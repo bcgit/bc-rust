@@ -11,51 +11,49 @@
 //! permutation that implements nothing but `encrypt_block` works here.
 //!
 //! # Usage Examples
-//! The nonce is supplied rather than generated, and there is an extra input (the AAD, authenticated but
-//! not encrypted) and an extra output (the tag).
 //!
-//! Decryption either returns the plaintext or fails with [`SymmetricCipherError::AEADTagCheckFailed`]
-//! -- it never returns plausible-looking rubbish the way the unauthenticated modes do when the
-//! ciphertext has been altered.
+//! CCM must know the payload length before it starts (Sec 3), and the generic traits' streaming
+//! constructor is handed no lengths, so [`CcmEncryptor`] / [`CcmDecryptor`] fix the frame in the
+//! type: `DATA_LEN` bytes of payload exactly, up to `AAD_LEN` of AAD. Their one-shots have the
+//! whole message in hand and take any length. The nonce is drawn unless a `_nonce` form is used;
+//! CCM needs it unique, not random (Sec 5.3), so a caller with a counter supplies its own. The
+//! AAD is authenticated but not encrypted, and the tag is the extra output.
 //!
 //! ```
 //! # mod toy { include!("../../tests/common/toy_block_cipher.rs"); }
 //! # use toy::ToyBlockCipher;
 //! use bouncycastle_core::errors::SymmetricCipherError;
 //! use bouncycastle_core::key_material::{KeyMaterial128, KeyType};
-//! use bouncycastle_cipher::modes::CcmPacket;
-//! use bouncycastle_cipher::{Decrypting, Encrypting};
+//! use bouncycastle_core::traits::{AEADCipherDecryptor, AEADCipherEncryptor};
+//! use bouncycastle_cipher::modes::{CcmDecryptor, CcmEncryptor};
 //!
-//! type ToyCcm<Dir> = CcmPacket<ToyBlockCipher, Dir, 16, 16, 12, 16>;
+//! // A 12-byte nonce, a 16-byte tag, 64 bytes of AAD capacity and 32-byte frames.
+//! type ToyEnc = CcmEncryptor<ToyBlockCipher, 16, 16, 12, 16, 64, 32>;
+//! type ToyDec = CcmDecryptor<ToyBlockCipher, 16, 16, 12, 16, 64, 32>;
 //!
 //! let key = KeyMaterial128::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
 //!     .expect("a 16-byte symmetric cipher key");
-//!
-//! // Supplied, not generated
-//! // It is the caller's responsibility that it never repeat under this key.
 //! let nonce = [0x01u8; 12];
-//!
 //! let header = b"authenticated, not encrypted";
 //! let message = b"any length: CCM pads internally";
 //!
-//! // The spec's own layout (SP 800-38C Sec 6.1 step 8): `ciphertext || tag`.
-//! let mut ct_and_tag = vec![0u8; message.len() + 16];
-//! ToyCcm::<Encrypting>::encrypt_out(&key, &nonce, header, message, &mut ct_and_tag).expect("encryption");
+//! // The one-shots, in the spec's own layout (Sec 6.1 step 8): `ciphertext || tag`.
+//! let ct_and_tag = ToyEnc::encrypt_with_aad_nonce(&key, &nonce, header, message).expect("encryption");
+//! let recovered = ToyDec::decrypt_with_aad(&key, &nonce, header, &ct_and_tag).expect("decryption");
+//! assert_eq!(&recovered[..], message);
 //!
-//! let mut recovered_plaintext = vec![0u8; message.len()];
-//! let n = ToyCcm::<Decrypting>::decrypt_out(&key, &nonce, header, &ct_and_tag, &mut recovered_plaintext).expect("decryption");
-//! assert_eq!(&recovered_plaintext[..n], message);
-//!
-//! // If we tamper with any byte of the ciphertext, then this fails with a SymmetricCipherError::AEADTagCheckFailed
+//! // Tampering with the ciphertext, or changing the AAD, fails the tag check.
 //! let mut tampered = ct_and_tag.clone();
 //! tampered[0] ^= 1;
-//! assert_eq!(ToyCcm::<Decrypting>::decrypt_out(&key, &nonce, header, &tampered, &mut recovered_plaintext).unwrap_err(),
-//!             SymmetricCipherError::AEADTagCheckFailed);
-//!
-//! // Same if we provide the correct ciphertext and tag, but change the authenticated data
-//! assert_eq!(ToyCcm::<Decrypting>::decrypt_out(&key, &nonce, b"other header", &ct_and_tag, &mut recovered_plaintext).unwrap_err(),
-//!             SymmetricCipherError::AEADTagCheckFailed);
+//! assert_eq!(ToyDec::decrypt_with_aad(&key, &nonce, header, &tampered).unwrap_err(),
+//!            SymmetricCipherError::AEADTagCheckFailed);
+//! assert_eq!(ToyDec::decrypt_with_aad(&key, &nonce, b"other header", &ct_and_tag).unwrap_err(),
+//!            SymmetricCipherError::AEADTagCheckFailed);
 //! ```
+//!
+//! A mode-bound key, `AES128Key<CCM<12, 16, 64, 32>>` and the like, reaches the same pair through
+//! its role traits, and its in-place one-shots take any length with no second buffer; see
+//! [`CCM`].
 //!
 //! # CCM is not a stream cipher
 //!
@@ -70,18 +68,16 @@
 //! > storage before CCM is applied; CCM is not designed to support partial processing or stream
 //! > processing.
 //!
-//! This is different from the `do_encrypt()` mode, often referred to as a "streaming mode" where
-//! the content is processed in batches; so long as the total expected length is known up-front.
-//! The AAD can be processed in batches the same way, if its length is declared up-front too; see
-//! [`CcmPacket::new_with_lengths`].
+//! The streaming methods still take the payload in pieces, and the AAD too, within the frame the
+//! type declares.
 //!
 //! # Suspending and resuming execution
 //!
-//! [`CcmPacket`] implements [`SuspendableKeyed`], so a message in progress can be suspended to a byte
-//! array and resumed later with the re-supplied key. The state is the CTR half, the CBC-MAC
-//! chaining value and the AAD and payload still owed; the permutation is rebuilt from the key. The
-//! array length is `CcmPacket::SUSPENDED_STATE_LEN`; see [the crate
-//! docs](crate#suspending-and-resuming-execution) for an example.
+//! [`CcmEncryptor`] and [`CcmDecryptor`] implement [`SuspendableKeyed`], so a message in progress
+//! can be suspended to a byte array and resumed later with the re-supplied key. The state is the
+//! CTR half, the CBC-MAC chaining value, the payload still owed and the AAD held back so far; the
+//! permutation is rebuilt from the key. The array length is each type's `SUSPENDED_STATE_LEN`;
+//! see [the crate docs](crate#suspending-and-resuming-execution) for an example.
 //!
 //! # 🚨 Security Considerations 🚨
 //!
@@ -131,46 +127,16 @@ use crate::{Decrypting, Encrypting};
 
 /// CCM (SP 800-38C) over any [`ElectronicCodeBook`] with a 128-bit block, for Sec 3's "packet
 /// environment, i.e., when all of the data is available in storage before CCM is applied": the
-/// AAD and payload lengths are declared per message, and the nonce is the caller's. The
-/// trait-implementing pair, [`CcmEncryptor`] / [`CcmDecryptor`], is built on this type.
+/// AAD and payload lengths are declared per message, and the nonce is the caller's. Crate-private:
+/// the trait-implementing pair, [`CcmEncryptor`] / [`CcmDecryptor`], is built on it, and the
+/// [`CCM`] mode's in-place one-shots run it over a message's own length.
 ///
-/// `Dir` is [`Encrypting`] or [`Decrypting`], `CcmPacket<P, Encrypting, ..>` has Sec 6.1's methods and
-/// nothing else, and `CcmPacket<P, Decrypting, ..>` has Sec 6.2's.
-///
-/// Asking an encryptor to verify a tag does not compile -- `do_decrypt_final` exists only on
-/// `CcmPacket<P, Decrypting, ..>`:
-///
-/// A nonce length A.1 does not permit does not compile:
-///
-/// ```compile_fail
-/// # mod toy { include!("../../tests/common/toy_block_cipher.rs"); }
-/// # use toy::ToyBlockCipher;
-/// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-/// use bouncycastle_cipher::modes::CcmPacket;
-/// use bouncycastle_cipher::Encrypting;
-///
-/// let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
-///     .unwrap();
-/// // n = 6 is not in {7, ..., 13}: it would make q = 9, which A.1 does not allow.
-/// let _ = CcmPacket::<ToyBlockCipher, Encrypting, 16, 16, 6, 16>::new(&key, &[0u8; 6], &[], 0);
-/// ```
-///
-/// Nor does an odd tag length:
-///
-/// ```compile_fail
-/// # mod toy { include!("../../tests/common/toy_block_cipher.rs"); }
-/// # use toy::ToyBlockCipher;
-/// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-/// use bouncycastle_cipher::modes::CcmPacket;
-/// use bouncycastle_cipher::Encrypting;
-///
-/// let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
-///     .unwrap();
-/// // t = 15 is not in {4, 6, 8, 10, 12, 14, 16}.
-/// let _ = CcmPacket::<ToyBlockCipher, Encrypting, 16, 16, 12, 15>::new(&key, &[0u8; 12], &[], 0);
-/// ```
+/// `Dir` is [`Encrypting`] or [`Decrypting`]: `CcmPacket<P, Encrypting, ..>` has Sec 6.1's
+/// methods and nothing else, and `CcmPacket<P, Decrypting, ..>` has Sec 6.2's. A.1's shape
+/// conditions on `NONCE_LEN` and `TAG_LEN` are asserted at compile time in `check_shape`, which
+/// every constructor runs; the pair's docs carry the `compile_fail` cases.
 #[derive(Clone)]
-pub struct CcmPacket<
+pub(crate) struct CcmPacket<
     P,
     Dir,
     const KEY_LEN: usize,
@@ -226,11 +192,6 @@ where
     /// The spec's `q`: the octet length of the payload-length field `Q`. A.1 requires `n + q = 15`.
     const Q_LEN: usize = CcmKeyStream::<P, KEY_LEN, BLOCK_LEN, NONCE_LEN>::Q_LEN;
 
-    /// The `N` of this type's [`SuspendableKeyed<N>`] impl: the version header, the CTR state,
-    /// the CBC-MAC chaining block and three counts as `u64`s. See [`bouncycastle_utils::suspendable_state`].
-    pub const SUSPENDED_STATE_LEN: usize =
-        LIB_VERSION_LEN + <Self as SuspendableComponent>::STATE_LEN;
-
     /// The CTR half's share of the suspended state.
     const CTR_STATE_LEN: usize = <StreamCipher<
         CcmKeyStream<P, KEY_LEN, BLOCK_LEN, NONCE_LEN>,
@@ -281,8 +242,8 @@ where
     /// counter blocks. Everything after this streams without buffering.
     ///
     /// `payload_len` is declared here because Appendix A.2.1 puts the payload length inside `B0`,
-    /// the first block the CBC-MAC absorbs. For an AAD that is not all in hand at once, see
-    /// [`Self::new_with_lengths`], which declares its length instead and takes it in pieces.
+    /// the first block the CBC-MAC absorbs. An AAD that is not all in hand at once goes through
+    /// the adapters, which hold it back until it is.
     ///
     /// * `key` must be a [`KeyType::SymmetricCipherKey`](bouncycastle_core::key_material::KeyType::SymmetricCipherKey)
     ///   of at least the permutation's strength.
@@ -294,7 +255,7 @@ where
     /// # Errors
     /// [`SymmetricCipherError::KeyMaterialError`] for a key of the wrong type or strength, and
     /// [`SymmetricCipherError::GenericError`] if `payload_len` exceeds A.1's `2^8q - 1`; see
-    /// [`CcmPacket`] for the table.
+    /// `CcmPacket` for the table.
     pub fn new(
         key: &KeyMaterial<KEY_LEN>,
         nonce: &[u8; NONCE_LEN],
@@ -311,63 +272,6 @@ where
         // Exactly the length just declared, so nothing is left owed.
         ccm.absorb_aad(aad);
         Ok(ccm)
-    }
-
-    /// As [`Self::new`], but with the AAD's length declared rather than the AAD itself, so that the
-    /// AAD can then be supplied in pieces through [`Self::do_update_aad`].
-    ///
-    /// Both lengths are needed up front, and only the lengths. `B0` carries the payload length
-    /// (A.2.1), and A.2.2 formats the AAD as "the encoding of a [...] concatenated with the
-    /// associated data A", so the CBC-MAC cannot absorb the first AAD byte until it has absorbed
-    /// `B0` and the encoding of `a`. The AAD bytes themselves then go through the CBC-MAC as they
-    /// arrive, in any chunking.
-    ///
-    /// The flow is: this constructor, exactly `aad_len` bytes of AAD through
-    /// [`Self::do_update_aad`], then exactly `payload_len` bytes of payload, then the final. The
-    /// AAD must be complete before any payload: A.2.3 puts the payload blocks after the AAD blocks.
-    ///
-    /// ```
-    /// # mod toy { include!("../../tests/common/toy_block_cipher.rs"); }
-    /// # use toy::ToyBlockCipher;
-    /// use bouncycastle_core::key_material::{KeyMaterial128, KeyType};
-    /// use bouncycastle_cipher::modes::CcmPacket;
-    /// use bouncycastle_cipher::Encrypting;
-    ///
-    /// type ToyCcm<Dir> = CcmPacket<ToyBlockCipher, Dir, 16, 16, 12, 16>;
-    ///
-    /// let key = KeyMaterial128::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
-    ///     .expect("a 16-byte symmetric cipher key");
-    /// let nonce = [0x01u8; 12];
-    /// let header: [&[u8]; 2] = [b"version: 1; ", b"route: a->b"];
-    /// let mut message = *b"attack at dawn";
-    ///
-    /// let aad_len = header.iter().map(|part| part.len()).sum();
-    /// let mut ccm =
-    ///     ToyCcm::<Encrypting>::new_with_lengths(&key, &nonce, aad_len, message.len()).unwrap();
-    /// for part in header {
-    ///     ccm.do_update_aad(part).unwrap();
-    /// }
-    /// ccm.do_encrypt(&mut message).unwrap();
-    /// let tag = ccm.do_encrypt_final().unwrap();
-    ///
-    /// // The same as supplying the AAD whole.
-    /// let mut whole = *b"attack at dawn";
-    /// let mut ccm = ToyCcm::<Encrypting>::new(&key, &nonce, b"version: 1; route: a->b", 14).unwrap();
-    /// ccm.do_encrypt(&mut whole).unwrap();
-    /// assert_eq!((message, tag), (whole, ccm.do_encrypt_final().unwrap()));
-    /// ```
-    ///
-    /// # Errors
-    /// As [`Self::new`].
-    pub fn new_with_lengths(
-        key: &KeyMaterial<KEY_LEN>,
-        nonce: &[u8; NONCE_LEN],
-        aad_len: usize,
-        payload_len: usize,
-    ) -> Result<Self, SymmetricCipherError> {
-        key.check_algorithm(Self::ALG_NAME)?;
-        let perm = P::new(key)?;
-        Self::from_perm_with_lengths(perm, nonce, aad_len, payload_len)
     }
 
     /// As [`Self::new`], from a key schedule that has already been expanded: the constructor a
@@ -402,30 +306,8 @@ where
         random_iv::<NONCE_LEN>(rng)
     }
 
-    /// Supplies the next piece of the AAD declared to [`Self::new_with_lengths`]. A sequence of
-    /// calls is equivalent to one call over the concatenation. An empty `aad` is a no-op.
-    ///
-    /// When the last declared byte arrives, the AAD is zero-padded to a block boundary (A.2.2's
-    /// "minimum number of '0' bits"), which is what opens the payload phase.
-    ///
-    /// # Errors
-    /// [`SymmetricCipherError::StateError`] if `aad` would take the total past the declared AAD
-    /// length -- which includes any non-empty AAD once the declared amount is complete, and so any
-    /// after [`Self::new`], which declares exactly the AAD it is given. Nothing is absorbed in that
-    /// case.
-    pub fn do_update_aad(&mut self, aad: &[u8]) -> Result<(), SymmetricCipherError> {
-        if aad.len() > self.aad_owed {
-            return Err(SymmetricCipherError::StateError(
-                "CCM was given more AAD than the declared AAD length, which the AAD length \
-                 encoding commits to",
-            ));
-        }
-        self.absorb_aad(aad);
-        Ok(())
-    }
-
-    /// [`Self::do_update_aad`] without its check: `aad` must be at most the AAD still owed, which
-    /// the caller has established. An empty `aad` is a no-op.
+    /// Absorbs `aad`, which must be at most the AAD still owed, which the caller has
+    /// established. An empty `aad` is a no-op.
     fn absorb_aad(&mut self, aad: &[u8]) {
         if aad.is_empty() {
             return;
@@ -439,9 +321,9 @@ where
         }
     }
 
-    /// As [`Self::new_with_lengths`], from a key schedule that has already been expanded: formats
-    /// and absorbs `B0` and, if there is any AAD, the encoding of its length, leaving the AAD
-    /// itself to [`Self::do_update_aad`].
+    /// From a key schedule that has already been expanded, with the AAD's length declared rather
+    /// than the AAD itself: formats and absorbs `B0` and, if there is any AAD, the encoding of
+    /// its length, leaving the AAD itself to [`Self::absorb_aad`].
     fn from_perm_with_lengths(
         perm: P,
         nonce: &[u8; NONCE_LEN],
@@ -466,7 +348,7 @@ where
     /// implement is handed a key and no AAD, and `B0`'s Adata bit (A.2.2: "'0' if a=0 and '1' if
     /// a>0") cannot be set until the AAD is complete. They call [`Self::format_header`] when it
     /// is, and nothing else may touch the MAC before that. `payload_len` must already be at most
-    /// [`Self::MAX_PAYLOAD_LEN`]; the adapters assert theirs at compile time.
+    /// `Self::MAX_PAYLOAD_LEN`; the adapters assert theirs at compile time.
     fn from_perm_unformatted(perm: P, nonce: &[u8; NONCE_LEN], payload_len: usize) -> Self {
         Self::check_shape();
         Self {
@@ -494,7 +376,7 @@ where
         // A.2.2: if `a > 0`, "the encoding of a is concatenated with the associated data A,
         // followed by the minimum number of '0' bits, possibly none, such that the resulting string
         // can be partitioned into 16-octet blocks". The encoding goes in now; `A` and the pad
-        // follow through `do_update_aad`. If `a = 0` there are no AAD blocks at all, so nothing is
+        // follow through `absorb_aad`. If `a = 0` there are no AAD blocks at all, so nothing is
         // absorbed and nothing is padded, and `B0` has already ended on a block boundary.
         if aad_len > 0 {
             let (encoded, encoded_len) = Self::encode_aad_len(aad_len as u64);
@@ -679,8 +561,8 @@ where
     ///
     /// # Errors
     /// [`SymmetricCipherError::StateError`] if `data` would take the total past the declared
-    /// payload length, or if it is non-empty while AAD declared to [`Self::new_with_lengths`] is
-    /// still outstanding. Nothing is consumed in either case.
+    /// payload length, or if it is non-empty while declared AAD is still outstanding. Nothing is
+    /// consumed in either case.
     pub fn do_encrypt(&mut self, data: &mut [u8]) -> Result<(), SymmetricCipherError> {
         self.take_owed(data.len())?;
         self.mac_absorb(data);
@@ -693,8 +575,7 @@ where
     /// # Errors
     /// [`SymmetricCipherError::StateError`] if less payload was supplied than the length declared
     /// to [`Self::new`] -- `B0` commits to that length, so a short message would produce a tag no
-    /// verifier could reproduce -- or less AAD than declared to [`Self::new_with_lengths`], for the
-    /// same reason.
+    /// verifier could reproduce -- or less AAD than declared, for the same reason.
     pub fn do_encrypt_final(self) -> Result<[u8; TAG_LEN], SymmetricCipherError> {
         if self.aad_owed != 0 {
             return Err(SymmetricCipherError::StateError(
@@ -784,8 +665,8 @@ where
     ///
     /// # Errors
     /// [`SymmetricCipherError::StateError`] if `data` would take the total past the declared
-    /// payload length, or if it is non-empty while AAD declared to [`Self::new_with_lengths`] is
-    /// still outstanding. Nothing is consumed in either case.
+    /// payload length, or if it is non-empty while declared AAD is still outstanding. Nothing is
+    /// consumed in either case.
     pub fn do_decrypt_update(&mut self, data: &mut [u8]) -> Result<(), SymmetricCipherError> {
         self.take_owed(data.len())?;
         self.ctr.do_decrypt_inplace(data)?;
@@ -803,7 +684,7 @@ where
     /// # Errors
     /// [`SymmetricCipherError::AEADTagCheckFailed`] if the tag does not verify, and
     /// [`SymmetricCipherError::StateError`] if less ciphertext was supplied than the length declared
-    /// to [`Self::new`], or less AAD than declared to [`Self::new_with_lengths`].
+    /// to [`Self::new`], or less AAD than declared.
     pub fn do_decrypt_final(self, tag: &[u8; TAG_LEN]) -> Result<(), SymmetricCipherError> {
         if self.aad_owed != 0 {
             return Err(SymmetricCipherError::StateError(
@@ -909,7 +790,7 @@ where
 /// over counter blocks formatted as A.3 specifies.
 ///
 /// Crate-private: CCM's CTR half alone is an unauthenticated cipher, and is only reachable
-/// through [`CcmPacket`]. It shares its key schedule with the CBC-MAC half, which reaches it through
+/// through `CcmPacket`. It shares its key schedule with the CBC-MAC half, which reaches it through
 /// [`StreamCipher::keystream`].
 #[derive(Clone)]
 struct CcmKeyStream<P, const KEY_LEN: usize, const BLOCK_LEN: usize, const NONCE_LEN: usize>
@@ -954,7 +835,7 @@ where
 
     /// The nonce `N`, read back out of the counter template: A.3 Table 3 puts it in octets
     /// `1 ... 15-q`, which is `1 ... NONCE_LEN` since `n + q = 15`. It is the same `N` that
-    /// `B0` carries (A.2.1 Table 2), so [`CcmPacket::format_header`] needs no second copy of it.
+    /// `B0` carries (A.2.1 Table 2), so `CcmPacket::format_header` needs no second copy of it.
     fn nonce(&self) -> [u8; NONCE_LEN] {
         let mut nonce = [0u8; NONCE_LEN];
         nonce.copy_from_slice(&self.ctr_template[1..1 + NONCE_LEN]);
@@ -965,8 +846,8 @@ where
     /// Table 2) and the counter field of `Ctr_i` (A.3, Table 3), which occupy the same octets.
     ///
     /// `Q_LEN <= 8`, so the low `Q_LEN` bytes of a big-endian `u64` are exactly `[x]_8q`. Nothing
-    /// is ever truncated in a way that matters: [`CcmPacket::new`] refuses a payload above
-    /// [`CcmPacket::MAX_PAYLOAD_LEN`], and the counter cannot pass that either, since there is one
+    /// is ever truncated in a way that matters: `CcmPacket::new` refuses a payload above
+    /// `CcmPacket::MAX_PAYLOAD_LEN`, and the counter cannot pass that either, since there is one
     /// counter block per `BLOCK_LEN` payload bytes.
     #[inline]
     fn put_q_field(block: &mut [u8; BLOCK_LEN], x: u64) {
@@ -1008,7 +889,7 @@ where
     }
 
     /// Every counter value from `next_ctr` to `2^8q - 1`. Never the binding limit in practice:
-    /// [`CcmPacket::new`] caps the payload at `2^8q - 1` bytes, far fewer than that many blocks.
+    /// `CcmPacket::new` caps the payload at `2^8q - 1` bytes, far fewer than that many blocks.
     fn remaining_blocks(&self) -> u64 {
         Self::MAX_COUNTER - self.next_ctr + 1
     }
@@ -1026,7 +907,7 @@ where
     }
 }
 
-/// What [`CcmEncryptor`] and [`CcmDecryptor`] share: the [`CcmPacket`] state, which the trait
+/// What [`CcmEncryptor`] and [`CcmDecryptor`] share: the `CcmPacket` state, which the trait
 /// constructor builds before it has seen any AAD, and the AAD itself, held back until it is
 /// complete.
 ///
@@ -1037,7 +918,7 @@ where
 /// buffer in either adapter, and `AAD_LEN` is its capacity: header-sized, by the caller's choice.
 ///
 /// `DATA_LEN` is an exact length, not a capacity, and is committed to `B0` here: the payload
-/// then streams through [`CcmPacket`]'s own `owed` accounting, which refuses more and whose finals
+/// then streams through `CcmPacket`'s own `owed` accounting, which refuses more and whose finals
 /// refuse less.
 #[derive(Clone)]
 struct CcmAdapter<
@@ -1077,7 +958,7 @@ where
     /// The compile-time check for the trait adapters, run from both [`CcmEncryptor`]'s and
     /// [`CcmDecryptor`]'s constructors and from their one-shots, which never build an adapter, so
     /// that a parameter set either names a usable pair or does not compile at all.
-    /// [`CcmPacket::check_shape`]'s own checks run as well, from the [`CcmPacket`] constructor underneath,
+    /// `CcmPacket::check_shape`'s own checks run as well, from the `CcmPacket` constructor underneath,
     /// and the floor for a generated nonce is `CcmEncryptor::check_random_nonce`'s, run only from
     /// the forms that draw one: every A.1 nonce length from 7 through 13 is usable here under a
     /// supplied nonce.
@@ -1137,7 +1018,7 @@ where
 
     /// Ends the AAD phase, the first time it is called: runs Sec 6.1 step 1 -- `B0`, the encoding
     /// of `a`, the AAD and its zero pad -- over the AAD held so far, which is now known to be all
-    /// of it. Called before any payload byte goes through [`CcmPacket`], and from every final, so a
+    /// of it. Called before any payload byte goes through `CcmPacket`, and from every final, so a
     /// message with no payload at all still gets its header. Later calls do nothing.
     fn begin_data(&mut self) {
         if !self.formatted {
@@ -1149,7 +1030,7 @@ where
     }
 }
 
-/// Adapts [`CcmPacket`] to [`AEADCipherEncryptor`] and, through it, [`SymmetricCipherEncryptor`], for a
+/// Adapts `CcmPacket` to [`AEADCipherEncryptor`] and, through it, [`SymmetricCipherEncryptor`], for a
 /// payload of exactly `DATA_LEN` bytes.
 ///
 /// [`SymmetricCipherEncryptor::do_encrypt_init`] is handed a key and nothing else, but CCM cannot
@@ -1163,7 +1044,7 @@ where
 /// `DATA_LEN` bytes of payload -- the fixed frame of SP 800-38C Sec 3's "packet environment" --
 /// and refuse any other amount, more at the update that would exceed it and less at the final.
 /// The one-shots are not bound by either parameter: with the whole message in hand there is
-/// nothing to declare up front and nothing to hold back, so they are [`CcmPacket`]'s own one-shots
+/// nothing to declare up front and nothing to hold back, so they are `CcmPacket`'s own one-shots
 /// under a generated nonce, for a payload and AAD of any length, and the AAD buffer is never
 /// built. `DATA_LEN` and `AAD_LEN` govern the streaming methods only.
 ///
@@ -1218,7 +1099,7 @@ where
 /// bound useful; the check runs only when one of them is instantiated. The forms that take the
 /// caller's nonce -- [`do_encrypt_init_nonce`](AEADCipherEncryptor::do_encrypt_init_nonce) and
 /// the `_nonce` one-shots -- and [`CcmDecryptor`] accept every A.1 nonce length from 7 through
-/// 13, as the inherent [`CcmPacket`] API does, with uniqueness the caller's to guarantee. So a short
+/// 13, as the inherent `CcmPacket` API does, with uniqueness the caller's to guarantee. So a short
 /// nonce compiles when it is supplied:
 ///
 /// ```
@@ -1268,9 +1149,39 @@ where
 ///
 /// # Memory
 ///
-/// A value is the fixed-size [`CcmPacket`] state, the `AAD_LEN`-byte AAD buffer and two words of
+/// A value is the fixed-size `CcmPacket` state, the `AAD_LEN`-byte AAD buffer and two words of
 /// bookkeeping, independent of `DATA_LEN`; the finals return and write only the tag. Nothing
 /// scales with the message.
+///
+/// A nonce length A.1 does not permit does not compile, whichever form is used:
+///
+/// ```compile_fail
+/// # mod toy { include!("../../tests/common/toy_block_cipher.rs"); }
+/// # use toy::ToyBlockCipher;
+/// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
+/// use bouncycastle_core::traits::AEADCipherEncryptor;
+/// use bouncycastle_cipher::modes::CcmEncryptor;
+///
+/// let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
+///     .unwrap();
+/// // n = 6 is not in {7, ..., 13}: it would make q = 9, which A.1 does not allow.
+/// let _ = CcmEncryptor::<ToyBlockCipher, 16, 16, 6, 16, 64, 256>::do_encrypt_init_nonce(&key, &[0u8; 6]);
+/// ```
+///
+/// Nor does an odd tag length:
+///
+/// ```compile_fail
+/// # mod toy { include!("../../tests/common/toy_block_cipher.rs"); }
+/// # use toy::ToyBlockCipher;
+/// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
+/// use bouncycastle_core::traits::AEADCipherEncryptor;
+/// use bouncycastle_cipher::modes::CcmEncryptor;
+///
+/// let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
+///     .unwrap();
+/// // t = 15 is not in {4, 6, 8, 10, 12, 14, 16}.
+/// let _ = CcmEncryptor::<ToyBlockCipher, 16, 16, 12, 15, 64, 256>::do_encrypt_init_nonce(&key, &[0u8; 12]);
+/// ```
 #[derive(Clone)]
 pub struct CcmEncryptor<
     P,
@@ -1318,7 +1229,7 @@ where
     /// # Errors
     /// [`SymmetricCipherError::StateError`] if fewer than `DATA_LEN` payload bytes were supplied:
     /// `B0` committed to `DATA_LEN`, so a shorter message would get a tag no verifier could
-    /// reproduce, and [`CcmPacket::do_encrypt_final`] refuses to produce one.
+    /// reproduce, and `CcmPacket::do_encrypt_final` refuses to produce one.
     fn finish(mut self) -> Result<[u8; TAG_LEN], SymmetricCipherError> {
         self.0.begin_data();
         self.0.ccm.do_encrypt_final()
@@ -1513,7 +1424,7 @@ where
         Ok(Self(CcmAdapter::new(perm, nonce)))
     }
 
-    /// [`CcmPacket::encrypt_detached_out`] itself, for a `plaintext` and `aad` of any length.
+    /// `CcmPacket::encrypt_detached_out` itself, for a `plaintext` and `aad` of any length.
     ///
     /// # Errors
     /// As [`encrypt_detached_rng_out`](AEADCipherEncryptor::encrypt_detached_rng_out), less the
@@ -1531,7 +1442,7 @@ where
         )
     }
 
-    /// [`CcmPacket::encrypt_out`] itself, for a `plaintext` and `aad` of any length.
+    /// `CcmPacket::encrypt_out` itself, for a `plaintext` and `aad` of any length.
     ///
     /// # Errors
     /// As [`encrypt_with_aad_rng_out`](AEADCipherEncryptor::encrypt_with_aad_rng_out), less the
@@ -1561,7 +1472,7 @@ where
         Ok((0, self.finish()?))
     }
 
-    /// [`CcmPacket::encrypt_detached_out`] under a nonce drawn from the default DRBG, as
+    /// `CcmPacket::encrypt_detached_out` under a nonce drawn from the default DRBG, as
     /// [`do_encrypt_init`](SymmetricCipherEncryptor::do_encrypt_init) draws it; see
     /// [`encrypt_detached_rng_out`](AEADCipherEncryptor::encrypt_detached_rng_out).
     fn encrypt_detached_out(
@@ -1574,12 +1485,12 @@ where
         Self::encrypt_detached_rng_out(key, &mut rng, aad, plaintext, ciphertext)
     }
 
-    /// [`CcmPacket::encrypt_detached_out`] under a nonce drawn from `rng`, for a `plaintext` and `aad`
+    /// `CcmPacket::encrypt_detached_out` under a nonce drawn from `rng`, for a `plaintext` and `aad`
     /// of any length: neither `DATA_LEN` nor `AAD_LEN` applies to a one-shot (see the type docs).
     ///
     /// # Errors
     /// [`SymmetricCipherError::OutputBufferTooSmall`] if `ciphertext` is shorter than
-    /// `plaintext`, checked before anything is drawn from `rng`; plus [`CcmPacket::new`]'s errors and
+    /// `plaintext`, checked before anything is drawn from `rng`; plus `CcmPacket::new`'s errors and
     /// the RNG's.
     fn encrypt_detached_rng_out(
         key: &KeyMaterial<KEY_LEN>,
@@ -1602,7 +1513,7 @@ where
         Ok((nonce, written, tag))
     }
 
-    /// [`CcmPacket::encrypt_out`] under a nonce drawn from the default DRBG; see
+    /// `CcmPacket::encrypt_out` under a nonce drawn from the default DRBG; see
     /// [`encrypt_with_aad_rng_out`](AEADCipherEncryptor::encrypt_with_aad_rng_out).
     fn encrypt_with_aad_out(
         key: &KeyMaterial<KEY_LEN>,
@@ -1614,7 +1525,7 @@ where
         Self::encrypt_with_aad_rng_out(key, &mut rng, aad, plaintext, ciphertext)
     }
 
-    /// [`CcmPacket::encrypt_out`] under a nonce drawn from `rng`, for a `plaintext` and `aad` of any
+    /// `CcmPacket::encrypt_out` under a nonce drawn from `rng`, for a `plaintext` and `aad` of any
     /// length, as [`encrypt_detached_rng_out`](AEADCipherEncryptor::encrypt_detached_rng_out).
     ///
     /// # Errors
@@ -1643,7 +1554,7 @@ where
     }
 }
 
-/// Adapts [`CcmPacket`] to [`AEADCipherDecryptor`] and, through it, [`SymmetricCipherDecryptor`], for
+/// Adapts `CcmPacket` to [`AEADCipherDecryptor`] and, through it, [`SymmetricCipherDecryptor`], for
 /// a payload of exactly `DATA_LEN` bytes; the mirror of [`CcmEncryptor`], and see it for the
 /// parameters, the nonce floor and the memory.
 ///
@@ -1653,7 +1564,7 @@ where
 /// can only be an inline tag (Sec 6.2 step 6's `LSB_Tlen(C)`), and only those bytes -- at most
 /// `TAG_LEN` -- are held back for the final to check. A `C` of any other length than `DATA_LEN`
 /// (detached) or `DATA_LEN + TAG_LEN` (inline) is refused as malformed. The one-shots are
-/// [`CcmPacket`]'s own and take a `C` of any length; see [`CcmEncryptor`].
+/// `CcmPacket`'s own and take a `C` of any length; see [`CcmEncryptor`].
 ///
 /// # 🚨 Security Considerations 🚨
 ///
@@ -1662,7 +1573,7 @@ where
 /// recovered rather than hold the whole frame back, so a forged ciphertext yields attacker-chosen
 /// bytes that only the final's [`SymmetricCipherError::AEADTagCheckFailed`] disowns. That is
 /// [`AEADCipherDecryptor`]'s general streaming caveat, and the inherent
-/// [`CcmPacket::do_decrypt_update`] has it too. Sec 6.2's "the payload P and the MAC T shall not be
+/// `CcmPacket::do_decrypt_update` has it too. Sec 6.2's "the payload P and the MAC T shall not be
 /// revealed" on INVALID is honoured by the one-shots, which zeroize what they wrote before
 /// returning the error.
 #[derive(Clone)]
@@ -1722,12 +1633,12 @@ where
     }
 
     /// Every final comes here once it has settled which bytes are the tag: Sec 6.2 step 10,
-    /// through [`CcmPacket::do_decrypt_final`]. The header goes in first if no payload call put it
+    /// through `CcmPacket::do_decrypt_final`. The header goes in first if no payload call put it
     /// there, which is the `DATA_LEN = 0` message.
     ///
     /// # Errors
     /// [`SymmetricCipherError::AEADTagCheckFailed`] if the tag does not verify. The callers have
-    /// already refused a short payload, so [`CcmPacket::do_decrypt_final`]'s own refusal of one is not
+    /// already refused a short payload, so `CcmPacket::do_decrypt_final`'s own refusal of one is not
     /// reachable from here; it stays as the backstop it is for the inherent API.
     fn finish(mut self, tag: &[u8; TAG_LEN]) -> Result<(), SymmetricCipherError> {
         self.inner.begin_data();
@@ -1848,7 +1759,7 @@ where
     }
 }
 
-/// The AEAD view, with `FINAL_LEN = TAG_LEN`. The one-shots are [`CcmPacket`]'s own, for a `C` and
+/// The AEAD view, with `FINAL_LEN = TAG_LEN`. The one-shots are `CcmPacket`'s own, for a `C` and
 /// AAD of any length; see [`CcmEncryptor`].
 impl<
     P,
@@ -1890,14 +1801,14 @@ where
         Ok(0)
     }
 
-    /// [`CcmPacket::decrypt_detached_out`], for a `ciphertext` and `aad` of any length: neither
+    /// `CcmPacket::decrypt_detached_out`, for a `ciphertext` and `aad` of any length: neither
     /// `DATA_LEN` nor `AAD_LEN` applies to a one-shot (see [`CcmEncryptor`]). Zeroizes
     /// `plaintext` on a failed tag, as `CcmPacket`'s does.
     ///
     /// # Errors
     /// [`SymmetricCipherError::OutputBufferTooSmall`] if `plaintext` is shorter than
     /// `ciphertext`; [`SymmetricCipherError::AEADTagCheckFailed`] if the tag does not verify;
-    /// plus [`CcmPacket::new`]'s errors.
+    /// plus `CcmPacket::new`'s errors.
     fn decrypt_detached_out(
         key: &KeyMaterial<KEY_LEN>,
         nonce: &[u8; NONCE_LEN],
@@ -1916,7 +1827,7 @@ where
         )
     }
 
-    /// [`CcmPacket::decrypt_out`], for a `ciphertext` and `aad` of any length, as
+    /// `CcmPacket::decrypt_out`, for a `ciphertext` and `aad` of any length, as
     /// [`decrypt_detached_out`](AEADCipherDecryptor::decrypt_detached_out).
     ///
     /// # Errors
@@ -1990,33 +1901,9 @@ where
     }
 }
 
-/// `N` must be [`CcmPacket::SUSPENDED_STATE_LEN`]; anything else is a compile error.
-impl<
-    P,
-    Dir,
-    const KEY_LEN: usize,
-    const BLOCK_LEN: usize,
-    const NONCE_LEN: usize,
-    const TAG_LEN: usize,
-    const N: usize,
-> SuspendableKeyed<N> for CcmPacket<P, Dir, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN>
-where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
-{
-    type Key = KeyMaterial<KEY_LEN>;
-
-    fn suspend(self) -> [u8; N] {
-        suspend_component(&self)
-    }
-
-    fn from_suspended(state: [u8; N], key: &Self::Key) -> Result<Self, SuspendableError> {
-        resume_component(&state, key)
-    }
-}
-
 /// The suspended state is the counter template and the next counter index; the permutation is
 /// rebuilt from the re-supplied key. Crate-private like the type, reachable only through
-/// [`CcmPacket`]'s state.
+/// `CcmPacket`'s state.
 impl<P, const KEY_LEN: usize, const BLOCK_LEN: usize, const NONCE_LEN: usize> SuspendableComponent
     for CcmKeyStream<P, KEY_LEN, BLOCK_LEN, NONCE_LEN>
 where
@@ -2303,7 +2190,7 @@ mod tests {
         }
     }
 
-    /// The constructor really uses [`CcmPacket::encode_aad_len`], and puts it *before* the AAD.
+    /// The constructor really uses `CcmPacket::encode_aad_len`, and puts it *before* the AAD.
     ///
     /// With the identity permutation the CBC-MAC is `y = B0 ^ B1 ^ ... ^ Br`, so with a one-block
     /// all-zero AAD the only nonzero contributions are `B0` and the length encoding. That makes the
@@ -2329,7 +2216,7 @@ mod tests {
 /// The frame -- `AAD_LEN` and `DATA_LEN` -- is on the mode because the streaming worker a key
 /// produces is [`CcmEncryptor`] / [`CcmDecryptor`], which must commit to the lengths before the
 /// first byte (`B0` carries the payload length) and have nowhere to take them at run time. The
-/// key's in-place one-shots do not use the frame: they go through [`CcmPacket`] with the message's
+/// key's in-place one-shots do not use the frame: they go through `CcmPacket` with the message's
 /// own lengths, so a `CCM` key takes any message length there.
 pub struct CCM<
     const NONCE_LEN: usize,
@@ -2462,5 +2349,260 @@ where
             buf.fill(0);
         }
         result
+    }
+}
+
+// ---- suspending the pair -----------------------------------------------------------------
+
+/// The adapter's suspended state is the packet's, then the held-back AAD, its length and the
+/// phase flag. A state that says the header is not yet formatted must have absorbed nothing,
+/// and the payload still owed can be no more than the frame.
+impl<
+    P,
+    Dir,
+    const KEY_LEN: usize,
+    const BLOCK_LEN: usize,
+    const NONCE_LEN: usize,
+    const TAG_LEN: usize,
+    const AAD_LEN: usize,
+    const DATA_LEN: usize,
+> SuspendableComponent
+    for CcmAdapter<P, Dir, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>
+where
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
+{
+    const STATE_LEN: usize =
+        <CcmPacket<P, Dir, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN> as SuspendableComponent>::STATE_LEN
+            + AAD_LEN
+            + 8
+            + 1;
+    type Key = KeyMaterial<KEY_LEN>;
+
+    fn write_state(&self, out: &mut [u8]) {
+        let (ccm, rest) = out.split_at_mut(
+            <CcmPacket<P, Dir, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN> as SuspendableComponent>::STATE_LEN,
+        );
+        self.ccm.write_state(ccm);
+        let mut w = CursorMut::new(rest);
+        w.bytes(&self.aad);
+        w.u64(self.aad_len as u64);
+        w.u8(u8::from(self.formatted));
+        debug_assert!(w.is_done());
+    }
+
+    fn read_state(state: &[u8], key: &Self::Key) -> Result<Self, SuspendableError> {
+        Self::check_shape();
+        let (ccm, rest) = state.split_at(
+            <CcmPacket<P, Dir, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN> as SuspendableComponent>::STATE_LEN,
+        );
+        let ccm = CcmPacket::read_state(ccm, key)?;
+        let mut r = Cursor::new(rest);
+        let aad: [u8; AAD_LEN] = r.array();
+        let aad_len = bounded_usize(r.u64(), AAD_LEN)?;
+        let formatted = match r.u8() {
+            0 => false,
+            1 => true,
+            _ => return Err(SuspendableError::InvalidData),
+        };
+        debug_assert!(r.is_done());
+        // `B0` commits to `DATA_LEN`, so no more than that can still be owed; and until the
+        // header is formatted the CBC-MAC has absorbed nothing and no AAD is owed to it.
+        if ccm.owed > DATA_LEN || (!formatted && (ccm.mac_pos != 0 || ccm.aad_owed != 0)) {
+            return Err(SuspendableError::InvalidData);
+        }
+        Ok(Self { ccm, aad, aad_len, formatted })
+    }
+}
+
+impl<
+    P,
+    const KEY_LEN: usize,
+    const BLOCK_LEN: usize,
+    const NONCE_LEN: usize,
+    const TAG_LEN: usize,
+    const AAD_LEN: usize,
+    const DATA_LEN: usize,
+> SuspendableComponent
+    for CcmEncryptor<P, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>
+where
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
+{
+    const STATE_LEN: usize = <CcmAdapter<
+        P,
+        Encrypting,
+        KEY_LEN,
+        BLOCK_LEN,
+        NONCE_LEN,
+        TAG_LEN,
+        AAD_LEN,
+        DATA_LEN,
+    > as SuspendableComponent>::STATE_LEN;
+    type Key = KeyMaterial<KEY_LEN>;
+
+    fn write_state(&self, out: &mut [u8]) {
+        self.0.write_state(out);
+    }
+
+    fn read_state(state: &[u8], key: &Self::Key) -> Result<Self, SuspendableError> {
+        Ok(Self(CcmAdapter::read_state(state, key)?))
+    }
+}
+
+/// The decryptor adds the bytes it is holding back past the frame and how many there are.
+impl<
+    P,
+    const KEY_LEN: usize,
+    const BLOCK_LEN: usize,
+    const NONCE_LEN: usize,
+    const TAG_LEN: usize,
+    const AAD_LEN: usize,
+    const DATA_LEN: usize,
+> SuspendableComponent
+    for CcmDecryptor<P, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>
+where
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
+{
+    const STATE_LEN: usize = <CcmAdapter<
+        P,
+        Decrypting,
+        KEY_LEN,
+        BLOCK_LEN,
+        NONCE_LEN,
+        TAG_LEN,
+        AAD_LEN,
+        DATA_LEN,
+    > as SuspendableComponent>::STATE_LEN
+        + TAG_LEN
+        + 8;
+    type Key = KeyMaterial<KEY_LEN>;
+
+    fn write_state(&self, out: &mut [u8]) {
+        let (inner, rest) =
+            out.split_at_mut(
+                <CcmAdapter<
+                    P,
+                    Decrypting,
+                    KEY_LEN,
+                    BLOCK_LEN,
+                    NONCE_LEN,
+                    TAG_LEN,
+                    AAD_LEN,
+                    DATA_LEN,
+                > as SuspendableComponent>::STATE_LEN,
+            );
+        self.inner.write_state(inner);
+        let mut w = CursorMut::new(rest);
+        w.bytes(&self.tag);
+        w.u64(self.tag_len as u64);
+        debug_assert!(w.is_done());
+    }
+
+    fn read_state(state: &[u8], key: &Self::Key) -> Result<Self, SuspendableError> {
+        let (inner, rest) =
+            state.split_at(
+                <CcmAdapter<
+                    P,
+                    Decrypting,
+                    KEY_LEN,
+                    BLOCK_LEN,
+                    NONCE_LEN,
+                    TAG_LEN,
+                    AAD_LEN,
+                    DATA_LEN,
+                > as SuspendableComponent>::STATE_LEN,
+            );
+        let inner = CcmAdapter::read_state(inner, key)?;
+        let mut r = Cursor::new(rest);
+        let tag: [u8; TAG_LEN] = r.array();
+        let tag_len = bounded_usize(r.u64(), TAG_LEN)?;
+        debug_assert!(r.is_done());
+        Ok(Self { inner, tag, tag_len })
+    }
+}
+
+impl<
+    P,
+    const KEY_LEN: usize,
+    const BLOCK_LEN: usize,
+    const NONCE_LEN: usize,
+    const TAG_LEN: usize,
+    const AAD_LEN: usize,
+    const DATA_LEN: usize,
+> CcmEncryptor<P, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>
+where
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
+{
+    /// The `N` of this type's [`SuspendableKeyed<N>`] impl: the version header, the mode's
+    /// state, the `AAD_LEN`-byte AAD buffer, its length and the phase flag. See
+    /// [`bouncycastle_utils::suspendable_state`].
+    pub const SUSPENDED_STATE_LEN: usize =
+        LIB_VERSION_LEN + <Self as SuspendableComponent>::STATE_LEN;
+}
+
+impl<
+    P,
+    const KEY_LEN: usize,
+    const BLOCK_LEN: usize,
+    const NONCE_LEN: usize,
+    const TAG_LEN: usize,
+    const AAD_LEN: usize,
+    const DATA_LEN: usize,
+> CcmDecryptor<P, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>
+where
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
+{
+    /// The `N` of this type's [`SuspendableKeyed<N>`] impl: the encryptor's, plus the held-back
+    /// tag and its length. See [`bouncycastle_utils::suspendable_state`].
+    pub const SUSPENDED_STATE_LEN: usize =
+        LIB_VERSION_LEN + <Self as SuspendableComponent>::STATE_LEN;
+}
+
+/// `N` must be [`CcmEncryptor::SUSPENDED_STATE_LEN`]; anything else is a compile error.
+impl<
+    P,
+    const KEY_LEN: usize,
+    const BLOCK_LEN: usize,
+    const NONCE_LEN: usize,
+    const TAG_LEN: usize,
+    const AAD_LEN: usize,
+    const DATA_LEN: usize,
+    const N: usize,
+> SuspendableKeyed<N> for CcmEncryptor<P, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>
+where
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
+{
+    type Key = KeyMaterial<KEY_LEN>;
+
+    fn suspend(self) -> [u8; N] {
+        suspend_component(&self)
+    }
+
+    fn from_suspended(state: [u8; N], key: &Self::Key) -> Result<Self, SuspendableError> {
+        resume_component(&state, key)
+    }
+}
+
+/// `N` must be [`CcmDecryptor::SUSPENDED_STATE_LEN`]; anything else is a compile error.
+impl<
+    P,
+    const KEY_LEN: usize,
+    const BLOCK_LEN: usize,
+    const NONCE_LEN: usize,
+    const TAG_LEN: usize,
+    const AAD_LEN: usize,
+    const DATA_LEN: usize,
+    const N: usize,
+> SuspendableKeyed<N> for CcmDecryptor<P, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>
+where
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
+{
+    type Key = KeyMaterial<KEY_LEN>;
+
+    fn suspend(self) -> [u8; N] {
+        suspend_component(&self)
+    }
+
+    fn from_suspended(state: [u8; N], key: &Self::Key) -> Result<Self, SuspendableError> {
+        resume_component(&state, key)
     }
 }
