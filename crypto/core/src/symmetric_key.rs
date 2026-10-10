@@ -230,6 +230,23 @@ pub trait AeadEncryptionKey<
         ciphertext.truncate(written);
         Ok((nonce, ciphertext, tag))
     }
+
+    /// One-shot in place, tag detached: encrypts `buf` under `aad` and a nonce drawn from `rng`,
+    /// in its own buffer, and returns the nonce and tag. For a message that is already in a
+    /// buffer the caller owns, this needs no second buffer the size of the message.
+    ///
+    /// # Errors
+    /// As [`encrypt_detached_out`](Self::encrypt_detached_out).
+    fn encrypt_detached_in_place(
+        &self,
+        rng: &mut dyn RNG,
+        aad: &[u8],
+        buf: &mut [u8],
+    ) -> Result<([u8; NONCE_LEN], [u8; TAG_LEN]), SymmetricCipherError> {
+        let (enc, nonce) = self.create_encryptor(rng)?;
+        let tag = crate::in_place::encrypt_detached(enc, aad, buf)?;
+        Ok((nonce, tag))
+    }
 }
 
 /// A key that can begin an authenticated decryption: the decryption half of an AEAD key.
@@ -360,6 +377,23 @@ pub trait AeadDecryptionKey<
         let written = self.decrypt_detached_out(nonce, aad, ciphertext, tag, &mut plaintext)?;
         plaintext.truncate(written);
         Ok(plaintext)
+    }
+
+    /// One-shot in place, tag detached: decrypts `buf` under `nonce` and `aad` in its own buffer
+    /// and checks `tag`. On any error `buf` is left zeroized, as the `_out` forms leave their
+    /// output: the plaintext was written into it before the tag could be checked.
+    ///
+    /// # Errors
+    /// [`SymmetricCipherError::AEADTagCheckFailed`] if the tag does not verify, or any error of
+    /// the decryptor's streaming methods.
+    fn decrypt_detached_in_place(
+        &self,
+        nonce: &[u8; NONCE_LEN],
+        aad: &[u8],
+        buf: &mut [u8],
+        tag: &[u8; TAG_LEN],
+    ) -> Result<(), SymmetricCipherError> {
+        crate::in_place::decrypt_detached(self.create_decryptor(nonce), aad, buf, tag)
     }
 }
 
