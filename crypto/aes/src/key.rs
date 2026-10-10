@@ -178,6 +178,10 @@ where
         M::encrypt_init(&self.state, rng)
     }
 
+    fn create_encryptor_nonce(&self, nonce: &[u8; NONCE_LEN]) -> Self::Encryptor {
+        M::encrypt_init_nonce(&self.state, nonce)
+    }
+
     // Forwarded rather than left to the trait's provided body so that a mode can override it:
     // CCM's streaming worker is fixed-frame, and its in-place one-shot goes another way.
     fn encrypt_detached_in_place(
@@ -187,6 +191,15 @@ where
         buf: &mut [u8],
     ) -> Result<([u8; NONCE_LEN], [u8; TAG_LEN]), SymmetricCipherError> {
         M::encrypt_detached_in_place(&self.state, rng, aad, buf)
+    }
+
+    fn encrypt_detached_in_place_nonce(
+        &self,
+        nonce: &[u8; NONCE_LEN],
+        aad: &[u8],
+        buf: &mut [u8],
+    ) -> Result<[u8; TAG_LEN], SymmetricCipherError> {
+        M::encrypt_detached_in_place_nonce(&self.state, nonce, aad, buf)
     }
 }
 
