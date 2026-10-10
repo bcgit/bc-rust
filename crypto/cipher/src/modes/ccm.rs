@@ -109,8 +109,10 @@ use crate::modes::ctr::apply_counter_blocks;
 use crate::modes::iv::random_iv;
 use crate::stream::StreamCipher;
 use bouncycastle_core::errors::{SuspendableError, SymmetricCipherError};
-use bouncycastle_core::hazmat::{ElectronicCodeBook, KeyStream};
-use bouncycastle_core::key_material::KeyMaterial;
+use bouncycastle_core::hazmat::{
+    AeadDecryptMode, AeadEncryptMode, ElectronicCodeBook, KeyStream, Mode,
+};
+use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{
     AEADCipherDecryptor, AEADCipherEncryptor, Algorithm, RNG, StreamCipherDecryptor,
@@ -2322,13 +2324,137 @@ mod tests {
 /// produces is [`CcmEncryptor`] / [`CcmDecryptor`], which must commit to the lengths before the
 /// first byte (`B0` carries the payload length) and have nowhere to take them at run time. The
 /// key's in-place one-shots do not use the frame: they go through [`CcmPacket`] with the message's
-/// own lengths, so a `CCM` key takes any message length there. The [`Mode`] and AEAD mode-trait
-/// impls are written by each permutation's crate while the cipher traits still carry `KEY_LEN`.
-///
-/// [`Mode`]: bouncycastle_core::hazmat::Mode
+/// own lengths, so a `CCM` key takes any message length there.
 pub struct CCM<
     const NONCE_LEN: usize,
     const TAG_LEN: usize,
     const AAD_LEN: usize,
     const DATA_LEN: usize,
 >;
+
+impl<const NONCE_LEN: usize, const TAG_LEN: usize, const AAD_LEN: usize, const DATA_LEN: usize>
+    CCM<NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>
+{
+    /// The largest payload this nonce length can carry, from A.1's "by definition, p<2^8q" with
+    /// `q = 15 - n`. At `n = 7`, `2^8q` is `2^64`, which does not fit a `u64`; there the bound is
+    /// `u64::MAX`, no bound at all on a `usize` length.
+    pub const MAX_PAYLOAD_LEN: u64 =
+        if 15 - NONCE_LEN >= 8 { u64::MAX } else { (1u64 << (8 * (15 - NONCE_LEN))) - 1 };
+}
+
+// The mode impls are generic over the permutation: `Mode<P>` needs no `KEY_LEN`, since CCM keeps
+// nothing per key but the schedule, and the two AEAD mode traits carry it. The in-place one-shots
+// override the provided bodies, because the streaming worker is fixed-frame: they run a
+// `CcmPacket` committed to the message's own length instead.
+
+impl<
+    P: Clone,
+    const NONCE_LEN: usize,
+    const TAG_LEN: usize,
+    const AAD_LEN: usize,
+    const DATA_LEN: usize,
+> Mode<P> for CCM<NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>
+{
+    type KeyState = P;
+    const KEY_TYPE: KeyType = KeyType::SymmetricCipherKey;
+
+    fn key_state(perm: P) -> Self::KeyState {
+        perm
+    }
+}
+
+impl<
+    P,
+    const KEY_LEN: usize,
+    const NONCE_LEN: usize,
+    const TAG_LEN: usize,
+    const AAD_LEN: usize,
+    const DATA_LEN: usize,
+> AeadEncryptMode<P, KEY_LEN, NONCE_LEN, TAG_LEN, TAG_LEN>
+    for CCM<NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>
+where
+    P: ElectronicCodeBook<KEY_LEN, 16> + ModeNames + Clone,
+{
+    type Encryptor = CcmEncryptor<P, KEY_LEN, 16, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>;
+
+    fn encrypt_init(
+        state: &Self::KeyState,
+        rng: &mut dyn RNG,
+    ) -> Result<(Self::Encryptor, [u8; NONCE_LEN]), SymmetricCipherError> {
+        Self::Encryptor::from_perm(state.clone(), rng)
+    }
+
+    fn encrypt_init_nonce(state: &Self::KeyState, nonce: &[u8; NONCE_LEN]) -> Self::Encryptor {
+        Self::Encryptor::from_perm_nonce(state.clone(), nonce)
+    }
+
+    fn encrypt_detached_in_place(
+        state: &Self::KeyState,
+        rng: &mut dyn RNG,
+        aad: &[u8],
+        buf: &mut [u8],
+    ) -> Result<([u8; NONCE_LEN], [u8; TAG_LEN]), SymmetricCipherError> {
+        let nonce = CcmPacket::<P, Encrypting, KEY_LEN, 16, NONCE_LEN, TAG_LEN>::random_nonce(rng)?;
+        Ok((nonce, Self::encrypt_detached_in_place_nonce(state, &nonce, aad, buf)?))
+    }
+
+    fn encrypt_detached_in_place_nonce(
+        state: &Self::KeyState,
+        nonce: &[u8; NONCE_LEN],
+        aad: &[u8],
+        buf: &mut [u8],
+    ) -> Result<[u8; TAG_LEN], SymmetricCipherError> {
+        let mut ccm = CcmPacket::<P, Encrypting, KEY_LEN, 16, NONCE_LEN, TAG_LEN>::from_perm(
+            state.clone(),
+            nonce,
+            aad,
+            buf.len(),
+        )?;
+        ccm.do_encrypt_inplace(buf)?;
+        ccm.do_encrypt_final()
+    }
+}
+
+impl<
+    P,
+    const KEY_LEN: usize,
+    const NONCE_LEN: usize,
+    const TAG_LEN: usize,
+    const AAD_LEN: usize,
+    const DATA_LEN: usize,
+> AeadDecryptMode<P, KEY_LEN, NONCE_LEN, TAG_LEN, TAG_LEN>
+    for CCM<NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>
+where
+    P: ElectronicCodeBook<KEY_LEN, 16> + ModeNames + Clone,
+{
+    type Decryptor = CcmDecryptor<P, KEY_LEN, 16, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>;
+
+    fn decrypt_init(state: &Self::KeyState, nonce: &[u8; NONCE_LEN]) -> Self::Decryptor {
+        Self::Decryptor::from_perm(state.clone(), nonce)
+    }
+
+    /// `buf` is zeroized on any error, as the provided body leaves it: the plaintext is in it
+    /// before the tag is checked.
+    fn decrypt_detached_in_place(
+        state: &Self::KeyState,
+        nonce: &[u8; NONCE_LEN],
+        aad: &[u8],
+        buf: &mut [u8],
+        tag: &[u8; TAG_LEN],
+    ) -> Result<(), SymmetricCipherError> {
+        let result = (|| {
+            let mut ccm = CcmPacket::<P, Decrypting, KEY_LEN, 16, NONCE_LEN, TAG_LEN>::from_perm(
+                state.clone(),
+                nonce,
+                aad,
+                buf.len(),
+            )?;
+            ccm.do_decrypt_inplace(buf)?;
+            ccm.do_decrypt_final(tag)
+        })();
+        if result.is_err() {
+            buf.fill(0);
+        }
+        result
+    }
+}
