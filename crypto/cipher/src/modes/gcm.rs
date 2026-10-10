@@ -893,3 +893,100 @@ where
         resume_component(&state, key)
     }
 }
+
+// The key-produced worker traits, forwarded to the cipher traits' own methods while those still
+// exist. Named by path rather than imported, since the method names coincide and an import would
+// make every call in this file ambiguous.
+
+impl<P, const KEY_LEN: usize, const TAG_LEN: usize>
+    bouncycastle_core::symmetric_key::AeadEncryptWorker<GCM_NONCE_LEN, TAG_LEN, TAG_LEN>
+    for Gcm<P, Encrypting, KEY_LEN, TAG_LEN>
+where
+    P: ElectronicCodeBook<KEY_LEN, 16> + ModeNames,
+{
+    fn do_update_aad(&mut self, aad: &[u8]) -> Result<(), SymmetricCipherError> {
+        AEADCipherEncryptor::do_update_aad(self, aad)
+    }
+
+    fn do_encrypt_out_len(&self, input_len: usize) -> usize {
+        SymmetricCipherEncryptor::do_encrypt_out_len(self, input_len)
+    }
+
+    fn do_encrypt_out(
+        &mut self,
+        plaintext: &[u8],
+        ciphertext: &mut [u8],
+    ) -> Result<usize, SymmetricCipherError> {
+        SymmetricCipherEncryptor::do_encrypt_out(self, plaintext, ciphertext)
+    }
+
+    fn do_encrypt_final(self) -> Result<([u8; TAG_LEN], usize), SymmetricCipherError> {
+        SymmetricCipherEncryptor::do_encrypt_final(self)
+    }
+
+    fn do_encrypt_final_detached_out(
+        self,
+        ciphertext: &mut [u8; TAG_LEN],
+    ) -> Result<(usize, [u8; TAG_LEN]), SymmetricCipherError> {
+        AEADCipherEncryptor::do_encrypt_final_detached_out(self, ciphertext)
+    }
+
+    fn encrypt_out_len(plaintext_len: usize) -> usize {
+        <Self as SymmetricCipherEncryptor<KEY_LEN, GCM_NONCE_LEN, TAG_LEN>>::encrypt_out_len(
+            plaintext_len,
+        )
+    }
+
+    fn encrypt_detached_out_len(plaintext_len: usize) -> usize {
+        <Self as AEADCipherEncryptor<KEY_LEN, GCM_NONCE_LEN, TAG_LEN, TAG_LEN>>::encrypt_detached_out_len(
+            plaintext_len,
+        )
+    }
+}
+
+impl<P, const KEY_LEN: usize, const TAG_LEN: usize>
+    bouncycastle_core::symmetric_key::AeadDecryptWorker<GCM_NONCE_LEN, TAG_LEN, TAG_LEN>
+    for Gcm<P, Decrypting, KEY_LEN, TAG_LEN>
+where
+    P: ElectronicCodeBook<KEY_LEN, 16> + ModeNames,
+{
+    fn do_update_aad(&mut self, aad: &[u8]) -> Result<(), SymmetricCipherError> {
+        AEADCipherDecryptor::do_update_aad(self, aad)
+    }
+
+    fn do_decrypt_out_len(&self, input_len: usize) -> usize {
+        SymmetricCipherDecryptor::do_decrypt_out_len(self, input_len)
+    }
+
+    fn do_decrypt_out(
+        &mut self,
+        ciphertext: &[u8],
+        plaintext: &mut [u8],
+    ) -> Result<usize, SymmetricCipherError> {
+        SymmetricCipherDecryptor::do_decrypt_out(self, ciphertext, plaintext)
+    }
+
+    fn do_decrypt_final(self) -> Result<([u8; TAG_LEN], usize), SymmetricCipherError> {
+        SymmetricCipherDecryptor::do_decrypt_final(self)
+    }
+
+    fn do_decrypt_final_detached_out(
+        self,
+        tag: &[u8; TAG_LEN],
+        plaintext: &mut [u8; TAG_LEN],
+    ) -> Result<usize, SymmetricCipherError> {
+        AEADCipherDecryptor::do_decrypt_final_detached_out(self, tag, plaintext)
+    }
+
+    fn decrypt_out_len(ciphertext_len: usize) -> usize {
+        <Self as SymmetricCipherDecryptor<KEY_LEN, GCM_NONCE_LEN, TAG_LEN>>::decrypt_out_len(
+            ciphertext_len,
+        )
+    }
+
+    fn decrypt_detached_out_len(ciphertext_len: usize) -> usize {
+        <Self as AEADCipherDecryptor<KEY_LEN, GCM_NONCE_LEN, TAG_LEN, TAG_LEN>>::decrypt_detached_out_len(
+            ciphertext_len,
+        )
+    }
+}

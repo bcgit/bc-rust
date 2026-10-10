@@ -18,7 +18,7 @@ mod common;
 
 use bouncycastle_cipher::modes::{CCM, CcmDecryptor, CcmEncryptor, ModeNames};
 use bouncycastle_core::errors::SymmetricCipherError;
-use bouncycastle_core::hazmat::{AeadDecryptMode, AeadEncryptMode, ElectronicCodeBook};
+use bouncycastle_core::hazmat::{AeadPacketDecryptMode, AeadPacketEncryptMode, ElectronicCodeBook};
 use bouncycastle_core::key_material::KeyMaterial;
 use bouncycastle_core::traits::{
     AEADCipherDecryptor, AEADCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
@@ -55,7 +55,7 @@ fn seal<P: ElectronicCodeBook<TOY_LEN, TOY_LEN> + ModeNames + Clone>(
     plaintext: &[u8],
 ) -> (Vec<u8>, [u8; TAG_LEN]) {
     let mut buf = plaintext.to_vec();
-    let tag = CCM::<NONCE_LEN, TAG_LEN, 0, 0>::encrypt_detached_in_place_nonce(
+    let tag = CCM::<NONCE_LEN, TAG_LEN>::encrypt_detached_in_place_nonce(
         &perm::<P>(),
         nonce,
         aad,
@@ -73,13 +73,7 @@ fn open<P: ElectronicCodeBook<TOY_LEN, TOY_LEN> + ModeNames + Clone>(
     tag: &[u8; TAG_LEN],
 ) -> Result<Vec<u8>, SymmetricCipherError> {
     let mut buf = ciphertext.to_vec();
-    CCM::<NONCE_LEN, TAG_LEN, 0, 0>::decrypt_detached_in_place(
-        &perm::<P>(),
-        nonce,
-        aad,
-        &mut buf,
-        tag,
-    )?;
+    CCM::<NONCE_LEN, TAG_LEN>::decrypt_detached_in_place(&perm::<P>(), nonce, aad, &mut buf, tag)?;
     Ok(buf)
 }
 
@@ -341,7 +335,7 @@ fn tag_length_changes_the_tag_but_not_the_ciphertext_and_tags_do_not_nest() {
 
     macro_rules! check_tag_len {
         ($t:literal) => {{
-            type Mode = CCM<NONCE_LEN, $t, 0, 0>;
+            type Mode = CCM<NONCE_LEN, $t>;
             let mut buf = plaintext.clone();
             let tag = Mode::encrypt_detached_in_place_nonce(&perm::<Toy>(), &nonce, aad, &mut buf)
                 .unwrap();
@@ -388,7 +382,7 @@ fn every_permitted_nonce_length_works() {
         // first `t` of them; the last nonce octet flipped below sits at block octet `N`, which an
         // 8-byte tag would never see once `N >= 8`. Real AES mixes every byte into every other,
         // so this is a limit of the toy, not of the mode.
-        type Mode<const N: usize> = CCM<N, 16, 0, 0>;
+        type Mode<const N: usize> = CCM<N, 16>;
         assert_eq!(
             Mode::<N>::MAX_PAYLOAD_LEN,
             expected_max_payload,
@@ -452,7 +446,7 @@ fn the_one_shot_releases_nothing_on_forgery_but_the_stream_does() {
     // The one-shot: verify-then-return, so a forged tag leaves nothing but zeros.
     let mut buf = ct.clone();
     assert!(matches!(
-        CCM::<NONCE_LEN, TAG_LEN, 0, 0>::decrypt_detached_in_place(
+        CCM::<NONCE_LEN, TAG_LEN>::decrypt_detached_in_place(
             &perm::<Toy>(),
             &nonce,
             b"aad",
