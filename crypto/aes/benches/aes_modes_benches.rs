@@ -51,7 +51,7 @@ use bouncycastle_cipher::modes::{
 };
 use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::errors::SymmetricCipherError;
-use bouncycastle_core::hazmat::{AeadDecryptMode, AeadEncryptMode, ElectronicCodeBook};
+use bouncycastle_core::hazmat::{AeadPacketDecryptMode, AeadPacketEncryptMode, ElectronicCodeBook};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{
@@ -79,7 +79,7 @@ type Aes128Cfb8<Dir> = Cfb8<AES128Internal, Dir, 16, BLOCK_LEN>;
 /// the frame parameters are unused by them.
 const CCM_NONCE_LEN: usize = 12;
 const CCM_TAG_LEN: usize = 16;
-type Aes128CcmMode = CCM<CCM_NONCE_LEN, CCM_TAG_LEN, 0, 0>;
+type Aes128CcmMode = CCM<CCM_NONCE_LEN, CCM_TAG_LEN>;
 
 /// The trait adapter takes its frame size at compile time. Its one-shots are not bound by it,
 /// but using the same 4 KiB message keeps this comparison representative of the public alias a

@@ -48,7 +48,7 @@
 use bouncycastle_aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
 use bouncycastle_cipher::modes::{CCM, ModeNames};
 use bouncycastle_core::errors::SymmetricCipherError;
-use bouncycastle_core::hazmat::{AeadDecryptMode, AeadEncryptMode, ElectronicCodeBook};
+use bouncycastle_core::hazmat::{AeadPacketDecryptMode, AeadPacketEncryptMode, ElectronicCodeBook};
 use bouncycastle_core::key_material::KeyMaterial;
 use bouncycastle_core_test_framework::test_data_loaders::{Value, bc_test_data_json, hex_field};
 use std::collections::BTreeMap;
@@ -84,10 +84,9 @@ where
 {
     let perm = P::new(key).expect("an ACVP key");
     let mut inline = plaintext.to_vec();
-    let tag = CCM::<NONCE_LEN, TAG_LEN, 0, 0>::encrypt_detached_in_place_nonce(
-        &perm, nonce, aad, &mut inline,
-    )
-    .expect("CCM encryption of a valid ACVP case");
+    let tag =
+        CCM::<NONCE_LEN, TAG_LEN>::encrypt_detached_in_place_nonce(&perm, nonce, aad, &mut inline)
+            .expect("CCM encryption of a valid ACVP case");
     inline.extend_from_slice(&tag);
     inline
 }
@@ -105,7 +104,7 @@ where
     let perm = P::new(key).expect("an ACVP key");
     let (ct, tag) = ct_and_tag.split_last_chunk::<TAG_LEN>().expect("a tag on every vector");
     let mut plaintext = ct.to_vec();
-    match CCM::<NONCE_LEN, TAG_LEN, 0, 0>::decrypt_detached_in_place(
+    match CCM::<NONCE_LEN, TAG_LEN>::decrypt_detached_in_place(
         &perm, nonce, aad, &mut plaintext, tag,
     ) {
         Ok(()) => Decrypted::Plaintext(plaintext),

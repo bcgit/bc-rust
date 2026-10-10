@@ -21,7 +21,7 @@ use bouncycastle_aes::AES128Key;
 use bouncycastle_aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
 use bouncycastle_cipher::modes::{CCM, CcmDecryptor, CcmEncryptor, ModeNames};
 use bouncycastle_core::errors::SymmetricCipherError;
-use bouncycastle_core::hazmat::{AeadDecryptMode, AeadEncryptMode, ElectronicCodeBook};
+use bouncycastle_core::hazmat::{AeadPacketDecryptMode, AeadPacketEncryptMode, ElectronicCodeBook};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::symmetric_key::FromKeyMaterial;
 use bouncycastle_core::traits::{
@@ -71,7 +71,7 @@ fn check_vector<
     // it opts out.
     sweep: bool,
 ) {
-    type Mode<const N: usize, const T: usize> = CCM<N, T, 0, 0>;
+    type Mode<const N: usize, const T: usize> = CCM<N, T>;
     type Enc<P, const K: usize, const N: usize, const T: usize, const D: usize> =
         CcmEncryptor<P, K, 16, N, T, 64, D>;
     type Dec<P, const K: usize, const N: usize, const T: usize, const D: usize> =
@@ -678,7 +678,7 @@ fn trait_one_shots_take_any_length_and_agree_with_the_in_place_one_shot() {
         assert_eq!(written, msg_len);
         let mut direct = msg.clone();
         let direct_tag =
-            CCM::<12, 16, 0, 0>::encrypt_detached_in_place_nonce(&perm, &nonce, &aad, &mut direct)
+            CCM::<12, 16>::encrypt_detached_in_place_nonce(&perm, &nonce, &aad, &mut direct)
                 .expect("in place");
         assert_eq!((&detached, tag), (&direct, direct_tag), "{what}: detached agrees");
 
@@ -1078,7 +1078,7 @@ fn a_non_cipher_key_is_rejected() {
         Err(SymmetricCipherError::KeyMaterialError(_))
     ));
     assert!(matches!(
-        AES128Key::<CCM<12, 16, 0, 0>>::from_key_material(&wrong),
+        AES128Key::<CCM<12, 16>>::from_key_material(&wrong),
         Err(SymmetricCipherError::KeyMaterialError(_))
     ));
 }
@@ -1151,7 +1151,7 @@ fn sizes_match_the_documented_memory_table() {
 /// A.1's `p < 2^8q`. With `n = 13`, `q = 2`, so the limit is 65535 and 65536 must be refused.
 #[test]
 fn payload_longer_than_the_q_limit_is_refused() {
-    type Mode = CCM<13, 14, 0, 0>;
+    type Mode = CCM<13, 14>;
     assert_eq!(Mode::MAX_PAYLOAD_LEN, 65535, "2^16 - 1 is the largest payload q = 2 can encode");
     let perm = AES128Internal::new(&key::<16>(APPENDIX_C_KEY)).unwrap();
     let nonce = [0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c];
@@ -1273,7 +1273,7 @@ fn supplied_nonce_forms_agree_with_the_in_place_one_shot_at_any_a1_nonce_length(
     assert_eq!(n, 48);
     let mut direct = frame;
     let direct_tag =
-        CCM::<13, 8, 0, 0>::encrypt_detached_in_place_nonce(&perm, &nonce, &aad, &mut direct)
+        CCM::<13, 8>::encrypt_detached_in_place_nonce(&perm, &nonce, &aad, &mut direct)
             .expect("in place");
     assert_eq!((detached, tag), (direct, direct_tag), "the two routes to Sec 6.1 agree");
     let mut inline = [0u8; 56];

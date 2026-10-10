@@ -2,10 +2,8 @@
 //! producing exactly what the mode's own `do_encrypt_init_rng` produces from the same material
 //! and RNG.
 
-use bouncycastle_aes::{
-    AES_CCM_128, AES_GCM_128, AES_GCM_192, AES_GCM_256, AES128Key, AES192Key, AES256Key,
-};
-use bouncycastle_cipher::modes::{CCM, GCM};
+use bouncycastle_aes::{AES_GCM_128, AES_GCM_192, AES_GCM_256, AES128Key, AES192Key, AES256Key};
+use bouncycastle_cipher::modes::GCM;
 use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
@@ -15,6 +13,12 @@ use bouncycastle_core::traits::{
     AEADCipherDecryptor, AEADCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
 };
 use bouncycastle_core_test_framework::FixedSeedRNG;
+
+/// The worker traits, kept out of scope: a GCM worker implements both them and the cipher
+/// traits under the same method names, so the generic helpers name them by path.
+mod w {
+    pub use bouncycastle_core::symmetric_key::{AeadDecryptWorker, AeadEncryptWorker};
+}
 
 fn material<const N: usize>() -> KeyMaterial<N> {
     let bytes: [u8; N] = core::array::from_fn(|i| (i as u8).wrapping_mul(7).wrapping_add(1));
@@ -34,10 +38,11 @@ where
     K: AeadEncryptionKey<N, 12, 16, 16>,
 {
     let (mut enc, nonce) = key.create_encryptor(&mut rng()).expect("nonce draw");
-    enc.do_update_aad(AAD).unwrap();
+    w::AeadEncryptWorker::do_update_aad(&mut enc, AAD).unwrap();
     let mut ct = vec![0u8; MSG.len()];
-    enc.do_encrypt_out(MSG, &mut ct).unwrap();
-    let (_, _, tag) = enc.do_encrypt_final_detached().unwrap();
+    w::AeadEncryptWorker::do_encrypt_out(&mut enc, MSG, &mut ct).unwrap();
+    let (_, tag) =
+        w::AeadEncryptWorker::do_encrypt_final_detached_out(enc, &mut [0u8; 16]).unwrap();
     (nonce, ct, tag)
 }
 
@@ -54,11 +59,11 @@ where
 {
     // Decryption setup is infallible: no Result to unwrap.
     let mut dec = key.create_decryptor(nonce);
-    dec.do_update_aad(AAD)?;
+    w::AeadDecryptWorker::do_update_aad(&mut dec, AAD)?;
     let mut pt = vec![0u8; ct.len() + 16];
-    let n = dec.do_decrypt_out(ct, &mut pt)?;
+    let n = w::AeadDecryptWorker::do_decrypt_out(&mut dec, ct, &mut pt)?;
     let mut last = [0u8; 16];
-    let m = dec.do_decrypt_final_detached_out(tag, &mut last)?;
+    let m = w::AeadDecryptWorker::do_decrypt_final_detached_out(dec, tag, &mut last)?;
     Ok([&pt[..n], &last[..m]].concat())
 }
 
@@ -318,42 +323,8 @@ fn gcm_in_place_one_shots_match_the_out_forms_at_every_length() {
     }
 }
 
-/// A `CCM` key's streaming worker is fixed-frame, and the provided `_out` one-shots go through
-/// it, so they take exactly `DATA_LEN`; the overridden in-place one-shots take any length, and
-/// agree byte for byte with the trait pair's own any-length one-shots.
-#[test]
-fn ccm_in_place_one_shots_take_any_length_and_match_the_trait_pair() {
-    const DATA_LEN: usize = 32;
-    let km = material::<16>();
-    let key = AES128Key::<CCM<12, 16, 0, DATA_LEN>>::from_key_material(&km).unwrap();
-    type Pair<Dir> = AES_CCM_128<Dir, 12, 16, 0, 0>;
-
-    for len in IN_PLACE_LENS {
-        let msg = message(len);
-        let mut buf = msg.clone();
-        let (nonce, tag) = key.encrypt_detached_in_place(&mut rng(), AAD, &mut buf).unwrap();
-
-        let mut ct = vec![0u8; len];
-        let (n, tag_p) =
-            Pair::<Encrypting>::encrypt_detached_nonce_out(&km, &nonce, AAD, &msg, &mut ct)
-                .unwrap();
-        assert_eq!((n, &ct, tag_p), (len, &buf, tag), "len {len}");
-
-        key.decrypt_detached_in_place(&nonce, AAD, &mut buf, &tag).unwrap();
-        assert_eq!(buf, msg, "len {len}");
-
-        // The streaming path, and the provided one-shots over it, only at the frame's length.
-        let via_stream = key.encrypt_detached(&mut rng(), AAD, &msg);
-        if len == DATA_LEN {
-            assert_eq!(via_stream.unwrap(), (nonce, ct, tag));
-        } else {
-            assert!(via_stream.is_err(), "len {len}");
-        }
-    }
-}
-
-/// A failed tag check leaves zeros in the caller's buffer on both the provided and the
-/// overridden paths, since the plaintext was written there before the tag could be checked.
+/// A failed tag check leaves zeros in the caller's buffer, since the plaintext was written there
+/// before the tag could be checked.
 #[test]
 fn in_place_decryption_zeroizes_the_buffer_on_a_bad_tag() {
     let msg = message(200);
@@ -367,20 +338,10 @@ fn in_place_decryption_zeroizes_the_buffer_on_a_bad_tag() {
         Err(SymmetricCipherError::AEADTagCheckFailed)
     ));
     assert!(buf.iter().all(|&b| b == 0));
-
-    let ccm = AES192Key::<CCM<12, 16, 0, 0>>::from_key_material(&material::<24>()).unwrap();
-    let mut buf = msg.clone();
-    let (nonce, tag) = ccm.encrypt_detached_in_place(&mut rng(), AAD, &mut buf).unwrap();
-    assert!(matches!(
-        ccm.decrypt_detached_in_place(&nonce, b"other aad", &mut buf, &tag),
-        Err(SymmetricCipherError::AEADTagCheckFailed)
-    ));
-    assert!(buf.iter().all(|&b| b == 0));
 }
 
 /// Every `_nonce` form, handed the nonce the drawing form drew, produces the drawing form's
-/// bytes: on GCM through the provided bodies, on CCM through the overridden in-place pair and
-/// the fixed-frame stream.
+/// bytes.
 #[test]
 fn supplied_nonce_forms_match_the_drawing_forms() {
     fn check<K>(key: &K, msg: &[u8])
@@ -404,42 +365,15 @@ fn supplied_nonce_forms_match_the_drawing_forms() {
         assert_eq!(buf, ct);
 
         let mut enc = key.create_encryptor_nonce(&nonce);
-        enc.do_update_aad(AAD).unwrap();
+        w::AeadEncryptWorker::do_update_aad(&mut enc, AAD).unwrap();
         let mut streamed = vec![0u8; msg.len()];
-        let n = enc.do_encrypt_out(msg, &mut streamed).unwrap();
-        let (_, _, tag_s) = enc.do_encrypt_final_detached().unwrap();
+        let n = w::AeadEncryptWorker::do_encrypt_out(&mut enc, msg, &mut streamed).unwrap();
+        let (_, tag_s) =
+            w::AeadEncryptWorker::do_encrypt_final_detached_out(enc, &mut [0u8; 16]).unwrap();
         assert_eq!((&streamed[..n], tag_s), (&ct[..], tag));
 
         assert_eq!(key.decrypt_detached(&nonce, AAD, &ct, &tag).unwrap(), msg);
     }
 
     check(&AES128Key::<GCM>::from_key_material(&material::<16>()).unwrap(), &message(200));
-    // The CCM key's stream is fixed at this length, so every form above can run on it.
-    check(
-        &AES128Key::<CCM<12, 16, { AAD.len() }, 48>>::from_key_material(&material::<16>()).unwrap(),
-        &message(48),
-    );
-}
-
-/// A CCM key with a nonce below the 12-byte floor for drawn nonces: the supplied-nonce forms
-/// compile and run at any A.1 length, agreeing with the trait pair's, while the drawing forms
-/// are never instantiated for it.
-#[test]
-fn a_short_ccm_nonce_is_reachable_through_the_supplied_nonce_forms() {
-    let km = material::<16>();
-    let key = AES128Key::<CCM<8, 8, 0, 0>>::from_key_material(&km).unwrap();
-    let nonce = [0xA5u8; 8];
-    let msg = message(100);
-
-    let mut buf = msg.clone();
-    let tag = key.encrypt_detached_in_place_nonce(&nonce, AAD, &mut buf).unwrap();
-    let mut ct = vec![0u8; msg.len()];
-    let (n, tag_p) = AES_CCM_128::<Encrypting, 8, 8, 0, 0>::encrypt_detached_nonce_out(
-        &km, &nonce, AAD, &msg, &mut ct,
-    )
-    .unwrap();
-    assert_eq!((n, &ct, tag_p), (msg.len(), &buf, tag));
-
-    key.decrypt_detached_in_place(&nonce, AAD, &mut buf, &tag).unwrap();
-    assert_eq!(buf, msg);
 }

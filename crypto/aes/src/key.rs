@@ -64,9 +64,14 @@
 use crate::hazmat::{AES128Internal, AES192Internal, AES256Internal, AESInternal};
 use crate::{AES128Params, AES192Params, AES256Params, AESParams};
 use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
-use bouncycastle_core::hazmat::{AeadDecryptMode, AeadEncryptMode, Mode};
+use bouncycastle_core::hazmat::{
+    AeadDecryptMode, AeadEncryptMode, AeadPacketDecryptMode, AeadPacketEncryptMode, Mode,
+};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
-use bouncycastle_core::symmetric_key::{AeadDecryptionKey, AeadEncryptionKey, FromKeyMaterial};
+use bouncycastle_core::symmetric_key::{
+    AeadDecryptionKey, AeadEncryptionKey, AeadPacketDecryptionKey, AeadPacketEncryptionKey,
+    FromKeyMaterial,
+};
 use bouncycastle_core::traits::RNG;
 
 /// An AES key for the mode `M`, parameterised by key length. Use the aliases [`AES128Key`],
@@ -219,6 +224,92 @@ where
 
     fn create_decryptor(&self, nonce: &[u8; NONCE_LEN]) -> Self::Decryptor {
         M::decrypt_init(&self.state, nonce)
+    }
+
+    fn decrypt_detached_in_place(
+        &self,
+        nonce: &[u8; NONCE_LEN],
+        aad: &[u8],
+        buf: &mut [u8],
+        tag: &[u8; TAG_LEN],
+    ) -> Result<(), SymmetricCipherError> {
+        M::decrypt_detached_in_place(&self.state, nonce, aad, buf, tag)
+    }
+}
+
+impl<
+    P,
+    M,
+    const KEY_LEN: usize,
+    const NONCE_LEN: usize,
+    const TAG_LEN: usize,
+    const FINAL_LEN: usize,
+> AeadPacketEncryptionKey<KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN> for AESKey<P, M>
+where
+    P: AESParams,
+    M: AeadPacketEncryptMode<AESInternal<P>, KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN>,
+{
+    type Encryptor = M::Encryptor;
+
+    fn create_encryptor(
+        &self,
+        rng: &mut dyn RNG,
+        aad_len: usize,
+        payload_len: usize,
+    ) -> Result<(Self::Encryptor, [u8; NONCE_LEN]), SymmetricCipherError> {
+        M::encrypt_init(&self.state, rng, aad_len, payload_len)
+    }
+
+    fn create_encryptor_nonce(
+        &self,
+        nonce: &[u8; NONCE_LEN],
+        aad_len: usize,
+        payload_len: usize,
+    ) -> Result<Self::Encryptor, SymmetricCipherError> {
+        M::encrypt_init_nonce(&self.state, nonce, aad_len, payload_len)
+    }
+
+    // Forwarded so that the mode's own in-place path is the one that runs.
+    fn encrypt_detached_in_place(
+        &self,
+        rng: &mut dyn RNG,
+        aad: &[u8],
+        buf: &mut [u8],
+    ) -> Result<([u8; NONCE_LEN], [u8; TAG_LEN]), SymmetricCipherError> {
+        M::encrypt_detached_in_place(&self.state, rng, aad, buf)
+    }
+
+    fn encrypt_detached_in_place_nonce(
+        &self,
+        nonce: &[u8; NONCE_LEN],
+        aad: &[u8],
+        buf: &mut [u8],
+    ) -> Result<[u8; TAG_LEN], SymmetricCipherError> {
+        M::encrypt_detached_in_place_nonce(&self.state, nonce, aad, buf)
+    }
+}
+
+impl<
+    P,
+    M,
+    const KEY_LEN: usize,
+    const NONCE_LEN: usize,
+    const TAG_LEN: usize,
+    const FINAL_LEN: usize,
+> AeadPacketDecryptionKey<KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN> for AESKey<P, M>
+where
+    P: AESParams,
+    M: AeadPacketDecryptMode<AESInternal<P>, KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN>,
+{
+    type Decryptor = M::Decryptor;
+
+    fn create_decryptor(
+        &self,
+        nonce: &[u8; NONCE_LEN],
+        aad_len: usize,
+        payload_len: usize,
+    ) -> Result<Self::Decryptor, SymmetricCipherError> {
+        M::decrypt_init(&self.state, nonce, aad_len, payload_len)
     }
 
     fn decrypt_detached_in_place(
