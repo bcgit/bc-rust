@@ -192,9 +192,9 @@ fn bench_streaming_decrypt() {
     print!("{}", written + m);
 }
 
-/// The trait encryptor's **one-shot**, which is the trait's own, provided over the streaming
-/// adapter, so it should measure what `bench_streaming_encrypt` measures: the adapter value and
-/// the DRBG the nonce is drawn from above `bench_direct_encrypt_detached`.
+/// The trait encryptor's **one-shot**, which calls `Ccm::encrypt_detached_out` under a generated
+/// nonce, so it should measure what `bench_direct_encrypt_detached` measures plus the DRBG the
+/// nonce is drawn from -- no adapter value and no `AAD_LEN` buffer.
 #[inline(never)]
 fn bench_oneshot_encrypt_out_detached() {
     eprintln!("CcmEncryptor::encrypt_detached_out, {MESSAGE_LEN} B");

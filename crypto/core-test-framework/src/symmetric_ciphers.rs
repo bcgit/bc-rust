@@ -25,10 +25,9 @@ pub struct TestFrameworkSymmetricCipher {
     /// the pair's streaming methods accept, if they accept only one. `None` (the default) means
     /// any length. A cipher whose payload length is fixed by its type -- CCM, whose `B0` block
     /// encodes the payload length, through its `DATA_LEN` parameter -- sets it here: the
-    /// streaming checks then run at exactly that length, the one-shots -- the trait's own,
-    /// provided over the streaming methods -- are checked to refuse every other length, and the
-    /// test also checks that one byte more is refused at the update and one byte fewer at the
-    /// final, on both sides.
+    /// streaming checks then run at exactly that length, the one-shots are checked to round trip
+    /// every other length while a stream of it is refused, and the test also checks that one byte
+    /// more is refused at the update and one byte fewer at the final, on both sides.
     pub fixed_message_len: Option<usize>,
 }
 
@@ -100,14 +99,23 @@ impl TestFrameworkSymmetricCipher {
                 );
                 continue;
             }
-            // a fixed-length pair's one-shots refuse every other length
+            // a fixed-length pair's streaming methods take only that length; its one-shots take
+            // any length and must round trip it
             if let Some(fixed) = self.fixed_message_len
                 && fixed != len
             {
                 let mut ct = vec![0u8; E::encrypt_out_len(len)];
+                let (init, n) = E::encrypt_out(&key, msg, &mut ct).unwrap_or_else(|e| {
+                    panic!("fixed length: a {len}-byte one-shot must be accepted: {e:?}")
+                });
+                let mut pt = vec![0u8; D::decrypt_out_len(n)];
+                let m = D::decrypt_out(&key, &init, &ct[..n], &mut pt).unwrap();
+                assert_eq!(&pt[..m], msg, "fixed length: {len}-byte one-shot round trip");
+                let (mut enc, _) = E::do_encrypt_init(&key).unwrap();
+                let mut buf = vec![0u8; enc.do_encrypt_out_len(len)];
                 assert!(
-                    E::encrypt_out(&key, msg, &mut ct).is_err(),
-                    "fixed length: a {len}-byte one-shot must be refused"
+                    enc.do_encrypt_out(msg, &mut buf).is_err() || enc.do_encrypt_final().is_err(),
+                    "fixed length: a {len}-byte stream must be refused"
                 );
                 continue;
             }

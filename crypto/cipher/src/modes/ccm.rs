@@ -1037,25 +1037,16 @@ impl<
 where
     P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
 {
-    /// The compile-time checks for the trait adapters, run from both [`CcmEncryptor`]'s and
-    /// [`CcmDecryptor`]'s constructors, which every entry point goes through, so that a parameter
-    /// set either names a usable adapter or does not compile at all. [`Ccm::check_shape`]'s own checks run
-    /// as well, from the [`Ccm`] constructor underneath.
-    ///
-    /// The encrypting side draws its nonce at random, and the random-collision bound is only
-    /// useful from 96 bits up. The decrypting side is given its nonce, so it has no such need of
-    /// its own; it carries the same floor so that the pair stays symmetric -- a `NONCE_LEN` for
-    /// which `CcmDecryptor` compiles but `CcmEncryptor` does not would be a trap for code written
-    /// against the generic traits, which instantiates both with one set of parameters. The
-    /// inherent [`Ccm`] API supports every A.1 length from 7 through 13 under a caller-managed
-    /// nonce.
+    /// The compile-time check for the trait adapters, run from both [`CcmEncryptor`]'s and
+    /// [`CcmDecryptor`]'s constructors and from their one-shots, which never build an adapter, so
+    /// that a parameter set either names a usable pair or does not compile at all.
+    /// [`Ccm::check_shape`]'s own checks run as well, from the [`Ccm`] constructor underneath,
+    /// and the floor for a generated nonce is `CcmEncryptor::check_random_nonce`'s, run only from
+    /// the forms that draw one: every A.1 nonce length from 7 through 13 is usable here under a
+    /// supplied nonce.
     #[inline]
     fn check_shape() {
         const {
-            assert!(
-                NONCE_LEN >= 12,
-                "CCM: the random-nonce AEAD adapters require NONCE_LEN >= 12; use Ccm directly with a caller-managed unique nonce for shorter lengths"
-            );
             // `B0` could not carry it (A.1's `p < 2^8q`), and this is the one place the length is
             // known at compile time, so it is a compile error rather than `Ccm::new`'s `Err`.
             assert!(
@@ -1134,9 +1125,10 @@ where
 /// `FINAL_LEN` is `TAG_LEN`, exactly as for GCM. The price is that they accept exactly
 /// `DATA_LEN` bytes of payload -- the fixed frame of SP 800-38C Sec 3's "packet environment" --
 /// and refuse any other amount, more at the update that would exceed it and less at the final.
-/// The one-shots are the trait's own, provided over those methods, so they take exactly
-/// `DATA_LEN` bytes too: a frame of any other length is a `Ccm` one-shot's job, with the lengths
-/// supplied per message.
+/// The one-shots are not bound by either parameter: with the whole message in hand there is
+/// nothing to declare up front and nothing to hold back, so they are [`Ccm`]'s own one-shots
+/// under a generated nonce, for a payload and AAD of any length, and the AAD buffer is never
+/// built. `DATA_LEN` and `AAD_LEN` govern the streaming methods only.
 ///
 /// `AAD_LEN` is a capacity, not an exact length: the trait's AAD is optional and open-ended, and
 /// the inherited [`SymmetricCipherEncryptor`] methods are this AEAD with none at all. Up to
@@ -1185,11 +1177,31 @@ where
 ///
 /// # Nonce length
 ///
-/// The trait generates a random nonce rather than accepting a caller-managed counter. To keep the
-/// random-collision bound useful, `NONCE_LEN` must therefore be at least 12 here, and
-/// [`CcmDecryptor`] carries the same floor so that the pair stays symmetric. The inherent [`Ccm`]
-/// API still supports every A.1 nonce length from 7 through 13 when the caller guarantees
-/// uniqueness. A shorter nonce does not compile:
+/// The forms that generate a nonce need `NONCE_LEN` of at least 12, to keep the random-collision
+/// bound useful; the check runs only when one of them is instantiated. The forms that take the
+/// caller's nonce -- [`do_encrypt_init_nonce`](AEADCipherEncryptor::do_encrypt_init_nonce) and
+/// the `_nonce` one-shots -- and [`CcmDecryptor`] accept every A.1 nonce length from 7 through
+/// 13, as the inherent [`Ccm`] API does, with uniqueness the caller's to guarantee. So a short
+/// nonce compiles when it is supplied:
+///
+/// ```
+/// # mod toy { include!("../../tests/common/toy_block_cipher.rs"); }
+/// # use toy::ToyBlockCipher;
+/// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
+/// use bouncycastle_core::traits::AEADCipherEncryptor;
+/// use bouncycastle_cipher::modes::CcmEncryptor;
+///
+/// let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey).unwrap();
+/// // n = 8 is permitted by A.1; the caller's counter supplies it.
+/// let counter = 7u64.to_be_bytes();
+/// let mut sealed = [0u8; 256 + 16];
+/// let n = CcmEncryptor::<ToyBlockCipher, 16, 16, 8, 16, 64, 256>::encrypt_with_aad_nonce_out(
+///     &key, &counter, b"hdr", &[0x5A; 256], &mut sealed,
+/// ).unwrap();
+/// assert_eq!(n, 256 + 16);
+/// ```
+///
+/// ...and not when it would be drawn:
 ///
 /// ```compile_fail
 /// # mod toy { include!("../../tests/common/toy_block_cipher.rs"); }
@@ -1274,6 +1286,21 @@ where
         self.0.begin_data();
         self.0.ccm.do_encrypt_final()
     }
+
+    /// The floor for a generated nonce, run from every form that draws one: the random-collision
+    /// bound is only useful from 96 bits up. A const block in a generic function is evaluated
+    /// when that function is instantiated, so a `NONCE_LEN` below the floor is a compile error
+    /// at the call that would draw, and nowhere else: the supplied-nonce forms and the decryptor
+    /// take any A.1 length.
+    #[inline]
+    fn check_random_nonce() {
+        const {
+            assert!(
+                NONCE_LEN >= 12,
+                "CCM: a generated nonce needs NONCE_LEN >= 12; supply the nonce (do_encrypt_init_nonce, the _nonce one-shots, or Ccm) for a shorter one"
+            );
+        }
+    }
 }
 
 impl<
@@ -1300,6 +1327,7 @@ where
         key: &KeyMaterial<KEY_LEN>,
         rng: &mut dyn RNG,
     ) -> Result<(Self, [u8; NONCE_LEN]), SymmetricCipherError> {
+        Self::check_random_nonce();
         // `P::new`'s own checks are the only key validation needed, exactly as for `Ccm` itself
         // and every other mode in this crate; `random_iv` is CBC/CFB's same OS-backed draw --
         // Sec 5.3 asks only for uniqueness, not CBC/CFB's unpredictability, but a CSPRNG draw is
@@ -1364,6 +1392,34 @@ where
     fn encrypt_out_len(plaintext_len: usize) -> usize {
         plaintext_len + TAG_LEN
     }
+
+    /// The AEAD one-shot with no AAD; see
+    /// [`encrypt_with_aad_out`](AEADCipherEncryptor::encrypt_with_aad_out).
+    fn encrypt_out(
+        key: &KeyMaterial<KEY_LEN>,
+        plaintext: &[u8],
+        ciphertext: &mut [u8],
+    ) -> Result<([u8; NONCE_LEN], usize), SymmetricCipherError> {
+        <Self as AEADCipherEncryptor<KEY_LEN, NONCE_LEN, TAG_LEN, TAG_LEN>>::encrypt_with_aad_out(
+            key,
+            &[],
+            plaintext,
+            ciphertext,
+        )
+    }
+
+    /// The AEAD one-shot with no AAD; see
+    /// [`encrypt_with_aad_rng_out`](AEADCipherEncryptor::encrypt_with_aad_rng_out).
+    fn encrypt_rng_out(
+        key: &KeyMaterial<KEY_LEN>,
+        rng: &mut dyn RNG,
+        plaintext: &[u8],
+        ciphertext: &mut [u8],
+    ) -> Result<([u8; NONCE_LEN], usize), SymmetricCipherError> {
+        <Self as AEADCipherEncryptor<KEY_LEN, NONCE_LEN, TAG_LEN, TAG_LEN>>::encrypt_with_aad_rng_out(
+            key, rng, &[], plaintext, ciphertext,
+        )
+    }
 }
 
 /// The AEAD view, with `FINAL_LEN = TAG_LEN`: the encryptor holds nothing back, so the detached
@@ -1391,6 +1447,53 @@ where
         self.0.do_update_aad(aad)
     }
 
+    /// [`do_encrypt_init_rng`](SymmetricCipherEncryptor::do_encrypt_init_rng) with the caller's
+    /// nonce in place of the draw, which is Sec 5.3's own model -- "the nonce is not required to
+    /// be random" -- and takes any A.1 nonce length, since nothing is drawn.
+    fn do_encrypt_init_nonce(
+        key: &KeyMaterial<KEY_LEN>,
+        nonce: &[u8; NONCE_LEN],
+    ) -> Result<Self, SymmetricCipherError> {
+        let perm = P::new(key)?;
+        Ok(Self(CcmAdapter::new(perm, nonce)))
+    }
+
+    /// [`Ccm::encrypt_detached_out`] itself, for a `plaintext` and `aad` of any length.
+    ///
+    /// # Errors
+    /// As [`encrypt_detached_rng_out`](AEADCipherEncryptor::encrypt_detached_rng_out), less the
+    /// RNG's.
+    fn encrypt_detached_nonce_out(
+        key: &KeyMaterial<KEY_LEN>,
+        nonce: &[u8; NONCE_LEN],
+        aad: &[u8],
+        plaintext: &[u8],
+        ciphertext: &mut [u8],
+    ) -> Result<(usize, [u8; TAG_LEN]), SymmetricCipherError> {
+        CcmAdapter::<P, Encrypting, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>::check_shape();
+        Ccm::<P, Encrypting, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN>::encrypt_detached_out(
+            key, nonce, aad, plaintext, ciphertext,
+        )
+    }
+
+    /// [`Ccm::encrypt_out`] itself, for a `plaintext` and `aad` of any length.
+    ///
+    /// # Errors
+    /// As [`encrypt_with_aad_rng_out`](AEADCipherEncryptor::encrypt_with_aad_rng_out), less the
+    /// RNG's.
+    fn encrypt_with_aad_nonce_out(
+        key: &KeyMaterial<KEY_LEN>,
+        nonce: &[u8; NONCE_LEN],
+        aad: &[u8],
+        plaintext: &[u8],
+        ciphertext: &mut [u8],
+    ) -> Result<usize, SymmetricCipherError> {
+        CcmAdapter::<P, Encrypting, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>::check_shape();
+        Ccm::<P, Encrypting, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN>::encrypt_out(
+            key, nonce, aad, plaintext, ciphertext,
+        )
+    }
+
     /// Sec 6.1 steps 4 and 8: the tag. Nothing is held back, so `ciphertext` is left zeroed.
     ///
     /// # Errors
@@ -1401,6 +1504,86 @@ where
     ) -> Result<(usize, [u8; TAG_LEN]), SymmetricCipherError> {
         ciphertext.fill(0);
         Ok((0, self.finish()?))
+    }
+
+    /// [`Ccm::encrypt_detached_out`] under a nonce drawn from the default DRBG, as
+    /// [`do_encrypt_init`](SymmetricCipherEncryptor::do_encrypt_init) draws it; see
+    /// [`encrypt_detached_rng_out`](AEADCipherEncryptor::encrypt_detached_rng_out).
+    fn encrypt_detached_out(
+        key: &KeyMaterial<KEY_LEN>,
+        aad: &[u8],
+        plaintext: &[u8],
+        ciphertext: &mut [u8],
+    ) -> Result<([u8; NONCE_LEN], usize, [u8; TAG_LEN]), SymmetricCipherError> {
+        let mut rng = HashDRBG_SHA512::new_from_os();
+        Self::encrypt_detached_rng_out(key, &mut rng, aad, plaintext, ciphertext)
+    }
+
+    /// [`Ccm::encrypt_detached_out`] under a nonce drawn from `rng`, for a `plaintext` and `aad`
+    /// of any length: neither `DATA_LEN` nor `AAD_LEN` applies to a one-shot (see the type docs).
+    ///
+    /// # Errors
+    /// [`SymmetricCipherError::OutputBufferTooSmall`] if `ciphertext` is shorter than
+    /// `plaintext`, checked before anything is drawn from `rng`; plus [`Ccm::new`]'s errors and
+    /// the RNG's.
+    fn encrypt_detached_rng_out(
+        key: &KeyMaterial<KEY_LEN>,
+        rng: &mut dyn RNG,
+        aad: &[u8],
+        plaintext: &[u8],
+        ciphertext: &mut [u8],
+    ) -> Result<([u8; NONCE_LEN], usize, [u8; TAG_LEN]), SymmetricCipherError> {
+        ciphertext.fill(0);
+        if ciphertext.len() < plaintext.len() {
+            return Err(SymmetricCipherError::OutputBufferTooSmall(plaintext.len()));
+        }
+        Self::check_random_nonce();
+        CcmAdapter::<P, Encrypting, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>::check_shape();
+        let nonce = random_iv::<NONCE_LEN>(rng)?;
+        let (written, tag) =
+            Ccm::<P, Encrypting, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN>::encrypt_detached_out(
+                key, &nonce, aad, plaintext, ciphertext,
+            )?;
+        Ok((nonce, written, tag))
+    }
+
+    /// [`Ccm::encrypt_out`] under a nonce drawn from the default DRBG; see
+    /// [`encrypt_with_aad_rng_out`](AEADCipherEncryptor::encrypt_with_aad_rng_out).
+    fn encrypt_with_aad_out(
+        key: &KeyMaterial<KEY_LEN>,
+        aad: &[u8],
+        plaintext: &[u8],
+        ciphertext: &mut [u8],
+    ) -> Result<([u8; NONCE_LEN], usize), SymmetricCipherError> {
+        let mut rng = HashDRBG_SHA512::new_from_os();
+        Self::encrypt_with_aad_rng_out(key, &mut rng, aad, plaintext, ciphertext)
+    }
+
+    /// [`Ccm::encrypt_out`] under a nonce drawn from `rng`, for a `plaintext` and `aad` of any
+    /// length, as [`encrypt_detached_rng_out`](AEADCipherEncryptor::encrypt_detached_rng_out).
+    ///
+    /// # Errors
+    /// As [`encrypt_detached_rng_out`](AEADCipherEncryptor::encrypt_detached_rng_out), with
+    /// `ciphertext` needing `plaintext.len() + TAG_LEN` bytes.
+    fn encrypt_with_aad_rng_out(
+        key: &KeyMaterial<KEY_LEN>,
+        rng: &mut dyn RNG,
+        aad: &[u8],
+        plaintext: &[u8],
+        ciphertext: &mut [u8],
+    ) -> Result<([u8; NONCE_LEN], usize), SymmetricCipherError> {
+        ciphertext.fill(0);
+        let needed = Self::encrypt_out_len(plaintext.len());
+        if ciphertext.len() < needed {
+            return Err(SymmetricCipherError::OutputBufferTooSmall(needed));
+        }
+        Self::check_random_nonce();
+        CcmAdapter::<P, Encrypting, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>::check_shape();
+        let nonce = random_iv::<NONCE_LEN>(rng)?;
+        let written = Ccm::<P, Encrypting, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN>::encrypt_out(
+            key, &nonce, aad, plaintext, ciphertext,
+        )?;
+        Ok((nonce, written))
     }
 }
 
@@ -1413,7 +1596,8 @@ where
 /// ciphertext and are decrypted and released by the call that brings them; anything after them
 /// can only be an inline tag (Sec 6.2 step 6's `LSB_Tlen(C)`), and only those bytes -- at most
 /// `TAG_LEN` -- are held back for the final to check. A `C` of any other length than `DATA_LEN`
-/// (detached) or `DATA_LEN + TAG_LEN` (inline) is refused as malformed.
+/// (detached) or `DATA_LEN + TAG_LEN` (inline) is refused as malformed. The one-shots are
+/// [`Ccm`]'s own and take a `C` of any length; see [`CcmEncryptor`].
 ///
 /// # 🚨 Security Considerations 🚨
 ///
@@ -1577,18 +1761,32 @@ where
         Ok(([0u8; TAG_LEN], 0))
     }
 
-    /// The payload, which is `DATA_LEN` whatever `ciphertext_len` claims. For the one `C` the
-    /// inline layout accepts that is `ciphertext_len - TAG_LEN`, as for any AEAD; for a shorter
-    /// `C` it is still what [`do_decrypt_out`](Self::do_decrypt_out) releases, so a one-shot that
-    /// sizes its buffer by this reaches the final and reports the short `C` as malformed, rather
-    /// than refusing the buffer first.
+    /// `C` less its inline tag, as for any AEAD: the one-shots take a `C` of any length. The
+    /// streaming side's own bound is [`do_decrypt_out_len`](Self::do_decrypt_out_len).
     fn decrypt_out_len(ciphertext_len: usize) -> usize {
-        ciphertext_len.min(DATA_LEN)
+        ciphertext_len.saturating_sub(TAG_LEN)
+    }
+
+    /// The AEAD one-shot with no AAD; see
+    /// [`decrypt_with_aad_out`](AEADCipherDecryptor::decrypt_with_aad_out).
+    fn decrypt_out(
+        key: &KeyMaterial<KEY_LEN>,
+        init_data: &[u8; NONCE_LEN],
+        ciphertext: &[u8],
+        plaintext: &mut [u8],
+    ) -> Result<usize, SymmetricCipherError> {
+        <Self as AEADCipherDecryptor<KEY_LEN, NONCE_LEN, TAG_LEN, TAG_LEN>>::decrypt_with_aad_out(
+            key,
+            init_data,
+            &[],
+            ciphertext,
+            plaintext,
+        )
     }
 }
 
-/// The AEAD view, with `FINAL_LEN = TAG_LEN`. The one-shots are the trait's own, so a `C` of
-/// any length but the frame's is refused like any other wrong-length stream.
+/// The AEAD view, with `FINAL_LEN = TAG_LEN`. The one-shots are [`Ccm`]'s own, for a `C` and
+/// AAD of any length; see [`CcmEncryptor`].
 impl<
     P,
     const KEY_LEN: usize,
@@ -1627,6 +1825,57 @@ where
         }
         self.finish(tag)?;
         Ok(0)
+    }
+
+    /// [`Ccm::decrypt_detached_out`], for a `ciphertext` and `aad` of any length: neither
+    /// `DATA_LEN` nor `AAD_LEN` applies to a one-shot (see [`CcmEncryptor`]). Zeroizes
+    /// `plaintext` on a failed tag, as `Ccm`'s does.
+    ///
+    /// # Errors
+    /// [`SymmetricCipherError::OutputBufferTooSmall`] if `plaintext` is shorter than
+    /// `ciphertext`; [`SymmetricCipherError::AEADTagCheckFailed`] if the tag does not verify;
+    /// plus [`Ccm::new`]'s errors.
+    fn decrypt_detached_out(
+        key: &KeyMaterial<KEY_LEN>,
+        nonce: &[u8; NONCE_LEN],
+        aad: &[u8],
+        ciphertext: &[u8],
+        tag: &[u8; TAG_LEN],
+        plaintext: &mut [u8],
+    ) -> Result<usize, SymmetricCipherError> {
+        plaintext.fill(0);
+        if plaintext.len() < ciphertext.len() {
+            return Err(SymmetricCipherError::OutputBufferTooSmall(ciphertext.len()));
+        }
+        CcmAdapter::<P, Decrypting, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>::check_shape();
+        Ccm::<P, Decrypting, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN>::decrypt_detached_out(
+            key, nonce, aad, ciphertext, tag, plaintext,
+        )
+    }
+
+    /// [`Ccm::decrypt_out`], for a `ciphertext` and `aad` of any length, as
+    /// [`decrypt_detached_out`](AEADCipherDecryptor::decrypt_detached_out).
+    ///
+    /// # Errors
+    /// As [`decrypt_detached_out`](AEADCipherDecryptor::decrypt_detached_out), with `plaintext`
+    /// needing [`decrypt_out_len`](SymmetricCipherDecryptor::decrypt_out_len) bytes, and
+    /// [`SymmetricCipherError::DecryptionFailed`] for a `C` shorter than the tag it must end with.
+    fn decrypt_with_aad_out(
+        key: &KeyMaterial<KEY_LEN>,
+        nonce: &[u8; NONCE_LEN],
+        aad: &[u8],
+        ciphertext: &[u8],
+        plaintext: &mut [u8],
+    ) -> Result<usize, SymmetricCipherError> {
+        plaintext.fill(0);
+        let needed = Self::decrypt_out_len(ciphertext.len());
+        if plaintext.len() < needed {
+            return Err(SymmetricCipherError::OutputBufferTooSmall(needed));
+        }
+        CcmAdapter::<P, Decrypting, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>::check_shape();
+        Ccm::<P, Decrypting, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN>::decrypt_out(
+            key, nonce, aad, ciphertext, plaintext,
+        )
     }
 }
 

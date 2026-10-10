@@ -151,6 +151,12 @@ fn a_buffering_pair_is_handled_by_every_default_method() {
         fn do_update_aad(&mut self, _aad: &[u8]) -> Result<(), SymmetricCipherError> {
             Ok(())
         }
+        fn do_encrypt_init_nonce(
+            key: &KeyMaterial<KEY_LEN>,
+            _nonce: &[u8; NONCE_LEN],
+        ) -> Result<Self, SymmetricCipherError> {
+            Ok(Self::do_encrypt_init(key)?.0)
+        }
         fn do_encrypt_final_detachedtag_out(
             mut self,
             ciphertext: &mut [u8; FINAL_LEN],

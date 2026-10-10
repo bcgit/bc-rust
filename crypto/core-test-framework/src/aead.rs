@@ -109,33 +109,37 @@ impl TestFrameworkAEADCipher {
         assert!(max_len <= DUMMY_SEED.len(), "the fixed message length must fit the seed buffer");
         for len in 0..=max_len {
             let msg = &DUMMY_SEED[..len];
-            // a fixed-length pair takes only that length, on every entry point: the one-shots
-            // are the trait's own, provided over the streaming methods that enforce it
+            // a fixed-length pair's streaming methods take only that length; its one-shots, with
+            // the whole message in hand, take any length and must round trip it
             if let Some(fixed) = self.fixed_message_len
                 && fixed != len
             {
                 let mut ct = vec![0u8; E::encrypt_detached_out_len(len)];
-                assert!(
-                    E::encrypt_detached_out(&key, aad, msg, &mut ct).is_err(),
-                    "fixed length: a {len}-byte detached one-shot must be refused"
-                );
+                let (nonce, n, tag) = E::encrypt_detached_out(&key, aad, msg, &mut ct)
+                    .unwrap_or_else(|e| {
+                        panic!(
+                            "fixed length: a {len}-byte detached one-shot must be accepted: {e:?}"
+                        )
+                    });
+                let mut pt = vec![0u8; D::decrypt_detached_out_len(n)];
+                let m =
+                    D::decrypt_detached_out(&key, &nonce, aad, &ct[..n], &tag, &mut pt).unwrap();
+                assert_eq!(&pt[..m], msg, "fixed length: {len}-byte detached one-shot round trip");
                 let mut inline = vec![0u8; E::encrypt_out_len(len)];
+                let (nonce, n) = E::encrypt_with_aad_out(&key, aad, msg, &mut inline)
+                    .unwrap_or_else(|e| {
+                        panic!("fixed length: a {len}-byte inline one-shot must be accepted: {e:?}")
+                    });
+                let mut pt = vec![0u8; D::decrypt_out_len(n)];
+                let m = D::decrypt_with_aad_out(&key, &nonce, aad, &inline[..n], &mut pt).unwrap();
+                assert_eq!(&pt[..m], msg, "fixed length: {len}-byte inline one-shot round trip");
+                // ...while the streaming methods refuse it, at the update or at the final
+                let (mut enc, _) = E::do_encrypt_init(&key).unwrap();
+                enc.do_update_aad(aad).unwrap();
+                let mut buf = vec![0u8; enc.do_encrypt_out_len(len)];
                 assert!(
-                    E::encrypt_with_aad_out(&key, aad, msg, &mut inline).is_err(),
-                    "fixed length: a {len}-byte inline one-shot must be refused"
-                );
-                // ...and so is a ciphertext of any length but the frame's
-                let fixed_msg = &DUMMY_SEED[..fixed];
-                let mut sealed = vec![0u8; E::encrypt_out_len(fixed)];
-                let (nonce, n) =
-                    E::encrypt_with_aad_out(&key, aad, fixed_msg, &mut sealed).unwrap();
-                let mut wrong = sealed[..n].to_vec();
-                wrong.resize(len + TAG_LEN, 0);
-                let mut pt = vec![0u8; D::decrypt_out_len(wrong.len())];
-                assert!(
-                    D::decrypt_with_aad_out(&key, &nonce, aad, &wrong, &mut pt).is_err(),
-                    "fixed length: a {}-byte ciphertext must be refused",
-                    wrong.len()
+                    enc.do_encrypt_out(msg, &mut buf).is_err() || enc.do_encrypt_final().is_err(),
+                    "fixed length: a {len}-byte stream must be refused"
                 );
                 continue;
             }
@@ -218,6 +222,45 @@ impl TestFrameworkAEADCipher {
             )
             .unwrap();
             assert_eq!(&exact[..exact_len], &detached[..], "len {len}: exact-size buffer");
+
+            // the supplied-nonce forms: the nonce the pinned RNG produced, supplied directly,
+            // must give the same bytes from the one-shots, the allocating one-shots and the
+            // streaming constructor alike
+            let mut by_nonce = vec![0u8; E::encrypt_detached_out_len(len)];
+            let (n_len, n_tag) =
+                E::encrypt_detached_nonce_out(&key, &pinned_nonce, aad, msg, &mut by_nonce)
+                    .unwrap();
+            by_nonce.truncate(n_len);
+            by_nonce.extend_from_slice(&n_tag);
+            assert_eq!(by_nonce, detached, "len {len}: encrypt_detached_nonce_out under the nonce");
+            let mut by_nonce = vec![0u8; E::encrypt_out_len(len)];
+            let n_len = E::encrypt_with_aad_nonce_out(&key, &pinned_nonce, aad, msg, &mut by_nonce)
+                .unwrap();
+            assert_eq!(&by_nonce[..n_len], &detached[..], "len {len}: encrypt_with_aad_nonce_out");
+            let mut short = vec![0u8; E::encrypt_out_len(len) - 1];
+            match E::encrypt_with_aad_nonce_out(&key, &pinned_nonce, aad, msg, &mut short) {
+                Err(SymmetricCipherError::OutputBufferTooSmall(n)) => {
+                    assert_eq!(n, E::encrypt_out_len(len))
+                }
+                other => panic!("encrypt_with_aad_nonce_out into a short buffer: {other:?}"),
+            }
+            let (mut alloc_ct, alloc_tag) =
+                E::encrypt_detached_nonce(&key, &pinned_nonce, aad, msg).unwrap();
+            alloc_ct.extend_from_slice(&alloc_tag);
+            assert_eq!(alloc_ct, detached, "len {len}: encrypt_detached_nonce");
+            assert_eq!(
+                E::encrypt_with_aad_nonce(&key, &pinned_nonce, aad, msg).unwrap(),
+                detached,
+                "len {len}: encrypt_with_aad_nonce"
+            );
+            let mut enc_n = E::do_encrypt_init_nonce(&key, &pinned_nonce).unwrap();
+            enc_n.do_update_aad(aad).unwrap();
+            let mut streamed = vec![0u8; enc_n.do_encrypt_out_len(len)];
+            let w = enc_n.do_encrypt_out(msg, &mut streamed).unwrap();
+            streamed.truncate(w);
+            let (last_n, last_n_len) = enc_n.do_encrypt_final().unwrap();
+            streamed.extend_from_slice(&last_n[..last_n_len]);
+            assert_eq!(streamed, detached, "len {len}: do_encrypt_init_nonce streaming");
             let mut short = vec![0u8; E::encrypt_out_len(len) - 1];
             match E::encrypt_with_aad_rng_out(
                 &key,

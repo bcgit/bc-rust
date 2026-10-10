@@ -17,8 +17,10 @@
 //! * [`AES_CCM_128_Packet`] and friends fix the payload length in the type, as the const parameter
 //!   `DATA_LEN`, and so implement [`AEADCipherEncryptor`] / [`AEADCipherDecryptor`] like every
 //!   other mode in this crate: they stream, holding back nothing but up to `AAD_LEN` bytes of
-//!   AAD, and their one-shots generate the nonce. Every entry point accepts exactly `DATA_LEN`
-//!   bytes of payload, the fixed frame of a packet protocol, and refuses any other amount.
+//!   AAD, and generate the nonce unless the caller supplies one through the trait's `_nonce`
+//!   forms. The streaming methods accept exactly `DATA_LEN` bytes of payload, the fixed frame of
+//!   a packet protocol, and refuse any other amount; the one-shots, with the whole message in
+//!   hand, take any length and are [`AES_CCM_128`]'s own.
 //!
 //! # The nonce and tag length are parametrizable
 //!
@@ -55,8 +57,8 @@
 //! ## Generic AEAD API for a fixed packet size
 //!
 //! For code written against [`AEADCipherEncryptor`] / [`AEADCipherDecryptor`], the fixed-frame
-//! pair generates the nonce and returns it. Every entry point, one-shots included, takes exactly
-//! `DATA_LEN` bytes of payload:
+//! pair generates the nonce and returns it. The streaming methods take exactly `DATA_LEN` bytes
+//! of payload; the one-shots take any length:
 //!
 //! ```
 //! use bouncycastle_aes::AES_CCM_128_Packet;
@@ -74,14 +76,15 @@
 //!
 //! let frame = [0x5Au8; 2048];
 //!
-//! // The one-shots: one frame.
+//! // The one-shots: a frame, or any other length, since they have the whole message in hand.
 //! let (nonce, ciphertext, tag) = AESEnc::encrypt_detached(&key, b"header", &frame).expect("encryption");
 //! let plaintext = AESDec::decrypt_detached(&key, &nonce, b"header", &ciphertext, &tag).expect("decryption");
 //! assert_eq!(&plaintext[..], &frame[..]);
-//! // ...and nothing but a frame.
-//! assert!(AESEnc::encrypt_detached(&key, b"header", b"message").is_err());
+//! let (nonce, ciphertext, tag) = AESEnc::encrypt_detached(&key, b"header", b"message").expect("encryption");
+//! let plaintext = AESDec::decrypt_detached(&key, &nonce, b"header", &ciphertext, &tag).expect("decryption");
+//! assert_eq!(&plaintext[..], b"message");
 //!
-//! // The streaming methods: the same frame, released as it is processed.
+//! // The streaming methods: exactly one frame, released as it is processed.
 //! let (mut enc, nonce) = AESEnc::do_encrypt_init(&key).expect("init");
 //! enc.do_update_aad(b"header").expect("aad");
 //! let mut sealed = vec![0u8; 2048];
@@ -220,16 +223,18 @@
 //! The difference between the key sizes is the key schedule; the `_Packet` pair adds the
 //! `AAD_LEN`-byte AAD buffer and, on the decrypting side, the held-back tag. Peak stack over a
 //! 16 KiB frame with AES-128, measured with massif on x86-64 in release mode by
-//! `mem_usage_benches/src/bench_ccm_mem_usage.rs`, including the caller's own 16 KiB arrays:
+//! `mem_usage_benches/src/bench_ccm_mem_usage.rs`, including the caller's own 16 KiB arrays. The
+//! `_Packet` one-shots call the `AES_CCM_128` ones, so they cost only the DRBG the nonce is drawn
+//! from on top:
 //!
 //! | Path | Peak stack |
 //! |---|---|
-//! | process start-up alone | 7 696 B |
-//! | `AES_CCM_128` one-shot, two arrays (message, ciphertext) | 35 944 B |
-//! | `AES_CCM_128` streaming, one array encrypted in place | 19 112 B |
-//! | `AES_CCM_128_Packet` streaming encrypt, two arrays | 37 400 B |
-//! | `AES_CCM_128_Packet` streaming decrypt, two arrays | 36 168 B |
-//! | `AES_CCM_128_Packet` one-shot, two arrays | 37 576 B |
+//! | process start-up alone | 7 680 B |
+//! | `AES_CCM_128` one-shot, two arrays (message, ciphertext) | 35 888 B |
+//! | `AES_CCM_128` streaming, one array encrypted in place | 19 088 B |
+//! | `AES_CCM_128_Packet` streaming encrypt, two arrays | 37 304 B |
+//! | `AES_CCM_128_Packet` streaming decrypt, two arrays | 36 144 B |
+//! | `AES_CCM_128_Packet` one-shot, two arrays | 36 208 B |
 //!
 //! # 🚨 Security Considerations 🚨
 //!
@@ -282,9 +287,11 @@ pub type AES_CCM_256<Dir, const NONCE_LEN: usize, const TAG_LEN: usize> =
 /// AES-128 in CCM mode, as an [`AEADCipherEncryptor`] or [`AEADCipherDecryptor`] by `Dir`, for
 /// frames of exactly `DATA_LEN` payload bytes.
 ///
-/// This is the fixed-frame pair, for code written against the generic AEAD traits: every entry
-/// point accepts exactly `DATA_LEN` bytes of payload and up to `AAD_LEN` of AAD, and the
-/// one-shots generate the nonce. `NONCE_LEN` must be at least 12 here, and `TAG_LEN` is as for
+/// This is the fixed-frame pair, for code written against the generic AEAD traits: the streaming
+/// methods accept exactly `DATA_LEN` bytes of payload and up to `AAD_LEN` of AAD, the one-shots
+/// any amount of either. The nonce is generated unless the caller supplies one through
+/// [`AEADCipherEncryptor::do_encrypt_init_nonce`] or the `_nonce` one-shots; a generated nonce
+/// needs `NONCE_LEN` of at least 12, a supplied one any A.1 length, and `TAG_LEN` is as for
 /// [`AES_CCM_128`]. See [`CcmEncryptor`] for the rules.
 #[allow(non_camel_case_types)]
 pub type AES_CCM_128_Packet<

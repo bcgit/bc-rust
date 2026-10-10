@@ -652,66 +652,104 @@ fn the_decryptor_releases_the_payload_and_holds_back_only_the_tag() {
     assert_eq!(out, message);
 }
 
-/// The trait one-shots are the trait's own, provided over the streaming methods, so `DATA_LEN`
-/// and `AAD_LEN` bind them exactly as they bind the streaming calls: a frame of the declared
-/// length goes through and agrees with the run-time-length [`Ccm`] byte for byte, and anything
-/// else is refused with the streaming methods' own errors.
+/// The one-shots are [`Ccm`]'s own under a generated nonce, so `DATA_LEN` and `AAD_LEN` do not
+/// bind them: at the frame's length they agree with the direct API byte for byte, and at any
+/// other length, with AAD past the capacity, they still round trip and agree, on every one of
+/// the nine forms -- detached and inline, with and without a caller's RNG, with and without AAD,
+/// and the three decrypting forms. A failed tag leaves the output zeroized. The streaming
+/// methods stay bound; see `the_adapters_refuse_more_than_the_declared_lengths`.
 #[test]
-fn trait_one_shots_are_bound_by_data_len() {
+fn trait_one_shots_take_any_length_and_agree_with_the_direct_api() {
     type Enc = CcmEncryptor<AES128Internal, 16, 16, 12, 16, 48, 48>;
     type Dec = CcmDecryptor<AES128Internal, 16, 16, 12, 16, 48, 48>;
+    type Direct<Dir> = Ccm<AES128Internal, Dir, 16, 16, 12, 16>;
     let k = key::<16>(APPENDIX_C_KEY);
-    let nonce_seed = [0x24u8; 12];
-    let aad = [0x3Cu8; 48];
-    let frame = [0xA5u8; 48];
+    let rng = || FixedSeedRNG::<12>::new([0x24u8; 12]);
 
-    let mut ciphertext = [0u8; 48];
-    let (nonce, written, tag) = Enc::encrypt_detached_rng_out(
-        &k,
-        &mut FixedSeedRNG::<12>::new(nonce_seed),
-        &aad,
-        &frame,
-        &mut ciphertext,
-    )
-    .expect("exactly DATA_LEN and AAD_LEN");
-    assert_eq!(written, 48);
-    let mut direct = [0u8; 48];
-    let (_, direct_tag) = Ccm::<AES128Internal, Encrypting, 16, 16, 12, 16>::encrypt_detached_out(
-        &k, &nonce, &aad, &frame, &mut direct,
-    )
-    .expect("direct");
-    assert_eq!((ciphertext, tag), (direct, direct_tag), "the two routes to Sec 6.1 agree");
-    let mut opened = [0u8; 48];
-    assert_eq!(
-        Dec::decrypt_detached_out(&k, &nonce, &aad, &ciphertext, &tag, &mut opened).expect("open"),
-        48
+    // The frame, one byte either side of it, nothing, and well past it; AAD at, under and past
+    // the capacity.
+    for (msg_len, aad_len) in [(48usize, 48usize), (47, 0), (49, 49), (0, 5), (1000, 200)] {
+        let msg = vec![0xA5u8; msg_len];
+        let aad = vec![0x3Cu8; aad_len];
+        let what = format!("{msg_len}-byte payload, {aad_len}-byte AAD");
+
+        let mut detached = vec![0u8; msg_len];
+        let (nonce, written, tag) =
+            Enc::encrypt_detached_rng_out(&k, &mut rng(), &aad, &msg, &mut detached)
+                .unwrap_or_else(|e| panic!("{what}: {e:?}"));
+        assert_eq!(written, msg_len);
+        let mut direct = vec![0u8; msg_len];
+        let (_, direct_tag) =
+            Direct::<Encrypting>::encrypt_detached_out(&k, &nonce, &aad, &msg, &mut direct)
+                .expect("direct");
+        assert_eq!((&detached, tag), (&direct, direct_tag), "{what}: detached agrees");
+
+        let mut inline = vec![0u8; msg_len + 16];
+        let (nonce_i, written_i) =
+            Enc::encrypt_with_aad_rng_out(&k, &mut rng(), &aad, &msg, &mut inline)
+                .unwrap_or_else(|e| panic!("{what}: {e:?}"));
+        assert_eq!((nonce_i, written_i), (nonce, msg_len + 16));
+        assert_eq!(&inline[..msg_len], &detached[..], "{what}: inline is detached plus tag");
+        assert_eq!(&inline[msg_len..], &tag);
+
+        let mut pt = vec![0xEEu8; msg_len];
+        assert_eq!(
+            Dec::decrypt_detached_out(&k, &nonce, &aad, &detached, &tag, &mut pt).expect("open"),
+            msg_len
+        );
+        assert_eq!(pt, msg, "{what}: detached round trip");
+        pt.fill(0xEE);
+        assert_eq!(
+            Dec::decrypt_with_aad_out(&k, &nonce, &aad, &inline, &mut pt).expect("open"),
+            msg_len
+        );
+        assert_eq!(pt, msg, "{what}: inline round trip");
+
+        // The default-DRBG forms and the no-AAD forms, each opened by the matching decrypt.
+        let (n2, w2, t2) = Enc::encrypt_detached_out(&k, &aad, &msg, &mut detached).unwrap();
+        assert_eq!(w2, msg_len);
+        Dec::decrypt_detached_out(&k, &n2, &aad, &detached, &t2, &mut pt).expect("open");
+        let (n3, w3) = Enc::encrypt_with_aad_out(&k, &aad, &msg, &mut inline).unwrap();
+        assert_eq!(w3, msg_len + 16);
+        Dec::decrypt_with_aad_out(&k, &n3, &aad, &inline, &mut pt).expect("open");
+        let (n4, w4) = Enc::encrypt_rng_out(&k, &mut rng(), &msg, &mut inline).unwrap();
+        assert_eq!((n4, w4), (nonce, msg_len + 16));
+        assert_eq!(Dec::decrypt_out_len(w4), msg_len);
+        pt.fill(0xEE);
+        assert_eq!(Dec::decrypt_out(&k, &n4, &inline, &mut pt).expect("open"), msg_len);
+        assert_eq!(pt, msg, "{what}: no-AAD round trip");
+        let (n5, w5) = Enc::encrypt_out(&k, &msg, &mut inline).unwrap();
+        assert_eq!(w5, msg_len + 16);
+        Dec::decrypt_out(&k, &n5, &inline, &mut pt).expect("open");
+    }
+
+    // A failed tag leaves nothing behind, on all three decrypting forms.
+    let msg = [0xA5u8; 48];
+    let mut inline = [0u8; 64];
+    let (nonce, _) = Enc::encrypt_with_aad_out(&k, b"hdr", &msg, &mut inline).unwrap();
+    let mut forged = inline;
+    forged[0] ^= 1;
+    let mut pt = [0xEEu8; 48];
+    assert!(matches!(
+        Dec::decrypt_with_aad_out(&k, &nonce, b"hdr", &forged, &mut pt),
+        Err(SymmetricCipherError::AEADTagCheckFailed)
+    ));
+    assert_eq!(pt, [0u8; 48]);
+    pt.fill(0xEE);
+    assert!(
+        matches!(
+            Dec::decrypt_out(&k, &nonce, &inline, &mut pt),
+            Err(SymmetricCipherError::AEADTagCheckFailed)
+        ),
+        "the AAD is missing"
     );
-    assert_eq!(opened, frame);
-
-    // One byte either side of the frame is refused, with the streaming methods' own variants.
-    let mut out = [0u8; 4096];
+    assert_eq!(pt, [0u8; 48]);
+    pt.fill(0xEE);
     assert!(matches!(
-        Enc::encrypt_detached_out(&k, &aad, &[0xA5u8; 47], &mut out),
-        Err(SymmetricCipherError::StateError(_))
+        Dec::decrypt_detached_out(&k, &nonce, b"hdr", &inline[..48], &[0u8; 16], &mut pt),
+        Err(SymmetricCipherError::AEADTagCheckFailed)
     ));
-    assert!(matches!(
-        Enc::encrypt_detached_out(&k, &aad, &[0xA5u8; 49], &mut out),
-        Err(SymmetricCipherError::StateError(_))
-    ));
-    assert!(matches!(
-        Enc::encrypt_detached_out(&k, &[0x3Cu8; 49], &frame, &mut out),
-        Err(SymmetricCipherError::GenericError(_))
-    ));
-    assert!(matches!(
-        Dec::decrypt_detached_out(&k, &nonce, &aad, &ciphertext[..47], &tag, &mut out),
-        Err(SymmetricCipherError::DecryptionFailed)
-    ));
-    let mut long = [0u8; 49];
-    long[..48].copy_from_slice(&ciphertext);
-    assert!(matches!(
-        Dec::decrypt_detached_out(&k, &nonce, &aad, &long, &tag, &mut out),
-        Err(SymmetricCipherError::DecryptionFailed)
-    ));
+    assert_eq!(pt, [0u8; 48]);
 }
 
 /// `B0` commits to `DATA_LEN`, so every final must check that exactly that much payload was
@@ -928,13 +966,12 @@ fn an_inline_ciphertext_shorter_than_the_tag_is_rejected() {
     assert_eq!(dec.do_decrypt_final().expect("an empty frame still verifies").1, 0);
 }
 
-/// The same agreement on a frame that is not empty, where the inline entry points can disagree
-/// in a way the empty frame hides. `do_decrypt_out` releases the payload as it arrives, up to
-/// `DATA_LEN`, and only then holds bytes back as the tag; so a `C` of fewer than
-/// `DATA_LEN + TAG_LEN` bytes still asks for a `DATA_LEN`-byte buffer when it is longer than the
-/// frame. `decrypt_out_len` is therefore `DATA_LEN` for any such `C`, not `C` less a tag: a
-/// one-shot that sizes its buffer by it reaches the final, which reports the short `C` as
-/// malformed, rather than refusing the buffer with `OutputBufferTooSmall` first.
+/// A truncated `C` on a frame that is not empty, where the streaming final and the one-shots
+/// part ways. The streaming decryptor knows the frame: `do_decrypt_out` releases the payload as
+/// it arrives, up to `DATA_LEN`, holds back only what follows as the tag, and the final reports
+/// anything short of `DATA_LEN + TAG_LEN` as malformed. The one-shots are [`Ccm`]'s own and know
+/// no frame: a `C` shorter than the tag is malformed, and anything longer is a shorter message
+/// whose tag does not verify. `decrypt_out_len` is `C` less a tag, as for any AEAD.
 #[test]
 fn a_short_inline_ciphertext_is_rejected_the_same_way_for_a_non_empty_frame() {
     const DATA_LEN: usize = 32;
@@ -946,28 +983,28 @@ fn a_short_inline_ciphertext_is_rejected_the_same_way_for_a_non_empty_frame() {
     let (nonce, n) = Enc::encrypt_with_aad_out(&k, b"hdr", &frame, &mut sealed).expect("seal");
     assert_eq!(n, DATA_LEN + 16);
 
-    // The whole frame plus its tag is the one accepted inline length, and the bound is exact.
     assert_eq!(Dec::decrypt_out_len(DATA_LEN + 16), DATA_LEN);
-    assert_eq!(Dec::decrypt_out_len(DATA_LEN + 1), DATA_LEN, "the payload is DATA_LEN");
-    assert_eq!(Dec::decrypt_out_len(5), 5, "...or all of a C shorter than the frame");
+    assert_eq!(Dec::decrypt_out_len(DATA_LEN + 1), DATA_LEN - 15, "C less its tag");
+    assert_eq!(Dec::decrypt_out_len(5), 0, "...and nothing for a C shorter than the tag");
 
     for len in 0..DATA_LEN + 16 {
         let short = &sealed[..len];
+        let one_shot_says = |r: Result<usize, SymmetricCipherError>| match (len < 16, r) {
+            (true, Err(SymmetricCipherError::DecryptionFailed)) => true,
+            (false, Err(SymmetricCipherError::AEADTagCheckFailed)) => true,
+            _ => false,
+        };
         let mut pt = vec![0u8; Dec::decrypt_out_len(len)];
         assert!(
-            matches!(
-                Dec::decrypt_with_aad_out(&k, &nonce, b"hdr", short, &mut pt),
-                Err(SymmetricCipherError::DecryptionFailed)
-            ),
-            "a {len}-byte C is not a frame and its tag (decrypt_with_aad_out)"
+            one_shot_says(Dec::decrypt_with_aad_out(&k, &nonce, b"hdr", short, &mut pt)),
+            "a {len}-byte C is too short for a tag, or a shorter message with the wrong one \
+             (decrypt_with_aad_out)"
         );
         let mut pt = vec![0u8; Dec::decrypt_out_len(len)];
         assert!(
-            matches!(
-                Dec::decrypt_out(&k, &nonce, short, &mut pt),
-                Err(SymmetricCipherError::DecryptionFailed)
-            ),
-            "a {len}-byte C is not a frame and its tag (decrypt_out)"
+            one_shot_says(Dec::decrypt_out(&k, &nonce, short, &mut pt)),
+            "a {len}-byte C is too short for a tag, or a shorter message with the wrong one \
+             (decrypt_out)"
         );
         let mut dec = Dec::do_decrypt_init(&k, &nonce).expect("init");
         dec.do_update_aad(b"hdr").expect("aad");
@@ -1280,4 +1317,62 @@ fn progressive_aad_enforces_the_declared_length_and_order() {
     let mut data2 = message;
     ccm.do_encrypt(&mut data2).unwrap();
     assert_eq!((data, no_aad), (data2, ccm.do_encrypt_final().unwrap()));
+}
+
+/// The supplied-nonce forms are [`Ccm`]'s own one-shots and streaming constructor under the
+/// caller's nonce, so they agree with the direct API byte for byte. They are also how a protocol
+/// with its own nonce discipline reaches CCM through the generic traits: IEEE 802.11 CCMP's
+/// 13-byte nonce and 8-byte tag sit below the 12-byte floor a generated nonce needs, and compile
+/// here because nothing draws one.
+#[test]
+fn supplied_nonce_forms_agree_with_the_direct_api_at_any_a1_nonce_length() {
+    type Enc = CcmEncryptor<AES128Internal, 16, 16, 13, 8, 32, 48>;
+    type Dec = CcmDecryptor<AES128Internal, 16, 16, 13, 8, 32, 48>;
+    type Direct<Dir> = Ccm<AES128Internal, Dir, 16, 16, 13, 8>;
+    let k = key::<16>(APPENDIX_C_KEY);
+    let nonce = [0x11u8; 13];
+    let aad = [0x3Cu8; 32];
+    let frame = [0xA5u8; 48];
+
+    let mut detached = [0u8; 48];
+    let (n, tag) =
+        Enc::encrypt_detached_nonce_out(&k, &nonce, &aad, &frame, &mut detached).expect("seal");
+    assert_eq!(n, 48);
+    let mut direct = [0u8; 48];
+    let (_, direct_tag) =
+        Direct::<Encrypting>::encrypt_detached_out(&k, &nonce, &aad, &frame, &mut direct)
+            .expect("direct");
+    assert_eq!((detached, tag), (direct, direct_tag), "the two routes to Sec 6.1 agree");
+    let mut inline = [0u8; 56];
+    assert_eq!(
+        Enc::encrypt_with_aad_nonce_out(&k, &nonce, &aad, &frame, &mut inline).expect("seal"),
+        56
+    );
+    assert_eq!(&inline[..48], &detached);
+    assert_eq!(&inline[48..], &tag);
+
+    // The streaming constructor, on the frame.
+    let mut enc = Enc::do_encrypt_init_nonce(&k, &nonce).expect("init");
+    enc.do_update_aad(&aad).expect("aad");
+    let mut streamed = [0u8; 48];
+    assert_eq!(enc.do_encrypt_out(&frame, &mut streamed).expect("released"), 48);
+    let (_, _, streamed_tag) = enc.do_encrypt_final_detachedtag().expect("tag");
+    assert_eq!((streamed, streamed_tag), (detached, tag));
+
+    // Opened by the decryptor at the same parameters, and not under another nonce.
+    let mut opened = [0u8; 48];
+    assert_eq!(
+        Dec::decrypt_detached_out(&k, &nonce, &aad, &detached, &tag, &mut opened).expect("open"),
+        48
+    );
+    assert_eq!(opened, frame);
+    assert_eq!(
+        Dec::decrypt_with_aad_out(&k, &nonce, &aad, &inline, &mut opened).expect("open"),
+        48
+    );
+    assert!(matches!(
+        Dec::decrypt_detached_out(&k, &[0x12u8; 13], &aad, &detached, &tag, &mut opened),
+        Err(SymmetricCipherError::AEADTagCheckFailed)
+    ));
+    assert_eq!(opened, [0u8; 48]);
 }
