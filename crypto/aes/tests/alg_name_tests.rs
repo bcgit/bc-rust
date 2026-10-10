@@ -10,7 +10,7 @@ use bouncycastle_aes::{
     AES_CBC_128, AES_CBC_192, AES_CBC_256, AES_CCM_128, AES_CCM_192, AES_CCM_256, AES_CFB_128,
     AES_CFB_192, AES_CFB_256, AES_CFB8_128, AES_CFB8_192, AES_CFB8_256, AES_CMAC_128, AES_CMAC_192,
     AES_CMAC_256, AES_CTR_128, AES_CTR_192, AES_CTR_256, AES_GCM_128, AES_GCM_192, AES_GCM_256,
-    CCM_NONCE_LEN, CCM_TAG_LEN,
+    AES_GMAC_128, AES_GMAC_192, AES_GMAC_256, CCM_NONCE_LEN, CCM_TAG_LEN,
 };
 use bouncycastle_cipher::modes::hazmat::ecb::Ecb;
 use bouncycastle_cipher::modes::{Cbc, Gcm};
@@ -114,6 +114,14 @@ fn ccm() {
     check::<AES_CCM_256<Encrypting, N, T, 16, 32>, AES_CCM_256<Decrypting, N, T, 16, 32>>(
         "AES_CCM_256", _256bit,
     );
+}
+
+#[test]
+fn gmac() {
+    use SecurityStrength::*;
+    check::<AES_GMAC_128<Encrypting>, AES_GMAC_128<Decrypting>>("AES_GMAC_128", _128bit);
+    check::<AES_GMAC_192<Encrypting>, AES_GMAC_192<Decrypting>>("AES_GMAC_192", _192bit);
+    check::<AES_GMAC_256<Encrypting>, AES_GMAC_256<Decrypting>>("AES_GMAC_256", _256bit);
 }
 
 #[test]

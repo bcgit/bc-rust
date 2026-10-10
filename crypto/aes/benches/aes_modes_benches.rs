@@ -24,9 +24,13 @@
 //! criterion's untimed setup (`iter_batched`); the copy is not part of the timing.
 
 use bouncycastle_aes::hazmat::{AES128Internal, AES256Internal};
-use bouncycastle_aes::{AES_CMAC_128, AES_CMAC_256, AES128Key, AES256Key};
+use bouncycastle_aes::{
+    AES_CMAC_128, AES_CMAC_256, AES_GMAC_128, AES_GMAC_256, AES128Key, AES256Key,
+};
 use bouncycastle_cipher::modes::hazmat::ecb::Ecb;
-use bouncycastle_cipher::modes::{CCM, CMAC, Cbc, CcmEncryptor, Cfb, Cfb8, Ctr, GCM_NONCE_LEN, Gcm};
+use bouncycastle_cipher::modes::{
+    CCM, CMAC, Cbc, CcmEncryptor, Cfb, Cfb8, Ctr, GCM_NONCE_LEN, GMAC, Gcm,
+};
 use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::hazmat::{AeadPacketEncryptMode, ElectronicCodeBook};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
@@ -571,9 +575,49 @@ fn bench_cmac(c: &mut Criterion) {
     group.finish();
 }
 
+/// GMAC is GHASH over the message plus two cipher calls, so it is several times faster than CMAC
+/// and the same as GCM's AAD-only measurement; the key object saves the schedule and `H` per tag.
+fn bench_gmac(c: &mut Criterion) {
+    let data: Vec<u8> = data().concat();
+    let mut group = c.benchmark_group("modes::gmac");
+    group.throughput(Throughput::Bytes(DATA_LEN as u64));
+    let mut rng = FixedSeedRNG::<GCM_NONCE_LEN>::new([0x24u8; GCM_NONCE_LEN]);
+
+    let key128 = mac_key::<16>();
+    group.bench_function("AES_128 Gmac::new 16KiB", |b| {
+        b.iter(|| {
+            let (gen_, _) = AES_GMAC_128::<Encrypting>::new(&key128, &mut rng).unwrap();
+            black_box(gen_.mac(black_box(&data)))
+        })
+    });
+    let key_object_128 = AES128Key::<GMAC>::from_key_material(&key128).unwrap();
+    group.bench_function("AES_128 key object 16KiB", |b| {
+        b.iter(|| {
+            let (gen_, _) = key_object_128.create_generator(&mut rng).unwrap();
+            black_box(gen_.mac(black_box(&data)))
+        })
+    });
+    let key256 = mac_key::<32>();
+    group.bench_function("AES_256 Gmac::new 16KiB", |b| {
+        b.iter(|| {
+            let (gen_, _) = AES_GMAC_256::<Encrypting>::new(&key256, &mut rng).unwrap();
+            black_box(gen_.mac(black_box(&data)))
+        })
+    });
+    let key_object_256 = AES256Key::<GMAC>::from_key_material(&key256).unwrap();
+    group.bench_function("AES_256 key object 16KiB", |b| {
+        b.iter(|| {
+            let (gen_, _) = key_object_256.create_generator(&mut rng).unwrap();
+            black_box(gen_.mac(black_box(&data)))
+        })
+    });
+
+    group.finish();
+}
+
 criterion_group!(
     benches, bench_aes128cbc, bench_cfb_aes128, bench_cfb8_aes128, bench_ctr_aes128,
     bench_ecb_aes128, bench_ccm_aes128, bench_ccm_one_shot_pair, bench_gcm_aes128,
-    bench_gcm_aes256, bench_init, bench_cmac
+    bench_gcm_aes256, bench_init, bench_cmac, bench_gmac
 );
 criterion_main!(benches);

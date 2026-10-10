@@ -21,6 +21,7 @@
 //! * [AES_CMAC](crate::cmac), a MAC rather than a cipher
 //! * [AES_CTR](crate::ctr)
 //! * [AES_GCM](crate::gcm)
+//! * [AES_GMAC](crate::gmac), a nonce-based MAC rather than a cipher
 //!
 //! A key that will encrypt many messages is better held as a mode-bound key object such as
 //! [`AES256Key<GCM>`](AES256Key), which validates and expands once and hands out the mode's
@@ -180,6 +181,7 @@ pub mod cfb8;
 pub mod cmac;
 pub mod ctr;
 pub mod gcm;
+pub mod gmac;
 pub mod hazmat;
 pub mod key;
 mod round;
@@ -269,4 +271,5 @@ pub use cfb8::{AES_CFB8_128, AES_CFB8_192, AES_CFB8_256};
 pub use cmac::{AES_CMAC_128, AES_CMAC_192, AES_CMAC_256};
 pub use ctr::{AES_CTR_128, AES_CTR_192, AES_CTR_256, CTR_NONCE_LEN};
 pub use gcm::{AES_GCM_128, AES_GCM_192, AES_GCM_256};
+pub use gmac::{AES_GMAC_128, AES_GMAC_192, AES_GMAC_256};
 pub use key::{AES128Key, AES192Key, AES256Key, AESKey};

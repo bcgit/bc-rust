@@ -1,5 +1,7 @@
 //! Known-answer tests against the NIST ACVP `ACVP-AES-GMAC` vectors from the `bc-test-data` repo.
 //!
+//! Every case also runs through `AES*Key<GMAC>` (`common/gmac_helpers.rs`).
+//!
 //! Same joiner and shape as `gcm_bc-test-data.rs` (see its module docs for the `bc-test-data`
 //! requirement and what is and is not covered against `bc-test-data`), over the GMAC set
 //! (`ACVP-AES-GMAC.4014543`, 270 cases): `payloadLen` is 0 throughout -- SP 800-38D Sec 5.2, GMAC is
@@ -8,9 +10,12 @@
 
 #[path = "common/acvp_gcm_helpers.rs"]
 mod acvp_gcm_helpers;
+#[path = "common/gmac_helpers.rs"]
+mod gmac_helpers;
 
 use acvp_gcm_helpers::{GCM_NONCE_LEN, run_decrypt_case, run_encrypt_case};
 use bouncycastle_core_test_framework::test_data_loaders::{Value, bc_test_data_json, hex_field};
+use gmac_helpers::run_key_object_case;
 use std::collections::BTreeMap;
 
 const TEST_DATA_DIR: &str = "crypto/aes_tdes_vectors/GCM";
@@ -66,6 +71,7 @@ fn acvp_aes_gmac_known_answer_tests() {
                     // A GMAC "ciphertext" is always empty.
                     run_encrypt_case(&key_bytes, iv, &aad, &[], tag_len, &[], &tag);
                     run_decrypt_case(&key_bytes, iv, &aad, &[], &tag, Some(&[]));
+                    run_key_object_case(&key_bytes, iv, &aad, &tag, true);
                     encrypt_checked += 1;
                 }
                 "decrypt" => {
@@ -77,9 +83,11 @@ fn acvp_aes_gmac_known_answer_tests() {
                     // to report either, since GMAC's plaintext is always empty).
                     if answer.get("testPassed").and_then(Value::as_bool) == Some(false) {
                         run_decrypt_case(&key_bytes, iv, &aad, &[], &tag, None);
+                        run_key_object_case(&key_bytes, iv, &aad, &tag, false);
                         decrypt_failed_checked += 1;
                     } else {
                         run_decrypt_case(&key_bytes, iv, &aad, &[], &tag, Some(&[]));
+                        run_key_object_case(&key_bytes, iv, &aad, &tag, true);
                     }
                 }
                 other => panic!("unexpected direction {other}"),
