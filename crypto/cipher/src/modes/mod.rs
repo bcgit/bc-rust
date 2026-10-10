@@ -65,14 +65,13 @@
 //! `AES_GCM_128` and friends from `bouncycastle-aes`. Those aliases are not all the same shape: the
 //! two block modes take a padding scheme as well as a direction, since neither is usable on data of
 //! arbitrary length without one, the three stream modes take only the direction, CCM takes the
-//! direction too, plus its nonce and tag lengths and, for the trait-implementing alias, its AAD
-//! capacity and frame length (`AES_CCM_128_Packet` is the inherent, per-message-length API), and
-//! GCM takes the direction and its tag length:
+//! direction in its type name, plus its nonce and tag lengths, its AAD capacity and its frame
+//! length, and GCM takes the direction and its tag length:
 //!
 //! ```
 //! # mod toy { include!("../../tests/common/toy_block_cipher.rs"); }
 //! # use toy::ToyBlockCipher;
-//! use bouncycastle_cipher::modes::{Cbc, CcmPacket, Cfb, Cfb8, Ctr, Gcm};
+//! use bouncycastle_cipher::modes::{Cbc, CcmDecryptor, CcmEncryptor, Cfb, Cfb8, Ctr, Gcm};
 //!
 //! // CBC, CFB, and CFB8 take a permutation, a direction, key length, and a block length.
 //! type ToyCbc<Dir> = Cbc<ToyBlockCipher, Dir, 16, 16>;
@@ -83,11 +82,14 @@
 //! // `BLOCK_LEN - NONCE_LEN`. 12 bytes of nonce leaves the maximum 4-byte counter.
 //! type ToyCtr<Dir> = Ctr<ToyBlockCipher, Dir, 16, 16, 12>;
 //!
-//! // CCM takes the permutation, a direction, key length, and a block length like the rest,
-//! // plus the nonce length and the tag length -- both CCM-specific choices rather than cipher params.
+//! // CCM takes the permutation, key length and block length like the rest, plus the nonce
+//! // length and the tag length -- both CCM-specific choices rather than cipher params.
 //! // The nonce length caps the payload (SP 800-38C A.1: `n + q = 15`, `p < 2^8q`) and the tag
 //! // length is the forgery bound; 12 and 16 are the usual pair.
-//! type ToyCcm<Dir> = CcmPacket<ToyBlockCipher, Dir, 16, 16, 12, 16>;
+//! // Each direction is its own type here, and the frame follows: `AAD_LEN` of AAD capacity and
+//! // frames of exactly `DATA_LEN` bytes, since CCM commits to the payload length up front.
+//! type ToyCcmEnc = CcmEncryptor<ToyBlockCipher, 16, 16, 12, 16, 64, 1024>;
+//! type ToyCcmDec = CcmDecryptor<ToyBlockCipher, 16, 16, 12, 16, 64, 1024>;
 //!
 //! // GCM mode is specified in NIST SP 800-38D. `Gcm` fixes the nonce at 12 bytes (Sec 5.2.1.1
 //! // recommends restricting support to 96 bits), and the block is always 16, so neither is a
@@ -153,7 +155,7 @@ pub mod hazmat;
 mod iv;
 
 pub use cbc::Cbc;
-pub use ccm::{CCM, CcmDecryptor, CcmEncryptor, CcmPacket};
+pub use ccm::{CCM, CcmDecryptor, CcmEncryptor};
 pub use cfb::Cfb;
 pub use cfb8::Cfb8;
 pub use ctr::Ctr;
@@ -165,7 +167,7 @@ pub use gcm::{GCM, GCM_NONCE_LEN, Gcm, GcmKeyState};
 pub trait ModeNames {
     /// Reported by [`Cbc`].
     const CBC_ALG_NAME: &'static str;
-    /// Reported by [`CcmPacket`], [`CcmEncryptor`] and [`CcmDecryptor`].
+    /// Reported by [`CcmEncryptor`] and [`CcmDecryptor`].
     const CCM_ALG_NAME: &'static str;
     /// Reported by [`Cfb`].
     const CFB_ALG_NAME: &'static str;
