@@ -153,18 +153,9 @@ pub trait AeadEncryptionKey<
         plaintext: &[u8],
         ciphertext: &mut [u8],
     ) -> Result<(usize, [u8; NONCE_LEN]), SymmetricCipherError> {
-        ciphertext.fill(0);
-        let needed = Self::Encryptor::encrypt_out_len(plaintext.len());
-        if ciphertext.len() < needed {
-            return Err(SymmetricCipherError::OutputBufferTooSmall(needed));
-        }
-        let (mut enc, nonce) = self.create_encryptor(rng)?;
-        enc.do_update_aad(aad)?;
-        let written = enc.do_encrypt_out(plaintext, ciphertext)?;
-        let (last, last_len) = enc.do_encrypt_final()?;
-        // `encrypt_out_len` is exactly `written + last_len`, so this fits in `ciphertext[..needed]`.
-        ciphertext[written..written + last_len].copy_from_slice(&last[..last_len]);
-        Ok((written + last_len, nonce))
+        let (enc, nonce) = self.create_encryptor(rng)?;
+        let written = crate::provided::encrypt_inline(enc, aad, plaintext, ciphertext)?;
+        Ok((written, nonce))
     }
 
     /// As [`encrypt_with_aad_out`](Self::encrypt_with_aad_out), allocating the ciphertext.
@@ -197,20 +188,9 @@ pub trait AeadEncryptionKey<
         plaintext: &[u8],
         ciphertext: &mut [u8],
     ) -> Result<(usize, [u8; NONCE_LEN], [u8; TAG_LEN]), SymmetricCipherError> {
-        ciphertext.fill(0);
-        let needed = Self::Encryptor::encrypt_detached_out_len(plaintext.len());
-        if ciphertext.len() < needed {
-            return Err(SymmetricCipherError::OutputBufferTooSmall(needed));
-        }
-        let (mut enc, nonce) = self.create_encryptor(rng)?;
-        enc.do_update_aad(aad)?;
-        let written = enc.do_encrypt_out(plaintext, ciphertext)?;
-        let mut final_buf = [0u8; FINAL_LEN];
-        let (final_len, tag) = enc.do_encrypt_final_detached_out(&mut final_buf)?;
-        // `encrypt_detached_out_len` bounds `written + final_len`, so this fits in
-        // `ciphertext[..needed]`.
-        ciphertext[written..written + final_len].copy_from_slice(&final_buf[..final_len]);
-        Ok((written + final_len, nonce, tag))
+        let (enc, nonce) = self.create_encryptor(rng)?;
+        let (written, tag) = crate::provided::encrypt_detached(enc, aad, plaintext, ciphertext)?;
+        Ok((written, nonce, tag))
     }
 
     /// As [`encrypt_detached_out`](Self::encrypt_detached_out), allocating the ciphertext.
@@ -244,7 +224,7 @@ pub trait AeadEncryptionKey<
         buf: &mut [u8],
     ) -> Result<([u8; NONCE_LEN], [u8; TAG_LEN]), SymmetricCipherError> {
         let (enc, nonce) = self.create_encryptor(rng)?;
-        let tag = crate::in_place::encrypt_detached(enc, aad, buf)?;
+        let tag = crate::provided::encrypt_detached_in_place(enc, aad, buf)?;
         Ok((nonce, tag))
     }
 }
@@ -393,7 +373,7 @@ pub trait AeadDecryptionKey<
         buf: &mut [u8],
         tag: &[u8; TAG_LEN],
     ) -> Result<(), SymmetricCipherError> {
-        crate::in_place::decrypt_detached(self.create_decryptor(nonce), aad, buf, tag)
+        crate::provided::decrypt_detached_in_place(self.create_decryptor(nonce), aad, buf, tag)
     }
 }
 
