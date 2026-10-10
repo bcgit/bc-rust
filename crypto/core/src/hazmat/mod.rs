@@ -20,5 +20,5 @@ pub use electronic_code_book::ElectronicCodeBook;
 pub use hazardous_operations::do_hazardous_operations;
 pub use key_stream::KeyStream;
 pub use mode::{
-    AeadDecryptMode, AeadEncryptMode, AeadPacketDecryptMode, AeadPacketEncryptMode, Mode,
+    AeadDecryptMode, AeadEncryptMode, AeadPacketDecryptMode, AeadPacketEncryptMode, MacMode, Mode,
 };

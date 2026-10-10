@@ -8,12 +8,13 @@
 //! must commit to the lengths before its first byte -- CCM, whose `B0` carries the payload length
 //! and whose AAD is length-prefixed -- implements [`AeadPacketEncryptMode`] /
 //! [`AeadPacketDecryptMode`] instead, whose constructors take the AAD and payload lengths and
-//! whose workers then need no buffer for either.
+//! whose workers then need no buffer for either. A MAC mode -- CMAC -- implements [`MacMode`],
+//! whose worker takes no nonce and serves both roles.
 
 use crate::errors::SymmetricCipherError;
 use crate::key_material::KeyType;
 use crate::symmetric_key::{AeadDecryptWorker, AeadEncryptWorker};
-use crate::traits::RNG;
+use crate::traits::{MAC, RNG};
 
 /// A mode's per-key state over the permutation `P`.
 ///
@@ -248,4 +249,16 @@ pub trait AeadPacketDecryptMode<
         let dec = Self::decrypt_init(state, nonce, aad.len(), buf.len())?;
         crate::provided::decrypt_detached_in_place(dec, aad, buf, tag)
     }
+}
+
+/// A MAC mode over `P`: the mode's own constructor for its worker, which generates and verifies
+/// alike. The role traits [`crate::symmetric_key::MacGenerationKey`] and
+/// [`crate::symmetric_key::MacVerificationKey`] forward to it.
+pub trait MacMode<P>: Mode<P> {
+    /// The streaming MAC worker this mode produces over `P`.
+    type Worker: MAC;
+
+    /// Begins a MAC over a new message from `state`. Infallible: the state is keyed and there is
+    /// nothing to draw.
+    fn mac_init(state: &Self::KeyState) -> Self::Worker;
 }
