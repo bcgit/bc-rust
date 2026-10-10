@@ -153,7 +153,7 @@ pub mod hazmat;
 mod iv;
 
 pub use cbc::Cbc;
-pub use ccm::{CcmDecryptor, CcmEncryptor, CcmPacket};
+pub use ccm::{CCM, CcmDecryptor, CcmEncryptor, CcmPacket};
 pub use cfb::Cfb;
 pub use cfb8::Cfb8;
 pub use ctr::Ctr;
