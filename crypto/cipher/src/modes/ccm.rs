@@ -204,10 +204,9 @@ where
     /// The largest payload this parameterization can carry, from A.1's "by definition, p<2^8q".
     ///
     /// `q = 8` would make `2^8q` exactly `2^64`, which does not fit a `u64`; there the bound is
-    /// `p <= 2^64 - 1`, i.e. `u64::MAX`, which is no bound at all on a `usize` length. Public so a
-    /// caller choosing a `DATA_LEN` for [`CcmEncryptor`] / [`CcmDecryptor`], or reporting the
-    /// limit in an error message, has the real number instead of re-deriving it.
-    pub const MAX_PAYLOAD_LEN: u64 =
+    /// `p <= 2^64 - 1`, i.e. `u64::MAX`, which is no bound at all on a `usize` length. Callers
+    /// outside the crate have it as [`CCM::MAX_PAYLOAD_LEN`].
+    pub(crate) const MAX_PAYLOAD_LEN: u64 =
         if Self::Q_LEN >= 8 { u64::MAX } else { (1u64 << (8 * Self::Q_LEN)) - 1 };
 
     /// The compile-time shape check, from Appendix A.1 and Sec 5.1; run from the constructor.
@@ -256,7 +255,7 @@ where
     /// [`SymmetricCipherError::KeyMaterialError`] for a key of the wrong type or strength, and
     /// [`SymmetricCipherError::GenericError`] if `payload_len` exceeds A.1's `2^8q - 1`; see
     /// `CcmPacket` for the table.
-    pub fn new(
+    pub(crate) fn new(
         key: &KeyMaterial<KEY_LEN>,
         nonce: &[u8; NONCE_LEN],
         aad: &[u8],
@@ -278,7 +277,7 @@ where
     ///
     /// # Errors
     /// [`SymmetricCipherError::GenericError`] if `payload_len` exceeds A.1's `2^8q - 1`.
-    pub fn from_perm(
+    pub(crate) fn from_perm(
         perm: P,
         nonce: &[u8; NONCE_LEN],
         aad: &[u8],
@@ -295,7 +294,7 @@ where
     ///
     /// # Errors
     /// [`SymmetricCipherError::RNGError`] if the draw fails.
-    pub fn random_nonce(rng: &mut dyn RNG) -> Result<[u8; NONCE_LEN], SymmetricCipherError> {
+    pub(crate) fn random_nonce(rng: &mut dyn RNG) -> Result<[u8; NONCE_LEN], SymmetricCipherError> {
         const {
             assert!(
                 NONCE_LEN >= 12,
@@ -562,7 +561,10 @@ where
     /// [`SymmetricCipherError::StateError`] if `data` would take the total past the declared
     /// payload length, or if it is non-empty while declared AAD is still outstanding. Nothing is
     /// consumed in either case.
-    pub fn do_encrypt_inplace(&mut self, data: &mut [u8]) -> Result<(), SymmetricCipherError> {
+    pub(crate) fn do_encrypt_inplace(
+        &mut self,
+        data: &mut [u8],
+    ) -> Result<(), SymmetricCipherError> {
         self.take_owed(data.len())?;
         self.mac_absorb(data);
         self.ctr.do_encrypt_inplace(data)?;
@@ -575,7 +577,7 @@ where
     /// [`SymmetricCipherError::StateError`] if less payload was supplied than the length declared
     /// to [`Self::new`] -- `B0` commits to that length, so a short message would produce a tag no
     /// verifier could reproduce -- or less AAD than declared, for the same reason.
-    pub fn do_encrypt_final(self) -> Result<[u8; TAG_LEN], SymmetricCipherError> {
+    pub(crate) fn do_encrypt_final(self) -> Result<[u8; TAG_LEN], SymmetricCipherError> {
         if self.aad_owed != 0 {
             return Err(SymmetricCipherError::StateError(
                 "CCM was given less AAD than the declared AAD length",
@@ -599,7 +601,7 @@ where
     /// # Errors
     /// [`SymmetricCipherError::OutputBufferTooSmall`] if `ciphertext` is too short, plus
     /// [`Self::new`]'s errors.
-    pub fn encrypt_detached_out(
+    pub(crate) fn encrypt_detached_out(
         key: &KeyMaterial<KEY_LEN>,
         nonce: &[u8; NONCE_LEN],
         aad: &[u8],
@@ -627,7 +629,7 @@ where
     ///
     /// # Errors
     /// As [`Self::encrypt_detached_out`].
-    pub fn encrypt_out(
+    pub(crate) fn encrypt_out(
         key: &KeyMaterial<KEY_LEN>,
         nonce: &[u8; NONCE_LEN],
         aad: &[u8],
@@ -666,7 +668,10 @@ where
     /// [`SymmetricCipherError::StateError`] if `data` would take the total past the declared
     /// payload length, or if it is non-empty while declared AAD is still outstanding. Nothing is
     /// consumed in either case.
-    pub fn do_decrypt_inplace(&mut self, data: &mut [u8]) -> Result<(), SymmetricCipherError> {
+    pub(crate) fn do_decrypt_inplace(
+        &mut self,
+        data: &mut [u8],
+    ) -> Result<(), SymmetricCipherError> {
         self.take_owed(data.len())?;
         self.ctr.do_decrypt_inplace(data)?;
         self.mac_absorb(data);
@@ -684,7 +689,7 @@ where
     /// [`SymmetricCipherError::AEADTagCheckFailed`] if the tag does not verify, and
     /// [`SymmetricCipherError::StateError`] if less ciphertext was supplied than the length declared
     /// to [`Self::new`], or less AAD than declared.
-    pub fn do_decrypt_final(self, tag: &[u8; TAG_LEN]) -> Result<(), SymmetricCipherError> {
+    pub(crate) fn do_decrypt_final(self, tag: &[u8; TAG_LEN]) -> Result<(), SymmetricCipherError> {
         if self.aad_owed != 0 {
             return Err(SymmetricCipherError::StateError(
                 "CCM was given less AAD than the declared AAD length",
@@ -712,7 +717,7 @@ where
     /// [`SymmetricCipherError::AEADTagCheckFailed`] if the tag does not verify,
     /// [`SymmetricCipherError::OutputBufferTooSmall`] if `plaintext` is too short, plus
     /// [`Self::new`]'s errors.
-    pub fn decrypt_detached_out(
+    pub(crate) fn decrypt_detached_out(
         key: &KeyMaterial<KEY_LEN>,
         nonce: &[u8; NONCE_LEN],
         aad: &[u8],
@@ -753,7 +758,7 @@ where
     /// every inline entry point -- this one, [`CcmDecryptor::do_decrypt_final`] and
     /// [`CcmDecryptor::decrypt_with_aad_out`](AEADCipherDecryptor::decrypt_with_aad_out) -- agrees
     /// on the same input. Otherwise as [`Self::decrypt_detached_out`].
-    pub fn decrypt_out(
+    pub(crate) fn decrypt_out(
         key: &KeyMaterial<KEY_LEN>,
         nonce: &[u8; NONCE_LEN],
         aad: &[u8],
