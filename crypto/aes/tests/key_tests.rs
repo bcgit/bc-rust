@@ -376,3 +376,69 @@ fn in_place_decryption_zeroizes_the_buffer_on_a_bad_tag() {
     ));
     assert!(buf.iter().all(|&b| b == 0));
 }
+
+/// Every `_nonce` form, handed the nonce the drawing form drew, produces the drawing form's
+/// bytes: on GCM through the provided bodies, on CCM through the overridden in-place pair and
+/// the fixed-frame stream.
+#[test]
+fn supplied_nonce_forms_match_the_drawing_forms() {
+    fn check<K>(key: &K, msg: &[u8])
+    where
+        K: AeadEncryptionKey<16, 12, 16, 16> + AeadDecryptionKey<16, 12, 16, 16>,
+    {
+        let (nonce, ct, tag) = key.encrypt_detached(&mut rng(), AAD, msg).unwrap();
+        let inline = key.encrypt_with_aad(&mut rng(), AAD, msg).unwrap().1;
+
+        assert_eq!(key.encrypt_detached_nonce(&nonce, AAD, msg).unwrap(), (ct.clone(), tag));
+        assert_eq!(key.encrypt_with_aad_nonce(&nonce, AAD, msg).unwrap(), inline);
+
+        let mut out = vec![0u8; msg.len() + 16];
+        let (n, tag_n) = key.encrypt_detached_nonce_out(&nonce, AAD, msg, &mut out).unwrap();
+        assert_eq!((n, &out[..n], tag_n), (ct.len(), &ct[..], tag));
+        let n = key.encrypt_with_aad_nonce_out(&nonce, AAD, msg, &mut out).unwrap();
+        assert_eq!(&out[..n], &inline[..]);
+
+        let mut buf = msg.to_vec();
+        assert_eq!(key.encrypt_detached_in_place_nonce(&nonce, AAD, &mut buf).unwrap(), tag);
+        assert_eq!(buf, ct);
+
+        let mut enc = key.create_encryptor_nonce(&nonce);
+        enc.do_update_aad(AAD).unwrap();
+        let mut streamed = vec![0u8; msg.len()];
+        let n = enc.do_encrypt_out(msg, &mut streamed).unwrap();
+        let (_, _, tag_s) = enc.do_encrypt_final_detached().unwrap();
+        assert_eq!((&streamed[..n], tag_s), (&ct[..], tag));
+
+        assert_eq!(key.decrypt_detached(&nonce, AAD, &ct, &tag).unwrap(), msg);
+    }
+
+    check(&AES128Key::<GCM>::from_key_material(&material::<16>()).unwrap(), &message(200));
+    // The CCM key's stream is fixed at this length, so every form above can run on it.
+    check(
+        &AES128Key::<CCM<12, 16, { AAD.len() }, 48>>::from_key_material(&material::<16>()).unwrap(),
+        &message(48),
+    );
+}
+
+/// A CCM key with a nonce below the 12-byte floor for drawn nonces: the supplied-nonce forms
+/// compile and run at any A.1 length, agreeing with the packet API, while the drawing forms
+/// are never instantiated for it.
+#[test]
+fn a_short_ccm_nonce_is_reachable_through_the_supplied_nonce_forms() {
+    let km = material::<16>();
+    let key = AES128Key::<CCM<8, 8, 0, 0>>::from_key_material(&km).unwrap();
+    let nonce = [0xA5u8; 8];
+    let msg = message(100);
+
+    let mut buf = msg.clone();
+    let tag = key.encrypt_detached_in_place_nonce(&nonce, AAD, &mut buf).unwrap();
+    let mut ct = vec![0u8; msg.len()];
+    let (n, tag_p) = AES_CCM_128_Packet::<Encrypting, 8, 8>::encrypt_detached_out(
+        &km, &nonce, AAD, &msg, &mut ct,
+    )
+    .unwrap();
+    assert_eq!((n, &ct, tag_p), (msg.len(), &buf, tag));
+
+    key.decrypt_detached_in_place(&nonce, AAD, &mut buf, &tag).unwrap();
+    assert_eq!(buf, msg);
+}

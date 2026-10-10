@@ -349,12 +349,28 @@ fn ccm_encrypt_in_place<P, const K: usize, const N: usize, const T: usize>(
 where
     P: ElectronicCodeBook<K, AES_BLOCK_LEN> + ModeNames + Clone,
 {
-    type Packet<P, const K: usize, const N: usize, const T: usize> =
-        CcmPacket<P, Encrypting, K, AES_BLOCK_LEN, N, T>;
-    let nonce = Packet::<P, K, N, T>::random_nonce(rng)?;
-    let mut ccm = Packet::<P, K, N, T>::from_perm(perm.clone(), &nonce, aad, buf.len())?;
+    let nonce = CcmPacket::<P, Encrypting, K, AES_BLOCK_LEN, N, T>::random_nonce(rng)?;
+    Ok((nonce, ccm_encrypt_in_place_nonce::<P, K, N, T>(perm, &nonce, aad, buf)?))
+}
+
+/// [`ccm_encrypt_in_place`] under a supplied nonce, which may be any A.1 length.
+fn ccm_encrypt_in_place_nonce<P, const K: usize, const N: usize, const T: usize>(
+    perm: &P,
+    nonce: &[u8; N],
+    aad: &[u8],
+    buf: &mut [u8],
+) -> Result<[u8; T], SymmetricCipherError>
+where
+    P: ElectronicCodeBook<K, AES_BLOCK_LEN> + ModeNames + Clone,
+{
+    let mut ccm = CcmPacket::<P, Encrypting, K, AES_BLOCK_LEN, N, T>::from_perm(
+        perm.clone(),
+        nonce,
+        aad,
+        buf.len(),
+    )?;
     ccm.do_encrypt_inplace(buf)?;
-    Ok((nonce, ccm.do_encrypt_final()?))
+    ccm.do_encrypt_final()
 }
 
 /// The in-place decryption every `CCM` mode impl forwards to. `buf` is zeroized on any error,
@@ -405,6 +421,10 @@ impl<const N: usize, const T: usize, const A: usize, const D: usize>
         Self::Encryptor::from_perm(state.clone(), rng)
     }
 
+    fn encrypt_init_nonce(state: &Self::KeyState, nonce: &[u8; N]) -> Self::Encryptor {
+        Self::Encryptor::from_perm_nonce(state.clone(), nonce)
+    }
+
     fn encrypt_detached_in_place(
         state: &Self::KeyState,
         rng: &mut dyn RNG,
@@ -412,6 +432,15 @@ impl<const N: usize, const T: usize, const A: usize, const D: usize>
         buf: &mut [u8],
     ) -> Result<([u8; N], [u8; T]), SymmetricCipherError> {
         ccm_encrypt_in_place::<AES128Internal, 16, N, T>(state, rng, aad, buf)
+    }
+
+    fn encrypt_detached_in_place_nonce(
+        state: &Self::KeyState,
+        nonce: &[u8; N],
+        aad: &[u8],
+        buf: &mut [u8],
+    ) -> Result<[u8; T], SymmetricCipherError> {
+        ccm_encrypt_in_place_nonce::<AES128Internal, 16, N, T>(state, nonce, aad, buf)
     }
 }
 
@@ -458,6 +487,10 @@ impl<const N: usize, const T: usize, const A: usize, const D: usize>
         Self::Encryptor::from_perm(state.clone(), rng)
     }
 
+    fn encrypt_init_nonce(state: &Self::KeyState, nonce: &[u8; N]) -> Self::Encryptor {
+        Self::Encryptor::from_perm_nonce(state.clone(), nonce)
+    }
+
     fn encrypt_detached_in_place(
         state: &Self::KeyState,
         rng: &mut dyn RNG,
@@ -465,6 +498,15 @@ impl<const N: usize, const T: usize, const A: usize, const D: usize>
         buf: &mut [u8],
     ) -> Result<([u8; N], [u8; T]), SymmetricCipherError> {
         ccm_encrypt_in_place::<AES192Internal, 24, N, T>(state, rng, aad, buf)
+    }
+
+    fn encrypt_detached_in_place_nonce(
+        state: &Self::KeyState,
+        nonce: &[u8; N],
+        aad: &[u8],
+        buf: &mut [u8],
+    ) -> Result<[u8; T], SymmetricCipherError> {
+        ccm_encrypt_in_place_nonce::<AES192Internal, 24, N, T>(state, nonce, aad, buf)
     }
 }
 
@@ -511,6 +553,10 @@ impl<const N: usize, const T: usize, const A: usize, const D: usize>
         Self::Encryptor::from_perm(state.clone(), rng)
     }
 
+    fn encrypt_init_nonce(state: &Self::KeyState, nonce: &[u8; N]) -> Self::Encryptor {
+        Self::Encryptor::from_perm_nonce(state.clone(), nonce)
+    }
+
     fn encrypt_detached_in_place(
         state: &Self::KeyState,
         rng: &mut dyn RNG,
@@ -518,6 +564,15 @@ impl<const N: usize, const T: usize, const A: usize, const D: usize>
         buf: &mut [u8],
     ) -> Result<([u8; N], [u8; T]), SymmetricCipherError> {
         ccm_encrypt_in_place::<AES256Internal, 32, N, T>(state, rng, aad, buf)
+    }
+
+    fn encrypt_detached_in_place_nonce(
+        state: &Self::KeyState,
+        nonce: &[u8; N],
+        aad: &[u8],
+        buf: &mut [u8],
+    ) -> Result<[u8; T], SymmetricCipherError> {
+        ccm_encrypt_in_place_nonce::<AES256Internal, 32, N, T>(state, nonce, aad, buf)
     }
 }
 

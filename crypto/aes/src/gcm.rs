@@ -193,6 +193,10 @@ impl<const TAG_LEN: usize> AeadEncryptMode<AES128Internal, 16, GCM_NONCE_LEN, TA
     ) -> Result<(Self::Encryptor, [u8; GCM_NONCE_LEN]), SymmetricCipherError> {
         Self::Encryptor::from_key_state(state, rng)
     }
+
+    fn encrypt_init_nonce(state: &Self::KeyState, nonce: &[u8; GCM_NONCE_LEN]) -> Self::Encryptor {
+        Self::Encryptor::from_key_state_nonce(state, nonce)
+    }
 }
 
 impl<const TAG_LEN: usize> AeadDecryptMode<AES128Internal, 16, GCM_NONCE_LEN, TAG_LEN, TAG_LEN>
@@ -225,6 +229,10 @@ impl<const TAG_LEN: usize> AeadEncryptMode<AES192Internal, 24, GCM_NONCE_LEN, TA
     ) -> Result<(Self::Encryptor, [u8; GCM_NONCE_LEN]), SymmetricCipherError> {
         Self::Encryptor::from_key_state(state, rng)
     }
+
+    fn encrypt_init_nonce(state: &Self::KeyState, nonce: &[u8; GCM_NONCE_LEN]) -> Self::Encryptor {
+        Self::Encryptor::from_key_state_nonce(state, nonce)
+    }
 }
 
 impl<const TAG_LEN: usize> AeadDecryptMode<AES192Internal, 24, GCM_NONCE_LEN, TAG_LEN, TAG_LEN>
@@ -256,6 +264,10 @@ impl<const TAG_LEN: usize> AeadEncryptMode<AES256Internal, 32, GCM_NONCE_LEN, TA
         rng: &mut dyn RNG,
     ) -> Result<(Self::Encryptor, [u8; GCM_NONCE_LEN]), SymmetricCipherError> {
         Self::Encryptor::from_key_state(state, rng)
+    }
+
+    fn encrypt_init_nonce(state: &Self::KeyState, nonce: &[u8; GCM_NONCE_LEN]) -> Self::Encryptor {
+        Self::Encryptor::from_key_state_nonce(state, nonce)
     }
 }
 
