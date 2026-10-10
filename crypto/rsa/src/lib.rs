@@ -264,10 +264,6 @@
 //!   security argument (RFC 8017 §8.1, Appendix A.2.3's references) assumes the salt is drawn
 //!   fresh and unpredictably each time. Signing with a low-quality or unseeded RNG, or reusing a
 //!   fixed salt outside a test, weakens that argument even though it will not directly leak `d`.
-//! - **Verification rejects a signature representative more than 64 bits shorter than `n`.**
-//!   RFC 8017 §5.2.2 accepts any `s` in `[0, n - 1]`; this crate additionally reports `s` with
-//!   `bitlen(s) <= bitlen(n) - 64` as an invalid signature. A genuine signature trips this with
-//!   probability 2^-64. Wycheproof's `SmallSignature` vectors are therefore rejected by policy.
 //! - **`ctx` is accepted but ignored.** RSASSA-PKCS1-v1_5 and RSASSA-PSS (RFC 8017 §8) have no
 //!   context-string input; `Signer`/`SignatureVerifier`'s `ctx` parameter is accepted for trait
 //!   conformance and silently ignored, as `bouncycastle-ecdsa` does for ECDSA. A caller relying
