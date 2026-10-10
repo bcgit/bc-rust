@@ -131,6 +131,7 @@ impl ModeNames for UnpairedAes128 {
     const CTR_ALG_NAME: &'static str = "AES_CTR_128 (unpaired)";
     const ECB_ALG_NAME: &'static str = "AES_ECB_128 (unpaired)";
     const GCM_ALG_NAME: &'static str = "AES_GCM_128 (unpaired)";
+    const GMAC_ALG_NAME: &'static str = "AES_GMAC_128 (unpaired)";
 }
 
 impl ElectronicCodeBook<16, BLOCK_LEN> for UnpairedAes128 {
