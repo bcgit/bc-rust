@@ -49,6 +49,24 @@ pub trait AeadEncryptMode<
         state: &Self::KeyState,
         rng: &mut dyn RNG,
     ) -> Result<(Self::Encryptor, [u8; NONCE_LEN]), SymmetricCipherError>;
+
+    /// Encrypts `buf` in place from `state` under `aad` and a nonce drawn from `rng`, returning
+    /// the nonce and the detached tag. Provided by streaming `buf` through
+    /// [`encrypt_init`](Self::encrypt_init)'s encryptor a chunk at a time; a mode whose worker
+    /// runs in place natively, or whose streaming worker cannot take the message, overrides it.
+    ///
+    /// # Errors
+    /// As [`encrypt_init`](Self::encrypt_init), or any error of the encryptor's streaming methods.
+    fn encrypt_detached_in_place(
+        state: &Self::KeyState,
+        rng: &mut dyn RNG,
+        aad: &[u8],
+        buf: &mut [u8],
+    ) -> Result<([u8; NONCE_LEN], [u8; TAG_LEN]), SymmetricCipherError> {
+        let (enc, nonce) = Self::encrypt_init(state, rng)?;
+        let tag = crate::in_place::encrypt_detached(enc, aad, buf)?;
+        Ok((nonce, tag))
+    }
 }
 
 /// The decryption side of an AEAD mode over `P`: the mode's own constructor for its decryptor.
@@ -66,4 +84,22 @@ pub trait AeadDecryptMode<
     /// Begins the decryption of a message encrypted under `nonce` from `state`. Infallible: the
     /// state is already keyed and the nonce length is in the type.
     fn decrypt_init(state: &Self::KeyState, nonce: &[u8; NONCE_LEN]) -> Self::Decryptor;
+
+    /// Decrypts `buf` in place from `state` under `nonce` and `aad`, and checks `tag`. On any
+    /// error `buf` is left zeroized, since the plaintext was written into it before the tag could
+    /// be checked. Provided over [`decrypt_init`](Self::decrypt_init) as
+    /// [`AeadEncryptMode::encrypt_detached_in_place`] is over its constructor.
+    ///
+    /// # Errors
+    /// [`SymmetricCipherError::AEADTagCheckFailed`] if the tag does not verify, or any error of
+    /// the decryptor's streaming methods.
+    fn decrypt_detached_in_place(
+        state: &Self::KeyState,
+        nonce: &[u8; NONCE_LEN],
+        aad: &[u8],
+        buf: &mut [u8],
+        tag: &[u8; TAG_LEN],
+    ) -> Result<(), SymmetricCipherError> {
+        crate::in_place::decrypt_detached(Self::decrypt_init(state, nonce), aad, buf, tag)
+    }
 }
