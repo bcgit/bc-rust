@@ -8,8 +8,8 @@
 
 pub mod errors;
 pub mod hazmat;
-mod in_place;
 pub mod key_material;
+mod provided;
 pub mod security_strength;
 pub mod symmetric_key;
 pub mod traits;

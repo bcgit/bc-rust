@@ -64,7 +64,7 @@ pub trait AeadEncryptMode<
         buf: &mut [u8],
     ) -> Result<([u8; NONCE_LEN], [u8; TAG_LEN]), SymmetricCipherError> {
         let (enc, nonce) = Self::encrypt_init(state, rng)?;
-        let tag = crate::in_place::encrypt_detached(enc, aad, buf)?;
+        let tag = crate::provided::encrypt_detached_in_place(enc, aad, buf)?;
         Ok((nonce, tag))
     }
 }
@@ -100,6 +100,6 @@ pub trait AeadDecryptMode<
         buf: &mut [u8],
         tag: &[u8; TAG_LEN],
     ) -> Result<(), SymmetricCipherError> {
-        crate::in_place::decrypt_detached(Self::decrypt_init(state, nonce), aad, buf, tag)
+        crate::provided::decrypt_detached_in_place(Self::decrypt_init(state, nonce), aad, buf, tag)
     }
 }
