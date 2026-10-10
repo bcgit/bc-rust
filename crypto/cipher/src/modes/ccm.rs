@@ -368,6 +368,38 @@ where
         Self::from_perm_with_lengths(perm, nonce, aad_len, payload_len)
     }
 
+    /// As [`Self::new`], from a key schedule that has already been expanded: the constructor a
+    /// mode-bound key's in-place one-shots use, where the key was validated once at construction.
+    ///
+    /// # Errors
+    /// [`SymmetricCipherError::GenericError`] if `payload_len` exceeds A.1's `2^8q - 1`.
+    pub fn from_perm(
+        perm: P,
+        nonce: &[u8; NONCE_LEN],
+        aad: &[u8],
+        payload_len: usize,
+    ) -> Result<Self, SymmetricCipherError> {
+        let mut ccm = Self::from_perm_with_lengths(perm, nonce, aad.len(), payload_len)?;
+        ccm.absorb_aad(aad);
+        Ok(ccm)
+    }
+
+    /// Draws a nonce for an encryption, under the floor every drawing form has: the
+    /// random-collision bound is only useful from 96 bits up, so a `NONCE_LEN` below 12 is a
+    /// compile error at the call that would draw, and nowhere else.
+    ///
+    /// # Errors
+    /// [`SymmetricCipherError::RNGError`] if the draw fails.
+    pub fn random_nonce(rng: &mut dyn RNG) -> Result<[u8; NONCE_LEN], SymmetricCipherError> {
+        const {
+            assert!(
+                NONCE_LEN >= 12,
+                "CCM: a generated nonce needs NONCE_LEN >= 12; supply the nonce for a shorter one"
+            );
+        }
+        random_iv::<NONCE_LEN>(rng)
+    }
+
     /// Supplies the next piece of the AAD declared to [`Self::new_with_lengths`]. A sequence of
     /// calls is equivalent to one call over the concatenation. An empty `aad` is a no-op.
     ///
@@ -1290,6 +1322,21 @@ where
         self.0.ccm.do_encrypt_final()
     }
 
+    /// Begins an encryption from a key schedule that has already been expanded, under a nonce
+    /// drawn from `rng`: the constructor a mode-bound key's `encrypt_init` uses. The result is
+    /// identical to [`SymmetricCipherEncryptor::do_encrypt_init_rng`] from the same key and RNG.
+    ///
+    /// # Errors
+    /// [`SymmetricCipherError::RNGError`] if the nonce draw fails; nothing else can.
+    pub fn from_perm(
+        perm: P,
+        rng: &mut dyn RNG,
+    ) -> Result<(Self, [u8; NONCE_LEN]), SymmetricCipherError> {
+        Self::check_random_nonce();
+        let nonce = random_iv::<NONCE_LEN>(rng)?;
+        Ok((Self(CcmAdapter::new(perm, &nonce)), nonce))
+    }
+
     /// The floor for a generated nonce, run from every form that draws one: the random-collision
     /// bound is only useful from 96 bits up. A const block in a generic function is evaluated
     /// when that function is instantiated, so a `NONCE_LEN` below the floor is a compile error
@@ -1330,15 +1377,12 @@ where
         key: &KeyMaterial<KEY_LEN>,
         rng: &mut dyn RNG,
     ) -> Result<(Self, [u8; NONCE_LEN]), SymmetricCipherError> {
-        Self::check_random_nonce();
         // `P::new`'s own checks are the only key validation needed, exactly as for `CcmPacket` itself
         // and every other mode in this crate; `random_iv` is CBC/CFB's same OS-backed draw --
         // Sec 5.3 asks only for uniqueness, not CBC/CFB's unpredictability, but a CSPRNG draw is
         // the only way to be unique without state `do_encrypt_init` does not have.
         key.check_algorithm(Self::ALG_NAME)?;
-        let perm = P::new(key)?;
-        let nonce = random_iv::<NONCE_LEN>(rng)?;
-        Ok((Self(CcmAdapter::new(perm, &nonce)), nonce))
+        Self::from_perm(P::new(key)?, rng)
     }
 
     /// The identity: nothing is held back, since `B0` is already committed to `DATA_LEN`.
@@ -1661,6 +1705,14 @@ impl<
 where
     P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
 {
+    /// Begins a decryption from a key schedule that has already been expanded: the constructor a
+    /// mode-bound key's `decrypt_init` uses. Infallible, as [`AeadDecryptMode::decrypt_init`] is.
+    ///
+    /// [`AeadDecryptMode::decrypt_init`]: bouncycastle_core::hazmat::AeadDecryptMode::decrypt_init
+    pub fn from_perm(perm: P, nonce: &[u8; NONCE_LEN]) -> Self {
+        Self { inner: CcmAdapter::new(perm, nonce), tag: [0u8; TAG_LEN], tag_len: 0 }
+    }
+
     /// Every final comes here once it has settled which bytes are the tag: Sec 6.2 step 10,
     /// through [`CcmPacket::do_decrypt_final`]. The header goes in first if no payload call put it
     /// there, which is the `DATA_LEN = 0` message.
@@ -1694,8 +1746,7 @@ where
     ) -> Result<Self, SymmetricCipherError> {
         // `P::new`'s own checks are the only key validation needed; see the encryptor.
         key.check_algorithm(Self::ALG_NAME)?;
-        let perm = P::new(key)?;
-        Ok(Self { inner: CcmAdapter::new(perm, nonce), tag: [0u8; TAG_LEN], tag_len: 0 })
+        Ok(Self::from_perm(P::new(key)?, nonce))
     }
 
     /// Every byte of `input_len` that is still inside the declared payload; the rest can only be
@@ -2264,3 +2315,20 @@ mod tests {
         assert_eq!(*ccm.y, expected, "y must be B0 ^ B1, with B1 starting with [14]_16");
     }
 }
+
+/// The CCM mode type: the `M` of a mode-bound key such as `AES128Key<CCM<12, 16, 0, 64>>`.
+///
+/// The frame -- `AAD_LEN` and `DATA_LEN` -- is on the mode because the streaming worker a key
+/// produces is [`CcmEncryptor`] / [`CcmDecryptor`], which must commit to the lengths before the
+/// first byte (`B0` carries the payload length) and have nowhere to take them at run time. The
+/// key's in-place one-shots do not use the frame: they go through [`CcmPacket`] with the message's
+/// own lengths, so a `CCM` key takes any message length there. The [`Mode`] and AEAD mode-trait
+/// impls are written by each permutation's crate while the cipher traits still carry `KEY_LEN`.
+///
+/// [`Mode`]: bouncycastle_core::hazmat::Mode
+pub struct CCM<
+    const NONCE_LEN: usize,
+    const TAG_LEN: usize,
+    const AAD_LEN: usize,
+    const DATA_LEN: usize,
+>;
