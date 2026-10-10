@@ -52,7 +52,9 @@ use bouncycastle::aes::{AES128Key, AES192Key, AES256Key};
 use bouncycastle::cipher::modes::CCM;
 use bouncycastle::core::errors::SymmetricCipherError;
 use bouncycastle::core::key_material::KeyMaterial;
-use bouncycastle::core::symmetric_key::{AeadDecryptionKey, AeadEncryptionKey, FromKeyMaterial};
+use bouncycastle::core::symmetric_key::{
+    AeadPacketDecryptionKey, AeadPacketEncryptionKey, FromKeyMaterial,
+};
 use bouncycastle::hex;
 
 use crate::helpers;
@@ -63,13 +65,11 @@ use crate::helpers::block_mode_helpers::{CipherDirection, load_key};
 /// The one-shots this command uses are on the key's role traits, and the key type carries the
 /// nonce and tag lengths as const parameters, so a generic `run` over the key length needs a way
 /// to name the key type for an `(N, T)` it chooses at run time: this generic associated type.
-/// The frame parameters are zero: this command never streams through the key's fixed-frame
-/// worker, only runs the in-place one-shots, which take any length.
 trait CcmKeys<const KEY_LEN: usize> {
     /// The key type at nonce length `N` and tag length `T`.
     type Key<const N: usize, const T: usize>: FromKeyMaterial<KEY_LEN>
-        + AeadEncryptionKey<KEY_LEN, N, T, T>
-        + AeadDecryptionKey<KEY_LEN, N, T, T>;
+        + AeadPacketEncryptionKey<KEY_LEN, N, T, T>
+        + AeadPacketDecryptionKey<KEY_LEN, N, T, T>;
 }
 
 struct Aes128;
@@ -77,15 +77,15 @@ struct Aes192;
 struct Aes256;
 
 impl CcmKeys<16> for Aes128 {
-    type Key<const N: usize, const T: usize> = AES128Key<CCM<N, T, 0, 0>>;
+    type Key<const N: usize, const T: usize> = AES128Key<CCM<N, T>>;
 }
 
 impl CcmKeys<24> for Aes192 {
-    type Key<const N: usize, const T: usize> = AES192Key<CCM<N, T, 0, 0>>;
+    type Key<const N: usize, const T: usize> = AES192Key<CCM<N, T>>;
 }
 
 impl CcmKeys<32> for Aes256 {
-    type Key<const N: usize, const T: usize> = AES256Key<CCM<N, T, 0, 0>>;
+    type Key<const N: usize, const T: usize> = AES256Key<CCM<N, T>>;
 }
 
 /// AES-128 CCM. See the module docs and the subcommand help.
