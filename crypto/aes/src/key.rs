@@ -8,6 +8,9 @@
 //! subkey, or for CMAC the stored subkeys). Using one key under two modes is two
 //! `from_key_material` calls on two key types; the accidental version does not compile. A MAC
 //! mode's key takes `KeyType::MACKey` material, a cipher mode's `KeyType::SymmetricCipherKey`.
+//! Which workers a key hands out is decided by its mode: the AEAD and MAC role traits for the
+//! modes that fit them, and for `GMAC`, whose tag is nonce-bound, an inherent pair (see
+//! [`crate::gmac`]).
 //!
 //! # Usage Examples
 //!
@@ -59,7 +62,8 @@
 //! # Memory Usage
 //!
 //! A key is its mode's per-key state: the expanded schedule, 176, 208 or 240 bytes for AES-128,
-//! -192 and -256, plus 16 bytes of hash subkey under `GCM` or 32 bytes of subkeys under `CMAC`.
+//! -192 and -256, plus 16 bytes of hash subkey under `GCM` or `GMAC`, or 32 bytes of subkeys
+//! under `CMAC`.
 //! The cost is paid per key, not per message, and replaces the per-message validation and
 //! expansion of the `KeyMaterial` path.
 
@@ -84,7 +88,7 @@ use bouncycastle_core::traits::RNG;
 /// and so is zeroized on drop; the key has no `Debug` and no way to read the material back. A
 /// caller who needs the bytes again keeps the `KeyMaterial`.
 pub struct AESKey<P: AESParams, M: Mode<AESInternal<P>>> {
-    state: M::KeyState,
+    pub(crate) state: M::KeyState,
 }
 
 /// An AES-128 key for the mode `M`: 16 bytes of material, expanded to a 10-round schedule.
