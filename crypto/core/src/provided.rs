@@ -1,17 +1,18 @@
 //! The provided bodies of the role keys' and mode traits' one-shots, over a worker that has
-//! already been constructed, so that the drawing and the supplied-nonce forms share them.
+//! already been constructed, so that the drawing, supplied-nonce and packet forms share them.
 //!
 //! The `_out` bodies stream the message from one slice to another. The in-place bodies run a
-//! message in its own buffer through the same split-slice update methods: each chunk is copied out to a small stack buffer and processed back into the bytes it came
-//! from. The output never overtakes the input: a streaming cipher emits at most what it has been
-//! given, so after `consumed` bytes have been read, at most `consumed` have been written, and the
-//! slice `[written, consumed)` is both already read and long enough for what this call can emit.
-//! That holds for a cipher that holds bytes back as well as for one that releases them at once.
-//! The price over a true in-place update is one memcpy of the data through `CHUNK` bytes of
-//! stack, and no second buffer the size of the message.
+//! message in its own buffer through the same split-slice update methods: each chunk is copied out
+//! to a small stack buffer and processed back into the bytes it came from. The output never
+//! overtakes the input: a streaming cipher emits at most what it has been given, so after
+//! `consumed` bytes have been read, at most `consumed` have been written, and the slice
+//! `[written, consumed)` is both already read and long enough for what this call can emit. That
+//! holds for a cipher that holds bytes back as well as for one that releases them at once. The
+//! price over a true in-place update is one memcpy of the data through `CHUNK` bytes of stack,
+//! and no second buffer the size of the message.
 
 use crate::errors::SymmetricCipherError;
-use crate::traits::{AEADCipherDecryptor, AEADCipherEncryptor};
+use crate::symmetric_key::{AeadDecryptWorker, AeadEncryptWorker};
 
 /// Bytes copied out per step. Four 16-byte blocks keeps a block-cipher mode on its wide path.
 const CHUNK: usize = 64;
@@ -25,7 +26,6 @@ const CHUNK: usize = 64;
 /// the worker's streaming methods.
 pub(crate) fn encrypt_inline<
     E,
-    const KEY_LEN: usize,
     const NONCE_LEN: usize,
     const TAG_LEN: usize,
     const FINAL_LEN: usize,
@@ -36,7 +36,7 @@ pub(crate) fn encrypt_inline<
     ciphertext: &mut [u8],
 ) -> Result<usize, SymmetricCipherError>
 where
-    E: AEADCipherEncryptor<KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN>,
+    E: AeadEncryptWorker<NONCE_LEN, TAG_LEN, FINAL_LEN>,
 {
     ciphertext.fill(0);
     let needed = E::encrypt_out_len(plaintext.len());
@@ -58,7 +58,6 @@ where
 /// As [`encrypt_inline`].
 pub(crate) fn encrypt_detached<
     E,
-    const KEY_LEN: usize,
     const NONCE_LEN: usize,
     const TAG_LEN: usize,
     const FINAL_LEN: usize,
@@ -69,7 +68,7 @@ pub(crate) fn encrypt_detached<
     ciphertext: &mut [u8],
 ) -> Result<(usize, [u8; TAG_LEN]), SymmetricCipherError>
 where
-    E: AEADCipherEncryptor<KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN>,
+    E: AeadEncryptWorker<NONCE_LEN, TAG_LEN, FINAL_LEN>,
 {
     ciphertext.fill(0);
     let needed = E::encrypt_detached_out_len(plaintext.len());
@@ -92,7 +91,6 @@ where
 /// Any error of the worker's streaming methods.
 pub(crate) fn encrypt_detached_in_place<
     E,
-    const KEY_LEN: usize,
     const NONCE_LEN: usize,
     const TAG_LEN: usize,
     const FINAL_LEN: usize,
@@ -102,7 +100,7 @@ pub(crate) fn encrypt_detached_in_place<
     buf: &mut [u8],
 ) -> Result<[u8; TAG_LEN], SymmetricCipherError>
 where
-    E: AEADCipherEncryptor<KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN>,
+    E: AeadEncryptWorker<NONCE_LEN, TAG_LEN, FINAL_LEN>,
 {
     enc.do_update_aad(aad)?;
     let mut tmp = [0u8; CHUNK];
@@ -120,6 +118,90 @@ where
     Ok(tag)
 }
 
+/// Decrypts `ciphertext`, tag inline, through `dec` after absorbing `aad` into `plaintext`, and
+/// returns the number of bytes written. `plaintext` is zeroized first, must hold
+/// `decrypt_out_len(ciphertext.len())` bytes, and is zeroized again before an error is returned.
+///
+/// # Errors
+/// [`SymmetricCipherError::OutputBufferTooSmall`] if `plaintext` is too short,
+/// [`SymmetricCipherError::AEADTagCheckFailed`] if the tag does not verify, or any error of the
+/// worker's streaming methods.
+pub(crate) fn decrypt_inline<
+    D,
+    const NONCE_LEN: usize,
+    const TAG_LEN: usize,
+    const FINAL_LEN: usize,
+>(
+    mut dec: D,
+    aad: &[u8],
+    ciphertext: &[u8],
+    plaintext: &mut [u8],
+) -> Result<usize, SymmetricCipherError>
+where
+    D: AeadDecryptWorker<NONCE_LEN, TAG_LEN, FINAL_LEN>,
+{
+    plaintext.fill(0);
+    let needed = D::decrypt_out_len(ciphertext.len());
+    if plaintext.len() < needed {
+        return Err(SymmetricCipherError::OutputBufferTooSmall(needed));
+    }
+    dec.do_update_aad(aad)?;
+    let written = dec.do_decrypt_out(ciphertext, plaintext)?;
+    match dec.do_decrypt_final() {
+        Ok((last, data_len)) => {
+            // `decrypt_out_len` bounds `written + data_len`, so this fits in `plaintext[..needed]`.
+            plaintext[written..written + data_len].copy_from_slice(&last[..data_len]);
+            Ok(written + data_len)
+        }
+        Err(e) => {
+            // What `do_decrypt_out` released is unauthenticated, and this one-shot owns the
+            // whole message, so it does not leave that in the caller's hands.
+            plaintext[..written].fill(0);
+            Err(e)
+        }
+    }
+}
+
+/// As [`decrypt_inline`] with the tag supplied separately; `plaintext` needs
+/// `decrypt_detached_out_len(ciphertext.len())` bytes.
+///
+/// # Errors
+/// As [`decrypt_inline`].
+pub(crate) fn decrypt_detached<
+    D,
+    const NONCE_LEN: usize,
+    const TAG_LEN: usize,
+    const FINAL_LEN: usize,
+>(
+    mut dec: D,
+    aad: &[u8],
+    ciphertext: &[u8],
+    tag: &[u8; TAG_LEN],
+    plaintext: &mut [u8],
+) -> Result<usize, SymmetricCipherError>
+where
+    D: AeadDecryptWorker<NONCE_LEN, TAG_LEN, FINAL_LEN>,
+{
+    plaintext.fill(0);
+    let needed = D::decrypt_detached_out_len(ciphertext.len());
+    if plaintext.len() < needed {
+        return Err(SymmetricCipherError::OutputBufferTooSmall(needed));
+    }
+    dec.do_update_aad(aad)?;
+    let written = dec.do_decrypt_out(ciphertext, plaintext)?;
+    let mut final_buf = [0u8; FINAL_LEN];
+    match dec.do_decrypt_final_detached_out(tag, &mut final_buf) {
+        Ok(final_len) => {
+            plaintext[written..written + final_len].copy_from_slice(&final_buf[..final_len]);
+            Ok(written + final_len)
+        }
+        Err(e) => {
+            plaintext[..written].fill(0);
+            Err(e)
+        }
+    }
+}
+
 /// Decrypts `buf` in place through `dec` after absorbing `aad`, and checks `tag`. On any error
 /// `buf` is zeroized: the plaintext was written into it before the tag could be checked.
 ///
@@ -128,7 +210,6 @@ where
 /// worker's streaming methods.
 pub(crate) fn decrypt_detached_in_place<
     D,
-    const KEY_LEN: usize,
     const NONCE_LEN: usize,
     const TAG_LEN: usize,
     const FINAL_LEN: usize,
@@ -139,7 +220,7 @@ pub(crate) fn decrypt_detached_in_place<
     tag: &[u8; TAG_LEN],
 ) -> Result<(), SymmetricCipherError>
 where
-    D: AEADCipherDecryptor<KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN>,
+    D: AeadDecryptWorker<NONCE_LEN, TAG_LEN, FINAL_LEN>,
 {
     let result = (|| {
         dec.do_update_aad(aad)?;
@@ -161,4 +242,15 @@ where
         buf.fill(0);
     }
     result
+}
+
+/// The payload length inside an inline `ciphertext || tag`, or the malformed-input error if
+/// there is not room for a tag.
+///
+/// # Errors
+/// [`SymmetricCipherError::DecryptionFailed`] if `ciphertext_len < TAG_LEN`.
+pub(crate) fn inline_payload_len<const TAG_LEN: usize>(
+    ciphertext_len: usize,
+) -> Result<usize, SymmetricCipherError> {
+    ciphertext_len.checked_sub(TAG_LEN).ok_or(SymmetricCipherError::DecryptionFailed)
 }
