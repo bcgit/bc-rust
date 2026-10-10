@@ -138,7 +138,7 @@ fn a_buffering_pair_is_handled_by_every_default_method() {
         }
         fn do_encrypt_final(self) -> Result<([u8; FINAL_LEN], usize), SymmetricCipherError> {
             let mut out = [0u8; FINAL_LEN];
-            let (n, tag) = self.do_encrypt_final_detachedtag_out(&mut out)?;
+            let (n, tag) = self.do_encrypt_final_detached_out(&mut out)?;
             out[n..n + TAG_LEN].copy_from_slice(&tag);
             Ok((out, n + TAG_LEN))
         }
@@ -157,7 +157,7 @@ fn a_buffering_pair_is_handled_by_every_default_method() {
         ) -> Result<Self, SymmetricCipherError> {
             Ok(Self::do_encrypt_init(key)?.0)
         }
-        fn do_encrypt_final_detachedtag_out(
+        fn do_encrypt_final_detached_out(
             mut self,
             ciphertext: &mut [u8; FINAL_LEN],
         ) -> Result<(usize, [u8; TAG_LEN]), SymmetricCipherError> {
@@ -207,7 +207,7 @@ fn a_buffering_pair_is_handled_by_every_default_method() {
         fn do_update_aad(&mut self, _aad: &[u8]) -> Result<(), SymmetricCipherError> {
             Ok(())
         }
-        fn do_decrypt_final_detachedtag_out(
+        fn do_decrypt_final_detached_out(
             mut self,
             tag: &[u8; TAG_LEN],
             plaintext: &mut [u8; FINAL_LEN],
@@ -247,7 +247,7 @@ fn a_buffering_pair_is_handled_by_every_default_method() {
             }
             let mut final_buf = [0u8; FINAL_LEN];
             let (final_len, chunked_tag) =
-                enc.do_encrypt_final_detachedtag_out(&mut final_buf).unwrap();
+                enc.do_encrypt_final_detached_out(&mut final_buf).unwrap();
             chunked.extend_from_slice(&final_buf[..final_len]);
             assert_eq!(chunked, ct, "len {len} chunk {chunk}: chunking must not be visible");
             assert_eq!(
@@ -256,7 +256,7 @@ fn a_buffering_pair_is_handled_by_every_default_method() {
             );
 
             // detached: the decryptor releases what it held back as a possible tag in
-            // `do_decrypt_final_detachedtag_out`, alongside what it held back of its own accord
+            // `do_decrypt_final_detached_out`, alongside what it held back of its own accord
             let mut dec = Dec::do_decrypt_init(&key, &nonce).unwrap();
             let mut pt = Vec::new();
             for piece in ct.chunks(chunk) {
@@ -267,7 +267,7 @@ fn a_buffering_pair_is_handled_by_every_default_method() {
                 pt.extend_from_slice(&buf[..n]);
             }
             let mut final_buf = [0u8; FINAL_LEN];
-            let final_len = dec.do_decrypt_final_detachedtag_out(&tag, &mut final_buf).unwrap();
+            let final_len = dec.do_decrypt_final_detached_out(&tag, &mut final_buf).unwrap();
             pt.extend_from_slice(&final_buf[..final_len]);
             assert_eq!(pt, msg, "len {len} chunk {chunk}: detached round trip");
 

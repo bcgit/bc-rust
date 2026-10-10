@@ -156,13 +156,13 @@
 //! unauthenticated until the tag has been checked after the final block.
 //! It is the application's responsibility not to take any action on the decrypted plaintext until
 //! the end of the ciphertext has been reached, and the `do_decrypt_final` /
-//! `do_decrypt_final_detachedtag` succeeds.
+//! `do_decrypt_final_detached` succeeds.
 //!
 //! The one-shots (`decrypt_out`, `decrypt_detached_out`, `decrypt_with_aad_out`) verify the
 //! tag first and release nothing on failure, making them more robust.
 //!
 //! * **GMAC is GCM with no plaintext** (Sec 5.2): feed only AAD and call
-//!   `do_encrypt_final_detachedtag`: there is no separate `Gmac` type.
+//!   `do_encrypt_final_detached`: there is no separate `Gmac` type.
 
 use crate::modes::Ctr;
 use crate::modes::ModeNames;
@@ -487,7 +487,7 @@ where
     }
 
     /// Algorithm 4 steps 4-6; nothing is held back, so `ciphertext` is left zeroed.
-    fn do_encrypt_final_detachedtag_out(
+    fn do_encrypt_final_detached_out(
         self,
         ciphertext: &mut [u8; TAG_LEN],
     ) -> Result<(usize, [u8; TAG_LEN]), SymmetricCipherError> {
@@ -682,7 +682,7 @@ where
     /// The detached layout: the up to `TAG_LEN` bytes held back as a possible tag are ciphertext
     /// after all, so they are decrypted into `plaintext` before the tag is checked against `tag`
     /// (Algorithm 5 steps 5-8). On failure `plaintext` is zeroized before the error is returned.
-    fn do_decrypt_final_detachedtag_out(
+    fn do_decrypt_final_detached_out(
         mut self,
         tag: &[u8; TAG_LEN],
         plaintext: &mut [u8; TAG_LEN],

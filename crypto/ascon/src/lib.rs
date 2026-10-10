@@ -64,7 +64,7 @@
 //! ```
 //!
 //! Authenticated encryption (streaming, detached tag). The decryptor holds back the last 16
-//! bytes it has seen, in case they are an inline tag, so `do_decrypt_final_detachedtag_out` is
+//! bytes it has seen, in case they are an inline tag, so `do_decrypt_final_detached_out` is
 //! where they come out:
 //! ```
 //! use bouncycastle_ascon::{AsconAead128Decryptor, AsconAead128Encryptor};
@@ -81,13 +81,13 @@
 //! let mut ciphertext = [0u8; 16];
 //! enc.do_encrypt_out(plaintext, &mut ciphertext).unwrap();
 //! let mut final_buf = [0u8; 16];
-//! let (_, tag) = enc.do_encrypt_final_detachedtag_out(&mut final_buf).unwrap();
+//! let (_, tag) = enc.do_encrypt_final_detached_out(&mut final_buf).unwrap();
 //!
 //! let mut dec = AsconAead128Decryptor::do_decrypt_init(&key, &nonce).unwrap();
 //! dec.do_update_aad(b"associated data").unwrap();
 //! let mut recovered = [0u8; 16];
 //! let n = dec.do_decrypt_out(&ciphertext, &mut recovered).unwrap(); // 0: all 16 held back
-//! let m = dec.do_decrypt_final_detachedtag_out(&tag, &mut final_buf).unwrap(); // authenticated
+//! let m = dec.do_decrypt_final_detached_out(&tag, &mut final_buf).unwrap(); // authenticated
 //! recovered[n..n + m].copy_from_slice(&final_buf[..m]);
 //! assert_eq!(&recovered, plaintext);
 //! ```
@@ -160,7 +160,7 @@
 //! | `do_update_aad` | 104 B | 104 B |
 //! | `do_encrypt_out` / `do_decrypt_out` | 176 B | 208 B |
 //! | `do_encrypt_final` / `do_decrypt_final` (tag inline) | 176 B | 208 B |
-//! | `do_encrypt_final_detachedtag_out` / `do_decrypt_final_detachedtag_out` | 176 B | 272 B |
+//! | `do_encrypt_final_detached_out` / `do_decrypt_final_detached_out` | 176 B | 272 B |
 //! | `encrypt_with_aad_rng_out` / `decrypt_with_aad_out` (one-shot) | 648 B | 888 B |
 //!
 //! The encrypting figures do not include the caller's RNG; `do_encrypt_init` and the one-shots
@@ -193,7 +193,7 @@
 //!   [`bouncycastle_core::traits::SymmetricCipherDecryptor::decrypt_out`]) zeroize their output
 //!   buffer before returning that error. The streaming API ([`AsconAead128::do_decrypt_update`] /
 //!   [`AsconAead128::do_decrypt_final`], or `do_update_out` followed by
-//!   [`bouncycastle_core::traits::AEADCipherDecryptor::do_decrypt_final_detachedtag_out`] or
+//!   [`bouncycastle_core::traits::AEADCipherDecryptor::do_decrypt_final_detached_out`] or
 //!   [`bouncycastle_core::traits::SymmetricCipherDecryptor::do_decrypt_final`]) does not: plaintext
 //!   bytes are necessarily written to the caller's buffer *before* the tag can be checked, so an
 //!   application streaming a large plaintext must have a way to cancel the operation or

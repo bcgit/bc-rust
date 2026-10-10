@@ -503,7 +503,7 @@ fn aead128_dir_alias_trait_framework() {
 }
 
 /// The two tag layouts must agree byte for byte: `direct_ciphertext || direct_tag`, produced by
-/// streaming [`AsconAead128Encryptor`] and taking the tag from `do_encrypt_final_detachedtag_out`,
+/// streaming [`AsconAead128Encryptor`] and taking the tag from `do_encrypt_final_detached_out`,
 /// must equal what the inline layout produces for the same key, nonce (driven by the same RNG
 /// stream), AAD and message -- through both `encrypt_with_aad_out` and the inherited
 /// `do_encrypt_final` -- and either must decrypt back to the original plaintext.
@@ -529,8 +529,7 @@ fn aead128_tagged_and_direct_layouts_agree() {
         let mut direct_ct = vec![0u8; pt.len()];
         direct_enc.do_encrypt_out(&pt, &mut direct_ct).unwrap();
         let mut unused = [0u8; 16];
-        let (flushed, direct_tag) =
-            direct_enc.do_encrypt_final_detachedtag_out(&mut unused).unwrap();
+        let (flushed, direct_tag) = direct_enc.do_encrypt_final_detached_out(&mut unused).unwrap();
         assert_eq!(flushed, 0, "Ascon-AEAD128 holds nothing back to flush");
         let mut direct_inline = direct_ct.clone();
         direct_inline.extend_from_slice(&direct_tag);
@@ -568,7 +567,7 @@ fn aead128_tagged_and_direct_layouts_agree() {
         assert_eq!(&one_back[..one_n], &pt[..], "pt_len {pt_len}: one-shot round trip");
 
         // ...and all of it decrypts back, each through its own view. The decryptor holds the
-        // last 16 bytes back either way; detached, `do_decrypt_final_detachedtag_out` releases
+        // last 16 bytes back either way; detached, `do_decrypt_final_detached_out` releases
         // them.
         let mut direct_dec = AsconAead128Decryptor::do_decrypt_init(&km, &direct_nonce).unwrap();
         direct_dec.do_update_aad(aad).unwrap();
@@ -576,7 +575,7 @@ fn aead128_tagged_and_direct_layouts_agree() {
         let got = direct_dec.do_decrypt_out(&direct_ct, &mut direct_pt).unwrap();
         assert_eq!(got, pt_len.saturating_sub(16), "pt_len {pt_len}: the last 16 bytes are held");
         let mut last = [0u8; 16];
-        let last_len = direct_dec.do_decrypt_final_detachedtag_out(&direct_tag, &mut last).unwrap();
+        let last_len = direct_dec.do_decrypt_final_detached_out(&direct_tag, &mut last).unwrap();
         assert_eq!(got + last_len, pt_len, "pt_len {pt_len}: detached final releases the rest");
         direct_pt[got..].copy_from_slice(&last[..last_len]);
         assert_eq!(direct_pt, pt, "pt_len {pt_len}: direct decrypt round trip");

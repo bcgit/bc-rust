@@ -109,7 +109,7 @@ pub fn encrypt_gcm<P, const KEY_LEN: usize, const TAG_LEN: usize>(
     }
 
     // The detached final flushes nothing for GCM and returns the tag, written last.
-    let (_, _, tag) = enc.do_encrypt_final_detachedtag().unwrap_or_else(|e| {
+    let (_, _, tag) = enc.do_encrypt_final_detached().unwrap_or_else(|e| {
         eprintln!("Error: encryption failed: {e:?}");
         exit(-1);
     });

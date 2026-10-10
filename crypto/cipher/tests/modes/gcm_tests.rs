@@ -54,7 +54,7 @@ fn aad_after_data_is_a_state_error_unless_empty() {
     }
     // An empty call after data is always fine.
     enc.do_update_aad(&[]).unwrap();
-    let _ = enc.do_encrypt_final_detachedtag().unwrap();
+    let _ = enc.do_encrypt_final_detached().unwrap();
 }
 
 /// The decryptor holds back the last `TAG_LEN` bytes it has seen, so a first `do_update_out` of
@@ -95,7 +95,7 @@ fn chunking_is_independent_for_aad_and_data() {
             let mut ct = [0u8; 50];
             let n = enc.do_encrypt_out(&message[..data_split], &mut ct).unwrap();
             enc.do_encrypt_out(&message[data_split..], &mut ct[n..]).unwrap();
-            let (_, _, tag) = enc.do_encrypt_final_detachedtag().unwrap();
+            let (_, _, tag) = enc.do_encrypt_final_detached().unwrap();
             assert_eq!(&ct[..], &expected_ct[..], "aad_split {aad_split}, data_split {data_split}");
             assert_eq!(tag, expected_tag, "aad_split {aad_split}, data_split {data_split}");
         }
@@ -233,7 +233,7 @@ fn one_shot_releases_nothing_on_forgery_but_streaming_does() {
     let released = dec.do_decrypt_out(&ct, &mut streaming_buf).unwrap();
     assert_eq!(released, 3, "19 bytes in, the last 16 held back");
     assert_eq!(&streaming_buf[..3], &message[..3], "streaming already produced plaintext");
-    match dec.do_decrypt_final_detachedtag(&tag) {
+    match dec.do_decrypt_final_detached(&tag) {
         Err(SymmetricCipherError::AEADTagCheckFailed) => {}
         other => panic!("expected AEADTagCheckFailed, got {other:?}"),
     }

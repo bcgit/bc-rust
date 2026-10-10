@@ -347,7 +347,7 @@ fn the_fixed_frame_pair_agrees_with_the_direct_api_on_appendix_c3() {
         ct.extend_from_slice(&buf);
     }
     let mut flushed = [0xEEu8; 8];
-    let (len, tag) = enc.do_encrypt_final_detachedtag_out(&mut flushed).expect("final");
+    let (len, tag) = enc.do_encrypt_final_detached_out(&mut flushed).expect("final");
     assert_eq!(len, 0, "the detached final flushes nothing");
     assert_eq!(flushed, [0u8; 8], "...and leaves the buffer zeroed");
     assert_eq!(&ct[..], want_ct, "C.3 ciphertext via the trait");
@@ -363,7 +363,7 @@ fn the_fixed_frame_pair_agrees_with_the_direct_api_on_appendix_c3() {
     }
     let mut out = [0xEEu8; 8];
     let n = dec
-        .do_decrypt_final_detachedtag_out(want_tag.try_into().expect("8 bytes"), &mut out)
+        .do_decrypt_final_detached_out(want_tag.try_into().expect("8 bytes"), &mut out)
         .expect("tag check");
     assert_eq!(n, 0, "the detached final releases nothing");
     assert_eq!(out, [0u8; 8], "...and leaves the buffer zeroed");
@@ -577,7 +577,7 @@ fn the_aad_capacity_and_the_payload_length_are_independent() {
         enc.do_update_aad(aad).expect("within AAD_LEN");
         let mut sealed = [0u8; 64];
         enc.do_encrypt_out(&message, &mut sealed).expect("exactly DATA_LEN");
-        let (_, _, tag) = enc.do_encrypt_final_detachedtag().expect("final");
+        let (_, _, tag) = enc.do_encrypt_final_detached().expect("final");
 
         let mut direct = [0u8; 64];
         let (_, direct_tag) =
@@ -591,7 +591,7 @@ fn the_aad_capacity_and_the_payload_length_are_independent() {
         dec.do_update_aad(aad).expect("within AAD_LEN");
         let mut opened = [0u8; 64];
         dec.do_decrypt_out(&sealed, &mut opened).expect("exactly DATA_LEN");
-        dec.do_decrypt_final_detachedtag(&tag).expect("tag check");
+        dec.do_decrypt_final_detached(&tag).expect("tag check");
         assert_eq!(opened, message);
     }
 }
@@ -640,7 +640,7 @@ fn the_decryptor_releases_the_payload_and_holds_back_only_the_tag() {
     dec.do_decrypt_out(&inline, &mut out).expect("the whole frame");
     let mut nothing = [0xEEu8; 16];
     assert!(matches!(
-        dec.do_decrypt_final_detachedtag_out(&tag, &mut nothing),
+        dec.do_decrypt_final_detached_out(&tag, &mut nothing),
         Err(SymmetricCipherError::DecryptionFailed)
     ));
     assert_eq!(nothing, [0u8; 16], "the detached final only zeroes its buffer");
@@ -649,7 +649,7 @@ fn the_decryptor_releases_the_payload_and_holds_back_only_the_tag() {
     let mut dec = Dec::do_decrypt_init(&k, &nonce).expect("init");
     let mut out = [0u8; 32];
     dec.do_decrypt_out(&inline[..32], &mut out).expect("the frame");
-    assert_eq!(dec.do_decrypt_final_detachedtag_out(&tag, &mut nothing).expect("tag check"), 0);
+    assert_eq!(dec.do_decrypt_final_detached_out(&tag, &mut nothing).expect("tag check"), 0);
     assert_eq!(nothing, [0u8; 16], "the detached final only zeroes its buffer");
     assert_eq!(out, message);
 }
@@ -797,17 +797,17 @@ fn every_final_refuses_a_payload_of_the_wrong_length() {
         );
         assert!(
             matches!(
-                enc(short).do_encrypt_final_detachedtag(),
+                enc(short).do_encrypt_final_detached(),
                 Err(SymmetricCipherError::StateError(_))
             ),
-            "do_encrypt_final_detachedtag after {short} of 8 bytes"
+            "do_encrypt_final_detached after {short} of 8 bytes"
         );
         assert!(
             matches!(
-                enc(short).do_encrypt_final_detachedtag_out(&mut buf),
+                enc(short).do_encrypt_final_detached_out(&mut buf),
                 Err(SymmetricCipherError::StateError(_))
             ),
-            "do_encrypt_final_detachedtag_out after {short} of 8 bytes"
+            "do_encrypt_final_detached_out after {short} of 8 bytes"
         );
     }
     // The positive controls, which also produce the ciphertext for the decrypting side.
@@ -819,13 +819,12 @@ fn every_final_refuses_a_payload_of_the_wrong_length() {
         16
     );
     assert_eq!(buf, tag);
-    let (_, n, tag2) = enc(8)
-        .do_encrypt_final_detachedtag()
-        .expect("do_encrypt_final_detachedtag on a whole frame");
+    let (_, n, tag2) =
+        enc(8).do_encrypt_final_detached().expect("do_encrypt_final_detached on a whole frame");
     assert_eq!((n, tag2), (0, tag));
     let (n, tag3) = enc(8)
-        .do_encrypt_final_detachedtag_out(&mut buf)
-        .expect("do_encrypt_final_detachedtag_out on a whole frame");
+        .do_encrypt_final_detached_out(&mut buf)
+        .expect("do_encrypt_final_detached_out on a whole frame");
     assert_eq!((n, tag3), (0, tag));
     let mut ct = [0u8; 8];
     {
@@ -871,38 +870,38 @@ fn every_final_refuses_a_payload_of_the_wrong_length() {
     for wrong in [0usize, 4, 7, 9, 24] {
         assert!(
             matches!(
-                dec(wrong).do_decrypt_final_detachedtag(&tag),
+                dec(wrong).do_decrypt_final_detached(&tag),
                 Err(SymmetricCipherError::DecryptionFailed)
             ),
-            "do_decrypt_final_detachedtag after {wrong} of 8 bytes"
+            "do_decrypt_final_detached after {wrong} of 8 bytes"
         );
         let mut buf = [0u8; 16];
         assert!(
             matches!(
-                dec(wrong).do_decrypt_final_detachedtag_out(&tag, &mut buf),
+                dec(wrong).do_decrypt_final_detached_out(&tag, &mut buf),
                 Err(SymmetricCipherError::DecryptionFailed)
             ),
-            "do_decrypt_final_detachedtag_out after {wrong} of 8 bytes"
+            "do_decrypt_final_detached_out after {wrong} of 8 bytes"
         );
     }
     assert_eq!(
         dec(8)
-            .do_decrypt_final_detachedtag(&tag)
-            .expect("do_decrypt_final_detachedtag on a whole frame")
+            .do_decrypt_final_detached(&tag)
+            .expect("do_decrypt_final_detached on a whole frame")
             .1,
         0
     );
     assert_eq!(
         dec(8)
-            .do_decrypt_final_detachedtag_out(&tag, &mut buf)
-            .expect("do_decrypt_final_detachedtag_out on a whole frame"),
+            .do_decrypt_final_detached_out(&tag, &mut buf)
+            .expect("do_decrypt_final_detached_out on a whole frame"),
         0
     );
     // ...and a whole frame with the wrong tag is the tag check failing, not a length refusal.
     let mut forged = tag;
     forged[0] ^= 0xFF;
     assert!(matches!(
-        dec(8).do_decrypt_final_detachedtag(&forged),
+        dec(8).do_decrypt_final_detached(&forged),
         Err(SymmetricCipherError::AEADTagCheckFailed)
     ));
 }
@@ -1361,7 +1360,7 @@ fn supplied_nonce_forms_agree_with_the_direct_api_at_any_a1_nonce_length() {
     enc.do_update_aad(&aad).expect("aad");
     let mut streamed = [0u8; 48];
     assert_eq!(enc.do_encrypt_out(&frame, &mut streamed).expect("released"), 48);
-    let (_, _, streamed_tag) = enc.do_encrypt_final_detachedtag().expect("tag");
+    let (_, _, streamed_tag) = enc.do_encrypt_final_detached().expect("tag");
     assert_eq!((streamed, streamed_tag), (detached, tag));
 
     // Opened by the decryptor at the same parameters, and not under another nonce.

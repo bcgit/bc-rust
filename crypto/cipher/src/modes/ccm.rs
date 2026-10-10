@@ -1163,13 +1163,13 @@ where
 ///     written += enc.do_encrypt_out(piece, &mut ct[written..]).expect("within DATA_LEN");
 /// }
 /// assert_eq!(written, 40);
-/// let (_, _, tag) = enc.do_encrypt_final_detachedtag().expect("exactly DATA_LEN was supplied");
+/// let (_, _, tag) = enc.do_encrypt_final_detached().expect("exactly DATA_LEN was supplied");
 ///
 /// let mut dec = Dec::do_decrypt_init(&key, &nonce).expect("init");
 /// dec.do_update_aad(header).expect("within AAD_LEN");
 /// let mut pt = [0u8; 40];
 /// dec.do_decrypt_out(&ct, &mut pt).expect("released, but not yet authenticated");
-/// dec.do_decrypt_final_detachedtag(&tag).expect("...until the tag verifies");
+/// dec.do_decrypt_final_detached(&tag).expect("...until the tag verifies");
 /// assert_eq!(pt, frame);
 ///
 /// // 39 bytes is not a frame: the final refuses rather than authenticate a length `B0` did not commit to.
@@ -1386,7 +1386,7 @@ where
     /// The tag, and nothing else: all of the ciphertext has already been released.
     ///
     /// # Errors
-    /// As [`AEADCipherEncryptor::do_encrypt_final_detachedtag_out`].
+    /// As [`AEADCipherEncryptor::do_encrypt_final_detached_out`].
     fn do_encrypt_final(self) -> Result<([u8; TAG_LEN], usize), SymmetricCipherError> {
         Ok((self.finish()?, TAG_LEN))
     }
@@ -1501,7 +1501,7 @@ where
     ///
     /// # Errors
     /// [`SymmetricCipherError::StateError`] if fewer than `DATA_LEN` payload bytes were supplied.
-    fn do_encrypt_final_detachedtag_out(
+    fn do_encrypt_final_detached_out(
         self,
         ciphertext: &mut [u8; TAG_LEN],
     ) -> Result<(usize, [u8; TAG_LEN]), SymmetricCipherError> {
@@ -1818,7 +1818,7 @@ where
     /// [`SymmetricCipherError::DecryptionFailed`] if `C` was not exactly `DATA_LEN` bytes -- a
     /// payload still owed, or bytes held back as a possible inline tag that this layout has no
     /// place for; [`SymmetricCipherError::AEADTagCheckFailed`] if the tag does not verify.
-    fn do_decrypt_final_detachedtag_out(
+    fn do_decrypt_final_detached_out(
         self,
         tag: &[u8; TAG_LEN],
         plaintext: &mut [u8; TAG_LEN],

@@ -460,7 +460,7 @@ fn one_shots_release_nothing_on_forgery_but_the_streams_do() {
     assert_eq!(&streamed[..], &plaintext[..], "the stream already produced plaintext");
     let mut detached = [0xEEu8; 16];
     assert!(matches!(
-        dec.do_decrypt_final_detachedtag_out(&tag, &mut detached),
+        dec.do_decrypt_final_detached_out(&tag, &mut detached),
         Err(SymmetricCipherError::AEADTagCheckFailed)
     ));
     assert_eq!(&streamed[..], &plaintext[..], "...and a rejected tag cannot take it back");

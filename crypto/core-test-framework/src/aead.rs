@@ -426,7 +426,7 @@ impl TestFrameworkAEADCipher {
                 ct.extend_from_slice(&buf[..n]);
             }
             let mut final_buf = [0u8; FINAL_LEN];
-            let (final_len, tag) = enc.do_encrypt_final_detachedtag_out(&mut final_buf).unwrap();
+            let (final_len, tag) = enc.do_encrypt_final_detached_out(&mut final_buf).unwrap();
             assert!(
                 final_len + TAG_LEN <= FINAL_LEN,
                 "chunk {chunk}: the detached flush must leave FINAL_LEN room for the tag"
@@ -449,7 +449,7 @@ impl TestFrameworkAEADCipher {
                 pt.extend_from_slice(&buf[..n]);
             }
             let mut final_buf = [0u8; FINAL_LEN];
-            let final_len = dec.do_decrypt_final_detachedtag_out(&tag, &mut final_buf).unwrap();
+            let final_len = dec.do_decrypt_final_detached_out(&tag, &mut final_buf).unwrap();
             pt.extend_from_slice(&final_buf[..final_len]);
             assert_eq!(pt, msg, "chunk {chunk}: streaming round trip");
         }
@@ -461,18 +461,18 @@ impl TestFrameworkAEADCipher {
         let mut ct = vec![0u8; enc.do_encrypt_out_len(msg.len())];
         let n = enc.do_encrypt_out(msg, &mut ct).unwrap();
         ct.truncate(n);
-        let (last, last_len, tag) = enc.do_encrypt_final_detachedtag().unwrap();
+        let (last, last_len, tag) = enc.do_encrypt_final_detached().unwrap();
         ct.extend_from_slice(&last[..last_len]);
-        assert_eq!(ct, ct_ref, "do_encrypt_final_detachedtag must give the one-shot ciphertext");
-        assert_eq!(tag, tag_ref, "do_encrypt_final_detachedtag must give the one-shot tag");
+        assert_eq!(ct, ct_ref, "do_encrypt_final_detached must give the one-shot ciphertext");
+        assert_eq!(tag, tag_ref, "do_encrypt_final_detached must give the one-shot tag");
         let mut dec = D::do_decrypt_init(&key, &nonce).unwrap();
         dec.do_update_aad(aad).unwrap();
         let mut pt = vec![0u8; dec.do_decrypt_out_len(ct.len())];
         let n = dec.do_decrypt_out(&ct, &mut pt).unwrap();
         pt.truncate(n);
-        let (last, data_len) = dec.do_decrypt_final_detachedtag(&tag).unwrap();
+        let (last, data_len) = dec.do_decrypt_final_detached(&tag).unwrap();
         pt.extend_from_slice(&last[..data_len]);
-        assert_eq!(pt, msg, "do_decrypt_final_detachedtag must round trip");
+        assert_eq!(pt, msg, "do_decrypt_final_detached must round trip");
         let mut wrong_tag = tag;
         wrong_tag[0] ^= 0xFF;
         let mut dec = D::do_decrypt_init(&key, &nonce).unwrap();
@@ -481,10 +481,10 @@ impl TestFrameworkAEADCipher {
         dec.do_decrypt_out(&ct, &mut pt).unwrap();
         assert!(
             matches!(
-                dec.do_decrypt_final_detachedtag(&wrong_tag),
+                dec.do_decrypt_final_detached(&wrong_tag),
                 Err(SymmetricCipherError::AEADTagCheckFailed)
             ),
-            "do_decrypt_final_detachedtag must check the tag"
+            "do_decrypt_final_detached must check the tag"
         );
 
         // an empty AAD is a no-op: it must give exactly what absorbing no AAD at all gives
@@ -554,7 +554,7 @@ impl TestFrameworkAEADCipher {
             // the state: the value is still good for the rest of the flow.
             enc.do_update_aad(b"").unwrap();
             let mut final_buf = [0u8; FINAL_LEN];
-            let (final_len, tag) = enc.do_encrypt_final_detachedtag_out(&mut final_buf).unwrap();
+            let (final_len, tag) = enc.do_encrypt_final_detached_out(&mut final_buf).unwrap();
             ct.extend_from_slice(&final_buf[..final_len]);
 
             let mut dec = D::do_decrypt_init(&key, &nonce).unwrap();
@@ -570,7 +570,7 @@ impl TestFrameworkAEADCipher {
             got = dec.do_decrypt_out(&ct[1..], &mut rest).unwrap();
             pt.extend_from_slice(&rest[..got]);
             let mut final_buf = [0u8; FINAL_LEN];
-            let final_len = dec.do_decrypt_final_detachedtag_out(&tag, &mut final_buf).unwrap();
+            let final_len = dec.do_decrypt_final_detached_out(&tag, &mut final_buf).unwrap();
             pt.extend_from_slice(&final_buf[..final_len]);
             assert_eq!(&pt[..], msg, "a refused do_update_aad must not disturb the state");
         }
@@ -735,13 +735,13 @@ impl TestFrameworkAEADCipher {
         let written = enc.do_encrypt_out(msg, &mut ct).unwrap();
         ct.truncate(written);
         let mut last = [SENTINEL; FINAL_LEN];
-        let (last_len, tag) = enc.do_encrypt_final_detachedtag_out(&mut last).unwrap();
-        assert_tail_zeroed(&last, last_len, "do_encrypt_final_detachedtag_out");
+        let (last_len, tag) = enc.do_encrypt_final_detached_out(&mut last).unwrap();
+        assert_tail_zeroed(&last, last_len, "do_encrypt_final_detached_out");
         ct.extend_from_slice(&last[..last_len]);
         assert_eq!(
             ct.len(),
             E::encrypt_detached_out_len(len),
-            "do_encrypt_out and do_encrypt_final_detachedtag_out must report only their own bytes"
+            "do_encrypt_out and do_encrypt_final_detached_out must report only their own bytes"
         );
         let mut dec = D::do_decrypt_init(&key, &nonce).unwrap();
         dec.do_update_aad(aad).unwrap();
@@ -749,12 +749,12 @@ impl TestFrameworkAEADCipher {
         let released = dec.do_decrypt_out(&ct, &mut rec).unwrap();
         rec.truncate(released);
         let mut last = [SENTINEL; FINAL_LEN];
-        let data_len = dec.do_decrypt_final_detachedtag_out(&tag, &mut last).unwrap();
-        assert_tail_zeroed(&last, data_len, "do_decrypt_final_detachedtag_out");
+        let data_len = dec.do_decrypt_final_detached_out(&tag, &mut last).unwrap();
+        assert_tail_zeroed(&last, data_len, "do_decrypt_final_detached_out");
         rec.extend_from_slice(&last[..data_len]);
         assert_eq!(
             rec, msg,
-            "do_decrypt_out and do_decrypt_final_detachedtag_out must report only their own bytes"
+            "do_decrypt_out and do_decrypt_final_detached_out must report only their own bytes"
         );
 
         // The key-type and security-strength checks on `do_encrypt_init` / `do_decrypt_init` are
@@ -928,7 +928,7 @@ impl TestFrameworkAEADTaggedLayout {
                     written += dec.do_decrypt_out(piece, &mut out[written..]).unwrap();
                 }
                 let mut last = [0u8; FINAL_LEN];
-                let last_len = dec.do_decrypt_final_detachedtag_out(&d_tag, &mut last).unwrap();
+                let last_len = dec.do_decrypt_final_detached_out(&d_tag, &mut last).unwrap();
                 assert_eq!(
                     written + last_len,
                     len,

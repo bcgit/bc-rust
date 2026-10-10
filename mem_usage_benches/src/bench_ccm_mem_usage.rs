@@ -147,7 +147,7 @@ fn bench_direct_encrypt_detached() {
 #[inline(never)]
 fn bench_streaming_encrypt() {
     eprintln!(
-        "CcmEncryptor do_encrypt_init/do_update_out/do_encrypt_final_detachedtag_out, {MESSAGE_LEN} B in 1 KiB chunks"
+        "CcmEncryptor do_encrypt_init/do_update_out/do_encrypt_final_detached_out, {MESSAGE_LEN} B in 1 KiB chunks"
     );
 
     let k = key::<16>();
@@ -160,7 +160,7 @@ fn bench_streaming_encrypt() {
         written += enc.do_encrypt_out(chunk, &mut ciphertext[written..]).unwrap();
     }
     let mut last = [0u8; TAG_LEN];
-    let (_, tag) = enc.do_encrypt_final_detachedtag_out(&mut last).unwrap();
+    let (_, tag) = enc.do_encrypt_final_detached_out(&mut last).unwrap();
     print!("{:x?}", &tag);
 }
 

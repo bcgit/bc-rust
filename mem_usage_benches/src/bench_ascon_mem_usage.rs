@@ -334,12 +334,12 @@ fn bench_aead_encrypt_final() {
 
 #[inline(never)]
 fn bench_aead_encrypt_final_detached() {
-    eprintln!("Ascon_AEAD128<Encrypting>::do_encrypt_final_detachedtag_out");
+    eprintln!("Ascon_AEAD128<Encrypting>::do_encrypt_final_detached_out");
     let enc = black_box(encryptor_after_data());
     measure(move || {
         let mut last = [0u8; TAG_LEN];
         let op = black_box(
-            <Enc as AEADCipherEncryptor<KEY_LEN, NONCE_LEN, TAG_LEN, TAG_LEN>>::do_encrypt_final_detachedtag_out
+            <Enc as AEADCipherEncryptor<KEY_LEN, NONCE_LEN, TAG_LEN, TAG_LEN>>::do_encrypt_final_detached_out
                 as fn(Enc, &mut [u8; TAG_LEN]) -> Result<(usize, [u8; TAG_LEN]), CipherErr>,
         );
         let (_, tag) = op(enc, &mut last).unwrap();
@@ -440,13 +440,13 @@ fn bench_aead_decrypt_final() {
 /// The detached final: decrypts the held-back ciphertext, then checks the separate tag.
 #[inline(never)]
 fn bench_aead_decrypt_final_detached() {
-    eprintln!("Ascon_AEAD128<Decrypting>::do_decrypt_final_detachedtag_out");
+    eprintln!("Ascon_AEAD128<Decrypting>::do_decrypt_final_detached_out");
     let dec = black_box(decryptor_holding_ciphertext());
     let tag: [u8; TAG_LEN] = black_box(sealed()[MSG_LEN..].try_into().unwrap());
     measure(move || {
         let mut last = [0u8; TAG_LEN];
         let op = black_box(
-            <Dec as AEADCipherDecryptor<KEY_LEN, NONCE_LEN, TAG_LEN, TAG_LEN>>::do_decrypt_final_detachedtag_out
+            <Dec as AEADCipherDecryptor<KEY_LEN, NONCE_LEN, TAG_LEN, TAG_LEN>>::do_decrypt_final_detached_out
                 as fn(Dec, &[u8; TAG_LEN], &mut [u8; TAG_LEN]) -> Result<usize, CipherErr>,
         );
         let n = op(dec, &tag, &mut last).unwrap();

@@ -29,7 +29,7 @@ pub type AEADEncryptedTuple<const NONCE_LEN: usize, const TAG_LEN: usize> =
 /// hold back up to the last `TAG_LEN` bytes it has seen, since until the stream ends they may be
 /// the tag; [`SymmetricCipherDecryptor::do_decrypt_out_len`] says exactly how many bytes each
 /// call releases. With the tag detached those held-back bytes turn out to be ciphertext, and
-/// [`do_decrypt_final_detachedtag_out`](Self::do_decrypt_final_detachedtag_out) decrypts them; with
+/// [`do_decrypt_final_detached_out`](Self::do_decrypt_final_detached_out) decrypts them; with
 /// it inline, [`SymmetricCipherDecryptor::do_decrypt_final`] checks them as the tag. So `FINAL_LEN`
 /// is at least `TAG_LEN`, plus whatever else the cipher holds back of its own accord.
 ///
@@ -38,7 +38,7 @@ pub type AEADEncryptedTuple<const NONCE_LEN: usize, const TAG_LEN: usize> =
 /// This is the one thing a streaming AEAD API cannot hide from its caller.
 /// [`SymmetricCipherDecryptor::do_decrypt_out`] releases plaintext as soon as it can, long before
 /// there is a tag to check it against, so a caller that *uses* those bytes before
-/// [`do_decrypt_final_detachedtag_out`](Self::do_decrypt_final_detachedtag_out) or
+/// [`do_decrypt_final_detached_out`](Self::do_decrypt_final_detached_out) or
 /// [`SymmetricCipherDecryptor::do_decrypt_final`] has returned `Ok` is acting on unauthenticated
 /// plaintext -- bytes an attacker may have chosen. Preventing exactly that is what the tag is for.
 /// A streaming caller must therefore treat everything `do_update_out` produces as untrusted until
@@ -75,13 +75,13 @@ pub trait AEADCipherDecryptor<
     /// # Errors
     /// [`SymmetricCipherError::AEADTagCheckFailed`] if the tag does not verify. Implementors must
     /// compare in constant time, and the caller learns only that the check failed.
-    fn do_decrypt_final_detachedtag_out(
+    fn do_decrypt_final_detached_out(
         self,
         tag: &[u8; TAG_LEN],
         plaintext: &mut [u8; FINAL_LEN],
     ) -> Result<usize, SymmetricCipherError>;
 
-    /// As [`do_decrypt_final_detachedtag_out`](Self::do_decrypt_final_detachedtag_out), returning
+    /// As [`do_decrypt_final_detached_out`](Self::do_decrypt_final_detached_out), returning
     /// the final buffer together with the number of leading bytes of it that are plaintext, the
     /// shape of [`SymmetricCipherDecryptor::do_decrypt_final`]. The two are provided the other way
     /// round from the base trait's pair -- the `_out` form is the one an implementor writes --
@@ -90,13 +90,13 @@ pub trait AEADCipherDecryptor<
     /// behind by this call.
     ///
     /// # Errors
-    /// As [`do_decrypt_final_detachedtag_out`](Self::do_decrypt_final_detachedtag_out).
-    fn do_decrypt_final_detachedtag(
+    /// As [`do_decrypt_final_detached_out`](Self::do_decrypt_final_detached_out).
+    fn do_decrypt_final_detached(
         self,
         tag: &[u8; TAG_LEN],
     ) -> Result<([u8; FINAL_LEN], usize), SymmetricCipherError> {
         let mut plaintext = [0u8; FINAL_LEN];
-        let data_len = self.do_decrypt_final_detachedtag_out(tag, &mut plaintext)?;
+        let data_len = self.do_decrypt_final_detached_out(tag, &mut plaintext)?;
         Ok((plaintext, data_len))
     }
 
@@ -122,7 +122,7 @@ pub trait AEADCipherDecryptor<
     /// # Errors
     /// [`SymmetricCipherError::OutputBufferTooSmall`] if `plaintext` is too short, checked
     /// before any work is done; otherwise whatever the streaming methods return, including
-    /// [`do_decrypt_final_detachedtag_out`](Self::do_decrypt_final_detachedtag_out)'s.
+    /// [`do_decrypt_final_detached_out`](Self::do_decrypt_final_detached_out)'s.
     fn decrypt_detached_out(
         key: &KeyMaterial<KEY_LEN>,
         nonce: &[u8; NONCE_LEN],
@@ -140,9 +140,9 @@ pub trait AEADCipherDecryptor<
         dec.do_update_aad(aad)?;
         let written = dec.do_decrypt_out(ciphertext, plaintext)?;
         let mut final_buf = [0u8; FINAL_LEN];
-        match dec.do_decrypt_final_detachedtag_out(tag, &mut final_buf) {
+        match dec.do_decrypt_final_detached_out(tag, &mut final_buf) {
             Ok(final_len) => {
-                // Everything held back comes out of `do_decrypt_final_detachedtag_out`, so `written
+                // Everything held back comes out of `do_decrypt_final_detached_out`, so `written
                 // + final_len` is the ciphertext length, which `decrypt_detached_out_len` bounds.
                 plaintext[written..written + final_len].copy_from_slice(&final_buf[..final_len]);
                 Ok(written + final_len)
@@ -316,27 +316,27 @@ pub trait AEADCipherEncryptor<
     /// plaintext was held back, encrypted, into `ciphertext`, and returns how many leading bytes of
     /// it are ciphertext together with the tag over the AAD and plaintext it has seen. The tag must
     /// be transmitted with the ciphertext; the recipient passes it to
-    /// [`AEADCipherDecryptor::do_decrypt_final_detachedtag_out`].
+    /// [`AEADCipherDecryptor::do_decrypt_final_detached_out`].
     ///
     /// `ciphertext` is `FINAL_LEN` long so that both final methods share one buffer size; the
     /// flush written here is at most `FINAL_LEN - TAG_LEN` of it, the tag not being part of it.
     /// The entire output buffer is zeroized before the ciphertext is written, so any bytes past
     /// the returned count will be 0.
-    fn do_encrypt_final_detachedtag_out(
+    fn do_encrypt_final_detached_out(
         self,
         ciphertext: &mut [u8; FINAL_LEN],
     ) -> Result<(usize, [u8; TAG_LEN]), SymmetricCipherError>;
 
-    /// As [`do_encrypt_final_detachedtag_out`](Self::do_encrypt_final_detachedtag_out), returning
+    /// As [`do_encrypt_final_detached_out`](Self::do_encrypt_final_detached_out), returning
     /// the final buffer, the number of leading bytes of it that are ciphertext, and the tag -- the
     /// shape of [`SymmetricCipherEncryptor::do_encrypt_final`] with the tag alongside. Provided
     /// over the `_out` form, the other way round from the base trait's pair; see
-    /// [`AEADCipherDecryptor::do_decrypt_final_detachedtag`].
-    fn do_encrypt_final_detachedtag(
+    /// [`AEADCipherDecryptor::do_decrypt_final_detached`].
+    fn do_encrypt_final_detached(
         self,
     ) -> Result<([u8; FINAL_LEN], usize, [u8; TAG_LEN]), SymmetricCipherError> {
         let mut ciphertext = [0u8; FINAL_LEN];
-        let (out_len, tag) = self.do_encrypt_final_detachedtag_out(&mut ciphertext)?;
+        let (out_len, tag) = self.do_encrypt_final_detached_out(&mut ciphertext)?;
         Ok((ciphertext, out_len, tag))
     }
 
@@ -356,7 +356,7 @@ pub trait AEADCipherEncryptor<
     /// written, so any bytes past that count will be 0.
     ///
     /// Provided as `do_encrypt_init`, one `do_update_aad`, one `do_update_out` and
-    /// `do_encrypt_final_detachedtag_out`.
+    /// `do_encrypt_final_detached_out`.
     ///
     /// # Errors
     /// [`SymmetricCipherError::OutputBufferTooSmall`] if `ciphertext` is too short, checked
@@ -376,7 +376,7 @@ pub trait AEADCipherEncryptor<
         enc.do_update_aad(aad)?;
         let written = enc.do_encrypt_out(plaintext, ciphertext)?;
         let mut final_buf = [0u8; FINAL_LEN];
-        let (final_len, tag) = enc.do_encrypt_final_detachedtag_out(&mut final_buf)?;
+        let (final_len, tag) = enc.do_encrypt_final_detached_out(&mut final_buf)?;
         // Implementors that hold plaintext back must override `encrypt_detached_out_len` if
         // `written + final_len` can exceed the plaintext length, so this fits in
         // `ciphertext[..needed]`.
@@ -418,7 +418,7 @@ pub trait AEADCipherEncryptor<
         enc.do_update_aad(aad)?;
         let written = enc.do_encrypt_out(plaintext, ciphertext)?;
         let mut final_buf = [0u8; FINAL_LEN];
-        let (final_len, tag) = enc.do_encrypt_final_detachedtag_out(&mut final_buf)?;
+        let (final_len, tag) = enc.do_encrypt_final_detached_out(&mut final_buf)?;
         // As in `encrypt_detached_out`.
         ciphertext[written..written + final_len].copy_from_slice(&final_buf[..final_len]);
         Ok((nonce, written + final_len, tag))
@@ -527,7 +527,7 @@ pub trait AEADCipherEncryptor<
         enc.do_update_aad(aad)?;
         let written = enc.do_encrypt_out(plaintext, ciphertext)?;
         let mut final_buf = [0u8; FINAL_LEN];
-        let (final_len, tag) = enc.do_encrypt_final_detachedtag_out(&mut final_buf)?;
+        let (final_len, tag) = enc.do_encrypt_final_detached_out(&mut final_buf)?;
         // As in `encrypt_detached_out`.
         ciphertext[written..written + final_len].copy_from_slice(&final_buf[..final_len]);
         Ok((written + final_len, tag))

@@ -92,13 +92,13 @@
 //! let mut sealed = vec![0u8; 2048];
 //! let n = enc.do_encrypt_out(&frame, &mut sealed).expect("the whole frame comes out");
 //! assert_eq!(n, 2048);
-//! let (_, _, tag) = enc.do_encrypt_final_detachedtag().expect("the tag");
+//! let (_, _, tag) = enc.do_encrypt_final_detached().expect("the tag");
 //!
 //! let mut dec = AESDec::do_decrypt_init(&key, &nonce).expect("init");
 //! dec.do_update_aad(b"header").expect("aad");
 //! let mut opened = vec![0u8; 2048];
 //! dec.do_decrypt_out(&sealed, &mut opened).expect("released, but not yet authenticated");
-//! dec.do_decrypt_final_detachedtag(&tag).expect("...until the tag verifies");
+//! dec.do_decrypt_final_detached(&tag).expect("...until the tag verifies");
 //! assert_eq!(opened, frame);
 //! ```
 //!
