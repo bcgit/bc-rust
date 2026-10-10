@@ -47,11 +47,11 @@
 use bouncycastle_aes::hazmat::{AES128Internal, AES256Internal};
 use bouncycastle_cipher::modes::hazmat::Ecb;
 use bouncycastle_cipher::modes::{
-    Cbc, CcmEncryptor, CcmPacket, Cfb, Cfb8, Ctr, GCM_NONCE_LEN, Gcm, ModeNames,
+    CCM, Cbc, CcmEncryptor, Cfb, Cfb8, Ctr, GCM_NONCE_LEN, Gcm, ModeNames,
 };
 use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::errors::SymmetricCipherError;
-use bouncycastle_core::hazmat::ElectronicCodeBook;
+use bouncycastle_core::hazmat::{AeadDecryptMode, AeadEncryptMode, ElectronicCodeBook};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{
@@ -75,15 +75,11 @@ type Aes256Cfb<Dir> = Cfb<AES256Internal, Dir, 32, BLOCK_LEN>;
 type Aes128Cfb8<Dir> = Cfb8<AES128Internal, Dir, 16, BLOCK_LEN>;
 
 /// CCM at the parameters the ACVP vectors and most protocols use: a 12-byte nonce and a full
-/// 16-byte tag. The direction is in the type as for the other modes, but the two directions are
-/// separate aliases here rather than one generic over `Dir`, because CCM's one-shots live on the
-/// direction-specific impl blocks.
+/// 16-byte tag. The mode's in-place one-shots over the keyed permutation are the direct path;
+/// the frame parameters are unused by them.
 const CCM_NONCE_LEN: usize = 12;
 const CCM_TAG_LEN: usize = 16;
-type Aes128CcmEnc =
-    CcmPacket<AES128Internal, Encrypting, 16, BLOCK_LEN, CCM_NONCE_LEN, CCM_TAG_LEN>;
-type Aes128CcmDec =
-    CcmPacket<AES128Internal, Decrypting, 16, BLOCK_LEN, CCM_NONCE_LEN, CCM_TAG_LEN>;
+type Aes128CcmMode = CCM<CCM_NONCE_LEN, CCM_TAG_LEN, 0, 0>;
 
 /// The trait adapter takes its frame size at compile time. Its one-shots are not bound by it,
 /// but using the same 4 KiB message keeps this comparison representative of the public alias a
@@ -824,7 +820,7 @@ fn bench_init(c: &mut Criterion) {
 /// once as a CBC-MAC input. The CBC-MAC half is serial by construction (Sec 6.1 step 3: `Yi` is
 /// the cipher of `Bi XOR Yi-1`), so unlike [`Ctr`] and the decrypt direction of `Cbc`/`Cfb` it has
 /// no pair or four path -- but the CTR half has exactly `Ctr`'s parallelism (A.3's `Ctrj` depends
-/// only on `j`), and `CcmPacket::apply_keystream` batches it the same way. So CCM sits *between* CTR's
+/// only on `j`), and the mode's keystream batches it the same way. So CCM sits *between* CTR's
 /// two numbers, not at a fixed fraction of either:
 ///
 /// * against `modes::ctr::AES_128/16KiB encrypt -- N=1`, CTR's unbatched single-block path, CCM
@@ -848,7 +844,7 @@ fn bench_init(c: &mut Criterion) {
 /// throughput should now sit close to CTR's *unbatched* number, since both are exactly one
 /// unbatched cipher call per block.
 fn bench_ccm_aes128(c: &mut Criterion) {
-    let key = key::<16>();
+    let perm = AES128Internal::new(&key::<16>()).unwrap();
     let nonce = [0x24u8; CCM_NONCE_LEN];
     let data = [0xA5u8; DATA_LEN];
     let no_aad: [u8; 0] = [];
@@ -858,15 +854,14 @@ fn bench_ccm_aes128(c: &mut Criterion) {
 
     group.bench_function("encrypt 16KiB, no AAD", |b| {
         b.iter_batched_ref(
-            || [0u8; DATA_LEN],
-            |out| {
+            || data,
+            |buf| {
                 black_box(
-                    Aes128CcmEnc::encrypt_detached_out(
-                        black_box(&key),
+                    Aes128CcmMode::encrypt_detached_in_place_nonce(
+                        black_box(&perm),
                         &nonce,
                         &no_aad,
-                        black_box(&data),
-                        out,
+                        buf,
                     )
                     .unwrap(),
                 )
@@ -877,22 +872,22 @@ fn bench_ccm_aes128(c: &mut Criterion) {
 
     // Encrypt once outside the loop so decryption measures a ciphertext that authenticates: a
     // failing tag check would short-circuit the comparison and measure the wrong thing.
-    let mut ciphertext = [0u8; DATA_LEN];
-    let (_, tag) =
-        Aes128CcmEnc::encrypt_detached_out(&key, &nonce, &no_aad, &data, &mut ciphertext).unwrap();
+    let mut ciphertext = data;
+    let tag =
+        Aes128CcmMode::encrypt_detached_in_place_nonce(&perm, &nonce, &no_aad, &mut ciphertext)
+            .unwrap();
 
     group.bench_function("decrypt 16KiB, no AAD", |b| {
         b.iter_batched_ref(
-            || [0u8; DATA_LEN],
-            |out| {
+            || ciphertext,
+            |buf| {
                 black_box(
-                    Aes128CcmDec::decrypt_detached_out(
-                        black_box(&key),
+                    Aes128CcmMode::decrypt_detached_in_place(
+                        black_box(&perm),
                         &nonce,
                         &no_aad,
-                        black_box(&ciphertext),
+                        buf,
                         &tag,
-                        out,
                     )
                     .unwrap(),
                 )
@@ -905,15 +900,14 @@ fn bench_ccm_aes128(c: &mut Criterion) {
     // cipher call per AAD block, so this should cost about 1.5x the no-AAD case for 2x the bytes.
     group.bench_function("encrypt 16KiB with 16KiB AAD", |b| {
         b.iter_batched_ref(
-            || [0u8; DATA_LEN],
-            |out| {
+            || data,
+            |buf| {
                 black_box(
-                    Aes128CcmEnc::encrypt_detached_out(
-                        black_box(&key),
+                    Aes128CcmMode::encrypt_detached_in_place_nonce(
+                        black_box(&perm),
                         &nonce,
                         black_box(&data),
-                        black_box(&data),
-                        out,
+                        buf,
                     )
                     .unwrap(),
                 )
@@ -928,11 +922,10 @@ fn bench_ccm_aes128(c: &mut Criterion) {
         b.iter(|| {
             let mut out: [u8; 0] = [];
             black_box(
-                Aes128CcmEnc::encrypt_detached_out(
-                    black_box(&key),
+                Aes128CcmMode::encrypt_detached_in_place_nonce(
+                    black_box(&perm),
                     &nonce,
                     black_box(&data),
-                    &no_aad,
                     &mut out,
                 )
                 .unwrap(),
@@ -943,13 +936,14 @@ fn bench_ccm_aes128(c: &mut Criterion) {
     group.finish();
 }
 
-/// The [`AEADCipherEncryptor`] one-shot against the inherent one-shot on the same message.
+/// The [`AEADCipherEncryptor`] one-shot against the mode's in-place one-shot on the same message.
 ///
-/// The trait's provided one-shot runs the streaming adapter over one 4 KiB frame and ends in the
-/// same `CcmPacket` implementation. A cheap deterministic RNG, created
-/// once outside the timed loop, isolates its nonce draw from OS entropy and DRBG construction.
+/// Both end in the same packet implementation; the trait form copies the message into the
+/// caller's output buffer and draws the nonce. A cheap deterministic RNG, created once outside
+/// the timed loop, isolates that draw from OS entropy and DRBG construction.
 fn bench_ccm_one_shot_pair(c: &mut Criterion) {
     let key = key::<16>();
+    let perm = AES128Internal::new(&key).unwrap();
     let data = [0xA5u8; CCM_BUFFER_LEN];
     let no_aad: [u8; 0] = [];
     let nonce = [0x24u8; CCM_NONCE_LEN];
@@ -977,18 +971,17 @@ fn bench_ccm_one_shot_pair(c: &mut Criterion) {
         )
     });
 
-    // The same 4 KiB and nonce through `CcmPacket` directly, for the ratio.
-    group.bench_function("CcmPacket::encrypt_detached_out 4KiB", |b| {
+    // The same 4 KiB and nonce through the mode's in-place one-shot, for the ratio.
+    group.bench_function("CCM::encrypt_detached_in_place_nonce 4KiB", |b| {
         b.iter_batched_ref(
-            || [0u8; CCM_BUFFER_LEN],
-            |out| {
+            || data,
+            |buf| {
                 black_box(
-                    Aes128CcmEnc::encrypt_detached_out(
-                        black_box(&key),
+                    Aes128CcmMode::encrypt_detached_in_place_nonce(
+                        black_box(&perm),
                         &nonce,
                         &no_aad,
-                        black_box(&data),
-                        out,
+                        buf,
                     )
                     .unwrap(),
                 )

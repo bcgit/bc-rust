@@ -46,11 +46,9 @@
 //! set is `testType: "AFT"`, so nothing is skipped for that reason.
 
 use bouncycastle_aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
-use bouncycastle_cipher::modes::CcmPacket;
-use bouncycastle_cipher::modes::ModeNames;
-use bouncycastle_cipher::{Decrypting, Encrypting};
+use bouncycastle_cipher::modes::{CCM, ModeNames};
 use bouncycastle_core::errors::SymmetricCipherError;
-use bouncycastle_core::hazmat::ElectronicCodeBook;
+use bouncycastle_core::hazmat::{AeadDecryptMode, AeadEncryptMode, ElectronicCodeBook};
 use bouncycastle_core::key_material::KeyMaterial;
 use bouncycastle_core_test_framework::test_data_loaders::{Value, bc_test_data_json, hex_field};
 use std::collections::BTreeMap;
@@ -73,12 +71,8 @@ enum Decrypted {
     TagCheckFailed,
 }
 
-/// Runs one encrypt case: `CcmPacket::encrypt_out` must produce the response file's `ct`, which is
-/// `ciphertext || tag`.
-///
-/// Also re-runs it through the length-declared streaming API in several chunkings, since these are
-/// the only real vectors available for that path and the one-shot is a single call over the whole
-/// payload.
+/// Runs one encrypt case through the mode's in-place one-shot, and returns the response file's
+/// layout, `ciphertext || tag`.
 fn encrypt_case<const KEY_LEN: usize, const TAG_LEN: usize, P>(
     key: &KeyMaterial<KEY_LEN>,
     nonce: &[u8; NONCE_LEN],
@@ -86,33 +80,15 @@ fn encrypt_case<const KEY_LEN: usize, const TAG_LEN: usize, P>(
     plaintext: &[u8],
 ) -> Vec<u8>
 where
-    P: ElectronicCodeBook<KEY_LEN, 16> + ModeNames,
+    P: ElectronicCodeBook<KEY_LEN, 16> + ModeNames + Clone,
 {
-    let mut inline = vec![0u8; plaintext.len() + TAG_LEN];
-    let written = CcmPacket::<P, Encrypting, KEY_LEN, 16, NONCE_LEN, TAG_LEN>::encrypt_out(
-        key, nonce, aad, plaintext, &mut inline,
+    let perm = P::new(key).expect("an ACVP key");
+    let mut inline = plaintext.to_vec();
+    let tag = CCM::<NONCE_LEN, TAG_LEN, 0, 0>::encrypt_detached_in_place_nonce(
+        &perm, nonce, aad, &mut inline,
     )
     .expect("CCM encryption of a valid ACVP case");
-    assert_eq!(written, inline.len(), "the inline layout writes ciphertext || tag");
-
-    // The same answer must come out of the streaming API, in any chunking of both phases.
-    for chunk in [1usize, 5, 16] {
-        let mut ccm = CcmPacket::<P, Encrypting, KEY_LEN, 16, NONCE_LEN, TAG_LEN>::new(
-            key,
-            nonce,
-            aad,
-            plaintext.len(),
-        )
-        .expect("streaming init");
-        let mut streamed = plaintext.to_vec();
-        for piece in streamed.chunks_mut(chunk) {
-            ccm.do_encrypt(piece).expect("update");
-        }
-        let tag = ccm.do_encrypt_final().expect("final");
-        assert_eq!(&streamed[..], &inline[..plaintext.len()], "streamed in {chunk}-byte chunks");
-        assert_eq!(&tag[..], &inline[plaintext.len()..], "streamed tag, {chunk}-byte chunks");
-    }
-
+    inline.extend_from_slice(&tag);
     inline
 }
 
@@ -124,16 +100,15 @@ fn decrypt_case<const KEY_LEN: usize, const TAG_LEN: usize, P>(
     ct_and_tag: &[u8],
 ) -> Decrypted
 where
-    P: ElectronicCodeBook<KEY_LEN, 16> + ModeNames,
+    P: ElectronicCodeBook<KEY_LEN, 16> + ModeNames + Clone,
 {
-    let mut plaintext = vec![0u8; ct_and_tag.len().saturating_sub(TAG_LEN)];
-    match CcmPacket::<P, Decrypting, KEY_LEN, 16, NONCE_LEN, TAG_LEN>::decrypt_out(
-        key, nonce, aad, ct_and_tag, &mut plaintext,
+    let perm = P::new(key).expect("an ACVP key");
+    let (ct, tag) = ct_and_tag.split_last_chunk::<TAG_LEN>().expect("a tag on every vector");
+    let mut plaintext = ct.to_vec();
+    match CCM::<NONCE_LEN, TAG_LEN, 0, 0>::decrypt_detached_in_place(
+        &perm, nonce, aad, &mut plaintext, tag,
     ) {
-        Ok(n) => {
-            plaintext.truncate(n);
-            Decrypted::Plaintext(plaintext)
-        }
+        Ok(()) => Decrypted::Plaintext(plaintext),
         Err(SymmetricCipherError::AEADTagCheckFailed) => {
             assert!(
                 plaintext.iter().all(|b| *b == 0),

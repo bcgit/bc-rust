@@ -3,7 +3,7 @@
 //! and RNG.
 
 use bouncycastle_aes::{
-    AES_CCM_128_Packet, AES_GCM_128, AES_GCM_192, AES_GCM_256, AES128Key, AES192Key, AES256Key,
+    AES_CCM_128, AES_GCM_128, AES_GCM_192, AES_GCM_256, AES128Key, AES192Key, AES256Key,
 };
 use bouncycastle_cipher::modes::{CCM, GCM};
 use bouncycastle_cipher::{Decrypting, Encrypting};
@@ -319,14 +319,14 @@ fn gcm_in_place_one_shots_match_the_out_forms_at_every_length() {
 }
 
 /// A `CCM` key's streaming worker is fixed-frame, and the provided `_out` one-shots go through
-/// it, so they take exactly `DATA_LEN`; the overridden in-place one-shots go through `CcmPacket`
-/// and take any length, agreeing with it byte for byte.
+/// it, so they take exactly `DATA_LEN`; the overridden in-place one-shots take any length, and
+/// agree byte for byte with the trait pair's own any-length one-shots.
 #[test]
-fn ccm_in_place_one_shots_take_any_length_and_match_the_packet_api() {
+fn ccm_in_place_one_shots_take_any_length_and_match_the_trait_pair() {
     const DATA_LEN: usize = 32;
     let km = material::<16>();
     let key = AES128Key::<CCM<12, 16, 0, DATA_LEN>>::from_key_material(&km).unwrap();
-    type Packet<Dir> = AES_CCM_128_Packet<Dir, 12, 16>;
+    type Pair<Dir> = AES_CCM_128<Dir, 12, 16, 0, 0>;
 
     for len in IN_PLACE_LENS {
         let msg = message(len);
@@ -335,7 +335,8 @@ fn ccm_in_place_one_shots_take_any_length_and_match_the_packet_api() {
 
         let mut ct = vec![0u8; len];
         let (n, tag_p) =
-            Packet::<Encrypting>::encrypt_detached_out(&km, &nonce, AAD, &msg, &mut ct).unwrap();
+            Pair::<Encrypting>::encrypt_detached_nonce_out(&km, &nonce, AAD, &msg, &mut ct)
+                .unwrap();
         assert_eq!((n, &ct, tag_p), (len, &buf, tag), "len {len}");
 
         key.decrypt_detached_in_place(&nonce, AAD, &mut buf, &tag).unwrap();
@@ -421,7 +422,7 @@ fn supplied_nonce_forms_match_the_drawing_forms() {
 }
 
 /// A CCM key with a nonce below the 12-byte floor for drawn nonces: the supplied-nonce forms
-/// compile and run at any A.1 length, agreeing with the packet API, while the drawing forms
+/// compile and run at any A.1 length, agreeing with the trait pair's, while the drawing forms
 /// are never instantiated for it.
 #[test]
 fn a_short_ccm_nonce_is_reachable_through_the_supplied_nonce_forms() {
@@ -433,7 +434,7 @@ fn a_short_ccm_nonce_is_reachable_through_the_supplied_nonce_forms() {
     let mut buf = msg.clone();
     let tag = key.encrypt_detached_in_place_nonce(&nonce, AAD, &mut buf).unwrap();
     let mut ct = vec![0u8; msg.len()];
-    let (n, tag_p) = AES_CCM_128_Packet::<Encrypting, 8, 8>::encrypt_detached_out(
+    let (n, tag_p) = AES_CCM_128::<Encrypting, 8, 8, 0, 0>::encrypt_detached_nonce_out(
         &km, &nonce, AAD, &msg, &mut ct,
     )
     .unwrap();
