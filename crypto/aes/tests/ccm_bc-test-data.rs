@@ -9,7 +9,7 @@
 //!
 //! The set has **no `tag` field anywhere**. An encrypt group's answer `ct` is the ciphertext with
 //! the tag appended, and a decrypt group's input `ct` is the same, which is exactly SP 800-38C
-//! Sec 6.1 step 8's own output string. So the cases go through [`CcmPacket::encrypt_out`] / [`CcmPacket::decrypt_out`],
+//! Sec 6.1 step 8's own output string. So the cases go through the mode's in-place one-shots with the tag split off,
 //! the inline pair, and the group's `payloadLen` / `tagLen` are only needed to pick `TAG_LEN` and
 //! to check the answer's length.
 //!
