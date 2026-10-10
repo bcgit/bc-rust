@@ -50,6 +50,7 @@ fn validate(key: &dyn KeyMaterialTrait) -> Result<(), SymmetricCipherError> {
 ///
 /// A true permutation on each byte, so it is a true permutation on the block, and its inverse is
 /// distinctly different code (XOR then `rotate_right(1)`).
+#[derive(Clone)]
 pub struct Toy {
     key: [u8; TOY_LEN],
 }
@@ -123,6 +124,7 @@ impl ElectronicCodeBook<TOY_LEN, TOY_LEN> for Toy {
 /// it is false.
 ///
 /// Its single-block methods are identical to [`Toy`]'s, so the two agree on odd-length input.
+#[derive(Clone)]
 pub struct SwappedPairToy {
     inner: Toy,
 }
@@ -196,6 +198,7 @@ impl ElectronicCodeBook<TOY_LEN, TOY_LEN> for SwappedPairToy {
 /// `TestFrameworkElectronicCodeBook`, which exercises both directions -- so it is only ever used with
 /// `Cfb`. Its forward methods delegate to [`Toy`], including the pair and four-block methods, so a CFB round trip
 /// over it must agree with one over `Toy`.
+#[derive(Clone)]
 pub struct ForwardOnlyToy {
     inner: Toy,
 }
@@ -251,6 +254,7 @@ impl ElectronicCodeBook<TOY_LEN, TOY_LEN> for ForwardOnlyToy {
 /// The four-block analogue of [`SwappedPairToy`]: a CBC decryptor that uses `decrypt_4blocks`
 /// must produce something other than the correct plaintext for four or more blocks, while fewer
 /// than four, which go through the pair and single paths, still round-trip.
+#[derive(Clone)]
 pub struct SwappedFourToy {
     inner: Toy,
 }
