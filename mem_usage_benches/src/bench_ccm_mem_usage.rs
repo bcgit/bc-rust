@@ -30,7 +30,9 @@
 
 use bouncycastle::aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
 use bouncycastle::cipher::modes::{CCM, CcmDecryptor, CcmEncryptor};
-use bouncycastle::core::hazmat::{AeadDecryptMode, AeadEncryptMode, ElectronicCodeBook};
+use bouncycastle::core::hazmat::{
+    AeadPacketDecryptMode, AeadPacketEncryptMode, ElectronicCodeBook,
+};
 use bouncycastle::core::key_material::{KeyMaterial, KeyType};
 use bouncycastle::core::traits::{
     AEADCipherDecryptor, AEADCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
@@ -50,7 +52,7 @@ const AAD_LEN: usize = 64;
 const MESSAGE_LEN: usize = DATA_LEN;
 
 /// The mode's in-place one-shots over the keyed permutation: the direct path.
-type Aes128CcmMode = CCM<NONCE_LEN, TAG_LEN, 0, 0>;
+type Aes128CcmMode = CCM<NONCE_LEN, TAG_LEN>;
 type Aes128CcmEncryptor =
     CcmEncryptor<AES128Internal, 16, 16, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>;
 type Aes128CcmDecryptor =
