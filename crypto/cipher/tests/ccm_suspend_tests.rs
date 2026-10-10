@@ -40,7 +40,7 @@ const ND: usize = ToyDec::SUSPENDED_STATE_LEN;
 
 /// A.1's `2^8q - 1`, which bounds the counter field: there is one counter block per payload
 /// block, so `MAX_COUNTER` is the same number for every `q < 8`.
-const LIMIT: u64 = CCM::<NONCE_LEN, 16, AAD_LEN, DATA_LEN>::MAX_PAYLOAD_LEN;
+const LIMIT: u64 = CCM::<NONCE_LEN, 16>::MAX_PAYLOAD_LEN;
 
 // Field offsets within the suspended array.
 const TEMPLATE: usize = LIB_VERSION_LEN;
