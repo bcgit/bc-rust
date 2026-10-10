@@ -1331,7 +1331,13 @@ where
     ) -> Result<(Self, [u8; NONCE_LEN]), SymmetricCipherError> {
         Self::check_random_nonce();
         let nonce = random_iv::<NONCE_LEN>(rng)?;
-        Ok((Self(CcmAdapter::new(perm, &nonce)), nonce))
+        Ok((Self::from_perm_nonce(perm, &nonce), nonce))
+    }
+
+    /// As [`Self::from_perm`] under a nonce the caller supplies, at any A.1 length: the
+    /// constructor a mode-bound key's `encrypt_init_nonce` uses.
+    pub fn from_perm_nonce(perm: P, nonce: &[u8; NONCE_LEN]) -> Self {
+        Self(CcmAdapter::new(perm, nonce))
     }
 
     /// The floor for a generated nonce, run from every form that draws one: the random-collision
