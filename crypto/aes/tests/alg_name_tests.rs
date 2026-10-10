@@ -3,8 +3,8 @@
 //! strength is the key's, so it is the same for every mode at a key size.
 //!
 //! The direction and the padding are type parameters of one algorithm, not different algorithms,
-//! so every combination of them must report the same name. So must the fixed-frame CCM aliases,
-//! which are a second API onto `AES_CCM_*` rather than another algorithm.
+//! so every combination of them must report the same name. So must the `AES_CCM_*_Packet` aliases,
+//! which are a second API onto the same mode rather than another algorithm.
 
 use bouncycastle_aes::hazmat::{AES_ECB_128, AES_ECB_192, AES_ECB_256};
 use bouncycastle_aes::{
@@ -97,22 +97,27 @@ fn ccm() {
     use SecurityStrength::*;
     const N: usize = CCM_NONCE_LEN;
     const T: usize = CCM_TAG_LEN;
-    check::<AES_CCM_128<Encrypting, N, T>, AES_CCM_128<Decrypting, N, T>>("AES_CCM_128", _128bit);
-    check::<AES_CCM_192<Encrypting, N, T>, AES_CCM_192<Decrypting, N, T>>("AES_CCM_192", _192bit);
-    check::<AES_CCM_256<Encrypting, N, T>, AES_CCM_256<Decrypting, N, T>>("AES_CCM_256", _256bit);
+    check::<AES_CCM_128_Packet<Encrypting, N, T>, AES_CCM_128_Packet<Decrypting, N, T>>(
+        "AES_CCM_128", _128bit,
+    );
+    check::<AES_CCM_192_Packet<Encrypting, N, T>, AES_CCM_192_Packet<Decrypting, N, T>>(
+        "AES_CCM_192", _192bit,
+    );
+    check::<AES_CCM_256_Packet<Encrypting, N, T>, AES_CCM_256_Packet<Decrypting, N, T>>(
+        "AES_CCM_256", _256bit,
+    );
     // The nonce and tag lengths are parameters too, not part of the name.
-    check::<AES_CCM_128<Encrypting, 7, 4>, AES_CCM_128<Decrypting, 7, 4>>("AES_CCM_128", _128bit);
+    check::<AES_CCM_128_Packet<Encrypting, 7, 4>, AES_CCM_128_Packet<Decrypting, 7, 4>>(
+        "AES_CCM_128", _128bit,
+    );
 
-    check::<
-        AES_CCM_128_Packet<Encrypting, N, T, 16, 32>,
-        AES_CCM_128_Packet<Decrypting, N, T, 16, 32>,
-    >("AES_CCM_128", _128bit);
-    check::<
-        AES_CCM_192_Packet<Encrypting, N, T, 16, 32>,
-        AES_CCM_192_Packet<Decrypting, N, T, 16, 32>,
-    >("AES_CCM_192", _192bit);
-    check::<
-        AES_CCM_256_Packet<Encrypting, N, T, 16, 32>,
-        AES_CCM_256_Packet<Decrypting, N, T, 16, 32>,
-    >("AES_CCM_256", _256bit);
+    check::<AES_CCM_128<Encrypting, N, T, 16, 32>, AES_CCM_128<Decrypting, N, T, 16, 32>>(
+        "AES_CCM_128", _128bit,
+    );
+    check::<AES_CCM_192<Encrypting, N, T, 16, 32>, AES_CCM_192<Decrypting, N, T, 16, 32>>(
+        "AES_CCM_192", _192bit,
+    );
+    check::<AES_CCM_256<Encrypting, N, T, 16, 32>, AES_CCM_256<Decrypting, N, T, 16, 32>>(
+        "AES_CCM_256", _256bit,
+    );
 }

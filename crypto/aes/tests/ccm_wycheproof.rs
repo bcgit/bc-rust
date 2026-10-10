@@ -19,12 +19,12 @@
 //! # Ciphertext and tag are separate fields, unlike the ACVP set
 //!
 //! Wycheproof's AEAD schema carries `ct` and `tag` as distinct fields (the `aead_test_schema_v1`
-//! schema), so these cases go through [`Ccm::encrypt_detached_out`] / [`Ccm::decrypt_detached_out`], not
+//! schema), so these cases go through [`CcmPacket::encrypt_detached_out`] / [`CcmPacket::decrypt_detached_out`], not
 //! the inline pair `ccm_bc-test-data.rs` uses.
 //!
 //! # Most of the parameter space cannot be dispatched to at all, by design
 //!
-//! `Ccm`'s `NONCE_LEN` and `TAG_LEN` are const generics restricted to A.1's sets --
+//! `CcmPacket`'s `NONCE_LEN` and `TAG_LEN` are const generics restricted to A.1's sets --
 //! `NONCE_LEN` in `7..=13` bytes, `TAG_LEN` in `{4, 6, 8, 10, 12, 14, 16}` bytes -- so there is no
 //! instantiation to dispatch a group whose `ivSize`/`tagSize` falls outside them to at all; unlike
 //! a runtime check, this is not something a case can "fail", because it is a compile-time property
@@ -34,7 +34,7 @@
 //! asserted at the end so a change in the vector file's shape is visible.
 
 use bouncycastle_aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
-use bouncycastle_cipher::modes::Ccm;
+use bouncycastle_cipher::modes::CcmPacket;
 use bouncycastle_cipher::modes::ModeNames;
 use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::errors::SymmetricCipherError;
@@ -64,8 +64,8 @@ fn cipher_key<const N: usize>(bytes: &[u8]) -> KeyMaterial<N> {
 /// Runs one case at a fully-instantiated `(KEY_LEN, NONCE_LEN, TAG_LEN, P)`.
 ///
 /// For a `result: "valid"` case, `msg` must encrypt to exactly `expected_ct`/`expected_tag`
-/// ([`Ccm::encrypt_detached_out`]), and `expected_ct`/`expected_tag` must decrypt back to `msg`
-/// ([`Ccm::decrypt_detached_out`]). For `result: "invalid"`, only the decrypt direction is checked --
+/// ([`CcmPacket::encrypt_detached_out`]), and `expected_ct`/`expected_tag` must decrypt back to `msg`
+/// ([`CcmPacket::decrypt_detached_out`]). For `result: "invalid"`, only the decrypt direction is checked --
 /// re-encrypting `msg` has no reason to reproduce a deliberately corrupted `ct`/`tag` -- and it
 /// must fail the tag check rather than return a payload.
 #[allow(clippy::too_many_arguments)]
@@ -90,7 +90,7 @@ fn run_case<const KEY_LEN: usize, const NONCE_LEN: usize, const TAG_LEN: usize, 
     if valid {
         let mut ct = vec![0u8; msg.len()];
         let (written, got_tag) =
-            Ccm::<P, Encrypting, KEY_LEN, 16, NONCE_LEN, TAG_LEN>::encrypt_detached_out(
+            CcmPacket::<P, Encrypting, KEY_LEN, 16, NONCE_LEN, TAG_LEN>::encrypt_detached_out(
                 &key, &nonce, aad, msg, &mut ct,
             )
             .unwrap_or_else(|e| panic!("tcId {tc_id}: valid case failed to encrypt: {e:?}"));
@@ -100,7 +100,7 @@ fn run_case<const KEY_LEN: usize, const NONCE_LEN: usize, const TAG_LEN: usize, 
     }
 
     let mut plaintext = vec![0u8; expected_ct.len()];
-    match Ccm::<P, Decrypting, KEY_LEN, 16, NONCE_LEN, TAG_LEN>::decrypt_detached_out(
+    match CcmPacket::<P, Decrypting, KEY_LEN, 16, NONCE_LEN, TAG_LEN>::decrypt_detached_out(
         &key, &nonce, aad, expected_ct, &tag, &mut plaintext,
     ) {
         Ok(n) => {

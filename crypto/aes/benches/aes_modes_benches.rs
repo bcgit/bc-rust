@@ -47,7 +47,7 @@
 use bouncycastle_aes::hazmat::{AES128Internal, AES256Internal};
 use bouncycastle_cipher::modes::hazmat::Ecb;
 use bouncycastle_cipher::modes::{
-    Cbc, Ccm, CcmEncryptor, Cfb, Cfb8, Ctr, GCM_NONCE_LEN, Gcm, ModeNames,
+    Cbc, CcmEncryptor, CcmPacket, Cfb, Cfb8, Ctr, GCM_NONCE_LEN, Gcm, ModeNames,
 };
 use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::errors::SymmetricCipherError;
@@ -80,8 +80,10 @@ type Aes128Cfb8<Dir> = Cfb8<AES128Internal, Dir, 16, BLOCK_LEN>;
 /// direction-specific impl blocks.
 const CCM_NONCE_LEN: usize = 12;
 const CCM_TAG_LEN: usize = 16;
-type Aes128CcmEnc = Ccm<AES128Internal, Encrypting, 16, BLOCK_LEN, CCM_NONCE_LEN, CCM_TAG_LEN>;
-type Aes128CcmDec = Ccm<AES128Internal, Decrypting, 16, BLOCK_LEN, CCM_NONCE_LEN, CCM_TAG_LEN>;
+type Aes128CcmEnc =
+    CcmPacket<AES128Internal, Encrypting, 16, BLOCK_LEN, CCM_NONCE_LEN, CCM_TAG_LEN>;
+type Aes128CcmDec =
+    CcmPacket<AES128Internal, Decrypting, 16, BLOCK_LEN, CCM_NONCE_LEN, CCM_TAG_LEN>;
 
 /// The trait adapter takes its frame size at compile time. Its one-shots are not bound by it,
 /// but using the same 4 KiB message keeps this comparison representative of the public alias a
@@ -822,7 +824,7 @@ fn bench_init(c: &mut Criterion) {
 /// once as a CBC-MAC input. The CBC-MAC half is serial by construction (Sec 6.1 step 3: `Yi` is
 /// the cipher of `Bi XOR Yi-1`), so unlike [`Ctr`] and the decrypt direction of `Cbc`/`Cfb` it has
 /// no pair or four path -- but the CTR half has exactly `Ctr`'s parallelism (A.3's `Ctrj` depends
-/// only on `j`), and `Ccm::apply_keystream` batches it the same way. So CCM sits *between* CTR's
+/// only on `j`), and `CcmPacket::apply_keystream` batches it the same way. So CCM sits *between* CTR's
 /// two numbers, not at a fixed fraction of either:
 ///
 /// * against `modes::ctr::AES_128/16KiB encrypt -- N=1`, CTR's unbatched single-block path, CCM
@@ -944,7 +946,7 @@ fn bench_ccm_aes128(c: &mut Criterion) {
 /// The [`AEADCipherEncryptor`] one-shot against the inherent one-shot on the same message.
 ///
 /// The trait's provided one-shot runs the streaming adapter over one 4 KiB frame and ends in the
-/// same `Ccm` implementation. A cheap deterministic RNG, created
+/// same `CcmPacket` implementation. A cheap deterministic RNG, created
 /// once outside the timed loop, isolates its nonce draw from OS entropy and DRBG construction.
 fn bench_ccm_one_shot_pair(c: &mut Criterion) {
     let key = key::<16>();
@@ -975,8 +977,8 @@ fn bench_ccm_one_shot_pair(c: &mut Criterion) {
         )
     });
 
-    // The same 4 KiB and nonce through `Ccm` directly, for the ratio.
-    group.bench_function("Ccm::encrypt_detached_out 4KiB", |b| {
+    // The same 4 KiB and nonce through `CcmPacket` directly, for the ratio.
+    group.bench_function("CcmPacket::encrypt_detached_out 4KiB", |b| {
         b.iter_batched_ref(
             || [0u8; CCM_BUFFER_LEN],
             |out| {

@@ -13,7 +13,7 @@
 
 mod common;
 
-use bouncycastle_cipher::modes::{Ccm, CcmDecryptor, ModeNames};
+use bouncycastle_cipher::modes::{CcmDecryptor, CcmPacket, ModeNames};
 use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::hazmat::ElectronicCodeBook;
@@ -25,10 +25,10 @@ use common::{ForwardOnlyToy, SwappedFourToy, SwappedPairToy, TOY_LEN, Toy, toy_k
 const NONCE_LEN: usize = 12;
 const TAG_LEN: usize = 16;
 
-type ToyCcm<Dir> = Ccm<Toy, Dir, TOY_LEN, TOY_LEN, NONCE_LEN, TAG_LEN>;
-type SwappedCcm<Dir> = Ccm<SwappedPairToy, Dir, TOY_LEN, TOY_LEN, NONCE_LEN, TAG_LEN>;
-type SwappedFourCcm<Dir> = Ccm<SwappedFourToy, Dir, TOY_LEN, TOY_LEN, NONCE_LEN, TAG_LEN>;
-type ForwardOnlyCcm<Dir> = Ccm<ForwardOnlyToy, Dir, TOY_LEN, TOY_LEN, NONCE_LEN, TAG_LEN>;
+type ToyCcm<Dir> = CcmPacket<Toy, Dir, TOY_LEN, TOY_LEN, NONCE_LEN, TAG_LEN>;
+type SwappedCcm<Dir> = CcmPacket<SwappedPairToy, Dir, TOY_LEN, TOY_LEN, NONCE_LEN, TAG_LEN>;
+type SwappedFourCcm<Dir> = CcmPacket<SwappedFourToy, Dir, TOY_LEN, TOY_LEN, NONCE_LEN, TAG_LEN>;
+type ForwardOnlyCcm<Dir> = CcmPacket<ForwardOnlyToy, Dir, TOY_LEN, TOY_LEN, NONCE_LEN, TAG_LEN>;
 
 fn pinned_nonce() -> [u8; NONCE_LEN] {
     core::array::from_fn(|i| 0xA0 ^ (i as u8))
@@ -46,7 +46,7 @@ fn encrypt<P: ElectronicCodeBook<TOY_LEN, TOY_LEN> + ModeNames>(
 ) -> (Vec<u8>, [u8; TAG_LEN]) {
     let mut ct = vec![0u8; plaintext.len()];
     let (written, tag) =
-        Ccm::<P, Encrypting, TOY_LEN, TOY_LEN, NONCE_LEN, TAG_LEN>::encrypt_detached_out(
+        CcmPacket::<P, Encrypting, TOY_LEN, TOY_LEN, NONCE_LEN, TAG_LEN>::encrypt_detached_out(
             &toy_key(),
             nonce,
             aad,
@@ -65,7 +65,7 @@ fn stream_encrypt<P: ElectronicCodeBook<TOY_LEN, TOY_LEN> + ModeNames>(
     plaintext: &[u8],
     chunk: usize,
 ) -> (Vec<u8>, [u8; TAG_LEN]) {
-    let mut ccm = Ccm::<P, Encrypting, TOY_LEN, TOY_LEN, NONCE_LEN, TAG_LEN>::new(
+    let mut ccm = CcmPacket::<P, Encrypting, TOY_LEN, TOY_LEN, NONCE_LEN, TAG_LEN>::new(
         &toy_key(),
         nonce,
         aad,
@@ -88,7 +88,7 @@ fn stream_decrypt<P: ElectronicCodeBook<TOY_LEN, TOY_LEN> + ModeNames>(
     tag: &[u8; TAG_LEN],
     chunk: usize,
 ) -> Result<Vec<u8>, SymmetricCipherError> {
-    let mut ccm = Ccm::<P, Decrypting, TOY_LEN, TOY_LEN, NONCE_LEN, TAG_LEN>::new(
+    let mut ccm = CcmPacket::<P, Decrypting, TOY_LEN, TOY_LEN, NONCE_LEN, TAG_LEN>::new(
         &toy_key(),
         nonce,
         aad,
@@ -310,8 +310,8 @@ fn tag_length_changes_the_tag_but_not_the_ciphertext_and_tags_do_not_nest() {
 
     macro_rules! check_tag_len {
         ($t:literal) => {{
-            type Enc = Ccm<Toy, Encrypting, TOY_LEN, TOY_LEN, NONCE_LEN, $t>;
-            type Dec = Ccm<Toy, Decrypting, TOY_LEN, TOY_LEN, NONCE_LEN, $t>;
+            type Enc = CcmPacket<Toy, Encrypting, TOY_LEN, TOY_LEN, NONCE_LEN, $t>;
+            type Dec = CcmPacket<Toy, Decrypting, TOY_LEN, TOY_LEN, NONCE_LEN, $t>;
             let mut ct = vec![0u8; plaintext.len()];
             let (_, tag) =
                 Enc::encrypt_detached_out(&toy_key(), &nonce, aad, &plaintext, &mut ct).unwrap();
@@ -342,7 +342,7 @@ fn tag_length_changes_the_tag_but_not_the_ciphertext_and_tags_do_not_nest() {
 }
 
 /// Every nonce length A.1 permits, `n` in `7..=13`, works, and each one implies its own payload
-/// limit: `q = 15 - n` and "by definition, p < 2^8q", which `Ccm::MAX_PAYLOAD_LEN` exposes.
+/// limit: `q = 15 - n` and "by definition, p < 2^8q", which `CcmPacket::MAX_PAYLOAD_LEN` exposes.
 /// `sp800_38c_tests.rs` reaches `n` of 7, 8, 12 and 13 through Appendix C; 9, 10 and 11 are
 /// reached only here. Over the toy alone, since where the nonce goes (A.2.1 Table 2, A.3 Table 3)
 /// is the mode's business and not the permutation's.
@@ -359,8 +359,8 @@ fn every_permitted_nonce_length_works() {
         // first `t` of them; the last nonce octet flipped below sits at block octet `N`, which an
         // 8-byte tag would never see once `N >= 8`. Real AES mixes every byte into every other,
         // so this is a limit of the toy, not of the mode.
-        type Enc<P, const K: usize, const N: usize> = Ccm<P, Encrypting, K, 16, N, 16>;
-        type Dec<P, const K: usize, const N: usize> = Ccm<P, Decrypting, K, 16, N, 16>;
+        type Enc<P, const K: usize, const N: usize> = CcmPacket<P, Encrypting, K, 16, N, 16>;
+        type Dec<P, const K: usize, const N: usize> = CcmPacket<P, Decrypting, K, 16, N, 16>;
         assert_eq!(
             Enc::<P, KEY_LEN, N>::MAX_PAYLOAD_LEN,
             expected_max_payload,

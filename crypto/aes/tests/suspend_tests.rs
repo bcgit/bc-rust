@@ -8,7 +8,7 @@
 
 use bouncycastle_aes::hazmat::AES_ECB_128;
 use bouncycastle_aes::{
-    AES_CBC_128, AES_CCM_128, AES_CFB_128, AES_CFB8_128, AES_CTR_128, AES_GCM_128,
+    AES_CBC_128, AES_CCM_128_Packet, AES_CFB_128, AES_CFB8_128, AES_CTR_128, AES_GCM_128,
 };
 use bouncycastle_cipher::Encrypting;
 use bouncycastle_cipher::padding::PKCS7;
@@ -88,7 +88,7 @@ fn every_alias_family_is_suspendable() {
         [out.as_slice(), &tag[..n]].concat()
     });
 
-    type CcmEnc = AES_CCM_128<Encrypting, 12, 16>;
+    type CcmEnc = AES_CCM_128_Packet<Encrypting, 12, 16>;
     let mut ccm = CcmEnc::new(&key(), &[0x24u8; 12], b"header", 32).unwrap();
     ccm.do_encrypt(&mut [0x11u8; 7]).unwrap();
     round_trip::<{ CcmEnc::SUSPENDED_STATE_LEN }, _>(ccm, |mut e| {

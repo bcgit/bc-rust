@@ -1,4 +1,4 @@
-//! What a resumed CCM state refuses: the bounds `Ccm` and its keystream check when they are
+//! What a resumed CCM state refuses: the bounds `CcmPacket` and its keystream check when they are
 //! rebuilt from a suspended array, each tampered with on its own.
 //!
 //! The round trips in `suspend_tests.rs` show that a faithful state resumes. These show that an
@@ -13,7 +13,7 @@
 //! integer a little-endian `u64`. Spec references are to NIST SP 800-38C (May 2004, errata
 //! update 07-20-2007).
 
-use bouncycastle_cipher::modes::Ccm;
+use bouncycastle_cipher::modes::CcmPacket;
 use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::errors::SuspendableError;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
@@ -28,7 +28,7 @@ use toy_block_cipher::ToyBlockCipher;
 /// payload limit is `2^24 - 1`.
 const NONCE_LEN: usize = 12;
 const BLOCK_LEN: usize = 16;
-type ToyCcm<Dir> = Ccm<ToyBlockCipher, Dir, 16, BLOCK_LEN, NONCE_LEN, 16>;
+type ToyCcm<Dir> = CcmPacket<ToyBlockCipher, Dir, 16, BLOCK_LEN, NONCE_LEN, 16>;
 const N: usize = ToyCcm::<Encrypting>::SUSPENDED_STATE_LEN;
 
 /// A.1's `2^8q - 1`, which bounds both the owed payload and, since there is one counter block per
@@ -83,7 +83,7 @@ fn owed_is_held_to_the_payload_limit() {
 
 /// The counter index runs from 1 (`S0` is the tag mask, step 7 starts the payload keystream at
 /// `S1`) to one past the last counter value, which is where it stands once every block has been
-/// used; 0 and anything beyond are not states a `Ccm` can have been in.
+/// used; 0 and anything beyond are not states a `CcmPacket` can have been in.
 #[test]
 fn the_counter_index_is_held_to_its_range() {
     let state = fresh(32);

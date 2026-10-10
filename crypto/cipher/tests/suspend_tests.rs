@@ -9,7 +9,7 @@
 //! pinned; `bouncycastle-aes` only checks that each alias reaches them.
 
 use bouncycastle_cipher::modes::hazmat::Ecb;
-use bouncycastle_cipher::modes::{Cbc, Ccm, Cfb, Cfb8, Ctr, Gcm};
+use bouncycastle_cipher::modes::{Cbc, CcmPacket, Cfb, Cfb8, Ctr, Gcm};
 use bouncycastle_cipher::padding::{PKCS7, PaddedBlockCipherDecryptor, PaddedBlockCipherEncryptor};
 use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
@@ -30,7 +30,7 @@ type ToyCfb<Dir> = Cfb<ToyBlockCipher, Dir, 16, 16>;
 type ToyCfb8<Dir> = Cfb8<ToyBlockCipher, Dir, 16, 16>;
 type ToyCtr<Dir> = Ctr<ToyBlockCipher, Dir, 16, 16, 12>;
 type ToyGcm<Dir> = Gcm<ToyBlockCipher, Dir, 16, 16>;
-type ToyCcm<Dir> = Ccm<ToyBlockCipher, Dir, 16, 16, 12, 16>;
+type ToyCcm<Dir> = CcmPacket<ToyBlockCipher, Dir, 16, 16, 12, 16>;
 type ToyPaddedEnc = PaddedBlockCipherEncryptor<ToyCbc<Encrypting>, PKCS7, 16, 16, 16>;
 type ToyPaddedDec = PaddedBlockCipherDecryptor<ToyCbc<Decrypting>, PKCS7, 16, 16, 16>;
 
