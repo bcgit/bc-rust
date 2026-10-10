@@ -464,14 +464,6 @@ impl AEADCipherEncryptor<ASCON_AEAD128_NONCE_LEN, ASCON_AEAD128_TAG_LEN, ASCON_A
         self.absorb_aad(aad)
     }
 
-    /// The inherent encrypting constructor under the caller's nonce.
-    fn do_encrypt_init_nonce(
-        key: &KeyMaterial<KEY_LEN>,
-        nonce: &[u8; NONCE_LEN],
-    ) -> Result<Self, SymmetricCipherError> {
-        Ok(Self(AsconAead128::new(key, nonce, None, true)?))
-    }
-
     /// Nothing is ever held back to flush, so `ciphertext` is left zeroed.
     fn do_encrypt_final_detached_out(
         self,

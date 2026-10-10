@@ -599,18 +599,6 @@ where
         self.absorb_aad(aad)
     }
 
-    /// [`do_encrypt_init_rng`](SymmetricCipherEncryptor::do_encrypt_init_rng) with the caller's
-    /// nonce in place of the draw; SP 800-38D Sec 8.2.1's deterministic construction is the
-    /// caller's to follow.
-    fn do_encrypt_init_nonce(
-        key: &KeyMaterial<KEY_LEN>,
-        nonce: &[u8; GCM_NONCE_LEN],
-    ) -> Result<Self, SymmetricCipherError> {
-        Self::check_shape();
-        let perm = P::new(key)?;
-        Ok(Self::setup(perm, *nonce))
-    }
-
     /// Algorithm 4 steps 4-6; nothing is held back, so `ciphertext` is left zeroed.
     fn do_encrypt_final_detached_out(
         self,
