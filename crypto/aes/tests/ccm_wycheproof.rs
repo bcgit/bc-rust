@@ -19,12 +19,12 @@
 //! # Ciphertext and tag are separate fields, unlike the ACVP set
 //!
 //! Wycheproof's AEAD schema carries `ct` and `tag` as distinct fields (the `aead_test_schema_v1`
-//! schema), so these cases go through [`CcmPacket::encrypt_detached_out`] / [`CcmPacket::decrypt_detached_out`], not
+//! schema), so these cases go through the mode's detached in-place one-shots, not
 //! the inline pair `ccm_bc-test-data.rs` uses.
 //!
 //! # Most of the parameter space cannot be dispatched to at all, by design
 //!
-//! `CcmPacket`'s `NONCE_LEN` and `TAG_LEN` are const generics restricted to A.1's sets --
+//! The mode's `NONCE_LEN` and `TAG_LEN` are const generics restricted to A.1's sets --
 //! `NONCE_LEN` in `7..=13` bytes, `TAG_LEN` in `{4, 6, 8, 10, 12, 14, 16}` bytes -- so there is no
 //! instantiation to dispatch a group whose `ivSize`/`tagSize` falls outside them to at all; unlike
 //! a runtime check, this is not something a case can "fail", because it is a compile-time property
