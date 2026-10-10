@@ -1989,6 +1989,7 @@ mod tests {
         const CCM_ALG_NAME: &'static str = "identity_CCM";
         const CFB_ALG_NAME: &'static str = "identity_CFB";
         const CFB8_ALG_NAME: &'static str = "identity_CFB8";
+        const CMAC_ALG_NAME: &'static str = "identity_CMAC";
         const CTR_ALG_NAME: &'static str = "identity_CTR";
         const ECB_ALG_NAME: &'static str = "identity_ECB";
         const GCM_ALG_NAME: &'static str = "identity_GCM";

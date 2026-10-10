@@ -13,6 +13,7 @@
 //! |---|---|---|---|
 //! | CBC | [`cbc`] | SP 800-38A Sec 6.2 | Cipher Block Chaining |
 //! | CCM | [`ccm`] | SP 800-38C | Counter with CBC-MAC. **Authenticated**: CTR plus CBC-MAC, with a tag and AAD |
+//! | CMAC | [`cmac`] | SP 800-38B | A MAC ([`MAC`]), not a cipher: 64- or 128-bit block ciphers, tags truncatable to 64 bits |
 //! | CFB | [`cfb`] | SP 800-38A Sec 6.3 | Cipher Feedback, full-block segment (`s = b`), i.e. CFB128 for AES |
 //! | CFB8 | [`cfb8`] | SP 800-38A Sec 6.3 | Cipher Feedback, 8-bit segment (`s = 8`) |
 //! | CTR | [`ctr`] | SP 800-38A Sec 6.5 | Counter. Nonce plus counter, both directions parallel |
@@ -149,6 +150,7 @@ pub mod cbc;
 pub mod ccm;
 pub mod cfb;
 pub mod cfb8;
+pub mod cmac;
 pub mod ctr;
 pub mod gcm;
 pub mod hazmat;
@@ -158,6 +160,7 @@ pub use cbc::Cbc;
 pub use ccm::{CCM, CcmDecryptor, CcmEncryptor, CcmPacketDecryptor, CcmPacketEncryptor};
 pub use cfb::Cfb;
 pub use cfb8::Cfb8;
+pub use cmac::{CMAC, CMAC_MIN_TAG_LEN, Cmac, CmacKeyState};
 pub use ctr::Ctr;
 pub use gcm::{GCM, GCM_NONCE_LEN, Gcm, GcmKeyState};
 
@@ -173,6 +176,8 @@ pub trait ModeNames {
     const CFB_ALG_NAME: &'static str;
     /// Reported by [`Cfb8`].
     const CFB8_ALG_NAME: &'static str;
+    /// Reported by [`Cmac`].
+    const CMAC_ALG_NAME: &'static str;
     /// Reported by [`Ctr`], through its keystream.
     const CTR_ALG_NAME: &'static str;
     /// Reported by [`hazmat::ecb::Ecb`].
@@ -187,7 +192,7 @@ use bouncycastle_core::hazmat::ElectronicCodeBook;
 #[allow(unused_imports)]
 use bouncycastle_core::traits::{
     AEADCipherDecryptor, AEADCipherEncryptor, Algorithm, BlockCipherDecryptor,
-    BlockCipherEncryptor, StreamCipherDecryptor, StreamCipherEncryptor, SymmetricCipherDecryptor,
-    SymmetricCipherEncryptor,
+    BlockCipherEncryptor, MAC, StreamCipherDecryptor, StreamCipherEncryptor,
+    SymmetricCipherDecryptor, SymmetricCipherEncryptor,
 };
 // end of imports needed for docs
