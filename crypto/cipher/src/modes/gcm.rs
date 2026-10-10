@@ -435,6 +435,16 @@ where
         Ok((Self::setup_from_state(state.clone(), nonce), nonce))
     }
 
+    /// As [`Self::from_key_state`] under a nonce the caller supplies: the constructor a
+    /// permutation crate's `AeadEncryptMode::encrypt_init_nonce` impl for [`GCM`] calls. The
+    /// result is identical to [`AEADCipherEncryptor::do_encrypt_init_nonce`] from the same key.
+    pub fn from_key_state_nonce(state: &GcmKeyState<P>, nonce: &[u8; GCM_NONCE_LEN]) -> Self
+    where
+        P: Clone,
+    {
+        Self::setup_from_state(state.clone(), *nonce)
+    }
+
     /// Encrypts `data` in place (GCTR, Algorithm 4 step 3) and absorbs the resulting ciphertext
     /// into GHASH (step 5). Nothing is held back.
     ///
