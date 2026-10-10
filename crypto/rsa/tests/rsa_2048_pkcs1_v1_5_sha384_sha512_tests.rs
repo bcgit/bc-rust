@@ -118,7 +118,6 @@ fn run_verify_vectors(
     expected_sha: &str,
     expected_num_tests: usize,
     expected_num_valid: usize,
-    expected_num_small_signature: usize,
     expected_num_invalid: usize,
 ) {
     let doc: Value = serde_json::from_str(&get_test_data(filename)).expect("valid JSON");
@@ -127,7 +126,6 @@ fn run_verify_vectors(
     let mut num_valid = 0usize;
     let mut num_invalid = 0usize;
     let mut num_missing_null = 0usize;
-    let mut num_small_signature = 0usize;
 
     for group in doc["testGroups"].as_array().unwrap() {
         assert_eq!(group["sha"], expected_sha);
@@ -152,13 +150,6 @@ fn run_verify_vectors(
 
             let verified = verify(&pk, &msg, &sig);
             match test["result"].as_str().unwrap() {
-                // Wycheproof's `SmallSignature` is a genuine `e = 3` signature whose representative
-                // is far below `n`, which RSAVP1's lower bound rejects by policy (see
-                // `rsa_core::rsavp1`).
-                "valid" if flags.contains(&"SmallSignature") => {
-                    assert!(!verified, "tcId {tc_id}: a small representative must be rejected");
-                    num_small_signature += 1;
-                }
                 "valid" => {
                     assert!(verified, "tcId {tc_id}: expected valid, got invalid");
                     num_valid += 1;
@@ -183,7 +174,6 @@ fn run_verify_vectors(
 
     assert_eq!(num_tests, expected_num_tests);
     assert_eq!(num_missing_null, 1);
-    assert_eq!(num_small_signature, expected_num_small_signature, "for {filename}");
     assert_eq!(num_valid, expected_num_valid);
     assert_eq!(num_invalid, expected_num_invalid);
 }
@@ -196,7 +186,6 @@ fn rsa_signature_sha384_wycheproof_vectors() {
         "SHA-384",
         258,
         7,
-        0,
         250,
     );
 }
@@ -208,8 +197,7 @@ fn rsa_signature_sha512_wycheproof_vectors() {
         |pk, msg, sig| RSASSA_PKCS1_v1_5_SHA512::verify(pk, msg, None, sig).is_ok(),
         "SHA-512",
         259,
-        7,
-        1,
+        8,
         250,
     );
 }

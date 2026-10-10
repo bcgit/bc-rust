@@ -175,7 +175,7 @@ fn trailing_zeros<const N: usize>(a: &[u64; N]) -> u32 {
     count
 }
 
-pub(crate) fn leading_zeros<const N: usize>(a: &[u64; N]) -> u32 {
+fn leading_zeros<const N: usize>(a: &[u64; N]) -> u32 {
     let mut count = 0;
     for limb in a.iter().rev() {
         if *limb == 0 {

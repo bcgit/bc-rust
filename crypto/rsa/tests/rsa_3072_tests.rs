@@ -237,14 +237,12 @@ fn run_pkcs1_v1_5_verify_vectors(
     verify: impl Fn(&RSA3072PublicKey, &[u8], &[u8; 384]) -> bool,
     expected_sha: &str,
     expected_valid: usize,
-    expected_small_signature: usize,
     expected_invalid: usize,
 ) {
     let doc: Value = serde_json::from_str(&get_test_data(filename)).expect("valid JSON");
     let mut num_valid = 0usize;
     let mut num_invalid = 0usize;
     let mut num_missing_null = 0usize;
-    let mut num_small_signature = 0usize;
 
     for group in doc["testGroups"].as_array().unwrap() {
         assert_eq!(group["sha"], expected_sha);
@@ -267,13 +265,6 @@ fn run_pkcs1_v1_5_verify_vectors(
             };
             let verified = verify(&pk, &msg, &sig);
             match test["result"].as_str().unwrap() {
-                // Wycheproof's `SmallSignature` is a genuine `e = 3` signature whose representative
-                // is far below `n`, which RSAVP1's lower bound rejects by policy (see
-                // `rsa_core::rsavp1`).
-                "valid" if flags.contains(&"SmallSignature") => {
-                    assert!(!verified, "tcId {tc_id}: a small representative must be rejected");
-                    num_small_signature += 1;
-                }
                 "valid" => {
                     assert!(verified, "tcId {tc_id}: expected valid, got invalid");
                     num_valid += 1;
@@ -292,7 +283,6 @@ fn run_pkcs1_v1_5_verify_vectors(
         }
     }
     assert_eq!(num_missing_null, 1);
-    assert_eq!(num_small_signature, expected_small_signature, "for {filename}");
     assert_eq!(num_valid, expected_valid, "for {filename}");
     assert_eq!(num_invalid, expected_invalid, "for {filename}");
 }
@@ -303,8 +293,7 @@ fn rsa_signature_3072_sha256_wycheproof_vectors() {
         "rsa_signature_3072_sha256_test.json",
         |pk, msg, sig| RSASSA_PKCS1_v1_5_SHA256::verify(pk, msg, None, sig).is_ok(),
         "SHA-256",
-        7,
-        1,
+        8,
         250,
     );
 }
@@ -320,7 +309,6 @@ fn rsa_signature_3072_sha384_wycheproof_vectors() {
         |pk, msg, sig| RSASSA_PKCS1_v1_5_SHA384::verify(pk, msg, None, sig).is_ok(),
         "SHA-384",
         7,
-        0,
         251,
     );
 }
@@ -335,8 +323,7 @@ fn rsa_signature_3072_sha512_wycheproof_vectors() {
         "rsa_signature_3072_sha512_test.json",
         |pk, msg, sig| RSASSA_PKCS1_v1_5_SHA512::verify(pk, msg, None, sig).is_ok(),
         "SHA-512",
-        7,
-        1,
+        8,
         251,
     );
 }
