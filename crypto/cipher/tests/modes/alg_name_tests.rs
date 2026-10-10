@@ -8,7 +8,7 @@ mod common;
 
 use bouncycastle_cipher::modes::hazmat::ecb::Ecb;
 use bouncycastle_cipher::modes::{
-    Cbc, CcmDecryptor, CcmEncryptor, CcmPacket, Cfb, Cfb8, Ctr, Gcm, ModeNames,
+    Cbc, CcmDecryptor, CcmEncryptor, Cfb, Cfb8, Ctr, Gcm, ModeNames,
 };
 use bouncycastle_cipher::padding::{
     NoPadding, PKCS7, PaddedBlockCipherDecryptor, PaddedBlockCipherEncryptor,
@@ -53,8 +53,6 @@ fn each_mode_reports_its_own_name() {
     check::<Cfb8<Toy, Decrypting, 16, 16>>(Toy::CFB8_ALG_NAME);
     check::<Gcm<Toy, Encrypting, 16, 16>>(Toy::GCM_ALG_NAME);
     check::<Gcm<Toy, Decrypting, 16, 16>>(Toy::GCM_ALG_NAME);
-    check::<CcmPacket<Toy, Encrypting, 16, 16, 12, 16>>(Toy::CCM_ALG_NAME);
-    check::<CcmPacket<Toy, Decrypting, 16, 16, 12, 16>>(Toy::CCM_ALG_NAME);
     check::<CcmEncryptor<Toy, 16, 16, 12, 16, 16, 32>>(Toy::CCM_ALG_NAME);
     check::<CcmDecryptor<Toy, 16, 16, 12, 16, 16, 32>>(Toy::CCM_ALG_NAME);
 }
