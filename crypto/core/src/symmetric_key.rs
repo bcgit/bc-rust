@@ -11,14 +11,16 @@
 //! * **Construction**, for keys the process holds: [`FromKeyMaterial`] for a key of exactly
 //!   `KEY_LEN` bytes, [`FromAnyKeyMaterial`] for a construction that accepts any byte string.
 //!   A key that lives in a hardware token implements neither; it has its own way in.
-//! * **Roles**, one trait per direction: [`AeadEncryptionKey`] / [`AeadDecryptionKey`] and
-//!   [`MacGenerationKey`] / [`MacVerificationKey`]. A key type implements the sides it is allowed
-//!   to use, so a decrypt-only or verify-only key refuses the other side at compile time. The
-//!   one-shots are provided methods over `create_*` and the worker's streaming methods.
+//! * **Roles**, one trait per direction: [`AeadEncryptionKey`] / [`AeadDecryptionKey`], their
+//!   packet forms [`AeadPacketEncryptionKey`] / [`AeadPacketDecryptionKey`] for a mode that must
+//!   know the lengths up front, and [`MacGenerationKey`] / [`MacVerificationKey`]. A key type
+//!   implements the sides it is allowed to use, so a decrypt-only or verify-only key refuses the
+//!   other side at compile time. The one-shots are provided methods over `create_*` and the
+//!   worker's streaming methods, which [`AeadEncryptWorker`] / [`AeadDecryptWorker`] describe.
 //!
 //! Which role a cipher key carries is decided by its mode type through the mode traits in
-//! [`crate::hazmat`] ([`Mode`], [`AeadEncryptMode`], [`AeadDecryptMode`]); the permutation crate
-//! connects the two with a forwarding impl per role.
+//! [`crate::hazmat`] ([`Mode`], [`AeadEncryptMode`], [`AeadDecryptMode`] and their packet
+//! forms); the permutation crate connects the two with a forwarding impl per role.
 //!
 //! ```text
 //! let key = AES128Key::<GCM>::generate(&mut rng)?;
@@ -40,10 +42,7 @@ use crate::errors::{MACError, SymmetricCipherError};
 use crate::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 #[cfg(feature = "std")]
 use crate::traits::AEADEncryptedTuple;
-use crate::traits::{
-    AEADCipherDecryptor, AEADCipherEncryptor, MAC, RNG, SymmetricCipherDecryptor,
-    SymmetricCipherEncryptor,
-};
+use crate::traits::{MAC, RNG};
 
 /// Construction of a key object from exactly `KEY_LEN` bytes of key material.
 ///
@@ -108,15 +107,116 @@ pub trait FromAnyKeyMaterial: Sized {
 
 // The lengths the cipher traits carry are const generics on the role traits rather than associated
 // constants, because stable Rust can neither pass an associated constant as a const-generic
-// argument (the `Encryptor` bound) nor size an array from one (the returned nonce). `KEY_LEN` is
-// here only while the cipher traits still carry it; it goes when their constructors do.
+// argument (the worker bound) nor size an array from one (the returned nonce). `KEY_LEN` is on
+// the role traits only while the cipher traits still carry it; it goes when their constructors do.
+
+/// An AEAD encryptor that already exists: the streaming methods of the cipher traits without
+/// their constructors, which is all a key's worker needs. A worker produced by a key implements
+/// this; the cipher traits' own types implement it by forwarding.
+pub trait AeadEncryptWorker<const NONCE_LEN: usize, const TAG_LEN: usize, const FINAL_LEN: usize>:
+    Sized
+{
+    /// Absorbs associated data, which is authenticated but not encrypted, before any payload.
+    ///
+    /// # Errors
+    /// [`SymmetricCipherError::StateError`] if non-empty after the payload has begun, or the
+    /// worker's own refusal of more than it declared.
+    fn do_update_aad(&mut self, aad: &[u8]) -> Result<(), SymmetricCipherError>;
+
+    /// The most ciphertext bytes the next `do_encrypt_out` of `input_len` bytes can release.
+    fn do_encrypt_out_len(&self, input_len: usize) -> usize;
+
+    /// Encrypts `plaintext` into `ciphertext`, returning the bytes written.
+    ///
+    /// # Errors
+    /// [`SymmetricCipherError::OutputBufferTooSmall`] if `ciphertext` is shorter than
+    /// [`do_encrypt_out_len`](Self::do_encrypt_out_len) says, or the worker's own refusals.
+    fn do_encrypt_out(
+        &mut self,
+        plaintext: &[u8],
+        ciphertext: &mut [u8],
+    ) -> Result<usize, SymmetricCipherError>;
+
+    /// Finishes with the tag inline: whatever was held back, then the tag, and how many bytes
+    /// of the array are valid.
+    ///
+    /// # Errors
+    /// The worker's own refusal of a message it was not given all of.
+    fn do_encrypt_final(self) -> Result<([u8; FINAL_LEN], usize), SymmetricCipherError>;
+
+    /// Finishes with the tag detached: whatever was held back goes into `ciphertext`, and the
+    /// bytes written come back with the tag.
+    ///
+    /// # Errors
+    /// As [`do_encrypt_final`](Self::do_encrypt_final).
+    fn do_encrypt_final_detached_out(
+        self,
+        ciphertext: &mut [u8; FINAL_LEN],
+    ) -> Result<(usize, [u8; TAG_LEN]), SymmetricCipherError>;
+
+    /// The ciphertext length, tag inline, for `plaintext_len` bytes.
+    fn encrypt_out_len(plaintext_len: usize) -> usize;
+
+    /// The ciphertext length, tag detached, for `plaintext_len` bytes.
+    fn encrypt_detached_out_len(plaintext_len: usize) -> usize;
+}
+
+/// An AEAD decryptor that already exists; see [`AeadEncryptWorker`].
+pub trait AeadDecryptWorker<const NONCE_LEN: usize, const TAG_LEN: usize, const FINAL_LEN: usize>:
+    Sized
+{
+    /// Absorbs associated data before any ciphertext.
+    ///
+    /// # Errors
+    /// As [`AeadEncryptWorker::do_update_aad`].
+    fn do_update_aad(&mut self, aad: &[u8]) -> Result<(), SymmetricCipherError>;
+
+    /// The most plaintext bytes the next `do_decrypt_out` of `input_len` bytes can release.
+    fn do_decrypt_out_len(&self, input_len: usize) -> usize;
+
+    /// Decrypts `ciphertext` into `plaintext`, returning the bytes written. What is written is
+    /// not yet authenticated: only the final says whether it may be trusted.
+    ///
+    /// # Errors
+    /// [`SymmetricCipherError::OutputBufferTooSmall`] if `plaintext` is shorter than
+    /// [`do_decrypt_out_len`](Self::do_decrypt_out_len) says, or the worker's own refusals.
+    fn do_decrypt_out(
+        &mut self,
+        ciphertext: &[u8],
+        plaintext: &mut [u8],
+    ) -> Result<usize, SymmetricCipherError>;
+
+    /// Finishes with the tag taken from the end of the ciphertext: whatever was held back, and
+    /// how many bytes of the array are valid.
+    ///
+    /// # Errors
+    /// [`SymmetricCipherError::AEADTagCheckFailed`] if the tag does not verify, and
+    /// [`SymmetricCipherError::DecryptionFailed`] for a malformed ciphertext.
+    fn do_decrypt_final(self) -> Result<([u8; FINAL_LEN], usize), SymmetricCipherError>;
+
+    /// Finishes against a detached `tag`: whatever was held back goes into `plaintext`, and the
+    /// bytes written come back.
+    ///
+    /// # Errors
+    /// As [`do_decrypt_final`](Self::do_decrypt_final).
+    fn do_decrypt_final_detached_out(
+        self,
+        tag: &[u8; TAG_LEN],
+        plaintext: &mut [u8; FINAL_LEN],
+    ) -> Result<usize, SymmetricCipherError>;
+
+    /// The plaintext length for `ciphertext_len` bytes with the tag inline.
+    fn decrypt_out_len(ciphertext_len: usize) -> usize;
+
+    /// The plaintext length for `ciphertext_len` bytes with the tag detached.
+    fn decrypt_detached_out_len(ciphertext_len: usize) -> usize;
+}
 
 /// A key that can begin an authenticated encryption: the encryption half of an AEAD key.
 ///
-/// The encryptor is the mode's ordinary type, so everything in [`AEADCipherEncryptor`] applies to
-/// it unchanged; this trait adds where it comes from. The one-shots are provided over
-/// [`create_encryptor`](Self::create_encryptor) and the streaming methods, and return the same
-/// bytes as streaming the message by hand.
+/// The encryptor is the mode's ordinary worker; this trait adds where it comes from. The
+/// one-shots are provided over [`create_encryptor`](Self::create_encryptor) and the worker's
+/// streaming methods, and return the same bytes as streaming the message by hand.
 ///
 /// # The nonce is drawn by default
 ///
@@ -132,7 +232,7 @@ pub trait AeadEncryptionKey<
 >
 {
     /// The streaming encryptor this key produces.
-    type Encryptor: AEADCipherEncryptor<KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN>;
+    type Encryptor: AeadEncryptWorker<NONCE_LEN, TAG_LEN, FINAL_LEN>;
 
     /// Begins an encryption under a nonce drawn from `rng`. The nonce is returned alongside the
     /// encryptor and must reach the recipient, who passes it to
@@ -344,7 +444,7 @@ pub trait AeadDecryptionKey<
 >
 {
     /// The streaming decryptor this key produces.
-    type Decryptor: AEADCipherDecryptor<KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN>;
+    type Decryptor: AeadDecryptWorker<NONCE_LEN, TAG_LEN, FINAL_LEN>;
 
     /// Begins the decryption of a message whose encryptor returned `nonce`.
     fn create_decryptor(&self, nonce: &[u8; NONCE_LEN]) -> Self::Decryptor;
@@ -366,28 +466,7 @@ pub trait AeadDecryptionKey<
         ciphertext: &[u8],
         plaintext: &mut [u8],
     ) -> Result<usize, SymmetricCipherError> {
-        plaintext.fill(0);
-        let needed = Self::Decryptor::decrypt_out_len(ciphertext.len());
-        if plaintext.len() < needed {
-            return Err(SymmetricCipherError::OutputBufferTooSmall(needed));
-        }
-        let mut dec = self.create_decryptor(nonce);
-        dec.do_update_aad(aad)?;
-        let written = dec.do_decrypt_out(ciphertext, plaintext)?;
-        match dec.do_decrypt_final() {
-            Ok((last, data_len)) => {
-                // `decrypt_out_len` bounds `written + data_len`, so this fits in
-                // `plaintext[..needed]`.
-                plaintext[written..written + data_len].copy_from_slice(&last[..data_len]);
-                Ok(written + data_len)
-            }
-            Err(e) => {
-                // What `do_decrypt_out` released is unauthenticated, and this one-shot owns the
-                // whole message, so it does not leave that in the caller's hands.
-                plaintext[..written].fill(0);
-                Err(e)
-            }
-        }
+        crate::provided::decrypt_inline(self.create_decryptor(nonce), aad, ciphertext, plaintext)
     }
 
     /// As [`decrypt_with_aad_out`](Self::decrypt_with_aad_out), allocating the plaintext.
@@ -421,27 +500,13 @@ pub trait AeadDecryptionKey<
         tag: &[u8; TAG_LEN],
         plaintext: &mut [u8],
     ) -> Result<usize, SymmetricCipherError> {
-        plaintext.fill(0);
-        let needed = Self::Decryptor::decrypt_detached_out_len(ciphertext.len());
-        if plaintext.len() < needed {
-            return Err(SymmetricCipherError::OutputBufferTooSmall(needed));
-        }
-        let mut dec = self.create_decryptor(nonce);
-        dec.do_update_aad(aad)?;
-        let written = dec.do_decrypt_out(ciphertext, plaintext)?;
-        let mut final_buf = [0u8; FINAL_LEN];
-        match dec.do_decrypt_final_detached_out(tag, &mut final_buf) {
-            Ok(final_len) => {
-                // `decrypt_detached_out_len` bounds `written + final_len`.
-                plaintext[written..written + final_len].copy_from_slice(&final_buf[..final_len]);
-                Ok(written + final_len)
-            }
-            Err(e) => {
-                // As in `decrypt_with_aad_out`.
-                plaintext[..written].fill(0);
-                Err(e)
-            }
-        }
+        crate::provided::decrypt_detached(
+            self.create_decryptor(nonce),
+            aad,
+            ciphertext,
+            tag,
+            plaintext,
+        )
     }
 
     /// As [`decrypt_detached_out`](Self::decrypt_detached_out), allocating the plaintext.
@@ -477,6 +542,323 @@ pub trait AeadDecryptionKey<
         tag: &[u8; TAG_LEN],
     ) -> Result<(), SymmetricCipherError> {
         crate::provided::decrypt_detached_in_place(self.create_decryptor(nonce), aad, buf, tag)
+    }
+}
+
+/// The encryption half of an AEAD key whose mode must know the AAD and payload lengths before
+/// its first byte: CCM. The constructors take both, and the worker then needs no buffer for
+/// either and holds nothing back. The one-shots have the lengths in hand, so they are provided
+/// exactly as [`AeadEncryptionKey`]'s are and behave the same.
+pub trait AeadPacketEncryptionKey<
+    const KEY_LEN: usize,
+    const NONCE_LEN: usize,
+    const TAG_LEN: usize,
+    const FINAL_LEN: usize,
+>
+{
+    /// The streaming encryptor this key produces.
+    type Encryptor: AeadEncryptWorker<NONCE_LEN, TAG_LEN, FINAL_LEN>;
+
+    /// Begins an encryption of `payload_len` bytes under `aad_len` bytes of AAD and a nonce
+    /// drawn from `rng`, which is returned. The worker then takes exactly those amounts.
+    ///
+    /// # Errors
+    /// [`SymmetricCipherError::RNGError`] if the nonce draw fails, or the mode's refusal of a
+    /// length it cannot encode.
+    fn create_encryptor(
+        &self,
+        rng: &mut dyn RNG,
+        aad_len: usize,
+        payload_len: usize,
+    ) -> Result<(Self::Encryptor, [u8; NONCE_LEN]), SymmetricCipherError>;
+
+    /// As [`create_encryptor`](Self::create_encryptor) under a nonce the caller supplies, who
+    /// takes on the obligation that it never repeat under this key.
+    ///
+    /// # Errors
+    /// The mode's refusal of a length it cannot encode.
+    fn create_encryptor_nonce(
+        &self,
+        nonce: &[u8; NONCE_LEN],
+        aad_len: usize,
+        payload_len: usize,
+    ) -> Result<Self::Encryptor, SymmetricCipherError>;
+
+    /// As [`AeadEncryptionKey::encrypt_with_aad_out`].
+    ///
+    /// # Errors
+    /// As [`create_encryptor`](Self::create_encryptor), or
+    /// [`SymmetricCipherError::OutputBufferTooSmall`] if `ciphertext` is too short.
+    fn encrypt_with_aad_out(
+        &self,
+        rng: &mut dyn RNG,
+        aad: &[u8],
+        plaintext: &[u8],
+        ciphertext: &mut [u8],
+    ) -> Result<(usize, [u8; NONCE_LEN]), SymmetricCipherError> {
+        let (enc, nonce) = self.create_encryptor(rng, aad.len(), plaintext.len())?;
+        let written = crate::provided::encrypt_inline(enc, aad, plaintext, ciphertext)?;
+        Ok((written, nonce))
+    }
+
+    /// As [`AeadEncryptionKey::encrypt_with_aad`].
+    ///
+    /// # Errors
+    /// As [`encrypt_with_aad_out`](Self::encrypt_with_aad_out).
+    #[cfg(feature = "std")]
+    fn encrypt_with_aad(
+        &self,
+        rng: &mut dyn RNG,
+        aad: &[u8],
+        plaintext: &[u8],
+    ) -> Result<([u8; NONCE_LEN], Vec<u8>), SymmetricCipherError> {
+        let mut ciphertext = vec![0u8; Self::Encryptor::encrypt_out_len(plaintext.len())];
+        let (written, nonce) = self.encrypt_with_aad_out(rng, aad, plaintext, &mut ciphertext)?;
+        ciphertext.truncate(written);
+        Ok((nonce, ciphertext))
+    }
+
+    /// As [`AeadEncryptionKey::encrypt_detached_out`].
+    ///
+    /// # Errors
+    /// As [`encrypt_with_aad_out`](Self::encrypt_with_aad_out).
+    fn encrypt_detached_out(
+        &self,
+        rng: &mut dyn RNG,
+        aad: &[u8],
+        plaintext: &[u8],
+        ciphertext: &mut [u8],
+    ) -> Result<(usize, [u8; NONCE_LEN], [u8; TAG_LEN]), SymmetricCipherError> {
+        let (enc, nonce) = self.create_encryptor(rng, aad.len(), plaintext.len())?;
+        let (written, tag) = crate::provided::encrypt_detached(enc, aad, plaintext, ciphertext)?;
+        Ok((written, nonce, tag))
+    }
+
+    /// As [`AeadEncryptionKey::encrypt_detached`].
+    ///
+    /// # Errors
+    /// As [`encrypt_detached_out`](Self::encrypt_detached_out).
+    #[cfg(feature = "std")]
+    fn encrypt_detached(
+        &self,
+        rng: &mut dyn RNG,
+        aad: &[u8],
+        plaintext: &[u8],
+    ) -> Result<AEADEncryptedTuple<NONCE_LEN, TAG_LEN>, SymmetricCipherError> {
+        let mut ciphertext = vec![0u8; Self::Encryptor::encrypt_detached_out_len(plaintext.len())];
+        let (written, nonce, tag) =
+            self.encrypt_detached_out(rng, aad, plaintext, &mut ciphertext)?;
+        ciphertext.truncate(written);
+        Ok((nonce, ciphertext, tag))
+    }
+
+    /// As [`AeadEncryptionKey::encrypt_detached_in_place`].
+    ///
+    /// # Errors
+    /// As [`create_encryptor`](Self::create_encryptor), or any error of the encryptor's
+    /// streaming methods.
+    fn encrypt_detached_in_place(
+        &self,
+        rng: &mut dyn RNG,
+        aad: &[u8],
+        buf: &mut [u8],
+    ) -> Result<([u8; NONCE_LEN], [u8; TAG_LEN]), SymmetricCipherError> {
+        let (enc, nonce) = self.create_encryptor(rng, aad.len(), buf.len())?;
+        let tag = crate::provided::encrypt_detached_in_place(enc, aad, buf)?;
+        Ok((nonce, tag))
+    }
+
+    /// As [`AeadEncryptionKey::encrypt_with_aad_nonce_out`].
+    ///
+    /// # Errors
+    /// As [`create_encryptor_nonce`](Self::create_encryptor_nonce), or
+    /// [`SymmetricCipherError::OutputBufferTooSmall`] if `ciphertext` is too short.
+    fn encrypt_with_aad_nonce_out(
+        &self,
+        nonce: &[u8; NONCE_LEN],
+        aad: &[u8],
+        plaintext: &[u8],
+        ciphertext: &mut [u8],
+    ) -> Result<usize, SymmetricCipherError> {
+        let enc = self.create_encryptor_nonce(nonce, aad.len(), plaintext.len())?;
+        crate::provided::encrypt_inline(enc, aad, plaintext, ciphertext)
+    }
+
+    /// As [`AeadEncryptionKey::encrypt_with_aad_nonce`].
+    ///
+    /// # Errors
+    /// As [`encrypt_with_aad_nonce_out`](Self::encrypt_with_aad_nonce_out).
+    #[cfg(feature = "std")]
+    fn encrypt_with_aad_nonce(
+        &self,
+        nonce: &[u8; NONCE_LEN],
+        aad: &[u8],
+        plaintext: &[u8],
+    ) -> Result<Vec<u8>, SymmetricCipherError> {
+        let mut ciphertext = vec![0u8; Self::Encryptor::encrypt_out_len(plaintext.len())];
+        let written = self.encrypt_with_aad_nonce_out(nonce, aad, plaintext, &mut ciphertext)?;
+        ciphertext.truncate(written);
+        Ok(ciphertext)
+    }
+
+    /// As [`AeadEncryptionKey::encrypt_detached_nonce_out`].
+    ///
+    /// # Errors
+    /// As [`encrypt_with_aad_nonce_out`](Self::encrypt_with_aad_nonce_out).
+    fn encrypt_detached_nonce_out(
+        &self,
+        nonce: &[u8; NONCE_LEN],
+        aad: &[u8],
+        plaintext: &[u8],
+        ciphertext: &mut [u8],
+    ) -> Result<(usize, [u8; TAG_LEN]), SymmetricCipherError> {
+        let enc = self.create_encryptor_nonce(nonce, aad.len(), plaintext.len())?;
+        crate::provided::encrypt_detached(enc, aad, plaintext, ciphertext)
+    }
+
+    /// As [`AeadEncryptionKey::encrypt_detached_nonce`].
+    ///
+    /// # Errors
+    /// As [`encrypt_detached_nonce_out`](Self::encrypt_detached_nonce_out).
+    #[cfg(feature = "std")]
+    fn encrypt_detached_nonce(
+        &self,
+        nonce: &[u8; NONCE_LEN],
+        aad: &[u8],
+        plaintext: &[u8],
+    ) -> Result<(Vec<u8>, [u8; TAG_LEN]), SymmetricCipherError> {
+        let mut ciphertext = vec![0u8; Self::Encryptor::encrypt_detached_out_len(plaintext.len())];
+        let (written, tag) =
+            self.encrypt_detached_nonce_out(nonce, aad, plaintext, &mut ciphertext)?;
+        ciphertext.truncate(written);
+        Ok((ciphertext, tag))
+    }
+
+    /// As [`AeadEncryptionKey::encrypt_detached_in_place_nonce`].
+    ///
+    /// # Errors
+    /// As [`create_encryptor_nonce`](Self::create_encryptor_nonce), or any error of the
+    /// encryptor's streaming methods.
+    fn encrypt_detached_in_place_nonce(
+        &self,
+        nonce: &[u8; NONCE_LEN],
+        aad: &[u8],
+        buf: &mut [u8],
+    ) -> Result<[u8; TAG_LEN], SymmetricCipherError> {
+        let enc = self.create_encryptor_nonce(nonce, aad.len(), buf.len())?;
+        crate::provided::encrypt_detached_in_place(enc, aad, buf)
+    }
+}
+
+/// The decryption half of an AEAD key whose mode must know the lengths up front; see
+/// [`AeadPacketEncryptionKey`]. For the inline layout the payload length is the ciphertext less
+/// its tag, and a ciphertext too short for a tag is malformed.
+pub trait AeadPacketDecryptionKey<
+    const KEY_LEN: usize,
+    const NONCE_LEN: usize,
+    const TAG_LEN: usize,
+    const FINAL_LEN: usize,
+>
+{
+    /// The streaming decryptor this key produces.
+    type Decryptor: AeadDecryptWorker<NONCE_LEN, TAG_LEN, FINAL_LEN>;
+
+    /// Begins the decryption of `payload_len` bytes of ciphertext under `aad_len` bytes of AAD,
+    /// encrypted under `nonce`.
+    ///
+    /// # Errors
+    /// The mode's refusal of a length it cannot encode.
+    fn create_decryptor(
+        &self,
+        nonce: &[u8; NONCE_LEN],
+        aad_len: usize,
+        payload_len: usize,
+    ) -> Result<Self::Decryptor, SymmetricCipherError>;
+
+    /// As [`AeadDecryptionKey::decrypt_with_aad_out`].
+    ///
+    /// # Errors
+    /// As [`AeadDecryptionKey::decrypt_with_aad_out`], and
+    /// [`SymmetricCipherError::DecryptionFailed`] if `ciphertext` is too short for a tag.
+    fn decrypt_with_aad_out(
+        &self,
+        nonce: &[u8; NONCE_LEN],
+        aad: &[u8],
+        ciphertext: &[u8],
+        plaintext: &mut [u8],
+    ) -> Result<usize, SymmetricCipherError> {
+        let payload_len = crate::provided::inline_payload_len::<TAG_LEN>(ciphertext.len())?;
+        let dec = self.create_decryptor(nonce, aad.len(), payload_len)?;
+        crate::provided::decrypt_inline(dec, aad, ciphertext, plaintext)
+    }
+
+    /// As [`AeadDecryptionKey::decrypt_with_aad`].
+    ///
+    /// # Errors
+    /// As [`decrypt_with_aad_out`](Self::decrypt_with_aad_out).
+    #[cfg(feature = "std")]
+    fn decrypt_with_aad(
+        &self,
+        nonce: &[u8; NONCE_LEN],
+        aad: &[u8],
+        ciphertext: &[u8],
+    ) -> Result<Vec<u8>, SymmetricCipherError> {
+        let mut plaintext = vec![0u8; Self::Decryptor::decrypt_out_len(ciphertext.len())];
+        let written = self.decrypt_with_aad_out(nonce, aad, ciphertext, &mut plaintext)?;
+        plaintext.truncate(written);
+        Ok(plaintext)
+    }
+
+    /// As [`AeadDecryptionKey::decrypt_detached_out`].
+    ///
+    /// # Errors
+    /// As [`AeadDecryptionKey::decrypt_detached_out`], or
+    /// [`create_decryptor`](Self::create_decryptor)'s.
+    fn decrypt_detached_out(
+        &self,
+        nonce: &[u8; NONCE_LEN],
+        aad: &[u8],
+        ciphertext: &[u8],
+        tag: &[u8; TAG_LEN],
+        plaintext: &mut [u8],
+    ) -> Result<usize, SymmetricCipherError> {
+        let dec = self.create_decryptor(nonce, aad.len(), ciphertext.len())?;
+        crate::provided::decrypt_detached(dec, aad, ciphertext, tag, plaintext)
+    }
+
+    /// As [`AeadDecryptionKey::decrypt_detached`].
+    ///
+    /// # Errors
+    /// As [`decrypt_detached_out`](Self::decrypt_detached_out).
+    #[cfg(feature = "std")]
+    fn decrypt_detached(
+        &self,
+        nonce: &[u8; NONCE_LEN],
+        aad: &[u8],
+        ciphertext: &[u8],
+        tag: &[u8; TAG_LEN],
+    ) -> Result<Vec<u8>, SymmetricCipherError> {
+        let mut plaintext = vec![0u8; Self::Decryptor::decrypt_detached_out_len(ciphertext.len())];
+        let written = self.decrypt_detached_out(nonce, aad, ciphertext, tag, &mut plaintext)?;
+        plaintext.truncate(written);
+        Ok(plaintext)
+    }
+
+    /// As [`AeadDecryptionKey::decrypt_detached_in_place`]; `buf` is untouched if construction
+    /// refuses the lengths, and zeroized on any error after that.
+    ///
+    /// # Errors
+    /// As [`AeadDecryptionKey::decrypt_detached_in_place`], or
+    /// [`create_decryptor`](Self::create_decryptor)'s.
+    fn decrypt_detached_in_place(
+        &self,
+        nonce: &[u8; NONCE_LEN],
+        aad: &[u8],
+        buf: &mut [u8],
+        tag: &[u8; TAG_LEN],
+    ) -> Result<(), SymmetricCipherError> {
+        let dec = self.create_decryptor(nonce, aad.len(), buf.len())?;
+        crate::provided::decrypt_detached_in_place(dec, aad, buf, tag)
     }
 }
 

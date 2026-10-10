@@ -19,4 +19,6 @@ mod mode;
 pub use electronic_code_book::ElectronicCodeBook;
 pub use hazardous_operations::do_hazardous_operations;
 pub use key_stream::KeyStream;
-pub use mode::{AeadDecryptMode, AeadEncryptMode, Mode};
+pub use mode::{
+    AeadDecryptMode, AeadEncryptMode, AeadPacketDecryptMode, AeadPacketEncryptMode, Mode,
+};
