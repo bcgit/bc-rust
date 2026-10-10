@@ -65,6 +65,7 @@ impl ModeNames for Toy {
     const CCM_ALG_NAME: &'static str = "Toy_CCM";
     const CFB_ALG_NAME: &'static str = "Toy_CFB";
     const CFB8_ALG_NAME: &'static str = "Toy_CFB8";
+    const CMAC_ALG_NAME: &'static str = "Toy_CMAC";
     const CTR_ALG_NAME: &'static str = "Toy_CTR";
     const ECB_ALG_NAME: &'static str = "Toy_ECB";
     const GCM_ALG_NAME: &'static str = "Toy_GCM";
@@ -139,6 +140,7 @@ impl ModeNames for SwappedPairToy {
     const CCM_ALG_NAME: &'static str = "SwappedPairToy_CCM";
     const CFB_ALG_NAME: &'static str = "SwappedPairToy_CFB";
     const CFB8_ALG_NAME: &'static str = "SwappedPairToy_CFB8";
+    const CMAC_ALG_NAME: &'static str = "SwappedPairToy_CMAC";
     const CTR_ALG_NAME: &'static str = "SwappedPairToy_CTR";
     const ECB_ALG_NAME: &'static str = "SwappedPairToy_ECB";
     const GCM_ALG_NAME: &'static str = "SwappedPairToy_GCM";
@@ -213,6 +215,7 @@ impl ModeNames for ForwardOnlyToy {
     const CCM_ALG_NAME: &'static str = "ForwardOnlyToy_CCM";
     const CFB_ALG_NAME: &'static str = "ForwardOnlyToy_CFB";
     const CFB8_ALG_NAME: &'static str = "ForwardOnlyToy_CFB8";
+    const CMAC_ALG_NAME: &'static str = "ForwardOnlyToy_CMAC";
     const CTR_ALG_NAME: &'static str = "ForwardOnlyToy_CTR";
     const ECB_ALG_NAME: &'static str = "ForwardOnlyToy_ECB";
     const GCM_ALG_NAME: &'static str = "ForwardOnlyToy_GCM";
@@ -269,6 +272,7 @@ impl ModeNames for SwappedFourToy {
     const CCM_ALG_NAME: &'static str = "SwappedFourToy_CCM";
     const CFB_ALG_NAME: &'static str = "SwappedFourToy_CFB";
     const CFB8_ALG_NAME: &'static str = "SwappedFourToy_CFB8";
+    const CMAC_ALG_NAME: &'static str = "SwappedFourToy_CMAC";
     const CTR_ALG_NAME: &'static str = "SwappedFourToy_CTR";
     const ECB_ALG_NAME: &'static str = "SwappedFourToy_ECB";
     const GCM_ALG_NAME: &'static str = "SwappedFourToy_GCM";

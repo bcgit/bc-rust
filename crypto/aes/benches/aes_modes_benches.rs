@@ -125,6 +125,7 @@ impl ModeNames for UnpairedAes128 {
     const CCM_ALG_NAME: &'static str = "AES_CCM_128 (unpaired)";
     const CFB_ALG_NAME: &'static str = "AES_CFB_128 (unpaired)";
     const CFB8_ALG_NAME: &'static str = "AES_CFB8_128 (unpaired)";
+    const CMAC_ALG_NAME: &'static str = "AES_CMAC_128 (unpaired)";
     const CTR_ALG_NAME: &'static str = "AES_CTR_128 (unpaired)";
     const ECB_ALG_NAME: &'static str = "AES_ECB_128 (unpaired)";
     const GCM_ALG_NAME: &'static str = "AES_GCM_128 (unpaired)";

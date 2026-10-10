@@ -42,6 +42,7 @@ impl ModeNames for ToyBlockCipher {
     const CCM_ALG_NAME: &'static str = "ToyBlockCipher_CCM";
     const CFB_ALG_NAME: &'static str = "ToyBlockCipher_CFB";
     const CFB8_ALG_NAME: &'static str = "ToyBlockCipher_CFB8";
+    const CMAC_ALG_NAME: &'static str = "ToyBlockCipher_CMAC";
     const CTR_ALG_NAME: &'static str = "ToyBlockCipher_CTR";
     const ECB_ALG_NAME: &'static str = "ToyBlockCipher_ECB";
     const GCM_ALG_NAME: &'static str = "ToyBlockCipher_GCM";

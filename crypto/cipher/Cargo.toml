@@ -47,6 +47,10 @@ name = "cfb_tests"
 path = "tests/modes/cfb_tests.rs"
 
 [[test]]
+name = "cmac_tests"
+path = "tests/modes/cmac_tests.rs"
+
+[[test]]
 name = "ctr_tests"
 path = "tests/modes/ctr_tests.rs"
 
