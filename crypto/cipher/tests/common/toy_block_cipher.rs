@@ -46,6 +46,7 @@ impl ModeNames for ToyBlockCipher {
     const CTR_ALG_NAME: &'static str = "ToyBlockCipher_CTR";
     const ECB_ALG_NAME: &'static str = "ToyBlockCipher_ECB";
     const GCM_ALG_NAME: &'static str = "ToyBlockCipher_GCM";
+    const GMAC_ALG_NAME: &'static str = "ToyBlockCipher_GMAC";
 }
 
 impl ElectronicCodeBook<TOY_BLOCK_LEN, TOY_BLOCK_LEN> for ToyBlockCipher {

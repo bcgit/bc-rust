@@ -1993,6 +1993,7 @@ mod tests {
         const CTR_ALG_NAME: &'static str = "identity_CTR";
         const ECB_ALG_NAME: &'static str = "identity_ECB";
         const GCM_ALG_NAME: &'static str = "identity_GCM";
+        const GMAC_ALG_NAME: &'static str = "identity_GMAC";
     }
 
     impl ElectronicCodeBook<16, 16> for Identity {

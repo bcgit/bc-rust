@@ -69,6 +69,7 @@ impl ModeNames for Toy {
     const CTR_ALG_NAME: &'static str = "Toy_CTR";
     const ECB_ALG_NAME: &'static str = "Toy_ECB";
     const GCM_ALG_NAME: &'static str = "Toy_GCM";
+    const GMAC_ALG_NAME: &'static str = "Toy_GMAC";
 }
 
 impl ElectronicCodeBook<TOY_LEN, TOY_LEN> for Toy {
@@ -144,6 +145,7 @@ impl ModeNames for SwappedPairToy {
     const CTR_ALG_NAME: &'static str = "SwappedPairToy_CTR";
     const ECB_ALG_NAME: &'static str = "SwappedPairToy_ECB";
     const GCM_ALG_NAME: &'static str = "SwappedPairToy_GCM";
+    const GMAC_ALG_NAME: &'static str = "SwappedPairToy_GMAC";
 }
 
 impl ElectronicCodeBook<TOY_LEN, TOY_LEN> for SwappedPairToy {
@@ -219,6 +221,7 @@ impl ModeNames for ForwardOnlyToy {
     const CTR_ALG_NAME: &'static str = "ForwardOnlyToy_CTR";
     const ECB_ALG_NAME: &'static str = "ForwardOnlyToy_ECB";
     const GCM_ALG_NAME: &'static str = "ForwardOnlyToy_GCM";
+    const GMAC_ALG_NAME: &'static str = "ForwardOnlyToy_GMAC";
 }
 
 impl ElectronicCodeBook<TOY_LEN, TOY_LEN> for ForwardOnlyToy {
@@ -276,6 +279,7 @@ impl ModeNames for SwappedFourToy {
     const CTR_ALG_NAME: &'static str = "SwappedFourToy_CTR";
     const ECB_ALG_NAME: &'static str = "SwappedFourToy_ECB";
     const GCM_ALG_NAME: &'static str = "SwappedFourToy_GCM";
+    const GMAC_ALG_NAME: &'static str = "SwappedFourToy_GMAC";
 }
 
 impl ElectronicCodeBook<TOY_LEN, TOY_LEN> for SwappedFourToy {

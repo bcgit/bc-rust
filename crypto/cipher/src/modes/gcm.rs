@@ -161,8 +161,8 @@
 //! The one-shots (`decrypt_out`, `decrypt_detached_out`, `decrypt_with_aad_out`) verify the
 //! tag first and release nothing on failure, making them more robust.
 //!
-//! * **GMAC is GCM with no plaintext** (Sec 5.2): feed only AAD and call
-//!   `do_encrypt_final_detached`: there is no separate `Gmac` type.
+//! * **GMAC is GCM with no plaintext** (Sec 5.2): [`Gmac`](crate::modes::gmac) is this type fed
+//!   only AAD, with the plaintext-free API.
 
 use crate::modes::Ctr;
 use crate::modes::ModeNames;
@@ -343,7 +343,7 @@ where
     /// `AEADCipher*::do_update_aad`. Any number of calls before the first `do_update_out`; a
     /// non-empty call after data has started is [`SymmetricCipherError::StateError`] (Algorithm 4
     /// absorbs `A` before `C` in one GHASH pass, D4). Empty AAD is always a no-op.
-    fn absorb_aad(&mut self, aad: &[u8]) -> Result<(), SymmetricCipherError> {
+    pub(crate) fn absorb_aad(&mut self, aad: &[u8]) -> Result<(), SymmetricCipherError> {
         if self.phase == Phase::Data {
             if aad.is_empty() {
                 return Ok(());
@@ -460,7 +460,7 @@ where
 
     /// Algorithm 4 steps 4-6: finishes the message and returns the detached authentication tag,
     /// truncated to `TAG_LEN` bytes (`MSB_t`, step 6). Consumes the encryptor.
-    fn finish(mut self) -> [u8; TAG_LEN] {
+    pub(crate) fn finish(mut self) -> [u8; TAG_LEN] {
         // Covers an AAD-only or entirely empty message, where no data was ever encrypted.
         self.begin_data_if_needed();
         let mut full: Secret<[u8; 16]> = Secret::new();
@@ -593,7 +593,7 @@ where
     ///
     /// # Errors
     /// [`SymmetricCipherError::AEADTagCheckFailed`] if the tag does not match.
-    fn finish(mut self, tag: &[u8; TAG_LEN]) -> Result<(), SymmetricCipherError> {
+    pub(crate) fn finish(mut self, tag: &[u8; TAG_LEN]) -> Result<(), SymmetricCipherError> {
         self.begin_data_if_needed();
         let mut full: Secret<[u8; 16]> = Secret::new();
         self.tag_block(&mut full);

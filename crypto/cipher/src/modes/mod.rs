@@ -19,6 +19,7 @@
 //! | CTR | [`ctr`] | SP 800-38A Sec 6.5 | Counter. Nonce plus counter, both directions parallel |
 //! | ECB | [`hazmat`] | SP 800-38A Sec 6.1 | Electronic Codebook. **Not confidential for data**; interoperability and test vectors only |
 //! | GCM | [`gcm`] | SP 800-38D | **Authenticated**: 96-bit nonce, 96-128-bit tag, no padding; AAD before data |
+//! | GMAC | [`gmac`] | SP 800-38D Sec 5.2 | A MAC, not a cipher: GCM with no plaintext, so the tag is bound to a 96-bit nonce |
 //!
 //! They divide three ways.
 //!
@@ -153,6 +154,7 @@ pub mod cfb8;
 pub mod cmac;
 pub mod ctr;
 pub mod gcm;
+pub mod gmac;
 pub mod hazmat;
 mod iv;
 
@@ -163,6 +165,7 @@ pub use cfb8::Cfb8;
 pub use cmac::{CMAC, CMAC_MIN_TAG_LEN, Cmac, CmacKeyState};
 pub use ctr::Ctr;
 pub use gcm::{GCM, GCM_NONCE_LEN, Gcm, GcmKeyState};
+pub use gmac::{GMAC, Gmac};
 
 /// A table of algorithm names used to populate [`Algorithm`] for each Mode-Permutation-Size combination.
 ///
@@ -184,6 +187,8 @@ pub trait ModeNames {
     const ECB_ALG_NAME: &'static str;
     /// Reported by [`Gcm`].
     const GCM_ALG_NAME: &'static str;
+    /// Reported by [`Gmac`].
+    const GMAC_ALG_NAME: &'static str;
 }
 
 // Imports needed for docs
