@@ -37,7 +37,7 @@ use bouncycastle_aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
 use bouncycastle_cipher::modes::{CCM, ModeNames};
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::hazmat::{
-    AeadDecryptMode, AeadEncryptMode, ElectronicCodeBook, do_hazardous_operations,
+    AeadPacketDecryptMode, AeadPacketEncryptMode, ElectronicCodeBook, do_hazardous_operations,
 };
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
@@ -81,7 +81,7 @@ fn run_case<const KEY_LEN: usize, const NONCE_LEN: usize, const TAG_LEN: usize, 
 ) where
     P: ElectronicCodeBook<KEY_LEN, 16> + ModeNames + Clone,
 {
-    type Mode<const N: usize, const T: usize> = CCM<N, T, 0, 0>;
+    type Mode<const N: usize, const T: usize> = CCM<N, T>;
     let perm = P::new(&cipher_key::<KEY_LEN>(key_bytes)).expect("a wycheproof key");
     let nonce: [u8; NONCE_LEN] =
         nonce_bytes.try_into().unwrap_or_else(|_| panic!("tcId {tc_id}: bad nonce length"));
