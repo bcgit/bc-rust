@@ -16,13 +16,13 @@ use std::fs;
 use std::path::Path;
 
 /// Signs through the streaming trait path with a fixed salt (`set_signer_salt`) -- the
-/// deterministic PSS mode, for tests against a known salt. Returns `sign_final`'s `Result`.
+/// deterministic PSS mode, for tests against a known salt. Returns `do_sign_final`'s `Result`.
 macro_rules! sign_with_salt {
     ($ty:ty, $sk:expr, $msg:expr, $salt:expr) => {{
-        let mut signer = <$ty>::sign_init($sk, None).unwrap();
+        let mut signer = <$ty>::do_sign_init($sk, None).unwrap();
         signer.set_signer_salt($salt);
-        signer.sign_update($msg);
-        signer.sign_final()
+        signer.do_sign_update($msg);
+        signer.do_sign_final()
     }};
 }
 

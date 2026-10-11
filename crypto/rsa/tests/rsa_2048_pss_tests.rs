@@ -25,13 +25,13 @@ use std::fs;
 use std::path::Path;
 
 /// Signs through the streaming trait path with a fixed salt (`set_signer_salt`) -- the
-/// deterministic PSS mode, for tests against a known salt. Returns `sign_final`'s `Result`.
+/// deterministic PSS mode, for tests against a known salt. Returns `do_sign_final`'s `Result`.
 macro_rules! sign_with_salt {
     ($ty:ty, $sk:expr, $msg:expr, $salt:expr) => {{
-        let mut signer = <$ty>::sign_init($sk, None).unwrap();
+        let mut signer = <$ty>::do_sign_init($sk, None).unwrap();
         signer.set_signer_salt($salt);
-        signer.sign_update($msg);
-        signer.sign_final()
+        signer.do_sign_update($msg);
+        signer.do_sign_final()
     }};
 }
 
@@ -254,11 +254,11 @@ fn set_signer_salt_fixes_the_salt_on_the_streaming_path() {
     let msg = b"fixed salt, streamed in two chunks";
     let salt = [0x42u8; 32];
 
-    let mut signer = RSASSA_PSS_SHA256::sign_init(&sk, None).unwrap();
+    let mut signer = RSASSA_PSS_SHA256::do_sign_init(&sk, None).unwrap();
     signer.set_signer_salt(salt);
-    signer.sign_update(&msg[..11]);
-    signer.sign_update(&msg[11..]);
-    let sig = signer.sign_final().unwrap();
+    signer.do_sign_update(&msg[..11]);
+    signer.do_sign_update(&msg[11..]);
+    let sig = signer.do_sign_final().unwrap();
     let mut digest = [0u8; 32];
     SHA256::default().hash_out(msg, &mut digest);
     let expected = rsassa_pss::sign_from_hash_with_salt::<
@@ -280,15 +280,15 @@ fn set_signer_salt_fixes_the_salt_on_the_streaming_path() {
     assert_eq!(sig, expected);
     RSASSA_PSS_SHA256::verify(&pk, msg, None, &sig).unwrap();
 
-    let mut fresh = RSASSA_PSS_SHA256::sign_init(&sk, None).unwrap();
-    fresh.sign_update(msg);
-    assert_ne!(fresh.sign_final().unwrap(), sig, "without set_signer_salt the salt is fresh");
+    let mut fresh = RSASSA_PSS_SHA256::do_sign_init(&sk, None).unwrap();
+    fresh.do_sign_update(msg);
+    assert_ne!(fresh.do_sign_final().unwrap(), sig, "without set_signer_salt the salt is fresh");
 
     // On a verify-initialised state it has no effect.
-    let mut verifier = RSASSA_PSS_SHA256::verify_init(&pk, None).unwrap();
+    let mut verifier = RSASSA_PSS_SHA256::do_verify_init(&pk, None).unwrap();
     verifier.set_signer_salt([0xffu8; 32]);
-    verifier.verify_update(msg);
-    verifier.verify_final(&sig).unwrap();
+    verifier.do_verify_update(msg);
+    verifier.do_verify_final(&sig).unwrap();
 }
 
 /// `sign_randomized` draws the salt from the caller's RNG (the ECDSA/SM2 shape): with a

@@ -141,7 +141,7 @@ fn parse_pk<PK: SignaturePublicKey<PK_LEN>, const PK_LEN: usize>(
 /// Verifies stdin against `--pkfile`/`--sigfile` through `V`'s streaming `SignatureVerifier`
 /// impl. Shared by [`rsa_sign_verify_cmd`]'s `Verify` arm, and called directly by the verify-only
 /// sizes (`rsa_1024_cmd`, `rsa_1536_cmd`). A signature file of the wrong length is simply
-/// invalid (RFC 8017 §8.1.2/§8.2.2 step 1), as `verify_final` reports it.
+/// invalid (RFC 8017 §8.1.2/§8.2.2 step 1), as `do_verify_final` reports it.
 fn do_verify<
     PK: SignaturePublicKey<PK_LEN>,
     V: SignatureVerifier<PK, PK_LEN, SIG_LEN>,
@@ -155,12 +155,12 @@ fn do_verify<
     let pk = parse_pk::<PK, PK_LEN>(&require_file(pkfile, "pkfile"), alg_name);
     let sig = require_file(sigfile, "sigfile");
 
-    // `verify_init` is infallible for every `bouncycastle_rsa` verifier (it only stores the key
+    // `do_verify_init` is infallible for every `bouncycastle_rsa` verifier (it only stores the key
     // and a fresh hash state), so this unwrap cannot fire.
-    let mut verifier = V::verify_init(&pk, None).unwrap();
-    stream_stdin_into(|chunk| verifier.verify_update(chunk));
+    let mut verifier = V::do_verify_init(&pk, None).unwrap();
+    stream_stdin_into(|chunk| verifier.do_verify_update(chunk));
 
-    if verifier.verify_final(&sig).is_ok() {
+    if verifier.do_verify_final(&sig).is_ok() {
         println!("Signature is valid.");
     } else {
         eprintln!("Signature is invalid.");
@@ -170,7 +170,7 @@ fn do_verify<
 
 /// One (size, scheme, hash) pairing `S`, generating a key pair, or signing or verifying stdin,
 /// per `action`. PSS pairings draw their salt from the library's default OS-backed RNG inside
-/// `S::sign_final`; `keygen` is the size's FIPS 186-5 generator, independent of scheme and hash.
+/// `S::do_sign_final`; `keygen` is the size's FIPS 186-5 generator, independent of scheme and hash.
 fn rsa_sign_verify_cmd<
     PK: SignaturePublicKey<PK_LEN>,
     SK: SignaturePrivateKey<SK_LEN>,
@@ -206,10 +206,10 @@ fn rsa_sign_verify_cmd<
         RSAAction::Sign => {
             let sk = parse_sk::<SK, SK_LEN>(&require_file(skfile, "skfile"), alg_name);
 
-            // `sign_init` is infallible for every `bouncycastle_rsa` signer (see `do_verify`).
-            let mut signer = S::sign_init(&sk, None).unwrap();
-            stream_stdin_into(|chunk| signer.sign_update(chunk));
-            let sig = signer.sign_final().unwrap_or_else(|_| {
+            // `do_sign_init` is infallible for every `bouncycastle_rsa` signer (see `do_verify`).
+            let mut signer = S::do_sign_init(&sk, None).unwrap();
+            stream_stdin_into(|chunk| signer.do_sign_update(chunk));
+            let sig = signer.do_sign_final().unwrap_or_else(|_| {
                 eprintln!("Error: signing failed.");
                 exit(-1);
             });
