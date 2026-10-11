@@ -62,15 +62,15 @@
 //! RSASSA_PKCS1_v1_5_SHA256::verify(&pk, b"the message to sign", None, &signature)?;
 //!
 //! // Streaming: the message arrives in chunks and is hashed as it goes.
-//! let mut signer = RSASSA_PKCS1_v1_5_SHA256::sign_init(&sk, None)?;
-//! signer.sign_update(b"the message ");
-//! signer.sign_update(b"to sign");
-//! let streamed = signer.sign_final()?;
+//! let mut signer = RSASSA_PKCS1_v1_5_SHA256::do_sign_init(&sk, None)?;
+//! signer.do_sign_update(b"the message ");
+//! signer.do_sign_update(b"to sign");
+//! let streamed = signer.do_sign_final()?;
 //! assert_eq!(streamed, signature); // PKCS#1 v1.5 is deterministic
 //!
-//! let mut verifier = RSASSA_PKCS1_v1_5_SHA256::verify_init(&pk, None)?;
-//! verifier.verify_update(b"the message to sign");
-//! verifier.verify_final(&streamed)?;
+//! let mut verifier = RSASSA_PKCS1_v1_5_SHA256::do_verify_init(&pk, None)?;
+//! verifier.do_verify_update(b"the message to sign");
+//! verifier.do_verify_final(&streamed)?;
 //!
 //! // `verify` takes a `&[u8]`: a signature of the wrong length is rejected as invalid
 //! // (RFC 8017 §8.2.2 step 1), as is one over a different message.
@@ -91,14 +91,14 @@
 //!
 //! // ... or fixed on a streaming state (as ML-DSA's `set_signer_rnd`), which makes PSS
 //! // deterministic -- for a caller with its own randomness source, or a test against a known salt.
-//! let mut signer = RSASSA_PSS_SHA256::sign_init(&sk, None)?;
+//! let mut signer = RSASSA_PSS_SHA256::do_sign_init(&sk, None)?;
 //! signer.set_signer_salt([0x42u8; 32]);
-//! signer.sign_update(b"the message to sign");
-//! let sig_d = signer.sign_final()?;
-//! let mut signer = RSASSA_PSS_SHA256::sign_init(&sk, None)?;
+//! signer.do_sign_update(b"the message to sign");
+//! let sig_d = signer.do_sign_final()?;
+//! let mut signer = RSASSA_PSS_SHA256::do_sign_init(&sk, None)?;
 //! signer.set_signer_salt([0x42u8; 32]);
-//! signer.sign_update(b"the message to sign");
-//! assert_eq!(signer.sign_final()?, sig_d);
+//! signer.do_sign_update(b"the message to sign");
+//! assert_eq!(signer.do_sign_final()?, sig_d);
 //! RSASSA_PSS_SHA256::verify(&pk, b"the message to sign", None, &sig_d)?;
 //!
 //! // Keys round-trip through the traits' raw fixed-width encoding (see `keys`'s docs).

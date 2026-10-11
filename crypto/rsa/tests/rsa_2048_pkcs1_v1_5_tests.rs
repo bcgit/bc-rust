@@ -189,16 +189,16 @@ fn key_trait_boundary_conditions() {
 }
 
 /// Streamed and one-shot signing are one computation: PKCS#1 v1.5 is deterministic, so the
-/// chunked `sign_init`/`sign_update`/`sign_final` path reproduces `Signer::sign` byte for byte.
+/// chunked `do_sign_init`/`do_sign_update`/`do_sign_final` path reproduces `Signer::sign` byte for byte.
 #[test]
 fn streamed_signature_equals_one_shot() {
     let (pk, sk) = fixed_keypair().unwrap();
     let msg = b"the same message, two ways";
     let one_shot = RSASSA_PKCS1_v1_5_SHA256::sign(&sk, msg, None).unwrap();
-    let mut signer = RSASSA_PKCS1_v1_5_SHA256::sign_init(&sk, None).unwrap();
-    signer.sign_update(&msg[..10]);
-    signer.sign_update(&msg[10..]);
-    let streamed = signer.sign_final().unwrap();
+    let mut signer = RSASSA_PKCS1_v1_5_SHA256::do_sign_init(&sk, None).unwrap();
+    signer.do_sign_update(&msg[..10]);
+    signer.do_sign_update(&msg[10..]);
+    let streamed = signer.do_sign_final().unwrap();
     assert_eq!(streamed, one_shot);
     RSASSA_PKCS1_v1_5_SHA256::verify(&pk, msg, None, &streamed).unwrap();
 }
@@ -227,13 +227,13 @@ fn trait_final_in_the_wrong_role_is_an_error() {
     let (pk, sk) = fixed_keypair().unwrap();
     let mut out = [0u8; SIG_LEN];
 
-    let verifier = RSASSA_PKCS1_v1_5_SHA256::verify_init(&pk, None).unwrap();
-    assert!(matches!(verifier.sign_final(), Err(SignatureError::GenericError(_))));
-    let verifier = RSASSA_PKCS1_v1_5_SHA256::verify_init(&pk, None).unwrap();
-    assert!(matches!(verifier.sign_final_out(&mut out), Err(SignatureError::GenericError(_))));
+    let verifier = RSASSA_PKCS1_v1_5_SHA256::do_verify_init(&pk, None).unwrap();
+    assert!(matches!(verifier.do_sign_final(), Err(SignatureError::GenericError(_))));
+    let verifier = RSASSA_PKCS1_v1_5_SHA256::do_verify_init(&pk, None).unwrap();
+    assert!(matches!(verifier.do_sign_final_out(&mut out), Err(SignatureError::GenericError(_))));
 
-    let signer = RSASSA_PKCS1_v1_5_SHA256::sign_init(&sk, None).unwrap();
-    assert!(matches!(signer.verify_final(&out), Err(SignatureError::GenericError(_))));
+    let signer = RSASSA_PKCS1_v1_5_SHA256::do_sign_init(&sk, None).unwrap();
+    assert!(matches!(signer.do_verify_final(&out), Err(SignatureError::GenericError(_))));
 }
 
 /// All three groups of `rsa_signature_2048_sha256_test.json` (259 vectors; the first group's key

@@ -6,7 +6,7 @@
 //! literals (e.g. RSA-2048/SHA-256 in [`crate::rsa_2048`]) rather than a caller choosing them.
 //!
 //! [`RSASSA_PKCS1_v1_5`] implements `bouncycastle_core`'s [`Signer`]/[`SignatureVerifier`] traits
-//! over those widths -- one-shot and streaming (`sign_init`/`sign_update`/`sign_final`), with a
+//! over those widths -- one-shot and streaming (`do_sign_init`/`do_sign_update`/`do_sign_final`), with a
 //! `&[u8]`-typed signature on the verify side -- on top of [`sign_from_hash`]/[`verify_from_hash`],
 //! which take the message hash rather than the message and are the pre-hash entry points for a
 //! caller that has already computed it.
@@ -36,7 +36,7 @@ use bouncycastle_core::traits::{
 /// `ctx` is accepted but ignored by every method: RSASSA-PKCS1-v1_5 (RFC 8017 §8.2) has no
 /// context-string input, the same position `bouncycastle_ecdsa` takes for ECDSA.
 ///
-/// The key is cloned into this state by `sign_init`/`verify_init` (the traits leave no room for a
+/// The key is cloned into this state by `do_sign_init`/`do_verify_init` (the traits leave no room for a
 /// borrow), so a signing state for the largest modulus size holds a copy of its
 /// `RsaPrivateKey`'s `Secret` fields for as long as the state lives -- see the crate docs'
 /// `# Memory Usage`.
@@ -87,9 +87,9 @@ where
         msg: &[u8],
         ctx: Option<&[u8]>,
     ) -> Result<[u8; K_LEN], SignatureError> {
-        let mut s = Self::sign_init(sk, ctx)?;
-        s.sign_update(msg);
-        s.sign_final()
+        let mut s = Self::do_sign_init(sk, ctx)?;
+        s.do_sign_update(msg);
+        s.do_sign_final()
     }
 
     fn sign_out(
@@ -103,18 +103,21 @@ where
         Ok(K_LEN)
     }
 
-    fn sign_init(sk: &RsaPrivateKey<L, HALF>, _ctx: Option<&[u8]>) -> Result<Self, SignatureError> {
+    fn do_sign_init(
+        sk: &RsaPrivateKey<L, HALF>,
+        _ctx: Option<&[u8]>,
+    ) -> Result<Self, SignatureError> {
         // ctx ignored -- see the type's docs.
         Ok(Self { hash: H::default(), sk: Some(sk.clone()), pk: None })
     }
 
-    fn sign_update(&mut self, msg_chunk: &[u8]) {
+    fn do_sign_update(&mut self, msg_chunk: &[u8]) {
         self.hash.do_update(msg_chunk);
     }
 
-    fn sign_final(self) -> Result<[u8; K_LEN], SignatureError> {
+    fn do_sign_final(self) -> Result<[u8; K_LEN], SignatureError> {
         let sk = self.sk.ok_or(SignatureError::GenericError(
-            "sign_final called on a verify-initialized RSASSA_PKCS1_v1_5; call verify_final instead",
+            "do_sign_final called on a verify-initialized RSASSA_PKCS1_v1_5; call do_verify_final instead",
         ))?;
         // EMSA-PKCS1-v1_5 step 1, `H = Hash(M)`, completed here over the streamed chunks.
         let mut digest = [0u8; H_LEN];
@@ -122,9 +125,9 @@ where
         sign_from_hash::<H, H_LEN, T_LEN, L, L2, L21, HALF, HALF2, HALF21, K_LEN>(&sk, &digest)
     }
 
-    fn sign_final_out(self, output: &mut [u8; K_LEN]) -> Result<usize, SignatureError> {
+    fn do_sign_final_out(self, output: &mut [u8; K_LEN]) -> Result<usize, SignatureError> {
         output.fill(0);
-        *output = self.sign_final()?;
+        *output = self.do_sign_final()?;
         Ok(K_LEN)
     }
 }
@@ -153,22 +156,22 @@ where
         ctx: Option<&[u8]>,
         sig: &[u8],
     ) -> Result<(), SignatureError> {
-        let mut v = Self::verify_init(pk, ctx)?;
-        v.verify_update(msg);
-        v.verify_final(sig)
+        let mut v = Self::do_verify_init(pk, ctx)?;
+        v.do_verify_update(msg);
+        v.do_verify_final(sig)
     }
 
-    fn verify_init(pk: &RsaPublicKey<L>, _ctx: Option<&[u8]>) -> Result<Self, SignatureError> {
+    fn do_verify_init(pk: &RsaPublicKey<L>, _ctx: Option<&[u8]>) -> Result<Self, SignatureError> {
         Ok(Self { hash: H::default(), sk: None, pk: Some(pk.clone()) })
     }
 
-    fn verify_update(&mut self, msg_chunk: &[u8]) {
+    fn do_verify_update(&mut self, msg_chunk: &[u8]) {
         self.hash.do_update(msg_chunk);
     }
 
-    fn verify_final(self, sig: &[u8]) -> Result<(), SignatureError> {
+    fn do_verify_final(self, sig: &[u8]) -> Result<(), SignatureError> {
         let pk = self.pk.ok_or(SignatureError::GenericError(
-            "verify_final called on a sign-initialized RSASSA_PKCS1_v1_5; call sign_final instead",
+            "do_verify_final called on a sign-initialized RSASSA_PKCS1_v1_5; call do_sign_final instead",
         ))?;
         // RFC 8017 §8.2.2 step 1: "Length checking: If the length of the signature S is not k
         // octets, output "invalid signature" and stop." -- the one place in this crate that step

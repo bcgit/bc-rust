@@ -89,13 +89,13 @@ where
     ) -> Result<[u8; K_LEN], SignatureError> {
         let mut salt = [0u8; S_LEN];
         rng.next_bytes_out(&mut salt).map_err(SignatureError::RNGError)?;
-        let mut signer = Self::sign_init(sk, None)?;
+        let mut signer = Self::do_sign_init(sk, None)?;
         signer.set_signer_salt(salt);
-        signer.sign_update(msg);
-        signer.sign_final()
+        signer.do_sign_update(msg);
+        signer.do_sign_final()
     }
 
-    /// As [`crate::rsassa_pss::RSASSA_PSS::set_signer_salt`]: fixes the salt `sign_final` uses.
+    /// As [`crate::rsassa_pss::RSASSA_PSS::set_signer_salt`]: fixes the salt `do_sign_final` uses.
     pub fn set_signer_salt(&mut self, salt: [u8; S_LEN]) {
         self.salt = Some(salt);
     }
@@ -142,9 +142,9 @@ where
         msg: &[u8],
         ctx: Option<&[u8]>,
     ) -> Result<[u8; K_LEN], SignatureError> {
-        let mut s = Self::sign_init(sk, ctx)?;
-        s.sign_update(msg);
-        s.sign_final()
+        let mut s = Self::do_sign_init(sk, ctx)?;
+        s.do_sign_update(msg);
+        s.do_sign_final()
     }
 
     fn sign_out(
@@ -158,18 +158,21 @@ where
         Ok(K_LEN)
     }
 
-    fn sign_init(sk: &RsaPrivateKey<L, HALF>, _ctx: Option<&[u8]>) -> Result<Self, SignatureError> {
+    fn do_sign_init(
+        sk: &RsaPrivateKey<L, HALF>,
+        _ctx: Option<&[u8]>,
+    ) -> Result<Self, SignatureError> {
         // ctx ignored -- see `RSASSA_PKCS1_v1_5`'s docs.
         Ok(Self { hash: X::default(), sk: Some(sk.clone()), pk: None, salt: None })
     }
 
-    fn sign_update(&mut self, msg_chunk: &[u8]) {
+    fn do_sign_update(&mut self, msg_chunk: &[u8]) {
         self.hash.do_update(msg_chunk);
     }
 
-    fn sign_final(self) -> Result<[u8; K_LEN], SignatureError> {
+    fn do_sign_final(self) -> Result<[u8; K_LEN], SignatureError> {
         let sk = self.sk.ok_or(SignatureError::GenericError(
-            "sign_final called on a verify-initialized RSASSA_PSS_SHAKE; call verify_final instead",
+            "do_sign_final called on a verify-initialized RSASSA_PSS_SHAKE; call do_verify_final instead",
         ))?;
         // EMSA-PSS step 2, `mHash = Hash(M)`, completed here over the streamed chunks.
         let mut m_hash = [0u8; H_LEN];
@@ -202,9 +205,9 @@ where
         >(&sk, &m_hash, &salt)
     }
 
-    fn sign_final_out(self, output: &mut [u8; K_LEN]) -> Result<usize, SignatureError> {
+    fn do_sign_final_out(self, output: &mut [u8; K_LEN]) -> Result<usize, SignatureError> {
         output.fill(0);
-        *output = self.sign_final()?;
+        *output = self.do_sign_final()?;
         Ok(K_LEN)
     }
 }
@@ -250,31 +253,31 @@ where
         ctx: Option<&[u8]>,
         sig: &[u8],
     ) -> Result<(), SignatureError> {
-        let mut v = Self::verify_init(pk, ctx)?;
-        v.verify_update(msg);
-        v.verify_final(sig)
+        let mut v = Self::do_verify_init(pk, ctx)?;
+        v.do_verify_update(msg);
+        v.do_verify_final(sig)
     }
 
-    fn verify_init(pk: &RsaPublicKey<L>, _ctx: Option<&[u8]>) -> Result<Self, SignatureError> {
+    fn do_verify_init(pk: &RsaPublicKey<L>, _ctx: Option<&[u8]>) -> Result<Self, SignatureError> {
         Ok(Self { hash: X::default(), sk: None, pk: Some(pk.clone()), salt: None })
     }
 
-    fn verify_update(&mut self, msg_chunk: &[u8]) {
+    fn do_verify_update(&mut self, msg_chunk: &[u8]) {
         self.hash.do_update(msg_chunk);
     }
 
-    fn verify_final(self, sig: &[u8]) -> Result<(), SignatureError> {
+    fn do_verify_final(self, sig: &[u8]) -> Result<(), SignatureError> {
         let pk = self.pk.ok_or(SignatureError::GenericError(
-            "verify_final called on a sign-initialized RSASSA_PSS_SHAKE; call sign_final instead",
+            "do_verify_final called on a sign-initialized RSASSA_PSS_SHAKE; call do_sign_final instead",
         ))?;
         // RFC 8017 §8.1.2 step 1: "Length checking: If the length of the signature S is not k
-        // octets, output "invalid signature" and stop." (See `RSASSA_PKCS1_v1_5::verify_final`.)
+        // octets, output "invalid signature" and stop." (See `RSASSA_PKCS1_v1_5::do_verify_final`.)
         let sig: &[u8; K_LEN] =
             sig.try_into().map_err(|_| SignatureError::SignatureVerificationFailed)?;
         let mut m_hash = [0u8; H_LEN];
         self.hash.do_final_out(&mut m_hash);
         // Step 2.b: RSAVP1's "signature representative out of range" is "invalid signature" here
-        // (see `RSASSA_PKCS1_v1_5::verify_final`).
+        // (see `RSASSA_PKCS1_v1_5::do_verify_final`).
         verify_from_hash::<X, H_LEN, S_LEN, M_PRIME_LEN, DB_LEN, L, L2, L21, K_LEN>(
             &pk, &m_hash, sig,
         )
@@ -284,7 +287,7 @@ where
 
 /// RSASSA-PSS-SIGN (RFC 8017 §8.1.1) with the salt supplied directly, given the message's hash
 /// `m_hash` (`X`'s `H_LEN`-byte output over the message) rather than the message -- mirroring
-/// [`crate::rsassa_pss::sign_from_hash_with_salt`], and what the [`Signer`] impl's `sign_final`
+/// [`crate::rsassa_pss::sign_from_hash_with_salt`], and what the [`Signer`] impl's `do_sign_final`
 /// calls.
 pub fn sign_from_hash_with_salt<
     X: XOF + Default,

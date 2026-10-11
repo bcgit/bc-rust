@@ -28,7 +28,7 @@ use bouncycastle_rng::DefaultRNG;
 /// `crate::rsa_2048::RSASSA_PSS_SHA256`.
 ///
 /// [`Signer::sign`] has no RNG parameter, and that trait's docs define it as sourcing any
-/// randomness it needs from the library's default OS-backed RNG, so `sign_final` draws the salt
+/// randomness it needs from the library's default OS-backed RNG, so `do_sign_final` draws the salt
 /// (EMSA-PSS-ENCODE step 4) from a fresh [`DefaultRNG`] unless the caller fixed one. Two
 /// `Signer::sign` calls over the same key and message therefore produce different, both valid,
 /// signatures. Control over that randomness follows the workspace's other signature crates:
@@ -57,7 +57,7 @@ pub struct RSASSA_PSS<
     hash: H,
     sk: Option<RsaPrivateKey<L, HALF>>,
     pk: Option<RsaPublicKey<L>>,
-    /// The salt `sign_final` will use, if [`Self::set_signer_salt`] fixed one; `None` means a
+    /// The salt `do_sign_final` will use, if [`Self::set_signer_salt`] fixed one; `None` means a
     /// fresh one from [`DefaultRNG`].
     salt: Option<[u8; S_LEN]>,
 }
@@ -110,13 +110,13 @@ where
     ) -> Result<[u8; K_LEN], SignatureError> {
         let mut salt = [0u8; S_LEN];
         rng.next_bytes_out(&mut salt).map_err(SignatureError::RNGError)?;
-        let mut signer = Self::sign_init(sk, None)?;
+        let mut signer = Self::do_sign_init(sk, None)?;
         signer.set_signer_salt(salt);
-        signer.sign_update(msg);
-        signer.sign_final()
+        signer.do_sign_update(msg);
+        signer.do_sign_final()
     }
 
-    /// Fixes the salt [`Signer::sign_final`] will use (EMSA-PSS-ENCODE step 4) instead of drawing
+    /// Fixes the salt [`Signer::do_sign_final`] will use (EMSA-PSS-ENCODE step 4) instead of drawing
     /// one from the default RNG -- the counterpart of `bouncycastle_mldsa`'s `set_signer_rnd`, for
     /// a caller with its own randomness source, a device without an RNG, or a test against a known
     /// salt. With the salt fixed, signing is deterministic; PSS's security argument assumes a
@@ -171,9 +171,9 @@ where
         msg: &[u8],
         ctx: Option<&[u8]>,
     ) -> Result<[u8; K_LEN], SignatureError> {
-        let mut s = Self::sign_init(sk, ctx)?;
-        s.sign_update(msg);
-        s.sign_final()
+        let mut s = Self::do_sign_init(sk, ctx)?;
+        s.do_sign_update(msg);
+        s.do_sign_final()
     }
 
     fn sign_out(
@@ -187,18 +187,21 @@ where
         Ok(K_LEN)
     }
 
-    fn sign_init(sk: &RsaPrivateKey<L, HALF>, _ctx: Option<&[u8]>) -> Result<Self, SignatureError> {
+    fn do_sign_init(
+        sk: &RsaPrivateKey<L, HALF>,
+        _ctx: Option<&[u8]>,
+    ) -> Result<Self, SignatureError> {
         // ctx ignored -- see the type's docs.
         Ok(Self { hash: H::default(), sk: Some(sk.clone()), pk: None, salt: None })
     }
 
-    fn sign_update(&mut self, msg_chunk: &[u8]) {
+    fn do_sign_update(&mut self, msg_chunk: &[u8]) {
         self.hash.do_update(msg_chunk);
     }
 
-    fn sign_final(self) -> Result<[u8; K_LEN], SignatureError> {
+    fn do_sign_final(self) -> Result<[u8; K_LEN], SignatureError> {
         let sk = self.sk.ok_or(SignatureError::GenericError(
-            "sign_final called on a verify-initialized RSASSA_PSS; call verify_final instead",
+            "do_sign_final called on a verify-initialized RSASSA_PSS; call do_verify_final instead",
         ))?;
         // EMSA-PSS step 2, `mHash = Hash(M)`, completed here over the streamed chunks.
         let mut m_hash = [0u8; H_LEN];
@@ -232,9 +235,9 @@ where
         >(&sk, &m_hash, &salt)
     }
 
-    fn sign_final_out(self, output: &mut [u8; K_LEN]) -> Result<usize, SignatureError> {
+    fn do_sign_final_out(self, output: &mut [u8; K_LEN]) -> Result<usize, SignatureError> {
         output.fill(0);
-        *output = self.sign_final()?;
+        *output = self.do_sign_final()?;
         Ok(K_LEN)
     }
 }
@@ -282,31 +285,31 @@ where
         ctx: Option<&[u8]>,
         sig: &[u8],
     ) -> Result<(), SignatureError> {
-        let mut v = Self::verify_init(pk, ctx)?;
-        v.verify_update(msg);
-        v.verify_final(sig)
+        let mut v = Self::do_verify_init(pk, ctx)?;
+        v.do_verify_update(msg);
+        v.do_verify_final(sig)
     }
 
-    fn verify_init(pk: &RsaPublicKey<L>, _ctx: Option<&[u8]>) -> Result<Self, SignatureError> {
+    fn do_verify_init(pk: &RsaPublicKey<L>, _ctx: Option<&[u8]>) -> Result<Self, SignatureError> {
         Ok(Self { hash: H::default(), sk: None, pk: Some(pk.clone()), salt: None })
     }
 
-    fn verify_update(&mut self, msg_chunk: &[u8]) {
+    fn do_verify_update(&mut self, msg_chunk: &[u8]) {
         self.hash.do_update(msg_chunk);
     }
 
-    fn verify_final(self, sig: &[u8]) -> Result<(), SignatureError> {
+    fn do_verify_final(self, sig: &[u8]) -> Result<(), SignatureError> {
         let pk = self.pk.ok_or(SignatureError::GenericError(
-            "verify_final called on a sign-initialized RSASSA_PSS; call sign_final instead",
+            "do_verify_final called on a sign-initialized RSASSA_PSS; call do_sign_final instead",
         ))?;
         // RFC 8017 §8.1.2 step 1: "Length checking: If the length of the signature S is not k
-        // octets, output "invalid signature" and stop." (See `RSASSA_PKCS1_v1_5::verify_final`.)
+        // octets, output "invalid signature" and stop." (See `RSASSA_PKCS1_v1_5::do_verify_final`.)
         let sig: &[u8; K_LEN] =
             sig.try_into().map_err(|_| SignatureError::SignatureVerificationFailed)?;
         let mut m_hash = [0u8; H_LEN];
         self.hash.do_final_out(&mut m_hash);
         // Step 2.b: RSAVP1's "signature representative out of range" is "invalid signature" here
-        // (see `RSASSA_PKCS1_v1_5::verify_final`).
+        // (see `RSASSA_PKCS1_v1_5::do_verify_final`).
         verify_from_hash::<H, H_LEN, SEED_LEN, S_LEN, M_PRIME_LEN, DB_LEN, L, L2, L21, K_LEN>(
             &pk, &m_hash, sig,
         )
@@ -316,7 +319,7 @@ where
 
 /// RSASSA-PSS-SIGN (RFC 8017 §8.1.1) with the salt supplied directly rather than drawn from an
 /// RNG, given the message's hash `m_hash` (`H`'s output over the message) rather than the message
-/// itself -- what the [`Signer`] impl's `sign_final` calls once it has hashed the streamed
+/// itself -- what the [`Signer`] impl's `do_sign_final` calls once it has hashed the streamed
 /// message and settled the salt. EMSA-PSS is randomized only in its choice of salt (§9.1's own
 /// note 5), so a fixed salt makes this deterministic and directly testable against a known salt.
 pub fn sign_from_hash_with_salt<

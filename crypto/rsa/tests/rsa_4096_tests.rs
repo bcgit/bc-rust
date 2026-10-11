@@ -28,13 +28,13 @@ use std::fs;
 use std::path::Path;
 
 /// Signs through the streaming trait path with a fixed salt (`set_signer_salt`) -- the
-/// deterministic PSS mode, for tests against a known salt. Returns `sign_final`'s `Result`.
+/// deterministic PSS mode, for tests against a known salt. Returns `do_sign_final`'s `Result`.
 macro_rules! sign_with_salt {
     ($ty:ty, $sk:expr, $msg:expr, $salt:expr) => {{
-        let mut signer = <$ty>::sign_init($sk, None).unwrap();
+        let mut signer = <$ty>::do_sign_init($sk, None).unwrap();
         signer.set_signer_salt($salt);
-        signer.sign_update($msg);
-        signer.sign_final()
+        signer.do_sign_update($msg);
+        signer.do_sign_final()
     }};
 }
 
@@ -468,10 +468,10 @@ where
     let msg = b"RSA-4096 trait round trip";
     let sig = S::sign(sk, msg, None).unwrap();
     S::verify(pk, msg, None, &sig).unwrap();
-    let mut signer = S::sign_init(sk, None).unwrap();
-    signer.sign_update(&msg[..8]);
-    signer.sign_update(&msg[8..]);
-    S::verify(pk, msg, None, &signer.sign_final().unwrap()).unwrap();
+    let mut signer = S::do_sign_init(sk, None).unwrap();
+    signer.do_sign_update(&msg[..8]);
+    signer.do_sign_update(&msg[8..]);
+    S::verify(pk, msg, None, &signer.do_sign_final().unwrap()).unwrap();
     assert!(S::verify(pk, b"a different message", None, &sig).is_err());
 }
 

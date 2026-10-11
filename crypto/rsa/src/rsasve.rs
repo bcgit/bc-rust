@@ -47,9 +47,8 @@ use crate::codec::{be_bytes_from_limbs, limbs_from_be_bytes};
 use crate::keys::{RsaPrivateKey, RsaPublicKey};
 use crate::rsa_core::{crt_exp, public_exp};
 use bouncycastle_core::errors::{KEMError, RNGError, SignatureError};
-use bouncycastle_core::key_material::{
-    KeyMaterial, KeyMaterialTrait, KeyType, do_hazardous_operations,
-};
+use bouncycastle_core::hazmat::do_hazardous_operations;
+use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{
     KEMDecapsulator, KEMEncapsulator, KEMPrivateKey, KEMPublicKey, RNG,
