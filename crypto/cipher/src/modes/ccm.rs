@@ -2407,9 +2407,12 @@ where
 // nothing per key but the schedule, and the packet mode traits carry what else they need. The
 // in-place one-shots override the provided bodies to run the packet directly over the buffer.
 
-impl<P: Clone, const NONCE_LEN: usize, const TAG_LEN: usize> Mode<P> for CCM<NONCE_LEN, TAG_LEN> {
+impl<P: Clone + ModeNames, const NONCE_LEN: usize, const TAG_LEN: usize> Mode<P>
+    for CCM<NONCE_LEN, TAG_LEN>
+{
     type KeyState = P;
     const KEY_TYPE: KeyType = KeyType::SymmetricCipherKey;
+    const ALG_NAME: &'static str = P::CCM_ALG_NAME;
 
     fn key_state(perm: P) -> Self::KeyState {
         perm

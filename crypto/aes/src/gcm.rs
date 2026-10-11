@@ -141,7 +141,7 @@
 //! All security considerations from [`bouncycastle_cipher::modes::gcm`] apply.
 
 use crate::hazmat::{AES128Internal, AES192Internal, AES256Internal};
-use bouncycastle_cipher::modes::{GCM, GCM_NONCE_LEN, Gcm, GcmKeyState};
+use bouncycastle_cipher::modes::{GCM, GCM_NONCE_LEN, Gcm, GcmKeyState, ModeNames};
 use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::hazmat::{AeadDecryptMode, AeadEncryptMode, Mode};
@@ -176,6 +176,7 @@ pub type AES_GCM_256<Dir> = Gcm<AES256Internal, Dir, 32, 16>;
 impl<const TAG_LEN: usize> Mode<AES128Internal> for GCM<TAG_LEN> {
     type KeyState = GcmKeyState<AES128Internal>;
     const KEY_TYPE: KeyType = KeyType::SymmetricCipherKey;
+    const ALG_NAME: &'static str = AES128Internal::GCM_ALG_NAME;
 
     fn key_state(perm: AES128Internal) -> Self::KeyState {
         GcmKeyState::new::<16>(perm)
@@ -212,6 +213,7 @@ impl<const TAG_LEN: usize> AeadDecryptMode<AES128Internal, 16, GCM_NONCE_LEN, TA
 impl<const TAG_LEN: usize> Mode<AES192Internal> for GCM<TAG_LEN> {
     type KeyState = GcmKeyState<AES192Internal>;
     const KEY_TYPE: KeyType = KeyType::SymmetricCipherKey;
+    const ALG_NAME: &'static str = AES192Internal::GCM_ALG_NAME;
 
     fn key_state(perm: AES192Internal) -> Self::KeyState {
         GcmKeyState::new::<24>(perm)
@@ -248,6 +250,7 @@ impl<const TAG_LEN: usize> AeadDecryptMode<AES192Internal, 24, GCM_NONCE_LEN, TA
 impl<const TAG_LEN: usize> Mode<AES256Internal> for GCM<TAG_LEN> {
     type KeyState = GcmKeyState<AES256Internal>;
     const KEY_TYPE: KeyType = KeyType::SymmetricCipherKey;
+    const ALG_NAME: &'static str = AES256Internal::GCM_ALG_NAME;
 
     fn key_state(perm: AES256Internal) -> Self::KeyState {
         GcmKeyState::new::<32>(perm)

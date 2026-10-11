@@ -57,7 +57,7 @@
 //! [`KeyType::MACKey`]: bouncycastle_core::key_material::KeyType::MACKey
 
 use crate::hazmat::{AES128Internal, AES192Internal, AES256Internal};
-use bouncycastle_cipher::modes::{CMAC, Cmac, CmacKeyState};
+use bouncycastle_cipher::modes::{CMAC, Cmac, CmacKeyState, ModeNames};
 use bouncycastle_core::hazmat::{MacMode, Mode};
 use bouncycastle_core::key_material::KeyType;
 
@@ -80,6 +80,7 @@ pub type AES_CMAC_256 = Cmac<AES256Internal, 32, 16>;
 impl Mode<AES128Internal> for CMAC {
     type KeyState = CmacKeyState<AES128Internal, 16>;
     const KEY_TYPE: KeyType = KeyType::MACKey;
+    const ALG_NAME: &'static str = AES128Internal::CMAC_ALG_NAME;
 
     fn key_state(perm: AES128Internal) -> Self::KeyState {
         CmacKeyState::new::<16>(perm)
@@ -97,6 +98,7 @@ impl MacMode<AES128Internal> for CMAC {
 impl Mode<AES192Internal> for CMAC {
     type KeyState = CmacKeyState<AES192Internal, 16>;
     const KEY_TYPE: KeyType = KeyType::MACKey;
+    const ALG_NAME: &'static str = AES192Internal::CMAC_ALG_NAME;
 
     fn key_state(perm: AES192Internal) -> Self::KeyState {
         CmacKeyState::new::<24>(perm)
@@ -114,6 +116,7 @@ impl MacMode<AES192Internal> for CMAC {
 impl Mode<AES256Internal> for CMAC {
     type KeyState = CmacKeyState<AES256Internal, 16>;
     const KEY_TYPE: KeyType = KeyType::MACKey;
+    const ALG_NAME: &'static str = AES256Internal::CMAC_ALG_NAME;
 
     fn key_state(perm: AES256Internal) -> Self::KeyState {
         CmacKeyState::new::<32>(perm)

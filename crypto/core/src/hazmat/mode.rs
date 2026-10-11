@@ -31,6 +31,11 @@ pub trait Mode<P> {
     /// cipher mode, [`KeyType::MACKey`] for a MAC mode. The key's constructor checks it.
     const KEY_TYPE: KeyType;
 
+    /// The [`Algorithm::ALG_NAME`](crate::traits::Algorithm::ALG_NAME) of this mode over this
+    /// permutation, `"AES_GCM_128"` for instance. The key's constructor checks the material's
+    /// algorithm binding against it, so a key bound to one mode is refused by every other.
+    const ALG_NAME: &'static str;
+
     /// Builds the per-key state from an already-keyed permutation.
     fn key_state(perm: P) -> Self::KeyState;
 }

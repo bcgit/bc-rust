@@ -43,7 +43,7 @@
 
 use crate::hazmat::{AES128Internal, AES192Internal, AES256Internal};
 use crate::{AES128Key, AES192Key, AES256Key};
-use bouncycastle_cipher::modes::{GCM_NONCE_LEN, GMAC, GcmKeyState, Gmac};
+use bouncycastle_cipher::modes::{GCM_NONCE_LEN, GMAC, GcmKeyState, Gmac, ModeNames};
 use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::hazmat::Mode;
@@ -70,6 +70,7 @@ pub type AES_GMAC_256<Dir> = Gmac<AES256Internal, Dir, 32, 16>;
 impl<const TAG_LEN: usize> Mode<AES128Internal> for GMAC<TAG_LEN> {
     type KeyState = GcmKeyState<AES128Internal>;
     const KEY_TYPE: KeyType = KeyType::MACKey;
+    const ALG_NAME: &'static str = AES128Internal::GMAC_ALG_NAME;
 
     fn key_state(perm: AES128Internal) -> Self::KeyState {
         GcmKeyState::new::<16>(perm)
@@ -112,6 +113,7 @@ impl<const TAG_LEN: usize> AES128Key<GMAC<TAG_LEN>> {
 impl<const TAG_LEN: usize> Mode<AES192Internal> for GMAC<TAG_LEN> {
     type KeyState = GcmKeyState<AES192Internal>;
     const KEY_TYPE: KeyType = KeyType::MACKey;
+    const ALG_NAME: &'static str = AES192Internal::GMAC_ALG_NAME;
 
     fn key_state(perm: AES192Internal) -> Self::KeyState {
         GcmKeyState::new::<24>(perm)
@@ -153,6 +155,7 @@ impl<const TAG_LEN: usize> AES192Key<GMAC<TAG_LEN>> {
 impl<const TAG_LEN: usize> Mode<AES256Internal> for GMAC<TAG_LEN> {
     type KeyState = GcmKeyState<AES256Internal>;
     const KEY_TYPE: KeyType = KeyType::MACKey;
+    const ALG_NAME: &'static str = AES256Internal::GMAC_ALG_NAME;
 
     fn key_state(perm: AES256Internal) -> Self::KeyState {
         GcmKeyState::new::<32>(perm)
