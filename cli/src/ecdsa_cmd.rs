@@ -100,9 +100,9 @@ pub(crate) fn ecdsa_cmd<
             let sk = parse_sk::<SK, SK_LEN>(&sk_bytes, alg_name);
 
             // stream the message from stdin
-            let mut signer = S::sign_init(&sk, None).unwrap();
-            stream_stdin_into(|chunk| signer.sign_update(chunk));
-            let sig = signer.sign_final().unwrap();
+            let mut signer = S::do_sign_init(&sk, None).unwrap();
+            stream_stdin_into(|chunk| signer.do_sign_update(chunk));
+            let sig = signer.do_sign_final().unwrap();
 
             write_bytes_or_hex(&sig, output_hex);
         }
@@ -112,10 +112,10 @@ pub(crate) fn ecdsa_cmd<
             let sig = require_file(sigfile, "sigfile");
 
             // stream the message from stdin
-            let mut verifier = S::verify_init(&pk, None).unwrap();
-            stream_stdin_into(|chunk| verifier.verify_update(chunk));
+            let mut verifier = S::do_verify_init(&pk, None).unwrap();
+            stream_stdin_into(|chunk| verifier.do_verify_update(chunk));
 
-            if verifier.verify_final(&sig).is_ok() {
+            if verifier.do_verify_final(&sig).is_ok() {
                 println!("Signature is valid.");
             } else {
                 eprintln!("Signature is invalid.");

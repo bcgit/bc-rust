@@ -8,7 +8,7 @@
 //! H(0) is read back through the public suspend API rather than from a crate-private constant. A
 //! freshly-constructed hash has processed no message, so the chaining value in its serialized state
 //! is still H(0). The layout is a 3-byte library version tag (written by
-//! `bouncycastle_core::suspendable_state::add_lib_ver`) followed by the eight 64-bit chaining
+//! `bouncycastle_utils::suspendable_state::add_lib_ver`) followed by the eight 64-bit chaining
 //! words, little-endian.
 //!
 //! Note that a wrong H(0) is also caught end-to-end by the CAVP vectors in `bc-test-data.rs`, since

@@ -1,6 +1,6 @@
 use bouncycastle::core::traits::{Hash, XOF, XOFSqueezer};
 use std::io;
-use std::io::{Read, Write};
+use std::io::Read;
 
 use bouncycastle::hex;
 use bouncycastle::sha3::{
@@ -145,14 +145,8 @@ fn stream_stdin(mut sink: impl FnMut(&[u8])) {
 
 /// Writes the digest as raw bytes or hex, with the trailing newline the other commands emit.
 fn write_out(out: &[u8], output_hex: bool) {
-    if output_hex {
-        for b in out {
-            print!("{b:02x}");
-        }
-    } else {
-        io::stdout().write_all(out).expect("Failed to write to stdout");
-    }
-    println!();
+    crate::helpers::write_bytes_or_hex(out, output_hex);
+    crate::helpers::write_stdout(b"\n");
 }
 
 fn do_shake(mut shake: impl XOF, output_len: usize, output_hex: bool) {
@@ -166,12 +160,5 @@ fn do_shake(mut shake: impl XOF, output_len: usize, output_hex: bool) {
 
     let mut shake = shake.into_squeezer();
     let out = shake.do_output(output_len);
-    if output_hex {
-        for b in out.iter() {
-            print!("{b:02x}");
-        }
-    } else {
-        io::stdout().write(&out).unwrap();
-    }
-    println!();
+    write_out(&out, output_hex);
 }

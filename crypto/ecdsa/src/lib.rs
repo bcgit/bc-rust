@@ -36,14 +36,14 @@
 //!
 //! let (pk, sk) = keygen()?;
 //!
-//! let mut signer = ECDSAP256::sign_init(&sk, None)?;
-//! signer.sign_update(b"the first chunk, ");
-//! signer.sign_update(b"then the second");
-//! let signature = signer.sign_final()?;
+//! let mut signer = ECDSAP256::do_sign_init(&sk, None)?;
+//! signer.do_sign_update(b"the first chunk, ");
+//! signer.do_sign_update(b"then the second");
+//! let signature = signer.do_sign_final()?;
 //!
-//! let mut verifier = ECDSAP256::verify_init(&pk, None)?;
-//! verifier.verify_update(b"the first chunk, then the second");
-//! verifier.verify_final(&signature)?;
+//! let mut verifier = ECDSAP256::do_verify_init(&pk, None)?;
+//! verifier.do_verify_update(b"the first chunk, then the second");
+//! verifier.do_verify_final(&signature)?;
 //! # Ok::<(), bouncycastle_core::errors::SignatureError>(())
 //! ```
 //!

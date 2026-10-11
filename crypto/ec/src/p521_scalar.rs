@@ -346,14 +346,17 @@ fn redc(t: &[u64; 18]) -> [u64; 9] {
             acc[idx] = s as u64;
             carry = s >> 64;
         }
-        let mut idx = i + 10;
-        while carry != 0 {
-            debug_assert!(idx < 19, "REDC overflowed its verified 19-limb bound");
+        // Propagate the carry through every limb above the window, up to the accumulator's
+        // proven 19-limb bound. The trip count depends only on the public round index `i`,
+        // never on the operands: once the carry has propagated out, the remaining iterations
+        // add 0. A `while carry != 0` here would be a secret-dependent branch on the signing
+        // path.
+        for idx in (i + 10)..19 {
             let s = (acc[idx] as u128) + carry;
             acc[idx] = s as u64;
             carry = s >> 64;
-            idx += 1;
         }
+        debug_assert_eq!(carry, 0, "carry must be fully propagated within the 19-limb bound");
     }
     debug_assert_eq!(&acc[..9], &[0u64; 9], "REDC's low limbs must be cleared after 9 rounds");
     debug_assert_eq!(acc[18], 0, "P-521 REDC's 19th limb is always 0 -- see module docs");
@@ -472,10 +475,12 @@ impl P521PublicScalar {
     }
 }
 
-// `redc`'s carry-propagation loop (`while carry != 0` above) is a genuinely reachable branch --
-// verified by instrumenting it with an unconditional `panic!` and confirming it fires during real
-// signature verification (the wycheproof P-521 suite in `bouncycastle-ecdsa`) -- but this crate's
-// own tests never happened to trigger it: not `algebraic_identities_over_many_pseudorandom_values`
+// `redc`'s carry propagation into the limbs above the `m * n` window (the `for idx in (i + 10)..19`
+// tail above) runs unconditionally, but a non-zero carry actually reaching those limbs is rare --
+// verified, when that tail was still a `while carry != 0` loop, by instrumenting it with an
+// unconditional `panic!` and confirming it fired during real signature verification (the
+// wycheproof P-521 suite in `bouncycastle-ecdsa`) -- and this crate's own tests never happened to
+// produce one: not `algebraic_identities_over_many_pseudorandom_values`
 // (hundreds of thousands of `redc` calls via `invert`'s ~585 multiplications per iteration, over
 // 1000 iterations, all with uniformly random `< n` operands), nor any of this module's other
 // tests. `redc` is private, so this can't be pinned through the public API either; the

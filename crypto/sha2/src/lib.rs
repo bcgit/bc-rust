@@ -109,7 +109,7 @@
 //! `T` does not affect either size: the truncation happens on the way out of `do_final`, so every
 //! member of the SHA-512 family carries the same 512-bit chaining value and 1024-bit buffer.
 //!
-//! # Security Considerations
+//! # 🚨 Security Considerations 🚨
 //!
 //! * SHA-224/256/384/512 offer 112/128/192/256 bits of collision resistance respectively;
 //!   SHA-512/224 and SHA-512/256 offer 112 and 128 bits (SP 800-107r1, Table 1 (§4.2)). More
@@ -155,17 +155,17 @@ use bouncycastle_core::traits::{Hash, KDF, MAC, Suspendable};
 /*** end of doc-only imports ***/
 
 /*** String constants ***/
-/// Algorithm name string for SHA224, as used by the factories and CLI.
+/// Algorithm name string for SHA224.
 pub const SHA224_NAME: &str = "SHA224";
-/// Algorithm name string for SHA256, as used by the factories and CLI.
+/// Algorithm name string for SHA256.
 pub const SHA256_NAME: &str = "SHA256";
-/// Algorithm name string for SHA384, as used by the factories and CLI.
+/// Algorithm name string for SHA384.
 pub const SHA384_NAME: &str = "SHA384";
-/// Algorithm name string for SHA512, as used by the factories and CLI.
+/// Algorithm name string for SHA512.
 pub const SHA512_NAME: &str = "SHA512";
-/// Algorithm name string for SHA512/224, as used by the factories and CLI.
+/// Algorithm name string for SHA512/224.
 pub const SHA512_224_NAME: &str = "SHA512/224";
-/// Algorithm name string for SHA512/256, as used by the factories and CLI.
+/// Algorithm name string for SHA512/256.
 pub const SHA512_256_NAME: &str = "SHA512/256";
 
 /*** pub types ***/

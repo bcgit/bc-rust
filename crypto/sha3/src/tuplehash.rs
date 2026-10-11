@@ -148,8 +148,8 @@ impl<PARAMS: SHAKEParams> Hash for TupleHashInternal<PARAMS> {
 /// output at a longer one.
 ///
 /// A *final* read binds it, because a caller that names a length and will not be back has said
-/// what `L` is: [`XOFSqueezer::do_final`] and [`XOF::xof`] produce the fixed-length TupleHash of
-/// Sec 5.3 (see [`LengthBoundSqueezer`]), and the [`Hash`] view -- [`Hash::do_final`],
+/// what `L` is: [`XOFSqueezer::do_output_final`] and [`XOF::xof`] produce the fixed-length
+/// TupleHash of Sec 5.3 (see [`LengthBoundSqueezer`]), and the [`Hash`] view -- [`Hash::do_final`],
 /// [`Hash::hash`] and [`Hash::hash_out`] -- does the same at the nominal [`Hash::output_len`],
 /// since a hash's output length is fixed by its type.
 ///
@@ -210,7 +210,7 @@ impl<PARAMS: SHAKEParams> Hash for TupleHashXOFInternal<PARAMS> {
     /// Sec 5.3 at `n = ` [`Hash::output_len`], not a prefix of the TupleHashXOF stream.
     fn do_final(self) -> Vec<u8> {
         let n = self.output_len();
-        self.into_squeezer().do_final(n)
+        self.into_squeezer().do_output_final(n)
     }
 
     fn do_final_out(self, output: &mut [u8]) -> usize {

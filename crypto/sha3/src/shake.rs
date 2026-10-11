@@ -4,11 +4,11 @@ use crate::keccak::{
     deserialize_sha3_family_state, serialize_sha3_family_state,
 };
 use bouncycastle_core::errors::{HashError, KDFError, SuspendableError};
-use bouncycastle_core::key_material;
+use bouncycastle_core::hazmat::do_hazardous_operations;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::suspendable_state::{add_lib_ver, check_lib_ver};
 use bouncycastle_core::traits::{Algorithm, Hash, KDF, Suspendable, XOF, XOFSqueezer};
+use bouncycastle_utils::suspendable_state::{add_lib_ver, check_lib_ver};
 use bouncycastle_utils::{max, min};
 
 /// Internal struct for SHAKE.
@@ -149,7 +149,7 @@ impl<PARAMS: SHAKEParams> SHAKEInternal<PARAMS> {
         self.keccak.absorb(additional_input);
 
         let mut bytes_written: usize = 0;
-        key_material::do_hazardous_operations(output_key, |output_key| {
+        do_hazardous_operations(output_key, |output_key| {
             bytes_written = self.squeeze_internal_out(
                 output_key.ref_to_bytes_mut().expect("Infallible within do_hazardous_operations"),
             );
@@ -160,7 +160,7 @@ impl<PARAMS: SHAKEParams> SHAKEInternal<PARAMS> {
         if self.kdf_key_type == KeyType::Zeroized {
             self.kdf_key_type = KeyType::Unknown;
         }
-        key_material::do_hazardous_operations(output_key, |output_key| {
+        do_hazardous_operations(output_key, |output_key| {
             output_key.set_key_type(self.kdf_key_type)?;
             output_key.set_security_strength(*min(
                 &self.kdf_security_strength,
@@ -406,7 +406,7 @@ impl<PARAMS: SHAKEParams> Hash for SHAKEInternal<PARAMS> {
     /// many*: a hash has one output length and it is this one. Ask for another through the XOF.
     fn do_final(self) -> Vec<u8> {
         let n = self.output_len();
-        self.into_squeezer().do_final(n)
+        self.into_squeezer().do_output_final(n)
     }
 
     fn do_final_out(self, output: &mut [u8]) -> usize {
@@ -417,7 +417,7 @@ impl<PARAMS: SHAKEParams> Hash for SHAKEInternal<PARAMS> {
         // buffer, which is exactly the difference between a XOF and a hash.
         let written = n.min(output.len());
         output[written..].fill(0);
-        self.into_squeezer().do_final_out(&mut output[..written])
+        self.into_squeezer().do_output_final_out(&mut output[..written])
     }
 
     fn do_final_partial_bits(
@@ -442,7 +442,7 @@ impl<PARAMS: SHAKEParams> Hash for SHAKEInternal<PARAMS> {
         // The buffer rule of do_final_out applies here too: output_len bytes, then zeros.
         let written = n.min(output.len());
         output[written..].fill(0);
-        Ok(squeezer.do_final_out(&mut output[..written]))
+        Ok(squeezer.do_output_final_out(&mut output[..written]))
     }
 
     fn max_security_strength(&self) -> SecurityStrength {

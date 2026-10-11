@@ -6,8 +6,7 @@ edition.workspace = true
 [dependencies]
 bouncycastle-core.workspace = true
 bouncycastle-utils.workspace = true
-bouncycastle-modes.workspace = true
-bouncycastle-padding.workspace = true
+bouncycastle-cipher.workspace = true
 
 [dev-dependencies]
 bouncycastle-core-test-framework.workspace = true
@@ -18,4 +17,8 @@ serde_json = "1.0" # for parsing the bc-test-data ACVP vector files
 
 [[bench]]
 name = "aes_benches"
+harness = false
+
+[[bench]]
+name = "aes_modes_benches"
 harness = false

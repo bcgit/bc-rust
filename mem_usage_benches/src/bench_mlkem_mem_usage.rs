@@ -877,7 +877,7 @@ fn bench_mlkem512_decaps() {
 
     /* One-time setup of the KAT -- commented out so that keygen is not captured in the bench */
     // let (pk, _sk) = MLKEM512::keygen_from_seed(&seed).unwrap();
-    // let (_ss, ct) = MLKEM512::encaps_internal(&pk, None, [1u8; 32]);
+    // let (_ss, ct) = MLKEM512::encaps_with_randomness(&pk, None, [1u8; 32]);
     // use bouncycastle_hex as hex;
     // eprintln!("ct:\n{}", &hex::encode(ct));
 
@@ -960,7 +960,7 @@ fn bench_mlkem512_lowmemory_decaps() {
 
     /* One-time setup of the KAT -- commented out so that keygen is not captured in the bench */
     // let (pk, _sk) = MLKEM512::keygen_from_seed(&seed).unwrap();
-    // let (_ss, ct) = MLKEM512::encaps_internal(&pk, None, [1u8; 32]);
+    // let (_ss, ct) = MLKEM512::encaps_with_randomness(&pk, None, [1u8; 32]);
     // use bouncycastle_hex as hex;
     // eprintln!("ct:\n{}", &hex::encode(ct));
 
@@ -1043,7 +1043,7 @@ fn bench_mlkem768_decaps() {
 
     /* One-time setup of the KAT -- commented out so that keygen is not captured in the bench */
     // let (pk, _sk) = MLKEM768::keygen_from_seed(&seed).unwrap();
-    // let (_ss, ct) = MLKEM768::encaps_internal(&pk, None, [1u8; 32]);
+    // let (_ss, ct) = MLKEM768::encaps_with_randomness(&pk, None, [1u8; 32]);
     // use bouncycastle_hex as hex;
     // eprintln!("ct:\n{}", &hex::encode(ct));
 
@@ -1147,7 +1147,7 @@ fn bench_mlkem768_lowmemory_decaps() {
 
     /* One-time setup of the KAT -- commented out so that keygen is not captured in the bench */
     // let (pk, _sk) = MLKEM768::keygen_from_seed(&seed).unwrap();
-    // let (_ss, ct) = MLKEM768::encaps_internal(&pk, None, [1u8; 32]);
+    // let (_ss, ct) = MLKEM768::encaps_with_randomness(&pk, None, [1u8; 32]);
     // use bouncycastle_hex as hex;
     // eprintln!("ct:\n{}", &hex::encode(ct));
 
@@ -1251,7 +1251,7 @@ fn bench_mlkem1024_decaps() {
 
     /* One-time setup of the KAT -- commented out so that keygen is not captured in the bench */
     // let (pk, _sk) = MLKEM1024::keygen_from_seed(&seed).unwrap();
-    // let (_ss, ct) = MLKEM1024::encaps_internal(&pk, None, [1u8; 32]);
+    // let (_ss, ct) = MLKEM1024::encaps_with_randomness(&pk, None, [1u8; 32]);
     // use bouncycastle_hex as hex;
     // eprintln!("ct:\n{}", &hex::encode(ct));
 
@@ -1387,7 +1387,7 @@ fn bench_mlkem1024_lowmemory_decaps() {
 
     /* One-time setup of the KAT -- commented out so that keygen is not captured in the bench */
     // let (pk, _sk) = MLKEM1024::keygen_from_seed(&seed).unwrap();
-    // let (_ss, ct) = MLKEM1024::encaps_internal(&pk, None, [1u8; 32]);
+    // let (_ss, ct) = MLKEM1024::encaps_with_randomness(&pk, None, [1u8; 32]);
     // use bouncycastle_hex as hex;
     // eprintln!("ct:\n{}", &hex::encode(ct));
 

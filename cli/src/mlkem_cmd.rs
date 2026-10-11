@@ -103,7 +103,7 @@ pub(crate) fn mlkem512_cmd(
 
             match MLKEM512::keypair_consistency_check(&pk, &sk) {
                 Ok(_) => {
-                    println!("SUCCESS: pk and sk match.");
+                    crate::helpers::println_stdout("SUCCESS: pk and sk match.");
                 }
                 Err(_) => {
                     eprintln!("FAILURE: pk and sk do not match.");
@@ -131,7 +131,7 @@ pub(crate) fn mlkem512_cmd(
             } else {
                 // write both to stdout in hex, separated by a newline.
                 write_bytes_or_hex(&ct, true);
-                println!();
+                crate::helpers::write_stdout(b"\n");
                 write_bytes_or_hex(ss.ref_to_bytes(), true);
             }
         }
@@ -226,7 +226,7 @@ pub(crate) fn mlkem768_cmd(
 
             match MLKEM768::keypair_consistency_check(&pk, &sk) {
                 Ok(_) => {
-                    println!("SUCCESS: pk and sk match.");
+                    crate::helpers::println_stdout("SUCCESS: pk and sk match.");
                 }
                 Err(_) => {
                     eprintln!("FAILURE: pk and sk do not match.");
@@ -254,7 +254,7 @@ pub(crate) fn mlkem768_cmd(
             } else {
                 // write both to stdout in hex, separated by a newline.
                 write_bytes_or_hex(&ct, true);
-                println!();
+                crate::helpers::write_stdout(b"\n");
                 write_bytes_or_hex(ss.ref_to_bytes(), true);
             }
         }
@@ -349,7 +349,7 @@ pub(crate) fn mlkem1024_cmd(
 
             match MLKEM1024::keypair_consistency_check(&pk, &sk) {
                 Ok(_) => {
-                    println!("SUCCESS: pk and sk match.");
+                    crate::helpers::println_stdout("SUCCESS: pk and sk match.");
                 }
                 Err(_) => {
                     eprintln!("FAILURE: pk and sk do not match.");
@@ -377,7 +377,7 @@ pub(crate) fn mlkem1024_cmd(
             } else {
                 // write both to stdout in hex, separated by a newline.
                 write_bytes_or_hex(&ct, true);
-                println!();
+                crate::helpers::write_stdout(b"\n");
                 write_bytes_or_hex(ss.ref_to_bytes(), true);
             }
         }

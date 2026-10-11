@@ -45,8 +45,8 @@
 //! # Ok::<(), bouncycastle_core::errors::SignatureError>(())
 //! ```
 //!
-//! Streaming, for a message too large to hold at once. `ZA` is absorbed by `sign_init`, so only
-//! the message itself passes through `sign_update`:
+//! Streaming, for a message too large to hold at once. `ZA` is absorbed by `do_sign_init`, so only
+//! the message itself passes through `do_sign_update`:
 //!
 //! ```
 //! use bouncycastle_core::traits::{SignatureVerifier, Signer};
@@ -56,14 +56,14 @@
 //! let (pk, sk) = keygen()?;
 //! let id = b"alice@example.com";
 //!
-//! let mut signer = SM2::sign_init(&sk, Some(id))?;
-//! signer.sign_update(b"the first chunk, ");
-//! signer.sign_update(b"then the second");
-//! let signature = signer.sign_final()?;
+//! let mut signer = SM2::do_sign_init(&sk, Some(id))?;
+//! signer.do_sign_update(b"the first chunk, ");
+//! signer.do_sign_update(b"then the second");
+//! let signature = signer.do_sign_final()?;
 //!
-//! let mut verifier = SM2::verify_init(&pk, Some(id))?;
-//! verifier.verify_update(b"the first chunk, then the second");
-//! verifier.verify_final(&signature)?;
+//! let mut verifier = SM2::do_verify_init(&pk, Some(id))?;
+//! verifier.do_verify_update(b"the first chunk, then the second");
+//! verifier.do_verify_final(&signature)?;
 //! # Ok::<(), bouncycastle_core::errors::SignatureError>(())
 //! ```
 //!

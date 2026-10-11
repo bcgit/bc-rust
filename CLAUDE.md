@@ -11,8 +11,8 @@ previous session's reading of them.
 
 - **[QUALITY_AND_STYLE.md](QUALITY_AND_STYLE.md) — read before writing or changing code, and before reviewing a
   diff.** The authority on architecture, crate and API shape, naming conventions, fallibility, macros, what tests and
-  benchmarks a crate owes, and which sections crate docs must have. Its own opening line invites an AI to review a PR
-  against it, so treat it as exactly that checklist.
+  benchmarks a crate owes, which sections crate docs must have, and how much they should say. Its own opening line
+  invites an AI to review a PR against it, so treat it as exactly that checklist.
 - **[CONTRIBUTING.md](CONTRIBUTING.md) — read before writing a commit message, opening a PR, or advising on how a
   change gets merged.** The authority on coding philosophy, PR hygiene and self-review, the quality bar a submission
   must clear to be accepted, how merges actually happen in this project, and the AI policy. That policy places
@@ -44,7 +44,9 @@ Revisit this section at the first non-alpha release.
 - Builds on Rust **stable**: there is no toolchain pin, and no crate enables a `#![feature(...)]` gate, so
   nightly-only tooling (`-Z` flags and the like) is not available. CI builds, tests and docs on stable; only the
   `rustfmt` job installs nightly.
-- 2024 edition (set workspace-wide in the root `Cargo.toml`), which needs Rust 1.85 or later.
+- 2024 edition (set workspace-wide in the root `Cargo.toml`).
+- Minimum Rust is 1.88: `rust-version` in the root `Cargo.toml`, inherited by `bouncycastle-utils` (the crate that
+  needs it, for `slice::as_chunks`) and so enforced for every crate that depends on it.
 
 ## Common commands
 
@@ -93,9 +95,9 @@ way when adding a harness, or `cargo test --workspace` fails to compile them.
 
 ## Workspace architecture
 
-The workspace has three top-level kinds of member:
+The workspace has four top-level kinds of member:
 
-1. `crypto/*` — one sub-crate per primitive (`sha2`, `sha3`, `sm3`, `hmac`, `hkdf`, `mlkem`, `mlkem_lowmemory`, `mldsa`, `mldsa_lowmemory`, `rng`, `hex`, `base64`, `utils`) plus the spine crates `core`, `core-test-framework`, and `factory`. Each crate is published as `bouncycastle-<name>` and depended on internally via the `workspace.dependencies` table in the root `Cargo.toml`.
+1. `crypto/*` — the library's sub-crates, plus the spine crates `core`, `core-test-framework`, and `factory` described below. Most are one primitive each; some, such as `cipher`, hold generic building blocks (modes, padding) as sub-modules. The set changes over time, so take it from `ls crypto/` or the root `Cargo.toml` rather than from a list here. Each crate is published as `bouncycastle-<name>` and depended on internally via the `workspace.dependencies` table in the root `Cargo.toml`.
 2. `src/` — the umbrella `bouncycastle` crate, which is just `pub use` re-exports of every sub-crate (e.g. `bouncycastle::sha3`, `bouncycastle::sm3`, `bouncycastle::mlkem`). It exists so downstream users can pull the whole library with one dependency; it has no code of its own.
 3. `cli/` — the `bc-rust` binary built on top of `bouncycastle`, exposing every primitive as a streaming stdin→stdout subcommand using `clap`.
 4. `mem_usage_benches/` — stand-alone binary crates that measure peak stack usage of algorithms (cannot be done via criterion).

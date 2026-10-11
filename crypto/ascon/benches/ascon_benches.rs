@@ -2,12 +2,13 @@ use bouncycastle_rng as rng;
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 use std::hint::black_box;
 
-use bouncycastle_ascon::ascon_aead128::AsconAead128;
+use bouncycastle_ascon::Ascon_AEAD128;
 use bouncycastle_ascon::ascon_cxof128::AsconCXof128;
 use bouncycastle_ascon::ascon_hash256::AsconHash256;
 use bouncycastle_ascon::ascon_xof128::AsconXof128;
+use bouncycastle_cipher::Encrypting;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-use bouncycastle_core::traits::{Hash, RNG, XOF};
+use bouncycastle_core::traits::{Hash, RNG, SymmetricCipherEncryptor, XOF};
 
 const DATA_LEN: usize = 16 * 1024;
 
@@ -20,16 +21,24 @@ fn random_data(len: usize) -> Vec<u8> {
 fn bench_aead128_encrypt(c: &mut Criterion) {
     let key =
         KeyMaterial::<16>::from_bytes_as_type(&[0x42u8; 16], KeyType::SymmetricCipherKey).unwrap();
-    let nonce = [0x24u8; 16];
     let data = random_data(DATA_LEN);
     let mut out = vec![0u8; DATA_LEN + 16];
+    // One DRBG for the whole run: the 16-byte nonce it draws per message is noise next to the
+    // 16 KiB of data, where seeding a fresh OS-backed DRBG per message would not be.
+    let mut nonce_rng = rng::DefaultRNG::default();
 
-    let mut group = c.benchmark_group("ascon::AsconAead128");
+    let mut group = c.benchmark_group("ascon::Ascon_AEAD128");
     group.throughput(Throughput::Bytes(DATA_LEN as u64));
 
-    group.bench_function(format!("{DATA_LEN} bytes -- ::encrypt()"), |b| {
+    group.bench_function(format!("{DATA_LEN} bytes -- ::encrypt_rng_out()"), |b| {
         b.iter(|| {
-            AsconAead128::encrypt(&key, &nonce, None, black_box(&data), &mut out).unwrap();
+            Ascon_AEAD128::<Encrypting>::encrypt_rng_out(
+                &key,
+                &mut nonce_rng,
+                black_box(&data),
+                &mut out,
+            )
+            .unwrap();
             black_box(&out);
         })
     });

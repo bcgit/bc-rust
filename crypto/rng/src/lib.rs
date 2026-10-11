@@ -16,7 +16,7 @@
 //! **WARNING: most people should stop reading here and should not attempt to modify the internals of RNGs.
 //! This crate contains dragons and other horrible things. 🐉🐍🐜**
 //!
-//! # 🚨🚨🚨Security Warning 🚨🚨🚨
+//! # 🚨 Security Considerations 🚨
 //!
 //! Misuse of the objects in this crate can lead to output which may appear random, but
 //! is in fact completely deterministic (ie multiple runs of your application will give the same outputs)
@@ -25,7 +25,8 @@
 //!
 //! This crate contains the [`Sp80090ADrbg`] trait, which is intentionally defined here and not in [`bouncycastle_core::traits`]
 //! since misuse of [`Sp80090ADrbg::instantiate`] can completely undermine the security of your entire
-//! cryptographic application.
+//! cryptographic application. A DRBG with no seed at all comes only from
+//! [`hazmat::NewUninitialized`].
 
 #![forbid(unsafe_code)]
 #![forbid(missing_docs)]
@@ -43,6 +44,7 @@ use bouncycastle_core::key_material::KeyType;
 // end doc-only imports
 
 pub mod hash_drbg80090a;
+pub mod hazmat;
 
 /*** String constants ***/
 ///

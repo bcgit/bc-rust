@@ -21,7 +21,7 @@
 //! generator"; there is no SM2 analogue of RFC 6979 in this draft, so (unlike every curve in
 //! `bouncycastle-ecdsa`) there is no deterministic default here. [`bouncycastle_core::traits::Signer`]'s
 //! own docs say its trait is "assumed to source all its randomness from bouncycastle's default
-//! os-backed RNG", so [`Signer::sign`]/[`Signer::sign_final`] do exactly that (via [`bouncycastle_rng::DefaultRNG`]);
+//! os-backed RNG", so [`Signer::sign`]/[`Signer::do_sign_final`] do exactly that (via [`bouncycastle_rng::DefaultRNG`]);
 //! [`SM2::sign_randomized`] is offered alongside for a caller-supplied RNG, the same "additional
 //! capability" shape `bouncycastle-ecdsa`'s curves offer for their own randomised alternative to
 //! RFC 6979.
@@ -71,8 +71,8 @@ pub const SIG_LEN: usize = 64;
 
 /// Streaming state for both `SM2`'s [`Signer`] and [`SignatureVerifier`] impls. Unlike
 /// `bouncycastle-ecdsa`'s curves, the hash absorbed here already has `ZA` prepended by
-/// [`Signer::sign_init`]/[`SignatureVerifier::verify_init`], so a later [`Signer::sign_final`]/
-/// [`SignatureVerifier::verify_final`] need only finish hashing `M` to get `e = SM3(ZA || M)`
+/// [`Signer::do_sign_init`]/[`SignatureVerifier::do_verify_init`], so a later [`Signer::do_sign_final`]/
+/// [`SignatureVerifier::do_verify_final`] need only finish hashing `M` to get `e = SM3(ZA || M)`
 /// (`draft-shen-sm2-ecdsa-02` §5.1.3 step 1 / §5.2.3 step 1).
 pub struct SM2 {
     hash: SM3,
@@ -201,9 +201,9 @@ impl Signer<SM2PrivateKey, SK_LEN, SIG_LEN> for SM2 {
         msg: &[u8],
         ctx: Option<&[u8]>,
     ) -> Result<[u8; SIG_LEN], SignatureError> {
-        let mut s = Self::sign_init(sk, ctx)?;
-        s.sign_update(msg);
-        s.sign_final()
+        let mut s = Self::do_sign_init(sk, ctx)?;
+        s.do_sign_update(msg);
+        s.do_sign_final()
     }
 
     fn sign_out(
@@ -217,7 +217,7 @@ impl Signer<SM2PrivateKey, SK_LEN, SIG_LEN> for SM2 {
         Ok(SIG_LEN)
     }
 
-    fn sign_init(sk: &SM2PrivateKey, ctx: Option<&[u8]>) -> Result<Self, SignatureError> {
+    fn do_sign_init(sk: &SM2PrivateKey, ctx: Option<&[u8]>) -> Result<Self, SignatureError> {
         let id = ctx.ok_or(SignatureError::GenericError(
             "SM2 requires ctx to carry the signer's identity IDA (draft-shen-sm2-ecdsa-02 S5.1.2); \
              see bouncycastle-sm2's crate docs",
@@ -231,13 +231,13 @@ impl Signer<SM2PrivateKey, SK_LEN, SIG_LEN> for SM2 {
         Ok(Self { hash, sk: Some(sk.clone()), pk: None })
     }
 
-    fn sign_update(&mut self, msg_chunk: &[u8]) {
+    fn do_sign_update(&mut self, msg_chunk: &[u8]) {
         self.hash.do_update(msg_chunk);
     }
 
-    fn sign_final(self) -> Result<[u8; SIG_LEN], SignatureError> {
+    fn do_sign_final(self) -> Result<[u8; SIG_LEN], SignatureError> {
         let sk = self.sk.ok_or(SignatureError::GenericError(
-            "sign_final called on a verify-initialized SM2; call verify_final instead",
+            "do_sign_final called on a verify-initialized SM2; call do_verify_final instead",
         ))?;
         let e = e_from_hash(self.hash);
 
@@ -251,9 +251,9 @@ impl Signer<SM2PrivateKey, SK_LEN, SIG_LEN> for SM2 {
         sign_with_k(&sk, &e, k)
     }
 
-    fn sign_final_out(self, output: &mut [u8; SIG_LEN]) -> Result<usize, SignatureError> {
+    fn do_sign_final_out(self, output: &mut [u8; SIG_LEN]) -> Result<usize, SignatureError> {
         output.fill(0);
-        *output = self.sign_final()?;
+        *output = self.do_sign_final()?;
         Ok(SIG_LEN)
     }
 }
@@ -265,12 +265,12 @@ impl SignatureVerifier<SM2PublicKey, PK_LEN, SIG_LEN> for SM2 {
         ctx: Option<&[u8]>,
         sig: &[u8],
     ) -> Result<(), SignatureError> {
-        let mut v = Self::verify_init(pk, ctx)?;
-        v.verify_update(msg);
-        v.verify_final(sig)
+        let mut v = Self::do_verify_init(pk, ctx)?;
+        v.do_verify_update(msg);
+        v.do_verify_final(sig)
     }
 
-    fn verify_init(pk: &SM2PublicKey, ctx: Option<&[u8]>) -> Result<Self, SignatureError> {
+    fn do_verify_init(pk: &SM2PublicKey, ctx: Option<&[u8]>) -> Result<Self, SignatureError> {
         let id = ctx.ok_or(SignatureError::GenericError(
             "SM2 requires ctx to carry the signer's identity IDA (draft-shen-sm2-ecdsa-02 S5.2.2); \
              see bouncycastle-sm2's crate docs",
@@ -283,13 +283,13 @@ impl SignatureVerifier<SM2PublicKey, PK_LEN, SIG_LEN> for SM2 {
         Ok(Self { hash, sk: None, pk: Some(*pk) })
     }
 
-    fn verify_update(&mut self, msg_chunk: &[u8]) {
+    fn do_verify_update(&mut self, msg_chunk: &[u8]) {
         self.hash.do_update(msg_chunk);
     }
 
-    fn verify_final(self, sig: &[u8]) -> Result<(), SignatureError> {
+    fn do_verify_final(self, sig: &[u8]) -> Result<(), SignatureError> {
         let pk = self.pk.ok_or(SignatureError::GenericError(
-            "verify_final called on a sign-initialized SM2; call sign_final instead",
+            "do_verify_final called on a sign-initialized SM2; call do_sign_final instead",
         ))?;
         // Exactly SIG_LEN, not "at least": the raw encoding is two fixed-width integers and
         // nothing else, so trailing bytes make this a different, malformed encoding rather than a

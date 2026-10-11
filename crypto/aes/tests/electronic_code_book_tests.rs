@@ -7,21 +7,21 @@
 //! `decrypt_2blocks`, `encrypt_4blocks` and `decrypt_4blocks` with its `u32` and `u64` plane
 //! paths, so the default implementations are not what runs.
 
-use bouncycastle_aes::BLOCK_LEN;
-use bouncycastle_aes::aes_internal::{AES128Internal, AES192Internal, AES256Internal};
+use bouncycastle_aes::AES_BLOCK_LEN;
+use bouncycastle_aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
 use bouncycastle_core_test_framework::electronic_code_book::TestFrameworkElectronicCodeBook;
 
 #[test]
 fn aes128_conforms_to_electronic_code_book() {
-    TestFrameworkElectronicCodeBook::new().test::<16, BLOCK_LEN, AES128Internal>();
+    TestFrameworkElectronicCodeBook::new().test::<16, AES_BLOCK_LEN, AES128Internal>();
 }
 
 #[test]
 fn aes192_conforms_to_electronic_code_book() {
-    TestFrameworkElectronicCodeBook::new().test::<24, BLOCK_LEN, AES192Internal>();
+    TestFrameworkElectronicCodeBook::new().test::<24, AES_BLOCK_LEN, AES192Internal>();
 }
 
 #[test]
 fn aes256_conforms_to_electronic_code_book() {
-    TestFrameworkElectronicCodeBook::new().test::<32, BLOCK_LEN, AES256Internal>();
+    TestFrameworkElectronicCodeBook::new().test::<32, AES_BLOCK_LEN, AES256Internal>();
 }

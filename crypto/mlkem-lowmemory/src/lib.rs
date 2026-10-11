@@ -210,7 +210,7 @@
 //! If using a [`MLKEM::keygen_from_seed`], then it is your responsibility to ensure that the seed is
 //! cryptographically random and unpredictable at a security strength that matches the MLKEM parameter set.
 //!
-//! Also, [`MLKEM::encaps_internal`] requires the encapsulation randomness to be provided, so the ciphertext
+//! Also, [`hazmat::EncapsWithRandomness`] requires the encapsulation randomness to be provided, so the ciphertext
 //! will only be as strong as the randomness that you provide.
 //!
 //! A note about cryptographic side-channel attacks: considerable effort has been expended to attempt
@@ -241,6 +241,7 @@
 use bouncycastle_core::key_material::KeyMaterialTrait;
 
 mod aux_functions;
+pub mod hazmat;
 mod low_memory_helpers;
 pub mod mlkem;
 mod mlkem_keys;

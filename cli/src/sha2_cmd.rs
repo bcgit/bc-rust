@@ -1,6 +1,6 @@
 use bouncycastle::core::traits::Hash;
 use std::io;
-use std::io::{Read, Write};
+use std::io::Read;
 
 use bouncycastle::sha2::{SHA224, SHA256, SHA384, SHA512, SHA512_224, SHA512_256};
 
@@ -37,12 +37,6 @@ fn do_sha2(mut sha2: impl Hash, output_hex: bool) {
 
     let out = sha2.do_final();
 
-    if output_hex {
-        for b in out.iter() {
-            print!("{b:02x}");
-        }
-    } else {
-        io::stdout().write(&out).unwrap();
-    }
-    println!();
+    crate::helpers::write_bytes_or_hex(&out, output_hex);
+    crate::helpers::write_stdout(b"\n");
 }

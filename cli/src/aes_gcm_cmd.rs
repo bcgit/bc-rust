@@ -13,13 +13,13 @@
 //! also lets an attacker recover the hash subkey (SP 800-38D Appendix A).
 
 use crate::helpers::aead_cipher_helpers::{decrypt_gcm, encrypt_gcm, load_aad};
-use crate::helpers::block_mode_helpers::{BlockModeAction, load_key};
-use bouncycastle::aes::aes_internal::{AES128Internal, AES192Internal, AES256Internal};
+use crate::helpers::block_mode_helpers::{CipherDirection, load_key};
+use bouncycastle::aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
+use bouncycastle::core::hazmat::ElectronicCodeBook;
 use bouncycastle::core::key_material::KeyMaterial;
-use bouncycastle::core::traits::ElectronicCodeBook;
 
 pub(crate) fn aes128_gcm_cmd(
-    action: &BlockModeAction,
+    action: &CipherDirection,
     key: &Option<String>,
     key_file: &Option<String>,
     aad: &Option<String>,
@@ -35,7 +35,7 @@ pub(crate) fn aes128_gcm_cmd(
 }
 
 pub(crate) fn aes192_gcm_cmd(
-    action: &BlockModeAction,
+    action: &CipherDirection,
     key: &Option<String>,
     key_file: &Option<String>,
     aad: &Option<String>,
@@ -51,7 +51,7 @@ pub(crate) fn aes192_gcm_cmd(
 }
 
 pub(crate) fn aes256_gcm_cmd(
-    action: &BlockModeAction,
+    action: &CipherDirection,
     key: &Option<String>,
     key_file: &Option<String>,
     aad: &Option<String>,
@@ -68,7 +68,7 @@ pub(crate) fn aes256_gcm_cmd(
 
 /// Dispatches to the shared AEAD streaming loops with `Gcm`'s 128-bit tag.
 fn run<P, const KEY_LEN: usize>(
-    action: &BlockModeAction,
+    action: &CipherDirection,
     key: &KeyMaterial<KEY_LEN>,
     aad: &[u8],
     output_hex: bool,
@@ -76,7 +76,7 @@ fn run<P, const KEY_LEN: usize>(
     P: ElectronicCodeBook<KEY_LEN, 16>,
 {
     match action {
-        BlockModeAction::Encrypt => encrypt_gcm::<P, KEY_LEN, 16>(key, aad, output_hex),
-        BlockModeAction::Decrypt => decrypt_gcm::<P, KEY_LEN, 16>(key, aad, output_hex),
+        CipherDirection::Encrypt => encrypt_gcm::<P, KEY_LEN, 16>(key, aad, output_hex),
+        CipherDirection::Decrypt => decrypt_gcm::<P, KEY_LEN, 16>(key, aad, output_hex),
     }
 }

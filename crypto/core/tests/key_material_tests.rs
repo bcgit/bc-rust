@@ -1,9 +1,10 @@
 #[cfg(test)]
 mod test_key_material {
     use bouncycastle_core::errors::KeyMaterialError;
+    use bouncycastle_core::hazmat::do_hazardous_operations;
     use bouncycastle_core::key_material::{
         KeyMaterial, KeyMaterial0, KeyMaterial128, KeyMaterial256, KeyMaterial512,
-        KeyMaterialTrait, KeyType, do_hazardous_operations,
+        KeyMaterialTrait, KeyType,
     };
     use bouncycastle_core::security_strength::SecurityStrength;
 

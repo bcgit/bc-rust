@@ -10,7 +10,7 @@
 //!
 //! # The IV travels in the ciphertext
 //!
-//! Exactly as for the block modes: there is no `--iv` flag, because `bouncycastle-modes` has no API
+//! Exactly as for the block modes: there is no `--iv` flag, because `bouncycastle_cipher::modes` has no API
 //! for a caller-supplied IV -- NIST SP 800-38A Sec 5.3 requires the CFB IV to be *unpredictable*
 //! rather than merely unique. `encrypt` generates one from the OS-backed DRBG and writes it as the
 //! **first block of the output**; `decrypt` reads it back from the **first block of the input**, so
@@ -29,12 +29,12 @@
 //! stdin is read as binary so the commands compose in a pipeline. `-x` renders the *output* as hex.
 //! For hex input, pipe through `hex-decode` first.
 
-use crate::helpers::block_mode_helpers::{BlockModeAction, CHUNK_LEN};
-use crate::helpers::write_bytes_or_hex;
+use crate::helpers::block_mode_helpers::{CHUNK_LEN, CipherDirection};
+use crate::helpers::{flush_stdout, write_bytes_or_hex, write_stdout};
 use bouncycastle::core::key_material::KeyMaterial;
 use bouncycastle::core::traits::{StreamCipherDecryptor, StreamCipherEncryptor};
 use std::io;
-use std::io::{Read, Write};
+use std::io::Read;
 use std::process::exit;
 
 /// Encrypts stdin to stdout under the stream mode `E`, writing the generated IV first.
@@ -59,7 +59,7 @@ pub(crate) fn encrypt_stream<E, const KEY_LEN: usize, const INIT_DATA_LEN: usize
         // Cannot fail: neither CFB nor CFB8 has a per-IV data limit.
         // CFB and CFB8 cannot fail here; CTR can, once its counter is exhausted, which is a real
         // limit a long enough stream reaches rather than a bug.
-        enc.do_encrypt(data).unwrap_or_else(|e| {
+        enc.do_encrypt_inplace(data).unwrap_or_else(|e| {
             eprintln!("Error: encryption failed: {e:?}");
             exit(-1);
         });
@@ -93,7 +93,7 @@ pub(crate) fn decrypt_stream<D, const KEY_LEN: usize, const INIT_DATA_LEN: usize
     });
 
     stream(|data| {
-        dec.do_decrypt(data).unwrap_or_else(|e| {
+        dec.do_decrypt_inplace(data).unwrap_or_else(|e| {
             eprintln!("Error: decryption failed: {e:?}");
             exit(-1);
         });
@@ -129,18 +129,15 @@ fn stream(mut process: impl FnMut(&mut [u8])) {
 /// Flushes stdout, and adds the trailing newline the hex-output commands all emit.
 fn finish(output_hex: bool) {
     if output_hex {
-        println!();
+        write_stdout(b"\n");
     }
-    io::stdout().flush().unwrap_or_else(|e| {
-        eprintln!("Error: failed to flush stdout: {e}");
-        exit(-1);
-    });
+    flush_stdout();
 }
 
 /// Runs one direction of a stream mode. The two `run` dispatchers in `aes_cfb_cmd` and
 /// `aes_cfb8_cmd` differ only in which mode they name, so the match lives here.
 pub(crate) fn run_stream_mode<E, D, const KEY_LEN: usize, const INIT_DATA_LEN: usize>(
-    action: &BlockModeAction,
+    action: &CipherDirection,
     key: &KeyMaterial<KEY_LEN>,
     output_hex: bool,
 ) where
@@ -148,7 +145,7 @@ pub(crate) fn run_stream_mode<E, D, const KEY_LEN: usize, const INIT_DATA_LEN: u
     D: StreamCipherDecryptor<KEY_LEN, INIT_DATA_LEN>,
 {
     match action {
-        BlockModeAction::Encrypt => encrypt_stream::<E, KEY_LEN, INIT_DATA_LEN>(key, output_hex),
-        BlockModeAction::Decrypt => decrypt_stream::<D, KEY_LEN, INIT_DATA_LEN>(key, output_hex),
+        CipherDirection::Encrypt => encrypt_stream::<E, KEY_LEN, INIT_DATA_LEN>(key, output_hex),
+        CipherDirection::Decrypt => decrypt_stream::<D, KEY_LEN, INIT_DATA_LEN>(key, output_hex),
     }
 }

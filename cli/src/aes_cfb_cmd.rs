@@ -16,7 +16,7 @@
 //! CFB is a stream cipher, so unlike `aes*-cbc` and `aes*-ecb` these commands accept input of any
 //! length and pad nothing; the ciphertext is exactly as long as the plaintext. For a message that
 //! is not a whole number of blocks the last partial block is a short final segment, which is what
-//! every streaming CFB128 implementation does; see the `bouncycastle_modes::Cfb` docs.
+//! every streaming CFB128 implementation does; see the `bouncycastle_cipher::modes::Cfb` docs.
 //!
 //! # Warning
 //!
@@ -26,15 +26,16 @@
 //! of the plaintext in the *same* block, so an attacker edits the block they aimed at, at the cost
 //! of randomising the next one. Do not decrypt data you have not authenticated separately.
 
-use crate::helpers::block_mode_helpers::{BLOCK_LEN, BlockModeAction, load_key};
+use crate::helpers::block_mode_helpers::{BLOCK_LEN, CipherDirection, load_key};
 use crate::helpers::stream_mode_helpers::run_stream_mode;
-use bouncycastle::aes::aes_internal::{AES128Internal, AES192Internal, AES256Internal};
+use bouncycastle::aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
+use bouncycastle::cipher::modes::Cfb;
+use bouncycastle::cipher::{Decrypting, Encrypting};
+use bouncycastle::core::hazmat::ElectronicCodeBook;
 use bouncycastle::core::key_material::KeyMaterial;
-use bouncycastle::core::traits::ElectronicCodeBook;
-use bouncycastle::modes::{Cfb, Decrypting, Encrypting};
 
 pub(crate) fn aes128_cfb_cmd(
-    action: &BlockModeAction,
+    action: &CipherDirection,
     key: &Option<String>,
     key_file: &Option<String>,
     output_hex: bool,
@@ -43,7 +44,7 @@ pub(crate) fn aes128_cfb_cmd(
 }
 
 pub(crate) fn aes192_cfb_cmd(
-    action: &BlockModeAction,
+    action: &CipherDirection,
     key: &Option<String>,
     key_file: &Option<String>,
     output_hex: bool,
@@ -52,7 +53,7 @@ pub(crate) fn aes192_cfb_cmd(
 }
 
 pub(crate) fn aes256_cfb_cmd(
-    action: &BlockModeAction,
+    action: &CipherDirection,
     key: &Option<String>,
     key_file: &Option<String>,
     output_hex: bool,
@@ -62,7 +63,7 @@ pub(crate) fn aes256_cfb_cmd(
 
 /// Dispatches to the shared streaming loops with `Cfb` filled in as the mode.
 fn run<P, const KEY_LEN: usize>(
-    action: &BlockModeAction,
+    action: &CipherDirection,
     key: &KeyMaterial<KEY_LEN>,
     output_hex: bool,
 ) where

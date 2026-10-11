@@ -8,6 +8,7 @@ mod tests {
     use bouncycastle_core::traits::RNG;
     use bouncycastle_core_test_framework::DUMMY_SEED;
     use bouncycastle_rng::Sp80090ADrbg;
+    use bouncycastle_rng::hazmat::NewUninitialized;
     use bouncycastle_rng::{HashDRBG_SHA256, HashDRBG_SHA512};
 
     #[test]
@@ -47,7 +48,7 @@ mod tests {
 
     #[test]
     fn test_init() {
-        let mut rng = HashDRBG_SHA256::new_unititialized();
+        let mut rng = HashDRBG_SHA256::new_uninitialized();
         let mut out = [0u8; 32];
         match rng.generate_out(&[], &mut out) {
             Err(RNGError::Uninitialized) => { /* good */ }
@@ -59,7 +60,7 @@ mod tests {
         assert_ne!(out, [0u8; 32]);
 
         // Success case: seed len equals required entropy
-        let mut rng = HashDRBG_SHA256::new_unititialized();
+        let mut rng = HashDRBG_SHA256::new_uninitialized();
         let mut out = [0u8; 32];
         let seed = KeyMaterial256::from_bytes_as_type(&DUMMY_SEED[..16], KeyType::Seed).unwrap();
         rng.instantiate(false, seed, &KeyMaterial0::new(), &[], SecurityStrength::_128bit).unwrap();
@@ -67,7 +68,7 @@ mod tests {
         assert_ne!(out, [0u8; 32]);
 
         // Error case: seed != KeyType::Seed
-        let mut rng = HashDRBG_SHA256::new_unititialized();
+        let mut rng = HashDRBG_SHA256::new_uninitialized();
         let seed =
             KeyMaterial256::from_bytes_as_type(&DUMMY_SEED[..32], KeyType::SymmetricCipherKey)
                 .unwrap();
@@ -77,7 +78,7 @@ mod tests {
         }
 
         // Error case: seed too short
-        let mut rng = HashDRBG_SHA256::new_unititialized();
+        let mut rng = HashDRBG_SHA256::new_uninitialized();
         let seed = KeyMaterial256::from_bytes_as_type(&DUMMY_SEED[..8], KeyType::Seed).unwrap();
         match rng.instantiate(false, seed, &KeyMaterial0::new(), &[], SecurityStrength::_128bit) {
             Err(RNGError::KeyMaterialError(_)) => { /* good */ }
@@ -90,7 +91,7 @@ mod tests {
 
         // Error case: security strength requested at init is higher than the underlying
         // hash function's max security strength
-        let mut rng = HashDRBG_SHA256::new_unititialized();
+        let mut rng = HashDRBG_SHA256::new_uninitialized();
         let seed = KeyMaterial256::from_bytes_as_type(&DUMMY_SEED[..32], KeyType::Seed).unwrap();
         match rng.instantiate(false, seed, &KeyMaterial0::new(), &[], SecurityStrength::_256bit) {
             Err(RNGError::KeyMaterialError(KeyMaterialError::SecurityStrength(_))) => { /* good */ }
@@ -100,16 +101,16 @@ mod tests {
         // Success case: security strength requested at init is lower than the underlying
         // hash function's max security strength
         // ... 112 bit
-        let mut rng = HashDRBG_SHA256::new_unititialized();
+        let mut rng = HashDRBG_SHA256::new_uninitialized();
         let seed = KeyMaterial256::from_bytes_as_type(&DUMMY_SEED[..32], KeyType::Seed).unwrap();
         rng.instantiate(false, seed, &KeyMaterial0::new(), &[], SecurityStrength::_128bit).unwrap();
         // ... 128 bit
-        let mut rng = HashDRBG_SHA256::new_unititialized();
+        let mut rng = HashDRBG_SHA256::new_uninitialized();
         let seed = KeyMaterial256::from_bytes_as_type(&DUMMY_SEED[..32], KeyType::Seed).unwrap();
         rng.instantiate(false, seed, &KeyMaterial0::new(), &[], SecurityStrength::_128bit).unwrap();
 
         // Error case: double initialize
-        let mut rng = HashDRBG_SHA256::new_unititialized();
+        let mut rng = HashDRBG_SHA256::new_uninitialized();
         let seed = KeyMaterial256::from_bytes_as_type(&DUMMY_SEED[..32], KeyType::Seed).unwrap();
         rng.instantiate(false, seed, &KeyMaterial0::new(), &[], SecurityStrength::_128bit).unwrap();
         let seed = KeyMaterial256::from_bytes_as_type(&DUMMY_SEED[..32], KeyType::Seed).unwrap();
@@ -132,7 +133,7 @@ mod tests {
         rng.reseed(&seed, &[0u8; 32]).unwrap();
 
         // Error case: uninitialized
-        let mut rng = HashDRBG_SHA256::new_unititialized();
+        let mut rng = HashDRBG_SHA256::new_uninitialized();
         let seed = KeyMaterial256::from_bytes_as_type(&DUMMY_SEED[..32], KeyType::Seed).unwrap();
         match rng.reseed(&seed, &[0u8; 32]) {
             Err(RNGError::Uninitialized) => { /*good*/ }
@@ -188,7 +189,7 @@ mod tests {
         assert_ne!(out, [0u8; 1024]);
 
         // Error case: uninitialized
-        let mut rng = HashDRBG_SHA256::new_unititialized();
+        let mut rng = HashDRBG_SHA256::new_uninitialized();
         match rng.generate(&[], 32) {
             Err(RNGError::Uninitialized) => { /*good*/ }
             _ => panic!("Expected Uninitialized error"),
@@ -233,7 +234,7 @@ mod tests {
         assert_ne!(out, [0u8; 1024]);
 
         // Error case: uninitialized
-        let mut rng = HashDRBG_SHA256::new_unititialized();
+        let mut rng = HashDRBG_SHA256::new_uninitialized();
         let mut out = [0u8; 32];
         match rng.generate_out(&[], &mut out) {
             Err(RNGError::Uninitialized) => { /*good*/ }
@@ -283,7 +284,7 @@ mod tests {
         assert_eq!(out.security_strength(), SecurityStrength::_128bit);
 
         // // Error case: uninitialized
-        let mut rng = HashDRBG_SHA256::new_unititialized();
+        let mut rng = HashDRBG_SHA256::new_uninitialized();
         let mut out = KeyMaterial256::new();
         match rng.generate_keymaterial_out(&[], &mut out) {
             Err(RNGError::Uninitialized) => { /*good*/ }

@@ -189,22 +189,17 @@ pub fn redc<const L: usize, const L2: usize, const L21: usize>(
         acc[i + L] = s as u64;
         carry = s >> 64;
 
-        // Propagate any further carry upward -- bounded to at most a couple of extra limbs by
-        // the same argument as every other curve's own redc tail loop in this crate (verified,
-        // not assumed, per the module docs). Verified separately (over 2,000,000 pseudorandom and
-        // adversarially-biased-toward-all-1-bits trials, for each of brainpoolP256r1/384r1/512r1's
-        // actual primes) that this loop never needs more than a single iteration for any input
-        // reachable from an actual field-element multiplication: `k`'s post-increment value is
-        // therefore never read again once the loop exits, which is why mutating `k += 1` itself
-        // (as opposed to the bound check above it) is an accepted equivalent mutant here.
-        let mut k = i + L + 1;
-        while carry != 0 {
-            debug_assert!(k < L21, "REDC overflowed its verified 2L+1-limb bound");
+        // Propagate the carry through every limb above the window, up to the accumulator's
+        // proven `L21`-limb bound. The trip count depends only on the public round index `i`,
+        // never on the operands: once the carry has propagated out, the remaining iterations
+        // add 0. A `while carry != 0` here would be a secret-dependent branch on the signing
+        // path.
+        for k in (i + L + 1)..L21 {
             let s = (acc[k] as u128) + carry;
             acc[k] = s as u64;
             carry = s >> 64;
-            k += 1;
         }
+        debug_assert_eq!(carry, 0, "carry must be fully propagated within the 2L+1-limb bound");
     }
 
     debug_assert_eq!(&acc[..L], &[0u64; L][..], "REDC's low limbs must be cleared after L rounds");

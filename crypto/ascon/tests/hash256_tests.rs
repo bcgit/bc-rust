@@ -38,7 +38,7 @@ fn hash256_embedded_kat() {
     for (msg_hex, md_hex) in HASH_KAT {
         let msg = dh(msg_hex);
         let expected = dh(md_hex);
-        assert_eq!(AsconHash256::digest(&msg).as_slice(), expected.as_slice(), "msg={msg_hex}");
+        assert_eq!(AsconHash256::new().hash(&msg).as_slice(), expected.as_slice(), "msg={msg_hex}");
 
         // AsconHash256 has no do_final_partial_bits support, so that part of the framework
         // is disabled; everything else (hash/hash_out/do_update+do_final(_out), truncation,
@@ -51,10 +51,11 @@ fn hash256_embedded_kat() {
 #[test]
 fn hash256_streaming_matches_one_shot() {
     let msg = pattern(100);
-    let expected = AsconHash256::digest(&msg);
+    let mut expected = [0u8; 32];
+    assert_eq!(AsconHash256::new().hash_out(&msg, &mut expected), 32);
 
     // One-shot APIs agree.
-    assert_eq!(AsconHash256::new().hash(&msg), expected.to_vec());
+    assert_eq!(AsconHash256::new().hash(&msg), expected);
     let mut buf = [0u8; 32];
     let mut h = AsconHash256::new();
     h.do_update(&msg);
@@ -93,7 +94,7 @@ fn hash256_metadata_accessors() {
 #[test]
 fn hash256_do_final_out_truncates_to_buffer() {
     let msg = pattern(50);
-    let expected = AsconHash256::digest(&msg);
+    let expected = AsconHash256::new().hash(&msg);
 
     let mut h = AsconHash256::new();
     h.do_update(&msg);
@@ -105,7 +106,7 @@ fn hash256_do_final_out_truncates_to_buffer() {
 #[test]
 fn hash256_hash_out_zeroizes_past_output_len() {
     let msg = pattern(50);
-    let expected = AsconHash256::digest(&msg);
+    let expected = AsconHash256::new().hash(&msg);
 
     let mut o = [0xEEu8; 64];
     assert_eq!(AsconHash256::new().hash_out(&msg, &mut o), 32);
@@ -127,7 +128,7 @@ fn hash256_suspendable_state() {
     use bouncycastle_core_test_framework::suspendable_state::TestFrameworkSuspendableState;
 
     let data: Vec<u8> = (0..37u8).collect();
-    let expected = AsconHash256::digest(&data).to_vec();
+    let expected = AsconHash256::new().hash(&data);
 
     // Suspend mid-absorb, resume, finish, and confirm the digest matches an uninterrupted run.
     let mut h = AsconHash256::new();

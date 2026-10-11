@@ -165,7 +165,7 @@ impl<PARAMS: SHAKEParams> Hash for CSHAKEInternal<PARAMS> {
     /// same bytes the squeezer produces. What the `Hash` view fixes is how many.
     fn do_final(self) -> Vec<u8> {
         let n = self.output_len();
-        self.into_squeezer().do_final(n)
+        self.into_squeezer().do_output_final(n)
     }
 
     fn do_final_out(self, output: &mut [u8]) -> usize {
@@ -175,7 +175,7 @@ impl<PARAMS: SHAKEParams> Hash for CSHAKEInternal<PARAMS> {
         // XOF spelling, which takes its length from the buffer.
         let written = n.min(output.len());
         output[written..].fill(0);
-        self.into_squeezer().do_final_out(&mut output[..written])
+        self.into_squeezer().do_output_final_out(&mut output[..written])
     }
 
     fn do_final_partial_bits(
@@ -200,7 +200,7 @@ impl<PARAMS: SHAKEParams> Hash for CSHAKEInternal<PARAMS> {
         // The buffer rule of do_final_out applies here too: output_len bytes, then zeros.
         let written = n.min(output.len());
         output[written..].fill(0);
-        Ok(squeezer.do_final_out(&mut output[..written]))
+        Ok(squeezer.do_output_final_out(&mut output[..written]))
     }
 
     fn max_security_strength(&self) -> SecurityStrength {

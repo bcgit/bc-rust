@@ -20,11 +20,12 @@
 
 #![allow(dead_code)]
 
-use bouncycastle_core::key_material;
+use bouncycastle_core::hazmat::do_hazardous_operations;
 use bouncycastle_core::key_material::{KeyMaterial512, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{KEMDecapsulator, KEMPrivateKey, KEMPublicKey};
 use bouncycastle_hex as hex;
+use bouncycastle_mlkem::hazmat::EncapsWithRandomness;
 use bouncycastle_mlkem::{
     MLKEM512, MLKEM512PrivateKey, MLKEM512PublicKey, MLKEM768, MLKEM768PrivateKey,
     MLKEM768PublicKey, MLKEM1024, MLKEM1024PrivateKey, MLKEM1024PublicKey, MLKEMTrait,
@@ -362,8 +363,11 @@ impl MLKEMEncapsTestCase {
 
         /* Perform the deterministic encaps and compare results */
 
-        let (k, ct) =
-            MLKEM512::encaps_internal(&ek, None, hex::decode(&self.m).unwrap().try_into().unwrap());
+        let (k, ct) = MLKEM512::encaps_with_randomness(
+            &ek,
+            None,
+            hex::decode(&self.m).unwrap().try_into().unwrap(),
+        );
 
         if self.result == "valid" {
             assert_eq!(k, hex::decode(&self.k).unwrap().as_slice());
@@ -392,8 +396,11 @@ impl MLKEMEncapsTestCase {
 
         /* Perform the deterministic encaps and compare results */
 
-        let (k, ct) =
-            MLKEM768::encaps_internal(&ek, None, hex::decode(&self.m).unwrap().try_into().unwrap());
+        let (k, ct) = MLKEM768::encaps_with_randomness(
+            &ek,
+            None,
+            hex::decode(&self.m).unwrap().try_into().unwrap(),
+        );
 
         if self.result == "valid" {
             assert_eq!(k, hex::decode(&self.k).unwrap().as_slice());
@@ -422,7 +429,7 @@ impl MLKEMEncapsTestCase {
 
         /* Perform the deterministic encaps and compare results */
 
-        let (k, ct) = MLKEM1024::encaps_internal(
+        let (k, ct) = MLKEM1024::encaps_with_randomness(
             &ek,
             None,
             hex::decode(&self.m).unwrap().try_into().unwrap(),
@@ -719,7 +726,7 @@ impl MLKEMTestCase {
             }
         };
         // allow an all-zero seed for testing
-        key_material::do_hazardous_operations(&mut seed, |seed| {
+        do_hazardous_operations(&mut seed, |seed| {
             seed.set_key_type(KeyType::Seed).unwrap();
             match seed.set_security_strength(SecurityStrength::_256bit) {
                 Ok(_) => Ok(()),
@@ -785,7 +792,7 @@ impl MLKEMTestCase {
             }
         };
         // allow an all-zero seed for testing
-        key_material::do_hazardous_operations(&mut seed, |seed| {
+        do_hazardous_operations(&mut seed, |seed| {
             seed.set_key_type(KeyType::Seed).unwrap();
             match seed.set_security_strength(SecurityStrength::_256bit) {
                 Ok(_) => Ok(()),
@@ -851,7 +858,7 @@ impl MLKEMTestCase {
             }
         };
         // allow an all-zero seed for testing
-        key_material::do_hazardous_operations(&mut seed, |seed| {
+        do_hazardous_operations(&mut seed, |seed| {
             seed.set_key_type(KeyType::Seed).unwrap();
             match seed.set_security_strength(SecurityStrength::_256bit) {
                 Ok(_) => Ok(()),

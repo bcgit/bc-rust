@@ -1,10 +1,9 @@
-use std::io::{Read, Write};
+use std::io::Read;
 use std::process::exit;
 use std::{fs, io};
 
-use bouncycastle::core::key_material::{
-    KeyMaterial512, KeyMaterialTrait, KeyType, do_hazardous_operations,
-};
+use bouncycastle::core::hazmat::do_hazardous_operations;
+use bouncycastle::core::key_material::{KeyMaterial512, KeyMaterialTrait, KeyType};
 use bouncycastle::core::traits::MAC;
 use bouncycastle::hex;
 use bouncycastle::sha2::hmac::{HMAC_SHA256, HMAC_SHA512, HMAC_SHA512_224, HMAC_SHA512_256};
@@ -117,14 +116,8 @@ fn do_mac(mut mac: impl MAC, verify_val: &Option<String>, output_hex: bool) {
         // compute a MAC value
         let out = mac.do_final();
 
-        if output_hex {
-            for b in out.iter() {
-                print!("{b:02x}");
-            }
-        } else {
-            io::stdout().write(&out).unwrap();
-        }
-        println!();
+        crate::helpers::write_bytes_or_hex(&out, output_hex);
+        crate::helpers::write_stdout(b"\n");
     } else {
         // verify a MAC
         if mac.do_verify_final(&hex::decode(verify_val.as_ref().unwrap()).unwrap()) {

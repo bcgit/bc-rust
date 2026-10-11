@@ -24,12 +24,12 @@
 
 #![allow(dead_code)]
 
-use bouncycastle_core::key_material::{
-    KeyMaterial512, KeyMaterialTrait, KeyType, do_hazardous_operations,
-};
+use bouncycastle_core::hazmat::do_hazardous_operations;
+use bouncycastle_core::key_material::{KeyMaterial512, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{KEMDecapsulator, KEMPublicKey};
 use bouncycastle_hex as hex;
+use bouncycastle_mlkem_lowmemory::hazmat::EncapsWithRandomness;
 use bouncycastle_mlkem_lowmemory::{
     MLKEM512, MLKEM512PublicKey, MLKEM768, MLKEM768PublicKey, MLKEM1024, MLKEM1024PublicKey,
     MLKEMPrivateKeyTrait, MLKEMTrait,
@@ -327,7 +327,7 @@ impl MLKEMEncapsTestCase {
             }
         };
 
-        let (k, ct) = MLKEM512::encaps_internal(&ek, m);
+        let (k, ct) = MLKEM512::encaps_with_randomness(&ek, m);
 
         if self.result == "valid" {
             assert_eq!(k, hex::decode(&self.k).unwrap().as_slice());
@@ -356,8 +356,10 @@ impl MLKEMEncapsTestCase {
 
         /* Perform the deterministic encaps and compare results */
 
-        let (k, ct) =
-            MLKEM768::encaps_internal(&ek, hex::decode(&self.m).unwrap().try_into().unwrap());
+        let (k, ct) = MLKEM768::encaps_with_randomness(
+            &ek,
+            hex::decode(&self.m).unwrap().try_into().unwrap(),
+        );
 
         if self.result == "valid" {
             assert_eq!(k, hex::decode(&self.k).unwrap().as_slice());
@@ -386,8 +388,10 @@ impl MLKEMEncapsTestCase {
 
         /* Perform the deterministic encaps and compare results */
 
-        let (k, ct) =
-            MLKEM1024::encaps_internal(&ek, hex::decode(&self.m).unwrap().try_into().unwrap());
+        let (k, ct) = MLKEM1024::encaps_with_randomness(
+            &ek,
+            hex::decode(&self.m).unwrap().try_into().unwrap(),
+        );
 
         if self.result == "valid" {
             assert_eq!(k, hex::decode(&self.k).unwrap().as_slice());

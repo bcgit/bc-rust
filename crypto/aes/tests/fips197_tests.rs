@@ -10,14 +10,14 @@
 //! `src/schedule.rs`, where the stored schedule can be unpacked and compared directly.
 //!
 //! Known-answer coverage for AES-192 and AES-256, which Appendix B does not reach, is in
-//! `sp800_38a_tests.rs` and `bc-test-data.rs`.
+//! `sp800_38a_ecb_tests.rs` and `acvp_ecb_tests.rs`.
 //!
 //! All values here are transcribed from the published FIPS 197 (Update 1) PDF.
 
-use bouncycastle_aes::aes_internal::{AES128Internal, AES192Internal, AES256Internal};
+use bouncycastle_aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
+use bouncycastle_core::hazmat::ElectronicCodeBook;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::traits::ElectronicCodeBook;
 
 /// Appendix A.1 / Appendix B key: `2b7e151628aed2a6abf7158809cf4f3c`.
 const KEY_128: [u8; 16] = [

@@ -22,7 +22,7 @@
 #![allow(dead_code)]
 
 use bouncycastle_core::errors::SignatureError;
-use bouncycastle_core::key_material;
+use bouncycastle_core::hazmat::do_hazardous_operations;
 use bouncycastle_core::key_material::{KeyMaterial256, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{SignaturePublicKey, SignatureVerifier};
@@ -274,7 +274,7 @@ impl MLDSASignSeedTestCase {
             }
         };
         // allow an all-zero seed for testing
-        key_material::do_hazardous_operations(&mut seed, |seed| {
+        do_hazardous_operations(&mut seed, |seed| {
             seed.set_key_type(KeyType::Seed)?;
             match seed.set_security_strength(SecurityStrength::_256bit) {
                 Ok(_) => Ok(()),
@@ -375,7 +375,7 @@ impl MLDSASignSeedTestCase {
             }
         };
         // allow an all-zero seed for testing
-        key_material::do_hazardous_operations(&mut seed, |seed| {
+        do_hazardous_operations(&mut seed, |seed| {
             seed.set_key_type(KeyType::Seed).unwrap();
             match seed.set_security_strength(SecurityStrength::_256bit) {
                 Ok(_) => Ok(()),
@@ -476,7 +476,7 @@ impl MLDSASignSeedTestCase {
             }
         };
         // allow an all-zero seed for testing
-        key_material::do_hazardous_operations(&mut seed, |seed| {
+        do_hazardous_operations(&mut seed, |seed| {
             seed.set_key_type(KeyType::Seed).unwrap();
             match seed.set_security_strength(SecurityStrength::_256bit) {
                 Ok(_) => Ok(()),

@@ -202,7 +202,7 @@
 //! The suspended state is the inner HMAC's suspended state (which is the hash's) plus 14 bytes; the
 //! salt is deliberately excluded and must be re-supplied on resume.
 //!
-//! # Security Considerations
+//! # 🚨 Security Considerations 🚨
 //!
 //! * Resuming a suspended HKDF with a different salt cannot be detected and silently produces a
 //!   different PRK; see the suspend/resume section above.
