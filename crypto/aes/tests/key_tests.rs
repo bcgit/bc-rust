@@ -2,15 +2,18 @@
 //! producing exactly what the mode's own `do_encrypt_init_rng` produces from the same material
 //! and RNG.
 
+use bouncycastle_aes::hazmat::AES128Internal;
 use bouncycastle_aes::{AES_GCM_128, AES_GCM_192, AES_GCM_256, AES128Key, AES192Key, AES256Key};
-use bouncycastle_cipher::modes::GCM;
+use bouncycastle_cipher::modes::{CCM, CMAC, GCM, GMAC};
 use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
+use bouncycastle_core::hazmat::Mode;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::symmetric_key::{AeadDecryptionKey, AeadEncryptionKey, FromKeyMaterial};
 use bouncycastle_core::traits::{
-    AEADCipherDecryptor, AEADCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
+    AEADCipherDecryptor, AEADCipherEncryptor, Algorithm, SymmetricCipherDecryptor,
+    SymmetricCipherEncryptor,
 };
 use bouncycastle_core_test_framework::FixedSeedRNG;
 
@@ -84,6 +87,42 @@ fn a_key_below_its_own_strength_is_refused_at_construction() {
         Err(SymmetricCipherError::KeyMaterialError(KeyMaterialError::SecurityStrength(_))) => {}
         other => panic!("expected SecurityStrength, got {:?}", other.err()),
     }
+}
+
+/// The material's algorithm binding is checked at construction against the mode's name over
+/// this permutation: a key bound to another mode, or to the same mode at another key length, is
+/// refused; one bound to this mode's name or unbound is accepted. Both key types.
+#[test]
+fn a_key_bound_to_another_algorithm_is_refused_at_construction() {
+    fn bound<const N: usize>(key_type: KeyType, alg: &'static str) -> KeyMaterial<N> {
+        let bytes: [u8; N] = core::array::from_fn(|i| (i as u8).wrapping_mul(7).wrapping_add(1));
+        let mut key = KeyMaterial::<N>::from_bytes_as_type(&bytes, key_type).unwrap();
+        key.set_algorithm(Some(alg)).unwrap();
+        key
+    }
+    fn refused<K>(result: Result<K, SymmetricCipherError>) -> bool {
+        matches!(
+            result,
+            Err(SymmetricCipherError::KeyMaterialError(KeyMaterialError::InvalidKeyType(_)))
+        )
+    }
+    let cipher = KeyType::SymmetricCipherKey;
+
+    assert!(refused(AES128Key::<GCM>::from_key_material(&bound(cipher, "AES_CBC_128"))));
+    assert!(refused(AES128Key::<CCM<12, 16>>::from_key_material(&bound(cipher, "AES_GCM_128"))));
+    assert!(refused(AES256Key::<GCM>::from_key_material(&bound(cipher, "AES_GCM_128"))));
+    assert!(AES128Key::<GCM>::from_key_material(&bound(cipher, "AES_GCM_128")).is_ok());
+    assert!(AES128Key::<CCM<12, 16>>::from_key_material(&bound(cipher, "AES_CCM_128")).is_ok());
+    assert!(AES128Key::<GCM>::from_key_material(&material::<16>()).is_ok());
+
+    let mac = KeyType::MACKey;
+    assert!(refused(AES128Key::<GMAC>::from_key_material(&bound(mac, "AES_CMAC_128"))));
+    assert!(refused(AES128Key::<CMAC>::from_key_material(&bound(mac, "AES_GMAC_128"))));
+    assert!(AES128Key::<CMAC>::from_key_material(&bound(mac, "AES_CMAC_128")).is_ok());
+    assert!(AES128Key::<GMAC>::from_key_material(&bound(mac, "AES_GMAC_128")).is_ok());
+
+    // The name checked is the one the mode's workers report.
+    assert_eq!(<GCM as Mode<AES128Internal>>::ALG_NAME, AES_GCM_128::<Encrypting>::ALG_NAME);
 }
 
 #[test]
