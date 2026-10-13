@@ -2,6 +2,7 @@
 //!
 //! As with all Factory objects, this implements constructions from strings and defaults, and
 //! returns a [`RNGFactory`] object which itself implements the [`RNG`] trait as a pass-through to the underlying algorithm.
+//! See [`RNG`] for the full random-byte and key-material filling API.
 //!
 //! A quick note about cryptographic random number generators (RNGs), which are also sometimes
 //! cryptographically secure random number generators (CSRNGs) or pseudorandom number generators (PRNGS)).
@@ -21,24 +22,20 @@
 //! Example usage:
 //! ```
 //! use bouncycastle_factory::AlgorithmFactory;
-//! use bouncycastle_core::traits::Hash;
-//! use bouncycastle_sha3 as sha3;
+//! use bouncycastle_core::traits::RNG;
+//! use bouncycastle_rng as rng;
 //!
-//! let data: &[u8] = b"Hello, world!";
-//!
-//! let h = bouncycastle_factory::hash_factory::HashFactory::new(sha3::SHA3_256_NAME).unwrap();
-//! let output: Vec<u8> = h.hash(data);
+//! let mut rng = bouncycastle_factory::rng_factory::RNGFactory::new(rng::HASH_DRBG_SHA256_NAME).unwrap();
+//! let output: Vec<u8> = rng.next_bytes(32).unwrap();
 //! ```
 //! Equivalently, it may be invoked by passing a string instead of using the constant:
-//! 
+//!
 //! ```
 //! use bouncycastle_factory::AlgorithmFactory;
-//! use bouncycastle_core::traits::Hash;
+//! use bouncycastle_core::traits::RNG;
 //!
-//! let data: &[u8] = b"Hello, world!";
-//!
-//! let h = bouncycastle_factory::hash_factory::HashFactory::new("SHA3-256").unwrap();
-//! let output: Vec<u8> = h.hash(data);
+//! let mut rng = bouncycastle_factory::rng_factory::RNGFactory::new("HashDRBG-SHA256").unwrap();
+//! let output: Vec<u8> = rng.next_bytes(32).unwrap();
 //! ```
 
 use crate::{AlgorithmFactory, FactoryError};
