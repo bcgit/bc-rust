@@ -9,12 +9,19 @@
 //!
 //! # Reduction algorithm
 //!
-//! Same fold as [`crate::p256`]/[`crate::p384`]: `2^256 = p + C` where `C = 2^32 + 2^9 + 2^8 + 2^7
-//! + 2^6 + 2^4 + 1` (33 bits -- even smaller relative to the modulus than P-384's `C < 2^129`).
-//! Two folds bound the result to within a single extra bit of `2^256`, exactly like
-//! [`crate::p384::reduce`]: that function's own doc comment has the full derivation and the
-//! wycheproof-caught bug an earlier, `debug_assert`-based version of this shape produced by
-//! assuming that extra bit was always `0`. This module folds it in explicitly from the start.
+//! `2^256 = p + C` with `C = 2^32 + 2^9 + 2^8 + 2^7 + 2^6 + 2^4 + 1` (33 bits), so a 512-bit
+//! product `t = hi * 2^256 + lo` is congruent mod `p` to `lo + hi * C`, a value only about 33 bits
+//! wider than `lo`. The private `reduce` applies that fold twice, which leaves at most a single
+//! bit above `2^256`, then folds that bit in under a mask; the bounds that make exactly those
+//! steps sufficient are derived in `reduce`'s own comment. This is the only reduction of its
+//! shape in the crate -- [`crate::p256`], [`crate::p384`] and [`crate::sm2`] evaluate the term
+//! tables of their respective standards, and the Brainpool curves use [`crate::montgomery`] --
+//! so the argument is written out here rather than by reference to another curve.
+//!
+//! The masked third fold is not a formality. An earlier P-384 version of this same two-fold shape
+//! `debug_assert`ed that the bit was always `0`, which held for every random trial and was wrong:
+//! wycheproof's `ecdsa_secp384r1` suite found a product that sets it. `reduce`'s comment gives
+//! the operands that set it on this curve, and `p256k1_field_tests.rs` pins one such product.
 
 use crate::nat;
 use bouncycastle_utils::ct;
@@ -287,13 +294,25 @@ fn reduce(t: &[u64; 8]) -> [u64; 4] {
         debug_assert_eq!(carry, 0, "secp256k1 reduction fold overflowed 512 bits");
         acc = sum;
     }
-    // After exactly 2 folds, `acc`'s high 4 limbs are at most a single bit -- see
-    // crate::p384::reduce's doc comment for the general proof (identical shape: fold 1 bounds
-    // `hi < 2^34ish` since `C < 2^33` here, fold 2 then bounds the result to within a single bit
-    // of `2^256`). Folded in explicitly rather than assumed zero, per that function's own
-    // wycheproof-caught lesson (verified here too, not checked in, against 2,000,000 random
-    // trials plus the `(p-1)*(p-1)` worst case, none of which happened to hit the rare case --
-    // exactly the kind of gap a real-world adversarial test suite, not random sampling, catches).
+    // After exactly two folds the high half of `acc` is a single bit. The bounds, with `C < 2^33`
+    // and `acc_i = hi_i * 2^256 + lo_i` the value after fold `i`:
+    //
+    //   (1) `t < 2^512` splits as `hi_0 * 2^256 + lo_0` with `hi_0, lo_0 < 2^256`, so fold 1's
+    //       `acc_1 = lo_0 + hi_0 * C < 2^256 + 2^256 * C < 2^290`: it fits in 8 limbs (the
+    //       `carry == 0` asserted in the loop) and its high half is `hi_1 <= C`.
+    //   (2) fold 2's `acc_2 = lo_1 + hi_1 * C < 2^256 + C^2 < 2^256 + 2^66`, so `acc[4]` is `0` or
+    //       `1` and `acc[5..8]` are `0`.
+    //   (3) when `acc[4]` is `1`, `lo_2 = acc_2 - 2^256 < C^2`, so `lo_2 + C < 2^66 + 2^33 < p`:
+    //       folding the bit in can neither carry out of 256 bits nor produce a value `>= p`.
+    //
+    // The bit is folded in explicitly rather than assumed to be `0`. It is reachable from
+    // canonical operands, but only by construction, not by sampling: by (2), fold 2 overflows iff
+    // `lo_1` lies within `hi_1 * C <= 2^66` of `2^256`, a probability of about `2^-190` for a
+    // pseudo-random product, which is why 2,000,000 random trials and the `(p-1)*(p-1)` worst case
+    // never reached it. `a = 2^255` with `b = 2 * ((2^256 - 1) * C^-1 mod 2^256)` does reach it:
+    // `a * b = hi_0 * 2^256` with `hi_0 * C ≡ 2^256 - 1 (mod 2^256)`, so `lo_1 = 2^256 - 1`.
+    // `p256k1_field_tests.rs` pins that product; without this fold its result is short by exactly
+    // `C`, which is the P-384 bug the module docs describe.
     let extra_bit = acc[4];
     let low: [u64; 4] = [acc[0], acc[1], acc[2], acc[3]];
     let mut c_or_zero = [0u64; 4];
@@ -304,8 +323,8 @@ fn reduce(t: &[u64; 8]) -> [u64; 4] {
         &mut c_or_zero,
     );
     let (folded, carry1) = nat::add(&low, &c_or_zero);
-    let (folded_plus_c, _) = nat::add(&folded, &C_LIMBS); // valid when carry1 == 1: folded < 2^33 there
-    let (diff, borrow) = nat::sub(&folded, &P_LIMBS); // valid when carry1 == 0
+    let (folded_plus_c, _) = nat::add(&folded, &C_LIMBS); // never selected: carry1 == 0 by bound (3)
+    let (diff, borrow) = nat::sub(&folded, &P_LIMBS); // the live path: carry1 == 0
     let mut when_no_carry = [0u64; 4];
     ct::conditional_select(Condition::<u64>::from_lsb(borrow), &folded, &diff, &mut when_no_carry);
     let mut result = [0u64; 4];
