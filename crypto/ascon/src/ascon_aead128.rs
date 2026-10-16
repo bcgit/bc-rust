@@ -10,20 +10,16 @@
 //! is transformed independently of the others in that block; the permutation only runs once a
 //! full 16-byte block has been absorbed, or at finalization.
 //!
-//! [`AsconAead128Encryptor`] / [`AsconAead128Decryptor`] adapt this type's direction-agnostic
-//! streaming API (a single [`AsconAead128`] value serves either direction, fixed at construction
-//! by [`AsconAead128::new_encrypting`] / [`AsconAead128::new_decrypting`]) to
-//! [`AEADCipherEncryptor`] / [`AEADCipherDecryptor`], whose
-//! direction is fixed by the type: each newtype wraps an [`AsconAead128`] already constructed for
-//! its own direction and only ever calls that direction's inherent methods, so the wrong-direction
-//! panics inside [`AsconAead128::do_encrypt_update`] and friends are unreachable through them. See
-//! their docs for why a thin newtype pair rather than encoding the direction into `AsconAead128`
-//! itself: the inherent API is deliberately one type serving both directions, which is what the
-//! in-place streaming and the explicit-nonce one-shots are built on.
+//! The direction is in the type: `AsconAead128<Encrypting>` has the encrypting methods and
+//! `AsconAead128<Decrypting>` the decrypting ones, so calling the wrong direction is a compile
+//! error. [`AsconAead128Encryptor`] / [`AsconAead128Decryptor`] wrap the two to
+//! [`AEADCipherEncryptor`] / [`AEADCipherDecryptor`]: the encryptor because the traits' finals
+//! have different signatures from the inherent ones under the same names, the decryptor because
+//! it must also hold back the trailing tag the inherent API takes separately.
 
 use core::fmt::{self, Debug, Display, Formatter};
 
-use bouncycastle_cipher::Direction;
+use bouncycastle_cipher::{Decrypting, Direction, Encrypting};
 use bouncycastle_core::errors::{KeyMaterialError, SuspendableError, SymmetricCipherError};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
@@ -35,13 +31,10 @@ use bouncycastle_rng::HashDRBG_SHA512;
 use bouncycastle_utils::ct::ct_eq_bytes;
 use bouncycastle_utils::secret::Secret;
 use bouncycastle_utils::suspendable_state::{add_lib_ver, check_lib_ver};
+use core::marker::PhantomData;
 
 use crate::ASCON_AEAD128_NAME;
 use crate::permutation::{AsconState, load_u64_le, p8, p12, store_u64_le};
-
-/*** Imports needed for docs ***/
-#[allow(unused_imports)]
-use bouncycastle_cipher::{Decrypting, Encrypting};
 
 /// Length in bytes of the Ascon-AEAD128 key.
 pub const KEY_LEN: usize = 16;
@@ -54,59 +47,53 @@ const RATE: usize = 16;
 /// Ascon-AEAD128 initial value (SP 800-232 Table 14).
 const ASCON_IV: u64 = 0x00001000808C0001;
 
-/// State machine for enforcing the call order and remembering the direction (encrypt/decrypt).
+/// Where the call sequence is: nothing absorbed yet, absorbing associated data, or absorbing
+/// plaintext/ciphertext. The direction is not here; it is the type parameter of [`AsconAead128`].
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-enum StateMachine {
-    EncInit,
-    EncAad,
-    EncData,
-    DecInit,
-    DecAad,
-    DecData,
+enum Phase {
+    Init,
+    Aad,
+    Data,
 }
 
-impl StateMachine {
-    // Stable u8 encoding used when suspending/resuming the AEAD state machine.
+impl Phase {
+    // Stable encoding of the low bits of the suspended call-state byte; the direction supplies
+    // the rest (see `ENC_DIR_BITS` / `DEC_DIR_BITS`).
     fn to_u8(self) -> u8 {
         match self {
-            StateMachine::EncInit => 0,
-            StateMachine::EncAad => 1,
-            StateMachine::EncData => 2,
-            StateMachine::DecInit => 4,
-            StateMachine::DecAad => 5,
-            StateMachine::DecData => 6,
+            Phase::Init => 0,
+            Phase::Aad => 1,
+            Phase::Data => 2,
         }
     }
 
     fn from_u8(v: u8) -> Option<Self> {
         Some(match v {
-            0 => StateMachine::EncInit,
-            1 => StateMachine::EncAad,
-            2 => StateMachine::EncData,
-            4 => StateMachine::DecInit,
-            5 => StateMachine::DecAad,
-            6 => StateMachine::DecData,
+            0 => Phase::Init,
+            1 => Phase::Aad,
+            2 => Phase::Data,
             _ => return None,
         })
     }
-
-    fn is_encrypt(self) -> bool {
-        matches!(self, StateMachine::EncInit | StateMachine::EncAad | StateMachine::EncData)
-    }
-
-    fn is_init(self) -> bool {
-        matches!(self, StateMachine::EncInit | StateMachine::DecInit)
-    }
 }
 
-/// An implementation of the Ascon-AEAD128 algorithm (NIST SP 800-232).
+/// An implementation of the Ascon-AEAD128 algorithm (NIST SP 800-232), in one direction: `Dir`
+/// is [`Encrypting`] or [`Decrypting`], and only that direction's methods exist on the type.
 ///
-/// A single instance performs one operation (encryption or decryption) under one (key, nonce) pair.
-/// See [`AsconAead128::new_encrypting`] for the streaming workflow and
-/// [`AsconAead128::encrypt`] /
+/// A single instance performs one operation under one (key, nonce) pair. See
+/// [`AsconAead128::new_encrypting`] for the streaming workflow and [`AsconAead128::encrypt`] /
 /// [`AsconAead128::decrypt`] for the one-shot APIs.
-#[derive(Clone)]
-pub struct AsconAead128 {
+///
+/// The wrong direction is a compile error:
+///
+/// ```compile_fail
+/// # use bouncycastle_ascon::AsconAead128;
+/// # use bouncycastle_core::key_material::{KeyMaterial, KeyType};
+/// # let key = KeyMaterial::<16>::from_bytes_as_type(&[7; 16], KeyType::SymmetricCipherKey).unwrap();
+/// let mut dec = AsconAead128::new_decrypting(&key, &[0u8; 16], None).unwrap();
+/// dec.do_encrypt_update(&mut [0u8; 4]);   // no such method on the decrypting type
+/// ```
+pub struct AsconAead128<Dir> {
     // 128-bit secret key (two 64-bit words). It is re-added to the state at finalization, so it must
     // be retained; wrapped in `Secret` for volatile-write zeroization on drop.
     key: Secret<[u64; 2]>,
@@ -115,11 +102,38 @@ pub struct AsconAead128 {
     state: Secret<AsconState>,
     // Byte position (0..RATE) within the current rate block.
     pos: usize,
-    // State machine for enforcing the call order and remembering the direction.
-    state_machine: StateMachine,
+    // Where the call sequence is, for enforcing the call order.
+    phase: Phase,
+    _dir: PhantomData<Dir>,
 }
 
-impl AsconAead128 {
+// Written out rather than derived so that `Dir`, a marker type, need not be `Clone`.
+impl<Dir> Clone for AsconAead128<Dir> {
+    fn clone(&self) -> Self {
+        Self {
+            key: self.key.clone(),
+            state: self.state.clone(),
+            pos: self.pos,
+            phase: self.phase,
+            _dir: PhantomData,
+        }
+    }
+}
+
+/// Draw a fresh, unique 128-bit nonce from the library's default OS-seeded DRBG.
+///
+/// The one-shot APIs of main's cipher framework generate the init data / nonce internally, so
+/// Ascon's per-encryption nonce-uniqueness requirement (SP 800-232 R3) is satisfied by sourcing
+/// each nonce from a CSPRNG. Callers who need deterministic, caller-supplied nonces should use
+/// the inherent streaming API ([`AsconAead128::new_encrypting`]).
+fn fresh_nonce() -> Result<[u8; NONCE_LEN], SymmetricCipherError> {
+    let mut rng = HashDRBG_SHA512::new_from_os();
+    let mut nonce = [0u8; NONCE_LEN];
+    rng.next_bytes_out(&mut nonce)?;
+    Ok(nonce)
+}
+
+impl<Dir> AsconAead128<Dir> {
     /// Validate a [`KeyMaterial`] for use with Ascon-AEAD128 and return its key words.
     /// The key must be tagged as a [`KeyType::SymmetricCipherKey`], not be bound to another
     /// algorithm, and carry at least the algorithm's 128-bit security strength (SP 800-232 R1/R2).
@@ -144,55 +158,14 @@ impl AsconAead128 {
         Ok([load_u64_le(bytes, 0), load_u64_le(bytes, 8)])
     }
 
-    /// Draw a fresh, unique 128-bit nonce from the library's default OS-seeded DRBG.
-    ///
-    /// The one-shot APIs of main's cipher framework generate the init data / nonce internally, so
-    /// Ascon's per-encryption nonce-uniqueness requirement (SP 800-232 R3) is satisfied by sourcing
-    /// each nonce from a CSPRNG. Callers who need deterministic, caller-supplied nonces should use
-    /// the inherent streaming API ([`AsconAead128::new_encrypting`]).
-    fn fresh_nonce() -> Result<[u8; NONCE_LEN], SymmetricCipherError> {
-        let mut rng = HashDRBG_SHA512::new_from_os();
-        let mut nonce = [0u8; NONCE_LEN];
-        rng.next_bytes_out(&mut nonce)?;
-        Ok(nonce)
-    }
-
-    /// Creates a streaming instance for **encryption** under a caller-supplied nonce.
-    /// * `key` is validated as a [`KeyType::SymmetricCipherKey`] with at least 128-bit strength.
-    /// * `nonce` is the 128-bit nonce. It **must** be unique per encryption under a given key;
-    ///   [`AsconAead128Encryptor`] generates one instead, which is the safer default.
-    /// * `ad` is optional associated data (authenticated, not encrypted); processed immediately.
-    ///
-    /// Only the `do_encrypt_*` methods may be called on the result; the decrypting ones panic.
-    pub fn new_encrypting(
-        key: &KeyMaterial<KEY_LEN>,
-        nonce: &[u8; NONCE_LEN],
-        ad: Option<&[u8]>,
-    ) -> Result<Self, SymmetricCipherError> {
-        Self::new(key, nonce, ad, true)
-    }
-
-    /// Creates a streaming instance for **decryption** under the nonce the ciphertext was produced
-    /// with; see [`new_encrypting`](Self::new_encrypting) for the arguments.
-    ///
-    /// Only the `do_decrypt_*` methods may be called on the result; the encrypting ones panic.
-    pub fn new_decrypting(
-        key: &KeyMaterial<KEY_LEN>,
-        nonce: &[u8; NONCE_LEN],
-        ad: Option<&[u8]>,
-    ) -> Result<Self, SymmetricCipherError> {
-        Self::new(key, nonce, ad, false)
-    }
-
-    /// The body of [`new_encrypting`](Self::new_encrypting) / [`new_decrypting`](Self::new_decrypting).
-    /// Private because a `bool` for the direction is not something the public API should ask a
-    /// caller to get right: every public entry point fixes it, either by name here or by type on
-    /// [`AsconAead128Encryptor`] / [`AsconAead128Decryptor`].
+    /// The body of [`new_encrypting`](AsconAead128::new_encrypting) /
+    /// [`new_decrypting`](AsconAead128::new_decrypting): SP 800-232 Sec 4.1.1 / 4.1.2 step 1,
+    /// the same in both directions. Private so that the direction is always fixed by the type
+    /// the public constructor is called on.
     fn new(
         key: &KeyMaterial<KEY_LEN>,
         nonce: &[u8; NONCE_LEN],
         ad: Option<&[u8]>,
-        for_encryption: bool,
     ) -> Result<Self, SymmetricCipherError> {
         let key_words = Self::checked_key(key)?;
         let mut key_secret: Secret<[u64; 2]> = Secret::new();
@@ -210,79 +183,14 @@ impl AsconAead128 {
         state[3] ^= key_words[0];
         state[4] ^= key_words[1];
 
-        let mut aead = AsconAead128 {
-            key: key_secret,
-            state,
-            pos: 0,
-            state_machine: if for_encryption {
-                StateMachine::EncInit
-            } else {
-                StateMachine::DecInit
-            },
-        };
+        let mut aead =
+            AsconAead128 { key: key_secret, state, pos: 0, phase: Phase::Init, _dir: PhantomData };
         if let Some(ad_bytes) = ad {
             // infallible: a freshly constructed instance has processed no data yet, so
             // `check_aad` cannot return `StateError`.
             aead.do_update_aad(ad_bytes).unwrap();
         }
         Ok(aead)
-    }
-
-    /// One-shot authenticated encryption with a caller-supplied nonce (SP 800-232 Algorithm 3).
-    /// Writes ciphertext followed by the 128-bit tag into `out`, which must be at least
-    /// `plaintext.len() + 16` bytes. Returns the number of bytes written.
-    pub fn encrypt(
-        key: &KeyMaterial<KEY_LEN>,
-        nonce: &[u8; NONCE_LEN],
-        ad: Option<&[u8]>,
-        plaintext: &[u8],
-        out: &mut [u8],
-    ) -> Result<usize, SymmetricCipherError> {
-        let needed = plaintext.len() + TAG_LEN;
-        if out.len() < needed {
-            return Err(SymmetricCipherError::OutputBufferTooSmall(needed));
-        }
-        let mut cipher = Self::new(key, nonce, ad, true)?;
-        out[..plaintext.len()].copy_from_slice(plaintext);
-        cipher.do_encrypt_update(&mut out[..plaintext.len()]);
-        let tag = cipher.do_encrypt_final();
-        out[plaintext.len()..needed].copy_from_slice(&tag);
-        Ok(needed)
-    }
-
-    /// One-shot authenticated decryption with a caller-supplied nonce (SP 800-232 Algorithm 4).
-    /// `ciphertext` is the ciphertext followed by the 128-bit tag. Writes the recovered plaintext
-    /// into `out`, which must be at least `ciphertext.len() - 16` bytes. Returns the number of
-    /// bytes written, or [`SymmetricCipherError::AEADTagCheckFailed`] if the tag does not verify --
-    /// in which case `out` is zeroized before returning.
-    pub fn decrypt(
-        key: &KeyMaterial<KEY_LEN>,
-        nonce: &[u8; NONCE_LEN],
-        ad: Option<&[u8]>,
-        ciphertext: &[u8],
-        out: &mut [u8],
-    ) -> Result<usize, SymmetricCipherError> {
-        if ciphertext.len() < TAG_LEN {
-            return Err(SymmetricCipherError::GenericError(
-                "Ascon-AEAD128 ciphertext shorter than tag",
-            ));
-        }
-        let pt_len = ciphertext.len() - TAG_LEN;
-        if out.len() < pt_len {
-            return Err(SymmetricCipherError::OutputBufferTooSmall(pt_len));
-        }
-        let mut cipher = Self::new(key, nonce, ad, false)?;
-        out[..pt_len].copy_from_slice(&ciphertext[..pt_len]);
-        cipher.do_decrypt_update(&mut out[..pt_len]);
-        // infallible: ciphertext.len() - pt_len == TAG_LEN by construction above.
-        let tag: &[u8; TAG_LEN] = ciphertext[pt_len..].try_into().unwrap();
-        match cipher.do_decrypt_final(tag) {
-            Ok(()) => Ok(pt_len),
-            Err(e) => {
-                out[..pt_len].fill(0);
-                Err(e)
-            }
-        }
     }
 
     /// Read the value of state byte `pos` (0 = LSB of word 0, ..., 15 = MSB of word 1).
@@ -339,11 +247,10 @@ impl AsconAead128 {
     }
 
     fn check_aad(&mut self) -> Result<(), SymmetricCipherError> {
-        match self.state_machine {
-            StateMachine::EncInit => self.state_machine = StateMachine::EncAad,
-            StateMachine::DecInit => self.state_machine = StateMachine::DecAad,
-            StateMachine::EncAad | StateMachine::DecAad => {}
-            StateMachine::EncData | StateMachine::DecData => {
+        match self.phase {
+            Phase::Init => self.phase = Phase::Aad,
+            Phase::Aad => {}
+            Phase::Data => {
                 return Err(SymmetricCipherError::StateError(
                     "Ascon-AEAD128: associated data must be processed before plaintext/ciphertext",
                 ));
@@ -356,22 +263,18 @@ impl AsconAead128 {
     // final (possibly empty) AAD block only if any AAD was actually supplied, then applies the
     // domain-separation bit unconditionally.
     fn finish_aad(&mut self) {
-        if matches!(self.state_machine, StateMachine::EncAad | StateMachine::DecAad) {
+        if self.phase == Phase::Aad {
             self.xor_state_byte(self.pos, 0x01);
             p8(&mut self.state);
             self.pos = 0;
         }
         // Domain separation (Eq. 22/40: S ^= (0^319 || 1)).
         self.state[4] ^= 0x8000000000000000;
-        self.state_machine = match self.state_machine {
-            StateMachine::EncInit | StateMachine::EncAad => StateMachine::EncData,
-            StateMachine::DecInit | StateMachine::DecAad => StateMachine::DecData,
-            StateMachine::EncData | StateMachine::DecData => unreachable!(),
-        };
+        self.phase = Phase::Data;
     }
 
     fn check_data(&mut self) {
-        if !matches!(self.state_machine, StateMachine::EncData | StateMachine::DecData) {
+        if self.phase != Phase::Data {
             self.finish_aad();
         }
     }
@@ -417,13 +320,47 @@ impl AsconAead128 {
         }
         Ok(())
     }
+}
+
+impl AsconAead128<Encrypting> {
+    /// Creates a streaming instance for **encryption** under a caller-supplied nonce.
+    /// * `key` is validated as a [`KeyType::SymmetricCipherKey`] with at least 128-bit strength.
+    /// * `nonce` is the 128-bit nonce. It **must** be unique per encryption under a given key;
+    ///   [`AsconAead128Encryptor`] generates one instead, which is the safer default.
+    /// * `ad` is optional associated data (authenticated, not encrypted); processed immediately.
+    pub fn new_encrypting(
+        key: &KeyMaterial<KEY_LEN>,
+        nonce: &[u8; NONCE_LEN],
+        ad: Option<&[u8]>,
+    ) -> Result<Self, SymmetricCipherError> {
+        Self::new(key, nonce, ad)
+    }
+
+    /// One-shot authenticated encryption with a caller-supplied nonce (SP 800-232 Algorithm 3).
+    /// Writes ciphertext followed by the 128-bit tag into `out`, which must be at least
+    /// `plaintext.len() + 16` bytes. Returns the number of bytes written.
+    pub fn encrypt(
+        key: &KeyMaterial<KEY_LEN>,
+        nonce: &[u8; NONCE_LEN],
+        ad: Option<&[u8]>,
+        plaintext: &[u8],
+        out: &mut [u8],
+    ) -> Result<usize, SymmetricCipherError> {
+        let needed = plaintext.len() + TAG_LEN;
+        if out.len() < needed {
+            return Err(SymmetricCipherError::OutputBufferTooSmall(needed));
+        }
+        let mut cipher = Self::new(key, nonce, ad)?;
+        out[..plaintext.len()].copy_from_slice(plaintext);
+        cipher.do_encrypt_update(&mut out[..plaintext.len()]);
+        let tag = cipher.do_encrypt_final();
+        out[plaintext.len()..needed].copy_from_slice(&tag);
+        Ok(needed)
+    }
 
     /// Encrypt `data` in place (SP 800-232 §4.1.1 step 3). Every byte is transformed and emitted
     /// immediately; nothing is buffered across calls.
     pub fn do_encrypt_update(&mut self, data: &mut [u8]) {
-        if !self.state_machine.is_encrypt() {
-            panic!("Ascon-AEAD128: do_encrypt_update called on a decryptor");
-        }
         self.check_data();
 
         let mut data = data;
@@ -448,22 +385,63 @@ impl AsconAead128 {
     /// (possibly empty) plaintext block; no further bytes are emitted here since every
     /// plaintext/ciphertext byte was already written by `do_encrypt_update`.
     pub fn do_encrypt_final(mut self) -> [u8; TAG_LEN] {
-        if !self.state_machine.is_encrypt() {
-            panic!("Ascon-AEAD128: do_encrypt_final called on a decryptor");
-        }
         self.check_data();
         // Padding of the final (possibly empty) plaintext block (Eq. 27).
         self.xor_state_byte(self.pos, 0x01);
         self.finish_data()
+    }
+}
+
+impl AsconAead128<Decrypting> {
+    /// Creates a streaming instance for **decryption** under the nonce the ciphertext was produced
+    /// with; see [`new_encrypting`](AsconAead128::new_encrypting) for the arguments.
+    pub fn new_decrypting(
+        key: &KeyMaterial<KEY_LEN>,
+        nonce: &[u8; NONCE_LEN],
+        ad: Option<&[u8]>,
+    ) -> Result<Self, SymmetricCipherError> {
+        Self::new(key, nonce, ad)
+    }
+
+    /// One-shot authenticated decryption with a caller-supplied nonce (SP 800-232 Algorithm 4).
+    /// `ciphertext` is the ciphertext followed by the 128-bit tag. Writes the recovered plaintext
+    /// into `out`, which must be at least `ciphertext.len() - 16` bytes. Returns the number of
+    /// bytes written, or [`SymmetricCipherError::AEADTagCheckFailed`] if the tag does not verify --
+    /// in which case `out` is zeroized before returning.
+    pub fn decrypt(
+        key: &KeyMaterial<KEY_LEN>,
+        nonce: &[u8; NONCE_LEN],
+        ad: Option<&[u8]>,
+        ciphertext: &[u8],
+        out: &mut [u8],
+    ) -> Result<usize, SymmetricCipherError> {
+        if ciphertext.len() < TAG_LEN {
+            return Err(SymmetricCipherError::GenericError(
+                "Ascon-AEAD128 ciphertext shorter than tag",
+            ));
+        }
+        let pt_len = ciphertext.len() - TAG_LEN;
+        if out.len() < pt_len {
+            return Err(SymmetricCipherError::OutputBufferTooSmall(pt_len));
+        }
+        let mut cipher = Self::new(key, nonce, ad)?;
+        out[..pt_len].copy_from_slice(&ciphertext[..pt_len]);
+        cipher.do_decrypt_update(&mut out[..pt_len]);
+        // infallible: ciphertext.len() - pt_len == TAG_LEN by construction above.
+        let tag: &[u8; TAG_LEN] = ciphertext[pt_len..].try_into().unwrap();
+        match cipher.do_decrypt_final(tag) {
+            Ok(()) => Ok(pt_len),
+            Err(e) => {
+                out[..pt_len].fill(0);
+                Err(e)
+            }
+        }
     }
 
     /// Decrypt `data` in place (SP 800-232 §4.1.2 step 3). Every byte is transformed and emitted
     /// immediately; the plaintext is **not** authenticated until [`AsconAead128::do_decrypt_final`]
     /// returns `Ok`.
     pub fn do_decrypt_update(&mut self, data: &mut [u8]) {
-        if self.state_machine.is_encrypt() {
-            panic!("Ascon-AEAD128: do_decrypt_update called on an encryptor");
-        }
         self.check_data();
 
         let mut data = data;
@@ -486,9 +464,6 @@ impl AsconAead128 {
 
     /// Finish decryption, checking `tag` in constant time (SP 800-232 §4.1.2 steps 3-4).
     pub fn do_decrypt_final(mut self, tag: &[u8; TAG_LEN]) -> Result<(), SymmetricCipherError> {
-        if self.state_machine.is_encrypt() {
-            panic!("Ascon-AEAD128: do_decrypt_final called on an encryptor");
-        }
         self.check_data();
         // Padding of the final (possibly empty) ciphertext block (Eq. 47).
         self.xor_state_byte(self.pos, 0x01);
@@ -501,31 +476,33 @@ impl AsconAead128 {
     }
 }
 
-impl Algorithm for AsconAead128 {
+impl<Dir> Algorithm for AsconAead128<Dir> {
     const ALG_NAME: &'static str = ASCON_AEAD128_NAME;
     const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_128bit;
 }
 
-/// Adapts [`AsconAead128`]'s encrypting direction to [`AEADCipherEncryptor`] and, through it,
-/// [`SymmetricCipherEncryptor`]; see the module docs for why this is a thin wrapper rather than a
-/// change to `AsconAead128` itself.
+/// Adapts `AsconAead128<Encrypting>` to [`AEADCipherEncryptor`] and, through it,
+/// [`SymmetricCipherEncryptor`]. A wrapper rather than an impl on the cipher itself because the
+/// traits' `do_encrypt_final` has a different signature from the inherent one, and a type cannot
+/// carry both under one name.
 ///
 /// `FINAL_LEN` is `TAG_LEN`: Ascon-AEAD128 holds nothing back, so the inline
 /// [`SymmetricCipherEncryptor::do_encrypt_final`] writes only the tag, and the detached
 /// [`AEADCipherEncryptor::do_encrypt_final_detached_out`] only zeroes its buffer.
-pub struct AsconAead128Encryptor(AsconAead128);
+pub struct AsconAead128Encryptor(AsconAead128<Encrypting>);
 
 impl Algorithm for AsconAead128Encryptor {
-    const ALG_NAME: &'static str = AsconAead128::ALG_NAME;
-    const MAX_SECURITY_STRENGTH: SecurityStrength = AsconAead128::MAX_SECURITY_STRENGTH;
+    const ALG_NAME: &'static str = AsconAead128::<Encrypting>::ALG_NAME;
+    const MAX_SECURITY_STRENGTH: SecurityStrength =
+        AsconAead128::<Encrypting>::MAX_SECURITY_STRENGTH;
 }
 
 impl SymmetricCipherEncryptor<KEY_LEN, NONCE_LEN, TAG_LEN> for AsconAead128Encryptor {
     fn do_encrypt_init(
         key: &KeyMaterial<KEY_LEN>,
     ) -> Result<(Self, [u8; NONCE_LEN]), SymmetricCipherError> {
-        let nonce = AsconAead128::fresh_nonce()?;
-        Ok((Self(AsconAead128::new(key, &nonce, None, true)?), nonce))
+        let nonce = fresh_nonce()?;
+        Ok((Self(AsconAead128::new_encrypting(key, &nonce, None)?), nonce))
     }
 
     fn do_encrypt_init_rng(
@@ -534,7 +511,7 @@ impl SymmetricCipherEncryptor<KEY_LEN, NONCE_LEN, TAG_LEN> for AsconAead128Encry
     ) -> Result<(Self, [u8; NONCE_LEN]), SymmetricCipherError> {
         let mut nonce = [0u8; NONCE_LEN];
         rng.next_bytes_out(&mut nonce)?;
-        Ok((Self(AsconAead128::new(key, &nonce, None, true)?), nonce))
+        Ok((Self(AsconAead128::new_encrypting(key, &nonce, None)?), nonce))
     }
 
     /// Ascon-AEAD128 never buffers: every byte given is a byte returned.
@@ -578,7 +555,7 @@ impl AEADCipherEncryptor<KEY_LEN, NONCE_LEN, TAG_LEN, TAG_LEN> for AsconAead128E
         key: &KeyMaterial<KEY_LEN>,
         nonce: &[u8; NONCE_LEN],
     ) -> Result<Self, SymmetricCipherError> {
-        Ok(Self(AsconAead128::new(key, nonce, None, true)?))
+        Ok(Self(AsconAead128::new_encrypting(key, nonce, None)?))
     }
 
     /// Nothing is ever held back to flush, so `ciphertext` is left zeroed.
@@ -591,9 +568,8 @@ impl AEADCipherEncryptor<KEY_LEN, NONCE_LEN, TAG_LEN, TAG_LEN> for AsconAead128E
     }
 }
 
-/// Adapts [`AsconAead128`]'s decrypting direction to [`AEADCipherDecryptor`] and, through it,
-/// [`SymmetricCipherDecryptor`]; see the module docs for why this is a thin wrapper rather than a
-/// change to `AsconAead128` itself.
+/// Adapts `AsconAead128<Decrypting>` to [`AEADCipherDecryptor`] and, through it,
+/// [`SymmetricCipherDecryptor`].
 ///
 /// Unlike the inherent API this does hold data back: the last `TAG_LEN` bytes of ciphertext it has
 /// seen, since until the stream ends it cannot know whether they are the inline tag
@@ -601,7 +577,7 @@ impl AEADCipherEncryptor<KEY_LEN, NONCE_LEN, TAG_LEN, TAG_LEN> for AsconAead128E
 /// ([`AEADCipherDecryptor::do_decrypt_final_detached_out`]). They are ciphertext, not plaintext,
 /// so they need no [`Secret`] wrapper.
 pub struct AsconAead128Decryptor {
-    cipher: AsconAead128,
+    cipher: AsconAead128<Decrypting>,
     /// The most recent `held_len` bytes of ciphertext, not yet given to `cipher`.
     held: [u8; TAG_LEN],
     /// Always `min(TAG_LEN, total ciphertext seen)`.
@@ -609,8 +585,9 @@ pub struct AsconAead128Decryptor {
 }
 
 impl Algorithm for AsconAead128Decryptor {
-    const ALG_NAME: &'static str = AsconAead128::ALG_NAME;
-    const MAX_SECURITY_STRENGTH: SecurityStrength = AsconAead128::MAX_SECURITY_STRENGTH;
+    const ALG_NAME: &'static str = AsconAead128::<Decrypting>::ALG_NAME;
+    const MAX_SECURITY_STRENGTH: SecurityStrength =
+        AsconAead128::<Decrypting>::MAX_SECURITY_STRENGTH;
 }
 
 impl SymmetricCipherDecryptor<KEY_LEN, NONCE_LEN, TAG_LEN> for AsconAead128Decryptor {
@@ -619,7 +596,7 @@ impl SymmetricCipherDecryptor<KEY_LEN, NONCE_LEN, TAG_LEN> for AsconAead128Decry
         nonce: &[u8; NONCE_LEN],
     ) -> Result<Self, SymmetricCipherError> {
         Ok(Self {
-            cipher: AsconAead128::new(key, nonce, None, false)?,
+            cipher: AsconAead128::new_decrypting(key, nonce, None)?,
             held: [0u8; TAG_LEN],
             held_len: 0,
         })
@@ -744,13 +721,13 @@ impl AEADCipherDecryptor<KEY_LEN, NONCE_LEN, TAG_LEN, TAG_LEN> for AsconAead128D
 pub type Ascon_AEAD128<Dir> =
     <Dir as Direction>::Select<AsconAead128Encryptor, AsconAead128Decryptor>;
 
-impl Debug for AsconAead128 {
+impl<Dir> Debug for AsconAead128<Dir> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "AsconAead128 (key/state masked)")
     }
 }
 
-impl Display for AsconAead128 {
+impl<Dir> Display for AsconAead128<Dir> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "AsconAead128 (key/state masked)")
     }
@@ -769,12 +746,49 @@ pub const SUSPENDED_ASCON_AEAD128_STATE_LEN: usize = 46;
 /// Ascon-CXOF128 0x03, Ascon-AEAD128 0x04. Never renumber one, or older states are misread.
 const AEAD128_STATE_TAG: u8 = 0x04;
 
-impl SuspendableKeyed<SUSPENDED_ASCON_AEAD128_STATE_LEN> for AsconAead128 {
+/// The direction's part of the suspended call-state byte, with the [`Phase`] in the low two
+/// bits: `0..=2` encrypting, `4..=6` decrypting. The encoding predates the direction being in
+/// the type; never renumber it, or older states are misread.
+const ENC_DIR_BITS: u8 = 0;
+const DEC_DIR_BITS: u8 = 4;
+
+impl SuspendableKeyed<SUSPENDED_ASCON_AEAD128_STATE_LEN> for AsconAead128<Encrypting> {
     // The 128-bit key must be re-supplied when resuming; it is never part of the serialized state,
     // and is re-validated exactly as `new()` validates it.
     type Key = KeyMaterial<KEY_LEN>;
 
     fn suspend(self) -> [u8; SUSPENDED_ASCON_AEAD128_STATE_LEN] {
+        self.suspend_as(ENC_DIR_BITS)
+    }
+
+    /// A state suspended by the decrypting type is [`SuspendableError::InvalidData`] here.
+    fn from_suspended(
+        serialized_state: [u8; SUSPENDED_ASCON_AEAD128_STATE_LEN],
+        key: &Self::Key,
+    ) -> Result<Self, SuspendableError> {
+        Self::resume_as(serialized_state, key, ENC_DIR_BITS)
+    }
+}
+
+impl SuspendableKeyed<SUSPENDED_ASCON_AEAD128_STATE_LEN> for AsconAead128<Decrypting> {
+    type Key = KeyMaterial<KEY_LEN>;
+
+    fn suspend(self) -> [u8; SUSPENDED_ASCON_AEAD128_STATE_LEN] {
+        self.suspend_as(DEC_DIR_BITS)
+    }
+
+    /// A state suspended by the encrypting type is [`SuspendableError::InvalidData`] here.
+    fn from_suspended(
+        serialized_state: [u8; SUSPENDED_ASCON_AEAD128_STATE_LEN],
+        key: &Self::Key,
+    ) -> Result<Self, SuspendableError> {
+        Self::resume_as(serialized_state, key, DEC_DIR_BITS)
+    }
+}
+
+impl<Dir> AsconAead128<Dir> {
+    /// The body of both directions' [`SuspendableKeyed::suspend`]; `dir_bits` marks the direction.
+    fn suspend_as(self, dir_bits: u8) -> [u8; SUSPENDED_ASCON_AEAD128_STATE_LEN] {
         let mut out_to_return = [0u8; SUSPENDED_ASCON_AEAD128_STATE_LEN];
         // infallible: add_lib_ver returns a slice of exactly SUSPENDED_ASCON_AEAD128_STATE_LEN - 3 = 43 bytes.
         let out: &mut [u8; SUSPENDED_ASCON_AEAD128_STATE_LEN - 3] =
@@ -786,14 +800,17 @@ impl SuspendableKeyed<SUSPENDED_ASCON_AEAD128_STATE_LEN> for AsconAead128 {
         }
         debug_assert!(self.pos < RATE);
         out[41] = self.pos as u8;
-        out[42] = self.state_machine.to_u8();
+        out[42] = dir_bits | self.phase.to_u8();
 
         out_to_return
     }
 
-    fn from_suspended(
+    /// The body of both directions' [`SuspendableKeyed::from_suspended`]: a call-state byte whose
+    /// direction is not `dir_bits` is refused, so a state never resumes in the other direction.
+    fn resume_as(
         serialized_state: [u8; SUSPENDED_ASCON_AEAD128_STATE_LEN],
-        key: &Self::Key,
+        key: &KeyMaterial<KEY_LEN>,
+        dir_bits: u8,
     ) -> Result<Self, SuspendableError> {
         // infallible: check_lib_ver returns a slice of exactly SUSPENDED_ASCON_AEAD128_STATE_LEN - 3 = 43 bytes.
         let input: &[u8; SUSPENDED_ASCON_AEAD128_STATE_LEN - 3] =
@@ -811,12 +828,15 @@ impl SuspendableKeyed<SUSPENDED_ASCON_AEAD128_STATE_LEN> for AsconAead128 {
         if pos >= RATE {
             return Err(SuspendableError::InvalidData);
         }
-        let state_machine =
-            StateMachine::from_u8(input[42]).ok_or(SuspendableError::InvalidData)?;
+        // The phase is the low two bits; everything above them must be exactly this direction.
+        if input[42] & !0x03 != dir_bits {
+            return Err(SuspendableError::InvalidData);
+        }
+        let phase = Phase::from_u8(input[42] & 0x03).ok_or(SuspendableError::InvalidData)?;
         // A nonzero byte position implies at least one AAD/data byte has already been absorbed
-        // into the current rate block, which is only possible once the *Aad or *Data phase has
-        // begun -- never while still in *Init.
-        if pos != 0 && state_machine.is_init() {
+        // into the current rate block, which is only possible once the Aad or Data phase has
+        // begun -- never while still in Init.
+        if pos != 0 && phase == Phase::Init {
             return Err(SuspendableError::InvalidData);
         }
 
@@ -824,7 +844,7 @@ impl SuspendableKeyed<SUSPENDED_ASCON_AEAD128_STATE_LEN> for AsconAead128 {
         let mut key_secret = Secret::<[u64; 2]>::new();
         *key_secret = key_words;
 
-        Ok(AsconAead128 { key: key_secret, state: s, pos, state_machine })
+        Ok(AsconAead128 { key: key_secret, state: s, pos, phase, _dir: PhantomData })
     }
 }
 
@@ -832,29 +852,18 @@ impl SuspendableKeyed<SUSPENDED_ASCON_AEAD128_STATE_LEN> for AsconAead128 {
 mod tests {
     use super::*;
 
-    // StateMachine is private, so its to_u8/from_u8 round trip -- exercised end-to-end via
-    // suspend/resume in tests/aead128_tests.rs for the states reachable there -- is pinned
+    // Phase is private, so its to_u8/from_u8 round trip -- exercised end-to-end via
+    // suspend/resume in tests/aead128_tests.rs for the phases reachable there -- is pinned
     // directly here for every discriminant, including ones a successful resume never needs to
-    // decode into (EncInit/EncAad/DecInit/DecAad never survive to be the *end* state of a
-    // still-running cipher in the integration tests, since further processing always advances
-    // them to *Data).
+    // decode into (Init and Aad never survive to be the *end* phase of a still-running cipher in
+    // the integration tests, since further processing always advances them to Data).
     #[test]
-    fn state_machine_u8_round_trip() {
-        let all = [
-            StateMachine::EncInit,
-            StateMachine::EncAad,
-            StateMachine::EncData,
-            StateMachine::DecInit,
-            StateMachine::DecAad,
-            StateMachine::DecData,
-        ];
-        for s in all {
-            assert_eq!(StateMachine::from_u8(s.to_u8()), Some(s), "round trip failed for {s:?}");
+    fn phase_u8_round_trip() {
+        for s in [Phase::Init, Phase::Aad, Phase::Data] {
+            assert_eq!(Phase::from_u8(s.to_u8()), Some(s), "round trip failed for {s:?}");
         }
-        // Unassigned discriminants (3 and 7 are deliberately skipped by to_u8's encoding) must
+        // The unassigned low-bits value (3, which the old six-state encoding also skipped) must
         // be rejected, not silently mapped to a variant.
-        for v in [3u8, 7, 200] {
-            assert_eq!(StateMachine::from_u8(v), None, "discriminant {v} must be rejected");
-        }
+        assert_eq!(Phase::from_u8(3), None);
     }
 }
