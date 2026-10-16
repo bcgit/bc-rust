@@ -34,6 +34,7 @@
 
 use bouncycastle_aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
 use bouncycastle_cipher::modes::Cfb;
+use bouncycastle_cipher::modes::ModeNames;
 use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::hazmat::ElectronicCodeBook;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
@@ -137,7 +138,7 @@ const ODD_CHUNKS: [usize; 3] = [5, 23, 63];
 /// that straddle the segments -- the vector should not care how the calls are grouped.
 fn check_encrypt<P, const KEY_LEN: usize>(section: &str, key_hex: &str, expected: &[&str; 4])
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
 {
     let key = key_material::<KEY_LEN>(key_hex);
     let iv = block(IV);
@@ -186,7 +187,7 @@ where
 /// straddle the segments.
 fn check_decrypt<P, const KEY_LEN: usize>(section: &str, key_hex: &str, ciphertext: &[&str; 4])
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
 {
     let key = key_material::<KEY_LEN>(key_hex);
     let iv = block(IV);
@@ -282,7 +283,7 @@ fn check_output_blocks<P, const KEY_LEN: usize>(
     ciphertexts: &[&str; 4],
     output_blocks: &[&str; 4],
 ) where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
 {
     let key = key_material::<KEY_LEN>(key_hex);
     let perm = P::new(&key).expect("a valid key");

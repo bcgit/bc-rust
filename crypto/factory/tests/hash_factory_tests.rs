@@ -167,7 +167,7 @@ mod hash_factory_tests {
         #[test]
         fn ascon_hash_tests() {
             use bouncycastle_ascon::ASCON_HASH256_NAME;
-            use bouncycastle_ascon::ascon_hash256::AsconHash256;
+            use bouncycastle_ascon::AsconHash256;
             use bouncycastle_factory::FactoryError;
 
             let direct = AsconHash256::new().hash(&DUMMY_SEED[..512]);

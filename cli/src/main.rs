@@ -299,48 +299,6 @@ enum Subcommands {
         x: bool,
     },
 
-    /// Perform cSHAKE128 (NIST SP 800-185) of the content provided on stdin. Requires the output
-    /// length in bytes. With no customization string this is exactly SHAKE128.
-    /// Supports streaming update for low memory footprint.
-    CSHAKE128 {
-        /// Length of the output in bytes.
-        length: usize,
-
-        #[arg(short = 's', long)]
-        /// Customization string. Two cSHAKEs with different customization strings produce
-        /// unrelated output, so this domain-separates one use of the function from another.
-        customization: Option<String>,
-
-        #[arg(short = 'n', long)]
-        /// Function-name string. Reserved by NIST for functions it defines (SP 800-185 Sec 3.4);
-        /// use --customization for your own domain separation.
-        function_name: Option<String>,
-
-        #[arg(short)]
-        /// Output the hashes in hex format.
-        x: bool,
-    },
-
-    /// Perform cSHAKE256 (NIST SP 800-185) of the content provided on stdin. Requires the output
-    /// length in bytes. With no customization string this is exactly SHAKE256.
-    /// Supports streaming update for low memory footprint.
-    CSHAKE256 {
-        /// Length of the output in bytes.
-        length: usize,
-
-        #[arg(short = 's', long)]
-        /// Customization string. See cshake128.
-        customization: Option<String>,
-
-        #[arg(short = 'n', long)]
-        /// Function-name string, reserved by NIST. See cshake128.
-        function_name: Option<String>,
-
-        #[arg(short)]
-        /// Output the hashes in hex format.
-        x: bool,
-    },
-
     /// Perform Ascon-Hash256 of the content provided on stdin.
     /// Supports streaming update for low memory footprint.
     AsconHash256 {
@@ -381,10 +339,13 @@ enum Subcommands {
     /// On encrypt, a fresh nonce is generated and written as the FIRST 16 BYTES of the output,
     /// followed by the ciphertext and then the 16-byte tag; on --decrypt the nonce is read back
     /// from the first 16 bytes of the input, so the two compose directly in a pipeline. This is
-    /// the same convention the AES commands use for their IV. There is no flag to supply a nonce,
-    /// as with the AES modes: repeating a nonce under one key destroys both the confidentiality
-    /// and the authenticity of Ascon-AEAD128. Decryption fails with a non-zero exit status if the
-    /// tag does not verify.
+    /// the same convention the AES commands use for their IV. Decryption fails with a non-zero
+    /// exit status if the tag does not verify.
+    ///
+    /// --nonce/--nonce-file override that: the nonce is then neither written on encrypt nor read
+    /// on decrypt, and the stream is exactly ciphertext||tag in both directions. That override
+    /// exists for reproducing known-answer vectors; repeating a nonce under one key destroys both
+    /// the confidentiality and the authenticity of Ascon-AEAD128.
     ///
     /// Note: in production uses, secrets should not be passed on the command-line because they get
     /// logged in shell history. Use the file-based input instead.
@@ -402,6 +363,17 @@ enum Subcommands {
         /// A file containing the 128-bit key in hex or binary.
         #[arg(long)]
         key_file: Option<String>,
+
+        /// The 128-bit nonce in hex. Hazardous override: supplying it keeps the nonce out of the
+        /// stream (see above), and reusing one under a given key breaks the cipher.
+        #[arg(long)]
+        nonce: Option<String>,
+
+        /// A file containing a 128-bit nonce in hex or binary; the same hazardous override.
+        #[arg(long)]
+        nonce_file: Option<String>,
+
+        /// Associated data in hex (authenticated but not encrypted).
 
         /// Associated data in hex (authenticated but not encrypted).
         #[arg(long)]
@@ -538,7 +510,7 @@ enum Subcommands {
         x: bool,
     },
 
-    /// Perform HMAC-SHA256 of the content provided on stdin.
+    /// Perform HKDF-SHA256 of the provided input keying material.
     ///     HKDF.extract_and_expand(salt, ikm, additional_info, L)
     /// Note: in production uses, secrets should not be passed on the command-line because they get
     /// logged in shell history. Use the file-based input instead.
@@ -558,7 +530,7 @@ enum Subcommands {
         #[arg(long)]
         ikm: Option<String>,
 
-        /// A file containing the salt value in binary.
+        /// A file containing the input keying material in binary.
         /// If both ikm and ikm_file options are provided, the file will be used.
         #[arg(short, long)]
         ikm_file: Option<String>,
@@ -572,7 +544,7 @@ enum Subcommands {
         #[arg(short, long)]
         additional_input_file: Option<String>,
 
-        /// Length of output to produce, in bytes.
+        /// Length of output to produce, in bytes: at most 255 times the hash's output length.
         #[arg(short, long)]
         len: usize,
 
@@ -581,7 +553,50 @@ enum Subcommands {
         x: bool,
     },
 
-    /// Perform HMAC-SHA512 of the content provided on stdin.
+    /// Perform HKDF-SHA384 of the provided input keying material.
+    ///     HKDF.extract_and_expand(salt, ikm, additional_info, L)
+    /// Note: in production uses, secrets should not be passed on the command-line because they get
+    /// logged in shell history. Use the file-based input instead.
+    HKDF_SHA384 {
+        /// The salt value in hex.
+        /// The `salt_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        salt: Option<String>,
+
+        /// A file containing the salt value in binary.
+        /// If both salt and salt_file options are provided, the file will be used.
+        #[arg(short, long)]
+        salt_file: Option<String>,
+
+        /// An Input Keying Material in hex.
+        /// The `ikm_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        ikm: Option<String>,
+
+        /// A file containing the input keying material in binary.
+        /// If both ikm and ikm_file options are provided, the file will be used.
+        #[arg(short, long)]
+        ikm_file: Option<String>,
+
+        /// Additional input data in hex.
+        #[arg(long)]
+        additional_input: Option<String>,
+
+        /// A file containing the additional input data in binary.
+        /// If both additional_input and additional_input_file options are provided, the file will be used.
+        #[arg(short, long)]
+        additional_input_file: Option<String>,
+
+        /// Length of output to produce, in bytes: at most 255 times the hash's output length.
+        #[arg(short, long)]
+        len: usize,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// Perform HKDF-SHA512 of the provided input keying material.
     ///     HKDF.extract_and_expand(salt, ikm, additional_info, L)
     /// Note: in production uses, secrets should not be passed on the command-line because they get
     /// logged in shell history. Use the file-based input instead.
@@ -601,7 +616,7 @@ enum Subcommands {
         #[arg(long)]
         ikm: Option<String>,
 
-        /// A file containing the salt value in binary.
+        /// A file containing the input keying material in binary.
         /// If both ikm and ikm_file options are provided, the file will be used.
         #[arg(short, long)]
         ikm_file: Option<String>,
@@ -615,7 +630,7 @@ enum Subcommands {
         #[arg(short, long)]
         additional_input_file: Option<String>,
 
-        /// Length of output to produce, in bytes.
+        /// Length of output to produce, in bytes: at most 255 times the hash's output length.
         #[arg(short, long)]
         len: usize,
 
@@ -2060,9 +2075,6 @@ fn run() {
         Some(Subcommands::SHAKE256 { length, x }) => {
             sha3_cmd::shake_cmd(256, *length, *x);
         }
-        Some(Subcommands::CSHAKE128 { length, customization, function_name, x }) => {
-            sha3_cmd::cshake_cmd(128, *length, function_name, customization, *x);
-        }
         Some(Subcommands::TUPLEHASH128 { length, elements, customization, x }) => {
             sha3_cmd::tuplehash_cmd(128, *length, elements, customization, *x);
         }
@@ -2081,9 +2093,6 @@ fn run() {
         Some(Subcommands::KMAC256 { length, customization, key, key_file, verify, x }) => {
             mac_cmd::kmac_cmd(256, *length, customization, key, key_file, verify, *x)
         }
-        Some(Subcommands::CSHAKE256 { length, customization, function_name, x }) => {
-            sha3_cmd::cshake_cmd(256, *length, function_name, customization, *x);
-        }
         Some(Subcommands::AsconHash256 { x }) => {
             ascon_cmd::hash256_cmd(*x);
         }
@@ -2093,9 +2102,9 @@ fn run() {
         Some(Subcommands::AsconCXOF128 { length, customization, x }) => {
             ascon_cmd::cxof128_cmd(customization, *length, *x);
         }
-        Some(Subcommands::AsconAEAD128 { key, key_file, ad, direction, x }) => {
+        Some(Subcommands::AsconAEAD128 { key, key_file, nonce, nonce_file, ad, direction, x }) => {
             let decrypt = matches!(direction, CipherDirection::Decrypt);
-            ascon_cmd::aead128_cmd(key, key_file, ad, decrypt, *x);
+            ascon_cmd::aead128_cmd(key, key_file, nonce, nonce_file, ad, decrypt, *x);
         }
         Some(Subcommands::HMAC_SHA256 { key, key_file, verify, x }) => {
             mac_cmd::mac_cmd(HMACVariant::SHA256, key, key_file, verify, *x)
@@ -2123,6 +2132,19 @@ fn run() {
             x,
         }) => hkdf_cmd::hkdf_cmd(
             "HKDF-SHA256", salt, salt_file, ikm, ikm_file, additional_input, additional_input_file,
+            *len, *x,
+        ),
+        Some(Subcommands::HKDF_SHA384 {
+            salt,
+            salt_file,
+            ikm,
+            ikm_file,
+            additional_input,
+            additional_input_file,
+            len,
+            x,
+        }) => hkdf_cmd::hkdf_cmd(
+            "HKDF-SHA384", salt, salt_file, ikm, ikm_file, additional_input, additional_input_file,
             *len, *x,
         ),
         Some(Subcommands::HKDF_SHA512 {

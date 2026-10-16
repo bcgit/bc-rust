@@ -1,5 +1,5 @@
 //! Shared plumbing for the ACVP AES-GCM and AES-GMAC known-answer test files
-//! (`acvp_gcm_tests.rs`, `acvp_gmac_tests.rs`), whose request/response JSON shape is identical
+//! (`gcm_bc-test-data.rs`, `gmac_bc-test-data.rs`), whose request/response JSON shape is identical
 //! between the two: GMAC is just the `payloadLen = 0` slice of the same ACVP AES-GCM protocol
 //! (SP 800-38D Sec 5.2: GMAC is GCM restricted to `P = ""`).
 //!
@@ -11,6 +11,7 @@
 
 use bouncycastle_aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
 use bouncycastle_cipher::modes::Gcm;
+use bouncycastle_cipher::modes::ModeNames;
 use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::key_material::KeyMaterial;
@@ -22,7 +23,7 @@ use bouncycastle_core_test_framework::FixedSeedRNG;
 /// The nonce length these vectors use; every group in the ACVP AES-GCM/GMAC sets has `ivLen = 96`.
 #[path = "acvp_helpers.rs"]
 mod acvp_helpers;
-pub use acvp_helpers::{cipher_key, decode, test_data_dir};
+pub use acvp_helpers::cipher_key;
 
 pub const GCM_NONCE_LEN: usize = 12;
 
@@ -69,7 +70,7 @@ fn run_encrypt<P, const KEY_LEN: usize, const TAG_LEN: usize>(
     data: &mut [u8],
     expected_tag: &[u8],
 ) where
-    P: bouncycastle_core::hazmat::ElectronicCodeBook<KEY_LEN, 16>,
+    P: bouncycastle_core::hazmat::ElectronicCodeBook<KEY_LEN, 16> + ModeNames,
 {
     let mut ct = vec![0u8; data.len()];
     let (got_iv, written, tag) = Gcm::<P, Encrypting, KEY_LEN, TAG_LEN>::encrypt_detached_rng_out(
@@ -126,7 +127,7 @@ fn run_decrypt<P, const KEY_LEN: usize, const TAG_LEN: usize>(
     tag: &[u8],
     expected_pt: Option<&[u8]>,
 ) where
-    P: bouncycastle_core::hazmat::ElectronicCodeBook<KEY_LEN, 16>,
+    P: bouncycastle_core::hazmat::ElectronicCodeBook<KEY_LEN, 16> + ModeNames,
 {
     let tag_arr: [u8; TAG_LEN] = tag.try_into().expect("tag length matches TAG_LEN");
 
@@ -138,10 +139,10 @@ fn run_decrypt<P, const KEY_LEN: usize, const TAG_LEN: usize>(
 
     // The inline `SymmetricCipherDecryptor` streaming view, `ciphertext || tag` through
     // `do_update_out`/`do_decrypt_final`, with AAD fed via `do_update_aad` first. Note this is
-    // *not* the AAD-less static `decrypt_out` one-shot (which has no AAD parameter at all and so
-    // cannot be checked against these vectors, none of which have empty AAD): the streaming path
-    // is where the inline layout meets AAD support, and unlike the one-shot it releases plaintext
-    // before the tag is checked -- see `gcm_tests.rs` for that distinction pinned with empty AAD.
+    // *not* the AAD-less static `decrypt_out` one-shot (which has no AAD parameter at all, so it
+    // cannot run the cases that carry AAD, and most do): the streaming path is where the inline
+    // layout meets AAD support, and unlike the one-shot it releases plaintext before the tag is
+    // checked -- see `gcm_tests.rs` for that distinction pinned with empty AAD.
     let mut dec =
         Gcm::<P, Decrypting, KEY_LEN, TAG_LEN>::do_decrypt_init(key, &iv).expect("decrypt init");
     dec.do_update_aad(aad).expect("aad");

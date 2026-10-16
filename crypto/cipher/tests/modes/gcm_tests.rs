@@ -3,11 +3,12 @@
 //! These check the properties of the *mode* -- AAD-before-data ordering, chunking independence,
 //! the tag-length family, the inline decryptor's tail hold-back, and the one-shot's
 //! verify-before-decrypt guarantee -- independently of (or alongside) the ACVP/bc-java known-answer
-//! vectors in the `aes` crate's `acvp_gcm_tests.rs`, `acvp_gmac_tests.rs` and `gcm_bc_java_tests.rs`.
+//! vectors in the `aes` crate's `gcm_bc-test-data.rs`, `gmac_bc-test-data.rs` and
+//! `gcm_bc_java_tests.rs`.
 
 mod common;
 
-use bouncycastle_cipher::modes::Gcm;
+use bouncycastle_cipher::modes::{Gcm, ModeNames};
 use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::traits::{
@@ -53,7 +54,7 @@ fn aad_after_data_is_a_state_error_unless_empty() {
     }
     // An empty call after data is always fine.
     enc.do_update_aad(&[]).unwrap();
-    let _ = enc.do_encrypt_final_detachedtag().unwrap();
+    let _ = enc.do_encrypt_final_detached().unwrap();
 }
 
 /// The decryptor holds back the last `TAG_LEN` bytes it has seen, so a first `do_update_out` of
@@ -94,7 +95,7 @@ fn chunking_is_independent_for_aad_and_data() {
             let mut ct = [0u8; 50];
             let n = enc.do_encrypt_out(&message[..data_split], &mut ct).unwrap();
             enc.do_encrypt_out(&message[data_split..], &mut ct[n..]).unwrap();
-            let (_, _, tag) = enc.do_encrypt_final_detachedtag().unwrap();
+            let (_, _, tag) = enc.do_encrypt_final_detached().unwrap();
             assert_eq!(&ct[..], &expected_ct[..], "aad_split {aad_split}, data_split {data_split}");
             assert_eq!(tag, expected_tag, "aad_split {aad_split}, data_split {data_split}");
         }
@@ -232,7 +233,7 @@ fn one_shot_releases_nothing_on_forgery_but_streaming_does() {
     let released = dec.do_decrypt_out(&ct, &mut streaming_buf).unwrap();
     assert_eq!(released, 3, "19 bytes in, the last 16 held back");
     assert_eq!(&streaming_buf[..3], &message[..3], "streaming already produced plaintext");
-    match dec.do_decrypt_final_detachedtag(&tag) {
+    match dec.do_decrypt_final_detached(&tag) {
         Err(SymmetricCipherError::AEADTagCheckFailed) => {}
         other => panic!("expected AEADTagCheckFailed, got {other:?}"),
     }
@@ -247,7 +248,7 @@ fn one_shot_releases_nothing_on_forgery_but_streaming_does() {
 fn neither_direction_uses_the_inverse_cipher() {
     fn round_trip<P>() -> ([u8; 48], [u8; 16])
     where
-        P: bouncycastle_core::hazmat::ElectronicCodeBook<TOY_LEN, TOY_LEN>,
+        P: bouncycastle_core::hazmat::ElectronicCodeBook<TOY_LEN, TOY_LEN> + ModeNames,
     {
         let key = toy_key();
         let aad = b"associated data of no particular length";

@@ -175,7 +175,7 @@ mod tests {
         let mut rng = HashDRBG_SHA256::new_from_os();
         let out = rng.generate(&[], 0).unwrap();
         assert_eq!(out.len(), 0);
-        assert_eq!(out, []);
+        assert_eq!(out, [0u8; 0]);
 
         // Success case: one-byte output
         let mut rng = HashDRBG_SHA256::new_from_os();
@@ -216,7 +216,7 @@ mod tests {
         let mut out = [0u8; 0];
         let bytes_written = rng.generate_out(&[], &mut out).unwrap();
         assert_eq!(bytes_written, 0);
-        assert_eq!(out, []);
+        assert_eq!(out, [0u8; 0]);
 
         // Success case: one-byte output
         let mut rng = HashDRBG_SHA256::new_from_os();
@@ -263,7 +263,7 @@ mod tests {
         let mut out = KeyMaterial0::new();
         let bytes_written = rng.generate_keymaterial_out(&[], &mut out).unwrap();
         assert_eq!(bytes_written, 0);
-        assert_eq!(out.ref_to_bytes(), []);
+        assert_eq!(out.ref_to_bytes(), [0u8; 0]);
         assert_eq!(out.security_strength(), SecurityStrength::None);
 
         // Success case: one-byte output

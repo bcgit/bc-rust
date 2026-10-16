@@ -5,7 +5,7 @@
 //! sequencing, direction typing, the empty init data, SP 800-38A Appendix D error propagation, and
 //! the codebook property that makes ECB unsuitable for data -- independently of any real cipher. The
 //! known-answer tests against SP 800-38A Appendix F.1 are in the `aes` crate,
-//! `crypto/aes/tests/sp800_38a_ecb_tests.rs`, and the ACVP set in `acvp_ecb_tests.rs` beside it.
+//! `crypto/aes/tests/sp800_38a_ecb_tests.rs`, and the ACVP set in `ecb_bc-test-data.rs` beside it.
 //!
 //! The toy's own conformance to [`ElectronicCodeBook`] is pinned once, by
 //! `the_toy_permutation_conforms_to_the_trait` in `cbc_tests.rs`; it is the same `Toy` here.
@@ -122,7 +122,7 @@ fn the_mode_matches_the_spec_equations() {
         core::array::from_fn(|i| core::array::from_fn(|j| (i * 31 + j * 7 + 1) as u8));
 
     let (mut enc, init) = ToyEcb::<Encrypting>::do_encrypt_init(&key).unwrap();
-    assert_eq!(init, [], "ECB has no init data");
+    assert_eq!(init, [0u8; 0], "ECB has no init data");
     let ct = enc_blocks(&mut enc, &plaintext);
     assert_eq!(
         ct.to_vec(),
@@ -390,7 +390,7 @@ fn the_padding_layer_round_trips_every_length() {
         let mut ciphertext = vec![0u8; Enc::encrypt_out_len(len)];
         let (init, written) =
             Enc::encrypt_out(&toy_key(), &plaintext, &mut ciphertext).expect("padded encryption");
-        assert_eq!(init, []);
+        assert_eq!(init, [0u8; 0]);
         assert_eq!(written, ciphertext.len(), "len {len}");
         let mut recovered = vec![0u8; Dec::decrypt_out_len(written)];
         let n = Dec::decrypt_out(&toy_key(), &init, &ciphertext, &mut recovered)

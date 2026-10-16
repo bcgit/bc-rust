@@ -1,6 +1,7 @@
 //! Shared conformance tests for [`KeyStream`] implementors.
 
 use crate::DUMMY_SEED;
+use crate::key_binding::{assert_refused, bound_elsewhere, bound_to};
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::hazmat::KeyStream;
 use bouncycastle_core::hazmat::do_hazardous_operations;
@@ -119,6 +120,10 @@ impl TestFrameworkKeyStream {
             Err(SymmetricCipherError::KeyMaterialError(_)) => { /* good */ }
             _ => panic!("A key that is not a SymmetricCipherKey should have been rejected"),
         };
+
+        // error case: a key bound to another algorithm; one bound to this one is fine
+        KS::new(&bound_to(&key, KS::ALG_NAME), &init_data).unwrap();
+        assert_refused(KS::new(&bound_elsewhere(&key), &init_data), "KeyStream::new");
 
         // error case: security strengths too weak, and strong enough
         let mut key = KeyMaterial::<KEY_LEN>::from_bytes_as_type(

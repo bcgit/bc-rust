@@ -11,9 +11,9 @@
 //! `bouncycastle_utils::suspendable_state::add_lib_ver`) followed by the eight 64-bit chaining
 //! words, little-endian.
 //!
-//! Note that a wrong H(0) is also caught end-to-end by the CAVP vectors in `bc-test-data.rs`, since
-//! every SHA-512/224 and SHA-512/256 digest would then differ. These tests localize such a failure
-//! to the IV Generation Function itself.
+//! Note that a wrong H(0) is also caught end-to-end by the CAVP vectors in `sha2_bc-test-data.rs`,
+//! since every SHA-512/224 and SHA-512/256 digest would then differ. These tests localize such a
+//! failure to the IV Generation Function itself.
 
 use bouncycastle_core::traits::Suspendable;
 use bouncycastle_sha2::{SHA512_224, SHA512_256, SUSPENDED_SHA512_STATE_LEN};

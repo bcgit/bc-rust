@@ -1,10 +1,10 @@
 //! Ascon-XOF128 tests (NIST SP 800-232 §5.2).
 //!
-//! Embedded NIST LWC known-answer vectors (always-on; full sweep in `bc_test_data.rs`) plus the
-//! prefix property, streaming/byte-at-a-time equivalence, trait-API, partial-input rejection,
+//! Embedded NIST LWC known-answer vectors (always-on; full sweep in `ascon_bc-test-data.rs`) plus
+//! the prefix property, streaming/byte-at-a-time equivalence, trait-API, partial-input rejection,
 //! and suspend/resume tests.
 
-use bouncycastle_ascon::ascon_xof128::{AsconXof128, AsconXof128Squeezer};
+use bouncycastle_ascon::{AsconXof128, AsconXof128Squeezer};
 use bouncycastle_core::errors::HashError;
 use bouncycastle_core::traits::{Hash, Suspendable, XOF, XOFSqueezer};
 use bouncycastle_core_test_framework::xof::TestFrameworkXOF;
@@ -205,7 +205,7 @@ fn xof128_absorb_then_squeeze_type_transition() {
 
 #[test]
 fn xof128_suspendable_state() {
-    use bouncycastle_ascon::ascon_cxof128::AsconCXof128;
+    use bouncycastle_ascon::AsconCXof128;
     use bouncycastle_core::errors::SuspendableError;
     use bouncycastle_core_test_framework::suspendable_state::TestFrameworkSuspendableState;
 

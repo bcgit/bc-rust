@@ -32,6 +32,7 @@
 
 use bouncycastle_aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
 use bouncycastle_cipher::modes::Cfb8;
+use bouncycastle_cipher::modes::ModeNames;
 use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::hazmat::ElectronicCodeBook;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
@@ -136,7 +137,7 @@ const CHUNKINGS: [usize; 7] = [1, 3, 4, 8, 9, 17, 18];
 /// how the calls are grouped.
 fn check_encrypt<P, const KEY_LEN: usize>(section: &str, key_hex: &str, expected_hex: &str)
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
 {
     let key = key_material::<KEY_LEN>(key_hex);
     let iv = block(IV);
@@ -163,7 +164,7 @@ where
 /// Runs one Appendix F.3 CFB8 decrypt subsection.
 fn check_decrypt<P, const KEY_LEN: usize>(section: &str, key_hex: &str, ciphertext_hex: &str)
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
 {
     let key = key_material::<KEY_LEN>(key_hex);
     let iv = block(IV);

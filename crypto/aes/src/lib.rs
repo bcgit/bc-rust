@@ -179,8 +179,81 @@ mod round;
 mod sbox;
 mod schedule;
 
+use bouncycastle_utils::secret::ZeroizablePrimitive;
+
 /// The AES block length in bytes: 16 (FIPS 197 Sec 3.4, `Nb` = 4 words).
 pub const AES_BLOCK_LEN: usize = 16;
+
+/// Prevents a fourth parameter set from being added outside this crate.
+///
+/// FIPS 197 Table 3 lists exactly three Key-Block-Round combinations -- AES-128, AES-192 and
+/// AES-256 -- and Sec 5 adds that "No other configurations of Rijndael conform to this
+/// Standard". Because [`AESParams`]
+/// has this private supertrait, only the three types below can implement it, so no
+/// downstream crate can instantiate the cipher with an unapproved key length or round count.
+trait AESParamsInternalTrait {}
+
+/// The per-key-length constants of FIPS 197 Table 3.
+///
+/// This is a trait rather than const generic parameters because the schedule length
+/// `4 * (Nr + 1)` cannot be written as an expression over another const parameter on stable
+/// const-generics; each implementation spells its own array type out instead. The same pattern is
+/// used by the `HashDRBG80090AParams_*` types in `bouncycastle-rng`.
+///
+/// Sealed via a private supertrait, so the three types below are the only implementations. The
+/// supertrait is named `*InternalTrait` after the pattern of `MLKEMPrivateKeyInternalTrait` in
+/// `bouncycastle-mlkem`, which seals its key types the same way.
+pub trait AESParams: AESParamsInternalTrait {
+    /// Key length in bytes: 16, 24 or 32 (FIPS 197 Table 3).
+    const KEY_LEN: usize;
+    /// `Nk`, the key length in 32-bit words: 4, 6 or 8 (FIPS 197 Table 3).
+    const NK: usize;
+    /// `Nr`, the number of rounds: 10, 12 or 14 (FIPS 197 Table 3).
+    const NR: usize;
+    /// The algorithm name, as reported by `Algorithm::ALG_NAME`.
+    const ALG_NAME: &'static str;
+    /// `[u32; 4 * (NR + 1)]` -- the bit-sliced schedule; its layout is
+    /// described in `schedule.rs`.
+    type Schedule: ZeroizablePrimitive + AsRef<[u32]> + AsMut<[u32]>;
+}
+
+/// AES-128 parameters: 16-byte key, `Nk` = 4, `Nr` = 10 (FIPS 197 Table 3).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AES128Params;
+/// AES-192 parameters: 24-byte key, `Nk` = 6, `Nr` = 12 (FIPS 197 Table 3).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AES192Params;
+/// AES-256 parameters: 32-byte key, `Nk` = 8, `Nr` = 14 (FIPS 197 Table 3).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AES256Params;
+
+impl AESParamsInternalTrait for AES128Params {}
+impl AESParamsInternalTrait for AES192Params {}
+impl AESParamsInternalTrait for AES256Params {}
+
+impl AESParams for AES128Params {
+    const KEY_LEN: usize = 16;
+    const NK: usize = 4;
+    const NR: usize = 10;
+    const ALG_NAME: &'static str = "AES-128";
+    type Schedule = [u32; 44]; // 4 * (10 + 1)
+}
+
+impl AESParams for AES192Params {
+    const KEY_LEN: usize = 24;
+    const NK: usize = 6;
+    const NR: usize = 12;
+    const ALG_NAME: &'static str = "AES-192";
+    type Schedule = [u32; 52]; // 4 * (12 + 1)
+}
+
+impl AESParams for AES256Params {
+    const KEY_LEN: usize = 32;
+    const NK: usize = 8;
+    const NR: usize = 14;
+    const ALG_NAME: &'static str = "AES-256";
+    type Schedule = [u32; 60]; // 4 * (14 + 1)
+}
 
 pub use cbc::{AES_CBC_128, AES_CBC_192, AES_CBC_256};
 pub use ccm::{

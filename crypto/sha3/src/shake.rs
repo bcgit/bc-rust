@@ -54,6 +54,45 @@ impl<PARAMS: SHAKEParams> SHAKEInternal<PARAMS> {
         }
     }
 
+    /// Writes the SHA3-family state under `tag` into `out`, which is exactly
+    /// `SHA3_FAMILY_STATE_LEN` bytes: the sponge and the KDF metadata, with no version header.
+    /// For the functions built on SHAKE, which stamp their own tag and add fields of their own.
+    pub(crate) fn write_family_state(&self, tag: u8, out: &mut [u8]) {
+        let out: &mut [u8; SHA3_FAMILY_STATE_LEN] =
+            out.try_into().expect("a family state is exactly SHA3_FAMILY_STATE_LEN bytes");
+        serialize_sha3_family_state(
+            out,
+            tag,
+            &self.keccak,
+            self.kdf_key_type,
+            self.kdf_security_strength,
+            self.kdf_entropy,
+        );
+    }
+
+    /// The reverse of [`Self::write_family_state`]. The sponge comes back in whichever phase it
+    /// was suspended in; [`Self::is_squeezing`] says which, and the caller decides what that
+    /// means for it.
+    pub(crate) fn read_family_state(state: &[u8], tag: u8) -> Result<Self, SuspendableError> {
+        let input: &[u8; SHA3_FAMILY_STATE_LEN] =
+            state.try_into().map_err(|_| SuspendableError::InvalidData)?;
+        let rate = 1600 - ((PARAMS::SIZE as usize) << 1);
+        let (keccak, kdf_key_type, kdf_security_strength, kdf_entropy) =
+            deserialize_sha3_family_state(input, tag, rate)?;
+        Ok(Self {
+            _phantomdata: core::marker::PhantomData,
+            keccak,
+            kdf_key_type,
+            kdf_security_strength,
+            kdf_entropy,
+        })
+    }
+
+    /// Whether the sponge has begun producing output.
+    pub(crate) fn is_squeezing(&self) -> bool {
+        self.keccak.squeezing
+    }
+
     fn hash_internal(mut self, data: &[u8], result_len: usize) -> Vec<u8> {
         self.keccak.absorb(data);
         self.into_squeezer().do_output(result_len)
@@ -302,6 +341,19 @@ impl<PARAMS: SHAKEParams> Default for SHAKEInternal<PARAMS> {
 /// there is no longer a SHAKE to call it on.
 pub struct SHAKESqueezer<PARAMS: SHAKEParams> {
     shake: SHAKEInternal<PARAMS>,
+}
+
+impl<PARAMS: SHAKEParams> SHAKESqueezer<PARAMS> {
+    /// Wraps a sponge that is already squeezing, as read back from a suspended state.
+    pub(crate) fn from_squeezing(shake: SHAKEInternal<PARAMS>) -> Self {
+        debug_assert!(shake.is_squeezing());
+        Self { shake }
+    }
+
+    /// [`SHAKEInternal::write_family_state`] for the squeezing half.
+    pub(crate) fn write_family_state(&self, tag: u8, out: &mut [u8]) {
+        self.shake.write_family_state(tag, out)
+    }
 }
 
 impl<PARAMS: SHAKEParams> XOFSqueezer for SHAKESqueezer<PARAMS> {

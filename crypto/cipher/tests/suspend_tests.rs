@@ -1,5 +1,5 @@
-//! Suspend-and-resume round trips for every mode and adapter, over the test framework's toy
-//! permutation.
+//! Suspend-and-resume round trips for every mode and adapter, over the toy
+//! permutation in `common/toy_block_cipher.rs`.
 //!
 //! Each test does part of an operation, suspends a clone of the cipher, resumes it with the
 //! re-supplied key, and then finishes both the original and the resumed cipher the same way. The
@@ -9,7 +9,7 @@
 //! pinned; `bouncycastle-aes` only checks that each alias reaches them.
 
 use bouncycastle_cipher::modes::hazmat::Ecb;
-use bouncycastle_cipher::modes::{Cbc, Ccm, Cfb, Cfb8, Ctr, Gcm};
+use bouncycastle_cipher::modes::{Cbc, CcmPacket, Cfb, Cfb8, Ctr, Gcm};
 use bouncycastle_cipher::padding::{PKCS7, PaddedBlockCipherDecryptor, PaddedBlockCipherEncryptor};
 use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
@@ -18,8 +18,11 @@ use bouncycastle_core::traits::{
     StreamCipherDecryptor, StreamCipherEncryptor, SuspendableKeyed, SymmetricCipherDecryptor,
     SymmetricCipherEncryptor,
 };
-use bouncycastle_core_test_framework::ToyBlockCipher;
 use bouncycastle_core_test_framework::suspendable_state::TestFrameworkSuspendableKeyedState;
+
+#[path = "common/toy_block_cipher.rs"]
+mod toy_block_cipher;
+use toy_block_cipher::ToyBlockCipher;
 
 type ToyEcb<Dir> = Ecb<ToyBlockCipher, Dir, 16, 16>;
 type ToyCbc<Dir> = Cbc<ToyBlockCipher, Dir, 16, 16>;
@@ -27,7 +30,7 @@ type ToyCfb<Dir> = Cfb<ToyBlockCipher, Dir, 16, 16>;
 type ToyCfb8<Dir> = Cfb8<ToyBlockCipher, Dir, 16, 16>;
 type ToyCtr<Dir> = Ctr<ToyBlockCipher, Dir, 16, 16, 12>;
 type ToyGcm<Dir> = Gcm<ToyBlockCipher, Dir, 16, 16>;
-type ToyCcm<Dir> = Ccm<ToyBlockCipher, Dir, 16, 16, 12, 16>;
+type ToyCcm<Dir> = CcmPacket<ToyBlockCipher, Dir, 16, 16, 12, 16>;
 type ToyPaddedEnc = PaddedBlockCipherEncryptor<ToyCbc<Encrypting>, PKCS7, 16, 16, 16>;
 type ToyPaddedDec = PaddedBlockCipherDecryptor<ToyCbc<Decrypting>, PKCS7, 16, 16, 16>;
 
@@ -201,10 +204,10 @@ fn ccm_both_directions() {
 
     let mut enc = ToyCcm::<Encrypting>::new(&key(), &nonce, aad, msg.len()).unwrap();
     let mut head = msg[..9].to_vec();
-    enc.do_encrypt(&mut head).unwrap();
+    enc.do_encrypt_inplace(&mut head).unwrap();
     let tail = round_trip::<{ ToyCcm::<Encrypting>::SUSPENDED_STATE_LEN }, _>(enc, |mut e| {
         let mut data = msg[9..].to_vec();
-        e.do_encrypt(&mut data).unwrap();
+        e.do_encrypt_inplace(&mut data).unwrap();
         data.extend_from_slice(&e.do_encrypt_final().unwrap());
         data
     });
@@ -212,10 +215,10 @@ fn ccm_both_directions() {
     let tag: [u8; 16] = tag.try_into().unwrap();
 
     let mut dec = ToyCcm::<Decrypting>::new(&key(), &nonce, aad, msg.len()).unwrap();
-    dec.do_decrypt_update(&mut head).unwrap();
+    dec.do_decrypt_inplace(&mut head).unwrap();
     let plain = round_trip::<{ ToyCcm::<Decrypting>::SUSPENDED_STATE_LEN }, _>(dec, |mut d| {
         let mut data = ct_tail.to_vec();
-        d.do_decrypt_update(&mut data).unwrap();
+        d.do_decrypt_inplace(&mut data).unwrap();
         d.do_decrypt_final(&tag).expect("the tag must verify after a resume");
         data
     });

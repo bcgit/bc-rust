@@ -1,11 +1,11 @@
 //! Ascon-CXOF128 tests (NIST SP 800-232 §5.3).
 //!
-//! Embedded NIST LWC known-answer vectors (always-on; full sweep in `bc_test_data.rs`) plus
+//! Embedded NIST LWC known-answer vectors (always-on; full sweep in `ascon_bc-test-data.rs`) plus
 //! domain-separation, streaming/byte-at-a-time equivalence, trait-API, partial-input rejection,
 //! and suspend/resume tests.
 
-use bouncycastle_ascon::ascon_cxof128::{AsconCXof128, AsconCXof128Squeezer};
-use bouncycastle_ascon::ascon_xof128::AsconXof128;
+use bouncycastle_ascon::AsconXof128;
+use bouncycastle_ascon::{AsconCXof128, AsconCXof128Squeezer};
 use bouncycastle_core::errors::HashError;
 use bouncycastle_core::traits::{Hash, Suspendable, XOF, XOFSqueezer};
 use bouncycastle_core_test_framework::xof::TestFrameworkXOF;
