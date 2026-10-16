@@ -25,7 +25,7 @@ fn bench_aead128_encrypt(c: &mut Criterion) {
     let data = random_data(DATA_LEN);
     let mut out = vec![0u8; DATA_LEN + 16];
 
-    let mut group = c.benchmark_group("ascon::AsconAEAD128");
+    let mut group = c.benchmark_group("ascon::Ascon_AEAD128");
     group.throughput(Throughput::Bytes(DATA_LEN as u64));
 
     group.bench_function(format!("{DATA_LEN} bytes -- ::encrypt()"), |b| {
