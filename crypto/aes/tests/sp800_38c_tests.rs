@@ -17,12 +17,13 @@
 //! decryption-verification process of CCM is straightforward to construct"), so the decryption
 //! direction is checked by round-tripping each vector's own `C` back to its `P`.
 
+use bouncycastle_aes::AES128Key;
 use bouncycastle_aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
-use bouncycastle_cipher::modes::ModeNames;
-use bouncycastle_cipher::modes::{CcmDecryptor, CcmEncryptor, CcmPacket};
-use bouncycastle_cipher::{Decrypting, Encrypting};
+use bouncycastle_cipher::modes::{CCM, CcmDecryptor, CcmEncryptor, ModeNames};
 use bouncycastle_core::errors::SymmetricCipherError;
+use bouncycastle_core::hazmat::{AeadPacketDecryptMode, AeadPacketEncryptMode, ElectronicCodeBook};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
+use bouncycastle_core::symmetric_key::FromKeyMaterial;
 use bouncycastle_core::traits::{
     AEADCipherDecryptor, AEADCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
 };
@@ -47,7 +48,9 @@ fn buffer_len_error<T>(r: Result<T, SymmetricCipherError>) -> Option<usize> {
     }
 }
 
-/// Drives one Appendix C example through every entry point, in both layouts and both directions.
+/// Drives one Appendix C example through every entry point: the mode's in-place one-shots, the
+/// fixed-frame pair's any-length one-shots in the appendix's own inline layout, and, if `sweep`,
+/// the pair's streams at the example's frame `DATA_LEN` in several chunkings.
 ///
 /// `c` is the appendix's whole `C` string; it is split at `plaintext.len()` into the ciphertext and
 /// the tag, so a mistake in either half is caught, and so is a mistake in where the split belongs.
@@ -55,7 +58,8 @@ fn check_vector<
     const KEY_LEN: usize,
     const NONCE_LEN: usize,
     const TAG_LEN: usize,
-    P: bouncycastle_core::hazmat::ElectronicCodeBook<KEY_LEN, 16> + ModeNames,
+    const DATA_LEN: usize,
+    P: ElectronicCodeBook<KEY_LEN, 16> + ModeNames + Clone,
 >(
     name: &str,
     key_hex: &str,
@@ -67,15 +71,18 @@ fn check_vector<
     // it opts out.
     sweep: bool,
 ) {
-    type Enc<P, const K: usize, const N: usize, const T: usize> =
-        CcmPacket<P, Encrypting, K, 16, N, T>;
-    type Dec<P, const K: usize, const N: usize, const T: usize> =
-        CcmPacket<P, Decrypting, K, 16, N, T>;
+    type Mode<const N: usize, const T: usize> = CCM<N, T>;
+    type Enc<P, const K: usize, const N: usize, const T: usize, const D: usize> =
+        CcmEncryptor<P, K, 16, N, T, 64, D>;
+    type Dec<P, const K: usize, const N: usize, const T: usize, const D: usize> =
+        CcmDecryptor<P, K, 16, N, T, 64, D>;
 
     let k = key::<KEY_LEN>(key_hex);
+    let perm = P::new(&k).expect("the appendix key");
     let nonce_bytes = hex::decode(nonce_hex).expect("valid hex nonce");
     let nonce: [u8; NONCE_LEN] = nonce_bytes.try_into().expect("nonce length matches NONCE_LEN");
     let plaintext = hex::decode(plaintext_hex).expect("valid hex plaintext");
+    assert_eq!(plaintext.len(), DATA_LEN, "{name}: the frame is the example's Plen");
     let c = hex::decode(c_hex).expect("valid hex C");
 
     assert_eq!(
@@ -84,70 +91,64 @@ fn check_vector<
         "{name}: the appendix's C must be Plen + Tlen octets"
     );
     let (want_ct, want_tag) = c.split_at(plaintext.len());
+    let want_tag: &[u8; TAG_LEN] = want_tag.try_into().expect("TAG_LEN bytes");
 
-    // --- Sec 6.1, detached tag ---
-    let mut ct = vec![0u8; plaintext.len()];
-    let (written, tag) = Enc::<P, KEY_LEN, NONCE_LEN, TAG_LEN>::encrypt_detached_out(
-        &k, &nonce, aad, &plaintext, &mut ct,
-    )
-    .expect("encryption");
-    assert_eq!(written, plaintext.len(), "{name}: CCM never expands the payload");
-    assert_eq!(ct, want_ct, "{name}: ciphertext");
-    assert_eq!(tag, want_tag, "{name}: tag");
+    // --- Sec 6.1 and 6.2 in place, detached tag ---
+    let mut buf = plaintext.clone();
+    let tag =
+        Mode::<NONCE_LEN, TAG_LEN>::encrypt_detached_in_place_nonce(&perm, &nonce, aad, &mut buf)
+            .expect("encryption");
+    assert_eq!(buf, want_ct, "{name}: ciphertext");
+    assert_eq!(&tag, want_tag, "{name}: tag");
+    Mode::<NONCE_LEN, TAG_LEN>::decrypt_detached_in_place(&perm, &nonce, aad, &mut buf, want_tag)
+        .expect("decryption");
+    assert_eq!(buf, plaintext, "{name}: detached round trip");
 
-    // --- Sec 6.1, the appendix's own inline `ciphertext || tag` layout ---
+    // --- the appendix's own inline `ciphertext || tag` layout, through the pair's one-shots ---
     let mut inline = vec![0u8; plaintext.len() + TAG_LEN];
-    let n = Enc::<P, KEY_LEN, NONCE_LEN, TAG_LEN>::encrypt_out(
+    let n = Enc::<P, KEY_LEN, NONCE_LEN, TAG_LEN, DATA_LEN>::encrypt_with_aad_nonce_out(
         &k, &nonce, aad, &plaintext, &mut inline,
     )
     .expect("encryption");
     assert_eq!(n, c.len(), "{name}: inline output length");
     assert_eq!(inline, c, "{name}: the whole C string of Appendix C");
-
-    // --- Sec 6.2, both layouts ---
     let mut recovered = vec![0u8; plaintext.len()];
-    let n = Dec::<P, KEY_LEN, NONCE_LEN, TAG_LEN>::decrypt_detached_out(
-        &k,
-        &nonce,
-        aad,
-        want_ct,
-        want_tag.try_into().expect("TAG_LEN bytes"),
-        &mut recovered,
+    let n = Dec::<P, KEY_LEN, NONCE_LEN, TAG_LEN, DATA_LEN>::decrypt_with_aad_out(
+        &k, &nonce, aad, &c, &mut recovered,
     )
     .expect("decryption");
     assert_eq!(n, plaintext.len());
-    assert_eq!(recovered, plaintext, "{name}: detached round trip");
-
-    let mut recovered = vec![0u8; plaintext.len()];
-    let n = Dec::<P, KEY_LEN, NONCE_LEN, TAG_LEN>::decrypt_out(&k, &nonce, aad, &c, &mut recovered)
-        .expect("decryption");
-    assert_eq!(n, plaintext.len());
     assert_eq!(recovered, plaintext, "{name}: inline round trip");
 
-    // --- Every ciphertext chunking through the streaming API gives the same answer ---
+    // --- Every ciphertext chunking through the streams gives the same answer ---
     if sweep {
-        // Sec 3 says CCM is not a streaming mode, and `CcmPacket` handles that by taking the payload length
-        // up front; given that, the chunking must be invisible, exactly as for the other modes.
+        // Sec 3 says CCM is not a streaming mode, and the pair handles that by fixing the frame in
+        // the type; given that, the chunking must be invisible, exactly as for the other modes.
         for chunk in [1usize, 2, 3, 7, 16, 17] {
-            let mut ccm =
-                Enc::<P, KEY_LEN, NONCE_LEN, TAG_LEN>::new(&k, &nonce, aad, plaintext.len())
+            let mut enc =
+                Enc::<P, KEY_LEN, NONCE_LEN, TAG_LEN, DATA_LEN>::do_encrypt_init_nonce(&k, &nonce)
                     .expect("streaming init");
-            let mut streamed = plaintext.clone();
-            for piece in streamed.chunks_mut(chunk) {
-                ccm.do_encrypt_inplace(piece).expect("update");
+            enc.do_update_aad(aad).expect("aad");
+            let mut streamed = vec![0u8; DATA_LEN];
+            let mut written = 0;
+            for piece in plaintext.chunks(chunk) {
+                written += enc.do_encrypt_out(piece, &mut streamed[written..]).expect("update");
             }
-            let streamed_tag = ccm.do_encrypt_final().expect("final");
+            let (_, _, streamed_tag) = enc.do_encrypt_final_detached().expect("final");
             assert_eq!(streamed, want_ct, "{name}: ciphertext, streamed in {chunk}-byte chunks");
-            assert_eq!(streamed_tag, want_tag, "{name}: tag, streamed in {chunk}-byte chunks");
+            assert_eq!(&streamed_tag, want_tag, "{name}: tag, streamed in {chunk}-byte chunks");
 
-            let mut ccm =
-                Dec::<P, KEY_LEN, NONCE_LEN, TAG_LEN>::new(&k, &nonce, aad, plaintext.len())
+            let mut dec =
+                Dec::<P, KEY_LEN, NONCE_LEN, TAG_LEN, DATA_LEN>::do_decrypt_init(&k, &nonce)
                     .expect("streaming init");
-            for piece in streamed.chunks_mut(chunk) {
-                ccm.do_decrypt_inplace(piece).expect("update");
+            dec.do_update_aad(aad).expect("aad");
+            let mut opened = vec![0u8; DATA_LEN];
+            let mut written = 0;
+            for piece in streamed.chunks(chunk) {
+                written += dec.do_decrypt_out(piece, &mut opened[written..]).expect("update");
             }
-            ccm.do_decrypt_final(want_tag.try_into().expect("TAG_LEN bytes")).expect("tag check");
-            assert_eq!(streamed, plaintext, "{name}: plaintext, streamed in {chunk}-byte chunks");
+            dec.do_decrypt_final_detached(want_tag).expect("tag check");
+            assert_eq!(opened, plaintext, "{name}: plaintext, streamed in {chunk}-byte chunks");
         }
     }
 }
@@ -157,7 +158,7 @@ fn check_vector<
 /// `n = 7`, so `q = 8`: the widest length field A.1 allows, and the shortest permitted tag.
 #[test]
 fn appendix_c1() {
-    check_vector::<16, 7, 4, AES128Internal>(
+    check_vector::<16, 7, 4, 4, AES128Internal>(
         "C.1",
         APPENDIX_C_KEY,
         "10111213141516",
@@ -175,7 +176,7 @@ fn appendix_c1() {
 /// "minimum number of '0' bits, possibly none" is none.
 #[test]
 fn appendix_c2() {
-    check_vector::<16, 8, 6, AES128Internal>(
+    check_vector::<16, 8, 6, 16, AES128Internal>(
         "C.2",
         APPENDIX_C_KEY,
         "1011121314151617",
@@ -193,7 +194,7 @@ fn appendix_c2() {
 /// the payload spans two counter blocks.
 #[test]
 fn appendix_c3() {
-    check_vector::<16, 12, 8, AES128Internal>(
+    check_vector::<16, 12, 8, 24, AES128Internal>(
         "C.3",
         APPENDIX_C_KEY,
         "101112131415161718191a1b",
@@ -225,7 +226,7 @@ fn appendix_c4() {
     }
     assert_eq!(aad.len(), 65536, "Alen = 524288 bits");
 
-    check_vector::<16, 13, 14, AES128Internal>(
+    check_vector::<16, 13, 14, 32, AES128Internal>(
         "C.4",
         APPENDIX_C_KEY,
         "101112131415161718191a1b1c",
@@ -312,10 +313,9 @@ fn framework_streaming_contract_other_parameter_sets() {
     >();
 }
 
-/// The fixed-frame pair must agree with the run-time-length [`CcmPacket`] byte for byte -- they are two
-/// routes to the same Sec 6.1 -- and it must be driven with a caller-chosen nonce to check that,
-/// which is what `do_encrypt_init_rng` and a fixed-output RNG provide. C.3's payload is 24 bytes
-/// and its AAD 20, so that is the frame.
+/// The fixed-frame pair's streams reproduce Appendix C.3 byte for byte, driven with the
+/// appendix's nonce through `do_encrypt_init_rng` and a fixed-output RNG. C.3's payload is 24
+/// bytes and its AAD 20, so that is the frame.
 #[test]
 fn the_fixed_frame_pair_agrees_with_the_direct_api_on_appendix_c3() {
     type Enc = CcmEncryptor<AES128Internal, 16, 16, 12, 8, 20, 24>;
@@ -476,13 +476,11 @@ fn an_empty_update_does_not_close_the_aad_phase() {
     let (tag, tag_len) = enc.do_encrypt_final().expect("final");
     assert_eq!(tag_len, 16);
 
-    // The AAD really was absorbed: the direct API with the same AAD must agree, and the
+    // The AAD really was absorbed: the one-shot with the same AAD must agree, and the
     // decryptor, given the same empty-then-AAD sequence, must verify it.
     let mut expected = [0u8; 7 + 16];
-    let n = CcmPacket::<AES128Internal, Encrypting, 16, 16, 12, 16>::encrypt_out(
-        &k, &nonce, aad, message, &mut expected,
-    )
-    .expect("direct");
+    let n =
+        Enc::encrypt_with_aad_nonce_out(&k, &nonce, aad, message, &mut expected).expect("one-shot");
     assert_eq!(n, 23);
     assert_eq!(&sealed[..], &expected[..7]);
     assert_eq!(&tag[..], &expected[7..]);
@@ -581,10 +579,8 @@ fn the_aad_capacity_and_the_payload_length_are_independent() {
 
         let mut direct = [0u8; 64];
         let (_, direct_tag) =
-            CcmPacket::<AES128Internal, Encrypting, 16, 16, 12, 16>::encrypt_detached_out(
-                &k, &nonce, aad, &message, &mut direct,
-            )
-            .expect("direct");
+            Enc::encrypt_detached_nonce_out(&k, &nonce, aad, &message, &mut direct)
+                .expect("one-shot");
         assert_eq!((sealed, tag), (direct, direct_tag), "aad of {} bytes", aad.len());
 
         let mut dec = Dec::do_decrypt_init(&k, &nonce).expect("init");
@@ -654,18 +650,18 @@ fn the_decryptor_releases_the_payload_and_holds_back_only_the_tag() {
     assert_eq!(out, message);
 }
 
-/// The one-shots are [`CcmPacket`]'s own under a generated nonce, so `DATA_LEN` and `AAD_LEN` do not
-/// bind them: at the frame's length they agree with the direct API byte for byte, and at any
-/// other length, with AAD past the capacity, they still round trip and agree, on every one of
-/// the nine forms -- detached and inline, with and without a caller's RNG, with and without AAD,
-/// and the three decrypting forms. A failed tag leaves the output zeroized. The streaming
-/// methods stay bound; see `the_adapters_refuse_more_than_the_declared_lengths`.
+/// The one-shots take the whole message, so `DATA_LEN` and `AAD_LEN` do not bind them: at the
+/// frame's length they agree with the mode's in-place one-shot byte for byte, and at any other
+/// length, with AAD past the capacity, they still round trip and agree, on every one of the nine
+/// forms -- detached and inline, with and without a caller's RNG, with and without AAD, and the
+/// three decrypting forms. A failed tag leaves the output zeroized. The streaming methods stay
+/// bound; see `the_adapters_refuse_more_than_the_declared_lengths`.
 #[test]
-fn trait_one_shots_take_any_length_and_agree_with_the_direct_api() {
+fn trait_one_shots_take_any_length_and_agree_with_the_in_place_one_shot() {
     type Enc = CcmEncryptor<AES128Internal, 16, 16, 12, 16, 48, 48>;
     type Dec = CcmDecryptor<AES128Internal, 16, 16, 12, 16, 48, 48>;
-    type Direct<Dir> = CcmPacket<AES128Internal, Dir, 16, 16, 12, 16>;
     let k = key::<16>(APPENDIX_C_KEY);
+    let perm = AES128Internal::new(&k).unwrap();
     let rng = || FixedSeedRNG::<12>::new([0x24u8; 12]);
 
     // The frame, one byte either side of it, nothing, and well past it; AAD at, under and past
@@ -680,10 +676,10 @@ fn trait_one_shots_take_any_length_and_agree_with_the_direct_api() {
             Enc::encrypt_detached_rng_out(&k, &mut rng(), &aad, &msg, &mut detached)
                 .unwrap_or_else(|e| panic!("{what}: {e:?}"));
         assert_eq!(written, msg_len);
-        let mut direct = vec![0u8; msg_len];
-        let (_, direct_tag) =
-            Direct::<Encrypting>::encrypt_detached_out(&k, &nonce, &aad, &msg, &mut direct)
-                .expect("direct");
+        let mut direct = msg.clone();
+        let direct_tag =
+            CCM::<12, 16>::encrypt_detached_in_place_nonce(&perm, &nonce, &aad, &mut direct)
+                .expect("in place");
         assert_eq!((&detached, tag), (&direct, direct_tag), "{what}: detached agrees");
 
         let mut inline = vec![0u8; msg_len + 16];
@@ -912,18 +908,17 @@ fn every_final_refuses_a_payload_of_the_wrong_length() {
 /// A `C` of exactly `TAG_LEN` octets is *not* too short: it is the empty payload of Sec 5.3's
 /// footnote, and must authenticate.
 ///
-/// All three inline entry points -- the inherent one-shot, the fixed-frame decryptor's
-/// `do_decrypt_final` and its `decrypt_with_aad_out` -- must report the same malformed input with
-/// the same variant, [`SymmetricCipherError::DecryptionFailed`], which is what
+/// Both inline entry points -- the decryptor's `decrypt_with_aad_out` and its `do_decrypt_final`
+/// -- must report the same malformed input with the same variant,
+/// [`SymmetricCipherError::DecryptionFailed`], which is what
 /// [`SymmetricCipherDecryptor::do_decrypt_final`] specifies for a malformed ciphertext; a caller
 /// telling "malformed" from "inauthentic" must not get a different answer depending on which one it
 /// used.
 #[test]
 fn an_inline_ciphertext_shorter_than_the_tag_is_rejected() {
-    type Enc = CcmPacket<AES128Internal, Encrypting, 16, 16, 12, 16>;
-    type Dec = CcmPacket<AES128Internal, Decrypting, 16, 16, 12, 16>;
     // The empty frame, so that every byte of a short `C` is a (missing) tag byte.
-    type StreamDec = CcmDecryptor<AES128Internal, 16, 16, 12, 16, 48, 0>;
+    type Enc = CcmEncryptor<AES128Internal, 16, 16, 12, 16, 48, 0>;
+    type Dec = CcmDecryptor<AES128Internal, 16, 16, 12, 16, 48, 0>;
     let k = key::<16>(APPENDIX_C_KEY);
     let nonce = [0u8; 12];
     let mut out = [0u8; 16];
@@ -933,19 +928,12 @@ fn an_inline_ciphertext_shorter_than_the_tag_is_rejected() {
         let short = vec![0u8; len];
         assert!(
             matches!(
-                Dec::decrypt_out(&k, &nonce, &[], &short, &mut out),
-                Err(SymmetricCipherError::DecryptionFailed)
-            ),
-            "a {len}-byte C cannot carry a 16-byte tag (CcmPacket::decrypt_out)"
-        );
-        assert!(
-            matches!(
-                StreamDec::decrypt_with_aad_out(&k, &nonce, &[], &short, &mut out),
+                Dec::decrypt_with_aad_out(&k, &nonce, &[], &short, &mut out),
                 Err(SymmetricCipherError::DecryptionFailed)
             ),
             "a {len}-byte C cannot carry a 16-byte tag (decrypt_with_aad_out)"
         );
-        let mut dec = StreamDec::do_decrypt_init(&k, &nonce).expect("init");
+        let mut dec = Dec::do_decrypt_init(&k, &nonce).expect("init");
         dec.do_decrypt_out(&short, &mut nothing).expect("held back as a possible tag");
         assert!(
             matches!(dec.do_decrypt_final(), Err(SymmetricCipherError::DecryptionFailed)),
@@ -953,16 +941,15 @@ fn an_inline_ciphertext_shorter_than_the_tag_is_rejected() {
         );
     }
 
-    // Exactly TAG_LEN: an empty payload plus its tag, which must verify, on all three.
+    // Exactly TAG_LEN: an empty payload plus its tag, which must verify, on both.
     let mut inline = [0u8; 16];
-    let n = Enc::encrypt_out(&k, &nonce, &[], &[], &mut inline).expect("encryption");
+    let n = Enc::encrypt_with_aad_nonce_out(&k, &nonce, &[], &[], &mut inline).expect("encryption");
     assert_eq!(n, 16);
-    assert_eq!(Dec::decrypt_out(&k, &nonce, &[], &inline, &mut out).expect("decryption"), 0);
     assert_eq!(
-        StreamDec::decrypt_with_aad_out(&k, &nonce, &[], &inline, &mut out).expect("decryption"),
+        Dec::decrypt_with_aad_out(&k, &nonce, &[], &inline, &mut out).expect("decryption"),
         0
     );
-    let mut dec = StreamDec::do_decrypt_init(&k, &nonce).expect("init");
+    let mut dec = Dec::do_decrypt_init(&k, &nonce).expect("init");
     assert_eq!(dec.do_decrypt_out(&inline, &mut nothing).expect("the tag"), 0);
     assert_eq!(dec.do_decrypt_final().expect("an empty frame still verifies").1, 0);
 }
@@ -970,9 +957,9 @@ fn an_inline_ciphertext_shorter_than_the_tag_is_rejected() {
 /// A truncated `C` on a frame that is not empty, where the streaming final and the one-shots
 /// part ways. The streaming decryptor knows the frame: `do_decrypt_out` releases the payload as
 /// it arrives, up to `DATA_LEN`, holds back only what follows as the tag, and the final reports
-/// anything short of `DATA_LEN + TAG_LEN` as malformed. The one-shots are [`CcmPacket`]'s own and know
-/// no frame: a `C` shorter than the tag is malformed, and anything longer is a shorter message
-/// whose tag does not verify. `decrypt_out_len` is `C` less a tag, as for any AEAD.
+/// anything short of `DATA_LEN + TAG_LEN` as malformed. The one-shots take the whole message and
+/// know no frame: a `C` shorter than the tag is malformed, and anything longer is a shorter
+/// message whose tag does not verify. `decrypt_out_len` is `C` less a tag, as for any AEAD.
 #[test]
 fn a_short_inline_ciphertext_is_rejected_the_same_way_for_a_non_empty_frame() {
     const DATA_LEN: usize = 32;
@@ -1026,120 +1013,133 @@ fn a_short_inline_ciphertext_is_rejected_the_same_way_for_a_non_empty_frame() {
 /// An output buffer that is too short is refused with the length required, before any work.
 #[test]
 fn undersized_output_buffers_are_refused() {
-    type Enc = CcmPacket<AES128Internal, Encrypting, 16, 16, 12, 16>;
-    type Dec = CcmPacket<AES128Internal, Decrypting, 16, 16, 12, 16>;
+    type Enc = CcmEncryptor<AES128Internal, 16, 16, 12, 16, 0, 0>;
+    type Dec = CcmDecryptor<AES128Internal, 16, 16, 12, 16, 0, 0>;
     let k = key::<16>(APPENDIX_C_KEY);
     let nonce = [0u8; 12];
     let plaintext = [0xAAu8; 24];
 
     let mut too_small = [0u8; 23];
     assert_eq!(
-        buffer_len_error(Enc::encrypt_detached_out(&k, &nonce, &[], &plaintext, &mut too_small)),
+        buffer_len_error(Enc::encrypt_detached_nonce_out(
+            &k,
+            &nonce,
+            &[],
+            &plaintext,
+            &mut too_small
+        )),
         Some(24)
     );
 
     let mut too_small = [0u8; 39];
     assert_eq!(
-        buffer_len_error(Enc::encrypt_out(&k, &nonce, &[], &plaintext, &mut too_small)),
+        buffer_len_error(Enc::encrypt_with_aad_nonce_out(
+            &k,
+            &nonce,
+            &[],
+            &plaintext,
+            &mut too_small
+        )),
         Some(40)
     );
 
     let mut ct = [0u8; 40];
-    Enc::encrypt_out(&k, &nonce, &[], &plaintext, &mut ct).expect("encryption");
+    Enc::encrypt_with_aad_nonce_out(&k, &nonce, &[], &plaintext, &mut ct).expect("encryption");
     let mut too_small = [0u8; 23];
-    assert_eq!(buffer_len_error(Dec::decrypt_out(&k, &nonce, &[], &ct, &mut too_small)), Some(24));
+    assert_eq!(
+        buffer_len_error(Dec::decrypt_with_aad_out(&k, &nonce, &[], &ct, &mut too_small)),
+        Some(24)
+    );
 }
 
-/// A key of the wrong [`KeyType`] is rejected by every entry point, in both directions.
+/// A key of the wrong [`KeyType`] is rejected by every entry point, in both directions, and by
+/// the mode-bound key's constructor.
 #[test]
 fn a_non_cipher_key_is_rejected() {
-    type Enc = CcmPacket<AES128Internal, Encrypting, 16, 16, 12, 16>;
-    type Dec = CcmPacket<AES128Internal, Decrypting, 16, 16, 12, 16>;
+    type Enc = CcmEncryptor<AES128Internal, 16, 16, 12, 16, 0, 0>;
+    type Dec = CcmDecryptor<AES128Internal, 16, 16, 12, 16, 0, 0>;
     let wrong =
         KeyMaterial::<16>::from_bytes_as_type(&[0x11; 16], KeyType::MACKey).expect("a MAC key");
     let mut out = [0u8; 16];
     assert!(matches!(
-        Enc::encrypt_detached_out(&wrong, &[0u8; 12], &[], &[], &mut out),
+        Enc::encrypt_detached_nonce_out(&wrong, &[0u8; 12], &[], &[], &mut out),
         Err(SymmetricCipherError::KeyMaterialError(_))
     ));
     assert!(matches!(
-        Enc::new(&wrong, &[0u8; 12], &[], 0),
+        Enc::do_encrypt_init_nonce(&wrong, &[0u8; 12]),
         Err(SymmetricCipherError::KeyMaterialError(_))
     ));
     assert!(matches!(
-        Dec::decrypt_out(&wrong, &[0u8; 12], &[], &[0u8; 16], &mut out),
+        Dec::decrypt_with_aad_out(&wrong, &[0u8; 12], &[], &[0u8; 16], &mut out),
         Err(SymmetricCipherError::KeyMaterialError(_))
     ));
     assert!(matches!(
-        Dec::new(&wrong, &[0u8; 12], &[], 0),
+        Dec::do_decrypt_init(&wrong, &[0u8; 12]),
+        Err(SymmetricCipherError::KeyMaterialError(_))
+    ));
+    assert!(matches!(
+        AES128Key::<CCM<12, 16>>::from_key_material(&wrong),
         Err(SymmetricCipherError::KeyMaterialError(_))
     ));
 }
 
 /// The direction is in the type, so the wrong direction's method is a **compile** error rather
-/// than a runtime one. This is what the `Dir` parameter buys over a runtime flag, and without a
-/// test the guarantee could quietly regress into an inherent method on the shared impl block.
+/// than a runtime one. This is what the two types buy over a runtime flag, and without a test the
+/// guarantee could quietly regress into a shared impl block.
 ///
-/// Both of these are checked as `compile_fail` doctests on [`CcmPacket`] itself; this test is the
+/// Both of these are checked as `compile_fail` doctests on the pair itself; this test is the
 /// positive half -- that the *right* direction's methods do exist on each -- which a
 /// `compile_fail` cannot express.
 #[test]
 fn each_direction_has_its_own_methods() {
-    type Enc = CcmPacket<AES128Internal, Encrypting, 16, 16, 12, 16>;
-    type Dec = CcmPacket<AES128Internal, Decrypting, 16, 16, 12, 16>;
+    type Enc = CcmEncryptor<AES128Internal, 16, 16, 12, 16, 8, 4>;
+    type Dec = CcmDecryptor<AES128Internal, 16, 16, 12, 16, 8, 4>;
     let k = key::<16>(APPENDIX_C_KEY);
     let nonce = [0x55u8; 12];
 
-    let mut enc = Enc::new(&k, &nonce, b"aad", 4).expect("encrypt init");
-    let mut data = [1u8, 2, 3, 4];
-    enc.do_encrypt_inplace(&mut data).expect("encrypt update");
-    let tag = enc.do_encrypt_final().expect("encrypt final");
+    let mut enc = Enc::do_encrypt_init_nonce(&k, &nonce).expect("encrypt init");
+    enc.do_update_aad(b"aad").expect("aad");
+    let mut data = [0u8; 4];
+    enc.do_encrypt_out(&[1u8, 2, 3, 4], &mut data).expect("encrypt update");
+    let (_, _, tag) = enc.do_encrypt_final_detached().expect("encrypt final");
 
-    let mut dec = Dec::new(&k, &nonce, b"aad", 4).expect("decrypt init");
-    dec.do_decrypt_inplace(&mut data).expect("decrypt update");
-    dec.do_decrypt_final(&tag).expect("decrypt final");
-    assert_eq!(data, [1u8, 2, 3, 4]);
+    let mut dec = Dec::do_decrypt_init(&k, &nonce).expect("decrypt init");
+    dec.do_update_aad(b"aad").expect("aad");
+    let mut back = [0u8; 4];
+    dec.do_decrypt_out(&data, &mut back).expect("decrypt update");
+    dec.do_decrypt_final_detached(&tag).expect("decrypt final");
+    assert_eq!(back, [1u8, 2, 3, 4]);
 }
 
 // ---- memory ------------------------------------------------------------------------------
 
-/// Pins the sizes: `CcmPacket` is 264/296/328 B for AES-128/192/256, independent of
-/// `NONCE_LEN`/`TAG_LEN`, and the fixed-frame pair is `CcmPacket` plus the `AAD_LEN` buffer and a few
+/// Pins the sizes: the fixed-frame pair is the mode's packet state (264/296/328 B for
+/// AES-128/192/256, independent of `NONCE_LEN`/`TAG_LEN`) plus the `AAD_LEN` buffer and a few
 /// words of bookkeeping, independent of `DATA_LEN`.
 #[test]
 fn sizes_match_the_documented_memory_table() {
     use core::mem::size_of;
 
-    assert_eq!(size_of::<CcmPacket<AES128Internal, Encrypting, 16, 16, 12, 16>>(), 264);
-    assert_eq!(size_of::<CcmPacket<AES192Internal, Encrypting, 24, 16, 12, 16>>(), 296);
-    assert_eq!(size_of::<CcmPacket<AES256Internal, Encrypting, 32, 16, 12, 16>>(), 328);
-
-    // Independent of NONCE_LEN and TAG_LEN: the nonce lives inside the counter template and the
-    // tag is assembled at finalization, not held.
-    assert_eq!(
-        size_of::<CcmPacket<AES128Internal, Encrypting, 16, 16, 12, 16>>(),
-        size_of::<CcmPacket<AES128Internal, Encrypting, 16, 16, 7, 4>>()
-    );
-    assert_eq!(
-        size_of::<CcmPacket<AES128Internal, Encrypting, 16, 16, 12, 16>>(),
-        size_of::<CcmPacket<AES128Internal, Encrypting, 16, 16, 13, 16>>()
-    );
-
-    // The direction marker is free, and does not change the layout.
-    assert_eq!(
-        size_of::<CcmPacket<AES128Internal, Encrypting, 16, 16, 12, 16>>(),
-        size_of::<CcmPacket<AES128Internal, Decrypting, 16, 16, 12, 16>>()
-    );
-
-    // The fixed-frame pair holds no payload: a 4 KiB frame costs exactly what a 16-byte one does.
+    // The pair holds no payload: a 4 KiB frame costs exactly what a 16-byte one does.
     let enc_64 = size_of::<CcmEncryptor<AES128Internal, 16, 16, 12, 16, 64, 4096>>();
     assert_eq!(enc_64, size_of::<CcmEncryptor<AES128Internal, 16, 16, 12, 16, 64, 16>>());
-    assert_eq!(enc_64, 264 + 64 + 16, "CcmPacket, the AAD buffer, its length and the phase flag");
+    assert_eq!(
+        enc_64,
+        264 + 64 + 16,
+        "the packet state, the AAD buffer, its length and the phase flag"
+    );
     assert_eq!(
         size_of::<CcmEncryptor<AES128Internal, 16, 16, 12, 16, 4096, 4096>>() - enc_64,
         4096 - 64,
         "the value grows by exactly the AAD capacity"
     );
+    // Independent of NONCE_LEN and TAG_LEN: the nonce lives inside the counter template and the
+    // tag is assembled at finalization, not held.
+    assert_eq!(enc_64, size_of::<CcmEncryptor<AES128Internal, 16, 16, 7, 4, 64, 4096>>());
+    assert_eq!(enc_64, size_of::<CcmEncryptor<AES128Internal, 16, 16, 13, 16, 64, 4096>>());
+    // The key schedule is the difference between the key lengths.
+    assert_eq!(size_of::<CcmEncryptor<AES192Internal, 24, 16, 12, 16, 64, 4096>>(), enc_64 + 32);
+    assert_eq!(size_of::<CcmEncryptor<AES256Internal, 32, 16, 12, 16, 64, 4096>>(), enc_64 + 64);
     // The decryptor adds the tag it holds back and that tag's length.
     let dec_64 = size_of::<CcmDecryptor<AES128Internal, 16, 16, 12, 16, 64, 4096>>();
     assert_eq!(dec_64, size_of::<CcmDecryptor<AES128Internal, 16, 16, 12, 16, 64, 16>>());
@@ -1149,32 +1149,37 @@ fn sizes_match_the_documented_memory_table() {
 // ---- moved from crypto/cipher/src/modes/ccm.rs's in-file unit tests -----------------------------
 
 /// A.1's `p < 2^8q`. With `n = 13`, `q = 2`, so the limit is 65535 and 65536 must be refused.
-///
-/// Only the public API is exercised, so this belongs here rather than in `ccm.rs`'s own
-/// `#[cfg(test)]` block, which is for the private formatting helpers no public API reaches.
 #[test]
 fn payload_longer_than_the_q_limit_is_refused() {
-    let k = key::<16>(APPENDIX_C_KEY);
+    type Mode = CCM<13, 14>;
+    assert_eq!(Mode::MAX_PAYLOAD_LEN, 65535, "2^16 - 1 is the largest payload q = 2 can encode");
+    let perm = AES128Internal::new(&key::<16>(APPENDIX_C_KEY)).unwrap();
     let nonce = [0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c];
+    let mut buf = vec![0u8; 65536];
     assert!(
-        CcmPacket::<AES128Internal, Encrypting, 16, 16, 13, 14>::new(&k, &nonce, &[], 65535)
-            .is_ok(),
-        "2^16 - 1 is the largest payload q = 2 can encode"
+        Mode::encrypt_detached_in_place_nonce(&perm, &nonce, &[], &mut buf[..65535]).is_ok(),
+        "2^16 - 1 is accepted"
     );
     assert!(
         matches!(
-            CcmPacket::<AES128Internal, Encrypting, 16, 16, 13, 14>::new(&k, &nonce, &[], 65536),
+            Mode::encrypt_detached_in_place_nonce(&perm, &nonce, &[], &mut buf),
             Err(SymmetricCipherError::GenericError(_))
         ),
         "2^16 does not fit [p]_16"
     );
 }
 
-// ---- progressive AAD: new_with_lengths + do_update_aad ------------------------------------
+// ---- progressive AAD through the pair's do_update_aad ------------------------------------
 
-/// Runs one Appendix C example through [`CcmPacket::new_with_lengths`], feeding the AAD in `chunk`-byte
-/// pieces, in both directions, and checks the result against the example's `C`.
-fn check_progressive_aad<const NONCE_LEN: usize, const TAG_LEN: usize>(
+/// Runs one Appendix C example through the pair's streams, feeding the AAD in `chunk`-byte
+/// pieces, in both directions, and checks the result against the example's `C`. The AAD capacity
+/// is the example's AAD length, so C.4's is a 64 KiB buffer.
+fn check_progressive_aad<
+    const NONCE_LEN: usize,
+    const TAG_LEN: usize,
+    const AAD_LEN: usize,
+    const DATA_LEN: usize,
+>(
     label: &str,
     nonce: &str,
     aad: &[u8],
@@ -1182,43 +1187,37 @@ fn check_progressive_aad<const NONCE_LEN: usize, const TAG_LEN: usize>(
     c: &str,
     chunk: usize,
 ) {
+    type Enc<const N: usize, const T: usize, const A: usize, const D: usize> =
+        CcmEncryptor<AES128Internal, 16, 16, N, T, A, D>;
+    type Dec<const N: usize, const T: usize, const A: usize, const D: usize> =
+        CcmDecryptor<AES128Internal, 16, 16, N, T, A, D>;
     let k = key::<16>(APPENDIX_C_KEY);
     let nonce: [u8; NONCE_LEN] = hex::decode(nonce).unwrap().try_into().unwrap();
     let plaintext = hex::decode(plaintext).unwrap();
     let c = hex::decode(c).unwrap();
     let (want_ct, want_tag) = c.split_at(plaintext.len());
+    let want_tag: &[u8; TAG_LEN] = want_tag.try_into().unwrap();
 
     let mut enc =
-        CcmPacket::<AES128Internal, Encrypting, 16, 16, NONCE_LEN, TAG_LEN>::new_with_lengths(
-            &k,
-            &nonce,
-            aad.len(),
-            plaintext.len(),
-        )
-        .unwrap();
+        Enc::<NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>::do_encrypt_init_nonce(&k, &nonce).unwrap();
     for piece in aad.chunks(chunk) {
         enc.do_update_aad(piece).unwrap();
     }
-    let mut data = plaintext.clone();
-    enc.do_encrypt_inplace(&mut data).unwrap();
-    let tag = enc.do_encrypt_final().unwrap();
+    let mut data = vec![0u8; DATA_LEN];
+    enc.do_encrypt_out(&plaintext, &mut data).unwrap();
+    let (_, _, tag) = enc.do_encrypt_final_detached().unwrap();
     assert_eq!(data, want_ct, "{label}: ciphertext, AAD in {chunk}-byte pieces");
-    assert_eq!(&tag[..], want_tag, "{label}: tag, AAD in {chunk}-byte pieces");
+    assert_eq!(&tag, want_tag, "{label}: tag, AAD in {chunk}-byte pieces");
 
     let mut dec =
-        CcmPacket::<AES128Internal, Decrypting, 16, 16, NONCE_LEN, TAG_LEN>::new_with_lengths(
-            &k,
-            &nonce,
-            aad.len(),
-            plaintext.len(),
-        )
-        .unwrap();
+        Dec::<NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>::do_decrypt_init(&k, &nonce).unwrap();
     for piece in aad.chunks(chunk) {
         dec.do_update_aad(piece).unwrap();
     }
-    dec.do_decrypt_inplace(&mut data).unwrap();
-    dec.do_decrypt_final(&tag).unwrap();
-    assert_eq!(data, plaintext, "{label}: decryption, AAD in {chunk}-byte pieces");
+    let mut opened = vec![0u8; DATA_LEN];
+    dec.do_decrypt_out(&data, &mut opened).unwrap();
+    dec.do_decrypt_final_detached(&tag).unwrap();
+    assert_eq!(opened, plaintext, "{label}: decryption, AAD in {chunk}-byte pieces");
 }
 
 /// Supplying the AAD in pieces gives Appendix C's answers, whatever the chunking: C.3's 20-byte
@@ -1227,7 +1226,7 @@ fn check_progressive_aad<const NONCE_LEN: usize, const TAG_LEN: usize>(
 #[test]
 fn progressive_aad_matches_appendix_c() {
     for chunk in [1, 3, 15, 16, 17, 20] {
-        check_progressive_aad::<12, 8>(
+        check_progressive_aad::<12, 8, 20, 24>(
             "C.3",
             "101112131415161718191a1b",
             &hex::decode("000102030405060708090a0b0c0d0e0f10111213").unwrap(),
@@ -1241,7 +1240,7 @@ fn progressive_aad_matches_appendix_c() {
         aad.extend(0u8..=255u8);
     }
     for chunk in [1, 7, 256, 1000, 65536] {
-        check_progressive_aad::<13, 14>(
+        check_progressive_aad::<13, 14, 65536, 32>(
             "C.4",
             "101112131415161718191a1b1c",
             &aad,
@@ -1253,87 +1252,17 @@ fn progressive_aad_matches_appendix_c() {
     }
 }
 
-/// The declared AAD length is encoded in front of the AAD, so, as for the payload, any other
-/// amount is refused -- more at the update, less at the final -- and the payload may not start
-/// until the AAD is complete. A refused call consumes nothing.
+/// The supplied-nonce forms take the caller's nonce to the same Sec 6.1 as the mode's in-place
+/// one-shot, so they agree with it byte for byte. They are also how a protocol with its own
+/// nonce discipline reaches CCM through the generic traits: IEEE 802.11 CCMP's 13-byte nonce and
+/// 8-byte tag sit below the 12-byte floor a generated nonce needs, and compile here because
+/// nothing draws one.
 #[test]
-fn progressive_aad_enforces_the_declared_length_and_order() {
-    type Enc = CcmPacket<AES128Internal, Encrypting, 16, 16, 12, 16>;
-    type Dec = CcmPacket<AES128Internal, Decrypting, 16, 16, 12, 16>;
-    let k = key::<16>(APPENDIX_C_KEY);
-    let nonce = [0x24u8; 12];
-    let aad = b"0123456789";
-    let message = *b"payload";
-
-    let reference = {
-        let mut ccm = Enc::new(&k, &nonce, aad, message.len()).unwrap();
-        let mut data = message;
-        ccm.do_encrypt_inplace(&mut data).unwrap();
-        (data, ccm.do_encrypt_final().unwrap())
-    };
-
-    // More than declared: refused, and the refused call absorbs nothing.
-    let mut ccm = Enc::new_with_lengths(&k, &nonce, aad.len(), message.len()).unwrap();
-    ccm.do_update_aad(&aad[..4]).unwrap();
-    assert!(matches!(ccm.do_update_aad(&[0u8; 7]), Err(SymmetricCipherError::StateError(_))));
-
-    // Payload before the AAD is complete: refused, and the data is left untouched.
-    let mut data = message;
-    assert!(matches!(ccm.do_encrypt_inplace(&mut data), Err(SymmetricCipherError::StateError(_))));
-    assert_eq!(data, message, "a refused update must not touch the data");
-    // An empty payload update is a no-op, not a refusal.
-    ccm.do_encrypt_inplace(&mut []).expect("an empty update is a no-op");
-
-    // Completing the AAD after both refusals gives the same answer as supplying it whole.
-    ccm.do_update_aad(&aad[4..]).unwrap();
-    ccm.do_encrypt_inplace(&mut data).unwrap();
-    assert_eq!((data, ccm.do_encrypt_final().unwrap()), reference);
-
-    // Less than declared: refused at the final, in both directions.
-    let mut ccm = Enc::new_with_lengths(&k, &nonce, aad.len(), 0).unwrap();
-    ccm.do_update_aad(&aad[..9]).unwrap();
-    assert!(matches!(ccm.do_encrypt_final(), Err(SymmetricCipherError::StateError(_))));
-    let mut dec = Dec::new_with_lengths(&k, &nonce, aad.len(), 0).unwrap();
-    dec.do_update_aad(&aad[..9]).unwrap();
-    assert!(matches!(dec.do_decrypt_final(&[0u8; 16]), Err(SymmetricCipherError::StateError(_))));
-
-    // The decryptor refuses payload before the AAD is complete too.
-    let mut dec = Dec::new_with_lengths(&k, &nonce, aad.len(), message.len()).unwrap();
-    let mut ct = reference.0;
-    assert!(matches!(dec.do_decrypt_inplace(&mut ct), Err(SymmetricCipherError::StateError(_))));
-    assert_eq!(ct, reference.0, "a refused update must not touch the data");
-    dec.do_update_aad(aad).unwrap();
-    dec.do_decrypt_inplace(&mut ct).unwrap();
-    dec.do_decrypt_final(&reference.1).expect("tag check");
-    assert_eq!(ct, message);
-
-    // `new` declares exactly the AAD it is given, so any more afterwards is refused.
-    let mut ccm = Enc::new(&k, &nonce, aad, message.len()).unwrap();
-    assert!(matches!(ccm.do_update_aad(b"x"), Err(SymmetricCipherError::StateError(_))));
-    ccm.do_update_aad(&[]).expect("an empty AAD update is always a no-op");
-
-    // A declared AAD length of zero is the no-AAD flow: the payload may start at once.
-    let mut ccm = Enc::new_with_lengths(&k, &nonce, 0, message.len()).unwrap();
-    let mut data = message;
-    ccm.do_encrypt_inplace(&mut data).unwrap();
-    let no_aad = ccm.do_encrypt_final().unwrap();
-    let mut ccm = Enc::new(&k, &nonce, &[], message.len()).unwrap();
-    let mut data2 = message;
-    ccm.do_encrypt_inplace(&mut data2).unwrap();
-    assert_eq!((data, no_aad), (data2, ccm.do_encrypt_final().unwrap()));
-}
-
-/// The supplied-nonce forms are [`CcmPacket`]'s own one-shots and streaming constructor under the
-/// caller's nonce, so they agree with the direct API byte for byte. They are also how a protocol
-/// with its own nonce discipline reaches CCM through the generic traits: IEEE 802.11 CCMP's
-/// 13-byte nonce and 8-byte tag sit below the 12-byte floor a generated nonce needs, and compile
-/// here because nothing draws one.
-#[test]
-fn supplied_nonce_forms_agree_with_the_direct_api_at_any_a1_nonce_length() {
+fn supplied_nonce_forms_agree_with_the_in_place_one_shot_at_any_a1_nonce_length() {
     type Enc = CcmEncryptor<AES128Internal, 16, 16, 13, 8, 32, 48>;
     type Dec = CcmDecryptor<AES128Internal, 16, 16, 13, 8, 32, 48>;
-    type Direct<Dir> = CcmPacket<AES128Internal, Dir, 16, 16, 13, 8>;
     let k = key::<16>(APPENDIX_C_KEY);
+    let perm = AES128Internal::new(&k).unwrap();
     let nonce = [0x11u8; 13];
     let aad = [0x3Cu8; 32];
     let frame = [0xA5u8; 48];
@@ -1342,10 +1271,10 @@ fn supplied_nonce_forms_agree_with_the_direct_api_at_any_a1_nonce_length() {
     let (n, tag) =
         Enc::encrypt_detached_nonce_out(&k, &nonce, &aad, &frame, &mut detached).expect("seal");
     assert_eq!(n, 48);
-    let mut direct = [0u8; 48];
-    let (_, direct_tag) =
-        Direct::<Encrypting>::encrypt_detached_out(&k, &nonce, &aad, &frame, &mut direct)
-            .expect("direct");
+    let mut direct = frame;
+    let direct_tag =
+        CCM::<13, 8>::encrypt_detached_in_place_nonce(&perm, &nonce, &aad, &mut direct)
+            .expect("in place");
     assert_eq!((detached, tag), (direct, direct_tag), "the two routes to Sec 6.1 agree");
     let mut inline = [0u8; 56];
     assert_eq!(

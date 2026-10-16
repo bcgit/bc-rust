@@ -319,9 +319,11 @@ impl ModeNames for AES128Internal {
     const CCM_ALG_NAME: &'static str = "AES_CCM_128";
     const CFB_ALG_NAME: &'static str = "AES_CFB_128";
     const CFB8_ALG_NAME: &'static str = "AES_CFB8_128";
+    const CMAC_ALG_NAME: &'static str = "AES_CMAC_128";
     const CTR_ALG_NAME: &'static str = "AES_CTR_128";
     const ECB_ALG_NAME: &'static str = "AES_ECB_128";
     const GCM_ALG_NAME: &'static str = "AES_GCM_128";
+    const GMAC_ALG_NAME: &'static str = "AES_GMAC_128";
 }
 
 impl ModeNames for AES192Internal {
@@ -329,9 +331,11 @@ impl ModeNames for AES192Internal {
     const CCM_ALG_NAME: &'static str = "AES_CCM_192";
     const CFB_ALG_NAME: &'static str = "AES_CFB_192";
     const CFB8_ALG_NAME: &'static str = "AES_CFB8_192";
+    const CMAC_ALG_NAME: &'static str = "AES_CMAC_192";
     const CTR_ALG_NAME: &'static str = "AES_CTR_192";
     const ECB_ALG_NAME: &'static str = "AES_ECB_192";
     const GCM_ALG_NAME: &'static str = "AES_GCM_192";
+    const GMAC_ALG_NAME: &'static str = "AES_GMAC_192";
 }
 
 impl ModeNames for AES256Internal {
@@ -339,7 +343,9 @@ impl ModeNames for AES256Internal {
     const CCM_ALG_NAME: &'static str = "AES_CCM_256";
     const CFB_ALG_NAME: &'static str = "AES_CFB_256";
     const CFB8_ALG_NAME: &'static str = "AES_CFB8_256";
+    const CMAC_ALG_NAME: &'static str = "AES_CMAC_256";
     const CTR_ALG_NAME: &'static str = "AES_CTR_256";
     const ECB_ALG_NAME: &'static str = "AES_ECB_256";
     const GCM_ALG_NAME: &'static str = "AES_GCM_256";
+    const GMAC_ALG_NAME: &'static str = "AES_GMAC_256";
 }

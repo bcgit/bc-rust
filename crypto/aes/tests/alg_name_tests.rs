@@ -3,15 +3,14 @@
 //! strength is the key's, so it is the same for every mode at a key size.
 //!
 //! The direction and the padding are type parameters of one algorithm, not different algorithms,
-//! so every combination of them must report the same name. So must the `AES_CCM_*_Packet` aliases,
-//! which are a second API onto the same mode rather than another algorithm.
+//! so every combination of them must report the same name, and so must every CCM frame.
 
 use bouncycastle_aes::hazmat::{AES_ECB_128, AES_ECB_192, AES_ECB_256};
 use bouncycastle_aes::{
-    AES_CBC_128, AES_CBC_192, AES_CBC_256, AES_CCM_128, AES_CCM_128_Packet, AES_CCM_192,
-    AES_CCM_192_Packet, AES_CCM_256, AES_CCM_256_Packet, AES_CFB_128, AES_CFB_192, AES_CFB_256,
-    AES_CFB8_128, AES_CFB8_192, AES_CFB8_256, AES_CTR_128, AES_CTR_192, AES_CTR_256, AES_GCM_128,
-    AES_GCM_192, AES_GCM_256, CCM_NONCE_LEN, CCM_TAG_LEN,
+    AES_CBC_128, AES_CBC_192, AES_CBC_256, AES_CCM_128, AES_CCM_192, AES_CCM_256, AES_CFB_128,
+    AES_CFB_192, AES_CFB_256, AES_CFB8_128, AES_CFB8_192, AES_CFB8_256, AES_CMAC_128, AES_CMAC_192,
+    AES_CMAC_256, AES_CTR_128, AES_CTR_192, AES_CTR_256, AES_GCM_128, AES_GCM_192, AES_GCM_256,
+    AES_GMAC_128, AES_GMAC_192, AES_GMAC_256, CCM_NONCE_LEN, CCM_TAG_LEN,
 };
 use bouncycastle_cipher::padding::{NoPadding, PKCS7};
 use bouncycastle_cipher::{Decrypting, Encrypting};
@@ -97,20 +96,10 @@ fn ccm() {
     use SecurityStrength::*;
     const N: usize = CCM_NONCE_LEN;
     const T: usize = CCM_TAG_LEN;
-    check::<AES_CCM_128_Packet<Encrypting, N, T>, AES_CCM_128_Packet<Decrypting, N, T>>(
-        "AES_CCM_128", _128bit,
-    );
-    check::<AES_CCM_192_Packet<Encrypting, N, T>, AES_CCM_192_Packet<Decrypting, N, T>>(
-        "AES_CCM_192", _192bit,
-    );
-    check::<AES_CCM_256_Packet<Encrypting, N, T>, AES_CCM_256_Packet<Decrypting, N, T>>(
-        "AES_CCM_256", _256bit,
-    );
     // The nonce and tag lengths are parameters too, not part of the name.
-    check::<AES_CCM_128_Packet<Encrypting, 7, 4>, AES_CCM_128_Packet<Decrypting, 7, 4>>(
+    check::<AES_CCM_128<Encrypting, 7, 4, 16, 32>, AES_CCM_128<Decrypting, 7, 4, 16, 32>>(
         "AES_CCM_128", _128bit,
     );
-
     check::<AES_CCM_128<Encrypting, N, T, 16, 32>, AES_CCM_128<Decrypting, N, T, 16, 32>>(
         "AES_CCM_128", _128bit,
     );
@@ -119,5 +108,30 @@ fn ccm() {
     );
     check::<AES_CCM_256<Encrypting, N, T, 16, 32>, AES_CCM_256<Decrypting, N, T, 16, 32>>(
         "AES_CCM_256", _256bit,
+    );
+}
+
+#[test]
+fn gmac() {
+    use SecurityStrength::*;
+    check::<AES_GMAC_128<Encrypting>, AES_GMAC_128<Decrypting>>("AES_GMAC_128", _128bit);
+    check::<AES_GMAC_192<Encrypting>, AES_GMAC_192<Decrypting>>("AES_GMAC_192", _192bit);
+    check::<AES_GMAC_256<Encrypting>, AES_GMAC_256<Decrypting>>("AES_GMAC_256", _256bit);
+}
+
+#[test]
+fn cmac() {
+    use SecurityStrength::*;
+    assert_eq!(
+        (AES_CMAC_128::ALG_NAME, AES_CMAC_128::MAX_SECURITY_STRENGTH),
+        ("AES_CMAC_128", _128bit)
+    );
+    assert_eq!(
+        (AES_CMAC_192::ALG_NAME, AES_CMAC_192::MAX_SECURITY_STRENGTH),
+        ("AES_CMAC_192", _192bit)
+    );
+    assert_eq!(
+        (AES_CMAC_256::ALG_NAME, AES_CMAC_256::MAX_SECURITY_STRENGTH),
+        ("AES_CMAC_256", _256bit)
     );
 }

@@ -112,8 +112,9 @@ use bouncycastle_core::key_material::{
     KeyMaterial, KeyMaterial0, KeyMaterial512, KeyMaterialTrait, KeyType,
 };
 use bouncycastle_core::security_strength::SecurityStrength;
+use bouncycastle_core::symmetric_key::{FromAnyKeyMaterial, MacGenerationKey};
 use bouncycastle_core::traits::{Hash, HashAlgParams, KDF, MAC, Suspendable, SuspendableKeyed};
-use bouncycastle_hmac::HMAC;
+use bouncycastle_hmac::{HMAC, HmacKey};
 use bouncycastle_utils::suspendable_state::{add_lib_ver, check_lib_ver};
 use bouncycastle_utils::{max, min};
 use std::marker::PhantomData;
@@ -390,6 +391,10 @@ impl<H: Hash + HashAlgParams + Default, const HASH_STATE_LEN: usize, const HKDF_
             KeyType::MACKey,
         )?;
 
+        // One key object for the whole expansion: the pads are computed once here and each
+        // block's HMAC starts from a clone of them.
+        let prk_key = HmacKey::<H>::from_key_material(&prk_as_mac_key)?;
+
         #[allow(non_snake_case)]
         let mut T = [0u8; MAX_HMAC_OUTPUT_LEN];
         let mut t_len: usize = 0;
@@ -398,8 +403,7 @@ impl<H: Hash + HashAlgParams + Default, const HASH_STATE_LEN: usize, const HKDF_
         do_hazardous_operations(okm, |okm| {
             let out = okm.ref_to_bytes_mut()?;
             while i < N {
-                let mut hmac = HMAC::<H>::new(&prk_as_mac_key)
-                    .map_err(|_| KeyMaterialError::GenericError("HMAC initialization failed"))?;
+                let mut hmac = prk_key.create_generator();
                 hmac.do_update(&T[..t_len]);
                 hmac.do_update(info);
                 hmac.do_update(&[i]);
@@ -420,7 +424,7 @@ impl<H: Hash + HashAlgParams + Default, const HASH_STATE_LEN: usize, const HKDF_
         // HMAC for a `remaining`-octet output instead would be a truncated MAC, which HMAC refuses
         // below MIN_FIPS_DIGEST_LEN: that rejected every L with L mod HashLen in 1..=3.
         let remaining = L - bytes_written;
-        let mut hmac = HMAC::<H>::new(&prk_as_mac_key)?;
+        let mut hmac = prk_key.create_generator();
         hmac.do_update(&T[..t_len]);
         hmac.do_update(info);
         hmac.do_update(&[i]);
@@ -490,7 +494,7 @@ impl<H: Hash + HashAlgParams + Default, const HASH_STATE_LEN: usize, const HKDF_
         // Often HMAC is initialized with a zero salt,
         // Key strength errors are ignored here.
         // This will all be tabulated correctly via entropy.credit_entropy()
-        self.hmac = Some(HMAC::<H>::new_allow_weak_key(salt)?);
+        self.hmac = Some(HmacKey::<H>::from_key_material_allow_weak(salt)?.create_generator());
 
         let additional_entropy = self.entropy.credit_entropy(salt);
         self.state = HkdfStates::Initialized;

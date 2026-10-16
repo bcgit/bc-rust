@@ -8,7 +8,7 @@
 
 use bouncycastle_aes::hazmat::AES_ECB_128;
 use bouncycastle_aes::{
-    AES_CBC_128, AES_CCM_128_Packet, AES_CFB_128, AES_CFB8_128, AES_CTR_128, AES_GCM_128,
+    AES_CBC_128, AES_CCM_128, AES_CFB_128, AES_CFB8_128, AES_CTR_128, AES_GCM_128,
 };
 use bouncycastle_cipher::Encrypting;
 use bouncycastle_cipher::padding::PKCS7;
@@ -88,12 +88,15 @@ fn every_alias_family_is_suspendable() {
         [out.as_slice(), &tag[..n]].concat()
     });
 
-    type CcmEnc = AES_CCM_128_Packet<Encrypting, 12, 16>;
-    let mut ccm = CcmEnc::new(&key(), &[0x24u8; 12], b"header", 32).unwrap();
-    ccm.do_encrypt_inplace(&mut [0x11u8; 7]).unwrap();
+    type CcmEnc = AES_CCM_128<Encrypting, 12, 16, 64, 32>;
+    let mut ccm = CcmEnc::do_encrypt_init_nonce(&key(), &[0x24u8; 12]).unwrap();
+    ccm.do_update_aad(b"header").unwrap();
+    let mut head = [0u8; 7];
+    ccm.do_encrypt_out(&[0x11u8; 7], &mut head).unwrap();
     round_trip::<{ CcmEnc::SUSPENDED_STATE_LEN }, _>(ccm, |mut e| {
-        let mut data = [0x22u8; 25];
-        e.do_encrypt_inplace(&mut data).unwrap();
-        [data.as_slice(), &e.do_encrypt_final().unwrap()].concat()
+        let mut out = [0u8; 25];
+        e.do_encrypt_out(&[0x22u8; 25], &mut out).unwrap();
+        let (tag, n) = e.do_encrypt_final().unwrap();
+        [out.as_slice(), &tag[..n]].concat()
     });
 }

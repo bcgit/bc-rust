@@ -21,3 +21,7 @@ harness = false
 [[bench]]
 name = "aes_modes_benches"
 harness = false
+
+[[bench]]
+name = "aes_gcm_packet_benches"
+harness = false

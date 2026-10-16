@@ -9,11 +9,10 @@
 //! as part of the library's public API. See [`bouncycastle_hmac`] for the full description of the
 //! three-phase [`MAC`] lifecycle, key typing and suspend/resume.
 //!
-//! The key buffer length is the underlying hash's block length: per RFC 2104, a key no longer than
-//! the block is used verbatim, and only longer keys are pre-hashed down to the output length, so the
-//! buffer must be able to hold a full block. It is taken from [`HashAlgParams::BLOCK_LEN`] -- the
-//! 512-bit block GB/T 32905-2016 s. 5.2 pads to -- rather than restated as a literal so the two
-//! cannot drift apart.
+//! A key of any length is accepted: per RFC 2104, a key longer than the hash's block -- the 512-bit
+//! block GB/T 32905-2016 s. 5.2 pads to -- is pre-hashed to the output length. The key's two pad
+//! states are computed once, when an [`HmacKey`](bouncycastle_hmac::HmacKey) is built or a worker
+//! is constructed from key material.
 //!
 //! # Usage Examples
 //!
@@ -63,7 +62,7 @@ pub const HMAC_SM3_NAME: &str = "HMAC-SM3";
 /*** Type aliases ***/
 /// Public type for HMAC using SM3.
 #[allow(non_camel_case_types)]
-pub type HMAC_SM3 = HMAC<SM3, { <SM3 as HashAlgParams>::BLOCK_LEN }>;
+pub type HMAC_SM3 = HMAC<SM3>;
 impl HMACParams for SM3 {
     type MACKey = KeyMaterial<{ <SM3 as HashAlgParams>::OUTPUT_LEN }>;
     const HMAC_ALG_NAME: &'static str = HMAC_SM3_NAME;
