@@ -53,7 +53,10 @@ rust code by placing:
 #![forbid(unsafe_code)]
 ```
 
-at the top of every sub-crate. We also avoid (except where absolutely necessary) third-party depencendencies which could
+at the top of every sub-crate, with two exceptions that each confine their `unsafe` to a few audited lines:
+`bouncycastle-utils` (constant-time barriers and zeroization) and `bouncycastle-arm` (the AArch64 Crypto Extensions
+intrinsics behind the hardware AES and GHASH kernels, compiled in only when the build declares those instructions). We
+also avoid (except where absolutely necessary) third-party depencendencies which could
 themselves introduce unsafe code.
 
 This gives maximum portability because our code will compile on any platform supported by the Rust compiler. It also

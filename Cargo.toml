@@ -12,6 +12,7 @@ version = "0.1.4"
 # *** Internal Dependencies ***
 bouncycastle = { path = "./" }
 bouncycastle-aes = { path = "./crypto/aes" }
+bouncycastle-arm = { path = "./crypto/arm" }
 bouncycastle-ascon = { path = "./crypto/ascon" }
 bouncycastle-base64 = { path = "./crypto/base64" }
 bouncycastle-chacha20 = { path = "./crypto/chacha20" }

@@ -18,11 +18,13 @@ get_cloc_stats_for_files() {
 get_docstring_lines=""
 get_unwraps=""
 get_errs=""
+get_unsafes=""
 get_docstring_and_errors_for_files() {
   files=$1
 
   total_unwraps="0"
   total_errs="0"
+  total_unsafes="0"
   total_docstrings="0"
   for file in $1; do
     unwraps=$(cat $file| grep -o ".unwrap()" | wc -l)
@@ -31,6 +33,9 @@ get_docstring_and_errors_for_files() {
     errs=$(cat $file| grep -o "Err(" | wc -l)
     total_errs=$((total_errs + errs))
 
+    unsafes=$(cat $file| grep -oE "unsafe (\{|fn|impl|trait)" | wc -l)
+    total_unsafes=$((total_unsafes + unsafes))
+
     docstring_lines1=$(cat $file| grep -o "^//!" | wc -l)
     docstring_lines2=$(cat $file| grep -o "///" | wc -l)
     total_docstrings=$((total_docstrings + docstring_lines1 + docstring_lines2))
@@ -38,6 +43,7 @@ get_docstring_and_errors_for_files() {
 
   get_unwraps=$total_unwraps
   get_errs=$total_errs
+  get_unsafes=$total_unsafes
   get_docstring_lines=$total_docstrings
 }
 
@@ -62,11 +68,13 @@ analyze_crate() {
     code_docstring_lines=$get_docstring_lines
     code_unwraps=$get_unwraps
     code_errs=$get_errs
+    code_unsafes=$get_unsafes
   else
     code_code="0"
     code_docstring_lines="0"
     code_unwraps="0"
     code_errs="0"
+    code_unsafes="0"
   fi
 
   if [[ -d $cratedir/tests ]]; then
@@ -90,6 +98,7 @@ analyze_crate() {
   echo "    unwraps in core code: $code_unwraps"
   echo "    Err() in core code: $code_errs"
   echo "    unwraps in test code: $tests_unwraps"
+  echo "  unsafe blocks/fns/impls in core code: $code_unsafes"
 
   # Return values
   crate_code_lines=$code_code
@@ -98,6 +107,7 @@ analyze_crate() {
   crate_code_unwraps=$code_unwraps
   crate_code_errs=$code_errs
   crate_test_unwraps=$tests_unwraps
+  crate_code_unsafes=$code_unsafes
 }
 
 analyze_subcrates() {
@@ -110,6 +120,7 @@ analyze_subcrates() {
   total_code_unwraps="0"
   total_code_errs="0"
   total_test_unwraps="0"
+  total_code_unsafes="0"
   for subcrate in $subcratedirs;
   do
     analyze_crate $subcrate
@@ -121,6 +132,7 @@ analyze_subcrates() {
   total_code_unwraps=$(( total_code_unwraps + crate_code_unwraps ))
   total_code_errs=$(( total_code_errs + crate_code_errs ))
   total_test_unwraps=$(( total_test_unwraps + crate_test_unwraps ))
+  total_code_unsafes=$(( total_code_unsafes + crate_code_unsafes ))
   done
 
   echo
@@ -134,6 +146,7 @@ analyze_subcrates() {
   echo "    unwraps in core code: $total_code_unwraps"
   echo "    Err() in core code: $total_code_errs"
   echo "    unwraps in test code: $total_test_unwraps"
+  echo "  unsafe blocks/fns/impls in core code: $total_code_unsafes"
 }
 
 
