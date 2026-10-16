@@ -45,7 +45,8 @@
 //!
 //! Authenticated encryption (one-shot, under a nonce the caller manages):
 //! ```
-//! use bouncycastle_ascon::{AsconAead128Decryptor, AsconAead128Encryptor};
+//! use bouncycastle_ascon::Ascon_AEAD128;
+//! use bouncycastle_cipher::{Decrypting, Encrypting};
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 //! use bouncycastle_core::traits::{AEADCipherDecryptor, AEADCipherEncryptor};
 //!
@@ -55,11 +56,11 @@
 //! let plaintext = b"secret message";
 //!
 //! let mut ct = vec![0u8; plaintext.len() + 16]; // ciphertext || 16-byte tag
-//! let n = AsconAead128Encryptor::encrypt_with_aad_nonce_out(&key, &nonce, ad, plaintext, &mut ct).unwrap();
+//! let n = Ascon_AEAD128::<Encrypting>::encrypt_with_aad_nonce_out(&key, &nonce, ad, plaintext, &mut ct).unwrap();
 //! ct.truncate(n);
 //!
 //! let mut pt = vec![0u8; ct.len() - 16];
-//! let m = AsconAead128Decryptor::decrypt_with_aad_out(&key, &nonce, ad, &ct, &mut pt).unwrap();
+//! let m = Ascon_AEAD128::<Decrypting>::decrypt_with_aad_out(&key, &nonce, ad, &ct, &mut pt).unwrap();
 //! pt.truncate(m);
 //! assert_eq!(&pt, plaintext);
 //! ```
@@ -68,7 +69,8 @@
 //! bytes it has seen, in case they are an inline tag, so `do_decrypt_final_detached_out` is
 //! where they come out:
 //! ```
-//! use bouncycastle_ascon::{AsconAead128Decryptor, AsconAead128Encryptor};
+//! use bouncycastle_ascon::Ascon_AEAD128;
+//! use bouncycastle_cipher::{Decrypting, Encrypting};
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 //! use bouncycastle_core::traits::{
 //!     AEADCipherDecryptor, AEADCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
@@ -77,14 +79,14 @@
 //! let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42u8; 16], KeyType::SymmetricCipherKey).unwrap();
 //!
 //! let plaintext = b"secret message!!";
-//! let (mut enc, nonce) = AsconAead128Encryptor::do_encrypt_init(&key).unwrap();
+//! let (mut enc, nonce) = Ascon_AEAD128::<Encrypting>::do_encrypt_init(&key).unwrap();
 //! enc.do_update_aad(b"associated data").unwrap();
 //! let mut ciphertext = [0u8; 16];
 //! enc.do_encrypt_out(plaintext, &mut ciphertext).unwrap();
 //! let mut final_buf = [0u8; 16];
 //! let (_, tag) = enc.do_encrypt_final_detached_out(&mut final_buf).unwrap();
 //!
-//! let mut dec = AsconAead128Decryptor::do_decrypt_init(&key, &nonce).unwrap();
+//! let mut dec = Ascon_AEAD128::<Decrypting>::do_decrypt_init(&key, &nonce).unwrap();
 //! dec.do_update_aad(b"associated data").unwrap();
 //! let mut recovered = [0u8; 16];
 //! let n = dec.do_decrypt_out(&ciphertext, &mut recovered).unwrap(); // 0: all 16 held back
@@ -100,7 +102,8 @@
 //! [`bouncycastle_core::traits::AEADCipherEncryptor::encrypt_with_aad_out`] /
 //! [`bouncycastle_core::traits::AEADCipherDecryptor::decrypt_with_aad_out`] are the one-shots with AAD:
 //! ```
-//! use bouncycastle_ascon::{AsconAead128Decryptor, AsconAead128Encryptor};
+//! use bouncycastle_ascon::Ascon_AEAD128;
+//! use bouncycastle_cipher::{Decrypting, Encrypting};
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 //! use bouncycastle_core::traits::{
 //!     AEADCipherDecryptor, AEADCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
@@ -110,16 +113,16 @@
 //! let plaintext = b"secret message!!";
 //!
 //! // No AAD: just a symmetric cipher.
-//! let mut inline = [0u8; 32]; // AsconAead128Encryptor::encrypt_out_len(16)
-//! let (nonce, len) = AsconAead128Encryptor::encrypt_out(&key, plaintext, &mut inline).unwrap();
+//! let mut inline = [0u8; 32]; // Ascon_AEAD128::<Encrypting>::encrypt_out_len(16)
+//! let (nonce, len) = Ascon_AEAD128::<Encrypting>::encrypt_out(&key, plaintext, &mut inline).unwrap();
 //! assert_eq!(len, plaintext.len() + 16); // ciphertext || tag
 //! let mut recovered = [0u8; 16];
-//! let n = AsconAead128Decryptor::decrypt_out(&key, &nonce, &inline[..len], &mut recovered).unwrap();
+//! let n = Ascon_AEAD128::<Decrypting>::decrypt_out(&key, &nonce, &inline[..len], &mut recovered).unwrap();
 //! assert_eq!(&recovered[..n], plaintext);
 //!
 //! // With AAD.
-//! let (nonce, len) = AsconAead128Encryptor::encrypt_with_aad_out(&key, b"aad", plaintext, &mut inline).unwrap();
-//! let n = AsconAead128Decryptor::decrypt_with_aad_out(&key, &nonce, b"aad", &inline[..len], &mut recovered).unwrap();
+//! let (nonce, len) = Ascon_AEAD128::<Encrypting>::encrypt_with_aad_out(&key, b"aad", plaintext, &mut inline).unwrap();
+//! let n = Ascon_AEAD128::<Decrypting>::decrypt_with_aad_out(&key, &nonce, b"aad", &inline[..len], &mut recovered).unwrap();
 //! assert_eq!(&recovered[..n], plaintext);
 //! ```
 //!
@@ -141,14 +144,15 @@
 //!
 //! | Type | In-memory size (bytes) | Suspended state size (bytes) |
 //! |------|-------------------------|-------------------------------|
-//! | [`Ascon_AEAD128<Encrypting>`](AsconAead128Encryptor) | 72 | [`SUSPENDED_ASCON_AEAD128_ENCRYPTOR_STATE_LEN`] (46) |
-//! | [`Ascon_AEAD128<Decrypting>`](AsconAead128Decryptor) | 96 | [`SUSPENDED_ASCON_AEAD128_DECRYPTOR_STATE_LEN`] (63) |
+//! | [`Ascon_AEAD128<Encrypting>`] | 96 | [`SUSPENDED_ASCON_AEAD128_ENCRYPTOR_STATE_LEN`] (46) |
+//! | [`Ascon_AEAD128<Decrypting>`] | 96 | [`SUSPENDED_ASCON_AEAD128_DECRYPTOR_STATE_LEN`] (63) |
 //! | [`AsconHash256`] | 64 | [`SUSPENDED_ASCON_HASH256_STATE_LEN`] (53) |
 //! | [`AsconXof128`] | 64 | [`SUSPENDED_ASCON_XOF128_STATE_LEN`] (54) |
 //! | [`AsconCXof128`] | 64 | [`SUSPENDED_ASCON_CXOF128_STATE_LEN`] (54) |
 //!
-//! "In-memory size" is `core::mem::size_of` on a 64-bit target. The decryptor's extra 24 bytes are
-//! the last 16 bytes of ciphertext it holds back in case they are the inline tag, and their count.
+//! "In-memory size" is `core::mem::size_of` on a 64-bit target. Both directions carry the 16 bytes
+//! the decrypting side holds back in case they are the inline tag, and their count; the encrypting
+//! side leaves them unused.
 //!
 //! Per-call stack usage is separate from that and does not depend on the data length either.
 //! Measured as the deepest frame chain below each entry point in the release build (x86-64 Linux,
@@ -213,9 +217,8 @@ mod ascon_hash256;
 mod ascon_xof128;
 
 pub use ascon_aead128::{
-    Ascon_AEAD128, AsconAead128Decryptor, AsconAead128Encryptor, KEY_LEN, NONCE_LEN,
-    SUSPENDED_ASCON_AEAD128_DECRYPTOR_STATE_LEN, SUSPENDED_ASCON_AEAD128_ENCRYPTOR_STATE_LEN,
-    TAG_LEN,
+    Ascon_AEAD128, AsconAEAD128, KEY_LEN, NONCE_LEN, SUSPENDED_ASCON_AEAD128_DECRYPTOR_STATE_LEN,
+    SUSPENDED_ASCON_AEAD128_ENCRYPTOR_STATE_LEN, TAG_LEN,
 };
 pub use ascon_cxof128::{AsconCXof128, AsconCXof128Squeezer, SUSPENDED_ASCON_CXOF128_STATE_LEN};
 pub use ascon_hash256::{AsconHash256, SUSPENDED_ASCON_HASH256_STATE_LEN};

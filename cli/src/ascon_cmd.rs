@@ -1,10 +1,11 @@
 use std::io::{self, Read};
 use std::process::exit;
 
+use bouncycastle::ascon::Ascon_AEAD128;
 use bouncycastle::ascon::AsconCXof128;
 use bouncycastle::ascon::AsconHash256;
 use bouncycastle::ascon::AsconXof128;
-use bouncycastle::ascon::{AsconAead128Decryptor, AsconAead128Encryptor};
+use bouncycastle::cipher::{Decrypting, Encrypting};
 use bouncycastle::core::errors::SymmetricCipherError;
 use bouncycastle::core::hazmat::do_hazardous_operations;
 use bouncycastle::core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
@@ -141,7 +142,7 @@ pub(crate) fn aead128_cmd(
     }
 }
 
-/// Drives [`AsconAead128Encryptor`] in the inline `ciphertext || tag` layout (the inherited
+/// Drives [`Ascon_AEAD128<Encrypting>`] in the inline `ciphertext || tag` layout (the inherited
 /// [`SymmetricCipherEncryptor::do_encrypt_final_out`]). With no nonce given one is generated and
 /// written ahead of the stream; a caller-supplied nonce is not written, since the caller has it.
 fn aead128_encrypt_stream(
@@ -151,8 +152,10 @@ fn aead128_encrypt_stream(
     output_hex: bool,
 ) {
     let start = match nonce {
-        Some(nonce) => AsconAead128Encryptor::do_encrypt_init_nonce(key, nonce).map(|c| (c, None)),
-        None => AsconAead128Encryptor::do_encrypt_init(key).map(|(c, n)| (c, Some(n))),
+        Some(nonce) => {
+            Ascon_AEAD128::<Encrypting>::do_encrypt_init_nonce(key, nonce).map(|c| (c, None))
+        }
+        None => Ascon_AEAD128::<Encrypting>::do_encrypt_init(key).map(|(c, n)| (c, Some(n))),
     };
     let (mut cipher, generated_nonce) = start.unwrap_or_else(|e| {
         eprintln!("Error: couldn't start encryption: {e:?}");
@@ -190,7 +193,7 @@ fn aead128_encrypt_stream(
 }
 
 /// Decrypts a stream whose final 16 bytes are the tag, which is only known once EOF is reached.
-/// [`AsconAead128Decryptor`] holds the last 16 bytes it has seen back itself, releasing everything
+/// [`Ascon_AEAD128<Decrypting>`] holds the last 16 bytes it has seen back itself, releasing everything
 /// before them as soon as it is known not to be part of the tag; at EOF
 /// [`SymmetricCipherDecryptor::do_decrypt_final`] checks what it held back as the tag.
 fn aead128_decrypt_stream(
@@ -215,10 +218,11 @@ fn aead128_decrypt_stream(
         }
     };
 
-    let mut cipher = AsconAead128Decryptor::do_decrypt_init(key, &nonce).unwrap_or_else(|e| {
-        eprintln!("Error: couldn't start decryption: {e:?}");
-        exit(-1);
-    });
+    let mut cipher =
+        Ascon_AEAD128::<Decrypting>::do_decrypt_init(key, &nonce).unwrap_or_else(|e| {
+            eprintln!("Error: couldn't start decryption: {e:?}");
+            exit(-1);
+        });
     if let Some(ad) = ad_opt {
         // infallible: as on the encrypt side, no ciphertext has been fed in yet.
         cipher.do_update_aad(ad).unwrap();
