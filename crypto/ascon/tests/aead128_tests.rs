@@ -10,6 +10,7 @@
 //!   through the `SymmetricCipherEncryptor`/`SymmetricCipherDecryptor` traits they extend.
 
 use bouncycastle_ascon::{AsconAead128, AsconAead128Decryptor, AsconAead128Encryptor};
+use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::hazmat::do_hazardous_operations;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
@@ -447,28 +448,6 @@ fn aead_debug_display_are_masked() {
 }
 
 /* -------------------------------------------------------------------------- */
-/* Direction-misuse guards                                                    */
-/* -------------------------------------------------------------------------- */
-
-#[test]
-#[should_panic(expected = "decryptor")]
-fn do_encrypt_update_on_decryptor_panics() {
-    let km = key_material(&KEY);
-    let mut d = AsconAead128::new_decrypting(&km, &NONCE, None).unwrap();
-    let mut buf = [0u8; 4];
-    d.do_encrypt_update(&mut buf);
-}
-
-#[test]
-#[should_panic(expected = "encryptor")]
-fn do_decrypt_update_on_encryptor_panics() {
-    let km = key_material(&KEY);
-    let mut e = AsconAead128::new_encrypting(&km, &NONCE, None).unwrap();
-    let mut buf = [0u8; 4];
-    e.do_decrypt_update(&mut buf);
-}
-
-/* -------------------------------------------------------------------------- */
 /* Trait conformance (shared core-test-framework)                             */
 /* -------------------------------------------------------------------------- */
 
@@ -657,7 +636,7 @@ fn aead128_suspendable_keyed_state() {
     TestFrameworkSuspendableKeyedState::new().test(&e, &km);
 
     let serialized = e.clone().suspend();
-    let mut resumed = AsconAead128::from_suspended(serialized, &km).unwrap();
+    let mut resumed = AsconAead128::<Encrypting>::from_suspended(serialized, &km).unwrap();
     resumed.do_encrypt_update(&mut out[18..pt.len()]);
     let tag = resumed.do_encrypt_final();
     out[pt.len()..].copy_from_slice(&tag);
@@ -667,7 +646,7 @@ fn aead128_suspendable_keyed_state() {
     let mut busted = serialized;
     busted[3] ^= 0xFF;
     assert!(matches!(
-        AsconAead128::from_suspended(busted, &km),
+        AsconAead128::<Encrypting>::from_suspended(busted, &km),
         Err(SuspendableError::InvalidData)
     ));
 
@@ -677,7 +656,7 @@ fn aead128_suspendable_keyed_state() {
     let mut bad_state = serialized;
     bad_state[last] = 200;
     assert!(matches!(
-        AsconAead128::from_suspended(bad_state, &km),
+        AsconAead128::<Encrypting>::from_suspended(bad_state, &km),
         Err(SuspendableError::InvalidData)
     ));
 
@@ -686,7 +665,7 @@ fn aead128_suspendable_keyed_state() {
     inconsistent[pos_offset] = 3; // pos = 3
     inconsistent[last] = 0; // EncInit
     assert!(matches!(
-        AsconAead128::from_suspended(inconsistent, &km),
+        AsconAead128::<Encrypting>::from_suspended(inconsistent, &km),
         Err(SuspendableError::InvalidData)
     ));
 
@@ -694,7 +673,21 @@ fn aead128_suspendable_keyed_state() {
     let mut bad_pos = serialized;
     bad_pos[pos_offset] = 16;
     assert!(matches!(
-        AsconAead128::from_suspended(bad_pos, &km),
+        AsconAead128::<Encrypting>::from_suspended(bad_pos, &km),
+        Err(SuspendableError::InvalidData)
+    ));
+
+    // A state suspended while encrypting must not resume as a decryptor, nor the reverse: the
+    // call-state byte carries the direction and the resuming type checks it.
+    assert!(matches!(
+        AsconAead128::<Decrypting>::from_suspended(serialized, &km),
+        Err(SuspendableError::InvalidData)
+    ));
+    let d = AsconAead128::new_decrypting(&km, &NONCE, Some(ad)).unwrap();
+    let d_state = d.suspend();
+    assert!(AsconAead128::<Decrypting>::from_suspended(d_state, &km).is_ok());
+    assert!(matches!(
+        AsconAead128::<Encrypting>::from_suspended(d_state, &km),
         Err(SuspendableError::InvalidData)
     ));
 }
