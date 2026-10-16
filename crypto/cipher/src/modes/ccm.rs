@@ -585,7 +585,10 @@ where
     /// [`SymmetricCipherError::StateError`] if `data` would take the total past the declared
     /// payload length, or if it is non-empty while declared AAD is still outstanding. Nothing is
     /// consumed in either case.
-    pub(crate) fn do_encrypt(&mut self, data: &mut [u8]) -> Result<(), SymmetricCipherError> {
+    pub(crate) fn do_encrypt_inplace(
+        &mut self,
+        data: &mut [u8],
+    ) -> Result<(), SymmetricCipherError> {
         self.take_owed(data.len())?;
         self.mac_absorb(data);
         self.ctr.do_encrypt_inplace(data)?;
@@ -636,7 +639,7 @@ where
         let mut ccm = Self::new(key, nonce, aad, plaintext.len())?;
         let out = &mut ciphertext[..plaintext.len()];
         out.copy_from_slice(plaintext);
-        ccm.do_encrypt(out)?;
+        ccm.do_encrypt_inplace(out)?;
         let tag = ccm.do_encrypt_final()?;
         Ok((plaintext.len(), tag))
     }
@@ -678,7 +681,7 @@ where
 {
     /// Decrypts `data` in place and authenticates the recovered plaintext.
     ///
-    /// The mirror of [`Self::do_encrypt`] with the two steps swapped: Sec 6.2 recovers `P` in
+    /// The mirror of [`Self::do_encrypt_inplace`] with the two steps swapped: Sec 6.2 recovers `P` in
     /// step 5 and only then formats `(N, A, P)` in step 7, so the MAC is fed the plaintext here too,
     /// never the ciphertext.
     ///
@@ -689,7 +692,7 @@ where
     /// [`SymmetricCipherError::StateError`] if `data` would take the total past the declared
     /// payload length, or if it is non-empty while declared AAD is still outstanding. Nothing is
     /// consumed in either case.
-    pub(crate) fn do_decrypt_update(
+    pub(crate) fn do_decrypt_inplace(
         &mut self,
         data: &mut [u8],
     ) -> Result<(), SymmetricCipherError> {
@@ -753,7 +756,7 @@ where
         let mut ccm = Self::new(key, nonce, aad, ciphertext.len())?;
         let out = &mut plaintext[..ciphertext.len()];
         out.copy_from_slice(ciphertext);
-        ccm.do_decrypt_update(out)?;
+        ccm.do_decrypt_inplace(out)?;
         match ccm.do_decrypt_final(tag) {
             Ok(()) => Ok(ciphertext.len()),
             Err(e) => {
@@ -1358,7 +1361,7 @@ where
         // Before the length check, so that a refused oversized call still closes the AAD phase:
         // the phase order is about call history, and this call happened.
         self.0.begin_data();
-        // `CcmPacket::do_encrypt` would refuse this too, but only after the plaintext had been copied
+        // `CcmPacket::do_encrypt_inplace` would refuse this too, but only after the plaintext had been copied
         // into the caller's output buffer, and a refused call must not leave plaintext there.
         if plaintext.len() > self.0.ccm.owed {
             return Err(SymmetricCipherError::StateError(
@@ -1367,7 +1370,7 @@ where
         }
         let out = &mut ciphertext[..plaintext.len()];
         out.copy_from_slice(plaintext);
-        self.0.ccm.do_encrypt(out)?;
+        self.0.ccm.do_encrypt_inplace(out)?;
         Ok(plaintext.len())
     }
 
@@ -1598,7 +1601,7 @@ where
 /// recovered rather than hold the whole frame back, so a forged ciphertext yields attacker-chosen
 /// bytes that only the final's [`SymmetricCipherError::AEADTagCheckFailed`] disowns. That is
 /// [`AEADCipherDecryptor`]'s general streaming caveat, and the inherent
-/// `CcmPacket::do_decrypt_update` has it too. Sec 6.2's "the payload P and the MAC T shall not be
+/// `CcmPacket::do_decrypt_inplace` has it too. Sec 6.2's "the payload P and the MAC T shall not be
 /// revealed" on INVALID is honoured by the one-shots, which zeroize what they wrote before
 /// returning the error.
 #[derive(Clone)]
@@ -1735,7 +1738,7 @@ where
         }
         // `release` is within what is owed, so `CcmPacket` cannot refuse it.
         plaintext[..release].copy_from_slice(data);
-        self.inner.ccm.do_decrypt_update(&mut plaintext[..release])?;
+        self.inner.ccm.do_decrypt_inplace(&mut plaintext[..release])?;
         self.tag[self.tag_len..self.tag_len + tail.len()].copy_from_slice(tail);
         self.tag_len += tail.len();
         Ok(release)
@@ -2307,7 +2310,7 @@ where
         }
         let out = &mut ciphertext[..plaintext.len()];
         out.copy_from_slice(plaintext);
-        self.0.do_encrypt(out)?;
+        self.0.do_encrypt_inplace(out)?;
         Ok(plaintext.len())
     }
 
@@ -2364,7 +2367,7 @@ where
         }
         let out = &mut plaintext[..take];
         out.copy_from_slice(&ciphertext[..take]);
-        self.ccm.do_decrypt_update(out)?;
+        self.ccm.do_decrypt_inplace(out)?;
         self.tag[self.tag_len..self.tag_len + rest].copy_from_slice(&ciphertext[take..]);
         self.tag_len += rest;
         Ok(take)
@@ -2462,7 +2465,7 @@ where
             aad,
             buf.len(),
         )?;
-        ccm.do_encrypt(buf)?;
+        ccm.do_encrypt_inplace(buf)?;
         ccm.do_encrypt_final()
     }
 }
@@ -2502,7 +2505,7 @@ where
             aad,
             buf.len(),
         )?;
-        let result = ccm.do_decrypt_update(buf).and_then(|()| ccm.do_decrypt_final(tag));
+        let result = ccm.do_decrypt_inplace(buf).and_then(|()| ccm.do_decrypt_final(tag));
         if result.is_err() {
             buf.fill(0);
         }
