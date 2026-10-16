@@ -215,10 +215,10 @@ fn ccm_both_directions() {
     let tag: [u8; 16] = tag.try_into().unwrap();
 
     let mut dec = ToyCcm::<Decrypting>::new(&key(), &nonce, aad, msg.len()).unwrap();
-    dec.do_decrypt_update(&mut head).unwrap();
+    dec.do_decrypt_inplace(&mut head).unwrap();
     let plain = round_trip::<{ ToyCcm::<Decrypting>::SUSPENDED_STATE_LEN }, _>(dec, |mut d| {
         let mut data = ct_tail.to_vec();
-        d.do_decrypt_update(&mut data).unwrap();
+        d.do_decrypt_inplace(&mut data).unwrap();
         d.do_decrypt_final(&tag).expect("the tag must verify after a resume");
         data
     });

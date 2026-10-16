@@ -144,7 +144,7 @@ fn check_vector<
                 Dec::<P, KEY_LEN, NONCE_LEN, TAG_LEN>::new(&k, &nonce, aad, plaintext.len())
                     .expect("streaming init");
             for piece in streamed.chunks_mut(chunk) {
-                ccm.do_decrypt_update(piece).expect("update");
+                ccm.do_decrypt_inplace(piece).expect("update");
             }
             ccm.do_decrypt_final(want_tag.try_into().expect("TAG_LEN bytes")).expect("tag check");
             assert_eq!(streamed, plaintext, "{name}: plaintext, streamed in {chunk}-byte chunks");
@@ -1096,7 +1096,7 @@ fn each_direction_has_its_own_methods() {
     let tag = enc.do_encrypt_final().expect("encrypt final");
 
     let mut dec = Dec::new(&k, &nonce, b"aad", 4).expect("decrypt init");
-    dec.do_decrypt_update(&mut data).expect("decrypt update");
+    dec.do_decrypt_inplace(&mut data).expect("decrypt update");
     dec.do_decrypt_final(&tag).expect("decrypt final");
     assert_eq!(data, [1u8, 2, 3, 4]);
 }
@@ -1216,7 +1216,7 @@ fn check_progressive_aad<const NONCE_LEN: usize, const TAG_LEN: usize>(
     for piece in aad.chunks(chunk) {
         dec.do_update_aad(piece).unwrap();
     }
-    dec.do_decrypt_update(&mut data).unwrap();
+    dec.do_decrypt_inplace(&mut data).unwrap();
     dec.do_decrypt_final(&tag).unwrap();
     assert_eq!(data, plaintext, "{label}: decryption, AAD in {chunk}-byte pieces");
 }
@@ -1300,10 +1300,10 @@ fn progressive_aad_enforces_the_declared_length_and_order() {
     // The decryptor refuses payload before the AAD is complete too.
     let mut dec = Dec::new_with_lengths(&k, &nonce, aad.len(), message.len()).unwrap();
     let mut ct = reference.0;
-    assert!(matches!(dec.do_decrypt_update(&mut ct), Err(SymmetricCipherError::StateError(_))));
+    assert!(matches!(dec.do_decrypt_inplace(&mut ct), Err(SymmetricCipherError::StateError(_))));
     assert_eq!(ct, reference.0, "a refused update must not touch the data");
     dec.do_update_aad(aad).unwrap();
-    dec.do_decrypt_update(&mut ct).unwrap();
+    dec.do_decrypt_inplace(&mut ct).unwrap();
     dec.do_decrypt_final(&reference.1).expect("tag check");
     assert_eq!(ct, message);
 

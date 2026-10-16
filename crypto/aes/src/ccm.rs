@@ -206,7 +206,7 @@
 //! let mut decryptor = AESDec::new(&key, &nonce, aad, ciphertext.len()).expect("decrypt init");
 //! let mut recovered = ciphertext;
 //! for piece in recovered.chunks_mut(19) {
-//!     decryptor.do_decrypt_update(piece).expect("decryption");
+//!     decryptor.do_decrypt_inplace(piece).expect("decryption");
 //! }
 //! decryptor.do_decrypt_final(&tag).expect("a valid tag");
 //! assert_eq!(recovered, plaintext);

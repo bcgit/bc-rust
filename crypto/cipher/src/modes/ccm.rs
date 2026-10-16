@@ -752,7 +752,7 @@ where
     /// [`SymmetricCipherError::StateError`] if `data` would take the total past the declared
     /// payload length, or if it is non-empty while AAD declared to [`Self::new_with_lengths`] is
     /// still outstanding. Nothing is consumed in either case.
-    pub fn do_decrypt_update(&mut self, data: &mut [u8]) -> Result<(), SymmetricCipherError> {
+    pub fn do_decrypt_inplace(&mut self, data: &mut [u8]) -> Result<(), SymmetricCipherError> {
         self.take_owed(data.len())?;
         self.ctr.do_decrypt_inplace(data)?;
         self.mac_absorb(data);
@@ -813,7 +813,7 @@ where
         let mut ccm = Self::new(key, nonce, aad, ciphertext.len())?;
         let out = &mut plaintext[..ciphertext.len()];
         out.copy_from_slice(ciphertext);
-        ccm.do_decrypt_update(out)?;
+        ccm.do_decrypt_inplace(out)?;
         match ccm.do_decrypt_final(tag) {
             Ok(()) => Ok(ciphertext.len()),
             Err(e) => {
@@ -1610,7 +1610,7 @@ where
 /// recovered rather than hold the whole frame back, so a forged ciphertext yields attacker-chosen
 /// bytes that only the final's [`SymmetricCipherError::AEADTagCheckFailed`] disowns. That is
 /// [`AEADCipherDecryptor`]'s general streaming caveat, and the inherent
-/// [`CcmPacket::do_decrypt_update`] has it too. Sec 6.2's "the payload P and the MAC T shall not be
+/// [`CcmPacket::do_decrypt_inplace`] has it too. Sec 6.2's "the payload P and the MAC T shall not be
 /// revealed" on INVALID is honoured by the one-shots, which zeroize what they wrote before
 /// returning the error.
 #[derive(Clone)]
@@ -1740,7 +1740,7 @@ where
         }
         // `release` is within what is owed, so `CcmPacket` cannot refuse it.
         plaintext[..release].copy_from_slice(data);
-        self.inner.ccm.do_decrypt_update(&mut plaintext[..release])?;
+        self.inner.ccm.do_decrypt_inplace(&mut plaintext[..release])?;
         self.tag[self.tag_len..self.tag_len + tail.len()].copy_from_slice(tail);
         self.tag_len += tail.len();
         Ok(release)

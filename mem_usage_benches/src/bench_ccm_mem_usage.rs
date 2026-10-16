@@ -217,7 +217,7 @@ fn bench_oneshot_encrypt_out_detached() {
 /// place, so peak stack is the `CcmPacket` value plus one array.
 #[inline(never)]
 fn bench_direct_streaming() {
-    eprintln!("CcmPacket::do_encrypt_update, {MESSAGE_LEN} B in 1 KiB chunks");
+    eprintln!("CcmPacket::do_encrypt, {MESSAGE_LEN} B in 1 KiB chunks");
 
     let k = key::<16>();
     let nonce = [0x24u8; NONCE_LEN];

@@ -472,7 +472,7 @@ fn go<P, const KEY_LEN: usize, const NONCE_LEN: usize, const TAG_LEN: usize>(
                 feed_aad(&mut ccm, aad);
                 // As the encrypt arm above: `data.len()` is exactly the length just declared, and
                 // it is supplied in this one call, so this cannot fail.
-                ccm.do_decrypt_update(data).expect("declared length matches what was sent");
+                ccm.do_decrypt_inplace(data).expect("declared length matches what was sent");
                 match ccm.do_decrypt_final(tag) {
                     Ok(()) => {
                         helpers::write_bytes_or_hex(data, output_hex);
