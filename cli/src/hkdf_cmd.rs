@@ -5,7 +5,7 @@ use bouncycastle::core::hazmat::do_hazardous_operations;
 use bouncycastle::core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle::hex;
 use bouncycastle::hkdf;
-use bouncycastle::sha2::hkdf::{HKDF_SHA256, HKDF_SHA512};
+use bouncycastle::sha2::hkdf::{HKDF_SHA256, HKDF_SHA384, HKDF_SHA512};
 
 pub(crate) fn hkdf_cmd(
     hkdfname: &str,
@@ -18,28 +18,18 @@ pub(crate) fn hkdf_cmd(
     len: usize,
     output_hex: bool,
 ) {
-    let salt_bytes: Vec<u8>;
-    let ikm_bytes: Vec<u8>;
-    let additional_input_bytes: Vec<u8>;
-    let mut out_key = KeyMaterial::<{ hkdf::MAX_HMAC_OUTPUT_LEN }>::new();
-
-    if len > 1024 {
-        eprintln!("Error: The CLI only supports output lengths up to 128 bytes (1024 bits).");
-        exit(-1);
-    }
-
-    // load the values
-
-    salt_bytes = if salt.is_some() {
-        hex::decode(salt.as_ref().unwrap()).unwrap()
-    } else if salt_file.is_some() {
-        fs::read(salt_file.as_ref().unwrap()).unwrap()
+    // Each value may come from hex on the command line or from a binary file; the file wins if
+    // both are given, as the subcommands' help says.
+    let salt_bytes = if let Some(file) = salt_file {
+        fs::read(file).unwrap()
+    } else if let Some(hex_str) = salt {
+        hex::decode(hex_str).unwrap()
     } else {
         eprintln!("Error: either `salt` or `salt-file` must be supplied.");
         exit(-1)
     };
     if salt_bytes.len() > 128 {
-        eprintln!("Error: The CLI only supports HKDF salts up to 128 bytes (1024 bytes).");
+        eprintln!("Error: The CLI only supports HKDF salts up to 128 bytes (1024 bits).");
         exit(-1);
     }
     let mut salt_key = KeyMaterial::<1024>::from_bytes(&salt_bytes).unwrap();
@@ -47,44 +37,57 @@ pub(crate) fn hkdf_cmd(
     do_hazardous_operations(&mut salt_key, |salt_key| salt_key.set_key_type(KeyType::MACKey))
         .unwrap();
 
-    ikm_bytes = if ikm.is_some() {
-        hex::decode(ikm.as_ref().unwrap()).unwrap()
-    } else if ikm_file.is_some() {
-        fs::read(ikm_file.as_ref().unwrap()).unwrap()
+    let ikm_bytes = if let Some(file) = ikm_file {
+        fs::read(file).unwrap()
+    } else if let Some(hex_str) = ikm {
+        hex::decode(hex_str).unwrap()
     } else {
         eprintln!("Error: either `ikm` or `ikm_file` must be supplied.");
         exit(-1)
     };
 
-    additional_input_bytes = if additional_input.is_some() {
-        hex::decode(additional_input.as_ref().unwrap()).unwrap()
-    } else if additional_input.is_some() {
-        fs::read(additional_input_file.as_ref().unwrap()).unwrap()
+    let info = if let Some(file) = additional_input_file {
+        fs::read(file).unwrap()
+    } else if let Some(hex_str) = additional_input {
+        hex::decode(hex_str).unwrap()
     } else {
         eprintln!("Error: either `additional_input` or `additional_input_file` must be supplied.");
         exit(-1)
     };
 
-    // Do the HKDF
-
-    match hkdfname {
+    // RFC 5869: PRK = HKDF-Extract(salt, IKM), then OKM = HKDF-Expand(PRK, info, L). The IKM is
+    // streamed into the extract phase, so its length is not bounded by a KeyMaterial buffer, and the
+    // additional input is the expand phase's `info`. The library refuses an L above 255 * HashLen.
+    let mut out_key = KeyMaterial::<{ 255 * hkdf::MAX_HMAC_OUTPUT_LEN }>::new();
+    let result = match hkdfname {
         "HKDF-SHA256" => {
             let mut h = HKDF_SHA256::new();
             h.do_extract_init(&salt_key).unwrap();
-            h.do_extract_update_bytes(ikm_bytes.as_slice()).unwrap();
-            h.do_extract_update_bytes(additional_input_bytes.as_slice()).unwrap();
-            h.do_extract_final_out(&mut out_key).unwrap();
+            h.do_extract_update_bytes(&ikm_bytes).unwrap();
+            let prk = h.do_extract_final().unwrap();
+            HKDF_SHA256::expand_out(&prk, &info, len, &mut out_key)
+        }
+        "HKDF-SHA384" => {
+            let mut h = HKDF_SHA384::new();
+            h.do_extract_init(&salt_key).unwrap();
+            h.do_extract_update_bytes(&ikm_bytes).unwrap();
+            let prk = h.do_extract_final().unwrap();
+            HKDF_SHA384::expand_out(&prk, &info, len, &mut out_key)
         }
         "HKDF-SHA512" => {
             let mut h = HKDF_SHA512::new();
             h.do_extract_init(&salt_key).unwrap();
-            h.do_extract_update_bytes(ikm_bytes.as_slice()).unwrap();
-            h.do_extract_update_bytes(additional_input_bytes.as_slice()).unwrap();
-            h.do_extract_final_out(&mut out_key).unwrap();
+            h.do_extract_update_bytes(&ikm_bytes).unwrap();
+            let prk = h.do_extract_final().unwrap();
+            HKDF_SHA512::expand_out(&prk, &info, len, &mut out_key)
         }
         _ => {
             panic!("{} is not a supported HKDF variant.", hkdfname);
         }
+    };
+    if let Err(e) = result {
+        eprintln!("Error: {e:?}");
+        exit(-1);
     }
 
     crate::helpers::write_bytes_or_hex(out_key.ref_to_bytes(), output_hex);

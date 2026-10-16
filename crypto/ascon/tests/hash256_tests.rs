@@ -1,9 +1,9 @@
 //! Ascon-Hash256 tests (NIST SP 800-232 §5.1).
 //!
-//! Embedded NIST LWC known-answer vectors (always-on; full sweep in `bc_test_data.rs`) plus
+//! Embedded NIST LWC known-answer vectors (always-on; full sweep in `ascon_bc-test-data.rs`) plus
 //! streaming-equivalence, one-shot/trait-API, metadata, and unsupported-partial-op tests.
 
-use bouncycastle_ascon::ascon_hash256::AsconHash256;
+use bouncycastle_ascon::AsconHash256;
 use bouncycastle_core::traits::{Hash, HashAlgParams};
 use bouncycastle_core_test_framework::hash::TestFrameworkHash;
 use bouncycastle_hex as hex;

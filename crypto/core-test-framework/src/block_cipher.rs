@@ -1,6 +1,7 @@
 //! Shared conformance tests for [`BlockCipherEncryptor`] / [`BlockCipherDecryptor`] implementors:
 //! the whole-block refinement of the symmetric cipher traits.
 
+use crate::key_binding::{assert_refused, bound_elsewhere, bound_to};
 use crate::{DUMMY_SEED, FixedSeedRNG};
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::hazmat::do_hazardous_operations;
@@ -134,6 +135,12 @@ impl TestFrameworkBlockCipher {
             Err(SymmetricCipherError::KeyMaterialError(_)) => { /* good */ }
             _ => panic!("Unexpected error"),
         };
+
+        // error case: a key bound to another algorithm; one bound to this one is fine
+        let (_, iv) = E::do_encrypt_init(&bound_to(&key, E::ALG_NAME)).unwrap();
+        D::do_decrypt_init(&bound_to(&key, D::ALG_NAME), &iv).unwrap();
+        assert_refused(E::do_encrypt_init(&bound_elsewhere(&key)), "do_encrypt_init");
+        assert_refused(D::do_decrypt_init(&bound_elsewhere(&key), &iv), "do_decrypt_init");
 
         // error case: security strengths too weak and too strong
         let mut key = KeyMaterial::<KEY_LEN>::from_bytes_as_type(

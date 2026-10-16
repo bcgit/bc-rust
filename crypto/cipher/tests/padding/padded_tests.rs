@@ -33,6 +33,7 @@ impl ToyCbc {
         if key.key_type() != KeyType::SymmetricCipherKey {
             return Err(KeyMaterialError::InvalidKeyType("expected SymmetricCipherKey"))?;
         }
+        key.check_algorithm(Self::ALG_NAME)?;
         if key.security_strength() < Self::MAX_SECURITY_STRENGTH {
             return Err(KeyMaterialError::GenericError("key too weak"))?;
         }

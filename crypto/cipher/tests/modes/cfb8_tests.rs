@@ -5,7 +5,7 @@
 //! SP 800-38A Appendix D error propagation, and the "forward cipher function only" rule of
 //! Sec 6.3 -- independently of any real cipher. The known-answer tests against SP 800-38A
 //! Appendix F.3.7-F.3.12 are in the `aes` crate, `crypto/aes/tests/sp800_38a_cfb8_tests.rs`, and
-//! the ACVP CFB8 set in `acvp_cfb8_tests.rs` beside it.
+//! the ACVP CFB8 set in `cfb8_bc-test-data.rs` beside it.
 //!
 //! The toy's own conformance to [`ElectronicCodeBook`] is pinned once, by
 //! `the_toy_permutation_conforms_to_the_trait` in `cbc_tests.rs`; it is the same `Toy` here, so it
@@ -13,7 +13,7 @@
 
 mod common;
 
-use bouncycastle_cipher::modes::{Cfb, Cfb8};
+use bouncycastle_cipher::modes::{Cfb, Cfb8, ModeNames};
 use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::hazmat::ElectronicCodeBook;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
@@ -353,13 +353,13 @@ fn call_chunking_does_not_change_the_result() {
 /// repeats it at 171 bytes, which is 42 four-byte batches and a 3-byte tail, and runs it over
 /// [`ForwardOnlyToy`] as well, so the chunked decryptions that reach the batch paths are shown to
 /// do so without the inverse cipher. The AES coverage (the `aes` crate's `sp800_38a_cfb8_tests.rs`
-/// and `acvp_cfb8_tests.rs`) chunks against *published* ciphertext; this is the direct
+/// and `cfb8_bc-test-data.rs`) chunks against *published* ciphertext; this is the direct
 /// single-call-versus-chunked comparison, kept free of an AES dependency.
 #[test]
 fn chunking_matches_a_single_call_at_every_batch_remainder() {
     fn check<P, const KEY_LEN: usize>(name: &str)
     where
-        P: ElectronicCodeBook<KEY_LEN, 16>,
+        P: ElectronicCodeBook<KEY_LEN, 16> + ModeNames,
     {
         let key_bytes: [u8; KEY_LEN] =
             core::array::from_fn(|i| (i as u8).wrapping_mul(31).wrapping_add(7));

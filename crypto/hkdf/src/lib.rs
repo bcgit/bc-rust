@@ -6,9 +6,9 @@
 //! point through which a hash declares the metadata from which the HKDF instance is built.
 //! The library provides the following concrete instantiations of HKDF:
 //!
-//! | Hash family | Instantiations                                                |
-//! |-------------|---------------------------------------------------------------|
-//! | SHA-2       | `bouncycastle_sha2::hkdf` -- `HKDF_SHA256`, `HKDF_SHA512`     |
+//! | Hash family | Instantiations                                                           |
+//! |-------------|--------------------------------------------------------------------------|
+//! | SHA-2       | `bouncycastle_sha2::hkdf` -- `HKDF_SHA256`, `HKDF_SHA384`, `HKDF_SHA512` |
 //!
 //! # Instantiating HKDF over a hash
 //!
@@ -39,43 +39,43 @@
 //!
 //! ## Worked example
 //!
-//! As an example, the `bouncycastle-sha2` crate instantiates HKDF-SHA256 and HKDF-SHA512 this way. The library does not ship
-//! HKDF-SHA384, so that makes a good illustration of adding one -- for a hash in this library or for
-//! a hash of your own, the shape is identical:
+//! As an example, the `bouncycastle-sha2` crate instantiates HKDF-SHA256, HKDF-SHA384 and
+//! HKDF-SHA512 this way. The library does not ship HKDF-SHA224, so that makes a good illustration of
+//! adding one -- for a hash in this library or for a hash of your own, the shape is identical:
 //!
 //! ```
 //! use bouncycastle_core::key_material::{KeyMaterial256, KeyType};
 //! use bouncycastle_core::traits::{KDF, SuspendableKeyed};
 //! use bouncycastle_hkdf::HKDF;
-//! use bouncycastle_sha2::{SHA384, SUSPENDED_SHA512_STATE_LEN};
+//! use bouncycastle_sha2::{SHA224, SUSPENDED_SHA256_STATE_LEN};
 //!
-//! // SHA-384 is a member of the SHA-512 family, so its suspended state is the SHA-512 one.
-//! const SUSPENDED_HKDF_SHA384_STATE_LEN: usize = SUSPENDED_SHA512_STATE_LEN + 14;
+//! // SHA-224 is a member of the SHA-256 family, so its suspended state is the SHA-256 one.
+//! const SUSPENDED_HKDF_SHA224_STATE_LEN: usize = SUSPENDED_SHA256_STATE_LEN + 14;
 //!
 //! #[allow(non_camel_case_types)]
-//! pub type HKDF_SHA384 =
-//!     HKDF<SHA384, SUSPENDED_SHA512_STATE_LEN, SUSPENDED_HKDF_SHA384_STATE_LEN>;
+//! pub type HKDF_SHA224 =
+//!     HKDF<SHA224, SUSPENDED_SHA256_STATE_LEN, SUSPENDED_HKDF_SHA224_STATE_LEN>;
 //!
-//! pub const HKDF_SHA384_NAME: &str = "HKDF-SHA384";
+//! pub const HKDF_SHA224_NAME: &str = "HKDF-SHA224";
 //!
 //! // That is all it takes: the KDF trait and the extract/expand API are now available.
 //! let ikm = KeyMaterial256::from_bytes_as_type(
 //!             b"\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f",
 //!             KeyType::Seed).unwrap();
-//! let okm = HKDF_SHA384::new().derive_key(&ikm, b"extra input").unwrap();
+//! let okm = HKDF_SHA224::new().derive_key(&ikm, b"extra input").unwrap();
 //!
-//! // ...and so is suspend/resume, because SHA-384 implements Suspendable and the two const
+//! // ...and so is suspend/resume, because SHA-224 implements Suspendable and the two const
 //! // parameters above agree.
 //! let salt = KeyMaterial256::from_bytes_as_type(
 //!             b"\x0f\x0e\x0d\x0c\x0b\x0a\x09\x08\x07\x06\x05\x04\x03\x02\x01\x00",
 //!             KeyType::MACKey).unwrap();
-//! let mut hkdf = HKDF_SHA384::new();
+//! let mut hkdf = HKDF_SHA224::new();
 //! hkdf.do_extract_init(&salt).unwrap();
 //! hkdf.do_extract_update_bytes(b"part 1").unwrap();
 //! let suspended = hkdf.suspend();
-//! assert_eq!(suspended.len(), SUSPENDED_HKDF_SHA384_STATE_LEN);
+//! assert_eq!(suspended.len(), SUSPENDED_HKDF_SHA224_STATE_LEN);
 //!
-//! let mut resumed = HKDF_SHA384::from_suspended(suspended, &salt).unwrap();
+//! let mut resumed = HKDF_SHA224::from_suspended(suspended, &salt).unwrap();
 //! resumed.do_extract_update_bytes(b"part 2").unwrap();
 //! let _prk = resumed.do_extract_final().unwrap();
 //! ```
@@ -415,22 +415,25 @@ impl<H: Hash + HashAlgParams + Default, const HASH_STATE_LEN: usize, const HKDF_
             Ok(())
         })?;
 
-        // Part of the output is not taken on the last iteration
+        // Part of the output is not taken on the last iteration. "OKM = first L octets of T", so the
+        // last block T(N) is computed in full and only its first `remaining` octets are kept. Asking
+        // HMAC for a `remaining`-octet output instead would be a truncated MAC, which HMAC refuses
+        // below MIN_FIPS_DIGEST_LEN: that rejected every L with L mod HashLen in 1..=3.
         let remaining = L - bytes_written;
         let mut hmac = HMAC::<H>::new(&prk_as_mac_key)?;
         hmac.do_update(&T[..t_len]);
         hmac.do_update(info);
         hmac.do_update(&[i]);
 
-        t_len = hmac.do_final_out(&mut T[..remaining])?;
-        debug_assert_eq!(t_len, remaining); // this will be true for every iteration after T(0) / T(1)
+        t_len = hmac.do_final_out(&mut T[..hash_len])?;
+        debug_assert_eq!(t_len, hash_len);
 
         do_hazardous_operations(okm, |okm| {
             let out = okm.ref_to_bytes_mut()?;
-            out[bytes_written..bytes_written + t_len].copy_from_slice(&T[..t_len]);
+            out[bytes_written..bytes_written + remaining].copy_from_slice(&T[..remaining]);
             Ok(())
         })?;
-        bytes_written += t_len;
+        bytes_written += remaining;
 
         // Set the KeyType of the output
         // Since some computation has been performed, the result will not actually be zeroized, even if all input key material was zeroized.

@@ -52,7 +52,8 @@ use std::io::{self, Read};
 use std::process::exit;
 
 use bouncycastle::aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
-use bouncycastle::cipher::modes::Ccm;
+use bouncycastle::cipher::modes::CcmPacket;
+use bouncycastle::cipher::modes::ModeNames;
 use bouncycastle::cipher::{Decrypting, Encrypting};
 use bouncycastle::core::errors::SymmetricCipherError;
 use bouncycastle::core::hazmat::ElectronicCodeBook;
@@ -142,8 +143,8 @@ pub(crate) fn aes256_ccm_cmd(
 /// Unlike the key there is no entropy question here: Sec 5.3 asks for uniqueness, not randomness,
 /// so an all-zero nonce is a perfectly valid *first* nonce and only a repeat is a problem.
 ///
-/// `--nonce-file` reads raw bytes ([`r#mod::read_from_file_raw`]), not the hex-or-raw guess
-/// [`r#mod::read_from_file`] uses for keys: a repeated nonce under one key is fatal for CCM (see
+/// `--nonce-file` reads raw bytes ([`helpers::read_from_file_raw`]), not the hex-or-raw guess
+/// [`helpers::read_from_file`] uses for keys: a repeated nonce under one key is fatal for CCM (see
 /// the module docs), so two distinct binary nonce files that happen to look like hex text of the
 /// same value must not silently collapse to the same nonce.
 ///
@@ -199,7 +200,7 @@ enum Aad {
 }
 
 impl Aad {
-    /// The AAD length to declare to [`Ccm::new_with_lengths`].
+    /// The AAD length to declare to [`CcmPacket::new_with_lengths`].
     fn len(&self) -> usize {
         match self {
             Aad::Bytes(bytes) => bytes.len(),
@@ -249,10 +250,10 @@ fn load_aad(aad: &Option<String>, aad_file: &Option<String>) -> Aad {
 /// encoding that does not match the AAD; that is reported and the command exits rather than
 /// producing it.
 fn feed_aad<P, Dir, const KEY_LEN: usize, const NONCE_LEN: usize, const TAG_LEN: usize>(
-    ccm: &mut Ccm<P, Dir, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN>,
+    ccm: &mut CcmPacket<P, Dir, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN>,
     aad: &mut Aad,
 ) where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
 {
     match aad {
         Aad::Bytes(bytes) => {
@@ -293,7 +294,7 @@ fn read_all_stdin() -> Vec<u8> {
 
 /// Turns the runtime nonce and tag lengths into the mode's const generic parameters.
 ///
-/// `NONCE_LEN` and `TAG_LEN` are const parameters of `Ccm` -- that is what makes A.1's length
+/// `NONCE_LEN` and `TAG_LEN` are const parameters of `CcmPacket` -- that is what makes A.1's length
 /// conditions compile-time checks rather than runtime ones -- so a command-line value has to be
 /// matched into one of the permitted instantiations. The two nested matches are the price of that,
 /// and they are exhaustive over A.1's sets: 7 nonce lengths x 7 tag lengths.
@@ -307,7 +308,7 @@ fn run<P, const KEY_LEN: usize>(
     tag_len: usize,
     output_hex: bool,
 ) where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
 {
     // Reject this before opening nonce/AAD files or waiting for stdin. Appendix A.1: "t is an
     // element of {4, 6, 8, 10, 12, 14, 16}".
@@ -370,7 +371,7 @@ fn run<P, const KEY_LEN: usize>(
     }
 }
 
-/// Reports [`Ccm::new_with_lengths`]'s refusal of a payload past the `q` limit and exits.
+/// Reports [`CcmPacket::new_with_lengths`]'s refusal of a payload past the `q` limit and exits.
 ///
 /// The only [`SymmetricCipherError::GenericError`] it can return is that limit: A.1's
 /// `p < 2^8q`, where `q = 15 - n`. Both directions hit it -- the decrypt side on the input minus
@@ -380,14 +381,14 @@ fn payload_past_the_q_limit<P, const KEY_LEN: usize, const NONCE_LEN: usize, con
     payload_len: usize,
 ) -> !
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
 {
     eprintln!("Error: {msg}");
     eprintln!(
         "       Payload is {payload_len} bytes; with a {NONCE_LEN}-byte nonce, q = {} and the \
          limit is {} bytes.",
         15 - NONCE_LEN,
-        Ccm::<P, Encrypting, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN>::MAX_PAYLOAD_LEN,
+        CcmPacket::<P, Encrypting, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN>::MAX_PAYLOAD_LEN,
     );
     eprintln!("       Use a shorter nonce for a larger payload.");
     exit(-1)
@@ -395,11 +396,11 @@ where
 
 /// One fully-instantiated CCM run.
 ///
-/// `input` is processed in place through [`Ccm`]'s own streaming API rather than through the
-/// one-shot [`Ccm::encrypt_out`]/[`Ccm::decrypt_out`], which each need a second, freshly allocated buffer
+/// `input` is processed in place through [`CcmPacket`]'s own streaming API rather than through the
+/// one-shot [`CcmPacket::encrypt_out`]/[`CcmPacket::decrypt_out`], which each need a second, freshly allocated buffer
 /// the size of `input`: the declared-length constructor already has everything a one-shot needs,
 /// so there is no second buffer to allocate or copy into. The AAD goes in through
-/// [`Ccm::new_with_lengths`] and [`feed_aad`], so a `--aad-file` is streamed rather than loaded.
+/// [`CcmPacket::new_with_lengths`] and [`feed_aad`], so a `--aad-file` is streamed rather than loaded.
 fn go<P, const KEY_LEN: usize, const NONCE_LEN: usize, const TAG_LEN: usize>(
     key: &KeyMaterial<KEY_LEN>,
     nonce_bytes: &[u8],
@@ -408,12 +409,12 @@ fn go<P, const KEY_LEN: usize, const NONCE_LEN: usize, const TAG_LEN: usize>(
     encrypt: bool,
     output_hex: bool,
 ) where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
 {
     type Enc<P, const K: usize, const N: usize, const T: usize> =
-        Ccm<P, Encrypting, K, BLOCK_LEN, N, T>;
+        CcmPacket<P, Encrypting, K, BLOCK_LEN, N, T>;
     type Dec<P, const K: usize, const N: usize, const T: usize> =
-        Ccm<P, Decrypting, K, BLOCK_LEN, N, T>;
+        CcmPacket<P, Decrypting, K, BLOCK_LEN, N, T>;
 
     // `run` dispatched on this exact length, so the conversion cannot fail.
     let Ok(nonce) = <[u8; NONCE_LEN]>::try_from(nonce_bytes) else {
@@ -434,7 +435,7 @@ fn go<P, const KEY_LEN: usize, const NONCE_LEN: usize, const TAG_LEN: usize>(
                 // and only call supplying it, so `take_owed` can never see too much and `owed`
                 // can never be left nonzero: neither of these can fail on the path that reaches
                 // them.
-                ccm.do_encrypt(&mut input).expect("declared length matches what was sent");
+                ccm.do_encrypt_inplace(&mut input).expect("declared length matches what was sent");
                 let tag = ccm.do_encrypt_final().expect("declared length was fully supplied");
                 helpers::write_bytes_or_hex(&input, output_hex);
                 helpers::write_bytes_or_hex(&tag, output_hex);
@@ -453,7 +454,7 @@ fn go<P, const KEY_LEN: usize, const NONCE_LEN: usize, const TAG_LEN: usize>(
     } else {
         // `split_last_chunk_mut` is `None` exactly when there is no room for a `TAG_LEN`-byte tag,
         // which is the same octet-level test (and the same allowance for an empty payload plus its
-        // tag) that `Ccm::decrypt_out`'s own doc comment explains for Sec 6.2 step 1.
+        // tag) that `CcmPacket::decrypt_out`'s own doc comment explains for Sec 6.2 step 1.
         let Some((data, tag)) = input.split_last_chunk_mut::<TAG_LEN>() else {
             eprintln!(
                 "Error: input is {} bytes, shorter than the {TAG_LEN}-byte tag it must end with.",
@@ -471,7 +472,7 @@ fn go<P, const KEY_LEN: usize, const NONCE_LEN: usize, const TAG_LEN: usize>(
                 feed_aad(&mut ccm, aad);
                 // As the encrypt arm above: `data.len()` is exactly the length just declared, and
                 // it is supplied in this one call, so this cannot fail.
-                ccm.do_decrypt_update(data).expect("declared length matches what was sent");
+                ccm.do_decrypt_inplace(data).expect("declared length matches what was sent");
                 match ccm.do_decrypt_final(tag) {
                     Ok(()) => {
                         helpers::write_bytes_or_hex(data, output_hex);

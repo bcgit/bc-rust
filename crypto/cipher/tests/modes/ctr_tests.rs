@@ -4,7 +4,7 @@
 //! incrementing function, the counter limit and its error, call sequencing at arbitrary byte
 //! boundaries, the batch paths in both directions, direction typing, and the "forward cipher
 //! function only" rule -- independently of any real cipher. The known-answer tests against the NIST
-//! ACVP `ACVP-AES-CTR` set are in the `aes` crate, `crypto/aes/tests/acvp_ctr_tests.rs`.
+//! ACVP `ACVP-AES-CTR` set are in the `aes` crate, `crypto/aes/tests/ctr_bc-test-data.rs`.
 //!
 //! The toy's own conformance to [`ElectronicCodeBook`] is pinned once, by
 //! `the_toy_permutation_conforms_to_the_trait` in `cbc_tests.rs`; it is the same `Toy` here, so it
@@ -23,8 +23,8 @@
 
 mod common;
 
-use bouncycastle_cipher::modes::Ctr;
 use bouncycastle_cipher::modes::hazmat::CtrKeyStream;
+use bouncycastle_cipher::modes::{Ctr, ModeNames};
 use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::hazmat::ElectronicCodeBook;
@@ -533,7 +533,7 @@ fn call_chunking_does_not_change_the_result() {
 fn chunking_matches_a_single_call_over_several_batches() {
     fn check<P, const KEY_LEN: usize>(name: &str)
     where
-        P: ElectronicCodeBook<KEY_LEN, 16>,
+        P: ElectronicCodeBook<KEY_LEN, 16> + ModeNames,
     {
         let key_bytes: [u8; KEY_LEN] =
             core::array::from_fn(|i| (i as u8).wrapping_mul(31).wrapping_add(7));

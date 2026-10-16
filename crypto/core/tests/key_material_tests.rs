@@ -530,13 +530,13 @@ mod test_key_material {
         // test fmt
         assert_eq!(
             format!("{}", key256),
-            "KeyMaterial<32>{ len: 32, key_type: MACKey, security_strength: _256bit }"
+            "KeyMaterial<32>{ len: 32, key_type: MACKey, security_strength: _256bit, algorithm: None }"
         );
 
         // test debug
         assert_eq!(
             format!("{:?}", key256),
-            "KeyMaterial<32>{ len: 32, key_type: MACKey, security_strength: _256bit }"
+            "KeyMaterial<32>{ len: 32, key_type: MACKey, security_strength: _256bit, algorithm: None }"
         );
 
         // and an underfull one of a different size.
@@ -546,13 +546,13 @@ mod test_key_material {
         // test fmt
         assert_eq!(
             format!("{}", key512),
-            "KeyMaterial<64>{ len: 32, key_type: MACKey, security_strength: _256bit }"
+            "KeyMaterial<64>{ len: 32, key_type: MACKey, security_strength: _256bit, algorithm: None }"
         );
 
         // test debug
         assert_eq!(
             format!("{:?}", key512),
-            "KeyMaterial<64>{ len: 32, key_type: MACKey, security_strength: _256bit }"
+            "KeyMaterial<64>{ len: 32, key_type: MACKey, security_strength: _256bit, algorithm: None }"
         );
     }
 
@@ -931,5 +931,71 @@ mod test_key_material {
             Err(KeyMaterialError::HazardousOperationNotPermitted) => { /* good */ }
             _ => panic!("the guard should have been cleared after the erroring closures"),
         }
+    }
+
+    /// Binding to an algorithm only ever narrows where a key may be used without a hazardous
+    /// closure: an unbound key can be bound, but a bound one cannot be unbound or moved.
+    #[test]
+    fn algorithm_binding() {
+        let mut key =
+            KeyMaterial128::from_bytes_as_type(&DUMMY_KEY[..16], KeyType::SymmetricCipherKey)
+                .unwrap();
+        assert_eq!(key.algorithm(), None);
+        assert_eq!(key.check_algorithm("AES_CBC_128"), Ok(()), "an unbound key fits any algorithm");
+        assert_eq!(key.check_algorithm("AES_GCM_128"), Ok(()));
+
+        key.set_algorithm(Some("AES_CBC_128")).unwrap();
+        assert_eq!(key.algorithm(), Some("AES_CBC_128"));
+        assert_eq!(key.check_algorithm("AES_CBC_128"), Ok(()));
+        assert!(matches!(
+            key.check_algorithm("AES_GCM_128"),
+            Err(KeyMaterialError::InvalidKeyType(_))
+        ));
+
+        // Re-binding to the same algorithm is a no-op; anything else is hazardous.
+        key.set_algorithm(Some("AES_CBC_128")).unwrap();
+        assert_eq!(
+            key.set_algorithm(Some("AES_GCM_128")),
+            Err(KeyMaterialError::HazardousOperationNotPermitted)
+        );
+        assert_eq!(key.set_algorithm(None), Err(KeyMaterialError::HazardousOperationNotPermitted));
+        assert_eq!(key.algorithm(), Some("AES_CBC_128"), "a refused change must leave it bound");
+
+        do_hazardous_operations(&mut key, |key| key.set_algorithm(Some("AES_GCM_128"))).unwrap();
+        assert_eq!(key.algorithm(), Some("AES_GCM_128"));
+        do_hazardous_operations(&mut key, |key| key.set_algorithm(None)).unwrap();
+        assert_eq!(key.algorithm(), None);
+
+        let mut zeroized = KeyMaterial128::new();
+        assert_eq!(
+            zeroized.set_algorithm(Some("AES_CBC_128")),
+            Err(KeyMaterialError::ActingOnZeroizedKey)
+        );
+    }
+
+    /// Copies of a key carry its binding; new bytes, or zeroizing, leave the key unbound.
+    #[test]
+    fn algorithm_binding_follows_the_key_bytes() {
+        let mut key =
+            KeyMaterial256::from_bytes_as_type(&DUMMY_KEY[..32], KeyType::SymmetricCipherKey)
+                .unwrap();
+        key.set_algorithm(Some("AES_GCM_256")).unwrap();
+
+        assert_eq!(key.clone().algorithm(), Some("AES_GCM_256"));
+        assert_eq!(KeyMaterial512::from_key(&key).unwrap().algorithm(), Some("AES_GCM_256"));
+        let mut truncated = KeyMaterial128::new();
+        key.clone().truncate(&mut truncated);
+        assert_eq!(truncated.algorithm(), Some("AES_GCM_256"));
+        assert!(
+            format!("{key}")
+                .ends_with(r#"security_strength: _256bit, algorithm: Some("AES_GCM_256") }"#)
+        );
+
+        let mut reloaded = key.clone();
+        reloaded.set_bytes_as_type(&DUMMY_KEY[32..64], KeyType::SymmetricCipherKey).unwrap();
+        assert_eq!(reloaded.algorithm(), None);
+
+        key.zeroize();
+        assert_eq!(key.algorithm(), None);
     }
 }

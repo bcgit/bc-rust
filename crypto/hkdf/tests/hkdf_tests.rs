@@ -826,4 +826,35 @@ mod hkdf_tests {
             Err(SuspendableError::InvalidData)
         ));
     }
+
+    /// RFC 5869 Sec 2.3: "OKM = first L octets of T", for any L up to 255 * HashLen, so a shorter
+    /// output is a prefix of a longer one. Every L from 0 to 200 covers each value of L mod HashLen
+    /// for both hashes: the last block used to be produced as an HMAC truncated to the remaining
+    /// length, which HMAC refuses below 4 bytes, so every L with L mod HashLen in 1..=3 failed.
+    #[test]
+    fn every_output_length_is_a_prefix_of_a_longer_one() {
+        let salt = KeyMaterial256::from_bytes_as_type(&DUMMY_SEED[..32], KeyType::MACKey).unwrap();
+        let ikm = KeyMaterial256::from_bytes_as_type(&DUMMY_SEED[32..64], KeyType::Seed).unwrap();
+        const MAX_L: usize = 200;
+
+        let mut full = KeyMaterial::<MAX_L>::new();
+        HKDF_SHA256::extract_and_expand_out(&salt, &ikm, b"info", MAX_L, &mut full).unwrap();
+        for l in 0..=MAX_L {
+            let mut okm = KeyMaterial::<MAX_L>::new();
+            let n = HKDF_SHA256::extract_and_expand_out(&salt, &ikm, b"info", l, &mut okm)
+                .unwrap_or_else(|e| panic!("HKDF-SHA256, L = {l}: {e:?}"));
+            assert_eq!(n, l, "HKDF-SHA256, L = {l}: bytes written");
+            assert_eq!(okm.ref_to_bytes(), &full.ref_to_bytes()[..l], "HKDF-SHA256, L = {l}");
+        }
+
+        let mut full = KeyMaterial::<MAX_L>::new();
+        HKDF_SHA512::extract_and_expand_out(&salt, &ikm, b"info", MAX_L, &mut full).unwrap();
+        for l in 0..=MAX_L {
+            let mut okm = KeyMaterial::<MAX_L>::new();
+            let n = HKDF_SHA512::extract_and_expand_out(&salt, &ikm, b"info", l, &mut okm)
+                .unwrap_or_else(|e| panic!("HKDF-SHA512, L = {l}: {e:?}"));
+            assert_eq!(n, l, "HKDF-SHA512, L = {l}: bytes written");
+            assert_eq!(okm.ref_to_bytes(), &full.ref_to_bytes()[..l], "HKDF-SHA512, L = {l}");
+        }
+    }
 }
