@@ -9,9 +9,8 @@
 //! A `valid` case must encrypt to exactly `ct || tag` and decrypt back to `msg`. An `invalid` case
 //! must be rejected with `AEADTagCheckFailed`, leaving the output buffer zeroized.
 
-use bouncycastle_ascon::{
-    AsconAead128Decryptor, AsconAead128Encryptor, KEY_LEN, NONCE_LEN, TAG_LEN,
-};
+use bouncycastle_ascon::{Ascon_AEAD128, KEY_LEN, NONCE_LEN, TAG_LEN};
+use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::hazmat::do_hazardous_operations;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
@@ -56,15 +55,17 @@ fn wycheproof_ascon_aead128() {
             let msg = hex_field(test, "msg", tc_id);
             let ct_and_tag = [hex_field(test, "ct", tc_id), hex_field(test, "tag", tc_id)].concat();
 
-            let mut pt = vec![0xEEu8; AsconAead128Decryptor::decrypt_out_len(ct_and_tag.len())];
-            let decrypted = AsconAead128Decryptor::decrypt_with_aad_out(
+            let mut pt =
+                vec![0xEEu8; Ascon_AEAD128::<Decrypting>::decrypt_out_len(ct_and_tag.len())];
+            let decrypted = Ascon_AEAD128::<Decrypting>::decrypt_with_aad_out(
                 &key, &nonce, &aad, &ct_and_tag, &mut pt,
             );
 
             match test.get("result").and_then(Value::as_str).expect("result") {
                 "valid" => {
-                    let mut out = vec![0u8; AsconAead128Encryptor::encrypt_out_len(msg.len())];
-                    let n = AsconAead128Encryptor::encrypt_with_aad_nonce_out(
+                    let mut out =
+                        vec![0u8; Ascon_AEAD128::<Encrypting>::encrypt_out_len(msg.len())];
+                    let n = Ascon_AEAD128::<Encrypting>::encrypt_with_aad_nonce_out(
                         &key, &nonce, &aad, &msg, &mut out,
                     )
                     .unwrap_or_else(|e| panic!("tcId {tc_id}: encrypt failed: {e:?}"));
