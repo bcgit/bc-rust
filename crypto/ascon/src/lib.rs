@@ -16,7 +16,7 @@
 //! This crate implements the four Ascon functions standardized in NIST SP 800-232
 //! (August 2025), which can be found here: <https://doi.org/10.6028/NIST.SP.800-232>
 //!
-//! - [`Ascon-AEAD128`](AsconAead128) — authenticated encryption (128-bit key/nonce/tag, 128-bit
+//! - [`Ascon-AEAD128`](Ascon_AEAD128) — authenticated encryption (128-bit key/nonce/tag, 128-bit
 //!   single-key security).
 //! - [`Ascon-Hash256`](AsconHash256) — hash function (256-bit digest, 128-bit security).
 //! - [`Ascon-XOF128`](AsconXof128) — extendable-output function.
@@ -43,10 +43,11 @@
 //! assert_eq!(&out[..], &digest[..]);
 //! ```
 //!
-//! Authenticated encryption (one-shot):
+//! Authenticated encryption (one-shot, under a nonce the caller manages):
 //! ```
-//! use bouncycastle_ascon::AsconAead128;
+//! use bouncycastle_ascon::{AsconAead128Decryptor, AsconAead128Encryptor};
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
+//! use bouncycastle_core::traits::{AEADCipherDecryptor, AEADCipherEncryptor};
 //!
 //! let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42u8; 16], KeyType::SymmetricCipherKey).unwrap();
 //! let nonce = [1u8; 16];           // MUST be unique per encryption under a given key
@@ -54,11 +55,11 @@
 //! let plaintext = b"secret message";
 //!
 //! let mut ct = vec![0u8; plaintext.len() + 16]; // ciphertext || 16-byte tag
-//! let n = AsconAead128::encrypt(&key, &nonce, Some(ad), plaintext, &mut ct).unwrap();
+//! let n = AsconAead128Encryptor::encrypt_with_aad_nonce_out(&key, &nonce, ad, plaintext, &mut ct).unwrap();
 //! ct.truncate(n);
 //!
 //! let mut pt = vec![0u8; ct.len() - 16];
-//! let m = AsconAead128::decrypt(&key, &nonce, Some(ad), &ct, &mut pt).unwrap();
+//! let m = AsconAead128Decryptor::decrypt_with_aad_out(&key, &nonce, ad, &ct, &mut pt).unwrap();
 //! pt.truncate(m);
 //! assert_eq!(&pt, plaintext);
 //! ```
@@ -140,9 +141,8 @@
 //!
 //! | Type | In-memory size (bytes) | Suspended state size (bytes) |
 //! |------|-------------------------|-------------------------------|
-//! | [`AsconAead128`] | 72 | [`SUSPENDED_ASCON_AEAD128_STATE_LEN`] (46) |
-//! | [`Ascon_AEAD128<Encrypting>`](AsconAead128Encryptor) | 72 | |
-//! | [`Ascon_AEAD128<Decrypting>`](AsconAead128Decryptor) | 96 | |
+//! | [`Ascon_AEAD128<Encrypting>`](AsconAead128Encryptor) | 72 | [`SUSPENDED_ASCON_AEAD128_ENCRYPTOR_STATE_LEN`] (46) |
+//! | [`Ascon_AEAD128<Decrypting>`](AsconAead128Decryptor) | 96 | [`SUSPENDED_ASCON_AEAD128_DECRYPTOR_STATE_LEN`] (63) |
 //! | [`AsconHash256`] | 64 | [`SUSPENDED_ASCON_HASH256_STATE_LEN`] (53) |
 //! | [`AsconXof128`] | 64 | [`SUSPENDED_ASCON_XOF128_STATE_LEN`] (54) |
 //! | [`AsconCXof128`] | 64 | [`SUSPENDED_ASCON_CXOF128_STATE_LEN`] (54) |
@@ -187,12 +187,11 @@
 //!   caller that needs a partial-byte final block should reach for SHA-3, which supports one.
 //! - **Decryption tag check failure:** a ciphertext decryption whose finalization returns
 //!   `Err(SymmetricCipherError::AEADTagCheckFailed)` must be treated as tampered, and the entire
-//!   plaintext rejected. The one-shot APIs ([`AsconAead128::decrypt`],
-//!   [`bouncycastle_core::traits::AEADCipherDecryptor::decrypt_detached_out`],
+//!   plaintext rejected. The one-shot APIs
+//!   ([`bouncycastle_core::traits::AEADCipherDecryptor::decrypt_detached_out`],
 //!   [`bouncycastle_core::traits::AEADCipherDecryptor::decrypt_with_aad_out`] and
 //!   [`bouncycastle_core::traits::SymmetricCipherDecryptor::decrypt_out`]) zeroize their output
-//!   buffer before returning that error. The streaming API ([`AsconAead128::do_decrypt_inplace`] /
-//!   [`AsconAead128::do_decrypt_final`], or `do_update_out` followed by
+//!   buffer before returning that error. The streaming API (`do_decrypt_out` followed by
 //!   [`bouncycastle_core::traits::AEADCipherDecryptor::do_decrypt_final_detached_out`] or
 //!   [`bouncycastle_core::traits::SymmetricCipherDecryptor::do_decrypt_final`]) does not: plaintext
 //!   bytes are necessarily written to the caller's buffer *before* the tag can be checked, so an
@@ -214,8 +213,9 @@ mod ascon_hash256;
 mod ascon_xof128;
 
 pub use ascon_aead128::{
-    Ascon_AEAD128, AsconAead128, AsconAead128Decryptor, AsconAead128Encryptor, KEY_LEN, NONCE_LEN,
-    SUSPENDED_ASCON_AEAD128_STATE_LEN, TAG_LEN,
+    Ascon_AEAD128, AsconAead128Decryptor, AsconAead128Encryptor, KEY_LEN, NONCE_LEN,
+    SUSPENDED_ASCON_AEAD128_DECRYPTOR_STATE_LEN, SUSPENDED_ASCON_AEAD128_ENCRYPTOR_STATE_LEN,
+    TAG_LEN,
 };
 pub use ascon_cxof128::{AsconCXof128, AsconCXof128Squeezer, SUSPENDED_ASCON_CXOF128_STATE_LEN};
 pub use ascon_hash256::{AsconHash256, SUSPENDED_ASCON_HASH256_STATE_LEN};

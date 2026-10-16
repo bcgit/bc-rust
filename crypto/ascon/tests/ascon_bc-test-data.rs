@@ -8,14 +8,17 @@
 //! These full sweeps (1025–1089 cases each) complement the small embedded vector sets in the
 //! per-primitive test files.
 
-use bouncycastle_ascon::AsconAead128;
 use bouncycastle_ascon::AsconCXof128;
 use bouncycastle_ascon::AsconHash256;
 use bouncycastle_ascon::AsconXof128;
+use bouncycastle_ascon::{AsconAead128Decryptor, AsconAead128Encryptor};
 use bouncycastle_core::hazmat::do_hazardous_operations;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::traits::{Hash, XOF};
+use bouncycastle_core::traits::{
+    AEADCipherDecryptor, AEADCipherEncryptor, Hash, SymmetricCipherDecryptor,
+    SymmetricCipherEncryptor, XOF,
+};
 use bouncycastle_core_test_framework::test_data_loaders::bc_test_data;
 use bouncycastle_hex as hex;
 use std::collections::BTreeMap;
@@ -113,34 +116,38 @@ fn ascon_aead128_kat() {
         let pt = decode_hex(field(case, &["PT", "P"]));
         let expected_ct = decode_hex(field(case, &["CT", "C"]));
 
-        let ad_opt = if ad.is_empty() { None } else { Some(ad.as_slice()) };
-
         // One-shot encrypt.
-        let mut ct = vec![0u8; pt.len() + 16];
-        let n = AsconAead128::encrypt(&key, &nonce, ad_opt, &pt, &mut ct).unwrap();
+        let mut ct = vec![0u8; AsconAead128Encryptor::encrypt_out_len(pt.len())];
+        let n = AsconAead128Encryptor::encrypt_with_aad_nonce_out(&key, &nonce, &ad, &pt, &mut ct)
+            .unwrap();
         ct.truncate(n);
 
         assert_eq!(ct, expected_ct, "encrypt mismatch (Count {})", field(case, &["Count"]));
 
         // One-shot decrypt round-trip.
-        let mut pt_out = vec![0u8; expected_ct.len()];
-        let m = AsconAead128::decrypt(&key, &nonce, ad_opt, &expected_ct, &mut pt_out)
-            .expect("decrypt should authenticate");
+        let mut pt_out = vec![0u8; AsconAead128Decryptor::decrypt_out_len(expected_ct.len())];
+        let m = AsconAead128Decryptor::decrypt_with_aad_out(
+            &key, &nonce, &ad, &expected_ct, &mut pt_out,
+        )
+        .expect("decrypt should authenticate");
 
         pt_out.truncate(m);
 
         assert_eq!(pt_out, pt, "decrypt mismatch (Count {})", field(case, &["Count"]));
 
-        // Byte-at-a-time streaming encrypt/decrypt, through the inherent API.
-        let mut enc = AsconAead128::new_encrypting(&key, &nonce, ad_opt).unwrap();
-        let mut stream_ct = pt.clone();
+        // Byte-at-a-time streaming encrypt/decrypt.
+        let mut enc = AsconAead128Encryptor::do_encrypt_init_nonce(&key, &nonce).unwrap();
+        enc.do_update_aad(&ad).unwrap();
+        let mut stream_ct = Vec::with_capacity(expected_ct.len());
 
-        for byte in stream_ct.iter_mut() {
-            enc.do_encrypt_inplace(core::slice::from_mut(byte));
+        for byte in &pt {
+            let mut out = [0u8; 1];
+            let n = enc.do_encrypt_out(core::slice::from_ref(byte), &mut out).unwrap();
+            stream_ct.extend_from_slice(&out[..n]);
         }
 
-        let tag = enc.do_encrypt_final();
-        stream_ct.extend_from_slice(&tag);
+        let (last, n) = enc.do_encrypt_final().unwrap();
+        stream_ct.extend_from_slice(&last[..n]);
 
         assert_eq!(
             stream_ct,
@@ -149,14 +156,18 @@ fn ascon_aead128_kat() {
             field(case, &["Count"])
         );
 
-        let mut dec = AsconAead128::new_decrypting(&key, &nonce, ad_opt).unwrap();
-        let mut stream_pt = expected_ct[..pt.len()].to_vec();
+        let mut dec = AsconAead128Decryptor::do_decrypt_init(&key, &nonce).unwrap();
+        dec.do_update_aad(&ad).unwrap();
+        let mut stream_pt = Vec::with_capacity(pt.len());
 
-        for byte in stream_pt.iter_mut() {
-            dec.do_decrypt_inplace(core::slice::from_mut(byte));
+        for byte in &expected_ct {
+            let mut out = [0u8; 1];
+            let n = dec.do_decrypt_out(core::slice::from_ref(byte), &mut out).unwrap();
+            stream_pt.extend_from_slice(&out[..n]);
         }
 
-        dec.do_decrypt_final(&tag).expect("streaming decrypt should authenticate");
+        let (last, n) = dec.do_decrypt_final().expect("streaming decrypt should authenticate");
+        stream_pt.extend_from_slice(&last[..n]);
 
         assert_eq!(stream_pt, pt, "streaming decrypt mismatch (Count {})", field(case, &["Count"]));
     }
