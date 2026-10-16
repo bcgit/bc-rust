@@ -175,9 +175,10 @@
 //! ```
 
 use crate::AES_BLOCK_LEN;
-use crate::AESParams;
 use crate::bitslice::Block;
+use crate::hazmat::engine::Engine;
 use crate::hazmat::{AES128Internal, AES192Internal, AES256Internal, AESInternal};
+use crate::{AES128Params, AES192Params, AES256Params, AESParams};
 use bouncycastle_cipher::Direction;
 use bouncycastle_cipher::modes::hazmat::ecb::Ecb;
 use bouncycastle_cipher::padding::{PaddedBlockCipherDecryptor, PaddedBlockCipherEncryptor};
@@ -246,13 +247,15 @@ pub type AES_ECB_256<'k, Dir, Pad> = <Dir as Direction>::Select<
     >,
 >;
 
-impl ElectronicCodeBook<16, AES_BLOCK_LEN> for AES128Internal {
+impl<E: Engine<AES128Params>> ElectronicCodeBook<16, AES_BLOCK_LEN>
+    for AESInternal<AES128Params, E>
+{
     fn new(key: &KeyMaterial<16>) -> Result<Self, SymmetricCipherError> {
-        AES128Internal::new(key)
+        AESInternal::<AES128Params, E>::new(key)
     }
 }
 
-impl BlockPermutation<AES_BLOCK_LEN> for AES128Internal {
+impl<E: Engine<AES128Params>> BlockPermutation<AES_BLOCK_LEN> for AESInternal<AES128Params, E> {
     fn encrypt_block(&self, block: &mut Block) {
         Self::encrypt_block(self, block)
     }
@@ -273,13 +276,15 @@ impl BlockPermutation<AES_BLOCK_LEN> for AES128Internal {
     }
 }
 
-impl ElectronicCodeBook<24, AES_BLOCK_LEN> for AES192Internal {
+impl<E: Engine<AES192Params>> ElectronicCodeBook<24, AES_BLOCK_LEN>
+    for AESInternal<AES192Params, E>
+{
     fn new(key: &KeyMaterial<24>) -> Result<Self, SymmetricCipherError> {
-        AES192Internal::new(key)
+        AESInternal::<AES192Params, E>::new(key)
     }
 }
 
-impl BlockPermutation<AES_BLOCK_LEN> for AES192Internal {
+impl<E: Engine<AES192Params>> BlockPermutation<AES_BLOCK_LEN> for AESInternal<AES192Params, E> {
     fn encrypt_block(&self, block: &mut Block) {
         Self::encrypt_block(self, block)
     }
@@ -300,13 +305,15 @@ impl BlockPermutation<AES_BLOCK_LEN> for AES192Internal {
     }
 }
 
-impl ElectronicCodeBook<32, AES_BLOCK_LEN> for AES256Internal {
+impl<E: Engine<AES256Params>> ElectronicCodeBook<32, AES_BLOCK_LEN>
+    for AESInternal<AES256Params, E>
+{
     fn new(key: &KeyMaterial<32>) -> Result<Self, SymmetricCipherError> {
-        AES256Internal::new(key)
+        AESInternal::<AES256Params, E>::new(key)
     }
 }
 
-impl BlockPermutation<AES_BLOCK_LEN> for AES256Internal {
+impl<E: Engine<AES256Params>> BlockPermutation<AES_BLOCK_LEN> for AESInternal<AES256Params, E> {
     fn encrypt_block(&self, block: &mut Block) {
         Self::encrypt_block(self, block)
     }
@@ -327,7 +334,7 @@ impl BlockPermutation<AES_BLOCK_LEN> for AES256Internal {
     }
 }
 
-impl<P: AESParams> core::fmt::Debug for AESInternal<P> {
+impl<P: AESParams, E: Engine<P>> core::fmt::Debug for AESInternal<P, E> {
     /// Prints the algorithm name only. The key schedule is secret and is never formatted.
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.write_str(P::ALG_NAME)
