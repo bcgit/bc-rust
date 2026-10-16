@@ -3,9 +3,11 @@
 //! built on it are written once whichever implementation runs the rounds.
 //!
 //! [`Bitsliced`] is the portable, table-free engine the crate docs describe, and it is
-//! [`DefaultEngine`] on every target. `AES128Internal` and friends use the default; naming an
-//! engine explicitly, as `AESInternal<AES128Params, Bitsliced<AES128Params>>`, is for tests
-//! that compare engines and for callers with a reason to pin one.
+//! [`DefaultEngine`] on every target except an AArch64 build that declares the Crypto
+//! Extensions (`target_feature = "aes"` and `"neon"`, little-endian), where the default is
+//! `Arm`, the engine over `bouncycastle-arm`'s kernels. `AES128Internal` and friends use the
+//! default; naming an engine explicitly, as `AESInternal<AES128Params, Bitsliced<AES128Params>>`,
+//! is for tests that compare engines and for callers with a reason to pin one.
 //!
 //! An engine holds the expanded key and nothing else. It is constructed only through
 //! `AESInternal::new`, which validates the key first, so `expand` takes a plain byte slice whose
@@ -16,7 +18,7 @@ use crate::bitslice::{Block, PlaneWord, Planes};
 use crate::round::{add_round_key, inv_mix_columns, inv_shift_rows, mix_columns, shift_rows};
 use crate::sbox::{inv_sbox, sbox};
 use crate::schedule::{expand, round_key};
-use bouncycastle_utils::secret::Secret;
+use bouncycastle_utils::secret::{Secret, ZeroizablePrimitive};
 
 /// Prevents an engine from being added outside this crate: every engine is reviewed against the
 /// FIPS 197 vectors and the constant-time claims in the crate docs before it can sit behind
@@ -52,8 +54,101 @@ pub trait Engine<P: AESParams>: EngineInternalTrait + Clone + PartialEq + Eq {
     fn decrypt_4blocks(&self, blocks: &mut [Block; 4]);
 }
 
-/// The engine `AESInternal` uses unless one is named: [`Bitsliced`] on every target.
+/// Prevents [`RoundKeys`] from being implemented outside this crate: the three AES sizes are the
+/// only round-key arrays.
+trait RoundKeysInternalTrait {}
+
+impl RoundKeysInternalTrait for [Block; 11] {}
+impl RoundKeysInternalTrait for [Block; 13] {}
+impl RoundKeysInternalTrait for [Block; 15] {}
+
+/// `[Block; Nr + 1]` for one key size: the bound on
+/// [`AESParams::RoundKeys`], sealed and implemented for the three
+/// AES sizes.
+///
+/// On a target without the `Arm` engine it is only the bound. There it carries that engine's
+/// kernels, which take the round keys as `[Block; Nr + 1]`, and `Nr + 1` cannot be written as an
+/// expression over `P` on stable const generics (the same reason `AESParams::Schedule` is an
+/// associated type). An engine must implement [`Engine<P>`] for every `P`, since the key types
+/// name `AESInternal<P>` for any `P`, so one that holds its schedule in that form reaches the
+/// kernels for its size through this trait rather than naming `N`.
+#[cfg(not(all(
+    target_arch = "aarch64",
+    target_endian = "little",
+    target_feature = "aes",
+    target_feature = "neon"
+)))]
+pub trait RoundKeys: ZeroizablePrimitive + RoundKeysInternalTrait {}
+
+#[cfg(not(all(
+    target_arch = "aarch64",
+    target_endian = "little",
+    target_feature = "aes",
+    target_feature = "neon"
+)))]
+impl RoundKeys for [Block; 11] {}
+#[cfg(not(all(
+    target_arch = "aarch64",
+    target_endian = "little",
+    target_feature = "aes",
+    target_feature = "neon"
+)))]
+impl RoundKeys for [Block; 13] {}
+#[cfg(not(all(
+    target_arch = "aarch64",
+    target_endian = "little",
+    target_feature = "aes",
+    target_feature = "neon"
+)))]
+impl RoundKeys for [Block; 15] {}
+
+/// `[Block; Nr + 1]` for one key size: the bound on
+/// [`AESParams::RoundKeys`], sealed and implemented for the three
+/// AES sizes, carrying the [`Arm`] engine's kernels for that size.
+///
+/// The kernels in `bouncycastle_arm::aes` take the round keys as `[Block; Nr + 1]`, and `Nr + 1`
+/// cannot be written as an expression over `P` on stable const generics (the same reason
+/// `AESParams::Schedule` is an associated type). An engine must implement [`Engine<P>`] for
+/// every `P`, since the key types name `AESInternal<P>` for any `P`, so [`Arm`] reaches the
+/// kernels for its size through this trait rather than naming `N`. Only `expand` differs between
+/// the sizes; the block functions are the same kernels.
+#[cfg(all(
+    target_arch = "aarch64",
+    target_endian = "little",
+    target_feature = "aes",
+    target_feature = "neon"
+))]
+pub trait RoundKeys: ZeroizablePrimitive + RoundKeysInternalTrait {
+    /// KEYEXPANSION()'s `w` for a key of this size. `key` is exactly that size's `KEY_LEN`
+    /// bytes; `AESInternal::new` has checked that before calling.
+    fn expand(key: &[u8]) -> Self;
+    /// KEYEXPANSIONEIC()'s `dw`: `self` with INVMIXCOLUMNS() applied to round keys `1..=Nr-1`.
+    fn equivalent_inverse(&self) -> Self;
+    /// CIPHER() on `B` independent blocks, in place, with `self` as `w`.
+    fn encrypt_blocks<const B: usize>(&self, blocks: &mut [Block; B]);
+    /// The equivalent inverse cipher on `B` independent blocks, in place, with `self` as `dw`.
+    fn decrypt_blocks<const B: usize>(&self, blocks: &mut [Block; B]);
+}
+
+/// The engine `AESInternal` uses unless one is named: [`Bitsliced`] on every target without
+/// the AArch64 Crypto Extensions declared at build time.
+#[cfg(not(all(
+    target_arch = "aarch64",
+    target_endian = "little",
+    target_feature = "aes",
+    target_feature = "neon"
+)))]
 pub type DefaultEngine<P> = Bitsliced<P>;
+
+/// The engine `AESInternal` uses unless one is named: [`Arm`], because this build declares the
+/// AArch64 Crypto Extensions.
+#[cfg(all(
+    target_arch = "aarch64",
+    target_endian = "little",
+    target_feature = "aes",
+    target_feature = "neon"
+))]
+pub type DefaultEngine<P> = Arm<P>;
 
 /// The portable engine: the bit-sliced, table-free implementation described in the crate docs.
 ///
@@ -197,5 +292,145 @@ impl<P: AESParams> Engine<P> for Bitsliced<P> {
     /// On `u64` planes.
     fn decrypt_4blocks(&self, blocks: &mut [Block; 4]) {
         self.decrypt::<u64>(blocks);
+    }
+}
+
+/// The AArch64 Crypto Extensions engine, over the kernels in `bouncycastle_arm::aes`.
+///
+/// CIPHER() runs on `AESE`/`AESMC` and decryption is the equivalent inverse cipher of FIPS 197
+/// Sec 5.3.5 on `AESD`/`AESIMC`, which is what those instructions compute, so this engine holds
+/// both schedules: `w` from KEYEXPANSION() and `dw` from KEYEXPANSIONEIC(). That is twice the
+/// state of [`Bitsliced`], 352, 416 or 480 bytes; a build that only encrypts, as CTR, GCM and
+/// CCM do, still pays for `dw`, which is the price of one type serving both directions. The
+/// expansion itself is table-free: SUBWORD() goes through `AESE`, see `bouncycastle_arm::aes`.
+///
+/// The expanded arrays are moved into their [`Secret`]s; the compiler may leave a copy of each
+/// in the dead frame of the kernel that produced it, which is the same caveat the crate's
+/// Security Considerations make about working state.
+#[cfg(all(
+    target_arch = "aarch64",
+    target_endian = "little",
+    target_feature = "aes",
+    target_feature = "neon"
+))]
+pub struct Arm<P: AESParams> {
+    /// KEYEXPANSION()'s `w`, as `Nr + 1` round keys.
+    w: Secret<P::RoundKeys>,
+    /// KEYEXPANSIONEIC()'s `dw`: `w` with INVMIXCOLUMNS() applied to round keys `1..=Nr-1`.
+    dw: Secret<P::RoundKeys>,
+}
+
+#[cfg(all(
+    target_arch = "aarch64",
+    target_endian = "little",
+    target_feature = "aes",
+    target_feature = "neon"
+))]
+mod arm {
+    use super::{Arm, Engine, EngineInternalTrait, RoundKeys};
+    use crate::AESParams;
+    use crate::bitslice::Block;
+    use bouncycastle_arm::aes::{
+        decrypt_blocks, encrypt_blocks, equivalent_inverse_round_keys, expand_128, expand_192,
+        expand_256,
+    };
+    use bouncycastle_utils::secret::Secret;
+
+    impl<P: AESParams> Clone for Arm<P> {
+        fn clone(&self) -> Self {
+            Self { w: self.w.clone(), dw: self.dw.clone() }
+        }
+    }
+
+    // Both schedules are compared, joined with `&` rather than `&&` so that the time taken does
+    // not say which of them differed; `Secret`'s equality inspects every byte. Round key 0 of `w`
+    // is the key itself (FIPS 197 Sec 5.2), so two engines are equal exactly when the keys are.
+    impl<P: AESParams> PartialEq for Arm<P> {
+        fn eq(&self, other: &Self) -> bool {
+            (self.w == other.w) & (self.dw == other.dw)
+        }
+    }
+
+    impl<P: AESParams> Eq for Arm<P> {}
+
+    impl<P: AESParams> EngineInternalTrait for Arm<P> {}
+
+    impl<P: AESParams> Engine<P> for Arm<P> {
+        fn expand(key: &[u8]) -> Self {
+            let mut w = Secret::<P::RoundKeys>::new();
+            *w = P::RoundKeys::expand(key);
+            let mut dw = Secret::<P::RoundKeys>::new();
+            *dw = w.equivalent_inverse();
+            Self { w, dw }
+        }
+        fn encrypt_block(&self, block: &mut Block) {
+            self.w.encrypt_blocks(core::array::from_mut(block));
+        }
+        fn decrypt_block(&self, block: &mut Block) {
+            self.dw.decrypt_blocks(core::array::from_mut(block));
+        }
+        fn encrypt_2blocks(&self, blocks: &mut [Block; 2]) {
+            self.w.encrypt_blocks(blocks);
+        }
+        fn decrypt_2blocks(&self, blocks: &mut [Block; 2]) {
+            self.dw.decrypt_blocks(blocks);
+        }
+        fn encrypt_4blocks(&self, blocks: &mut [Block; 4]) {
+            self.w.encrypt_blocks(blocks);
+        }
+        fn decrypt_4blocks(&self, blocks: &mut [Block; 4]) {
+            self.dw.decrypt_blocks(blocks);
+        }
+    }
+
+    impl RoundKeys for [Block; 11] {
+        fn expand(key: &[u8]) -> Self {
+            // Cannot fail: `AESInternal::new` has checked the key is `KEY_LEN` = 16 bytes.
+            let key: &[u8; 16] = key.try_into().expect("AESInternal::new checks the key length");
+            expand_128(key)
+        }
+        fn equivalent_inverse(&self) -> Self {
+            equivalent_inverse_round_keys(self)
+        }
+        fn encrypt_blocks<const B: usize>(&self, blocks: &mut [Block; B]) {
+            encrypt_blocks(self, blocks);
+        }
+        fn decrypt_blocks<const B: usize>(&self, blocks: &mut [Block; B]) {
+            decrypt_blocks(self, blocks);
+        }
+    }
+
+    impl RoundKeys for [Block; 13] {
+        fn expand(key: &[u8]) -> Self {
+            // Cannot fail: `AESInternal::new` has checked the key is `KEY_LEN` = 24 bytes.
+            let key: &[u8; 24] = key.try_into().expect("AESInternal::new checks the key length");
+            expand_192(key)
+        }
+        fn equivalent_inverse(&self) -> Self {
+            equivalent_inverse_round_keys(self)
+        }
+        fn encrypt_blocks<const B: usize>(&self, blocks: &mut [Block; B]) {
+            encrypt_blocks(self, blocks);
+        }
+        fn decrypt_blocks<const B: usize>(&self, blocks: &mut [Block; B]) {
+            decrypt_blocks(self, blocks);
+        }
+    }
+
+    impl RoundKeys for [Block; 15] {
+        fn expand(key: &[u8]) -> Self {
+            // Cannot fail: `AESInternal::new` has checked the key is `KEY_LEN` = 32 bytes.
+            let key: &[u8; 32] = key.try_into().expect("AESInternal::new checks the key length");
+            expand_256(key)
+        }
+        fn equivalent_inverse(&self) -> Self {
+            equivalent_inverse_round_keys(self)
+        }
+        fn encrypt_blocks<const B: usize>(&self, blocks: &mut [Block; B]) {
+            encrypt_blocks(self, blocks);
+        }
+        fn decrypt_blocks<const B: usize>(&self, blocks: &mut [Block; B]) {
+            decrypt_blocks(self, blocks);
+        }
     }
 }

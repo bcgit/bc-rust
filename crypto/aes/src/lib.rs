@@ -85,6 +85,23 @@
 //! schedule with each round key transformed. One [`AES128Internal`](hazmat::AES128Internal) value therefore encrypts and decrypts
 //! from one stored schedule.
 //!
+//! ## Engines
+//!
+//! The round functions sit behind a sealed [`Engine`](hazmat::engine::Engine) trait, and
+//! [`AESInternal`](hazmat::AESInternal) takes the engine as a type parameter with a default, so
+//! the type, its trait impls and every mode built on it are written once.
+//! [`Bitsliced`](hazmat::engine::Bitsliced) is the engine described above and the default on
+//! every target but one: an AArch64 build that declares `target_feature = "aes"`, as
+//! `aarch64-apple-darwin` does by default and `RUSTFLAGS="-C target-feature=+aes"` does on
+//! Linux, defaults to the `Arm` engine, which runs CIPHER() on the `AESE`/`AESMC` instructions
+//! and the equivalent inverse cipher of FIPS 197 Sec 5.3.5 on `AESD`/`AESIMC` through the
+//! kernels in `bouncycastle-arm`. Naming the engine, as
+//! `AESInternal<AES128Params, Bitsliced<AES128Params>>`, pins one; the crate's
+//! `arm_agreement_tests` run both engines on the same random inputs.
+//!
+//! A binary built with `aes` requires that instruction set on every CPU it runs on, and there
+//! is no run-time detection; see the Security Considerations of `bouncycastle-arm`.
+//!
 //! # Memory Usage
 //!
 //! There are no lookup tables and no heap allocation. The only persistent state is the key
@@ -98,7 +115,11 @@
 //! | Key schedule, held between calls | 176 B | 208 B | 240 B |
 //! | Lookup tables | 0 B | 0 B | 0 B |
 //!
-//! Per-call stack usage is set by the plane width: 16, 32 or 64 bytes of bit-sliced state for
+//! The `Arm` engine holds both FIPS 197 schedules as sixteen-byte round keys, `w` for CIPHER()
+//! and `dw` for EQINVCIPHER(), so 352, 416 or 480 B between calls, and uses registers only
+//! within one.
+//!
+//! Per-call stack usage of the bit-sliced engine is set by the plane width: 16, 32 or 64 bytes of bit-sliced state for
 //! one, two or four blocks, the same again for the round key widened from its stored one-block
 //! form, plus the S-box circuit's spills. Only key expansion depends on the key length. Measured
 //! as the deepest frame chain below each entry point in the release build (x86-64, return
@@ -131,7 +152,9 @@
 //!
 //! By construction there is no secret-dependent memory access and no secret-dependent branch,
 //! in the cipher (sbox) *or* in the key load (key schedule expansion)
-//! The only branches are the round loops, which count over the public `Nr`.
+//! The only branches are the round loops, which count over the public `Nr`. The `Arm` engine's
+//! instructions work on registers, so the same holds there; whether their latency is
+//! data-independent is a property of the CPU, as `bouncycastle-arm`'s docs say.
 //!
 //! This guarantee is "by construction" at the source code level only since no guarantees can be made
 //! against the compiler optimizing the provided code into non-constant time assembly. For uses that
@@ -224,6 +247,9 @@ pub trait AESParams: AESParamsInternalTrait {
     /// `[u32; 4 * (NR + 1)]` -- the bit-sliced schedule; its layout is
     /// described in `schedule.rs`.
     type Schedule: ZeroizablePrimitive + AsRef<[u32]> + AsMut<[u32]>;
+    /// `[[u8; 16]; NR + 1]` -- the round keys as sixteen-byte blocks, the form the hardware
+    /// engines in [`hazmat::engine`] hold them in; see [`RoundKeys`](hazmat::engine::RoundKeys).
+    type RoundKeys: hazmat::engine::RoundKeys;
 }
 
 /// AES-128 parameters: 16-byte key, `Nk` = 4, `Nr` = 10 (FIPS 197 Table 3).
@@ -246,6 +272,7 @@ impl AESParams for AES128Params {
     const NR: usize = 10;
     const ALG_NAME: &'static str = "AES-128";
     type Schedule = [u32; 44]; // 4 * (10 + 1)
+    type RoundKeys = [[u8; 16]; 11]; // 10 + 1
 }
 
 impl AESParams for AES192Params {
@@ -254,6 +281,7 @@ impl AESParams for AES192Params {
     const NR: usize = 12;
     const ALG_NAME: &'static str = "AES-192";
     type Schedule = [u32; 52]; // 4 * (12 + 1)
+    type RoundKeys = [[u8; 16]; 13]; // 12 + 1
 }
 
 impl AESParams for AES256Params {
@@ -262,6 +290,7 @@ impl AESParams for AES256Params {
     const NR: usize = 14;
     const ALG_NAME: &'static str = "AES-256";
     type Schedule = [u32; 60]; // 4 * (14 + 1)
+    type RoundKeys = [[u8; 16]; 15]; // 14 + 1
 }
 
 pub use cbc::{AES_CBC_128, AES_CBC_192, AES_CBC_256};

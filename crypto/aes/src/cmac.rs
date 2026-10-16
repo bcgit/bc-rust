@@ -34,8 +34,10 @@
 //! # Memory Usage
 //!
 //! A key is the expanded schedule plus the two 16-byte subkeys: 208, 240 and 272 bytes for
-//! AES-128, -192 and -256. A worker borrows that and adds the running `C_i`, the pending block
-//! and its length: 48 bytes at every key length.
+//! AES-128, -192 and -256, or 176, 208 and 240 bytes more with the `Arm` engine, the default on
+//! an AArch64 build with the Crypto Extensions, for the second schedule it holds (see the crate
+//! docs). A worker borrows that and adds the running `C_i`, the pending block and its length:
+//! 48 bytes at every key length.
 //!
 //! [`AES128Key<CMAC>`]: crate::AES128Key
 //! [`MAC`]: bouncycastle_core::traits::MAC

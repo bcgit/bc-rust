@@ -37,7 +37,9 @@
 //! # Memory Usage
 //!
 //! A key is the expanded schedule plus the 16-byte hash subkey, the same as a GCM key: 192, 224
-//! and 256 bytes for AES-128, -192 and -256. A worker is a `Gcm` of the same shape.
+//! and 256 bytes for AES-128, -192 and -256, or 176, 208 and 240 bytes more with the `Arm`
+//! engine, the default on an AArch64 build with the Crypto Extensions, for the second schedule
+//! it holds (see the crate docs). A worker is a `Gcm` of the same shape.
 //!
 //! [`AES128Key<GMAC>`]: crate::AES128Key
 

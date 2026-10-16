@@ -1,8 +1,10 @@
 //! `AES*Key<CMAC>`: the key object holding the subkeys, and the workers it hands out producing
 //! exactly what the mode's own route produces over a `CmacKeyState` built from the same bytes.
 
-use bouncycastle_aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
+use bouncycastle_aes::hazmat::engine::Bitsliced;
+use bouncycastle_aes::hazmat::{AES128Internal, AES192Internal, AES256Internal, AESInternal};
 use bouncycastle_aes::{AES_CMAC_128, AES_CMAC_192, AES_CMAC_256, AES128Key, AES192Key, AES256Key};
+use bouncycastle_aes::{AES128Params, AES192Params, AES256Params};
 use bouncycastle_cipher::modes::{CMAC, CmacKeyState};
 use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
 use bouncycastle_core::hazmat::{ElectronicCodeBook, MacMode, Mode};
@@ -128,18 +130,23 @@ fn generate_draws_a_mac_key() {
     assert_eq!(AES128Key::<CMAC>::KEY_TYPE, KeyType::MACKey);
 }
 
-/// The sizes the docs quote.
+/// The sizes the docs quote: the bit-sliced engine's schedule plus the two subkeys. Whichever
+/// engine is the default on this target, the key adds the same 32 B to it.
 #[test]
 fn sizes() {
     use core::mem::size_of;
+    assert_eq!(size_of::<AES128Key<CMAC>>(), size_of::<CmacKeyState<AES128Internal, 16>>());
     assert_eq!(
-        size_of::<AES128Key<CMAC>>(),
-        size_of::<CmacKeyState<bouncycastle_aes::hazmat::AES128Internal, 16>>()
-    );
-    assert_eq!(
-        [size_of::<AES128Key<CMAC>>(), size_of::<AES192Key<CMAC>>(), size_of::<AES256Key<CMAC>>()],
+        [
+            size_of::<CmacKeyState<AESInternal<AES128Params, Bitsliced<AES128Params>>, 16>>(),
+            size_of::<CmacKeyState<AESInternal<AES192Params, Bitsliced<AES192Params>>, 16>>(),
+            size_of::<CmacKeyState<AESInternal<AES256Params, Bitsliced<AES256Params>>, 16>>(),
+        ],
         [208, 240, 272]
     );
+    assert_eq!(size_of::<AES128Key<CMAC>>(), size_of::<AES128Internal>() + 32);
+    assert_eq!(size_of::<AES192Key<CMAC>>(), size_of::<AES192Internal>() + 32);
+    assert_eq!(size_of::<AES256Key<CMAC>>(), size_of::<AES256Internal>() + 32);
     assert_eq!(
         [size_of::<AES_CMAC_128>(), size_of::<AES_CMAC_192>(), size_of::<AES_CMAC_256>()],
         [48, 48, 48]

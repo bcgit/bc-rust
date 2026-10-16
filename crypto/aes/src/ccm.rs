@@ -171,7 +171,9 @@
 //!
 //! The difference between the key sizes is the key schedule, which the workers borrow rather
 //! than copy; the pair adds the mode's state, the `AAD_LEN`-byte AAD buffer and, on the
-//! decrypting side, the held-back tag. Peak stack over a
+//! decrypting side, the held-back tag. With the `Arm` engine, the default on an AArch64 build
+//! with the Crypto Extensions, the key is 176, 208 or 240 B larger for the second schedule that
+//! engine holds (see the crate docs); the workers and the pair are unchanged. Peak stack over a
 //! 16 KiB frame with AES-128, measured with massif on x86-64 in release mode by
 //! `mem_usage_benches/src/bench_ccm_mem_usage.rs`, including the caller's own 16 KiB arrays:
 //!
