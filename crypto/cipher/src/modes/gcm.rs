@@ -82,7 +82,7 @@
 //!
 //! There is also a streaming mode.
 //! Note that the aad must be supplied before any plaintext or ciphertext; attempting to call
-//! `do_update_aad()` after a `do_encrypt_inplace()` will result in a [`SymmetricCipherError::StateError`].
+//! `do_update_aad()` after a `do_encrypt()` will result in a [`SymmetricCipherError::StateError`].
 //!
 //! ```
 //! # mod toy { include!("../../tests/common/toy_block_cipher.rs"); }
