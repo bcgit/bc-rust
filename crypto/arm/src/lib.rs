@@ -21,6 +21,10 @@
 //! `-C target-cpu` that implies it. A binary built that way requires `FEAT_AES` (which
 //! includes `PMULL`) on every CPU it runs on; see Security Considerations.
 //!
+//! To exercise the portable fallback on a host that enables `aes` by default, disable it for
+//! rustdoc as well as rustc, since cargo hands `RUSTFLAGS` only to the latter:
+//! `RUSTFLAGS="-C target-feature=-aes" RUSTDOCFLAGS="-C target-feature=-aes" cargo test`.
+//!
 //! # Usage Examples
 //!
 //! The AES kernels work on round keys expanded from a raw key and on arrays of whole blocks:

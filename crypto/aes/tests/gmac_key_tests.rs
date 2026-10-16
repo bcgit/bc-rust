@@ -1,8 +1,10 @@
 //! `AES*Key<GMAC>`: the key object holding `H`, and the pair it hands out producing exactly what
 //! `AES_GCM_*` over AAD alone produces from the same bytes.
 
-use bouncycastle_aes::hazmat::{AES128Internal, AES192Internal};
+use bouncycastle_aes::hazmat::engine::Bitsliced;
+use bouncycastle_aes::hazmat::{AES128Internal, AES192Internal, AES256Internal, AESInternal};
 use bouncycastle_aes::{AES_GCM_128, AES_GMAC_128, AES_GMAC_192, AES128Key, AES192Key, AES256Key};
+use bouncycastle_aes::{AES128Params, AES192Params, AES256Params};
 use bouncycastle_cipher::modes::{GCM, GCM_NONCE_LEN, GMAC, GcmKeyState, Gmac};
 use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
@@ -135,15 +137,24 @@ fn generate_draws_a_mac_key() {
     assert!(key.create_verifier(&NONCE).verify(MSG, &tag));
 }
 
-/// The sizes the docs quote: a GMAC key is a GCM key, and a worker is a `Gcm`.
+/// The sizes the docs quote: a GMAC key is a GCM key, the bit-sliced engine's schedule plus the
+/// hash subkey, and a worker is a `Gcm`. Whichever engine is the default on this target, the key
+/// adds the same 16 B to it.
 #[test]
 fn sizes() {
     use core::mem::size_of;
     assert_eq!(size_of::<AES128Key<GMAC>>(), size_of::<GcmKeyState<AES128Internal>>());
     assert_eq!(
-        [size_of::<AES128Key<GMAC>>(), size_of::<AES192Key<GMAC>>(), size_of::<AES256Key<GMAC>>()],
+        [
+            size_of::<GcmKeyState<AESInternal<AES128Params, Bitsliced<AES128Params>>>>(),
+            size_of::<GcmKeyState<AESInternal<AES192Params, Bitsliced<AES192Params>>>>(),
+            size_of::<GcmKeyState<AESInternal<AES256Params, Bitsliced<AES256Params>>>>(),
+        ],
         [192, 224, 256]
     );
+    assert_eq!(size_of::<AES128Key<GMAC>>(), size_of::<AES128Internal>() + 16);
+    assert_eq!(size_of::<AES192Key<GMAC>>(), size_of::<AES192Internal>() + 16);
+    assert_eq!(size_of::<AES256Key<GMAC>>(), size_of::<AES256Internal>() + 16);
     assert_eq!(size_of::<AES128Key<GMAC>>(), size_of::<AES128Key<GCM>>());
     assert_eq!(size_of::<AES_GMAC_128<'_, Encrypting>>(), size_of::<AES_GCM_128<'_, Encrypting>>());
     assert_eq!(
