@@ -14,16 +14,22 @@
 // properly document everything.
 #![forbid(missing_docs)]
 
+pub mod aead;
+pub mod block_cipher;
+pub mod electronic_code_book;
 pub mod hash;
 pub mod kdf;
 pub mod kem;
+pub mod key_stream;
 pub mod mac;
 pub mod signature;
 pub mod suspendable_state;
 pub mod symmetric_ciphers;
+pub mod test_data_loaders;
 pub mod xof;
 
 mod fixed_seed_rng;
+mod key_binding;
 pub use fixed_seed_rng::FixedSeedRNG;
 
 /// A dummy seed for use in tests which is \x00..\xFF repeated for 1024 bytes

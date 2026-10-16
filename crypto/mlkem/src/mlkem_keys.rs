@@ -6,7 +6,7 @@ use crate::mlkem::{MLKEM768_PK_LEN, MLKEM768_SK_LEN};
 use crate::mlkem::{MLKEM1024_PK_LEN, MLKEM1024_SK_LEN};
 use crate::params::{MLKEM512Params, MLKEM768Params, MLKEM1024Params, MLKEMParams};
 use bouncycastle_core::errors::KEMError;
-use bouncycastle_core::key_material;
+use bouncycastle_core::hazmat::do_hazardous_operations;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::traits::{Hash, KEMPrivateKey, KEMPublicKey};
 use bouncycastle_sha3::SHA3_256;
@@ -493,7 +493,7 @@ impl<
             tmp[32..].copy_from_slice(&*self.z);
             let mut seed = KeyMaterial::<64>::from_bytes_as_type(&*tmp, KeyType::Seed).unwrap();
 
-            key_material::do_hazardous_operations(&mut seed, |seed| {
+            do_hazardous_operations(&mut seed, |seed| {
                 seed.set_security_strength(P::MAX_SECURITY_STRENGTH)
             })
             .unwrap();

@@ -179,7 +179,10 @@
 //!
 //! Note that since HMAC is a keyed algorithm and we do not want to serialize the private key into
 //! the state, the trait structure forces you to re-provide the same key when you resume the
-//! operation. Securely storing this key in the interim is the responsibility of the caller. Note
+//! operation. Securely storing this key in the interim is the responsibility of the caller. The
+//! state is not key-free, though: it is the inner sponge after absorbing `K ⊕ ipad`, and Keccak-f
+//! is a permutation, so anyone holding the state and the message absorbed so far can invert it
+//! back to `K ⊕ ipad` and hence the key. Store the suspended state as securely as the key. Note
 //! also that if you resume the HMAC with the wrong key, [`SuspendableKeyed::from_suspended`] has no
 //! way to detect this, so the end result will be a broken MAC value computed with different keys in
 //! the inner and outer pad. So make sure you resume with the same key!
@@ -232,7 +235,7 @@
 //! as the output size grows. The suspended state is exactly the inner hash's suspended state -- the
 //! key is deliberately excluded -- so all four share the sponge's single value.
 //!
-//! # Security Considerations
+//! # 🚨 Security Considerations 🚨
 //!
 //! * The key must carry at least the security strength claimed by the HMAC, and [`MAC::new`]
 //!   enforces that. [`MAC::new_allow_weak_key`] deliberately skips the check; use it only where a
@@ -244,8 +247,9 @@
 //!   IG A.8 / NIST SP 800-107-r1 Section 5.3.3. That is a floor, not a recommendation -- RFC 2104
 //!   Section 5 recommends that the output length "be not less than half the length of the hash
 //!   output ... and not less than 80 bits".
-//! * Resuming a suspended HMAC with the wrong key cannot be detected and silently produces a wrong
-//!   MAC; see the suspend/resume section above.
+//! * A suspended HMAC state can be inverted to the key and must be stored as securely as the key;
+//!   and resuming with the wrong key cannot be detected and silently produces a wrong MAC. See the
+//!   suspend/resume section above.
 //! * SHA-3 is a sponge and is not vulnerable to the length-extension attack that motivates HMAC for
 //!   Merkle-Damgard hashes, so a plain `SHA3(k || m)` is not broken the way `SHA256(k || m)` is.
 //!   HMAC-SHA3 remains the right choice for interoperability and for FIPS 198-1 conformance, and
@@ -254,7 +258,8 @@
 use crate::SUSPENDED_SHA3_STATE_LEN;
 use crate::{SHA3_224, SHA3_256, SHA3_384, SHA3_512};
 use bouncycastle_core::key_material::KeyMaterial;
-use bouncycastle_core::traits::{HashAlgParams, SecurityStrength};
+use bouncycastle_core::security_strength::SecurityStrength;
+use bouncycastle_core::traits::HashAlgParams;
 use bouncycastle_hmac::{HMAC, HMACParams};
 
 /*** Imports needed for docs ***/

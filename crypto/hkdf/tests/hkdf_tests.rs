@@ -1,12 +1,13 @@
 #[cfg(test)]
 mod hkdf_tests {
     use bouncycastle_core::errors::{KDFError, KeyMaterialError, MACError, SuspendableError};
-    use bouncycastle_core::key_material;
+    use bouncycastle_core::hazmat::do_hazardous_operations;
     use bouncycastle_core::key_material::{
         KeyMaterial, KeyMaterial0, KeyMaterial128, KeyMaterial256, KeyMaterial512,
         KeyMaterialTrait, KeyType,
     };
-    use bouncycastle_core::traits::{HashAlgParams, KDF, SecurityStrength};
+    use bouncycastle_core::security_strength::SecurityStrength;
+    use bouncycastle_core::traits::{HashAlgParams, KDF};
     use bouncycastle_core_test_framework::DUMMY_SEED;
     use bouncycastle_core_test_framework::kdf::TestFrameworkKDF;
     use bouncycastle_hex as hex;
@@ -523,14 +524,14 @@ mod hkdf_tests {
         /*** First with the one-shot APIs ::extract() and ::expand_out(). ***/
 
         let mut ikm_key = KeyMaterial::<100>::new();
-        key_material::do_hazardous_operations(&mut ikm_key, |ikm_key| {
+        do_hazardous_operations(&mut ikm_key, |ikm_key| {
             // just for testing, ignore the error about zeroized keys
             ikm_key.set_bytes_as_type(&hex::decode(ikm).unwrap(), KeyType::CryptographicRandom)
         })
         .unwrap();
 
         let mut salt_key = KeyMaterial::<100>::new();
-        key_material::do_hazardous_operations(&mut salt_key, |salt_key| {
+        do_hazardous_operations(&mut salt_key, |salt_key| {
             // just for testing, ignore the error about zeroized keys
             salt_key.set_bytes_as_type(&hex::decode(salt).unwrap(), KeyType::MACKey)
         })
@@ -543,10 +544,8 @@ mod hkdf_tests {
         // Some of the RFC5896 test vectors have input keys that are too short to meet the entropy seeding rules.
         // So, just for testing, we'll bump this up to full entropy, regardless of what entropy HKDF::extract()
         // thinks it should be based on the inputs.
-        key_material::do_hazardous_operations(&mut prk_key, |prk_key| {
-            prk_key.set_key_type(KeyType::MACKey)
-        })
-        .unwrap();
+        do_hazardous_operations(&mut prk_key, |prk_key| prk_key.set_key_type(KeyType::MACKey))
+            .unwrap();
 
         let mut okm_key = KeyMaterial::<100>::new();
         _ = HKDF_SHA256::expand_out(&prk_key, &info, L, &mut okm_key).unwrap();
@@ -678,7 +677,7 @@ mod hkdf_tests {
 
         // SP800-56Cr2 tcId 1
         let mut salt = KeyMaterial::<128>::new(); // have to do it this way for it to accept a zeroized key
-        key_material::do_hazardous_operations(&mut salt, |salt| {
+        do_hazardous_operations(&mut salt, |salt| {
             salt.set_bytes_as_type(&hex::decode("00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000").unwrap(), KeyType::MACKey)
         }).unwrap();
 
@@ -826,5 +825,36 @@ mod hkdf_tests {
             HKDF_SHA256::from_suspended(corrupt, &salt),
             Err(SuspendableError::InvalidData)
         ));
+    }
+
+    /// RFC 5869 Sec 2.3: "OKM = first L octets of T", for any L up to 255 * HashLen, so a shorter
+    /// output is a prefix of a longer one. Every L from 0 to 200 covers each value of L mod HashLen
+    /// for both hashes: the last block used to be produced as an HMAC truncated to the remaining
+    /// length, which HMAC refuses below 4 bytes, so every L with L mod HashLen in 1..=3 failed.
+    #[test]
+    fn every_output_length_is_a_prefix_of_a_longer_one() {
+        let salt = KeyMaterial256::from_bytes_as_type(&DUMMY_SEED[..32], KeyType::MACKey).unwrap();
+        let ikm = KeyMaterial256::from_bytes_as_type(&DUMMY_SEED[32..64], KeyType::Seed).unwrap();
+        const MAX_L: usize = 200;
+
+        let mut full = KeyMaterial::<MAX_L>::new();
+        HKDF_SHA256::extract_and_expand_out(&salt, &ikm, b"info", MAX_L, &mut full).unwrap();
+        for l in 0..=MAX_L {
+            let mut okm = KeyMaterial::<MAX_L>::new();
+            let n = HKDF_SHA256::extract_and_expand_out(&salt, &ikm, b"info", l, &mut okm)
+                .unwrap_or_else(|e| panic!("HKDF-SHA256, L = {l}: {e:?}"));
+            assert_eq!(n, l, "HKDF-SHA256, L = {l}: bytes written");
+            assert_eq!(okm.ref_to_bytes(), &full.ref_to_bytes()[..l], "HKDF-SHA256, L = {l}");
+        }
+
+        let mut full = KeyMaterial::<MAX_L>::new();
+        HKDF_SHA512::extract_and_expand_out(&salt, &ikm, b"info", MAX_L, &mut full).unwrap();
+        for l in 0..=MAX_L {
+            let mut okm = KeyMaterial::<MAX_L>::new();
+            let n = HKDF_SHA512::extract_and_expand_out(&salt, &ikm, b"info", l, &mut okm)
+                .unwrap_or_else(|e| panic!("HKDF-SHA512, L = {l}: {e:?}"));
+            assert_eq!(n, l, "HKDF-SHA512, L = {l}: bytes written");
+            assert_eq!(okm.ref_to_bytes(), &full.ref_to_bytes()[..l], "HKDF-SHA512, L = {l}");
+        }
     }
 }

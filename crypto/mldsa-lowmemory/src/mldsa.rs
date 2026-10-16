@@ -19,10 +19,10 @@
 //! let msg_chunk1 = b"The quick brown fox ";
 //! let msg_chunk2 = b"jumped over the lazy dog";
 //!
-//! let mut signer = MLDSA65::sign_init(&sk, None).unwrap();
-//! signer.sign_update(msg_chunk1);
-//! signer.sign_update(msg_chunk2);
-//! let sig = signer.sign_final().unwrap();
+//! let mut signer = MLDSA65::do_sign_init(&sk, None).unwrap();
+//! signer.do_sign_update(msg_chunk1);
+//! signer.do_sign_update(msg_chunk2);
+//! let sig = signer.do_sign_final().unwrap();
 //! // This is the signature value that can be saved to a file or whatever it is needed.
 //!
 //! // This is compatible with a verifies that takes the whole message as one chunk:
@@ -34,11 +34,11 @@
 //! }
 //!
 //! // But of course there's also a streaming API for the verifier!
-//! let mut verifier = MLDSA65::verify_init(&pk, None).unwrap();
-//! verifier.verify_update(msg_chunk1);
-//! verifier.verify_update(msg_chunk2);
+//! let mut verifier = MLDSA65::do_verify_init(&pk, None).unwrap();
+//! verifier.do_verify_update(msg_chunk1);
+//! verifier.do_verify_update(msg_chunk2);
 //!
-//! match verifier.verify_final(&sig.as_slice()) {
+//! match verifier.do_verify_final(&sig.as_slice()) {
 //!     Ok(()) => println!("Signature is valid!"),
 //!     Err(SignatureError::SignatureVerificationFailed) => println!("Signature is invalid!"),
 //!     Err(e) => panic!("Something else went wrong: {:?}", e),
@@ -61,11 +61,11 @@
 //! let msg_chunk1 = b"The quick brown fox ";
 //! let msg_chunk2 = b"jumped over the lazy dog";
 //!
-//! let mut signer = MLDSA65::sign_init(&sk, Some(b"signing ctx value")).unwrap();
+//! let mut signer = MLDSA65::do_sign_init(&sk, Some(b"signing ctx value")).unwrap();
 //! signer.set_signer_rnd([0u8; 32]); // an all-zero rnd is the "deterministic" mode of ML-DSA
-//! signer.sign_update(msg_chunk1);
-//! signer.sign_update(msg_chunk2);
-//! let sig = signer.sign_final().unwrap();
+//! signer.do_sign_update(msg_chunk1);
+//! signer.do_sign_update(msg_chunk2);
+//! let sig = signer.do_sign_final().unwrap();
 //! ```
 //!
 //! # External Mu mode
@@ -398,8 +398,9 @@ use crate::{
 };
 use bouncycastle_core::errors::{RNGError, SignatureError, SuspendableError};
 use bouncycastle_core::key_material::KeyMaterial;
+use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{
-    Algorithm, AlgorithmOID, RNG, SecurityStrength, SignatureVerifier, Signer, Suspendable, XOF,
+    Algorithm, AlgorithmOID, Hash, RNG, SignatureVerifier, Signer, Suspendable, XOF, XOFSqueezer,
 };
 use bouncycastle_rng::HashDRBG_SHA512;
 use bouncycastle_sha3::{SHAKE128, SHAKE256, SUSPENDED_SHA3_STATE_LEN};
@@ -413,6 +414,7 @@ use bouncycastle_core::key_material::{KeyMaterial256, KeyMaterialTrait};
 #[allow(unused_imports)]
 use bouncycastle_core::traits::{PHSignatureVerifier, PHSigner};
 use bouncycastle_utils::secret::{Secret, ZeroizablePrimitive};
+
 /*** Constants ***/
 
 ///
@@ -787,11 +789,12 @@ impl<
         // Alg 7; 7: 𝜌″ ← H(𝐾||𝑟𝑛𝑑||𝜇, 64)
         let rho_p_p: [u8; 64] = {
             let mut h = H::new();
-            h.absorb(sk.K()).expect("absorb before squeeze is infallible");
-            h.absorb(&rnd).expect("absorb before squeeze is infallible");
-            h.absorb(mu).expect("absorb before squeeze is infallible");
+            h.do_update(sk.K());
+            h.do_update(&rnd);
+            h.do_update(mu);
             let mut rho_p_p = [0u8; 64];
-            h.squeeze_out(&mut rho_p_p);
+            let mut h = h.into_squeezer();
+            h.do_output_out(&mut rho_p_p);
 
             rho_p_p
         };
@@ -817,15 +820,15 @@ impl<
             let sig_val_c_tilde = {
                 // scope for hash
                 let mut hash = H::new();
-                hash.absorb(mu).expect("absorb before squeeze is infallible");
+                hash.do_update(mu);
                 for row in 0..P::k {
                     let mut w = compute_w_row::<P>(&sk.rho(), &rho_p_p, kappa, row);
                     w.high_bits::<P>();
-                    hash.absorb(w.w1_encode::<P>().as_ref())
-                        .expect("absorb before squeeze is infallible");
+                    hash.do_update(w.w1_encode::<P>().as_ref());
                 }
                 let mut sig_val_c_tilde = <P::SigCTilde as ZeroizablePrimitive>::ZEROED;
-                hash.squeeze_out(sig_val_c_tilde.as_mut());
+                let mut hash = hash.into_squeezer();
+                hash.do_output_out(sig_val_c_tilde.as_mut());
                 sig_val_c_tilde
             };
             // 16: 𝑐 ∈ 𝑅𝑞 ← SampleInBall(c_tilde)
@@ -965,8 +968,8 @@ impl<
     }
 
     /// To be used for deterministic signing in conjunction with the
-    /// [`MLDSA44::sign_init`], [`MLDSA44::sign_update`], and [`MLDSA44::sign_final`] flow.
-    /// Can be set anywhere after [`MLDSA44::sign_init`] and before [`MLDSA44::sign_final`]
+    /// [`MLDSA44::do_sign_init`], [`MLDSA44::do_sign_update`], and [`MLDSA44::do_sign_final`] flow.
+    /// Can be set anywhere after [`MLDSA44::do_sign_init`] and before [`MLDSA44::do_sign_final`]
     fn set_signer_rnd(&mut self, rnd: [u8; 32]) {
         self.signer_rnd = Some(rnd);
     }
@@ -1013,7 +1016,7 @@ impl<
         // 12: 𝑐_tilde_p ← H(𝜇||w1Encode(𝐰1'), 𝜆/4)
         // ▷ hash it; this should match 𝑐_tilde
         let mut hash = H::new();
-        hash.absorb(mu).expect("absorb before squeeze is infallible");
+        hash.do_update(mu);
 
         for row in 0..P::k {
             let mut wp_approx = match {
@@ -1034,12 +1037,12 @@ impl<
             // 10: 𝐰1′ ← UseHint(𝐡, 𝐰'_approx)
             // ▷ reconstruction of signer’s commitment
             wp_approx.use_hint::<P>(&h_i);
-            hash.absorb(wp_approx.w1_encode::<P>().as_ref())
-                .expect("absorb before squeeze is infallible");
+            hash.do_update(wp_approx.w1_encode::<P>().as_ref());
         }
 
         let mut c_tilde_p = <P::SigCTilde as ZeroizablePrimitive>::ZEROED;
-        hash.squeeze_out(c_tilde_p.as_mut());
+        let mut hash = hash.into_squeezer();
+        hash.do_output_out(c_tilde_p.as_mut());
 
         // Verification is also done in constant time
         // 13 (second half): return [[ ||𝐳||∞ < 𝛾1 − 𝛽]] and [[𝑐 ̃ = 𝑐′ ]]
@@ -1244,8 +1247,8 @@ pub trait MLDSATrait<
         rnd: [u8; 32],
         output: &mut [u8; SIG_LEN],
     ) -> Result<usize, SignatureError>;
-    /// To be used for deterministic signing in conjunction with the [`MLDSA44::sign_init`], [`MLDSA44::sign_update`], and [`MLDSA44::sign_final`] flow.
-    /// Can be set anywhere after [`MLDSA44::sign_init`] and before [`MLDSA44::sign_final`]
+    /// To be used for deterministic signing in conjunction with the [`MLDSA44::do_sign_init`], [`MLDSA44::do_sign_update`], and [`MLDSA44::do_sign_final`] flow.
+    /// Can be set anywhere after [`MLDSA44::do_sign_init`] and before [`MLDSA44::do_sign_final`]
     fn set_signer_rnd(&mut self, rnd: [u8; 32]);
     /// An alternate way to start the streaming signing mode by providing a private key seed instead of an expanded private key
     fn sign_init_from_seed(
@@ -1290,7 +1293,7 @@ impl<
         Ok(bytes_written)
     }
 
-    fn sign_init(sk: &SK, ctx: Option<&[u8]>) -> Result<Self, SignatureError> {
+    fn do_sign_init(sk: &SK, ctx: Option<&[u8]>) -> Result<Self, SignatureError> {
         Ok(Self {
             _phantom: PhantomData,
             mu_builder: MuBuilder::do_init(&sk.tr(), ctx)?,
@@ -1301,17 +1304,17 @@ impl<
         })
     }
 
-    fn sign_update(&mut self, msg_chunk: &[u8]) {
+    fn do_sign_update(&mut self, msg_chunk: &[u8]) {
         self.mu_builder.do_update(msg_chunk);
     }
 
-    fn sign_final(self) -> Result<[u8; SIG_LEN], SignatureError> {
+    fn do_sign_final(self) -> Result<[u8; SIG_LEN], SignatureError> {
         let mut out = [0u8; SIG_LEN];
-        self.sign_final_out(&mut out)?;
+        self.do_sign_final_out(&mut out)?;
         Ok(out)
     }
 
-    fn sign_final_out(self, output: &mut [u8; SIG_LEN]) -> Result<usize, SignatureError> {
+    fn do_sign_final_out(self, output: &mut [u8; SIG_LEN]) -> Result<usize, SignatureError> {
         let mu = self.mu_builder.do_final();
 
         if self.sk.is_none() && self.seed.is_none() {
@@ -1369,7 +1372,7 @@ impl<
         Self::verify_mu(pk, &mu, &sig.try_into().unwrap())
     }
 
-    fn verify_init(pk: &PK, ctx: Option<&[u8]>) -> Result<Self, SignatureError> {
+    fn do_verify_init(pk: &PK, ctx: Option<&[u8]>) -> Result<Self, SignatureError> {
         Ok(Self {
             _phantom: Default::default(),
             mu_builder: MuBuilder::do_init(&pk.compute_tr(), ctx)?,
@@ -1380,11 +1383,11 @@ impl<
         })
     }
 
-    fn verify_update(&mut self, msg_chunk: &[u8]) {
+    fn do_verify_update(&mut self, msg_chunk: &[u8]) {
         self.mu_builder.do_update(msg_chunk);
     }
 
-    fn verify_final(self, sig: &[u8]) -> Result<(), SignatureError> {
+    fn do_verify_final(self, sig: &[u8]) -> Result<(), SignatureError> {
         let mu = self.mu_builder.do_final();
 
         assert!(
@@ -1446,14 +1449,14 @@ impl MuBuilder {
         // Algorithm 7
         // 6: 𝜇 ← H(BytesToBits(𝑡𝑟)||𝑀', 64)
         let mut mb = Self { h: H::new() };
-        mb.h.absorb(tr).expect("absorb before squeeze is infallible");
+        mb.h.do_update(tr);
 
         // Algorithm 2
         // 10: 𝑀′ ← BytesToBits(IntegerToBytes(0, 1) ∥ IntegerToBytes(|𝑐𝑡𝑥|, 1) ∥ 𝑐𝑡𝑥) ∥ 𝑀
         // all done together
-        mb.h.absorb(&[0u8]).expect("absorb before squeeze is infallible");
-        mb.h.absorb(&[ctx.len() as u8]).expect("absorb before squeeze is infallible");
-        mb.h.absorb(ctx).expect("absorb before squeeze is infallible");
+        mb.h.do_update(&[0u8]);
+        mb.h.do_update(&[ctx.len() as u8]);
+        mb.h.do_update(ctx);
 
         // now ready to absorb M
         Ok(mb)
@@ -1461,16 +1464,16 @@ impl MuBuilder {
 
     /// Stream a chunk of the message.
     pub fn do_update(&mut self, msg_chunk: &[u8]) {
-        self.h.absorb(msg_chunk).expect("absorb before squeeze is infallible");
+        self.h.do_update(msg_chunk);
     }
 
     /// Finalize and return the mu value.
-    pub fn do_final(mut self) -> [u8; 64] {
+    pub fn do_final(self) -> [u8; 64] {
         // Completion of
         // Algorithm 7
         // 6: 𝜇 ← H(BytesToBits(𝑡𝑟)||𝑀 ′, 64)
         let mut mu = [0u8; 64];
-        self.h.squeeze_out(&mut mu);
+        self.h.into_squeezer().do_output_out(&mut mu);
 
         mu
     }

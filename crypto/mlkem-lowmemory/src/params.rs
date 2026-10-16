@@ -15,7 +15,7 @@
 use crate::mlkem::{
     ML_KEM_512_NAME, ML_KEM_768_NAME, ML_KEM_1024_NAME, MLKEM_SEED_LEN, MLKEM_SS_LEN,
 };
-use bouncycastle_core::traits::SecurityStrength;
+use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_utils::secret::ZeroizablePrimitive;
 
 /// A fixed-size byte buffer whose length depends on the parameter set.

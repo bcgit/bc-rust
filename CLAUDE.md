@@ -11,8 +11,8 @@ previous session's reading of them.
 
 - **[QUALITY_AND_STYLE.md](QUALITY_AND_STYLE.md) — read before writing or changing code, and before reviewing a
   diff.** The authority on architecture, crate and API shape, naming conventions, fallibility, macros, what tests and
-  benchmarks a crate owes, and which sections crate docs must have. Its own opening line invites an AI to review a PR
-  against it, so treat it as exactly that checklist.
+  benchmarks a crate owes, which sections crate docs must have, and how much they should say. Its own opening line
+  invites an AI to review a PR against it, so treat it as exactly that checklist.
 - **[CONTRIBUTING.md](CONTRIBUTING.md) — read before writing a commit message, opening a PR, or advising on how a
   change gets merged.** The authority on coding philosophy, PR hygiene and self-review, the quality bar a submission
   must clear to be accepted, how merges actually happen in this project, and the AI policy. That policy places
@@ -44,16 +44,21 @@ Revisit this section at the first non-alpha release.
 - Builds on Rust **stable**: there is no toolchain pin, and no crate enables a `#![feature(...)]` gate, so
   nightly-only tooling (`-Z` flags and the like) is not available. CI builds, tests and docs on stable; only the
   `rustfmt` job installs nightly.
-- 2024 edition (set workspace-wide in the root `Cargo.toml`), which needs Rust 1.85 or later.
+- 2024 edition (set workspace-wide in the root `Cargo.toml`).
+- Minimum Rust is 1.88: `rust-version` in the root `Cargo.toml`, inherited by `bouncycastle-utils` (the crate that
+  needs it, for `slice::as_chunks`) and so enforced for every crate that depends on it.
 
 ## Common commands
 
-Build / test / bench / docs run against the cargo workspace from the repo root:
+Build / test / bench / docs run against the cargo workspace from the repo root. `--workspace` is
+not optional: the root manifest is both the workspace and the umbrella `bouncycastle` package, so a
+bare `cargo build` builds only that package (no `cli`, no benches) and a bare `cargo test` runs
+**zero** tests and still exits 0, because the umbrella crate has none of its own.
 
 ```
-cargo build                     # whole workspace incl. `bc-rust` CLI binary
+cargo build --workspace         # whole workspace incl. `bc-rust` CLI binary
 cargo build -p bouncycastle-sha3   # one sub-crate
-cargo test                      # all tests
+cargo test --workspace          # all tests
 cargo test -p bouncycastle-mlkem   # tests for one crate
 cargo test -p bouncycastle-mlkem ml_kem_tests   # one integration test file
 cargo bench --all               # all criterion benches
@@ -66,22 +71,34 @@ Quality / mutation testing:
 
 ```
 ./dev_scripts/quality_stats.sh ./crypto    # lines-of-code, docstring & fallibility metrics; CI publishes this
-cargo mutants                              # config in .cargo/mutants.toml (output: custom_mutants_output/)
+cargo mutants -p bouncycastle-sha3         # config in .cargo/mutants.toml (output: custom_mutants_output/)
 ```
 
-Stack-memory benches are separate binaries under `mem_usage_benches/`:
+`-p` is as non-optional here as `--workspace` is for build and test, and for the same reason: a bare
+`cargo mutants` examines only the root `bouncycastle` package, whose single `src/lib.rs` yields no
+mutants, so it prints "No mutants found under the active filters" and exits **0**. See
+[the mutation-testing mechanics](#notes-on-testing) for scoping a run to one file, for crates whose
+tests live elsewhere, and for the test-data symlink.
+
+Stack-memory benches are separate binaries under `mem_usage_benches/src/`, each declared as a
+`[[bin]]` in that crate's `Cargo.toml`:
 
 ```
 cargo run --release -p mem_usage_benches --bin bench_mlkem_mem_usage
 cargo run --release -p mem_usage_benches --bin bench_mldsa_mem_usage
 ```
 
+`mem_usage_benches/src/lib.rs` makes those sources modules of a lib target as well, so their `//!`
+headers are rustdoc'd and any indented or fenced block in them is compiled as a Rust doctest. The
+valgrind and `ms_print` recipes there are fenced as ```` ```text ```` for that reason — keep it that
+way when adding a harness, or `cargo test --workspace` fails to compile them.
+
 ## Workspace architecture
 
-The workspace has three top-level kinds of member:
+The workspace has four top-level kinds of member:
 
-1. `crypto/*` — one sub-crate per primitive (`sha2`, `sha3`, `hmac`, `hkdf`, `mlkem`, `mlkem_lowmemory`, `mldsa`, `mldsa_lowmemory`, `rng`, `hex`, `base64`, `utils`) plus the spine crates `core`, `core-test-framework`, and `factory`. Each crate is published as `bouncycastle-<name>` and depended on internally via the `workspace.dependencies` table in the root `Cargo.toml`.
-2. `src/` — the umbrella `bouncycastle` crate, which is just `pub use` re-exports of every sub-crate (e.g. `bouncycastle::sha3`, `bouncycastle::mlkem`). It exists so downstream users can pull the whole library with one dependency; it has no code of its own.
+1. `crypto/*` — the library's sub-crates, plus the spine crates `core`, `core-test-framework`, and `factory` described below. Most are one primitive each; some, such as `cipher`, hold generic building blocks (modes, padding) as sub-modules. The set changes over time, so take it from `ls crypto/` or the root `Cargo.toml` rather than from a list here. Each crate is published as `bouncycastle-<name>` and depended on internally via the `workspace.dependencies` table in the root `Cargo.toml`.
+2. `src/` — the umbrella `bouncycastle` crate, which is just `pub use` re-exports of every sub-crate (e.g. `bouncycastle::sha3`, `bouncycastle::sm3`, `bouncycastle::mlkem`). It exists so downstream users can pull the whole library with one dependency; it has no code of its own.
 3. `cli/` — the `bc-rust` binary built on top of `bouncycastle`, exposing every primitive as a streaming stdin→stdout subcommand using `clap`.
 4. `mem_usage_benches/` — stand-alone binary crates that measure peak stack usage of algorithms (cannot be done via criterion).
 
@@ -121,8 +138,64 @@ Repo mechanics behind those rules, which the documents don't spell out:
 - `./dev_scripts/quality_stats.sh` produces the fallibility metrics both documents ask you to check. Run it before
   and after a change and compare, rather than eyeballing the diff.
 - **CLI commands stream.** The `cli/` binary is stdin→stdout with ~1 KB buffers so commands compose in shell
-  pipelines; preserve that when adding subcommands.
+  pipelines; preserve that when adding subcommands. The exception is a construction that is not
+  itself streamable, such as CCM (SP 800-38C Sec 3: "CCM is not designed to support partial
+  processing or stream processing", because the payload length is inside the first block the MAC
+  covers) -- there, read the whole input once and process it in place, rather than adding a second
+  buffer the size of the input on top of it; see `aes_ccm_cmd.rs`.
 - Trait → factory → CLI is the wiring path for a new primitive; see [the workspace architecture](#the-core--core-test-framework--factory-spine) above for the crates involved.
+- AI-drafted docs and comments run long. Before committing, check them against QUALITY_AND_STYLE.md's "Proportion"
+  rule: cut duplicated material, long rationale and restated spec text rather than adding more.
+
+## Scope of changes
+
+Implement what was asked and stop. Unrequested refactors — extracting a trait, renaming for
+readability, restructuring impls — are not free even when they are correct: bundled into a feature
+commit they make the diff unreviewable, because a reviewer cannot separate the new behaviour from
+the restructuring, and the review time that costs is the reason not to do it.
+
+- If a refactor genuinely unblocks the task, give it **its own commit ahead of** the feature, so it
+  can be reviewed or dropped on its own.
+- If it unblocks nothing, propose it and wait rather than doing it.
+- The same goes for drive-by comment rewrites, reformatting and file moves in code you are only
+  passing through.
+
+## Lessons from the Ascon-AEAD128 refactors (October 2026)
+
+A series of PRs took `AsconAead128` from one struct serving both directions through a runtime
+flag, with a parallel inherent API and two newtype wrappers, to `Ascon_AEAD128<Dir>`. What that
+taught, as mechanics to apply next time a cipher type is shaped or reshaped:
+
+- **The direction goes in the type.** `Cipher<Dir>` with `Encrypting` / `Decrypting` and one
+  `impl` block per direction turns wrong-direction calls into compile errors and shrinks the
+  call-order state machine to the phases alone. Reach for `Direction::Select` only when the two
+  directions really are different types (padded CBC); when they share their state, one generic
+  struct under the spec-spelled name (`Ascon_AEAD128<Dir>`, `#[allow(non_camel_case_types)]`)
+  is the whole public type, with no CamelCase twin and no alias to it.
+- **The trait pair is the API.** Do not keep an inherent streaming or one-shot API beside the
+  `AEADCipher*` / `SymmetricCipher*` impls; everything a caller needs, including a supplied nonce
+  (`do_encrypt_init_nonce`, `encrypt_with_aad_nonce_out`), is on the traits. The only inherent
+  methods a cipher adds are for what the traits lack, in-place streaming (`do_*_inplace`), and
+  their decrypt form keeps the same tag hold-back as `do_decrypt_out` so the two interleave.
+- **Private helpers must not share a trait method's name.** An inherent `do_encrypt_final` with a
+  different signature from the trait's is what forced the wrapper newtypes; name the core
+  helpers for what they do (`absorb_aad`, `encrypt_bytes`, `finish_tag`, `verify_tag`).
+- **Fold wrapper state into the struct.** A decrypt-only buffer (the held-back tag) is carried on
+  both directions, unused when encrypting, as `Gcm` already does; that is cheaper than a second
+  type and keeps `SuspendableKeyed` on the cipher itself.
+- **Suspended-state formats are frozen.** Moving the impl or splitting the type must not change a
+  byte of the layout; the call-state byte keeps its direction bits and resume refuses the other
+  direction. When the two directions' states differ in length, publish a constant per direction.
+- **When public items go, the tests follow the API, and the benches get built.** Integration
+  tests move onto the trait methods rather than the inherent ones surviving for their sake.
+  `cargo test --workspace` does not compile `benches/` or `mem_usage_benches`, so finish with
+  `cargo test --workspace --all-targets --no-run`, and put `compile_fail` doctests on public items
+  only: on a private item they pass vacuously once the import they name is gone. After rewriting
+  a CLI path, run it against a known-answer vector (`--nonce` on `ascon-aead128` reproduces the
+  LWC KAT tag).
+- **A rename stays in the crate it was asked for.** `do_*_update` to `do_*_inplace` was done for
+  Ascon; the CCM packet type still has its namesake. Note the follow-up rather than widening the
+  change.
 
 ## Working from specifications
 
@@ -158,11 +231,16 @@ Rules when working from the downloaded copy:
 What a crate must be tested against — including the mutation-testing expectation, the trait test framework, and the
 external vector suites — is specified in QUALITY_AND_STYLE.md and CONTRIBUTING.md. Repo-specific mechanics:
 
-- `cargo mutants` is expected to be run on each crate; surviving mutants must be investigated but not all need to die (e.g. XOR/OR equivalences in crypto code are acceptable). Config lives in `.cargo/mutants.toml` (output dir `custom_mutants_output/`).
-- Behaviour-critical private functions can use in-file `#[cfg(test)] mod tests` blocks when they can't be exercised from outside the crate.
+- `cargo mutants` is expected to be run on each crate; surviving mutants must be investigated but not all need to die (e.g. XOR/OR equivalences in crypto code are acceptable). Config lives in `.cargo/mutants.toml` (output dir `custom_mutants_output/`). Four things about running it here:
+  - **Always pass `-p <crate>`.** Without it only the root package is examined, which has no mutants, and the run "passes" vacuously — see [Common commands](#common-commands).
+  - **`-f`/`--file` does nothing while the checked-in config is in play**, because its `examine_globs` wins over the CLI filter: `cargo mutants -p bouncycastle-sha3 -f '**/kmac.rs'` still examines all ~874 mutants in the crate. To scope a run to the files you changed, copy `.cargo/mutants.toml` somewhere outside the repo, delete its `examine_globs` block, and pass `--config <copy>`; `-f` then filters as documented. (`--config /dev/null` also works but throws away `skip_calls`, `error_values`, `cap_lints` and the timeout multipliers with it.)
+  - **Add `--test-workspace true` when a crate's mutants are killed by another crate's tests.** The `core` traits are the case that matters: their default method bodies are exercised from `sha3` and `factory`, so a `-p bouncycastle-core` run alone reports them all as missed.
+  - **Symlink the test data into `/tmp`.** `cargo mutants` copies the tree to `/tmp/cargo-mutants-<dir>-XXXX.tmp/`, so the `../../../bc-test-data/...` paths the vector suites use resolve to `/tmp/bc-test-data`. Without `ln -s <path-to>/bc-test-data /tmp/bc-test-data` those tests print their "not found" warning, pass vacuously, and every mutant they would have killed is reported as missed. Use `--jobs 3` and an explicit `--timeout`; note that a mutant which makes a squeeze return no bytes hangs a fill loop for real, so some timeouts are kills rather than false alarms.
+- Integration tests in `tests/` are preferred over in-file `#[cfg(test)] mod tests` blocks — see "Unit tests vs integration tests" in QUALITY_AND_STYLE.md for the reasoning and the exceptions. A unit test is justified for high-risk code that has known-answer values and cannot be reached through the public API; when you write one, all of its helpers go inside that `mod tests`.
+- A property that can be asserted at compile time (`const _: () = assert!(...)`) stays a compile-time assertion even when a test also covers it: `cargo mutants` cannot see a const assertion fail, so pair the two rather than trading the guarantee for the coverage.
 - For traits in `core`, the canonical tests live in `core-test-framework` and are invoked from each implementor's integration tests — don't duplicate them per-implementation.
 - The per-width `impl Condition<W>` blocks in `crypto/utils/src/ct.rs` (and their test modules) are deliberately duplicated rather than macro-generated: `cargo mutants` cannot see into `macro_rules!` bodies, so a macro would hide the mask identities from mutation testing. Do not fold them back into a macro. Any change to one width in a group (i64/i32, u64/u32) must be applied to every width in that group.
 
 ## CI
 
-The only workflow is `.github/workflows/publish_doc_benches_to_ghpages.yaml`: on every PR it builds rustdoc and runs `quality_stats.sh`; on `main` it additionally runs `cargo bench --all` and publishes docs, code stats, and benchmark results to GitHub Pages (`https://bcgit.github.io/bc-rust/`). There is no separate CI test/lint job — local `cargo test` is the gate.
+The only workflow is `.github/workflows/publish_doc_benches_to_ghpages.yaml`: on every PR it builds rustdoc and runs `quality_stats.sh`; on `main` it additionally runs `cargo bench --all` and publishes docs, code stats, and benchmark results to GitHub Pages (`https://bcgit.github.io/bc-rust/`). There is no separate CI test/lint job — local `cargo test --workspace` is the gate, and nothing but a developer running it stands between a broken test and `main`.

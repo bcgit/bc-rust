@@ -1,8 +1,8 @@
 //! Generic behaviour tests for anything that implements [`Suspendable`] and [`SuspendableKeyed`].
 
 use bouncycastle_core::errors::SuspendableError;
-use bouncycastle_core::suspendable_state::{LIB_VERSION, SemVer};
 use bouncycastle_core::traits::{Suspendable, SuspendableKeyed};
+use bouncycastle_utils::suspendable_state::{LIB_VERSION, SemVer};
 
 /// Instance of the test framework.
 pub struct TestFrameworkSuspendableState {

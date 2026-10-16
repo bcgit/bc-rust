@@ -105,7 +105,7 @@ pub(crate) fn mldsa44_cmd(
 
             match MLDSA44::keypair_consistency_check(&pk, &sk) {
                 Ok(_) => {
-                    println!("SUCCESS: pk and sk match.");
+                    crate::helpers::println_stdout("SUCCESS: pk and sk match.");
                 }
                 Err(_) => {
                     eprintln!("FAILURE: pk and sk do not match.");
@@ -137,17 +137,17 @@ pub(crate) fn mldsa44_cmd(
                     exit(-1);
                 }
             };
-            let mut signer = MLDSA44::sign_init(&sk, Some(&ctx)).unwrap();
+            let mut signer = MLDSA44::do_sign_init(&sk, Some(&ctx)).unwrap();
 
             let mut buf = [0u8; 1024];
             let mut bytes_read = io::stdin().read(&mut buf).expect("Failed to read from stdin");
-            signer.sign_update(&buf[..bytes_read]);
+            signer.do_sign_update(&buf[..bytes_read]);
             while bytes_read != 0 {
                 bytes_read = io::stdin().read(&mut buf).expect("Failed to read from stdin");
-                signer.sign_update(&buf[..bytes_read]);
+                signer.do_sign_update(&buf[..bytes_read]);
             }
 
-            let sig = signer.sign_final().unwrap();
+            let sig = signer.do_sign_final().unwrap();
 
             write_bytes_or_hex(&sig, output_hex);
         }
@@ -183,20 +183,20 @@ pub(crate) fn mldsa44_cmd(
             };
 
             // and now verify, streaming the message from stdin
-            let mut verifier = MLDSA44::verify_init(&pk, Some(&ctx)).unwrap();
+            let mut verifier = MLDSA44::do_verify_init(&pk, Some(&ctx)).unwrap();
 
             let mut buf = [0u8; 1024];
             let mut bytes_read = io::stdin().read(&mut buf).expect("Failed to read from stdin");
-            verifier.verify_update(&buf[..bytes_read]);
+            verifier.do_verify_update(&buf[..bytes_read]);
             while bytes_read != 0 {
                 bytes_read = io::stdin().read(&mut buf).expect("Failed to read from stdin");
-                verifier.verify_update(&buf[..bytes_read]);
+                verifier.do_verify_update(&buf[..bytes_read]);
             }
 
-            let sig = verifier.verify_final(&sig);
+            let sig = verifier.do_verify_final(&sig);
 
             if sig.is_ok() {
-                println!("Signature is valid.");
+                crate::helpers::println_stdout("Signature is valid.");
             } else {
                 eprintln!("Signature is invalid.");
                 exit(-1);
@@ -264,7 +264,7 @@ pub(crate) fn mldsa65_cmd(
 
             match MLDSA65::keypair_consistency_check(&pk, &sk) {
                 Ok(_) => {
-                    println!("SUCCESS: pk and sk match.");
+                    crate::helpers::println_stdout("SUCCESS: pk and sk match.");
                 }
                 Err(_) => {
                     eprintln!("FAILURE: pk and sk do not match.");
@@ -296,17 +296,17 @@ pub(crate) fn mldsa65_cmd(
                     exit(-1);
                 }
             };
-            let mut signer = MLDSA65::sign_init(&sk, Some(&ctx)).unwrap();
+            let mut signer = MLDSA65::do_sign_init(&sk, Some(&ctx)).unwrap();
 
             let mut buf = [0u8; 1024];
             let mut bytes_read = io::stdin().read(&mut buf).expect("Failed to read from stdin");
-            signer.sign_update(&buf[..bytes_read]);
+            signer.do_sign_update(&buf[..bytes_read]);
             while bytes_read != 0 {
                 bytes_read = io::stdin().read(&mut buf).expect("Failed to read from stdin");
-                signer.sign_update(&buf[..bytes_read]);
+                signer.do_sign_update(&buf[..bytes_read]);
             }
 
-            let sig = signer.sign_final().unwrap();
+            let sig = signer.do_sign_final().unwrap();
 
             write_bytes_or_hex(&sig, output_hex);
         }
@@ -342,20 +342,20 @@ pub(crate) fn mldsa65_cmd(
             };
 
             // and now verify, streaming the message from stdin
-            let mut verifier = MLDSA65::verify_init(&pk, Some(&ctx)).unwrap();
+            let mut verifier = MLDSA65::do_verify_init(&pk, Some(&ctx)).unwrap();
 
             let mut buf = [0u8; 1024];
             let mut bytes_read = io::stdin().read(&mut buf).expect("Failed to read from stdin");
-            verifier.verify_update(&buf[..bytes_read]);
+            verifier.do_verify_update(&buf[..bytes_read]);
             while bytes_read != 0 {
                 bytes_read = io::stdin().read(&mut buf).expect("Failed to read from stdin");
-                verifier.verify_update(&buf[..bytes_read]);
+                verifier.do_verify_update(&buf[..bytes_read]);
             }
 
-            let sig = verifier.verify_final(&sig);
+            let sig = verifier.do_verify_final(&sig);
 
             if sig.is_ok() {
-                println!("Signature is valid.");
+                crate::helpers::println_stdout("Signature is valid.");
             } else {
                 eprintln!("Signature is invalid.");
                 exit(-1);
@@ -422,7 +422,7 @@ pub(crate) fn mldsa87_cmd(
 
             match MLDSA87::keypair_consistency_check(&pk, &sk) {
                 Ok(_) => {
-                    println!("SUCCESS: pk and sk match.");
+                    crate::helpers::println_stdout("SUCCESS: pk and sk match.");
                 }
                 Err(_) => {
                     eprintln!("FAILURE: pk and sk do not match.");
@@ -454,17 +454,17 @@ pub(crate) fn mldsa87_cmd(
                     exit(-1);
                 }
             };
-            let mut signer = MLDSA87::sign_init(&sk, Some(&ctx)).unwrap();
+            let mut signer = MLDSA87::do_sign_init(&sk, Some(&ctx)).unwrap();
 
             let mut buf = [0u8; 1024];
             let mut bytes_read = io::stdin().read(&mut buf).expect("Failed to read from stdin");
-            signer.sign_update(&buf[..bytes_read]);
+            signer.do_sign_update(&buf[..bytes_read]);
             while bytes_read != 0 {
                 bytes_read = io::stdin().read(&mut buf).expect("Failed to read from stdin");
-                signer.sign_update(&buf[..bytes_read]);
+                signer.do_sign_update(&buf[..bytes_read]);
             }
 
-            let sig = signer.sign_final().unwrap();
+            let sig = signer.do_sign_final().unwrap();
 
             write_bytes_or_hex(&sig, output_hex);
         }
@@ -500,20 +500,20 @@ pub(crate) fn mldsa87_cmd(
             };
 
             // and now verify, streaming the message from stdin
-            let mut verifier = MLDSA87::verify_init(&pk, Some(&ctx)).unwrap();
+            let mut verifier = MLDSA87::do_verify_init(&pk, Some(&ctx)).unwrap();
 
             let mut buf = [0u8; 1024];
             let mut bytes_read = io::stdin().read(&mut buf).expect("Failed to read from stdin");
-            verifier.verify_update(&buf[..bytes_read]);
+            verifier.do_verify_update(&buf[..bytes_read]);
             while bytes_read != 0 {
                 bytes_read = io::stdin().read(&mut buf).expect("Failed to read from stdin");
-                verifier.verify_update(&buf[..bytes_read]);
+                verifier.do_verify_update(&buf[..bytes_read]);
             }
 
-            let sig = verifier.verify_final(&sig);
+            let sig = verifier.do_verify_final(&sig);
 
             if sig.is_ok() {
-                println!("Signature is valid.");
+                crate::helpers::println_stdout("Signature is valid.");
             } else {
                 eprintln!("Signature is invalid.");
                 exit(-1);
@@ -581,7 +581,7 @@ pub(crate) fn hash_mldsa44_sha512_cmd(
 
             match MLDSA44::keypair_consistency_check(&pk, &sk) {
                 Ok(_) => {
-                    println!("SUCCESS: pk and sk match.");
+                    crate::helpers::println_stdout("SUCCESS: pk and sk match.");
                 }
                 Err(_) => {
                     eprintln!("FAILURE: pk and sk do not match.");
@@ -613,17 +613,17 @@ pub(crate) fn hash_mldsa44_sha512_cmd(
                     exit(-1);
                 }
             };
-            let mut signer = HashMLDSA44_with_SHA512::sign_init(&sk, Some(&ctx)).unwrap();
+            let mut signer = HashMLDSA44_with_SHA512::do_sign_init(&sk, Some(&ctx)).unwrap();
 
             let mut buf = [0u8; 1024];
             let mut bytes_read = io::stdin().read(&mut buf).expect("Failed to read from stdin");
-            signer.sign_update(&buf[..bytes_read]);
+            signer.do_sign_update(&buf[..bytes_read]);
             while bytes_read != 0 {
                 bytes_read = io::stdin().read(&mut buf).expect("Failed to read from stdin");
-                signer.sign_update(&buf[..bytes_read]);
+                signer.do_sign_update(&buf[..bytes_read]);
             }
 
-            let sig = signer.sign_final().unwrap();
+            let sig = signer.do_sign_final().unwrap();
 
             write_bytes_or_hex(&sig, output_hex);
         }
@@ -659,20 +659,20 @@ pub(crate) fn hash_mldsa44_sha512_cmd(
             };
 
             // and now verify, streaming the message from stdin
-            let mut verifier = HashMLDSA44_with_SHA512::verify_init(&pk, Some(&ctx)).unwrap();
+            let mut verifier = HashMLDSA44_with_SHA512::do_verify_init(&pk, Some(&ctx)).unwrap();
 
             let mut buf = [0u8; 1024];
             let mut bytes_read = io::stdin().read(&mut buf).expect("Failed to read from stdin");
-            verifier.verify_update(&buf[..bytes_read]);
+            verifier.do_verify_update(&buf[..bytes_read]);
             while bytes_read != 0 {
                 bytes_read = io::stdin().read(&mut buf).expect("Failed to read from stdin");
-                verifier.verify_update(&buf[..bytes_read]);
+                verifier.do_verify_update(&buf[..bytes_read]);
             }
 
-            let sig = verifier.verify_final(&sig);
+            let sig = verifier.do_verify_final(&sig);
 
             if sig.is_ok() {
-                println!("Signature is valid.");
+                crate::helpers::println_stdout("Signature is valid.");
             } else {
                 eprintln!("Signature is invalid.");
                 exit(-1);
@@ -740,7 +740,7 @@ pub(crate) fn hash_mldsa65_sha512_cmd(
 
             match MLDSA65::keypair_consistency_check(&pk, &sk) {
                 Ok(_) => {
-                    println!("SUCCESS: pk and sk match.");
+                    crate::helpers::println_stdout("SUCCESS: pk and sk match.");
                 }
                 Err(_) => {
                     eprintln!("FAILURE: pk and sk do not match.");
@@ -772,17 +772,17 @@ pub(crate) fn hash_mldsa65_sha512_cmd(
                     exit(-1);
                 }
             };
-            let mut signer = HashMLDSA65_with_SHA512::sign_init(&sk, Some(&ctx)).unwrap();
+            let mut signer = HashMLDSA65_with_SHA512::do_sign_init(&sk, Some(&ctx)).unwrap();
 
             let mut buf = [0u8; 1024];
             let mut bytes_read = io::stdin().read(&mut buf).expect("Failed to read from stdin");
-            signer.sign_update(&buf[..bytes_read]);
+            signer.do_sign_update(&buf[..bytes_read]);
             while bytes_read != 0 {
                 bytes_read = io::stdin().read(&mut buf).expect("Failed to read from stdin");
-                signer.sign_update(&buf[..bytes_read]);
+                signer.do_sign_update(&buf[..bytes_read]);
             }
 
-            let sig = signer.sign_final().unwrap();
+            let sig = signer.do_sign_final().unwrap();
 
             write_bytes_or_hex(&sig, output_hex);
         }
@@ -818,20 +818,20 @@ pub(crate) fn hash_mldsa65_sha512_cmd(
             };
 
             // and now verify, streaming the message from stdin
-            let mut verifier = HashMLDSA65_with_SHA512::verify_init(&pk, Some(&ctx)).unwrap();
+            let mut verifier = HashMLDSA65_with_SHA512::do_verify_init(&pk, Some(&ctx)).unwrap();
 
             let mut buf = [0u8; 1024];
             let mut bytes_read = io::stdin().read(&mut buf).expect("Failed to read from stdin");
-            verifier.verify_update(&buf[..bytes_read]);
+            verifier.do_verify_update(&buf[..bytes_read]);
             while bytes_read != 0 {
                 bytes_read = io::stdin().read(&mut buf).expect("Failed to read from stdin");
-                verifier.verify_update(&buf[..bytes_read]);
+                verifier.do_verify_update(&buf[..bytes_read]);
             }
 
-            let sig = verifier.verify_final(&sig);
+            let sig = verifier.do_verify_final(&sig);
 
             if sig.is_ok() {
-                println!("Signature is valid.");
+                crate::helpers::println_stdout("Signature is valid.");
             } else {
                 eprintln!("Signature is invalid.");
                 exit(-1);
@@ -898,7 +898,7 @@ pub(crate) fn hash_mldsa87_sha512_cmd(
 
             match MLDSA87::keypair_consistency_check(&pk, &sk) {
                 Ok(_) => {
-                    println!("SUCCESS: pk and sk match.");
+                    crate::helpers::println_stdout("SUCCESS: pk and sk match.");
                 }
                 Err(_) => {
                     eprintln!("FAILURE: pk and sk do not match.");
@@ -930,17 +930,17 @@ pub(crate) fn hash_mldsa87_sha512_cmd(
                     exit(-1);
                 }
             };
-            let mut signer = HashMLDSA87_with_SHA512::sign_init(&sk, Some(&ctx)).unwrap();
+            let mut signer = HashMLDSA87_with_SHA512::do_sign_init(&sk, Some(&ctx)).unwrap();
 
             let mut buf = [0u8; 1024];
             let mut bytes_read = io::stdin().read(&mut buf).expect("Failed to read from stdin");
-            signer.sign_update(&buf[..bytes_read]);
+            signer.do_sign_update(&buf[..bytes_read]);
             while bytes_read != 0 {
                 bytes_read = io::stdin().read(&mut buf).expect("Failed to read from stdin");
-                signer.sign_update(&buf[..bytes_read]);
+                signer.do_sign_update(&buf[..bytes_read]);
             }
 
-            let sig = signer.sign_final().unwrap();
+            let sig = signer.do_sign_final().unwrap();
 
             write_bytes_or_hex(&sig, output_hex);
         }
@@ -976,20 +976,20 @@ pub(crate) fn hash_mldsa87_sha512_cmd(
             };
 
             // and now verify, streaming the message from stdin
-            let mut verifier = HashMLDSA87_with_SHA512::verify_init(&pk, Some(&ctx)).unwrap();
+            let mut verifier = HashMLDSA87_with_SHA512::do_verify_init(&pk, Some(&ctx)).unwrap();
 
             let mut buf = [0u8; 1024];
             let mut bytes_read = io::stdin().read(&mut buf).expect("Failed to read from stdin");
-            verifier.verify_update(&buf[..bytes_read]);
+            verifier.do_verify_update(&buf[..bytes_read]);
             while bytes_read != 0 {
                 bytes_read = io::stdin().read(&mut buf).expect("Failed to read from stdin");
-                verifier.verify_update(&buf[..bytes_read]);
+                verifier.do_verify_update(&buf[..bytes_read]);
             }
 
-            let sig = verifier.verify_final(&sig);
+            let sig = verifier.do_verify_final(&sig);
 
             if sig.is_ok() {
-                println!("Signature is valid.");
+                crate::helpers::println_stdout("Signature is valid.");
             } else {
                 eprintln!("Signature is invalid.");
                 exit(-1);

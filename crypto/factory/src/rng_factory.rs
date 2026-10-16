@@ -45,7 +45,8 @@ use crate::{AlgorithmFactory, FactoryError};
 use crate::{DEFAULT, DEFAULT_128_BIT, DEFAULT_256_BIT};
 use bouncycastle_core::errors::RNGError;
 use bouncycastle_core::key_material::KeyMaterialTrait;
-use bouncycastle_core::traits::{RNG, SecurityStrength};
+use bouncycastle_core::security_strength::SecurityStrength;
+use bouncycastle_core::traits::RNG;
 
 use bouncycastle_rng as rng;
 use bouncycastle_rng::{HASH_DRBG_SHA256_NAME, HASH_DRBG_SHA512_NAME};

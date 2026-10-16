@@ -21,7 +21,10 @@
 //! Some conversions, such as converting a key of type RawLowEntropy into a SymmetricCipherKey, will fail unless
 //! run inside of a [`do_hazardous_operations`] closure, see below.
 //!
-//! # 🚨 Security 🚨
+//! A key can also be bound to one algorithm with [`KeyMaterialTrait::set_algorithm`], after which
+//! every other cipher refuses it; see [`KeyMaterialTrait::algorithm`].
+//!
+//! # 🚨 Security Considerations 🚨
 //!
 //! Additional security features:
 //!   * Zeroizes on destruction.
@@ -51,7 +54,9 @@
 //! See [`do_hazardous_operations`] for documentation and sample code.
 
 use crate::errors::{KeyMaterialError, SuspendableError};
-use crate::traits::{RNG, SecurityStrength};
+use crate::hazmat::do_hazardous_operations;
+use crate::security_strength::SecurityStrength;
+use crate::traits::RNG;
 use bouncycastle_utils::{ct, min, secret::Secret};
 
 use core::cmp::{Ordering, PartialOrd};
@@ -81,7 +86,8 @@ pub trait KeyMaterialTrait: KeyMaterialInternalTrait {
     /// Note that even if a [`KeyMaterialError::ActingOnZeroizedKey`] is returned, the object is still populated and usable.
     /// For example, you could catch it like this:
     /// ```
-    /// use bouncycastle_core::key_material::{KeyMaterial256, KeyType, KeyMaterialTrait, do_hazardous_operations};
+    /// use bouncycastle_core::hazmat::do_hazardous_operations;
+    /// use bouncycastle_core::key_material::{KeyMaterial256, KeyType, KeyMaterialTrait};
     /// use bouncycastle_core::key_material::KeyMaterial;
     /// use bouncycastle_core::errors::KeyMaterialError;
     ///
@@ -170,6 +176,38 @@ pub trait KeyMaterialTrait: KeyMaterialInternalTrait {
     /// returns [`KeyMaterialError::ActingOnZeroizedKey`].
     fn set_key_type(&mut self, key_type: KeyType) -> Result<(), KeyMaterialError>;
 
+    /// The algorithm this key is bound to, as its [`Algorithm::ALG_NAME`], or `None` if unbound.
+    ///
+    /// Binding is opt-in key separation on top of [`KeyType`]: a [`KeyType::SymmetricCipherKey`]
+    /// bound to `"AES_CBC_128"` is refused by `AES_GCM_128`, while an unbound one is accepted by
+    /// any cipher it fits. Ciphers check it with [`KeyMaterialTrait::check_algorithm`] when they
+    /// are given the key; a raw block permutation does not.
+    ///
+    /// [`Algorithm::ALG_NAME`]: crate::traits::Algorithm::ALG_NAME
+    fn algorithm(&self) -> Option<&'static str>;
+
+    /// Binds this key to the algorithm named `Some(alg_name)`, or unbinds it with `None`.
+    ///
+    /// # 🚨 Hazardous Operation 🚨
+    /// Binding an unbound key, and re-binding a key to the algorithm it is already bound to, are
+    /// always permitted. Unbinding a key or binding it to a different algorithm needs a
+    /// [`do_hazardous_operations`] closure, and otherwise returns
+    /// [`KeyMaterialError::HazardousOperationNotPermitted`]. Binding a [`KeyType::Zeroized`] key
+    /// returns [`KeyMaterialError::ActingOnZeroizedKey`].
+    fn set_algorithm(&mut self, algorithm: Option<&'static str>) -> Result<(), KeyMaterialError>;
+
+    /// Whether this key may be used by the algorithm named `alg_name`: `Ok` if it is unbound or
+    /// bound to exactly that algorithm, and [`KeyMaterialError::InvalidKeyType`] if it is bound to
+    /// another.
+    fn check_algorithm(&self, alg_name: &str) -> Result<(), KeyMaterialError> {
+        match self.algorithm() {
+            Some(bound) if bound != alg_name => {
+                Err(KeyMaterialError::InvalidKeyType("The key is bound to a different algorithm."))
+            }
+            _ => Ok(()),
+        }
+    }
+
     /// Security Strength, as used here, aligns with NIST SP 800-90A guidance for random number generation,
     /// specifically section 8.4.
     ///
@@ -224,6 +262,8 @@ pub struct KeyMaterial<const KEY_LEN: usize> {
     key_len: Secret<usize>,
     key_type: KeyType,
     security_strength: SecurityStrength,
+    /// See [`KeyMaterialTrait::algorithm`].
+    algorithm: Option<&'static str>,
     allow_hazardous_operations: bool,
 }
 
@@ -297,6 +337,7 @@ impl<const KEY_LEN: usize> KeyMaterial<KEY_LEN> {
             key_len: Secret::new(),
             key_type: KeyType::Zeroized,
             security_strength: SecurityStrength::None,
+            algorithm: None,
             allow_hazardous_operations: false,
         }
     }
@@ -358,6 +399,7 @@ impl<const KEY_LEN: usize> KeyMaterial<KEY_LEN> {
         *key.key_len = other.key_len();
         key.key_type = other.key_type();
         key.security_strength = other.security_strength();
+        key.algorithm = other.algorithm();
         Ok(key)
     }
 }
@@ -383,6 +425,8 @@ impl<const KEY_LEN: usize> KeyMaterialTrait for KeyMaterial<KEY_LEN> {
         self.buf[..source.len()].copy_from_slice(source);
         *self.key_len = source.len();
         self.key_type = new_key_type;
+        // New bytes are a new key, bound to nothing.
+        self.algorithm = None;
 
         do_hazardous_operations(self, |s| {
             if new_key_type <= KeyType::Unknown {
@@ -499,6 +543,28 @@ impl<const KEY_LEN: usize> KeyMaterialTrait for KeyMaterial<KEY_LEN> {
         Ok(())
     }
 
+    fn algorithm(&self) -> Option<&'static str> {
+        self.algorithm
+    }
+
+    fn set_algorithm(&mut self, algorithm: Option<&'static str>) -> Result<(), KeyMaterialError> {
+        if self.allow_hazardous_operations {
+            self.algorithm = algorithm;
+            return Ok(());
+        }
+        if self.key_type == KeyType::Zeroized {
+            return Err(KeyMaterialError::ActingOnZeroizedKey);
+        }
+        match (self.algorithm, algorithm) {
+            // Binding only narrows where the key may be used, so it is always safe.
+            (None, _) => self.algorithm = algorithm,
+            (Some(bound), Some(new)) if bound == new => { /* No change */ }
+            // Once a KeyMaterial is bound, it should stay that way.
+            _ => return Err(KeyMaterialError::HazardousOperationNotPermitted),
+        }
+        Ok(())
+    }
+
     fn security_strength(&self) -> SecurityStrength {
         self.security_strength.clone()
     }
@@ -568,6 +634,7 @@ impl<const KEY_LEN: usize> KeyMaterialTrait for KeyMaterial<KEY_LEN> {
         self.buf.zeroize();
         self.key_len.zeroize();
         self.key_type = KeyType::Zeroized;
+        self.algorithm = None;
     }
 
     fn equals(&self, other: &dyn KeyMaterialTrait) -> bool {
@@ -591,6 +658,7 @@ impl<const KEY_LEN: usize> KeyMaterialTrait for KeyMaterial<KEY_LEN> {
             // set the metadata
             into.set_key_len(bytes_to_copy)?;
             into.set_key_type(self.key_type)?;
+            into.set_algorithm(self.algorithm)?;
             into.set_security_strength(
                 min(&self.security_strength(), &SecurityStrength::from_bytes(bytes_to_copy))
                     .clone(),
@@ -655,8 +723,8 @@ impl<const KEY_LEN: usize> fmt::Display for KeyMaterial<KEY_LEN> {
         // deref the key_len explicitly so that Secret doesn't render it as "<redacted>"
         write!(
             f,
-            "KeyMaterial<{}>{{ len: {}, key_type: {:?}, security_strength: {:?} }}",
-            KEY_LEN, *self.key_len, self.key_type, self.security_strength
+            "KeyMaterial<{}>{{ len: {}, key_type: {:?}, security_strength: {:?}, algorithm: {:?} }}",
+            KEY_LEN, *self.key_len, self.key_type, self.security_strength, self.algorithm
         )
     }
 }
@@ -667,8 +735,8 @@ impl<const KEY_LEN: usize> fmt::Debug for KeyMaterial<KEY_LEN> {
         // deref the key_len explicitly so that Secret doesn't render it as "<redacted>"
         write!(
             f,
-            "KeyMaterial<{}>{{ len: {}, key_type: {:?}, security_strength: {:?} }}",
-            KEY_LEN, *self.key_len, self.key_type, self.security_strength
+            "KeyMaterial<{}>{{ len: {}, key_type: {:?}, security_strength: {:?}, algorithm: {:?} }}",
+            KEY_LEN, *self.key_len, self.key_type, self.security_strength, self.algorithm
         )
     }
 }
@@ -677,13 +745,14 @@ impl<const KEY_LEN: usize> fmt::Debug for KeyMaterial<KEY_LEN> {
 
 /// Internal-use trait holding the low-level hazardous-operations guard toggle.
 ///
-/// These methods are deliberately split out of [`KeyMaterialTrait`] into a private trait so that
-/// they are not accessible from outside this module.
+/// These methods are deliberately split out of [`KeyMaterialTrait`] into a crate-private trait so
+/// that they are not accessible from outside this crate; [`do_hazardous_operations`] is the only
+/// way to flip the guard.
 ///
 /// This is a supertrait of [`KeyMaterialTrait`], so anything that implements [`KeyMaterialTrait`]
 /// also implements this. [`KeyMaterialTrait`] therefore stays dyn-compatible (both methods here are
 /// object-safe), which matters because `Box<dyn KeyMaterialTrait>` is used widely as a return type.
-trait KeyMaterialInternalTrait {
+pub(crate) trait KeyMaterialInternalTrait {
     /// Whether this instance is currently allowed to perform potentially hazardous operations.
     fn allows_hazardous_operations(&self) -> bool;
     /// Sets this instance to be able to perform potentially hazardous operations such as
@@ -696,7 +765,7 @@ trait KeyMaterialInternalTrait {
     /// and to give static analysis tools an obvious marker that a given KeyMaterial variable warrants
     /// further inspection.
     ///
-    /// Prefer the scoped [`KeyMaterial::do_hazardous_operations`] wrapper, which calls this and
+    /// Prefer the scoped [`do_hazardous_operations`] wrapper, which calls this and
     /// [`KeyMaterialInternalTrait::drop_hazardous_operations`] for you so the guard can't be left set.
     fn allow_hazardous_operations(&mut self);
 
@@ -714,107 +783,4 @@ impl<const KEY_LEN: usize> KeyMaterialInternalTrait for KeyMaterial<KEY_LEN> {
     fn drop_hazardous_operations(&mut self) {
         self.allow_hazardous_operations = false;
     }
-}
-
-/// Runs the provided closure within which hazardous operations are allowed.
-/// All hazardous operations will return a [`KeyMaterialError::HazardousOperationNotPermitted`]
-/// if used outside of this closure.
-///
-/// Example usage:
-///
-/// ```rust
-/// use bouncycastle_core::key_material::{KeyType, KeyMaterial256, KeyMaterialTrait, do_hazardous_operations};
-/// use bouncycastle_core::traits::SecurityStrength;
-///
-/// // Let's create an all-zero key
-/// let mut key = KeyMaterial256::default();
-///
-/// // Let's set a key of all zeroes, which the library would normally force to be
-/// // [KeyType::Zeroized], but we want to force it to [KeyType::Seed], which is considered a
-/// // hazardous operation.
-/// do_hazardous_operations(&mut key, |key| {
-///     key.set_bytes_as_type(&[8u8; 32], KeyType::Seed)
-///     // note that the closure is required to return Result<(), KeyMaterialError>,
-///     // so we can chain [KeyMaterial::set_bytes_as_type], otherwise we would need
-///     // to end with Ok(()).
-/// }).unwrap();
-///
-/// assert_eq!(key.key_len(), 32);
-/// assert_eq!(key.key_type(), KeyType::Seed);
-/// ```
-///
-/// ```rust
-/// use bouncycastle_core::key_material::{KeyType, KeyMaterial256, KeyMaterialTrait, do_hazardous_operations};
-/// use bouncycastle_core::traits::SecurityStrength;
-///
-/// // Let's create an all-zero key
-/// let mut key = KeyMaterial256::default();
-/// assert_eq!(key.key_type(), KeyType::Zeroized);
-/// assert_eq!(key.security_strength(), SecurityStrength::None);
-///
-/// // Now we want to tell the library that this all-zero key
-/// // is to be used as a 32-byte [KeyType::Seed] at the 256-bit security strength,
-/// // which the library will not allow you to do outside of the hazerdous operations closure.
-/// do_hazardous_operations(&mut key, |key| {
-///     key.set_key_len(32)?;
-///     key.set_key_type(KeyType::Seed)?;
-///     key.set_security_strength(SecurityStrength::_256bit)?;
-///     Ok(())
-/// }).unwrap();
-///
-/// assert_eq!(key.key_type(), KeyType::Seed);
-/// assert_eq!(key.security_strength(), SecurityStrength::_256bit);
-/// ```
-///
-/// Another common usage of hazardous operations is to get a direct mutable reference to the
-/// underlying KeyMaterial byte buffer; for example if you want to copy in key bytes from somewhere else.
-///
-/// ```rust
-/// use bouncycastle_core::key_material::{KeyType, KeyMaterial512, KeyMaterialTrait, do_hazardous_operations};
-/// use bouncycastle_core::traits::SecurityStrength;
-///
-/// // In this example, we initialize a KeyMateriol512 (64 bytes) with only 32 bytes of input.
-/// let mut key = KeyMaterial512::from_bytes_as_type(
-///                                 &[1u8; 32],
-///                                 KeyType::CryptographicRandom
-///                         ).unwrap();
-/// assert_eq!(key.key_len(), 32);
-///
-/// // Now we want to expand the length to 64 bytes and copy in an additional 32 bytes of key data,
-/// // using [KeyMaterial::mut_ref_to_bytes].
-/// let additional_bytes = [2u8; 32];
-/// do_hazardous_operations(&mut key, |key| {
-///     key.set_key_len(64)?;
-///     key.ref_to_bytes_mut()?[32..].copy_from_slice(&additional_bytes);
-///     Ok(())
-/// }).unwrap();
-///
-/// assert_eq!(key.key_len(), 64);
-/// // Reading the key bytes via [KeyMateriol::ref_to_bytes] is not a hazardous operation.
-/// assert_eq!(key.ref_to_bytes()[..32], [1u8; 32]);
-/// assert_eq!(key.ref_to_bytes()[32..], [2u8; 32]);
-/// ```
-///
-// Dev note: This is a free function rather than a method on [KeyMaterialTrait] because it is
-// generic over the closure type, which would make the trait non-dyn-compatible; the trait is used
-// as `&dyn KeyMaterialTrait` elsewhere (e.g. [KeyMaterialTrait::concatenate], [KeyMaterialTrait::equals]).
-// The toggle itself lives on the module-private [KeyMaterialInternalTrait], so external crates cannot
-// flip the guard by hand and must go through this scoped wrapper (hence `#[allow(private_bounds)]`).
-#[allow(private_bounds)]
-pub fn do_hazardous_operations<KEY, F>(key: &mut KEY, f: F) -> Result<(), KeyMaterialError>
-where
-    KEY: KeyMaterialTrait + ?Sized,
-    F: FnOnce(&mut KEY) -> Result<(), KeyMaterialError>,
-{
-    let allows = key.allows_hazardous_operations();
-
-    key.allow_hazardous_operations();
-    let ret = f(key);
-
-    // to allow nested closures, if this key instance allowed
-    // before entering, then leave it.
-    if !allows {
-        key.drop_hazardous_operations();
-    }
-    ret
 }

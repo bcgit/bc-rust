@@ -1,0 +1,266 @@
+//! A constant-time, table-free AES block cipher engine (NIST FIPS 197).
+//!
+//! This crate provides the raw AES keyed permutation implemented as a Boolean circuit over bit-planes
+//! rather than as byte substitutions through a lookup table, which makes it both smaller and constant-time;
+//! see [Design](#design).
+//!
+//! This crate also provides various ready-to-use AES-based modes of operation.
+//!
+//! # Usage Examples
+//!
+//! The raw AES permutation, [`AESInternal`](hazmat::AESInternal), lives under [`hazmat`] because it
+//! is not secure to use by itself; see
+//! [A block permutation is not a cipher](#a-block-permutation-is-not-a-cipher) below.
+//!
+//! For ready-to-use primitives, see the documentation for one of the provided modes of operation:
+//!
+//! * [AES_CBC](crate::cbc)
+//! * [AES_CCM](crate::ccm)
+//! * [AES_CFB](crate::cfb)
+//! * [AES_CFB8](crate::cfb8)
+//! * [AES_CTR](crate::ctr)
+//! * [AES_GCM](crate::gcm)
+//!
+//! AES in ECB mode, [`AES_ECB_128`](hazmat::AES_ECB_128) and friends, is under [`hazmat`] because
+//! it is a building block for other modes, not itself a confidentiality mode for data.
+//!
+//! # Design
+//!
+//! ## No lookup table
+//!
+//! FIPS 197 Sec 5.1.1 presents the S-box as a table (Table 4), and almost every AES
+//! implementation stores it as one -- 256 bytes, or 2-8 KiB for the "T-table" variants that fold
+//! MIXCOLUMNS() in. The trouble is that a table indexed by a byte of the state is indexed by
+//! secret data, so on any CPU with a data cache the memory access pattern, and hence the timing,
+//! depends on the key. That is a practical, repeatedly-demonstrated attack, and it is not fixable
+//! with a lookup-table-based implementation.
+//!
+//! ## Bit-slicing
+//!
+//! The SBox implementation is borrowed from J. Boyar and R. Peralta,
+//! "A new combinational logic minimization technique with applications to cryptology",
+//! <https://eprint.iacr.org/2009/191.pdf> and the accompanying `SLP_AES_113.txt`.
+//!
+//! It is "bit-sliced" in the sense that the state is transposed so that each of eight words holds
+//! one *bit position* of every byte: word `q[k]` collects bit `k` of all the bytes. In that form
+//! the S-box becomes a fixed Boolean circuit -- 32 AND, 77 XOR and 4 XNOR gates, the 113-gate
+//! straight-line program of Boyar and Peralta -- and one `&` or `^` applies a gate to every byte
+//! position at once. Nothing is ever indexed by a secret, and nothing branches on one.
+//!
+//! Multiple blocks at once:
+//! A single block bitslices into a `[u16; 8]` planes object. Since XOR and XNOR of two u16's, two u32's, or two u64's
+//! is still a single operation (at least on a 64-bit machine), we can process two blocks at a time as a `[u32; 8]`
+//! or 4 blocks at a time as a `[u64; 8]` for approximately the same cost as a single block.
+//! The circuit and the masks cost about the same at every width, so the batched entry points
+//! multiply throughput. Measured with the crate's criterion benches on x86-64, 16 KiB per run,
+//! relative to the single-block entry point:
+//!
+//! | Entry point | Encrypt | Decrypt |
+//! |---|---|---|
+//! | `encrypt_block` / `decrypt_block` (`u16` planes) | 1.0x | 1.0x |
+//! | `encrypt_2blocks` / `decrypt_2blocks` (`u32` planes) | 1.75x | 1.95x |
+//! | `encrypt_4blocks` / `decrypt_4blocks` (`u64` planes) | 3.0x | 3.7x |
+//!
+//! The ratios hold for all three key lengths to within a few percent; in absolute terms AES-128
+//! single-block encryption is about 240 us per 16 KiB and decryption about 330 us. That multiplier
+//! is what the modes of operation batch through wherever their blocks are independent: both
+//! directions of ECB and CTR (and so GCM's CTR half), and the decryption direction of CBC, CFB and
+//! CFB8. CBC and CFB *encryption* cannot, because each forward cipher input depends on the previous
+//! output (SP 800-38A Sec 6.2 and 6.3), so those two paths run one block at a time.
+//!
+//! SHIFTROWS() and MIXCOLUMNS() become masks and rotations in the same representation, and the
+//! key schedule is stored bit-sliced too, so no transposition happens inside the round loop. The
+//! exact bit layout, and the derivation of every mask from it, is documented in the source code of the `bitslice`
+//! and `round` modules.
+//!
+//! Decryption follows FIPS 197 Algorithm 3, the straight inverse cipher, rather than the
+//! equivalent inverse cipher of Sec 5.3.5. Algorithm 3 puts INVMIXCOLUMNS() after ADDROUNDKEY(),
+//! so it uses the *unmodified* key schedule; the equivalent inverse cipher would need a second
+//! schedule with each round key transformed. One [`AES128Internal`](hazmat::AES128Internal) value therefore encrypts and decrypts
+//! from one stored schedule.
+//!
+//! # Memory Usage
+//!
+//! There are no lookup tables and no heap allocation. The only persistent state is the key
+//! schedule, which is `4 * (Nr + 1)` words -- exactly the size FIPS 197 Sec 5.2 defines, with the
+//! bit-sliced form stored at the one-block width so that bit-slicing costs nothing in space:
+//!
+//! | | [`AES128Internal`](hazmat::AES128Internal) | [`AES192Internal`](hazmat::AES192Internal) | [`AES256Internal`](hazmat::AES256Internal) |
+//! |---|---|---|---|
+//! | Key | 16 B | 24 B | 32 B |
+//! | Rounds, `Nr` | 10 | 12 | 14 |
+//! | Key schedule, held between calls | 176 B | 208 B | 240 B |
+//! | Lookup tables | 0 B | 0 B | 0 B |
+//!
+//! Per-call stack usage is set by the plane width: 16, 32 or 64 bytes of bit-sliced state for
+//! one, two or four blocks, the same again for the round key widened from its stored one-block
+//! form, plus the S-box circuit's spills. Only key expansion depends on the key length. Measured
+//! as the deepest frame chain below each entry point in the release build (x86-64, return
+//! addresses included):
+//!
+//! | Entry point | AES-128 | AES-192 | AES-256 |
+//! |---|---|---|---|
+//! | `new` (key expansion) | 312 B | 344 B | 376 B |
+//! | `encrypt_block` (`u16` planes) | 208 B | 208 B | 208 B |
+//! | `decrypt_block` (`u16` planes) | 208 B | 208 B | 208 B |
+//! | `encrypt_2blocks` (`u32` planes) | 240 B | 240 B | 240 B |
+//! | `decrypt_2blocks` (`u32` planes) | 224 B | 224 B | 224 B |
+//! | `encrypt_4blocks` (`u64` planes) | 320 B | 320 B | 320 B |
+//! | `decrypt_4blocks` (`u64` planes) | 352 B | 352 B | 352 B |
+//!
+//! # 🚨 Security Considerations 🚨
+//!
+//! ## A block permutation is not a cipher
+//!
+//! [`AES128Internal`](hazmat::AES128Internal) and friends transform exactly 16 bytes.
+//! Using them directly on data is equivalent to the [Electronic Code Book (ECB)](hazmat::AES_ECB_128) mode,
+//! which does not provide proper confidentiality in most contexts since the same plaintext block
+//! will produce the same ciphertext block every time, so structure in the plaintext survives encryption.
+//! **Do not do it.** Use a ready-to-use mode of operation, and
+//! prefer an authenticated one (AEAD) so that ciphertext tampering is detected. That is why the
+//! permutation and the ECB aliases live under [`hazmat`]; [`bouncycastle_core::hazmat`] lists the
+//! supported uses.
+//!
+//! ## Constant-time properties
+//!
+//! By construction there is no secret-dependent memory access and no secret-dependent branch,
+//! in the cipher (sbox) *or* in the key load (key schedule expansion)
+//! The only branches are the round loops, which count over the public `Nr`.
+//!
+//! This guarantee is "by construction" at the source code level only since no guarantees can be made
+//! against the compiler optimizing the provided code into non-constant time assembly. For uses that
+//! require constant-time guarantees that strong, then a library that uses inline assembly for critical
+//! sections might be more appropriate.
+//!
+//! Caveats worth stating plainly:
+//!
+//! * The Rust compiler makes no guarantee it will preserve this. The code is written so that the
+//!   natural code generation is straight-line, and `#![forbid(unsafe_code)]` rules out the usual
+//!   ways of forcing the issue, but the property is not contractual.
+//! * The working state (16, 32 or 64 bytes, by the entry point) is not scrubbed after a call.
+//!   Only the key schedule is wrapped in `Secret`, and so only it is guaranteed to be zeroized on
+//!   drop.
+//! * Constant-time execution says nothing about power or electromagnetic side channels.
+//!
+//! # Provenance
+//!
+//! * Normative reference: **NIST FIPS 197** (Advanced Encryption Standard), including Update 1.
+//!   Every transformation cites its section, algorithm and equation numbers.
+//! * The S-box circuit is the 113-gate straight-line program `SLP_AES_113.txt` from Peralta's
+//!   circuit collection, described in J. Boyar and R. Peralta, "A new combinational logic
+//!   minimization technique with applications to cryptology",
+//!   <https://eprint.iacr.org/2009/191.pdf>.
+//! * The bit-sliced structure, the transpose, and the shape of the SHIFTROWS()/MIXCOLUMNS()
+//!   mask-and-rotation code are translated from BearSSL's `aes_ct` implementation by Thomas
+//!   Pornin (MIT licence). The bit layout is not BearSSL's -- blocks sit side by side in 16-bit
+//!   lanes rather than interleaved bit by bit, so that one set of masks serves every width -- and
+//!   every constant is derived from the documented layout in the comments and pinned by a test
+//!   against a byte-wise reference written from the FIPS 197 equations.
+//! * Verified against FIPS 197 Appendix A (all three key expansions, every word), FIPS 197
+//!   Appendix B, NIST SP 800-38A Appendix F.1 (ECB, all three key lengths, both directions), and
+//!   the NIST ACVP `ACVP-AES-ECB` vectors.
+
+#![no_std]
+#![forbid(unsafe_code)]
+#![forbid(missing_docs)]
+// `AESParams` is deliberately sealed with a private supertrait so that no fourth parameter set can
+// be added outside this crate; that is what triggers this lint.
+#![allow(private_bounds)]
+
+mod bitslice;
+pub mod cbc;
+pub mod ccm;
+pub mod cfb;
+pub mod cfb8;
+pub mod ctr;
+pub mod gcm;
+pub mod hazmat;
+mod round;
+mod sbox;
+mod schedule;
+
+use bouncycastle_utils::secret::ZeroizablePrimitive;
+
+/// The AES block length in bytes: 16 (FIPS 197 Sec 3.4, `Nb` = 4 words).
+pub const AES_BLOCK_LEN: usize = 16;
+
+/// Prevents a fourth parameter set from being added outside this crate.
+///
+/// FIPS 197 Table 3 lists exactly three Key-Block-Round combinations -- AES-128, AES-192 and
+/// AES-256 -- and Sec 5 adds that "No other configurations of Rijndael conform to this
+/// Standard". Because [`AESParams`]
+/// has this private supertrait, only the three types below can implement it, so no
+/// downstream crate can instantiate the cipher with an unapproved key length or round count.
+trait AESParamsInternalTrait {}
+
+/// The per-key-length constants of FIPS 197 Table 3.
+///
+/// This is a trait rather than const generic parameters because the schedule length
+/// `4 * (Nr + 1)` cannot be written as an expression over another const parameter on stable
+/// const-generics; each implementation spells its own array type out instead. The same pattern is
+/// used by the `HashDRBG80090AParams_*` types in `bouncycastle-rng`.
+///
+/// Sealed via a private supertrait, so the three types below are the only implementations. The
+/// supertrait is named `*InternalTrait` after the pattern of `MLKEMPrivateKeyInternalTrait` in
+/// `bouncycastle-mlkem`, which seals its key types the same way.
+pub trait AESParams: AESParamsInternalTrait {
+    /// Key length in bytes: 16, 24 or 32 (FIPS 197 Table 3).
+    const KEY_LEN: usize;
+    /// `Nk`, the key length in 32-bit words: 4, 6 or 8 (FIPS 197 Table 3).
+    const NK: usize;
+    /// `Nr`, the number of rounds: 10, 12 or 14 (FIPS 197 Table 3).
+    const NR: usize;
+    /// The algorithm name, as reported by `Algorithm::ALG_NAME`.
+    const ALG_NAME: &'static str;
+    /// `[u32; 4 * (NR + 1)]` -- the bit-sliced schedule; its layout is
+    /// described in `schedule.rs`.
+    type Schedule: ZeroizablePrimitive + AsRef<[u32]> + AsMut<[u32]>;
+}
+
+/// AES-128 parameters: 16-byte key, `Nk` = 4, `Nr` = 10 (FIPS 197 Table 3).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AES128Params;
+/// AES-192 parameters: 24-byte key, `Nk` = 6, `Nr` = 12 (FIPS 197 Table 3).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AES192Params;
+/// AES-256 parameters: 32-byte key, `Nk` = 8, `Nr` = 14 (FIPS 197 Table 3).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct AES256Params;
+
+impl AESParamsInternalTrait for AES128Params {}
+impl AESParamsInternalTrait for AES192Params {}
+impl AESParamsInternalTrait for AES256Params {}
+
+impl AESParams for AES128Params {
+    const KEY_LEN: usize = 16;
+    const NK: usize = 4;
+    const NR: usize = 10;
+    const ALG_NAME: &'static str = "AES-128";
+    type Schedule = [u32; 44]; // 4 * (10 + 1)
+}
+
+impl AESParams for AES192Params {
+    const KEY_LEN: usize = 24;
+    const NK: usize = 6;
+    const NR: usize = 12;
+    const ALG_NAME: &'static str = "AES-192";
+    type Schedule = [u32; 52]; // 4 * (12 + 1)
+}
+
+impl AESParams for AES256Params {
+    const KEY_LEN: usize = 32;
+    const NK: usize = 8;
+    const NR: usize = 14;
+    const ALG_NAME: &'static str = "AES-256";
+    type Schedule = [u32; 60]; // 4 * (14 + 1)
+}
+
+pub use cbc::{AES_CBC_128, AES_CBC_192, AES_CBC_256};
+pub use ccm::{
+    AES_CCM_128, AES_CCM_128_Packet, AES_CCM_192, AES_CCM_192_Packet, AES_CCM_256,
+    AES_CCM_256_Packet, CCM_NONCE_LEN, CCM_TAG_LEN,
+};
+pub use cfb::{AES_CFB_128, AES_CFB_192, AES_CFB_256};
+pub use cfb8::{AES_CFB8_128, AES_CFB8_192, AES_CFB8_256};
+pub use ctr::{AES_CTR_128, AES_CTR_192, AES_CTR_256, CTR_NONCE_LEN};
+pub use gcm::{AES_GCM_128, AES_GCM_192, AES_GCM_256};
