@@ -136,7 +136,7 @@ fn ascon_aead128_kat() {
         let mut stream_ct = pt.clone();
 
         for byte in stream_ct.iter_mut() {
-            enc.do_encrypt_update(core::slice::from_mut(byte));
+            enc.do_encrypt_inplace(core::slice::from_mut(byte));
         }
 
         let tag = enc.do_encrypt_final();
@@ -153,7 +153,7 @@ fn ascon_aead128_kat() {
         let mut stream_pt = expected_ct[..pt.len()].to_vec();
 
         for byte in stream_pt.iter_mut() {
-            dec.do_decrypt_update(core::slice::from_mut(byte));
+            dec.do_decrypt_inplace(core::slice::from_mut(byte));
         }
 
         dec.do_decrypt_final(&tag).expect("streaming decrypt should authenticate");

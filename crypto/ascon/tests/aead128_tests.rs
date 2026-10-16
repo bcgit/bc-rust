@@ -114,7 +114,7 @@ fn enc_chunked(key: &[u8; 16], nonce: &[u8; 16], ad: &[u8], pt: &[u8], chunk: us
     let mut off = 0;
     while off < pt.len() {
         let end = (off + chunk).min(pt.len());
-        cipher.do_encrypt_update(&mut out[off..end]);
+        cipher.do_encrypt_inplace(&mut out[off..end]);
         off = end;
     }
     let tag = cipher.do_encrypt_final();
@@ -139,7 +139,7 @@ fn dec_chunked(
     let mut off = 0;
     while off < pt_len {
         let end = (off + chunk).min(pt_len);
-        cipher.do_decrypt_update(&mut out[off..end]);
+        cipher.do_decrypt_inplace(&mut out[off..end]);
         off = end;
     }
     // infallible: ct.len() - pt_len == 16 by construction above.
@@ -233,7 +233,7 @@ fn aead_chunked_aad_matches_one_shot() {
         }
         let mut out = vec![0u8; pt.len() + 16];
         out[..pt.len()].copy_from_slice(&pt);
-        e.do_encrypt_update(&mut out[..pt.len()]);
+        e.do_encrypt_inplace(&mut out[..pt.len()]);
         let tag = e.do_encrypt_final();
         out[pt.len()..].copy_from_slice(&tag);
         assert_eq!(out, ct_ref, "chunked AAD mismatch (chunk={chunk})");
@@ -262,7 +262,7 @@ fn aead_streaming_chunk_sweep() {
                 let mut off = 0;
                 while off < out.len() {
                     let end = (off + chunk).min(out.len());
-                    e.do_encrypt_update(&mut out[off..end]);
+                    e.do_encrypt_inplace(&mut out[off..end]);
                     off = end;
                 }
                 let tag = e.do_encrypt_final();
@@ -274,7 +274,7 @@ fn aead_streaming_chunk_sweep() {
                 let mut off = 0;
                 while off < back.len() {
                     let end = (off + chunk).min(back.len());
-                    d.do_decrypt_update(&mut back[off..end]);
+                    d.do_decrypt_inplace(&mut back[off..end]);
                     off = end;
                 }
                 let tag_arr: [u8; 16] = tag_ref.try_into().unwrap();
@@ -291,7 +291,7 @@ fn do_decrypt_final_rejects_wrong_tag() {
     let pt = pattern(20);
     let mut d = AsconAead128::new_decrypting(&km, &NONCE, None).unwrap();
     let mut buf = pt.clone();
-    d.do_decrypt_update(&mut buf);
+    d.do_decrypt_inplace(&mut buf);
     let wrong_tag = [0xFFu8; 16];
     assert!(matches!(
         d.do_decrypt_final(&wrong_tag),
@@ -631,13 +631,13 @@ fn aead128_suspendable_keyed_state() {
     let mut e = AsconAead128::new_encrypting(&km, &NONCE, Some(ad)).unwrap();
     let mut out = vec![0u8; pt.len() + 16];
     out[..pt.len()].copy_from_slice(&pt);
-    e.do_encrypt_update(&mut out[..18]);
+    e.do_encrypt_inplace(&mut out[..18]);
 
     TestFrameworkSuspendableKeyedState::new().test(&e, &km);
 
     let serialized = e.clone().suspend();
     let mut resumed = AsconAead128::<Encrypting>::from_suspended(serialized, &km).unwrap();
-    resumed.do_encrypt_update(&mut out[18..pt.len()]);
+    resumed.do_encrypt_inplace(&mut out[18..pt.len()]);
     let tag = resumed.do_encrypt_final();
     out[pt.len()..].copy_from_slice(&tag);
     assert_eq!(out, ct_ref, "resumed AEAD ciphertext must match one-shot encryption");

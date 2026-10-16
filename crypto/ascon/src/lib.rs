@@ -191,7 +191,7 @@
 //!   [`bouncycastle_core::traits::AEADCipherDecryptor::decrypt_detached_out`],
 //!   [`bouncycastle_core::traits::AEADCipherDecryptor::decrypt_with_aad_out`] and
 //!   [`bouncycastle_core::traits::SymmetricCipherDecryptor::decrypt_out`]) zeroize their output
-//!   buffer before returning that error. The streaming API ([`AsconAead128::do_decrypt_update`] /
+//!   buffer before returning that error. The streaming API ([`AsconAead128::do_decrypt_inplace`] /
 //!   [`AsconAead128::do_decrypt_final`], or `do_update_out` followed by
 //!   [`bouncycastle_core::traits::AEADCipherDecryptor::do_decrypt_final_detached_out`] or
 //!   [`bouncycastle_core::traits::SymmetricCipherDecryptor::do_decrypt_final`]) does not: plaintext
