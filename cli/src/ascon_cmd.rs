@@ -210,7 +210,7 @@ fn aead128_encrypt_stream_with_explicit_nonce(
         if n == 0 {
             break;
         }
-        cipher.do_encrypt_update(&mut buf[..n]);
+        cipher.do_encrypt_inplace(&mut buf[..n]);
         helpers::write_bytes_or_hex(&buf[..n], output_hex);
     }
     let tag = cipher.do_encrypt_final();

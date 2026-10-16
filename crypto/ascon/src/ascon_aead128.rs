@@ -4,7 +4,7 @@
 //! `Ascon-p[12]`; associated-data and plaintext/ciphertext blocks use `Ascon-p[8]`.
 //!
 //! Every byte of plaintext/ciphertext is transformed and emitted as soon as it is seen (no
-//! held-back buffering across `do_encrypt_update`/`do_decrypt_update` calls); this is what lets the
+//! held-back buffering across `do_encrypt_inplace`/`do_decrypt_inplace` calls); this is what lets the
 //! finalizers be plain `self -> tag` / `self -> Result<(), _>` calls with nothing left to flush.
 //! Ascon-AEAD128 permits this because within a 128-bit rate block each plaintext/ciphertext byte
 //! is transformed independently of the others in that block; the permutation only runs once a
@@ -91,7 +91,7 @@ impl Phase {
 /// # use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// # let key = KeyMaterial::<16>::from_bytes_as_type(&[7; 16], KeyType::SymmetricCipherKey).unwrap();
 /// let mut dec = AsconAead128::new_decrypting(&key, &[0u8; 16], None).unwrap();
-/// dec.do_encrypt_update(&mut [0u8; 4]);   // no such method on the decrypting type
+/// dec.do_encrypt_inplace(&mut [0u8; 4]);   // no such method on the decrypting type
 /// ```
 pub struct AsconAead128<Dir> {
     // 128-bit secret key (two 64-bit words). It is re-added to the state at finalization, so it must
@@ -352,7 +352,7 @@ impl AsconAead128<Encrypting> {
         }
         let mut cipher = Self::new(key, nonce, ad)?;
         out[..plaintext.len()].copy_from_slice(plaintext);
-        cipher.do_encrypt_update(&mut out[..plaintext.len()]);
+        cipher.do_encrypt_inplace(&mut out[..plaintext.len()]);
         let tag = cipher.do_encrypt_final();
         out[plaintext.len()..needed].copy_from_slice(&tag);
         Ok(needed)
@@ -360,7 +360,7 @@ impl AsconAead128<Encrypting> {
 
     /// Encrypt `data` in place (SP 800-232 §4.1.1 step 3). Every byte is transformed and emitted
     /// immediately; nothing is buffered across calls.
-    pub fn do_encrypt_update(&mut self, data: &mut [u8]) {
+    pub fn do_encrypt_inplace(&mut self, data: &mut [u8]) {
         self.check_data();
 
         let mut data = data;
@@ -383,7 +383,7 @@ impl AsconAead128<Encrypting> {
 
     /// Finish encryption; returns the 128-bit tag (SP 800-232 §4.1.1 steps 3-4). Pads the final
     /// (possibly empty) plaintext block; no further bytes are emitted here since every
-    /// plaintext/ciphertext byte was already written by `do_encrypt_update`.
+    /// plaintext/ciphertext byte was already written by `do_encrypt_inplace`.
     pub fn do_encrypt_final(mut self) -> [u8; TAG_LEN] {
         self.check_data();
         // Padding of the final (possibly empty) plaintext block (Eq. 27).
@@ -426,7 +426,7 @@ impl AsconAead128<Decrypting> {
         }
         let mut cipher = Self::new(key, nonce, ad)?;
         out[..pt_len].copy_from_slice(&ciphertext[..pt_len]);
-        cipher.do_decrypt_update(&mut out[..pt_len]);
+        cipher.do_decrypt_inplace(&mut out[..pt_len]);
         // infallible: ciphertext.len() - pt_len == TAG_LEN by construction above.
         let tag: &[u8; TAG_LEN] = ciphertext[pt_len..].try_into().unwrap();
         match cipher.do_decrypt_final(tag) {
@@ -441,7 +441,7 @@ impl AsconAead128<Decrypting> {
     /// Decrypt `data` in place (SP 800-232 §4.1.2 step 3). Every byte is transformed and emitted
     /// immediately; the plaintext is **not** authenticated until [`AsconAead128::do_decrypt_final`]
     /// returns `Ok`.
-    pub fn do_decrypt_update(&mut self, data: &mut [u8]) {
+    pub fn do_decrypt_inplace(&mut self, data: &mut [u8]) {
         self.check_data();
 
         let mut data = data;
@@ -530,7 +530,7 @@ impl SymmetricCipherEncryptor<KEY_LEN, NONCE_LEN, TAG_LEN> for AsconAead128Encry
         }
         let out = &mut ciphertext[..plaintext.len()];
         out.copy_from_slice(plaintext);
-        self.0.do_encrypt_update(out);
+        self.0.do_encrypt_inplace(out);
         Ok(plaintext.len())
     }
 
@@ -625,7 +625,7 @@ impl SymmetricCipherDecryptor<KEY_LEN, NONCE_LEN, TAG_LEN> for AsconAead128Decry
         out[from_held..].copy_from_slice(&ciphertext[..from_input]);
         // Called even when `release` is 0: that is what ends the AAD phase in `cipher`, so a
         // later non-empty `do_update_aad` is refused however little ciphertext has been seen.
-        self.cipher.do_decrypt_update(out);
+        self.cipher.do_decrypt_inplace(out);
         // Keep the newest `TAG_LEN` (or fewer) bytes: what is left of `held`, then the tail of
         // `ciphertext`.
         let kept = self.held_len - from_held;
@@ -675,7 +675,7 @@ impl AEADCipherDecryptor<KEY_LEN, NONCE_LEN, TAG_LEN, TAG_LEN> for AsconAead128D
         plaintext.fill(0);
         let n = self.held_len;
         plaintext[..n].copy_from_slice(&self.held[..n]);
-        self.cipher.do_decrypt_update(&mut plaintext[..n]);
+        self.cipher.do_decrypt_inplace(&mut plaintext[..n]);
         if let Err(e) = self.cipher.do_decrypt_final(tag) {
             plaintext.fill(0);
             return Err(e);
