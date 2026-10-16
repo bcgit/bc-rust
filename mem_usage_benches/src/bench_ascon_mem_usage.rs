@@ -59,7 +59,10 @@ use bouncycastle::ascon::Ascon_AEAD128;
 use bouncycastle::ascon::{AsconCXof128, AsconCXof128Squeezer, SUSPENDED_ASCON_CXOF128_STATE_LEN};
 use bouncycastle::ascon::{AsconHash256, SUSPENDED_ASCON_HASH256_STATE_LEN};
 use bouncycastle::ascon::{AsconXof128, AsconXof128Squeezer, SUSPENDED_ASCON_XOF128_STATE_LEN};
-use bouncycastle::ascon::{KEY_LEN, NONCE_LEN, SUSPENDED_ASCON_AEAD128_STATE_LEN, TAG_LEN};
+use bouncycastle::ascon::{
+    KEY_LEN, NONCE_LEN, SUSPENDED_ASCON_AEAD128_DECRYPTOR_STATE_LEN,
+    SUSPENDED_ASCON_AEAD128_ENCRYPTOR_STATE_LEN, TAG_LEN,
+};
 use bouncycastle::cipher::{Decrypting, Encrypting};
 use bouncycastle::core::errors::{HashError, RNGError, SymmetricCipherError};
 use bouncycastle::core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
@@ -143,7 +146,14 @@ fn print_struct_sizes() {
     // holds back in case they are the inline tag.
     println!("size_of<Ascon_AEAD128<Encrypting>>: {}", size_of::<Enc>());
     println!("size_of<Ascon_AEAD128<Decrypting>>: {}", size_of::<Dec>());
-    println!("SUSPENDED_ASCON_AEAD128_STATE_LEN: {}", SUSPENDED_ASCON_AEAD128_STATE_LEN);
+    println!(
+        "SUSPENDED_ASCON_AEAD128_ENCRYPTOR_STATE_LEN: {}",
+        SUSPENDED_ASCON_AEAD128_ENCRYPTOR_STATE_LEN
+    );
+    println!(
+        "SUSPENDED_ASCON_AEAD128_DECRYPTOR_STATE_LEN: {}",
+        SUSPENDED_ASCON_AEAD128_DECRYPTOR_STATE_LEN
+    );
 
     // The three sponges are the permutation state (40 B), an 8-byte rate buffer, its position
     // and the squeezing flag; a squeezer is the same sponge, moved.
