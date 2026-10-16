@@ -1,0 +1,15 @@
+[package]
+name = "bouncycastle-arm"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+
+[dev-dependencies]
+bouncycastle-hex.workspace = true
+criterion.workspace = true
+
+[[bench]]
+name = "arm_benches"
+harness = false

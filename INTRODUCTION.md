@@ -81,10 +81,12 @@ A few other design principles that we employ are described below.
 
 Yes, in many cases you can improve performance by skirting the strict type and memory safety system of Rust, including
 by directly embedding assembly code. But to us, this undermines the primary reason that you're developing in Rust in the
-first place. Every crate carries `#![forbid(unsafe_code)]`, with one exception: `bouncycastle-utils` holds constant-time
-and secure-zeroization code that cannot be accomplished reliably within safe rust. Each instance of unsafe is a few
-lines with its safety argument alongside, and all unsafe is jailed to the one crate so that everything built on it stays
-in safe Rust.
+first place. Every crate carries `#![forbid(unsafe_code)]`, with two exceptions. `bouncycastle-utils` holds constant-time
+and secure-zeroization code that cannot be accomplished reliably within safe rust. `bouncycastle-arm` holds the AArch64
+Crypto Extensions kernels for AES and GHASH, whose intrinsics the compiler will not let safe code call; it is
+`#![deny(unsafe_code)]` with a single `intrinsics` module of one-line wrappers allowed to opt back in, and it is compiled
+only when the build declares those instructions. In both crates each instance of unsafe is a few lines with its safety
+argument alongside, and all unsafe is jailed to those two crates so that everything built on them stays in safe Rust.
 
 ### If it compiles, then it's safe
 

@@ -123,6 +123,10 @@ crypto/<name>/
   benches/*.rs        # criterion benches (declared as [[bench]] with harness=false)
 ```
 
+`#![forbid(unsafe_code)]` has two exceptions, `utils` and `arm`; INTRODUCTION.md's "No unsafe code!" section is the
+authority on what each may hold and how it is confined (`arm` is `#![deny(unsafe_code)]` with one `intrinsics` module
+allowed to opt back in, and exists only under `cfg(target_feature = "aes")`).
+
 `#![no_std]` is the long-term goal but the `core` crate still has a `Vec`-removal TODO blocking it (see the comment at the top of `crypto/core/src/lib.rs`). Don't add new `Vec` usage where a const-sized array would do.
 
 ## Project-specific conventions
