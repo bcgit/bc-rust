@@ -69,21 +69,21 @@
 //! assert_eq!(four, [[0u8; 16], [1u8; 16], [2u8; 16], [3u8; 16]]);
 //! ```
 
-use crate::bitslice::{Block, PlaneWord, Planes};
-use crate::round::{add_round_key, inv_mix_columns, inv_shift_rows, mix_columns, shift_rows};
-use crate::sbox::{inv_sbox, sbox};
-use crate::schedule::{expand, round_key};
+use crate::bitslice::Block;
+use crate::hazmat::engine::{DefaultEngine, Engine};
 use crate::{AES128Params, AES192Params, AES256Params, AESParams};
 use bouncycastle_cipher::modes::ModeNames;
 use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::Algorithm;
-use bouncycastle_utils::secret::Secret;
+use core::marker::PhantomData;
 
 // Imports needed for docs
 #[allow(unused_imports)]
 use bouncycastle_core::hazmat::ElectronicCodeBook;
+#[allow(unused_imports)]
+use bouncycastle_utils::secret::Secret;
 // End imports needed for docs
 
 /// The AES keyed permutation, parameterised by key length.
@@ -92,25 +92,35 @@ use bouncycastle_core::hazmat::ElectronicCodeBook;
 /// `P` is sealed to the three parameter sets of FIPS 197 Table 3, so no fourth instantiation
 /// exists.
 ///
-/// The only state is the key schedule, held in a [`Secret`] so that it is zeroized on drop and
-/// redacted from `Debug`. There is no direction flag and no initialisation state: both directions
-/// work from the same schedule (see the `inv_cipher` method), and a constructed value is always
-/// ready to use, so there is no `init()` or `reset()`.
-#[derive(Clone)]
-pub struct AESInternal<P: AESParams> {
-    schedule: Secret<P::Schedule>,
+/// The only state is the key schedule, held by the engine `E` in a [`Secret`] so that it is
+/// zeroized on drop and redacted from `Debug`. There is no direction flag and no initialisation
+/// state: a constructed value is always ready to use in either direction, so there is no
+/// `init()` or `reset()`.
+///
+/// `E` is the [`Engine`] that expands the key and runs the rounds. It defaults to
+/// [`DefaultEngine`], which is the right choice unless a test compares engines or a caller has a
+/// reason to pin one; see [`crate::hazmat::engine`].
+pub struct AESInternal<P: AESParams, E: Engine<P> = DefaultEngine<P>> {
+    engine: E,
+    _params: PhantomData<P>,
 }
 
-// Written out rather than derived so that `P`, a marker type, need not be `PartialEq`. Round key
-// 0 is the key itself (FIPS 197 Sec 5.2), so two schedules are equal exactly when the keys are;
-// `Secret`'s equality inspects every byte, so the time taken does not say where they differ.
-impl<P: AESParams> PartialEq for AESInternal<P> {
-    fn eq(&self, other: &Self) -> bool {
-        self.schedule == other.schedule
+// Written out rather than derived: a derive would demand `P: Clone` of the parameter-set marker.
+impl<P: AESParams, E: Engine<P>> Clone for AESInternal<P, E> {
+    fn clone(&self) -> Self {
+        Self { engine: self.engine.clone(), _params: PhantomData }
     }
 }
 
-impl<P: AESParams> Eq for AESInternal<P> {}
+// Written out rather than derived so that `P`, a marker type, need not be `PartialEq`. Equality
+// is the engine's, which is over the expanded key and decided in constant time (see [`Engine`]).
+impl<P: AESParams, E: Engine<P>> PartialEq for AESInternal<P, E> {
+    fn eq(&self, other: &Self) -> bool {
+        self.engine == other.engine
+    }
+}
+
+impl<P: AESParams, E: Engine<P>> Eq for AESInternal<P, E> {}
 
 /// AES-128: 16-byte key, 10 rounds (FIPS 197 Table 3).
 #[allow(non_camel_case_types)]
@@ -122,7 +132,7 @@ pub type AES192Internal = AESInternal<AES192Params>;
 #[allow(non_camel_case_types)]
 pub type AES256Internal = AESInternal<AES256Params>;
 
-impl<P: AESParams> AESInternal<P> {
+impl<P: AESParams, E: Engine<P>> AESInternal<P, E> {
     /// Checks a key is fit to use before it is expanded.
     ///
     /// The key must be tagged [`KeyType::SymmetricCipherKey`], must be exactly `P::KEY_LEN` bytes
@@ -153,122 +163,44 @@ impl<P: AESParams> AESInternal<P> {
         Ok(())
     }
 
-    /// CIPHER() on every block in the state at once (FIPS 197 Sec 5.1, Algorithm 1).
-    ///
-    /// `T` is the plane width, and so the number of blocks: one, two or four. The body is the
-    /// same at every width; see [`crate::bitslice`].
-    ///
-    /// Algorithm 1 line by line: line 3 is the initial ADDROUNDKEY() with `w[0..3]`; lines 4-9 are
-    /// the `Nr - 1` full rounds; lines 10-12 are the final round, which omits MIXCOLUMNS(); line
-    /// 13 returns the state.
-    fn cipher<T: PlaneWord>(&self, q: &mut Planes<T>) {
-        // line 3: state = state XOR w[0..3]
-        add_round_key(q, &round_key::<P, T>(&self.schedule, 0));
-
-        // lines 4-9: for round from 1 to Nr - 1
-        for round in 1..P::NR {
-            sbox(q); // line 5, SUBBYTES()
-            shift_rows(q); // line 6, SHIFTROWS()
-            mix_columns(q); // line 7, MIXCOLUMNS()
-            add_round_key(q, &round_key::<P, T>(&self.schedule, round)); // line 8
-        }
-
-        // lines 10-12: the final round has no MIXCOLUMNS()
-        sbox(q);
-        shift_rows(q);
-        add_round_key(q, &round_key::<P, T>(&self.schedule, P::NR));
-    }
-
-    /// INVCIPHER() on every block in the state at once (FIPS 197 Sec 5.3, Algorithm 3).
-    ///
-    /// This is the **straight** inverse cipher of Algorithm 3, not the equivalent inverse cipher
-    /// of Sec 5.3.5. That matters: Algorithm 3 applies INVMIXCOLUMNS() *after* ADDROUNDKEY(),
-    /// which lets it use the ordinary key schedule, whereas Sec 5.3.5 reorders the round to put
-    /// the two the other way round and needs a separate schedule with INVMIXCOLUMNS() applied to
-    /// each round key (Algorithm 5, KEYEXPANSIONEIC()).
-    ///
-    /// Following Algorithm 3 is therefore what allows one [`AESInternal`] value to encrypt *and* decrypt
-    /// from a single stored schedule, with no second copy and no transformation at construction
-    /// time -- which is the whole reason this crate can offer both directions at 176-240 bytes of
-    /// state.
-    ///
-    /// Line by line: line 3 is ADDROUNDKEY() with the last round key; lines 4-9 are the
-    /// `Nr - 1` full inverse rounds; lines 10-12 are the final one, which omits INVMIXCOLUMNS();
-    /// line 13 returns the state.
-    fn inv_cipher<T: PlaneWord>(&self, q: &mut Planes<T>) {
-        // line 3: state = state XOR w[4*Nr .. 4*Nr+3]
-        add_round_key(q, &round_key::<P, T>(&self.schedule, P::NR));
-
-        // lines 4-9: for round from Nr - 1 down to 1
-        for round in (1..P::NR).rev() {
-            inv_shift_rows(q); // line 5, INVSHIFTROWS()
-            inv_sbox(q); // line 6, INVSUBBYTES()
-            add_round_key(q, &round_key::<P, T>(&self.schedule, round)); // line 7
-            inv_mix_columns(q); // line 8, INVMIXCOLUMNS()
-        }
-
-        // lines 10-12: the final inverse round has no INVMIXCOLUMNS()
-        inv_shift_rows(q);
-        inv_sbox(q);
-        add_round_key(q, &round_key::<P, T>(&self.schedule, 0));
-    }
-
-    /// Encrypts the blocks a `T`-wide state holds, in place: transpose in, [`Self::cipher`],
-    /// transpose out.
-    #[inline(always)]
-    fn encrypt<T: PlaneWord>(&self, blocks: &mut T::Blocks) {
-        let mut q = T::pack(blocks);
-        self.cipher(&mut q);
-        T::unpack(&mut q, blocks);
-    }
-
-    /// Decrypts the blocks a `T`-wide state holds, in place: transpose in, [`Self::inv_cipher`],
-    /// transpose out.
-    #[inline(always)]
-    fn decrypt<T: PlaneWord>(&self, blocks: &mut T::Blocks) {
-        let mut q = T::pack(blocks);
-        self.inv_cipher(&mut q);
-        T::unpack(&mut q, blocks);
-    }
-
-    /// Encrypts one block in place, on `u16` planes.
+    /// Encrypts one block in place.
     ///
     /// This is the right call when only one block is available -- CBC and CFB encryption, whose
-    /// blocks are serially dependent -- and it does no wasted work: the `u16` state holds
-    /// exactly one block. Where two or four independent blocks are available, which for a mode
-    /// of operation means CTR or the decryption direction of CBC and CFB, prefer
-    /// [`Self::encrypt_2blocks`] or [`Self::encrypt_4blocks`], which cost little more per call.
+    /// blocks are serially dependent. Where two or four independent blocks are available, which
+    /// for a mode of operation means CTR or the decryption direction of CBC and CFB, prefer
+    /// [`Self::encrypt_2blocks`] or [`Self::encrypt_4blocks`]: every [`Engine`] runs them for
+    /// little more than the cost of one block.
     ///
     /// Infallible: a constructed [`AESInternal`] is always usable and every input length is fixed.
     pub(crate) fn encrypt_block(&self, block: &mut Block) {
-        self.encrypt::<u16>(core::array::from_mut(block));
+        self.engine.encrypt_block(block);
     }
 
-    /// Decrypts one block in place, on `u16` planes. See [`Self::encrypt_block`].
+    /// Decrypts one block in place. See [`Self::encrypt_block`].
     pub(crate) fn decrypt_block(&self, block: &mut Block) {
-        self.decrypt::<u16>(core::array::from_mut(block));
+        self.engine.decrypt_block(block);
     }
 
-    /// Encrypts two independent blocks in place, on `u32` planes, for about the cost of one.
-    /// See [`Self::encrypt_block`] for when to use which.
+    /// Encrypts two independent blocks in place. See [`Self::encrypt_block`] for when to use
+    /// which.
     pub(crate) fn encrypt_2blocks(&self, blocks: &mut [Block; 2]) {
-        self.encrypt::<u32>(blocks);
+        self.engine.encrypt_2blocks(blocks);
     }
 
-    /// Decrypts two independent blocks in place, on `u32` planes. See [`Self::encrypt_block`].
+    /// Decrypts two independent blocks in place. See [`Self::encrypt_block`].
     pub(crate) fn decrypt_2blocks(&self, blocks: &mut [Block; 2]) {
-        self.decrypt::<u32>(blocks);
+        self.engine.decrypt_2blocks(blocks);
     }
 
-    /// Encrypts four independent blocks in place, on `u64` planes, for about the cost of one.
-    /// See [`Self::encrypt_block`] for when to use which.
+    /// Encrypts four independent blocks in place. See [`Self::encrypt_block`] for when to use
+    /// which.
     pub(crate) fn encrypt_4blocks(&self, blocks: &mut [Block; 4]) {
-        self.encrypt::<u64>(blocks);
+        self.engine.encrypt_4blocks(blocks);
     }
 
-    /// Decrypts four independent blocks in place, on `u64` planes. See [`Self::encrypt_block`].
+    /// Decrypts four independent blocks in place. See [`Self::encrypt_block`].
     pub(crate) fn decrypt_4blocks(&self, blocks: &mut [Block; 4]) {
-        self.decrypt::<u64>(blocks);
+        self.engine.decrypt_4blocks(blocks);
     }
 }
 
@@ -278,7 +210,7 @@ impl<P: AESParams> AESInternal<P> {
 // Each `new` differs only in the `KeyMaterial<N>` capacity it accepts, which is what makes a
 // wrong-length key a compile error at the call site rather than a runtime error.
 
-impl AES128Internal {
+impl<E: Engine<AES128Params>> AESInternal<AES128Params, E> {
     /// Expands a 16-byte key into an AES-128 schedule.
     ///
     /// # Errors
@@ -287,37 +219,37 @@ impl AES128Internal {
     /// * [`KeyMaterialError::SecurityStrength`] if the key carries a strength below 128 bits.
     pub(crate) fn new(key: &KeyMaterial<16>) -> Result<Self, SymmetricCipherError> {
         Self::validate(key)?;
-        Ok(Self { schedule: expand::<AES128Params>(key.ref_to_bytes()) })
+        Ok(Self { engine: E::expand(key.ref_to_bytes()), _params: PhantomData })
     }
 }
 
-impl AES192Internal {
+impl<E: Engine<AES192Params>> AESInternal<AES192Params, E> {
     /// Expands a 24-byte key into an AES-192 schedule. See [`AES128Internal::new`] for the error cases.
     pub(crate) fn new(key: &KeyMaterial<24>) -> Result<Self, SymmetricCipherError> {
         Self::validate(key)?;
-        Ok(Self { schedule: expand::<AES192Params>(key.ref_to_bytes()) })
+        Ok(Self { engine: E::expand(key.ref_to_bytes()), _params: PhantomData })
     }
 }
 
-impl AES256Internal {
+impl<E: Engine<AES256Params>> AESInternal<AES256Params, E> {
     /// Expands a 32-byte key into an AES-256 schedule. See [`AES128Internal::new`] for the error cases.
     pub(crate) fn new(key: &KeyMaterial<32>) -> Result<Self, SymmetricCipherError> {
         Self::validate(key)?;
-        Ok(Self { schedule: expand::<AES256Params>(key.ref_to_bytes()) })
+        Ok(Self { engine: E::expand(key.ref_to_bytes()), _params: PhantomData })
     }
 }
 
-impl Algorithm for AES128Internal {
+impl<E: Engine<AES128Params>> Algorithm for AESInternal<AES128Params, E> {
     const ALG_NAME: &'static str = AES128Params::ALG_NAME;
     const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_128bit;
 }
 
-impl Algorithm for AES192Internal {
+impl<E: Engine<AES192Params>> Algorithm for AESInternal<AES192Params, E> {
     const ALG_NAME: &'static str = AES192Params::ALG_NAME;
     const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_192bit;
 }
 
-impl Algorithm for AES256Internal {
+impl<E: Engine<AES256Params>> Algorithm for AESInternal<AES256Params, E> {
     const ALG_NAME: &'static str = AES256Params::ALG_NAME;
     const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_256bit;
 }
@@ -325,7 +257,7 @@ impl Algorithm for AES256Internal {
 // The `Algorithm` impls above name the permutation. Each mode over it is a different algorithm,
 // reported under the name of its public alias (`AES_CBC_128` and so on).
 
-impl ModeNames for AES128Internal {
+impl<E: Engine<AES128Params>> ModeNames for AESInternal<AES128Params, E> {
     const CBC_ALG_NAME: &'static str = "AES_CBC_128";
     const CCM_ALG_NAME: &'static str = "AES_CCM_128";
     const CFB_ALG_NAME: &'static str = "AES_CFB_128";
@@ -337,7 +269,7 @@ impl ModeNames for AES128Internal {
     const GMAC_ALG_NAME: &'static str = "AES_GMAC_128";
 }
 
-impl ModeNames for AES192Internal {
+impl<E: Engine<AES192Params>> ModeNames for AESInternal<AES192Params, E> {
     const CBC_ALG_NAME: &'static str = "AES_CBC_192";
     const CCM_ALG_NAME: &'static str = "AES_CCM_192";
     const CFB_ALG_NAME: &'static str = "AES_CFB_192";
@@ -349,7 +281,7 @@ impl ModeNames for AES192Internal {
     const GMAC_ALG_NAME: &'static str = "AES_GMAC_192";
 }
 
-impl ModeNames for AES256Internal {
+impl<E: Engine<AES256Params>> ModeNames for AESInternal<AES256Params, E> {
     const CBC_ALG_NAME: &'static str = "AES_CBC_256";
     const CCM_ALG_NAME: &'static str = "AES_CCM_256";
     const CFB_ALG_NAME: &'static str = "AES_CFB_256";
