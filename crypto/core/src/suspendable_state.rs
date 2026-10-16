@@ -65,6 +65,7 @@ pub const LIB_VERSION: SemVer = SemVer {
     patch: parse_version_component(env!("CARGO_PKG_VERSION_PATCH")),
 };
 
+#[cfg(feature = "std")]
 #[test]
 /// Just to check it visually
 fn print_lib_ver() {

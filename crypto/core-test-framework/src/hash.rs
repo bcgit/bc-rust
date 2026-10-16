@@ -1,6 +1,10 @@
 //! Generic behaviour tests for anything that implements [`Hash`].
 
+// Imports needed for std
+#[allow(unused_imports)]
 use bouncycastle_core::errors::HashError;
+// end of imports needed for std
+
 use bouncycastle_core::traits::{Hash, HashAlgParams};
 
 /// Instance of the test framework.
@@ -28,44 +32,24 @@ impl TestFrameworkHash {
         /*** fn result_len() -> usize ***/
         assert_eq!(H::default().output_len(), H::OUTPUT_LEN);
 
-        /*** fn hash(self, data: &[u8]) -> Vec<u8> **/
-        let output_vec = H::default().hash(input);
-        assert_eq!(output_vec, expected_output);
-
         /*** fn hash_out(self, data: &[u8], output: &mut [u8]) -> Result<usize, HashError> ***/
         let mut output_buf = vec![0_u8; H::OUTPUT_LEN];
         H::default().hash_out(input, &mut output_buf);
         assert_eq!(output_buf, expected_output);
 
-        /*** fn do_update(&mut self, data: &[u8]) -> Result<(), HashError> ***/
-        /*** fn do_final(self) -> Result<Vec<u8>, HashError> **/
-
-        let mut message_digest = H::default();
-        message_digest.do_update(input);
-        let output_buf = message_digest.do_final();
-        assert_eq!(expected_output, output_buf, "Incorrect output for input (update_bytes)");
-
-        for length in 1..output_buf.len() {
-            let mut truncated = vec![0_u8; length];
-
-            let mut message_digest = H::default();
-            message_digest.do_update(input);
-            message_digest.do_final_out(&mut truncated);
-
-            assert_eq!(
-                &expected_output[0..length],
-                &truncated,
-                "Incorrect output for input (update_byte) / truncated: {length}"
-            );
+        /*** fn hash(self, data: &[u8]) -> Vec<u8> **/
+        #[cfg(feature = "std")]
+        {
+            let output_vec = H::default().hash(input);
+            assert_eq!(output_vec, expected_output);
         }
 
-        /*** Test breaking the message into multiple do_update's ***/
-        let mut message_digest = H::default();
-        for chunk in input.chunks(16) {
-            message_digest.do_update(chunk);
-        }
-        let output_buf = message_digest.do_final();
-        assert_eq!(expected_output, output_buf, "Incorrect output for input (update_bytes)");
+        /*** fn hash_array<const N: usize>(self, data: &[u8]) -> [u8; N]  (no_std alternative) ***/
+        // Use N = 64, the maximum output length across all hashes; hash_array zero-pads the tail
+        // beyond output_len, so the digest lands in the first OUTPUT_LEN bytes.
+        let arr: [u8; 64] = H::default().hash_array(input);
+        assert_eq!(&arr[..H::OUTPUT_LEN], expected_output, "hash_array digest mismatch");
+        assert!(arr[H::OUTPUT_LEN..].iter().all(|&b| b == 0), "hash_array tail not zero-padded");
 
         /*** fn do_update(&mut self, data: &[u8]) -> Result<(), HashError> ***/
         /*** fn do_final_out(self, output: &mut [u8]) -> Result<usize, HashError> ***/
@@ -77,6 +61,15 @@ impl TestFrameworkHash {
         message_digest.do_final_out(&mut output_buf);
         assert_eq!(&expected_output, &output_buf, "Incorrect output for input (update_bytes)");
         output_buf.fill(0);
+
+        /*** fn do_final(self) -> Result<Vec<u8>, HashError> **/
+        #[cfg(feature = "std")]
+        {
+            let mut message_digest = H::default();
+            message_digest.do_update(input);
+            let output_buf = message_digest.do_final();
+            assert_eq!(expected_output, output_buf, "Incorrect output for input (update_bytes)");
+        }
 
         // Test truncation of the output buffer
         for length in 1..output_buf.len() {
@@ -93,13 +86,57 @@ impl TestFrameworkHash {
             );
         }
 
+        /*** Test breaking the message into multiple do_update's ***/
+        let mut output_buf = vec![0_u8; H::OUTPUT_LEN];
+
+        let mut message_digest = H::default();
+        for chunk in input.chunks(16) {
+            message_digest.do_update(chunk);
+        }
+        message_digest.do_final_out(&mut output_buf);
+        assert_eq!(expected_output, output_buf, "Incorrect output for input (update_bytes)");
+
+        // ... and the same via do_final()
+        #[cfg(feature = "std")]
+        {
+            let mut message_digest = H::default();
+            for chunk in input.chunks(16) {
+                message_digest.do_update(chunk);
+            }
+            let output_buf = message_digest.do_final();
+            assert_eq!(expected_output, output_buf, "Incorrect output for input (update_bytes)");
+        }
+
+        /*** fn do_final_array<const N: usize>(self) -> [u8; N]  (no_std alternative) ***/
+        let mut message_digest = H::default();
+        message_digest.do_update(input);
+        let arr: [u8; 64] = message_digest.do_final_array();
+        assert_eq!(&arr[..H::OUTPUT_LEN], expected_output, "do_final_array digest mismatch");
+        assert!(
+            arr[H::OUTPUT_LEN..].iter().all(|&b| b == 0),
+            "do_final_array tail not zero-padded"
+        );
+
         if self.enable_partial_byte_tests {
             /*** Testing: ***/
-            /*** fn do_final_partial_bits(self, partial_byte: u8, num_bits: usize)-> Result<Vec<u8>, HashError>; ***/
             /*** fn do_final_partial_bits_out(self, partial_byte: u8, num_bits: usize, output: &mut [u8]) -> Result<usize, HashError>; ***/
+            /*** fn do_final_partial_bits(self, partial_byte: u8, num_bits: usize)-> Result<Vec<u8>, HashError>; ***/
             // A known-answer test for these needs a different expected output from the rest of this
+            // function, so these tests check properties of the output instead.
 
             // Helper: the digest of `input` finished with the low `num_bits` bits of `partial_byte`.
+            let partial_digest_out = |partial_byte: u8, num_bits: usize| -> Vec<u8> {
+                let mut message_digest = H::default();
+                message_digest.do_update(input);
+                let mut output_buf = vec![0_u8; H::OUTPUT_LEN];
+                message_digest
+                    .do_final_partial_bits_out(partial_byte, num_bits, &mut output_buf)
+                    .expect("do_final_partial_bits_out() must succeed for num_bits in 0..=7");
+                output_buf
+            };
+
+            // ... and the same helper via do_final_partial_bits()
+            #[cfg(feature = "std")]
             let partial_digest = |partial_byte: u8, num_bits: usize| -> Vec<u8> {
                 let mut message_digest = H::default();
                 message_digest.do_update(input);
@@ -112,6 +149,13 @@ impl TestFrameworkHash {
             //     Hash::do_final())".
             // So, test against the `expected_output` result from above
             for partial_byte in [0x00u8, 0x01, 0x80, 0xA5, 0xFF] {
+                assert_eq!(
+                    partial_digest_out(partial_byte, 0),
+                    expected_output,
+                    "num_bits = 0 must be equivalent to do_final() / partial_byte: {partial_byte:#04X}"
+                );
+
+                #[cfg(feature = "std")]
                 assert_eq!(
                     partial_digest(partial_byte, 0),
                     expected_output,
@@ -127,6 +171,13 @@ impl TestFrameworkHash {
                 let mask = (1u8 << num_bits) - 1;
                 for partial_byte in [0x00u8, 0x5A, 0xA5, 0xFF] {
                     assert_eq!(
+                        partial_digest_out(partial_byte, num_bits),
+                        partial_digest_out(partial_byte & mask, num_bits),
+                        "bits above num_bits = {num_bits} must be ignored / partial_byte: {partial_byte:#04X}"
+                    );
+
+                    #[cfg(feature = "std")]
+                    assert_eq!(
                         partial_digest(partial_byte, num_bits),
                         partial_digest(partial_byte & mask, num_bits),
                         "bits above num_bits = {num_bits} must be ignored / partial_byte: {partial_byte:#04X}"
@@ -138,16 +189,6 @@ impl TestFrameworkHash {
             //    The range has to be validated before any shift by num_bits, so check well past
             //     the width of the shifted type as well as the 8 / 9 boundary.
             for num_bits in [8usize, 9, 15, 16, 64, usize::MAX] {
-                let mut message_digest = H::default();
-                message_digest.do_update(input);
-                assert!(
-                    matches!(
-                        message_digest.do_final_partial_bits(0xFF, num_bits),
-                        Err(HashError::InvalidLength(_))
-                    ),
-                    "num_bits = {num_bits} must be rejected with InvalidLength"
-                );
-
                 let mut output = vec![0u8; H::OUTPUT_LEN];
                 let mut message_digest = H::default();
                 message_digest.do_update(input);
@@ -158,11 +199,27 @@ impl TestFrameworkHash {
                     ),
                     "num_bits = {num_bits} must be rejected with InvalidLength (_out variant)"
                 );
+
+                #[cfg(feature = "std")]
+                {
+                    let mut message_digest = H::default();
+                    message_digest.do_update(input);
+                    assert!(
+                        matches!(
+                            message_digest.do_final_partial_bits(0xFF, num_bits),
+                            Err(HashError::InvalidLength(_))
+                        ),
+                        "num_bits = {num_bits} must be rejected with InvalidLength (Vec variant)"
+                    );
+                }
             }
 
             // "The same as Hash::do_final_partial_bits, but takes the output buffer as an
             //     argument": the two variants must agree, and the Vec variant must return
             //     output_len() bytes.
+            // partial_digest uses do_final_partial_bits internally here,
+            // allowing for comparison with do_final_partial_bits_out
+            #[cfg(feature = "std")]
             for num_bits in 0..=7 {
                 for partial_byte in [0x00u8, 0x5A, 0xA5, 0xFF] {
                     let expected_partial_output = partial_digest(partial_byte, num_bits);
@@ -188,7 +245,7 @@ impl TestFrameworkHash {
             let mut partial_outputs: Vec<Vec<u8>> = Vec::new();
             for num_bits in 0..=7 {
                 for partial_byte in 0..(1u16 << num_bits) {
-                    partial_outputs.push(partial_digest(partial_byte as u8, num_bits));
+                    partial_outputs.push(partial_digest_out(partial_byte as u8, num_bits));
                 }
             }
             let num_partial_outputs = partial_outputs.len();

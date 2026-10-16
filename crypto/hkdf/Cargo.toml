@@ -3,9 +3,19 @@ name = "bouncycastle-hkdf"
 version.workspace = true
 edition.workspace = true
 
+[features]
+default = ["std"]
+std = [
+    "bouncycastle-core/std",
+    "bouncycastle-core-test-framework/std",
+    "bouncycastle-hmac/std",
+    "bouncycastle-rng/std",
+    "bouncycastle-sha2/std",
+]
+
 [dependencies]
-bouncycastle-core.workspace = true
-bouncycastle-hmac.workspace = true
+bouncycastle-core = { workspace = true, default-features = false }
+bouncycastle-hmac = { workspace = true, default-features = false }
 bouncycastle-utils.workspace = true
 
 # The concrete HKDF instantiations (HKDF_SHA256, HKDF_SHA512) live in bouncycastle-sha2, which makes
@@ -14,8 +24,8 @@ bouncycastle-utils.workspace = true
 # library's own hashes; Cargo permits cycles through dev-dependencies.
 # todo -- we're about to change that and move them to their respective crates in the next phase.
 [dev-dependencies]
-bouncycastle-core-test-framework.workspace = true
+bouncycastle-core-test-framework = { workspace = true, default-features = false }
 criterion.workspace = true
-bouncycastle-rng.workspace = true
+bouncycastle-rng = { workspace = true, default-features = false }
 bouncycastle-hex.workspace = true
-bouncycastle-sha2.workspace = true
+bouncycastle-sha2 = { workspace = true, default-features = false }

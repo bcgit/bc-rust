@@ -8,7 +8,8 @@ The Bounce Castle Rust project should be broken up into individual modular crate
 The project aims to be completely self-contained with zero external dependencies in the runtime code. External
 dependencies are ok in test or benchmarking code.
 
-lib.rs for all crates needs to contain: `#![forbid(missing_docs)]`, `#![no_std]`.
+lib.rs for all crates needs to contain `#![forbid(missing_docs)]`, and should include some no_std attribute
+(see NO_STD_NOTES.md).
 
 All primitives must be accompanied by a CLI in `/cli`.
 
