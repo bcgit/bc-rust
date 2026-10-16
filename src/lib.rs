@@ -13,6 +13,7 @@ pub use bouncycastle_mldsa_lowmemory as mldsa_lowmemory;
 pub use bouncycastle_mlkem as mlkem;
 pub use bouncycastle_mlkem_lowmemory as mlkem_lowmemory;
 pub use bouncycastle_rng as rng;
+pub use bouncycastle_rsa as rsa;
 pub use bouncycastle_sha2 as sha2;
 pub use bouncycastle_sha3 as sha3;
 pub use bouncycastle_sm2 as sm2;
