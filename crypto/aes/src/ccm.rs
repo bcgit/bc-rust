@@ -196,7 +196,7 @@
 //! let mut encryptor = AESEnc::new(&key, &nonce, aad, plaintext.len()).expect("encrypt init");
 //! let mut ciphertext = plaintext;
 //! for piece in ciphertext.chunks_mut(7) {
-//!     encryptor.do_encrypt(piece).expect("encryption");
+//!     encryptor.do_encrypt_inplace(piece).expect("encryption");
 //! }
 //! // The tag is computed over everything, so it is the last thing out.
 //! let tag = encryptor.do_encrypt_final().expect("the tag");

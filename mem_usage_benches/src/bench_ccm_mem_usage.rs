@@ -181,7 +181,7 @@ fn bench_streaming_decrypt() {
     let mut sealed = [0u8; MESSAGE_LEN + TAG_LEN];
     sealed[..MESSAGE_LEN].fill(core::hint::black_box(0xA5));
     let mut ccm = Aes128Ccm::<Encrypting>::new(&k, &nonce, &[], MESSAGE_LEN).unwrap();
-    ccm.do_encrypt(&mut sealed[..MESSAGE_LEN]).unwrap();
+    ccm.do_encrypt_inplace(&mut sealed[..MESSAGE_LEN]).unwrap();
     let tag = ccm.do_encrypt_final().unwrap();
     sealed[MESSAGE_LEN..].copy_from_slice(&tag);
     let sealed = core::hint::black_box(&sealed);
@@ -217,7 +217,7 @@ fn bench_oneshot_encrypt_out_detached() {
 /// place, so peak stack is the `CcmPacket` value plus one array.
 #[inline(never)]
 fn bench_direct_streaming() {
-    eprintln!("CcmPacket::do_encrypt, {MESSAGE_LEN} B in 1 KiB chunks");
+    eprintln!("CcmPacket::do_encrypt_inplace, {MESSAGE_LEN} B in 1 KiB chunks");
 
     let k = key::<16>();
     let nonce = [0x24u8; NONCE_LEN];
@@ -225,7 +225,7 @@ fn bench_direct_streaming() {
     let data = core::hint::black_box(&mut data);
     let mut ccm = Aes128Ccm::<Encrypting>::new(&k, &nonce, &[], data.len()).unwrap();
     for chunk in data.chunks_mut(1024) {
-        ccm.do_encrypt(chunk).unwrap();
+        ccm.do_encrypt_inplace(chunk).unwrap();
     }
     let tag = ccm.do_encrypt_final().unwrap();
     print!("{:x?}", &tag);

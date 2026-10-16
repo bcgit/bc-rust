@@ -134,7 +134,7 @@ fn check_vector<
                     .expect("streaming init");
             let mut streamed = plaintext.clone();
             for piece in streamed.chunks_mut(chunk) {
-                ccm.do_encrypt(piece).expect("update");
+                ccm.do_encrypt_inplace(piece).expect("update");
             }
             let streamed_tag = ccm.do_encrypt_final().expect("final");
             assert_eq!(streamed, want_ct, "{name}: ciphertext, streamed in {chunk}-byte chunks");
@@ -1092,7 +1092,7 @@ fn each_direction_has_its_own_methods() {
 
     let mut enc = Enc::new(&k, &nonce, b"aad", 4).expect("encrypt init");
     let mut data = [1u8, 2, 3, 4];
-    enc.do_encrypt(&mut data).expect("encrypt update");
+    enc.do_encrypt_inplace(&mut data).expect("encrypt update");
     let tag = enc.do_encrypt_final().expect("encrypt final");
 
     let mut dec = Dec::new(&k, &nonce, b"aad", 4).expect("decrypt init");
@@ -1200,7 +1200,7 @@ fn check_progressive_aad<const NONCE_LEN: usize, const TAG_LEN: usize>(
         enc.do_update_aad(piece).unwrap();
     }
     let mut data = plaintext.clone();
-    enc.do_encrypt(&mut data).unwrap();
+    enc.do_encrypt_inplace(&mut data).unwrap();
     let tag = enc.do_encrypt_final().unwrap();
     assert_eq!(data, want_ct, "{label}: ciphertext, AAD in {chunk}-byte pieces");
     assert_eq!(&tag[..], want_tag, "{label}: tag, AAD in {chunk}-byte pieces");
@@ -1268,7 +1268,7 @@ fn progressive_aad_enforces_the_declared_length_and_order() {
     let reference = {
         let mut ccm = Enc::new(&k, &nonce, aad, message.len()).unwrap();
         let mut data = message;
-        ccm.do_encrypt(&mut data).unwrap();
+        ccm.do_encrypt_inplace(&mut data).unwrap();
         (data, ccm.do_encrypt_final().unwrap())
     };
 
@@ -1279,14 +1279,14 @@ fn progressive_aad_enforces_the_declared_length_and_order() {
 
     // Payload before the AAD is complete: refused, and the data is left untouched.
     let mut data = message;
-    assert!(matches!(ccm.do_encrypt(&mut data), Err(SymmetricCipherError::StateError(_))));
+    assert!(matches!(ccm.do_encrypt_inplace(&mut data), Err(SymmetricCipherError::StateError(_))));
     assert_eq!(data, message, "a refused update must not touch the data");
     // An empty payload update is a no-op, not a refusal.
-    ccm.do_encrypt(&mut []).expect("an empty update is a no-op");
+    ccm.do_encrypt_inplace(&mut []).expect("an empty update is a no-op");
 
     // Completing the AAD after both refusals gives the same answer as supplying it whole.
     ccm.do_update_aad(&aad[4..]).unwrap();
-    ccm.do_encrypt(&mut data).unwrap();
+    ccm.do_encrypt_inplace(&mut data).unwrap();
     assert_eq!((data, ccm.do_encrypt_final().unwrap()), reference);
 
     // Less than declared: refused at the final, in both directions.
@@ -1315,11 +1315,11 @@ fn progressive_aad_enforces_the_declared_length_and_order() {
     // A declared AAD length of zero is the no-AAD flow: the payload may start at once.
     let mut ccm = Enc::new_with_lengths(&k, &nonce, 0, message.len()).unwrap();
     let mut data = message;
-    ccm.do_encrypt(&mut data).unwrap();
+    ccm.do_encrypt_inplace(&mut data).unwrap();
     let no_aad = ccm.do_encrypt_final().unwrap();
     let mut ccm = Enc::new(&k, &nonce, &[], message.len()).unwrap();
     let mut data2 = message;
-    ccm.do_encrypt(&mut data2).unwrap();
+    ccm.do_encrypt_inplace(&mut data2).unwrap();
     assert_eq!((data, no_aad), (data2, ccm.do_encrypt_final().unwrap()));
 }
 

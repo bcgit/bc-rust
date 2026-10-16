@@ -58,7 +58,7 @@ fn encrypt<P: ElectronicCodeBook<TOY_LEN, TOY_LEN> + ModeNames>(
     (ct, tag)
 }
 
-/// Sec 6.1 through the streaming API over `P`, `chunk` bytes per `do_encrypt`.
+/// Sec 6.1 through the streaming API over `P`, `chunk` bytes per `do_encrypt_inplace`.
 fn stream_encrypt<P: ElectronicCodeBook<TOY_LEN, TOY_LEN> + ModeNames>(
     nonce: &[u8; NONCE_LEN],
     aad: &[u8],
@@ -74,7 +74,7 @@ fn stream_encrypt<P: ElectronicCodeBook<TOY_LEN, TOY_LEN> + ModeNames>(
     .unwrap();
     let mut data = plaintext.to_vec();
     for piece in data.chunks_mut(chunk) {
-        ccm.do_encrypt(piece).unwrap();
+        ccm.do_encrypt_inplace(piece).unwrap();
     }
     let tag = ccm.do_encrypt_final().unwrap();
     (data, tag)
@@ -226,8 +226,8 @@ fn every_split_agrees_with_the_one_shot_in_both_directions() {
         let mut enc = ToyCcm::<Encrypting>::new(&toy_key(), &nonce, aad, plaintext.len()).unwrap();
         let mut streamed = plaintext.clone();
         let (head, rest) = streamed.split_at_mut(split);
-        enc.do_encrypt(head).unwrap();
-        enc.do_encrypt(rest).unwrap();
+        enc.do_encrypt_inplace(head).unwrap();
+        enc.do_encrypt_inplace(rest).unwrap();
         assert_eq!(enc.do_encrypt_final().unwrap(), tag, "tag, split at {split}");
         assert_eq!(streamed, ct, "ciphertext, split at {split}");
 
@@ -255,12 +255,12 @@ fn both_directions_hold_to_the_declared_length() {
     let mut enc = ToyCcm::<Encrypting>::new(&toy_key(), &nonce, &[], 8).unwrap();
     let mut too_much = [0x77u8; 9];
     assert!(
-        matches!(enc.do_encrypt(&mut too_much), Err(SymmetricCipherError::StateError(_))),
+        matches!(enc.do_encrypt_inplace(&mut too_much), Err(SymmetricCipherError::StateError(_))),
         "9 bytes against a declared 8"
     );
     assert_eq!(too_much, [0x77u8; 9], "a refused update must not touch the data");
     let mut some = plaintext[..4].to_vec();
-    enc.do_encrypt(&mut some).expect("4 of the 8 declared bytes");
+    enc.do_encrypt_inplace(&mut some).expect("4 of the 8 declared bytes");
     assert!(
         matches!(enc.do_encrypt_final(), Err(SymmetricCipherError::StateError(_))),
         "finalizing 4 bytes short"

@@ -70,7 +70,7 @@
 //! > storage before CCM is applied; CCM is not designed to support partial processing or stream
 //! > processing.
 //!
-//! This is different from the `do_encrypt()` mode, often referred to as a "streaming mode" where
+//! This is different from the `do_encrypt_inplace()` mode, often referred to as a "streaming mode" where
 //! the content is processed in batches; so long as the total expected length is known up-front.
 //! The AAD can be processed in batches the same way, if its length is declared up-front too; see
 //! [`CcmPacket::new_with_lengths`].
@@ -345,13 +345,13 @@ where
     /// for part in header {
     ///     ccm.do_update_aad(part).unwrap();
     /// }
-    /// ccm.do_encrypt(&mut message).unwrap();
+    /// ccm.do_encrypt_inplace(&mut message).unwrap();
     /// let tag = ccm.do_encrypt_final().unwrap();
     ///
     /// // The same as supplying the AAD whole.
     /// let mut whole = *b"attack at dawn";
     /// let mut ccm = ToyCcm::<Encrypting>::new(&key, &nonce, b"version: 1; route: a->b", 14).unwrap();
-    /// ccm.do_encrypt(&mut whole).unwrap();
+    /// ccm.do_encrypt_inplace(&mut whole).unwrap();
     /// assert_eq!((message, tag), (whole, ccm.do_encrypt_final().unwrap()));
     /// ```
     ///
@@ -647,7 +647,7 @@ where
     /// [`SymmetricCipherError::StateError`] if `data` would take the total past the declared
     /// payload length, or if it is non-empty while AAD declared to [`Self::new_with_lengths`] is
     /// still outstanding. Nothing is consumed in either case.
-    pub fn do_encrypt(&mut self, data: &mut [u8]) -> Result<(), SymmetricCipherError> {
+    pub fn do_encrypt_inplace(&mut self, data: &mut [u8]) -> Result<(), SymmetricCipherError> {
         self.take_owed(data.len())?;
         self.mac_absorb(data);
         self.ctr.do_encrypt_inplace(data)?;
@@ -699,7 +699,7 @@ where
         let mut ccm = Self::new(key, nonce, aad, plaintext.len())?;
         let out = &mut ciphertext[..plaintext.len()];
         out.copy_from_slice(plaintext);
-        ccm.do_encrypt(out)?;
+        ccm.do_encrypt_inplace(out)?;
         let tag = ccm.do_encrypt_final()?;
         Ok((plaintext.len(), tag))
     }
@@ -741,7 +741,7 @@ where
 {
     /// Decrypts `data` in place and authenticates the recovered plaintext.
     ///
-    /// The mirror of [`Self::do_encrypt`] with the two steps swapped: Sec 6.2 recovers `P` in
+    /// The mirror of [`Self::do_encrypt_inplace`] with the two steps swapped: Sec 6.2 recovers `P` in
     /// step 5 and only then formats `(N, A, P)` in step 7, so the MAC is fed the plaintext here too,
     /// never the ciphertext.
     ///
@@ -1370,7 +1370,7 @@ where
         // Before the length check, so that a refused oversized call still closes the AAD phase:
         // the phase order is about call history, and this call happened.
         self.0.begin_data();
-        // `CcmPacket::do_encrypt` would refuse this too, but only after the plaintext had been copied
+        // `CcmPacket::do_encrypt_inplace` would refuse this too, but only after the plaintext had been copied
         // into the caller's output buffer, and a refused call must not leave plaintext there.
         if plaintext.len() > self.0.ccm.owed {
             return Err(SymmetricCipherError::StateError(
@@ -1379,7 +1379,7 @@ where
         }
         let out = &mut ciphertext[..plaintext.len()];
         out.copy_from_slice(plaintext);
-        self.0.ccm.do_encrypt(out)?;
+        self.0.ccm.do_encrypt_inplace(out)?;
         Ok(plaintext.len())
     }
 

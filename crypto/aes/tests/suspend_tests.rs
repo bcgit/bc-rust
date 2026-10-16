@@ -90,10 +90,10 @@ fn every_alias_family_is_suspendable() {
 
     type CcmEnc = AES_CCM_128_Packet<Encrypting, 12, 16>;
     let mut ccm = CcmEnc::new(&key(), &[0x24u8; 12], b"header", 32).unwrap();
-    ccm.do_encrypt(&mut [0x11u8; 7]).unwrap();
+    ccm.do_encrypt_inplace(&mut [0x11u8; 7]).unwrap();
     round_trip::<{ CcmEnc::SUSPENDED_STATE_LEN }, _>(ccm, |mut e| {
         let mut data = [0x22u8; 25];
-        e.do_encrypt(&mut data).unwrap();
+        e.do_encrypt_inplace(&mut data).unwrap();
         [data.as_slice(), &e.do_encrypt_final().unwrap()].concat()
     });
 }
