@@ -197,19 +197,23 @@ where
 /// 13, 14 or 15 bytes. Both bounds are inline `const` assertions in the constructors, so a nonce
 /// length outside that range is a **compile** error at the call site rather than a runtime `Err`.
 ///
-/// The permitted lengths all work:
+/// The permitted lengths all work, here through the mode type [`CTR`] a key is bound to:
 ///
 /// ```
 /// # mod toy { include!("../../tests/common/toy_block_cipher.rs"); }
 /// # use toy::ToyBlockCipher;
+/// use bouncycastle_core::hazmat::{ElectronicCodeBook, Mode, SymmetricEncryptMode};
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-/// use bouncycastle_core::traits::SymmetricCipherEncryptor;
-/// use bouncycastle_cipher::modes::Ctr;
-/// use bouncycastle_cipher::Encrypting;
+/// use bouncycastle_cipher::modes::CTR;
+/// use bouncycastle_rng::HashDRBG_SHA512;
 ///
 /// let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey).unwrap();
-/// let _ = Ctr::<ToyBlockCipher, Encrypting, 16, 16, 12>::do_encrypt_init(&key).unwrap(); // 4-byte counter
-/// let _ = Ctr::<ToyBlockCipher, Encrypting, 16, 16, 15>::do_encrypt_init(&key).unwrap(); // 1-byte counter
+/// let perm = ToyBlockCipher::new(&key).unwrap();
+/// let mut rng = HashDRBG_SHA512::new_from_os();
+/// // 4-byte counter
+/// let _ = CTR::<12>::encrypt_init(&<CTR<12> as Mode<ToyBlockCipher>>::key_state(perm.clone()), &mut rng).unwrap();
+/// // 1-byte counter
+/// let _ = CTR::<15>::encrypt_init(&<CTR<15> as Mode<ToyBlockCipher>>::key_state(perm), &mut rng).unwrap();
 /// ```
 pub type Ctr<P, Dir, const KEY_LEN: usize, const BLOCK_LEN: usize, const INIT_DATA_LEN: usize> =
     StreamCipher<

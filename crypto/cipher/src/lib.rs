@@ -20,24 +20,29 @@
 //! protect it as the plaintext it governs, and never resume one state twice.
 //!
 //! ```
-//! use bouncycastle_cipher::modes::Cbc;
+//! use bouncycastle_cipher::modes::{Blocks, CBC, Cbc};
 //! use bouncycastle_cipher::Encrypting;
+//! use bouncycastle_core::hazmat::{BlockEncryptMode, ElectronicCodeBook, Mode};
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 //! use bouncycastle_core::traits::{BlockCipherEncryptor, SuspendableKeyed};
+//! use bouncycastle_rng::HashDRBG_SHA512;
 //! # mod toy { include!("../tests/common/toy_block_cipher.rs"); }
 //! # use toy::ToyBlockCipher;
 //!
 //! type ToyCbc = Cbc<ToyBlockCipher, Encrypting, 16, 16>;
 //! const STATE_LEN: usize = ToyCbc::SUSPENDED_STATE_LEN;
 //!
+//! // The mode's key state, as a mode-bound key such as `AES128Key<CBC<Blocks>>` holds it.
 //! let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey).unwrap();
-//! let (mut enc, _iv) = ToyCbc::do_encrypt_init(&key).unwrap();
+//! let state = <CBC<Blocks> as Mode<ToyBlockCipher>>::key_state(ToyBlockCipher::new(&key).unwrap());
+//! let (mut enc, _iv) = CBC::<Blocks>::encrypt_init(&state, &mut HashDRBG_SHA512::new_from_os()).unwrap();
 //! let mut first = [[0x11u8; 16]];
 //! enc.do_encrypt_blocks_inplace(&mut first).unwrap();
 //!
-//! // Suspending consumes the cipher. The key is not in the state and is re-supplied to resume.
-//! let state: [u8; STATE_LEN] = enc.suspend();
-//! let mut enc = ToyCbc::from_suspended(state, &key).unwrap();
+//! // Suspending consumes the cipher. The key is not in the suspended state; resume borrows the
+//! // key state again, as `create_encryptor` did.
+//! let suspended: [u8; STATE_LEN] = enc.suspend();
+//! let mut enc = ToyCbc::from_suspended(suspended, &state).unwrap();
 //! let mut second = [[0x22u8; 16]];
 //! enc.do_encrypt_blocks_inplace(&mut second).unwrap();
 //! ```

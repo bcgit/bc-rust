@@ -5,9 +5,8 @@
 //!
 //! [`Gcm`] fixes the nonce at 96 bits (12 bytes, [`GCM_NONCE_LEN`]): SP 800-38D Sec 5.2.1.1
 //! recommends that implementations "restrict support to the length of 96 bits", and the other IV
-//! lengths are not implemented. The nonce is never taken from the caller: instead
-//! [`SymmetricCipherEncryptor::do_encrypt_init`] and [`SymmetricCipherEncryptor::do_encrypt_init_rng`]
-//! draw it from the default OS RNG or the provided RNG, respectively.
+//! lengths are not implemented. The nonce is drawn from the RNG the key is given, or supplied
+//! through the `_nonce` forms, which put its uniqueness on the caller.
 //!
 //! The tag length is a const generic `TAG_LEN`, checked at compile time to lie in `12..=16` bytes
 //! (96, 104, 112, 120 or 128 bits -- Sec 5.2.1.2's five recommended values). The 32- and 64-bit tags
@@ -15,100 +14,131 @@
 //!
 //! # Usage Examples
 //!
-//! [`Gcm`] is used through [`AEADCipherEncryptor`] / [`AEADCipherDecryptor`], with
-//! `FINAL_LEN = TAG_LEN`, and through the [`SymmetricCipherEncryptor`] /
-//! [`SymmetricCipherDecryptor`] traits they extend:
+//! [`Gcm`] is the worker a mode-bound key hands out -- [`GCM`] on a key type such as
+//! `bouncycastle_aes::AES128Key<GCM>`, whose AEAD role traits carry the one-shots -- and it
+//! implements [`AEADCipherEncryptor`] / [`AEADCipherDecryptor`] with `FINAL_LEN = TAG_LEN`, and the
+//! [`SymmetricCipherEncryptor`] / [`SymmetricCipherDecryptor`] traits they extend. The key holds a
+//! [`GcmKeyState`] and starts each message from it, which is the route over the toy permutation.
 //!
-//! Used through the SymmetricCipher traits, there is no option to include additional associated data (aad),
-//! and the tag is inlined into the ciphertext as `ciphertext || tag`.
+//! Through the SymmetricCipher methods there is no additional associated data (aad), and the tag
+//! is inlined into the ciphertext as `ciphertext || tag`:
 //!
 //! ```
 //! # mod toy { include!("../../tests/common/toy_block_cipher.rs"); }
 //! # use toy::ToyBlockCipher;
+//! use bouncycastle_core::errors::SymmetricCipherError;
+//! use bouncycastle_core::hazmat::ElectronicCodeBook;
 //! use bouncycastle_core::key_material::{KeyMaterial128, KeyType};
 //! use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
-//! use bouncycastle_core::errors::SymmetricCipherError;
-//! use bouncycastle_cipher::modes::Gcm;
+//! use bouncycastle_cipher::modes::{Gcm, GcmKeyState};
 //! use bouncycastle_cipher::{Decrypting, Encrypting};
+//! use bouncycastle_rng::HashDRBG_SHA512;
 //!
 //! type ToyGcm<Dir> = Gcm<ToyBlockCipher, Dir, 16, 16>;
 //!
 //! let key = KeyMaterial128::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
 //!     .expect("a 16-byte symmetric cipher key");
-//! let aad = b"header, sent in the clear";
+//! let state = GcmKeyState::new::<16>(ToyBlockCipher::new(&key).unwrap());
 //! let plaintext: [u8; 16] = *b"attack at dawn!!";
 //!
-//! let (nonce, ciphertext) = ToyGcm::<Encrypting>::encrypt(&key, &plaintext).expect("encrypt");
+//! let (mut enc, nonce) = ToyGcm::<Encrypting>::from_key_state(&state, &mut HashDRBG_SHA512::new_from_os())
+//!     .expect("nonce draw");
+//! let mut ciphertext = vec![0u8; 16 + 16];
+//! let n = enc.do_encrypt_out(&plaintext, &mut ciphertext).expect("encrypt");
+//! let (tag, tag_len) = enc.do_encrypt_final().expect("the tag");
+//! ciphertext[n..].copy_from_slice(&tag[..tag_len]);
 //!
-//! let mut recovered = ToyGcm::<Decrypting>::decrypt(&key, &nonce, &ciphertext).expect("decrypt");
-//! assert_eq!(recovered, plaintext);
+//! let open = |ct: &[u8]| -> Result<Vec<u8>, SymmetricCipherError> {
+//!     let mut dec = ToyGcm::<Decrypting>::from_key_state(&state, &nonce);
+//!     let mut pt = vec![0u8; ct.len()];
+//!     let n = dec.do_decrypt_out(ct, &mut pt)?;
+//!     let (last, last_len) = dec.do_decrypt_final()?;
+//!     pt.truncate(n);
+//!     pt.extend_from_slice(&last[..last_len]);
+//!     Ok(pt)
+//! };
+//! assert_eq!(open(&ciphertext).expect("decrypt"), plaintext);
 //!
 //! // A tampered ciphertext will be caught by the tag
 //! let mut tampered_ct = ciphertext.clone();
 //! tampered_ct[1] ^= 0xFF;
-//! match ToyGcm::<Decrypting>::decrypt(&key, &nonce, &tampered_ct).unwrap_err() {
-//!     SymmetricCipherError::AEADTagCheckFailed => { /* good */ }
-//!     _ => { panic!() }
-//! }
+//! assert_eq!(open(&tampered_ct).unwrap_err(), SymmetricCipherError::AEADTagCheckFailed);
 //! ```
 //!
-//! The AEADCipher traits provide the AEAD-specific functionality, including accepting the aad, and
-//! the `_detached()` methods handle the tag separately, instead of inlined into the ciphertext.
-//!
-//! ```
-//! # mod toy { include!("../../tests/common/toy_block_cipher.rs"); }
-//! # use toy::ToyBlockCipher;
-//! use bouncycastle_core::key_material::{KeyMaterial128, KeyType};
-//! use bouncycastle_core::traits::{AEADCipherDecryptor, AEADCipherEncryptor};
-//! use bouncycastle_cipher::modes::Gcm;
-//! use bouncycastle_cipher::{Decrypting, Encrypting};
-//!
-//! type ToyGcm<Dir> = Gcm<ToyBlockCipher, Dir, 16, 16>;
-//!
-//! let key = KeyMaterial128::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
-//!     .expect("a 16-byte symmetric cipher key");
-//! let aad = b"header, sent in the clear";
-//! let plaintext = *b"attack at dawn!!";
-//!
-//! let mut ciphertext = [0u8; 16];
-//! let (nonce, _bytes_written, tag) =
-//!     ToyGcm::<Encrypting>::encrypt_detached_out(&key, aad, &plaintext, &mut ciphertext).unwrap();
-//!
-//! let mut recovered = [0u8; 16];
-//! ToyGcm::<Decrypting>::decrypt_detached_out(&key, &nonce, aad, &ciphertext, &tag, &mut recovered)
-//!     .unwrap();
-//! assert_eq!(recovered, plaintext);
-//! ```
-//!
-//! There is also a streaming mode.
-//! Note that the aad must be supplied before any plaintext or ciphertext; attempting to call
+//! The AEADCipher methods provide the AEAD-specific functionality, including accepting the aad,
+//! and the `_detached` finals handle the tag separately, instead of inlined into the ciphertext.
+//! The aad must be supplied before any plaintext or ciphertext; attempting to call
 //! `do_update_aad()` after a `do_encrypt()` will result in a [`SymmetricCipherError::StateError`].
 //!
 //! ```
 //! # mod toy { include!("../../tests/common/toy_block_cipher.rs"); }
 //! # use toy::ToyBlockCipher;
+//! use bouncycastle_core::hazmat::ElectronicCodeBook;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 //! use bouncycastle_core::traits::{
 //!     AEADCipherDecryptor, AEADCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
 //! };
-//! use bouncycastle_cipher::modes::Gcm;
+//! use bouncycastle_cipher::modes::{Gcm, GcmKeyState};
 //! use bouncycastle_cipher::{Decrypting, Encrypting};
+//! use bouncycastle_rng::HashDRBG_SHA512;
 //!
 //! type ToyGcm<Dir> = Gcm<ToyBlockCipher, Dir, 16, 16>;
 //!
 //! let key = KeyMaterial::<16>::from_bytes_as_type(&[0x07; 16], KeyType::SymmetricCipherKey)
 //!     .expect("a 16-byte symmetric cipher key");
+//! let state = GcmKeyState::new::<16>(ToyBlockCipher::new(&key).unwrap());
 //! let aad = b"some associated data";
 //! let message = b"a message that streams in over more than one call";
 //!
-//! let (mut enc, nonce) = ToyGcm::<Encrypting>::do_encrypt_init(&key).unwrap();
+//! let (mut enc, nonce) =
+//!     ToyGcm::<Encrypting>::from_key_state(&state, &mut HashDRBG_SHA512::new_from_os()).unwrap();
+//! enc.do_update_aad(aad).unwrap();
+//! let mut ct = vec![0u8; message.len()];
+//! enc.do_encrypt_out(message, &mut ct).unwrap();
+//! let (_, tag) = enc.do_encrypt_final_detached_out(&mut [0u8; 16]).unwrap();
+//!
+//! let mut dec = ToyGcm::<Decrypting>::from_key_state(&state, &nonce);
+//! dec.do_update_aad(aad).unwrap();
+//! let mut pt = vec![0u8; ct.len()];
+//! let written = dec.do_decrypt_out(&ct, &mut pt).unwrap();
+//! let mut last = [0u8; 16];
+//! let last_len = dec.do_decrypt_final_detached_out(&tag, &mut last).unwrap();
+//! pt.truncate(written);
+//! pt.extend_from_slice(&last[..last_len]);
+//! assert_eq!(pt, message);
+//! ```
+//!
+//! The same with an inline tag:
+//!
+//! ```
+//! # mod toy { include!("../../tests/common/toy_block_cipher.rs"); }
+//! # use toy::ToyBlockCipher;
+//! use bouncycastle_core::hazmat::ElectronicCodeBook;
+//! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
+//! use bouncycastle_core::traits::{
+//!     AEADCipherDecryptor, AEADCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
+//! };
+//! use bouncycastle_cipher::modes::{Gcm, GcmKeyState};
+//! use bouncycastle_cipher::{Decrypting, Encrypting};
+//! use bouncycastle_rng::HashDRBG_SHA512;
+//!
+//! type ToyGcm<Dir> = Gcm<ToyBlockCipher, Dir, 16, 16>;
+//!
+//! let key = KeyMaterial::<16>::from_bytes_as_type(&[0x07; 16], KeyType::SymmetricCipherKey)
+//!     .expect("a 16-byte symmetric cipher key");
+//! let state = GcmKeyState::new::<16>(ToyBlockCipher::new(&key).unwrap());
+//! let aad = b"some associated data";
+//! let message = b"a message that streams in over more than one call";
+//!
+//! let (mut enc, nonce) =
+//!     ToyGcm::<Encrypting>::from_key_state(&state, &mut HashDRBG_SHA512::new_from_os()).unwrap();
 //! enc.do_update_aad(aad).unwrap();
 //! let mut ct = vec![0u8; message.len()];
 //! enc.do_encrypt_out(message, &mut ct).unwrap();
 //! let (tag_block, tag_len) = enc.do_encrypt_final().unwrap();
 //! ct.extend_from_slice(&tag_block[..tag_len]);
 //!
-//! let mut dec = ToyGcm::<Decrypting>::do_decrypt_init(&key, &nonce).unwrap();
+//! let mut dec = ToyGcm::<Decrypting>::from_key_state(&state, &nonce);
 //! dec.do_update_aad(aad).unwrap();
 //! let mut pt = vec![0u8; ct.len()];
 //! let written = dec.do_decrypt_out(&ct, &mut pt).unwrap();

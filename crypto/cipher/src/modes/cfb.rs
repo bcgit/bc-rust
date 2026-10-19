@@ -54,30 +54,36 @@
 //! They take a `&mut [u8]` of any length; there is no padding layer and the ciphertext is exactly
 //! as long as the plaintext:
 //!
+//! The pair is reached through a mode-bound key, [`CFB`] or [`CFB8`](crate::modes::CFB8) on a key type such as
+//! `bouncycastle_aes::AES128Key<CFB>`, whose role traits carry the one-shots. The key holds the
+//! mode's key state and calls the mode traits shown here, which is the route over the toy
+//! permutation:
+//!
 //! ```
 //! # mod toy { include!("../../tests/common/toy_block_cipher.rs"); }
 //! # use toy::ToyBlockCipher;
+//! use bouncycastle_core::hazmat::{ElectronicCodeBook, Mode, SymmetricDecryptMode, SymmetricEncryptMode};
 //! use bouncycastle_core::key_material::{KeyMaterial128, KeyType};
 //! use bouncycastle_core::traits::{StreamCipherDecryptor, StreamCipherEncryptor};
-//! use bouncycastle_cipher::modes::{Cfb, Cfb8};
-//! use bouncycastle_cipher::{Decrypting, Encrypting};
-//!
-//! type ToyCfb<Dir> = Cfb<ToyBlockCipher, Dir, 16, 16>;
-//! type ToyCfb8<Dir> = Cfb8<ToyBlockCipher, Dir, 16, 16>;
+//! use bouncycastle_cipher::modes::CFB;
+//! use bouncycastle_rng::HashDRBG_SHA512;
 //!
 //! let key = KeyMaterial128::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
 //!     .expect("a 16-byte symmetric cipher key");
+//! let state = <CFB as Mode<ToyBlockCipher>>::key_state(ToyBlockCipher::new(&key).unwrap());
+//! let mut rng = HashDRBG_SHA512::new_from_os();
 //!
 //! // Start with the plaintext.
 //! let plaintext = b"the quick brown fox!!";
 //! let mut data = *plaintext;
 //!
-//! let (bytes_written, iv) = ToyCfb::<Encrypting>::encrypt_inplace(&key, &mut data).expect("encryption");
+//! let (mut enc, iv) = CFB::encrypt_init(&state, &mut rng).expect("iv draw");
+//! let bytes_written = enc.do_encrypt_inplace(&mut data).expect("encryption");
 //! assert_eq!(bytes_written, plaintext.len());
 //!
 //! // `data` now contains the ciphertext
 //!
-//! ToyCfb::<Decrypting>::decrypt_inplace(&key, &iv, &mut data).expect("decryption");
+//! CFB::decrypt_init(&state, &iv).do_decrypt_inplace(&mut data).expect("decryption");
 //! assert_eq!(data, *b"the quick brown fox!!");
 //! ```
 //!
