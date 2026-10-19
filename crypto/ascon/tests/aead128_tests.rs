@@ -602,19 +602,19 @@ fn aead128_suspendable_keyed_state() {
     let ad = b"suspend-ad";
     let ct_ref = enc_oneshot(&KEY, &NONCE, ad, &pt);
     let key = aead_key(&KEY);
-    let km = key_material(&KEY);
 
-    // Encrypt part of the plaintext, suspend, resume with the re-supplied key, finish, and confirm
-    // the output matches a one-shot encryption. The key is never part of the serialized state.
+    // Encrypt part of the plaintext, suspend, resume over the re-supplied key object, finish, and
+    // confirm the output matches a one-shot encryption. The key is never part of the serialized
+    // state.
     let mut e = key.create_encryptor_nonce(&NONCE);
     e.do_update_aad(ad).unwrap();
     let mut out = vec![0u8; pt.len() + 16];
     e.do_encrypt_out(&pt[..18], &mut out[..18]).unwrap();
 
-    TestFrameworkSuspendableKeyedState::new().test(&e, &km);
+    TestFrameworkSuspendableKeyedState::new().test(&e, &key);
 
     let serialized = e.clone().suspend();
-    let mut resumed = Ascon_AEAD128::<Encrypting>::from_suspended(serialized, &km).unwrap();
+    let mut resumed = Ascon_AEAD128::<Encrypting>::from_suspended(serialized, &key).unwrap();
     resumed.do_encrypt_out(&pt[18..], &mut out[18..pt.len()]).unwrap();
     let (last, n) = resumed.do_encrypt_final().unwrap();
     out[pt.len()..].copy_from_slice(&last[..n]);
@@ -624,7 +624,7 @@ fn aead128_suspendable_keyed_state() {
     let mut busted = serialized;
     busted[3] ^= 0xFF;
     assert!(matches!(
-        Ascon_AEAD128::<Encrypting>::from_suspended(busted, &km),
+        Ascon_AEAD128::<Encrypting>::from_suspended(busted, &key),
         Err(SuspendableError::InvalidData)
     ));
 
@@ -634,7 +634,7 @@ fn aead128_suspendable_keyed_state() {
     let mut bad_state = serialized;
     bad_state[last] = 200;
     assert!(matches!(
-        Ascon_AEAD128::<Encrypting>::from_suspended(bad_state, &km),
+        Ascon_AEAD128::<Encrypting>::from_suspended(bad_state, &key),
         Err(SuspendableError::InvalidData)
     ));
 
@@ -643,7 +643,7 @@ fn aead128_suspendable_keyed_state() {
     inconsistent[pos_offset] = 3; // pos = 3
     inconsistent[last] = 0; // encrypting, Init
     assert!(matches!(
-        Ascon_AEAD128::<Encrypting>::from_suspended(inconsistent, &km),
+        Ascon_AEAD128::<Encrypting>::from_suspended(inconsistent, &key),
         Err(SuspendableError::InvalidData)
     ));
 
@@ -651,7 +651,7 @@ fn aead128_suspendable_keyed_state() {
     let mut bad_pos = serialized;
     bad_pos[pos_offset] = 16;
     assert!(matches!(
-        Ascon_AEAD128::<Encrypting>::from_suspended(bad_pos, &km),
+        Ascon_AEAD128::<Encrypting>::from_suspended(bad_pos, &key),
         Err(SuspendableError::InvalidData)
     ));
 
@@ -663,10 +663,10 @@ fn aead128_suspendable_keyed_state() {
     let n1 = d.do_decrypt_out(&ct_ref[..30], &mut back).unwrap();
     assert_eq!(n1, 14);
 
-    TestFrameworkSuspendableKeyedState::new().test(&d, &km);
+    TestFrameworkSuspendableKeyedState::new().test(&d, &key);
 
     let d_state = d.clone().suspend();
-    let mut d2 = Ascon_AEAD128::<Decrypting>::from_suspended(d_state, &km).unwrap();
+    let mut d2 = Ascon_AEAD128::<Decrypting>::from_suspended(d_state, &key).unwrap();
     let n2 = d2.do_decrypt_out(&ct_ref[30..], &mut back[n1..]).unwrap();
     let (_, n3) = d2.do_decrypt_final().unwrap();
     assert_eq!(n3, 0, "the final releases nothing: what it held was the tag");
@@ -677,7 +677,7 @@ fn aead128_suspendable_keyed_state() {
     let mut bad_held = d_state;
     bad_held[SUSPENDED_ASCON_AEAD128_DECRYPTOR_STATE_LEN - 1] = 17;
     assert!(matches!(
-        Ascon_AEAD128::<Decrypting>::from_suspended(bad_held, &km),
+        Ascon_AEAD128::<Decrypting>::from_suspended(bad_held, &key),
         Err(SuspendableError::InvalidData)
     ));
 
@@ -686,13 +686,13 @@ fn aead128_suspendable_keyed_state() {
     let mut enc_as_dec = [0u8; SUSPENDED_ASCON_AEAD128_DECRYPTOR_STATE_LEN];
     enc_as_dec[..SUSPENDED_ASCON_AEAD128_ENCRYPTOR_STATE_LEN].copy_from_slice(&serialized);
     assert!(matches!(
-        Ascon_AEAD128::<Decrypting>::from_suspended(enc_as_dec, &km),
+        Ascon_AEAD128::<Decrypting>::from_suspended(enc_as_dec, &key),
         Err(SuspendableError::InvalidData)
     ));
     let mut dec_as_enc = [0u8; SUSPENDED_ASCON_AEAD128_ENCRYPTOR_STATE_LEN];
     dec_as_enc.copy_from_slice(&d_state[..SUSPENDED_ASCON_AEAD128_ENCRYPTOR_STATE_LEN]);
     assert!(matches!(
-        Ascon_AEAD128::<Encrypting>::from_suspended(dec_as_enc, &km),
+        Ascon_AEAD128::<Encrypting>::from_suspended(dec_as_enc, &key),
         Err(SuspendableError::InvalidData)
     ));
 }

@@ -157,7 +157,9 @@ fn each_type_rejects_the_others() {
     rejected::<_, KMACXOF128>(squeezer.clone().suspend(), "an unbound squeezer in KMACXOF128");
     rejected::<_, CSHAKE128>(squeezer.suspend(), "an unbound squeezer in cSHAKE128");
 
-    let mut k = KMAC128Key::from_key_material(&key()).unwrap().create_generator();
+    let k_key = KMAC128Key::from_key_material(&key()).unwrap();
+
+    let mut k = k_key.create_generator();
     k.do_update(PART1);
     rejected::<_, TupleHash128>(k.clone().suspend(), "a KMAC128 state in TupleHash128");
     rejected::<_, KMAC256>(k.suspend(), "a KMAC128 state in KMAC256");
@@ -192,7 +194,9 @@ fn corrupt_fields_are_rejected() {
     bad[SQUEEZING_FLAG] = 1;
     rejected::<_, CSHAKE128>(bad, "a squeezing sponge in an absorbing cSHAKE");
 
-    let mut k = KMAC128Key::from_key_material(&key()).unwrap().create_generator();
+    let k_key = KMAC128Key::from_key_material(&key()).unwrap();
+
+    let mut k = k_key.create_generator();
     k.do_update(PART1);
     let mut bad = k.suspend();
     bad[CUSTOMIZED] = 0;

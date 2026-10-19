@@ -191,7 +191,8 @@
 //!             b"\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f",
 //!             KeyType::MACKey).unwrap();
 //!
-//! let mut hmac = HmacKey::<SHA3_256>::from_key_material(&key).unwrap().create_generator();
+//! let key = HmacKey::<SHA3_256>::from_key_material(&key).unwrap();
+//! let mut hmac = key.create_generator();
 //! hmac.do_update(msg_part1);
 //!
 //! // suspend the in-progress mac (the key is NOT included in the serialized state)
@@ -202,7 +203,7 @@
 //! // ...
 //!
 //! // ... later, possibly on another host: resume from the serialized state by re-supplying
-//! // the same key (make sure you store it securely!).
+//! // the same key object (make sure you store the material securely!).
 //! let mut hmac_resumed = HMAC_SHA3_256::from_suspended(serialized_state, &key).unwrap();
 //! hmac_resumed.do_update(msg_part2);
 //! let h: Vec<u8> = hmac_resumed.do_final();
@@ -213,15 +214,16 @@
 //! No heap memory is used by the algorithm itself; the `Vec<u8>`-returning convenience methods
 //! allocate only the output buffer, and the `*_out` variants allocate nothing.
 //!
-//! | Object                                           | Size (bytes) |
-//! |--------------------------------------------------|--------------|
-//! | `HMAC_SHA3_224` .. `HMAC_SHA3_512`, and their `HmacKey` | 880   |
-//! | Suspended state, all four ([`SuspendableKeyed`]) | 415          |
+//! | Object                                                  | Size (bytes) |
+//! |---------------------------------------------------------|--------------|
+//! | `HmacKey` for `HMAC_SHA3_224` .. `HMAC_SHA3_512`         | 880          |
+//! | `HMAC_SHA3_224` .. `HMAC_SHA3_512` worker                | 448          |
+//! | Suspended state, all four ([`SuspendableKeyed`])        | 415          |
 //!
-//! The worker and the key are each two Keccak-f\[1600\] sponges (440 bytes each, see the
-//! crate-level Memory Usage section): the inner hash and the outer pad state. The suspended state
-//! is exactly the inner hash's suspended state -- the key is deliberately excluded -- so all four
-//! share the sponge's single value.
+//! The key is two Keccak-f\[1600\] sponges (440 bytes each, see the crate-level Memory Usage
+//! section): the inner and the outer pad state. The worker is the inner sponge plus a reference
+//! to the key it borrows. The suspended state is exactly the inner hash's suspended state -- the
+//! key is deliberately excluded -- so all four share the sponge's single value.
 //!
 //! # 🚨 Security Considerations 🚨
 //!
@@ -274,7 +276,7 @@ pub const HMAC_SHA3_512_NAME: &str = "HMAC-SHA3-512";
 /*** Type aliases ***/
 /// Public type for HMAC using SHA3_224.
 #[allow(non_camel_case_types)]
-pub type HMAC_SHA3_224 = HMAC<SHA3_224>;
+pub type HMAC_SHA3_224<'k> = HMAC<'k, SHA3_224>;
 impl HMACParams for SHA3_224 {
     type MACKey = KeyMaterial<{ <SHA3_224 as HashAlgParams>::OUTPUT_LEN }>;
     const HMAC_ALG_NAME: &'static str = HMAC_SHA3_224_NAME;
@@ -287,7 +289,7 @@ impl HMACParams for SHA3_224 {
 
 /// Public type for HMAC using SHA3_256.
 #[allow(non_camel_case_types)]
-pub type HMAC_SHA3_256 = HMAC<SHA3_256>;
+pub type HMAC_SHA3_256<'k> = HMAC<'k, SHA3_256>;
 impl HMACParams for SHA3_256 {
     type MACKey = KeyMaterial<{ <SHA3_256 as HashAlgParams>::OUTPUT_LEN }>;
     const HMAC_ALG_NAME: &'static str = HMAC_SHA3_256_NAME;
@@ -300,7 +302,7 @@ impl HMACParams for SHA3_256 {
 
 /// Public type for HMAC using SHA3_384.
 #[allow(non_camel_case_types)]
-pub type HMAC_SHA3_384 = HMAC<SHA3_384>;
+pub type HMAC_SHA3_384<'k> = HMAC<'k, SHA3_384>;
 impl HMACParams for SHA3_384 {
     type MACKey = KeyMaterial<{ <SHA3_384 as HashAlgParams>::OUTPUT_LEN }>;
     const HMAC_ALG_NAME: &'static str = HMAC_SHA3_384_NAME;
@@ -313,7 +315,7 @@ impl HMACParams for SHA3_384 {
 
 /// Public type for HMAC using SHA3_512.
 #[allow(non_camel_case_types)]
-pub type HMAC_SHA3_512 = HMAC<SHA3_512>;
+pub type HMAC_SHA3_512<'k> = HMAC<'k, SHA3_512>;
 impl HMACParams for SHA3_512 {
     type MACKey = KeyMaterial<{ <SHA3_512 as HashAlgParams>::OUTPUT_LEN }>;
     const HMAC_ALG_NAME: &'static str = HMAC_SHA3_512_NAME;

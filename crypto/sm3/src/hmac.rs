@@ -63,7 +63,7 @@ pub const HMAC_SM3_NAME: &str = "HMAC-SM3";
 /*** Type aliases ***/
 /// Public type for HMAC using SM3.
 #[allow(non_camel_case_types)]
-pub type HMAC_SM3 = HMAC<SM3>;
+pub type HMAC_SM3<'k> = HMAC<'k, SM3>;
 impl HMACParams for SM3 {
     type MACKey = KeyMaterial<{ <SM3 as HashAlgParams>::OUTPUT_LEN }>;
     const HMAC_ALG_NAME: &'static str = HMAC_SM3_NAME;

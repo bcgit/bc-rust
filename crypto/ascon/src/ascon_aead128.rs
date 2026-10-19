@@ -729,9 +729,9 @@ const DEC_DIR_BITS: u8 = 4;
 impl<'k> SuspendableKeyed<'k, SUSPENDED_ASCON_AEAD128_ENCRYPTOR_STATE_LEN>
     for Ascon_AEAD128<Encrypting>
 {
-    // The 128-bit key must be re-supplied when resuming; it is never part of the serialized state,
-    // and is re-validated exactly as construction validates it.
-    type Key = KeyMaterial<KEY_LEN>;
+    // The key is never part of the serialized state; the key object the worker was made from is
+    // re-supplied, already validated.
+    type Key = AsconAEAD128Key;
 
     fn suspend(self) -> [u8; SUSPENDED_ASCON_AEAD128_ENCRYPTOR_STATE_LEN] {
         self.suspend_as(ENC_DIR_BITS)
@@ -751,7 +751,7 @@ impl<'k> SuspendableKeyed<'k, SUSPENDED_ASCON_AEAD128_ENCRYPTOR_STATE_LEN>
 impl<'k> SuspendableKeyed<'k, SUSPENDED_ASCON_AEAD128_DECRYPTOR_STATE_LEN>
     for Ascon_AEAD128<Decrypting>
 {
-    type Key = KeyMaterial<KEY_LEN>;
+    type Key = AsconAEAD128Key;
 
     fn suspend(self) -> [u8; SUSPENDED_ASCON_AEAD128_DECRYPTOR_STATE_LEN] {
         let mut out = [0u8; SUSPENDED_ASCON_AEAD128_DECRYPTOR_STATE_LEN];
@@ -804,7 +804,7 @@ impl<Dir> Ascon_AEAD128<Dir> {
     /// direction is not `dir_bits` is refused, so a state never resumes in the other direction.
     fn resume_as(
         serialized_state: [u8; CIPHER_STATE_LEN],
-        key: &KeyMaterial<KEY_LEN>,
+        key: &AsconAEAD128Key,
         dir_bits: u8,
     ) -> Result<Self, SuspendableError> {
         // infallible: check_lib_ver returns a slice of exactly CIPHER_STATE_LEN - 3 = 43 bytes.
@@ -835,9 +835,8 @@ impl<Dir> Ascon_AEAD128<Dir> {
             return Err(SuspendableError::InvalidData);
         }
 
-        let key_words = Self::checked_key(key).map_err(|_| SuspendableError::InvalidData)?;
         let mut key_secret = Secret::<[u64; 2]>::new();
-        *key_secret = key_words;
+        *key_secret = *key.key;
 
         Ok(Ascon_AEAD128 {
             key: key_secret,

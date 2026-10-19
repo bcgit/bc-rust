@@ -53,31 +53,24 @@ pub(crate) fn mac_cmd(
     // instantiate the MAC object and call do_mac()
     match hmac_variant {
         HMACVariant::SHA256 => {
-            let mac =
-                HmacKey::<SHA256>::from_key_material_allow_weak(&key).unwrap().create_generator();
-            do_mac(mac, verify_val, output_hex);
+            let hmac_key = HmacKey::<SHA256>::from_key_material_allow_weak(&key).unwrap();
+            do_mac(hmac_key.create_generator(), verify_val, output_hex);
         }
         HMACVariant::SHA512 => {
-            let mac =
-                HmacKey::<SHA512>::from_key_material_allow_weak(&key).unwrap().create_generator();
-            do_mac(mac, verify_val, output_hex);
+            let hmac_key = HmacKey::<SHA512>::from_key_material_allow_weak(&key).unwrap();
+            do_mac(hmac_key.create_generator(), verify_val, output_hex);
         }
         HMACVariant::SHA512_224 => {
-            let mac = HmacKey::<SHA512_224>::from_key_material_allow_weak(&key)
-                .unwrap()
-                .create_generator();
-            do_mac(mac, verify_val, output_hex);
+            let hmac_key = HmacKey::<SHA512_224>::from_key_material_allow_weak(&key).unwrap();
+            do_mac(hmac_key.create_generator(), verify_val, output_hex);
         }
         HMACVariant::SHA512_256 => {
-            let mac = HmacKey::<SHA512_256>::from_key_material_allow_weak(&key)
-                .unwrap()
-                .create_generator();
-            do_mac(mac, verify_val, output_hex);
+            let hmac_key = HmacKey::<SHA512_256>::from_key_material_allow_weak(&key).unwrap();
+            do_mac(hmac_key.create_generator(), verify_val, output_hex);
         }
         HMACVariant::SM3 => {
-            let mac =
-                HmacKey::<SM3>::from_key_material_allow_weak(&key).unwrap().create_generator();
-            do_mac(mac, verify_val, output_hex);
+            let hmac_key = HmacKey::<SM3>::from_key_material_allow_weak(&key).unwrap();
+            do_mac(hmac_key.create_generator(), verify_val, output_hex);
         }
     }
 }
