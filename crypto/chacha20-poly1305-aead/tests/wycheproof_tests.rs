@@ -1,4 +1,4 @@
-//! Uses the sibling Wycheproof checkout (WYCHEPROOF_ROOT can override its root).
+//! Uses the sibling Wycheproof checkout.
 //! No JSON vectors are embedded or packaged with this crate. Unsupported nonce/tag sizes
 //! cannot be passed to the fixed-array API; those cases are counted and reported separately.
 mod common;
@@ -6,11 +6,12 @@ mod common;
 use bouncycastle_chacha20_poly1305_aead::ChaCha20Poly1305Decryptor as Dec;
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::traits::{AEADCipherDecryptor, SymmetricCipherDecryptor};
+use bouncycastle_core_test_framework::external_vectors::ExternalVectors;
 
 #[test]
 fn wycheproof_chacha20_poly1305() {
     let Some(doc) =
-        common::load("WYCHEPROOF_ROOT", "wycheproof", "testvectors_v1/chacha20_poly1305_test.json")
+        common::load(ExternalVectors::Wycheproof, "testvectors_v1/chacha20_poly1305_test.json")
     else {
         return;
     };

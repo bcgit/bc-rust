@@ -1,6 +1,4 @@
 //! RFC vectors live in the sibling bc-test-data repository, never in the crate package.
-//! Set BC_TEST_DATA to override that repository's root. Missing default data is reported and
-//! skipped, following the other crypto integration suites; an explicit override must exist.
 use bouncycastle_chacha20::ChaCha20;
 use bouncycastle_chacha20::hazmat::ChaCha20KeyStream;
 use bouncycastle_cipher::Encrypting;
@@ -8,21 +6,17 @@ use bouncycastle_core::hazmat::do_hazardous_operations;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::StreamCipherEncryptor;
+use bouncycastle_core_test_framework::external_vectors::{ExternalVectors, external_vector_file};
 use serde_json::Value;
-use std::{fs, path::PathBuf};
+use std::fs;
 
 #[test]
 fn rfc8439_blocks_encryption_and_one_time_keys() {
-    let override_root = std::env::var_os("BC_TEST_DATA");
-    let root = override_root
-        .as_ref()
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../bc-test-data"));
-    let path = root.join("crypto/rfc8439/chacha20.json");
-    if !path.exists() && override_root.is_none() {
-        eprintln!("WARNING: {} not found; RFC 8439 ChaCha20 vectors skipped", path.display());
+    let Some(path) =
+        external_vector_file(ExternalVectors::BcTestData, "crypto/rfc8439/chacha20.json")
+    else {
         return;
-    }
+    };
     let document: Value =
         serde_json::from_str(&fs::read_to_string(&path).expect("RFC vector file")).unwrap();
     let cases = document["tests"].as_array().unwrap();

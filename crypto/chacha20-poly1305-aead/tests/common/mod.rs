@@ -7,19 +7,12 @@ use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{
     AEADCipherDecryptor, AEADCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
 };
+use bouncycastle_core_test_framework::external_vectors::{ExternalVectors, external_vector_file};
 use serde_json::Value;
-use std::{fs, path::PathBuf};
+use std::fs;
 
-pub fn load(variable: &str, sibling: &str, relative: &str) -> Option<Value> {
-    let override_root = std::env::var_os(variable);
-    let root = override_root.as_ref().map(PathBuf::from).unwrap_or_else(|| {
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../..").join(sibling)
-    });
-    let path = root.join(relative);
-    if !path.exists() && override_root.is_none() {
-        eprintln!("WARNING: {} not found; external vectors skipped", path.display());
-        return None;
-    }
+pub fn load(repo: ExternalVectors, relative: &str) -> Option<Value> {
+    let path = external_vector_file(repo, relative)?;
     Some(
         serde_json::from_str(&fs::read_to_string(&path).expect("external test vector file"))
             .unwrap(),

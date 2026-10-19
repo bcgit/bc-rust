@@ -1,10 +1,12 @@
-//! RFC fixtures live at bc-test-data/crypto/rfc8439. BC_TEST_DATA overrides its root.
+//! RFC fixtures live at bc-test-data/crypto/rfc8439.
 mod common;
+
+use bouncycastle_core_test_framework::external_vectors::ExternalVectors;
 
 #[test]
 fn rfc8439_aead_encryption_and_decryption() {
     let Some(doc) =
-        common::load("BC_TEST_DATA", "bc-test-data", "crypto/rfc8439/chacha20-poly1305-aead.json")
+        common::load(ExternalVectors::BcTestData, "crypto/rfc8439/chacha20-poly1305-aead.json")
     else {
         return;
     };

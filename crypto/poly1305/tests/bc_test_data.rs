@@ -3,23 +3,19 @@ use bouncycastle_core::{
     key_material::{KeyMaterial, KeyType},
     traits::MAC,
 };
+use bouncycastle_core_test_framework::external_vectors::{ExternalVectors, external_vector_file};
 use bouncycastle_core_test_framework::mac::TestFrameworkMAC;
 use bouncycastle_poly1305::Poly1305;
 use serde_json::Value;
-use std::{fs, path::PathBuf};
+use std::fs;
 
 #[test]
 fn rfc8439_poly1305_including_reduction_edge_cases() {
-    let override_root = std::env::var_os("BC_TEST_DATA");
-    let root = override_root
-        .as_ref()
-        .map(PathBuf::from)
-        .unwrap_or_else(|| PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../../bc-test-data"));
-    let path = root.join("crypto/rfc8439/poly1305.json");
-    if !path.exists() && override_root.is_none() {
-        eprintln!("WARNING: {} not found; RFC 8439 Poly1305 vectors skipped", path.display());
+    let Some(path) =
+        external_vector_file(ExternalVectors::BcTestData, "crypto/rfc8439/poly1305.json")
+    else {
         return;
-    }
+    };
     let document: Value =
         serde_json::from_str(&fs::read_to_string(&path).expect("RFC vector file")).unwrap();
     let cases = document["tests"].as_array().unwrap();
