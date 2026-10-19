@@ -3,7 +3,7 @@
 //! Parallel to [`crate::helpers::stream_mode_helpers`], but for a key bound to
 //! [`bouncycastle::cipher::modes::GCM`] rather than a stream mode: GCM carries additional
 //! authenticated data and a tag, neither of which the stream traits have room for, so this module
-//! drives the key's AEAD workers through [`AeadEncryptWorker`] / [`AeadDecryptWorker`], which
+//! drives the key's AEAD workers through [`AEADCipherEncryptor`] / [`AEADCipherDecryptor`], which
 //! add `do_update_aad` to the symmetric-cipher streaming methods.
 //!
 //! # On-the-wire format: `nonce || ciphertext || tag`
@@ -36,8 +36,9 @@
 //! other GCM implementation given the same file.
 
 use crate::helpers::{flush_stdout, read_from_file_raw, write_bytes_or_hex, write_stdout};
-use bouncycastle::core::symmetric_key::{
-    AeadDecryptWorker, AeadDecryptionKey, AeadEncryptWorker, AeadEncryptionKey,
+use bouncycastle::core::symmetric_key::{AeadDecryptionKey, AeadEncryptionKey};
+use bouncycastle::core::traits::{
+    AEADCipherDecryptor, AEADCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
 };
 use bouncycastle::hex;
 use std::io;

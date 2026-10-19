@@ -47,7 +47,7 @@ pub(crate) fn encrypt_stream<K, const KEY_LEN: usize, const INIT_DATA_LEN: usize
     output_hex: bool,
 ) where
     K: SymmetricEncryptionKey<KEY_LEN, INIT_DATA_LEN, 0>,
-    K::Encryptor: StreamCipherEncryptor<KEY_LEN, INIT_DATA_LEN>,
+    K::Encryptor: StreamCipherEncryptor<INIT_DATA_LEN>,
 {
     let (mut enc, iv) =
         key.create_encryptor(&mut HashDRBG_SHA512::new_from_os()).unwrap_or_else(|e| {
@@ -80,7 +80,7 @@ pub(crate) fn decrypt_stream<K, const KEY_LEN: usize, const INIT_DATA_LEN: usize
     output_hex: bool,
 ) where
     K: SymmetricDecryptionKey<KEY_LEN, INIT_DATA_LEN, 0>,
-    K::Decryptor: StreamCipherDecryptor<KEY_LEN, INIT_DATA_LEN>,
+    K::Decryptor: StreamCipherDecryptor<INIT_DATA_LEN>,
 {
     // The leading bytes are the IV, not ciphertext.
     let mut iv = [0u8; INIT_DATA_LEN];
@@ -146,8 +146,8 @@ pub(crate) fn run_stream_mode<K, const KEY_LEN: usize, const INIT_DATA_LEN: usiz
 ) where
     K: SymmetricEncryptionKey<KEY_LEN, INIT_DATA_LEN, 0>
         + SymmetricDecryptionKey<KEY_LEN, INIT_DATA_LEN, 0>,
-    K::Encryptor: StreamCipherEncryptor<KEY_LEN, INIT_DATA_LEN>,
-    K::Decryptor: StreamCipherDecryptor<KEY_LEN, INIT_DATA_LEN>,
+    K::Encryptor: StreamCipherEncryptor<INIT_DATA_LEN>,
+    K::Decryptor: StreamCipherDecryptor<INIT_DATA_LEN>,
 {
     match action {
         CipherDirection::Encrypt => encrypt_stream::<K, KEY_LEN, INIT_DATA_LEN>(key, output_hex),

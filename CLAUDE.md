@@ -173,10 +173,12 @@ taught, as mechanics to apply next time a cipher type is shaped or reshaped:
   struct under the spec-spelled name (`Ascon_AEAD128<Dir>`, `#[allow(non_camel_case_types)]`)
   is the whole public type, with no CamelCase twin and no alias to it.
 - **The trait pair is the API.** Do not keep an inherent streaming or one-shot API beside the
-  `AEADCipher*` / `SymmetricCipher*` impls; everything a caller needs, including a supplied nonce
-  (`do_encrypt_init_nonce`, `encrypt_with_aad_nonce_out`), is on the traits. The only inherent
-  methods a cipher adds are for what the traits lack, in-place streaming (`do_*_inplace`), and
-  their decrypt form keeps the same tag hold-back as `do_decrypt_out` so the two interleave.
+  `AEADCipher*` / `SymmetricCipher*` impls; everything a caller needs is on the traits, and
+  everything that takes a key or draws a nonce, including a supplied nonce
+  (`create_encryptor_nonce`, `encrypt_with_aad_nonce_out`), is on the key object. The only
+  inherent methods a cipher adds are for what the traits lack, in-place streaming
+  (`do_*_inplace`), and their decrypt form keeps the same tag hold-back as `do_decrypt_out` so
+  the two interleave.
 - **Private helpers must not share a trait method's name.** An inherent `do_encrypt_final` with a
   different signature from the trait's is what forced the wrapper newtypes; name the core
   helpers for what they do (`absorb_aad`, `encrypt_bytes`, `finish_tag`, `verify_tag`).
@@ -196,6 +198,37 @@ taught, as mechanics to apply next time a cipher type is shaped or reshaped:
 - **A rename stays in the crate it was asked for.** `do_*_update` to `do_*_inplace` was done for
   Ascon; the CCM packet type still has its namesake. Note the follow-up rather than widening the
   change.
+
+## Lessons from the key-object rework (October 2026)
+
+The symmetric cipher and MAC traits lost their constructors and key-taking one-shots; keys took them.
+What that taught, as mechanics for the next trait that sheds a constructor:
+
+- **The trait describes a worker that exists.** `SymmetricCipherEncryptor`, `AEADCipherEncryptor`,
+  `BlockCipherEncryptor`, `StreamCipherEncryptor`, their decrypting halves and `MAC` carry only
+  streaming methods and length helpers. Construction is a key object's (`create_encryptor(rng)`,
+  `create_decryptor(init)`, `create_generator()`), and the one-shots are provided on the role
+  traits in `core::symmetric_key` over those. `KEY_LEN` is on the role and mode traits, never on
+  a worker trait.
+- **Mode types carry the role.** A key is `AESKey<P, M>`; which role pairs it implements is
+  decided by `M`'s mode-trait impls in `core::hazmat::mode` (`SymmetricEncryptMode`,
+  `BlockEncryptMode`, `EcbEncryptMode`, `AeadEncryptMode`, `AeadPacketEncryptMode`, `MacMode`).
+  Padding and frame parameters live in the mode type (`CBC<PKCS7>`, `CBC<Blocks>`,
+  `ECB<Blocks>`, `CTR<12>`, `CCMFrame<12, 16, 64, 1024>`), not on a worker alias.
+- **A key that needs the permutation's key length cannot be generic over it.** `Mode<P>` cannot
+  carry `KEY_LEN` while `ElectronicCodeBook<KEY_LEN, BLOCK_LEN>` does, so the GCM, GMAC and CMAC
+  mode impls are written per AES key length; the cipher crate's tests use local `ToyGCM` /
+  `ToyCMAC` marker types for the same reason. A `BlockPermutation<BLOCK_LEN>` split is the open
+  follow-up.
+- **Test the key, not the worker pair.** The framework runners are `test_key` over a role pair
+  and the construction suites in `core_test_framework::from_key_material`; a test of "a key of the
+  wrong type is rejected" belongs to the construction suite, once, not to each mode's tests.
+  Known-answer suites keep pinning their IV through `create_encryptor` and a `FixedSeedRNG`.
+- **Resume still takes the material.** `SuspendableKeyed::Key` stays `KeyMaterial<KEY_LEN>`;
+  resuming from a key object is a follow-up, not something to fold into the deletion.
+- **What has no key-path twin is dropped, and said so.** `new_allow_weak_key` on a cipher-based
+  MAC, a wrong-length `KeyMaterial512` into a fixed-length key, GCM's verify-before-decrypt
+  one-shot override: each went with a line in the commit message rather than a shim.
 
 ## Working from specifications
 

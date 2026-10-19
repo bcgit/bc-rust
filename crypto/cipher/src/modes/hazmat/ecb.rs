@@ -241,37 +241,11 @@ where
     const MAX_SECURITY_STRENGTH: SecurityStrength = P::MAX_SECURITY_STRENGTH;
 }
 
-impl<P, const KEY_LEN: usize, const BLOCK_LEN: usize> BlockCipherEncryptor<KEY_LEN, 0, BLOCK_LEN>
+impl<P, const KEY_LEN: usize, const BLOCK_LEN: usize> BlockCipherEncryptor<0, BLOCK_LEN>
     for Ecb<P, Encrypting, KEY_LEN, BLOCK_LEN>
 where
     P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
 {
-    /// Expands the key. ECB has no initialization data (SP 800-38A Table D.2 lists the IV column
-    /// as "Not applicable"), so the returned init data is the empty array.
-    fn do_encrypt_init(
-        key: &KeyMaterial<KEY_LEN>,
-    ) -> Result<(Self, [u8; 0]), SymmetricCipherError> {
-        Ok((Self::new(key)?, []))
-    }
-
-    /// Always panics: ECB generates no init data, so there is nothing for an RNG to do.
-    ///
-    /// # Panics
-    /// Unconditionally, as [`BlockCipherEncryptor::do_encrypt_init_rng`] requires of a mode whose
-    /// `INIT_DATA_LEN` is 0. Reaching for the RNG-taking constructor means the caller expects a
-    /// randomized mode, and ECB is not one -- SP 800-38A Table D.2 lists its IV column as "Not
-    /// applicable" -- so silently ignoring the RNG would leave that mistaken expectation
-    /// undisturbed. Use [`do_encrypt_init`](Self::do_encrypt_init), or a mode that has an IV.
-    fn do_encrypt_init_rng(
-        _key: &KeyMaterial<KEY_LEN>,
-        _rng: &mut dyn RNG,
-    ) -> Result<(Self, [u8; 0]), SymmetricCipherError> {
-        unimplemented!(
-            "ECB has no initialization data, so it draws nothing from an RNG: use do_encrypt_init, \
-             or a mode with an IV if a randomized ciphertext was wanted"
-        )
-    }
-
     /// The implementor hook (the flat `do_encrypt_inplace` is provided over it):
     /// `Cj = CIPH_K(Pj)` for every block, in place.
     ///
@@ -299,20 +273,11 @@ where
     }
 }
 
-impl<P, const KEY_LEN: usize, const BLOCK_LEN: usize> BlockCipherDecryptor<KEY_LEN, 0, BLOCK_LEN>
+impl<P, const KEY_LEN: usize, const BLOCK_LEN: usize> BlockCipherDecryptor<0, BLOCK_LEN>
     for Ecb<P, Decrypting, KEY_LEN, BLOCK_LEN>
 where
     P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
 {
-    /// Expands the key. The init data is the empty array [`BlockCipherEncryptor::do_encrypt_init`]
-    /// returned; there is nothing in it to use.
-    fn do_decrypt_init(
-        key: &KeyMaterial<KEY_LEN>,
-        _init_data: &[u8; 0],
-    ) -> Result<Self, SymmetricCipherError> {
-        Self::new(key)
-    }
-
     /// The implementor hook (the flat `do_decrypt_inplace` is provided over it):
     /// `Pj = CIPH^-1_K(Cj)` for every block, in place -- fours, then pairs, then the remaining
     /// block, as on the encrypt side. Never fails.

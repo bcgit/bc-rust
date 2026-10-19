@@ -412,11 +412,7 @@ fn bench_aes256(c: &mut Criterion) {
 /// Runs the 16 KiB through a freshly made stream-cipher encryptor in `call_len`-byte calls. Used
 /// by the CFB, CFB8 and CTR groups: it is generic over the trait, not over the mode, and the
 /// caller's key (or mode constructor) supplies the worker.
-fn stream_encrypt_in_calls<
-    E: StreamCipherEncryptor<KEY_LEN, INIT_DATA_LEN>,
-    const KEY_LEN: usize,
-    const INIT_DATA_LEN: usize,
->(
+fn stream_encrypt_in_calls<E: StreamCipherEncryptor<INIT_DATA_LEN>, const INIT_DATA_LEN: usize>(
     mut enc: E,
     scratch: &mut [u8],
     call_len: usize,
@@ -428,11 +424,7 @@ fn stream_encrypt_in_calls<
 
 /// Runs the 16 KiB through a freshly made stream-cipher decryptor in `call_len`-byte calls.
 /// Shared as above.
-fn stream_decrypt_in_calls<
-    D: StreamCipherDecryptor<KEY_LEN, INIT_DATA_LEN>,
-    const KEY_LEN: usize,
-    const INIT_DATA_LEN: usize,
->(
+fn stream_decrypt_in_calls<D: StreamCipherDecryptor<INIT_DATA_LEN>, const INIT_DATA_LEN: usize>(
     mut dec: D,
     scratch: &mut [u8],
     call_len: usize,

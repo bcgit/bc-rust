@@ -1,7 +1,7 @@
 //! AES-GCM authenticated encryption and decryption, streaming stdin to stdout.
 //!
 //! Only the mode wiring lives here: the nonce/tag framing, AAD loading and stdin streaming are in
-//! [`helpers::aead_cipher_helpers`], shared across all three key lengths. See that module for the
+//! [`crate::helpers::aead_cipher_helpers`], shared across all three key lengths. See that module for the
 //! command-line contract (`nonce || ciphertext || tag`, the AAD flags, and why a tag failure may be
 //! reported after plaintext has already reached stdout).
 //!

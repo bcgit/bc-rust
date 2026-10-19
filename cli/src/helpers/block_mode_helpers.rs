@@ -160,13 +160,13 @@ pub(crate) fn load_key_object<K: FromKeyMaterial<KEY_LEN>, const KEY_LEN: usize>
 /// `INIT_DATA_LEN` is the mode's: one block for CBC, 0 for ECB, in which case nothing is written
 /// ahead of the ciphertext. `mode` names the mode in error messages ("CBC", "ECB"); it has no
 /// effect on the output.
-pub(crate) fn encrypt_stream<E, const KEY_LEN: usize, const INIT_DATA_LEN: usize>(
+pub(crate) fn encrypt_stream<E, const INIT_DATA_LEN: usize>(
     mut enc: E,
     iv: &[u8; INIT_DATA_LEN],
     output_hex: bool,
     mode: &str,
 ) where
-    E: BlockCipherEncryptor<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
+    E: BlockCipherEncryptor<INIT_DATA_LEN, BLOCK_LEN>,
 {
     // The IV goes out ahead of the ciphertext, so `decrypt` can pick it up. (Empty for ECB.)
     if INIT_DATA_LEN > 0 {
@@ -192,12 +192,12 @@ pub(crate) fn encrypt_stream<E, const KEY_LEN: usize, const INIT_DATA_LEN: usize
 
 /// Decrypts stdin to stdout through the worker `make_decryptor` gives for the init data (the IV)
 /// read from the first `INIT_DATA_LEN` bytes of input -- one block for CBC, nothing for ECB.
-pub(crate) fn decrypt_stream<D, const KEY_LEN: usize, const INIT_DATA_LEN: usize>(
+pub(crate) fn decrypt_stream<D, const INIT_DATA_LEN: usize>(
     make_decryptor: impl FnOnce(&[u8; INIT_DATA_LEN]) -> D,
     output_hex: bool,
     mode: &str,
 ) where
-    D: BlockCipherDecryptor<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
+    D: BlockCipherDecryptor<INIT_DATA_LEN, BLOCK_LEN>,
 {
     // The leading bytes are the IV, not ciphertext. (None for ECB: the read is skipped.)
     let mut iv = [0u8; INIT_DATA_LEN];

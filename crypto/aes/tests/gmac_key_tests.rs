@@ -10,8 +10,7 @@ use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::symmetric_key::FromKeyMaterial;
-use bouncycastle_core::traits::AEADCipherEncryptor;
+use bouncycastle_core::symmetric_key::{AeadEncryptionKey, FromKeyMaterial};
 use bouncycastle_core_test_framework::FixedSeedRNG;
 
 const NONCE: [u8; GCM_NONCE_LEN] = [0x5A; GCM_NONCE_LEN];
@@ -61,14 +60,11 @@ fn the_key_and_the_other_routes_agree_at_every_key_length() {
     agree!(AES256Key<GMAC>, AES_GMAC_256, 32, 0x33);
 
     // And GCM over the same bytes as a cipher key, with the message as AAD and no payload.
-    let (nonce, _, from_gcm) = AES_GCM_128::<Encrypting>::encrypt_detached_rng_out(
-        &material::<16>(0x11, KeyType::SymmetricCipherKey),
-        &mut rng(),
-        MSG,
-        &[],
-        &mut [],
-    )
-    .unwrap();
+    let (_, nonce, from_gcm) =
+        AES128Key::<GCM>::from_key_material(&material::<16>(0x11, KeyType::SymmetricCipherKey))
+            .unwrap()
+            .encrypt_detached_out(&mut rng(), MSG, &[], &mut [])
+            .unwrap();
     assert_eq!((nonce, from_gcm), (NONCE, tag128));
 }
 

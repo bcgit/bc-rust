@@ -83,9 +83,7 @@ use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
 use bouncycastle_core::hazmat::{ElectronicCodeBook, do_hazardous_operations};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::traits::{
-    AEADCipherEncryptor, Algorithm, RNG, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
-};
+use bouncycastle_core::traits::{Algorithm, RNG};
 
 /// The GMAC mode type: the `M` of a mode-bound key such as `AES128Key<GMAC>`. `GMAC` is GMAC with
 /// the full 128-bit tag; `GMAC<12>` and so on select a shorter tag, within the `12..=16` byte
@@ -176,9 +174,12 @@ where
     pub fn new(
         key: &KeyMaterial<KEY_LEN>,
         rng: &mut dyn RNG,
-    ) -> Result<(Self, [u8; GCM_NONCE_LEN]), SymmetricCipherError> {
-        let cipher_key = mac_key_as_cipher_key(key)?;
-        let (gcm, nonce) = Gcm::do_encrypt_init_rng(&cipher_key, rng)?;
+    ) -> Result<(Self, [u8; GCM_NONCE_LEN]), SymmetricCipherError>
+    where
+        P: Clone,
+    {
+        let state = GcmKeyState::new::<KEY_LEN>(P::new(&mac_key_as_cipher_key(key)?)?);
+        let (gcm, nonce) = Gcm::<P, Encrypting, KEY_LEN, TAG_LEN>::from_key_state(&state, rng)?;
         Ok((Self { gcm }, nonce))
     }
 
@@ -189,9 +190,12 @@ where
     pub fn new_nonce(
         key: &KeyMaterial<KEY_LEN>,
         nonce: &[u8; GCM_NONCE_LEN],
-    ) -> Result<Self, SymmetricCipherError> {
-        let cipher_key = mac_key_as_cipher_key(key)?;
-        Ok(Self { gcm: Gcm::do_encrypt_init_nonce(&cipher_key, nonce)? })
+    ) -> Result<Self, SymmetricCipherError>
+    where
+        P: Clone,
+    {
+        let state = GcmKeyState::new::<KEY_LEN>(P::new(&mac_key_as_cipher_key(key)?)?);
+        Ok(Self { gcm: Gcm::from_key_state_nonce(&state, nonce) })
     }
 
     /// Absorbs more of the message.
@@ -232,9 +236,12 @@ where
     pub fn new(
         key: &KeyMaterial<KEY_LEN>,
         nonce: &[u8; GCM_NONCE_LEN],
-    ) -> Result<Self, SymmetricCipherError> {
-        let cipher_key = mac_key_as_cipher_key(key)?;
-        Ok(Self { gcm: Gcm::do_decrypt_init(&cipher_key, nonce)? })
+    ) -> Result<Self, SymmetricCipherError>
+    where
+        P: Clone,
+    {
+        let state = GcmKeyState::new::<KEY_LEN>(P::new(&mac_key_as_cipher_key(key)?)?);
+        Ok(Self { gcm: Gcm::<P, Decrypting, KEY_LEN, TAG_LEN>::from_key_state(&state, nonce) })
     }
 
     /// Absorbs more of the message.

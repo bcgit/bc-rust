@@ -51,7 +51,7 @@ fn swapped_four_key() -> ToyKey<SwappedFourToy, ECB<Blocks>> {
 /// The implementor hook `do_encrypt_blocks_inplace`, by value, for tests whose data is
 /// block-shaped.
 fn enc_blocks<const N: usize>(
-    enc: &mut impl BlockCipherEncryptor<TOY_LEN, 0, TOY_LEN>,
+    enc: &mut impl BlockCipherEncryptor<0, TOY_LEN>,
     plaintext: &[[u8; TOY_LEN]; N],
 ) -> [[u8; TOY_LEN]; N] {
     let mut blocks = *plaintext;
@@ -61,7 +61,7 @@ fn enc_blocks<const N: usize>(
 
 /// The implementor hook `do_decrypt_blocks_inplace`, by value.
 fn dec_blocks<const N: usize>(
-    dec: &mut impl BlockCipherDecryptor<TOY_LEN, 0, TOY_LEN>,
+    dec: &mut impl BlockCipherDecryptor<0, TOY_LEN>,
     ciphertext: &[[u8; TOY_LEN]; N],
 ) -> [[u8; TOY_LEN]; N] {
     let mut blocks = *ciphertext;
@@ -71,7 +71,7 @@ fn dec_blocks<const N: usize>(
 
 /// The flat streaming method `do_encrypt_inplace`, by value.
 fn enc_flat<const LEN: usize>(
-    enc: &mut impl BlockCipherEncryptor<TOY_LEN, 0, TOY_LEN>,
+    enc: &mut impl BlockCipherEncryptor<0, TOY_LEN>,
     plaintext: &[u8; LEN],
 ) -> [u8; LEN] {
     let mut data = *plaintext;
@@ -81,7 +81,7 @@ fn enc_flat<const LEN: usize>(
 
 /// The flat streaming method `do_decrypt_inplace`, by value.
 fn dec_flat<const LEN: usize>(
-    dec: &mut impl BlockCipherDecryptor<TOY_LEN, 0, TOY_LEN>,
+    dec: &mut impl BlockCipherDecryptor<0, TOY_LEN>,
     ciphertext: &[u8; LEN],
 ) -> [u8; LEN] {
     let mut data = *ciphertext;

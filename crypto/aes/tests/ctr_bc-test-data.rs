@@ -98,8 +98,8 @@ where
     K: FromKeyMaterial<KEY_LEN>
         + SymmetricEncryptionKey<KEY_LEN, NONCE_LEN, 0>
         + SymmetricDecryptionKey<KEY_LEN, NONCE_LEN, 0>,
-    K::Encryptor: StreamCipherEncryptor<KEY_LEN, NONCE_LEN>,
-    K::Decryptor: StreamCipherDecryptor<KEY_LEN, NONCE_LEN>,
+    K::Encryptor: StreamCipherEncryptor<NONCE_LEN>,
+    K::Decryptor: StreamCipherDecryptor<NONCE_LEN>,
 {
     let key = K::from_key_material(&cipher_key::<KEY_LEN>(key_bytes)).expect("a valid key");
     let mut data = input.to_vec();

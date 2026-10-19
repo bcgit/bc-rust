@@ -17,10 +17,9 @@
 
 use crate::errors::SymmetricCipherError;
 use crate::key_material::KeyType;
-use crate::symmetric_key::{AeadDecryptWorker, AeadEncryptWorker};
 use crate::traits::{
-    BlockCipherDecryptor, BlockCipherEncryptor, MAC, RNG, SymmetricCipherDecryptor,
-    SymmetricCipherEncryptor,
+    AEADCipherDecryptor, AEADCipherEncryptor, BlockCipherDecryptor, BlockCipherEncryptor, MAC, RNG,
+    SymmetricCipherDecryptor, SymmetricCipherEncryptor,
 };
 
 /// A mode's per-key state over the permutation `P`.
@@ -61,7 +60,7 @@ pub trait AeadEncryptMode<
 >: Mode<P>
 {
     /// The streaming encryptor this mode produces over `P`.
-    type Encryptor: AeadEncryptWorker<NONCE_LEN, TAG_LEN, FINAL_LEN>;
+    type Encryptor: AEADCipherEncryptor<NONCE_LEN, TAG_LEN, FINAL_LEN>;
 
     /// Begins an encryption from `state` under a nonce drawn from `rng`.
     ///
@@ -121,7 +120,7 @@ pub trait AeadDecryptMode<
 >: Mode<P>
 {
     /// The streaming decryptor this mode produces over `P`.
-    type Decryptor: AeadDecryptWorker<NONCE_LEN, TAG_LEN, FINAL_LEN>;
+    type Decryptor: AEADCipherDecryptor<NONCE_LEN, TAG_LEN, FINAL_LEN>;
 
     /// Begins the decryption of a message encrypted under `nonce` from `state`. Infallible: the
     /// state is already keyed and the nonce length is in the type.
@@ -158,7 +157,7 @@ pub trait AeadPacketEncryptMode<
 >: Mode<P>
 {
     /// The streaming encryptor this mode produces over `P`.
-    type Encryptor: AeadEncryptWorker<NONCE_LEN, TAG_LEN, FINAL_LEN>;
+    type Encryptor: AEADCipherEncryptor<NONCE_LEN, TAG_LEN, FINAL_LEN>;
 
     /// Begins an encryption of `payload_len` bytes under `aad_len` bytes of AAD, from `state`
     /// under a nonce drawn from `rng`.
@@ -230,7 +229,7 @@ pub trait AeadPacketDecryptMode<
 >: Mode<P>
 {
     /// The streaming decryptor this mode produces over `P`.
-    type Decryptor: AeadDecryptWorker<NONCE_LEN, TAG_LEN, FINAL_LEN>;
+    type Decryptor: AEADCipherDecryptor<NONCE_LEN, TAG_LEN, FINAL_LEN>;
 
     /// Begins the decryption of `payload_len` bytes of ciphertext under `aad_len` bytes of AAD,
     /// encrypted under `nonce`, from `state`.
@@ -273,7 +272,7 @@ pub trait SymmetricEncryptMode<
 >: Mode<P>
 {
     /// The streaming encryptor this mode produces over `P`.
-    type Encryptor: SymmetricCipherEncryptor<KEY_LEN, INIT_DATA_LEN, FINAL_LEN>;
+    type Encryptor: SymmetricCipherEncryptor<INIT_DATA_LEN, FINAL_LEN>;
 
     /// Begins an encryption from `state` under init data drawn from `rng`.
     ///
@@ -294,7 +293,7 @@ pub trait SymmetricDecryptMode<
 >: Mode<P>
 {
     /// The streaming decryptor this mode produces over `P`.
-    type Decryptor: SymmetricCipherDecryptor<KEY_LEN, INIT_DATA_LEN, FINAL_LEN>;
+    type Decryptor: SymmetricCipherDecryptor<INIT_DATA_LEN, FINAL_LEN>;
 
     /// Begins the decryption of a message encrypted under `init_data` from `state`. Infallible:
     /// the state is already keyed and the init data length is in the type.
@@ -311,7 +310,7 @@ pub trait BlockEncryptMode<
 >: Mode<P>
 {
     /// The streaming encryptor this mode produces over `P`.
-    type Encryptor: BlockCipherEncryptor<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>;
+    type Encryptor: BlockCipherEncryptor<INIT_DATA_LEN, BLOCK_LEN>;
 
     /// Begins an encryption from `state` under init data drawn from `rng`.
     ///
@@ -332,7 +331,7 @@ pub trait BlockDecryptMode<
 >: Mode<P>
 {
     /// The streaming decryptor this mode produces over `P`.
-    type Decryptor: BlockCipherDecryptor<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>;
+    type Decryptor: BlockCipherDecryptor<INIT_DATA_LEN, BLOCK_LEN>;
 
     /// Begins the decryption of a message encrypted under `init_data` from `state`. Infallible.
     fn decrypt_init(state: &Self::KeyState, init_data: &[u8; INIT_DATA_LEN]) -> Self::Decryptor;
@@ -343,7 +342,7 @@ pub trait BlockDecryptMode<
 /// `INIT_DATA_LEN = 0`, so that nothing is handed an RNG it has no use for.
 pub trait EcbEncryptMode<P, const KEY_LEN: usize, const BLOCK_LEN: usize>: Mode<P> {
     /// The streaming encryptor this mode produces over `P`.
-    type Encryptor: BlockCipherEncryptor<KEY_LEN, 0, BLOCK_LEN>;
+    type Encryptor: BlockCipherEncryptor<0, BLOCK_LEN>;
 
     /// Begins an encryption from `state`.
     fn encrypt_init(state: &Self::KeyState) -> Self::Encryptor;
@@ -352,7 +351,7 @@ pub trait EcbEncryptMode<P, const KEY_LEN: usize, const BLOCK_LEN: usize>: Mode<
 /// The decryption side of ECB over `P`; see [`EcbEncryptMode`].
 pub trait EcbDecryptMode<P, const KEY_LEN: usize, const BLOCK_LEN: usize>: Mode<P> {
     /// The streaming decryptor this mode produces over `P`.
-    type Decryptor: BlockCipherDecryptor<KEY_LEN, 0, BLOCK_LEN>;
+    type Decryptor: BlockCipherDecryptor<0, BLOCK_LEN>;
 
     /// Begins a decryption from `state`.
     fn decrypt_init(state: &Self::KeyState) -> Self::Decryptor;

@@ -54,14 +54,14 @@ fn forward_only_key() -> ToyKey<ForwardOnlyToy, CFB> {
 }
 
 /// `do_encrypt_inplace`, by value.
-fn enc(e: &mut impl StreamCipherEncryptor<TOY_LEN, TOY_LEN>, plaintext: &[u8]) -> Vec<u8> {
+fn enc(e: &mut impl StreamCipherEncryptor<TOY_LEN>, plaintext: &[u8]) -> Vec<u8> {
     let mut data = plaintext.to_vec();
     e.do_encrypt_inplace(&mut data).unwrap();
     data
 }
 
 /// `do_decrypt_inplace`, by value.
-fn dec(d: &mut impl StreamCipherDecryptor<TOY_LEN, TOY_LEN>, ciphertext: &[u8]) -> Vec<u8> {
+fn dec(d: &mut impl StreamCipherDecryptor<TOY_LEN>, ciphertext: &[u8]) -> Vec<u8> {
     let mut data = ciphertext.to_vec();
     d.do_decrypt_inplace(&mut data).unwrap();
     data
@@ -69,7 +69,7 @@ fn dec(d: &mut impl StreamCipherDecryptor<TOY_LEN, TOY_LEN>, ciphertext: &[u8]) 
 
 /// `do_encrypt_inplace` in `chunk`-byte calls, by value. The last call may be shorter.
 fn enc_chunked(
-    e: &mut impl StreamCipherEncryptor<TOY_LEN, TOY_LEN>,
+    e: &mut impl StreamCipherEncryptor<TOY_LEN>,
     plaintext: &[u8],
     chunk: usize,
 ) -> Vec<u8> {
@@ -82,7 +82,7 @@ fn enc_chunked(
 
 /// `do_decrypt_inplace` in `chunk`-byte calls, by value. The last call may be shorter.
 fn dec_chunked(
-    d: &mut impl StreamCipherDecryptor<TOY_LEN, TOY_LEN>,
+    d: &mut impl StreamCipherDecryptor<TOY_LEN>,
     ciphertext: &[u8],
     chunk: usize,
 ) -> Vec<u8> {

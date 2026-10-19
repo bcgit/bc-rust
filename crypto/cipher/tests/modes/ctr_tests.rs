@@ -81,20 +81,20 @@ fn forward_only_key() -> ToyKey<ForwardOnlyToy, CTR<NONCE_LEN>> {
 /// Capacity of a 1-byte counter, in bytes.
 const TINY_CAPACITY: usize = 256 * TOY_LEN;
 
-fn enc(e: &mut impl StreamCipherEncryptor<TOY_LEN, NONCE_LEN>, plaintext: &[u8]) -> Vec<u8> {
+fn enc(e: &mut impl StreamCipherEncryptor<NONCE_LEN>, plaintext: &[u8]) -> Vec<u8> {
     let mut data = plaintext.to_vec();
     e.do_encrypt_inplace(&mut data).unwrap();
     data
 }
 
-fn dec(d: &mut impl StreamCipherDecryptor<TOY_LEN, NONCE_LEN>, ciphertext: &[u8]) -> Vec<u8> {
+fn dec(d: &mut impl StreamCipherDecryptor<NONCE_LEN>, ciphertext: &[u8]) -> Vec<u8> {
     let mut data = ciphertext.to_vec();
     d.do_decrypt_inplace(&mut data).unwrap();
     data
 }
 
 fn dec_chunked(
-    d: &mut impl StreamCipherDecryptor<TOY_LEN, NONCE_LEN>,
+    d: &mut impl StreamCipherDecryptor<NONCE_LEN>,
     ciphertext: &[u8],
     chunk: usize,
 ) -> Vec<u8> {

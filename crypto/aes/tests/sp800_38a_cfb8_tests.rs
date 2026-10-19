@@ -137,7 +137,7 @@ const CHUNKINGS: [usize; 7] = [1, 3, 4, 8, 9, 17, 18];
 fn check_encrypt<K, const KEY_LEN: usize>(section: &str, key_hex: &str, expected_hex: &str)
 where
     K: FromKeyMaterial<KEY_LEN> + SymmetricEncryptionKey<KEY_LEN, BLOCK_LEN, 0>,
-    K::Encryptor: StreamCipherEncryptor<KEY_LEN, BLOCK_LEN>,
+    K::Encryptor: StreamCipherEncryptor<BLOCK_LEN>,
 {
     let key = K::from_key_material(&key_material::<KEY_LEN>(key_hex)).expect("a valid key");
     let iv = block(IV);
@@ -162,7 +162,7 @@ where
 fn check_decrypt<K, const KEY_LEN: usize>(section: &str, key_hex: &str, ciphertext_hex: &str)
 where
     K: FromKeyMaterial<KEY_LEN> + SymmetricDecryptionKey<KEY_LEN, BLOCK_LEN, 0>,
-    K::Decryptor: StreamCipherDecryptor<KEY_LEN, BLOCK_LEN>,
+    K::Decryptor: StreamCipherDecryptor<BLOCK_LEN>,
 {
     let key = K::from_key_material(&key_material::<KEY_LEN>(key_hex)).expect("a valid key");
     let iv = block(IV);

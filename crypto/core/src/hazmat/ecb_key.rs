@@ -13,7 +13,7 @@ use crate::traits::{BlockCipherDecryptor, BlockCipherEncryptor};
 /// uses.
 pub trait EcbEncryptionKey<const KEY_LEN: usize, const BLOCK_LEN: usize> {
     /// The streaming encryptor this key produces.
-    type Encryptor: BlockCipherEncryptor<KEY_LEN, 0, BLOCK_LEN>;
+    type Encryptor: BlockCipherEncryptor<0, BLOCK_LEN>;
 
     /// Begins an encryption.
     fn create_encryptor(&self) -> Self::Encryptor;
@@ -34,7 +34,7 @@ pub trait EcbEncryptionKey<const KEY_LEN: usize, const BLOCK_LEN: usize> {
 /// A key that can begin an ECB decryption; see [`EcbEncryptionKey`].
 pub trait EcbDecryptionKey<const KEY_LEN: usize, const BLOCK_LEN: usize> {
     /// The streaming decryptor this key produces.
-    type Decryptor: BlockCipherDecryptor<KEY_LEN, 0, BLOCK_LEN>;
+    type Decryptor: BlockCipherDecryptor<0, BLOCK_LEN>;
 
     /// Begins a decryption.
     fn create_decryptor(&self) -> Self::Decryptor;

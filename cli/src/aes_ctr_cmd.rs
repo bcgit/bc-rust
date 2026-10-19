@@ -85,8 +85,8 @@ fn run<K, const KEY_LEN: usize>(action: &CipherDirection, key: &K, output_hex: b
 where
     K: SymmetricEncryptionKey<KEY_LEN, CTR_NONCE_LEN, 0>
         + SymmetricDecryptionKey<KEY_LEN, CTR_NONCE_LEN, 0>,
-    K::Encryptor: StreamCipherEncryptor<KEY_LEN, CTR_NONCE_LEN>,
-    K::Decryptor: StreamCipherDecryptor<KEY_LEN, CTR_NONCE_LEN>,
+    K::Encryptor: StreamCipherEncryptor<CTR_NONCE_LEN>,
+    K::Decryptor: StreamCipherDecryptor<CTR_NONCE_LEN>,
 {
     run_stream_mode::<K, KEY_LEN, CTR_NONCE_LEN>(action, key, output_hex)
 }

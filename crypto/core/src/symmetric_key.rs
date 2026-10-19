@@ -19,8 +19,7 @@
 //!   [`crate::hazmat`], and [`MacGenerationKey`] / [`MacVerificationKey`]. A key type
 //!   implements the sides it is allowed to use, so a decrypt-only or verify-only key refuses the
 //!   other side at compile time. The one-shots are provided methods over `create_*` and the
-//!   worker's streaming methods, which [`AeadEncryptWorker`] / [`AeadDecryptWorker`] describe
-//!   for the AEAD pair and the cipher traits in [`crate::traits`] for the rest.
+//!   worker's streaming methods, the cipher traits in [`crate::traits`].
 //!
 //! Which role a cipher key carries is decided by its mode type through the mode traits in
 //! [`crate::hazmat`] ([`Mode`], [`AeadEncryptMode`], [`AeadDecryptMode`] and their packet,
@@ -49,8 +48,9 @@ use crate::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 #[cfg(feature = "std")]
 use crate::traits::AEADEncryptedTuple;
 use crate::traits::{
-    BlockCipherDecryptor, BlockCipherEncryptor, MAC, RNG, StreamCipherDecryptor,
-    StreamCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
+    AEADCipherDecryptor, AEADCipherEncryptor, BlockCipherDecryptor, BlockCipherEncryptor, MAC, RNG,
+    StreamCipherDecryptor, StreamCipherEncryptor, SymmetricCipherDecryptor,
+    SymmetricCipherEncryptor,
 };
 
 /// Construction of a key object from exactly `KEY_LEN` bytes of key material.
@@ -114,112 +114,10 @@ pub trait FromAnyKeyMaterial: Sized {
     fn generate(rng: &mut dyn RNG) -> Result<Self, MACError>;
 }
 
-// The lengths the cipher traits carry are const generics on the role traits rather than associated
-// constants, because stable Rust can neither pass an associated constant as a const-generic
-// argument (the worker bound) nor size an array from one (the returned nonce). `KEY_LEN` is on
-// the role traits only while the cipher traits still carry it; it goes when their constructors do.
-
-/// An AEAD encryptor that already exists: the streaming methods of the cipher traits without
-/// their constructors, which is all a key's worker needs. A worker produced by a key implements
-/// this; the cipher traits' own types implement it by forwarding.
-pub trait AeadEncryptWorker<const NONCE_LEN: usize, const TAG_LEN: usize, const FINAL_LEN: usize>:
-    Sized
-{
-    /// Absorbs associated data, which is authenticated but not encrypted, before any payload.
-    ///
-    /// # Errors
-    /// [`SymmetricCipherError::StateError`] if non-empty after the payload has begun, or the
-    /// worker's own refusal of more than it declared.
-    fn do_update_aad(&mut self, aad: &[u8]) -> Result<(), SymmetricCipherError>;
-
-    /// The most ciphertext bytes the next `do_encrypt_out` of `input_len` bytes can release.
-    fn do_encrypt_out_len(&self, input_len: usize) -> usize;
-
-    /// Encrypts `plaintext` into `ciphertext`, returning the bytes written.
-    ///
-    /// # Errors
-    /// [`SymmetricCipherError::OutputBufferTooSmall`] if `ciphertext` is shorter than
-    /// [`do_encrypt_out_len`](Self::do_encrypt_out_len) says, or the worker's own refusals.
-    fn do_encrypt_out(
-        &mut self,
-        plaintext: &[u8],
-        ciphertext: &mut [u8],
-    ) -> Result<usize, SymmetricCipherError>;
-
-    /// Finishes with the tag inline: whatever was held back, then the tag, and how many bytes
-    /// of the array are valid.
-    ///
-    /// # Errors
-    /// The worker's own refusal of a message it was not given all of.
-    fn do_encrypt_final(self) -> Result<([u8; FINAL_LEN], usize), SymmetricCipherError>;
-
-    /// Finishes with the tag detached: whatever was held back goes into `ciphertext`, and the
-    /// bytes written come back with the tag.
-    ///
-    /// # Errors
-    /// As [`do_encrypt_final`](Self::do_encrypt_final).
-    fn do_encrypt_final_detached_out(
-        self,
-        ciphertext: &mut [u8; FINAL_LEN],
-    ) -> Result<(usize, [u8; TAG_LEN]), SymmetricCipherError>;
-
-    /// The ciphertext length, tag inline, for `plaintext_len` bytes.
-    fn encrypt_out_len(plaintext_len: usize) -> usize;
-
-    /// The ciphertext length, tag detached, for `plaintext_len` bytes.
-    fn encrypt_detached_out_len(plaintext_len: usize) -> usize;
-}
-
-/// An AEAD decryptor that already exists; see [`AeadEncryptWorker`].
-pub trait AeadDecryptWorker<const NONCE_LEN: usize, const TAG_LEN: usize, const FINAL_LEN: usize>:
-    Sized
-{
-    /// Absorbs associated data before any ciphertext.
-    ///
-    /// # Errors
-    /// As [`AeadEncryptWorker::do_update_aad`].
-    fn do_update_aad(&mut self, aad: &[u8]) -> Result<(), SymmetricCipherError>;
-
-    /// The most plaintext bytes the next `do_decrypt_out` of `input_len` bytes can release.
-    fn do_decrypt_out_len(&self, input_len: usize) -> usize;
-
-    /// Decrypts `ciphertext` into `plaintext`, returning the bytes written. What is written is
-    /// not yet authenticated: only the final says whether it may be trusted.
-    ///
-    /// # Errors
-    /// [`SymmetricCipherError::OutputBufferTooSmall`] if `plaintext` is shorter than
-    /// [`do_decrypt_out_len`](Self::do_decrypt_out_len) says, or the worker's own refusals.
-    fn do_decrypt_out(
-        &mut self,
-        ciphertext: &[u8],
-        plaintext: &mut [u8],
-    ) -> Result<usize, SymmetricCipherError>;
-
-    /// Finishes with the tag taken from the end of the ciphertext: whatever was held back, and
-    /// how many bytes of the array are valid.
-    ///
-    /// # Errors
-    /// [`SymmetricCipherError::AEADTagCheckFailed`] if the tag does not verify, and
-    /// [`SymmetricCipherError::DecryptionFailed`] for a malformed ciphertext.
-    fn do_decrypt_final(self) -> Result<([u8; FINAL_LEN], usize), SymmetricCipherError>;
-
-    /// Finishes against a detached `tag`: whatever was held back goes into `plaintext`, and the
-    /// bytes written come back.
-    ///
-    /// # Errors
-    /// As [`do_decrypt_final`](Self::do_decrypt_final).
-    fn do_decrypt_final_detached_out(
-        self,
-        tag: &[u8; TAG_LEN],
-        plaintext: &mut [u8; FINAL_LEN],
-    ) -> Result<usize, SymmetricCipherError>;
-
-    /// The plaintext length for `ciphertext_len` bytes with the tag inline.
-    fn decrypt_out_len(ciphertext_len: usize) -> usize;
-
-    /// The plaintext length for `ciphertext_len` bytes with the tag detached.
-    fn decrypt_detached_out_len(ciphertext_len: usize) -> usize;
-}
+// The lengths are const generics on the role traits rather than associated constants, because
+// stable Rust can neither pass an associated constant as a const-generic argument (the worker
+// bound) nor size an array from one (the returned nonce). `KEY_LEN` is here, and not on the
+// cipher traits, because it is the key's: the worker never sees the material.
 
 /// A key that can begin an authenticated encryption: the encryption half of an AEAD key.
 ///
@@ -241,7 +139,7 @@ pub trait AeadEncryptionKey<
 >
 {
     /// The streaming encryptor this key produces.
-    type Encryptor: AeadEncryptWorker<NONCE_LEN, TAG_LEN, FINAL_LEN>;
+    type Encryptor: AEADCipherEncryptor<NONCE_LEN, TAG_LEN, FINAL_LEN>;
 
     /// Begins an encryption under a nonce drawn from `rng`. The nonce is returned alongside the
     /// encryptor and must reach the recipient, who passes it to
@@ -453,7 +351,7 @@ pub trait AeadDecryptionKey<
 >
 {
     /// The streaming decryptor this key produces.
-    type Decryptor: AeadDecryptWorker<NONCE_LEN, TAG_LEN, FINAL_LEN>;
+    type Decryptor: AEADCipherDecryptor<NONCE_LEN, TAG_LEN, FINAL_LEN>;
 
     /// Begins the decryption of a message whose encryptor returned `nonce`.
     fn create_decryptor(&self, nonce: &[u8; NONCE_LEN]) -> Self::Decryptor;
@@ -566,7 +464,7 @@ pub trait AeadPacketEncryptionKey<
 >
 {
     /// The streaming encryptor this key produces.
-    type Encryptor: AeadEncryptWorker<NONCE_LEN, TAG_LEN, FINAL_LEN>;
+    type Encryptor: AEADCipherEncryptor<NONCE_LEN, TAG_LEN, FINAL_LEN>;
 
     /// Begins an encryption of `payload_len` bytes under `aad_len` bytes of AAD and a nonce
     /// drawn from `rng`, which is returned. The worker then takes exactly those amounts.
@@ -770,7 +668,7 @@ pub trait AeadPacketDecryptionKey<
 >
 {
     /// The streaming decryptor this key produces.
-    type Decryptor: AeadDecryptWorker<NONCE_LEN, TAG_LEN, FINAL_LEN>;
+    type Decryptor: AEADCipherDecryptor<NONCE_LEN, TAG_LEN, FINAL_LEN>;
 
     /// Begins the decryption of `payload_len` bytes of ciphertext under `aad_len` bytes of AAD,
     /// encrypted under `nonce`.
@@ -885,7 +783,7 @@ pub trait SymmetricEncryptionKey<
 >
 {
     /// The streaming encryptor this key produces.
-    type Encryptor: SymmetricCipherEncryptor<KEY_LEN, INIT_DATA_LEN, FINAL_LEN>;
+    type Encryptor: SymmetricCipherEncryptor<INIT_DATA_LEN, FINAL_LEN>;
 
     /// Begins an encryption under init data drawn from `rng`, which is returned alongside the
     /// encryptor and must reach the recipient, who passes it to
@@ -945,7 +843,7 @@ pub trait SymmetricEncryptionKey<
         data: &mut [u8],
     ) -> Result<(usize, [u8; INIT_DATA_LEN]), SymmetricCipherError>
     where
-        Self::Encryptor: StreamCipherEncryptor<KEY_LEN, INIT_DATA_LEN>,
+        Self::Encryptor: StreamCipherEncryptor<INIT_DATA_LEN>,
     {
         let (mut enc, init_data) = self.create_encryptor(rng)?;
         let written = StreamCipherEncryptor::do_encrypt_inplace(&mut enc, data)?;
@@ -963,7 +861,7 @@ pub trait SymmetricDecryptionKey<
 >
 {
     /// The streaming decryptor this key produces.
-    type Decryptor: SymmetricCipherDecryptor<KEY_LEN, INIT_DATA_LEN, FINAL_LEN>;
+    type Decryptor: SymmetricCipherDecryptor<INIT_DATA_LEN, FINAL_LEN>;
 
     /// Begins the decryption of a message whose encryptor returned `init_data`.
     fn create_decryptor(&self, init_data: &[u8; INIT_DATA_LEN]) -> Self::Decryptor;
@@ -1016,7 +914,7 @@ pub trait SymmetricDecryptionKey<
         data: &mut [u8],
     ) -> Result<usize, SymmetricCipherError>
     where
-        Self::Decryptor: StreamCipherDecryptor<KEY_LEN, INIT_DATA_LEN>,
+        Self::Decryptor: StreamCipherDecryptor<INIT_DATA_LEN>,
     {
         let mut dec = self.create_decryptor(init_data);
         StreamCipherDecryptor::do_decrypt_inplace(&mut dec, data)
@@ -1034,7 +932,7 @@ pub trait BlockEncryptionKey<
 >
 {
     /// The streaming encryptor this key produces.
-    type Encryptor: BlockCipherEncryptor<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>;
+    type Encryptor: BlockCipherEncryptor<INIT_DATA_LEN, BLOCK_LEN>;
 
     /// Begins an encryption under init data drawn from `rng`, which is returned alongside the
     /// encryptor and must reach the recipient, who passes it to
@@ -1073,7 +971,7 @@ pub trait BlockDecryptionKey<
 >
 {
     /// The streaming decryptor this key produces.
-    type Decryptor: BlockCipherDecryptor<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>;
+    type Decryptor: BlockCipherDecryptor<INIT_DATA_LEN, BLOCK_LEN>;
 
     /// Begins the decryption of a message whose encryptor returned `init_data`.
     fn create_decryptor(&self, init_data: &[u8; INIT_DATA_LEN]) -> Self::Decryptor;

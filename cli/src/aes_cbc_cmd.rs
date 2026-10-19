@@ -74,10 +74,10 @@ where
                     eprintln!("Error: couldn't start encryption: {e:?}");
                     exit(-1);
                 });
-            encrypt_stream::<_, KEY_LEN, BLOCK_LEN>(enc, &iv, output_hex, MODE)
+            encrypt_stream::<_, BLOCK_LEN>(enc, &iv, output_hex, MODE)
         }
         CipherDirection::Decrypt => {
-            decrypt_stream::<_, KEY_LEN, BLOCK_LEN>(|iv| key.create_decryptor(iv), output_hex, MODE)
+            decrypt_stream::<_, BLOCK_LEN>(|iv| key.create_decryptor(iv), output_hex, MODE)
         }
     }
 }

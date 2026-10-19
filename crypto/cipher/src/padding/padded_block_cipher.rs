@@ -8,11 +8,10 @@
 //! all, in which case `do_encrypt_final` reports 0 of the `FINAL_LEN` bytes as output.
 
 use bouncycastle_core::errors::{SuspendableError, SymmetricCipherError};
-use bouncycastle_core::key_material::KeyMaterial;
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{
-    Algorithm, BlockCipherDecryptor, BlockCipherEncryptor, BlockCipherPadding, RNG,
-    SuspendableKeyed, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
+    Algorithm, BlockCipherDecryptor, BlockCipherEncryptor, BlockCipherPadding, SuspendableKeyed,
+    SymmetricCipherDecryptor, SymmetricCipherEncryptor,
 };
 use bouncycastle_utils::secret::Secret;
 use bouncycastle_utils::suspendable_state::{
@@ -28,8 +27,8 @@ const GROUP: usize = 8;
 /// Encrypts arbitrary-length data with a block cipher `E`, padding the final block with `P`.
 ///
 /// Stream with [`SymmetricCipherEncryptor::do_encrypt_out`] then
-/// [`SymmetricCipherEncryptor::do_encrypt_final`], or use the one-shot
-/// [`SymmetricCipherEncryptor::encrypt_out`]. Output is
+/// [`SymmetricCipherEncryptor::do_encrypt_final`], or use the key's one-shot `encrypt_out`.
+/// Output is
 /// `plaintext_len / BLOCK_LEN + 1` blocks for a scheme that always pads (PKCS7), and exactly the
 /// input length for one that never does (`NoPadding`, which rejects an unaligned input at
 /// `do_encrypt_final`). The buffered partial plaintext block is held in a [`Secret`].
@@ -41,7 +40,7 @@ pub struct PaddedBlockCipherEncryptor<
     const INIT_DATA_LEN: usize,
     const BLOCK_LEN: usize,
 > where
-    E: BlockCipherEncryptor<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
+    E: BlockCipherEncryptor<INIT_DATA_LEN, BLOCK_LEN>,
     P: BlockCipherPadding<BLOCK_LEN>,
 {
     encryptor: E,
@@ -54,7 +53,7 @@ pub struct PaddedBlockCipherEncryptor<
 impl<E, P, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize> Algorithm
     for PaddedBlockCipherEncryptor<E, P, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
 where
-    E: BlockCipherEncryptor<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
+    E: BlockCipherEncryptor<INIT_DATA_LEN, BLOCK_LEN>,
     P: BlockCipherPadding<BLOCK_LEN>,
 {
     /// The inner cipher's name; padding does not change what the algorithm is.
@@ -66,7 +65,7 @@ where
 impl<E, P, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize>
     PaddedBlockCipherEncryptor<E, P, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
 where
-    E: BlockCipherEncryptor<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
+    E: BlockCipherEncryptor<INIT_DATA_LEN, BLOCK_LEN>,
     P: BlockCipherPadding<BLOCK_LEN>,
 {
     /// The adapter over an already-constructed inner cipher, with nothing buffered: what a mode
@@ -77,27 +76,12 @@ where
 }
 
 impl<E, P, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize>
-    SymmetricCipherEncryptor<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
+    SymmetricCipherEncryptor<INIT_DATA_LEN, BLOCK_LEN>
     for PaddedBlockCipherEncryptor<E, P, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
 where
-    E: BlockCipherEncryptor<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
+    E: BlockCipherEncryptor<INIT_DATA_LEN, BLOCK_LEN>,
     P: BlockCipherPadding<BLOCK_LEN>,
 {
-    fn do_encrypt_init(
-        key: &KeyMaterial<KEY_LEN>,
-    ) -> Result<(Self, [u8; INIT_DATA_LEN]), SymmetricCipherError> {
-        let (encryptor, init_data) = E::do_encrypt_init(key)?;
-        Ok((Self { encryptor, _padding: PhantomData, buf: Secret::new(), buf_len: 0 }, init_data))
-    }
-
-    fn do_encrypt_init_rng(
-        key: &KeyMaterial<KEY_LEN>,
-        rng: &mut dyn RNG,
-    ) -> Result<(Self, [u8; INIT_DATA_LEN]), SymmetricCipherError> {
-        let (encryptor, init_data) = E::do_encrypt_init_rng(key, rng)?;
-        Ok((Self { encryptor, _padding: PhantomData, buf: Secret::new(), buf_len: 0 }, init_data))
-    }
-
     /// Whole blocks among the buffered bytes plus `input_len`.
     fn do_encrypt_out_len(&self, input_len: usize) -> usize {
         (self.buf_len + input_len) / BLOCK_LEN * BLOCK_LEN
@@ -193,7 +177,7 @@ where
 ///
 /// Only the last block carries padding, so [`do_update_out`](Self::do_decrypt_out) always withholds
 /// the most recent complete block and [`do_decrypt_final`](Self::do_decrypt_final) unpads it.
-/// One-shot: [`decrypt_out`](Self::decrypt_out).
+/// One-shot: the key's `decrypt_out`.
 #[derive(Clone)]
 pub struct PaddedBlockCipherDecryptor<
     D,
@@ -202,7 +186,7 @@ pub struct PaddedBlockCipherDecryptor<
     const INIT_DATA_LEN: usize,
     const BLOCK_LEN: usize,
 > where
-    D: BlockCipherDecryptor<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
+    D: BlockCipherDecryptor<INIT_DATA_LEN, BLOCK_LEN>,
     P: BlockCipherPadding<BLOCK_LEN>,
 {
     decryptor: D,
@@ -217,7 +201,7 @@ pub struct PaddedBlockCipherDecryptor<
 impl<D, P, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize> Algorithm
     for PaddedBlockCipherDecryptor<D, P, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
 where
-    D: BlockCipherDecryptor<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
+    D: BlockCipherDecryptor<INIT_DATA_LEN, BLOCK_LEN>,
     P: BlockCipherPadding<BLOCK_LEN>,
 {
     /// The inner cipher's name; padding does not change what the algorithm is.
@@ -229,7 +213,7 @@ where
 impl<D, P, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize>
     PaddedBlockCipherDecryptor<D, P, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
 where
-    D: BlockCipherDecryptor<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
+    D: BlockCipherDecryptor<INIT_DATA_LEN, BLOCK_LEN>,
     P: BlockCipherPadding<BLOCK_LEN>,
 {
     /// The adapter over an already-constructed inner cipher, with nothing buffered or held
@@ -240,25 +224,12 @@ where
 }
 
 impl<D, P, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize>
-    SymmetricCipherDecryptor<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
+    SymmetricCipherDecryptor<INIT_DATA_LEN, BLOCK_LEN>
     for PaddedBlockCipherDecryptor<D, P, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
 where
-    D: BlockCipherDecryptor<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
+    D: BlockCipherDecryptor<INIT_DATA_LEN, BLOCK_LEN>,
     P: BlockCipherPadding<BLOCK_LEN>,
 {
-    fn do_decrypt_init(
-        key: &KeyMaterial<KEY_LEN>,
-        init_data: &[u8; INIT_DATA_LEN],
-    ) -> Result<Self, SymmetricCipherError> {
-        Ok(Self {
-            decryptor: D::do_decrypt_init(key, init_data)?,
-            _padding: PhantomData,
-            buf: [0u8; BLOCK_LEN],
-            buf_len: 0,
-            held: None,
-        })
-    }
-
     /// All complete blocks but the most recent one are released.
     fn do_decrypt_out_len(&self, input_len: usize) -> usize {
         let complete = self.held.is_some() as usize + (self.buf_len + input_len) / BLOCK_LEN;
@@ -363,7 +334,7 @@ where
 impl<E, P, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize>
     PaddedBlockCipherEncryptor<E, P, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
 where
-    E: BlockCipherEncryptor<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN> + SuspendableComponent,
+    E: BlockCipherEncryptor<INIT_DATA_LEN, BLOCK_LEN> + SuspendableComponent,
     P: BlockCipherPadding<BLOCK_LEN>,
 {
     /// The `N` of this type's [`SuspendableKeyed<N>`] impl: the version header, the inner
@@ -378,7 +349,7 @@ where
 impl<E, P, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize>
     SuspendableComponent for PaddedBlockCipherEncryptor<E, P, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
 where
-    E: BlockCipherEncryptor<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN> + SuspendableComponent,
+    E: BlockCipherEncryptor<INIT_DATA_LEN, BLOCK_LEN> + SuspendableComponent,
     P: BlockCipherPadding<BLOCK_LEN>,
 {
     const STATE_LEN: usize = E::STATE_LEN + BLOCK_LEN + 8;
@@ -411,7 +382,7 @@ where
 impl<E, P, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize, const N: usize>
     SuspendableKeyed<N> for PaddedBlockCipherEncryptor<E, P, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
 where
-    E: BlockCipherEncryptor<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN> + SuspendableComponent,
+    E: BlockCipherEncryptor<INIT_DATA_LEN, BLOCK_LEN> + SuspendableComponent,
     P: BlockCipherPadding<BLOCK_LEN>,
 {
     type Key = E::Key;
@@ -428,7 +399,7 @@ where
 impl<D, P, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize>
     PaddedBlockCipherDecryptor<D, P, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
 where
-    D: BlockCipherDecryptor<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN> + SuspendableComponent,
+    D: BlockCipherDecryptor<INIT_DATA_LEN, BLOCK_LEN> + SuspendableComponent,
     P: BlockCipherPadding<BLOCK_LEN>,
 {
     /// The `N` of this type's [`SuspendableKeyed<N>`] impl: the version header, the inner
@@ -443,7 +414,7 @@ where
 impl<D, P, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize>
     SuspendableComponent for PaddedBlockCipherDecryptor<D, P, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
 where
-    D: BlockCipherDecryptor<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN> + SuspendableComponent,
+    D: BlockCipherDecryptor<INIT_DATA_LEN, BLOCK_LEN> + SuspendableComponent,
     P: BlockCipherPadding<BLOCK_LEN>,
 {
     const STATE_LEN: usize = D::STATE_LEN + BLOCK_LEN + 8 + 1 + BLOCK_LEN;
@@ -493,7 +464,7 @@ where
 impl<D, P, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize, const N: usize>
     SuspendableKeyed<N> for PaddedBlockCipherDecryptor<D, P, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
 where
-    D: BlockCipherDecryptor<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN> + SuspendableComponent,
+    D: BlockCipherDecryptor<INIT_DATA_LEN, BLOCK_LEN> + SuspendableComponent,
     P: BlockCipherPadding<BLOCK_LEN>,
 {
     type Key = D::Key;

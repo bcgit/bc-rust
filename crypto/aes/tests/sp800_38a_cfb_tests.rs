@@ -138,7 +138,7 @@ const ODD_CHUNKS: [usize; 3] = [5, 23, 63];
 fn check_encrypt<K, const KEY_LEN: usize>(section: &str, key_hex: &str, expected: &[&str; 4])
 where
     K: FromKeyMaterial<KEY_LEN> + SymmetricEncryptionKey<KEY_LEN, BLOCK_LEN, 0>,
-    K::Encryptor: StreamCipherEncryptor<KEY_LEN, BLOCK_LEN>,
+    K::Encryptor: StreamCipherEncryptor<BLOCK_LEN>,
 {
     let key = K::from_key_material(&key_material::<KEY_LEN>(key_hex)).expect("a valid key");
     let iv = block(IV);
@@ -184,7 +184,7 @@ where
 fn check_decrypt<K, const KEY_LEN: usize>(section: &str, key_hex: &str, ciphertext: &[&str; 4])
 where
     K: FromKeyMaterial<KEY_LEN> + SymmetricDecryptionKey<KEY_LEN, BLOCK_LEN, 0>,
-    K::Decryptor: StreamCipherDecryptor<KEY_LEN, BLOCK_LEN>,
+    K::Decryptor: StreamCipherDecryptor<BLOCK_LEN>,
 {
     let key = K::from_key_material(&key_material::<KEY_LEN>(key_hex)).expect("a valid key");
     let iv = block(IV);

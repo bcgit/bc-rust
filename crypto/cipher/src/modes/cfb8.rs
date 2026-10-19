@@ -66,7 +66,6 @@ use bouncycastle_core::traits::{
     Algorithm, RNG, StreamCipherDecryptor, StreamCipherEncryptor, SuspendableKeyed,
     SymmetricCipherDecryptor, SymmetricCipherEncryptor,
 };
-use bouncycastle_rng::HashDRBG_SHA512;
 use bouncycastle_utils::suspendable_state::{
     LIB_VERSION_LEN, SuspendableComponent, resume_component, suspend_component,
 };
@@ -227,31 +226,11 @@ where
     const MAX_SECURITY_STRENGTH: SecurityStrength = P::MAX_SECURITY_STRENGTH;
 }
 
-impl<P, const KEY_LEN: usize, const BLOCK_LEN: usize>
-    SymmetricCipherEncryptor<KEY_LEN, BLOCK_LEN, 0> for Cfb8<P, Encrypting, KEY_LEN, BLOCK_LEN>
+impl<P, const KEY_LEN: usize, const BLOCK_LEN: usize> SymmetricCipherEncryptor<BLOCK_LEN, 0>
+    for Cfb8<P, Encrypting, KEY_LEN, BLOCK_LEN>
 where
     P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
 {
-    /// Begins an encryption flow, generating the IV from the library's default OS-backed DRBG.
-    fn do_encrypt_init(
-        key: &KeyMaterial<KEY_LEN>,
-    ) -> Result<(Self, [u8; BLOCK_LEN]), SymmetricCipherError> {
-        let mut rng = HashDRBG_SHA512::new_from_os();
-        Self::do_encrypt_init_rng(key, &mut rng)
-    }
-
-    /// As [`SymmetricCipherEncryptor::do_encrypt_init`], but takes the IV from the provided RNG.
-    fn do_encrypt_init_rng(
-        key: &KeyMaterial<KEY_LEN>,
-        rng: &mut dyn RNG,
-    ) -> Result<(Self, [u8; BLOCK_LEN]), SymmetricCipherError> {
-        key.check_algorithm(Self::ALG_NAME)?;
-        let perm = P::new(key)?;
-        // `I1 = IV`.
-        let iv = random_iv::<BLOCK_LEN>(rng)?;
-        Ok((Self { perm, chain: iv, _dir: PhantomData }, iv))
-    }
-
     /// Every input byte produces exactly one output byte.
     fn do_encrypt_out_len(&self, input_len: usize) -> usize {
         input_len
@@ -278,7 +257,7 @@ where
     }
 }
 
-impl<P, const KEY_LEN: usize, const BLOCK_LEN: usize> StreamCipherEncryptor<KEY_LEN, BLOCK_LEN>
+impl<P, const KEY_LEN: usize, const BLOCK_LEN: usize> StreamCipherEncryptor<BLOCK_LEN>
     for Cfb8<P, Encrypting, KEY_LEN, BLOCK_LEN>
 where
     P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
@@ -298,23 +277,11 @@ where
     }
 }
 
-impl<P, const KEY_LEN: usize, const BLOCK_LEN: usize>
-    SymmetricCipherDecryptor<KEY_LEN, BLOCK_LEN, 0> for Cfb8<P, Decrypting, KEY_LEN, BLOCK_LEN>
+impl<P, const KEY_LEN: usize, const BLOCK_LEN: usize> SymmetricCipherDecryptor<BLOCK_LEN, 0>
+    for Cfb8<P, Decrypting, KEY_LEN, BLOCK_LEN>
 where
     P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
 {
-    /// Begins a decryption flow from the IV returned by
-    /// [`SymmetricCipherEncryptor::do_encrypt_init`].
-    fn do_decrypt_init(
-        key: &KeyMaterial<KEY_LEN>,
-        init_data: &[u8; BLOCK_LEN],
-    ) -> Result<Self, SymmetricCipherError> {
-        key.check_algorithm(Self::ALG_NAME)?;
-        let perm = P::new(key)?;
-        // `I1 = IV`, exactly as on the encrypt side.
-        Ok(Self { perm, chain: *init_data, _dir: PhantomData })
-    }
-
     /// Nothing is held back, so every input byte can be released immediately.
     fn do_decrypt_out_len(&self, input_len: usize) -> usize {
         input_len
@@ -341,7 +308,7 @@ where
     }
 }
 
-impl<P, const KEY_LEN: usize, const BLOCK_LEN: usize> StreamCipherDecryptor<KEY_LEN, BLOCK_LEN>
+impl<P, const KEY_LEN: usize, const BLOCK_LEN: usize> StreamCipherDecryptor<BLOCK_LEN>
     for Cfb8<P, Decrypting, KEY_LEN, BLOCK_LEN>
 where
     P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,

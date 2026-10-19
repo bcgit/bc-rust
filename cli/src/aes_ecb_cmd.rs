@@ -73,10 +73,10 @@ where
 {
     match action {
         CipherDirection::Encrypt => {
-            encrypt_stream::<_, KEY_LEN, 0>(key.create_encryptor(), &[], output_hex, MODE)
+            encrypt_stream::<_, 0>(key.create_encryptor(), &[], output_hex, MODE)
         }
         CipherDirection::Decrypt => {
-            decrypt_stream::<_, KEY_LEN, 0>(|_| key.create_decryptor(), output_hex, MODE)
+            decrypt_stream::<_, 0>(|_| key.create_decryptor(), output_hex, MODE)
         }
     }
 }

@@ -119,7 +119,6 @@ use bouncycastle_core::traits::{
     Algorithm, BlockCipherDecryptor, BlockCipherEncryptor, BlockCipherPadding, RNG,
     SuspendableKeyed,
 };
-use bouncycastle_rng::HashDRBG_SHA512;
 use bouncycastle_utils::suspendable_state::{
     LIB_VERSION_LEN, SuspendableComponent, resume_component, suspend_component,
 };
@@ -337,30 +336,11 @@ where
     const MAX_SECURITY_STRENGTH: SecurityStrength = P::MAX_SECURITY_STRENGTH;
 }
 
-impl<P, const KEY_LEN: usize, const BLOCK_LEN: usize>
-    BlockCipherEncryptor<KEY_LEN, BLOCK_LEN, BLOCK_LEN> for Cbc<P, Encrypting, KEY_LEN, BLOCK_LEN>
+impl<P, const KEY_LEN: usize, const BLOCK_LEN: usize> BlockCipherEncryptor<BLOCK_LEN, BLOCK_LEN>
+    for Cbc<P, Encrypting, KEY_LEN, BLOCK_LEN>
 where
     P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
 {
-    /// Begins an encryption flow, generating the IV from the library's default OS-backed DRBG.
-    fn do_encrypt_init(
-        key: &KeyMaterial<KEY_LEN>,
-    ) -> Result<(Self, [u8; BLOCK_LEN]), SymmetricCipherError> {
-        let mut rng = HashDRBG_SHA512::new_from_os();
-        Self::do_encrypt_init_rng(key, &mut rng)
-    }
-
-    /// As [`BlockCipherEncryptor::do_encrypt_init`], but takes the IV from the provided RNG.
-    fn do_encrypt_init_rng(
-        key: &KeyMaterial<KEY_LEN>,
-        rng: &mut dyn RNG,
-    ) -> Result<(Self, [u8; BLOCK_LEN]), SymmetricCipherError> {
-        key.check_algorithm(Self::ALG_NAME)?;
-        let perm = P::new(key)?;
-        let iv = random_iv::<BLOCK_LEN>(rng)?;
-        Ok((Self { perm, chain: iv, _dir: PhantomData }, iv))
-    }
-
     /// The implementor hook (the flat `do_encrypt_inplace` is provided over it).
     ///
     /// Strictly serial: `Cj` is the input to block `j + 1`, so there is no pair path here. See the
@@ -376,22 +356,11 @@ where
     }
 }
 
-impl<P, const KEY_LEN: usize, const BLOCK_LEN: usize>
-    BlockCipherDecryptor<KEY_LEN, BLOCK_LEN, BLOCK_LEN> for Cbc<P, Decrypting, KEY_LEN, BLOCK_LEN>
+impl<P, const KEY_LEN: usize, const BLOCK_LEN: usize> BlockCipherDecryptor<BLOCK_LEN, BLOCK_LEN>
+    for Cbc<P, Decrypting, KEY_LEN, BLOCK_LEN>
 where
     P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
 {
-    /// Begins a decryption flow from the IV returned by
-    /// [`BlockCipherEncryptor::do_encrypt_init`].
-    fn do_decrypt_init(
-        key: &KeyMaterial<KEY_LEN>,
-        init_data: &[u8; BLOCK_LEN],
-    ) -> Result<Self, SymmetricCipherError> {
-        key.check_algorithm(Self::ALG_NAME)?;
-        let perm = P::new(key)?;
-        Ok(Self { perm, chain: *init_data, _dir: PhantomData })
-    }
-
     /// The implementor hook (the flat `do_decrypt_inplace` is provided over it).
     ///
     /// Walks the input in fours through `decrypt_4blocks`, then pairs through `decrypt_2blocks`,

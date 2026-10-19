@@ -323,7 +323,7 @@ fn bench_aead_encrypt_update_aad() {
     measure(move || {
         let mut enc = enc;
         let op = black_box(
-            <Enc as AEADCipherEncryptor<KEY_LEN, NONCE_LEN, TAG_LEN, TAG_LEN>>::do_update_aad
+            <Enc as AEADCipherEncryptor<NONCE_LEN, TAG_LEN, TAG_LEN>>::do_update_aad
                 as fn(&mut Enc, &[u8]) -> Result<(), CipherErr>,
         );
         op(&mut enc, &aad).unwrap();
@@ -340,7 +340,7 @@ fn bench_aead_encrypt_out() {
         let mut enc = enc;
         let mut ct = [0u8; MSG_LEN];
         let op = black_box(
-            <Enc as SymmetricCipherEncryptor<KEY_LEN, NONCE_LEN, TAG_LEN>>::do_encrypt_out
+            <Enc as SymmetricCipherEncryptor<NONCE_LEN, TAG_LEN>>::do_encrypt_out
                 as fn(&mut Enc, &[u8], &mut [u8]) -> Result<usize, CipherErr>,
         );
         let n = op(&mut enc, &pt, &mut ct).unwrap();
@@ -355,7 +355,7 @@ fn bench_aead_encrypt_final() {
     let enc = black_box(encryptor_after_data());
     measure(move || {
         let op = black_box(
-            <Enc as SymmetricCipherEncryptor<KEY_LEN, NONCE_LEN, TAG_LEN>>::do_encrypt_final
+            <Enc as SymmetricCipherEncryptor<NONCE_LEN, TAG_LEN>>::do_encrypt_final
                 as fn(Enc) -> Result<([u8; TAG_LEN], usize), CipherErr>,
         );
         let (tag, n) = op(enc).unwrap();
@@ -370,7 +370,7 @@ fn bench_aead_encrypt_final_detached() {
     measure(move || {
         let mut last = [0u8; TAG_LEN];
         let op = black_box(
-            <Enc as AEADCipherEncryptor<KEY_LEN, NONCE_LEN, TAG_LEN, TAG_LEN>>::do_encrypt_final_detached_out
+            <Enc as AEADCipherEncryptor<NONCE_LEN, TAG_LEN, TAG_LEN>>::do_encrypt_final_detached_out
                 as fn(Enc, &mut [u8; TAG_LEN]) -> Result<(usize, [u8; TAG_LEN]), CipherErr>,
         );
         let (_, tag) = op(enc, &mut last).unwrap();
@@ -426,7 +426,7 @@ fn bench_aead_decrypt_update_aad() {
     measure(move || {
         let mut dec = dec;
         let op = black_box(
-            <Dec as AEADCipherDecryptor<KEY_LEN, NONCE_LEN, TAG_LEN, TAG_LEN>>::do_update_aad
+            <Dec as AEADCipherDecryptor<NONCE_LEN, TAG_LEN, TAG_LEN>>::do_update_aad
                 as fn(&mut Dec, &[u8]) -> Result<(), CipherErr>,
         );
         op(&mut dec, &aad).unwrap();
@@ -445,7 +445,7 @@ fn bench_aead_decrypt_out() {
         let mut dec = dec;
         let mut pt = [0u8; SEALED_LEN];
         let op = black_box(
-            <Dec as SymmetricCipherDecryptor<KEY_LEN, NONCE_LEN, TAG_LEN>>::do_decrypt_out
+            <Dec as SymmetricCipherDecryptor<NONCE_LEN, TAG_LEN>>::do_decrypt_out
                 as fn(&mut Dec, &[u8], &mut [u8]) -> Result<usize, CipherErr>,
         );
         let n = op(&mut dec, &ct, &mut pt).unwrap();
@@ -460,7 +460,7 @@ fn bench_aead_decrypt_final() {
     let dec = black_box(decryptor_holding_tag());
     measure(move || {
         let op = black_box(
-            <Dec as SymmetricCipherDecryptor<KEY_LEN, NONCE_LEN, TAG_LEN>>::do_decrypt_final
+            <Dec as SymmetricCipherDecryptor<NONCE_LEN, TAG_LEN>>::do_decrypt_final
                 as fn(Dec) -> Result<([u8; TAG_LEN], usize), CipherErr>,
         );
         let (_, n) = op(dec).unwrap();
@@ -477,7 +477,7 @@ fn bench_aead_decrypt_final_detached() {
     measure(move || {
         let mut last = [0u8; TAG_LEN];
         let op = black_box(
-            <Dec as AEADCipherDecryptor<KEY_LEN, NONCE_LEN, TAG_LEN, TAG_LEN>>::do_decrypt_final_detached_out
+            <Dec as AEADCipherDecryptor<NONCE_LEN, TAG_LEN, TAG_LEN>>::do_decrypt_final_detached_out
                 as fn(Dec, &[u8; TAG_LEN], &mut [u8; TAG_LEN]) -> Result<usize, CipherErr>,
         );
         let n = op(dec, &tag, &mut last).unwrap();

@@ -5,10 +5,10 @@
 //! which [`MAC::mac_out`] / [`MAC::do_final_out`] truncate to the caller's buffer, down to
 //! [`CMAC_MIN_TAG_LEN`] bytes.
 //!
-//! There are two ways onto it. [`MAC::new`] takes the key material for one message and derives
-//! the subkeys each time. A mode-bound key holds a [`CmacKeyState`] -- the keyed permutation and
-//! the two subkeys, derived once -- and hands out workers through [`CMAC`], the marker a key type
-//! such as `bouncycastle_aes::AES128Key<CMAC>` is bound to.
+//! The way onto it is a mode-bound key, built with `from_key_material`, which holds a
+//! [`CmacKeyState`] -- the keyed permutation and the two subkeys, derived once -- and hands out
+//! workers through [`CMAC`], the marker a key type such as `bouncycastle_aes::AES128Key<CMAC>` is
+//! bound to.
 //!
 //! # Usage Examples
 //!
@@ -61,8 +61,8 @@
 //! * **Message span** (Appendix B): limit a key to 2^48 messages with a 128-bit block cipher, and
 //!   2^21 with a 64-bit one.
 //! * **Key separation** (Sec 5.2): the key "shall be used exclusively for the CMAC mode of the
-//!   chosen block cipher", so [`MAC::new`] accepts only a [`KeyType::MACKey`] key (or an all-zero
-//!   key, as HMAC does), never a [`KeyType::SymmetricCipherKey`].
+//!   chosen block cipher", so the key's `from_key_material` accepts only a [`KeyType::MACKey`]
+//!   key (or an all-zero key, as HMAC does), never a [`KeyType::SymmetricCipherKey`].
 //! * **Replay** (Appendix C): a valid tag says nothing about freshness; that is the protocol's job.
 
 use super::ModeNames;
@@ -249,19 +249,6 @@ impl<P, const KEY_LEN: usize, const BLOCK_LEN: usize> MAC for Cmac<P, KEY_LEN, B
 where
     P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
 {
-    /// # Errors
-    /// [`KeyMaterialError::InvalidKeyType`] unless the key is a [`KeyType::MACKey`] (or all-zero),
-    /// [`KeyMaterialError::SecurityStrength`] if it is weaker than the block cipher, and
-    /// [`KeyMaterialError::InvalidLength`] unless it is exactly `KEY_LEN` bytes.
-    fn new(key: &impl KeyMaterialTrait) -> Result<Self, MACError> {
-        Self::init(key, false)
-    }
-
-    /// As [`MAC::new`], without the security strength check.
-    fn new_allow_weak_key(key: &impl KeyMaterialTrait) -> Result<Self, MACError> {
-        Self::init(key, true)
-    }
-
     fn output_len(&self) -> usize {
         BLOCK_LEN
     }
@@ -370,8 +357,8 @@ where
 
     /// # Errors
     /// [`SuspendableError::IncompatibleVersion`] for a state from an incompatible library version,
-    /// and [`SuspendableError::InvalidData`] for a malformed state or a key [`MAC::new_allow_weak_key`]
-    /// would reject.
+    /// and [`SuspendableError::InvalidData`] for a malformed state or a key the CMAC key's
+    /// `from_key_material_allow_weak` would reject.
     fn from_suspended(state: [u8; STATE_LEN], key: &Self::Key) -> Result<Self, SuspendableError> {
         const {
             assert!(

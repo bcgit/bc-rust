@@ -23,13 +23,11 @@
 use crate::{Decrypting, Encrypting};
 use bouncycastle_core::errors::{SuspendableError, SymmetricCipherError};
 use bouncycastle_core::hazmat::KeyStream;
-use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{
-    Algorithm, RNG, StreamCipherDecryptor, StreamCipherEncryptor, SuspendableKeyed,
+    Algorithm, StreamCipherDecryptor, StreamCipherEncryptor, SuspendableKeyed,
     SymmetricCipherDecryptor, SymmetricCipherEncryptor,
 };
-use bouncycastle_rng::HashDRBG_SHA512;
 use bouncycastle_utils::secret::Secret;
 use bouncycastle_utils::suspendable_state::{
     Cursor, CursorMut, LIB_VERSION_LEN, SuspendableComponent, bounded_usize, resume_component,
@@ -210,33 +208,11 @@ where
 }
 
 impl<KS, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize>
-    SymmetricCipherEncryptor<KEY_LEN, INIT_DATA_LEN, 0>
+    SymmetricCipherEncryptor<INIT_DATA_LEN, 0>
     for StreamCipher<KS, Encrypting, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
 where
     KS: KeyStream<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
 {
-    /// Begins an encryption flow, drawing the init data from the library's default OS-backed DRBG.
-    fn do_encrypt_init(
-        key: &KeyMaterial<KEY_LEN>,
-    ) -> Result<(Self, [u8; INIT_DATA_LEN]), SymmetricCipherError> {
-        let mut rng = HashDRBG_SHA512::new_from_os();
-        Self::do_encrypt_init_rng(key, &mut rng)
-    }
-
-    /// As [`SymmetricCipherEncryptor::do_encrypt_init`], but draws the init data from `rng`.
-    /// Never panics: `INIT_DATA_LEN == 0` is ruled out at compile time; see [`StreamCipher`].
-    fn do_encrypt_init_rng(
-        key: &KeyMaterial<KEY_LEN>,
-        rng: &mut dyn RNG,
-    ) -> Result<(Self, [u8; INIT_DATA_LEN]), SymmetricCipherError> {
-        Self::check_shape();
-        let mut init_data = [0u8; INIT_DATA_LEN];
-        rng.next_bytes_out(&mut init_data)?;
-        key.check_algorithm(Self::ALG_NAME)?;
-        let keystream = KS::new(key, &init_data)?;
-        Ok((Self::from_keystream(keystream), init_data))
-    }
-
     /// Every input byte produces exactly one output byte.
     fn do_encrypt_out_len(&self, input_len: usize) -> usize {
         input_len
@@ -264,7 +240,7 @@ where
 }
 
 impl<KS, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize>
-    StreamCipherEncryptor<KEY_LEN, INIT_DATA_LEN>
+    StreamCipherEncryptor<INIT_DATA_LEN>
     for StreamCipher<KS, Encrypting, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
 where
     KS: KeyStream<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
@@ -280,22 +256,11 @@ where
 }
 
 impl<KS, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize>
-    SymmetricCipherDecryptor<KEY_LEN, INIT_DATA_LEN, 0>
+    SymmetricCipherDecryptor<INIT_DATA_LEN, 0>
     for StreamCipher<KS, Decrypting, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
 where
     KS: KeyStream<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
 {
-    /// Begins a decryption flow from the init data returned by
-    /// [`SymmetricCipherEncryptor::do_encrypt_init`].
-    fn do_decrypt_init(
-        key: &KeyMaterial<KEY_LEN>,
-        init_data: &[u8; INIT_DATA_LEN],
-    ) -> Result<Self, SymmetricCipherError> {
-        Self::check_shape();
-        key.check_algorithm(Self::ALG_NAME)?;
-        Ok(Self::from_keystream(KS::new(key, init_data)?))
-    }
-
     /// Nothing is held back, so every input byte can be released immediately.
     fn do_decrypt_out_len(&self, input_len: usize) -> usize {
         input_len
@@ -323,7 +288,7 @@ where
 }
 
 impl<KS, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize>
-    StreamCipherDecryptor<KEY_LEN, INIT_DATA_LEN>
+    StreamCipherDecryptor<INIT_DATA_LEN>
     for StreamCipher<KS, Decrypting, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
 where
     KS: KeyStream<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,

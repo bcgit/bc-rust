@@ -114,12 +114,10 @@ use bouncycastle_core::hazmat::{
 };
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::symmetric_key::{AeadDecryptWorker, AeadEncryptWorker};
 use bouncycastle_core::traits::{
     AEADCipherDecryptor, AEADCipherEncryptor, Algorithm, RNG, StreamCipherDecryptor,
     StreamCipherEncryptor, SuspendableKeyed, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
 };
-use bouncycastle_rng::HashDRBG_SHA512;
 use bouncycastle_utils::ct::ct_eq_bytes;
 use bouncycastle_utils::secret::Secret;
 use bouncycastle_utils::suspendable_state::{
@@ -242,44 +240,8 @@ where
         };
     }
 
-    /// Begins a CCM flow: formats `B0`, absorbs it and all of `A` into the CBC-MAC, and readies the
-    /// counter blocks. Everything after this streams without buffering.
-    ///
-    /// `payload_len` is declared here because Appendix A.2.1 puts the payload length inside `B0`,
-    /// the first block the CBC-MAC absorbs. An AAD that is not all in hand at once goes through
-    /// the adapters, which hold it back until it is.
-    ///
-    /// * `key` must be a [`KeyType::SymmetricCipherKey`](bouncycastle_core::key_material::KeyType::SymmetricCipherKey)
-    ///   of at least the permutation's strength.
-    /// * `nonce` **must not** repeat under `key`; see the module's security considerations.
-    /// * `aad` is authenticated but not encrypted, and may be empty.
-    /// * `payload_len` is the exact number of payload bytes that will follow. Supplying any other
-    ///   amount is refused, at the update or at finalization.
-    ///
-    /// # Errors
-    /// [`SymmetricCipherError::KeyMaterialError`] for a key of the wrong type or strength, and
-    /// [`SymmetricCipherError::GenericError`] if `payload_len` exceeds A.1's `2^8q - 1`; see
-    /// `CcmPacket` for the table.
-    pub(crate) fn new(
-        key: &KeyMaterial<KEY_LEN>,
-        nonce: &[u8; NONCE_LEN],
-        aad: &[u8],
-        payload_len: usize,
-    ) -> Result<Self, SymmetricCipherError> {
-        // The shape check and the payload-limit check both belong to `from_perm_with_lengths`,
-        // which is the one path every construction goes through; duplicating them here would be
-        // two more `Err` sites that could drift apart from it. `P::new`'s own `KeyType`/strength
-        // checks are the only key validation needed, exactly as for every other mode in this crate.
-        key.check_algorithm(Self::ALG_NAME)?;
-        let perm = P::new(key)?;
-        let mut ccm = Self::from_perm_with_lengths(perm, nonce, aad.len(), payload_len)?;
-        // Exactly the length just declared, so nothing is left owed.
-        ccm.absorb_aad(aad);
-        Ok(ccm)
-    }
-
-    /// As [`Self::new`], from a key schedule that has already been expanded: the constructor a
-    /// mode-bound key's in-place one-shots use, where the key was validated once at construction.
+    /// From a key schedule that has already been expanded: the constructor a mode-bound key's
+    /// in-place one-shots use, where the key was validated once at construction.
     ///
     /// # Errors
     /// [`SymmetricCipherError::GenericError`] if `payload_len` exceeds A.1's `2^8q - 1`.
@@ -618,62 +580,6 @@ where
         }
         Ok(self.finish_mac())
     }
-
-    /// One-shot generation-encryption with a **detached** tag (Sec 6.1).
-    ///
-    /// Writes `plaintext.len()` bytes of ciphertext into `ciphertext` and returns that count with
-    /// the tag. The entire output buffer is zeroized before the ciphertext is written, so any bytes
-    /// past that count will be 0. For the spec's own inline `ciphertext || tag` string, use
-    /// [`Self::encrypt_out`].
-    ///
-    /// # Errors
-    /// [`SymmetricCipherError::OutputBufferTooSmall`] if `ciphertext` is too short, plus
-    /// [`Self::new`]'s errors.
-    pub(crate) fn encrypt_detached_out(
-        key: &KeyMaterial<KEY_LEN>,
-        nonce: &[u8; NONCE_LEN],
-        aad: &[u8],
-        plaintext: &[u8],
-        ciphertext: &mut [u8],
-    ) -> Result<(usize, [u8; TAG_LEN]), SymmetricCipherError> {
-        ciphertext.fill(0);
-        if ciphertext.len() < plaintext.len() {
-            return Err(SymmetricCipherError::OutputBufferTooSmall(plaintext.len()));
-        }
-        let mut ccm = Self::new(key, nonce, aad, plaintext.len())?;
-        let out = &mut ciphertext[..plaintext.len()];
-        out.copy_from_slice(plaintext);
-        ccm.do_encrypt_inplace(out)?;
-        let tag = ccm.do_encrypt_final()?;
-        Ok((plaintext.len(), tag))
-    }
-
-    /// One-shot generation-encryption producing the spec's own output string (Sec 6.1 step 8):
-    /// `C = (P XOR MSB_Plen(S)) || (T XOR MSB_Tlen(S0))`, i.e. `ciphertext || tag` inline.
-    ///
-    /// `ciphertext` needs `plaintext.len() + TAG_LEN` bytes; the return is how many were written.
-    /// The entire output buffer is zeroized before the output is written, so any bytes past that
-    /// count will be 0.
-    ///
-    /// # Errors
-    /// As [`Self::encrypt_detached_out`].
-    pub(crate) fn encrypt_out(
-        key: &KeyMaterial<KEY_LEN>,
-        nonce: &[u8; NONCE_LEN],
-        aad: &[u8],
-        plaintext: &[u8],
-        ciphertext: &mut [u8],
-    ) -> Result<usize, SymmetricCipherError> {
-        ciphertext.fill(0);
-        let needed = plaintext.len() + TAG_LEN;
-        if ciphertext.len() < needed {
-            return Err(SymmetricCipherError::OutputBufferTooSmall(needed));
-        }
-        let (data, tag_out) = ciphertext[..needed].split_at_mut(plaintext.len());
-        let (_, tag) = Self::encrypt_detached_out(key, nonce, aad, plaintext, data)?;
-        tag_out.copy_from_slice(&tag);
-        Ok(needed)
-    }
 }
 
 /// Sec 6.2, the decryption-verification process. Present only on the decrypting direction, so an
@@ -733,71 +639,6 @@ where
         } else {
             Err(SymmetricCipherError::AEADTagCheckFailed)
         }
-    }
-
-    /// One-shot decryption-verification with a **detached** tag (Sec 6.2).
-    ///
-    /// Returns the number of plaintext bytes written. The entire output buffer is zeroized before
-    /// the plaintext is written, so any bytes past that count will be 0. On failure `plaintext` is zeroized before the error is returned, so Sec 6.2's "the payload P
-    /// and the MAC T shall not be revealed" holds even for a caller who ignores the `Result`.
-    ///
-    /// # Errors
-    /// [`SymmetricCipherError::AEADTagCheckFailed`] if the tag does not verify,
-    /// [`SymmetricCipherError::OutputBufferTooSmall`] if `plaintext` is too short, plus
-    /// [`Self::new`]'s errors.
-    pub(crate) fn decrypt_detached_out(
-        key: &KeyMaterial<KEY_LEN>,
-        nonce: &[u8; NONCE_LEN],
-        aad: &[u8],
-        ciphertext: &[u8],
-        tag: &[u8; TAG_LEN],
-        plaintext: &mut [u8],
-    ) -> Result<usize, SymmetricCipherError> {
-        plaintext.fill(0);
-        if plaintext.len() < ciphertext.len() {
-            return Err(SymmetricCipherError::OutputBufferTooSmall(ciphertext.len()));
-        }
-        let mut ccm = Self::new(key, nonce, aad, ciphertext.len())?;
-        let out = &mut plaintext[..ciphertext.len()];
-        out.copy_from_slice(ciphertext);
-        ccm.do_decrypt_inplace(out)?;
-        match ccm.do_decrypt_final(tag) {
-            Ok(()) => Ok(ciphertext.len()),
-            Err(e) => {
-                // Sec 6.2: on INVALID the payload "shall not be revealed". A plain `fill` because
-                // this crate is `#![forbid(unsafe_code)]`; the store is to the caller's own buffer,
-                // which the caller may read after this returns, so it is not a dead store the
-                // optimizer is entitled to drop.
-                out.fill(0);
-                Err(e)
-            }
-        }
-    }
-
-    /// One-shot decryption-verification of the spec's own output string (Sec 6.2), splitting the
-    /// trailing `TAG_LEN` bytes off `ciphertext` as the tag -- step 6's `LSB_Tlen(C)`. Returns the
-    /// number of plaintext bytes written. The entire output buffer is zeroized before the plaintext
-    /// is written, so any bytes past that count will be 0.
-    ///
-    /// # Errors
-    /// [`SymmetricCipherError::DecryptionFailed`] for Sec 6.2 step 1, "If Clen <= Tlen, then
-    /// return INVALID": a malformed input rather than a failed check, reported with the variant
-    /// [`SymmetricCipherDecryptor::do_decrypt_final`] specifies for a malformed ciphertext so that
-    /// every inline entry point -- this one, [`CcmDecryptor::do_decrypt_final`] and
-    /// [`CcmDecryptor::decrypt_with_aad_out`](AEADCipherDecryptor::decrypt_with_aad_out) -- agrees
-    /// on the same input. Otherwise as [`Self::decrypt_detached_out`].
-    pub(crate) fn decrypt_out(
-        key: &KeyMaterial<KEY_LEN>,
-        nonce: &[u8; NONCE_LEN],
-        aad: &[u8],
-        ciphertext: &[u8],
-        plaintext: &mut [u8],
-    ) -> Result<usize, SymmetricCipherError> {
-        plaintext.fill(0);
-        let Some((data, tag)) = ciphertext.split_last_chunk::<TAG_LEN>() else {
-            return Err(SymmetricCipherError::DecryptionFailed);
-        };
-        Self::decrypt_detached_out(key, nonce, aad, data, tag, plaintext)
     }
 }
 
@@ -1065,7 +906,7 @@ where
 /// Adapts `CcmPacket` to [`AEADCipherEncryptor`] and, through it, [`SymmetricCipherEncryptor`], for a
 /// payload of exactly `DATA_LEN` bytes.
 ///
-/// [`SymmetricCipherEncryptor::do_encrypt_init`] is handed a key and nothing else, but CCM cannot
+/// An AEAD key's `create_encryptor` is handed a nonce and nothing else, but CCM cannot
 /// form `B0` -- and so cannot authenticate anything -- until it knows the payload length
 /// (Appendix A.2.1; see the module docs). Rather than hold the message until the final call
 /// reveals that length, this type fixes the payload length as the const parameter `DATA_LEN`.
@@ -1280,8 +1121,7 @@ where
     }
 
     /// Begins an encryption from a key schedule that has already been expanded, under a nonce
-    /// drawn from `rng`: the constructor a mode-bound key's `encrypt_init` uses. The result is
-    /// identical to [`SymmetricCipherEncryptor::do_encrypt_init_rng`] from the same key and RNG.
+    /// drawn from `rng`: the constructor a mode-bound key's `encrypt_init` uses.
     ///
     /// # Errors
     /// [`SymmetricCipherError::RNGError`] if the nonce draw fails; nothing else can.
@@ -1324,30 +1164,11 @@ impl<
     const TAG_LEN: usize,
     const AAD_LEN: usize,
     const DATA_LEN: usize,
-> SymmetricCipherEncryptor<KEY_LEN, NONCE_LEN, TAG_LEN>
+> SymmetricCipherEncryptor<NONCE_LEN, TAG_LEN>
     for CcmEncryptor<P, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>
 where
     P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
 {
-    fn do_encrypt_init(
-        key: &KeyMaterial<KEY_LEN>,
-    ) -> Result<(Self, [u8; NONCE_LEN]), SymmetricCipherError> {
-        let mut rng = HashDRBG_SHA512::new_from_os();
-        Self::do_encrypt_init_rng(key, &mut rng)
-    }
-
-    fn do_encrypt_init_rng(
-        key: &KeyMaterial<KEY_LEN>,
-        rng: &mut dyn RNG,
-    ) -> Result<(Self, [u8; NONCE_LEN]), SymmetricCipherError> {
-        // `P::new`'s own checks are the only key validation needed, exactly as for `CcmPacket` itself
-        // and every other mode in this crate; `random_iv` is CBC/CFB's same OS-backed draw --
-        // Sec 5.3 asks only for uniqueness, not CBC/CFB's unpredictability, but a CSPRNG draw is
-        // the only way to be unique without state `do_encrypt_init` does not have.
-        key.check_algorithm(Self::ALG_NAME)?;
-        Self::from_perm(P::new(key)?, rng)
-    }
-
     /// The identity: nothing is held back, since `B0` is already committed to `DATA_LEN`.
     fn do_encrypt_out_len(&self, input_len: usize) -> usize {
         input_len
@@ -1402,34 +1223,6 @@ where
     fn encrypt_out_len(plaintext_len: usize) -> usize {
         plaintext_len + TAG_LEN
     }
-
-    /// The AEAD one-shot with no AAD; see
-    /// [`encrypt_with_aad_out`](AEADCipherEncryptor::encrypt_with_aad_out).
-    fn encrypt_out(
-        key: &KeyMaterial<KEY_LEN>,
-        plaintext: &[u8],
-        ciphertext: &mut [u8],
-    ) -> Result<([u8; NONCE_LEN], usize), SymmetricCipherError> {
-        <Self as AEADCipherEncryptor<KEY_LEN, NONCE_LEN, TAG_LEN, TAG_LEN>>::encrypt_with_aad_out(
-            key,
-            &[],
-            plaintext,
-            ciphertext,
-        )
-    }
-
-    /// The AEAD one-shot with no AAD; see
-    /// [`encrypt_with_aad_rng_out`](AEADCipherEncryptor::encrypt_with_aad_rng_out).
-    fn encrypt_rng_out(
-        key: &KeyMaterial<KEY_LEN>,
-        rng: &mut dyn RNG,
-        plaintext: &[u8],
-        ciphertext: &mut [u8],
-    ) -> Result<([u8; NONCE_LEN], usize), SymmetricCipherError> {
-        <Self as AEADCipherEncryptor<KEY_LEN, NONCE_LEN, TAG_LEN, TAG_LEN>>::encrypt_with_aad_rng_out(
-            key, rng, &[], plaintext, ciphertext,
-        )
-    }
 }
 
 /// The AEAD view, with `FINAL_LEN = TAG_LEN`: the encryptor holds nothing back, so the detached
@@ -1442,7 +1235,7 @@ impl<
     const TAG_LEN: usize,
     const AAD_LEN: usize,
     const DATA_LEN: usize,
-> AEADCipherEncryptor<KEY_LEN, NONCE_LEN, TAG_LEN, TAG_LEN>
+> AEADCipherEncryptor<NONCE_LEN, TAG_LEN, TAG_LEN>
     for CcmEncryptor<P, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>
 where
     P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
@@ -1457,53 +1250,6 @@ where
         self.0.do_update_aad(aad)
     }
 
-    /// [`do_encrypt_init_rng`](SymmetricCipherEncryptor::do_encrypt_init_rng) with the caller's
-    /// nonce in place of the draw, which is Sec 5.3's own model -- "the nonce is not required to
-    /// be random" -- and takes any A.1 nonce length, since nothing is drawn.
-    fn do_encrypt_init_nonce(
-        key: &KeyMaterial<KEY_LEN>,
-        nonce: &[u8; NONCE_LEN],
-    ) -> Result<Self, SymmetricCipherError> {
-        let perm = P::new(key)?;
-        Ok(Self(CcmAdapter::new(perm, nonce)))
-    }
-
-    /// `CcmPacket::encrypt_detached_out` itself, for a `plaintext` and `aad` of any length.
-    ///
-    /// # Errors
-    /// As [`encrypt_detached_rng_out`](AEADCipherEncryptor::encrypt_detached_rng_out), less the
-    /// RNG's.
-    fn encrypt_detached_nonce_out(
-        key: &KeyMaterial<KEY_LEN>,
-        nonce: &[u8; NONCE_LEN],
-        aad: &[u8],
-        plaintext: &[u8],
-        ciphertext: &mut [u8],
-    ) -> Result<(usize, [u8; TAG_LEN]), SymmetricCipherError> {
-        CcmAdapter::<P, Encrypting, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>::check_shape();
-        CcmPacket::<P, Encrypting, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN>::encrypt_detached_out(
-            key, nonce, aad, plaintext, ciphertext,
-        )
-    }
-
-    /// `CcmPacket::encrypt_out` itself, for a `plaintext` and `aad` of any length.
-    ///
-    /// # Errors
-    /// As [`encrypt_with_aad_rng_out`](AEADCipherEncryptor::encrypt_with_aad_rng_out), less the
-    /// RNG's.
-    fn encrypt_with_aad_nonce_out(
-        key: &KeyMaterial<KEY_LEN>,
-        nonce: &[u8; NONCE_LEN],
-        aad: &[u8],
-        plaintext: &[u8],
-        ciphertext: &mut [u8],
-    ) -> Result<usize, SymmetricCipherError> {
-        CcmAdapter::<P, Encrypting, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>::check_shape();
-        CcmPacket::<P, Encrypting, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN>::encrypt_out(
-            key, nonce, aad, plaintext, ciphertext,
-        )
-    }
-
     /// Sec 6.1 steps 4 and 8: the tag. Nothing is held back, so `ciphertext` is left zeroed.
     ///
     /// # Errors
@@ -1514,90 +1260,6 @@ where
     ) -> Result<(usize, [u8; TAG_LEN]), SymmetricCipherError> {
         ciphertext.fill(0);
         Ok((0, self.finish()?))
-    }
-
-    /// `CcmPacket::encrypt_detached_out` under a nonce drawn from the default DRBG, as
-    /// [`do_encrypt_init`](SymmetricCipherEncryptor::do_encrypt_init) draws it; see
-    /// [`encrypt_detached_rng_out`](AEADCipherEncryptor::encrypt_detached_rng_out).
-    fn encrypt_detached_out(
-        key: &KeyMaterial<KEY_LEN>,
-        aad: &[u8],
-        plaintext: &[u8],
-        ciphertext: &mut [u8],
-    ) -> Result<([u8; NONCE_LEN], usize, [u8; TAG_LEN]), SymmetricCipherError> {
-        let mut rng = HashDRBG_SHA512::new_from_os();
-        Self::encrypt_detached_rng_out(key, &mut rng, aad, plaintext, ciphertext)
-    }
-
-    /// `CcmPacket::encrypt_detached_out` under a nonce drawn from `rng`, for a `plaintext` and `aad`
-    /// of any length: neither `DATA_LEN` nor `AAD_LEN` applies to a one-shot (see the type docs).
-    ///
-    /// # Errors
-    /// [`SymmetricCipherError::OutputBufferTooSmall`] if `ciphertext` is shorter than
-    /// `plaintext`, checked before anything is drawn from `rng`; plus `CcmPacket::new`'s errors and
-    /// the RNG's.
-    fn encrypt_detached_rng_out(
-        key: &KeyMaterial<KEY_LEN>,
-        rng: &mut dyn RNG,
-        aad: &[u8],
-        plaintext: &[u8],
-        ciphertext: &mut [u8],
-    ) -> Result<([u8; NONCE_LEN], usize, [u8; TAG_LEN]), SymmetricCipherError> {
-        ciphertext.fill(0);
-        if ciphertext.len() < plaintext.len() {
-            return Err(SymmetricCipherError::OutputBufferTooSmall(plaintext.len()));
-        }
-        Self::check_random_nonce();
-        CcmAdapter::<P, Encrypting, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>::check_shape();
-        let nonce = random_iv::<NONCE_LEN>(rng)?;
-        let (written, tag) =
-            CcmPacket::<P, Encrypting, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN>::encrypt_detached_out(
-                key, &nonce, aad, plaintext, ciphertext,
-            )?;
-        Ok((nonce, written, tag))
-    }
-
-    /// `CcmPacket::encrypt_out` under a nonce drawn from the default DRBG; see
-    /// [`encrypt_with_aad_rng_out`](AEADCipherEncryptor::encrypt_with_aad_rng_out).
-    fn encrypt_with_aad_out(
-        key: &KeyMaterial<KEY_LEN>,
-        aad: &[u8],
-        plaintext: &[u8],
-        ciphertext: &mut [u8],
-    ) -> Result<([u8; NONCE_LEN], usize), SymmetricCipherError> {
-        let mut rng = HashDRBG_SHA512::new_from_os();
-        Self::encrypt_with_aad_rng_out(key, &mut rng, aad, plaintext, ciphertext)
-    }
-
-    /// `CcmPacket::encrypt_out` under a nonce drawn from `rng`, for a `plaintext` and `aad` of any
-    /// length, as [`encrypt_detached_rng_out`](AEADCipherEncryptor::encrypt_detached_rng_out).
-    ///
-    /// # Errors
-    /// As [`encrypt_detached_rng_out`](AEADCipherEncryptor::encrypt_detached_rng_out), with
-    /// `ciphertext` needing `plaintext.len() + TAG_LEN` bytes.
-    fn encrypt_with_aad_rng_out(
-        key: &KeyMaterial<KEY_LEN>,
-        rng: &mut dyn RNG,
-        aad: &[u8],
-        plaintext: &[u8],
-        ciphertext: &mut [u8],
-    ) -> Result<([u8; NONCE_LEN], usize), SymmetricCipherError> {
-        ciphertext.fill(0);
-        let needed =
-            <Self as SymmetricCipherEncryptor<KEY_LEN, NONCE_LEN, TAG_LEN>>::encrypt_out_len(
-                plaintext.len(),
-            );
-        if ciphertext.len() < needed {
-            return Err(SymmetricCipherError::OutputBufferTooSmall(needed));
-        }
-        Self::check_random_nonce();
-        CcmAdapter::<P, Encrypting, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>::check_shape();
-        let nonce = random_iv::<NONCE_LEN>(rng)?;
-        let written =
-            CcmPacket::<P, Encrypting, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN>::encrypt_out(
-                key, &nonce, aad, plaintext, ciphertext,
-            )?;
-        Ok((nonce, written))
     }
 }
 
@@ -1701,20 +1363,11 @@ impl<
     const TAG_LEN: usize,
     const AAD_LEN: usize,
     const DATA_LEN: usize,
-> SymmetricCipherDecryptor<KEY_LEN, NONCE_LEN, TAG_LEN>
+> SymmetricCipherDecryptor<NONCE_LEN, TAG_LEN>
     for CcmDecryptor<P, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>
 where
     P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
 {
-    fn do_decrypt_init(
-        key: &KeyMaterial<KEY_LEN>,
-        nonce: &[u8; NONCE_LEN],
-    ) -> Result<Self, SymmetricCipherError> {
-        // `P::new`'s own checks are the only key validation needed; see the encryptor.
-        key.check_algorithm(Self::ALG_NAME)?;
-        Ok(Self::from_perm(P::new(key)?, nonce))
-    }
-
     /// Every byte of `input_len` that is still inside the declared payload; the rest can only be
     /// the tag, and is held back.
     fn do_decrypt_out_len(&self, input_len: usize) -> usize {
@@ -1787,23 +1440,6 @@ where
     fn decrypt_out_len(ciphertext_len: usize) -> usize {
         ciphertext_len.saturating_sub(TAG_LEN)
     }
-
-    /// The AEAD one-shot with no AAD; see
-    /// [`decrypt_with_aad_out`](AEADCipherDecryptor::decrypt_with_aad_out).
-    fn decrypt_out(
-        key: &KeyMaterial<KEY_LEN>,
-        init_data: &[u8; NONCE_LEN],
-        ciphertext: &[u8],
-        plaintext: &mut [u8],
-    ) -> Result<usize, SymmetricCipherError> {
-        <Self as AEADCipherDecryptor<KEY_LEN, NONCE_LEN, TAG_LEN, TAG_LEN>>::decrypt_with_aad_out(
-            key,
-            init_data,
-            &[],
-            ciphertext,
-            plaintext,
-        )
-    }
 }
 
 /// The AEAD view, with `FINAL_LEN = TAG_LEN`. The one-shots are `CcmPacket`'s own, for a `C` and
@@ -1816,7 +1452,7 @@ impl<
     const TAG_LEN: usize,
     const AAD_LEN: usize,
     const DATA_LEN: usize,
-> AEADCipherDecryptor<KEY_LEN, NONCE_LEN, TAG_LEN, TAG_LEN>
+> AEADCipherDecryptor<NONCE_LEN, TAG_LEN, TAG_LEN>
     for CcmDecryptor<P, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>
 where
     P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
@@ -1846,60 +1482,6 @@ where
         }
         self.finish(tag)?;
         Ok(0)
-    }
-
-    /// `CcmPacket::decrypt_detached_out`, for a `ciphertext` and `aad` of any length: neither
-    /// `DATA_LEN` nor `AAD_LEN` applies to a one-shot (see [`CcmEncryptor`]). Zeroizes
-    /// `plaintext` on a failed tag, as `CcmPacket`'s does.
-    ///
-    /// # Errors
-    /// [`SymmetricCipherError::OutputBufferTooSmall`] if `plaintext` is shorter than
-    /// `ciphertext`; [`SymmetricCipherError::AEADTagCheckFailed`] if the tag does not verify;
-    /// plus `CcmPacket::new`'s errors.
-    fn decrypt_detached_out(
-        key: &KeyMaterial<KEY_LEN>,
-        nonce: &[u8; NONCE_LEN],
-        aad: &[u8],
-        ciphertext: &[u8],
-        tag: &[u8; TAG_LEN],
-        plaintext: &mut [u8],
-    ) -> Result<usize, SymmetricCipherError> {
-        plaintext.fill(0);
-        if plaintext.len() < ciphertext.len() {
-            return Err(SymmetricCipherError::OutputBufferTooSmall(ciphertext.len()));
-        }
-        CcmAdapter::<P, Decrypting, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>::check_shape();
-        CcmPacket::<P, Decrypting, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN>::decrypt_detached_out(
-            key, nonce, aad, ciphertext, tag, plaintext,
-        )
-    }
-
-    /// `CcmPacket::decrypt_out`, for a `ciphertext` and `aad` of any length, as
-    /// [`decrypt_detached_out`](AEADCipherDecryptor::decrypt_detached_out).
-    ///
-    /// # Errors
-    /// As [`decrypt_detached_out`](AEADCipherDecryptor::decrypt_detached_out), with `plaintext`
-    /// needing [`decrypt_out_len`](SymmetricCipherDecryptor::decrypt_out_len) bytes, and
-    /// [`SymmetricCipherError::DecryptionFailed`] for a `C` shorter than the tag it must end with.
-    fn decrypt_with_aad_out(
-        key: &KeyMaterial<KEY_LEN>,
-        nonce: &[u8; NONCE_LEN],
-        aad: &[u8],
-        ciphertext: &[u8],
-        plaintext: &mut [u8],
-    ) -> Result<usize, SymmetricCipherError> {
-        plaintext.fill(0);
-        let needed =
-            <Self as SymmetricCipherDecryptor<KEY_LEN, NONCE_LEN, TAG_LEN>>::decrypt_out_len(
-                ciphertext.len(),
-            );
-        if plaintext.len() < needed {
-            return Err(SymmetricCipherError::OutputBufferTooSmall(needed));
-        }
-        CcmAdapter::<P, Decrypting, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>::check_shape();
-        CcmPacket::<P, Decrypting, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN>::decrypt_out(
-            key, nonce, aad, ciphertext, plaintext,
-        )
     }
 }
 
@@ -2084,8 +1666,13 @@ mod tests {
     #[test]
     fn the_constructor_absorbs_b0() {
         let nonce = [0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16];
-        let ccm =
-            CcmPacket::<Identity, Encrypting, 16, 16, 7, 4>::new(&key(), &nonce, &[], 4).unwrap();
+        let ccm = CcmPacket::<Identity, Encrypting, 16, 16, 7, 4>::from_perm_with_lengths(
+            Identity::new(&key()).unwrap(),
+            &nonce,
+            0,
+            4,
+        )
+        .unwrap();
         assert_eq!(
             *ccm.y,
             CcmPacket::<Identity, Encrypting, 16, 16, 7, 4>::format_b0(&nonce, false, 4)
@@ -2253,7 +1840,9 @@ mod tests {
         let nonce = [0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16];
         // 14 zero bytes of AAD: the 2-byte length plus 14 bytes is exactly one 16-byte block, so
         // there is no padding to reason about.
-        let ccm = Mode::new(&key(), &nonce, &[0u8; 14], 0).unwrap();
+        let mut ccm =
+            Mode::from_perm_with_lengths(Identity::new(&key()).unwrap(), &nonce, 14, 0).unwrap();
+        ccm.absorb_aad(&[0u8; 14]);
 
         let b0 = Mode::format_b0(&nonce, true, 0);
         let mut b1 = [0u8; 16];
@@ -2302,16 +1891,21 @@ where
     tag_len: usize,
 }
 
-impl<P, const KEY_LEN: usize, const NONCE_LEN: usize, const TAG_LEN: usize>
-    AeadEncryptWorker<NONCE_LEN, TAG_LEN, TAG_LEN>
+impl<P, const KEY_LEN: usize, const NONCE_LEN: usize, const TAG_LEN: usize> Algorithm
     for CcmPacketEncryptor<P, KEY_LEN, NONCE_LEN, TAG_LEN>
 where
     P: ElectronicCodeBook<KEY_LEN, 16> + ModeNames,
 {
-    fn do_update_aad(&mut self, aad: &[u8]) -> Result<(), SymmetricCipherError> {
-        self.0.do_update_aad(aad)
-    }
+    const ALG_NAME: &'static str = P::CCM_ALG_NAME;
+    const MAX_SECURITY_STRENGTH: SecurityStrength = P::MAX_SECURITY_STRENGTH;
+}
 
+impl<P, const KEY_LEN: usize, const NONCE_LEN: usize, const TAG_LEN: usize>
+    SymmetricCipherEncryptor<NONCE_LEN, TAG_LEN>
+    for CcmPacketEncryptor<P, KEY_LEN, NONCE_LEN, TAG_LEN>
+where
+    P: ElectronicCodeBook<KEY_LEN, 16> + ModeNames,
+{
     /// The identity: nothing is held back, since `B0` is already committed to the length.
     fn do_encrypt_out_len(&self, input_len: usize) -> usize {
         input_len
@@ -2340,6 +1934,21 @@ where
         Ok((self.0.do_encrypt_final()?, TAG_LEN))
     }
 
+    fn encrypt_out_len(plaintext_len: usize) -> usize {
+        plaintext_len + TAG_LEN
+    }
+}
+
+impl<P, const KEY_LEN: usize, const NONCE_LEN: usize, const TAG_LEN: usize>
+    AEADCipherEncryptor<NONCE_LEN, TAG_LEN, TAG_LEN>
+    for CcmPacketEncryptor<P, KEY_LEN, NONCE_LEN, TAG_LEN>
+where
+    P: ElectronicCodeBook<KEY_LEN, 16> + ModeNames,
+{
+    fn do_update_aad(&mut self, aad: &[u8]) -> Result<(), SymmetricCipherError> {
+        self.0.do_update_aad(aad)
+    }
+
     fn do_encrypt_final_detached_out(
         self,
         ciphertext: &mut [u8; TAG_LEN],
@@ -2348,25 +1957,26 @@ where
         Ok((0, self.0.do_encrypt_final()?))
     }
 
-    fn encrypt_out_len(plaintext_len: usize) -> usize {
-        plaintext_len + TAG_LEN
-    }
-
     fn encrypt_detached_out_len(plaintext_len: usize) -> usize {
         plaintext_len
     }
 }
 
-impl<P, const KEY_LEN: usize, const NONCE_LEN: usize, const TAG_LEN: usize>
-    AeadDecryptWorker<NONCE_LEN, TAG_LEN, TAG_LEN>
+impl<P, const KEY_LEN: usize, const NONCE_LEN: usize, const TAG_LEN: usize> Algorithm
     for CcmPacketDecryptor<P, KEY_LEN, NONCE_LEN, TAG_LEN>
 where
     P: ElectronicCodeBook<KEY_LEN, 16> + ModeNames,
 {
-    fn do_update_aad(&mut self, aad: &[u8]) -> Result<(), SymmetricCipherError> {
-        self.ccm.do_update_aad(aad)
-    }
+    const ALG_NAME: &'static str = P::CCM_ALG_NAME;
+    const MAX_SECURITY_STRENGTH: SecurityStrength = P::MAX_SECURITY_STRENGTH;
+}
 
+impl<P, const KEY_LEN: usize, const NONCE_LEN: usize, const TAG_LEN: usize>
+    SymmetricCipherDecryptor<NONCE_LEN, TAG_LEN>
+    for CcmPacketDecryptor<P, KEY_LEN, NONCE_LEN, TAG_LEN>
+where
+    P: ElectronicCodeBook<KEY_LEN, 16> + ModeNames,
+{
     /// Every byte still inside the declared payload; the rest can only be the tag, and is held.
     fn do_decrypt_out_len(&self, input_len: usize) -> usize {
         input_len.min(self.ccm.owed)
@@ -2405,6 +2015,21 @@ where
         Ok(([0u8; TAG_LEN], 0))
     }
 
+    fn decrypt_out_len(ciphertext_len: usize) -> usize {
+        ciphertext_len.saturating_sub(TAG_LEN)
+    }
+}
+
+impl<P, const KEY_LEN: usize, const NONCE_LEN: usize, const TAG_LEN: usize>
+    AEADCipherDecryptor<NONCE_LEN, TAG_LEN, TAG_LEN>
+    for CcmPacketDecryptor<P, KEY_LEN, NONCE_LEN, TAG_LEN>
+where
+    P: ElectronicCodeBook<KEY_LEN, 16> + ModeNames,
+{
+    fn do_update_aad(&mut self, aad: &[u8]) -> Result<(), SymmetricCipherError> {
+        self.ccm.do_update_aad(aad)
+    }
+
     /// Detached: the ciphertext must be exactly the declared payload, with nothing after it.
     fn do_decrypt_final_detached_out(
         self,
@@ -2417,10 +2042,6 @@ where
         }
         self.ccm.do_decrypt_final(tag)?;
         Ok(0)
-    }
-
-    fn decrypt_out_len(ciphertext_len: usize) -> usize {
-        ciphertext_len.saturating_sub(TAG_LEN)
     }
 
     fn decrypt_detached_out_len(ciphertext_len: usize) -> usize {
@@ -2612,113 +2233,6 @@ where
 
 // The key-produced worker traits for the fixed-frame pair, forwarded to the cipher traits' own
 // methods while those still exist; named by path as `gcm.rs` names them.
-
-impl<
-    P,
-    const KEY_LEN: usize,
-    const BLOCK_LEN: usize,
-    const NONCE_LEN: usize,
-    const TAG_LEN: usize,
-    const AAD_LEN: usize,
-    const DATA_LEN: usize,
-> AeadEncryptWorker<NONCE_LEN, TAG_LEN, TAG_LEN>
-    for CcmEncryptor<P, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>
-where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
-{
-    fn do_update_aad(&mut self, aad: &[u8]) -> Result<(), SymmetricCipherError> {
-        AEADCipherEncryptor::do_update_aad(self, aad)
-    }
-
-    fn do_encrypt_out_len(&self, input_len: usize) -> usize {
-        SymmetricCipherEncryptor::do_encrypt_out_len(self, input_len)
-    }
-
-    fn do_encrypt_out(
-        &mut self,
-        plaintext: &[u8],
-        ciphertext: &mut [u8],
-    ) -> Result<usize, SymmetricCipherError> {
-        SymmetricCipherEncryptor::do_encrypt_out(self, plaintext, ciphertext)
-    }
-
-    fn do_encrypt_final(self) -> Result<([u8; TAG_LEN], usize), SymmetricCipherError> {
-        SymmetricCipherEncryptor::do_encrypt_final(self)
-    }
-
-    fn do_encrypt_final_detached_out(
-        self,
-        ciphertext: &mut [u8; TAG_LEN],
-    ) -> Result<(usize, [u8; TAG_LEN]), SymmetricCipherError> {
-        AEADCipherEncryptor::do_encrypt_final_detached_out(self, ciphertext)
-    }
-
-    fn encrypt_out_len(plaintext_len: usize) -> usize {
-        <Self as SymmetricCipherEncryptor<KEY_LEN, NONCE_LEN, TAG_LEN>>::encrypt_out_len(
-            plaintext_len,
-        )
-    }
-
-    fn encrypt_detached_out_len(plaintext_len: usize) -> usize {
-        <Self as AEADCipherEncryptor<KEY_LEN, NONCE_LEN, TAG_LEN, TAG_LEN>>::encrypt_detached_out_len(
-            plaintext_len,
-        )
-    }
-}
-
-impl<
-    P,
-    const KEY_LEN: usize,
-    const BLOCK_LEN: usize,
-    const NONCE_LEN: usize,
-    const TAG_LEN: usize,
-    const AAD_LEN: usize,
-    const DATA_LEN: usize,
-> AeadDecryptWorker<NONCE_LEN, TAG_LEN, TAG_LEN>
-    for CcmDecryptor<P, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>
-where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
-{
-    fn do_update_aad(&mut self, aad: &[u8]) -> Result<(), SymmetricCipherError> {
-        AEADCipherDecryptor::do_update_aad(self, aad)
-    }
-
-    fn do_decrypt_out_len(&self, input_len: usize) -> usize {
-        SymmetricCipherDecryptor::do_decrypt_out_len(self, input_len)
-    }
-
-    fn do_decrypt_out(
-        &mut self,
-        ciphertext: &[u8],
-        plaintext: &mut [u8],
-    ) -> Result<usize, SymmetricCipherError> {
-        SymmetricCipherDecryptor::do_decrypt_out(self, ciphertext, plaintext)
-    }
-
-    fn do_decrypt_final(self) -> Result<([u8; TAG_LEN], usize), SymmetricCipherError> {
-        SymmetricCipherDecryptor::do_decrypt_final(self)
-    }
-
-    fn do_decrypt_final_detached_out(
-        self,
-        tag: &[u8; TAG_LEN],
-        plaintext: &mut [u8; TAG_LEN],
-    ) -> Result<usize, SymmetricCipherError> {
-        AEADCipherDecryptor::do_decrypt_final_detached_out(self, tag, plaintext)
-    }
-
-    fn decrypt_out_len(ciphertext_len: usize) -> usize {
-        <Self as SymmetricCipherDecryptor<KEY_LEN, NONCE_LEN, TAG_LEN>>::decrypt_out_len(
-            ciphertext_len,
-        )
-    }
-
-    fn decrypt_detached_out_len(ciphertext_len: usize) -> usize {
-        <Self as AEADCipherDecryptor<KEY_LEN, NONCE_LEN, TAG_LEN, TAG_LEN>>::decrypt_detached_out_len(
-            ciphertext_len,
-        )
-    }
-}
 
 // ---- suspending the pair -----------------------------------------------------------------
 
