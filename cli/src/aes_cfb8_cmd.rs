@@ -72,12 +72,12 @@ pub(crate) fn aes256_cfb8_cmd(
 }
 
 /// Dispatches to the shared streaming loops with `Cfb8` filled in as the mode.
-fn run<K, const KEY_LEN: usize>(action: &CipherDirection, key: &K, output_hex: bool)
+fn run<'k, K, const KEY_LEN: usize>(action: &CipherDirection, key: &'k K, output_hex: bool)
 where
     K: SymmetricEncryptionKey<KEY_LEN, BLOCK_LEN, 0>
         + SymmetricDecryptionKey<KEY_LEN, BLOCK_LEN, 0>,
-    K::Encryptor: StreamCipherEncryptor<BLOCK_LEN>,
-    K::Decryptor: StreamCipherDecryptor<BLOCK_LEN>,
+    K::Encryptor<'k>: StreamCipherEncryptor<BLOCK_LEN>,
+    K::Decryptor<'k>: StreamCipherDecryptor<BLOCK_LEN>,
 {
     run_stream_mode::<K, KEY_LEN, BLOCK_LEN>(action, key, output_hex)
 }

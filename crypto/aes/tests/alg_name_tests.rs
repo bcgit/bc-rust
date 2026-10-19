@@ -27,68 +27,80 @@ fn check<Enc: Algorithm, Dec: Algorithm>(name: &str, strength: SecurityStrength)
 
 #[test]
 fn cbc() {
-    type Enc = AES_CBC_128<Encrypting, NoPadding>;
+    type Enc<'k> = AES_CBC_128<'k, Encrypting, NoPadding>;
     assert_eq!(Enc::ALG_NAME, "AES_CBC_128");
     assert_eq!(Enc::MAX_SECURITY_STRENGTH, SecurityStrength::_128bit);
 
     use SecurityStrength::*;
-    check::<AES_CBC_128<Encrypting, NoPadding>, AES_CBC_128<Decrypting, NoPadding>>(
+    check::<AES_CBC_128<'_, Encrypting, NoPadding>, AES_CBC_128<'_, Decrypting, NoPadding>>(
         "AES_CBC_128", _128bit,
     );
-    check::<AES_CBC_128<Encrypting, PKCS7>, AES_CBC_128<Decrypting, PKCS7>>("AES_CBC_128", _128bit);
-    check::<AES_CBC_192<Encrypting, NoPadding>, AES_CBC_192<Decrypting, NoPadding>>(
+    check::<AES_CBC_128<'_, Encrypting, PKCS7>, AES_CBC_128<'_, Decrypting, PKCS7>>(
+        "AES_CBC_128", _128bit,
+    );
+    check::<AES_CBC_192<'_, Encrypting, NoPadding>, AES_CBC_192<'_, Decrypting, NoPadding>>(
         "AES_CBC_192", _192bit,
     );
-    check::<AES_CBC_192<Encrypting, PKCS7>, AES_CBC_192<Decrypting, PKCS7>>("AES_CBC_192", _192bit);
-    check::<AES_CBC_256<Encrypting, NoPadding>, AES_CBC_256<Decrypting, NoPadding>>(
+    check::<AES_CBC_192<'_, Encrypting, PKCS7>, AES_CBC_192<'_, Decrypting, PKCS7>>(
+        "AES_CBC_192", _192bit,
+    );
+    check::<AES_CBC_256<'_, Encrypting, NoPadding>, AES_CBC_256<'_, Decrypting, NoPadding>>(
         "AES_CBC_256", _256bit,
     );
-    check::<AES_CBC_256<Encrypting, PKCS7>, AES_CBC_256<Decrypting, PKCS7>>("AES_CBC_256", _256bit);
+    check::<AES_CBC_256<'_, Encrypting, PKCS7>, AES_CBC_256<'_, Decrypting, PKCS7>>(
+        "AES_CBC_256", _256bit,
+    );
 }
 
 #[test]
 fn ecb() {
     use SecurityStrength::*;
-    check::<AES_ECB_128<Encrypting, NoPadding>, AES_ECB_128<Decrypting, NoPadding>>(
+    check::<AES_ECB_128<'_, Encrypting, NoPadding>, AES_ECB_128<'_, Decrypting, NoPadding>>(
         "AES_ECB_128", _128bit,
     );
-    check::<AES_ECB_128<Encrypting, PKCS7>, AES_ECB_128<Decrypting, PKCS7>>("AES_ECB_128", _128bit);
-    check::<AES_ECB_192<Encrypting, NoPadding>, AES_ECB_192<Decrypting, NoPadding>>(
+    check::<AES_ECB_128<'_, Encrypting, PKCS7>, AES_ECB_128<'_, Decrypting, PKCS7>>(
+        "AES_ECB_128", _128bit,
+    );
+    check::<AES_ECB_192<'_, Encrypting, NoPadding>, AES_ECB_192<'_, Decrypting, NoPadding>>(
         "AES_ECB_192", _192bit,
     );
-    check::<AES_ECB_192<Encrypting, PKCS7>, AES_ECB_192<Decrypting, PKCS7>>("AES_ECB_192", _192bit);
-    check::<AES_ECB_256<Encrypting, NoPadding>, AES_ECB_256<Decrypting, NoPadding>>(
+    check::<AES_ECB_192<'_, Encrypting, PKCS7>, AES_ECB_192<'_, Decrypting, PKCS7>>(
+        "AES_ECB_192", _192bit,
+    );
+    check::<AES_ECB_256<'_, Encrypting, NoPadding>, AES_ECB_256<'_, Decrypting, NoPadding>>(
         "AES_ECB_256", _256bit,
     );
-    check::<AES_ECB_256<Encrypting, PKCS7>, AES_ECB_256<Decrypting, PKCS7>>("AES_ECB_256", _256bit);
+    check::<AES_ECB_256<'_, Encrypting, PKCS7>, AES_ECB_256<'_, Decrypting, PKCS7>>(
+        "AES_ECB_256", _256bit,
+    );
 }
 
 #[test]
 fn cfb_cfb8_ctr() {
     use SecurityStrength::*;
-    check::<AES_CFB_128<Encrypting>, AES_CFB_128<Decrypting>>("AES_CFB_128", _128bit);
-    check::<AES_CFB_192<Encrypting>, AES_CFB_192<Decrypting>>("AES_CFB_192", _192bit);
-    check::<AES_CFB_256<Encrypting>, AES_CFB_256<Decrypting>>("AES_CFB_256", _256bit);
+    check::<AES_CFB_128<'_, Encrypting>, AES_CFB_128<'_, Decrypting>>("AES_CFB_128", _128bit);
+    check::<AES_CFB_192<'_, Encrypting>, AES_CFB_192<'_, Decrypting>>("AES_CFB_192", _192bit);
+    check::<AES_CFB_256<'_, Encrypting>, AES_CFB_256<'_, Decrypting>>("AES_CFB_256", _256bit);
 
-    check::<AES_CFB8_128<Encrypting>, AES_CFB8_128<Decrypting>>("AES_CFB8_128", _128bit);
-    check::<AES_CFB8_192<Encrypting>, AES_CFB8_192<Decrypting>>("AES_CFB8_192", _192bit);
-    check::<AES_CFB8_256<Encrypting>, AES_CFB8_256<Decrypting>>("AES_CFB8_256", _256bit);
+    check::<AES_CFB8_128<'_, Encrypting>, AES_CFB8_128<'_, Decrypting>>("AES_CFB8_128", _128bit);
+    check::<AES_CFB8_192<'_, Encrypting>, AES_CFB8_192<'_, Decrypting>>("AES_CFB8_192", _192bit);
+    check::<AES_CFB8_256<'_, Encrypting>, AES_CFB8_256<'_, Decrypting>>("AES_CFB8_256", _256bit);
 
-    check::<AES_CTR_128<Encrypting>, AES_CTR_128<Decrypting>>("AES_CTR_128", _128bit);
-    check::<AES_CTR_192<Encrypting>, AES_CTR_192<Decrypting>>("AES_CTR_192", _192bit);
-    check::<AES_CTR_256<Encrypting>, AES_CTR_256<Decrypting>>("AES_CTR_256", _256bit);
+    check::<AES_CTR_128<'_, Encrypting>, AES_CTR_128<'_, Decrypting>>("AES_CTR_128", _128bit);
+    check::<AES_CTR_192<'_, Encrypting>, AES_CTR_192<'_, Decrypting>>("AES_CTR_192", _192bit);
+    check::<AES_CTR_256<'_, Encrypting>, AES_CTR_256<'_, Decrypting>>("AES_CTR_256", _256bit);
 }
 
 #[test]
 fn gcm() {
-    type Enc = AES_GCM_128<Encrypting>;
+    type Enc<'k> = AES_GCM_128<'k, Encrypting>;
     assert_eq!(Enc::ALG_NAME, "AES_GCM_128");
     assert_eq!(Enc::MAX_SECURITY_STRENGTH, SecurityStrength::_128bit);
 
     use SecurityStrength::*;
-    check::<AES_GCM_128<Encrypting>, AES_GCM_128<Decrypting>>("AES_GCM_128", _128bit);
-    check::<AES_GCM_192<Encrypting>, AES_GCM_192<Decrypting>>("AES_GCM_192", _192bit);
-    check::<AES_GCM_256<Encrypting>, AES_GCM_256<Decrypting>>("AES_GCM_256", _256bit);
+    check::<AES_GCM_128<'_, Encrypting>, AES_GCM_128<'_, Decrypting>>("AES_GCM_128", _128bit);
+    check::<AES_GCM_192<'_, Encrypting>, AES_GCM_192<'_, Decrypting>>("AES_GCM_192", _192bit);
+    check::<AES_GCM_256<'_, Encrypting>, AES_GCM_256<'_, Decrypting>>("AES_GCM_256", _256bit);
 }
 
 #[test]
@@ -97,16 +109,16 @@ fn ccm() {
     const N: usize = CCM_NONCE_LEN;
     const T: usize = CCM_TAG_LEN;
     // The nonce and tag lengths are parameters too, not part of the name.
-    check::<AES_CCM_128<Encrypting, 7, 4, 16, 32>, AES_CCM_128<Decrypting, 7, 4, 16, 32>>(
+    check::<AES_CCM_128<'_, Encrypting, 7, 4, 16, 32>, AES_CCM_128<'_, Decrypting, 7, 4, 16, 32>>(
         "AES_CCM_128", _128bit,
     );
-    check::<AES_CCM_128<Encrypting, N, T, 16, 32>, AES_CCM_128<Decrypting, N, T, 16, 32>>(
+    check::<AES_CCM_128<'_, Encrypting, N, T, 16, 32>, AES_CCM_128<'_, Decrypting, N, T, 16, 32>>(
         "AES_CCM_128", _128bit,
     );
-    check::<AES_CCM_192<Encrypting, N, T, 16, 32>, AES_CCM_192<Decrypting, N, T, 16, 32>>(
+    check::<AES_CCM_192<'_, Encrypting, N, T, 16, 32>, AES_CCM_192<'_, Decrypting, N, T, 16, 32>>(
         "AES_CCM_192", _192bit,
     );
-    check::<AES_CCM_256<Encrypting, N, T, 16, 32>, AES_CCM_256<Decrypting, N, T, 16, 32>>(
+    check::<AES_CCM_256<'_, Encrypting, N, T, 16, 32>, AES_CCM_256<'_, Decrypting, N, T, 16, 32>>(
         "AES_CCM_256", _256bit,
     );
 }
@@ -114,9 +126,9 @@ fn ccm() {
 #[test]
 fn gmac() {
     use SecurityStrength::*;
-    check::<AES_GMAC_128<Encrypting>, AES_GMAC_128<Decrypting>>("AES_GMAC_128", _128bit);
-    check::<AES_GMAC_192<Encrypting>, AES_GMAC_192<Decrypting>>("AES_GMAC_192", _192bit);
-    check::<AES_GMAC_256<Encrypting>, AES_GMAC_256<Decrypting>>("AES_GMAC_256", _256bit);
+    check::<AES_GMAC_128<'_, Encrypting>, AES_GMAC_128<'_, Decrypting>>("AES_GMAC_128", _128bit);
+    check::<AES_GMAC_192<'_, Encrypting>, AES_GMAC_192<'_, Decrypting>>("AES_GMAC_192", _192bit);
+    check::<AES_GMAC_256<'_, Encrypting>, AES_GMAC_256<'_, Decrypting>>("AES_GMAC_256", _256bit);
 }
 
 #[test]

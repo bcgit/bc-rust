@@ -136,8 +136,9 @@ const CHUNKINGS: [usize; 7] = [1, 3, 4, 8, 9, 17, 18];
 /// how the calls are grouped.
 fn check_encrypt<K, const KEY_LEN: usize>(section: &str, key_hex: &str, expected_hex: &str)
 where
+    K: 'static,
     K: FromKeyMaterial<KEY_LEN> + SymmetricEncryptionKey<KEY_LEN, BLOCK_LEN, 0>,
-    K::Encryptor: StreamCipherEncryptor<BLOCK_LEN>,
+    for<'k> K::Encryptor<'k>: StreamCipherEncryptor<BLOCK_LEN>,
 {
     let key = K::from_key_material(&key_material::<KEY_LEN>(key_hex)).expect("a valid key");
     let iv = block(IV);
@@ -161,8 +162,9 @@ where
 /// Runs one Appendix F.3 CFB8 decrypt subsection.
 fn check_decrypt<K, const KEY_LEN: usize>(section: &str, key_hex: &str, ciphertext_hex: &str)
 where
+    K: 'static,
     K: FromKeyMaterial<KEY_LEN> + SymmetricDecryptionKey<KEY_LEN, BLOCK_LEN, 0>,
-    K::Decryptor: StreamCipherDecryptor<BLOCK_LEN>,
+    for<'k> K::Decryptor<'k>: StreamCipherDecryptor<BLOCK_LEN>,
 {
     let key = K::from_key_material(&key_material::<KEY_LEN>(key_hex)).expect("a valid key");
     let iv = block(IV);

@@ -218,10 +218,8 @@ fn cbc_differs_from_ecb_by_the_iv() {
     assert_eq!(ecb, block("3ad77bb40d7a3660a89ecaf32466ef97"), "F.1.1 block #1");
 
     // CBC's C1 = CIPH_K(P1 XOR IV) is the F.2.1 answer, and differs.
-    let (mut enc, _) = AES128Key::<CBC<Blocks>>::from_key_material(&key)
-        .unwrap()
-        .create_encryptor(&mut FixedSeedRNG::<16>::new(iv))
-        .unwrap();
+    let key_object = AES128Key::<CBC<Blocks>>::from_key_material(&key).unwrap();
+    let (mut enc, _) = key_object.create_encryptor(&mut FixedSeedRNG::<16>::new(iv)).unwrap();
     let mut cbc = block(PLAINTEXTS[0]);
     enc.do_encrypt_inplace(&mut cbc).unwrap();
     assert_eq!(cbc, block(CIPHERTEXTS_128[0]), "F.2.1 block #1");

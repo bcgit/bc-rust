@@ -55,8 +55,12 @@ impl TestFrameworkSymmetricCipher {
         if let Some(fixed) = self.fixed_message_len {
             assert!(fixed <= DUMMY_SEED.len(), "fixed_message_len must fit the seed buffer");
         }
-        let encrypt_out_len = |len: usize| K::Encryptor::encrypt_out_len(len);
-        let decrypt_out_len = |len: usize| K::Decryptor::decrypt_out_len(len);
+        let encrypt_out_len = |len: usize| {
+            <K::Encryptor<'_> as SymmetricCipherEncryptor<INIT_DATA_LEN, FINAL_LEN>>::encrypt_out_len(len)
+        };
+        let decrypt_out_len = |len: usize| {
+            <K::Decryptor<'_> as SymmetricCipherDecryptor<INIT_DATA_LEN, FINAL_LEN>>::decrypt_out_len(len)
+        };
 
         // one-shot round trip, every (accepted) length; every other length must be refused
         for len in 0..=max_len {
@@ -394,17 +398,18 @@ impl TestFrameworkStreamCipher {
     /// [`SymmetricDecryptionKey`] pair whose workers are stream ciphers, with `rng` supplying
     /// every init data draw. The key-policy checks are `TestFrameworkFromKeyMaterial`'s.
     pub fn test_key<
+        'k,
         const KEY_LEN: usize,
         const INIT_DATA_LEN: usize,
         K: SymmetricEncryptionKey<KEY_LEN, INIT_DATA_LEN, 0>
             + SymmetricDecryptionKey<KEY_LEN, INIT_DATA_LEN, 0>,
     >(
         &self,
-        key: &K,
+        key: &'k K,
         rng: &mut dyn RNG,
     ) where
-        K::Encryptor: StreamCipherEncryptor<INIT_DATA_LEN>,
-        K::Decryptor: StreamCipherDecryptor<INIT_DATA_LEN>,
+        K::Encryptor<'k>: StreamCipherEncryptor<INIT_DATA_LEN>,
+        K::Decryptor<'k>: StreamCipherDecryptor<INIT_DATA_LEN>,
     {
         // one-shot, in place: must round-trip, and report every byte as written.
         let mut buf = *DUMMY_SEED;
@@ -459,13 +464,19 @@ impl TestFrameworkStreamCipher {
         assert_eq!(&buf[..], &DUMMY_SEED[..]);
 
         // the separate-output methods of the symmetric traits agree with the in-place ones
-        let mut out = vec![0u8; K::Encryptor::encrypt_out_len(DUMMY_SEED.len())];
+        let out_len =
+            <K::Encryptor<'k> as SymmetricCipherEncryptor<INIT_DATA_LEN, 0>>::encrypt_out_len(
+                DUMMY_SEED.len(),
+            );
+        let mut out = vec![0u8; out_len];
         let (n, iv3) = key.encrypt_out(rng, DUMMY_SEED, &mut out).unwrap();
         assert_eq!(n, DUMMY_SEED.len(), "a stream cipher never changes the length");
         let mut back = out.clone();
         key.decrypt_inplace(&iv3, &mut back).unwrap();
         assert_eq!(&back[..], &DUMMY_SEED[..]);
-        let mut pt = vec![0u8; K::Decryptor::decrypt_out_len(n)];
+        let pt_len =
+            <K::Decryptor<'k> as SymmetricCipherDecryptor<INIT_DATA_LEN, 0>>::decrypt_out_len(n);
+        let mut pt = vec![0u8; pt_len];
         let m = key.decrypt_out(&iv3, &out[..n], &mut pt).unwrap();
         assert_eq!(&pt[..m], &DUMMY_SEED[..]);
 

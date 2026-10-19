@@ -34,8 +34,8 @@
 //! # Memory Usage
 //!
 //! A key is the expanded schedule plus the two 16-byte subkeys: 208, 240 and 272 bytes for
-//! AES-128, -192 and -256. A worker is a clone of that plus the running `C_i`, the pending block
-//! and its length: 248, 280 and 312 bytes.
+//! AES-128, -192 and -256. A worker borrows that and adds the running `C_i`, the pending block
+//! and its length: 48 bytes at every key length.
 //!
 //! [`AES128Key<CMAC>`]: crate::AES128Key
 //! [`MAC`]: bouncycastle_core::traits::MAC
@@ -50,15 +50,15 @@ use bouncycastle_core::key_material::KeyType;
 
 /// AES-128 in CMAC.
 #[allow(non_camel_case_types)]
-pub type AES_CMAC_128 = Cmac<AES128Internal, 16, 16>;
+pub type AES_CMAC_128<'k> = Cmac<'k, AES128Internal, 16, 16>;
 
 /// AES-192 in CMAC. See [`AES_CMAC_128`].
 #[allow(non_camel_case_types)]
-pub type AES_CMAC_192 = Cmac<AES192Internal, 24, 16>;
+pub type AES_CMAC_192<'k> = Cmac<'k, AES192Internal, 24, 16>;
 
 /// AES-256 in CMAC. See [`AES_CMAC_128`].
 #[allow(non_camel_case_types)]
-pub type AES_CMAC_256 = Cmac<AES256Internal, 32, 16>;
+pub type AES_CMAC_256<'k> = Cmac<'k, AES256Internal, 32, 16>;
 
 // Per key length for the reason the GCM impls are (see `gcm.rs`): the subkey derivation needs the
 // permutation's `ElectronicCodeBook<KEY_LEN, 16>` bound, and `KEY_LEN` cannot be tied to
@@ -75,9 +75,9 @@ impl Mode<AES128Internal> for CMAC {
 }
 
 impl MacMode<AES128Internal> for CMAC {
-    type Worker = AES_CMAC_128;
+    type Worker<'k> = AES_CMAC_128<'k>;
 
-    fn mac_init(state: &Self::KeyState) -> Self::Worker {
+    fn mac_init<'k>(state: &'k Self::KeyState) -> Self::Worker<'k> {
         Cmac::from_key_state(state)
     }
 }
@@ -93,9 +93,9 @@ impl Mode<AES192Internal> for CMAC {
 }
 
 impl MacMode<AES192Internal> for CMAC {
-    type Worker = AES_CMAC_192;
+    type Worker<'k> = AES_CMAC_192<'k>;
 
-    fn mac_init(state: &Self::KeyState) -> Self::Worker {
+    fn mac_init<'k>(state: &'k Self::KeyState) -> Self::Worker<'k> {
         Cmac::from_key_state(state)
     }
 }
@@ -111,9 +111,9 @@ impl Mode<AES256Internal> for CMAC {
 }
 
 impl MacMode<AES256Internal> for CMAC {
-    type Worker = AES_CMAC_256;
+    type Worker<'k> = AES_CMAC_256<'k>;
 
-    fn mac_init(state: &Self::KeyState) -> Self::Worker {
+    fn mac_init<'k>(state: &'k Self::KeyState) -> Self::Worker<'k> {
         Cmac::from_key_state(state)
     }
 }

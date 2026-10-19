@@ -103,12 +103,12 @@ pub const CTR_NONCE_LEN: usize = 12;
 
 /// AES-128 in CTR mode with a 12-byte nonce.
 #[allow(non_camel_case_types)]
-pub type AES_CTR_128<Dir> = Ctr<AES128Internal, Dir, 16, AES_BLOCK_LEN, CTR_NONCE_LEN>;
+pub type AES_CTR_128<'k, Dir> = Ctr<'k, AES128Internal, Dir, 16, AES_BLOCK_LEN, CTR_NONCE_LEN>;
 
 /// AES-192 in CTR mode with a 12-byte nonce.
 #[allow(non_camel_case_types)]
-pub type AES_CTR_192<Dir> = Ctr<AES192Internal, Dir, 24, AES_BLOCK_LEN, CTR_NONCE_LEN>;
+pub type AES_CTR_192<'k, Dir> = Ctr<'k, AES192Internal, Dir, 24, AES_BLOCK_LEN, CTR_NONCE_LEN>;
 
 /// AES-256 in CTR mode with a 12-byte nonce. See [`AES_CTR_128`].
 #[allow(non_camel_case_types)]
-pub type AES_CTR_256<Dir> = Ctr<AES256Internal, Dir, 32, AES_BLOCK_LEN, CTR_NONCE_LEN>;
+pub type AES_CTR_256<'k, Dir> = Ctr<'k, AES256Internal, Dir, 32, AES_BLOCK_LEN, CTR_NONCE_LEN>;

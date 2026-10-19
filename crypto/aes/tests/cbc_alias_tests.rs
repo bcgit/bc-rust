@@ -45,15 +45,27 @@ fn the_aliases_name_the_expected_types() {
     use core::mem::size_of;
 
     assert_eq!(
-        size_of::<AES_CBC_128<Encrypting, PKCS7>>(),
+        size_of::<AES_CBC_128<'_, Encrypting, PKCS7>>(),
         size_of::<
-            PaddedBlockCipherEncryptor<Cbc<AES128Internal, Encrypting, 16, 16>, PKCS7, 16, 16, 16>,
+            PaddedBlockCipherEncryptor<
+                Cbc<'_, AES128Internal, Encrypting, 16, 16>,
+                PKCS7,
+                16,
+                16,
+                16,
+            >,
         >()
     );
     assert_eq!(
-        size_of::<AES_CBC_128<Decrypting, PKCS7>>(),
+        size_of::<AES_CBC_128<'_, Decrypting, PKCS7>>(),
         size_of::<
-            PaddedBlockCipherDecryptor<Cbc<AES128Internal, Decrypting, 16, 16>, PKCS7, 16, 16, 16>,
+            PaddedBlockCipherDecryptor<
+                Cbc<'_, AES128Internal, Decrypting, 16, 16>,
+                PKCS7,
+                16,
+                16,
+                16,
+            >,
         >()
     );
 
@@ -61,15 +73,15 @@ fn the_aliases_name_the_expected_types() {
     // have to agree in size -- and here they do not, which is itself evidence the projection
     // selected two different adapters rather than one.
     assert_ne!(
-        size_of::<AES_CBC_128<Encrypting, PKCS7>>(),
-        size_of::<AES_CBC_128<Decrypting, PKCS7>>()
+        size_of::<AES_CBC_128<'_, Encrypting, PKCS7>>(),
+        size_of::<AES_CBC_128<'_, Decrypting, PKCS7>>()
     );
 
     // ...and the key hands out exactly those types.
     let key = key_for::<CBC<PKCS7>>();
     let (enc, iv) = key.create_encryptor(&mut rng()).unwrap();
-    let _: AES_CBC_128<Encrypting, PKCS7> = enc;
-    let _: AES_CBC_128<Decrypting, PKCS7> = key.create_decryptor(&iv);
+    let _: AES_CBC_128<'_, Encrypting, PKCS7> = enc;
+    let _: AES_CBC_128<'_, Decrypting, PKCS7> = key.create_decryptor(&iv);
 }
 
 /// Every key length round-trips through its alias, at a length that needs padding and one that does

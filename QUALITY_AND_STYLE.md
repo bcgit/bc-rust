@@ -93,6 +93,8 @@ reached through a key object (`AES128Key<GCM>`, `HmacKey<SHA256>`, `KMAC128Key`,
 `KeyMaterial` by `FromKeyMaterial` / `FromAnyKeyMaterial`, and its one-shots and `create_*` constructors are methods on
 that key. The cipher and MAC traits in `core::traits` describe a worker that already exists and carry no constructor
 and no key-taking method, so a key's validation and expansion happen once, where the key is made, rather than per call.
+A worker borrows the key it came from, for the lifetime on the role trait's associated worker type, so making one
+copies no schedule and a worker cannot outlive its key.
 
 Other version of Bouncy Castle have a design pattern where stateful objects follow a pattern of new () -> init () ->
 do_update () -> do_final (), and then optionally reset () that sets the object back to an unitialized state. Instead,

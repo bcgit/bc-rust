@@ -36,7 +36,7 @@
 //! [`Ctr`] implements [`SuspendableKeyed`](bouncycastle_core::traits::SuspendableKeyed), so a
 //! message in progress can be suspended to a byte array and resumed later with the re-supplied key.
 //! The state is the nonce, the next counter value and the partly used keystream block; the
-//! permutation is rebuilt from the key. The array length is `Ctr::SUSPENDED_STATE_LEN`; see [the
+//! permutation is the key's, re-supplied by reference. The array length is `Ctr::SUSPENDED_STATE_LEN`; see [the
 //! crate docs](crate#suspending-and-resuming-execution) for an example.
 //!
 //! # 🚨 Security Considerations 🚨
@@ -96,14 +96,17 @@ impl<P, const KEY_LEN: usize, const BLOCK_LEN: usize, const NONCE_LEN: usize>
 where
     P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames + Clone,
 {
-    type Encryptor = Ctr<P, Encrypting, KEY_LEN, BLOCK_LEN, NONCE_LEN>;
+    type Encryptor<'k>
+        = Ctr<'k, P, Encrypting, KEY_LEN, BLOCK_LEN, NONCE_LEN>
+    where
+        P: 'k;
 
-    fn encrypt_init(
-        state: &Self::KeyState,
+    fn encrypt_init<'k>(
+        state: &'k Self::KeyState,
         rng: &mut dyn RNG,
-    ) -> Result<(Self::Encryptor, [u8; NONCE_LEN]), SymmetricCipherError> {
+    ) -> Result<(Self::Encryptor<'k>, [u8; NONCE_LEN]), SymmetricCipherError> {
         let nonce = random_iv::<NONCE_LEN>(rng)?;
-        Ok((StreamCipher::from_keystream(CtrKeyStream::start(state.clone(), nonce)), nonce))
+        Ok((StreamCipher::from_keystream(CtrKeyStream::from_perm(state, nonce)), nonce))
     }
 }
 
@@ -112,10 +115,16 @@ impl<P, const KEY_LEN: usize, const BLOCK_LEN: usize, const NONCE_LEN: usize>
 where
     P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames + Clone,
 {
-    type Decryptor = Ctr<P, Decrypting, KEY_LEN, BLOCK_LEN, NONCE_LEN>;
+    type Decryptor<'k>
+        = Ctr<'k, P, Decrypting, KEY_LEN, BLOCK_LEN, NONCE_LEN>
+    where
+        P: 'k;
 
-    fn decrypt_init(state: &Self::KeyState, init_data: &[u8; NONCE_LEN]) -> Self::Decryptor {
-        StreamCipher::from_keystream(CtrKeyStream::start(state.clone(), *init_data))
+    fn decrypt_init<'k>(
+        state: &'k Self::KeyState,
+        init_data: &[u8; NONCE_LEN],
+    ) -> Self::Decryptor<'k> {
+        StreamCipher::from_keystream(CtrKeyStream::from_perm(state, *init_data))
     }
 }
 
@@ -150,9 +159,9 @@ where
 /// // 1-byte counter
 /// let _ = CTR::<15>::encrypt_init(&<CTR<15> as Mode<ToyBlockCipher>>::key_state(perm), &mut rng).unwrap();
 /// ```
-pub type Ctr<P, Dir, const KEY_LEN: usize, const BLOCK_LEN: usize, const INIT_DATA_LEN: usize> =
+pub type Ctr<'k, P, Dir, const KEY_LEN: usize, const BLOCK_LEN: usize, const INIT_DATA_LEN: usize> =
     StreamCipher<
-        CtrKeyStream<P, KEY_LEN, BLOCK_LEN, INIT_DATA_LEN>,
+        CtrKeyStream<'k, P, KEY_LEN, BLOCK_LEN, INIT_DATA_LEN>,
         Dir,
         KEY_LEN,
         INIT_DATA_LEN,

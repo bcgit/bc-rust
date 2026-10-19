@@ -14,7 +14,7 @@
 //! # Suspending and resuming execution
 //!
 //! [`StreamCipher`] implements [`SuspendableKeyed`], so a message in progress can be suspended to a
-//! byte array and resumed later with the re-supplied key. The state is the keystream's own state
+//! byte array and resumed later over the re-supplied key state. The state is the keystream's own state
 //! and the partly used keystream block, for any keystream that implements [`SuspendableComponent`].
 //! The array length is `StreamCipher::SUSPENDED_STATE_LEN`; see [the crate
 //! docs](crate#suspending-and-resuming-execution) for an example.
@@ -97,7 +97,7 @@ pub struct StreamCipher<
     const INIT_DATA_LEN: usize,
     const BLOCK_LEN: usize,
 > where
-    KS: KeyStream<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
+    KS: KeyStream<INIT_DATA_LEN, BLOCK_LEN>,
 {
     keystream: KS,
     /// The keystream block currently being consumed. Meaningful only while `used < BLOCK_LEN`.
@@ -111,15 +111,15 @@ pub struct StreamCipher<
 impl<KS, Dir, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize>
     StreamCipher<KS, Dir, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
 where
-    KS: KeyStream<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
+    KS: KeyStream<INIT_DATA_LEN, BLOCK_LEN>,
 {
     /// Wraps a keystream that has already been constructed and positioned, such as one that
     /// starts part-way into its counter space (GCM's GCTR starts at `inc32(J0)`).
     ///
     /// # 🚨 Security Considerations 🚨
     /// This bypasses init-data generation: the keystream's nonce is whatever it was constructed
-    /// with, and the caller is responsible for it never repeating under the key. The
-    /// [`SymmetricCipherEncryptor`] constructors are the safe path.
+    /// with, and the caller is responsible for it never repeating under the key. A key's
+    /// `create_encryptor` is the safe path.
     pub fn from_keystream(keystream: KS) -> Self {
         Self::check_shape();
         Self { keystream, pending: Secret::new(), used: BLOCK_LEN, _marker: PhantomData }
@@ -199,7 +199,7 @@ where
 impl<KS, Dir, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize> Algorithm
     for StreamCipher<KS, Dir, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
 where
-    KS: KeyStream<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
+    KS: KeyStream<INIT_DATA_LEN, BLOCK_LEN>,
 {
     /// The keystream's name.
     const ALG_NAME: &'static str = KS::ALG_NAME;
@@ -211,7 +211,7 @@ impl<KS, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOCK_LEN: usiz
     SymmetricCipherEncryptor<INIT_DATA_LEN, 0>
     for StreamCipher<KS, Encrypting, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
 where
-    KS: KeyStream<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
+    KS: KeyStream<INIT_DATA_LEN, BLOCK_LEN>,
 {
     /// Every input byte produces exactly one output byte.
     fn do_encrypt_out_len(&self, input_len: usize) -> usize {
@@ -243,7 +243,7 @@ impl<KS, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOCK_LEN: usiz
     StreamCipherEncryptor<INIT_DATA_LEN>
     for StreamCipher<KS, Encrypting, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
 where
-    KS: KeyStream<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
+    KS: KeyStream<INIT_DATA_LEN, BLOCK_LEN>,
 {
     /// XORs the next `data.len()` keystream bytes into `data`.
     ///
@@ -259,7 +259,7 @@ impl<KS, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOCK_LEN: usiz
     SymmetricCipherDecryptor<INIT_DATA_LEN, 0>
     for StreamCipher<KS, Decrypting, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
 where
-    KS: KeyStream<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
+    KS: KeyStream<INIT_DATA_LEN, BLOCK_LEN>,
 {
     /// Nothing is held back, so every input byte can be released immediately.
     fn do_decrypt_out_len(&self, input_len: usize) -> usize {
@@ -291,7 +291,7 @@ impl<KS, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOCK_LEN: usiz
     StreamCipherDecryptor<INIT_DATA_LEN>
     for StreamCipher<KS, Decrypting, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
 where
-    KS: KeyStream<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
+    KS: KeyStream<INIT_DATA_LEN, BLOCK_LEN>,
 {
     /// The same XOR as encryption.
     ///
@@ -302,25 +302,25 @@ where
     }
 }
 
-impl<KS, Dir, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize>
+impl<'k, KS, Dir, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize>
     StreamCipher<KS, Dir, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
 where
-    KS: KeyStream<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN> + SuspendableComponent,
+    KS: KeyStream<INIT_DATA_LEN, BLOCK_LEN> + SuspendableComponent<'k>,
 {
     /// The `N` of this type's [`SuspendableKeyed<N>`] impl: the version header, the keystream's
     /// state, the pending keystream block and the `used` count as a `u64`. See
     /// [`bouncycastle_utils::suspendable_state`].
     pub const SUSPENDED_STATE_LEN: usize =
-        LIB_VERSION_LEN + <Self as SuspendableComponent>::STATE_LEN;
+        LIB_VERSION_LEN + <Self as SuspendableComponent<'k>>::STATE_LEN;
 }
 
 /// The suspended state is the keystream's own state followed by the pending keystream block and
 /// how much of it is used. The pending block is live keystream, which is why the whole state
 /// must be protected and never resumed twice; see [`bouncycastle_utils::suspendable_state`].
-impl<KS, Dir, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize>
-    SuspendableComponent for StreamCipher<KS, Dir, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
+impl<'k, KS, Dir, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize>
+    SuspendableComponent<'k> for StreamCipher<KS, Dir, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
 where
-    KS: KeyStream<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN> + SuspendableComponent,
+    KS: KeyStream<INIT_DATA_LEN, BLOCK_LEN> + SuspendableComponent<'k>,
 {
     const STATE_LEN: usize = KS::STATE_LEN + BLOCK_LEN + 8;
     type Key = KS::Key;
@@ -334,7 +334,7 @@ where
         debug_assert!(w.is_done());
     }
 
-    fn read_state(state: &[u8], key: &Self::Key) -> Result<Self, SuspendableError> {
+    fn read_state(state: &[u8], key: &'k Self::Key) -> Result<Self, SuspendableError> {
         Self::check_shape();
         let (ks, rest) = state.split_at(KS::STATE_LEN);
         let keystream = KS::read_state(ks, key)?;
@@ -351,15 +351,16 @@ where
 
 /// `N` must be [`StreamCipher::SUSPENDED_STATE_LEN`]; anything else is a compile error.
 impl<
+    'k,
     KS,
     Dir,
     const KEY_LEN: usize,
     const INIT_DATA_LEN: usize,
     const BLOCK_LEN: usize,
     const N: usize,
-> SuspendableKeyed<N> for StreamCipher<KS, Dir, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
+> SuspendableKeyed<'k, N> for StreamCipher<KS, Dir, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
 where
-    KS: KeyStream<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN> + SuspendableComponent,
+    KS: KeyStream<INIT_DATA_LEN, BLOCK_LEN> + SuspendableComponent<'k>,
 {
     type Key = KS::Key;
 
@@ -367,7 +368,7 @@ where
         suspend_component(&self)
     }
 
-    fn from_suspended(state: [u8; N], key: &Self::Key) -> Result<Self, SuspendableError> {
+    fn from_suspended(state: [u8; N], key: &'k Self::Key) -> Result<Self, SuspendableError> {
         resume_component(&state, key)
     }
 }

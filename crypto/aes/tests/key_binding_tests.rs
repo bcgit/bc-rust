@@ -9,7 +9,8 @@ use bouncycastle_aes::{AES_CBC_128, AES_GCM_128, AES128Key};
 use bouncycastle_cipher::Encrypting;
 use bouncycastle_cipher::modes::{CBC, CTR, GCM};
 use bouncycastle_cipher::padding::PKCS7;
-use bouncycastle_core::errors::{KeyMaterialError, SuspendableError, SymmetricCipherError};
+use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
+use bouncycastle_core::hazmat::ModeKey;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::symmetric_key::{
     AeadEncryptionKey, FromKeyMaterial, SymmetricDecryptionKey, SymmetricEncryptionKey,
@@ -17,8 +18,8 @@ use bouncycastle_core::symmetric_key::{
 use bouncycastle_core::traits::{Algorithm, SuspendableKeyed};
 use bouncycastle_rng::HashDRBG_SHA512;
 
-type CbcEnc = AES_CBC_128<Encrypting, PKCS7>;
-type GcmEnc = AES_GCM_128<Encrypting>;
+type CbcEnc<'k> = AES_CBC_128<'k, Encrypting, PKCS7>;
+type GcmEnc<'k> = AES_GCM_128<'k, Encrypting>;
 
 fn material() -> KeyMaterial<16> {
     KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey).unwrap()
@@ -72,15 +73,13 @@ fn unbound_material_is_accepted_by_both() {
 }
 
 #[test]
-fn a_suspended_state_does_not_resume_under_another_algorithms_key() {
+fn a_suspended_state_resumes_over_the_key_it_was_made_from() {
     let cbc_material = bound(CbcEnc::ALG_NAME);
     let cbc_key = AES128Key::<CBC<PKCS7>>::from_key_material(&cbc_material).unwrap();
     let (enc, _iv) = cbc_key.create_encryptor(&mut HashDRBG_SHA512::new_from_os()).unwrap();
     let state: [u8; CbcEnc::SUSPENDED_STATE_LEN] = enc.suspend();
 
-    CbcEnc::from_suspended(state, &cbc_material).unwrap();
-    assert_eq!(
-        CbcEnc::from_suspended(state, &bound(GcmEnc::ALG_NAME)).err(),
-        Some(SuspendableError::InvalidData)
-    );
+    // Resume takes the key's state, so a key bound to another algorithm is refused where it
+    // always was, at construction, and cannot reach `from_suspended` at all.
+    CbcEnc::from_suspended(state, cbc_key.state()).unwrap();
 }

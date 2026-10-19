@@ -45,7 +45,7 @@
 //! direction, CFB decryption is expected to come out ahead of CBC decryption.
 
 use bouncycastle_aes::hazmat::{AES128Internal, AES256Internal};
-use bouncycastle_aes::{AES_GMAC_128, AES_GMAC_256, AES128Key, AES256Key};
+use bouncycastle_aes::{AES128Key, AES256Key};
 use bouncycastle_cipher::modes::hazmat::{ECB, Ecb};
 use bouncycastle_cipher::modes::{
     Blocks, CBC, CCM, CCM_Packet, CFB, CFB8, CMAC, CTR, Cbc, Cfb, Cfb8, Ctr, GCM, GCM_NONCE_LEN,
@@ -76,9 +76,9 @@ const BLOCK_LEN: usize = 16;
 const NUM_BLOCKS: usize = 1024;
 const DATA_LEN: usize = NUM_BLOCKS * BLOCK_LEN;
 
-type Aes128Cfb<Dir> = Cfb<AES128Internal, Dir, 16, BLOCK_LEN>;
-type Aes256Cfb<Dir> = Cfb<AES256Internal, Dir, 32, BLOCK_LEN>;
-type Aes128Cfb8<Dir> = Cfb8<AES128Internal, Dir, 16, BLOCK_LEN>;
+type Aes128Cfb<'k, Dir> = Cfb<'k, AES128Internal, Dir, 16, BLOCK_LEN>;
+type Aes256Cfb<'k, Dir> = Cfb<'k, AES256Internal, Dir, 32, BLOCK_LEN>;
+type Aes128Cfb8<'k, Dir> = Cfb8<'k, AES128Internal, Dir, 16, BLOCK_LEN>;
 
 /// CCM at the parameters the ACVP vectors and most protocols use: a 12-byte nonce and a full
 /// 16-byte tag. The mode's in-place one-shots over the keyed permutation are the direct path;
@@ -98,15 +98,15 @@ type Aes128CcmFrameKey =
 const GCM_TAG_LEN: usize = 16;
 type Aes128GcmKey = AES128Key<GCM<GCM_TAG_LEN>>;
 type Aes256GcmKey = AES256Key<GCM<GCM_TAG_LEN>>;
-type Aes128Ctr<Dir> = Ctr<AES128Internal, Dir, 16, BLOCK_LEN, 12>;
-type Aes256Ctr<Dir> = Ctr<AES256Internal, Dir, 32, BLOCK_LEN, 12>;
-type Aes128Ecb<Dir> = Ecb<AES128Internal, Dir, 16, BLOCK_LEN>;
+type Aes128Ctr<'k, Dir> = Ctr<'k, AES128Internal, Dir, 16, BLOCK_LEN, 12>;
+type Aes256Ctr<'k, Dir> = Ctr<'k, AES256Internal, Dir, 32, BLOCK_LEN, 12>;
+type Aes128Ecb<'k, Dir> = Ecb<'k, AES128Internal, Dir, 16, BLOCK_LEN>;
 
 /// AES-128 with the batch methods implemented as single-block loops instead of AES's bit-sliced
 /// pair.
 ///
-/// This exists purely to isolate the value of the pair path. Comparing `Cbc<AES128Internal, ..>` against
-/// `Cbc<UnpairedAes128, ..>` at the *same* `N` holds everything else fixed -- same cipher, same
+/// This exists purely to isolate the value of the pair path. Comparing `Cbc<'_, AES128Internal, ..>` against
+/// `Cbc<'_, UnpairedAes128, ..>` at the *same* `N` holds everything else fixed -- same cipher, same
 /// call granularity, same amount of data movement -- so the difference is attributable to
 /// `decrypt_2blocks` and nothing else.
 ///
@@ -170,9 +170,9 @@ impl ElectronicCodeBook<16, BLOCK_LEN> for UnpairedAes128 {
     }
 }
 
-type UnpairedAes128Cbc<Dir> = Cbc<UnpairedAes128, Dir, 16, BLOCK_LEN>;
-type UnpairedAes128Cfb<Dir> = Cfb<UnpairedAes128, Dir, 16, BLOCK_LEN>;
-type UnpairedAes128Ecb<Dir> = Ecb<UnpairedAes128, Dir, 16, BLOCK_LEN>;
+type UnpairedAes128Cbc<'k, Dir> = Cbc<'k, UnpairedAes128, Dir, 16, BLOCK_LEN>;
+type UnpairedAes128Cfb<'k, Dir> = Cfb<'k, UnpairedAes128, Dir, 16, BLOCK_LEN>;
+type UnpairedAes128Ecb<'k, Dir> = Ecb<'k, UnpairedAes128, Dir, 16, BLOCK_LEN>;
 
 fn key<const N: usize>() -> KeyMaterial<N> {
     let bytes: [u8; N] = core::array::from_fn(|i| (i as u8).wrapping_mul(7).wrapping_add(1));
@@ -1171,7 +1171,7 @@ fn bench_cmac(c: &mut Criterion) {
 }
 
 /// GMAC is GHASH over the message plus two cipher calls, so it is several times faster than CMAC
-/// and the same as GCM's AAD-only measurement; the key object saves the schedule and `H` per tag.
+/// and the same as GCM's AAD-only measurement.
 fn bench_gmac(c: &mut Criterion) {
     let data: Vec<u8> = data().concat();
     let mut group = c.benchmark_group("modes::gmac");
@@ -1179,12 +1179,6 @@ fn bench_gmac(c: &mut Criterion) {
     let mut rng = FixedSeedRNG::<GCM_NONCE_LEN>::new([0x24u8; GCM_NONCE_LEN]);
 
     let key128 = mac_key::<16>();
-    group.bench_function("AES_128 Gmac::new 16KiB", |b| {
-        b.iter(|| {
-            let (gen_, _) = AES_GMAC_128::<Encrypting>::new(&key128, &mut rng).unwrap();
-            black_box(gen_.mac(black_box(&data)))
-        })
-    });
     let key_object_128 = AES128Key::<GMAC>::from_key_material(&key128).unwrap();
     group.bench_function("AES_128 key object 16KiB", |b| {
         b.iter(|| {
@@ -1193,12 +1187,6 @@ fn bench_gmac(c: &mut Criterion) {
         })
     });
     let key256 = mac_key::<32>();
-    group.bench_function("AES_256 Gmac::new 16KiB", |b| {
-        b.iter(|| {
-            let (gen_, _) = AES_GMAC_256::<Encrypting>::new(&key256, &mut rng).unwrap();
-            black_box(gen_.mac(black_box(&data)))
-        })
-    });
     let key_object_256 = AES256Key::<GMAC>::from_key_material(&key256).unwrap();
     group.bench_function("AES_256 key object 16KiB", |b| {
         b.iter(|| {

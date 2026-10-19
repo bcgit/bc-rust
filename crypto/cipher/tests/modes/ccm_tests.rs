@@ -97,7 +97,8 @@ fn stream_encrypt<
     plaintext: &[u8],
     chunk: usize,
 ) -> (Vec<u8>, [u8; TAG_LEN]) {
-    let mut enc = frame_key::<P, DATA_LEN>().create_encryptor_nonce(nonce);
+    let key = frame_key::<P, DATA_LEN>();
+    let mut enc = key.create_encryptor_nonce(nonce);
     enc.do_update_aad(aad).unwrap();
     let mut out = vec![0u8; plaintext.len()];
     let mut written = 0;
@@ -120,7 +121,8 @@ fn stream_decrypt<
     tag: &[u8; TAG_LEN],
     chunk: usize,
 ) -> Result<Vec<u8>, SymmetricCipherError> {
-    let mut dec = frame_key::<P, DATA_LEN>().create_decryptor(nonce);
+    let key = frame_key::<P, DATA_LEN>();
+    let mut dec = key.create_decryptor(nonce);
     dec.do_update_aad(aad)?;
     let mut out = vec![0u8; ciphertext.len()];
     let mut written = 0;
@@ -196,7 +198,8 @@ fn the_pair_path_is_really_used_in_both_directions_and_the_mac_never_batches() {
     // Decryption: the swapped keystream recovers the wrong plaintext (Sec 6.2 step 5), which is
     // what the MAC then absorbs (step 9), so the tag check fails. The stream releases the
     // plaintext before the final, so the wrong recovery can be seen.
-    let mut dec = frame_key::<SwappedPairToy, LEN>().create_decryptor(&nonce);
+    let key = frame_key::<SwappedPairToy, LEN>();
+    let mut dec = key.create_decryptor(&nonce);
     dec.do_update_aad(b"aad").unwrap();
     let mut back = vec![0u8; LEN];
     dec.do_decrypt_out(&ct, &mut back).unwrap();
@@ -227,7 +230,9 @@ fn the_four_block_path_is_really_used_in_both_directions() {
     assert_eq!(pairs_ct, ct, "pairs must not use the four path");
     assert_eq!(pairs_tag, tag);
 
-    let mut dec = frame_key::<SwappedFourToy, LEN>().create_decryptor(&nonce);
+    let key = frame_key::<SwappedFourToy, LEN>();
+
+    let mut dec = key.create_decryptor(&nonce);
     dec.do_update_aad(b"aad").unwrap();
     let mut back = vec![0u8; LEN];
     dec.do_decrypt_out(&ct, &mut back).unwrap();
@@ -259,7 +264,8 @@ fn every_split_agrees_with_the_one_shot_in_both_directions() {
     let (ct, tag) = seal::<Toy>(&nonce, aad, &plaintext);
 
     for split in 0..=LEN {
-        let mut enc = frame_key::<Toy, LEN>().create_encryptor_nonce(&nonce);
+        let key = frame_key::<Toy, LEN>();
+        let mut enc = key.create_encryptor_nonce(&nonce);
         enc.do_update_aad(aad).unwrap();
         let mut streamed = vec![0u8; LEN];
         enc.do_encrypt_out(&plaintext[..split], &mut streamed).unwrap();
@@ -268,7 +274,9 @@ fn every_split_agrees_with_the_one_shot_in_both_directions() {
         assert_eq!(streamed_tag, tag, "tag, split at {split}");
         assert_eq!(streamed, ct, "ciphertext, split at {split}");
 
-        let mut dec = frame_key::<Toy, LEN>().create_decryptor(&nonce);
+        let key = frame_key::<Toy, LEN>();
+
+        let mut dec = key.create_decryptor(&nonce);
         dec.do_update_aad(aad).unwrap();
         let mut back = vec![0u8; LEN];
         dec.do_decrypt_out(&ct[..split], &mut back).unwrap();
@@ -290,7 +298,8 @@ fn both_streams_hold_to_the_frame() {
     let (ct, tag) = seal::<Toy>(&nonce, &[], &plaintext);
 
     // Encrypting: too much is refused, and finalizing short is refused.
-    let mut enc = frame_key::<Toy, LEN>().create_encryptor_nonce(&nonce);
+    let key = frame_key::<Toy, LEN>();
+    let mut enc = key.create_encryptor_nonce(&nonce);
     let mut out = [0u8; 9];
     assert!(
         matches!(
@@ -307,7 +316,8 @@ fn both_streams_hold_to_the_frame() {
 
     // Decrypting: the stream's bound is the frame plus an inline tag, and a final that has not
     // seen the frame reports a malformed ciphertext.
-    let mut dec = frame_key::<Toy, LEN>().create_decryptor(&nonce);
+    let key = frame_key::<Toy, LEN>();
+    let mut dec = key.create_decryptor(&nonce);
     let mut out = [0u8; LEN];
     assert!(
         matches!(
@@ -321,7 +331,9 @@ fn both_streams_hold_to_the_frame() {
     dec.do_decrypt_final_detached(&tag).unwrap();
     assert_eq!(out, plaintext[..]);
 
-    let mut dec = frame_key::<Toy, LEN>().create_decryptor(&nonce);
+    let key = frame_key::<Toy, LEN>();
+
+    let mut dec = key.create_decryptor(&nonce);
     dec.do_decrypt_out(&ct[..4], &mut out).unwrap();
     assert!(
         matches!(dec.do_decrypt_final_detached(&tag), Err(SymmetricCipherError::DecryptionFailed)),
@@ -467,7 +479,8 @@ fn the_one_shot_releases_nothing_on_forgery_but_the_stream_does() {
     // The stream: the payload is released by the update that brings it, the finals release
     // nothing, and a rejected tag cannot take it back. The detached final leaves its (unused)
     // buffer alone rather than zeroizing it, since there is nothing of the plaintext in it.
-    let mut dec = frame_key::<Toy, LEN>().create_decryptor(&nonce);
+    let key = frame_key::<Toy, LEN>();
+    let mut dec = key.create_decryptor(&nonce);
     dec.do_update_aad(b"aad").unwrap();
     let mut streamed = [0u8; LEN];
     assert_eq!(dec.do_decrypt_out(&ct, &mut streamed).unwrap(), LEN, "released mid-stream");
@@ -482,7 +495,8 @@ fn the_one_shot_releases_nothing_on_forgery_but_the_stream_does() {
 
     let mut inline = ct.clone();
     inline.extend_from_slice(&tag);
-    let mut dec = frame_key::<Toy, LEN>().create_decryptor(&nonce);
+    let key = frame_key::<Toy, LEN>();
+    let mut dec = key.create_decryptor(&nonce);
     dec.do_update_aad(b"aad").unwrap();
     let mut streamed = [0u8; LEN];
     assert_eq!(dec.do_decrypt_out(&inline, &mut streamed).unwrap(), LEN);

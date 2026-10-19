@@ -42,12 +42,12 @@ use std::process::exit;
 ///
 /// `INIT_DATA_LEN` is the mode's: one block for CFB and CFB8, 12 bytes for CTR. The IV is drawn
 /// from the OS-backed DRBG; there is no way to supply one.
-pub(crate) fn encrypt_stream<K, const KEY_LEN: usize, const INIT_DATA_LEN: usize>(
-    key: &K,
+pub(crate) fn encrypt_stream<'k, K, const KEY_LEN: usize, const INIT_DATA_LEN: usize>(
+    key: &'k K,
     output_hex: bool,
 ) where
     K: SymmetricEncryptionKey<KEY_LEN, INIT_DATA_LEN, 0>,
-    K::Encryptor: StreamCipherEncryptor<INIT_DATA_LEN>,
+    K::Encryptor<'k>: StreamCipherEncryptor<INIT_DATA_LEN>,
 {
     let (mut enc, iv) =
         key.create_encryptor(&mut HashDRBG_SHA512::new_from_os()).unwrap_or_else(|e| {
@@ -75,12 +75,12 @@ pub(crate) fn encrypt_stream<K, const KEY_LEN: usize, const INIT_DATA_LEN: usize
 
 /// Decrypts stdin to stdout under the key's stream mode, taking the IV from the first
 /// `INIT_DATA_LEN` bytes of input.
-pub(crate) fn decrypt_stream<K, const KEY_LEN: usize, const INIT_DATA_LEN: usize>(
-    key: &K,
+pub(crate) fn decrypt_stream<'k, K, const KEY_LEN: usize, const INIT_DATA_LEN: usize>(
+    key: &'k K,
     output_hex: bool,
 ) where
     K: SymmetricDecryptionKey<KEY_LEN, INIT_DATA_LEN, 0>,
-    K::Decryptor: StreamCipherDecryptor<INIT_DATA_LEN>,
+    K::Decryptor<'k>: StreamCipherDecryptor<INIT_DATA_LEN>,
 {
     // The leading bytes are the IV, not ciphertext.
     let mut iv = [0u8; INIT_DATA_LEN];
@@ -139,15 +139,15 @@ fn finish(output_hex: bool) {
 /// Runs one direction of a stream mode under its key. The `run` dispatchers in `aes_cfb_cmd`,
 /// `aes_cfb8_cmd` and `aes_ctr_cmd` differ only in which key type they load, so the match lives
 /// here.
-pub(crate) fn run_stream_mode<K, const KEY_LEN: usize, const INIT_DATA_LEN: usize>(
+pub(crate) fn run_stream_mode<'k, K, const KEY_LEN: usize, const INIT_DATA_LEN: usize>(
     action: &CipherDirection,
-    key: &K,
+    key: &'k K,
     output_hex: bool,
 ) where
     K: SymmetricEncryptionKey<KEY_LEN, INIT_DATA_LEN, 0>
         + SymmetricDecryptionKey<KEY_LEN, INIT_DATA_LEN, 0>,
-    K::Encryptor: StreamCipherEncryptor<INIT_DATA_LEN>,
-    K::Decryptor: StreamCipherDecryptor<INIT_DATA_LEN>,
+    K::Encryptor<'k>: StreamCipherEncryptor<INIT_DATA_LEN>,
+    K::Decryptor<'k>: StreamCipherDecryptor<INIT_DATA_LEN>,
 {
     match action {
         CipherDirection::Encrypt => encrypt_stream::<K, KEY_LEN, INIT_DATA_LEN>(key, output_hex),

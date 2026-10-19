@@ -228,9 +228,12 @@ impl<PARAMS: SHAKEParams> FromAnyKeyMaterial for KMACKeyInternal<PARAMS> {
 }
 
 impl<PARAMS: SHAKEParams> MacGenerationKey for KMACKeyInternal<PARAMS> {
-    type Generator = KMACInternal<PARAMS>;
+    type Generator<'k>
+        = KMACInternal<PARAMS>
+    where
+        Self: 'k;
 
-    fn create_generator(&self) -> Self::Generator {
+    fn create_generator<'k>(&'k self) -> Self::Generator<'k> {
         KMACInternal {
             cshake: self.cshake.clone(),
             output_len: self.output_len,
@@ -240,9 +243,12 @@ impl<PARAMS: SHAKEParams> MacGenerationKey for KMACKeyInternal<PARAMS> {
 }
 
 impl<PARAMS: SHAKEParams> MacVerificationKey for KMACKeyInternal<PARAMS> {
-    type Verifier = KMACInternal<PARAMS>;
+    type Verifier<'k>
+        = KMACInternal<PARAMS>
+    where
+        Self: 'k;
 
-    fn create_verifier(&self) -> Self::Verifier {
+    fn create_verifier<'k>(&'k self) -> Self::Verifier<'k> {
         self.create_generator()
     }
 }
@@ -287,7 +293,7 @@ impl<PARAMS: SHAKEParams> KMACInternal<PARAMS> {
     }
 }
 
-impl<PARAMS: SHAKEParams> SuspendableComponent for KMACInternal<PARAMS> {
+impl<'k, PARAMS: SHAKEParams> SuspendableComponent<'k> for KMACInternal<PARAMS> {
     const STATE_LEN: usize = CSHAKE_COMPONENT_LEN + 8;
     type Key = ();
 
@@ -299,7 +305,7 @@ impl<PARAMS: SHAKEParams> SuspendableComponent for KMACInternal<PARAMS> {
         debug_assert!(w.is_done());
     }
 
-    fn read_state(state: &[u8], _key: &()) -> Result<Self, SuspendableError> {
+    fn read_state(state: &[u8], _key: &'k ()) -> Result<Self, SuspendableError> {
         let (cshake, rest) = state.split_at(CSHAKE_COMPONENT_LEN);
         let cshake = CSHAKEInternal::read_tagged_customized(cshake, PARAMS::KMAC_STATE_TAG)?;
         let mut r = Cursor::new(rest);
@@ -450,7 +456,7 @@ impl<PARAMS: SHAKEParams> KMACXOFInternal<PARAMS> {
     }
 }
 
-impl<PARAMS: SHAKEParams> SuspendableComponent for KMACXOFInternal<PARAMS> {
+impl<'k, PARAMS: SHAKEParams> SuspendableComponent<'k> for KMACXOFInternal<PARAMS> {
     const STATE_LEN: usize = CSHAKE_COMPONENT_LEN;
     type Key = ();
 
@@ -458,7 +464,7 @@ impl<PARAMS: SHAKEParams> SuspendableComponent for KMACXOFInternal<PARAMS> {
         self.cshake.write_tagged(PARAMS::KMACXOF_STATE_TAG, out)
     }
 
-    fn read_state(state: &[u8], _key: &()) -> Result<Self, SuspendableError> {
+    fn read_state(state: &[u8], _key: &'k ()) -> Result<Self, SuspendableError> {
         let cshake = CSHAKEInternal::read_tagged_customized(state, PARAMS::KMACXOF_STATE_TAG)?;
         Ok(Self { cshake, strength: SecurityStrength::from_bits(PARAMS::SIZE as usize) })
     }

@@ -34,7 +34,7 @@ use bouncycastle_core_test_framework::symmetric_ciphers::TestFrameworkSymmetricC
 use common::{TOY_LEN, Toy, toy_key};
 use toy_key::{ToyKey, os_rng};
 
-type ToyCtr<Dir> = Ctr<Toy, Dir, TOY_LEN, TOY_LEN, 12>;
+type ToyCtr<'k, Dir> = Ctr<'k, Toy, Dir, TOY_LEN, TOY_LEN, 12>;
 
 /// The toy key under the stream mode `M`.
 fn key_for<M: Mode<Toy>>() -> ToyKey<Toy, M> {
@@ -63,12 +63,12 @@ fn the_stream_modes_conform_to_the_symmetric_cipher_suite() {
 /// the check that the bridge adds nothing and loses nothing.
 #[test]
 fn the_two_apis_agree_byte_for_byte() {
-    fn check<K, const KEY_LEN: usize, const INIT_DATA_LEN: usize>(name: &str, key: &K)
+    fn check<'k, K, const KEY_LEN: usize, const INIT_DATA_LEN: usize>(name: &str, key: &'k K)
     where
         K: SymmetricEncryptionKey<KEY_LEN, INIT_DATA_LEN, 0>
             + SymmetricDecryptionKey<KEY_LEN, INIT_DATA_LEN, 0>,
-        K::Encryptor: StreamCipherEncryptor<INIT_DATA_LEN>,
-        K::Decryptor: StreamCipherDecryptor<INIT_DATA_LEN>,
+        K::Encryptor<'k>: StreamCipherEncryptor<INIT_DATA_LEN>,
+        K::Decryptor<'k>: StreamCipherDecryptor<INIT_DATA_LEN>,
     {
         for len in [0usize, 1, 15, 16, 17, 63, 64, 171] {
             let plaintext: Vec<u8> = (0..len).map(|i| (i * 7 + 1) as u8).collect();
@@ -103,7 +103,9 @@ fn the_input_buffer_is_not_modified() {
     let plaintext: Vec<u8> = (0..100u8).collect();
     let original = plaintext.clone();
 
-    let (mut enc, _init) = key_for::<CFB>().create_encryptor(&mut os_rng()).unwrap();
+    let key = key_for::<CFB>();
+
+    let (mut enc, _init) = key.create_encryptor(&mut os_rng()).unwrap();
     let mut ciphertext = vec![0u8; plaintext.len()];
     enc.do_encrypt_out(&plaintext, &mut ciphertext).unwrap();
 

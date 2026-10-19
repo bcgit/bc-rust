@@ -98,11 +98,12 @@ const CHUNKINGS: [usize; 6] = [1, 5, 16, 17, 33, 69];
 
 fn check<K, const KEY_LEN: usize>(name: &str, key_hex: &str, expected_hex: &str)
 where
+    K: 'static,
     K: FromKeyMaterial<KEY_LEN>
         + SymmetricEncryptionKey<KEY_LEN, NONCE_LEN, 0>
         + SymmetricDecryptionKey<KEY_LEN, NONCE_LEN, 0>,
-    K::Encryptor: StreamCipherEncryptor<NONCE_LEN>,
-    K::Decryptor: StreamCipherDecryptor<NONCE_LEN>,
+    for<'k> K::Encryptor<'k>: StreamCipherEncryptor<NONCE_LEN>,
+    for<'k> K::Decryptor<'k>: StreamCipherDecryptor<NONCE_LEN>,
 {
     let key = K::from_key_material(&key_material::<KEY_LEN>(key_hex)).expect("a valid key");
     let nonce: [u8; NONCE_LEN] = unhex(NONCE).try_into().expect("a 12-byte nonce");

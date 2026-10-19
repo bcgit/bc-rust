@@ -17,7 +17,7 @@ use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
 use bouncycastle_core::hazmat::{
     AeadDeclaredDecryptMode, AeadDeclaredEncryptMode, AeadDecryptMode, AeadEncryptMode,
     BlockDecryptMode, BlockEncryptMode, EcbDecryptMode, EcbDecryptionKey, EcbEncryptMode,
-    EcbEncryptionKey, ElectronicCodeBook, MacMode, Mode, SymmetricDecryptMode,
+    EcbEncryptionKey, ElectronicCodeBook, MacMode, Mode, ModeKey, SymmetricDecryptMode,
     SymmetricEncryptMode, do_hazardous_operations,
 };
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
@@ -50,6 +50,12 @@ impl<P, M: Mode<P>> ToyKey<P, M> {
 
     /// The mode's per-key state, for tests of the workers' `from_key_state` routes.
     pub fn state(&self) -> &M::KeyState {
+        &self.state
+    }
+}
+
+impl<P, M: Mode<P>> ModeKey<P, M> for ToyKey<P, M> {
+    fn state(&self) -> &M::KeyState {
         &self.state
     }
 }
@@ -100,12 +106,15 @@ impl<P, M, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const FINAL_LEN: us
 where
     M: SymmetricEncryptMode<P, KEY_LEN, INIT_DATA_LEN, FINAL_LEN>,
 {
-    type Encryptor = M::Encryptor;
+    type Encryptor<'k>
+        = M::Encryptor<'k>
+    where
+        Self: 'k;
 
-    fn create_encryptor(
-        &self,
+    fn create_encryptor<'k>(
+        &'k self,
         rng: &mut dyn RNG,
-    ) -> Result<(Self::Encryptor, [u8; INIT_DATA_LEN]), SymmetricCipherError> {
+    ) -> Result<(Self::Encryptor<'k>, [u8; INIT_DATA_LEN]), SymmetricCipherError> {
         M::encrypt_init(&self.state, rng)
     }
 }
@@ -115,9 +124,12 @@ impl<P, M, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const FINAL_LEN: us
 where
     M: SymmetricDecryptMode<P, KEY_LEN, INIT_DATA_LEN, FINAL_LEN>,
 {
-    type Decryptor = M::Decryptor;
+    type Decryptor<'k>
+        = M::Decryptor<'k>
+    where
+        Self: 'k;
 
-    fn create_decryptor(&self, init_data: &[u8; INIT_DATA_LEN]) -> Self::Decryptor {
+    fn create_decryptor<'k>(&'k self, init_data: &[u8; INIT_DATA_LEN]) -> Self::Decryptor<'k> {
         M::decrypt_init(&self.state, init_data)
     }
 }
@@ -127,12 +139,15 @@ impl<P, M, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOCK_LEN: us
 where
     M: BlockEncryptMode<P, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
 {
-    type Encryptor = M::Encryptor;
+    type Encryptor<'k>
+        = M::Encryptor<'k>
+    where
+        Self: 'k;
 
-    fn create_encryptor(
-        &self,
+    fn create_encryptor<'k>(
+        &'k self,
         rng: &mut dyn RNG,
-    ) -> Result<(Self::Encryptor, [u8; INIT_DATA_LEN]), SymmetricCipherError> {
+    ) -> Result<(Self::Encryptor<'k>, [u8; INIT_DATA_LEN]), SymmetricCipherError> {
         M::encrypt_init(&self.state, rng)
     }
 }
@@ -142,9 +157,12 @@ impl<P, M, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOCK_LEN: us
 where
     M: BlockDecryptMode<P, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
 {
-    type Decryptor = M::Decryptor;
+    type Decryptor<'k>
+        = M::Decryptor<'k>
+    where
+        Self: 'k;
 
-    fn create_decryptor(&self, init_data: &[u8; INIT_DATA_LEN]) -> Self::Decryptor {
+    fn create_decryptor<'k>(&'k self, init_data: &[u8; INIT_DATA_LEN]) -> Self::Decryptor<'k> {
         M::decrypt_init(&self.state, init_data)
     }
 }
@@ -154,9 +172,12 @@ impl<P, M, const KEY_LEN: usize, const BLOCK_LEN: usize> EcbEncryptionKey<KEY_LE
 where
     M: EcbEncryptMode<P, KEY_LEN, BLOCK_LEN>,
 {
-    type Encryptor = M::Encryptor;
+    type Encryptor<'k>
+        = M::Encryptor<'k>
+    where
+        Self: 'k;
 
-    fn create_encryptor(&self) -> Self::Encryptor {
+    fn create_encryptor<'k>(&'k self) -> Self::Encryptor<'k> {
         M::encrypt_init(&self.state)
     }
 }
@@ -166,9 +187,12 @@ impl<P, M, const KEY_LEN: usize, const BLOCK_LEN: usize> EcbDecryptionKey<KEY_LE
 where
     M: EcbDecryptMode<P, KEY_LEN, BLOCK_LEN>,
 {
-    type Decryptor = M::Decryptor;
+    type Decryptor<'k>
+        = M::Decryptor<'k>
+    where
+        Self: 'k;
 
-    fn create_decryptor(&self) -> Self::Decryptor {
+    fn create_decryptor<'k>(&'k self) -> Self::Decryptor<'k> {
         M::decrypt_init(&self.state)
     }
 }
@@ -184,16 +208,19 @@ impl<
 where
     M: AeadEncryptMode<P, KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN>,
 {
-    type Encryptor = M::Encryptor;
+    type Encryptor<'k>
+        = M::Encryptor<'k>
+    where
+        Self: 'k;
 
-    fn create_encryptor(
-        &self,
+    fn create_encryptor<'k>(
+        &'k self,
         rng: &mut dyn RNG,
-    ) -> Result<(Self::Encryptor, [u8; NONCE_LEN]), SymmetricCipherError> {
+    ) -> Result<(Self::Encryptor<'k>, [u8; NONCE_LEN]), SymmetricCipherError> {
         M::encrypt_init(&self.state, rng)
     }
 
-    fn create_encryptor_nonce(&self, nonce: &[u8; NONCE_LEN]) -> Self::Encryptor {
+    fn create_encryptor_nonce<'k>(&'k self, nonce: &[u8; NONCE_LEN]) -> Self::Encryptor<'k> {
         M::encrypt_init_nonce(&self.state, nonce)
     }
 
@@ -227,9 +254,12 @@ impl<
 where
     M: AeadDecryptMode<P, KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN>,
 {
-    type Decryptor = M::Decryptor;
+    type Decryptor<'k>
+        = M::Decryptor<'k>
+    where
+        Self: 'k;
 
-    fn create_decryptor(&self, nonce: &[u8; NONCE_LEN]) -> Self::Decryptor {
+    fn create_decryptor<'k>(&'k self, nonce: &[u8; NONCE_LEN]) -> Self::Decryptor<'k> {
         M::decrypt_init(&self.state, nonce)
     }
 
@@ -255,23 +285,26 @@ impl<
 where
     M: AeadDeclaredEncryptMode<P, KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN>,
 {
-    type Encryptor = M::Encryptor;
+    type Encryptor<'k>
+        = M::Encryptor<'k>
+    where
+        Self: 'k;
 
-    fn create_encryptor(
-        &self,
+    fn create_encryptor<'k>(
+        &'k self,
         rng: &mut dyn RNG,
         aad_len: usize,
         payload_len: usize,
-    ) -> Result<(Self::Encryptor, [u8; NONCE_LEN]), SymmetricCipherError> {
+    ) -> Result<(Self::Encryptor<'k>, [u8; NONCE_LEN]), SymmetricCipherError> {
         M::encrypt_init(&self.state, rng, aad_len, payload_len)
     }
 
-    fn create_encryptor_nonce(
-        &self,
+    fn create_encryptor_nonce<'k>(
+        &'k self,
         nonce: &[u8; NONCE_LEN],
         aad_len: usize,
         payload_len: usize,
-    ) -> Result<Self::Encryptor, SymmetricCipherError> {
+    ) -> Result<Self::Encryptor<'k>, SymmetricCipherError> {
         M::encrypt_init_nonce(&self.state, nonce, aad_len, payload_len)
     }
 
@@ -305,14 +338,17 @@ impl<
 where
     M: AeadDeclaredDecryptMode<P, KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN>,
 {
-    type Decryptor = M::Decryptor;
+    type Decryptor<'k>
+        = M::Decryptor<'k>
+    where
+        Self: 'k;
 
-    fn create_decryptor(
-        &self,
+    fn create_decryptor<'k>(
+        &'k self,
         nonce: &[u8; NONCE_LEN],
         aad_len: usize,
         payload_len: usize,
-    ) -> Result<Self::Decryptor, SymmetricCipherError> {
+    ) -> Result<Self::Decryptor<'k>, SymmetricCipherError> {
         M::decrypt_init(&self.state, nonce, aad_len, payload_len)
     }
 
@@ -328,17 +364,23 @@ where
 }
 
 impl<P, M: MacMode<P>> MacGenerationKey for ToyKey<P, M> {
-    type Generator = M::Worker;
+    type Generator<'k>
+        = M::Worker<'k>
+    where
+        Self: 'k;
 
-    fn create_generator(&self) -> Self::Generator {
+    fn create_generator<'k>(&'k self) -> Self::Generator<'k> {
         M::mac_init(&self.state)
     }
 }
 
 impl<P, M: MacMode<P>> MacVerificationKey for ToyKey<P, M> {
-    type Verifier = M::Worker;
+    type Verifier<'k>
+        = M::Worker<'k>
+    where
+        Self: 'k;
 
-    fn create_verifier(&self) -> Self::Verifier {
+    fn create_verifier<'k>(&'k self) -> Self::Verifier<'k> {
         M::mac_init(&self.state)
     }
 }
@@ -366,17 +408,23 @@ impl<P, const TAG_LEN: usize> AeadEncryptMode<P, TOY_KEY_LEN, GCM_NONCE_LEN, TAG
 where
     P: ElectronicCodeBook<TOY_KEY_LEN, 16> + ModeNames + Clone,
 {
-    type Encryptor = Gcm<P, Encrypting, TOY_KEY_LEN, TAG_LEN>;
+    type Encryptor<'k>
+        = Gcm<'k, P, Encrypting, TOY_KEY_LEN, TAG_LEN>
+    where
+        P: 'k;
 
-    fn encrypt_init(
-        state: &Self::KeyState,
+    fn encrypt_init<'k>(
+        state: &'k Self::KeyState,
         rng: &mut dyn RNG,
-    ) -> Result<(Self::Encryptor, [u8; GCM_NONCE_LEN]), SymmetricCipherError> {
-        Self::Encryptor::from_key_state(state, rng)
+    ) -> Result<(Self::Encryptor<'k>, [u8; GCM_NONCE_LEN]), SymmetricCipherError> {
+        <Self::Encryptor<'k>>::from_key_state(state, rng)
     }
 
-    fn encrypt_init_nonce(state: &Self::KeyState, nonce: &[u8; GCM_NONCE_LEN]) -> Self::Encryptor {
-        Self::Encryptor::from_key_state_nonce(state, nonce)
+    fn encrypt_init_nonce<'k>(
+        state: &'k Self::KeyState,
+        nonce: &[u8; GCM_NONCE_LEN],
+    ) -> Self::Encryptor<'k> {
+        <Self::Encryptor<'k>>::from_key_state_nonce(state, nonce)
     }
 }
 
@@ -385,10 +433,16 @@ impl<P, const TAG_LEN: usize> AeadDecryptMode<P, TOY_KEY_LEN, GCM_NONCE_LEN, TAG
 where
     P: ElectronicCodeBook<TOY_KEY_LEN, 16> + ModeNames + Clone,
 {
-    type Decryptor = Gcm<P, Decrypting, TOY_KEY_LEN, TAG_LEN>;
+    type Decryptor<'k>
+        = Gcm<'k, P, Decrypting, TOY_KEY_LEN, TAG_LEN>
+    where
+        P: 'k;
 
-    fn decrypt_init(state: &Self::KeyState, nonce: &[u8; GCM_NONCE_LEN]) -> Self::Decryptor {
-        Self::Decryptor::from_key_state(state, nonce)
+    fn decrypt_init<'k>(
+        state: &'k Self::KeyState,
+        nonce: &[u8; GCM_NONCE_LEN],
+    ) -> Self::Decryptor<'k> {
+        <Self::Decryptor<'k>>::from_key_state(state, nonce)
     }
 }
 
@@ -413,27 +467,27 @@ impl<P, const TAG_LEN: usize> ToyKey<P, ToyGMAC<TAG_LEN>>
 where
     P: ElectronicCodeBook<TOY_KEY_LEN, 16> + ModeNames + Clone,
 {
-    pub fn create_generator(
-        &self,
+    pub fn create_generator<'k>(
+        &'k self,
         rng: &mut dyn RNG,
     ) -> Result<
-        (Gmac<P, Encrypting, TOY_KEY_LEN, TAG_LEN>, [u8; GCM_NONCE_LEN]),
+        (Gmac<'k, P, Encrypting, TOY_KEY_LEN, TAG_LEN>, [u8; GCM_NONCE_LEN]),
         SymmetricCipherError,
     > {
         Gmac::<P, Encrypting, TOY_KEY_LEN, TAG_LEN>::from_key_state(&self.state, rng)
     }
 
-    pub fn create_generator_nonce(
-        &self,
+    pub fn create_generator_nonce<'k>(
+        &'k self,
         nonce: &[u8; GCM_NONCE_LEN],
-    ) -> Gmac<P, Encrypting, TOY_KEY_LEN, TAG_LEN> {
+    ) -> Gmac<'k, P, Encrypting, TOY_KEY_LEN, TAG_LEN> {
         Gmac::<P, Encrypting, TOY_KEY_LEN, TAG_LEN>::from_key_state_nonce(&self.state, nonce)
     }
 
-    pub fn create_verifier(
-        &self,
+    pub fn create_verifier<'k>(
+        &'k self,
         nonce: &[u8; GCM_NONCE_LEN],
-    ) -> Gmac<P, Decrypting, TOY_KEY_LEN, TAG_LEN> {
+    ) -> Gmac<'k, P, Decrypting, TOY_KEY_LEN, TAG_LEN> {
         Gmac::<P, Decrypting, TOY_KEY_LEN, TAG_LEN>::from_key_state(&self.state, nonce)
     }
 }
@@ -458,9 +512,12 @@ impl<P> MacMode<P> for ToyCMAC
 where
     P: ElectronicCodeBook<TOY_KEY_LEN, 16> + ModeNames + Clone,
 {
-    type Worker = Cmac<P, TOY_KEY_LEN, 16>;
+    type Worker<'k>
+        = Cmac<'k, P, TOY_KEY_LEN, 16>
+    where
+        P: 'k;
 
-    fn mac_init(state: &Self::KeyState) -> Self::Worker {
+    fn mac_init<'k>(state: &'k Self::KeyState) -> Self::Worker<'k> {
         Cmac::from_key_state(state)
     }
 }

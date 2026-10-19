@@ -653,14 +653,17 @@ impl FromKeyMaterial<KEY_LEN> for AsconAEAD128Key {
 }
 
 impl AeadEncryptionKey<KEY_LEN, NONCE_LEN, TAG_LEN, TAG_LEN> for AsconAEAD128Key {
-    type Encryptor = Ascon_AEAD128<Encrypting>;
+    type Encryptor<'k>
+        = Ascon_AEAD128<Encrypting>
+    where
+        Self: 'k;
 
     /// # Errors
     /// [`SymmetricCipherError::RNGError`] if the nonce draw fails; nothing else can.
-    fn create_encryptor(
-        &self,
+    fn create_encryptor<'k>(
+        &'k self,
         rng: &mut dyn RNG,
-    ) -> Result<(Self::Encryptor, [u8; NONCE_LEN]), SymmetricCipherError> {
+    ) -> Result<(Self::Encryptor<'k>, [u8; NONCE_LEN]), SymmetricCipherError> {
         let mut nonce = [0u8; NONCE_LEN];
         rng.next_bytes_out(&mut nonce)?;
         Ok((Ascon_AEAD128::from_key_words(&self.key, &nonce), nonce))
@@ -668,15 +671,18 @@ impl AeadEncryptionKey<KEY_LEN, NONCE_LEN, TAG_LEN, TAG_LEN> for AsconAEAD128Key
 
     /// Under a nonce the caller supplies, who takes on the obligation that it never repeat
     /// under this key (SP 800-232 R3).
-    fn create_encryptor_nonce(&self, nonce: &[u8; NONCE_LEN]) -> Self::Encryptor {
+    fn create_encryptor_nonce<'k>(&'k self, nonce: &[u8; NONCE_LEN]) -> Self::Encryptor<'k> {
         Ascon_AEAD128::from_key_words(&self.key, nonce)
     }
 }
 
 impl AeadDecryptionKey<KEY_LEN, NONCE_LEN, TAG_LEN, TAG_LEN> for AsconAEAD128Key {
-    type Decryptor = Ascon_AEAD128<Decrypting>;
+    type Decryptor<'k>
+        = Ascon_AEAD128<Decrypting>
+    where
+        Self: 'k;
 
-    fn create_decryptor(&self, nonce: &[u8; NONCE_LEN]) -> Self::Decryptor {
+    fn create_decryptor<'k>(&'k self, nonce: &[u8; NONCE_LEN]) -> Self::Decryptor<'k> {
         Ascon_AEAD128::from_key_words(&self.key, nonce)
     }
 }
@@ -720,7 +726,9 @@ const AEAD128_STATE_TAG: u8 = 0x04;
 const ENC_DIR_BITS: u8 = 0;
 const DEC_DIR_BITS: u8 = 4;
 
-impl SuspendableKeyed<SUSPENDED_ASCON_AEAD128_ENCRYPTOR_STATE_LEN> for Ascon_AEAD128<Encrypting> {
+impl<'k> SuspendableKeyed<'k, SUSPENDED_ASCON_AEAD128_ENCRYPTOR_STATE_LEN>
+    for Ascon_AEAD128<Encrypting>
+{
     // The 128-bit key must be re-supplied when resuming; it is never part of the serialized state,
     // and is re-validated exactly as construction validates it.
     type Key = KeyMaterial<KEY_LEN>;
@@ -732,7 +740,7 @@ impl SuspendableKeyed<SUSPENDED_ASCON_AEAD128_ENCRYPTOR_STATE_LEN> for Ascon_AEA
     /// A state suspended by the decrypting side is [`SuspendableError::InvalidData`] here.
     fn from_suspended(
         serialized_state: [u8; SUSPENDED_ASCON_AEAD128_ENCRYPTOR_STATE_LEN],
-        key: &Self::Key,
+        key: &'k Self::Key,
     ) -> Result<Self, SuspendableError> {
         Self::resume_as(serialized_state, key, ENC_DIR_BITS)
     }
@@ -740,7 +748,9 @@ impl SuspendableKeyed<SUSPENDED_ASCON_AEAD128_ENCRYPTOR_STATE_LEN> for Ascon_AEA
 
 /// The core's state, then the held-back bytes and their count; see
 /// [`SUSPENDED_ASCON_AEAD128_DECRYPTOR_STATE_LEN`].
-impl SuspendableKeyed<SUSPENDED_ASCON_AEAD128_DECRYPTOR_STATE_LEN> for Ascon_AEAD128<Decrypting> {
+impl<'k> SuspendableKeyed<'k, SUSPENDED_ASCON_AEAD128_DECRYPTOR_STATE_LEN>
+    for Ascon_AEAD128<Decrypting>
+{
     type Key = KeyMaterial<KEY_LEN>;
 
     fn suspend(self) -> [u8; SUSPENDED_ASCON_AEAD128_DECRYPTOR_STATE_LEN] {
@@ -756,7 +766,7 @@ impl SuspendableKeyed<SUSPENDED_ASCON_AEAD128_DECRYPTOR_STATE_LEN> for Ascon_AEA
     /// [`SuspendableError::InvalidData`].
     fn from_suspended(
         serialized_state: [u8; SUSPENDED_ASCON_AEAD128_DECRYPTOR_STATE_LEN],
-        key: &Self::Key,
+        key: &'k Self::Key,
     ) -> Result<Self, SuspendableError> {
         // infallible: the slice is exactly CIPHER_STATE_LEN bytes by construction.
         let cipher_state: [u8; CIPHER_STATE_LEN] =

@@ -64,10 +64,22 @@ impl TestFrameworkAEADCipher {
             FINAL_LEN >= TAG_LEN,
             "FINAL_LEN must have room for the inline tag the decryptor holds back"
         );
-        let encrypt_out_len = |len: usize| K::Encryptor::encrypt_out_len(len);
-        let encrypt_detached_out_len = |len: usize| K::Encryptor::encrypt_detached_out_len(len);
-        let decrypt_out_len = |len: usize| K::Decryptor::decrypt_out_len(len);
-        let decrypt_detached_out_len = |len: usize| K::Decryptor::decrypt_detached_out_len(len);
+        let encrypt_out_len = |len: usize| {
+            <K::Encryptor<'_> as SymmetricCipherEncryptor<NONCE_LEN, FINAL_LEN>>::encrypt_out_len(
+                len,
+            )
+        };
+        let encrypt_detached_out_len = |len: usize| {
+            <K::Encryptor<'_> as AEADCipherEncryptor<NONCE_LEN, TAG_LEN, FINAL_LEN>>::encrypt_detached_out_len(len)
+        };
+        let decrypt_out_len = |len: usize| {
+            <K::Decryptor<'_> as SymmetricCipherDecryptor<NONCE_LEN, FINAL_LEN>>::decrypt_out_len(
+                len,
+            )
+        };
+        let decrypt_detached_out_len = |len: usize| {
+            <K::Decryptor<'_> as AEADCipherDecryptor<NONCE_LEN, TAG_LEN, FINAL_LEN>>::decrypt_detached_out_len(len)
+        };
         let aad: &[u8] = b"some associated data";
         let pinned = [0xA5u8; NONCE_LEN];
         let fixed_rng = || FixedSeedRNG::<NONCE_LEN>::new(pinned);
@@ -630,9 +642,19 @@ impl TestFrameworkAEADTaggedLayout {
         &self,
         key: &K,
     ) {
-        let encrypt_out_len = |len: usize| K::Encryptor::encrypt_out_len(len);
-        let encrypt_detached_out_len = |len: usize| K::Encryptor::encrypt_detached_out_len(len);
-        let decrypt_out_len = |len: usize| K::Decryptor::decrypt_out_len(len);
+        let encrypt_out_len = |len: usize| {
+            <K::Encryptor<'_> as SymmetricCipherEncryptor<NONCE_LEN, FINAL_LEN>>::encrypt_out_len(
+                len,
+            )
+        };
+        let encrypt_detached_out_len = |len: usize| {
+            <K::Encryptor<'_> as AEADCipherEncryptor<NONCE_LEN, TAG_LEN, FINAL_LEN>>::encrypt_detached_out_len(len)
+        };
+        let decrypt_out_len = |len: usize| {
+            <K::Decryptor<'_> as SymmetricCipherDecryptor<NONCE_LEN, FINAL_LEN>>::decrypt_out_len(
+                len,
+            )
+        };
         // Encrypts `msg` into the inline layout with the one-shot, under the pinned nonce.
         let tagged_ct = |msg: &[u8]| -> (Vec<u8>, [u8; NONCE_LEN]) {
             let mut ct = vec![0u8; encrypt_out_len(msg.len())];

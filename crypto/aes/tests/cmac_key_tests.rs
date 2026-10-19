@@ -136,6 +136,6 @@ fn sizes() {
     );
     assert_eq!(
         [size_of::<AES_CMAC_128>(), size_of::<AES_CMAC_192>(), size_of::<AES_CMAC_256>()],
-        [248, 280, 312]
+        [48, 48, 48]
     );
 }

@@ -16,8 +16,8 @@
 //!
 //! # Usage Examples
 //!
-//! The direction is part of the type: [`Cbc<P, Encrypting, ..>`](Cbc) implements
-//! [`BlockCipherEncryptor`] and nothing else, and [`Cbc<P, Decrypting, ..>`](Cbc) implements
+//! The direction is part of the type: [`Cbc<'k, P, Encrypting, ..>`](Cbc) implements
+//! [`BlockCipherEncryptor`] and nothing else, and [`Cbc<'k, P, Decrypting, ..>`](Cbc) implements
 //! [`BlockCipherDecryptor`] and nothing else.
 //! The IV is drawn from the RNG and returned; there is no API for supplying one.
 //!
@@ -86,8 +86,8 @@
 //! # Suspending and resuming execution
 //!
 //! [`Cbc`] implements [`SuspendableKeyed`], so a message in progress can be suspended to a byte
-//! array and resumed later with the re-supplied key. The state is the chaining block; the
-//! permutation is rebuilt from the key. The array length is `Cbc::SUSPENDED_STATE_LEN`; see [the
+//! array and resumed later over the re-supplied key state. The state is the chaining block; the
+//! permutation is the key's. The array length is `Cbc::SUSPENDED_STATE_LEN`; see [the
 //! crate docs](crate#suspending-and-resuming-execution) for an example.
 //!
 //! # 🚨 Security Considerations 🚨
@@ -113,7 +113,7 @@ use bouncycastle_core::hazmat::{
     BlockDecryptMode, BlockEncryptMode, ElectronicCodeBook, Mode, SymmetricDecryptMode,
     SymmetricEncryptMode,
 };
-use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
+use bouncycastle_core::key_material::KeyType;
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{
     Algorithm, BlockCipherDecryptor, BlockCipherEncryptor, BlockCipherPadding, RNG,
@@ -148,20 +148,23 @@ where
     P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames + Clone,
     Pad: BlockCipherPadding<BLOCK_LEN>,
 {
-    type Encryptor = PaddedBlockCipherEncryptor<
-        Cbc<P, Encrypting, KEY_LEN, BLOCK_LEN>,
+    type Encryptor<'k>
+        = PaddedBlockCipherEncryptor<
+        Cbc<'k, P, Encrypting, KEY_LEN, BLOCK_LEN>,
         Pad,
         KEY_LEN,
         BLOCK_LEN,
         BLOCK_LEN,
-    >;
+    >
+    where
+        P: 'k;
 
-    fn encrypt_init(
-        state: &Self::KeyState,
+    fn encrypt_init<'k>(
+        state: &'k Self::KeyState,
         rng: &mut dyn RNG,
-    ) -> Result<(Self::Encryptor, [u8; BLOCK_LEN]), SymmetricCipherError> {
+    ) -> Result<(Self::Encryptor<'k>, [u8; BLOCK_LEN]), SymmetricCipherError> {
         let iv = random_iv::<BLOCK_LEN>(rng)?;
-        Ok((PaddedBlockCipherEncryptor::from_inner(Cbc::from_perm(state.clone(), iv)), iv))
+        Ok((PaddedBlockCipherEncryptor::from_inner(Cbc::from_perm(state, iv)), iv))
     }
 }
 
@@ -171,16 +174,22 @@ where
     P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames + Clone,
     Pad: BlockCipherPadding<BLOCK_LEN>,
 {
-    type Decryptor = PaddedBlockCipherDecryptor<
-        Cbc<P, Decrypting, KEY_LEN, BLOCK_LEN>,
+    type Decryptor<'k>
+        = PaddedBlockCipherDecryptor<
+        Cbc<'k, P, Decrypting, KEY_LEN, BLOCK_LEN>,
         Pad,
         KEY_LEN,
         BLOCK_LEN,
         BLOCK_LEN,
-    >;
+    >
+    where
+        P: 'k;
 
-    fn decrypt_init(state: &Self::KeyState, init_data: &[u8; BLOCK_LEN]) -> Self::Decryptor {
-        PaddedBlockCipherDecryptor::from_inner(Cbc::from_perm(state.clone(), *init_data))
+    fn decrypt_init<'k>(
+        state: &'k Self::KeyState,
+        init_data: &[u8; BLOCK_LEN],
+    ) -> Self::Decryptor<'k> {
+        PaddedBlockCipherDecryptor::from_inner(Cbc::from_perm(state, *init_data))
     }
 }
 
@@ -189,14 +198,17 @@ impl<P, const KEY_LEN: usize, const BLOCK_LEN: usize>
 where
     P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames + Clone,
 {
-    type Encryptor = Cbc<P, Encrypting, KEY_LEN, BLOCK_LEN>;
+    type Encryptor<'k>
+        = Cbc<'k, P, Encrypting, KEY_LEN, BLOCK_LEN>
+    where
+        P: 'k;
 
-    fn encrypt_init(
-        state: &Self::KeyState,
+    fn encrypt_init<'k>(
+        state: &'k Self::KeyState,
         rng: &mut dyn RNG,
-    ) -> Result<(Self::Encryptor, [u8; BLOCK_LEN]), SymmetricCipherError> {
+    ) -> Result<(Self::Encryptor<'k>, [u8; BLOCK_LEN]), SymmetricCipherError> {
         let iv = random_iv::<BLOCK_LEN>(rng)?;
-        Ok((Cbc::from_perm(state.clone(), iv), iv))
+        Ok((Cbc::from_perm(state, iv), iv))
     }
 }
 
@@ -205,17 +217,23 @@ impl<P, const KEY_LEN: usize, const BLOCK_LEN: usize>
 where
     P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames + Clone,
 {
-    type Decryptor = Cbc<P, Decrypting, KEY_LEN, BLOCK_LEN>;
+    type Decryptor<'k>
+        = Cbc<'k, P, Decrypting, KEY_LEN, BLOCK_LEN>
+    where
+        P: 'k;
 
-    fn decrypt_init(state: &Self::KeyState, init_data: &[u8; BLOCK_LEN]) -> Self::Decryptor {
-        Cbc::from_perm(state.clone(), *init_data)
+    fn decrypt_init<'k>(
+        state: &'k Self::KeyState,
+        init_data: &[u8; BLOCK_LEN],
+    ) -> Self::Decryptor<'k> {
+        Cbc::from_perm(state, *init_data)
     }
 }
 
 /// CBC mode over any [`ElectronicCodeBook`], with the direction encoded in the type.
 ///
 /// `Dir` is [`Encrypting`] or [`Decrypting`]. [`BlockCipherEncryptor`] is implemented only for the
-/// former and [`BlockCipherDecryptor`] only for the latter, so a `Cbc<_, Encrypting, _, _>` has no
+/// former and [`BlockCipherDecryptor`] only for the latter, so a `Cbc<'k, _, Encrypting, _, _>` has no
 /// decryption methods at all -- using one in the wrong direction is a compile error rather than a
 /// runtime check.
 ///
@@ -223,30 +241,30 @@ where
 ///
 /// # State
 ///
-/// Two fields: the permutation (which owns the key schedule, and is responsible for keeping it in
-/// a zeroize-on-drop wrapper) and one block of chaining value. The chaining value is an IV or a
+/// Two fields: a reference to the permutation, whose key schedule stays in the key, and one block
+/// of chaining value. The chaining value is an IV or a
 /// ciphertext block, both of which are public, so it is deliberately not wrapped in a `Secret`.
 #[derive(Clone)]
-pub struct Cbc<P, Dir, const KEY_LEN: usize, const BLOCK_LEN: usize>
+pub struct Cbc<'k, P, Dir, const KEY_LEN: usize, const BLOCK_LEN: usize>
 where
     P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
 {
-    perm: P,
+    perm: &'k P,
     /// `Cj-1`, initialised to the IV. See the module docs on why there is only one field for both.
     chain: [u8; BLOCK_LEN],
     _dir: PhantomData<Dir>,
 }
 
-impl<P, Dir, const KEY_LEN: usize, const BLOCK_LEN: usize> Cbc<P, Dir, KEY_LEN, BLOCK_LEN>
+impl<'k, P, Dir, const KEY_LEN: usize, const BLOCK_LEN: usize> Cbc<'k, P, Dir, KEY_LEN, BLOCK_LEN>
 where
     P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
 {
-    /// The `N` of this type's [`SuspendableKeyed<N>`] impl: the version header and the chaining
+    /// The `N` of this type's [`SuspendableKeyed<'k, N>`] impl: the version header and the chaining
     /// block. See [`bouncycastle_utils::suspendable_state`].
     pub const SUSPENDED_STATE_LEN: usize = LIB_VERSION_LEN + BLOCK_LEN;
 
     /// `C0 = IV`, over an already-keyed permutation: what the [`CBC`] mode impls build.
-    pub(crate) fn from_perm(perm: P, iv: [u8; BLOCK_LEN]) -> Self {
+    pub(crate) fn from_perm(perm: &'k P, iv: [u8; BLOCK_LEN]) -> Self {
         Self { perm, chain: iv, _dir: PhantomData }
     }
 
@@ -325,8 +343,8 @@ where
     }
 }
 
-impl<P, Dir, const KEY_LEN: usize, const BLOCK_LEN: usize> Algorithm
-    for Cbc<P, Dir, KEY_LEN, BLOCK_LEN>
+impl<'k, P, Dir, const KEY_LEN: usize, const BLOCK_LEN: usize> Algorithm
+    for Cbc<'k, P, Dir, KEY_LEN, BLOCK_LEN>
 where
     P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
 {
@@ -336,8 +354,8 @@ where
     const MAX_SECURITY_STRENGTH: SecurityStrength = P::MAX_SECURITY_STRENGTH;
 }
 
-impl<P, const KEY_LEN: usize, const BLOCK_LEN: usize> BlockCipherEncryptor<BLOCK_LEN, BLOCK_LEN>
-    for Cbc<P, Encrypting, KEY_LEN, BLOCK_LEN>
+impl<'k, P, const KEY_LEN: usize, const BLOCK_LEN: usize> BlockCipherEncryptor<BLOCK_LEN, BLOCK_LEN>
+    for Cbc<'k, P, Encrypting, KEY_LEN, BLOCK_LEN>
 where
     P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
 {
@@ -356,8 +374,8 @@ where
     }
 }
 
-impl<P, const KEY_LEN: usize, const BLOCK_LEN: usize> BlockCipherDecryptor<BLOCK_LEN, BLOCK_LEN>
-    for Cbc<P, Decrypting, KEY_LEN, BLOCK_LEN>
+impl<'k, P, const KEY_LEN: usize, const BLOCK_LEN: usize> BlockCipherDecryptor<BLOCK_LEN, BLOCK_LEN>
+    for Cbc<'k, P, Decrypting, KEY_LEN, BLOCK_LEN>
 where
     P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
 {
@@ -387,23 +405,22 @@ where
     }
 }
 
-/// The suspended state is the chaining block `Cj-1`, in both directions; the permutation is
-/// rebuilt from the re-supplied key. See [`bouncycastle_utils::suspendable_state`].
-impl<P, Dir, const KEY_LEN: usize, const BLOCK_LEN: usize> SuspendableComponent
-    for Cbc<P, Dir, KEY_LEN, BLOCK_LEN>
+/// The suspended state is the chaining block `Cj-1`, in both directions; the permutation is the
+/// key's, re-supplied by reference. See [`bouncycastle_utils::suspendable_state`].
+impl<'k, P, Dir, const KEY_LEN: usize, const BLOCK_LEN: usize> SuspendableComponent<'k>
+    for Cbc<'k, P, Dir, KEY_LEN, BLOCK_LEN>
 where
     P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
 {
     const STATE_LEN: usize = BLOCK_LEN;
-    type Key = KeyMaterial<KEY_LEN>;
+    type Key = P;
 
     fn write_state(&self, out: &mut [u8]) {
         out.copy_from_slice(&self.chain);
     }
 
-    fn read_state(state: &[u8], key: &Self::Key) -> Result<Self, SuspendableError> {
-        key.check_algorithm(Self::ALG_NAME).map_err(|_| SuspendableError::InvalidData)?;
-        let perm = P::new(key).map_err(|_| SuspendableError::InvalidData)?;
+    fn read_state(state: &[u8], key: &'k Self::Key) -> Result<Self, SuspendableError> {
+        let perm = key;
         let mut chain = [0u8; BLOCK_LEN];
         chain.copy_from_slice(state);
         Ok(Self { perm, chain, _dir: PhantomData })
@@ -411,18 +428,18 @@ where
 }
 
 /// `N` must be [`Cbc::SUSPENDED_STATE_LEN`]; anything else is a compile error.
-impl<P, Dir, const KEY_LEN: usize, const BLOCK_LEN: usize, const N: usize> SuspendableKeyed<N>
-    for Cbc<P, Dir, KEY_LEN, BLOCK_LEN>
+impl<'k, P, Dir, const KEY_LEN: usize, const BLOCK_LEN: usize, const N: usize>
+    SuspendableKeyed<'k, N> for Cbc<'k, P, Dir, KEY_LEN, BLOCK_LEN>
 where
     P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
 {
-    type Key = KeyMaterial<KEY_LEN>;
+    type Key = P;
 
     fn suspend(self) -> [u8; N] {
         suspend_component(&self)
     }
 
-    fn from_suspended(state: [u8; N], key: &Self::Key) -> Result<Self, SuspendableError> {
+    fn from_suspended(state: [u8; N], key: &'k Self::Key) -> Result<Self, SuspendableError> {
         resume_component(&state, key)
     }
 }

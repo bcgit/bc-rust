@@ -21,7 +21,7 @@ use cmac_helpers::mac_key;
 fn run_case<const N: usize, K>(tc_id: u64, key: &[u8], msg: &[u8], tag: &[u8], valid: bool)
 where
     K: FromKeyMaterial<N> + MacGenerationKey + MacVerificationKey,
-    <K as MacGenerationKey>::Generator: MAC,
+    for<'k> <K as MacGenerationKey>::Generator<'k>: MAC,
 {
     let material = mac_key::<N>(key);
     let key = K::from_key_material(&material).unwrap_or_else(|e| panic!("tcId {tc_id}: {e:?}"));

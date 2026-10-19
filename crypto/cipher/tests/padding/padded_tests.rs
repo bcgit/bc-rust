@@ -30,12 +30,12 @@ use toy_key::{ToyKey, os_rng};
 const B: usize = TOY_BLOCK_LEN;
 
 type Key = ToyKey<ToyBlockCipher, CBC<PKCS7>>;
-type Enc = <Key as SymmetricEncryptionKey<B, B, B>>::Encryptor;
-type Dec = <Key as SymmetricDecryptionKey<B, B, B>>::Decryptor;
+type Enc<'k> = <Key as SymmetricEncryptionKey<B, B, B>>::Encryptor<'k>;
+type Dec<'k> = <Key as SymmetricDecryptionKey<B, B, B>>::Decryptor<'k>;
 /// The same adapters over `NoPadding`: an alignment check rather than a padding scheme.
 type KeyNP = ToyKey<ToyBlockCipher, CBC<NoPadding>>;
-type EncNP = <KeyNP as SymmetricEncryptionKey<B, B, B>>::Encryptor;
-type DecNP = <KeyNP as SymmetricDecryptionKey<B, B, B>>::Decryptor;
+type EncNP<'k> = <KeyNP as SymmetricEncryptionKey<B, B, B>>::Encryptor<'k>;
+type DecNP<'k> = <KeyNP as SymmetricDecryptionKey<B, B, B>>::Decryptor<'k>;
 
 fn material() -> KeyMaterial<B> {
     KeyMaterial::<B>::from_bytes_as_type(&[0x5a; B], KeyType::SymmetricCipherKey).unwrap()
@@ -284,8 +284,8 @@ fn no_padding_adds_nothing_to_aligned_data() {
 
         // Byte for byte the bare cipher's output under the same IV.
         let mut bare = pt.clone();
-        let (mut enc, _) =
-            key_for::<CBC<Blocks>>().create_encryptor(&mut FixedSeedRNG::<B>::new(iv)).unwrap();
+        let key = key_for::<CBC<Blocks>>();
+        let (mut enc, _) = key.create_encryptor(&mut FixedSeedRNG::<B>::new(iv)).unwrap();
         let (blocks_mut, _) = bare.as_chunks_mut::<B>();
         enc.do_encrypt_blocks_inplace(blocks_mut).unwrap();
         assert_eq!(ct, bare, "{blocks} blocks: the adapter must not alter the ciphertext");

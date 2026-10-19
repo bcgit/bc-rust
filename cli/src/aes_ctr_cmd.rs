@@ -81,12 +81,12 @@ pub(crate) fn aes256_ctr_cmd(
 }
 
 /// Dispatches to the shared streaming loops with `Ctr` filled in as the mode.
-fn run<K, const KEY_LEN: usize>(action: &CipherDirection, key: &K, output_hex: bool)
+fn run<'k, K, const KEY_LEN: usize>(action: &CipherDirection, key: &'k K, output_hex: bool)
 where
     K: SymmetricEncryptionKey<KEY_LEN, CTR_NONCE_LEN, 0>
         + SymmetricDecryptionKey<KEY_LEN, CTR_NONCE_LEN, 0>,
-    K::Encryptor: StreamCipherEncryptor<CTR_NONCE_LEN>,
-    K::Decryptor: StreamCipherDecryptor<CTR_NONCE_LEN>,
+    K::Encryptor<'k>: StreamCipherEncryptor<CTR_NONCE_LEN>,
+    K::Decryptor<'k>: StreamCipherDecryptor<CTR_NONCE_LEN>,
 {
     run_stream_mode::<K, KEY_LEN, CTR_NONCE_LEN>(action, key, output_hex)
 }

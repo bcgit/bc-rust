@@ -174,8 +174,8 @@ fn create_decryptor_round_trips_and_detects_tampering() {
 fn key_one_shots_match_the_streaming_methods() {
     let km = material::<16>();
     let key = AES128Key::<GCM>::from_key_material(&km).expect("a valid key");
-    type E = AES_GCM_128<Encrypting>;
-    type D = AES_GCM_128<Decrypting>;
+    type E<'k> = AES_GCM_128<'k, Encrypting>;
+    type D<'k> = AES_GCM_128<'k, Decrypting>;
 
     // The reference: streamed by hand, detached, under the pinned nonce.
     let (nonce_s, ct_s, tag_s) = encrypt_via_key::<16, _>(&key);

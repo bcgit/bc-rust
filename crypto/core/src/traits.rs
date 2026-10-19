@@ -1125,8 +1125,10 @@ pub trait Suspendable<const SERIALIZED_STATE_LEN: usize>: Sized {
 /// which require a private key in order to resume successfully.
 /// For security reasons, the private key is not included in the serialized state
 /// and must be provided separately as part of the deserialization process.
-pub trait SuspendableKeyed<const SERIALIZED_STATE_LEN: usize>: Sized {
-    /// The type of key that must be re-supplied to resume this object.
+pub trait SuspendableKeyed<'k, const SERIALIZED_STATE_LEN: usize>: Sized {
+    /// The type of key that must be re-supplied to resume this object. A worker that borrows its
+    /// key for `'k` names the key's type (the mode's key state, for a cipher mode) and is resumed
+    /// over the reference it is given; one that owns a copy of its key ignores the lifetime.
     type Key: ?Sized;
 
     /// Suspend operation by serializing out the state of the object.
@@ -1145,7 +1147,7 @@ pub trait SuspendableKeyed<const SERIALIZED_STATE_LEN: usize>: Sized {
     /// deserializer should reject serialized states from that version or older.
     fn from_suspended(
         state: [u8; SERIALIZED_STATE_LEN],
-        key: &Self::Key,
+        key: &'k Self::Key,
     ) -> Result<Self, SuspendableError>;
 }
 

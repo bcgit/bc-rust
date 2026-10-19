@@ -34,7 +34,7 @@
 //! use bouncycastle_cipher::{Decrypting, Encrypting};
 //! use bouncycastle_rng::HashDRBG_SHA512;
 //!
-//! type ToyGcm<Dir> = Gcm<ToyBlockCipher, Dir, 16, 16>;
+//! type ToyGcm<'k, Dir> = Gcm<'k, ToyBlockCipher, Dir, 16, 16>;
 //!
 //! let key = KeyMaterial128::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
 //!     .expect("a 16-byte symmetric cipher key");
@@ -82,7 +82,7 @@
 //! use bouncycastle_cipher::{Decrypting, Encrypting};
 //! use bouncycastle_rng::HashDRBG_SHA512;
 //!
-//! type ToyGcm<Dir> = Gcm<ToyBlockCipher, Dir, 16, 16>;
+//! type ToyGcm<'k, Dir> = Gcm<'k, ToyBlockCipher, Dir, 16, 16>;
 //!
 //! let key = KeyMaterial::<16>::from_bytes_as_type(&[0x07; 16], KeyType::SymmetricCipherKey)
 //!     .expect("a 16-byte symmetric cipher key");
@@ -122,7 +122,7 @@
 //! use bouncycastle_cipher::{Decrypting, Encrypting};
 //! use bouncycastle_rng::HashDRBG_SHA512;
 //!
-//! type ToyGcm<Dir> = Gcm<ToyBlockCipher, Dir, 16, 16>;
+//! type ToyGcm<'k, Dir> = Gcm<'k, ToyBlockCipher, Dir, 16, 16>;
 //!
 //! let key = KeyMaterial::<16>::from_bytes_as_type(&[0x07; 16], KeyType::SymmetricCipherKey)
 //!     .expect("a 16-byte symmetric cipher key");
@@ -150,9 +150,9 @@
 //! # Suspending and resuming execution
 //!
 //! [`Gcm`] implements [`SuspendableKeyed`], so a message in progress can be suspended to a byte
-//! array and resumed later with the re-supplied key. The state is the CTR half, the running GHASH,
-//! the byte counts and whatever a decryptor is holding back as a possible tag; `H` and the tag mask
-//! are re-derived from the key. The array length is `Gcm::SUSPENDED_STATE_LEN`; see [the crate
+//! array and resumed later over the re-supplied key state. The state is the CTR half, the running
+//! GHASH, the byte counts and whatever a decryptor is holding back as a possible tag; `H` is the
+//! key state's and the tag mask is re-derived from it. The array length is `Gcm::SUSPENDED_STATE_LEN`; see [the crate
 //! docs](crate#suspending-and-resuming-execution) for an example.
 //!
 //! # 🚨 Security Considerations 🚨
@@ -201,7 +201,6 @@ use crate::modes::hazmat::CtrKeyStream;
 use crate::{Decrypting, Encrypting};
 use bouncycastle_core::errors::{SuspendableError, SymmetricCipherError};
 use bouncycastle_core::hazmat::ElectronicCodeBook;
-use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{
     AEADCipherDecryptor, AEADCipherEncryptor, Algorithm, RNG, StreamCipherDecryptor,
@@ -272,15 +271,16 @@ impl Phase {
 
 /// Galois/Counter Mode over any [`ElectronicCodeBook`] permutation, direction typed as
 /// [`Encrypting`] / [`Decrypting`]. See the module docs for the two APIs this type exposes and
-/// [`GCM_NONCE_LEN`] / `TAG_LEN` for what is fixed and what is chosen.
+/// [`GCM_NONCE_LEN`] / `TAG_LEN` for what is fixed and what is chosen. A worker borrows the key
+/// state it was made from for `'k`: the schedule and `H` stay in the key.
 #[derive(Clone)]
-pub struct Gcm<P, Dir, const KEY_LEN: usize, const TAG_LEN: usize>
+pub struct Gcm<'k, P, Dir, const KEY_LEN: usize, const TAG_LEN: usize>
 where
     P: ElectronicCodeBook<KEY_LEN, 16> + ModeNames,
 {
     /// `GCTR_K(inc32(J0), .)`: Algorithm 4 step 3 / Algorithm 5 step 4, started at counter 2 (see
     /// [`Gcm::setup`]).
-    ctr: Ctr<P, Dir, KEY_LEN, 16, GCM_NONCE_LEN>,
+    ctr: Ctr<'k, P, Dir, KEY_LEN, 16, GCM_NONCE_LEN>,
     /// `GHASH_H` over `A || 0^v || C || 0^u`, Algorithm 4/5 step 5/6.
     ghash: Ghash,
     /// `CIPH_K(J0)`, the one-time mask for the tag (step 6's `GCTR_K(J0, S) = S (+) CIPH_K(J0)`,
@@ -302,19 +302,19 @@ where
     _dir: PhantomData<Dir>,
 }
 
-impl<P, Dir, const KEY_LEN: usize, const TAG_LEN: usize> Gcm<P, Dir, KEY_LEN, TAG_LEN>
+impl<'k, P, Dir, const KEY_LEN: usize, const TAG_LEN: usize> Gcm<'k, P, Dir, KEY_LEN, TAG_LEN>
 where
     P: ElectronicCodeBook<KEY_LEN, 16> + ModeNames,
 {
-    /// The `N` of this type's [`SuspendableKeyed<N>`] impl: the version header, the CTR state,
+    /// The `N` of this type's [`SuspendableKeyed<'k, N>`] impl: the version header, the CTR state,
     /// the GHASH state, the two byte counts, the phase, the held-back tail and its length. See
     /// [`bouncycastle_utils::suspendable_state`].
     pub const SUSPENDED_STATE_LEN: usize =
-        LIB_VERSION_LEN + <Self as SuspendableComponent>::STATE_LEN;
+        LIB_VERSION_LEN + <Self as SuspendableComponent<'k>>::STATE_LEN;
 
     /// The CTR half's share of the suspended state.
     const CTR_STATE_LEN: usize =
-        <Ctr<P, Dir, KEY_LEN, 16, GCM_NONCE_LEN> as SuspendableComponent>::STATE_LEN;
+        <Ctr<'k, P, Dir, KEY_LEN, 16, GCM_NONCE_LEN> as SuspendableComponent<'k>>::STATE_LEN;
 
     /// The compile-time shape check: `TAG_LEN` must be one of Sec 5.2.1.2's five recommended tag
     /// lengths in bytes (96, 104, 112, 120, 128 bits -- Appendix C's 32- and 64-bit tags are a
@@ -330,14 +330,9 @@ where
         };
     }
 
-    /// Algorithm 4 steps 1-2 and the precomputation for step 6's tag mask, from a bare permutation.
-    fn setup(perm: P, nonce: [u8; GCM_NONCE_LEN]) -> Self {
-        Self::setup_from_state(GcmKeyState::new::<KEY_LEN>(perm), nonce)
-    }
-
     /// Algorithm 4 step 2 and the precomputation for step 6's tag mask, over a key state that
-    /// already holds step 1's `H`.
-    fn setup_from_state(state: GcmKeyState<P>, nonce: [u8; GCM_NONCE_LEN]) -> Self {
+    /// already holds step 1's `H`, which the worker borrows for `'k`.
+    fn setup_from_state(state: &'k GcmKeyState<P>, nonce: [u8; GCM_NONCE_LEN]) -> Self {
         Self::check_shape();
         let GcmKeyState { perm, h } = state;
 
@@ -357,7 +352,7 @@ where
 
         Self {
             ctr,
-            ghash: Ghash::new(&h),
+            ghash: Ghash::new(h),
             ek_j0,
             aad_len: 0,
             data_len: 0,
@@ -433,7 +428,8 @@ where
     }
 }
 
-impl<P, Dir, const KEY_LEN: usize, const TAG_LEN: usize> Algorithm for Gcm<P, Dir, KEY_LEN, TAG_LEN>
+impl<'k, P, Dir, const KEY_LEN: usize, const TAG_LEN: usize> Algorithm
+    for Gcm<'k, P, Dir, KEY_LEN, TAG_LEN>
 where
     P: ElectronicCodeBook<KEY_LEN, 16> + ModeNames,
 {
@@ -441,34 +437,30 @@ where
     const MAX_SECURITY_STRENGTH: SecurityStrength = P::MAX_SECURITY_STRENGTH;
 }
 
-impl<P, const KEY_LEN: usize, const TAG_LEN: usize> Gcm<P, Encrypting, KEY_LEN, TAG_LEN>
+impl<'k, P, const KEY_LEN: usize, const TAG_LEN: usize> Gcm<'k, P, Encrypting, KEY_LEN, TAG_LEN>
 where
     P: ElectronicCodeBook<KEY_LEN, 16> + ModeNames,
 {
-    /// Begins an encryption from a key's stored state under a nonce drawn from `rng`: the
+    /// Begins an encryption over a key's stored state under a nonce drawn from `rng`: the
     /// encryption constructor a permutation crate's `AeadEncryptMode` impl for [`GCM`] calls.
+    /// Nothing is copied out of `state`; the worker reads the schedule and `H` through the
+    /// borrow and cannot outlive it.
     ///
     /// # Errors
     /// [`SymmetricCipherError::RNGError`] if the nonce draw fails; nothing else can.
     pub fn from_key_state(
-        state: &GcmKeyState<P>,
+        state: &'k GcmKeyState<P>,
         rng: &mut dyn RNG,
-    ) -> Result<(Self, [u8; GCM_NONCE_LEN]), SymmetricCipherError>
-    where
-        P: Clone,
-    {
+    ) -> Result<(Self, [u8; GCM_NONCE_LEN]), SymmetricCipherError> {
         Self::check_shape();
         let nonce = crate::modes::iv::random_iv::<GCM_NONCE_LEN>(rng)?;
-        Ok((Self::setup_from_state(state.clone(), nonce), nonce))
+        Ok((Self::setup_from_state(state, nonce), nonce))
     }
 
     /// As [`Self::from_key_state`] under a nonce the caller supplies: the constructor a
     /// permutation crate's `AeadEncryptMode::encrypt_init_nonce` impl for [`GCM`] calls.
-    pub fn from_key_state_nonce(state: &GcmKeyState<P>, nonce: &[u8; GCM_NONCE_LEN]) -> Self
-    where
-        P: Clone,
-    {
-        Self::setup_from_state(state.clone(), *nonce)
+    pub fn from_key_state_nonce(state: &'k GcmKeyState<P>, nonce: &[u8; GCM_NONCE_LEN]) -> Self {
+        Self::setup_from_state(state, *nonce)
     }
 
     /// Encrypts `data` in place (GCTR, Algorithm 4 step 3) and absorbs the resulting ciphertext
@@ -497,8 +489,8 @@ where
     }
 }
 
-impl<P, const KEY_LEN: usize, const TAG_LEN: usize> SymmetricCipherEncryptor<GCM_NONCE_LEN, TAG_LEN>
-    for Gcm<P, Encrypting, KEY_LEN, TAG_LEN>
+impl<'k, P, const KEY_LEN: usize, const TAG_LEN: usize>
+    SymmetricCipherEncryptor<GCM_NONCE_LEN, TAG_LEN> for Gcm<'k, P, Encrypting, KEY_LEN, TAG_LEN>
 where
     P: ElectronicCodeBook<KEY_LEN, 16> + ModeNames,
 {
@@ -534,8 +526,9 @@ where
 /// The AEAD view: [`AEADCipherEncryptor`] over the [`SymmetricCipherEncryptor`] impl above, with
 /// `FINAL_LEN = TAG_LEN`. The encryptor holds nothing back, so the detached final flushes nothing
 /// and returns only the tag.
-impl<P, const KEY_LEN: usize, const TAG_LEN: usize>
-    AEADCipherEncryptor<GCM_NONCE_LEN, TAG_LEN, TAG_LEN> for Gcm<P, Encrypting, KEY_LEN, TAG_LEN>
+impl<'k, P, const KEY_LEN: usize, const TAG_LEN: usize>
+    AEADCipherEncryptor<GCM_NONCE_LEN, TAG_LEN, TAG_LEN>
+    for Gcm<'k, P, Encrypting, KEY_LEN, TAG_LEN>
 where
     P: ElectronicCodeBook<KEY_LEN, 16> + ModeNames,
 {
@@ -553,18 +546,15 @@ where
     }
 }
 
-impl<P, const KEY_LEN: usize, const TAG_LEN: usize> Gcm<P, Decrypting, KEY_LEN, TAG_LEN>
+impl<'k, P, const KEY_LEN: usize, const TAG_LEN: usize> Gcm<'k, P, Decrypting, KEY_LEN, TAG_LEN>
 where
     P: ElectronicCodeBook<KEY_LEN, 16> + ModeNames,
 {
     /// Begins the decryption of a message encrypted under `nonce` from a key's stored state: the
     /// decryption constructor a permutation crate's `AeadDecryptMode` impl for [`GCM`] calls.
     /// Infallible: the state is already keyed and the nonce length is in the type.
-    pub fn from_key_state(state: &GcmKeyState<P>, nonce: &[u8; GCM_NONCE_LEN]) -> Self
-    where
-        P: Clone,
-    {
-        Self::setup_from_state(state.clone(), *nonce)
+    pub fn from_key_state(state: &'k GcmKeyState<P>, nonce: &[u8; GCM_NONCE_LEN]) -> Self {
+        Self::setup_from_state(state, *nonce)
     }
 
     /// Absorbs `data` (ciphertext) into GHASH, then decrypts it in place. Order matters and is the
@@ -600,8 +590,8 @@ where
     }
 }
 
-impl<P, const KEY_LEN: usize, const TAG_LEN: usize> SymmetricCipherDecryptor<GCM_NONCE_LEN, TAG_LEN>
-    for Gcm<P, Decrypting, KEY_LEN, TAG_LEN>
+impl<'k, P, const KEY_LEN: usize, const TAG_LEN: usize>
+    SymmetricCipherDecryptor<GCM_NONCE_LEN, TAG_LEN> for Gcm<'k, P, Decrypting, KEY_LEN, TAG_LEN>
 where
     P: ElectronicCodeBook<KEY_LEN, 16> + ModeNames,
 {
@@ -678,8 +668,9 @@ where
 /// The AEAD view: [`AEADCipherDecryptor`] over the [`SymmetricCipherDecryptor`] impl above, with
 /// `FINAL_LEN = TAG_LEN`. The one-shots are overridden, as `decrypt_out` is, to check the tag
 /// before any plaintext is written.
-impl<P, const KEY_LEN: usize, const TAG_LEN: usize>
-    AEADCipherDecryptor<GCM_NONCE_LEN, TAG_LEN, TAG_LEN> for Gcm<P, Decrypting, KEY_LEN, TAG_LEN>
+impl<'k, P, const KEY_LEN: usize, const TAG_LEN: usize>
+    AEADCipherDecryptor<GCM_NONCE_LEN, TAG_LEN, TAG_LEN>
+    for Gcm<'k, P, Decrypting, KEY_LEN, TAG_LEN>
 where
     P: ElectronicCodeBook<KEY_LEN, 16> + ModeNames,
 {
@@ -708,16 +699,16 @@ where
 }
 
 /// The suspended state is the CTR half, the running GHASH, the two byte counts, the phase, and
-/// the up-to-`TAG_LEN` bytes a decryptor holds back. `H` and `CIPH_K(J0)` are not in it: both
-/// derive from the key and the nonce, and `setup` re-derives them on resume. See
+/// the up-to-`TAG_LEN` bytes a decryptor holds back. `H` and `CIPH_K(J0)` are not in it: `H` is
+/// the key state's, and `CIPH_K(J0)` is re-derived from it and the nonce on resume. See
 /// [`bouncycastle_utils::suspendable_state`].
-impl<P, Dir, const KEY_LEN: usize, const TAG_LEN: usize> SuspendableComponent
-    for Gcm<P, Dir, KEY_LEN, TAG_LEN>
+impl<'k, P, Dir, const KEY_LEN: usize, const TAG_LEN: usize> SuspendableComponent<'k>
+    for Gcm<'k, P, Dir, KEY_LEN, TAG_LEN>
 where
     P: ElectronicCodeBook<KEY_LEN, 16> + ModeNames,
 {
     const STATE_LEN: usize = Self::CTR_STATE_LEN + GHASH_STATE_LEN + 8 + 8 + 1 + TAG_LEN + 8;
-    type Key = KeyMaterial<KEY_LEN>;
+    type Key = GcmKeyState<P>;
 
     fn write_state(&self, out: &mut [u8]) {
         let (ctr, rest) = out.split_at_mut(Self::CTR_STATE_LEN);
@@ -733,21 +724,20 @@ where
         debug_assert!(w.is_done());
     }
 
-    fn read_state(state: &[u8], key: &Self::Key) -> Result<Self, SuspendableError> {
+    fn read_state(state: &[u8], key: &'k Self::Key) -> Result<Self, SuspendableError> {
         Self::check_shape();
         let (ctr, rest) = state.split_at(Self::CTR_STATE_LEN);
         let (ghash, rest) = rest.split_at(GHASH_STATE_LEN);
 
-        // `setup` re-derives `H` and `CIPH_K(J0)` from the key and the nonce, which is the
-        // leading part of the CTR state. Its fresh CTR and GHASH are then replaced by the
-        // suspended ones; the CTR read expands the key a second time, a one-off cost at resume.
-        let nonce = CtrKeyStream::<P, KEY_LEN, 16, GCM_NONCE_LEN>::nonce_from_state(ctr);
-        key.check_algorithm(Self::ALG_NAME).map_err(|_| SuspendableError::InvalidData)?;
-        let perm = P::new(key).map_err(|_| SuspendableError::InvalidData)?;
-        let mut gcm = Self::setup(perm, nonce);
-        gcm.ctr = <Ctr<P, Dir, KEY_LEN, 16, GCM_NONCE_LEN> as SuspendableComponent>::read_state(
-            ctr, key,
-        )?;
+        // `setup_from_state` takes `H` from the key state and re-derives `CIPH_K(J0)` from the
+        // nonce, which is the leading part of the CTR state. Its fresh CTR and GHASH are then
+        // replaced by the suspended ones.
+        let nonce = CtrKeyStream::<'k, P, KEY_LEN, 16, GCM_NONCE_LEN>::nonce_from_state(ctr);
+        let mut gcm = Self::setup_from_state(key, nonce);
+        gcm.ctr =
+            <Ctr<'k, P, Dir, KEY_LEN, 16, GCM_NONCE_LEN> as SuspendableComponent<'k>>::read_state(
+                ctr, &key.perm,
+            )?;
         gcm.ghash.restore_state(ghash)?;
 
         let mut r = Cursor::new(rest);
@@ -762,18 +752,18 @@ where
 }
 
 /// `N` must be [`Gcm::SUSPENDED_STATE_LEN`]; anything else is a compile error.
-impl<P, Dir, const KEY_LEN: usize, const TAG_LEN: usize, const N: usize> SuspendableKeyed<N>
-    for Gcm<P, Dir, KEY_LEN, TAG_LEN>
+impl<'k, P, Dir, const KEY_LEN: usize, const TAG_LEN: usize, const N: usize> SuspendableKeyed<'k, N>
+    for Gcm<'k, P, Dir, KEY_LEN, TAG_LEN>
 where
     P: ElectronicCodeBook<KEY_LEN, 16> + ModeNames,
 {
-    type Key = KeyMaterial<KEY_LEN>;
+    type Key = GcmKeyState<P>;
 
     fn suspend(self) -> [u8; N] {
         suspend_component(&self)
     }
 
-    fn from_suspended(state: [u8; N], key: &Self::Key) -> Result<Self, SuspendableError> {
+    fn from_suspended(state: [u8; N], key: &'k Self::Key) -> Result<Self, SuspendableError> {
         resume_component(&state, key)
     }
 }

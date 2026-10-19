@@ -41,22 +41,34 @@ fn the_aliases_name_the_expected_types() {
     use core::mem::size_of;
 
     assert_eq!(
-        size_of::<AES_ECB_128<Encrypting, PKCS7>>(),
+        size_of::<AES_ECB_128<'_, Encrypting, PKCS7>>(),
         size_of::<
-            PaddedBlockCipherEncryptor<Ecb<AES128Internal, Encrypting, 16, 16>, PKCS7, 16, 0, 16>,
+            PaddedBlockCipherEncryptor<
+                Ecb<'_, AES128Internal, Encrypting, 16, 16>,
+                PKCS7,
+                16,
+                0,
+                16,
+            >,
         >()
     );
     assert_eq!(
-        size_of::<AES_ECB_128<Decrypting, PKCS7>>(),
+        size_of::<AES_ECB_128<'_, Decrypting, PKCS7>>(),
         size_of::<
-            PaddedBlockCipherDecryptor<Ecb<AES128Internal, Decrypting, 16, 16>, PKCS7, 16, 0, 16>,
+            PaddedBlockCipherDecryptor<
+                Ecb<'_, AES128Internal, Decrypting, 16, 16>,
+                PKCS7,
+                16,
+                0,
+                16,
+            >,
         >()
     );
 
     let key = key_for::<ECB<PKCS7>>();
     let (enc, no_iv) = key.create_encryptor(&mut rng()).unwrap();
-    let _: AES_ECB_128<Encrypting, PKCS7> = enc;
-    let _: AES_ECB_128<Decrypting, PKCS7> = key.create_decryptor(&no_iv);
+    let _: AES_ECB_128<'_, Encrypting, PKCS7> = enc;
+    let _: AES_ECB_128<'_, Decrypting, PKCS7> = key.create_decryptor(&no_iv);
 }
 
 /// ECB has no IV, so the init data is an empty array and the ciphertext is exactly the padded
@@ -102,13 +114,13 @@ fn every_key_length_round_trips() {
     check::<32, AES256Key<ECB<PKCS7>>>("AES-256");
 
     // The other two aliases are the same projection at the other key lengths.
-    let _: AES_ECB_192<Encrypting, PKCS7> =
+    let _: AES_ECB_192<'_, Encrypting, PKCS7> =
         AES192Key::<ECB<PKCS7>>::from_key_material(&material::<24>())
             .unwrap()
             .create_encryptor(&mut rng())
             .unwrap()
             .0;
-    let _: AES_ECB_256<Encrypting, PKCS7> =
+    let _: AES_ECB_256<'_, Encrypting, PKCS7> =
         AES256Key::<ECB<PKCS7>>::from_key_material(&material::<32>())
             .unwrap()
             .create_encryptor(&mut rng())

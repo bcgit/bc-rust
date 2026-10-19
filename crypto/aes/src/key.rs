@@ -5,7 +5,7 @@
 //! is bound to its AES variant and its mode by the Rust type rather than by the length of a byte
 //! buffer and the call site. Validation and key expansion happen once, in the constructor, and
 //! every message under the key starts from the stored schedule (and, for GCM, the stored hash
-//! subkey, or for CMAC the stored subkeys). Using one key under two modes is two
+//! subkey, or for CMAC the stored subkeys), which the workers borrow rather than copy. Using one key under two modes is two
 //! `from_key_material` calls on two key types; the accidental version does not compile, and
 //! material bound to an algorithm (`KeyMaterialTrait::set_algorithm`) is accepted only by that
 //! mode's key. A MAC mode's key takes `KeyType::MACKey` material, a cipher mode's
@@ -77,7 +77,7 @@ use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
 use bouncycastle_core::hazmat::{
     AeadDeclaredDecryptMode, AeadDeclaredEncryptMode, AeadDecryptMode, AeadEncryptMode,
     BlockDecryptMode, BlockEncryptMode, EcbDecryptMode, EcbDecryptionKey, EcbEncryptMode,
-    EcbEncryptionKey, MacMode, Mode, SymmetricDecryptMode, SymmetricEncryptMode,
+    EcbEncryptionKey, MacMode, Mode, ModeKey, SymmetricDecryptMode, SymmetricEncryptMode,
     do_hazardous_operations,
 };
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
@@ -203,6 +203,12 @@ impl<M: Mode<AES256Internal>> FromKeyMaterial<32> for AES256Key<M> {
     }
 }
 
+impl<P: AESParams, M: Mode<AESInternal<P>>> ModeKey<AESInternal<P>, M> for AESKey<P, M> {
+    fn state(&self) -> &M::KeyState {
+        &self.state
+    }
+}
+
 // The role impls forward to whichever mode traits `M` implements over this permutation, so which
 // roles a key type carries is decided by its mode. They are per crate rather than a blanket in
 // `core` because the key state leaves the key only through here.
@@ -219,16 +225,19 @@ where
     P: AESParams,
     M: AeadEncryptMode<AESInternal<P>, KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN>,
 {
-    type Encryptor = M::Encryptor;
+    type Encryptor<'k>
+        = M::Encryptor<'k>
+    where
+        Self: 'k;
 
-    fn create_encryptor(
-        &self,
+    fn create_encryptor<'k>(
+        &'k self,
         rng: &mut dyn RNG,
-    ) -> Result<(Self::Encryptor, [u8; NONCE_LEN]), SymmetricCipherError> {
+    ) -> Result<(Self::Encryptor<'k>, [u8; NONCE_LEN]), SymmetricCipherError> {
         M::encrypt_init(&self.state, rng)
     }
 
-    fn create_encryptor_nonce(&self, nonce: &[u8; NONCE_LEN]) -> Self::Encryptor {
+    fn create_encryptor_nonce<'k>(&'k self, nonce: &[u8; NONCE_LEN]) -> Self::Encryptor<'k> {
         M::encrypt_init_nonce(&self.state, nonce)
     }
 
@@ -265,9 +274,12 @@ where
     P: AESParams,
     M: AeadDecryptMode<AESInternal<P>, KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN>,
 {
-    type Decryptor = M::Decryptor;
+    type Decryptor<'k>
+        = M::Decryptor<'k>
+    where
+        Self: 'k;
 
-    fn create_decryptor(&self, nonce: &[u8; NONCE_LEN]) -> Self::Decryptor {
+    fn create_decryptor<'k>(&'k self, nonce: &[u8; NONCE_LEN]) -> Self::Decryptor<'k> {
         M::decrypt_init(&self.state, nonce)
     }
 
@@ -294,23 +306,26 @@ where
     P: AESParams,
     M: AeadDeclaredEncryptMode<AESInternal<P>, KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN>,
 {
-    type Encryptor = M::Encryptor;
+    type Encryptor<'k>
+        = M::Encryptor<'k>
+    where
+        Self: 'k;
 
-    fn create_encryptor(
-        &self,
+    fn create_encryptor<'k>(
+        &'k self,
         rng: &mut dyn RNG,
         aad_len: usize,
         payload_len: usize,
-    ) -> Result<(Self::Encryptor, [u8; NONCE_LEN]), SymmetricCipherError> {
+    ) -> Result<(Self::Encryptor<'k>, [u8; NONCE_LEN]), SymmetricCipherError> {
         M::encrypt_init(&self.state, rng, aad_len, payload_len)
     }
 
-    fn create_encryptor_nonce(
-        &self,
+    fn create_encryptor_nonce<'k>(
+        &'k self,
         nonce: &[u8; NONCE_LEN],
         aad_len: usize,
         payload_len: usize,
-    ) -> Result<Self::Encryptor, SymmetricCipherError> {
+    ) -> Result<Self::Encryptor<'k>, SymmetricCipherError> {
         M::encrypt_init_nonce(&self.state, nonce, aad_len, payload_len)
     }
 
@@ -346,14 +361,17 @@ where
     P: AESParams,
     M: AeadDeclaredDecryptMode<AESInternal<P>, KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN>,
 {
-    type Decryptor = M::Decryptor;
+    type Decryptor<'k>
+        = M::Decryptor<'k>
+    where
+        Self: 'k;
 
-    fn create_decryptor(
-        &self,
+    fn create_decryptor<'k>(
+        &'k self,
         nonce: &[u8; NONCE_LEN],
         aad_len: usize,
         payload_len: usize,
-    ) -> Result<Self::Decryptor, SymmetricCipherError> {
+    ) -> Result<Self::Decryptor<'k>, SymmetricCipherError> {
         M::decrypt_init(&self.state, nonce, aad_len, payload_len)
     }
 
@@ -374,12 +392,15 @@ where
     P: AESParams,
     M: SymmetricEncryptMode<AESInternal<P>, KEY_LEN, INIT_DATA_LEN, FINAL_LEN>,
 {
-    type Encryptor = M::Encryptor;
+    type Encryptor<'k>
+        = M::Encryptor<'k>
+    where
+        Self: 'k;
 
-    fn create_encryptor(
-        &self,
+    fn create_encryptor<'k>(
+        &'k self,
         rng: &mut dyn RNG,
-    ) -> Result<(Self::Encryptor, [u8; INIT_DATA_LEN]), SymmetricCipherError> {
+    ) -> Result<(Self::Encryptor<'k>, [u8; INIT_DATA_LEN]), SymmetricCipherError> {
         M::encrypt_init(&self.state, rng)
     }
 }
@@ -390,9 +411,12 @@ where
     P: AESParams,
     M: SymmetricDecryptMode<AESInternal<P>, KEY_LEN, INIT_DATA_LEN, FINAL_LEN>,
 {
-    type Decryptor = M::Decryptor;
+    type Decryptor<'k>
+        = M::Decryptor<'k>
+    where
+        Self: 'k;
 
-    fn create_decryptor(&self, init_data: &[u8; INIT_DATA_LEN]) -> Self::Decryptor {
+    fn create_decryptor<'k>(&'k self, init_data: &[u8; INIT_DATA_LEN]) -> Self::Decryptor<'k> {
         M::decrypt_init(&self.state, init_data)
     }
 }
@@ -403,12 +427,15 @@ where
     P: AESParams,
     M: BlockEncryptMode<AESInternal<P>, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
 {
-    type Encryptor = M::Encryptor;
+    type Encryptor<'k>
+        = M::Encryptor<'k>
+    where
+        Self: 'k;
 
-    fn create_encryptor(
-        &self,
+    fn create_encryptor<'k>(
+        &'k self,
         rng: &mut dyn RNG,
-    ) -> Result<(Self::Encryptor, [u8; INIT_DATA_LEN]), SymmetricCipherError> {
+    ) -> Result<(Self::Encryptor<'k>, [u8; INIT_DATA_LEN]), SymmetricCipherError> {
         M::encrypt_init(&self.state, rng)
     }
 }
@@ -419,9 +446,12 @@ where
     P: AESParams,
     M: BlockDecryptMode<AESInternal<P>, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
 {
-    type Decryptor = M::Decryptor;
+    type Decryptor<'k>
+        = M::Decryptor<'k>
+    where
+        Self: 'k;
 
-    fn create_decryptor(&self, init_data: &[u8; INIT_DATA_LEN]) -> Self::Decryptor {
+    fn create_decryptor<'k>(&'k self, init_data: &[u8; INIT_DATA_LEN]) -> Self::Decryptor<'k> {
         M::decrypt_init(&self.state, init_data)
     }
 }
@@ -432,9 +462,12 @@ where
     P: AESParams,
     M: EcbEncryptMode<AESInternal<P>, KEY_LEN, BLOCK_LEN>,
 {
-    type Encryptor = M::Encryptor;
+    type Encryptor<'k>
+        = M::Encryptor<'k>
+    where
+        Self: 'k;
 
-    fn create_encryptor(&self) -> Self::Encryptor {
+    fn create_encryptor<'k>(&'k self) -> Self::Encryptor<'k> {
         M::encrypt_init(&self.state)
     }
 }
@@ -445,25 +478,34 @@ where
     P: AESParams,
     M: EcbDecryptMode<AESInternal<P>, KEY_LEN, BLOCK_LEN>,
 {
-    type Decryptor = M::Decryptor;
+    type Decryptor<'k>
+        = M::Decryptor<'k>
+    where
+        Self: 'k;
 
-    fn create_decryptor(&self) -> Self::Decryptor {
+    fn create_decryptor<'k>(&'k self) -> Self::Decryptor<'k> {
         M::decrypt_init(&self.state)
     }
 }
 
 impl<P: AESParams, M: MacMode<AESInternal<P>>> MacGenerationKey for AESKey<P, M> {
-    type Generator = M::Worker;
+    type Generator<'k>
+        = M::Worker<'k>
+    where
+        Self: 'k;
 
-    fn create_generator(&self) -> Self::Generator {
+    fn create_generator<'k>(&'k self) -> Self::Generator<'k> {
         M::mac_init(&self.state)
     }
 }
 
 impl<P: AESParams, M: MacMode<AESInternal<P>>> MacVerificationKey for AESKey<P, M> {
-    type Verifier = M::Worker;
+    type Verifier<'k>
+        = M::Worker<'k>
+    where
+        Self: 'k;
 
-    fn create_verifier(&self) -> Self::Verifier {
+    fn create_verifier<'k>(&'k self) -> Self::Verifier<'k> {
         M::mac_init(&self.state)
     }
 }

@@ -190,17 +190,18 @@ fn a_short_nonce_is_reachable_through_the_supplied_nonce_forms() {
     assert_eq!(buf, msg);
 }
 
-/// The workers are the mode's `Ccm` state, 264/296/328 B for AES-128/192/256, with the
-/// decryptor adding the tag it holds back and that tag's length; the aes docs quote these.
+/// The workers are the mode's `Ccm` state over a borrowed schedule, 96 B at every key length,
+/// with the decryptor adding the tag it holds back and that tag's length; the aes docs quote
+/// these.
 #[test]
 fn worker_sizes_match_the_documented_memory_table() {
     use bouncycastle_aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
     use bouncycastle_cipher::modes::{CcmDecryptor, CcmEncryptor};
     use core::mem::size_of;
-    assert_eq!(size_of::<CcmEncryptor<AES128Internal, 16, 12, 16>>(), 264);
-    assert_eq!(size_of::<CcmEncryptor<AES192Internal, 24, 12, 16>>(), 296);
-    assert_eq!(size_of::<CcmEncryptor<AES256Internal, 32, 12, 16>>(), 328);
-    assert_eq!(size_of::<CcmDecryptor<AES128Internal, 16, 12, 16>>(), 288);
-    assert_eq!(size_of::<CcmDecryptor<AES192Internal, 24, 12, 16>>(), 320);
-    assert_eq!(size_of::<CcmDecryptor<AES256Internal, 32, 12, 16>>(), 352);
+    assert_eq!(size_of::<CcmEncryptor<'_, AES128Internal, 16, 12, 16>>(), 96);
+    assert_eq!(size_of::<CcmEncryptor<'_, AES192Internal, 24, 12, 16>>(), 96);
+    assert_eq!(size_of::<CcmEncryptor<'_, AES256Internal, 32, 12, 16>>(), 96);
+    assert_eq!(size_of::<CcmDecryptor<'_, AES128Internal, 16, 12, 16>>(), 120);
+    assert_eq!(size_of::<CcmDecryptor<'_, AES192Internal, 24, 12, 16>>(), 120);
+    assert_eq!(size_of::<CcmDecryptor<'_, AES256Internal, 32, 12, 16>>(), 120);
 }

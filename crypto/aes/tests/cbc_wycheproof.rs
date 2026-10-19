@@ -10,7 +10,7 @@
 //! The file's "PKCS #5" is the padding of RFC 5652 Sec 6.3 (`k - (lth mod k)` octets of value
 //! `k - (lth mod k)`), which the cipher crate provides as [`PKCS7`]; the two names differ only in
 //! that PKCS #5 was written for 8-byte blocks. So these vectors drive `AES128Key<CBC<PKCS7>>` and
-//! friends, whose workers are the padded aliases `AES_CBC_128<_, PKCS7>`, i.e. CBC through the
+//! friends, whose workers are the padded aliases `AES_CBC_128<'_, _, PKCS7>`, i.e. CBC through the
 //! `PaddedBlockCipherEncryptor` / `PaddedBlockCipherDecryptor` adapters, where
 //! `cbc_bc-test-data.rs` and `sp800_38a_cbc_tests.rs` drive the unpadded
 //! [`Cbc`](bouncycastle_cipher::modes::Cbc) underneath them through `CBC<Blocks>`.
@@ -95,7 +95,11 @@ fn run_case<K, const KEY_LEN: usize>(
         .unwrap_or_else(|e| panic!("tcId {tc_id}: the key should be accepted: {e:?}"));
 
     if expected == Expected::Valid {
-        let mut ct = vec![0u8; K::Encryptor::encrypt_out_len(msg.len())];
+        let ct_len =
+            <K::Encryptor<'_> as SymmetricCipherEncryptor<BLOCK_LEN, BLOCK_LEN>>::encrypt_out_len(
+                msg.len(),
+            );
+        let mut ct = vec![0u8; ct_len];
         let (written, got_iv) = key
             .encrypt_out(&mut FixedSeedRNG::<BLOCK_LEN>::new(iv), msg, &mut ct)
             .unwrap_or_else(|e| panic!("tcId {tc_id}: valid case failed to encrypt: {e:?}"));
@@ -104,7 +108,11 @@ fn run_case<K, const KEY_LEN: usize>(
         assert_eq!(ct, expected_ct, "tcId {tc_id}: ciphertext mismatch");
     }
 
-    let mut plaintext = vec![0u8; K::Decryptor::decrypt_out_len(expected_ct.len())];
+    let pt_len =
+        <K::Decryptor<'_> as SymmetricCipherDecryptor<BLOCK_LEN, BLOCK_LEN>>::decrypt_out_len(
+            expected_ct.len(),
+        );
+    let mut plaintext = vec![0u8; pt_len];
     let outcome = key.decrypt_out(&iv, expected_ct, &mut plaintext);
     match (expected, outcome) {
         (Expected::Valid, Ok(n)) => {
