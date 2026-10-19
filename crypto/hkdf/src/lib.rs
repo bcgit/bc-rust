@@ -113,9 +113,10 @@ use bouncycastle_core::key_material::{
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::symmetric_key::{FromAnyKeyMaterial, MacGenerationKey};
 use bouncycastle_core::traits::{Algorithm, KDF, MAC, Suspendable, SuspendableKeyed};
-use bouncycastle_hmac::{HMAC, HMACParams, HmacKey, LARGEST_HASHER_BLOCK_LEN};
+use bouncycastle_hmac::hazmat as hmac_hazmat;
+use bouncycastle_hmac::{HMACParams, HmacKey, LARGEST_HASHER_BLOCK_LEN};
 use bouncycastle_utils::secret::Secret;
-use bouncycastle_utils::suspendable_state::{add_lib_ver, check_lib_ver};
+use bouncycastle_utils::suspendable_state::{add_lib_ver, bounded_usize, check_lib_ver};
 use bouncycastle_utils::{max, min};
 use std::marker::PhantomData;
 // Imports needed only for docs
@@ -159,12 +160,20 @@ pub const MAX_HMAC_OUTPUT_LEN: usize = 64;
 ///     `SuspendableKeyed<{HASH_STATE_LEN + 14}>` over `H: Suspendable<HASH_STATE_LEN>`.
 #[derive(Clone)]
 pub struct HKDF<H: HMACParams, const HASH_STATE_LEN: usize, const HKDF_STATE_LEN: usize> {
-    // Optional because an HMAC cannot be constructed until a key is provided
-    // to initialize it with.
+    // Optional because the extract-phase HMAC cannot be keyed until the salt is provided.
     // None must correspond to a state of Uninitialized.
-    hmac: Option<HMAC<H>>,
+    hmac: Option<HkdfExtract<H>>,
     entropy: HkdfEntropyTracker<H>,
     state: HkdfStates,
+}
+
+/// The extract phase's HMAC, held as its two halves: the salt key and the inner hash absorbing
+/// the IKM. An `HMAC` worker borrows its key, and a struct cannot borrow from itself, so the
+/// phase is run through `bouncycastle_hmac::hazmat`'s `inner_state` and `finish_out` instead.
+#[derive(Clone)]
+struct HkdfExtract<H: HMACParams> {
+    key: HmacKey<H>,
+    inner: H,
 }
 
 // Note: does not need to impl Drop because HKDF itself does not hold any sensitive state data.
@@ -217,7 +226,8 @@ impl<H: HMACParams> HkdfEntropyTracker<H> {
     /// Returns the amount of entropy credited.
     fn credit_entropy(&mut self, key: &impl KeyMaterialTrait) -> usize {
         let additional_entropy = if key.is_full_entropy() { key.key_len() } else { 0 };
-        self.entropy += additional_entropy;
+        // Saturating: the counter is bookkeeping, and a resumed state may carry any value.
+        self.entropy = self.entropy.saturating_add(additional_entropy);
         self.security_strength = max(&self.security_strength, &key.security_strength()).clone();
         self.security_strength =
             min(&self.security_strength, &SecurityStrength::from_bytes(H::OUTPUT_LEN / 2)).clone();
@@ -562,7 +572,9 @@ impl<H: HMACParams, const HASH_STATE_LEN: usize, const HKDF_STATE_LEN: usize>
         // The salt is often empty or short, so HMAC's key-strength check is skipped; the entropy
         // tracker below accounts for it.
         let salt_key = Self::salt_as_mac_key(salt)?;
-        self.hmac = Some(HmacKey::<H>::from_key_material_allow_weak(&salt_key)?.create_generator());
+        let key = HmacKey::<H>::from_key_material_allow_weak(&salt_key)?;
+        let inner = hmac_hazmat::inner_state(&key);
+        self.hmac = Some(HkdfExtract { key, inner });
 
         let additional_entropy = self.entropy.credit_entropy(salt);
         self.state = HkdfStates::Initialized;
@@ -595,9 +607,7 @@ impl<H: HMACParams, const HASH_STATE_LEN: usize, const HKDF_STATE_LEN: usize>
         debug_assert!(self.hmac.is_some());
 
         let additional_entropy = self.entropy.credit_entropy(ikm);
-        let hmac_ref: &mut HMAC<H> = self.hmac.as_mut().unwrap();
-        hmac_ref.do_update(ikm.ref_to_bytes());
-        // self.hmac.as_mut().unwrap().do_update(ikm.ref_to_bytes());
+        self.hmac.as_mut().unwrap().inner.do_update(ikm.ref_to_bytes());
 
         Ok(additional_entropy)
     }
@@ -619,7 +629,7 @@ impl<H: HMACParams, const HASH_STATE_LEN: usize, const HKDF_STATE_LEN: usize>
         };
         self.state = HkdfStates::TakingAdditionalInfo;
 
-        self.hmac.as_mut().unwrap().do_update(ikm_chunk);
+        self.hmac.as_mut().unwrap().inner.do_update(ikm_chunk);
         Ok(0)
     }
 
@@ -648,11 +658,9 @@ impl<H: HMACParams, const HASH_STATE_LEN: usize, const HKDF_STATE_LEN: usize>
         let output_key_type = self.entropy.get_output_key_type(); // need to do this above self.hmac.do_final_out, which will consume self.
 
         let mut bytes_written = 0;
+        let HkdfExtract { key, inner } = self.hmac.unwrap();
         do_hazardous_operations(prk, |okm| {
-            bytes_written = self
-                .hmac
-                .unwrap()
-                .do_final_out(&mut okm.ref_to_bytes_mut()?)
+            bytes_written = hmac_hazmat::finish_out(&key, inner, okm.ref_to_bytes_mut()?)
                 .map_err(|_| KeyMaterialError::GenericError("HMAC do_final_out failed"))?;
             okm.set_key_len(bytes_written)?;
             okm.set_key_type(output_key_type)?;
@@ -815,7 +823,7 @@ where
         // The present flag, then (when present) the inner salt-keyed HMAC blob right after it.
         if let Some(hmac) = self.hmac {
             state[3] = 1; // present flag
-            state[4..4 + HASH_STATE_LEN].copy_from_slice(&hmac.suspend());
+            state[4..4 + HASH_STATE_LEN].copy_from_slice(&hmac.inner.suspend());
         }
         // else None:
         //  the presence flag = 0
@@ -843,10 +851,11 @@ where
         let hmac = match state[3] {
             0 => None,
             // infallible: the sub-slice is exactly HASH_STATE_LEN bytes by const construction.
-            1 => Some(HMAC::<H>::from_suspended(
-                state[4..4 + HASH_STATE_LEN].try_into().unwrap(),
-                salt,
-            )?),
+            1 => Some(HkdfExtract {
+                key: HmacKey::<H>::from_key_material_allow_weak(salt)
+                    .map_err(|_| SuspendableError::InvalidData)?,
+                inner: H::from_suspended(state[4..4 + HASH_STATE_LEN].try_into().unwrap())?,
+            }),
             _ => return Err(SuspendableError::InvalidData),
         };
 
@@ -860,10 +869,12 @@ where
             return Err(SuspendableError::InvalidData);
         }
 
-        // infallible: the sub-slice is exactly 8 bytes by const construction.
-        let entropy =
-            u64::from_le_bytes(state[5 + HASH_STATE_LEN..13 + HASH_STATE_LEN].try_into().unwrap())
-                as usize;
+        // infallible: the sub-slice is exactly 8 bytes by const construction. The counter is
+        // refused rather than truncated where `usize` is narrower than the encoding.
+        let entropy = bounded_usize(
+            u64::from_le_bytes(state[5 + HASH_STATE_LEN..13 + HASH_STATE_LEN].try_into().unwrap()),
+            usize::MAX,
+        )?;
         let security_strength = SecurityStrength::try_from(state[13 + HASH_STATE_LEN])?;
 
         Ok(HKDF {

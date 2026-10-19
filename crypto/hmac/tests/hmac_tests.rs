@@ -34,9 +34,9 @@ mod hmac_tests {
         assert_eq!(zero_length_key.key_len(), 0);
         assert_eq!(zero_length_key.key_type(), KeyType::MACKey);
 
-        let mut mac = HmacKey::<SHA256>::from_key_material_allow_weak(&zero_length_key)
-            .unwrap()
-            .create_generator();
+        let mac_key = HmacKey::<SHA256>::from_key_material_allow_weak(&zero_length_key).unwrap();
+
+        let mut mac = mac_key.create_generator();
         mac.do_update("Hi There".as_bytes());
         let output = mac.do_final();
         assert_eq!(output, b"\xe4\x84\x11\x26\x27\x15\xc8\x37\x0c\xd5\xe7\xbf\x8e\x82\xbe\xf5\x3b\xd5\x37\x12\xd0\x07\xf3\x42\x93\x51\x84\x3b\x77\xc7\xbb\x9b");
@@ -47,7 +47,8 @@ mod hmac_tests {
             KeyType::MACKey,
         )
         .unwrap();
-        let mut mac = HmacKey::<SHA224>::from_key_material(&key).unwrap().create_generator();
+        let mac_key = HmacKey::<SHA224>::from_key_material(&key).unwrap();
+        let mut mac = mac_key.create_generator();
         mac.do_update(b"Hi There");
         let output = mac.do_final();
         assert_eq!(output, b"\x89\x6f\xb1\x12\x8a\xbb\xdf\x19\x68\x32\x10\x7c\xd4\x9d\xf3\x3f\x47\xb4\xb1\x16\x99\x12\xba\x4f\x53\x68\x4b\x22");
@@ -58,7 +59,8 @@ mod hmac_tests {
             KeyType::MACKey,
         )
         .unwrap();
-        let mac = HmacKey::<SHA256>::from_key_material(&key).unwrap().create_generator();
+        let mac_key = HmacKey::<SHA256>::from_key_material(&key).unwrap();
+        let mac = mac_key.create_generator();
         // mac.do_update(b"").unwrap();
         let output = mac.do_final();
         assert_eq!(
@@ -168,14 +170,16 @@ mod hmac_tests {
 
         // SHA-512 has a 128-byte block, so use a 127-byte key
         let key = KeyMaterial::<200>::from_bytes_as_type(&[0x0B; 127], KeyType::MACKey).unwrap();
-        let mut mac = HmacKey::<SHA512>::from_key_material(&key).unwrap().create_generator();
+        let mac_key = HmacKey::<SHA512>::from_key_material(&key).unwrap();
+        let mut mac = mac_key.create_generator();
         mac.do_update(b"Hi There");
         let tag = mac.do_final();
         assert!(HmacKey::<SHA512>::from_key_material(&key).unwrap().verify(b"Hi There", &tag));
 
         // SHA3-224 has the largest block (144 bytes); a 143-byte key exercises the top of the range.
         let key = KeyMaterial::<200>::from_bytes_as_type(&[0x0B; 143], KeyType::MACKey).unwrap();
-        let mut mac = HmacKey::<SHA3_224>::from_key_material(&key).unwrap().create_generator();
+        let mac_key = HmacKey::<SHA3_224>::from_key_material(&key).unwrap();
+        let mut mac = mac_key.create_generator();
         mac.do_update(b"Hi There");
         let tag = mac.do_final();
         assert!(HmacKey::<SHA3_224>::from_key_material(&key).unwrap().verify(b"Hi There", &tag));
@@ -212,8 +216,8 @@ mod hmac_tests {
             }
         }
         // It passes through the weak form
-        let mut hmac =
-            HmacKey::<SHA512>::from_key_material_allow_weak(&key).unwrap().create_generator();
+        let hmac_key = HmacKey::<SHA512>::from_key_material_allow_weak(&key).unwrap();
+        let mut hmac = hmac_key.create_generator();
         hmac.do_update(b"Hi There");
         hmac.do_final();
 
@@ -249,12 +253,14 @@ mod hmac_tests {
         let out = HmacKey::<SHA224>::from_key_material(&key).unwrap().mac(b"Hi There");
 
         // test output that's the wrong length, should simply return False
-        let mut mac = HmacKey::<SHA224>::from_key_material(&key).unwrap().create_generator();
+        let mac_key = HmacKey::<SHA224>::from_key_material(&key).unwrap();
+        let mut mac = mac_key.create_generator();
         mac.do_update(b"Hi There");
         assert!(!mac.do_verify_final(&out[..out.len() - 1]));
 
         // test output that's the right length but wrong value -- do_verify
-        let mut mac = HmacKey::<SHA224>::from_key_material(&key).unwrap().create_generator();
+        let mac_key = HmacKey::<SHA224>::from_key_material(&key).unwrap();
+        let mut mac = mac_key.create_generator();
         mac.do_update(b"Hi There");
         assert!(!mac.do_verify_final(&[0x01_u8; 28]));
 
@@ -266,7 +272,8 @@ mod hmac_tests {
         );
 
         // error case: test that it'll refuse to truncate below MIN_FIPS_DIGEST_LEN
-        let mut mac = HmacKey::<SHA224>::from_key_material(&key).unwrap().create_generator();
+        let mac_key = HmacKey::<SHA224>::from_key_material(&key).unwrap();
+        let mut mac = mac_key.create_generator();
         mac.do_update(b"Hi There");
         let mut out = vec![0u8; MIN_FIPS_DIGEST_LEN - 1];
         match mac.do_final_out(&mut out) {
@@ -280,7 +287,8 @@ mod hmac_tests {
         }
 
         // success case: ... but it will truncate to exactly MIN_FIPS_DIGEST_LEN
-        let mut mac = HmacKey::<SHA224>::from_key_material(&key).unwrap().create_generator();
+        let mac_key = HmacKey::<SHA224>::from_key_material(&key).unwrap();
+        let mut mac = mac_key.create_generator();
         mac.do_update(b"Hi There");
         let mut out = vec![0u8; MIN_FIPS_DIGEST_LEN];
         let bytes_written = mac.do_final_out(&mut out).unwrap();
@@ -288,17 +296,21 @@ mod hmac_tests {
         assert_eq!(&out, b"\x89\x6f\xb1\x12");
 
         // fail case: mac value is correct but truncated
-        let mac = HmacKey::<SHA3_224>::from_key_material(&key).unwrap().create_generator();
+        let mac_key = HmacKey::<SHA3_224>::from_key_material(&key).unwrap();
+        let mac = mac_key.create_generator();
         let mut mac_val = mac.mac(b"Polly want a cracker?");
-        let verifier = HmacKey::<SHA3_224>::from_key_material(&key).unwrap().create_generator();
+        let verifier_key = HmacKey::<SHA3_224>::from_key_material(&key).unwrap();
+        let verifier = verifier_key.create_generator();
         assert!(verifier.verify(b"Polly want a cracker?", &mac_val));
 
         // truncation of the mac value is considered a fail
-        let verifier = HmacKey::<SHA3_224>::from_key_material(&key).unwrap().create_generator();
+        let verifier_key = HmacKey::<SHA3_224>::from_key_material(&key).unwrap();
+        let verifier = verifier_key.create_generator();
         assert!(!verifier.verify(b"Polly want a cracker?", &mac_val[..mac_val.len() - 1]));
 
         // .. as is some extra bytes at the end
-        let verifier = HmacKey::<SHA3_224>::from_key_material(&key).unwrap().create_generator();
+        let verifier_key = HmacKey::<SHA3_224>::from_key_material(&key).unwrap();
+        let verifier = verifier_key.create_generator();
         mac_val.extend_from_slice(&[0u8; 4]);
         assert!(!verifier.verify(b"Polly want a cracker?", &mac_val));
     }
@@ -346,8 +358,8 @@ mod hmac_tests {
             assert_eq!(full.len(), 28);
             assert_eq!(&full[..20], &expected[..]);
             // the same vector through the streaming API in uneven chunks
-            let mut mac =
-                HmacKey::<SHA512_224>::from_key_material(&key).unwrap().create_generator();
+            let mac_key = HmacKey::<SHA512_224>::from_key_material(&key).unwrap();
+            let mut mac = mac_key.create_generator();
             for chunk in msg.chunks(13) {
                 mac.do_update(chunk);
             }
@@ -365,8 +377,8 @@ mod hmac_tests {
             assert_eq!(full.len(), 28);
             assert_eq!(&full[..20], &expected[..]);
             // the same vector through the streaming API in uneven chunks
-            let mut mac =
-                HmacKey::<SHA512_224>::from_key_material(&key).unwrap().create_generator();
+            let mac_key = HmacKey::<SHA512_224>::from_key_material(&key).unwrap();
+            let mut mac = mac_key.create_generator();
             for chunk in msg.chunks(13) {
                 mac.do_update(chunk);
             }
@@ -392,8 +404,8 @@ mod hmac_tests {
             assert_eq!(full.len(), 32);
             assert_eq!(&full[..20], &expected[..]);
             // the same vector through the streaming API in uneven chunks
-            let mut mac =
-                HmacKey::<SHA512_256>::from_key_material(&key).unwrap().create_generator();
+            let mac_key = HmacKey::<SHA512_256>::from_key_material(&key).unwrap();
+            let mut mac = mac_key.create_generator();
             for chunk in msg.chunks(13) {
                 mac.do_update(chunk);
             }
@@ -412,8 +424,8 @@ mod hmac_tests {
             assert_eq!(full.len(), 32);
             assert_eq!(&full[..20], &expected[..]);
             // the same vector through the streaming API in uneven chunks
-            let mut mac =
-                HmacKey::<SHA512_256>::from_key_material(&key).unwrap().create_generator();
+            let mac_key = HmacKey::<SHA512_256>::from_key_material(&key).unwrap();
+            let mut mac = mac_key.create_generator();
             for chunk in msg.chunks(13) {
                 mac.do_update(chunk);
             }
@@ -648,8 +660,8 @@ mod hmac_tests {
             .unwrap();
             let mut out = [0u8; 128 / 8];
             // Key is shorter than HMAC security strength, so it needs the weak form
-            let hmac =
-                HmacKey::<SHA384>::from_key_material_allow_weak(&key).unwrap().create_generator();
+            let hmac_key = HmacKey::<SHA384>::from_key_material_allow_weak(&key).unwrap();
+            let hmac = hmac_key.create_generator();
             hmac.mac_out(b"Test With Truncation", &mut out).unwrap();
             assert_eq!(&Vec::from(out), &hex::decode("3abf34c3503b2a23a46efc619baef897").unwrap());
 
@@ -725,8 +737,8 @@ mod hmac_tests {
             .unwrap();
             let mut out = [0u8; 128 / 8];
             // Key is shorter than HMAC security strength, so it needs the weak form
-            let hmac =
-                HmacKey::<SHA512>::from_key_material_allow_weak(&key).unwrap().create_generator();
+            let hmac_key = HmacKey::<SHA512>::from_key_material_allow_weak(&key).unwrap();
+            let hmac = hmac_key.create_generator();
             hmac.mac_out(b"Test With Truncation", &mut out).unwrap();
             assert_eq!(&Vec::from(out), &hex::decode("415fad6271580a531d4179bc891d87a6").unwrap());
 
@@ -783,9 +795,8 @@ mod hmac_tests {
         // zero-length key (weak; needs the weak form)
         let mut zero_length_key = KeyMaterial256::default();
         do_hazardous_operations(&mut zero_length_key, |k| k.set_key_type(KeyType::MACKey)).unwrap();
-        let mut mac = HmacKey::<SM3>::from_key_material_allow_weak(&zero_length_key)
-            .unwrap()
-            .create_generator();
+        let mac_key = HmacKey::<SM3>::from_key_material_allow_weak(&zero_length_key).unwrap();
+        let mut mac = mac_key.create_generator();
         mac.do_update(b"abc");
         assert_eq!(
             mac.do_final(),
@@ -815,17 +826,14 @@ mod hmac_tests {
         let msg = b"Colorless green ideas sleep furiously";
 
         // A helper that exercises the full round-trip for one HMAC variant. HMAC is keyed, so the
-        // key is NOT in the serialized state -- it is re-supplied (by reference) to
-        // from_serialized_state.
-        // The `+ 'static` on the trait object matches the associated type `type Key = dyn
-        // KeyMaterialTrait` (a bare `dyn` in an associated type defaults to `'static`). The concrete
-        // key types are owned, so they satisfy it.
+        // key is NOT in the serialized state -- the key object is re-supplied (by reference) to
+        // from_suspended.
         fn round_trip<'k, const N: usize, H>(
             mut hmac: H,
-            key: &'k (dyn KeyMaterialTrait + 'static),
+            key: &'k <H as SuspendableKeyed<'k, N>>::Key,
             input: &[u8],
         ) where
-            H: MAC + Clone + SuspendableKeyed<'k, N, Key = dyn KeyMaterialTrait + 'static>,
+            H: MAC + Clone + SuspendableKeyed<'k, N>,
         {
             hmac.do_update(&input[..10]);
 
@@ -857,41 +865,24 @@ mod hmac_tests {
             }
         }
 
-        round_trip(
-            HmacKey::<SHA256>::from_key_material(&key).unwrap().create_generator(),
-            &key,
-            msg,
-        );
-        round_trip(
-            HmacKey::<SHA512>::from_key_material(&key).unwrap().create_generator(),
-            &key,
-            msg,
-        );
-        round_trip(
-            HmacKey::<SHA512_224>::from_key_material(&key).unwrap().create_generator(),
-            &key,
-            msg,
-        );
-        round_trip(
-            HmacKey::<SHA512_256>::from_key_material(&key).unwrap().create_generator(),
-            &key,
-            msg,
-        );
-        round_trip(
-            HmacKey::<SHA3_256>::from_key_material(&key).unwrap().create_generator(),
-            &key,
-            msg,
-        );
-        round_trip(HmacKey::<SM3>::from_key_material(&key).unwrap().create_generator(), &key, msg);
+        let hmac_key = HmacKey::<SHA256>::from_key_material(&key).unwrap();
+        round_trip(hmac_key.create_generator(), &hmac_key, msg);
+        let hmac_key = HmacKey::<SHA512>::from_key_material(&key).unwrap();
+        round_trip(hmac_key.create_generator(), &hmac_key, msg);
+        let hmac_key = HmacKey::<SHA512_224>::from_key_material(&key).unwrap();
+        round_trip(hmac_key.create_generator(), &hmac_key, msg);
+        let hmac_key = HmacKey::<SHA512_256>::from_key_material(&key).unwrap();
+        round_trip(hmac_key.create_generator(), &hmac_key, msg);
+        let hmac_key = HmacKey::<SHA3_256>::from_key_material(&key).unwrap();
+        round_trip(hmac_key.create_generator(), &hmac_key, msg);
+        let hmac_key = HmacKey::<SM3>::from_key_material(&key).unwrap();
+        round_trip(hmac_key.create_generator(), &hmac_key, msg);
 
         // test suspend / resume with a key larger than block size
         let long_key =
             KeyMaterial::<200>::from_bytes_as_type(&DUMMY_SEED[..200], KeyType::MACKey).unwrap();
-        round_trip(
-            HmacKey::<SHA256>::from_key_material(&long_key).unwrap().create_generator(),
-            &long_key,
-            msg,
-        );
+        let hmac_key = HmacKey::<SHA256>::from_key_material(&long_key).unwrap();
+        round_trip(hmac_key.create_generator(), &hmac_key, msg);
     }
 
     /// Tests that no private data is displayed
@@ -902,7 +893,8 @@ mod hmac_tests {
             KeyType::MACKey,
         )
         .unwrap();
-        let hmac = HmacKey::<SHA256>::from_key_material(&key).unwrap().create_generator();
+        let hmac_key = HmacKey::<SHA256>::from_key_material(&key).unwrap();
+        let hmac = hmac_key.create_generator();
 
         // test fmt
         let fmt_str = format!("{}", &hmac);
