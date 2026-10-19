@@ -74,7 +74,9 @@ use crate::{DEFAULT, DEFAULT_128_BIT, DEFAULT_256_BIT, FactoryError};
 use bouncycastle_core::errors::MACError;
 use bouncycastle_core::key_material::KeyMaterialTrait;
 use bouncycastle_core::security_strength::SecurityStrength;
+use bouncycastle_core::symmetric_key::{FromAnyKeyMaterial, MacGenerationKey};
 use bouncycastle_core::traits::MAC;
+use bouncycastle_hmac::HmacKey;
 use bouncycastle_sha2 as sha2;
 use bouncycastle_sha2::hmac::{
     HMAC_SHA224_NAME, HMAC_SHA256_NAME, HMAC_SHA384_NAME, HMAC_SHA512_224_NAME,
@@ -84,7 +86,9 @@ use bouncycastle_sha3 as sha3;
 use bouncycastle_sha3::hmac::{
     HMAC_SHA3_224_NAME, HMAC_SHA3_256_NAME, HMAC_SHA3_384_NAME, HMAC_SHA3_512_NAME,
 };
-use bouncycastle_sha3::kmac::{KMAC128, KMAC128_NAME, KMAC256, KMAC256_NAME};
+use bouncycastle_sha3::kmac::{
+    KMAC128, KMAC128_NAME, KMAC128Key, KMAC256, KMAC256_NAME, KMAC256Key,
+};
 use bouncycastle_sm3 as sm3;
 use bouncycastle_sm3::hmac::HMAC_SM3_NAME;
 
@@ -153,23 +157,45 @@ impl MACFactory {
             DEFAULT => Self::default(key),
             DEFAULT_128_BIT => Self::default_128_bit(key),
             DEFAULT_256_BIT => Self::default_256_bit(key),
-            KMAC128_NAME => Ok(Self::KMAC128(KMAC128::new(key)?)),
-            KMAC256_NAME => Ok(Self::KMAC256(KMAC256::new(key)?)),
-            HMAC_SHA224_NAME => Ok(Self::HMAC_SHA224(sha2::hmac::HMAC_SHA224::new(key)?)),
-            HMAC_SHA256_NAME => Ok(Self::HMAC_SHA256(sha2::hmac::HMAC_SHA256::new(key)?)),
-            HMAC_SHA384_NAME => Ok(Self::HMAC_SHA384(sha2::hmac::HMAC_SHA384::new(key)?)),
-            HMAC_SHA512_NAME => Ok(Self::HMAC_SHA512(sha2::hmac::HMAC_SHA512::new(key)?)),
-            HMAC_SHA512_224_NAME => {
-                Ok(Self::HMAC_SHA512_224(sha2::hmac::HMAC_SHA512_224::new(key)?))
+            KMAC128_NAME => {
+                Ok(Self::KMAC128(KMAC128Key::from_key_material(key)?.create_generator()))
             }
-            HMAC_SHA512_256_NAME => {
-                Ok(Self::HMAC_SHA512_256(sha2::hmac::HMAC_SHA512_256::new(key)?))
+            KMAC256_NAME => {
+                Ok(Self::KMAC256(KMAC256Key::from_key_material(key)?.create_generator()))
             }
-            HMAC_SHA3_224_NAME => Ok(Self::HMAC_SHA3_224(sha3::hmac::HMAC_SHA3_224::new(key)?)),
-            HMAC_SHA3_256_NAME => Ok(Self::HMAC_SHA3_256(sha3::hmac::HMAC_SHA3_256::new(key)?)),
-            HMAC_SHA3_384_NAME => Ok(Self::HMAC_SHA3_384(sha3::hmac::HMAC_SHA3_384::new(key)?)),
-            HMAC_SHA3_512_NAME => Ok(Self::HMAC_SHA3_512(sha3::hmac::HMAC_SHA3_512::new(key)?)),
-            HMAC_SM3_NAME => Ok(Self::HMAC_SM3(sm3::hmac::HMAC_SM3::new(key)?)),
+            HMAC_SHA224_NAME => Ok(Self::HMAC_SHA224(
+                HmacKey::<sha2::SHA224>::from_key_material(key)?.create_generator(),
+            )),
+            HMAC_SHA256_NAME => Ok(Self::HMAC_SHA256(
+                HmacKey::<sha2::SHA256>::from_key_material(key)?.create_generator(),
+            )),
+            HMAC_SHA384_NAME => Ok(Self::HMAC_SHA384(
+                HmacKey::<sha2::SHA384>::from_key_material(key)?.create_generator(),
+            )),
+            HMAC_SHA512_NAME => Ok(Self::HMAC_SHA512(
+                HmacKey::<sha2::SHA512>::from_key_material(key)?.create_generator(),
+            )),
+            HMAC_SHA512_224_NAME => Ok(Self::HMAC_SHA512_224(
+                HmacKey::<sha2::SHA512_224>::from_key_material(key)?.create_generator(),
+            )),
+            HMAC_SHA512_256_NAME => Ok(Self::HMAC_SHA512_256(
+                HmacKey::<sha2::SHA512_256>::from_key_material(key)?.create_generator(),
+            )),
+            HMAC_SHA3_224_NAME => Ok(Self::HMAC_SHA3_224(
+                HmacKey::<sha3::SHA3_224>::from_key_material(key)?.create_generator(),
+            )),
+            HMAC_SHA3_256_NAME => Ok(Self::HMAC_SHA3_256(
+                HmacKey::<sha3::SHA3_256>::from_key_material(key)?.create_generator(),
+            )),
+            HMAC_SHA3_384_NAME => Ok(Self::HMAC_SHA3_384(
+                HmacKey::<sha3::SHA3_384>::from_key_material(key)?.create_generator(),
+            )),
+            HMAC_SHA3_512_NAME => Ok(Self::HMAC_SHA3_512(
+                HmacKey::<sha3::SHA3_512>::from_key_material(key)?.create_generator(),
+            )),
+            HMAC_SM3_NAME => {
+                Ok(Self::HMAC_SM3(HmacKey::<sm3::SM3>::from_key_material(key)?.create_generator()))
+            }
             _ => Err(FactoryError::UnsupportedAlgorithm(format!(
                 "The algorithm: \"{}\" is not a known MAC",
                 alg_name
