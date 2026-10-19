@@ -1,5 +1,5 @@
 use bouncycastle_chacha20_poly1305_aead::{
-    ChaCha20Poly1305Decryptor as Dec, ChaCha20Poly1305Encryptor as Enc,
+    ChaCha20Poly1305Decryptor as Dec, ChaCha20Poly1305Encryptor as Enc, MAX_MESSAGE_LEN,
 };
 use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
@@ -11,6 +11,12 @@ use bouncycastle_core_test_framework::aead::TestFrameworkAEADCipher;
 #[test]
 fn core_aead_and_symmetric_contracts() {
     TestFrameworkAEADCipher::new().test_encryptor_decryptor::<32, 12, 16, 16, Enc, Dec>();
+}
+
+/// RFC 8439 Sec 2.8: "P_MAX (maximum size of the plaintext) is 274,877,906,880 bytes".
+#[test]
+fn max_message_len_is_the_rfc_p_max() {
+    assert_eq!(MAX_MESSAGE_LEN, 274_877_906_880);
 }
 
 #[test]

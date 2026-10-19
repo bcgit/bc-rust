@@ -154,12 +154,6 @@ fn padding_len(length: u64) -> usize {
     ((16 - (length & 15)) & 15) as usize
 }
 
-// Private-state boundary tests live beside the integration tests. They position the
-// counter near exhaustion without processing a 256 GiB message or exposing a test API.
-#[cfg(test)]
-#[path = "../tests/internal/limits.rs"]
-mod limits;
-
 /// ChaCha20-Poly1305 encryption, with inline and detached tags through the core traits.
 pub struct ChaCha20Poly1305Encryptor(State);
 
@@ -324,5 +318,114 @@ impl AEADCipherDecryptor<KEY_LEN, NONCE_LEN, TAG_LEN, TAG_LEN> for ChaCha20Poly1
         self.state.verify(tag)?;
         plaintext[..n].copy_from_slice(&last[..n]);
         Ok(n)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    //! The message and AAD length limits. Reaching them through the public API means processing
+    //! 256 GiB of data, or 2^64 bytes of AAD, so these position the private state next to the
+    //! boundary instead: the "cannot be tested from integration tests" case QUALITY_AND_STYLE.md
+    //! carves out for unit tests.
+
+    use super::*;
+
+    fn state() -> State {
+        let key = KeyMaterial::from_bytes_as_type(&[7; 32], KeyType::SymmetricCipherKey).unwrap();
+        State::new(&key, &[9; 12]).unwrap()
+    }
+
+    /// One block of data left: the keystream at its last counter, and `data_len` to match.
+    fn near_limit() -> State {
+        let key = KeyMaterial::from_bytes_as_type(&[7; 32], KeyType::SymmetricCipherKey).unwrap();
+        let mut state = state();
+        // `check_data_len` relies on MAX_MESSAGE_LEN being exactly the data keystream's capacity.
+        assert_eq!(state.cipher.keystream().remaining_blocks() * 64, MAX_MESSAGE_LEN);
+        state.cipher = ChaCha20::from_keystream(
+            ChaCha20KeyStream::start_at(&key, &[9; 12], u32::MAX).unwrap(),
+        );
+        state.data_len = MAX_MESSAGE_LEN - 64;
+        state
+    }
+
+    #[test]
+    fn encryption_limit_errors_leave_state_and_output_untouched() {
+        let mut enc = ChaCha20Poly1305Encryptor(near_limit());
+        let mut out = [0xa5; 65];
+        assert!(matches!(
+            enc.do_encrypt_out(&[0; 65], &mut out),
+            Err(SymmetricCipherError::DataLimitExceeded)
+        ));
+        assert_eq!(out, [0xa5; 65]);
+        assert!(!enc.0.data_started);
+        enc.do_update_aad(b"aad").unwrap();
+        enc.do_encrypt_out(&[0; 63], &mut out[..63]).unwrap();
+        assert_eq!(MAX_MESSAGE_LEN - enc.0.data_len, 1);
+        let mut short = [0xa5; 2];
+        assert!(matches!(
+            enc.do_encrypt_out(&[0; 2], &mut short),
+            Err(SymmetricCipherError::DataLimitExceeded)
+        ));
+        assert_eq!(short, [0xa5; 2]);
+        enc.do_encrypt_out(&[0], &mut out[63..64]).unwrap();
+        assert_eq!(enc.0.data_len, MAX_MESSAGE_LEN);
+        enc.do_encrypt_out(&[], &mut []).unwrap();
+        let mut reference = ChaCha20Poly1305Encryptor(near_limit());
+        reference.do_update_aad(b"aad").unwrap();
+        let mut expected = [0; 64];
+        reference.do_encrypt_out(&[0; 64], &mut expected).unwrap();
+        assert_eq!(out[..64], expected);
+        assert_eq!(enc.do_final().unwrap(), reference.do_final().unwrap());
+    }
+
+    #[test]
+    fn inline_decryption_allows_the_last_ciphertext_block_plus_tag() {
+        let mut enc = ChaCha20Poly1305Encryptor(near_limit());
+        let mut inline = [0; 80];
+        enc.do_encrypt_out(&[0x42; 64], &mut inline[..64]).unwrap();
+        inline[64..].copy_from_slice(&enc.do_final().unwrap().0);
+        let mut dec = ChaCha20Poly1305Decryptor { state: near_limit(), held: [0; 16], held_len: 0 };
+        let mut out = [0xa5; 65];
+        assert!(matches!(
+            dec.do_decrypt_out(&[0; 81], &mut out),
+            Err(SymmetricCipherError::DataLimitExceeded)
+        ));
+        assert_eq!(out, [0xa5; 65]);
+        assert_eq!(dec.held_len, 0);
+        assert!(!dec.state.data_started);
+        assert_eq!(dec.do_decrypt_out(&inline, &mut out).unwrap(), 64);
+        assert_eq!(dec.state.data_len, MAX_MESSAGE_LEN);
+        assert_eq!(dec.do_final().unwrap().1, 0);
+        assert_eq!(&out[..64], &[0x42; 64]);
+        assert_eq!(out[64], 0xa5);
+    }
+
+    #[test]
+    fn detached_final_checks_the_limit_and_clears_its_buffer() {
+        let mut dec = ChaCha20Poly1305Decryptor { state: near_limit(), held: [0; 16], held_len: 0 };
+        // The update must reserve a possible inline tag. Only detached finalization can know
+        // that these extra 16 bytes are actually ciphertext exceeding the counter limit.
+        dec.do_decrypt_out(&[0; 80], &mut [0; 64]).unwrap();
+        let mut out = [0xa5; 16];
+        assert!(matches!(
+            dec.do_final_detached_out(&[0; 16], &mut out),
+            Err(SymmetricCipherError::DataLimitExceeded)
+        ));
+        assert_eq!(out, [0; 16]);
+    }
+
+    #[test]
+    fn aad_length_overflow_is_rejected_before_absorption() {
+        let mut state = state();
+        let mut reference = self::state();
+        state.aad_len = u64::MAX - 1;
+        reference.aad_len = u64::MAX - 1;
+        assert!(matches!(state.update_aad(&[1, 2]), Err(SymmetricCipherError::StateError(_))));
+        assert_eq!(state.aad_len, u64::MAX - 1);
+        state.update_aad(&[1]).unwrap();
+        reference.update_aad(&[1]).unwrap();
+        state.update_aad(&[]).unwrap();
+        assert_eq!(state.aad_len, u64::MAX);
+        assert_eq!(state.tag(), reference.tag());
     }
 }
