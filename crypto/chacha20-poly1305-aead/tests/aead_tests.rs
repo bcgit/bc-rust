@@ -66,3 +66,12 @@ fn key_capacity_does_not_replace_key_length() {
         ));
     }
 }
+
+/// The figures in the crate docs' Memory Usage table.
+#[cfg(target_pointer_width = "64")]
+#[test]
+fn sizes_match_the_documented_memory_table() {
+    use core::mem::size_of;
+    assert_eq!(size_of::<Enc>(), 360);
+    assert_eq!(size_of::<Dec>(), 384);
+}

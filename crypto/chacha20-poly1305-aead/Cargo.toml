@@ -18,4 +18,9 @@ bouncycastle-utils.workspace = true
 [dev-dependencies]
 bouncycastle-core-test-framework.workspace = true
 bouncycastle-hex.workspace = true
+criterion.workspace = true
 serde_json = "1.0"
+
+[[bench]]
+name = "aead_benches"
+harness = false

@@ -155,3 +155,14 @@ fn resumed_counter_is_bounded() {
     let wrong = KeyMaterial::<32>::from_bytes_as_type(&[0x42; 32], KeyType::MACKey).unwrap();
     assert!(ChaCha20::<Encrypting>::from_suspended(state, &wrong).is_err());
 }
+
+/// The figures in the crate docs' Memory Usage table.
+#[cfg(target_pointer_width = "64")]
+#[test]
+fn sizes_match_the_documented_memory_table() {
+    use core::mem::size_of;
+    assert_eq!(size_of::<ChaCha20KeyStream>(), 72);
+    assert_eq!(size_of::<ChaCha20<Encrypting>>(), 144);
+    assert_eq!(size_of::<ChaCha20<Decrypting>>(), 144);
+    assert_eq!(ChaCha20::<Encrypting>::SUSPENDED_STATE_LEN, 95);
+}

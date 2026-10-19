@@ -165,3 +165,10 @@ fn reference_tag(r0: u32, block: &[u8; 16]) -> [u8; 16] {
     }
     tag
 }
+
+/// The figure in the crate docs' Memory Usage table.
+#[cfg(target_pointer_width = "64")]
+#[test]
+fn size_matches_the_documented_memory_table() {
+    assert_eq!(core::mem::size_of::<Poly1305>(), 192);
+}

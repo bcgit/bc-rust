@@ -6,6 +6,7 @@
     * SM3 -- the SM3 hash (GB/T 32905-2016 / ISO/IEC 10118-3:2018), ported from bc-java.
     * AES -- AES-128/192/256, along with its modes AES_ECB, AES_CBC, AES_CCM, AES_CFB, AES_CFB8, AES_CTR, and AES_GCM.
     * ASCON -- Ascon-AEAD128, Ascon-Hash256, Ascon-XOF128 and Ascon-CXOF128 (NIST SP 800-232).
+    * CHACHA20 -- ChaCha20, Poly1305 and ChaCha20-Poly1305 (RFC 8439).
 * Further memory usage improvements on ML-DSA / ML-KEM. New figures for the largest size are:
     * ML-DSA-87/Sign 118 kb, ML-DSA-87/Verify 212 kb
     * ML-DSA-87_lowmemory/Sign 25 kb, ML-DSA-87_lowmemory/Verify 21 kb

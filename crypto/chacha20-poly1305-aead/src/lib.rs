@@ -5,12 +5,13 @@
 //! nonces 12 bytes. Encryption generates a nonce; protocols that supply their own may use
 //! [`ChaCha20Poly1305Encryptor::new_with_nonce`], taking responsibility for nonce uniqueness.
 //! A key/nonce may encrypt at most `64 * (2^32 - 1)` bytes. AAD must precede all data updates,
-//! including empty updates. Empty AAD is always a no-op.
+//! including empty updates. Empty AAD is always a no-op. Secret state is zeroized on drop;
+//! streaming and output-buffer methods do not allocate. This is the IETF construction, not the
+//! original 64-bit-nonce variant or XChaCha20.
 //!
-//! Streaming decryption releases **unauthenticated** bytes: do not use them until finalization
-//! succeeds, and erase them on failure. The one-shot trait methods erase their output on tag
-//! failure. Secret state is zeroized on drop; streaming and output-buffer methods do not allocate.
-//! This is the IETF construction, not the original 64-bit-nonce variant or XChaCha20.
+//! # Usage Examples
+//!
+//! One-shot, with a detached tag:
 //!
 //! ```
 //! use bouncycastle_chacha20_poly1305_aead::{ChaCha20Poly1305Encryptor as Enc, ChaCha20Poly1305Decryptor as Dec};
@@ -22,7 +23,56 @@
 //! Dec::decrypt_detached_out(&key, &nonce, b"header", &ciphertext[..n], &tag, &mut plaintext).unwrap();
 //! assert_eq!(&plaintext, b"message");
 //! ```
+//!
+//! Streaming, with the tag inline after the ciphertext:
+//!
+//! ```
+//! use bouncycastle_chacha20_poly1305_aead::{ChaCha20Poly1305Encryptor as Enc, ChaCha20Poly1305Decryptor as Dec};
+//! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
+//! use bouncycastle_core::traits::{
+//!     AEADCipherDecryptor, AEADCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
+//! };
+//! let key = KeyMaterial::<32>::from_bytes_as_type(&[0x42; 32], KeyType::SymmetricCipherKey).unwrap();
+//! let (mut enc, nonce) = Enc::do_encrypt_init(&key).unwrap();
+//! enc.do_update_aad(b"header").unwrap();
+//! let mut sealed = Vec::new();
+//! for piece in [&b"first part, "[..], &b"second part"[..]] {
+//!     let mut out = [0u8; 32];
+//!     let n = enc.do_encrypt_out(piece, &mut out).unwrap();
+//!     sealed.extend_from_slice(&out[..n]);
+//! }
+//! let (tag, _) = enc.do_final().unwrap();
+//! sealed.extend_from_slice(&tag);
+//!
+//! let mut dec = Dec::do_decrypt_init(&key, &nonce).unwrap();
+//! dec.do_update_aad(b"header").unwrap();
+//! let mut plaintext = vec![0u8; sealed.len()];
+//! let n = dec.do_decrypt_out(&sealed, &mut plaintext).unwrap();
+//! // Only once do_final succeeds is plaintext[..n] authenticated.
+//! let (_, m) = dec.do_final().unwrap();
+//! assert_eq!(&plaintext[..n + m], b"first part, second part");
+//! ```
+//!
+//! # Memory Usage
+//!
+//! | Type | In-memory size (bytes) |
+//! |------|------------------------|
+//! | [`ChaCha20Poly1305Encryptor`] | 360 |
+//! | [`ChaCha20Poly1305Decryptor`] | 384 |
+//!
+//! "In-memory size" is `core::mem::size_of` on a 64-bit target. There are no heap allocations and
+//! no message-sized buffers, so this crate has no `mem_usage_benches` harness.
+//!
+//! # Security Considerations
+//!
+//! - Never reuse a nonce under the same key. The trait constructors generate one; a caller of
+//!   [`ChaCha20Poly1305Encryptor::new_with_nonce`] is responsible for uniqueness. Reuse exposes
+//!   the XOR of the plaintexts and lets an attacker forge tags.
+//! - Streaming decryption releases **unauthenticated** bytes: do not use them until finalization
+//!   succeeds, and erase them on failure. The one-shot trait methods erase their output on tag
+//!   failure.
 
+#![no_std]
 #![forbid(unsafe_code)]
 #![forbid(missing_docs)]
 

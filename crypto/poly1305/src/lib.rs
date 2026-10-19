@@ -1,9 +1,9 @@
 //! Poly1305 one-time authentication from [RFC 8439, section 2.5](https://www.rfc-editor.org/rfc/rfc8439#section-2.5).
 //!
-//! A 32-byte key must be used for **exactly one message**. Finalization consumes the instance;
-//! callers remain responsible for never initializing another message with that key.
 //! This implements [`MAC`] with full 16-byte tags only: truncation is rejected. Streaming and
 //! output-buffer methods do not allocate. Secret state is zeroized on drop.
+//!
+//! # Usage Examples
 //!
 //! ```
 //! use bouncycastle_core::{key_material::{KeyMaterial, KeyType}, traits::MAC};
@@ -15,6 +15,22 @@
 //! let tag = mac.finalize();
 //! assert_eq!(tag.len(), 16);
 //! ```
+//!
+//! # Memory Usage
+//!
+//! | Type | In-memory size (bytes) |
+//! |------|------------------------|
+//! | [`Poly1305`] | 192 |
+//!
+//! "In-memory size" is `core::mem::size_of` on a 64-bit target. There are no heap allocations in
+//! the streaming and `*_out` APIs, so this crate has no `mem_usage_benches` harness.
+//!
+//! # Security Considerations
+//!
+//! - A 32-byte key must be used for **exactly one message**: two tags under one key let an
+//!   attacker forge others. Finalization consumes the instance, but nothing stops a caller
+//!   initializing another message with the same key. ChaCha20-Poly1305 derives a fresh key per
+//!   message.
 
 #![forbid(unsafe_code)]
 #![forbid(missing_docs)]
