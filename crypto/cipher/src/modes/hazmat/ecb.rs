@@ -47,15 +47,15 @@
 //! cipher functions can be computed in parallel".
 //!
 //! To take advantage of this parallelism, this mode batches both directions through the
-//! permutation's four-block and pair methods ([`ElectronicCodeBook::encrypt_4blocks`] /
-//! [`ElectronicCodeBook::encrypt_2blocks`] and their inverses), which may represent a speed-up over
+//! permutation's four-block and pair methods ([`BlockPermutation::encrypt_4blocks`] /
+//! [`BlockPermutation::encrypt_2blocks`] and their inverses), which may represent a speed-up over
 //! iterating one block at a time, depending on the implementation of the underlying cipher.
 //!
 //! # Suspending and resuming execution
 //!
 //! [`Ecb`] implements [`SuspendableKeyed`], so a message in progress can be suspended to a byte
 //! array and resumed later with the re-supplied key. The state is empty, since nothing carries over
-//! between blocks, and resuming is re-expanding the key; it exists so the padded adapters over ECB
+//! between blocks, and resuming is taking the key state again; it exists so the padded adapters over ECB
 //! can be suspended. The array length is `Ecb::SUSPENDED_STATE_LEN`; see [the crate
 //! docs](crate#suspending-and-resuming-execution) for an example.
 //!
@@ -86,10 +86,10 @@ use crate::padding::{PaddedBlockCipherDecryptor, PaddedBlockCipherEncryptor};
 use crate::{Decrypting, Encrypting};
 use bouncycastle_core::errors::{SuspendableError, SymmetricCipherError};
 use bouncycastle_core::hazmat::{
-    EcbDecryptMode, EcbEncryptMode, ElectronicCodeBook, Mode, SymmetricDecryptMode,
-    SymmetricEncryptMode,
+    BlockPermutation, EcbDecryptMode, EcbEncryptMode, ElectronicCodeBook, Mode,
+    SymmetricDecryptMode, SymmetricEncryptMode,
 };
-use bouncycastle_core::key_material::{KeyMaterial, KeyType};
+use bouncycastle_core::key_material::KeyType;
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{
     Algorithm, BlockCipherDecryptor, BlockCipherEncryptor, BlockCipherPadding, RNG,
@@ -123,10 +123,13 @@ impl<P, const KEY_LEN: usize, const BLOCK_LEN: usize> EcbEncryptMode<P, KEY_LEN,
 where
     P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames + Clone,
 {
-    type Encryptor = Ecb<P, Encrypting, KEY_LEN, BLOCK_LEN>;
+    type Encryptor<'k>
+        = Ecb<'k, P, Encrypting, BLOCK_LEN>
+    where
+        P: 'k;
 
-    fn encrypt_init(state: &Self::KeyState) -> Self::Encryptor {
-        Ecb::from_perm(state.clone())
+    fn encrypt_init<'k>(state: &'k Self::KeyState) -> Self::Encryptor<'k> {
+        Ecb::from_perm(state)
     }
 }
 
@@ -135,10 +138,13 @@ impl<P, const KEY_LEN: usize, const BLOCK_LEN: usize> EcbDecryptMode<P, KEY_LEN,
 where
     P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames + Clone,
 {
-    type Decryptor = Ecb<P, Decrypting, KEY_LEN, BLOCK_LEN>;
+    type Decryptor<'k>
+        = Ecb<'k, P, Decrypting, BLOCK_LEN>
+    where
+        P: 'k;
 
-    fn decrypt_init(state: &Self::KeyState) -> Self::Decryptor {
-        Ecb::from_perm(state.clone())
+    fn decrypt_init<'k>(state: &'k Self::KeyState) -> Self::Decryptor<'k> {
+        Ecb::from_perm(state)
     }
 }
 
@@ -148,21 +154,18 @@ where
     P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames + Clone,
     Pad: BlockCipherPadding<BLOCK_LEN>,
 {
-    type Encryptor = PaddedBlockCipherEncryptor<
-        Ecb<P, Encrypting, KEY_LEN, BLOCK_LEN>,
-        Pad,
-        KEY_LEN,
-        0,
-        BLOCK_LEN,
-    >;
+    type Encryptor<'k>
+        = PaddedBlockCipherEncryptor<Ecb<'k, P, Encrypting, BLOCK_LEN>, Pad, 0, BLOCK_LEN>
+    where
+        P: 'k;
 
     /// ECB has no init data, so nothing is drawn from `rng` and the init data is the empty
     /// array.
-    fn encrypt_init(
-        state: &Self::KeyState,
+    fn encrypt_init<'k>(
+        state: &'k Self::KeyState,
         _rng: &mut dyn RNG,
-    ) -> Result<(Self::Encryptor, [u8; 0]), SymmetricCipherError> {
-        Ok((PaddedBlockCipherEncryptor::from_inner(Ecb::from_perm(state.clone())), []))
+    ) -> Result<(Self::Encryptor<'k>, [u8; 0]), SymmetricCipherError> {
+        Ok((PaddedBlockCipherEncryptor::from_inner(Ecb::from_perm(state)), []))
     }
 }
 
@@ -172,16 +175,13 @@ where
     P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames + Clone,
     Pad: BlockCipherPadding<BLOCK_LEN>,
 {
-    type Decryptor = PaddedBlockCipherDecryptor<
-        Ecb<P, Decrypting, KEY_LEN, BLOCK_LEN>,
-        Pad,
-        KEY_LEN,
-        0,
-        BLOCK_LEN,
-    >;
+    type Decryptor<'k>
+        = PaddedBlockCipherDecryptor<Ecb<'k, P, Decrypting, BLOCK_LEN>, Pad, 0, BLOCK_LEN>
+    where
+        P: 'k;
 
-    fn decrypt_init(state: &Self::KeyState, _init_data: &[u8; 0]) -> Self::Decryptor {
-        PaddedBlockCipherDecryptor::from_inner(Ecb::from_perm(state.clone()))
+    fn decrypt_init<'k>(state: &'k Self::KeyState, _init_data: &[u8; 0]) -> Self::Decryptor<'k> {
+        PaddedBlockCipherDecryptor::from_inner(Ecb::from_perm(state))
     }
 }
 
@@ -191,46 +191,40 @@ where
 /// Considerations". Provided for interoperability and test vectors.
 ///
 /// `Dir` is [`Encrypting`] or [`Decrypting`]. [`BlockCipherEncryptor`] is implemented only for the
-/// former and [`BlockCipherDecryptor`] only for the latter, so an `Ecb<_, Encrypting, _, _>` has no
+/// former and [`BlockCipherDecryptor`] only for the latter, so an `Ecb<'k, _, Encrypting, _, _>` has no
 /// decryption methods at all -- using one in the wrong direction is a compile error rather than a
 /// runtime check.
 ///
 /// # State
 /// Only the permutation, which owns the key schedule and is responsible for keeping it in a
 /// zeroize-on-drop wrapper. Nothing chains from one block to the next, so unlike `Cbc` and `Cfb`
-/// there is no block of chaining value: `size_of::<Ecb<P, ..>>() == size_of::<P>()`.
+/// there is no block of chaining value: `size_of::<Ecb<'k, P, ..>>() == size_of::<P>()`.
 #[derive(Clone)]
-pub struct Ecb<P, Dir, const KEY_LEN: usize, const BLOCK_LEN: usize>
+pub struct Ecb<'k, P, Dir, const BLOCK_LEN: usize>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
+    P: BlockPermutation<BLOCK_LEN> + ModeNames,
 {
-    perm: P,
+    perm: &'k P,
     _dir: PhantomData<Dir>,
 }
 
-impl<P, Dir, const KEY_LEN: usize, const BLOCK_LEN: usize> Ecb<P, Dir, KEY_LEN, BLOCK_LEN>
+impl<'k, P, Dir, const BLOCK_LEN: usize> Ecb<'k, P, Dir, BLOCK_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
+    P: BlockPermutation<BLOCK_LEN> + ModeNames,
 {
-    /// The `N` of this type's [`SuspendableKeyed<N>`] impl: the version header alone, since ECB
+    /// The `N` of this type's [`SuspendableKeyed<'k, N>`] impl: the version header alone, since ECB
     /// has no state between blocks. See [`bouncycastle_utils::suspendable_state`].
     pub const SUSPENDED_STATE_LEN: usize = LIB_VERSION_LEN;
 
-    /// Expands the key. Both `_init` constructors are this; there is nothing else to set up.
-    fn new(key: &KeyMaterial<KEY_LEN>) -> Result<Self, SymmetricCipherError> {
-        Ok(Self::from_perm(P::new(key)?))
-    }
-
     /// Over an already-keyed permutation: what the [`ECB`] mode impls build.
-    pub(crate) fn from_perm(perm: P) -> Self {
+    pub(crate) fn from_perm(perm: &'k P) -> Self {
         Self { perm, _dir: PhantomData }
     }
 }
 
-impl<P, Dir, const KEY_LEN: usize, const BLOCK_LEN: usize> Algorithm
-    for Ecb<P, Dir, KEY_LEN, BLOCK_LEN>
+impl<'k, P, Dir, const BLOCK_LEN: usize> Algorithm for Ecb<'k, P, Dir, BLOCK_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
+    P: BlockPermutation<BLOCK_LEN> + ModeNames,
 {
     /// The permutation's name for this mode, [`ModeNames::ECB_ALG_NAME`].
     const ALG_NAME: &'static str = P::ECB_ALG_NAME;
@@ -239,37 +233,12 @@ where
     const MAX_SECURITY_STRENGTH: SecurityStrength = P::MAX_SECURITY_STRENGTH;
 }
 
-impl<P, const KEY_LEN: usize, const BLOCK_LEN: usize> BlockCipherEncryptor<KEY_LEN, 0, BLOCK_LEN>
-    for Ecb<P, Encrypting, KEY_LEN, BLOCK_LEN>
+impl<'k, P, const BLOCK_LEN: usize> BlockCipherEncryptor<0, BLOCK_LEN>
+    for Ecb<'k, P, Encrypting, BLOCK_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
+    P: BlockPermutation<BLOCK_LEN> + ModeNames,
 {
-    /// Expands the key. ECB has no initialization data (SP 800-38A Table D.2 lists the IV column
-    /// as "Not applicable"), so the returned init data is the empty array.
-    fn do_encrypt_init(
-        key: &KeyMaterial<KEY_LEN>,
-    ) -> Result<(Self, [u8; 0]), SymmetricCipherError> {
-        Ok((Self::new(key)?, []))
-    }
-
-    /// Always panics: ECB generates no init data, so there is nothing for an RNG to do.
-    ///
-    /// # Panics
-    /// Unconditionally, as [`BlockCipherEncryptor::do_encrypt_init_rng`] requires of a mode whose
-    /// `INIT_DATA_LEN` is 0. Reaching for the RNG-taking constructor means the caller expects a
-    /// randomized mode, and ECB is not one -- SP 800-38A Table D.2 lists its IV column as "Not
-    /// applicable" -- so silently ignoring the RNG would leave that mistaken expectation
-    /// undisturbed. Use [`do_encrypt_init`](Self::do_encrypt_init), or a mode that has an IV.
-    fn do_encrypt_init_rng(
-        _key: &KeyMaterial<KEY_LEN>,
-        _rng: &mut dyn RNG,
-    ) -> Result<(Self, [u8; 0]), SymmetricCipherError> {
-        unimplemented!(
-            "ECB has no initialization data, so it draws nothing from an RNG: use do_encrypt_init, \
-             or a mode with an IV if a randomized ciphertext was wanted"
-        )
-    }
-
+    /// The implementor hook:
     /// `Cj = CIPH_K(Pj)` for every block, in place.
     ///
     /// Sec 6.1 allows the forward cipher functions to "be computed in parallel", so the blocks go
@@ -296,20 +265,12 @@ where
     }
 }
 
-impl<P, const KEY_LEN: usize, const BLOCK_LEN: usize> BlockCipherDecryptor<KEY_LEN, 0, BLOCK_LEN>
-    for Ecb<P, Decrypting, KEY_LEN, BLOCK_LEN>
+impl<'k, P, const BLOCK_LEN: usize> BlockCipherDecryptor<0, BLOCK_LEN>
+    for Ecb<'k, P, Decrypting, BLOCK_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
+    P: BlockPermutation<BLOCK_LEN> + ModeNames,
 {
-    /// Expands the key. The init data is the empty array [`BlockCipherEncryptor::do_encrypt_init`]
-    /// returned; there is nothing in it to use.
-    fn do_decrypt_init(
-        key: &KeyMaterial<KEY_LEN>,
-        _init_data: &[u8; 0],
-    ) -> Result<Self, SymmetricCipherError> {
-        Self::new(key)
-    }
-
+    /// The implementor hook:
     /// `Pj = CIPH^-1_K(Cj)` for every block, in place -- fours, then pairs, then the remaining
     /// block, as on the encrypt side. Never fails.
     fn do_decrypt_blocks_inplace(
@@ -333,39 +294,38 @@ where
 }
 
 /// ECB carries nothing from one block to the next, so its suspended state is empty and resuming
-/// is re-expanding the key. It is implemented so that the padded adapters over it, which do hold
+/// is taking the key state again. It is implemented so that the padded adapters over it, which do hold
 /// a partial block, can be suspended. See [`bouncycastle_utils::suspendable_state`].
-impl<P, Dir, const KEY_LEN: usize, const BLOCK_LEN: usize> SuspendableComponent
-    for Ecb<P, Dir, KEY_LEN, BLOCK_LEN>
+impl<'k, P, Dir, const BLOCK_LEN: usize> SuspendableComponent<'k> for Ecb<'k, P, Dir, BLOCK_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
+    P: BlockPermutation<BLOCK_LEN> + ModeNames,
 {
     const STATE_LEN: usize = 0;
-    type Key = KeyMaterial<KEY_LEN>;
+    type Key = P;
 
     fn write_state(&self, out: &mut [u8]) {
         debug_assert!(out.is_empty());
     }
 
-    fn read_state(state: &[u8], key: &Self::Key) -> Result<Self, SuspendableError> {
+    fn read_state(state: &[u8], key: &'k Self::Key) -> Result<Self, SuspendableError> {
         debug_assert!(state.is_empty());
-        Self::new(key).map_err(|_| SuspendableError::InvalidData)
+        Ok(Self::from_perm(key))
     }
 }
 
 /// `N` must be [`Ecb::SUSPENDED_STATE_LEN`]; anything else is a compile error.
-impl<P, Dir, const KEY_LEN: usize, const BLOCK_LEN: usize, const N: usize> SuspendableKeyed<N>
-    for Ecb<P, Dir, KEY_LEN, BLOCK_LEN>
+impl<'k, P, Dir, const BLOCK_LEN: usize, const N: usize> SuspendableKeyed<'k, N>
+    for Ecb<'k, P, Dir, BLOCK_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
+    P: BlockPermutation<BLOCK_LEN> + ModeNames,
 {
-    type Key = KeyMaterial<KEY_LEN>;
+    type Key = P;
 
     fn suspend(self) -> [u8; N] {
         suspend_component(&self)
     }
 
-    fn from_suspended(state: [u8; N], key: &Self::Key) -> Result<Self, SuspendableError> {
+    fn from_suspended(state: [u8; N], key: &'k Self::Key) -> Result<Self, SuspendableError> {
         resume_component(&state, key)
     }
 }

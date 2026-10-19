@@ -205,16 +205,6 @@ impl MACFactory {
 }
 
 impl MAC for MACFactory {
-    /// This is a dummy function, required by the [`MAC`] trait. DO NOT call it, it does not do anything.
-    fn new(_key: &impl KeyMaterialTrait) -> Result<Self, MACError> {
-        unimplemented!()
-    }
-
-    /// This is a dummy function, required by the [`MAC`] trait. DO NOT call it, it does not do anything.
-    fn new_allow_weak_key(_key: &impl KeyMaterialTrait) -> Result<Self, MACError> {
-        unimplemented!()
-    }
-
     fn output_len(&self) -> usize {
         match self {
             Self::KMAC128(h) => h.output_len(),

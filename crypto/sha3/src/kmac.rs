@@ -280,20 +280,6 @@ impl<PARAMS: SHAKEParams> Algorithm for KMACInternal<PARAMS> {
 }
 
 impl<PARAMS: SHAKEParams> KMACInternal<PARAMS> {
-    /// A worker for one message under a key built for this message alone: what
-    /// [`KMACKeyInternal::with_params`] does once, done per message.
-    pub(crate) fn new_with_params(
-        key: &dyn KeyMaterialTrait,
-        customization: &[u8],
-        output_len: usize,
-        allow_weak_key: bool,
-    ) -> Result<Self, MACError> {
-        Ok(KMACKeyInternal::<PARAMS>::with_params_checked(
-            key, customization, output_len, allow_weak_key,
-        )?
-        .create_generator())
-    }
-
     /// Absorbs `right_encode(value)`, the length binding of Sec 4.3 step 1.
     fn absorb_right_encode(&mut self, value: u64) {
         let (buf, len) = right_encode(value);
@@ -345,16 +331,6 @@ impl<PARAMS: SHAKEParams> Suspendable<SUSPENDED_KMAC_STATE_LEN> for KMACInternal
 }
 
 impl<PARAMS: SHAKEParams> MAC for KMACInternal<PARAMS> {
-    /// A KMAC with no customization string, producing the nominal output length -- 32 bytes for
-    /// KMAC128 and 64 for KMAC256. [`KMACKeyInternal::with_params`] chooses either.
-    fn new(key: &impl KeyMaterialTrait) -> Result<Self, MACError> {
-        Ok(KMACKeyInternal::<PARAMS>::from_key_material(key)?.create_generator())
-    }
-
-    fn new_allow_weak_key(key: &impl KeyMaterialTrait) -> Result<Self, MACError> {
-        Ok(KMACKeyInternal::<PARAMS>::from_key_material_allow_weak(key)?.create_generator())
-    }
-
     fn output_len(&self) -> usize {
         self.output_len
     }
@@ -468,7 +444,8 @@ impl<PARAMS: SHAKEParams> KMACXOFInternal<PARAMS> {
     ) -> Result<Self, MACError> {
         // The key binding is identical to KMAC's; only the length encoding differs, and that is
         // applied when output begins.
-        let kmac = KMACInternal::<PARAMS>::new_with_params(key, customization, 0, allow_weak_key)?;
+        let kmac =
+            KMACKeyInternal::<PARAMS>::with_params_checked(key, customization, 0, allow_weak_key)?;
         Ok(Self { cshake: kmac.cshake, strength: kmac.strength })
     }
 }

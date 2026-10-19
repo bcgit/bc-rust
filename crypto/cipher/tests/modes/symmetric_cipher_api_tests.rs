@@ -67,8 +67,8 @@ fn the_two_apis_agree_byte_for_byte() {
     where
         K: SymmetricEncryptionKey<KEY_LEN, INIT_DATA_LEN, 0>
             + SymmetricDecryptionKey<KEY_LEN, INIT_DATA_LEN, 0>,
-        K::Encryptor: StreamCipherEncryptor<KEY_LEN, INIT_DATA_LEN>,
-        K::Decryptor: StreamCipherDecryptor<KEY_LEN, INIT_DATA_LEN>,
+        K::Encryptor: StreamCipherEncryptor<INIT_DATA_LEN>,
+        K::Decryptor: StreamCipherDecryptor<INIT_DATA_LEN>,
     {
         for len in [0usize, 1, 15, 16, 17, 63, 64, 171] {
             let plaintext: Vec<u8> = (0..len).map(|i| (i * 7 + 1) as u8).collect();
@@ -117,12 +117,12 @@ fn the_length_predictions_are_exact() {
     let key = key_for::<CTR<12>>();
     for len in [0usize, 1, 15, 16, 17, 1000] {
         assert_eq!(
-            <ToyCtr<Encrypting> as SymmetricCipherEncryptor<TOY_LEN, 12, 0>>::encrypt_out_len(len),
+            <ToyCtr<Encrypting> as SymmetricCipherEncryptor<12, 0>>::encrypt_out_len(len),
             len,
             "encrypt_out_len is the identity"
         );
         assert_eq!(
-            <ToyCtr<Decrypting> as SymmetricCipherDecryptor<TOY_LEN, 12, 0>>::decrypt_out_len(len),
+            <ToyCtr<Decrypting> as SymmetricCipherDecryptor<12, 0>>::decrypt_out_len(len),
             len,
             "decrypt_out_len is exact, not an upper bound"
         );

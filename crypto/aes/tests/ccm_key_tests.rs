@@ -4,14 +4,17 @@
 //! Only the worker traits are in scope here, since the pair's cipher-trait methods share their
 //! names.
 
-use bouncycastle_aes::{AES_CCM_128, AES128Key, AES192Key};
-use bouncycastle_cipher::Encrypting;
+use bouncycastle_aes::hazmat::AES128Internal;
+use bouncycastle_aes::{AES128Key, AES192Key};
 use bouncycastle_cipher::modes::CCM;
 use bouncycastle_core::errors::SymmetricCipherError;
+use bouncycastle_core::hazmat::{AeadPacketEncryptMode, ElectronicCodeBook};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::symmetric_key::{
-    AeadDecryptWorker, AeadEncryptWorker, AeadPacketDecryptionKey, AeadPacketEncryptionKey,
-    FromKeyMaterial,
+    AeadPacketDecryptionKey, AeadPacketEncryptionKey, FromKeyMaterial,
+};
+use bouncycastle_core::traits::{
+    AEADCipherDecryptor, AEADCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
 };
 use bouncycastle_core_test_framework::FixedSeedRNG;
 
@@ -31,15 +34,12 @@ fn message(len: usize) -> Vec<u8> {
     (0..len).map(|i| (i * 31 % 251) as u8).collect()
 }
 
-/// The pair's any-length `_nonce` one-shot, the reference for every form below.
+/// The mode's in-place `_nonce` one-shot over the bare permutation (the hazmat mode-trait
+/// route), the reference for every form below.
 fn reference(km: &KeyMaterial<16>, nonce: &[u8; 12], msg: &[u8]) -> (Vec<u8>, [u8; 16]) {
-    use bouncycastle_core::traits::AEADCipherEncryptor;
-    let mut ct = vec![0u8; msg.len()];
-    let (n, tag) = AES_CCM_128::<Encrypting, 12, 16, 0, 0>::encrypt_detached_nonce_out(
-        km, nonce, AAD, msg, &mut ct,
-    )
-    .unwrap();
-    assert_eq!(n, msg.len());
+    let perm = AES128Internal::new(km).unwrap();
+    let mut ct = msg.to_vec();
+    let tag = CCM::<12, 16>::encrypt_detached_in_place_nonce(&perm, nonce, AAD, &mut ct).unwrap();
     (ct, tag)
 }
 
@@ -180,12 +180,9 @@ fn a_short_nonce_is_reachable_through_the_supplied_nonce_forms() {
     let mut buf = msg.clone();
     let tag = key.encrypt_detached_in_place_nonce(&nonce, AAD, &mut buf).unwrap();
     let (ct, tag_p) = {
-        use bouncycastle_core::traits::AEADCipherEncryptor;
-        let mut ct = vec![0u8; msg.len()];
-        let (_, t) = AES_CCM_128::<Encrypting, 8, 8, 0, 0>::encrypt_detached_nonce_out(
-            &km, &nonce, AAD, &msg, &mut ct,
-        )
-        .unwrap();
+        let perm = AES128Internal::new(&km).unwrap();
+        let mut ct = msg.clone();
+        let t = CCM::<8, 8>::encrypt_detached_in_place_nonce(&perm, &nonce, AAD, &mut ct).unwrap();
         (ct, t)
     };
     assert_eq!((ct, tag_p), (buf.clone(), tag));

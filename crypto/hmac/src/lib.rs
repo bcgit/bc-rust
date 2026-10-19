@@ -42,10 +42,6 @@
 //! assert!(key.verify(b"part onepart two", &tag[..n]));   // one-shot, same path underneath
 //! ```
 //!
-//! [`MAC::new`] and [`MAC::new_allow_weak_key`] on the worker build the same key internally and
-//! take one worker from it, so they cost the pad computation per message; a key that will
-//! authenticate more than one message is better held as an [`HmacKey`].
-//!
 //! # Instantiating HMAC over a Hash
 //!
 //! HMAC works with any hash: [`HMAC<HASH>`](HMAC) needs only [`Hash`]. What HMAC cannot
@@ -96,14 +92,16 @@
 //! These apply to every instantiation; the hash crates' `hmac` modules repeat the ones that matter
 //! most in day-to-day use.
 //!
-//! * [`HMACParams::HMAC_MAX_SECURITY_STRENGTH`] is a claim that [`MAC::new`] enforces against the
-//!   key's tagged strength, and that [`HMAC::keygen_from_rng`] enforces against the RNG's. Declaring
-//!   a strength the underlying hash cannot support does not make the construction stronger, it just
-//!   makes the check wrong. NIST SP 800-107-r1 Section 5.3.4 gives the ceiling: the effective
-//!   strength is `min(strength of K, 2C)` for an internal chaining value of `C` bits.
-//! * [`MAC::new_allow_weak_key`] deliberately skips the key-strength check. It exists for protocols
-//!   that call for a weak or all-zero key -- an all-zero HKDF salt, for example -- and should not be
-//!   used to silence an error from [`MAC::new`].
+//! * [`HMACParams::HMAC_MAX_SECURITY_STRENGTH`] is a claim that
+//!   [`FromAnyKeyMaterial::from_key_material`] enforces against the key's tagged strength, and
+//!   that [`HMAC::keygen_from_rng`] enforces against the RNG's. Declaring a strength the
+//!   underlying hash cannot support does not make the construction stronger, it just makes the
+//!   check wrong. NIST SP 800-107-r1 Section 5.3.4 gives the ceiling: the effective strength is
+//!   `min(strength of K, 2C)` for an internal chaining value of `C` bits.
+//! * [`FromAnyKeyMaterial::from_key_material_allow_weak`] deliberately skips the key-strength
+//!   check. It exists for protocols that call for a weak or all-zero key -- an all-zero HKDF salt,
+//!   for example -- and should not be used to silence an error from
+//!   [`FromAnyKeyMaterial::from_key_material`].
 //! * Verification via [`MAC::verify`] / [`MAC::do_verify_final`] uses a constant-time comparison.
 //!   Recomputing the MAC and comparing it with `==` leaks how many leading bytes matched.
 //! * [`MIN_FIPS_DIGEST_LEN`] (4 bytes) is the shortest truncation this crate will produce, per
@@ -335,8 +333,7 @@ impl<HASH: Hash + Default> MacVerificationKey for HmacKey<HASH> {
 /*** Worker ***/
 
 /// The HMAC worker for one message: the inner hash, absorbing the message, and the outer pad state
-/// it is finished through. Obtained from an [`HmacKey`], or built with its own key for one message
-/// by [`MAC::new`].
+/// it is finished through. Obtained from an [`HmacKey`].
 #[derive(Clone)]
 pub struct HMAC<HASH: Hash + Default> {
     /// RFC 2104 Section 2 steps (3)-(4): `H(K XOR ipad, text)` in progress.
@@ -393,14 +390,6 @@ impl<HASH: Hash + Default> HMAC<HASH> {
 }
 
 impl<HASH: Hash + Default> MAC for HMAC<HASH> {
-    fn new(key: &impl KeyMaterialTrait) -> Result<Self, MACError> {
-        Ok(HmacKey::<HASH>::from_key_material_checked(key, false)?.create_generator())
-    }
-
-    fn new_allow_weak_key(key: &impl KeyMaterialTrait) -> Result<Self, MACError> {
-        Ok(HmacKey::<HASH>::from_key_material_checked(key, true)?.create_generator())
-    }
-
     fn output_len(&self) -> usize {
         self.hasher.output_len()
     }

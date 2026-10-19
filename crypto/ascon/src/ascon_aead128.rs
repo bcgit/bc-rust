@@ -27,7 +27,6 @@ use bouncycastle_core::traits::{
     AEADCipherDecryptor, AEADCipherEncryptor, Algorithm, RNG, SuspendableKeyed,
     SymmetricCipherDecryptor, SymmetricCipherEncryptor,
 };
-use bouncycastle_rng::HashDRBG_SHA512;
 use bouncycastle_utils::ct::ct_eq_bytes;
 use bouncycastle_utils::secret::Secret;
 use bouncycastle_utils::suspendable_state::{add_lib_ver, check_lib_ver};
@@ -173,19 +172,6 @@ impl<Dir> Clone for Ascon_AEAD128<Dir> {
     }
 }
 
-/// Draw a fresh, unique 128-bit nonce from the library's default OS-seeded DRBG.
-///
-/// The one-shot APIs of main's cipher framework generate the init data / nonce internally, so
-/// Ascon's per-encryption nonce-uniqueness requirement (SP 800-232 R3) is satisfied by sourcing
-/// each nonce from a CSPRNG. A caller who manages its own nonces uses
-/// [`AEADCipherEncryptor::do_encrypt_init_nonce`] instead.
-fn fresh_nonce() -> Result<[u8; NONCE_LEN], SymmetricCipherError> {
-    let mut rng = HashDRBG_SHA512::new_from_os();
-    let mut nonce = [0u8; NONCE_LEN];
-    rng.next_bytes_out(&mut nonce)?;
-    Ok(nonce)
-}
-
 impl<Dir> Ascon_AEAD128<Dir> {
     /// Validate a [`KeyMaterial`] for use with Ascon-AEAD128 and return its key words.
     /// The key must be tagged as a [`KeyType::SymmetricCipherKey`] and carry at least the
@@ -208,16 +194,6 @@ impl<Dir> Ascon_AEAD128<Dir> {
             return Err(KeyMaterialError::InvalidLength.into());
         }
         Ok([load_u64_le(bytes, 0), load_u64_le(bytes, 8)])
-    }
-
-    /// SP 800-232 Sec 4.1.1 / 4.1.2 step 1, the same in both directions: validates `key` as a
-    /// [`KeyType::SymmetricCipherKey`] of at least 128-bit strength and initialises the state
-    /// under `nonce`. The direction is whatever type this is called on.
-    fn new(
-        key: &KeyMaterial<KEY_LEN>,
-        nonce: &[u8; NONCE_LEN],
-    ) -> Result<Self, SymmetricCipherError> {
-        Ok(Self::from_key_words(&Self::checked_key(key)?, nonce))
     }
 
     /// Step 1 from already-validated key words: what [`AsconAEAD128Key`] calls per message.
@@ -455,23 +431,7 @@ impl<Dir> Algorithm for Ascon_AEAD128<Dir> {
     const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_128bit;
 }
 
-impl SymmetricCipherEncryptor<KEY_LEN, NONCE_LEN, TAG_LEN> for Ascon_AEAD128<Encrypting> {
-    fn do_encrypt_init(
-        key: &KeyMaterial<KEY_LEN>,
-    ) -> Result<(Self, [u8; NONCE_LEN]), SymmetricCipherError> {
-        let nonce = fresh_nonce()?;
-        Ok((Self::new(key, &nonce)?, nonce))
-    }
-
-    fn do_encrypt_init_rng(
-        key: &KeyMaterial<KEY_LEN>,
-        rng: &mut dyn RNG,
-    ) -> Result<(Self, [u8; NONCE_LEN]), SymmetricCipherError> {
-        let mut nonce = [0u8; NONCE_LEN];
-        rng.next_bytes_out(&mut nonce)?;
-        Ok((Self::new(key, &nonce)?, nonce))
-    }
-
+impl SymmetricCipherEncryptor<NONCE_LEN, TAG_LEN> for Ascon_AEAD128<Encrypting> {
     /// Ascon-AEAD128 never buffers: every byte given is a byte returned.
     fn do_encrypt_out_len(&self, input_len: usize) -> usize {
         input_len
@@ -503,16 +463,9 @@ impl SymmetricCipherEncryptor<KEY_LEN, NONCE_LEN, TAG_LEN> for Ascon_AEAD128<Enc
     }
 }
 
-impl AEADCipherEncryptor<KEY_LEN, NONCE_LEN, TAG_LEN, TAG_LEN> for Ascon_AEAD128<Encrypting> {
+impl AEADCipherEncryptor<NONCE_LEN, TAG_LEN, TAG_LEN> for Ascon_AEAD128<Encrypting> {
     fn do_update_aad(&mut self, aad: &[u8]) -> Result<(), SymmetricCipherError> {
         self.absorb_aad(aad)
-    }
-
-    fn do_encrypt_init_nonce(
-        key: &KeyMaterial<KEY_LEN>,
-        nonce: &[u8; NONCE_LEN],
-    ) -> Result<Self, SymmetricCipherError> {
-        Self::new(key, nonce)
     }
 
     /// Nothing is ever held back to flush, so `ciphertext` is left zeroed.
@@ -525,14 +478,7 @@ impl AEADCipherEncryptor<KEY_LEN, NONCE_LEN, TAG_LEN, TAG_LEN> for Ascon_AEAD128
     }
 }
 
-impl SymmetricCipherDecryptor<KEY_LEN, NONCE_LEN, TAG_LEN> for Ascon_AEAD128<Decrypting> {
-    fn do_decrypt_init(
-        key: &KeyMaterial<KEY_LEN>,
-        nonce: &[u8; NONCE_LEN],
-    ) -> Result<Self, SymmetricCipherError> {
-        Self::new(key, nonce)
-    }
-
+impl SymmetricCipherDecryptor<NONCE_LEN, TAG_LEN> for Ascon_AEAD128<Decrypting> {
     /// Everything but the last `TAG_LEN` bytes seen so far is released.
     fn do_decrypt_out_len(&self, input_len: usize) -> usize {
         (self.held_len + input_len).saturating_sub(TAG_LEN)
@@ -588,7 +534,7 @@ impl SymmetricCipherDecryptor<KEY_LEN, NONCE_LEN, TAG_LEN> for Ascon_AEAD128<Dec
     }
 }
 
-impl AEADCipherDecryptor<KEY_LEN, NONCE_LEN, TAG_LEN, TAG_LEN> for Ascon_AEAD128<Decrypting> {
+impl AEADCipherDecryptor<NONCE_LEN, TAG_LEN, TAG_LEN> for Ascon_AEAD128<Decrypting> {
     /// # Errors
     /// [`SymmetricCipherError::StateError`] if `aad` is non-empty and
     /// [`SymmetricCipherDecryptor::do_decrypt_out`] has already been called.
@@ -731,95 +677,6 @@ impl AeadDecryptionKey<KEY_LEN, NONCE_LEN, TAG_LEN, TAG_LEN> for AsconAEAD128Key
 
     fn create_decryptor(&self, nonce: &[u8; NONCE_LEN]) -> Self::Decryptor {
         Ascon_AEAD128::from_key_words(&self.key, nonce)
-    }
-}
-
-// The worker traits the key's role traits are bounded on, forwarded to the cipher traits by
-// path; they fold into those traits once the trait constructors go.
-impl bouncycastle_core::symmetric_key::AeadEncryptWorker<NONCE_LEN, TAG_LEN, TAG_LEN>
-    for Ascon_AEAD128<Encrypting>
-{
-    fn do_update_aad(&mut self, aad: &[u8]) -> Result<(), SymmetricCipherError> {
-        AEADCipherEncryptor::do_update_aad(self, aad)
-    }
-
-    fn do_encrypt_out_len(&self, input_len: usize) -> usize {
-        SymmetricCipherEncryptor::do_encrypt_out_len(self, input_len)
-    }
-
-    fn do_encrypt_out(
-        &mut self,
-        plaintext: &[u8],
-        ciphertext: &mut [u8],
-    ) -> Result<usize, SymmetricCipherError> {
-        SymmetricCipherEncryptor::do_encrypt_out(self, plaintext, ciphertext)
-    }
-
-    fn do_encrypt_final(self) -> Result<([u8; TAG_LEN], usize), SymmetricCipherError> {
-        SymmetricCipherEncryptor::do_encrypt_final(self)
-    }
-
-    fn do_encrypt_final_detached_out(
-        self,
-        ciphertext: &mut [u8; TAG_LEN],
-    ) -> Result<(usize, [u8; TAG_LEN]), SymmetricCipherError> {
-        AEADCipherEncryptor::do_encrypt_final_detached_out(self, ciphertext)
-    }
-
-    fn encrypt_out_len(plaintext_len: usize) -> usize {
-        <Self as SymmetricCipherEncryptor<KEY_LEN, NONCE_LEN, TAG_LEN>>::encrypt_out_len(
-            plaintext_len,
-        )
-    }
-
-    fn encrypt_detached_out_len(plaintext_len: usize) -> usize {
-        <Self as AEADCipherEncryptor<KEY_LEN, NONCE_LEN, TAG_LEN, TAG_LEN>>::encrypt_detached_out_len(
-            plaintext_len,
-        )
-    }
-}
-
-impl bouncycastle_core::symmetric_key::AeadDecryptWorker<NONCE_LEN, TAG_LEN, TAG_LEN>
-    for Ascon_AEAD128<Decrypting>
-{
-    fn do_update_aad(&mut self, aad: &[u8]) -> Result<(), SymmetricCipherError> {
-        AEADCipherDecryptor::do_update_aad(self, aad)
-    }
-
-    fn do_decrypt_out_len(&self, input_len: usize) -> usize {
-        SymmetricCipherDecryptor::do_decrypt_out_len(self, input_len)
-    }
-
-    fn do_decrypt_out(
-        &mut self,
-        ciphertext: &[u8],
-        plaintext: &mut [u8],
-    ) -> Result<usize, SymmetricCipherError> {
-        SymmetricCipherDecryptor::do_decrypt_out(self, ciphertext, plaintext)
-    }
-
-    fn do_decrypt_final(self) -> Result<([u8; TAG_LEN], usize), SymmetricCipherError> {
-        SymmetricCipherDecryptor::do_decrypt_final(self)
-    }
-
-    fn do_decrypt_final_detached_out(
-        self,
-        tag: &[u8; TAG_LEN],
-        plaintext: &mut [u8; TAG_LEN],
-    ) -> Result<usize, SymmetricCipherError> {
-        AEADCipherDecryptor::do_decrypt_final_detached_out(self, tag, plaintext)
-    }
-
-    fn decrypt_out_len(ciphertext_len: usize) -> usize {
-        <Self as SymmetricCipherDecryptor<KEY_LEN, NONCE_LEN, TAG_LEN>>::decrypt_out_len(
-            ciphertext_len,
-        )
-    }
-
-    fn decrypt_detached_out_len(ciphertext_len: usize) -> usize {
-        <Self as AEADCipherDecryptor<KEY_LEN, NONCE_LEN, TAG_LEN, TAG_LEN>>::decrypt_detached_out_len(
-            ciphertext_len,
-        )
     }
 }
 

@@ -36,7 +36,7 @@ fn swapped_four_key() -> ToyKey<SwappedFourToy, CBC<Blocks>> {
 /// The implementor hook `do_encrypt_blocks_inplace`, by value, for tests whose data is
 /// block-shaped.
 fn enc_blocks<const N: usize>(
-    enc: &mut impl BlockCipherEncryptor<TOY_LEN, TOY_LEN, TOY_LEN>,
+    enc: &mut impl BlockCipherEncryptor<TOY_LEN, TOY_LEN>,
     plaintext: &[[u8; TOY_LEN]; N],
 ) -> [[u8; TOY_LEN]; N] {
     let mut blocks = *plaintext;
@@ -46,7 +46,7 @@ fn enc_blocks<const N: usize>(
 
 /// The implementor hook `do_decrypt_blocks_inplace`, by value.
 fn dec_blocks<const N: usize>(
-    dec: &mut impl BlockCipherDecryptor<TOY_LEN, TOY_LEN, TOY_LEN>,
+    dec: &mut impl BlockCipherDecryptor<TOY_LEN, TOY_LEN>,
     ciphertext: &[[u8; TOY_LEN]; N],
 ) -> [[u8; TOY_LEN]; N] {
     let mut blocks = *ciphertext;
@@ -163,11 +163,13 @@ fn the_pair_path_is_really_used() {
     assert_eq!(dec_blocks(&mut dec, &ct), plaintext);
 
     // The swapped-pair toy encrypts identically (encryption is serial and never pairs)...
-    let (mut enc, iv) = swapped_key().create_encryptor(&mut os_rng()).unwrap();
+    let key = swapped_key();
+    let (mut enc, iv) = key.create_encryptor(&mut os_rng()).unwrap();
     let ct = enc_blocks(&mut enc, &plaintext);
 
     // ...but decrypting the pair together must now be wrong, because the pair path is used.
-    let mut dec = swapped_key().create_decryptor(&iv);
+    let key = swapped_key();
+    let mut dec = key.create_decryptor(&iv);
     assert_ne!(
         dec_blocks(&mut dec, &ct),
         plaintext,
@@ -175,7 +177,8 @@ fn the_pair_path_is_really_used() {
     );
 
     // Decrypting one block at a time avoids the pair path, so it is correct even for this toy.
-    let mut dec = swapped_key().create_decryptor(&iv);
+    let key = swapped_key();
+    let mut dec = key.create_decryptor(&iv);
     let p0 = dec_blocks(&mut dec, &[ct[0]])[0];
     let p1 = dec_blocks(&mut dec, &[ct[1]])[0];
     assert_eq!([p0, p1], plaintext, "the single-block path must not pair");
@@ -200,20 +203,24 @@ fn the_four_block_path_is_really_used() {
     assert_eq!(dec_blocks(&mut dec, &ct), plaintext);
 
     // The rotated-four toy encrypts identically (encryption is serial and never batches)...
-    let (mut enc, iv) = swapped_four_key().create_encryptor(&mut os_rng()).unwrap();
+    let key = swapped_four_key();
+    let (mut enc, iv) = key.create_encryptor(&mut os_rng()).unwrap();
     let ct = enc_blocks(&mut enc, &plaintext);
 
     // ...but decrypting five together must be wrong, because the first four take the four path.
-    let mut dec = swapped_four_key().create_decryptor(&iv);
+    let key = swapped_four_key();
+    let mut dec = key.create_decryptor(&iv);
     assert_ne!(dec_blocks(&mut dec, &ct), plaintext, "four blocks must go through decrypt_4blocks");
 
     // Exactly four together is wrong for the same reason.
     let four: [[u8; TOY_LEN]; 4] = ct[..4].try_into().unwrap();
-    let mut dec = swapped_four_key().create_decryptor(&iv);
+    let key = swapped_four_key();
+    let mut dec = key.create_decryptor(&iv);
     assert_ne!(&dec_blocks(&mut dec, &four)[..], &plaintext[..4]);
 
     // Two pairs go through the pair path and are correct; so is the fifth block on its own.
-    let mut dec = swapped_four_key().create_decryptor(&iv);
+    let key = swapped_four_key();
+    let mut dec = key.create_decryptor(&iv);
     let first: [[u8; TOY_LEN]; 2] = ct[..2].try_into().unwrap();
     let second: [[u8; TOY_LEN]; 2] = ct[2..4].try_into().unwrap();
     assert_eq!(

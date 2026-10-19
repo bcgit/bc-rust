@@ -19,7 +19,9 @@ use bouncycastle_cipher::modes::hazmat::ecb::{ECB, Ecb};
 use bouncycastle_cipher::modes::{Blocks, CBC, Cbc, ModeNames};
 use bouncycastle_cipher::padding::PKCS7;
 use bouncycastle_cipher::{Decrypting, Encrypting};
-use bouncycastle_core::hazmat::{EcbDecryptionKey, EcbEncryptionKey, ElectronicCodeBook};
+use bouncycastle_core::hazmat::{
+    BlockPermutation, EcbDecryptionKey, EcbEncryptionKey, ElectronicCodeBook,
+};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::symmetric_key::{
     BlockEncryptionKey, FromKeyMaterial, SymmetricDecryptionKey, SymmetricEncryptionKey,
@@ -33,12 +35,16 @@ use bouncycastle_core_test_framework::from_key_material::TestFrameworkFromKeyMat
 use common::{SwappedFourToy, SwappedPairToy, TOY_LEN, Toy, toy_key};
 use toy_key::{ToyKey, os_rng};
 
-type ToyEcb<Dir> = Ecb<Toy, Dir, TOY_LEN, TOY_LEN>;
+type ToyEcb<'k, Dir> = Ecb<'k, Toy, Dir, TOY_LEN>;
 type ToyEcbKey = ToyKey<Toy, ECB<Blocks>>;
 
 fn ecb_key() -> ToyEcbKey {
     ToyEcbKey::from_key_material(&toy_key()).expect("the toy key")
 }
+
+/// The key the worker helpers below hand out borrowed workers over; a worker cannot outlive
+/// its key, so the helpers' key lives for the whole test binary.
+static KEY: std::sync::LazyLock<ToyEcbKey> = std::sync::LazyLock::new(ecb_key);
 
 fn swapped_key() -> ToyKey<SwappedPairToy, ECB<Blocks>> {
     ToyKey::from_key_material(&toy_key()).expect("the toy key")
@@ -51,7 +57,7 @@ fn swapped_four_key() -> ToyKey<SwappedFourToy, ECB<Blocks>> {
 /// The implementor hook `do_encrypt_blocks_inplace`, by value, for tests whose data is
 /// block-shaped.
 fn enc_blocks<const N: usize>(
-    enc: &mut impl BlockCipherEncryptor<TOY_LEN, 0, TOY_LEN>,
+    enc: &mut impl BlockCipherEncryptor<0, TOY_LEN>,
     plaintext: &[[u8; TOY_LEN]; N],
 ) -> [[u8; TOY_LEN]; N] {
     let mut blocks = *plaintext;
@@ -61,7 +67,7 @@ fn enc_blocks<const N: usize>(
 
 /// The implementor hook `do_decrypt_blocks_inplace`, by value.
 fn dec_blocks<const N: usize>(
-    dec: &mut impl BlockCipherDecryptor<TOY_LEN, 0, TOY_LEN>,
+    dec: &mut impl BlockCipherDecryptor<0, TOY_LEN>,
     ciphertext: &[[u8; TOY_LEN]; N],
 ) -> [[u8; TOY_LEN]; N] {
     let mut blocks = *ciphertext;
@@ -69,12 +75,12 @@ fn dec_blocks<const N: usize>(
     blocks
 }
 
-fn encryptor() -> ToyEcb<Encrypting> {
-    ecb_key().create_encryptor()
+fn encryptor() -> ToyEcb<'static, Encrypting> {
+    KEY.create_encryptor()
 }
 
-fn decryptor() -> ToyEcb<Decrypting> {
-    ecb_key().create_decryptor()
+fn decryptor() -> ToyEcb<'static, Decrypting> {
+    KEY.create_decryptor()
 }
 
 // ---- the mode against the shared framework ------------------------------------------------
@@ -143,10 +149,8 @@ fn the_mode_matches_the_spec_equations() {
 
     // ...and ECB is not CBC: CBC computes CIPH_K(P1 XOR IV), ECB computes CIPH_K(P1).
     let iv: [u8; TOY_LEN] = core::array::from_fn(|i| 0xF0 ^ (i as u8));
-    let (mut cbc, _) = ToyKey::<Toy, CBC<Blocks>>::from_key_material(&toy_key())
-        .unwrap()
-        .create_encryptor(&mut FixedSeedRNG::<TOY_LEN>::new(iv))
-        .unwrap();
+    let cbc_key = ToyKey::<Toy, CBC<Blocks>>::from_key_material(&toy_key()).unwrap();
+    let (mut cbc, _) = cbc_key.create_encryptor(&mut FixedSeedRNG::<TOY_LEN>::new(iv)).unwrap();
     let mut first = plaintext[0];
     cbc.do_encrypt_blocks_inplace(first.as_chunks_mut().0).unwrap();
     assert_ne!(first, ct[0], "ECB must not agree with CBC");
@@ -197,25 +201,29 @@ fn the_pair_path_is_used_in_both_directions() {
     let ct = enc_blocks(&mut encryptor(), &plaintext);
 
     // Encryption: a pair goes through encrypt_2blocks, so the swapped toy returns them swapped.
-    let mut enc = swapped_key().create_encryptor();
+    let key = swapped_key();
+    let mut enc = key.create_encryptor();
     let swapped_ct = enc_blocks(&mut enc, &plaintext);
     assert_eq!(swapped_ct, [ct[1], ct[0]], "encrypting a pair must go through encrypt_2blocks");
 
     // ...and one block at a time avoids the pair path.
-    let mut enc = swapped_key().create_encryptor();
+    let key = swapped_key();
+    let mut enc = key.create_encryptor();
     assert_eq!(
         [enc_blocks(&mut enc, &[plaintext[0]])[0], enc_blocks(&mut enc, &[plaintext[1]])[0]],
         ct
     );
 
     // Decryption likewise.
-    let mut dec = swapped_key().create_decryptor();
+    let key = swapped_key();
+    let mut dec = key.create_decryptor();
     assert_eq!(
         dec_blocks(&mut dec, &ct),
         [plaintext[1], plaintext[0]],
         "decrypting a pair must go through decrypt_2blocks"
     );
-    let mut dec = swapped_key().create_decryptor();
+    let key = swapped_key();
+    let mut dec = key.create_decryptor();
     assert_eq!([dec_blocks(&mut dec, &[ct[0]])[0], dec_blocks(&mut dec, &[ct[1]])[0]], plaintext);
 }
 
@@ -229,20 +237,27 @@ fn the_four_block_path_is_used_in_both_directions() {
     let ct = enc_blocks(&mut encryptor(), &plaintext);
     assert_eq!(dec_blocks(&mut decryptor(), &ct), plaintext);
 
-    let mut enc = swapped_four_key().create_encryptor();
+    let key = swapped_four_key();
+
+    let mut enc = key.create_encryptor();
     let rotated = enc_blocks(&mut enc, &plaintext);
     assert_ne!(rotated, ct, "five blocks must go through encrypt_4blocks");
     assert_eq!(rotated[4], ct[4], "the fifth block goes through the single path and is right");
     assert_eq!(&rotated[..4], &[ct[1], ct[2], ct[3], ct[0]], "four rotated");
 
-    let mut enc = swapped_four_key().create_encryptor();
+    let key = swapped_four_key();
+
+    let mut enc = key.create_encryptor();
     let a = enc_blocks(&mut enc, &[plaintext[0], plaintext[1]]);
     let b = enc_blocks(&mut enc, &[plaintext[2], plaintext[3]]);
     assert_eq!([a, b].as_flattened(), &ct[..4], "pairs use the pair path only");
 
-    let mut dec = swapped_four_key().create_decryptor();
+    let key = swapped_four_key();
+
+    let mut dec = key.create_decryptor();
     assert_ne!(dec_blocks(&mut dec, &ct), plaintext, "five blocks must go through decrypt_4blocks");
-    let mut dec = swapped_four_key().create_decryptor();
+    let key = swapped_four_key();
+    let mut dec = key.create_decryptor();
     for (c, p) in ct.iter().zip(plaintext.iter()) {
         assert_eq!(&dec_blocks(&mut dec, &[*c])[0], p, "the single-block path must not batch");
     }
@@ -347,8 +362,8 @@ fn the_keys_enforce_the_material_policy() {
 #[test]
 fn the_padding_layer_round_trips_every_length() {
     type Key = ToyKey<Toy, ECB<PKCS7>>;
-    type Enc = <Key as SymmetricEncryptionKey<TOY_LEN, 0, TOY_LEN>>::Encryptor;
-    type Dec = <Key as SymmetricDecryptionKey<TOY_LEN, 0, TOY_LEN>>::Decryptor;
+    type Enc<'k> = <Key as SymmetricEncryptionKey<TOY_LEN, 0, TOY_LEN>>::Encryptor<'k>;
+    type Dec<'k> = <Key as SymmetricDecryptionKey<TOY_LEN, 0, TOY_LEN>>::Decryptor<'k>;
     let key = Key::from_key_material(&toy_key()).expect("the toy key");
 
     for len in 0..=(3 * TOY_LEN + 1) {
@@ -366,16 +381,16 @@ fn the_padding_layer_round_trips_every_length() {
 
 // ---- memory ------------------------------------------------------------------------------
 
-/// Pins the module docs' claim that an ECB value is exactly the permutation:
-/// `size_of::<Ecb<P, ..>>() == size_of::<P>()`.
+/// Pins the module docs' claim that an ECB value is a reference to the permutation and nothing
+/// else.
 #[test]
 fn sizes_match_the_documented_memory_table() {
     use core::mem::size_of;
-    assert_eq!(size_of::<ToyEcb<Encrypting>>(), size_of::<Toy>());
+    assert_eq!(size_of::<ToyEcb<Encrypting>>(), size_of::<&Toy>());
     assert_eq!(size_of::<ToyEcb<Encrypting>>(), size_of::<ToyEcb<Decrypting>>());
     // One block smaller than CBC, which stores a chaining value.
     assert_eq!(
         size_of::<ToyEcb<Encrypting>>() + TOY_LEN,
-        size_of::<Cbc<Toy, Encrypting, TOY_LEN, TOY_LEN>>()
+        size_of::<Cbc<'_, Toy, Encrypting, TOY_LEN>>()
     );
 }

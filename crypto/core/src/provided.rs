@@ -12,8 +12,9 @@
 //! and no second buffer the size of the message.
 
 use crate::errors::SymmetricCipherError;
-use crate::symmetric_key::{AeadDecryptWorker, AeadEncryptWorker};
-use crate::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
+use crate::traits::{
+    AEADCipherDecryptor, AEADCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
+};
 
 /// Bytes copied out per step. Four 16-byte blocks keeps a block-cipher mode on its wide path.
 const CHUNK: usize = 64;
@@ -37,7 +38,7 @@ pub(crate) fn encrypt_inline<
     ciphertext: &mut [u8],
 ) -> Result<usize, SymmetricCipherError>
 where
-    E: AeadEncryptWorker<NONCE_LEN, TAG_LEN, FINAL_LEN>,
+    E: AEADCipherEncryptor<NONCE_LEN, TAG_LEN, FINAL_LEN>,
 {
     ciphertext.fill(0);
     let needed = E::encrypt_out_len(plaintext.len());
@@ -69,7 +70,7 @@ pub(crate) fn encrypt_detached<
     ciphertext: &mut [u8],
 ) -> Result<(usize, [u8; TAG_LEN]), SymmetricCipherError>
 where
-    E: AeadEncryptWorker<NONCE_LEN, TAG_LEN, FINAL_LEN>,
+    E: AEADCipherEncryptor<NONCE_LEN, TAG_LEN, FINAL_LEN>,
 {
     ciphertext.fill(0);
     let needed = E::encrypt_detached_out_len(plaintext.len());
@@ -101,7 +102,7 @@ pub(crate) fn encrypt_detached_in_place<
     buf: &mut [u8],
 ) -> Result<[u8; TAG_LEN], SymmetricCipherError>
 where
-    E: AeadEncryptWorker<NONCE_LEN, TAG_LEN, FINAL_LEN>,
+    E: AEADCipherEncryptor<NONCE_LEN, TAG_LEN, FINAL_LEN>,
 {
     enc.do_update_aad(aad)?;
     let mut tmp = [0u8; CHUNK];
@@ -139,7 +140,7 @@ pub(crate) fn decrypt_inline<
     plaintext: &mut [u8],
 ) -> Result<usize, SymmetricCipherError>
 where
-    D: AeadDecryptWorker<NONCE_LEN, TAG_LEN, FINAL_LEN>,
+    D: AEADCipherDecryptor<NONCE_LEN, TAG_LEN, FINAL_LEN>,
 {
     plaintext.fill(0);
     let needed = D::decrypt_out_len(ciphertext.len());
@@ -181,7 +182,7 @@ pub(crate) fn decrypt_detached<
     plaintext: &mut [u8],
 ) -> Result<usize, SymmetricCipherError>
 where
-    D: AeadDecryptWorker<NONCE_LEN, TAG_LEN, FINAL_LEN>,
+    D: AEADCipherDecryptor<NONCE_LEN, TAG_LEN, FINAL_LEN>,
 {
     plaintext.fill(0);
     let needed = D::decrypt_detached_out_len(ciphertext.len());
@@ -221,7 +222,7 @@ pub(crate) fn decrypt_detached_in_place<
     tag: &[u8; TAG_LEN],
 ) -> Result<(), SymmetricCipherError>
 where
-    D: AeadDecryptWorker<NONCE_LEN, TAG_LEN, FINAL_LEN>,
+    D: AEADCipherDecryptor<NONCE_LEN, TAG_LEN, FINAL_LEN>,
 {
     let result = (|| {
         dec.do_update_aad(aad)?;
@@ -263,18 +264,13 @@ pub(crate) fn inline_payload_len<const TAG_LEN: usize>(
 /// # Errors
 /// [`SymmetricCipherError::OutputBufferTooSmall`] if `ciphertext` is too short, or any error of
 /// the worker's streaming methods.
-pub(crate) fn symmetric_encrypt_out<
-    E,
-    const KEY_LEN: usize,
-    const INIT_DATA_LEN: usize,
-    const FINAL_LEN: usize,
->(
+pub(crate) fn symmetric_encrypt_out<E, const INIT_DATA_LEN: usize, const FINAL_LEN: usize>(
     mut enc: E,
     plaintext: &[u8],
     ciphertext: &mut [u8],
 ) -> Result<usize, SymmetricCipherError>
 where
-    E: SymmetricCipherEncryptor<KEY_LEN, INIT_DATA_LEN, FINAL_LEN>,
+    E: SymmetricCipherEncryptor<INIT_DATA_LEN, FINAL_LEN>,
 {
     ciphertext.fill(0);
     let needed = E::encrypt_out_len(plaintext.len());
@@ -296,18 +292,13 @@ where
 /// # Errors
 /// [`SymmetricCipherError::OutputBufferTooSmall`] if `plaintext` is too short, or any error of
 /// the worker's streaming methods.
-pub(crate) fn symmetric_decrypt_out<
-    D,
-    const KEY_LEN: usize,
-    const INIT_DATA_LEN: usize,
-    const FINAL_LEN: usize,
->(
+pub(crate) fn symmetric_decrypt_out<D, const INIT_DATA_LEN: usize, const FINAL_LEN: usize>(
     mut dec: D,
     ciphertext: &[u8],
     plaintext: &mut [u8],
 ) -> Result<usize, SymmetricCipherError>
 where
-    D: SymmetricCipherDecryptor<KEY_LEN, INIT_DATA_LEN, FINAL_LEN>,
+    D: SymmetricCipherDecryptor<INIT_DATA_LEN, FINAL_LEN>,
 {
     plaintext.fill(0);
     let needed = D::decrypt_out_len(ciphertext.len());
