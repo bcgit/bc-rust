@@ -56,7 +56,7 @@
 
 use core::hint::black_box;
 
-use bouncycastle::ascon::Ascon_AEAD128;
+use bouncycastle::ascon::{Ascon_AEAD128, AsconAEAD128Key};
 use bouncycastle::ascon::{AsconCXof128, AsconCXof128Squeezer, SUSPENDED_ASCON_CXOF128_STATE_LEN};
 use bouncycastle::ascon::{AsconHash256, SUSPENDED_ASCON_HASH256_STATE_LEN};
 use bouncycastle::ascon::{AsconXof128, AsconXof128Squeezer, SUSPENDED_ASCON_XOF128_STATE_LEN};
@@ -68,6 +68,7 @@ use bouncycastle::cipher::{Decrypting, Encrypting};
 use bouncycastle::core::errors::{HashError, RNGError, SymmetricCipherError};
 use bouncycastle::core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle::core::security_strength::SecurityStrength;
+use bouncycastle::core::symmetric_key::{AeadDecryptionKey, AeadEncryptionKey, FromKeyMaterial};
 use bouncycastle::core::traits::{
     AEADCipherDecryptor, AEADCipherEncryptor, Hash, RNG, SymmetricCipherDecryptor,
     SymmetricCipherEncryptor, XOF, XOFSqueezer,
@@ -93,8 +94,7 @@ const NONCE: [u8; NONCE_LEN] = [
 
 /// Stands in for the caller's RNG and hands back [`NONCE`], so that the encrypting init runs
 /// Ascon's initialization and nothing else: a DRBG's generate would be the deepest part of that
-/// chain, and the default `do_encrypt_init`'s OS entropy call is outside what the frame remarks
-/// can see. Not a random number generator; it exists only for this harness.
+/// chain, and a DRBG's own stack is outside what the frame remarks can see. Not a random number generator; it exists only for this harness.
 struct FixedNonce;
 
 impl RNG for FixedNonce {
@@ -181,6 +181,12 @@ fn key() -> KeyMaterial<KEY_LEN> {
     KeyMaterial::<KEY_LEN>::from_bytes_as_type(&KEY, KeyType::SymmetricCipherKey).unwrap()
 }
 
+/// The key object the workers are made from, likewise in its own frame.
+#[inline(never)]
+fn aead_key() -> AsconAEAD128Key {
+    AsconAEAD128Key::from_key_material(&key()).unwrap()
+}
+
 /// A message filled at run time, so that its contents are not a constant the compiler could fold
 /// the whole computation over.
 #[inline(never)]
@@ -194,7 +200,7 @@ fn message<const N: usize>(fill: u8) -> [u8; N] {
 
 #[inline(never)]
 fn encryptor() -> Enc {
-    Enc::do_encrypt_init_rng(&key(), &mut FixedNonce).unwrap().0
+    aead_key().create_encryptor(&mut FixedNonce).unwrap().0
 }
 
 /// An encryptor that has taken the AAD and the message, so the final pads a partial block.
@@ -209,21 +215,21 @@ fn encryptor_after_data() -> Enc {
 
 #[inline(never)]
 fn decryptor() -> Dec {
-    Dec::do_decrypt_init(&key(), &NONCE).unwrap()
+    aead_key().create_decryptor(&NONCE)
 }
 
 /// `MSG_LEN` bytes sealed under [`NONCE`] with the AAD, as ciphertext || tag.
 #[inline(never)]
 fn sealed() -> [u8; SEALED_LEN] {
     let mut out = [0u8; SEALED_LEN];
-    Enc::encrypt_with_aad_rng_out(
-        &key(),
-        &mut FixedNonce,
-        &message::<AAD_LEN>(0x5a),
-        &message::<MSG_LEN>(0xa5),
-        &mut out,
-    )
-    .unwrap();
+    aead_key()
+        .encrypt_with_aad_out(
+            &mut FixedNonce,
+            &message::<AAD_LEN>(0x5a),
+            &message::<MSG_LEN>(0xa5),
+            &mut out,
+        )
+        .unwrap();
     out
 }
 
@@ -276,16 +282,31 @@ fn cxof128_squeezer() -> AsconCXof128Squeezer {
 
 // ---- Ascon-AEAD128, encrypting ------------------------------------------------------------
 
-/// Initialization: the key check, then `IV || K || N` through `Ascon-p[12]`.
+/// The key: the key check, in its own frame.
 #[inline(never)]
-fn bench_aead_encrypt_init() {
-    eprintln!("Ascon_AEAD128<Encrypting>::do_encrypt_init_rng");
+fn bench_aead_from_key_material() {
+    eprintln!("AsconAEAD128Key::from_key_material");
     let k = key();
     measure(|| {
         let op = black_box(
-            <Enc as SymmetricCipherEncryptor<KEY_LEN, NONCE_LEN, TAG_LEN>>::do_encrypt_init_rng
+            <AsconAEAD128Key as FromKeyMaterial<KEY_LEN>>::from_key_material
+                as fn(&KeyMaterial<KEY_LEN>) -> Result<AsconAEAD128Key, CipherErr>,
+        );
+        let key = op(&k).unwrap();
+        black_box(&key);
+    });
+}
+
+/// Initialization: the nonce draw, then `IV || K || N` through `Ascon-p[12]`.
+#[inline(never)]
+fn bench_aead_encrypt_init() {
+    eprintln!("AsconAEAD128Key::create_encryptor");
+    let k = aead_key();
+    measure(|| {
+        let op = black_box(
+            <AsconAEAD128Key as AeadEncryptionKey<KEY_LEN, NONCE_LEN, TAG_LEN, TAG_LEN>>::create_encryptor
                 as fn(
-                    &KeyMaterial<KEY_LEN>,
+                    &AsconAEAD128Key,
                     &mut dyn RNG,
                 ) -> Result<(Enc, [u8; NONCE_LEN]), CipherErr>,
         );
@@ -361,23 +382,23 @@ fn bench_aead_encrypt_final_detached() {
 /// The one-shot with AAD and the tag inline: init, AAD, data and final in one call.
 #[inline(never)]
 fn bench_aead_encrypt_oneshot() {
-    eprintln!("Ascon_AEAD128<Encrypting>::encrypt_with_aad_rng_out, {MSG_LEN} B");
-    let k = key();
+    eprintln!("AsconAEAD128Key::encrypt_with_aad_out, {MSG_LEN} B");
+    let k = aead_key();
     let aad = black_box(message::<AAD_LEN>(0x5a));
     let pt = black_box(message::<MSG_LEN>(0xa5));
     measure(move || {
         let mut ct = [0u8; SEALED_LEN];
         let op = black_box(
-            <Enc as AEADCipherEncryptor<KEY_LEN, NONCE_LEN, TAG_LEN, TAG_LEN>>::encrypt_with_aad_rng_out
+            <AsconAEAD128Key as AeadEncryptionKey<KEY_LEN, NONCE_LEN, TAG_LEN, TAG_LEN>>::encrypt_with_aad_out
                 as fn(
-                    &KeyMaterial<KEY_LEN>,
+                    &AsconAEAD128Key,
                     &mut dyn RNG,
                     &[u8],
                     &[u8],
                     &mut [u8],
-                ) -> Result<([u8; NONCE_LEN], usize), CipherErr>,
+                ) -> Result<(usize, [u8; NONCE_LEN]), CipherErr>,
         );
-        let (_, n) = op(&k, &mut FixedNonce, &aad, &pt, &mut ct).unwrap();
+        let (n, _) = op(&k, &mut FixedNonce, &aad, &pt, &mut ct).unwrap();
         print!("{:x?}", &ct[..n]);
     });
 }
@@ -386,14 +407,14 @@ fn bench_aead_encrypt_oneshot() {
 
 #[inline(never)]
 fn bench_aead_decrypt_init() {
-    eprintln!("Ascon_AEAD128<Decrypting>::do_decrypt_init");
-    let k = key();
+    eprintln!("AsconAEAD128Key::create_decryptor");
+    let k = aead_key();
     measure(|| {
         let op = black_box(
-            <Dec as SymmetricCipherDecryptor<KEY_LEN, NONCE_LEN, TAG_LEN>>::do_decrypt_init
-                as fn(&KeyMaterial<KEY_LEN>, &[u8; NONCE_LEN]) -> Result<Dec, CipherErr>,
+            <AsconAEAD128Key as AeadDecryptionKey<KEY_LEN, NONCE_LEN, TAG_LEN, TAG_LEN>>::create_decryptor
+                as fn(&AsconAEAD128Key, &[u8; NONCE_LEN]) -> Dec,
         );
-        let dec = op(&k, &NONCE).unwrap();
+        let dec = op(&k, &NONCE);
         black_box(&dec);
     });
 }
@@ -468,16 +489,16 @@ fn bench_aead_decrypt_final_detached() {
 /// The one-shot with AAD and the tag inline.
 #[inline(never)]
 fn bench_aead_decrypt_oneshot() {
-    eprintln!("Ascon_AEAD128<Decrypting>::decrypt_with_aad_out, {SEALED_LEN} B");
-    let k = key();
+    eprintln!("AsconAEAD128Key::decrypt_with_aad_out, {SEALED_LEN} B");
+    let k = aead_key();
     let aad = black_box(message::<AAD_LEN>(0x5a));
     let ct = black_box(sealed());
     measure(move || {
         let mut pt = [0u8; MSG_LEN];
         let op = black_box(
-            <Dec as AEADCipherDecryptor<KEY_LEN, NONCE_LEN, TAG_LEN, TAG_LEN>>::decrypt_with_aad_out
+            <AsconAEAD128Key as AeadDecryptionKey<KEY_LEN, NONCE_LEN, TAG_LEN, TAG_LEN>>::decrypt_with_aad_out
                 as fn(
-                    &KeyMaterial<KEY_LEN>,
+                    &AsconAEAD128Key,
                     &[u8; NONCE_LEN],
                     &[u8],
                     &[u8],
@@ -644,6 +665,7 @@ fn bench_cxof128_oneshot() {
 fn main() {
     print_struct_sizes()
     // bench_do_nothing()
+    // bench_aead_from_key_material()
     // bench_aead_encrypt_init()
     // bench_aead_encrypt_update_aad()
     // bench_aead_encrypt_out()
