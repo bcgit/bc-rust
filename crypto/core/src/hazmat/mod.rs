@@ -11,14 +11,18 @@
 //! grep -rnE --include='*.rs' 'use .*::hazmat::'
 //! ```
 
+mod ecb_key;
 mod electronic_code_book;
 mod hazardous_operations;
 mod key_stream;
 mod mode;
 
+pub use ecb_key::{EcbDecryptionKey, EcbEncryptionKey};
 pub use electronic_code_book::ElectronicCodeBook;
 pub use hazardous_operations::do_hazardous_operations;
 pub use key_stream::KeyStream;
 pub use mode::{
-    AeadDecryptMode, AeadEncryptMode, AeadPacketDecryptMode, AeadPacketEncryptMode, MacMode, Mode,
+    AeadDecryptMode, AeadEncryptMode, AeadPacketDecryptMode, AeadPacketEncryptMode,
+    BlockDecryptMode, BlockEncryptMode, EcbDecryptMode, EcbEncryptMode, MacMode, Mode,
+    SymmetricDecryptMode, SymmetricEncryptMode,
 };
