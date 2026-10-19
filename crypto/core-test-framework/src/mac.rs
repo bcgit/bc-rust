@@ -26,6 +26,29 @@ impl TestFrameworkMAC {
         input: &[u8],
         expected_output: &[u8],
     ) {
+        self.run::<M>(key, input, expected_output, true);
+    }
+
+    /// As [`Self::test_mac`], for a MAC whose tag cannot be truncated and whose key has a fixed
+    /// length, such as Poly1305: an output buffer shorter than the tag must be rejected with
+    /// [`MACError::InvalidLength`] and left zeroed, and the weak-key checks use a key of `key`'s
+    /// length rather than 64 bytes.
+    pub fn test_mac_fixed_output<M: MAC>(
+        &self,
+        key: &impl KeyMaterialTrait,
+        input: &[u8],
+        expected_output: &[u8],
+    ) {
+        self.run::<M>(key, input, expected_output, false);
+    }
+
+    fn run<M: MAC>(
+        &self,
+        key: &impl KeyMaterialTrait,
+        input: &[u8],
+        expected_output: &[u8],
+        truncatable: bool,
+    ) {
         // Test ::mac()
         let out = M::new_allow_weak_key(key).unwrap().mac(input);
         assert_eq!(out, expected_output);
@@ -36,11 +59,16 @@ impl TestFrameworkMAC {
         assert_eq!(bytes_written, expected_output.len());
         assert_eq!(out, expected_output);
 
-        // Test an output buffer that's too small (should truncate)
-        let mut out = vec![0u8; expected_output.len() - 2];
-        let bytes_written = M::new_allow_weak_key(key).unwrap().mac_out(input, &mut out).unwrap();
-        assert_eq!(bytes_written, expected_output.len() - 2);
-        assert_eq!(out, expected_output[..expected_output.len() - 2]);
+        // Test an output buffer that's too small (should truncate, or be rejected and zeroed)
+        let mut out = vec![0xA5u8; expected_output.len() - 2];
+        let result = M::new_allow_weak_key(key).unwrap().mac_out(input, &mut out);
+        if truncatable {
+            assert_eq!(result.unwrap(), expected_output.len() - 2);
+            assert_eq!(out, expected_output[..expected_output.len() - 2]);
+        } else {
+            assert!(matches!(result, Err(MACError::InvalidLength(_))));
+            assert_eq!(out, vec![0u8; expected_output.len() - 2]);
+        }
 
         // Test an output buffer that's too big (expect the first L bytes to get filled)
         let mut out = vec![0u8; 2 * expected_output.len()];
@@ -74,14 +102,16 @@ impl TestFrameworkMAC {
         // Test .init(), .do_update(), .do_verify_final_out()
         let mut mac = M::new_allow_weak_key(key).unwrap();
         mac.do_update(input);
-        mac.do_verify_final(expected_output);
+        assert!(mac.do_verify_final(expected_output));
 
         // entropy of input key
 
         // MACs of all security strengths should throw an error on a no-security (and non-zero) key.
 
+        let key_none_len = if truncatable { 64 } else { key.key_len() };
         let mut key_none =
-            KeyMaterial512::from_bytes_as_type(&DUMMY_SEED[0..64], KeyType::MACKey).unwrap();
+            KeyMaterial512::from_bytes_as_type(&DUMMY_SEED[0..key_none_len], KeyType::MACKey)
+                .unwrap();
         key_none.set_security_strength(SecurityStrength::None).unwrap();
 
         match M::new(&key_none) {
