@@ -64,6 +64,19 @@ where
 }
 
 impl<E, P, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize>
+    PaddedBlockCipherEncryptor<E, P, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
+where
+    E: BlockCipherEncryptor<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
+    P: BlockCipherPadding<BLOCK_LEN>,
+{
+    /// The adapter over an already-constructed inner cipher, with nothing buffered: what a mode
+    /// type's `encrypt_init` builds.
+    pub(crate) fn from_inner(encryptor: E) -> Self {
+        Self { encryptor, _padding: PhantomData, buf: Secret::new(), buf_len: 0 }
+    }
+}
+
+impl<E, P, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize>
     SymmetricCipherEncryptor<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
     for PaddedBlockCipherEncryptor<E, P, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
 where
@@ -215,6 +228,19 @@ where
     const ALG_NAME: &'static str = D::ALG_NAME;
     /// Padding does not change the strength of the inner cipher.
     const MAX_SECURITY_STRENGTH: SecurityStrength = D::MAX_SECURITY_STRENGTH;
+}
+
+impl<D, P, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize>
+    PaddedBlockCipherDecryptor<D, P, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
+where
+    D: BlockCipherDecryptor<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
+    P: BlockCipherPadding<BLOCK_LEN>,
+{
+    /// The adapter over an already-constructed inner cipher, with nothing buffered or held
+    /// back: what a mode type's `decrypt_init` builds.
+    pub(crate) fn from_inner(decryptor: D) -> Self {
+        Self { decryptor, _padding: PhantomData, buf: [0u8; BLOCK_LEN], buf_len: 0, held: None }
+    }
 }
 
 impl<D, P, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize>

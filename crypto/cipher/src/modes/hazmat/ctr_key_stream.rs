@@ -79,9 +79,10 @@ where
         };
     }
 
-    /// `T1 = N | [0]m`: the nonce, then a zero counter.
+    /// `T1 = N | [0]m`: the nonce, then a zero counter. What the [`CTR`](crate::modes::CTR) mode
+    /// impls build over a key's stored permutation.
     #[inline]
-    fn start(perm: P, nonce: [u8; INIT_DATA_LEN]) -> Self {
+    pub(crate) fn start(perm: P, nonce: [u8; INIT_DATA_LEN]) -> Self {
         Self::start_at(perm, nonce, 0)
     }
 

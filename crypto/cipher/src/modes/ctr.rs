@@ -121,23 +121,75 @@
 
 use crate::modes::ModeNames;
 use crate::modes::hazmat::ctr_key_stream::CtrKeyStream;
+use crate::modes::iv::random_iv;
 use crate::stream::StreamCipher;
-use bouncycastle_core::hazmat::ElectronicCodeBook;
+use crate::{Decrypting, Encrypting};
+use bouncycastle_core::errors::SymmetricCipherError;
+use bouncycastle_core::hazmat::{
+    ElectronicCodeBook, Mode, SymmetricDecryptMode, SymmetricEncryptMode,
+};
+use bouncycastle_core::key_material::KeyType;
+use bouncycastle_core::traits::RNG;
 use bouncycastle_utils::secret::Secret;
 
 // Imports needed for docs
 #[allow(unused_imports)]
-use bouncycastle_core::errors::SymmetricCipherError;
-#[allow(unused_imports)]
 use bouncycastle_core::traits::{StreamCipherDecryptor, StreamCipherEncryptor};
 // end of imports needed for docs
+
+/// The CTR mode type: the `M` of a mode-bound key such as `AES128Key<CTR>`, on the symmetric key
+/// path with [`Ctr`] as its worker. `NONCE_LEN` is the init data length, `BLOCK_LEN - NONCE_LEN`
+/// the counter width; the defaults are a 12-byte nonce on a 16-byte block, the `AES_CTR_*`
+/// aliases' shape. The block length is a parameter because the nonce does not fix it, and
+/// stable Rust cannot tie it to the permutation's from inside the mode impl. Its key state is the
+/// keyed permutation alone.
+pub struct CTR<const NONCE_LEN: usize = 12, const BLOCK_LEN: usize = 16>;
+
+impl<P: Clone + ModeNames, const NONCE_LEN: usize, const BLOCK_LEN: usize> Mode<P>
+    for CTR<NONCE_LEN, BLOCK_LEN>
+{
+    type KeyState = P;
+    const KEY_TYPE: KeyType = KeyType::SymmetricCipherKey;
+
+    fn key_state(perm: P) -> Self::KeyState {
+        perm
+    }
+}
+
+impl<P, const KEY_LEN: usize, const BLOCK_LEN: usize, const NONCE_LEN: usize>
+    SymmetricEncryptMode<P, KEY_LEN, NONCE_LEN, 0> for CTR<NONCE_LEN, BLOCK_LEN>
+where
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames + Clone,
+{
+    type Encryptor = Ctr<P, Encrypting, KEY_LEN, BLOCK_LEN, NONCE_LEN>;
+
+    fn encrypt_init(
+        state: &Self::KeyState,
+        rng: &mut dyn RNG,
+    ) -> Result<(Self::Encryptor, [u8; NONCE_LEN]), SymmetricCipherError> {
+        let nonce = random_iv::<NONCE_LEN>(rng)?;
+        Ok((StreamCipher::from_keystream(CtrKeyStream::start(state.clone(), nonce)), nonce))
+    }
+}
+
+impl<P, const KEY_LEN: usize, const BLOCK_LEN: usize, const NONCE_LEN: usize>
+    SymmetricDecryptMode<P, KEY_LEN, NONCE_LEN, 0> for CTR<NONCE_LEN, BLOCK_LEN>
+where
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames + Clone,
+{
+    type Decryptor = Ctr<P, Decrypting, KEY_LEN, BLOCK_LEN, NONCE_LEN>;
+
+    fn decrypt_init(state: &Self::KeyState, init_data: &[u8; NONCE_LEN]) -> Self::Decryptor {
+        StreamCipher::from_keystream(CtrKeyStream::start(state.clone(), *init_data))
+    }
+}
 
 /// CTR mode over any [`ElectronicCodeBook`] permutation function, with the direction encoded in the type: the
 /// crate-private CTR keystream, `CtrKeyStream`, wrapped in a [`StreamCipher`].
 ///
 /// The counter block is the init data (the nonce) followed by a counter filling the rest of the
 /// block, so `INIT_DATA_LEN` chooses the counter length; see the module docs. `Dir` is
-/// [`Encrypting`](crate::Encrypting) or [`Decrypting`](crate::Decrypting).
+/// [`Encrypting`] or [`Decrypting`].
 ///
 /// # The counter width is checked at compile time
 ///
