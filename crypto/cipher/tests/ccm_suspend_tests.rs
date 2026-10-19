@@ -14,9 +14,10 @@
 //! the held-back tag and its length. Every integer is a little-endian `u64`. Spec references are
 //! to NIST SP 800-38C (May 2004, errata update 07-20-2007).
 
-use bouncycastle_cipher::modes::{CCM, CcmDecryptor, CcmEncryptor};
+use bouncycastle_cipher::modes::{CCM, CCMFrame, CcmDecryptor, CcmEncryptor};
 use bouncycastle_core::errors::SuspendableError;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
+use bouncycastle_core::symmetric_key::{AeadDecryptionKey, AeadEncryptionKey, FromKeyMaterial};
 use bouncycastle_core::traits::{
     AEADCipherDecryptor, AEADCipherEncryptor, SuspendableKeyed, SymmetricCipherDecryptor,
     SymmetricCipherEncryptor,
@@ -25,7 +26,10 @@ use bouncycastle_utils::suspendable_state::LIB_VERSION_LEN;
 
 #[path = "common/toy_block_cipher.rs"]
 mod toy_block_cipher;
+#[path = "common/toy_key.rs"]
+mod toy_key;
 use toy_block_cipher::ToyBlockCipher;
+use toy_key::ToyKey;
 
 /// A 12-byte nonce, so `q = 3`: the counter field is the template's last three octets and the
 /// payload limit is `2^24 - 1`.
@@ -57,10 +61,15 @@ fn key() -> KeyMaterial<16> {
     KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey).unwrap()
 }
 
+/// The key the pair is made from; resume still takes the material, through `key()`.
+fn frame_key() -> ToyKey<ToyBlockCipher, CCMFrame<NONCE_LEN, 16, AAD_LEN, DATA_LEN>> {
+    ToyKey::from_key_material(&key()).unwrap()
+}
+
 /// An encryptor holding its AAD back, before any payload: the header is not yet formatted, so
 /// the CBC-MAC has absorbed nothing.
 fn unformatted() -> [u8; N] {
-    let mut enc = ToyEnc::do_encrypt_init_nonce(&key(), &[0x24u8; NONCE_LEN]).unwrap();
+    let mut enc = frame_key().create_encryptor_nonce(&[0x24u8; NONCE_LEN]);
     enc.do_update_aad(b"aad").unwrap();
     enc.suspend()
 }
@@ -68,7 +77,7 @@ fn unformatted() -> [u8; N] {
 /// An encryptor one block into its payload: the header is formatted, `next_ctr = 2`, the CBC-MAC
 /// block boundary has just been crossed, and 16 of the 32 bytes are still owed.
 fn mid_payload() -> [u8; N] {
-    let mut enc = ToyEnc::do_encrypt_init_nonce(&key(), &[0x24u8; NONCE_LEN]).unwrap();
+    let mut enc = frame_key().create_encryptor_nonce(&[0x24u8; NONCE_LEN]);
     enc.do_update_aad(b"aad").unwrap();
     let mut out = [0u8; 16];
     enc.do_encrypt_out(&[0x5Au8; 16], &mut out).unwrap();
@@ -186,7 +195,7 @@ fn the_aad_length_is_held_to_its_capacity() {
 /// on the tag bytes it holds back.
 #[test]
 fn the_decrypting_direction_checks_the_same_bounds() {
-    let mut dec = ToyDec::do_decrypt_init(&key(), &[0x24u8; NONCE_LEN]).unwrap();
+    let mut dec = frame_key().create_decryptor(&[0x24u8; NONCE_LEN]);
     dec.do_update_aad(b"aad").unwrap();
     let mut out = [0u8; 16];
     dec.do_decrypt_out(&[0x5Au8; 16], &mut out).unwrap();
