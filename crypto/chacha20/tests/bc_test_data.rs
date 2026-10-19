@@ -2,9 +2,12 @@
 //! Set BC_TEST_DATA to override that repository's root. Missing default data is reported and
 //! skipped, following the other crypto integration suites; an explicit override must exist.
 use bouncycastle_chacha20::ChaCha20;
+use bouncycastle_chacha20::hazmat::ChaCha20KeyStream;
+use bouncycastle_cipher::Encrypting;
 use bouncycastle_core::hazmat::do_hazardous_operations;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
+use bouncycastle_core::traits::StreamCipherEncryptor;
 use serde_json::Value;
 use std::{fs, path::PathBuf};
 
@@ -39,15 +42,19 @@ fn rfc8439_blocks_encryption_and_one_time_keys() {
         let expected = decode("output");
         for chunk in [1, 3, 16, 63, 64, 65, 127, 512] {
             let mut actual = message.clone();
-            let mut cipher = ChaCha20::new(&key, &nonce, counter).unwrap();
+            let mut cipher = at(&key, &nonce, counter);
             for bytes in actual.chunks_mut(chunk) {
-                cipher.apply_keystream(bytes).unwrap();
-                cipher.apply_keystream(&mut []).unwrap();
+                cipher.do_encrypt(bytes).unwrap();
+                cipher.do_encrypt(&mut []).unwrap();
             }
             assert_eq!(actual, expected, "RFC {id}, chunk {chunk}");
-            ChaCha20::new(&key, &nonce, counter).unwrap().apply_keystream(&mut actual).unwrap();
+            at(&key, &nonce, counter).do_encrypt(&mut actual).unwrap();
             assert_eq!(actual, message, "RFC {id} decryption");
         }
     }
     println!("RFC 8439 ChaCha20: {} vectors passed", cases.len());
+}
+
+fn at(key: &KeyMaterial<32>, nonce: &[u8; 12], counter: u32) -> ChaCha20<Encrypting> {
+    ChaCha20::from_keystream(ChaCha20KeyStream::start_at(key, nonce, counter).unwrap())
 }

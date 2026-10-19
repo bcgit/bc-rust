@@ -27,12 +27,15 @@
 #![forbid(missing_docs)]
 
 use bouncycastle_chacha20::ChaCha20;
+use bouncycastle_chacha20::hazmat::ChaCha20KeyStream;
+use bouncycastle_cipher::Encrypting;
 use bouncycastle_core::errors::SymmetricCipherError;
+use bouncycastle_core::hazmat::KeyStream;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{
-    AEADCipherDecryptor, AEADCipherEncryptor, Algorithm, MAC, RNG, SymmetricCipherDecryptor,
-    SymmetricCipherEncryptor,
+    AEADCipherDecryptor, AEADCipherEncryptor, Algorithm, MAC, RNG, StreamCipherEncryptor,
+    SymmetricCipherDecryptor, SymmetricCipherEncryptor,
 };
 use bouncycastle_poly1305::Poly1305;
 use bouncycastle_rng::DefaultRNG;
@@ -48,7 +51,9 @@ pub const TAG_LEN: usize = 16;
 pub const MAX_MESSAGE_LEN: u64 = u32::MAX as u64 * 64;
 
 struct State {
-    cipher: ChaCha20,
+    // Both directions: RFC 8439 Sec 2.8 decrypts by applying "the ChaCha20 encryption function"
+    // to the ciphertext.
+    cipher: ChaCha20<Encrypting>,
     mac: Poly1305,
     aad_len: u64,
     data_len: u64,
@@ -60,14 +65,18 @@ impl State {
         key: &KeyMaterial<KEY_LEN>,
         nonce: &[u8; NONCE_LEN],
     ) -> Result<Self, SymmetricCipherError> {
-        let mut cipher = ChaCha20::new(key, nonce, 0)?;
-        let mut block: Secret<[u8; 64]> = Secret::new();
-        cipher.apply_keystream(&mut *block)?;
-        let mac_key = KeyMaterial::<32>::from_bytes_as_type(&block[..32], KeyType::MACKey)?;
+        // RFC 8439 Sec 2.8: the one-time key is the first 32 bytes of block 0 (Sec 2.6.1,
+        // poly1305_key_gen), and the data is encrypted "with the initial counter set to 1".
+        // Taking block 0 leaves the keystream at counter 1, so the same keystream carries the data.
+        let mut keystream = ChaCha20KeyStream::new(key, nonce)?;
+        let mut block: Secret<[[u8; 64]; 1]> = Secret::new();
+        keystream.apply_blocks(&mut *block);
+        let mac_key = KeyMaterial::<32>::from_bytes_as_type(&block[0][..32], KeyType::MACKey)?;
         // This is a derived one-time key, including the (possible) all-zero value. Key strength
         // was already enforced on the parent cipher key; no entropy heuristic applies here.
         let mac = Poly1305::new_allow_weak_key(&mac_key)
             .expect("ChaCha20 supplies exactly 32 bytes of one-time MAC key");
+        let cipher = ChaCha20::from_keystream(keystream);
         Ok(Self { cipher, mac, aad_len: 0, data_len: 0, data_started: false })
     }
 
@@ -89,11 +98,12 @@ impl State {
         Ok(())
     }
 
+    // The cipher started at counter 1 and has processed exactly `data_len` bytes, so this is its
+    // own limit. Checking it here, before the MAC absorbs anything or the AAD phase ends, is what
+    // keeps a refused call free of side effects.
     fn check_data_len(&self, length: usize) -> Result<(), SymmetricCipherError> {
-        if length as u64 > self.cipher.remaining_bytes() {
-            return Err(SymmetricCipherError::StateError(
-                "ChaCha20-Poly1305 message limit exceeded",
-            ));
+        if length as u64 > MAX_MESSAGE_LEN - self.data_len {
+            return Err(SymmetricCipherError::DataLimitExceeded);
         }
         Ok(())
     }
@@ -108,7 +118,7 @@ impl State {
     fn encrypt(&mut self, data: &mut [u8]) -> Result<(), SymmetricCipherError> {
         self.check_data_len(data.len())?;
         self.start_data();
-        self.cipher.apply_keystream(data)?;
+        self.cipher.do_encrypt(data)?;
         self.mac.do_update(data);
         self.data_len += data.len() as u64;
         Ok(())
@@ -118,7 +128,7 @@ impl State {
         self.check_data_len(data.len())?;
         self.start_data();
         self.mac.do_update(data);
-        self.cipher.apply_keystream(data)?;
+        self.cipher.do_encrypt(data)?;
         self.data_len += data.len() as u64;
         Ok(())
     }
