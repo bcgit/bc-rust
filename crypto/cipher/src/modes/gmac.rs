@@ -31,11 +31,11 @@
 //! use bouncycastle_core::key_material::{KeyMaterial128, KeyType};
 //! use bouncycastle_rng::HashDRBG_SHA512;
 //!
-//! type ToyGmac<'k, Dir> = Gmac<'k, ToyBlockCipher, Dir, 16, 16>;
+//! type ToyGmac<'k, Dir> = Gmac<'k, ToyBlockCipher, Dir, 16>;
 //!
 //! let mut rng = HashDRBG_SHA512::new_from_os();
 //! let key = KeyMaterial128::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey).unwrap();
-//! let state = GcmKeyState::new::<16>(ToyBlockCipher::new(&key).unwrap());
+//! let state = GcmKeyState::new(ToyBlockCipher::new(&key).unwrap());
 //!
 //! let (mut generator, nonce) = ToyGmac::<Encrypting>::from_key_state(&state, &mut rng).unwrap();
 //! generator.do_update(b"a message ");
@@ -61,44 +61,55 @@ use crate::modes::ModeNames;
 use crate::modes::gcm::{GCM_NONCE_LEN, Gcm, GcmKeyState};
 use crate::{Decrypting, Encrypting};
 use bouncycastle_core::errors::SymmetricCipherError;
-use bouncycastle_core::hazmat::ElectronicCodeBook;
+use bouncycastle_core::hazmat::{BlockPermutation, Mode};
+use bouncycastle_core::key_material::KeyType;
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{Algorithm, RNG};
 
 /// The GMAC mode type: the `M` of a mode-bound key such as `AES128Key<GMAC>`. `GMAC` is GMAC with
 /// the full 128-bit tag; `GMAC<12>` and so on select a shorter tag, within the `12..=16` byte
 /// range [`Gcm`] accepts. Its key state is [`GcmKeyState`], so a GMAC key caches `H` as a GCM key
-/// does. The [`Mode`] impl and the generator/verifier pair that connect it to a key type are
-/// written by each permutation's crate while the cipher traits still carry `KEY_LEN`.
-///
-/// [`Mode`]: bouncycastle_core::hazmat::Mode
+/// does. The [`Mode`] impl below is generic over any [`BlockPermutation`] with a 128-bit block;
+/// the generator/verifier pair is inherent on each key type, since a GMAC tag is bound to a nonce
+/// and so fits neither MAC role trait.
 pub struct GMAC<const TAG_LEN: usize = 16>;
+
+impl<P, const TAG_LEN: usize> Mode<P> for GMAC<TAG_LEN>
+where
+    P: BlockPermutation<16> + ModeNames + Clone,
+{
+    type KeyState = GcmKeyState<P>;
+    const KEY_TYPE: KeyType = KeyType::MACKey;
+
+    fn key_state(perm: P) -> Self::KeyState {
+        GcmKeyState::new(perm)
+    }
+}
 
 /// GMAC over the permutation `P`, generating (`Dir = Encrypting`) or verifying (`Dir =
 /// Decrypting`) a `TAG_LEN`-byte tag. See the module docs.
-pub struct Gmac<'k, P, Dir, const KEY_LEN: usize, const TAG_LEN: usize>
+pub struct Gmac<'k, P, Dir, const TAG_LEN: usize>
 where
-    P: ElectronicCodeBook<KEY_LEN, 16> + ModeNames,
+    P: BlockPermutation<16> + ModeNames,
 {
-    gcm: Gcm<'k, P, Dir, KEY_LEN, TAG_LEN>,
+    gcm: Gcm<'k, P, Dir, TAG_LEN>,
 }
 
 /// `Gcm`'s AAD absorption fails only if AAD follows data, which GMAC never supplies, or if the
 /// running AAD length overflows a `u64`, which needs 2^64 bytes of input.
 const AAD_INFALLIBLE: &str = "GMAC: GCM rejects AAD only after data or past 2^64 bytes";
 
-impl<'k, P, Dir, const KEY_LEN: usize, const TAG_LEN: usize> Algorithm
-    for Gmac<'k, P, Dir, KEY_LEN, TAG_LEN>
+impl<'k, P, Dir, const TAG_LEN: usize> Algorithm for Gmac<'k, P, Dir, TAG_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, 16> + ModeNames,
+    P: BlockPermutation<16> + ModeNames,
 {
     const ALG_NAME: &'static str = P::GMAC_ALG_NAME;
     const MAX_SECURITY_STRENGTH: SecurityStrength = P::MAX_SECURITY_STRENGTH;
 }
 
-impl<'k, P, const KEY_LEN: usize, const TAG_LEN: usize> Gmac<'k, P, Encrypting, KEY_LEN, TAG_LEN>
+impl<'k, P, const TAG_LEN: usize> Gmac<'k, P, Encrypting, TAG_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, 16> + ModeNames,
+    P: BlockPermutation<16> + ModeNames,
 {
     /// Begins a tag from a key's stored state under a nonce drawn from `rng`: what a mode-bound
     /// key's `create_generator` calls.
@@ -109,7 +120,7 @@ where
         state: &'k GcmKeyState<P>,
         rng: &mut dyn RNG,
     ) -> Result<(Self, [u8; GCM_NONCE_LEN]), SymmetricCipherError> {
-        let (gcm, nonce) = Gcm::<P, Encrypting, KEY_LEN, TAG_LEN>::from_key_state(state, rng)?;
+        let (gcm, nonce) = Gcm::<P, Encrypting, TAG_LEN>::from_key_state(state, rng)?;
         Ok((Self { gcm }, nonce))
     }
 
@@ -136,15 +147,15 @@ where
     }
 }
 
-impl<'k, P, const KEY_LEN: usize, const TAG_LEN: usize> Gmac<'k, P, Decrypting, KEY_LEN, TAG_LEN>
+impl<'k, P, const TAG_LEN: usize> Gmac<'k, P, Decrypting, TAG_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, 16> + ModeNames,
+    P: BlockPermutation<16> + ModeNames,
 {
     /// Begins verifying a tag made under `nonce` from a key's stored state: what a mode-bound
     /// key's `create_verifier` calls. Infallible: the state is keyed and the nonce length is in
     /// the type.
     pub fn from_key_state(state: &'k GcmKeyState<P>, nonce: &[u8; GCM_NONCE_LEN]) -> Self {
-        Self { gcm: Gcm::<P, Decrypting, KEY_LEN, TAG_LEN>::from_key_state(state, nonce) }
+        Self { gcm: Gcm::<P, Decrypting, TAG_LEN>::from_key_state(state, nonce) }
     }
 
     /// Absorbs more of the message.

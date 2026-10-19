@@ -7,7 +7,7 @@ mod common;
 #[path = "../common/toy_key.rs"]
 mod toy_key;
 
-use bouncycastle_cipher::modes::{CMAC_MIN_TAG_LEN, Cmac, CmacKeyState, ModeNames};
+use bouncycastle_cipher::modes::{CMAC, CMAC_MIN_TAG_LEN, Cmac, CmacKeyState, ModeNames};
 use bouncycastle_core::errors::{MACError, SuspendableError};
 use bouncycastle_core::hazmat::ElectronicCodeBook;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
@@ -17,10 +17,10 @@ use bouncycastle_core::traits::{MAC, SuspendableKeyed};
 use bouncycastle_core_test_framework::from_key_material::TestFrameworkFromKeyMaterial;
 use bouncycastle_core_test_framework::mac::TestFrameworkMAC;
 use common::{TOY_LEN, Toy, toy_key};
-use toy_key::{ToyCMAC, ToyKey};
+use toy_key::ToyKey;
 
-type ToyCmac<'k> = Cmac<'k, Toy, TOY_LEN, TOY_LEN>;
-type ToyCmacKey = ToyKey<Toy, ToyCMAC>;
+type ToyCmac<'k> = Cmac<'k, Toy, TOY_LEN>;
+type ToyCmacKey = ToyKey<Toy, CMAC>;
 
 fn cmac_key() -> ToyCmacKey {
     ToyCmacKey::from_key_material(&mac_key()).expect("the toy MAC key")
@@ -33,7 +33,7 @@ fn mac_key() -> KeyMaterial<TOY_LEN> {
 }
 
 fn key_state() -> CmacKeyState<Toy, TOY_LEN> {
-    CmacKeyState::new::<TOY_LEN>(Toy::new(&toy_key()).unwrap())
+    CmacKeyState::new(Toy::new(&toy_key()).unwrap())
 }
 
 fn message(len: usize) -> Vec<u8> {

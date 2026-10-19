@@ -18,7 +18,7 @@ mod key_stream;
 mod mode;
 
 pub use ecb_key::{EcbDecryptionKey, EcbEncryptionKey};
-pub use electronic_code_book::ElectronicCodeBook;
+pub use electronic_code_book::{BlockPermutation, ElectronicCodeBook};
 pub use hazardous_operations::do_hazardous_operations;
 pub use key_stream::KeyStream;
 pub use mode::{

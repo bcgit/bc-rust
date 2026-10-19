@@ -7,7 +7,7 @@ mod common;
 #[path = "../common/toy_key.rs"]
 mod toy_key;
 
-use bouncycastle_cipher::modes::{GCM_NONCE_LEN, GcmKeyState, Gmac, ModeNames};
+use bouncycastle_cipher::modes::{GCM, GCM_NONCE_LEN, GMAC, GcmKeyState, Gmac, ModeNames};
 use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::hazmat::ElectronicCodeBook;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
@@ -16,10 +16,10 @@ use bouncycastle_core::symmetric_key::{AeadEncryptionKey, FromKeyMaterial};
 use bouncycastle_core_test_framework::FixedSeedRNG;
 use bouncycastle_core_test_framework::from_key_material::TestFrameworkFromKeyMaterial;
 use common::{TOY_LEN, Toy, toy_key};
-use toy_key::{ToyGCM, ToyGMAC, ToyKey};
+use toy_key::ToyKey;
 
-type ToyGmac<'k, Dir, const TAG_LEN: usize = 16> = Gmac<'k, Toy, Dir, TOY_LEN, TAG_LEN>;
-type ToyGmacKey<const TAG_LEN: usize = 16> = ToyKey<Toy, ToyGMAC<TAG_LEN>>;
+type ToyGmac<'k, Dir, const TAG_LEN: usize = 16> = Gmac<'k, Toy, Dir, TAG_LEN>;
+type ToyGmacKey<const TAG_LEN: usize = 16> = ToyKey<Toy, GMAC<TAG_LEN>>;
 
 fn gmac_key<const TAG_LEN: usize>() -> ToyGmacKey<TAG_LEN> {
     ToyGmacKey::from_key_material(&mac_key()).expect("the toy MAC key")
@@ -32,7 +32,7 @@ fn mac_key() -> KeyMaterial<TOY_LEN> {
 }
 
 fn key_state() -> GcmKeyState<Toy> {
-    GcmKeyState::new::<TOY_LEN>(Toy::new(&toy_key()).unwrap())
+    GcmKeyState::new(Toy::new(&toy_key()).unwrap())
 }
 
 fn message(len: usize) -> Vec<u8> {
@@ -50,7 +50,7 @@ fn every_route_gives_gcm_s_aad_only_tag() {
     let state = key_state();
     for len in [0, 1, 15, 16, 17, 32, 33, 100] {
         let msg = message(len);
-        let (_, gcm_nonce, expected) = ToyKey::<Toy, ToyGCM>::from_key_material(&toy_key())
+        let (_, gcm_nonce, expected) = ToyKey::<Toy, GCM>::from_key_material(&toy_key())
             .unwrap()
             .encrypt_detached_out(&mut rng(), &msg, &[], &mut [])
             .unwrap();

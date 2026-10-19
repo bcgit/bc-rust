@@ -156,16 +156,14 @@ use bouncycastle_core::symmetric_key::{SymmetricDecryptionKey, SymmetricEncrypti
 #[allow(non_camel_case_types)]
 pub type AES_CBC_128<'k, Dir, Pad> = <Dir as Direction>::Select<
     PaddedBlockCipherEncryptor<
-        Cbc<'k, AES128Internal, Encrypting, 16, AES_BLOCK_LEN>,
+        Cbc<'k, AES128Internal, Encrypting, AES_BLOCK_LEN>,
         Pad,
-        16,
         AES_BLOCK_LEN,
         AES_BLOCK_LEN,
     >,
     PaddedBlockCipherDecryptor<
-        Cbc<'k, AES128Internal, Decrypting, 16, AES_BLOCK_LEN>,
+        Cbc<'k, AES128Internal, Decrypting, AES_BLOCK_LEN>,
         Pad,
-        16,
         AES_BLOCK_LEN,
         AES_BLOCK_LEN,
     >,
@@ -175,16 +173,14 @@ pub type AES_CBC_128<'k, Dir, Pad> = <Dir as Direction>::Select<
 #[allow(non_camel_case_types)]
 pub type AES_CBC_192<'k, Dir, Pad> = <Dir as Direction>::Select<
     PaddedBlockCipherEncryptor<
-        Cbc<'k, AES192Internal, Encrypting, 24, AES_BLOCK_LEN>,
+        Cbc<'k, AES192Internal, Encrypting, AES_BLOCK_LEN>,
         Pad,
-        24,
         AES_BLOCK_LEN,
         AES_BLOCK_LEN,
     >,
     PaddedBlockCipherDecryptor<
-        Cbc<'k, AES192Internal, Decrypting, 24, AES_BLOCK_LEN>,
+        Cbc<'k, AES192Internal, Decrypting, AES_BLOCK_LEN>,
         Pad,
-        24,
         AES_BLOCK_LEN,
         AES_BLOCK_LEN,
     >,
@@ -194,16 +190,14 @@ pub type AES_CBC_192<'k, Dir, Pad> = <Dir as Direction>::Select<
 #[allow(non_camel_case_types)]
 pub type AES_CBC_256<'k, Dir, Pad> = <Dir as Direction>::Select<
     PaddedBlockCipherEncryptor<
-        Cbc<'k, AES256Internal, Encrypting, 32, AES_BLOCK_LEN>,
+        Cbc<'k, AES256Internal, Encrypting, AES_BLOCK_LEN>,
         Pad,
-        32,
         AES_BLOCK_LEN,
         AES_BLOCK_LEN,
     >,
     PaddedBlockCipherDecryptor<
-        Cbc<'k, AES256Internal, Decrypting, 32, AES_BLOCK_LEN>,
+        Cbc<'k, AES256Internal, Decrypting, AES_BLOCK_LEN>,
         Pad,
-        32,
         AES_BLOCK_LEN,
         AES_BLOCK_LEN,
     >,

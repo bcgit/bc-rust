@@ -34,7 +34,7 @@ use bouncycastle_core_test_framework::symmetric_ciphers::TestFrameworkSymmetricC
 use common::{TOY_LEN, Toy, toy_key};
 use toy_key::{ToyKey, os_rng};
 
-type ToyCtr<'k, Dir> = Ctr<'k, Toy, Dir, TOY_LEN, TOY_LEN, 12>;
+type ToyCtr<'k, Dir> = Ctr<'k, Toy, Dir, TOY_LEN, 12>;
 
 /// The toy key under the stream mode `M`.
 fn key_for<M: Mode<Toy>>() -> ToyKey<Toy, M> {

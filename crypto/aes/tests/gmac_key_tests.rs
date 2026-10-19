@@ -148,6 +148,6 @@ fn sizes() {
     assert_eq!(size_of::<AES_GMAC_128<'_, Encrypting>>(), size_of::<AES_GCM_128<'_, Encrypting>>());
     assert_eq!(
         size_of::<AES_GMAC_192<'_, Decrypting>>(),
-        size_of::<Gmac<'_, AES192Internal, Decrypting, 24, 16>>()
+        size_of::<Gmac<'_, AES192Internal, Decrypting, 16>>()
     );
 }

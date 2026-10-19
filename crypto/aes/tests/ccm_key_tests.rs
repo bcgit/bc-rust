@@ -198,10 +198,10 @@ fn worker_sizes_match_the_documented_memory_table() {
     use bouncycastle_aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
     use bouncycastle_cipher::modes::{CcmDecryptor, CcmEncryptor};
     use core::mem::size_of;
-    assert_eq!(size_of::<CcmEncryptor<'_, AES128Internal, 16, 12, 16>>(), 96);
-    assert_eq!(size_of::<CcmEncryptor<'_, AES192Internal, 24, 12, 16>>(), 96);
-    assert_eq!(size_of::<CcmEncryptor<'_, AES256Internal, 32, 12, 16>>(), 96);
-    assert_eq!(size_of::<CcmDecryptor<'_, AES128Internal, 16, 12, 16>>(), 120);
-    assert_eq!(size_of::<CcmDecryptor<'_, AES192Internal, 24, 12, 16>>(), 120);
-    assert_eq!(size_of::<CcmDecryptor<'_, AES256Internal, 32, 12, 16>>(), 120);
+    assert_eq!(size_of::<CcmEncryptor<'_, AES128Internal, 12, 16>>(), 96);
+    assert_eq!(size_of::<CcmEncryptor<'_, AES192Internal, 12, 16>>(), 96);
+    assert_eq!(size_of::<CcmEncryptor<'_, AES256Internal, 12, 16>>(), 96);
+    assert_eq!(size_of::<CcmDecryptor<'_, AES128Internal, 12, 16>>(), 120);
+    assert_eq!(size_of::<CcmDecryptor<'_, AES192Internal, 12, 16>>(), 120);
+    assert_eq!(size_of::<CcmDecryptor<'_, AES256Internal, 12, 16>>(), 120);
 }

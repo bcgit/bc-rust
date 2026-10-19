@@ -970,8 +970,8 @@ fn an_inline_ciphertext_shorter_than_the_tag_is_rejected() {
 #[test]
 fn a_short_inline_ciphertext_is_rejected_the_same_way_for_a_non_empty_frame() {
     const DATA_LEN: usize = 32;
-    type Enc<'k> = CcmPacketEncryptor<'k, AES128Internal, 16, 16, 12, 16, 16, DATA_LEN>;
-    type Dec<'k> = CcmPacketDecryptor<'k, AES128Internal, 16, 16, 12, 16, 16, DATA_LEN>;
+    type Enc<'k> = CcmPacketEncryptor<'k, AES128Internal, 16, 12, 16, 16, DATA_LEN>;
+    type Dec<'k> = CcmPacketDecryptor<'k, AES128Internal, 16, 12, 16, 16, DATA_LEN>;
     let key = frame_key::<12, 16, 16, DATA_LEN>();
     let declared = AES128Key::<CCM<12, 16>>::from_key_material(&material::<16>(APPENDIX_C_KEY))
         .expect("the appendix key");
@@ -1095,37 +1095,28 @@ fn sizes_match_the_documented_memory_table() {
     use core::mem::size_of;
 
     // The pair holds no payload: a 4 KiB frame costs exactly what a 16-byte one does.
-    let enc_64 = size_of::<CcmPacketEncryptor<'_, AES128Internal, 16, 16, 12, 16, 64, 4096>>();
-    assert_eq!(enc_64, size_of::<CcmPacketEncryptor<'_, AES128Internal, 16, 16, 12, 16, 64, 16>>());
+    let enc_64 = size_of::<CcmPacketEncryptor<'_, AES128Internal, 16, 12, 16, 64, 4096>>();
+    assert_eq!(enc_64, size_of::<CcmPacketEncryptor<'_, AES128Internal, 16, 12, 16, 64, 16>>());
     assert_eq!(
         enc_64,
         96 + 64 + 16,
         "the `Ccm` state, the AAD buffer, its length and the phase flag"
     );
     assert_eq!(
-        size_of::<CcmPacketEncryptor<'_, AES128Internal, 16, 16, 12, 16, 4096, 4096>>() - enc_64,
+        size_of::<CcmPacketEncryptor<'_, AES128Internal, 16, 12, 16, 4096, 4096>>() - enc_64,
         4096 - 64,
         "the value grows by exactly the AAD capacity"
     );
     // Independent of NONCE_LEN and TAG_LEN: the nonce lives inside the counter template and the
     // tag is assembled at finalization, not held.
-    assert_eq!(enc_64, size_of::<CcmPacketEncryptor<'_, AES128Internal, 16, 16, 7, 4, 64, 4096>>());
-    assert_eq!(
-        enc_64,
-        size_of::<CcmPacketEncryptor<'_, AES128Internal, 16, 16, 13, 16, 64, 4096>>()
-    );
+    assert_eq!(enc_64, size_of::<CcmPacketEncryptor<'_, AES128Internal, 16, 7, 4, 64, 4096>>());
+    assert_eq!(enc_64, size_of::<CcmPacketEncryptor<'_, AES128Internal, 16, 13, 16, 64, 4096>>());
     // The key schedule stays in the key, so the key length makes no difference.
-    assert_eq!(
-        size_of::<CcmPacketEncryptor<'_, AES192Internal, 24, 16, 12, 16, 64, 4096>>(),
-        enc_64
-    );
-    assert_eq!(
-        size_of::<CcmPacketEncryptor<'_, AES256Internal, 32, 16, 12, 16, 64, 4096>>(),
-        enc_64
-    );
+    assert_eq!(size_of::<CcmPacketEncryptor<'_, AES192Internal, 16, 12, 16, 64, 4096>>(), enc_64);
+    assert_eq!(size_of::<CcmPacketEncryptor<'_, AES256Internal, 16, 12, 16, 64, 4096>>(), enc_64);
     // The decryptor adds the tag it holds back and that tag's length.
-    let dec_64 = size_of::<CcmPacketDecryptor<'_, AES128Internal, 16, 16, 12, 16, 64, 4096>>();
-    assert_eq!(dec_64, size_of::<CcmPacketDecryptor<'_, AES128Internal, 16, 16, 12, 16, 64, 16>>());
+    let dec_64 = size_of::<CcmPacketDecryptor<'_, AES128Internal, 16, 12, 16, 64, 4096>>();
+    assert_eq!(dec_64, size_of::<CcmPacketDecryptor<'_, AES128Internal, 16, 12, 16, 64, 16>>());
     assert_eq!(dec_64, enc_64 + 16 + 8);
 }
 

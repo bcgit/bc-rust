@@ -25,7 +25,7 @@
 //! performed in parallel". Counter blocks depend on nothing but the nonce and the index, so unlike
 //! CBC and CFB there is no feed-forward between blocks at all.
 //! As such, both directions walk the block-aligned part of the data in fours through
-//! [`ElectronicCodeBook::encrypt_4blocks`], then in pairs through [`ElectronicCodeBook::encrypt_2blocks`].
+//! [`BlockPermutation::encrypt_4blocks`], then in pairs through [`BlockPermutation::encrypt_2blocks`].
 //! Only a leftover single block, and the keystream block for a short tail at the end, go one block at a time.
 //!
 //! Like the rest of CFB and CTR, only the **forward** cipher function is ever used, in both
@@ -126,7 +126,7 @@ use crate::stream::StreamCipher;
 use crate::{Decrypting, Encrypting};
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::hazmat::{
-    ElectronicCodeBook, Mode, SymmetricDecryptMode, SymmetricEncryptMode,
+    BlockPermutation, ElectronicCodeBook, Mode, SymmetricDecryptMode, SymmetricEncryptMode,
 };
 use bouncycastle_core::key_material::KeyType;
 use bouncycastle_core::traits::RNG;
@@ -162,7 +162,7 @@ where
     P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames + Clone,
 {
     type Encryptor<'k>
-        = Ctr<'k, P, Encrypting, KEY_LEN, BLOCK_LEN, NONCE_LEN>
+        = Ctr<'k, P, Encrypting, BLOCK_LEN, NONCE_LEN>
     where
         P: 'k;
 
@@ -181,7 +181,7 @@ where
     P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames + Clone,
 {
     type Decryptor<'k>
-        = Ctr<'k, P, Decrypting, KEY_LEN, BLOCK_LEN, NONCE_LEN>
+        = Ctr<'k, P, Decrypting, BLOCK_LEN, NONCE_LEN>
     where
         P: 'k;
 
@@ -224,34 +224,28 @@ where
 /// // 1-byte counter
 /// let _ = CTR::<15>::encrypt_init(&<CTR<15> as Mode<ToyBlockCipher>>::key_state(perm), &mut rng).unwrap();
 /// ```
-pub type Ctr<'k, P, Dir, const KEY_LEN: usize, const BLOCK_LEN: usize, const INIT_DATA_LEN: usize> =
-    StreamCipher<
-        CtrKeyStream<'k, P, KEY_LEN, BLOCK_LEN, INIT_DATA_LEN>,
-        Dir,
-        KEY_LEN,
-        INIT_DATA_LEN,
-        BLOCK_LEN,
-    >;
+pub type Ctr<'k, P, Dir, const BLOCK_LEN: usize, const INIT_DATA_LEN: usize> =
+    StreamCipher<CtrKeyStream<'k, P, BLOCK_LEN, INIT_DATA_LEN>, Dir, INIT_DATA_LEN, BLOCK_LEN>;
 
 /// XORs `Oj = CIPH_K(Tj)` into `blocks` for the next `blocks.len()` counter values, starting at
 /// `*next` and advancing it past them, where `Tj = counter_block(j)`.
 ///
 /// Shared by [`CtrKeyStream`] and CCM's keystream (SP 800-38C Sec 6.1 steps 5-7), which differ
 /// only in how a counter block is formatted. Walks the blocks in fours through
-/// [`ElectronicCodeBook::encrypt_4blocks`], then pairs, then a single block: the counter blocks
+/// [`BlockPermutation::encrypt_4blocks`], then pairs, then a single block: the counter blocks
 /// depend only on `j`, not on the data or on each other's cipher output, so the forward ciphers in
 /// a batch are independent. This is the parallelism SP 800-38A Sec 6.5 describes, and it applies
 /// to both directions.
 ///
 /// The keystream scratch is one [`Secret`] per width and per call rather than per batch, so every
 /// block of `Oj` is zeroized when this returns.
-pub(crate) fn apply_counter_blocks<P, const KEY_LEN: usize, const BLOCK_LEN: usize>(
+pub(crate) fn apply_counter_blocks<P, const BLOCK_LEN: usize>(
     perm: &P,
     next: &mut u64,
     counter_block: impl Fn(u64) -> [u8; BLOCK_LEN],
     blocks: &mut [[u8; BLOCK_LEN]],
 ) where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
+    P: BlockPermutation<BLOCK_LEN> + ModeNames,
 {
     let (fours, rest) = blocks.as_chunks_mut::<4>();
     let mut ks4: Secret<[[u8; BLOCK_LEN]; 4]> = Secret::new();
@@ -274,7 +268,7 @@ pub(crate) fn apply_counter_blocks<P, const KEY_LEN: usize, const BLOCK_LEN: usi
 /// One batch of [`apply_counter_blocks`]: builds `N` counter blocks into `keystream`, encrypts
 /// them with one `batch` call, and XORs the result into `blocks`.
 #[inline]
-fn apply_batch<P, const KEY_LEN: usize, const BLOCK_LEN: usize, const N: usize>(
+fn apply_batch<P, const BLOCK_LEN: usize, const N: usize>(
     perm: &P,
     next: &mut u64,
     counter_block: &impl Fn(u64) -> [u8; BLOCK_LEN],
@@ -282,7 +276,7 @@ fn apply_batch<P, const KEY_LEN: usize, const BLOCK_LEN: usize, const N: usize>(
     keystream: &mut [[u8; BLOCK_LEN]; N],
     batch: impl Fn(&P, &mut [[u8; BLOCK_LEN]; N]),
 ) where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
+    P: BlockPermutation<BLOCK_LEN> + ModeNames,
 {
     for slot in keystream.iter_mut() {
         *slot = counter_block(*next);
