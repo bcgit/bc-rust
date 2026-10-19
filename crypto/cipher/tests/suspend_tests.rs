@@ -8,11 +8,18 @@
 //! The AES aliases get the same impls through these generic types, so this is where they are
 //! pinned; `bouncycastle-aes` only checks that each alias reaches them.
 
-use bouncycastle_cipher::modes::hazmat::ecb::Ecb;
-use bouncycastle_cipher::modes::{Cbc, CcmDecryptor, CcmEncryptor, Cfb, Cfb8, Ctr, Gcm};
+use bouncycastle_cipher::modes::hazmat::ecb::{ECB, Ecb};
+use bouncycastle_cipher::modes::{
+    Blocks, CBC, CCMFrame, CFB, CFB8, CTR, Cbc, CcmDecryptor, CcmEncryptor, Cfb, Cfb8, Ctr, Gcm,
+};
 use bouncycastle_cipher::padding::{PKCS7, PaddedBlockCipherDecryptor, PaddedBlockCipherEncryptor};
 use bouncycastle_cipher::{Decrypting, Encrypting};
+use bouncycastle_core::hazmat::{EcbDecryptionKey, EcbEncryptionKey, Mode};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
+use bouncycastle_core::symmetric_key::{
+    AeadDecryptionKey, AeadEncryptionKey, BlockDecryptionKey, BlockEncryptionKey, FromKeyMaterial,
+    SymmetricDecryptionKey, SymmetricEncryptionKey,
+};
 use bouncycastle_core::traits::{
     AEADCipherDecryptor, AEADCipherEncryptor, BlockCipherDecryptor, BlockCipherEncryptor,
     StreamCipherDecryptor, StreamCipherEncryptor, SuspendableKeyed, SymmetricCipherDecryptor,
@@ -22,7 +29,10 @@ use bouncycastle_core_test_framework::suspendable_state::TestFrameworkSuspendabl
 
 #[path = "common/toy_block_cipher.rs"]
 mod toy_block_cipher;
+#[path = "common/toy_key.rs"]
+mod toy_key;
 use toy_block_cipher::ToyBlockCipher;
+use toy_key::{ToyGCM, ToyKey, os_rng};
 
 type ToyEcb<Dir> = Ecb<ToyBlockCipher, Dir, 16, 16>;
 type ToyCbc<Dir> = Cbc<ToyBlockCipher, Dir, 16, 16>;
@@ -31,6 +41,7 @@ type ToyCfb8<Dir> = Cfb8<ToyBlockCipher, Dir, 16, 16>;
 type ToyCtr<Dir> = Ctr<ToyBlockCipher, Dir, 16, 16, 12>;
 type ToyGcm<Dir> = Gcm<ToyBlockCipher, Dir, 16, 16>;
 // A 64-byte AAD capacity and 37-byte frames, the message `ccm_both_directions` uses.
+type ToyCcmFrame = CCMFrame<12, 16, 64, 37>;
 type ToyCcmEnc = CcmEncryptor<ToyBlockCipher, 16, 16, 12, 16, 64, 37>;
 type ToyCcmDec = CcmDecryptor<ToyBlockCipher, 16, 16, 12, 16, 64, 37>;
 type ToyPaddedEnc = PaddedBlockCipherEncryptor<ToyCbc<Encrypting>, PKCS7, 16, 16, 16>;
@@ -38,6 +49,11 @@ type ToyPaddedDec = PaddedBlockCipherDecryptor<ToyCbc<Decrypting>, PKCS7, 16, 16
 
 fn key() -> KeyMaterial<16> {
     KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey).unwrap()
+}
+
+/// The toy key under the mode `M`; resume still takes the material, through `key()`.
+fn key_for<M: Mode<ToyBlockCipher>>() -> ToyKey<ToyBlockCipher, M> {
+    ToyKey::from_key_material(&key()).expect("the toy key")
 }
 
 fn message(len: usize) -> Vec<u8> {
@@ -60,7 +76,7 @@ where
 
 #[test]
 fn cbc_both_directions() {
-    let (mut enc, iv) = ToyCbc::<Encrypting>::do_encrypt_init(&key()).unwrap();
+    let (mut enc, iv) = key_for::<CBC<Blocks>>().create_encryptor(&mut os_rng()).unwrap();
     let mut first = [0x11u8; 16];
     enc.do_encrypt_blocks_inplace(first.as_chunks_mut().0).unwrap();
     let rest = round_trip::<{ ToyCbc::<Encrypting>::SUSPENDED_STATE_LEN }, _>(enc, |mut e| {
@@ -69,7 +85,7 @@ fn cbc_both_directions() {
         data.to_vec()
     });
 
-    let mut dec = ToyCbc::<Decrypting>::do_decrypt_init(&key(), &iv).unwrap();
+    let mut dec = key_for::<CBC<Blocks>>().create_decryptor(&iv);
     dec.do_decrypt_blocks_inplace(first.as_chunks_mut().0).unwrap();
     assert_eq!(first, [0x11u8; 16]);
     let plain = round_trip::<{ ToyCbc::<Decrypting>::SUSPENDED_STATE_LEN }, _>(dec, |mut d| {
@@ -82,14 +98,14 @@ fn cbc_both_directions() {
 
 #[test]
 fn ecb_both_directions() {
-    let (mut enc, _) = ToyEcb::<Encrypting>::do_encrypt_init(&key()).unwrap();
+    let mut enc = key_for::<ECB<Blocks>>().create_encryptor();
     enc.do_encrypt_blocks_inplace(&mut [[0x11u8; 16]]).unwrap();
     round_trip::<{ ToyEcb::<Encrypting>::SUSPENDED_STATE_LEN }, _>(enc, |mut e| {
         let mut data = [0x22u8; 32];
         e.do_encrypt_blocks_inplace(data.as_chunks_mut().0).unwrap();
         data.to_vec()
     });
-    let dec = ToyEcb::<Decrypting>::do_decrypt_init(&key(), &[]).unwrap();
+    let dec = key_for::<ECB<Blocks>>().create_decryptor();
     round_trip::<{ ToyEcb::<Decrypting>::SUSPENDED_STATE_LEN }, _>(dec, |mut d| {
         let mut data = [0x33u8; 32];
         d.do_decrypt_blocks_inplace(data.as_chunks_mut().0).unwrap();
@@ -100,7 +116,7 @@ fn ecb_both_directions() {
 #[test]
 fn cfb_mid_segment_both_directions() {
     let msg = message(40);
-    let (mut enc, iv) = ToyCfb::<Encrypting>::do_encrypt_init(&key()).unwrap();
+    let (mut enc, iv) = key_for::<CFB>().create_encryptor(&mut os_rng()).unwrap();
     let mut head = msg[..7].to_vec();
     enc.do_encrypt_inplace(&mut head).unwrap();
     let tail = round_trip::<{ ToyCfb::<Encrypting>::SUSPENDED_STATE_LEN }, _>(enc, |mut e| {
@@ -109,7 +125,7 @@ fn cfb_mid_segment_both_directions() {
         data
     });
 
-    let mut dec = ToyCfb::<Decrypting>::do_decrypt_init(&key(), &iv).unwrap();
+    let mut dec = key_for::<CFB>().create_decryptor(&iv);
     dec.do_decrypt_inplace(&mut head).unwrap();
     assert_eq!(head, msg[..7]);
     let plain = round_trip::<{ ToyCfb::<Decrypting>::SUSPENDED_STATE_LEN }, _>(dec, |mut d| {
@@ -123,7 +139,7 @@ fn cfb_mid_segment_both_directions() {
 #[test]
 fn cfb8_both_directions() {
     let msg = message(20);
-    let (mut enc, iv) = ToyCfb8::<Encrypting>::do_encrypt_init(&key()).unwrap();
+    let (mut enc, iv) = key_for::<CFB8>().create_encryptor(&mut os_rng()).unwrap();
     let mut head = msg[..5].to_vec();
     enc.do_encrypt_inplace(&mut head).unwrap();
     let tail = round_trip::<{ ToyCfb8::<Encrypting>::SUSPENDED_STATE_LEN }, _>(enc, |mut e| {
@@ -131,7 +147,7 @@ fn cfb8_both_directions() {
         e.do_encrypt_inplace(&mut data).unwrap();
         data
     });
-    let mut dec = ToyCfb8::<Decrypting>::do_decrypt_init(&key(), &iv).unwrap();
+    let mut dec = key_for::<CFB8>().create_decryptor(&iv);
     dec.do_decrypt_inplace(&mut head).unwrap();
     let plain = round_trip::<{ ToyCfb8::<Decrypting>::SUSPENDED_STATE_LEN }, _>(dec, |mut d| {
         let mut data = tail.clone();
@@ -144,7 +160,7 @@ fn cfb8_both_directions() {
 #[test]
 fn ctr_mid_block_both_directions() {
     let msg = message(50);
-    let (mut enc, nonce) = ToyCtr::<Encrypting>::do_encrypt_init(&key()).unwrap();
+    let (mut enc, nonce) = key_for::<CTR<12>>().create_encryptor(&mut os_rng()).unwrap();
     let mut head = msg[..7].to_vec();
     enc.do_encrypt_inplace(&mut head).unwrap();
     let tail = round_trip::<{ ToyCtr::<Encrypting>::SUSPENDED_STATE_LEN }, _>(enc, |mut e| {
@@ -152,7 +168,7 @@ fn ctr_mid_block_both_directions() {
         e.do_encrypt_inplace(&mut data).unwrap();
         data
     });
-    let mut dec = ToyCtr::<Decrypting>::do_decrypt_init(&key(), &nonce).unwrap();
+    let mut dec = key_for::<CTR<12>>().create_decryptor(&nonce);
     dec.do_decrypt_inplace(&mut head).unwrap();
     let plain = round_trip::<{ ToyCtr::<Decrypting>::SUSPENDED_STATE_LEN }, _>(dec, |mut d| {
         let mut data = tail.clone();
@@ -167,7 +183,7 @@ fn gcm_both_directions_with_aad() {
     let msg = message(45);
     let aad = b"authenticated header";
 
-    let (mut enc, nonce) = ToyGcm::<Encrypting>::do_encrypt_init(&key()).unwrap();
+    let (mut enc, nonce) = key_for::<ToyGCM<16>>().create_encryptor(&mut os_rng()).unwrap();
     enc.do_update_aad(aad).unwrap();
     let mut head = [0u8; 5];
     enc.do_encrypt_out(&msg[..5], &mut head).unwrap();
@@ -184,7 +200,7 @@ fn gcm_both_directions_with_aad() {
 
     // The decryptor holds the last 16 bytes back, so after 10 bytes nothing has been released,
     // but data has started and the AAD phase is closed: a state worth suspending.
-    let mut dec = ToyGcm::<Decrypting>::do_decrypt_init(&key(), &nonce).unwrap();
+    let mut dec = key_for::<ToyGCM<16>>().create_decryptor(&nonce);
     dec.do_update_aad(aad).unwrap();
     let mut nothing = [0u8; 0];
     assert_eq!(dec.do_decrypt_out(&ciphertext[..10], &mut nothing).unwrap(), 0);
@@ -206,7 +222,7 @@ fn ccm_both_directions() {
 
     // Suspended with half the AAD held back and no payload yet, and again mid-payload; both
     // must continue to the one answer.
-    let mut enc = ToyCcmEnc::do_encrypt_init_nonce(&key(), &nonce).unwrap();
+    let mut enc = key_for::<ToyCcmFrame>().create_encryptor_nonce(&nonce);
     enc.do_update_aad(&aad[..3]).unwrap();
     let sealed = round_trip::<{ ToyCcmEnc::SUSPENDED_STATE_LEN }, _>(enc, |mut e| {
         e.do_update_aad(&aad[3..]).unwrap();
@@ -216,7 +232,7 @@ fn ccm_both_directions() {
         out.extend_from_slice(&tag);
         out
     });
-    let mut enc = ToyCcmEnc::do_encrypt_init_nonce(&key(), &nonce).unwrap();
+    let mut enc = key_for::<ToyCcmFrame>().create_encryptor_nonce(&nonce);
     enc.do_update_aad(aad).unwrap();
     let mut head = vec![0u8; 9];
     enc.do_encrypt_out(&msg[..9], &mut head).unwrap();
@@ -231,7 +247,7 @@ fn ccm_both_directions() {
     let (ct, tag) = sealed.split_at(37);
     let tag: [u8; 16] = tag.try_into().unwrap();
 
-    let mut dec = ToyCcmDec::do_decrypt_init(&key(), &nonce).unwrap();
+    let mut dec = key_for::<ToyCcmFrame>().create_decryptor(&nonce);
     dec.do_update_aad(aad).unwrap();
     let mut opened_head = vec![0u8; 9];
     dec.do_decrypt_out(&ct[..9], &mut opened_head).unwrap();
@@ -244,7 +260,7 @@ fn ccm_both_directions() {
     assert_eq!([&opened_head[..], &plain[..]].concat(), msg);
 
     // ...and with part of an inline tag already held back at the suspend point.
-    let mut dec = ToyCcmDec::do_decrypt_init(&key(), &nonce).unwrap();
+    let mut dec = key_for::<ToyCcmFrame>().create_decryptor(&nonce);
     dec.do_update_aad(aad).unwrap();
     let mut opened = vec![0u8; 37];
     dec.do_decrypt_out(&sealed[..40], &mut opened).unwrap();
@@ -259,7 +275,7 @@ fn ccm_both_directions() {
 #[test]
 fn padded_cbc_both_directions() {
     let msg = message(45);
-    let (mut enc, iv) = ToyPaddedEnc::do_encrypt_init(&key()).unwrap();
+    let (mut enc, iv) = key_for::<CBC<PKCS7>>().create_encryptor(&mut os_rng()).unwrap();
     let mut head = [0u8; 16];
     // 20 bytes in: one block out, four buffered.
     assert_eq!(enc.do_encrypt_out(&msg[..20], &mut head).unwrap(), 16);
@@ -276,7 +292,7 @@ fn padded_cbc_both_directions() {
     assert_eq!(ciphertext.len(), 48);
 
     // 20 bytes in: one block released, one held back, four buffered.
-    let mut dec = ToyPaddedDec::do_decrypt_init(&key(), &iv).unwrap();
+    let mut dec = key_for::<CBC<PKCS7>>().create_decryptor(&iv);
     let mut first = [0u8; 16];
     assert_eq!(dec.do_decrypt_out(&ciphertext[..36], &mut first).unwrap(), 16);
     let plain = round_trip::<{ ToyPaddedDec::SUSPENDED_STATE_LEN }, _>(dec, |mut d| {

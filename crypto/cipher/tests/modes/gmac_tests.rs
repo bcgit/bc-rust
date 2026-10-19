@@ -3,19 +3,27 @@
 //! The known-answer tests (ACVP, Wycheproof) are in the `aes` crate, `crypto/aes/tests/gmac_*.rs`.
 
 mod common;
+#[path = "../common/toy_key.rs"]
+mod toy_key;
 
-use bouncycastle_cipher::modes::{GCM_NONCE_LEN, Gcm, GcmKeyState, Gmac};
+use bouncycastle_cipher::modes::{GCM_NONCE_LEN, GcmKeyState, Gmac, ModeNames};
 use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
 use bouncycastle_core::hazmat::ElectronicCodeBook;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::traits::AEADCipherEncryptor;
+use bouncycastle_core::symmetric_key::{AeadEncryptionKey, FromKeyMaterial};
 use bouncycastle_core_test_framework::FixedSeedRNG;
+use bouncycastle_core_test_framework::from_key_material::TestFrameworkFromKeyMaterial;
 use common::{TOY_LEN, Toy, toy_key};
+use toy_key::{ToyGCM, ToyGMAC, ToyKey};
 
 type ToyGmac<Dir, const TAG_LEN: usize = 16> = Gmac<Toy, Dir, TOY_LEN, TAG_LEN>;
-type ToyGcm<Dir, const TAG_LEN: usize = 16> = Gcm<Toy, Dir, TOY_LEN, TAG_LEN>;
+type ToyGmacKey<const TAG_LEN: usize = 16> = ToyKey<Toy, ToyGMAC<TAG_LEN>>;
+
+fn gmac_key<const TAG_LEN: usize>() -> ToyGmacKey<TAG_LEN> {
+    ToyGmacKey::from_key_material(&mac_key()).expect("the toy MAC key")
+}
 
 const NONCE: [u8; GCM_NONCE_LEN] = [0x5A; GCM_NONCE_LEN];
 
@@ -42,15 +50,22 @@ fn every_route_gives_gcm_s_aad_only_tag() {
     let state = key_state();
     for len in [0, 1, 15, 16, 17, 32, 33, 100] {
         let msg = message(len);
-        let (gcm_nonce, _, expected) = ToyGcm::<Encrypting>::encrypt_detached_rng_out(
-            &toy_key(),
-            &mut rng(),
-            &msg,
-            &[],
-            &mut [],
-        )
-        .unwrap();
+        let (_, gcm_nonce, expected) = ToyKey::<Toy, ToyGCM>::from_key_material(&toy_key())
+            .unwrap()
+            .encrypt_detached_out(&mut rng(), &msg, &[], &mut [])
+            .unwrap();
         assert_eq!(gcm_nonce, NONCE);
+
+        let key = gmac_key::<16>();
+        let (gen_, nonce) = key.create_generator(&mut rng()).unwrap();
+        assert_eq!(nonce, NONCE, "len {len}");
+        assert_eq!(gen_.mac(&msg), expected, "key.create_generator, len {len}");
+        assert_eq!(
+            key.create_generator_nonce(&NONCE).mac(&msg),
+            expected,
+            "key.create_generator_nonce, len {len}"
+        );
+        assert!(key.create_verifier(&NONCE).verify(&msg, &expected));
 
         let (gen_, nonce) = ToyGmac::<Encrypting>::from_key_state(&state, &mut rng()).unwrap();
         assert_eq!(nonce, NONCE, "len {len}");
@@ -158,4 +173,12 @@ fn key_validation() {
 
     let zero = KeyMaterial::<TOY_LEN>::from_bytes_as_type(&[0; TOY_LEN], KeyType::MACKey).unwrap();
     assert!(ToyGmac::<Decrypting>::new(&zero, &NONCE).is_err());
+}
+
+/// The key's construction suite: a `MACKey` of the permutation's length and strength, bound to
+/// the GMAC name or to nothing.
+#[test]
+fn the_key_enforces_the_material_policy() {
+    TestFrameworkFromKeyMaterial::new()
+        .test::<TOY_LEN, ToyGmacKey>(Toy::GMAC_ALG_NAME, SecurityStrength::_128bit);
 }
