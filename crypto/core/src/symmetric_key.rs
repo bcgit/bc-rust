@@ -13,14 +13,20 @@
 //!   A key that lives in a hardware token implements neither; it has its own way in.
 //! * **Roles**, one trait per direction: [`AeadEncryptionKey`] / [`AeadDecryptionKey`], their
 //!   packet forms [`AeadPacketEncryptionKey`] / [`AeadPacketDecryptionKey`] for a mode that must
-//!   know the lengths up front, and [`MacGenerationKey`] / [`MacVerificationKey`]. A key type
+//!   know the lengths up front, [`SymmetricEncryptionKey`] / [`SymmetricDecryptionKey`] for the
+//!   unauthenticated modes that take data of any length (padded CBC, CFB, CFB8, CTR),
+//!   [`BlockEncryptionKey`] / [`BlockDecryptionKey`] for the whole-block modes, the ECB pair in
+//!   [`crate::hazmat`], and [`MacGenerationKey`] / [`MacVerificationKey`]. A key type
 //!   implements the sides it is allowed to use, so a decrypt-only or verify-only key refuses the
 //!   other side at compile time. The one-shots are provided methods over `create_*` and the
-//!   worker's streaming methods, which [`AeadEncryptWorker`] / [`AeadDecryptWorker`] describe.
+//!   worker's streaming methods, which [`AeadEncryptWorker`] / [`AeadDecryptWorker`] describe
+//!   for the AEAD pair and the cipher traits in [`crate::traits`] for the rest.
 //!
 //! Which role a cipher key carries is decided by its mode type through the mode traits in
-//! [`crate::hazmat`] ([`Mode`], [`AeadEncryptMode`], [`AeadDecryptMode`] and their packet
-//! forms); the permutation crate connects the two with a forwarding impl per role.
+//! [`crate::hazmat`] ([`Mode`], [`AeadEncryptMode`], [`AeadDecryptMode`] and their packet,
+//! symmetric, block and ECB forms); the permutation crate connects the two with a forwarding
+//! impl per role. A mode implements exactly one pair, so `key.create_encryptor(..)` on a key
+//! bound to it is never ambiguous.
 //!
 //! ```text
 //! let key = AES128Key::<GCM>::generate(&mut rng)?;
@@ -42,7 +48,10 @@ use crate::errors::{MACError, SymmetricCipherError};
 use crate::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 #[cfg(feature = "std")]
 use crate::traits::AEADEncryptedTuple;
-use crate::traits::{MAC, RNG};
+use crate::traits::{
+    BlockCipherDecryptor, BlockCipherEncryptor, MAC, RNG, StreamCipherDecryptor,
+    StreamCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
+};
 
 /// Construction of a key object from exactly `KEY_LEN` bytes of key material.
 ///
@@ -859,6 +868,227 @@ pub trait AeadPacketDecryptionKey<
     ) -> Result<(), SymmetricCipherError> {
         let dec = self.create_decryptor(nonce, aad.len(), buf.len())?;
         crate::provided::decrypt_detached_in_place(dec, aad, buf, tag)
+    }
+}
+
+/// A key that can begin an unauthenticated encryption of data of any length: the encryption
+/// half of a key for padded CBC, CFB, CFB8 or CTR. The encryptor is the mode's ordinary worker, a
+/// [`SymmetricCipherEncryptor`]; this trait adds where it comes from, and the one-shots are
+/// provided over [`create_encryptor`](Self::create_encryptor) and the worker's streaming methods.
+///
+/// The init data (an IV or nonce) is drawn from the RNG the key is given and returned; there is
+/// no form that takes one, since these modes need it unpredictable (SP 800-38A Appendix C).
+pub trait SymmetricEncryptionKey<
+    const KEY_LEN: usize,
+    const INIT_DATA_LEN: usize,
+    const FINAL_LEN: usize,
+>
+{
+    /// The streaming encryptor this key produces.
+    type Encryptor: SymmetricCipherEncryptor<KEY_LEN, INIT_DATA_LEN, FINAL_LEN>;
+
+    /// Begins an encryption under init data drawn from `rng`, which is returned alongside the
+    /// encryptor and must reach the recipient, who passes it to
+    /// [`SymmetricDecryptionKey::create_decryptor`].
+    ///
+    /// # Errors
+    /// [`SymmetricCipherError::RNGError`] if the draw fails; nothing else can.
+    fn create_encryptor(
+        &self,
+        rng: &mut dyn RNG,
+    ) -> Result<(Self::Encryptor, [u8; INIT_DATA_LEN]), SymmetricCipherError>;
+
+    /// One-shot: encrypts `plaintext` into `ciphertext`, which needs `encrypt_out_len` bytes of
+    /// the encryptor type, and returns the number of bytes written with the generated init data.
+    /// The entire output buffer is zeroized before the ciphertext is written.
+    ///
+    /// # Errors
+    /// [`SymmetricCipherError::OutputBufferTooSmall`] if `ciphertext` is too short, or any error
+    /// of [`create_encryptor`](Self::create_encryptor) and the encryptor's streaming methods.
+    fn encrypt_out(
+        &self,
+        rng: &mut dyn RNG,
+        plaintext: &[u8],
+        ciphertext: &mut [u8],
+    ) -> Result<(usize, [u8; INIT_DATA_LEN]), SymmetricCipherError> {
+        let (enc, init_data) = self.create_encryptor(rng)?;
+        let written = crate::provided::symmetric_encrypt_out(enc, plaintext, ciphertext)?;
+        Ok((written, init_data))
+    }
+
+    /// As [`encrypt_out`](Self::encrypt_out), allocating the ciphertext.
+    ///
+    /// # Errors
+    /// As [`encrypt_out`](Self::encrypt_out).
+    #[cfg(feature = "std")]
+    fn encrypt(
+        &self,
+        rng: &mut dyn RNG,
+        plaintext: &[u8],
+    ) -> Result<([u8; INIT_DATA_LEN], Vec<u8>), SymmetricCipherError> {
+        let mut ciphertext = vec![0u8; Self::Encryptor::encrypt_out_len(plaintext.len())];
+        let (written, init_data) = self.encrypt_out(rng, plaintext, &mut ciphertext)?;
+        ciphertext.truncate(written);
+        Ok((init_data, ciphertext))
+    }
+
+    /// One-shot in place, for a mode whose encryptor is a stream cipher: encrypts `data` in its
+    /// own buffer under init data drawn from `rng`, and returns the number of bytes written with
+    /// the init data.
+    ///
+    /// # Errors
+    /// As [`create_encryptor`](Self::create_encryptor), or
+    /// [`StreamCipherEncryptor::do_encrypt_inplace`]'s.
+    fn encrypt_inplace(
+        &self,
+        rng: &mut dyn RNG,
+        data: &mut [u8],
+    ) -> Result<(usize, [u8; INIT_DATA_LEN]), SymmetricCipherError>
+    where
+        Self::Encryptor: StreamCipherEncryptor<KEY_LEN, INIT_DATA_LEN>,
+    {
+        let (mut enc, init_data) = self.create_encryptor(rng)?;
+        let written = StreamCipherEncryptor::do_encrypt_inplace(&mut enc, data)?;
+        Ok((written, init_data))
+    }
+}
+
+/// A key that can begin an unauthenticated decryption of data of any length; see
+/// [`SymmetricEncryptionKey`]. Construction is infallible: the key is already validated and the
+/// init data length is in the type.
+pub trait SymmetricDecryptionKey<
+    const KEY_LEN: usize,
+    const INIT_DATA_LEN: usize,
+    const FINAL_LEN: usize,
+>
+{
+    /// The streaming decryptor this key produces.
+    type Decryptor: SymmetricCipherDecryptor<KEY_LEN, INIT_DATA_LEN, FINAL_LEN>;
+
+    /// Begins the decryption of a message whose encryptor returned `init_data`.
+    fn create_decryptor(&self, init_data: &[u8; INIT_DATA_LEN]) -> Self::Decryptor;
+
+    /// One-shot: decrypts `ciphertext` under `init_data` into `plaintext`, which needs
+    /// `decrypt_out_len(ciphertext.len())` bytes of the decryptor type, and returns the number
+    /// of plaintext bytes written. The entire output buffer is zeroized before the plaintext is
+    /// written, and again before an error is returned.
+    ///
+    /// # Errors
+    /// [`SymmetricCipherError::OutputBufferTooSmall`] if `plaintext` is too short, or any error
+    /// of the decryptor's streaming methods: a malformed ciphertext or bad padding.
+    fn decrypt_out(
+        &self,
+        init_data: &[u8; INIT_DATA_LEN],
+        ciphertext: &[u8],
+        plaintext: &mut [u8],
+    ) -> Result<usize, SymmetricCipherError> {
+        crate::provided::symmetric_decrypt_out(
+            self.create_decryptor(init_data),
+            ciphertext,
+            plaintext,
+        )
+    }
+
+    /// As [`decrypt_out`](Self::decrypt_out), allocating the plaintext.
+    ///
+    /// # Errors
+    /// As [`decrypt_out`](Self::decrypt_out).
+    #[cfg(feature = "std")]
+    fn decrypt(
+        &self,
+        init_data: &[u8; INIT_DATA_LEN],
+        ciphertext: &[u8],
+    ) -> Result<Vec<u8>, SymmetricCipherError> {
+        let mut plaintext = vec![0u8; Self::Decryptor::decrypt_out_len(ciphertext.len())];
+        let written = self.decrypt_out(init_data, ciphertext, &mut plaintext)?;
+        plaintext.truncate(written);
+        Ok(plaintext)
+    }
+
+    /// One-shot in place, for a mode whose decryptor is a stream cipher: decrypts `data` in its
+    /// own buffer under `init_data`, and returns the number of bytes written.
+    ///
+    /// # Errors
+    /// [`StreamCipherDecryptor::do_decrypt_inplace`]'s.
+    fn decrypt_inplace(
+        &self,
+        init_data: &[u8; INIT_DATA_LEN],
+        data: &mut [u8],
+    ) -> Result<usize, SymmetricCipherError>
+    where
+        Self::Decryptor: StreamCipherDecryptor<KEY_LEN, INIT_DATA_LEN>,
+    {
+        let mut dec = self.create_decryptor(init_data);
+        StreamCipherDecryptor::do_decrypt_inplace(&mut dec, data)
+    }
+}
+
+/// A key that can begin a whole-block encryption: the encryption half of a key for CBC without
+/// a padding layer. The encryptor is a [`BlockCipherEncryptor`], whose buffers are
+/// block-aligned arrays checked at compile time; data of arbitrary length goes through a padded
+/// mode and [`SymmetricEncryptionKey`] instead.
+pub trait BlockEncryptionKey<
+    const KEY_LEN: usize,
+    const INIT_DATA_LEN: usize,
+    const BLOCK_LEN: usize,
+>
+{
+    /// The streaming encryptor this key produces.
+    type Encryptor: BlockCipherEncryptor<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>;
+
+    /// Begins an encryption under init data drawn from `rng`, which is returned alongside the
+    /// encryptor and must reach the recipient, who passes it to
+    /// [`BlockDecryptionKey::create_decryptor`].
+    ///
+    /// # Errors
+    /// [`SymmetricCipherError::RNGError`] if the draw fails; nothing else can.
+    fn create_encryptor(
+        &self,
+        rng: &mut dyn RNG,
+    ) -> Result<(Self::Encryptor, [u8; INIT_DATA_LEN]), SymmetricCipherError>;
+
+    /// One-shot: encrypts `LEN` bytes, a whole number of blocks, in place under init data drawn
+    /// from `rng`, and returns the number of bytes written with the init data. `LEN % BLOCK_LEN
+    /// == 0` is checked at compile time, as for [`BlockCipherEncryptor::do_encrypt_inplace`].
+    ///
+    /// # Errors
+    /// As [`create_encryptor`](Self::create_encryptor), or the encryptor's own refusals.
+    fn encrypt_inplace<const LEN: usize>(
+        &self,
+        rng: &mut dyn RNG,
+        data: &mut [u8; LEN],
+    ) -> Result<(usize, [u8; INIT_DATA_LEN]), SymmetricCipherError> {
+        let (mut enc, init_data) = self.create_encryptor(rng)?;
+        let written = enc.do_encrypt_inplace(data)?;
+        Ok((written, init_data))
+    }
+}
+
+/// A key that can begin a whole-block decryption; see [`BlockEncryptionKey`]. Construction is
+/// infallible: the key is already validated and the init data length is in the type.
+pub trait BlockDecryptionKey<
+    const KEY_LEN: usize,
+    const INIT_DATA_LEN: usize,
+    const BLOCK_LEN: usize,
+>
+{
+    /// The streaming decryptor this key produces.
+    type Decryptor: BlockCipherDecryptor<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>;
+
+    /// Begins the decryption of a message whose encryptor returned `init_data`.
+    fn create_decryptor(&self, init_data: &[u8; INIT_DATA_LEN]) -> Self::Decryptor;
+
+    /// One-shot: decrypts `LEN` bytes, a whole number of blocks, in place under `init_data`, and
+    /// returns the number of bytes written. `LEN % BLOCK_LEN == 0` is checked at compile time.
+    ///
+    /// # Errors
+    /// The decryptor's own refusals.
+    fn decrypt_inplace<const LEN: usize>(
+        &self,
+        init_data: &[u8; INIT_DATA_LEN],
+        data: &mut [u8; LEN],
+    ) -> Result<usize, SymmetricCipherError> {
+        self.create_decryptor(init_data).do_decrypt_inplace(data)
     }
 }
 
