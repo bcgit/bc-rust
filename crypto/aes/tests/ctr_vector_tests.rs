@@ -25,16 +25,13 @@
 //! the counter starting at zero, so the two line up exactly when the IV's low four bytes are zero,
 //! which is why the IV above ends in `00000000`. See the [`Ctr`] module docs.
 
-use bouncycastle_aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
-use bouncycastle_cipher::modes::Ctr;
-use bouncycastle_cipher::modes::ModeNames;
-use bouncycastle_cipher::{Decrypting, Encrypting};
-use bouncycastle_core::hazmat::ElectronicCodeBook;
+use bouncycastle_aes::{AES128Key, AES192Key, AES256Key};
+use bouncycastle_cipher::modes::CTR;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-use bouncycastle_core::traits::{
-    StreamCipherDecryptor, StreamCipherEncryptor, SymmetricCipherDecryptor,
-    SymmetricCipherEncryptor,
+use bouncycastle_core::symmetric_key::{
+    FromKeyMaterial, SymmetricDecryptionKey, SymmetricEncryptionKey,
 };
+use bouncycastle_core::traits::{StreamCipherDecryptor, StreamCipherEncryptor};
 use bouncycastle_core_test_framework::FixedSeedRNG;
 use bouncycastle_hex as hex;
 
@@ -99,11 +96,15 @@ fn key_material<const N: usize>(hex_str: &str) -> KeyMaterial<N> {
 /// through every path rather than only the batched one.
 const CHUNKINGS: [usize; 6] = [1, 5, 16, 17, 33, 69];
 
-fn check<P, const KEY_LEN: usize>(name: &str, key_hex: &str, expected_hex: &str)
+fn check<K, const KEY_LEN: usize>(name: &str, key_hex: &str, expected_hex: &str)
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
+    K: FromKeyMaterial<KEY_LEN>
+        + SymmetricEncryptionKey<KEY_LEN, NONCE_LEN, 0>
+        + SymmetricDecryptionKey<KEY_LEN, NONCE_LEN, 0>,
+    K::Encryptor: StreamCipherEncryptor<KEY_LEN, NONCE_LEN>,
+    K::Decryptor: StreamCipherDecryptor<KEY_LEN, NONCE_LEN>,
 {
-    let key = key_material::<KEY_LEN>(key_hex);
+    let key = K::from_key_material(&key_material::<KEY_LEN>(key_hex)).expect("a valid key");
     let nonce: [u8; NONCE_LEN] = unhex(NONCE).try_into().expect("a 12-byte nonce");
     let plaintext = unhex(PLAINTEXT);
     let expected = unhex(expected_hex);
@@ -113,11 +114,7 @@ where
     // Encryption, in one call and in every chunking.
     for chunk in [plaintext.len()].into_iter().chain(CHUNKINGS) {
         let (mut enc, got) =
-            Ctr::<P, Encrypting, KEY_LEN, BLOCK_LEN, NONCE_LEN>::do_encrypt_init_rng(
-                &key,
-                &mut FixedSeedRNG::<NONCE_LEN>::new(nonce),
-            )
-            .expect("encrypt init");
+            key.create_encryptor(&mut FixedSeedRNG::<NONCE_LEN>::new(nonce)).expect("encrypt init");
         assert_eq!(got, nonce, "{name}: the pinned RNG should reproduce the nonce");
 
         let mut data = plaintext.clone();
@@ -129,9 +126,7 @@ where
 
     // Decryption, likewise.
     for chunk in [expected.len()].into_iter().chain(CHUNKINGS) {
-        let mut dec =
-            Ctr::<P, Decrypting, KEY_LEN, BLOCK_LEN, NONCE_LEN>::do_decrypt_init(&key, &nonce)
-                .expect("decrypt init");
+        let mut dec = key.create_decryptor(&nonce);
         let mut data = expected.clone();
         for piece in data.chunks_mut(chunk) {
             dec.do_decrypt_inplace(piece).expect("decryption");
@@ -141,24 +136,23 @@ where
 
     // ...and the one-shot.
     let mut data = expected.clone();
-    Ctr::<P, Decrypting, KEY_LEN, BLOCK_LEN, NONCE_LEN>::decrypt_inplace(&key, &nonce, &mut data)
-        .expect("one-shot decryption");
+    key.decrypt_inplace(&nonce, &mut data).expect("one-shot decryption");
     assert_eq!(data, plaintext, "{name}: one-shot");
 }
 
 #[test]
 fn aes128_ctr_matches_openssl() {
-    check::<AES128Internal, 16>("AES-128", KEY_128, CT_128);
+    check::<AES128Key<CTR<NONCE_LEN>>, 16>("AES-128", KEY_128, CT_128);
 }
 
 #[test]
 fn aes192_ctr_matches_openssl() {
-    check::<AES192Internal, 24>("AES-192", KEY_192, CT_192);
+    check::<AES192Key<CTR<NONCE_LEN>>, 24>("AES-192", KEY_192, CT_192);
 }
 
 #[test]
 fn aes256_ctr_matches_openssl() {
-    check::<AES256Internal, 32>("AES-256", KEY_256, CT_256);
+    check::<AES256Key<CTR<NONCE_LEN>>, 32>("AES-256", KEY_256, CT_256);
 }
 
 /// The vectors must actually depend on the counter advancing: the second block of ciphertext must

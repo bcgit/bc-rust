@@ -26,20 +26,19 @@
 //! # Driving the IV
 //!
 //! There is no API for supplying an IV -- see the crate docs. Encryption is therefore driven
-//! through [`SymmetricCipherEncryptor::do_encrypt_init_rng`] with a [`FixedSeedRNG`] whose stream is
-//! the vector's IV, and the test asserts the returned init data really is that IV before comparing
-//! any ciphertext. Decryption takes the IV directly, as init data.
+//! through the key's [`SymmetricEncryptionKey::create_encryptor`] with a [`FixedSeedRNG`] whose
+//! stream is the vector's IV, and the test asserts the returned init data really is that IV before
+//! comparing any ciphertext. Decryption takes the IV directly, as init data.
 
-use bouncycastle_aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
-use bouncycastle_cipher::modes::Cfb8;
-use bouncycastle_cipher::modes::ModeNames;
-use bouncycastle_cipher::{Decrypting, Encrypting};
+use bouncycastle_aes::hazmat::AES128Internal;
+use bouncycastle_aes::{AES128Key, AES192Key, AES256Key};
+use bouncycastle_cipher::modes::CFB8;
 use bouncycastle_core::hazmat::ElectronicCodeBook;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-use bouncycastle_core::traits::{
-    StreamCipherDecryptor, StreamCipherEncryptor, SymmetricCipherDecryptor,
-    SymmetricCipherEncryptor,
+use bouncycastle_core::symmetric_key::{
+    FromKeyMaterial, SymmetricDecryptionKey, SymmetricEncryptionKey,
 };
+use bouncycastle_core::traits::{StreamCipherDecryptor, StreamCipherEncryptor};
 use bouncycastle_core_test_framework::FixedSeedRNG;
 use bouncycastle_hex as hex;
 
@@ -135,22 +134,20 @@ const CHUNKINGS: [usize; 7] = [1, 3, 4, 8, 9, 17, 18];
 ///
 /// Checks the whole message in one call, then in every chunking above -- the vector should not care
 /// how the calls are grouped.
-fn check_encrypt<P, const KEY_LEN: usize>(section: &str, key_hex: &str, expected_hex: &str)
+fn check_encrypt<K, const KEY_LEN: usize>(section: &str, key_hex: &str, expected_hex: &str)
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
+    K: FromKeyMaterial<KEY_LEN> + SymmetricEncryptionKey<KEY_LEN, BLOCK_LEN, 0>,
+    K::Encryptor: StreamCipherEncryptor<KEY_LEN, BLOCK_LEN>,
 {
-    let key = key_material::<KEY_LEN>(key_hex);
+    let key = K::from_key_material(&key_material::<KEY_LEN>(key_hex)).expect("a valid key");
     let iv = block(IV);
     let plaintext = bytes(PLAINTEXT);
     let expected = bytes(expected_hex);
     assert_eq!(plaintext.len(), 18, "{section}: the CFB8 subsections use 18 one-byte segments");
 
     for chunk in [plaintext.len()].into_iter().chain(CHUNKINGS) {
-        let (mut enc, got_iv) = Cfb8::<P, Encrypting, KEY_LEN, BLOCK_LEN>::do_encrypt_init_rng(
-            &key,
-            &mut FixedSeedRNG::<BLOCK_LEN>::new(iv),
-        )
-        .unwrap();
+        let (mut enc, got_iv) =
+            key.create_encryptor(&mut FixedSeedRNG::<BLOCK_LEN>::new(iv)).unwrap();
         assert_eq!(got_iv, iv, "{section}: the pinned RNG should produce the vector's IV");
 
         let mut data = plaintext.clone();
@@ -162,18 +159,18 @@ where
 }
 
 /// Runs one Appendix F.3 CFB8 decrypt subsection.
-fn check_decrypt<P, const KEY_LEN: usize>(section: &str, key_hex: &str, ciphertext_hex: &str)
+fn check_decrypt<K, const KEY_LEN: usize>(section: &str, key_hex: &str, ciphertext_hex: &str)
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
+    K: FromKeyMaterial<KEY_LEN> + SymmetricDecryptionKey<KEY_LEN, BLOCK_LEN, 0>,
+    K::Decryptor: StreamCipherDecryptor<KEY_LEN, BLOCK_LEN>,
 {
-    let key = key_material::<KEY_LEN>(key_hex);
+    let key = K::from_key_material(&key_material::<KEY_LEN>(key_hex)).expect("a valid key");
     let iv = block(IV);
     let plaintext = bytes(PLAINTEXT);
     let ciphertext = bytes(ciphertext_hex);
 
     for chunk in [ciphertext.len()].into_iter().chain(CHUNKINGS) {
-        let mut dec =
-            Cfb8::<P, Decrypting, KEY_LEN, BLOCK_LEN>::do_decrypt_init(&key, &iv).unwrap();
+        let mut dec = key.create_decryptor(&iv);
         let mut data = ciphertext.clone();
         for piece in data.chunks_mut(chunk) {
             dec.do_decrypt_inplace(piece).unwrap();
@@ -183,38 +180,38 @@ where
 
     // ...and the one-shot, where the IV is an input.
     let mut data = ciphertext.clone();
-    Cfb8::<P, Decrypting, KEY_LEN, BLOCK_LEN>::decrypt_inplace(&key, &iv, &mut data).unwrap();
+    key.decrypt_inplace(&iv, &mut data).unwrap();
     assert_eq!(data, plaintext, "{section}: one-shot");
 }
 
 #[test]
 fn f_3_7_cfb8_aes128_encrypt() {
-    check_encrypt::<AES128Internal, 16>("F.3.7", KEY_128, CIPHERTEXT_128);
+    check_encrypt::<AES128Key<CFB8>, 16>("F.3.7", KEY_128, CIPHERTEXT_128);
 }
 
 #[test]
 fn f_3_8_cfb8_aes128_decrypt() {
-    check_decrypt::<AES128Internal, 16>("F.3.8", KEY_128, CIPHERTEXT_128);
+    check_decrypt::<AES128Key<CFB8>, 16>("F.3.8", KEY_128, CIPHERTEXT_128);
 }
 
 #[test]
 fn f_3_9_cfb8_aes192_encrypt() {
-    check_encrypt::<AES192Internal, 24>("F.3.9", KEY_192, CIPHERTEXT_192);
+    check_encrypt::<AES192Key<CFB8>, 24>("F.3.9", KEY_192, CIPHERTEXT_192);
 }
 
 #[test]
 fn f_3_10_cfb8_aes192_decrypt() {
-    check_decrypt::<AES192Internal, 24>("F.3.10", KEY_192, CIPHERTEXT_192);
+    check_decrypt::<AES192Key<CFB8>, 24>("F.3.10", KEY_192, CIPHERTEXT_192);
 }
 
 #[test]
 fn f_3_11_cfb8_aes256_encrypt() {
-    check_encrypt::<AES256Internal, 32>("F.3.11", KEY_256, CIPHERTEXT_256);
+    check_encrypt::<AES256Key<CFB8>, 32>("F.3.11", KEY_256, CIPHERTEXT_256);
 }
 
 #[test]
 fn f_3_12_cfb8_aes256_decrypt() {
-    check_decrypt::<AES256Internal, 32>("F.3.12", KEY_256, CIPHERTEXT_256);
+    check_decrypt::<AES256Key<CFB8>, 32>("F.3.12", KEY_256, CIPHERTEXT_256);
 }
 
 /// The spec's tabulated **Input Blocks** are the shift register and its **Output Blocks** are

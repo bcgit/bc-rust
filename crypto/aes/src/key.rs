@@ -10,9 +10,11 @@
 //! material bound to an algorithm (`KeyMaterialTrait::set_algorithm`) is accepted only by that
 //! mode's key. A MAC mode's key takes `KeyType::MACKey` material, a cipher mode's
 //! `KeyType::SymmetricCipherKey`.
-//! Which workers a key hands out is decided by its mode: the AEAD and MAC role traits for the
-//! modes that fit them, and for `GMAC`, whose tag is nonce-bound, an inherent pair (see
-//! [`crate::gmac`]).
+//! Which workers a key hands out is decided by its mode: the symmetric pair for the stream modes
+//! and the padded block modes (`CFB`, `CFB8`, `CTR`, `CBC<PKCS7>`, `ECB<PKCS7>`), the block pair
+//! for `CBC<Blocks>`, the `hazmat` ECB pair for `ECB<Blocks>`, the AEAD pairs for `GCM`, `CCM`
+//! and `CCMFrame`, the MAC pair for `CMAC`, and for `GMAC`, whose tag is nonce-bound, an inherent
+//! pair (see [`crate::gmac`]).
 //!
 //! # Usage Examples
 //!
@@ -73,13 +75,16 @@ use crate::hazmat::{AES128Internal, AES192Internal, AES256Internal, AESInternal}
 use crate::{AES128Params, AES192Params, AES256Params, AESParams};
 use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
 use bouncycastle_core::hazmat::{
-    AeadDecryptMode, AeadEncryptMode, AeadPacketDecryptMode, AeadPacketEncryptMode, MacMode, Mode,
+    AeadDecryptMode, AeadEncryptMode, AeadPacketDecryptMode, AeadPacketEncryptMode,
+    BlockDecryptMode, BlockEncryptMode, EcbDecryptMode, EcbDecryptionKey, EcbEncryptMode,
+    EcbEncryptionKey, MacMode, Mode, SymmetricDecryptMode, SymmetricEncryptMode,
     do_hazardous_operations,
 };
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::symmetric_key::{
     AeadDecryptionKey, AeadEncryptionKey, AeadPacketDecryptionKey, AeadPacketEncryptionKey,
-    FromKeyMaterial, MacGenerationKey, MacVerificationKey,
+    BlockDecryptionKey, BlockEncryptionKey, FromKeyMaterial, MacGenerationKey, MacVerificationKey,
+    SymmetricDecryptionKey, SymmetricEncryptionKey,
 };
 use bouncycastle_core::traits::RNG;
 
@@ -360,6 +365,90 @@ where
         tag: &[u8; TAG_LEN],
     ) -> Result<(), SymmetricCipherError> {
         M::decrypt_detached_in_place(&self.state, nonce, aad, buf, tag)
+    }
+}
+
+impl<P, M, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const FINAL_LEN: usize>
+    SymmetricEncryptionKey<KEY_LEN, INIT_DATA_LEN, FINAL_LEN> for AESKey<P, M>
+where
+    P: AESParams,
+    M: SymmetricEncryptMode<AESInternal<P>, KEY_LEN, INIT_DATA_LEN, FINAL_LEN>,
+{
+    type Encryptor = M::Encryptor;
+
+    fn create_encryptor(
+        &self,
+        rng: &mut dyn RNG,
+    ) -> Result<(Self::Encryptor, [u8; INIT_DATA_LEN]), SymmetricCipherError> {
+        M::encrypt_init(&self.state, rng)
+    }
+}
+
+impl<P, M, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const FINAL_LEN: usize>
+    SymmetricDecryptionKey<KEY_LEN, INIT_DATA_LEN, FINAL_LEN> for AESKey<P, M>
+where
+    P: AESParams,
+    M: SymmetricDecryptMode<AESInternal<P>, KEY_LEN, INIT_DATA_LEN, FINAL_LEN>,
+{
+    type Decryptor = M::Decryptor;
+
+    fn create_decryptor(&self, init_data: &[u8; INIT_DATA_LEN]) -> Self::Decryptor {
+        M::decrypt_init(&self.state, init_data)
+    }
+}
+
+impl<P, M, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize>
+    BlockEncryptionKey<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN> for AESKey<P, M>
+where
+    P: AESParams,
+    M: BlockEncryptMode<AESInternal<P>, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
+{
+    type Encryptor = M::Encryptor;
+
+    fn create_encryptor(
+        &self,
+        rng: &mut dyn RNG,
+    ) -> Result<(Self::Encryptor, [u8; INIT_DATA_LEN]), SymmetricCipherError> {
+        M::encrypt_init(&self.state, rng)
+    }
+}
+
+impl<P, M, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize>
+    BlockDecryptionKey<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN> for AESKey<P, M>
+where
+    P: AESParams,
+    M: BlockDecryptMode<AESInternal<P>, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
+{
+    type Decryptor = M::Decryptor;
+
+    fn create_decryptor(&self, init_data: &[u8; INIT_DATA_LEN]) -> Self::Decryptor {
+        M::decrypt_init(&self.state, init_data)
+    }
+}
+
+impl<P, M, const KEY_LEN: usize, const BLOCK_LEN: usize> EcbEncryptionKey<KEY_LEN, BLOCK_LEN>
+    for AESKey<P, M>
+where
+    P: AESParams,
+    M: EcbEncryptMode<AESInternal<P>, KEY_LEN, BLOCK_LEN>,
+{
+    type Encryptor = M::Encryptor;
+
+    fn create_encryptor(&self) -> Self::Encryptor {
+        M::encrypt_init(&self.state)
+    }
+}
+
+impl<P, M, const KEY_LEN: usize, const BLOCK_LEN: usize> EcbDecryptionKey<KEY_LEN, BLOCK_LEN>
+    for AESKey<P, M>
+where
+    P: AESParams,
+    M: EcbDecryptMode<AESInternal<P>, KEY_LEN, BLOCK_LEN>,
+{
+    type Decryptor = M::Decryptor;
+
+    fn create_decryptor(&self) -> Self::Decryptor {
+        M::decrypt_init(&self.state)
     }
 }
 

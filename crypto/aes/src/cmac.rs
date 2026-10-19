@@ -2,26 +2,12 @@
 //! [`AES128Key<CMAC>`] and friends MAC keys.
 //!
 //! See [`bouncycastle_cipher::modes::cmac`] for the construction, the key requirements,
-//! truncation and security considerations. [`AES_CMAC_128`] and friends pin the permutation and
-//! its key and block lengths; the [`MAC`] trait on them derives the subkeys per message from the
-//! key material. A mode-bound key, [`AES128Key<CMAC>`], derives them once and hands out the same
-//! worker through [`MacGenerationKey`] and [`MacVerificationKey`].
+//! truncation and security considerations. [`AES_CMAC_128`] and friends name the worker, which
+//! implements [`MAC`]; it comes from a key, [`AES128Key<CMAC>`], which takes
+//! [`KeyType::MACKey`] material, derives the subkeys once and hands out the worker through
+//! [`MacGenerationKey`] and [`MacVerificationKey`].
 //!
 //! # Usage Examples
-//!
-//! One message from the material:
-//!
-//! ```
-//! use bouncycastle_aes::AES_CMAC_128;
-//! use bouncycastle_core::key_material::{KeyMaterial128, KeyType};
-//! use bouncycastle_core::traits::MAC;
-//!
-//! let key = KeyMaterial128::from_bytes_as_type(&[0x42; 16], KeyType::MACKey).unwrap();
-//! let tag = AES_CMAC_128::new(&key).unwrap().mac(b"a message");
-//! assert!(AES_CMAC_128::new(&key).unwrap().verify(b"a message", &tag));
-//! ```
-//!
-//! Many messages from a key object, which takes the same [`KeyType::MACKey`] material:
 //!
 //! ```
 //! use bouncycastle_aes::AES256Key;
@@ -33,12 +19,14 @@
 //! let material = KeyMaterial256::from_bytes_as_type(&[0x42; 32], KeyType::MACKey).unwrap();
 //! let key = AES256Key::<CMAC>::from_key_material(&material).expect("a valid AES-256 MAC key");
 //!
+//! // A message that arrives in pieces, through the worker.
 //! let mut generator = key.create_generator();
 //! generator.do_update(b"a message that arrives ");
 //! generator.do_update(b"in pieces");
 //! let mut tag = [0u8; 16];
 //! assert_eq!(generator.do_final_out(&mut tag).unwrap(), 16);
 //!
+//! // One-shots on the key.
 //! assert!(key.verify(b"a message that arrives in pieces", &tag));
 //! assert_eq!(key.mac(b"a message that arrives in pieces"), tag);
 //! ```
@@ -47,8 +35,7 @@
 //!
 //! A key is the expanded schedule plus the two 16-byte subkeys: 208, 240 and 272 bytes for
 //! AES-128, -192 and -256. A worker is a clone of that plus the running `C_i`, the pending block
-//! and its length: 248, 280 and 312 bytes. The `MAC` route builds the same worker per message,
-//! deriving the subkeys each time.
+//! and its length: 248, 280 and 312 bytes.
 //!
 //! [`AES128Key<CMAC>`]: crate::AES128Key
 //! [`MAC`]: bouncycastle_core::traits::MAC

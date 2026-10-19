@@ -1,30 +1,31 @@
-//! Different AES modes are different algorithms, and a key bound to one of them is refused by the
-//! others: a key bound to `AES_CBC_128` cannot be used for `AES_GCM_128`, through the streaming
-//! init, the one-shots, or resuming a suspended state. An unbound key is still accepted by both,
-//! since binding is opt-in. The per-trait contract is checked for every cipher by the shared test
-//! framework; this pins the cross-mode case on the real aliases.
+//! Different AES modes are different algorithms, and material bound to one of them is refused by
+//! the others' keys: material bound to `AES_CBC_128` builds an `AES128Key<CBC<..>>` but not an
+//! `AES128Key<GCM>` or `<CTR>`, and a suspended CBC state does not resume under it either.
+//! Unbound material is still accepted by all, since binding is opt-in. The per-key contract is
+//! checked for every key type by `TestFrameworkFromKeyMaterial`; this pins the cross-mode case
+//! on the real types.
 
-use bouncycastle_aes::{AES_CBC_128, AES_CTR_128, AES_GCM_128};
+use bouncycastle_aes::{AES_CBC_128, AES_GCM_128, AES128Key};
+use bouncycastle_cipher::Encrypting;
+use bouncycastle_cipher::modes::{CBC, CTR, GCM};
 use bouncycastle_cipher::padding::PKCS7;
-use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::errors::{KeyMaterialError, SuspendableError, SymmetricCipherError};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
-use bouncycastle_core::traits::{
-    Algorithm, SuspendableKeyed, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
+use bouncycastle_core::symmetric_key::{
+    AeadEncryptionKey, FromKeyMaterial, SymmetricDecryptionKey, SymmetricEncryptionKey,
 };
+use bouncycastle_core::traits::{Algorithm, SuspendableKeyed};
+use bouncycastle_rng::HashDRBG_SHA512;
 
 type CbcEnc = AES_CBC_128<Encrypting, PKCS7>;
-type CbcDec = AES_CBC_128<Decrypting, PKCS7>;
 type GcmEnc = AES_GCM_128<Encrypting>;
-type GcmDec = AES_GCM_128<Decrypting>;
-type CtrEnc = AES_CTR_128<Encrypting>;
 
-fn key() -> KeyMaterial<16> {
+fn material() -> KeyMaterial<16> {
     KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey).unwrap()
 }
 
 fn bound(alg_name: &'static str) -> KeyMaterial<16> {
-    let mut key = key();
+    let mut key = material();
     key.set_algorithm(Some(alg_name)).unwrap();
     key
 }
@@ -37,42 +38,47 @@ fn assert_refused<T>(result: Result<T, SymmetricCipherError>) {
 }
 
 #[test]
-fn a_cbc_key_is_refused_by_gcm() {
-    let cbc_key = bound(CbcEnc::ALG_NAME);
-    assert_eq!(cbc_key.algorithm(), Some("AES_CBC_128"));
+fn material_bound_to_cbc_is_refused_by_gcm() {
+    let mut rng = HashDRBG_SHA512::new_from_os();
+    let cbc_material = bound(CbcEnc::ALG_NAME);
+    assert_eq!(cbc_material.algorithm(), Some("AES_CBC_128"));
 
     // CBC takes it.
+    let cbc_key = AES128Key::<CBC<PKCS7>>::from_key_material(&cbc_material).unwrap();
     let mut ct = [0u8; 32];
-    let (iv, written) = CbcEnc::encrypt_out(&cbc_key, b"sixteen byte msg", &mut ct).unwrap();
+    let (written, iv) = cbc_key.encrypt_out(&mut rng, b"sixteen byte msg", &mut ct).unwrap();
     let mut pt = [0u8; 32];
-    let n = CbcDec::decrypt_out(&cbc_key, &iv, &ct[..written], &mut pt).unwrap();
+    let n = cbc_key.decrypt_out(&iv, &ct[..written], &mut pt).unwrap();
     assert_eq!(&pt[..n], b"sixteen byte msg");
 
-    // GCM, and every other mode, does not: streaming init, one-shot, either direction.
-    assert_refused(GcmEnc::do_encrypt_init(&cbc_key));
-    assert_refused(GcmDec::do_decrypt_init(&cbc_key, &[0u8; 12]));
-    assert_refused(GcmEnc::encrypt_out(&cbc_key, b"msg", &mut [0u8; 3 + 16]));
-    assert_refused(CtrEnc::do_encrypt_init(&cbc_key));
+    // GCM, and every other mode, does not: the one gate is the key's constructor.
+    assert_refused(AES128Key::<GCM>::from_key_material(&cbc_material));
+    assert_refused(AES128Key::<CTR>::from_key_material(&cbc_material));
 
     // And the other way round.
-    assert_refused(CbcEnc::do_encrypt_init(&bound(GcmEnc::ALG_NAME)));
+    assert_refused(AES128Key::<CBC<PKCS7>>::from_key_material(&bound(GcmEnc::ALG_NAME)));
 }
 
 #[test]
-fn an_unbound_key_is_accepted_by_both() {
-    let key = key();
-    assert_eq!(key.algorithm(), None);
-    CbcEnc::do_encrypt_init(&key).unwrap();
-    GcmEnc::do_encrypt_init(&key).unwrap();
+fn unbound_material_is_accepted_by_both() {
+    let mut rng = HashDRBG_SHA512::new_from_os();
+    let material = material();
+    assert_eq!(material.algorithm(), None);
+    AES128Key::<CBC<PKCS7>>::from_key_material(&material)
+        .unwrap()
+        .create_encryptor(&mut rng)
+        .unwrap();
+    AES128Key::<GCM>::from_key_material(&material).unwrap().create_encryptor(&mut rng).unwrap();
 }
 
 #[test]
 fn a_suspended_state_does_not_resume_under_another_algorithms_key() {
-    let cbc_key = bound(CbcEnc::ALG_NAME);
-    let (enc, _iv) = CbcEnc::do_encrypt_init(&cbc_key).unwrap();
-    let state: [u8; CbcEnc::SUSPENDED_STATE_LEN] = enc.clone().suspend();
+    let cbc_material = bound(CbcEnc::ALG_NAME);
+    let cbc_key = AES128Key::<CBC<PKCS7>>::from_key_material(&cbc_material).unwrap();
+    let (enc, _iv) = cbc_key.create_encryptor(&mut HashDRBG_SHA512::new_from_os()).unwrap();
+    let state: [u8; CbcEnc::SUSPENDED_STATE_LEN] = enc.suspend();
 
-    CbcEnc::from_suspended(state, &cbc_key).unwrap();
+    CbcEnc::from_suspended(state, &cbc_material).unwrap();
     assert_eq!(
         CbcEnc::from_suspended(state, &bound(GcmEnc::ALG_NAME)).err(),
         Some(SuspendableError::InvalidData)

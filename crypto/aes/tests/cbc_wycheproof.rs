@@ -9,10 +9,11 @@
 //!
 //! The file's "PKCS #5" is the padding of RFC 5652 Sec 6.3 (`k - (lth mod k)` octets of value
 //! `k - (lth mod k)`), which the cipher crate provides as [`PKCS7`]; the two names differ only in
-//! that PKCS #5 was written for 8-byte blocks. So these vectors drive the padded aliases
-//! `AES_CBC_128<_, PKCS7>` and friends, i.e. CBC through the `PaddedBlockCipherEncryptor` /
-//! `PaddedBlockCipherDecryptor` adapters, where `cbc_bc-test-data.rs` and `sp800_38a_cbc_tests.rs`
-//! drive the unpadded [`Cbc`](bouncycastle_cipher::modes::Cbc) underneath them.
+//! that PKCS #5 was written for 8-byte blocks. So these vectors drive `AES128Key<CBC<PKCS7>>` and
+//! friends, whose workers are the padded aliases `AES_CBC_128<_, PKCS7>`, i.e. CBC through the
+//! `PaddedBlockCipherEncryptor` / `PaddedBlockCipherDecryptor` adapters, where
+//! `cbc_bc-test-data.rs` and `sp800_38a_cbc_tests.rs` drive the unpadded
+//! [`Cbc`](bouncycastle_cipher::modes::Cbc) underneath them through `CBC<Blocks>`.
 //!
 //! # Why this set is worth having alongside the ACVP one
 //!
@@ -26,13 +27,16 @@
 //! The IV is supplied through a `FixedSeedRNG`, as in `cbc_bc-test-data.rs`, and the returned IV is
 //! asserted to be the vector's.
 
-use bouncycastle_aes::{AES_CBC_128, AES_CBC_192, AES_CBC_256};
+use bouncycastle_aes::{AES128Key, AES192Key, AES256Key};
+use bouncycastle_cipher::modes::CBC;
 use bouncycastle_cipher::padding::PKCS7;
-use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::errors::{PaddingError, SymmetricCipherError};
 use bouncycastle_core::hazmat::do_hazardous_operations;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
+use bouncycastle_core::symmetric_key::{
+    FromKeyMaterial, SymmetricDecryptionKey, SymmetricEncryptionKey,
+};
 use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
 use bouncycastle_core_test_framework::FixedSeedRNG;
 use bouncycastle_core_test_framework::test_data_loaders::{Value, hex_field, wycheproof_json};
@@ -69,13 +73,13 @@ enum Expected {
     NoFinalBlock,
 }
 
-/// Runs one case through the padded `AES_CBC_*<_, PKCS7>` pair at one key length.
+/// Runs one case through the `AES*Key<CBC<PKCS7>>` key at one key length.
 ///
 /// For a valid case, `msg` must encrypt to exactly `expected_ct` under the vector's IV, and
 /// `expected_ct` must decrypt back to `msg`. For an invalid case only the decrypt direction is
 /// checked -- re-encrypting `msg` with correct padding has no reason to reproduce a deliberately
 /// mis-padded `ct` -- and it must fail with the variant the case's flags predict.
-fn run_case<E, D, const KEY_LEN: usize>(
+fn run_case<K, const KEY_LEN: usize>(
     tc_id: u64,
     key_bytes: &[u8],
     iv: [u8; BLOCK_LEN],
@@ -83,23 +87,25 @@ fn run_case<E, D, const KEY_LEN: usize>(
     expected_ct: &[u8],
     expected: Expected,
 ) where
-    E: SymmetricCipherEncryptor<KEY_LEN, BLOCK_LEN, BLOCK_LEN>,
-    D: SymmetricCipherDecryptor<KEY_LEN, BLOCK_LEN, BLOCK_LEN>,
+    K: FromKeyMaterial<KEY_LEN>
+        + SymmetricEncryptionKey<KEY_LEN, BLOCK_LEN, BLOCK_LEN>
+        + SymmetricDecryptionKey<KEY_LEN, BLOCK_LEN, BLOCK_LEN>,
 {
-    let key = cipher_key::<KEY_LEN>(key_bytes);
+    let key = K::from_key_material(&cipher_key::<KEY_LEN>(key_bytes))
+        .unwrap_or_else(|e| panic!("tcId {tc_id}: the key should be accepted: {e:?}"));
 
     if expected == Expected::Valid {
-        let mut ct = vec![0u8; E::encrypt_out_len(msg.len())];
-        let (got_iv, written) =
-            E::encrypt_rng_out(&key, &mut FixedSeedRNG::<BLOCK_LEN>::new(iv), msg, &mut ct)
-                .unwrap_or_else(|e| panic!("tcId {tc_id}: valid case failed to encrypt: {e:?}"));
+        let mut ct = vec![0u8; K::Encryptor::encrypt_out_len(msg.len())];
+        let (written, got_iv) = key
+            .encrypt_out(&mut FixedSeedRNG::<BLOCK_LEN>::new(iv), msg, &mut ct)
+            .unwrap_or_else(|e| panic!("tcId {tc_id}: valid case failed to encrypt: {e:?}"));
         assert_eq!(got_iv, iv, "tcId {tc_id}: the seeded RNG must reproduce the vector's IV");
         ct.truncate(written);
         assert_eq!(ct, expected_ct, "tcId {tc_id}: ciphertext mismatch");
     }
 
-    let mut plaintext = vec![0u8; D::decrypt_out_len(expected_ct.len())];
-    let outcome = D::decrypt_out(&key, &iv, expected_ct, &mut plaintext);
+    let mut plaintext = vec![0u8; K::Decryptor::decrypt_out_len(expected_ct.len())];
+    let outcome = key.decrypt_out(&iv, expected_ct, &mut plaintext);
     match (expected, outcome) {
         (Expected::Valid, Ok(n)) => {
             plaintext.truncate(n);
@@ -119,7 +125,7 @@ fn run_case<E, D, const KEY_LEN: usize>(
     }
 }
 
-/// Dispatches on the key length to the matching `AES_CBC_*` alias pair.
+/// Dispatches on the key length to the matching `AES*Key<CBC<PKCS7>>`.
 fn dispatch(
     tc_id: u64,
     key_bytes: &[u8],
@@ -129,15 +135,15 @@ fn dispatch(
     expected: Expected,
 ) {
     match key_bytes.len() {
-        16 => run_case::<AES_CBC_128<Encrypting, PKCS7>, AES_CBC_128<Decrypting, PKCS7>, 16>(
-            tc_id, key_bytes, iv, msg, expected_ct, expected,
-        ),
-        24 => run_case::<AES_CBC_192<Encrypting, PKCS7>, AES_CBC_192<Decrypting, PKCS7>, 24>(
-            tc_id, key_bytes, iv, msg, expected_ct, expected,
-        ),
-        32 => run_case::<AES_CBC_256<Encrypting, PKCS7>, AES_CBC_256<Decrypting, PKCS7>, 32>(
-            tc_id, key_bytes, iv, msg, expected_ct, expected,
-        ),
+        16 => {
+            run_case::<AES128Key<CBC<PKCS7>>, 16>(tc_id, key_bytes, iv, msg, expected_ct, expected)
+        }
+        24 => {
+            run_case::<AES192Key<CBC<PKCS7>>, 24>(tc_id, key_bytes, iv, msg, expected_ct, expected)
+        }
+        32 => {
+            run_case::<AES256Key<CBC<PKCS7>>, 32>(tc_id, key_bytes, iv, msg, expected_ct, expected)
+        }
         other => panic!("tcId {tc_id}: AES keys are 16, 24 or 32 bytes, got {other}"),
     }
 }

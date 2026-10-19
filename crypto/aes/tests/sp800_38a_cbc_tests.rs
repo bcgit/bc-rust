@@ -11,16 +11,16 @@
 //! # Driving the IV
 //!
 //! There is no API for supplying an IV -- see the crate docs. Encryption is therefore driven
-//! through [`BlockCipherEncryptor::do_encrypt_init_rng`] with a [`FixedSeedRNG`] whose stream is
-//! the vector's IV, and the test asserts the returned init data really is that IV before comparing
-//! any ciphertext. Decryption takes the IV directly, as init data.
+//! through the key's [`BlockEncryptionKey::create_encryptor`] with a [`FixedSeedRNG`] whose
+//! stream is the vector's IV, and the test asserts the returned init data really is that IV before
+//! comparing any ciphertext. Decryption takes the IV directly, as init data.
 
-use bouncycastle_aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
-use bouncycastle_cipher::modes::Cbc;
-use bouncycastle_cipher::modes::ModeNames;
-use bouncycastle_cipher::{Decrypting, Encrypting};
+use bouncycastle_aes::hazmat::AES128Internal;
+use bouncycastle_aes::{AES128Key, AES192Key, AES256Key};
+use bouncycastle_cipher::modes::{Blocks, CBC};
 use bouncycastle_core::hazmat::ElectronicCodeBook;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
+use bouncycastle_core::symmetric_key::{BlockDecryptionKey, BlockEncryptionKey, FromKeyMaterial};
 use bouncycastle_core::traits::{BlockCipherDecryptor, BlockCipherEncryptor};
 use bouncycastle_core_test_framework::FixedSeedRNG;
 use bouncycastle_hex as hex;
@@ -92,32 +92,24 @@ fn key_material<const N: usize>(hex_str: &str) -> KeyMaterial<N> {
 ///
 /// Checks the whole message in one call, then again one block at a time, then again through the
 /// implementor hook -- the vector should not care how the calls are grouped.
-fn check_encrypt<P, const KEY_LEN: usize>(section: &str, key_hex: &str, expected: &[&str; 4])
+fn check_encrypt<K, const KEY_LEN: usize>(section: &str, key_hex: &str, expected: &[&str; 4])
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
+    K: FromKeyMaterial<KEY_LEN> + BlockEncryptionKey<KEY_LEN, BLOCK_LEN, BLOCK_LEN>,
 {
-    let key = key_material::<KEY_LEN>(key_hex);
+    let key = K::from_key_material(&key_material::<KEY_LEN>(key_hex)).expect("a valid key");
     let iv = block(IV);
     let pt = blocks(&PLAINTEXTS);
     let ct = blocks(expected);
 
     // All four blocks in one call.
-    let (mut enc, got_iv) = Cbc::<P, Encrypting, KEY_LEN, BLOCK_LEN>::do_encrypt_init_rng(
-        &key,
-        &mut FixedSeedRNG::<BLOCK_LEN>::new(iv),
-    )
-    .unwrap();
+    let (mut enc, got_iv) = key.create_encryptor(&mut FixedSeedRNG::<BLOCK_LEN>::new(iv)).unwrap();
     assert_eq!(got_iv, iv, "{section}: the pinned RNG should produce the vector's IV");
     let mut data = flat(&PLAINTEXTS);
     enc.do_encrypt_inplace(&mut data).unwrap();
     assert_eq!(data, flat(expected), "{section}: four blocks in one call");
 
     // One block at a time.
-    let (mut enc, _) = Cbc::<P, Encrypting, KEY_LEN, BLOCK_LEN>::do_encrypt_init_rng(
-        &key,
-        &mut FixedSeedRNG::<BLOCK_LEN>::new(iv),
-    )
-    .unwrap();
+    let (mut enc, _) = key.create_encryptor(&mut FixedSeedRNG::<BLOCK_LEN>::new(iv)).unwrap();
     for (i, (p, c)) in pt.iter().zip(ct.iter()).enumerate() {
         let mut got = *p;
         enc.do_encrypt_inplace(&mut got).unwrap();
@@ -125,11 +117,7 @@ where
     }
 
     // Through the implementor hook, `do_*_blocks`.
-    let (mut enc, _) = Cbc::<P, Encrypting, KEY_LEN, BLOCK_LEN>::do_encrypt_init_rng(
-        &key,
-        &mut FixedSeedRNG::<BLOCK_LEN>::new(iv),
-    )
-    .unwrap();
+    let (mut enc, _) = key.create_encryptor(&mut FixedSeedRNG::<BLOCK_LEN>::new(iv)).unwrap();
     let mut blocks = pt;
     enc.do_encrypt_blocks_inplace(&mut blocks).unwrap();
     assert_eq!(blocks, ct, "{section}: implementor hook");
@@ -139,25 +127,23 @@ where
 ///
 /// Checks one call, one block at a time, and the odd grouping `3 + 1` -- which is the grouping that
 /// leaves a one-block remainder after the pair loop in `do_decrypt_blocks_inplace`.
-fn check_decrypt<P, const KEY_LEN: usize>(section: &str, key_hex: &str, ciphertext: &[&str; 4])
+fn check_decrypt<K, const KEY_LEN: usize>(section: &str, key_hex: &str, ciphertext: &[&str; 4])
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
+    K: FromKeyMaterial<KEY_LEN> + BlockDecryptionKey<KEY_LEN, BLOCK_LEN, BLOCK_LEN>,
 {
-    let key = key_material::<KEY_LEN>(key_hex);
+    let key = K::from_key_material(&key_material::<KEY_LEN>(key_hex)).expect("a valid key");
     let iv = block(IV);
     let pt = blocks(&PLAINTEXTS);
     let ct = blocks(ciphertext);
 
-    type Dec<P, const K: usize> = Cbc<P, Decrypting, K, BLOCK_LEN>;
-
     // All four blocks in one call (two pairs, no remainder).
-    let mut dec = Dec::<P, KEY_LEN>::do_decrypt_init(&key, &iv).unwrap();
+    let mut dec = key.create_decryptor(&iv);
     let mut data = flat(ciphertext);
     dec.do_decrypt_inplace(&mut data).unwrap();
     assert_eq!(data, flat(&PLAINTEXTS), "{section}: four blocks in one call");
 
     // One block at a time (never takes the pair path).
-    let mut dec = Dec::<P, KEY_LEN>::do_decrypt_init(&key, &iv).unwrap();
+    let mut dec = key.create_decryptor(&iv);
     for (i, (c, p)) in ct.iter().zip(pt.iter()).enumerate() {
         let mut got = *c;
         dec.do_decrypt_inplace(&mut got).unwrap();
@@ -165,7 +151,7 @@ where
     }
 
     // 3 + 1: one pair plus a remainder, then a lone block.
-    let mut dec = Dec::<P, KEY_LEN>::do_decrypt_init(&key, &iv).unwrap();
+    let mut dec = key.create_decryptor(&iv);
     let mut three: [u8; 3 * BLOCK_LEN] = ct[..3].as_flattened().try_into().unwrap();
     dec.do_decrypt_inplace(&mut three).unwrap();
     let mut one = ct[3];
@@ -174,7 +160,7 @@ where
     assert_eq!(one, pt[3], "{section}: block 4");
 
     // Through the implementor hook, `do_*_blocks`.
-    let mut dec = Dec::<P, KEY_LEN>::do_decrypt_init(&key, &iv).unwrap();
+    let mut dec = key.create_decryptor(&iv);
     let mut blocks = ct;
     dec.do_decrypt_blocks_inplace(&mut blocks).unwrap();
     assert_eq!(blocks, pt, "{section}: implementor hook");
@@ -182,32 +168,32 @@ where
 
 #[test]
 fn f_2_1_cbc_aes128_encrypt() {
-    check_encrypt::<AES128Internal, 16>("F.2.1", KEY_128, &CIPHERTEXTS_128);
+    check_encrypt::<AES128Key<CBC<Blocks>>, 16>("F.2.1", KEY_128, &CIPHERTEXTS_128);
 }
 
 #[test]
 fn f_2_2_cbc_aes128_decrypt() {
-    check_decrypt::<AES128Internal, 16>("F.2.2", KEY_128, &CIPHERTEXTS_128);
+    check_decrypt::<AES128Key<CBC<Blocks>>, 16>("F.2.2", KEY_128, &CIPHERTEXTS_128);
 }
 
 #[test]
 fn f_2_3_cbc_aes192_encrypt() {
-    check_encrypt::<AES192Internal, 24>("F.2.3", KEY_192, &CIPHERTEXTS_192);
+    check_encrypt::<AES192Key<CBC<Blocks>>, 24>("F.2.3", KEY_192, &CIPHERTEXTS_192);
 }
 
 #[test]
 fn f_2_4_cbc_aes192_decrypt() {
-    check_decrypt::<AES192Internal, 24>("F.2.4", KEY_192, &CIPHERTEXTS_192);
+    check_decrypt::<AES192Key<CBC<Blocks>>, 24>("F.2.4", KEY_192, &CIPHERTEXTS_192);
 }
 
 #[test]
 fn f_2_5_cbc_aes256_encrypt() {
-    check_encrypt::<AES256Internal, 32>("F.2.5", KEY_256, &CIPHERTEXTS_256);
+    check_encrypt::<AES256Key<CBC<Blocks>>, 32>("F.2.5", KEY_256, &CIPHERTEXTS_256);
 }
 
 #[test]
 fn f_2_6_cbc_aes256_decrypt() {
-    check_decrypt::<AES256Internal, 32>("F.2.6", KEY_256, &CIPHERTEXTS_256);
+    check_decrypt::<AES256Key<CBC<Blocks>>, 32>("F.2.6", KEY_256, &CIPHERTEXTS_256);
 }
 
 /// The one-shot API must agree with the vectors too, on the decrypt side where the IV is an input.
@@ -232,11 +218,10 @@ fn cbc_differs_from_ecb_by_the_iv() {
     assert_eq!(ecb, block("3ad77bb40d7a3660a89ecaf32466ef97"), "F.1.1 block #1");
 
     // CBC's C1 = CIPH_K(P1 XOR IV) is the F.2.1 answer, and differs.
-    let (mut enc, _) = Cbc::<AES128Internal, Encrypting, 16, 16>::do_encrypt_init_rng(
-        &key,
-        &mut FixedSeedRNG::<16>::new(iv),
-    )
-    .unwrap();
+    let (mut enc, _) = AES128Key::<CBC<Blocks>>::from_key_material(&key)
+        .unwrap()
+        .create_encryptor(&mut FixedSeedRNG::<16>::new(iv))
+        .unwrap();
     let mut cbc = block(PLAINTEXTS[0]);
     enc.do_encrypt_inplace(&mut cbc).unwrap();
     assert_eq!(cbc, block(CIPHERTEXTS_128[0]), "F.2.1 block #1");
