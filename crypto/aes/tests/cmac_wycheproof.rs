@@ -4,15 +4,11 @@
 //! this repository, i.e. at `../wycheproof` relative to the root of this git project. If it is
 //! missing, the test prints a warning and passes without checking anything.
 //!
-//! Every valid tag is also checked through the key object, `AES*Key<CMAC>`, so the two routes are
-//! held to the same answers.
+//! Every tag is checked through the worker an `AES*Key<CMAC>` hands out and through the key's own
+//! one-shots, so the two routes are held to the same answers.
 
-use bouncycastle_aes::{AES_CMAC_128, AES_CMAC_192, AES_CMAC_256, AES128Key, AES192Key, AES256Key};
+use bouncycastle_aes::{AES128Key, AES192Key, AES256Key};
 use bouncycastle_cipher::modes::{CMAC, CMAC_MIN_TAG_LEN};
-use bouncycastle_core::errors::{KeyMaterialError, MACError};
-use bouncycastle_core::hazmat::do_hazardous_operations;
-use bouncycastle_core::key_material::{KeyMaterial512, KeyMaterialTrait, KeyType};
-use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::symmetric_key::{FromKeyMaterial, MacGenerationKey, MacVerificationKey};
 use bouncycastle_core::traits::MAC;
 use bouncycastle_core_test_framework::test_data_loaders::{hex_field, wycheproof_json};
@@ -28,18 +24,14 @@ where
     <K as MacGenerationKey>::Generator: MAC,
 {
     let material = mac_key::<N>(key);
-    let full = <K as MacGenerationKey>::Generator::new(&material).unwrap().mac(msg);
-    assert_eq!(full == tag, valid, "tcId {tc_id}");
-    assert_eq!(
-        <K as MacGenerationKey>::Generator::new(&material).unwrap().verify(msg, tag),
-        valid,
-        "tcId {tc_id}"
-    );
-
     let key = K::from_key_material(&material).unwrap_or_else(|e| panic!("tcId {tc_id}: {e:?}"));
-    assert_eq!(key.verify(msg, tag), valid, "tcId {tc_id}: via the key object");
+    let full = key.create_generator().mac(msg);
+    assert_eq!(full == tag, valid, "tcId {tc_id}");
+    assert_eq!(key.create_generator().verify(msg, tag), valid, "tcId {tc_id}");
+
+    assert_eq!(key.verify(msg, tag), valid, "tcId {tc_id}: via the key's one-shot");
     if valid {
-        assert_eq!(key.mac(msg), tag, "tcId {tc_id}: via the key object");
+        assert_eq!(key.mac(msg), tag, "tcId {tc_id}: via the key's one-shot");
         let mut out = [0u8; CMAC_MIN_TAG_LEN];
         key.mac_out(msg, &mut out).unwrap();
         assert_eq!(out[..], tag[..CMAC_MIN_TAG_LEN], "tcId {tc_id}: truncated tag");
@@ -69,18 +61,9 @@ fn wycheproof_aes_cmac() {
                 24 => run_case::<24, AES192Key<CMAC>>(tc_id, &key, &msg, &tag, expect_valid),
                 32 => run_case::<32, AES256Key<CMAC>>(tc_id, &key, &msg, &tag, expect_valid),
                 _ => {
-                    // "InvalidKeySize": no AES-CMAC accepts it, even without the strength check.
+                    // "InvalidKeySize": no `AES*Key<CMAC>` takes it, since the key length is in
+                    // the `KeyMaterial<16 | 24 | 32>` type; nothing to run at runtime.
                     assert!(!expect_valid, "tcId {tc_id}");
-                    let mut k = KeyMaterial512::new();
-                    do_hazardous_operations(&mut k, |k| {
-                        k.set_bytes_as_type(&key, KeyType::MACKey)?;
-                        k.set_security_strength(SecurityStrength::None)
-                    })
-                    .unwrap();
-                    let bad_len = Some(MACError::KeyMaterialError(KeyMaterialError::InvalidLength));
-                    assert_eq!(AES_CMAC_128::new_allow_weak_key(&k).err(), bad_len);
-                    assert_eq!(AES_CMAC_192::new_allow_weak_key(&k).err(), bad_len);
-                    assert_eq!(AES_CMAC_256::new_allow_weak_key(&k).err(), bad_len);
                     bad_key += 1;
                     continue;
                 }
