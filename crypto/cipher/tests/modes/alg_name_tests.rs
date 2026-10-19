@@ -6,14 +6,17 @@
 
 mod common;
 
-use bouncycastle_cipher::modes::hazmat::{CtrKeyStream, Ecb};
+use bouncycastle_cipher::modes::hazmat::{CtrKeyStream, ECB, Ecb};
 use bouncycastle_cipher::modes::{
-    Cbc, CcmDecryptor, CcmEncryptor, Cfb, Cfb8, Cmac, Ctr, Gcm, Gmac, ModeNames,
+    Blocks, CBC, CCM, CCMFrame, CFB, CFB8, CTR, Cbc, CcmDecryptor, CcmEncryptor, Cfb, Cfb8, Cmac,
+    Ctr, Gcm, Gmac, ModeNames,
 };
 use bouncycastle_cipher::padding::{
     NoPadding, PKCS7, PaddedBlockCipherDecryptor, PaddedBlockCipherEncryptor,
 };
 use bouncycastle_cipher::{Decrypting, Encrypting};
+use bouncycastle_core::hazmat::Mode;
+use bouncycastle_core::key_material::KeyType;
 use bouncycastle_core::traits::Algorithm;
 use common::Toy;
 
@@ -80,4 +83,25 @@ fn the_wrappers_forward_the_inner_name() {
     check::<PaddedBlockCipherDecryptor<Ecb<Toy, Decrypting, 16, 16>, NoPadding, 16, 0, 16>>(
         Toy::ECB_ALG_NAME,
     );
+}
+
+/// A mode type's key reports the mode's name and asks for a cipher key, whatever the padding or
+/// frame parameters.
+#[test]
+fn each_mode_type_reports_its_mode_name() {
+    fn check<M: Mode<Toy>>(name: &str) {
+        assert_eq!(M::ALG_NAME, name);
+        assert_eq!(M::KEY_TYPE, KeyType::SymmetricCipherKey, "{name}");
+    }
+    check::<CBC<Blocks>>(Toy::CBC_ALG_NAME);
+    check::<CBC<PKCS7>>(Toy::CBC_ALG_NAME);
+    check::<CBC<NoPadding>>(Toy::CBC_ALG_NAME);
+    check::<ECB<Blocks>>(Toy::ECB_ALG_NAME);
+    check::<ECB<PKCS7>>(Toy::ECB_ALG_NAME);
+    check::<CFB>(Toy::CFB_ALG_NAME);
+    check::<CFB8>(Toy::CFB8_ALG_NAME);
+    check::<CTR>(Toy::CTR_ALG_NAME);
+    check::<CTR<15>>(Toy::CTR_ALG_NAME);
+    check::<CCM<12, 16>>(Toy::CCM_ALG_NAME);
+    check::<CCMFrame<12, 16, 16, 32>>(Toy::CCM_ALG_NAME);
 }
