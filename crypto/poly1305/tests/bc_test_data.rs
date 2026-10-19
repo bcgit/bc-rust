@@ -1,10 +1,9 @@
 //! RFC known-answer vectors are loaded from bc-test-data, with no embedded fixture data.
-//! The shared MAC framework assumes truncatable tags and variable-length keys; Poly1305
-//! instead enforces a 32-byte key and full 16-byte tag, covered in poly1305_tests.rs.
 use bouncycastle_core::{
     key_material::{KeyMaterial, KeyType},
     traits::MAC,
 };
+use bouncycastle_core_test_framework::mac::TestFrameworkMAC;
 use bouncycastle_poly1305::Poly1305;
 use serde_json::Value;
 use std::{fs, path::PathBuf};
@@ -31,6 +30,7 @@ fn rfc8439_poly1305_including_reduction_edge_cases() {
         let msg = decode("msg");
         let tag = decode("tag");
         let id = case["id"].as_str().unwrap();
+        TestFrameworkMAC::new().test_mac_fixed_output::<Poly1305>(&key, &msg, &tag);
         assert_eq!(Poly1305::new_allow_weak_key(&key).unwrap().mac(&msg), tag, "RFC {id}");
         let mut out = [0xa5; 24];
         assert_eq!(

@@ -23,7 +23,8 @@ use bouncycastle_core::errors::{KeyMaterialError, MACError};
 use bouncycastle_core::key_material::{KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{Algorithm, MAC};
-use bouncycastle_utils::{ct, secret::Secret};
+use bouncycastle_utils::ct::{self, Condition};
+use bouncycastle_utils::secret::Secret;
 
 /// One-time key length in bytes.
 pub const KEY_LEN: usize = 32;
@@ -40,8 +41,14 @@ const MASK: u64 = (1 << 26) - 1;
 /// must have operand-independent timing on the target processor for constant-time execution.
 pub struct Poly1305 {
     r: Secret<[u64; 5]>,
+    /// `5 * r[1..5]`, the multipliers of the product terms that wrap past 2^130; see
+    /// `process_block`. Computed once per key rather than per block.
+    r5: Secret<[u64; 4]>,
     pad: Secret<[u32; 4]>,
     h: Secret<[u64; 5]>,
+    /// `process_block`'s product accumulator: a function of `h` and `r`, so kept in a `Secret`
+    /// that lives with the instance rather than being re-allocated and zeroized every block.
+    product: Secret<[u64; 5]>,
     buffer: Secret<[u8; BLOCK_LEN]>,
     buffered: usize,
 }
@@ -78,7 +85,19 @@ impl Poly1305 {
         for (word, chunk) in pad.iter_mut().zip(bytes[16..].chunks_exact(4)) {
             *word = u32::from_le_bytes(chunk.try_into().unwrap());
         }
-        Ok(Self { r, pad, h: Secret::new(), buffer: Secret::new(), buffered: 0 })
+        let mut r5: Secret<[u64; 4]> = Secret::new();
+        for (r5, r) in r5.iter_mut().zip(&r[1..]) {
+            *r5 = 5 * r;
+        }
+        Ok(Self {
+            r,
+            r5,
+            pad,
+            h: Secret::new(),
+            product: Secret::new(),
+            buffer: Secret::new(),
+            buffered: 0,
+        })
     }
 
     fn process_block(&mut self) {
@@ -97,14 +116,16 @@ impl Poly1305 {
         self.h[4] += (load32(&self.buffer[12..16]) >> 8) | high_bit;
 
         // 2^130 = 5 (mod 2^130 - 5). Each sum is below 2^58, so u64 suffices.
-        let mut product: Secret<[u64; 5]> = Secret::new();
+        let product = &mut *self.product;
+        *product = [0; 5];
         for i in 0..5 {
             for j in 0..5 {
                 let index = i + j;
                 if index < 5 {
                     product[index] += self.h[i] * self.r[j];
                 } else {
-                    product[index - 5] += 5 * self.h[i] * self.r[j];
+                    // index >= 5 implies j >= 1. The same value as `5 * h[i] * r[j]`.
+                    product[index - 5] += self.h[i] * self.r5[j - 1];
                 }
             }
         }
@@ -141,9 +162,11 @@ impl Poly1305 {
             reduced[i] &= MASK;
         }
         reduced[4] = reduced[4].wrapping_sub(1 << 26);
-        let select_reduced = (reduced[4] >> 63).wrapping_sub(1);
+        // h >= p iff the borrow out of h - p is clear, i.e. iff reduced[4]'s top bit is 0; so h is
+        // kept iff that bit is set.
+        let keep_h = Condition::<u64>::from_msb(reduced[4]);
         for i in 0..5 {
-            self.h[i] = (self.h[i] & !select_reduced) | (reduced[i] & select_reduced);
+            self.h[i] = keep_h.select(self.h[i], reduced[i]);
         }
 
         let mut words: Secret<[u64; 4]> = Secret::new();
