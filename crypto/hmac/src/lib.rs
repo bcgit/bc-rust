@@ -306,7 +306,11 @@ impl<HASH: Hash + Default> FromAnyKeyMaterial for HmacKey<HASH> {
                 .map_err(|_| KeyMaterialError::GenericError("RNG failed."))?;
             key.set_key_len(output_len)?;
             key.set_key_type(KeyType::MACKey)?;
-            key.set_security_strength(rng.security_strength())
+            // The RNG's strength, capped at what the length carries, as KeyMaterial::from_rng
+            // does: a 28-byte HMAC-SHA224 key from a 256-bit DRBG is a 192-bit key.
+            let by_len = SecurityStrength::from_bits(output_len * 8);
+            let by_rng = rng.security_strength();
+            key.set_security_strength(if by_rng < by_len { by_rng } else { by_len })
         })?;
         Self::from_key_material(&key)
     }
