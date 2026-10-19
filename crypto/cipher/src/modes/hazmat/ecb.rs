@@ -10,29 +10,30 @@
 //!
 //! # Usage Examples
 //!
-//! ECB has the same shape with no IV: `encrypt` returns an empty array and `decrypt` takes one.
-//! The codebook property that makes it unsuitable for data is visible in the ciphertext:
+//! ECB has the same shape with no IV and no RNG: a key bound to [`ECB<Blocks>`] (the `hazmat`
+//! role pair) hands out its workers infallibly, and [`ECB<Pad>`](ECB) puts the padded form on the
+//! symmetric pair with an empty init array. The codebook property that makes it unsuitable for
+//! data is visible in the ciphertext:
 //!
 //! ```
 //! # mod toy { include!("../../../tests/common/toy_block_cipher.rs"); }
 //! # use toy::ToyBlockCipher;
+//! use bouncycastle_core::hazmat::{EcbDecryptMode, EcbEncryptMode, ElectronicCodeBook, Mode};
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 //! use bouncycastle_core::traits::{BlockCipherDecryptor, BlockCipherEncryptor};
-//! use bouncycastle_cipher::modes::hazmat::ecb::Ecb;
-//! use bouncycastle_cipher::{Decrypting, Encrypting};
-//!
-//! type ToyEcb<Dir> = Ecb<ToyBlockCipher, Dir, 16, 16>;
+//! use bouncycastle_cipher::modes::hazmat::ecb::ECB;
+//! use bouncycastle_cipher::modes::Blocks;
 //!
 //! let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
 //!     .expect("a 16-byte symmetric cipher key");
-//! let mut data = [0x5Au8; 32]; // two equal blocks
+//! let state = <ECB<Blocks> as Mode<ToyBlockCipher>>::key_state(ToyBlockCipher::new(&key).unwrap());
+//! let mut data = [[0x5Au8; 16]; 2]; // two equal blocks
 //!
-//! let (bytes_written, no_iv): (usize, [u8; 0]) = ToyEcb::<Encrypting>::encrypt_inplace(&key, &mut data).expect("encryption");
-//! assert_eq!(no_iv.len(), 0, "ECB mode returns the IV as an empty array");
-//! assert_eq!(data[..16], data[16..], "equal plaintext blocks give equal ciphertext blocks");
+//! ECB::<Blocks>::encrypt_init(&state).do_encrypt_blocks_inplace(&mut data).expect("encryption");
+//! assert_eq!(data[0], data[1], "equal plaintext blocks give equal ciphertext blocks");
 //!
-//! ToyEcb::<Decrypting>::decrypt_inplace(&key, &[], &mut data).expect("decryption");
-//! assert_eq!(data, [0x5Au8; 32]);
+//! ECB::<Blocks>::decrypt_init(&state).do_decrypt_blocks_inplace(&mut data).expect("decryption");
+//! assert_eq!(data, [[0x5Au8; 16]; 2]);
 //! ```
 //!
 //! # A mode with no state

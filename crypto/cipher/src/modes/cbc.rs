@@ -19,30 +19,39 @@
 //! The direction is part of the type: [`Cbc<P, Encrypting, ..>`](Cbc) implements
 //! [`BlockCipherEncryptor`] and nothing else, and [`Cbc<P, Decrypting, ..>`](Cbc) implements
 //! [`BlockCipherDecryptor`] and nothing else.
-//! The IV is generated and returned; there is no API for supplying one.
+//! The IV is drawn from the RNG and returned; there is no API for supplying one.
+//!
+//! The pair is reached through a mode-bound key -- [`CBC<Blocks>`] on a key type such as
+//! `bouncycastle_aes::AES128Key<CBC<Blocks>>` for whole blocks, [`CBC<Pad>`](CBC) for the padded
+//! form -- whose role traits carry the one-shots. The key holds the mode's key state and calls the
+//! mode traits shown here, which is the route over the toy permutation:
 //!
 //! ```
 //! # mod toy { include!("../../tests/common/toy_block_cipher.rs"); }
 //! # use toy::ToyBlockCipher;
+//! use bouncycastle_core::hazmat::{BlockDecryptMode, BlockEncryptMode, ElectronicCodeBook, Mode};
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 //! use bouncycastle_core::traits::{BlockCipherDecryptor, BlockCipherEncryptor};
-//! use bouncycastle_cipher::modes::Cbc;
-//! use bouncycastle_cipher::{Decrypting, Encrypting};
-//!
-//! type ToyCbc<Dir> = Cbc<ToyBlockCipher, Dir, 16, 16>;
+//! use bouncycastle_cipher::modes::{Blocks, CBC};
+//! use bouncycastle_rng::HashDRBG_SHA512;
 //!
 //! let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
 //!     .expect("a 16-byte symmetric cipher key");
+//! let state = <CBC<Blocks> as Mode<ToyBlockCipher>>::key_state(ToyBlockCipher::new(&key).unwrap());
+//! let mut rng = HashDRBG_SHA512::new_from_os();
 //!
-//! // 48 bytes: three whole blocks. A length that is not a multiple of 16 would not compile.
-//! let plaintext: [u8; 48] = *b"The quick brown fox jumps over the lazy dog. OK!";
+//! // Three whole blocks: the workers take `&mut [[u8; 16]]`, so a partial block cannot be
+//! // expressed.
+//! let plaintext: [[u8; 16]; 3] =
+//!     [*b"The quick brown ", *b"fox jumps over t", *b"he lazy dog. OK!"];
 //!
-//! // One shot, in place: encrypts under a freshly generated IV, which is returned.
+//! // In place, under a freshly drawn IV, which is returned.
 //! let mut data = plaintext;
-//! let (_, iv) = ToyCbc::<Encrypting>::encrypt_inplace(&key, &mut data).expect("encryption");
+//! let (mut enc, iv) = CBC::<Blocks>::encrypt_init(&state, &mut rng).expect("iv draw");
+//! enc.do_encrypt_blocks_inplace(&mut data).expect("encryption");
 //! assert_ne!(data, plaintext);
 //!
-//! ToyCbc::<Decrypting>::decrypt_inplace(&key, &iv, &mut data).expect("decryption");
+//! CBC::<Blocks>::decrypt_init(&state, &iv).do_decrypt_blocks_inplace(&mut data).expect("decryption");
 //! assert_eq!(data, plaintext);
 //! ```
 //!
@@ -52,47 +61,28 @@
 //! ```
 //! # mod toy { include!("../../tests/common/toy_block_cipher.rs"); }
 //! # use toy::ToyBlockCipher;
+//! use bouncycastle_core::hazmat::{BlockDecryptMode, BlockEncryptMode, ElectronicCodeBook, Mode};
 //! use bouncycastle_core::key_material::{KeyMaterial128, KeyType};
 //! use bouncycastle_core::traits::{BlockCipherDecryptor, BlockCipherEncryptor};
-//! use bouncycastle_cipher::modes::Cbc;
-//! use bouncycastle_cipher::{Decrypting, Encrypting};
-//!
-//! type ToyCbc<Dir> = Cbc<ToyBlockCipher, Dir, 16, 16>;
+//! use bouncycastle_cipher::modes::{Blocks, CBC};
+//! use bouncycastle_rng::HashDRBG_SHA512;
 //!
 //! let key = KeyMaterial128::from_bytes_as_type(&[0x07; 16], KeyType::SymmetricCipherKey)
 //!     .expect("a 16-byte symmetric cipher key");
+//! let state = <CBC<Blocks> as Mode<ToyBlockCipher>>::key_state(ToyBlockCipher::new(&key).unwrap());
 //!
 //! let (mut encryptor, iv) =
-//!     ToyCbc::<Encrypting>::do_encrypt_init(&key).expect("encrypt init");
+//!     CBC::<Blocks>::encrypt_init(&state, &mut HashDRBG_SHA512::new_from_os()).expect("iv draw");
 //! let mut first = [[0xAAu8; 16]];
 //! let mut rest = [[0xBBu8; 16]; 2];
 //! encryptor.do_encrypt_blocks_inplace(&mut first).expect("block 1");
 //! encryptor.do_encrypt_blocks_inplace(&mut rest).expect("blocks 2-3");
 //!
-//! let mut decryptor = ToyCbc::<Decrypting>::do_decrypt_init(&key, &iv).expect("decrypt init");
+//! let mut decryptor = CBC::<Blocks>::decrypt_init(&state, &iv);
 //! decryptor.do_decrypt_blocks_inplace(&mut first).unwrap();
 //! decryptor.do_decrypt_blocks_inplace(&mut rest).unwrap();
 //! assert_eq!(first, [[0xAAu8; 16]]);
 //! assert_eq!(rest, [[0xBBu8; 16]; 2]);
-//! ```
-//!
-//! A length that is not a whole number of blocks is refused, not truncated:
-//!
-//! ```
-//! # mod toy { include!("../../tests/common/toy_block_cipher.rs"); }
-//! # use toy::ToyBlockCipher;
-//! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-//! use bouncycastle_core::errors::SymmetricCipherError;
-//! use bouncycastle_core::traits::BlockCipherEncryptor;
-//! use bouncycastle_cipher::modes::Cbc;
-//! use bouncycastle_cipher::Encrypting;
-//!
-//! let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey).unwrap();
-//! let mut data = [0u8; 20];
-//! assert_eq!(
-//!     Cbc::<ToyBlockCipher, Encrypting, 16, 16>::encrypt_inplace(&key, &mut data),
-//!     Err(SymmetricCipherError::DataNotBlockAligned)
-//! );
 //! ```
 //!
 //! # Suspending and resuming execution

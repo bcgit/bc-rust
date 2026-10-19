@@ -12,48 +12,51 @@
 //!
 //! # Usage Examples
 //!
-//! CCM must know the payload length before it starts (Sec 3), and the generic traits' streaming
-//! constructor is handed no lengths, so [`CcmEncryptor`] / [`CcmDecryptor`] fix the frame in the
-//! type: `DATA_LEN` bytes of payload exactly, up to `AAD_LEN` of AAD. Their one-shots have the
-//! whole message in hand and take any length. The nonce is drawn unless a `_nonce` form is used;
-//! CCM needs it unique, not random (Sec 5.3), so a caller with a counter supplies its own. The
-//! AAD is authenticated but not encrypted, and the tag is the extra output.
+//! CCM must know the payload length before it starts (Sec 3). A key bound to [`CCM`] takes the
+//! lengths per message through the AEAD *packet* role pair, and its in-place one-shots take any
+//! length with no second buffer; a key bound to [`CCMFrame`] fixes them in the type, as the
+//! [`CcmEncryptor`] / [`CcmDecryptor`] streams it hands out do: `DATA_LEN` bytes of payload
+//! exactly, up to `AAD_LEN` of AAD. The nonce is drawn unless a `_nonce` form is used; CCM needs
+//! it unique, not random (Sec 5.3), so a caller with a counter supplies its own. The AAD is
+//! authenticated but not encrypted, and the tag is the extra output.
+//!
+//! The key holds the mode's key state and calls the mode traits, which is the route over the toy
+//! permutation:
 //!
 //! ```
 //! # mod toy { include!("../../tests/common/toy_block_cipher.rs"); }
 //! # use toy::ToyBlockCipher;
 //! use bouncycastle_core::errors::SymmetricCipherError;
+//! use bouncycastle_core::hazmat::{AeadPacketDecryptMode, AeadPacketEncryptMode, ElectronicCodeBook, Mode};
 //! use bouncycastle_core::key_material::{KeyMaterial128, KeyType};
-//! use bouncycastle_core::traits::{AEADCipherDecryptor, AEADCipherEncryptor};
-//! use bouncycastle_cipher::modes::{CcmDecryptor, CcmEncryptor};
+//! use bouncycastle_cipher::modes::CCM;
 //!
-//! // A 12-byte nonce, a 16-byte tag, 64 bytes of AAD capacity and 32-byte frames.
-//! type ToyEnc = CcmEncryptor<ToyBlockCipher, 16, 16, 12, 16, 64, 32>;
-//! type ToyDec = CcmDecryptor<ToyBlockCipher, 16, 16, 12, 16, 64, 32>;
+//! // A 12-byte nonce and a 16-byte tag.
+//! type Mode12 = CCM<12, 16>;
 //!
 //! let key = KeyMaterial128::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
 //!     .expect("a 16-byte symmetric cipher key");
+//! let state = <Mode12 as Mode<ToyBlockCipher>>::key_state(ToyBlockCipher::new(&key).unwrap());
 //! let nonce = [0x01u8; 12];
 //! let header = b"authenticated, not encrypted";
 //! let message = b"any length: CCM pads internally";
 //!
-//! // The one-shots, in the spec's own layout (Sec 6.1 step 8): `ciphertext || tag`.
-//! let ct_and_tag = ToyEnc::encrypt_with_aad_nonce(&key, &nonce, header, message).expect("encryption");
-//! let recovered = ToyDec::decrypt_with_aad(&key, &nonce, header, &ct_and_tag).expect("decryption");
-//! assert_eq!(&recovered[..], message);
+//! // In place, with the tag detached.
+//! let mut buf = message.to_vec();
+//! let tag = Mode12::encrypt_detached_in_place_nonce(&state, &nonce, header, &mut buf).expect("encryption");
+//! let ciphertext = buf.clone();
+//! Mode12::decrypt_detached_in_place(&state, &nonce, header, &mut buf, &tag).expect("decryption");
+//! assert_eq!(&buf[..], message);
 //!
 //! // Tampering with the ciphertext, or changing the AAD, fails the tag check.
-//! let mut tampered = ct_and_tag.clone();
+//! let mut tampered = ciphertext.clone();
 //! tampered[0] ^= 1;
-//! assert_eq!(ToyDec::decrypt_with_aad(&key, &nonce, header, &tampered).unwrap_err(),
+//! assert_eq!(Mode12::decrypt_detached_in_place(&state, &nonce, header, &mut tampered, &tag).unwrap_err(),
 //!            SymmetricCipherError::AEADTagCheckFailed);
-//! assert_eq!(ToyDec::decrypt_with_aad(&key, &nonce, b"other header", &ct_and_tag).unwrap_err(),
+//! let mut other = ciphertext.clone();
+//! assert_eq!(Mode12::decrypt_detached_in_place(&state, &nonce, b"other header", &mut other, &tag).unwrap_err(),
 //!            SymmetricCipherError::AEADTagCheckFailed);
 //! ```
-//!
-//! A mode-bound key, `AES128Key<CCM<12, 16, 64, 32>>` and the like, reaches the same pair through
-//! its role traits, and its in-place one-shots take any length with no second buffer; see
-//! [`CCM`].
 //!
 //! # CCM is not a stream cipher
 //!
@@ -1083,20 +1086,22 @@ where
 /// ```
 /// # mod toy { include!("../../tests/common/toy_block_cipher.rs"); }
 /// # use toy::ToyBlockCipher;
+/// use bouncycastle_core::hazmat::{AeadDecryptMode, AeadEncryptMode, ElectronicCodeBook, Mode};
 /// use bouncycastle_core::key_material::{KeyMaterial128, KeyType};
 /// use bouncycastle_core::traits::{AEADCipherDecryptor, AEADCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor};
-/// use bouncycastle_cipher::modes::{CcmDecryptor, CcmEncryptor};
+/// use bouncycastle_cipher::modes::CCMFrame;
+/// use bouncycastle_rng::HashDRBG_SHA512;
 ///
-/// // Frames of exactly 40 payload bytes, with up to 16 bytes of header.
-/// type Enc = CcmEncryptor<ToyBlockCipher, 16, 16, 12, 16, 16, 40>;
-/// type Dec = CcmDecryptor<ToyBlockCipher, 16, 16, 12, 16, 16, 40>;
+/// // Frames of exactly 40 payload bytes, with up to 16 bytes of header, as a key is bound to them.
+/// type Frame = CCMFrame<12, 16, 16, 40>;
 ///
 /// let key = KeyMaterial128::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
 ///     .expect("a 16-byte symmetric cipher key");
+/// let state = <Frame as Mode<ToyBlockCipher>>::key_state(ToyBlockCipher::new(&key).unwrap());
 /// let header = b"frame 7";
 /// let frame = [0x5Au8; 40];
 ///
-/// let (mut enc, nonce) = Enc::do_encrypt_init(&key).expect("init");
+/// let (mut enc, nonce) = Frame::encrypt_init(&state, &mut HashDRBG_SHA512::new_from_os()).expect("nonce draw");
 /// enc.do_update_aad(header).expect("within AAD_LEN");
 /// let mut ct = [0u8; 40];
 /// // Every byte comes straight out; the chunking is the caller's business.
@@ -1107,7 +1112,7 @@ where
 /// assert_eq!(written, 40);
 /// let (_, _, tag) = enc.do_encrypt_final_detached().expect("exactly DATA_LEN was supplied");
 ///
-/// let mut dec = Dec::do_decrypt_init(&key, &nonce).expect("init");
+/// let mut dec = Frame::decrypt_init(&state, &nonce);
 /// dec.do_update_aad(header).expect("within AAD_LEN");
 /// let mut pt = [0u8; 40];
 /// dec.do_decrypt_out(&ct, &mut pt).expect("released, but not yet authenticated");
@@ -1115,7 +1120,7 @@ where
 /// assert_eq!(pt, frame);
 ///
 /// // 39 bytes is not a frame: the final refuses rather than authenticate a length `B0` did not commit to.
-/// let (mut short, _) = Enc::do_encrypt_init(&key).expect("init");
+/// let mut short = Frame::encrypt_init_nonce(&state, &nonce);
 /// short.do_encrypt_out(&frame[..39], &mut ct).expect("within DATA_LEN");
 /// assert!(short.do_encrypt_final().is_err());
 /// ```
@@ -1124,26 +1129,30 @@ where
 ///
 /// The forms that generate a nonce need `NONCE_LEN` of at least 12, to keep the random-collision
 /// bound useful; the check runs only when one of them is instantiated. The forms that take the
-/// caller's nonce -- [`do_encrypt_init_nonce`](AEADCipherEncryptor::do_encrypt_init_nonce) and
-/// the `_nonce` one-shots -- and [`CcmDecryptor`] accept every A.1 nonce length from 7 through
-/// 13, as the inherent `CcmPacket` API does, with uniqueness the caller's to guarantee. So a short
-/// nonce compiles when it is supplied:
+/// caller's nonce -- the `_nonce` constructor and one-shots of a key bound to [`CCMFrame`] -- and
+/// [`CcmDecryptor`] accept every A.1 nonce length from 7 through 13, as the inherent `CcmPacket`
+/// API does, with uniqueness the caller's to guarantee. So a short nonce compiles when it is
+/// supplied:
 ///
 /// ```
 /// # mod toy { include!("../../tests/common/toy_block_cipher.rs"); }
 /// # use toy::ToyBlockCipher;
+/// use bouncycastle_core::hazmat::{AeadEncryptMode, ElectronicCodeBook, Mode};
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-/// use bouncycastle_core::traits::AEADCipherEncryptor;
-/// use bouncycastle_cipher::modes::CcmEncryptor;
+/// use bouncycastle_core::traits::{AEADCipherEncryptor, SymmetricCipherEncryptor};
+/// use bouncycastle_cipher::modes::CCMFrame;
 ///
 /// let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey).unwrap();
+/// let state = <CCMFrame<8, 16, 64, 256> as Mode<ToyBlockCipher>>::key_state(ToyBlockCipher::new(&key).unwrap());
 /// // n = 8 is permitted by A.1; the caller's counter supplies it.
 /// let counter = 7u64.to_be_bytes();
+/// let mut enc = CCMFrame::<8, 16, 64, 256>::encrypt_init_nonce(&state, &counter);
+/// enc.do_update_aad(b"hdr").unwrap();
 /// let mut sealed = [0u8; 256 + 16];
-/// let n = CcmEncryptor::<ToyBlockCipher, 16, 16, 8, 16, 64, 256>::encrypt_with_aad_nonce_out(
-///     &key, &counter, b"hdr", &[0x5A; 256], &mut sealed,
-/// ).unwrap();
-/// assert_eq!(n, 256 + 16);
+/// let n = enc.do_encrypt_out(&[0x5A; 256], &mut sealed).unwrap();
+/// let (tag, tag_len) = enc.do_encrypt_final().unwrap();
+/// sealed[n..].copy_from_slice(&tag[..tag_len]);
+/// assert_eq!(n + tag_len, 256 + 16);
 /// ```
 ///
 /// ...and not when it would be drawn:
@@ -1151,13 +1160,15 @@ where
 /// ```compile_fail
 /// # mod toy { include!("../../tests/common/toy_block_cipher.rs"); }
 /// # use toy::ToyBlockCipher;
+/// use bouncycastle_core::hazmat::{AeadEncryptMode, ElectronicCodeBook, Mode};
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-/// use bouncycastle_core::traits::SymmetricCipherEncryptor;
-/// use bouncycastle_cipher::modes::CcmEncryptor;
+/// use bouncycastle_cipher::modes::CCMFrame;
+/// use bouncycastle_rng::HashDRBG_SHA512;
 ///
 /// let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey).unwrap();
+/// let state = <CCMFrame<8, 16, 64, 256> as Mode<ToyBlockCipher>>::key_state(ToyBlockCipher::new(&key).unwrap());
 /// // n = 8 is permitted by A.1, but too short for a random draw.
-/// let _ = CcmEncryptor::<ToyBlockCipher, 16, 16, 8, 16, 64, 256>::do_encrypt_init(&key);
+/// let _ = CCMFrame::<8, 16, 64, 256>::encrypt_init(&state, &mut HashDRBG_SHA512::new_from_os());
 /// ```
 ///
 /// Nor does a `DATA_LEN` that `B0` could not carry under this `NONCE_LEN` (A.1's `p < 2^8q`):
@@ -1165,13 +1176,15 @@ where
 /// ```compile_fail
 /// # mod toy { include!("../../tests/common/toy_block_cipher.rs"); }
 /// # use toy::ToyBlockCipher;
+/// use bouncycastle_core::hazmat::{AeadEncryptMode, ElectronicCodeBook, Mode};
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-/// use bouncycastle_core::traits::SymmetricCipherEncryptor;
-/// use bouncycastle_cipher::modes::CcmEncryptor;
+/// use bouncycastle_cipher::modes::CCMFrame;
+/// use bouncycastle_rng::HashDRBG_SHA512;
 ///
 /// let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey).unwrap();
+/// let state = <CCMFrame<13, 16, 64, 65536> as Mode<ToyBlockCipher>>::key_state(ToyBlockCipher::new(&key).unwrap());
 /// // n = 13 leaves q = 2, so the payload is at most 65535 bytes.
-/// let _ = CcmEncryptor::<ToyBlockCipher, 16, 16, 13, 16, 64, 65536>::do_encrypt_init(&key);
+/// let _ = CCMFrame::<13, 16, 64, 65536>::encrypt_init(&state, &mut HashDRBG_SHA512::new_from_os());
 /// ```
 ///
 /// # Memory
@@ -1185,14 +1198,15 @@ where
 /// ```compile_fail
 /// # mod toy { include!("../../tests/common/toy_block_cipher.rs"); }
 /// # use toy::ToyBlockCipher;
+/// use bouncycastle_core::hazmat::{AeadEncryptMode, ElectronicCodeBook, Mode};
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-/// use bouncycastle_core::traits::AEADCipherEncryptor;
-/// use bouncycastle_cipher::modes::CcmEncryptor;
+/// use bouncycastle_cipher::modes::CCMFrame;
 ///
 /// let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
 ///     .unwrap();
+/// let state = <CCMFrame<6, 16, 64, 256> as Mode<ToyBlockCipher>>::key_state(ToyBlockCipher::new(&key).unwrap());
 /// // n = 6 is not in {7, ..., 13}: it would make q = 9, which A.1 does not allow.
-/// let _ = CcmEncryptor::<ToyBlockCipher, 16, 16, 6, 16, 64, 256>::do_encrypt_init_nonce(&key, &[0u8; 6]);
+/// let _ = CCMFrame::<6, 16, 64, 256>::encrypt_init_nonce(&state, &[0u8; 6]);
 /// ```
 ///
 /// Nor does an odd tag length:
@@ -1200,14 +1214,15 @@ where
 /// ```compile_fail
 /// # mod toy { include!("../../tests/common/toy_block_cipher.rs"); }
 /// # use toy::ToyBlockCipher;
+/// use bouncycastle_core::hazmat::{AeadEncryptMode, ElectronicCodeBook, Mode};
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-/// use bouncycastle_core::traits::AEADCipherEncryptor;
-/// use bouncycastle_cipher::modes::CcmEncryptor;
+/// use bouncycastle_cipher::modes::CCMFrame;
 ///
 /// let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
 ///     .unwrap();
+/// let state = <CCMFrame<12, 15, 64, 256> as Mode<ToyBlockCipher>>::key_state(ToyBlockCipher::new(&key).unwrap());
 /// // t = 15 is not in {4, 6, 8, 10, 12, 14, 16}.
-/// let _ = CcmEncryptor::<ToyBlockCipher, 16, 16, 12, 15, 64, 256>::do_encrypt_init_nonce(&key, &[0u8; 12]);
+/// let _ = CCMFrame::<12, 15, 64, 256>::encrypt_init_nonce(&state, &[0u8; 12]);
 /// ```
 #[derive(Clone)]
 pub struct CcmEncryptor<

@@ -12,24 +12,27 @@
 //!
 //! # Usage Examples
 //!
-//! One-shot, and verifying, over `ToyBlockCipher` (see the [module docs](super) for why):
+//! One-shot, and verifying, from a key state -- what a mode-bound key holds -- over
+//! `ToyBlockCipher` (see the [module docs](super) for why):
 //!
 //! ```
 //! # mod toy { include!("../../tests/common/toy_block_cipher.rs"); }
 //! # use toy::ToyBlockCipher;
-//! use bouncycastle_cipher::modes::Cmac;
+//! use bouncycastle_cipher::modes::{Cmac, CmacKeyState};
+//! use bouncycastle_core::hazmat::ElectronicCodeBook;
 //! use bouncycastle_core::key_material::{KeyMaterial128, KeyType};
 //! use bouncycastle_core::traits::MAC;
 //!
 //! type ToyCmac = Cmac<ToyBlockCipher, 16, 16>;
 //!
-//! let key = KeyMaterial128::from_bytes_as_type(&[0x42; 16], KeyType::MACKey).unwrap();
-//! let tag = ToyCmac::new(&key).unwrap().mac(b"a message");
+//! let key = KeyMaterial128::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey).unwrap();
+//! let state = CmacKeyState::new::<16>(ToyBlockCipher::new(&key).unwrap());
+//! let tag = ToyCmac::from_key_state(&state).mac(b"a message");
 //! assert_eq!(tag.len(), 16);
-//! assert!(ToyCmac::new(&key).unwrap().verify(b"a message", &tag));
+//! assert!(ToyCmac::from_key_state(&state).verify(b"a message", &tag));
 //! ```
 //!
-//! Streaming from a key state, with a tag truncated to 8 bytes:
+//! Streaming, with a tag truncated to 8 bytes:
 //!
 //! ```
 //! # mod toy { include!("../../tests/common/toy_block_cipher.rs"); }
