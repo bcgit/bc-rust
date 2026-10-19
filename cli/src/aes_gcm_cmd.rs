@@ -13,11 +13,10 @@
 //! also lets an attacker recover the hash subkey (SP 800-38D Appendix A).
 
 use crate::helpers::aead_cipher_helpers::{decrypt_gcm, encrypt_gcm, load_aad};
-use crate::helpers::block_mode_helpers::{CipherDirection, load_key};
-use bouncycastle::aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
-use bouncycastle::cipher::modes::ModeNames;
-use bouncycastle::core::hazmat::ElectronicCodeBook;
-use bouncycastle::core::key_material::KeyMaterial;
+use crate::helpers::block_mode_helpers::{CipherDirection, load_key_object};
+use bouncycastle::aes::{AES128Key, AES192Key, AES256Key};
+use bouncycastle::cipher::modes::GCM;
+use bouncycastle::core::symmetric_key::{AeadDecryptionKey, AeadEncryptionKey};
 
 pub(crate) fn aes128_gcm_cmd(
     action: &CipherDirection,
@@ -27,9 +26,9 @@ pub(crate) fn aes128_gcm_cmd(
     aad_file: &Option<String>,
     output_hex: bool,
 ) {
-    run::<AES128Internal, 16>(
+    run::<AES128Key<GCM>, 16>(
         action,
-        &load_key::<16>(key, key_file, "AES-128"),
+        &load_key_object::<_, 16>(key, key_file, "AES-128"),
         &load_aad(aad, aad_file),
         output_hex,
     );
@@ -43,9 +42,9 @@ pub(crate) fn aes192_gcm_cmd(
     aad_file: &Option<String>,
     output_hex: bool,
 ) {
-    run::<AES192Internal, 24>(
+    run::<AES192Key<GCM>, 24>(
         action,
-        &load_key::<24>(key, key_file, "AES-192"),
+        &load_key_object::<_, 24>(key, key_file, "AES-192"),
         &load_aad(aad, aad_file),
         output_hex,
     );
@@ -59,25 +58,21 @@ pub(crate) fn aes256_gcm_cmd(
     aad_file: &Option<String>,
     output_hex: bool,
 ) {
-    run::<AES256Internal, 32>(
+    run::<AES256Key<GCM>, 32>(
         action,
-        &load_key::<32>(key, key_file, "AES-256"),
+        &load_key_object::<_, 32>(key, key_file, "AES-256"),
         &load_aad(aad, aad_file),
         output_hex,
     );
 }
 
 /// Dispatches to the shared AEAD streaming loops with `Gcm`'s 128-bit tag.
-fn run<P, const KEY_LEN: usize>(
-    action: &CipherDirection,
-    key: &KeyMaterial<KEY_LEN>,
-    aad: &[u8],
-    output_hex: bool,
-) where
-    P: ElectronicCodeBook<KEY_LEN, 16> + ModeNames,
+fn run<K, const KEY_LEN: usize>(action: &CipherDirection, key: &K, aad: &[u8], output_hex: bool)
+where
+    K: AeadEncryptionKey<KEY_LEN, 12, 16, 16> + AeadDecryptionKey<KEY_LEN, 12, 16, 16>,
 {
     match action {
-        CipherDirection::Encrypt => encrypt_gcm::<P, KEY_LEN, 16>(key, aad, output_hex),
-        CipherDirection::Decrypt => decrypt_gcm::<P, KEY_LEN, 16>(key, aad, output_hex),
+        CipherDirection::Encrypt => encrypt_gcm::<K, KEY_LEN, 16>(key, aad, output_hex),
+        CipherDirection::Decrypt => decrypt_gcm::<K, KEY_LEN, 16>(key, aad, output_hex),
     }
 }

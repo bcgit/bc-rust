@@ -51,6 +51,7 @@ use crate::helpers::{
 use bouncycastle::core::hazmat::do_hazardous_operations;
 use bouncycastle::core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle::core::security_strength::SecurityStrength;
+use bouncycastle::core::symmetric_key::FromKeyMaterial;
 use bouncycastle::core::traits::{BlockCipherDecryptor, BlockCipherEncryptor};
 use bouncycastle::hex;
 use clap::ValueEnum;
@@ -140,26 +141,36 @@ pub(crate) fn load_key<const KEY_LEN: usize>(
     key
 }
 
-/// Encrypts stdin to stdout under the mode `E`, writing the generated init data (the IV) first.
+/// The key object for a command: the material from `--key` / `--key-file`, checked and expanded
+/// once. `K` is the key type the command's mode wants, `AES128Key<CBC<Blocks>>` and the like.
+pub(crate) fn load_key_object<K: FromKeyMaterial<KEY_LEN>, const KEY_LEN: usize>(
+    key: &Option<String>,
+    key_file: &Option<String>,
+    alg: &str,
+) -> K {
+    K::from_key_material(&load_key::<KEY_LEN>(key, key_file, alg)).unwrap_or_else(|e| {
+        eprintln!("Error: couldn't load the key: {e:?}");
+        exit(-1);
+    })
+}
+
+/// Encrypts stdin to stdout through `enc`, a worker the command's key has already made, writing
+/// `iv` first.
 ///
 /// `INIT_DATA_LEN` is the mode's: one block for CBC, 0 for ECB, in which case nothing is written
 /// ahead of the ciphertext. `mode` names the mode in error messages ("CBC", "ECB"); it has no
 /// effect on the output.
 pub(crate) fn encrypt_stream<E, const KEY_LEN: usize, const INIT_DATA_LEN: usize>(
-    key: &KeyMaterial<KEY_LEN>,
+    mut enc: E,
+    iv: &[u8; INIT_DATA_LEN],
     output_hex: bool,
     mode: &str,
 ) where
     E: BlockCipherEncryptor<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
 {
-    let (mut enc, iv) = E::do_encrypt_init(key).unwrap_or_else(|e| {
-        eprintln!("Error: couldn't start encryption: {e:?}");
-        exit(-1);
-    });
-
     // The IV goes out ahead of the ciphertext, so `decrypt` can pick it up. (Empty for ECB.)
     if INIT_DATA_LEN > 0 {
-        write_bytes_or_hex(&iv, output_hex);
+        write_bytes_or_hex(iv, output_hex);
     }
 
     // The cipher works in place: `data` holds plaintext on the way in and ciphertext on the way out.
@@ -179,10 +190,10 @@ pub(crate) fn encrypt_stream<E, const KEY_LEN: usize, const INIT_DATA_LEN: usize
     finish(output_hex);
 }
 
-/// Decrypts stdin to stdout under the mode `D`, taking the init data (the IV) from the first
-/// `INIT_DATA_LEN` bytes of input -- one block for CBC, nothing for ECB.
+/// Decrypts stdin to stdout through the worker `make_decryptor` gives for the init data (the IV)
+/// read from the first `INIT_DATA_LEN` bytes of input -- one block for CBC, nothing for ECB.
 pub(crate) fn decrypt_stream<D, const KEY_LEN: usize, const INIT_DATA_LEN: usize>(
-    key: &KeyMaterial<KEY_LEN>,
+    make_decryptor: impl FnOnce(&[u8; INIT_DATA_LEN]) -> D,
     output_hex: bool,
     mode: &str,
 ) where
@@ -200,10 +211,7 @@ pub(crate) fn decrypt_stream<D, const KEY_LEN: usize, const INIT_DATA_LEN: usize
         exit(-1);
     }
 
-    let mut dec = D::do_decrypt_init(key, &iv).unwrap_or_else(|e| {
-        eprintln!("Error: couldn't start decryption: {e:?}");
-        exit(-1);
-    });
+    let mut dec = make_decryptor(&iv);
 
     stream_aligned(mode, |data| {
         if let Ok(chunk) = <&mut [u8; CHUNK_LEN]>::try_from(&mut *data) {

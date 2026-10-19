@@ -31,25 +31,29 @@
 
 use crate::helpers::block_mode_helpers::{CHUNK_LEN, CipherDirection};
 use crate::helpers::{flush_stdout, write_bytes_or_hex, write_stdout};
-use bouncycastle::core::key_material::KeyMaterial;
+use bouncycastle::core::symmetric_key::{SymmetricDecryptionKey, SymmetricEncryptionKey};
 use bouncycastle::core::traits::{StreamCipherDecryptor, StreamCipherEncryptor};
+use bouncycastle::rng::HashDRBG_SHA512;
 use std::io;
 use std::io::Read;
 use std::process::exit;
 
-/// Encrypts stdin to stdout under the stream mode `E`, writing the generated IV first.
+/// Encrypts stdin to stdout under the key's stream mode, writing the generated IV first.
 ///
-/// `INIT_DATA_LEN` is the mode's: one block for CFB and CFB8.
-pub(crate) fn encrypt_stream<E, const KEY_LEN: usize, const INIT_DATA_LEN: usize>(
-    key: &KeyMaterial<KEY_LEN>,
+/// `INIT_DATA_LEN` is the mode's: one block for CFB and CFB8, 12 bytes for CTR. The IV is drawn
+/// from the OS-backed DRBG; there is no way to supply one.
+pub(crate) fn encrypt_stream<K, const KEY_LEN: usize, const INIT_DATA_LEN: usize>(
+    key: &K,
     output_hex: bool,
 ) where
-    E: StreamCipherEncryptor<KEY_LEN, INIT_DATA_LEN>,
+    K: SymmetricEncryptionKey<KEY_LEN, INIT_DATA_LEN, 0>,
+    K::Encryptor: StreamCipherEncryptor<KEY_LEN, INIT_DATA_LEN>,
 {
-    let (mut enc, iv) = E::do_encrypt_init(key).unwrap_or_else(|e| {
-        eprintln!("Error: couldn't start encryption: {e:?}");
-        exit(-1);
-    });
+    let (mut enc, iv) =
+        key.create_encryptor(&mut HashDRBG_SHA512::new_from_os()).unwrap_or_else(|e| {
+            eprintln!("Error: couldn't start encryption: {e:?}");
+            exit(-1);
+        });
 
     // The IV goes out ahead of the ciphertext, so `decrypt` can pick it up.
     write_bytes_or_hex(&iv, output_hex);
@@ -69,13 +73,14 @@ pub(crate) fn encrypt_stream<E, const KEY_LEN: usize, const INIT_DATA_LEN: usize
     finish(output_hex);
 }
 
-/// Decrypts stdin to stdout under the stream mode `D`, taking the IV from the first
+/// Decrypts stdin to stdout under the key's stream mode, taking the IV from the first
 /// `INIT_DATA_LEN` bytes of input.
-pub(crate) fn decrypt_stream<D, const KEY_LEN: usize, const INIT_DATA_LEN: usize>(
-    key: &KeyMaterial<KEY_LEN>,
+pub(crate) fn decrypt_stream<K, const KEY_LEN: usize, const INIT_DATA_LEN: usize>(
+    key: &K,
     output_hex: bool,
 ) where
-    D: StreamCipherDecryptor<KEY_LEN, INIT_DATA_LEN>,
+    K: SymmetricDecryptionKey<KEY_LEN, INIT_DATA_LEN, 0>,
+    K::Decryptor: StreamCipherDecryptor<KEY_LEN, INIT_DATA_LEN>,
 {
     // The leading bytes are the IV, not ciphertext.
     let mut iv = [0u8; INIT_DATA_LEN];
@@ -87,10 +92,7 @@ pub(crate) fn decrypt_stream<D, const KEY_LEN: usize, const INIT_DATA_LEN: usize
         exit(-1);
     }
 
-    let mut dec = D::do_decrypt_init(key, &iv).unwrap_or_else(|e| {
-        eprintln!("Error: couldn't start decryption: {e:?}");
-        exit(-1);
-    });
+    let mut dec = key.create_decryptor(&iv);
 
     stream(|data| {
         dec.do_decrypt_inplace(data).unwrap_or_else(|e| {
@@ -134,18 +136,21 @@ fn finish(output_hex: bool) {
     flush_stdout();
 }
 
-/// Runs one direction of a stream mode. The two `run` dispatchers in `aes_cfb_cmd` and
-/// `aes_cfb8_cmd` differ only in which mode they name, so the match lives here.
-pub(crate) fn run_stream_mode<E, D, const KEY_LEN: usize, const INIT_DATA_LEN: usize>(
+/// Runs one direction of a stream mode under its key. The `run` dispatchers in `aes_cfb_cmd`,
+/// `aes_cfb8_cmd` and `aes_ctr_cmd` differ only in which key type they load, so the match lives
+/// here.
+pub(crate) fn run_stream_mode<K, const KEY_LEN: usize, const INIT_DATA_LEN: usize>(
     action: &CipherDirection,
-    key: &KeyMaterial<KEY_LEN>,
+    key: &K,
     output_hex: bool,
 ) where
-    E: StreamCipherEncryptor<KEY_LEN, INIT_DATA_LEN>,
-    D: StreamCipherDecryptor<KEY_LEN, INIT_DATA_LEN>,
+    K: SymmetricEncryptionKey<KEY_LEN, INIT_DATA_LEN, 0>
+        + SymmetricDecryptionKey<KEY_LEN, INIT_DATA_LEN, 0>,
+    K::Encryptor: StreamCipherEncryptor<KEY_LEN, INIT_DATA_LEN>,
+    K::Decryptor: StreamCipherDecryptor<KEY_LEN, INIT_DATA_LEN>,
 {
     match action {
-        CipherDirection::Encrypt => encrypt_stream::<E, KEY_LEN, INIT_DATA_LEN>(key, output_hex),
-        CipherDirection::Decrypt => decrypt_stream::<D, KEY_LEN, INIT_DATA_LEN>(key, output_hex),
+        CipherDirection::Encrypt => encrypt_stream::<K, KEY_LEN, INIT_DATA_LEN>(key, output_hex),
+        CipherDirection::Decrypt => decrypt_stream::<K, KEY_LEN, INIT_DATA_LEN>(key, output_hex),
     }
 }

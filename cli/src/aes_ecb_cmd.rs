@@ -16,14 +16,12 @@
 //! `aes*-cbc` or `aes*-cfb` under separate authentication, or better an AEAD.
 
 use crate::helpers::block_mode_helpers::{
-    BLOCK_LEN, CipherDirection, decrypt_stream, encrypt_stream, load_key,
+    BLOCK_LEN, CipherDirection, decrypt_stream, encrypt_stream, load_key_object,
 };
-use bouncycastle::aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
-use bouncycastle::cipher::modes::ModeNames;
-use bouncycastle::cipher::modes::hazmat::Ecb;
-use bouncycastle::cipher::{Decrypting, Encrypting};
-use bouncycastle::core::hazmat::ElectronicCodeBook;
-use bouncycastle::core::key_material::KeyMaterial;
+use bouncycastle::aes::{AES128Key, AES192Key, AES256Key};
+use bouncycastle::cipher::modes::Blocks;
+use bouncycastle::cipher::modes::hazmat::ECB;
+use bouncycastle::core::hazmat::{EcbDecryptionKey, EcbEncryptionKey};
 
 /// Names the mode in error messages.
 const MODE: &str = "ECB";
@@ -34,7 +32,11 @@ pub(crate) fn aes128_ecb_cmd(
     key_file: &Option<String>,
     output_hex: bool,
 ) {
-    run::<AES128Internal, 16>(action, &load_key::<16>(key, key_file, "AES-128"), output_hex);
+    run::<_, 16>(
+        action,
+        &load_key_object::<AES128Key<ECB<Blocks>>, 16>(key, key_file, "AES-128"),
+        output_hex,
+    );
 }
 
 pub(crate) fn aes192_ecb_cmd(
@@ -43,7 +45,11 @@ pub(crate) fn aes192_ecb_cmd(
     key_file: &Option<String>,
     output_hex: bool,
 ) {
-    run::<AES192Internal, 24>(action, &load_key::<24>(key, key_file, "AES-192"), output_hex);
+    run::<_, 24>(
+        action,
+        &load_key_object::<AES192Key<ECB<Blocks>>, 24>(key, key_file, "AES-192"),
+        output_hex,
+    );
 }
 
 pub(crate) fn aes256_ecb_cmd(
@@ -52,28 +58,25 @@ pub(crate) fn aes256_ecb_cmd(
     key_file: &Option<String>,
     output_hex: bool,
 ) {
-    run::<AES256Internal, 32>(action, &load_key::<32>(key, key_file, "AES-256"), output_hex);
+    run::<_, 32>(
+        action,
+        &load_key_object::<AES256Key<ECB<Blocks>>, 32>(key, key_file, "AES-256"),
+        output_hex,
+    );
 }
 
 /// Dispatches to the shared streaming loops with `Ecb` filled in as the mode. `INIT_DATA_LEN` is 0,
 /// so the loops write and read no IV.
-fn run<P, const KEY_LEN: usize>(
-    action: &CipherDirection,
-    key: &KeyMaterial<KEY_LEN>,
-    output_hex: bool,
-) where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
+fn run<K, const KEY_LEN: usize>(action: &CipherDirection, key: &K, output_hex: bool)
+where
+    K: EcbEncryptionKey<KEY_LEN, BLOCK_LEN> + EcbDecryptionKey<KEY_LEN, BLOCK_LEN>,
 {
     match action {
         CipherDirection::Encrypt => {
-            encrypt_stream::<Ecb<P, Encrypting, KEY_LEN, BLOCK_LEN>, KEY_LEN, 0>(
-                key, output_hex, MODE,
-            )
+            encrypt_stream::<_, KEY_LEN, 0>(key.create_encryptor(), &[], output_hex, MODE)
         }
         CipherDirection::Decrypt => {
-            decrypt_stream::<Ecb<P, Decrypting, KEY_LEN, BLOCK_LEN>, KEY_LEN, 0>(
-                key, output_hex, MODE,
-            )
+            decrypt_stream::<_, KEY_LEN, 0>(|_| key.create_decryptor(), output_hex, MODE)
         }
     }
 }

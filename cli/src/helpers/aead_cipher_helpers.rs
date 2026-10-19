@@ -1,10 +1,10 @@
 //! Shared plumbing for the AEAD subcommands: `aes{128,192,256}-gcm`.
 //!
-//! Parallel to [`crate::helpers::stream_mode_helpers`], but for [`bouncycastle::cipher::modes::Gcm`] rather than a
-//! [`StreamCipherEncryptor`](bouncycastle::core::traits::StreamCipherEncryptor) mode: GCM carries
-//! additional authenticated data and a tag, neither of which that trait has room for, so this
-//! module drives it through [`AEADCipherEncryptor`] / [`AEADCipherDecryptor`] instead, which add
-//! `do_update_aad` to the symmetric-cipher streaming methods.
+//! Parallel to [`crate::helpers::stream_mode_helpers`], but for a key bound to
+//! [`bouncycastle::cipher::modes::GCM`] rather than a stream mode: GCM carries additional
+//! authenticated data and a tag, neither of which the stream traits have room for, so this module
+//! drives the key's AEAD workers through [`AeadEncryptWorker`] / [`AeadDecryptWorker`], which
+//! add `do_update_aad` to the symmetric-cipher streaming methods.
 //!
 //! # On-the-wire format: `nonce || ciphertext || tag`
 //!
@@ -36,13 +36,8 @@
 //! other GCM implementation given the same file.
 
 use crate::helpers::{flush_stdout, read_from_file_raw, write_bytes_or_hex, write_stdout};
-use bouncycastle::cipher::modes::Gcm;
-use bouncycastle::cipher::modes::ModeNames;
-use bouncycastle::cipher::{Decrypting, Encrypting};
-use bouncycastle::core::hazmat::ElectronicCodeBook;
-use bouncycastle::core::key_material::KeyMaterial;
-use bouncycastle::core::traits::{
-    AEADCipherDecryptor, AEADCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
+use bouncycastle::core::symmetric_key::{
+    AeadDecryptWorker, AeadDecryptionKey, AeadEncryptWorker, AeadEncryptionKey,
 };
 use bouncycastle::hex;
 use std::io;
@@ -71,14 +66,15 @@ pub fn load_aad(aad: &Option<String>, aad_file: &Option<String>) -> Vec<u8> {
 
 /// Encrypts stdin to stdout under GCM: writes the generated nonce, then the ciphertext as it
 /// streams, then the tag.
-pub fn encrypt_gcm<P, const KEY_LEN: usize, const TAG_LEN: usize>(
-    key: &KeyMaterial<KEY_LEN>,
+pub fn encrypt_gcm<K, const KEY_LEN: usize, const TAG_LEN: usize>(
+    key: &K,
     aad: &[u8],
     output_hex: bool,
 ) where
-    P: ElectronicCodeBook<KEY_LEN, 16> + ModeNames,
+    K: AeadEncryptionKey<KEY_LEN, 12, TAG_LEN, TAG_LEN>,
 {
-    let (mut enc, nonce) = Gcm::<P, Encrypting, KEY_LEN, TAG_LEN>::do_encrypt_init(key)
+    let (mut enc, nonce) = key
+        .create_encryptor(&mut bouncycastle::rng::HashDRBG_SHA512::new_from_os())
         .unwrap_or_else(|e| {
             eprintln!("Error: couldn't start encryption: {e:?}");
             exit(-1);
@@ -109,7 +105,7 @@ pub fn encrypt_gcm<P, const KEY_LEN: usize, const TAG_LEN: usize>(
     }
 
     // The detached final flushes nothing for GCM and returns the tag, written last.
-    let (_, _, tag) = enc.do_encrypt_final_detached().unwrap_or_else(|e| {
+    let (_, tag) = enc.do_encrypt_final_detached_out(&mut [0u8; TAG_LEN]).unwrap_or_else(|e| {
         eprintln!("Error: encryption failed: {e:?}");
         exit(-1);
     });
@@ -120,12 +116,12 @@ pub fn encrypt_gcm<P, const KEY_LEN: usize, const TAG_LEN: usize>(
 /// Decrypts stdin to stdout under GCM: reads the 12-byte nonce, streams the rest through the
 /// inline decryptor, and checks the tag on `do_decrypt_final`. See the module docs for why
 /// plaintext may already be written to stdout by the time a tag failure is reported.
-pub fn decrypt_gcm<P, const KEY_LEN: usize, const TAG_LEN: usize>(
-    key: &KeyMaterial<KEY_LEN>,
+pub fn decrypt_gcm<K, const KEY_LEN: usize, const TAG_LEN: usize>(
+    key: &K,
     aad: &[u8],
     output_hex: bool,
 ) where
-    P: ElectronicCodeBook<KEY_LEN, 16> + ModeNames,
+    K: AeadDecryptionKey<KEY_LEN, 12, TAG_LEN, TAG_LEN>,
 {
     let mut nonce = [0u8; 12];
     if let Err(e) = io::stdin().read_exact(&mut nonce) {
@@ -135,11 +131,7 @@ pub fn decrypt_gcm<P, const KEY_LEN: usize, const TAG_LEN: usize>(
         exit(-1);
     }
 
-    let mut dec = Gcm::<P, Decrypting, KEY_LEN, TAG_LEN>::do_decrypt_init(key, &nonce)
-        .unwrap_or_else(|e| {
-            eprintln!("Error: couldn't start decryption: {e:?}");
-            exit(-1);
-        });
+    let mut dec = key.create_decryptor(&nonce);
     dec.do_update_aad(aad).unwrap_or_else(|e| {
         eprintln!("Error: couldn't absorb the additional authenticated data: {e:?}");
         exit(-1);
