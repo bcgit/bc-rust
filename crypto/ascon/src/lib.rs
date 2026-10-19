@@ -17,7 +17,7 @@
 //! (August 2025), which can be found here: <https://doi.org/10.6028/NIST.SP.800-232>
 //!
 //! - [`Ascon-AEAD128`](Ascon_AEAD128) — authenticated encryption (128-bit key/nonce/tag, 128-bit
-//!   single-key security).
+//!   single-key security), used through [`AsconAEAD128Key`].
 //! - [`Ascon-Hash256`](AsconHash256) — hash function (256-bit digest, 128-bit security).
 //! - [`Ascon-XOF128`](AsconXof128) — extendable-output function.
 //! - [`Ascon-CXOF128`](AsconCXof128) — customized extendable-output function.
@@ -43,50 +43,53 @@
 //! assert_eq!(&out[..], &digest[..]);
 //! ```
 //!
-//! Authenticated encryption (one-shot, under a nonce the caller manages):
+//! Authenticated encryption (one-shot, under a nonce the caller manages), through the key:
 //! ```
-//! use bouncycastle_ascon::Ascon_AEAD128;
-//! use bouncycastle_cipher::{Decrypting, Encrypting};
+//! use bouncycastle_ascon::AsconAEAD128Key;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-//! use bouncycastle_core::traits::{AEADCipherDecryptor, AEADCipherEncryptor};
+//! use bouncycastle_core::symmetric_key::{AeadDecryptionKey, AeadEncryptionKey, FromKeyMaterial};
 //!
-//! let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42u8; 16], KeyType::SymmetricCipherKey).unwrap();
+//! let material = KeyMaterial::<16>::from_bytes_as_type(&[0x42u8; 16], KeyType::SymmetricCipherKey).unwrap();
+//! let key = AsconAEAD128Key::from_key_material(&material).unwrap();
 //! let nonce = [1u8; 16];           // MUST be unique per encryption under a given key
 //! let ad = b"associated data";
 //! let plaintext = b"secret message";
 //!
 //! let mut ct = vec![0u8; plaintext.len() + 16]; // ciphertext || 16-byte tag
-//! let n = Ascon_AEAD128::<Encrypting>::encrypt_with_aad_nonce_out(&key, &nonce, ad, plaintext, &mut ct).unwrap();
+//! let n = key.encrypt_with_aad_nonce_out(&nonce, ad, plaintext, &mut ct).unwrap();
 //! ct.truncate(n);
 //!
 //! let mut pt = vec![0u8; ct.len() - 16];
-//! let m = Ascon_AEAD128::<Decrypting>::decrypt_with_aad_out(&key, &nonce, ad, &ct, &mut pt).unwrap();
+//! let m = key.decrypt_with_aad_out(&nonce, ad, &ct, &mut pt).unwrap();
 //! pt.truncate(m);
 //! assert_eq!(&pt, plaintext);
 //! ```
 //!
-//! Authenticated encryption (streaming, detached tag). The decryptor holds back the last 16
-//! bytes it has seen, in case they are an inline tag, so `do_decrypt_final_detached_out` is
-//! where they come out:
+//! Authenticated encryption (streaming, detached tag), with the nonce drawn from the caller's
+//! RNG. The decryptor holds back the last 16 bytes it has seen, in case they are an inline tag,
+//! so `do_decrypt_final_detached_out` is where they come out:
 //! ```
-//! use bouncycastle_ascon::Ascon_AEAD128;
-//! use bouncycastle_cipher::{Decrypting, Encrypting};
+//! use bouncycastle_ascon::AsconAEAD128Key;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
+//! use bouncycastle_core::symmetric_key::{AeadDecryptionKey, AeadEncryptionKey, FromKeyMaterial};
 //! use bouncycastle_core::traits::{
 //!     AEADCipherDecryptor, AEADCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
 //! };
+//! use bouncycastle_rng::HashDRBG_SHA512;
 //!
-//! let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42u8; 16], KeyType::SymmetricCipherKey).unwrap();
+//! let mut rng = HashDRBG_SHA512::new_from_os();
+//! let material = KeyMaterial::<16>::from_bytes_as_type(&[0x42u8; 16], KeyType::SymmetricCipherKey).unwrap();
+//! let key = AsconAEAD128Key::from_key_material(&material).unwrap();
 //!
 //! let plaintext = b"secret message!!";
-//! let (mut enc, nonce) = Ascon_AEAD128::<Encrypting>::do_encrypt_init(&key).unwrap();
+//! let (mut enc, nonce) = key.create_encryptor(&mut rng).unwrap();
 //! enc.do_update_aad(b"associated data").unwrap();
 //! let mut ciphertext = [0u8; 16];
 //! enc.do_encrypt_out(plaintext, &mut ciphertext).unwrap();
 //! let mut final_buf = [0u8; 16];
 //! let (_, tag) = enc.do_encrypt_final_detached_out(&mut final_buf).unwrap();
 //!
-//! let mut dec = Ascon_AEAD128::<Decrypting>::do_decrypt_init(&key, &nonce).unwrap();
+//! let mut dec = key.create_decryptor(&nonce);
 //! dec.do_update_aad(b"associated data").unwrap();
 //! let mut recovered = [0u8; 16];
 //! let n = dec.do_decrypt_out(&ciphertext, &mut recovered).unwrap(); // 0: all 16 held back
@@ -95,34 +98,27 @@
 //! assert_eq!(&recovered, plaintext);
 //! ```
 //!
-//! For the inline `ciphertext || tag` layout that most wire formats and files use, the pair is
-//! also a [`bouncycastle_core::traits::SymmetricCipherEncryptor`] /
-//! [`bouncycastle_core::traits::SymmetricCipherDecryptor`], which covers the no-AAD case --
-//! streaming, or through its `encrypt_out` / `decrypt_out` one-shots -- and
-//! [`bouncycastle_core::traits::AEADCipherEncryptor::encrypt_with_aad_out`] /
-//! [`bouncycastle_core::traits::AEADCipherDecryptor::decrypt_with_aad_out`] are the one-shots with AAD:
+//! For the inline `ciphertext || tag` layout that most wire formats and files use, the key's
+//! `encrypt_with_aad_out` / `decrypt_with_aad_out` are the one-shots, with an empty AAD when
+//! there is none, and the workers are also a
+//! [`bouncycastle_core::traits::SymmetricCipherEncryptor`] /
+//! [`bouncycastle_core::traits::SymmetricCipherDecryptor`] pair for streaming it:
 //! ```
-//! use bouncycastle_ascon::Ascon_AEAD128;
-//! use bouncycastle_cipher::{Decrypting, Encrypting};
+//! use bouncycastle_ascon::AsconAEAD128Key;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-//! use bouncycastle_core::traits::{
-//!     AEADCipherDecryptor, AEADCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
-//! };
+//! use bouncycastle_core::symmetric_key::{AeadDecryptionKey, AeadEncryptionKey, FromKeyMaterial};
+//! use bouncycastle_rng::HashDRBG_SHA512;
 //!
-//! let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42u8; 16], KeyType::SymmetricCipherKey).unwrap();
+//! let mut rng = HashDRBG_SHA512::new_from_os();
+//! let material = KeyMaterial::<16>::from_bytes_as_type(&[0x42u8; 16], KeyType::SymmetricCipherKey).unwrap();
+//! let key = AsconAEAD128Key::from_key_material(&material).unwrap();
 //! let plaintext = b"secret message!!";
 //!
-//! // No AAD: just a symmetric cipher.
-//! let mut inline = [0u8; 32]; // Ascon_AEAD128::<Encrypting>::encrypt_out_len(16)
-//! let (nonce, len) = Ascon_AEAD128::<Encrypting>::encrypt_out(&key, plaintext, &mut inline).unwrap();
+//! let mut inline = [0u8; 32]; // plaintext.len() + 16
+//! let (len, nonce) = key.encrypt_with_aad_out(&mut rng, b"aad", plaintext, &mut inline).unwrap();
 //! assert_eq!(len, plaintext.len() + 16); // ciphertext || tag
 //! let mut recovered = [0u8; 16];
-//! let n = Ascon_AEAD128::<Decrypting>::decrypt_out(&key, &nonce, &inline[..len], &mut recovered).unwrap();
-//! assert_eq!(&recovered[..n], plaintext);
-//!
-//! // With AAD.
-//! let (nonce, len) = Ascon_AEAD128::<Encrypting>::encrypt_with_aad_out(&key, b"aad", plaintext, &mut inline).unwrap();
-//! let n = Ascon_AEAD128::<Decrypting>::decrypt_with_aad_out(&key, &nonce, b"aad", &inline[..len], &mut recovered).unwrap();
+//! let n = key.decrypt_with_aad_out(&nonce, b"aad", &inline[..len], &mut recovered).unwrap();
 //! assert_eq!(&recovered[..n], plaintext);
 //! ```
 //!
@@ -144,6 +140,7 @@
 //!
 //! | Type | In-memory size (bytes) | Suspended state size (bytes) |
 //! |------|-------------------------|-------------------------------|
+//! | [`AsconAEAD128Key`] | 16 | |
 //! | [`Ascon_AEAD128<Encrypting>`] | 96 | [`SUSPENDED_ASCON_AEAD128_ENCRYPTOR_STATE_LEN`] (46) |
 //! | [`Ascon_AEAD128<Decrypting>`] | 96 | [`SUSPENDED_ASCON_AEAD128_DECRYPTOR_STATE_LEN`] (63) |
 //! | [`AsconHash256`] | 64 | [`SUSPENDED_ASCON_HASH256_STATE_LEN`] (53) |
@@ -160,15 +157,18 @@
 //!
 //! | Ascon-AEAD128 entry point | Encrypting | Decrypting |
 //! |---|---|---|
-//! | `do_encrypt_init_rng` / `do_decrypt_init` | 536 B | 504 B |
+//! | `AsconAEAD128Key::from_key_material` (the key check, once per key) | - | - |
+//! | `create_encryptor` / `create_decryptor` | - | - |
 //! | `do_update_aad` | 104 B | 104 B |
 //! | `do_encrypt_out` / `do_decrypt_out` | 176 B | 208 B |
 //! | `do_encrypt_final` / `do_decrypt_final` (tag inline) | 176 B | 208 B |
 //! | `do_encrypt_final_detached_out` / `do_decrypt_final_detached_out` | 176 B | 272 B |
-//! | `encrypt_with_aad_rng_out` / `decrypt_with_aad_out` (one-shot) | 648 B | 888 B |
+//! | `encrypt_with_aad_out` / `decrypt_with_aad_out` (one-shot) | - | - |
 //!
-//! The encrypting figures do not include the caller's RNG; `do_encrypt_init` and the one-shots
-//! without `_rng` draw the nonce from the library's default DRBG, whose stack is not counted here.
+//! The key path's rows have not been measured yet: the key check moved out of the per-message
+//! init into `from_key_material`, and the one-shots are now the role traits' provided bodies,
+//! so the old figures for those entry points no longer apply. `bench_ascon_mem_usage` has the
+//! harness. The encrypting figures do not include the caller's RNG.
 //!
 //! | Sponge entry point | Ascon-Hash256 | Ascon-XOF128 | Ascon-CXOF128 |
 //! |---|---|---|---|
@@ -191,11 +191,10 @@
 //!   caller that needs a partial-byte final block should reach for SHA-3, which supports one.
 //! - **Decryption tag check failure:** a ciphertext decryption whose finalization returns
 //!   `Err(SymmetricCipherError::AEADTagCheckFailed)` must be treated as tampered, and the entire
-//!   plaintext rejected. The one-shot APIs
-//!   ([`bouncycastle_core::traits::AEADCipherDecryptor::decrypt_detached_out`],
-//!   [`bouncycastle_core::traits::AEADCipherDecryptor::decrypt_with_aad_out`] and
-//!   [`bouncycastle_core::traits::SymmetricCipherDecryptor::decrypt_out`]) zeroize their output
-//!   buffer before returning that error. The streaming API (`do_decrypt_out` followed by
+//!   plaintext rejected. The key's one-shots
+//!   ([`bouncycastle_core::symmetric_key::AeadDecryptionKey::decrypt_detached_out`] and
+//!   [`bouncycastle_core::symmetric_key::AeadDecryptionKey::decrypt_with_aad_out`]) zeroize
+//!   their output buffer before returning that error. The streaming API (`do_decrypt_out` followed by
 //!   [`bouncycastle_core::traits::AEADCipherDecryptor::do_decrypt_final_detached_out`] or
 //!   [`bouncycastle_core::traits::SymmetricCipherDecryptor::do_decrypt_final`]) does not: plaintext
 //!   bytes are necessarily written to the caller's buffer *before* the tag can be checked, so an
@@ -217,8 +216,9 @@ mod ascon_hash256;
 mod ascon_xof128;
 
 pub use ascon_aead128::{
-    Ascon_AEAD128, KEY_LEN, NONCE_LEN, SUSPENDED_ASCON_AEAD128_DECRYPTOR_STATE_LEN,
-    SUSPENDED_ASCON_AEAD128_ENCRYPTOR_STATE_LEN, TAG_LEN,
+    Ascon_AEAD128, AsconAEAD128Key, KEY_LEN, NONCE_LEN,
+    SUSPENDED_ASCON_AEAD128_DECRYPTOR_STATE_LEN, SUSPENDED_ASCON_AEAD128_ENCRYPTOR_STATE_LEN,
+    TAG_LEN,
 };
 pub use ascon_cxof128::{AsconCXof128, AsconCXof128Squeezer, SUSPENDED_ASCON_CXOF128_STATE_LEN};
 pub use ascon_hash256::{AsconHash256, SUSPENDED_ASCON_HASH256_STATE_LEN};
