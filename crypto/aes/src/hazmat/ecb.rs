@@ -177,7 +177,7 @@ use bouncycastle_cipher::modes::hazmat::ecb::Ecb;
 use bouncycastle_cipher::padding::{PaddedBlockCipherDecryptor, PaddedBlockCipherEncryptor};
 use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::errors::SymmetricCipherError;
-use bouncycastle_core::hazmat::ElectronicCodeBook;
+use bouncycastle_core::hazmat::{BlockPermutation, ElectronicCodeBook};
 use bouncycastle_core::key_material::KeyMaterial;
 
 // Imports needed for docs
@@ -193,16 +193,14 @@ use bouncycastle_core::symmetric_key::{SymmetricDecryptionKey, SymmetricEncrypti
 #[allow(non_camel_case_types)]
 pub type AES_ECB_128<'k, Dir, Pad> = <Dir as Direction>::Select<
     PaddedBlockCipherEncryptor<
-        Ecb<'k, AES128Internal, Encrypting, 16, AES_BLOCK_LEN>,
+        Ecb<'k, AES128Internal, Encrypting, AES_BLOCK_LEN>,
         Pad,
-        16,
         0,
         AES_BLOCK_LEN,
     >,
     PaddedBlockCipherDecryptor<
-        Ecb<'k, AES128Internal, Decrypting, 16, AES_BLOCK_LEN>,
+        Ecb<'k, AES128Internal, Decrypting, AES_BLOCK_LEN>,
         Pad,
-        16,
         0,
         AES_BLOCK_LEN,
     >,
@@ -212,16 +210,14 @@ pub type AES_ECB_128<'k, Dir, Pad> = <Dir as Direction>::Select<
 #[allow(non_camel_case_types)]
 pub type AES_ECB_192<'k, Dir, Pad> = <Dir as Direction>::Select<
     PaddedBlockCipherEncryptor<
-        Ecb<'k, AES192Internal, Encrypting, 24, AES_BLOCK_LEN>,
+        Ecb<'k, AES192Internal, Encrypting, AES_BLOCK_LEN>,
         Pad,
-        24,
         0,
         AES_BLOCK_LEN,
     >,
     PaddedBlockCipherDecryptor<
-        Ecb<'k, AES192Internal, Decrypting, 24, AES_BLOCK_LEN>,
+        Ecb<'k, AES192Internal, Decrypting, AES_BLOCK_LEN>,
         Pad,
-        24,
         0,
         AES_BLOCK_LEN,
     >,
@@ -231,16 +227,14 @@ pub type AES_ECB_192<'k, Dir, Pad> = <Dir as Direction>::Select<
 #[allow(non_camel_case_types)]
 pub type AES_ECB_256<'k, Dir, Pad> = <Dir as Direction>::Select<
     PaddedBlockCipherEncryptor<
-        Ecb<'k, AES256Internal, Encrypting, 32, AES_BLOCK_LEN>,
+        Ecb<'k, AES256Internal, Encrypting, AES_BLOCK_LEN>,
         Pad,
-        32,
         0,
         AES_BLOCK_LEN,
     >,
     PaddedBlockCipherDecryptor<
-        Ecb<'k, AES256Internal, Decrypting, 32, AES_BLOCK_LEN>,
+        Ecb<'k, AES256Internal, Decrypting, AES_BLOCK_LEN>,
         Pad,
-        32,
         0,
         AES_BLOCK_LEN,
     >,
@@ -250,6 +244,9 @@ impl ElectronicCodeBook<16, AES_BLOCK_LEN> for AES128Internal {
     fn new(key: &KeyMaterial<16>) -> Result<Self, SymmetricCipherError> {
         AES128Internal::new(key)
     }
+}
+
+impl BlockPermutation<AES_BLOCK_LEN> for AES128Internal {
     fn encrypt_block(&self, block: &mut Block) {
         Self::encrypt_block(self, block)
     }
@@ -274,6 +271,9 @@ impl ElectronicCodeBook<24, AES_BLOCK_LEN> for AES192Internal {
     fn new(key: &KeyMaterial<24>) -> Result<Self, SymmetricCipherError> {
         AES192Internal::new(key)
     }
+}
+
+impl BlockPermutation<AES_BLOCK_LEN> for AES192Internal {
     fn encrypt_block(&self, block: &mut Block) {
         Self::encrypt_block(self, block)
     }
@@ -298,6 +298,9 @@ impl ElectronicCodeBook<32, AES_BLOCK_LEN> for AES256Internal {
     fn new(key: &KeyMaterial<32>) -> Result<Self, SymmetricCipherError> {
         AES256Internal::new(key)
     }
+}
+
+impl BlockPermutation<AES_BLOCK_LEN> for AES256Internal {
     fn encrypt_block(&self, block: &mut Block) {
         Self::encrypt_block(self, block)
     }

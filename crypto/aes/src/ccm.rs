@@ -235,26 +235,8 @@ pub type AES_CCM_128<
     const AAD_LEN: usize,
     const DATA_LEN: usize,
 > = <Dir as Direction>::Select<
-    CcmPacketEncryptor<
-        'k,
-        AES128Internal,
-        16,
-        AES_BLOCK_LEN,
-        NONCE_LEN,
-        TAG_LEN,
-        AAD_LEN,
-        DATA_LEN,
-    >,
-    CcmPacketDecryptor<
-        'k,
-        AES128Internal,
-        16,
-        AES_BLOCK_LEN,
-        NONCE_LEN,
-        TAG_LEN,
-        AAD_LEN,
-        DATA_LEN,
-    >,
+    CcmPacketEncryptor<'k, AES128Internal, AES_BLOCK_LEN, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>,
+    CcmPacketDecryptor<'k, AES128Internal, AES_BLOCK_LEN, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>,
 >;
 
 /// AES-192 in CCM mode, as an [`AEADCipherEncryptor`] or [`AEADCipherDecryptor`] by `Dir`. See [`AES_CCM_128`].
@@ -267,26 +249,8 @@ pub type AES_CCM_192<
     const AAD_LEN: usize,
     const DATA_LEN: usize,
 > = <Dir as Direction>::Select<
-    CcmPacketEncryptor<
-        'k,
-        AES192Internal,
-        24,
-        AES_BLOCK_LEN,
-        NONCE_LEN,
-        TAG_LEN,
-        AAD_LEN,
-        DATA_LEN,
-    >,
-    CcmPacketDecryptor<
-        'k,
-        AES192Internal,
-        24,
-        AES_BLOCK_LEN,
-        NONCE_LEN,
-        TAG_LEN,
-        AAD_LEN,
-        DATA_LEN,
-    >,
+    CcmPacketEncryptor<'k, AES192Internal, AES_BLOCK_LEN, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>,
+    CcmPacketDecryptor<'k, AES192Internal, AES_BLOCK_LEN, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>,
 >;
 
 /// AES-256 in CCM mode, as an [`AEADCipherEncryptor`] or [`AEADCipherDecryptor`] by `Dir`. See [`AES_CCM_128`].
@@ -299,24 +263,6 @@ pub type AES_CCM_256<
     const AAD_LEN: usize,
     const DATA_LEN: usize,
 > = <Dir as Direction>::Select<
-    CcmPacketEncryptor<
-        'k,
-        AES256Internal,
-        32,
-        AES_BLOCK_LEN,
-        NONCE_LEN,
-        TAG_LEN,
-        AAD_LEN,
-        DATA_LEN,
-    >,
-    CcmPacketDecryptor<
-        'k,
-        AES256Internal,
-        32,
-        AES_BLOCK_LEN,
-        NONCE_LEN,
-        TAG_LEN,
-        AAD_LEN,
-        DATA_LEN,
-    >,
+    CcmPacketEncryptor<'k, AES256Internal, AES_BLOCK_LEN, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>,
+    CcmPacketDecryptor<'k, AES256Internal, AES_BLOCK_LEN, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>,
 >;

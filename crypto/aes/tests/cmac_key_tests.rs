@@ -42,9 +42,9 @@ fn the_key_object_gives_the_csrc_answer() {
 
 #[test]
 fn the_key_and_the_bare_key_state_agree_at_every_key_length() {
-    let state_16 = CmacKeyState::new::<16>(AES128Internal::new(&cipher_key::<16>(0x0b)).unwrap());
-    let state_24 = CmacKeyState::new::<24>(AES192Internal::new(&cipher_key::<24>(0x0c)).unwrap());
-    let state_32 = CmacKeyState::new::<32>(AES256Internal::new(&cipher_key::<32>(0x0d)).unwrap());
+    let state_16 = CmacKeyState::new(AES128Internal::new(&cipher_key::<16>(0x0b)).unwrap());
+    let state_24 = CmacKeyState::new(AES192Internal::new(&cipher_key::<24>(0x0c)).unwrap());
+    let state_32 = CmacKeyState::new(AES256Internal::new(&cipher_key::<32>(0x0d)).unwrap());
     for len in [0usize, 1, 15, 16, 17, 43] {
         let msg = &MSG[..len];
         assert_eq!(
