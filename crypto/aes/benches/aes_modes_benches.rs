@@ -54,8 +54,9 @@ use bouncycastle_cipher::modes::{
 use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::hazmat::{
-    AeadDeclaredDecryptMode, AeadDeclaredEncryptMode, BlockDecryptMode, EcbDecryptionKey,
-    EcbEncryptMode, EcbEncryptionKey, ElectronicCodeBook, Mode, SymmetricDecryptMode,
+    AeadDeclaredDecryptMode, AeadDeclaredEncryptMode, BlockDecryptMode, BlockPermutation,
+    EcbDecryptionKey, EcbEncryptMode, EcbEncryptionKey, ElectronicCodeBook, Mode,
+    SymmetricDecryptMode,
 };
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
@@ -76,9 +77,9 @@ const BLOCK_LEN: usize = 16;
 const NUM_BLOCKS: usize = 1024;
 const DATA_LEN: usize = NUM_BLOCKS * BLOCK_LEN;
 
-type Aes128Cfb<'k, Dir> = Cfb<'k, AES128Internal, Dir, 16, BLOCK_LEN>;
-type Aes256Cfb<'k, Dir> = Cfb<'k, AES256Internal, Dir, 32, BLOCK_LEN>;
-type Aes128Cfb8<'k, Dir> = Cfb8<'k, AES128Internal, Dir, 16, BLOCK_LEN>;
+type Aes128Cfb<'k, Dir> = Cfb<'k, AES128Internal, Dir, BLOCK_LEN>;
+type Aes256Cfb<'k, Dir> = Cfb<'k, AES256Internal, Dir, BLOCK_LEN>;
+type Aes128Cfb8<'k, Dir> = Cfb8<'k, AES128Internal, Dir, BLOCK_LEN>;
 
 /// CCM at the parameters the ACVP vectors and most protocols use: a 12-byte nonce and a full
 /// 16-byte tag. The mode's in-place one-shots over the keyed permutation are the direct path;
@@ -98,9 +99,9 @@ type Aes128CcmFrameKey =
 const GCM_TAG_LEN: usize = 16;
 type Aes128GcmKey = AES128Key<GCM<GCM_TAG_LEN>>;
 type Aes256GcmKey = AES256Key<GCM<GCM_TAG_LEN>>;
-type Aes128Ctr<'k, Dir> = Ctr<'k, AES128Internal, Dir, 16, BLOCK_LEN, 12>;
-type Aes256Ctr<'k, Dir> = Ctr<'k, AES256Internal, Dir, 32, BLOCK_LEN, 12>;
-type Aes128Ecb<'k, Dir> = Ecb<'k, AES128Internal, Dir, 16, BLOCK_LEN>;
+type Aes128Ctr<'k, Dir> = Ctr<'k, AES128Internal, Dir, BLOCK_LEN, 12>;
+type Aes256Ctr<'k, Dir> = Ctr<'k, AES256Internal, Dir, BLOCK_LEN, 12>;
+type Aes128Ecb<'k, Dir> = Ecb<'k, AES128Internal, Dir, BLOCK_LEN>;
 
 /// AES-128 with the batch methods implemented as single-block loops instead of AES's bit-sliced
 /// pair.
@@ -140,11 +141,14 @@ impl ElectronicCodeBook<16, BLOCK_LEN> for UnpairedAes128 {
     fn new(key: &KeyMaterial<16>) -> Result<Self, SymmetricCipherError> {
         Ok(Self(<AES128Internal as ElectronicCodeBook<16, BLOCK_LEN>>::new(key)?))
     }
+}
+
+impl BlockPermutation<BLOCK_LEN> for UnpairedAes128 {
     fn encrypt_block(&self, block: &mut [u8; BLOCK_LEN]) {
-        <AES128Internal as ElectronicCodeBook<16, BLOCK_LEN>>::encrypt_block(&self.0, block)
+        <AES128Internal as BlockPermutation<BLOCK_LEN>>::encrypt_block(&self.0, block)
     }
     fn decrypt_block(&self, block: &mut [u8; BLOCK_LEN]) {
-        <AES128Internal as ElectronicCodeBook<16, BLOCK_LEN>>::decrypt_block(&self.0, block)
+        <AES128Internal as BlockPermutation<BLOCK_LEN>>::decrypt_block(&self.0, block)
     }
     // Deliberately single-block loops, as a cipher with no unit wider than a block would write
     // them, bypassing AES's bit-sliced pair.
@@ -170,9 +174,9 @@ impl ElectronicCodeBook<16, BLOCK_LEN> for UnpairedAes128 {
     }
 }
 
-type UnpairedAes128Cbc<'k, Dir> = Cbc<'k, UnpairedAes128, Dir, 16, BLOCK_LEN>;
-type UnpairedAes128Cfb<'k, Dir> = Cfb<'k, UnpairedAes128, Dir, 16, BLOCK_LEN>;
-type UnpairedAes128Ecb<'k, Dir> = Ecb<'k, UnpairedAes128, Dir, 16, BLOCK_LEN>;
+type UnpairedAes128Cbc<'k, Dir> = Cbc<'k, UnpairedAes128, Dir, BLOCK_LEN>;
+type UnpairedAes128Cfb<'k, Dir> = Cfb<'k, UnpairedAes128, Dir, BLOCK_LEN>;
+type UnpairedAes128Ecb<'k, Dir> = Ecb<'k, UnpairedAes128, Dir, BLOCK_LEN>;
 
 fn key<const N: usize>() -> KeyMaterial<N> {
     let bytes: [u8; N] = core::array::from_fn(|i| (i as u8).wrapping_mul(7).wrapping_add(1));

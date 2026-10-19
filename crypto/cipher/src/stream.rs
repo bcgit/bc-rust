@@ -90,13 +90,8 @@ pub fn stream_do_final() -> Result<([u8; 0], usize), SymmetricCipherError> {
 /// against the whole call, so a message is never half-processed before the cipher notices. Past
 /// that point the keystream would repeat, which is the two-time-pad failure within one message.
 #[derive(Clone)]
-pub struct StreamCipher<
-    KS,
-    Dir,
-    const KEY_LEN: usize,
-    const INIT_DATA_LEN: usize,
-    const BLOCK_LEN: usize,
-> where
+pub struct StreamCipher<KS, Dir, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize>
+where
     KS: KeyStream<INIT_DATA_LEN, BLOCK_LEN>,
 {
     keystream: KS,
@@ -108,8 +103,8 @@ pub struct StreamCipher<
     _marker: PhantomData<Dir>,
 }
 
-impl<KS, Dir, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize>
-    StreamCipher<KS, Dir, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
+impl<KS, Dir, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize>
+    StreamCipher<KS, Dir, INIT_DATA_LEN, BLOCK_LEN>
 where
     KS: KeyStream<INIT_DATA_LEN, BLOCK_LEN>,
 {
@@ -196,8 +191,8 @@ where
     }
 }
 
-impl<KS, Dir, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize> Algorithm
-    for StreamCipher<KS, Dir, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
+impl<KS, Dir, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize> Algorithm
+    for StreamCipher<KS, Dir, INIT_DATA_LEN, BLOCK_LEN>
 where
     KS: KeyStream<INIT_DATA_LEN, BLOCK_LEN>,
 {
@@ -207,9 +202,9 @@ where
     const MAX_SECURITY_STRENGTH: SecurityStrength = KS::MAX_SECURITY_STRENGTH;
 }
 
-impl<KS, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize>
+impl<KS, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize>
     SymmetricCipherEncryptor<INIT_DATA_LEN, 0>
-    for StreamCipher<KS, Encrypting, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
+    for StreamCipher<KS, Encrypting, INIT_DATA_LEN, BLOCK_LEN>
 where
     KS: KeyStream<INIT_DATA_LEN, BLOCK_LEN>,
 {
@@ -239,9 +234,8 @@ where
     }
 }
 
-impl<KS, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize>
-    StreamCipherEncryptor<INIT_DATA_LEN>
-    for StreamCipher<KS, Encrypting, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
+impl<KS, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize> StreamCipherEncryptor<INIT_DATA_LEN>
+    for StreamCipher<KS, Encrypting, INIT_DATA_LEN, BLOCK_LEN>
 where
     KS: KeyStream<INIT_DATA_LEN, BLOCK_LEN>,
 {
@@ -255,9 +249,9 @@ where
     }
 }
 
-impl<KS, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize>
+impl<KS, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize>
     SymmetricCipherDecryptor<INIT_DATA_LEN, 0>
-    for StreamCipher<KS, Decrypting, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
+    for StreamCipher<KS, Decrypting, INIT_DATA_LEN, BLOCK_LEN>
 where
     KS: KeyStream<INIT_DATA_LEN, BLOCK_LEN>,
 {
@@ -287,9 +281,8 @@ where
     }
 }
 
-impl<KS, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize>
-    StreamCipherDecryptor<INIT_DATA_LEN>
-    for StreamCipher<KS, Decrypting, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
+impl<KS, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize> StreamCipherDecryptor<INIT_DATA_LEN>
+    for StreamCipher<KS, Decrypting, INIT_DATA_LEN, BLOCK_LEN>
 where
     KS: KeyStream<INIT_DATA_LEN, BLOCK_LEN>,
 {
@@ -302,8 +295,8 @@ where
     }
 }
 
-impl<'k, KS, Dir, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize>
-    StreamCipher<KS, Dir, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
+impl<'k, KS, Dir, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize>
+    StreamCipher<KS, Dir, INIT_DATA_LEN, BLOCK_LEN>
 where
     KS: KeyStream<INIT_DATA_LEN, BLOCK_LEN> + SuspendableComponent<'k>,
 {
@@ -317,8 +310,8 @@ where
 /// The suspended state is the keystream's own state followed by the pending keystream block and
 /// how much of it is used. The pending block is live keystream, which is why the whole state
 /// must be protected and never resumed twice; see [`bouncycastle_utils::suspendable_state`].
-impl<'k, KS, Dir, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize>
-    SuspendableComponent<'k> for StreamCipher<KS, Dir, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
+impl<'k, KS, Dir, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize> SuspendableComponent<'k>
+    for StreamCipher<KS, Dir, INIT_DATA_LEN, BLOCK_LEN>
 where
     KS: KeyStream<INIT_DATA_LEN, BLOCK_LEN> + SuspendableComponent<'k>,
 {
@@ -350,15 +343,8 @@ where
 }
 
 /// `N` must be [`StreamCipher::SUSPENDED_STATE_LEN`]; anything else is a compile error.
-impl<
-    'k,
-    KS,
-    Dir,
-    const KEY_LEN: usize,
-    const INIT_DATA_LEN: usize,
-    const BLOCK_LEN: usize,
-    const N: usize,
-> SuspendableKeyed<'k, N> for StreamCipher<KS, Dir, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
+impl<'k, KS, Dir, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize, const N: usize>
+    SuspendableKeyed<'k, N> for StreamCipher<KS, Dir, INIT_DATA_LEN, BLOCK_LEN>
 where
     KS: KeyStream<INIT_DATA_LEN, BLOCK_LEN> + SuspendableComponent<'k>,
 {

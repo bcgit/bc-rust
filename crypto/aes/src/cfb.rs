@@ -94,12 +94,12 @@ use bouncycastle_core::symmetric_key::{SymmetricDecryptionKey, SymmetricEncrypti
 
 /// AES-128 in CFB128 mode.
 #[allow(non_camel_case_types)]
-pub type AES_CFB_128<'k, Dir> = Cfb<'k, AES128Internal, Dir, 16, AES_BLOCK_LEN>;
+pub type AES_CFB_128<'k, Dir> = Cfb<'k, AES128Internal, Dir, AES_BLOCK_LEN>;
 
 /// AES-192 in CFB128 mode.
 #[allow(non_camel_case_types)]
-pub type AES_CFB_192<'k, Dir> = Cfb<'k, AES192Internal, Dir, 24, AES_BLOCK_LEN>;
+pub type AES_CFB_192<'k, Dir> = Cfb<'k, AES192Internal, Dir, AES_BLOCK_LEN>;
 
 /// AES-256 in CFB128 mode. See [`AES_CFB_128`].
 #[allow(non_camel_case_types)]
-pub type AES_CFB_256<'k, Dir> = Cfb<'k, AES256Internal, Dir, 32, AES_BLOCK_LEN>;
+pub type AES_CFB_256<'k, Dir> = Cfb<'k, AES256Internal, Dir, AES_BLOCK_LEN>;

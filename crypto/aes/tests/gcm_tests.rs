@@ -37,11 +37,11 @@ fn the_alias_names_the_expected_type() {
 
     assert_eq!(
         size_of::<AES_GCM_128<'_, Encrypting>>(),
-        size_of::<Gcm<'_, AES128Internal, Encrypting, 16, 16>>()
+        size_of::<Gcm<'_, AES128Internal, Encrypting, 16>>()
     );
     assert_eq!(
         size_of::<AES_GCM_128<'_, Decrypting>>(),
-        size_of::<Gcm<'_, AES128Internal, Decrypting, 16, 16>>()
+        size_of::<Gcm<'_, AES128Internal, Decrypting, 16>>()
     );
 }
 

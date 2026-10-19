@@ -11,7 +11,7 @@
 use bouncycastle_cipher::modes::hazmat::{ECB, Ecb};
 use bouncycastle_cipher::modes::{
     Blocks, CBC, CCM_Packet, CFB, CFB8, CTR, Cbc, CcmPacketDecryptor, CcmPacketEncryptor, Cfb,
-    Cfb8, Ctr, Gcm,
+    Cfb8, Ctr, GCM, Gcm,
 };
 use bouncycastle_cipher::padding::{PKCS7, PaddedBlockCipherDecryptor, PaddedBlockCipherEncryptor};
 use bouncycastle_cipher::{Decrypting, Encrypting};
@@ -33,20 +33,20 @@ mod toy_block_cipher;
 #[path = "common/toy_key.rs"]
 mod toy_key;
 use toy_block_cipher::ToyBlockCipher;
-use toy_key::{ToyGCM, ToyKey, os_rng};
+use toy_key::{ToyKey, os_rng};
 
-type ToyEcb<'k, Dir> = Ecb<'k, ToyBlockCipher, Dir, 16, 16>;
-type ToyCbc<'k, Dir> = Cbc<'k, ToyBlockCipher, Dir, 16, 16>;
-type ToyCfb<'k, Dir> = Cfb<'k, ToyBlockCipher, Dir, 16, 16>;
-type ToyCfb8<'k, Dir> = Cfb8<'k, ToyBlockCipher, Dir, 16, 16>;
-type ToyCtr<'k, Dir> = Ctr<'k, ToyBlockCipher, Dir, 16, 16, 12>;
-type ToyGcm<'k, Dir> = Gcm<'k, ToyBlockCipher, Dir, 16, 16>;
+type ToyEcb<'k, Dir> = Ecb<'k, ToyBlockCipher, Dir, 16>;
+type ToyCbc<'k, Dir> = Cbc<'k, ToyBlockCipher, Dir, 16>;
+type ToyCfb<'k, Dir> = Cfb<'k, ToyBlockCipher, Dir, 16>;
+type ToyCfb8<'k, Dir> = Cfb8<'k, ToyBlockCipher, Dir, 16>;
+type ToyCtr<'k, Dir> = Ctr<'k, ToyBlockCipher, Dir, 16, 12>;
+type ToyGcm<'k, Dir> = Gcm<'k, ToyBlockCipher, Dir, 16>;
 // A 64-byte AAD capacity and 37-byte frames, the message `ccm_both_directions` uses.
 type ToyCcmPacket = CCM_Packet<12, 16, 64, 37>;
-type ToyCcmEnc<'k> = CcmPacketEncryptor<'k, ToyBlockCipher, 16, 16, 12, 16, 64, 37>;
-type ToyCcmDec<'k> = CcmPacketDecryptor<'k, ToyBlockCipher, 16, 16, 12, 16, 64, 37>;
-type ToyPaddedEnc<'k> = PaddedBlockCipherEncryptor<ToyCbc<'k, Encrypting>, PKCS7, 16, 16, 16>;
-type ToyPaddedDec<'k> = PaddedBlockCipherDecryptor<ToyCbc<'k, Decrypting>, PKCS7, 16, 16, 16>;
+type ToyCcmEnc<'k> = CcmPacketEncryptor<'k, ToyBlockCipher, 16, 12, 16, 64, 37>;
+type ToyCcmDec<'k> = CcmPacketDecryptor<'k, ToyBlockCipher, 16, 12, 16, 64, 37>;
+type ToyPaddedEnc<'k> = PaddedBlockCipherEncryptor<ToyCbc<'k, Encrypting>, PKCS7, 16, 16>;
+type ToyPaddedDec<'k> = PaddedBlockCipherDecryptor<ToyCbc<'k, Decrypting>, PKCS7, 16, 16>;
 
 fn key() -> KeyMaterial<16> {
     KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey).unwrap()
@@ -230,7 +230,7 @@ fn gcm_both_directions_with_aad() {
     let msg = message(45);
     let aad = b"authenticated header";
 
-    let key = key_for::<ToyGCM<16>>();
+    let key = key_for::<GCM<16>>();
     let (mut enc, nonce) = key.create_encryptor(&mut os_rng()).unwrap();
     enc.do_update_aad(aad).unwrap();
     let mut head = [0u8; 5];
@@ -252,7 +252,7 @@ fn gcm_both_directions_with_aad() {
 
     // The decryptor holds the last 16 bytes back, so after 10 bytes nothing has been released,
     // but data has started and the AAD phase is closed: a state worth suspending.
-    let key = key_for::<ToyGCM<16>>();
+    let key = key_for::<GCM<16>>();
     let mut dec = key.create_decryptor(&nonce);
     dec.do_update_aad(aad).unwrap();
     let mut nothing = [0u8; 0];

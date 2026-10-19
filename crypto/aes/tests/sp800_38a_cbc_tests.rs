@@ -18,7 +18,7 @@
 use bouncycastle_aes::hazmat::AES128Internal;
 use bouncycastle_aes::{AES128Key, AES192Key, AES256Key};
 use bouncycastle_cipher::modes::{Blocks, CBC};
-use bouncycastle_core::hazmat::ElectronicCodeBook;
+use bouncycastle_core::hazmat::{BlockPermutation, ElectronicCodeBook};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::symmetric_key::{BlockDecryptionKey, BlockEncryptionKey, FromKeyMaterial};
 use bouncycastle_core::traits::{BlockCipherDecryptor, BlockCipherEncryptor};
@@ -211,7 +211,7 @@ fn cbc_differs_from_ecb_by_the_iv() {
 
     // The raw permutation on P1 alone is the ECB answer from F.1.1.
     let mut ecb = block(PLAINTEXTS[0]);
-    <AES128Internal as ElectronicCodeBook<16, 16>>::encrypt_block(
+    <AES128Internal as BlockPermutation<16>>::encrypt_block(
         &<AES128Internal as ElectronicCodeBook<16, 16>>::new(&key).unwrap(),
         &mut ecb,
     );

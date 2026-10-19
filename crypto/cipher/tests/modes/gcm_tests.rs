@@ -10,7 +10,7 @@ mod common;
 #[path = "../common/toy_key.rs"]
 mod toy_key;
 
-use bouncycastle_cipher::modes::ModeNames;
+use bouncycastle_cipher::modes::{GCM, ModeNames};
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::symmetric_key::{AeadDecryptionKey, AeadEncryptionKey, FromKeyMaterial};
@@ -20,9 +20,9 @@ use bouncycastle_core::traits::{
 use bouncycastle_core_test_framework::FixedSeedRNG;
 use bouncycastle_core_test_framework::from_key_material::TestFrameworkFromKeyMaterial;
 use common::{ForwardOnlyToy, TOY_LEN, Toy, toy_key};
-use toy_key::{ToyGCM, ToyKey, os_rng};
+use toy_key::{ToyKey, os_rng};
 
-type ToyGcmKey<const TAG_LEN: usize = 16> = ToyKey<Toy, ToyGCM<TAG_LEN>>;
+type ToyGcmKey<const TAG_LEN: usize = 16> = ToyKey<Toy, GCM<TAG_LEN>>;
 
 fn gcm_key<const TAG_LEN: usize>() -> ToyGcmKey<TAG_LEN> {
     ToyGcmKey::from_key_material(&toy_key()).expect("the toy key")
@@ -246,7 +246,7 @@ fn neither_direction_uses_the_inverse_cipher() {
     where
         P: bouncycastle_core::hazmat::ElectronicCodeBook<TOY_LEN, TOY_LEN> + ModeNames + Clone,
     {
-        let key = ToyKey::<P, ToyGCM<16>>::from_key_material(&toy_key()).unwrap();
+        let key = ToyKey::<P, GCM<16>>::from_key_material(&toy_key()).unwrap();
         let aad = b"associated data of no particular length";
         let message = b"a message that is not a whole number of blocks!!";
 

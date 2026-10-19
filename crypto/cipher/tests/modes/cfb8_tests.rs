@@ -17,7 +17,7 @@ mod toy_key;
 
 use bouncycastle_cipher::modes::{CFB, CFB8, Cfb8, ModeNames};
 use bouncycastle_cipher::{Decrypting, Encrypting};
-use bouncycastle_core::hazmat::ElectronicCodeBook;
+use bouncycastle_core::hazmat::{BlockPermutation, ElectronicCodeBook};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::symmetric_key::{
@@ -30,7 +30,7 @@ use bouncycastle_core_test_framework::symmetric_ciphers::TestFrameworkStreamCiph
 use common::{ForwardOnlyToy, SwappedFourToy, SwappedPairToy, TOY_LEN, Toy, toy_key};
 use toy_key::{ToyKey, os_rng};
 
-type ToyCfb8<'k, Dir> = Cfb8<'k, Toy, Dir, TOY_LEN, TOY_LEN>;
+type ToyCfb8<'k, Dir> = Cfb8<'k, Toy, Dir, TOY_LEN>;
 
 type ToyCfb8Key = ToyKey<Toy, CFB8>;
 
@@ -130,7 +130,7 @@ fn cfb8_conforms_to_the_stream_cipher_framework() {
 /// the implementation uses.
 ///
 /// This is the independent reference the mode is checked against below. It uses only
-/// [`ElectronicCodeBook::encrypt_block`], because that is all the spec calls for.
+/// [`BlockPermutation::encrypt_block`], because that is all the spec calls for.
 fn reference_cfb8(perm: &Toy, iv: [u8; TOY_LEN], input: &[u8], encrypt: bool) -> Vec<u8> {
     let mut chain = iv; // I1 = IV
     let mut out = Vec::with_capacity(input.len());

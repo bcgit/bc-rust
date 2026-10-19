@@ -131,10 +131,10 @@ fn the_key_type_a_mode_requires_is_the_constructor_constant() {
 fn create_encryptor_matches_the_key_state_route() {
     let km = material::<32>();
     let key = AES256Key::<GCM>::from_key_material(&km).expect("a valid key");
-    let state = GcmKeyState::new::<32>(AES256Internal::new(&km).unwrap());
+    let state = GcmKeyState::new(AES256Internal::new(&km).unwrap());
 
     let (mut enc_state, nonce_state) =
-        Gcm::<AES256Internal, Encrypting, 32, 16>::from_key_state(&state, &mut rng())
+        Gcm::<AES256Internal, Encrypting, 16>::from_key_state(&state, &mut rng())
             .expect("key-state init");
     let (mut enc_key, nonce_key) = key.create_encryptor(&mut rng()).expect("key-side init");
     assert_eq!(nonce_state, nonce_key);
@@ -231,10 +231,10 @@ fn the_key_and_the_key_state_route_interoperate_at_every_key_length() {
         P: ElectronicCodeBook<N, 16> + ModeNames + Clone,
         K: AeadEncryptionKey<N, 12, 16, 16> + AeadDecryptionKey<N, 12, 16, 16>,
     {
-        let state = GcmKeyState::new::<N>(P::new(&material::<N>()).unwrap());
+        let state = GcmKeyState::new(P::new(&material::<N>()).unwrap());
 
         let (mut enc, nonce) =
-            Gcm::<P, Encrypting, N, 16>::from_key_state(&state, &mut rng()).unwrap();
+            Gcm::<P, Encrypting, 16>::from_key_state(&state, &mut rng()).unwrap();
         enc.do_update_aad(AAD).unwrap();
         let mut ct = vec![0u8; MSG.len()];
         enc.do_encrypt_out(MSG, &mut ct).unwrap();
@@ -243,7 +243,7 @@ fn the_key_and_the_key_state_route_interoperate_at_every_key_length() {
         assert_eq!(pt, MSG);
 
         let (nonce, ct, tag) = encrypt_via_key::<N, K>(key);
-        let mut dec = Gcm::<P, Decrypting, N, 16>::from_key_state(&state, &nonce);
+        let mut dec = Gcm::<P, Decrypting, 16>::from_key_state(&state, &nonce);
         dec.do_update_aad(AAD).unwrap();
         let mut pt = vec![0u8; ct.len()];
         let n = dec.do_decrypt_out(&ct, &mut pt).unwrap();

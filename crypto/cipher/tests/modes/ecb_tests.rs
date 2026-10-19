@@ -19,7 +19,9 @@ use bouncycastle_cipher::modes::hazmat::{ECB, Ecb};
 use bouncycastle_cipher::modes::{Blocks, CBC, Cbc, ModeNames};
 use bouncycastle_cipher::padding::PKCS7;
 use bouncycastle_cipher::{Decrypting, Encrypting};
-use bouncycastle_core::hazmat::{EcbDecryptionKey, EcbEncryptionKey, ElectronicCodeBook};
+use bouncycastle_core::hazmat::{
+    BlockPermutation, EcbDecryptionKey, EcbEncryptionKey, ElectronicCodeBook,
+};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::symmetric_key::{
     BlockEncryptionKey, FromKeyMaterial, SymmetricDecryptionKey, SymmetricEncryptionKey,
@@ -33,7 +35,7 @@ use bouncycastle_core_test_framework::from_key_material::TestFrameworkFromKeyMat
 use common::{SwappedFourToy, SwappedPairToy, TOY_LEN, Toy, toy_key};
 use toy_key::{ToyKey, os_rng};
 
-type ToyEcb<'k, Dir> = Ecb<'k, Toy, Dir, TOY_LEN, TOY_LEN>;
+type ToyEcb<'k, Dir> = Ecb<'k, Toy, Dir, TOY_LEN>;
 type ToyEcbKey = ToyKey<Toy, ECB<Blocks>>;
 
 fn ecb_key() -> ToyEcbKey {
@@ -409,6 +411,6 @@ fn sizes_match_the_documented_memory_table() {
     // One block smaller than CBC, which stores a chaining value.
     assert_eq!(
         size_of::<ToyEcb<Encrypting>>() + TOY_LEN,
-        size_of::<Cbc<'_, Toy, Encrypting, TOY_LEN, TOY_LEN>>()
+        size_of::<Cbc<'_, Toy, Encrypting, TOY_LEN>>()
     );
 }

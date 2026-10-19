@@ -215,11 +215,14 @@ What that taught, as mechanics for the next trait that sheds a constructor:
   `BlockEncryptMode`, `EcbEncryptMode`, `AeadEncryptMode`, `AeadDeclaredEncryptMode`, `MacMode`).
   Padding and frame parameters live in the mode type (`CBC<PKCS7>`, `CBC<Blocks>`,
   `ECB<Blocks>`, `CTR<12>`, `CCM_Packet<12, 16, 64, 1024>`), not on a worker alias.
-- **A key that needs the permutation's key length cannot be generic over it.** `Mode<P>` cannot
-  carry `KEY_LEN` while `ElectronicCodeBook<KEY_LEN, BLOCK_LEN>` does, so the GCM, GMAC and CMAC
-  mode impls are written per AES key length; the cipher crate's tests use local `ToyGCM` /
-  `ToyCMAC` marker types for the same reason. A `BlockPermutation<BLOCK_LEN>` split is the open
-  follow-up.
+- **The key length stops at the key.** `BlockPermutation<BLOCK_LEN>` carries the block methods
+  and `ElectronicCodeBook<KEY_LEN, BLOCK_LEN>` adds only `new`, so a worker and a mode's
+  `Mode<P>` impl bound on the former and never name a key length; the GCM, GMAC and CMAC impls
+  are generic in `cipher` for that reason. `KEY_LEN` stays on the mode traits' worker-producing
+  halves as the tie between a key's length and its permutation's, through
+  `P: ElectronicCodeBook<KEY_LEN, ..>`, which is what keeps a key object's role impls to the one
+  length. A mode that must know the block length (`CMAC<BLOCK_LEN>`, `CTR<N, BLOCK_LEN>`) takes
+  it as a parameter, since stable Rust cannot read it off the permutation inside the impl.
 - **Test the key, not the worker pair.** The framework runners are `test_key` over a role pair
   and the construction suites in `core_test_framework::from_key_material`; a test of "a key of the
   wrong type is rejected" belongs to the construction suite, once, not to each mode's tests.

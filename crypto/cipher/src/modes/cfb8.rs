@@ -58,7 +58,7 @@ use crate::stream::{stream_do_final, stream_update_out};
 use crate::{Decrypting, Encrypting};
 use bouncycastle_core::errors::{SuspendableError, SymmetricCipherError};
 use bouncycastle_core::hazmat::{
-    ElectronicCodeBook, Mode, SymmetricDecryptMode, SymmetricEncryptMode,
+    BlockPermutation, ElectronicCodeBook, Mode, SymmetricDecryptMode, SymmetricEncryptMode,
 };
 use bouncycastle_core::key_material::KeyType;
 use bouncycastle_core::security_strength::SecurityStrength;
@@ -97,7 +97,7 @@ where
     P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames + Clone,
 {
     type Encryptor<'k>
-        = Cfb8<'k, P, Encrypting, KEY_LEN, BLOCK_LEN>
+        = Cfb8<'k, P, Encrypting, BLOCK_LEN>
     where
         P: 'k;
 
@@ -117,7 +117,7 @@ where
     P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames + Clone,
 {
     type Decryptor<'k>
-        = Cfb8<'k, P, Decrypting, KEY_LEN, BLOCK_LEN>
+        = Cfb8<'k, P, Decrypting, BLOCK_LEN>
     where
         P: 'k;
 
@@ -151,9 +151,9 @@ where
 /// byte and lives only in a local, so no keystream outlives the call that used it. No partial
 /// segment is stored either, because a segment is one byte.
 #[derive(Clone)]
-pub struct Cfb8<'k, P, Dir, const KEY_LEN: usize, const BLOCK_LEN: usize>
+pub struct Cfb8<'k, P, Dir, const BLOCK_LEN: usize>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
+    P: BlockPermutation<BLOCK_LEN> + ModeNames,
 {
     perm: &'k P,
     /// `Ij`: the IV, then the shift register. See the module docs.
@@ -161,9 +161,9 @@ where
     _dir: PhantomData<Dir>,
 }
 
-impl<'k, P, Dir, const KEY_LEN: usize, const BLOCK_LEN: usize> Cfb8<'k, P, Dir, KEY_LEN, BLOCK_LEN>
+impl<'k, P, Dir, const BLOCK_LEN: usize> Cfb8<'k, P, Dir, BLOCK_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
+    P: BlockPermutation<BLOCK_LEN> + ModeNames,
 {
     /// The `N` of this type's [`SuspendableKeyed<'k, N>`] impl: the version header and the shift
     /// register. See [`bouncycastle_utils::suspendable_state`].
@@ -223,10 +223,9 @@ where
     }
 }
 
-impl<'k, P, Dir, const KEY_LEN: usize, const BLOCK_LEN: usize> Algorithm
-    for Cfb8<'k, P, Dir, KEY_LEN, BLOCK_LEN>
+impl<'k, P, Dir, const BLOCK_LEN: usize> Algorithm for Cfb8<'k, P, Dir, BLOCK_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
+    P: BlockPermutation<BLOCK_LEN> + ModeNames,
 {
     /// The permutation's name for this mode, [`ModeNames::CFB8_ALG_NAME`].
     const ALG_NAME: &'static str = P::CFB8_ALG_NAME;
@@ -234,10 +233,10 @@ where
     const MAX_SECURITY_STRENGTH: SecurityStrength = P::MAX_SECURITY_STRENGTH;
 }
 
-impl<'k, P, const KEY_LEN: usize, const BLOCK_LEN: usize> SymmetricCipherEncryptor<BLOCK_LEN, 0>
-    for Cfb8<'k, P, Encrypting, KEY_LEN, BLOCK_LEN>
+impl<'k, P, const BLOCK_LEN: usize> SymmetricCipherEncryptor<BLOCK_LEN, 0>
+    for Cfb8<'k, P, Encrypting, BLOCK_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
+    P: BlockPermutation<BLOCK_LEN> + ModeNames,
 {
     /// Every input byte produces exactly one output byte.
     fn do_encrypt_out_len(&self, input_len: usize) -> usize {
@@ -265,10 +264,10 @@ where
     }
 }
 
-impl<'k, P, const KEY_LEN: usize, const BLOCK_LEN: usize> StreamCipherEncryptor<BLOCK_LEN>
-    for Cfb8<'k, P, Encrypting, KEY_LEN, BLOCK_LEN>
+impl<'k, P, const BLOCK_LEN: usize> StreamCipherEncryptor<BLOCK_LEN>
+    for Cfb8<'k, P, Encrypting, BLOCK_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
+    P: BlockPermutation<BLOCK_LEN> + ModeNames,
 {
     /// Encrypts `data`, of any length, in place: `Cj = Pj XOR MSB_8(CIPH_K(Ij))` for each byte,
     /// then `Cj` shifts into the register.
@@ -285,10 +284,10 @@ where
     }
 }
 
-impl<'k, P, const KEY_LEN: usize, const BLOCK_LEN: usize> SymmetricCipherDecryptor<BLOCK_LEN, 0>
-    for Cfb8<'k, P, Decrypting, KEY_LEN, BLOCK_LEN>
+impl<'k, P, const BLOCK_LEN: usize> SymmetricCipherDecryptor<BLOCK_LEN, 0>
+    for Cfb8<'k, P, Decrypting, BLOCK_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
+    P: BlockPermutation<BLOCK_LEN> + ModeNames,
 {
     /// Nothing is held back, so every input byte can be released immediately.
     fn do_decrypt_out_len(&self, input_len: usize) -> usize {
@@ -316,10 +315,10 @@ where
     }
 }
 
-impl<'k, P, const KEY_LEN: usize, const BLOCK_LEN: usize> StreamCipherDecryptor<BLOCK_LEN>
-    for Cfb8<'k, P, Decrypting, KEY_LEN, BLOCK_LEN>
+impl<'k, P, const BLOCK_LEN: usize> StreamCipherDecryptor<BLOCK_LEN>
+    for Cfb8<'k, P, Decrypting, BLOCK_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
+    P: BlockPermutation<BLOCK_LEN> + ModeNames,
 {
     /// Decrypts `data`, of any length, in place: `Pj = Cj XOR MSB_8(CIPH_K(Ij))` for each byte,
     /// with the *ciphertext* byte -- the one that came in, not the plaintext going out -- shifted
@@ -349,10 +348,9 @@ where
 
 /// The suspended state is the shift register `Ij`, in both directions; the permutation is the
 /// key's, re-supplied by reference. See [`bouncycastle_utils::suspendable_state`].
-impl<'k, P, Dir, const KEY_LEN: usize, const BLOCK_LEN: usize> SuspendableComponent<'k>
-    for Cfb8<'k, P, Dir, KEY_LEN, BLOCK_LEN>
+impl<'k, P, Dir, const BLOCK_LEN: usize> SuspendableComponent<'k> for Cfb8<'k, P, Dir, BLOCK_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
+    P: BlockPermutation<BLOCK_LEN> + ModeNames,
 {
     const STATE_LEN: usize = BLOCK_LEN;
     type Key = P;
@@ -370,10 +368,10 @@ where
 }
 
 /// `N` must be [`Cfb8::SUSPENDED_STATE_LEN`]; anything else is a compile error.
-impl<'k, P, Dir, const KEY_LEN: usize, const BLOCK_LEN: usize, const N: usize>
-    SuspendableKeyed<'k, N> for Cfb8<'k, P, Dir, KEY_LEN, BLOCK_LEN>
+impl<'k, P, Dir, const BLOCK_LEN: usize, const N: usize> SuspendableKeyed<'k, N>
+    for Cfb8<'k, P, Dir, BLOCK_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
+    P: BlockPermutation<BLOCK_LEN> + ModeNames,
 {
     type Key = P;
 

@@ -9,8 +9,8 @@
 //! the forward cipher operations cannot be performed in parallel".
 //!
 //! This implementation uses that: decryption walks the ciphertext four blocks at a time through
-//! [`ElectronicCodeBook::decrypt_4blocks`], then any remaining pair through
-//! [`ElectronicCodeBook::decrypt_2blocks`], then the last block singly. A bit-sliced engine
+//! [`BlockPermutation::decrypt_4blocks`], then any remaining pair through
+//! [`BlockPermutation::decrypt_2blocks`], then the last block singly. A bit-sliced engine
 //! computes two or four blocks (AES, on `u32` or `u64` planes) for barely more than the cost of
 //! one. Encryption cannot, and does not.
 //!
@@ -110,8 +110,8 @@ use crate::padding::{PaddedBlockCipherDecryptor, PaddedBlockCipherEncryptor};
 use crate::{Decrypting, Encrypting};
 use bouncycastle_core::errors::{SuspendableError, SymmetricCipherError};
 use bouncycastle_core::hazmat::{
-    BlockDecryptMode, BlockEncryptMode, ElectronicCodeBook, Mode, SymmetricDecryptMode,
-    SymmetricEncryptMode,
+    BlockDecryptMode, BlockEncryptMode, BlockPermutation, ElectronicCodeBook, Mode,
+    SymmetricDecryptMode, SymmetricEncryptMode,
 };
 use bouncycastle_core::key_material::KeyType;
 use bouncycastle_core::security_strength::SecurityStrength;
@@ -149,13 +149,7 @@ where
     Pad: BlockCipherPadding<BLOCK_LEN>,
 {
     type Encryptor<'k>
-        = PaddedBlockCipherEncryptor<
-        Cbc<'k, P, Encrypting, KEY_LEN, BLOCK_LEN>,
-        Pad,
-        KEY_LEN,
-        BLOCK_LEN,
-        BLOCK_LEN,
-    >
+        = PaddedBlockCipherEncryptor<Cbc<'k, P, Encrypting, BLOCK_LEN>, Pad, BLOCK_LEN, BLOCK_LEN>
     where
         P: 'k;
 
@@ -175,13 +169,7 @@ where
     Pad: BlockCipherPadding<BLOCK_LEN>,
 {
     type Decryptor<'k>
-        = PaddedBlockCipherDecryptor<
-        Cbc<'k, P, Decrypting, KEY_LEN, BLOCK_LEN>,
-        Pad,
-        KEY_LEN,
-        BLOCK_LEN,
-        BLOCK_LEN,
-    >
+        = PaddedBlockCipherDecryptor<Cbc<'k, P, Decrypting, BLOCK_LEN>, Pad, BLOCK_LEN, BLOCK_LEN>
     where
         P: 'k;
 
@@ -199,7 +187,7 @@ where
     P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames + Clone,
 {
     type Encryptor<'k>
-        = Cbc<'k, P, Encrypting, KEY_LEN, BLOCK_LEN>
+        = Cbc<'k, P, Encrypting, BLOCK_LEN>
     where
         P: 'k;
 
@@ -218,7 +206,7 @@ where
     P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames + Clone,
 {
     type Decryptor<'k>
-        = Cbc<'k, P, Decrypting, KEY_LEN, BLOCK_LEN>
+        = Cbc<'k, P, Decrypting, BLOCK_LEN>
     where
         P: 'k;
 
@@ -245,9 +233,9 @@ where
 /// of chaining value. The chaining value is an IV or a
 /// ciphertext block, both of which are public, so it is deliberately not wrapped in a `Secret`.
 #[derive(Clone)]
-pub struct Cbc<'k, P, Dir, const KEY_LEN: usize, const BLOCK_LEN: usize>
+pub struct Cbc<'k, P, Dir, const BLOCK_LEN: usize>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
+    P: BlockPermutation<BLOCK_LEN> + ModeNames,
 {
     perm: &'k P,
     /// `Cj-1`, initialised to the IV. See the module docs on why there is only one field for both.
@@ -255,9 +243,9 @@ where
     _dir: PhantomData<Dir>,
 }
 
-impl<'k, P, Dir, const KEY_LEN: usize, const BLOCK_LEN: usize> Cbc<'k, P, Dir, KEY_LEN, BLOCK_LEN>
+impl<'k, P, Dir, const BLOCK_LEN: usize> Cbc<'k, P, Dir, BLOCK_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
+    P: BlockPermutation<BLOCK_LEN> + ModeNames,
 {
     /// The `N` of this type's [`SuspendableKeyed<'k, N>`] impl: the version header and the chaining
     /// block. See [`bouncycastle_utils::suspendable_state`].
@@ -291,7 +279,7 @@ where
         self.chain = cj;
     }
 
-    /// Decrypts two consecutive blocks with one [`ElectronicCodeBook::decrypt_2blocks`] call.
+    /// Decrypts two consecutive blocks with one [`BlockPermutation::decrypt_2blocks`] call.
     ///
     /// Writing the pair as `Cj, Cj+1` with `Cj-1` the incoming chaining value, Sec 6.2 gives
     ///
@@ -320,7 +308,7 @@ where
         self.chain = cj1;
     }
 
-    /// Decrypts four consecutive blocks with one [`ElectronicCodeBook::decrypt_4blocks`] call.
+    /// Decrypts four consecutive blocks with one [`BlockPermutation::decrypt_4blocks`] call.
     ///
     /// The same argument as [`Self::decrypt_pair`], four wide: `Pj+k = CIPH^-1_K(Cj+k) XOR Cj+k-1`
     /// for `k = 0..4`, with `Cj-1` the incoming chaining value. No inverse cipher depends on
@@ -343,10 +331,9 @@ where
     }
 }
 
-impl<'k, P, Dir, const KEY_LEN: usize, const BLOCK_LEN: usize> Algorithm
-    for Cbc<'k, P, Dir, KEY_LEN, BLOCK_LEN>
+impl<'k, P, Dir, const BLOCK_LEN: usize> Algorithm for Cbc<'k, P, Dir, BLOCK_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
+    P: BlockPermutation<BLOCK_LEN> + ModeNames,
 {
     /// The permutation's name for this mode, [`ModeNames::CBC_ALG_NAME`].
     const ALG_NAME: &'static str = P::CBC_ALG_NAME;
@@ -354,10 +341,10 @@ where
     const MAX_SECURITY_STRENGTH: SecurityStrength = P::MAX_SECURITY_STRENGTH;
 }
 
-impl<'k, P, const KEY_LEN: usize, const BLOCK_LEN: usize> BlockCipherEncryptor<BLOCK_LEN, BLOCK_LEN>
-    for Cbc<'k, P, Encrypting, KEY_LEN, BLOCK_LEN>
+impl<'k, P, const BLOCK_LEN: usize> BlockCipherEncryptor<BLOCK_LEN, BLOCK_LEN>
+    for Cbc<'k, P, Encrypting, BLOCK_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
+    P: BlockPermutation<BLOCK_LEN> + ModeNames,
 {
     /// The implementor hook (the flat `do_encrypt_inplace` is provided over it).
     ///
@@ -374,10 +361,10 @@ where
     }
 }
 
-impl<'k, P, const KEY_LEN: usize, const BLOCK_LEN: usize> BlockCipherDecryptor<BLOCK_LEN, BLOCK_LEN>
-    for Cbc<'k, P, Decrypting, KEY_LEN, BLOCK_LEN>
+impl<'k, P, const BLOCK_LEN: usize> BlockCipherDecryptor<BLOCK_LEN, BLOCK_LEN>
+    for Cbc<'k, P, Decrypting, BLOCK_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
+    P: BlockPermutation<BLOCK_LEN> + ModeNames,
 {
     /// The implementor hook (the flat `do_decrypt_inplace` is provided over it).
     ///
@@ -407,10 +394,9 @@ where
 
 /// The suspended state is the chaining block `Cj-1`, in both directions; the permutation is the
 /// key's, re-supplied by reference. See [`bouncycastle_utils::suspendable_state`].
-impl<'k, P, Dir, const KEY_LEN: usize, const BLOCK_LEN: usize> SuspendableComponent<'k>
-    for Cbc<'k, P, Dir, KEY_LEN, BLOCK_LEN>
+impl<'k, P, Dir, const BLOCK_LEN: usize> SuspendableComponent<'k> for Cbc<'k, P, Dir, BLOCK_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
+    P: BlockPermutation<BLOCK_LEN> + ModeNames,
 {
     const STATE_LEN: usize = BLOCK_LEN;
     type Key = P;
@@ -428,10 +414,10 @@ where
 }
 
 /// `N` must be [`Cbc::SUSPENDED_STATE_LEN`]; anything else is a compile error.
-impl<'k, P, Dir, const KEY_LEN: usize, const BLOCK_LEN: usize, const N: usize>
-    SuspendableKeyed<'k, N> for Cbc<'k, P, Dir, KEY_LEN, BLOCK_LEN>
+impl<'k, P, Dir, const BLOCK_LEN: usize, const N: usize> SuspendableKeyed<'k, N>
+    for Cbc<'k, P, Dir, BLOCK_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
+    P: BlockPermutation<BLOCK_LEN> + ModeNames,
 {
     type Key = P;
 

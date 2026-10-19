@@ -2,23 +2,17 @@
 // written here so the modes can be driven through the key path without a real cipher. The role
 // impls forward to whichever mode traits `M` implements over `P`, exactly as the AES key's do.
 //
-// GCM, GMAC and CMAC have no `Mode<P>` impl in this crate (their key state needs the permutation's
-// key length, which `Mode<P>` cannot carry), so the marker types `ToyGCM`, `ToyGMAC` and `ToyCMAC`
-// below stand in for them over the toys.
-//
 // Pulled in with `#[path]` from the tests, so every item is `pub` and unused ones are allowed.
 #![allow(dead_code)]
 
-use bouncycastle_cipher::modes::{
-    Cmac, CmacKeyState, GCM_NONCE_LEN, Gcm, GcmKeyState, Gmac, ModeNames,
-};
+use bouncycastle_cipher::modes::{GCM_NONCE_LEN, GMAC, Gmac, ModeNames};
 use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
 use bouncycastle_core::hazmat::{
     AeadDeclaredDecryptMode, AeadDeclaredEncryptMode, AeadDecryptMode, AeadEncryptMode,
-    BlockDecryptMode, BlockEncryptMode, EcbDecryptMode, EcbDecryptionKey, EcbEncryptMode,
-    EcbEncryptionKey, ElectronicCodeBook, MacMode, Mode, ModeKey, SymmetricDecryptMode,
-    SymmetricEncryptMode, do_hazardous_operations,
+    BlockDecryptMode, BlockEncryptMode, BlockPermutation, EcbDecryptMode, EcbDecryptionKey,
+    EcbEncryptMode, EcbEncryptionKey, ElectronicCodeBook, MacMode, Mode, ModeKey,
+    SymmetricDecryptMode, SymmetricEncryptMode, do_hazardous_operations,
 };
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::symmetric_key::{
@@ -385,140 +379,31 @@ impl<P, M: MacMode<P>> MacVerificationKey for ToyKey<P, M> {
     }
 }
 
-// ---- the modes whose key state needs the key length: GCM, GMAC and CMAC over a 16-byte toy ----
+// ---- GMAC's pair, inherent on the key as it is on the AES key ----------------------------------
 
-/// GCM over a 16-byte toy, as a mode type.
-pub struct ToyGCM<const TAG_LEN: usize = 16>;
-
-impl<P, const TAG_LEN: usize> Mode<P> for ToyGCM<TAG_LEN>
+impl<P, const TAG_LEN: usize> ToyKey<P, GMAC<TAG_LEN>>
 where
-    P: ElectronicCodeBook<TOY_KEY_LEN, 16> + ModeNames + Clone,
-{
-    type KeyState = GcmKeyState<P>;
-    const KEY_TYPE: KeyType = KeyType::SymmetricCipherKey;
-    const ALG_NAME: &'static str = P::GCM_ALG_NAME;
-
-    fn key_state(perm: P) -> Self::KeyState {
-        GcmKeyState::new::<TOY_KEY_LEN>(perm)
-    }
-}
-
-impl<P, const TAG_LEN: usize> AeadEncryptMode<P, TOY_KEY_LEN, GCM_NONCE_LEN, TAG_LEN, TAG_LEN>
-    for ToyGCM<TAG_LEN>
-where
-    P: ElectronicCodeBook<TOY_KEY_LEN, 16> + ModeNames + Clone,
-{
-    type Encryptor<'k>
-        = Gcm<'k, P, Encrypting, TOY_KEY_LEN, TAG_LEN>
-    where
-        P: 'k;
-
-    fn encrypt_init<'k>(
-        state: &'k Self::KeyState,
-        rng: &mut dyn RNG,
-    ) -> Result<(Self::Encryptor<'k>, [u8; GCM_NONCE_LEN]), SymmetricCipherError> {
-        <Self::Encryptor<'k>>::from_key_state(state, rng)
-    }
-
-    fn encrypt_init_nonce<'k>(
-        state: &'k Self::KeyState,
-        nonce: &[u8; GCM_NONCE_LEN],
-    ) -> Self::Encryptor<'k> {
-        <Self::Encryptor<'k>>::from_key_state_nonce(state, nonce)
-    }
-}
-
-impl<P, const TAG_LEN: usize> AeadDecryptMode<P, TOY_KEY_LEN, GCM_NONCE_LEN, TAG_LEN, TAG_LEN>
-    for ToyGCM<TAG_LEN>
-where
-    P: ElectronicCodeBook<TOY_KEY_LEN, 16> + ModeNames + Clone,
-{
-    type Decryptor<'k>
-        = Gcm<'k, P, Decrypting, TOY_KEY_LEN, TAG_LEN>
-    where
-        P: 'k;
-
-    fn decrypt_init<'k>(
-        state: &'k Self::KeyState,
-        nonce: &[u8; GCM_NONCE_LEN],
-    ) -> Self::Decryptor<'k> {
-        <Self::Decryptor<'k>>::from_key_state(state, nonce)
-    }
-}
-
-/// GMAC over a 16-byte toy, as a mode type; the generator/verifier pair is inherent on the key,
-/// as it is for the AES key, because a GMAC tag is bound to a nonce.
-pub struct ToyGMAC<const TAG_LEN: usize = 16>;
-
-impl<P, const TAG_LEN: usize> Mode<P> for ToyGMAC<TAG_LEN>
-where
-    P: ElectronicCodeBook<TOY_KEY_LEN, 16> + ModeNames + Clone,
-{
-    type KeyState = GcmKeyState<P>;
-    const KEY_TYPE: KeyType = KeyType::MACKey;
-    const ALG_NAME: &'static str = P::GMAC_ALG_NAME;
-
-    fn key_state(perm: P) -> Self::KeyState {
-        GcmKeyState::new::<TOY_KEY_LEN>(perm)
-    }
-}
-
-impl<P, const TAG_LEN: usize> ToyKey<P, ToyGMAC<TAG_LEN>>
-where
-    P: ElectronicCodeBook<TOY_KEY_LEN, 16> + ModeNames + Clone,
+    P: BlockPermutation<16> + ModeNames + Clone,
 {
     pub fn create_generator<'k>(
         &'k self,
         rng: &mut dyn RNG,
-    ) -> Result<
-        (Gmac<'k, P, Encrypting, TOY_KEY_LEN, TAG_LEN>, [u8; GCM_NONCE_LEN]),
-        SymmetricCipherError,
-    > {
-        Gmac::<P, Encrypting, TOY_KEY_LEN, TAG_LEN>::from_key_state(&self.state, rng)
+    ) -> Result<(Gmac<'k, P, Encrypting, TAG_LEN>, [u8; GCM_NONCE_LEN]), SymmetricCipherError> {
+        Gmac::<P, Encrypting, TAG_LEN>::from_key_state(&self.state, rng)
     }
 
     pub fn create_generator_nonce<'k>(
         &'k self,
         nonce: &[u8; GCM_NONCE_LEN],
-    ) -> Gmac<'k, P, Encrypting, TOY_KEY_LEN, TAG_LEN> {
-        Gmac::<P, Encrypting, TOY_KEY_LEN, TAG_LEN>::from_key_state_nonce(&self.state, nonce)
+    ) -> Gmac<'k, P, Encrypting, TAG_LEN> {
+        Gmac::<P, Encrypting, TAG_LEN>::from_key_state_nonce(&self.state, nonce)
     }
 
     pub fn create_verifier<'k>(
         &'k self,
         nonce: &[u8; GCM_NONCE_LEN],
-    ) -> Gmac<'k, P, Decrypting, TOY_KEY_LEN, TAG_LEN> {
-        Gmac::<P, Decrypting, TOY_KEY_LEN, TAG_LEN>::from_key_state(&self.state, nonce)
-    }
-}
-
-/// CMAC over a 16-byte toy, as a mode type.
-pub struct ToyCMAC;
-
-impl<P> Mode<P> for ToyCMAC
-where
-    P: ElectronicCodeBook<TOY_KEY_LEN, 16> + ModeNames + Clone,
-{
-    type KeyState = CmacKeyState<P, 16>;
-    const KEY_TYPE: KeyType = KeyType::MACKey;
-    const ALG_NAME: &'static str = P::CMAC_ALG_NAME;
-
-    fn key_state(perm: P) -> Self::KeyState {
-        CmacKeyState::new::<TOY_KEY_LEN>(perm)
-    }
-}
-
-impl<P> MacMode<P> for ToyCMAC
-where
-    P: ElectronicCodeBook<TOY_KEY_LEN, 16> + ModeNames + Clone,
-{
-    type Worker<'k>
-        = Cmac<'k, P, TOY_KEY_LEN, 16>
-    where
-        P: 'k;
-
-    fn mac_init<'k>(state: &'k Self::KeyState) -> Self::Worker<'k> {
-        Cmac::from_key_state(state)
+    ) -> Gmac<'k, P, Decrypting, TAG_LEN> {
+        Gmac::<P, Decrypting, TAG_LEN>::from_key_state(&self.state, nonce)
     }
 }
 

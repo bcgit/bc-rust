@@ -3,7 +3,7 @@
 use crate::modes::ModeNames;
 use crate::modes::ctr::apply_counter_blocks;
 use bouncycastle_core::errors::SuspendableError;
-use bouncycastle_core::hazmat::{ElectronicCodeBook, KeyStream};
+use bouncycastle_core::hazmat::{BlockPermutation, KeyStream};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::Algorithm;
 use bouncycastle_utils::suspendable_state::{Cursor, CursorMut, SuspendableComponent};
@@ -15,7 +15,7 @@ use crate::modes::Ctr;
 use crate::stream::StreamCipher;
 // end of imports needed for docs
 
-/// The CTR keystream `Oj = CIPH_K(Tj)` over any [`ElectronicCodeBook`], with `Tj = N | [j]m`;
+/// The CTR keystream `Oj = CIPH_K(Tj)` over any [`BlockPermutation`], with `Tj = N | [j]m`;
 /// see the module docs. Use it through [`Ctr`].
 ///
 /// # 🚨 Security Considerations 🚨
@@ -29,14 +29,9 @@ use crate::stream::StreamCipher;
 /// nonce and the counter are both public, so they are plain fields; no keystream is kept between
 /// calls.
 #[derive(Clone)]
-pub struct CtrKeyStream<
-    'k,
-    P,
-    const KEY_LEN: usize,
-    const BLOCK_LEN: usize,
-    const INIT_DATA_LEN: usize,
-> where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
+pub struct CtrKeyStream<'k, P, const BLOCK_LEN: usize, const INIT_DATA_LEN: usize>
+where
+    P: BlockPermutation<BLOCK_LEN> + ModeNames,
 {
     perm: &'k P,
     /// `N`: the message nonce, the leading bytes of every counter block.
@@ -50,10 +45,10 @@ pub struct CtrKeyStream<
     next_counter: u64,
 }
 
-impl<'k, P, const KEY_LEN: usize, const BLOCK_LEN: usize, const INIT_DATA_LEN: usize>
-    CtrKeyStream<'k, P, KEY_LEN, BLOCK_LEN, INIT_DATA_LEN>
+impl<'k, P, const BLOCK_LEN: usize, const INIT_DATA_LEN: usize>
+    CtrKeyStream<'k, P, BLOCK_LEN, INIT_DATA_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
+    P: BlockPermutation<BLOCK_LEN> + ModeNames,
 {
     /// Bytes of counter at the end of each block: whatever the nonce leaves.
     const CTR_LEN: usize = BLOCK_LEN - INIT_DATA_LEN;
@@ -129,10 +124,10 @@ where
     }
 }
 
-impl<'k, P, const KEY_LEN: usize, const BLOCK_LEN: usize, const INIT_DATA_LEN: usize> Algorithm
-    for CtrKeyStream<'k, P, KEY_LEN, BLOCK_LEN, INIT_DATA_LEN>
+impl<'k, P, const BLOCK_LEN: usize, const INIT_DATA_LEN: usize> Algorithm
+    for CtrKeyStream<'k, P, BLOCK_LEN, INIT_DATA_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
+    P: BlockPermutation<BLOCK_LEN> + ModeNames,
 {
     /// The permutation's name for this mode, [`ModeNames::CTR_ALG_NAME`].
     const ALG_NAME: &'static str = P::CTR_ALG_NAME;
@@ -140,10 +135,10 @@ where
     const MAX_SECURITY_STRENGTH: SecurityStrength = P::MAX_SECURITY_STRENGTH;
 }
 
-impl<'k, P, const KEY_LEN: usize, const BLOCK_LEN: usize, const INIT_DATA_LEN: usize>
-    KeyStream<INIT_DATA_LEN, BLOCK_LEN> for CtrKeyStream<'k, P, KEY_LEN, BLOCK_LEN, INIT_DATA_LEN>
+impl<'k, P, const BLOCK_LEN: usize, const INIT_DATA_LEN: usize> KeyStream<INIT_DATA_LEN, BLOCK_LEN>
+    for CtrKeyStream<'k, P, BLOCK_LEN, INIT_DATA_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
+    P: BlockPermutation<BLOCK_LEN> + ModeNames,
 {
     /// A whole block for every counter value left.
     fn remaining_blocks(&self) -> u64 {
@@ -165,10 +160,10 @@ where
 
 /// The suspended state is the nonce and the next counter value; the permutation is the key's,
 /// re-supplied by reference. See [`bouncycastle_utils::suspendable_state`].
-impl<'k, P, const KEY_LEN: usize, const BLOCK_LEN: usize, const INIT_DATA_LEN: usize>
-    SuspendableComponent<'k> for CtrKeyStream<'k, P, KEY_LEN, BLOCK_LEN, INIT_DATA_LEN>
+impl<'k, P, const BLOCK_LEN: usize, const INIT_DATA_LEN: usize> SuspendableComponent<'k>
+    for CtrKeyStream<'k, P, BLOCK_LEN, INIT_DATA_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
+    P: BlockPermutation<BLOCK_LEN> + ModeNames,
 {
     const STATE_LEN: usize = INIT_DATA_LEN + 8;
     type Key = P;
@@ -214,8 +209,8 @@ mod tests {
         include!("../../../tests/common/toy_block_cipher.rs");
     }
 
-    type ToyKeyStream<'k> = CtrKeyStream<'k, ToyBlockCipher, 16, 16, 12>;
-    type ToyCtr<'k> = Ctr<'k, ToyBlockCipher, Encrypting, 16, 16, 12>;
+    type ToyKeyStream<'k> = CtrKeyStream<'k, ToyBlockCipher, 16, 12>;
+    type ToyCtr<'k> = Ctr<'k, ToyBlockCipher, Encrypting, 16, 12>;
 
     fn key() -> KeyMaterial<16> {
         KeyMaterial::<16>::from_bytes_as_type(&[0x5Au8; 16], KeyType::SymmetricCipherKey)

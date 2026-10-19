@@ -61,9 +61,11 @@ pub trait ModeKey<P, M: Mode<P>> {
     fn state(&self) -> &M::KeyState;
 }
 
-// `KEY_LEN` is on these traits only while the cipher traits still carry it: the permutation bound
-// a mode impl needs, `P: ElectronicCodeBook<KEY_LEN, ..>`, must be tied to the impl's trait. It
-// goes when the constructors leave the cipher traits.
+// `KEY_LEN` is on these traits as the tie between a key's length and its permutation's: a mode
+// impl bounds `P: ElectronicCodeBook<KEY_LEN, ..>`, which only the permutation's own key length
+// satisfies, so a key object's role impls, which take `KEY_LEN` from here, exist for that one
+// length. The workers themselves never see it; `Mode<P>` and `MacMode<P>` bound on
+// `BlockPermutation` alone.
 
 /// The encryption side of an AEAD mode over `P`: the mode's own constructor for its encryptor.
 pub trait AeadEncryptMode<

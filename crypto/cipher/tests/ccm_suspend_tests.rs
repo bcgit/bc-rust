@@ -38,9 +38,9 @@ const BLOCK_LEN: usize = 16;
 const AAD_LEN: usize = 16;
 const DATA_LEN: usize = 32;
 type ToyEnc<'k> =
-    CcmPacketEncryptor<'k, ToyBlockCipher, 16, BLOCK_LEN, NONCE_LEN, 16, AAD_LEN, DATA_LEN>;
+    CcmPacketEncryptor<'k, ToyBlockCipher, BLOCK_LEN, NONCE_LEN, 16, AAD_LEN, DATA_LEN>;
 type ToyDec<'k> =
-    CcmPacketDecryptor<'k, ToyBlockCipher, 16, BLOCK_LEN, NONCE_LEN, 16, AAD_LEN, DATA_LEN>;
+    CcmPacketDecryptor<'k, ToyBlockCipher, BLOCK_LEN, NONCE_LEN, 16, AAD_LEN, DATA_LEN>;
 const N: usize = ToyEnc::SUSPENDED_STATE_LEN;
 const ND: usize = ToyDec::SUSPENDED_STATE_LEN;
 

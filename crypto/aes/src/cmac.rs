@@ -44,76 +44,16 @@
 //! [`KeyType::MACKey`]: bouncycastle_core::key_material::KeyType::MACKey
 
 use crate::hazmat::{AES128Internal, AES192Internal, AES256Internal};
-use bouncycastle_cipher::modes::{CMAC, Cmac, CmacKeyState, ModeNames};
-use bouncycastle_core::hazmat::{MacMode, Mode};
-use bouncycastle_core::key_material::KeyType;
+use bouncycastle_cipher::modes::Cmac;
 
 /// AES-128 in CMAC.
 #[allow(non_camel_case_types)]
-pub type AES_CMAC_128<'k> = Cmac<'k, AES128Internal, 16, 16>;
+pub type AES_CMAC_128<'k> = Cmac<'k, AES128Internal, 16>;
 
 /// AES-192 in CMAC. See [`AES_CMAC_128`].
 #[allow(non_camel_case_types)]
-pub type AES_CMAC_192<'k> = Cmac<'k, AES192Internal, 24, 16>;
+pub type AES_CMAC_192<'k> = Cmac<'k, AES192Internal, 16>;
 
 /// AES-256 in CMAC. See [`AES_CMAC_128`].
 #[allow(non_camel_case_types)]
-pub type AES_CMAC_256<'k> = Cmac<'k, AES256Internal, 32, 16>;
-
-// Per key length for the reason the GCM impls are (see `gcm.rs`): the subkey derivation needs the
-// permutation's `ElectronicCodeBook<KEY_LEN, 16>` bound, and `KEY_LEN` cannot be tied to
-// `Mode<P>` from a generic impl.
-
-impl Mode<AES128Internal> for CMAC {
-    type KeyState = CmacKeyState<AES128Internal, 16>;
-    const KEY_TYPE: KeyType = KeyType::MACKey;
-    const ALG_NAME: &'static str = AES128Internal::CMAC_ALG_NAME;
-
-    fn key_state(perm: AES128Internal) -> Self::KeyState {
-        CmacKeyState::new::<16>(perm)
-    }
-}
-
-impl MacMode<AES128Internal> for CMAC {
-    type Worker<'k> = AES_CMAC_128<'k>;
-
-    fn mac_init<'k>(state: &'k Self::KeyState) -> Self::Worker<'k> {
-        Cmac::from_key_state(state)
-    }
-}
-
-impl Mode<AES192Internal> for CMAC {
-    type KeyState = CmacKeyState<AES192Internal, 16>;
-    const KEY_TYPE: KeyType = KeyType::MACKey;
-    const ALG_NAME: &'static str = AES192Internal::CMAC_ALG_NAME;
-
-    fn key_state(perm: AES192Internal) -> Self::KeyState {
-        CmacKeyState::new::<24>(perm)
-    }
-}
-
-impl MacMode<AES192Internal> for CMAC {
-    type Worker<'k> = AES_CMAC_192<'k>;
-
-    fn mac_init<'k>(state: &'k Self::KeyState) -> Self::Worker<'k> {
-        Cmac::from_key_state(state)
-    }
-}
-
-impl Mode<AES256Internal> for CMAC {
-    type KeyState = CmacKeyState<AES256Internal, 16>;
-    const KEY_TYPE: KeyType = KeyType::MACKey;
-    const ALG_NAME: &'static str = AES256Internal::CMAC_ALG_NAME;
-
-    fn key_state(perm: AES256Internal) -> Self::KeyState {
-        CmacKeyState::new::<32>(perm)
-    }
-}
-
-impl MacMode<AES256Internal> for CMAC {
-    type Worker<'k> = AES_CMAC_256<'k>;
-
-    fn mac_init<'k>(state: &'k Self::KeyState) -> Self::Worker<'k> {
-        Cmac::from_key_state(state)
-    }
-}
+pub type AES_CMAC_256<'k> = Cmac<'k, AES256Internal, 16>;

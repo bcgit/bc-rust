@@ -23,7 +23,7 @@
 //! that reach the batch paths. Every case is run **four times**: as one call over the whole
 //! payload, byte by byte, in 8-byte calls, and in 3-byte calls that never line up with the
 //! 8-byte batch. Between them those put the multi-byte cases through
-//! [`ElectronicCodeBook::encrypt_4blocks`] and [`ElectronicCodeBook::encrypt_2blocks`] -- the
+//! [`BlockPermutation::encrypt_4blocks`] and [`BlockPermutation::encrypt_2blocks`] -- the
 //! *forward* function, even on the decrypt side -- and through the single-byte path, with the
 //! shift register carried across calls at every alignment. So all of that is exercised against real
 //! vectors and not only against the toys in `cfb8_tests.rs`.

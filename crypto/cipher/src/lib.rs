@@ -30,7 +30,7 @@
 //! # mod toy { include!("../tests/common/toy_block_cipher.rs"); }
 //! # use toy::ToyBlockCipher;
 //!
-//! type ToyCbc<'k> = Cbc<'k, ToyBlockCipher, Encrypting, 16, 16>;
+//! type ToyCbc<'k> = Cbc<'k, ToyBlockCipher, Encrypting, 16>;
 //! const STATE_LEN: usize = ToyCbc::SUSPENDED_STATE_LEN;
 //!
 //! // The mode's key state, as a mode-bound key such as `AES128Key<CBC<Blocks>>` holds it.
@@ -99,8 +99,8 @@ mod sealed {
 ///
 /// ```text
 /// pub type AES_CBC_128<Dir, Pad> = <Dir as Direction>::Select<
-///     PaddedBlockCipherEncryptor<Cbc<AES128Internal, Encrypting, 16, 16>, Pad, 16, 16, 16>,
-///     PaddedBlockCipherDecryptor<Cbc<AES128Internal, Decrypting, 16, 16>, Pad, 16, 16, 16>,
+///     PaddedBlockCipherEncryptor<Cbc<AES128Internal, Encrypting, 16>, Pad, 16, 16>,
+///     PaddedBlockCipherDecryptor<Cbc<AES128Internal, Decrypting, 16>, Pad, 16, 16>,
 /// >;
 /// ```
 ///

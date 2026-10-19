@@ -34,11 +34,11 @@
 //! use bouncycastle_cipher::{Decrypting, Encrypting};
 //! use bouncycastle_rng::HashDRBG_SHA512;
 //!
-//! type ToyGcm<'k, Dir> = Gcm<'k, ToyBlockCipher, Dir, 16, 16>;
+//! type ToyGcm<'k, Dir> = Gcm<'k, ToyBlockCipher, Dir, 16>;
 //!
 //! let key = KeyMaterial128::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
 //!     .expect("a 16-byte symmetric cipher key");
-//! let state = GcmKeyState::new::<16>(ToyBlockCipher::new(&key).unwrap());
+//! let state = GcmKeyState::new(ToyBlockCipher::new(&key).unwrap());
 //! let plaintext: [u8; 16] = *b"attack at dawn!!";
 //!
 //! let (mut enc, nonce) = ToyGcm::<Encrypting>::from_key_state(&state, &mut HashDRBG_SHA512::new_from_os())
@@ -82,11 +82,11 @@
 //! use bouncycastle_cipher::{Decrypting, Encrypting};
 //! use bouncycastle_rng::HashDRBG_SHA512;
 //!
-//! type ToyGcm<'k, Dir> = Gcm<'k, ToyBlockCipher, Dir, 16, 16>;
+//! type ToyGcm<'k, Dir> = Gcm<'k, ToyBlockCipher, Dir, 16>;
 //!
 //! let key = KeyMaterial::<16>::from_bytes_as_type(&[0x07; 16], KeyType::SymmetricCipherKey)
 //!     .expect("a 16-byte symmetric cipher key");
-//! let state = GcmKeyState::new::<16>(ToyBlockCipher::new(&key).unwrap());
+//! let state = GcmKeyState::new(ToyBlockCipher::new(&key).unwrap());
 //! let aad = b"some associated data";
 //! let message = b"a message that streams in over more than one call";
 //!
@@ -122,11 +122,11 @@
 //! use bouncycastle_cipher::{Decrypting, Encrypting};
 //! use bouncycastle_rng::HashDRBG_SHA512;
 //!
-//! type ToyGcm<'k, Dir> = Gcm<'k, ToyBlockCipher, Dir, 16, 16>;
+//! type ToyGcm<'k, Dir> = Gcm<'k, ToyBlockCipher, Dir, 16>;
 //!
 //! let key = KeyMaterial::<16>::from_bytes_as_type(&[0x07; 16], KeyType::SymmetricCipherKey)
 //!     .expect("a 16-byte symmetric cipher key");
-//! let state = GcmKeyState::new::<16>(ToyBlockCipher::new(&key).unwrap());
+//! let state = GcmKeyState::new(ToyBlockCipher::new(&key).unwrap());
 //! let aad = b"some associated data";
 //! let message = b"a message that streams in over more than one call";
 //!
@@ -200,7 +200,10 @@ use crate::modes::ghash::{GHASH_STATE_LEN, Ghash};
 use crate::modes::hazmat::CtrKeyStream;
 use crate::{Decrypting, Encrypting};
 use bouncycastle_core::errors::{SuspendableError, SymmetricCipherError};
-use bouncycastle_core::hazmat::ElectronicCodeBook;
+use bouncycastle_core::hazmat::{
+    AeadDecryptMode, AeadEncryptMode, BlockPermutation, ElectronicCodeBook, Mode,
+};
+use bouncycastle_core::key_material::KeyType;
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{
     AEADCipherDecryptor, AEADCipherEncryptor, Algorithm, RNG, StreamCipherDecryptor,
@@ -219,11 +222,66 @@ pub const GCM_NONCE_LEN: usize = 12;
 
 /// The GCM mode type: the `M` of a mode-bound key such as `AES128Key<GCM>`. `GCM` is GCM with
 /// the full 128-bit tag; `GCM<12>` and so on select a shorter tag, within the `12..=16` byte range
-/// [`Gcm`] accepts. The [`Mode`] and AEAD mode-trait impls that connect it to a key type are
-/// written by each permutation's crate while the cipher traits still carry `KEY_LEN`.
-///
-/// [`Mode`]: bouncycastle_core::hazmat::Mode
+/// [`Gcm`] accepts. The [`Mode`] and AEAD mode-trait impls below are generic over any
+/// [`BlockPermutation`] with a 128-bit block, so a permutation crate's key type needs nothing of
+/// its own.
 pub struct GCM<const TAG_LEN: usize = 16>;
+
+impl<P, const TAG_LEN: usize> Mode<P> for GCM<TAG_LEN>
+where
+    P: BlockPermutation<16> + ModeNames + Clone,
+{
+    type KeyState = GcmKeyState<P>;
+    const KEY_TYPE: KeyType = KeyType::SymmetricCipherKey;
+    const ALG_NAME: &'static str = P::GCM_ALG_NAME;
+
+    fn key_state(perm: P) -> Self::KeyState {
+        GcmKeyState::new(perm)
+    }
+}
+
+impl<P, const KEY_LEN: usize, const TAG_LEN: usize>
+    AeadEncryptMode<P, KEY_LEN, GCM_NONCE_LEN, TAG_LEN, TAG_LEN> for GCM<TAG_LEN>
+where
+    P: ElectronicCodeBook<KEY_LEN, 16> + ModeNames + Clone,
+{
+    type Encryptor<'k>
+        = Gcm<'k, P, Encrypting, TAG_LEN>
+    where
+        P: 'k;
+
+    fn encrypt_init<'k>(
+        state: &'k Self::KeyState,
+        rng: &mut dyn RNG,
+    ) -> Result<(Self::Encryptor<'k>, [u8; GCM_NONCE_LEN]), SymmetricCipherError> {
+        Gcm::<P, Encrypting, TAG_LEN>::from_key_state(state, rng)
+    }
+
+    fn encrypt_init_nonce<'k>(
+        state: &'k Self::KeyState,
+        nonce: &[u8; GCM_NONCE_LEN],
+    ) -> Self::Encryptor<'k> {
+        Gcm::<P, Encrypting, TAG_LEN>::from_key_state_nonce(state, nonce)
+    }
+}
+
+impl<P, const KEY_LEN: usize, const TAG_LEN: usize>
+    AeadDecryptMode<P, KEY_LEN, GCM_NONCE_LEN, TAG_LEN, TAG_LEN> for GCM<TAG_LEN>
+where
+    P: ElectronicCodeBook<KEY_LEN, 16> + ModeNames + Clone,
+{
+    type Decryptor<'k>
+        = Gcm<'k, P, Decrypting, TAG_LEN>
+    where
+        P: 'k;
+
+    fn decrypt_init<'k>(
+        state: &'k Self::KeyState,
+        nonce: &[u8; GCM_NONCE_LEN],
+    ) -> Self::Decryptor<'k> {
+        Gcm::<P, Decrypting, TAG_LEN>::from_key_state(state, nonce)
+    }
+}
 
 /// What a GCM key keeps per key: the keyed permutation and the hash subkey `H = CIPH_K(0^128)`
 /// (SP 800-38D Algorithm 4 step 1), derived once here rather than once per message. It is the
@@ -237,9 +295,9 @@ pub struct GcmKeyState<P> {
 
 impl<P> GcmKeyState<P> {
     /// Derives `H` from `perm`.
-    pub fn new<const KEY_LEN: usize>(perm: P) -> Self
+    pub fn new(perm: P) -> Self
     where
-        P: ElectronicCodeBook<KEY_LEN, 16>,
+        P: BlockPermutation<16>,
     {
         // Encrypted in place inside a `Secret` so that `H` is never held in an unzeroized stack
         // array (Sec 5.3; Appendix A on what `H` gives an attacker).
@@ -274,13 +332,13 @@ impl Phase {
 /// [`GCM_NONCE_LEN`] / `TAG_LEN` for what is fixed and what is chosen. A worker borrows the key
 /// state it was made from for `'k`: the schedule and `H` stay in the key.
 #[derive(Clone)]
-pub struct Gcm<'k, P, Dir, const KEY_LEN: usize, const TAG_LEN: usize>
+pub struct Gcm<'k, P, Dir, const TAG_LEN: usize>
 where
-    P: ElectronicCodeBook<KEY_LEN, 16> + ModeNames,
+    P: BlockPermutation<16> + ModeNames,
 {
     /// `GCTR_K(inc32(J0), .)`: Algorithm 4 step 3 / Algorithm 5 step 4, started at counter 2 (see
     /// [`Gcm::setup`]).
-    ctr: Ctr<'k, P, Dir, KEY_LEN, 16, GCM_NONCE_LEN>,
+    ctr: Ctr<'k, P, Dir, 16, GCM_NONCE_LEN>,
     /// `GHASH_H` over `A || 0^v || C || 0^u`, Algorithm 4/5 step 5/6.
     ghash: Ghash,
     /// `CIPH_K(J0)`, the one-time mask for the tag (step 6's `GCTR_K(J0, S) = S (+) CIPH_K(J0)`,
@@ -302,9 +360,9 @@ where
     _dir: PhantomData<Dir>,
 }
 
-impl<'k, P, Dir, const KEY_LEN: usize, const TAG_LEN: usize> Gcm<'k, P, Dir, KEY_LEN, TAG_LEN>
+impl<'k, P, Dir, const TAG_LEN: usize> Gcm<'k, P, Dir, TAG_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, 16> + ModeNames,
+    P: BlockPermutation<16> + ModeNames,
 {
     /// The `N` of this type's [`SuspendableKeyed<'k, N>`] impl: the version header, the CTR state,
     /// the GHASH state, the two byte counts, the phase, the held-back tail and its length. See
@@ -314,7 +372,7 @@ where
 
     /// The CTR half's share of the suspended state.
     const CTR_STATE_LEN: usize =
-        <Ctr<'k, P, Dir, KEY_LEN, 16, GCM_NONCE_LEN> as SuspendableComponent<'k>>::STATE_LEN;
+        <Ctr<'k, P, Dir, 16, GCM_NONCE_LEN> as SuspendableComponent<'k>>::STATE_LEN;
 
     /// The compile-time shape check: `TAG_LEN` must be one of Sec 5.2.1.2's five recommended tag
     /// lengths in bytes (96, 104, 112, 120, 128 bits -- Appendix C's 32- and 64-bit tags are a
@@ -428,18 +486,17 @@ where
     }
 }
 
-impl<'k, P, Dir, const KEY_LEN: usize, const TAG_LEN: usize> Algorithm
-    for Gcm<'k, P, Dir, KEY_LEN, TAG_LEN>
+impl<'k, P, Dir, const TAG_LEN: usize> Algorithm for Gcm<'k, P, Dir, TAG_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, 16> + ModeNames,
+    P: BlockPermutation<16> + ModeNames,
 {
     const ALG_NAME: &'static str = P::GCM_ALG_NAME;
     const MAX_SECURITY_STRENGTH: SecurityStrength = P::MAX_SECURITY_STRENGTH;
 }
 
-impl<'k, P, const KEY_LEN: usize, const TAG_LEN: usize> Gcm<'k, P, Encrypting, KEY_LEN, TAG_LEN>
+impl<'k, P, const TAG_LEN: usize> Gcm<'k, P, Encrypting, TAG_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, 16> + ModeNames,
+    P: BlockPermutation<16> + ModeNames,
 {
     /// Begins an encryption over a key's stored state under a nonce drawn from `rng`: the
     /// encryption constructor a permutation crate's `AeadEncryptMode` impl for [`GCM`] calls.
@@ -489,10 +546,10 @@ where
     }
 }
 
-impl<'k, P, const KEY_LEN: usize, const TAG_LEN: usize>
-    SymmetricCipherEncryptor<GCM_NONCE_LEN, TAG_LEN> for Gcm<'k, P, Encrypting, KEY_LEN, TAG_LEN>
+impl<'k, P, const TAG_LEN: usize> SymmetricCipherEncryptor<GCM_NONCE_LEN, TAG_LEN>
+    for Gcm<'k, P, Encrypting, TAG_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, 16> + ModeNames,
+    P: BlockPermutation<16> + ModeNames,
 {
     /// The identity: GCM's encryptor holds nothing back.
     fn do_encrypt_out_len(&self, input_len: usize) -> usize {
@@ -526,11 +583,10 @@ where
 /// The AEAD view: [`AEADCipherEncryptor`] over the [`SymmetricCipherEncryptor`] impl above, with
 /// `FINAL_LEN = TAG_LEN`. The encryptor holds nothing back, so the detached final flushes nothing
 /// and returns only the tag.
-impl<'k, P, const KEY_LEN: usize, const TAG_LEN: usize>
-    AEADCipherEncryptor<GCM_NONCE_LEN, TAG_LEN, TAG_LEN>
-    for Gcm<'k, P, Encrypting, KEY_LEN, TAG_LEN>
+impl<'k, P, const TAG_LEN: usize> AEADCipherEncryptor<GCM_NONCE_LEN, TAG_LEN, TAG_LEN>
+    for Gcm<'k, P, Encrypting, TAG_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, 16> + ModeNames,
+    P: BlockPermutation<16> + ModeNames,
 {
     fn do_update_aad(&mut self, aad: &[u8]) -> Result<(), SymmetricCipherError> {
         self.absorb_aad(aad)
@@ -546,9 +602,9 @@ where
     }
 }
 
-impl<'k, P, const KEY_LEN: usize, const TAG_LEN: usize> Gcm<'k, P, Decrypting, KEY_LEN, TAG_LEN>
+impl<'k, P, const TAG_LEN: usize> Gcm<'k, P, Decrypting, TAG_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, 16> + ModeNames,
+    P: BlockPermutation<16> + ModeNames,
 {
     /// Begins the decryption of a message encrypted under `nonce` from a key's stored state: the
     /// decryption constructor a permutation crate's `AeadDecryptMode` impl for [`GCM`] calls.
@@ -590,10 +646,10 @@ where
     }
 }
 
-impl<'k, P, const KEY_LEN: usize, const TAG_LEN: usize>
-    SymmetricCipherDecryptor<GCM_NONCE_LEN, TAG_LEN> for Gcm<'k, P, Decrypting, KEY_LEN, TAG_LEN>
+impl<'k, P, const TAG_LEN: usize> SymmetricCipherDecryptor<GCM_NONCE_LEN, TAG_LEN>
+    for Gcm<'k, P, Decrypting, TAG_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, 16> + ModeNames,
+    P: BlockPermutation<16> + ModeNames,
 {
     /// `tail_len + input_len`, minus up to `TAG_LEN` bytes held back because they might be the tag.
     fn do_decrypt_out_len(&self, input_len: usize) -> usize {
@@ -668,11 +724,10 @@ where
 /// The AEAD view: [`AEADCipherDecryptor`] over the [`SymmetricCipherDecryptor`] impl above, with
 /// `FINAL_LEN = TAG_LEN`. The one-shots are overridden, as `decrypt_out` is, to check the tag
 /// before any plaintext is written.
-impl<'k, P, const KEY_LEN: usize, const TAG_LEN: usize>
-    AEADCipherDecryptor<GCM_NONCE_LEN, TAG_LEN, TAG_LEN>
-    for Gcm<'k, P, Decrypting, KEY_LEN, TAG_LEN>
+impl<'k, P, const TAG_LEN: usize> AEADCipherDecryptor<GCM_NONCE_LEN, TAG_LEN, TAG_LEN>
+    for Gcm<'k, P, Decrypting, TAG_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, 16> + ModeNames,
+    P: BlockPermutation<16> + ModeNames,
 {
     fn do_update_aad(&mut self, aad: &[u8]) -> Result<(), SymmetricCipherError> {
         self.absorb_aad(aad)
@@ -702,10 +757,9 @@ where
 /// the up-to-`TAG_LEN` bytes a decryptor holds back. `H` and `CIPH_K(J0)` are not in it: `H` is
 /// the key state's, and `CIPH_K(J0)` is re-derived from it and the nonce on resume. See
 /// [`bouncycastle_utils::suspendable_state`].
-impl<'k, P, Dir, const KEY_LEN: usize, const TAG_LEN: usize> SuspendableComponent<'k>
-    for Gcm<'k, P, Dir, KEY_LEN, TAG_LEN>
+impl<'k, P, Dir, const TAG_LEN: usize> SuspendableComponent<'k> for Gcm<'k, P, Dir, TAG_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, 16> + ModeNames,
+    P: BlockPermutation<16> + ModeNames,
 {
     const STATE_LEN: usize = Self::CTR_STATE_LEN + GHASH_STATE_LEN + 8 + 8 + 1 + TAG_LEN + 8;
     type Key = GcmKeyState<P>;
@@ -732,12 +786,11 @@ where
         // `setup_from_state` takes `H` from the key state and re-derives `CIPH_K(J0)` from the
         // nonce, which is the leading part of the CTR state. Its fresh CTR and GHASH are then
         // replaced by the suspended ones.
-        let nonce = CtrKeyStream::<'k, P, KEY_LEN, 16, GCM_NONCE_LEN>::nonce_from_state(ctr);
+        let nonce = CtrKeyStream::<'k, P, 16, GCM_NONCE_LEN>::nonce_from_state(ctr);
         let mut gcm = Self::setup_from_state(key, nonce);
-        gcm.ctr =
-            <Ctr<'k, P, Dir, KEY_LEN, 16, GCM_NONCE_LEN> as SuspendableComponent<'k>>::read_state(
-                ctr, &key.perm,
-            )?;
+        gcm.ctr = <Ctr<'k, P, Dir, 16, GCM_NONCE_LEN> as SuspendableComponent<'k>>::read_state(
+            ctr, &key.perm,
+        )?;
         gcm.ghash.restore_state(ghash)?;
 
         let mut r = Cursor::new(rest);
@@ -752,10 +805,10 @@ where
 }
 
 /// `N` must be [`Gcm::SUSPENDED_STATE_LEN`]; anything else is a compile error.
-impl<'k, P, Dir, const KEY_LEN: usize, const TAG_LEN: usize, const N: usize> SuspendableKeyed<'k, N>
-    for Gcm<'k, P, Dir, KEY_LEN, TAG_LEN>
+impl<'k, P, Dir, const TAG_LEN: usize, const N: usize> SuspendableKeyed<'k, N>
+    for Gcm<'k, P, Dir, TAG_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, 16> + ModeNames,
+    P: BlockPermutation<16> + ModeNames,
 {
     type Key = GcmKeyState<P>;
 

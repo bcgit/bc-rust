@@ -59,9 +59,9 @@ type Aes128CcmMode = CCM<NONCE_LEN, TAG_LEN>;
 /// The key bound to the fixed frame, whose streams are the pair below.
 type Aes128CcmPacketKey = AES128Key<CCM_Packet<NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>>;
 type Aes128CcmEncryptor<'k> =
-    CcmPacketEncryptor<'k, AES128Internal, 16, 16, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>;
+    CcmPacketEncryptor<'k, AES128Internal, 16, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>;
 type Aes128CcmDecryptor<'k> =
-    CcmPacketDecryptor<'k, AES128Internal, 16, 16, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>;
+    CcmPacketDecryptor<'k, AES128Internal, 16, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>;
 
 fn key<const N: usize>() -> KeyMaterial<N> {
     KeyMaterial::<N>::from_bytes_as_type(&[0x42u8; N], KeyType::SymmetricCipherKey).unwrap()
@@ -121,17 +121,16 @@ fn print_struct_sizes() {
     );
     eprintln!(
         "CcmPacketEncryptor<'_, .., 64, 240>      {:>7} B",
-        size_of::<CcmPacketEncryptor<'_, AES128Internal, 16, 16, NONCE_LEN, TAG_LEN, 64, 240>>()
+        size_of::<CcmPacketEncryptor<'_, AES128Internal, 16, NONCE_LEN, TAG_LEN, 64, 240>>()
     );
     eprintln!(
         "CcmPacketEncryptor<'_, .., 7, 4, ..>     {:>7} B",
-        size_of::<CcmPacketEncryptor<'_, AES128Internal, 16, 16, 7, 4, AAD_LEN, DATA_LEN>>()
+        size_of::<CcmPacketEncryptor<'_, AES128Internal, 16, 7, 4, AAD_LEN, DATA_LEN>>()
     );
     eprintln!(
         "CcmPacketEncryptor<'_, AES256Internal>   {:>7} B",
-        size_of::<
-            CcmPacketEncryptor<'_, AES256Internal, 32, 16, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>,
-        >()
+        size_of::<CcmPacketEncryptor<'_, AES256Internal, 16, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>>(
+        )
     );
 
     print!("{}", size_of::<Aes128CcmEncryptor>());

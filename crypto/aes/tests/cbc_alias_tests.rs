@@ -46,27 +46,13 @@ fn the_aliases_name_the_expected_types() {
 
     assert_eq!(
         size_of::<AES_CBC_128<'_, Encrypting, PKCS7>>(),
-        size_of::<
-            PaddedBlockCipherEncryptor<
-                Cbc<'_, AES128Internal, Encrypting, 16, 16>,
-                PKCS7,
-                16,
-                16,
-                16,
-            >,
-        >()
+        size_of::<PaddedBlockCipherEncryptor<Cbc<'_, AES128Internal, Encrypting, 16>, PKCS7, 16, 16>>(
+        )
     );
     assert_eq!(
         size_of::<AES_CBC_128<'_, Decrypting, PKCS7>>(),
-        size_of::<
-            PaddedBlockCipherDecryptor<
-                Cbc<'_, AES128Internal, Decrypting, 16, 16>,
-                PKCS7,
-                16,
-                16,
-                16,
-            >,
-        >()
+        size_of::<PaddedBlockCipherDecryptor<Cbc<'_, AES128Internal, Decrypting, 16>, PKCS7, 16, 16>>(
+        )
     );
 
     // The two directions are genuinely different types, so the encryptor and the decryptor do not

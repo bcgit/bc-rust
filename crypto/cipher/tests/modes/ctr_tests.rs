@@ -29,7 +29,7 @@ use bouncycastle_cipher::modes::hazmat::CtrKeyStream;
 use bouncycastle_cipher::modes::{CTR, Ctr, ModeNames};
 use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::errors::SymmetricCipherError;
-use bouncycastle_core::hazmat::ElectronicCodeBook;
+use bouncycastle_core::hazmat::{BlockPermutation, ElectronicCodeBook};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::symmetric_key::{
@@ -45,12 +45,12 @@ use toy_key::{ToyKey, os_rng};
 
 /// The default shape under test: a 12-byte nonce, so a 4-byte counter.
 const NONCE_LEN: usize = 12;
-type ToyCtr<'k, Dir> = Ctr<'k, Toy, Dir, TOY_LEN, TOY_LEN, NONCE_LEN>;
+type ToyCtr<'k, Dir> = Ctr<'k, Toy, Dir, TOY_LEN, NONCE_LEN>;
 
 /// A 15-byte nonce leaves a **1-byte** counter, so the whole counter space is 256 blocks -- 4 KiB
 /// of keystream. That makes the exhaustion behaviour reachable in a test.
 const SHORT_CTR_NONCE_LEN: usize = 15;
-type TinyCtr<'k, Dir> = Ctr<'k, Toy, Dir, TOY_LEN, TOY_LEN, SHORT_CTR_NONCE_LEN>;
+type TinyCtr<'k, Dir> = Ctr<'k, Toy, Dir, TOY_LEN, SHORT_CTR_NONCE_LEN>;
 
 type ToyCtrKey = ToyKey<Toy, CTR<NONCE_LEN>>;
 
@@ -148,16 +148,14 @@ fn ctr_keystream_conforms_to_the_key_stream_framework() {
     let framework = TestFrameworkKeyStream::new();
     let toy = Toy::new(&toy_key()).unwrap();
     framework.test::<NONCE_LEN, TOY_LEN, _>(|nonce| {
-        CtrKeyStream::<Toy, TOY_LEN, TOY_LEN, NONCE_LEN>::from_perm(&toy, *nonce)
+        CtrKeyStream::<Toy, TOY_LEN, NONCE_LEN>::from_perm(&toy, *nonce)
     });
     framework.test::<SHORT_CTR_NONCE_LEN, TOY_LEN, _>(|nonce| {
-        CtrKeyStream::<Toy, TOY_LEN, TOY_LEN, SHORT_CTR_NONCE_LEN>::from_perm(&toy, *nonce)
+        CtrKeyStream::<Toy, TOY_LEN, SHORT_CTR_NONCE_LEN>::from_perm(&toy, *nonce)
     });
     let forward_only = ForwardOnlyToy::new(&toy_key()).unwrap();
     framework.test::<NONCE_LEN, TOY_LEN, _>(|nonce| {
-        CtrKeyStream::<ForwardOnlyToy, TOY_LEN, TOY_LEN, NONCE_LEN>::from_perm(
-            &forward_only, *nonce,
-        )
+        CtrKeyStream::<ForwardOnlyToy, TOY_LEN, NONCE_LEN>::from_perm(&forward_only, *nonce)
     });
 }
 

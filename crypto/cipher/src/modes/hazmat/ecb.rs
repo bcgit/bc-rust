@@ -47,8 +47,8 @@
 //! cipher functions can be computed in parallel".
 //!
 //! To take advantage of this parallelism, this mode batches both directions through the
-//! permutation's four-block and pair methods ([`ElectronicCodeBook::encrypt_4blocks`] /
-//! [`ElectronicCodeBook::encrypt_2blocks`] and their inverses), which may represent a speed-up over
+//! permutation's four-block and pair methods ([`BlockPermutation::encrypt_4blocks`] /
+//! [`BlockPermutation::encrypt_2blocks`] and their inverses), which may represent a speed-up over
 //! iterating one block at a time, depending on the implementation of the underlying cipher.
 //!
 //! # Suspending and resuming execution
@@ -86,8 +86,8 @@ use crate::padding::{PaddedBlockCipherDecryptor, PaddedBlockCipherEncryptor};
 use crate::{Decrypting, Encrypting};
 use bouncycastle_core::errors::{SuspendableError, SymmetricCipherError};
 use bouncycastle_core::hazmat::{
-    EcbDecryptMode, EcbEncryptMode, ElectronicCodeBook, Mode, SymmetricDecryptMode,
-    SymmetricEncryptMode,
+    BlockPermutation, EcbDecryptMode, EcbEncryptMode, ElectronicCodeBook, Mode,
+    SymmetricDecryptMode, SymmetricEncryptMode,
 };
 use bouncycastle_core::key_material::KeyType;
 use bouncycastle_core::security_strength::SecurityStrength;
@@ -125,7 +125,7 @@ where
     P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames + Clone,
 {
     type Encryptor<'k>
-        = Ecb<'k, P, Encrypting, KEY_LEN, BLOCK_LEN>
+        = Ecb<'k, P, Encrypting, BLOCK_LEN>
     where
         P: 'k;
 
@@ -140,7 +140,7 @@ where
     P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames + Clone,
 {
     type Decryptor<'k>
-        = Ecb<'k, P, Decrypting, KEY_LEN, BLOCK_LEN>
+        = Ecb<'k, P, Decrypting, BLOCK_LEN>
     where
         P: 'k;
 
@@ -156,13 +156,7 @@ where
     Pad: BlockCipherPadding<BLOCK_LEN>,
 {
     type Encryptor<'k>
-        = PaddedBlockCipherEncryptor<
-        Ecb<'k, P, Encrypting, KEY_LEN, BLOCK_LEN>,
-        Pad,
-        KEY_LEN,
-        0,
-        BLOCK_LEN,
-    >
+        = PaddedBlockCipherEncryptor<Ecb<'k, P, Encrypting, BLOCK_LEN>, Pad, 0, BLOCK_LEN>
     where
         P: 'k;
 
@@ -183,13 +177,7 @@ where
     Pad: BlockCipherPadding<BLOCK_LEN>,
 {
     type Decryptor<'k>
-        = PaddedBlockCipherDecryptor<
-        Ecb<'k, P, Decrypting, KEY_LEN, BLOCK_LEN>,
-        Pad,
-        KEY_LEN,
-        0,
-        BLOCK_LEN,
-    >
+        = PaddedBlockCipherDecryptor<Ecb<'k, P, Decrypting, BLOCK_LEN>, Pad, 0, BLOCK_LEN>
     where
         P: 'k;
 
@@ -213,17 +201,17 @@ where
 /// zeroize-on-drop wrapper. Nothing chains from one block to the next, so unlike `Cbc` and `Cfb`
 /// there is no block of chaining value: `size_of::<Ecb<'k, P, ..>>() == size_of::<P>()`.
 #[derive(Clone)]
-pub struct Ecb<'k, P, Dir, const KEY_LEN: usize, const BLOCK_LEN: usize>
+pub struct Ecb<'k, P, Dir, const BLOCK_LEN: usize>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
+    P: BlockPermutation<BLOCK_LEN> + ModeNames,
 {
     perm: &'k P,
     _dir: PhantomData<Dir>,
 }
 
-impl<'k, P, Dir, const KEY_LEN: usize, const BLOCK_LEN: usize> Ecb<'k, P, Dir, KEY_LEN, BLOCK_LEN>
+impl<'k, P, Dir, const BLOCK_LEN: usize> Ecb<'k, P, Dir, BLOCK_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
+    P: BlockPermutation<BLOCK_LEN> + ModeNames,
 {
     /// The `N` of this type's [`SuspendableKeyed<'k, N>`] impl: the version header alone, since ECB
     /// has no state between blocks. See [`bouncycastle_utils::suspendable_state`].
@@ -235,10 +223,9 @@ where
     }
 }
 
-impl<'k, P, Dir, const KEY_LEN: usize, const BLOCK_LEN: usize> Algorithm
-    for Ecb<'k, P, Dir, KEY_LEN, BLOCK_LEN>
+impl<'k, P, Dir, const BLOCK_LEN: usize> Algorithm for Ecb<'k, P, Dir, BLOCK_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
+    P: BlockPermutation<BLOCK_LEN> + ModeNames,
 {
     /// The permutation's name for this mode, [`ModeNames::ECB_ALG_NAME`].
     const ALG_NAME: &'static str = P::ECB_ALG_NAME;
@@ -247,10 +234,10 @@ where
     const MAX_SECURITY_STRENGTH: SecurityStrength = P::MAX_SECURITY_STRENGTH;
 }
 
-impl<'k, P, const KEY_LEN: usize, const BLOCK_LEN: usize> BlockCipherEncryptor<0, BLOCK_LEN>
-    for Ecb<'k, P, Encrypting, KEY_LEN, BLOCK_LEN>
+impl<'k, P, const BLOCK_LEN: usize> BlockCipherEncryptor<0, BLOCK_LEN>
+    for Ecb<'k, P, Encrypting, BLOCK_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
+    P: BlockPermutation<BLOCK_LEN> + ModeNames,
 {
     /// The implementor hook (the flat `do_encrypt_inplace` is provided over it):
     /// `Cj = CIPH_K(Pj)` for every block, in place.
@@ -279,10 +266,10 @@ where
     }
 }
 
-impl<'k, P, const KEY_LEN: usize, const BLOCK_LEN: usize> BlockCipherDecryptor<0, BLOCK_LEN>
-    for Ecb<'k, P, Decrypting, KEY_LEN, BLOCK_LEN>
+impl<'k, P, const BLOCK_LEN: usize> BlockCipherDecryptor<0, BLOCK_LEN>
+    for Ecb<'k, P, Decrypting, BLOCK_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
+    P: BlockPermutation<BLOCK_LEN> + ModeNames,
 {
     /// The implementor hook (the flat `do_decrypt_inplace` is provided over it):
     /// `Pj = CIPH^-1_K(Cj)` for every block, in place -- fours, then pairs, then the remaining
@@ -310,10 +297,9 @@ where
 /// ECB carries nothing from one block to the next, so its suspended state is empty and resuming
 /// is taking the key state again. It is implemented so that the padded adapters over it, which do hold
 /// a partial block, can be suspended. See [`bouncycastle_utils::suspendable_state`].
-impl<'k, P, Dir, const KEY_LEN: usize, const BLOCK_LEN: usize> SuspendableComponent<'k>
-    for Ecb<'k, P, Dir, KEY_LEN, BLOCK_LEN>
+impl<'k, P, Dir, const BLOCK_LEN: usize> SuspendableComponent<'k> for Ecb<'k, P, Dir, BLOCK_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
+    P: BlockPermutation<BLOCK_LEN> + ModeNames,
 {
     const STATE_LEN: usize = 0;
     type Key = P;
@@ -329,10 +315,10 @@ where
 }
 
 /// `N` must be [`Ecb::SUSPENDED_STATE_LEN`]; anything else is a compile error.
-impl<'k, P, Dir, const KEY_LEN: usize, const BLOCK_LEN: usize, const N: usize>
-    SuspendableKeyed<'k, N> for Ecb<'k, P, Dir, KEY_LEN, BLOCK_LEN>
+impl<'k, P, Dir, const BLOCK_LEN: usize, const N: usize> SuspendableKeyed<'k, N>
+    for Ecb<'k, P, Dir, BLOCK_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
+    P: BlockPermutation<BLOCK_LEN> + ModeNames,
 {
     type Key = P;
 
