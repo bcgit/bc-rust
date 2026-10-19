@@ -1,6 +1,7 @@
 #[cfg(test)]
 mod hash_factory_tests {
     use bouncycastle_core::key_material::{KeyMaterial, KeyType};
+    use bouncycastle_core::symmetric_key::{MacGenerationKey, MacVerificationKey};
     use bouncycastle_core::traits::MAC;
     use bouncycastle_factory::mac_factory::MACFactory;
     use bouncycastle_hex as hex;
@@ -31,7 +32,7 @@ mod hash_factory_tests {
             let msg = hex::decode("2579f5df03e0fccde2b515944d88dc81ca3b4a20517cdc54170559f0d2f889e2f543eacf8a84b34563d0139351ea9a77399d274c5c6c1b0f488063b7255f9df648667fe800151ef288a68d6c8c24d57abd7e4f70eed149752beae4a9763cebf03c").unwrap();
             let expected = hex::decode("6e927067f724d4fedc96b310c5115979e8dde8a4").unwrap();
             let hmac = MACFactory::new("HMAC-SHA512/224", &key).unwrap();
-            assert_eq!(hmac.output_len(), 28);
+            assert_eq!(hmac.create_generator().output_len(), 28);
             assert_eq!(&hmac.mac(&msg)[..20], &expected[..]);
             let hmac =
                 MACFactory::new(bouncycastle_sha2::hmac::HMAC_SHA512_224_NAME, &key).unwrap();
@@ -46,7 +47,7 @@ mod hash_factory_tests {
             let msg = hex::decode("").unwrap();
             let expected = hex::decode("7857d4737760e127f1533185c6ad183ac4e10bd9").unwrap();
             let hmac = MACFactory::new("HMAC-SHA512/256", &key).unwrap();
-            assert_eq!(hmac.output_len(), 32);
+            assert_eq!(hmac.create_generator().output_len(), 32);
             assert_eq!(&hmac.mac(&msg)[..20], &expected[..]);
             let hmac =
                 MACFactory::new(bouncycastle_sha2::hmac::HMAC_SHA512_256_NAME, &key).unwrap();
@@ -66,7 +67,8 @@ mod hash_factory_tests {
                 &hex::decode("6e927067f724d4fedc96b310c5115979e8dde8a4").unwrap()[..]
             );
 
-            let mut hmac = MACFactory::new("HMAC-SHA512/224", &key).unwrap();
+            let hmac_key = MACFactory::new("HMAC-SHA512/224", &key).unwrap();
+            let mut hmac = hmac_key.create_generator();
             for chunk in msg.chunks(7) {
                 hmac.do_update(chunk);
             }
@@ -80,7 +82,8 @@ mod hash_factory_tests {
             assert_eq!(out, full);
 
             let mut out = vec![0xffu8; 28];
-            let mut hmac = MACFactory::new("HMAC-SHA512/224", &key).unwrap();
+            let hmac_key = MACFactory::new("HMAC-SHA512/224", &key).unwrap();
+            let mut hmac = hmac_key.create_generator();
             hmac.do_update(&msg);
             assert_eq!(hmac.do_final_out(&mut out).unwrap(), 28);
             assert_eq!(out, full);
@@ -89,10 +92,12 @@ mod hash_factory_tests {
             wrong[0] ^= 1;
             assert!(MACFactory::new("HMAC-SHA512/224", &key).unwrap().verify(&msg, &full));
             assert!(!MACFactory::new("HMAC-SHA512/224", &key).unwrap().verify(&msg, &wrong));
-            let mut hmac = MACFactory::new("HMAC-SHA512/224", &key).unwrap();
+            let hmac_key = MACFactory::new("HMAC-SHA512/224", &key).unwrap();
+            let mut hmac = hmac_key.create_generator();
             hmac.do_update(&msg);
             assert!(hmac.do_verify_final(&full));
-            let mut hmac = MACFactory::new("HMAC-SHA512/224", &key).unwrap();
+            let hmac_key = MACFactory::new("HMAC-SHA512/224", &key).unwrap();
+            let mut hmac = hmac_key.create_generator();
             hmac.do_update(&msg);
             assert!(!hmac.do_verify_final(&wrong));
 
@@ -110,7 +115,8 @@ mod hash_factory_tests {
                 &hex::decode("7857d4737760e127f1533185c6ad183ac4e10bd9").unwrap()[..]
             );
 
-            let mut hmac = MACFactory::new("HMAC-SHA512/256", &key).unwrap();
+            let hmac_key = MACFactory::new("HMAC-SHA512/256", &key).unwrap();
+            let mut hmac = hmac_key.create_generator();
             for chunk in msg.chunks(7) {
                 hmac.do_update(chunk);
             }
@@ -124,7 +130,8 @@ mod hash_factory_tests {
             assert_eq!(out, full);
 
             let mut out = vec![0xffu8; 32];
-            let mut hmac = MACFactory::new("HMAC-SHA512/256", &key).unwrap();
+            let hmac_key = MACFactory::new("HMAC-SHA512/256", &key).unwrap();
+            let mut hmac = hmac_key.create_generator();
             hmac.do_update(&msg);
             assert_eq!(hmac.do_final_out(&mut out).unwrap(), 32);
             assert_eq!(out, full);
@@ -133,10 +140,12 @@ mod hash_factory_tests {
             wrong[0] ^= 1;
             assert!(MACFactory::new("HMAC-SHA512/256", &key).unwrap().verify(&msg, &full));
             assert!(!MACFactory::new("HMAC-SHA512/256", &key).unwrap().verify(&msg, &wrong));
-            let mut hmac = MACFactory::new("HMAC-SHA512/256", &key).unwrap();
+            let hmac_key = MACFactory::new("HMAC-SHA512/256", &key).unwrap();
+            let mut hmac = hmac_key.create_generator();
             hmac.do_update(&msg);
             assert!(hmac.do_verify_final(&full));
-            let mut hmac = MACFactory::new("HMAC-SHA512/256", &key).unwrap();
+            let hmac_key = MACFactory::new("HMAC-SHA512/256", &key).unwrap();
+            let mut hmac = hmac_key.create_generator();
             hmac.do_update(&msg);
             assert!(!hmac.do_verify_final(&wrong));
 
@@ -154,7 +163,7 @@ mod hash_factory_tests {
             .unwrap();
             for name in ["HMAC-SM3", bouncycastle_sm3::hmac::HMAC_SM3_NAME] {
                 let hmac = MACFactory::new(name, &key).unwrap();
-                assert_eq!(hmac.output_len(), 32);
+                assert_eq!(hmac.create_generator().output_len(), 32);
                 assert!(
                     hmac.verify(
                         b"Hi There",

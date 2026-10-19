@@ -235,10 +235,14 @@ What that taught, as mechanics for the next trait that sheds a constructor:
   function handed `key: &'k K` that names the worker is generic over `'k`; one that builds its
   key locally bounds `for<'k> K::Encryptor<'k>: ..` with `K: 'static`. A test binds the key
   before the worker, since `key_fn().create_encryptor(..)` borrows a temporary.
-- **Resume takes the key state.** `SuspendableKeyed<'k, N>` and `SuspendableComponent<'k>` take
-  the key by `&'k`, and a cipher-mode worker's `Key` is the mode's `KeyState`, reached through
-  `hazmat::ModeKey::state`; the suspended layouts did not change. A worker that owns a copy of its
-  key (Ascon, HMAC, KMAC) implements the traits for every `'k` and ignores it.
+- **Resume takes the key object.** `SuspendableKeyed<'k, N>` and `SuspendableComponent<'k>` take
+  the key by `&'k`: a cipher-mode worker's `Key` is the mode's `KeyState`, reached through
+  `hazmat::ModeKey::state`, HMAC's is `HmacKey`, Ascon's is `AsconAEAD128Key`, and HKDF's stays
+  the salt material, since HKDF is not a key object. The suspended layouts did not change. A
+  worker that owns a copy of its key (Ascon, KMAC) implements the traits for every `'k` and
+  ignores it. A struct cannot hold a worker that borrows a key it also owns: HKDF runs its
+  extract-phase HMAC as the two halves `HmacKey::inner_state` / `finish_out`, and the MAC
+  factory is a key enum that hands out a worker enum.
 - **What has no key-path twin is dropped, and said so.** `new_allow_weak_key` on a cipher-based
   MAC, a wrong-length `KeyMaterial512` into a fixed-length key, GCM's verify-before-decrypt
   one-shot override: each went with a line in the commit message rather than a shim.

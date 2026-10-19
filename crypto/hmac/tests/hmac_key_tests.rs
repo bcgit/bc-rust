@@ -169,7 +169,7 @@ fn a_worker_from_the_key_suspends_and_resumes() {
     let mut w = key.create_generator();
     w.do_update(&MSG[..7]);
     let state: [u8; SUSPENDED_SHA256_STATE_LEN] = w.suspend();
-    let mut resumed = HMAC::<SHA256>::from_suspended(state, &km as &dyn KeyMaterialTrait).unwrap();
+    let mut resumed = HMAC::<SHA256>::from_suspended(state, &key).unwrap();
     resumed.do_update(&MSG[7..]);
     assert_eq!(resumed.do_final(), key.mac(MSG));
 }
