@@ -58,10 +58,10 @@ const MESSAGE_LEN: usize = DATA_LEN;
 type Aes128CcmMode = CCM<NONCE_LEN, TAG_LEN>;
 /// The key bound to the fixed frame, whose streams are the pair below.
 type Aes128CcmPacketKey = AES128Key<CCM_Packet<NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>>;
-type Aes128CcmEncryptor =
-    CcmPacketEncryptor<AES128Internal, 16, 16, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>;
-type Aes128CcmDecryptor =
-    CcmPacketDecryptor<AES128Internal, 16, 16, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>;
+type Aes128CcmEncryptor<'k> =
+    CcmPacketEncryptor<'k, AES128Internal, 16, 16, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>;
+type Aes128CcmDecryptor<'k> =
+    CcmPacketDecryptor<'k, AES128Internal, 16, 16, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>;
 
 fn key<const N: usize>() -> KeyMaterial<N> {
     KeyMaterial::<N>::from_bytes_as_type(&[0x42u8; N], KeyType::SymmetricCipherKey).unwrap()
@@ -112,25 +112,26 @@ fn print_struct_sizes() {
         "--- the trait pair: `Ccm` state + AAD_LEN + bookkeeping, independent of DATA_LEN ---"
     );
     eprintln!(
-        "CcmPacketEncryptor<.., {AAD_LEN}, {DATA_LEN}> {:>7} B",
+        "CcmPacketEncryptor<'_, .., {AAD_LEN}, {DATA_LEN}> {:>7} B",
         size_of::<Aes128CcmEncryptor>()
     );
     eprintln!(
-        "CcmPacketDecryptor<.., {AAD_LEN}, {DATA_LEN}> {:>7} B",
+        "CcmPacketDecryptor<'_, .., {AAD_LEN}, {DATA_LEN}> {:>7} B",
         size_of::<Aes128CcmDecryptor>()
     );
     eprintln!(
-        "CcmPacketEncryptor<.., 64, 240>      {:>7} B",
-        size_of::<CcmPacketEncryptor<AES128Internal, 16, 16, NONCE_LEN, TAG_LEN, 64, 240>>()
+        "CcmPacketEncryptor<'_, .., 64, 240>      {:>7} B",
+        size_of::<CcmPacketEncryptor<'_, AES128Internal, 16, 16, NONCE_LEN, TAG_LEN, 64, 240>>()
     );
     eprintln!(
-        "CcmPacketEncryptor<.., 7, 4, ..>     {:>7} B",
-        size_of::<CcmPacketEncryptor<AES128Internal, 16, 16, 7, 4, AAD_LEN, DATA_LEN>>()
+        "CcmPacketEncryptor<'_, .., 7, 4, ..>     {:>7} B",
+        size_of::<CcmPacketEncryptor<'_, AES128Internal, 16, 16, 7, 4, AAD_LEN, DATA_LEN>>()
     );
     eprintln!(
-        "CcmPacketEncryptor<AES256Internal>   {:>7} B",
-        size_of::<CcmPacketEncryptor<AES256Internal, 32, 16, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>>(
-        )
+        "CcmPacketEncryptor<'_, AES256Internal>   {:>7} B",
+        size_of::<
+            CcmPacketEncryptor<'_, AES256Internal, 32, 16, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>,
+        >()
     );
 
     print!("{}", size_of::<Aes128CcmEncryptor>());

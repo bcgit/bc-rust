@@ -154,16 +154,16 @@ use bouncycastle_core::symmetric_key::{SymmetricDecryptionKey, SymmetricEncrypti
 
 /// AES-128 in CBC mode with a padding scheme.
 #[allow(non_camel_case_types)]
-pub type AES_CBC_128<Dir, Pad> = <Dir as Direction>::Select<
+pub type AES_CBC_128<'k, Dir, Pad> = <Dir as Direction>::Select<
     PaddedBlockCipherEncryptor<
-        Cbc<AES128Internal, Encrypting, 16, AES_BLOCK_LEN>,
+        Cbc<'k, AES128Internal, Encrypting, 16, AES_BLOCK_LEN>,
         Pad,
         16,
         AES_BLOCK_LEN,
         AES_BLOCK_LEN,
     >,
     PaddedBlockCipherDecryptor<
-        Cbc<AES128Internal, Decrypting, 16, AES_BLOCK_LEN>,
+        Cbc<'k, AES128Internal, Decrypting, 16, AES_BLOCK_LEN>,
         Pad,
         16,
         AES_BLOCK_LEN,
@@ -173,16 +173,16 @@ pub type AES_CBC_128<Dir, Pad> = <Dir as Direction>::Select<
 
 /// AES-192 in CBC mode with a padding scheme.
 #[allow(non_camel_case_types)]
-pub type AES_CBC_192<Dir, Pad> = <Dir as Direction>::Select<
+pub type AES_CBC_192<'k, Dir, Pad> = <Dir as Direction>::Select<
     PaddedBlockCipherEncryptor<
-        Cbc<AES192Internal, Encrypting, 24, AES_BLOCK_LEN>,
+        Cbc<'k, AES192Internal, Encrypting, 24, AES_BLOCK_LEN>,
         Pad,
         24,
         AES_BLOCK_LEN,
         AES_BLOCK_LEN,
     >,
     PaddedBlockCipherDecryptor<
-        Cbc<AES192Internal, Decrypting, 24, AES_BLOCK_LEN>,
+        Cbc<'k, AES192Internal, Decrypting, 24, AES_BLOCK_LEN>,
         Pad,
         24,
         AES_BLOCK_LEN,
@@ -192,16 +192,16 @@ pub type AES_CBC_192<Dir, Pad> = <Dir as Direction>::Select<
 
 /// AES-256 in CBC mode with a padding scheme. See [`AES_CBC_128`].
 #[allow(non_camel_case_types)]
-pub type AES_CBC_256<Dir, Pad> = <Dir as Direction>::Select<
+pub type AES_CBC_256<'k, Dir, Pad> = <Dir as Direction>::Select<
     PaddedBlockCipherEncryptor<
-        Cbc<AES256Internal, Encrypting, 32, AES_BLOCK_LEN>,
+        Cbc<'k, AES256Internal, Encrypting, 32, AES_BLOCK_LEN>,
         Pad,
         32,
         AES_BLOCK_LEN,
         AES_BLOCK_LEN,
     >,
     PaddedBlockCipherDecryptor<
-        Cbc<AES256Internal, Decrypting, 32, AES_BLOCK_LEN>,
+        Cbc<'k, AES256Internal, Decrypting, 32, AES_BLOCK_LEN>,
         Pad,
         32,
         AES_BLOCK_LEN,

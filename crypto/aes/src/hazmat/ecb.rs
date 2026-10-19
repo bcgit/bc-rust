@@ -191,16 +191,16 @@ use bouncycastle_core::symmetric_key::{SymmetricDecryptionKey, SymmetricEncrypti
 
 /// AES-128 in ECB mode with a padding scheme.
 #[allow(non_camel_case_types)]
-pub type AES_ECB_128<Dir, Pad> = <Dir as Direction>::Select<
+pub type AES_ECB_128<'k, Dir, Pad> = <Dir as Direction>::Select<
     PaddedBlockCipherEncryptor<
-        Ecb<AES128Internal, Encrypting, 16, AES_BLOCK_LEN>,
+        Ecb<'k, AES128Internal, Encrypting, 16, AES_BLOCK_LEN>,
         Pad,
         16,
         0,
         AES_BLOCK_LEN,
     >,
     PaddedBlockCipherDecryptor<
-        Ecb<AES128Internal, Decrypting, 16, AES_BLOCK_LEN>,
+        Ecb<'k, AES128Internal, Decrypting, 16, AES_BLOCK_LEN>,
         Pad,
         16,
         0,
@@ -210,16 +210,16 @@ pub type AES_ECB_128<Dir, Pad> = <Dir as Direction>::Select<
 
 /// AES-192 in ECB mode with a padding scheme.
 #[allow(non_camel_case_types)]
-pub type AES_ECB_192<Dir, Pad> = <Dir as Direction>::Select<
+pub type AES_ECB_192<'k, Dir, Pad> = <Dir as Direction>::Select<
     PaddedBlockCipherEncryptor<
-        Ecb<AES192Internal, Encrypting, 24, AES_BLOCK_LEN>,
+        Ecb<'k, AES192Internal, Encrypting, 24, AES_BLOCK_LEN>,
         Pad,
         24,
         0,
         AES_BLOCK_LEN,
     >,
     PaddedBlockCipherDecryptor<
-        Ecb<AES192Internal, Decrypting, 24, AES_BLOCK_LEN>,
+        Ecb<'k, AES192Internal, Decrypting, 24, AES_BLOCK_LEN>,
         Pad,
         24,
         0,
@@ -229,16 +229,16 @@ pub type AES_ECB_192<Dir, Pad> = <Dir as Direction>::Select<
 
 /// AES-256 in ECB mode with a padding scheme. See [`AES_ECB_128`].
 #[allow(non_camel_case_types)]
-pub type AES_ECB_256<Dir, Pad> = <Dir as Direction>::Select<
+pub type AES_ECB_256<'k, Dir, Pad> = <Dir as Direction>::Select<
     PaddedBlockCipherEncryptor<
-        Ecb<AES256Internal, Encrypting, 32, AES_BLOCK_LEN>,
+        Ecb<'k, AES256Internal, Encrypting, 32, AES_BLOCK_LEN>,
         Pad,
         32,
         0,
         AES_BLOCK_LEN,
     >,
     PaddedBlockCipherDecryptor<
-        Ecb<AES256Internal, Decrypting, 32, AES_BLOCK_LEN>,
+        Ecb<'k, AES256Internal, Decrypting, 32, AES_BLOCK_LEN>,
         Pad,
         32,
         0,

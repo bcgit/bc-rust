@@ -820,12 +820,12 @@ mod hmac_tests {
         // The `+ 'static` on the trait object matches the associated type `type Key = dyn
         // KeyMaterialTrait` (a bare `dyn` in an associated type defaults to `'static`). The concrete
         // key types are owned, so they satisfy it.
-        fn round_trip<const N: usize, H>(
+        fn round_trip<'k, const N: usize, H>(
             mut hmac: H,
-            key: &(dyn KeyMaterialTrait + 'static),
+            key: &'k (dyn KeyMaterialTrait + 'static),
             input: &[u8],
         ) where
-            H: MAC + Clone + SuspendableKeyed<N, Key = dyn KeyMaterialTrait>,
+            H: MAC + Clone + SuspendableKeyed<'k, N, Key = dyn KeyMaterialTrait + 'static>,
         {
             hmac.do_update(&input[..10]);
 

@@ -155,19 +155,19 @@ use bouncycastle_core::traits::{
 
 /// AES-128 in GCM with a 128-bit tag.
 #[allow(non_camel_case_types)]
-pub type AES_GCM_128<Dir> = Gcm<AES128Internal, Dir, 16, 16>;
+pub type AES_GCM_128<'k, Dir> = Gcm<'k, AES128Internal, Dir, 16, 16>;
 
 /// AES-192 in GCM with a 128-bit tag.
 #[allow(non_camel_case_types)]
-pub type AES_GCM_192<Dir> = Gcm<AES192Internal, Dir, 24, 16>;
+pub type AES_GCM_192<'k, Dir> = Gcm<'k, AES192Internal, Dir, 24, 16>;
 
 /// AES-256 in GCM with a 128-bit tag. See [`AES_GCM_128`].
 #[allow(non_camel_case_types)]
-pub type AES_GCM_256<Dir> = Gcm<AES256Internal, Dir, 32, 16>;
+pub type AES_GCM_256<'k, Dir> = Gcm<'k, AES256Internal, Dir, 32, 16>;
 
 // The `GCM` mode impls for the three AES permutations, which is what makes `AES128Key<GCM>` and
 // friends AEAD keys. Written per key length rather than once over `AESInternal<P>`: the generic
-// form needs `Gcm<AESInternal<P>, Dir, { P::KEY_LEN }, TAG_LEN>`, a const expression stable Rust
+// form needs `Gcm<'k, AESInternal<P>, Dir, { P::KEY_LEN }, TAG_LEN>`, a const expression stable Rust
 // rejects, and a generic impl in `cipher` over `P: ElectronicCodeBook<KEY_LEN, 16>` leaves
 // `KEY_LEN` unconstrained on `Mode<P>`. Both go once `KEY_LEN` leaves the cipher traits.
 
@@ -183,27 +183,33 @@ impl<const TAG_LEN: usize> Mode<AES128Internal> for GCM<TAG_LEN> {
 impl<const TAG_LEN: usize> AeadEncryptMode<AES128Internal, 16, GCM_NONCE_LEN, TAG_LEN, TAG_LEN>
     for GCM<TAG_LEN>
 {
-    type Encryptor = Gcm<AES128Internal, Encrypting, 16, TAG_LEN>;
+    type Encryptor<'k> = Gcm<'k, AES128Internal, Encrypting, 16, TAG_LEN>;
 
-    fn encrypt_init(
-        state: &Self::KeyState,
+    fn encrypt_init<'k>(
+        state: &'k Self::KeyState,
         rng: &mut dyn RNG,
-    ) -> Result<(Self::Encryptor, [u8; GCM_NONCE_LEN]), SymmetricCipherError> {
-        Self::Encryptor::from_key_state(state, rng)
+    ) -> Result<(Self::Encryptor<'k>, [u8; GCM_NONCE_LEN]), SymmetricCipherError> {
+        <Self::Encryptor<'k>>::from_key_state(state, rng)
     }
 
-    fn encrypt_init_nonce(state: &Self::KeyState, nonce: &[u8; GCM_NONCE_LEN]) -> Self::Encryptor {
-        Self::Encryptor::from_key_state_nonce(state, nonce)
+    fn encrypt_init_nonce<'k>(
+        state: &'k Self::KeyState,
+        nonce: &[u8; GCM_NONCE_LEN],
+    ) -> Self::Encryptor<'k> {
+        <Self::Encryptor<'k>>::from_key_state_nonce(state, nonce)
     }
 }
 
 impl<const TAG_LEN: usize> AeadDecryptMode<AES128Internal, 16, GCM_NONCE_LEN, TAG_LEN, TAG_LEN>
     for GCM<TAG_LEN>
 {
-    type Decryptor = Gcm<AES128Internal, Decrypting, 16, TAG_LEN>;
+    type Decryptor<'k> = Gcm<'k, AES128Internal, Decrypting, 16, TAG_LEN>;
 
-    fn decrypt_init(state: &Self::KeyState, nonce: &[u8; GCM_NONCE_LEN]) -> Self::Decryptor {
-        Self::Decryptor::from_key_state(state, nonce)
+    fn decrypt_init<'k>(
+        state: &'k Self::KeyState,
+        nonce: &[u8; GCM_NONCE_LEN],
+    ) -> Self::Decryptor<'k> {
+        <Self::Decryptor<'k>>::from_key_state(state, nonce)
     }
 }
 
@@ -219,27 +225,33 @@ impl<const TAG_LEN: usize> Mode<AES192Internal> for GCM<TAG_LEN> {
 impl<const TAG_LEN: usize> AeadEncryptMode<AES192Internal, 24, GCM_NONCE_LEN, TAG_LEN, TAG_LEN>
     for GCM<TAG_LEN>
 {
-    type Encryptor = Gcm<AES192Internal, Encrypting, 24, TAG_LEN>;
+    type Encryptor<'k> = Gcm<'k, AES192Internal, Encrypting, 24, TAG_LEN>;
 
-    fn encrypt_init(
-        state: &Self::KeyState,
+    fn encrypt_init<'k>(
+        state: &'k Self::KeyState,
         rng: &mut dyn RNG,
-    ) -> Result<(Self::Encryptor, [u8; GCM_NONCE_LEN]), SymmetricCipherError> {
-        Self::Encryptor::from_key_state(state, rng)
+    ) -> Result<(Self::Encryptor<'k>, [u8; GCM_NONCE_LEN]), SymmetricCipherError> {
+        <Self::Encryptor<'k>>::from_key_state(state, rng)
     }
 
-    fn encrypt_init_nonce(state: &Self::KeyState, nonce: &[u8; GCM_NONCE_LEN]) -> Self::Encryptor {
-        Self::Encryptor::from_key_state_nonce(state, nonce)
+    fn encrypt_init_nonce<'k>(
+        state: &'k Self::KeyState,
+        nonce: &[u8; GCM_NONCE_LEN],
+    ) -> Self::Encryptor<'k> {
+        <Self::Encryptor<'k>>::from_key_state_nonce(state, nonce)
     }
 }
 
 impl<const TAG_LEN: usize> AeadDecryptMode<AES192Internal, 24, GCM_NONCE_LEN, TAG_LEN, TAG_LEN>
     for GCM<TAG_LEN>
 {
-    type Decryptor = Gcm<AES192Internal, Decrypting, 24, TAG_LEN>;
+    type Decryptor<'k> = Gcm<'k, AES192Internal, Decrypting, 24, TAG_LEN>;
 
-    fn decrypt_init(state: &Self::KeyState, nonce: &[u8; GCM_NONCE_LEN]) -> Self::Decryptor {
-        Self::Decryptor::from_key_state(state, nonce)
+    fn decrypt_init<'k>(
+        state: &'k Self::KeyState,
+        nonce: &[u8; GCM_NONCE_LEN],
+    ) -> Self::Decryptor<'k> {
+        <Self::Decryptor<'k>>::from_key_state(state, nonce)
     }
 }
 
@@ -255,26 +267,32 @@ impl<const TAG_LEN: usize> Mode<AES256Internal> for GCM<TAG_LEN> {
 impl<const TAG_LEN: usize> AeadEncryptMode<AES256Internal, 32, GCM_NONCE_LEN, TAG_LEN, TAG_LEN>
     for GCM<TAG_LEN>
 {
-    type Encryptor = Gcm<AES256Internal, Encrypting, 32, TAG_LEN>;
+    type Encryptor<'k> = Gcm<'k, AES256Internal, Encrypting, 32, TAG_LEN>;
 
-    fn encrypt_init(
-        state: &Self::KeyState,
+    fn encrypt_init<'k>(
+        state: &'k Self::KeyState,
         rng: &mut dyn RNG,
-    ) -> Result<(Self::Encryptor, [u8; GCM_NONCE_LEN]), SymmetricCipherError> {
-        Self::Encryptor::from_key_state(state, rng)
+    ) -> Result<(Self::Encryptor<'k>, [u8; GCM_NONCE_LEN]), SymmetricCipherError> {
+        <Self::Encryptor<'k>>::from_key_state(state, rng)
     }
 
-    fn encrypt_init_nonce(state: &Self::KeyState, nonce: &[u8; GCM_NONCE_LEN]) -> Self::Encryptor {
-        Self::Encryptor::from_key_state_nonce(state, nonce)
+    fn encrypt_init_nonce<'k>(
+        state: &'k Self::KeyState,
+        nonce: &[u8; GCM_NONCE_LEN],
+    ) -> Self::Encryptor<'k> {
+        <Self::Encryptor<'k>>::from_key_state_nonce(state, nonce)
     }
 }
 
 impl<const TAG_LEN: usize> AeadDecryptMode<AES256Internal, 32, GCM_NONCE_LEN, TAG_LEN, TAG_LEN>
     for GCM<TAG_LEN>
 {
-    type Decryptor = Gcm<AES256Internal, Decrypting, 32, TAG_LEN>;
+    type Decryptor<'k> = Gcm<'k, AES256Internal, Decrypting, 32, TAG_LEN>;
 
-    fn decrypt_init(state: &Self::KeyState, nonce: &[u8; GCM_NONCE_LEN]) -> Self::Decryptor {
-        Self::Decryptor::from_key_state(state, nonce)
+    fn decrypt_init<'k>(
+        state: &'k Self::KeyState,
+        nonce: &[u8; GCM_NONCE_LEN],
+    ) -> Self::Decryptor<'k> {
+        <Self::Decryptor<'k>>::from_key_state(state, nonce)
     }
 }

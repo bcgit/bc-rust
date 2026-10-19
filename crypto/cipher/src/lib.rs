@@ -13,7 +13,8 @@
 //! # Suspending and resuming execution
 //!
 //! Every mode and adapter implements `SuspendableKeyed`, so a message in progress can be suspended
-//! to a byte array and resumed later with the re-supplied key. The length of that array is the
+//! to a byte array and resumed later over the re-supplied key state, which a key object exposes
+//! through `bouncycastle_core::hazmat::ModeKey::state`. The length of that array is the
 //! type's `SUSPENDED_STATE_LEN`, and a wrong length is a compile error; the mechanism is
 //! [`bouncycastle_utils::suspendable_state`]. A suspended state holds everything the message in
 //! progress depends on except the key -- a chaining block, live keystream, a running MAC -- so
@@ -29,7 +30,7 @@
 //! # mod toy { include!("../tests/common/toy_block_cipher.rs"); }
 //! # use toy::ToyBlockCipher;
 //!
-//! type ToyCbc = Cbc<ToyBlockCipher, Encrypting, 16, 16>;
+//! type ToyCbc<'k> = Cbc<'k, ToyBlockCipher, Encrypting, 16>;
 //! const STATE_LEN: usize = ToyCbc::SUSPENDED_STATE_LEN;
 //!
 //! // The mode's key state, as a mode-bound key such as `AES128Key<CBC<Blocks>>` holds it.
@@ -98,8 +99,8 @@ mod sealed {
 ///
 /// ```text
 /// pub type AES_CBC_128<Dir, Pad> = <Dir as Direction>::Select<
-///     PaddedBlockCipherEncryptor<Cbc<AES128Internal, Encrypting, 16, 16>, Pad, 16, 16, 16>,
-///     PaddedBlockCipherDecryptor<Cbc<AES128Internal, Decrypting, 16, 16>, Pad, 16, 16, 16>,
+///     PaddedBlockCipherEncryptor<Cbc<AES128Internal, Encrypting, 16>, Pad, 16, 16>,
+///     PaddedBlockCipherDecryptor<Cbc<AES128Internal, Decrypting, 16>, Pad, 16, 16>,
 /// >;
 /// ```
 ///

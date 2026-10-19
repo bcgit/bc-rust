@@ -12,11 +12,13 @@ use crate::traits::{BlockCipherDecryptor, BlockCipherEncryptor};
 /// Equal plaintext blocks give equal ciphertext blocks; see [`crate::hazmat`] for the supported
 /// uses.
 pub trait EcbEncryptionKey<const KEY_LEN: usize, const BLOCK_LEN: usize> {
-    /// The streaming encryptor this key produces.
-    type Encryptor: BlockCipherEncryptor<0, BLOCK_LEN>;
+    /// The streaming encryptor this key produces, borrowing the key for `'k`.
+    type Encryptor<'k>: BlockCipherEncryptor<0, BLOCK_LEN>
+    where
+        Self: 'k;
 
     /// Begins an encryption.
-    fn create_encryptor(&self) -> Self::Encryptor;
+    fn create_encryptor<'k>(&'k self) -> Self::Encryptor<'k>;
 
     /// One-shot: encrypts `LEN` bytes, a whole number of blocks, in place, and returns the number
     /// of bytes written. `LEN % BLOCK_LEN == 0` is checked at compile time.
@@ -33,11 +35,13 @@ pub trait EcbEncryptionKey<const KEY_LEN: usize, const BLOCK_LEN: usize> {
 
 /// A key that can begin an ECB decryption; see [`EcbEncryptionKey`].
 pub trait EcbDecryptionKey<const KEY_LEN: usize, const BLOCK_LEN: usize> {
-    /// The streaming decryptor this key produces.
-    type Decryptor: BlockCipherDecryptor<0, BLOCK_LEN>;
+    /// The streaming decryptor this key produces, borrowing the key for `'k`.
+    type Decryptor<'k>: BlockCipherDecryptor<0, BLOCK_LEN>
+    where
+        Self: 'k;
 
     /// Begins a decryption.
-    fn create_decryptor(&self) -> Self::Decryptor;
+    fn create_decryptor<'k>(&'k self) -> Self::Decryptor<'k>;
 
     /// One-shot: decrypts `LEN` bytes, a whole number of blocks, in place, and returns the number
     /// of bytes written. `LEN % BLOCK_LEN == 0` is checked at compile time.

@@ -32,8 +32,8 @@ const PACKET_LEN: usize = 16 * 1024;
 const NONCE_LEN: usize = 12;
 const TAG_LEN: usize = 16;
 
-type Enc = AES_GCM_256<Encrypting>;
-type Dec = AES_GCM_256<Decrypting>;
+type Enc<'k> = AES_GCM_256<'k, Encrypting>;
+type Dec<'k> = AES_GCM_256<'k, Decrypting>;
 type Key = AES256Key<GCM>;
 
 fn material() -> KeyMaterial<32> {
@@ -81,10 +81,8 @@ fn bench_encrypt_packets(c: &mut Criterion) {
         b.iter_batched_ref(
             || [0u8; PACKET_LEN],
             |out| {
-                let (enc, nonce) = Key::from_key_material(black_box(&km))
-                    .unwrap()
-                    .create_encryptor(&mut rng)
-                    .unwrap();
+                let per_packet = Key::from_key_material(black_box(&km)).unwrap();
+                let (enc, nonce) = per_packet.create_encryptor(&mut rng).unwrap();
                 black_box((nonce, encrypt_packet(enc, black_box(&packet), out)))
             },
             BatchSize::LargeInput,
@@ -107,10 +105,8 @@ fn bench_encrypt_packets(c: &mut Criterion) {
                 || [0u8; PACKET_LEN],
                 |out| {
                     let mut os_rng = HashDRBG_SHA512::new_from_os();
-                    let (enc, nonce) = Key::from_key_material(black_box(&km))
-                        .unwrap()
-                        .create_encryptor(&mut os_rng)
-                        .unwrap();
+                    let per_packet = Key::from_key_material(black_box(&km)).unwrap();
+                    let (enc, nonce) = per_packet.create_encryptor(&mut os_rng).unwrap();
                     black_box((nonce, encrypt_packet(enc, black_box(&packet), out)))
                 },
                 BatchSize::LargeInput,
@@ -149,7 +145,8 @@ fn bench_decrypt_packets(c: &mut Criterion) {
         b.iter_batched_ref(
             || [0u8; PACKET_LEN],
             |out| {
-                let dec = Key::from_key_material(black_box(&km)).unwrap().create_decryptor(&nonce);
+                let per_packet = Key::from_key_material(black_box(&km)).unwrap();
+                let dec = per_packet.create_decryptor(&nonce);
                 black_box(decrypt_packet(dec, black_box(&ct), &tag, out))
             },
             BatchSize::LargeInput,
@@ -185,12 +182,11 @@ fn bench_init(c: &mut Criterion) {
         "AES256Key<GCM>: from_key_material + create_encryptor (per packet)",
         |b| {
             b.iter(|| {
-                black_box(
-                    Key::from_key_material(black_box(&km))
-                        .unwrap()
-                        .create_encryptor(&mut rng)
-                        .unwrap(),
-                )
+                let per_packet = Key::from_key_material(black_box(&km)).unwrap();
+                let (enc, nonce) = per_packet.create_encryptor(&mut rng).unwrap();
+                // The worker borrows the key, so what a per-packet key costs is what it takes
+                // to make the worker and finish it.
+                black_box((nonce, enc.do_encrypt_final().unwrap()))
             })
         },
     );
@@ -201,7 +197,9 @@ fn bench_init(c: &mut Criterion) {
         "AES256Key<GCM>: from_key_material + create_decryptor (per packet)",
         |b| {
             b.iter(|| {
-                black_box(Key::from_key_material(black_box(&km)).unwrap().create_decryptor(&nonce))
+                let per_packet = Key::from_key_material(black_box(&km)).unwrap();
+                let dec = per_packet.create_decryptor(&nonce);
+                black_box(dec.do_decrypt_final().is_ok())
             })
         },
     );
@@ -213,12 +211,9 @@ fn bench_init(c: &mut Criterion) {
         |b| {
             b.iter(|| {
                 let mut os_rng = HashDRBG_SHA512::new_from_os();
-                black_box(
-                    Key::from_key_material(black_box(&km))
-                        .unwrap()
-                        .create_encryptor(&mut os_rng)
-                        .unwrap(),
-                )
+                let per_packet = Key::from_key_material(black_box(&km)).unwrap();
+                let (enc, nonce) = per_packet.create_encryptor(&mut os_rng).unwrap();
+                black_box((nonce, enc.do_encrypt_final().unwrap()))
             })
         },
     );

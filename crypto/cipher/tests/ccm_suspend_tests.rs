@@ -37,8 +37,10 @@ const NONCE_LEN: usize = 12;
 const BLOCK_LEN: usize = 16;
 const AAD_LEN: usize = 16;
 const DATA_LEN: usize = 32;
-type ToyEnc = CcmPacketEncryptor<ToyBlockCipher, 16, BLOCK_LEN, NONCE_LEN, 16, AAD_LEN, DATA_LEN>;
-type ToyDec = CcmPacketDecryptor<ToyBlockCipher, 16, BLOCK_LEN, NONCE_LEN, 16, AAD_LEN, DATA_LEN>;
+type ToyEnc<'k> =
+    CcmPacketEncryptor<'k, ToyBlockCipher, 16, BLOCK_LEN, NONCE_LEN, 16, AAD_LEN, DATA_LEN>;
+type ToyDec<'k> =
+    CcmPacketDecryptor<'k, ToyBlockCipher, 16, BLOCK_LEN, NONCE_LEN, 16, AAD_LEN, DATA_LEN>;
 const N: usize = ToyEnc::SUSPENDED_STATE_LEN;
 const ND: usize = ToyDec::SUSPENDED_STATE_LEN;
 
@@ -61,7 +63,7 @@ fn key() -> KeyMaterial<16> {
     KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey).unwrap()
 }
 
-/// The key the pair is made from; resume still takes the material, through `key()`.
+/// The key the pair is made from; its workers borrow it, and resume takes its state.
 fn frame_key() -> ToyKey<ToyBlockCipher, CCM_Packet<NONCE_LEN, 16, AAD_LEN, DATA_LEN>> {
     ToyKey::from_key_material(&key()).unwrap()
 }
@@ -69,7 +71,8 @@ fn frame_key() -> ToyKey<ToyBlockCipher, CCM_Packet<NONCE_LEN, 16, AAD_LEN, DATA
 /// An encryptor holding its AAD back, before any payload: the header is not yet formatted, so
 /// the CBC-MAC has absorbed nothing.
 fn unformatted() -> [u8; N] {
-    let mut enc = frame_key().create_encryptor_nonce(&[0x24u8; NONCE_LEN]);
+    let key = frame_key();
+    let mut enc = key.create_encryptor_nonce(&[0x24u8; NONCE_LEN]);
     enc.do_update_aad(b"aad").unwrap();
     enc.suspend()
 }
@@ -77,7 +80,8 @@ fn unformatted() -> [u8; N] {
 /// An encryptor one block into its payload: the header is formatted, `next_ctr = 2`, the CBC-MAC
 /// block boundary has just been crossed, and 16 of the 32 bytes are still owed.
 fn mid_payload() -> [u8; N] {
-    let mut enc = frame_key().create_encryptor_nonce(&[0x24u8; NONCE_LEN]);
+    let key = frame_key();
+    let mut enc = key.create_encryptor_nonce(&[0x24u8; NONCE_LEN]);
     enc.do_update_aad(b"aad").unwrap();
     let mut out = [0u8; 16];
     enc.do_encrypt_out(&[0x5Au8; 16], &mut out).unwrap();
@@ -90,7 +94,8 @@ fn with_u64<const L: usize>(mut state: [u8; L], at: usize, value: u64) -> [u8; L
 }
 
 fn resumes(state: [u8; N]) -> Result<(), SuspendableError> {
-    ToyEnc::from_suspended(state, &key()).map(|_| ())
+    let key = frame_key();
+    ToyEnc::from_suspended(state, key.state()).map(|_| ())
 }
 
 /// `mac_pos` is how much of the current CBC-MAC block has been XORed in, and a full block is
@@ -195,12 +200,14 @@ fn the_aad_length_is_held_to_its_capacity() {
 /// on the tag bytes it holds back.
 #[test]
 fn the_decrypting_direction_checks_the_same_bounds() {
-    let mut dec = frame_key().create_decryptor(&[0x24u8; NONCE_LEN]);
+    let key = frame_key();
+    let mut dec = key.create_decryptor(&[0x24u8; NONCE_LEN]);
     dec.do_update_aad(b"aad").unwrap();
     let mut out = [0u8; 16];
     dec.do_decrypt_out(&[0x5Au8; 16], &mut out).unwrap();
     let state = dec.suspend();
-    let resumes = |state: [u8; ND]| ToyDec::from_suspended(state, &key()).map(|_| ());
+    let key = frame_key();
+    let resumes = |state: [u8; ND]| ToyDec::from_suspended(state, key.state()).map(|_| ());
 
     assert!(resumes(state).is_ok());
     assert!(resumes(with_u64(state, OWED, DATA_LEN as u64 + 1)).is_err());
