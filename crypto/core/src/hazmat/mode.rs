@@ -8,13 +8,20 @@
 //! must commit to the lengths before its first byte -- CCM, whose `B0` carries the payload length
 //! and whose AAD is length-prefixed -- implements [`AeadPacketEncryptMode`] /
 //! [`AeadPacketDecryptMode`] instead, whose constructors take the AAD and payload lengths and
-//! whose workers then need no buffer for either. A MAC mode -- CMAC -- implements [`MacMode`],
-//! whose worker takes no nonce and serves both roles.
+//! whose workers then need no buffer for either. The unauthenticated modes have the same two
+//! shapes with no tag: [`SymmetricEncryptMode`] / [`SymmetricDecryptMode`] for a mode that takes
+//! data of any length (padded CBC, CFB, CFB8, CTR), [`BlockEncryptMode`] / [`BlockDecryptMode`]
+//! for one that takes whole blocks (CBC with no padding layer), and [`EcbEncryptMode`] /
+//! [`EcbDecryptMode`] for ECB, which has no init data and so takes no RNG. A MAC mode -- CMAC --
+//! implements [`MacMode`], whose worker takes no nonce and serves both roles.
 
 use crate::errors::SymmetricCipherError;
 use crate::key_material::KeyType;
 use crate::symmetric_key::{AeadDecryptWorker, AeadEncryptWorker};
-use crate::traits::{MAC, RNG};
+use crate::traits::{
+    BlockCipherDecryptor, BlockCipherEncryptor, MAC, RNG, SymmetricCipherDecryptor,
+    SymmetricCipherEncryptor,
+};
 
 /// A mode's per-key state over the permutation `P`.
 ///
@@ -249,6 +256,101 @@ pub trait AeadPacketDecryptMode<
         let dec = Self::decrypt_init(state, nonce, aad.len(), buf.len())?;
         crate::provided::decrypt_detached_in_place(dec, aad, buf, tag)
     }
+}
+
+/// The encryption side of an unauthenticated mode over `P` that takes data of any length: the
+/// mode's own constructor for its [`SymmetricCipherEncryptor`].
+pub trait SymmetricEncryptMode<
+    P,
+    const KEY_LEN: usize,
+    const INIT_DATA_LEN: usize,
+    const FINAL_LEN: usize,
+>: Mode<P>
+{
+    /// The streaming encryptor this mode produces over `P`.
+    type Encryptor: SymmetricCipherEncryptor<KEY_LEN, INIT_DATA_LEN, FINAL_LEN>;
+
+    /// Begins an encryption from `state` under init data drawn from `rng`.
+    ///
+    /// # Errors
+    /// [`SymmetricCipherError::RNGError`] if the draw fails; nothing else can.
+    fn encrypt_init(
+        state: &Self::KeyState,
+        rng: &mut dyn RNG,
+    ) -> Result<(Self::Encryptor, [u8; INIT_DATA_LEN]), SymmetricCipherError>;
+}
+
+/// The decryption side of an unauthenticated mode over `P` that takes data of any length.
+pub trait SymmetricDecryptMode<
+    P,
+    const KEY_LEN: usize,
+    const INIT_DATA_LEN: usize,
+    const FINAL_LEN: usize,
+>: Mode<P>
+{
+    /// The streaming decryptor this mode produces over `P`.
+    type Decryptor: SymmetricCipherDecryptor<KEY_LEN, INIT_DATA_LEN, FINAL_LEN>;
+
+    /// Begins the decryption of a message encrypted under `init_data` from `state`. Infallible:
+    /// the state is already keyed and the init data length is in the type.
+    fn decrypt_init(state: &Self::KeyState, init_data: &[u8; INIT_DATA_LEN]) -> Self::Decryptor;
+}
+
+/// The encryption side of a whole-block mode over `P`: the mode's own constructor for its
+/// [`BlockCipherEncryptor`].
+pub trait BlockEncryptMode<
+    P,
+    const KEY_LEN: usize,
+    const INIT_DATA_LEN: usize,
+    const BLOCK_LEN: usize,
+>: Mode<P>
+{
+    /// The streaming encryptor this mode produces over `P`.
+    type Encryptor: BlockCipherEncryptor<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>;
+
+    /// Begins an encryption from `state` under init data drawn from `rng`.
+    ///
+    /// # Errors
+    /// [`SymmetricCipherError::RNGError`] if the draw fails; nothing else can.
+    fn encrypt_init(
+        state: &Self::KeyState,
+        rng: &mut dyn RNG,
+    ) -> Result<(Self::Encryptor, [u8; INIT_DATA_LEN]), SymmetricCipherError>;
+}
+
+/// The decryption side of a whole-block mode over `P`.
+pub trait BlockDecryptMode<
+    P,
+    const KEY_LEN: usize,
+    const INIT_DATA_LEN: usize,
+    const BLOCK_LEN: usize,
+>: Mode<P>
+{
+    /// The streaming decryptor this mode produces over `P`.
+    type Decryptor: BlockCipherDecryptor<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>;
+
+    /// Begins the decryption of a message encrypted under `init_data` from `state`. Infallible.
+    fn decrypt_init(state: &Self::KeyState, init_data: &[u8; INIT_DATA_LEN]) -> Self::Decryptor;
+}
+
+/// The encryption side of ECB over `P`: a whole-block mode with no init data, so its constructor
+/// takes no RNG and cannot fail. Its own pair rather than [`BlockEncryptMode`] with
+/// `INIT_DATA_LEN = 0`, so that nothing is handed an RNG it has no use for.
+pub trait EcbEncryptMode<P, const KEY_LEN: usize, const BLOCK_LEN: usize>: Mode<P> {
+    /// The streaming encryptor this mode produces over `P`.
+    type Encryptor: BlockCipherEncryptor<KEY_LEN, 0, BLOCK_LEN>;
+
+    /// Begins an encryption from `state`.
+    fn encrypt_init(state: &Self::KeyState) -> Self::Encryptor;
+}
+
+/// The decryption side of ECB over `P`; see [`EcbEncryptMode`].
+pub trait EcbDecryptMode<P, const KEY_LEN: usize, const BLOCK_LEN: usize>: Mode<P> {
+    /// The streaming decryptor this mode produces over `P`.
+    type Decryptor: BlockCipherDecryptor<KEY_LEN, 0, BLOCK_LEN>;
+
+    /// Begins a decryption from `state`.
+    fn decrypt_init(state: &Self::KeyState) -> Self::Decryptor;
 }
 
 /// A MAC mode over `P`: the mode's own constructor for its worker, which generates and verifies
