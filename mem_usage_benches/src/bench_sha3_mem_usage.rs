@@ -26,7 +26,7 @@
 #![allow(unused_imports)]
 
 use bouncycastle::core::traits::{Hash, Suspendable, XOF, XOFSqueezer};
-use bouncycastle::sha3::kmac::{KMAC128, KMAC256, KMACXOF128, KMACXOF256};
+use bouncycastle::sha3::kmac::{KMAC128, KMAC128Key, KMAC256, KMAC256Key, KMACXOF128, KMACXOF256};
 use bouncycastle::sha3::parallelhash::{
     ParallelHash128, ParallelHash256, ParallelHashXOF128, ParallelHashXOF256,
 };
@@ -56,6 +56,8 @@ fn print_struct_sizes() {
     println!("\nSP 800-185");
     println!("size_of<CSHAKE128>: {}", size_of::<CSHAKE128>());
     println!("size_of<CSHAKE256>: {}", size_of::<CSHAKE256>());
+    println!("size_of<KMAC128Key>: {}", size_of::<KMAC128Key>());
+    println!("size_of<KMAC256Key>: {}", size_of::<KMAC256Key>());
     println!("size_of<KMAC128>: {}", size_of::<KMAC128>());
     println!("size_of<KMAC256>: {}", size_of::<KMAC256>());
     println!("size_of<KMACXOF128>: {}", size_of::<KMACXOF128>());

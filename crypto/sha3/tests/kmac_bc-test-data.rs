@@ -6,11 +6,12 @@
 
 use bouncycastle_core::errors::MACError;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
+use bouncycastle_core::symmetric_key::MacGenerationKey;
 use bouncycastle_core::traits::{Hash, MAC, XOF, XOFSqueezer};
 use bouncycastle_core_test_framework::test_data_loaders::bc_test_data;
 use bouncycastle_core_test_framework::xof::TestFrameworkXOF;
 use bouncycastle_hex as hex;
-use bouncycastle_sha3::kmac::{KMAC128, KMAC256, KMACXOF128, KMACXOF256};
+use bouncycastle_sha3::kmac::{KMAC128Key, KMAC256Key, KMACXOF128, KMACXOF256};
 
 const TEST_DATA_DIR: &str = "crypto/sp800-185";
 
@@ -82,10 +83,10 @@ fn nist_sp800_185_kmac_sample_values() {
         let key = key_material(&v.key);
 
         let got = match v.strength {
-            128 => KMAC128::new_with_params(&key, v.s.as_bytes(), want, false)
+            128 => KMAC128Key::with_params(&key, v.s.as_bytes(), want)
                 .expect("a valid key")
                 .mac(&v.msg),
-            256 => KMAC256::new_with_params(&key, v.s.as_bytes(), want, false)
+            256 => KMAC256Key::with_params(&key, v.s.as_bytes(), want)
                 .expect("a valid key")
                 .mac(&v.msg),
             other => panic!("COUNT {i}: unexpected strength {other}"),
@@ -173,7 +174,7 @@ fn do_final_binds_the_length_when_nothing_has_been_read() {
         match f.strength {
             128 => check_do_final_binds_length(
                 || KMACXOF128::new(&key, s, false).expect("a valid key"),
-                |n| KMAC128::new_with_params(&key, s, n, false).expect("a valid key").mac(&f.msg),
+                |n| KMAC128Key::with_params(&key, s, n).expect("a valid key").mac(&f.msg),
                 &f.msg,
                 &f.output,
                 &x.output,
@@ -181,7 +182,7 @@ fn do_final_binds_the_length_when_nothing_has_been_read() {
             ),
             256 => check_do_final_binds_length(
                 || KMACXOF256::new(&key, s, false).expect("a valid key"),
-                |n| KMAC256::new_with_params(&key, s, n, false).expect("a valid key").mac(&f.msg),
+                |n| KMAC256Key::with_params(&key, s, n).expect("a valid key").mac(&f.msg),
                 &f.msg,
                 &f.output,
                 &x.output,
@@ -335,13 +336,13 @@ fn mac_out_and_do_final_out_agree_with_the_sample_values() {
         let ctx = format!("COUNT {i}: KMAC{} S={:?}", v.strength, v.s);
         match v.strength {
             128 => check_out_variants(
-                || KMAC128::new_with_params(&key, s, n, false).unwrap(),
+                || KMAC128Key::with_params(&key, s, n).unwrap().create_generator(),
                 &v.msg,
                 &v.output,
                 &ctx,
             ),
             256 => check_out_variants(
-                || KMAC256::new_with_params(&key, s, n, false).unwrap(),
+                || KMAC256Key::with_params(&key, s, n).unwrap().create_generator(),
                 &v.msg,
                 &v.output,
                 &ctx,
