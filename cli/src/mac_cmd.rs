@@ -6,6 +6,7 @@ use bouncycastle::core::hazmat::do_hazardous_operations;
 use bouncycastle::core::key_material::{KeyMaterial512, KeyMaterialTrait, KeyType};
 use bouncycastle::core::traits::MAC;
 use bouncycastle::hex;
+use bouncycastle::poly1305::Poly1305;
 use bouncycastle::sha2::hmac::{HMAC_SHA256, HMAC_SHA512, HMAC_SHA512_224, HMAC_SHA512_256};
 use bouncycastle::sha3::{KMAC128, KMAC256};
 use bouncycastle::sm3::hmac::HMAC_SM3;
@@ -101,6 +102,23 @@ pub(crate) fn kmac_cmd(
         ),
         _ => panic!("Unsupported algorithm: KMAC-{bit_len}"),
     }
+}
+
+/// Poly1305 (RFC 8439 Sec 2.5) under a 32-byte one-time key, which must never MAC a second
+/// message. The tag is always the full 16 bytes.
+pub(crate) fn poly1305_cmd(
+    key: &Option<String>,
+    key_file: &Option<String>,
+    verify_val: &Option<String>,
+    output_hex: bool,
+) {
+    let key = load_mac_key(key, key_file);
+    // new_allow_weak_key, as the other MAC commands do.
+    let mac = Poly1305::new_allow_weak_key(&key).unwrap_or_else(|_| {
+        eprintln!("Error: Poly1305 needs a 32-byte one-time key, got {} bytes.", key.key_len());
+        exit(-1)
+    });
+    do_mac(mac, verify_val, output_hex);
 }
 
 fn do_mac(mut mac: impl MAC, verify_val: &Option<String>, output_hex: bool) {

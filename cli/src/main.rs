@@ -6,6 +6,8 @@ mod aes_ctr_cmd;
 mod aes_ecb_cmd;
 mod aes_gcm_cmd;
 mod ascon_cmd;
+mod chacha20_cmd;
+mod chacha20_poly1305_cmd;
 mod encoders_cmd;
 mod helpers;
 mod hkdf_cmd;
@@ -539,6 +541,31 @@ enum Subcommands {
 
         #[arg(short)]
         /// Output the hashes in hex format.
+        x: bool,
+    },
+
+    /// Compute or verify a Poly1305 tag (RFC 8439 Sec 2.5) over the content provided on stdin.
+    ///
+    /// WARNING: the key is ONE-TIME. MACing two messages under the same 32-byte key lets an
+    /// attacker forge tags. For general-purpose authentication use an HMAC or KMAC command, or
+    /// `chacha20-poly1305`, which derives a fresh Poly1305 key for every message.
+    POLY1305 {
+        /// The 32-byte one-time key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 32-byte one-time key in binary.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        /// A 16-byte tag to be verified.
+        /// The command will output either 0 for success or -1 for verification failure.
+        #[arg(short, long)]
+        verify: Option<String>,
+
+        #[arg(short)]
+        /// Output the tag in hex format.
         x: bool,
     },
 
@@ -1263,6 +1290,62 @@ enum Subcommands {
         x: bool,
     },
 
+    /// ChaCha20 (RFC 8439 Sec 2.4), streaming stdin to stdout.
+    ///
+    /// The 12-byte nonce is generated and written ahead of the ciphertext, and any input length is
+    /// accepted, as for `aes128-ctr`. WARNING: no authentication, and as malleable as CTR; use
+    /// `chacha20-poly1305` unless the ciphertext is authenticated separately.
+    CHACHA20 {
+        #[arg(short, long)]
+        direction: CipherDirection,
+
+        /// The 32-byte key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 32-byte key, in binary or hex.
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// ChaCha20-Poly1305 (RFC 8439 Sec 2.8), streaming stdin to stdout.
+    ///
+    /// See `aes128-gcm` for the nonce/tag framing, the AAD flags and the warnings: the nonce is
+    /// 12 bytes and the tag 16, as there.
+    CHACHA20_POLY1305 {
+        #[arg(short, long)]
+        direction: CipherDirection,
+
+        /// The 32-byte key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 32-byte key, in binary or hex.
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        /// The additional authenticated data, in hex. Covered by the tag but not encrypted.
+        #[arg(long)]
+        aad: Option<String>,
+
+        /// A file containing the additional authenticated data, as raw bytes (never hex-decoded).
+        /// If both aad and aad_file options are provided, the file will be used.
+        #[arg(long)]
+        aad_file: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
     /// AES-128 in ECB mode (NIST SP 800-38A Sec 6.1), streaming stdin to stdout.
     ///
     /// WARNING: ECB is NOT a confidentiality mode for data. Under a given key every plaintext
@@ -1675,6 +1758,9 @@ fn run() {
         Some(Subcommands::HMAC_SM3 { key, key_file, verify, x }) => {
             mac_cmd::mac_cmd(HMACVariant::SM3, key, key_file, verify, *x)
         }
+        Some(Subcommands::POLY1305 { key, key_file, verify, x }) => {
+            mac_cmd::poly1305_cmd(key, key_file, verify, *x)
+        }
         Some(Subcommands::HKDF_SHA256 {
             salt,
             salt_file,
@@ -1791,6 +1877,14 @@ fn run() {
         }
         Some(Subcommands::AES256_GCM { direction, key, key_file, aad, aad_file, x }) => {
             aes_gcm_cmd::aes256_gcm_cmd(direction, key, key_file, aad, aad_file, *x);
+        }
+        Some(Subcommands::CHACHA20 { direction, key, key_file, x }) => {
+            chacha20_cmd::chacha20_cmd(direction, key, key_file, *x);
+        }
+        Some(Subcommands::CHACHA20_POLY1305 { direction, key, key_file, aad, aad_file, x }) => {
+            chacha20_poly1305_cmd::chacha20_poly1305_cmd(
+                direction, key, key_file, aad, aad_file, *x,
+            );
         }
         Some(Subcommands::AES128_ECB { direction, key, key_file, x }) => {
             aes_ecb_cmd::aes128_ecb_cmd(direction, key, key_file, *x);

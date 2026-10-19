@@ -166,5 +166,25 @@ mod hash_factory_tests {
                 );
             }
         }
+
+        #[test]
+        fn poly1305_tests() {
+            // RFC 8439 Sec 2.5.2.
+            let key = KeyMaterial::<32>::from_bytes_as_type(
+                &hex::decode("85d6be7857556d337f4452fe42d506a80103808afb0db2fd4abff6af4149f51b")
+                    .unwrap(),
+                KeyType::MACKey,
+            )
+            .unwrap();
+            let tag = hex::decode("a8061dc1305136c6c22b8baf0c0127a9").unwrap();
+            let msg = b"Cryptographic Forum Research Group";
+            let mac = MACFactory::new("Poly1305", &key).unwrap();
+            assert_eq!(mac.output_len(), 16);
+            assert_eq!(mac.mac(msg), tag);
+            assert!(MACFactory::new("Poly1305", &key).unwrap().verify(msg, &tag));
+            let mut short = [0xa5u8; 15];
+            assert!(MACFactory::new("Poly1305", &key).unwrap().mac_out(msg, &mut short).is_err());
+            assert_eq!(short, [0u8; 15]);
+        }
     }
 }
