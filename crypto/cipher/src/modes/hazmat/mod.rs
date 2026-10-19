@@ -15,4 +15,4 @@ mod ctr_key_stream;
 mod ecb;
 
 pub use ctr_key_stream::CtrKeyStream;
-pub use ecb::Ecb;
+pub use ecb::{ECB, Ecb};

@@ -43,6 +43,15 @@
 //! why it lives under [`hazmat`] -- see [`hazmat::Ecb`] and
 //! [Choosing between the modes](#choosing-between-the-modes).
 //!
+//! Each mode is also a **mode type** -- [`CBC`], [`CCM`], [`CCMFrame`], [`CFB`], [`CFB8`],
+//! [`CTR`], [`GCM`], [`hazmat::ECB`], and the MACs [`CMAC`] and [`GMAC`] -- the `M` a mode-bound
+//! key such as `bouncycastle_aes::AES128Key<M>` is parameterised by. The mode type implements the
+//! hazmat mode traits of [`bouncycastle_core::hazmat`], which is how a key hands out the mode's
+//! encryptors and decryptors through the role traits of `bouncycastle_core::symmetric_key`; a
+//! key is bound to one mode, and which role traits it carries follow from that mode. The modes
+//! with a padded and a whole-block form, CBC and ECB, take the padding scheme or [`Blocks`] as a
+//! parameter, and the two forms are two key types.
+//!
 //! [Choosing between the modes](#choosing-between-the-modes) covers when each is the right answer
 //! -- which, for a new design, one of them usually is.
 //!
@@ -159,14 +168,22 @@ pub mod gmac;
 pub mod hazmat;
 mod iv;
 
-pub use cbc::Cbc;
-pub use ccm::{CCM, CcmDecryptor, CcmEncryptor, CcmPacketDecryptor, CcmPacketEncryptor};
-pub use cfb::Cfb;
-pub use cfb8::Cfb8;
+pub use cbc::{CBC, Cbc};
+pub use ccm::{CCM, CCMFrame, CcmDecryptor, CcmEncryptor, CcmPacketDecryptor, CcmPacketEncryptor};
+pub use cfb::{CFB, Cfb};
+pub use cfb8::{CFB8, Cfb8};
 pub use cmac::{CMAC, CMAC_MIN_TAG_LEN, Cmac, CmacKeyState};
-pub use ctr::Ctr;
+pub use ctr::{CTR, Ctr};
 pub use gcm::{GCM, GCM_NONCE_LEN, Gcm, GcmKeyState};
 pub use gmac::{GMAC, Gmac};
+
+/// Selects the whole-block form of a mode that also has a padded form: `CBC<Blocks>` is a key
+/// for the block-aligned [`Cbc`] itself, on the block key path, where `CBC<PKCS7>` is one for
+/// the padded adapter over it, on the symmetric path. Likewise `ECB<Blocks>` under
+/// [`hazmat`]. Not a padding scheme: it adds nothing, and the lengths it accepts are checked at
+/// compile time rather than refused at the final as `NoPadding` does.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Blocks;
 
 /// The [`Algorithm::ALG_NAME`] each mode reports when built on `Self`.
 ///

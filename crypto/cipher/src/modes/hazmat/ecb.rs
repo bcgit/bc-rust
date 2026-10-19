@@ -80,19 +80,110 @@
 //!
 //! **ECB Mode should not be used in production!**
 
-use crate::modes::ModeNames;
+use crate::modes::{Blocks, ModeNames};
+use crate::padding::{PaddedBlockCipherDecryptor, PaddedBlockCipherEncryptor};
 use crate::{Decrypting, Encrypting};
 use bouncycastle_core::errors::{SuspendableError, SymmetricCipherError};
-use bouncycastle_core::hazmat::ElectronicCodeBook;
-use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait};
+use bouncycastle_core::hazmat::{
+    EcbDecryptMode, EcbEncryptMode, ElectronicCodeBook, Mode, SymmetricDecryptMode,
+    SymmetricEncryptMode,
+};
+use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{
-    Algorithm, BlockCipherDecryptor, BlockCipherEncryptor, RNG, SuspendableKeyed,
+    Algorithm, BlockCipherDecryptor, BlockCipherEncryptor, BlockCipherPadding, RNG,
+    SuspendableKeyed,
 };
 use bouncycastle_utils::suspendable_state::{
     LIB_VERSION_LEN, SuspendableComponent, resume_component, suspend_component,
 };
 use core::marker::PhantomData;
+
+/// The ECB mode type: the `M` of a mode-bound key such as `AES128Key<ECB<Blocks>>`. `X` is
+/// [`Blocks`], which puts the key on the ECB key path of [`bouncycastle_core::hazmat`] with
+/// [`Ecb`] itself as its worker, or a padding scheme, which puts it on the symmetric path with
+/// the padded adapter over `Ecb`; that path's constructor takes an RNG, which ECB, having no init
+/// data, draws nothing from. Its key state is the keyed permutation alone.
+///
+/// **Not a confidentiality mode for data**, whichever form; see [`Ecb`].
+pub struct ECB<X>(core::marker::PhantomData<X>);
+
+impl<P: Clone + ModeNames, X> Mode<P> for ECB<X> {
+    type KeyState = P;
+    const KEY_TYPE: KeyType = KeyType::SymmetricCipherKey;
+    const ALG_NAME: &'static str = P::ECB_ALG_NAME;
+
+    fn key_state(perm: P) -> Self::KeyState {
+        perm
+    }
+}
+
+impl<P, const KEY_LEN: usize, const BLOCK_LEN: usize> EcbEncryptMode<P, KEY_LEN, BLOCK_LEN>
+    for ECB<Blocks>
+where
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames + Clone,
+{
+    type Encryptor = Ecb<P, Encrypting, KEY_LEN, BLOCK_LEN>;
+
+    fn encrypt_init(state: &Self::KeyState) -> Self::Encryptor {
+        Ecb::from_perm(state.clone())
+    }
+}
+
+impl<P, const KEY_LEN: usize, const BLOCK_LEN: usize> EcbDecryptMode<P, KEY_LEN, BLOCK_LEN>
+    for ECB<Blocks>
+where
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames + Clone,
+{
+    type Decryptor = Ecb<P, Decrypting, KEY_LEN, BLOCK_LEN>;
+
+    fn decrypt_init(state: &Self::KeyState) -> Self::Decryptor {
+        Ecb::from_perm(state.clone())
+    }
+}
+
+impl<P, Pad, const KEY_LEN: usize, const BLOCK_LEN: usize>
+    SymmetricEncryptMode<P, KEY_LEN, 0, BLOCK_LEN> for ECB<Pad>
+where
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames + Clone,
+    Pad: BlockCipherPadding<BLOCK_LEN>,
+{
+    type Encryptor = PaddedBlockCipherEncryptor<
+        Ecb<P, Encrypting, KEY_LEN, BLOCK_LEN>,
+        Pad,
+        KEY_LEN,
+        0,
+        BLOCK_LEN,
+    >;
+
+    /// ECB has no init data, so nothing is drawn from `rng` and the init data is the empty
+    /// array.
+    fn encrypt_init(
+        state: &Self::KeyState,
+        _rng: &mut dyn RNG,
+    ) -> Result<(Self::Encryptor, [u8; 0]), SymmetricCipherError> {
+        Ok((PaddedBlockCipherEncryptor::from_inner(Ecb::from_perm(state.clone())), []))
+    }
+}
+
+impl<P, Pad, const KEY_LEN: usize, const BLOCK_LEN: usize>
+    SymmetricDecryptMode<P, KEY_LEN, 0, BLOCK_LEN> for ECB<Pad>
+where
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames + Clone,
+    Pad: BlockCipherPadding<BLOCK_LEN>,
+{
+    type Decryptor = PaddedBlockCipherDecryptor<
+        Ecb<P, Decrypting, KEY_LEN, BLOCK_LEN>,
+        Pad,
+        KEY_LEN,
+        0,
+        BLOCK_LEN,
+    >;
+
+    fn decrypt_init(state: &Self::KeyState, _init_data: &[u8; 0]) -> Self::Decryptor {
+        PaddedBlockCipherDecryptor::from_inner(Ecb::from_perm(state.clone()))
+    }
+}
 
 /// ECB mode over any permutation that impls [`ElectronicCodeBook`], with the direction encoded in the type.
 ///
@@ -128,7 +219,12 @@ where
     /// Expands the key. Both `_init` constructors are this; there is nothing else to set up.
     fn new(key: &KeyMaterial<KEY_LEN>) -> Result<Self, SymmetricCipherError> {
         key.check_algorithm(Self::ALG_NAME)?;
-        Ok(Self { perm: P::new(key)?, _dir: PhantomData })
+        Ok(Self::from_perm(P::new(key)?))
+    }
+
+    /// Over an already-keyed permutation: what the [`ECB`] mode impls build.
+    pub(crate) fn from_perm(perm: P) -> Self {
+        Self { perm, _dir: PhantomData }
     }
 }
 

@@ -97,21 +97,114 @@
 //! So, while the IV need not be secret, best-practice is to authenticate it along with the ciphertext,
 //! or use an authenticated (AEAD) mode such as GCM.
 
-use crate::modes::ModeNames;
 use crate::modes::iv::random_iv;
+use crate::modes::{Blocks, ModeNames};
+use crate::padding::{PaddedBlockCipherDecryptor, PaddedBlockCipherEncryptor};
 use crate::{Decrypting, Encrypting};
 use bouncycastle_core::errors::{SuspendableError, SymmetricCipherError};
-use bouncycastle_core::hazmat::ElectronicCodeBook;
-use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait};
+use bouncycastle_core::hazmat::{
+    BlockDecryptMode, BlockEncryptMode, ElectronicCodeBook, Mode, SymmetricDecryptMode,
+    SymmetricEncryptMode,
+};
+use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{
-    Algorithm, BlockCipherDecryptor, BlockCipherEncryptor, RNG, SuspendableKeyed,
+    Algorithm, BlockCipherDecryptor, BlockCipherEncryptor, BlockCipherPadding, RNG,
+    SuspendableKeyed,
 };
 use bouncycastle_rng::HashDRBG_SHA512;
 use bouncycastle_utils::suspendable_state::{
     LIB_VERSION_LEN, SuspendableComponent, resume_component, suspend_component,
 };
 use core::marker::PhantomData;
+
+/// The CBC mode type: the `M` of a mode-bound key such as `AES128Key<CBC<PKCS7>>`. `X` is the
+/// padding scheme, which puts the key on the symmetric path with the padded adapter as its
+/// worker, or [`Blocks`], which puts it on the block path with [`Cbc`] itself. Its key state is
+/// the keyed permutation alone: CBC derives nothing from the key.
+///
+/// [`PKCS7`]: crate::padding::PKCS7
+pub struct CBC<X>(core::marker::PhantomData<X>);
+
+impl<P: Clone + ModeNames, X> Mode<P> for CBC<X> {
+    type KeyState = P;
+    const KEY_TYPE: KeyType = KeyType::SymmetricCipherKey;
+    const ALG_NAME: &'static str = P::CBC_ALG_NAME;
+
+    fn key_state(perm: P) -> Self::KeyState {
+        perm
+    }
+}
+
+impl<P, Pad, const KEY_LEN: usize, const BLOCK_LEN: usize>
+    SymmetricEncryptMode<P, KEY_LEN, BLOCK_LEN, BLOCK_LEN> for CBC<Pad>
+where
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames + Clone,
+    Pad: BlockCipherPadding<BLOCK_LEN>,
+{
+    type Encryptor = PaddedBlockCipherEncryptor<
+        Cbc<P, Encrypting, KEY_LEN, BLOCK_LEN>,
+        Pad,
+        KEY_LEN,
+        BLOCK_LEN,
+        BLOCK_LEN,
+    >;
+
+    fn encrypt_init(
+        state: &Self::KeyState,
+        rng: &mut dyn RNG,
+    ) -> Result<(Self::Encryptor, [u8; BLOCK_LEN]), SymmetricCipherError> {
+        let iv = random_iv::<BLOCK_LEN>(rng)?;
+        Ok((PaddedBlockCipherEncryptor::from_inner(Cbc::from_perm(state.clone(), iv)), iv))
+    }
+}
+
+impl<P, Pad, const KEY_LEN: usize, const BLOCK_LEN: usize>
+    SymmetricDecryptMode<P, KEY_LEN, BLOCK_LEN, BLOCK_LEN> for CBC<Pad>
+where
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames + Clone,
+    Pad: BlockCipherPadding<BLOCK_LEN>,
+{
+    type Decryptor = PaddedBlockCipherDecryptor<
+        Cbc<P, Decrypting, KEY_LEN, BLOCK_LEN>,
+        Pad,
+        KEY_LEN,
+        BLOCK_LEN,
+        BLOCK_LEN,
+    >;
+
+    fn decrypt_init(state: &Self::KeyState, init_data: &[u8; BLOCK_LEN]) -> Self::Decryptor {
+        PaddedBlockCipherDecryptor::from_inner(Cbc::from_perm(state.clone(), *init_data))
+    }
+}
+
+impl<P, const KEY_LEN: usize, const BLOCK_LEN: usize>
+    BlockEncryptMode<P, KEY_LEN, BLOCK_LEN, BLOCK_LEN> for CBC<Blocks>
+where
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames + Clone,
+{
+    type Encryptor = Cbc<P, Encrypting, KEY_LEN, BLOCK_LEN>;
+
+    fn encrypt_init(
+        state: &Self::KeyState,
+        rng: &mut dyn RNG,
+    ) -> Result<(Self::Encryptor, [u8; BLOCK_LEN]), SymmetricCipherError> {
+        let iv = random_iv::<BLOCK_LEN>(rng)?;
+        Ok((Cbc::from_perm(state.clone(), iv), iv))
+    }
+}
+
+impl<P, const KEY_LEN: usize, const BLOCK_LEN: usize>
+    BlockDecryptMode<P, KEY_LEN, BLOCK_LEN, BLOCK_LEN> for CBC<Blocks>
+where
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames + Clone,
+{
+    type Decryptor = Cbc<P, Decrypting, KEY_LEN, BLOCK_LEN>;
+
+    fn decrypt_init(state: &Self::KeyState, init_data: &[u8; BLOCK_LEN]) -> Self::Decryptor {
+        Cbc::from_perm(state.clone(), *init_data)
+    }
+}
 
 /// CBC mode over any [`ElectronicCodeBook`], with the direction encoded in the type.
 ///
@@ -145,6 +238,11 @@ where
     /// The `N` of this type's [`SuspendableKeyed<N>`] impl: the version header and the chaining
     /// block. See [`bouncycastle_utils::suspendable_state`].
     pub const SUSPENDED_STATE_LEN: usize = LIB_VERSION_LEN + BLOCK_LEN;
+
+    /// `C0 = IV`, over an already-keyed permutation: what the [`CBC`] mode impls build.
+    pub(crate) fn from_perm(perm: P, iv: [u8; BLOCK_LEN]) -> Self {
+        Self { perm, chain: iv, _dir: PhantomData }
+    }
 
     /// `Cj = CIPH_K(Pj XOR Cj-1)` in place, then `Cj` becomes the next chaining value.
     #[inline]

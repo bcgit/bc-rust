@@ -57,8 +57,10 @@ use crate::modes::iv::random_iv;
 use crate::stream::{stream_do_final, stream_update_out};
 use crate::{Decrypting, Encrypting};
 use bouncycastle_core::errors::{SuspendableError, SymmetricCipherError};
-use bouncycastle_core::hazmat::ElectronicCodeBook;
-use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait};
+use bouncycastle_core::hazmat::{
+    ElectronicCodeBook, Mode, SymmetricDecryptMode, SymmetricEncryptMode,
+};
+use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{
     Algorithm, RNG, StreamCipherDecryptor, StreamCipherEncryptor, SuspendableKeyed,
@@ -74,6 +76,50 @@ use core::marker::PhantomData;
 #[allow(unused_imports)]
 use crate::modes::cfb;
 // End imports needed for docs
+
+/// The CFB8 mode type: the `M` of a mode-bound key such as `AES128Key<CFB8>`, on the symmetric
+/// key path with [`Cfb8`] as its worker. Its key state is the keyed permutation alone.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CFB8;
+
+impl<P: Clone + ModeNames> Mode<P> for CFB8 {
+    type KeyState = P;
+    const KEY_TYPE: KeyType = KeyType::SymmetricCipherKey;
+    const ALG_NAME: &'static str = P::CFB8_ALG_NAME;
+
+    fn key_state(perm: P) -> Self::KeyState {
+        perm
+    }
+}
+
+impl<P, const KEY_LEN: usize, const BLOCK_LEN: usize> SymmetricEncryptMode<P, KEY_LEN, BLOCK_LEN, 0>
+    for CFB8
+where
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames + Clone,
+{
+    type Encryptor = Cfb8<P, Encrypting, KEY_LEN, BLOCK_LEN>;
+
+    fn encrypt_init(
+        state: &Self::KeyState,
+        rng: &mut dyn RNG,
+    ) -> Result<(Self::Encryptor, [u8; BLOCK_LEN]), SymmetricCipherError> {
+        // `I1 = IV`.
+        let iv = random_iv::<BLOCK_LEN>(rng)?;
+        Ok((Cfb8 { perm: state.clone(), chain: iv, _dir: PhantomData }, iv))
+    }
+}
+
+impl<P, const KEY_LEN: usize, const BLOCK_LEN: usize> SymmetricDecryptMode<P, KEY_LEN, BLOCK_LEN, 0>
+    for CFB8
+where
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames + Clone,
+{
+    type Decryptor = Cfb8<P, Decrypting, KEY_LEN, BLOCK_LEN>;
+
+    fn decrypt_init(state: &Self::KeyState, init_data: &[u8; BLOCK_LEN]) -> Self::Decryptor {
+        Cfb8 { perm: state.clone(), chain: *init_data, _dir: PhantomData }
+    }
+}
 
 /// CFB8 mode over any [`ElectronicCodeBook`], with the direction encoded in the type.
 ///
