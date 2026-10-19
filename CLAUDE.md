@@ -224,8 +224,18 @@ What that taught, as mechanics for the next trait that sheds a constructor:
   and the construction suites in `core_test_framework::from_key_material`; a test of "a key of the
   wrong type is rejected" belongs to the construction suite, once, not to each mode's tests.
   Known-answer suites keep pinning their IV through `create_encryptor` and a `FixedSeedRNG`.
-- **Resume still takes the material.** `SuspendableKeyed::Key` stays `KeyMaterial<KEY_LEN>`;
-  resuming from a key object is a follow-up, not something to fold into the deletion.
+- **Workers borrow the key.** The role and mode traits hand out workers through a generic
+  associated type with a lifetime, `type Encryptor<'k>`, and the cipher-crate workers hold
+  `&'k` to the mode's key state, so `create_encryptor` copies no schedule and a worker cannot
+  outlive its key. Spell the mode traits' GAT bound `where P: 'k`, not `where Self::KeyState: 'k`:
+  rustc rejects a generic impl whose key state is a struct over `P` (E0276) under the latter. A
+  function handed `key: &'k K` that names the worker is generic over `'k`; one that builds its
+  key locally bounds `for<'k> K::Encryptor<'k>: ..` with `K: 'static`. A test binds the key
+  before the worker, since `key_fn().create_encryptor(..)` borrows a temporary.
+- **Resume takes the key state.** `SuspendableKeyed<'k, N>` and `SuspendableComponent<'k>` take
+  the key by `&'k`, and a cipher-mode worker's `Key` is the mode's `KeyState`, reached through
+  `hazmat::ModeKey::state`; the suspended layouts did not change. A worker that owns a copy of its
+  key (Ascon, HMAC, KMAC) implements the traits for every `'k` and ignores it.
 - **What has no key-path twin is dropped, and said so.** `new_allow_weak_key` on a cipher-based
   MAC, a wrong-length `KeyMaterial512` into a fixed-length key, GCM's verify-before-decrypt
   one-shot override: each went with a line in the commit message rather than a shim.

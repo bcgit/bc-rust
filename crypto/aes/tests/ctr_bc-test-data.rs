@@ -96,11 +96,12 @@ fn run_case<K, const KEY_LEN: usize>(
     grouping: Grouping,
 ) -> Vec<u8>
 where
+    K: 'static,
     K: FromKeyMaterial<KEY_LEN>
         + SymmetricEncryptionKey<KEY_LEN, NONCE_LEN, 0>
         + SymmetricDecryptionKey<KEY_LEN, NONCE_LEN, 0>,
-    K::Encryptor: StreamCipherEncryptor<NONCE_LEN>,
-    K::Decryptor: StreamCipherDecryptor<NONCE_LEN>,
+    for<'k> K::Encryptor<'k>: StreamCipherEncryptor<NONCE_LEN>,
+    for<'k> K::Decryptor<'k>: StreamCipherDecryptor<NONCE_LEN>,
 {
     let key = K::from_key_material(&cipher_key::<KEY_LEN>(key_bytes)).expect("a valid key");
     let mut data = input.to_vec();

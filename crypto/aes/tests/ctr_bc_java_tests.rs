@@ -60,9 +60,9 @@ fn key<const NONCE_LEN: usize>() -> AES128Key<CTR<NONCE_LEN>> {
 fn keystream<const NONCE_LEN: usize>(nonce_hex: &str, blocks: usize) -> Vec<u8> {
     let nonce: [u8; NONCE_LEN] =
         hex::decode(nonce_hex).expect("valid hex").try_into().expect("nonce length");
-    let (mut enc, got) = key::<NONCE_LEN>()
-        .create_encryptor(&mut FixedSeedRNG::<NONCE_LEN>::new(nonce))
-        .expect("encrypt init");
+    let key = key::<NONCE_LEN>();
+    let (mut enc, got) =
+        key.create_encryptor(&mut FixedSeedRNG::<NONCE_LEN>::new(nonce)).expect("encrypt init");
     assert_eq!(got, nonce, "the pinned RNG should reproduce the nonce");
 
     let mut data = vec![0u8; blocks * 16];
@@ -152,7 +152,8 @@ fn three_byte_counter_matches_bc_java() {
 fn the_counter_limit_falls_where_bc_java_throws() {
     let nonce: [u8; 15] =
         hex::decode("5a5b5c5d5e5f606162636465666768").unwrap().try_into().unwrap();
-    let (mut enc, _) = key::<15>().create_encryptor(&mut FixedSeedRNG::<15>::new(nonce)).unwrap();
+    let key = key::<15>();
+    let (mut enc, _) = key.create_encryptor(&mut FixedSeedRNG::<15>::new(nonce)).unwrap();
 
     // BC Java encrypts 4096 bytes under this IV without complaint.
     let mut data = vec![0u8; 4096];

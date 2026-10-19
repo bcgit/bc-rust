@@ -165,22 +165,23 @@
 //! | Type | AES-128 | AES-192 | AES-256 |
 //! |---|---|---|---|
 //! | [`AES128Key`]`<CCM<..>>` and friends: the key schedule | 176 B | 208 B | 240 B |
-//! | its workers, encrypting / decrypting | 264 B / 288 B | 296 B / 320 B | 328 B / 352 B |
-//! | [`AES_CCM_128`] and friends, encrypting, `AAD_LEN = 64` | 344 B | 376 B | 408 B |
-//! | [`AES_CCM_128`] and friends, decrypting, `AAD_LEN = 64` | 368 B | 400 B | 432 B |
+//! | its workers, encrypting / decrypting | 96 B / 120 B | 96 B / 120 B | 96 B / 120 B |
+//! | [`AES_CCM_128`] and friends, encrypting, `AAD_LEN = 64` | 176 B | 176 B | 176 B |
+//! | [`AES_CCM_128`] and friends, decrypting, `AAD_LEN = 64` | 200 B | 200 B | 200 B |
 //!
-//! The difference between the key sizes is the key schedule; the pair adds the mode's state, the
-//! `AAD_LEN`-byte AAD buffer and, on the decrypting side, the held-back tag. Peak stack over a
+//! The difference between the key sizes is the key schedule, which the workers borrow rather
+//! than copy; the pair adds the mode's state, the `AAD_LEN`-byte AAD buffer and, on the
+//! decrypting side, the held-back tag. Peak stack over a
 //! 16 KiB frame with AES-128, measured with massif on x86-64 in release mode by
 //! `mem_usage_benches/src/bench_ccm_mem_usage.rs`, including the caller's own 16 KiB arrays:
 //!
 //! | Path | Peak stack |
 //! |---|---|
 //! | process start-up alone | 7 680 B |
-//! | `AES128Key<CCM<..>>` in place, one array | 19 328 B |
-//! | `AES_CCM_128` streaming encrypt, two arrays | 37 400 B |
-//! | `AES_CCM_128` streaming decrypt, two arrays | 36 368 B |
-//! | `AES_CCM_128` one-shot, two arrays | 36 904 B |
+//! | `AES128Key<CCM<..>>` in place, one array | 18 608 B |
+//! | `AES_CCM_128` streaming encrypt, two arrays | 36 216 B |
+//! | `AES_CCM_128` streaming decrypt, two arrays | 35 424 B |
+//! | `AES_CCM_128` one-shot, two arrays | 35 880 B |
 //!
 //! # 🚨 Security Considerations 🚨
 //!
@@ -227,38 +228,95 @@ pub const CCM_TAG_LEN: usize = 16;
 /// for the rules.
 #[allow(non_camel_case_types)]
 pub type AES_CCM_128<
+    'k,
     Dir,
     const NONCE_LEN: usize,
     const TAG_LEN: usize,
     const AAD_LEN: usize,
     const DATA_LEN: usize,
 > = <Dir as Direction>::Select<
-    CcmPacketEncryptor<AES128Internal, 16, AES_BLOCK_LEN, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>,
-    CcmPacketDecryptor<AES128Internal, 16, AES_BLOCK_LEN, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>,
+    CcmPacketEncryptor<
+        'k,
+        AES128Internal,
+        16,
+        AES_BLOCK_LEN,
+        NONCE_LEN,
+        TAG_LEN,
+        AAD_LEN,
+        DATA_LEN,
+    >,
+    CcmPacketDecryptor<
+        'k,
+        AES128Internal,
+        16,
+        AES_BLOCK_LEN,
+        NONCE_LEN,
+        TAG_LEN,
+        AAD_LEN,
+        DATA_LEN,
+    >,
 >;
 
 /// AES-192 in CCM mode, as an [`AEADCipherEncryptor`] or [`AEADCipherDecryptor`] by `Dir`. See [`AES_CCM_128`].
 #[allow(non_camel_case_types)]
 pub type AES_CCM_192<
+    'k,
     Dir,
     const NONCE_LEN: usize,
     const TAG_LEN: usize,
     const AAD_LEN: usize,
     const DATA_LEN: usize,
 > = <Dir as Direction>::Select<
-    CcmPacketEncryptor<AES192Internal, 24, AES_BLOCK_LEN, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>,
-    CcmPacketDecryptor<AES192Internal, 24, AES_BLOCK_LEN, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>,
+    CcmPacketEncryptor<
+        'k,
+        AES192Internal,
+        24,
+        AES_BLOCK_LEN,
+        NONCE_LEN,
+        TAG_LEN,
+        AAD_LEN,
+        DATA_LEN,
+    >,
+    CcmPacketDecryptor<
+        'k,
+        AES192Internal,
+        24,
+        AES_BLOCK_LEN,
+        NONCE_LEN,
+        TAG_LEN,
+        AAD_LEN,
+        DATA_LEN,
+    >,
 >;
 
 /// AES-256 in CCM mode, as an [`AEADCipherEncryptor`] or [`AEADCipherDecryptor`] by `Dir`. See [`AES_CCM_128`].
 #[allow(non_camel_case_types)]
 pub type AES_CCM_256<
+    'k,
     Dir,
     const NONCE_LEN: usize,
     const TAG_LEN: usize,
     const AAD_LEN: usize,
     const DATA_LEN: usize,
 > = <Dir as Direction>::Select<
-    CcmPacketEncryptor<AES256Internal, 32, AES_BLOCK_LEN, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>,
-    CcmPacketDecryptor<AES256Internal, 32, AES_BLOCK_LEN, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>,
+    CcmPacketEncryptor<
+        'k,
+        AES256Internal,
+        32,
+        AES_BLOCK_LEN,
+        NONCE_LEN,
+        TAG_LEN,
+        AAD_LEN,
+        DATA_LEN,
+    >,
+    CcmPacketDecryptor<
+        'k,
+        AES256Internal,
+        32,
+        AES_BLOCK_LEN,
+        NONCE_LEN,
+        TAG_LEN,
+        AAD_LEN,
+        DATA_LEN,
+    >,
 >;

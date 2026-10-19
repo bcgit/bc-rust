@@ -315,17 +315,23 @@ impl<HASH: Hash + Default> FromAnyKeyMaterial for HmacKey<HASH> {
 }
 
 impl<HASH: Hash + Default> MacGenerationKey for HmacKey<HASH> {
-    type Generator = HMAC<HASH>;
+    type Generator<'k>
+        = HMAC<HASH>
+    where
+        Self: 'k;
 
-    fn create_generator(&self) -> Self::Generator {
+    fn create_generator<'k>(&'k self) -> Self::Generator<'k> {
         HMAC { hasher: self.inner.clone(), outer: self.outer.clone() }
     }
 }
 
 impl<HASH: Hash + Default> MacVerificationKey for HmacKey<HASH> {
-    type Verifier = HMAC<HASH>;
+    type Verifier<'k>
+        = HMAC<HASH>
+    where
+        Self: 'k;
 
-    fn create_verifier(&self) -> Self::Verifier {
+    fn create_verifier<'k>(&'k self) -> Self::Verifier<'k> {
         self.create_generator()
     }
 }
@@ -448,8 +454,8 @@ impl<HASH: Hash + Default> MAC for HMAC<HASH> {
 /// alone and is rebuilt from the re-supplied key on resume, so the state carries one secret fewer.
 /// The key is *not* authenticated against the state: resuming with the wrong key cannot be
 /// detected and produces a wrong MAC.
-impl<const HASH_STATE_LEN: usize, HASH: Hash + Default + Suspendable<HASH_STATE_LEN>>
-    SuspendableKeyed<HASH_STATE_LEN> for HMAC<HASH>
+impl<'k, const HASH_STATE_LEN: usize, HASH: Hash + Default + Suspendable<HASH_STATE_LEN>>
+    SuspendableKeyed<'k, HASH_STATE_LEN> for HMAC<HASH>
 {
     type Key = dyn KeyMaterialTrait;
 
@@ -459,7 +465,7 @@ impl<const HASH_STATE_LEN: usize, HASH: Hash + Default + Suspendable<HASH_STATE_
 
     fn from_suspended(
         state: [u8; HASH_STATE_LEN],
-        key: &Self::Key,
+        key: &'k Self::Key,
     ) -> Result<Self, SuspendableError> {
         let hasher = HASH::from_suspended(state)?;
         let HmacKey { outer, .. } = HmacKey::<HASH>::from_key_bytes(key.ref_to_bytes());

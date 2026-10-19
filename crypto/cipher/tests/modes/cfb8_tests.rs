@@ -30,13 +30,17 @@ use bouncycastle_core_test_framework::symmetric_ciphers::TestFrameworkStreamCiph
 use common::{ForwardOnlyToy, SwappedFourToy, SwappedPairToy, TOY_LEN, Toy, toy_key};
 use toy_key::{ToyKey, os_rng};
 
-type ToyCfb8<Dir> = Cfb8<Toy, Dir, TOY_LEN, TOY_LEN>;
+type ToyCfb8<'k, Dir> = Cfb8<'k, Toy, Dir, TOY_LEN, TOY_LEN>;
 
 type ToyCfb8Key = ToyKey<Toy, CFB8>;
 
 fn cfb8_key() -> ToyCfb8Key {
     ToyCfb8Key::from_key_material(&toy_key()).expect("the toy key")
 }
+
+/// The key the worker helpers below hand out borrowed workers over; a worker cannot outlive
+/// its key, so the helpers' key lives for the whole test binary.
+static KEY: std::sync::LazyLock<ToyCfb8Key> = std::sync::LazyLock::new(cfb8_key);
 
 fn swapped_key() -> ToyKey<SwappedPairToy, CFB8> {
     ToyKey::from_key_material(&toy_key()).expect("the toy key")
@@ -87,14 +91,14 @@ fn pinned_rng(iv: [u8; TOY_LEN]) -> FixedSeedRNG<TOY_LEN> {
     FixedSeedRNG::<TOY_LEN>::new(iv)
 }
 
-fn pinned_encryptor(iv: [u8; TOY_LEN]) -> ToyCfb8<Encrypting> {
-    let (enc, got) = cfb8_key().create_encryptor(&mut pinned_rng(iv)).expect("encrypt init");
+fn pinned_encryptor(iv: [u8; TOY_LEN]) -> ToyCfb8<'static, Encrypting> {
+    let (enc, got) = KEY.create_encryptor(&mut pinned_rng(iv)).expect("encrypt init");
     assert_eq!(got, iv, "the pinned RNG should reproduce the IV");
     enc
 }
 
-fn pinned_decryptor(iv: [u8; TOY_LEN]) -> ToyCfb8<Decrypting> {
-    cfb8_key().create_decryptor(&iv)
+fn pinned_decryptor(iv: [u8; TOY_LEN]) -> ToyCfb8<'static, Decrypting> {
+    KEY.create_decryptor(&iv)
 }
 
 /// A test message of `len` bytes with no repeating structure at the block size.
@@ -278,15 +282,19 @@ fn neither_direction_uses_the_inverse_cipher() {
     let iv = pinned_iv();
     let plaintext = message(19);
 
-    let (mut e, _) = forward_only_key().create_encryptor(&mut pinned_rng(iv)).unwrap();
+    let key = forward_only_key();
+
+    let (mut e, _) = key.create_encryptor(&mut pinned_rng(iv)).unwrap();
     let ct = enc(&mut e, &plaintext);
 
     // One call: four fours, then a pair, then a single byte.
-    let mut d = forward_only_key().create_decryptor(&iv);
+    let key = forward_only_key();
+    let mut d = key.create_decryptor(&iv);
     assert_eq!(dec(&mut d, &ct), plaintext, "all paths, forward cipher only");
 
     // Byte by byte: the single-byte path only.
-    let mut d = forward_only_key().create_decryptor(&iv);
+    let key = forward_only_key();
+    let mut d = key.create_decryptor(&iv);
     assert_eq!(dec_chunked(&mut d, &ct, 1), plaintext, "single-byte path, forward cipher only");
 
     // The forward-only toy must agree with the real one, or the above proves nothing.
@@ -446,15 +454,18 @@ fn the_pair_path_is_really_used() {
     assert_eq!(dec(&mut pinned_decryptor(iv), &ct), plaintext);
 
     // The swapped-pair toy encrypts identically -- CFB8 encryption is serial and never batches.
-    let (mut e, _) = swapped_key().create_encryptor(&mut pinned_rng(iv)).unwrap();
+    let key = swapped_key();
+    let (mut e, _) = key.create_encryptor(&mut pinned_rng(iv)).unwrap();
     assert_eq!(enc(&mut e, &plaintext), ct, "CFB8 encryption must not use the pair path");
 
     // ...but decrypting two bytes together must now be wrong, because the pair path is used.
-    let mut d = swapped_key().create_decryptor(&iv);
+    let key = swapped_key();
+    let mut d = key.create_decryptor(&iv);
     assert_ne!(dec(&mut d, &ct), plaintext, "a pair must go through encrypt_2blocks");
 
     // One byte at a time avoids the pair path, so it is correct even for this toy.
-    let mut d = swapped_key().create_decryptor(&iv);
+    let key = swapped_key();
+    let mut d = key.create_decryptor(&iv);
     assert_eq!(dec_chunked(&mut d, &ct, 1), plaintext, "the single-byte path must not pair");
 }
 
@@ -473,21 +484,25 @@ fn the_four_byte_path_is_really_used() {
     assert_eq!(dec(&mut pinned_decryptor(iv), &ct), plaintext);
 
     // The rotated-four toy encrypts identically: CFB8 encryption is serial and never batches.
-    let (mut e, _) = swapped_four_key().create_encryptor(&mut pinned_rng(iv)).unwrap();
+    let key = swapped_four_key();
+    let (mut e, _) = key.create_encryptor(&mut pinned_rng(iv)).unwrap();
     assert_eq!(enc(&mut e, &plaintext), ct, "CFB8 encryption must not use the four path");
 
     // ...but five bytes together must now be wrong, because the first four go through
     // encrypt_4blocks.
-    let mut d = swapped_four_key().create_decryptor(&iv);
+    let key = swapped_four_key();
+    let mut d = key.create_decryptor(&iv);
     assert_ne!(dec(&mut d, &ct), plaintext, "five bytes must go through encrypt_4blocks");
 
     // Two bytes use the pair path only, so they are correct even for this toy...
     let two = &ct[..2];
-    let mut d = swapped_four_key().create_decryptor(&iv);
+    let key = swapped_four_key();
+    let mut d = key.create_decryptor(&iv);
     assert_eq!(dec(&mut d, two), plaintext[..2], "pairs must not use the four path");
 
     // ...and so is one byte at a time.
-    let mut d = swapped_four_key().create_decryptor(&iv);
+    let key = swapped_four_key();
+    let mut d = key.create_decryptor(&iv);
     assert_eq!(dec_chunked(&mut d, &ct, 1), plaintext, "the single-byte path must not batch");
 }
 

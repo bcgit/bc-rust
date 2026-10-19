@@ -14,6 +14,12 @@
 //! for one that takes whole blocks (CBC with no padding layer), and [`EcbEncryptMode`] /
 //! [`EcbDecryptMode`] for ECB, which has no init data and so takes no RNG. A MAC mode -- CMAC --
 //! implements [`MacMode`], whose worker takes no nonce and serves both roles.
+//!
+//! Every worker borrows the key state it is made from, for the lifetime `'k` on the mode's
+//! associated worker type: the schedule stays in the key and is read through the reference, so
+//! making a worker copies nothing but the per-message state, and a worker cannot outlive its
+//! key. Resuming a suspended worker takes the same reference, which a key object exposes through
+//! [`ModeKey::state`].
 
 use crate::errors::SymmetricCipherError;
 use crate::key_material::KeyType;
@@ -41,6 +47,15 @@ pub trait Mode<P> {
     fn key_state(perm: P) -> Self::KeyState;
 }
 
+/// A key object's mode state, borrowed: what a suspended worker is resumed over
+/// (`SuspendableKeyed::Key` on a cipher mode's worker is the mode's `KeyState`). Hazmat because
+/// the state is the bare keyed permutation, which the mode traits take directly; the safe route to
+/// a worker is the key's `create_*` method.
+pub trait ModeKey<P, M: Mode<P>> {
+    /// The mode's per-key state this key holds.
+    fn state(&self) -> &M::KeyState;
+}
+
 // `KEY_LEN` is on these traits only while the cipher traits still carry it: the permutation bound
 // a mode impl needs, `P: ElectronicCodeBook<KEY_LEN, ..>`, must be tied to the impl's trait. It
 // goes when the constructors leave the cipher traits.
@@ -54,23 +69,30 @@ pub trait AeadEncryptMode<
     const FINAL_LEN: usize,
 >: Mode<P>
 {
-    /// The streaming encryptor this mode produces over `P`.
-    type Encryptor: AEADCipherEncryptor<NONCE_LEN, TAG_LEN, FINAL_LEN>;
+    /// The streaming encryptor this mode produces over `P`. It borrows the key state it was made
+    /// from for `'k`: the schedule is read through the reference, never copied into the worker,
+    /// and the worker cannot outlive the state.
+    type Encryptor<'k>: AEADCipherEncryptor<NONCE_LEN, TAG_LEN, FINAL_LEN>
+    where
+        P: 'k;
 
     /// Begins an encryption from `state` under a nonce drawn from `rng`.
     ///
     /// # Errors
     /// [`SymmetricCipherError::RNGError`] if the nonce draw fails; nothing else can.
-    fn encrypt_init(
-        state: &Self::KeyState,
+    fn encrypt_init<'k>(
+        state: &'k Self::KeyState,
         rng: &mut dyn RNG,
-    ) -> Result<(Self::Encryptor, [u8; NONCE_LEN]), SymmetricCipherError>;
+    ) -> Result<(Self::Encryptor<'k>, [u8; NONCE_LEN]), SymmetricCipherError>;
 
     /// Begins an encryption from `state` under a nonce the caller supplies. Infallible, as
     /// [`AeadDecryptMode::decrypt_init`] is: the state is keyed and the nonce length is in the
     /// type. The caller takes on the obligation [`encrypt_init`](Self::encrypt_init) discharges
     /// for it: the nonce must never repeat under this key.
-    fn encrypt_init_nonce(state: &Self::KeyState, nonce: &[u8; NONCE_LEN]) -> Self::Encryptor;
+    fn encrypt_init_nonce<'k>(
+        state: &'k Self::KeyState,
+        nonce: &[u8; NONCE_LEN],
+    ) -> Self::Encryptor<'k>;
 
     /// Encrypts `buf` in place from `state` under `aad` and a nonce drawn from `rng`, returning
     /// the nonce and the detached tag. Provided by streaming `buf` through
@@ -114,12 +136,16 @@ pub trait AeadDecryptMode<
     const FINAL_LEN: usize,
 >: Mode<P>
 {
-    /// The streaming decryptor this mode produces over `P`.
-    type Decryptor: AEADCipherDecryptor<NONCE_LEN, TAG_LEN, FINAL_LEN>;
+    /// The streaming decryptor this mode produces over `P`. It borrows the key state it was made
+    /// from for `'k`: the schedule is read through the reference, never copied into the worker,
+    /// and the worker cannot outlive the state.
+    type Decryptor<'k>: AEADCipherDecryptor<NONCE_LEN, TAG_LEN, FINAL_LEN>
+    where
+        P: 'k;
 
     /// Begins the decryption of a message encrypted under `nonce` from `state`. Infallible: the
     /// state is already keyed and the nonce length is in the type.
-    fn decrypt_init(state: &Self::KeyState, nonce: &[u8; NONCE_LEN]) -> Self::Decryptor;
+    fn decrypt_init<'k>(state: &'k Self::KeyState, nonce: &[u8; NONCE_LEN]) -> Self::Decryptor<'k>;
 
     /// Decrypts `buf` in place from `state` under `nonce` and `aad`, and checks `tag`. On any
     /// error `buf` is left zeroized, since the plaintext was written into it before the tag could
@@ -151,8 +177,12 @@ pub trait AeadDeclaredEncryptMode<
     const FINAL_LEN: usize,
 >: Mode<P>
 {
-    /// The streaming encryptor this mode produces over `P`.
-    type Encryptor: AEADCipherEncryptor<NONCE_LEN, TAG_LEN, FINAL_LEN>;
+    /// The streaming encryptor this mode produces over `P`. It borrows the key state it was made
+    /// from for `'k`: the schedule is read through the reference, never copied into the worker,
+    /// and the worker cannot outlive the state.
+    type Encryptor<'k>: AEADCipherEncryptor<NONCE_LEN, TAG_LEN, FINAL_LEN>
+    where
+        P: 'k;
 
     /// Begins an encryption of `payload_len` bytes under `aad_len` bytes of AAD, from `state`
     /// under a nonce drawn from `rng`.
@@ -160,24 +190,24 @@ pub trait AeadDeclaredEncryptMode<
     /// # Errors
     /// [`SymmetricCipherError::RNGError`] if the nonce draw fails, or the mode's own refusal of
     /// a length it cannot encode.
-    fn encrypt_init(
-        state: &Self::KeyState,
+    fn encrypt_init<'k>(
+        state: &'k Self::KeyState,
         rng: &mut dyn RNG,
         aad_len: usize,
         payload_len: usize,
-    ) -> Result<(Self::Encryptor, [u8; NONCE_LEN]), SymmetricCipherError>;
+    ) -> Result<(Self::Encryptor<'k>, [u8; NONCE_LEN]), SymmetricCipherError>;
 
     /// As [`encrypt_init`](Self::encrypt_init) under a nonce the caller supplies, who takes on
     /// the obligation that it never repeat under this key.
     ///
     /// # Errors
     /// The mode's own refusal of a length it cannot encode.
-    fn encrypt_init_nonce(
-        state: &Self::KeyState,
+    fn encrypt_init_nonce<'k>(
+        state: &'k Self::KeyState,
         nonce: &[u8; NONCE_LEN],
         aad_len: usize,
         payload_len: usize,
-    ) -> Result<Self::Encryptor, SymmetricCipherError>;
+    ) -> Result<Self::Encryptor<'k>, SymmetricCipherError>;
 
     /// Encrypts `buf` in place from `state` under `aad` and a nonce drawn from `rng`, returning
     /// the nonce and the detached tag. Provided by streaming `buf` through the encryptor a chunk
@@ -223,20 +253,24 @@ pub trait AeadDeclaredDecryptMode<
     const FINAL_LEN: usize,
 >: Mode<P>
 {
-    /// The streaming decryptor this mode produces over `P`.
-    type Decryptor: AEADCipherDecryptor<NONCE_LEN, TAG_LEN, FINAL_LEN>;
+    /// The streaming decryptor this mode produces over `P`. It borrows the key state it was made
+    /// from for `'k`: the schedule is read through the reference, never copied into the worker,
+    /// and the worker cannot outlive the state.
+    type Decryptor<'k>: AEADCipherDecryptor<NONCE_LEN, TAG_LEN, FINAL_LEN>
+    where
+        P: 'k;
 
     /// Begins the decryption of `payload_len` bytes of ciphertext under `aad_len` bytes of AAD,
     /// encrypted under `nonce`, from `state`.
     ///
     /// # Errors
     /// The mode's own refusal of a length it cannot encode.
-    fn decrypt_init(
-        state: &Self::KeyState,
+    fn decrypt_init<'k>(
+        state: &'k Self::KeyState,
         nonce: &[u8; NONCE_LEN],
         aad_len: usize,
         payload_len: usize,
-    ) -> Result<Self::Decryptor, SymmetricCipherError>;
+    ) -> Result<Self::Decryptor<'k>, SymmetricCipherError>;
 
     /// Decrypts `buf` in place from `state` under `nonce` and `aad`, and checks `tag`. On any
     /// error after construction `buf` is left zeroized, since the plaintext was written into it
@@ -266,17 +300,21 @@ pub trait SymmetricEncryptMode<
     const FINAL_LEN: usize,
 >: Mode<P>
 {
-    /// The streaming encryptor this mode produces over `P`.
-    type Encryptor: SymmetricCipherEncryptor<INIT_DATA_LEN, FINAL_LEN>;
+    /// The streaming encryptor this mode produces over `P`. It borrows the key state it was made
+    /// from for `'k`: the schedule is read through the reference, never copied into the worker,
+    /// and the worker cannot outlive the state.
+    type Encryptor<'k>: SymmetricCipherEncryptor<INIT_DATA_LEN, FINAL_LEN>
+    where
+        P: 'k;
 
     /// Begins an encryption from `state` under init data drawn from `rng`.
     ///
     /// # Errors
     /// [`SymmetricCipherError::RNGError`] if the draw fails; nothing else can.
-    fn encrypt_init(
-        state: &Self::KeyState,
+    fn encrypt_init<'k>(
+        state: &'k Self::KeyState,
         rng: &mut dyn RNG,
-    ) -> Result<(Self::Encryptor, [u8; INIT_DATA_LEN]), SymmetricCipherError>;
+    ) -> Result<(Self::Encryptor<'k>, [u8; INIT_DATA_LEN]), SymmetricCipherError>;
 }
 
 /// The decryption side of an unauthenticated mode over `P` that takes data of any length.
@@ -287,12 +325,19 @@ pub trait SymmetricDecryptMode<
     const FINAL_LEN: usize,
 >: Mode<P>
 {
-    /// The streaming decryptor this mode produces over `P`.
-    type Decryptor: SymmetricCipherDecryptor<INIT_DATA_LEN, FINAL_LEN>;
+    /// The streaming decryptor this mode produces over `P`. It borrows the key state it was made
+    /// from for `'k`: the schedule is read through the reference, never copied into the worker,
+    /// and the worker cannot outlive the state.
+    type Decryptor<'k>: SymmetricCipherDecryptor<INIT_DATA_LEN, FINAL_LEN>
+    where
+        P: 'k;
 
     /// Begins the decryption of a message encrypted under `init_data` from `state`. Infallible:
     /// the state is already keyed and the init data length is in the type.
-    fn decrypt_init(state: &Self::KeyState, init_data: &[u8; INIT_DATA_LEN]) -> Self::Decryptor;
+    fn decrypt_init<'k>(
+        state: &'k Self::KeyState,
+        init_data: &[u8; INIT_DATA_LEN],
+    ) -> Self::Decryptor<'k>;
 }
 
 /// The encryption side of a whole-block mode over `P`: the mode's own constructor for its
@@ -304,17 +349,21 @@ pub trait BlockEncryptMode<
     const BLOCK_LEN: usize,
 >: Mode<P>
 {
-    /// The streaming encryptor this mode produces over `P`.
-    type Encryptor: BlockCipherEncryptor<INIT_DATA_LEN, BLOCK_LEN>;
+    /// The streaming encryptor this mode produces over `P`. It borrows the key state it was made
+    /// from for `'k`: the schedule is read through the reference, never copied into the worker,
+    /// and the worker cannot outlive the state.
+    type Encryptor<'k>: BlockCipherEncryptor<INIT_DATA_LEN, BLOCK_LEN>
+    where
+        P: 'k;
 
     /// Begins an encryption from `state` under init data drawn from `rng`.
     ///
     /// # Errors
     /// [`SymmetricCipherError::RNGError`] if the draw fails; nothing else can.
-    fn encrypt_init(
-        state: &Self::KeyState,
+    fn encrypt_init<'k>(
+        state: &'k Self::KeyState,
         rng: &mut dyn RNG,
-    ) -> Result<(Self::Encryptor, [u8; INIT_DATA_LEN]), SymmetricCipherError>;
+    ) -> Result<(Self::Encryptor<'k>, [u8; INIT_DATA_LEN]), SymmetricCipherError>;
 }
 
 /// The decryption side of a whole-block mode over `P`.
@@ -325,41 +374,60 @@ pub trait BlockDecryptMode<
     const BLOCK_LEN: usize,
 >: Mode<P>
 {
-    /// The streaming decryptor this mode produces over `P`.
-    type Decryptor: BlockCipherDecryptor<INIT_DATA_LEN, BLOCK_LEN>;
+    /// The streaming decryptor this mode produces over `P`. It borrows the key state it was made
+    /// from for `'k`: the schedule is read through the reference, never copied into the worker,
+    /// and the worker cannot outlive the state.
+    type Decryptor<'k>: BlockCipherDecryptor<INIT_DATA_LEN, BLOCK_LEN>
+    where
+        P: 'k;
 
     /// Begins the decryption of a message encrypted under `init_data` from `state`. Infallible.
-    fn decrypt_init(state: &Self::KeyState, init_data: &[u8; INIT_DATA_LEN]) -> Self::Decryptor;
+    fn decrypt_init<'k>(
+        state: &'k Self::KeyState,
+        init_data: &[u8; INIT_DATA_LEN],
+    ) -> Self::Decryptor<'k>;
 }
 
 /// The encryption side of ECB over `P`: a whole-block mode with no init data, so its constructor
 /// takes no RNG and cannot fail. Its own pair rather than [`BlockEncryptMode`] with
 /// `INIT_DATA_LEN = 0`, so that nothing is handed an RNG it has no use for.
 pub trait EcbEncryptMode<P, const KEY_LEN: usize, const BLOCK_LEN: usize>: Mode<P> {
-    /// The streaming encryptor this mode produces over `P`.
-    type Encryptor: BlockCipherEncryptor<0, BLOCK_LEN>;
+    /// The streaming encryptor this mode produces over `P`. It borrows the key state it was made
+    /// from for `'k`: the schedule is read through the reference, never copied into the worker,
+    /// and the worker cannot outlive the state.
+    type Encryptor<'k>: BlockCipherEncryptor<0, BLOCK_LEN>
+    where
+        P: 'k;
 
     /// Begins an encryption from `state`.
-    fn encrypt_init(state: &Self::KeyState) -> Self::Encryptor;
+    fn encrypt_init<'k>(state: &'k Self::KeyState) -> Self::Encryptor<'k>;
 }
 
 /// The decryption side of ECB over `P`; see [`EcbEncryptMode`].
 pub trait EcbDecryptMode<P, const KEY_LEN: usize, const BLOCK_LEN: usize>: Mode<P> {
-    /// The streaming decryptor this mode produces over `P`.
-    type Decryptor: BlockCipherDecryptor<0, BLOCK_LEN>;
+    /// The streaming decryptor this mode produces over `P`. It borrows the key state it was made
+    /// from for `'k`: the schedule is read through the reference, never copied into the worker,
+    /// and the worker cannot outlive the state.
+    type Decryptor<'k>: BlockCipherDecryptor<0, BLOCK_LEN>
+    where
+        P: 'k;
 
     /// Begins a decryption from `state`.
-    fn decrypt_init(state: &Self::KeyState) -> Self::Decryptor;
+    fn decrypt_init<'k>(state: &'k Self::KeyState) -> Self::Decryptor<'k>;
 }
 
 /// A MAC mode over `P`: the mode's own constructor for its worker, which generates and verifies
 /// alike. The role traits [`crate::symmetric_key::MacGenerationKey`] and
 /// [`crate::symmetric_key::MacVerificationKey`] forward to it.
 pub trait MacMode<P>: Mode<P> {
-    /// The streaming MAC worker this mode produces over `P`.
-    type Worker: MAC;
+    /// The streaming MAC worker this mode produces over `P`. It borrows the key state it was made
+    /// from for `'k`: the schedule is read through the reference, never copied into the worker,
+    /// and the worker cannot outlive the state.
+    type Worker<'k>: MAC
+    where
+        P: 'k;
 
     /// Begins a MAC over a new message from `state`. Infallible: the state is keyed and there is
     /// nothing to draw.
-    fn mac_init(state: &Self::KeyState) -> Self::Worker;
+    fn mac_init<'k>(state: &'k Self::KeyState) -> Self::Worker<'k>;
 }

@@ -137,8 +137,9 @@ const ODD_CHUNKS: [usize; 3] = [5, 23, 63];
 /// that straddle the segments -- the vector should not care how the calls are grouped.
 fn check_encrypt<K, const KEY_LEN: usize>(section: &str, key_hex: &str, expected: &[&str; 4])
 where
+    K: 'static,
     K: FromKeyMaterial<KEY_LEN> + SymmetricEncryptionKey<KEY_LEN, BLOCK_LEN, 0>,
-    K::Encryptor: StreamCipherEncryptor<BLOCK_LEN>,
+    for<'k> K::Encryptor<'k>: StreamCipherEncryptor<BLOCK_LEN>,
 {
     let key = K::from_key_material(&key_material::<KEY_LEN>(key_hex)).expect("a valid key");
     let iv = block(IV);
@@ -183,8 +184,9 @@ where
 /// straddle the segments.
 fn check_decrypt<K, const KEY_LEN: usize>(section: &str, key_hex: &str, ciphertext: &[&str; 4])
 where
+    K: 'static,
     K: FromKeyMaterial<KEY_LEN> + SymmetricDecryptionKey<KEY_LEN, BLOCK_LEN, 0>,
-    K::Decryptor: StreamCipherDecryptor<BLOCK_LEN>,
+    for<'k> K::Decryptor<'k>: StreamCipherDecryptor<BLOCK_LEN>,
 {
     let key = K::from_key_material(&key_material::<KEY_LEN>(key_hex)).expect("a valid key");
     let iv = block(IV);

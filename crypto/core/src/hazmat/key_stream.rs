@@ -1,8 +1,6 @@
 //! A keyed keystream generator: the raw primitive under a stream cipher, as
 //! [`ElectronicCodeBook`] is the raw primitive under a block cipher mode.
 
-use crate::errors::SymmetricCipherError;
-use crate::key_material::KeyMaterial;
 use crate::traits::Algorithm;
 
 // Imports needed for docs
@@ -17,8 +15,8 @@ use crate::traits::{BlockCipherEncryptor, StreamCipherDecryptor, StreamCipherEnc
 /// A keyed keystream generator: the raw primitive under a stream cipher, as
 /// [`ElectronicCodeBook`] is the raw primitive under a block cipher mode.
 ///
-/// It is constructed from a key and init data and XORs successive keystream blocks into whatever
-/// it is handed. It has no direction and no init-data policy: generating the nonce, buffering a
+/// It is positioned by its init data over an already-keyed permutation it borrows, and XORs
+/// successive keystream blocks into whatever it is handed. It has no direction and no init-data policy: generating the nonce, buffering a
 /// partly-used block between calls, and refusing a call that would run past the end of the
 /// keystream all belong to `bouncycastle_cipher::stream::StreamCipher`, which turns any
 /// `KeyStream` into a [`StreamCipherEncryptor`] / [`StreamCipherDecryptor`] pair.
@@ -27,8 +25,8 @@ use crate::traits::{BlockCipherEncryptor, StreamCipherDecryptor, StreamCipherEnc
 /// keystream block is the encryption of the last ciphertext block.
 ///
 /// # 🚨 Security Considerations 🚨
-/// [`KeyStream::new`] takes the init data from the caller, so nothing stops a caller reusing a
-/// nonce under a key -- which repeats the keystream and reveals the XOR of the two plaintexts --
+/// A keystream's constructor takes the init data from the caller, so nothing stops a caller
+/// reusing a nonce under a key -- which repeats the keystream and reveals the XOR of the two plaintexts --
 /// and nothing stops it running past [`KeyStream::remaining_blocks`]. `StreamCipher` generates
 /// the init data and enforces the limit; use it. See the [module docs](crate::hazmat) for the
 /// supported uses of the raw trait.
@@ -36,20 +34,7 @@ use crate::traits::{BlockCipherEncryptor, StreamCipherDecryptor, StreamCipherEnc
 /// Implementors hold the key in a zeroize-on-drop wrapper, as for [`ElectronicCodeBook`]. Any
 /// keystream they produce into scratch space of their own is live key material until it has been
 /// XORed in, and gets the same treatment.
-pub trait KeyStream<const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize>:
-    Algorithm + Sized
-{
-    /// Expands the key and positions the keystream at its first block for `init_data`.
-    ///
-    /// # Errors
-    /// Rejects a key whose [`KeyType`] is not [`KeyType::SymmetricCipherKey`], and one whose
-    /// security strength is below [`Algorithm::MAX_SECURITY_STRENGTH`], both as a
-    /// [`SymmetricCipherError::KeyMaterialError`].
-    fn new(
-        key: &KeyMaterial<KEY_LEN>,
-        init_data: &[u8; INIT_DATA_LEN],
-    ) -> Result<Self, SymmetricCipherError>;
-
+pub trait KeyStream<const INIT_DATA_LEN: usize, const BLOCK_LEN: usize>: Algorithm + Sized {
     /// How many more keystream blocks this value can produce before its keystream would repeat.
     /// A keystream with no practical limit returns `u64::MAX`.
     fn remaining_blocks(&self) -> u64;

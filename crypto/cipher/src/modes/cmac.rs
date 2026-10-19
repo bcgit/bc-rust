@@ -7,8 +7,8 @@
 //!
 //! The way onto it is a mode-bound key, built with `from_key_material`, which holds a
 //! [`CmacKeyState`] -- the keyed permutation and the two subkeys, derived once -- and hands out
-//! workers through [`CMAC`], the marker a key type such as `bouncycastle_aes::AES128Key<CMAC>` is
-//! bound to.
+//! workers that borrow it through [`CMAC`], the marker a key type such as
+//! `bouncycastle_aes::AES128Key<CMAC>` is bound to.
 //!
 //! # Usage Examples
 //!
@@ -23,7 +23,7 @@
 //! use bouncycastle_core::key_material::{KeyMaterial128, KeyType};
 //! use bouncycastle_core::traits::MAC;
 //!
-//! type ToyCmac = Cmac<ToyBlockCipher, 16, 16>;
+//! type ToyCmac<'k> = Cmac<'k, ToyBlockCipher, 16, 16>;
 //!
 //! let key = KeyMaterial128::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey).unwrap();
 //! let state = CmacKeyState::new::<16>(ToyBlockCipher::new(&key).unwrap());
@@ -64,12 +64,14 @@
 //!   chosen block cipher", so the key's `from_key_material` accepts only a [`KeyType::MACKey`]
 //!   key (or an all-zero key, as HMAC does), never a [`KeyType::SymmetricCipherKey`].
 //! * **Replay** (Appendix C): a valid tag says nothing about freshness; that is the protocol's job.
+//!
+//! [`KeyType::MACKey`]: bouncycastle_core::key_material::KeyType::MACKey
+//! [`KeyType::SymmetricCipherKey`]: bouncycastle_core::key_material::KeyType::SymmetricCipherKey
 
 use super::ModeNames;
 use alloc::vec::Vec;
-use bouncycastle_core::errors::{KeyMaterialError, MACError, SuspendableError};
-use bouncycastle_core::hazmat::{ElectronicCodeBook, do_hazardous_operations};
-use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
+use bouncycastle_core::errors::{MACError, SuspendableError};
+use bouncycastle_core::hazmat::ElectronicCodeBook;
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{Algorithm, MAC, SuspendableKeyed};
 use bouncycastle_utils::ct::ct_eq_bytes;
@@ -138,11 +140,11 @@ impl<P, const BLOCK_LEN: usize> CmacKeyState<P, BLOCK_LEN> {
 
 /// CMAC (SP 800-38B) over the permutation `P`, keyed by a `KEY_LEN`-byte key, with a `BLOCK_LEN`
 /// of 8 or 16 bytes. See the module docs.
-pub struct Cmac<P, const KEY_LEN: usize, const BLOCK_LEN: usize>
+pub struct Cmac<'k, P, const KEY_LEN: usize, const BLOCK_LEN: usize>
 where
     P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
 {
-    key: CmacKeyState<P, BLOCK_LEN>,
+    key: &'k CmacKeyState<P, BLOCK_LEN>,
     /// `C_i` of Sec 6.2 step 6 for the blocks absorbed so far; `C_0 = 0^b` (step 5).
     c: Secret<[u8; BLOCK_LEN]>,
     /// The last `pending_len` bytes of message seen. Held back even when full, because only
@@ -152,7 +154,7 @@ where
     pending_len: usize,
 }
 
-impl<P, const KEY_LEN: usize, const BLOCK_LEN: usize> Cmac<P, KEY_LEN, BLOCK_LEN>
+impl<'k, P, const KEY_LEN: usize, const BLOCK_LEN: usize> Cmac<'k, P, KEY_LEN, BLOCK_LEN>
 where
     P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
 {
@@ -160,52 +162,10 @@ where
     /// pending block, and its length.
     pub const SUSPENDED_STATE_LEN: usize = 3 + 2 * BLOCK_LEN + 1;
 
-    /// Begins a MAC over a new message from a key state, which is cloned into the worker.
-    pub fn from_key_state(state: &CmacKeyState<P, BLOCK_LEN>) -> Self
-    where
-        P: Clone,
-    {
-        Self::from_owned_state(state.clone())
-    }
-
-    fn from_owned_state(key: CmacKeyState<P, BLOCK_LEN>) -> Self {
+    /// Begins a MAC over a new message over a key state, which the worker borrows: the
+    /// permutation and the subkeys stay in the key.
+    pub fn from_key_state(key: &'k CmacKeyState<P, BLOCK_LEN>) -> Self {
         Self { key, c: Secret::new(), pending: Secret::new(), pending_len: 0 }
-    }
-
-    /// Validates `key` and derives the subkeys. The checks run type, then strength, then length,
-    /// so a short-strength key is reported as such whatever its length.
-    fn init(
-        key: &(impl KeyMaterialTrait + ?Sized),
-        allow_weak_key: bool,
-    ) -> Result<Self, MACError> {
-        if !(key.key_type() == KeyType::MACKey || key.key_type() == KeyType::Zeroized) {
-            return Err(KeyMaterialError::InvalidKeyType("CMAC: key type must be a MAC key").into());
-        }
-        if !allow_weak_key && key.security_strength() < P::MAX_SECURITY_STRENGTH {
-            return Err(KeyMaterialError::SecurityStrength(
-                "CMAC: provided key has a lower security strength than the block cipher",
-            )
-            .into());
-        }
-        if key.key_len() != KEY_LEN {
-            return Err(KeyMaterialError::InvalidLength.into());
-        }
-
-        // `P::new` accepts only a full-strength `SymmetricCipherKey`. The MAC key's type, strength
-        // and length were checked above, so this copy is retagged to pass that gate and is used for
-        // nothing else; `P::new` then has nothing left to reject.
-        let mut cipher_key = KeyMaterial::<KEY_LEN>::from_bytes_as_type(
-            key.ref_to_bytes(),
-            KeyType::SymmetricCipherKey,
-        )?;
-        do_hazardous_operations(&mut cipher_key, |k| {
-            k.set_key_type(KeyType::SymmetricCipherKey)?;
-            k.set_security_strength(P::MAX_SECURITY_STRENGTH)
-        })?;
-        let perm = P::new(&cipher_key)
-            .map_err(|_| MACError::GenericError("CMAC: the block cipher rejected the key"))?;
-
-        Ok(Self::from_owned_state(CmacKeyState::new(perm)))
     }
 
     /// Sec 6.2 step 6 for one block: `C_i = CIPH_K(C_{i-1} (+) M_i)`, in place in `c`.
@@ -237,7 +197,8 @@ where
     }
 }
 
-impl<P, const KEY_LEN: usize, const BLOCK_LEN: usize> Algorithm for Cmac<P, KEY_LEN, BLOCK_LEN>
+impl<'k, P, const KEY_LEN: usize, const BLOCK_LEN: usize> Algorithm
+    for Cmac<'k, P, KEY_LEN, BLOCK_LEN>
 where
     P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
 {
@@ -245,7 +206,7 @@ where
     const MAX_SECURITY_STRENGTH: SecurityStrength = P::MAX_SECURITY_STRENGTH;
 }
 
-impl<P, const KEY_LEN: usize, const BLOCK_LEN: usize> MAC for Cmac<P, KEY_LEN, BLOCK_LEN>
+impl<'k, P, const KEY_LEN: usize, const BLOCK_LEN: usize> MAC for Cmac<'k, P, KEY_LEN, BLOCK_LEN>
 where
     P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
 {
@@ -326,18 +287,17 @@ where
     }
 }
 
-/// The state is `C_i` and the pending block; the subkeys are recomputed from the re-supplied key,
-/// which must be the one the suspended `Cmac` was created with -- a different key cannot be
-/// detected and silently produces a wrong tag. As for HMAC, the key's security strength is not
-/// re-checked on resume.
+/// The state is `C_i` and the pending block; the subkeys are the re-supplied key state's, which
+/// must be the one the suspended `Cmac` was created with -- a different key cannot be detected
+/// and silently produces a wrong tag.
 ///
 /// `STATE_LEN` must be [`Cmac::SUSPENDED_STATE_LEN`]; any other value fails to compile.
-impl<P, const KEY_LEN: usize, const BLOCK_LEN: usize, const STATE_LEN: usize>
-    SuspendableKeyed<STATE_LEN> for Cmac<P, KEY_LEN, BLOCK_LEN>
+impl<'k, P, const KEY_LEN: usize, const BLOCK_LEN: usize, const STATE_LEN: usize>
+    SuspendableKeyed<'k, STATE_LEN> for Cmac<'k, P, KEY_LEN, BLOCK_LEN>
 where
     P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
 {
-    type Key = dyn KeyMaterialTrait;
+    type Key = CmacKeyState<P, BLOCK_LEN>;
 
     fn suspend(self) -> [u8; STATE_LEN] {
         const {
@@ -357,9 +317,11 @@ where
 
     /// # Errors
     /// [`SuspendableError::IncompatibleVersion`] for a state from an incompatible library version,
-    /// and [`SuspendableError::InvalidData`] for a malformed state or a key the CMAC key's
-    /// `from_key_material_allow_weak` would reject.
-    fn from_suspended(state: [u8; STATE_LEN], key: &Self::Key) -> Result<Self, SuspendableError> {
+    /// and [`SuspendableError::InvalidData`] for a malformed state.
+    fn from_suspended(
+        state: [u8; STATE_LEN],
+        key: &'k Self::Key,
+    ) -> Result<Self, SuspendableError> {
         const {
             assert!(
                 STATE_LEN == 3 + 2 * BLOCK_LEN + 1,
@@ -371,7 +333,7 @@ where
         if pending_len > BLOCK_LEN {
             return Err(SuspendableError::InvalidData);
         }
-        let mut cmac = Self::init(key, true).map_err(|_| SuspendableError::InvalidData)?;
+        let mut cmac = Self::from_key_state(key);
         cmac.c.copy_from_slice(&body[..BLOCK_LEN]);
         cmac.pending.copy_from_slice(&body[BLOCK_LEN..2 * BLOCK_LEN]);
         cmac.pending_len = pending_len;

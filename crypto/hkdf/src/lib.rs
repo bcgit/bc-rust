@@ -743,8 +743,8 @@ impl<H: Hash + HashAlgParams + Default, const HASH_STATE_LEN: usize, const HKDF_
 /// So the total per HKDF variant is the 3-byte version header + 11 bytes of HKDF bookkeeping
 /// (present flag, state tag, entropy counter, security strength) + the inner HMAC's blob = `B + 14`,
 /// which is the relationship `HKDF_STATE_LEN == HASH_STATE_LEN + 14` asserted below.
-impl<H, const HASH_STATE_LEN: usize, const HKDF_STATE_LEN: usize> SuspendableKeyed<HKDF_STATE_LEN>
-    for HKDF<H, HASH_STATE_LEN, HKDF_STATE_LEN>
+impl<'k, H, const HASH_STATE_LEN: usize, const HKDF_STATE_LEN: usize>
+    SuspendableKeyed<'k, HKDF_STATE_LEN> for HKDF<H, HASH_STATE_LEN, HKDF_STATE_LEN>
 where
     H: Hash + HashAlgParams + Default + Suspendable<HASH_STATE_LEN>,
 {
@@ -781,7 +781,7 @@ where
 
     fn from_suspended(
         state: [u8; HKDF_STATE_LEN],
-        salt: &Self::Key,
+        salt: &'k Self::Key,
     ) -> Result<Self, SuspendableError> {
         debug_assert_eq!(HKDF_STATE_LEN, HASH_STATE_LEN + 14);
 

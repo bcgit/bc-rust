@@ -19,7 +19,7 @@ use bouncycastle_core_test_framework::mac::TestFrameworkMAC;
 use common::{TOY_LEN, Toy, toy_key};
 use toy_key::{ToyCMAC, ToyKey};
 
-type ToyCmac = Cmac<Toy, TOY_LEN, TOY_LEN>;
+type ToyCmac<'k> = Cmac<'k, Toy, TOY_LEN, TOY_LEN>;
 type ToyCmacKey = ToyKey<Toy, ToyCMAC>;
 
 fn cmac_key() -> ToyCmacKey {
@@ -141,15 +141,15 @@ fn truncation() {
 
 #[test]
 fn suspend_resume() {
-    let key = mac_key();
+    let key = cmac_key();
     for mlen in [0, 16, 20, 64] {
         let msg = message(mlen);
-        let expected = cmac_key().mac(&msg);
+        let expected = key.mac(&msg);
         for split in 0..=mlen {
-            let mut cmac = cmac_key().create_generator();
+            let mut cmac = key.create_generator();
             cmac.do_update(&msg[..split]);
             let state: [u8; STATE_LEN] = cmac.suspend();
-            let mut resumed = ToyCmac::from_suspended(state, &key).unwrap();
+            let mut resumed = ToyCmac::from_suspended(state, key.state()).unwrap();
             resumed.do_update(&msg[split..]);
             assert_eq!(resumed.do_final(), expected, "mlen {mlen}, suspended at {split}");
         }
@@ -158,34 +158,26 @@ fn suspend_resume() {
 
 #[test]
 fn suspend_resume_rejects() {
-    let key = mac_key();
-    let mut cmac = cmac_key().create_generator();
+    let key = cmac_key();
+    let mut cmac = key.create_generator();
     cmac.do_update(b"some data");
     let state: [u8; STATE_LEN] = cmac.suspend();
     assert_eq!(STATE_LEN, 3 + 2 * TOY_LEN + 1);
 
     let mut bad_len = state;
     bad_len[STATE_LEN - 1] = TOY_LEN as u8 + 1;
-    assert_eq!(ToyCmac::from_suspended(bad_len, &key).err(), Some(SuspendableError::InvalidData));
+    assert_eq!(
+        ToyCmac::from_suspended(bad_len, key.state()).err(),
+        Some(SuspendableError::InvalidData)
+    );
     let mut full_len = state;
     full_len[STATE_LEN - 1] = TOY_LEN as u8;
-    assert!(ToyCmac::from_suspended(full_len, &key).is_ok());
+    assert!(ToyCmac::from_suspended(full_len, key.state()).is_ok());
 
     let mut no_ver = state;
     no_ver[..3].fill(0);
     assert_eq!(
-        ToyCmac::from_suspended(no_ver, &key).err(),
+        ToyCmac::from_suspended(no_ver, key.state()).err(),
         Some(SuspendableError::IncompatibleVersion)
-    );
-
-    let wrong_len = KeyMaterial::<32>::from_bytes_as_type(&[7u8; 32], KeyType::MACKey).unwrap();
-    assert_eq!(
-        ToyCmac::from_suspended(state, &wrong_len).err(),
-        Some(SuspendableError::InvalidData)
-    );
-    assert_eq!(
-        ToyCmac::from_suspended(state, &toy_key()).err(),
-        Some(SuspendableError::InvalidData),
-        "a cipher key is the wrong type"
     );
 }

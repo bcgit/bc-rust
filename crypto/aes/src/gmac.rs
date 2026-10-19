@@ -53,15 +53,15 @@ use bouncycastle_core::traits::RNG;
 /// AES-128 in GMAC with a 128-bit tag. `Dir` is [`Encrypting`] to generate a tag or
 /// [`Decrypting`] to verify one.
 #[allow(non_camel_case_types)]
-pub type AES_GMAC_128<Dir> = Gmac<AES128Internal, Dir, 16, 16>;
+pub type AES_GMAC_128<'k, Dir> = Gmac<'k, AES128Internal, Dir, 16, 16>;
 
 /// AES-192 in GMAC with a 128-bit tag. See [`AES_GMAC_128`].
 #[allow(non_camel_case_types)]
-pub type AES_GMAC_192<Dir> = Gmac<AES192Internal, Dir, 24, 16>;
+pub type AES_GMAC_192<'k, Dir> = Gmac<'k, AES192Internal, Dir, 24, 16>;
 
 /// AES-256 in GMAC with a 128-bit tag. See [`AES_GMAC_128`].
 #[allow(non_camel_case_types)]
-pub type AES_GMAC_256<Dir> = Gmac<AES256Internal, Dir, 32, 16>;
+pub type AES_GMAC_256<'k, Dir> = Gmac<'k, AES256Internal, Dir, 32, 16>;
 
 // Per key length for the reason the GCM impls are (see `gcm.rs`): the worker carries `KEY_LEN`,
 // which cannot be tied to `Mode<P>` from a generic impl. The pair is per key length for the same
@@ -81,11 +81,11 @@ impl<const TAG_LEN: usize> AES128Key<GMAC<TAG_LEN>> {
     ///
     /// # Errors
     /// [`SymmetricCipherError::RNGError`] if the nonce draw fails; nothing else can.
-    pub fn create_generator(
-        &self,
+    pub fn create_generator<'k>(
+        &'k self,
         rng: &mut dyn RNG,
     ) -> Result<
-        (Gmac<AES128Internal, Encrypting, 16, TAG_LEN>, [u8; GCM_NONCE_LEN]),
+        (Gmac<'k, AES128Internal, Encrypting, 16, TAG_LEN>, [u8; GCM_NONCE_LEN]),
         SymmetricCipherError,
     > {
         Gmac::<AES128Internal, Encrypting, 16, TAG_LEN>::from_key_state(&self.state, rng)
@@ -93,18 +93,18 @@ impl<const TAG_LEN: usize> AES128Key<GMAC<TAG_LEN>> {
 
     /// Begins a tag under a nonce the caller supplies, who takes on the obligation that it never
     /// repeat under this key.
-    pub fn create_generator_nonce(
-        &self,
+    pub fn create_generator_nonce<'k>(
+        &'k self,
         nonce: &[u8; GCM_NONCE_LEN],
-    ) -> Gmac<AES128Internal, Encrypting, 16, TAG_LEN> {
+    ) -> Gmac<'k, AES128Internal, Encrypting, 16, TAG_LEN> {
         Gmac::<AES128Internal, Encrypting, 16, TAG_LEN>::from_key_state_nonce(&self.state, nonce)
     }
 
     /// Begins the verification of a tag made under `nonce`. Infallible.
-    pub fn create_verifier(
-        &self,
+    pub fn create_verifier<'k>(
+        &'k self,
         nonce: &[u8; GCM_NONCE_LEN],
-    ) -> Gmac<AES128Internal, Decrypting, 16, TAG_LEN> {
+    ) -> Gmac<'k, AES128Internal, Decrypting, 16, TAG_LEN> {
         Gmac::<AES128Internal, Decrypting, 16, TAG_LEN>::from_key_state(&self.state, nonce)
     }
 }
@@ -123,29 +123,29 @@ impl<const TAG_LEN: usize> AES192Key<GMAC<TAG_LEN>> {
     ///
     /// # Errors
     /// As [`AES128Key::create_generator`].
-    pub fn create_generator(
-        &self,
+    pub fn create_generator<'k>(
+        &'k self,
         rng: &mut dyn RNG,
     ) -> Result<
-        (Gmac<AES192Internal, Encrypting, 24, TAG_LEN>, [u8; GCM_NONCE_LEN]),
+        (Gmac<'k, AES192Internal, Encrypting, 24, TAG_LEN>, [u8; GCM_NONCE_LEN]),
         SymmetricCipherError,
     > {
         Gmac::<AES192Internal, Encrypting, 24, TAG_LEN>::from_key_state(&self.state, rng)
     }
 
     /// As [`AES128Key::create_generator_nonce`].
-    pub fn create_generator_nonce(
-        &self,
+    pub fn create_generator_nonce<'k>(
+        &'k self,
         nonce: &[u8; GCM_NONCE_LEN],
-    ) -> Gmac<AES192Internal, Encrypting, 24, TAG_LEN> {
+    ) -> Gmac<'k, AES192Internal, Encrypting, 24, TAG_LEN> {
         Gmac::<AES192Internal, Encrypting, 24, TAG_LEN>::from_key_state_nonce(&self.state, nonce)
     }
 
     /// As [`AES128Key::create_verifier`].
-    pub fn create_verifier(
-        &self,
+    pub fn create_verifier<'k>(
+        &'k self,
         nonce: &[u8; GCM_NONCE_LEN],
-    ) -> Gmac<AES192Internal, Decrypting, 24, TAG_LEN> {
+    ) -> Gmac<'k, AES192Internal, Decrypting, 24, TAG_LEN> {
         Gmac::<AES192Internal, Decrypting, 24, TAG_LEN>::from_key_state(&self.state, nonce)
     }
 }
@@ -164,29 +164,29 @@ impl<const TAG_LEN: usize> AES256Key<GMAC<TAG_LEN>> {
     ///
     /// # Errors
     /// As [`AES128Key::create_generator`].
-    pub fn create_generator(
-        &self,
+    pub fn create_generator<'k>(
+        &'k self,
         rng: &mut dyn RNG,
     ) -> Result<
-        (Gmac<AES256Internal, Encrypting, 32, TAG_LEN>, [u8; GCM_NONCE_LEN]),
+        (Gmac<'k, AES256Internal, Encrypting, 32, TAG_LEN>, [u8; GCM_NONCE_LEN]),
         SymmetricCipherError,
     > {
         Gmac::<AES256Internal, Encrypting, 32, TAG_LEN>::from_key_state(&self.state, rng)
     }
 
     /// As [`AES128Key::create_generator_nonce`].
-    pub fn create_generator_nonce(
-        &self,
+    pub fn create_generator_nonce<'k>(
+        &'k self,
         nonce: &[u8; GCM_NONCE_LEN],
-    ) -> Gmac<AES256Internal, Encrypting, 32, TAG_LEN> {
+    ) -> Gmac<'k, AES256Internal, Encrypting, 32, TAG_LEN> {
         Gmac::<AES256Internal, Encrypting, 32, TAG_LEN>::from_key_state_nonce(&self.state, nonce)
     }
 
     /// As [`AES128Key::create_verifier`].
-    pub fn create_verifier(
-        &self,
+    pub fn create_verifier<'k>(
+        &'k self,
         nonce: &[u8; GCM_NONCE_LEN],
-    ) -> Gmac<AES256Internal, Decrypting, 32, TAG_LEN> {
+    ) -> Gmac<'k, AES256Internal, Decrypting, 32, TAG_LEN> {
         Gmac::<AES256Internal, Decrypting, 32, TAG_LEN>::from_key_state(&self.state, nonce)
     }
 }

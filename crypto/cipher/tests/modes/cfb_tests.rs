@@ -33,13 +33,17 @@ use bouncycastle_core_test_framework::symmetric_ciphers::TestFrameworkStreamCiph
 use common::{ForwardOnlyToy, SwappedFourToy, SwappedPairToy, TOY_LEN, Toy, toy_key};
 use toy_key::{ToyKey, os_rng};
 
-type ToyCfb<Dir> = Cfb<Toy, Dir, TOY_LEN, TOY_LEN>;
+type ToyCfb<'k, Dir> = Cfb<'k, Toy, Dir, TOY_LEN, TOY_LEN>;
 
 type ToyCfbKey = ToyKey<Toy, CFB>;
 
 fn cfb_key() -> ToyCfbKey {
     ToyCfbKey::from_key_material(&toy_key()).expect("the toy key")
 }
+
+/// The key the worker helpers below hand out borrowed workers over; a worker cannot outlive
+/// its key, so the helpers' key lives for the whole test binary.
+static KEY: std::sync::LazyLock<ToyCfbKey> = std::sync::LazyLock::new(cfb_key);
 
 fn swapped_key() -> ToyKey<SwappedPairToy, CFB> {
     ToyKey::from_key_material(&toy_key()).expect("the toy key")
@@ -103,14 +107,14 @@ fn pinned_rng(iv: [u8; TOY_LEN]) -> FixedSeedRNG<TOY_LEN> {
     FixedSeedRNG::<TOY_LEN>::new(iv)
 }
 
-fn pinned_encryptor(iv: [u8; TOY_LEN]) -> ToyCfb<Encrypting> {
-    let (enc, got) = cfb_key().create_encryptor(&mut pinned_rng(iv)).expect("encrypt init");
+fn pinned_encryptor(iv: [u8; TOY_LEN]) -> ToyCfb<'static, Encrypting> {
+    let (enc, got) = KEY.create_encryptor(&mut pinned_rng(iv)).expect("encrypt init");
     assert_eq!(got, iv, "the pinned RNG should reproduce the IV");
     enc
 }
 
-fn pinned_decryptor(iv: [u8; TOY_LEN]) -> ToyCfb<Decrypting> {
-    cfb_key().create_decryptor(&iv)
+fn pinned_decryptor(iv: [u8; TOY_LEN]) -> ToyCfb<'static, Decrypting> {
+    KEY.create_decryptor(&iv)
 }
 
 /// A test message of `len` bytes with no repeating structure at the block size.
@@ -210,10 +214,8 @@ fn the_mode_matches_the_spec_equations() {
     );
 
     // ...and CFB is not CBC: CBC computes `CIPH_K(P1 XOR IV)`, CFB computes `P1 XOR CIPH_K(IV)`.
-    let (mut cbc, _) = ToyKey::<Toy, CBC<Blocks>>::from_key_material(&toy_key())
-        .unwrap()
-        .create_encryptor(&mut pinned_rng(iv))
-        .unwrap();
+    let cbc_key = ToyKey::<Toy, CBC<Blocks>>::from_key_material(&toy_key()).unwrap();
+    let (mut cbc, _) = cbc_key.create_encryptor(&mut pinned_rng(iv)).unwrap();
     let mut cbc_c1: [u8; TOY_LEN] = plaintext[..TOY_LEN].try_into().unwrap();
     cbc.do_encrypt_blocks_inplace(cbc_c1.as_chunks_mut().0).unwrap();
     assert_ne!(&cbc_c1[..], &ct[..TOY_LEN], "CFB must not agree with CBC");
@@ -296,15 +298,19 @@ fn neither_direction_uses_the_inverse_cipher() {
     let iv = pinned_iv();
     let plaintext = message(11 * TOY_LEN + 5);
 
-    let (mut e, _) = forward_only_key().create_encryptor(&mut pinned_rng(iv)).unwrap();
+    let key = forward_only_key();
+
+    let (mut e, _) = key.create_encryptor(&mut pinned_rng(iv)).unwrap();
     let ct = enc(&mut e, &plaintext);
 
     // One call: two fours, then a pair, then a single, then the short segment.
-    let mut d = forward_only_key().create_decryptor(&iv);
+    let key = forward_only_key();
+    let mut d = key.create_decryptor(&iv);
     assert_eq!(dec(&mut d, &ct), plaintext, "all paths, forward cipher only");
 
     // Byte by byte: the byte path only.
-    let mut d = forward_only_key().create_decryptor(&iv);
+    let key = forward_only_key();
+    let mut d = key.create_decryptor(&iv);
     assert_eq!(dec_chunked(&mut d, &ct, 1), plaintext, "byte path, forward cipher only");
 
     // The forward-only toy must agree with the real one, or the above proves nothing.
@@ -478,20 +484,24 @@ fn the_pair_path_is_really_used() {
 
     // The swapped-pair toy encrypts identically -- CFB encryption is serial and never pairs, so its
     // `encrypt_2blocks` override is not reached from the encryptor at all.
-    let (mut e, _) = swapped_key().create_encryptor(&mut pinned_rng(iv)).unwrap();
+    let key = swapped_key();
+    let (mut e, _) = key.create_encryptor(&mut pinned_rng(iv)).unwrap();
     assert_eq!(enc(&mut e, &plaintext), ct, "CFB encryption must not use the pair path");
 
     // ...but decrypting the pair together must now be wrong, because the pair path is used.
-    let mut d = swapped_key().create_decryptor(&iv);
+    let key = swapped_key();
+    let mut d = key.create_decryptor(&iv);
     assert_ne!(dec(&mut d, &ct), plaintext, "decrypting a pair must go through encrypt_2blocks");
 
     // Decrypting one block at a time avoids the pair path, so it is correct even for this toy.
-    let mut d = swapped_key().create_decryptor(&iv);
+    let key = swapped_key();
+    let mut d = key.create_decryptor(&iv);
     assert_eq!(dec_chunked(&mut d, &ct, TOY_LEN), plaintext, "the single-block path must not pair");
 
     // So does splitting the pair across a segment boundary: 5 bytes, then 27. The second call has
     // an 11-byte head, one whole block and no tail, so there is no pair to form.
-    let mut d = swapped_key().create_decryptor(&iv);
+    let key = swapped_key();
+    let mut d = key.create_decryptor(&iv);
     let mut got = ct.clone();
     d.do_decrypt_inplace(&mut got[..5]).unwrap();
     d.do_decrypt_inplace(&mut got[5..]).unwrap();
@@ -515,16 +525,19 @@ fn the_four_block_path_is_really_used() {
     assert_eq!(dec(&mut pinned_decryptor(iv), &ct), plaintext);
 
     // The rotated-four toy encrypts identically: CFB encryption is serial and never batches.
-    let (mut e, _) = swapped_four_key().create_encryptor(&mut pinned_rng(iv)).unwrap();
+    let key = swapped_four_key();
+    let (mut e, _) = key.create_encryptor(&mut pinned_rng(iv)).unwrap();
     assert_eq!(enc(&mut e, &plaintext), ct, "CFB encryption must not use the four path");
 
     // ...but five blocks together must now be wrong, because the first four go through
     // encrypt_4blocks.
-    let mut d = swapped_four_key().create_decryptor(&iv);
+    let key = swapped_four_key();
+    let mut d = key.create_decryptor(&iv);
     assert_ne!(dec(&mut d, &ct), plaintext, "five blocks must go through encrypt_4blocks");
 
     // Pairs use the pair path only, so they are correct even for this toy...
-    let mut d = swapped_four_key().create_decryptor(&iv);
+    let key = swapped_four_key();
+    let mut d = key.create_decryptor(&iv);
     assert_eq!(
         dec_chunked(&mut d, &ct, 2 * TOY_LEN),
         plaintext,
@@ -532,7 +545,8 @@ fn the_four_block_path_is_really_used() {
     );
 
     // ...and so is one block at a time.
-    let mut d = swapped_four_key().create_decryptor(&iv);
+    let key = swapped_four_key();
+    let mut d = key.create_decryptor(&iv);
     assert_eq!(
         dec_chunked(&mut d, &ct, TOY_LEN),
         plaintext,
@@ -759,15 +773,16 @@ fn every_length_round_trips_without_padding() {
 
 // ---- memory ------------------------------------------------------------------------------
 
-/// Pins the "Memory Usage" statement in the module docs -- the state is the permutation, one
-/// block and a byte count -- and the claim that CFB costs one `usize` more than CBC: the block that
-/// is `Ij`, `Oj` and `I_{j+1}` in turn, plus the count of how much of it has been used.
+/// Pins the "Memory Usage" statement in the module docs -- the state is a reference to the
+/// permutation, one block and a byte count -- and the claim that CFB costs one `usize` more than
+/// CBC: the block that is `Ij`, `Oj` and `I_{j+1}` in turn, plus the count of how much of it has
+/// been used.
 #[test]
 fn sizes_match_the_documented_memory_table() {
     use core::mem::size_of;
 
     // The general rule the docs state.
-    assert_eq!(size_of::<ToyCfb<Encrypting>>(), size_of::<Toy>() + TOY_LEN + size_of::<usize>());
+    assert_eq!(size_of::<ToyCfb<Encrypting>>(), size_of::<&Toy>() + TOY_LEN + size_of::<usize>());
 
     // The direction marker is free, and does not change the layout.
     assert_eq!(size_of::<ToyCfb<Encrypting>>(), size_of::<ToyCfb<Decrypting>>());
@@ -775,6 +790,6 @@ fn sizes_match_the_documented_memory_table() {
     // The docs say CFB is one `usize` bigger than CBC.
     assert_eq!(
         size_of::<ToyCfb<Encrypting>>(),
-        size_of::<Cbc<Toy, Encrypting, TOY_LEN, TOY_LEN>>() + size_of::<usize>()
+        size_of::<Cbc<'_, Toy, Encrypting, TOY_LEN, TOY_LEN>>() + size_of::<usize>()
     );
 }

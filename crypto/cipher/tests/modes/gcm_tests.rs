@@ -10,7 +10,7 @@ mod common;
 #[path = "../common/toy_key.rs"]
 mod toy_key;
 
-use bouncycastle_cipher::modes::ModeNames;
+use bouncycastle_cipher::modes::{GCM, ModeNames};
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::symmetric_key::{AeadDecryptionKey, AeadEncryptionKey, FromKeyMaterial};
@@ -20,9 +20,9 @@ use bouncycastle_core::traits::{
 use bouncycastle_core_test_framework::FixedSeedRNG;
 use bouncycastle_core_test_framework::from_key_material::TestFrameworkFromKeyMaterial;
 use common::{ForwardOnlyToy, TOY_LEN, Toy, toy_key};
-use toy_key::{ToyGCM, ToyKey, os_rng};
+use toy_key::{ToyKey, os_rng};
 
-type ToyGcmKey<const TAG_LEN: usize = 16> = ToyKey<Toy, ToyGCM<TAG_LEN>>;
+type ToyGcmKey<const TAG_LEN: usize = 16> = ToyKey<Toy, GCM<TAG_LEN>>;
 
 fn gcm_key<const TAG_LEN: usize>() -> ToyGcmKey<TAG_LEN> {
     ToyGcmKey::from_key_material(&toy_key()).expect("the toy key")
@@ -239,12 +239,12 @@ fn one_shot_releases_nothing_on_forgery_but_streaming_does() {
 /// checks the tag, so on a forged tag it must zeroize that buffer before returning the error.
 #[test]
 fn streaming_detached_final_zeroizes_its_buffer_on_forgery() {
-    let key = toy_key();
+    let key = ToyGcmKey::<16>::from_key_material(&toy_key()).unwrap();
     let message = *b"do not trust me yet";
     let (nonce, ct, mut tag) = toy_encrypt::<16>(b"aad", &message, [0xAFu8; 12]);
     tag[0] ^= 0xFF; // forge it
 
-    let mut dec = ToyGcm::<Decrypting, 16>::do_decrypt_init(&key, &nonce).unwrap();
+    let mut dec = key.create_decryptor(&nonce);
     dec.do_update_aad(b"aad").unwrap();
     dec.do_decrypt_out(&ct, &mut [0u8; 19]).unwrap();
     // Pre-filled with a non-zero byte, so a buffer the decryptor never wrote is not mistaken for
@@ -268,7 +268,7 @@ fn neither_direction_uses_the_inverse_cipher() {
     where
         P: bouncycastle_core::hazmat::ElectronicCodeBook<TOY_LEN, TOY_LEN> + ModeNames + Clone,
     {
-        let key = ToyKey::<P, ToyGCM<16>>::from_key_material(&toy_key()).unwrap();
+        let key = ToyKey::<P, GCM<16>>::from_key_material(&toy_key()).unwrap();
         let aad = b"associated data of no particular length";
         let message = b"a message that is not a whole number of blocks!!";
 

@@ -28,7 +28,7 @@ mod toy_key;
 use bouncycastle_cipher::modes::{CTR, Ctr, ModeNames};
 use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::errors::SymmetricCipherError;
-use bouncycastle_core::hazmat::ElectronicCodeBook;
+use bouncycastle_core::hazmat::{BlockPermutation, ElectronicCodeBook};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::symmetric_key::{
@@ -43,18 +43,22 @@ use toy_key::{ToyKey, os_rng};
 
 /// The default shape under test: a 12-byte nonce, so a 4-byte counter.
 const NONCE_LEN: usize = 12;
-type ToyCtr<Dir> = Ctr<Toy, Dir, TOY_LEN, TOY_LEN, NONCE_LEN>;
+type ToyCtr<'k, Dir> = Ctr<'k, Toy, Dir, TOY_LEN, NONCE_LEN>;
 
 /// A 15-byte nonce leaves a **1-byte** counter, so the whole counter space is 256 blocks -- 4 KiB
 /// of keystream. That makes the exhaustion behaviour reachable in a test.
 const SHORT_CTR_NONCE_LEN: usize = 15;
-type TinyCtr<Dir> = Ctr<Toy, Dir, TOY_LEN, TOY_LEN, SHORT_CTR_NONCE_LEN>;
+type TinyCtr<'k, Dir> = Ctr<'k, Toy, Dir, TOY_LEN, SHORT_CTR_NONCE_LEN>;
 
 type ToyCtrKey = ToyKey<Toy, CTR<NONCE_LEN>>;
 
 fn ctr_key() -> ToyCtrKey {
     ctr_key_n()
 }
+
+/// The key the worker helpers below hand out borrowed workers over; a worker cannot outlive
+/// its key, so the helpers' key lives for the whole test binary.
+static KEY: std::sync::LazyLock<ToyCtrKey> = std::sync::LazyLock::new(ctr_key);
 
 /// The toy key under CTR at any permitted nonce length.
 fn ctr_key_n<const N: usize>() -> ToyKey<Toy, CTR<N>> {
@@ -111,14 +115,14 @@ fn pinned_rng(nonce: [u8; NONCE_LEN]) -> FixedSeedRNG<NONCE_LEN> {
     FixedSeedRNG::<NONCE_LEN>::new(nonce)
 }
 
-fn pinned_encryptor(nonce: [u8; NONCE_LEN]) -> ToyCtr<Encrypting> {
-    let (e, got) = ctr_key().create_encryptor(&mut pinned_rng(nonce)).unwrap();
+fn pinned_encryptor(nonce: [u8; NONCE_LEN]) -> ToyCtr<'static, Encrypting> {
+    let (e, got) = KEY.create_encryptor(&mut pinned_rng(nonce)).unwrap();
     assert_eq!(got, nonce, "the pinned RNG should reproduce the nonce");
     e
 }
 
-fn pinned_decryptor(nonce: [u8; NONCE_LEN]) -> ToyCtr<Decrypting> {
-    ctr_key().create_decryptor(&nonce)
+fn pinned_decryptor(nonce: [u8; NONCE_LEN]) -> ToyCtr<'static, Decrypting> {
+    KEY.create_decryptor(&nonce)
 }
 
 fn message(len: usize) -> Vec<u8> {
@@ -244,8 +248,9 @@ fn check_counter_blocks<const N: usize>(blocks: usize) {
     let perm = <Toy as ElectronicCodeBook<TOY_LEN, TOY_LEN>>::new(&toy_key()).unwrap();
     let nonce: [u8; N] = core::array::from_fn(|i| (i as u8).wrapping_mul(13).wrapping_add(5));
 
-    let (mut e, got) =
-        ctr_key_n::<N>().create_encryptor(&mut FixedSeedRNG::<N>::new(nonce)).unwrap();
+    let key = ctr_key_n::<N>();
+
+    let (mut e, got) = key.create_encryptor(&mut FixedSeedRNG::<N>::new(nonce)).unwrap();
     assert_eq!(got, nonce);
     let mut keystream = vec![0u8; blocks * TOY_LEN];
     e.do_encrypt_inplace(&mut keystream).expect("the run must fit in the counter space");
@@ -340,10 +345,10 @@ fn the_f5_counter_blocks_have_the_shape_this_type_assumes() {
 fn the_counter_limit_is_enforced() {
     let nonce: [u8; SHORT_CTR_NONCE_LEN] = core::array::from_fn(|i| 0x5A ^ (i as u8));
 
+    let key = tiny_key();
     let encryptor = || {
-        let (e, got) = tiny_key()
-            .create_encryptor(&mut FixedSeedRNG::<SHORT_CTR_NONCE_LEN>::new(nonce))
-            .unwrap();
+        let (e, got) =
+            key.create_encryptor(&mut FixedSeedRNG::<SHORT_CTR_NONCE_LEN>::new(nonce)).unwrap();
         assert_eq!(got, nonce);
         e
     };
@@ -408,9 +413,9 @@ fn the_counter_limit_is_enforced_at_two_bytes_too() {
     const CAPACITY: usize = 65536 * TOY_LEN;
     let nonce: [u8; NONCE] = core::array::from_fn(|i| 0x3C ^ (i as u8));
 
+    let key = ctr_key_n::<NONCE>();
     let encryptor = || {
-        let (e, got) =
-            ctr_key_n::<NONCE>().create_encryptor(&mut FixedSeedRNG::<NONCE>::new(nonce)).unwrap();
+        let (e, got) = key.create_encryptor(&mut FixedSeedRNG::<NONCE>::new(nonce)).unwrap();
         assert_eq!(got, nonce);
         e
     };
@@ -433,7 +438,8 @@ fn the_counter_limit_is_enforced_at_two_bytes_too() {
 #[test]
 fn the_counter_limit_is_enforced_when_decrypting_too() {
     let nonce: [u8; SHORT_CTR_NONCE_LEN] = core::array::from_fn(|i| 0x5A ^ (i as u8));
-    let mut d = tiny_key().create_decryptor(&nonce);
+    let key = tiny_key();
+    let mut d = key.create_decryptor(&nonce);
     let mut data = vec![0u8; TINY_CAPACITY + 1];
     assert!(
         d.do_decrypt_inplace(&mut data).is_err(),
@@ -451,18 +457,22 @@ fn neither_direction_uses_the_inverse_cipher() {
     let nonce = pinned_nonce();
     let plaintext = message(11 * TOY_LEN + 5);
 
-    let (mut e, _) =
-        forward_only_key().create_encryptor(&mut FixedSeedRNG::<NONCE_LEN>::new(nonce)).unwrap();
+    let key = forward_only_key();
+
+    let (mut e, _) = key.create_encryptor(&mut FixedSeedRNG::<NONCE_LEN>::new(nonce)).unwrap();
     let mut ct = plaintext.clone();
     e.do_encrypt_inplace(&mut ct).unwrap();
 
-    let mut d = forward_only_key().create_decryptor(&nonce);
+    let key = forward_only_key();
+
+    let mut d = key.create_decryptor(&nonce);
     let mut back = ct.clone();
     d.do_decrypt_inplace(&mut back).unwrap();
     assert_eq!(back, plaintext, "all paths, forward cipher only");
 
     // Byte by byte, so the single-block path runs too.
-    let mut d = forward_only_key().create_decryptor(&nonce);
+    let key = forward_only_key();
+    let mut d = key.create_decryptor(&nonce);
     let mut back = ct.clone();
     for piece in back.chunks_mut(1) {
         d.do_decrypt_inplace(piece).unwrap();
@@ -584,13 +594,15 @@ fn the_pair_path_is_really_used_in_both_directions() {
     assert_eq!(dec(&mut pinned_decryptor(nonce), &ct), plaintext);
 
     // Encryption: two blocks together must go through encrypt_2blocks, so the swapped toy differs.
-    let (mut e, _) = swapped_key().create_encryptor(&mut pinned_rng(nonce)).unwrap();
+    let key = swapped_key();
+    let (mut e, _) = key.create_encryptor(&mut pinned_rng(nonce)).unwrap();
     let mut swapped = plaintext.clone();
     e.do_encrypt_inplace(&mut swapped).unwrap();
     assert_ne!(swapped, ct, "CTR encryption must use the pair path");
 
     // ...but one block at a time avoids it, and then it agrees with the correct toy.
-    let (mut e, _) = swapped_key().create_encryptor(&mut pinned_rng(nonce)).unwrap();
+    let key = swapped_key();
+    let (mut e, _) = key.create_encryptor(&mut pinned_rng(nonce)).unwrap();
     let mut single = plaintext.clone();
     for piece in single.chunks_mut(TOY_LEN) {
         e.do_encrypt_inplace(piece).unwrap();
@@ -598,7 +610,8 @@ fn the_pair_path_is_really_used_in_both_directions() {
     assert_eq!(single, ct, "the single-block path must not pair");
 
     // Decryption: the same, on the correct ciphertext.
-    let mut d = swapped_key().create_decryptor(&nonce);
+    let key = swapped_key();
+    let mut d = key.create_decryptor(&nonce);
     let mut back = ct.clone();
     d.do_decrypt_inplace(&mut back).unwrap();
     assert_ne!(back, plaintext, "CTR decryption must use the pair path");
@@ -612,20 +625,25 @@ fn the_four_block_path_is_really_used_in_both_directions() {
 
     let ct = enc(&mut pinned_encryptor(nonce), &plaintext);
 
-    let (mut e, _) = swapped_four_key().create_encryptor(&mut pinned_rng(nonce)).unwrap();
+    let key = swapped_four_key();
+
+    let (mut e, _) = key.create_encryptor(&mut pinned_rng(nonce)).unwrap();
     let mut swapped = plaintext.clone();
     e.do_encrypt_inplace(&mut swapped).unwrap();
     assert_ne!(swapped, ct, "five blocks must go through encrypt_4blocks");
 
     // Two blocks at a time uses pairs only, so the rotated-four toy is correct there.
-    let (mut e, _) = swapped_four_key().create_encryptor(&mut pinned_rng(nonce)).unwrap();
+    let key = swapped_four_key();
+    let (mut e, _) = key.create_encryptor(&mut pinned_rng(nonce)).unwrap();
     let mut pairs = plaintext.clone();
     for piece in pairs.chunks_mut(2 * TOY_LEN) {
         e.do_encrypt_inplace(piece).unwrap();
     }
     assert_eq!(pairs, ct, "pairs must not use the four path");
 
-    let mut d = swapped_four_key().create_decryptor(&nonce);
+    let key = swapped_four_key();
+
+    let mut d = key.create_decryptor(&nonce);
     let mut back = ct.clone();
     d.do_decrypt_inplace(&mut back).unwrap();
     assert_ne!(back, plaintext, "decryption must batch fours too");
@@ -701,8 +719,9 @@ fn every_permitted_nonce_length_works() {
         let nonce: [u8; N] = core::array::from_fn(|i| (i as u8).wrapping_mul(11).wrapping_add(3));
         let plaintext = (0..100u8).collect::<Vec<u8>>();
 
-        let (mut e, got) =
-            ctr_key_n::<N>().create_encryptor(&mut FixedSeedRNG::<N>::new(nonce)).unwrap();
+        let key = ctr_key_n::<N>();
+
+        let (mut e, got) = key.create_encryptor(&mut FixedSeedRNG::<N>::new(nonce)).unwrap();
         assert_eq!(got, nonce);
         let mut ct = plaintext.clone();
         e.do_encrypt_inplace(&mut ct).unwrap();
@@ -720,15 +739,15 @@ fn every_permitted_nonce_length_works() {
 
 // ---- memory ---------------------------------------------------------------------------------
 
-/// Pins the layout: permutation + nonce + counter (`u64`) + keystream block + the used offset,
-/// rounded up to the `u64`'s alignment.
+/// Pins the layout: a reference to the permutation + nonce + counter (`u64`) + keystream block +
+/// the used offset, rounded up to the `u64`'s alignment.
 #[test]
 fn sizes_match_the_documented_memory_table() {
     use core::mem::{align_of, size_of};
 
     assert_eq!(
         size_of::<ToyCtr<Encrypting>>(),
-        (size_of::<Toy>() + NONCE_LEN + size_of::<u64>() + TOY_LEN + size_of::<usize>())
+        (size_of::<&Toy>() + NONCE_LEN + size_of::<u64>() + TOY_LEN + size_of::<usize>())
             .next_multiple_of(align_of::<u64>())
     );
 

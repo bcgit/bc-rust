@@ -743,13 +743,14 @@ mod hkdf_tests {
         // A helper that exercises the full round-trip for one HKDF variant. A concrete `&KeyMaterial128`
         // works for `do_extract_init` (which wants a `Sized` `&impl KeyMaterialTrait`) and coerces to
         // `&dyn KeyMaterialTrait` for the serialization APIs.
-        fn round_trip<const HASH_LEN: usize, const LEN: usize, H>(
-            salt: &KeyMaterial128,
+        fn round_trip<'k, const HASH_LEN: usize, const LEN: usize, H>(
+            salt: &'k KeyMaterial128,
             part1: &[u8],
             part2: &[u8],
         ) where
             H: Hash + HashAlgParams + Default,
-            HKDF<H, HASH_LEN, LEN>: Clone + SuspendableKeyed<LEN, Key = dyn KeyMaterialTrait>,
+            HKDF<H, HASH_LEN, LEN>:
+                Clone + SuspendableKeyed<'k, LEN, Key = dyn KeyMaterialTrait + 'static>,
         {
             let hkdf = HKDF::<H, HASH_LEN, LEN>::new();
 

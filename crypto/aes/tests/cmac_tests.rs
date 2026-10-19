@@ -6,7 +6,7 @@
 use bouncycastle_aes::hazmat::{AES128Internal, AES256Internal};
 use bouncycastle_aes::{AES_CMAC_128, AES_CMAC_256, AES128Key, AES192Key, AES256Key};
 use bouncycastle_cipher::modes::{CMAC, CMAC_MIN_TAG_LEN, ModeNames};
-use bouncycastle_core::hazmat::do_hazardous_operations;
+use bouncycastle_core::hazmat::{ModeKey, do_hazardous_operations};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::symmetric_key::{FromKeyMaterial, MacGenerationKey, MacVerificationKey};
@@ -131,8 +131,8 @@ fn truncation_to_the_minimum_tag() {
 fn algorithm_params() {
     assert_eq!(AES_CMAC_128::ALG_NAME, "AES_CMAC_128");
     assert_eq!(AES_CMAC_256::MAX_SECURITY_STRENGTH, SecurityStrength::_256bit);
-    let cmac =
-        AES192Key::<CMAC>::from_key_material(&mac_key::<24>(KEY_192)).unwrap().create_generator();
+    let key = AES192Key::<CMAC>::from_key_material(&mac_key::<24>(KEY_192)).unwrap();
+    let cmac = key.create_generator();
     assert_eq!(cmac.output_len(), 16);
     assert_eq!(cmac.max_security_strength(), SecurityStrength::_192bit);
     assert_eq!(STATE_LEN, 36);
@@ -151,7 +151,7 @@ fn suspend_resume() {
             let mut cmac = key.create_generator();
             cmac.do_update(&msg[..split]);
             let state: [u8; STATE_LEN] = cmac.suspend();
-            let mut resumed = AES_CMAC_128::from_suspended(state, &material).unwrap();
+            let mut resumed = AES_CMAC_128::from_suspended(state, key.state()).unwrap();
             resumed.do_update(&msg[split..*mlen]);
             assert_eq!(resumed.do_final(), expected, "mlen {mlen}, suspended at {split}");
         }
