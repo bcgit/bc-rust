@@ -20,7 +20,7 @@
 //! `ascon-aead128`, are the streaming alternatives.
 //!
 //! The AAD is read whole too: the key's one-shot takes it as a slice. (A.2.2 needs its length
-//! before its first byte, so streaming it would need the declared-length constructor the packet
+//! before its first byte, so streaming it would need the declared-length constructor the declared-length
 //! type keeps for itself.)
 //!
 //! # The nonce is supplied, not generated
@@ -53,7 +53,7 @@ use bouncycastle::cipher::modes::CCM;
 use bouncycastle::core::errors::SymmetricCipherError;
 use bouncycastle::core::key_material::KeyMaterial;
 use bouncycastle::core::symmetric_key::{
-    AeadPacketDecryptionKey, AeadPacketEncryptionKey, FromKeyMaterial,
+    AeadDeclaredDecryptionKey, AeadDeclaredEncryptionKey, FromKeyMaterial,
 };
 use bouncycastle::hex;
 
@@ -68,8 +68,8 @@ use crate::helpers::block_mode_helpers::{CipherDirection, load_key};
 trait CcmKeys<const KEY_LEN: usize> {
     /// The key type at nonce length `N` and tag length `T`.
     type Key<const N: usize, const T: usize>: FromKeyMaterial<KEY_LEN>
-        + AeadPacketEncryptionKey<KEY_LEN, N, T, T>
-        + AeadPacketDecryptionKey<KEY_LEN, N, T, T>;
+        + AeadDeclaredEncryptionKey<KEY_LEN, N, T, T>
+        + AeadDeclaredDecryptionKey<KEY_LEN, N, T, T>;
 }
 
 struct Aes128;

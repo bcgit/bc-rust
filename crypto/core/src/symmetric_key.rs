@@ -12,7 +12,7 @@
 //!   `KEY_LEN` bytes, [`FromAnyKeyMaterial`] for a construction that accepts any byte string.
 //!   A key that lives in a hardware token implements neither; it has its own way in.
 //! * **Roles**, one trait per direction: [`AeadEncryptionKey`] / [`AeadDecryptionKey`], their
-//!   packet forms [`AeadPacketEncryptionKey`] / [`AeadPacketDecryptionKey`] for a mode that must
+//!   declared-length forms [`AeadDeclaredEncryptionKey`] / [`AeadDeclaredDecryptionKey`] for a mode that must
 //!   know the lengths up front, [`SymmetricEncryptionKey`] / [`SymmetricDecryptionKey`] for the
 //!   unauthenticated modes that take data of any length (padded CBC, CFB, CFB8, CTR),
 //!   [`BlockEncryptionKey`] / [`BlockDecryptionKey`] for the whole-block modes, the ECB pair in
@@ -22,7 +22,7 @@
 //!   worker's streaming methods, the cipher traits in [`crate::traits`].
 //!
 //! Which role a cipher key carries is decided by its mode type through the mode traits in
-//! [`crate::hazmat`] ([`Mode`], [`AeadEncryptMode`], [`AeadDecryptMode`] and their packet,
+//! [`crate::hazmat`] ([`Mode`], [`AeadEncryptMode`], [`AeadDecryptMode`] and their declared-length,
 //! symmetric, block and ECB forms); the permutation crate connects the two with a forwarding
 //! impl per role. A mode implements exactly one pair, so `key.create_encryptor(..)` on a key
 //! bound to it is never ambiguous.
@@ -456,7 +456,7 @@ pub trait AeadDecryptionKey<
 /// its first byte: CCM. The constructors take both, and the worker then needs no buffer for
 /// either and holds nothing back. The one-shots have the lengths in hand, so they are provided
 /// exactly as [`AeadEncryptionKey`]'s are and behave the same.
-pub trait AeadPacketEncryptionKey<
+pub trait AeadDeclaredEncryptionKey<
     const KEY_LEN: usize,
     const NONCE_LEN: usize,
     const TAG_LEN: usize,
@@ -658,9 +658,9 @@ pub trait AeadPacketEncryptionKey<
 }
 
 /// The decryption half of an AEAD key whose mode must know the lengths up front; see
-/// [`AeadPacketEncryptionKey`]. For the inline layout the payload length is the ciphertext less
+/// [`AeadDeclaredEncryptionKey`]. For the inline layout the payload length is the ciphertext less
 /// its tag, and a ciphertext too short for a tag is malformed.
-pub trait AeadPacketDecryptionKey<
+pub trait AeadDeclaredDecryptionKey<
     const KEY_LEN: usize,
     const NONCE_LEN: usize,
     const TAG_LEN: usize,

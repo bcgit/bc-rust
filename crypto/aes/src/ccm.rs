@@ -10,14 +10,14 @@
 //! `create_encryptor` is handed no lengths, so [`AES_CCM_128`] and friends fix the payload length
 //! in the type as the const parameter `DATA_LEN` -- the fixed frame of a packet protocol -- hold
 //! back nothing but up to `AAD_LEN` bytes of AAD, and refuse any other amount of payload. They
-//! come from a key, [`AES128Key`]`<CCMFrame<NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>>` and friends,
+//! come from a key, [`AES128Key`]`<CCM_Packet<NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>>` and friends,
 //! through the [`AeadEncryptionKey`] / [`AeadDecryptionKey`] pair, whose one-shots take the
 //! frame length too. The nonce is drawn from the caller's RNG unless supplied through the
 //! `_nonce` forms, which CCM permits because it requires the nonce to be unique but not random
 //! (Sec 5.3), so a caller with a counter can do better than a draw from a DRBG.
 //!
 //! A message of any length goes through the other key, [`AES128Key`]`<CCM<NONCE_LEN, TAG_LEN>>`
-//! and friends: its [`AeadPacketEncryptionKey`] / [`AeadPacketDecryptionKey`] constructors take
+//! and friends: its [`AeadDeclaredEncryptionKey`] / [`AeadDeclaredDecryptionKey`] constructors take
 //! the AAD and payload lengths, so its workers hold nothing back, and its in-place one-shots
 //! take any length with no second buffer.
 //!
@@ -43,26 +43,26 @@
 //!
 //! ```text
 //! // 12-byte nonce, 16-byte tag, up to 64 bytes of AAD, 2 KiB frames
-//! AES128Key<CCMFrame<CCM_NONCE_LEN, CCM_TAG_LEN, 64, 2048>>
+//! AES128Key<CCM_Packet<CCM_NONCE_LEN, CCM_TAG_LEN, 64, 2048>>
 //! ```
 //!
 //! Though some alternative choices do exist, for example:
 //! ```text
 //! // IEEE 802.11 CCMP's 13 byte nonce and 8 byte tag
-//! AES128Key<CCMFrame<13, 8, 64, 2048>>
+//! AES128Key<CCM_Packet<13, 8, 64, 2048>>
 //! ```
 //!
 //! # Usage Examples
 //!
 //! ## Fixed frames, through the generic AEAD pair
 //!
-//! For code written against [`AEADCipherEncryptor`] / [`AEADCipherDecryptor`], the `CCMFrame`
+//! For code written against [`AEADCipherEncryptor`] / [`AEADCipherDecryptor`], the `CCM_Packet`
 //! key draws the nonce and returns it. Its streaming methods and one-shots take exactly
 //! `DATA_LEN` bytes of payload:
 //!
 //! ```
 //! use bouncycastle_aes::AES128Key;
-//! use bouncycastle_cipher::modes::CCMFrame;
+//! use bouncycastle_cipher::modes::CCM_Packet;
 //! use bouncycastle_core::key_material::{KeyMaterial128, KeyType};
 //! use bouncycastle_core::symmetric_key::{AeadDecryptionKey, AeadEncryptionKey, FromKeyMaterial};
 //! use bouncycastle_core::traits::{AEADCipherDecryptor, AEADCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor};
@@ -73,7 +73,7 @@
 //!     .expect("a 16-byte symmetric cipher key");
 //! // Up to 64 bytes of AAD, and frames of exactly 2 KiB -- comfortably above an 802.11 frame,
 //! // the packet size CCM was designed for.
-//! let key = AES128Key::<CCMFrame<12, 16, 64, 2048>>::from_key_material(&material)
+//! let key = AES128Key::<CCM_Packet<12, 16, 64, 2048>>::from_key_material(&material)
 //!     .expect("a valid AES-128 key");
 //!
 //! let frame = [0x5Au8; 2048];
@@ -109,7 +109,7 @@
 //! use bouncycastle_aes::{AES256Key, CCM_NONCE_LEN, CCM_TAG_LEN};
 //! use bouncycastle_cipher::modes::CCM;
 //! use bouncycastle_core::key_material::{KeyMaterial256, KeyType};
-//! use bouncycastle_core::symmetric_key::{AeadPacketDecryptionKey, AeadPacketEncryptionKey, FromKeyMaterial};
+//! use bouncycastle_core::symmetric_key::{AeadDeclaredDecryptionKey, AeadDeclaredEncryptionKey, FromKeyMaterial};
 //!
 //! let material = KeyMaterial256::from_bytes_as_type(&[0x42; 32], KeyType::SymmetricCipherKey)
 //!     .expect("a 32-byte symmetric cipher key");
@@ -144,7 +144,7 @@
 //! use bouncycastle_aes::AES128Key;
 //! use bouncycastle_cipher::modes::CCM;
 //! use bouncycastle_core::key_material::{KeyMaterial128, KeyType};
-//! use bouncycastle_core::symmetric_key::{AeadPacketDecryptionKey, AeadPacketEncryptionKey, FromKeyMaterial};
+//! use bouncycastle_core::symmetric_key::{AeadDeclaredDecryptionKey, AeadDeclaredEncryptionKey, FromKeyMaterial};
 //!
 //! let material = KeyMaterial128::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
 //!     .expect("a 16-byte symmetric cipher key");
@@ -190,7 +190,7 @@
 use crate::AES_BLOCK_LEN;
 use crate::hazmat::{AES128Internal, AES192Internal, AES256Internal};
 use bouncycastle_cipher::Direction;
-use bouncycastle_cipher::modes::{CcmDecryptor, CcmEncryptor};
+use bouncycastle_cipher::modes::{CcmPacketDecryptor, CcmPacketEncryptor};
 
 // Imports needed for docs
 #[allow(unused_imports)]
@@ -199,7 +199,7 @@ use crate::AES128Key;
 use bouncycastle_cipher::{Decrypting, Encrypting};
 #[allow(unused_imports)]
 use bouncycastle_core::symmetric_key::{
-    AeadDecryptionKey, AeadEncryptionKey, AeadPacketDecryptionKey, AeadPacketEncryptionKey,
+    AeadDeclaredDecryptionKey, AeadDeclaredEncryptionKey, AeadDecryptionKey, AeadEncryptionKey,
 };
 #[allow(unused_imports)]
 use bouncycastle_core::traits::{AEADCipherDecryptor, AEADCipherEncryptor};
@@ -219,11 +219,11 @@ pub const CCM_TAG_LEN: usize = 16;
 ///
 /// This is the fixed-frame pair, for code written against the generic AEAD traits: the streaming
 /// methods accept exactly `DATA_LEN` bytes of payload and up to `AAD_LEN` of AAD. It comes from
-/// an [`AES128Key`]`<CCMFrame<NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>>`, whose `create_encryptor`
+/// an [`AES128Key`]`<CCM_Packet<NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>>`, whose `create_encryptor`
 /// draws the nonce and whose `create_encryptor_nonce` and `_nonce` one-shots take the caller's;
 /// a drawn nonce needs `NONCE_LEN` of at least 12, a supplied one any A.1 length. `NONCE_LEN` must be 7..=13
 /// and `TAG_LEN` one of 4, 6, 8, 10, 12, 14, 16 (A.1); anything else is a compile error. Use
-/// [`CCM_NONCE_LEN`] and [`CCM_TAG_LEN`] if you have no reason to choose. See [`CcmEncryptor`]
+/// [`CCM_NONCE_LEN`] and [`CCM_TAG_LEN`] if you have no reason to choose. See [`CcmPacketEncryptor`]
 /// for the rules.
 #[allow(non_camel_case_types)]
 pub type AES_CCM_128<
@@ -233,8 +233,8 @@ pub type AES_CCM_128<
     const AAD_LEN: usize,
     const DATA_LEN: usize,
 > = <Dir as Direction>::Select<
-    CcmEncryptor<AES128Internal, 16, AES_BLOCK_LEN, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>,
-    CcmDecryptor<AES128Internal, 16, AES_BLOCK_LEN, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>,
+    CcmPacketEncryptor<AES128Internal, 16, AES_BLOCK_LEN, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>,
+    CcmPacketDecryptor<AES128Internal, 16, AES_BLOCK_LEN, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>,
 >;
 
 /// AES-192 in CCM mode, as an [`AEADCipherEncryptor`] or [`AEADCipherDecryptor`] by `Dir`. See [`AES_CCM_128`].
@@ -246,8 +246,8 @@ pub type AES_CCM_192<
     const AAD_LEN: usize,
     const DATA_LEN: usize,
 > = <Dir as Direction>::Select<
-    CcmEncryptor<AES192Internal, 24, AES_BLOCK_LEN, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>,
-    CcmDecryptor<AES192Internal, 24, AES_BLOCK_LEN, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>,
+    CcmPacketEncryptor<AES192Internal, 24, AES_BLOCK_LEN, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>,
+    CcmPacketDecryptor<AES192Internal, 24, AES_BLOCK_LEN, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>,
 >;
 
 /// AES-256 in CCM mode, as an [`AEADCipherEncryptor`] or [`AEADCipherDecryptor`] by `Dir`. See [`AES_CCM_128`].
@@ -259,6 +259,6 @@ pub type AES_CCM_256<
     const AAD_LEN: usize,
     const DATA_LEN: usize,
 > = <Dir as Direction>::Select<
-    CcmEncryptor<AES256Internal, 32, AES_BLOCK_LEN, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>,
-    CcmDecryptor<AES256Internal, 32, AES_BLOCK_LEN, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>,
+    CcmPacketEncryptor<AES256Internal, 32, AES_BLOCK_LEN, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>,
+    CcmPacketDecryptor<AES256Internal, 32, AES_BLOCK_LEN, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>,
 >;

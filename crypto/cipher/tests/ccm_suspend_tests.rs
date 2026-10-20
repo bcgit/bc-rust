@@ -1,4 +1,4 @@
-//! What a resumed CCM state refuses: the bounds the pair and its packet state check when they
+//! What a resumed CCM state refuses: the bounds the pair and its `Ccm` state check when they
 //! are rebuilt from a suspended array, each tampered with on its own.
 //!
 //! The round trips in `suspend_tests.rs` show that a faithful state resumes. These show that an
@@ -8,13 +8,13 @@
 //! corrupts several at once would still pass if any one check were dropped.
 //!
 //! The offsets are those of the layout the `SuspendableComponent` impls write, in order: the
-//! library version, the packet state (the keystream's counter template and counter index, the
+//! library version, the `Ccm` state (the keystream's counter template and counter index, the
 //! stream cipher's pending block and its `used` count, then the chaining block, `mac_pos`,
 //! `aad_owed` and `owed`), the held-back AAD, its length and the phase flag; the decryptor adds
 //! the held-back tag and its length. Every integer is a little-endian `u64`. Spec references are
 //! to NIST SP 800-38C (May 2004, errata update 07-20-2007).
 
-use bouncycastle_cipher::modes::{CCM, CCMFrame, CcmDecryptor, CcmEncryptor};
+use bouncycastle_cipher::modes::{CCM, CCM_Packet, CcmPacketDecryptor, CcmPacketEncryptor};
 use bouncycastle_core::errors::SuspendableError;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::symmetric_key::{AeadDecryptionKey, AeadEncryptionKey, FromKeyMaterial};
@@ -37,8 +37,8 @@ const NONCE_LEN: usize = 12;
 const BLOCK_LEN: usize = 16;
 const AAD_LEN: usize = 16;
 const DATA_LEN: usize = 32;
-type ToyEnc = CcmEncryptor<ToyBlockCipher, 16, BLOCK_LEN, NONCE_LEN, 16, AAD_LEN, DATA_LEN>;
-type ToyDec = CcmDecryptor<ToyBlockCipher, 16, BLOCK_LEN, NONCE_LEN, 16, AAD_LEN, DATA_LEN>;
+type ToyEnc = CcmPacketEncryptor<ToyBlockCipher, 16, BLOCK_LEN, NONCE_LEN, 16, AAD_LEN, DATA_LEN>;
+type ToyDec = CcmPacketDecryptor<ToyBlockCipher, 16, BLOCK_LEN, NONCE_LEN, 16, AAD_LEN, DATA_LEN>;
 const N: usize = ToyEnc::SUSPENDED_STATE_LEN;
 const ND: usize = ToyDec::SUSPENDED_STATE_LEN;
 
@@ -62,7 +62,7 @@ fn key() -> KeyMaterial<16> {
 }
 
 /// The key the pair is made from; resume still takes the material, through `key()`.
-fn frame_key() -> ToyKey<ToyBlockCipher, CCMFrame<NONCE_LEN, 16, AAD_LEN, DATA_LEN>> {
+fn frame_key() -> ToyKey<ToyBlockCipher, CCM_Packet<NONCE_LEN, 16, AAD_LEN, DATA_LEN>> {
     ToyKey::from_key_material(&key()).unwrap()
 }
 

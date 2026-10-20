@@ -10,7 +10,8 @@
 
 use bouncycastle_cipher::modes::hazmat::ecb::{ECB, Ecb};
 use bouncycastle_cipher::modes::{
-    Blocks, CBC, CCMFrame, CFB, CFB8, CTR, Cbc, CcmDecryptor, CcmEncryptor, Cfb, Cfb8, Ctr, Gcm,
+    Blocks, CBC, CCM_Packet, CFB, CFB8, CTR, Cbc, CcmPacketDecryptor, CcmPacketEncryptor, Cfb,
+    Cfb8, Ctr, Gcm,
 };
 use bouncycastle_cipher::padding::{PKCS7, PaddedBlockCipherDecryptor, PaddedBlockCipherEncryptor};
 use bouncycastle_cipher::{Decrypting, Encrypting};
@@ -41,9 +42,9 @@ type ToyCfb8<Dir> = Cfb8<ToyBlockCipher, Dir, 16, 16>;
 type ToyCtr<Dir> = Ctr<ToyBlockCipher, Dir, 16, 16, 12>;
 type ToyGcm<Dir> = Gcm<ToyBlockCipher, Dir, 16, 16>;
 // A 64-byte AAD capacity and 37-byte frames, the message `ccm_both_directions` uses.
-type ToyCcmFrame = CCMFrame<12, 16, 64, 37>;
-type ToyCcmEnc = CcmEncryptor<ToyBlockCipher, 16, 16, 12, 16, 64, 37>;
-type ToyCcmDec = CcmDecryptor<ToyBlockCipher, 16, 16, 12, 16, 64, 37>;
+type ToyCcmPacket = CCM_Packet<12, 16, 64, 37>;
+type ToyCcmEnc = CcmPacketEncryptor<ToyBlockCipher, 16, 16, 12, 16, 64, 37>;
+type ToyCcmDec = CcmPacketDecryptor<ToyBlockCipher, 16, 16, 12, 16, 64, 37>;
 type ToyPaddedEnc = PaddedBlockCipherEncryptor<ToyCbc<Encrypting>, PKCS7, 16, 16, 16>;
 type ToyPaddedDec = PaddedBlockCipherDecryptor<ToyCbc<Decrypting>, PKCS7, 16, 16, 16>;
 
@@ -222,7 +223,7 @@ fn ccm_both_directions() {
 
     // Suspended with half the AAD held back and no payload yet, and again mid-payload; both
     // must continue to the one answer.
-    let mut enc = key_for::<ToyCcmFrame>().create_encryptor_nonce(&nonce);
+    let mut enc = key_for::<ToyCcmPacket>().create_encryptor_nonce(&nonce);
     enc.do_update_aad(&aad[..3]).unwrap();
     let sealed = round_trip::<{ ToyCcmEnc::SUSPENDED_STATE_LEN }, _>(enc, |mut e| {
         e.do_update_aad(&aad[3..]).unwrap();
@@ -232,7 +233,7 @@ fn ccm_both_directions() {
         out.extend_from_slice(&tag);
         out
     });
-    let mut enc = key_for::<ToyCcmFrame>().create_encryptor_nonce(&nonce);
+    let mut enc = key_for::<ToyCcmPacket>().create_encryptor_nonce(&nonce);
     enc.do_update_aad(aad).unwrap();
     let mut head = vec![0u8; 9];
     enc.do_encrypt_out(&msg[..9], &mut head).unwrap();
@@ -247,7 +248,7 @@ fn ccm_both_directions() {
     let (ct, tag) = sealed.split_at(37);
     let tag: [u8; 16] = tag.try_into().unwrap();
 
-    let mut dec = key_for::<ToyCcmFrame>().create_decryptor(&nonce);
+    let mut dec = key_for::<ToyCcmPacket>().create_decryptor(&nonce);
     dec.do_update_aad(aad).unwrap();
     let mut opened_head = vec![0u8; 9];
     dec.do_decrypt_out(&ct[..9], &mut opened_head).unwrap();
@@ -260,7 +261,7 @@ fn ccm_both_directions() {
     assert_eq!([&opened_head[..], &plain[..]].concat(), msg);
 
     // ...and with part of an inline tag already held back at the suspend point.
-    let mut dec = key_for::<ToyCcmFrame>().create_decryptor(&nonce);
+    let mut dec = key_for::<ToyCcmPacket>().create_decryptor(&nonce);
     dec.do_update_aad(aad).unwrap();
     let mut opened = vec![0u8; 37];
     dec.do_decrypt_out(&sealed[..40], &mut opened).unwrap();

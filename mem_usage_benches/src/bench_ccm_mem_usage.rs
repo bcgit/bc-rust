@@ -30,9 +30,9 @@
 
 use bouncycastle::aes::AES128Key;
 use bouncycastle::aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
-use bouncycastle::cipher::modes::{CCM, CCMFrame, CcmDecryptor, CcmEncryptor};
+use bouncycastle::cipher::modes::{CCM, CCM_Packet, CcmPacketDecryptor, CcmPacketEncryptor};
 use bouncycastle::core::hazmat::{
-    AeadPacketDecryptMode, AeadPacketEncryptMode, ElectronicCodeBook,
+    AeadDeclaredDecryptMode, AeadDeclaredEncryptMode, ElectronicCodeBook,
 };
 use bouncycastle::core::key_material::{KeyMaterial, KeyType};
 use bouncycastle::core::symmetric_key::{AeadDecryptionKey, AeadEncryptionKey, FromKeyMaterial};
@@ -57,11 +57,11 @@ const MESSAGE_LEN: usize = DATA_LEN;
 /// The mode's in-place one-shots over the keyed permutation: the direct path.
 type Aes128CcmMode = CCM<NONCE_LEN, TAG_LEN>;
 /// The key bound to the fixed frame, whose streams are the pair below.
-type Aes128CcmFrameKey = AES128Key<CCMFrame<NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>>;
+type Aes128CcmPacketKey = AES128Key<CCM_Packet<NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>>;
 type Aes128CcmEncryptor =
-    CcmEncryptor<AES128Internal, 16, 16, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>;
+    CcmPacketEncryptor<AES128Internal, 16, 16, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>;
 type Aes128CcmDecryptor =
-    CcmDecryptor<AES128Internal, 16, 16, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>;
+    CcmPacketDecryptor<AES128Internal, 16, 16, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>;
 
 fn key<const N: usize>() -> KeyMaterial<N> {
     KeyMaterial::<N>::from_bytes_as_type(&[0x42u8; N], KeyType::SymmetricCipherKey).unwrap()
@@ -71,8 +71,8 @@ fn perm() -> AES128Internal {
     AES128Internal::new(&key::<16>()).unwrap()
 }
 
-fn frame_key() -> Aes128CcmFrameKey {
-    Aes128CcmFrameKey::from_key_material(&key::<16>()).unwrap()
+fn frame_key() -> Aes128CcmPacketKey {
+    Aes128CcmPacketKey::from_key_material(&key::<16>()).unwrap()
 }
 
 /// The message every bench processes, filled at run time and then only ever reached through a
@@ -96,7 +96,7 @@ fn bench_do_nothing() {
 
 /// Prints the in-memory size of each CCM value: the persistent cost of holding one open.
 ///
-/// A mode-bound key is the keyed permutation alone; the trait pair is the mode's packet state
+/// A mode-bound key is the keyed permutation alone; the trait pair is the mode's `Ccm` state
 /// (the permutation, three blocks and five counters, independent of `NONCE_LEN` and `TAG_LEN`)
 /// plus the `AAD_LEN` buffer and a few words, at any `DATA_LEN`.
 #[inline(never)]
@@ -109,27 +109,34 @@ fn print_struct_sizes() {
     eprintln!("AES256Internal  {:>7} B", size_of::<AES256Internal>());
 
     eprintln!(
-        "--- the trait pair: packet state + AAD_LEN + bookkeeping, independent of DATA_LEN ---"
-    );
-    eprintln!("CcmEncryptor<.., {AAD_LEN}, {DATA_LEN}> {:>7} B", size_of::<Aes128CcmEncryptor>());
-    eprintln!("CcmDecryptor<.., {AAD_LEN}, {DATA_LEN}> {:>7} B", size_of::<Aes128CcmDecryptor>());
-    eprintln!(
-        "CcmEncryptor<.., 64, 240>      {:>7} B",
-        size_of::<CcmEncryptor<AES128Internal, 16, 16, NONCE_LEN, TAG_LEN, 64, 240>>()
+        "--- the trait pair: `Ccm` state + AAD_LEN + bookkeeping, independent of DATA_LEN ---"
     );
     eprintln!(
-        "CcmEncryptor<.., 7, 4, ..>     {:>7} B",
-        size_of::<CcmEncryptor<AES128Internal, 16, 16, 7, 4, AAD_LEN, DATA_LEN>>()
+        "CcmPacketEncryptor<.., {AAD_LEN}, {DATA_LEN}> {:>7} B",
+        size_of::<Aes128CcmEncryptor>()
     );
     eprintln!(
-        "CcmEncryptor<AES256Internal>   {:>7} B",
-        size_of::<CcmEncryptor<AES256Internal, 32, 16, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>>()
+        "CcmPacketDecryptor<.., {AAD_LEN}, {DATA_LEN}> {:>7} B",
+        size_of::<Aes128CcmDecryptor>()
+    );
+    eprintln!(
+        "CcmPacketEncryptor<.., 64, 240>      {:>7} B",
+        size_of::<CcmPacketEncryptor<AES128Internal, 16, 16, NONCE_LEN, TAG_LEN, 64, 240>>()
+    );
+    eprintln!(
+        "CcmPacketEncryptor<.., 7, 4, ..>     {:>7} B",
+        size_of::<CcmPacketEncryptor<AES128Internal, 16, 16, 7, 4, AAD_LEN, DATA_LEN>>()
+    );
+    eprintln!(
+        "CcmPacketEncryptor<AES256Internal>   {:>7} B",
+        size_of::<CcmPacketEncryptor<AES256Internal, 32, 16, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>>(
+        )
     );
 
     print!("{}", size_of::<Aes128CcmEncryptor>());
 }
 
-/// The in-place path over the message: the packet state plus the caller's one buffer, and
+/// The in-place path over the message: the `Ccm` state plus the caller's one buffer, and
 /// nothing else. This is the baseline for `bench_streaming_encrypt`, `bench_streaming_decrypt`
 /// and `bench_oneshot_encrypt_out_detached`.
 #[inline(never)]
@@ -150,7 +157,7 @@ fn bench_in_place_encrypt() {
 #[inline(never)]
 fn bench_streaming_encrypt() {
     eprintln!(
-        "CcmEncryptor create_encryptor/do_encrypt_out/do_encrypt_final_detached_out, {MESSAGE_LEN} B in 1 KiB chunks"
+        "CcmPacketEncryptor create_encryptor/do_encrypt_out/do_encrypt_final_detached_out, {MESSAGE_LEN} B in 1 KiB chunks"
     );
 
     let k = frame_key();
@@ -176,7 +183,7 @@ fn bench_streaming_encrypt() {
 #[inline(never)]
 fn bench_streaming_decrypt() {
     eprintln!(
-        "CcmDecryptor create_decryptor/do_decrypt_out/do_decrypt_final, {MESSAGE_LEN} B in 1 KiB chunks"
+        "CcmPacketDecryptor create_decryptor/do_decrypt_out/do_decrypt_final, {MESSAGE_LEN} B in 1 KiB chunks"
     );
 
     let k = frame_key();
@@ -208,7 +215,7 @@ fn bench_streaming_decrypt() {
 /// measures plus that DRBG.
 #[inline(never)]
 fn bench_oneshot_encrypt_out_detached() {
-    eprintln!("AES128Key<CCMFrame>::encrypt_detached_out, {MESSAGE_LEN} B");
+    eprintln!("AES128Key<CCM_Packet>::encrypt_detached_out, {MESSAGE_LEN} B");
 
     let k = frame_key();
     let mut rng = HashDRBG_SHA512::new_from_os();

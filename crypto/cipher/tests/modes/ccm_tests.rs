@@ -6,7 +6,7 @@
 //! stream holds to its frame, and which entry points release unauthenticated plaintext --
 //! independently of the known-answer vectors in the `aes` crate's `sp800_38c_tests.rs`,
 //! `ccm_bc-test-data.rs` and `ccm_wycheproof.rs`. The Appendix C file also carries the
-//! fixed-frame `CcmEncryptor` / `CcmDecryptor` pair's contract, the shared framework run and the
+//! fixed-frame `CcmPacketEncryptor` / `CcmPacketDecryptor` pair's contract, the shared framework run and the
 //! memory table, so none of those is repeated here.
 //!
 //! The one-shots are the mode's in-place pair on [`CCM`], which take any length; the streams are
@@ -18,13 +18,13 @@ mod common;
 #[path = "../common/toy_key.rs"]
 mod toy_key;
 
-use bouncycastle_cipher::modes::{CCM, CCMFrame, ModeNames};
+use bouncycastle_cipher::modes::{CCM, CCM_Packet, ModeNames};
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::hazmat::ElectronicCodeBook;
 use bouncycastle_core::key_material::KeyMaterial;
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::symmetric_key::{
-    AeadDecryptionKey, AeadEncryptionKey, AeadPacketDecryptionKey, AeadPacketEncryptionKey,
+    AeadDeclaredDecryptionKey, AeadDeclaredEncryptionKey, AeadDecryptionKey, AeadEncryptionKey,
     FromKeyMaterial,
 };
 use bouncycastle_core::traits::{
@@ -41,10 +41,10 @@ const TAG_LEN: usize = 16;
 const AAD_LEN: usize = 64;
 
 /// The toy key under the in-place pair, which takes any length.
-type PacketKey<P> = ToyKey<P, CCM<NONCE_LEN, TAG_LEN>>;
+type DeclaredKey<P> = ToyKey<P, CCM<NONCE_LEN, TAG_LEN>>;
 /// The toy key under the fixed-frame streams, whose frame is `DATA_LEN`.
 type FrameKey<P, const DATA_LEN: usize> =
-    ToyKey<P, CCMFrame<NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>>;
+    ToyKey<P, CCM_Packet<NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>>;
 
 fn pinned_nonce() -> [u8; NONCE_LEN] {
     core::array::from_fn(|i| 0xA0 ^ (i as u8))
@@ -54,8 +54,8 @@ fn message(len: usize) -> Vec<u8> {
     (0..len).map(|i| (i as u8).wrapping_mul(3).wrapping_add(1)).collect()
 }
 
-fn packet_key<P: ElectronicCodeBook<TOY_LEN, TOY_LEN> + ModeNames + Clone>() -> PacketKey<P> {
-    PacketKey::from_key_material(&toy_key()).expect("the toy key")
+fn declared_key<P: ElectronicCodeBook<TOY_LEN, TOY_LEN> + ModeNames + Clone>() -> DeclaredKey<P> {
+    DeclaredKey::from_key_material(&toy_key()).expect("the toy key")
 }
 
 fn frame_key<P: ElectronicCodeBook<TOY_LEN, TOY_LEN> + ModeNames + Clone, const DATA_LEN: usize>()
@@ -70,7 +70,7 @@ fn seal<P: ElectronicCodeBook<TOY_LEN, TOY_LEN> + ModeNames + Clone>(
     plaintext: &[u8],
 ) -> (Vec<u8>, [u8; TAG_LEN]) {
     let mut buf = plaintext.to_vec();
-    let tag = packet_key::<P>().encrypt_detached_in_place_nonce(nonce, aad, &mut buf).unwrap();
+    let tag = declared_key::<P>().encrypt_detached_in_place_nonce(nonce, aad, &mut buf).unwrap();
     (buf, tag)
 }
 
@@ -82,7 +82,7 @@ fn open<P: ElectronicCodeBook<TOY_LEN, TOY_LEN> + ModeNames + Clone>(
     tag: &[u8; TAG_LEN],
 ) -> Result<Vec<u8>, SymmetricCipherError> {
     let mut buf = ciphertext.to_vec();
-    packet_key::<P>().decrypt_detached_in_place(nonce, aad, &mut buf, tag)?;
+    declared_key::<P>().decrypt_detached_in_place(nonce, aad, &mut buf, tag)?;
     Ok(buf)
 }
 
@@ -444,7 +444,7 @@ fn every_permitted_nonce_length_works() {
 /// Sec 6.2: "When the error message INVALID is returned, the payload P and the MAC T shall not
 /// be revealed." The in-place one-shot honours that -- the caller's buffer comes back zeroized --
 /// because it has the whole ciphertext before it starts. The stream cannot: Sec 6.2 recovers `P`
-/// (step 5) before it can verify it (step 10), and the fixed-frame `CcmDecryptor` releases `P`
+/// (step 5) before it can verify it (step 10), and the fixed-frame `CcmPacketDecryptor` releases `P`
 /// as it is recovered rather than hold the frame back, so by the time the final rejects the tag
 /// the plaintext is already in the caller's buffer, as its docs warn. Pinning the difference
 /// makes it a documented property rather than an accident.
@@ -459,7 +459,7 @@ fn the_one_shot_releases_nothing_on_forgery_but_the_stream_does() {
     // The one-shot: verify-then-return, so a forged tag leaves nothing but zeros.
     let mut buf = ct.clone();
     assert!(matches!(
-        packet_key::<Toy>().decrypt_detached_in_place(&nonce, b"aad", &mut buf, &tag),
+        declared_key::<Toy>().decrypt_detached_in_place(&nonce, b"aad", &mut buf, &tag),
         Err(SymmetricCipherError::AEADTagCheckFailed)
     ));
     assert_eq!(buf, [0u8; LEN], "the one-shot must zeroize its buffer on a forged tag");
@@ -509,6 +509,6 @@ fn a_large_payload_round_trips_in_place() {
 #[test]
 fn the_keys_enforce_the_material_policy() {
     let framework = TestFrameworkFromKeyMaterial::new();
-    framework.test::<TOY_LEN, PacketKey<Toy>>(Toy::CCM_ALG_NAME, SecurityStrength::_128bit);
+    framework.test::<TOY_LEN, DeclaredKey<Toy>>(Toy::CCM_ALG_NAME, SecurityStrength::_128bit);
     framework.test::<TOY_LEN, FrameKey<Toy, 32>>(Toy::CCM_ALG_NAME, SecurityStrength::_128bit);
 }

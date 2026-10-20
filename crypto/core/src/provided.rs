@@ -1,5 +1,5 @@
 //! The provided bodies of the role keys' and mode traits' one-shots, over a worker that has
-//! already been constructed, so that the drawing, supplied-nonce and packet forms share them.
+//! already been constructed, so that the drawing, supplied-nonce and declared-length forms share them.
 //!
 //! The `_out` bodies stream the message from one slice to another. The in-place bodies run a
 //! message in its own buffer through the same split-slice update methods: each chunk is copied out
