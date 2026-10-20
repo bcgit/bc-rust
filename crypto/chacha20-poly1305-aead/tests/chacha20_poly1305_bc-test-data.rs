@@ -1,13 +1,11 @@
 //! RFC fixtures live at bc-test-data/crypto/rfc8439.
 mod common;
 
-use bouncycastle_core_test_framework::external_vectors::ExternalVectors;
+use bouncycastle_core_test_framework::test_data_loaders::bc_test_data_json;
 
 #[test]
 fn rfc8439_aead_encryption_and_decryption() {
-    let Some(doc) =
-        common::load(ExternalVectors::BcTestData, "crypto/rfc8439/chacha20-poly1305-aead.json")
-    else {
+    let Some(doc) = bc_test_data_json("crypto/rfc8439", "chacha20-poly1305-aead.json") else {
         return;
     };
     let cases = doc["tests"].as_array().unwrap();

@@ -22,7 +22,7 @@ const BLOCK_LIMIT: u64 = 1 << 32;
 /// successive values of the 32-bit block counter, with a fixed key and 96-bit nonce. Use it
 /// through [`ChaCha20`](crate::ChaCha20).
 ///
-/// # 🚨 Security 🚨
+/// # 🚨 Security Considerations 🚨
 /// A raw [`KeyStream`]: constructed directly, it takes the nonce from the caller and does not
 /// refuse to run past the counter. In particular, never use it with the key and nonce of a
 /// ChaCha20-Poly1305 message: block 0 of that pair is the message's one-time Poly1305 key (RFC 8439
@@ -47,8 +47,12 @@ impl ChaCha20KeyStream {
     /// RFC 8439 Sec 2.4's "32-bit initial counter. This can be set to any number, but will usually
     /// be zero or one."
     ///
+    /// Unlike [`KeyStream::new`], this does not check which algorithm the key is bound to: it is
+    /// the constructor for a construction over the keystream, such as ChaCha20-Poly1305, which
+    /// checks the key against its own name.
+    ///
     /// # Errors
-    /// As [`KeyStream::new`], and a key whose length is not [`KEY_LEN`].
+    /// As [`KeyStream::new`] apart from the binding, and a key whose length is not [`KEY_LEN`].
     pub fn start_at(
         key: &KeyMaterial<KEY_LEN>,
         nonce: &[u8; NONCE_LEN],
@@ -102,6 +106,7 @@ impl KeyStream<KEY_LEN, NONCE_LEN, BLOCK_LEN> for ChaCha20KeyStream {
         key: &KeyMaterial<KEY_LEN>,
         init_data: &[u8; NONCE_LEN],
     ) -> Result<Self, SymmetricCipherError> {
+        key.check_algorithm(Self::ALG_NAME)?;
         Self::init(key, init_data, 0)
     }
 
@@ -175,6 +180,7 @@ impl SuspendableComponent for ChaCha20KeyStream {
     }
 
     fn read_state(state: &[u8], key: &Self::Key) -> Result<Self, SuspendableError> {
+        key.check_algorithm(Self::ALG_NAME).map_err(|_| SuspendableError::InvalidData)?;
         let mut r = Cursor::new(state);
         let nonce = r.array::<NONCE_LEN>();
         // The counter counts to `BLOCK_LIMIT` and stops there (the exhausted state, with

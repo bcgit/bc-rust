@@ -3,16 +3,17 @@
 //! cannot be passed to the fixed-array API; those cases are counted and reported separately.
 mod common;
 
-use bouncycastle_chacha20_poly1305_aead::ChaCha20Poly1305Decryptor as Dec;
+use bouncycastle_chacha20_poly1305_aead::ChaCha20_Poly1305;
+use bouncycastle_cipher::Decrypting;
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::traits::{AEADCipherDecryptor, SymmetricCipherDecryptor};
-use bouncycastle_core_test_framework::external_vectors::ExternalVectors;
+use bouncycastle_core_test_framework::test_data_loaders::wycheproof_json;
+
+type Dec = ChaCha20_Poly1305<Decrypting>;
 
 #[test]
 fn wycheproof_chacha20_poly1305() {
-    let Some(doc) =
-        common::load(ExternalVectors::Wycheproof, "testvectors_v1/chacha20_poly1305_test.json")
-    else {
+    let Some(doc) = wycheproof_json("chacha20_poly1305_test.json") else {
         return;
     };
     assert_eq!(doc["algorithm"], "CHACHA20-POLY1305");
@@ -51,11 +52,9 @@ fn wycheproof_chacha20_poly1305() {
                     Err(SymmetricCipherError::AEADTagCheckFailed),
                     "tcId {id}"
                 );
-                // The core default clears bytes released by updates. The held final bytes
-                // have never been written to this output and retain their sentinel values.
-                let released = ct.len().saturating_sub(16);
-                assert!(out[..released].iter().all(|&b| b == 0), "tcId {id}");
-                assert!(out[released..].iter().all(|&b| b == 0xa5), "tcId {id}");
+                // The core default zeroizes the whole output buffer on entry, and leaves it so
+                // when the tag fails.
+                assert!(out.iter().all(|&b| b == 0), "tcId {id}");
                 let mut inline = ct.clone();
                 inline.extend_from_slice(&tag);
                 assert_eq!(
@@ -71,7 +70,7 @@ fn wycheproof_chacha20_poly1305() {
                 dec.do_decrypt_out(&ct, &mut out).unwrap();
                 let mut last = [0xa5; 16];
                 assert_eq!(
-                    dec.do_final_detached_out(&tag, &mut last),
+                    dec.do_decrypt_final_detached_out(&tag, &mut last),
                     Err(SymmetricCipherError::AEADTagCheckFailed)
                 );
                 assert_eq!(last, [0; 16]);

@@ -3,21 +3,13 @@ use bouncycastle_core::{
     key_material::{KeyMaterial, KeyType},
     traits::MAC,
 };
-use bouncycastle_core_test_framework::external_vectors::{ExternalVectors, external_vector_file};
 use bouncycastle_core_test_framework::mac::TestFrameworkMAC;
+use bouncycastle_core_test_framework::test_data_loaders::bc_test_data_json;
 use bouncycastle_poly1305::Poly1305;
-use serde_json::Value;
-use std::fs;
 
 #[test]
 fn rfc8439_poly1305_including_reduction_edge_cases() {
-    let Some(path) =
-        external_vector_file(ExternalVectors::BcTestData, "crypto/rfc8439/poly1305.json")
-    else {
-        return;
-    };
-    let document: Value =
-        serde_json::from_str(&fs::read_to_string(&path).expect("RFC vector file")).unwrap();
+    let Some(document) = bc_test_data_json("crypto/rfc8439", "poly1305.json") else { return };
     let cases = document["tests"].as_array().unwrap();
     assert_eq!(cases.len(), 12);
     for case in cases {

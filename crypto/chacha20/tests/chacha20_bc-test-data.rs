@@ -6,19 +6,11 @@ use bouncycastle_core::hazmat::do_hazardous_operations;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::StreamCipherEncryptor;
-use bouncycastle_core_test_framework::external_vectors::{ExternalVectors, external_vector_file};
-use serde_json::Value;
-use std::fs;
+use bouncycastle_core_test_framework::test_data_loaders::bc_test_data_json;
 
 #[test]
 fn rfc8439_blocks_encryption_and_one_time_keys() {
-    let Some(path) =
-        external_vector_file(ExternalVectors::BcTestData, "crypto/rfc8439/chacha20.json")
-    else {
-        return;
-    };
-    let document: Value =
-        serde_json::from_str(&fs::read_to_string(&path).expect("RFC vector file")).unwrap();
+    let Some(document) = bc_test_data_json("crypto/rfc8439", "chacha20.json") else { return };
     let cases = document["tests"].as_array().unwrap();
     assert_eq!(cases.len(), 12);
     for case in cases {
@@ -38,11 +30,11 @@ fn rfc8439_blocks_encryption_and_one_time_keys() {
             let mut actual = message.clone();
             let mut cipher = at(&key, &nonce, counter);
             for bytes in actual.chunks_mut(chunk) {
-                cipher.do_encrypt(bytes).unwrap();
-                cipher.do_encrypt(&mut []).unwrap();
+                cipher.do_encrypt_inplace(bytes).unwrap();
+                cipher.do_encrypt_inplace(&mut []).unwrap();
             }
             assert_eq!(actual, expected, "RFC {id}, chunk {chunk}");
-            at(&key, &nonce, counter).do_encrypt(&mut actual).unwrap();
+            at(&key, &nonce, counter).do_encrypt_inplace(&mut actual).unwrap();
             assert_eq!(actual, message, "RFC {id} decryption");
         }
     }

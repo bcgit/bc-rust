@@ -25,7 +25,7 @@
 //! "In-memory size" is `core::mem::size_of` on a 64-bit target. There are no heap allocations in
 //! the streaming and `*_out` APIs, so this crate has no `mem_usage_benches` harness.
 //!
-//! # Security Considerations
+//! # 🚨 Security Considerations 🚨
 //!
 //! - A 32-byte key must be used for **exactly one message**: two tags under one key let an
 //!   attacker forge others. Finalization consumes the instance, but nothing stops a caller

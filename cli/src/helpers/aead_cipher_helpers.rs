@@ -1,4 +1,4 @@
-//! Shared plumbing for the AEAD subcommands: `aes{128,192,256}-gcm`.
+//! Shared plumbing for the AEAD subcommands: `aes{128,192,256}-gcm` and `chacha20-poly1305`.
 //!
 //! Parallel to [`crate::helpers::stream_mode_helpers`], but for an AEAD such as [`bouncycastle::cipher::modes::Gcm`] rather than a
 //! [`StreamCipherEncryptor`](bouncycastle::core::traits::StreamCipherEncryptor) mode: an AEAD carries
@@ -27,14 +27,14 @@
 //! # AAD
 //!
 //! `--aad <hex>` or `--aad-file <path>`; if neither is given, AAD is empty. Fed to the engine in
-//! one call before any ciphertext, matching SP 800-38D Algorithm 4's requirement that AAD precede
-//! data.
+//! one call before any ciphertext, since both GCM (SP 800-38D Algorithm 4) and ChaCha20-Poly1305
+//! (RFC 8439 Sec 2.8) authenticate the AAD ahead of the ciphertext.
 //!
 //! `--aad-file` is read as raw bytes ([`read_from_file_raw`]), never hex-decoded. The
 //! hex-or-raw guess `--key-file` uses would change what is authenticated without any error: a
 //! binary header that happens to parse as hex text (`cafe`, or sixteen zero bytes, which the hex
 //! decoder skips) would be authenticated as its decoding, and the tag would not verify against any
-//! other GCM implementation given the same file.
+//! other implementation given the same file.
 
 use crate::helpers::{flush_stdout, read_from_file_raw, write_bytes_or_hex, write_stdout};
 use bouncycastle::cipher::modes::Gcm;

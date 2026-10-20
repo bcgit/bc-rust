@@ -16,8 +16,8 @@
 //! use bouncycastle_core::{key_material::{KeyMaterial, KeyType}, traits::{StreamCipherEncryptor, StreamCipherDecryptor}};
 //! let key = KeyMaterial::<32>::from_bytes_as_type(&[0x42; 32], KeyType::SymmetricCipherKey).unwrap();
 //! let mut message = *b"message";
-//! let (_, nonce) = ChaCha20::<Encrypting>::encrypt_in_place(&key, &mut message).unwrap();
-//! ChaCha20::<Decrypting>::decrypt_in_place(&key, &nonce, &mut message).unwrap();
+//! let (_, nonce) = ChaCha20::<Encrypting>::encrypt_inplace(&key, &mut message).unwrap();
+//! ChaCha20::<Decrypting>::decrypt_inplace(&key, &nonce, &mut message).unwrap();
 //! assert_eq!(&message, b"message");
 //! ```
 //!
@@ -35,10 +35,10 @@
 //! let mut data = [0x5au8; 100];
 //! let (mut enc, nonce) = ChaCha20::<Encrypting>::do_encrypt_init(&key).unwrap();
 //! for piece in data.chunks_mut(7) {
-//!     enc.do_encrypt(piece).unwrap();
+//!     enc.do_encrypt_inplace(piece).unwrap();
 //! }
 //! let mut dec = ChaCha20::<Decrypting>::do_decrypt_init(&key, &nonce).unwrap();
-//! dec.do_decrypt(&mut data).unwrap();
+//! dec.do_decrypt_inplace(&mut data).unwrap();
 //! assert_eq!(data, [0x5au8; 100]);
 //! ```
 //!
@@ -52,7 +52,7 @@
 //! "In-memory size" is `core::mem::size_of` on a 64-bit target. There are no heap allocations and
 //! no message-sized buffers, so this crate has no `mem_usage_benches` harness.
 //!
-//! # Security Considerations
+//! # 🚨 Security Considerations 🚨
 //!
 //! - Never reuse a nonce under the same key, or overlap counter ranges for that key and nonce
 //!   through [`hazmat::ChaCha20KeyStream::start_at`]: the keystream repeats and the XOR of the two

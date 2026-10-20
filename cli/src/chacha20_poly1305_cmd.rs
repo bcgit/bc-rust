@@ -8,9 +8,8 @@
 
 use crate::helpers::aead_cipher_helpers::{decrypt_aead, encrypt_aead, load_aad};
 use crate::helpers::block_mode_helpers::{CipherDirection, load_key};
-use bouncycastle::chacha20_poly1305_aead::{
-    ChaCha20Poly1305Decryptor, ChaCha20Poly1305Encryptor, KEY_LEN, NONCE_LEN, TAG_LEN,
-};
+use bouncycastle::chacha20_poly1305_aead::{ChaCha20_Poly1305, KEY_LEN, NONCE_LEN, TAG_LEN};
+use bouncycastle::cipher::{Decrypting, Encrypting};
 
 pub(crate) fn chacha20_poly1305_cmd(
     action: &CipherDirection,
@@ -24,12 +23,12 @@ pub(crate) fn chacha20_poly1305_cmd(
     let aad = load_aad(aad, aad_file);
     match action {
         CipherDirection::Encrypt => {
-            encrypt_aead::<ChaCha20Poly1305Encryptor, KEY_LEN, NONCE_LEN, TAG_LEN, TAG_LEN>(
+            encrypt_aead::<ChaCha20_Poly1305<Encrypting>, KEY_LEN, NONCE_LEN, TAG_LEN, TAG_LEN>(
                 &key, &aad, output_hex,
             )
         }
         CipherDirection::Decrypt => {
-            decrypt_aead::<ChaCha20Poly1305Decryptor, KEY_LEN, NONCE_LEN, TAG_LEN, TAG_LEN>(
+            decrypt_aead::<ChaCha20_Poly1305<Decrypting>, KEY_LEN, NONCE_LEN, TAG_LEN, TAG_LEN>(
                 &key, &aad, output_hex,
             )
         }

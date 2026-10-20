@@ -1,23 +1,15 @@
-use bouncycastle_chacha20_poly1305_aead::{
-    ChaCha20Poly1305Decryptor as Dec, ChaCha20Poly1305Encryptor as Enc,
-};
+use bouncycastle_chacha20_poly1305_aead::ChaCha20_Poly1305;
+use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::hazmat::do_hazardous_operations;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{
     AEADCipherDecryptor, AEADCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
 };
-use bouncycastle_core_test_framework::external_vectors::{ExternalVectors, external_vector_file};
-use serde_json::Value;
-use std::fs;
+use bouncycastle_core_test_framework::test_data_loaders::Value;
 
-pub fn load(repo: ExternalVectors, relative: &str) -> Option<Value> {
-    let path = external_vector_file(repo, relative)?;
-    Some(
-        serde_json::from_str(&fs::read_to_string(&path).expect("external test vector file"))
-            .unwrap(),
-    )
-}
+type Enc = ChaCha20_Poly1305<Encrypting>;
+type Dec = ChaCha20_Poly1305<Decrypting>;
 
 pub fn decode(case: &Value, field: &str) -> Vec<u8> {
     bouncycastle_hex::decode(case[field].as_str().expect(field)).unwrap()
@@ -50,7 +42,7 @@ pub fn check_valid(
     let n = Dec::decrypt_detached_out(key, nonce, aad, ct, tag, &mut plaintext).unwrap();
     assert_eq!(n, msg.len());
     assert_eq!(&plaintext[..n], msg);
-    assert_eq!(&plaintext[n..], &[0xa5; 8]);
+    assert_eq!(&plaintext[n..], &[0; 8], "bytes past the plaintext are zeroized");
     assert_eq!(
         Dec::decrypt_with_aad_out(key, nonce, aad, &inline, &mut plaintext).unwrap(),
         msg.len()
@@ -58,7 +50,7 @@ pub fn check_valid(
     assert_eq!(&plaintext[..msg.len()], msg);
 
     for &chunk in chunks {
-        let mut enc = Enc::new_with_nonce(key, nonce).unwrap();
+        let mut enc = Enc::do_encrypt_init_nonce(key, nonce).unwrap();
         for bytes in aad.chunks(chunk) {
             enc.do_update_aad(bytes).unwrap();
         }
@@ -69,9 +61,9 @@ pub fn check_valid(
             offset += enc.do_encrypt_out(bytes, &mut ciphertext[offset..]).unwrap();
         }
         let mut last = [0xa5; 16];
-        let (n, actual_tag) = enc.do_final_detached_out(&mut last).unwrap();
+        let (n, actual_tag) = enc.do_encrypt_final_detached_out(&mut last).unwrap();
         assert_eq!(n, 0);
-        assert_eq!(last, [0xa5; 16]);
+        assert_eq!(last, [0; 16], "the unused final buffer is zeroized");
         assert_eq!(offset, msg.len());
         assert_eq!(ciphertext, ct);
         assert_eq!(&actual_tag, tag);
@@ -91,9 +83,9 @@ pub fn check_valid(
                 written += n;
             }
             let (last, n) = if detached {
-                dec.do_final_detached(tag).unwrap()
+                dec.do_decrypt_final_detached(tag).unwrap()
             } else {
-                dec.do_final().unwrap()
+                dec.do_decrypt_final().unwrap()
             };
             recovered[written..written + n].copy_from_slice(&last[..n]);
             assert_eq!(written + n, msg.len());

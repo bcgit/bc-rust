@@ -35,23 +35,23 @@ fn counter_exhaustion_is_atomic_and_retains_partial_blocks() {
     for used in [0, 1, 31, 63, 64] {
         let nonce = [7; 12];
         let mut reference = [0x5a; 64];
-        at(&nonce, u32::MAX).do_encrypt(&mut reference).unwrap();
+        at(&nonce, u32::MAX).do_encrypt_inplace(&mut reference).unwrap();
         let mut cipher = at(&nonce, u32::MAX);
         let mut actual = [0x5a; 64];
-        cipher.do_encrypt(&mut actual[..used]).unwrap();
+        cipher.do_encrypt_inplace(&mut actual[..used]).unwrap();
 
         let mut too_long = vec![0xa5; 65 - used];
         assert!(matches!(
-            cipher.do_encrypt(&mut too_long),
+            cipher.do_encrypt_inplace(&mut too_long),
             Err(SymmetricCipherError::DataLimitExceeded)
         ));
         assert!(too_long.iter().all(|&b| b == 0xa5));
-        cipher.do_encrypt(&mut actual[used..]).unwrap();
+        cipher.do_encrypt_inplace(&mut actual[used..]).unwrap();
         assert_eq!(actual, reference);
         assert_eq!(cipher.keystream().remaining_blocks(), 0);
-        assert_eq!(cipher.do_encrypt(&mut []).unwrap(), 0);
+        assert_eq!(cipher.do_encrypt_inplace(&mut []).unwrap(), 0);
         assert!(matches!(
-            cipher.do_encrypt(&mut [0]),
+            cipher.do_encrypt_inplace(&mut [0]),
             Err(SymmetricCipherError::DataLimitExceeded)
         ));
     }
@@ -61,12 +61,12 @@ fn counter_exhaustion_is_atomic_and_retains_partial_blocks() {
 fn last_two_blocks_work_in_arbitrary_chunks() {
     let nonce = [9; 12];
     let mut expected = [0u8; 128];
-    at(&nonce, u32::MAX - 1).do_encrypt(&mut expected).unwrap();
+    at(&nonce, u32::MAX - 1).do_encrypt_inplace(&mut expected).unwrap();
     for chunk in [1, 3, 63, 64, 65, 127] {
         let mut cipher = at(&nonce, u32::MAX - 1);
         let mut out = [0u8; 128];
         for bytes in out.chunks_mut(chunk) {
-            cipher.do_encrypt(bytes).unwrap();
+            cipher.do_encrypt_inplace(bytes).unwrap();
         }
         assert_eq!(out, expected);
         assert_eq!(cipher.keystream().remaining_blocks(), 0);
@@ -83,12 +83,26 @@ fn start_at_matches_new_after_discarding_blocks() {
     let nonce = [3; 12];
     let mut from_new =
         ChaCha20::<Encrypting>::from_keystream(ChaCha20KeyStream::new(&key(), &nonce).unwrap());
-    from_new.do_encrypt(&mut [0u8; 128]).unwrap();
+    from_new.do_encrypt_inplace(&mut [0u8; 128]).unwrap();
     let mut a = [0x42u8; 100];
     let mut b = a;
-    from_new.do_encrypt(&mut a).unwrap();
-    at(&nonce, 2).do_encrypt(&mut b).unwrap();
+    from_new.do_encrypt_inplace(&mut a).unwrap();
+    at(&nonce, 2).do_encrypt_inplace(&mut b).unwrap();
     assert_eq!(a, b);
+}
+
+/// `new` and the cipher refuse a key bound to another algorithm (the framework suites check that
+/// too); `start_at` leaves the check to the construction above it, so it accepts one.
+#[test]
+fn only_start_at_leaves_the_algorithm_binding_to_its_caller() {
+    let mut bound = key();
+    bound.set_algorithm(Some("ChaCha20-Poly1305")).unwrap();
+    assert!(matches!(
+        ChaCha20KeyStream::new(&bound, &[0; 12]),
+        Err(SymmetricCipherError::KeyMaterialError(KeyMaterialError::InvalidKeyType(_)))
+    ));
+    assert!(ChaCha20::<Decrypting>::do_decrypt_init(&bound, &[0; 12]).is_err());
+    assert!(ChaCha20KeyStream::start_at(&bound, &[0; 12], 0).is_ok());
 }
 
 #[test]
@@ -116,22 +130,22 @@ fn suspend_and_resume_continues_the_keystream() {
     for first in [0, 1, 63, 64, 65] {
         let (mut enc, nonce) = ChaCha20::<Encrypting>::do_encrypt_init(&key).unwrap();
         let mut ciphertext = vec![0x5au8; 200];
-        enc.do_encrypt(&mut ciphertext[..first]).unwrap();
+        enc.do_encrypt_inplace(&mut ciphertext[..first]).unwrap();
         TestFrameworkSuspendableKeyedState::new().test::<N, _>(&enc, &key);
         let state: [u8; N] = enc.clone().suspend();
         let mut resumed = ChaCha20::<Encrypting>::from_suspended(state, &key).unwrap();
         let mut rest = ciphertext[first..].to_vec();
-        enc.do_encrypt(&mut ciphertext[first..]).unwrap();
-        resumed.do_encrypt(&mut rest).unwrap();
+        enc.do_encrypt_inplace(&mut ciphertext[first..]).unwrap();
+        resumed.do_encrypt_inplace(&mut rest).unwrap();
         assert_eq!(rest, ciphertext[first..]);
 
         let mut dec = ChaCha20::<Decrypting>::do_decrypt_init(&key, &nonce).unwrap();
-        dec.do_decrypt(&mut ciphertext[..first]).unwrap();
+        dec.do_decrypt_inplace(&mut ciphertext[..first]).unwrap();
         const M: usize = ChaCha20::<Decrypting>::SUSPENDED_STATE_LEN;
         TestFrameworkSuspendableKeyedState::new().test::<M, _>(&dec, &key);
         let state: [u8; M] = dec.suspend();
         let mut resumed = ChaCha20::<Decrypting>::from_suspended(state, &key).unwrap();
-        resumed.do_decrypt(&mut ciphertext[first..]).unwrap();
+        resumed.do_decrypt_inplace(&mut ciphertext[first..]).unwrap();
         assert_eq!(ciphertext, vec![0x5au8; 200]);
     }
 }
@@ -142,10 +156,10 @@ fn suspend_and_resume_continues_the_keystream() {
 fn resumed_counter_is_bounded() {
     const N: usize = ChaCha20::<Encrypting>::SUSPENDED_STATE_LEN;
     let mut cipher = at(&[1; 12], u32::MAX);
-    cipher.do_encrypt(&mut [0u8; 64]).unwrap();
+    cipher.do_encrypt_inplace(&mut [0u8; 64]).unwrap();
     let state: [u8; N] = cipher.suspend();
     let mut resumed = ChaCha20::<Encrypting>::from_suspended(state, &key()).unwrap();
-    assert!(resumed.do_encrypt(&mut [0]).is_err());
+    assert!(resumed.do_encrypt_inplace(&mut [0]).is_err());
 
     // Layout: version header (3), nonce (12), next counter (8, little-endian), pending block, used.
     let mut past = state;

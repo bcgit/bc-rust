@@ -27,10 +27,10 @@ fn bench_chacha20(c: &mut Criterion) {
 
     // The decryptor takes the nonce, so each iteration starts a fresh keystream without drawing a
     // nonce from the OS; the XOR is the same in both directions.
-    group.bench_function(format!("{DATA_LEN} bytes -- .do_decrypt()"), |b| {
+    group.bench_function(format!("{DATA_LEN} bytes -- .do_decrypt_inplace()"), |b| {
         b.iter(|| {
             let mut cipher = ChaCha20::<Decrypting>::do_decrypt_init(&key, &nonce).unwrap();
-            cipher.do_decrypt(black_box(&mut buf)).unwrap();
+            cipher.do_decrypt_inplace(black_box(&mut buf)).unwrap();
             black_box(&buf);
         })
     });
