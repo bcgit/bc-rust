@@ -153,29 +153,29 @@
 //!
 //! Per-call stack usage is separate from that and does not depend on the data length either.
 //! Measured as the deepest frame chain below each entry point in the release build (x86-64 Linux,
-//! rustc 1.95.0, return addresses included):
+//! rustc 1.97.0-nightly, return addresses included; `bench_ascon_mem_usage` has the harness and
+//! the method):
 //!
 //! | Ascon-AEAD128 entry point | Encrypting | Decrypting |
 //! |---|---|---|
-//! | `AsconAEAD128Key::from_key_material` (the key check, once per key) | - | - |
-//! | `create_encryptor` / `create_decryptor` | - | - |
-//! | `do_update_aad` | 104 B | 104 B |
+//! | `AsconAEAD128Key::from_key_material` (the key check, once per key) | 24 B | 24 B |
+//! | `create_encryptor` / `create_decryptor` | 120 B | 48 B |
+//! | `do_update_aad` | 48 B | 48 B |
 //! | `do_encrypt_out` / `do_decrypt_out` | 176 B | 208 B |
-//! | `do_encrypt_final` / `do_decrypt_final` (tag inline) | 176 B | 208 B |
-//! | `do_encrypt_final_detached_out` / `do_decrypt_final_detached_out` | 176 B | 272 B |
-//! | `encrypt_with_aad_out` / `decrypt_with_aad_out` (one-shot) | - | - |
+//! | `do_encrypt_final` / `do_decrypt_final` (tag inline) | 112 B | 256 B |
+//! | `do_encrypt_final_detached_out` / `do_decrypt_final_detached_out` | 112 B | 288 B |
+//! | `encrypt_with_aad_out` / `decrypt_with_aad_out` (one-shot) | 520 B | 640 B |
 //!
-//! The key path's rows have not been measured yet: the key check moved out of the per-message
-//! init into `from_key_material`, and the one-shots are now the role traits' provided bodies,
-//! so the old figures for those entry points no longer apply. `bench_ascon_mem_usage` has the
-//! harness. The encrypting figures do not include the caller's RNG.
+//! The encrypting `create_encryptor` figure includes the call into the caller's RNG but not the
+//! RNG's own stack; the one-shots are the role traits' provided bodies, which copy the message
+//! through a 64-byte chunk on the stack, and the decrypting one holds the tag back as well.
 //!
 //! | Sponge entry point | Ascon-Hash256 | Ascon-XOF128 | Ascon-CXOF128 |
 //! |---|---|---|---|
-//! | `with_customization` | | | 200 B |
-//! | `do_update` | 72 B | 72 B | 72 B |
-//! | `do_final_out` / `do_output_out` | 152 B | 104 B | 104 B |
-//! | `hash_out` / `xof_out` (one-shot) | 152 B | 168 B | 168 B |
+//! | `with_customization` | | | 192 B |
+//! | `do_update` | 64 B | 64 B | 64 B |
+//! | `do_final_out` / `do_output_out` | 144 B | 96 B | 96 B |
+//! | `hash_out` / `xof_out` (one-shot) | 144 B | 160 B | 160 B |
 //!
 //! The sponges' `new` copies a precomputed state and runs no permutation.
 //!
