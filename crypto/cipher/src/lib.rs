@@ -24,7 +24,8 @@
 //! use bouncycastle_cipher::Encrypting;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 //! use bouncycastle_core::traits::{BlockCipherEncryptor, SuspendableKeyed};
-//! use bouncycastle_core_test_framework::ToyBlockCipher;
+//! # mod toy { include!("../tests/common/toy_block_cipher.rs"); }
+//! # use toy::ToyBlockCipher;
 //!
 //! type ToyCbc = Cbc<ToyBlockCipher, Encrypting, 16, 16>;
 //! const STATE_LEN: usize = ToyCbc::SUSPENDED_STATE_LEN;
@@ -32,26 +33,31 @@
 //! let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey).unwrap();
 //! let (mut enc, _iv) = ToyCbc::do_encrypt_init(&key).unwrap();
 //! let mut first = [0x11u8; 16];
-//! enc.do_encrypt(&mut first).unwrap();
+//! enc.do_encrypt_inplace(&mut first).unwrap();
 //!
 //! // Suspending consumes the cipher. The key is not in the state and is re-supplied to resume.
 //! let state: [u8; STATE_LEN] = enc.suspend();
 //! let mut enc = ToyCbc::from_suspended(state, &key).unwrap();
 //! let mut second = [0x22u8; 16];
-//! enc.do_encrypt(&mut second).unwrap();
+//! enc.do_encrypt_inplace(&mut second).unwrap();
 //! ```
 //!
 //! # Memory Usage
 //!
 //! See the "Memory Usage" section of each module.
 //!
-//! # Security Considerations
+//! # 🚨 Security Considerations 🚨
 //!
 //! See the "Security Considerations" section of each module.
 
 #![forbid(unsafe_code)]
 #![forbid(missing_docs)]
 #![no_std]
+
+// `tests/common/toy_block_cipher.rs` names `bouncycastle_cipher::modes::ModeNames`, and is also
+// `include!`d by unit tests here, where that path would otherwise not resolve.
+#[cfg(test)]
+extern crate self as bouncycastle_cipher;
 
 pub mod modes;
 pub mod padding;
@@ -84,8 +90,10 @@ mod sealed {
 /// written as a projection through this trait instead:
 ///
 /// ```text
-/// pub type Ascon_AEAD128<Dir> =
-///     <Dir as Direction>::Select<AsconAead128Encryptor, AsconAead128Decryptor>;
+/// pub type AES_CBC_128<Dir, Pad> = <Dir as Direction>::Select<
+///     PaddedBlockCipherEncryptor<Cbc<AES128Internal, Encrypting, 16, 16>, Pad, 16, 16, 16>,
+///     PaddedBlockCipherDecryptor<Cbc<AES128Internal, Decrypting, 16, 16>, Pad, 16, 16, 16>,
+/// >;
 /// ```
 ///
 /// Sealed: implemented for the two markers and for nothing else, so `Encrypting` and `Decrypting`

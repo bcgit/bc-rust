@@ -10,9 +10,9 @@ bouncycastle-utils.workspace = true
 
 [dev-dependencies]
 bouncycastle-core-test-framework.workspace = true
-criterion.workspace = true
 bouncycastle-hex.workspace = true
 bouncycastle-rng.workspace = true
+criterion.workspace = true
 
 [[bench]]
 name = "sha3_benches"

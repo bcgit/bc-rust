@@ -1,17 +1,50 @@
 //! cSHAKE, the customizable SHAKE of NIST SP 800-185 Sec 3.
 
-use crate::SHAKEParams;
+use crate::keccak::SHA3_FAMILY_STATE_LEN;
 use crate::shake::{SHAKEInternal, SHAKESqueezer};
-use crate::xof_utils::left_encode;
-use bouncycastle_core::errors::HashError;
+use crate::{SHAKE128Params, SHAKE256Params, SHAKEParams};
+use bouncycastle_core::errors::{HashError, SuspendableError};
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::traits::{Algorithm, Hash, XOF, XOFSqueezer};
+use bouncycastle_core::traits::{Algorithm, Hash, Suspendable, XOF, XOFSqueezer};
+use bouncycastle_utils::suspendable_state::{
+    Cursor, CursorMut, LIB_VERSION_LEN, SuspendableComponent, resume_component, suspend_component,
+};
+
+// imports needed for docs
+#[allow(unused_imports)]
+use crate::SHAKE128;
+// end of doc-only imports
+
+/// The name of the cSHAKE128 algorithm (NIST SP 800-185 Sec 3).
+pub const CSHAKE128_NAME: &str = "CSHAKE128";
+/// The name of the cSHAKE256 algorithm (NIST SP 800-185 Sec 3).
+pub const CSHAKE256_NAME: &str = "CSHAKE256";
+
+/// Length in bytes of the suspended state of cSHAKE.
+pub const SUSPENDED_CSHAKE_STATE_LEN: usize = LIB_VERSION_LEN + CSHAKE_COMPONENT_LEN;
+/// Length in bytes of the suspended state of a [`CSHAKESqueezer`].
+pub const SUSPENDED_LENGTH_BOUND_SQUEEZER_STATE_LEN: usize = SUSPENDED_CSHAKE_STATE_LEN;
+/// The cSHAKE state without its version header: the SHA3-family state, then one byte saying
+/// whether `N` or `S` was non-empty. The functions built on cSHAKE write this first, under their
+/// own tag, and their own fields after it.
+pub(crate) const CSHAKE_COMPONENT_LEN: usize = SHA3_FAMILY_STATE_LEN + 1;
 
 /// The domain separator cSHAKE absorbs in place of SHAKE's `1111`: the `00` of SP 800-185 Sec 3.3,
 /// two zero bits, which is what keeps a customized instance separate from plain SHAKE.
 const CSHAKE_SUFFIX: (u8, usize) = (0x00, 2);
 
-/// Internal struct for cSHAKE. Use [`crate::CSHAKE128`] or [`crate::CSHAKE256`].
+/// cSHAKE128: the customizable SHAKE128 of NIST SP 800-185 Sec 3, at a 128-bit security strength.
+///
+/// Construct with [`CSHAKEInternal::new`], passing the function-name string `N` (reserved for
+/// NIST, normally empty) and the customization string `S`. With both empty this is exactly
+/// [`SHAKE128`].
+pub type CSHAKE128 = CSHAKEInternal<SHAKE128Params>;
+/// cSHAKE256: the customizable SHAKE256 of NIST SP 800-185 Sec 3, at a 256-bit security strength.
+///
+/// See [`CSHAKE128`].
+pub type CSHAKE256 = CSHAKEInternal<SHAKE256Params>;
+
+/// Internal struct for cSHAKE.
 ///
 /// cSHAKE is SHAKE with two extra inputs bound to the front of the message: a function-name string
 /// `N`, reserved for NIST, and a customization string `S`, chosen by the caller. SP 800-185 Sec 3.1
@@ -127,6 +160,71 @@ fn absorb_zeros<PARAMS: SHAKEParams>(shake: &mut SHAKEInternal<PARAMS>, mut coun
     }
 }
 
+impl<PARAMS: SHAKEParams> CSHAKEInternal<PARAMS> {
+    /// Writes the state under `tag` into `out`, which is exactly [`CSHAKE_COMPONENT_LEN`] bytes.
+    pub(crate) fn write_tagged(&self, tag: u8, out: &mut [u8]) {
+        let (family, rest) = out.split_at_mut(SHA3_FAMILY_STATE_LEN);
+        self.shake.write_family_state(tag, family);
+        let mut w = CursorMut::new(rest);
+        w.u8(self.customized as u8);
+        debug_assert!(w.is_done());
+    }
+
+    /// The reverse of [`Self::write_tagged`]. A sponge that has begun squeezing is refused: a
+    /// cSHAKE a caller can hold is still absorbing, and the squeezing half is a [`SHAKESqueezer`]
+    /// or a [`CSHAKESqueezer`], which resume their own states.
+    pub(crate) fn read_tagged(state: &[u8], tag: u8) -> Result<Self, SuspendableError> {
+        let (family, rest) = state.split_at(SHA3_FAMILY_STATE_LEN);
+        let shake = SHAKEInternal::read_family_state(family, tag)?;
+        if shake.is_squeezing() {
+            return Err(SuspendableError::InvalidData);
+        }
+        let mut r = Cursor::new(rest);
+        let customized = match r.u8() {
+            0 => false,
+            1 => true,
+            _ => return Err(SuspendableError::InvalidData),
+        };
+        debug_assert!(r.is_done());
+        Ok(Self { shake, customized })
+    }
+
+    /// [`Self::read_tagged`] for the functions built on cSHAKE, whose `N` is never empty: a state
+    /// claiming otherwise is not one they wrote.
+    pub(crate) fn read_tagged_customized(state: &[u8], tag: u8) -> Result<Self, SuspendableError> {
+        let cshake = Self::read_tagged(state, tag)?;
+        if !cshake.customized {
+            return Err(SuspendableError::InvalidData);
+        }
+        Ok(cshake)
+    }
+}
+
+impl<PARAMS: SHAKEParams> SuspendableComponent for CSHAKEInternal<PARAMS> {
+    const STATE_LEN: usize = CSHAKE_COMPONENT_LEN;
+    type Key = ();
+
+    fn write_state(&self, out: &mut [u8]) {
+        self.write_tagged(PARAMS::CSHAKE_STATE_TAG, out)
+    }
+
+    fn read_state(state: &[u8], _key: &()) -> Result<Self, SuspendableError> {
+        Self::read_tagged(state, PARAMS::CSHAKE_STATE_TAG)
+    }
+}
+
+/// The absorbing phase. Once output begins the sponge is a [`SHAKESqueezer`] -- the domain suffix
+/// is in, and nothing cSHAKE-specific remains -- so it suspends and resumes as one.
+impl<PARAMS: SHAKEParams> Suspendable<SUSPENDED_CSHAKE_STATE_LEN> for CSHAKEInternal<PARAMS> {
+    fn suspend(self) -> [u8; SUSPENDED_CSHAKE_STATE_LEN] {
+        suspend_component(&self)
+    }
+
+    fn from_suspended(state: [u8; SUSPENDED_CSHAKE_STATE_LEN]) -> Result<Self, SuspendableError> {
+        resume_component(&state, &())
+    }
+}
+
 impl<PARAMS: SHAKEParams> Default for CSHAKEInternal<PARAMS> {
     /// An uncustomized cSHAKE, which by Sec 3.3 step 1 is plain SHAKE.
     fn default() -> Self {
@@ -165,7 +263,7 @@ impl<PARAMS: SHAKEParams> Hash for CSHAKEInternal<PARAMS> {
     /// same bytes the squeezer produces. What the `Hash` view fixes is how many.
     fn do_final(self) -> Vec<u8> {
         let n = self.output_len();
-        self.into_squeezer().do_final(n)
+        self.into_squeezer().do_output_final(n)
     }
 
     fn do_final_out(self, output: &mut [u8]) -> usize {
@@ -175,7 +273,7 @@ impl<PARAMS: SHAKEParams> Hash for CSHAKEInternal<PARAMS> {
         // XOF spelling, which takes its length from the buffer.
         let written = n.min(output.len());
         output[written..].fill(0);
-        self.into_squeezer().do_final_out(&mut output[..written])
+        self.into_squeezer().do_output_final_out(&mut output[..written])
     }
 
     fn do_final_partial_bits(
@@ -200,7 +298,7 @@ impl<PARAMS: SHAKEParams> Hash for CSHAKEInternal<PARAMS> {
         // The buffer rule of do_final_out applies here too: output_len bytes, then zeros.
         let written = n.min(output.len());
         output[written..].fill(0);
-        Ok(squeezer.do_final_out(&mut output[..written]))
+        Ok(squeezer.do_output_final_out(&mut output[..written]))
     }
 
     fn max_security_strength(&self) -> SecurityStrength {
@@ -231,6 +329,277 @@ impl<PARAMS: SHAKEParams> XOF for CSHAKEInternal<PARAMS> {
             self.shake.into_squeezer_partial_bits_with_suffix(partial_byte, num_bits, suffix, bits)
         } else {
             self.shake.into_squeezer_partial_bits(partial_byte, num_bits)
+        }
+    }
+}
+
+/*** cshake helpers ***/
+/// The widest encoding these functions produce: a length byte plus up to eight value bytes.
+///
+/// SP 800-185 Sec 2.3.1 permits integers up to `2^2040 - 1`, which would need 255 value bytes. A
+/// `u64` covers every length this library can be handed -- an input of `2^64` bits is 2 exabytes --
+/// so the buffer is sized for that rather than for the spec's theoretical maximum.
+pub(crate) const MAX_ENCODED_LEN: usize = 9;
+
+/// `left_encode(x)`: SP 800-185 Sec 2.3.1.
+///
+/// Encodes `value` so that it can be parsed unambiguously *from the beginning*: the number of
+/// value bytes comes first, then the value itself, big-endian. Returns the buffer and how much of
+/// it is used.
+///
+/// The spec's example: `left_encode(0)` is `10000000 00000000`, which in this document's
+/// low-order-bit-first notation is the bytes `01 00`.
+pub(crate) fn left_encode(value: u64) -> ([u8; MAX_ENCODED_LEN], usize) {
+    let mut buf = [0u8; MAX_ENCODED_LEN];
+    // Step 1: n is the smallest positive integer with 2^(8n) > value. Zero still takes one byte,
+    // which is why the count starts at 1 rather than 0.
+    let n = value_bytes(value);
+    buf[0] = n as u8;
+    // Steps 2-4: the base-256 digits of value, most significant first.
+    for i in 0..n {
+        buf[1 + i] = (value >> (8 * (n - 1 - i))) as u8;
+    }
+    (buf, n + 1)
+}
+
+/// `right_encode(x)`: SP 800-185 Sec 2.3.1.
+///
+/// Unused until KMAC and TupleHash land, which bind the requested output length with it.
+///
+/// As [`left_encode`], but the length byte comes *last*, so the encoding can be parsed from the end
+/// of a string. The spec's example: `right_encode(0)` is the bytes `00 01`.
+#[allow(dead_code)] // used by KMAC and TupleHash
+pub(crate) fn right_encode(value: u64) -> ([u8; MAX_ENCODED_LEN], usize) {
+    let mut buf = [0u8; MAX_ENCODED_LEN];
+    let n = value_bytes(value);
+    for i in 0..n {
+        buf[i] = (value >> (8 * (n - 1 - i))) as u8;
+    }
+    buf[n] = n as u8;
+    (buf, n + 1)
+}
+
+/// The number of base-256 digits in `value`: the spec's `n`, the smallest positive integer with
+/// `2^(8n) > value`. Positive, so zero encodes as one byte.
+fn value_bytes(value: u64) -> usize {
+    let mut n = 1;
+    let mut v = value;
+    while {
+        v >>= 8;
+        v != 0
+    } {
+        n += 1;
+    }
+    n
+}
+
+/// The squeezing phase of KMACXOF, TupleHashXOF and ParallelHashXOF, which still has a choice to
+/// make.
+///
+/// Every SP 800-185 function ends its absorbed input with `right_encode(L)`, and the two forms of
+/// each function differ only in what goes in there: the fixed-length KMAC, TupleHash and
+/// ParallelHash of s. 4.3, 5.3 and 6.3 encode the requested output length, and the XOF forms of
+/// s. 4.3.1, 5.3.1 and 6.3.1 encode 0. Nothing else about them differs, so the choice can be left
+/// until the caller says how it wants to read -- which is what this type does:
+///
+/// * [`XOFSqueezer::do_output`] is the XOF reading. It is the caller saying "give me some bytes and
+///   I may be back for more", which only `right_encode(0)` can answer, since a length bound into
+///   the sponge cannot be revised once output has begun.
+/// * [`XOFSqueezer::do_output_final`], as the **first** read, is the fixed-length reading. It is
+///   the caller saying how many bytes it wants and that it will not be back, so `L` is that length
+///   in bits and the result is the fixed-length function of s. 4.3, 5.3 or 6.3 -- the same bytes
+///   `KMAC128(K, X, L, S)` produces, not a truncation of `KMACXOF128`.
+///
+/// The first read commits: the encoding is in the sponge from then on, so a `do_final` that
+/// follows a `do_output` cannot bind anything and simply continues the `right_encode(0)` stream
+/// the earlier read already chose.
+#[derive(Clone)]
+pub struct CSHAKESqueezer<PARAMS: SHAKEParams> {
+    phase: Phase<PARAMS>,
+}
+
+/// Which side of the first read this squeezer is on.
+#[derive(Clone)]
+enum Phase<PARAMS: SHAKEParams> {
+    /// Nothing read yet, so `right_encode(L)` is still the caller's to choose.
+    Unbound(CSHAKEInternal<PARAMS>),
+    /// The encoding has been absorbed and the sponge is producing output.
+    Squeezing(SHAKESqueezer<PARAMS>),
+    /// Never observed: [`CSHAKESqueezer::read`] leaves this here only while the value moves
+    /// from one of the phases above to the other.
+    Binding,
+}
+
+impl<PARAMS: SHAKEParams> CSHAKESqueezer<PARAMS> {
+    /// Wraps a cSHAKE with everything but its `right_encode(L)` absorbed.
+    pub(crate) fn new(cshake: CSHAKEInternal<PARAMS>) -> Self {
+        Self { phase: Phase::Unbound(cshake) }
+    }
+
+    /// [`XOFSqueezer::do_output_final_out`] with `L` given rather than taken from the buffer.
+    ///
+    /// For the `Hash` view of these functions, whose length is fixed by the type: it binds the
+    /// nominal output length and then writes as much of it as the caller's buffer has room for,
+    /// which is what [`Hash::do_final_out`] promises. Going through
+    /// [`XOFSqueezer::do_output_final_out`] would bind the buffer's length instead, and a short
+    /// buffer would then compute a different function rather than truncating this one.
+    pub(crate) fn do_final_out_with_length(mut self, length_bits: u64, output: &mut [u8]) -> usize {
+        self.read(length_bits, output)
+    }
+
+    /// Fills `output` from the stream, absorbing `right_encode(length_bits)` first if this is the
+    /// first read. `output` is zeroized before anything is written to it.
+    fn read(&mut self, length_bits: u64, output: &mut [u8]) -> usize {
+        self.phase = match core::mem::replace(&mut self.phase, Phase::Binding) {
+            Phase::Unbound(mut cshake) => {
+                let (buf, len) = right_encode(length_bits);
+                cshake.do_update(&buf[..len]);
+                Phase::Squeezing(cshake.into_squeezer())
+            }
+            // An earlier read chose the encoding; this one continues that stream.
+            committed => committed,
+        };
+        match &mut self.phase {
+            Phase::Squeezing(squeezer) => squeezer.do_output_out(output),
+            // The match above turns `Unbound` into `Squeezing` and puts `Binding` back as it found
+            // it, so neither can be live here.
+            _ => unreachable!("the first read always leaves the squeezing phase"),
+        }
+    }
+}
+
+/// Both phases suspend. The sponge's own phase flag records which, so the state is the cSHAKE
+/// layout under one tag, and a resumed `Unbound` squeezer still has its first read to make.
+impl<PARAMS: SHAKEParams> SuspendableComponent for CSHAKESqueezer<PARAMS> {
+    const STATE_LEN: usize = CSHAKE_COMPONENT_LEN;
+    type Key = ();
+
+    fn write_state(&self, out: &mut [u8]) {
+        let tag = PARAMS::LENGTH_BOUND_SQUEEZER_STATE_TAG;
+        match &self.phase {
+            Phase::Unbound(cshake) => cshake.write_tagged(tag, out),
+            Phase::Squeezing(squeezer) => {
+                let (family, rest) = out.split_at_mut(SHA3_FAMILY_STATE_LEN);
+                squeezer.write_family_state(tag, family);
+                // Every function that reaches this squeezer has a non-empty N.
+                let mut w = CursorMut::new(rest);
+                w.u8(1);
+                debug_assert!(w.is_done());
+            }
+            Phase::Binding => unreachable!("Binding is never live outside `read`"),
+        }
+    }
+
+    fn read_state(state: &[u8], _key: &()) -> Result<Self, SuspendableError> {
+        let (family, rest) = state.split_at(SHA3_FAMILY_STATE_LEN);
+        let shake = SHAKEInternal::<PARAMS>::read_family_state(
+            family,
+            PARAMS::LENGTH_BOUND_SQUEEZER_STATE_TAG,
+        )?;
+        let mut r = Cursor::new(rest);
+        if r.u8() != 1 {
+            return Err(SuspendableError::InvalidData);
+        }
+        debug_assert!(r.is_done());
+        let phase = if shake.is_squeezing() {
+            Phase::Squeezing(SHAKESqueezer::from_squeezing(shake))
+        } else {
+            Phase::Unbound(CSHAKEInternal { shake, customized: true })
+        };
+        Ok(Self { phase })
+    }
+}
+
+impl<PARAMS: SHAKEParams> Suspendable<SUSPENDED_LENGTH_BOUND_SQUEEZER_STATE_LEN>
+    for CSHAKESqueezer<PARAMS>
+{
+    fn suspend(self) -> [u8; SUSPENDED_LENGTH_BOUND_SQUEEZER_STATE_LEN] {
+        suspend_component(&self)
+    }
+
+    fn from_suspended(
+        state: [u8; SUSPENDED_LENGTH_BOUND_SQUEEZER_STATE_LEN],
+    ) -> Result<Self, SuspendableError> {
+        resume_component(&state, &())
+    }
+}
+
+impl<PARAMS: SHAKEParams> XOFSqueezer for CSHAKESqueezer<PARAMS> {
+    fn do_output(&mut self, num_bytes: usize) -> Vec<u8> {
+        let mut out = vec![0u8; num_bytes];
+        self.do_output_out(&mut out);
+        out
+    }
+
+    /// Reading as a XOF, so `right_encode(0)` if this is the first read (s. 4.3.1, 5.3.1, 6.3.1).
+    fn do_output_out(&mut self, output: &mut [u8]) -> usize {
+        self.read(0, output)
+    }
+
+    fn do_output_final(self, num_bytes: usize) -> Vec<u8> {
+        let mut out = vec![0u8; num_bytes];
+        self.do_output_final_out(&mut out);
+        out
+    }
+
+    /// The last read, so if it is also the first, `L` is its length in bits and this is the
+    /// fixed-length function of s. 4.3, 5.3 or 6.3. After a [`XOFSqueezer::do_output`] the encoding
+    /// is already in the sponge and this just continues that stream.
+    fn do_output_final_out(mut self, output: &mut [u8]) -> usize {
+        self.read((output.len() as u64) * 8, output)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The two worked examples in SP 800-185 Sec 2.3.1, in the byte spelling of Sec 2
+    /// ("bytes are written with the low-order bit first" in binary, high-order digit first in hex).
+    #[test]
+    fn spec_examples() {
+        let (b, n) = right_encode(0);
+        assert_eq!(&b[..n], &[0x00, 0x01], "right_encode(0) = 00000000 10000000");
+
+        let (b, n) = left_encode(0);
+        assert_eq!(&b[..n], &[0x01, 0x00], "left_encode(0) = 10000000 00000000");
+    }
+
+    /// The encodings that appear in the NIST cSHAKE sample file: `left_encode(168)` opens the
+    /// bytepad block, and `left_encode(120)` prefixes the 15-character "Email Signature".
+    #[test]
+    fn cshake_sample_encodings() {
+        let (b, n) = left_encode(168);
+        assert_eq!(&b[..n], &[0x01, 0xA8], "left_encode(168), the cSHAKE128 rate");
+
+        let (b, n) = left_encode(120);
+        assert_eq!(&b[..n], &[0x01, 0x78], "left_encode(15 * 8), for \"Email Signature\"");
+    }
+
+    /// The length byte grows with the value, and the value is big-endian after it.
+    #[test]
+    fn multi_byte_values() {
+        let (b, n) = left_encode(0x0100);
+        assert_eq!(&b[..n], &[0x02, 0x01, 0x00]);
+        let (b, n) = right_encode(0x0100);
+        assert_eq!(&b[..n], &[0x01, 0x00, 0x02]);
+
+        let (b, n) = left_encode(u64::MAX);
+        assert_eq!(&b[..n], &[0x08, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF]);
+        let (b, n) = right_encode(u64::MAX);
+        assert_eq!(&b[..n], &[0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0x08]);
+    }
+
+    /// Every boundary where the number of value bytes increases.
+    #[test]
+    fn byte_count_boundaries() {
+        for n in 1..=8u32 {
+            let just_under = if n == 8 { u64::MAX } else { (1u64 << (8 * n)) - 1 };
+            assert_eq!(left_encode(just_under).1, n as usize + 1, "2^{} - 1", 8 * n);
+            assert_eq!(right_encode(just_under).1, n as usize + 1, "2^{} - 1", 8 * n);
+            if n < 8 {
+                assert_eq!(left_encode(1u64 << (8 * n)).1, n as usize + 2, "2^{}", 8 * n);
+            }
         }
     }
 }

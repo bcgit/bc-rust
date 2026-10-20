@@ -18,43 +18,44 @@ type ToyCbc<Dir> = Cbc<Toy, Dir, TOY_LEN, TOY_LEN>;
 type SwappedCbc<Dir> = Cbc<SwappedPairToy, Dir, TOY_LEN, TOY_LEN>;
 type SwappedFourCbc<Dir> = Cbc<SwappedFourToy, Dir, TOY_LEN, TOY_LEN>;
 
-/// The implementor hook `do_encrypt_blocks`, by value, for tests whose data is block-shaped.
+/// The implementor hook `do_encrypt_blocks_inplace`, by value, for tests whose data is
+/// block-shaped.
 fn enc_blocks<const N: usize>(
     enc: &mut impl BlockCipherEncryptor<TOY_LEN, TOY_LEN, TOY_LEN>,
     plaintext: &[[u8; TOY_LEN]; N],
 ) -> [[u8; TOY_LEN]; N] {
     let mut blocks = *plaintext;
-    enc.do_encrypt_blocks(&mut blocks).unwrap();
+    enc.do_encrypt_blocks_inplace(&mut blocks).unwrap();
     blocks
 }
 
-/// The implementor hook `do_decrypt_blocks`, by value.
+/// The implementor hook `do_decrypt_blocks_inplace`, by value.
 fn dec_blocks<const N: usize>(
     dec: &mut impl BlockCipherDecryptor<TOY_LEN, TOY_LEN, TOY_LEN>,
     ciphertext: &[[u8; TOY_LEN]; N],
 ) -> [[u8; TOY_LEN]; N] {
     let mut blocks = *ciphertext;
-    dec.do_decrypt_blocks(&mut blocks).unwrap();
+    dec.do_decrypt_blocks_inplace(&mut blocks).unwrap();
     blocks
 }
 
-/// The flat streaming method `do_encrypt`, by value.
+/// The flat streaming method `do_encrypt_inplace`, by value.
 fn enc_flat<const LEN: usize>(
     enc: &mut impl BlockCipherEncryptor<TOY_LEN, TOY_LEN, TOY_LEN>,
     plaintext: &[u8; LEN],
 ) -> [u8; LEN] {
     let mut data = *plaintext;
-    enc.do_encrypt(&mut data).unwrap();
+    enc.do_encrypt_inplace(&mut data).unwrap();
     data
 }
 
-/// The flat streaming method `do_decrypt`, by value.
+/// The flat streaming method `do_decrypt_inplace`, by value.
 fn dec_flat<const LEN: usize>(
     dec: &mut impl BlockCipherDecryptor<TOY_LEN, TOY_LEN, TOY_LEN>,
     ciphertext: &[u8; LEN],
 ) -> [u8; LEN] {
     let mut data = *ciphertext;
-    dec.do_decrypt(&mut data).unwrap();
+    dec.do_decrypt_inplace(&mut data).unwrap();
     data
 }
 
@@ -150,7 +151,7 @@ fn call_grouping_does_not_change_the_result() {
     assert_eq!(five, [plaintext[3], plaintext[4], plaintext[5], plaintext[6], plaintext[7]]);
 }
 
-/// The pair path in `do_decrypt_blocks` must actually be taken.
+/// The pair path in `do_decrypt_blocks_inplace` must actually be taken.
 ///
 /// [`SwappedPairToy`] returns its two pair results in the wrong order while its single-block
 /// methods are correct. So a CBC decryptor that uses `decrypt_2blocks` gives the wrong answer for
@@ -186,7 +187,8 @@ fn the_pair_path_is_really_used() {
     assert_eq!([p0, p1], plaintext, "the single-block path must not pair");
 }
 
-/// The four-block path in `do_decrypt_blocks` must actually be taken, and only for full fours.
+/// The four-block path in `do_decrypt_blocks_inplace` must actually be taken, and only for full
+/// fours.
 ///
 /// [`SwappedFourToy`] returns its four results rotated while its pair and single-block methods
 /// are correct. So a CBC decryptor that uses `decrypt_4blocks` gives the wrong answer for four
@@ -335,9 +337,9 @@ fn identical_plaintext_gives_different_ciphertext() {
     let plaintext = [0x77u8; 2 * TOY_LEN];
 
     let mut first = plaintext;
-    ToyCbc::<Encrypting>::encrypt_in_place(&key, &mut first).unwrap();
+    ToyCbc::<Encrypting>::encrypt_inplace(&key, &mut first).unwrap();
     let mut second = plaintext;
-    ToyCbc::<Encrypting>::encrypt_in_place(&key, &mut second).unwrap();
+    ToyCbc::<Encrypting>::encrypt_inplace(&key, &mut second).unwrap();
     assert_ne!(first, second);
 
     // ...and, within one message, two identical plaintext blocks must not give identical
@@ -379,10 +381,10 @@ fn one_shots_agree_with_the_streaming_api() {
     };
     let mut buf = flat3;
     let (_, iv_b) =
-        ToyCbc::<Encrypting>::encrypt_in_place_rng(&key, &mut pinned_rng(), &mut buf).unwrap();
+        ToyCbc::<Encrypting>::encrypt_rng_inplace(&key, &mut pinned_rng(), &mut buf).unwrap();
     assert_eq!(iv_a, iv_b);
     assert_eq!(buf, *ct_blocks.as_flattened(), "3 blocks: one-shot must equal streaming");
-    ToyCbc::<Decrypting>::decrypt_in_place(&key, &iv, &mut buf).unwrap();
+    ToyCbc::<Decrypting>::decrypt_inplace(&key, &iv, &mut buf).unwrap();
     assert_eq!(buf, flat3);
 
     // 4 blocks = 64 bytes: pairs only, no tail.
@@ -395,15 +397,15 @@ fn one_shots_agree_with_the_streaming_api() {
         enc_blocks(&mut enc, &blocks4)
     };
     let mut buf = flat4;
-    ToyCbc::<Encrypting>::encrypt_in_place_rng(&key, &mut pinned_rng(), &mut buf).unwrap();
+    ToyCbc::<Encrypting>::encrypt_rng_inplace(&key, &mut pinned_rng(), &mut buf).unwrap();
     assert_eq!(buf, *ct_blocks.as_flattened(), "4 blocks: one-shot must equal streaming");
-    ToyCbc::<Decrypting>::decrypt_in_place(&key, &iv, &mut buf).unwrap();
+    ToyCbc::<Decrypting>::decrypt_inplace(&key, &iv, &mut buf).unwrap();
     assert_eq!(buf, flat4);
 
     // The OS-RNG variant round-trips too.
     let mut buf = flat3;
-    let (_, iv_fresh) = ToyCbc::<Encrypting>::encrypt_in_place(&key, &mut buf).unwrap();
+    let (_, iv_fresh) = ToyCbc::<Encrypting>::encrypt_inplace(&key, &mut buf).unwrap();
     assert_ne!(buf, flat3);
-    ToyCbc::<Decrypting>::decrypt_in_place(&key, &iv_fresh, &mut buf).unwrap();
+    ToyCbc::<Decrypting>::decrypt_inplace(&key, &iv_fresh, &mut buf).unwrap();
     assert_eq!(buf, flat3);
 }

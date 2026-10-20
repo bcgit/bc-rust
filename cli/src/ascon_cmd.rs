@@ -1,12 +1,11 @@
 use std::io::{self, Read};
 use std::process::exit;
 
-use bouncycastle::ascon::ascon_aead128::{
-    AsconAead128, AsconAead128Decryptor, AsconAead128Encryptor,
-};
-use bouncycastle::ascon::ascon_cxof128::AsconCXof128;
-use bouncycastle::ascon::ascon_hash256::AsconHash256;
-use bouncycastle::ascon::ascon_xof128::AsconXof128;
+use bouncycastle::ascon::Ascon_AEAD128;
+use bouncycastle::ascon::AsconCXof128;
+use bouncycastle::ascon::AsconHash256;
+use bouncycastle::ascon::AsconXof128;
+use bouncycastle::cipher::{Decrypting, Encrypting};
 use bouncycastle::core::errors::SymmetricCipherError;
 use bouncycastle::core::hazmat::do_hazardous_operations;
 use bouncycastle::core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
@@ -143,23 +142,22 @@ pub(crate) fn aead128_cmd(
     }
 }
 
-/// Generated-nonce encryption: drives [`AsconAead128Encryptor`] in the inline `ciphertext || tag`
-/// layout (the inherited [`SymmetricCipherEncryptor::do_final_out`]), writing the nonce it
-/// generated ahead of the stream.
-/// With an explicit nonce there is no nonce to write, so that case goes to
-/// [`aead128_encrypt_stream_with_explicit_nonce`] instead.
+/// Drives [`Ascon_AEAD128<Encrypting>`] in the inline `ciphertext || tag` layout (the inherited
+/// [`SymmetricCipherEncryptor::do_encrypt_final_out`]). With no nonce given one is generated and
+/// written ahead of the stream; a caller-supplied nonce is not written, since the caller has it.
 fn aead128_encrypt_stream(
     key: &KeyMaterial<16>,
     nonce: Option<&[u8; 16]>,
     ad_opt: Option<&[u8]>,
     output_hex: bool,
 ) {
-    if let Some(nonce) = nonce {
-        aead128_encrypt_stream_with_explicit_nonce(key, nonce, ad_opt, output_hex);
-        return;
-    }
-
-    let (mut cipher, nonce) = AsconAead128Encryptor::do_encrypt_init(key).unwrap_or_else(|e| {
+    let start = match nonce {
+        Some(nonce) => {
+            Ascon_AEAD128::<Encrypting>::do_encrypt_init_nonce(key, nonce).map(|c| (c, None))
+        }
+        None => Ascon_AEAD128::<Encrypting>::do_encrypt_init(key).map(|(c, n)| (c, Some(n))),
+    };
+    let (mut cipher, generated_nonce) = start.unwrap_or_else(|e| {
         eprintln!("Error: couldn't start encryption: {e:?}");
         exit(-1);
     });
@@ -169,7 +167,9 @@ fn aead128_encrypt_stream(
         cipher.do_update_aad(ad).unwrap();
     }
 
-    helpers::write_bytes_or_hex(&nonce, output_hex);
+    if let Some(nonce) = generated_nonce {
+        helpers::write_bytes_or_hex(&nonce, output_hex);
+    }
 
     let mut buf = [0u8; 1024];
     loop {
@@ -185,47 +185,17 @@ fn aead128_encrypt_stream(
     }
     // infallible: Ascon-AEAD128 holds nothing back, so the inline final is only the 16-byte tag.
     let mut tail = [0u8; 16];
-    let tail_len = cipher.do_final_out(&mut tail).unwrap();
+    let tail_len = cipher.do_encrypt_final_out(&mut tail).unwrap();
     helpers::write_bytes_or_hex(&tail[..tail_len], output_hex);
     if output_hex {
         crate::helpers::write_stdout(b"\n");
     }
 }
 
-/// Encryption under a caller-supplied nonce, which nothing is written to the stream for. This
-/// drives the inherent [`AsconAead128`] API rather than the `AEADCipherEncryptor` pair because the
-/// pair generates its own nonce by construction -- `do_encrypt_init` owns that choice, which is
-/// the point of the trait -- and has no caller-supplied-nonce constructor to call here.
-fn aead128_encrypt_stream_with_explicit_nonce(
-    key: &KeyMaterial<16>,
-    nonce: &[u8; 16],
-    ad_opt: Option<&[u8]>,
-    output_hex: bool,
-) {
-    let mut cipher = AsconAead128::new_encrypting(key, nonce, ad_opt).unwrap_or_else(|e| {
-        eprintln!("Error: couldn't start encryption: {e:?}");
-        exit(-1);
-    });
-    let mut buf = [0u8; 1024];
-    loop {
-        let n = io::stdin().read(&mut buf).expect("Failed to read from stdin");
-        if n == 0 {
-            break;
-        }
-        cipher.do_encrypt_update(&mut buf[..n]);
-        helpers::write_bytes_or_hex(&buf[..n], output_hex);
-    }
-    let tag = cipher.do_encrypt_final();
-    helpers::write_bytes_or_hex(&tag, output_hex);
-    if output_hex {
-        crate::helpers::write_stdout(b"\n");
-    }
-}
-
 /// Decrypts a stream whose final 16 bytes are the tag, which is only known once EOF is reached.
-/// [`AsconAead128Decryptor`] holds the last 16 bytes it has seen back itself, releasing everything
+/// [`Ascon_AEAD128<Decrypting>`] holds the last 16 bytes it has seen back itself, releasing everything
 /// before them as soon as it is known not to be part of the tag; at EOF
-/// [`SymmetricCipherDecryptor::do_final`] checks what it held back as the tag.
+/// [`SymmetricCipherDecryptor::do_decrypt_final`] checks what it held back as the tag.
 fn aead128_decrypt_stream(
     key: &KeyMaterial<16>,
     nonce: Option<&[u8; 16]>,
@@ -248,10 +218,11 @@ fn aead128_decrypt_stream(
         }
     };
 
-    let mut cipher = AsconAead128Decryptor::do_decrypt_init(key, &nonce).unwrap_or_else(|e| {
-        eprintln!("Error: couldn't start decryption: {e:?}");
-        exit(-1);
-    });
+    let mut cipher =
+        Ascon_AEAD128::<Decrypting>::do_decrypt_init(key, &nonce).unwrap_or_else(|e| {
+            eprintln!("Error: couldn't start decryption: {e:?}");
+            exit(-1);
+        });
     if let Some(ad) = ad_opt {
         // infallible: as on the encrypt side, no ciphertext has been fed in yet.
         cipher.do_update_aad(ad).unwrap();
@@ -270,7 +241,7 @@ fn aead128_decrypt_stream(
         helpers::write_bytes_or_hex(&out[..written], output_hex);
     }
 
-    match cipher.do_final() {
+    match cipher.do_decrypt_final() {
         Ok((last, last_len)) => {
             helpers::write_bytes_or_hex(&last[..last_len], output_hex);
             if output_hex {

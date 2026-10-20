@@ -27,6 +27,10 @@ name = "pkcs7_tests"
 path = "tests/padding/pkcs7_tests.rs"
 
 [[test]]
+name = "alg_name_tests"
+path = "tests/modes/alg_name_tests.rs"
+
+[[test]]
 name = "cbc_tests"
 path = "tests/modes/cbc_tests.rs"
 

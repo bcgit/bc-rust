@@ -48,11 +48,11 @@ mod hash_mldsa_tests {
         let (_pk, sk) = HashMLDSA44_with_SHA256::keygen().unwrap();
 
         // ctx with len 255 works
-        HashMLDSA44_with_SHA256::sign_init(&sk, Some(&[1u8; 255])).unwrap();
+        HashMLDSA44_with_SHA256::do_sign_init(&sk, Some(&[1u8; 255])).unwrap();
 
         // ctx with len 256 is too long
         let too_long_ctx = [1u8; 256];
-        match HashMLDSA44_with_SHA256::sign_init(&sk, Some(&too_long_ctx)) {
+        match HashMLDSA44_with_SHA256::do_sign_init(&sk, Some(&too_long_ctx)) {
             Err(SignatureError::LengthError(_)) => { /* good */ }
             _ => panic!("Expected error for ctx too long"),
         }
@@ -255,23 +255,23 @@ mod hash_mldsa_tests {
         // END expected values
 
         // test the streaming API from sk
-        let mut s = HashMLDSA44_with_SHA512::sign_init(&expected_sk, ctx).unwrap();
+        let mut s = HashMLDSA44_with_SHA512::do_sign_init(&expected_sk, ctx).unwrap();
         s.set_signer_rnd(rnd);
-        s.sign_update(msg);
-        let sig = s.sign_final().unwrap();
+        s.do_sign_update(msg);
+        let sig = s.do_sign_final().unwrap();
         assert_eq!(&sig, &expected_sig);
 
         // test the streaming API from seed
         let mut s = HashMLDSA44_with_SHA512::sign_init_from_seed(&seed, ctx).unwrap();
         s.set_signer_rnd(rnd);
-        s.sign_update(msg);
-        let sig = s.sign_final().unwrap();
+        s.do_sign_update(msg);
+        let sig = s.do_sign_final().unwrap();
         assert_eq!(&sig, &expected_sig);
 
         // test the streaming verifier
-        let mut v = HashMLDSA44_with_SHA512::verify_init(&expected_pk, ctx).unwrap();
-        v.verify_update(msg);
-        v.verify_final(&expected_sig).unwrap();
+        let mut v = HashMLDSA44_with_SHA512::do_verify_init(&expected_pk, ctx).unwrap();
+        v.do_verify_update(msg);
+        v.do_verify_final(&expected_sig).unwrap();
     }
 
     #[test]

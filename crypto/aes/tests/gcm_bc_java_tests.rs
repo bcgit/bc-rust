@@ -11,6 +11,7 @@
 
 use bouncycastle_aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
 use bouncycastle_cipher::modes::Gcm;
+use bouncycastle_cipher::modes::ModeNames;
 use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::traits::{AEADCipherDecryptor, AEADCipherEncryptor};
@@ -181,7 +182,7 @@ fn cases() -> Vec<Case> {
 
 fn run<P, const KEY_LEN: usize>(case: &Case)
 where
-    P: bouncycastle_core::hazmat::ElectronicCodeBook<KEY_LEN, 16>,
+    P: bouncycastle_core::hazmat::ElectronicCodeBook<KEY_LEN, 16> + ModeNames,
 {
     let key_bytes = hex::decode(&case.key).expect("valid hex key");
     // `KeyMaterial` tags an all-zero buffer as `KeyType::Zeroized` regardless of the type
@@ -208,7 +209,7 @@ where
     let expected_tag = hex::decode(case.tag).expect("valid hex tag");
 
     let mut data = vec![0u8; pt.len()];
-    let (got_iv, _, tag) = Gcm::<P, Encrypting, KEY_LEN, 16>::encrypt_detached_out_rng(
+    let (got_iv, _, tag) = Gcm::<P, Encrypting, KEY_LEN, 16>::encrypt_detached_rng_out(
         &key,
         &mut FixedSeedRNG::<12>::new(iv),
         &aad,

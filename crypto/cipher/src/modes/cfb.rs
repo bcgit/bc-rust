@@ -55,7 +55,8 @@
 //! as long as the plaintext:
 //!
 //! ```
-//! use bouncycastle_core_test_framework::ToyBlockCipher;
+//! # mod toy { include!("../../tests/common/toy_block_cipher.rs"); }
+//! # use toy::ToyBlockCipher;
 //! use bouncycastle_core::key_material::{KeyMaterial128, KeyType};
 //! use bouncycastle_core::traits::{StreamCipherDecryptor, StreamCipherEncryptor};
 //! use bouncycastle_cipher::modes::{Cfb, Cfb8};
@@ -71,19 +72,20 @@
 //! let plaintext = b"the quick brown fox!!";
 //! let mut data = *plaintext;
 //!
-//! let (bytes_written, iv) = ToyCfb::<Encrypting>::encrypt_in_place(&key, &mut data).expect("encryption");
+//! let (bytes_written, iv) = ToyCfb::<Encrypting>::encrypt_inplace(&key, &mut data).expect("encryption");
 //! assert_eq!(bytes_written, plaintext.len());
 //!
 //! // `data` now contains the ciphertext
 //!
-//! ToyCfb::<Decrypting>::decrypt_in_place(&key, &iv, &mut data).expect("decryption");
+//! ToyCfb::<Decrypting>::decrypt_inplace(&key, &iv, &mut data).expect("decryption");
 //! assert_eq!(data, *b"the quick brown fox!!");
 //! ```
 //!
 //! Streaming works with chunks of any size:
 //!
 //! ```
-//! use bouncycastle_core_test_framework::ToyBlockCipher;
+//! # mod toy { include!("../../tests/common/toy_block_cipher.rs"); }
+//! # use toy::ToyBlockCipher;
 //! use bouncycastle_core::key_material::{KeyMaterial128, KeyType};
 //! use bouncycastle_core::traits::{
 //!     StreamCipherDecryptor, StreamCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor
@@ -101,16 +103,16 @@
 //!
 //! // Just to prove that this can handle arbitrary sizes, we'll feed in
 //! //  7 bytes, then 33: neither is a whole block.
-//! let bytes_written = encryptor.do_encrypt(&mut data[..7]).expect("first chunk");
+//! let bytes_written = encryptor.do_encrypt_inplace(&mut data[..7]).expect("first chunk");
 //! assert_eq!(bytes_written, 7);
 //!
-//! let bytes_written = encryptor.do_encrypt(&mut data[7..]).expect("the rest");
+//! let bytes_written = encryptor.do_encrypt_inplace(&mut data[7..]).expect("the rest");
 //! assert_eq!(bytes_written, 33);
 //!
 //! // Decrypting in a different chunking must also agree.
 //! let mut decryptor = ToyCfb::<Decrypting>::do_decrypt_init(&key, &iv).expect("init");
-//! decryptor.do_decrypt(&mut data[..19]).expect("first chunk");
-//! decryptor.do_decrypt(&mut data[19..]).expect("the rest");
+//! decryptor.do_decrypt_inplace(&mut data[..19]).expect("first chunk");
+//! decryptor.do_decrypt_inplace(&mut data[19..]).expect("the rest");
 //! assert_eq!(data, [0x5Au8; 40]);
 //! ```
 //!
@@ -167,12 +169,13 @@
 //! This reinforces the general advice to always generate cryptographically random IVs unique for
 //! each encryption operation.
 
+use crate::modes::ModeNames;
 use crate::modes::iv::random_iv;
 use crate::stream::{stream_do_final, stream_update_out};
 use crate::{Decrypting, Encrypting};
 use bouncycastle_core::errors::{SuspendableError, SymmetricCipherError};
 use bouncycastle_core::hazmat::ElectronicCodeBook;
-use bouncycastle_core::key_material::KeyMaterial;
+use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{
     Algorithm, RNG, StreamCipherDecryptor, StreamCipherEncryptor, SuspendableKeyed,
@@ -206,7 +209,7 @@ use crate::modes::cfb8;
 #[derive(Clone)]
 pub struct Cfb<P, Dir, const KEY_LEN: usize, const BLOCK_LEN: usize>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
 {
     perm: P,
     /// `buf[..used]` is the ciphertext of the current segment so far, i.e. the head of `I_{j+1}`;
@@ -232,7 +235,7 @@ where
 
 impl<P, Dir, const KEY_LEN: usize, const BLOCK_LEN: usize> Cfb<P, Dir, KEY_LEN, BLOCK_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
 {
     /// The `N` of this type's [`SuspendableKeyed<N>`] impl: the version header, the segment
     /// buffer and the `used` count as a `u64`. See [`bouncycastle_utils::suspendable_state`].
@@ -388,11 +391,10 @@ where
 impl<P, Dir, const KEY_LEN: usize, const BLOCK_LEN: usize> Algorithm
     for Cfb<P, Dir, KEY_LEN, BLOCK_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
 {
-    /// The underlying permutation's name. The mode is not appended: `&'static str`s cannot be
-    /// concatenated in a `const`, and the mode is already in the type.
-    const ALG_NAME: &'static str = P::ALG_NAME;
+    /// The permutation's name for this mode, [`ModeNames::CFB_ALG_NAME`].
+    const ALG_NAME: &'static str = P::CFB_ALG_NAME;
     /// A mode does not change the strength of the underlying cipher.
     const MAX_SECURITY_STRENGTH: SecurityStrength = P::MAX_SECURITY_STRENGTH;
 }
@@ -400,7 +402,7 @@ where
 impl<P, const KEY_LEN: usize, const BLOCK_LEN: usize>
     SymmetricCipherEncryptor<KEY_LEN, BLOCK_LEN, 0> for Cfb<P, Encrypting, KEY_LEN, BLOCK_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
 {
     /// Begins an encryption flow, generating the IV from the library's default OS-backed DRBG.
     fn do_encrypt_init(
@@ -415,6 +417,7 @@ where
         key: &KeyMaterial<KEY_LEN>,
         rng: &mut dyn RNG,
     ) -> Result<(Self, [u8; BLOCK_LEN]), SymmetricCipherError> {
+        key.check_algorithm(Self::ALG_NAME)?;
         let perm = P::new(key)?;
         // `I1 = IV`.
         let iv = random_iv::<BLOCK_LEN>(rng)?;
@@ -432,11 +435,12 @@ where
         plaintext: &[u8],
         ciphertext: &mut [u8],
     ) -> Result<usize, SymmetricCipherError> {
-        stream_update_out(plaintext, ciphertext, |data| self.do_encrypt(data))
+        ciphertext.fill(0);
+        stream_update_out(plaintext, ciphertext, |data| self.do_encrypt_inplace(data))
     }
 
     /// See [`stream_do_final`].
-    fn do_final(self) -> Result<([u8; 0], usize), SymmetricCipherError> {
+    fn do_encrypt_final(self) -> Result<([u8; 0], usize), SymmetricCipherError> {
         stream_do_final()
     }
 
@@ -449,7 +453,7 @@ where
 impl<P, const KEY_LEN: usize, const BLOCK_LEN: usize> StreamCipherEncryptor<KEY_LEN, BLOCK_LEN>
     for Cfb<P, Encrypting, KEY_LEN, BLOCK_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
 {
     /// Encrypts `data`, of any length, in place.
     ///
@@ -459,7 +463,7 @@ where
     /// module docs. Never fails: CFB has no per-IV data limit.
     ///
     /// Infallible -- cannot produce an error.
-    fn do_encrypt(&mut self, data: &mut [u8]) -> Result<usize, SymmetricCipherError> {
+    fn do_encrypt_inplace(&mut self, data: &mut [u8]) -> Result<usize, SymmetricCipherError> {
         let len = data.len();
         let (head, blocks, tail) = self.split(data);
         self.encrypt_bytes(head);
@@ -474,7 +478,7 @@ where
 impl<P, const KEY_LEN: usize, const BLOCK_LEN: usize>
     SymmetricCipherDecryptor<KEY_LEN, BLOCK_LEN, 0> for Cfb<P, Decrypting, KEY_LEN, BLOCK_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
 {
     /// Begins a decryption flow from the IV returned by
     /// [`SymmetricCipherEncryptor::do_encrypt_init`].
@@ -482,6 +486,7 @@ where
         key: &KeyMaterial<KEY_LEN>,
         init_data: &[u8; BLOCK_LEN],
     ) -> Result<Self, SymmetricCipherError> {
+        key.check_algorithm(Self::ALG_NAME)?;
         let perm = P::new(key)?;
         // `I1 = IV`, exactly as on the encrypt side.
         Ok(Self::start(perm, *init_data))
@@ -498,16 +503,17 @@ where
         ciphertext: &[u8],
         plaintext: &mut [u8],
     ) -> Result<usize, SymmetricCipherError> {
-        stream_update_out(ciphertext, plaintext, |data| self.do_decrypt(data))
+        plaintext.fill(0);
+        stream_update_out(ciphertext, plaintext, |data| self.do_decrypt_inplace(data))
     }
 
     /// See [`stream_do_final`].
-    fn do_final(self) -> Result<([u8; 0], usize), SymmetricCipherError> {
+    fn do_decrypt_final(self) -> Result<([u8; 0], usize), SymmetricCipherError> {
         stream_do_final()
     }
 
     /// Exact rather than an upper bound: a stream cipher never changes the length of its data.
-    fn decrypt_out_max_len(ciphertext_len: usize) -> usize {
+    fn decrypt_out_len(ciphertext_len: usize) -> usize {
         ciphertext_len
     }
 }
@@ -515,7 +521,7 @@ where
 impl<P, const KEY_LEN: usize, const BLOCK_LEN: usize> StreamCipherDecryptor<KEY_LEN, BLOCK_LEN>
     for Cfb<P, Decrypting, KEY_LEN, BLOCK_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
 {
     /// Decrypts `data`, of any length, in place.
     ///
@@ -524,7 +530,7 @@ where
     /// `as_chunks_mut` splits into exactly those shapes with no runtime length check and no
     /// indexing arithmetic. The bytes that complete an open segment, and the final short segment,
     /// go singly. Never fails: CFB has no per-IV data limit.
-    fn do_decrypt(&mut self, data: &mut [u8]) -> Result<usize, SymmetricCipherError> {
+    fn do_decrypt_inplace(&mut self, data: &mut [u8]) -> Result<usize, SymmetricCipherError> {
         let len = data.len();
         let (head, blocks, tail) = self.split(data);
         self.decrypt_bytes(head);
@@ -550,7 +556,7 @@ where
 impl<P, Dir, const KEY_LEN: usize, const BLOCK_LEN: usize> SuspendableComponent
     for Cfb<P, Dir, KEY_LEN, BLOCK_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
 {
     const STATE_LEN: usize = BLOCK_LEN + 8;
     type Key = KeyMaterial<KEY_LEN>;
@@ -563,6 +569,7 @@ where
     }
 
     fn read_state(state: &[u8], key: &Self::Key) -> Result<Self, SuspendableError> {
+        key.check_algorithm(Self::ALG_NAME).map_err(|_| SuspendableError::InvalidData)?;
         let perm = P::new(key).map_err(|_| SuspendableError::InvalidData)?;
         let mut r = Cursor::new(state);
         let buf = r.array::<BLOCK_LEN>();
@@ -577,7 +584,7 @@ where
 impl<P, Dir, const KEY_LEN: usize, const BLOCK_LEN: usize, const N: usize> SuspendableKeyed<N>
     for Cfb<P, Dir, KEY_LEN, BLOCK_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
 {
     type Key = KeyMaterial<KEY_LEN>;
 

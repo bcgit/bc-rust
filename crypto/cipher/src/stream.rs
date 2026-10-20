@@ -23,7 +23,7 @@
 use crate::{Decrypting, Encrypting};
 use bouncycastle_core::errors::{SuspendableError, SymmetricCipherError};
 use bouncycastle_core::hazmat::KeyStream;
-use bouncycastle_core::key_material::KeyMaterial;
+use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{
     Algorithm, RNG, StreamCipherDecryptor, StreamCipherEncryptor, SuspendableKeyed,
@@ -40,6 +40,7 @@ use core::marker::PhantomData;
 /// The separate-output `do_update_out` of a stream cipher, over its in-place data method: copies
 /// `input` into `output` and applies `in_place` there, so the caller's input is left untouched.
 /// Returns `input.len()`, since a stream cipher neither buffers nor changes the length of its data.
+/// The whole of `output` is zeroized first, so any bytes past `input.len()` will be 0.
 ///
 /// # Errors
 /// [`SymmetricCipherError::OutputBufferTooSmall`] if `output` is shorter than `input`, checked
@@ -49,6 +50,7 @@ pub fn stream_update_out(
     output: &mut [u8],
     in_place: impl FnOnce(&mut [u8]) -> Result<usize, SymmetricCipherError>,
 ) -> Result<usize, SymmetricCipherError> {
+    output.fill(0);
     if output.len() < input.len() {
         return Err(SymmetricCipherError::OutputBufferTooSmall(input.len()));
     }
@@ -58,8 +60,8 @@ pub fn stream_update_out(
     Ok(input.len())
 }
 
-/// The `do_final` of a stream cipher: nothing is held back, so there is nothing to finish -- an
-/// empty buffer, none of it output, and no padding or tag to check.
+/// The `do_encrypt_final` / `do_decrypt_final` of a stream cipher: nothing is held back, so there
+/// is nothing to finish -- an empty buffer, none of it output, and no padding or tag to check.
 ///
 /// `cargo mutants` reports the `[]` here as a surviving mutant against `[0; 0]` and `[1; 0]`.
 /// Those are the same value: a zero-length array has no element to differ in, so the three
@@ -116,7 +118,7 @@ where
     /// Wraps a keystream that has already been constructed and positioned, such as one that
     /// starts part-way into its counter space (GCM's GCTR starts at `inc32(J0)`).
     ///
-    /// # 🚨 Security 🚨
+    /// # 🚨 Security Considerations 🚨
     /// This bypasses init-data generation: the keystream's nonce is whatever it was constructed
     /// with, and the caller is responsible for it never repeating under the key. The
     /// [`SymmetricCipherEncryptor`] constructors are the safe path.
@@ -230,6 +232,7 @@ where
         Self::check_shape();
         let mut init_data = [0u8; INIT_DATA_LEN];
         rng.next_bytes_out(&mut init_data)?;
+        key.check_algorithm(Self::ALG_NAME)?;
         let keystream = KS::new(key, &init_data)?;
         Ok((Self::from_keystream(keystream), init_data))
     }
@@ -245,11 +248,12 @@ where
         plaintext: &[u8],
         ciphertext: &mut [u8],
     ) -> Result<usize, SymmetricCipherError> {
+        ciphertext.fill(0);
         stream_update_out(plaintext, ciphertext, |data| self.apply(data))
     }
 
     /// See [`stream_do_final`].
-    fn do_final(self) -> Result<([u8; 0], usize), SymmetricCipherError> {
+    fn do_encrypt_final(self) -> Result<([u8; 0], usize), SymmetricCipherError> {
         stream_do_final()
     }
 
@@ -270,7 +274,7 @@ where
     /// # Errors
     /// [`SymmetricCipherError::DataLimitExceeded`] if the keystream cannot cover the call. Nothing
     /// is consumed in that case; see [`StreamCipher`].
-    fn do_encrypt(&mut self, data: &mut [u8]) -> Result<usize, SymmetricCipherError> {
+    fn do_encrypt_inplace(&mut self, data: &mut [u8]) -> Result<usize, SymmetricCipherError> {
         self.apply(data)
     }
 }
@@ -288,6 +292,7 @@ where
         init_data: &[u8; INIT_DATA_LEN],
     ) -> Result<Self, SymmetricCipherError> {
         Self::check_shape();
+        key.check_algorithm(Self::ALG_NAME)?;
         Ok(Self::from_keystream(KS::new(key, init_data)?))
     }
 
@@ -302,16 +307,17 @@ where
         ciphertext: &[u8],
         plaintext: &mut [u8],
     ) -> Result<usize, SymmetricCipherError> {
+        plaintext.fill(0);
         stream_update_out(ciphertext, plaintext, |data| self.apply(data))
     }
 
     /// See [`stream_do_final`].
-    fn do_final(self) -> Result<([u8; 0], usize), SymmetricCipherError> {
+    fn do_decrypt_final(self) -> Result<([u8; 0], usize), SymmetricCipherError> {
         stream_do_final()
     }
 
     /// Exact rather than an upper bound: a stream cipher never changes the length of its data.
-    fn decrypt_out_max_len(ciphertext_len: usize) -> usize {
+    fn decrypt_out_len(ciphertext_len: usize) -> usize {
         ciphertext_len
     }
 }
@@ -325,8 +331,8 @@ where
     /// The same XOR as encryption.
     ///
     /// # Errors
-    /// As [`StreamCipherEncryptor::do_encrypt`].
-    fn do_decrypt(&mut self, data: &mut [u8]) -> Result<usize, SymmetricCipherError> {
+    /// As [`StreamCipherEncryptor::do_encrypt_inplace`].
+    fn do_decrypt_inplace(&mut self, data: &mut [u8]) -> Result<usize, SymmetricCipherError> {
         self.apply(data)
     }
 }

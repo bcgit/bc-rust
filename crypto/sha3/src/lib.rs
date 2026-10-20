@@ -1,4 +1,4 @@
-//! Implements SHA3 as per NIST FIPS 202.
+//! Implements SHA3 as per NIST FIPS 202, and the SHA-3 derived functions of NIST SP 800-185.
 //!
 //! This crate provides the following primitives:
 //!
@@ -6,8 +6,11 @@
 //! * SHAKE [`XOF`] functions.
 //! * SHA3-based [`KDF`] functions.
 //! * HMAC_SHA3_* [`MAC`] functions.
+//! * The SP 800-185 functions: cSHAKE ([`XOF`]), KMAC ([`MAC`]), TupleHash and ParallelHash
+//!   ([`Hash`]), and their arbitrary-output-length forms KMACXOF, TupleHashXOF and
+//!   ParallelHashXOF ([`XOF`]).
 //!
-//! # Examples
+//! # Usage Examples
 //! ## Hash
 //! Hash functionality is accessed via the [`Hash`] trait,
 //! which is implemented by [`SHA3_224`], [`SHA3_256`], [`SHA3_384`] and [`SHA3_512`].
@@ -74,7 +77,7 @@
 //!
 //! [`XOF`] extends [`Hash`], so SHAKE takes input through [`Hash::do_update`] like any other hash.
 //! Output is where they differ: [`XOF::into_squeezer`] ends the input phase and returns an
-//! [`XOFSqueezer`](bouncycastle_core::traits::XOFSqueezer), whose
+//! [`XOFSqueezer`], whose
 //! [`do_output`](bouncycastle_core::traits::XOFSqueezer::do_output) can be called as many times as you
 //! like, each call continuing one stream.
 //!
@@ -129,13 +132,34 @@
 //! ## HMAC
 //! See [hmac].
 //!
+//! ## KMAC, TupleHash and ParallelHash
+//! The SP 800-185 defines "SHA-3 Derived Functions" KMAC, ParallelHash, and TupleHash, which are
+//! functions built on top of SHAKE with further domain-separating inputs bound into the computation.
+//! Each takes a customization string `S`, which may be empty; instances with
+//! different `S` are unrelated functions (SP 800-185 Sec 8.2.2).
+//!
+//! The core building block is "customizable SHAKE" or "cSHAKE", which is implemented in this crate
+//! but not intended for direct use since NIST SP 800-185 §3.4 says:
+//!
+//! > The cSHAKE function includes an input string that may be used to provide a function name (N).
+//!   This is intended for use by NIST in defining SHA-3-derived functions, and should only be set to
+//!   values defined by NIST
+//!
+//! See:
+//!
+//! * [`kmac`]
+//! * [`parallelhash`]
+//! * [`tuplehash`]
+//!
 //! # Suspending and resuming execution
 //!
 //! When hashing a large message, it can be advantageous to be able to suspend the operation
 //! to a cache and resume it later; for example if waiting for the message to stream over a slow network
 //! connection.
 //!
-//! For this reason, all SHA3 algorithms impl [`Suspendable`].
+//! For this reason, every SHA3, SHAKE and SP 800-185 type impls [`Suspendable`], squeezers included,
+//! so a long output stream can be paused as well as a long input. HMAC is keyed and impls
+//! `SuspendableKeyed` instead; see [hmac].
 //!
 //!```rust
 //! use bouncycastle_sha3 as sha3;
@@ -162,20 +186,35 @@
 //!
 //! # Memory Usage
 //!
-//! All SHA3 and SHAKE variants share the same Keccak-f\[1600\] sponge and so have identical memory
-//! footprints. No heap memory is used by the algorithms themselves; the `Vec<u8>`-returning
-//! convenience methods allocate only the output buffer, and the `*_out` variants allocate nothing.
+//! Everything here shares the same Keccak-f\[1600\] sponge, so sizes differ only by the bookkeeping
+//! each function adds; ParallelHash carries a second sponge for the block being filled. No heap
+//! memory is used by the algorithms themselves; the `Vec<u8>`-returning convenience methods
+//! allocate only the output buffer, and the `*_out` variants allocate nothing.
 //!
-//! | Object                                  | Size (bytes) |
-//! |-----------------------------------------|--------------|
-//! | `SHA3_224` .. `SHA3_512`, `SHAKE128/256` | 440          |
-//! | Suspended state ([`Suspendable`])       | 415          |
+//! | Object                                                          | Size (bytes) |
+//! |-----------------------------------------------------------------|--------------|
+//! | `SHA3_224` .. `SHA3_512`, `SHAKE128/256`, `SHAKESqueezer`       | 440          |
+//! | `CSHAKE128/256`, `TUPLEHASHXOF128/256`, `LengthBoundSqueezer`   | 448          |
+//! | `KMACXOF128/256`, `TUPLEHASH128/256`                            | 456          |
+//! | `KMAC128/256`                                                   | 464          |
+//! | `PARALLELHASHXOF128/256`                                        | 912          |
+//! | `PARALLELHASH128/256`                                           | 920          |
+//!
+//! Suspended states, as `SUSPENDED_*_STATE_LEN`:
+//!
+//! | State                                                           | Size (bytes) |
+//! |-----------------------------------------------------------------|--------------|
+//! | SHA3, SHAKE and `SHAKESqueezer`                                 | 415          |
+//! | cSHAKE, KMACXOF, TupleHashXOF, `LengthBoundSqueezer`            | 416          |
+//! | KMAC, TupleHash                                                 | 424          |
+//! | ParallelHashXOF                                                 | 852          |
+//! | ParallelHash                                                    | 860          |
 //!
 //! Sizes are `core::mem::size_of` values reported by `mem_usage_benches/bench_sha3_mem_usage.rs`
 //! (`cargo run --release -p mem_usage_benches --bin bench_sha3_mem_usage`), which also has valgrind
 //! massif entry points for measuring peak stack usage of the hash, XOF and suspend/resume paths.
 //!
-//! # Security Considerations
+//! # 🚨 Security Considerations 🚨
 //!
 //! * SHA3-224/256/384/512 offer 112/128/192/256 bits of collision resistance respectively; SHAKE128
 //!   and SHAKE256 offer 128 and 256 bits of security for output lengths at least twice that size
@@ -184,6 +223,17 @@
 //!   length must be bound to the digest, include it in the message (FIPS 202 Appendix A.2).
 //! * The sponge state and queue are held in [`bouncycastle_utils::secret::Secret`] and zeroized on
 //!   drop.
+//! * KMAC's security rests on its key and output lengths (SP 800-185 Sec 8.4): the key check is
+//!   [`kmac::KMACInternal::new_with_params`]'s, with `allow_weak_key` as the bypass, and an output
+//!   shorter than 8 bytes is the caller's to justify (Sec 8.4.2: never below 4, and below 8
+//!   only after a risk analysis).
+//! * cSHAKE has SHAKE's prefix property; the fixed-length KMAC, TupleHash and ParallelHash do
+//!   not, because the output length is bound in, but their XOF forms read as a stream do
+//!   (Sec 8.2.2).
+//! * A customization string is not a key: for any `N` and `S`, cSHAKE has exactly SHAKE's
+//!   security (Sec 8.2.1). It separates instances; it does not strengthen them.
+//! * A suspended KMAC or KMACXOF state inverts to the key, as a suspended HMAC-SHA3 state does
+//!   (see [hmac]): store it as securely as the key.
 
 #![forbid(unsafe_code)]
 #![forbid(missing_docs)]
@@ -199,20 +249,18 @@ use bouncycastle_core::errors::HashError;
 #[allow(unused_imports)]
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 #[allow(unused_imports)]
-use bouncycastle_core::traits::{Hash, KDF, MAC, Suspendable, XOF};
+use bouncycastle_core::traits::{Hash, KDF, MAC, Suspendable, XOF, XOFSqueezer};
 // end of doc-only imports
+
+pub mod hmac;
+pub mod kmac;
+pub mod parallelhash;
+pub mod tuplehash;
 
 mod cshake;
 mod keccak;
-mod kmac;
-mod length_bound_squeezer;
-mod parallelhash;
 mod sha3;
 mod shake;
-mod tuplehash;
-mod xof_utils;
-
-pub mod hmac;
 
 /*** String constants ***/
 /// Algorithm name string for SHA3-224, as used by the factories and CLI.
@@ -227,102 +275,18 @@ pub const SHA3_512_NAME: &str = "SHA3-512";
 pub const SHAKE128_NAME: &str = "SHAKE128";
 /// Algorithm name string for SHAKE256, as used by the factories and CLI.
 pub const SHAKE256_NAME: &str = "SHAKE256";
-/// The name of the cSHAKE128 algorithm (NIST SP 800-185 Sec 3).
-pub const CSHAKE128_NAME: &str = "CSHAKE128";
-/// The name of the cSHAKE256 algorithm (NIST SP 800-185 Sec 3).
-pub const CSHAKE256_NAME: &str = "CSHAKE256";
-/// The name of the KMAC128 algorithm (NIST SP 800-185 Sec 4).
-pub const KMAC128_NAME: &str = "KMAC128";
-/// The name of the KMAC256 algorithm (NIST SP 800-185 Sec 4).
-pub const KMAC256_NAME: &str = "KMAC256";
-/// The name of the KMACXOF128 algorithm (NIST SP 800-185 Sec 4.3.1).
-pub const KMACXOF128_NAME: &str = "KMACXOF128";
-/// The name of the KMACXOF256 algorithm (NIST SP 800-185 Sec 4.3.1).
-pub const KMACXOF256_NAME: &str = "KMACXOF256";
-/// The name of the TupleHash128 algorithm (NIST SP 800-185 Sec 5).
-pub const TUPLEHASH128_NAME: &str = "TupleHash128";
-/// The name of the TupleHash256 algorithm (NIST SP 800-185 Sec 5).
-pub const TUPLEHASH256_NAME: &str = "TupleHash256";
-/// The name of the TupleHashXOF128 algorithm (NIST SP 800-185 Sec 5.3.1).
-pub const TUPLEHASHXOF128_NAME: &str = "TupleHashXOF128";
-/// The name of the TupleHashXOF256 algorithm (NIST SP 800-185 Sec 5.3.1).
-pub const TUPLEHASHXOF256_NAME: &str = "TupleHashXOF256";
-/// The name of the ParallelHash128 algorithm (NIST SP 800-185 Sec 6).
-pub const PARALLELHASH128_NAME: &str = "ParallelHash128";
-/// The name of the ParallelHash256 algorithm (NIST SP 800-185 Sec 6).
-pub const PARALLELHASH256_NAME: &str = "ParallelHash256";
-/// The name of the ParallelHashXOF128 algorithm (NIST SP 800-185 Sec 6.3.1).
-pub const PARALLELHASHXOF128_NAME: &str = "ParallelHashXOF128";
-/// The name of the ParallelHashXOF256 algorithm (NIST SP 800-185 Sec 6.3.1).
-pub const PARALLELHASHXOF256_NAME: &str = "ParallelHashXOF256";
 
 /*** pub types ***/
-pub use cshake::CSHAKEInternal;
-pub use kmac::{KMACInternal, KMACXOFInternal};
-pub use length_bound_squeezer::LengthBoundSqueezer;
-pub use parallelhash::{ParallelHashInternal, ParallelHashXOFInternal};
+pub use keccak::SUSPENDED_SHA3_STATE_LEN;
+
 pub use sha3::SHA3Internal;
-pub use tuplehash::{TupleHashInternal, TupleHashXOFInternal};
 
-/// cSHAKE128: the customizable SHAKE128 of NIST SP 800-185 Sec 3, at a 128-bit security strength.
-///
-/// Construct with [`CSHAKEInternal::new`], passing the function-name string `N` (reserved for
-/// NIST, normally empty) and the customization string `S`. With both empty this is exactly
-/// [`SHAKE128`].
-pub type CSHAKE128 = CSHAKEInternal<SHAKE128Params>;
-/// cSHAKE256: the customizable SHAKE256 of NIST SP 800-185 Sec 3, at a 256-bit security strength.
-///
-/// See [`CSHAKE128`].
-pub type CSHAKE256 = CSHAKEInternal<SHAKE256Params>;
-
-/// KMAC128: the Keccak MAC of NIST SP 800-185 Sec 4, at a 128-bit security strength.
-///
-/// [`bouncycastle_core::traits::MAC::new`] gives the common case -- no customization, 32-byte
-/// output. [`KMACInternal::new_with_params`] chooses the customization string and output length,
-/// [`KMACXOF128`] is the separate arbitrary-length function of Sec 4.3.1.
-pub type KMAC128 = KMACInternal<SHAKE128Params>;
-/// KMAC256: the Keccak MAC of NIST SP 800-185 Sec 4, at a 256-bit security strength.
-///
-/// See [`KMAC128`]. The nominal output length is 64 bytes.
-pub type KMAC256 = KMACInternal<SHAKE256Params>;
-
-/// KMACXOF128: the arbitrary-output-length KMAC of NIST SP 800-185 Sec 4.3.1.
-///
-/// A keyed [`XOF`]. Distinct from [`KMAC128`], and not a longer
-/// view of it: over the same inputs the two produce unrelated output.
-pub type KMACXOF128 = KMACXOFInternal<SHAKE128Params>;
-/// KMACXOF256: the arbitrary-output-length KMAC of NIST SP 800-185 Sec 4.3.1.
-///
-/// See [`KMACXOF128`].
-pub type KMACXOF256 = KMACXOFInternal<SHAKE256Params>;
-
-/// TupleHash128: the unambiguous tuple hash of NIST SP 800-185 Sec 5, 128-bit strength.
-///
-/// Each [`Hash::do_update`] call appends one *tuple
-/// element*, not a run of bytes -- so unlike every other hash here, the chunking is part of the
-/// input. See [`TupleHashInternal`].
-pub type TUPLEHASH128 = TupleHashInternal<SHAKE128Params>;
-/// TupleHash256: see [`TUPLEHASH128`].
-pub type TUPLEHASH256 = TupleHashInternal<SHAKE256Params>;
-/// TupleHashXOF128: the arbitrary-output-length TupleHash of Sec 5.3.1.
-pub type TUPLEHASHXOF128 = TupleHashXOFInternal<SHAKE128Params>;
-/// TupleHashXOF256: see [`TUPLEHASHXOF128`].
-pub type TUPLEHASHXOF256 = TupleHashXOFInternal<SHAKE256Params>;
-
-/// ParallelHash128: the parallelisable hash of NIST SP 800-185 Sec 6, 128-bit strength.
-///
-/// The block size `B` is part of the function, not a tuning knob: the same message under a
-/// different `B` hashes differently. See [`ParallelHashInternal`].
-pub type PARALLELHASH128 = ParallelHashInternal<SHAKE128Params>;
-/// ParallelHash256: see [`PARALLELHASH128`].
-pub type PARALLELHASH256 = ParallelHashInternal<SHAKE256Params>;
-/// ParallelHashXOF128: the arbitrary-output-length ParallelHash of Sec 6.3.1.
-pub type PARALLELHASHXOF128 = ParallelHashXOFInternal<SHAKE128Params>;
-/// ParallelHashXOF256: see [`PARALLELHASHXOF128`].
-pub type PARALLELHASHXOF256 = ParallelHashXOFInternal<SHAKE256Params>;
 pub use shake::{SHAKEInternal, SHAKESqueezer};
 
-pub use keccak::SUSPENDED_SHA3_STATE_LEN;
+pub use cshake::{
+    CSHAKE128, CSHAKE256, CSHAKEInternal, CSHAKESqueezer, SUSPENDED_CSHAKE_STATE_LEN,
+    SUSPENDED_LENGTH_BOUND_SQUEEZER_STATE_LEN,
+};
 
 /// Public type for SHA3_224.
 pub type SHA3_224 = SHA3Internal<SHA3_224Params>;
@@ -339,7 +303,7 @@ pub type SHAKE256 = SHAKEInternal<SHAKE256Params>;
 
 /*** Param traits ***/
 
-/// Private trait on purpose so that only the NIST-approved params can be used.
+/// Private (sealed) trait on purpose so that only the NIST-approved params can be used.
 trait SHA3Params: HashAlgParams + Clone {
     const SIZE: KeccakSize;
     /// A tag, unique across all SHA3 *and* SHAKE variants, identifying which variant produced a
@@ -347,8 +311,6 @@ trait SHA3Params: HashAlgParams + Clone {
     /// this to be distinct from every value used by [`SHAKEParams::STATE_TAG`]. Never reuse a value.
     const STATE_TAG: u8;
 }
-
-// TODO: it would probably be more elegant to macro these.
 
 /// The public hash types expose the same parameters as their `*Params` marker, so the constants
 /// are defined exactly once (on the params struct) and forwarded here.
@@ -443,6 +405,7 @@ impl AlgorithmOID for SHA3_512 {
         &[0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x0a];
 }
 
+/// Private (sealed) trait on purpose so that only the NIST-approved params can be used.
 trait SHAKEParams: Algorithm + Clone {
     const SIZE: KeccakSize;
     /// See [`SHA3Params::STATE_TAG`]. Must be distinct from every SHA3 *and* SHAKE variant's tag.
@@ -464,6 +427,18 @@ trait SHAKEParams: Algorithm + Clone {
     const PARALLELHASH_ALG_NAME: &'static str;
     /// The name of the ParallelHashXOF built on this parameter set.
     const PARALLELHASHXOF_ALG_NAME: &'static str;
+    /// The first of eight state tags for the SP 800-185 functions built on this parameter set,
+    /// which follow it in the order below. The same rule as [`SHA3Params::STATE_TAG`]: distinct
+    /// from every other tag in the crate, and never reused.
+    const SP800_185_STATE_TAG_BASE: u8;
+    const CSHAKE_STATE_TAG: u8 = Self::SP800_185_STATE_TAG_BASE;
+    const KMAC_STATE_TAG: u8 = Self::SP800_185_STATE_TAG_BASE + 1;
+    const KMACXOF_STATE_TAG: u8 = Self::SP800_185_STATE_TAG_BASE + 2;
+    const TUPLEHASH_STATE_TAG: u8 = Self::SP800_185_STATE_TAG_BASE + 3;
+    const TUPLEHASHXOF_STATE_TAG: u8 = Self::SP800_185_STATE_TAG_BASE + 4;
+    const PARALLELHASH_STATE_TAG: u8 = Self::SP800_185_STATE_TAG_BASE + 5;
+    const PARALLELHASHXOF_STATE_TAG: u8 = Self::SP800_185_STATE_TAG_BASE + 6;
+    const LENGTH_BOUND_SQUEEZER_STATE_TAG: u8 = Self::SP800_185_STATE_TAG_BASE + 7;
 }
 /// The parameters for SHAKE128.
 #[derive(Clone)]
@@ -475,13 +450,14 @@ impl Algorithm for SHAKE128Params {
 impl SHAKEParams for SHAKE128Params {
     const SIZE: KeccakSize = KeccakSize::_128;
     const STATE_TAG: u8 = 5;
-    const CSHAKE_ALG_NAME: &'static str = CSHAKE128_NAME;
-    const KMAC_ALG_NAME: &'static str = KMAC128_NAME;
-    const KMACXOF_ALG_NAME: &'static str = KMACXOF128_NAME;
-    const TUPLEHASH_ALG_NAME: &'static str = TUPLEHASH128_NAME;
-    const TUPLEHASHXOF_ALG_NAME: &'static str = TUPLEHASHXOF128_NAME;
-    const PARALLELHASH_ALG_NAME: &'static str = PARALLELHASH128_NAME;
-    const PARALLELHASHXOF_ALG_NAME: &'static str = PARALLELHASHXOF128_NAME;
+    const CSHAKE_ALG_NAME: &'static str = cshake::CSHAKE128_NAME;
+    const KMAC_ALG_NAME: &'static str = kmac::KMAC128_NAME;
+    const KMACXOF_ALG_NAME: &'static str = kmac::KMACXOF128_NAME;
+    const TUPLEHASH_ALG_NAME: &'static str = tuplehash::TUPLEHASH128_NAME;
+    const TUPLEHASHXOF_ALG_NAME: &'static str = tuplehash::TUPLEHASHXOF128_NAME;
+    const PARALLELHASH_ALG_NAME: &'static str = parallelhash::PARALLELHASH128_NAME;
+    const PARALLELHASHXOF_ALG_NAME: &'static str = parallelhash::PARALLELHASHXOF128_NAME;
+    const SP800_185_STATE_TAG_BASE: u8 = 7; // 7..=14
 }
 /// Assigned by NIST in the Computer Security Objects Register: id-shake128 { hashAlgs 11 }
 impl AlgorithmOID for SHAKE128 {
@@ -499,13 +475,14 @@ impl Algorithm for SHAKE256Params {
 impl SHAKEParams for SHAKE256Params {
     const SIZE: KeccakSize = KeccakSize::_256;
     const STATE_TAG: u8 = 6;
-    const CSHAKE_ALG_NAME: &'static str = CSHAKE256_NAME;
-    const KMAC_ALG_NAME: &'static str = KMAC256_NAME;
-    const KMACXOF_ALG_NAME: &'static str = KMACXOF256_NAME;
-    const TUPLEHASH_ALG_NAME: &'static str = TUPLEHASH256_NAME;
-    const TUPLEHASHXOF_ALG_NAME: &'static str = TUPLEHASHXOF256_NAME;
-    const PARALLELHASH_ALG_NAME: &'static str = PARALLELHASH256_NAME;
-    const PARALLELHASHXOF_ALG_NAME: &'static str = PARALLELHASHXOF256_NAME;
+    const CSHAKE_ALG_NAME: &'static str = cshake::CSHAKE256_NAME;
+    const KMAC_ALG_NAME: &'static str = kmac::KMAC256_NAME;
+    const KMACXOF_ALG_NAME: &'static str = kmac::KMACXOF256_NAME;
+    const TUPLEHASH_ALG_NAME: &'static str = tuplehash::TUPLEHASH256_NAME;
+    const TUPLEHASHXOF_ALG_NAME: &'static str = tuplehash::TUPLEHASHXOF256_NAME;
+    const PARALLELHASH_ALG_NAME: &'static str = parallelhash::PARALLELHASH256_NAME;
+    const PARALLELHASHXOF_ALG_NAME: &'static str = parallelhash::PARALLELHASHXOF256_NAME;
+    const SP800_185_STATE_TAG_BASE: u8 = 15; // 15..=22
 }
 /// Assigned by NIST in the Computer Security Objects Register: id-shake256 { hashAlgs 12 }
 impl AlgorithmOID for SHAKE256 {

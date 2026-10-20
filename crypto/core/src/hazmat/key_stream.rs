@@ -25,7 +25,7 @@ use crate::traits::{BlockCipherEncryptor, StreamCipherDecryptor, StreamCipherEnc
 /// Only a keystream that is independent of the data fits: CTR does, CFB does not, since its next
 /// keystream block is the encryption of the last ciphertext block.
 ///
-/// # 🚨 Security 🚨
+/// # 🚨 Security Considerations 🚨
 /// [`KeyStream::new`] takes the init data from the caller, so nothing stops a caller reusing a
 /// nonce under a key -- which repeats the keystream and reveals the XOR of the two plaintexts --
 /// and nothing stops it running past [`KeyStream::remaining_blocks`]. `StreamCipher` generates
@@ -41,9 +41,12 @@ pub trait KeyStream<const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOC
     /// Expands the key and positions the keystream at its first block for `init_data`.
     ///
     /// # Errors
-    /// Rejects a key whose [`KeyType`] is not [`KeyType::SymmetricCipherKey`], and one whose
-    /// security strength is below [`Algorithm::MAX_SECURITY_STRENGTH`], both as a
+    /// Rejects a key whose [`KeyType`] is not [`KeyType::SymmetricCipherKey`], one bound to a
+    /// different algorithm (see [`KeyMaterialTrait::algorithm`]), and one whose security strength
+    /// is below [`Algorithm::MAX_SECURITY_STRENGTH`], all as a
     /// [`SymmetricCipherError::KeyMaterialError`].
+    ///
+    /// [`KeyMaterialTrait::algorithm`]: crate::key_material::KeyMaterialTrait::algorithm
     fn new(
         key: &KeyMaterial<KEY_LEN>,
         init_data: &[u8; INIT_DATA_LEN],
@@ -55,7 +58,8 @@ pub trait KeyStream<const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOC
 
     /// XORs the next `blocks.len()` keystream blocks into `blocks`, in place, and advances past
     /// them. A sequence of calls is equivalent to one call over the concatenation; how to batch
-    /// the blocks is the implementor's decision, as for [`BlockCipherEncryptor::do_encrypt_blocks`].
+    /// the blocks is the implementor's decision, as for
+    /// [`BlockCipherEncryptor::do_encrypt_blocks_inplace`].
     ///
     /// Infallible because the caller has already checked `blocks.len()` against
     /// [`Self::remaining_blocks`]. Asking for more is a programmer error, and the implementor may

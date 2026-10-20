@@ -376,21 +376,22 @@ mod mldsa_tests {
         .unwrap();
 
         // test the streaming API on the same value
-        let mut s = MLDSA44::sign_init(&sk, Some(&hex::decode(MLDSA44_KAT1.ctx).unwrap())).unwrap();
+        let mut s =
+            MLDSA44::do_sign_init(&sk, Some(&hex::decode(MLDSA44_KAT1.ctx).unwrap())).unwrap();
         s.set_signer_rnd(rnd);
-        s.sign_update(&hex::decode(MLDSA44_KAT1.message).unwrap());
-        let sig = s.sign_final().unwrap();
+        s.do_sign_update(&hex::decode(MLDSA44_KAT1.message).unwrap());
+        let sig = s.do_sign_final().unwrap();
         let decoded_sig: [u8; MLDSA44_SIG_LEN] =
             hex::decode(MLDSA44_KAT1.signature).unwrap().try_into().unwrap();
         assert_eq!(&sig, &decoded_sig);
 
         // Then with the message broken into chunks
-        let mut s = MLDSA44::sign_init(&sk, Some(b"streaming API chunked")).unwrap();
+        let mut s = MLDSA44::do_sign_init(&sk, Some(b"streaming API chunked")).unwrap();
         s.set_signer_rnd(rnd);
         for msg_chunk in DUMMY_SEED.chunks(100) {
-            s.sign_update(msg_chunk);
+            s.do_sign_update(msg_chunk);
         }
-        let sig_val = s.sign_final().unwrap();
+        let sig_val = s.do_sign_final().unwrap();
         MLDSA44::verify(&sk.derive_pk(), DUMMY_SEED, Some(b"streaming API chunked"), &sig_val)
             .unwrap();
 
@@ -423,10 +424,11 @@ mod mldsa_tests {
         .unwrap();
 
         // test the streaming API on the same value
-        let mut s = MLDSA65::sign_init(&sk, Some(&hex::decode(MLDSA65_KAT1.ctx).unwrap())).unwrap();
+        let mut s =
+            MLDSA65::do_sign_init(&sk, Some(&hex::decode(MLDSA65_KAT1.ctx).unwrap())).unwrap();
         s.set_signer_rnd(rnd);
-        s.sign_update(&hex::decode(MLDSA65_KAT1.message).unwrap());
-        let sig = s.sign_final().unwrap();
+        s.do_sign_update(&hex::decode(MLDSA65_KAT1.message).unwrap());
+        let sig = s.do_sign_final().unwrap();
         let decoded_sig: [u8; MLDSA65_SIG_LEN] =
             hex::decode(MLDSA65_KAT1.signature).unwrap().try_into().unwrap();
         assert_eq!(&sig, &decoded_sig);
@@ -460,10 +462,11 @@ mod mldsa_tests {
         .unwrap();
 
         // Test the streaming API on the same value
-        let mut s = MLDSA87::sign_init(&sk, Some(&hex::decode(MLDSA87_KAT1.ctx).unwrap())).unwrap();
+        let mut s =
+            MLDSA87::do_sign_init(&sk, Some(&hex::decode(MLDSA87_KAT1.ctx).unwrap())).unwrap();
         s.set_signer_rnd(rnd);
-        s.sign_update(&hex::decode(MLDSA87_KAT1.message).unwrap());
-        let sig = s.sign_final().unwrap();
+        s.do_sign_update(&hex::decode(MLDSA87_KAT1.message).unwrap());
+        let sig = s.do_sign_final().unwrap();
         let decoded_sig: [u8; MLDSA87_SIG_LEN] =
             hex::decode(MLDSA87_KAT1.signature).unwrap().try_into().unwrap();
         assert_eq!(&sig, &decoded_sig);
@@ -704,16 +707,16 @@ mod mldsa_tests {
             MLDSA44::sign_init_from_seed(&seed, Some(&hex::decode(MLDSA44_KAT1.ctx).unwrap()))
                 .unwrap();
         s.set_signer_rnd(rnd);
-        s.sign_update(&hex::decode(MLDSA44_KAT1.message).unwrap());
-        let sig = s.sign_final().unwrap();
+        s.do_sign_update(&hex::decode(MLDSA44_KAT1.message).unwrap());
+        let sig = s.do_sign_final().unwrap();
         assert_eq!(&sig, &expected_sig);
 
         // Test also the streaming verifier
 
         let mut v =
-            MLDSA44::verify_init(&pk, Some(&hex::decode(MLDSA44_KAT1.ctx).unwrap())).unwrap();
-        v.verify_update(&hex::decode(MLDSA44_KAT1.message).unwrap());
-        v.verify_final(&expected_sig).unwrap();
+            MLDSA44::do_verify_init(&pk, Some(&hex::decode(MLDSA44_KAT1.ctx).unwrap())).unwrap();
+        v.do_verify_update(&hex::decode(MLDSA44_KAT1.message).unwrap());
+        v.do_verify_final(&expected_sig).unwrap();
     }
 
     #[test]
@@ -725,11 +728,11 @@ mod mldsa_tests {
         let (_pk, sk) = MLDSA44::keygen().unwrap();
 
         // ctx with len 255 works
-        MLDSA44::sign_init(&sk, Some(&[1u8; 255])).unwrap();
+        MLDSA44::do_sign_init(&sk, Some(&[1u8; 255])).unwrap();
 
         // ctx with len 256 is too long
         let too_long_ctx = [1u8; 256];
-        match MLDSA44::sign_init(&sk, Some(&too_long_ctx)) {
+        match MLDSA44::do_sign_init(&sk, Some(&too_long_ctx)) {
             Err(SignatureError::LengthError(_)) => { /* good */ }
             _ => panic!("Expected error for ctx too long"),
         }

@@ -32,6 +32,7 @@
 
 use bouncycastle_aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
 use bouncycastle_cipher::modes::Cfb8;
+use bouncycastle_cipher::modes::ModeNames;
 use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::hazmat::ElectronicCodeBook;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
@@ -136,7 +137,7 @@ const CHUNKINGS: [usize; 7] = [1, 3, 4, 8, 9, 17, 18];
 /// how the calls are grouped.
 fn check_encrypt<P, const KEY_LEN: usize>(section: &str, key_hex: &str, expected_hex: &str)
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
 {
     let key = key_material::<KEY_LEN>(key_hex);
     let iv = block(IV);
@@ -154,7 +155,7 @@ where
 
         let mut data = plaintext.clone();
         for piece in data.chunks_mut(chunk) {
-            enc.do_encrypt(piece).unwrap();
+            enc.do_encrypt_inplace(piece).unwrap();
         }
         assert_eq!(data, expected, "{section}: {chunk}-byte calls");
     }
@@ -163,7 +164,7 @@ where
 /// Runs one Appendix F.3 CFB8 decrypt subsection.
 fn check_decrypt<P, const KEY_LEN: usize>(section: &str, key_hex: &str, ciphertext_hex: &str)
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
 {
     let key = key_material::<KEY_LEN>(key_hex);
     let iv = block(IV);
@@ -175,14 +176,14 @@ where
             Cfb8::<P, Decrypting, KEY_LEN, BLOCK_LEN>::do_decrypt_init(&key, &iv).unwrap();
         let mut data = ciphertext.clone();
         for piece in data.chunks_mut(chunk) {
-            dec.do_decrypt(piece).unwrap();
+            dec.do_decrypt_inplace(piece).unwrap();
         }
         assert_eq!(data, plaintext, "{section}: {chunk}-byte calls");
     }
 
     // ...and the one-shot, where the IV is an input.
     let mut data = ciphertext.clone();
-    Cfb8::<P, Decrypting, KEY_LEN, BLOCK_LEN>::decrypt_in_place(&key, &iv, &mut data).unwrap();
+    Cfb8::<P, Decrypting, KEY_LEN, BLOCK_LEN>::decrypt_inplace(&key, &iv, &mut data).unwrap();
     assert_eq!(data, plaintext, "{section}: one-shot");
 }
 

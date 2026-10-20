@@ -11,7 +11,7 @@ use crate::key_material::KeyType;
 
 /// A keyed block permutation: the `CIPH_K` / `CIPH^-1_K` of NIST SP 800-38A Sec 5.1.
 ///
-/// # 🚨 Security 🚨
+/// # 🚨 Security Considerations 🚨
 /// A permutation applied to data block by block is ECB: equal plaintext blocks give equal
 /// ciphertext blocks, so the structure of the plaintext survives. This is the primitive under
 /// CBC, CTR, GCM and the rest of `bouncycastle_cipher::modes`, not a cipher for data; see the

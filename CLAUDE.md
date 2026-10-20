@@ -144,6 +144,8 @@ Repo mechanics behind those rules, which the documents don't spell out:
   covers) -- there, read the whole input once and process it in place, rather than adding a second
   buffer the size of the input on top of it; see `aes_ccm_cmd.rs`.
 - Trait → factory → CLI is the wiring path for a new primitive; see [the workspace architecture](#the-core--core-test-framework--factory-spine) above for the crates involved.
+- AI-drafted docs and comments run long. Before committing, check them against QUALITY_AND_STYLE.md's "Proportion"
+  rule: cut duplicated material, long rationale and restated spec text rather than adding more.
 
 ## Scope of changes
 
@@ -157,6 +159,43 @@ the restructuring, and the review time that costs is the reason not to do it.
 - If it unblocks nothing, propose it and wait rather than doing it.
 - The same goes for drive-by comment rewrites, reformatting and file moves in code you are only
   passing through.
+
+## Lessons from the Ascon-AEAD128 refactors (October 2026)
+
+A series of PRs took `AsconAead128` from one struct serving both directions through a runtime
+flag, with a parallel inherent API and two newtype wrappers, to `Ascon_AEAD128<Dir>`. What that
+taught, as mechanics to apply next time a cipher type is shaped or reshaped:
+
+- **The direction goes in the type.** `Cipher<Dir>` with `Encrypting` / `Decrypting` and one
+  `impl` block per direction turns wrong-direction calls into compile errors and shrinks the
+  call-order state machine to the phases alone. Reach for `Direction::Select` only when the two
+  directions really are different types (padded CBC); when they share their state, one generic
+  struct under the spec-spelled name (`Ascon_AEAD128<Dir>`, `#[allow(non_camel_case_types)]`)
+  is the whole public type, with no CamelCase twin and no alias to it.
+- **The trait pair is the API.** Do not keep an inherent streaming or one-shot API beside the
+  `AEADCipher*` / `SymmetricCipher*` impls; everything a caller needs, including a supplied nonce
+  (`do_encrypt_init_nonce`, `encrypt_with_aad_nonce_out`), is on the traits. The only inherent
+  methods a cipher adds are for what the traits lack, in-place streaming (`do_*_inplace`), and
+  their decrypt form keeps the same tag hold-back as `do_decrypt_out` so the two interleave.
+- **Private helpers must not share a trait method's name.** An inherent `do_encrypt_final` with a
+  different signature from the trait's is what forced the wrapper newtypes; name the core
+  helpers for what they do (`absorb_aad`, `encrypt_bytes`, `finish_tag`, `verify_tag`).
+- **Fold wrapper state into the struct.** A decrypt-only buffer (the held-back tag) is carried on
+  both directions, unused when encrypting, as `Gcm` already does; that is cheaper than a second
+  type and keeps `SuspendableKeyed` on the cipher itself.
+- **Suspended-state formats are frozen.** Moving the impl or splitting the type must not change a
+  byte of the layout; the call-state byte keeps its direction bits and resume refuses the other
+  direction. When the two directions' states differ in length, publish a constant per direction.
+- **When public items go, the tests follow the API, and the benches get built.** Integration
+  tests move onto the trait methods rather than the inherent ones surviving for their sake.
+  `cargo test --workspace` does not compile `benches/` or `mem_usage_benches`, so finish with
+  `cargo test --workspace --all-targets --no-run`, and put `compile_fail` doctests on public items
+  only: on a private item they pass vacuously once the import they name is gone. After rewriting
+  a CLI path, run it against a known-answer vector (`--nonce` on `ascon-aead128` reproduces the
+  LWC KAT tag).
+- **A rename stays in the crate it was asked for.** `do_*_update` to `do_*_inplace` was done for
+  Ascon; the CCM packet type still has its namesake. Note the follow-up rather than widening the
+  change.
 
 ## Working from specifications
 

@@ -5,7 +5,7 @@
 //! SP 800-38A Appendix D error propagation, and the "forward cipher function only" rule of
 //! Sec 6.3 -- independently of any real cipher. The known-answer tests against SP 800-38A
 //! Appendix F.3.7-F.3.12 are in the `aes` crate, `crypto/aes/tests/sp800_38a_cfb8_tests.rs`, and
-//! the ACVP CFB8 set in `acvp_cfb8_tests.rs` beside it.
+//! the ACVP CFB8 set in `cfb8_bc-test-data.rs` beside it.
 //!
 //! The toy's own conformance to [`ElectronicCodeBook`] is pinned once, by
 //! `the_toy_permutation_conforms_to_the_trait` in `cbc_tests.rs`; it is the same `Toy` here, so it
@@ -13,7 +13,7 @@
 
 mod common;
 
-use bouncycastle_cipher::modes::{Cfb, Cfb8};
+use bouncycastle_cipher::modes::{Cfb, Cfb8, ModeNames};
 use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::hazmat::ElectronicCodeBook;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
@@ -30,21 +30,21 @@ type SwappedCfb8<Dir> = Cfb8<SwappedPairToy, Dir, TOY_LEN, TOY_LEN>;
 type ForwardOnlyCfb8<Dir> = Cfb8<ForwardOnlyToy, Dir, TOY_LEN, TOY_LEN>;
 type SwappedFourCfb8<Dir> = Cfb8<SwappedFourToy, Dir, TOY_LEN, TOY_LEN>;
 
-/// `do_encrypt`, by value.
+/// `do_encrypt_inplace`, by value.
 fn enc(e: &mut impl StreamCipherEncryptor<TOY_LEN, TOY_LEN>, plaintext: &[u8]) -> Vec<u8> {
     let mut data = plaintext.to_vec();
-    e.do_encrypt(&mut data).unwrap();
+    e.do_encrypt_inplace(&mut data).unwrap();
     data
 }
 
-/// `do_decrypt`, by value.
+/// `do_decrypt_inplace`, by value.
 fn dec(d: &mut impl StreamCipherDecryptor<TOY_LEN, TOY_LEN>, ciphertext: &[u8]) -> Vec<u8> {
     let mut data = ciphertext.to_vec();
-    d.do_decrypt(&mut data).unwrap();
+    d.do_decrypt_inplace(&mut data).unwrap();
     data
 }
 
-/// `do_decrypt` in `chunk`-byte calls, by value. The last call may be shorter.
+/// `do_decrypt_inplace` in `chunk`-byte calls, by value. The last call may be shorter.
 fn dec_chunked(
     d: &mut impl StreamCipherDecryptor<TOY_LEN, TOY_LEN>,
     ciphertext: &[u8],
@@ -52,7 +52,7 @@ fn dec_chunked(
 ) -> Vec<u8> {
     let mut data = ciphertext.to_vec();
     for piece in data.chunks_mut(chunk) {
-        d.do_decrypt(piece).unwrap();
+        d.do_decrypt_inplace(piece).unwrap();
     }
     data
 }
@@ -212,18 +212,18 @@ fn cfb8_is_not_cfb128() {
             .unwrap();
     assert_eq!(got, iv);
     let mut cfb128 = plaintext.clone();
-    cfb.do_encrypt(&mut cfb128).unwrap();
+    cfb.do_encrypt_inplace(&mut cfb128).unwrap();
 
     assert_eq!(cfb8[0], cfb128[0], "both modes start O1 = CIPH_K(IV), so C1 agrees");
     assert_ne!(cfb8[1..], cfb128[1..], "everything after the first byte must differ");
 
     // ...and neither can decrypt the other's ciphertext.
     let mut wrong = cfb128.clone();
-    ToyCfb8::<Decrypting>::decrypt_in_place(&key, &iv, &mut wrong).unwrap();
+    ToyCfb8::<Decrypting>::decrypt_inplace(&key, &iv, &mut wrong).unwrap();
     assert_ne!(wrong, plaintext, "CFB8 must not decrypt a CFB128 ciphertext");
 
     let mut wrong = cfb8.clone();
-    Cfb::<Toy, Decrypting, TOY_LEN, TOY_LEN>::decrypt_in_place(&key, &iv, &mut wrong).unwrap();
+    Cfb::<Toy, Decrypting, TOY_LEN, TOY_LEN>::decrypt_inplace(&key, &iv, &mut wrong).unwrap();
     assert_ne!(wrong, plaintext, "CFB128 must not decrypt a CFB8 ciphertext");
 }
 
@@ -322,7 +322,7 @@ fn call_chunking_does_not_change_the_result() {
         let mut ct = plaintext.clone();
         let mut e = pinned_encryptor(iv);
         for piece in ct.chunks_mut(enc_chunk) {
-            e.do_encrypt(piece).unwrap();
+            e.do_encrypt_inplace(piece).unwrap();
         }
         assert_eq!(ct, reference, "encrypting in {enc_chunk}-byte calls");
 
@@ -337,12 +337,12 @@ fn call_chunking_does_not_change_the_result() {
 
     // Empty calls anywhere are no-ops.
     let mut e = pinned_encryptor(iv);
-    e.do_encrypt(&mut []).unwrap();
+    e.do_encrypt_inplace(&mut []).unwrap();
     let mut ct = plaintext.clone();
-    e.do_encrypt(&mut ct[..5]).unwrap();
-    e.do_encrypt(&mut []).unwrap();
-    e.do_encrypt(&mut ct[5..]).unwrap();
-    e.do_encrypt(&mut []).unwrap();
+    e.do_encrypt_inplace(&mut ct[..5]).unwrap();
+    e.do_encrypt_inplace(&mut []).unwrap();
+    e.do_encrypt_inplace(&mut ct[5..]).unwrap();
+    e.do_encrypt_inplace(&mut []).unwrap();
     assert_eq!(ct, reference, "empty calls must not disturb the state");
 }
 
@@ -353,13 +353,13 @@ fn call_chunking_does_not_change_the_result() {
 /// repeats it at 171 bytes, which is 42 four-byte batches and a 3-byte tail, and runs it over
 /// [`ForwardOnlyToy`] as well, so the chunked decryptions that reach the batch paths are shown to
 /// do so without the inverse cipher. The AES coverage (the `aes` crate's `sp800_38a_cfb8_tests.rs`
-/// and `acvp_cfb8_tests.rs`) chunks against *published* ciphertext; this is the direct
+/// and `cfb8_bc-test-data.rs`) chunks against *published* ciphertext; this is the direct
 /// single-call-versus-chunked comparison, kept free of an AES dependency.
 #[test]
 fn chunking_matches_a_single_call_at_every_batch_remainder() {
     fn check<P, const KEY_LEN: usize>(name: &str)
     where
-        P: ElectronicCodeBook<KEY_LEN, 16>,
+        P: ElectronicCodeBook<KEY_LEN, 16> + ModeNames,
     {
         let key_bytes: [u8; KEY_LEN] =
             core::array::from_fn(|i| (i as u8).wrapping_mul(31).wrapping_add(7));
@@ -384,19 +384,19 @@ fn chunking_matches_a_single_call_at_every_batch_remainder() {
 
         // The reference: the whole message in one call.
         let mut reference = plaintext.clone();
-        encryptor().do_encrypt(&mut reference).expect("one-call encryption");
+        encryptor().do_encrypt_inplace(&mut reference).expect("one-call encryption");
         assert_ne!(reference, plaintext, "{name}: the data must actually be encrypted");
 
         // ...and the round trip of that, also in one call.
         let mut back = reference.clone();
-        decryptor().do_decrypt(&mut back).expect("one-call decryption");
+        decryptor().do_decrypt_inplace(&mut back).expect("one-call decryption");
         assert_eq!(back, plaintext, "{name}: one-call round trip");
 
         for &enc_chunk in &CHUNKINGS {
             let mut ct = plaintext.clone();
             let mut e = encryptor();
             for piece in ct.chunks_mut(enc_chunk) {
-                e.do_encrypt(piece).expect("chunked encryption");
+                e.do_encrypt_inplace(piece).expect("chunked encryption");
             }
             assert_eq!(ct, reference, "{name}: encrypting in {enc_chunk}-byte calls");
 
@@ -404,7 +404,7 @@ fn chunking_matches_a_single_call_at_every_batch_remainder() {
                 let mut pt = ct.clone();
                 let mut d = decryptor();
                 for piece in pt.chunks_mut(dec_chunk) {
-                    d.do_decrypt(piece).expect("chunked decryption");
+                    d.do_decrypt_inplace(piece).expect("chunked decryption");
                 }
                 assert_eq!(
                     pt, plaintext,
@@ -418,7 +418,7 @@ fn chunking_matches_a_single_call_at_every_batch_remainder() {
     check::<ForwardOnlyToy, TOY_LEN>("ForwardOnlyToy");
 }
 
-/// The pair path in `do_decrypt` must actually be taken.
+/// The pair path in `do_decrypt_inplace` must actually be taken.
 ///
 /// [`SwappedPairToy`] returns its two pair results in the wrong order while its single-block method
 /// is correct. CFB8 decryption batches through `encrypt_2blocks`, so with this permutation six
@@ -450,7 +450,8 @@ fn the_pair_path_is_really_used() {
     assert_eq!(dec_chunked(&mut d, &ct, 1), plaintext, "the single-byte path must not pair");
 }
 
-/// The four-byte batch path in `do_decrypt` must actually be taken, and only for full fours.
+/// The four-byte batch path in `do_decrypt_inplace` must actually be taken, and only for full
+/// fours.
 ///
 /// [`SwappedFourToy`] returns its four `encrypt_4blocks` results rotated while its pair and
 /// single-block methods are correct. So five bytes handed over together decrypt wrongly (four
@@ -496,22 +497,22 @@ fn one_shots_agree_with_the_streaming_api() {
 
         let mut buf = plaintext.clone();
         let (_, iv_b) =
-            ToyCfb8::<Encrypting>::encrypt_in_place_rng(&key, &mut pinned_rng(iv), &mut buf)
+            ToyCfb8::<Encrypting>::encrypt_rng_inplace(&key, &mut pinned_rng(iv), &mut buf)
                 .unwrap();
         assert_eq!(iv_b, iv);
         assert_eq!(buf, streamed, "len {len}: one-shot must equal streaming");
-        ToyCfb8::<Decrypting>::decrypt_in_place(&key, &iv, &mut buf).unwrap();
+        ToyCfb8::<Decrypting>::decrypt_inplace(&key, &iv, &mut buf).unwrap();
         assert_eq!(buf, plaintext);
 
         // The OS-RNG variant round-trips too. Whether the ciphertext *differs* from the plaintext
         // is only worth asserting once the message is long enough that coinciding with the
         // keystream by chance is negligible -- see `every_length_round_trips_without_padding`.
         let mut buf = plaintext.clone();
-        let (_, iv_fresh) = ToyCfb8::<Encrypting>::encrypt_in_place(&key, &mut buf).unwrap();
+        let (_, iv_fresh) = ToyCfb8::<Encrypting>::encrypt_inplace(&key, &mut buf).unwrap();
         if len >= 8 {
             assert_ne!(buf, plaintext);
         }
-        ToyCfb8::<Decrypting>::decrypt_in_place(&key, &iv_fresh, &mut buf).unwrap();
+        ToyCfb8::<Decrypting>::decrypt_inplace(&key, &iv_fresh, &mut buf).unwrap();
         assert_eq!(buf, plaintext);
     }
 }
@@ -628,9 +629,9 @@ fn identical_plaintext_gives_different_ciphertext() {
     let plaintext = [0x77u8; 2 * TOY_LEN];
 
     let mut first = plaintext;
-    ToyCfb8::<Encrypting>::encrypt_in_place(&key, &mut first).unwrap();
+    ToyCfb8::<Encrypting>::encrypt_inplace(&key, &mut first).unwrap();
     let mut second = plaintext;
-    ToyCfb8::<Encrypting>::encrypt_in_place(&key, &mut second).unwrap();
+    ToyCfb8::<Encrypting>::encrypt_inplace(&key, &mut second).unwrap();
     assert_ne!(first, second);
 
     // ...and, within one message, a run of identical plaintext bytes must not give a run of
@@ -664,7 +665,7 @@ fn every_length_round_trips_without_padding() {
     for len in 0..=(2 * TOY_LEN + 1) {
         let plaintext = message(len);
         let mut data = plaintext.clone();
-        let (n, iv) = ToyCfb8::<Encrypting>::encrypt_in_place(&key, &mut data).expect("encryption");
+        let (n, iv) = ToyCfb8::<Encrypting>::encrypt_inplace(&key, &mut data).expect("encryption");
         assert_eq!(n, len, "len {len}: encrypt must report the number of bytes written");
         assert_eq!(data.len(), len, "len {len}: the ciphertext is as long as the plaintext");
         // Only meaningful once the message is long enough that agreeing with the keystream by
@@ -675,7 +676,7 @@ fn every_length_round_trips_without_padding() {
         if len >= 8 {
             assert_ne!(data, plaintext, "len {len}: the data must actually be encrypted");
         }
-        ToyCfb8::<Decrypting>::decrypt_in_place(&key, &iv, &mut data).expect("decryption");
+        ToyCfb8::<Decrypting>::decrypt_inplace(&key, &iv, &mut data).expect("decryption");
         assert_eq!(data, plaintext, "len {len}: round trip");
     }
 }

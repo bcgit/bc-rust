@@ -16,7 +16,7 @@ use bouncycastle_core::traits::KEMEncapsulator;
 
 /// FIPS 203 Algorithm 17, ML-KEM.Encaps_internal(ek, m), with `m` supplied by the caller.
 ///
-/// # 🚨 Security 🚨
+/// # 🚨 Security Considerations 🚨
 /// `m` is the encapsulation randomness, the message the underlying PKE encrypts. It must be 32
 /// bytes of fresh, uniformly random, secret data for every call: any deterministic KEM, like any
 /// deterministic encryption, fails every indistinguishability notion (IND-CPA, IND-CCA2), and a

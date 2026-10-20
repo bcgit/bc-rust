@@ -36,7 +36,7 @@ testing must also be contained within the `mod tests {}` block.
 All traits in `bouncycastle-core` must have corresponding tests in `bouncycastle-core-test-framework` that exercise all
 behaviours and error conditions that are common to all implementations of that trait.
 `bouncycastle-core-test-framework` is test infrastructure only: it goes under `[dev-dependencies]` and is never a
-runtime dependency, since it ships a deterministic `FixedSeedRNG` and a deliberately insecure `ToyBlockCipher`.
+runtime dependency, since it ships a deterministic `FixedSeedRNG`.
 
 All crypto algorithms must have tests against the bc-test-data repo and against wycheproof.
 
@@ -113,6 +113,47 @@ its `Ok` value (on its own, or alongside anything else the function needs to ret
 holds even when the count is fully determined by the input -- a fixed-length `[u8; LEN]` buffer, say, always writes
 exactly `LEN` -- so that callers never have to remember which output-buffer methods report their length and which
 don't.
+
+### fn prefixes and suffixes
+
+Function prefixes and suffixes are used consistently across the library.
+
+Take, for example a one-shot API `fn encrypt(plaintext: &[u8]) -> Result<Vec<u8>, SymmetricCipherError>`.
+
+The following prefixes can be applied:
+
+* `do_`: this implies that it is part of a stateful streaming API, will typically take `&mut self`, and is likely
+  accompanied by a `do_encrypt_init()` and `do_encrypt_final()`.
+
+The following suffixes can be applied
+
+* `_init / _update / _final`: indicates phase of a stateful streaming API. Other verbs can be used here as appropriate
+  to the primitive, such as `absorb / squeeze`, `encrypt / decrypt`, etc. `_init` is typically a static constructor
+  (though exceptions may exist), and `_final` indicates that this function call renders the object unusable afterwards
+  by consuming `self` via a move: `_final(self, ..)`.
+* `_rng`: indicates that this version of the function sources its random numbers from a provided `&mut dyn RNG` instead
+  of
+  from the default library RNG. `_rng(.., &mut dyn RNG)`.
+* `_out / _inplace`: indicates that the function works in the provided buffer. `_out` indicates that the function takes
+  an output buffer, which may be oversized, and returns the number of bytes written to it:
+  `_out(.., out: &mut [u8] -> Result<usize, SymmetricCipherError>`. `_inplace` indicates that the input and output are
+  required to be the same size, and so the function uses the same buffer for input and output:
+  `_inplace(.., data: &mut [u8]) -> Result<usize, SymmetricCipherError>`. It is assumed that these will be
+  memory-efficient and work in the provided buffer instead of creating duplicate data on the stack.
+* `_out_len`: a pair for an `_out` function that computes the minimum size of the output buffer required for the paired
+  `_out` function to succeed. This may be an over-estimate in order to guarantee success, for example if the size of the
+  required output buffer depends on the contents, and a subsequent call to the paired `_out` function does not actually
+  fill all of the requested space.
+
+Where multiple suffixes are present on a single function, they should go in this order:
+
+```text
+_{init, update, final, etc}_{rng}_{out, out_len, inplace}
+```
+
+Any function that takes an output buffer via an `_out` function must zeroize the provided output buffer via a
+`out.fill(0)` prior to writing to it. This must be done first, before even any error checking so that no stale content
+is left in the output buffer, even in the case of an error.
 
 ## Fallibility
 
@@ -218,6 +259,10 @@ the crate.
 Most crates should have a "Security Considerations" section that documents any footguns where the user of this crate
 could undermine their own security; for example where providing a seed or a nonce that is not truly random would
 completely undermine the algorithm.
+
+The heading is always exactly `# 🚨 Security Considerations 🚨`, wherever it appears: crate docs, module docs, or the
+docs of an individual type or function. A consistent heading makes these sections easy to spot when reading and to find
+with a search.
 
 ## Release Notes
 

@@ -8,7 +8,7 @@ use bouncycastle::core::traits::MAC;
 use bouncycastle::hex;
 use bouncycastle::poly1305::Poly1305;
 use bouncycastle::sha2::hmac::{HMAC_SHA256, HMAC_SHA512, HMAC_SHA512_224, HMAC_SHA512_256};
-use bouncycastle::sha3::{KMAC128, KMAC256};
+use bouncycastle::sha3::kmac::{KMAC128, KMAC256};
 use bouncycastle::sm3::hmac::HMAC_SM3;
 
 #[allow(non_camel_case_types)]

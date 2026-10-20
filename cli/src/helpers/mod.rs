@@ -217,7 +217,7 @@ pub(crate) fn stream_xof(mut xof: impl XOF, output_len: usize, output_hex: bool)
         bytes_read = io::stdin().read(&mut buf).expect("Failed to read from stdin");
     }
 
-    let out = xof.into_squeezer().do_final(output_len);
+    let out = xof.into_squeezer().do_output_final(output_len);
     write_bytes_or_hex(&out, output_hex);
     write_stdout(b"\n");
 }

@@ -9,7 +9,7 @@ use crate::hash_drbg80090a::HashDRBG80090A;
 
 /// Constructs a DRBG with no seed at all.
 ///
-/// # 🚨 Security 🚨
+/// # 🚨 Security Considerations 🚨
 /// The value is unusable until [`Sp80090ADrbg::instantiate`] has been called, and everything
 /// built on its output is only as strong as the seed material that call is given. Nothing here
 /// checks that material. [`HashDRBG80090A::new`] seeds from the OS and is the constructor to use;

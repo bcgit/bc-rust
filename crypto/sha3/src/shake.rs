@@ -54,6 +54,45 @@ impl<PARAMS: SHAKEParams> SHAKEInternal<PARAMS> {
         }
     }
 
+    /// Writes the SHA3-family state under `tag` into `out`, which is exactly
+    /// `SHA3_FAMILY_STATE_LEN` bytes: the sponge and the KDF metadata, with no version header.
+    /// For the functions built on SHAKE, which stamp their own tag and add fields of their own.
+    pub(crate) fn write_family_state(&self, tag: u8, out: &mut [u8]) {
+        let out: &mut [u8; SHA3_FAMILY_STATE_LEN] =
+            out.try_into().expect("a family state is exactly SHA3_FAMILY_STATE_LEN bytes");
+        serialize_sha3_family_state(
+            out,
+            tag,
+            &self.keccak,
+            self.kdf_key_type,
+            self.kdf_security_strength,
+            self.kdf_entropy,
+        );
+    }
+
+    /// The reverse of [`Self::write_family_state`]. The sponge comes back in whichever phase it
+    /// was suspended in; [`Self::is_squeezing`] says which, and the caller decides what that
+    /// means for it.
+    pub(crate) fn read_family_state(state: &[u8], tag: u8) -> Result<Self, SuspendableError> {
+        let input: &[u8; SHA3_FAMILY_STATE_LEN] =
+            state.try_into().map_err(|_| SuspendableError::InvalidData)?;
+        let rate = 1600 - ((PARAMS::SIZE as usize) << 1);
+        let (keccak, kdf_key_type, kdf_security_strength, kdf_entropy) =
+            deserialize_sha3_family_state(input, tag, rate)?;
+        Ok(Self {
+            _phantomdata: core::marker::PhantomData,
+            keccak,
+            kdf_key_type,
+            kdf_security_strength,
+            kdf_entropy,
+        })
+    }
+
+    /// Whether the sponge has begun producing output.
+    pub(crate) fn is_squeezing(&self) -> bool {
+        self.keccak.squeezing
+    }
+
     fn hash_internal(mut self, data: &[u8], result_len: usize) -> Vec<u8> {
         self.keccak.absorb(data);
         self.into_squeezer().do_output(result_len)
@@ -304,6 +343,19 @@ pub struct SHAKESqueezer<PARAMS: SHAKEParams> {
     shake: SHAKEInternal<PARAMS>,
 }
 
+impl<PARAMS: SHAKEParams> SHAKESqueezer<PARAMS> {
+    /// Wraps a sponge that is already squeezing, as read back from a suspended state.
+    pub(crate) fn from_squeezing(shake: SHAKEInternal<PARAMS>) -> Self {
+        debug_assert!(shake.is_squeezing());
+        Self { shake }
+    }
+
+    /// [`SHAKEInternal::write_family_state`] for the squeezing half.
+    pub(crate) fn write_family_state(&self, tag: u8, out: &mut [u8]) {
+        self.shake.write_family_state(tag, out)
+    }
+}
+
 impl<PARAMS: SHAKEParams> XOFSqueezer for SHAKESqueezer<PARAMS> {
     fn do_output(&mut self, num_bytes: usize) -> Vec<u8> {
         let mut out = vec![0u8; num_bytes];
@@ -406,7 +458,7 @@ impl<PARAMS: SHAKEParams> Hash for SHAKEInternal<PARAMS> {
     /// many*: a hash has one output length and it is this one. Ask for another through the XOF.
     fn do_final(self) -> Vec<u8> {
         let n = self.output_len();
-        self.into_squeezer().do_final(n)
+        self.into_squeezer().do_output_final(n)
     }
 
     fn do_final_out(self, output: &mut [u8]) -> usize {
@@ -417,7 +469,7 @@ impl<PARAMS: SHAKEParams> Hash for SHAKEInternal<PARAMS> {
         // buffer, which is exactly the difference between a XOF and a hash.
         let written = n.min(output.len());
         output[written..].fill(0);
-        self.into_squeezer().do_final_out(&mut output[..written])
+        self.into_squeezer().do_output_final_out(&mut output[..written])
     }
 
     fn do_final_partial_bits(
@@ -442,7 +494,7 @@ impl<PARAMS: SHAKEParams> Hash for SHAKEInternal<PARAMS> {
         // The buffer rule of do_final_out applies here too: output_len bytes, then zeros.
         let written = n.min(output.len());
         output[written..].fill(0);
-        Ok(squeezer.do_final_out(&mut output[..written]))
+        Ok(squeezer.do_output_final_out(&mut output[..written]))
     }
 
     fn max_security_strength(&self) -> SecurityStrength {

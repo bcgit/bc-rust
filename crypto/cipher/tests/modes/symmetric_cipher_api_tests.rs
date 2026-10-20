@@ -38,9 +38,9 @@ type ToyCtr<Dir> = Ctr<Toy, Dir, TOY_LEN, TOY_LEN, 12>;
 ///
 /// It pins the whole contract: one-shot round trips at every length, the `std` one-shots against
 /// the `_out` ones, streaming in eight chunkings with `update_out_len` exact on every call,
-/// `do_final_out` against `do_final`, a driven RNG reproducing its init data, corruption detection,
-/// short output buffers refused with the required length, and the key-type and security-strength
-/// policy.
+/// `do_encrypt_final_out` / `do_decrypt_final_out` against `do_encrypt_final` / `do_decrypt_final`,
+/// a driven RNG reproducing its init data, corruption detection, short output buffers refused with
+/// the required length, and the key-type and security-strength policy.
 #[test]
 fn the_stream_modes_conform_to_the_symmetric_cipher_suite() {
     let framework = TestFrameworkSymmetricCipher::new();
@@ -53,8 +53,8 @@ fn the_stream_modes_conform_to_the_symmetric_cipher_suite() {
 }
 
 /// The separate-output API must produce exactly what the in-place API produces, for the same key
-/// and init data. The separate-output API is written in terms of `do_encrypt`, so this is the check that
-/// the bridge adds nothing and loses nothing.
+/// and init data. The separate-output API is written in terms of `do_encrypt_inplace`, so this is
+/// the check that the bridge adds nothing and loses nothing.
 #[test]
 fn the_two_apis_agree_byte_for_byte() {
     fn check<E, D, const KEY_LEN: usize, const INIT_DATA_LEN: usize>(
@@ -72,7 +72,7 @@ fn the_two_apis_agree_byte_for_byte() {
             // The in-place API, which the mode implements directly.
             let (mut enc, init) = E::do_encrypt_init(key).unwrap();
             let mut in_place = plaintext.clone();
-            enc.do_encrypt(&mut in_place).unwrap();
+            enc.do_encrypt_inplace(&mut in_place).unwrap();
 
             // The separate-output API, under the same init data.
             let mut dec_as_sym =
@@ -82,7 +82,7 @@ fn the_two_apis_agree_byte_for_byte() {
                 .unwrap();
             let mut out = vec![0u8; plaintext.len()];
             let n = dec_as_sym.do_decrypt_out(&in_place, &mut out).unwrap();
-            let (last, last_len) = dec_as_sym.do_final().unwrap();
+            let (last, last_len) = dec_as_sym.do_decrypt_final().unwrap();
             assert_eq!(n, plaintext.len(), "{name}, len {len}: everything is released immediately");
             assert_eq!(last, [0u8; 0], "{name}: a stream cipher has no final output");
             assert_eq!(last_len, 0, "{name}: ...and none of it is data");
@@ -127,11 +127,9 @@ fn the_length_predictions_are_exact() {
             "encrypt_out_len is the identity"
         );
         assert_eq!(
-            <ToyCtr<Decrypting> as SymmetricCipherDecryptor<TOY_LEN, 12, 0>>::decrypt_out_max_len(
-                len
-            ),
+            <ToyCtr<Decrypting> as SymmetricCipherDecryptor<TOY_LEN, 12, 0>>::decrypt_out_len(len),
             len,
-            "decrypt_out_max_len is exact, not an upper bound"
+            "decrypt_out_len is exact, not an upper bound"
         );
 
         let (enc, _) =
@@ -175,7 +173,7 @@ fn a_short_output_buffer_is_refused_without_consuming_anything() {
     )
     .unwrap();
     let mut reference = plaintext.clone();
-    fresh.do_encrypt(&mut reference).unwrap();
+    fresh.do_encrypt_inplace(&mut reference).unwrap();
     assert_eq!(big_enough, reference, "the refused call must not have advanced the keystream");
 }
 
@@ -194,7 +192,7 @@ fn a_short_output_buffer_is_refused_when_decrypting_too() {
     // Encrypt normally, then try to decrypt into a buffer one byte too small.
     let (mut enc, init) = ToyCfb::<Encrypting>::do_encrypt_init(&key).unwrap();
     let mut ciphertext = plaintext.clone();
-    enc.do_encrypt(&mut ciphertext).unwrap();
+    enc.do_encrypt_inplace(&mut ciphertext).unwrap();
 
     let mut dec =
         <ToyCfb<Decrypting> as SymmetricCipherDecryptor<TOY_LEN, TOY_LEN, 0>>::do_decrypt_init(
@@ -216,8 +214,8 @@ fn a_short_output_buffer_is_refused_when_decrypting_too() {
     assert_eq!(n, ciphertext.len());
     assert_eq!(big_enough, plaintext, "the refused call must not have advanced the keystream");
 
-    // An oversized buffer is fine, and only the leading bytes are written: the check is "too
-    // short", not "not exactly equal".
+    // An oversized buffer is fine, the data lands in the leading bytes and the rest is zeroed: the
+    // check is "too short", not "not exactly equal".
     let mut oversized = vec![0xAAu8; ciphertext.len() + 8];
     let mut dec =
         <ToyCfb<Decrypting> as SymmetricCipherDecryptor<TOY_LEN, TOY_LEN, 0>>::do_decrypt_init(
@@ -227,7 +225,7 @@ fn a_short_output_buffer_is_refused_when_decrypting_too() {
     let n = dec.do_decrypt_out(&ciphertext, &mut oversized).expect("an oversized buffer is fine");
     assert_eq!(n, ciphertext.len());
     assert_eq!(&oversized[..n], &plaintext[..], "the data lands in the leading bytes");
-    assert!(oversized[n..].iter().all(|&b| b == 0xAA), "the rest is left alone");
+    assert!(oversized[n..].iter().all(|&b| b == 0), "the rest is zeroed");
 }
 
 /// The allocating one-shots -- the `Vec`-returning `encrypt` / `decrypt`, which no other test here

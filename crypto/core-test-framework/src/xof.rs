@@ -8,8 +8,8 @@ pub struct TestFrameworkXOF {
     // Put any config options here
     /// Can be disabled for XOFs that don't support a partial final byte of input.
     pub enable_partial_byte_tests: bool,
-    /// Set for XOFs whose [`XOFSqueezer::do_final`] binds the length it is asked for when it is
-    /// the first read -- the SP 800-185 forms, which then compute their fixed-length counterpart
+    /// Set for XOFs whose [`XOFSqueezer::do_output_final`] binds the length it is asked for when it
+    /// is the first read -- the SP 800-185 forms, which then compute their fixed-length counterpart
     /// rather than the XOF stream. The suite cannot know those bytes, so it checks the split
     /// instead and leaves the values to the implementation's own vector tests.
     pub do_final_binds_output_length: bool,
@@ -87,7 +87,7 @@ impl TestFrameworkXOF {
         // second's bytes belong to the implementation's own vector tests.
         let mut xof = make();
         xof.do_update(input);
-        let first_read = xof.into_squeezer().do_final(expected_output.len());
+        let first_read = xof.into_squeezer().do_output_final(expected_output.len());
         if self.do_final_binds_output_length {
             assert_ne!(
                 first_read, expected_output,
@@ -102,7 +102,7 @@ impl TestFrameworkXOF {
         let mut buf = vec![0xFFu8; expected_output.len()];
         let mut xof = make();
         xof.do_update(input);
-        let n = xof.into_squeezer().do_final_out(&mut buf);
+        let n = xof.into_squeezer().do_output_final_out(&mut buf);
         assert_eq!(n, expected_output.len(), "do_final_out must report what it wrote");
         assert_eq!(buf, first_read, "do_final_out must agree with do_final");
 
@@ -113,7 +113,7 @@ impl TestFrameworkXOF {
         let mut out = xof.into_squeezer();
         let first = out.do_output(split);
         assert_eq!(
-            [first, out.do_final(expected_output.len() - split)].concat(),
+            [first, out.do_output_final(expected_output.len() - split)].concat(),
             expected_output,
             "do_final after a read must continue that stream"
         );
@@ -206,7 +206,7 @@ impl TestFrameworkXOF {
             c.do_update(input);
             assert_eq!(
                 via_hash,
-                c.into_squeezer().do_final(output_len),
+                c.into_squeezer().do_output_final(output_len),
                 "Hash::do_final must be the squeezer's final read at output_len"
             );
         } else {

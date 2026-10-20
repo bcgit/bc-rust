@@ -13,7 +13,7 @@
 //! rest of stdin through the inline decryptor -- which, per
 //! [`SymmetricCipherDecryptor`](bouncycastle::core::traits::SymmetricCipherDecryptor)'s contract,
 //! holds back the last 16 bytes it has seen because they might be the tag -- and checks the tag on
-//! `do_final`.
+//! `do_decrypt_final`.
 //!
 //! # The exit code is the signal, not the output
 //!
@@ -38,6 +38,7 @@
 
 use crate::helpers::{flush_stdout, read_from_file_raw, write_bytes_or_hex, write_stdout};
 use bouncycastle::cipher::modes::Gcm;
+use bouncycastle::cipher::modes::ModeNames;
 use bouncycastle::cipher::{Decrypting, Encrypting};
 use bouncycastle::core::hazmat::ElectronicCodeBook;
 use bouncycastle::core::key_material::KeyMaterial;
@@ -73,7 +74,7 @@ pub fn encrypt_gcm<P, const KEY_LEN: usize, const TAG_LEN: usize>(
     aad: &[u8],
     output_hex: bool,
 ) where
-    P: ElectronicCodeBook<KEY_LEN, 16>,
+    P: ElectronicCodeBook<KEY_LEN, 16> + ModeNames,
 {
     encrypt_aead::<Gcm<P, Encrypting, KEY_LEN, TAG_LEN>, KEY_LEN, 12, TAG_LEN, TAG_LEN>(
         key, aad, output_hex,
@@ -86,7 +87,7 @@ pub fn decrypt_gcm<P, const KEY_LEN: usize, const TAG_LEN: usize>(
     aad: &[u8],
     output_hex: bool,
 ) where
-    P: ElectronicCodeBook<KEY_LEN, 16>,
+    P: ElectronicCodeBook<KEY_LEN, 16> + ModeNames,
 {
     decrypt_aead::<Gcm<P, Decrypting, KEY_LEN, TAG_LEN>, KEY_LEN, 12, TAG_LEN, TAG_LEN>(
         key, aad, output_hex,
@@ -140,7 +141,7 @@ pub fn encrypt_aead<
 
     // The detached final returns whatever ciphertext was held back (none, for the AEADs here)
     // and the tag, written last.
-    let (last, last_len, tag) = enc.do_final_detached().unwrap_or_else(|e| {
+    let (last, last_len, tag) = enc.do_encrypt_final_detached().unwrap_or_else(|e| {
         eprintln!("Error: encryption failed: {e:?}");
         exit(-1);
     });
@@ -150,8 +151,8 @@ pub fn encrypt_aead<
 }
 
 /// Decrypts stdin to stdout under any AEAD: reads the nonce, streams the rest through the inline
-/// decryptor, and checks the tag on `do_final`. See the module docs for why plaintext may already
-/// be written to stdout by the time a tag failure is reported.
+/// decryptor, and checks the tag on `do_decrypt_final`. See the module docs for why plaintext may
+/// already be written to stdout by the time a tag failure is reported.
 pub fn decrypt_aead<
     D,
     const KEY_LEN: usize,
@@ -201,7 +202,7 @@ pub fn decrypt_aead<
         write_bytes_or_hex(&out, output_hex);
     }
 
-    match dec.do_final() {
+    match dec.do_decrypt_final() {
         // Any plaintext still held back (none, for the AEADs here: the held bytes are the tag).
         Ok((last, last_len)) => write_bytes_or_hex(&last[..last_len], output_hex),
         Err(e) => {

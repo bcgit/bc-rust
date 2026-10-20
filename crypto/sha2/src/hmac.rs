@@ -227,7 +227,7 @@
 //! hash's suspended state -- the key is deliberately excluded -- so it matches the corresponding row
 //! for the bare hash.
 //!
-//! # Security Considerations
+//! # 🚨 Security Considerations 🚨
 //!
 //! * The key must carry at least the security strength claimed by the HMAC, and [`MAC::new`]
 //!   enforces that. [`MAC::new_allow_weak_key`] deliberately skips the check; use it only where a

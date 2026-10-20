@@ -3,7 +3,7 @@
 //! direct type side by side on the same input; nothing here is an expected value written by hand.
 
 use bouncycastle_ascon::ASCON_XOF128_NAME;
-use bouncycastle_ascon::ascon_xof128::AsconXof128;
+use bouncycastle_ascon::AsconXof128;
 use bouncycastle_core::errors::HashError;
 use bouncycastle_core::traits::{Hash, XOF, XOFSqueezer};
 use bouncycastle_core_test_framework::xof::TestFrameworkXOF;

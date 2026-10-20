@@ -70,7 +70,7 @@ pub enum HashFactory {
     ///
     SM3(sm3::SM3),
     ///
-    AsconHash256(ascon::ascon_hash256::AsconHash256),
+    AsconHash256(ascon::AsconHash256),
 }
 
 impl Default for HashFactory {
@@ -103,7 +103,7 @@ impl AlgorithmFactory for HashFactory {
             SHA3_384_NAME => Ok(Self::SHA3_384(sha3::SHA3_384::new())),
             SHA3_512_NAME => Ok(Self::SHA3_512(sha3::SHA3_512::new())),
             SM3_NAME => Ok(Self::SM3(sm3::SM3::new())),
-            ASCON_HASH256_NAME => Ok(Self::AsconHash256(ascon::ascon_hash256::AsconHash256::new())),
+            ASCON_HASH256_NAME => Ok(Self::AsconHash256(ascon::AsconHash256::new())),
             _ => Err(FactoryError::UnsupportedAlgorithm(format!(
                 "The algorithm: \"{}\" is not a known Hash",
                 alg_name

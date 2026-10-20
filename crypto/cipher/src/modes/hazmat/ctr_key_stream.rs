@@ -1,9 +1,10 @@
 //! The CTR keystream, [`CtrKeyStream`]: a raw [`KeyStream`], used through [`Ctr`].
 
+use crate::modes::ModeNames;
 use crate::modes::ctr::apply_counter_blocks;
 use bouncycastle_core::errors::{SuspendableError, SymmetricCipherError};
 use bouncycastle_core::hazmat::{ElectronicCodeBook, KeyStream};
-use bouncycastle_core::key_material::KeyMaterial;
+use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::Algorithm;
 use bouncycastle_utils::suspendable_state::{Cursor, CursorMut, SuspendableComponent};
@@ -18,7 +19,7 @@ use crate::stream::StreamCipher;
 /// The CTR keystream `Oj = CIPH_K(Tj)` over any [`ElectronicCodeBook`], with `Tj = N | [j]m`;
 /// see the module docs. Use it through [`Ctr`].
 ///
-/// # 🚨 Security 🚨
+/// # 🚨 Security Considerations 🚨
 /// A raw [`KeyStream`]: constructed directly, it takes the nonce from the caller and does not
 /// refuse to run past the counter. See [`KeyStream`]'s security notes and
 /// [`bouncycastle_core::hazmat`] for the supported uses.
@@ -30,7 +31,7 @@ use crate::stream::StreamCipher;
 #[derive(Clone)]
 pub struct CtrKeyStream<P, const KEY_LEN: usize, const BLOCK_LEN: usize, const INIT_DATA_LEN: usize>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
 {
     perm: P,
     /// `N`: the message nonce, the leading bytes of every counter block.
@@ -47,7 +48,7 @@ where
 impl<P, const KEY_LEN: usize, const BLOCK_LEN: usize, const INIT_DATA_LEN: usize>
     CtrKeyStream<P, KEY_LEN, BLOCK_LEN, INIT_DATA_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
 {
     /// Bytes of counter at the end of each block: whatever the nonce leaves.
     const CTR_LEN: usize = BLOCK_LEN - INIT_DATA_LEN;
@@ -125,11 +126,10 @@ where
 impl<P, const KEY_LEN: usize, const BLOCK_LEN: usize, const INIT_DATA_LEN: usize> Algorithm
     for CtrKeyStream<P, KEY_LEN, BLOCK_LEN, INIT_DATA_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
 {
-    /// The underlying permutation's name. The mode is not appended: `&'static str`s cannot be
-    /// concatenated in a `const`, and the mode is already in the type.
-    const ALG_NAME: &'static str = P::ALG_NAME;
+    /// The permutation's name for this mode, [`ModeNames::CTR_ALG_NAME`].
+    const ALG_NAME: &'static str = P::CTR_ALG_NAME;
     /// A mode does not change the strength of the underlying cipher.
     const MAX_SECURITY_STRENGTH: SecurityStrength = P::MAX_SECURITY_STRENGTH;
 }
@@ -138,7 +138,7 @@ impl<P, const KEY_LEN: usize, const BLOCK_LEN: usize, const INIT_DATA_LEN: usize
     KeyStream<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
     for CtrKeyStream<P, KEY_LEN, BLOCK_LEN, INIT_DATA_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
 {
     /// Expands the key; the keystream starts at `T1 = N | [0]m`.
     fn new(
@@ -146,6 +146,7 @@ where
         init_data: &[u8; INIT_DATA_LEN],
     ) -> Result<Self, SymmetricCipherError> {
         Self::check_shape();
+        key.check_algorithm(Self::ALG_NAME)?;
         let perm = P::new(key)?;
         Ok(Self::start(perm, *init_data))
     }
@@ -173,7 +174,7 @@ where
 impl<P, const KEY_LEN: usize, const BLOCK_LEN: usize, const INIT_DATA_LEN: usize>
     SuspendableComponent for CtrKeyStream<P, KEY_LEN, BLOCK_LEN, INIT_DATA_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
 {
     const STATE_LEN: usize = INIT_DATA_LEN + 8;
     type Key = KeyMaterial<KEY_LEN>;
@@ -187,6 +188,7 @@ where
 
     fn read_state(state: &[u8], key: &Self::Key) -> Result<Self, SuspendableError> {
         Self::check_shape();
+        key.check_algorithm(Self::ALG_NAME).map_err(|_| SuspendableError::InvalidData)?;
         let perm = P::new(key).map_err(|_| SuspendableError::InvalidData)?;
         let mut r = Cursor::new(state);
         let nonce = r.array::<INIT_DATA_LEN>();
@@ -213,7 +215,11 @@ mod tests {
     use bouncycastle_core::hazmat::ElectronicCodeBook;
     use bouncycastle_core::key_material::{KeyMaterial, KeyType};
     use bouncycastle_core::traits::StreamCipherEncryptor;
-    use bouncycastle_core_test_framework::ToyBlockCipher;
+    use toy::ToyBlockCipher;
+
+    mod toy {
+        include!("../../../tests/common/toy_block_cipher.rs");
+    }
 
     type ToyKeyStream = CtrKeyStream<ToyBlockCipher, 16, 16, 12>;
     type ToyCtr = Ctr<ToyBlockCipher, Encrypting, 16, 16, 12>;
@@ -235,7 +241,7 @@ mod tests {
             nonce,
         ));
         let mut discarded = [0u8; 32];
-        from_start.do_encrypt(&mut discarded).unwrap();
+        from_start.do_encrypt_inplace(&mut discarded).unwrap();
 
         let mut from_start_at = ToyCtr::from_keystream(ToyKeyStream::start_at(
             ToyBlockCipher::new(&key()).unwrap(),
@@ -245,8 +251,8 @@ mod tests {
 
         let mut a = [0x42u8; 48];
         let mut b = a;
-        from_start.do_encrypt(&mut a).unwrap();
-        from_start_at.do_encrypt(&mut b).unwrap();
+        from_start.do_encrypt_inplace(&mut a).unwrap();
+        from_start_at.do_encrypt_inplace(&mut b).unwrap();
         assert_eq!(a, b, "start_at(.., 2) must agree with start() past its first two blocks");
     }
 
