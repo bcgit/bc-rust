@@ -198,9 +198,7 @@ const LARGEST_HASHER_OUTPUT_LEN: usize = 64;
 /// Every worker the key hands out starts from a clone of the inner state and borrows the key for
 /// the outer one, so the per-message cost of the key is one clone and no hashing. The key holds
 /// no key bytes: a caller who needs the material again keeps the `KeyMaterial`. Construction is
-/// [`FromAnyKeyMaterial`]; the workers come from [`MacGenerationKey`] and [`MacVerificationKey`],
-/// and a construction that keeps the inner hash itself (HKDF's extract phase) uses
-/// [`inner_state`](Self::inner_state) and [`finish_out`](Self::finish_out) directly.
+/// [`FromAnyKeyMaterial`]; the workers come from [`MacGenerationKey`] and [`MacVerificationKey`].
 pub struct HmacKey<HASH: Hash + Default> {
     /// `H` after absorbing `K XOR ipad`: the start of RFC 2104 Section 2 step (4).
     inner: HASH,
@@ -318,7 +316,10 @@ impl<HASH: Hash + Default> FromAnyKeyMaterial for HmacKey<HASH> {
 
 impl<HASH: Hash + Default> HmacKey<HASH> {
     /// `H` after absorbing `K XOR ipad`, ready for the text: the start of RFC 2104 Section 2
-    /// step (4). What a worker's updates feed; [`finish_out`](Self::finish_out) is its other half.
+    /// step (4). What a worker's updates feed; `finish_out` is its other half. Hidden: the two
+    /// exist for HKDF's extract phase, which cannot hold a worker that borrows a key it owns, and
+    /// are not part of the key's documented API.
+    #[doc(hidden)]
     pub fn inner_state(&self) -> HASH {
         self.inner.clone()
     }
@@ -329,6 +330,7 @@ impl<HASH: Hash + Default> HmacKey<HASH> {
     ///
     /// # Errors
     /// [`MACError::InvalidLength`] if `out` is shorter than [`MIN_FIPS_DIGEST_LEN`].
+    #[doc(hidden)]
     pub fn finish_out(&self, inner: HASH, out: &mut [u8]) -> Result<usize, MACError> {
         out.fill(0);
         if out.len() < MIN_FIPS_DIGEST_LEN {
