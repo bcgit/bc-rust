@@ -19,13 +19,17 @@
 
 use bouncycastle_aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
 use bouncycastle_aes::{AES128Key, AES192Key, AES256Key};
-use bouncycastle_cipher::modes::{CCM, CCMFrame, CcmDecryptor, CcmEncryptor, ModeNames};
+use bouncycastle_cipher::modes::{
+    CCM, CCM_Packet, CcmPacketDecryptor, CcmPacketEncryptor, ModeNames,
+};
 use bouncycastle_core::errors::SymmetricCipherError;
-use bouncycastle_core::hazmat::{AeadPacketDecryptMode, AeadPacketEncryptMode, ElectronicCodeBook};
+use bouncycastle_core::hazmat::{
+    AeadDeclaredDecryptMode, AeadDeclaredEncryptMode, ElectronicCodeBook,
+};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::symmetric_key::{
-    AeadDecryptionKey, AeadEncryptionKey, AeadPacketDecryptionKey, AeadPacketEncryptionKey,
+    AeadDeclaredDecryptionKey, AeadDeclaredEncryptionKey, AeadDecryptionKey, AeadEncryptionKey,
     FromKeyMaterial,
 };
 use bouncycastle_core::traits::{
@@ -47,11 +51,11 @@ fn material<const N: usize>(hex_key: &str) -> KeyMaterial<N> {
         .expect("a symmetric cipher key")
 }
 
-/// The appendix key bound to the fixed-frame pair: its streams are [`CcmEncryptor`] /
-/// [`CcmDecryptor`] at `(NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN)`, and its one-shots take exactly
+/// The appendix key bound to the fixed-frame pair: its streams are [`CcmPacketEncryptor`] /
+/// [`CcmPacketDecryptor`] at `(NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN)`, and its one-shots take exactly
 /// `DATA_LEN` bytes.
 type FrameKey<const N: usize, const T: usize, const A: usize, const D: usize> =
-    AES128Key<CCMFrame<N, T, A, D>>;
+    AES128Key<CCM_Packet<N, T, A, D>>;
 
 fn frame_key<const N: usize, const T: usize, const A: usize, const D: usize>()
 -> FrameKey<N, T, A, D> {
@@ -266,8 +270,8 @@ fn framework(data_len: usize) -> TestFrameworkAEADCipher {
 }
 
 /// The whole [`AeadEncryptionKey`] / [`AeadDecryptionKey`] contract, through the shared
-/// framework, for a key bound to [`CCMFrame`], whose streams are the fixed-frame
-/// [`CcmEncryptor`] / [`CcmDecryptor`] pair.
+/// framework, for a key bound to [`CCM_Packet`], whose streams are the fixed-frame
+/// [`CcmPacketEncryptor`] / [`CcmPacketDecryptor`] pair.
 ///
 /// `DATA_LEN` is 240, well above the few multiples of the tag the suite's one-shots try, so the
 /// one-shots and the streaming methods are exercised at exactly it and refused at every other
@@ -283,11 +287,11 @@ fn framework_streaming_contract() {
 fn framework_streaming_contract_other_parameter_sets() {
     let mut rng = os_rng();
     framework(240).test_key::<24, 12, 16, 16, _>(
-        &AES192Key::<CCMFrame<12, 16, 64, 240>>::generate(&mut rng).expect("a generated key"),
+        &AES192Key::<CCM_Packet<12, 16, 64, 240>>::generate(&mut rng).expect("a generated key"),
         &mut rng,
     );
     framework(240).test_key::<32, 12, 16, 16, _>(
-        &AES256Key::<CCMFrame<12, 16, 64, 240>>::generate(&mut rng).expect("a generated key"),
+        &AES256Key::<CCM_Packet<12, 16, 64, 240>>::generate(&mut rng).expect("a generated key"),
         &mut rng,
     );
     // A 13-byte nonce (q = 2) with an 8-byte tag: the parameterization IEEE 802.11 CCMP uses, and
@@ -620,15 +624,15 @@ fn the_decryptor_releases_the_payload_and_holds_back_only_the_tag() {
 }
 
 /// The frame key's one-shots are written over its streams, so `DATA_LEN` and `AAD_LEN` bind
-/// them: at the frame's length, with AAD at and under the capacity, they agree with the packet
+/// them: at the frame's length, with AAD at and under the capacity, they agree with the declared-length
 /// key's in-place one-shots byte for byte, on every form -- detached and inline, drawing and
 /// supplied-nonce, with and without AAD, and the three decrypting forms -- and at any other
 /// length, or with AAD past the capacity, every form is refused. A failed tag leaves the output
-/// zeroized. The packet key, [`CCM`], is the one that takes any length.
+/// zeroized. The declared-length key, [`CCM`], is the one that takes any length.
 #[test]
-fn frame_key_one_shots_take_the_frame_and_agree_with_the_packet_key() {
+fn packet_key_one_shots_take_the_frame_and_agree_with_the_declared_length_key() {
     let key = frame_key::<12, 16, 48, 48>();
-    let packet = AES128Key::<CCM<12, 16>>::from_key_material(&material::<16>(APPENDIX_C_KEY))
+    let declared = AES128Key::<CCM<12, 16>>::from_key_material(&material::<16>(APPENDIX_C_KEY))
         .expect("the appendix key");
     let rng = || FixedSeedRNG::<12>::new([0x24u8; 12]);
 
@@ -645,7 +649,7 @@ fn frame_key_one_shots_take_the_frame_and_agree_with_the_packet_key() {
         assert_eq!(written, msg_len);
         let mut direct = msg.clone();
         let direct_tag =
-            packet.encrypt_detached_in_place_nonce(&nonce, &aad, &mut direct).expect("in place");
+            declared.encrypt_detached_in_place_nonce(&nonce, &aad, &mut direct).expect("in place");
         assert_eq!((&detached, tag), (&direct, direct_tag), "{what}: detached agrees");
 
         let mut inline = vec![0u8; msg_len + 16];
@@ -668,7 +672,7 @@ fn frame_key_one_shots_take_the_frame_and_agree_with_the_packet_key() {
             msg_len
         );
         assert_eq!(pt, msg, "{what}: inline round trip");
-        packet.decrypt_detached_in_place(&nonce, &aad, &mut direct, &tag).expect("in place");
+        declared.decrypt_detached_in_place(&nonce, &aad, &mut direct, &tag).expect("in place");
         assert_eq!(direct, msg, "{what}: in-place round trip");
 
         // The supplied-nonce forms, each opened by the matching decrypt.
@@ -681,7 +685,7 @@ fn frame_key_one_shots_take_the_frame_and_agree_with_the_packet_key() {
     }
 
     // One byte either side of the frame, nothing, well past it, and AAD past the capacity: every
-    // form refuses, and the packet key does not.
+    // form refuses, and the declared-length key does not.
     for (msg_len, aad_len) in [(47usize, 0usize), (49, 0), (0, 5), (1000, 200), (48, 49)] {
         let msg = vec![0xA5u8; msg_len];
         let aad = vec![0x3Cu8; aad_len];
@@ -708,10 +712,10 @@ fn frame_key_one_shots_take_the_frame_and_agree_with_the_packet_key() {
         );
 
         let mut direct = msg.clone();
-        let tag = packet
+        let tag = declared
             .encrypt_detached_in_place_nonce(&nonce, &aad, &mut direct)
-            .unwrap_or_else(|e| panic!("{what}: the packet key takes any length: {e:?}"));
-        let n = packet.encrypt_with_aad_nonce_out(&nonce, &aad, &msg, &mut inline).unwrap();
+            .unwrap_or_else(|e| panic!("{what}: the declared-length key takes any length: {e:?}"));
+        let n = declared.encrypt_with_aad_nonce_out(&nonce, &aad, &msg, &mut inline).unwrap();
         assert_eq!(n, msg_len + 16);
         let mut pt = vec![0xEEu8; msg_len];
         assert!(
@@ -753,7 +757,7 @@ fn frame_key_one_shots_take_the_frame_and_agree_with_the_packet_key() {
     assert_eq!(pt, [0u8; 48]);
     let mut buf = inline[..48].to_vec();
     assert!(matches!(
-        packet.decrypt_detached_in_place(&nonce, b"hdr", &mut buf, &[0u8; 16]),
+        declared.decrypt_detached_in_place(&nonce, b"hdr", &mut buf, &[0u8; 16]),
         Err(SymmetricCipherError::AEADTagCheckFailed)
     ));
     assert_eq!(buf, [0u8; 48]);
@@ -956,20 +960,20 @@ fn an_inline_ciphertext_shorter_than_the_tag_is_rejected() {
     assert_eq!(dec.do_decrypt_final().expect("an empty frame still verifies").1, 0);
 }
 
-/// A truncated `C` on a frame that is not empty, where the frame key's stream and the packet
+/// A truncated `C` on a frame that is not empty, where the frame key's stream and the declared-length
 /// key's one-shots part ways. The streaming decryptor knows the frame: `do_decrypt_out` releases
 /// the payload as it arrives, up to `DATA_LEN`, holds back only what follows as the tag, and the
-/// final reports anything short of `DATA_LEN + TAG_LEN` as malformed. The packet key's one-shots
+/// final reports anything short of `DATA_LEN + TAG_LEN` as malformed. The declared-length key's one-shots
 /// take the whole message and know no frame: a `C` shorter than the tag is malformed, and
 /// anything longer is a shorter message whose tag does not verify. `decrypt_out_len` is `C` less
 /// a tag, as for any AEAD.
 #[test]
 fn a_short_inline_ciphertext_is_rejected_the_same_way_for_a_non_empty_frame() {
     const DATA_LEN: usize = 32;
-    type Enc = CcmEncryptor<AES128Internal, 16, 16, 12, 16, 16, DATA_LEN>;
-    type Dec = CcmDecryptor<AES128Internal, 16, 16, 12, 16, 16, DATA_LEN>;
+    type Enc = CcmPacketEncryptor<AES128Internal, 16, 16, 12, 16, 16, DATA_LEN>;
+    type Dec = CcmPacketDecryptor<AES128Internal, 16, 16, 12, 16, 16, DATA_LEN>;
     let key = frame_key::<12, 16, 16, DATA_LEN>();
-    let packet = AES128Key::<CCM<12, 16>>::from_key_material(&material::<16>(APPENDIX_C_KEY))
+    let declared = AES128Key::<CCM<12, 16>>::from_key_material(&material::<16>(APPENDIX_C_KEY))
         .expect("the appendix key");
     let frame = [0x5Au8; DATA_LEN];
     let mut sealed = vec![0u8; Enc::encrypt_out_len(DATA_LEN)];
@@ -990,7 +994,7 @@ fn a_short_inline_ciphertext_is_rejected_the_same_way_for_a_non_empty_frame() {
         };
         let mut pt = vec![0u8; Dec::decrypt_out_len(len)];
         assert!(
-            one_shot_says(packet.decrypt_with_aad_out(&nonce, b"hdr", short, &mut pt)),
+            one_shot_says(declared.decrypt_with_aad_out(&nonce, b"hdr", short, &mut pt)),
             "a {len}-byte C is too short for a tag, or a shorter message with the wrong one \
              (decrypt_with_aad_out)"
         );
@@ -1006,7 +1010,7 @@ fn a_short_inline_ciphertext_is_rejected_the_same_way_for_a_non_empty_frame() {
 
     // ...and the accepted length, through both, so the loop's bound is not off by one.
     let mut pt = vec![0u8; Dec::decrypt_out_len(sealed.len())];
-    assert_eq!(packet.decrypt_with_aad_out(&nonce, b"hdr", &sealed, &mut pt).expect("open"), 32);
+    assert_eq!(declared.decrypt_with_aad_out(&nonce, b"hdr", &sealed, &mut pt).expect("open"), 32);
     assert_eq!(&pt[..], &frame[..]);
     assert_eq!(key.decrypt_with_aad_out(&nonce, b"hdr", &sealed, &mut pt).expect("open"), 32);
     assert_eq!(&pt[..], &frame[..]);
@@ -1083,7 +1087,7 @@ fn each_direction_has_its_own_methods() {
 
 // ---- memory ------------------------------------------------------------------------------
 
-/// Pins the sizes: the fixed-frame pair is the mode's packet state (264/296/328 B for
+/// Pins the sizes: the fixed-frame pair is the mode's `Ccm` state (264/296/328 B for
 /// AES-128/192/256, independent of `NONCE_LEN`/`TAG_LEN`) plus the `AAD_LEN` buffer and a few
 /// words of bookkeeping, independent of `DATA_LEN`.
 #[test]
@@ -1091,28 +1095,34 @@ fn sizes_match_the_documented_memory_table() {
     use core::mem::size_of;
 
     // The pair holds no payload: a 4 KiB frame costs exactly what a 16-byte one does.
-    let enc_64 = size_of::<CcmEncryptor<AES128Internal, 16, 16, 12, 16, 64, 4096>>();
-    assert_eq!(enc_64, size_of::<CcmEncryptor<AES128Internal, 16, 16, 12, 16, 64, 16>>());
+    let enc_64 = size_of::<CcmPacketEncryptor<AES128Internal, 16, 16, 12, 16, 64, 4096>>();
+    assert_eq!(enc_64, size_of::<CcmPacketEncryptor<AES128Internal, 16, 16, 12, 16, 64, 16>>());
     assert_eq!(
         enc_64,
         264 + 64 + 16,
-        "the packet state, the AAD buffer, its length and the phase flag"
+        "the `Ccm` state, the AAD buffer, its length and the phase flag"
     );
     assert_eq!(
-        size_of::<CcmEncryptor<AES128Internal, 16, 16, 12, 16, 4096, 4096>>() - enc_64,
+        size_of::<CcmPacketEncryptor<AES128Internal, 16, 16, 12, 16, 4096, 4096>>() - enc_64,
         4096 - 64,
         "the value grows by exactly the AAD capacity"
     );
     // Independent of NONCE_LEN and TAG_LEN: the nonce lives inside the counter template and the
     // tag is assembled at finalization, not held.
-    assert_eq!(enc_64, size_of::<CcmEncryptor<AES128Internal, 16, 16, 7, 4, 64, 4096>>());
-    assert_eq!(enc_64, size_of::<CcmEncryptor<AES128Internal, 16, 16, 13, 16, 64, 4096>>());
+    assert_eq!(enc_64, size_of::<CcmPacketEncryptor<AES128Internal, 16, 16, 7, 4, 64, 4096>>());
+    assert_eq!(enc_64, size_of::<CcmPacketEncryptor<AES128Internal, 16, 16, 13, 16, 64, 4096>>());
     // The key schedule is the difference between the key lengths.
-    assert_eq!(size_of::<CcmEncryptor<AES192Internal, 24, 16, 12, 16, 64, 4096>>(), enc_64 + 32);
-    assert_eq!(size_of::<CcmEncryptor<AES256Internal, 32, 16, 12, 16, 64, 4096>>(), enc_64 + 64);
+    assert_eq!(
+        size_of::<CcmPacketEncryptor<AES192Internal, 24, 16, 12, 16, 64, 4096>>(),
+        enc_64 + 32
+    );
+    assert_eq!(
+        size_of::<CcmPacketEncryptor<AES256Internal, 32, 16, 12, 16, 64, 4096>>(),
+        enc_64 + 64
+    );
     // The decryptor adds the tag it holds back and that tag's length.
-    let dec_64 = size_of::<CcmDecryptor<AES128Internal, 16, 16, 12, 16, 64, 4096>>();
-    assert_eq!(dec_64, size_of::<CcmDecryptor<AES128Internal, 16, 16, 12, 16, 64, 16>>());
+    let dec_64 = size_of::<CcmPacketDecryptor<AES128Internal, 16, 16, 12, 16, 64, 4096>>();
+    assert_eq!(dec_64, size_of::<CcmPacketDecryptor<AES128Internal, 16, 16, 12, 16, 64, 16>>());
     assert_eq!(dec_64, enc_64 + 16 + 8);
 }
 

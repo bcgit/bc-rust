@@ -1,4 +1,4 @@
-//! The mode-bound CCM key: the packet role traits, whose constructors take the AAD and payload
+//! The mode-bound CCM key: the declared-length role traits, whose constructors take the AAD and payload
 //! lengths, their one-shots at any length, and agreement with the generic-trait pair.
 //!
 //! Only the worker traits are in scope here, since the pair's cipher-trait methods share their
@@ -8,10 +8,10 @@ use bouncycastle_aes::hazmat::AES128Internal;
 use bouncycastle_aes::{AES128Key, AES192Key};
 use bouncycastle_cipher::modes::CCM;
 use bouncycastle_core::errors::SymmetricCipherError;
-use bouncycastle_core::hazmat::{AeadPacketEncryptMode, ElectronicCodeBook};
+use bouncycastle_core::hazmat::{AeadDeclaredEncryptMode, ElectronicCodeBook};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::symmetric_key::{
-    AeadPacketDecryptionKey, AeadPacketEncryptionKey, FromKeyMaterial,
+    AeadDeclaredDecryptionKey, AeadDeclaredEncryptionKey, FromKeyMaterial,
 };
 use bouncycastle_core::traits::{
     AEADCipherDecryptor, AEADCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
@@ -190,17 +190,17 @@ fn a_short_nonce_is_reachable_through_the_supplied_nonce_forms() {
     assert_eq!(buf, msg);
 }
 
-/// The workers are the mode's packet state, 264/296/328 B for AES-128/192/256, with the
+/// The workers are the mode's `Ccm` state, 264/296/328 B for AES-128/192/256, with the
 /// decryptor adding the tag it holds back and that tag's length; the aes docs quote these.
 #[test]
 fn worker_sizes_match_the_documented_memory_table() {
     use bouncycastle_aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
-    use bouncycastle_cipher::modes::{CcmPacketDecryptor, CcmPacketEncryptor};
+    use bouncycastle_cipher::modes::{CcmDecryptor, CcmEncryptor};
     use core::mem::size_of;
-    assert_eq!(size_of::<CcmPacketEncryptor<AES128Internal, 16, 12, 16>>(), 264);
-    assert_eq!(size_of::<CcmPacketEncryptor<AES192Internal, 24, 12, 16>>(), 296);
-    assert_eq!(size_of::<CcmPacketEncryptor<AES256Internal, 32, 12, 16>>(), 328);
-    assert_eq!(size_of::<CcmPacketDecryptor<AES128Internal, 16, 12, 16>>(), 288);
-    assert_eq!(size_of::<CcmPacketDecryptor<AES192Internal, 24, 12, 16>>(), 320);
-    assert_eq!(size_of::<CcmPacketDecryptor<AES256Internal, 32, 12, 16>>(), 352);
+    assert_eq!(size_of::<CcmEncryptor<AES128Internal, 16, 12, 16>>(), 264);
+    assert_eq!(size_of::<CcmEncryptor<AES192Internal, 24, 12, 16>>(), 296);
+    assert_eq!(size_of::<CcmEncryptor<AES256Internal, 32, 12, 16>>(), 328);
+    assert_eq!(size_of::<CcmDecryptor<AES128Internal, 16, 12, 16>>(), 288);
+    assert_eq!(size_of::<CcmDecryptor<AES192Internal, 24, 12, 16>>(), 320);
+    assert_eq!(size_of::<CcmDecryptor<AES256Internal, 32, 12, 16>>(), 352);
 }

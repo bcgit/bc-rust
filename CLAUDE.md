@@ -196,7 +196,7 @@ taught, as mechanics to apply next time a cipher type is shaped or reshaped:
   a CLI path, run it against a known-answer vector (`--nonce` on `ascon-aead128` reproduces the
   LWC KAT tag).
 - **A rename stays in the crate it was asked for.** `do_*_update` to `do_*_inplace` was done for
-  Ascon; the CCM packet type still has its namesake. Note the follow-up rather than widening the
+  Ascon; the CCM type still has its namesake. Note the follow-up rather than widening the
   change.
 
 ## Lessons from the key-object rework (October 2026)
@@ -212,9 +212,9 @@ What that taught, as mechanics for the next trait that sheds a constructor:
   a worker trait.
 - **Mode types carry the role.** A key is `AESKey<P, M>`; which role pairs it implements is
   decided by `M`'s mode-trait impls in `core::hazmat::mode` (`SymmetricEncryptMode`,
-  `BlockEncryptMode`, `EcbEncryptMode`, `AeadEncryptMode`, `AeadPacketEncryptMode`, `MacMode`).
+  `BlockEncryptMode`, `EcbEncryptMode`, `AeadEncryptMode`, `AeadDeclaredEncryptMode`, `MacMode`).
   Padding and frame parameters live in the mode type (`CBC<PKCS7>`, `CBC<Blocks>`,
-  `ECB<Blocks>`, `CTR<12>`, `CCMFrame<12, 16, 64, 1024>`), not on a worker alias.
+  `ECB<Blocks>`, `CTR<12>`, `CCM_Packet<12, 16, 64, 1024>`), not on a worker alias.
 - **A key that needs the permutation's key length cannot be generic over it.** `Mode<P>` cannot
   carry `KEY_LEN` while `ElectronicCodeBook<KEY_LEN, BLOCK_LEN>` does, so the GCM, GMAC and CMAC
   mode impls are written per AES key length; the cipher crate's tests use local `ToyGCM` /

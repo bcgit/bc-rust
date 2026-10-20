@@ -48,7 +48,9 @@
 use bouncycastle_aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
 use bouncycastle_cipher::modes::{CCM, ModeNames};
 use bouncycastle_core::errors::SymmetricCipherError;
-use bouncycastle_core::hazmat::{AeadPacketDecryptMode, AeadPacketEncryptMode, ElectronicCodeBook};
+use bouncycastle_core::hazmat::{
+    AeadDeclaredDecryptMode, AeadDeclaredEncryptMode, ElectronicCodeBook,
+};
 use bouncycastle_core::key_material::KeyMaterial;
 use bouncycastle_core_test_framework::test_data_loaders::{Value, bc_test_data_json, hex_field};
 use std::collections::BTreeMap;

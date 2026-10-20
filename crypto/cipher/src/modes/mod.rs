@@ -43,7 +43,7 @@
 //! why it lives under [`hazmat`] -- see [`hazmat::ecb::Ecb`] and
 //! [Choosing between the modes](#choosing-between-the-modes).
 //!
-//! Each mode is also a **mode type** -- [`CBC`], [`CCM`], [`CCMFrame`], [`CFB`], [`CFB8`],
+//! Each mode is also a **mode type** -- [`CBC`], [`CCM`], [`CCM_Packet`], [`CFB`], [`CFB8`],
 //! [`CTR`], [`GCM`], [`hazmat::ecb::ECB`], and the MACs [`CMAC`] and [`GMAC`] -- the `M` a mode-bound
 //! key such as `bouncycastle_aes::AES128Key<M>` is parameterised by. The mode type implements the
 //! hazmat mode traits of [`bouncycastle_core::hazmat`], which is how a key hands out the mode's
@@ -82,30 +82,31 @@
 //! ```
 //! # mod toy { include!("../../tests/common/toy_block_cipher.rs"); }
 //! # use toy::ToyBlockCipher;
-//! use bouncycastle_cipher::modes::{Cbc, CcmDecryptor, CcmEncryptor, Cfb, Cfb8, Ctr, Gcm};
+//! use bouncycastle_cipher::modes::{Cbc, CcmPacketDecryptor, CcmPacketEncryptor, Cfb, Cfb8, Ctr, Gcm};
 //!
-//! // CBC, CFB, and CFB8 take a permutation, a direction, key length, and a block length.
-//! type ToyCbc<Dir> = Cbc<ToyBlockCipher, Dir, 16, 16>;
-//! type ToyCfb<Dir> = Cfb<ToyBlockCipher, Dir, 16, 16>;
-//! type ToyCfb8<Dir> = Cfb8<ToyBlockCipher, Dir, 16, 16>;
+//! // Every worker borrows its key state for `'k`. CBC, CFB, and CFB8 then take a permutation, a
+//! // direction and a block length; the key length is the key's business, not the worker's.
+//! type ToyCbc<'k, Dir> = Cbc<'k, ToyBlockCipher, Dir, 16>;
+//! type ToyCfb<'k, Dir> = Cfb<'k, ToyBlockCipher, Dir, 16>;
+//! type ToyCfb8<'k, Dir> = Cfb8<'k, ToyBlockCipher, Dir, 16>;
 //!
 //! // CTR takes one more parameter: the nonce length, which fixes the counter width at
 //! // `BLOCK_LEN - NONCE_LEN`. 12 bytes of nonce leaves the maximum 4-byte counter.
-//! type ToyCtr<Dir> = Ctr<ToyBlockCipher, Dir, 16, 16, 12>;
+//! type ToyCtr<'k, Dir> = Ctr<'k, ToyBlockCipher, Dir, 16, 12>;
 //!
-//! // CCM takes the permutation, key length and block length like the rest, plus the nonce
-//! // length and the tag length -- both CCM-specific choices rather than cipher params.
+//! // CCM takes the permutation and block length like the rest, plus the nonce length and the
+//! // tag length -- both CCM-specific choices rather than cipher params.
 //! // The nonce length caps the payload (SP 800-38C A.1: `n + q = 15`, `p < 2^8q`) and the tag
 //! // length is the forgery bound; 12 and 16 are the usual pair.
 //! // Each direction is its own type here, and the frame follows: `AAD_LEN` of AAD capacity and
 //! // frames of exactly `DATA_LEN` bytes, since CCM commits to the payload length up front.
-//! type ToyCcmEnc = CcmEncryptor<ToyBlockCipher, 16, 16, 12, 16, 64, 1024>;
-//! type ToyCcmDec = CcmDecryptor<ToyBlockCipher, 16, 16, 12, 16, 64, 1024>;
+//! type ToyCcmEnc<'k> = CcmPacketEncryptor<'k, ToyBlockCipher, 16, 12, 16, 64, 1024>;
+//! type ToyCcmDec<'k> = CcmPacketDecryptor<'k, ToyBlockCipher, 16, 12, 16, 64, 1024>;
 //!
 //! // GCM mode is specified in NIST SP 800-38D. `Gcm` fixes the nonce at 12 bytes (Sec 5.2.1.1
 //! // recommends restricting support to 96 bits), and the block is always 16, so neither is a
 //! // parameter.
-//! type ToyGcm<Dir> = Gcm<ToyBlockCipher, Dir, 16, 16>;
+//! type ToyGcm<'k, Dir> = Gcm<'k, ToyBlockCipher, Dir, 16>;
 //! ```
 //!
 //! ## Encrypting and decrypting
@@ -168,7 +169,9 @@ pub mod hazmat;
 mod iv;
 
 pub use cbc::{CBC, Cbc};
-pub use ccm::{CCM, CCMFrame, CcmDecryptor, CcmEncryptor, CcmPacketDecryptor, CcmPacketEncryptor};
+pub use ccm::{
+    CCM, CCM_Packet, CcmDecryptor, CcmEncryptor, CcmPacketDecryptor, CcmPacketEncryptor,
+};
 pub use cfb::{CFB, Cfb};
 pub use cfb8::{CFB8, Cfb8};
 pub use cmac::{CMAC, CMAC_MIN_TAG_LEN, Cmac, CmacKeyState};
@@ -190,7 +193,7 @@ pub struct Blocks;
 pub trait ModeNames {
     /// Reported by [`Cbc`].
     const CBC_ALG_NAME: &'static str;
-    /// Reported by [`CcmEncryptor`] and [`CcmDecryptor`].
+    /// Reported by [`CcmPacketEncryptor`] and [`CcmPacketDecryptor`].
     const CCM_ALG_NAME: &'static str;
     /// Reported by [`Cfb`].
     const CFB_ALG_NAME: &'static str;
