@@ -41,24 +41,26 @@
 //! ```
 //! # mod toy { include!("../../tests/common/toy_block_cipher.rs"); }
 //! # use toy::ToyBlockCipher;
+//! use bouncycastle_core::hazmat::{ElectronicCodeBook, Mode, SymmetricDecryptMode, SymmetricEncryptMode};
 //! use bouncycastle_core::key_material::{KeyMaterial128, KeyType};
 //! use bouncycastle_core::traits::{StreamCipherDecryptor, StreamCipherEncryptor};
-//! use bouncycastle_cipher::modes::Ctr;
-//! use bouncycastle_cipher::{Decrypting, Encrypting};
-//!
-//! // A 12-byte nonce, leaving a 4-byte counter.
-//! type ToyCtr<Dir> = Ctr<ToyBlockCipher, Dir, 16, 16, 12>;
+//! use bouncycastle_cipher::modes::CTR;
+//! use bouncycastle_rng::HashDRBG_SHA512;
 //!
 //! let key = KeyMaterial128::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
 //!     .expect("a 16-byte symmetric cipher key");
+//! // `CTR`'s defaults: a 12-byte nonce, leaving a 4-byte counter on a 16-byte block.
+//! let state = <CTR<12, 16> as Mode<ToyBlockCipher>>::key_state(ToyBlockCipher::new(&key).unwrap());
 //!
 //! let plaintext = b"the quick brown fox!!";
 //! let mut data = *plaintext;
 //!
-//! let (bytes_written, nonce) = ToyCtr::<Encrypting>::encrypt_inplace(&key, &mut data).expect("encryption");
+//! let (mut encryptor, nonce) =
+//!     CTR::<12, 16>::encrypt_init(&state, &mut HashDRBG_SHA512::new_from_os()).expect("nonce draw");
+//! let bytes_written = encryptor.do_encrypt_inplace(&mut data).expect("encryption");
 //! assert_eq!(bytes_written, plaintext.len());
 //!
-//! ToyCtr::<Decrypting>::decrypt_inplace(&key, &nonce, &mut data).expect("decryption");
+//! CTR::<12, 16>::decrypt_init(&state, &nonce).do_decrypt_inplace(&mut data).expect("decryption");
 //! assert_eq!(data, *plaintext);
 //! ```
 //!
@@ -67,20 +69,19 @@
 //! ```
 //! # mod toy { include!("../../tests/common/toy_block_cipher.rs"); }
 //! # use toy::ToyBlockCipher;
+//! use bouncycastle_core::hazmat::{ElectronicCodeBook, Mode, SymmetricDecryptMode, SymmetricEncryptMode};
 //! use bouncycastle_core::key_material::{KeyMaterial128, KeyType};
-//! use bouncycastle_core::traits::{
-//!     StreamCipherDecryptor, StreamCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor
-//! };
-//! use bouncycastle_cipher::modes::Ctr;
-//! use bouncycastle_cipher::{Decrypting, Encrypting};
-//!
-//! type ToyCtr<Dir> = Ctr<ToyBlockCipher, Dir, 16, 16, 12>;
+//! use bouncycastle_core::traits::{StreamCipherDecryptor, StreamCipherEncryptor};
+//! use bouncycastle_cipher::modes::CTR;
+//! use bouncycastle_rng::HashDRBG_SHA512;
 //!
 //! let key = KeyMaterial128::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
 //!     .expect("a 16-byte symmetric cipher key");
+//! let state = <CTR<12, 16> as Mode<ToyBlockCipher>>::key_state(ToyBlockCipher::new(&key).unwrap());
 //! let mut data = [0x5Au8; 40];
 //!
-//! let (mut encryptor, nonce) = ToyCtr::<Encrypting>::do_encrypt_init(&key).expect("init");
+//! let (mut encryptor, nonce) =
+//!     CTR::<12, 16>::encrypt_init(&state, &mut HashDRBG_SHA512::new_from_os()).expect("nonce draw");
 //!
 //! // Just to prove that this can handle arbitrary sizes, we'll feed in
 //! //  7 bytes, then 33: neither is a whole block.
@@ -91,7 +92,7 @@
 //! assert_eq!(bytes_written, 33);
 //!
 //! // Decrypting in a different chunking must also agree.
-//! let mut decryptor = ToyCtr::<Decrypting>::do_decrypt_init(&key, &nonce).expect("init");
+//! let mut decryptor = CTR::<12, 16>::decrypt_init(&state, &nonce);
 //! decryptor.do_decrypt_inplace(&mut data[..19]).expect("first chunk");
 //! decryptor.do_decrypt_inplace(&mut data[19..]).expect("the rest");
 //! assert_eq!(data, [0x5Au8; 40]);
