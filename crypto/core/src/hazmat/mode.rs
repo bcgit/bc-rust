@@ -6,8 +6,8 @@
 //! There are two shapes of constructor. [`AeadEncryptMode`] / [`AeadDecryptMode`] are handed a
 //! nonce and nothing else, which is every mode that can take its message as it comes. A mode that
 //! must commit to the lengths before its first byte -- CCM, whose `B0` carries the payload length
-//! and whose AAD is length-prefixed -- implements [`AeadPacketEncryptMode`] /
-//! [`AeadPacketDecryptMode`] instead, whose constructors take the AAD and payload lengths and
+//! and whose AAD is length-prefixed -- implements [`AeadDeclaredEncryptMode`] /
+//! [`AeadDeclaredDecryptMode`] instead, whose constructors take the AAD and payload lengths and
 //! whose workers then need no buffer for either. The unauthenticated modes have the same two
 //! shapes with no tag: [`SymmetricEncryptMode`] / [`SymmetricDecryptMode`] for a mode that takes
 //! data of any length (padded CBC, CFB, CFB8, CTR), [`BlockEncryptMode`] / [`BlockDecryptMode`]
@@ -148,7 +148,7 @@ pub trait AeadDecryptMode<
 /// The encryption side of an AEAD mode over `P` whose worker must know the AAD and payload
 /// lengths before its first byte. The constructors take both; the worker then accepts exactly
 /// that much of each, in any chunking, and holds nothing back.
-pub trait AeadPacketEncryptMode<
+pub trait AeadDeclaredEncryptMode<
     P,
     const KEY_LEN: usize,
     const NONCE_LEN: usize,
@@ -219,8 +219,8 @@ pub trait AeadPacketEncryptMode<
 }
 
 /// The decryption side of an AEAD mode over `P` whose worker must know the AAD and payload
-/// lengths before its first byte; see [`AeadPacketEncryptMode`].
-pub trait AeadPacketDecryptMode<
+/// lengths before its first byte; see [`AeadDeclaredEncryptMode`].
+pub trait AeadDeclaredDecryptMode<
     P,
     const KEY_LEN: usize,
     const NONCE_LEN: usize,

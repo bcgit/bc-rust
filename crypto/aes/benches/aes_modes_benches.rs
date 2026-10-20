@@ -48,13 +48,13 @@ use bouncycastle_aes::hazmat::{AES128Internal, AES256Internal};
 use bouncycastle_aes::{AES_GMAC_128, AES_GMAC_256, AES128Key, AES256Key};
 use bouncycastle_cipher::modes::hazmat::{ECB, Ecb};
 use bouncycastle_cipher::modes::{
-    Blocks, CBC, CCM, CCMFrame, CFB, CFB8, CMAC, CTR, Cbc, Cfb, Cfb8, Ctr, GCM, GCM_NONCE_LEN,
+    Blocks, CBC, CCM, CCM_Packet, CFB, CFB8, CMAC, CTR, Cbc, Cfb, Cfb8, Ctr, GCM, GCM_NONCE_LEN,
     GMAC, ModeNames,
 };
 use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::hazmat::{
-    AeadPacketDecryptMode, AeadPacketEncryptMode, BlockDecryptMode, EcbDecryptionKey,
+    AeadDeclaredDecryptMode, AeadDeclaredEncryptMode, BlockDecryptMode, EcbDecryptionKey,
     EcbEncryptMode, EcbEncryptionKey, ElectronicCodeBook, Mode, SymmetricDecryptMode,
 };
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
@@ -93,7 +93,7 @@ type Aes128CcmMode = CCM<CCM_NONCE_LEN, CCM_TAG_LEN>;
 const CCM_BUFFER_LEN: usize = 4096;
 const CCM_AAD_LEN: usize = 64;
 type Aes128CcmFrameKey =
-    AES128Key<CCMFrame<CCM_NONCE_LEN, CCM_TAG_LEN, CCM_AAD_LEN, CCM_BUFFER_LEN>>;
+    AES128Key<CCM_Packet<CCM_NONCE_LEN, CCM_TAG_LEN, CCM_AAD_LEN, CCM_BUFFER_LEN>>;
 /// GCM with the full 16-byte tag, as the `AES_GCM_*` aliases fix it.
 const GCM_TAG_LEN: usize = 16;
 type Aes128GcmKey = AES128Key<GCM<GCM_TAG_LEN>>;
@@ -960,7 +960,7 @@ fn bench_ccm_aes128(c: &mut Criterion) {
 /// The frame key's [`AeadEncryptionKey`] one-shot against the mode's in-place one-shot on the
 /// same message.
 ///
-/// Both end in the same packet implementation; the key form copies the message into the caller's
+/// Both end in the same `Ccm` implementation; the key form copies the message into the caller's
 /// output buffer and draws the nonce. A cheap deterministic RNG, created once outside the timed
 /// loop, isolates that draw from OS entropy and DRBG construction.
 fn bench_ccm_one_shot_pair(c: &mut Criterion) {

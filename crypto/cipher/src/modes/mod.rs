@@ -43,7 +43,7 @@
 //! why it lives under [`hazmat`] -- see [`hazmat::Ecb`] and
 //! [Choosing between the modes](#choosing-between-the-modes).
 //!
-//! Each mode is also a **mode type** -- [`CBC`], [`CCM`], [`CCMFrame`], [`CFB`], [`CFB8`],
+//! Each mode is also a **mode type** -- [`CBC`], [`CCM`], [`CCM_Packet`], [`CFB`], [`CFB8`],
 //! [`CTR`], [`GCM`], [`hazmat::ECB`], and the MACs [`CMAC`] and [`GMAC`] -- the `M` a mode-bound
 //! key such as `bouncycastle_aes::AES128Key<M>` is parameterised by. The mode type implements the
 //! hazmat mode traits of [`bouncycastle_core::hazmat`], which is how a key hands out the mode's
@@ -82,7 +82,7 @@
 //! ```
 //! # mod toy { include!("../../tests/common/toy_block_cipher.rs"); }
 //! # use toy::ToyBlockCipher;
-//! use bouncycastle_cipher::modes::{Cbc, CcmDecryptor, CcmEncryptor, Cfb, Cfb8, Ctr, Gcm};
+//! use bouncycastle_cipher::modes::{Cbc, CcmPacketDecryptor, CcmPacketEncryptor, Cfb, Cfb8, Ctr, Gcm};
 //!
 //! // CBC, CFB, and CFB8 take a permutation, a direction, key length, and a block length.
 //! type ToyCbc<Dir> = Cbc<ToyBlockCipher, Dir, 16, 16>;
@@ -99,8 +99,8 @@
 //! // length is the forgery bound; 12 and 16 are the usual pair.
 //! // Each direction is its own type here, and the frame follows: `AAD_LEN` of AAD capacity and
 //! // frames of exactly `DATA_LEN` bytes, since CCM commits to the payload length up front.
-//! type ToyCcmEnc = CcmEncryptor<ToyBlockCipher, 16, 16, 12, 16, 64, 1024>;
-//! type ToyCcmDec = CcmDecryptor<ToyBlockCipher, 16, 16, 12, 16, 64, 1024>;
+//! type ToyCcmEnc = CcmPacketEncryptor<ToyBlockCipher, 16, 16, 12, 16, 64, 1024>;
+//! type ToyCcmDec = CcmPacketDecryptor<ToyBlockCipher, 16, 16, 12, 16, 64, 1024>;
 //!
 //! // GCM mode is specified in NIST SP 800-38D. `Gcm` fixes the nonce at 12 bytes (Sec 5.2.1.1
 //! // recommends restricting support to 96 bits), and the block is always 16, so neither is a
@@ -169,7 +169,9 @@ pub mod hazmat;
 mod iv;
 
 pub use cbc::{CBC, Cbc};
-pub use ccm::{CCM, CCMFrame, CcmDecryptor, CcmEncryptor, CcmPacketDecryptor, CcmPacketEncryptor};
+pub use ccm::{
+    CCM, CCM_Packet, CcmDecryptor, CcmEncryptor, CcmPacketDecryptor, CcmPacketEncryptor,
+};
 pub use cfb::{CFB, Cfb};
 pub use cfb8::{CFB8, Cfb8};
 pub use cmac::{CMAC, CMAC_MIN_TAG_LEN, Cmac, CmacKeyState};
@@ -195,7 +197,7 @@ pub struct Blocks;
 pub trait ModeNames {
     /// Reported by [`Cbc`].
     const CBC_ALG_NAME: &'static str;
-    /// Reported by [`CcmEncryptor`] and [`CcmDecryptor`].
+    /// Reported by [`CcmPacketEncryptor`] and [`CcmPacketDecryptor`].
     const CCM_ALG_NAME: &'static str;
     /// Reported by [`Cfb`].
     const CFB_ALG_NAME: &'static str;

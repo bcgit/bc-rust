@@ -13,7 +13,7 @@
 //! Which workers a key hands out is decided by its mode: the symmetric pair for the stream modes
 //! and the padded block modes (`CFB`, `CFB8`, `CTR`, `CBC<PKCS7>`, `ECB<PKCS7>`), the block pair
 //! for `CBC<Blocks>`, the `hazmat` ECB pair for `ECB<Blocks>`, the AEAD pairs for `GCM`, `CCM`
-//! and `CCMFrame`, the MAC pair for `CMAC`, and for `GMAC`, whose tag is nonce-bound, an inherent
+//! and `CCM_Packet`, the MAC pair for `CMAC`, and for `GMAC`, whose tag is nonce-bound, an inherent
 //! pair (see [`crate::gmac`]).
 //!
 //! # Usage Examples
@@ -75,14 +75,14 @@ use crate::hazmat::{AES128Internal, AES192Internal, AES256Internal, AESInternal}
 use crate::{AES128Params, AES192Params, AES256Params, AESParams};
 use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
 use bouncycastle_core::hazmat::{
-    AeadDecryptMode, AeadEncryptMode, AeadPacketDecryptMode, AeadPacketEncryptMode,
+    AeadDeclaredDecryptMode, AeadDeclaredEncryptMode, AeadDecryptMode, AeadEncryptMode,
     BlockDecryptMode, BlockEncryptMode, EcbDecryptMode, EcbDecryptionKey, EcbEncryptMode,
     EcbEncryptionKey, MacMode, Mode, SymmetricDecryptMode, SymmetricEncryptMode,
     do_hazardous_operations,
 };
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::symmetric_key::{
-    AeadDecryptionKey, AeadEncryptionKey, AeadPacketDecryptionKey, AeadPacketEncryptionKey,
+    AeadDeclaredDecryptionKey, AeadDeclaredEncryptionKey, AeadDecryptionKey, AeadEncryptionKey,
     BlockDecryptionKey, BlockEncryptionKey, FromKeyMaterial, MacGenerationKey, MacVerificationKey,
     SymmetricDecryptionKey, SymmetricEncryptionKey,
 };
@@ -289,10 +289,10 @@ impl<
     const NONCE_LEN: usize,
     const TAG_LEN: usize,
     const FINAL_LEN: usize,
-> AeadPacketEncryptionKey<KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN> for AESKey<P, M>
+> AeadDeclaredEncryptionKey<KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN> for AESKey<P, M>
 where
     P: AESParams,
-    M: AeadPacketEncryptMode<AESInternal<P>, KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN>,
+    M: AeadDeclaredEncryptMode<AESInternal<P>, KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN>,
 {
     type Encryptor = M::Encryptor;
 
@@ -341,10 +341,10 @@ impl<
     const NONCE_LEN: usize,
     const TAG_LEN: usize,
     const FINAL_LEN: usize,
-> AeadPacketDecryptionKey<KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN> for AESKey<P, M>
+> AeadDeclaredDecryptionKey<KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN> for AESKey<P, M>
 where
     P: AESParams,
-    M: AeadPacketDecryptMode<AESInternal<P>, KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN>,
+    M: AeadDeclaredDecryptMode<AESInternal<P>, KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN>,
 {
     type Decryptor = M::Decryptor;
 

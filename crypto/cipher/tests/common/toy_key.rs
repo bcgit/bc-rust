@@ -15,14 +15,14 @@ use bouncycastle_cipher::modes::{
 use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
 use bouncycastle_core::hazmat::{
-    AeadDecryptMode, AeadEncryptMode, AeadPacketDecryptMode, AeadPacketEncryptMode,
+    AeadDeclaredDecryptMode, AeadDeclaredEncryptMode, AeadDecryptMode, AeadEncryptMode,
     BlockDecryptMode, BlockEncryptMode, EcbDecryptMode, EcbDecryptionKey, EcbEncryptMode,
     EcbEncryptionKey, ElectronicCodeBook, MacMode, Mode, SymmetricDecryptMode,
     SymmetricEncryptMode, do_hazardous_operations,
 };
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::symmetric_key::{
-    AeadDecryptionKey, AeadEncryptionKey, AeadPacketDecryptionKey, AeadPacketEncryptionKey,
+    AeadDeclaredDecryptionKey, AeadDeclaredEncryptionKey, AeadDecryptionKey, AeadEncryptionKey,
     BlockDecryptionKey, BlockEncryptionKey, FromKeyMaterial, MacGenerationKey, MacVerificationKey,
     SymmetricDecryptionKey, SymmetricEncryptionKey,
 };
@@ -251,9 +251,9 @@ impl<
     const NONCE_LEN: usize,
     const TAG_LEN: usize,
     const FINAL_LEN: usize,
-> AeadPacketEncryptionKey<KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN> for ToyKey<P, M>
+> AeadDeclaredEncryptionKey<KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN> for ToyKey<P, M>
 where
-    M: AeadPacketEncryptMode<P, KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN>,
+    M: AeadDeclaredEncryptMode<P, KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN>,
 {
     type Encryptor = M::Encryptor;
 
@@ -301,9 +301,9 @@ impl<
     const NONCE_LEN: usize,
     const TAG_LEN: usize,
     const FINAL_LEN: usize,
-> AeadPacketDecryptionKey<KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN> for ToyKey<P, M>
+> AeadDeclaredDecryptionKey<KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN> for ToyKey<P, M>
 where
-    M: AeadPacketDecryptMode<P, KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN>,
+    M: AeadDeclaredDecryptMode<P, KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN>,
 {
     type Decryptor = M::Decryptor;
 

@@ -8,7 +8,7 @@
 use bouncycastle_aes::hazmat::{AES128Internal, AES256Internal};
 use bouncycastle_aes::{AES128Key, AES256Key};
 use bouncycastle_cipher::modes::hazmat::ECB;
-use bouncycastle_cipher::modes::{Blocks, CBC, CCMFrame, CFB, CFB8, CTR, ModeNames};
+use bouncycastle_cipher::modes::{Blocks, CBC, CCM_Packet, CFB, CFB8, CTR, ModeNames};
 use bouncycastle_cipher::padding::{NoPadding, PKCS7};
 use bouncycastle_core::hazmat::{EcbEncryptionKey, Mode};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
@@ -28,7 +28,7 @@ use bouncycastle_core_test_framework::symmetric_ciphers::{
 use bouncycastle_rng::HashDRBG_SHA512;
 
 /// A 32-byte frame for the fixed-frame CCM key, within the framework's seed buffer.
-type Frame = CCMFrame<12, 16, 64, 32>;
+type Packet = CCM_Packet<12, 16, 64, 32>;
 
 fn material<const N: usize>() -> KeyMaterial<N> {
     let bytes: [u8; N] = core::array::from_fn(|i| (i as u8).wrapping_mul(7).wrapping_add(1));
@@ -71,7 +71,7 @@ fn every_mode_key_enforces_the_material_policy() {
     construction_suite::<CFB>(AES128Internal::CFB_ALG_NAME, AES256Internal::CFB_ALG_NAME);
     construction_suite::<CFB8>(AES128Internal::CFB8_ALG_NAME, AES256Internal::CFB8_ALG_NAME);
     construction_suite::<CTR>(AES128Internal::CTR_ALG_NAME, AES256Internal::CTR_ALG_NAME);
-    construction_suite::<Frame>(AES128Internal::CCM_ALG_NAME, AES256Internal::CCM_ALG_NAME);
+    construction_suite::<Packet>(AES128Internal::CCM_ALG_NAME, AES256Internal::CCM_ALG_NAME);
 }
 
 #[test]
@@ -124,8 +124,8 @@ fn stream_mode_keys_pass_the_stream_cipher_framework() {
 fn ccm_frame_keys_pass_the_aead_framework() {
     let mut framework = TestFrameworkAEADCipher::new();
     framework.fixed_message_len = Some(32);
-    framework.test_key::<16, 12, 16, 16, _>(&key128::<Frame>(), &mut rng());
-    framework.test_key::<32, 12, 16, 16, _>(&key256::<Frame>(), &mut rng());
+    framework.test_key::<16, 12, 16, 16, _>(&key128::<Packet>(), &mut rng());
+    framework.test_key::<32, 12, 16, 16, _>(&key256::<Packet>(), &mut rng());
 }
 
 /// ECB has no init data, so the `ECB<Blocks>` key makes its workers with no RNG and nothing to

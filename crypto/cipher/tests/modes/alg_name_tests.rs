@@ -8,8 +8,8 @@ mod common;
 
 use bouncycastle_cipher::modes::hazmat::{CtrKeyStream, ECB, Ecb};
 use bouncycastle_cipher::modes::{
-    Blocks, CBC, CCM, CCMFrame, CFB, CFB8, CTR, Cbc, CcmDecryptor, CcmEncryptor, Cfb, Cfb8, Cmac,
-    Ctr, Gcm, Gmac, ModeNames,
+    Blocks, CBC, CCM, CCM_Packet, CFB, CFB8, CTR, Cbc, CcmPacketDecryptor, CcmPacketEncryptor, Cfb,
+    Cfb8, Cmac, Ctr, Gcm, Gmac, ModeNames,
 };
 use bouncycastle_cipher::padding::{
     NoPadding, PKCS7, PaddedBlockCipherDecryptor, PaddedBlockCipherEncryptor,
@@ -59,8 +59,8 @@ fn each_mode_reports_its_own_name() {
     check::<CtrKeyStream<Toy, 16, 16, 12>>(Toy::CTR_ALG_NAME);
     check::<Gcm<Toy, Encrypting, 16, 16>>(Toy::GCM_ALG_NAME);
     check::<Gcm<Toy, Decrypting, 16, 16>>(Toy::GCM_ALG_NAME);
-    check::<CcmEncryptor<Toy, 16, 16, 12, 16, 16, 32>>(Toy::CCM_ALG_NAME);
-    check::<CcmDecryptor<Toy, 16, 16, 12, 16, 16, 32>>(Toy::CCM_ALG_NAME);
+    check::<CcmPacketEncryptor<Toy, 16, 16, 12, 16, 16, 32>>(Toy::CCM_ALG_NAME);
+    check::<CcmPacketDecryptor<Toy, 16, 16, 12, 16, 16, 32>>(Toy::CCM_ALG_NAME);
     check::<Cmac<Toy, 16, 16>>(Toy::CMAC_ALG_NAME);
     check::<Gmac<Toy, Encrypting, 16, 16>>(Toy::GMAC_ALG_NAME);
     check::<Gmac<Toy, Decrypting, 16, 16>>(Toy::GMAC_ALG_NAME);
@@ -103,5 +103,5 @@ fn each_mode_type_reports_its_mode_name() {
     check::<CTR>(Toy::CTR_ALG_NAME);
     check::<CTR<15>>(Toy::CTR_ALG_NAME);
     check::<CCM<12, 16>>(Toy::CCM_ALG_NAME);
-    check::<CCMFrame<12, 16, 16, 32>>(Toy::CCM_ALG_NAME);
+    check::<CCM_Packet<12, 16, 16, 32>>(Toy::CCM_ALG_NAME);
 }

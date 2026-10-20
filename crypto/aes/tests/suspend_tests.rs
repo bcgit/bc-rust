@@ -12,7 +12,7 @@ use bouncycastle_aes::{
 };
 use bouncycastle_cipher::Encrypting;
 use bouncycastle_cipher::modes::hazmat::ECB;
-use bouncycastle_cipher::modes::{CBC, CCMFrame, CFB, CFB8, CTR, GCM};
+use bouncycastle_cipher::modes::{CBC, CCM_Packet, CFB, CFB8, CTR, GCM};
 use bouncycastle_cipher::padding::PKCS7;
 use bouncycastle_core::hazmat::Mode;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
@@ -105,7 +105,7 @@ fn every_alias_family_is_suspendable() {
     });
 
     type CcmEnc = AES_CCM_128<Encrypting, 12, 16, 64, 32>;
-    let mut ccm = key_for::<CCMFrame<12, 16, 64, 32>>().create_encryptor_nonce(&[0x24u8; 12]);
+    let mut ccm = key_for::<CCM_Packet<12, 16, 64, 32>>().create_encryptor_nonce(&[0x24u8; 12]);
     ccm.do_update_aad(b"header").unwrap();
     let mut head = [0u8; 7];
     ccm.do_encrypt_out(&[0x11u8; 7], &mut head).unwrap();
