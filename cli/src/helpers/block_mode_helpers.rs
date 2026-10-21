@@ -73,9 +73,9 @@ pub(crate) const CHUNK_LEN: usize = 64 * BLOCK_LEN;
 /// for the mode you are running.
 #[derive(ValueEnum, Clone, Debug)]
 pub(crate) enum CipherDirection {
-    /// Encrypt stdin to stdout. See the subcommand's own help for this mode's exact framing.
+    /// Encrypt stdin to stdout.
     Encrypt,
-    /// Decrypt stdin to stdout. See the subcommand's own help for this mode's exact framing.
+    /// Decrypt stdin to stdout.
     Decrypt,
 }
 
