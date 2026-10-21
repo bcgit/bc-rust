@@ -33,14 +33,15 @@ struct Cli {
 #[allow(non_camel_case_types)]
 #[derive(Subcommand)]
 enum Subcommands {
-    /// AES-128 in CBC mode (NIST SP 800-38A Sec 6.2), streaming stdin to stdout.
+    /// AES-128 in CBC mode (NIST SP 800-38A Sec 6.2) with PKCS7 padding, streaming stdin to stdout.
     ///
     /// On `encrypt`, a fresh unpredictable IV is generated and written as the FIRST 16 BYTES of
     /// the output; on `decrypt` it is read back from the first 16 bytes of the input, so the two
     /// compose directly in a pipeline. There is deliberately no `--iv` flag.
     ///
-    /// Input must be a whole number of 16-byte blocks: CBC is defined only on whole blocks and
-    /// these commands apply no padding, so unaligned input is rejected rather than padded.
+    /// Input may be any length: it is padded with PKCS7 to a whole number of 16-byte blocks, so the
+    /// ciphertext after the IV is 1 to 16 bytes longer than the plaintext, and `decrypt` rejects
+    /// a ciphertext whose padding is malformed.
     ///
     /// WARNING: CBC provides confidentiality only. It does not detect tampering, and neither the
     /// ciphertext nor the IV is authenticated. Do not decrypt data you have not authenticated
@@ -353,9 +354,9 @@ enum Subcommands {
         x: bool,
     },
 
-    /// AES-192 in CBC mode (NIST SP 800-38A Sec 6.2), streaming stdin to stdout.
+    /// AES-192 in CBC mode (NIST SP 800-38A Sec 6.2) with PKCS7 padding, streaming stdin to stdout.
     ///
-    /// See `aes128-cbc` for the IV convention, block-alignment requirement and warnings; only the
+    /// See `aes128-cbc` for the IV convention, padding and warnings; only the
     /// key length differs.
     AES192_CBC {
         #[arg(short, long)]
@@ -545,9 +546,9 @@ enum Subcommands {
         x: bool,
     },
 
-    /// AES-256 in CBC mode (NIST SP 800-38A Sec 6.2), streaming stdin to stdout.
+    /// AES-256 in CBC mode (NIST SP 800-38A Sec 6.2) with PKCS7 padding, streaming stdin to stdout.
     ///
-    /// See `aes128-cbc` for the IV convention, block-alignment requirement and warnings; only the
+    /// See `aes128-cbc` for the IV convention, padding and warnings; only the
     /// key length differs.
     AES256_CBC {
         #[arg(short, long)]

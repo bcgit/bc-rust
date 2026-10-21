@@ -106,7 +106,7 @@ pub(crate) fn decrypt_stream<D, const KEY_LEN: usize, const INIT_DATA_LEN: usize
 /// Reads stdin and hands it to `process` in pieces of at most `CHUNK_LEN` bytes, mutably so it can
 /// be transformed in place.
 ///
-/// Unlike the block modes' `stream_aligned`, nothing is buffered to a boundary and no length is
+/// Unlike the block modes (`block_mode_helpers`), nothing is buffered to a boundary and no length is
 /// rejected: a stream cipher takes any number of bytes, and a sequence of calls is equivalent to
 /// one call over the concatenation, so whatever a read returns can go straight through. That also
 /// means the mode's own byte path is exercised at whatever alignment the pipe happens to deliver,

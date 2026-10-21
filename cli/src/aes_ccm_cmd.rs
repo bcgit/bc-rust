@@ -49,9 +49,12 @@
 
 use std::fs::File;
 use std::io::{self, Read};
+use std::marker::PhantomData;
 use std::process::exit;
 
-use bouncycastle::aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
+use bouncycastle::aes::{
+    AES_CCM_128_Packet, AES_CCM_192_Packet, AES_CCM_256_Packet, CCM_NONCE_LEN, CCM_TAG_LEN,
+};
 use bouncycastle::cipher::modes::CcmPacket;
 use bouncycastle::cipher::modes::ModeNames;
 use bouncycastle::cipher::{Decrypting, Encrypting};
@@ -78,7 +81,8 @@ pub(crate) fn aes128_ccm_cmd(
     tag_len: usize,
     output_hex: bool,
 ) {
-    run::<AES128Internal, 16>(
+    run(
+        PhantomData::<AES_CCM_128_Packet<Encrypting, CCM_NONCE_LEN, CCM_TAG_LEN>>,
         action,
         &load_key::<16>(key, key_file, "AES-128"),
         nonce,
@@ -102,7 +106,8 @@ pub(crate) fn aes192_ccm_cmd(
     tag_len: usize,
     output_hex: bool,
 ) {
-    run::<AES192Internal, 24>(
+    run(
+        PhantomData::<AES_CCM_192_Packet<Encrypting, CCM_NONCE_LEN, CCM_TAG_LEN>>,
         action,
         &load_key::<24>(key, key_file, "AES-192"),
         nonce,
@@ -126,7 +131,8 @@ pub(crate) fn aes256_ccm_cmd(
     tag_len: usize,
     output_hex: bool,
 ) {
-    run::<AES256Internal, 32>(
+    run(
+        PhantomData::<AES_CCM_256_Packet<Encrypting, CCM_NONCE_LEN, CCM_TAG_LEN>>,
         action,
         &load_key::<32>(key, key_file, "AES-256"),
         nonce,
@@ -294,11 +300,16 @@ fn read_all_stdin() -> Vec<u8> {
 
 /// Turns the runtime nonce and tag lengths into the mode's const generic parameters.
 ///
+/// `_aes` is the caller's `AES_CCM_*_Packet` type at the default lengths, and serves only to fix
+/// the block cipher `P` by inference, so that each entry point names the public alias rather than
+/// the cipher inside it; the lengths actually used are dispatched on below.
+///
 /// `NONCE_LEN` and `TAG_LEN` are const parameters of `CcmPacket` -- that is what makes A.1's length
 /// conditions compile-time checks rather than runtime ones -- so a command-line value has to be
 /// matched into one of the permitted instantiations. The two nested matches are the price of that,
 /// and they are exhaustive over A.1's sets: 7 nonce lengths x 7 tag lengths.
 fn run<P, const KEY_LEN: usize>(
+    _aes: PhantomData<CcmPacket<P, Encrypting, KEY_LEN, BLOCK_LEN, CCM_NONCE_LEN, CCM_TAG_LEN>>,
     action: &CipherDirection,
     key: &KeyMaterial<KEY_LEN>,
     nonce: &Option<String>,

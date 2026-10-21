@@ -1,9 +1,10 @@
 //! Shared plumbing for the block-cipher-mode subcommands: `aes{128,192,256}-{cbc,ecb}`.
 //!
 //! Everything here is mode-independent -- key loading, stdin framing, block-alignment enforcement,
-//! output formatting -- and is generic over the mode via [`BlockCipherEncryptor`] /
-//! [`BlockCipherDecryptor`]. `aes_cbc_cmd` and `aes_ecb_cmd` are thin dispatchers over it, so the
-//! commands cannot drift apart on the parts that matter for correctness.
+//! output formatting -- and is generic over the mode via [`SymmetricCipherEncryptor`] /
+//! [`SymmetricCipherDecryptor`]. `aes_cbc_cmd` and `aes_ecb_cmd` are thin dispatchers over it,
+//! instantiating it with the `AES_CBC_*` types under `PKCS7` and the `AES_ECB_*` types under
+//! `NoPadding`, so the commands cannot drift apart on the parts that matter for correctness.
 //!
 //! The CFB and CTR commands are stream ciphers and live in [`crate::helpers::stream_mode_helpers`] instead;
 //! they share
@@ -28,13 +29,13 @@
 //! The IV is not secret (Sec 5.3), so shipping it in the clear is correct. Its *integrity* is not
 //! protected, and neither is the ciphertext's -- see the warnings on each subcommand.
 //!
-//! # Input must be block-aligned
+//! # Padding and block alignment
 //!
-//! The modes in this module are defined only on whole blocks (SP 800-38A Sec 5.2), and these
-//! commands apply no padding, so input that is not a multiple of 16 bytes is rejected rather than
-//! silently padded. (The CFB commands have no such requirement; see [`crate::helpers::stream_mode_helpers`].)
-//! Padding is the caller's business; the library offers `bouncycastle_cipher::padding` for it, but wiring a
-//! padding scheme into the CLI would change the on-the-wire format and is a separate decision.
+//! The modes in this module are defined only on whole blocks (SP 800-38A Sec 5.2). The CBC
+//! commands pad with PKCS7, so they encrypt input of any length, and the ciphertext body is always
+//! one to sixteen bytes longer than the plaintext. The ECB commands apply no padding, so input that
+//! is not a multiple of 16 bytes is rejected rather than silently padded. (The CFB commands have
+//! no such requirement; see [`crate::helpers::stream_mode_helpers`].)
 //!
 //! # Binary in, binary out
 //!
@@ -51,7 +52,7 @@ use crate::helpers::{
 use bouncycastle::core::hazmat::do_hazardous_operations;
 use bouncycastle::core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle::core::security_strength::SecurityStrength;
-use bouncycastle::core::traits::{BlockCipherDecryptor, BlockCipherEncryptor};
+use bouncycastle::core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
 use bouncycastle::hex;
 use clap::ValueEnum;
 use std::io;
@@ -61,11 +62,7 @@ use std::process::exit;
 /// The AES block length in bytes.
 pub(crate) const BLOCK_LEN: usize = 16;
 
-/// Bytes processed per call: 1 KiB = 64 blocks, matching the other streaming commands.
-///
-/// A full chunk goes through `do_*::<CHUNK_LEN>` in one call, in place, which for decryption means
-/// 32 pairs down the mode's two-block path. The at-most-63-block tail at end of input goes one
-/// block at a time; it is bounded, so its cost does not scale with the input.
+/// Bytes read from stdin per call: 1 KiB = 64 blocks, shared with the stream-mode commands.
 pub(crate) const CHUNK_LEN: usize = 64 * BLOCK_LEN;
 
 /// Which direction to run. Shared by cipher subcommands, -- see the specific subcommand's
@@ -143,14 +140,14 @@ pub(crate) fn load_key<const KEY_LEN: usize>(
 /// Encrypts stdin to stdout under the mode `E`, writing the generated init data (the IV) first.
 ///
 /// `INIT_DATA_LEN` is the mode's: one block for CBC, 0 for ECB, in which case nothing is written
-/// ahead of the ciphertext. `mode` names the mode in error messages ("CBC", "ECB"); it has no
-/// effect on the output.
+/// ahead of the ciphertext. `aligned_mode` is `Some(mode name)` for a mode that pads nothing, whose
+/// input must therefore be a whole number of blocks; the name appears in the error message.
 pub(crate) fn encrypt_stream<E, const KEY_LEN: usize, const INIT_DATA_LEN: usize>(
     key: &KeyMaterial<KEY_LEN>,
     output_hex: bool,
-    mode: &str,
+    aligned_mode: Option<&str>,
 ) where
-    E: BlockCipherEncryptor<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
+    E: SymmetricCipherEncryptor<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
 {
     let (mut enc, iv) = E::do_encrypt_init(key).unwrap_or_else(|e| {
         eprintln!("Error: couldn't start encryption: {e:?}");
@@ -162,31 +159,37 @@ pub(crate) fn encrypt_stream<E, const KEY_LEN: usize, const INIT_DATA_LEN: usize
         write_bytes_or_hex(&iv, output_hex);
     }
 
-    // The cipher works in place: `data` holds plaintext on the way in and ciphertext on the way out.
-    stream_aligned(mode, |data| {
-        if let Ok(chunk) = <&mut [u8; CHUNK_LEN]>::try_from(&mut *data) {
-            // Cannot fail: none of these modes has a per-IV data limit.
-            enc.do_encrypt_inplace(chunk).unwrap();
-        } else {
-            // The bounded tail at end of input: whole blocks, fewer than a chunk.
-            for block in data.as_chunks_mut::<BLOCK_LEN>().0 {
-                enc.do_encrypt_inplace(block).unwrap();
-            }
-        }
-        write_bytes_or_hex(data, output_hex);
+    let mut out = [0u8; CHUNK_LEN];
+    let total = stream_chunks(|data| {
+        // Cannot fail: `out` has room for every whole block of `data` plus the fewer than
+        // `BLOCK_LEN` bytes held over from the last call, and none of these modes has a per-IV
+        // data limit.
+        let written = enc.do_encrypt_out(data, &mut out).unwrap();
+        write_bytes_or_hex(&out[..written], output_hex);
     });
+
+    if let Some(mode) = aligned_mode {
+        check_aligned(mode, total);
+    }
+    // The padded final block; under `NoPadding` an aligned message has none, and this reports 0.
+    let (last, last_len) = enc.do_encrypt_final().unwrap_or_else(|e| {
+        eprintln!("Error: encryption failed: {e:?}");
+        exit(-1);
+    });
+    write_bytes_or_hex(&last[..last_len], output_hex);
 
     finish(output_hex);
 }
 
 /// Decrypts stdin to stdout under the mode `D`, taking the init data (the IV) from the first
-/// `INIT_DATA_LEN` bytes of input -- one block for CBC, nothing for ECB.
+/// `INIT_DATA_LEN` bytes of input -- one block for CBC, nothing for ECB. `aligned_mode` is as for
+/// [`encrypt_stream`].
 pub(crate) fn decrypt_stream<D, const KEY_LEN: usize, const INIT_DATA_LEN: usize>(
     key: &KeyMaterial<KEY_LEN>,
     output_hex: bool,
-    mode: &str,
+    aligned_mode: Option<&str>,
 ) where
-    D: BlockCipherDecryptor<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
+    D: SymmetricCipherDecryptor<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
 {
     // The leading bytes are the IV, not ciphertext. (None for ECB: the read is skipped.)
     let mut iv = [0u8; INIT_DATA_LEN];
@@ -205,60 +208,65 @@ pub(crate) fn decrypt_stream<D, const KEY_LEN: usize, const INIT_DATA_LEN: usize
         exit(-1);
     });
 
-    stream_aligned(mode, |data| {
-        if let Ok(chunk) = <&mut [u8; CHUNK_LEN]>::try_from(&mut *data) {
-            // A full chunk is 32 pairs, so this is the mode's two-block path.
-            dec.do_decrypt_inplace(chunk).unwrap();
-        } else {
-            for block in data.as_chunks_mut::<BLOCK_LEN>().0 {
-                dec.do_decrypt_inplace(block).unwrap();
-            }
-        }
-        write_bytes_or_hex(data, output_hex);
+    let mut out = [0u8; CHUNK_LEN];
+    let total = stream_chunks(|data| {
+        // Cannot fail: the decryptor releases no more than it is given plus what it holds over
+        // (under one block buffered, and one whole block held back in case it is the last), and
+        // that never exceeds `out`.
+        let written = dec.do_decrypt_out(data, &mut out).unwrap();
+        write_bytes_or_hex(&out[..written], output_hex);
     });
+
+    if let Some(mode) = aligned_mode {
+        check_aligned(mode, total);
+    }
+    // Releases the block held back above, unpadded; under `NoPadding` all of it is data. A
+    // padded ciphertext that is unaligned or has malformed padding fails here.
+    let (last, last_len) = dec.do_decrypt_final().unwrap_or_else(|e| {
+        // Flush what was already written first, as `check_aligned` does, so the error follows it.
+        let _ = io::stdout().flush();
+        eprintln!("\nError: decryption failed: {e:?}");
+        exit(-1);
+    });
+    write_bytes_or_hex(&last[..last_len], output_hex);
 
     finish(output_hex);
 }
 
-/// Reads stdin and hands it to `process` in block-aligned pieces, mutably so it can be transformed
-/// in place: a full `CHUNK_LEN` bytes each time one has accumulated, then once more at end of input
-/// with whatever whole blocks remain (fewer than a chunk). Reads need not respect block or chunk boundaries -- bytes simply accumulate in the
-/// buffer until it is full -- so a block split across two reads needs no special handling.
-///
-/// Input whose total length is not a multiple of `BLOCK_LEN` is an error, because none of these
-/// modes is defined on a partial block and these commands do not pad.
-fn stream_aligned(mode: &str, mut process: impl FnMut(&mut [u8])) {
+/// Reads stdin to the end, handing it to `process` in pieces of at most `CHUNK_LEN` bytes, and
+/// returns the total number of bytes read. Pieces need not be block-aligned: the cipher buffers a
+/// partial block across calls.
+fn stream_chunks(mut process: impl FnMut(&[u8])) -> usize {
     let mut buf = [0u8; CHUNK_LEN];
-    let mut filled = 0usize;
-
+    let mut total = 0usize;
     loop {
-        let n = io::stdin().read(&mut buf[filled..]).unwrap_or_else(|e| {
+        let n = io::stdin().read(&mut buf).unwrap_or_else(|e| {
             eprintln!("Error: failed to read from stdin: {e}");
             exit(-1);
         });
         if n == 0 {
-            break;
+            return total;
         }
-        filled += n;
-        if filled == CHUNK_LEN {
-            process(&mut buf);
-            filled = 0;
-        }
+        total += n;
+        process(&buf[..n]);
     }
+}
 
-    if !filled.is_multiple_of(BLOCK_LEN) {
-        // Everything before the misaligned tail has already been written, and in hex mode is
+/// Exits with an error if `total` is not a whole number of blocks, for a mode that is defined only
+/// on whole blocks and pads nothing. `NoPadding` would also refuse it at `do_*_final`, but without
+/// saying how many bytes were left over.
+fn check_aligned(mode: &str, total: usize) {
+    if !total.is_multiple_of(BLOCK_LEN) {
+        // Everything before the misaligned tail has already been written (bar the one block a
+        // decryptor holds back until `do_decrypt_final`), and in hex mode is
         // still sitting in stdout's line buffer with no newline to release it. Flush first so the
-        // ciphertext and the error come out in order rather than the error landing inside it.
+        // output and the error come out in order rather than the error landing inside it.
         let _ = io::stdout().flush();
         eprintln!(
             "\nError: input to {mode} must be a whole number of {BLOCK_LEN}-byte blocks (data contained {} trailing byte(s)).",
-            filled % BLOCK_LEN
+            total % BLOCK_LEN
         );
         exit(-1);
-    }
-    if filled != 0 {
-        process(&mut buf[..filled]);
     }
 }
 

@@ -10,7 +10,8 @@
 //!
 //! `encrypt` writes the generated 12-byte nonce first, then the ciphertext as it streams, then the
 //! 16-byte tag once stdin is exhausted. `decrypt` reads the 12-byte nonce first, then streams the
-//! rest of stdin through the inline decryptor -- which, per [`SymmetricCipherDecryptor`]'s contract,
+//! rest of stdin through the inline decryptor -- which, per
+//! [`SymmetricCipherDecryptor`](bouncycastle::core::traits::SymmetricCipherDecryptor)'s contract,
 //! holds back the last 16 bytes it has seen because they might be the tag -- and checks the tag on
 //! `do_decrypt_final`.
 //!
@@ -36,14 +37,8 @@
 //! other GCM implementation given the same file.
 
 use crate::helpers::{flush_stdout, read_from_file_raw, write_bytes_or_hex, write_stdout};
-use bouncycastle::cipher::modes::Gcm;
-use bouncycastle::cipher::modes::ModeNames;
-use bouncycastle::cipher::{Decrypting, Encrypting};
-use bouncycastle::core::hazmat::ElectronicCodeBook;
 use bouncycastle::core::key_material::KeyMaterial;
-use bouncycastle::core::traits::{
-    AEADCipherDecryptor, AEADCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
-};
+use bouncycastle::core::traits::{AEADCipherDecryptor, AEADCipherEncryptor};
 use bouncycastle::hex;
 use std::io;
 use std::io::{Read, Write};
@@ -53,6 +48,9 @@ use std::process::exit;
 /// four-block path does, so this matches the other streaming commands' 1 KiB rather than needing
 /// its own tuning.
 const CHUNK_LEN: usize = 1024;
+
+/// The GCM nonce length `encrypt` generates and writes first, and `decrypt` reads back.
+const GCM_NONCE_LEN: usize = 12;
 
 /// Loads the additional authenticated data from `--aad` (hex) or `--aad-file` (raw bytes; see the
 /// module docs for why not hex). Empty if neither is given: AAD is optional, unlike the key.
@@ -71,18 +69,17 @@ pub fn load_aad(aad: &Option<String>, aad_file: &Option<String>) -> Vec<u8> {
 
 /// Encrypts stdin to stdout under GCM: writes the generated nonce, then the ciphertext as it
 /// streams, then the tag.
-pub fn encrypt_gcm<P, const KEY_LEN: usize, const TAG_LEN: usize>(
+pub fn encrypt_gcm<E, const KEY_LEN: usize, const TAG_LEN: usize>(
     key: &KeyMaterial<KEY_LEN>,
     aad: &[u8],
     output_hex: bool,
 ) where
-    P: ElectronicCodeBook<KEY_LEN, 16> + ModeNames,
+    E: AEADCipherEncryptor<KEY_LEN, GCM_NONCE_LEN, TAG_LEN, TAG_LEN>,
 {
-    let (mut enc, nonce) = Gcm::<P, Encrypting, KEY_LEN, TAG_LEN>::do_encrypt_init(key)
-        .unwrap_or_else(|e| {
-            eprintln!("Error: couldn't start encryption: {e:?}");
-            exit(-1);
-        });
+    let (mut enc, nonce) = E::do_encrypt_init(key).unwrap_or_else(|e| {
+        eprintln!("Error: couldn't start encryption: {e:?}");
+        exit(-1);
+    });
     write_bytes_or_hex(&nonce, output_hex);
 
     enc.do_update_aad(aad).unwrap_or_else(|e| {
@@ -120,14 +117,14 @@ pub fn encrypt_gcm<P, const KEY_LEN: usize, const TAG_LEN: usize>(
 /// Decrypts stdin to stdout under GCM: reads the 12-byte nonce, streams the rest through the
 /// inline decryptor, and checks the tag on `do_decrypt_final`. See the module docs for why
 /// plaintext may already be written to stdout by the time a tag failure is reported.
-pub fn decrypt_gcm<P, const KEY_LEN: usize, const TAG_LEN: usize>(
+pub fn decrypt_gcm<D, const KEY_LEN: usize, const TAG_LEN: usize>(
     key: &KeyMaterial<KEY_LEN>,
     aad: &[u8],
     output_hex: bool,
 ) where
-    P: ElectronicCodeBook<KEY_LEN, 16> + ModeNames,
+    D: AEADCipherDecryptor<KEY_LEN, GCM_NONCE_LEN, TAG_LEN, TAG_LEN>,
 {
-    let mut nonce = [0u8; 12];
+    let mut nonce = [0u8; GCM_NONCE_LEN];
     if let Err(e) = io::stdin().read_exact(&mut nonce) {
         eprintln!(
             "Error: input too short to contain the 12-byte nonce that `encrypt` writes first ({e})."
@@ -135,11 +132,10 @@ pub fn decrypt_gcm<P, const KEY_LEN: usize, const TAG_LEN: usize>(
         exit(-1);
     }
 
-    let mut dec = Gcm::<P, Decrypting, KEY_LEN, TAG_LEN>::do_decrypt_init(key, &nonce)
-        .unwrap_or_else(|e| {
-            eprintln!("Error: couldn't start decryption: {e:?}");
-            exit(-1);
-        });
+    let mut dec = D::do_decrypt_init(key, &nonce).unwrap_or_else(|e| {
+        eprintln!("Error: couldn't start decryption: {e:?}");
+        exit(-1);
+    });
     dec.do_update_aad(aad).unwrap_or_else(|e| {
         eprintln!("Error: couldn't absorb the additional authenticated data: {e:?}");
         exit(-1);
