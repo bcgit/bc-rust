@@ -160,13 +160,9 @@ pub use cfb8::Cfb8;
 pub use ctr::Ctr;
 pub use gcm::{GCM_NONCE_LEN, Gcm};
 
-/// The [`Algorithm::ALG_NAME`] each mode reports when built on `Self`.
+/// A table of algorithm names used to populate [`Algorithm`] for each Mode-Permutation-Size combination.
 ///
-/// A mode over a permutation is a different algorithm from the permutation -- AES-128 in CBC mode
-/// is `"AES_CBC_128"`, not `"AES-128"` -- and `&'static str`s cannot be concatenated in a `const`,
-/// so the permutation names the modes built on it, as a hash names its HMAC through
-/// `HMACParams::HMAC_ALG_NAME`. There are no defaults: a permutation that forgot one would
-/// otherwise report its own name for that mode.
+/// For permutations that do not implement all modes, simply leave the NAME for that mode as the empty-string.
 pub trait ModeNames {
     /// Reported by [`Cbc`].
     const CBC_ALG_NAME: &'static str;
