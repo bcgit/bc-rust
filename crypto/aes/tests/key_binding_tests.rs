@@ -2,9 +2,12 @@
 //! others: a key bound to `AES_CBC_128` cannot be used for `AES_GCM_128`, through the streaming
 //! init, the one-shots, or resuming a suspended state. An unbound key is still accepted by both,
 //! since binding is opt-in. The per-trait contract is checked for every cipher by the shared test
-//! framework; this pins the cross-mode case on the real aliases.
+//! framework; this pins the cross-mode case on the real aliases, and the cross-size case: a key of
+//! the right length bound to another key size's name.
 
-use bouncycastle_aes::{AES_CBC_128, AES_CTR_128, AES_GCM_128};
+use bouncycastle_aes::{
+    AES_CBC_128, AES_CBC_192, AES_CBC_256, AES_CTR_128, AES_GCM_128, AES_GCM_256,
+};
 use bouncycastle_cipher::padding::PKCS7;
 use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::errors::{KeyMaterialError, SuspendableError, SymmetricCipherError};
@@ -23,8 +26,9 @@ fn key() -> KeyMaterial<16> {
     KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey).unwrap()
 }
 
-fn bound(alg_name: &'static str) -> KeyMaterial<16> {
-    let mut key = key();
+fn bound<const K: usize>(alg_name: &'static str) -> KeyMaterial<K> {
+    let mut key =
+        KeyMaterial::<K>::from_bytes_as_type(&[0x42; K], KeyType::SymmetricCipherKey).unwrap();
     key.set_algorithm(Some(alg_name)).unwrap();
     key
 }
@@ -77,4 +81,20 @@ fn a_suspended_state_does_not_resume_under_another_algorithms_key() {
         CbcEnc::from_suspended(state, &bound(GcmEnc::ALG_NAME)).err(),
         Some(SuspendableError::InvalidData)
     );
+}
+
+/// The bound name carries the key size, so a key of the right length bound to another size's
+/// alias is refused even within one mode. A 16-byte key cannot reach a 256-bit alias at all -- the
+/// key length is in the type -- so this is the only cross-size mistake left to catch at runtime.
+#[test]
+fn a_key_bound_to_another_key_size_is_refused() {
+    type Cbc256 = AES_CBC_256<Encrypting, PKCS7>;
+    let key = bound::<32>(Cbc256::ALG_NAME);
+    Cbc256::do_encrypt_init(&key).unwrap();
+    assert_refused(AES_GCM_256::<Encrypting>::do_encrypt_init(&key));
+
+    assert_refused(Cbc256::do_encrypt_init(&bound::<32>(CbcEnc::ALG_NAME)));
+    assert_refused(AES_CBC_192::<Encrypting, PKCS7>::do_encrypt_init(&bound::<24>(
+        Cbc256::ALG_NAME,
+    )));
 }
