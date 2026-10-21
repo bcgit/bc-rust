@@ -107,12 +107,13 @@ impl TestFrameworkSuspendableKeyedState {
     ///
     /// Expects ta be handed an instance of the object that has some in-progress state to be serialized.
     pub fn test<
+        'k,
         const SERIALIZED_STATE_LEN: usize,
-        S: SuspendableKeyed<SERIALIZED_STATE_LEN> + Clone,
+        S: SuspendableKeyed<'k, SERIALIZED_STATE_LEN> + Clone,
     >(
         &self,
         instance: &S,
-        key: &S::Key,
+        key: &'k S::Key,
     ) {
         // There's not a lot we can test here in the abstract, but we can test a few things to
         // ensure that the SerializableState trait has been impl'd correctly.

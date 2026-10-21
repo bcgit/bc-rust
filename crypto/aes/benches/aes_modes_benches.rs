@@ -45,19 +45,28 @@
 //! direction, CFB decryption is expected to come out ahead of CBC decryption.
 
 use bouncycastle_aes::hazmat::{AES128Internal, AES256Internal};
-use bouncycastle_cipher::modes::hazmat::Ecb;
+use bouncycastle_aes::{AES128Key, AES256Key};
+use bouncycastle_cipher::modes::hazmat::{ECB, Ecb};
 use bouncycastle_cipher::modes::{
-    Cbc, CcmEncryptor, CcmPacket, Cfb, Cfb8, Ctr, GCM_NONCE_LEN, Gcm, ModeNames,
+    Blocks, CBC, CCM, CCM_Packet, CFB, CFB8, CMAC, CTR, Cbc, Cfb, Cfb8, Ctr, GCM, GCM_NONCE_LEN,
+    GMAC, ModeNames,
 };
 use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::errors::SymmetricCipherError;
-use bouncycastle_core::hazmat::ElectronicCodeBook;
+use bouncycastle_core::hazmat::{
+    AeadDeclaredDecryptMode, AeadDeclaredEncryptMode, BlockDecryptMode, BlockPermutation,
+    EcbDecryptionKey, EcbEncryptMode, EcbEncryptionKey, ElectronicCodeBook, Mode,
+    SymmetricDecryptMode,
+};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
+use bouncycastle_core::symmetric_key::{
+    AeadDecryptionKey, AeadEncryptionKey, BlockDecryptionKey, BlockEncryptionKey, FromKeyMaterial,
+    MacGenerationKey, SymmetricDecryptionKey, SymmetricEncryptionKey,
+};
 use bouncycastle_core::traits::{
-    AEADCipherDecryptor, AEADCipherEncryptor, Algorithm, BlockCipherDecryptor,
-    BlockCipherEncryptor, StreamCipherDecryptor, StreamCipherEncryptor, SymmetricCipherDecryptor,
-    SymmetricCipherEncryptor,
+    Algorithm, BlockCipherDecryptor, BlockCipherEncryptor, StreamCipherDecryptor,
+    StreamCipherEncryptor, SymmetricCipherEncryptor,
 };
 use bouncycastle_core_test_framework::FixedSeedRNG;
 use criterion::{BatchSize, Criterion, Throughput, criterion_group, criterion_main};
@@ -68,55 +77,47 @@ const BLOCK_LEN: usize = 16;
 const NUM_BLOCKS: usize = 1024;
 const DATA_LEN: usize = NUM_BLOCKS * BLOCK_LEN;
 
-type Aes128Cbc<Dir> = Cbc<AES128Internal, Dir, 16, BLOCK_LEN>;
-type Aes256Cbc<Dir> = Cbc<AES256Internal, Dir, 32, BLOCK_LEN>;
-type Aes128Cfb<Dir> = Cfb<AES128Internal, Dir, 16, BLOCK_LEN>;
-type Aes256Cfb<Dir> = Cfb<AES256Internal, Dir, 32, BLOCK_LEN>;
-type Aes128Cfb8<Dir> = Cfb8<AES128Internal, Dir, 16, BLOCK_LEN>;
+type Aes128Cfb<'k, Dir> = Cfb<'k, AES128Internal, Dir, BLOCK_LEN>;
+type Aes256Cfb<'k, Dir> = Cfb<'k, AES256Internal, Dir, BLOCK_LEN>;
+type Aes128Cfb8<'k, Dir> = Cfb8<'k, AES128Internal, Dir, BLOCK_LEN>;
 
 /// CCM at the parameters the ACVP vectors and most protocols use: a 12-byte nonce and a full
-/// 16-byte tag. The direction is in the type as for the other modes, but the two directions are
-/// separate aliases here rather than one generic over `Dir`, because CCM's one-shots live on the
-/// direction-specific impl blocks.
+/// 16-byte tag. The mode's in-place one-shots over the keyed permutation are the direct path;
+/// the frame parameters are unused by them.
 const CCM_NONCE_LEN: usize = 12;
 const CCM_TAG_LEN: usize = 16;
-type Aes128CcmEnc =
-    CcmPacket<AES128Internal, Encrypting, 16, BLOCK_LEN, CCM_NONCE_LEN, CCM_TAG_LEN>;
-type Aes128CcmDec =
-    CcmPacket<AES128Internal, Decrypting, 16, BLOCK_LEN, CCM_NONCE_LEN, CCM_TAG_LEN>;
+type Aes128CcmMode = CCM<CCM_NONCE_LEN, CCM_TAG_LEN>;
 
-/// The trait adapter takes its frame size at compile time. Its one-shots are not bound by it,
-/// but using the same 4 KiB message keeps this comparison representative of the public alias a
+/// The frame key takes its frame size at compile time. Its one-shots are not bound by it, but
+/// using the same 4 KiB message keeps this comparison representative of the public alias a
 /// packet protocol would choose.
 const CCM_BUFFER_LEN: usize = 4096;
 const CCM_AAD_LEN: usize = 64;
-type Aes128CcmEncryptor = CcmEncryptor<
-    AES128Internal,
-    16,
-    BLOCK_LEN,
-    CCM_NONCE_LEN,
-    CCM_TAG_LEN,
-    CCM_AAD_LEN,
-    CCM_BUFFER_LEN,
->;
+type Aes128CcmFrameKey =
+    AES128Key<CCM_Packet<CCM_NONCE_LEN, CCM_TAG_LEN, CCM_AAD_LEN, CCM_BUFFER_LEN>>;
 /// GCM with the full 16-byte tag, as the `AES_GCM_*` aliases fix it.
 const GCM_TAG_LEN: usize = 16;
-type Aes128Gcm<Dir> = Gcm<AES128Internal, Dir, 16, GCM_TAG_LEN>;
-type Aes256Gcm<Dir> = Gcm<AES256Internal, Dir, 32, GCM_TAG_LEN>;
-type Aes128Ctr<Dir> = Ctr<AES128Internal, Dir, 16, BLOCK_LEN, 12>;
-type Aes256Ctr<Dir> = Ctr<AES256Internal, Dir, 32, BLOCK_LEN, 12>;
-type Aes128Ecb<Dir> = Ecb<AES128Internal, Dir, 16, BLOCK_LEN>;
+type Aes128GcmKey = AES128Key<GCM<GCM_TAG_LEN>>;
+type Aes256GcmKey = AES256Key<GCM<GCM_TAG_LEN>>;
+type Aes128Ctr<'k, Dir> = Ctr<'k, AES128Internal, Dir, BLOCK_LEN, 12>;
+type Aes256Ctr<'k, Dir> = Ctr<'k, AES256Internal, Dir, BLOCK_LEN, 12>;
+type Aes128Ecb<'k, Dir> = Ecb<'k, AES128Internal, Dir, BLOCK_LEN>;
 
 /// AES-128 with the batch methods implemented as single-block loops instead of AES's bit-sliced
 /// pair.
 ///
-/// This exists purely to isolate the value of the pair path. Comparing `Cbc<AES128Internal, ..>` against
-/// `Cbc<UnpairedAes128, ..>` at the *same* `N` holds everything else fixed -- same cipher, same
+/// This exists purely to isolate the value of the pair path. Comparing `Cbc<'_, AES128Internal, ..>` against
+/// `Cbc<'_, UnpairedAes128, ..>` at the *same* `N` holds everything else fixed -- same cipher, same
 /// call granularity, same amount of data movement -- so the difference is attributable to
 /// `decrypt_2blocks` and nothing else.
 ///
 /// Comparing `N = 1` against `N = 8` does *not* isolate it: encryption, which can never pair, also
 /// speeds up substantially between those two, so call granularity dominates that comparison.
+///
+/// It is not an `AESParams`, so no `AESKey` can be built over it; its workers come from the
+/// mode types' own constructors (`Mode::key_state`, then the mode's `*_init`), which is what the
+/// key does internally.
+#[derive(Clone)]
 struct UnpairedAes128(AES128Internal);
 
 impl Algorithm for UnpairedAes128 {
@@ -129,20 +130,25 @@ impl ModeNames for UnpairedAes128 {
     const CCM_ALG_NAME: &'static str = "AES_CCM_128 (unpaired)";
     const CFB_ALG_NAME: &'static str = "AES_CFB_128 (unpaired)";
     const CFB8_ALG_NAME: &'static str = "AES_CFB8_128 (unpaired)";
+    const CMAC_ALG_NAME: &'static str = "AES_CMAC_128 (unpaired)";
     const CTR_ALG_NAME: &'static str = "AES_CTR_128 (unpaired)";
     const ECB_ALG_NAME: &'static str = "AES_ECB_128 (unpaired)";
     const GCM_ALG_NAME: &'static str = "AES_GCM_128 (unpaired)";
+    const GMAC_ALG_NAME: &'static str = "AES_GMAC_128 (unpaired)";
 }
 
 impl ElectronicCodeBook<16, BLOCK_LEN> for UnpairedAes128 {
     fn new(key: &KeyMaterial<16>) -> Result<Self, SymmetricCipherError> {
         Ok(Self(<AES128Internal as ElectronicCodeBook<16, BLOCK_LEN>>::new(key)?))
     }
+}
+
+impl BlockPermutation<BLOCK_LEN> for UnpairedAes128 {
     fn encrypt_block(&self, block: &mut [u8; BLOCK_LEN]) {
-        <AES128Internal as ElectronicCodeBook<16, BLOCK_LEN>>::encrypt_block(&self.0, block)
+        <AES128Internal as BlockPermutation<BLOCK_LEN>>::encrypt_block(&self.0, block)
     }
     fn decrypt_block(&self, block: &mut [u8; BLOCK_LEN]) {
-        <AES128Internal as ElectronicCodeBook<16, BLOCK_LEN>>::decrypt_block(&self.0, block)
+        <AES128Internal as BlockPermutation<BLOCK_LEN>>::decrypt_block(&self.0, block)
     }
     // Deliberately single-block loops, as a cipher with no unit wider than a block would write
     // them, bypassing AES's bit-sliced pair.
@@ -168,13 +174,30 @@ impl ElectronicCodeBook<16, BLOCK_LEN> for UnpairedAes128 {
     }
 }
 
-type UnpairedAes128Cbc<Dir> = Cbc<UnpairedAes128, Dir, 16, BLOCK_LEN>;
-type UnpairedAes128Cfb<Dir> = Cfb<UnpairedAes128, Dir, 16, BLOCK_LEN>;
-type UnpairedAes128Ecb<Dir> = Ecb<UnpairedAes128, Dir, 16, BLOCK_LEN>;
+type UnpairedAes128Cbc<'k, Dir> = Cbc<'k, UnpairedAes128, Dir, BLOCK_LEN>;
+type UnpairedAes128Cfb<'k, Dir> = Cfb<'k, UnpairedAes128, Dir, BLOCK_LEN>;
+type UnpairedAes128Ecb<'k, Dir> = Ecb<'k, UnpairedAes128, Dir, BLOCK_LEN>;
 
 fn key<const N: usize>() -> KeyMaterial<N> {
     let bytes: [u8; N] = core::array::from_fn(|i| (i as u8).wrapping_mul(7).wrapping_add(1));
     KeyMaterial::<N>::from_bytes_as_type(&bytes, KeyType::SymmetricCipherKey).unwrap()
+}
+
+/// The keyed toy permutation, which is also its key state under every mode here.
+fn unpaired() -> UnpairedAes128 {
+    UnpairedAes128::new(&key::<16>()).unwrap()
+}
+
+/// IVs and nonces for the throughput measurements come from a cheap deterministic RNG created
+/// outside the timed loop, so they measure the mode and not OS entropy or DRBG construction.
+fn iv_rng() -> FixedSeedRNG<BLOCK_LEN> {
+    FixedSeedRNG::<BLOCK_LEN>::new([0x24u8; BLOCK_LEN])
+}
+
+/// [`key`]'s bytes as a `KeyType::MACKey`, which is what CMAC takes.
+fn mac_key<const N: usize>() -> KeyMaterial<N> {
+    let bytes: [u8; N] = core::array::from_fn(|i| (i as u8).wrapping_mul(7).wrapping_add(1));
+    KeyMaterial::<N>::from_bytes_as_type(&bytes, KeyType::MACKey).unwrap()
 }
 
 fn data() -> Vec<[u8; BLOCK_LEN]> {
@@ -184,7 +207,8 @@ fn data() -> Vec<[u8; BLOCK_LEN]> {
 }
 
 fn bench_aes128(c: &mut Criterion) {
-    let k = key::<16>();
+    let key = AES128Key::<CBC<Blocks>>::from_key_material(&key::<16>()).unwrap();
+    let mut rng = iv_rng();
     let blocks = data();
 
     let mut group = c.benchmark_group("modes::cbc::AES_128");
@@ -195,7 +219,7 @@ fn bench_aes128(c: &mut Criterion) {
         b.iter_batched(
             || blocks.clone(),
             |mut scratch| {
-                let (mut enc, _) = Aes128Cbc::<Encrypting>::do_encrypt_init(&k).unwrap();
+                let (mut enc, _) = key.create_encryptor(&mut rng).unwrap();
                 for block in scratch.iter_mut() {
                     enc.do_encrypt_inplace(block).unwrap();
                 }
@@ -209,7 +233,7 @@ fn bench_aes128(c: &mut Criterion) {
         b.iter_batched(
             || blocks.clone(),
             |mut scratch| {
-                let (mut enc, _) = Aes128Cbc::<Encrypting>::do_encrypt_init(&k).unwrap();
+                let (mut enc, _) = key.create_encryptor(&mut rng).unwrap();
                 for chunk in scratch.chunks_exact_mut(8) {
                     let arr: &mut [u8; 8 * BLOCK_LEN] =
                         chunk.as_flattened_mut().try_into().unwrap();
@@ -222,7 +246,7 @@ fn bench_aes128(c: &mut Criterion) {
     });
 
     // ---- decryption: parallel, uses decrypt_2blocks for every pair ----
-    let (mut enc, iv) = Aes128Cbc::<Encrypting>::do_encrypt_init(&k).unwrap();
+    let (mut enc, iv) = key.create_encryptor(&mut rng).unwrap();
     let mut ciphertext = blocks.clone();
     for chunk in ciphertext.chunks_exact_mut(8) {
         enc.do_encrypt_blocks_inplace(chunk).unwrap();
@@ -234,7 +258,7 @@ fn bench_aes128(c: &mut Criterion) {
         b.iter_batched(
             || ciphertext.clone(),
             |mut scratch| {
-                let mut dec = Aes128Cbc::<Decrypting>::do_decrypt_init(&k, &iv).unwrap();
+                let mut dec = key.create_decryptor(&iv);
                 for block in scratch.iter_mut() {
                     dec.do_decrypt_inplace(block).unwrap();
                 }
@@ -250,7 +274,7 @@ fn bench_aes128(c: &mut Criterion) {
         b.iter_batched(
             || ciphertext.clone(),
             |mut scratch| {
-                let mut dec = Aes128Cbc::<Decrypting>::do_decrypt_init(&k, &iv).unwrap();
+                let mut dec = key.create_decryptor(&iv);
                 for chunk in scratch.chunks_exact_mut(2) {
                     let arr: &mut [u8; 2 * BLOCK_LEN] =
                         chunk.as_flattened_mut().try_into().unwrap();
@@ -266,7 +290,7 @@ fn bench_aes128(c: &mut Criterion) {
         b.iter_batched(
             || ciphertext.clone(),
             |mut scratch| {
-                let mut dec = Aes128Cbc::<Decrypting>::do_decrypt_init(&k, &iv).unwrap();
+                let mut dec = key.create_decryptor(&iv);
                 for chunk in scratch.chunks_exact_mut(8) {
                     let arr: &mut [u8; 8 * BLOCK_LEN] =
                         chunk.as_flattened_mut().try_into().unwrap();
@@ -283,7 +307,7 @@ fn bench_aes128(c: &mut Criterion) {
         b.iter_batched(
             || ciphertext.clone(),
             |mut scratch| {
-                let mut dec = Aes128Cbc::<Decrypting>::do_decrypt_init(&k, &iv).unwrap();
+                let mut dec = key.create_decryptor(&iv);
                 for chunk in scratch.chunks_exact_mut(9) {
                     let arr: &mut [u8; 9 * BLOCK_LEN] =
                         chunk.as_flattened_mut().try_into().unwrap();
@@ -297,11 +321,12 @@ fn bench_aes128(c: &mut Criterion) {
 
     // The controlled comparison: identical N, identical cipher, bit-sliced pair vs single-block loops.
     // This pair of numbers -- and only this pair -- measures what `decrypt_2blocks` buys.
+    let unpaired_state = <CBC<Blocks> as Mode<UnpairedAes128>>::key_state(unpaired());
     group.bench_function("16KiB decrypt -- N=8, pair path (2blocks overridden)", |b| {
         b.iter_batched(
             || ciphertext.clone(),
             |mut scratch| {
-                let mut dec = Aes128Cbc::<Decrypting>::do_decrypt_init(&k, &iv).unwrap();
+                let mut dec = key.create_decryptor(&iv);
                 for chunk in scratch.chunks_exact_mut(8) {
                     let arr: &mut [u8; 8 * BLOCK_LEN] =
                         chunk.as_flattened_mut().try_into().unwrap();
@@ -317,7 +342,14 @@ fn bench_aes128(c: &mut Criterion) {
         b.iter_batched(
             || ciphertext.clone(),
             |mut scratch| {
-                let mut dec = UnpairedAes128Cbc::<Decrypting>::do_decrypt_init(&k, &iv).unwrap();
+                let mut dec: UnpairedAes128Cbc<Decrypting> = <CBC<Blocks> as BlockDecryptMode<
+                    UnpairedAes128,
+                    16,
+                    BLOCK_LEN,
+                    BLOCK_LEN,
+                >>::decrypt_init(
+                    &unpaired_state, &iv
+                );
                 for chunk in scratch.chunks_exact_mut(8) {
                     let arr: &mut [u8; 8 * BLOCK_LEN] =
                         chunk.as_flattened_mut().try_into().unwrap();
@@ -333,7 +365,8 @@ fn bench_aes128(c: &mut Criterion) {
 }
 
 fn bench_aes256(c: &mut Criterion) {
-    let k = key::<32>();
+    let key = AES256Key::<CBC<Blocks>>::from_key_material(&key::<32>()).unwrap();
+    let mut rng = iv_rng();
     let blocks = data();
 
     let mut group = c.benchmark_group("modes::cbc::AES_256");
@@ -343,7 +376,7 @@ fn bench_aes256(c: &mut Criterion) {
         b.iter_batched(
             || blocks.clone(),
             |mut scratch| {
-                let (mut enc, _) = Aes256Cbc::<Encrypting>::do_encrypt_init(&k).unwrap();
+                let (mut enc, _) = key.create_encryptor(&mut rng).unwrap();
                 for chunk in scratch.chunks_exact_mut(8) {
                     let arr: &mut [u8; 8 * BLOCK_LEN] =
                         chunk.as_flattened_mut().try_into().unwrap();
@@ -355,7 +388,7 @@ fn bench_aes256(c: &mut Criterion) {
         )
     });
 
-    let (mut enc, iv) = Aes256Cbc::<Encrypting>::do_encrypt_init(&k).unwrap();
+    let (mut enc, iv) = key.create_encryptor(&mut rng).unwrap();
     let mut ciphertext = blocks.clone();
     for chunk in ciphertext.chunks_exact_mut(8) {
         enc.do_encrypt_blocks_inplace(chunk).unwrap();
@@ -365,7 +398,7 @@ fn bench_aes256(c: &mut Criterion) {
         b.iter_batched(
             || ciphertext.clone(),
             |mut scratch| {
-                let mut dec = Aes256Cbc::<Decrypting>::do_decrypt_init(&k, &iv).unwrap();
+                let mut dec = key.create_decryptor(&iv);
                 for chunk in scratch.chunks_exact_mut(8) {
                     let arr: &mut [u8; 8 * BLOCK_LEN] =
                         chunk.as_flattened_mut().try_into().unwrap();
@@ -380,42 +413,34 @@ fn bench_aes256(c: &mut Criterion) {
     group.finish();
 }
 
-/// Runs the 16 KiB through a stream-cipher encryptor in `call_len`-byte calls. Used by the CFB,
-/// CFB8 and CTR groups: it is generic over the trait, not over the mode.
-fn cfb_encrypt_in_calls<
-    E: StreamCipherEncryptor<KEY_LEN, INIT_DATA_LEN>,
-    const KEY_LEN: usize,
-    const INIT_DATA_LEN: usize,
->(
-    k: &KeyMaterial<KEY_LEN>,
+/// Runs the 16 KiB through a freshly made stream-cipher encryptor in `call_len`-byte calls. Used
+/// by the CFB, CFB8 and CTR groups: it is generic over the trait, not over the mode, and the
+/// caller's key (or mode constructor) supplies the worker.
+fn stream_encrypt_in_calls<E: StreamCipherEncryptor<INIT_DATA_LEN>, const INIT_DATA_LEN: usize>(
+    mut enc: E,
     scratch: &mut [u8],
     call_len: usize,
 ) {
-    let (mut enc, _) = E::do_encrypt_init(k).unwrap();
     for piece in scratch.chunks_mut(call_len) {
         enc.do_encrypt_inplace(piece).unwrap();
     }
 }
 
-/// Runs the 16 KiB through a stream-cipher decryptor in `call_len`-byte calls. Shared as above.
-fn cfb_decrypt_in_calls<
-    D: StreamCipherDecryptor<KEY_LEN, INIT_DATA_LEN>,
-    const KEY_LEN: usize,
-    const INIT_DATA_LEN: usize,
->(
-    k: &KeyMaterial<KEY_LEN>,
-    iv: &[u8; INIT_DATA_LEN],
+/// Runs the 16 KiB through a freshly made stream-cipher decryptor in `call_len`-byte calls.
+/// Shared as above.
+fn stream_decrypt_in_calls<D: StreamCipherDecryptor<INIT_DATA_LEN>, const INIT_DATA_LEN: usize>(
+    mut dec: D,
     scratch: &mut [u8],
     call_len: usize,
 ) {
-    let mut dec = D::do_decrypt_init(k, iv).unwrap();
     for piece in scratch.chunks_mut(call_len) {
         dec.do_decrypt_inplace(piece).unwrap();
     }
 }
 
 fn bench_cfb_aes128(c: &mut Criterion) {
-    let k = key::<16>();
+    let key = AES128Key::<CFB>::from_key_material(&key::<16>()).unwrap();
+    let mut rng = iv_rng();
     let blocks = data();
     let flat: Vec<u8> = blocks.as_flattened().to_vec();
 
@@ -434,9 +459,9 @@ fn bench_cfb_aes128(c: &mut Criterion) {
             b.iter_batched(
                 || flat.clone(),
                 |mut scratch| {
-                    cfb_encrypt_in_calls::<Aes128Cfb<Encrypting>, 16, BLOCK_LEN>(
-                        &k, &mut scratch, call_len,
-                    );
+                    let (enc, _): (Aes128Cfb<Encrypting>, _) =
+                        key.create_encryptor(&mut rng).unwrap();
+                    stream_encrypt_in_calls(enc, &mut scratch, call_len);
                     black_box(&scratch);
                 },
                 BatchSize::LargeInput,
@@ -446,7 +471,7 @@ fn bench_cfb_aes128(c: &mut Criterion) {
 
     // ---- decryption: parallel, and uses `encrypt_4blocks` / `encrypt_2blocks` -- the FORWARD
     // batch methods ----
-    let (mut enc, iv) = Aes128Cfb::<Encrypting>::do_encrypt_init(&k).unwrap();
+    let (mut enc, iv) = key.create_encryptor(&mut rng).unwrap();
     let mut ciphertext = flat.clone();
     enc.do_encrypt_inplace(&mut ciphertext).unwrap();
 
@@ -466,9 +491,8 @@ fn bench_cfb_aes128(c: &mut Criterion) {
             b.iter_batched(
                 || ciphertext.clone(),
                 |mut scratch| {
-                    cfb_decrypt_in_calls::<Aes128Cfb<Decrypting>, 16, BLOCK_LEN>(
-                        &k, &iv, &mut scratch, call_len,
-                    );
+                    let dec: Aes128Cfb<Decrypting> = key.create_decryptor(&iv);
+                    stream_decrypt_in_calls(dec, &mut scratch, call_len);
                     black_box(&scratch);
                 },
                 BatchSize::LargeInput,
@@ -482,28 +506,24 @@ fn bench_cfb_aes128(c: &mut Criterion) {
         b.iter_batched(
             || ciphertext.clone(),
             |mut scratch| {
-                cfb_decrypt_in_calls::<Aes128Cfb<Decrypting>, 16, BLOCK_LEN>(
-                    &k,
-                    &iv,
-                    &mut scratch,
-                    8 * BLOCK_LEN,
-                );
+                let dec: Aes128Cfb<Decrypting> = key.create_decryptor(&iv);
+                stream_decrypt_in_calls(dec, &mut scratch, 8 * BLOCK_LEN);
                 black_box(&scratch);
             },
             BatchSize::LargeInput,
         )
     });
 
+    let unpaired_state = <CFB as Mode<UnpairedAes128>>::key_state(unpaired());
     group.bench_function("16KiB decrypt -- N=8, no pair path (single-block loops)", |b| {
         b.iter_batched(
             || ciphertext.clone(),
             |mut scratch| {
-                cfb_decrypt_in_calls::<UnpairedAes128Cfb<Decrypting>, 16, BLOCK_LEN>(
-                    &k,
-                    &iv,
-                    &mut scratch,
-                    8 * BLOCK_LEN,
-                );
+                let dec: UnpairedAes128Cfb<Decrypting> =
+                    <CFB as SymmetricDecryptMode<UnpairedAes128, 16, BLOCK_LEN, 0>>::decrypt_init(
+                        &unpaired_state, &iv,
+                    );
+                stream_decrypt_in_calls(dec, &mut scratch, 8 * BLOCK_LEN);
                 black_box(&scratch);
             },
             BatchSize::LargeInput,
@@ -514,7 +534,8 @@ fn bench_cfb_aes128(c: &mut Criterion) {
 }
 
 fn bench_cfb_aes256(c: &mut Criterion) {
-    let k = key::<32>();
+    let key = AES256Key::<CFB>::from_key_material(&key::<32>()).unwrap();
+    let mut rng = iv_rng();
     let flat: Vec<u8> = data().as_flattened().to_vec();
 
     let mut group = c.benchmark_group("modes::cfb::AES_256");
@@ -524,18 +545,15 @@ fn bench_cfb_aes256(c: &mut Criterion) {
         b.iter_batched(
             || flat.clone(),
             |mut scratch| {
-                cfb_encrypt_in_calls::<Aes256Cfb<Encrypting>, 32, BLOCK_LEN>(
-                    &k,
-                    &mut scratch,
-                    8 * BLOCK_LEN,
-                );
+                let (enc, _): (Aes256Cfb<Encrypting>, _) = key.create_encryptor(&mut rng).unwrap();
+                stream_encrypt_in_calls(enc, &mut scratch, 8 * BLOCK_LEN);
                 black_box(&scratch);
             },
             BatchSize::LargeInput,
         )
     });
 
-    let (mut enc, iv) = Aes256Cfb::<Encrypting>::do_encrypt_init(&k).unwrap();
+    let (mut enc, iv) = key.create_encryptor(&mut rng).unwrap();
     let mut ciphertext = flat.clone();
     enc.do_encrypt_inplace(&mut ciphertext).unwrap();
 
@@ -543,12 +561,8 @@ fn bench_cfb_aes256(c: &mut Criterion) {
         b.iter_batched(
             || ciphertext.clone(),
             |mut scratch| {
-                cfb_decrypt_in_calls::<Aes256Cfb<Decrypting>, 32, BLOCK_LEN>(
-                    &k,
-                    &iv,
-                    &mut scratch,
-                    8 * BLOCK_LEN,
-                );
+                let dec: Aes256Cfb<Decrypting> = key.create_decryptor(&iv);
+                stream_decrypt_in_calls(dec, &mut scratch, 8 * BLOCK_LEN);
                 black_box(&scratch);
             },
             BatchSize::LargeInput,
@@ -565,7 +579,8 @@ fn bench_cfb_aes256(c: &mut Criterion) {
 /// should be substantially faster than encryption -- the same batch effect CBC and CFB show, at
 /// byte granularity.
 fn bench_cfb8_aes128(c: &mut Criterion) {
-    let k = key::<16>();
+    let key = AES128Key::<CFB8>::from_key_material(&key::<16>()).unwrap();
+    let mut rng = iv_rng();
     let flat: Vec<u8> = data().as_flattened().to_vec();
 
     let mut group = c.benchmark_group("modes::cfb8::AES_128");
@@ -576,16 +591,15 @@ fn bench_cfb8_aes128(c: &mut Criterion) {
         b.iter_batched(
             || flat.clone(),
             |mut scratch| {
-                cfb_encrypt_in_calls::<Aes128Cfb8<Encrypting>, 16, BLOCK_LEN>(
-                    &k, &mut scratch, DATA_LEN,
-                );
+                let (enc, _): (Aes128Cfb8<Encrypting>, _) = key.create_encryptor(&mut rng).unwrap();
+                stream_encrypt_in_calls(enc, &mut scratch, DATA_LEN);
                 black_box(&scratch);
             },
             BatchSize::LargeInput,
         )
     });
 
-    let (mut enc, iv) = Aes128Cfb8::<Encrypting>::do_encrypt_init(&k).unwrap();
+    let (mut enc, iv) = key.create_encryptor(&mut rng).unwrap();
     let mut ciphertext = flat.clone();
     enc.do_encrypt_inplace(&mut ciphertext).unwrap();
 
@@ -602,9 +616,8 @@ fn bench_cfb8_aes128(c: &mut Criterion) {
             b.iter_batched(
                 || ciphertext.clone(),
                 |mut scratch| {
-                    cfb_decrypt_in_calls::<Aes128Cfb8<Decrypting>, 16, BLOCK_LEN>(
-                        &k, &iv, &mut scratch, call_len,
-                    );
+                    let dec: Aes128Cfb8<Decrypting> = key.create_decryptor(&iv);
+                    stream_decrypt_in_calls(dec, &mut scratch, call_len);
                     black_box(&scratch);
                 },
                 BatchSize::LargeInput,
@@ -622,7 +635,8 @@ fn bench_cfb8_aes128(c: &mut Criterion) {
 /// decryption shows for the feedback modes, and the two directions should measure the same, since
 /// they are the same operation. That symmetry is the number to watch here.
 fn bench_ctr_aes128(c: &mut Criterion) {
-    let k = key::<16>();
+    let key = AES128Key::<CTR>::from_key_material(&key::<16>()).unwrap();
+    let mut rng = FixedSeedRNG::<12>::new([0x24u8; 12]);
     let flat: Vec<u8> = data().as_flattened().to_vec();
 
     let mut group = c.benchmark_group("modes::ctr::AES_128");
@@ -640,9 +654,9 @@ fn bench_ctr_aes128(c: &mut Criterion) {
             b.iter_batched(
                 || flat.clone(),
                 |mut scratch| {
-                    cfb_encrypt_in_calls::<Aes128Ctr<Encrypting>, 16, 12>(
-                        &k, &mut scratch, call_len,
-                    );
+                    let (enc, _): (Aes128Ctr<Encrypting>, _) =
+                        key.create_encryptor(&mut rng).unwrap();
+                    stream_encrypt_in_calls(enc, &mut scratch, call_len);
                     black_box(&scratch);
                 },
                 BatchSize::LargeInput,
@@ -650,7 +664,7 @@ fn bench_ctr_aes128(c: &mut Criterion) {
         });
     }
 
-    let (mut enc, nonce) = Aes128Ctr::<Encrypting>::do_encrypt_init(&k).unwrap();
+    let (mut enc, nonce) = key.create_encryptor(&mut rng).unwrap();
     let mut ciphertext = flat.clone();
     enc.do_encrypt_inplace(&mut ciphertext).unwrap();
 
@@ -662,9 +676,8 @@ fn bench_ctr_aes128(c: &mut Criterion) {
             b.iter_batched(
                 || ciphertext.clone(),
                 |mut scratch| {
-                    cfb_decrypt_in_calls::<Aes128Ctr<Decrypting>, 16, 12>(
-                        &k, &nonce, &mut scratch, call_len,
-                    );
+                    let dec: Aes128Ctr<Decrypting> = key.create_decryptor(&nonce);
+                    stream_decrypt_in_calls(dec, &mut scratch, call_len);
                     black_box(&scratch);
                 },
                 BatchSize::LargeInput,
@@ -677,7 +690,8 @@ fn bench_ctr_aes128(c: &mut Criterion) {
 
 /// AES-256 CTR, for the same key-length comparison the other modes carry.
 fn bench_ctr_aes256(c: &mut Criterion) {
-    let k = key::<32>();
+    let key = AES256Key::<CTR>::from_key_material(&key::<32>()).unwrap();
+    let mut rng = FixedSeedRNG::<12>::new([0x24u8; 12]);
     let flat: Vec<u8> = data().as_flattened().to_vec();
 
     let mut group = c.benchmark_group("modes::ctr::AES_256");
@@ -687,11 +701,8 @@ fn bench_ctr_aes256(c: &mut Criterion) {
         b.iter_batched(
             || flat.clone(),
             |mut scratch| {
-                cfb_encrypt_in_calls::<Aes256Ctr<Encrypting>, 32, 12>(
-                    &k,
-                    &mut scratch,
-                    8 * BLOCK_LEN,
-                );
+                let (enc, _): (Aes256Ctr<Encrypting>, _) = key.create_encryptor(&mut rng).unwrap();
+                stream_encrypt_in_calls(enc, &mut scratch, 8 * BLOCK_LEN);
                 black_box(&scratch);
             },
             BatchSize::LargeInput,
@@ -706,7 +717,7 @@ fn bench_ctr_aes256(c: &mut Criterion) {
 /// N >= 2 speed-up that only decryption shows for CBC and CFB, and the encrypt/decrypt gap should be
 /// just the permutation's own forward/inverse cost difference.
 fn bench_ecb_aes128(c: &mut Criterion) {
-    let k = key::<16>();
+    let key = AES128Key::<ECB<Blocks>>::from_key_material(&key::<16>()).unwrap();
     let blocks = data();
 
     let mut group = c.benchmark_group("modes::ecb::AES_128");
@@ -716,7 +727,7 @@ fn bench_ecb_aes128(c: &mut Criterion) {
         b.iter_batched(
             || blocks.clone(),
             |mut scratch| {
-                let (mut enc, _) = Aes128Ecb::<Encrypting>::do_encrypt_init(&k).unwrap();
+                let mut enc: Aes128Ecb<Encrypting> = key.create_encryptor();
                 for block in scratch.iter_mut() {
                     enc.do_encrypt_inplace(block).unwrap();
                 }
@@ -730,7 +741,7 @@ fn bench_ecb_aes128(c: &mut Criterion) {
         b.iter_batched(
             || blocks.clone(),
             |mut scratch| {
-                let (mut enc, _) = Aes128Ecb::<Encrypting>::do_encrypt_init(&k).unwrap();
+                let mut enc: Aes128Ecb<Encrypting> = key.create_encryptor();
                 for chunk in scratch.chunks_exact_mut(8) {
                     let arr: &mut [u8; 8 * BLOCK_LEN] =
                         chunk.as_flattened_mut().try_into().unwrap();
@@ -746,7 +757,7 @@ fn bench_ecb_aes128(c: &mut Criterion) {
         b.iter_batched(
             || blocks.clone(),
             |mut scratch| {
-                let mut dec = Aes128Ecb::<Decrypting>::do_decrypt_init(&k, &[]).unwrap();
+                let mut dec: Aes128Ecb<Decrypting> = key.create_decryptor();
                 for chunk in scratch.chunks_exact_mut(8) {
                     let arr: &mut [u8; 8 * BLOCK_LEN] =
                         chunk.as_flattened_mut().try_into().unwrap();
@@ -759,11 +770,15 @@ fn bench_ecb_aes128(c: &mut Criterion) {
     });
 
     // The controlled comparison: identical N, identical cipher, bit-sliced pair vs single-block loops.
+    let unpaired_state = <ECB<Blocks> as Mode<UnpairedAes128>>::key_state(unpaired());
     group.bench_function("16KiB encrypt -- N=8, no pair path (single-block loops)", |b| {
         b.iter_batched(
             || blocks.clone(),
             |mut scratch| {
-                let (mut enc, _) = UnpairedAes128Ecb::<Encrypting>::do_encrypt_init(&k).unwrap();
+                let mut enc: UnpairedAes128Ecb<Encrypting> =
+                    <ECB<Blocks> as EcbEncryptMode<UnpairedAes128, 16, BLOCK_LEN>>::encrypt_init(
+                        &unpaired_state,
+                    );
                 for chunk in scratch.chunks_exact_mut(8) {
                     let arr: &mut [u8; 8 * BLOCK_LEN] =
                         chunk.as_flattened_mut().try_into().unwrap();
@@ -778,39 +793,45 @@ fn bench_ecb_aes128(c: &mut Criterion) {
     group.finish();
 }
 
-/// `do_*_init` includes a key expansion, and for encryption also an IV draw from the OS-backed
-/// DRBG. Worth its own measurement, because for short messages it dominates.
+/// What a message pays before its first byte, split as the key path splits it: `from_key_material`
+/// is the key expansion, paid once per key; `create_encryptor` is a clone of the stored schedule
+/// plus an IV draw, and `create_decryptor` the clone alone, paid per message. The IV comes from
+/// the cheap deterministic RNG, so the draw's cost is the copy and not a DRBG. Worth its own
+/// measurement, because for short messages construction dominates.
 fn bench_init(c: &mut Criterion) {
     let k128 = key::<16>();
     let k256 = key::<32>();
     let iv = [0u8; BLOCK_LEN];
+    let mut rng = iv_rng();
+    let cbc128 = AES128Key::<CBC<Blocks>>::from_key_material(&k128).unwrap();
+    let cfb128 = AES128Key::<CFB>::from_key_material(&k128).unwrap();
 
     let mut group = c.benchmark_group("modes::init");
 
-    group.bench_function("AES_128 do_encrypt_init (key schedule + IV)", |b| {
-        b.iter(|| black_box(Aes128Cbc::<Encrypting>::do_encrypt_init(black_box(&k128)).unwrap().1))
+    group.bench_function("AES_128 from_key_material, CBC (key schedule)", |b| {
+        b.iter(|| black_box(AES128Key::<CBC<Blocks>>::from_key_material(black_box(&k128)).unwrap()))
     });
-    group.bench_function("AES_128 do_decrypt_init (key schedule only)", |b| {
-        b.iter(|| {
-            black_box(Aes128Cbc::<Decrypting>::do_decrypt_init(black_box(&k128), &iv).unwrap())
-        })
+    group.bench_function("AES_256 from_key_material, CBC (key schedule)", |b| {
+        b.iter(|| black_box(AES256Key::<CBC<Blocks>>::from_key_material(black_box(&k256)).unwrap()))
     });
-    group.bench_function("AES_256 do_decrypt_init (key schedule only)", |b| {
-        b.iter(|| {
-            black_box(Aes256Cbc::<Decrypting>::do_decrypt_init(black_box(&k256), &iv).unwrap())
-        })
+    group.bench_function("AES_128 create_encryptor, CBC (schedule clone + IV draw)", |b| {
+        b.iter(|| black_box(black_box(&cbc128).create_encryptor(&mut rng).unwrap().1))
+    });
+    group.bench_function("AES_128 create_decryptor, CBC (schedule clone)", |b| {
+        b.iter(|| black_box(black_box(&cbc128).create_decryptor(&iv)))
     });
 
-    // CFB does exactly the same work here -- one key expansion, plus an IV draw when encrypting --
-    // so these should match the CBC numbers. A divergence would mean one mode is doing something
-    // extra at construction time.
-    group.bench_function("AES_128 do_encrypt_init, CFB (key schedule + IV)", |b| {
-        b.iter(|| black_box(Aes128Cfb::<Encrypting>::do_encrypt_init(black_box(&k128)).unwrap().1))
+    // CFB does exactly the same work here -- one key expansion per key, one clone plus an IV
+    // draw per encryptor -- so these should match the CBC numbers. A divergence would mean one
+    // mode is doing something extra at construction time.
+    group.bench_function("AES_128 from_key_material, CFB (key schedule)", |b| {
+        b.iter(|| black_box(AES128Key::<CFB>::from_key_material(black_box(&k128)).unwrap()))
     });
-    group.bench_function("AES_128 do_decrypt_init, CFB (key schedule only)", |b| {
-        b.iter(|| {
-            black_box(Aes128Cfb::<Decrypting>::do_decrypt_init(black_box(&k128), &iv).unwrap())
-        })
+    group.bench_function("AES_128 create_encryptor, CFB (schedule clone + IV draw)", |b| {
+        b.iter(|| black_box(black_box(&cfb128).create_encryptor(&mut rng).unwrap().1))
+    });
+    group.bench_function("AES_128 create_decryptor, CFB (schedule clone)", |b| {
+        b.iter(|| black_box(black_box(&cfb128).create_decryptor(&iv)))
     });
 
     group.finish();
@@ -824,7 +845,7 @@ fn bench_init(c: &mut Criterion) {
 /// once as a CBC-MAC input. The CBC-MAC half is serial by construction (Sec 6.1 step 3: `Yi` is
 /// the cipher of `Bi XOR Yi-1`), so unlike [`Ctr`] and the decrypt direction of `Cbc`/`Cfb` it has
 /// no pair or four path -- but the CTR half has exactly `Ctr`'s parallelism (A.3's `Ctrj` depends
-/// only on `j`), and `CcmPacket::apply_keystream` batches it the same way. So CCM sits *between* CTR's
+/// only on `j`), and the mode's keystream batches it the same way. So CCM sits *between* CTR's
 /// two numbers, not at a fixed fraction of either:
 ///
 /// * against `modes::ctr::AES_128/16KiB encrypt -- N=1`, CTR's unbatched single-block path, CCM
@@ -848,7 +869,7 @@ fn bench_init(c: &mut Criterion) {
 /// throughput should now sit close to CTR's *unbatched* number, since both are exactly one
 /// unbatched cipher call per block.
 fn bench_ccm_aes128(c: &mut Criterion) {
-    let key = key::<16>();
+    let perm = AES128Internal::new(&key::<16>()).unwrap();
     let nonce = [0x24u8; CCM_NONCE_LEN];
     let data = [0xA5u8; DATA_LEN];
     let no_aad: [u8; 0] = [];
@@ -858,15 +879,14 @@ fn bench_ccm_aes128(c: &mut Criterion) {
 
     group.bench_function("encrypt 16KiB, no AAD", |b| {
         b.iter_batched_ref(
-            || [0u8; DATA_LEN],
-            |out| {
+            || data,
+            |buf| {
                 black_box(
-                    Aes128CcmEnc::encrypt_detached_out(
-                        black_box(&key),
+                    Aes128CcmMode::encrypt_detached_in_place_nonce(
+                        black_box(&perm),
                         &nonce,
                         &no_aad,
-                        black_box(&data),
-                        out,
+                        buf,
                     )
                     .unwrap(),
                 )
@@ -877,22 +897,22 @@ fn bench_ccm_aes128(c: &mut Criterion) {
 
     // Encrypt once outside the loop so decryption measures a ciphertext that authenticates: a
     // failing tag check would short-circuit the comparison and measure the wrong thing.
-    let mut ciphertext = [0u8; DATA_LEN];
-    let (_, tag) =
-        Aes128CcmEnc::encrypt_detached_out(&key, &nonce, &no_aad, &data, &mut ciphertext).unwrap();
+    let mut ciphertext = data;
+    let tag =
+        Aes128CcmMode::encrypt_detached_in_place_nonce(&perm, &nonce, &no_aad, &mut ciphertext)
+            .unwrap();
 
     group.bench_function("decrypt 16KiB, no AAD", |b| {
         b.iter_batched_ref(
-            || [0u8; DATA_LEN],
-            |out| {
+            || ciphertext,
+            |buf| {
                 black_box(
-                    Aes128CcmDec::decrypt_detached_out(
-                        black_box(&key),
+                    Aes128CcmMode::decrypt_detached_in_place(
+                        black_box(&perm),
                         &nonce,
                         &no_aad,
-                        black_box(&ciphertext),
+                        buf,
                         &tag,
-                        out,
                     )
                     .unwrap(),
                 )
@@ -905,15 +925,14 @@ fn bench_ccm_aes128(c: &mut Criterion) {
     // cipher call per AAD block, so this should cost about 1.5x the no-AAD case for 2x the bytes.
     group.bench_function("encrypt 16KiB with 16KiB AAD", |b| {
         b.iter_batched_ref(
-            || [0u8; DATA_LEN],
-            |out| {
+            || data,
+            |buf| {
                 black_box(
-                    Aes128CcmEnc::encrypt_detached_out(
-                        black_box(&key),
+                    Aes128CcmMode::encrypt_detached_in_place_nonce(
+                        black_box(&perm),
                         &nonce,
                         black_box(&data),
-                        black_box(&data),
-                        out,
+                        buf,
                     )
                     .unwrap(),
                 )
@@ -928,11 +947,10 @@ fn bench_ccm_aes128(c: &mut Criterion) {
         b.iter(|| {
             let mut out: [u8; 0] = [];
             black_box(
-                Aes128CcmEnc::encrypt_detached_out(
-                    black_box(&key),
+                Aes128CcmMode::encrypt_detached_in_place_nonce(
+                    black_box(&perm),
                     &nonce,
                     black_box(&data),
-                    &no_aad,
                     &mut out,
                 )
                 .unwrap(),
@@ -943,13 +961,16 @@ fn bench_ccm_aes128(c: &mut Criterion) {
     group.finish();
 }
 
-/// The [`AEADCipherEncryptor`] one-shot against the inherent one-shot on the same message.
+/// The frame key's [`AeadEncryptionKey`] one-shot against the mode's in-place one-shot on the
+/// same message.
 ///
-/// The trait's provided one-shot runs the streaming adapter over one 4 KiB frame and ends in the
-/// same `CcmPacket` implementation. A cheap deterministic RNG, created
-/// once outside the timed loop, isolates its nonce draw from OS entropy and DRBG construction.
+/// Both end in the same `Ccm` implementation; the key form copies the message into the caller's
+/// output buffer and draws the nonce. A cheap deterministic RNG, created once outside the timed
+/// loop, isolates that draw from OS entropy and DRBG construction.
 fn bench_ccm_one_shot_pair(c: &mut Criterion) {
-    let key = key::<16>();
+    let material = key::<16>();
+    let key = Aes128CcmFrameKey::from_key_material(&material).unwrap();
+    let perm = AES128Internal::new(&material).unwrap();
     let data = [0xA5u8; CCM_BUFFER_LEN];
     let no_aad: [u8; 0] = [];
     let nonce = [0x24u8; CCM_NONCE_LEN];
@@ -958,37 +979,31 @@ fn bench_ccm_one_shot_pair(c: &mut Criterion) {
     let mut group = c.benchmark_group("modes::ccm::one_shot");
     group.throughput(Throughput::Bytes(CCM_BUFFER_LEN as u64));
 
-    group.bench_function("AEADCipherEncryptor::encrypt_detached_rng_out 4KiB", |b| {
+    group.bench_function("AeadEncryptionKey::encrypt_detached_out 4KiB", |b| {
         b.iter_batched_ref(
             || [0u8; CCM_BUFFER_LEN],
             |out| {
                 black_box(
-                    Aes128CcmEncryptor::encrypt_detached_rng_out(
-                        black_box(&key),
-                        &mut rng,
-                        &no_aad,
-                        black_box(&data),
-                        out,
-                    )
-                    .unwrap(),
+                    black_box(&key)
+                        .encrypt_detached_out(&mut rng, &no_aad, black_box(&data), out)
+                        .unwrap(),
                 )
             },
             BatchSize::LargeInput,
         )
     });
 
-    // The same 4 KiB and nonce through `CcmPacket` directly, for the ratio.
-    group.bench_function("CcmPacket::encrypt_detached_out 4KiB", |b| {
+    // The same 4 KiB and nonce through the mode's in-place one-shot, for the ratio.
+    group.bench_function("CCM::encrypt_detached_in_place_nonce 4KiB", |b| {
         b.iter_batched_ref(
-            || [0u8; CCM_BUFFER_LEN],
-            |out| {
+            || data,
+            |buf| {
                 black_box(
-                    Aes128CcmEnc::encrypt_detached_out(
-                        black_box(&key),
+                    Aes128CcmMode::encrypt_detached_in_place_nonce(
+                        black_box(&perm),
                         &nonce,
                         &no_aad,
-                        black_box(&data),
-                        out,
+                        buf,
                     )
                     .unwrap(),
                 )
@@ -1004,7 +1019,7 @@ fn bench_ccm_one_shot_pair(c: &mut Criterion) {
 /// it against. The nonce comes from a cheap deterministic RNG created outside the timed loop, so
 /// the figures measure the mode and not OS entropy or DRBG construction.
 fn bench_gcm_aes128(c: &mut Criterion) {
-    let key = key::<16>();
+    let key = Aes128GcmKey::from_key_material(&key::<16>()).unwrap();
     let data = [0xA5u8; DATA_LEN];
     let no_aad: [u8; 0] = [];
     let mut rng = FixedSeedRNG::<GCM_NONCE_LEN>::new([0x24u8; GCM_NONCE_LEN]);
@@ -1017,14 +1032,9 @@ fn bench_gcm_aes128(c: &mut Criterion) {
             || [0u8; DATA_LEN],
             |out| {
                 black_box(
-                    Aes128Gcm::<Encrypting>::encrypt_detached_rng_out(
-                        black_box(&key),
-                        &mut rng,
-                        &no_aad,
-                        black_box(&data),
-                        out,
-                    )
-                    .unwrap(),
+                    black_box(&key)
+                        .encrypt_detached_out(&mut rng, &no_aad, black_box(&data), out)
+                        .unwrap(),
                 )
             },
             BatchSize::LargeInput,
@@ -1034,10 +1044,8 @@ fn bench_gcm_aes128(c: &mut Criterion) {
     // Encrypt once outside the loop so decryption measures a ciphertext that authenticates: a
     // failing tag check would short-circuit the comparison and measure the wrong thing.
     let mut ciphertext = [0u8; DATA_LEN];
-    let (nonce, _, tag) = Aes128Gcm::<Encrypting>::encrypt_detached_rng_out(
-        &key, &mut rng, &no_aad, &data, &mut ciphertext,
-    )
-    .unwrap();
+    let (_, nonce, tag) =
+        key.encrypt_detached_out(&mut rng, &no_aad, &data, &mut ciphertext).unwrap();
 
     // The one-shot verifies the tag before it decrypts (SP 800-38D Sec 7's preamble permits the
     // reordering), so this is GHASH over the whole ciphertext and then CTR over it: the same work
@@ -1047,15 +1055,9 @@ fn bench_gcm_aes128(c: &mut Criterion) {
             || [0u8; DATA_LEN],
             |out| {
                 black_box(
-                    Aes128Gcm::<Decrypting>::decrypt_detached_out(
-                        black_box(&key),
-                        &nonce,
-                        &no_aad,
-                        black_box(&ciphertext),
-                        &tag,
-                        out,
-                    )
-                    .unwrap(),
+                    black_box(&key)
+                        .decrypt_detached_out(&nonce, &no_aad, black_box(&ciphertext), &tag, out)
+                        .unwrap(),
                 )
             },
             BatchSize::LargeInput,
@@ -1069,14 +1071,9 @@ fn bench_gcm_aes128(c: &mut Criterion) {
             || [0u8; DATA_LEN],
             |out| {
                 black_box(
-                    Aes128Gcm::<Encrypting>::encrypt_detached_rng_out(
-                        black_box(&key),
-                        &mut rng,
-                        black_box(&data),
-                        black_box(&data),
-                        out,
-                    )
-                    .unwrap(),
+                    black_box(&key)
+                        .encrypt_detached_out(&mut rng, black_box(&data), black_box(&data), out)
+                        .unwrap(),
                 )
             },
             BatchSize::LargeInput,
@@ -1089,14 +1086,9 @@ fn bench_gcm_aes128(c: &mut Criterion) {
         b.iter(|| {
             let mut out: [u8; 0] = [];
             black_box(
-                Aes128Gcm::<Encrypting>::encrypt_detached_rng_out(
-                    black_box(&key),
-                    &mut rng,
-                    black_box(&data),
-                    &no_aad,
-                    &mut out,
-                )
-                .unwrap(),
+                black_box(&key)
+                    .encrypt_detached_out(&mut rng, black_box(&data), &no_aad, &mut out)
+                    .unwrap(),
             )
         })
     });
@@ -1107,9 +1099,7 @@ fn bench_gcm_aes128(c: &mut Criterion) {
         b.iter_batched(
             || data.to_vec(),
             |plaintext| {
-                let (mut enc, _nonce) =
-                    Aes128Gcm::<Encrypting>::do_encrypt_init_rng(black_box(&key), &mut rng)
-                        .unwrap();
+                let (mut enc, _nonce) = black_box(&key).create_encryptor(&mut rng).unwrap();
                 let mut out = [0u8; 8 * BLOCK_LEN];
                 for piece in plaintext.chunks(8 * BLOCK_LEN) {
                     enc.do_encrypt_out(piece, &mut out).unwrap();
@@ -1126,7 +1116,7 @@ fn bench_gcm_aes128(c: &mut Criterion) {
 
 /// AES-256 GCM, for the same key-length comparison the other modes carry.
 fn bench_gcm_aes256(c: &mut Criterion) {
-    let key = key::<32>();
+    let key = Aes256GcmKey::from_key_material(&key::<32>()).unwrap();
     let data = [0xA5u8; DATA_LEN];
     let no_aad: [u8; 0] = [];
     let mut rng = FixedSeedRNG::<GCM_NONCE_LEN>::new([0x24u8; GCM_NONCE_LEN]);
@@ -1139,14 +1129,9 @@ fn bench_gcm_aes256(c: &mut Criterion) {
             || [0u8; DATA_LEN],
             |out| {
                 black_box(
-                    Aes256Gcm::<Encrypting>::encrypt_detached_rng_out(
-                        black_box(&key),
-                        &mut rng,
-                        &no_aad,
-                        black_box(&data),
-                        out,
-                    )
-                    .unwrap(),
+                    black_box(&key)
+                        .encrypt_detached_out(&mut rng, &no_aad, black_box(&data), out)
+                        .unwrap(),
                 )
             },
             BatchSize::LargeInput,
@@ -1156,9 +1141,71 @@ fn bench_gcm_aes256(c: &mut Criterion) {
     group.finish();
 }
 
+/// CMAC is serial like CBC encryption (SP 800-38B Sec 6.2 step 6 chains every block), so it
+/// should come out close to `modes::cbc::AES_128` encryption. Building the key once skips the
+/// per-tag key expansion and subkey derivation, one block encryption, which is invisible at 16
+/// KiB; the `from_key_material per tag` arms pay it every time, for the comparison.
+fn bench_cmac(c: &mut Criterion) {
+    let data: Vec<u8> = data().concat();
+    let mut group = c.benchmark_group("modes::cmac");
+    group.throughput(Throughput::Bytes(DATA_LEN as u64));
+
+    let key128 = mac_key::<16>();
+    group.bench_function("AES_128 from_key_material per tag 16KiB", |b| {
+        b.iter(|| {
+            black_box(AES128Key::<CMAC>::from_key_material(&key128).unwrap().mac(black_box(&data)))
+        })
+    });
+    let key_object_128 = AES128Key::<CMAC>::from_key_material(&key128).unwrap();
+    group.bench_function("AES_128 key object 16KiB", |b| {
+        b.iter(|| black_box(key_object_128.mac(black_box(&data))))
+    });
+    let key256 = mac_key::<32>();
+    group.bench_function("AES_256 from_key_material per tag 16KiB", |b| {
+        b.iter(|| {
+            black_box(AES256Key::<CMAC>::from_key_material(&key256).unwrap().mac(black_box(&data)))
+        })
+    });
+    let key_object_256 = AES256Key::<CMAC>::from_key_material(&key256).unwrap();
+    group.bench_function("AES_256 key object 16KiB", |b| {
+        b.iter(|| black_box(key_object_256.mac(black_box(&data))))
+    });
+
+    group.finish();
+}
+
+/// GMAC is GHASH over the message plus two cipher calls, so it is several times faster than CMAC
+/// and the same as GCM's AAD-only measurement.
+fn bench_gmac(c: &mut Criterion) {
+    let data: Vec<u8> = data().concat();
+    let mut group = c.benchmark_group("modes::gmac");
+    group.throughput(Throughput::Bytes(DATA_LEN as u64));
+    let mut rng = FixedSeedRNG::<GCM_NONCE_LEN>::new([0x24u8; GCM_NONCE_LEN]);
+
+    let key128 = mac_key::<16>();
+    let key_object_128 = AES128Key::<GMAC>::from_key_material(&key128).unwrap();
+    group.bench_function("AES_128 key object 16KiB", |b| {
+        b.iter(|| {
+            let (gen_, _) = key_object_128.create_generator(&mut rng).unwrap();
+            black_box(gen_.mac(black_box(&data)))
+        })
+    });
+    let key256 = mac_key::<32>();
+    let key_object_256 = AES256Key::<GMAC>::from_key_material(&key256).unwrap();
+    group.bench_function("AES_256 key object 16KiB", |b| {
+        b.iter(|| {
+            let (gen_, _) = key_object_256.create_generator(&mut rng).unwrap();
+            black_box(gen_.mac(black_box(&data)))
+        })
+    });
+
+    group.finish();
+}
+
 criterion_group!(
     benches, bench_aes128, bench_aes256, bench_cfb_aes128, bench_cfb_aes256, bench_cfb8_aes128,
     bench_ctr_aes128, bench_ctr_aes256, bench_ecb_aes128, bench_ccm_aes128,
-    bench_ccm_one_shot_pair, bench_gcm_aes128, bench_gcm_aes256, bench_init
+    bench_ccm_one_shot_pair, bench_gcm_aes128, bench_gcm_aes256, bench_init, bench_cmac,
+    bench_gmac
 );
 criterion_main!(benches);

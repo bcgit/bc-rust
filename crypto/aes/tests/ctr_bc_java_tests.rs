@@ -36,32 +36,33 @@
 //! three key lengths -- and it is exact. Those cases are covered there and by the ACVP suite, so
 //! what is pinned here is specifically the part neither of them reaches: the narrow counters.
 
-use bouncycastle_aes::hazmat::AES128Internal;
-use bouncycastle_cipher::Encrypting;
-use bouncycastle_cipher::modes::Ctr;
+use bouncycastle_aes::AES128Key;
+use bouncycastle_cipher::modes::CTR;
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-use bouncycastle_core::traits::{StreamCipherEncryptor, SymmetricCipherEncryptor};
+use bouncycastle_core::symmetric_key::{FromKeyMaterial, SymmetricEncryptionKey};
+use bouncycastle_core::traits::StreamCipherEncryptor;
 use bouncycastle_core_test_framework::FixedSeedRNG;
 use bouncycastle_hex as hex;
 
 /// The AES-128 key used for every vector in this file: SP 800-38A Appendix F's first key.
 const KEY: &str = "2b7e151628aed2a6abf7158809cf4f3c";
 
-fn key() -> KeyMaterial<16> {
+/// The key under CTR at the given nonce length.
+fn key<const NONCE_LEN: usize>() -> AES128Key<CTR<NONCE_LEN>> {
     let raw = hex::decode(KEY).expect("valid hex");
-    KeyMaterial::<16>::from_bytes_as_type(&raw, KeyType::SymmetricCipherKey).expect("a valid key")
+    let material = KeyMaterial::<16>::from_bytes_as_type(&raw, KeyType::SymmetricCipherKey)
+        .expect("a valid key");
+    AES128Key::from_key_material(&material).expect("a valid key")
 }
 
 /// Produces `blocks` blocks of keystream by encrypting zeros under the given nonce.
 fn keystream<const NONCE_LEN: usize>(nonce_hex: &str, blocks: usize) -> Vec<u8> {
     let nonce: [u8; NONCE_LEN] =
         hex::decode(nonce_hex).expect("valid hex").try_into().expect("nonce length");
-    let (mut enc, got) = Ctr::<AES128Internal, Encrypting, 16, 16, NONCE_LEN>::do_encrypt_init_rng(
-        &key(),
-        &mut FixedSeedRNG::<NONCE_LEN>::new(nonce),
-    )
-    .expect("encrypt init");
+    let key = key::<NONCE_LEN>();
+    let (mut enc, got) =
+        key.create_encryptor(&mut FixedSeedRNG::<NONCE_LEN>::new(nonce)).expect("encrypt init");
     assert_eq!(got, nonce, "the pinned RNG should reproduce the nonce");
 
     let mut data = vec![0u8; blocks * 16];
@@ -151,11 +152,8 @@ fn three_byte_counter_matches_bc_java() {
 fn the_counter_limit_falls_where_bc_java_throws() {
     let nonce: [u8; 15] =
         hex::decode("5a5b5c5d5e5f606162636465666768").unwrap().try_into().unwrap();
-    let (mut enc, _) = Ctr::<AES128Internal, Encrypting, 16, 16, 15>::do_encrypt_init_rng(
-        &key(),
-        &mut FixedSeedRNG::<15>::new(nonce),
-    )
-    .unwrap();
+    let key = key::<15>();
+    let (mut enc, _) = key.create_encryptor(&mut FixedSeedRNG::<15>::new(nonce)).unwrap();
 
     // BC Java encrypts 4096 bytes under this IV without complaint.
     let mut data = vec![0u8; 4096];

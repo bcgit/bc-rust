@@ -1,50 +1,51 @@
 //! ChaCha20-Poly1305 AEAD from [RFC 8439, section 2.8](https://www.rfc-editor.org/rfc/rfc8439#section-2.8).
 //!
-//! [`ChaCha20_Poly1305<Encrypting>`] / [`ChaCha20_Poly1305<Decrypting>`] is the cipher with the
-//! direction in its type, implementing the core [`AEADCipherEncryptor`] / [`AEADCipherDecryptor`]
-//! traits for streaming and one-shot operations with either an inline or detached 16-byte tag.
-//! Keys are 32 bytes and nonces 12 bytes. Encryption generates a nonce; protocols that supply
-//! their own may use [`AEADCipherEncryptor::do_encrypt_init_nonce`], taking responsibility for
-//! nonce uniqueness. A key/nonce may encrypt at most `64 * (2^32 - 1)` bytes. AAD must precede all
-//! data updates, including empty updates. Empty AAD is always a no-op. Secret state is zeroized on
-//! drop; streaming and output-buffer methods do not allocate. This is the IETF construction, not
-//! the original 64-bit-nonce variant or XChaCha20.
+//! [`ChaCha20Poly1305Key`] is the key object: built once from 32 bytes of key material through
+//! [`FromKeyMaterial`], it hands out [`ChaCha20_Poly1305<Encrypting>`] /
+//! [`ChaCha20_Poly1305<Decrypting>`] workers through [`AeadEncryptionKey`] /
+//! [`AeadDecryptionKey`], whose one-shots and the workers' [`AEADCipherEncryptor`] /
+//! [`AEADCipherDecryptor`] streaming methods take the 16-byte tag inline or detached. Keys are 32
+//! bytes and nonces 12 bytes. Encryption draws the nonce from the RNG it is given; protocols that
+//! supply their own may use [`AeadEncryptionKey::create_encryptor_nonce`], taking responsibility
+//! for nonce uniqueness. A key/nonce may encrypt at most `64 * (2^32 - 1)` bytes. AAD must precede
+//! all data updates, including empty updates. Empty AAD is always a no-op. Secret state is
+//! zeroized on drop; streaming and output-buffer methods do not allocate. This is the IETF
+//! construction, not the original 64-bit-nonce variant or XChaCha20.
 //!
 //! # Usage Examples
 //!
 //! One-shot, with a detached tag:
 //!
 //! ```
-//! use bouncycastle_chacha20_poly1305_aead::ChaCha20_Poly1305;
-//! use bouncycastle_cipher::{Decrypting, Encrypting};
-//! use bouncycastle_core::{key_material::{KeyMaterial, KeyType}, traits::{AEADCipherEncryptor, AEADCipherDecryptor}};
+//! use bouncycastle_chacha20_poly1305_aead::ChaCha20Poly1305Key;
+//! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
+//! use bouncycastle_core::symmetric_key::{AeadDecryptionKey, AeadEncryptionKey, FromKeyMaterial};
+//! use bouncycastle_rng::HashDRBG_SHA512;
 //!
-//! type Enc = ChaCha20_Poly1305<Encrypting>;
-//! type Dec = ChaCha20_Poly1305<Decrypting>;
-//!
-//! let key = KeyMaterial::<32>::from_bytes_as_type(&[0x42; 32], KeyType::SymmetricCipherKey).unwrap();
+//! let material = KeyMaterial::<32>::from_bytes_as_type(&[0x42; 32], KeyType::SymmetricCipherKey).unwrap();
+//! let key = ChaCha20Poly1305Key::from_key_material(&material).unwrap();
+//! let mut rng = HashDRBG_SHA512::new_from_os();
 //! let mut ciphertext = [0u8; 7];
-//! let (nonce, n, tag) = Enc::encrypt_detached_out(&key, b"header", b"message", &mut ciphertext).unwrap();
+//! let (n, nonce, tag) = key.encrypt_detached_out(&mut rng, b"header", b"message", &mut ciphertext).unwrap();
 //! let mut plaintext = [0u8; 7];
-//! Dec::decrypt_detached_out(&key, &nonce, b"header", &ciphertext[..n], &tag, &mut plaintext).unwrap();
+//! key.decrypt_detached_out(&nonce, b"header", &ciphertext[..n], &tag, &mut plaintext).unwrap();
 //! assert_eq!(&plaintext, b"message");
 //! ```
 //!
 //! Streaming, with the tag inline after the ciphertext:
 //!
 //! ```
-//! use bouncycastle_chacha20_poly1305_aead::ChaCha20_Poly1305;
-//! use bouncycastle_cipher::{Decrypting, Encrypting};
+//! use bouncycastle_chacha20_poly1305_aead::ChaCha20Poly1305Key;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
+//! use bouncycastle_core::symmetric_key::{AeadDecryptionKey, AeadEncryptionKey, FromKeyMaterial};
 //! use bouncycastle_core::traits::{
 //!     AEADCipherDecryptor, AEADCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
 //! };
+//! use bouncycastle_rng::HashDRBG_SHA512;
 //!
-//! type Enc = ChaCha20_Poly1305<Encrypting>;
-//! type Dec = ChaCha20_Poly1305<Decrypting>;
-//!
-//! let key = KeyMaterial::<32>::from_bytes_as_type(&[0x42; 32], KeyType::SymmetricCipherKey).unwrap();
-//! let (mut enc, nonce) = Enc::do_encrypt_init(&key).unwrap();
+//! let material = KeyMaterial::<32>::from_bytes_as_type(&[0x42; 32], KeyType::SymmetricCipherKey).unwrap();
+//! let key = ChaCha20Poly1305Key::from_key_material(&material).unwrap();
+//! let (mut enc, nonce) = key.create_encryptor(&mut HashDRBG_SHA512::new_from_os()).unwrap();
 //! enc.do_update_aad(b"header").unwrap();
 //! let mut sealed = Vec::new();
 //! for piece in [&b"first part, "[..], &b"second part"[..]] {
@@ -55,7 +56,7 @@
 //! let (tag, _) = enc.do_encrypt_final().unwrap();
 //! sealed.extend_from_slice(&tag);
 //!
-//! let mut dec = Dec::do_decrypt_init(&key, &nonce).unwrap();
+//! let mut dec = key.create_decryptor(&nonce);
 //! dec.do_update_aad(b"header").unwrap();
 //! let mut plaintext = vec![0u8; sealed.len()];
 //! let n = dec.do_decrypt_out(&sealed, &mut plaintext).unwrap();
@@ -68,38 +69,40 @@
 //!
 //! | Type | In-memory size (bytes) |
 //! |------|------------------------|
-//! | [`ChaCha20_Poly1305<Encrypting>`] | 384 |
-//! | [`ChaCha20_Poly1305<Decrypting>`] | 384 |
+//! | [`ChaCha20Poly1305Key`] | 32 |
+//! | [`ChaCha20_Poly1305<Encrypting>`] | 344 |
+//! | [`ChaCha20_Poly1305<Decrypting>`] | 344 |
 //!
 //! "In-memory size" is `core::mem::size_of` on a 64-bit target. There are no heap allocations and
 //! no message-sized buffers, so this crate has no `mem_usage_benches` harness.
 //!
 //! # 🚨 Security Considerations 🚨
 //!
-//! - Never reuse a nonce under the same key. The trait constructors generate one; a caller of
-//!   [`AEADCipherEncryptor::do_encrypt_init_nonce`] is responsible for uniqueness. Reuse exposes
-//!   the XOR of the plaintexts and lets an attacker forge tags.
+//! - Never reuse a nonce under the same key. The key's `create_encryptor` and its one-shots draw
+//!   one; a caller of [`AeadEncryptionKey::create_encryptor_nonce`] or the `_nonce` one-shots is
+//!   responsible for uniqueness. Reuse exposes the XOR of the plaintexts and lets an attacker forge
+//!   tags.
 //! - Streaming decryption releases **unauthenticated** bytes: do not use them until finalization
-//!   succeeds, and erase them on failure. The one-shot trait methods erase their output on tag
-//!   failure.
+//!   succeeds, and erase them on failure. The key's one-shots erase their output on tag failure.
 
 #![no_std]
 #![forbid(unsafe_code)]
 #![forbid(missing_docs)]
 
 use bouncycastle_chacha20::ChaCha20;
-use bouncycastle_chacha20::hazmat::ChaCha20KeyStream;
+use bouncycastle_chacha20::hazmat::{ChaCha20KeyState, ChaCha20KeyStream};
 use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::hazmat::KeyStream;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
+use bouncycastle_core::symmetric_key::{AeadDecryptionKey, AeadEncryptionKey, FromKeyMaterial};
 use bouncycastle_core::traits::{
     AEADCipherDecryptor, AEADCipherEncryptor, Algorithm, MAC, RNG, StreamCipherDecryptor,
     StreamCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
 };
 use bouncycastle_poly1305::Poly1305;
-use bouncycastle_rng::DefaultRNG;
+use bouncycastle_poly1305::hazmat::key_from_bytes;
 use bouncycastle_utils::{ct, secret::Secret};
 
 /// Key length in bytes.
@@ -113,11 +116,8 @@ pub const MAX_MESSAGE_LEN: u64 = u32::MAX as u64 * 64;
 
 /// ChaCha20-Poly1305 (RFC 8439 Sec 2.8) in one direction: `Dir` is [`Encrypting`] or
 /// [`Decrypting`], and only that direction's methods exist on the type, so the wrong direction is a
-/// compile error. One instance performs one operation under one (key, nonce) pair.
-///
-/// Both directions take a [`KeyType::SymmetricCipherKey`] of 256-bit strength that is unbound or
-/// bound to this type's [`Algorithm::ALG_NAME`]; a key bound to any other algorithm, plain
-/// ChaCha20 included, is refused.
+/// compile error. One instance performs one operation under one (key, nonce) pair, and is made by
+/// a [`ChaCha20Poly1305Key`].
 ///
 /// The encrypting side holds nothing back: `FINAL_LEN` is `TAG_LEN`, so the inline
 /// [`SymmetricCipherEncryptor::do_encrypt_final`] writes only the tag. The decrypting side holds
@@ -125,19 +125,39 @@ pub const MAX_MESSAGE_LEN: u64 = u32::MAX as u64 * 64;
 /// may be the inline tag.
 ///
 /// ```compile_fail
-/// # use bouncycastle_chacha20_poly1305_aead::ChaCha20_Poly1305;
-/// # use bouncycastle_cipher::Decrypting;
+/// # use bouncycastle_chacha20_poly1305_aead::ChaCha20Poly1305Key;
 /// # use bouncycastle_core::key_material::{KeyMaterial, KeyType};
+/// # use bouncycastle_core::symmetric_key::{AeadDecryptionKey, FromKeyMaterial};
 /// # use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
-/// # let key = KeyMaterial::<32>::from_bytes_as_type(&[7; 32], KeyType::SymmetricCipherKey).unwrap();
-/// let mut dec = ChaCha20_Poly1305::<Decrypting>::do_decrypt_init(&key, &[0u8; 12]).unwrap();
+/// # let material = KeyMaterial::<32>::from_bytes_as_type(&[7; 32], KeyType::SymmetricCipherKey).unwrap();
+/// # let key = ChaCha20Poly1305Key::from_key_material(&material).unwrap();
+/// let mut dec = key.create_decryptor(&[0u8; 12]);
 /// dec.do_encrypt_out(&[0u8; 4], &mut [0u8; 4]); // no such method on the decrypting type
 /// ```
+///
+/// A worker borrows its key for `'k`, and cannot be cloned, since two copies of one encryptor
+/// would encrypt two messages under one nonce:
+///
+/// ```compile_fail
+/// # use bouncycastle_chacha20_poly1305_aead::ChaCha20_Poly1305;
+/// # use bouncycastle_cipher::Encrypting;
+/// fn cloneable<T: Clone>() {}
+/// cloneable::<ChaCha20_Poly1305<'static, Encrypting>>();
+/// ```
+///
+/// which compiles without its last line:
+///
+/// ```
+/// # use bouncycastle_chacha20_poly1305_aead::ChaCha20_Poly1305;
+/// # use bouncycastle_cipher::Encrypting;
+/// fn cloneable<T: Clone>() {}
+/// let _ = core::mem::size_of::<ChaCha20_Poly1305<'static, Encrypting>>();
+/// ```
 #[allow(non_camel_case_types)]
-pub struct ChaCha20_Poly1305<Dir> {
+pub struct ChaCha20_Poly1305<'k, Dir> {
     // The data keystream, from block counter 1. Decrypting, it is RFC 8439 Sec 2.8's "ChaCha20
     // encryption function ... applied to the ciphertext": both directions are the same XOR.
-    cipher: ChaCha20<Dir>,
+    cipher: ChaCha20<'k, Dir>,
     mac: Poly1305,
     aad_len: u64,
     data_len: u64,
@@ -149,33 +169,27 @@ pub struct ChaCha20_Poly1305<Dir> {
     held_len: usize,
 }
 
-impl<Dir> Algorithm for ChaCha20_Poly1305<Dir> {
+impl<Dir> Algorithm for ChaCha20_Poly1305<'_, Dir> {
     const ALG_NAME: &'static str = "ChaCha20-Poly1305";
     // The cipher key has 256-bit strength; authentication is limited by the 128-bit tag.
     const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_256bit;
 }
 
-impl<Dir> ChaCha20_Poly1305<Dir> {
-    /// The setup of both directions, under the caller's or a generated `nonce`.
-    fn new(
-        key: &KeyMaterial<KEY_LEN>,
-        nonce: &[u8; NONCE_LEN],
-    ) -> Result<Self, SymmetricCipherError> {
-        // The key is bound, if at all, to this AEAD; `start_at` is the keystream constructor that
-        // leaves that check to its caller, as GCM does with its CTR keystream.
-        key.check_algorithm(Self::ALG_NAME)?;
+impl<'k, Dir> ChaCha20_Poly1305<'k, Dir> {
+    /// The setup of both directions under `nonce`, from a key its key object has validated.
+    fn new(key: &'k ChaCha20KeyState, nonce: &[u8; NONCE_LEN]) -> Self {
         // RFC 8439 Sec 2.8: the one-time key is the first 32 bytes of block 0 (Sec 2.6.1,
         // poly1305_key_gen), and the data is encrypted "with the initial counter set to 1".
         // Taking block 0 leaves the keystream at counter 1, so the same keystream carries the data.
-        let mut keystream = ChaCha20KeyStream::start_at(key, nonce, 0)?;
+        let mut keystream = ChaCha20KeyStream::start_at(key, nonce, 0);
         let mut block: Secret<[[u8; 64]; 1]> = Secret::new();
         keystream.apply_blocks(&mut *block);
-        let mac_key = KeyMaterial::<32>::from_bytes_as_type(&block[0][..32], KeyType::MACKey)?;
+        // infallible: the slice is exactly the 32 bytes of the one-time key.
+        let one_time_key: &[u8; 32] = block[0][..32].try_into().unwrap();
         // This is a derived one-time key, including the (possible) all-zero value. Key strength
         // was already enforced on the parent cipher key; no entropy heuristic applies here.
-        let mac = Poly1305::new_allow_weak_key(&mac_key)
-            .expect("ChaCha20 supplies exactly 32 bytes of one-time MAC key");
-        Ok(Self {
+        let mac = key_from_bytes(one_time_key).into_generator();
+        Self {
             cipher: ChaCha20::from_keystream(keystream),
             mac,
             aad_len: 0,
@@ -183,7 +197,7 @@ impl<Dir> ChaCha20_Poly1305<Dir> {
             data_started: false,
             held: [0u8; TAG_LEN],
             held_len: 0,
-        })
+        }
     }
 
     fn absorb_aad(&mut self, aad: &[u8]) -> Result<(), SymmetricCipherError> {
@@ -230,7 +244,7 @@ impl<Dir> ChaCha20_Poly1305<Dir> {
     }
 }
 
-impl ChaCha20_Poly1305<Encrypting> {
+impl ChaCha20_Poly1305<'_, Encrypting> {
     fn encrypt_bytes(&mut self, data: &mut [u8]) -> Result<(), SymmetricCipherError> {
         self.check_data_len(data.len())?;
         self.start_data();
@@ -241,7 +255,7 @@ impl ChaCha20_Poly1305<Encrypting> {
     }
 }
 
-impl ChaCha20_Poly1305<Decrypting> {
+impl ChaCha20_Poly1305<'_, Decrypting> {
     fn decrypt_bytes(&mut self, data: &mut [u8]) -> Result<(), SymmetricCipherError> {
         self.check_data_len(data.len())?;
         self.start_data();
@@ -264,22 +278,7 @@ fn padding_len(length: u64) -> usize {
     ((16 - (length & 15)) & 15) as usize
 }
 
-impl SymmetricCipherEncryptor<KEY_LEN, NONCE_LEN, TAG_LEN> for ChaCha20_Poly1305<Encrypting> {
-    fn do_encrypt_init(
-        key: &KeyMaterial<KEY_LEN>,
-    ) -> Result<(Self, [u8; NONCE_LEN]), SymmetricCipherError> {
-        Self::do_encrypt_init_rng(key, &mut DefaultRNG::default())
-    }
-
-    fn do_encrypt_init_rng(
-        key: &KeyMaterial<KEY_LEN>,
-        rng: &mut dyn RNG,
-    ) -> Result<(Self, [u8; NONCE_LEN]), SymmetricCipherError> {
-        let mut nonce = [0u8; NONCE_LEN];
-        rng.next_bytes_out(&mut nonce)?;
-        Ok((Self::new(key, &nonce)?, nonce))
-    }
-
+impl SymmetricCipherEncryptor<NONCE_LEN, TAG_LEN> for ChaCha20_Poly1305<'_, Encrypting> {
     fn do_encrypt_out_len(&self, input_len: usize) -> usize {
         input_len
     }
@@ -309,16 +308,9 @@ impl SymmetricCipherEncryptor<KEY_LEN, NONCE_LEN, TAG_LEN> for ChaCha20_Poly1305
     }
 }
 
-impl AEADCipherEncryptor<KEY_LEN, NONCE_LEN, TAG_LEN, TAG_LEN> for ChaCha20_Poly1305<Encrypting> {
+impl AEADCipherEncryptor<NONCE_LEN, TAG_LEN, TAG_LEN> for ChaCha20_Poly1305<'_, Encrypting> {
     fn do_update_aad(&mut self, aad: &[u8]) -> Result<(), SymmetricCipherError> {
         self.absorb_aad(aad)
-    }
-
-    fn do_encrypt_init_nonce(
-        key: &KeyMaterial<KEY_LEN>,
-        nonce: &[u8; NONCE_LEN],
-    ) -> Result<Self, SymmetricCipherError> {
-        Self::new(key, nonce)
     }
 
     /// Nothing is ever held back to flush, so `ciphertext` is left zeroed.
@@ -331,14 +323,7 @@ impl AEADCipherEncryptor<KEY_LEN, NONCE_LEN, TAG_LEN, TAG_LEN> for ChaCha20_Poly
     }
 }
 
-impl SymmetricCipherDecryptor<KEY_LEN, NONCE_LEN, TAG_LEN> for ChaCha20_Poly1305<Decrypting> {
-    fn do_decrypt_init(
-        key: &KeyMaterial<KEY_LEN>,
-        nonce: &[u8; NONCE_LEN],
-    ) -> Result<Self, SymmetricCipherError> {
-        Self::new(key, nonce)
-    }
-
+impl SymmetricCipherDecryptor<NONCE_LEN, TAG_LEN> for ChaCha20_Poly1305<'_, Decrypting> {
     fn do_decrypt_out_len(&self, input_len: usize) -> usize {
         input_len.saturating_sub(TAG_LEN - self.held_len)
     }
@@ -383,7 +368,7 @@ impl SymmetricCipherDecryptor<KEY_LEN, NONCE_LEN, TAG_LEN> for ChaCha20_Poly1305
     }
 }
 
-impl AEADCipherDecryptor<KEY_LEN, NONCE_LEN, TAG_LEN, TAG_LEN> for ChaCha20_Poly1305<Decrypting> {
+impl AEADCipherDecryptor<NONCE_LEN, TAG_LEN, TAG_LEN> for ChaCha20_Poly1305<'_, Decrypting> {
     fn do_update_aad(&mut self, aad: &[u8]) -> Result<(), SymmetricCipherError> {
         self.absorb_aad(aad)
     }
@@ -406,6 +391,66 @@ impl AEADCipherDecryptor<KEY_LEN, NONCE_LEN, TAG_LEN, TAG_LEN> for ChaCha20_Poly
     }
 }
 
+/// A ChaCha20-Poly1305 key: the 256-bit key of RFC 8439 Sec 2.8, validated once, from which the
+/// encryptor and decryptor for each message are made. Built through [`FromKeyMaterial`] from
+/// material tagged [`KeyType::SymmetricCipherKey`], unbound or bound to this AEAD's
+/// [`Algorithm::ALG_NAME`], of 256-bit strength; material bound to plain ChaCha20 is refused. The
+/// key words live in a `Secret`, zeroized on drop; there is no `Debug` and no way to read them
+/// back.
+#[derive(Clone)]
+pub struct ChaCha20Poly1305Key {
+    state: ChaCha20KeyState,
+}
+
+impl FromKeyMaterial<KEY_LEN> for ChaCha20Poly1305Key {
+    const KEY_TYPE: KeyType = KeyType::SymmetricCipherKey;
+
+    /// # Errors
+    /// * [`KeyMaterialError::InvalidKeyType`](bouncycastle_core::errors::KeyMaterialError::InvalidKeyType)
+    ///   if the key is bound to another algorithm (`KeyMaterialTrait::set_algorithm`), or is not
+    ///   a `SymmetricCipherKey`.
+    /// * As [`ChaCha20KeyState::new`] otherwise.
+    fn from_key_material(key: &KeyMaterial<KEY_LEN>) -> Result<Self, SymmetricCipherError> {
+        // The key is bound, if at all, to this AEAD. The key state, which the ChaCha20 key builds
+        // on too, leaves that check to its caller, as an AES key's permutation does.
+        key.check_algorithm(ChaCha20_Poly1305::<Encrypting>::ALG_NAME)?;
+        Ok(Self { state: ChaCha20KeyState::new(key)? })
+    }
+}
+
+impl AeadEncryptionKey<KEY_LEN, NONCE_LEN, TAG_LEN, TAG_LEN> for ChaCha20Poly1305Key {
+    type Encryptor<'k>
+        = ChaCha20_Poly1305<'k, Encrypting>
+    where
+        Self: 'k;
+
+    fn create_encryptor<'k>(
+        &'k self,
+        rng: &mut dyn RNG,
+    ) -> Result<(Self::Encryptor<'k>, [u8; NONCE_LEN]), SymmetricCipherError> {
+        let mut nonce = [0u8; NONCE_LEN];
+        rng.next_bytes_out(&mut nonce)?;
+        Ok((ChaCha20_Poly1305::new(&self.state, &nonce), nonce))
+    }
+
+    /// Under a nonce the caller supplies, who takes on the obligation that it never repeat under
+    /// this key: RFC 8439 Sec 2.8's nonce is "different for each invocation with the same key".
+    fn create_encryptor_nonce<'k>(&'k self, nonce: &[u8; NONCE_LEN]) -> Self::Encryptor<'k> {
+        ChaCha20_Poly1305::new(&self.state, nonce)
+    }
+}
+
+impl AeadDecryptionKey<KEY_LEN, NONCE_LEN, TAG_LEN, TAG_LEN> for ChaCha20Poly1305Key {
+    type Decryptor<'k>
+        = ChaCha20_Poly1305<'k, Decrypting>
+    where
+        Self: 'k;
+
+    fn create_decryptor<'k>(&'k self, nonce: &[u8; NONCE_LEN]) -> Self::Decryptor<'k> {
+        ChaCha20_Poly1305::new(&self.state, nonce)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     //! The message and AAD length limits. Reaching them through the public API means processing
@@ -415,29 +460,31 @@ mod tests {
 
     use super::*;
 
-    fn key() -> KeyMaterial<KEY_LEN> {
-        KeyMaterial::from_bytes_as_type(&[7; 32], KeyType::SymmetricCipherKey).unwrap()
+    fn key() -> ChaCha20KeyState {
+        let material =
+            KeyMaterial::<KEY_LEN>::from_bytes_as_type(&[7; 32], KeyType::SymmetricCipherKey);
+        ChaCha20KeyState::new(&material.unwrap()).unwrap()
     }
 
-    fn fresh<Dir>() -> ChaCha20_Poly1305<Dir> {
-        ChaCha20_Poly1305::new(&key(), &[9; 12]).unwrap()
+    fn fresh<Dir>(key: &ChaCha20KeyState) -> ChaCha20_Poly1305<'_, Dir> {
+        ChaCha20_Poly1305::new(key, &[9; 12])
     }
 
     /// One block of data left: the keystream at its last counter, and `data_len` to match.
-    fn near_limit<Dir>() -> ChaCha20_Poly1305<Dir> {
-        let mut cipher = fresh();
+    fn near_limit<Dir>(key: &ChaCha20KeyState) -> ChaCha20_Poly1305<'_, Dir> {
+        let mut cipher = fresh(key);
         // `check_data_len` relies on MAX_MESSAGE_LEN being exactly the data keystream's capacity.
         assert_eq!(cipher.cipher.keystream().remaining_blocks() * 64, MAX_MESSAGE_LEN);
-        cipher.cipher = ChaCha20::from_keystream(
-            ChaCha20KeyStream::start_at(&key(), &[9; 12], u32::MAX).unwrap(),
-        );
+        cipher.cipher =
+            ChaCha20::from_keystream(ChaCha20KeyStream::start_at(key, &[9; 12], u32::MAX));
         cipher.data_len = MAX_MESSAGE_LEN - 64;
         cipher
     }
 
     #[test]
     fn encryption_limit_errors_leave_state_and_output_untouched() {
-        let mut enc = near_limit::<Encrypting>();
+        let key = key();
+        let mut enc = near_limit::<Encrypting>(&key);
         let mut out = [0xa5; 65];
         assert!(matches!(
             enc.do_encrypt_out(&[0; 65], &mut out),
@@ -457,7 +504,7 @@ mod tests {
         enc.do_encrypt_out(&[0], &mut out[63..64]).unwrap();
         assert_eq!(enc.data_len, MAX_MESSAGE_LEN);
         enc.do_encrypt_out(&[], &mut []).unwrap();
-        let mut reference = near_limit::<Encrypting>();
+        let mut reference = near_limit::<Encrypting>(&key);
         reference.do_update_aad(b"aad").unwrap();
         let mut expected = [0; 64];
         reference.do_encrypt_out(&[0; 64], &mut expected).unwrap();
@@ -467,11 +514,12 @@ mod tests {
 
     #[test]
     fn inline_decryption_allows_the_last_ciphertext_block_plus_tag() {
-        let mut enc = near_limit::<Encrypting>();
+        let key = key();
+        let mut enc = near_limit::<Encrypting>(&key);
         let mut inline = [0; 80];
         enc.do_encrypt_out(&[0x42; 64], &mut inline[..64]).unwrap();
         inline[64..].copy_from_slice(&enc.do_encrypt_final().unwrap().0);
-        let mut dec = near_limit::<Decrypting>();
+        let mut dec = near_limit::<Decrypting>(&key);
         let mut out = [0xa5; 65];
         assert!(matches!(
             dec.do_decrypt_out(&[0; 81], &mut out),
@@ -489,7 +537,8 @@ mod tests {
 
     #[test]
     fn detached_final_checks_the_limit_and_clears_its_buffer() {
-        let mut dec = near_limit::<Decrypting>();
+        let key = key();
+        let mut dec = near_limit::<Decrypting>(&key);
         // The update must reserve a possible inline tag. Only detached finalization can know
         // that these extra 16 bytes are actually ciphertext exceeding the counter limit.
         dec.do_decrypt_out(&[0; 80], &mut [0; 64]).unwrap();
@@ -503,8 +552,9 @@ mod tests {
 
     #[test]
     fn aad_length_overflow_is_rejected_before_absorption() {
-        let mut cipher = fresh::<Encrypting>();
-        let mut reference = fresh::<Encrypting>();
+        let key = key();
+        let mut cipher = fresh::<Encrypting>(&key);
+        let mut reference = fresh::<Encrypting>(&key);
         cipher.aad_len = u64::MAX - 1;
         reference.aad_len = u64::MAX - 1;
         assert!(matches!(cipher.absorb_aad(&[1, 2]), Err(SymmetricCipherError::StateError(_))));

@@ -2,9 +2,9 @@ use bouncycastle_rng as rng;
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 use std::hint::black_box;
 
-use bouncycastle_chacha20_poly1305_aead::ChaCha20_Poly1305;
-use bouncycastle_cipher::Encrypting;
+use bouncycastle_chacha20_poly1305_aead::ChaCha20Poly1305Key;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
+use bouncycastle_core::symmetric_key::{AeadEncryptionKey, FromKeyMaterial};
 use bouncycastle_core::traits::{AEADCipherEncryptor, RNG, SymmetricCipherEncryptor};
 
 const DATA_LEN: usize = 16 * 1024;
@@ -16,8 +16,9 @@ fn random_data(len: usize) -> Vec<u8> {
 }
 
 fn bench_encrypt(c: &mut Criterion) {
-    let key =
+    let material =
         KeyMaterial::<32>::from_bytes_as_type(&[0x42u8; 32], KeyType::SymmetricCipherKey).unwrap();
+    let key = ChaCha20Poly1305Key::from_key_material(&material).unwrap();
     let nonce = [0x24u8; 12];
     let data = random_data(DATA_LEN);
     let mut out = vec![0u8; DATA_LEN];
@@ -28,8 +29,7 @@ fn bench_encrypt(c: &mut Criterion) {
     // A fixed nonce keeps OS randomness out of the timing; never do this outside a benchmark.
     group.bench_function(format!("{DATA_LEN} bytes -- .do_encrypt_out()"), |b| {
         b.iter(|| {
-            let mut enc =
-                ChaCha20_Poly1305::<Encrypting>::do_encrypt_init_nonce(&key, &nonce).unwrap();
+            let mut enc = key.create_encryptor_nonce(&nonce);
             enc.do_update_aad(b"header").unwrap();
             enc.do_encrypt_out(black_box(&data), &mut out).unwrap();
             black_box(enc.do_encrypt_final_detached().unwrap());

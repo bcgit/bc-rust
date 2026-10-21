@@ -18,8 +18,14 @@
 //! * [AES_CCM](crate::ccm)
 //! * [AES_CFB](crate::cfb)
 //! * [AES_CFB8](crate::cfb8)
+//! * [AES_CMAC](crate::cmac), a MAC rather than a cipher
 //! * [AES_CTR](crate::ctr)
 //! * [AES_GCM](crate::gcm)
+//! * [AES_GMAC](crate::gmac), a nonce-based MAC rather than a cipher
+//!
+//! Each mode is used through a mode-bound key object such as [`AES256Key<GCM>`](AES256Key),
+//! which validates and expands the material once and hands out the mode's encryptors and
+//! decryptors; see [`key`].
 //!
 //! AES in ECB mode, [`AES_ECB_128`](hazmat::AES_ECB_128) and friends, is under [`hazmat`] because
 //! it is a building block for other modes, not itself a confidentiality mode for data.
@@ -172,9 +178,12 @@ pub mod cbc;
 pub mod ccm;
 pub mod cfb;
 pub mod cfb8;
+pub mod cmac;
 pub mod ctr;
 pub mod gcm;
+pub mod gmac;
 pub mod hazmat;
+pub mod key;
 mod round;
 mod sbox;
 mod schedule;
@@ -256,11 +265,11 @@ impl AESParams for AES256Params {
 }
 
 pub use cbc::{AES_CBC_128, AES_CBC_192, AES_CBC_256};
-pub use ccm::{
-    AES_CCM_128, AES_CCM_128_Packet, AES_CCM_192, AES_CCM_192_Packet, AES_CCM_256,
-    AES_CCM_256_Packet, CCM_NONCE_LEN, CCM_TAG_LEN,
-};
+pub use ccm::{AES_CCM_128, AES_CCM_192, AES_CCM_256, CCM_NONCE_LEN, CCM_TAG_LEN};
 pub use cfb::{AES_CFB_128, AES_CFB_192, AES_CFB_256};
 pub use cfb8::{AES_CFB8_128, AES_CFB8_192, AES_CFB8_256};
+pub use cmac::{AES_CMAC_128, AES_CMAC_192, AES_CMAC_256};
 pub use ctr::{AES_CTR_128, AES_CTR_192, AES_CTR_256, CTR_NONCE_LEN};
 pub use gcm::{AES_GCM_128, AES_GCM_192, AES_GCM_256};
+pub use gmac::{AES_GMAC_128, AES_GMAC_192, AES_GMAC_256};
+pub use key::{AES128Key, AES192Key, AES256Key, AESKey};

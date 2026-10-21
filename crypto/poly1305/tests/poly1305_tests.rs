@@ -1,37 +1,49 @@
-use bouncycastle_core::errors::{KeyMaterialError, MACError};
-use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
-use bouncycastle_core::security_strength::SecurityStrength;
+use bouncycastle_core::errors::MACError;
 use bouncycastle_core::traits::MAC;
 use bouncycastle_core_test_framework::mac::TestFrameworkMAC;
-use bouncycastle_poly1305::Poly1305;
+use bouncycastle_poly1305::hazmat::key_from_bytes;
+use bouncycastle_poly1305::{Poly1305, Poly1305Key};
 
-fn key() -> KeyMaterial<32> {
-    KeyMaterial::from_bytes_as_type(&[0x42; 32], KeyType::MACKey).unwrap()
+/// A public test key, so these tests make as many keys from it as they like; a real one-time key
+/// authenticates one message.
+const KEY: [u8; 32] = [0x42; 32];
+
+fn generator() -> Poly1305 {
+    key_from_bytes(&KEY).into_generator()
+}
+
+fn verify(msg: &[u8], tag: &[u8]) -> bool {
+    key_from_bytes(&KEY).into_verifier().verify(msg, tag)
 }
 
 /// The framework's API-contract checks, which need no external data. The tag's correctness is
-/// pinned by the RFC 8439 vectors in bc_test_data.rs, which run the same suite.
+/// pinned by the RFC 8439 vectors in poly1305_bc-test-data.rs, which run the same suite.
 #[test]
 fn core_mac_contract() {
     let msg = b"framework message spanning more than one 16-byte block";
-    let tag = Poly1305::new(&key()).unwrap().mac(msg);
-    TestFrameworkMAC::new().test_mac_fixed_output::<Poly1305>(&key(), msg, &tag);
+    let tag = generator().mac(msg);
+    TestFrameworkMAC::new().test_one_time_mac(generator, msg, &tag);
 }
 
 #[test]
 fn empty_message_returns_the_additive_key_half() {
-    let key = key();
-    assert_eq!(Poly1305::new(&key).unwrap().finalize(), key.ref_to_bytes()[16..]);
+    assert_eq!(generator().finalize(), KEY[16..]);
+}
+
+/// The two ways to consume a key make the same worker.
+#[test]
+fn the_verifier_computes_the_generators_tag() {
+    let msg = b"message";
+    assert_eq!(key_from_bytes(&KEY).into_verifier().mac(msg), generator().mac(msg));
 }
 
 #[test]
 fn streaming_and_output_buffer_contract() {
-    let key = key();
     for len in [0, 1, 15, 16, 17, 31, 32, 33, 63, 64, 65, 255, 1025] {
         let msg: Vec<u8> = (0..len).map(|i| (i as u8).wrapping_mul(7)).collect();
-        let expected = Poly1305::new(&key).unwrap().mac(&msg);
+        let expected = generator().mac(&msg);
         for chunk in [1, 3, 15, 16, 17, 64, 129] {
-            let mut mac = Poly1305::new(&key).unwrap();
+            let mut mac = generator();
             assert_eq!(mac.output_len(), 16);
             mac.do_update(&[]);
             for bytes in msg.chunks(chunk) {
@@ -43,58 +55,34 @@ fn streaming_and_output_buffer_contract() {
             assert_eq!(&out[..16], expected);
             assert_eq!(&out[16..], &[0; 16]);
         }
-        assert!(Poly1305::new(&key).unwrap().verify(&msg, &expected));
+        assert!(verify(&msg, &expected));
         for bit in 0..128 {
             let mut bad = expected.clone();
             bad[bit / 8] ^= 1 << (bit % 8);
-            assert!(!Poly1305::new(&key).unwrap().verify(&msg, &bad));
+            assert!(!verify(&msg, &bad));
         }
-        assert!(!Poly1305::new(&key).unwrap().verify(&msg, &expected[..15]));
-        assert!(!Poly1305::new(&key).unwrap().verify(&msg, &[0; 17]));
+        assert!(!verify(&msg, &expected[..15]));
+        assert!(!verify(&msg, &[0; 17]));
     }
 }
 
 #[test]
 fn full_tags_are_required() {
-    let key = key();
     for len in 0..16 {
         let mut out = vec![0xa5; len];
         assert!(matches!(
-            Poly1305::new(&key).unwrap().mac_out(b"message", &mut out),
+            generator().mac_out(b"message", &mut out),
             Err(MACError::InvalidLength(_))
         ));
         assert!(out.iter().all(|&b| b == 0));
     }
 }
 
+/// The all-zero key, which RFC 8439 accepts and only the caller can refuse: with `r = 0` and
+/// `s = 0` every tag is zero.
 #[test]
-fn key_length_type_and_strength_policy() {
-    for len in 0..=64 {
-        let key = KeyMaterial::<64>::from_bytes_as_type(&vec![1; len], KeyType::MACKey).unwrap();
-        assert_eq!(Poly1305::new_allow_weak_key(&key).is_ok(), len == 32);
-    }
-    for kind in
-        [KeyType::SymmetricCipherKey, KeyType::Seed, KeyType::Unknown, KeyType::CryptographicRandom]
-    {
-        let key = KeyMaterial::<32>::from_bytes_as_type(&[1; 32], kind).unwrap();
-        assert!(matches!(
-            Poly1305::new(&key),
-            Err(MACError::KeyMaterialError(KeyMaterialError::InvalidKeyType(_)))
-        ));
-        assert!(Poly1305::new_allow_weak_key(&key).is_err());
-    }
-    let mut key = key();
-    key.set_security_strength(SecurityStrength::_128bit).unwrap();
-    assert!(Poly1305::new(&key).is_ok(), "exactly the algorithm's strength is enough");
-    key.set_security_strength(SecurityStrength::_112bit).unwrap();
-    assert!(matches!(
-        Poly1305::new(&key),
-        Err(MACError::KeyMaterialError(KeyMaterialError::SecurityStrength(_)))
-    ));
-    assert!(Poly1305::new_allow_weak_key(&key).is_ok());
-    let zero = KeyMaterial::<32>::from_bytes(&[0; 32]).unwrap();
-    assert!(Poly1305::new(&zero).is_err());
-    assert_eq!(Poly1305::new_allow_weak_key(&zero).unwrap().mac(b"zero-key test"), [0; 16]);
+fn the_all_zero_key_is_accepted() {
+    assert_eq!(key_from_bytes(&[0; 32]).into_generator().mac(b"zero-key test"), [0; 16]);
 }
 
 /// One full block under a key whose clamped `r` is the single limb `r0 < 2^26` and whose `s` is
@@ -113,9 +101,8 @@ fn final_carry_out_of_h0() {
         let block: [u8; 16] = bouncycastle_hex::decode(block).unwrap().try_into().unwrap();
         let mut key = [0u8; 32];
         key[..4].copy_from_slice(&r0.to_le_bytes());
-        let key = KeyMaterial::<32>::from_bytes_as_type(&key, KeyType::MACKey).unwrap();
         assert_eq!(
-            Poly1305::new_allow_weak_key(&key).unwrap().mac(&block),
+            key_from_bytes(&key).into_generator().mac(&block),
             reference_tag(r0, &block),
             "r0 = {r0:#x}"
         );
@@ -166,9 +153,10 @@ fn reference_tag(r0: u32, block: &[u8; 16]) -> [u8; 16] {
     tag
 }
 
-/// The figure in the crate docs' Memory Usage table.
+/// The figures in the crate docs' Memory Usage table.
 #[cfg(target_pointer_width = "64")]
 #[test]
-fn size_matches_the_documented_memory_table() {
+fn sizes_match_the_documented_memory_table() {
+    assert_eq!(core::mem::size_of::<Poly1305Key>(), 88);
     assert_eq!(core::mem::size_of::<Poly1305>(), 192);
 }

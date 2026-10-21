@@ -250,7 +250,7 @@ impl<PARAMS: SHAKEParams> ParallelHashInternal<PARAMS> {
     }
 }
 
-impl<PARAMS: SHAKEParams> SuspendableComponent for ParallelHashInternal<PARAMS> {
+impl<'k, PARAMS: SHAKEParams> SuspendableComponent<'k> for ParallelHashInternal<PARAMS> {
     const STATE_LEN: usize = PARALLEL_STATE_LEN + 8;
     type Key = ();
 
@@ -262,7 +262,7 @@ impl<PARAMS: SHAKEParams> SuspendableComponent for ParallelHashInternal<PARAMS> 
         debug_assert!(w.is_done());
     }
 
-    fn read_state(state: &[u8], _key: &()) -> Result<Self, SuspendableError> {
+    fn read_state(state: &[u8], _key: &'k ()) -> Result<Self, SuspendableError> {
         let (parallel, rest) = state.split_at(PARALLEL_STATE_LEN);
         let state = ParallelState::read_state(parallel, PARAMS::PARALLELHASH_STATE_TAG)?;
         let mut r = Cursor::new(rest);
@@ -384,7 +384,7 @@ impl<PARAMS: SHAKEParams> ParallelHashXOFInternal<PARAMS> {
     }
 }
 
-impl<PARAMS: SHAKEParams> SuspendableComponent for ParallelHashXOFInternal<PARAMS> {
+impl<'k, PARAMS: SHAKEParams> SuspendableComponent<'k> for ParallelHashXOFInternal<PARAMS> {
     const STATE_LEN: usize = PARALLEL_STATE_LEN;
     type Key = ();
 
@@ -392,7 +392,7 @@ impl<PARAMS: SHAKEParams> SuspendableComponent for ParallelHashXOFInternal<PARAM
         self.state.write_state(PARAMS::PARALLELHASHXOF_STATE_TAG, out)
     }
 
-    fn read_state(state: &[u8], _key: &()) -> Result<Self, SuspendableError> {
+    fn read_state(state: &[u8], _key: &'k ()) -> Result<Self, SuspendableError> {
         Ok(Self { state: ParallelState::read_state(state, PARAMS::PARALLELHASHXOF_STATE_TAG)? })
     }
 }

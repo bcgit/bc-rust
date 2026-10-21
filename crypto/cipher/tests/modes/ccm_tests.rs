@@ -3,32 +3,48 @@
 //! These check the properties of the *mode* -- that only the forward cipher function is ever
 //! used, that the counter half batches while the CBC-MAC stays serial, that call chunking is
 //! invisible in both directions, what `TAG_LEN` and `NONCE_LEN` do and do not change, that the
-//! decryptor holds to the declared length, and which entry points release unauthenticated
-//! plaintext -- independently of the known-answer vectors in the `aes` crate's `sp800_38c_tests.rs`,
+//! stream holds to its frame, and which entry points release unauthenticated plaintext --
+//! independently of the known-answer vectors in the `aes` crate's `sp800_38c_tests.rs`,
 //! `ccm_bc-test-data.rs` and `ccm_wycheproof.rs`. The Appendix C file also carries the
-//! fixed-frame `CcmEncryptor` / `CcmDecryptor` pair's contract, the shared framework run and the
+//! fixed-frame `CcmPacketEncryptor` / `CcmPacketDecryptor` pair's contract, the shared framework run and the
 //! memory table, so none of those is repeated here.
+//!
+//! The one-shots are the mode's in-place pair on [`CCM`], which take any length; the streams are
+//! the fixed-frame pair, whose frame is the message under test.
 //!
 //! Spec references are to NIST SP 800-38C (May 2004, errata update 07-20-2007).
 
 mod common;
+#[path = "../common/toy_key.rs"]
+mod toy_key;
 
-use bouncycastle_cipher::modes::{CcmDecryptor, CcmPacket, ModeNames};
-use bouncycastle_cipher::{Decrypting, Encrypting};
+use bouncycastle_cipher::modes::{CCM, CCM_Packet, ModeNames};
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::hazmat::ElectronicCodeBook;
 use bouncycastle_core::key_material::KeyMaterial;
-use bouncycastle_core::traits::{AEADCipherDecryptor, SymmetricCipherDecryptor};
+use bouncycastle_core::security_strength::SecurityStrength;
+use bouncycastle_core::symmetric_key::{
+    AeadDeclaredDecryptionKey, AeadDeclaredEncryptionKey, AeadDecryptionKey, AeadEncryptionKey,
+    FromKeyMaterial,
+};
+use bouncycastle_core::traits::{
+    AEADCipherDecryptor, AEADCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
+};
+use bouncycastle_core_test_framework::from_key_material::TestFrameworkFromKeyMaterial;
 use common::{ForwardOnlyToy, SwappedFourToy, SwappedPairToy, TOY_LEN, Toy, toy_key};
+use toy_key::ToyKey;
 
 /// The default shape under test: a 12-byte nonce, so `q = 3`, and a full 16-byte tag.
 const NONCE_LEN: usize = 12;
 const TAG_LEN: usize = 16;
+/// The streams' AAD capacity, above any AAD used here.
+const AAD_LEN: usize = 64;
 
-type ToyCcm<Dir> = CcmPacket<Toy, Dir, TOY_LEN, TOY_LEN, NONCE_LEN, TAG_LEN>;
-type SwappedCcm<Dir> = CcmPacket<SwappedPairToy, Dir, TOY_LEN, TOY_LEN, NONCE_LEN, TAG_LEN>;
-type SwappedFourCcm<Dir> = CcmPacket<SwappedFourToy, Dir, TOY_LEN, TOY_LEN, NONCE_LEN, TAG_LEN>;
-type ForwardOnlyCcm<Dir> = CcmPacket<ForwardOnlyToy, Dir, TOY_LEN, TOY_LEN, NONCE_LEN, TAG_LEN>;
+/// The toy key under the in-place pair, which takes any length.
+type DeclaredKey<P> = ToyKey<P, CCM<NONCE_LEN, TAG_LEN>>;
+/// The toy key under the fixed-frame streams, whose frame is `DATA_LEN`.
+type FrameKey<P, const DATA_LEN: usize> =
+    ToyKey<P, CCM_Packet<NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>>;
 
 fn pinned_nonce() -> [u8; NONCE_LEN] {
     core::array::from_fn(|i| 0xA0 ^ (i as u8))
@@ -38,68 +54,84 @@ fn message(len: usize) -> Vec<u8> {
     (0..len).map(|i| (i as u8).wrapping_mul(3).wrapping_add(1)).collect()
 }
 
-/// One-shot Sec 6.1 over the toy permutation `P`, detached: the ciphertext and the tag.
-fn encrypt<P: ElectronicCodeBook<TOY_LEN, TOY_LEN> + ModeNames>(
+fn declared_key<P: ElectronicCodeBook<TOY_LEN, TOY_LEN> + ModeNames + Clone>() -> DeclaredKey<P> {
+    DeclaredKey::from_key_material(&toy_key()).expect("the toy key")
+}
+
+fn frame_key<P: ElectronicCodeBook<TOY_LEN, TOY_LEN> + ModeNames + Clone, const DATA_LEN: usize>()
+-> FrameKey<P, DATA_LEN> {
+    FrameKey::from_key_material(&toy_key()).expect("the toy key")
+}
+
+/// One-shot Sec 6.1 over the toy permutation `P`, in place: the ciphertext and the tag.
+fn seal<P: ElectronicCodeBook<TOY_LEN, TOY_LEN> + ModeNames + Clone>(
     nonce: &[u8; NONCE_LEN],
     aad: &[u8],
     plaintext: &[u8],
 ) -> (Vec<u8>, [u8; TAG_LEN]) {
-    let mut ct = vec![0u8; plaintext.len()];
-    let (written, tag) =
-        CcmPacket::<P, Encrypting, TOY_LEN, TOY_LEN, NONCE_LEN, TAG_LEN>::encrypt_detached_out(
-            &toy_key(),
-            nonce,
-            aad,
-            plaintext,
-            &mut ct,
-        )
-        .unwrap();
-    assert_eq!(written, plaintext.len(), "CCM never expands the payload");
-    (ct, tag)
+    let mut buf = plaintext.to_vec();
+    let tag = declared_key::<P>().encrypt_detached_in_place_nonce(nonce, aad, &mut buf).unwrap();
+    (buf, tag)
 }
 
-/// Sec 6.1 through the streaming API over `P`, `chunk` bytes per `do_encrypt_inplace`.
-fn stream_encrypt<P: ElectronicCodeBook<TOY_LEN, TOY_LEN> + ModeNames>(
+/// One-shot Sec 6.2 over `P`, in place.
+fn open<P: ElectronicCodeBook<TOY_LEN, TOY_LEN> + ModeNames + Clone>(
+    nonce: &[u8; NONCE_LEN],
+    aad: &[u8],
+    ciphertext: &[u8],
+    tag: &[u8; TAG_LEN],
+) -> Result<Vec<u8>, SymmetricCipherError> {
+    let mut buf = ciphertext.to_vec();
+    declared_key::<P>().decrypt_detached_in_place(nonce, aad, &mut buf, tag)?;
+    Ok(buf)
+}
+
+/// Sec 6.1 through the fixed-frame stream over `P`, `chunk` bytes per update. The frame is
+/// `DATA_LEN`, so `plaintext` must be exactly that long.
+fn stream_encrypt<
+    P: ElectronicCodeBook<TOY_LEN, TOY_LEN> + ModeNames + Clone,
+    const DATA_LEN: usize,
+>(
     nonce: &[u8; NONCE_LEN],
     aad: &[u8],
     plaintext: &[u8],
     chunk: usize,
 ) -> (Vec<u8>, [u8; TAG_LEN]) {
-    let mut ccm = CcmPacket::<P, Encrypting, TOY_LEN, TOY_LEN, NONCE_LEN, TAG_LEN>::new(
-        &toy_key(),
-        nonce,
-        aad,
-        plaintext.len(),
-    )
-    .unwrap();
-    let mut data = plaintext.to_vec();
-    for piece in data.chunks_mut(chunk) {
-        ccm.do_encrypt_inplace(piece).unwrap();
+    let key = frame_key::<P, DATA_LEN>();
+    let mut enc = key.create_encryptor_nonce(nonce);
+    enc.do_update_aad(aad).unwrap();
+    let mut out = vec![0u8; plaintext.len()];
+    let mut written = 0;
+    for piece in plaintext.chunks(chunk) {
+        written += enc.do_encrypt_out(piece, &mut out[written..]).unwrap();
     }
-    let tag = ccm.do_encrypt_final().unwrap();
-    (data, tag)
+    assert_eq!(written, plaintext.len(), "CCM never holds back payload");
+    let (_, _, tag) = enc.do_encrypt_final_detached().unwrap();
+    (out, tag)
 }
 
-/// Sec 6.2 through the streaming API over `P`, `chunk` bytes per `do_decrypt_inplace`.
-fn stream_decrypt<P: ElectronicCodeBook<TOY_LEN, TOY_LEN> + ModeNames>(
+/// Sec 6.2 through the fixed-frame stream over `P`, `chunk` bytes per update, detached tag.
+fn stream_decrypt<
+    P: ElectronicCodeBook<TOY_LEN, TOY_LEN> + ModeNames + Clone,
+    const DATA_LEN: usize,
+>(
     nonce: &[u8; NONCE_LEN],
     aad: &[u8],
     ciphertext: &[u8],
     tag: &[u8; TAG_LEN],
     chunk: usize,
 ) -> Result<Vec<u8>, SymmetricCipherError> {
-    let mut ccm = CcmPacket::<P, Decrypting, TOY_LEN, TOY_LEN, NONCE_LEN, TAG_LEN>::new(
-        &toy_key(),
-        nonce,
-        aad,
-        ciphertext.len(),
-    )?;
-    let mut data = ciphertext.to_vec();
-    for piece in data.chunks_mut(chunk) {
-        ccm.do_decrypt_inplace(piece)?;
+    let key = frame_key::<P, DATA_LEN>();
+    let mut dec = key.create_decryptor(nonce);
+    dec.do_update_aad(aad)?;
+    let mut out = vec![0u8; ciphertext.len()];
+    let mut written = 0;
+    for piece in ciphertext.chunks(chunk) {
+        written += dec.do_decrypt_out(piece, &mut out[written..])?;
     }
-    ccm.do_decrypt_final(tag)?;
-    Ok(data)
+    dec.do_decrypt_final_detached(tag)?;
+    out.truncate(written);
+    Ok(out)
 }
 
 // ---- the forward-cipher-only rule ---------------------------------------------------------
@@ -112,34 +144,28 @@ fn stream_decrypt<P: ElectronicCodeBook<TOY_LEN, TOY_LEN> + ModeNames>(
 /// the four-block, pair, single-block and partial-block keystream paths all run.
 #[test]
 fn neither_direction_uses_the_inverse_cipher() {
+    const LEN: usize = 11 * TOY_LEN + 5;
     let nonce = pinned_nonce();
     // Long enough to span two MAC blocks, so the AAD's own zero pad (A.2.2) runs as well.
     let aad = b"a header long enough to run over into a second CBC-MAC block";
-    let plaintext = message(11 * TOY_LEN + 5);
+    let plaintext = message(LEN);
 
-    let (ct, tag) = encrypt::<ForwardOnlyToy>(&nonce, aad, &plaintext);
-    let mut back = vec![0u8; plaintext.len()];
-    ForwardOnlyCcm::<Decrypting>::decrypt_detached_out(
-        &toy_key(),
-        &nonce,
-        aad,
-        &ct,
-        &tag,
-        &mut back,
-    )
-    .unwrap();
-    assert_eq!(back, plaintext, "all paths, forward cipher only");
+    let (ct, tag) = seal::<ForwardOnlyToy>(&nonce, aad, &plaintext);
+    assert_eq!(open::<ForwardOnlyToy>(&nonce, aad, &ct, &tag).unwrap(), plaintext);
 
     // Byte by byte, so the partial-block keystream path runs in both directions too.
     assert_eq!(
-        stream_encrypt::<ForwardOnlyToy>(&nonce, aad, &plaintext, 1),
+        stream_encrypt::<ForwardOnlyToy, LEN>(&nonce, aad, &plaintext, 1),
         (ct.clone(), tag),
         "byte path, forward cipher only"
     );
-    assert_eq!(stream_decrypt::<ForwardOnlyToy>(&nonce, aad, &ct, &tag, 1).unwrap(), plaintext);
+    assert_eq!(
+        stream_decrypt::<ForwardOnlyToy, LEN>(&nonce, aad, &ct, &tag, 1).unwrap(),
+        plaintext
+    );
 
     // The forward-only toy must agree with the real one, or the above proves nothing.
-    assert_eq!(encrypt::<Toy>(&nonce, aad, &plaintext), (ct, tag), "the two toys must agree");
+    assert_eq!(seal::<Toy>(&nonce, aad, &plaintext), (ct, tag), "the two toys must agree");
 }
 
 // ---- the batched keystream paths ----------------------------------------------------------
@@ -155,26 +181,33 @@ fn neither_direction_uses_the_inverse_cipher() {
 /// avoids the pair path and agrees with `Toy` entirely.
 #[test]
 fn the_pair_path_is_really_used_in_both_directions_and_the_mac_never_batches() {
+    const LEN: usize = 2 * TOY_LEN;
     let nonce = pinned_nonce();
-    let plaintext = message(2 * TOY_LEN);
-    let (ct, tag) = encrypt::<Toy>(&nonce, b"aad", &plaintext);
+    let plaintext = message(LEN);
+    let (ct, tag) = seal::<Toy>(&nonce, b"aad", &plaintext);
 
-    let (swapped_ct, swapped_tag) = encrypt::<SwappedPairToy>(&nonce, b"aad", &plaintext);
+    let (swapped_ct, swapped_tag) = seal::<SwappedPairToy>(&nonce, b"aad", &plaintext);
     assert_ne!(swapped_ct, ct, "CCM encryption must use the pair path");
     assert_eq!(swapped_tag, tag, "the CBC-MAC and S0 are single-block, so the tag must not change");
 
     let (single_ct, single_tag) =
-        stream_encrypt::<SwappedPairToy>(&nonce, b"aad", &plaintext, TOY_LEN);
+        stream_encrypt::<SwappedPairToy, LEN>(&nonce, b"aad", &plaintext, TOY_LEN);
     assert_eq!(single_ct, ct, "the single-block path must not pair");
     assert_eq!(single_tag, tag);
 
     // Decryption: the swapped keystream recovers the wrong plaintext (Sec 6.2 step 5), which is
-    // what the MAC then absorbs (step 9), so the tag check fails.
-    let mut dec = SwappedCcm::<Decrypting>::new(&toy_key(), &nonce, b"aad", ct.len()).unwrap();
-    let mut back = ct.clone();
-    dec.do_decrypt_inplace(&mut back).unwrap();
+    // what the MAC then absorbs (step 9), so the tag check fails. The stream releases the
+    // plaintext before the final, so the wrong recovery can be seen.
+    let key = frame_key::<SwappedPairToy, LEN>();
+    let mut dec = key.create_decryptor(&nonce);
+    dec.do_update_aad(b"aad").unwrap();
+    let mut back = vec![0u8; LEN];
+    dec.do_decrypt_out(&ct, &mut back).unwrap();
     assert_ne!(back, plaintext, "CCM decryption must use the pair path");
-    assert!(matches!(dec.do_decrypt_final(&tag), Err(SymmetricCipherError::AEADTagCheckFailed)));
+    assert!(matches!(
+        dec.do_decrypt_final_detached(&tag),
+        Err(SymmetricCipherError::AEADTagCheckFailed)
+    ));
 }
 
 /// The four-block path must be taken, in both directions, and only for full fours.
@@ -182,25 +215,32 @@ fn the_pair_path_is_really_used_in_both_directions_and_the_mac_never_batches() {
 /// methods are correct.
 #[test]
 fn the_four_block_path_is_really_used_in_both_directions() {
+    const LEN: usize = 5 * TOY_LEN;
     let nonce = pinned_nonce();
-    let plaintext = message(5 * TOY_LEN);
-    let (ct, tag) = encrypt::<Toy>(&nonce, b"aad", &plaintext);
+    let plaintext = message(LEN);
+    let (ct, tag) = seal::<Toy>(&nonce, b"aad", &plaintext);
 
-    let (swapped_ct, swapped_tag) = encrypt::<SwappedFourToy>(&nonce, b"aad", &plaintext);
+    let (swapped_ct, swapped_tag) = seal::<SwappedFourToy>(&nonce, b"aad", &plaintext);
     assert_ne!(swapped_ct, ct, "five blocks must go through encrypt_4blocks");
     assert_eq!(swapped_tag, tag, "the CBC-MAC and S0 are single-block, so the tag must not change");
 
     // Two blocks per call uses pairs only, so the rotated-four toy is correct there.
     let (pairs_ct, pairs_tag) =
-        stream_encrypt::<SwappedFourToy>(&nonce, b"aad", &plaintext, 2 * TOY_LEN);
+        stream_encrypt::<SwappedFourToy, LEN>(&nonce, b"aad", &plaintext, 2 * TOY_LEN);
     assert_eq!(pairs_ct, ct, "pairs must not use the four path");
     assert_eq!(pairs_tag, tag);
 
-    let mut dec = SwappedFourCcm::<Decrypting>::new(&toy_key(), &nonce, b"aad", ct.len()).unwrap();
-    let mut back = ct.clone();
-    dec.do_decrypt_inplace(&mut back).unwrap();
+    let key = frame_key::<SwappedFourToy, LEN>();
+
+    let mut dec = key.create_decryptor(&nonce);
+    dec.do_update_aad(b"aad").unwrap();
+    let mut back = vec![0u8; LEN];
+    dec.do_decrypt_out(&ct, &mut back).unwrap();
     assert_ne!(back, plaintext, "decryption must batch fours too");
-    assert!(matches!(dec.do_decrypt_final(&tag), Err(SymmetricCipherError::AEADTagCheckFailed)));
+    assert!(matches!(
+        dec.do_decrypt_final_detached(&tag),
+        Err(SymmetricCipherError::AEADTagCheckFailed)
+    ));
 }
 
 // ---- call sequencing ----------------------------------------------------------------------
@@ -217,74 +257,86 @@ fn the_four_block_path_is_really_used_in_both_directions() {
 /// short final remainder, never one big enough to batch.
 #[test]
 fn every_split_agrees_with_the_one_shot_in_both_directions() {
+    const LEN: usize = 6 * TOY_LEN + 5;
     let nonce = pinned_nonce();
     let aad = b"header";
-    let plaintext = message(6 * TOY_LEN + 5);
-    let (ct, tag) = encrypt::<Toy>(&nonce, aad, &plaintext);
+    let plaintext = message(LEN);
+    let (ct, tag) = seal::<Toy>(&nonce, aad, &plaintext);
 
-    for split in 0..=plaintext.len() {
-        let mut enc = ToyCcm::<Encrypting>::new(&toy_key(), &nonce, aad, plaintext.len()).unwrap();
-        let mut streamed = plaintext.clone();
-        let (head, rest) = streamed.split_at_mut(split);
-        enc.do_encrypt_inplace(head).unwrap();
-        enc.do_encrypt_inplace(rest).unwrap();
-        assert_eq!(enc.do_encrypt_final().unwrap(), tag, "tag, split at {split}");
+    for split in 0..=LEN {
+        let key = frame_key::<Toy, LEN>();
+        let mut enc = key.create_encryptor_nonce(&nonce);
+        enc.do_update_aad(aad).unwrap();
+        let mut streamed = vec![0u8; LEN];
+        enc.do_encrypt_out(&plaintext[..split], &mut streamed).unwrap();
+        enc.do_encrypt_out(&plaintext[split..], &mut streamed[split..]).unwrap();
+        let (_, _, streamed_tag) = enc.do_encrypt_final_detached().unwrap();
+        assert_eq!(streamed_tag, tag, "tag, split at {split}");
         assert_eq!(streamed, ct, "ciphertext, split at {split}");
 
-        let mut dec = ToyCcm::<Decrypting>::new(&toy_key(), &nonce, aad, ct.len()).unwrap();
-        let mut back = ct.clone();
-        let (head, rest) = back.split_at_mut(split);
-        dec.do_decrypt_inplace(head).unwrap();
-        dec.do_decrypt_inplace(rest).unwrap();
-        dec.do_decrypt_final(&tag).unwrap_or_else(|e| panic!("tag check, split at {split}: {e:?}"));
+        let key = frame_key::<Toy, LEN>();
+
+        let mut dec = key.create_decryptor(&nonce);
+        dec.do_update_aad(aad).unwrap();
+        let mut back = vec![0u8; LEN];
+        dec.do_decrypt_out(&ct[..split], &mut back).unwrap();
+        dec.do_decrypt_out(&ct[split..], &mut back[split..]).unwrap();
+        dec.do_decrypt_final_detached(&tag)
+            .unwrap_or_else(|e| panic!("tag check, split at {split}: {e:?}"));
         assert_eq!(back, plaintext, "plaintext, split at {split}");
     }
 }
 
-/// The payload length declared to `new` is inside `B0` (A.2.1 Table 2's `Q`), so neither
-/// direction may be given more data than declared, nor finalized with less: either would produce
-/// or verify a tag against a `B0` no counterpart could reproduce. A refused update consumes
-/// nothing, so the flow is still usable.
+/// The frame is inside `B0` (A.2.1 Table 2's `Q`), so neither stream may be given more than it,
+/// nor finalized with less: either would produce or verify a tag against a `B0` no counterpart
+/// could reproduce. A refused update consumes nothing, so the flow is still usable.
 #[test]
-fn both_directions_hold_to_the_declared_length() {
+fn both_streams_hold_to_the_frame() {
+    const LEN: usize = 8;
     let nonce = pinned_nonce();
-    let plaintext = message(8);
-    let (ct, tag) = encrypt::<Toy>(&nonce, &[], &plaintext);
+    let plaintext = message(LEN);
+    let (ct, tag) = seal::<Toy>(&nonce, &[], &plaintext);
 
     // Encrypting: too much is refused, and finalizing short is refused.
-    let mut enc = ToyCcm::<Encrypting>::new(&toy_key(), &nonce, &[], 8).unwrap();
-    let mut too_much = [0x77u8; 9];
+    let key = frame_key::<Toy, LEN>();
+    let mut enc = key.create_encryptor_nonce(&nonce);
+    let mut out = [0u8; 9];
     assert!(
-        matches!(enc.do_encrypt_inplace(&mut too_much), Err(SymmetricCipherError::StateError(_))),
-        "9 bytes against a declared 8"
+        matches!(
+            enc.do_encrypt_out(&[0x77u8; 9], &mut out),
+            Err(SymmetricCipherError::StateError(_))
+        ),
+        "9 bytes against a frame of 8"
     );
-    assert_eq!(too_much, [0x77u8; 9], "a refused update must not touch the data");
-    let mut some = plaintext[..4].to_vec();
-    enc.do_encrypt_inplace(&mut some).expect("4 of the 8 declared bytes");
+    enc.do_encrypt_out(&plaintext[..4], &mut out).expect("4 of the 8 bytes");
     assert!(
-        matches!(enc.do_encrypt_final(), Err(SymmetricCipherError::StateError(_))),
+        matches!(enc.do_encrypt_final_detached(), Err(SymmetricCipherError::StateError(_))),
         "finalizing 4 bytes short"
     );
 
-    // Decrypting: the same two refusals.
-    let mut dec = ToyCcm::<Decrypting>::new(&toy_key(), &nonce, &[], 8).unwrap();
-    let mut too_much = [0x77u8; 9];
+    // Decrypting: the stream's bound is the frame plus an inline tag, and a final that has not
+    // seen the frame reports a malformed ciphertext.
+    let key = frame_key::<Toy, LEN>();
+    let mut dec = key.create_decryptor(&nonce);
+    let mut out = [0u8; LEN];
     assert!(
-        matches!(dec.do_decrypt_inplace(&mut too_much), Err(SymmetricCipherError::StateError(_))),
-        "9 bytes against a declared 8"
+        matches!(
+            dec.do_decrypt_out(&[0x77u8; LEN + TAG_LEN + 1], &mut out),
+            Err(SymmetricCipherError::StateError(_))
+        ),
+        "more than the frame and a tag"
     );
-    assert_eq!(too_much, [0x77u8; 9], "a refused update must not touch the data");
-    // ...and must not have debited the declared length either: the 8 genuine bytes still verify.
-    let mut back = ct.clone();
-    dec.do_decrypt_inplace(&mut back).unwrap();
-    dec.do_decrypt_final(&tag).unwrap();
-    assert_eq!(back, plaintext);
+    // ...and must not have debited the frame either: the 8 genuine bytes still verify.
+    dec.do_decrypt_out(&ct, &mut out).unwrap();
+    dec.do_decrypt_final_detached(&tag).unwrap();
+    assert_eq!(out, plaintext[..]);
 
-    let mut dec = ToyCcm::<Decrypting>::new(&toy_key(), &nonce, &[], 8).unwrap();
-    let mut some = ct[..4].to_vec();
-    dec.do_decrypt_inplace(&mut some).unwrap();
+    let key = frame_key::<Toy, LEN>();
+
+    let mut dec = key.create_decryptor(&nonce);
+    dec.do_decrypt_out(&ct[..4], &mut out).unwrap();
     assert!(
-        matches!(dec.do_decrypt_final(&tag), Err(SymmetricCipherError::StateError(_))),
+        matches!(dec.do_decrypt_final_detached(&tag), Err(SymmetricCipherError::DecryptionFailed)),
         "finalizing 4 bytes short"
     );
 }
@@ -306,19 +358,16 @@ fn tag_length_changes_the_tag_but_not_the_ciphertext_and_tags_do_not_nest() {
     let nonce = pinned_nonce();
     let aad = b"associated";
     let plaintext = message(23);
-    let (ct16, tag16) = encrypt::<Toy>(&nonce, aad, &plaintext);
+    let (ct16, tag16) = seal::<Toy>(&nonce, aad, &plaintext);
 
     macro_rules! check_tag_len {
         ($t:literal) => {{
-            type Enc = CcmPacket<Toy, Encrypting, TOY_LEN, TOY_LEN, NONCE_LEN, $t>;
-            type Dec = CcmPacket<Toy, Decrypting, TOY_LEN, TOY_LEN, NONCE_LEN, $t>;
-            let mut ct = vec![0u8; plaintext.len()];
-            let (_, tag) =
-                Enc::encrypt_detached_out(&toy_key(), &nonce, aad, &plaintext, &mut ct).unwrap();
-            assert_eq!(ct, ct16, "ciphertext must not depend on TAG_LEN ({})", $t);
-            let mut pt = vec![0u8; plaintext.len()];
-            Dec::decrypt_detached_out(&toy_key(), &nonce, aad, &ct, &tag, &mut pt).unwrap();
-            assert_eq!(pt, plaintext, "TAG_LEN={} round trip", $t);
+            let key = ToyKey::<Toy, CCM<NONCE_LEN, $t>>::from_key_material(&toy_key()).unwrap();
+            let mut buf = plaintext.clone();
+            let tag = key.encrypt_detached_in_place_nonce(&nonce, aad, &mut buf).unwrap();
+            assert_eq!(buf, ct16, "ciphertext must not depend on TAG_LEN ({})", $t);
+            key.decrypt_detached_in_place(&nonce, aad, &mut buf, &tag).unwrap();
+            assert_eq!(buf, plaintext, "TAG_LEN={} round trip", $t);
             tag.to_vec()
         }};
     }
@@ -342,7 +391,7 @@ fn tag_length_changes_the_tag_but_not_the_ciphertext_and_tags_do_not_nest() {
 }
 
 /// Every nonce length A.1 permits, `n` in `7..=13`, works, and each one implies its own payload
-/// limit: `q = 15 - n` and "by definition, p < 2^8q", which `CcmPacket::MAX_PAYLOAD_LEN` exposes.
+/// limit: `q = 15 - n` and "by definition, p < 2^8q", which `CCM::MAX_PAYLOAD_LEN` exposes.
 /// `sp800_38c_tests.rs` reaches `n` of 7, 8, 12 and 13 through Appendix C; 9, 10 and 11 are
 /// reached only here. Over the toy alone, since where the nonce goes (A.2.1 Table 2, A.3 Table 3)
 /// is the mode's business and not the permutation's.
@@ -352,43 +401,39 @@ fn every_permitted_nonce_length_works() {
         key: &KeyMaterial<KEY_LEN>,
         expected_max_payload: u64,
     ) where
-        P: ElectronicCodeBook<KEY_LEN, 16> + ModeNames,
+        P: ElectronicCodeBook<KEY_LEN, 16> + ModeNames + Clone,
     {
         // The full 16-byte tag, deliberately. `Toy` permutes each byte independently, so under
         // it the CBC-MAC is sixteen independent byte-chains and a `t`-byte tag witnesses only the
         // first `t` of them; the last nonce octet flipped below sits at block octet `N`, which an
         // 8-byte tag would never see once `N >= 8`. Real AES mixes every byte into every other,
         // so this is a limit of the toy, not of the mode.
-        type Enc<P, const K: usize, const N: usize> = CcmPacket<P, Encrypting, K, 16, N, 16>;
-        type Dec<P, const K: usize, const N: usize> = CcmPacket<P, Decrypting, K, 16, N, 16>;
+        type Mode<const N: usize> = CCM<N, 16>;
         assert_eq!(
-            Enc::<P, KEY_LEN, N>::MAX_PAYLOAD_LEN,
+            Mode::<N>::MAX_PAYLOAD_LEN,
             expected_max_payload,
             "n = {N}: the payload limit 2^8q - 1 that q = 15 - n implies"
         );
+        let key = ToyKey::<P, Mode<N>>::from_perm(P::new(key).unwrap());
 
         let nonce: [u8; N] = core::array::from_fn(|i| (i as u8).wrapping_mul(11).wrapping_add(3));
         let plaintext = message(100);
-        let mut ct = vec![0u8; plaintext.len()];
-        let (_, tag) =
-            Enc::<P, KEY_LEN, N>::encrypt_detached_out(key, &nonce, b"aad", &plaintext, &mut ct)
-                .unwrap();
-        assert_ne!(ct, plaintext, "nonce length {N}: must actually encrypt");
+        let mut buf = plaintext.clone();
+        let tag = key.encrypt_detached_in_place_nonce(&nonce, b"aad", &mut buf).unwrap();
+        assert_ne!(buf, plaintext, "nonce length {N}: must actually encrypt");
+        let ct = buf.clone();
 
-        let mut back = vec![0u8; plaintext.len()];
-        Dec::<P, KEY_LEN, N>::decrypt_detached_out(key, &nonce, b"aad", &ct, &tag, &mut back)
-            .unwrap();
-        assert_eq!(back, plaintext, "nonce length {N}: round trip");
+        key.decrypt_detached_in_place(&nonce, b"aad", &mut buf, &tag).unwrap();
+        assert_eq!(buf, plaintext, "nonce length {N}: round trip");
 
         // The last nonce octet sits right before `Q` in B0 (Table 2) and before the counter in
         // every `Ctr_i` (Table 3); flipping it must change both and so fail the check.
         let mut wrong = nonce;
         wrong[N - 1] ^= 0x01;
+        let mut buf = ct;
         assert!(
             matches!(
-                Dec::<P, KEY_LEN, N>::decrypt_detached_out(
-                    key, &wrong, b"aad", &ct, &tag, &mut back
-                ),
+                key.decrypt_detached_in_place(&wrong, b"aad", &mut buf, &tag),
                 Err(SymmetricCipherError::AEADTagCheckFailed)
             ),
             "nonce length {N}: the nonce is authenticated"
@@ -409,54 +454,36 @@ fn every_permitted_nonce_length_works() {
 /// Which entry points release unauthenticated plaintext on a forgery, pinned side by side.
 ///
 /// Sec 6.2: "When the error message INVALID is returned, the payload P and the MAC T shall not
-/// be revealed." The one-shots honour that -- the caller's buffer comes back zeroized -- because
-/// they have the whole ciphertext before they start. Neither streaming path can: Sec 6.2
-/// recovers `P` (step 5) before it can verify it (step 10), and both the inherent
-/// `do_decrypt_inplace` and the fixed-frame `CcmDecryptor` release `P` as it is recovered rather
-/// than hold the frame back, so by the time the final rejects the tag the plaintext is already
-/// in the caller's buffer, as their docs warn. Pinning the difference makes it a documented
-/// property rather than an accident.
+/// be revealed." The in-place one-shot honours that -- the caller's buffer comes back zeroized --
+/// because it has the whole ciphertext before it starts. The stream cannot: Sec 6.2 recovers `P`
+/// (step 5) before it can verify it (step 10), and the fixed-frame `CcmPacketDecryptor` releases `P`
+/// as it is recovered rather than hold the frame back, so by the time the final rejects the tag
+/// the plaintext is already in the caller's buffer, as its docs warn. Pinning the difference
+/// makes it a documented property rather than an accident.
 #[test]
-fn one_shots_release_nothing_on_forgery_but_the_streams_do() {
+fn the_one_shot_releases_nothing_on_forgery_but_the_stream_does() {
+    const LEN: usize = 19;
     let nonce = pinned_nonce();
     let plaintext = *b"do not trust me yet";
-    let (ct, mut tag) = encrypt::<Toy>(&nonce, b"aad", &plaintext);
+    let (ct, mut tag) = seal::<Toy>(&nonce, b"aad", &plaintext);
     tag[0] ^= 0xFF; // forge it
 
-    // The inherent one-shot: verify-then-return, so a forged tag leaves nothing but zeros.
-    let mut one_shot = [0xEEu8; 19];
+    // The one-shot: verify-then-return, so a forged tag leaves nothing but zeros.
+    let mut buf = ct.clone();
     assert!(matches!(
-        ToyCcm::<Decrypting>::decrypt_detached_out(
-            &toy_key(),
-            &nonce,
-            b"aad",
-            &ct,
-            &tag,
-            &mut one_shot
-        ),
+        declared_key::<Toy>().decrypt_detached_in_place(&nonce, b"aad", &mut buf, &tag),
         Err(SymmetricCipherError::AEADTagCheckFailed)
     ));
-    assert_eq!(one_shot, [0u8; 19], "the one-shot must zeroize its buffer on a forged tag");
+    assert_eq!(buf, [0u8; LEN], "the one-shot must zeroize its buffer on a forged tag");
 
-    // The inherent stream: the plaintext is in the buffer before the tag is ever looked at, and
-    // rejecting the tag cannot take it back.
-    let mut dec = ToyCcm::<Decrypting>::new(&toy_key(), &nonce, b"aad", ct.len()).unwrap();
-    let mut streamed = ct.clone();
-    dec.do_decrypt_inplace(&mut streamed).unwrap();
-    assert_eq!(&streamed[..], &plaintext[..], "the stream already produced plaintext");
-    assert!(matches!(dec.do_decrypt_final(&tag), Err(SymmetricCipherError::AEADTagCheckFailed)));
-    assert_eq!(&streamed[..], &plaintext[..], "...and a rejected tag cannot take it back");
-
-    // The fixed-frame decryptor is the same stream behind the trait: the payload is released by
-    // the update that brings it, the finals release nothing, and a rejected tag cannot take it
-    // back. The detached final leaves its (unused) buffer alone rather than zeroizing it, since
-    // there is nothing of the plaintext in it to zeroize.
-    type Dec = CcmDecryptor<Toy, TOY_LEN, TOY_LEN, NONCE_LEN, TAG_LEN, 48, 19>;
-
-    let mut dec = Dec::do_decrypt_init(&toy_key(), &nonce).unwrap();
+    // The stream: the payload is released by the update that brings it, the finals release
+    // nothing, and a rejected tag cannot take it back. The detached final leaves its (unused)
+    // buffer alone rather than zeroizing it, since there is nothing of the plaintext in it.
+    let key = frame_key::<Toy, LEN>();
+    let mut dec = key.create_decryptor(&nonce);
     dec.do_update_aad(b"aad").unwrap();
-    let mut streamed = [0u8; 19];
-    assert_eq!(dec.do_decrypt_out(&ct, &mut streamed).unwrap(), 19, "released mid-stream");
+    let mut streamed = [0u8; LEN];
+    assert_eq!(dec.do_decrypt_out(&ct, &mut streamed).unwrap(), LEN, "released mid-stream");
     assert_eq!(&streamed[..], &plaintext[..], "the stream already produced plaintext");
     let mut detached = [0xEEu8; 16];
     assert!(matches!(
@@ -468,35 +495,34 @@ fn one_shots_release_nothing_on_forgery_but_the_streams_do() {
 
     let mut inline = ct.clone();
     inline.extend_from_slice(&tag);
-    let mut dec = Dec::do_decrypt_init(&toy_key(), &nonce).unwrap();
+    let key = frame_key::<Toy, LEN>();
+    let mut dec = key.create_decryptor(&nonce);
     dec.do_update_aad(b"aad").unwrap();
-    let mut streamed = [0u8; 19];
-    assert_eq!(dec.do_decrypt_out(&inline, &mut streamed).unwrap(), 19);
+    let mut streamed = [0u8; LEN];
+    assert_eq!(dec.do_decrypt_out(&inline, &mut streamed).unwrap(), LEN);
     assert_eq!(&streamed[..], &plaintext[..]);
     assert!(matches!(dec.do_decrypt_final(), Err(SymmetricCipherError::AEADTagCheckFailed)));
 }
 
-/// Tests a large payload that would blow the Linux stack limit if we try to hard-copy it.
-/// Tests the inherent APIs on CCM.
+/// A payload large enough to blow the stack if it were copied there, through the in-place
+/// one-shots, which hold nothing but the caller's one buffer.
 #[test]
-fn test_large_payload_inherent() {
-    // 5 mb payload
+fn a_large_payload_round_trips_in_place() {
     const LARGE_LEN: usize = 5 * 1024 * 1024;
-    let key = toy_key();
     let nonce = pinned_nonce();
     let aad = b"header";
     let plaintext = message(LARGE_LEN);
 
-    // round-tripped though the inherent CCM interface
-    let mut ct = vec![0u8; LARGE_LEN];
-    let (written, tag) =
-        ToyCcm::<Encrypting>::encrypt_detached_out(&key, &nonce, aad, &plaintext, &mut ct).unwrap();
-    assert_eq!(written, LARGE_LEN);
+    let (ct, tag) = seal::<Toy>(&nonce, aad, &plaintext);
     assert_ne!(ct, plaintext, "must actually encrypt");
+    assert_eq!(open::<Toy>(&nonce, aad, &ct, &tag).unwrap(), plaintext, "in-place round trip");
+}
 
-    let mut back = vec![0u8; LARGE_LEN];
-    let n = ToyCcm::<Decrypting>::decrypt_detached_out(&key, &nonce, aad, &ct, &tag, &mut back)
-        .unwrap();
-    assert_eq!(n, LARGE_LEN);
-    assert_eq!(back, plaintext, "inherent round trip");
+/// The construction suite for both keys: the type, binding and strength policy of
+/// `from_key_material`.
+#[test]
+fn the_keys_enforce_the_material_policy() {
+    let framework = TestFrameworkFromKeyMaterial::new();
+    framework.test::<TOY_LEN, DeclaredKey<Toy>>(Toy::CCM_ALG_NAME, SecurityStrength::_128bit);
+    framework.test::<TOY_LEN, FrameKey<Toy, 32>>(Toy::CCM_ALG_NAME, SecurityStrength::_128bit);
 }

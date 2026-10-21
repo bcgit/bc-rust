@@ -4,12 +4,15 @@ use std::{fs, io};
 
 use bouncycastle::core::hazmat::do_hazardous_operations;
 use bouncycastle::core::key_material::{KeyMaterial512, KeyMaterialTrait, KeyType};
+use bouncycastle::core::symmetric_key::{FromAnyKeyMaterial, MacGenerationKey};
 use bouncycastle::core::traits::MAC;
 use bouncycastle::hex;
-use bouncycastle::poly1305::Poly1305;
-use bouncycastle::sha2::hmac::{HMAC_SHA256, HMAC_SHA512, HMAC_SHA512_224, HMAC_SHA512_256};
-use bouncycastle::sha3::kmac::{KMAC128, KMAC256};
-use bouncycastle::sm3::hmac::HMAC_SM3;
+use bouncycastle::hmac::HmacKey;
+use bouncycastle::poly1305;
+use bouncycastle::poly1305::hazmat::key_from_bytes;
+use bouncycastle::sha2::{SHA256, SHA512, SHA512_224, SHA512_256};
+use bouncycastle::sha3::kmac::{KMAC128Key, KMAC256Key};
+use bouncycastle::sm3::SM3;
 
 #[allow(non_camel_case_types)]
 pub(crate) enum HMACVariant {
@@ -52,24 +55,24 @@ pub(crate) fn mac_cmd(
     // instantiate the MAC object and call do_mac()
     match hmac_variant {
         HMACVariant::SHA256 => {
-            let mac = HMAC_SHA256::new_allow_weak_key(&key).unwrap();
-            do_mac(mac, verify_val, output_hex);
+            let hmac_key = HmacKey::<SHA256>::from_key_material_allow_weak(&key).unwrap();
+            do_mac(hmac_key.create_generator(), verify_val, output_hex);
         }
         HMACVariant::SHA512 => {
-            let mac = HMAC_SHA512::new_allow_weak_key(&key).unwrap();
-            do_mac(mac, verify_val, output_hex);
+            let hmac_key = HmacKey::<SHA512>::from_key_material_allow_weak(&key).unwrap();
+            do_mac(hmac_key.create_generator(), verify_val, output_hex);
         }
         HMACVariant::SHA512_224 => {
-            let mac = HMAC_SHA512_224::new_allow_weak_key(&key).unwrap();
-            do_mac(mac, verify_val, output_hex);
+            let hmac_key = HmacKey::<SHA512_224>::from_key_material_allow_weak(&key).unwrap();
+            do_mac(hmac_key.create_generator(), verify_val, output_hex);
         }
         HMACVariant::SHA512_256 => {
-            let mac = HMAC_SHA512_256::new_allow_weak_key(&key).unwrap();
-            do_mac(mac, verify_val, output_hex);
+            let hmac_key = HmacKey::<SHA512_256>::from_key_material_allow_weak(&key).unwrap();
+            do_mac(hmac_key.create_generator(), verify_val, output_hex);
         }
         HMACVariant::SM3 => {
-            let mac = HMAC_SM3::new_allow_weak_key(&key).unwrap();
-            do_mac(mac, verify_val, output_hex);
+            let hmac_key = HmacKey::<SM3>::from_key_material_allow_weak(&key).unwrap();
+            do_mac(hmac_key.create_generator(), verify_val, output_hex);
         }
     }
 }
@@ -87,16 +90,20 @@ pub(crate) fn kmac_cmd(
 ) {
     let key = load_mac_key(key, key_file);
     let s = customization.as_deref().unwrap_or("").as_bytes();
-    // new_allow_weak_key, as the HMAC commands do: a CLI is used for test vectors and scripting,
-    // where a short or all-zero key is a legitimate thing to want.
+    // The allow-weak form, as the HMAC commands use: a CLI is used for test vectors and
+    // scripting, where a short or all-zero key is a legitimate thing to want.
     match bit_len {
         128 => do_mac(
-            KMAC128::new_with_params(&key, s, length, true).expect("a valid MAC key"),
+            KMAC128Key::with_params_allow_weak(&key, s, length)
+                .expect("a valid MAC key")
+                .create_generator(),
             verify_val,
             output_hex,
         ),
         256 => do_mac(
-            KMAC256::new_with_params(&key, s, length, true).expect("a valid MAC key"),
+            KMAC256Key::with_params_allow_weak(&key, s, length)
+                .expect("a valid MAC key")
+                .create_generator(),
             verify_val,
             output_hex,
         ),
@@ -113,12 +120,13 @@ pub(crate) fn poly1305_cmd(
     output_hex: bool,
 ) {
     let key = load_mac_key(key, key_file);
-    // new_allow_weak_key, as the other MAC commands do.
-    let mac = Poly1305::new_allow_weak_key(&key).unwrap_or_else(|_| {
+    // No key policy, as the other MAC commands take their allow-weak forms: a CLI is used for test
+    // vectors and scripting, where a weak or all-zero key is a legitimate thing to want.
+    let Ok(bytes) = <&[u8; poly1305::KEY_LEN]>::try_from(key.ref_to_bytes()) else {
         eprintln!("Error: Poly1305 needs a 32-byte one-time key, got {} bytes.", key.key_len());
         exit(-1)
-    });
-    do_mac(mac, verify_val, output_hex);
+    };
+    do_mac(key_from_bytes(bytes).into_generator(), verify_val, output_hex);
 }
 
 fn do_mac(mut mac: impl MAC, verify_val: &Option<String>, output_hex: bool) {

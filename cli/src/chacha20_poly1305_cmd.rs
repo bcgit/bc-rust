@@ -7,9 +7,8 @@
 //! has already reached stdout; check the exit code before using it.
 
 use crate::helpers::aead_cipher_helpers::{decrypt_aead, encrypt_aead, load_aad};
-use crate::helpers::block_mode_helpers::{CipherDirection, load_key};
-use bouncycastle::chacha20_poly1305_aead::{ChaCha20_Poly1305, KEY_LEN, NONCE_LEN, TAG_LEN};
-use bouncycastle::cipher::{Decrypting, Encrypting};
+use crate::helpers::block_mode_helpers::{CipherDirection, load_key_object};
+use bouncycastle::chacha20_poly1305_aead::{ChaCha20Poly1305Key, KEY_LEN, NONCE_LEN, TAG_LEN};
 
 pub(crate) fn chacha20_poly1305_cmd(
     action: &CipherDirection,
@@ -19,18 +18,14 @@ pub(crate) fn chacha20_poly1305_cmd(
     aad_file: &Option<String>,
     output_hex: bool,
 ) {
-    let key = load_key::<KEY_LEN>(key, key_file, "ChaCha20-Poly1305");
+    let key = load_key_object::<ChaCha20Poly1305Key, KEY_LEN>(key, key_file, "ChaCha20-Poly1305");
     let aad = load_aad(aad, aad_file);
     match action {
         CipherDirection::Encrypt => {
-            encrypt_aead::<ChaCha20_Poly1305<Encrypting>, KEY_LEN, NONCE_LEN, TAG_LEN, TAG_LEN>(
-                &key, &aad, output_hex,
-            )
+            encrypt_aead::<_, KEY_LEN, NONCE_LEN, TAG_LEN, TAG_LEN>(&key, &aad, output_hex)
         }
         CipherDirection::Decrypt => {
-            decrypt_aead::<ChaCha20_Poly1305<Decrypting>, KEY_LEN, NONCE_LEN, TAG_LEN, TAG_LEN>(
-                &key, &aad, output_hex,
-            )
+            decrypt_aead::<_, KEY_LEN, NONCE_LEN, TAG_LEN, TAG_LEN>(&key, &aad, output_hex)
         }
     }
 }

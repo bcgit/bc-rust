@@ -3,13 +3,10 @@
 //! cannot be passed to the fixed-array API; those cases are counted and reported separately.
 mod common;
 
-use bouncycastle_chacha20_poly1305_aead::ChaCha20_Poly1305;
-use bouncycastle_cipher::Decrypting;
 use bouncycastle_core::errors::SymmetricCipherError;
+use bouncycastle_core::symmetric_key::AeadDecryptionKey;
 use bouncycastle_core::traits::{AEADCipherDecryptor, SymmetricCipherDecryptor};
 use bouncycastle_core_test_framework::test_data_loaders::wycheproof_json;
-
-type Dec = ChaCha20_Poly1305<Decrypting>;
 
 #[test]
 fn wycheproof_chacha20_poly1305() {
@@ -48,24 +45,31 @@ fn wycheproof_chacha20_poly1305() {
             } else {
                 let mut out = vec![0xa5; ct.len()];
                 assert_eq!(
-                    Dec::decrypt_detached_out(&key, &nonce, &aad, &ct, &tag, &mut out),
+                    key.decrypt_detached_out(&nonce, &aad, &ct, &tag, &mut out),
                     Err(SymmetricCipherError::AEADTagCheckFailed),
                     "tcId {id}"
                 );
-                // The core default zeroizes the whole output buffer on entry, and leaves it so
+                // The key's one-shot zeroizes the whole output buffer on entry, and leaves it so
                 // when the tag fails.
                 assert!(out.iter().all(|&b| b == 0), "tcId {id}");
                 let mut inline = ct.clone();
                 inline.extend_from_slice(&tag);
                 assert_eq!(
-                    Dec::decrypt_with_aad_out(&key, &nonce, &aad, &inline, &mut out),
+                    key.decrypt_with_aad_out(&nonce, &aad, &inline, &mut out),
                     Err(SymmetricCipherError::AEADTagCheckFailed),
                     "tcId {id}"
                 );
                 assert!(out.iter().all(|&b| b == 0), "tcId {id}");
+                let mut in_place = ct.clone();
+                assert_eq!(
+                    key.decrypt_detached_in_place(&nonce, &aad, &mut in_place, &tag),
+                    Err(SymmetricCipherError::AEADTagCheckFailed),
+                    "tcId {id}"
+                );
+                assert!(in_place.iter().all(|&b| b == 0), "tcId {id}");
 
                 // The detached final-output buffer is also erased on authentication failure.
-                let mut dec = Dec::do_decrypt_init(&key, &nonce).unwrap();
+                let mut dec = key.create_decryptor(&nonce);
                 dec.do_update_aad(&aad).unwrap();
                 dec.do_decrypt_out(&ct, &mut out).unwrap();
                 let mut last = [0xa5; 16];

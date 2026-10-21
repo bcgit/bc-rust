@@ -26,14 +26,12 @@
 //! of the plaintext in the *same* block, so an attacker edits the block they aimed at, at the cost
 //! of randomising the next one. Do not decrypt data you have not authenticated separately.
 
-use crate::helpers::block_mode_helpers::{BLOCK_LEN, CipherDirection, load_key};
+use crate::helpers::block_mode_helpers::{BLOCK_LEN, CipherDirection, load_key_object};
 use crate::helpers::stream_mode_helpers::run_stream_mode;
-use bouncycastle::aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
-use bouncycastle::cipher::modes::Cfb;
-use bouncycastle::cipher::modes::ModeNames;
-use bouncycastle::cipher::{Decrypting, Encrypting};
-use bouncycastle::core::hazmat::ElectronicCodeBook;
-use bouncycastle::core::key_material::KeyMaterial;
+use bouncycastle::aes::{AES128Key, AES192Key, AES256Key};
+use bouncycastle::cipher::modes::CFB;
+use bouncycastle::core::symmetric_key::{SymmetricDecryptionKey, SymmetricEncryptionKey};
+use bouncycastle::core::traits::{StreamCipherDecryptor, StreamCipherEncryptor};
 
 pub(crate) fn aes128_cfb_cmd(
     action: &CipherDirection,
@@ -41,7 +39,11 @@ pub(crate) fn aes128_cfb_cmd(
     key_file: &Option<String>,
     output_hex: bool,
 ) {
-    run::<AES128Internal, 16>(action, &load_key::<16>(key, key_file, "AES-128"), output_hex);
+    run::<_, 16>(
+        action,
+        &load_key_object::<AES128Key<CFB>, 16>(key, key_file, "AES-128"),
+        output_hex,
+    );
 }
 
 pub(crate) fn aes192_cfb_cmd(
@@ -50,7 +52,11 @@ pub(crate) fn aes192_cfb_cmd(
     key_file: &Option<String>,
     output_hex: bool,
 ) {
-    run::<AES192Internal, 24>(action, &load_key::<24>(key, key_file, "AES-192"), output_hex);
+    run::<_, 24>(
+        action,
+        &load_key_object::<AES192Key<CFB>, 24>(key, key_file, "AES-192"),
+        output_hex,
+    );
 }
 
 pub(crate) fn aes256_cfb_cmd(
@@ -59,21 +65,20 @@ pub(crate) fn aes256_cfb_cmd(
     key_file: &Option<String>,
     output_hex: bool,
 ) {
-    run::<AES256Internal, 32>(action, &load_key::<32>(key, key_file, "AES-256"), output_hex);
+    run::<_, 32>(
+        action,
+        &load_key_object::<AES256Key<CFB>, 32>(key, key_file, "AES-256"),
+        output_hex,
+    );
 }
 
 /// Dispatches to the shared streaming loops with `Cfb` filled in as the mode.
-fn run<P, const KEY_LEN: usize>(
-    action: &CipherDirection,
-    key: &KeyMaterial<KEY_LEN>,
-    output_hex: bool,
-) where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
+fn run<'k, K, const KEY_LEN: usize>(action: &CipherDirection, key: &'k K, output_hex: bool)
+where
+    K: SymmetricEncryptionKey<KEY_LEN, BLOCK_LEN, 0>
+        + SymmetricDecryptionKey<KEY_LEN, BLOCK_LEN, 0>,
+    K::Encryptor<'k>: StreamCipherEncryptor<BLOCK_LEN>,
+    K::Decryptor<'k>: StreamCipherDecryptor<BLOCK_LEN>,
 {
-    run_stream_mode::<
-        Cfb<P, Encrypting, KEY_LEN, BLOCK_LEN>,
-        Cfb<P, Decrypting, KEY_LEN, BLOCK_LEN>,
-        KEY_LEN,
-        BLOCK_LEN,
-    >(action, key, output_hex)
+    run_stream_mode::<K, KEY_LEN, BLOCK_LEN>(action, key, output_hex)
 }

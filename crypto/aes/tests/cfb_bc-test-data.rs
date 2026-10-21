@@ -25,7 +25,7 @@
 //! block, in pairs with a one-block remainder for odd lengths, as one call over the whole payload,
 //! and in 5-byte calls that never line up with a block. The second and third passes are what put
 //! the multi-block cases through the pair and four-block paths -- which for CFB are
-//! [`ElectronicCodeBook::encrypt_2blocks`] and [`ElectronicCodeBook::encrypt_4blocks`], the
+//! [`BlockPermutation::encrypt_2blocks`] and [`BlockPermutation::encrypt_4blocks`], the
 //! *forward* function, even on the decrypt side -- and the fourth is what puts them through the
 //! byte path with segments left open between calls. So all of that is exercised against real
 //! vectors and not only against the toys in `cfb_tests.rs`. Every ACVP CFB128 payload is a whole
@@ -37,15 +37,12 @@
 //! than in SP 800-38A, and implementing it from anything else would be guesswork. The test reports
 //! how many it skipped so the gap stays visible.
 
-use bouncycastle_aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
-use bouncycastle_cipher::modes::Cfb;
-use bouncycastle_cipher::modes::ModeNames;
-use bouncycastle_cipher::{Decrypting, Encrypting};
-use bouncycastle_core::hazmat::ElectronicCodeBook;
-use bouncycastle_core::traits::{
-    StreamCipherDecryptor, StreamCipherEncryptor, SymmetricCipherDecryptor,
-    SymmetricCipherEncryptor,
+use bouncycastle_aes::{AES128Key, AES192Key, AES256Key};
+use bouncycastle_cipher::modes::CFB;
+use bouncycastle_core::symmetric_key::{
+    FromKeyMaterial, SymmetricDecryptionKey, SymmetricEncryptionKey,
 };
+use bouncycastle_core::traits::{StreamCipherDecryptor, StreamCipherEncryptor};
 use bouncycastle_core_test_framework::FixedSeedRNG;
 use bouncycastle_core_test_framework::test_data_loaders::{Value, bc_test_data_json, hex_field};
 use std::collections::BTreeMap;
@@ -86,12 +83,12 @@ impl Grouping {
     }
 }
 
-/// Runs one CFB128 case in one direction, for a given permutation, under the given grouping.
+/// Runs one CFB128 case in one direction, for a given key type, under the given grouping.
 ///
-/// Encryption is driven through `do_encrypt_init_rng` with a `FixedSeedRNG` emitting the vector's
-/// IV, and the returned init data is checked against that IV before any ciphertext is compared --
-/// so a change that ignored the RNG could not pass silently.
-fn run_case<P, const KEY_LEN: usize>(
+/// Encryption is driven through the key's `create_encryptor` with a `FixedSeedRNG` emitting the
+/// vector's IV, and the returned init data is checked against that IV before any ciphertext is
+/// compared -- so a change that ignored the RNG could not pass silently.
+fn run_case<K, const KEY_LEN: usize>(
     key_bytes: &[u8],
     iv: [u8; BLOCK_LEN],
     input: &[u8],
@@ -99,25 +96,26 @@ fn run_case<P, const KEY_LEN: usize>(
     grouping: Grouping,
 ) -> Vec<u8>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
+    K: 'static,
+    K: FromKeyMaterial<KEY_LEN>
+        + SymmetricEncryptionKey<KEY_LEN, BLOCK_LEN, 0>
+        + SymmetricDecryptionKey<KEY_LEN, BLOCK_LEN, 0>,
+    for<'k> K::Encryptor<'k>: StreamCipherEncryptor<BLOCK_LEN>,
+    for<'k> K::Decryptor<'k>: StreamCipherDecryptor<BLOCK_LEN>,
 {
-    let key = cipher_key::<KEY_LEN>(key_bytes);
+    let key = K::from_key_material(&cipher_key::<KEY_LEN>(key_bytes)).expect("a valid key");
     let mut data = input.to_vec();
     let chunk = grouping.chunk_len(data.len());
 
     if encrypt {
-        let (mut enc, got_iv) = Cfb::<P, Encrypting, KEY_LEN, BLOCK_LEN>::do_encrypt_init_rng(
-            &key,
-            &mut FixedSeedRNG::<BLOCK_LEN>::new(iv),
-        )
-        .expect("encrypt init");
+        let (mut enc, got_iv) =
+            key.create_encryptor(&mut FixedSeedRNG::<BLOCK_LEN>::new(iv)).expect("encrypt init");
         assert_eq!(got_iv, iv, "the pinned RNG should reproduce the vector's IV");
         for piece in data.chunks_mut(chunk) {
             enc.do_encrypt_inplace(piece).unwrap();
         }
     } else {
-        let mut dec =
-            Cfb::<P, Decrypting, KEY_LEN, BLOCK_LEN>::do_decrypt_init(&key, &iv).expect("dec init");
+        let mut dec = key.create_decryptor(&iv);
         for piece in data.chunks_mut(chunk) {
             dec.do_decrypt_inplace(piece).unwrap();
         }
@@ -135,9 +133,9 @@ fn run_case_for_key_len(
     grouping: Grouping,
 ) -> Vec<u8> {
     match key_bytes.len() {
-        16 => run_case::<AES128Internal, 16>(key_bytes, iv, input, encrypt, grouping),
-        24 => run_case::<AES192Internal, 24>(key_bytes, iv, input, encrypt, grouping),
-        32 => run_case::<AES256Internal, 32>(key_bytes, iv, input, encrypt, grouping),
+        16 => run_case::<AES128Key<CFB>, 16>(key_bytes, iv, input, encrypt, grouping),
+        24 => run_case::<AES192Key<CFB>, 24>(key_bytes, iv, input, encrypt, grouping),
+        32 => run_case::<AES256Key<CFB>, 32>(key_bytes, iv, input, encrypt, grouping),
         other => panic!("ACVP AES vectors should only use 16, 24 or 32 byte keys, got {other}"),
     }
 }

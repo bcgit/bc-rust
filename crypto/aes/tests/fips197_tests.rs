@@ -15,7 +15,7 @@
 //! All values here are transcribed from the published FIPS 197 (Update 1) PDF.
 
 use bouncycastle_aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
-use bouncycastle_core::hazmat::ElectronicCodeBook;
+use bouncycastle_core::hazmat::{BlockPermutation, ElectronicCodeBook};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 

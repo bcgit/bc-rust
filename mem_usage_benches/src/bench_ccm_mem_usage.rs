@@ -28,13 +28,18 @@
 #![allow(dead_code)]
 #![allow(unused_imports)]
 
+use bouncycastle::aes::AES128Key;
 use bouncycastle::aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
-use bouncycastle::cipher::modes::{CcmDecryptor, CcmEncryptor, CcmPacket};
-use bouncycastle::cipher::{Decrypting, Encrypting};
+use bouncycastle::cipher::modes::{CCM, CCM_Packet, CcmPacketDecryptor, CcmPacketEncryptor};
+use bouncycastle::core::hazmat::{
+    AeadDeclaredDecryptMode, AeadDeclaredEncryptMode, ElectronicCodeBook,
+};
 use bouncycastle::core::key_material::{KeyMaterial, KeyType};
+use bouncycastle::core::symmetric_key::{AeadDecryptionKey, AeadEncryptionKey, FromKeyMaterial};
 use bouncycastle::core::traits::{
     AEADCipherDecryptor, AEADCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
 };
+use bouncycastle::rng::HashDRBG_SHA512;
 
 /// The parameters the ACVP vectors and most protocols use: 12-byte nonce, 16-byte tag.
 const NONCE_LEN: usize = 12;
@@ -49,14 +54,25 @@ const DATA_LEN: usize = 16384;
 const AAD_LEN: usize = 64;
 const MESSAGE_LEN: usize = DATA_LEN;
 
-type Aes128Ccm<Dir> = CcmPacket<AES128Internal, Dir, 16, 16, NONCE_LEN, TAG_LEN>;
-type Aes128CcmEncryptor =
-    CcmEncryptor<AES128Internal, 16, 16, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>;
-type Aes128CcmDecryptor =
-    CcmDecryptor<AES128Internal, 16, 16, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>;
+/// The mode's in-place one-shots over the keyed permutation: the direct path.
+type Aes128CcmMode = CCM<NONCE_LEN, TAG_LEN>;
+/// The key bound to the fixed frame, whose streams are the pair below.
+type Aes128CcmPacketKey = AES128Key<CCM_Packet<NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>>;
+type Aes128CcmEncryptor<'k> =
+    CcmPacketEncryptor<'k, AES128Internal, 16, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>;
+type Aes128CcmDecryptor<'k> =
+    CcmPacketDecryptor<'k, AES128Internal, 16, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>;
 
 fn key<const N: usize>() -> KeyMaterial<N> {
     KeyMaterial::<N>::from_bytes_as_type(&[0x42u8; N], KeyType::SymmetricCipherKey).unwrap()
+}
+
+fn perm() -> AES128Internal {
+    AES128Internal::new(&key::<16>()).unwrap()
+}
+
+fn frame_key() -> Aes128CcmPacketKey {
+    Aes128CcmPacketKey::from_key_material(&key::<16>()).unwrap()
 }
 
 /// The message every bench processes, filled at run time and then only ever reached through a
@@ -80,81 +96,76 @@ fn bench_do_nothing() {
 
 /// Prints the in-memory size of each CCM value: the persistent cost of holding one open.
 ///
-/// The two things to notice are that `CcmPacket` does not depend on `NONCE_LEN` or `TAG_LEN` -- the nonce
-/// lives inside the counter template and the tag is assembled at finalization -- and that the
-/// trait adapters are `CcmPacket` plus the `AAD_LEN` buffer and a few words, at any `DATA_LEN`.
+/// A mode-bound key is the keyed permutation alone; the trait pair is the mode's `Ccm` state
+/// (the permutation, three blocks and five counters, independent of `NONCE_LEN` and `TAG_LEN`)
+/// plus the `AAD_LEN` buffer and a few words, at any `DATA_LEN`.
 #[inline(never)]
 fn print_struct_sizes() {
     use core::mem::size_of;
 
-    eprintln!(
-        "--- CcmPacket: permutation + 3 blocks + 5 counters, independent of nonce/tag length ---"
-    );
-    eprintln!("CcmPacket<AES128Internal, .., 12, 16>  {:>7} B", size_of::<Aes128Ccm<Encrypting>>());
-    eprintln!(
-        "CcmPacket<AES128Internal, .., 7, 4>    {:>7} B",
-        size_of::<CcmPacket<AES128Internal, Encrypting, 16, 16, 7, 4>>()
-    );
-    eprintln!(
-        "CcmPacket<AES128Internal, .., 13, 16>  {:>7} B",
-        size_of::<CcmPacket<AES128Internal, Encrypting, 16, 16, 13, 16>>()
-    );
-    eprintln!(
-        "CcmPacket<AES192Internal, .., 12, 16>  {:>7} B",
-        size_of::<CcmPacket<AES192Internal, Encrypting, 24, 16, 12, 16>>()
-    );
-    eprintln!(
-        "CcmPacket<AES256Internal, .., 12, 16>  {:>7} B",
-        size_of::<CcmPacket<AES256Internal, Encrypting, 32, 16, 12, 16>>()
-    );
-    eprintln!("Decrypting is the same size:");
-    eprintln!("CcmPacket<AES128Internal, Decrypting>  {:>7} B", size_of::<Aes128Ccm<Decrypting>>());
+    eprintln!("--- the key state: the keyed permutation alone ---");
+    eprintln!("AES128Internal  {:>7} B", size_of::<AES128Internal>());
+    eprintln!("AES192Internal  {:>7} B", size_of::<AES192Internal>());
+    eprintln!("AES256Internal  {:>7} B", size_of::<AES256Internal>());
 
     eprintln!(
-        "--- the trait adapters: CcmPacket + AAD_LEN + bookkeeping, independent of DATA_LEN ---"
+        "--- the trait pair: `Ccm` state + AAD_LEN + bookkeeping, independent of DATA_LEN ---"
     );
-    eprintln!("CcmEncryptor<.., {AAD_LEN}, {DATA_LEN}> {:>7} B", size_of::<Aes128CcmEncryptor>());
-    eprintln!("CcmDecryptor<.., {AAD_LEN}, {DATA_LEN}> {:>7} B", size_of::<Aes128CcmDecryptor>());
     eprintln!(
-        "CcmEncryptor<.., 64, 240>      {:>7} B",
-        size_of::<CcmEncryptor<AES128Internal, 16, 16, NONCE_LEN, TAG_LEN, 64, 240>>()
+        "CcmPacketEncryptor<'_, .., {AAD_LEN}, {DATA_LEN}> {:>7} B",
+        size_of::<Aes128CcmEncryptor>()
+    );
+    eprintln!(
+        "CcmPacketDecryptor<'_, .., {AAD_LEN}, {DATA_LEN}> {:>7} B",
+        size_of::<Aes128CcmDecryptor>()
+    );
+    eprintln!(
+        "CcmPacketEncryptor<'_, .., 64, 240>      {:>7} B",
+        size_of::<CcmPacketEncryptor<'_, AES128Internal, 16, NONCE_LEN, TAG_LEN, 64, 240>>()
+    );
+    eprintln!(
+        "CcmPacketEncryptor<'_, .., 7, 4, ..>     {:>7} B",
+        size_of::<CcmPacketEncryptor<'_, AES128Internal, 16, 7, 4, AAD_LEN, DATA_LEN>>()
+    );
+    eprintln!(
+        "CcmPacketEncryptor<'_, AES256Internal>   {:>7} B",
+        size_of::<CcmPacketEncryptor<'_, AES256Internal, 16, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>>(
+        )
     );
 
-    print!("{}", size_of::<Aes128Ccm<Encrypting>>());
+    print!("{}", size_of::<Aes128CcmEncryptor>());
 }
 
-/// The direct path over the message: `CcmPacket` plus the caller's own buffers, and nothing else.
-/// This is the baseline for `bench_streaming_encrypt`, `bench_streaming_decrypt` and
-/// `bench_oneshot_encrypt_out_detached`.
+/// The in-place path over the message: the `Ccm` state plus the caller's one buffer, and
+/// nothing else. This is the baseline for `bench_streaming_encrypt`, `bench_streaming_decrypt`
+/// and `bench_oneshot_encrypt_out_detached`.
 #[inline(never)]
-fn bench_direct_encrypt_detached() {
-    eprintln!("CcmPacket::encrypt_detached_out, {MESSAGE_LEN} B");
+fn bench_in_place_encrypt() {
+    eprintln!("CCM::encrypt_detached_in_place_nonce, {MESSAGE_LEN} B");
 
-    let k = key::<16>();
+    let perm = perm();
     let nonce = [0x24u8; NONCE_LEN];
-    let plaintext = message();
-    let plaintext = core::hint::black_box(&plaintext);
-    let mut ciphertext = [0u8; MESSAGE_LEN];
-    let (_, tag) =
-        Aes128Ccm::<Encrypting>::encrypt_detached_out(&k, &nonce, &[], plaintext, &mut ciphertext)
-            .unwrap();
+    let mut data = message();
+    let data = core::hint::black_box(&mut data);
+    let tag = Aes128CcmMode::encrypt_detached_in_place_nonce(&perm, &nonce, &[], data).unwrap();
     print!("{:x?}", &tag);
 }
 
-/// The same message through the trait encryptor's **streaming** methods: `do_encrypt_init`
-/// builds the value, `do_update_out` writes each chunk's ciphertext straight out, and the final
-/// returns the tag. The caller's two arrays are the whole of the stack that scales.
+/// The same message through the frame key's **streaming** encryptor: `create_encryptor` builds
+/// the value under a drawn nonce, `do_encrypt_out` writes each chunk's ciphertext straight out,
+/// and the final returns the tag. The caller's two arrays are the whole of the stack that scales.
 #[inline(never)]
 fn bench_streaming_encrypt() {
     eprintln!(
-        "CcmEncryptor do_encrypt_init/do_update_out/do_encrypt_final_detached_out, {MESSAGE_LEN} B in 1 KiB chunks"
+        "CcmPacketEncryptor create_encryptor/do_encrypt_out/do_encrypt_final_detached_out, {MESSAGE_LEN} B in 1 KiB chunks"
     );
 
-    let k = key::<16>();
+    let k = frame_key();
+    let mut rng = HashDRBG_SHA512::new_from_os();
     let plaintext = message();
     let plaintext = core::hint::black_box(&plaintext);
     let mut ciphertext = [0u8; MESSAGE_LEN];
-    let (mut enc, _nonce) = Aes128CcmEncryptor::do_encrypt_init(&k).unwrap();
+    let (mut enc, _nonce) = k.create_encryptor(&mut rng).unwrap();
     let mut written = 0;
     for chunk in plaintext.chunks(1024) {
         written += enc.do_encrypt_out(chunk, &mut ciphertext[written..]).unwrap();
@@ -167,27 +178,30 @@ fn bench_streaming_encrypt() {
 /// The decrypting side of the same comparison, with the tag inline: the decryptor releases each
 /// chunk's plaintext as it arrives into the caller's `opened` array and holds back only the tag.
 ///
-/// The sealed message is produced in place with the direct streaming API, so that the bench
-/// holds two arrays -- `sealed` and `opened` -- like `bench_direct_encrypt_detached` does, and
-/// only the streaming decrypt is under measurement.
+/// The sealed message is produced in place with the mode's one-shot, so that the bench holds
+/// two arrays -- `sealed` and `opened` -- and only the streaming decrypt is under measurement.
 #[inline(never)]
 fn bench_streaming_decrypt() {
     eprintln!(
-        "CcmDecryptor do_decrypt_init/do_update_out/do_decrypt_final, {MESSAGE_LEN} B in 1 KiB chunks"
+        "CcmPacketDecryptor create_decryptor/do_decrypt_out/do_decrypt_final, {MESSAGE_LEN} B in 1 KiB chunks"
     );
 
-    let k = key::<16>();
+    let k = frame_key();
     let nonce = [0x24u8; NONCE_LEN];
     let mut sealed = [0u8; MESSAGE_LEN + TAG_LEN];
     sealed[..MESSAGE_LEN].fill(core::hint::black_box(0xA5));
-    let mut ccm = Aes128Ccm::<Encrypting>::new(&k, &nonce, &[], MESSAGE_LEN).unwrap();
-    ccm.do_encrypt_inplace(&mut sealed[..MESSAGE_LEN]).unwrap();
-    let tag = ccm.do_encrypt_final().unwrap();
+    let tag = Aes128CcmMode::encrypt_detached_in_place_nonce(
+        &perm(),
+        &nonce,
+        &[],
+        &mut sealed[..MESSAGE_LEN],
+    )
+    .unwrap();
     sealed[MESSAGE_LEN..].copy_from_slice(&tag);
     let sealed = core::hint::black_box(&sealed);
 
     let mut opened = [0u8; MESSAGE_LEN];
-    let mut dec = Aes128CcmDecryptor::do_decrypt_init(&k, &nonce).unwrap();
+    let mut dec = k.create_decryptor(&nonce);
     let mut written = 0;
     for chunk in sealed.chunks(1024) {
         written += dec.do_decrypt_out(chunk, &mut opened[written..]).unwrap();
@@ -196,38 +210,19 @@ fn bench_streaming_decrypt() {
     print!("{}", written + m);
 }
 
-/// The trait encryptor's **one-shot**, which calls `CcmPacket::encrypt_detached_out` under a generated
-/// nonce, so it should measure what `bench_direct_encrypt_detached` measures plus the DRBG the
-/// nonce is drawn from -- no adapter value and no `AAD_LEN` buffer.
+/// The frame key's **one-shot**, written over its stream, into the caller's output buffer under
+/// a nonce drawn from the caller's DRBG, so it should measure what `bench_streaming_encrypt`
+/// measures plus that DRBG.
 #[inline(never)]
 fn bench_oneshot_encrypt_out_detached() {
-    eprintln!("CcmEncryptor::encrypt_detached_out, {MESSAGE_LEN} B");
+    eprintln!("AES128Key<CCM_Packet>::encrypt_detached_out, {MESSAGE_LEN} B");
 
-    let k = key::<16>();
+    let k = frame_key();
+    let mut rng = HashDRBG_SHA512::new_from_os();
     let plaintext = message();
     let plaintext = core::hint::black_box(&plaintext);
     let mut ciphertext = [0u8; MESSAGE_LEN];
-    let (_, _, tag) =
-        Aes128CcmEncryptor::encrypt_detached_out(&k, &[], plaintext, &mut ciphertext).unwrap();
-    print!("{:x?}", &tag);
-}
-
-/// The streaming direct path, which is what a caller in SP 800-38C Sec 3's packet environment
-/// with a run-time length should use: the payload length is declared up front and encrypted in
-/// place, so peak stack is the `CcmPacket` value plus one array.
-#[inline(never)]
-fn bench_direct_streaming() {
-    eprintln!("CcmPacket::do_encrypt_inplace, {MESSAGE_LEN} B in 1 KiB chunks");
-
-    let k = key::<16>();
-    let nonce = [0x24u8; NONCE_LEN];
-    let mut data = message();
-    let data = core::hint::black_box(&mut data);
-    let mut ccm = Aes128Ccm::<Encrypting>::new(&k, &nonce, &[], data.len()).unwrap();
-    for chunk in data.chunks_mut(1024) {
-        ccm.do_encrypt_inplace(chunk).unwrap();
-    }
-    let tag = ccm.do_encrypt_final().unwrap();
+    let (_, _, tag) = k.encrypt_detached_out(&mut rng, &[], plaintext, &mut ciphertext).unwrap();
     print!("{:x?}", &tag);
 }
 
@@ -235,11 +230,10 @@ fn main() {
     let which = std::env::args().nth(1).unwrap_or_default();
     match which.as_str() {
         "nothing" => bench_do_nothing(),
-        "direct" => bench_direct_encrypt_detached(),
+        "in_place" => bench_in_place_encrypt(),
         "stream_enc" => bench_streaming_encrypt(),
         "stream_dec" => bench_streaming_decrypt(),
         "oneshot" => bench_oneshot_encrypt_out_detached(),
-        "direct_stream" => bench_direct_streaming(),
         _ => print_struct_sizes(),
     }
 }

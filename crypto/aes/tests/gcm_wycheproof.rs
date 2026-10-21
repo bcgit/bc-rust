@@ -19,10 +19,10 @@
 //! # Ciphertext and tag are separate fields
 //!
 //! Wycheproof's AEAD schema (`aead_test_schema_v1`) carries `ct` and `tag` as distinct fields, so
-//! these cases go through the detached pair, [`AEADCipherEncryptor::encrypt_detached_rng_out`] /
-//! [`AEADCipherDecryptor::decrypt_detached_out`]. [`Gcm`] generates its own nonce, so the vector's
-//! `iv` is supplied through a `FixedSeedRNG` and the returned nonce is asserted to be exactly that
-//! IV, the same technique as `gcm_bc-test-data.rs`.
+//! these cases go through the key's detached pair, `encrypt_detached_out` /
+//! `decrypt_detached_out`. The key draws its own nonce, so the vector's `iv` is supplied through
+//! a `FixedSeedRNG` and the returned nonce is asserted to be exactly that IV, the same technique
+//! as `gcm_bc-test-data.rs`.
 //!
 //! # Only the 96-bit-IV groups can be dispatched to, by design
 //!
@@ -36,16 +36,13 @@
 //! 128-bit tag, which is within the `12..=16` bytes `Gcm` accepts, so the tag size never rules a
 //! case out.
 
-use bouncycastle_aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
-use bouncycastle_cipher::modes::ModeNames;
-use bouncycastle_cipher::modes::{GCM_NONCE_LEN, Gcm};
-use bouncycastle_cipher::{Decrypting, Encrypting};
+use bouncycastle_aes::{AES128Key, AES192Key, AES256Key};
+use bouncycastle_cipher::modes::{GCM, GCM_NONCE_LEN};
 use bouncycastle_core::errors::SymmetricCipherError;
-use bouncycastle_core::hazmat::ElectronicCodeBook;
 use bouncycastle_core::hazmat::do_hazardous_operations;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::traits::{AEADCipherDecryptor, AEADCipherEncryptor};
+use bouncycastle_core::symmetric_key::{AeadDecryptionKey, AeadEncryptionKey, FromKeyMaterial};
 use bouncycastle_core_test_framework::FixedSeedRNG;
 use bouncycastle_core_test_framework::test_data_loaders::{Value, hex_field, wycheproof_json};
 
@@ -74,7 +71,7 @@ fn cipher_key<const N: usize>(bytes: &[u8]) -> KeyMaterial<N> {
 /// reason to reproduce a deliberately corrupted tag -- and it must fail the tag check rather than
 /// return a payload, leaving the caller's buffer zeroized as the trait contract requires.
 #[allow(clippy::too_many_arguments)]
-fn run_case<const KEY_LEN: usize, const TAG_LEN: usize, P>(
+fn run_case<const KEY_LEN: usize, const TAG_LEN: usize, K>(
     tc_id: u64,
     key_bytes: &[u8],
     iv: [u8; GCM_NONCE_LEN],
@@ -84,22 +81,18 @@ fn run_case<const KEY_LEN: usize, const TAG_LEN: usize, P>(
     expected_tag: &[u8],
     valid: bool,
 ) where
-    P: ElectronicCodeBook<KEY_LEN, 16> + ModeNames,
+    K: FromKeyMaterial<KEY_LEN>
+        + AeadEncryptionKey<KEY_LEN, GCM_NONCE_LEN, TAG_LEN, TAG_LEN>
+        + AeadDecryptionKey<KEY_LEN, GCM_NONCE_LEN, TAG_LEN, TAG_LEN>,
 {
-    let key = cipher_key::<KEY_LEN>(key_bytes);
+    let key = K::from_key_material(&cipher_key::<KEY_LEN>(key_bytes)).expect("a wycheproof key");
     let tag: [u8; TAG_LEN] =
         expected_tag.try_into().unwrap_or_else(|_| panic!("tcId {tc_id}: bad tag length"));
 
     if valid {
         let mut ct = vec![0u8; msg.len()];
-        let (got_iv, written, got_tag) =
-            Gcm::<P, Encrypting, KEY_LEN, TAG_LEN>::encrypt_detached_rng_out(
-                &key,
-                &mut FixedSeedRNG::<GCM_NONCE_LEN>::new(iv),
-                aad,
-                msg,
-                &mut ct,
-            )
+        let (written, got_iv, got_tag) = key
+            .encrypt_detached_out(&mut FixedSeedRNG::<GCM_NONCE_LEN>::new(iv), aad, msg, &mut ct)
             .unwrap_or_else(|e| panic!("tcId {tc_id}: valid case failed to encrypt: {e:?}"));
         assert_eq!(got_iv, iv, "tcId {tc_id}: the seeded RNG must reproduce the vector's IV");
         assert_eq!(written, msg.len(), "tcId {tc_id}: encrypt_detached writes exactly msg.len()");
@@ -108,9 +101,7 @@ fn run_case<const KEY_LEN: usize, const TAG_LEN: usize, P>(
     }
 
     let mut plaintext = vec![0u8; expected_ct.len()];
-    match Gcm::<P, Decrypting, KEY_LEN, TAG_LEN>::decrypt_detached_out(
-        &key, &iv, aad, expected_ct, &tag, &mut plaintext,
-    ) {
+    match key.decrypt_detached_out(&iv, aad, expected_ct, &tag, &mut plaintext) {
         Ok(n) => {
             assert!(valid, "tcId {tc_id}: an invalid vector decrypted and verified anyway");
             plaintext.truncate(n);
@@ -150,13 +141,13 @@ fn dispatch(
         return false;
     }
     match key_bytes.len() {
-        16 => run_case::<16, 16, AES128Internal>(
+        16 => run_case::<16, 16, AES128Key<GCM>>(
             tc_id, key_bytes, iv, aad, msg, expected_ct, expected_tag, valid,
         ),
-        24 => run_case::<24, 16, AES192Internal>(
+        24 => run_case::<24, 16, AES192Key<GCM>>(
             tc_id, key_bytes, iv, aad, msg, expected_ct, expected_tag, valid,
         ),
-        32 => run_case::<32, 16, AES256Internal>(
+        32 => run_case::<32, 16, AES256Key<GCM>>(
             tc_id, key_bytes, iv, aad, msg, expected_ct, expected_tag, valid,
         ),
         _ => return false,

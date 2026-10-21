@@ -47,6 +47,10 @@ name = "cfb_tests"
 path = "tests/modes/cfb_tests.rs"
 
 [[test]]
+name = "cmac_tests"
+path = "tests/modes/cmac_tests.rs"
+
+[[test]]
 name = "ctr_tests"
 path = "tests/modes/ctr_tests.rs"
 
@@ -57,6 +61,10 @@ path = "tests/modes/ecb_tests.rs"
 [[test]]
 name = "gcm_tests"
 path = "tests/modes/gcm_tests.rs"
+
+[[test]]
+name = "gmac_tests"
+path = "tests/modes/gmac_tests.rs"
 
 [[test]]
 name = "symmetric_cipher_api_tests"
