@@ -239,8 +239,8 @@ fn appendix_c4() {
         // No chunking sweep here: with a 64 KiB AAD every extra pass through Sec 6.1 or 6.2 is a
         // 4096-block CBC-MAC, and the sweep alone made this the slowest test in the crate. What it
         // pins, chunking invisibility, is pinned on C.1 to C.3 above and exhaustively over the toy
-        // in `ccm_tests.rs`; what only C.4 can pin, the six-octet AAD length and `q = 2`, needs one
-        // pass.
+        // in `crypto/cipher/tests/modes/ccm_tests.rs`; what only C.4 can pin, the six-octet AAD
+        // length and `q = 2`, needs one pass.
         false,
     );
 }
@@ -1146,12 +1146,9 @@ fn sizes_match_the_documented_memory_table() {
     assert_eq!(dec_64, enc_64 + 16 + 8);
 }
 
-// ---- moved from crypto/cipher/src/modes/ccm.rs's in-file unit tests -----------------------------
+// ---- payload length limit ----------------------------------------------------------------
 
 /// A.1's `p < 2^8q`. With `n = 13`, `q = 2`, so the limit is 65535 and 65536 must be refused.
-///
-/// Only the public API is exercised, so this belongs here rather than in `ccm.rs`'s own
-/// `#[cfg(test)]` block, which is for the private formatting helpers no public API reaches.
 #[test]
 fn payload_longer_than_the_q_limit_is_refused() {
     let k = key::<16>(APPENDIX_C_KEY);

@@ -1,16 +1,14 @@
-//! Tests for the padded AES-CBC aliases.
+//! Tests for the padded AES-CBC and AES-ECB aliases.
 //!
-//! The aliases are only type aliases, so what is worth testing is that they name the *right* types
-//! and that both parameters actually select: the direction picks the encryptor or the decryptor, and
-//! the padding scheme changes the behaviour rather than being decorative. The mode and the padding
-//! layer are tested in their own crates; this checks the wiring between them.
+//! The aliases are only type aliases, so what is worth testing is that both parameters actually
+//! select: the direction picks the encryptor or the decryptor, and the padding scheme changes the
+//! behaviour rather than being decorative. The mode and the padding layer are tested in their own
+//! crates; this checks the wiring between them. Which type each alias resolves to is pinned in
+//! `alias_tests.rs`.
 
-use bouncycastle_aes::hazmat::AES128Internal;
+use bouncycastle_aes::hazmat::{AES_ECB_128, AES_ECB_192, AES_ECB_256};
 use bouncycastle_aes::{AES_CBC_128, AES_CBC_192, AES_CBC_256};
-use bouncycastle_cipher::modes::Cbc;
-use bouncycastle_cipher::padding::{
-    NoPadding, PKCS7, PaddedBlockCipherDecryptor, PaddedBlockCipherEncryptor,
-};
+use bouncycastle_cipher::padding::{NoPadding, PKCS7};
 use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
@@ -20,45 +18,14 @@ fn key<const N: usize>() -> KeyMaterial<N> {
     KeyMaterial::<N>::from_bytes_as_type(&bytes, KeyType::SymmetricCipherKey).expect("a valid key")
 }
 
-/// The aliases must resolve to exactly the adapters they claim to, at both directions.
-///
-/// A type alias that quietly resolved to something else -- the wrong padding, the wrong direction,
-/// the wrong key length -- would still compile everywhere it is used, so this pins the projection
-/// itself by asserting the layouts coincide with the fully spelled-out types.
-#[test]
-fn the_aliases_name_the_expected_types() {
-    use core::mem::size_of;
-
-    assert_eq!(
-        size_of::<AES_CBC_128<Encrypting, PKCS7>>(),
-        size_of::<
-            PaddedBlockCipherEncryptor<Cbc<AES128Internal, Encrypting, 16, 16>, PKCS7, 16, 16, 16>,
-        >()
-    );
-    assert_eq!(
-        size_of::<AES_CBC_128<Decrypting, PKCS7>>(),
-        size_of::<
-            PaddedBlockCipherDecryptor<Cbc<AES128Internal, Decrypting, 16, 16>, PKCS7, 16, 16, 16>,
-        >()
-    );
-
-    // The two directions are genuinely different types, so the encryptor and the decryptor do not
-    // have to agree in size -- and here they do not, which is itself evidence the projection
-    // selected two different adapters rather than one.
-    assert_ne!(
-        size_of::<AES_CBC_128<Encrypting, PKCS7>>(),
-        size_of::<AES_CBC_128<Decrypting, PKCS7>>()
-    );
-}
-
-/// Every key length round-trips through its alias, at a length that needs padding and one that does
-/// not.
+/// Every key length round-trips through its alias, at lengths that need padding and lengths that
+/// do not.
 #[test]
 fn every_key_length_round_trips() {
-    fn check<const N: usize, Enc, Dec>(name: &str)
+    fn check<const N: usize, const IV_LEN: usize, Enc, Dec>(name: &str)
     where
-        Enc: SymmetricCipherEncryptor<N, 16, 16>,
-        Dec: SymmetricCipherDecryptor<N, 16, 16>,
+        Enc: SymmetricCipherEncryptor<N, IV_LEN, 16>,
+        Dec: SymmetricCipherDecryptor<N, IV_LEN, 16>,
     {
         for len in [0usize, 1, 15, 16, 17, 63, 64] {
             let plaintext: Vec<u8> = (0..len).map(|i| (i * 11 + 3) as u8).collect();
@@ -76,9 +43,12 @@ fn every_key_length_round_trips() {
         }
     }
 
-    check::<16, AES_CBC_128<Encrypting, PKCS7>, AES_CBC_128<Decrypting, PKCS7>>("AES-128");
-    check::<24, AES_CBC_192<Encrypting, PKCS7>, AES_CBC_192<Decrypting, PKCS7>>("AES-192");
-    check::<32, AES_CBC_256<Encrypting, PKCS7>, AES_CBC_256<Decrypting, PKCS7>>("AES-256");
+    check::<16, 16, AES_CBC_128<Encrypting, PKCS7>, AES_CBC_128<Decrypting, PKCS7>>("CBC-128");
+    check::<24, 16, AES_CBC_192<Encrypting, PKCS7>, AES_CBC_192<Decrypting, PKCS7>>("CBC-192");
+    check::<32, 16, AES_CBC_256<Encrypting, PKCS7>, AES_CBC_256<Decrypting, PKCS7>>("CBC-256");
+    check::<16, 0, AES_ECB_128<Encrypting, PKCS7>, AES_ECB_128<Decrypting, PKCS7>>("ECB-128");
+    check::<24, 0, AES_ECB_192<Encrypting, PKCS7>, AES_ECB_192<Decrypting, PKCS7>>("ECB-192");
+    check::<32, 0, AES_ECB_256<Encrypting, PKCS7>, AES_ECB_256<Decrypting, PKCS7>>("ECB-256");
 }
 
 /// The padding parameter must actually select the scheme, not merely be carried around.
@@ -88,23 +58,29 @@ fn every_key_length_round_trips() {
 /// parameter reaches the behaviour.
 #[test]
 fn the_padding_parameter_selects_the_scheme() {
-    type Pkcs7Enc = AES_CBC_128<Encrypting, PKCS7>;
-    type NoPadEnc = AES_CBC_128<Encrypting, NoPadding>;
+    fn check<const IV_LEN: usize, Pkcs7Enc, NoPadEnc>(name: &str)
+    where
+        Pkcs7Enc: SymmetricCipherEncryptor<16, IV_LEN, 16>,
+        NoPadEnc: SymmetricCipherEncryptor<16, IV_LEN, 16>,
+    {
+        // A whole block: both schemes accept it, and they disagree about the length.
+        let aligned = [0x5Au8; 16];
+        let (_, pkcs7) = Pkcs7Enc::encrypt(&key::<16>(), &aligned).expect("PKCS7 accepts it");
+        let (_, nopad) = NoPadEnc::encrypt(&key::<16>(), &aligned).expect("NoPadding accepts it");
+        assert_eq!(pkcs7.len(), 32, "{name}: PKCS7 adds a whole block of padding to aligned data");
+        assert_eq!(nopad.len(), 16, "{name}: NoPadding adds nothing");
 
-    // A whole block: both schemes accept it, and they disagree about the length.
-    let aligned = [0x5Au8; 16];
-    let (_, pkcs7) = Pkcs7Enc::encrypt(&key::<16>(), &aligned).expect("PKCS7 accepts aligned data");
-    let (_, nopad) = NoPadEnc::encrypt(&key::<16>(), &aligned).expect("NoPadding accepts it too");
-    assert_eq!(pkcs7.len(), 32, "PKCS7 adds a whole block of padding to aligned data");
-    assert_eq!(nopad.len(), 16, "NoPadding adds nothing");
+        // Five bytes: PKCS7 pads it, NoPadding refuses rather than silently padding.
+        let unaligned = b"hello";
+        assert!(Pkcs7Enc::encrypt(&key::<16>(), unaligned).is_ok(), "{name}: PKCS7 pads it");
+        assert!(
+            NoPadEnc::encrypt(&key::<16>(), unaligned).is_err(),
+            "{name}: NoPadding must refuse a message that is not a whole number of blocks"
+        );
+    }
 
-    // Five bytes: PKCS7 pads it, NoPadding refuses rather than silently padding.
-    let unaligned = b"hello";
-    assert!(Pkcs7Enc::encrypt(&key::<16>(), unaligned).is_ok(), "PKCS7 pads a partial block");
-    assert!(
-        NoPadEnc::encrypt(&key::<16>(), unaligned).is_err(),
-        "NoPadding must refuse a message that is not a whole number of blocks"
-    );
+    check::<16, AES_CBC_128<Encrypting, PKCS7>, AES_CBC_128<Encrypting, NoPadding>>("CBC");
+    check::<0, AES_ECB_128<Encrypting, PKCS7>, AES_ECB_128<Encrypting, NoPadding>>("ECB");
 }
 
 /// A ciphertext made under one scheme must not decrypt cleanly under the other.
@@ -132,7 +108,7 @@ fn the_two_schemes_are_not_interchangeable() {
 
 /// The IV is generated per encryption, so the same plaintext gives different ciphertext.
 #[test]
-fn each_encryption_gets_a_fresh_iv() {
+fn each_cbc_encryption_gets_a_fresh_iv() {
     let plaintext = [0x77u8; 32];
     let mut seen = std::collections::BTreeSet::new();
     for _ in 0..16 {
@@ -141,6 +117,37 @@ fn each_encryption_gets_a_fresh_iv() {
         let back = AES_CBC_128::<Decrypting, PKCS7>::decrypt(&key::<16>(), &iv, &ct).unwrap();
         assert_eq!(back, plaintext);
     }
+}
+
+/// ECB has no IV, so the init data is an empty array and the ciphertext is exactly the padded
+/// plaintext with nothing prepended. That is the difference from the CBC aliases, and it comes from
+/// the `INIT_DATA_LEN = 0` the projection is given.
+#[test]
+fn ecb_has_no_iv() {
+    let (no_iv, ciphertext) =
+        AES_ECB_128::<Encrypting, PKCS7>::encrypt(&key::<16>(), b"hello").expect("encryption");
+    assert_eq!(no_iv, [0u8; 0], "ECB has no IV, so the init data is empty");
+    assert_eq!(ciphertext.len(), 16, "five bytes padded to one block, nothing prepended");
+
+    let recovered =
+        AES_ECB_128::<Decrypting, PKCS7>::decrypt(&key::<16>(), &no_iv, &ciphertext).unwrap();
+    assert_eq!(recovered, b"hello");
+}
+
+/// Padding does not fix ECB: identical plaintext blocks still give identical ciphertext blocks, and
+/// the same message under the same key always gives the same ciphertext. The aliases carry the
+/// warning; this is the test that it is warranted.
+#[test]
+fn padding_does_not_hide_the_ecb_codebook_property() {
+    // Two identical blocks give two identical ciphertext blocks.
+    let (_, ciphertext) =
+        AES_ECB_128::<Encrypting, NoPadding>::encrypt(&key::<16>(), &[0x5Au8; 32]).unwrap();
+    assert_eq!(ciphertext[..16], ciphertext[16..], "ECB is a codebook, padded or not");
+
+    // ...and encryption is deterministic, there being no IV to vary.
+    let (_, a) = AES_ECB_128::<Encrypting, PKCS7>::encrypt(&key::<16>(), b"hello").unwrap();
+    let (_, b) = AES_ECB_128::<Encrypting, PKCS7>::encrypt(&key::<16>(), b"hello").unwrap();
+    assert_eq!(a, b, "the same message encrypts the same way every time");
 }
 
 /// The allocating streaming wrappers `do_encrypt` / `do_decrypt` return exactly what their `_out`

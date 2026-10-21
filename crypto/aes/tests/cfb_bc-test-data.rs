@@ -2,8 +2,8 @@
 //!
 //! Requires `bc-test-data` to be cloned alongside this repository, i.e. at `../bc-test-data`
 //! relative to the root of this git project. If it is absent the test prints a warning and passes,
-//! matching the convention used by the ML-KEM, ML-DSA, `aes` and AES-CBC suites --
-//! `cargo test` must stay green for someone who has only cloned this repository.
+//! matching the other vector suites in this crate and the ML-KEM and ML-DSA ones -- `cargo test`
+//! must stay green for someone who has only cloned this repository.
 //!
 //! This is the CFB128 counterpart to `cbc_bc-test-data.rs` (AES-CBC) and to
 //! `ecb_bc-test-data.rs` (AES-ECB, the raw permutation). The `CFB128` file is
@@ -28,9 +28,9 @@
 //! [`ElectronicCodeBook::encrypt_2blocks`] and [`ElectronicCodeBook::encrypt_4blocks`], the
 //! *forward* function, even on the decrypt side -- and the fourth is what puts them through the
 //! byte path with segments left open between calls. So all of that is exercised against real
-//! vectors and not only against the toys in `cfb_tests.rs`. Every ACVP CFB128 payload is a whole
-//! number of blocks, so the short final segment is not covered here (it is not covered by any
-//! official vector); `cfb_tests.rs` pins it against the raw permutation.
+//! vectors and not only against the toys in `crypto/cipher/tests/modes/cfb_tests.rs`. Every ACVP
+//! CFB128 payload is a whole number of blocks, so the short final segment is not covered here (it
+//! is not covered by any official vector); `cfb_tests.rs` pins it against the raw permutation.
 //!
 //! The 6 MCT (Monte Carlo Test) groups are **not** implemented: their expected output is a
 //! `resultsArray` produced by a chained update rule defined in the ACVP AES specification rather

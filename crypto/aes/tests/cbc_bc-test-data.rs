@@ -2,7 +2,7 @@
 //!
 //! Requires `bc-test-data` to be cloned alongside this repository, i.e. at `../bc-test-data`
 //! relative to the root of this git project. If it is absent the test prints a warning and passes,
-//! matching the convention used by the ML-KEM, ML-DSA and `aes` suites -- `cargo test`
+//! matching the other vector suites in this crate and the ML-KEM and ML-DSA ones -- `cargo test`
 //! must stay green for someone who has only cloned this repository.
 //!
 //! These are the counterpart to `ecb_bc-test-data.rs`, which consumes the
@@ -22,7 +22,8 @@
 //! including 60 whose payload spans 2 to 10 blocks. Every case is run **twice**: once block by
 //! block, and once in pairs with a one-block remainder for odd lengths. The second pass is what
 //! puts the multi-block cases through `ElectronicCodeBook::decrypt_2blocks`, so the pair path is
-//! exercised against real vectors and not only against the toy in `cbc_tests.rs`.
+//! exercised against real vectors and not only against the toy in
+//! `crypto/cipher/tests/modes/cbc_tests.rs`.
 //!
 //! The 6 MCT (Monte Carlo Test) groups are **not** implemented: their expected output is a
 //! `resultsArray` produced by a chained update rule defined in the ACVP AES specification rather
