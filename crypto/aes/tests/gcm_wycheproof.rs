@@ -107,7 +107,9 @@ fn run_case<const KEY_LEN: usize, const TAG_LEN: usize, P>(
         assert_eq!(got_tag, tag, "tcId {tc_id}: tag mismatch");
     }
 
-    let mut plaintext = vec![0u8; expected_ct.len()];
+    // Pre-filled with a non-zero byte, so a buffer the decryptor never wrote is not mistaken for
+    // one it zeroized.
+    let mut plaintext = vec![0xEEu8; expected_ct.len()];
     match Gcm::<P, Decrypting, KEY_LEN, TAG_LEN>::decrypt_detached_out(
         &key, &iv, aad, expected_ct, &tag, &mut plaintext,
     ) {

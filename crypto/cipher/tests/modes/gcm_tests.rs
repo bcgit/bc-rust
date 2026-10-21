@@ -239,6 +239,28 @@ fn one_shot_releases_nothing_on_forgery_but_streaming_does() {
     }
 }
 
+/// The streaming detached final decrypts the held-back tail into the caller's buffer before it
+/// checks the tag, so on a forged tag it must zeroize that buffer before returning the error.
+#[test]
+fn streaming_detached_final_zeroizes_its_buffer_on_forgery() {
+    let key = toy_key();
+    let message = *b"do not trust me yet";
+    let (nonce, ct, mut tag) = toy_encrypt::<16>(b"aad", &message, [0xAFu8; 12]);
+    tag[0] ^= 0xFF; // forge it
+
+    let mut dec = ToyGcm::<Decrypting, 16>::do_decrypt_init(&key, &nonce).unwrap();
+    dec.do_update_aad(b"aad").unwrap();
+    dec.do_decrypt_out(&ct, &mut [0u8; 19]).unwrap();
+    // Pre-filled with a non-zero byte, so a buffer the decryptor never wrote is not mistaken for
+    // one it zeroized.
+    let mut final_buf = [0xEEu8; 16];
+    match dec.do_decrypt_final_detached_out(&tag, &mut final_buf) {
+        Err(SymmetricCipherError::AEADTagCheckFailed) => {}
+        other => panic!("expected AEADTagCheckFailed, got {other:?}"),
+    }
+    assert_eq!(final_buf, [0u8; 16], "the held-back tail must not survive a forged tag");
+}
+
 /// SP 800-38D Sec 5.1: "GCM does not employ the inverse cipher function." GCTR (Sec 6.5) applies
 /// `CIPH_K` to counter blocks in both directions and GHASH (Sec 6.4) is field arithmetic, so a
 /// permutation that implements only the forward direction works. [`ForwardOnlyToy`] panics from

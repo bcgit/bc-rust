@@ -236,11 +236,15 @@ fn tampered_final_block_is_rejected() {
         let (iv, n) = Enc::encrypt_out(&key, &msg(len), &mut ct).unwrap();
         // flipping the low bit of the final byte corrupts the PKCS7 length byte
         ct[n - 1] ^= 0x01;
-        let mut out = vec![0u8; n];
+        // Pre-filled with a non-zero byte, so a buffer the decryptor never wrote is not mistaken
+        // for one it zeroized. At `B + 5` the first block has been decrypted into `out` by the
+        // time the padding fails, and `decrypt_out` must wipe it.
+        let mut out = vec![0xEEu8; n];
         match Dec::decrypt_out(&key, &iv, &ct, &mut out) {
             Err(SymmetricCipherError::PaddingError(PaddingError::InvalidPadding)) => {}
             other => panic!("len {len}: expected InvalidPadding, got {other:?}"),
         }
+        assert!(out.iter().all(|&b| b == 0), "len {len}: a failed decrypt must zeroize `out`");
     }
 }
 
