@@ -1695,12 +1695,9 @@ pub trait SymmetricCipherDecryptor<
     /// [`SymmetricCipherEncryptor::do_encrypt_init`].
     ///
     /// # Errors
-    /// Rejects a key whose [`KeyType`] is not [`KeyType::SymmetricCipherKey`], one bound to a
-    /// different algorithm (see [`KeyMaterialTrait::algorithm`]), and one whose security strength
-    /// is below [`Algorithm::MAX_SECURITY_STRENGTH`], all as a
+    /// Rejects a key whose [`KeyType`] is not [`KeyType::SymmetricCipherKey`], and one whose
+    /// security strength is below [`Algorithm::MAX_SECURITY_STRENGTH`], both as a
     /// [`SymmetricCipherError::KeyMaterialError`].
-    ///
-    /// [`KeyMaterialTrait::algorithm`]: crate::key_material::KeyMaterialTrait::algorithm
     fn do_decrypt_init(
         key: &KeyMaterial<KEY_LEN>,
         init_data: &[u8; INIT_DATA_LEN],
@@ -1892,12 +1889,9 @@ pub trait SymmetricCipherEncryptor<
     /// randomness from the library's default OS-backed RNG.
     ///
     /// # Errors
-    /// Rejects a key whose [`KeyType`] is not [`KeyType::SymmetricCipherKey`], one bound to a
-    /// different algorithm (see [`KeyMaterialTrait::algorithm`]), and one whose security strength
-    /// is below [`Algorithm::MAX_SECURITY_STRENGTH`], all as a
+    /// Rejects a key whose [`KeyType`] is not [`KeyType::SymmetricCipherKey`], and one whose
+    /// security strength is below [`Algorithm::MAX_SECURITY_STRENGTH`], both as a
     /// [`SymmetricCipherError::KeyMaterialError`].
-    ///
-    /// [`KeyMaterialTrait::algorithm`]: crate::key_material::KeyMaterialTrait::algorithm
     fn do_encrypt_init(
         key: &KeyMaterial<KEY_LEN>,
     ) -> Result<(Self, [u8; INIT_DATA_LEN]), SymmetricCipherError>;

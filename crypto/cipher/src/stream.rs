@@ -23,7 +23,7 @@
 use crate::{Decrypting, Encrypting};
 use bouncycastle_core::errors::{SuspendableError, SymmetricCipherError};
 use bouncycastle_core::hazmat::KeyStream;
-use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait};
+use bouncycastle_core::key_material::KeyMaterial;
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{
     Algorithm, RNG, StreamCipherDecryptor, StreamCipherEncryptor, SuspendableKeyed,
@@ -232,7 +232,6 @@ where
         Self::check_shape();
         let mut init_data = [0u8; INIT_DATA_LEN];
         rng.next_bytes_out(&mut init_data)?;
-        key.check_algorithm(Self::ALG_NAME)?;
         let keystream = KS::new(key, &init_data)?;
         Ok((Self::from_keystream(keystream), init_data))
     }
@@ -292,7 +291,6 @@ where
         init_data: &[u8; INIT_DATA_LEN],
     ) -> Result<Self, SymmetricCipherError> {
         Self::check_shape();
-        key.check_algorithm(Self::ALG_NAME)?;
         Ok(Self::from_keystream(KS::new(key, init_data)?))
     }
 
