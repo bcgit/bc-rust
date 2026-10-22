@@ -6,7 +6,7 @@
 
 mod common;
 
-use bouncycastle_cipher::modes::hazmat::{CtrKeyStream, Ecb};
+use bouncycastle_cipher::modes::hazmat::ecb::Ecb;
 use bouncycastle_cipher::modes::{
     Cbc, CcmDecryptor, CcmEncryptor, CcmPacket, Cfb, Cfb8, Ctr, Gcm, ModeNames,
 };
@@ -51,7 +51,6 @@ fn each_mode_reports_its_own_name() {
     check::<Cfb<Toy, Decrypting, 16, 16>>(Toy::CFB_ALG_NAME);
     check::<Cfb8<Toy, Encrypting, 16, 16>>(Toy::CFB8_ALG_NAME);
     check::<Cfb8<Toy, Decrypting, 16, 16>>(Toy::CFB8_ALG_NAME);
-    check::<CtrKeyStream<Toy, 16, 16, 12>>(Toy::CTR_ALG_NAME);
     check::<Gcm<Toy, Encrypting, 16, 16>>(Toy::GCM_ALG_NAME);
     check::<Gcm<Toy, Decrypting, 16, 16>>(Toy::GCM_ALG_NAME);
     check::<CcmPacket<Toy, Encrypting, 16, 16, 12, 16>>(Toy::CCM_ALG_NAME);

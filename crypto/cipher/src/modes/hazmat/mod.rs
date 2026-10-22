@@ -11,8 +11,5 @@
 //! grep -rnE --include='*.rs' 'use .*::hazmat::'
 //! ```
 
-mod ctr_key_stream;
-mod ecb;
-
-pub use ctr_key_stream::CtrKeyStream;
-pub use ecb::Ecb;
+pub(crate) mod ctr_key_stream;
+pub mod ecb;

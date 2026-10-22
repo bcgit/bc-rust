@@ -14,7 +14,7 @@ use bouncycastle_aes::{
     AES_CFB8_128, AES_CFB8_192, AES_CFB8_256, AES_CTR_128, AES_CTR_192, AES_CTR_256, AES_GCM_128,
     AES_GCM_192, AES_GCM_256, CCM_NONCE_LEN, CCM_TAG_LEN,
 };
-use bouncycastle_cipher::modes::hazmat::Ecb;
+use bouncycastle_cipher::modes::hazmat::ecb::Ecb;
 use bouncycastle_cipher::modes::{Cbc, Gcm};
 use bouncycastle_cipher::padding::{
     NoPadding, PKCS7, PaddedBlockCipherDecryptor, PaddedBlockCipherEncryptor,

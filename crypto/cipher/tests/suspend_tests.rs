@@ -8,7 +8,7 @@
 //! The AES aliases get the same impls through these generic types, so this is where they are
 //! pinned; `bouncycastle-aes` only checks that each alias reaches them.
 
-use bouncycastle_cipher::modes::hazmat::Ecb;
+use bouncycastle_cipher::modes::hazmat::ecb::Ecb;
 use bouncycastle_cipher::modes::{Cbc, CcmPacket, Cfb, Cfb8, Ctr, Gcm};
 use bouncycastle_cipher::padding::{PKCS7, PaddedBlockCipherDecryptor, PaddedBlockCipherEncryptor};
 use bouncycastle_cipher::{Decrypting, Encrypting};

@@ -24,7 +24,7 @@
 //! criterion's untimed setup (`iter_batched`); the copy is not part of the timing.
 
 use bouncycastle_aes::hazmat::{AES128Internal, AES256Internal};
-use bouncycastle_cipher::modes::hazmat::Ecb;
+use bouncycastle_cipher::modes::hazmat::ecb::Ecb;
 use bouncycastle_cipher::modes::{Cbc, CcmPacket, Cfb, Cfb8, Ctr, GCM_NONCE_LEN, Gcm};
 use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};

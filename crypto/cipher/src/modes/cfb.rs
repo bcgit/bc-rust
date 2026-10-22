@@ -81,40 +81,7 @@
 //! assert_eq!(data, *b"the quick brown fox!!");
 //! ```
 //!
-//! Streaming works with chunks of any size:
-//!
-//! ```
-//! # mod toy { include!("../../tests/common/toy_block_cipher.rs"); }
-//! # use toy::ToyBlockCipher;
-//! use bouncycastle_core::key_material::{KeyMaterial128, KeyType};
-//! use bouncycastle_core::traits::{
-//!     StreamCipherDecryptor, StreamCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor
-//! };
-//! use bouncycastle_cipher::modes::Cfb;
-//! use bouncycastle_cipher::{Decrypting, Encrypting};
-//!
-//! type ToyCfb<Dir> = Cfb<ToyBlockCipher, Dir, 16, 16>;
-//!
-//! let key = KeyMaterial128::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
-//!     .expect("a 16-byte symmetric cipher key");
-//! let mut data = [0x5Au8; 40];
-//!
-//! let (mut encryptor, iv) = ToyCfb::<Encrypting>::do_encrypt_init(&key).expect("init");
-//!
-//! // Just to prove that this can handle arbitrary sizes, we'll feed in
-//! //  7 bytes, then 33: neither is a whole block.
-//! let bytes_written = encryptor.do_encrypt_inplace(&mut data[..7]).expect("first chunk");
-//! assert_eq!(bytes_written, 7);
-//!
-//! let bytes_written = encryptor.do_encrypt_inplace(&mut data[7..]).expect("the rest");
-//! assert_eq!(bytes_written, 33);
-//!
-//! // Decrypting in a different chunking must also agree.
-//! let mut decryptor = ToyCfb::<Decrypting>::do_decrypt_init(&key, &iv).expect("init");
-//! decryptor.do_decrypt_inplace(&mut data[..19]).expect("first chunk");
-//! decryptor.do_decrypt_inplace(&mut data[19..]).expect("the rest");
-//! assert_eq!(data, [0x5Au8; 40]);
-//! ```
+//! Other usage modes, such as streaming, behave the same as [`ctr`](crate::modes::ctr).
 //!
 //! # Suspending and resuming execution
 //!

@@ -167,7 +167,7 @@
 use crate::modes::Ctr;
 use crate::modes::ModeNames;
 use crate::modes::ghash::{GHASH_STATE_LEN, Ghash};
-use crate::modes::hazmat::CtrKeyStream;
+use crate::modes::hazmat::ctr_key_stream::CtrKeyStream;
 use crate::{Decrypting, Encrypting};
 use bouncycastle_core::errors::{SuspendableError, SymmetricCipherError};
 use bouncycastle_core::hazmat::ElectronicCodeBook;

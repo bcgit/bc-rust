@@ -18,7 +18,7 @@
 //! # use toy::ToyBlockCipher;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 //! use bouncycastle_core::traits::{BlockCipherDecryptor, BlockCipherEncryptor};
-//! use bouncycastle_cipher::modes::hazmat::Ecb;
+//! use bouncycastle_cipher::modes::hazmat::ecb::Ecb;
 //! use bouncycastle_cipher::{Decrypting, Encrypting};
 //!
 //! type ToyEcb<Dir> = Ecb<ToyBlockCipher, Dir, 16, 16>;

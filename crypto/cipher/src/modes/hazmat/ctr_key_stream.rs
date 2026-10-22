@@ -1,4 +1,5 @@
-//! The CTR keystream, [`CtrKeyStream`]: a raw [`KeyStream`], used through [`Ctr`].
+//! The CTR keystream (NIST SP 800-38A Sec 6.5), [`CtrKeyStream`]: a raw [`KeyStream`], used
+//! through [`Ctr`].
 
 use crate::modes::ModeNames;
 use crate::modes::ctr::apply_counter_blocks;
@@ -16,8 +17,8 @@ use crate::modes::Ctr;
 use crate::stream::StreamCipher;
 // end of imports needed for docs
 
-/// The CTR keystream `Oj = CIPH_K(Tj)` over any [`ElectronicCodeBook`], with `Tj = N | [j]m`;
-/// see the module docs. Use it through [`Ctr`].
+/// The CTR keystream `Oj = CIPH_K(Tj)` (SP 800-38A Sec 6.5) over any [`ElectronicCodeBook`], with
+/// `Tj = N | [j]m` (SP 800-38A Appendix B.2); see the module docs. Use it through [`Ctr`].
 ///
 /// # 🚨 Security Considerations 🚨
 /// A raw [`KeyStream`]: constructed directly, it takes the nonce from the caller and does not
@@ -201,18 +202,26 @@ where
     }
 }
 
+/// The toys the `tests/modes` integration tests use, shared with the unit tests below rather than
+/// copied. Declared here, not inside `mod tests`, so that `#[path]` is relative to this file.
+#[cfg(test)]
+#[path = "../../../tests/modes/common/mod.rs"]
+mod modes_common;
+
 #[cfg(test)]
 mod tests {
-    //! Unit tests for `start_at`, which is `pub(crate)` and so cannot be reached from
-    //! `tests/ctr_tests.rs` -- exactly the "high-risk code that cannot be reached through the
-    //! public API" case QUALITY_AND_STYLE.md carves out for a unit test here rather than an
+    //! Unit tests for [`CtrKeyStream`], which is `pub(crate)` and so cannot be reached from
+    //! `tests/modes/ctr_tests.rs` -- exactly the "high-risk code that cannot be reached through
+    //! the public API" case QUALITY_AND_STYLE.md carves out for a unit test here rather than an
     //! integration test.
 
+    use super::modes_common::{ForwardOnlyToy, TOY_LEN, Toy};
     use super::*;
     use crate::Encrypting;
     use bouncycastle_core::hazmat::ElectronicCodeBook;
     use bouncycastle_core::key_material::{KeyMaterial, KeyType};
     use bouncycastle_core::traits::StreamCipherEncryptor;
+    use bouncycastle_core_test_framework::key_stream::TestFrameworkKeyStream;
     use toy::ToyBlockCipher;
 
     mod toy {
@@ -261,5 +270,28 @@ mod tests {
     fn start_at_capacity_is_block_limit_minus_the_starting_counter() {
         let ks = ToyKeyStream::start_at(ToyBlockCipher::new(&key()).unwrap(), [0u8; 12], 2);
         assert_eq!(ks.remaining_blocks(), ToyKeyStream::BLOCK_LIMIT - 2);
+    }
+
+    /// The keystream under the mode, on its own: over the toy at the default nonce length and at
+    /// the one-byte-counter length, and over [`ForwardOnlyToy`] so that whatever the framework
+    /// drives through the batch paths is shown to get there without the inverse cipher.
+    #[test]
+    fn ctr_keystream_conforms_to_the_key_stream_framework() {
+        let framework = TestFrameworkKeyStream::new();
+        framework.test::<TOY_LEN, 12, TOY_LEN, CtrKeyStream<Toy, TOY_LEN, TOY_LEN, 12>>();
+        framework.test::<TOY_LEN, 15, TOY_LEN, CtrKeyStream<Toy, TOY_LEN, TOY_LEN, 15>>();
+        framework
+            .test::<TOY_LEN, 12, TOY_LEN, CtrKeyStream<ForwardOnlyToy, TOY_LEN, TOY_LEN, 12>>();
+    }
+
+    /// The keystream reports the permutation's CTR name, not its bare `ALG_NAME`; `Ctr` forwards
+    /// it, which `tests/modes/alg_name_tests.rs` checks.
+    #[test]
+    fn ctr_keystream_reports_the_ctr_name() {
+        assert_eq!(CtrKeyStream::<Toy, 16, 16, 12>::ALG_NAME, Toy::CTR_ALG_NAME);
+        assert_eq!(
+            CtrKeyStream::<Toy, 16, 16, 12>::MAX_SECURITY_STRENGTH,
+            Toy::MAX_SECURITY_STRENGTH
+        );
     }
 }

@@ -14,7 +14,7 @@
 //! counter would repeat, which for a keystream mode means reusing keystream: the two-time-pad
 //! failure, within a single message.
 //!
-//! So [`Ctr`] **refuses** rather than wraps. [`CtrKeyStream`] reports how many counter values are
+//! So [`Ctr`] **refuses** rather than wraps. Its keystream, `CtrKeyStream`, reports how many counter values are
 //! left, and a call that would need more keystream than that returns
 //! [`SymmetricCipherError::DataLimitExceeded`] and consumes nothing -- [`StreamCipher`] makes the check up
 //! front, against the whole call, so a message is never half-encrypted before the mode notices.
@@ -30,6 +30,72 @@
 //!
 //! Like the rest of CFB and CTR, only the **forward** cipher function is ever used, in both
 //! directions, so a permutation that implements only `encrypt_block` works here.
+//!
+//! # Usage Examples
+//!
+//! The direction is part of the type: [`Ctr<P, Encrypting, ..>`](Ctr) implements
+//! [`StreamCipherEncryptor`] and [`Ctr<P, Decrypting, ..>`](Ctr) implements
+//! [`StreamCipherDecryptor`]. The data can be any length, and the ciphertext is exactly as long as
+//! the plaintext:
+//!
+//! ```
+//! # mod toy { include!("../../tests/common/toy_block_cipher.rs"); }
+//! # use toy::ToyBlockCipher;
+//! use bouncycastle_core::key_material::{KeyMaterial128, KeyType};
+//! use bouncycastle_core::traits::{StreamCipherDecryptor, StreamCipherEncryptor};
+//! use bouncycastle_cipher::modes::Ctr;
+//! use bouncycastle_cipher::{Decrypting, Encrypting};
+//!
+//! // A 12-byte nonce, leaving a 4-byte counter.
+//! type ToyCtr<Dir> = Ctr<ToyBlockCipher, Dir, 16, 16, 12>;
+//!
+//! let key = KeyMaterial128::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
+//!     .expect("a 16-byte symmetric cipher key");
+//!
+//! let plaintext = b"the quick brown fox!!";
+//! let mut data = *plaintext;
+//!
+//! let (bytes_written, nonce) = ToyCtr::<Encrypting>::encrypt_inplace(&key, &mut data).expect("encryption");
+//! assert_eq!(bytes_written, plaintext.len());
+//!
+//! ToyCtr::<Decrypting>::decrypt_inplace(&key, &nonce, &mut data).expect("decryption");
+//! assert_eq!(data, *plaintext);
+//! ```
+//!
+//! Streaming works with chunks of any size:
+//!
+//! ```
+//! # mod toy { include!("../../tests/common/toy_block_cipher.rs"); }
+//! # use toy::ToyBlockCipher;
+//! use bouncycastle_core::key_material::{KeyMaterial128, KeyType};
+//! use bouncycastle_core::traits::{
+//!     StreamCipherDecryptor, StreamCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor
+//! };
+//! use bouncycastle_cipher::modes::Ctr;
+//! use bouncycastle_cipher::{Decrypting, Encrypting};
+//!
+//! type ToyCtr<Dir> = Ctr<ToyBlockCipher, Dir, 16, 16, 12>;
+//!
+//! let key = KeyMaterial128::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
+//!     .expect("a 16-byte symmetric cipher key");
+//! let mut data = [0x5Au8; 40];
+//!
+//! let (mut encryptor, nonce) = ToyCtr::<Encrypting>::do_encrypt_init(&key).expect("init");
+//!
+//! // Just to prove that this can handle arbitrary sizes, we'll feed in
+//! //  7 bytes, then 33: neither is a whole block.
+//! let bytes_written = encryptor.do_encrypt_inplace(&mut data[..7]).expect("first chunk");
+//! assert_eq!(bytes_written, 7);
+//!
+//! let bytes_written = encryptor.do_encrypt_inplace(&mut data[7..]).expect("the rest");
+//! assert_eq!(bytes_written, 33);
+//!
+//! // Decrypting in a different chunking must also agree.
+//! let mut decryptor = ToyCtr::<Decrypting>::do_decrypt_init(&key, &nonce).expect("init");
+//! decryptor.do_decrypt_inplace(&mut data[..19]).expect("first chunk");
+//! decryptor.do_decrypt_inplace(&mut data[19..]).expect("the rest");
+//! assert_eq!(data, [0x5Au8; 40]);
+//! ```
 //!
 //! # Suspending and resuming execution
 //!
@@ -54,7 +120,7 @@
 //! counter blocks distinct.
 
 use crate::modes::ModeNames;
-use crate::modes::hazmat::CtrKeyStream;
+use crate::modes::hazmat::ctr_key_stream::CtrKeyStream;
 use crate::stream::StreamCipher;
 use bouncycastle_core::hazmat::ElectronicCodeBook;
 use bouncycastle_utils::secret::Secret;
@@ -67,7 +133,7 @@ use bouncycastle_core::traits::{StreamCipherDecryptor, StreamCipherEncryptor};
 // end of imports needed for docs
 
 /// CTR mode over any [`ElectronicCodeBook`] permutation function, with the direction encoded in the type: the
-/// [`CtrKeyStream`] wrapped in a [`StreamCipher`].
+/// crate-private CTR keystream, `CtrKeyStream`, wrapped in a [`StreamCipher`].
 ///
 /// The counter block is the init data (the nonce) followed by a counter filling the rest of the
 /// block, so `INIT_DATA_LEN` chooses the counter length; see the module docs. `Dir` is

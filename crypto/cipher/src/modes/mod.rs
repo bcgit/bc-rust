@@ -38,7 +38,7 @@
 //! CBC, CFB, CFB8 and CTR all generate their own init data: an IV for the first three, a nonce for
 //! CTR, which is shorter than a block because the rest of the counter block is the counter. ECB has
 //! none at all (`INIT_DATA_LEN = 0`) and is the raw permutation applied block by block, which is
-//! why it lives under [`hazmat`] -- see [`hazmat::Ecb`] and
+//! why it lives under [`hazmat`] -- see [`hazmat::ecb::Ecb`] and
 //! [Choosing between the modes](#choosing-between-the-modes).
 //!
 //! [Choosing between the modes](#choosing-between-the-modes) covers when each is the right answer
@@ -172,9 +172,9 @@ pub trait ModeNames {
     const CFB_ALG_NAME: &'static str;
     /// Reported by [`Cfb8`].
     const CFB8_ALG_NAME: &'static str;
-    /// Reported by [`Ctr`], through its keystream [`hazmat::CtrKeyStream`].
+    /// Reported by [`Ctr`], through its keystream.
     const CTR_ALG_NAME: &'static str;
-    /// Reported by [`hazmat::Ecb`].
+    /// Reported by [`hazmat::ecb::Ecb`].
     const ECB_ALG_NAME: &'static str;
     /// Reported by [`Gcm`].
     const GCM_ALG_NAME: &'static str;

@@ -23,7 +23,6 @@
 
 mod common;
 
-use bouncycastle_cipher::modes::hazmat::CtrKeyStream;
 use bouncycastle_cipher::modes::{Ctr, ModeNames};
 use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::errors::SymmetricCipherError;
@@ -34,7 +33,6 @@ use bouncycastle_core::traits::{
     SymmetricCipherEncryptor,
 };
 use bouncycastle_core_test_framework::FixedSeedRNG;
-use bouncycastle_core_test_framework::key_stream::TestFrameworkKeyStream;
 use bouncycastle_core_test_framework::symmetric_ciphers::TestFrameworkStreamCipher;
 use common::{ForwardOnlyToy, SwappedFourToy, SwappedPairToy, TOY_LEN, Toy, toy_key};
 
@@ -107,27 +105,6 @@ const CHUNKINGS: [usize; 12] = [1, 3, 5, 7, 15, 16, 17, 31, 32, 33, 64, 100];
 fn ctr_conforms_to_the_stream_cipher_framework() {
     TestFrameworkStreamCipher::new()
         .test::<TOY_LEN, NONCE_LEN, ToyCtr<Encrypting>, ToyCtr<Decrypting>>();
-}
-
-/// The keystream under the mode, on its own: over the toy at the default nonce length and at the
-/// one-byte-counter length, and over [`ForwardOnlyToy`] so that whatever the framework drives
-/// through the batch paths is shown to get there without the inverse cipher.
-#[test]
-fn ctr_keystream_conforms_to_the_key_stream_framework() {
-    let framework = TestFrameworkKeyStream::new();
-    framework.test::<TOY_LEN, NONCE_LEN, TOY_LEN, CtrKeyStream<Toy, TOY_LEN, TOY_LEN, NONCE_LEN>>();
-    framework.test::<
-        TOY_LEN,
-        SHORT_CTR_NONCE_LEN,
-        TOY_LEN,
-        CtrKeyStream<Toy, TOY_LEN, TOY_LEN, SHORT_CTR_NONCE_LEN>,
-    >();
-    framework.test::<
-        TOY_LEN,
-        NONCE_LEN,
-        TOY_LEN,
-        CtrKeyStream<ForwardOnlyToy, TOY_LEN, TOY_LEN, NONCE_LEN>,
-    >();
 }
 
 // ---- the spec equations -------------------------------------------------------------------
