@@ -35,18 +35,6 @@ impl TestFrameworkBlockCipher {
         )
         .unwrap();
 
-        // to test blocks, we'll chunk our dummy seed
-        let (mut encryptor, iv) = E::do_encrypt_init(&key).unwrap();
-        let mut decryptor = D::do_decrypt_init(&key, &iv).unwrap();
-
-        // one block at a time, through the flat streaming methods (LEN = BLOCK_LEN), in place
-        for msg_chunk in DUMMY_SEED.as_chunks::<BLOCK_LEN>().0.iter() {
-            let mut buf = *msg_chunk;
-            encryptor.do_encrypt_inplace(&mut buf).unwrap();
-            decryptor.do_decrypt_inplace(&mut buf).unwrap();
-            assert_eq!(msg_chunk, &buf);
-        }
-
         // multi-block (two at a time) through the implementor hook `do_*_blocks`: blocks encrypted together
         // must decrypt both together and one at a time, and blocks encrypted one at a time must
         // decrypt together.
@@ -64,14 +52,14 @@ impl TestFrameworkBlockCipher {
             let mut buf = *msg_pair;
             encryptor.do_encrypt_blocks_inplace(&mut buf).unwrap();
             for (msg_chunk, block) in msg_pair.iter().zip(buf.iter_mut()) {
-                decryptor.do_decrypt_inplace(block).unwrap();
+                decryptor.do_decrypt_blocks_inplace(block.as_chunks_mut().0).unwrap();
                 assert_eq!(msg_chunk, block);
             }
 
             // encrypt one at a time, decrypt together
             let mut buf = *msg_pair;
             for block in buf.iter_mut() {
-                encryptor.do_encrypt_inplace(block).unwrap();
+                encryptor.do_encrypt_blocks_inplace(block.as_chunks_mut().0).unwrap();
             }
             decryptor.do_decrypt_blocks_inplace(&mut buf).unwrap();
             assert_eq!(msg_pair, &buf);
@@ -92,8 +80,43 @@ impl TestFrameworkBlockCipher {
         // ...and it must agree with the streaming API under the same init data.
         let mut streamed = D::do_decrypt_init(&key, &iv).unwrap();
         let mut buf = ct;
-        streamed.do_decrypt_inplace(&mut buf).unwrap();
+        streamed.do_decrypt_blocks_inplace(buf.as_chunks_mut().0).unwrap();
         assert_eq!(buf, *one_block);
+
+        // The one-shots take a runtime length, so they must refuse data that is not a whole number
+        // of blocks, before touching it.
+        for len in [1, BLOCK_LEN - 1, BLOCK_LEN + 1, 2 * BLOCK_LEN + 1] {
+            let mut bad = DUMMY_SEED[..len].to_vec();
+            assert!(
+                matches!(
+                    E::encrypt_inplace(&key, &mut bad),
+                    Err(SymmetricCipherError::DataNotBlockAligned)
+                ),
+                "len {len}: an unaligned plaintext must be refused"
+            );
+            // The RNG one-shot is only driven for a cipher with init data; see below.
+            if INIT_DATA_LEN > 0 {
+                assert!(
+                    matches!(
+                        E::encrypt_rng_inplace(
+                            &key,
+                            &mut FixedSeedRNG::<INIT_DATA_LEN>::new([0xA5u8; INIT_DATA_LEN]),
+                            &mut bad
+                        ),
+                        Err(SymmetricCipherError::DataNotBlockAligned)
+                    ),
+                    "len {len}: an unaligned plaintext must be refused by the RNG one-shot"
+                );
+            }
+            assert!(
+                matches!(
+                    D::decrypt_inplace(&key, &iv, &mut bad),
+                    Err(SymmetricCipherError::DataNotBlockAligned)
+                ),
+                "len {len}: an unaligned ciphertext must be refused"
+            );
+            assert_eq!(bad, DUMMY_SEED[..len], "len {len}: refused data must be untouched");
+        }
 
         // The RNG-taking constructor is only exercised for a cipher that has init data to
         // generate. Its contract requires an implementation with `INIT_DATA_LEN == 0` (ECB) to
@@ -105,7 +128,7 @@ impl TestFrameworkBlockCipher {
             let (mut streamed, iv_streamed) =
                 E::do_encrypt_init_rng(&key, &mut FixedSeedRNG::<INIT_DATA_LEN>::new(pinned))
                     .unwrap();
-            streamed.do_encrypt_inplace(&mut expected).unwrap();
+            streamed.do_encrypt_blocks_inplace(expected.as_chunks_mut().0).unwrap();
             let mut buf = *one_block;
             let (n, iv) = E::encrypt_rng_inplace(
                 &key,

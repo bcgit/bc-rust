@@ -76,7 +76,7 @@ fn blocks(hex_strs: &[&str; 4]) -> [[u8; BLOCK_LEN]; 4] {
     core::array::from_fn(|i| block(hex_strs[i]))
 }
 
-/// The same four blocks as 64 contiguous bytes, for the flat streaming and one-shot methods.
+/// The same four blocks as 64 contiguous bytes, for the one-shot methods and the whole-message calls.
 fn flat(hex_strs: &[&str; 4]) -> [u8; 4 * BLOCK_LEN] {
     blocks(hex_strs).as_flattened().try_into().expect("4 blocks = 64 bytes")
 }
@@ -90,8 +90,8 @@ fn key_material<const N: usize>(hex_str: &str) -> KeyMaterial<N> {
 
 /// Runs one Appendix F.2 encrypt subsection.
 ///
-/// Checks the whole message in one call, then again one block at a time, then again through the
-/// implementor hook -- the vector should not care how the calls are grouped.
+/// Checks the whole message in one call, then again one block at a time -- the vector should not
+/// care how the calls are grouped.
 fn check_encrypt<P, const KEY_LEN: usize>(section: &str, key_hex: &str, expected: &[&str; 4])
 where
     P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
@@ -109,7 +109,7 @@ where
     .unwrap();
     assert_eq!(got_iv, iv, "{section}: the pinned RNG should produce the vector's IV");
     let mut data = flat(&PLAINTEXTS);
-    enc.do_encrypt_inplace(&mut data).unwrap();
+    enc.do_encrypt_blocks_inplace(data.as_chunks_mut().0).unwrap();
     assert_eq!(data, flat(expected), "{section}: four blocks in one call");
 
     // One block at a time.
@@ -120,19 +120,9 @@ where
     .unwrap();
     for (i, (p, c)) in pt.iter().zip(ct.iter()).enumerate() {
         let mut got = *p;
-        enc.do_encrypt_inplace(&mut got).unwrap();
+        enc.do_encrypt_blocks_inplace(got.as_chunks_mut().0).unwrap();
         assert_eq!(&got, c, "{section}: block #{}", i + 1);
     }
-
-    // Through the implementor hook, `do_*_blocks`.
-    let (mut enc, _) = Cbc::<P, Encrypting, KEY_LEN, BLOCK_LEN>::do_encrypt_init_rng(
-        &key,
-        &mut FixedSeedRNG::<BLOCK_LEN>::new(iv),
-    )
-    .unwrap();
-    let mut blocks = pt;
-    enc.do_encrypt_blocks_inplace(&mut blocks).unwrap();
-    assert_eq!(blocks, ct, "{section}: implementor hook");
 }
 
 /// Runs one Appendix F.2 decrypt subsection.
@@ -153,31 +143,25 @@ where
     // All four blocks in one call (two pairs, no remainder).
     let mut dec = Dec::<P, KEY_LEN>::do_decrypt_init(&key, &iv).unwrap();
     let mut data = flat(ciphertext);
-    dec.do_decrypt_inplace(&mut data).unwrap();
+    dec.do_decrypt_blocks_inplace(data.as_chunks_mut().0).unwrap();
     assert_eq!(data, flat(&PLAINTEXTS), "{section}: four blocks in one call");
 
     // One block at a time (never takes the pair path).
     let mut dec = Dec::<P, KEY_LEN>::do_decrypt_init(&key, &iv).unwrap();
     for (i, (c, p)) in ct.iter().zip(pt.iter()).enumerate() {
         let mut got = *c;
-        dec.do_decrypt_inplace(&mut got).unwrap();
+        dec.do_decrypt_blocks_inplace(got.as_chunks_mut().0).unwrap();
         assert_eq!(&got, p, "{section}: block #{}", i + 1);
     }
 
     // 3 + 1: one pair plus a remainder, then a lone block.
     let mut dec = Dec::<P, KEY_LEN>::do_decrypt_init(&key, &iv).unwrap();
     let mut three: [u8; 3 * BLOCK_LEN] = ct[..3].as_flattened().try_into().unwrap();
-    dec.do_decrypt_inplace(&mut three).unwrap();
+    dec.do_decrypt_blocks_inplace(three.as_chunks_mut().0).unwrap();
     let mut one = ct[3];
-    dec.do_decrypt_inplace(&mut one).unwrap();
+    dec.do_decrypt_blocks_inplace(one.as_chunks_mut().0).unwrap();
     assert_eq!(&three[..], pt[..3].as_flattened(), "{section}: blocks 1-3");
     assert_eq!(one, pt[3], "{section}: block 4");
-
-    // Through the implementor hook, `do_*_blocks`.
-    let mut dec = Dec::<P, KEY_LEN>::do_decrypt_init(&key, &iv).unwrap();
-    let mut blocks = ct;
-    dec.do_decrypt_blocks_inplace(&mut blocks).unwrap();
-    assert_eq!(blocks, pt, "{section}: implementor hook");
 }
 
 #[test]
@@ -238,7 +222,7 @@ fn cbc_differs_from_ecb_by_the_iv() {
     )
     .unwrap();
     let mut cbc = block(PLAINTEXTS[0]);
-    enc.do_encrypt_inplace(&mut cbc).unwrap();
+    enc.do_encrypt_blocks_inplace(cbc.as_chunks_mut().0).unwrap();
     assert_eq!(cbc, block(CIPHERTEXTS_128[0]), "F.2.1 block #1");
     assert_ne!(cbc, ecb);
 }

@@ -85,7 +85,7 @@ fn bench_aes128cbc(c: &mut Criterion) {
                 for chunk in scratch.chunks_exact_mut(8) {
                     let arr: &mut [u8; 8 * BLOCK_LEN] =
                         chunk.as_flattened_mut().try_into().unwrap();
-                    enc.do_encrypt_inplace(arr).unwrap();
+                    enc.do_encrypt_blocks_inplace(arr.as_chunks_mut().0).unwrap();
                 }
                 black_box(&scratch);
             },
@@ -108,7 +108,7 @@ fn bench_aes128cbc(c: &mut Criterion) {
                 for chunk in scratch.chunks_exact_mut(8) {
                     let arr: &mut [u8; 8 * BLOCK_LEN] =
                         chunk.as_flattened_mut().try_into().unwrap();
-                    dec.do_decrypt_inplace(arr).unwrap();
+                    dec.do_decrypt_blocks_inplace(arr.as_chunks_mut().0).unwrap();
                 }
                 black_box(&scratch);
             },
@@ -290,7 +290,7 @@ fn bench_ecb_aes128(c: &mut Criterion) {
                 for chunk in scratch.chunks_exact_mut(8) {
                     let arr: &mut [u8; 8 * BLOCK_LEN] =
                         chunk.as_flattened_mut().try_into().unwrap();
-                    enc.do_encrypt_inplace(arr).unwrap();
+                    enc.do_encrypt_blocks_inplace(arr.as_chunks_mut().0).unwrap();
                 }
                 black_box(&scratch);
             },

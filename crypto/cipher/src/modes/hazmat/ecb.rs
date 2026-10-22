@@ -174,7 +174,6 @@ where
         )
     }
 
-    /// The implementor hook (the flat `do_encrypt_inplace` is provided over it):
     /// `Cj = CIPH_K(Pj)` for every block, in place.
     ///
     /// Sec 6.1 allows the forward cipher functions to "be computed in parallel", so the blocks go
@@ -215,7 +214,6 @@ where
         Self::new(key)
     }
 
-    /// The implementor hook (the flat `do_decrypt_inplace` is provided over it):
     /// `Pj = CIPH^-1_K(Cj)` for every block, in place -- fours, then pairs, then the remaining
     /// block, as on the encrypt side. Never fails.
     fn do_decrypt_blocks_inplace(

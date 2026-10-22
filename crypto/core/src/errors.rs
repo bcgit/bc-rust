@@ -175,6 +175,9 @@ pub enum SymmetricCipherError {
     /// input and left the cipher's state untouched, so the bytes that still fit can be processed
     /// in a shorter call; the rest needs a fresh encryption under new init data.
     DataLimitExceeded,
+    /// The data is not a whole number of blocks, for a block cipher operation that takes only
+    /// whole blocks: a misaligned block-cipher ciphertext is malformed. Nothing was processed.
+    DataNotBlockAligned,
     ///
     KeyMaterialError(KeyMaterialError),
     ///

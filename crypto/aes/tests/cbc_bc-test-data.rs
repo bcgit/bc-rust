@@ -89,7 +89,7 @@ where
             Grouping::Single => {
                 for block in input {
                     let mut c = *block;
-                    enc.do_encrypt_inplace(&mut c).unwrap();
+                    enc.do_encrypt_blocks_inplace(c.as_chunks_mut().0).unwrap();
                     out.push(c);
                 }
             }
@@ -102,7 +102,7 @@ where
                 }
                 for block in tail {
                     let mut c = *block;
-                    enc.do_encrypt_inplace(&mut c).unwrap();
+                    enc.do_encrypt_blocks_inplace(c.as_chunks_mut().0).unwrap();
                     out.push(c);
                 }
             }
@@ -115,7 +115,7 @@ where
             Grouping::Single => {
                 for block in input {
                     let mut p = *block;
-                    dec.do_decrypt_inplace(&mut p).unwrap();
+                    dec.do_decrypt_blocks_inplace(p.as_chunks_mut().0).unwrap();
                     out.push(p);
                 }
             }
@@ -128,7 +128,7 @@ where
                 }
                 for block in tail {
                     let mut p = *block;
-                    dec.do_decrypt_inplace(&mut p).unwrap();
+                    dec.do_decrypt_blocks_inplace(p.as_chunks_mut().0).unwrap();
                     out.push(p);
                 }
             }

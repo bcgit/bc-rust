@@ -1,6 +1,6 @@
 //! Tests for PaddedBlockCipherEncryptor / PaddedBlockCipherDecryptor.
 //!
-//! No real block cipher exists in the workspace yet, so these tests drive the adapters with a toy
+//! No real block cipher exists in the this crate, so these tests drive the adapters with a toy
 //! CBC-style cipher whose "block permutation" is XOR with the key. It is cryptographically worthless
 //! but exercises every code path of the adapters: IV generation, chaining state across calls, and
 //! the one-block lag on decryption.
@@ -261,12 +261,12 @@ fn malformed_ciphertext_lengths_are_rejected() {
     // not a multiple of the block length
     assert!(matches!(
         Dec::decrypt_out(&key, &iv, &[0u8; B + 1], &mut out),
-        Err(SymmetricCipherError::DecryptionFailed)
+        Err(SymmetricCipherError::DataNotBlockAligned)
     ));
     // streaming: partial trailing block at final
     let mut dec = Dec::do_decrypt_init(&key, &iv).unwrap();
     dec.do_decrypt_out(&[0u8; B + 3], &mut out).unwrap();
-    assert!(matches!(dec.do_decrypt_final(), Err(SymmetricCipherError::DecryptionFailed)));
+    assert!(matches!(dec.do_decrypt_final(), Err(SymmetricCipherError::DataNotBlockAligned)));
     // streaming: nothing fed at all
     let dec = Dec::do_decrypt_init(&key, &iv).unwrap();
     assert!(matches!(dec.do_decrypt_final(), Err(SymmetricCipherError::DecryptionFailed)));
@@ -362,7 +362,7 @@ fn no_padding_adds_nothing_to_aligned_data() {
     }
 }
 
-/// An unaligned message is refused with `PaddingNotPermitted`, from the one-shot and from a
+/// An unaligned message is refused with `DataNotBlockAligned`, from the one-shot and from a
 /// streaming `do_encrypt_final`, and nothing is written for the final block.
 #[test]
 fn no_padding_refuses_unaligned_data() {
@@ -373,7 +373,7 @@ fn no_padding_refuses_unaligned_data() {
         assert!(
             matches!(
                 EncNP::encrypt_out(&key, &pt, &mut ct),
-                Err(SymmetricCipherError::PaddingError(PaddingError::PaddingNotPermitted))
+                Err(SymmetricCipherError::DataNotBlockAligned)
             ),
             "len {len}: one-shot must refuse an unaligned message"
         );
@@ -383,10 +383,7 @@ fn no_padding_refuses_unaligned_data() {
         let mut buf = vec![0u8; whole];
         assert_eq!(enc.do_encrypt_out(&pt, &mut buf).unwrap(), whole, "whole blocks still stream");
         assert!(
-            matches!(
-                enc.do_encrypt_final(),
-                Err(SymmetricCipherError::PaddingError(PaddingError::PaddingNotPermitted))
-            ),
+            matches!(enc.do_encrypt_final(), Err(SymmetricCipherError::DataNotBlockAligned)),
             "len {len}: do_encrypt_final must refuse the buffered partial block"
         );
     }
@@ -408,7 +405,7 @@ fn no_padding_decryptor_accepts_empty_and_rejects_unaligned() {
         assert!(
             matches!(
                 DecNP::decrypt_out(&key, &iv, &msg(len), &mut out),
-                Err(SymmetricCipherError::DecryptionFailed)
+                Err(SymmetricCipherError::DataNotBlockAligned)
             ),
             "len {len}: an unaligned ciphertext is malformed"
         );
