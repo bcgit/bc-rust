@@ -13,16 +13,14 @@
 #![cfg(all(
     target_arch = "aarch64",
     target_endian = "little",
-    target_feature = "aes",
-    target_feature = "neon"
+    target_feature = "neon",
+    any(target_feature = "aes", feature = "std")
 ))]
 
 mod common;
 
-use bouncycastle_arm::aes::{
-    Block, RoundKeys128, RoundKeys192, RoundKeys256, decrypt_blocks, encrypt_blocks,
-    equivalent_inverse_round_keys, expand_128, expand_192, expand_256,
-};
+use bouncycastle_arm::CryptoExtensions;
+use bouncycastle_arm::aes::{Block, RoundKeys128, RoundKeys192, RoundKeys256};
 use bouncycastle_hex as hex;
 use common::{Xorshift, hex_block, hex_bytes};
 
@@ -84,19 +82,22 @@ fn check_expansion<const N: usize>(key_hex: &str, w: &[Block; N], expanded: &[&s
 
 #[test]
 fn appendix_a1_expands_the_128_bit_key_word_for_word() {
-    let w = expand_128(&hex_bytes::<16>(KEY_128));
+    let Some(cx) = common::cx() else { return };
+    let w = cx.expand_128(&hex_bytes::<16>(KEY_128));
     check_expansion(KEY_128, &w, &WORDS_128);
 }
 
 #[test]
 fn appendix_a2_expands_the_192_bit_key_word_for_word() {
-    let w = expand_192(&hex_bytes::<24>(KEY_192));
+    let Some(cx) = common::cx() else { return };
+    let w = cx.expand_192(&hex_bytes::<24>(KEY_192));
     check_expansion(KEY_192, &w, &WORDS_192);
 }
 
 #[test]
 fn appendix_a3_expands_the_256_bit_key_word_for_word() {
-    let w = expand_256(&hex_bytes::<32>(KEY_256));
+    let Some(cx) = common::cx() else { return };
+    let w = cx.expand_256(&hex_bytes::<32>(KEY_256));
     check_expansion(KEY_256, &w, &WORDS_256);
 }
 
@@ -104,16 +105,17 @@ fn appendix_a3_expands_the_256_bit_key_word_for_word() {
 
 #[test]
 fn appendix_b_encrypts_the_documented_block() {
+    let Some(cx) = common::cx() else { return };
     // Input = 32 43 f6 a8 88 5a 30 8d 31 31 98 a2 e0 37 07 34, Key = Appendix A.1's.
     // The final state printed as "output" reads, column by column:
     //         39 25 84 1d 02 dc 09 fb dc 11 85 97 19 6a 0b 32
-    let w = expand_128(&hex_bytes::<16>(KEY_128));
+    let w = cx.expand_128(&hex_bytes::<16>(KEY_128));
     let mut blocks = [hex_block("3243f6a8885a308d313198a2e0370734")];
-    encrypt_blocks(&w, &mut blocks);
+    cx.encrypt_blocks(&w, &mut blocks);
     assert_eq!(blocks[0], hex_block("3925841d02dc09fbdc118597196a0b32"));
 
-    let dw = equivalent_inverse_round_keys(&w);
-    decrypt_blocks(&dw, &mut blocks);
+    let dw = cx.equivalent_inverse_round_keys(&w);
+    cx.decrypt_blocks(&dw, &mut blocks);
     assert_eq!(blocks[0], hex_block("3243f6a8885a308d313198a2e0370734"));
 }
 
@@ -157,48 +159,51 @@ fn blocks4(hex: &[&str; 4]) -> [Block; 4] {
 
 /// Encrypts and decrypts F.1's four blocks through the four-block path, then checks that the
 /// one- and two-block paths give byte-identical results.
-fn check_ecb<const N: usize>(w: &[Block; N], ciphertext: &[&str; 4]) {
+fn check_ecb<const N: usize>(cx: CryptoExtensions, w: &[Block; N], ciphertext: &[&str; 4]) {
     let plaintext = blocks4(&F1_PLAINTEXT);
     let expected = blocks4(ciphertext);
-    let dw = equivalent_inverse_round_keys(w);
+    let dw = cx.equivalent_inverse_round_keys(w);
 
     let mut four = plaintext;
-    encrypt_blocks(w, &mut four);
+    cx.encrypt_blocks(w, &mut four);
     assert_eq!(four, expected, "ECB encrypt, four blocks at once");
-    decrypt_blocks(&dw, &mut four);
+    cx.decrypt_blocks(&dw, &mut four);
     assert_eq!(four, plaintext, "ECB decrypt, four blocks at once");
 
     for (i, block) in plaintext.iter().enumerate() {
         let mut one = [*block];
-        encrypt_blocks(w, &mut one);
+        cx.encrypt_blocks(w, &mut one);
         assert_eq!(one[0], expected[i], "block {i} alone");
-        decrypt_blocks(&dw, &mut one);
+        cx.decrypt_blocks(&dw, &mut one);
         assert_eq!(one[0], *block, "block {i} alone, decrypted");
     }
 
     let mut pair = [plaintext[0], plaintext[1]];
-    encrypt_blocks(w, &mut pair);
+    cx.encrypt_blocks(w, &mut pair);
     assert_eq!(pair, [expected[0], expected[1]], "first pair");
     let mut pair = [plaintext[2], plaintext[3]];
-    encrypt_blocks(w, &mut pair);
+    cx.encrypt_blocks(w, &mut pair);
     assert_eq!(pair, [expected[2], expected[3]], "second pair");
-    decrypt_blocks(&dw, &mut pair);
+    cx.decrypt_blocks(&dw, &mut pair);
     assert_eq!(pair, [plaintext[2], plaintext[3]], "second pair, decrypted");
 }
 
 #[test]
 fn sp800_38a_f1_ecb_aes128() {
-    check_ecb(&expand_128(&hex_bytes::<16>(KEY_128)), &F1_CIPHERTEXT_128);
+    let Some(cx) = common::cx() else { return };
+    check_ecb(cx, &cx.expand_128(&hex_bytes::<16>(KEY_128)), &F1_CIPHERTEXT_128);
 }
 
 #[test]
 fn sp800_38a_f1_ecb_aes192() {
-    check_ecb(&expand_192(&hex_bytes::<24>(KEY_192)), &F1_CIPHERTEXT_192);
+    let Some(cx) = common::cx() else { return };
+    check_ecb(cx, &cx.expand_192(&hex_bytes::<24>(KEY_192)), &F1_CIPHERTEXT_192);
 }
 
 #[test]
 fn sp800_38a_f1_ecb_aes256() {
-    check_ecb(&expand_256(&hex_bytes::<32>(KEY_256)), &F1_CIPHERTEXT_256);
+    let Some(cx) = common::cx() else { return };
+    check_ecb(cx, &cx.expand_256(&hex_bytes::<32>(KEY_256)), &F1_CIPHERTEXT_256);
 }
 
 // ---- FIPS 197 (2001) Appendix C: the equivalent inverse cipher's round keys --------------------
@@ -262,35 +267,43 @@ const C3_IK_SCH: [&str; 15] = [
 
 /// Appendix C numbers the inverse cipher's rounds in the order they run, so `ik_sch[r]` is
 /// `dw[Nr - r]` in Algorithm 4's indexing.
-fn check_appendix_c<const N: usize>(w: &[Block; N], ik_sch: &[&str; N], ciphertext: &str) {
+fn check_appendix_c<const N: usize>(
+    cx: CryptoExtensions,
+    w: &[Block; N],
+    ik_sch: &[&str; N],
+    ciphertext: &str,
+) {
     let nr = N - 1;
-    let dw = equivalent_inverse_round_keys(w);
+    let dw = cx.equivalent_inverse_round_keys(w);
     for (r, expected) in ik_sch.iter().enumerate() {
         assert_eq!(hex::encode(dw[nr - r]), *expected, "round[{r}].ik_sch");
     }
     let mut block = [hex_block(C_PLAINTEXT)];
-    encrypt_blocks(w, &mut block);
+    cx.encrypt_blocks(w, &mut block);
     assert_eq!(block[0], hex_block(ciphertext));
-    decrypt_blocks(&dw, &mut block);
+    cx.decrypt_blocks(&dw, &mut block);
     assert_eq!(block[0], hex_block(C_PLAINTEXT));
 }
 
 #[test]
 fn appendix_c1_aes128_inverse_round_keys_and_vectors() {
+    let Some(cx) = common::cx() else { return };
     let key: [u8; 16] = core::array::from_fn(|i| i as u8);
-    check_appendix_c(&expand_128(&key), &C1_IK_SCH, C1_CIPHERTEXT);
+    check_appendix_c(cx, &cx.expand_128(&key), &C1_IK_SCH, C1_CIPHERTEXT);
 }
 
 #[test]
 fn appendix_c2_aes192_inverse_round_keys_and_vectors() {
+    let Some(cx) = common::cx() else { return };
     let key: [u8; 24] = core::array::from_fn(|i| i as u8);
-    check_appendix_c(&expand_192(&key), &C2_IK_SCH, C2_CIPHERTEXT);
+    check_appendix_c(cx, &cx.expand_192(&key), &C2_IK_SCH, C2_CIPHERTEXT);
 }
 
 #[test]
 fn appendix_c3_aes256_inverse_round_keys_and_vectors() {
+    let Some(cx) = common::cx() else { return };
     let key: [u8; 32] = core::array::from_fn(|i| i as u8);
-    check_appendix_c(&expand_256(&key), &C3_IK_SCH, C3_CIPHERTEXT);
+    check_appendix_c(cx, &cx.expand_256(&key), &C3_IK_SCH, C3_CIPHERTEXT);
 }
 
 // ---- Structure -------------------------------------------------------------------------------
@@ -298,18 +311,19 @@ fn appendix_c3_aes256_inverse_round_keys_and_vectors() {
 /// Algorithm 5 lines 19-22: only round keys `1..=Nr-1` change.
 #[test]
 fn equivalent_inverse_schedule_keeps_the_first_and_last_round_keys() {
-    let w: RoundKeys128 = expand_128(&hex_bytes::<16>(KEY_128));
-    let dw = equivalent_inverse_round_keys(&w);
+    let Some(cx) = common::cx() else { return };
+    let w: RoundKeys128 = cx.expand_128(&hex_bytes::<16>(KEY_128));
+    let dw = cx.equivalent_inverse_round_keys(&w);
     assert_eq!(dw[0], w[0]);
     assert_eq!(dw[10], w[10]);
     for i in 1..10 {
         assert_ne!(dw[i], w[i], "round key {i} is transformed");
     }
-    let w: RoundKeys192 = expand_192(&hex_bytes::<24>(KEY_192));
-    let dw = equivalent_inverse_round_keys(&w);
+    let w: RoundKeys192 = cx.expand_192(&hex_bytes::<24>(KEY_192));
+    let dw = cx.equivalent_inverse_round_keys(&w);
     assert_eq!((dw[0], dw[12]), (w[0], w[12]));
-    let w: RoundKeys256 = expand_256(&hex_bytes::<32>(KEY_256));
-    let dw = equivalent_inverse_round_keys(&w);
+    let w: RoundKeys256 = cx.expand_256(&hex_bytes::<32>(KEY_256));
+    let dw = cx.equivalent_inverse_round_keys(&w);
     assert_eq!((dw[0], dw[14]), (w[0], w[14]));
 }
 
@@ -317,6 +331,7 @@ fn equivalent_inverse_schedule_keeps_the_first_and_last_round_keys() {
 /// the batched paths agree with the single-block one.
 #[test]
 fn round_trips_on_random_keys_and_blocks() {
+    let Some(cx) = common::cx() else { return };
     let mut rng = Xorshift(0x1234_5678_9abc_def1);
     for _ in 0..50 {
         let mut k128 = [0u8; 16];
@@ -325,34 +340,34 @@ fn round_trips_on_random_keys_and_blocks() {
         rng.fill(&mut k192);
         let mut k256 = [0u8; 32];
         rng.fill(&mut k256);
-        check_round_trips(&expand_128(&k128), &mut rng);
-        check_round_trips(&expand_192(&k192), &mut rng);
-        check_round_trips(&expand_256(&k256), &mut rng);
+        check_round_trips(cx, &cx.expand_128(&k128), &mut rng);
+        check_round_trips(cx, &cx.expand_192(&k192), &mut rng);
+        check_round_trips(cx, &cx.expand_256(&k256), &mut rng);
     }
 }
 
-fn check_round_trips<const N: usize>(w: &[Block; N], rng: &mut Xorshift) {
-    let dw = equivalent_inverse_round_keys(w);
+fn check_round_trips<const N: usize>(cx: CryptoExtensions, w: &[Block; N], rng: &mut Xorshift) {
+    let dw = cx.equivalent_inverse_round_keys(w);
     let plaintext: [Block; 4] = core::array::from_fn(|_| rng.block());
 
     let mut four = plaintext;
-    encrypt_blocks(w, &mut four);
+    cx.encrypt_blocks(w, &mut four);
     let ciphertext = four;
-    decrypt_blocks(&dw, &mut four);
+    cx.decrypt_blocks(&dw, &mut four);
     assert_eq!(four, plaintext);
 
     for i in 0..4 {
         let mut one = [plaintext[i]];
-        encrypt_blocks(w, &mut one);
+        cx.encrypt_blocks(w, &mut one);
         assert_eq!(one[0], ciphertext[i]);
-        decrypt_blocks(&dw, &mut one);
+        cx.decrypt_blocks(&dw, &mut one);
         assert_eq!(one[0], plaintext[i]);
     }
     for i in [0, 2] {
         let mut pair = [plaintext[i], plaintext[i + 1]];
-        encrypt_blocks(w, &mut pair);
+        cx.encrypt_blocks(w, &mut pair);
         assert_eq!(pair, [ciphertext[i], ciphertext[i + 1]]);
-        decrypt_blocks(&dw, &mut pair);
+        cx.decrypt_blocks(&dw, &mut pair);
         assert_eq!(pair, [plaintext[i], plaintext[i + 1]]);
     }
 }

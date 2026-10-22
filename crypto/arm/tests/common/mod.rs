@@ -2,7 +2,18 @@
 
 #![allow(dead_code)]
 
+use bouncycastle_arm::CryptoExtensions;
 use bouncycastle_hex as hex;
+
+/// The proof the kernels need, or `None` on a CPU without the instructions, where the test
+/// returns early. Only a `std` build can reach `None`; one that declares `aes` always has it.
+pub fn cx() -> Option<CryptoExtensions> {
+    let cx = CryptoExtensions::detect();
+    if cx.is_none() {
+        println!("WARNING: this CPU lacks FEAT_AES; skipping");
+    }
+    cx
+}
 
 /// A xorshift64 generator, so the random-input tests need no external crate; the same shape
 /// `bouncycastle-cipher`'s GHASH tests use.

@@ -803,6 +803,14 @@ mod ghash {
 
     use bouncycastle_utils::secret::Secret;
 
+    #[cfg(all(
+        target_arch = "aarch64",
+        target_endian = "little",
+        target_feature = "aes",
+        target_feature = "neon"
+    ))]
+    use bouncycastle_arm::CryptoExtensions;
+
     /// A block of `GF(2^128)`, in the two-`u64` form described in the module docs.
     type Block = [u64; 2];
 
@@ -978,7 +986,7 @@ mod ghash {
         target_feature = "neon"
     ))]
     pub(crate) fn mul(x: &Block, y: &Block) -> Block {
-        bouncycastle_arm::ghash::mul(x, y)
+        CryptoExtensions::declared().ghash_mul(x, y)
     }
 
     /// The `GHASH` accumulator (Algorithm 2, Sec 6.4).
@@ -1100,7 +1108,7 @@ mod ghash {
                     }
                     x[0][0] ^= self.y[0];
                     x[0][1] ^= self.y[1];
-                    *self.y = bouncycastle_arm::ghash::mul4(&x, &self.h_powers);
+                    *self.y = CryptoExtensions::declared().ghash_mul4(&x, &self.h_powers);
                 }
                 remainder
             };

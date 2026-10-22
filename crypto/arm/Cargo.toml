@@ -4,6 +4,10 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 
+[features]
+# Run-time detection of the instructions, through `std::arch::is_aarch64_feature_detected!`.
+std = []
+
 [dependencies]
 
 [dev-dependencies]
