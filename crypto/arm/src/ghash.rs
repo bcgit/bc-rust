@@ -32,13 +32,15 @@ use crate::intrinsics::V128;
 pub type Element = [u64; 2];
 
 /// An element in the byte-reversed order `PMULL` wants: the lane swap of the module docs.
-#[inline(always)]
+#[target_feature(enable = "aes,neon")]
+#[inline]
 fn load(x: &Element) -> V128 {
     V128::from_u64x2(x[1], x[0])
 }
 
 /// The inverse of [`load`].
-#[inline(always)]
+#[target_feature(enable = "aes,neon")]
+#[inline]
 fn store(v: V128) -> Element {
     [v.lane_u64::<1>(), v.lane_u64::<0>()]
 }
@@ -58,7 +60,8 @@ fn store(v: V128) -> Element {
 ///    that crosses the top of the 128-bit value back onto `low`.
 /// 3. The matching right shifts by 1, 2 and 7, with the carry from stage 2, complete the fold;
 ///    the reduced product is `high ⊕ low`.
-#[inline(always)]
+#[target_feature(enable = "aes,neon")]
+#[inline]
 fn reduce(low: V128, high: V128) -> V128 {
     let zero = V128::zero();
 
@@ -98,7 +101,8 @@ fn reduce(low: V128, high: V128) -> V128 {
 
 /// The four `PMULL` products of two byte-reversed operands, combined into the low and high
 /// halves of the 256-bit product: `(high, low)` with the two cross terms folded into both.
-#[inline(always)]
+#[target_feature(enable = "aes,neon")]
+#[inline]
 fn mul_no_reduce(a: V128, b: V128) -> (V128, V128) {
     let zero = V128::zero();
     let high = a.pmull_hh(b);
@@ -112,6 +116,7 @@ fn mul_no_reduce(a: V128, b: V128) -> (V128, V128) {
 }
 
 /// `X • Y` (Sec 6.3, Algorithm 1). A port of bc-fips `gfmul()`.
+#[target_feature(enable = "aes,neon")]
 pub fn mul(x: &Element, y: &Element) -> Element {
     let (low, high) = mul_no_reduce(load(x), load(y));
     store(reduce(low, high))
@@ -122,6 +127,7 @@ pub fn mul(x: &Element, y: &Element) -> Element {
 /// reduced ones because reduction is linear.
 ///
 /// For GHASH pass `y = [H^4, H^3, H^2, H]` and `x[0] = Y ⊕ X1`, `x[1..] = X2, X3, X4`.
+#[target_feature(enable = "aes,neon")]
 pub fn mul4(x: &[Element; 4], y: &[Element; 4]) -> Element {
     let (mut low, mut high) = mul_no_reduce(load(&x[0]), load(&y[0]));
     for i in 1..4 {

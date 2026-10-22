@@ -90,17 +90,20 @@
 //! The round functions sit behind a sealed [`Engine`](hazmat::engine::Engine) trait, and
 //! [`AESInternal`](hazmat::AESInternal) takes the engine as a type parameter with a default, so
 //! the type, its trait impls and every mode built on it are written once.
-//! [`Bitsliced`](hazmat::engine::Bitsliced) is the engine described above and the default on
-//! every target but one: an AArch64 build that declares `target_feature = "aes"`, as
-//! `aarch64-apple-darwin` does by default and `RUSTFLAGS="-C target-feature=+aes"` does on
-//! Linux, defaults to the `Arm` engine, which runs CIPHER() on the `AESE`/`AESMC` instructions
-//! and the equivalent inverse cipher of FIPS 197 Sec 5.3.5 on `AESD`/`AESIMC` through the
-//! kernels in `bouncycastle-arm`. Naming the engine, as
-//! `AESInternal<AES128Params, Bitsliced<AES128Params>>`, pins one; the crate's
-//! `arm_agreement_tests` run both engines on the same random inputs.
+//! [`Bitsliced`](hazmat::engine::Bitsliced) is the engine described above. On little-endian
+//! AArch64 the `Arm` engine runs CIPHER() on the `AESE`/`AESMC` instructions and the equivalent
+//! inverse cipher of FIPS 197 Sec 5.3.5 on `AESD`/`AESIMC`, through the kernels in
+//! `bouncycastle-arm`. Which one [`DefaultEngine`](hazmat::engine::DefaultEngine) is depends on
+//! the build:
 //!
-//! A binary built with `aes` requires that instruction set on every CPU it runs on, and there
-//! is no run-time detection; see the Security Considerations of `bouncycastle-arm`.
+//! * a build that declares `target_feature = "aes"`, as `aarch64-apple-darwin` does by default,
+//!   uses `Arm`, and requires the instructions on every CPU it runs on;
+//! * any other AArch64 build with the `std` feature uses `Detected`, which asks the CPU once per
+//!   key and runs `Arm` if it has the instructions and `Bitsliced` if not;
+//! * everything else uses `Bitsliced`.
+//!
+//! Naming the engine, as `AESInternal<AES128Params, Bitsliced<AES128Params>>`, pins one; the
+//! crate's `arm_agreement_tests` run the default against `Bitsliced` on the same random inputs.
 //!
 //! # Memory Usage
 //!
@@ -117,7 +120,7 @@
 //!
 //! The `Arm` engine holds both FIPS 197 schedules as sixteen-byte round keys, `w` for CIPHER()
 //! and `dw` for EQINVCIPHER(), so 352, 416 or 480 B between calls, and uses registers only
-//! within one.
+//! within one. `Detected` is the size of `Arm` plus a 4-byte tag, whichever engine it chose.
 //!
 //! Per-call stack usage of the bit-sliced engine is set by the plane width: 16, 32 or 64 bytes of bit-sliced state for
 //! one, two or four blocks, the same again for the round key widened from its stored one-block

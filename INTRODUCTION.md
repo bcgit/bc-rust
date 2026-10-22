@@ -83,9 +83,10 @@ Yes, in many cases you can improve performance by skirting the strict type and m
 by directly embedding assembly code. But to us, this undermines the primary reason that you're developing in Rust in the
 first place. Every crate carries `#![forbid(unsafe_code)]`, with two exceptions. `bouncycastle-utils` holds constant-time
 and secure-zeroization code that cannot be accomplished reliably within safe rust. `bouncycastle-arm` holds the AArch64
-Crypto Extensions kernels for AES and GHASH, whose intrinsics the compiler will not let safe code call; it is
-`#![deny(unsafe_code)]` with a single `intrinsics` module of one-line wrappers allowed to opt back in, and it is compiled
-only when the build declares those instructions. In both crates each instance of unsafe is a few lines with its safety
+Crypto Extensions kernels for AES and GHASH, which the compiler will not let safe code call without proof that the CPU
+has the instructions; it is `#![deny(unsafe_code)]`, and only two modules opt back in: `intrinsics`, for the two
+load/store wrappers that take raw pointers, and `cpu`, whose `CryptoExtensions` value is that proof, obtained from the
+build's declaration or by asking the CPU at run time. In both crates each instance of unsafe is a few lines with its safety
 argument alongside, and all unsafe is jailed to those two crates so that everything built on them stays in safe Rust.
 
 ### If it compiles, then it's safe

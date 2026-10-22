@@ -40,7 +40,8 @@ fn rot_word(w: [u8; 4]) -> [u8; 4] {
 /// S-box table: `AESE(x, 0)` computes `SHIFTROWS(SUBBYTES(x))`, and when all four columns of
 /// `x` hold the same word, SHIFTROWS moves identical bytes onto each other and is the identity,
 /// so lane 0 of the result is SUBWORD of that word. Nothing is indexed by the key.
-#[inline(always)]
+#[target_feature(enable = "aes,neon")]
+#[inline]
 fn sub_word(w: [u8; 4]) -> [u8; 4] {
     V128::splat_u32(u32::from_le_bytes(w)).aese(V128::zero()).lane_u32::<0>().to_le_bytes()
 }
@@ -48,6 +49,7 @@ fn sub_word(w: [u8; 4]) -> [u8; 4] {
 /// KEYEXPANSION() (Sec 5.2, Algorithm 2), writing `w` straight into the round-key blocks:
 /// word `w[i]` is bytes `4 * (i % 4)..` of block `i / 4`. `KEY_LEN` is `4 * Nk` and `N` is
 /// `Nr + 1`, both fixed by the three public wrappers.
+#[target_feature(enable = "aes,neon")]
 fn expand<const KEY_LEN: usize, const N: usize>(key: &[u8; KEY_LEN]) -> [Block; N] {
     const {
         assert!(
@@ -90,16 +92,19 @@ fn expand<const KEY_LEN: usize, const N: usize>(key: &[u8; KEY_LEN]) -> [Block; 
 }
 
 /// KEYEXPANSION() for a 128-bit key (Sec 5.2): `Nk = 4`, `Nr = 10`.
+#[target_feature(enable = "aes,neon")]
 pub fn expand_128(key: &[u8; 16]) -> RoundKeys128 {
     expand(key)
 }
 
 /// KEYEXPANSION() for a 192-bit key (Sec 5.2): `Nk = 6`, `Nr = 12`.
+#[target_feature(enable = "aes,neon")]
 pub fn expand_192(key: &[u8; 24]) -> RoundKeys192 {
     expand(key)
 }
 
 /// KEYEXPANSION() for a 256-bit key (Sec 5.2): `Nk = 8`, `Nr = 14`.
+#[target_feature(enable = "aes,neon")]
 pub fn expand_256(key: &[u8; 32]) -> RoundKeys256 {
     expand(key)
 }
@@ -115,6 +120,7 @@ const fn check_rounds<const N: usize>() {
 /// Lines 19-22 of KEYEXPANSIONEIC() (Sec 5.3.5, Algorithm 5): `dw` is `w` with
 /// INVMIXCOLUMNS() applied to round keys `1..=Nr-1`; the first and last are unchanged. This is
 /// the schedule [`decrypt_blocks`] consumes.
+#[target_feature(enable = "aes,neon")]
 pub fn equivalent_inverse_round_keys<const N: usize>(w: &[Block; N]) -> [Block; N] {
     check_rounds::<N>();
     let nr = N - 1;
@@ -137,6 +143,7 @@ pub fn equivalent_inverse_round_keys<const N: usize>(w: &[Block; N]) -> [Block; 
 /// The `B` states advance together through each round so that independent `AESE`/`AESMC`
 /// chains overlap in the pipeline; the result is indistinguishable from `B` single-block
 /// calls.
+#[target_feature(enable = "aes,neon")]
 pub fn encrypt_blocks<const N: usize, const B: usize>(w: &[Block; N], blocks: &mut [Block; B]) {
     check_rounds::<N>();
     const {
@@ -172,6 +179,7 @@ pub fn encrypt_blocks<const N: usize, const B: usize>(w: &[Block; N], blocks: &m
 /// first iteration's lines 5-6 are one `aesd`; each iteration's line 7 is an `aesimc` and its
 /// line 8 together with the next iteration's lines 5-6 is the next `aesd`; lines 10-12 end
 /// with a plain XOR with `dw[0]`.
+#[target_feature(enable = "aes,neon")]
 pub fn decrypt_blocks<const N: usize, const B: usize>(dw: &[Block; N], blocks: &mut [Block; B]) {
     check_rounds::<N>();
     const {

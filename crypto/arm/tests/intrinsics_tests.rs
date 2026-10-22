@@ -2,18 +2,30 @@
 //!
 //! The AES instructions are pinned by the FIPS 197 and SP 800-38A vectors in `aes_tests.rs`;
 //! here they are checked only for the identities that relate them to each other.
+//!
+//! The wrappers are `#[target_feature]`, so each test body is too, and [`run`] calls it only
+//! on a CPU with the instructions.
 
 #![cfg(all(
     target_arch = "aarch64",
     target_endian = "little",
-    target_feature = "aes",
-    target_feature = "neon"
+    target_feature = "neon",
+    any(target_feature = "aes", feature = "std")
 ))]
 
 mod common;
 
 use bouncycastle_arm::intrinsics::V128;
 use common::Xorshift;
+
+/// Runs a `#[target_feature(enable = "aes,neon")]` test body, or returns early on a CPU
+/// without the instructions.
+fn run(body: unsafe fn()) {
+    if common::cx().is_some() {
+        // SAFETY: `cx()` found the instructions `body`'s `#[target_feature]` names.
+        unsafe { body() }
+    }
+}
 
 /// Carry-less multiplication of two 64-bit values, bit by bit.
 fn clmul(a: u64, b: u64) -> u128 {
@@ -40,6 +52,11 @@ fn from_lanes_u32(l: &[u32; 4]) -> [u8; 16] {
 
 #[test]
 fn bytes_round_trip() {
+    run(bytes_round_trip_body);
+}
+
+#[target_feature(enable = "aes,neon")]
+fn bytes_round_trip_body() {
     let mut rng = Xorshift(1);
     for _ in 0..100 {
         let b = rng.block();
@@ -50,6 +67,11 @@ fn bytes_round_trip() {
 
 #[test]
 fn u64_lanes_are_little_endian_halves() {
+    run(u64_lanes_are_little_endian_halves_body);
+}
+
+#[target_feature(enable = "aes,neon")]
+fn u64_lanes_are_little_endian_halves_body() {
     let (lo, hi) = (0x0123_4567_89ab_cdefu64, 0xfedc_ba98_7654_3210u64);
     let v = V128::from_u64x2(lo, hi);
     let mut expected = [0u8; 16];
@@ -62,6 +84,11 @@ fn u64_lanes_are_little_endian_halves() {
 
 #[test]
 fn u32_splat_and_lane() {
+    run(u32_splat_and_lane_body);
+}
+
+#[target_feature(enable = "aes,neon")]
+fn u32_splat_and_lane_body() {
     let v = V128::splat_u32(0x1122_3344);
     assert_eq!(lanes_u32(&v.to_bytes()), [0x1122_3344; 4]);
     assert_eq!(v.lane_u32::<0>(), 0x1122_3344);
@@ -72,6 +99,11 @@ fn u32_splat_and_lane() {
 
 #[test]
 fn eor_and_orr_are_bytewise() {
+    run(eor_and_orr_are_bytewise_body);
+}
+
+#[target_feature(enable = "aes,neon")]
+fn eor_and_orr_are_bytewise_body() {
     let mut rng = Xorshift(2);
     for _ in 0..100 {
         let (a, b) = (rng.block(), rng.block());
@@ -83,6 +115,11 @@ fn eor_and_orr_are_bytewise() {
 
 #[test]
 fn rev64_reverses_each_eight_byte_half() {
+    run(rev64_reverses_each_eight_byte_half_body);
+}
+
+#[target_feature(enable = "aes,neon")]
+fn rev64_reverses_each_eight_byte_half_body() {
     let b: [u8; 16] = core::array::from_fn(|i| i as u8);
     let r = V128::from_bytes(&b).rev64().to_bytes();
     assert_eq!(r, [7, 6, 5, 4, 3, 2, 1, 0, 15, 14, 13, 12, 11, 10, 9, 8]);
@@ -90,6 +127,11 @@ fn rev64_reverses_each_eight_byte_half() {
 
 #[test]
 fn ext_is_a_window_into_the_concatenation() {
+    run(ext_is_a_window_into_the_concatenation_body);
+}
+
+#[target_feature(enable = "aes,neon")]
+fn ext_is_a_window_into_the_concatenation_body() {
     let a: [u8; 16] = core::array::from_fn(|i| i as u8);
     let b: [u8; 16] = core::array::from_fn(|i| 0x10 + i as u8);
     let mut cat = [0u8; 32];
@@ -109,6 +151,11 @@ fn ext_is_a_window_into_the_concatenation() {
 
 #[test]
 fn lane_shifts_match_per_lane_u32_shifts() {
+    run(lane_shifts_match_per_lane_u32_shifts_body);
+}
+
+#[target_feature(enable = "aes,neon")]
+fn lane_shifts_match_per_lane_u32_shifts_body() {
     let mut rng = Xorshift(3);
     for _ in 0..100 {
         let b = rng.block();
@@ -127,6 +174,11 @@ fn lane_shifts_match_per_lane_u32_shifts() {
 
 #[test]
 fn add32_wraps_within_each_lane() {
+    run(add32_wraps_within_each_lane_body);
+}
+
+#[target_feature(enable = "aes,neon")]
+fn add32_wraps_within_each_lane_body() {
     let mut rng = Xorshift(4);
     for _ in 0..100 {
         let (a, b) = (rng.block(), rng.block());
@@ -143,6 +195,11 @@ fn add32_wraps_within_each_lane() {
 
 #[test]
 fn pmull_variants_match_scalar_carry_less_multiplication() {
+    run(pmull_variants_match_scalar_carry_less_multiplication_body);
+}
+
+#[target_feature(enable = "aes,neon")]
+fn pmull_variants_match_scalar_carry_less_multiplication_body() {
     let mut rng = Xorshift(5);
     for _ in 0..1000 {
         let (a0, a1, b0, b1) = (rng.next_u64(), rng.next_u64(), rng.next_u64(), rng.next_u64());
@@ -158,6 +215,11 @@ fn pmull_variants_match_scalar_carry_less_multiplication() {
 /// shift of `AESE`, leaving only the key addition: `aesd(aese(x, k), 0) == x XOR k`.
 #[test]
 fn aes_instruction_identities() {
+    run(aes_instruction_identities_body);
+}
+
+#[target_feature(enable = "aes,neon")]
+fn aes_instruction_identities_body() {
     let mut rng = Xorshift(6);
     for _ in 0..100 {
         let (x, k) = (rng.block(), rng.block());

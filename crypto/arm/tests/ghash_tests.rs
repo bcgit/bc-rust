@@ -4,13 +4,13 @@
 #![cfg(all(
     target_arch = "aarch64",
     target_endian = "little",
-    target_feature = "aes",
-    target_feature = "neon"
+    target_feature = "neon",
+    any(target_feature = "aes", feature = "std")
 ))]
 
 mod common;
 
-use bouncycastle_arm::ghash::{Element, mul, mul4};
+use bouncycastle_arm::ghash::Element;
 use common::Xorshift;
 
 /// `R = 11100001 || 0^120` (Sec 6.3): first byte `0xE1`, the rest zero, in the `[u64; 2]` form.
@@ -48,55 +48,61 @@ fn mul_reference(x: &Element, y: &Element) -> Element {
 
 #[test]
 fn mul_matches_the_reference_on_zero() {
+    let Some(cx) = common::cx() else { return };
     let h: Element = [0x1122_3344_5566_7788, 0x99aa_bbcc_ddee_ff00];
-    assert_eq!(mul(&[0, 0], &h), mul_reference(&[0, 0], &h));
-    assert_eq!(mul(&h, &[0, 0]), mul_reference(&h, &[0, 0]));
+    assert_eq!(cx.ghash_mul(&[0, 0], &h), mul_reference(&[0, 0], &h));
+    assert_eq!(cx.ghash_mul(&h, &[0, 0]), mul_reference(&h, &[0, 0]));
 }
 
 #[test]
 fn mul_matches_the_reference_at_every_single_bit_position() {
+    let Some(cx) = common::cx() else { return };
     let h: Element = [0xdead_beef_cafe_babe, 0x0123_4567_89ab_cdef];
     for i in 0..128u32 {
         let x: Element = if i < 64 { [1u64 << (63 - i), 0] } else { [0, 1u64 << (127 - i)] };
-        assert_eq!(mul(&x, &h), mul_reference(&x, &h), "bit position {i}");
-        assert_eq!(mul(&h, &x), mul_reference(&h, &x), "bit position {i}, swapped");
+        assert_eq!(cx.ghash_mul(&x, &h), mul_reference(&x, &h), "bit position {i}");
+        assert_eq!(cx.ghash_mul(&h, &x), mul_reference(&h, &x), "bit position {i}, swapped");
     }
 }
 
 #[test]
 fn mul_matches_the_reference_on_all_ones() {
+    let Some(cx) = common::cx() else { return };
     let h: Element = [0xfeed_face_dead_beef, 0x0102_0304_0506_0708];
     let ones: Element = [u64::MAX, u64::MAX];
-    assert_eq!(mul(&ones, &h), mul_reference(&ones, &h));
-    assert_eq!(mul(&h, &ones), mul_reference(&h, &ones));
-    assert_eq!(mul(&ones, &ones), mul_reference(&ones, &ones));
+    assert_eq!(cx.ghash_mul(&ones, &h), mul_reference(&ones, &h));
+    assert_eq!(cx.ghash_mul(&h, &ones), mul_reference(&h, &ones));
+    assert_eq!(cx.ghash_mul(&ones, &ones), mul_reference(&ones, &ones));
 }
 
 #[test]
 fn mul_matches_the_reference_on_ten_thousand_random_pairs() {
+    let Some(cx) = common::cx() else { return };
     let mut rng = Xorshift(0x2545_f491_4f6c_dd1d);
     for _ in 0..10_000 {
         let x = rng.element();
         let y = rng.element();
-        assert_eq!(mul(&x, &y), mul_reference(&x, &y), "x={x:?} y={y:?}");
+        assert_eq!(cx.ghash_mul(&x, &y), mul_reference(&x, &y), "x={x:?} y={y:?}");
     }
 }
 
 #[test]
 fn mul_by_one_is_the_identity_and_mul_is_commutative() {
+    let Some(cx) = common::cx() else { return };
     let mut rng = Xorshift(0x9e37_79b9_7f4a_7c15);
     for _ in 0..256 {
         let x = rng.element();
         let y = rng.element();
-        assert_eq!(mul(&x, &ONE), x);
-        assert_eq!(mul(&ONE, &x), x);
-        assert_eq!(mul(&x, &y), mul(&y, &x));
+        assert_eq!(cx.ghash_mul(&x, &ONE), x);
+        assert_eq!(cx.ghash_mul(&ONE, &x), x);
+        assert_eq!(cx.ghash_mul(&x, &y), cx.ghash_mul(&y, &x));
     }
-    assert_eq!(mul(&R, &ONE), R);
+    assert_eq!(cx.ghash_mul(&R, &ONE), R);
 }
 
 #[test]
 fn mul4_is_the_sum_of_four_products() {
+    let Some(cx) = common::cx() else { return };
     let mut rng = Xorshift(0xbf58_476d_1ce4_e5b9);
     for _ in 0..1000 {
         let x: [Element; 4] = core::array::from_fn(|_| rng.element());
@@ -107,7 +113,7 @@ fn mul4_is_the_sum_of_four_products() {
             expected[0] ^= p[0];
             expected[1] ^= p[1];
         }
-        assert_eq!(mul4(&x, &y), expected);
+        assert_eq!(cx.ghash_mul4(&x, &y), expected);
     }
 }
 
@@ -115,12 +121,13 @@ fn mul4_is_the_sum_of_four_products() {
 /// X3.H^2 (+) X4.H` must equal four steps of `Y_i = (Y_{i-1} (+) X_i).H`.
 #[test]
 fn mul4_folds_four_ghash_steps_at_once() {
+    let Some(cx) = common::cx() else { return };
     let mut rng = Xorshift(0x94d0_49bb_1331_11eb);
     for _ in 0..200 {
         let h = rng.element();
-        let h2 = mul(&h, &h);
-        let h3 = mul(&h2, &h);
-        let h4 = mul(&h3, &h);
+        let h2 = cx.ghash_mul(&h, &h);
+        let h3 = cx.ghash_mul(&h2, &h);
+        let h4 = cx.ghash_mul(&h3, &h);
         let blocks: [Element; 8] = core::array::from_fn(|_| rng.element());
 
         let mut one_at_a_time: Element = [0, 0];
@@ -131,7 +138,8 @@ fn mul4_folds_four_ghash_steps_at_once() {
         let mut four_at_a_time: Element = [0, 0];
         for group in blocks.chunks_exact(4) {
             let first = [four_at_a_time[0] ^ group[0][0], four_at_a_time[1] ^ group[0][1]];
-            four_at_a_time = mul4(&[first, group[1], group[2], group[3]], &[h4, h3, h2, h]);
+            four_at_a_time =
+                cx.ghash_mul4(&[first, group[1], group[2], group[3]], &[h4, h3, h2, h]);
         }
         assert_eq!(four_at_a_time, one_at_a_time);
     }

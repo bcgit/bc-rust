@@ -1,19 +1,19 @@
-//! The two engines on the same random inputs: `Bitsliced`, the portable reference, against
-//! `Arm`, the Crypto Extensions engine that is the default on this target.
+//! The engines on the same random inputs: `Bitsliced`, the portable reference, against the
+//! default on this target, which is `Arm` on a build that declares the Crypto Extensions and
+//! `Detected` on one that asks the CPU (where it is `Arm` on any CPU with the instructions).
 //!
 //! The known-answer suites in this directory already run on whichever engine is the default,
-//! so on an AArch64 build with `aes` they exercise `Arm`. This file adds the randomised
-//! comparison for every key size, both directions and all three widths, and pins that the
-//! default really is `Arm` here.
+//! so on these builds they exercise `Arm`. This file adds the randomised comparison for every
+//! key size, both directions and all three widths, and pins which engine the default is.
 
 #![cfg(all(
     target_arch = "aarch64",
     target_endian = "little",
-    target_feature = "aes",
-    target_feature = "neon"
+    target_feature = "neon",
+    any(target_feature = "aes", feature = "std")
 ))]
 
-use bouncycastle_aes::hazmat::engine::{Arm, Bitsliced};
+use bouncycastle_aes::hazmat::engine::{Bitsliced, DefaultEngine};
 use bouncycastle_aes::hazmat::{AES128Internal, AES192Internal, AES256Internal, AESInternal};
 use bouncycastle_aes::{AES128Params, AES192Params, AES256Params};
 use bouncycastle_core::hazmat::ElectronicCodeBook;
@@ -94,7 +94,7 @@ fn engines_agree_for_aes128_on_random_keys_and_blocks() {
         agree::<
             16,
             AESInternal<AES128Params, Bitsliced<AES128Params>>,
-            AESInternal<AES128Params, Arm<AES128Params>>,
+            AESInternal<AES128Params, DefaultEngine<AES128Params>>,
         >(&mut rng);
     }
 }
@@ -106,7 +106,7 @@ fn engines_agree_for_aes192_on_random_keys_and_blocks() {
         agree::<
             24,
             AESInternal<AES192Params, Bitsliced<AES192Params>>,
-            AESInternal<AES192Params, Arm<AES192Params>>,
+            AESInternal<AES192Params, DefaultEngine<AES192Params>>,
         >(&mut rng);
     }
 }
@@ -118,15 +118,18 @@ fn engines_agree_for_aes256_on_random_keys_and_blocks() {
         agree::<
             32,
             AESInternal<AES256Params, Bitsliced<AES256Params>>,
-            AESInternal<AES256Params, Arm<AES256Params>>,
+            AESInternal<AES256Params, DefaultEngine<AES256Params>>,
         >(&mut rng);
     }
 }
 
-/// On this target the default engine is `Arm`: the aliases are the `Arm` instantiations, which
-/// the compiler checks here, and they carry both schedules, which the sizes check.
+/// On a build that declares the Crypto Extensions the default engine is `Arm`: the aliases are
+/// the `Arm` instantiations, which the compiler checks here, and they carry both schedules,
+/// which the sizes check.
+#[cfg(target_feature = "aes")]
 #[test]
 fn the_default_engine_on_this_target_is_arm() {
+    use bouncycastle_aes::hazmat::engine::Arm;
     fn is_arm_128(_: &AESInternal<AES128Params, Arm<AES128Params>>) {}
     fn is_arm_192(_: &AESInternal<AES192Params, Arm<AES192Params>>) {}
     fn is_arm_256(_: &AESInternal<AES256Params, Arm<AES256Params>>) {}
@@ -138,4 +141,30 @@ fn the_default_engine_on_this_target_is_arm() {
     assert_eq!(size_of::<AES192Internal>(), 2 * 13 * 16);
     assert_eq!(size_of::<AES256Internal>(), 2 * 15 * 16);
     assert_eq!(size_of::<AESInternal<AES128Params, Bitsliced<AES128Params>>>(), 44 * 4);
+}
+
+/// On a build that asks the CPU, the default engine is `Detected`, and it holds `Arm` exactly
+/// when the CPU has the instructions.
+#[cfg(not(target_feature = "aes"))]
+#[test]
+fn the_default_engine_on_this_target_is_detected_and_follows_the_cpu() {
+    use bouncycastle_aes::hazmat::engine::{Detected, Engine};
+    fn is_detected_128(_: &AESInternal<AES128Params, Detected<AES128Params>>) {}
+    fn is_detected_192(_: &AESInternal<AES192Params, Detected<AES192Params>>) {}
+    fn is_detected_256(_: &AESInternal<AES256Params, Detected<AES256Params>>) {}
+    let mut rng = DefaultRNG::default();
+    is_detected_128(&AES128Internal::new(&random_key::<16>(&mut rng)).unwrap());
+    is_detected_192(&AES192Internal::new(&random_key::<24>(&mut rng)).unwrap());
+    is_detected_256(&AES256Internal::new(&random_key::<32>(&mut rng)).unwrap());
+
+    fn picked_arm<P: bouncycastle_aes::AESParams>(key: &[u8]) -> bool
+    where
+        Detected<P>: Engine<P>,
+    {
+        matches!(<Detected<P> as Engine<P>>::expand(key), Detected::Arm(_))
+    }
+    let has_aes = std::arch::is_aarch64_feature_detected!("aes");
+    assert_eq!(picked_arm::<AES128Params>(&[0; 16]), has_aes);
+    assert_eq!(picked_arm::<AES192Params>(&[0; 24]), has_aes);
+    assert_eq!(picked_arm::<AES256Params>(&[0; 32]), has_aes);
 }
