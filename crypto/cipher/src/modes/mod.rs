@@ -149,7 +149,6 @@ pub mod cfb;
 pub mod cfb8;
 pub mod ctr;
 pub mod gcm;
-mod ghash;
 pub mod hazmat;
 mod iv;
 
