@@ -138,7 +138,7 @@
 
 use crate::modes::ModeNames;
 use crate::modes::iv::random_iv;
-use crate::stream::{stream_do_final, stream_update_out};
+use crate::stream::stream_update_out;
 use crate::{Decrypting, Encrypting};
 use bouncycastle_core::errors::{SuspendableError, SymmetricCipherError};
 use bouncycastle_core::hazmat::ElectronicCodeBook;
@@ -405,9 +405,9 @@ where
         stream_update_out(plaintext, ciphertext, |data| self.do_encrypt_inplace(data))
     }
 
-    /// See [`stream_do_final`].
+    /// Nothing is held back, so there is nothing to finish.
     fn do_encrypt_final(self) -> Result<([u8; 0], usize), SymmetricCipherError> {
-        stream_do_final()
+        Ok(([], 0))
     }
 
     /// A stream cipher never changes the length of its data.
@@ -472,9 +472,9 @@ where
         stream_update_out(ciphertext, plaintext, |data| self.do_decrypt_inplace(data))
     }
 
-    /// See [`stream_do_final`].
+    /// Nothing is held back, so there is nothing to finish.
     fn do_decrypt_final(self) -> Result<([u8; 0], usize), SymmetricCipherError> {
-        stream_do_final()
+        Ok(([], 0))
     }
 
     /// Exact rather than an upper bound: a stream cipher never changes the length of its data.

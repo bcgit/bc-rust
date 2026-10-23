@@ -60,17 +60,6 @@ pub fn stream_update_out(
     Ok(input.len())
 }
 
-/// The `do_encrypt_final` / `do_decrypt_final` of a stream cipher: nothing is held back, so there
-/// is nothing to finish -- an empty buffer, none of it output, and no padding or tag to check.
-///
-/// `cargo mutants` reports the `[]` here as a surviving mutant against `[0; 0]` and `[1; 0]`.
-/// Those are the same value: a zero-length array has no element to differ in, so the three
-/// spellings are indistinguishable and no test can separate them. The mutants that *do* change
-/// behaviour -- returning 1 rather than 0 for the data length -- are caught.
-pub fn stream_do_final() -> Result<([u8; 0], usize), SymmetricCipherError> {
-    Ok(([], 0))
-}
-
 /// A stream cipher over any [`KeyStream`], with the direction encoded in the type.
 ///
 /// `Dir` is [`Encrypting`] or [`Decrypting`].
@@ -251,9 +240,9 @@ where
         stream_update_out(plaintext, ciphertext, |data| self.apply(data))
     }
 
-    /// See [`stream_do_final`].
+    /// Nothing is held back, so there is nothing to finish.
     fn do_encrypt_final(self) -> Result<([u8; 0], usize), SymmetricCipherError> {
-        stream_do_final()
+        Ok(([], 0))
     }
 
     /// A stream cipher never changes the length of its data.
@@ -309,9 +298,9 @@ where
         stream_update_out(ciphertext, plaintext, |data| self.apply(data))
     }
 
-    /// See [`stream_do_final`].
+    /// Nothing is held back, so there is nothing to finish.
     fn do_decrypt_final(self) -> Result<([u8; 0], usize), SymmetricCipherError> {
-        stream_do_final()
+        Ok(([], 0))
     }
 
     /// Exact rather than an upper bound: a stream cipher never changes the length of its data.
