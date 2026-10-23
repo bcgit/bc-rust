@@ -4,16 +4,17 @@
 #![allow(private_bounds)]
 
 use crate::Sp80090ADrbg;
+use crate::hazmat::NewUninitialized;
 
 use bouncycastle_core::errors::{KeyMaterialError, RNGError};
-use bouncycastle_core::key_material::{
-    KeyMaterial512, KeyMaterialTrait, KeyType, do_hazardous_operations,
-};
-use bouncycastle_core::traits::{Hash, HashAlgParams, RNG, SecurityStrength};
+use bouncycastle_core::hazmat::do_hazardous_operations;
+use bouncycastle_core::key_material::{KeyMaterial512, KeyMaterialTrait, KeyType};
+use bouncycastle_core::security_strength::SecurityStrength;
+use bouncycastle_core::traits::{Hash, HashAlgParams, RNG};
 use bouncycastle_sha2::{SHA256, SHA512};
 use bouncycastle_utils::{min, secret::Secret};
 
-use std::fmt::{Display, Formatter};
+use core::fmt::{Display, Formatter};
 
 enum SupportedHash {
     SHA256,
@@ -90,7 +91,7 @@ struct AdministrativeInfo {
 
 /// Explicit implementation of Display that prevents auto-generated ones from accidentally leaking secrets.
 impl<const SEED_LEN: usize> Display for WorkingState<SEED_LEN> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+    fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
         write!(f, "HashDRBG80090A::WorkingState::<{}>", SEED_LEN)
     }
 }
@@ -108,26 +109,6 @@ impl<H: HashDRBG80090AParams> HashDRBG80090A<H> {
     /// Alias for [`HashDRBG80090A::new_from_os`].
     pub fn new() -> Self {
         Self::new_from_os()
-    }
-
-    /// Creates a new, uninstantiated instance. After creating it, you must call instantiate() to seed it.
-    ///
-    /// **WARNING: Dangerous! This constructor does not initialize the DRBG from any entropy source,
-    /// and relies on you to provide a strong seed.**
-    pub fn new_unititialized() -> Self {
-        Self {
-            _phantom: core::marker::PhantomData,
-            state: WorkingState::<LARGEST_HASHER_OUTPUT_LEN> {
-                v: Secret::<[u8; LARGEST_HASHER_OUTPUT_LEN]>::new(),
-                c: Secret::<[u8; LARGEST_HASHER_OUTPUT_LEN]>::new(),
-                reseed_counter: Secret::new(),
-            },
-            admin_info: AdministrativeInfo {
-                strength: H::MAX_SECURITY_STRENGTH,
-                prediction_resistance: false,
-                instantiated: false,
-            },
-        }
     }
 
     /// Creates a new instance using the local OS RNG as a source of seed entropy.
@@ -151,10 +132,30 @@ impl<H: HashDRBG80090AParams> HashDRBG80090A<H> {
         })
         .unwrap();
 
-        let mut rng = Self::new_unititialized();
+        let mut rng = Self::new_uninitialized();
         let ss = seed.security_strength().clone();
         rng.instantiate(false, seed, &KeyMaterial512::new(), "new_from_os".as_bytes(), ss).unwrap();
         rng
+    }
+}
+
+impl<H: HashDRBG80090AParams> NewUninitialized for HashDRBG80090A<H> {
+    /// The state is all zeros and `instantiated` is false, so every output method refuses until
+    /// [`Sp80090ADrbg::instantiate`] has run.
+    fn new_uninitialized() -> Self {
+        Self {
+            _phantom: core::marker::PhantomData,
+            state: WorkingState::<LARGEST_HASHER_OUTPUT_LEN> {
+                v: Secret::<[u8; LARGEST_HASHER_OUTPUT_LEN]>::new(),
+                c: Secret::<[u8; LARGEST_HASHER_OUTPUT_LEN]>::new(),
+                reseed_counter: Secret::new(),
+            },
+            admin_info: AdministrativeInfo {
+                strength: H::MAX_SECURITY_STRENGTH,
+                prediction_resistance: false,
+                instantiated: false,
+            },
+        }
     }
 }
 

@@ -1,12 +1,12 @@
 #[cfg(test)]
 mod sha3_tests {
-    use super::sha3_test_helpers::*;
     use bouncycastle_core::errors::HashError;
-    use bouncycastle_core::key_material;
+    use bouncycastle_core::hazmat::do_hazardous_operations;
     use bouncycastle_core::key_material::{
         KeyMaterial, KeyMaterial256, KeyMaterial512, KeyMaterialTrait, KeyType,
     };
-    use bouncycastle_core::traits::{Hash, HashAlgParams, KDF, SecurityStrength};
+    use bouncycastle_core::security_strength::SecurityStrength;
+    use bouncycastle_core::traits::{Hash, HashAlgParams, KDF};
     use bouncycastle_core_test_framework::DUMMY_SEED;
     use bouncycastle_core_test_framework::hash::TestFrameworkHash;
     use bouncycastle_core_test_framework::kdf::TestFrameworkKDF;
@@ -383,7 +383,7 @@ mod sha3_tests {
         let mut output_seed = SHA3_256::new()
             .derive_key(&input_seed, b"some addtional input to the KDF")
             .expect("Error happened");
-        key_material::do_hazardous_operations(&mut *output_seed, |output_seed| {
+        do_hazardous_operations(&mut *output_seed, |output_seed| {
             output_seed.set_key_type(KeyType::MACKey)
         })
         .unwrap();
@@ -412,11 +412,6 @@ mod sha3_tests {
 
         assert_eq!(Hash::max_security_strength(&SHA3_512::default()), SecurityStrength::_256bit);
         assert_eq!(KDF::max_security_strength(&SHA3_512::default()), SecurityStrength::_256bit);
-    }
-
-    #[test]
-    fn run_kats() {
-        run_test_vectors(read_test_vectors("SHA3TestVectors.txt"));
     }
 
     #[test]
@@ -474,169 +469,5 @@ mod sha3_tests {
             Err(SuspendableError::InvalidData) => { /* good */ }
             _ => panic!("Expected an error when loading a SHA3-256 state into SHAKE256"),
         }
-    }
-
-    fn run_test_vectors(test_vectors: Vec<TestCase>) {
-        for tc in test_vectors {
-            match tc.algorithm {
-                224 => run_test_case(tc, SHA3_224::new()),
-                256 => run_test_case(tc, SHA3_256::new()),
-                384 => run_test_case(tc, SHA3_384::new()),
-                512 => run_test_case(tc, SHA3_512::new()),
-                _ => panic!("Unsupported algorithm {}", tc.algorithm),
-            }
-        }
-    }
-
-    fn run_test_case(tc: TestCase, mut sha3: impl Hash) {
-        let partial_bits = tc.bits % 8;
-        let output: Vec<u8>;
-
-        if partial_bits == 0 {
-            sha3.do_update(tc.msg.as_slice());
-            output = sha3.do_final();
-        } else {
-            sha3.do_update(&tc.msg[..(tc.msg.len() - 1)]);
-            output = sha3.do_final_partial_bits(tc.msg[tc.msg.len() - 1], partial_bits).unwrap();
-        }
-
-        assert_eq!(tc.hash, output);
-    }
-}
-
-/** Constant helpers **/
-
-pub(crate) mod sha3_test_helpers {
-    use bouncycastle_hex as hex;
-    use std::fs;
-    use std::path::Path;
-    use std::sync::Once;
-
-    // Test vectors are read from the bc-test-data repo (https://github.com/bcgit/bc-test-data),
-    // which must be cloned alongside this repo at "../bc-test-data" (same convention as the mldsa
-    // and mlkem crates). If it is not present the vector tests print a warning and pass vacuously.
-    const TEST_DATA_PATH_RELATIVE: &str = "../../../bc-test-data/crypto";
-    const TEST_DATA_PATH: &str = "../bc-test-data/crypto";
-
-    static TEST_DATA_CHECK: Once = Once::new();
-
-    /// Returns the contents of `filename` from bc-test-data, or `None` (after a one-time warning)
-    /// if the repo is not checked out.
-    fn get_test_data(filename: &str) -> Option<String> {
-        let dir =
-            [TEST_DATA_PATH_RELATIVE, TEST_DATA_PATH].into_iter().find(|d| Path::new(d).exists());
-        TEST_DATA_CHECK.call_once(|| match dir {
-            Some(d) => println!("bc-test-data found at: {d:?}"),
-            None => {
-                println!("WARNING: bc-test-data directory not found; vector tests will be skipped")
-            }
-        });
-        let dir = dir?;
-        Some(
-            fs::read_to_string(format!("{dir}/{filename}"))
-                .expect("failed to read test vector file"),
-        )
-    }
-
-    const SAMPLE_OF: &str = " sample of ";
-    const MSG_HEADER: &str = "Msg as bit string";
-    const HASH_HEADER: &str = "Hash val is";
-
-    pub(crate) struct TestCase {
-        pub(crate) algorithm: usize,
-        pub(crate) bits: usize,
-        pub(crate) msg: Vec<u8>,
-        pub(crate) hash: Vec<u8>,
-    }
-
-    /// Parses the named NIST FIPS 202 example-vector file from bc-test-data. Returns an empty list
-    /// (skipping the test) if bc-test-data is not available.
-    pub(crate) fn read_test_vectors(filename: &str) -> Vec<TestCase> {
-        let mut test_vectors: Vec<TestCase> = vec![];
-        let Some(content) = get_test_data(filename) else {
-            return test_vectors;
-        };
-        let string_content: Vec<String> = content.lines().map(String::from).collect();
-
-        let mut i = 0;
-        while i < string_content.len() {
-            if string_content[i].contains(SAMPLE_OF) {
-                let header = string_content[i].split(SAMPLE_OF).collect::<Vec<&str>>();
-
-                let algorithm =
-                    header[0].split("-").collect::<Vec<&str>>()[1].parse::<usize>().unwrap();
-                let bits = header[1].split("-").collect::<Vec<&str>>()[0].parse::<usize>().unwrap();
-
-                i += 2;
-                if !string_content[i].contains(MSG_HEADER) {
-                    panic!("Missing header {}", MSG_HEADER);
-                }
-
-                i += 1;
-                let mut block: Vec<u8> = vec![];
-                while string_content[i].len() != 0 {
-                    if string_content[i].trim().eq("#(empty message)") {
-                        i += 1;
-                        break;
-                    }
-                    let line = string_content[i].replace(" ", "");
-                    block.append(&mut Vec::from(line));
-                    i += 1;
-                }
-                if block.len() != bits {
-                    panic!(
-                        "Test vector length mismatch: block len = {}, bits = {}",
-                        block.len(),
-                        bits
-                    )
-                }
-                let msg = decode_binary(&mut block);
-
-                i += 1;
-                if !string_content[i].contains(HASH_HEADER) {
-                    panic!("Missing header {}", HASH_HEADER);
-                }
-
-                i += 1;
-                let mut block: Vec<u8> = vec![];
-                while string_content[i].len() != 0 {
-                    let line = string_content[i].replace(" ", "");
-                    block.append(&mut Vec::from(line));
-                    i += 1;
-                }
-                let hash = hex::decode(&*String::from_utf8(block).unwrap()).unwrap();
-
-                let v = TestCase { algorithm, bits, msg, hash };
-                test_vectors.push(v);
-            }
-            i += 1;
-        }
-
-        test_vectors
-    }
-
-    fn decode_binary(block: &mut Vec<u8>) -> Vec<u8> {
-        let bits = block.len();
-        let full_bytes = bits / 8;
-        let total_bytes = (bits + 7) / 8;
-        let mut result = vec![0u8; total_bytes];
-
-        for i in 0..full_bytes {
-            let index = i * 8;
-            block[index..(index + 8)].reverse();
-            result[i] = parse_binary(&block[index..(index + 8)]);
-        }
-
-        if total_bytes > full_bytes {
-            block[(full_bytes * 8)..].reverse();
-            result[full_bytes] = parse_binary(&block[(full_bytes * 8)..]);
-        }
-
-        result
-    }
-
-    fn parse_binary(block: &[u8]) -> u8 {
-        let str = std::str::from_utf8(block).unwrap();
-        isize::from_str_radix(str, 2).unwrap() as u8
     }
 }

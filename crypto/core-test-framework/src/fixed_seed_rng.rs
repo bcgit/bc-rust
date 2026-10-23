@@ -1,9 +1,10 @@
 //! A deterministic fake [`RNG`] for reproducible tests.
 
 use bouncycastle_core::errors::{KeyMaterialError, RNGError};
-use bouncycastle_core::key_material;
+use bouncycastle_core::hazmat::do_hazardous_operations;
 use bouncycastle_core::key_material::{KeyMaterialTrait, KeyType};
-use bouncycastle_core::traits::{RNG, SecurityStrength};
+use bouncycastle_core::security_strength::SecurityStrength;
+use bouncycastle_core::traits::RNG;
 
 /// A test-only fake [`RNG`] that produces a fixed, fully deterministic byte stream.
 ///
@@ -77,7 +78,7 @@ impl<const SEED_LEN: usize> RNG for FixedSeedRNG<SEED_LEN> {
     /// strength is enough for every ML-KEM / ML-DSA parameter set.
     fn fill_keymaterial_out(&mut self, out: &mut dyn KeyMaterialTrait) -> Result<usize, RNGError> {
         let mut len = 0;
-        key_material::do_hazardous_operations(out, |out| {
+        do_hazardous_operations(out, |out| {
             len = self
                 .next_bytes_out(out.ref_to_bytes_mut()?)
                 .map_err(|_| KeyMaterialError::GenericError("RNG failed to acquire next bytes."))?;

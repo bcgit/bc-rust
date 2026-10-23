@@ -8,7 +8,7 @@
 //! an error if a caller matches exhaustively against the current set of variants.
 
 ///
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum HashError {
     ///
@@ -24,7 +24,7 @@ pub enum HashError {
 }
 
 ///
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum KeyMaterialError {
     ///
@@ -44,7 +44,7 @@ pub enum KeyMaterialError {
 }
 
 ///
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum KDFError {
     ///
@@ -60,7 +60,7 @@ pub enum KDFError {
 }
 
 ///
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum KEMError {
     ///
@@ -84,7 +84,7 @@ pub enum KEMError {
 }
 
 ///
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum MACError {
     ///
@@ -100,7 +100,7 @@ pub enum MACError {
 }
 
 ///
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum RNGError {
     ///
@@ -126,18 +126,13 @@ pub enum RNGError {
     KeyMaterialError(KeyMaterialError),
 }
 
-///
-#[derive(Debug)]
-#[non_exhaustive]
-pub enum SuspendableError {
-    /// The serialized state was produced by a library version incompatible with this one.
-    IncompatibleVersion,
-    /// The serialized state is malformed or corrupt.
-    InvalidData,
-}
+/// Errors from [`Suspendable`](crate::traits::Suspendable) and
+/// [`SuspendableKeyed`](crate::traits::SuspendableKeyed). Defined in `bouncycastle-utils` next to
+/// the version-header helpers that raise it, and re-exported here with the other error types.
+pub use bouncycastle_utils::suspendable_state::SuspendableError;
 
 ///
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum SignatureError {
     ///
@@ -161,7 +156,7 @@ pub enum SignatureError {
 }
 
 ///
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum SymmetricCipherError {
     ///
@@ -170,18 +165,51 @@ pub enum SymmetricCipherError {
     AEADTagCheckFailed,
     ///
     DecryptionFailed,
-    /// Indicates that the output buffer is not large enough to hold the requested output.
-    /// The usize represents the required buffer length.
-    IncorrectOutputBufferLength(&'static str, usize),
+    /// The caller's output buffer is too small for what this call would write. The usize is the
+    /// minimum length the buffer needs for the same call to succeed on a retry; the call consumed
+    /// no input and left the cipher's state untouched, so retrying with a buffer at least that
+    /// long produces exactly what the refused call would have.
+    OutputBufferTooSmall(usize),
+    /// The cipher has no keystream or counter space left under its current init data: this call
+    /// would need more than remains, and continuing would repeat keystream. The call consumed no
+    /// input and left the cipher's state untouched, so the bytes that still fit can be processed
+    /// in a shorter call; the rest needs a fresh encryption under new init data.
+    DataLimitExceeded,
+    /// The data is not a whole number of blocks, for a block cipher operation that takes only
+    /// whole blocks: a misaligned block-cipher ciphertext is malformed. Nothing was processed.
+    DataNotBlockAligned,
     ///
     KeyMaterialError(KeyMaterialError),
+    ///
+    PaddingError(PaddingError),
     ///
     RNGError(RNGError),
     ///
     StateError(&'static str),
 }
 
+/// Errors from a [`crate::traits::BlockCipherPadding`] scheme.
+#[derive(Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum PaddingError {
+    /// `pad()` was asked to pad more data than fits in a block alongside at least one byte of padding.
+    /// The usize is the maximum permitted data length (`BLOCK_LEN - 1`).
+    DataLengthTooLong(usize),
+    /// `unpad()` found the block does not carry well-formed padding. Deliberately carries no detail
+    /// about *how* the padding was malformed.
+    InvalidPadding,
+    /// `pad()` was asked to add padding by a scheme that adds none (`NoPadding`): the data was not
+    /// a whole number of blocks, and the caller must align it.
+    PaddingNotPermitted,
+}
+
 /*** Promotion functions ***/
+impl From<PaddingError> for SymmetricCipherError {
+    fn from(e: PaddingError) -> SymmetricCipherError {
+        Self::PaddingError(e)
+    }
+}
+
 impl From<KeyMaterialError> for SymmetricCipherError {
     fn from(e: KeyMaterialError) -> SymmetricCipherError {
         Self::KeyMaterialError(e)

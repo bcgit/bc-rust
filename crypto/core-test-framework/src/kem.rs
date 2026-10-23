@@ -2,8 +2,9 @@
 
 use crate::FixedSeedRNG;
 use bouncycastle_core::errors::KEMError;
+use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{
-    KEMDecapsulator, KEMEncapsulator, KEMPrivateKey, KEMPublicKey, RNG, SecurityStrength,
+    KEMDecapsulator, KEMEncapsulator, KEMPrivateKey, KEMPublicKey, RNG,
 };
 
 /// Instance of the test framework.

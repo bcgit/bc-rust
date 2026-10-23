@@ -9,7 +9,7 @@ use core::ops::{Index, IndexMut};
 
 /// A polynomial over the ML-KEM ring.
 ///
-/// # 🚨 Security 🚨
+/// # 🚨 Security Considerations 🚨
 /// Polynomials themselves are not inherently secret since sometimes they are part of public keys
 /// and sometimes private keys.
 /// It is the responsibility of the caller to wrap sensitive instances in `Secret<Polynomial>`.

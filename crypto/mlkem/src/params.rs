@@ -10,7 +10,7 @@
 
 use crate::matrix::{Matrix, MatrixTrait, Vector, VectorTrait};
 use crate::mlkem::{ML_KEM_512_NAME, ML_KEM_768_NAME, ML_KEM_1024_NAME, MLKEM_SS_LEN};
-use bouncycastle_core::traits::SecurityStrength;
+use bouncycastle_core::security_strength::SecurityStrength;
 
 /// A crate-private (aka "sealed") trait that prevents a new ML-KEM parameter set from being defined
 /// outside this crate.

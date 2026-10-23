@@ -98,6 +98,12 @@ fn decode_test() {
         Err(_) => {}
     }
 
+    // A backslash that is not the `\x` of an escaped byte is an invalid character, including one
+    // that ends the input: the decoder must not read past the end looking for the `x`.
+    assert!(matches!(hex::decode("ab\\"), Err(HexError::InvalidHexCharacter(2))));
+    assert!(matches!(hex::decode("\\"), Err(HexError::InvalidHexCharacter(0))));
+    assert!(matches!(hex::decode("ab\\\\x01"), Err(HexError::InvalidHexCharacter(2))));
+
     /* test other bytes-like input formats */
     assert_eq!(
         hex::decode(b"\x30\x30\x30\x31\x30\x32\x30\x33").unwrap(),

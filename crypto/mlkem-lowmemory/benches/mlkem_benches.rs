@@ -1,6 +1,7 @@
 use bouncycastle_core::key_material::{KeyMaterial512, KeyType};
 use bouncycastle_core::traits::KEMDecapsulator;
 use bouncycastle_hex as hex;
+use bouncycastle_mlkem_lowmemory::hazmat::EncapsWithRandomness;
 use bouncycastle_mlkem_lowmemory::{
     MLKEM_RND_LEN, MLKEM512, MLKEM512_CT_LEN, MLKEM768, MLKEM768_CT_LEN, MLKEM1024,
     MLKEM1024_CT_LEN, MLKEMTrait,
@@ -79,7 +80,7 @@ fn bench_mlkem_encaps(c: &mut Criterion) {
     group.bench_function("ML-KEM-512_lowmemory", |b| {
         b.iter(|| {
             for i in 0..NUM_ELEMS {
-                _ = black_box(MLKEM512::encaps_internal(&pk, nonces[i]));
+                _ = black_box(MLKEM512::encaps_with_randomness(&pk, nonces[i]));
             }
         })
     });
@@ -92,7 +93,7 @@ fn bench_mlkem_encaps(c: &mut Criterion) {
     group.bench_function("ML-KEM-768_lowmemory", |b| {
         b.iter(|| {
             for i in 0..NUM_ELEMS {
-                _ = black_box(MLKEM768::encaps_internal(&pk, nonces[i]));
+                _ = black_box(MLKEM768::encaps_with_randomness(&pk, nonces[i]));
             }
         })
     });
@@ -105,7 +106,7 @@ fn bench_mlkem_encaps(c: &mut Criterion) {
     group.bench_function("ML-KEM-1024_lowmemory", |b| {
         b.iter(|| {
             for i in 0..NUM_ELEMS {
-                _ = black_box(MLKEM1024::encaps_internal(&pk, nonces[i]));
+                _ = black_box(MLKEM1024::encaps_with_randomness(&pk, nonces[i]));
             }
         })
     });
@@ -139,8 +140,8 @@ fn bench_mlkem_decaps(c: &mut Criterion) {
     let mut cts = [[0u8; MLKEM512_CT_LEN]; NUM_ELEMS];
     for i in 0..NUM_ELEMS {
         // create each ct with a unique nonce
-        // encaps_internal() returns (ss, ct) ... we only want ct, hence the ".1"
-        cts[i].copy_from_slice(&MLKEM512::encaps_internal(&pk, [i as u8; MLKEM_RND_LEN]).1);
+        // encaps_with_randomness() returns (ss, ct) ... we only want ct, hence the ".1"
+        cts[i].copy_from_slice(&MLKEM512::encaps_with_randomness(&pk, [i as u8; MLKEM_RND_LEN]).1);
     }
 
     group.throughput(criterion::Throughput::Elements(NUM_ELEMS as u64));
@@ -160,8 +161,8 @@ fn bench_mlkem_decaps(c: &mut Criterion) {
     let mut cts = [[0u8; MLKEM768_CT_LEN]; NUM_ELEMS];
     for i in 0..NUM_ELEMS {
         // create each ct with a unique nonce
-        // encaps_internal() returns (ss, ct) ... we only want ct, hence the ".1"
-        cts[i].copy_from_slice(&MLKEM768::encaps_internal(&pk, [i as u8; MLKEM_RND_LEN]).1);
+        // encaps_with_randomness() returns (ss, ct) ... we only want ct, hence the ".1"
+        cts[i].copy_from_slice(&MLKEM768::encaps_with_randomness(&pk, [i as u8; MLKEM_RND_LEN]).1);
     }
 
     group.throughput(criterion::Throughput::Elements(NUM_ELEMS as u64));
@@ -181,8 +182,8 @@ fn bench_mlkem_decaps(c: &mut Criterion) {
     let mut cts = [[0u8; MLKEM1024_CT_LEN]; NUM_ELEMS];
     for i in 0..NUM_ELEMS {
         // create each ct with a unique nonce
-        // encaps_internal() returns (ss, ct) ... we only want ct, hence the ".1"
-        cts[i].copy_from_slice(&MLKEM1024::encaps_internal(&pk, [i as u8; MLKEM_RND_LEN]).1);
+        // encaps_with_randomness() returns (ss, ct) ... we only want ct, hence the ".1"
+        cts[i].copy_from_slice(&MLKEM1024::encaps_with_randomness(&pk, [i as u8; MLKEM_RND_LEN]).1);
     }
 
     group.throughput(criterion::Throughput::Elements(NUM_ELEMS as u64));

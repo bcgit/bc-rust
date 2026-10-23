@@ -19,7 +19,8 @@ use crate::hash_mldsa::{
 use crate::mldsa::{
     ML_DSA_44_NAME, ML_DSA_65_NAME, ML_DSA_87_NAME, MLDSA_SEED_LEN, POLY_T1PACKED_LEN, q,
 };
-use bouncycastle_core::traits::{Algorithm, AlgorithmOID, Hash, HashAlgParams, SecurityStrength};
+use bouncycastle_core::security_strength::SecurityStrength;
+use bouncycastle_core::traits::{Algorithm, AlgorithmOID, Hash, HashAlgParams};
 use bouncycastle_sha2::{SHA256, SHA512};
 use bouncycastle_utils::secret::ZeroizablePrimitive;
 

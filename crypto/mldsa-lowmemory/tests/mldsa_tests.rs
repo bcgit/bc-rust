@@ -3,11 +3,11 @@
 mod mldsa_tests {
     use crate::{MLDSA44_KAT1, MLDSA65_KAT1, MLDSA87_KAT1};
     use bouncycastle_core::errors::{RNGError, SignatureError, SuspendableError};
-    use bouncycastle_core::key_material;
+    use bouncycastle_core::hazmat::do_hazardous_operations;
     use bouncycastle_core::key_material::{KeyMaterial256, KeyMaterialTrait, KeyType};
+    use bouncycastle_core::security_strength::SecurityStrength;
     use bouncycastle_core::traits::{
-        RNG, SecurityStrength, SignaturePrivateKey, SignaturePublicKey, SignatureVerifier, Signer,
-        Suspendable,
+        Hash, RNG, SignaturePrivateKey, SignaturePublicKey, SignatureVerifier, Signer, Suspendable,
     };
     use bouncycastle_core_test_framework::DUMMY_SEED;
     use bouncycastle_core_test_framework::FixedSeedRNG;
@@ -277,10 +277,8 @@ mod mldsa_tests {
         assert_eq!(derived_pk.encode(), expected_pk_bytes.as_slice());
 
         // success case KeyType: BytesFullEntropy
-        key_material::do_hazardous_operations(&mut seed, |seed| {
-            seed.set_key_type(KeyType::CryptographicRandom)
-        })
-        .unwrap();
+        do_hazardous_operations(&mut seed, |seed| seed.set_key_type(KeyType::CryptographicRandom))
+            .unwrap();
         _ = MLDSA44::keygen_from_seed(&seed).unwrap();
 
         // Failure case: key type != Seed || BytesFullEntropy
@@ -343,21 +341,22 @@ mod mldsa_tests {
         .unwrap();
 
         // test the streaming API on the same value
-        let mut s = MLDSA44::sign_init(&sk, Some(&hex::decode(MLDSA44_KAT1.ctx).unwrap())).unwrap();
+        let mut s =
+            MLDSA44::do_sign_init(&sk, Some(&hex::decode(MLDSA44_KAT1.ctx).unwrap())).unwrap();
         s.set_signer_rnd(rnd);
-        s.sign_update(&hex::decode(MLDSA44_KAT1.message).unwrap());
-        let sig = s.sign_final().unwrap();
+        s.do_sign_update(&hex::decode(MLDSA44_KAT1.message).unwrap());
+        let sig = s.do_sign_final().unwrap();
         let decoded_sig: &[u8; MLDSA44_SIG_LEN] =
             &hex::decode(MLDSA44_KAT1.signature).unwrap().try_into().unwrap();
         assert_eq!(&sig, decoded_sig);
 
         // Then with the message broken into chunks
-        let mut s = MLDSA44::sign_init(&sk, Some(b"streaming API chunked")).unwrap();
+        let mut s = MLDSA44::do_sign_init(&sk, Some(b"streaming API chunked")).unwrap();
         s.set_signer_rnd(rnd);
         for msg_chunk in DUMMY_SEED.chunks(100) {
-            s.sign_update(msg_chunk);
+            s.do_sign_update(msg_chunk);
         }
-        let sig_val = s.sign_final().unwrap();
+        let sig_val = s.do_sign_final().unwrap();
         MLDSA44::verify(&sk.derive_pk(), DUMMY_SEED, Some(b"streaming API chunked"), &sig_val)
             .unwrap();
 
@@ -390,10 +389,11 @@ mod mldsa_tests {
         .unwrap();
 
         // test the streaming API on the same value
-        let mut s = MLDSA65::sign_init(&sk, Some(&hex::decode(MLDSA65_KAT1.ctx).unwrap())).unwrap();
+        let mut s =
+            MLDSA65::do_sign_init(&sk, Some(&hex::decode(MLDSA65_KAT1.ctx).unwrap())).unwrap();
         s.set_signer_rnd(rnd);
-        s.sign_update(&hex::decode(MLDSA65_KAT1.message).unwrap());
-        let sig = s.sign_final().unwrap();
+        s.do_sign_update(&hex::decode(MLDSA65_KAT1.message).unwrap());
+        let sig = s.do_sign_final().unwrap();
         let decoded_sig: &[u8; MLDSA65_SIG_LEN] =
             &hex::decode(MLDSA65_KAT1.signature).unwrap().try_into().unwrap();
         assert_eq!(&sig, decoded_sig);
@@ -427,10 +427,11 @@ mod mldsa_tests {
         .unwrap();
 
         // test the streaming API on the same value
-        let mut s = MLDSA87::sign_init(&sk, Some(&hex::decode(MLDSA87_KAT1.ctx).unwrap())).unwrap();
+        let mut s =
+            MLDSA87::do_sign_init(&sk, Some(&hex::decode(MLDSA87_KAT1.ctx).unwrap())).unwrap();
         s.set_signer_rnd(rnd);
-        s.sign_update(&hex::decode(MLDSA87_KAT1.message).unwrap());
-        let sig = s.sign_final().unwrap();
+        s.do_sign_update(&hex::decode(MLDSA87_KAT1.message).unwrap());
+        let sig = s.do_sign_final().unwrap();
         let decoded_sig: &[u8; MLDSA87_SIG_LEN] =
             &hex::decode(MLDSA87_KAT1.signature).unwrap().try_into().unwrap();
         assert_eq!(&sig, decoded_sig);
@@ -538,7 +539,7 @@ mod mldsa_tests {
             KeyType::Seed,
         )
         .unwrap();
-        key_material::do_hazardous_operations(&mut low_security_seed, |seed| {
+        do_hazardous_operations(&mut low_security_seed, |seed| {
             seed.set_security_strength(SecurityStrength::_192bit)
         })
         .unwrap();
@@ -552,7 +553,7 @@ mod mldsa_tests {
             KeyType::Seed,
         )
         .unwrap();
-        key_material::do_hazardous_operations(&mut low_security_seed, |seed| {
+        do_hazardous_operations(&mut low_security_seed, |seed| {
             seed.set_security_strength(SecurityStrength::_128bit)
         })
         .unwrap();
@@ -568,16 +569,16 @@ mod mldsa_tests {
             MLDSA44::sign_init_from_seed(&seed, Some(&hex::decode(MLDSA44_KAT1.ctx).unwrap()))
                 .unwrap();
         s.set_signer_rnd(rnd);
-        s.sign_update(&hex::decode(MLDSA44_KAT1.message).unwrap());
-        let sig = s.sign_final().unwrap();
+        s.do_sign_update(&hex::decode(MLDSA44_KAT1.message).unwrap());
+        let sig = s.do_sign_final().unwrap();
         assert_eq!(&sig, &expected_sig);
 
         // while we're at it, test the streaming verifier cause I'm not sure where else this is being tested.
 
         let mut v =
-            MLDSA44::verify_init(&pk, Some(&hex::decode(MLDSA44_KAT1.ctx).unwrap())).unwrap();
-        v.verify_update(&hex::decode(MLDSA44_KAT1.message).unwrap());
-        v.verify_final(&expected_sig).unwrap();
+            MLDSA44::do_verify_init(&pk, Some(&hex::decode(MLDSA44_KAT1.ctx).unwrap())).unwrap();
+        v.do_verify_update(&hex::decode(MLDSA44_KAT1.message).unwrap());
+        v.do_verify_final(&expected_sig).unwrap();
     }
 
     #[test]
@@ -589,11 +590,11 @@ mod mldsa_tests {
         let (_pk, sk) = MLDSA44::keygen().unwrap();
 
         // ctx with len 255 works
-        MLDSA44::sign_init(&sk, Some(&[1u8; 255])).unwrap();
+        MLDSA44::do_sign_init(&sk, Some(&[1u8; 255])).unwrap();
 
         // ctx with len 256 is too long
         let too_long_ctx = [1u8; 256];
-        match MLDSA44::sign_init(&sk, Some(&too_long_ctx)) {
+        match MLDSA44::do_sign_init(&sk, Some(&too_long_ctx)) {
             Err(SignatureError::LengthError(_)) => { /* good */ }
             _ => panic!("Expected error for ctx too long"),
         }
@@ -867,7 +868,6 @@ mod mldsa_tests {
 
     #[test]
     fn serializable_state_mubuilder_rejects_wrong_variant() {
-        use bouncycastle_core::traits::XOF;
         use bouncycastle_sha3::SHAKE128;
 
         // A MuBuilder is always backed by SHAKE256. A serialized SHAKE128 state has the same length
@@ -875,9 +875,7 @@ mod mldsa_tests {
         // variant tag weren't checked -- SHAKE128 (tag 5) must be rejected by MuBuilder (SHAKE256,
         // tag 6).
         let mut shake128 = SHAKE128::new();
-        shake128
-            .absorb(b"Colorless green ideas sleep furiously")
-            .expect("absorb before squeeze is infallible");
+        shake128.do_update(b"Colorless green ideas sleep furiously");
         let serialized_128 = shake128.suspend();
 
         match MuBuilder::from_suspended(serialized_128) {

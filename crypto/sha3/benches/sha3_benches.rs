@@ -125,7 +125,7 @@ fn bench_shake128_64b(c: &mut Criterion) {
         format!("input: {} bytes, output: {} bytes -- ::hashes()", big_data.len(), digest.len()),
         |b| {
             b.iter(|| {
-                SHAKE128::new().hash_xof_out(black_box(&big_data), &mut digest);
+                SHAKE128::new().xof_out(black_box(&big_data), &mut digest);
                 black_box(&digest);
             })
         },
@@ -149,7 +149,7 @@ fn bench_shake128_64k(c: &mut Criterion) {
         format!("input: {} bytes, output: {} bytes -- ::hashes()", big_data.len(), digest.len()),
         |b| {
             b.iter(|| {
-                SHAKE128::new().hash_xof_out(black_box(&big_data), &mut digest);
+                SHAKE128::new().xof_out(black_box(&big_data), &mut digest);
                 black_box(&digest);
             })
         },
@@ -173,7 +173,7 @@ fn bench_shake256_64b(c: &mut Criterion) {
         format!("input: {} bytes, output: {} bytes -- ::hashes()", big_data.len(), digest.len()),
         |b| {
             b.iter(|| {
-                SHAKE256::new().hash_xof_out(black_box(&big_data), &mut digest);
+                SHAKE256::new().xof_out(black_box(&big_data), &mut digest);
                 black_box(&digest);
             })
         },
@@ -197,7 +197,7 @@ fn bench_shake256_64k(c: &mut Criterion) {
         format!("input: {} bytes, output: {} bytes -- ::hashes()", big_data.len(), digest.len()),
         |b| {
             b.iter(|| {
-                SHAKE128::new().hash_xof_out(black_box(&big_data), &mut digest);
+                SHAKE128::new().xof_out(black_box(&big_data), &mut digest);
                 black_box(&digest);
             })
         },

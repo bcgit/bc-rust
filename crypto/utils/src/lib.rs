@@ -18,6 +18,7 @@
 
 pub mod ct;
 pub mod secret;
+pub mod suspendable_state;
 
 /// Basic max function. If they are equal, it returns the first one.
 pub fn max<'a, T: PartialOrd>(x: &'a T, y: &'a T) -> &'a T {
