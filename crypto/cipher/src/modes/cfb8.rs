@@ -54,7 +54,6 @@
 
 use crate::modes::ModeNames;
 use crate::modes::iv::random_iv;
-use crate::stream::stream_update_out;
 use crate::{Decrypting, Encrypting};
 use bouncycastle_core::errors::{SuspendableError, SymmetricCipherError};
 use bouncycastle_core::hazmat::ElectronicCodeBook;
@@ -210,14 +209,25 @@ where
         input_len
     }
 
-    /// See [`stream_update_out`].
+    /// Copies `plaintext` into `ciphertext` and works in place there, so the caller's input is left
+    /// untouched. The whole of `ciphertext` is zeroized first.
+    ///
+    /// # Errors
+    /// [`SymmetricCipherError::OutputBufferTooSmall`] if `ciphertext` is shorter than `plaintext`,
+    /// checked before anything is consumed.
     fn do_encrypt_out(
         &mut self,
         plaintext: &[u8],
         ciphertext: &mut [u8],
     ) -> Result<usize, SymmetricCipherError> {
         ciphertext.fill(0);
-        stream_update_out(plaintext, ciphertext, |data| self.do_encrypt_inplace(data))
+        if ciphertext.len() < plaintext.len() {
+            return Err(SymmetricCipherError::OutputBufferTooSmall(plaintext.len()));
+        }
+        let out = &mut ciphertext[..plaintext.len()];
+        out.copy_from_slice(plaintext);
+        self.do_encrypt_inplace(out)?;
+        Ok(plaintext.len())
     }
 
     /// Nothing is held back, so there is nothing to finish.
@@ -272,14 +282,25 @@ where
         input_len
     }
 
-    /// See [`stream_update_out`].
+    /// Copies `ciphertext` into `plaintext` and works in place there, so the caller's input is left
+    /// untouched. The whole of `plaintext` is zeroized first.
+    ///
+    /// # Errors
+    /// [`SymmetricCipherError::OutputBufferTooSmall`] if `plaintext` is shorter than `ciphertext`,
+    /// checked before anything is consumed.
     fn do_decrypt_out(
         &mut self,
         ciphertext: &[u8],
         plaintext: &mut [u8],
     ) -> Result<usize, SymmetricCipherError> {
         plaintext.fill(0);
-        stream_update_out(ciphertext, plaintext, |data| self.do_decrypt_inplace(data))
+        if plaintext.len() < ciphertext.len() {
+            return Err(SymmetricCipherError::OutputBufferTooSmall(ciphertext.len()));
+        }
+        let out = &mut plaintext[..ciphertext.len()];
+        out.copy_from_slice(ciphertext);
+        self.do_decrypt_inplace(out)?;
+        Ok(ciphertext.len())
     }
 
     /// Nothing is held back, so there is nothing to finish.

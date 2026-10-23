@@ -1,5 +1,4 @@
-//! Stream ciphers built from a [`KeyStream`], and the helpers a stream cipher that cannot be built
-//! that way uses for the separate-output half of its API.
+//! Stream ciphers built from a [`KeyStream`].
 //!
 //! [`StreamCipher`] turns any [`KeyStream`] into a [`StreamCipherEncryptor`] /
 //! [`StreamCipherDecryptor`] pair, and with it the [`SymmetricCipherEncryptor`] /
@@ -8,8 +7,7 @@
 //! implementor writes the keystream; the nonce, the partly-used block held between calls and the
 //! refusal to run past the end of the keystream are written once, here.
 //!
-//! A mode whose keystream depends on the data, such as CFB, implements the traits itself; the free
-//! functions here are the parts of that implementation that are the same for every stream cipher.
+//! A mode whose keystream depends on the data, such as CFB, implements the traits itself.
 //!
 //! # Suspending and resuming execution
 //!
@@ -36,29 +34,6 @@ use bouncycastle_utils::suspendable_state::{
     suspend_component,
 };
 use core::marker::PhantomData;
-
-/// The separate-output `do_update_out` of a stream cipher, over its in-place data method: copies
-/// `input` into `output` and applies `in_place` there, so the caller's input is left untouched.
-/// Returns `input.len()`, since a stream cipher neither buffers nor changes the length of its data.
-/// The whole of `output` is zeroized first, so any bytes past `input.len()` will be 0.
-///
-/// # Errors
-/// [`SymmetricCipherError::OutputBufferTooSmall`] if `output` is shorter than `input`, checked
-/// before anything is consumed; otherwise whatever `in_place` returns.
-pub fn stream_update_out(
-    input: &[u8],
-    output: &mut [u8],
-    in_place: impl FnOnce(&mut [u8]) -> Result<usize, SymmetricCipherError>,
-) -> Result<usize, SymmetricCipherError> {
-    output.fill(0);
-    if output.len() < input.len() {
-        return Err(SymmetricCipherError::OutputBufferTooSmall(input.len()));
-    }
-    let out = &mut output[..input.len()];
-    out.copy_from_slice(input);
-    in_place(out)?;
-    Ok(input.len())
-}
 
 /// A stream cipher over any [`KeyStream`], with the direction encoded in the type.
 ///
@@ -230,14 +205,25 @@ where
         input_len
     }
 
-    /// See [`stream_update_out`].
+    /// Copies `plaintext` into `ciphertext` and works in place there, so the caller's input is left
+    /// untouched. The whole of `ciphertext` is zeroized first.
+    ///
+    /// # Errors
+    /// [`SymmetricCipherError::OutputBufferTooSmall`] if `ciphertext` is shorter than `plaintext`,
+    /// checked before anything is consumed.
     fn do_encrypt_out(
         &mut self,
         plaintext: &[u8],
         ciphertext: &mut [u8],
     ) -> Result<usize, SymmetricCipherError> {
         ciphertext.fill(0);
-        stream_update_out(plaintext, ciphertext, |data| self.apply(data))
+        if ciphertext.len() < plaintext.len() {
+            return Err(SymmetricCipherError::OutputBufferTooSmall(plaintext.len()));
+        }
+        let out = &mut ciphertext[..plaintext.len()];
+        out.copy_from_slice(plaintext);
+        self.apply(out)?;
+        Ok(plaintext.len())
     }
 
     /// Nothing is held back, so there is nothing to finish.
@@ -288,14 +274,25 @@ where
         input_len
     }
 
-    /// See [`stream_update_out`].
+    /// Copies `ciphertext` into `plaintext` and works in place there, so the caller's input is left
+    /// untouched. The whole of `plaintext` is zeroized first.
+    ///
+    /// # Errors
+    /// [`SymmetricCipherError::OutputBufferTooSmall`] if `plaintext` is shorter than `ciphertext`,
+    /// checked before anything is consumed.
     fn do_decrypt_out(
         &mut self,
         ciphertext: &[u8],
         plaintext: &mut [u8],
     ) -> Result<usize, SymmetricCipherError> {
         plaintext.fill(0);
-        stream_update_out(ciphertext, plaintext, |data| self.apply(data))
+        if plaintext.len() < ciphertext.len() {
+            return Err(SymmetricCipherError::OutputBufferTooSmall(ciphertext.len()));
+        }
+        let out = &mut plaintext[..ciphertext.len()];
+        out.copy_from_slice(ciphertext);
+        self.apply(out)?;
+        Ok(ciphertext.len())
     }
 
     /// Nothing is held back, so there is nothing to finish.
