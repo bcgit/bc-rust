@@ -110,7 +110,7 @@ use crate::modes::iv::random_iv;
 use crate::stream::StreamCipher;
 use bouncycastle_core::errors::{SuspendableError, SymmetricCipherError};
 use bouncycastle_core::hazmat::{ElectronicCodeBook, KeyStream};
-use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait};
+use bouncycastle_core::key_material::KeyMaterial;
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{
     AEADCipherDecryptor, AEADCipherEncryptor, Algorithm, RNG, StreamCipherDecryptor,
@@ -303,7 +303,6 @@ where
         // which is the one path every construction goes through; duplicating them here would be
         // two more `Err` sites that could drift apart from it. `P::new`'s own `KeyType`/strength
         // checks are the only key validation needed, exactly as for every other mode in this crate.
-        key.check_algorithm(Self::ALG_NAME)?;
         let perm = P::new(key)?;
         let mut ccm = Self::from_perm_with_lengths(perm, nonce, aad.len(), payload_len)?;
         // Exactly the length just declared, so nothing is left owed.
@@ -363,7 +362,6 @@ where
         aad_len: usize,
         payload_len: usize,
     ) -> Result<Self, SymmetricCipherError> {
-        key.check_algorithm(Self::ALG_NAME)?;
         let perm = P::new(key)?;
         Self::from_perm_with_lengths(perm, nonce, aad_len, payload_len)
     }
@@ -969,7 +967,6 @@ where
         key: &KeyMaterial<KEY_LEN>,
         nonce: &[u8; NONCE_LEN],
     ) -> Result<Self, SymmetricCipherError> {
-        key.check_algorithm(Self::ALG_NAME)?;
         Ok(Self::from_perm(P::new(key)?, nonce))
     }
 
@@ -1335,7 +1332,6 @@ where
         // and every other mode in this crate; `random_iv` is CBC/CFB's same OS-backed draw --
         // Sec 5.3 asks only for uniqueness, not CBC/CFB's unpredictability, but a CSPRNG draw is
         // the only way to be unique without state `do_encrypt_init` does not have.
-        key.check_algorithm(Self::ALG_NAME)?;
         let perm = P::new(key)?;
         let nonce = random_iv::<NONCE_LEN>(rng)?;
         Ok((Self(CcmAdapter::new(perm, &nonce)), nonce))
@@ -1693,7 +1689,6 @@ where
         nonce: &[u8; NONCE_LEN],
     ) -> Result<Self, SymmetricCipherError> {
         // `P::new`'s own checks are the only key validation needed; see the encryptor.
-        key.check_algorithm(Self::ALG_NAME)?;
         let perm = P::new(key)?;
         Ok(Self { inner: CcmAdapter::new(perm, nonce), tag: [0u8; TAG_LEN], tag_len: 0 })
     }
@@ -1974,7 +1969,6 @@ where
     }
 
     fn read_state(state: &[u8], key: &Self::Key) -> Result<Self, SuspendableError> {
-        key.check_algorithm(Self::ALG_NAME).map_err(|_| SuspendableError::InvalidData)?;
         let perm = P::new(key).map_err(|_| SuspendableError::InvalidData)?;
         let mut r = Cursor::new(state);
         let ctr_template = r.array::<BLOCK_LEN>();

@@ -2,7 +2,6 @@
 //! [`SymmetricCipherDecryptor`] and their stream-cipher refinement. The block-cipher and AEAD
 //! refinements have their own runners in [`crate::block_cipher`] and [`crate::aead`].
 
-use crate::key_binding::{assert_refused, bound_elsewhere, bound_to};
 use crate::{DUMMY_SEED, FixedSeedRNG};
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::hazmat::do_hazardous_operations;
@@ -19,7 +18,7 @@ pub struct TestFrameworkSymmetricCipher {
     /// granularity the pair accepts. 1 (the default) means every length round-trips. A larger value
     /// -- the block length, for a `PaddedBlockCipherEncryptor` over `NoPadding` -- means only
     /// multiples of it round-trip, and every other length must be *rejected* by `do_encrypt_final`
-    /// / `encrypt_out` with a `PaddingError`, which the test then asserts instead.
+    /// / `encrypt_out` with `DataNotBlockAligned`, which the test then asserts instead.
     pub required_alignment: usize,
     /// For [`test_encryptor_decryptor`](Self::test_encryptor_decryptor): the one message length
     /// the pair's streaming methods accept, if they accept only one. `None` (the default) means
@@ -87,14 +86,17 @@ impl TestFrameworkSymmetricCipher {
             if !len.is_multiple_of(align) {
                 let mut ct = vec![0u8; E::encrypt_out_len(len) + FINAL_LEN];
                 match E::encrypt_out(&key, msg, &mut ct) {
-                    Err(SymmetricCipherError::PaddingError(_)) => {}
+                    Err(SymmetricCipherError::DataNotBlockAligned) => {}
                     other => panic!("len {len} is not aligned and must be refused, got {other:?}"),
                 }
                 let (mut enc, _) = E::do_encrypt_init(&key).unwrap();
                 let mut buf = vec![0u8; enc.do_encrypt_out_len(len)];
                 enc.do_encrypt_out(msg, &mut buf).unwrap();
                 assert!(
-                    matches!(enc.do_encrypt_final(), Err(SymmetricCipherError::PaddingError(_))),
+                    matches!(
+                        enc.do_encrypt_final(),
+                        Err(SymmetricCipherError::DataNotBlockAligned)
+                    ),
                     "len {len}: streaming do_encrypt_final must refuse an unaligned message"
                 );
                 continue;
@@ -447,12 +449,6 @@ impl TestFrameworkSymmetricCipher {
             _ => panic!("A key that is not a SymmetricCipherKey should have been rejected"),
         };
 
-        // error case: a key bound to another algorithm; one bound to this one is fine
-        E::do_encrypt_init(&bound_to(&key, E::ALG_NAME)).unwrap();
-        D::do_decrypt_init(&bound_to(&key, D::ALG_NAME), &init_data).unwrap();
-        assert_refused(E::do_encrypt_init(&bound_elsewhere(&key)), "do_encrypt_init");
-        assert_refused(D::do_decrypt_init(&bound_elsewhere(&key), &init_data), "do_decrypt_init");
-
         // error case: security strengths too weak, and strong enough
         let mut key = KeyMaterial::<KEY_LEN>::from_bytes_as_type(
             &DUMMY_SEED[..KEY_LEN],
@@ -641,13 +637,6 @@ impl TestFrameworkStreamCipher {
             Err(SymmetricCipherError::KeyMaterialError(_)) => { /* good */ }
             _ => panic!("Unexpected error"),
         };
-
-        // error case: a key bound to another algorithm; one bound to this one is fine
-        let init_data = [0u8; INIT_DATA_LEN];
-        E::do_encrypt_init(&bound_to(&key, E::ALG_NAME)).unwrap();
-        D::do_decrypt_init(&bound_to(&key, D::ALG_NAME), &init_data).unwrap();
-        assert_refused(E::do_encrypt_init(&bound_elsewhere(&key)), "do_encrypt_init");
-        assert_refused(D::do_decrypt_init(&bound_elsewhere(&key), &init_data), "do_decrypt_init");
 
         // error case: security strengths too weak and too strong
         let mut key = KeyMaterial::<KEY_LEN>::from_bytes_as_type(

@@ -61,8 +61,3 @@ path = "tests/modes/gcm_tests.rs"
 [[test]]
 name = "symmetric_cipher_api_tests"
 path = "tests/modes/symmetric_cipher_api_tests.rs"
-
-[[bench]]
-name = "padding_benches"
-path = "benches/padding/padding_benches.rs"
-harness = false

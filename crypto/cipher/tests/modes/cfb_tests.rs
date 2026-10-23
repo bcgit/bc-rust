@@ -195,7 +195,7 @@ fn the_mode_matches_the_spec_equations() {
         Cbc::<Toy, Encrypting, TOY_LEN, TOY_LEN>::do_encrypt_init_rng(&key, &mut pinned_rng(iv))
             .unwrap();
     let mut cbc_c1: [u8; TOY_LEN] = plaintext[..TOY_LEN].try_into().unwrap();
-    cbc.do_encrypt_inplace(&mut cbc_c1).unwrap();
+    cbc.do_encrypt_blocks_inplace(cbc_c1.as_chunks_mut().0).unwrap();
     assert_ne!(&cbc_c1[..], &ct[..TOY_LEN], "CFB must not agree with CBC");
 }
 

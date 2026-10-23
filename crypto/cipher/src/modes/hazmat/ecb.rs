@@ -18,7 +18,7 @@
 //! # use toy::ToyBlockCipher;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 //! use bouncycastle_core::traits::{BlockCipherDecryptor, BlockCipherEncryptor};
-//! use bouncycastle_cipher::modes::hazmat::Ecb;
+//! use bouncycastle_cipher::modes::hazmat::ecb::Ecb;
 //! use bouncycastle_cipher::{Decrypting, Encrypting};
 //!
 //! type ToyEcb<Dir> = Ecb<ToyBlockCipher, Dir, 16, 16>;
@@ -84,7 +84,7 @@ use crate::modes::ModeNames;
 use crate::{Decrypting, Encrypting};
 use bouncycastle_core::errors::{SuspendableError, SymmetricCipherError};
 use bouncycastle_core::hazmat::ElectronicCodeBook;
-use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait};
+use bouncycastle_core::key_material::KeyMaterial;
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{
     Algorithm, BlockCipherDecryptor, BlockCipherEncryptor, RNG, SuspendableKeyed,
@@ -127,7 +127,6 @@ where
 
     /// Expands the key. Both `_init` constructors are this; there is nothing else to set up.
     fn new(key: &KeyMaterial<KEY_LEN>) -> Result<Self, SymmetricCipherError> {
-        key.check_algorithm(Self::ALG_NAME)?;
         Ok(Self { perm: P::new(key)?, _dir: PhantomData })
     }
 }
@@ -175,7 +174,6 @@ where
         )
     }
 
-    /// The implementor hook (the flat `do_encrypt_inplace` is provided over it):
     /// `Cj = CIPH_K(Pj)` for every block, in place.
     ///
     /// Sec 6.1 allows the forward cipher functions to "be computed in parallel", so the blocks go
@@ -216,7 +214,6 @@ where
         Self::new(key)
     }
 
-    /// The implementor hook (the flat `do_decrypt_inplace` is provided over it):
     /// `Pj = CIPH^-1_K(Cj)` for every block, in place -- fours, then pairs, then the remaining
     /// block, as on the encrypt side. Never fails.
     fn do_decrypt_blocks_inplace(

@@ -2,7 +2,7 @@
 //! its peak memory usage can be measured with:
 //!
 //! ```text
-//! valgrind --tool=massif --heap=no --stacks=yes -- target/release/bench_ascon_mem_usage <bench> > /dev/null
+//! valgrind --tool=massif --heap=no --stacks=yes -- target/release/bench_ascon_mem_usage > /dev/null
 //!
 //! ms_print massif.out.*
 //! ```
@@ -10,7 +10,7 @@
 //! or, shoved all into one line:
 //!
 //! ```text
-//! clear; clear; valgrind --tool=massif --heap=no --stacks=yes -- target/release/bench_ascon_mem_usage aead_encrypt_out > /dev/null; ms_print massif.out.*; rm massif.out.*
+//! clear; clear; valgrind --tool=massif --heap=no --stacks=yes -- target/release/bench_ascon_mem_usage > /dev/null; ms_print massif.out.*; rm massif.out.*
 //! ```
 //!
 //! Make sure you build in release mode!
@@ -18,9 +18,10 @@
 //! Note: print!() and `black_box` are used to force the compiler not to optimize away the actual
 //! code. The important stuff for benchmarking goes to stderr so the junk can be piped to /dev/null.
 //!
-//! Main is at the bottom: the first argument names the bench to run (see the `match`), and with
-//! none it prints the struct sizes. Measure one at a time, because massif reports the peak across
-//! the whole process.
+//! Main is at the bottom, and controls which of these actually runs -- measure one at a time,
+//! because massif reports the peak across the whole process. The benches are toggled by
+//! commenting them in and out rather than chosen by an argument, so that reading `std::env`
+//! and the dispatch are not under the measured frame.
 //!
 //! # What to expect, and why massif cannot see it
 //!
@@ -641,31 +642,28 @@ fn bench_cxof128_oneshot() {
 }
 
 fn main() {
-    let which = std::env::args().nth(1).unwrap_or_default();
-    match which.as_str() {
-        "nothing" => bench_do_nothing(),
-        "aead_encrypt_init" => bench_aead_encrypt_init(),
-        "aead_encrypt_update_aad" => bench_aead_encrypt_update_aad(),
-        "aead_encrypt_out" => bench_aead_encrypt_out(),
-        "aead_encrypt_final" => bench_aead_encrypt_final(),
-        "aead_encrypt_final_detached" => bench_aead_encrypt_final_detached(),
-        "aead_encrypt_oneshot" => bench_aead_encrypt_oneshot(),
-        "aead_decrypt_init" => bench_aead_decrypt_init(),
-        "aead_decrypt_update_aad" => bench_aead_decrypt_update_aad(),
-        "aead_decrypt_out" => bench_aead_decrypt_out(),
-        "aead_decrypt_final" => bench_aead_decrypt_final(),
-        "aead_decrypt_final_detached" => bench_aead_decrypt_final_detached(),
-        "aead_decrypt_oneshot" => bench_aead_decrypt_oneshot(),
-        "hash256_update" => bench_hash256_update(),
-        "hash256_final" => bench_hash256_final(),
-        "hash256_oneshot" => bench_hash256_oneshot(),
-        "xof128_update" => bench_xof128_update(),
-        "xof128_output" => bench_xof128_output(),
-        "xof128_oneshot" => bench_xof128_oneshot(),
-        "cxof128_with_customization" => bench_cxof128_with_customization(),
-        "cxof128_update" => bench_cxof128_update(),
-        "cxof128_output" => bench_cxof128_output(),
-        "cxof128_oneshot" => bench_cxof128_oneshot(),
-        _ => print_struct_sizes(),
-    }
+    print_struct_sizes()
+    // bench_do_nothing()
+    // bench_aead_encrypt_init()
+    // bench_aead_encrypt_update_aad()
+    // bench_aead_encrypt_out()
+    // bench_aead_encrypt_final()
+    // bench_aead_encrypt_final_detached()
+    // bench_aead_encrypt_oneshot()
+    // bench_aead_decrypt_init()
+    // bench_aead_decrypt_update_aad()
+    // bench_aead_decrypt_out()
+    // bench_aead_decrypt_final()
+    // bench_aead_decrypt_final_detached()
+    // bench_aead_decrypt_oneshot()
+    // bench_hash256_update()
+    // bench_hash256_final()
+    // bench_hash256_oneshot()
+    // bench_xof128_update()
+    // bench_xof128_output()
+    // bench_xof128_oneshot()
+    // bench_cxof128_with_customization()
+    // bench_cxof128_update()
+    // bench_cxof128_output()
+    // bench_cxof128_oneshot()
 }

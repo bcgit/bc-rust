@@ -67,7 +67,8 @@ fn cipher_key<const N: usize>(bytes: &[u8]) -> KeyMaterial<N> {
 /// ([`CcmPacket::encrypt_detached_out`]), and `expected_ct`/`expected_tag` must decrypt back to `msg`
 /// ([`CcmPacket::decrypt_detached_out`]). For `result: "invalid"`, only the decrypt direction is checked --
 /// re-encrypting `msg` has no reason to reproduce a deliberately corrupted `ct`/`tag` -- and it
-/// must fail the tag check rather than return a payload.
+/// must fail the tag check rather than return a payload, leaving the output buffer zeroized as
+/// [`CcmPacket::decrypt_detached_out`] documents.
 #[allow(clippy::too_many_arguments)]
 fn run_case<const KEY_LEN: usize, const NONCE_LEN: usize, const TAG_LEN: usize, P>(
     tc_id: u64,
@@ -99,7 +100,9 @@ fn run_case<const KEY_LEN: usize, const NONCE_LEN: usize, const TAG_LEN: usize, 
         assert_eq!(got_tag, tag, "tcId {tc_id}: tag mismatch");
     }
 
-    let mut plaintext = vec![0u8; expected_ct.len()];
+    // Pre-filled with a non-zero byte, so a buffer the decryptor never wrote is not mistaken for
+    // one it zeroized.
+    let mut plaintext = vec![0xEEu8; expected_ct.len()];
     match CcmPacket::<P, Decrypting, KEY_LEN, 16, NONCE_LEN, TAG_LEN>::decrypt_detached_out(
         &key, &nonce, aad, expected_ct, &tag, &mut plaintext,
     ) {
@@ -110,6 +113,10 @@ fn run_case<const KEY_LEN: usize, const NONCE_LEN: usize, const TAG_LEN: usize, 
         }
         Err(SymmetricCipherError::AEADTagCheckFailed) => {
             assert!(!valid, "tcId {tc_id}: a valid vector failed its tag check");
+            assert!(
+                plaintext.iter().all(|&b| b == 0),
+                "tcId {tc_id}: a failed tag check must leave the output buffer zeroized"
+            );
         }
         Err(e) => panic!("tcId {tc_id}: unexpected CCM error: {e:?}"),
     }

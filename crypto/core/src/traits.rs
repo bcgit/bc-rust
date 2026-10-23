@@ -614,7 +614,7 @@ pub trait AlgorithmOID {
 }
 
 /// The decryption half of a block cipher's streaming API; see [`BlockCipherEncryptor`], whose
-/// notes on in-place operation, compile-time lengths and the `Result` all apply here too.
+/// notes on in-place operation, lengths and the `Result` all apply here too.
 pub trait BlockCipherDecryptor<
     const KEY_LEN: usize,
     const INIT_DATA_LEN: usize,
@@ -627,8 +627,7 @@ pub trait BlockCipherDecryptor<
         init_data: &[u8; INIT_DATA_LEN],
     ) -> Result<Self, SymmetricCipherError>;
     /// The implementor hook: decrypts consecutive whole blocks in place. See
-    /// [`BlockCipherEncryptor::do_encrypt_blocks_inplace`]; callers should normally use the flat
-    /// [`BlockCipherDecryptor::do_decrypt_inplace`] instead. Returns the number of bytes written, which is
+    /// [`BlockCipherEncryptor::do_encrypt_blocks_inplace`]. Returns the number of bytes written, which is
     /// always `blocks.len() * BLOCK_LEN` since a block cipher mode never changes the length of its
     /// data, but the count is still returned for consistency with the rest of the library's
     /// output-buffer APIs.
@@ -637,33 +636,21 @@ pub trait BlockCipherDecryptor<
         blocks: &mut [[u8; BLOCK_LEN]],
     ) -> Result<usize, SymmetricCipherError>;
 
-    /// Streaming: decrypts `LEN` bytes, a whole number of blocks, in place. `LEN % BLOCK_LEN == 0`
-    /// is checked at compile time, exactly as for [`BlockCipherEncryptor::do_encrypt_inplace`].
-    /// Returns the number of bytes written; see [`Self::do_decrypt_blocks_inplace`].
-    fn do_decrypt_inplace<const LEN: usize>(
-        &mut self,
-        data: &mut [u8; LEN],
-    ) -> Result<usize, SymmetricCipherError> {
-        const {
-            assert!(
-                LEN.is_multiple_of(BLOCK_LEN),
-                "length must be a whole number of BLOCK_LEN-byte blocks"
-            )
-        };
-        // The remainder is provably empty (asserted above) and ignored.
-        let (blocks, _) = data.as_chunks_mut::<BLOCK_LEN>();
-        self.do_decrypt_blocks_inplace(blocks)
-    }
-
-    /// One-shot: decrypts `LEN` bytes in place from the given init data. `LEN % BLOCK_LEN == 0` is
-    /// checked at compile time exactly as for [`BlockCipherEncryptor::encrypt_inplace`]. Returns the
-    /// number of bytes written; see [`Self::do_decrypt_blocks_inplace`].
-    fn decrypt_inplace<const LEN: usize>(
+    /// One-shot: decrypts `data` in place from the given init data. Returns the number of bytes
+    /// written; see [`Self::do_decrypt_blocks_inplace`].
+    ///
+    /// # Errors
+    /// [`SymmetricCipherError::DataNotBlockAligned`] if `data` is not a whole number of blocks,
+    /// checked before any work is done, so `data` is left untouched.
+    fn decrypt_inplace(
         key: &KeyMaterial<KEY_LEN>,
         init_data: &[u8; INIT_DATA_LEN],
-        data: &mut [u8; LEN],
+        data: &mut [u8],
     ) -> Result<usize, SymmetricCipherError> {
-        Self::do_decrypt_init(key, init_data)?.do_decrypt_inplace(data)
+        let (blocks, []) = data.as_chunks_mut::<BLOCK_LEN>() else {
+            return Err(SymmetricCipherError::DataNotBlockAligned);
+        };
+        Self::do_decrypt_init(key, init_data)?.do_decrypt_blocks_inplace(blocks)
     }
 }
 
@@ -694,18 +681,17 @@ pub trait BlockCipherDecryptor<
 /// separate output buffer would only ever be a copy, and a copy of plaintext is one more thing to
 /// scrub. Callers that need to keep the plaintext copy it first.
 ///
-/// # Lengths are checked at compile time
+/// # Block alignment
 ///
-/// Every buffer is a `[u8; LEN]`, and `LEN % BLOCK_LEN == 0` is checked by an inline `const`
-/// assertion when the method is instantiated: a misaligned length is a compile error at the call
-/// site, not a runtime `Err`, which is why there is no length variant of [`SymmetricCipherError`]
-/// here. Data whose length is only known at run time is fed in block by block, or through the
-/// padding layer.
+/// The streaming methods take whole blocks, `&mut [[u8; BLOCK_LEN]]`, so a partial block cannot be
+/// expressed. The one-shots take a `&mut [u8]` and refuse one that is not a whole number of blocks
+/// with [`SymmetricCipherError::DataNotBlockAligned`], before doing any work. Data of any length
+/// goes through the padding layer.
 ///
 /// # Why the data methods still return `Result`
 ///
-/// Nothing about the buffer can go wrong, and a constructed value is always ready to use, so a
-/// mode like CBC never returns `Err` from them. The `Result` is for modes with a per-initialization
+/// Nothing about a whole-blocks buffer can go wrong, and a constructed value is always ready to
+/// use, so a mode like CBC never returns `Err` from the streaming methods. The `Result` is for modes with a per-initialization
 /// data limit -- a counter-based mode must refuse to encrypt past the point where its counter would
 /// repeat -- which a streaming API cannot check any earlier than the call that would cross it.
 pub trait BlockCipherEncryptor<
@@ -742,7 +728,6 @@ pub trait BlockCipherEncryptor<
     /// no length invariant for a const parameter to carry, and because how to batch the blocks --
     /// singly, in pairs, in fours -- is the mode's decision, not the caller's: a mode whose
     /// permutation processes several blocks at once (CBC decryption, CTR) chunks the slice itself.
-    /// Callers should normally use the flat [`BlockCipherEncryptor::do_encrypt_inplace`] instead.
     /// Returns the number of bytes written, which is always `blocks.len() * BLOCK_LEN` since a
     /// block cipher mode never changes the length of its data, but the count is still returned for
     /// consistency with the rest of the library's output-buffer APIs.
@@ -751,51 +736,40 @@ pub trait BlockCipherEncryptor<
         blocks: &mut [[u8; BLOCK_LEN]],
     ) -> Result<usize, SymmetricCipherError>;
 
-    /// Streaming: encrypts `LEN` bytes, a whole number of blocks, in place. A sequence of calls
-    /// is equivalent to one call over the concatenation. Returns the number of bytes written; see
-    /// [`Self::do_encrypt_blocks_inplace`].
+    /// One-shot: encrypts `data` in place under a fresh init, and returns the number of bytes
+    /// written (see [`Self::do_encrypt_blocks_inplace`]) alongside the generated init data.
     ///
-    /// `LEN % BLOCK_LEN == 0` is checked **at compile time**; see the trait docs. The whole buffer
-    /// then goes to [`BlockCipherEncryptor::do_encrypt_blocks_inplace`] in one call.
-    fn do_encrypt_inplace<const LEN: usize>(
-        &mut self,
-        data: &mut [u8; LEN],
-    ) -> Result<usize, SymmetricCipherError> {
-        const {
-            assert!(
-                LEN.is_multiple_of(BLOCK_LEN),
-                "length must be a whole number of BLOCK_LEN-byte blocks"
-            )
-        };
-        // The remainder is provably empty (asserted above) and ignored.
-        let (blocks, _) = data.as_chunks_mut::<BLOCK_LEN>();
-        self.do_encrypt_blocks_inplace(blocks)
-    }
-
-    /// One-shot: encrypts `LEN` bytes in place under a fresh init, and returns the number of
-    /// bytes written (see [`Self::do_encrypt_blocks_inplace`]) alongside the generated init data.
-    /// `LEN % BLOCK_LEN == 0` is checked **at compile time**; see the trait docs.
-    fn encrypt_inplace<const LEN: usize>(
+    /// # Errors
+    /// [`SymmetricCipherError::DataNotBlockAligned`] if `data` is not a whole number of blocks,
+    /// checked before any work is done, so `data` is left untouched.
+    fn encrypt_inplace(
         key: &KeyMaterial<KEY_LEN>,
-        data: &mut [u8; LEN],
+        data: &mut [u8],
     ) -> Result<(usize, [u8; INIT_DATA_LEN]), SymmetricCipherError> {
+        let (blocks, []) = data.as_chunks_mut::<BLOCK_LEN>() else {
+            return Err(SymmetricCipherError::DataNotBlockAligned);
+        };
         let (mut enc, init_data) = Self::do_encrypt_init(key)?;
-        let written = enc.do_encrypt_inplace(data)?;
+        let written = enc.do_encrypt_blocks_inplace(blocks)?;
         Ok((written, init_data))
     }
     /// As [`BlockCipherEncryptor::encrypt_inplace`], but sources randomness from the provided RNG.
+    /// A misaligned `data` is refused before `rng` is drawn from.
     ///
     /// # Panics
     /// Provided over [`do_encrypt_init_rng`](Self::do_encrypt_init_rng), so it panics in exactly
     /// the cases that does: an implementation with `INIT_DATA_LEN == 0`, which has no randomness
     /// to consume. See that method for why.
-    fn encrypt_rng_inplace<const LEN: usize>(
+    fn encrypt_rng_inplace(
         key: &KeyMaterial<KEY_LEN>,
         rng: &mut dyn RNG,
-        data: &mut [u8; LEN],
+        data: &mut [u8],
     ) -> Result<(usize, [u8; INIT_DATA_LEN]), SymmetricCipherError> {
+        let (blocks, []) = data.as_chunks_mut::<BLOCK_LEN>() else {
+            return Err(SymmetricCipherError::DataNotBlockAligned);
+        };
         let (mut enc, init_data) = Self::do_encrypt_init_rng(key, rng)?;
-        let written = enc.do_encrypt_inplace(data)?;
+        let written = enc.do_encrypt_blocks_inplace(blocks)?;
         Ok((written, init_data))
     }
 }
@@ -1695,12 +1669,9 @@ pub trait SymmetricCipherDecryptor<
     /// [`SymmetricCipherEncryptor::do_encrypt_init`].
     ///
     /// # Errors
-    /// Rejects a key whose [`KeyType`] is not [`KeyType::SymmetricCipherKey`], one bound to a
-    /// different algorithm (see [`KeyMaterialTrait::algorithm`]), and one whose security strength
-    /// is below [`Algorithm::MAX_SECURITY_STRENGTH`], all as a
+    /// Rejects a key whose [`KeyType`] is not [`KeyType::SymmetricCipherKey`], and one whose
+    /// security strength is below [`Algorithm::MAX_SECURITY_STRENGTH`], both as a
     /// [`SymmetricCipherError::KeyMaterialError`].
-    ///
-    /// [`KeyMaterialTrait::algorithm`]: crate::key_material::KeyMaterialTrait::algorithm
     fn do_decrypt_init(
         key: &KeyMaterial<KEY_LEN>,
         init_data: &[u8; INIT_DATA_LEN],
@@ -1776,8 +1747,9 @@ pub trait SymmetricCipherDecryptor<
     /// used.
     ///
     /// # Errors
-    /// [`SymmetricCipherError::DecryptionFailed`] if the ciphertext was malformed (empty, not a
-    /// whole number of blocks, or not the length an implementor's type fixes);
+    /// [`SymmetricCipherError::DataNotBlockAligned`] if a block cipher's ciphertext was not a whole
+    /// number of blocks; [`SymmetricCipherError::DecryptionFailed`] if it was otherwise malformed
+    /// (empty, or not the length an implementor's type fixes);
     /// [`SymmetricCipherError::PaddingError`] or
     /// [`SymmetricCipherError::AEADTagCheckFailed`] if the check fails. In every error case the
     /// caller learns only that decryption failed, not where.
@@ -1892,12 +1864,9 @@ pub trait SymmetricCipherEncryptor<
     /// randomness from the library's default OS-backed RNG.
     ///
     /// # Errors
-    /// Rejects a key whose [`KeyType`] is not [`KeyType::SymmetricCipherKey`], one bound to a
-    /// different algorithm (see [`KeyMaterialTrait::algorithm`]), and one whose security strength
-    /// is below [`Algorithm::MAX_SECURITY_STRENGTH`], all as a
+    /// Rejects a key whose [`KeyType`] is not [`KeyType::SymmetricCipherKey`], and one whose
+    /// security strength is below [`Algorithm::MAX_SECURITY_STRENGTH`], both as a
     /// [`SymmetricCipherError::KeyMaterialError`].
-    ///
-    /// [`KeyMaterialTrait::algorithm`]: crate::key_material::KeyMaterialTrait::algorithm
     fn do_encrypt_init(
         key: &KeyMaterial<KEY_LEN>,
     ) -> Result<(Self, [u8; INIT_DATA_LEN]), SymmetricCipherError>;

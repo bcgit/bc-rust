@@ -13,7 +13,7 @@
 mod common;
 
 use bouncycastle_cipher::modes::Cbc;
-use bouncycastle_cipher::modes::hazmat::Ecb;
+use bouncycastle_cipher::modes::hazmat::ecb::Ecb;
 use bouncycastle_cipher::padding::{PKCS7, PaddedBlockCipherDecryptor, PaddedBlockCipherEncryptor};
 use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::hazmat::ElectronicCodeBook;
@@ -48,26 +48,6 @@ fn dec_blocks<const N: usize>(
     let mut blocks = *ciphertext;
     dec.do_decrypt_blocks_inplace(&mut blocks).unwrap();
     blocks
-}
-
-/// The flat streaming method `do_encrypt_inplace`, by value.
-fn enc_flat<const LEN: usize>(
-    enc: &mut impl BlockCipherEncryptor<TOY_LEN, 0, TOY_LEN>,
-    plaintext: &[u8; LEN],
-) -> [u8; LEN] {
-    let mut data = *plaintext;
-    enc.do_encrypt_inplace(&mut data).unwrap();
-    data
-}
-
-/// The flat streaming method `do_decrypt_inplace`, by value.
-fn dec_flat<const LEN: usize>(
-    dec: &mut impl BlockCipherDecryptor<TOY_LEN, 0, TOY_LEN>,
-    ciphertext: &[u8; LEN],
-) -> [u8; LEN] {
-    let mut data = *ciphertext;
-    dec.do_decrypt_inplace(&mut data).unwrap();
-    data
 }
 
 fn encryptor() -> ToyEcb<Encrypting> {
@@ -154,7 +134,7 @@ fn the_mode_matches_the_spec_equations() {
     )
     .unwrap();
     let mut first = plaintext[0];
-    cbc.do_encrypt_inplace(&mut first).unwrap();
+    cbc.do_encrypt_blocks_inplace(first.as_chunks_mut().0).unwrap();
     assert_ne!(first, ct[0], "ECB must not agree with CBC");
 }
 
@@ -241,7 +221,10 @@ fn the_pair_path_is_used_in_both_directions() {
 
     // ...and one block at a time avoids the pair path.
     let (mut enc, _) = SwappedEcb::<Encrypting>::do_encrypt_init(&key).unwrap();
-    assert_eq!([enc_flat(&mut enc, &plaintext[0]), enc_flat(&mut enc, &plaintext[1])], ct);
+    assert_eq!(
+        [enc_blocks(&mut enc, &[plaintext[0]])[0], enc_blocks(&mut enc, &[plaintext[1]])[0]],
+        ct
+    );
 
     // Decryption likewise.
     let mut dec = SwappedEcb::<Decrypting>::do_decrypt_init(&key, &[]).unwrap();
@@ -251,7 +234,7 @@ fn the_pair_path_is_used_in_both_directions() {
         "decrypting a pair must go through decrypt_2blocks"
     );
     let mut dec = SwappedEcb::<Decrypting>::do_decrypt_init(&key, &[]).unwrap();
-    assert_eq!([dec_flat(&mut dec, &ct[0]), dec_flat(&mut dec, &ct[1])], plaintext);
+    assert_eq!([dec_blocks(&mut dec, &[ct[0]])[0], dec_blocks(&mut dec, &[ct[1]])[0]], plaintext);
 }
 
 /// The four-block path must be taken, and only for full fours, in both directions.
@@ -280,7 +263,7 @@ fn the_four_block_path_is_used_in_both_directions() {
     assert_ne!(dec_blocks(&mut dec, &ct), plaintext, "five blocks must go through decrypt_4blocks");
     let mut dec = SwappedFourEcb::<Decrypting>::do_decrypt_init(&key, &[]).unwrap();
     for (c, p) in ct.iter().zip(plaintext.iter()) {
-        assert_eq!(&dec_flat(&mut dec, c), p, "the single-block path must not batch");
+        assert_eq!(&dec_blocks(&mut dec, &[*c])[0], p, "the single-block path must not batch");
     }
 }
 
@@ -294,7 +277,7 @@ fn call_grouping_does_not_change_the_result() {
 
     let mut enc = encryptor();
     let mut got = [[0u8; TOY_LEN]; 11];
-    got[0] = enc_flat(&mut enc, &plaintext[0]);
+    got[0] = enc_blocks(&mut enc, &[plaintext[0]])[0];
     got[1..3].copy_from_slice(&enc_blocks(&mut enc, &[plaintext[1], plaintext[2]]));
     let rest: [[u8; TOY_LEN]; 8] = plaintext[3..11].try_into().unwrap();
     got[3..11].copy_from_slice(&enc_blocks(&mut enc, &rest));
@@ -312,15 +295,14 @@ fn call_grouping_does_not_change_the_result() {
     }
 }
 
-/// The flat streaming method and the one-shots must agree with the block-shaped hook.
+/// The one-shots must agree with the block-shaped hook.
 #[test]
-fn flat_streaming_and_one_shots_agree_with_the_block_hook() {
+fn one_shots_agree_with_the_block_hook() {
     let key = toy_key();
     let plaintext = [[0x11u8; TOY_LEN], [0x22u8; TOY_LEN], [0x33u8; TOY_LEN]];
     let flat_plaintext: [u8; 3 * TOY_LEN] = plaintext.as_flattened().try_into().unwrap();
 
     let block_ct = enc_blocks(&mut encryptor(), &plaintext);
-    assert_eq!(*block_ct.as_flattened(), enc_flat(&mut encryptor(), &flat_plaintext));
 
     let mut buf = flat_plaintext;
     let (_, init) = ToyEcb::<Encrypting>::encrypt_inplace(&key, &mut buf).unwrap();
@@ -329,8 +311,6 @@ fn flat_streaming_and_one_shots_agree_with_the_block_hook() {
     assert_eq!(buf, flat_plaintext);
 
     assert_eq!(dec_blocks(&mut decryptor(), &block_ct), plaintext);
-    let flat_ct: [u8; 3 * TOY_LEN] = block_ct.as_flattened().try_into().unwrap();
-    assert_eq!(dec_flat(&mut decryptor(), &flat_ct), flat_plaintext);
 }
 
 // ---- SP 800-38A Appendix D error propagation ---------------------------------------------

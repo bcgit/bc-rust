@@ -64,16 +64,35 @@
 //!
 //! let (mut encryptor, iv) =
 //!     ToyCbc::<Encrypting>::do_encrypt_init(&key).expect("encrypt init");
-//! let mut first = [0xAAu8; 16];
-//! let mut rest = [0xBBu8; 32];
-//! encryptor.do_encrypt_inplace(&mut first).expect("block 1");
-//! encryptor.do_encrypt_inplace(&mut rest).expect("blocks 2-3");
+//! let mut first = [[0xAAu8; 16]];
+//! let mut rest = [[0xBBu8; 16]; 2];
+//! encryptor.do_encrypt_blocks_inplace(&mut first).expect("block 1");
+//! encryptor.do_encrypt_blocks_inplace(&mut rest).expect("blocks 2-3");
 //!
 //! let mut decryptor = ToyCbc::<Decrypting>::do_decrypt_init(&key, &iv).expect("decrypt init");
-//! decryptor.do_decrypt_inplace(&mut first).unwrap();
-//! decryptor.do_decrypt_inplace(&mut rest).unwrap();
-//! assert_eq!(first, [0xAAu8; 16]);
-//! assert_eq!(rest, [0xBBu8; 32]);
+//! decryptor.do_decrypt_blocks_inplace(&mut first).unwrap();
+//! decryptor.do_decrypt_blocks_inplace(&mut rest).unwrap();
+//! assert_eq!(first, [[0xAAu8; 16]]);
+//! assert_eq!(rest, [[0xBBu8; 16]; 2]);
+//! ```
+//!
+//! A length that is not a whole number of blocks is refused, not truncated:
+//!
+//! ```
+//! # mod toy { include!("../../tests/common/toy_block_cipher.rs"); }
+//! # use toy::ToyBlockCipher;
+//! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
+//! use bouncycastle_core::errors::SymmetricCipherError;
+//! use bouncycastle_core::traits::BlockCipherEncryptor;
+//! use bouncycastle_cipher::modes::Cbc;
+//! use bouncycastle_cipher::Encrypting;
+//!
+//! let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey).unwrap();
+//! let mut data = [0u8; 20];
+//! assert_eq!(
+//!     Cbc::<ToyBlockCipher, Encrypting, 16, 16>::encrypt_inplace(&key, &mut data),
+//!     Err(SymmetricCipherError::DataNotBlockAligned)
+//! );
 //! ```
 //!
 //! # Suspending and resuming execution
@@ -102,7 +121,7 @@ use crate::modes::iv::random_iv;
 use crate::{Decrypting, Encrypting};
 use bouncycastle_core::errors::{SuspendableError, SymmetricCipherError};
 use bouncycastle_core::hazmat::ElectronicCodeBook;
-use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait};
+use bouncycastle_core::key_material::KeyMaterial;
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{
     Algorithm, BlockCipherDecryptor, BlockCipherEncryptor, RNG, SuspendableKeyed,
@@ -250,14 +269,11 @@ where
         key: &KeyMaterial<KEY_LEN>,
         rng: &mut dyn RNG,
     ) -> Result<(Self, [u8; BLOCK_LEN]), SymmetricCipherError> {
-        key.check_algorithm(Self::ALG_NAME)?;
         let perm = P::new(key)?;
         let iv = random_iv::<BLOCK_LEN>(rng)?;
         Ok((Self { perm, chain: iv, _dir: PhantomData }, iv))
     }
 
-    /// The implementor hook (the flat `do_encrypt_inplace` is provided over it).
-    ///
     /// Strictly serial: `Cj` is the input to block `j + 1`, so there is no pair path here. See the
     /// module docs. Never fails: CBC has no per-IV data limit.
     fn do_encrypt_blocks_inplace(
@@ -282,13 +298,10 @@ where
         key: &KeyMaterial<KEY_LEN>,
         init_data: &[u8; BLOCK_LEN],
     ) -> Result<Self, SymmetricCipherError> {
-        key.check_algorithm(Self::ALG_NAME)?;
         let perm = P::new(key)?;
         Ok(Self { perm, chain: *init_data, _dir: PhantomData })
     }
 
-    /// The implementor hook (the flat `do_decrypt_inplace` is provided over it).
-    ///
     /// Walks the input in fours through `decrypt_4blocks`, then pairs through `decrypt_2blocks`,
     /// then the at-most-one block left over: Sec 6.2's parallelism, in the units the permutation
     /// offers. `as_chunks_mut` splits into exactly those shapes with no runtime length check and no
@@ -328,7 +341,6 @@ where
     }
 
     fn read_state(state: &[u8], key: &Self::Key) -> Result<Self, SuspendableError> {
-        key.check_algorithm(Self::ALG_NAME).map_err(|_| SuspendableError::InvalidData)?;
         let perm = P::new(key).map_err(|_| SuspendableError::InvalidData)?;
         let mut chain = [0u8; BLOCK_LEN];
         chain.copy_from_slice(state);

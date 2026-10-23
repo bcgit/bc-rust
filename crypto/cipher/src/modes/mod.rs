@@ -38,7 +38,7 @@
 //! CBC, CFB, CFB8 and CTR all generate their own init data: an IV for the first three, a nonce for
 //! CTR, which is shorter than a block because the rest of the counter block is the counter. ECB has
 //! none at all (`INIT_DATA_LEN = 0`) and is the raw permutation applied block by block, which is
-//! why it lives under [`hazmat`] -- see [`hazmat::Ecb`] and
+//! why it lives under [`hazmat`] -- see [`hazmat::ecb::Ecb`] and
 //! [Choosing between the modes](#choosing-between-the-modes).
 //!
 //! [Choosing between the modes](#choosing-between-the-modes) covers when each is the right answer
@@ -149,7 +149,6 @@ pub mod cfb;
 pub mod cfb8;
 pub mod ctr;
 pub mod gcm;
-mod ghash;
 pub mod hazmat;
 mod iv;
 
@@ -160,13 +159,9 @@ pub use cfb8::Cfb8;
 pub use ctr::Ctr;
 pub use gcm::{GCM_NONCE_LEN, Gcm};
 
-/// The [`Algorithm::ALG_NAME`] each mode reports when built on `Self`.
+/// A table of algorithm names used to populate [`Algorithm`] for each Mode-Permutation-Size combination.
 ///
-/// A mode over a permutation is a different algorithm from the permutation -- AES-128 in CBC mode
-/// is `"AES_CBC_128"`, not `"AES-128"` -- and `&'static str`s cannot be concatenated in a `const`,
-/// so the permutation names the modes built on it, as a hash names its HMAC through
-/// `HMACParams::HMAC_ALG_NAME`. There are no defaults: a permutation that forgot one would
-/// otherwise report its own name for that mode.
+/// For permutations that do not implement all modes, simply leave the NAME for that mode as the empty-string.
 pub trait ModeNames {
     /// Reported by [`Cbc`].
     const CBC_ALG_NAME: &'static str;
@@ -176,9 +171,9 @@ pub trait ModeNames {
     const CFB_ALG_NAME: &'static str;
     /// Reported by [`Cfb8`].
     const CFB8_ALG_NAME: &'static str;
-    /// Reported by [`Ctr`], through its keystream [`hazmat::CtrKeyStream`].
+    /// Reported by [`Ctr`], through its keystream.
     const CTR_ALG_NAME: &'static str;
-    /// Reported by [`hazmat::Ecb`].
+    /// Reported by [`hazmat::ecb::Ecb`].
     const ECB_ALG_NAME: &'static str;
     /// Reported by [`Gcm`].
     const GCM_ALG_NAME: &'static str;

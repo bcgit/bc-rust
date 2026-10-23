@@ -37,624 +37,21 @@ struct Cli {
 #[allow(non_camel_case_types)]
 #[derive(Subcommand)]
 enum Subcommands {
-    /// Encode binary data from stdin to hex.
-    /// Supports streaming for low memory footprint and continuous processing from stdin to stdout.
-    HexEncode,
-
-    /// Decode hex data from stdin to binary.
-    /// Supports streaming for low memory footprint and continuous processing from stdin to stdout.
-    HexDecode,
-
-    /// Encode binary data from stdin to base64.
-    /// Supports streaming for low memory footprint and continuous processing from stdin to stdout.
-    Base64Encode,
-
-    /// Decode base64 data from stdin to binary.
-    /// Supports streaming for low memory footprint and continuous processing from stdin to stdout.
-    Base64Decode,
-
-    /// Perform SHA224 of the content provided on stdin.
-    /// Supports streaming update for low memory footprint.
-    SHA224 {
-        #[arg(short)]
-        /// Output the hashes in hex format.
-        x: bool,
-    },
-
-    /// Perform SHA256 of the content provided on stdin.
-    /// Supports streaming update for low memory footprint.
-    SHA256 {
-        #[arg(short)]
-        /// Output the hashes in hex format.
-        x: bool,
-    },
-
-    /// Perform SHA384 of the content provided on stdin.
-    /// Supports streaming update for low memory footprint.
-    SHA384 {
-        #[arg(short)]
-        /// Output the hashes in hex format.
-        x: bool,
-    },
-
-    /// Perform SHA512 of the content provided on stdin.
-    /// Supports streaming update for low memory footprint.
-    SHA512 {
-        #[arg(short)]
-        /// Output the hashes in hex format.
-        x: bool,
-    },
-
-    /// Perform SHA512/224 of the content provided on stdin.
-    /// Supports streaming update for low memory footprint.
-    SHA512_224 {
-        #[arg(short)]
-        /// Output the hashes in hex format.
-        x: bool,
-    },
-
-    /// Perform SHA512/256 of the content provided on stdin.
-    /// Supports streaming update for low memory footprint.
-    SHA512_256 {
-        #[arg(short)]
-        /// Output the hashes in hex format.
-        x: bool,
-    },
-
-    /// Perform SHA3-224 of the content provided on stdin.
-    /// Supports streaming update for low memory footprint.
-    SHA3_224 {
-        #[arg(short)]
-        /// Output the hashes in hex format.
-        x: bool,
-    },
-
-    /// Perform SHA3-256 of the content provided on stdin.
-    /// Supports streaming update for low memory footprint.
-    SHA3_256 {
-        #[arg(short)]
-        /// Output the hashes in hex format.
-        x: bool,
-    },
-
-    /// Perform SHA3-256 of the content provided on stdin.
-    /// Supports streaming update for low memory footprint.
-    SHA3_384 {
-        #[arg(short)]
-        /// Output the hashes in hex format.
-        x: bool,
-    },
-
-    /// Perform SHA3-256 of the content provided on stdin.
-    /// Supports streaming update for low memory footprint.
-    SHA3_512 {
-        #[arg(short)]
-        /// Output the hashes in hex format.
-        x: bool,
-    },
-
-    /// Perform SM3 of the content provided on stdin.
-    /// Supports streaming update for low memory footprint.
-    SM3 {
-        #[arg(short)]
-        /// Output the hashes in hex format.
-        x: bool,
-    },
-
-    /// Perform SHAKE128 of the content provided on stdin. Requires the output length in bytes.
-    /// Supports streaming update for low memory footprint.
-    SHAKE128 {
-        /// Length of the output in bytes.
-        length: usize,
-
-        #[arg(short)]
-        /// Output the hashes in hex format.
-        x: bool,
-    },
-
-    /// Perform SHAKE256 of the content provided on stdin. Requires the output length in bytes.
-    /// Supports streaming update for low memory footprint.
-    SHAKE256 {
-        /// Length of the output in bytes.
-        length: usize,
-
-        #[arg(short)]
-        /// Output the hashes in hex format.
-        x: bool,
-    },
-
-    /// Perform TupleHash128 (NIST SP 800-185 Sec 5) over a tuple of strings. The tuple is given
-    /// by repeated --element flags, each in hex; with none, stdin is hashed as a single element.
-    /// The boundaries between elements are part of the hash.
-    TUPLEHASH128 {
-        /// Length of the output in bytes.
-        length: usize,
-
-        #[arg(short = 'e', long = "element")]
-        /// A tuple element, in hex. Repeat for each element, in order.
-        elements: Vec<String>,
-
-        #[arg(short = 's', long)]
-        /// Customization string.
-        customization: Option<String>,
-
-        #[arg(short)]
-        /// Output the hashes in hex format.
-        x: bool,
-    },
-
-    /// Perform TupleHash256 (NIST SP 800-185 Sec 5). See tuplehash128.
-    TUPLEHASH256 {
-        /// Length of the output in bytes.
-        length: usize,
-
-        #[arg(short = 'e', long = "element")]
-        /// A tuple element, in hex. Repeat for each element, in order.
-        elements: Vec<String>,
-
-        #[arg(short = 's', long)]
-        /// Customization string.
-        customization: Option<String>,
-
-        #[arg(short)]
-        /// Output the hashes in hex format.
-        x: bool,
-    },
-
-    /// Perform ParallelHash128 (NIST SP 800-185 Sec 6) of the content provided on stdin.
-    /// The block size is part of the function: the same input under a different block size gives
-    /// an unrelated hash, so both sides must use the same value.
-    /// Supports streaming update for low memory footprint.
-    PARALLELHASH128 {
-        /// Length of the output in bytes.
-        length: usize,
-
-        #[arg(short = 'b', long)]
-        /// Block size B in bytes, for the parallel split.
-        block_size: usize,
-
-        #[arg(short = 's', long)]
-        /// Customization string.
-        customization: Option<String>,
-
-        #[arg(short)]
-        /// Output the hashes in hex format.
-        x: bool,
-    },
-
-    /// Perform ParallelHash256 (NIST SP 800-185 Sec 6). See parallelhash128.
-    PARALLELHASH256 {
-        /// Length of the output in bytes.
-        length: usize,
-
-        #[arg(short = 'b', long)]
-        /// Block size B in bytes, for the parallel split.
-        block_size: usize,
-
-        #[arg(short = 's', long)]
-        /// Customization string.
-        customization: Option<String>,
-
-        #[arg(short)]
-        /// Output the hashes in hex format.
-        x: bool,
-    },
-
-    /// Compute or verify a KMAC128 (NIST SP 800-185 Sec 4) over the content provided on stdin.
-    /// The tag length and customization string are bound into the computation, so the verifier
-    /// must use the same values.
-    KMAC128 {
-        /// Length of the tag in bytes.
-        length: usize,
-
-        #[arg(short = 's', long)]
-        /// Customization string, domain-separating this use of KMAC from another.
-        customization: Option<String>,
-
-        #[arg(short, long)]
-        /// The key, in hex.
-        key: Option<String>,
-
-        #[arg(long)]
-        /// File containing the key, as raw bytes.
-        key_file: Option<String>,
-
-        #[arg(short, long)]
-        /// Verify against this tag (hex) instead of computing one.
-        verify: Option<String>,
-
-        #[arg(short)]
-        /// Output the tag in hex format.
-        x: bool,
-    },
-
-    /// Compute or verify a KMAC256 (NIST SP 800-185 Sec 4) over the content provided on stdin.
-    /// See kmac128.
-    KMAC256 {
-        /// Length of the tag in bytes.
-        length: usize,
-
-        #[arg(short = 's', long)]
-        /// Customization string, domain-separating this use of KMAC from another.
-        customization: Option<String>,
-
-        #[arg(short, long)]
-        /// The key, in hex.
-        key: Option<String>,
-
-        #[arg(long)]
-        /// File containing the key, as raw bytes.
-        key_file: Option<String>,
-
-        #[arg(short, long)]
-        /// Verify against this tag (hex) instead of computing one.
-        verify: Option<String>,
-
-        #[arg(short)]
-        /// Output the tag in hex format.
-        x: bool,
-    },
-
-    /// Perform Ascon-Hash256 of the content provided on stdin.
-    /// Supports streaming update for low memory footprint.
-    AsconHash256 {
-        #[arg(short)]
-        /// Output the digest in hex format.
-        x: bool,
-    },
-
-    /// Perform Ascon-XOF128 of the content provided on stdin. Requires the output length in bytes.
-    /// Supports streaming update for low memory footprint.
-    AsconXOF128 {
-        /// Length of the output in bytes.
-        length: usize,
-
-        #[arg(short)]
-        /// Output in hex format.
-        x: bool,
-    },
-
-    /// Perform Ascon-CXOF128 of the content provided on stdin. Requires the output length in bytes.
-    /// Supports streaming update for low memory footprint.
-    AsconCXOF128 {
-        /// Length of the output in bytes.
-        length: usize,
-
-        /// Customization string in hex (optional).
-        #[arg(long)]
-        customization: Option<String>,
-
-        #[arg(short)]
-        /// Output in hex format.
-        x: bool,
-    },
-
-    /// Ascon-AEAD128 authenticated encryption/decryption of the content provided on stdin
-    /// (NIST SP 800-232).
-    ///
-    /// On encrypt, a fresh nonce is generated and written as the FIRST 16 BYTES of the output,
-    /// followed by the ciphertext and then the 16-byte tag; on --decrypt the nonce is read back
-    /// from the first 16 bytes of the input, so the two compose directly in a pipeline. This is
-    /// the same convention the AES commands use for their IV. Decryption fails with a non-zero
-    /// exit status if the tag does not verify.
-    ///
-    /// --nonce/--nonce-file override that: the nonce is then neither written on encrypt nor read
-    /// on decrypt, and the stream is exactly ciphertext||tag in both directions. That override
-    /// exists for reproducing known-answer vectors; repeating a nonce under one key destroys both
-    /// the confidentiality and the authenticity of Ascon-AEAD128.
-    ///
-    /// Note: in production uses, secrets should not be passed on the command-line because they get
-    /// logged in shell history. Use the file-based input instead.
-    ///
-    /// Security note: decryption streams its output, so plaintext bytes are written to stdout
-    /// before the authentication tag (the last 16 bytes of input) can be checked. Do not treat
-    /// the output as authentic until this command exits with status 0; a non-zero exit means the
-    /// input was tampered with and any plaintext already written must be discarded.
-    AsconAEAD128 {
-        /// The 128-bit key in hex.
-        /// The `key_file` option is preferred to avoid leaving key material in command history.
-        #[arg(long)]
-        key: Option<String>,
-
-        /// A file containing the 128-bit key in hex or binary.
-        #[arg(long)]
-        key_file: Option<String>,
-
-        /// The 128-bit nonce in hex. Hazardous override: supplying it keeps the nonce out of the
-        /// stream (see above), and reusing one under a given key breaks the cipher.
-        #[arg(long)]
-        nonce: Option<String>,
-
-        /// A file containing a 128-bit nonce in hex or binary; the same hazardous override.
-        #[arg(long)]
-        nonce_file: Option<String>,
-
-        /// Associated data in hex (authenticated but not encrypted).
-
-        /// Associated data in hex (authenticated but not encrypted).
-        #[arg(long)]
-        ad: Option<String>,
-
-        #[arg(short, long)]
-        direction: CipherDirection,
-
-        #[arg(short)]
-        /// Output in hex format.
-        x: bool,
-    },
-
-    /// Perform HMAC-SHA256 of the content provided on stdin.
-    /// Supports streaming update for low memory footprint.
-    /// Note: in production uses, secrets should not be passed on the command-line because they get
-    /// logged in shell history. Use the file-based input instead.
-    HMAC_SHA256 {
-        /// The MAC key in hex.
-        /// The `key_file` option is preferred to avoid leaving key material in command history.
-        #[arg(long)]
-        key: Option<String>,
-
-        /// A file containing the MAC key in binary.
-        #[arg(short, long)]
-        key_file: Option<String>,
-
-        /// A MAC value to be verified.
-        /// The command will output either 0 for success or -1 for verification failure.
-        #[arg(short, long)]
-        verify: Option<String>,
-
-        #[arg(short)]
-        /// Output the hashes in hex format.
-        x: bool,
-    },
-
-    /// Perform HMAC-SHA512 of the content provided on stdin.
-    /// Supports streaming update for low memory footprint.
-    /// Note: in production uses, secrets should not be passed on the command-line because they get
-    /// logged in shell history. Use the file-based input instead.
-    HMAC_SHA512 {
-        /// The MAC key in hex.
-        /// The `key_file` option is preferred to avoid leaving key material in command history.
-        #[arg(long)]
-        key: Option<String>,
-
-        /// A file containing the MAC key in binary.
-        /// If both key and key_file options are provided, the file will be used.
-        #[arg(short, long)]
-        key_file: Option<String>,
-
-        /// A MAC value to be verified.
-        /// The command will output either 0 for success or -1 for verification failure.
-        #[arg(short, long)]
-        verify: Option<String>,
-
-        #[arg(short)]
-        /// Output the hashes in hex format.
-        x: bool,
-    },
-
-    /// Perform HMAC-SHA512/224 of the content provided on stdin.
-    /// Supports streaming update for low memory footprint.
-    /// Note: in production uses, secrets should not be passed on the command-line because they get
-    /// logged in shell history. Use the file-based input instead.
-    HMAC_SHA512_224 {
-        /// The MAC key in hex.
-        /// The `key_file` option is preferred to avoid leaving key material in command history.
-        #[arg(long)]
-        key: Option<String>,
-
-        /// A file containing the MAC key in binary.
-        /// If both key and key_file options are provided, the file will be used.
-        #[arg(short, long)]
-        key_file: Option<String>,
-
-        /// A MAC value to be verified.
-        /// The command will output either 0 for success or -1 for verification failure.
-        #[arg(short, long)]
-        verify: Option<String>,
-
-        #[arg(short)]
-        /// Output the hashes in hex format.
-        x: bool,
-    },
-
-    /// Perform HMAC-SHA512/256 of the content provided on stdin.
-    /// Supports streaming update for low memory footprint.
-    /// Note: in production uses, secrets should not be passed on the command-line because they get
-    /// logged in shell history. Use the file-based input instead.
-    HMAC_SHA512_256 {
-        /// The MAC key in hex.
-        /// The `key_file` option is preferred to avoid leaving key material in command history.
-        #[arg(long)]
-        key: Option<String>,
-
-        /// A file containing the MAC key in binary.
-        /// If both key and key_file options are provided, the file will be used.
-        #[arg(short, long)]
-        key_file: Option<String>,
-
-        /// A MAC value to be verified.
-        /// The command will output either 0 for success or -1 for verification failure.
-        #[arg(short, long)]
-        verify: Option<String>,
-
-        #[arg(short)]
-        /// Output the hashes in hex format.
-        x: bool,
-    },
-    /// Perform HMAC-SM3 of the content provided on stdin.
-    /// Supports streaming update for low memory footprint.
-    /// Note: in production uses, secrets should not be passed on the command-line because they get
-    /// logged in shell history. Use the file-based input instead.
-    HMAC_SM3 {
-        /// The MAC key in hex.
-        /// The `key_file` option is preferred to avoid leaving key material in command history.
-        #[arg(long)]
-        key: Option<String>,
-
-        /// A file containing the MAC key in binary.
-        /// If both key and key_file options are provided, the file will be used.
-        #[arg(short, long)]
-        key_file: Option<String>,
-
-        /// A MAC value to be verified.
-        /// The command will output either 0 for success or -1 for verification failure.
-        #[arg(short, long)]
-        verify: Option<String>,
-
-        #[arg(short)]
-        /// Output the hashes in hex format.
-        x: bool,
-    },
-
-    /// Perform HKDF-SHA256 of the provided input keying material.
-    ///     HKDF.extract_and_expand(salt, ikm, additional_info, L)
-    /// Note: in production uses, secrets should not be passed on the command-line because they get
-    /// logged in shell history. Use the file-based input instead.
-    HKDF_SHA256 {
-        /// The salt value in hex.
-        /// The `salt_file` option is preferred to avoid leaving key material in command history.
-        #[arg(long)]
-        salt: Option<String>,
-
-        /// A file containing the salt value in binary.
-        /// If both salt and salt_file options are provided, the file will be used.
-        #[arg(short, long)]
-        salt_file: Option<String>,
-
-        /// An Input Keying Material in hex.
-        /// The `ikm_file` option is preferred to avoid leaving key material in command history.
-        #[arg(long)]
-        ikm: Option<String>,
-
-        /// A file containing the input keying material in binary.
-        /// If both ikm and ikm_file options are provided, the file will be used.
-        #[arg(short, long)]
-        ikm_file: Option<String>,
-
-        /// Additional input data in hex.
-        #[arg(long)]
-        additional_input: Option<String>,
-
-        /// A file containing the additional input data in binary.
-        /// If both additional_input and additional_input_file options are provided, the file will be used.
-        #[arg(short, long)]
-        additional_input_file: Option<String>,
-
-        /// Length of output to produce, in bytes: at most 255 times the hash's output length.
-        #[arg(short, long)]
-        len: usize,
-
-        #[arg(short)]
-        /// Output in hex format.
-        x: bool,
-    },
-
-    /// Perform HKDF-SHA384 of the provided input keying material.
-    ///     HKDF.extract_and_expand(salt, ikm, additional_info, L)
-    /// Note: in production uses, secrets should not be passed on the command-line because they get
-    /// logged in shell history. Use the file-based input instead.
-    HKDF_SHA384 {
-        /// The salt value in hex.
-        /// The `salt_file` option is preferred to avoid leaving key material in command history.
-        #[arg(long)]
-        salt: Option<String>,
-
-        /// A file containing the salt value in binary.
-        /// If both salt and salt_file options are provided, the file will be used.
-        #[arg(short, long)]
-        salt_file: Option<String>,
-
-        /// An Input Keying Material in hex.
-        /// The `ikm_file` option is preferred to avoid leaving key material in command history.
-        #[arg(long)]
-        ikm: Option<String>,
-
-        /// A file containing the input keying material in binary.
-        /// If both ikm and ikm_file options are provided, the file will be used.
-        #[arg(short, long)]
-        ikm_file: Option<String>,
-
-        /// Additional input data in hex.
-        #[arg(long)]
-        additional_input: Option<String>,
-
-        /// A file containing the additional input data in binary.
-        /// If both additional_input and additional_input_file options are provided, the file will be used.
-        #[arg(short, long)]
-        additional_input_file: Option<String>,
-
-        /// Length of output to produce, in bytes: at most 255 times the hash's output length.
-        #[arg(short, long)]
-        len: usize,
-
-        #[arg(short)]
-        /// Output in hex format.
-        x: bool,
-    },
-
-    /// Perform HKDF-SHA512 of the provided input keying material.
-    ///     HKDF.extract_and_expand(salt, ikm, additional_info, L)
-    /// Note: in production uses, secrets should not be passed on the command-line because they get
-    /// logged in shell history. Use the file-based input instead.
-    HKDF_SHA512 {
-        /// The salt value in hex.
-        /// The `salt_file` option is preferred to avoid leaving key material in command history.
-        #[arg(long)]
-        salt: Option<String>,
-
-        /// A file containing the salt value in binary.
-        /// If both salt and salt_file options are provided, the file will be used.
-        #[arg(short, long)]
-        salt_file: Option<String>,
-
-        /// An Input Keying Material in hex.
-        /// The `ikm_file` option is preferred to avoid leaving key material in command history.
-        #[arg(long)]
-        ikm: Option<String>,
-
-        /// A file containing the input keying material in binary.
-        /// If both ikm and ikm_file options are provided, the file will be used.
-        #[arg(short, long)]
-        ikm_file: Option<String>,
-
-        /// Additional input data in hex.
-        #[arg(long)]
-        additional_input: Option<String>,
-
-        /// A file containing the additional input data in binary.
-        /// If both additional_input and additional_input_file options are provided, the file will be used.
-        #[arg(short, long)]
-        additional_input_file: Option<String>,
-
-        /// Length of output to produce, in bytes: at most 255 times the hash's output length.
-        #[arg(short, long)]
-        len: usize,
-
-        #[arg(short)]
-        /// Output in hex format.
-        x: bool,
-    },
-
-    /// Generate cryptographically-secure random bytes, seeded from the operating system's entropy source (/dev/random or equivalent).
-    /// Uses the library's default 256-bit secure RNG algorithm.
-    RNG {
-        /// Number of bytes to generate. If omitted, it will stream continuously until the process is terminated.
-        #[arg(short, long)]
-        len: Option<u32>,
-
-        #[arg(short)]
-        /// Output in hex format.
-        x: bool,
-    },
-
-    /// AES-128 in CBC mode (NIST SP 800-38A Sec 6.2), streaming stdin to stdout.
+    /// AES-128 in CBC mode (NIST SP 800-38A Sec 6.2) with PKCS7 padding, streaming stdin to stdout.
     ///
     /// On `encrypt`, a fresh unpredictable IV is generated and written as the FIRST 16 BYTES of
     /// the output; on `decrypt` it is read back from the first 16 bytes of the input, so the two
-    /// compose directly in a pipeline. There is deliberately no `--iv` flag.
+    /// compose directly in a pipeline.
     ///
-    /// Input must be a whole number of 16-byte blocks: CBC is defined only on whole blocks and
-    /// these commands apply no padding, so unaligned input is rejected rather than padded.
+    /// With `--iv` (hex) or `--iv-file` (raw bytes), the IV is supplied instead: `encrypt` uses it
+    /// and writes ONLY the ciphertext, and `decrypt` reads ONLY ciphertext from stdin. This is for
+    /// a format that carries the IV itself, and for reproducing published vectors. The IV must
+    /// then be unpredictable to an attacker (SP 800-38A Appendix C) and never reused under one
+    /// key; that is the caller's responsibility, which the default takes care of.
+    ///
+    /// Input may be any length: it is padded with PKCS7 to a whole number of 16-byte blocks, so the
+    /// ciphertext after the IV is 1 to 16 bytes longer than the plaintext, and `decrypt` rejects
+    /// a ciphertext whose padding is malformed.
     ///
     /// WARNING: CBC provides confidentiality only. It does not detect tampering, and neither the
     /// ciphertext nor the IV is authenticated. Do not decrypt data you have not authenticated
@@ -676,308 +73,15 @@ enum Subcommands {
         #[arg(short, long)]
         key_file: Option<String>,
 
-        #[arg(short)]
-        /// Output in hex format.
-        x: bool,
-    },
-
-    /// AES-192 in CBC mode (NIST SP 800-38A Sec 6.2), streaming stdin to stdout.
-    ///
-    /// See `aes128-cbc` for the IV convention, block-alignment requirement and warnings; only the
-    /// key length differs.
-    AES192_CBC {
-        #[arg(short, long)]
-        direction: CipherDirection,
-
-        /// The 24-byte AES key in hex.
-        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        /// The 16-byte IV in hex. Supplied instead of generated: `encrypt` then writes none
+        /// and `decrypt` reads none. See the IV paragraph above.
         #[arg(long)]
-        key: Option<String>,
+        iv: Option<String>,
 
-        /// A file containing the 24-byte AES key, in binary or hex.
-        /// If both key and key_file options are provided, the file will be used.
-        #[arg(short, long)]
-        key_file: Option<String>,
-
-        #[arg(short)]
-        /// Output in hex format.
-        x: bool,
-    },
-
-    /// AES-256 in CBC mode (NIST SP 800-38A Sec 6.2), streaming stdin to stdout.
-    ///
-    /// See `aes128-cbc` for the IV convention, block-alignment requirement and warnings; only the
-    /// key length differs.
-    AES256_CBC {
-        #[arg(short, long)]
-        direction: CipherDirection,
-
-        /// The 32-byte AES key in hex.
-        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        /// A file containing the 16-byte IV, as raw bytes exactly as they are (no hex
+        /// decoding). If both iv and iv_file options are provided, the file will be used.
         #[arg(long)]
-        key: Option<String>,
-
-        /// A file containing the 32-byte AES key, in binary or hex.
-        /// If both key and key_file options are provided, the file will be used.
-        #[arg(short, long)]
-        key_file: Option<String>,
-
-        #[arg(short)]
-        /// Output in hex format.
-        x: bool,
-    },
-
-    /// AES-128 in CFB128 mode (NIST SP 800-38A Sec 6.3), streaming stdin to stdout.
-    ///
-    /// The segment size is the full block, i.e. CFB128. SP 800-38A's 8-bit CFB is a different,
-    /// non-interoperable mode; use `aes128-cfb8` for that. The 1-bit variant is not provided.
-    ///
-    /// On `encrypt`, a fresh unpredictable IV is generated and written as the FIRST 16 BYTES of
-    /// the output; on `decrypt` it is read back from the first 16 bytes of the input, so the two
-    /// compose directly in a pipeline. There is deliberately no `--iv` flag.
-    ///
-    /// Input may be ANY length: CFB is a stream cipher, so nothing is padded and the ciphertext is
-    /// exactly as long as the plaintext.
-    ///
-    /// WARNING: CFB provides confidentiality only. It does not detect tampering, and neither the
-    /// ciphertext nor the IV is authenticated. Flipping a ciphertext bit flips the same bit of the
-    /// plaintext in the same block, so tampering is directly exploitable. Do not decrypt data you
-    /// have not authenticated separately.
-    ///
-    /// Note: in production uses, secrets should not be passed on the command-line because they get
-    /// logged in shell history. Use the file-based input instead.
-    AES128_CFB {
-        #[arg(short, long)]
-        direction: CipherDirection,
-
-        /// The 16-byte AES key in hex.
-        /// The `key_file` option is preferred to avoid leaving key material in command history.
-        #[arg(long)]
-        key: Option<String>,
-
-        /// A file containing the 16-byte AES key, in binary or hex.
-        /// If both key and key_file options are provided, the file will be used.
-        #[arg(short, long)]
-        key_file: Option<String>,
-
-        #[arg(short)]
-        /// Output in hex format.
-        x: bool,
-    },
-
-    /// AES-192 in CFB128 mode (NIST SP 800-38A Sec 6.3), streaming stdin to stdout.
-    ///
-    /// See `aes128-cfb` for the IV convention, input-length rule and warnings; only the key length
-    /// differs.
-    AES192_CFB {
-        #[arg(short, long)]
-        direction: CipherDirection,
-
-        /// The 24-byte AES key in hex.
-        /// The `key_file` option is preferred to avoid leaving key material in command history.
-        #[arg(long)]
-        key: Option<String>,
-
-        /// A file containing the 24-byte AES key, in binary or hex.
-        /// If both key and key_file options are provided, the file will be used.
-        #[arg(short, long)]
-        key_file: Option<String>,
-
-        #[arg(short)]
-        /// Output in hex format.
-        x: bool,
-    },
-
-    /// AES-256 in CFB128 mode (NIST SP 800-38A Sec 6.3), streaming stdin to stdout.
-    ///
-    /// See `aes128-cfb` for the IV convention, input-length rule and warnings; only the key length
-    /// differs.
-    AES256_CFB {
-        #[arg(short, long)]
-        direction: CipherDirection,
-
-        /// The 32-byte AES key in hex.
-        /// The `key_file` option is preferred to avoid leaving key material in command history.
-        #[arg(long)]
-        key: Option<String>,
-
-        /// A file containing the 32-byte AES key, in binary or hex.
-        /// If both key and key_file options are provided, the file will be used.
-        #[arg(short, long)]
-        key_file: Option<String>,
-
-        #[arg(short)]
-        /// Output in hex format.
-        x: bool,
-    },
-
-    /// AES-128 in CFB8 mode (NIST SP 800-38A Sec 6.3, s = 8), streaming stdin to stdout.
-    ///
-    /// The segment size is one byte. This is a DIFFERENT, NON-INTEROPERABLE mode from the CFB128
-    /// of `aes128-cfb`: the two ciphertexts agree only on their first byte. It also costs one AES
-    /// call per byte, sixteen times the work of `aes128-cfb`, so prefer that unless a byte-granular
-    /// self-synchronising stream is required or the format demands CFB8.
-    ///
-    /// On `encrypt`, a fresh unpredictable IV is generated and written as the FIRST 16 BYTES of
-    /// the output; on `decrypt` it is read back from the first 16 bytes of the input, so the two
-    /// compose directly in a pipeline. There is deliberately no `--iv` flag.
-    ///
-    /// Input may be ANY length: CFB8's segment is a single byte, so nothing is padded and the
-    /// ciphertext is exactly as long as the plaintext.
-    ///
-    /// WARNING: CFB8 provides confidentiality only. It does not detect tampering, and neither the
-    /// ciphertext nor the IV is authenticated. Flipping a ciphertext bit flips the same bit of the
-    /// same plaintext byte and corrupts the following 16 bytes, after which decryption
-    /// resynchronises. Do not decrypt data you have not authenticated separately.
-    ///
-    /// Note: in production uses, secrets should not be passed on the command-line because they get
-    /// logged in shell history. Use the file-based input instead.
-    AES128_CFB8 {
-        #[arg(short, long)]
-        direction: CipherDirection,
-
-        /// The 16-byte AES key in hex.
-        /// The `key_file` option is preferred to avoid leaving key material in command history.
-        #[arg(long)]
-        key: Option<String>,
-
-        /// A file containing the 16-byte AES key, in binary or hex.
-        /// If both key and key_file options are provided, the file will be used.
-        #[arg(short, long)]
-        key_file: Option<String>,
-
-        #[arg(short)]
-        /// Output in hex format.
-        x: bool,
-    },
-
-    /// AES-192 in CFB8 mode (NIST SP 800-38A Sec 6.3, s = 8), streaming stdin to stdout.
-    ///
-    /// See `aes128-cfb8` for the IV convention, input-length rule and warnings; only the key length
-    /// differs.
-    AES192_CFB8 {
-        #[arg(short, long)]
-        direction: CipherDirection,
-
-        /// The 24-byte AES key in hex.
-        /// The `key_file` option is preferred to avoid leaving key material in command history.
-        #[arg(long)]
-        key: Option<String>,
-
-        /// A file containing the 24-byte AES key, in binary or hex.
-        /// If both key and key_file options are provided, the file will be used.
-        #[arg(short, long)]
-        key_file: Option<String>,
-
-        #[arg(short)]
-        /// Output in hex format.
-        x: bool,
-    },
-
-    /// AES-256 in CFB8 mode (NIST SP 800-38A Sec 6.3, s = 8), streaming stdin to stdout.
-    ///
-    /// See `aes128-cfb8` for the IV convention, input-length rule and warnings; only the key length
-    /// differs.
-    AES256_CFB8 {
-        #[arg(short, long)]
-        direction: CipherDirection,
-
-        /// The 32-byte AES key in hex.
-        /// The `key_file` option is preferred to avoid leaving key material in command history.
-        #[arg(long)]
-        key: Option<String>,
-
-        /// A file containing the 32-byte AES key, in binary or hex.
-        /// If both key and key_file options are provided, the file will be used.
-        #[arg(short, long)]
-        key_file: Option<String>,
-
-        #[arg(short)]
-        /// Output in hex format.
-        x: bool,
-    },
-
-    /// AES-128 in CTR mode (NIST SP 800-38A Sec 6.5), streaming stdin to stdout.
-    ///
-    /// The counter block is a 12-byte nonce followed by a 4-byte counter starting at zero, so one
-    /// message can be up to 2^32 blocks (64 GiB); past that the command errors rather than
-    /// repeating keystream.
-    ///
-    /// On `encrypt`, a fresh nonce is generated and written as the FIRST 12 BYTES of the output;
-    /// on `decrypt` it is read back from the first 12 bytes of the input, so the two compose
-    /// directly in a pipeline. Note that this is 12 bytes, not the 16 the other modes write. There
-    /// is deliberately no `--iv` flag.
-    ///
-    /// Input may be ANY length: CTR is a stream cipher, so nothing is padded and the ciphertext is
-    /// exactly as long as the plaintext.
-    ///
-    /// WARNING: CTR provides confidentiality only and is the most malleable mode here. It does not
-    /// detect tampering, and flipping any ciphertext bit flips exactly the corresponding plaintext
-    /// bit and nothing else, so an attacker can edit the plaintext at will with no garbling to give
-    /// it away. A repeated nonce under one key leaks the XOR of the two messages outright. Do not
-    /// decrypt data you have not authenticated separately.
-    ///
-    /// Note: in production uses, secrets should not be passed on the command-line because they get
-    /// logged in shell history. Use the file-based input instead.
-    AES128_CTR {
-        #[arg(short, long)]
-        direction: CipherDirection,
-
-        /// The 16-byte AES key in hex.
-        /// The `key_file` option is preferred to avoid leaving key material in command history.
-        #[arg(long)]
-        key: Option<String>,
-
-        /// A file containing the 16-byte AES key, in binary or hex.
-        /// If both key and key_file options are provided, the file will be used.
-        #[arg(short, long)]
-        key_file: Option<String>,
-
-        #[arg(short)]
-        /// Output in hex format.
-        x: bool,
-    },
-
-    /// AES-192 in CTR mode (NIST SP 800-38A Sec 6.5), streaming stdin to stdout.
-    ///
-    /// See `aes128-ctr` for the nonce convention, input-length rule and warnings; only the key
-    /// length differs.
-    AES192_CTR {
-        #[arg(short, long)]
-        direction: CipherDirection,
-
-        /// The 24-byte AES key in hex.
-        /// The `key_file` option is preferred to avoid leaving key material in command history.
-        #[arg(long)]
-        key: Option<String>,
-
-        /// A file containing the 24-byte AES key, in binary or hex.
-        /// If both key and key_file options are provided, the file will be used.
-        #[arg(short, long)]
-        key_file: Option<String>,
-
-        #[arg(short)]
-        /// Output in hex format.
-        x: bool,
-    },
-
-    /// AES-256 in CTR mode (NIST SP 800-38A Sec 6.5), streaming stdin to stdout.
-    ///
-    /// See `aes128-ctr` for the nonce convention, input-length rule and warnings; only the key
-    /// length differs.
-    AES256_CTR {
-        #[arg(short, long)]
-        direction: CipherDirection,
-
-        /// The 32-byte AES key in hex.
-        /// The `key_file` option is preferred to avoid leaving key material in command history.
-        #[arg(long)]
-        key: Option<String>,
-
-        /// A file containing the 32-byte AES key, in binary or hex.
-        /// If both key and key_file options are provided, the file will be used.
-        #[arg(short, long)]
-        key_file: Option<String>,
+        iv_file: Option<String>,
 
         #[arg(short)]
         /// Output in hex format.
@@ -1065,6 +169,306 @@ enum Subcommands {
         x: bool,
     },
 
+    /// AES-128 in CFB128 mode (NIST SP 800-38A Sec 6.3), streaming stdin to stdout.
+    ///
+    /// The segment size is the full block, i.e. CFB128. SP 800-38A's 8-bit CFB is a different,
+    /// non-interoperable mode; use `aes128-cfb8` for that. The 1-bit variant is not provided.
+    ///
+    /// On `encrypt`, a fresh unpredictable IV is generated and written as the FIRST 16 BYTES of
+    /// the output; on `decrypt` it is read back from the first 16 bytes of the input, so the two
+    /// compose directly in a pipeline.
+    ///
+    /// With `--iv` (hex) or `--iv-file` (raw bytes), the IV is supplied instead: `encrypt` uses it
+    /// and writes ONLY the ciphertext, and `decrypt` reads ONLY ciphertext from stdin. This is for
+    /// a format that carries the IV itself, and for reproducing published vectors. The IV must
+    /// then be unpredictable to an attacker (SP 800-38A Appendix C) and never reused under one
+    /// key; that is the caller's responsibility, which the default takes care of.
+    ///
+    /// Input may be ANY length: CFB is a stream cipher, so nothing is padded and the ciphertext is
+    /// exactly as long as the plaintext.
+    ///
+    /// WARNING: CFB provides confidentiality only. It does not detect tampering, and neither the
+    /// ciphertext nor the IV is authenticated. Flipping a ciphertext bit flips the same bit of the
+    /// plaintext in the same block, so tampering is directly exploitable. Do not decrypt data you
+    /// have not authenticated separately.
+    ///
+    /// Note: in production uses, secrets should not be passed on the command-line because they get
+    /// logged in shell history. Use the file-based input instead.
+    AES128_CFB {
+        #[arg(short, long)]
+        direction: CipherDirection,
+
+        /// The 16-byte AES key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 16-byte AES key, in binary or hex.
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        /// The 16-byte IV in hex. Supplied instead of generated: `encrypt` then writes no IV and
+        /// `decrypt` reads none. See the IV paragraph above.
+        #[arg(long)]
+        iv: Option<String>,
+
+        /// A file containing the 16-byte IV, as raw bytes exactly as they are (no hex decoding).
+        /// If both iv and iv_file options are provided, the file will be used.
+        #[arg(long)]
+        iv_file: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// AES-128 in CFB8 mode (NIST SP 800-38A Sec 6.3, s = 8), streaming stdin to stdout.
+    ///
+    /// The segment size is one byte. This is a DIFFERENT, NON-INTEROPERABLE mode from the CFB128
+    /// of `aes128-cfb`: the two ciphertexts agree only on their first byte. It also costs one AES
+    /// call per byte, sixteen times the work of `aes128-cfb`, so prefer that unless a byte-granular
+    /// self-synchronising stream is required or the format demands CFB8.
+    ///
+    /// On `encrypt`, a fresh unpredictable IV is generated and written as the FIRST 16 BYTES of
+    /// the output; on `decrypt` it is read back from the first 16 bytes of the input, so the two
+    /// compose directly in a pipeline.
+    ///
+    /// With `--iv` (hex) or `--iv-file` (raw bytes), the IV is supplied instead: `encrypt` uses it
+    /// and writes ONLY the ciphertext, and `decrypt` reads ONLY ciphertext from stdin. This is for
+    /// a format that carries the IV itself, and for reproducing published vectors. The IV must
+    /// then be unpredictable to an attacker (SP 800-38A Appendix C) and never reused under one
+    /// key; that is the caller's responsibility, which the default takes care of.
+    ///
+    /// Input may be ANY length: CFB8's segment is a single byte, so nothing is padded and the
+    /// ciphertext is exactly as long as the plaintext.
+    ///
+    /// WARNING: CFB8 provides confidentiality only. It does not detect tampering, and neither the
+    /// ciphertext nor the IV is authenticated. Flipping a ciphertext bit flips the same bit of the
+    /// same plaintext byte and corrupts the following 16 bytes, after which decryption
+    /// resynchronises. Do not decrypt data you have not authenticated separately.
+    ///
+    /// Note: in production uses, secrets should not be passed on the command-line because they get
+    /// logged in shell history. Use the file-based input instead.
+    AES128_CFB8 {
+        #[arg(short, long)]
+        direction: CipherDirection,
+
+        /// The 16-byte AES key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 16-byte AES key, in binary or hex.
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        /// The 16-byte IV in hex. Supplied instead of generated: `encrypt` then writes no IV and
+        /// `decrypt` reads none. See the IV paragraph above.
+        #[arg(long)]
+        iv: Option<String>,
+
+        /// A file containing the 16-byte IV, as raw bytes exactly as they are (no hex decoding).
+        /// If both iv and iv_file options are provided, the file will be used.
+        #[arg(long)]
+        iv_file: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// AES-128 in CTR mode (NIST SP 800-38A Sec 6.5), streaming stdin to stdout.
+    ///
+    /// The counter block is a 12-byte nonce followed by a 4-byte counter starting at zero, so one
+    /// message can be up to 2^32 blocks (64 GiB); past that the command errors rather than
+    /// repeating keystream.
+    ///
+    /// On `encrypt`, a fresh nonce is generated and written as the FIRST 12 BYTES of the output;
+    /// on `decrypt` it is read back from the first 12 bytes of the input, so the two compose
+    /// directly in a pipeline. Note that this is 12 bytes, not the 16 the other modes write.
+    ///
+    /// With `--iv` (hex) or `--iv-file` (raw bytes), the 12-byte nonce is supplied instead:
+    /// `encrypt` uses it and writes ONLY the ciphertext, and `decrypt` reads ONLY ciphertext from
+    /// stdin. The counter block is then `nonce || 00000000`, which is how an OpenSSL `-iv` whose
+    /// low four bytes are zero lines up with it. The nonce MUST be unique per message under one
+    /// key; that is the caller's responsibility, which the default takes care of.
+    ///
+    /// Input may be ANY length: CTR is a stream cipher, so nothing is padded and the ciphertext is
+    /// exactly as long as the plaintext.
+    ///
+    /// WARNING: CTR provides confidentiality only and is the most malleable mode here. It does not
+    /// detect tampering, and flipping any ciphertext bit flips exactly the corresponding plaintext
+    /// bit and nothing else, so an attacker can edit the plaintext at will with no garbling to give
+    /// it away. A repeated nonce under one key leaks the XOR of the two messages outright. Do not
+    /// decrypt data you have not authenticated separately.
+    ///
+    /// Note: in production uses, secrets should not be passed on the command-line because they get
+    /// logged in shell history. Use the file-based input instead.
+    AES128_CTR {
+        #[arg(short, long)]
+        direction: CipherDirection,
+
+        /// The 16-byte AES key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 16-byte AES key, in binary or hex.
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        /// The 12-byte nonce in hex. Supplied instead of generated: `encrypt` then writes none
+        /// and `decrypt` reads none. See the nonce paragraph above.
+        #[arg(long)]
+        iv: Option<String>,
+
+        /// A file containing the 12-byte nonce, as raw bytes exactly as they are (no hex
+        /// decoding). If both iv and iv_file options are provided, the file will be used.
+        #[arg(long)]
+        iv_file: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// AES-128 in ECB mode (NIST SP 800-38A Sec 6.1), streaming stdin to stdout.
+    ///
+    /// WARNING: ECB is NOT a confidentiality mode for data. Under a given key every plaintext
+    /// block maps to the same ciphertext block, so equal blocks stay visibly equal, the same input
+    /// always gives the same output, and blocks can be reordered, repeated or removed undetectably.
+    /// This command exists for interoperability with systems that require ECB and for test
+    /// vectors. For data use aes*-cbc or aes*-cfb under separate authentication, or an AEAD.
+    ///
+    /// There is NO IV: nothing is prepended on `encrypt` and nothing is consumed on `decrypt`, so
+    /// the output is exactly as long as the input.
+    ///
+    /// Input must be a whole number of 16-byte blocks: this command is block-aligned and applies
+    /// no padding, so unaligned input is rejected rather than padded.
+    ///
+    /// Note: in production uses, secrets should not be passed on the command-line because they get
+    /// logged in shell history. Use the file-based input instead.
+    AES128_ECB {
+        #[arg(short, long)]
+        direction: CipherDirection,
+
+        /// The 16-byte AES key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 16-byte AES key, in binary or hex.
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// AES-128 in GCM (NIST SP 800-38D), streaming stdin to stdout.
+    ///
+    /// AUTHENTICATED, unlike the other AES modes here: tampering with the ciphertext, the AAD or
+    /// the IV is detected rather than merely producing wrong plaintext.
+    ///
+    /// On `encrypt`, a fresh 12-byte IV is generated and written as the FIRST 12 BYTES of the
+    /// output, the ciphertext follows, and the 16-byte tag is written last. `decrypt` reads the IV
+    /// back from the first 12 bytes of input and streams the rest, checking the tag once input is
+    /// exhausted. (SP 800-38D calls this value the IV, and defines it as a nonce.)
+    ///
+    /// With `--iv` (hex) or `--iv-file` (raw bytes), the IV is supplied instead: `encrypt` uses it
+    /// and writes ONLY `ciphertext || tag`, and `decrypt` reads ONLY that from stdin. The IV MUST
+    /// be unique per message under one key (Sec 8), and a repeat is worse here than merely
+    /// unwise: it lets an attacker recover the hash subkey (Appendix A). The default takes care of
+    /// that; with `--iv` it is on the caller.
+    ///
+    /// `--aad` (hex) or `--aad-file` (raw bytes) supply the additional authenticated data,
+    /// which is covered by the tag but not encrypted; if neither is given, AAD is empty.
+    ///
+    /// Input may be ANY length: GCM needs no padding.
+    ///
+    /// WARNING: on `decrypt`, a tag failure may be reported only after plaintext has already been
+    /// written to stdout, because this command streams the inline decryptor. A script MUST check
+    /// the exit code before trusting anything already written; on failure this command prints
+    /// `Error: authentication failed` and exits non-zero.
+    ///
+    /// Note: in production uses, secrets should not be passed on the command-line because they get
+    /// logged in shell history. Use the file-based input instead.
+    AES128_GCM {
+        #[arg(short, long)]
+        direction: CipherDirection,
+
+        /// The 16-byte AES key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 16-byte AES key, in binary or hex.
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        /// The 12-byte IV in hex. Supplied instead of generated: `encrypt` then writes none and
+        /// `decrypt` reads none. See the IV paragraph above.
+        #[arg(long)]
+        iv: Option<String>,
+
+        /// A file containing the 12-byte IV, as raw bytes exactly as they are (no hex decoding).
+        /// If both iv and iv_file options are provided, the file will be used.
+        #[arg(long)]
+        iv_file: Option<String>,
+
+        /// The additional authenticated data, in hex. Covered by the tag but not encrypted.
+        #[arg(long)]
+        aad: Option<String>,
+
+        /// A file containing the additional authenticated data, as raw bytes (never hex-decoded).
+        /// If both aad and aad_file options are provided, the file will be used.
+        #[arg(long)]
+        aad_file: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// AES-192 in CBC mode (NIST SP 800-38A Sec 6.2) with PKCS7 padding, streaming stdin to stdout.
+    ///
+    /// See `aes128-cbc` for the IV convention, padding and warnings; only the
+    /// key length differs.
+    AES192_CBC {
+        #[arg(short, long)]
+        direction: CipherDirection,
+
+        /// The 24-byte AES key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 24-byte AES key, in binary or hex.
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        /// The 16-byte IV in hex. Supplied instead of generated: `encrypt` then writes none
+        /// and `decrypt` reads none. See the IV paragraph above.
+        #[arg(long)]
+        iv: Option<String>,
+
+        /// A file containing the 16-byte IV, as raw bytes exactly as they are (no hex
+        /// decoding). If both iv and iv_file options are provided, the file will be used.
+        #[arg(long)]
+        iv_file: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
     /// AES-192 in CCM mode (NIST SP 800-38C), authenticated encryption of stdin to stdout.
     ///
     /// See `aes128-ccm` for the nonce convention, the length rules, the non-streaming note and the
@@ -1104,6 +508,203 @@ enum Subcommands {
         /// Tag length in bytes: one of 4, 6, 8, 10, 12, 14, 16. Must match on decrypt.
         #[arg(long, default_value_t = 16)]
         tag_len: usize,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// AES-192 in CFB128 mode (NIST SP 800-38A Sec 6.3), streaming stdin to stdout.
+    ///
+    /// See `aes128-cfb` for the IV convention, input-length rule and warnings; only the key length
+    /// differs.
+    AES192_CFB {
+        #[arg(short, long)]
+        direction: CipherDirection,
+
+        /// The 24-byte AES key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 24-byte AES key, in binary or hex.
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        /// The 16-byte IV in hex. Supplied instead of generated: `encrypt` then writes no IV and
+        /// `decrypt` reads none. See the IV paragraph above.
+        #[arg(long)]
+        iv: Option<String>,
+
+        /// A file containing the 16-byte IV, as raw bytes exactly as they are (no hex decoding).
+        /// If both iv and iv_file options are provided, the file will be used.
+        #[arg(long)]
+        iv_file: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// AES-192 in CFB8 mode (NIST SP 800-38A Sec 6.3, s = 8), streaming stdin to stdout.
+    ///
+    /// See `aes128-cfb8` for the IV convention, input-length rule and warnings; only the key length
+    /// differs.
+    AES192_CFB8 {
+        #[arg(short, long)]
+        direction: CipherDirection,
+
+        /// The 24-byte AES key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 24-byte AES key, in binary or hex.
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        /// The 16-byte IV in hex. Supplied instead of generated: `encrypt` then writes no IV and
+        /// `decrypt` reads none. See the IV paragraph above.
+        #[arg(long)]
+        iv: Option<String>,
+
+        /// A file containing the 16-byte IV, as raw bytes exactly as they are (no hex decoding).
+        /// If both iv and iv_file options are provided, the file will be used.
+        #[arg(long)]
+        iv_file: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// AES-192 in CTR mode (NIST SP 800-38A Sec 6.5), streaming stdin to stdout.
+    ///
+    /// See `aes128-ctr` for the nonce convention, input-length rule and warnings; only the key
+    /// length differs.
+    AES192_CTR {
+        #[arg(short, long)]
+        direction: CipherDirection,
+
+        /// The 24-byte AES key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 24-byte AES key, in binary or hex.
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        /// The 12-byte nonce in hex. Supplied instead of generated: `encrypt` then writes none
+        /// and `decrypt` reads none. See the nonce paragraph above.
+        #[arg(long)]
+        iv: Option<String>,
+
+        /// A file containing the 12-byte nonce, as raw bytes exactly as they are (no hex
+        /// decoding). If both iv and iv_file options are provided, the file will be used.
+        #[arg(long)]
+        iv_file: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// AES-192 in ECB mode (NIST SP 800-38A Sec 6.1), streaming stdin to stdout.
+    ///
+    /// See `aes128-ecb` for the warning, the absence of an IV and the block-alignment requirement;
+    /// only the key length differs.
+    AES192_ECB {
+        #[arg(short, long)]
+        direction: CipherDirection,
+
+        /// The 24-byte AES key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 24-byte AES key, in binary or hex.
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// AES-192 in GCM (NIST SP 800-38D), streaming stdin to stdout.
+    ///
+    /// See `aes128-gcm` for the IV/tag framing, the AAD flags and the warnings; only the key
+    /// length differs.
+    AES192_GCM {
+        #[arg(short, long)]
+        direction: CipherDirection,
+
+        /// The 24-byte AES key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 24-byte AES key, in binary or hex.
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        /// The 12-byte IV in hex. Supplied instead of generated: `encrypt` then writes none and
+        /// `decrypt` reads none. See the IV paragraph above.
+        #[arg(long)]
+        iv: Option<String>,
+
+        /// A file containing the 12-byte IV, as raw bytes exactly as they are (no hex decoding).
+        /// If both iv and iv_file options are provided, the file will be used.
+        #[arg(long)]
+        iv_file: Option<String>,
+
+        /// The additional authenticated data, in hex. Covered by the tag but not encrypted.
+        #[arg(long)]
+        aad: Option<String>,
+
+        /// A file containing the additional authenticated data, as raw bytes (never hex-decoded).
+        /// If both aad and aad_file options are provided, the file will be used.
+        #[arg(long)]
+        aad_file: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// AES-256 in CBC mode (NIST SP 800-38A Sec 6.2) with PKCS7 padding, streaming stdin to stdout.
+    ///
+    /// See `aes128-cbc` for the IV convention, padding and warnings; only the
+    /// key length differs.
+    AES256_CBC {
+        #[arg(short, long)]
+        direction: CipherDirection,
+
+        /// The 32-byte AES key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 32-byte AES key, in binary or hex.
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        /// The 16-byte IV in hex. Supplied instead of generated: `encrypt` then writes none
+        /// and `decrypt` reads none. See the IV paragraph above.
+        #[arg(long)]
+        iv: Option<String>,
+
+        /// A file containing the 16-byte IV, as raw bytes exactly as they are (no hex
+        /// decoding). If both iv and iv_file options are provided, the file will be used.
+        #[arg(long)]
+        iv_file: Option<String>,
 
         #[arg(short)]
         /// Output in hex format.
@@ -1155,94 +756,11 @@ enum Subcommands {
         x: bool,
     },
 
-    /// AES-128 in GCM (NIST SP 800-38D), streaming stdin to stdout.
+    /// AES-256 in CFB128 mode (NIST SP 800-38A Sec 6.3), streaming stdin to stdout.
     ///
-    /// AUTHENTICATED, unlike the other AES modes here: tampering with the ciphertext, the AAD or
-    /// the nonce is detected rather than merely producing wrong plaintext.
-    ///
-    /// On `encrypt`, a fresh nonce is generated and written as the FIRST 12 BYTES of the output,
-    /// the ciphertext follows, and the 16-byte tag is written last. `decrypt` reads the nonce back
-    /// from the first 12 bytes of input and streams the rest, checking the tag once input is
-    /// exhausted. There is deliberately no `--iv` flag: a repeated GCM nonce is worse than merely
-    /// unwise, since it lets an attacker recover the hash subkey (SP 800-38D Appendix A).
-    ///
-    /// `--aad` (hex) or `--aad-file` (raw bytes) supply the additional authenticated data,
-    /// which is covered by the tag but not encrypted; if neither is given, AAD is empty.
-    ///
-    /// Input may be ANY length: GCM needs no padding.
-    ///
-    /// WARNING: on `decrypt`, a tag failure may be reported only after plaintext has already been
-    /// written to stdout, because this command streams the inline decryptor. A script MUST check
-    /// the exit code before trusting anything already written; on failure this command prints
-    /// `Error: authentication failed` and exits non-zero.
-    ///
-    /// Note: in production uses, secrets should not be passed on the command-line because they get
-    /// logged in shell history. Use the file-based input instead.
-    AES128_GCM {
-        #[arg(short, long)]
-        direction: CipherDirection,
-
-        /// The 16-byte AES key in hex.
-        /// The `key_file` option is preferred to avoid leaving key material in command history.
-        #[arg(long)]
-        key: Option<String>,
-
-        /// A file containing the 16-byte AES key, in binary or hex.
-        /// If both key and key_file options are provided, the file will be used.
-        #[arg(short, long)]
-        key_file: Option<String>,
-
-        /// The additional authenticated data, in hex. Covered by the tag but not encrypted.
-        #[arg(long)]
-        aad: Option<String>,
-
-        /// A file containing the additional authenticated data, as raw bytes (never hex-decoded).
-        /// If both aad and aad_file options are provided, the file will be used.
-        #[arg(long)]
-        aad_file: Option<String>,
-
-        #[arg(short)]
-        /// Output in hex format.
-        x: bool,
-    },
-
-    /// AES-192 in GCM (NIST SP 800-38D), streaming stdin to stdout.
-    ///
-    /// See `aes128-gcm` for the nonce/tag framing, the AAD flags and the warnings; only the key
-    /// length differs.
-    AES192_GCM {
-        #[arg(short, long)]
-        direction: CipherDirection,
-
-        /// The 24-byte AES key in hex.
-        /// The `key_file` option is preferred to avoid leaving key material in command history.
-        #[arg(long)]
-        key: Option<String>,
-
-        /// A file containing the 24-byte AES key, in binary or hex.
-        /// If both key and key_file options are provided, the file will be used.
-        #[arg(short, long)]
-        key_file: Option<String>,
-
-        /// The additional authenticated data, in hex. Covered by the tag but not encrypted.
-        #[arg(long)]
-        aad: Option<String>,
-
-        /// A file containing the additional authenticated data, as raw bytes (never hex-decoded).
-        /// If both aad and aad_file options are provided, the file will be used.
-        #[arg(long)]
-        aad_file: Option<String>,
-
-        #[arg(short)]
-        /// Output in hex format.
-        x: bool,
-    },
-
-    /// AES-256 in GCM (NIST SP 800-38D), streaming stdin to stdout.
-    ///
-    /// See `aes128-gcm` for the nonce/tag framing, the AAD flags and the warnings; only the key
-    /// length differs.
-    AES256_GCM {
+    /// See `aes128-cfb` for the IV convention, input-length rule and warnings; only the key length
+    /// differs.
+    AES256_CFB {
         #[arg(short, long)]
         direction: CipherDirection,
 
@@ -1256,72 +774,81 @@ enum Subcommands {
         #[arg(short, long)]
         key_file: Option<String>,
 
-        /// The additional authenticated data, in hex. Covered by the tag but not encrypted.
+        /// The 16-byte IV in hex. Supplied instead of generated: `encrypt` then writes no IV and
+        /// `decrypt` reads none. See the IV paragraph above.
         #[arg(long)]
-        aad: Option<String>,
+        iv: Option<String>,
 
-        /// A file containing the additional authenticated data, as raw bytes (never hex-decoded).
-        /// If both aad and aad_file options are provided, the file will be used.
+        /// A file containing the 16-byte IV, as raw bytes exactly as they are (no hex decoding).
+        /// If both iv and iv_file options are provided, the file will be used.
         #[arg(long)]
-        aad_file: Option<String>,
+        iv_file: Option<String>,
 
         #[arg(short)]
         /// Output in hex format.
         x: bool,
     },
 
-    /// AES-128 in ECB mode (NIST SP 800-38A Sec 6.1), streaming stdin to stdout.
+    /// AES-256 in CFB8 mode (NIST SP 800-38A Sec 6.3, s = 8), streaming stdin to stdout.
     ///
-    /// WARNING: ECB is NOT a confidentiality mode for data. Under a given key every plaintext
-    /// block maps to the same ciphertext block, so equal blocks stay visibly equal, the same input
-    /// always gives the same output, and blocks can be reordered, repeated or removed undetectably.
-    /// This command exists for interoperability with systems that require ECB and for test
-    /// vectors. For data use aes*-cbc or aes*-cfb under separate authentication, or an AEAD.
-    ///
-    /// There is NO IV: nothing is prepended on `encrypt` and nothing is consumed on `decrypt`, so
-    /// the output is exactly as long as the input.
-    ///
-    /// Input must be a whole number of 16-byte blocks: this command is block-aligned and applies
-    /// no padding, so unaligned input is rejected rather than padded.
-    ///
-    /// Note: in production uses, secrets should not be passed on the command-line because they get
-    /// logged in shell history. Use the file-based input instead.
-    AES128_ECB {
+    /// See `aes128-cfb8` for the IV convention, input-length rule and warnings; only the key length
+    /// differs.
+    AES256_CFB8 {
         #[arg(short, long)]
         direction: CipherDirection,
 
-        /// The 16-byte AES key in hex.
+        /// The 32-byte AES key in hex.
         /// The `key_file` option is preferred to avoid leaving key material in command history.
         #[arg(long)]
         key: Option<String>,
 
-        /// A file containing the 16-byte AES key, in binary or hex.
+        /// A file containing the 32-byte AES key, in binary or hex.
         /// If both key and key_file options are provided, the file will be used.
         #[arg(short, long)]
         key_file: Option<String>,
+
+        /// The 16-byte IV in hex. Supplied instead of generated: `encrypt` then writes no IV and
+        /// `decrypt` reads none. See the IV paragraph above.
+        #[arg(long)]
+        iv: Option<String>,
+
+        /// A file containing the 16-byte IV, as raw bytes exactly as they are (no hex decoding).
+        /// If both iv and iv_file options are provided, the file will be used.
+        #[arg(long)]
+        iv_file: Option<String>,
 
         #[arg(short)]
         /// Output in hex format.
         x: bool,
     },
 
-    /// AES-192 in ECB mode (NIST SP 800-38A Sec 6.1), streaming stdin to stdout.
+    /// AES-256 in CTR mode (NIST SP 800-38A Sec 6.5), streaming stdin to stdout.
     ///
-    /// See `aes128-ecb` for the warning, the absence of an IV and the block-alignment requirement;
-    /// only the key length differs.
-    AES192_ECB {
+    /// See `aes128-ctr` for the nonce convention, input-length rule and warnings; only the key
+    /// length differs.
+    AES256_CTR {
         #[arg(short, long)]
         direction: CipherDirection,
 
-        /// The 24-byte AES key in hex.
+        /// The 32-byte AES key in hex.
         /// The `key_file` option is preferred to avoid leaving key material in command history.
         #[arg(long)]
         key: Option<String>,
 
-        /// A file containing the 24-byte AES key, in binary or hex.
+        /// A file containing the 32-byte AES key, in binary or hex.
         /// If both key and key_file options are provided, the file will be used.
         #[arg(short, long)]
         key_file: Option<String>,
+
+        /// The 12-byte nonce in hex. Supplied instead of generated: `encrypt` then writes none
+        /// and `decrypt` reads none. See the nonce paragraph above.
+        #[arg(long)]
+        iv: Option<String>,
+
+        /// A file containing the 12-byte nonce, as raw bytes exactly as they are (no hex
+        /// decoding). If both iv and iv_file options are provided, the file will be used.
+        #[arg(long)]
+        iv_file: Option<String>,
 
         #[arg(short)]
         /// Output in hex format.
@@ -1351,218 +878,143 @@ enum Subcommands {
         x: bool,
     },
 
-    /// The ML-KEM-512 key encapsulation algorithm.
-    MLKEM512 {
-        action: mlkem_cmd::MLKEMAction,
+    /// AES-256 in GCM (NIST SP 800-38D), streaming stdin to stdout.
+    ///
+    /// See `aes128-gcm` for the IV/tag framing, the AAD flags and the warnings; only the key
+    /// length differs.
+    AES256_GCM {
+        #[arg(short, long)]
+        direction: CipherDirection,
 
+        /// The 32-byte AES key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
         #[arg(long)]
-        /// The private key file (in hex or binary) for decaps
-        skfile: Option<String>,
+        key: Option<String>,
 
-        #[arg(long)]
-        /// The public key file (in hex or binary) for encaps
-        pkfile: Option<String>,
+        /// A file containing the 32-byte AES key, in binary or hex.
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
 
+        /// The 12-byte IV in hex. Supplied instead of generated: `encrypt` then writes none and
+        /// `decrypt` reads none. See the IV paragraph above.
         #[arg(long)]
-        /// The ciphertext value file (in hex or binary) either for encaps to output to, or for decaps to read from.
-        ctfile: Option<String>,
+        iv: Option<String>,
+
+        /// A file containing the 12-byte IV, as raw bytes exactly as they are (no hex decoding).
+        /// If both iv and iv_file options are provided, the file will be used.
+        #[arg(long)]
+        iv_file: Option<String>,
+
+        /// The additional authenticated data, in hex. Covered by the tag but not encrypted.
+        #[arg(long)]
+        aad: Option<String>,
+
+        /// A file containing the additional authenticated data, as raw bytes (never hex-decoded).
+        /// If both aad and aad_file options are provided, the file will be used.
+        #[arg(long)]
+        aad_file: Option<String>,
 
         #[arg(short)]
         /// Output in hex format.
         x: bool,
     },
 
-    /// The ML-KEM-768 key encapsulation algorithm.
-    MLKEM768 {
-        action: mlkem_cmd::MLKEMAction,
-
+    /// Ascon-AEAD128 authenticated encryption/decryption of the content provided on stdin
+    /// (NIST SP 800-232).
+    ///
+    /// On encrypt, a fresh nonce is generated and written as the FIRST 16 BYTES of the output,
+    /// followed by the ciphertext and then the 16-byte tag; on --decrypt the nonce is read back
+    /// from the first 16 bytes of the input, so the two compose directly in a pipeline. This is
+    /// the same convention the AES commands use for their IV. Decryption fails with a non-zero
+    /// exit status if the tag does not verify.
+    ///
+    /// --nonce/--nonce-file override that: the nonce is then neither written on encrypt nor read
+    /// on decrypt, and the stream is exactly ciphertext||tag in both directions. That override
+    /// exists for reproducing known-answer vectors; repeating a nonce under one key destroys both
+    /// the confidentiality and the authenticity of Ascon-AEAD128.
+    ///
+    /// Note: in production uses, secrets should not be passed on the command-line because they get
+    /// logged in shell history. Use the file-based input instead.
+    ///
+    /// Security note: decryption streams its output, so plaintext bytes are written to stdout
+    /// before the authentication tag (the last 16 bytes of input) can be checked. Do not treat
+    /// the output as authentic until this command exits with status 0; a non-zero exit means the
+    /// input was tampered with and any plaintext already written must be discarded.
+    AsconAEAD128 {
+        /// The 128-bit key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
         #[arg(long)]
-        /// The private key file (in hex or binary) for decaps
-        skfile: Option<String>,
+        key: Option<String>,
 
+        /// A file containing the 128-bit key in hex or binary.
         #[arg(long)]
-        /// The public key file (in hex or binary) for encaps
-        pkfile: Option<String>,
+        key_file: Option<String>,
 
+        /// The 128-bit nonce in hex. Hazardous override: supplying it keeps the nonce out of the
+        /// stream (see above), and reusing one under a given key breaks the cipher.
         #[arg(long)]
-        /// The ciphertext value file (in hex or binary) either for encaps to output to, or for decaps to read from.
-        ctfile: Option<String>,
+        nonce: Option<String>,
+
+        /// A file containing a 128-bit nonce in hex or binary; the same hazardous override.
+        #[arg(long)]
+        nonce_file: Option<String>,
+
+        /// Associated data in hex (authenticated but not encrypted).
+
+        /// Associated data in hex (authenticated but not encrypted).
+        #[arg(long)]
+        ad: Option<String>,
+
+        #[arg(short, long)]
+        direction: CipherDirection,
 
         #[arg(short)]
         /// Output in hex format.
         x: bool,
     },
 
-    /// The ML-KEM-1024 key encapsulation algorithm.
-    MLKEM1024 {
-        action: mlkem_cmd::MLKEMAction,
+    /// Perform Ascon-CXOF128 of the content provided on stdin. Requires the output length in bytes.
+    /// Supports streaming update for low memory footprint.
+    AsconCXOF128 {
+        /// Length of the output in bytes.
+        length: usize,
 
+        /// Customization string in hex (optional).
         #[arg(long)]
-        /// The private key file (in hex or binary) for decaps
-        skfile: Option<String>,
-
-        #[arg(long)]
-        /// The public key file (in hex or binary) for encaps
-        pkfile: Option<String>,
-
-        #[arg(long)]
-        /// The ciphertext value file (in hex or binary) either for encaps to output to, or for decaps to read from.
-        ctfile: Option<String>,
+        customization: Option<String>,
 
         #[arg(short)]
         /// Output in hex format.
         x: bool,
     },
 
-    /// The ML-DSA-44 signature algorithm.
-    MLDSA44 {
-        action: MLDSAAction,
+    /// Perform Ascon-Hash256 of the content provided on stdin.
+    /// Supports streaming update for low memory footprint.
+    AsconHash256 {
+        #[arg(short)]
+        /// Output the digest in hex format.
+        x: bool,
+    },
 
-        #[arg(long)]
-        /// The file containing context string (in hex) for signing or verifying
-        ctxfile: Option<String>,
-
-        #[arg(long)]
-        /// The private key file (in hex or binary) for signing
-        skfile: Option<String>,
-
-        #[arg(long)]
-        /// The public key file (in hex or binary) for verifying
-        pkfile: Option<String>,
-
-        #[arg(long)]
-        /// The signature value file (in hex or binary) for verifying
-        sigfile: Option<String>,
+    /// Perform Ascon-XOF128 of the content provided on stdin. Requires the output length in bytes.
+    /// Supports streaming update for low memory footprint.
+    AsconXOF128 {
+        /// Length of the output in bytes.
+        length: usize,
 
         #[arg(short)]
         /// Output in hex format.
         x: bool,
     },
 
-    /// The ML-DSA-65 signature algorithm.
-    MLDSA65 {
-        action: MLDSAAction,
+    /// Decode base64 data from stdin to binary.
+    /// Supports streaming for low memory footprint and continuous processing from stdin to stdout.
+    Base64Decode,
 
-        #[arg(long)]
-        /// The file containing context string (in hex) for signing or verifying
-        ctxfile: Option<String>,
-
-        #[arg(long)]
-        /// The private key file (in hex or binary) for signing
-        skfile: Option<String>,
-
-        #[arg(long)]
-        /// The public key file (in hex or binary) for verifying
-        pkfile: Option<String>,
-
-        #[arg(long)]
-        /// The signature value file (in hex or binary) for verifying
-        sigfile: Option<String>,
-
-        #[arg(short)]
-        /// Output in hex format.
-        x: bool,
-    },
-
-    /// The ML-DSA-87 signature algorithm.
-    MLDSA87 {
-        action: MLDSAAction,
-
-        #[arg(long)]
-        /// The file containing context string (in hex) for signing or verifying
-        ctxfile: Option<String>,
-
-        #[arg(long)]
-        /// The private key file (in hex or binary) for signing
-        skfile: Option<String>,
-
-        #[arg(long)]
-        /// The public key file (in hex or binary) for verifying
-        pkfile: Option<String>,
-
-        #[arg(long)]
-        /// The signature value file (in hex or binary) for verifying
-        sigfile: Option<String>,
-
-        #[arg(short)]
-        /// Output in hex format.
-        x: bool,
-    },
-
-    /// The HashML-DSA-44 signature algorithm.
-    HashMLDSA44 {
-        action: MLDSAAction,
-
-        #[arg(long)]
-        /// The file containing context string (in hex) for signing or verifying
-        ctxfile: Option<String>,
-
-        #[arg(long)]
-        /// The private key file (in hex or binary) for signing
-        skfile: Option<String>,
-
-        #[arg(long)]
-        /// The public key file (in hex or binary) for verifying
-        pkfile: Option<String>,
-
-        #[arg(long)]
-        /// The signature value file (in hex or binary) for verifying
-        sigfile: Option<String>,
-
-        #[arg(short)]
-        /// Output in hex format.
-        x: bool,
-    },
-
-    /// The HashML-DSA-65 signature algorithm.
-    HashMLDSA65 {
-        action: MLDSAAction,
-
-        #[arg(long)]
-        /// The file containing context string (in hex) for signing or verifying
-        ctxfile: Option<String>,
-
-        #[arg(long)]
-        /// The private key file (in hex or binary) for signing
-        skfile: Option<String>,
-
-        #[arg(long)]
-        /// The public key file (in hex or binary) for verifying
-        pkfile: Option<String>,
-
-        #[arg(long)]
-        /// The signature value file (in hex or binary) for verifying
-        sigfile: Option<String>,
-
-        #[arg(short)]
-        /// Output in hex format.
-        x: bool,
-    },
-
-    /// The HashML-DSA87 signature algorithm.
-    HashMLDSA87 {
-        action: MLDSAAction,
-
-        #[arg(long)]
-        /// The file containing context string (in hex) for signing or verifying
-        ctxfile: Option<String>,
-
-        #[arg(long)]
-        /// The private key file (in hex or binary) for signing
-        skfile: Option<String>,
-
-        #[arg(long)]
-        /// The public key file (in hex or binary) for verifying
-        pkfile: Option<String>,
-
-        #[arg(long)]
-        /// The signature value file (in hex or binary) for verifying
-        sigfile: Option<String>,
-
-        #[arg(short)]
-        /// Output in hex format.
-        x: bool,
-    },
+    /// Encode binary data from stdin to base64.
+    /// Supports streaming for low memory footprint and continuous processing from stdin to stdout.
+    Base64Encode,
 
     /// The ECDSA signature algorithm over NIST P-256 (FIPS 186-5), deterministic (RFC 6979) by
     /// default. `ctx` has no effect: ECDSA has no context-string input.
@@ -1712,6 +1164,688 @@ enum Subcommands {
         x: bool,
     },
 
+    /// The HashML-DSA-44 signature algorithm.
+    HashMLDSA44 {
+        action: MLDSAAction,
+
+        #[arg(long)]
+        /// The file containing context string (in hex) for signing or verifying
+        ctxfile: Option<String>,
+
+        #[arg(long)]
+        /// The private key file (in hex or binary) for signing
+        skfile: Option<String>,
+
+        #[arg(long)]
+        /// The public key file (in hex or binary) for verifying
+        pkfile: Option<String>,
+
+        #[arg(long)]
+        /// The signature value file (in hex or binary) for verifying
+        sigfile: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// The HashML-DSA-65 signature algorithm.
+    HashMLDSA65 {
+        action: MLDSAAction,
+
+        #[arg(long)]
+        /// The file containing context string (in hex) for signing or verifying
+        ctxfile: Option<String>,
+
+        #[arg(long)]
+        /// The private key file (in hex or binary) for signing
+        skfile: Option<String>,
+
+        #[arg(long)]
+        /// The public key file (in hex or binary) for verifying
+        pkfile: Option<String>,
+
+        #[arg(long)]
+        /// The signature value file (in hex or binary) for verifying
+        sigfile: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// The HashML-DSA87 signature algorithm.
+    HashMLDSA87 {
+        action: MLDSAAction,
+
+        #[arg(long)]
+        /// The file containing context string (in hex) for signing or verifying
+        ctxfile: Option<String>,
+
+        #[arg(long)]
+        /// The private key file (in hex or binary) for signing
+        skfile: Option<String>,
+
+        #[arg(long)]
+        /// The public key file (in hex or binary) for verifying
+        pkfile: Option<String>,
+
+        #[arg(long)]
+        /// The signature value file (in hex or binary) for verifying
+        sigfile: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// Decode hex data from stdin to binary.
+    /// Supports streaming for low memory footprint and continuous processing from stdin to stdout.
+    HexDecode,
+
+    /// Encode binary data from stdin to hex.
+    /// Supports streaming for low memory footprint and continuous processing from stdin to stdout.
+    HexEncode,
+
+    /// Perform HKDF-SHA256 of the provided input keying material.
+    ///     HKDF.extract_and_expand(salt, ikm, additional_info, L)
+    /// Note: in production uses, secrets should not be passed on the command-line because they get
+    /// logged in shell history. Use the file-based input instead.
+    HKDF_SHA256 {
+        /// The salt value in hex.
+        /// The `salt_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        salt: Option<String>,
+
+        /// A file containing the salt value in binary.
+        /// If both salt and salt_file options are provided, the file will be used.
+        #[arg(short, long)]
+        salt_file: Option<String>,
+
+        /// An Input Keying Material in hex.
+        /// The `ikm_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        ikm: Option<String>,
+
+        /// A file containing the input keying material in binary.
+        /// If both ikm and ikm_file options are provided, the file will be used.
+        #[arg(short, long)]
+        ikm_file: Option<String>,
+
+        /// Additional input data in hex.
+        #[arg(long)]
+        additional_input: Option<String>,
+
+        /// A file containing the additional input data in binary.
+        /// If both additional_input and additional_input_file options are provided, the file will be used.
+        #[arg(short, long)]
+        additional_input_file: Option<String>,
+
+        /// Length of output to produce, in bytes: at most 255 times the hash's output length.
+        #[arg(short, long)]
+        len: usize,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// Perform HKDF-SHA384 of the provided input keying material.
+    ///     HKDF.extract_and_expand(salt, ikm, additional_info, L)
+    /// Note: in production uses, secrets should not be passed on the command-line because they get
+    /// logged in shell history. Use the file-based input instead.
+    HKDF_SHA384 {
+        /// The salt value in hex.
+        /// The `salt_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        salt: Option<String>,
+
+        /// A file containing the salt value in binary.
+        /// If both salt and salt_file options are provided, the file will be used.
+        #[arg(short, long)]
+        salt_file: Option<String>,
+
+        /// An Input Keying Material in hex.
+        /// The `ikm_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        ikm: Option<String>,
+
+        /// A file containing the input keying material in binary.
+        /// If both ikm and ikm_file options are provided, the file will be used.
+        #[arg(short, long)]
+        ikm_file: Option<String>,
+
+        /// Additional input data in hex.
+        #[arg(long)]
+        additional_input: Option<String>,
+
+        /// A file containing the additional input data in binary.
+        /// If both additional_input and additional_input_file options are provided, the file will be used.
+        #[arg(short, long)]
+        additional_input_file: Option<String>,
+
+        /// Length of output to produce, in bytes: at most 255 times the hash's output length.
+        #[arg(short, long)]
+        len: usize,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// Perform HKDF-SHA512 of the provided input keying material.
+    ///     HKDF.extract_and_expand(salt, ikm, additional_info, L)
+    /// Note: in production uses, secrets should not be passed on the command-line because they get
+    /// logged in shell history. Use the file-based input instead.
+    HKDF_SHA512 {
+        /// The salt value in hex.
+        /// The `salt_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        salt: Option<String>,
+
+        /// A file containing the salt value in binary.
+        /// If both salt and salt_file options are provided, the file will be used.
+        #[arg(short, long)]
+        salt_file: Option<String>,
+
+        /// An Input Keying Material in hex.
+        /// The `ikm_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        ikm: Option<String>,
+
+        /// A file containing the input keying material in binary.
+        /// If both ikm and ikm_file options are provided, the file will be used.
+        #[arg(short, long)]
+        ikm_file: Option<String>,
+
+        /// Additional input data in hex.
+        #[arg(long)]
+        additional_input: Option<String>,
+
+        /// A file containing the additional input data in binary.
+        /// If both additional_input and additional_input_file options are provided, the file will be used.
+        #[arg(short, long)]
+        additional_input_file: Option<String>,
+
+        /// Length of output to produce, in bytes: at most 255 times the hash's output length.
+        #[arg(short, long)]
+        len: usize,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// Perform HMAC-SHA256 of the content provided on stdin.
+    /// Supports streaming update for low memory footprint.
+    /// Note: in production uses, secrets should not be passed on the command-line because they get
+    /// logged in shell history. Use the file-based input instead.
+    HMAC_SHA256 {
+        /// The MAC key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the MAC key in binary.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        /// A MAC value to be verified.
+        /// The command will output either 0 for success or -1 for verification failure.
+        #[arg(short, long)]
+        verify: Option<String>,
+
+        #[arg(short)]
+        /// Output the hashes in hex format.
+        x: bool,
+    },
+
+    /// Perform HMAC-SHA512 of the content provided on stdin.
+    /// Supports streaming update for low memory footprint.
+    /// Note: in production uses, secrets should not be passed on the command-line because they get
+    /// logged in shell history. Use the file-based input instead.
+    HMAC_SHA512 {
+        /// The MAC key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the MAC key in binary.
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        /// A MAC value to be verified.
+        /// The command will output either 0 for success or -1 for verification failure.
+        #[arg(short, long)]
+        verify: Option<String>,
+
+        #[arg(short)]
+        /// Output the hashes in hex format.
+        x: bool,
+    },
+
+    /// Perform HMAC-SHA512/224 of the content provided on stdin.
+    /// Supports streaming update for low memory footprint.
+    /// Note: in production uses, secrets should not be passed on the command-line because they get
+    /// logged in shell history. Use the file-based input instead.
+    HMAC_SHA512_224 {
+        /// The MAC key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the MAC key in binary.
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        /// A MAC value to be verified.
+        /// The command will output either 0 for success or -1 for verification failure.
+        #[arg(short, long)]
+        verify: Option<String>,
+
+        #[arg(short)]
+        /// Output the hashes in hex format.
+        x: bool,
+    },
+
+    /// Perform HMAC-SHA512/256 of the content provided on stdin.
+    /// Supports streaming update for low memory footprint.
+    /// Note: in production uses, secrets should not be passed on the command-line because they get
+    /// logged in shell history. Use the file-based input instead.
+    HMAC_SHA512_256 {
+        /// The MAC key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the MAC key in binary.
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        /// A MAC value to be verified.
+        /// The command will output either 0 for success or -1 for verification failure.
+        #[arg(short, long)]
+        verify: Option<String>,
+
+        #[arg(short)]
+        /// Output the hashes in hex format.
+        x: bool,
+    },
+
+    /// Perform HMAC-SM3 of the content provided on stdin.
+    /// Supports streaming update for low memory footprint.
+    /// Note: in production uses, secrets should not be passed on the command-line because they get
+    /// logged in shell history. Use the file-based input instead.
+    HMAC_SM3 {
+        /// The MAC key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the MAC key in binary.
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        /// A MAC value to be verified.
+        /// The command will output either 0 for success or -1 for verification failure.
+        #[arg(short, long)]
+        verify: Option<String>,
+
+        #[arg(short)]
+        /// Output the hashes in hex format.
+        x: bool,
+    },
+
+    /// Compute or verify a KMAC128 (NIST SP 800-185 Sec 4) over the content provided on stdin.
+    /// The tag length and customization string are bound into the computation, so the verifier
+    /// must use the same values.
+    KMAC128 {
+        /// Length of the tag in bytes.
+        length: usize,
+
+        #[arg(short = 's', long)]
+        /// Customization string, domain-separating this use of KMAC from another.
+        customization: Option<String>,
+
+        #[arg(short, long)]
+        /// The key, in hex.
+        key: Option<String>,
+
+        #[arg(long)]
+        /// File containing the key, as raw bytes.
+        key_file: Option<String>,
+
+        #[arg(short, long)]
+        /// Verify against this tag (hex) instead of computing one.
+        verify: Option<String>,
+
+        #[arg(short)]
+        /// Output the tag in hex format.
+        x: bool,
+    },
+
+    /// Compute or verify a KMAC256 (NIST SP 800-185 Sec 4) over the content provided on stdin.
+    /// See kmac128.
+    KMAC256 {
+        /// Length of the tag in bytes.
+        length: usize,
+
+        #[arg(short = 's', long)]
+        /// Customization string, domain-separating this use of KMAC from another.
+        customization: Option<String>,
+
+        #[arg(short, long)]
+        /// The key, in hex.
+        key: Option<String>,
+
+        #[arg(long)]
+        /// File containing the key, as raw bytes.
+        key_file: Option<String>,
+
+        #[arg(short, long)]
+        /// Verify against this tag (hex) instead of computing one.
+        verify: Option<String>,
+
+        #[arg(short)]
+        /// Output the tag in hex format.
+        x: bool,
+    },
+
+    /// The ML-DSA-44 signature algorithm.
+    MLDSA44 {
+        action: MLDSAAction,
+
+        #[arg(long)]
+        /// The file containing context string (in hex) for signing or verifying
+        ctxfile: Option<String>,
+
+        #[arg(long)]
+        /// The private key file (in hex or binary) for signing
+        skfile: Option<String>,
+
+        #[arg(long)]
+        /// The public key file (in hex or binary) for verifying
+        pkfile: Option<String>,
+
+        #[arg(long)]
+        /// The signature value file (in hex or binary) for verifying
+        sigfile: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// The ML-DSA-65 signature algorithm.
+    MLDSA65 {
+        action: MLDSAAction,
+
+        #[arg(long)]
+        /// The file containing context string (in hex) for signing or verifying
+        ctxfile: Option<String>,
+
+        #[arg(long)]
+        /// The private key file (in hex or binary) for signing
+        skfile: Option<String>,
+
+        #[arg(long)]
+        /// The public key file (in hex or binary) for verifying
+        pkfile: Option<String>,
+
+        #[arg(long)]
+        /// The signature value file (in hex or binary) for verifying
+        sigfile: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// The ML-DSA-87 signature algorithm.
+    MLDSA87 {
+        action: MLDSAAction,
+
+        #[arg(long)]
+        /// The file containing context string (in hex) for signing or verifying
+        ctxfile: Option<String>,
+
+        #[arg(long)]
+        /// The private key file (in hex or binary) for signing
+        skfile: Option<String>,
+
+        #[arg(long)]
+        /// The public key file (in hex or binary) for verifying
+        pkfile: Option<String>,
+
+        #[arg(long)]
+        /// The signature value file (in hex or binary) for verifying
+        sigfile: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// The ML-KEM-512 key encapsulation algorithm.
+    MLKEM512 {
+        action: mlkem_cmd::MLKEMAction,
+
+        #[arg(long)]
+        /// The private key file (in hex or binary) for decaps
+        skfile: Option<String>,
+
+        #[arg(long)]
+        /// The public key file (in hex or binary) for encaps
+        pkfile: Option<String>,
+
+        #[arg(long)]
+        /// The ciphertext value file (in hex or binary) either for encaps to output to, or for decaps to read from.
+        ctfile: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// The ML-KEM-768 key encapsulation algorithm.
+    MLKEM768 {
+        action: mlkem_cmd::MLKEMAction,
+
+        #[arg(long)]
+        /// The private key file (in hex or binary) for decaps
+        skfile: Option<String>,
+
+        #[arg(long)]
+        /// The public key file (in hex or binary) for encaps
+        pkfile: Option<String>,
+
+        #[arg(long)]
+        /// The ciphertext value file (in hex or binary) either for encaps to output to, or for decaps to read from.
+        ctfile: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// The ML-KEM-1024 key encapsulation algorithm.
+    MLKEM1024 {
+        action: mlkem_cmd::MLKEMAction,
+
+        #[arg(long)]
+        /// The private key file (in hex or binary) for decaps
+        skfile: Option<String>,
+
+        #[arg(long)]
+        /// The public key file (in hex or binary) for encaps
+        pkfile: Option<String>,
+
+        #[arg(long)]
+        /// The ciphertext value file (in hex or binary) either for encaps to output to, or for decaps to read from.
+        ctfile: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// Perform ParallelHash128 (NIST SP 800-185 Sec 6) of the content provided on stdin.
+    /// The block size is part of the function: the same input under a different block size gives
+    /// an unrelated hash, so both sides must use the same value.
+    /// Supports streaming update for low memory footprint.
+    PARALLELHASH128 {
+        /// Length of the output in bytes.
+        length: usize,
+
+        #[arg(short = 'b', long)]
+        /// Block size B in bytes, for the parallel split.
+        block_size: usize,
+
+        #[arg(short = 's', long)]
+        /// Customization string.
+        customization: Option<String>,
+
+        #[arg(short)]
+        /// Output the hashes in hex format.
+        x: bool,
+    },
+
+    /// Perform ParallelHash256 (NIST SP 800-185 Sec 6). See parallelhash128.
+    PARALLELHASH256 {
+        /// Length of the output in bytes.
+        length: usize,
+
+        #[arg(short = 'b', long)]
+        /// Block size B in bytes, for the parallel split.
+        block_size: usize,
+
+        #[arg(short = 's', long)]
+        /// Customization string.
+        customization: Option<String>,
+
+        #[arg(short)]
+        /// Output the hashes in hex format.
+        x: bool,
+    },
+
+    /// Generate cryptographically-secure random bytes, seeded from the operating system's entropy source (/dev/random or equivalent).
+    /// Uses the library's default 256-bit secure RNG algorithm.
+    RNG {
+        /// Number of bytes to generate. If omitted, it will stream continuously until the process is terminated.
+        #[arg(short, long)]
+        len: Option<u32>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// Perform SHA3-224 of the content provided on stdin.
+    /// Supports streaming update for low memory footprint.
+    SHA3_224 {
+        #[arg(short)]
+        /// Output the hashes in hex format.
+        x: bool,
+    },
+
+    /// Perform SHA3-256 of the content provided on stdin.
+    /// Supports streaming update for low memory footprint.
+    SHA3_256 {
+        #[arg(short)]
+        /// Output the hashes in hex format.
+        x: bool,
+    },
+
+    /// Perform SHA3-256 of the content provided on stdin.
+    /// Supports streaming update for low memory footprint.
+    SHA3_384 {
+        #[arg(short)]
+        /// Output the hashes in hex format.
+        x: bool,
+    },
+
+    /// Perform SHA3-256 of the content provided on stdin.
+    /// Supports streaming update for low memory footprint.
+    SHA3_512 {
+        #[arg(short)]
+        /// Output the hashes in hex format.
+        x: bool,
+    },
+
+    /// Perform SHA224 of the content provided on stdin.
+    /// Supports streaming update for low memory footprint.
+    SHA224 {
+        #[arg(short)]
+        /// Output the hashes in hex format.
+        x: bool,
+    },
+
+    /// Perform SHA256 of the content provided on stdin.
+    /// Supports streaming update for low memory footprint.
+    SHA256 {
+        #[arg(short)]
+        /// Output the hashes in hex format.
+        x: bool,
+    },
+
+    /// Perform SHA384 of the content provided on stdin.
+    /// Supports streaming update for low memory footprint.
+    SHA384 {
+        #[arg(short)]
+        /// Output the hashes in hex format.
+        x: bool,
+    },
+
+    /// Perform SHA512 of the content provided on stdin.
+    /// Supports streaming update for low memory footprint.
+    SHA512 {
+        #[arg(short)]
+        /// Output the hashes in hex format.
+        x: bool,
+    },
+
+    /// Perform SHA512/224 of the content provided on stdin.
+    /// Supports streaming update for low memory footprint.
+    SHA512_224 {
+        #[arg(short)]
+        /// Output the hashes in hex format.
+        x: bool,
+    },
+
+    /// Perform SHA512/256 of the content provided on stdin.
+    /// Supports streaming update for low memory footprint.
+    SHA512_256 {
+        #[arg(short)]
+        /// Output the hashes in hex format.
+        x: bool,
+    },
+
+    /// Perform SHAKE128 of the content provided on stdin. Requires the output length in bytes.
+    /// Supports streaming update for low memory footprint.
+    SHAKE128 {
+        /// Length of the output in bytes.
+        length: usize,
+
+        #[arg(short)]
+        /// Output the hashes in hex format.
+        x: bool,
+    },
+
+    /// Perform SHAKE256 of the content provided on stdin. Requires the output length in bytes.
+    /// Supports streaming update for low memory footprint.
+    SHAKE256 {
+        /// Length of the output in bytes.
+        length: usize,
+
+        #[arg(short)]
+        /// Output the hashes in hex format.
+        x: bool,
+    },
+
     /// The SM2 Digital Signature Algorithm (draft-shen-sm2-ecdsa-02 S5, GB/T 32918.2-2016),
     /// randomised only (the draft specifies no deterministic scheme). `--idfile` is mandatory for
     /// signing and verifying: it carries the signer's identity IDA, which every SM2 operation
@@ -1740,6 +1874,52 @@ enum Subcommands {
         /// Output in hex format.
         x: bool,
     },
+
+    /// Perform SM3 of the content provided on stdin.
+    /// Supports streaming update for low memory footprint.
+    SM3 {
+        #[arg(short)]
+        /// Output the hashes in hex format.
+        x: bool,
+    },
+
+    /// Perform TupleHash128 (NIST SP 800-185 Sec 5) over a tuple of strings. The tuple is given
+    /// by repeated --element flags, each in hex; with none, stdin is hashed as a single element.
+    /// The boundaries between elements are part of the hash.
+    TUPLEHASH128 {
+        /// Length of the output in bytes.
+        length: usize,
+
+        #[arg(short = 'e', long = "element")]
+        /// A tuple element, in hex. Repeat for each element, in order.
+        elements: Vec<String>,
+
+        #[arg(short = 's', long)]
+        /// Customization string.
+        customization: Option<String>,
+
+        #[arg(short)]
+        /// Output the hashes in hex format.
+        x: bool,
+    },
+
+    /// Perform TupleHash256 (NIST SP 800-185 Sec 5). See tuplehash128.
+    TUPLEHASH256 {
+        /// Length of the output in bytes.
+        length: usize,
+
+        #[arg(short = 'e', long = "element")]
+        /// A tuple element, in hex. Repeat for each element, in order.
+        elements: Vec<String>,
+
+        #[arg(short = 's', long)]
+        /// Customization string.
+        customization: Option<String>,
+
+        #[arg(short)]
+        /// Output the hashes in hex format.
+        x: bool,
+    },
 }
 
 fn main() {
@@ -1756,74 +1936,138 @@ fn run() {
     let cli = Cli::parse();
 
     match &cli.subcommands {
-        Some(Subcommands::HexEncode) => {
-            encoders_cmd::hex_encode_cmd();
+        Some(Subcommands::AES128_CBC { direction, key, key_file, iv, iv_file, x }) => {
+            aes_cbc_cmd::aes128_cbc_cmd(direction, key, key_file, iv, iv_file, *x);
         }
-        Some(Subcommands::HexDecode) => {
-            encoders_cmd::hex_decode_cmd();
+        Some(Subcommands::AES128_CCM {
+            direction,
+            key,
+            key_file,
+            nonce,
+            nonce_file,
+            aad,
+            aad_file,
+            tag_len,
+            x,
+        }) => {
+            aes_ccm_cmd::aes128_ccm_cmd(
+                direction, key, key_file, nonce, nonce_file, aad, aad_file, *tag_len, *x,
+            );
         }
-        Some(Subcommands::Base64Encode) => {
-            encoders_cmd::base64_encode_cmd();
+        Some(Subcommands::AES128_CFB { direction, key, key_file, iv, iv_file, x }) => {
+            aes_cfb_cmd::aes128_cfb_cmd(direction, key, key_file, iv, iv_file, *x);
         }
-        Some(Subcommands::Base64Decode) => {
-            encoders_cmd::base64_decode_cmd();
+        Some(Subcommands::AES128_CFB8 { direction, key, key_file, iv, iv_file, x }) => {
+            aes_cfb8_cmd::aes128_cfb8_cmd(direction, key, key_file, iv, iv_file, *x);
         }
-        Some(Subcommands::SHA224 { x }) => {
-            sha2_cmd::sha2_cmd(SHA2Variant::SHA224, *x);
+        Some(Subcommands::AES128_CTR { direction, key, key_file, iv, iv_file, x }) => {
+            aes_ctr_cmd::aes128_ctr_cmd(direction, key, key_file, iv, iv_file, *x);
         }
-        Some(Subcommands::SHA256 { x }) => {
-            sha2_cmd::sha2_cmd(SHA2Variant::SHA256, *x);
+        Some(Subcommands::AES128_ECB { direction, key, key_file, x }) => {
+            aes_ecb_cmd::aes128_ecb_cmd(direction, key, key_file, *x);
         }
-        Some(Subcommands::SHA384 { x }) => {
-            sha2_cmd::sha2_cmd(SHA2Variant::SHA384, *x);
+        Some(Subcommands::AES128_GCM {
+            direction,
+            key,
+            key_file,
+            iv,
+            iv_file,
+            aad,
+            aad_file,
+            x,
+        }) => {
+            aes_gcm_cmd::aes128_gcm_cmd(direction, key, key_file, iv, iv_file, aad, aad_file, *x);
         }
-        Some(Subcommands::SHA512 { x }) => {
-            sha2_cmd::sha2_cmd(SHA2Variant::SHA512, *x);
+        Some(Subcommands::AES192_CBC { direction, key, key_file, iv, iv_file, x }) => {
+            aes_cbc_cmd::aes192_cbc_cmd(direction, key, key_file, iv, iv_file, *x);
         }
-        Some(Subcommands::SHA512_224 { x }) => {
-            sha2_cmd::sha2_cmd(SHA2Variant::SHA512_224, *x);
+        Some(Subcommands::AES192_CCM {
+            direction,
+            key,
+            key_file,
+            nonce,
+            nonce_file,
+            aad,
+            aad_file,
+            tag_len,
+            x,
+        }) => {
+            aes_ccm_cmd::aes192_ccm_cmd(
+                direction, key, key_file, nonce, nonce_file, aad, aad_file, *tag_len, *x,
+            );
         }
-        Some(Subcommands::SHA512_256 { x }) => {
-            sha2_cmd::sha2_cmd(SHA2Variant::SHA512_256, *x);
+        Some(Subcommands::AES192_CFB { direction, key, key_file, iv, iv_file, x }) => {
+            aes_cfb_cmd::aes192_cfb_cmd(direction, key, key_file, iv, iv_file, *x);
         }
-        Some(Subcommands::SHA3_224 { x }) => {
-            sha3_cmd::sha3_cmd(224, *x);
+        Some(Subcommands::AES192_CFB8 { direction, key, key_file, iv, iv_file, x }) => {
+            aes_cfb8_cmd::aes192_cfb8_cmd(direction, key, key_file, iv, iv_file, *x);
         }
-        Some(Subcommands::SHA3_256 { x }) => {
-            sha3_cmd::sha3_cmd(256, *x);
+        Some(Subcommands::AES192_CTR { direction, key, key_file, iv, iv_file, x }) => {
+            aes_ctr_cmd::aes192_ctr_cmd(direction, key, key_file, iv, iv_file, *x);
         }
-        Some(Subcommands::SHA3_384 { x }) => {
-            sha3_cmd::sha3_cmd(384, *x);
+        Some(Subcommands::AES192_ECB { direction, key, key_file, x }) => {
+            aes_ecb_cmd::aes192_ecb_cmd(direction, key, key_file, *x);
         }
-        Some(Subcommands::SHA3_512 { x }) => {
-            sha3_cmd::sha3_cmd(512, *x);
+        Some(Subcommands::AES192_GCM {
+            direction,
+            key,
+            key_file,
+            iv,
+            iv_file,
+            aad,
+            aad_file,
+            x,
+        }) => {
+            aes_gcm_cmd::aes192_gcm_cmd(direction, key, key_file, iv, iv_file, aad, aad_file, *x);
         }
-        Some(Subcommands::SM3 { x }) => {
-            sm3_cmd::sm3_cmd(*x);
+        Some(Subcommands::AES256_CBC { direction, key, key_file, iv, iv_file, x }) => {
+            aes_cbc_cmd::aes256_cbc_cmd(direction, key, key_file, iv, iv_file, *x);
         }
-        Some(Subcommands::SHAKE128 { length, x }) => {
-            sha3_cmd::shake_cmd(128, *length, *x);
+        Some(Subcommands::AES256_CCM {
+            direction,
+            key,
+            key_file,
+            nonce,
+            nonce_file,
+            aad,
+            aad_file,
+            tag_len,
+            x,
+        }) => {
+            aes_ccm_cmd::aes256_ccm_cmd(
+                direction, key, key_file, nonce, nonce_file, aad, aad_file, *tag_len, *x,
+            );
         }
-        Some(Subcommands::SHAKE256 { length, x }) => {
-            sha3_cmd::shake_cmd(256, *length, *x);
+        Some(Subcommands::AES256_CFB { direction, key, key_file, iv, iv_file, x }) => {
+            aes_cfb_cmd::aes256_cfb_cmd(direction, key, key_file, iv, iv_file, *x);
         }
-        Some(Subcommands::TUPLEHASH128 { length, elements, customization, x }) => {
-            sha3_cmd::tuplehash_cmd(128, *length, elements, customization, *x);
+        Some(Subcommands::AES256_CFB8 { direction, key, key_file, iv, iv_file, x }) => {
+            aes_cfb8_cmd::aes256_cfb8_cmd(direction, key, key_file, iv, iv_file, *x);
         }
-        Some(Subcommands::TUPLEHASH256 { length, elements, customization, x }) => {
-            sha3_cmd::tuplehash_cmd(256, *length, elements, customization, *x);
+        Some(Subcommands::AES256_CTR { direction, key, key_file, iv, iv_file, x }) => {
+            aes_ctr_cmd::aes256_ctr_cmd(direction, key, key_file, iv, iv_file, *x);
         }
-        Some(Subcommands::PARALLELHASH128 { length, block_size, customization, x }) => {
-            sha3_cmd::parallelhash_cmd(128, *length, *block_size, customization, *x);
+        Some(Subcommands::AES256_ECB { direction, key, key_file, x }) => {
+            aes_ecb_cmd::aes256_ecb_cmd(direction, key, key_file, *x);
         }
-        Some(Subcommands::PARALLELHASH256 { length, block_size, customization, x }) => {
-            sha3_cmd::parallelhash_cmd(256, *length, *block_size, customization, *x);
+        Some(Subcommands::AES256_GCM {
+            direction,
+            key,
+            key_file,
+            iv,
+            iv_file,
+            aad,
+            aad_file,
+            x,
+        }) => {
+            aes_gcm_cmd::aes256_gcm_cmd(direction, key, key_file, iv, iv_file, aad, aad_file, *x);
         }
-        Some(Subcommands::KMAC128 { length, customization, key, key_file, verify, x }) => {
-            mac_cmd::kmac_cmd(128, *length, customization, key, key_file, verify, *x)
+        Some(Subcommands::AsconAEAD128 { key, key_file, nonce, nonce_file, ad, direction, x }) => {
+            let decrypt = matches!(direction, CipherDirection::Decrypt);
+            ascon_cmd::aead128_cmd(key, key_file, nonce, nonce_file, ad, decrypt, *x);
         }
-        Some(Subcommands::KMAC256 { length, customization, key, key_file, verify, x }) => {
-            mac_cmd::kmac_cmd(256, *length, customization, key, key_file, verify, *x)
+        Some(Subcommands::AsconCXOF128 { length, customization, x }) => {
+            ascon_cmd::cxof128_cmd(customization, *length, *x);
         }
         Some(Subcommands::AsconHash256 { x }) => {
             ascon_cmd::hash256_cmd(*x);
@@ -1831,27 +2075,47 @@ fn run() {
         Some(Subcommands::AsconXOF128 { length, x }) => {
             ascon_cmd::xof128_cmd(*length, *x);
         }
-        Some(Subcommands::AsconCXOF128 { length, customization, x }) => {
-            ascon_cmd::cxof128_cmd(customization, *length, *x);
+        Some(Subcommands::Base64Decode) => {
+            encoders_cmd::base64_decode_cmd();
         }
-        Some(Subcommands::AsconAEAD128 { key, key_file, nonce, nonce_file, ad, direction, x }) => {
-            let decrypt = matches!(direction, CipherDirection::Decrypt);
-            ascon_cmd::aead128_cmd(key, key_file, nonce, nonce_file, ad, decrypt, *x);
+        Some(Subcommands::Base64Encode) => {
+            encoders_cmd::base64_encode_cmd();
         }
-        Some(Subcommands::HMAC_SHA256 { key, key_file, verify, x }) => {
-            mac_cmd::mac_cmd(HMACVariant::SHA256, key, key_file, verify, *x)
+        Some(Subcommands::ECDSA_P256 { action, skfile, pkfile, sigfile, x }) => {
+            ecdsa_cmd::ecdsa_p256_cmd(action, skfile, pkfile, sigfile, *x);
         }
-        Some(Subcommands::HMAC_SHA512 { key, key_file, verify, x }) => {
-            mac_cmd::mac_cmd(HMACVariant::SHA512, key, key_file, verify, *x)
+        Some(Subcommands::ECDSA_P384 { action, skfile, pkfile, sigfile, x }) => {
+            ecdsa_cmd::ecdsa_p384_cmd(action, skfile, pkfile, sigfile, *x);
         }
-        Some(Subcommands::HMAC_SHA512_224 { key, key_file, verify, x }) => {
-            mac_cmd::mac_cmd(HMACVariant::SHA512_224, key, key_file, verify, *x)
+        Some(Subcommands::ECDSA_P521 { action, skfile, pkfile, sigfile, x }) => {
+            ecdsa_cmd::ecdsa_p521_cmd(action, skfile, pkfile, sigfile, *x);
         }
-        Some(Subcommands::HMAC_SHA512_256 { key, key_file, verify, x }) => {
-            mac_cmd::mac_cmd(HMACVariant::SHA512_256, key, key_file, verify, *x)
+        Some(Subcommands::ECDSA_SECP256K1 { action, skfile, pkfile, sigfile, x }) => {
+            ecdsa_cmd::ecdsa_secp256k1_cmd(action, skfile, pkfile, sigfile, *x);
         }
-        Some(Subcommands::HMAC_SM3 { key, key_file, verify, x }) => {
-            mac_cmd::mac_cmd(HMACVariant::SM3, key, key_file, verify, *x)
+        Some(Subcommands::ECDSA_BP256R1 { action, skfile, pkfile, sigfile, x }) => {
+            ecdsa_cmd::ecdsa_bp256r1_cmd(action, skfile, pkfile, sigfile, *x);
+        }
+        Some(Subcommands::ECDSA_BP384R1 { action, skfile, pkfile, sigfile, x }) => {
+            ecdsa_cmd::ecdsa_bp384r1_cmd(action, skfile, pkfile, sigfile, *x);
+        }
+        Some(Subcommands::ECDSA_BP512R1 { action, skfile, pkfile, sigfile, x }) => {
+            ecdsa_cmd::ecdsa_bp512r1_cmd(action, skfile, pkfile, sigfile, *x);
+        }
+        Some(Subcommands::HashMLDSA44 { action, ctxfile, skfile, pkfile, sigfile, x }) => {
+            mldsa_cmd::hash_mldsa44_sha512_cmd(action, ctxfile, skfile, pkfile, sigfile, *x);
+        }
+        Some(Subcommands::HashMLDSA65 { action, ctxfile, skfile, pkfile, sigfile, x }) => {
+            mldsa_cmd::hash_mldsa65_sha512_cmd(action, ctxfile, skfile, pkfile, sigfile, *x);
+        }
+        Some(Subcommands::HashMLDSA87 { action, ctxfile, skfile, pkfile, sigfile, x }) => {
+            mldsa_cmd::hash_mldsa87_sha512_cmd(action, ctxfile, skfile, pkfile, sigfile, *x);
+        }
+        Some(Subcommands::HexDecode) => {
+            encoders_cmd::hex_decode_cmd();
+        }
+        Some(Subcommands::HexEncode) => {
+            encoders_cmd::hex_encode_cmd();
         }
         Some(Subcommands::HKDF_SHA256 {
             salt,
@@ -1892,114 +2156,26 @@ fn run() {
             "HKDF-SHA512", salt, salt_file, ikm, ikm_file, additional_input, additional_input_file,
             *len, *x,
         ),
-        Some(Subcommands::RNG { len, x }) => rng_cmd::rng_cmd(*len, *x),
-        Some(Subcommands::AES128_CBC { direction, key, key_file, x }) => {
-            aes_cbc_cmd::aes128_cbc_cmd(direction, key, key_file, *x);
+        Some(Subcommands::HMAC_SHA256 { key, key_file, verify, x }) => {
+            mac_cmd::mac_cmd(HMACVariant::SHA256, key, key_file, verify, *x)
         }
-        Some(Subcommands::AES192_CBC { direction, key, key_file, x }) => {
-            aes_cbc_cmd::aes192_cbc_cmd(direction, key, key_file, *x);
+        Some(Subcommands::HMAC_SHA512 { key, key_file, verify, x }) => {
+            mac_cmd::mac_cmd(HMACVariant::SHA512, key, key_file, verify, *x)
         }
-        Some(Subcommands::AES256_CBC { direction, key, key_file, x }) => {
-            aes_cbc_cmd::aes256_cbc_cmd(direction, key, key_file, *x);
+        Some(Subcommands::HMAC_SHA512_224 { key, key_file, verify, x }) => {
+            mac_cmd::mac_cmd(HMACVariant::SHA512_224, key, key_file, verify, *x)
         }
-        Some(Subcommands::AES128_CFB { direction, key, key_file, x }) => {
-            aes_cfb_cmd::aes128_cfb_cmd(direction, key, key_file, *x);
+        Some(Subcommands::HMAC_SHA512_256 { key, key_file, verify, x }) => {
+            mac_cmd::mac_cmd(HMACVariant::SHA512_256, key, key_file, verify, *x)
         }
-        Some(Subcommands::AES192_CFB { direction, key, key_file, x }) => {
-            aes_cfb_cmd::aes192_cfb_cmd(direction, key, key_file, *x);
+        Some(Subcommands::HMAC_SM3 { key, key_file, verify, x }) => {
+            mac_cmd::mac_cmd(HMACVariant::SM3, key, key_file, verify, *x)
         }
-        Some(Subcommands::AES256_CFB { direction, key, key_file, x }) => {
-            aes_cfb_cmd::aes256_cfb_cmd(direction, key, key_file, *x);
+        Some(Subcommands::KMAC128 { length, customization, key, key_file, verify, x }) => {
+            mac_cmd::kmac_cmd(128, *length, customization, key, key_file, verify, *x)
         }
-        Some(Subcommands::AES128_CFB8 { direction, key, key_file, x }) => {
-            aes_cfb8_cmd::aes128_cfb8_cmd(direction, key, key_file, *x);
-        }
-        Some(Subcommands::AES192_CFB8 { direction, key, key_file, x }) => {
-            aes_cfb8_cmd::aes192_cfb8_cmd(direction, key, key_file, *x);
-        }
-        Some(Subcommands::AES256_CFB8 { direction, key, key_file, x }) => {
-            aes_cfb8_cmd::aes256_cfb8_cmd(direction, key, key_file, *x);
-        }
-        Some(Subcommands::AES128_CTR { direction, key, key_file, x }) => {
-            aes_ctr_cmd::aes128_ctr_cmd(direction, key, key_file, *x);
-        }
-        Some(Subcommands::AES192_CTR { direction, key, key_file, x }) => {
-            aes_ctr_cmd::aes192_ctr_cmd(direction, key, key_file, *x);
-        }
-        Some(Subcommands::AES256_CTR { direction, key, key_file, x }) => {
-            aes_ctr_cmd::aes256_ctr_cmd(direction, key, key_file, *x);
-        }
-        Some(Subcommands::AES128_CCM {
-            direction,
-            key,
-            key_file,
-            nonce,
-            nonce_file,
-            aad,
-            aad_file,
-            tag_len,
-            x,
-        }) => {
-            aes_ccm_cmd::aes128_ccm_cmd(
-                direction, key, key_file, nonce, nonce_file, aad, aad_file, *tag_len, *x,
-            );
-        }
-        Some(Subcommands::AES192_CCM {
-            direction,
-            key,
-            key_file,
-            nonce,
-            nonce_file,
-            aad,
-            aad_file,
-            tag_len,
-            x,
-        }) => {
-            aes_ccm_cmd::aes192_ccm_cmd(
-                direction, key, key_file, nonce, nonce_file, aad, aad_file, *tag_len, *x,
-            );
-        }
-        Some(Subcommands::AES256_CCM {
-            direction,
-            key,
-            key_file,
-            nonce,
-            nonce_file,
-            aad,
-            aad_file,
-            tag_len,
-            x,
-        }) => {
-            aes_ccm_cmd::aes256_ccm_cmd(
-                direction, key, key_file, nonce, nonce_file, aad, aad_file, *tag_len, *x,
-            );
-        }
-        Some(Subcommands::AES128_GCM { direction, key, key_file, aad, aad_file, x }) => {
-            aes_gcm_cmd::aes128_gcm_cmd(direction, key, key_file, aad, aad_file, *x);
-        }
-        Some(Subcommands::AES192_GCM { direction, key, key_file, aad, aad_file, x }) => {
-            aes_gcm_cmd::aes192_gcm_cmd(direction, key, key_file, aad, aad_file, *x);
-        }
-        Some(Subcommands::AES256_GCM { direction, key, key_file, aad, aad_file, x }) => {
-            aes_gcm_cmd::aes256_gcm_cmd(direction, key, key_file, aad, aad_file, *x);
-        }
-        Some(Subcommands::AES128_ECB { direction, key, key_file, x }) => {
-            aes_ecb_cmd::aes128_ecb_cmd(direction, key, key_file, *x);
-        }
-        Some(Subcommands::AES192_ECB { direction, key, key_file, x }) => {
-            aes_ecb_cmd::aes192_ecb_cmd(direction, key, key_file, *x);
-        }
-        Some(Subcommands::AES256_ECB { direction, key, key_file, x }) => {
-            aes_ecb_cmd::aes256_ecb_cmd(direction, key, key_file, *x);
-        }
-        Some(Subcommands::MLKEM512 { action, skfile, pkfile, ctfile, x }) => {
-            mlkem_cmd::mlkem512_cmd(action, skfile, pkfile, ctfile, *x);
-        }
-        Some(Subcommands::MLKEM768 { action, skfile, pkfile, ctfile, x }) => {
-            mlkem_cmd::mlkem768_cmd(action, skfile, pkfile, ctfile, *x);
-        }
-        Some(Subcommands::MLKEM1024 { action, skfile, pkfile, ctfile, x }) => {
-            mlkem_cmd::mlkem1024_cmd(action, skfile, pkfile, ctfile, *x);
+        Some(Subcommands::KMAC256 { length, customization, key, key_file, verify, x }) => {
+            mac_cmd::kmac_cmd(256, *length, customization, key, key_file, verify, *x)
         }
         Some(Subcommands::MLDSA44 { action, ctxfile, skfile, pkfile, sigfile, x }) => {
             mldsa_cmd::mldsa44_cmd(action, ctxfile, skfile, pkfile, sigfile, *x);
@@ -2010,38 +2186,69 @@ fn run() {
         Some(Subcommands::MLDSA87 { action, ctxfile, skfile, pkfile, sigfile, x }) => {
             mldsa_cmd::mldsa87_cmd(action, ctxfile, skfile, pkfile, sigfile, *x);
         }
-        Some(Subcommands::HashMLDSA44 { action, ctxfile, skfile, pkfile, sigfile, x }) => {
-            mldsa_cmd::hash_mldsa44_sha512_cmd(action, ctxfile, skfile, pkfile, sigfile, *x);
+        Some(Subcommands::MLKEM512 { action, skfile, pkfile, ctfile, x }) => {
+            mlkem_cmd::mlkem512_cmd(action, skfile, pkfile, ctfile, *x);
         }
-        Some(Subcommands::HashMLDSA65 { action, ctxfile, skfile, pkfile, sigfile, x }) => {
-            mldsa_cmd::hash_mldsa65_sha512_cmd(action, ctxfile, skfile, pkfile, sigfile, *x);
+        Some(Subcommands::MLKEM768 { action, skfile, pkfile, ctfile, x }) => {
+            mlkem_cmd::mlkem768_cmd(action, skfile, pkfile, ctfile, *x);
         }
-        Some(Subcommands::HashMLDSA87 { action, ctxfile, skfile, pkfile, sigfile, x }) => {
-            mldsa_cmd::hash_mldsa87_sha512_cmd(action, ctxfile, skfile, pkfile, sigfile, *x);
+        Some(Subcommands::MLKEM1024 { action, skfile, pkfile, ctfile, x }) => {
+            mlkem_cmd::mlkem1024_cmd(action, skfile, pkfile, ctfile, *x);
         }
-        Some(Subcommands::ECDSA_P256 { action, skfile, pkfile, sigfile, x }) => {
-            ecdsa_cmd::ecdsa_p256_cmd(action, skfile, pkfile, sigfile, *x);
+        Some(Subcommands::PARALLELHASH128 { length, block_size, customization, x }) => {
+            sha3_cmd::parallelhash_cmd(128, *length, *block_size, customization, *x);
         }
-        Some(Subcommands::ECDSA_P384 { action, skfile, pkfile, sigfile, x }) => {
-            ecdsa_cmd::ecdsa_p384_cmd(action, skfile, pkfile, sigfile, *x);
+        Some(Subcommands::PARALLELHASH256 { length, block_size, customization, x }) => {
+            sha3_cmd::parallelhash_cmd(256, *length, *block_size, customization, *x);
         }
-        Some(Subcommands::ECDSA_P521 { action, skfile, pkfile, sigfile, x }) => {
-            ecdsa_cmd::ecdsa_p521_cmd(action, skfile, pkfile, sigfile, *x);
+        Some(Subcommands::RNG { len, x }) => rng_cmd::rng_cmd(*len, *x),
+        Some(Subcommands::SHA3_224 { x }) => {
+            sha3_cmd::sha3_cmd(224, *x);
         }
-        Some(Subcommands::ECDSA_SECP256K1 { action, skfile, pkfile, sigfile, x }) => {
-            ecdsa_cmd::ecdsa_secp256k1_cmd(action, skfile, pkfile, sigfile, *x);
+        Some(Subcommands::SHA3_256 { x }) => {
+            sha3_cmd::sha3_cmd(256, *x);
         }
-        Some(Subcommands::ECDSA_BP256R1 { action, skfile, pkfile, sigfile, x }) => {
-            ecdsa_cmd::ecdsa_bp256r1_cmd(action, skfile, pkfile, sigfile, *x);
+        Some(Subcommands::SHA3_384 { x }) => {
+            sha3_cmd::sha3_cmd(384, *x);
         }
-        Some(Subcommands::ECDSA_BP384R1 { action, skfile, pkfile, sigfile, x }) => {
-            ecdsa_cmd::ecdsa_bp384r1_cmd(action, skfile, pkfile, sigfile, *x);
+        Some(Subcommands::SHA3_512 { x }) => {
+            sha3_cmd::sha3_cmd(512, *x);
         }
-        Some(Subcommands::ECDSA_BP512R1 { action, skfile, pkfile, sigfile, x }) => {
-            ecdsa_cmd::ecdsa_bp512r1_cmd(action, skfile, pkfile, sigfile, *x);
+        Some(Subcommands::SHA224 { x }) => {
+            sha2_cmd::sha2_cmd(SHA2Variant::SHA224, *x);
+        }
+        Some(Subcommands::SHA256 { x }) => {
+            sha2_cmd::sha2_cmd(SHA2Variant::SHA256, *x);
+        }
+        Some(Subcommands::SHA384 { x }) => {
+            sha2_cmd::sha2_cmd(SHA2Variant::SHA384, *x);
+        }
+        Some(Subcommands::SHA512 { x }) => {
+            sha2_cmd::sha2_cmd(SHA2Variant::SHA512, *x);
+        }
+        Some(Subcommands::SHA512_224 { x }) => {
+            sha2_cmd::sha2_cmd(SHA2Variant::SHA512_224, *x);
+        }
+        Some(Subcommands::SHA512_256 { x }) => {
+            sha2_cmd::sha2_cmd(SHA2Variant::SHA512_256, *x);
+        }
+        Some(Subcommands::SHAKE128 { length, x }) => {
+            sha3_cmd::shake_cmd(128, *length, *x);
+        }
+        Some(Subcommands::SHAKE256 { length, x }) => {
+            sha3_cmd::shake_cmd(256, *length, *x);
         }
         Some(Subcommands::SM2 { action, idfile, skfile, pkfile, sigfile, x }) => {
             sm2_cmd::sm2_cmd(action, idfile, skfile, pkfile, sigfile, *x);
+        }
+        Some(Subcommands::SM3 { x }) => {
+            sm3_cmd::sm3_cmd(*x);
+        }
+        Some(Subcommands::TUPLEHASH128 { length, elements, customization, x }) => {
+            sha3_cmd::tuplehash_cmd(128, *length, elements, customization, *x);
+        }
+        Some(Subcommands::TUPLEHASH256 { length, elements, customization, x }) => {
+            sha3_cmd::tuplehash_cmd(256, *length, elements, customization, *x);
         }
         None => {
             eprintln!("No command provided. See -h")

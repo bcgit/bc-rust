@@ -33,55 +33,55 @@
 //! nonce is drawn from the OS-backed DRBG for exactly that reason, and there is no way to supply
 //! one.
 
-use crate::helpers::block_mode_helpers::{BLOCK_LEN, CipherDirection, load_key};
+use crate::helpers::block_mode_helpers::{CipherDirection, load_iv, load_key};
 use crate::helpers::stream_mode_helpers::run_stream_mode;
-use bouncycastle::aes::CTR_NONCE_LEN;
-use bouncycastle::aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
-use bouncycastle::cipher::modes::Ctr;
-use bouncycastle::cipher::modes::ModeNames;
+use bouncycastle::aes::{AES_CTR_128, AES_CTR_192, AES_CTR_256, CTR_NONCE_LEN};
 use bouncycastle::cipher::{Decrypting, Encrypting};
-use bouncycastle::core::hazmat::ElectronicCodeBook;
-use bouncycastle::core::key_material::KeyMaterial;
 
 pub(crate) fn aes128_ctr_cmd(
     action: &CipherDirection,
     key: &Option<String>,
     key_file: &Option<String>,
+    iv: &Option<String>,
+    iv_file: &Option<String>,
     output_hex: bool,
 ) {
-    run::<AES128Internal, 16>(action, &load_key::<16>(key, key_file, "AES-128"), output_hex);
+    run_stream_mode::<AES_CTR_128<Encrypting>, AES_CTR_128<Decrypting>, 16, CTR_NONCE_LEN>(
+        action,
+        &load_key::<16>(key, key_file, "AES-128"),
+        load_iv::<CTR_NONCE_LEN>(iv, iv_file),
+        output_hex,
+    );
 }
 
 pub(crate) fn aes192_ctr_cmd(
     action: &CipherDirection,
     key: &Option<String>,
     key_file: &Option<String>,
+    iv: &Option<String>,
+    iv_file: &Option<String>,
     output_hex: bool,
 ) {
-    run::<AES192Internal, 24>(action, &load_key::<24>(key, key_file, "AES-192"), output_hex);
+    run_stream_mode::<AES_CTR_192<Encrypting>, AES_CTR_192<Decrypting>, 24, CTR_NONCE_LEN>(
+        action,
+        &load_key::<24>(key, key_file, "AES-192"),
+        load_iv::<CTR_NONCE_LEN>(iv, iv_file),
+        output_hex,
+    );
 }
 
 pub(crate) fn aes256_ctr_cmd(
     action: &CipherDirection,
     key: &Option<String>,
     key_file: &Option<String>,
+    iv: &Option<String>,
+    iv_file: &Option<String>,
     output_hex: bool,
 ) {
-    run::<AES256Internal, 32>(action, &load_key::<32>(key, key_file, "AES-256"), output_hex);
-}
-
-/// Dispatches to the shared streaming loops with `Ctr` filled in as the mode.
-fn run<P, const KEY_LEN: usize>(
-    action: &CipherDirection,
-    key: &KeyMaterial<KEY_LEN>,
-    output_hex: bool,
-) where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
-{
-    run_stream_mode::<
-        Ctr<P, Encrypting, KEY_LEN, BLOCK_LEN, CTR_NONCE_LEN>,
-        Ctr<P, Decrypting, KEY_LEN, BLOCK_LEN, CTR_NONCE_LEN>,
-        KEY_LEN,
-        CTR_NONCE_LEN,
-    >(action, key, output_hex)
+    run_stream_mode::<AES_CTR_256<Encrypting>, AES_CTR_256<Decrypting>, 32, CTR_NONCE_LEN>(
+        action,
+        &load_key::<32>(key, key_file, "AES-256"),
+        load_iv::<CTR_NONCE_LEN>(iv, iv_file),
+        output_hex,
+    );
 }

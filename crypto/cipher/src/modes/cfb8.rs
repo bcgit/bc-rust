@@ -54,11 +54,10 @@
 
 use crate::modes::ModeNames;
 use crate::modes::iv::random_iv;
-use crate::stream::{stream_do_final, stream_update_out};
 use crate::{Decrypting, Encrypting};
 use bouncycastle_core::errors::{SuspendableError, SymmetricCipherError};
 use bouncycastle_core::hazmat::ElectronicCodeBook;
-use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait};
+use bouncycastle_core::key_material::KeyMaterial;
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{
     Algorithm, RNG, StreamCipherDecryptor, StreamCipherEncryptor, SuspendableKeyed,
@@ -199,7 +198,6 @@ where
         key: &KeyMaterial<KEY_LEN>,
         rng: &mut dyn RNG,
     ) -> Result<(Self, [u8; BLOCK_LEN]), SymmetricCipherError> {
-        key.check_algorithm(Self::ALG_NAME)?;
         let perm = P::new(key)?;
         // `I1 = IV`.
         let iv = random_iv::<BLOCK_LEN>(rng)?;
@@ -211,19 +209,30 @@ where
         input_len
     }
 
-    /// See [`stream_update_out`].
+    /// Copies `plaintext` into `ciphertext` and works in place there, so the caller's input is left
+    /// untouched. The whole of `ciphertext` is zeroized first.
+    ///
+    /// # Errors
+    /// [`SymmetricCipherError::OutputBufferTooSmall`] if `ciphertext` is shorter than `plaintext`,
+    /// checked before anything is consumed.
     fn do_encrypt_out(
         &mut self,
         plaintext: &[u8],
         ciphertext: &mut [u8],
     ) -> Result<usize, SymmetricCipherError> {
         ciphertext.fill(0);
-        stream_update_out(plaintext, ciphertext, |data| self.do_encrypt_inplace(data))
+        if ciphertext.len() < plaintext.len() {
+            return Err(SymmetricCipherError::OutputBufferTooSmall(plaintext.len()));
+        }
+        let out = &mut ciphertext[..plaintext.len()];
+        out.copy_from_slice(plaintext);
+        self.do_encrypt_inplace(out)?;
+        Ok(plaintext.len())
     }
 
-    /// See [`stream_do_final`].
+    /// Nothing is held back, so there is nothing to finish.
     fn do_encrypt_final(self) -> Result<([u8; 0], usize), SymmetricCipherError> {
-        stream_do_final()
+        Ok(([], 0))
     }
 
     /// A stream cipher never changes the length of its data.
@@ -263,7 +272,6 @@ where
         key: &KeyMaterial<KEY_LEN>,
         init_data: &[u8; BLOCK_LEN],
     ) -> Result<Self, SymmetricCipherError> {
-        key.check_algorithm(Self::ALG_NAME)?;
         let perm = P::new(key)?;
         // `I1 = IV`, exactly as on the encrypt side.
         Ok(Self { perm, chain: *init_data, _dir: PhantomData })
@@ -274,19 +282,30 @@ where
         input_len
     }
 
-    /// See [`stream_update_out`].
+    /// Copies `ciphertext` into `plaintext` and works in place there, so the caller's input is left
+    /// untouched. The whole of `plaintext` is zeroized first.
+    ///
+    /// # Errors
+    /// [`SymmetricCipherError::OutputBufferTooSmall`] if `plaintext` is shorter than `ciphertext`,
+    /// checked before anything is consumed.
     fn do_decrypt_out(
         &mut self,
         ciphertext: &[u8],
         plaintext: &mut [u8],
     ) -> Result<usize, SymmetricCipherError> {
         plaintext.fill(0);
-        stream_update_out(ciphertext, plaintext, |data| self.do_decrypt_inplace(data))
+        if plaintext.len() < ciphertext.len() {
+            return Err(SymmetricCipherError::OutputBufferTooSmall(ciphertext.len()));
+        }
+        let out = &mut plaintext[..ciphertext.len()];
+        out.copy_from_slice(ciphertext);
+        self.do_decrypt_inplace(out)?;
+        Ok(ciphertext.len())
     }
 
-    /// See [`stream_do_final`].
+    /// Nothing is held back, so there is nothing to finish.
     fn do_decrypt_final(self) -> Result<([u8; 0], usize), SymmetricCipherError> {
-        stream_do_final()
+        Ok(([], 0))
     }
 
     /// Exact rather than an upper bound: a stream cipher never changes the length of its data.
@@ -341,7 +360,6 @@ where
     }
 
     fn read_state(state: &[u8], key: &Self::Key) -> Result<Self, SuspendableError> {
-        key.check_algorithm(Self::ALG_NAME).map_err(|_| SuspendableError::InvalidData)?;
         let perm = P::new(key).map_err(|_| SuspendableError::InvalidData)?;
         let mut chain = [0u8; BLOCK_LEN];
         chain.copy_from_slice(state);

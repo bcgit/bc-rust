@@ -3,7 +3,7 @@
 //! **🚨 Security note: 🚨 ECB is not a confidentiality mode for data.** That is why these are
 //! under [`hazmat`](crate::hazmat); see [`bouncycastle_core::hazmat`] for the supported uses.
 //!
-//! See [`bouncycastle_cipher::modes::hazmat::Ecb`] for details on the ElectronicCodebook construction.
+//! See [`bouncycastle_cipher::modes::hazmat::ecb::Ecb`] for details on the ElectronicCodebook construction.
 //!
 //! The aliases here are padded block ciphers that accept input of any size; `NoPadding` accepts
 //! only whole blocks but goes through the same adapter. The unpadded mode underneath them, which
@@ -151,7 +151,7 @@
 //!
 //! # 🚨 Security Considerations 🚨
 //!
-//! All security considerations from [`bouncycastle_cipher::modes::hazmat::Ecb`] apply. Above all, **ECB is not a
+//! All security considerations from [`bouncycastle_cipher::modes::hazmat::ecb::Ecb`] apply. Above all, **ECB is not a
 //! confidentiality mode for data**: under a given key every plaintext block maps to the same
 //! ciphertext block, so the structure of the plaintext shows through, and padding does not change
 //! that in the least. It makes ECB accept any length; it does not make it safe.
@@ -177,7 +177,7 @@ use crate::AESParams;
 use crate::bitslice::Block;
 use crate::hazmat::{AES128Internal, AES192Internal, AES256Internal, AESInternal};
 use bouncycastle_cipher::Direction;
-use bouncycastle_cipher::modes::hazmat::Ecb;
+use bouncycastle_cipher::modes::hazmat::ecb::Ecb;
 use bouncycastle_cipher::padding::{PaddedBlockCipherDecryptor, PaddedBlockCipherEncryptor};
 use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::errors::SymmetricCipherError;

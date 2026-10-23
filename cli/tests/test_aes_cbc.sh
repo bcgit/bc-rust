@@ -2,14 +2,18 @@
 # The aes128-cbc / aes192-cbc / aes256-cbc subcommands, end to end through the binary.
 #
 # Framing: encrypt writes a fresh IV as the first 16 bytes of its output, decrypt reads it back
-# from the first 16 bytes of its input, and neither applies padding, so input must be a whole
-# number of 16-byte blocks. Keys and data come from `bc-rust rng`; the one fixed input is the
-# SP 800-38A Appendix F.2 known-answer set.
+# from the first 16 bytes of its input, and the plaintext is padded with PKCS7, so input may be
+# any length and the ciphertext after the IV is 1 to 16 bytes longer than it. Keys and data come
+# from `bc-rust rng`; the one fixed input is the SP 800-38A Appendix F.2 known-answer set.
 
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 # One subcommand per key length: `cbc 128` prints "aes128-cbc".
 cbc() { echo "aes$1-cbc"; }
+
+# `padded_len N` prints the PKCS7-padded length of an N-byte plaintext: always at least one byte
+# of padding, so an aligned plaintext gains a whole block.
+padded_len() { echo $(($1 / 16 * 16 + 16)); }
 
 # ---- round trips --------------------------------------------------------------------------
 
@@ -20,7 +24,7 @@ test_round_trip_through_files() {
         rng 1024 >"$TMP/pt"
 
         "$BC_RUST" "$(cbc $bits)" -d encrypt --key-file "$TMP/key" <"$TMP/pt" >"$TMP/ct"
-        assert_size "$TMP/ct" $((16 + 1024)) "$bits: ciphertext is the IV plus the plaintext length"
+        assert_size "$TMP/ct" $((16 + 1040)) "$bits: ciphertext is the IV plus the padded plaintext"
         assert_differs "$TMP/pt" "$TMP/ct" "$bits: the data must actually be encrypted"
 
         "$BC_RUST" "$(cbc $bits)" -d decrypt --key-file "$TMP/key" <"$TMP/ct" >"$TMP/rec"
@@ -28,19 +32,31 @@ test_round_trip_through_files() {
     done
 }
 
+test_any_length_round_trips_and_pads_to_the_next_block() {
+    rng 16 >"$TMP/key"
+    local len
+    for len in 0 1 15 16 17 31 32 33 1023 1024 1025 1039 1040 1041; do
+        rng "$len" >"$TMP/pt"
+        "$BC_RUST" aes128-cbc -d encrypt --key-file "$TMP/key" <"$TMP/pt" >"$TMP/ct"
+        assert_size "$TMP/ct" $((16 + $(padded_len "$len"))) "$len bytes: IV plus PKCS7-padded body"
+        "$BC_RUST" aes128-cbc -d decrypt --key-file "$TMP/key" <"$TMP/ct" >"$TMP/rec"
+        assert_same "$TMP/pt" "$TMP/rec" "$len bytes: decrypt must recover the plaintext"
+    done
+}
+
 test_round_trip_through_a_pipe_larger_than_the_pipe_buffer() {
     rng 16 >"$TMP/key"
-    rng $((1024 * 1024)) >"$TMP/pt"
+    rng $((1024 * 1024 + 7)) >"$TMP/pt"
     "$BC_RUST" aes128-cbc -d encrypt --key-file "$TMP/key" <"$TMP/pt" \
         | "$BC_RUST" aes128-cbc -d decrypt --key-file "$TMP/key" >"$TMP/rec"
-    assert_same "$TMP/pt" "$TMP/rec" "1 MiB must survive encrypt | decrypt with no file in between"
+    assert_same "$TMP/pt" "$TMP/rec" "1 MiB + 7 must survive encrypt | decrypt with no file in between"
 }
 
 test_hex_output_composes_through_hex_decode() {
     rng 16 >"$TMP/key"
     rng 4096 >"$TMP/pt"
     "$BC_RUST" aes128-cbc -d encrypt --key-file "$TMP/key" -x <"$TMP/pt" >"$TMP/ct.hex"
-    assert_size "$TMP/ct.hex" $((2 * (16 + 4096) + 1)) "-x emits two hex characters per byte, then a newline"
+    assert_size "$TMP/ct.hex" $((2 * (16 + 4096 + 16) + 1)) "-x emits two hex characters per byte, then a newline"
     "$BC_RUST" hex-decode <"$TMP/ct.hex" \
         | "$BC_RUST" aes128-cbc -d decrypt --key-file "$TMP/key" >"$TMP/rec"
     assert_same "$TMP/pt" "$TMP/rec" "-x output must decrypt after hex-decode"
@@ -58,11 +74,11 @@ test_each_invocation_uses_a_fresh_iv() {
     assert_same "$TMP/pt" "$TMP/rec" "the second ciphertext still decrypts"
 }
 
-test_empty_input_produces_only_the_iv() {
+test_empty_input_produces_the_iv_and_one_padding_block() {
     rng 16 >"$TMP/key"
     : >"$TMP/empty"
     "$BC_RUST" aes128-cbc -d encrypt --key-file "$TMP/key" <"$TMP/empty" >"$TMP/ct"
-    assert_size "$TMP/ct" 16 "an empty message encrypts to just the IV"
+    assert_size "$TMP/ct" 32 "an empty message encrypts to the IV and a block of padding"
     "$BC_RUST" aes128-cbc -d decrypt --key-file "$TMP/key" <"$TMP/ct" >"$TMP/rec"
     assert_size "$TMP/rec" 0 "and decrypts back to nothing"
 }
@@ -97,8 +113,9 @@ test_the_wrong_key_gives_the_wrong_plaintext() {
     rng 16 >"$TMP/other"
     rng 256 >"$TMP/pt"
     "$BC_RUST" aes128-cbc -d encrypt --key-file "$TMP/key" <"$TMP/pt" >"$TMP/ct"
-    # CBC is unauthenticated: a wrong key succeeds and produces garbage, never the plaintext.
-    "$BC_RUST" aes128-cbc -d decrypt --key-file "$TMP/other" <"$TMP/ct" >"$TMP/rec"
+    # CBC is unauthenticated: a wrong key usually trips the padding check, but can by chance
+    # unpad cleanly and produce garbage. Either way it must never produce the plaintext.
+    "$BC_RUST" aes128-cbc -d decrypt --key-file "$TMP/other" <"$TMP/ct" >"$TMP/rec" 2>/dev/null || true
     assert_differs "$TMP/pt" "$TMP/rec" "a different key must not recover the plaintext"
 }
 
@@ -108,7 +125,7 @@ test_an_all_zero_key_warns_but_proceeds() {
     expect_ok "an all-zero key is accepted" \
         "$BC_RUST" aes128-cbc -d encrypt --key-file "$TMP/key" <"$TMP/pt" >"$TMP/ct"
     assert_stderr_has "arning"
-    assert_size "$TMP/ct" $((16 + 64)) "and the output is complete"
+    assert_size "$TMP/ct" $((16 + 64 + 16)) "and the output is complete"
 }
 
 # ---- known answers --------------------------------------------------------------------------
@@ -116,6 +133,8 @@ test_an_all_zero_key_warns_but_proceeds() {
 # SP 800-38A Appendix F.2.2, F.2.4 and F.2.6 (CBC decrypt at each key length), transcribed in
 # the Rust suite this file replaces. The CLI takes the IV as the first 16 bytes of its input, so
 # the input here is IV || ciphertext, and the output must be the appendix's four plaintext blocks.
+# The appendix applies no padding, so the PKCS7 block that follows its four blocks is appended
+# with `cbc_pkcs7_block`.
 F2_IV=000102030405060708090a0b0c0d0e0f
 F2_PLAINTEXT=6bc1bee22e409f96e93d7e117393172aae2d8a571e03ac9c9eb76fac45af8e5130c81c46a35ce411e5fbc1191a0a52eff69f2445df4f9b17ad2b417be66c3710
 F2_KEY_128=2b7e151628aed2a6abf7158809cf4f3c
@@ -130,25 +149,55 @@ test_decrypt_matches_sp800_38a_f2_vectors() {
     for bits in 128 192 256; do
         key="F2_KEY_$bits"
         ct="F2_CT_$bits"
-        unhex "$F2_IV${!ct}" >"$TMP/ct"
+        unhex "$F2_IV${!ct}$(cbc_pkcs7_block "${!key}" "${!ct: -32}")" >"$TMP/ct"
         got=$("$BC_RUST" "$(cbc $bits)" -d decrypt --key "${!key}" <"$TMP/ct" | "$BC_RUST" hex-encode)
         assert_eq "$got" "$F2_PLAINTEXT" "$bits: F.2 decrypt vector"
     done
 }
 
+# PKCS7 (RFC 5652 Sec 6.3) fills the last block with N bytes of value N. Undo CBC on the final
+# block by hand -- ECB-decrypt it, then XOR with the block before -- and look at the padding.
+test_padding_is_pkcs7() {
+    rng 16 >"$TMP/key"
+    rng 20 >"$TMP/pt"
+    "$BC_RUST" aes128-cbc -d encrypt --key-file "$TMP/key" <"$TMP/pt" >"$TMP/ct"
+    local ct last prev padded
+    ct=$(hex "$TMP/ct")
+    prev=${ct:32:32}
+    last=${ct:64:32}
+    padded=$(xor_hex "$(hex_out "$BC_RUST" aes128-ecb -d decrypt --key-file "$TMP/key" -x \
+        < <(unhex "$last"))" "$prev")
+    assert_eq "${padded:0:8}" "$(slice "$TMP/pt" 16 4 | "$BC_RUST" hex-encode)" "the block starts with the last 4 plaintext bytes"
+    assert_eq "${padded:8}" 0c0c0c0c0c0c0c0c0c0c0c0c "then 12 bytes of 0x0c"
+}
+
 # ---- rejected inputs ------------------------------------------------------------------------
 
-test_unaligned_input_is_rejected() {
-    rng 16 >"$TMP/key"
-    rng 1025 >"$TMP/pt"
-    expect_fail "1025 bytes is not a whole number of blocks" \
-        "$BC_RUST" aes128-cbc -d encrypt --key-file "$TMP/key" <"$TMP/pt"
-    assert_stderr_has "whole number of 16-byte blocks"
+test_a_ciphertext_without_pkcs7_padding_is_rejected() {
+    # The F.2 ciphertext is unpadded: its last plaintext block ends in 0x10, which claims sixteen
+    # bytes of padding, but the fifteen before it are not 0x10.
+    unhex "$F2_IV$F2_CT_128" >"$TMP/ct"
+    expect_fail "an unpadded ciphertext must fail the padding check" \
+        "$BC_RUST" aes128-cbc -d decrypt --key "$F2_KEY_128" <"$TMP/ct"
+    assert_stderr_has "decryption failed"
+}
 
-    rng $((16 + 1025)) >"$TMP/ct"
-    expect_fail "an unaligned body after the IV is rejected on decrypt too" \
-        "$BC_RUST" aes128-cbc -d decrypt --key-file "$TMP/key" <"$TMP/ct"
-    assert_stderr_has "whole number of 16-byte blocks"
+test_an_unaligned_ciphertext_is_rejected() {
+    rng 16 >"$TMP/key"
+    rng 100 >"$TMP/pt"
+    "$BC_RUST" aes128-cbc -d encrypt --key-file "$TMP/key" <"$TMP/pt" >"$TMP/ct"
+    head -c $((16 + 112 - 1)) "$TMP/ct" >"$TMP/truncated"
+    expect_fail "a ciphertext one byte short of a whole block cannot be unpadded" \
+        "$BC_RUST" aes128-cbc -d decrypt --key-file "$TMP/key" <"$TMP/truncated"
+    assert_stderr_has "decryption failed"
+}
+
+test_an_iv_with_no_ciphertext_is_rejected() {
+    rng 16 >"$TMP/key"
+    rng 16 >"$TMP/iv_only"
+    expect_fail "a padded message is at least one block after the IV" \
+        "$BC_RUST" aes128-cbc -d decrypt --key-file "$TMP/key" <"$TMP/iv_only"
+    assert_stderr_has "decryption failed"
 }
 
 test_decrypt_input_shorter_than_the_iv_is_rejected() {

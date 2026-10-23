@@ -1,16 +1,13 @@
-//! AES-GCM through the shared conformance suites, plus the alias checks.
+//! AES-GCM through the shared conformance suites.
 //!
-//! The aliases are only type aliases, so what is worth testing is that they name the *right* type
-//! at both directions, that all three key lengths reach the shared `AEADCipherEncryptor` /
+//! What is checked here is that all three key lengths reach the shared `AEADCipherEncryptor` /
 //! `AEADCipherDecryptor` conformance suite (`TestFrameworkAEADCipher`, which runs the
 //! `SymmetricCipherEncryptor` / `SymmetricCipherDecryptor` suite first), that the inline
 //! `ciphertext || tag` layout holds at every byte-boundary edge (`TestFrameworkAEADTaggedLayout`),
 //! and that a fresh nonce is generated per encryption. Algorithm correctness itself is pinned by
 //! the ACVP and bc-java known-answer suites beside this file.
 
-use bouncycastle_aes::hazmat::AES128Internal;
 use bouncycastle_aes::{AES_GCM_128, AES_GCM_192, AES_GCM_256};
-use bouncycastle_cipher::modes::Gcm;
 use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::traits::{AEADCipherDecryptor, AEADCipherEncryptor};
@@ -20,21 +17,6 @@ use bouncycastle_core_test_framework::aead::TestFrameworkAEADTaggedLayout;
 fn key<const N: usize>() -> KeyMaterial<N> {
     let bytes: [u8; N] = core::array::from_fn(|i| (i as u8).wrapping_mul(7).wrapping_add(1));
     KeyMaterial::<N>::from_bytes_as_type(&bytes, KeyType::SymmetricCipherKey).expect("a valid key")
-}
-
-/// The alias must resolve to exactly the type it claims to, at both directions.
-#[test]
-fn the_alias_names_the_expected_type() {
-    use core::mem::size_of;
-
-    assert_eq!(
-        size_of::<AES_GCM_128<Encrypting>>(),
-        size_of::<Gcm<AES128Internal, Encrypting, 16, 16>>()
-    );
-    assert_eq!(
-        size_of::<AES_GCM_128<Decrypting>>(),
-        size_of::<Gcm<AES128Internal, Decrypting, 16, 16>>()
-    );
 }
 
 /// All three key lengths satisfy the shared AEAD conformance suite, which includes the
