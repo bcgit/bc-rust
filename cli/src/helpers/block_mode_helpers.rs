@@ -11,20 +11,28 @@
 //! [`load_key`] and [`CipherDirection`] with this module, so the key handling and the `encrypt` /
 //! `decrypt` spelling stay identical across all of them.
 //!
-//! # The IV travels in the ciphertext
+//! # The IV travels in the ciphertext, unless `--iv` is given
 //!
-//! There is no `--iv` flag, and that is deliberate: `bouncycastle_cipher::modes` has no API for a
-//! caller-supplied IV, because NIST SP 800-38A Sec 5.3 requires the CBC and CFB IV to be
-//! *unpredictable* rather than merely unique. `encrypt` therefore generates one from the OS-backed
-//! DRBG and writes it as the **first block of the output**; `decrypt` reads it back from the
-//! **first block of the input**. So the two compose directly. The framing is generic over the
-//! mode's `INIT_DATA_LEN`: for ECB it is 0, so those commands write and read no IV and the
-//! ciphertext is exactly as long as the plaintext.
+//! By default `encrypt` generates the IV from the OS-backed DRBG and writes it as the **first
+//! block of the output**, and `decrypt` reads it back from the **first block of the input**, so
+//! the two compose directly. NIST SP 800-38A Sec 5.3 requires the CBC and CFB IV to be
+//! *unpredictable*, and a DRBG draw is the way to get one. The framing is generic over the mode's
+//! `INIT_DATA_LEN`: for ECB it is 0, so those commands write and read no IV and the ciphertext
+//! is exactly as long as the plaintext.
 //!
 //! ```text
 //! bc-rust aes128-cbc encrypt --key-file k.bin < plain.bin > cipher.bin
 //! bc-rust aes128-cbc decrypt --key-file k.bin < cipher.bin > plain.bin
 //! ```
+//!
+//! Every mode with an IV or nonce (CBC, CFB, CFB8, CTR, GCM) also takes `--iv` / `--iv-file`,
+//! loaded by [`load_iv`], for a format that carries the IV itself and for reproducing published
+//! vectors. With it, `encrypt` uses the supplied value and writes **only the ciphertext**, and
+//! `decrypt` takes it from the flag and reads **only ciphertext** from stdin. The modes have no
+//! IV-taking constructor, so it reaches them through `do_encrypt_init_rng` and a [`FixedIv`]
+//! that hands out exactly those bytes (GCM has `do_encrypt_init_nonce` and uses that).
+//! Unpredictability, and for CTR and GCM uniqueness, is then the caller's responsibility. CCM
+//! keeps its own `--nonce`, which is variable-length and was never generated.
 //!
 //! The IV is not secret (Sec 5.3), so shipping it in the clear is correct. Its *integrity* is not
 //! protected, and neither is the ciphertext's -- see the warnings on each subcommand.
@@ -46,13 +54,15 @@
 //! cat cipher.hex | bc-rust hex-decode | bc-rust aes256-cbc decrypt --key-file k.bin
 //! ```
 
+use crate::helpers;
 use crate::helpers::{
     flush_stdout, read_from_file, strip_trailing_newline, write_bytes_or_hex, write_stdout,
 };
+use bouncycastle::core::errors::RNGError;
 use bouncycastle::core::hazmat::do_hazardous_operations;
 use bouncycastle::core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle::core::security_strength::SecurityStrength;
-use bouncycastle::core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
+use bouncycastle::core::traits::{RNG, SymmetricCipherDecryptor, SymmetricCipherEncryptor};
 use bouncycastle::hex;
 use clap::ValueEnum;
 use std::io;
@@ -137,26 +147,116 @@ pub(crate) fn load_key<const KEY_LEN: usize>(
     key
 }
 
-/// Encrypts stdin to stdout under the mode `E`, writing the generated init data (the IV) first.
+/// An [`RNG`] that yields the caller's IV once, so `--iv` can reach a mode whose only
+/// constructors are `do_encrypt_init` and `do_encrypt_init_rng`. A second draw, or one of the
+/// wrong length, is an error rather than a repeat: the IV must be consumed exactly as given.
+pub(crate) struct FixedIv<const N: usize> {
+    iv: [u8; N],
+    used: bool,
+}
+
+impl<const N: usize> FixedIv<N> {
+    pub(crate) fn new(iv: [u8; N]) -> Self {
+        Self { iv, used: false }
+    }
+}
+
+impl<const N: usize> RNG for FixedIv<N> {
+    fn add_seed_keymaterial(&mut self, _: &dyn KeyMaterialTrait) -> Result<(), RNGError> {
+        Err(RNGError::GenericError("a fixed IV cannot be reseeded"))
+    }
+
+    fn next_int(&mut self) -> Result<u32, RNGError> {
+        Err(RNGError::GenericError("a fixed IV only supplies the IV"))
+    }
+
+    fn next_bytes(&mut self, len: usize) -> Result<Vec<u8>, RNGError> {
+        let mut out = vec![0u8; len];
+        self.next_bytes_out(&mut out)?;
+        Ok(out)
+    }
+
+    fn next_bytes_out(&mut self, out: &mut [u8]) -> Result<usize, RNGError> {
+        if self.used || out.len() != N {
+            return Err(RNGError::GenericError("the cipher asked for more than the one IV"));
+        }
+        self.used = true;
+        out.copy_from_slice(&self.iv);
+        Ok(N)
+    }
+
+    fn fill_keymaterial_out(&mut self, _: &mut dyn KeyMaterialTrait) -> Result<usize, RNGError> {
+        Err(RNGError::GenericError("a fixed IV only supplies the IV"))
+    }
+
+    fn security_strength(&self) -> SecurityStrength {
+        SecurityStrength::None
+    }
+}
+
+/// Loads `--iv-file` (raw bytes, never hex-decoded) or `--iv` (hex); the file wins if both are
+/// given, as for `--key-file`. `None` when neither is given, which selects the generated,
+/// in-band IV. The IV must be exactly `INIT_DATA_LEN` bytes.
+///
+/// As for CCM's `--nonce-file`, a trailing newline in the file is part of the IV, and is warned
+/// about, because a file written with `echo` rather than `echo -n` is the usual way to get one.
+pub(crate) fn load_iv<const INIT_DATA_LEN: usize>(
+    iv: &Option<String>,
+    iv_file: &Option<String>,
+) -> Option<[u8; INIT_DATA_LEN]> {
+    let bytes = if let Some(file) = iv_file {
+        let bytes = helpers::read_from_file_raw(file);
+        if bytes.last() == Some(&b'\n') {
+            eprintln!(
+                "Warning: IV file '{file}' ends with a newline byte (0x0a), which is used as part \
+                 of the IV. If that is not intended, write it with `printf` or `echo -n`."
+            );
+        }
+        bytes
+    } else if let Some(v) = iv {
+        hex::decode(v).unwrap_or_else(|_| {
+            eprintln!("Error: IV is not valid hex.");
+            exit(-1)
+        })
+    } else {
+        return None;
+    };
+    Some(bytes.as_slice().try_into().unwrap_or_else(|_| {
+        eprintln!(
+            "Error: IV is {} bytes; this mode requires exactly {INIT_DATA_LEN}.",
+            bytes.len()
+        );
+        exit(-1)
+    }))
+}
+
+/// Encrypts stdin to stdout under the mode `E`. With no `iv`, the init data (the IV) is generated
+/// and written first; with one, it is used and the output is ciphertext only.
 ///
 /// `INIT_DATA_LEN` is the mode's: one block for CBC, 0 for ECB, in which case nothing is written
 /// ahead of the ciphertext. `aligned_mode` is `Some(mode name)` for a mode that pads nothing, whose
 /// input must therefore be a whole number of blocks; the name appears in the error message.
 pub(crate) fn encrypt_stream<E, const KEY_LEN: usize, const INIT_DATA_LEN: usize>(
     key: &KeyMaterial<KEY_LEN>,
+    iv: Option<[u8; INIT_DATA_LEN]>,
     output_hex: bool,
     aligned_mode: Option<&str>,
 ) where
     E: SymmetricCipherEncryptor<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
 {
-    let (mut enc, iv) = E::do_encrypt_init(key).unwrap_or_else(|e| {
+    let init = match iv {
+        Some(iv) => E::do_encrypt_init_rng(key, &mut FixedIv::new(iv)),
+        None => E::do_encrypt_init(key),
+    };
+    let (mut enc, generated_iv) = init.unwrap_or_else(|e| {
         eprintln!("Error: couldn't start encryption: {e:?}");
         exit(-1);
     });
 
-    // The IV goes out ahead of the ciphertext, so `decrypt` can pick it up. (Empty for ECB.)
-    if INIT_DATA_LEN > 0 {
-        write_bytes_or_hex(&iv, output_hex);
+    // A generated IV goes out ahead of the ciphertext, so `decrypt` can pick it up. (Empty for
+    // ECB.) A supplied one is the caller's to carry.
+    if INIT_DATA_LEN > 0 && iv.is_none() {
+        write_bytes_or_hex(&generated_iv, output_hex);
     }
 
     let mut out = [0u8; CHUNK_LEN];
@@ -181,27 +281,31 @@ pub(crate) fn encrypt_stream<E, const KEY_LEN: usize, const INIT_DATA_LEN: usize
     finish(output_hex);
 }
 
-/// Decrypts stdin to stdout under the mode `D`, taking the init data (the IV) from the first
-/// `INIT_DATA_LEN` bytes of input -- one block for CBC, nothing for ECB. `aligned_mode` is as for
-/// [`encrypt_stream`].
+/// Decrypts stdin to stdout under the mode `D`, taking the init data (the IV) from `iv` if given
+/// and otherwise from the first `INIT_DATA_LEN` bytes of input -- one block for CBC, nothing for
+/// ECB. `aligned_mode` is as for [`encrypt_stream`].
 pub(crate) fn decrypt_stream<D, const KEY_LEN: usize, const INIT_DATA_LEN: usize>(
     key: &KeyMaterial<KEY_LEN>,
+    iv: Option<[u8; INIT_DATA_LEN]>,
     output_hex: bool,
     aligned_mode: Option<&str>,
 ) where
     D: SymmetricCipherDecryptor<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
 {
-    // The leading bytes are the IV, not ciphertext. (None for ECB: the read is skipped.)
-    let mut iv = [0u8; INIT_DATA_LEN];
-    if INIT_DATA_LEN > 0
-        && let Err(e) = io::stdin().read_exact(&mut iv)
-    {
-        eprintln!(
-            "Error: input too short to contain the {INIT_DATA_LEN}-byte IV that `encrypt` writes \
-             as its first block ({e})."
-        );
-        exit(-1);
-    }
+    let iv = iv.unwrap_or_else(|| {
+        // The leading bytes are the IV, not ciphertext. (None for ECB: the read is skipped.)
+        let mut iv = [0u8; INIT_DATA_LEN];
+        if INIT_DATA_LEN > 0
+            && let Err(e) = io::stdin().read_exact(&mut iv)
+        {
+            eprintln!(
+                "Error: input too short to contain the {INIT_DATA_LEN}-byte IV that `encrypt` \
+                 writes as its first block ({e}). If the IV is held separately, pass it with --iv."
+            );
+            exit(-1);
+        }
+        iv
+    });
 
     let mut dec = D::do_decrypt_init(key, &iv).unwrap_or_else(|e| {
         eprintln!("Error: couldn't start decryption: {e:?}");

@@ -37,7 +37,13 @@ enum Subcommands {
     ///
     /// On `encrypt`, a fresh unpredictable IV is generated and written as the FIRST 16 BYTES of
     /// the output; on `decrypt` it is read back from the first 16 bytes of the input, so the two
-    /// compose directly in a pipeline. There is deliberately no `--iv` flag.
+    /// compose directly in a pipeline.
+    ///
+    /// With `--iv` (hex) or `--iv-file` (raw bytes), the IV is supplied instead: `encrypt` uses it
+    /// and writes ONLY the ciphertext, and `decrypt` reads ONLY ciphertext from stdin. This is for
+    /// a format that carries the IV itself, and for reproducing published vectors. The IV must
+    /// then be unpredictable to an attacker (SP 800-38A Appendix C) and never reused under one
+    /// key; that is the caller's responsibility, which the default takes care of.
     ///
     /// Input may be any length: it is padded with PKCS7 to a whole number of 16-byte blocks, so the
     /// ciphertext after the IV is 1 to 16 bytes longer than the plaintext, and `decrypt` rejects
@@ -62,6 +68,16 @@ enum Subcommands {
         /// If both key and key_file options are provided, the file will be used.
         #[arg(short, long)]
         key_file: Option<String>,
+
+        /// The 16-byte IV in hex. Supplied instead of generated: `encrypt` then writes none
+        /// and `decrypt` reads none. See the IV paragraph above.
+        #[arg(long)]
+        iv: Option<String>,
+
+        /// A file containing the 16-byte IV, as raw bytes exactly as they are (no hex
+        /// decoding). If both iv and iv_file options are provided, the file will be used.
+        #[arg(long)]
+        iv_file: Option<String>,
 
         #[arg(short)]
         /// Output in hex format.
@@ -156,7 +172,13 @@ enum Subcommands {
     ///
     /// On `encrypt`, a fresh unpredictable IV is generated and written as the FIRST 16 BYTES of
     /// the output; on `decrypt` it is read back from the first 16 bytes of the input, so the two
-    /// compose directly in a pipeline. There is deliberately no `--iv` flag.
+    /// compose directly in a pipeline.
+    ///
+    /// With `--iv` (hex) or `--iv-file` (raw bytes), the IV is supplied instead: `encrypt` uses it
+    /// and writes ONLY the ciphertext, and `decrypt` reads ONLY ciphertext from stdin. This is for
+    /// a format that carries the IV itself, and for reproducing published vectors. The IV must
+    /// then be unpredictable to an attacker (SP 800-38A Appendix C) and never reused under one
+    /// key; that is the caller's responsibility, which the default takes care of.
     ///
     /// Input may be ANY length: CFB is a stream cipher, so nothing is padded and the ciphertext is
     /// exactly as long as the plaintext.
@@ -182,6 +204,16 @@ enum Subcommands {
         #[arg(short, long)]
         key_file: Option<String>,
 
+        /// The 16-byte IV in hex. Supplied instead of generated: `encrypt` then writes no IV and
+        /// `decrypt` reads none. See the IV paragraph above.
+        #[arg(long)]
+        iv: Option<String>,
+
+        /// A file containing the 16-byte IV, as raw bytes exactly as they are (no hex decoding).
+        /// If both iv and iv_file options are provided, the file will be used.
+        #[arg(long)]
+        iv_file: Option<String>,
+
         #[arg(short)]
         /// Output in hex format.
         x: bool,
@@ -196,7 +228,13 @@ enum Subcommands {
     ///
     /// On `encrypt`, a fresh unpredictable IV is generated and written as the FIRST 16 BYTES of
     /// the output; on `decrypt` it is read back from the first 16 bytes of the input, so the two
-    /// compose directly in a pipeline. There is deliberately no `--iv` flag.
+    /// compose directly in a pipeline.
+    ///
+    /// With `--iv` (hex) or `--iv-file` (raw bytes), the IV is supplied instead: `encrypt` uses it
+    /// and writes ONLY the ciphertext, and `decrypt` reads ONLY ciphertext from stdin. This is for
+    /// a format that carries the IV itself, and for reproducing published vectors. The IV must
+    /// then be unpredictable to an attacker (SP 800-38A Appendix C) and never reused under one
+    /// key; that is the caller's responsibility, which the default takes care of.
     ///
     /// Input may be ANY length: CFB8's segment is a single byte, so nothing is padded and the
     /// ciphertext is exactly as long as the plaintext.
@@ -222,6 +260,16 @@ enum Subcommands {
         #[arg(short, long)]
         key_file: Option<String>,
 
+        /// The 16-byte IV in hex. Supplied instead of generated: `encrypt` then writes no IV and
+        /// `decrypt` reads none. See the IV paragraph above.
+        #[arg(long)]
+        iv: Option<String>,
+
+        /// A file containing the 16-byte IV, as raw bytes exactly as they are (no hex decoding).
+        /// If both iv and iv_file options are provided, the file will be used.
+        #[arg(long)]
+        iv_file: Option<String>,
+
         #[arg(short)]
         /// Output in hex format.
         x: bool,
@@ -235,8 +283,13 @@ enum Subcommands {
     ///
     /// On `encrypt`, a fresh nonce is generated and written as the FIRST 12 BYTES of the output;
     /// on `decrypt` it is read back from the first 12 bytes of the input, so the two compose
-    /// directly in a pipeline. Note that this is 12 bytes, not the 16 the other modes write. There
-    /// is deliberately no `--iv` flag.
+    /// directly in a pipeline. Note that this is 12 bytes, not the 16 the other modes write.
+    ///
+    /// With `--iv` (hex) or `--iv-file` (raw bytes), the 12-byte nonce is supplied instead:
+    /// `encrypt` uses it and writes ONLY the ciphertext, and `decrypt` reads ONLY ciphertext from
+    /// stdin. The counter block is then `nonce || 00000000`, which is how an OpenSSL `-iv` whose
+    /// low four bytes are zero lines up with it. The nonce MUST be unique per message under one
+    /// key; that is the caller's responsibility, which the default takes care of.
     ///
     /// Input may be ANY length: CTR is a stream cipher, so nothing is padded and the ciphertext is
     /// exactly as long as the plaintext.
@@ -262,6 +315,16 @@ enum Subcommands {
         /// If both key and key_file options are provided, the file will be used.
         #[arg(short, long)]
         key_file: Option<String>,
+
+        /// The 12-byte nonce in hex. Supplied instead of generated: `encrypt` then writes none
+        /// and `decrypt` reads none. See the nonce paragraph above.
+        #[arg(long)]
+        iv: Option<String>,
+
+        /// A file containing the 12-byte nonce, as raw bytes exactly as they are (no hex
+        /// decoding). If both iv and iv_file options are provided, the file will be used.
+        #[arg(long)]
+        iv_file: Option<String>,
 
         #[arg(short)]
         /// Output in hex format.
@@ -306,13 +369,18 @@ enum Subcommands {
     /// AES-128 in GCM (NIST SP 800-38D), streaming stdin to stdout.
     ///
     /// AUTHENTICATED, unlike the other AES modes here: tampering with the ciphertext, the AAD or
-    /// the nonce is detected rather than merely producing wrong plaintext.
+    /// the IV is detected rather than merely producing wrong plaintext.
     ///
-    /// On `encrypt`, a fresh nonce is generated and written as the FIRST 12 BYTES of the output,
-    /// the ciphertext follows, and the 16-byte tag is written last. `decrypt` reads the nonce back
-    /// from the first 12 bytes of input and streams the rest, checking the tag once input is
-    /// exhausted. There is deliberately no `--iv` flag: a repeated GCM nonce is worse than merely
-    /// unwise, since it lets an attacker recover the hash subkey (SP 800-38D Appendix A).
+    /// On `encrypt`, a fresh 12-byte IV is generated and written as the FIRST 12 BYTES of the
+    /// output, the ciphertext follows, and the 16-byte tag is written last. `decrypt` reads the IV
+    /// back from the first 12 bytes of input and streams the rest, checking the tag once input is
+    /// exhausted. (SP 800-38D calls this value the IV, and defines it as a nonce.)
+    ///
+    /// With `--iv` (hex) or `--iv-file` (raw bytes), the IV is supplied instead: `encrypt` uses it
+    /// and writes ONLY `ciphertext || tag`, and `decrypt` reads ONLY that from stdin. The IV MUST
+    /// be unique per message under one key (Sec 8), and a repeat is worse here than merely
+    /// unwise: it lets an attacker recover the hash subkey (Appendix A). The default takes care of
+    /// that; with `--iv` it is on the caller.
     ///
     /// `--aad` (hex) or `--aad-file` (raw bytes) supply the additional authenticated data,
     /// which is covered by the tag but not encrypted; if neither is given, AAD is empty.
@@ -339,6 +407,16 @@ enum Subcommands {
         /// If both key and key_file options are provided, the file will be used.
         #[arg(short, long)]
         key_file: Option<String>,
+
+        /// The 12-byte IV in hex. Supplied instead of generated: `encrypt` then writes none and
+        /// `decrypt` reads none. See the IV paragraph above.
+        #[arg(long)]
+        iv: Option<String>,
+
+        /// A file containing the 12-byte IV, as raw bytes exactly as they are (no hex decoding).
+        /// If both iv and iv_file options are provided, the file will be used.
+        #[arg(long)]
+        iv_file: Option<String>,
 
         /// The additional authenticated data, in hex. Covered by the tag but not encrypted.
         #[arg(long)]
@@ -371,6 +449,16 @@ enum Subcommands {
         /// If both key and key_file options are provided, the file will be used.
         #[arg(short, long)]
         key_file: Option<String>,
+
+        /// The 16-byte IV in hex. Supplied instead of generated: `encrypt` then writes none
+        /// and `decrypt` reads none. See the IV paragraph above.
+        #[arg(long)]
+        iv: Option<String>,
+
+        /// A file containing the 16-byte IV, as raw bytes exactly as they are (no hex
+        /// decoding). If both iv and iv_file options are provided, the file will be used.
+        #[arg(long)]
+        iv_file: Option<String>,
 
         #[arg(short)]
         /// Output in hex format.
@@ -440,6 +528,16 @@ enum Subcommands {
         #[arg(short, long)]
         key_file: Option<String>,
 
+        /// The 16-byte IV in hex. Supplied instead of generated: `encrypt` then writes no IV and
+        /// `decrypt` reads none. See the IV paragraph above.
+        #[arg(long)]
+        iv: Option<String>,
+
+        /// A file containing the 16-byte IV, as raw bytes exactly as they are (no hex decoding).
+        /// If both iv and iv_file options are provided, the file will be used.
+        #[arg(long)]
+        iv_file: Option<String>,
+
         #[arg(short)]
         /// Output in hex format.
         x: bool,
@@ -463,6 +561,16 @@ enum Subcommands {
         #[arg(short, long)]
         key_file: Option<String>,
 
+        /// The 16-byte IV in hex. Supplied instead of generated: `encrypt` then writes no IV and
+        /// `decrypt` reads none. See the IV paragraph above.
+        #[arg(long)]
+        iv: Option<String>,
+
+        /// A file containing the 16-byte IV, as raw bytes exactly as they are (no hex decoding).
+        /// If both iv and iv_file options are provided, the file will be used.
+        #[arg(long)]
+        iv_file: Option<String>,
+
         #[arg(short)]
         /// Output in hex format.
         x: bool,
@@ -485,6 +593,16 @@ enum Subcommands {
         /// If both key and key_file options are provided, the file will be used.
         #[arg(short, long)]
         key_file: Option<String>,
+
+        /// The 12-byte nonce in hex. Supplied instead of generated: `encrypt` then writes none
+        /// and `decrypt` reads none. See the nonce paragraph above.
+        #[arg(long)]
+        iv: Option<String>,
+
+        /// A file containing the 12-byte nonce, as raw bytes exactly as they are (no hex
+        /// decoding). If both iv and iv_file options are provided, the file will be used.
+        #[arg(long)]
+        iv_file: Option<String>,
 
         #[arg(short)]
         /// Output in hex format.
@@ -516,7 +634,7 @@ enum Subcommands {
 
     /// AES-192 in GCM (NIST SP 800-38D), streaming stdin to stdout.
     ///
-    /// See `aes128-gcm` for the nonce/tag framing, the AAD flags and the warnings; only the key
+    /// See `aes128-gcm` for the IV/tag framing, the AAD flags and the warnings; only the key
     /// length differs.
     AES192_GCM {
         #[arg(short, long)]
@@ -531,6 +649,16 @@ enum Subcommands {
         /// If both key and key_file options are provided, the file will be used.
         #[arg(short, long)]
         key_file: Option<String>,
+
+        /// The 12-byte IV in hex. Supplied instead of generated: `encrypt` then writes none and
+        /// `decrypt` reads none. See the IV paragraph above.
+        #[arg(long)]
+        iv: Option<String>,
+
+        /// A file containing the 12-byte IV, as raw bytes exactly as they are (no hex decoding).
+        /// If both iv and iv_file options are provided, the file will be used.
+        #[arg(long)]
+        iv_file: Option<String>,
 
         /// The additional authenticated data, in hex. Covered by the tag but not encrypted.
         #[arg(long)]
@@ -563,6 +691,16 @@ enum Subcommands {
         /// If both key and key_file options are provided, the file will be used.
         #[arg(short, long)]
         key_file: Option<String>,
+
+        /// The 16-byte IV in hex. Supplied instead of generated: `encrypt` then writes none
+        /// and `decrypt` reads none. See the IV paragraph above.
+        #[arg(long)]
+        iv: Option<String>,
+
+        /// A file containing the 16-byte IV, as raw bytes exactly as they are (no hex
+        /// decoding). If both iv and iv_file options are provided, the file will be used.
+        #[arg(long)]
+        iv_file: Option<String>,
 
         #[arg(short)]
         /// Output in hex format.
@@ -632,6 +770,16 @@ enum Subcommands {
         #[arg(short, long)]
         key_file: Option<String>,
 
+        /// The 16-byte IV in hex. Supplied instead of generated: `encrypt` then writes no IV and
+        /// `decrypt` reads none. See the IV paragraph above.
+        #[arg(long)]
+        iv: Option<String>,
+
+        /// A file containing the 16-byte IV, as raw bytes exactly as they are (no hex decoding).
+        /// If both iv and iv_file options are provided, the file will be used.
+        #[arg(long)]
+        iv_file: Option<String>,
+
         #[arg(short)]
         /// Output in hex format.
         x: bool,
@@ -655,6 +803,16 @@ enum Subcommands {
         #[arg(short, long)]
         key_file: Option<String>,
 
+        /// The 16-byte IV in hex. Supplied instead of generated: `encrypt` then writes no IV and
+        /// `decrypt` reads none. See the IV paragraph above.
+        #[arg(long)]
+        iv: Option<String>,
+
+        /// A file containing the 16-byte IV, as raw bytes exactly as they are (no hex decoding).
+        /// If both iv and iv_file options are provided, the file will be used.
+        #[arg(long)]
+        iv_file: Option<String>,
+
         #[arg(short)]
         /// Output in hex format.
         x: bool,
@@ -677,6 +835,16 @@ enum Subcommands {
         /// If both key and key_file options are provided, the file will be used.
         #[arg(short, long)]
         key_file: Option<String>,
+
+        /// The 12-byte nonce in hex. Supplied instead of generated: `encrypt` then writes none
+        /// and `decrypt` reads none. See the nonce paragraph above.
+        #[arg(long)]
+        iv: Option<String>,
+
+        /// A file containing the 12-byte nonce, as raw bytes exactly as they are (no hex
+        /// decoding). If both iv and iv_file options are provided, the file will be used.
+        #[arg(long)]
+        iv_file: Option<String>,
 
         #[arg(short)]
         /// Output in hex format.
@@ -708,7 +876,7 @@ enum Subcommands {
 
     /// AES-256 in GCM (NIST SP 800-38D), streaming stdin to stdout.
     ///
-    /// See `aes128-gcm` for the nonce/tag framing, the AAD flags and the warnings; only the key
+    /// See `aes128-gcm` for the IV/tag framing, the AAD flags and the warnings; only the key
     /// length differs.
     AES256_GCM {
         #[arg(short, long)]
@@ -723,6 +891,16 @@ enum Subcommands {
         /// If both key and key_file options are provided, the file will be used.
         #[arg(short, long)]
         key_file: Option<String>,
+
+        /// The 12-byte IV in hex. Supplied instead of generated: `encrypt` then writes none and
+        /// `decrypt` reads none. See the IV paragraph above.
+        #[arg(long)]
+        iv: Option<String>,
+
+        /// A file containing the 12-byte IV, as raw bytes exactly as they are (no hex decoding).
+        /// If both iv and iv_file options are provided, the file will be used.
+        #[arg(long)]
+        iv_file: Option<String>,
 
         /// The additional authenticated data, in hex. Covered by the tag but not encrypted.
         #[arg(long)]
@@ -1575,8 +1753,8 @@ fn run() {
     let cli = Cli::parse();
 
     match &cli.subcommands {
-        Some(Subcommands::AES128_CBC { direction, key, key_file, x }) => {
-            aes_cbc_cmd::aes128_cbc_cmd(direction, key, key_file, *x);
+        Some(Subcommands::AES128_CBC { direction, key, key_file, iv, iv_file, x }) => {
+            aes_cbc_cmd::aes128_cbc_cmd(direction, key, key_file, iv, iv_file, *x);
         }
         Some(Subcommands::AES128_CCM {
             direction,
@@ -1593,23 +1771,32 @@ fn run() {
                 direction, key, key_file, nonce, nonce_file, aad, aad_file, *tag_len, *x,
             );
         }
-        Some(Subcommands::AES128_CFB { direction, key, key_file, x }) => {
-            aes_cfb_cmd::aes128_cfb_cmd(direction, key, key_file, *x);
+        Some(Subcommands::AES128_CFB { direction, key, key_file, iv, iv_file, x }) => {
+            aes_cfb_cmd::aes128_cfb_cmd(direction, key, key_file, iv, iv_file, *x);
         }
-        Some(Subcommands::AES128_CFB8 { direction, key, key_file, x }) => {
-            aes_cfb8_cmd::aes128_cfb8_cmd(direction, key, key_file, *x);
+        Some(Subcommands::AES128_CFB8 { direction, key, key_file, iv, iv_file, x }) => {
+            aes_cfb8_cmd::aes128_cfb8_cmd(direction, key, key_file, iv, iv_file, *x);
         }
-        Some(Subcommands::AES128_CTR { direction, key, key_file, x }) => {
-            aes_ctr_cmd::aes128_ctr_cmd(direction, key, key_file, *x);
+        Some(Subcommands::AES128_CTR { direction, key, key_file, iv, iv_file, x }) => {
+            aes_ctr_cmd::aes128_ctr_cmd(direction, key, key_file, iv, iv_file, *x);
         }
         Some(Subcommands::AES128_ECB { direction, key, key_file, x }) => {
             aes_ecb_cmd::aes128_ecb_cmd(direction, key, key_file, *x);
         }
-        Some(Subcommands::AES128_GCM { direction, key, key_file, aad, aad_file, x }) => {
-            aes_gcm_cmd::aes128_gcm_cmd(direction, key, key_file, aad, aad_file, *x);
+        Some(Subcommands::AES128_GCM {
+            direction,
+            key,
+            key_file,
+            iv,
+            iv_file,
+            aad,
+            aad_file,
+            x,
+        }) => {
+            aes_gcm_cmd::aes128_gcm_cmd(direction, key, key_file, iv, iv_file, aad, aad_file, *x);
         }
-        Some(Subcommands::AES192_CBC { direction, key, key_file, x }) => {
-            aes_cbc_cmd::aes192_cbc_cmd(direction, key, key_file, *x);
+        Some(Subcommands::AES192_CBC { direction, key, key_file, iv, iv_file, x }) => {
+            aes_cbc_cmd::aes192_cbc_cmd(direction, key, key_file, iv, iv_file, *x);
         }
         Some(Subcommands::AES192_CCM {
             direction,
@@ -1626,23 +1813,32 @@ fn run() {
                 direction, key, key_file, nonce, nonce_file, aad, aad_file, *tag_len, *x,
             );
         }
-        Some(Subcommands::AES192_CFB { direction, key, key_file, x }) => {
-            aes_cfb_cmd::aes192_cfb_cmd(direction, key, key_file, *x);
+        Some(Subcommands::AES192_CFB { direction, key, key_file, iv, iv_file, x }) => {
+            aes_cfb_cmd::aes192_cfb_cmd(direction, key, key_file, iv, iv_file, *x);
         }
-        Some(Subcommands::AES192_CFB8 { direction, key, key_file, x }) => {
-            aes_cfb8_cmd::aes192_cfb8_cmd(direction, key, key_file, *x);
+        Some(Subcommands::AES192_CFB8 { direction, key, key_file, iv, iv_file, x }) => {
+            aes_cfb8_cmd::aes192_cfb8_cmd(direction, key, key_file, iv, iv_file, *x);
         }
-        Some(Subcommands::AES192_CTR { direction, key, key_file, x }) => {
-            aes_ctr_cmd::aes192_ctr_cmd(direction, key, key_file, *x);
+        Some(Subcommands::AES192_CTR { direction, key, key_file, iv, iv_file, x }) => {
+            aes_ctr_cmd::aes192_ctr_cmd(direction, key, key_file, iv, iv_file, *x);
         }
         Some(Subcommands::AES192_ECB { direction, key, key_file, x }) => {
             aes_ecb_cmd::aes192_ecb_cmd(direction, key, key_file, *x);
         }
-        Some(Subcommands::AES192_GCM { direction, key, key_file, aad, aad_file, x }) => {
-            aes_gcm_cmd::aes192_gcm_cmd(direction, key, key_file, aad, aad_file, *x);
+        Some(Subcommands::AES192_GCM {
+            direction,
+            key,
+            key_file,
+            iv,
+            iv_file,
+            aad,
+            aad_file,
+            x,
+        }) => {
+            aes_gcm_cmd::aes192_gcm_cmd(direction, key, key_file, iv, iv_file, aad, aad_file, *x);
         }
-        Some(Subcommands::AES256_CBC { direction, key, key_file, x }) => {
-            aes_cbc_cmd::aes256_cbc_cmd(direction, key, key_file, *x);
+        Some(Subcommands::AES256_CBC { direction, key, key_file, iv, iv_file, x }) => {
+            aes_cbc_cmd::aes256_cbc_cmd(direction, key, key_file, iv, iv_file, *x);
         }
         Some(Subcommands::AES256_CCM {
             direction,
@@ -1659,20 +1855,29 @@ fn run() {
                 direction, key, key_file, nonce, nonce_file, aad, aad_file, *tag_len, *x,
             );
         }
-        Some(Subcommands::AES256_CFB { direction, key, key_file, x }) => {
-            aes_cfb_cmd::aes256_cfb_cmd(direction, key, key_file, *x);
+        Some(Subcommands::AES256_CFB { direction, key, key_file, iv, iv_file, x }) => {
+            aes_cfb_cmd::aes256_cfb_cmd(direction, key, key_file, iv, iv_file, *x);
         }
-        Some(Subcommands::AES256_CFB8 { direction, key, key_file, x }) => {
-            aes_cfb8_cmd::aes256_cfb8_cmd(direction, key, key_file, *x);
+        Some(Subcommands::AES256_CFB8 { direction, key, key_file, iv, iv_file, x }) => {
+            aes_cfb8_cmd::aes256_cfb8_cmd(direction, key, key_file, iv, iv_file, *x);
         }
-        Some(Subcommands::AES256_CTR { direction, key, key_file, x }) => {
-            aes_ctr_cmd::aes256_ctr_cmd(direction, key, key_file, *x);
+        Some(Subcommands::AES256_CTR { direction, key, key_file, iv, iv_file, x }) => {
+            aes_ctr_cmd::aes256_ctr_cmd(direction, key, key_file, iv, iv_file, *x);
         }
         Some(Subcommands::AES256_ECB { direction, key, key_file, x }) => {
             aes_ecb_cmd::aes256_ecb_cmd(direction, key, key_file, *x);
         }
-        Some(Subcommands::AES256_GCM { direction, key, key_file, aad, aad_file, x }) => {
-            aes_gcm_cmd::aes256_gcm_cmd(direction, key, key_file, aad, aad_file, *x);
+        Some(Subcommands::AES256_GCM {
+            direction,
+            key,
+            key_file,
+            iv,
+            iv_file,
+            aad,
+            aad_file,
+            x,
+        }) => {
+            aes_gcm_cmd::aes256_gcm_cmd(direction, key, key_file, iv, iv_file, aad, aad_file, *x);
         }
         Some(Subcommands::AsconAEAD128 { key, key_file, nonce, nonce_file, ad, direction, x }) => {
             let decrypt = matches!(direction, CipherDirection::Decrypt);

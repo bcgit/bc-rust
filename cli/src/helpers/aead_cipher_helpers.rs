@@ -6,11 +6,13 @@
 //! module drives it through [`AEADCipherEncryptor`] / [`AEADCipherDecryptor`] instead, which add
 //! `do_update_aad` to the symmetric-cipher streaming methods.
 //!
-//! # On-the-wire format: `nonce || ciphertext || tag`
+//! # On-the-wire format: `IV || ciphertext || tag`
 //!
-//! `encrypt` writes the generated 12-byte nonce first, then the ciphertext as it streams, then the
-//! 16-byte tag once stdin is exhausted. `decrypt` reads the 12-byte nonce first, then streams the
-//! rest of stdin through the inline decryptor -- which, per
+//! `encrypt` writes the generated 12-byte IV first, then the ciphertext as it streams, then the
+//! 16-byte tag once stdin is exhausted. `decrypt` reads the 12-byte IV first, then streams the
+//! rest of stdin through the inline decryptor. With `--iv`, the IV is the caller's and is
+//! neither written nor read: the format is `ciphertext || tag` (see
+//! [`crate::helpers::block_mode_helpers`] for the flag). The decryptor, per
 //! [`SymmetricCipherDecryptor`](bouncycastle::core::traits::SymmetricCipherDecryptor)'s contract,
 //! holds back the last 16 bytes it has seen because they might be the tag -- and checks the tag on
 //! `do_decrypt_final`.
@@ -49,7 +51,8 @@ use std::process::exit;
 /// its own tuning.
 const CHUNK_LEN: usize = 1024;
 
-/// The GCM nonce length `encrypt` generates and writes first, and `decrypt` reads back.
+/// The GCM IV length `encrypt` generates and writes first, and `decrypt` reads back. SP 800-38D
+/// calls the value the IV; the trait and this file's identifiers call it the nonce.
 const GCM_NONCE_LEN: usize = 12;
 
 /// Loads the additional authenticated data from `--aad` (hex) or `--aad-file` (raw bytes; see the
@@ -67,20 +70,27 @@ pub fn load_aad(aad: &Option<String>, aad_file: &Option<String>) -> Vec<u8> {
     }
 }
 
-/// Encrypts stdin to stdout under GCM: writes the generated nonce, then the ciphertext as it
-/// streams, then the tag.
+/// Encrypts stdin to stdout under GCM: writes the generated IV (unless `nonce` supplies one),
+/// then the ciphertext as it streams, then the tag.
 pub fn encrypt_gcm<E, const KEY_LEN: usize, const TAG_LEN: usize>(
     key: &KeyMaterial<KEY_LEN>,
+    nonce: Option<[u8; GCM_NONCE_LEN]>,
     aad: &[u8],
     output_hex: bool,
 ) where
     E: AEADCipherEncryptor<KEY_LEN, GCM_NONCE_LEN, TAG_LEN, TAG_LEN>,
 {
-    let (mut enc, nonce) = E::do_encrypt_init(key).unwrap_or_else(|e| {
+    let mut enc = match nonce {
+        Some(nonce) => E::do_encrypt_init_nonce(key, &nonce),
+        None => E::do_encrypt_init(key).map(|(enc, nonce)| {
+            write_bytes_or_hex(&nonce, output_hex);
+            enc
+        }),
+    }
+    .unwrap_or_else(|e| {
         eprintln!("Error: couldn't start encryption: {e:?}");
         exit(-1);
     });
-    write_bytes_or_hex(&nonce, output_hex);
 
     enc.do_update_aad(aad).unwrap_or_else(|e| {
         eprintln!("Error: couldn't absorb the additional authenticated data: {e:?}");
@@ -114,23 +124,29 @@ pub fn encrypt_gcm<E, const KEY_LEN: usize, const TAG_LEN: usize>(
     finish(output_hex);
 }
 
-/// Decrypts stdin to stdout under GCM: reads the 12-byte nonce, streams the rest through the
-/// inline decryptor, and checks the tag on `do_decrypt_final`. See the module docs for why
-/// plaintext may already be written to stdout by the time a tag failure is reported.
+/// Decrypts stdin to stdout under GCM: takes the 12-byte IV from `nonce` or else reads it
+/// first, streams the rest through the inline decryptor, and checks the tag on
+/// `do_decrypt_final`. See the module docs for why plaintext may already be written to stdout by
+/// the time a tag failure is reported.
 pub fn decrypt_gcm<D, const KEY_LEN: usize, const TAG_LEN: usize>(
     key: &KeyMaterial<KEY_LEN>,
+    nonce: Option<[u8; GCM_NONCE_LEN]>,
     aad: &[u8],
     output_hex: bool,
 ) where
     D: AEADCipherDecryptor<KEY_LEN, GCM_NONCE_LEN, TAG_LEN, TAG_LEN>,
 {
-    let mut nonce = [0u8; GCM_NONCE_LEN];
-    if let Err(e) = io::stdin().read_exact(&mut nonce) {
-        eprintln!(
-            "Error: input too short to contain the 12-byte nonce that `encrypt` writes first ({e})."
-        );
-        exit(-1);
-    }
+    let nonce = nonce.unwrap_or_else(|| {
+        let mut nonce = [0u8; GCM_NONCE_LEN];
+        if let Err(e) = io::stdin().read_exact(&mut nonce) {
+            eprintln!(
+                "Error: input too short to contain the 12-byte IV that `encrypt` writes first \
+                 ({e}). If the IV is held separately, pass it with --iv."
+            );
+            exit(-1);
+        }
+        nonce
+    });
 
     let mut dec = D::do_decrypt_init(key, &nonce).unwrap_or_else(|e| {
         eprintln!("Error: couldn't start decryption: {e:?}");

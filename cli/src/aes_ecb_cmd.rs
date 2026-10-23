@@ -77,7 +77,11 @@ fn run<E, D, const KEY_LEN: usize>(
     D: SymmetricCipherDecryptor<KEY_LEN, 0, BLOCK_LEN>,
 {
     match action {
-        CipherDirection::Encrypt => encrypt_stream::<E, KEY_LEN, 0>(key, output_hex, Some(MODE)),
-        CipherDirection::Decrypt => decrypt_stream::<D, KEY_LEN, 0>(key, output_hex, Some(MODE)),
+        CipherDirection::Encrypt => {
+            encrypt_stream::<E, KEY_LEN, 0>(key, None, output_hex, Some(MODE))
+        }
+        CipherDirection::Decrypt => {
+            decrypt_stream::<D, KEY_LEN, 0>(key, None, output_hex, Some(MODE))
+        }
     }
 }
