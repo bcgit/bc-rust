@@ -232,14 +232,11 @@ fn bench_direct_streaming() {
 }
 
 fn main() {
-    let which = std::env::args().nth(1).unwrap_or_default();
-    match which.as_str() {
-        "nothing" => bench_do_nothing(),
-        "direct" => bench_direct_encrypt_detached(),
-        "stream_enc" => bench_streaming_encrypt(),
-        "stream_dec" => bench_streaming_decrypt(),
-        "oneshot" => bench_oneshot_encrypt_out_detached(),
-        "direct_stream" => bench_direct_streaming(),
-        _ => print_struct_sizes(),
-    }
+    print_struct_sizes()
+    // bench_do_nothing()
+    // bench_direct_encrypt_detached()
+    // bench_streaming_encrypt()
+    // bench_streaming_decrypt()
+    // bench_oneshot_encrypt_out_detached()
+    // bench_direct_streaming()
 }
