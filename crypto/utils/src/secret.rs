@@ -252,6 +252,39 @@ impl<T: ZeroizablePrimitive> Default for Secret<T> {
     }
 }
 
+/// Overwrites `value` with its all-zero representation through a volatile write, which the
+/// compiler is not permitted to elide as a dead store (see this module's docs on why a plain
+/// `fill(0)` is not enough).
+///
+/// [`Secret`] is the right tool whenever a secret can *live* inside one: it scrubs on drop, so a
+/// caller cannot forget to. This is the escape hatch for values that cannot -- a field of a `Copy`
+/// type whose public API depends on staying `Copy`, for instance, where wrapping it would be a
+/// breaking change out of proportion to the gain. The caller then owns the responsibility for
+/// calling this at the right moment, and on every path out of the function. Prefer [`Secret`]
+/// wherever the choice exists.
+///
+/// This lives here rather than in the crates that need it because those crates are
+/// `#![forbid(unsafe_code)]`; keeping the one `write_volatile` central is this crate's stated
+/// purpose.
+pub fn zeroize_in_place<T: ZeroizablePrimitive>(value: &mut T) {
+    // Just to make sure -- this should trigger on any unit tests for any instantiation of `T`
+    // that causes this assumption to be violated.
+    debug_assert_eq!(size_of::<T>(), size_of_val(&T::ZEROED));
+
+    // SAFETY: `value` is a valid, properly aligned, mutable reference to an initialized `T`, which
+    // is exactly the contract `write_volatile` requires. `T::ZEROED` is defined by
+    // `ZeroizablePrimitive` as the all-zero value of `T`, a valid and correctly-sized bit pattern.
+    // `write_volatile` (rather than a plain store) is what forbids the compiler from eliding this
+    // scrub as a dead write, per its contract:
+    // https://doc.rust-lang.org/std/ptr/fn.write_volatile.html
+    unsafe {
+        ptr::write_volatile(value, T::ZEROED);
+    }
+    // Compile-time barrier: keeps the volatile scrub ordered before any later memory ops. Emits no
+    // machine instructions.
+    compiler_fence(Ordering::SeqCst);
+}
+
 impl<T: ZeroizablePrimitive> Secret<T> {
     /// Securely overwrite the contained value with zeros.
     /// After this returns, every byte of the wrapped value has been volatile-written to `0`.
@@ -263,27 +296,7 @@ impl<T: ZeroizablePrimitive> Secret<T> {
     /// since this will still call `zeroize()` and also move the object, preventing you from accidentally reusing it.
     #[inline]
     pub fn zeroize(&mut self) {
-        // SAFETY: `&mut self.0` is a valid, properly aligned, mutable reference to an initialized
-        // `T`, which is exactly the contract `write_volatile` requires.
-        // `T::ZEROED` is defined above for each supported primitive and primitive-array as the
-        // is the all-zero value of `T`, which is a valid and correctly-sized bit pattern
-        // for the primitive scalar/array being zeroized.
-        //`write_volatile` (rather than a plain store) is what forbids the compiler from eliding
-        // this scrub as a dead write as per its contract:
-        // https://doc.rust-lang.org/std/ptr/fn.write_volatile.html
-
-        // Just to make sure -- this should trigger on any unit tests for any instantiation of
-        // Secret<T> that causes this assumption to be violated.
-        debug_assert_eq!(size_of::<T>(), size_of_val(&T::ZEROED));
-
-        unsafe {
-            ptr::write_volatile(&mut self.0, T::ZEROED);
-        }
-        // Compile-time barrier: keeps the volatile scrub ordered before any later memory ops.
-        // (for example, if the user calls .zeroize() outside of a drop and then continues using
-        // the object by filling it with new data, which is valid usage.)
-        // Emits no machine instructions.
-        compiler_fence(Ordering::SeqCst);
+        zeroize_in_place(&mut self.0);
     }
 }
 
