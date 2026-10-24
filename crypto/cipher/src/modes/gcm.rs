@@ -900,15 +900,20 @@ mod ghash {
     //!
     //! # The AArch64 path
     //!
-    //! On a little-endian AArch64 build that declares `target_feature = "aes"`, [`mul`] is
-    //! `bouncycastle_arm`'s `PMULL` kernel and [`Ghash::update`] folds whole blocks four at a time
-    //! through its four-product kernel, which sums four products under one reduction. That is
+    //! On little-endian AArch64, where the CPU has `PMULL` (part of `FEAT_AES`) -- always, on a build
+    //! that declares `target_feature = "aes"`; as found at run time, on one with the `std` feature --
+    //! [`mul`] is `bouncycastle_arm`'s `PMULL` kernel and [`Ghash::update`] folds whole blocks four at
+    //! a time through its four-product kernel, which sums four products under one reduction. That is
     //! Sec 6.4's "In effect, the GHASH function calculates `X1•H^m ⊕ X2•H^(m-1) ⊕ ... ⊕ Xm•H`"
     //! taken four terms at a time: `Y = (Y ⊕ X1)•H^4 ⊕ X2•H^3 ⊕ X3•H^2 ⊕ X4•H`. The path keeps
     //! `H^2`, `H^3` and `H^4` beside `H`, 48 bytes more state; the suspended form is unchanged,
-    //! because the powers are re-derived from `H` on resume exactly as `H` itself is. Elsewhere the
-    //! portable multiplier runs; the tests pin the two against each other and both against
-    //! Algorithm 1.
+    //! because the powers are re-derived from `H` on resume exactly as `H` itself is. Elsewhere, and
+    //! on a CPU without `PMULL`, the portable multiplier runs; the tests pin the two against each
+    //! other and both against Algorithm 1.
+    //!
+    //! The CPU check is `bouncycastle_arm::CryptoExtensions::detect()`, made per multiply and per
+    //! [`Ghash::update`] call: free when the build declares the instructions, and a cached flag read
+    //! otherwise.
 
     use bouncycastle_core::errors::SuspendableError;
     use bouncycastle_utils::secret::Secret;
@@ -917,8 +922,8 @@ mod ghash {
     #[cfg(all(
         target_arch = "aarch64",
         target_endian = "little",
-        target_feature = "aes",
-        target_feature = "neon"
+        target_feature = "neon",
+        any(target_feature = "aes", feature = "std")
     ))]
     use bouncycastle_arm::CryptoExtensions;
 
@@ -1034,16 +1039,6 @@ mod ghash {
     /// a bit-reversal trick (`rev(x)*rev(y) == rev((x*y) << 1)`) to reach the high 64 bits of each
     /// 64x64 product without a 128-bit multiply, followed by the standard two-step reduction by `R`.
     /// Variable names (`h0..h5`, `z0..z3`) match the Java source so the two can be diffed side by side.
-    // On the `PMULL` targets only the tests call this, to pin the kernel against it.
-    #[cfg_attr(
-        all(
-            target_arch = "aarch64",
-            target_endian = "little",
-            target_feature = "aes",
-            target_feature = "neon"
-        ),
-        allow(dead_code)
-    )]
     fn mul_portable(x: &Block, y: &Block) -> Block {
         let (x0, x1) = (x[0], x[1]);
         let (y0, y1) = (y[0], y[1]);
@@ -1082,22 +1077,26 @@ mod ghash {
     #[cfg(not(all(
         target_arch = "aarch64",
         target_endian = "little",
-        target_feature = "aes",
-        target_feature = "neon"
+        target_feature = "neon",
+        any(target_feature = "aes", feature = "std")
     )))]
     pub(crate) fn mul(x: &Block, y: &Block) -> Block {
         mul_portable(x, y)
     }
 
-    /// `x . y` (Sec 6.3's `*` operator) on `PMULL`; see the module docs.
+    /// `x . y` (Sec 6.3's `*` operator) on `PMULL` where the CPU has it, else portable; see the module
+    /// docs.
     #[cfg(all(
         target_arch = "aarch64",
         target_endian = "little",
-        target_feature = "aes",
-        target_feature = "neon"
+        target_feature = "neon",
+        any(target_feature = "aes", feature = "std")
     ))]
     pub(crate) fn mul(x: &Block, y: &Block) -> Block {
-        CryptoExtensions::declared().ghash_mul(x, y)
+        match CryptoExtensions::detect() {
+            Some(cx) => cx.ghash_mul(x, y),
+            None => mul_portable(x, y),
+        }
     }
 
     /// The `GHASH` accumulator (Algorithm 2, Sec 6.4).
@@ -1124,8 +1123,8 @@ mod ghash {
         #[cfg(all(
             target_arch = "aarch64",
             target_endian = "little",
-            target_feature = "aes",
-            target_feature = "neon"
+            target_feature = "neon",
+            any(target_feature = "aes", feature = "std")
         ))]
         h_powers: Secret<[Block; 4]>,
         /// `Y_i` of Algorithm 2.
@@ -1146,8 +1145,8 @@ mod ghash {
             #[cfg(all(
                 target_arch = "aarch64",
                 target_endian = "little",
-                target_feature = "aes",
-                target_feature = "neon"
+                target_feature = "neon",
+                any(target_feature = "aes", feature = "std")
             ))]
             let h_powers = {
                 let mut p: Secret<[Block; 4]> = Secret::new();
@@ -1162,8 +1161,8 @@ mod ghash {
                 #[cfg(all(
                     target_arch = "aarch64",
                     target_endian = "little",
-                    target_feature = "aes",
-                    target_feature = "neon"
+                    target_feature = "neon",
+                    any(target_feature = "aes", feature = "std")
                 ))]
                 h_powers,
                 y: Secret::new(),
@@ -1210,21 +1209,24 @@ mod ghash {
             #[cfg(all(
                 target_arch = "aarch64",
                 target_endian = "little",
-                target_feature = "aes",
-                target_feature = "neon"
+                target_feature = "neon",
+                any(target_feature = "aes", feature = "std")
             ))]
-            let blocks = {
-                let (quads, remainder) = blocks.as_chunks::<4>();
-                let mut x: Secret<[Block; 4]> = Secret::new();
-                for quad in quads {
-                    for (xi, block) in x.iter_mut().zip(quad) {
-                        *xi = block_from_bytes(block);
+            let blocks = match CryptoExtensions::detect() {
+                Some(cx) => {
+                    let (quads, remainder) = blocks.as_chunks::<4>();
+                    let mut x: Secret<[Block; 4]> = Secret::new();
+                    for quad in quads {
+                        for (xi, block) in x.iter_mut().zip(quad) {
+                            *xi = block_from_bytes(block);
+                        }
+                        x[0][0] ^= self.y[0];
+                        x[0][1] ^= self.y[1];
+                        *self.y = cx.ghash_mul4(&x, &self.h_powers);
                     }
-                    x[0][0] ^= self.y[0];
-                    x[0][1] ^= self.y[1];
-                    *self.y = CryptoExtensions::declared().ghash_mul4(&x, &self.h_powers);
+                    remainder
                 }
-                remainder
+                None => blocks,
             };
             for block in blocks {
                 Self::absorb(&mut self.y, &self.h, block);
@@ -1358,21 +1360,22 @@ mod ghash {
             }
         }
 
-        /// On the `PMULL` targets `mul` and the four-block path use the kernel; it must agree with
+        /// Where the CPU has `PMULL`, `mul` and the four-block path use it; the kernel must agree with
         /// the portable multiplier it replaces, not only with the bit-serial reference.
         #[cfg(all(
             target_arch = "aarch64",
             target_endian = "little",
-            target_feature = "aes",
-            target_feature = "neon"
+            target_feature = "neon",
+            any(target_feature = "aes", feature = "std")
         ))]
         #[test]
         fn pmull_matches_the_portable_multiplier_on_ten_thousand_random_pairs() {
+            let Some(cx) = CryptoExtensions::detect() else { return };
             let mut rng = Lcg(0x94d0_49bb_1331_11eb);
             for _ in 0..10_000 {
                 let x = rng.next_block();
                 let y = rng.next_block();
-                assert_eq!(mul(&x, &y), mul_portable(&x, &y), "x={x:?} y={y:?}");
+                assert_eq!(cx.ghash_mul(&x, &y), mul_portable(&x, &y), "x={x:?} y={y:?}");
             }
         }
 

@@ -40,30 +40,35 @@ impl CryptoExtensions {
     }
 
     /// [`aes::expand_128`].
+    #[inline]
     pub fn expand_128(self, key: &[u8; 16]) -> RoundKeys128 {
         // SAFETY: `self` exists, so the CPU has what the callee's `#[target_feature]` names.
         unsafe { aes::expand_128(key) }
     }
 
     /// [`aes::expand_192`].
+    #[inline]
     pub fn expand_192(self, key: &[u8; 24]) -> RoundKeys192 {
         // SAFETY: `self` exists, so the CPU has what the callee's `#[target_feature]` names.
         unsafe { aes::expand_192(key) }
     }
 
     /// [`aes::expand_256`].
+    #[inline]
     pub fn expand_256(self, key: &[u8; 32]) -> RoundKeys256 {
         // SAFETY: `self` exists, so the CPU has what the callee's `#[target_feature]` names.
         unsafe { aes::expand_256(key) }
     }
 
     /// [`aes::equivalent_inverse_round_keys`].
+    #[inline]
     pub fn equivalent_inverse_round_keys<const N: usize>(self, w: &[Block; N]) -> [Block; N] {
         // SAFETY: `self` exists, so the CPU has what the callee's `#[target_feature]` names.
         unsafe { aes::equivalent_inverse_round_keys(w) }
     }
 
     /// [`aes::encrypt_blocks`].
+    #[inline]
     pub fn encrypt_blocks<const N: usize, const B: usize>(
         self,
         w: &[Block; N],
@@ -74,6 +79,7 @@ impl CryptoExtensions {
     }
 
     /// [`aes::decrypt_blocks`].
+    #[inline]
     pub fn decrypt_blocks<const N: usize, const B: usize>(
         self,
         dw: &[Block; N],
@@ -84,12 +90,14 @@ impl CryptoExtensions {
     }
 
     /// [`ghash::mul`].
+    #[inline]
     pub fn ghash_mul(self, x: &Element, y: &Element) -> Element {
         // SAFETY: `self` exists, so the CPU has what the callee's `#[target_feature]` names.
         unsafe { ghash::mul(x, y) }
     }
 
     /// [`ghash::mul4`].
+    #[inline]
     pub fn ghash_mul4(self, x: &[Element; 4], y: &[Element; 4]) -> Element {
         // SAFETY: `self` exists, so the CPU has what the callee's `#[target_feature]` names.
         unsafe { ghash::mul4(x, y) }

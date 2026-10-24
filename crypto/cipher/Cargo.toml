@@ -9,9 +9,14 @@ bouncycastle-core.workspace = true
 bouncycastle-rng.workspace = true
 bouncycastle-utils.workspace = true
 
-# The PMULL GHASH multiply behind GCM's `ghash` module. Linked only into builds that declare the
-# instructions, so every other target neither compiles nor depends on it.
-[target.'cfg(all(target_arch = "aarch64", target_feature = "aes"))'.dependencies]
+[features]
+# On AArch64 builds that do not declare `aes`, detect `PMULL` at run time and use it for GHASH
+# where present; see the `ghash` module in `modes::gcm`. No effect elsewhere.
+std = ["bouncycastle-arm/std"]
+
+# The PMULL GHASH multiply behind GCM's `ghash` module. Empty unless the build declares the
+# instructions or enables `std`.
+[target.'cfg(all(target_arch = "aarch64", target_endian = "little"))'.dependencies]
 bouncycastle-arm.workspace = true
 
 [dev-dependencies]
