@@ -96,7 +96,7 @@ pub(crate) fn flinv(flinv_in: u64, ke: u64) -> u64 {
 /// with the subkeys supplied by three accessors: `kw(i)` for `kw1 .. kw4`, `k(i)` for
 /// `k1 .. k_rounds`, and `ke(i)` for `ke1 .. ke_m` (`m = 4` or `6`), all 1-based as the RFC
 /// numbers them. Encryption passes the schedule's own order; decryption passes the swapped order
-/// of Sec 2.3.3 (see [`crate::Camellia::decrypt_4blocks`]).
+/// of Sec 2.3.3 (see [`crate::hazmat::CamelliaInternal::decrypt_4blocks`]).
 ///
 /// Line by line against Sec 2.3.1 / 2.3.2:
 ///

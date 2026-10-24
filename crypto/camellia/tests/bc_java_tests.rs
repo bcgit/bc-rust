@@ -11,7 +11,9 @@
 mod common;
 
 use bouncycastle_camellia::BLOCK_LEN;
-use bouncycastle_camellia::hazmat::{Camellia_128, Camellia_192, Camellia_256};
+use bouncycastle_camellia::hazmat::{
+    Camellia128Internal, Camellia192Internal, Camellia256Internal,
+};
 use bouncycastle_core::hazmat::ElectronicCodeBook;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use common::bytes;
@@ -113,9 +115,9 @@ fn camellia_test_vectors() {
         let input: [u8; BLOCK_LEN] = bytes(input);
         let output: [u8; BLOCK_LEN] = bytes(output);
         match key.len() / 2 {
-            16 => block_cipher_vector_test::<16, Camellia_128>(id, key, &input, &output),
-            24 => block_cipher_vector_test::<24, Camellia_192>(id, key, &input, &output),
-            32 => block_cipher_vector_test::<32, Camellia_256>(id, key, &input, &output),
+            16 => block_cipher_vector_test::<16, Camellia128Internal>(id, key, &input, &output),
+            24 => block_cipher_vector_test::<24, Camellia192Internal>(id, key, &input, &output),
+            32 => block_cipher_vector_test::<32, Camellia256Internal>(id, key, &input, &output),
             n => panic!("unexpected key length {n}"),
         }
     }

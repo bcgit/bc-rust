@@ -1,5 +1,5 @@
-//! Camellia-CBC known-answer tests, through the [`Camellia_CBC_128`] / `_192` / `_256` aliases,
-//! i.e. `bouncycastle_cipher::modes` over this permutation.
+//! Camellia-CBC known-answer tests, through `Camellia128Key<CBC<Blocks>>` and its siblings -- the
+//! block-aligned keys the padded `Camellia_CBC_*` aliases wrap.
 //!
 //! RFC 3713 has no CBC vectors (it only assigns the `id-camellia*-cbc` identifiers, Sec 3), so
 //! these are the `CAMELLIA-*-CBC` entries of OpenSSL's `test/recipes/30-test_evp_data/evpciph_camellia.txt`
@@ -10,33 +10,20 @@
 //! own.) The plaintext blocks and the 128/192/256-bit keys are those of NIST SP 800-38A Appendix F,
 //! so a CBC vector here is also a cross-check of the single-block cipher under fresh keys.
 //!
-//! There is no API for supplying an IV, so encryption is driven through
-//! [`BlockCipherEncryptor::do_encrypt_init_rng`] with a [`FixedSeedRNG`] whose stream is the
-//! vector's IV, and the test asserts the returned init data really is that IV before comparing
-//! any ciphertext. Decryption takes the IV directly.
+//! There is no API for supplying an IV, so encryption is driven through the key's
+//! `create_encryptor` with a [`FixedSeedRNG`] whose stream is the vector's IV, and the test asserts
+//! the returned init data really is that IV before comparing any ciphertext. Decryption takes the
+//! IV directly.
 
 mod common;
 
-use bouncycastle_camellia::BLOCK_LEN;
-use bouncycastle_camellia::hazmat::{Camellia_128, Camellia_192, Camellia_256};
-use bouncycastle_cipher::modes::Cbc;
-use bouncycastle_cipher::{Decrypting, Encrypting};
-use bouncycastle_core::hazmat::ElectronicCodeBook;
+use bouncycastle_camellia::{BLOCK_LEN, Camellia128Key, Camellia192Key, Camellia256Key};
+use bouncycastle_cipher::modes::{Blocks, CBC};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
+use bouncycastle_core::symmetric_key::{BlockDecryptionKey, BlockEncryptionKey, FromKeyMaterial};
 use bouncycastle_core::traits::{BlockCipherDecryptor, BlockCipherEncryptor};
 use bouncycastle_core_test_framework::FixedSeedRNG;
 use common::bytes;
-
-/// The published CBC vectors are whole blocks, so they are checked against the mode
-/// itself rather than through the `Camellia_CBC_*` aliases: those carry a padding scheme and
-/// are the arbitrary-length API, which would append a padding block to an already-aligned
-/// message. `cbc_alias_tests.rs` covers the aliases.
-/// Camellia-128 in CBC mode, block-aligned and in place -- what `Camellia_CBC_128` wraps.
-type Camellia128Cbc<Dir> = Cbc<Camellia_128, Dir, 16, 16>;
-/// Camellia-192 in CBC mode, block-aligned and in place -- what `Camellia_CBC_192` wraps.
-type Camellia192Cbc<Dir> = Cbc<Camellia_192, Dir, 24, 16>;
-/// Camellia-256 in CBC mode, block-aligned and in place -- what `Camellia_CBC_256` wraps.
-type Camellia256Cbc<Dir> = Cbc<Camellia_256, Dir, 32, 16>;
 
 /// The IV of the first entry of every chain.
 const IV: &str = "000102030405060708090A0B0C0D0E0F";
@@ -85,100 +72,75 @@ fn concat<const N: usize>(blocks: &[&str]) -> [u8; N] {
     bytes(&joined)
 }
 
-/// A chained CBC message of `N` bytes under `IV`: one call, block by block, both directions.
-fn check_chain<const KEY_LEN: usize, P, const N: usize>(
+/// A chained CBC message of `N` bytes under `IV`, through a `CBC<Blocks>` key: one call, block by
+/// block, both directions.
+fn check_chain<'k, const KEY_LEN: usize, K, const N: usize>(
     name: &str,
-    key: &KeyMaterial<KEY_LEN>,
+    key: &'k K,
     pt: &[u8; N],
     ct: &[u8; N],
 ) where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    K: BlockEncryptionKey<KEY_LEN, BLOCK_LEN, BLOCK_LEN>
+        + BlockDecryptionKey<KEY_LEN, BLOCK_LEN, BLOCK_LEN>,
 {
     let iv: [u8; 16] = bytes(IV);
 
     // Encrypt, all blocks in one call, under the vector's IV.
-    let (mut enc, got_iv) = Cbc::<P, Encrypting, KEY_LEN, BLOCK_LEN>::do_encrypt_init_rng(
-        key,
-        &mut FixedSeedRNG::<16>::new(iv),
-    )
-    .unwrap();
+    let (mut enc, got_iv) = key.create_encryptor(&mut FixedSeedRNG::<16>::new(iv)).unwrap();
     assert_eq!(got_iv, iv, "{name}: the pinned RNG should produce the vector's IV");
     let mut data = *pt;
-    enc.do_encrypt(&mut data).unwrap();
+    enc.do_encrypt_blocks_inplace(data.as_chunks_mut::<BLOCK_LEN>().0).unwrap();
     assert_eq!(data, *ct, "{name}: encrypt, all blocks in one call");
 
     // Encrypt one block at a time.
-    let (mut enc, _) = Cbc::<P, Encrypting, KEY_LEN, BLOCK_LEN>::do_encrypt_init_rng(
-        key,
-        &mut FixedSeedRNG::<16>::new(iv),
-    )
-    .unwrap();
+    let (mut enc, _) = key.create_encryptor(&mut FixedSeedRNG::<16>::new(iv)).unwrap();
     let mut data = *pt;
     for block in data.as_chunks_mut::<BLOCK_LEN>().0.iter_mut() {
-        enc.do_encrypt(block).unwrap();
+        enc.do_encrypt_blocks_inplace(core::slice::from_mut(block)).unwrap();
     }
     assert_eq!(data, *ct, "{name}: encrypt, one block at a time");
 
     // Decrypt with the IV as init data: one shot, and streaming.
     let mut data = *ct;
-    Cbc::<P, Decrypting, KEY_LEN, BLOCK_LEN>::decrypt_in_place(key, &iv, &mut data).unwrap();
+    key.decrypt_inplace(&iv, &mut data).unwrap();
     assert_eq!(data, *pt, "{name}: decrypt, one shot");
 
-    let mut dec = Cbc::<P, Decrypting, KEY_LEN, BLOCK_LEN>::do_decrypt_init(key, &iv).unwrap();
+    let mut dec = key.create_decryptor(&iv);
     let mut data = *ct;
     for block in data.as_chunks_mut::<BLOCK_LEN>().0.iter_mut() {
-        dec.do_decrypt(block).unwrap();
+        dec.do_decrypt_blocks_inplace(core::slice::from_mut(block)).unwrap();
     }
     assert_eq!(data, *pt, "{name}: decrypt, one block at a time");
 }
 
 #[test]
 fn camellia_128_cbc_chain() {
-    let key = key::<16>(KEY_128);
-    check_chain::<16, Camellia_128, 48>(
+    let key = Camellia128Key::<CBC<Blocks>>::from_key_material(&key::<16>(KEY_128)).unwrap();
+    check_chain::<16, _, 48>(
         "CAMELLIA-128-CBC",
         &key,
         &concat::<48>(&PT[..3]),
         &concat::<48>(&CT_128),
     );
-    // The fourth entry stands alone: one block under its own IV, via the alias directly.
+    // The fourth entry stands alone: one block under its own IV.
     let iv: [u8; 16] = bytes(IV_128_4);
     let mut data: [u8; 16] = bytes(PT[3]);
-    let (mut enc, got_iv) =
-        Camellia128Cbc::<Encrypting>::do_encrypt_init_rng(&key, &mut FixedSeedRNG::<16>::new(iv))
-            .unwrap();
+    let (mut enc, got_iv) = key.create_encryptor(&mut FixedSeedRNG::<16>::new(iv)).unwrap();
     assert_eq!(got_iv, iv);
-    enc.do_encrypt(&mut data).unwrap();
+    enc.do_encrypt_blocks_inplace(core::slice::from_mut(&mut data)).unwrap();
     assert_eq!(data, bytes::<16>(CT_128_4), "CAMELLIA-128-CBC entry 4");
-    Camellia128Cbc::<Decrypting>::decrypt_in_place(&key, &iv, &mut data).unwrap();
+    key.decrypt_inplace(&iv, &mut data).unwrap();
     assert_eq!(data, bytes::<16>(PT[3]));
 }
 
 #[test]
 fn camellia_192_cbc_chain() {
-    let key = key::<24>(KEY_192);
-    check_chain::<24, Camellia_192, 64>(
-        "CAMELLIA-192-CBC",
-        &key,
-        &concat::<64>(&PT),
-        &concat::<64>(&CT_192),
-    );
-    // And through the alias, one shot.
-    let mut data = concat::<64>(&CT_192);
-    Camellia192Cbc::<Decrypting>::decrypt_in_place(&key, &bytes::<16>(IV), &mut data).unwrap();
-    assert_eq!(data, concat::<64>(&PT));
+    let key = Camellia192Key::<CBC<Blocks>>::from_key_material(&key::<24>(KEY_192)).unwrap();
+    check_chain::<24, _, 64>("CAMELLIA-192-CBC", &key, &concat::<64>(&PT), &concat::<64>(&CT_192));
 }
 
 #[test]
 fn camellia_256_cbc_chain() {
-    let key = key::<32>(KEY_256);
-    check_chain::<32, Camellia_256, 64>(
-        "CAMELLIA-256-CBC",
-        &key,
-        &concat::<64>(&PT),
-        &concat::<64>(&CT_256),
-    );
-    let mut data = concat::<64>(&CT_256);
-    Camellia256Cbc::<Decrypting>::decrypt_in_place(&key, &bytes::<16>(IV), &mut data).unwrap();
-    assert_eq!(data, concat::<64>(&PT));
+    let key = Camellia256Key::<CBC<Blocks>>::from_key_material(&key::<32>(KEY_256)).unwrap();
+    check_chain::<32, _, 64>("CAMELLIA-256-CBC", &key, &concat::<64>(&PT), &concat::<64>(&CT_256));
 }

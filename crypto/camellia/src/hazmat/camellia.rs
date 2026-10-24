@@ -5,8 +5,9 @@ use crate::schedule::{
     Camellia128Params, Camellia192Params, Camellia256Params, CamelliaParams, expand, k, ke, kw,
 };
 use crate::{BLOCK_LEN, LANES};
+use bouncycastle_cipher::modes::ModeNames;
 use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
-use bouncycastle_core::hazmat::ElectronicCodeBook;
+use bouncycastle_core::hazmat::{BlockPermutation, ElectronicCodeBook};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::Algorithm;
@@ -15,9 +16,10 @@ use bouncycastle_utils::secret::Secret;
 /// One Camellia block.
 pub type Block = [u8; BLOCK_LEN];
 
-/// The Camellia keyed permutation, parameterised by key length, constant-time.
+/// The Camellia keyed permutation, parameterised by key length, constant-time: the engine under
+/// [`CamelliaKey`](crate::CamelliaKey).
 ///
-/// Use the aliases [`Camellia_128`], [`Camellia_192`] and [`Camellia_256`] rather than naming this
+/// Use the aliases [`Camellia128Internal`], [`Camellia192Internal`] and [`Camellia256Internal`] rather than naming this
 /// directly. `P` is sealed to the three parameter sets of RFC 3713, so no fourth instantiation
 /// exists.
 ///
@@ -27,21 +29,22 @@ pub type Block = [u8; BLOCK_LEN];
 /// from the same stored schedule, and a constructed value is always ready to use -- there is no
 /// `init()` or `reset()`, unlike an engine that lays the subkeys out differently depending on the
 /// direction it is initialised for.
-pub struct Camellia<P: CamelliaParams> {
+#[derive(Clone)]
+pub struct CamelliaInternal<P: CamelliaParams> {
     schedule: Secret<P::Schedule>,
 }
 
 /// Camellia-128: 16-byte key, 18 rounds (RFC 3713 Sec 2.3.1).
 #[allow(non_camel_case_types)]
-pub type Camellia_128 = Camellia<Camellia128Params>;
+pub type Camellia128Internal = CamelliaInternal<Camellia128Params>;
 /// Camellia-192: 24-byte key, 24 rounds (RFC 3713 Sec 2.3.2).
 #[allow(non_camel_case_types)]
-pub type Camellia_192 = Camellia<Camellia192Params>;
+pub type Camellia192Internal = CamelliaInternal<Camellia192Params>;
 /// Camellia-256: 32-byte key, 24 rounds (RFC 3713 Sec 2.3.2).
 #[allow(non_camel_case_types)]
-pub type Camellia_256 = Camellia<Camellia256Params>;
+pub type Camellia256Internal = CamelliaInternal<Camellia256Params>;
 
-impl<P: CamelliaParams> Camellia<P> {
+impl<P: CamelliaParams> CamelliaInternal<P> {
     /// Checks a key is fit to use before it is expanded.
     ///
     /// The key must be tagged [`KeyType::SymmetricCipherKey`], must be exactly `P::KEY_LEN` bytes
@@ -81,7 +84,7 @@ impl<P: CamelliaParams> Camellia<P> {
     /// and CFB -- reach it as the `ElectronicCodeBook` four-block batch; CBC
     /// encryption cannot, since its blocks are serially dependent.
     ///
-    /// Infallible: a constructed [`Camellia`] is always usable and every input length is fixed.
+    /// Infallible: a constructed [`CamelliaInternal`] is always usable and every input length is fixed.
     pub fn encrypt_4blocks(&self, blocks: &mut [Block; LANES]) {
         let s = self.schedule.as_ref();
         rounds(blocks, P::ROUNDS, |i| kw(s, i), |i| k(s, i), |i| ke::<P>(s, i));
@@ -90,7 +93,7 @@ impl<P: CamelliaParams> Camellia<P> {
     /// Decrypts four independent blocks in place (Sec 2.3.3): "the same way as the encryption
     /// procedure by reversing the order of the subkeys", namely `kw1 <-> kw3`, `kw2 <-> kw4`,
     /// `k_i <-> k_{n+1-i}` for `n` rounds, and `ke_i <-> ke_{m+1-i}` for `m` FL keys. See
-    /// [`Camellia::encrypt_4blocks`].
+    /// [`CamelliaInternal::encrypt_4blocks`].
     pub fn decrypt_4blocks(&self, blocks: &mut [Block; LANES]) {
         let s = self.schedule.as_ref();
         rounds(
@@ -106,7 +109,7 @@ impl<P: CamelliaParams> Camellia<P> {
     ///
     /// The circuit always processes four lanes, so a single-block call puts the block in every
     /// lane and discards three results: it does four blocks' worth of work. Use
-    /// [`Camellia::encrypt_4blocks`] where independent blocks
+    /// [`CamelliaInternal::encrypt_4blocks`] where independent blocks
     /// are available.
     ///
     /// Filling the spare lanes with copies costs exactly what zeros would, and buys a free
@@ -146,7 +149,7 @@ impl<P: CamelliaParams> Camellia<P> {
     }
 }
 
-impl Camellia_128 {
+impl Camellia128Internal {
     /// Expands a 16-byte key into the Camellia-128 subkeys (Sec 2.2).
     ///
     /// # Errors
@@ -159,7 +162,7 @@ impl Camellia_128 {
     }
 }
 
-impl Camellia_192 {
+impl Camellia192Internal {
     /// Expands a 24-byte key into the Camellia-192 subkeys. See [`ElectronicCodeBook::new`] for the
     /// error cases.
     pub(crate) fn new(key: &KeyMaterial<24>) -> Result<Self, SymmetricCipherError> {
@@ -168,7 +171,7 @@ impl Camellia_192 {
     }
 }
 
-impl Camellia_256 {
+impl Camellia256Internal {
     /// Expands a 32-byte key into the Camellia-256 subkeys. See [`ElectronicCodeBook::new`] for the
     /// error cases.
     pub(crate) fn new(key: &KeyMaterial<32>) -> Result<Self, SymmetricCipherError> {
@@ -177,101 +180,149 @@ impl Camellia_256 {
     }
 }
 
-impl Algorithm for Camellia_128 {
+impl Algorithm for Camellia128Internal {
     const ALG_NAME: &'static str = Camellia128Params::ALG_NAME;
     const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_128bit;
 }
 
-impl Algorithm for Camellia_192 {
+impl Algorithm for Camellia192Internal {
     const ALG_NAME: &'static str = Camellia192Params::ALG_NAME;
     const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_192bit;
 }
 
-impl Algorithm for Camellia_256 {
+impl Algorithm for Camellia256Internal {
     const ALG_NAME: &'static str = Camellia256Params::ALG_NAME;
     const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_256bit;
 }
 
-// The three `ElectronicCodeBook` impls are one-line delegations to the inherent methods above,
+// The three `ElectronicCodeBook` / `BlockPermutation` impl pairs are one-line delegations to the
+// inherent methods above,
 // written out longhand rather than generated because `cargo mutants` cannot see into macro bodies.
 //
 // Each fills the lanes in its pair and four-block methods: two blocks in two of the four lanes
 // cost one circuit pass per round where two single-block calls would cost two, and four blocks
 // are one full pass where two pair calls would be two.
 
-impl ElectronicCodeBook<16, BLOCK_LEN> for Camellia_128 {
+impl ElectronicCodeBook<16, BLOCK_LEN> for Camellia128Internal {
     fn new(key: &KeyMaterial<16>) -> Result<Self, SymmetricCipherError> {
-        Camellia_128::new(key)
-    }
-    fn encrypt_block(&self, block: &mut Block) {
-        Camellia::encrypt_block(self, block)
-    }
-    fn decrypt_block(&self, block: &mut Block) {
-        Camellia::decrypt_block(self, block)
-    }
-    fn encrypt_2blocks(&self, blocks: &mut [Block; 2]) {
-        Camellia::encrypt_2blocks(self, blocks)
-    }
-    fn decrypt_2blocks(&self, blocks: &mut [Block; 2]) {
-        Camellia::decrypt_2blocks(self, blocks)
-    }
-    fn encrypt_4blocks(&self, blocks: &mut [Block; LANES]) {
-        Camellia::encrypt_4blocks(self, blocks)
-    }
-    fn decrypt_4blocks(&self, blocks: &mut [Block; LANES]) {
-        Camellia::decrypt_4blocks(self, blocks)
+        Camellia128Internal::new(key)
     }
 }
 
-impl ElectronicCodeBook<24, BLOCK_LEN> for Camellia_192 {
+impl BlockPermutation<BLOCK_LEN> for Camellia128Internal {
+    fn encrypt_block(&self, block: &mut Block) {
+        CamelliaInternal::encrypt_block(self, block)
+    }
+    fn decrypt_block(&self, block: &mut Block) {
+        CamelliaInternal::decrypt_block(self, block)
+    }
+    fn encrypt_2blocks(&self, blocks: &mut [Block; 2]) {
+        CamelliaInternal::encrypt_2blocks(self, blocks)
+    }
+    fn decrypt_2blocks(&self, blocks: &mut [Block; 2]) {
+        CamelliaInternal::decrypt_2blocks(self, blocks)
+    }
+    fn encrypt_4blocks(&self, blocks: &mut [Block; LANES]) {
+        CamelliaInternal::encrypt_4blocks(self, blocks)
+    }
+    fn decrypt_4blocks(&self, blocks: &mut [Block; LANES]) {
+        CamelliaInternal::decrypt_4blocks(self, blocks)
+    }
+}
+
+impl ElectronicCodeBook<24, BLOCK_LEN> for Camellia192Internal {
     fn new(key: &KeyMaterial<24>) -> Result<Self, SymmetricCipherError> {
-        Camellia_192::new(key)
-    }
-    fn encrypt_block(&self, block: &mut Block) {
-        Camellia::encrypt_block(self, block)
-    }
-    fn decrypt_block(&self, block: &mut Block) {
-        Camellia::decrypt_block(self, block)
-    }
-    fn encrypt_2blocks(&self, blocks: &mut [Block; 2]) {
-        Camellia::encrypt_2blocks(self, blocks)
-    }
-    fn decrypt_2blocks(&self, blocks: &mut [Block; 2]) {
-        Camellia::decrypt_2blocks(self, blocks)
-    }
-    fn encrypt_4blocks(&self, blocks: &mut [Block; LANES]) {
-        Camellia::encrypt_4blocks(self, blocks)
-    }
-    fn decrypt_4blocks(&self, blocks: &mut [Block; LANES]) {
-        Camellia::decrypt_4blocks(self, blocks)
+        Camellia192Internal::new(key)
     }
 }
 
-impl ElectronicCodeBook<32, BLOCK_LEN> for Camellia_256 {
+impl BlockPermutation<BLOCK_LEN> for Camellia192Internal {
+    fn encrypt_block(&self, block: &mut Block) {
+        CamelliaInternal::encrypt_block(self, block)
+    }
+    fn decrypt_block(&self, block: &mut Block) {
+        CamelliaInternal::decrypt_block(self, block)
+    }
+    fn encrypt_2blocks(&self, blocks: &mut [Block; 2]) {
+        CamelliaInternal::encrypt_2blocks(self, blocks)
+    }
+    fn decrypt_2blocks(&self, blocks: &mut [Block; 2]) {
+        CamelliaInternal::decrypt_2blocks(self, blocks)
+    }
+    fn encrypt_4blocks(&self, blocks: &mut [Block; LANES]) {
+        CamelliaInternal::encrypt_4blocks(self, blocks)
+    }
+    fn decrypt_4blocks(&self, blocks: &mut [Block; LANES]) {
+        CamelliaInternal::decrypt_4blocks(self, blocks)
+    }
+}
+
+impl ElectronicCodeBook<32, BLOCK_LEN> for Camellia256Internal {
     fn new(key: &KeyMaterial<32>) -> Result<Self, SymmetricCipherError> {
-        Camellia_256::new(key)
-    }
-    fn encrypt_block(&self, block: &mut Block) {
-        Camellia::encrypt_block(self, block)
-    }
-    fn decrypt_block(&self, block: &mut Block) {
-        Camellia::decrypt_block(self, block)
-    }
-    fn encrypt_2blocks(&self, blocks: &mut [Block; 2]) {
-        Camellia::encrypt_2blocks(self, blocks)
-    }
-    fn decrypt_2blocks(&self, blocks: &mut [Block; 2]) {
-        Camellia::decrypt_2blocks(self, blocks)
-    }
-    fn encrypt_4blocks(&self, blocks: &mut [Block; LANES]) {
-        Camellia::encrypt_4blocks(self, blocks)
-    }
-    fn decrypt_4blocks(&self, blocks: &mut [Block; LANES]) {
-        Camellia::decrypt_4blocks(self, blocks)
+        Camellia256Internal::new(key)
     }
 }
 
-impl<P: CamelliaParams> core::fmt::Debug for Camellia<P> {
+impl BlockPermutation<BLOCK_LEN> for Camellia256Internal {
+    fn encrypt_block(&self, block: &mut Block) {
+        CamelliaInternal::encrypt_block(self, block)
+    }
+    fn decrypt_block(&self, block: &mut Block) {
+        CamelliaInternal::decrypt_block(self, block)
+    }
+    fn encrypt_2blocks(&self, blocks: &mut [Block; 2]) {
+        CamelliaInternal::encrypt_2blocks(self, blocks)
+    }
+    fn decrypt_2blocks(&self, blocks: &mut [Block; 2]) {
+        CamelliaInternal::decrypt_2blocks(self, blocks)
+    }
+    fn encrypt_4blocks(&self, blocks: &mut [Block; LANES]) {
+        CamelliaInternal::encrypt_4blocks(self, blocks)
+    }
+    fn decrypt_4blocks(&self, blocks: &mut [Block; LANES]) {
+        CamelliaInternal::decrypt_4blocks(self, blocks)
+    }
+}
+
+// Camellia has published modes beyond the four this crate aliases -- RFC 5528 defines CTR and
+// CCM, RFC 6367 GCM -- so every mode is named; a key under the others is made by naming the mode.
+impl ModeNames for Camellia128Internal {
+    const CBC_ALG_NAME: &'static str = "Camellia_CBC_128";
+    const CCM_ALG_NAME: &'static str = "Camellia_CCM_128";
+    const CFB_ALG_NAME: &'static str = "Camellia_CFB_128";
+    const CFB8_ALG_NAME: &'static str = "Camellia_CFB8_128";
+    const CMAC_ALG_NAME: &'static str = "Camellia_CMAC_128";
+    const CTR_ALG_NAME: &'static str = "Camellia_CTR_128";
+    const ECB_ALG_NAME: &'static str = "Camellia_ECB_128";
+    const GCM_ALG_NAME: &'static str = "Camellia_GCM_128";
+    const GMAC_ALG_NAME: &'static str = "Camellia_GMAC_128";
+}
+
+impl ModeNames for Camellia192Internal {
+    const CBC_ALG_NAME: &'static str = "Camellia_CBC_192";
+    const CCM_ALG_NAME: &'static str = "Camellia_CCM_192";
+    const CFB_ALG_NAME: &'static str = "Camellia_CFB_192";
+    const CFB8_ALG_NAME: &'static str = "Camellia_CFB8_192";
+    const CMAC_ALG_NAME: &'static str = "Camellia_CMAC_192";
+    const CTR_ALG_NAME: &'static str = "Camellia_CTR_192";
+    const ECB_ALG_NAME: &'static str = "Camellia_ECB_192";
+    const GCM_ALG_NAME: &'static str = "Camellia_GCM_192";
+    const GMAC_ALG_NAME: &'static str = "Camellia_GMAC_192";
+}
+
+impl ModeNames for Camellia256Internal {
+    const CBC_ALG_NAME: &'static str = "Camellia_CBC_256";
+    const CCM_ALG_NAME: &'static str = "Camellia_CCM_256";
+    const CFB_ALG_NAME: &'static str = "Camellia_CFB_256";
+    const CFB8_ALG_NAME: &'static str = "Camellia_CFB8_256";
+    const CMAC_ALG_NAME: &'static str = "Camellia_CMAC_256";
+    const CTR_ALG_NAME: &'static str = "Camellia_CTR_256";
+    const ECB_ALG_NAME: &'static str = "Camellia_ECB_256";
+    const GCM_ALG_NAME: &'static str = "Camellia_GCM_256";
+    const GMAC_ALG_NAME: &'static str = "Camellia_GMAC_256";
+}
+
+impl<P: CamelliaParams> core::fmt::Debug for CamelliaInternal<P> {
     /// Prints the algorithm name only. The subkeys are secret and are never formatted.
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.write_str(P::ALG_NAME)
@@ -286,28 +337,28 @@ mod tests {
     fn test_engine_sizes_are_exactly_the_subkeys() {
         // The "Memory Usage" table in the crate docs quotes these: 26 or 34 subkeys of 64 bits and
         // nothing else -- no direction flag, no round counter, no initialised marker.
-        assert_eq!(size_of::<Camellia_128>(), 208);
-        assert_eq!(size_of::<Camellia_192>(), 272);
-        assert_eq!(size_of::<Camellia_256>(), 272);
-        assert_eq!(size_of::<Camellia_128>(), size_of::<[u64; 4 + 18 + 4]>());
-        assert_eq!(size_of::<Camellia_256>(), size_of::<[u64; 4 + 24 + 6]>());
+        assert_eq!(size_of::<Camellia128Internal>(), 208);
+        assert_eq!(size_of::<Camellia192Internal>(), 272);
+        assert_eq!(size_of::<Camellia256Internal>(), 272);
+        assert_eq!(size_of::<Camellia128Internal>(), size_of::<[u64; 4 + 18 + 4]>());
+        assert_eq!(size_of::<Camellia256Internal>(), size_of::<[u64; 4 + 24 + 6]>());
     }
 
     #[test]
     fn test_alg_names_and_strengths() {
-        assert_eq!(<Camellia_128 as Algorithm>::ALG_NAME, "Camellia-128");
-        assert_eq!(<Camellia_192 as Algorithm>::ALG_NAME, "Camellia-192");
-        assert_eq!(<Camellia_256 as Algorithm>::ALG_NAME, "Camellia-256");
+        assert_eq!(<Camellia128Internal as Algorithm>::ALG_NAME, "Camellia-128");
+        assert_eq!(<Camellia192Internal as Algorithm>::ALG_NAME, "Camellia-192");
+        assert_eq!(<Camellia256Internal as Algorithm>::ALG_NAME, "Camellia-256");
         assert_eq!(
-            <Camellia_128 as Algorithm>::MAX_SECURITY_STRENGTH,
+            <Camellia128Internal as Algorithm>::MAX_SECURITY_STRENGTH,
             SecurityStrength::from_bytes(Camellia128Params::KEY_LEN)
         );
         assert_eq!(
-            <Camellia_192 as Algorithm>::MAX_SECURITY_STRENGTH,
+            <Camellia192Internal as Algorithm>::MAX_SECURITY_STRENGTH,
             SecurityStrength::from_bytes(Camellia192Params::KEY_LEN)
         );
         assert_eq!(
-            <Camellia_256 as Algorithm>::MAX_SECURITY_STRENGTH,
+            <Camellia256Internal as Algorithm>::MAX_SECURITY_STRENGTH,
             SecurityStrength::from_bytes(Camellia256Params::KEY_LEN)
         );
     }

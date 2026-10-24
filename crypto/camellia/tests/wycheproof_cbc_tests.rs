@@ -20,14 +20,17 @@
 //!
 //! Decryption takes the IV as init data, so an invalid case is simply required to fail and a valid
 //! one to reproduce the message. Encryption never accepts an IV -- see the crate docs -- so the
-//! valid cases are driven through `encrypt_out_rng` with a [`FixedSeedRNG`] emitting the vector's
-//! IV, and the returned init data is checked against it before any ciphertext is compared.
+//! valid cases are driven through the key's `encrypt_out` with a [`FixedSeedRNG`] emitting the
+//! vector's IV, and the returned init data is checked against it before any ciphertext is
+//! compared.
 
-use bouncycastle_camellia::{Camellia_CBC_128, Camellia_CBC_192, Camellia_CBC_256};
+use bouncycastle_camellia::{Camellia128Key, Camellia192Key, Camellia256Key};
+use bouncycastle_cipher::modes::CBC;
 use bouncycastle_cipher::padding::PKCS7;
-use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
+use bouncycastle_core::symmetric_key::{
+    FromKeyMaterial, SymmetricDecryptionKey, SymmetricEncryptionKey,
+};
 use bouncycastle_core_test_framework::FixedSeedRNG;
 use bouncycastle_hex as hex;
 use serde_json::Value;
@@ -65,22 +68,22 @@ fn decode(v: &Value, field: &str, tc: u64) -> Vec<u8> {
     hex::decode(s).unwrap_or_else(|_| panic!("tcId {tc}: bad hex in {field}"))
 }
 
-/// Runs one case for a given key length. Returns `true` if it was a valid case.
-fn run_case<Enc, Dec, const N: usize>(t: &Value) -> bool
+/// Runs one case for a given key length, under the `CBC<PKCS7>` key `make` builds from the
+/// case's material. Returns `true` if it was a valid case.
+fn run_case<K, const N: usize>(t: &Value, make: impl Fn(&KeyMaterial<N>) -> K) -> bool
 where
-    Enc: SymmetricCipherEncryptor<N, 16, 16>,
-    Dec: SymmetricCipherDecryptor<N, 16, 16>,
+    K: SymmetricEncryptionKey<N, 16, 16> + SymmetricDecryptionKey<N, 16, 16>,
 {
     let tc = t.get("tcId").and_then(Value::as_u64).expect("tcId");
-    let key = key_material::<N>(&decode(t, "key", tc));
+    let key = make(&key_material::<N>(&decode(t, "key", tc)));
     let iv: [u8; 16] = decode(t, "iv", tc).try_into().expect("a 16-byte IV");
     let msg = decode(t, "msg", tc);
     let ct = decode(t, "ct", tc);
     let result = t.get("result").and_then(Value::as_str).expect("result");
     let comment = t.get("comment").and_then(Value::as_str).unwrap_or("");
 
-    let mut out = vec![0u8; Dec::decrypt_out_max_len(ct.len())];
-    let decrypted = Dec::decrypt_out(&key, &iv, &ct, &mut out);
+    let mut out = vec![0u8; ct.len() + 16];
+    let decrypted = key.decrypt_out(&iv, &ct, &mut out);
 
     match result {
         "valid" => {
@@ -90,10 +93,10 @@ where
             assert_eq!(&out[..n], &msg[..], "tcId {tc} ({comment}): wrong plaintext");
 
             // ...and encryption reproduces the ciphertext under the vector's IV.
-            let mut ct_out = vec![0u8; Enc::encrypt_out_len(msg.len())];
-            let (got_iv, written) =
-                Enc::encrypt_out_rng(&key, &mut FixedSeedRNG::<16>::new(iv), &msg, &mut ct_out)
-                    .unwrap_or_else(|e| panic!("tcId {tc}: encryption failed: {e:?}"));
+            let mut ct_out = vec![0u8; msg.len() + 16];
+            let (written, got_iv) = key
+                .encrypt_out(&mut FixedSeedRNG::<16>::new(iv), &msg, &mut ct_out)
+                .unwrap_or_else(|e| panic!("tcId {tc}: encryption failed: {e:?}"));
             assert_eq!(got_iv, iv, "tcId {tc}: the pinned RNG should reproduce the vector's IV");
             assert_eq!(&ct_out[..written], &ct[..], "tcId {tc} ({comment}): wrong ciphertext");
             true
@@ -126,21 +129,15 @@ fn wycheproof_cbc_pkcs5_vectors() {
 
         for t in group.get("tests").and_then(Value::as_array).expect("tests") {
             let was_valid = match key_size {
-                128 => run_case::<
-                    Camellia_CBC_128<Encrypting, PKCS7>,
-                    Camellia_CBC_128<Decrypting, PKCS7>,
-                    16,
-                >(t),
-                192 => run_case::<
-                    Camellia_CBC_192<Encrypting, PKCS7>,
-                    Camellia_CBC_192<Decrypting, PKCS7>,
-                    24,
-                >(t),
-                256 => run_case::<
-                    Camellia_CBC_256<Encrypting, PKCS7>,
-                    Camellia_CBC_256<Decrypting, PKCS7>,
-                    32,
-                >(t),
+                128 => run_case::<_, 16>(t, |m| {
+                    Camellia128Key::<CBC<PKCS7>>::from_key_material(m).expect("a valid key")
+                }),
+                192 => run_case::<_, 24>(t, |m| {
+                    Camellia192Key::<CBC<PKCS7>>::from_key_material(m).expect("a valid key")
+                }),
+                256 => run_case::<_, 32>(t, |m| {
+                    Camellia256Key::<CBC<PKCS7>>::from_key_material(m).expect("a valid key")
+                }),
                 other => panic!("unexpected key size {other}"),
             };
             if was_valid { valid += 1 } else { invalid += 1 }
