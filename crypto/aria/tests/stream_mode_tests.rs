@@ -8,25 +8,26 @@
 //! aliases exactly, in all three modes:
 //!
 //! * The CFB128 and CFB8 vectors share the IV `0f1e2d3c..f0` that the CBC vectors use, and are
-//!   driven through [`StreamCipherEncryptor::do_encrypt_init_rng`] with a [`FixedSeedRNG`] whose
-//!   stream is that IV (there is no API for supplying one); the test asserts the returned init data
-//!   really is the vector's IV before comparing any ciphertext. Decryption takes the IV directly.
+//!   driven through the key's `create_encryptor` with a [`FixedSeedRNG`] whose stream is that IV
+//!   (there is no API for supplying one); the test asserts the returned init data really is the
+//!   vector's IV before comparing any ciphertext. Decryption takes the IV directly.
 //! * The CTR vectors start from an **all-zero counter block** and their `NextIV` is `..0a` after
 //!   the 160-byte, ten-block message, so the counter runs 0, 1, ... 9. That is exactly what the
-//!   nonce/counter split of `Ctr` produces from a twelve-byte zero nonce (see the [`ARIA_CTR_128`]
-//!   docs), so they are straight known-answer tests through the alias too.
+//!   nonce/counter split of `Ctr` produces from a twelve-byte zero nonce (see the
+//!   [`ARIA_CTR_128`](bouncycastle_aria::ARIA_CTR_128) docs), so they are straight known-answer
+//!   tests through the key too.
 //!
 //! The same 160-byte plaintext runs through all three modes, and it is the one the ECB and CBC
 //! vectors in `kisa_vectors_tests.rs` use.
 
 mod common;
 
-use bouncycastle_aria::{
-    ARIA_CFB_128, ARIA_CFB_192, ARIA_CFB_256, ARIA_CFB8_128, ARIA_CFB8_192, ARIA_CFB8_256,
-    ARIA_CTR_128, ARIA_CTR_192, ARIA_CTR_256, BLOCK_LEN, CTR_NONCE_LEN,
-};
-use bouncycastle_cipher::{Decrypting, Encrypting};
+use bouncycastle_aria::{ARIA128Key, ARIA192Key, ARIA256Key, BLOCK_LEN, CTR_NONCE_LEN};
+use bouncycastle_cipher::modes::{CFB, CFB8, CTR};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
+use bouncycastle_core::symmetric_key::{
+    FromKeyMaterial, SymmetricDecryptionKey, SymmetricEncryptionKey,
+};
 use bouncycastle_core::traits::{StreamCipherDecryptor, StreamCipherEncryptor};
 use bouncycastle_core_test_framework::FixedSeedRNG;
 use common::bytes;
@@ -162,61 +163,60 @@ const CTR_CT_256: &str = concat!(
     "ab2cad944e51d266548e61c6eb0aa1cd",
 );
 
-fn key_material<const N: usize>(hex_str: &str) -> KeyMaterial<N> {
+fn material<const N: usize>(hex_str: &str) -> KeyMaterial<N> {
     KeyMaterial::<N>::from_bytes_as_type(&bytes::<N>(hex_str), KeyType::SymmetricCipherKey)
         .expect("a valid symmetric cipher key")
 }
 
-/// One vector, through the alias: encrypted under the vector's own init data, in one call and then
+/// One vector, through the key: encrypted under the vector's own init data, in one call and then
 /// in pieces, and decrypted back both ways.
 ///
 /// `init` is the IV for the CFB modes and the nonce for CTR; the only difference between the three
 /// modes here is its length, which is why one function covers all nine vectors.
-fn check<const KEY_LEN: usize, const INIT_DATA_LEN: usize, Enc, Dec>(
+fn check<'k, const KEY_LEN: usize, const INIT_DATA_LEN: usize, K>(
     name: &str,
-    key_hex: &str,
+    key: &'k K,
     init: [u8; INIT_DATA_LEN],
     expected: &str,
 ) where
-    Enc: StreamCipherEncryptor<KEY_LEN, INIT_DATA_LEN>,
-    Dec: StreamCipherDecryptor<KEY_LEN, INIT_DATA_LEN>,
+    K: SymmetricEncryptionKey<KEY_LEN, INIT_DATA_LEN, 0>
+        + SymmetricDecryptionKey<KEY_LEN, INIT_DATA_LEN, 0>,
+    K::Encryptor<'k>: StreamCipherEncryptor<INIT_DATA_LEN>,
+    K::Decryptor<'k>: StreamCipherDecryptor<INIT_DATA_LEN>,
 {
-    let key = key_material::<KEY_LEN>(key_hex);
     let pt = bytes::<LEN>(PLAINTEXT);
     let ct = bytes::<LEN>(expected);
 
     // There is no API for supplying init data, so pin the RNG to the vector's and check it came
     // back before trusting any ciphertext.
-    let (mut enc, got) =
-        Enc::do_encrypt_init_rng(&key, &mut FixedSeedRNG::<INIT_DATA_LEN>::new(init))
-            .expect("encryption init");
+    let (mut enc, got) = key
+        .create_encryptor(&mut FixedSeedRNG::<INIT_DATA_LEN>::new(init))
+        .expect("encryption init");
     assert_eq!(got, init, "{name}: the pinned RNG should produce the vector's init data");
     let mut data = pt;
-    let written = enc.do_encrypt(&mut data).expect("encryption");
-    assert_eq!(written, LEN, "{name}: a stream cipher writes exactly what it was given");
+    enc.do_encrypt_inplace(&mut data).expect("encryption");
     assert_eq!(data, ct, "{name} encrypt, one call");
 
     // Block by block: the answer must not depend on where the call boundaries fall.
-    let (mut enc, _) =
-        Enc::do_encrypt_init_rng(&key, &mut FixedSeedRNG::<INIT_DATA_LEN>::new(init))
-            .expect("encryption init");
+    let (mut enc, _) = key
+        .create_encryptor(&mut FixedSeedRNG::<INIT_DATA_LEN>::new(init))
+        .expect("encryption init");
     let mut data = pt;
     for block in data.chunks_mut(BLOCK_LEN) {
-        enc.do_encrypt(block).expect("encryption");
+        enc.do_encrypt_inplace(block).expect("encryption");
     }
     assert_eq!(data, ct, "{name} encrypt, one block at a time");
 
     let mut data = ct;
-    let read = Dec::decrypt_in_place(&key, &init, &mut data).expect("decryption");
-    assert_eq!(read, LEN, "{name}: bytes read");
+    key.decrypt_inplace(&init, &mut data).expect("decryption");
     assert_eq!(data, pt, "{name} decrypt, one shot");
 
     // Seven bytes at a time, which crosses no boundary the mode cares about and every boundary it
     // must not.
-    let mut dec = Dec::do_decrypt_init(&key, &init).expect("decryption init");
+    let mut dec = key.create_decryptor(&init);
     let mut data = ct;
     for piece in data.chunks_mut(7) {
-        dec.do_decrypt(piece).expect("decryption");
+        dec.do_decrypt_inplace(piece).expect("decryption");
     }
     assert_eq!(data, pt, "{name} decrypt, seven bytes at a time");
 }
@@ -225,9 +225,9 @@ fn check<const KEY_LEN: usize, const INIT_DATA_LEN: usize, Enc, Dec>(
 
 #[test]
 fn aria_128_cfb_vectors() {
-    check::<16, BLOCK_LEN, ARIA_CFB_128<Encrypting>, ARIA_CFB_128<Decrypting>>(
+    check::<16, _, _>(
         "ARIA-128-CFB",
-        KEY_128,
+        &ARIA128Key::<CFB>::from_key_material(&material::<16>(KEY_128)).unwrap(),
         bytes::<BLOCK_LEN>(IV),
         CFB_CT_128,
     );
@@ -235,9 +235,9 @@ fn aria_128_cfb_vectors() {
 
 #[test]
 fn aria_192_cfb_vectors() {
-    check::<24, BLOCK_LEN, ARIA_CFB_192<Encrypting>, ARIA_CFB_192<Decrypting>>(
+    check::<24, _, _>(
         "ARIA-192-CFB",
-        KEY_192,
+        &ARIA192Key::<CFB>::from_key_material(&material::<24>(KEY_192)).unwrap(),
         bytes::<BLOCK_LEN>(IV),
         CFB_CT_192,
     );
@@ -245,9 +245,9 @@ fn aria_192_cfb_vectors() {
 
 #[test]
 fn aria_256_cfb_vectors() {
-    check::<32, BLOCK_LEN, ARIA_CFB_256<Encrypting>, ARIA_CFB_256<Decrypting>>(
+    check::<32, _, _>(
         "ARIA-256-CFB",
-        KEY_256,
+        &ARIA256Key::<CFB>::from_key_material(&material::<32>(KEY_256)).unwrap(),
         bytes::<BLOCK_LEN>(IV),
         CFB_CT_256,
     );
@@ -257,9 +257,9 @@ fn aria_256_cfb_vectors() {
 
 #[test]
 fn aria_128_cfb8_vectors() {
-    check::<16, BLOCK_LEN, ARIA_CFB8_128<Encrypting>, ARIA_CFB8_128<Decrypting>>(
+    check::<16, _, _>(
         "ARIA-128-CFB8",
-        KEY_128,
+        &ARIA128Key::<CFB8>::from_key_material(&material::<16>(KEY_128)).unwrap(),
         bytes::<BLOCK_LEN>(IV),
         CFB8_CT_128,
     );
@@ -267,9 +267,9 @@ fn aria_128_cfb8_vectors() {
 
 #[test]
 fn aria_192_cfb8_vectors() {
-    check::<24, BLOCK_LEN, ARIA_CFB8_192<Encrypting>, ARIA_CFB8_192<Decrypting>>(
+    check::<24, _, _>(
         "ARIA-192-CFB8",
-        KEY_192,
+        &ARIA192Key::<CFB8>::from_key_material(&material::<24>(KEY_192)).unwrap(),
         bytes::<BLOCK_LEN>(IV),
         CFB8_CT_192,
     );
@@ -277,9 +277,9 @@ fn aria_192_cfb8_vectors() {
 
 #[test]
 fn aria_256_cfb8_vectors() {
-    check::<32, BLOCK_LEN, ARIA_CFB8_256<Encrypting>, ARIA_CFB8_256<Decrypting>>(
+    check::<32, _, _>(
         "ARIA-256-CFB8",
-        KEY_256,
+        &ARIA256Key::<CFB8>::from_key_material(&material::<32>(KEY_256)).unwrap(),
         bytes::<BLOCK_LEN>(IV),
         CFB8_CT_256,
     );
@@ -293,22 +293,31 @@ const CTR_NONCE: [u8; CTR_NONCE_LEN] = [0u8; CTR_NONCE_LEN];
 
 #[test]
 fn aria_128_ctr_vectors() {
-    check::<16, CTR_NONCE_LEN, ARIA_CTR_128<Encrypting>, ARIA_CTR_128<Decrypting>>(
-        "ARIA-128-CTR", KEY_128, CTR_NONCE, CTR_CT_128,
+    check::<16, _, _>(
+        "ARIA-128-CTR",
+        &ARIA128Key::<CTR>::from_key_material(&material::<16>(KEY_128)).unwrap(),
+        CTR_NONCE,
+        CTR_CT_128,
     );
 }
 
 #[test]
 fn aria_192_ctr_vectors() {
-    check::<24, CTR_NONCE_LEN, ARIA_CTR_192<Encrypting>, ARIA_CTR_192<Decrypting>>(
-        "ARIA-192-CTR", KEY_192, CTR_NONCE, CTR_CT_192,
+    check::<24, _, _>(
+        "ARIA-192-CTR",
+        &ARIA192Key::<CTR>::from_key_material(&material::<24>(KEY_192)).unwrap(),
+        CTR_NONCE,
+        CTR_CT_192,
     );
 }
 
 #[test]
 fn aria_256_ctr_vectors() {
-    check::<32, CTR_NONCE_LEN, ARIA_CTR_256<Encrypting>, ARIA_CTR_256<Decrypting>>(
-        "ARIA-256-CTR", KEY_256, CTR_NONCE, CTR_CT_256,
+    check::<32, _, _>(
+        "ARIA-256-CTR",
+        &ARIA256Key::<CTR>::from_key_material(&material::<32>(KEY_256)).unwrap(),
+        CTR_NONCE,
+        CTR_CT_256,
     );
 }
 

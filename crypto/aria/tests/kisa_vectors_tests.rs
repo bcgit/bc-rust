@@ -4,34 +4,24 @@
 //! file.
 //!
 //! The ECB vectors are 10 independent blocks, so they exercise the four-block, pair
-//! and single-block paths against published answers (two fours and a pair). The CBC vectors go through the
-//! [`ARIA_CBC_128`] / `_192` / `_256` aliases: encryption is driven through
-//! [`BlockCipherEncryptor::do_encrypt_init_rng`] with a [`FixedSeedRNG`] whose stream is the
-//! vector's IV (there is no API for supplying one), and the test asserts the returned init data
-//! really is that IV before comparing any ciphertext; decryption takes the IV directly.
+//! and single-block paths against published answers (two fours and a pair). The CBC vectors go
+//! through `ARIA128Key<CBC<Blocks>>` and its siblings, the block-aligned keys the padded
+//! `ARIA_CBC_*` aliases wrap: encryption is driven through the key's `create_encryptor` with a
+//! [`FixedSeedRNG`] whose stream is the vector's IV (there is no API for supplying one), and the
+//! test asserts the returned init data really is that IV before comparing any ciphertext;
+//! decryption takes the IV directly.
 
 mod common;
 
-use bouncycastle_aria::hazmat::{ARIA, ARIA_128, ARIA_192, ARIA_256};
-use bouncycastle_aria::{ARIAParams, BLOCK_LEN};
-use bouncycastle_cipher::modes::Cbc;
-use bouncycastle_cipher::{Decrypting, Encrypting};
-use bouncycastle_core::hazmat::ElectronicCodeBook;
+use bouncycastle_aria::hazmat::{ARIA128Internal, ARIA192Internal, ARIA256Internal, ARIAInternal};
+use bouncycastle_aria::{ARIA128Key, ARIA192Key, ARIA256Key, ARIAParams, BLOCK_LEN};
+use bouncycastle_cipher::modes::{Blocks, CBC};
+use bouncycastle_core::hazmat::{BlockPermutation, ElectronicCodeBook};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
+use bouncycastle_core::symmetric_key::{BlockDecryptionKey, BlockEncryptionKey, FromKeyMaterial};
 use bouncycastle_core::traits::{BlockCipherDecryptor, BlockCipherEncryptor};
 use bouncycastle_core_test_framework::FixedSeedRNG;
 use common::bytes;
-
-/// The published CBC vectors are whole blocks, so they are checked against the mode
-/// itself rather than through the `ARIA_CBC_*` aliases: those carry a padding scheme and
-/// are the arbitrary-length API, which would append a padding block to an already-aligned
-/// message. `cbc_alias_tests.rs` covers the aliases.
-/// ARIA-128 in CBC mode, block-aligned and in place -- what `ARIA_CBC_128` wraps.
-type Aria128Cbc<Dir> = Cbc<ARIA_128, Dir, 16, 16>;
-/// ARIA-192 in CBC mode, block-aligned and in place -- what `ARIA_CBC_192` wraps.
-type Aria192Cbc<Dir> = Cbc<ARIA_192, Dir, 24, 16>;
-/// ARIA-256 in CBC mode, block-aligned and in place -- what `ARIA_CBC_256` wraps.
-type Aria256Cbc<Dir> = Cbc<ARIA_256, Dir, 32, 16>;
 
 /// The 160-byte plaintext shared by all six vectors.
 const PLAINTEXT: &str = "11111111aaaaaaaa11111111bbbbbbbb11111111cccccccc11111111dddddddd22222222aaaaaaaa22222222bbbbbbbb22222222cccccccc22222222dddddddd33333333aaaaaaaa33333333bbbbbbbb33333333cccccccc33333333dddddddd44444444aaaaaaaa44444444bbbbbbbb44444444cccccccc44444444dddddddd55555555aaaaaaaa55555555bbbbbbbb55555555cccccccc55555555dddddddd";
@@ -63,9 +53,9 @@ fn blocks10(hex_str: &str) -> [[u8; BLOCK_LEN]; 10] {
 }
 
 /// ECB: 10 independent blocks through every batching, both directions.
-fn check_ecb<const KEY_LEN: usize, P: ARIAParams>(name: &str, perm: &ARIA<P>, ct_hex: &str)
+fn check_ecb<P: ARIAParams>(name: &str, perm: &ARIAInternal<P>, ct_hex: &str)
 where
-    ARIA<P>: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    ARIAInternal<P>: BlockPermutation<BLOCK_LEN>,
 {
     let pt = blocks10(PLAINTEXT);
     let ct = blocks10(ct_hex);
@@ -102,87 +92,71 @@ where
     }
 }
 
-/// CBC: the 10-block message in one call, block by block, both directions.
-fn check_cbc<const KEY_LEN: usize, P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>>(
-    name: &str,
-    key: &KeyMaterial<KEY_LEN>,
-    ct_hex: &str,
-) {
+/// CBC: the 10-block message in one call, block by block, both directions, through a
+/// `CBC<Blocks>` key.
+fn check_cbc<'k, const KEY_LEN: usize, K>(name: &str, key: &'k K, ct_hex: &str)
+where
+    K: BlockEncryptionKey<KEY_LEN, BLOCK_LEN, BLOCK_LEN>
+        + BlockDecryptionKey<KEY_LEN, BLOCK_LEN, BLOCK_LEN>,
+{
     let iv: [u8; 16] = bytes(IV);
     let pt: [u8; 160] = bytes(PLAINTEXT);
     let ct: [u8; 160] = bytes(ct_hex);
 
-    let (mut enc, got_iv) = Cbc::<P, Encrypting, KEY_LEN, BLOCK_LEN>::do_encrypt_init_rng(
-        key,
-        &mut FixedSeedRNG::<16>::new(iv),
-    )
-    .unwrap();
+    let (mut enc, got_iv) = key.create_encryptor(&mut FixedSeedRNG::<16>::new(iv)).unwrap();
     assert_eq!(got_iv, iv, "{name}: the pinned RNG should produce the vector's IV");
     let mut data = pt;
-    enc.do_encrypt(&mut data).unwrap();
+    enc.do_encrypt_blocks_inplace(data.as_chunks_mut::<BLOCK_LEN>().0).unwrap();
     assert_eq!(data, ct, "{name}: encrypt, all blocks in one call");
 
-    let (mut enc, _) = Cbc::<P, Encrypting, KEY_LEN, BLOCK_LEN>::do_encrypt_init_rng(
-        key,
-        &mut FixedSeedRNG::<16>::new(iv),
-    )
-    .unwrap();
+    let (mut enc, _) = key.create_encryptor(&mut FixedSeedRNG::<16>::new(iv)).unwrap();
     let mut data = pt;
     for block in data.as_chunks_mut::<BLOCK_LEN>().0.iter_mut() {
-        enc.do_encrypt(block).unwrap();
+        enc.do_encrypt_blocks_inplace(core::slice::from_mut(block)).unwrap();
     }
     assert_eq!(data, ct, "{name}: encrypt, one block at a time");
 
     let mut data = ct;
-    Cbc::<P, Decrypting, KEY_LEN, BLOCK_LEN>::decrypt_in_place(key, &iv, &mut data).unwrap();
+    key.decrypt_inplace(&iv, &mut data).unwrap();
     assert_eq!(data, pt, "{name}: decrypt, one shot");
 
-    let mut dec = Cbc::<P, Decrypting, KEY_LEN, BLOCK_LEN>::do_decrypt_init(key, &iv).unwrap();
+    let mut dec = key.create_decryptor(&iv);
     let mut data = ct;
     for block in data.as_chunks_mut::<BLOCK_LEN>().0.iter_mut() {
-        dec.do_decrypt(block).unwrap();
+        dec.do_decrypt_blocks_inplace(core::slice::from_mut(block)).unwrap();
     }
     assert_eq!(data, pt, "{name}: decrypt, one block at a time");
 }
 
 #[test]
 fn aria_128_ecb() {
-    check_ecb::<16, _>("ARIA-128-ECB", &ARIA_128::new(&key::<16>(KEY_128)).unwrap(), ECB_128);
+    check_ecb("ARIA-128-ECB", &ARIA128Internal::new(&key::<16>(KEY_128)).unwrap(), ECB_128);
 }
 
 #[test]
 fn aria_192_ecb() {
-    check_ecb::<24, _>("ARIA-192-ECB", &ARIA_192::new(&key::<24>(KEY_192)).unwrap(), ECB_192);
+    check_ecb("ARIA-192-ECB", &ARIA192Internal::new(&key::<24>(KEY_192)).unwrap(), ECB_192);
 }
 
 #[test]
 fn aria_256_ecb() {
-    check_ecb::<32, _>("ARIA-256-ECB", &ARIA_256::new(&key::<32>(KEY_256)).unwrap(), ECB_256);
+    check_ecb("ARIA-256-ECB", &ARIA256Internal::new(&key::<32>(KEY_256)).unwrap(), ECB_256);
 }
 
 #[test]
 fn aria_128_cbc() {
-    let key = key::<16>(KEY_128);
-    check_cbc::<16, ARIA_128>("ARIA-128-CBC", &key, CBC_128);
-    let mut data: [u8; 160] = bytes(CBC_128);
-    Aria128Cbc::<Decrypting>::decrypt_in_place(&key, &bytes::<16>(IV), &mut data).unwrap();
-    assert_eq!(data, bytes::<160>(PLAINTEXT));
+    let key = ARIA128Key::<CBC<Blocks>>::from_key_material(&key::<16>(KEY_128)).unwrap();
+    check_cbc::<16, _>("ARIA-128-CBC", &key, CBC_128);
 }
 
 #[test]
 fn aria_192_cbc() {
-    let key = key::<24>(KEY_192);
-    check_cbc::<24, ARIA_192>("ARIA-192-CBC", &key, CBC_192);
-    let mut data: [u8; 160] = bytes(CBC_192);
-    Aria192Cbc::<Decrypting>::decrypt_in_place(&key, &bytes::<16>(IV), &mut data).unwrap();
-    assert_eq!(data, bytes::<160>(PLAINTEXT));
+    let key = ARIA192Key::<CBC<Blocks>>::from_key_material(&key::<24>(KEY_192)).unwrap();
+    check_cbc::<24, _>("ARIA-192-CBC", &key, CBC_192);
 }
 
 #[test]
 fn aria_256_cbc() {
-    let key = key::<32>(KEY_256);
-    check_cbc::<32, ARIA_256>("ARIA-256-CBC", &key, CBC_256);
-    let mut data: [u8; 160] = bytes(CBC_256);
-    Aria256Cbc::<Decrypting>::decrypt_in_place(&key, &bytes::<16>(IV), &mut data).unwrap();
-    assert_eq!(data, bytes::<160>(PLAINTEXT));
+    let key = ARIA256Key::<CBC<Blocks>>::from_key_material(&key::<32>(KEY_256)).unwrap();
+    check_cbc::<32, _>("ARIA-256-CBC", &key, CBC_256);
 }

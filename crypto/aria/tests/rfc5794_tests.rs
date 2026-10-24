@@ -8,9 +8,9 @@
 
 mod common;
 
-use bouncycastle_aria::hazmat::{ARIA, ARIA_128, ARIA_192, ARIA_256};
+use bouncycastle_aria::hazmat::{ARIA128Internal, ARIA192Internal, ARIA256Internal, ARIAInternal};
 use bouncycastle_aria::{ARIAParams, BLOCK_LEN, LANES};
-use bouncycastle_core::hazmat::ElectronicCodeBook;
+use bouncycastle_core::hazmat::{BlockPermutation, ElectronicCodeBook};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use common::bytes;
 
@@ -37,11 +37,11 @@ fn key<const N: usize>(hex_str: &str) -> KeyMaterial<N> {
 /// Every entry point, both directions, for one vector.
 fn check<const KEY_LEN: usize, P: ARIAParams>(
     name: &str,
-    perm: &ARIA<P>,
+    perm: &ARIAInternal<P>,
     plaintext: &[u8; BLOCK_LEN],
     ciphertext: &[u8; BLOCK_LEN],
 ) where
-    ARIA<P>: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    ARIAInternal<P>: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
 {
     // Single block.
     let mut b = *plaintext;
@@ -85,19 +85,19 @@ fn check<const KEY_LEN: usize, P: ARIAParams>(
 
 #[test]
 fn appendix_a_1_128_bit_key() {
-    let perm = ARIA_128::new(&key::<16>(KEY_128)).unwrap();
+    let perm = ARIA128Internal::new(&key::<16>(KEY_128)).unwrap();
     check::<16, _>("Appendix A.1", &perm, &bytes(PLAINTEXT), &bytes(CT_128));
 }
 
 #[test]
 fn appendix_a_2_192_bit_key() {
-    let perm = ARIA_192::new(&key::<24>(KEY_192)).unwrap();
+    let perm = ARIA192Internal::new(&key::<24>(KEY_192)).unwrap();
     check::<24, _>("Appendix A.2", &perm, &bytes(PLAINTEXT), &bytes(CT_192));
 }
 
 #[test]
 fn appendix_a_3_256_bit_key() {
-    let perm = ARIA_256::new(&key::<32>(KEY_256)).unwrap();
+    let perm = ARIA256Internal::new(&key::<32>(KEY_256)).unwrap();
     check::<32, _>("Appendix A.3", &perm, &bytes(PLAINTEXT), &bytes(CT_256));
 }
 
@@ -108,9 +108,9 @@ fn key_lengths_are_distinct_ciphers() {
     let mut a = bytes::<16>(PLAINTEXT);
     let mut b = a;
     let mut c = a;
-    ARIA_128::new(&key::<16>(KEY_128)).unwrap().encrypt_block(&mut a);
-    ARIA_192::new(&key::<24>(KEY_192)).unwrap().encrypt_block(&mut b);
-    ARIA_256::new(&key::<32>(KEY_256)).unwrap().encrypt_block(&mut c);
+    ARIA128Internal::new(&key::<16>(KEY_128)).unwrap().encrypt_block(&mut a);
+    ARIA192Internal::new(&key::<24>(KEY_192)).unwrap().encrypt_block(&mut b);
+    ARIA256Internal::new(&key::<32>(KEY_256)).unwrap().encrypt_block(&mut c);
     assert_ne!(a, b);
     assert_ne!(b, c);
     assert_ne!(a, c);
@@ -119,7 +119,7 @@ fn key_lengths_are_distinct_ciphers() {
 /// `Debug` prints the algorithm name only, never the round keys.
 #[test]
 fn debug_prints_only_the_name() {
-    assert_eq!(format!("{:?}", ARIA_128::new(&key::<16>(KEY_128)).unwrap()), "ARIA-128");
-    assert_eq!(format!("{:?}", ARIA_192::new(&key::<24>(KEY_192)).unwrap()), "ARIA-192");
-    assert_eq!(format!("{:?}", ARIA_256::new(&key::<32>(KEY_256)).unwrap()), "ARIA-256");
+    assert_eq!(format!("{:?}", ARIA128Internal::new(&key::<16>(KEY_128)).unwrap()), "ARIA-128");
+    assert_eq!(format!("{:?}", ARIA192Internal::new(&key::<24>(KEY_192)).unwrap()), "ARIA-192");
+    assert_eq!(format!("{:?}", ARIA256Internal::new(&key::<32>(KEY_256)).unwrap()), "ARIA-256");
 }

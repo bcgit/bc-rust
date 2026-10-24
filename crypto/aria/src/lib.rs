@@ -1,24 +1,93 @@
 //! A constant-time, table-free, low-memory ARIA block cipher engine (RFC 5794), ported from
 //! Bouncy Castle Java's `ARIAEngine`.
 //!
-//! This crate provides the raw ARIA keyed permutation -- [`ARIA_128`], [`ARIA_192`] and [`ARIA_256`]
-//! -- a 128-bit block cipher with 128-, 192- and 256-bit keys, the Korean standard block cipher
-//! (KS X 1213:2004) described in RFC 5794, which is the specification every comment in this crate
-//! cites. The four S-boxes are evaluated as Boolean circuits over bit-planes rather than looked up
-//! in tables, so the engine is constant-time and carries no tables at all; the planes are 16 bits
-//! wide so that the working set stays small, which is what "lowmemory" means here. See
-//! [Design](#design).
+//! This crate provides ARIA -- a 128-bit block cipher with 128-, 192- and 256-bit keys, the Korean
+//! standard block cipher (KS X 1213:2004) described in RFC 5794, which is the specification every
+//! comment in this crate cites -- under the library's key objects: [`ARIA128Key<M>`],
+//! [`ARIA192Key<M>`] and [`ARIA256Key<M>`], a key bound to one mode `M`, validated and expanded
+//! once, handing out that mode's encryptors and decryptors. The engines underneath,
+//! [`ARIA128Internal`] and friends, evaluate the four S-boxes as Boolean circuits over bit-planes
+//! rather than looking them up in tables, so they are constant-time and carry no tables at all;
+//! the planes are 16 bits wide so that the working set stays small, which is what "lowmemory"
+//! means here. See [Design](#design).
 //!
-//! It is a *permutation*, not a cipher you can encrypt data with, which is why it lives under
-//! [`hazmat`]. See [Security Considerations](#security-considerations).
+//! An engine is a *permutation*, not a cipher you can encrypt data with, which is why it lives
+//! under [`hazmat`]. See [Security Considerations](#security-considerations).
 //!
 //! # Usage Examples
 //!
-//! ## Encrypting and decrypting a single block
+//! ## Modes of operation
+//!
+//! A key is built once, under a mode from `bouncycastle_cipher::modes`, and used for as many
+//! messages as needed: `CBC<PKCS7>` for CBC (NIST SP 800-38A Sec 6.2) with PKCS#7 padding, `CFB`
+//! for CFB128 (Sec 6.3), `CFB8` for the `s = 8` segment size, a different and non-interoperable
+//! mode costing one ARIA call per byte, and `CTR` for CTR (Sec 6.5) with a 12-byte nonce and a
+//! 4-byte counter. The aliases [`ARIA_CBC_128`], [`ARIA_CFB_128`], [`ARIA_CFB8_128`],
+//! [`ARIA_CTR_128`] and their `_192` / `_256` siblings name the workers the keys hand out.
+//!
+//! CBC is a block cipher, so it is defined only on whole blocks and the key's mode carries a
+//! padding scheme to bridge the difference; the CFB modes and CTR are stream ciphers and take any
+//! length with no padding at all. See the `bouncycastle_cipher::modes` crate docs for the
+//! comparison.
 //!
 //! ```
-//! use bouncycastle_aria::hazmat::ARIA_128;
-//! use bouncycastle_core::hazmat::ElectronicCodeBook;
+//! use bouncycastle_aria::ARIA256Key;
+//! use bouncycastle_cipher::modes::CBC;
+//! use bouncycastle_cipher::padding::PKCS7;
+//! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
+//! use bouncycastle_core::symmetric_key::{FromKeyMaterial, SymmetricDecryptionKey, SymmetricEncryptionKey};
+//! use bouncycastle_rng::HashDRBG_SHA512;
+//!
+//! let mut rng = HashDRBG_SHA512::new_from_os();   // one RNG, held across messages
+//! let material = KeyMaterial::<32>::from_bytes_as_type(&[0x42; 32], KeyType::SymmetricCipherKey)
+//!     .expect("a 32-byte symmetric cipher key");
+//! let key = ARIA256Key::<CBC<PKCS7>>::from_key_material(&material).expect("a valid ARIA-256 key");
+//!
+//! // Any length: PKCS#7 pads it out to whole blocks, so 50 bytes is as good as 48.
+//! let plaintext = [0x5Au8; 50];
+//!
+//! // The IV is drawn from `rng` and returned; there is no API for supplying one.
+//! let (iv, ciphertext) = key.encrypt(&mut rng, &plaintext).expect("encryption");
+//! assert_eq!(ciphertext.len(), 64, "50 bytes padded out to four blocks");
+//!
+//! let recovered = key.decrypt(&iv, &ciphertext).expect("decryption");
+//! assert_eq!(recovered, plaintext);
+//! ```
+//!
+//! The stream modes take any length and return the initialisation data the same way:
+//!
+//! ```
+//! use bouncycastle_aria::ARIA256Key;
+//! use bouncycastle_cipher::modes::CTR;
+//! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
+//! use bouncycastle_core::symmetric_key::{FromKeyMaterial, SymmetricDecryptionKey, SymmetricEncryptionKey};
+//! use bouncycastle_rng::HashDRBG_SHA512;
+//!
+//! let mut rng = HashDRBG_SHA512::new_from_os();
+//! let material = KeyMaterial::<32>::from_bytes_as_type(&[0x42; 32], KeyType::SymmetricCipherKey)
+//!     .expect("a 32-byte symmetric cipher key");
+//! let key = ARIA256Key::<CTR>::from_key_material(&material).expect("a valid ARIA-256 key");
+//!
+//! // 50 bytes, and the ciphertext is 50 bytes: no padding anywhere.
+//! let plaintext = [0x5Au8; 50];
+//! let mut data = plaintext;
+//! let (_, nonce) = key.encrypt_inplace(&mut rng, &mut data).expect("encryption");
+//! assert_ne!(data, plaintext);
+//!
+//! key.decrypt_inplace(&nonce, &mut data).expect("decryption");
+//! assert_eq!(data, plaintext);
+//! ```
+//!
+//! For the block-aligned API -- whole blocks in place, through the block role pair -- make the
+//! key under `CBC<Blocks>`; the padded aliases wrap the same worker.
+//!
+//! ## The raw permutation
+//!
+//! The engine transforms one block, and `ElectronicCodeBook::new` on it is the one-shot:
+//!
+//! ```
+//! use bouncycastle_aria::hazmat::ARIA128Internal;
+//! use bouncycastle_core::hazmat::{BlockPermutation, ElectronicCodeBook};
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 //!
 //! // RFC 5794 Appendix A.1, "128-Bit Key".
@@ -28,7 +97,7 @@
 //!     KeyType::SymmetricCipherKey,
 //! ).expect("a 16-byte symmetric cipher key");
 //!
-//! let aria = ARIA_128::new(&key).expect("a valid ARIA-128 key");
+//! let aria = ARIA128Internal::new(&key).expect("a valid ARIA-128 key");
 //!
 //! let mut block = [0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77,
 //!                  0x88, 0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff];
@@ -42,26 +111,26 @@
 //!                    0x88, 0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff]);
 //! ```
 //!
-//! The 192- and 256-bit variants are [`ARIA_192`] and [`ARIA_256`], constructed from a
-//! `KeyMaterial<24>` and a `KeyMaterial<32>`; a key of the wrong length does not compile.
+//! The 192- and 256-bit variants are [`ARIA192Internal`] and [`ARIA256Internal`], constructed
+//! from a `KeyMaterial<24>` and a `KeyMaterial<32>`; a key of the wrong length does not compile.
 //!
 //! ## Four blocks at a time
 //!
 //! Each S-box circuit substitutes 16 bytes per pass and a substitution layer sends four bytes of
 //! every block through each of the four S-boxes, so four independent blocks cost the same as one.
-//! Where a caller has four, [`ARIA::encrypt_4blocks`] is four times the throughput of four
-//! [`ElectronicCodeBook::encrypt_block`](bouncycastle_core::hazmat::ElectronicCodeBook::encrypt_block) calls, and it is also the
-//! four-block batch [`ElectronicCodeBook::encrypt_4blocks`](bouncycastle_core::hazmat::ElectronicCodeBook::encrypt_4blocks) offers to modes:
+//! Where a caller has four, [`ARIAInternal::encrypt_4blocks`] is four times the throughput of four
+//! [`BlockPermutation::encrypt_block`](bouncycastle_core::hazmat::BlockPermutation::encrypt_block) calls, and it is also the
+//! four-block batch [`BlockPermutation::encrypt_4blocks`](bouncycastle_core::hazmat::BlockPermutation::encrypt_4blocks) offers to modes:
 //!
 //! ```
-//! use bouncycastle_aria::hazmat::ARIA_256;
+//! use bouncycastle_aria::hazmat::ARIA256Internal;
 //! use bouncycastle_aria::LANES;
-//! use bouncycastle_core::hazmat::ElectronicCodeBook;
+//! use bouncycastle_core::hazmat::{BlockPermutation, ElectronicCodeBook};
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 //!
 //! let key = KeyMaterial::<32>::from_bytes_as_type(&[0x42; 32], KeyType::SymmetricCipherKey)
 //!     .expect("a 32-byte symmetric cipher key");
-//! let aria = ARIA_256::new(&key).expect("a valid ARIA-256 key");
+//! let aria = ARIA256Internal::new(&key).expect("a valid ARIA-256 key");
 //!
 //! let mut blocks: [[u8; 16]; LANES] = core::array::from_fn(|i| [i as u8; 16]);
 //! let original = blocks;
@@ -69,75 +138,6 @@
 //! aria.decrypt_4blocks(&mut blocks);
 //! assert_eq!(blocks, original);
 //! ```
-//!
-//! ## Modes of operation
-//!
-//! To encrypt more than one block, use a mode of operation from `bouncycastle_cipher::modes`. This crate
-//! provides aliases that fill in the const parameters, leaving only the choices a caller actually
-//! makes: [`ARIA_CBC_128`], [`ARIA_CBC_192`] and [`ARIA_CBC_256`] for CBC (NIST SP 800-38A
-//! Sec 6.2), which take the direction **and a padding scheme**, and [`ARIA_CFB_128`] / `_192` /
-//! `_256` for CFB128 (Sec 6.3), which take only the direction. [`ARIA_CFB8_128`] / `_192` / `_256`
-//! give CFB8, the `s = 8` segment size, which is a different and non-interoperable mode costing one
-//! ARIA call per byte, and [`ARIA_CTR_128`] / `_192` / `_256` give CTR (Sec 6.5) with a 12-byte
-//! nonce and a 4-byte counter.
-//!
-//! CBC is a block cipher, so it is defined only on whole blocks and the alias carries a padding
-//! scheme to bridge the difference; the CFB modes and CTR are stream ciphers and take any length
-//! with no padding at all. See the `bouncycastle_cipher::modes` crate docs for the comparison, and
-//! [`ARIA_CBC_128`] for why the scheme is named in the type.
-//!
-//! ```
-//! use bouncycastle_aria::ARIA_CBC_256;
-//! use bouncycastle_core::hazmat::ElectronicCodeBook;
-//! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-//! use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
-//! use bouncycastle_cipher::{Decrypting, Encrypting};
-//! use bouncycastle_cipher::padding::PKCS7;
-//!
-//! let key = KeyMaterial::<32>::from_bytes_as_type(&[0x42; 32], KeyType::SymmetricCipherKey)
-//!     .expect("a 32-byte symmetric cipher key");
-//! // Any length: PKCS#7 pads it out to whole blocks, so 50 bytes is as good as 48.
-//! let plaintext = [0x5Au8; 50];
-//!
-//! // The IV is generated for you and returned; there is no API for supplying one.
-//! let (iv, ciphertext) =
-//!     ARIA_CBC_256::<Encrypting, PKCS7>::encrypt(&key, &plaintext).expect("encryption");
-//! assert_eq!(ciphertext.len(), 64, "50 bytes padded out to four blocks");
-//!
-//! let recovered =
-//!     ARIA_CBC_256::<Decrypting, PKCS7>::decrypt(&key, &iv, &ciphertext).expect("decryption");
-//! assert_eq!(recovered, plaintext);
-//! ```
-//!
-//! The stream modes take any length and return the initialisation data the same way:
-//!
-//! ```
-//! use bouncycastle_aria::ARIA_CTR_256;
-//! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-//! use bouncycastle_core::traits::{StreamCipherDecryptor, StreamCipherEncryptor};
-//! use bouncycastle_cipher::{Decrypting, Encrypting};
-//!
-//! let key = KeyMaterial::<32>::from_bytes_as_type(&[0x42; 32], KeyType::SymmetricCipherKey)
-//!     .expect("a 32-byte symmetric cipher key");
-//! // 50 bytes, and the ciphertext is 50 bytes: no padding anywhere.
-//! let plaintext = [0x5Au8; 50];
-//! let mut data = plaintext;
-//!
-//! // The nonce is generated for you and returned; there is no API for supplying one.
-//! let (written, nonce) = ARIA_CTR_256::<Encrypting>::encrypt_in_place(&key, &mut data).expect("encryption");
-//! assert_eq!(written, 50);
-//! assert_ne!(data, plaintext);
-//!
-//! ARIA_CTR_256::<Decrypting>::decrypt_in_place(&key, &nonce, &mut data).expect("decryption");
-//! assert_eq!(data, plaintext);
-//! ```
-//!
-//! For the block-aligned API -- whole blocks in place, with the length checked at compile time --
-//! name `bouncycastle_cipher::modes::Cbc` directly; that is what the CBC aliases wrap.
-//!
-//! There is no one-shot static on the permutation, because `ARIA_128::new(&key)?.encrypt_block(..)`
-//! already *is* the one shot. Data-level one-shots belong to the modes of operation, which take
-//! arbitrary-length input and generate their own initialisation data.
 //!
 //! # Design
 //!
@@ -201,13 +201,14 @@
 //! # Memory Usage
 //!
 //! No heap allocation and no lookup tables. The persistent state is the encryption round keys of
-//! Sec 2.2, one more than the number of rounds, 16 bytes each:
+//! Sec 2.2, one more than the number of rounds, 16 bytes each, held once in the key; a worker adds
+//! the mode's own state and a reference to the key:
 //!
 //! | Type | Key | Rounds | Round keys (persistent) | Tables |
 //! |---|---|---|---|---|
-//! | [`ARIA_128`] | 16 B | 12 | 13 x 16 = 208 B | 0 B |
-//! | [`ARIA_192`] | 24 B | 14 | 15 x 16 = 240 B | 0 B |
-//! | [`ARIA_256`] | 32 B | 16 | 17 x 16 = 272 B | 0 B |
+//! | [`ARIA128Internal`] | 16 B | 12 | 13 x 16 = 208 B | 0 B |
+//! | [`ARIA192Internal`] | 24 B | 14 | 15 x 16 = 240 B | 0 B |
+//! | [`ARIA256Internal`] | 32 B | 16 | 17 x 16 = 272 B | 0 B |
 //!
 //! Per-call stack usage is the four-block working state -- four words per block, 64 bytes -- plus
 //! the four class words being substituted (16 bytes), the eight `u16` planes (16 bytes), one round
@@ -221,7 +222,7 @@
 //!
 //! ## A block permutation is not a cipher
 //!
-//! [`ARIA_128`] and its siblings transform exactly 16 bytes. Using one directly on data means ECB,
+//! [`ARIA128Internal`] and its siblings transform exactly 16 bytes. Using one directly on data means ECB,
 //! which is not confidential: identical plaintext blocks produce identical ciphertext blocks, so
 //! structure in the plaintext survives encryption. **Do not do it.** Use a mode of operation, and
 //! prefer an authenticated one so that ciphertext tampering is detected. RFC 5794 Appendix B
@@ -286,6 +287,7 @@ mod cfb;
 mod cfb8;
 mod ctr;
 pub mod hazmat;
+mod key;
 mod round;
 mod sbox;
 mod schedule;
@@ -294,16 +296,17 @@ mod schedule;
 pub const BLOCK_LEN: usize = 16;
 
 /// The number of blocks the bit-sliced S-box circuits substitute at once. See
-/// [`ARIA::encrypt_4blocks`].
+/// [`ARIAInternal::encrypt_4blocks`].
 pub const LANES: usize = 4;
 
 pub use cbc::{ARIA_CBC_128, ARIA_CBC_192, ARIA_CBC_256};
 pub use cfb::{ARIA_CFB_128, ARIA_CFB_192, ARIA_CFB_256};
 pub use cfb8::{ARIA_CFB8_128, ARIA_CFB8_192, ARIA_CFB8_256};
 pub use ctr::{ARIA_CTR_128, ARIA_CTR_192, ARIA_CTR_256, CTR_NONCE_LEN};
+pub use key::{ARIA128Key, ARIA192Key, ARIA256Key, ARIAKey};
 pub use schedule::ARIAParams;
 
 // Imports needed for docs
 #[allow(unused_imports)]
-use hazmat::{ARIA, ARIA_128, ARIA_192, ARIA_256};
+use hazmat::{ARIA128Internal, ARIA192Internal, ARIA256Internal, ARIAInternal};
 // end of imports needed for docs

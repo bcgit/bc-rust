@@ -11,7 +11,7 @@
 
 mod common;
 
-use bouncycastle_aria::hazmat::{ARIA_128, ARIA_192, ARIA_256};
+use bouncycastle_aria::hazmat::{ARIA128Internal, ARIA192Internal, ARIA256Internal};
 use bouncycastle_aria::{BLOCK_LEN, LANES};
 use bouncycastle_core::hazmat::ElectronicCodeBook;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
@@ -93,9 +93,9 @@ fn two_block_override_matches<const KEY_LEN: usize, P: ElectronicCodeBook<KEY_LE
 /// Single-block API against the reference: 256 keys of each length, 8 blocks each, both directions.
 #[test]
 fn single_block_agrees_with_the_reference() {
-    single_block_agrees::<16, ARIA_128>(0x5EED_0001);
-    single_block_agrees::<24, ARIA_192>(0x5EED_0002);
-    single_block_agrees::<32, ARIA_256>(0x5EED_0003);
+    single_block_agrees::<16, ARIA128Internal>(0x5EED_0001);
+    single_block_agrees::<24, ARIA192Internal>(0x5EED_0002);
+    single_block_agrees::<32, ARIA256Internal>(0x5EED_0003);
 }
 
 /// The four-lane API -- the natural unit -- against the reference, every lane, both directions.
@@ -103,9 +103,9 @@ fn single_block_agrees_with_the_reference() {
 fn four_lanes_agree_with_the_reference() {
     fn run<const KEY_LEN: usize, P: bouncycastle_aria::ARIAParams>(
         mut seed: u32,
-        new: impl Fn(&[u8; KEY_LEN]) -> bouncycastle_aria::hazmat::ARIA<P>,
+        new: impl Fn(&[u8; KEY_LEN]) -> bouncycastle_aria::hazmat::ARIAInternal<P>,
     ) where
-        bouncycastle_aria::hazmat::ARIA<P>: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+        bouncycastle_aria::hazmat::ARIAInternal<P>: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
     {
         for _ in 0..128 {
             let key: [u8; KEY_LEN] = common::pseudo_random(&mut seed);
@@ -134,19 +134,19 @@ fn four_lanes_agree_with_the_reference() {
     }
     let km =
         |k: &[u8]| KeyMaterial::<16>::from_bytes_as_type(k, KeyType::SymmetricCipherKey).unwrap();
-    run::<16, _>(0x5EED_0031, |k| ARIA_128::new(&km(k)).unwrap());
+    run::<16, _>(0x5EED_0031, |k| ARIA128Internal::new(&km(k)).unwrap());
     let km =
         |k: &[u8]| KeyMaterial::<24>::from_bytes_as_type(k, KeyType::SymmetricCipherKey).unwrap();
-    run::<24, _>(0x5EED_0032, |k| ARIA_192::new(&km(k)).unwrap());
+    run::<24, _>(0x5EED_0032, |k| ARIA192Internal::new(&km(k)).unwrap());
     let km =
         |k: &[u8]| KeyMaterial::<32>::from_bytes_as_type(k, KeyType::SymmetricCipherKey).unwrap();
-    run::<32, _>(0x5EED_0033, |k| ARIA_256::new(&km(k)).unwrap());
+    run::<32, _>(0x5EED_0033, |k| ARIA256Internal::new(&km(k)).unwrap());
 }
 
 /// The two-block override against two single-block calls and the reference, in both slots.
 #[test]
 fn two_block_override_matches_two_single_calls() {
-    two_block_override_matches::<16, ARIA_128>(0x5EED_0021);
-    two_block_override_matches::<24, ARIA_192>(0x5EED_0022);
-    two_block_override_matches::<32, ARIA_256>(0x5EED_0023);
+    two_block_override_matches::<16, ARIA128Internal>(0x5EED_0021);
+    two_block_override_matches::<24, ARIA192Internal>(0x5EED_0022);
+    two_block_override_matches::<32, ARIA256Internal>(0x5EED_0023);
 }
