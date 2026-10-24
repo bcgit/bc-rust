@@ -1,4 +1,4 @@
-//! Criterion benchmarks for the constant-time TDES engine.
+//! Criterion benchmarks for the constant-time TDESInternal engine.
 //!
 //! The permutation processes one block per call and its pair and four-block entry points are
 //! single-block loops, so the figures to watch are the single-block throughput in each direction
@@ -6,16 +6,16 @@
 //! four-block path costs the same as four single-block calls, i.e. that nothing is lost by a mode
 //! preferring it.
 
-use bouncycastle_core::hazmat::ElectronicCodeBook;
+use bouncycastle_core::hazmat::{BlockPermutation, ElectronicCodeBook};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::traits::RNG;
 use bouncycastle_rng as rng;
-use bouncycastle_tdes::hazmat::TDES;
+use bouncycastle_tdes::hazmat::TDESInternal;
 use bouncycastle_tdes::{BLOCK_LEN, KEY_LEN};
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 use std::hint::black_box;
 
-/// 16 KiB of data, i.e. 2048 TDES blocks.
+/// 16 KiB of data, i.e. 2048 TDESInternal blocks.
 const NUM_BLOCKS: usize = 2048;
 const DATA_LEN: usize = NUM_BLOCKS * BLOCK_LEN;
 
@@ -37,7 +37,7 @@ fn key() -> KeyMaterial<KEY_LEN> {
         generator.next_bytes_out(&mut bytes).unwrap();
         let key = KeyMaterial::<KEY_LEN>::from_bytes_as_type(&bytes, KeyType::SymmetricCipherKey)
             .unwrap();
-        if TDES::new(&key).is_ok() {
+        if TDESInternal::new(&key).is_ok() {
             return key;
         }
     }
@@ -47,13 +47,13 @@ fn bench_key_expansion(c: &mut Criterion) {
     let mut group = c.benchmark_group("tdes::key expansion");
     let key = key();
     group.bench_function("TDES::new()", |b| {
-        b.iter(|| black_box(TDES::new(black_box(&key)).unwrap()))
+        b.iter(|| black_box(TDESInternal::new(black_box(&key)).unwrap()))
     });
     group.finish();
 }
 
 fn bench_tdes(c: &mut Criterion) {
-    let tdes = TDES::new(&key()).unwrap();
+    let tdes = TDESInternal::new(&key()).unwrap();
     let blocks = random_blocks();
 
     let mut group = c.benchmark_group("tdes::TDES");

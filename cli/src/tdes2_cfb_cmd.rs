@@ -1,14 +1,15 @@
 //! Two-key TDES-CFB64 decryption, streaming stdin to stdout.
 //!
 //! Decryption only: NIST SP 800-131A Rev 2 Table 1 disallows two-key TDEA for encryption,
-//! `bouncycastle-tdes` will not compile an encrypting mode over `TDES2Key`, and
+//! `TDES2Key::create_encryptor` does not compile, and
 //! [`DecryptOnlyAction`] has no `encrypt`. Everything else is `tdes-cfb decrypt` -- the first 8
 //! bytes of input are the IV, the rest any length -- see [`crate::tdes_cfb_cmd`] and
 //! [`crate::helpers::stream_mode_helpers`]. The key is the 16-byte `KEY1 || KEY2`.
 
-use crate::helpers::block_mode_helpers::{DecryptOnlyAction, load_key};
+use crate::helpers::block_mode_helpers::{DecryptOnlyAction, load_key_object};
 use crate::helpers::stream_mode_helpers::decrypt_stream;
-use bouncycastle::tdes::{BLOCK_LEN, KEY_LEN_2KEY, TDES2_CFB};
+use bouncycastle::cipher::modes::CFB;
+use bouncycastle::tdes::{BLOCK_LEN, KEY_LEN_2KEY, TDES2Key};
 
 pub(crate) fn tdes2_cfb_cmd(
     action: &DecryptOnlyAction,
@@ -17,6 +18,6 @@ pub(crate) fn tdes2_cfb_cmd(
     output_hex: bool,
 ) {
     let DecryptOnlyAction::Decrypt = action;
-    let key = load_key::<KEY_LEN_2KEY>(key, key_file, "two-key TDES");
-    decrypt_stream::<TDES2_CFB, KEY_LEN_2KEY, BLOCK_LEN>(&key, output_hex)
+    let key = load_key_object::<TDES2Key<CFB>, KEY_LEN_2KEY>(key, key_file, "two-key TDES");
+    decrypt_stream::<_, KEY_LEN_2KEY, BLOCK_LEN>(&key, None, output_hex)
 }

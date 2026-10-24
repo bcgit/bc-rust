@@ -1,12 +1,13 @@
 //! The TDEA forward and inverse cipher operations (SP 800-67r2 Sec 3.1), the key-bundle checks of
 //! Sec 3.1 and Sec 3.3.2, and the three-key engine type. The two-key engine is in
-//! [`crate::tdes2`] and shares the checks defined here.
+//! [`super::tdes2`] and shares the checks defined here.
 
 use crate::des::{Subkeys, inverse_ip, ip, rounds};
 use crate::schedule::{PARITY_MASK, expand, is_weak};
 use crate::{BLOCK_LEN, KEY_LEN};
+use bouncycastle_cipher::modes::ModeNames;
 use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
-use bouncycastle_core::hazmat::ElectronicCodeBook;
+use bouncycastle_core::hazmat::{BlockPermutation, ElectronicCodeBook};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::Algorithm;
@@ -15,17 +16,19 @@ use bouncycastle_utils::secret::Secret;
 
 pub(crate) type Block = [u8; BLOCK_LEN];
 
-/// The three-key TDEA keyed permutation (SP 800-67r2 Sec 3.1), "3TDEA".
+/// The three-key TDEA keyed permutation (SP 800-67r2 Sec 3.1), "3TDEA": the engine under
+/// [`TDES3Key`](crate::TDES3Key).
 ///
 /// The only state is the three expanded DEA keys, held in a [`Secret`] so that they are zeroized
 /// on drop and redacted from `Debug`. There is no direction flag: the inverse transformation reads
 /// the same round keys backwards (Sec 2.2), so one value serves both directions, and a
 /// constructed value is always ready to use, so there is no `init()` or `reset()`.
 ///
-/// Only bundles of three distinct keys are accepted. See `TDES::new` for what is rejected and
-/// why; for two-key TDEA, which is decryption-only, see [`crate::TDES2Key`]. See the crate docs
-/// for the standing of TDEA today.
-pub struct TDES {
+/// Only bundles of three distinct keys are accepted; its [`ElectronicCodeBook::new`] says what is
+/// rejected and why. For two-key TDEA, which is decryption-only, see
+/// [`TDES2Internal`](super::TDES2Internal). See the crate docs for the standing of TDEA today.
+#[derive(Clone)]
+pub struct TDESInternal {
     schedule: Secret<[Subkeys; 3]>,
 }
 
@@ -87,66 +90,12 @@ pub(crate) fn any_weak(keys: &[u64]) -> Result<(), SymmetricCipherError> {
     Ok(())
 }
 
-impl TDES {
-    /// Expands a 24-byte key bundle `Key1 || Key2 || Key3` into the three DEA key schedules.
-    ///
-    /// The parity bits (the last bit of each key byte, Appendix A) are ignored, as the algorithm
-    /// ignores them; a key with wrong parity is not rejected, and two keys differing only in
-    /// parity are the same key for every check below.
-    ///
-    /// # Errors
-    /// * [`KeyMaterialError::InvalidKeyType`] if the key is not [`KeyType::SymmetricCipherKey`].
-    /// * [`KeyMaterialError::InvalidLength`] if the key is not 24 bytes long.
-    /// * [`KeyMaterialError::SecurityStrength`] if the key carries a strength below 112 bits, the
-    ///   strength SP 800-57 Part 1 Rev 5, Sec 5.6.1 Table 2 assigns to 3TDEA.
-    /// * [`KeyMaterialError::WeakKey`] if the three component keys are not pairwise distinct. Sec
-    ///   3.1 defines three-key TDEA only for `Key1 != Key2`, `Key2 != Key3`, `Key3 != Key1`:
-    ///   `Key1 = Key2` or `Key2 = Key3` makes two of the three DEA transformations cancel, leaving
-    ///   single DES, and `Key1 = Key3` is two-key TDEA, which has its own decryption-only type,
-    ///   [`crate::TDES2Key`], taking the 16-byte `Key1 || Key2`.
-    /// * [`KeyMaterialError::WeakKey`] if any component is one of the 64 weak, semi-weak or
-    ///   possibly weak DEA keys of Sec 3.3.2.
-    pub(crate) fn new(key: &KeyMaterial<KEY_LEN>) -> Result<Self, SymmetricCipherError> {
-        validate_wrapper(key, KEY_LEN, Self::MAX_SECURITY_STRENGTH)?;
-        // `validate_wrapper` has established the length; this is a type change, not a check.
-        let bytes: &[u8; KEY_LEN] =
-            key.ref_to_bytes().try_into().map_err(|_| KeyMaterialError::InvalidLength)?;
-        let (keys, _) = bytes.as_chunks::<8>();
-        let k: [u64; 3] = core::array::from_fn(|i| u64::from_be_bytes(keys[i]));
-
-        // Sec 3.1: three distinct keys. Every comparison is evaluated so that timing does not say
-        // which pair matched.
-        if same_key(k[0], k[1]) | same_key(k[1], k[2]) | same_key(k[0], k[2]) {
-            return Err(REPEATED_KEY.into());
-        }
-        any_weak(&k)?;
-
-        let mut schedule = Secret::<[Subkeys; 3]>::new();
-        for (i, sk) in schedule.iter_mut().enumerate() {
-            expand(k[i], sk);
-        }
-        Ok(Self { schedule })
-    }
-
-    /// The TDEA forward cipher operation, `O = F_Key3(I_Key2(F_Key1(d)))` (Sec 3.1), in place.
-    ///
-    /// Each DEA transformation is `IP`, sixteen iterations, `IP^-1` (Sec 2.1). The `IP^-1` ending
-    /// one and the `IP` beginning the next cancel, so `IP` is applied once before the forty-eight
-    /// iterations and `IP^-1` once after; see [`rounds`].
-    pub(crate) fn encrypt_block(&self, block: &mut Block) {
-        let [k1, k2, k3] = &*self.schedule;
-        forward(block, k1, k2, k3);
-    }
-
-    /// The TDEA inverse cipher operation, `O = I_Key1(F_Key2(I_Key3(d)))` (Sec 3.1), in place.
-    pub(crate) fn decrypt_block(&self, block: &mut Block) {
-        let [k1, k2, k3] = &*self.schedule;
-        inverse(block, k1, k2, k3);
-    }
-}
-
 /// `F_Key3(I_Key2(F_Key1(d)))` on one block, with `IP` and `IP^-1` applied once around all
 /// forty-eight iterations. Shared by the three-key and two-key engines.
+///
+/// Each DEA transformation is `IP`, sixteen iterations, `IP^-1` (Sec 2.1). The `IP^-1` ending
+/// one and the `IP` beginning the next cancel, so `IP` is applied once before the forty-eight
+/// iterations and `IP^-1` once after; see [`rounds`].
 #[inline(always)]
 pub(crate) fn forward(block: &mut Block, k1: &Subkeys, k2: &Subkeys, k3: &Subkeys) {
     let (l, r) = split(block);
@@ -184,47 +133,104 @@ fn join(block: &mut Block, (l, r): (u32, u32)) {
     block[4..].copy_from_slice(&r.to_be_bytes());
 }
 
-impl Algorithm for TDES {
+impl Algorithm for TDESInternal {
     const ALG_NAME: &'static str = "TDES";
     /// SP 800-57 Part 1 Rev 5, Sec 5.6.1 Table 2: 3TDEA provides 112 bits of security strength.
     const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_112bit;
 }
 
-impl ElectronicCodeBook<KEY_LEN, BLOCK_LEN> for TDES {
+impl ElectronicCodeBook<KEY_LEN, BLOCK_LEN> for TDESInternal {
+    /// Expands a 24-byte key bundle `Key1 || Key2 || Key3` into the three DEA key schedules.
+    ///
+    /// The parity bits (the last bit of each key byte, Appendix A) are ignored, as the algorithm
+    /// ignores them; a key with wrong parity is not rejected, and two keys differing only in
+    /// parity are the same key for every check below.
+    ///
+    /// # Errors
+    /// * [`KeyMaterialError::InvalidKeyType`] if the key is not [`KeyType::SymmetricCipherKey`].
+    /// * [`KeyMaterialError::InvalidLength`] if the key is not 24 bytes long.
+    /// * [`KeyMaterialError::SecurityStrength`] if the key carries a strength below 112 bits, the
+    ///   strength SP 800-57 Part 1 Rev 5, Sec 5.6.1 Table 2 assigns to 3TDEA.
+    /// * [`KeyMaterialError::WeakKey`] if the three component keys are not pairwise distinct. Sec
+    ///   3.1 defines three-key TDEA only for `Key1 != Key2`, `Key2 != Key3`, `Key3 != Key1`:
+    ///   `Key1 = Key2` or `Key2 = Key3` makes two of the three DEA transformations cancel, leaving
+    ///   single DES, and `Key1 = Key3` is two-key TDEA, which has its own decryption-only engine,
+    ///   [`TDES2Internal`](super::TDES2Internal), taking the 16-byte `Key1 || Key2`.
+    /// * [`KeyMaterialError::WeakKey`] if any component is one of the 64 weak, semi-weak or
+    ///   possibly weak DEA keys of Sec 3.3.2.
     fn new(key: &KeyMaterial<KEY_LEN>) -> Result<Self, SymmetricCipherError> {
-        TDES::new(key)
+        validate_wrapper(key, KEY_LEN, Self::MAX_SECURITY_STRENGTH)?;
+        // `validate_wrapper` has established the length; this is a type change, not a check.
+        let bytes: &[u8; KEY_LEN] =
+            key.ref_to_bytes().try_into().map_err(|_| KeyMaterialError::InvalidLength)?;
+        let (keys, _) = bytes.as_chunks::<8>();
+        let k: [u64; 3] = core::array::from_fn(|i| u64::from_be_bytes(keys[i]));
+
+        // Sec 3.1: three distinct keys. Every comparison is evaluated so that timing does not say
+        // which pair matched.
+        if same_key(k[0], k[1]) | same_key(k[1], k[2]) | same_key(k[0], k[2]) {
+            return Err(REPEATED_KEY.into());
+        }
+        any_weak(&k)?;
+
+        let mut schedule = Secret::<[Subkeys; 3]>::new();
+        for (i, sk) in schedule.iter_mut().enumerate() {
+            expand(k[i], sk);
+        }
+        Ok(Self { schedule })
     }
+}
+
+impl BlockPermutation<BLOCK_LEN> for TDESInternal {
+    /// The TDEA forward cipher operation, `O = F_Key3(I_Key2(F_Key1(d)))` (Sec 3.1), in place.
     fn encrypt_block(&self, block: &mut Block) {
-        TDES::encrypt_block(self, block)
+        let [k1, k2, k3] = &*self.schedule;
+        forward(block, k1, k2, k3);
     }
+    /// The TDEA inverse cipher operation, `O = I_Key1(F_Key2(I_Key3(d)))` (Sec 3.1), in place.
     fn decrypt_block(&self, block: &mut Block) {
-        TDES::decrypt_block(self, block)
+        let [k1, k2, k3] = &*self.schedule;
+        inverse(block, k1, k2, k3);
     }
     // The engine has no natural unit larger than one block, so the pair and four-block methods
     // are single-block loops.
     fn encrypt_2blocks(&self, blocks: &mut [Block; 2]) {
         for block in blocks.iter_mut() {
-            TDES::encrypt_block(self, block)
+            self.encrypt_block(block)
         }
     }
     fn decrypt_2blocks(&self, blocks: &mut [Block; 2]) {
         for block in blocks.iter_mut() {
-            TDES::decrypt_block(self, block)
+            self.decrypt_block(block)
         }
     }
     fn encrypt_4blocks(&self, blocks: &mut [Block; 4]) {
         for block in blocks.iter_mut() {
-            TDES::encrypt_block(self, block)
+            self.encrypt_block(block)
         }
     }
     fn decrypt_4blocks(&self, blocks: &mut [Block; 4]) {
         for block in blocks.iter_mut() {
-            TDES::decrypt_block(self, block)
+            self.decrypt_block(block)
         }
     }
 }
 
-impl core::fmt::Debug for TDES {
+/// The cipher modes offered over TDEA (SP 800-38A Appendix E). No AEAD or MAC mode is, so those
+/// names are empty.
+impl ModeNames for TDESInternal {
+    const CBC_ALG_NAME: &'static str = "TDES_CBC";
+    const CCM_ALG_NAME: &'static str = "";
+    const CFB_ALG_NAME: &'static str = "TDES_CFB";
+    const CFB8_ALG_NAME: &'static str = "TDES_CFB8";
+    const CMAC_ALG_NAME: &'static str = "";
+    const CTR_ALG_NAME: &'static str = "TDES_CTR";
+    const ECB_ALG_NAME: &'static str = "TDES_ECB";
+    const GCM_ALG_NAME: &'static str = "";
+    const GMAC_ALG_NAME: &'static str = "";
+}
+
+impl core::fmt::Debug for TDESInternal {
     /// Prints the algorithm name only. The key schedule is secret and is never formatted.
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.write_str(Self::ALG_NAME)
@@ -239,15 +245,15 @@ mod tests {
     fn test_engine_size_is_exactly_the_three_schedules() {
         // The "Memory Usage" table in the crate docs quotes this. No direction flag, no counters:
         // three DEA keys of sixteen two-word round keys.
-        assert_eq!(size_of::<TDES>(), 3 * 16 * 2 * 4);
-        assert_eq!(size_of::<TDES>(), 384);
+        assert_eq!(size_of::<TDESInternal>(), 3 * 16 * 2 * 4);
+        assert_eq!(size_of::<TDESInternal>(), 384);
     }
 
     #[test]
     fn test_alg_name_and_strength() {
-        assert_eq!(<TDES as Algorithm>::ALG_NAME, "TDES");
-        assert_eq!(<TDES as Algorithm>::MAX_SECURITY_STRENGTH, SecurityStrength::_112bit);
-        assert!(<TDES as ElectronicCodeBook<KEY_LEN, BLOCK_LEN>>::ENCRYPTION_APPROVED);
+        assert_eq!(<TDESInternal as Algorithm>::ALG_NAME, "TDES");
+        assert_eq!(<TDESInternal as Algorithm>::MAX_SECURITY_STRENGTH, SecurityStrength::_112bit);
+        assert!(<TDESInternal as ElectronicCodeBook<KEY_LEN, BLOCK_LEN>>::ENCRYPTION_APPROVED);
     }
 
     #[test]

@@ -15,12 +15,12 @@
 //! in total (SP 800-67 Rev 2 Sec 3.4); the command does not count across invocations.
 
 use crate::helpers::block_mode_helpers::{
-    CipherDirection, decrypt_stream, encrypt_stream, load_key,
+    CipherDirection, decrypt_stream, encrypt_stream, load_key_object, start_encryptor,
 };
-use bouncycastle::cipher::modes::Cbc;
-use bouncycastle::cipher::{Decrypting, Encrypting};
-use bouncycastle::tdes::hazmat::TDES;
-use bouncycastle::tdes::{BLOCK_LEN, KEY_LEN};
+use bouncycastle::cipher::modes::CBC;
+use bouncycastle::cipher::padding::NoPadding;
+use bouncycastle::core::symmetric_key::{SymmetricDecryptionKey, SymmetricEncryptionKey};
+use bouncycastle::tdes::{BLOCK_LEN, KEY_LEN, TDES3Key};
 
 /// Names the mode in error messages.
 const MODE: &str = "CBC";
@@ -31,17 +31,23 @@ pub(crate) fn tdes_cbc_cmd(
     key_file: &Option<String>,
     output_hex: bool,
 ) {
-    let key = load_key::<KEY_LEN>(key, key_file, "TDES");
+    // `NoPadding`: whole blocks only, as the command's contract says.
+    let key = load_key_object::<TDES3Key<CBC<NoPadding>>, KEY_LEN>(key, key_file, "TDES");
     match action {
         CipherDirection::Encrypt => {
-            encrypt_stream::<Cbc<TDES, Encrypting, KEY_LEN, BLOCK_LEN>, KEY_LEN, BLOCK_LEN, BLOCK_LEN>(
-                &key, output_hex, MODE,
+            let (enc, generated_iv) = start_encryptor(None, |rng| key.create_encryptor(rng));
+            encrypt_stream::<_, BLOCK_LEN, BLOCK_LEN>(
+                enc,
+                generated_iv.as_ref(),
+                output_hex,
+                Some(MODE),
             )
         }
-        CipherDirection::Decrypt => {
-            decrypt_stream::<Cbc<TDES, Decrypting, KEY_LEN, BLOCK_LEN>, KEY_LEN, BLOCK_LEN, BLOCK_LEN>(
-                &key, output_hex, MODE,
-            )
-        }
+        CipherDirection::Decrypt => decrypt_stream::<_, BLOCK_LEN, BLOCK_LEN>(
+            None,
+            |iv| key.create_decryptor(iv),
+            output_hex,
+            Some(MODE),
+        ),
     }
 }

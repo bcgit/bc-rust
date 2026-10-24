@@ -1,4 +1,5 @@
-//! Key-bundle handling: what `TDES::new` accepts and rejects, and why.
+//! Key-bundle handling: what the engines' `ElectronicCodeBook::new` accepts and rejects, and why.
+//! The keys at the crate root run these checks through it, see `mode_key_tests.rs`.
 //!
 //! * The 4 weak, 12 semi-weak and 48 possibly weak DEA keys listed in SP 800-67r2 Sec 3.3.2, all
 //!   rejected in any component position, and shown to be exactly the 64 keys the engine's
@@ -9,12 +10,12 @@
 //! * The `KeyMaterial` checks: type, length and security strength.
 
 use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
-use bouncycastle_core::hazmat::ElectronicCodeBook;
 use bouncycastle_core::hazmat::do_hazardous_operations;
+use bouncycastle_core::hazmat::{BlockPermutation, ElectronicCodeBook};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::Algorithm;
-use bouncycastle_tdes::hazmat::{TDES, TDES2Key};
+use bouncycastle_tdes::hazmat::{TDES2Internal, TDESInternal};
 use bouncycastle_tdes::{BLOCK_LEN, KEY_LEN, KEY_LEN_2KEY};
 
 /// Sec 3.3.2, "Keys that are considered weak are (in hexadecimal format)".
@@ -67,13 +68,13 @@ fn bundle(k: [u64; 3]) -> KeyMaterial<KEY_LEN> {
     KeyMaterial::<KEY_LEN>::from_bytes_as_type(&bytes, KeyType::SymmetricCipherKey).unwrap()
 }
 
-fn is_weak_key_error(result: Result<TDES, SymmetricCipherError>) -> bool {
+fn is_weak_key_error(result: Result<TDESInternal, SymmetricCipherError>) -> bool {
     matches!(result, Err(SymmetricCipherError::KeyMaterialError(KeyMaterialError::WeakKey(_))))
 }
 
 #[test]
 fn a_good_bundle_is_accepted() {
-    assert!(TDES::new(&bundle(GOOD)).is_ok());
+    assert!(TDESInternal::new(&bundle(GOOD)).is_ok());
 }
 
 #[test]
@@ -86,14 +87,14 @@ fn every_listed_weak_key_is_rejected_in_every_position() {
             let mut k = GOOD;
             k[position] = weak;
             assert!(
-                is_weak_key_error(TDES::new(&bundle(k))),
+                is_weak_key_error(TDESInternal::new(&bundle(k))),
                 "weak key {weak:016x} in position {} should be rejected",
                 position + 1
             );
             // ...and with the parity bits flipped, since the algorithm ignores them.
             k[position] = weak ^ !PARITY_MASK;
             assert!(
-                is_weak_key_error(TDES::new(&bundle(k))),
+                is_weak_key_error(TDESInternal::new(&bundle(k))),
                 "weak key {weak:016x} with even parity"
             );
         }
@@ -150,7 +151,10 @@ fn a_key_one_bit_away_from_weak_is_accepted() {
         let nearly = weak ^ (1u64 << 62); // key bit 2, not a parity bit
         let mut k = GOOD;
         k[1] = nearly;
-        assert!(TDES::new(&bundle(k)).is_ok(), "{nearly:016x} should not be treated as weak");
+        assert!(
+            TDESInternal::new(&bundle(k)).is_ok(),
+            "{nearly:016x} should not be treated as weak"
+        );
     }
 }
 
@@ -158,21 +162,21 @@ fn a_key_one_bit_away_from_weak_is_accepted() {
 fn repeated_component_keys_are_rejected() {
     let [a, b, c] = GOOD;
     // Key1 = Key2 and Key2 = Key3 collapse to single DES; Key1 = Key3 is two-key TDEA.
-    assert!(is_weak_key_error(TDES::new(&bundle([a, a, c]))), "Key1 = Key2");
-    assert!(is_weak_key_error(TDES::new(&bundle([a, b, b]))), "Key2 = Key3");
-    assert!(is_weak_key_error(TDES::new(&bundle([a, b, a]))), "Key1 = Key3 (two-key TDEA)");
-    assert!(is_weak_key_error(TDES::new(&bundle([a, a, a]))), "three identical keys");
+    assert!(is_weak_key_error(TDESInternal::new(&bundle([a, a, c]))), "Key1 = Key2");
+    assert!(is_weak_key_error(TDESInternal::new(&bundle([a, b, b]))), "Key2 = Key3");
+    assert!(is_weak_key_error(TDESInternal::new(&bundle([a, b, a]))), "Key1 = Key3 (two-key TDEA)");
+    assert!(is_weak_key_error(TDESInternal::new(&bundle([a, a, a]))), "three identical keys");
     // Differing only in parity is the same key to the engine, so it is still a repeat.
     assert!(
-        is_weak_key_error(TDES::new(&bundle([a, a ^ !PARITY_MASK, c]))),
+        is_weak_key_error(TDESInternal::new(&bundle([a, a ^ !PARITY_MASK, c]))),
         "parity-only difference"
     );
 }
 
 #[test]
 fn parity_bits_do_not_change_the_cipher() {
-    let good = TDES::new(&bundle(GOOD)).unwrap();
-    let flipped = TDES::new(&bundle([
+    let good = TDESInternal::new(&bundle(GOOD)).unwrap();
+    let flipped = TDESInternal::new(&bundle([
         GOOD[0] ^ !PARITY_MASK,
         GOOD[1] ^ 0x0000_0000_0000_0001,
         GOOD[2] ^ 0x0100_0100_0100_0100,
@@ -192,7 +196,7 @@ fn parity_bits_do_not_change_the_cipher() {
 #[test]
 fn a_non_parity_bit_does_change_the_cipher() {
     // The complement of the test above: every one of the 56 x 3 effective key bits matters.
-    let good = TDES::new(&bundle(GOOD)).unwrap();
+    let good = TDESInternal::new(&bundle(GOOD)).unwrap();
     let block = [0x5Au8; BLOCK_LEN];
     let mut reference = block;
     good.encrypt_block(&mut reference);
@@ -204,7 +208,7 @@ fn a_non_parity_bit_does_change_the_cipher() {
             let mut k = GOOD;
             k[position] ^= 1u64 << bit;
             let mut out = block;
-            TDES::new(&bundle(k)).unwrap().encrypt_block(&mut out);
+            TDESInternal::new(&bundle(k)).unwrap().encrypt_block(&mut out);
             assert_ne!(out, reference, "key {} bit {bit} had no effect", position + 1);
         }
     }
@@ -220,7 +224,7 @@ fn the_key_material_checks() {
     // Wrong type.
     let mac_key = KeyMaterial::<KEY_LEN>::from_bytes_as_type(&bytes, KeyType::MACKey).unwrap();
     assert!(matches!(
-        TDES::new(&mac_key),
+        TDESInternal::new(&mac_key),
         Err(SymmetricCipherError::KeyMaterialError(KeyMaterialError::InvalidKeyType(_)))
     ));
 
@@ -228,28 +232,28 @@ fn the_key_material_checks() {
     let mut key = bundle(GOOD);
     do_hazardous_operations(&mut key, |k| k.set_security_strength(SecurityStrength::None)).unwrap();
     assert!(matches!(
-        TDES::new(&key),
+        TDESInternal::new(&key),
         Err(SymmetricCipherError::KeyMaterialError(KeyMaterialError::SecurityStrength(_)))
     ));
     do_hazardous_operations(&mut key, |k| k.set_security_strength(SecurityStrength::_112bit))
         .unwrap();
-    assert!(TDES::new(&key).is_ok());
+    assert!(TDESInternal::new(&key).is_ok());
 
     // An all-zero buffer is tagged Zeroized by KeyMaterial and rejected on type.
     let zero =
         KeyMaterial::<KEY_LEN>::from_bytes_as_type(&[0u8; KEY_LEN], KeyType::SymmetricCipherKey)
             .unwrap();
     assert!(matches!(
-        TDES::new(&zero),
+        TDESInternal::new(&zero),
         Err(SymmetricCipherError::KeyMaterialError(KeyMaterialError::InvalidKeyType(_)))
     ));
 
-    assert_eq!(<TDES as Algorithm>::MAX_SECURITY_STRENGTH, SecurityStrength::_112bit);
+    assert_eq!(<TDESInternal as Algorithm>::MAX_SECURITY_STRENGTH, SecurityStrength::_112bit);
 }
 
 #[test]
 fn debug_output_names_the_algorithm_only() {
-    let tdes = TDES::new(&bundle(GOOD)).unwrap();
+    let tdes = TDESInternal::new(&bundle(GOOD)).unwrap();
     assert_eq!(format!("{tdes:?}"), "TDES");
 }
 
@@ -263,20 +267,20 @@ fn bundle2(k: [u64; 2]) -> KeyMaterial<KEY_LEN_2KEY> {
     KeyMaterial::<KEY_LEN_2KEY>::from_bytes_as_type(&bytes, KeyType::SymmetricCipherKey).unwrap()
 }
 
-fn is_weak_key_error2(result: Result<TDES2Key, SymmetricCipherError>) -> bool {
+fn is_weak_key_error2(result: Result<TDES2Internal, SymmetricCipherError>) -> bool {
     matches!(result, Err(SymmetricCipherError::KeyMaterialError(KeyMaterialError::WeakKey(_))))
 }
 
 #[test]
 fn two_key_bundle_is_the_three_key_bundle_with_key3_equal_to_key1() {
     // Sec 3.1: 2TDEA is `Key3 = Key1`. `TDES` refuses that bundle; `TDES2Key` computes it. Check
-    // against a three-key engine built by hand from the same DEA keys is impossible (TDES rejects
+    // against a three-key engine built by hand from the same DEA keys is impossible (TDESInternal rejects
     // it), so check the definition directly: F_K1(I_K2(F_K1(d))) via the single-DES identity
     // F_K1(I_K1(x)) = x -- encrypting with (K1, K2) then decrypting with (K1, K2) round-trips, and
     // the result differs from three-key TDEA with an unrelated third key.
     let [a, b, c] = GOOD;
-    let two = TDES2Key::new(&bundle2([a, b])).unwrap();
-    let three = TDES::new(&bundle([a, b, c])).unwrap();
+    let two = TDES2Internal::new(&bundle2([a, b])).unwrap();
+    let three = TDESInternal::new(&bundle([a, b, c])).unwrap();
     let block = [0x5Au8; BLOCK_LEN];
     let mut x = block;
     two.encrypt_block(&mut x);
@@ -291,16 +295,16 @@ fn two_key_bundle_is_the_three_key_bundle_with_key3_equal_to_key1() {
 #[test]
 fn two_key_repeated_or_weak_components_are_rejected() {
     let [a, b, _] = GOOD;
-    assert!(is_weak_key_error2(TDES2Key::new(&bundle2([a, a]))), "Key1 = Key2 is single DES");
+    assert!(is_weak_key_error2(TDES2Internal::new(&bundle2([a, a]))), "Key1 = Key2 is single DES");
     assert!(
-        is_weak_key_error2(TDES2Key::new(&bundle2([a, a ^ !PARITY_MASK]))),
+        is_weak_key_error2(TDES2Internal::new(&bundle2([a, a ^ !PARITY_MASK]))),
         "parity-only difference"
     );
     for &weak in WEAK.iter().chain(SEMI_WEAK.iter()).chain(POSSIBLY_WEAK.iter()) {
-        assert!(is_weak_key_error2(TDES2Key::new(&bundle2([weak, b]))), "{weak:016x} as Key1");
-        assert!(is_weak_key_error2(TDES2Key::new(&bundle2([a, weak]))), "{weak:016x} as Key2");
+        assert!(is_weak_key_error2(TDES2Internal::new(&bundle2([weak, b]))), "{weak:016x} as Key1");
+        assert!(is_weak_key_error2(TDES2Internal::new(&bundle2([a, weak]))), "{weak:016x} as Key2");
     }
-    assert!(TDES2Key::new(&bundle2([a, b])).is_ok());
+    assert!(TDES2Internal::new(&bundle2([a, b])).is_ok());
 }
 
 #[test]
@@ -311,7 +315,7 @@ fn two_key_material_checks_and_metadata() {
     bytes[8..].copy_from_slice(&b.to_be_bytes());
     let mac_key = KeyMaterial::<KEY_LEN_2KEY>::from_bytes_as_type(&bytes, KeyType::MACKey).unwrap();
     assert!(matches!(
-        TDES2Key::new(&mac_key),
+        TDES2Internal::new(&mac_key),
         Err(SymmetricCipherError::KeyMaterialError(KeyMaterialError::InvalidKeyType(_)))
     ));
 
@@ -319,10 +323,10 @@ fn two_key_material_checks_and_metadata() {
     // library models, so no strength is too low for it.
     let mut key = bundle2([a, b]);
     do_hazardous_operations(&mut key, |k| k.set_security_strength(SecurityStrength::None)).unwrap();
-    assert!(TDES2Key::new(&key).is_ok());
-    assert_eq!(<TDES2Key as Algorithm>::MAX_SECURITY_STRENGTH, SecurityStrength::None);
-    assert_eq!(<TDES2Key as Algorithm>::ALG_NAME, "TDES-2KEY");
-    assert!(!<TDES2Key as ElectronicCodeBook<KEY_LEN_2KEY, BLOCK_LEN>>::ENCRYPTION_APPROVED);
-    assert!(<TDES as ElectronicCodeBook<KEY_LEN, BLOCK_LEN>>::ENCRYPTION_APPROVED);
-    assert_eq!(format!("{:?}", TDES2Key::new(&bundle2([a, b])).unwrap()), "TDES-2KEY");
+    assert!(TDES2Internal::new(&key).is_ok());
+    assert_eq!(<TDES2Internal as Algorithm>::MAX_SECURITY_STRENGTH, SecurityStrength::None);
+    assert_eq!(<TDES2Internal as Algorithm>::ALG_NAME, "TDES-2KEY");
+    assert!(!<TDES2Internal as ElectronicCodeBook<KEY_LEN_2KEY, BLOCK_LEN>>::ENCRYPTION_APPROVED);
+    assert!(<TDESInternal as ElectronicCodeBook<KEY_LEN, BLOCK_LEN>>::ENCRYPTION_APPROVED);
+    assert_eq!(format!("{:?}", TDES2Internal::new(&bundle2([a, b])).unwrap()), "TDES-2KEY");
 }

@@ -36,10 +36,10 @@
 //! TDEA is a legacy algorithm, disallowed for encryption by NIST SP 800-131A Rev 2 after 2023; see
 //! the `bouncycastle-tdes` crate docs.
 
-use crate::helpers::block_mode_helpers::{CipherDirection, load_key};
+use crate::helpers::block_mode_helpers::{CipherDirection, load_key_object};
 use crate::helpers::stream_mode_helpers::run_stream_mode;
-use bouncycastle::cipher::{Decrypting, Encrypting};
-use bouncycastle::tdes::{CTR_NONCE_LEN, KEY_LEN, TDES_CTR};
+use bouncycastle::cipher::modes::CTR;
+use bouncycastle::tdes::{BLOCK_LEN, CTR_NONCE_LEN, KEY_LEN, TDES3Key};
 
 pub(crate) fn tdes_ctr_cmd(
     action: &CipherDirection,
@@ -47,8 +47,7 @@ pub(crate) fn tdes_ctr_cmd(
     key_file: &Option<String>,
     output_hex: bool,
 ) {
-    let key = load_key::<KEY_LEN>(key, key_file, "TDES");
-    run_stream_mode::<TDES_CTR<Encrypting>, TDES_CTR<Decrypting>, KEY_LEN, CTR_NONCE_LEN>(
-        action, &key, output_hex,
-    )
+    let key =
+        load_key_object::<TDES3Key<CTR<CTR_NONCE_LEN, BLOCK_LEN>>, KEY_LEN>(key, key_file, "TDES");
+    run_stream_mode::<_, KEY_LEN, CTR_NONCE_LEN>(action, &key, None, output_hex)
 }
