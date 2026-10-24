@@ -97,29 +97,34 @@ fn pseudo_random(len: usize, seed: u32) -> Vec<u8> {
         .collect()
 }
 
-/// The library's answer for the same key, nonce and ciphertext, so the CLI can be held to it.
-fn library_ctr_decrypt<const KEY_LEN: usize, P>(key_hex: &str, nonce: &[u8], data: &mut [u8])
+/// The library's answer for the same key, init data and ciphertext, so the CLI can be held to
+/// it: the key object's in-place decryption.
+fn library_ctr_decrypt<'k, const KEY_LEN: usize, K>(key: &'k K, init: &[u8], data: &mut [u8])
 where
-    P: bouncycastle::core::hazmat::ElectronicCodeBook<KEY_LEN, 16>,
+    K: bouncycastle::core::symmetric_key::SymmetricDecryptionKey<KEY_LEN, NONCE_LEN, 0>,
+    K::Decryptor<'k>: bouncycastle::core::traits::StreamCipherDecryptor<NONCE_LEN>,
 {
-    use bouncycastle::camellia::CTR_NONCE_LEN;
-    use bouncycastle::cipher::Decrypting;
-    use bouncycastle::cipher::modes::Ctr;
-    use bouncycastle::core::key_material::{KeyMaterial, KeyType};
-    use bouncycastle::core::traits::StreamCipherDecryptor;
+    let init: [u8; NONCE_LEN] = init.try_into().expect("the mode's init data length");
+    key.decrypt_inplace(&init, data).expect("decryption");
+}
 
+/// The key object for `key_hex`, under the mode the command uses.
+fn key_object<const KEY_LEN: usize, K>(key_hex: &str) -> K
+where
+    K: bouncycastle::core::symmetric_key::FromKeyMaterial<KEY_LEN>,
+{
+    use bouncycastle::core::key_material::{KeyMaterial, KeyType};
     let key_bytes: [u8; KEY_LEN] = unhex(key_hex).try_into().expect("the right key length");
     let key = KeyMaterial::<KEY_LEN>::from_bytes_as_type(&key_bytes, KeyType::SymmetricCipherKey)
         .expect("a valid symmetric cipher key");
-    let nonce: [u8; CTR_NONCE_LEN] = nonce.try_into().expect("a 12-byte nonce");
-    Ctr::<P, Decrypting, KEY_LEN, 16, CTR_NONCE_LEN>::decrypt_in_place(&key, &nonce, data)
-        .expect("decryption");
+    K::from_key_material(&key).expect("a valid key")
 }
 
 /// What each command emits must be exactly what `Ctr` over the matching permutation produces.
 #[test]
 fn the_commands_are_ctr_over_camellia() {
-    use bouncycastle::camellia::hazmat::{Camellia_128, Camellia_192, Camellia_256};
+    use bouncycastle::camellia::{Camellia128Key, Camellia192Key, Camellia256Key};
+    use bouncycastle::cipher::modes::CTR;
 
     for len in [1usize, 5, 16, 17, 64] {
         let plaintext = pseudo_random(len, len as u32);
@@ -127,19 +132,31 @@ fn the_commands_are_ctr_over_camellia() {
         let out = run_ok(&["camellia128-ctr", "encrypt", "--key", KEY_128], &plaintext);
         let (nonce, body) = out.split_at(NONCE_LEN);
         let mut recovered = body.to_vec();
-        library_ctr_decrypt::<16, Camellia_128>(KEY_128, nonce, &mut recovered);
+        library_ctr_decrypt::<16, _>(
+            &key_object::<16, Camellia128Key<CTR>>(KEY_128),
+            nonce,
+            &mut recovered,
+        );
         assert_eq!(recovered, plaintext, "camellia128-ctr, len {len}");
 
         let out = run_ok(&["camellia192-ctr", "encrypt", "--key", KEY_192], &plaintext);
         let (nonce, body) = out.split_at(NONCE_LEN);
         let mut recovered = body.to_vec();
-        library_ctr_decrypt::<24, Camellia_192>(KEY_192, nonce, &mut recovered);
+        library_ctr_decrypt::<24, _>(
+            &key_object::<24, Camellia192Key<CTR>>(KEY_192),
+            nonce,
+            &mut recovered,
+        );
         assert_eq!(recovered, plaintext, "camellia192-ctr, len {len}");
 
         let out = run_ok(&["camellia256-ctr", "encrypt", "--key", KEY_256], &plaintext);
         let (nonce, body) = out.split_at(NONCE_LEN);
         let mut recovered = body.to_vec();
-        library_ctr_decrypt::<32, Camellia_256>(KEY_256, nonce, &mut recovered);
+        library_ctr_decrypt::<32, _>(
+            &key_object::<32, Camellia256Key<CTR>>(KEY_256),
+            nonce,
+            &mut recovered,
+        );
         assert_eq!(recovered, plaintext, "camellia256-ctr, len {len}");
     }
 }

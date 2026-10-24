@@ -13,7 +13,9 @@ mod common;
 mod ntt_cryptrec_data;
 
 use bouncycastle_camellia::BLOCK_LEN;
-use bouncycastle_camellia::hazmat::{Camellia_128, Camellia_192, Camellia_256};
+use bouncycastle_camellia::hazmat::{
+    Camellia128Internal, Camellia192Internal, Camellia256Internal,
+};
 use bouncycastle_core::hazmat::ElectronicCodeBook;
 use bouncycastle_core::hazmat::do_hazardous_operations;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
@@ -86,7 +88,7 @@ fn plaintexts_are_single_bits() {
 fn camellia_128_all_ten_keys() {
     let mut n = 0;
     for (i, set) in CAMELLIA_128.iter().enumerate() {
-        n += check_key_set::<16, Camellia_128>(128, i + 1, set);
+        n += check_key_set::<16, Camellia128Internal>(128, i + 1, set);
     }
     assert_eq!(n, 1280);
 }
@@ -95,7 +97,7 @@ fn camellia_128_all_ten_keys() {
 fn camellia_192_all_ten_keys() {
     let mut n = 0;
     for (i, set) in CAMELLIA_192.iter().enumerate() {
-        n += check_key_set::<24, Camellia_192>(192, i + 1, set);
+        n += check_key_set::<24, Camellia192Internal>(192, i + 1, set);
     }
     assert_eq!(n, 1280);
 }
@@ -104,7 +106,7 @@ fn camellia_192_all_ten_keys() {
 fn camellia_256_all_ten_keys() {
     let mut n = 0;
     for (i, set) in CAMELLIA_256.iter().enumerate() {
-        n += check_key_set::<32, Camellia_256>(256, i + 1, set);
+        n += check_key_set::<32, Camellia256Internal>(256, i + 1, set);
     }
     assert_eq!(n, 1280);
 }

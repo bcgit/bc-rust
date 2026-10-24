@@ -10,33 +10,36 @@
 //!   `test/recipes/30-test_evp_data/evpciph_camellia.txt` (OpenSSL 3.6.2), transcribed from the
 //!   file. For each key length the four entries chain -- each `IV` is the previous `Ciphertext` --
 //!   so they form one four-block CFB128 message under the IV `000102..0f`, which is what is checked
-//!   here through the [`Camellia_CFB_128`] / `_192` / `_256` aliases. The plaintext blocks and the
-//!   keys are NIST SP 800-38A Appendix F's.
+//!   here through `Camellia128Key<CFB>` and its siblings. The plaintext blocks and the keys are
+//!   NIST SP 800-38A Appendix F's.
 //! * **CTR.** RFC 5528's nine Camellia-CTR test vectors (Sec 4.1). Its counter block is a 4-octet
 //!   nonce, an 8-octet IV and a 4-octet block counter **starting at one**, where `Ctr` here takes a
 //!   12-byte nonce and a counter starting at zero, so the published counter blocks are one step
-//!   past the first block these aliases generate and cannot be reached through them. The vectors
+//!   past the first block the `CTR` keys generate and cannot be reached through them. The vectors
 //!   therefore pin [`reference_ctr`], written from the SP 800-38A Sec 6.5 equations over the
-//!   permutation, and the aliases are then required to agree with that same reference on the
-//!   counter blocks they do produce.
+//!   permutation, and the keys are then required to agree with that same reference on the counter
+//!   blocks they do produce.
 //! * **CFB8.** There is no published vector: the OpenSSL file says in as many words that it does
 //!   not carry `CFB{1,8}-CAMELLIAxxx`. [`reference_cfb8`] evaluates the Sec 6.3 equations at
-//!   `s = 8` over the permutation, and the aliases are held to it.
+//!   `s = 8` over the permutation, and the `CFB8` keys are held to it.
 //!
 //! Everything internal to the modes -- the counter increment, the short final block, the shift
 //! register, the chunking -- is covered by the SP 800-38A and ACVP vectors in `bouncycastle_cipher::modes`.
 
 mod common;
 
-use bouncycastle_camellia::hazmat::{Camellia_128, Camellia_192, Camellia_256};
-use bouncycastle_camellia::{
-    BLOCK_LEN, CTR_NONCE_LEN, Camellia_CFB_128, Camellia_CFB_192, Camellia_CFB_256,
-    Camellia_CFB8_128, Camellia_CFB8_192, Camellia_CFB8_256, Camellia_CTR_128, Camellia_CTR_192,
-    Camellia_CTR_256,
+use bouncycastle_camellia::hazmat::{
+    Camellia128Internal, Camellia192Internal, Camellia256Internal,
 };
-use bouncycastle_cipher::{Decrypting, Encrypting};
+use bouncycastle_camellia::{
+    BLOCK_LEN, CTR_NONCE_LEN, Camellia128Key, Camellia192Key, Camellia256Key,
+};
+use bouncycastle_cipher::modes::{CFB, CFB8, CTR};
 use bouncycastle_core::hazmat::ElectronicCodeBook;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
+use bouncycastle_core::symmetric_key::{
+    FromKeyMaterial, SymmetricDecryptionKey, SymmetricEncryptionKey,
+};
 use bouncycastle_core::traits::{StreamCipherDecryptor, StreamCipherEncryptor};
 use bouncycastle_core_test_framework::FixedSeedRNG;
 use common::bytes;
@@ -85,67 +88,64 @@ const CFB_CT_256: &str = concat!(
     "5953ADCE14DB8C7F39F1BD39F359BFFA",
 );
 
-/// One key length's CFB128 vector: encrypted under the vector's own IV, in one call and then block
-/// by block, and decrypted back both ways.
-fn check_cfb<const KEY_LEN: usize, Enc, Dec>(name: &str, key_hex: &str, expected: &str)
+/// One key length's CFB128 vector, through its `CFB` key: encrypted under the vector's own IV, in
+/// one call and then block by block, and decrypted back both ways.
+fn check_cfb<'k, const KEY_LEN: usize, K>(name: &str, key: &'k K, expected: &str)
 where
-    Enc: StreamCipherEncryptor<KEY_LEN, BLOCK_LEN>,
-    Dec: StreamCipherDecryptor<KEY_LEN, BLOCK_LEN>,
+    K: SymmetricEncryptionKey<KEY_LEN, BLOCK_LEN, 0>
+        + SymmetricDecryptionKey<KEY_LEN, BLOCK_LEN, 0>,
+    K::Encryptor<'k>: StreamCipherEncryptor<BLOCK_LEN>,
+    K::Decryptor<'k>: StreamCipherDecryptor<BLOCK_LEN>,
 {
-    let key = key_material::<KEY_LEN>(key_hex);
     let iv = bytes::<BLOCK_LEN>(CFB_IV);
     let pt = bytes::<64>(CFB_PT);
     let ct = bytes::<64>(expected);
 
     // There is no API for supplying an IV, so pin the RNG to the vector's and check what came back.
     let (mut enc, got_iv) =
-        Enc::do_encrypt_init_rng(&key, &mut FixedSeedRNG::<BLOCK_LEN>::new(iv)).expect("enc init");
+        key.create_encryptor(&mut FixedSeedRNG::<BLOCK_LEN>::new(iv)).expect("enc init");
     assert_eq!(got_iv, iv, "{name}: the pinned RNG should produce the vector's IV");
     let mut data = pt;
-    let written = enc.do_encrypt(&mut data).expect("encryption");
-    assert_eq!(written, pt.len(), "{name}: a stream cipher writes exactly what it was given");
+    enc.do_encrypt_inplace(&mut data).expect("encryption");
     assert_eq!(data, ct, "{name} encrypt, one call");
 
     let (mut enc, _) =
-        Enc::do_encrypt_init_rng(&key, &mut FixedSeedRNG::<BLOCK_LEN>::new(iv)).expect("enc init");
+        key.create_encryptor(&mut FixedSeedRNG::<BLOCK_LEN>::new(iv)).expect("enc init");
     let mut data = pt;
     for block in data.chunks_mut(BLOCK_LEN) {
-        enc.do_encrypt(block).expect("encryption");
+        enc.do_encrypt_inplace(block).expect("encryption");
     }
     assert_eq!(data, ct, "{name} encrypt, one block at a time");
 
     let mut data = ct;
-    Dec::decrypt_in_place(&key, &iv, &mut data).expect("decryption");
+    key.decrypt_inplace(&iv, &mut data).expect("decryption");
     assert_eq!(data, pt, "{name} decrypt, one shot");
 
     // Seven bytes at a time: a stream cipher must not care where the call boundaries fall.
-    let mut dec = Dec::do_decrypt_init(&key, &iv).expect("dec init");
+    let mut dec = key.create_decryptor(&iv);
     let mut data = ct;
     for piece in data.chunks_mut(7) {
-        dec.do_decrypt(piece).expect("decryption");
+        dec.do_decrypt_inplace(piece).expect("decryption");
     }
     assert_eq!(data, pt, "{name} decrypt, seven bytes at a time");
 }
 
 #[test]
 fn cfb128_camellia128_openssl_vectors() {
-    check_cfb::<16, Camellia_CFB_128<Encrypting>, Camellia_CFB_128<Decrypting>>(
-        "CFB128-CAMELLIA128", KEY_128, CFB_CT_128,
-    );
+    let key = Camellia128Key::<CFB>::from_key_material(&key_material::<16>(KEY_128)).unwrap();
+    check_cfb::<16, _>("CFB128-CAMELLIA128", &key, CFB_CT_128);
 }
 
 #[test]
 fn cfb128_camellia192_openssl_vectors() {
-    check_cfb::<24, Camellia_CFB_192<Encrypting>, Camellia_CFB_192<Decrypting>>(
-        "CFB128-CAMELLIA192", KEY_192, CFB_CT_192,
-    );
+    let key = Camellia192Key::<CFB>::from_key_material(&key_material::<24>(KEY_192)).unwrap();
+    check_cfb::<24, _>("CFB128-CAMELLIA192", &key, CFB_CT_192);
 }
 
 #[test]
 fn cfb128_camellia256_openssl_vectors() {
-    check_cfb::<32, Camellia_CFB_256<Encrypting>, Camellia_CFB_256<Decrypting>>(
-        "CFB128-CAMELLIA256", KEY_256, CFB_CT_256,
-    );
+    let key = Camellia256Key::<CFB>::from_key_material(&key_material::<32>(KEY_256)).unwrap();
+    check_cfb::<32, _>("CFB128-CAMELLIA256", &key, CFB_CT_256);
 }
 
 // ---- CTR: RFC 5528's vectors, through a reference built from the equations ----------------------
@@ -289,24 +289,26 @@ fn hex_vec(hex_str: &str) -> Vec<u8> {
 
 #[test]
 fn rfc5528_ctr_vectors_pin_the_reference() {
-    check_ctr_vectors::<Camellia_128, 16>("RFC 5528 Camellia-128-CTR", &CTR_VECTORS_128);
-    check_ctr_vectors::<Camellia_192, 24>("RFC 5528 Camellia-192-CTR", &CTR_VECTORS_192);
-    check_ctr_vectors::<Camellia_256, 32>("RFC 5528 Camellia-256-CTR", &CTR_VECTORS_256);
+    check_ctr_vectors::<Camellia128Internal, 16>("RFC 5528 Camellia-128-CTR", &CTR_VECTORS_128);
+    check_ctr_vectors::<Camellia192Internal, 24>("RFC 5528 Camellia-192-CTR", &CTR_VECTORS_192);
+    check_ctr_vectors::<Camellia256Internal, 32>("RFC 5528 Camellia-256-CTR", &CTR_VECTORS_256);
 }
 
-/// Each CTR alias agrees with the pinned reference on the counter blocks it does produce: the
+/// Each `CTR` key agrees with the pinned reference on the counter blocks it does produce: the
 /// 12-byte nonce followed by a four-byte counter starting at zero. Lengths cross the block boundary
 /// and end on a short final block, which is where `MSB_u(O_n)` applies.
-fn check_ctr_alias<P, const KEY_LEN: usize, Enc, Dec>(name: &str, key_hex: &str)
+fn check_ctr_key<'k, P, const KEY_LEN: usize, K>(name: &str, key_hex: &str, key: &'k K)
 where
     P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
-    Enc: StreamCipherEncryptor<KEY_LEN, CTR_NONCE_LEN>,
-    Dec: StreamCipherDecryptor<KEY_LEN, CTR_NONCE_LEN>,
+    K: SymmetricEncryptionKey<KEY_LEN, CTR_NONCE_LEN, 0>
+        + SymmetricDecryptionKey<KEY_LEN, CTR_NONCE_LEN, 0>,
+    K::Encryptor<'k>: StreamCipherEncryptor<CTR_NONCE_LEN>,
+    K::Decryptor<'k>: StreamCipherDecryptor<CTR_NONCE_LEN>,
 {
-    let key = key_material::<KEY_LEN>(key_hex);
+    let material = key_material::<KEY_LEN>(key_hex);
     let nonce = bytes::<CTR_NONCE_LEN>("000102030405060708090A0B");
 
-    // The counter block the alias starts from: the nonce, then four zero bytes.
+    // The counter block the key starts from: the nonce, then four zero bytes.
     let mut t1 = [0u8; BLOCK_LEN];
     t1[..CTR_NONCE_LEN].copy_from_slice(&nonce);
 
@@ -316,31 +318,36 @@ where
             (0..len).map(|_| common::pseudo_random::<1>(&mut seed)[0]).collect();
 
         let mut expected = plaintext.clone();
-        reference_ctr::<P, KEY_LEN>(&key, t1, &mut expected);
+        reference_ctr::<P, KEY_LEN>(&material, t1, &mut expected);
 
         let mut data = plaintext.clone();
         let (mut enc, got) =
-            Enc::do_encrypt_init_rng(&key, &mut FixedSeedRNG::<CTR_NONCE_LEN>::new(nonce))
-                .expect("enc init");
+            key.create_encryptor(&mut FixedSeedRNG::<CTR_NONCE_LEN>::new(nonce)).expect("enc init");
         assert_eq!(got, nonce, "{name}: the pinned RNG should produce the chosen nonce");
-        enc.do_encrypt(&mut data).expect("encryption");
+        enc.do_encrypt_inplace(&mut data).expect("encryption");
         assert_eq!(data, expected, "{name}, len {len}: should match the reference");
 
-        Dec::decrypt_in_place(&key, &nonce, &mut data).expect("decryption");
+        key.decrypt_inplace(&nonce, &mut data).expect("decryption");
         assert_eq!(data, plaintext, "{name}, len {len}: round trip");
     }
 }
 
 #[test]
-fn the_ctr_aliases_agree_with_the_reference() {
-    check_ctr_alias::<Camellia_128, 16, Camellia_CTR_128<Encrypting>, Camellia_CTR_128<Decrypting>>(
-        "Camellia_CTR_128", KEY_128,
+fn the_ctr_keys_agree_with_the_reference() {
+    check_ctr_key::<Camellia128Internal, 16, _>(
+        "Camellia_CTR_128",
+        KEY_128,
+        &Camellia128Key::<CTR>::from_key_material(&key_material::<16>(KEY_128)).unwrap(),
     );
-    check_ctr_alias::<Camellia_192, 24, Camellia_CTR_192<Encrypting>, Camellia_CTR_192<Decrypting>>(
-        "Camellia_CTR_192", KEY_192,
+    check_ctr_key::<Camellia192Internal, 24, _>(
+        "Camellia_CTR_192",
+        KEY_192,
+        &Camellia192Key::<CTR>::from_key_material(&key_material::<24>(KEY_192)).unwrap(),
     );
-    check_ctr_alias::<Camellia_256, 32, Camellia_CTR_256<Encrypting>, Camellia_CTR_256<Decrypting>>(
-        "Camellia_CTR_256", KEY_256,
+    check_ctr_key::<Camellia256Internal, 32, _>(
+        "Camellia_CTR_256",
+        KEY_256,
+        &Camellia256Key::<CTR>::from_key_material(&key_material::<32>(KEY_256)).unwrap(),
     );
 }
 
@@ -380,14 +387,16 @@ fn reference_cfb8<P, const KEY_LEN: usize>(
     }
 }
 
-/// Each CFB8 alias agrees with the equations, both directions, at lengths either side of a block.
-fn check_cfb8<P, const KEY_LEN: usize, Enc, Dec>(name: &str, key_hex: &str)
+/// Each `CFB8` key agrees with the equations, both directions, at lengths either side of a block.
+fn check_cfb8<'k, P, const KEY_LEN: usize, K>(name: &str, key_hex: &str, key: &'k K)
 where
     P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
-    Enc: StreamCipherEncryptor<KEY_LEN, BLOCK_LEN>,
-    Dec: StreamCipherDecryptor<KEY_LEN, BLOCK_LEN>,
+    K: SymmetricEncryptionKey<KEY_LEN, BLOCK_LEN, 0>
+        + SymmetricDecryptionKey<KEY_LEN, BLOCK_LEN, 0>,
+    K::Encryptor<'k>: StreamCipherEncryptor<BLOCK_LEN>,
+    K::Decryptor<'k>: StreamCipherDecryptor<BLOCK_LEN>,
 {
-    let key = key_material::<KEY_LEN>(key_hex);
+    let material = key_material::<KEY_LEN>(key_hex);
     let iv = bytes::<BLOCK_LEN>(CFB_IV);
 
     let mut seed = 0x5EEDu32;
@@ -396,34 +405,39 @@ where
             (0..len).map(|_| common::pseudo_random::<1>(&mut seed)[0]).collect();
 
         let mut expected = plaintext.clone();
-        reference_cfb8::<P, KEY_LEN>(&key, iv, &mut expected, true);
+        reference_cfb8::<P, KEY_LEN>(&material, iv, &mut expected, true);
 
         let mut data = plaintext.clone();
         let (mut enc, got_iv) =
-            Enc::do_encrypt_init_rng(&key, &mut FixedSeedRNG::<BLOCK_LEN>::new(iv))
-                .expect("enc init");
+            key.create_encryptor(&mut FixedSeedRNG::<BLOCK_LEN>::new(iv)).expect("enc init");
         assert_eq!(got_iv, iv);
-        enc.do_encrypt(&mut data).expect("encryption");
+        enc.do_encrypt_inplace(&mut data).expect("encryption");
         assert_eq!(data, expected, "{name}, len {len}: encrypt should match the equations");
 
         let mut back = data.clone();
-        reference_cfb8::<P, KEY_LEN>(&key, iv, &mut back, false);
+        reference_cfb8::<P, KEY_LEN>(&material, iv, &mut back, false);
         assert_eq!(back, plaintext, "{name}, len {len}: the reference decrypts its own output");
 
-        Dec::decrypt_in_place(&key, &iv, &mut data).expect("decryption");
+        key.decrypt_inplace(&iv, &mut data).expect("decryption");
         assert_eq!(data, plaintext, "{name}, len {len}: decrypt should match");
     }
 }
 
 #[test]
-fn the_cfb8_aliases_agree_with_the_equations() {
-    check_cfb8::<Camellia_128, 16, Camellia_CFB8_128<Encrypting>, Camellia_CFB8_128<Decrypting>>(
-        "Camellia_CFB8_128", KEY_128,
+fn the_cfb8_keys_agree_with_the_equations() {
+    check_cfb8::<Camellia128Internal, 16, _>(
+        "Camellia_CFB8_128",
+        KEY_128,
+        &Camellia128Key::<CFB8>::from_key_material(&key_material::<16>(KEY_128)).unwrap(),
     );
-    check_cfb8::<Camellia_192, 24, Camellia_CFB8_192<Encrypting>, Camellia_CFB8_192<Decrypting>>(
-        "Camellia_CFB8_192", KEY_192,
+    check_cfb8::<Camellia192Internal, 24, _>(
+        "Camellia_CFB8_192",
+        KEY_192,
+        &Camellia192Key::<CFB8>::from_key_material(&key_material::<24>(KEY_192)).unwrap(),
     );
-    check_cfb8::<Camellia_256, 32, Camellia_CFB8_256<Encrypting>, Camellia_CFB8_256<Decrypting>>(
-        "Camellia_CFB8_256", KEY_256,
+    check_cfb8::<Camellia256Internal, 32, _>(
+        "Camellia_CFB8_256",
+        KEY_256,
+        &Camellia256Key::<CFB8>::from_key_material(&key_material::<32>(KEY_256)).unwrap(),
     );
 }

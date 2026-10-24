@@ -6,9 +6,11 @@
 
 mod common;
 
-use bouncycastle_camellia::hazmat::{Camellia, Camellia_128, Camellia_192, Camellia_256};
+use bouncycastle_camellia::hazmat::{
+    Camellia128Internal, Camellia192Internal, Camellia256Internal, CamelliaInternal,
+};
 use bouncycastle_camellia::{BLOCK_LEN, LANES};
-use bouncycastle_core::hazmat::ElectronicCodeBook;
+use bouncycastle_core::hazmat::{BlockPermutation, ElectronicCodeBook};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use common::bytes;
 
@@ -35,11 +37,11 @@ fn key<const N: usize>(hex_str: &str) -> KeyMaterial<N> {
 /// Every entry point, both directions, for one vector.
 fn check<const KEY_LEN: usize, P: bouncycastle_camellia::CamelliaParams>(
     name: &str,
-    perm: &Camellia<P>,
+    perm: &CamelliaInternal<P>,
     plaintext: &[u8; BLOCK_LEN],
     ciphertext: &[u8; BLOCK_LEN],
 ) where
-    Camellia<P>: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+    CamelliaInternal<P>: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
 {
     // Single block.
     let mut b = *plaintext;
@@ -83,19 +85,19 @@ fn check<const KEY_LEN: usize, P: bouncycastle_camellia::CamelliaParams>(
 
 #[test]
 fn appendix_a_128_bit_key() {
-    let perm = Camellia_128::new(&key::<16>(KEY_128)).unwrap();
+    let perm = Camellia128Internal::new(&key::<16>(KEY_128)).unwrap();
     check::<16, _>("Appendix A, 128-bit key", &perm, &bytes(PLAINTEXT), &bytes(CT_128));
 }
 
 #[test]
 fn appendix_a_192_bit_key() {
-    let perm = Camellia_192::new(&key::<24>(KEY_192)).unwrap();
+    let perm = Camellia192Internal::new(&key::<24>(KEY_192)).unwrap();
     check::<24, _>("Appendix A, 192-bit key", &perm, &bytes(PLAINTEXT), &bytes(CT_192));
 }
 
 #[test]
 fn appendix_a_256_bit_key() {
-    let perm = Camellia_256::new(&key::<32>(KEY_256)).unwrap();
+    let perm = Camellia256Internal::new(&key::<32>(KEY_256)).unwrap();
     check::<32, _>("Appendix A, 256-bit key", &perm, &bytes(PLAINTEXT), &bytes(CT_256));
 }
 
@@ -106,9 +108,9 @@ fn key_lengths_are_distinct_ciphers() {
     let mut a = bytes::<16>(PLAINTEXT);
     let mut b = a;
     let mut c = a;
-    Camellia_128::new(&key::<16>(KEY_128)).unwrap().encrypt_block(&mut a);
-    Camellia_192::new(&key::<24>(KEY_192)).unwrap().encrypt_block(&mut b);
-    Camellia_256::new(&key::<32>(KEY_256)).unwrap().encrypt_block(&mut c);
+    Camellia128Internal::new(&key::<16>(KEY_128)).unwrap().encrypt_block(&mut a);
+    Camellia192Internal::new(&key::<24>(KEY_192)).unwrap().encrypt_block(&mut b);
+    Camellia256Internal::new(&key::<32>(KEY_256)).unwrap().encrypt_block(&mut c);
     assert_ne!(a, b);
     assert_ne!(b, c);
     assert_ne!(a, c);
@@ -117,7 +119,16 @@ fn key_lengths_are_distinct_ciphers() {
 /// `Debug` prints the algorithm name only, never the subkeys.
 #[test]
 fn debug_prints_only_the_name() {
-    assert_eq!(format!("{:?}", Camellia_128::new(&key::<16>(KEY_128)).unwrap()), "Camellia-128");
-    assert_eq!(format!("{:?}", Camellia_192::new(&key::<24>(KEY_192)).unwrap()), "Camellia-192");
-    assert_eq!(format!("{:?}", Camellia_256::new(&key::<32>(KEY_256)).unwrap()), "Camellia-256");
+    assert_eq!(
+        format!("{:?}", Camellia128Internal::new(&key::<16>(KEY_128)).unwrap()),
+        "Camellia-128"
+    );
+    assert_eq!(
+        format!("{:?}", Camellia192Internal::new(&key::<24>(KEY_192)).unwrap()),
+        "Camellia-192"
+    );
+    assert_eq!(
+        format!("{:?}", Camellia256Internal::new(&key::<32>(KEY_256)).unwrap()),
+        "Camellia-256"
+    );
 }

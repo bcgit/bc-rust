@@ -11,13 +11,12 @@
 //! authenticated. Do not decrypt data you have not authenticated separately.
 
 use crate::helpers::block_mode_helpers::{
-    BLOCK_LEN, CipherDirection, decrypt_stream, encrypt_stream, load_key,
+    CipherDirection, decrypt_stream, encrypt_stream, load_key_object, start_encryptor,
 };
-use bouncycastle::camellia::hazmat::{Camellia_128, Camellia_192, Camellia_256};
-use bouncycastle::cipher::modes::Cbc;
-use bouncycastle::cipher::{Decrypting, Encrypting};
-use bouncycastle::core::hazmat::ElectronicCodeBook;
-use bouncycastle::core::key_material::KeyMaterial;
+use bouncycastle::camellia::{BLOCK_LEN, Camellia128Key, Camellia192Key, Camellia256Key};
+use bouncycastle::cipher::modes::CBC;
+use bouncycastle::cipher::padding::NoPadding;
+use bouncycastle::core::symmetric_key::{SymmetricDecryptionKey, SymmetricEncryptionKey};
 
 /// Names the mode in error messages.
 const MODE: &str = "CBC";
@@ -28,7 +27,11 @@ pub(crate) fn camellia128_cbc_cmd(
     key_file: &Option<String>,
     output_hex: bool,
 ) {
-    run::<Camellia_128, 16>(action, &load_key::<16>(key, key_file, "Camellia-128"), output_hex);
+    run::<_, 16>(
+        action,
+        &load_key_object::<Camellia128Key<CBC<NoPadding>>, 16>(key, key_file, "Camellia-128"),
+        output_hex,
+    );
 }
 
 pub(crate) fn camellia192_cbc_cmd(
@@ -37,7 +40,11 @@ pub(crate) fn camellia192_cbc_cmd(
     key_file: &Option<String>,
     output_hex: bool,
 ) {
-    run::<Camellia_192, 24>(action, &load_key::<24>(key, key_file, "Camellia-192"), output_hex);
+    run::<_, 24>(
+        action,
+        &load_key_object::<Camellia192Key<CBC<NoPadding>>, 24>(key, key_file, "Camellia-192"),
+        output_hex,
+    );
 }
 
 pub(crate) fn camellia256_cbc_cmd(
@@ -46,27 +53,30 @@ pub(crate) fn camellia256_cbc_cmd(
     key_file: &Option<String>,
     output_hex: bool,
 ) {
-    run::<Camellia_256, 32>(action, &load_key::<32>(key, key_file, "Camellia-256"), output_hex);
+    run::<_, 32>(
+        action,
+        &load_key_object::<Camellia256Key<CBC<NoPadding>>, 32>(key, key_file, "Camellia-256"),
+        output_hex,
+    );
 }
 
-/// Dispatches to the shared streaming loops with `Cbc` filled in as the mode.
-fn run<P, const KEY_LEN: usize>(
-    action: &CipherDirection,
-    key: &KeyMaterial<KEY_LEN>,
-    output_hex: bool,
-) where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+/// Dispatches to the shared streaming loops under the key's CBC mode. `NoPadding` keeps the
+/// command's contract: whole blocks only, with the IV in band.
+fn run<K, const KEY_LEN: usize>(action: &CipherDirection, key: &K, output_hex: bool)
+where
+    K: SymmetricEncryptionKey<KEY_LEN, BLOCK_LEN, BLOCK_LEN>
+        + SymmetricDecryptionKey<KEY_LEN, BLOCK_LEN, BLOCK_LEN>,
 {
     match action {
         CipherDirection::Encrypt => {
-            encrypt_stream::<Cbc<P, Encrypting, KEY_LEN, BLOCK_LEN>, KEY_LEN, BLOCK_LEN>(
-                key, output_hex, MODE,
-            )
+            let (enc, generated_iv) = start_encryptor(None, |rng| key.create_encryptor(rng));
+            encrypt_stream::<_, BLOCK_LEN>(enc, generated_iv.as_ref(), output_hex, Some(MODE))
         }
-        CipherDirection::Decrypt => {
-            decrypt_stream::<Cbc<P, Decrypting, KEY_LEN, BLOCK_LEN>, KEY_LEN, BLOCK_LEN>(
-                key, output_hex, MODE,
-            )
-        }
+        CipherDirection::Decrypt => decrypt_stream::<_, BLOCK_LEN>(
+            None,
+            |iv| key.create_decryptor(iv),
+            output_hex,
+            Some(MODE),
+        ),
     }
 }

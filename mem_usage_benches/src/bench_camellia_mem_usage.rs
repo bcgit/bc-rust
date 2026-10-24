@@ -35,8 +35,10 @@
 #![allow(unused_imports)]
 
 use bouncycastle::camellia::LANES;
-use bouncycastle::camellia::hazmat::{Camellia_128, Camellia_192, Camellia_256};
-use bouncycastle::core::hazmat::ElectronicCodeBook;
+use bouncycastle::camellia::hazmat::{
+    Camellia128Internal, Camellia192Internal, Camellia256Internal,
+};
+use bouncycastle::core::hazmat::{BlockPermutation, ElectronicCodeBook};
 use bouncycastle::core::key_material::{KeyMaterial, KeyType};
 
 /// This exists so /usr/bin/time can measure the base memory footprint of the harness itself.
@@ -52,9 +54,9 @@ fn print_struct_sizes() {
 
     // RFC 3713 Sec 2.2: kw1..kw4, k1..k18 and ke1..ke4 for 128-bit keys (26 x 8 bytes);
     // kw1..kw4, k1..k24 and ke1..ke6 otherwise (34 x 8 bytes).
-    println!("size_of<Camellia_128>: {}", size_of::<Camellia_128>());
-    println!("size_of<Camellia_192>: {}", size_of::<Camellia_192>());
-    println!("size_of<Camellia_256>: {}", size_of::<Camellia_256>());
+    println!("size_of<Camellia128Internal>: {}", size_of::<Camellia128Internal>());
+    println!("size_of<Camellia192Internal>: {}", size_of::<Camellia192Internal>());
+    println!("size_of<Camellia256Internal>: {}", size_of::<Camellia256Internal>());
 }
 
 fn key<const KEY_LEN: usize>() -> KeyMaterial<KEY_LEN> {
@@ -67,41 +69,41 @@ fn key<const KEY_LEN: usize>() -> KeyMaterial<KEY_LEN> {
 }
 
 fn bench_camellia128_key_expansion() {
-    eprintln!("Camellia_128::new (key expansion)");
+    eprintln!("Camellia128Internal::new (key expansion)");
 
-    let camellia = Camellia_128::new(&key()).unwrap();
+    let camellia = Camellia128Internal::new(&key()).unwrap();
     print!("{camellia:?}");
 }
 
 fn bench_camellia256_key_expansion() {
-    eprintln!("Camellia_256::new (key expansion)");
+    eprintln!("Camellia256Internal::new (key expansion)");
 
-    let camellia = Camellia_256::new(&key()).unwrap();
+    let camellia = Camellia256Internal::new(&key()).unwrap();
     print!("{camellia:?}");
 }
 
 fn bench_camellia128_encrypt_block() {
-    eprintln!("Camellia_128::encrypt_block");
+    eprintln!("Camellia128Internal::encrypt_block");
 
-    let camellia = Camellia_128::new(&key()).unwrap();
+    let camellia = Camellia128Internal::new(&key()).unwrap();
     let mut block = [0x11u8; 16];
     camellia.encrypt_block(&mut block);
     print!("{block:x?}");
 }
 
 fn bench_camellia256_decrypt_block() {
-    eprintln!("Camellia_256::decrypt_block");
+    eprintln!("Camellia256Internal::decrypt_block");
 
-    let camellia = Camellia_256::new(&key()).unwrap();
+    let camellia = Camellia256Internal::new(&key()).unwrap();
     let mut block = [0x11u8; 16];
     camellia.decrypt_block(&mut block);
     print!("{block:x?}");
 }
 
 fn bench_camellia256_encrypt_4blocks() {
-    eprintln!("Camellia_256::encrypt_4blocks");
+    eprintln!("Camellia256Internal::encrypt_4blocks");
 
-    let camellia = Camellia_256::new(&key()).unwrap();
+    let camellia = Camellia256Internal::new(&key()).unwrap();
     let mut blocks: [[u8; 16]; LANES] = core::array::from_fn(|i| [0x11 * (i as u8 + 1); 16]);
     camellia.encrypt_4blocks(&mut blocks);
     print!("{blocks:x?}");

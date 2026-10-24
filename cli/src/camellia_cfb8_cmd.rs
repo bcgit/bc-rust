@@ -16,13 +16,12 @@
 //! CFB8 provides confidentiality only. It does not detect tampering, and neither the ciphertext nor
 //! the IV is authenticated. Do not decrypt data you have not authenticated separately.
 
-use crate::helpers::block_mode_helpers::{BLOCK_LEN, CipherDirection, load_key};
+use crate::helpers::block_mode_helpers::{CipherDirection, load_key_object};
 use crate::helpers::stream_mode_helpers::run_stream_mode;
-use bouncycastle::camellia::hazmat::{Camellia_128, Camellia_192, Camellia_256};
-use bouncycastle::cipher::modes::Cfb8;
-use bouncycastle::cipher::{Decrypting, Encrypting};
-use bouncycastle::core::hazmat::ElectronicCodeBook;
-use bouncycastle::core::key_material::KeyMaterial;
+use bouncycastle::camellia::{BLOCK_LEN, Camellia128Key, Camellia192Key, Camellia256Key};
+use bouncycastle::cipher::modes::CFB8;
+use bouncycastle::core::symmetric_key::{SymmetricDecryptionKey, SymmetricEncryptionKey};
+use bouncycastle::core::traits::{StreamCipherDecryptor, StreamCipherEncryptor};
 
 pub(crate) fn camellia128_cfb8_cmd(
     action: &CipherDirection,
@@ -30,7 +29,11 @@ pub(crate) fn camellia128_cfb8_cmd(
     key_file: &Option<String>,
     output_hex: bool,
 ) {
-    run::<Camellia_128, 16>(action, &load_key::<16>(key, key_file, "Camellia-128"), output_hex);
+    run::<_, 16>(
+        action,
+        &load_key_object::<Camellia128Key<CFB8>, 16>(key, key_file, "Camellia-128"),
+        output_hex,
+    );
 }
 
 pub(crate) fn camellia192_cfb8_cmd(
@@ -39,7 +42,11 @@ pub(crate) fn camellia192_cfb8_cmd(
     key_file: &Option<String>,
     output_hex: bool,
 ) {
-    run::<Camellia_192, 24>(action, &load_key::<24>(key, key_file, "Camellia-192"), output_hex);
+    run::<_, 24>(
+        action,
+        &load_key_object::<Camellia192Key<CFB8>, 24>(key, key_file, "Camellia-192"),
+        output_hex,
+    );
 }
 
 pub(crate) fn camellia256_cfb8_cmd(
@@ -48,21 +55,21 @@ pub(crate) fn camellia256_cfb8_cmd(
     key_file: &Option<String>,
     output_hex: bool,
 ) {
-    run::<Camellia_256, 32>(action, &load_key::<32>(key, key_file, "Camellia-256"), output_hex);
+    run::<_, 32>(
+        action,
+        &load_key_object::<Camellia256Key<CFB8>, 32>(key, key_file, "Camellia-256"),
+        output_hex,
+    );
 }
 
-/// Dispatches to the shared streaming loops with `Cfb8` filled in as the mode.
-fn run<P, const KEY_LEN: usize>(
-    action: &CipherDirection,
-    key: &KeyMaterial<KEY_LEN>,
-    output_hex: bool,
-) where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+/// Dispatches to the shared streaming loops with `Cfb8` filled in as the mode; the init data
+/// travels in band, as the command's contract says.
+fn run<'k, K, const KEY_LEN: usize>(action: &CipherDirection, key: &'k K, output_hex: bool)
+where
+    K: SymmetricEncryptionKey<KEY_LEN, BLOCK_LEN, 0>
+        + SymmetricDecryptionKey<KEY_LEN, BLOCK_LEN, 0>,
+    K::Encryptor<'k>: StreamCipherEncryptor<BLOCK_LEN>,
+    K::Decryptor<'k>: StreamCipherDecryptor<BLOCK_LEN>,
 {
-    run_stream_mode::<
-        Cfb8<P, Encrypting, KEY_LEN, BLOCK_LEN>,
-        Cfb8<P, Decrypting, KEY_LEN, BLOCK_LEN>,
-        KEY_LEN,
-        BLOCK_LEN,
-    >(action, key, output_hex)
+    run_stream_mode::<K, KEY_LEN, BLOCK_LEN>(action, key, None, output_hex)
 }

@@ -8,9 +8,9 @@
 //! and Camellia-256 share the 24-round schedule, so only the 256-bit variant is benchmarked
 //! alongside the 18-round Camellia-128.
 
-use bouncycastle_camellia::hazmat::{Camellia_128, Camellia_256};
+use bouncycastle_camellia::hazmat::{Camellia128Internal, Camellia256Internal};
 use bouncycastle_camellia::{BLOCK_LEN, LANES};
-use bouncycastle_core::hazmat::ElectronicCodeBook;
+use bouncycastle_core::hazmat::{BlockPermutation, ElectronicCodeBook};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::traits::RNG;
 use bouncycastle_rng as rng;
@@ -40,22 +40,22 @@ fn bench_key_expansion(c: &mut Criterion) {
     let mut group = c.benchmark_group("camellia::key expansion");
 
     let key128 = key::<16>();
-    group.bench_function("Camellia_128::new()", |b| {
-        b.iter(|| black_box(Camellia_128::new(black_box(&key128)).unwrap()))
+    group.bench_function("Camellia128Internal::new()", |b| {
+        b.iter(|| black_box(Camellia128Internal::new(black_box(&key128)).unwrap()))
     });
     let key256 = key::<32>();
-    group.bench_function("Camellia_256::new()", |b| {
-        b.iter(|| black_box(Camellia_256::new(black_box(&key256)).unwrap()))
+    group.bench_function("Camellia256Internal::new()", |b| {
+        b.iter(|| black_box(Camellia256Internal::new(black_box(&key256)).unwrap()))
     });
 
     group.finish();
 }
 
 fn bench_camellia128(c: &mut Criterion) {
-    let camellia = Camellia_128::new(&key::<16>()).unwrap();
+    let camellia = Camellia128Internal::new(&key::<16>()).unwrap();
     let blocks = random_blocks();
 
-    let mut group = c.benchmark_group("camellia::Camellia_128");
+    let mut group = c.benchmark_group("camellia::Camellia128Internal");
     group.throughput(Throughput::Bytes(DATA_LEN as u64));
 
     group.bench_function("16KiB -- .encrypt_block() x1024", |b| {
@@ -102,10 +102,10 @@ fn bench_camellia128(c: &mut Criterion) {
 }
 
 fn bench_camellia256(c: &mut Criterion) {
-    let camellia = Camellia_256::new(&key::<32>()).unwrap();
+    let camellia = Camellia256Internal::new(&key::<32>()).unwrap();
     let blocks = random_blocks();
 
-    let mut group = c.benchmark_group("camellia::Camellia_256");
+    let mut group = c.benchmark_group("camellia::Camellia256Internal");
     group.throughput(Throughput::Bytes(DATA_LEN as u64));
 
     group.bench_function("16KiB -- .encrypt_block() x1024", |b| {
