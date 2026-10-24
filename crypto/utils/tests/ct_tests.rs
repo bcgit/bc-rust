@@ -833,13 +833,13 @@ mod ct_bytes_tests {
     /// pattern bit for bit) and agree with `ct_eq_bytes`.
     #[test]
     fn test_ct_eq_bytes_mask() {
-        use bouncycastle_utils::ct::{ct_eq_bytes, ct_eq_bytes_mask};
+        use bouncycastle_utils::ct::{ct_eq_bytes, ct_eq_bytes_condition};
 
         const PATTERN: u32 = 0x5555_5555;
         let a: [u8; 20] = core::array::from_fn(|i| i as u8);
         let mut b = a;
         for (other, expected) in [(&a[..], true), (&b[..19], false)] {
-            let m = ct_eq_bytes_mask(&a, other);
+            let m = ct_eq_bytes_condition(&a, other);
             assert_eq!(m.select(PATTERN, !PATTERN), if expected { PATTERN } else { !PATTERN });
             assert_eq!(m.to_bool(), expected);
             assert_eq!(ct_eq_bytes(&a, other), expected);
@@ -847,12 +847,12 @@ mod ct_bytes_tests {
         // a difference in the word path and one in the byte tail (for 2, 4 and 8-byte words)
         for pos in [5, 19] {
             b[pos] ^= 0x01;
-            let m = ct_eq_bytes_mask(&a, &b);
+            let m = ct_eq_bytes_condition(&a, &b);
             assert_eq!(m.select(PATTERN, !PATTERN), !PATTERN, "pos {pos}");
             assert!(!ct_eq_bytes(&a, &b), "pos {pos}");
             b[pos] ^= 0x01;
         }
-        assert_eq!(ct_eq_bytes_mask(&[], &[]).select(PATTERN, !PATTERN), PATTERN);
+        assert_eq!(ct_eq_bytes_condition(&[], &[]).select(PATTERN, !PATTERN), PATTERN);
     }
 
     #[test]
