@@ -54,6 +54,8 @@
 #![forbid(missing_docs)]
 #![no_std]
 
+extern crate alloc;
+
 // `tests/common/toy_block_cipher.rs` names `bouncycastle_cipher::modes::ModeNames`, and is also
 // `include!`d by unit tests here, where that path would otherwise not resolve.
 #[cfg(test)]
