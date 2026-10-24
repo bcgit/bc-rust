@@ -9,6 +9,11 @@ bouncycastle-core.workspace = true
 bouncycastle-rng.workspace = true
 bouncycastle-utils.workspace = true
 
+# The PMULL GHASH multiply behind GCM's `ghash` module. Linked only into builds that declare the
+# instructions, so every other target neither compiles nor depends on it.
+[target.'cfg(all(target_arch = "aarch64", target_feature = "aes"))'.dependencies]
+bouncycastle-arm.workspace = true
+
 [dev-dependencies]
 bouncycastle-core-test-framework.workspace = true
 bouncycastle-hex.workspace = true

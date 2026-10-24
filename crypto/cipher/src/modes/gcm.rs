@@ -897,6 +897,18 @@ mod ghash {
     //! the `x[0], x[1]` pair carrying the bottom bit of `x[0]` into the top bit of `x[1]`, and `R`
     //! (`11100001 || 0^120`, Sec 6.3) is the block whose first byte is `0xE1` and the rest zero, i.e.
     //! `[0xE1 << 56, 0]` in this representation.
+    //!
+    //! # The AArch64 path
+    //!
+    //! On a little-endian AArch64 build that declares `target_feature = "aes"`, [`mul`] is
+    //! `bouncycastle_arm`'s `PMULL` kernel and [`Ghash::update`] folds whole blocks four at a time
+    //! through its four-product kernel, which sums four products under one reduction. That is
+    //! Sec 6.4's "In effect, the GHASH function calculates `X1•H^m ⊕ X2•H^(m-1) ⊕ ... ⊕ Xm•H`"
+    //! taken four terms at a time: `Y = (Y ⊕ X1)•H^4 ⊕ X2•H^3 ⊕ X3•H^2 ⊕ X4•H`. The path keeps
+    //! `H^2`, `H^3` and `H^4` beside `H`, 48 bytes more state; the suspended form is unchanged,
+    //! because the powers are re-derived from `H` on resume exactly as `H` itself is. Elsewhere the
+    //! portable multiplier runs; the tests pin the two against each other and both against
+    //! Algorithm 1.
 
     use bouncycastle_core::errors::SuspendableError;
     use bouncycastle_utils::secret::Secret;
@@ -1014,7 +1026,17 @@ mod ghash {
     /// a bit-reversal trick (`rev(x)*rev(y) == rev((x*y) << 1)`) to reach the high 64 bits of each
     /// 64x64 product without a 128-bit multiply, followed by the standard two-step reduction by `R`.
     /// Variable names (`h0..h5`, `z0..z3`) match the Java source so the two can be diffed side by side.
-    pub(crate) fn mul(x: &Block, y: &Block) -> Block {
+    // On the `PMULL` targets only the tests call this, to pin the kernel against it.
+    #[cfg_attr(
+        all(
+            target_arch = "aarch64",
+            target_endian = "little",
+            target_feature = "aes",
+            target_feature = "neon"
+        ),
+        allow(dead_code)
+    )]
+    fn mul_portable(x: &Block, y: &Block) -> Block {
         let (x0, x1) = (x[0], x[1]);
         let (y0, y1) = (y[0], y[1]);
         let (x0r, x1r) = (x0.reverse_bits(), x1.reverse_bits());
@@ -1048,6 +1070,28 @@ mod ghash {
         [z0, z1]
     }
 
+    /// `x . y` (Sec 6.3's `*` operator): the portable multiplier, on a target without `PMULL`.
+    #[cfg(not(all(
+        target_arch = "aarch64",
+        target_endian = "little",
+        target_feature = "aes",
+        target_feature = "neon"
+    )))]
+    pub(crate) fn mul(x: &Block, y: &Block) -> Block {
+        mul_portable(x, y)
+    }
+
+    /// `x . y` (Sec 6.3's `*` operator) on `PMULL`; see the module docs.
+    #[cfg(all(
+        target_arch = "aarch64",
+        target_endian = "little",
+        target_feature = "aes",
+        target_feature = "neon"
+    ))]
+    pub(crate) fn mul(x: &Block, y: &Block) -> Block {
+        bouncycastle_arm::ghash::mul(x, y)
+    }
+
     /// The `GHASH` accumulator (Algorithm 2, Sec 6.4).
     ///
     /// `Y_0 = 0^128` (step 2); each call to [`update`](Self::update) absorbs whole blocks via
@@ -1067,6 +1111,15 @@ mod ghash {
     pub(crate) struct Ghash {
         /// The hash subkey `H = CIPH_K(0^128)`.
         h: Secret<Block>,
+        /// `[H^4, H^3, H^2, H]`, in the order `mul4` pairs them with four consecutive blocks (see the
+        /// module docs). Derived from `h` and never suspended.
+        #[cfg(all(
+            target_arch = "aarch64",
+            target_endian = "little",
+            target_feature = "aes",
+            target_feature = "neon"
+        ))]
+        h_powers: Secret<[Block; 4]>,
         /// `Y_i` of Algorithm 2.
         y: Secret<Block>,
         /// Bytes of the current block not yet absorbed.
@@ -1081,7 +1134,34 @@ mod ghash {
             let mut hs: Secret<Block> = Secret::new();
             hs[0] = u64::from_be_bytes(h[..8].try_into().expect("first half of H is 8 bytes"));
             hs[1] = u64::from_be_bytes(h[8..].try_into().expect("second half of H is 8 bytes"));
-            Self { h: hs, y: Secret::new(), pending: Secret::new(), pending_len: 0 }
+            // `H^2 = H . H`, `H^3 = H^2 . H`, `H^4 = H^3 . H` (Sec 6.3), stored highest power first.
+            #[cfg(all(
+                target_arch = "aarch64",
+                target_endian = "little",
+                target_feature = "aes",
+                target_feature = "neon"
+            ))]
+            let h_powers = {
+                let mut p: Secret<[Block; 4]> = Secret::new();
+                p[3] = *hs;
+                p[2] = mul(&p[3], &hs);
+                p[1] = mul(&p[2], &hs);
+                p[0] = mul(&p[1], &hs);
+                p
+            };
+            Self {
+                h: hs,
+                #[cfg(all(
+                    target_arch = "aarch64",
+                    target_endian = "little",
+                    target_feature = "aes",
+                    target_feature = "neon"
+                ))]
+                h_powers,
+                y: Secret::new(),
+                pending: Secret::new(),
+                pending_len: 0,
+            }
         }
 
         /// `Y_i = (Y_{i-1} (+) X_i) . H` for one whole block `X_i`, updating `Y` in place.
@@ -1114,6 +1194,30 @@ mod ghash {
             }
 
             let (blocks, rest) = data.as_chunks::<16>();
+            // Four at a time: `Y = (Y (+) X_i) . H^4 (+) X_{i+1} . H^3 (+) X_{i+2} . H^2 (+) X_{i+3} . H`,
+            // Algorithm 2 step 3 applied four times with the multiplications gathered under one
+            // reduction (Sec 6.4, "In effect, the GHASH function calculates X1 . H^m (+) ..."). The
+            // four inputs sit in a `Secret` because the first carries `Y`, and one `Secret` serves the
+            // whole call so it is zeroized once.
+            #[cfg(all(
+                target_arch = "aarch64",
+                target_endian = "little",
+                target_feature = "aes",
+                target_feature = "neon"
+            ))]
+            let blocks = {
+                let (quads, remainder) = blocks.as_chunks::<4>();
+                let mut x: Secret<[Block; 4]> = Secret::new();
+                for quad in quads {
+                    for (xi, block) in x.iter_mut().zip(quad) {
+                        *xi = block_from_bytes(block);
+                    }
+                    x[0][0] ^= self.y[0];
+                    x[0][1] ^= self.y[1];
+                    *self.y = bouncycastle_arm::ghash::mul4(&x, &self.h_powers);
+                }
+                remainder
+            };
             for block in blocks {
                 Self::absorb(&mut self.y, &self.h, block);
             }
@@ -1246,6 +1350,24 @@ mod ghash {
             }
         }
 
+        /// On the `PMULL` targets `mul` and the four-block path use the kernel; it must agree with
+        /// the portable multiplier it replaces, not only with the bit-serial reference.
+        #[cfg(all(
+            target_arch = "aarch64",
+            target_endian = "little",
+            target_feature = "aes",
+            target_feature = "neon"
+        ))]
+        #[test]
+        fn pmull_matches_the_portable_multiplier_on_ten_thousand_random_pairs() {
+            let mut rng = Lcg(0x94d0_49bb_1331_11eb);
+            for _ in 0..10_000 {
+                let x = rng.next_block();
+                let y = rng.next_block();
+                assert_eq!(mul(&x, &y), mul_portable(&x, &y), "x={x:?} y={y:?}");
+            }
+        }
+
         #[test]
         fn mul_by_one_is_the_identity() {
             let mut rng = Lcg(0x9e37_79b9_7f4a_7c15);
@@ -1273,14 +1395,15 @@ mod ghash {
             assert_eq!(mul_reference(&R, &ONE), R);
         }
 
-        /// `GHASH` over one, two and three blocks must equal folding [`mul_reference`] by hand, per
-        /// Algorithm 2 step 3: `Y_i = (Y_{i-1} (+) X_i) . H`.
+        /// `GHASH` over one to nine blocks must equal folding [`mul_reference`] by hand, per
+        /// Algorithm 2 step 3: `Y_i = (Y_{i-1} (+) X_i) . H`. Nine crosses the four-block grouping
+        /// of the AArch64 path twice, with a single block left over.
         #[test]
         fn ghash_matches_folding_the_reference_multiplier_by_hand() {
             let h_bytes = [0x42u8; 16];
             let h = block_from_bytes(&h_bytes);
 
-            let blocks: [[u8; 16]; 3] = [[0x11; 16], [0x22; 16], [0x33; 16]];
+            let blocks: [[u8; 16]; 9] = core::array::from_fn(|i| [0x11 * (i as u8 + 1); 16]);
 
             let mut y = [0u64, 0u64];
             for block in &blocks {
@@ -1290,7 +1413,7 @@ mod ghash {
                 y = mul_reference(&y, &h);
             }
 
-            for n in 1..=3 {
+            for n in 1..=9 {
                 let mut g = Ghash::new(&h_bytes);
                 for block in &blocks[..n] {
                     g.update(block);
@@ -1319,12 +1442,14 @@ mod ghash {
             let _ = y;
         }
 
-        /// Chunking independence: absorbing a 100-byte message in one call must equal absorbing it in
-        /// two pieces, at every possible split point.
+        /// Chunking independence: absorbing a 300-byte message in one call must equal absorbing it in
+        /// two pieces, at every possible split point. Three hundred bytes is eighteen whole blocks
+        /// and a partial one, so the splits land on every phase of the AArch64 path's four-block
+        /// grouping as well as inside blocks.
         #[test]
         fn update_is_chunking_independent() {
             let h_bytes = [0x7eu8; 16];
-            let data: [u8; 100] = core::array::from_fn(|i| i as u8);
+            let data: [u8; 300] = core::array::from_fn(|i| i as u8);
 
             let mut whole = Ghash::new(&h_bytes);
             whole.update(&data);
