@@ -4,6 +4,14 @@
 //! pairs (empty, short ASCII, longer ASCII, all-zero, all-`0xff`), each with the deterministic
 //! `k`, the resulting `(r, s)`, and `Q = [d]G` computed via the standard affine group law (general
 //! `a`), `random.seed 1234567`.
+//!
+//! On this curve the §3.2 step h.3 rejection loop runs on nearly half of real messages (see
+//! `rfc6979_bp384r1`'s module docs), and these vectors pin it deliberately: CASE_0 rejects two
+//! candidates before its `k`, CASE_4 one, and a sixth pair, CASE_5, is chosen so that six in a
+//! row are rejected, exercising the `K = HMAC_K(V || 0x00)` re-key six times. Every vector,
+//! including all three rejecting ones, is additionally reproduced by python-ecdsa 0.19.2 (its own
+//! pure-Python RFC 6979) and by OpenSSL 4.0.2's deterministic ECDSA (through the cryptography
+//! 50.0.1 bindings), which also anchors the curve constants a second way.
 
 use bouncycastle_core::traits::Hash;
 use bouncycastle_core::traits::{
@@ -27,6 +35,8 @@ struct Vector {
     uy: &'static str,
 }
 
+// The first two h.3 candidates for this (d, msg) are >= n: the accepted k is the third, after
+// two re-keys of the HMAC chain.
 const CASE_0: Vector = Vector {
     d: "0A3ECED49C8BE3E693AF8A68F77282BD1201AF823A0A4FE05170CFF294DC13FC115AC6CB3C58FD846EC5C07FF6908E54",
     msg: b"",
@@ -67,6 +77,7 @@ const CASE_3: Vector = Vector {
     uy: "776FB4EA44FE91B2CD416CA75D3F115D0B044826D949E129F7A5B5008C6CB069925D86B6EEBD5EDCF813AC2B5D417305",
 };
 
+// One h.3 rejection: the accepted k is the second candidate.
 const CASE_4: Vector = Vector {
     d: "3AC2CE16303249B912258C63556A44E17CEE4B4D567578F26A89C3FC0098EFE577CBF8FCAC22AAE164F74D7169CEB006",
     msg: &[0xffu8; 10],
@@ -77,7 +88,19 @@ const CASE_4: Vector = Vector {
     uy: "64DE68D75FA78C5E6F9B37E297163E77EFFABB263D957D5C017EAF2AD4F9F9567664BB1E701959E6302BE803300CE40F",
 };
 
-const CASES: [&Vector; 5] = [&CASE_0, &CASE_1, &CASE_2, &CASE_3, &CASE_4];
+// Pins the h.3 continue-chain deliberately: six candidates in a row are >= n, so the accepted k
+// follows six `K = HMAC_K(V || 0x00)` re-keys -- the (d, msg) pair was searched for exactly that.
+const CASE_5: Vector = Vector {
+    d: "65410D0A7B55AC6BE4151D747AF74AF138BC0BBDEE4345D0551AA055D0F995E9FAAA3692CCD92C41A178481E5EB2CB03",
+    msg: b"brainpoolP384r1 rejection test 3",
+    k: "1FD7200F56175EE6562B30503B474C69CAE25E83B924CCB619726AE707684E23820BEEB3BCCBBE9DFEA2FF805B26FB68",
+    r: "1AB76CFE4E93C696421D80EFC50C7F026B5C12125488970EFCF9FBA40D6734F2323F57BCE809923C886ADACFB51F105C",
+    s: "2B260A5C092C38E580E01EDE836CBA95D9C9C0F4A82CDE497B1603AFF0BE1E7141FE57177D940EE41F89A8F383C9D8C2",
+    ux: "87086428290CD23F878DE8250334D9A67EFCBF9DC90161B6A956CCF48AF45B3989FD7785A95B669080D6D3F7514E785B",
+    uy: "3E7F94B4B7826F07898649827C215A147C71A1DFDC0B42592998135F148B6EB53AB0E23C4DDF2D0BF795FB275B09A656",
+};
+
+const CASES: [&Vector; 6] = [&CASE_0, &CASE_1, &CASE_2, &CASE_3, &CASE_4, &CASE_5];
 
 fn bytes48(hex: &str) -> [u8; 48] {
     hex_decode(hex).unwrap().try_into().unwrap()

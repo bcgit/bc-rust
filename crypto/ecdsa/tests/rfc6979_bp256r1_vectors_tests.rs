@@ -5,6 +5,14 @@
 //! msg)` pairs (empty, short ASCII, longer ASCII, all-zero, all-`0xff`), each with the
 //! deterministic `k`, the resulting `(r, s)`, and `Q = [d]G` computed via the standard affine
 //! group law (general `a`), `random.seed 1234567`.
+//!
+//! On this curve the §3.2 step h.3 rejection loop runs on a third of real messages (see
+//! `rfc6979_bp256r1`'s module docs), and these vectors pin it deliberately: CASE_0 rejects one
+//! candidate before its `k`, and a sixth pair, CASE_5, is chosen so that five in a row are
+//! rejected, exercising the `K = HMAC_K(V || 0x00)` re-key five times. Every vector, including
+//! both rejecting ones, is additionally reproduced by python-ecdsa 0.19.2 (its own pure-Python
+//! RFC 6979) and by OpenSSL 4.0.2's deterministic ECDSA (through the cryptography 50.0.1
+//! bindings), which also anchors the curve constants a second way.
 
 use bouncycastle_core::traits::Hash;
 use bouncycastle_core::traits::{
@@ -28,6 +36,8 @@ struct Vector {
     uy: &'static str,
 }
 
+// The first h.3 candidate for this (d, msg) is >= n: the accepted k is the second, after one
+// re-key of the HMAC chain.
 const CASE_0: Vector = Vector {
     d: "1201AF823A0A4FE05170CFF294DC13FC115AC6CB3C58FD846EC5C07FF6908E54",
     msg: b"",
@@ -78,7 +88,20 @@ const CASE_4: Vector = Vector {
     uy: "62F10FDBD0CDE940DD72CEBD0A3C8FB1D734ECB5C6B287CDEB2E50CA650D67C2",
 };
 
-const CASES: [&Vector; 5] = [&CASE_0, &CASE_1, &CASE_2, &CASE_3, &CASE_4];
+// Pins the h.3 continue-chain deliberately: five candidates in a row are >= n, so the accepted k
+// follows five `K = HMAC_K(V || 0x00)` re-keys. d is SHA-512("bc-rust brainpoolP256r1 h.3
+// rejection pin") reduced into [1, n-1]; the message index is the first to reach five rejections.
+const CASE_5: Vector = Vector {
+    d: "07C1C10F28FB620F5ABFC2231E5CF77931E282BFCC735F96DE13FDCCFB51F95E",
+    msg: b"brainpoolP256r1 rejection test 363",
+    k: "753584443CB1744D143C4E19D1DE051F2DB89DEA3F208C1089EFAF093C459CA9",
+    r: "2228C1F981B3F9514F15D1D2CFFCF96E5F6C93ABF5208872611B5A69E3B6CC2D",
+    s: "64B2088C315AB6158001B09B6F15EC2FE314F1B5CA971E92453A1FCDF414D472",
+    ux: "8CBDEA6139F062041BDF604D0C80750AC944D23BFD5406A1EFA70A5FC19B290C",
+    uy: "46A4AE6AA2E4182CC865D49169994AD26DA55207D4E517DC68780EC25A263DC1",
+};
+
+const CASES: [&Vector; 6] = [&CASE_0, &CASE_1, &CASE_2, &CASE_3, &CASE_4, &CASE_5];
 
 fn bytes32(hex: &str) -> [u8; 32] {
     hex_decode(hex).unwrap().try_into().unwrap()
