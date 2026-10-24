@@ -1,7 +1,7 @@
 //! TDES-ECB encryption and decryption, streaming stdin to stdout.
 //!
 //! Only the mode wiring lives here: key loading, stdin framing and block-alignment enforcement are
-//! all in [`crate::block_mode_cmd`], shared with the AES commands and `tdes-cbc`. See that module
+//! all in [`crate::helpers::block_mode_helpers`], shared with the AES commands and `tdes-cbc`. See that module
 //! for the command-line contract. ECB has no IV (`INIT_DATA_LEN = 0`), so nothing is prepended to
 //! the output or consumed from the input: the ciphertext is exactly as long as the plaintext. The
 //! block is 8 bytes.
@@ -21,8 +21,8 @@
 use crate::helpers::block_mode_helpers::{
     CipherDirection, decrypt_stream, encrypt_stream, load_key,
 };
-use bouncycastle::modes::hazmat::Ecb;
-use bouncycastle::modes::{Decrypting, Encrypting};
+use bouncycastle::cipher::modes::hazmat::Ecb;
+use bouncycastle::cipher::{Decrypting, Encrypting};
 use bouncycastle::tdes::hazmat::TDES;
 use bouncycastle::tdes::{BLOCK_LEN, KEY_LEN};
 
@@ -30,19 +30,19 @@ use bouncycastle::tdes::{BLOCK_LEN, KEY_LEN};
 const MODE: &str = "ECB";
 
 pub(crate) fn tdes_ecb_cmd(
-    action: &BlockModeAction,
+    action: &CipherDirection,
     key: &Option<String>,
     key_file: &Option<String>,
     output_hex: bool,
 ) {
     let key = load_key::<KEY_LEN>(key, key_file, "TDES");
     match action {
-        BlockModeAction::Encrypt => {
+        CipherDirection::Encrypt => {
             encrypt_stream::<Ecb<TDES, Encrypting, KEY_LEN, BLOCK_LEN>, KEY_LEN, 0, BLOCK_LEN>(
                 &key, output_hex, MODE,
             )
         }
-        BlockModeAction::Decrypt => {
+        CipherDirection::Decrypt => {
             decrypt_stream::<Ecb<TDES, Decrypting, KEY_LEN, BLOCK_LEN>, KEY_LEN, 0, BLOCK_LEN>(
                 &key, output_hex, MODE,
             )

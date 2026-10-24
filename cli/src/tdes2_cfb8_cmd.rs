@@ -4,10 +4,10 @@
 //! `bouncycastle-tdes` will not compile an encrypting mode over `TDES2Key`, and
 //! [`DecryptOnlyAction`] has no `encrypt`. Everything else is `tdes-cfb8 decrypt` -- the first 8
 //! bytes of input are the IV, the rest any length -- see [`crate::tdes_cfb8_cmd`] for how CFB8
-//! differs from CFB64, and [`crate::stream_mode_cmd`]. The key is the 16-byte `KEY1 || KEY2`.
+//! differs from CFB64, and [`crate::helpers::stream_mode_helpers`]. The key is the 16-byte `KEY1 || KEY2`.
 
-use crate::block_mode_cmd::{DecryptOnlyAction, load_key};
-use crate::stream_mode_cmd::decrypt_stream;
+use crate::helpers::block_mode_helpers::{DecryptOnlyAction, load_key};
+use crate::helpers::stream_mode_helpers::decrypt_stream;
 use bouncycastle::tdes::{BLOCK_LEN, KEY_LEN_2KEY, TDES2_CFB8};
 
 pub(crate) fn tdes2_cfb8_cmd(

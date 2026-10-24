@@ -4,10 +4,10 @@
 //! `bouncycastle-tdes` will not compile an encrypting mode over `TDES2Key`, and
 //! [`DecryptOnlyAction`] has no `encrypt`. Everything else is `tdes-ctr decrypt` -- the first 6
 //! bytes of input are the nonce, the counter starts at zero, at most 512 KiB of data -- see
-//! [`crate::tdes_ctr_cmd`] and [`crate::stream_mode_cmd`]. The key is the 16-byte `KEY1 || KEY2`.
+//! [`crate::tdes_ctr_cmd`] and [`crate::helpers::stream_mode_helpers`]. The key is the 16-byte `KEY1 || KEY2`.
 
-use crate::block_mode_cmd::{DecryptOnlyAction, load_key};
-use crate::stream_mode_cmd::decrypt_stream;
+use crate::helpers::block_mode_helpers::{DecryptOnlyAction, load_key};
+use crate::helpers::stream_mode_helpers::decrypt_stream;
 use bouncycastle::tdes::{CTR_NONCE_LEN, KEY_LEN_2KEY, TDES2_CTR};
 
 pub(crate) fn tdes2_ctr_cmd(

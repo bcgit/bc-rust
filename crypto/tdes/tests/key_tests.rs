@@ -9,9 +9,9 @@
 //! * The `KeyMaterial` checks: type, length and security strength.
 
 use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
-use bouncycastle_core::key_material::{
-    KeyMaterial, KeyMaterialTrait, KeyType, do_hazardous_operations,
-};
+use bouncycastle_core::hazmat::ElectronicCodeBook;
+use bouncycastle_core::hazmat::do_hazardous_operations;
+use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::Algorithm;
 use bouncycastle_tdes::hazmat::{TDES, TDES2Key};

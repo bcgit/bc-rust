@@ -35,6 +35,7 @@
 #![allow(dead_code)]
 #![allow(unused_imports)]
 
+use bouncycastle::core::hazmat::ElectronicCodeBook;
 use bouncycastle::core::key_material::{KeyMaterial, KeyType};
 use bouncycastle::tdes::hazmat::{TDES, TDES2Key};
 use bouncycastle::tdes::{BLOCK_LEN, KEY_LEN};
