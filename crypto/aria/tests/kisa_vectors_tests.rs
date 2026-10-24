@@ -14,11 +14,12 @@ mod common;
 
 use bouncycastle_aria::hazmat::{ARIA, ARIA_128, ARIA_192, ARIA_256};
 use bouncycastle_aria::{ARIAParams, BLOCK_LEN};
+use bouncycastle_cipher::modes::Cbc;
+use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::hazmat::ElectronicCodeBook;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::traits::{BlockCipherDecryptor, BlockCipherEncryptor};
 use bouncycastle_core_test_framework::FixedSeedRNG;
-use bouncycastle_modes::{Cbc, Decrypting, Encrypting};
 use common::bytes;
 
 /// The published CBC vectors are whole blocks, so they are checked against the mode

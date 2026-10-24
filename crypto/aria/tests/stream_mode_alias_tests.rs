@@ -4,19 +4,20 @@
 //! and behave as the mode they claim to be: the direction selects the encryptor or the decryptor,
 //! the init data is the length the mode defines, and the three modes are distinct from each other.
 //! The known-answer coverage is in `stream_mode_tests.rs`, and the modes themselves are tested in
-//! their own right in `bouncycastle-modes`; this checks the wiring between them.
+//! their own right in `bouncycastle_cipher::modes`; this checks the wiring between them.
 
 use bouncycastle_aria::hazmat::{ARIA_128, ARIA_192, ARIA_256};
 use bouncycastle_aria::{
     ARIA_CFB_128, ARIA_CFB_192, ARIA_CFB_256, ARIA_CFB8_128, ARIA_CFB8_192, ARIA_CFB8_256,
     ARIA_CTR_128, ARIA_CTR_192, ARIA_CTR_256, BLOCK_LEN, CTR_NONCE_LEN,
 };
+use bouncycastle_cipher::modes::{Cfb, Cfb8, Ctr};
+use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::traits::{
     StreamCipherDecryptor, StreamCipherEncryptor, SymmetricCipherEncryptor,
 };
 use bouncycastle_core_test_framework::FixedSeedRNG;
-use bouncycastle_modes::{Cfb, Cfb8, Ctr, Decrypting, Encrypting};
 
 fn key<const N: usize>() -> KeyMaterial<N> {
     let bytes: [u8; N] = core::array::from_fn(|i| (i as u8).wrapping_mul(7).wrapping_add(1));

@@ -25,10 +25,10 @@ use bouncycastle_aria::{
     ARIA_CFB_128, ARIA_CFB_192, ARIA_CFB_256, ARIA_CFB8_128, ARIA_CFB8_192, ARIA_CFB8_256,
     ARIA_CTR_128, ARIA_CTR_192, ARIA_CTR_256, BLOCK_LEN, CTR_NONCE_LEN,
 };
+use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::traits::{StreamCipherDecryptor, StreamCipherEncryptor};
 use bouncycastle_core_test_framework::FixedSeedRNG;
-use bouncycastle_modes::{Decrypting, Encrypting};
 use common::bytes;
 
 /// The 160-byte plaintext shared by all nine vectors.
