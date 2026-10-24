@@ -6,8 +6,12 @@ mod hmac_tests {
         KeyMaterial, KeyMaterial256, KeyMaterial512, KeyMaterialTrait, KeyType,
     };
     use bouncycastle_core::security_strength::SecurityStrength;
+    use bouncycastle_core::symmetric_key::{
+        FromAnyKeyMaterial, MacGenerationKey, MacVerificationKey,
+    };
     use bouncycastle_core::traits::{Algorithm, Hash, MAC};
     use bouncycastle_core_test_framework::DUMMY_SEED;
+    use bouncycastle_core_test_framework::from_key_material::TestFrameworkFromAnyKeyMaterial;
     use bouncycastle_core_test_framework::mac::TestFrameworkMAC;
     use bouncycastle_hex as hex;
     use bouncycastle_hmac::*;
@@ -30,7 +34,9 @@ mod hmac_tests {
         assert_eq!(zero_length_key.key_len(), 0);
         assert_eq!(zero_length_key.key_type(), KeyType::MACKey);
 
-        let mut mac = HMAC::<SHA256>::new_allow_weak_key(&zero_length_key).unwrap();
+        let mac_key = HmacKey::<SHA256>::from_key_material_allow_weak(&zero_length_key).unwrap();
+
+        let mut mac = mac_key.create_generator();
         mac.do_update("Hi There".as_bytes());
         let output = mac.do_final();
         assert_eq!(output, b"\xe4\x84\x11\x26\x27\x15\xc8\x37\x0c\xd5\xe7\xbf\x8e\x82\xbe\xf5\x3b\xd5\x37\x12\xd0\x07\xf3\x42\x93\x51\x84\x3b\x77\xc7\xbb\x9b");
@@ -41,7 +47,8 @@ mod hmac_tests {
             KeyType::MACKey,
         )
         .unwrap();
-        let mut mac = HMAC::<SHA224>::new(&key).unwrap();
+        let mac_key = HmacKey::<SHA224>::from_key_material(&key).unwrap();
+        let mut mac = mac_key.create_generator();
         mac.do_update(b"Hi There");
         let output = mac.do_final();
         assert_eq!(output, b"\x89\x6f\xb1\x12\x8a\xbb\xdf\x19\x68\x32\x10\x7c\xd4\x9d\xf3\x3f\x47\xb4\xb1\x16\x99\x12\xba\x4f\x53\x68\x4b\x22");
@@ -52,7 +59,8 @@ mod hmac_tests {
             KeyType::MACKey,
         )
         .unwrap();
-        let mac = HMAC::<SHA256>::new(&key).unwrap();
+        let mac_key = HmacKey::<SHA256>::from_key_material(&key).unwrap();
+        let mac = mac_key.create_generator();
         // mac.do_update(b"").unwrap();
         let output = mac.do_final();
         assert_eq!(
@@ -68,38 +76,33 @@ mod hmac_tests {
             b"\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f",
             KeyType::MACKey).unwrap();
 
-        _ = HMAC::<SHA224>::new(&key).unwrap();
-        _ = HMAC_SHA224::new(&key).unwrap();
+        let _: HMAC_SHA224 = HmacKey::<SHA224>::from_key_material(&key).unwrap().create_generator();
 
-        _ = HMAC::<SHA256>::new(&key).unwrap();
-        _ = HMAC_SHA256::new(&key).unwrap();
+        let _: HMAC_SHA256 = HmacKey::<SHA256>::from_key_material(&key).unwrap().create_generator();
 
-        _ = HMAC::<SHA384>::new(&key).unwrap();
-        _ = HMAC_SHA384::new(&key).unwrap();
+        let _: HMAC_SHA384 = HmacKey::<SHA384>::from_key_material(&key).unwrap().create_generator();
 
-        _ = HMAC::<SHA512>::new(&key).unwrap();
-        _ = HMAC_SHA512::new(&key).unwrap();
+        let _: HMAC_SHA512 = HmacKey::<SHA512>::from_key_material(&key).unwrap().create_generator();
 
-        _ = HMAC::<SHA512_224>::new(&key).unwrap();
-        _ = HMAC_SHA512_224::new(&key).unwrap();
+        let _: HMAC_SHA512_224 =
+            HmacKey::<SHA512_224>::from_key_material(&key).unwrap().create_generator();
 
-        _ = HMAC::<SHA512_256>::new(&key).unwrap();
-        _ = HMAC_SHA512_256::new(&key).unwrap();
+        let _: HMAC_SHA512_256 =
+            HmacKey::<SHA512_256>::from_key_material(&key).unwrap().create_generator();
 
-        _ = HMAC::<SHA3_224>::new(&key).unwrap();
-        _ = HMAC_SHA3_224::new(&key).unwrap();
+        let _: HMAC_SHA3_224 =
+            HmacKey::<SHA3_224>::from_key_material(&key).unwrap().create_generator();
 
-        _ = HMAC::<SHA3_256>::new(&key).unwrap();
-        _ = HMAC_SHA3_256::new(&key).unwrap();
+        let _: HMAC_SHA3_256 =
+            HmacKey::<SHA3_256>::from_key_material(&key).unwrap().create_generator();
 
-        _ = HMAC::<SHA3_384>::new(&key).unwrap();
-        _ = HMAC_SHA3_384::new(&key).unwrap();
+        let _: HMAC_SHA3_384 =
+            HmacKey::<SHA3_384>::from_key_material(&key).unwrap().create_generator();
 
-        _ = HMAC::<SHA3_512>::new(&key).unwrap();
-        _ = HMAC_SHA3_512::new(&key).unwrap();
+        let _: HMAC_SHA3_512 =
+            HmacKey::<SHA3_512>::from_key_material(&key).unwrap().create_generator();
 
-        _ = HMAC::<SM3>::new(&key).unwrap();
-        _ = HMAC_SM3::new(&key).unwrap();
+        let _: HMAC_SM3 = HmacKey::<SM3>::from_key_material(&key).unwrap().create_generator();
     }
 
     #[test]
@@ -111,15 +114,15 @@ mod hmac_tests {
         .unwrap();
         assert_eq!(short_key.security_strength(), SecurityStrength::_112bit);
         // key is too short, so it is expected to fail
-        match HMAC::<SHA256>::new(&short_key) {
+        match HmacKey::<SHA256>::from_key_material(&short_key) {
             Err(MACError::KeyMaterialError(KeyMaterialError::SecurityStrength(_))) => { /* good */ }
             _ => panic!(
                 "This should have thrown a KeyMaterialError::SecurityStrength error but it didn't"
             ),
         }
 
-        // It works after allowing weak keys
-        HMAC::<SHA256>::new_allow_weak_key(&short_key).unwrap();
+        // It works through the weak form
+        HmacKey::<SHA256>::from_key_material_allow_weak(&short_key).unwrap();
 
         // It works with a long enough key
         let key = KeyMaterial256::from_bytes_as_type(
@@ -127,7 +130,7 @@ mod hmac_tests {
             KeyType::MACKey,
         )
         .unwrap();
-        HMAC::<SHA256>::new(&key).unwrap();
+        HmacKey::<SHA256>::from_key_material(&key).unwrap();
     }
 
     #[test]
@@ -139,7 +142,7 @@ mod hmac_tests {
         )
         .unwrap();
         assert!(
-            HMAC_SHA256::new(&key).unwrap().verify(
+            HmacKey::<SHA256>::from_key_material(&key).unwrap().verify(
                 b"Hi There",
                 &hex::decode("4da0a0bb56f010db147b8f6e5f2dbecf7bb35ff00c8b9da31c9b94cc81815873")
                     .unwrap()
@@ -152,7 +155,7 @@ mod hmac_tests {
             KeyType::MACKey,
         )
         .unwrap();
-        HMAC_SHA256::new(&key).unwrap().verify(
+        HmacKey::<SHA256>::from_key_material(&key).unwrap().verify(
             b"Hi There",
             &hex::decode("5cb9475aba606afe8c82c2d1b3e1cfb1c814e8a72ce5a7b4fe43b0a0aac45144")
                 .unwrap(),
@@ -167,17 +170,19 @@ mod hmac_tests {
 
         // SHA-512 has a 128-byte block, so use a 127-byte key
         let key = KeyMaterial::<200>::from_bytes_as_type(&[0x0B; 127], KeyType::MACKey).unwrap();
-        let mut mac = HMAC_SHA512::new(&key).unwrap();
+        let mac_key = HmacKey::<SHA512>::from_key_material(&key).unwrap();
+        let mut mac = mac_key.create_generator();
         mac.do_update(b"Hi There");
         let tag = mac.do_final();
-        assert!(HMAC_SHA512::new(&key).unwrap().verify(b"Hi There", &tag));
+        assert!(HmacKey::<SHA512>::from_key_material(&key).unwrap().verify(b"Hi There", &tag));
 
         // SHA3-224 has the largest block (144 bytes); a 143-byte key exercises the top of the range.
         let key = KeyMaterial::<200>::from_bytes_as_type(&[0x0B; 143], KeyType::MACKey).unwrap();
-        let mut mac = HMAC_SHA3_224::new(&key).unwrap();
+        let mac_key = HmacKey::<SHA3_224>::from_key_material(&key).unwrap();
+        let mut mac = mac_key.create_generator();
         mac.do_update(b"Hi There");
         let tag = mac.do_final();
-        assert!(HMAC_SHA3_224::new(&key).unwrap().verify(b"Hi There", &tag));
+        assert!(HmacKey::<SHA3_224>::from_key_material(&key).unwrap().verify(b"Hi There", &tag));
     }
 
     #[test]
@@ -185,14 +190,14 @@ mod hmac_tests {
         // Test: provided key has the correct length, but insufficient tagged security strength
         // HMAC should still work, but should return an error
 
-        // it works with a zero key (as new_allow_weak_key)
+        // it works with a zero key (through the weak form)
         // zero-len key
         let mut zero_key = KeyMaterial256::default();
-        HMAC_SHA256::new_allow_weak_key(&zero_key).unwrap();
+        HmacKey::<SHA256>::from_key_material_allow_weak(&zero_key).unwrap();
 
         // non-zero len key of all-zero bytes
         do_hazardous_operations(&mut zero_key, |zero_key| zero_key.set_key_len(32)).unwrap();
-        HMAC_SHA256::new_allow_weak_key(&zero_key).unwrap();
+        HmacKey::<SHA256>::from_key_material_allow_weak(&zero_key).unwrap();
 
         // Note: zero-len keys that are not Zeroized or MACKey are not allowed
 
@@ -202,7 +207,7 @@ mod hmac_tests {
         assert_eq!(key.security_strength(), SecurityStrength::_256bit);
         key.set_security_strength(SecurityStrength::_128bit).unwrap();
         // The call should fail, as the key's security strength is set below the required threshold
-        match HMAC::<SHA512>::new(&key) {
+        match HmacKey::<SHA512>::from_key_material(&key) {
             Err(MACError::KeyMaterialError(KeyMaterialError::SecurityStrength(_))) => { /* fine */ }
             _ => {
                 panic!(
@@ -210,18 +215,30 @@ mod hmac_tests {
                 )
             }
         }
-        // It passes after setting .allow_weak_keys()
-        let mut hmac = HMAC::<SHA512>::new_allow_weak_key(&key).unwrap();
+        // It passes through the weak form
+        let hmac_key = HmacKey::<SHA512>::from_key_material_allow_weak(&key).unwrap();
+        let mut hmac = hmac_key.create_generator();
         hmac.do_update(b"Hi There");
         hmac.do_final();
 
         // one-shot APIs still work with a weak key
-        let out = HMAC::<SHA512>::new_allow_weak_key(&key).unwrap().mac(b"Hi There");
-        assert!(HMAC::<SHA512>::new_allow_weak_key(&key).unwrap().verify(b"Hi There", &out));
+        let out = HmacKey::<SHA512>::from_key_material_allow_weak(&key).unwrap().mac(b"Hi There");
+        assert!(
+            HmacKey::<SHA512>::from_key_material_allow_weak(&key)
+                .unwrap()
+                .verify(b"Hi There", &out)
+        );
         // likewise with pre-allocated buffers
         let mut out = [0u8; 64];
-        HMAC::<SHA512>::new_allow_weak_key(&key).unwrap().mac_out(b"Hi There", &mut out).unwrap();
-        assert!(HMAC::<SHA512>::new_allow_weak_key(&key).unwrap().verify(b"Hi There", &out));
+        HmacKey::<SHA512>::from_key_material_allow_weak(&key)
+            .unwrap()
+            .mac_out(b"Hi There", &mut out)
+            .unwrap();
+        assert!(
+            HmacKey::<SHA512>::from_key_material_allow_weak(&key)
+                .unwrap()
+                .verify(b"Hi There", &out)
+        );
     }
 
     #[test]
@@ -233,23 +250,30 @@ mod hmac_tests {
         .unwrap();
 
         // get the known-good output
-        let out = HMAC::<SHA224>::new(&key).unwrap().mac(b"Hi There");
+        let out = HmacKey::<SHA224>::from_key_material(&key).unwrap().mac(b"Hi There");
 
         // test output that's the wrong length, should simply return False
-        let mut mac = HMAC::<SHA224>::new(&key).unwrap();
+        let mac_key = HmacKey::<SHA224>::from_key_material(&key).unwrap();
+        let mut mac = mac_key.create_generator();
         mac.do_update(b"Hi There");
         assert!(!mac.do_verify_final(&out[..out.len() - 1]));
 
         // test output that's the right length but wrong value -- do_verify
-        let mut mac = HMAC::<SHA224>::new(&key).unwrap();
+        let mac_key = HmacKey::<SHA224>::from_key_material(&key).unwrap();
+        let mut mac = mac_key.create_generator();
         mac.do_update(b"Hi There");
         assert!(!mac.do_verify_final(&[0x01_u8; 28]));
 
         // test output that's the right length but wrong value -- static verify
-        assert!(!HMAC_SHA224::new(&key).unwrap().verify(b"Hi There", &[0x01_u8; 28]));
+        assert!(
+            !HmacKey::<SHA224>::from_key_material(&key)
+                .unwrap()
+                .verify(b"Hi There", &[0x01_u8; 28])
+        );
 
         // error case: test that it'll refuse to truncate below MIN_FIPS_DIGEST_LEN
-        let mut mac = HMAC::<SHA224>::new(&key).unwrap();
+        let mac_key = HmacKey::<SHA224>::from_key_material(&key).unwrap();
+        let mut mac = mac_key.create_generator();
         mac.do_update(b"Hi There");
         let mut out = vec![0u8; MIN_FIPS_DIGEST_LEN - 1];
         match mac.do_final_out(&mut out) {
@@ -263,7 +287,8 @@ mod hmac_tests {
         }
 
         // success case: ... but it will truncate to exactly MIN_FIPS_DIGEST_LEN
-        let mut mac = HMAC::<SHA224>::new(&key).unwrap();
+        let mac_key = HmacKey::<SHA224>::from_key_material(&key).unwrap();
+        let mut mac = mac_key.create_generator();
         mac.do_update(b"Hi There");
         let mut out = vec![0u8; MIN_FIPS_DIGEST_LEN];
         let bytes_written = mac.do_final_out(&mut out).unwrap();
@@ -271,17 +296,21 @@ mod hmac_tests {
         assert_eq!(&out, b"\x89\x6f\xb1\x12");
 
         // fail case: mac value is correct but truncated
-        let mac = HMAC_SHA3_224::new(&key).unwrap();
+        let mac_key = HmacKey::<SHA3_224>::from_key_material(&key).unwrap();
+        let mac = mac_key.create_generator();
         let mut mac_val = mac.mac(b"Polly want a cracker?");
-        let verifier = HMAC_SHA3_224::new(&key).unwrap();
+        let verifier_key = HmacKey::<SHA3_224>::from_key_material(&key).unwrap();
+        let verifier = verifier_key.create_generator();
         assert!(verifier.verify(b"Polly want a cracker?", &mac_val));
 
         // truncation of the mac value is considered a fail
-        let verifier = HMAC_SHA3_224::new(&key).unwrap();
+        let verifier_key = HmacKey::<SHA3_224>::from_key_material(&key).unwrap();
+        let verifier = verifier_key.create_generator();
         assert!(!verifier.verify(b"Polly want a cracker?", &mac_val[..mac_val.len() - 1]));
 
         // .. as is some extra bytes at the end
-        let verifier = HMAC_SHA3_224::new(&key).unwrap();
+        let verifier_key = HmacKey::<SHA3_224>::from_key_material(&key).unwrap();
+        let verifier = verifier_key.create_generator();
         mac_val.extend_from_slice(&[0u8; 4]);
         assert!(!verifier.verify(b"Polly want a cracker?", &mac_val));
     }
@@ -325,11 +354,12 @@ mod hmac_tests {
             .unwrap();
             let msg = hex::decode("2579f5df03e0fccde2b515944d88dc81ca3b4a20517cdc54170559f0d2f889e2f543eacf8a84b34563d0139351ea9a77399d274c5c6c1b0f488063b7255f9df648667fe800151ef288a68d6c8c24d57abd7e4f70eed149752beae4a9763cebf03c").unwrap();
             let expected = hex::decode("6e927067f724d4fedc96b310c5115979e8dde8a4").unwrap();
-            let full = HMAC_SHA512_224::new(&key).unwrap().mac(&msg);
+            let full = HmacKey::<SHA512_224>::from_key_material(&key).unwrap().mac(&msg);
             assert_eq!(full.len(), 28);
             assert_eq!(&full[..20], &expected[..]);
             // the same vector through the streaming API in uneven chunks
-            let mut mac = HMAC_SHA512_224::new(&key).unwrap();
+            let mac_key = HmacKey::<SHA512_224>::from_key_material(&key).unwrap();
+            let mut mac = mac_key.create_generator();
             for chunk in msg.chunks(13) {
                 mac.do_update(chunk);
             }
@@ -343,11 +373,12 @@ mod hmac_tests {
             .unwrap();
             let msg = hex::decode("dedb0cc1c2a9b960d3").unwrap();
             let expected = hex::decode("9cf6def15b5ead939e1fda675b52147a01a6ccb6").unwrap();
-            let full = HMAC_SHA512_224::new(&key).unwrap().mac(&msg);
+            let full = HmacKey::<SHA512_224>::from_key_material(&key).unwrap().mac(&msg);
             assert_eq!(full.len(), 28);
             assert_eq!(&full[..20], &expected[..]);
             // the same vector through the streaming API in uneven chunks
-            let mut mac = HMAC_SHA512_224::new(&key).unwrap();
+            let mac_key = HmacKey::<SHA512_224>::from_key_material(&key).unwrap();
+            let mut mac = mac_key.create_generator();
             for chunk in msg.chunks(13) {
                 mac.do_update(chunk);
             }
@@ -369,11 +400,12 @@ mod hmac_tests {
             .unwrap();
             let msg = hex::decode("").unwrap();
             let expected = hex::decode("7857d4737760e127f1533185c6ad183ac4e10bd9").unwrap();
-            let full = HMAC_SHA512_256::new(&key).unwrap().mac(&msg);
+            let full = HmacKey::<SHA512_256>::from_key_material(&key).unwrap().mac(&msg);
             assert_eq!(full.len(), 32);
             assert_eq!(&full[..20], &expected[..]);
             // the same vector through the streaming API in uneven chunks
-            let mut mac = HMAC_SHA512_256::new(&key).unwrap();
+            let mac_key = HmacKey::<SHA512_256>::from_key_material(&key).unwrap();
+            let mut mac = mac_key.create_generator();
             for chunk in msg.chunks(13) {
                 mac.do_update(chunk);
             }
@@ -388,16 +420,25 @@ mod hmac_tests {
             let msg =
                 hex::decode("9268f10c36fd3366012e841260e60227a968f6c8546dee6abc83b3").unwrap();
             let expected = hex::decode("3288232187dcf1ea421f5c12bdeb4fd9d0a0a25b").unwrap();
-            let full = HMAC_SHA512_256::new(&key).unwrap().mac(&msg);
+            let full = HmacKey::<SHA512_256>::from_key_material(&key).unwrap().mac(&msg);
             assert_eq!(full.len(), 32);
             assert_eq!(&full[..20], &expected[..]);
             // the same vector through the streaming API in uneven chunks
-            let mut mac = HMAC_SHA512_256::new(&key).unwrap();
+            let mac_key = HmacKey::<SHA512_256>::from_key_material(&key).unwrap();
+            let mut mac = mac_key.create_generator();
             for chunk in msg.chunks(13) {
                 mac.do_update(chunk);
             }
             assert_eq!(mac.do_final(), full);
         }
+    }
+
+    /// What `TestFrameworkMAC::test_mac` ran per vector: the key built with the weak form (RFC 4231
+    /// keys are below the HMAC's strength), its workers against the vector, and the key policy.
+    fn test_hmac<H: Hash + Default>(key: &impl KeyMaterialTrait, input: &[u8], expected: &[u8]) {
+        let hmac_key = HmacKey::<H>::from_key_material_allow_weak(key).unwrap();
+        TestFrameworkMAC::new().test_mac_key(&hmac_key, input, expected);
+        TestFrameworkFromAnyKeyMaterial::new().test::<HmacKey<H>>(key);
     }
 
     #[cfg(test)]
@@ -407,7 +448,6 @@ mod hmac_tests {
 
         #[test]
         fn hmac_sha224() {
-            let test_framework = TestFrameworkMAC::new();
             let mut zero_length_key = KeyMaterial256::default();
             do_hazardous_operations(&mut zero_length_key, |zero_length_key| {
                 zero_length_key.set_key_type(KeyType::MACKey)
@@ -416,15 +456,14 @@ mod hmac_tests {
             assert_eq!(zero_length_key.key_len(), 0);
             assert_eq!(zero_length_key.key_type(), KeyType::MACKey);
 
-            test_framework.test_mac::<HMAC<SHA224>>(
+            test_hmac::<SHA224>(
                 &zero_length_key,
                 b"Hello, world",
                 &hex::decode("57454372e6a8780b11150274d7056c6fbcffef902f9c23f24fbbfee9").unwrap(),
             );
 
             // RFC4231 Test Case 1
-            let test_framework = TestFrameworkMAC::new();
-            test_framework.test_mac::<HMAC<SHA224>>(
+            test_hmac::<SHA224>(
                 &KeyMaterial256::from_bytes_as_type(
                     &hex::decode("0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b").unwrap(),
                     KeyType::MACKey,
@@ -435,7 +474,7 @@ mod hmac_tests {
             );
 
             // RFC4231 Test Case 2 -- Test with a key shorter than the length of the HMAC output.
-            test_framework.test_mac::<HMAC<SHA224>>(
+            test_hmac::<SHA224>(
                 &KeyMaterial256::from_bytes_as_type(b"Jefe", KeyType::MACKey).unwrap(),
                 b"what do ya want for nothing?",
                 &hex::decode("a30e01098bc6dbbf45690f3a7e9e6d0f8bbea2a39e6148008fd05e44").unwrap(),
@@ -443,14 +482,14 @@ mod hmac_tests {
 
             // RFC4231 Test Case 3 -- Test with a combined length of key and data that is larger than 64
             //    bytes (= block-size of SHA-224 and SHA-256).
-            test_framework.test_mac::<HMAC<SHA224>>(&KeyMaterial256::from_bytes_as_type(&hex::decode("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa").unwrap(), KeyType::MACKey).unwrap(),
+            test_hmac::<SHA224>(&KeyMaterial256::from_bytes_as_type(&hex::decode("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa").unwrap(), KeyType::MACKey).unwrap(),
                                                     &hex::decode("dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd").unwrap(),
                                                     &hex::decode("7fb3cb3588c6c1f6ffa9694d7d6ad2649365b0c1f65d69d1ec8333ea").unwrap(),
             );
 
             // RFC4231 Test Case 4 -- Test with a combined length of key and data that is larger than 64
             //    bytes (= block-size of SHA-224 and SHA-256).
-            test_framework.test_mac::<HMAC<SHA224>>(&KeyMaterial256::from_bytes_as_type(&hex::decode("0102030405060708090a0b0c0d0e0f10111213141516171819").unwrap(), KeyType::MACKey).unwrap(),
+            test_hmac::<SHA224>(&KeyMaterial256::from_bytes_as_type(&hex::decode("0102030405060708090a0b0c0d0e0f10111213141516171819").unwrap(), KeyType::MACKey).unwrap(),
                                                     &hex::decode("cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd").unwrap(),
                                                     &hex::decode("6c11506874013cac6a2abc1bb382627cec6a90d86efc012de7afec5a").unwrap(),
             );
@@ -462,13 +501,16 @@ mod hmac_tests {
             )
             .unwrap();
             let mut out = [0u8; 128 / 8];
-            HMAC::<SHA224>::new(&key).unwrap().mac_out(b"Test With Truncation", &mut out).unwrap();
+            HmacKey::<SHA224>::from_key_material(&key)
+                .unwrap()
+                .mac_out(b"Test With Truncation", &mut out)
+                .unwrap();
             assert_eq!(&Vec::from(out), &hex::decode("0e2aea68a90c8d37c988bcdb9fca6fa8").unwrap());
 
             // RFC4231 Test Case 6 -- Test with a combined length of key and data that is larger than 64
             //    bytes (= block-size of SHA-224 and SHA-256).
             let key = KeyMaterial::<131>::from_bytes_as_type(&hex::decode("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa").unwrap(), KeyType::MACKey).unwrap();
-            test_framework.test_mac::<HMAC<SHA224>>(
+            test_hmac::<SHA224>(
                 &key,
                 b"Test Using Larger Than Block-Size Key - Hash Key First",
                 &hex::decode("95e9a0db962095adaebe9b2d6f0dbce2d499f112f2d2b7273fa6870e").unwrap(),
@@ -476,7 +518,7 @@ mod hmac_tests {
 
             // RFC4231 Test Case 7 -- Test with a key and data that is larger than 128 bytes (= block-size
             //    of SHA-384 and SHA-512)
-            test_framework.test_mac::<HMAC<SHA224>>(&KeyMaterial::<131>::from_bytes_as_type(&hex::decode("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa").unwrap(), KeyType::MACKey).unwrap(),
+            test_hmac::<SHA224>(&KeyMaterial::<131>::from_bytes_as_type(&hex::decode("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa").unwrap(), KeyType::MACKey).unwrap(),
                                                     b"This is a test using a larger than block-size key and a larger than block-size data. The key needs to be hashed before being used by the HMAC algorithm.",
                                                     &hex::decode("3a854166ac5d9f023f54d517d0b39dbd946770db9c2b95c9f6f565d1").unwrap(),
             );
@@ -485,7 +527,6 @@ mod hmac_tests {
         #[test]
         fn hmac_sha256() {
             // test with zero-length key
-            let test_framework = TestFrameworkMAC::new();
             let mut zero_length_key = KeyMaterial256::default();
             do_hazardous_operations(&mut zero_length_key, |zero_length_key| {
                 zero_length_key.set_key_type(KeyType::MACKey)
@@ -494,7 +535,7 @@ mod hmac_tests {
             assert_eq!(zero_length_key.key_len(), 0);
             assert_eq!(zero_length_key.key_type(), KeyType::MACKey);
 
-            test_framework.test_mac::<HMAC<SHA256>>(
+            test_hmac::<SHA256>(
                 &zero_length_key,
                 b"Hello, world",
                 &hex::decode("c0fa4c55880318c31c1020e7a2cf830c2c695716387795c7a0eb918ba84e4bf0")
@@ -502,8 +543,7 @@ mod hmac_tests {
             );
 
             // RFC4231 Test Case 1
-            let test_framework = TestFrameworkMAC::new();
-            test_framework.test_mac::<HMAC<SHA256>>(
+            test_hmac::<SHA256>(
                 &KeyMaterial256::from_bytes_as_type(
                     &hex::decode("0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b").unwrap(),
                     KeyType::MACKey,
@@ -515,7 +555,7 @@ mod hmac_tests {
             );
 
             // RFC4231 Test Case 2 -- Test with a key shorter than the length of the HMAC output.
-            test_framework.test_mac::<HMAC<SHA256>>(
+            test_hmac::<SHA256>(
                 &KeyMaterial256::from_bytes_as_type(b"Jefe", KeyType::MACKey).unwrap(),
                 b"what do ya want for nothing?",
                 &hex::decode("5bdcc146bf60754e6a042426089575c75a003f089d2739839dec58b964ec3843")
@@ -524,14 +564,14 @@ mod hmac_tests {
 
             // RFC4231 Test Case 3 -- Test with a combined length of key and data that is larger than 64
             //    bytes (= block-size of SHA-224 and SHA-256).
-            test_framework.test_mac::<HMAC<SHA256>>(&KeyMaterial256::from_bytes_as_type(&hex::decode("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa").unwrap(), KeyType::MACKey).unwrap(),
+            test_hmac::<SHA256>(&KeyMaterial256::from_bytes_as_type(&hex::decode("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa").unwrap(), KeyType::MACKey).unwrap(),
                                                     &hex::decode("dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd").unwrap(),
                                                     &hex::decode("773ea91e36800e46854db8ebd09181a72959098b3ef8c122d9635514ced565fe").unwrap(),
             );
 
             // RFC4231 Test Case 4 -- Test with a combined length of key and data that is larger than 64
             //    bytes (= block-size of SHA-224 and SHA-256).
-            test_framework.test_mac::<HMAC<SHA256>>(&KeyMaterial256::from_bytes_as_type(&hex::decode("0102030405060708090a0b0c0d0e0f10111213141516171819").unwrap(), KeyType::MACKey).unwrap(),
+            test_hmac::<SHA256>(&KeyMaterial256::from_bytes_as_type(&hex::decode("0102030405060708090a0b0c0d0e0f10111213141516171819").unwrap(), KeyType::MACKey).unwrap(),
                                                     &hex::decode("cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd").unwrap(),
                                                     &hex::decode("82558a389a443c0ea4cc819899f2083a85f0faa3e578f8077a2e3ff46729665b").unwrap(),
             );
@@ -543,19 +583,22 @@ mod hmac_tests {
             )
             .unwrap();
             let mut out = [0u8; 128 / 8];
-            HMAC::<SHA256>::new(&key).unwrap().mac_out(b"Test With Truncation", &mut out).unwrap();
+            HmacKey::<SHA256>::from_key_material(&key)
+                .unwrap()
+                .mac_out(b"Test With Truncation", &mut out)
+                .unwrap();
             assert_eq!(&Vec::from(out), &hex::decode("a3b6167473100ee06e0c796c2955552b").unwrap());
 
             // RFC4231 Test Case 6 -- Test with a combined length of key and data that is larger than 64
             //    bytes (= block-size of SHA-224 and SHA-256).
-            test_framework.test_mac::<HMAC<SHA256>>(&KeyMaterial::<131>::from_bytes_as_type(&hex::decode("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa").unwrap(), KeyType::MACKey).unwrap(),
+            test_hmac::<SHA256>(&KeyMaterial::<131>::from_bytes_as_type(&hex::decode("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa").unwrap(), KeyType::MACKey).unwrap(),
                                                     b"Test Using Larger Than Block-Size Key - Hash Key First",
                                                     &hex::decode("60e431591ee0b67f0d8a26aacbf5b77f8e0bc6213728c5140546040f0ee37f54").unwrap(),
             );
 
             // RFC4231 Test Case 7 -- Test with a key and data that is larger than 128 bytes (= block-size
             //    of SHA-384 and SHA-512)
-            test_framework.test_mac::<HMAC<SHA256>>(&KeyMaterial::<131>::from_bytes_as_type(&hex::decode("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa").unwrap(), KeyType::MACKey).unwrap(),
+            test_hmac::<SHA256>(&KeyMaterial::<131>::from_bytes_as_type(&hex::decode("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa").unwrap(), KeyType::MACKey).unwrap(),
                                                     b"This is a test using a larger than block-size key and a larger than block-size data. The key needs to be hashed before being used by the HMAC algorithm.",
                                                     &hex::decode("9b09ffa71b942fcb27635fbcd5b0e944bfdc63644f0713938a7f51535c3a35e2").unwrap(),
             );
@@ -564,7 +607,6 @@ mod hmac_tests {
         #[test]
         fn hmac_sha384() {
             // test with zero-length key
-            let test_framework = TestFrameworkMAC::new();
             let mut zero_length_key = KeyMaterial256::default();
             do_hazardous_operations(&mut zero_length_key, |zero_length_key| {
                 zero_length_key.set_key_type(KeyType::MACKey)
@@ -573,15 +615,14 @@ mod hmac_tests {
             assert_eq!(zero_length_key.key_len(), 0);
             assert_eq!(zero_length_key.key_type(), KeyType::MACKey);
 
-            test_framework.test_mac::<HMAC<SHA384>>(
+            test_hmac::<SHA384>(
                 &zero_length_key,
                 b"Hello, world",
                 &hex::decode("fbd41442f749049355175277afbaff610539e5bfa874c9cf86ef867a43a30b09a5eac6578d5c0cb1ceddc95f97598af7").unwrap(),
             );
 
             // RFC4231 Test Case 1
-            let test_framework = TestFrameworkMAC::new();
-            test_framework.test_mac::<HMAC<SHA384>>(
+            test_hmac::<SHA384>(
                 &KeyMaterial256::from_bytes_as_type(
                     &hex::decode("0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b").unwrap(),
                     KeyType::MACKey,
@@ -591,7 +632,7 @@ mod hmac_tests {
             );
 
             // RFC4231 Test Case 2 -- Test with a key shorter than the length of the HMAC output.
-            test_framework.test_mac::<HMAC<SHA384>>(
+            test_hmac::<SHA384>(
                 &KeyMaterial256::from_bytes_as_type(b"Jefe", KeyType::MACKey).unwrap(),
                 b"what do ya want for nothing?",
                 &hex::decode("af45d2e376484031617f78d2b58a6b1b9c7ef464f5a01b47e42ec3736322445e8e2240ca5e69e2c78b3239ecfab21649").unwrap(),
@@ -599,14 +640,14 @@ mod hmac_tests {
 
             // RFC4231 Test Case 3 -- Test with a combined length of key and data that is larger than 64
             //    bytes (= block-size of SHA-224 and SHA-256).
-            test_framework.test_mac::<HMAC<SHA384>>(&KeyMaterial256::from_bytes_as_type(&hex::decode("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa").unwrap(), KeyType::MACKey).unwrap(),
+            test_hmac::<SHA384>(&KeyMaterial256::from_bytes_as_type(&hex::decode("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa").unwrap(), KeyType::MACKey).unwrap(),
                                                     &hex::decode("dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd").unwrap(),
                                                     &hex::decode("88062608d3e6ad8a0aa2ace014c8a86f0aa635d947ac9febe83ef4e55966144b2a5ab39dc13814b94e3ab6e101a34f27").unwrap(),
             );
 
             // RFC4231 Test Case 4 -- Test with a combined length of key and data that is larger than 64
             //    bytes (= block-size of SHA-224 and SHA-256).
-            test_framework.test_mac::<HMAC<SHA384>>(&KeyMaterial256::from_bytes_as_type(&hex::decode("0102030405060708090a0b0c0d0e0f10111213141516171819").unwrap(), KeyType::MACKey).unwrap(),
+            test_hmac::<SHA384>(&KeyMaterial256::from_bytes_as_type(&hex::decode("0102030405060708090a0b0c0d0e0f10111213141516171819").unwrap(), KeyType::MACKey).unwrap(),
                                                     &hex::decode("cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd").unwrap(),
                                                     &hex::decode("3e8a69b7783c25851933ab6290af6ca77a9981480850009cc5577c6e1f573b4e6801dd23c4a7d679ccf8a386c674cffb").unwrap(),
             );
@@ -618,21 +659,22 @@ mod hmac_tests {
             )
             .unwrap();
             let mut out = [0u8; 128 / 8];
-            // Key is shorter than HMAC security strength, so it needs to use new_allow_weak_keys()
-            let hmac = HMAC::<SHA384>::new_allow_weak_key(&key).unwrap();
+            // Key is shorter than HMAC security strength, so it needs the weak form
+            let hmac_key = HmacKey::<SHA384>::from_key_material_allow_weak(&key).unwrap();
+            let hmac = hmac_key.create_generator();
             hmac.mac_out(b"Test With Truncation", &mut out).unwrap();
             assert_eq!(&Vec::from(out), &hex::decode("3abf34c3503b2a23a46efc619baef897").unwrap());
 
             // RFC4231 Test Case 6 -- Test with a combined length of key and data that is larger than 64
             //    bytes (= block-size of SHA-224 and SHA-256).
-            test_framework.test_mac::<HMAC<SHA384>>(&KeyMaterial::<131>::from_bytes_as_type(&hex::decode("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa").unwrap(), KeyType::MACKey).unwrap(),
+            test_hmac::<SHA384>(&KeyMaterial::<131>::from_bytes_as_type(&hex::decode("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa").unwrap(), KeyType::MACKey).unwrap(),
                                                     b"Test Using Larger Than Block-Size Key - Hash Key First",
                                                     &hex::decode("4ece084485813e9088d2c63a041bc5b44f9ef1012a2b588f3cd11f05033ac4c60c2ef6ab4030fe8296248df163f44952").unwrap(),
             );
 
             // RFC4231 Test Case 7 -- Test with a key and data that is larger than 128 bytes (= block-size
             //    of SHA-384 and SHA-512)
-            test_framework.test_mac::<HMAC<SHA384>>(&KeyMaterial::<131>::from_bytes_as_type(&hex::decode("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa").unwrap(), KeyType::MACKey).unwrap(),
+            test_hmac::<SHA384>(&KeyMaterial::<131>::from_bytes_as_type(&hex::decode("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa").unwrap(), KeyType::MACKey).unwrap(),
                                                     b"This is a test using a larger than block-size key and a larger than block-size data. The key needs to be hashed before being used by the HMAC algorithm.",
                                                     &hex::decode("6617178e941f020d351e2f254e8fd32c602420feb0b8fb9adccebb82461e99c5a678cc31e799176d3860e6110c46523e").unwrap(),
             );
@@ -641,7 +683,6 @@ mod hmac_tests {
         #[test]
         fn hmac_sha512() {
             // test with zero-length key
-            let test_framework = TestFrameworkMAC::new();
             let mut zero_length_key = KeyMaterial256::default();
             do_hazardous_operations(&mut zero_length_key, |zero_length_key| {
                 zero_length_key.set_key_type(KeyType::MACKey)
@@ -650,15 +691,14 @@ mod hmac_tests {
             assert_eq!(zero_length_key.key_len(), 0);
             assert_eq!(zero_length_key.key_type(), KeyType::MACKey);
 
-            test_framework.test_mac::<HMAC<SHA512>>(
+            test_hmac::<SHA512>(
                 &zero_length_key,
                 b"Hello, world",
                 &hex::decode("e8f7176e01bf9bb883f71f42c143681e86cfafe0b61f3bc0d824e2cde13b5f80199e82d865aebb725461c86a54086aeacac37a86a9f1cf07db567ba5a10f1cc1").unwrap(),
             );
 
             // RFC4231 Test Case 1
-            let test_framework = TestFrameworkMAC::new();
-            test_framework.test_mac::<HMAC<SHA512>>(
+            test_hmac::<SHA512>(
                 &KeyMaterial256::from_bytes_as_type(
                     &hex::decode("0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b").unwrap(),
                     KeyType::MACKey,
@@ -669,7 +709,7 @@ mod hmac_tests {
             );
 
             // RFC4231 Test Case 2 -- Test with a key shorter than the length of the HMAC output.
-            test_framework.test_mac::<HMAC<SHA512>>(
+            test_hmac::<SHA512>(
                 &KeyMaterial256::from_bytes_as_type(b"Jefe", KeyType::MACKey).unwrap(),
                 b"what do ya want for nothing?",
                 &hex::decode("164b7a7bfcf819e2e395fbe73b56e0a387bd64222e831fd610270cd7ea2505549758bf75c05a994a6d034f65f8f0e6fdcaeab1a34d4a6b4b636e070a38bce737").unwrap(),
@@ -677,14 +717,14 @@ mod hmac_tests {
 
             // RFC4231 Test Case 3 -- Test with a combined length of key and data that is larger than 64
             //    bytes (= block-size of SHA-224 and SHA-256).
-            test_framework.test_mac::<HMAC<SHA512>>(&KeyMaterial256::from_bytes_as_type(&hex::decode("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa").unwrap(), KeyType::MACKey).unwrap(),
+            test_hmac::<SHA512>(&KeyMaterial256::from_bytes_as_type(&hex::decode("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa").unwrap(), KeyType::MACKey).unwrap(),
                                                     &hex::decode("dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd").unwrap(),
                                                     &hex::decode("fa73b0089d56a284efb0f0756c890be9b1b5dbdd8ee81a3655f83e33b2279d39bf3e848279a722c806b485a47e67c807b946a337bee8942674278859e13292fb").unwrap(),
             );
 
             // RFC4231 Test Case 4 -- Test with a combined length of key and data that is larger than 64
             //    bytes (= block-size of SHA-224 and SHA-256).
-            test_framework.test_mac::<HMAC<SHA512>>(&KeyMaterial256::from_bytes_as_type(&hex::decode("0102030405060708090a0b0c0d0e0f10111213141516171819").unwrap(), KeyType::MACKey).unwrap(),
+            test_hmac::<SHA512>(&KeyMaterial256::from_bytes_as_type(&hex::decode("0102030405060708090a0b0c0d0e0f10111213141516171819").unwrap(), KeyType::MACKey).unwrap(),
                                                     &hex::decode("cdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcdcd").unwrap(),
                                                     &hex::decode("b0ba465637458c6990e5a8c5f61d4af7e576d97ff94b872de76f8050361ee3dba91ca5c11aa25eb4d679275cc5788063a5f19741120c4f2de2adebeb10a298dd").unwrap(),
             );
@@ -696,21 +736,22 @@ mod hmac_tests {
             )
             .unwrap();
             let mut out = [0u8; 128 / 8];
-            // Key is shorter than HMAC security strength, so need to use new_allow_weak_keys()
-            let hmac = HMAC::<SHA512>::new_allow_weak_key(&key).unwrap();
+            // Key is shorter than HMAC security strength, so it needs the weak form
+            let hmac_key = HmacKey::<SHA512>::from_key_material_allow_weak(&key).unwrap();
+            let hmac = hmac_key.create_generator();
             hmac.mac_out(b"Test With Truncation", &mut out).unwrap();
             assert_eq!(&Vec::from(out), &hex::decode("415fad6271580a531d4179bc891d87a6").unwrap());
 
             // RFC4231 Test Case 6 -- Test with a combined length of key and data that is larger than 64
             //    bytes (= block-size of SHA-224 and SHA-256).
-            test_framework.test_mac::<HMAC<SHA512>>(&KeyMaterial::<131>::from_bytes_as_type(&hex::decode("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa").unwrap(), KeyType::MACKey).unwrap(),
+            test_hmac::<SHA512>(&KeyMaterial::<131>::from_bytes_as_type(&hex::decode("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa").unwrap(), KeyType::MACKey).unwrap(),
                                                     b"Test Using Larger Than Block-Size Key - Hash Key First",
                                                     &hex::decode("80b24263c7c1a3ebb71493c1dd7be8b49b46d1f41b4aeec1121b013783f8f3526b56d037e05f2598bd0fd2215d6a1e5295e64f73f63f0aec8b915a985d786598").unwrap(),
             );
 
             // RFC4231 Test Case 7 -- Test with a key and data that is larger than 128 bytes (= block-size
             //    of SHA-384 and SHA-512)
-            test_framework.test_mac::<HMAC<SHA512>>(&KeyMaterial::<131>::from_bytes_as_type(&hex::decode("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa").unwrap(), KeyType::MACKey).unwrap(),
+            test_hmac::<SHA512>(&KeyMaterial::<131>::from_bytes_as_type(&hex::decode("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa").unwrap(), KeyType::MACKey).unwrap(),
                                                     b"This is a test using a larger than block-size key and a larger than block-size data. The key needs to be hashed before being used by the HMAC algorithm.",
                                                     &hex::decode("e37b6a775dc87dbaa4dfa9f96e5e3ffddebd71f8867289865df5a32d20cdc944b6022cac3c4982b10d5eeb55c3e4de15134676fb6de0446065c97440fa8c6a58").unwrap(),
             );
@@ -724,10 +765,9 @@ mod hmac_tests {
     #[test]
     fn hmac_sm3_known_answers() {
         use bouncycastle_core::key_material::KeyMaterial;
-        let test_framework = TestFrameworkMAC::new();
 
         // RFC4231 Test Case 1 key/message
-        test_framework.test_mac::<HMAC_SM3>(
+        test_hmac::<SM3>(
             &KeyMaterial::<20>::from_bytes_as_type(
                 &hex::decode("0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b").unwrap(),
                 KeyType::MACKey,
@@ -738,24 +778,25 @@ mod hmac_tests {
                 .unwrap(),
         );
         // RFC4231 Test Case 2 key/message
-        test_framework.test_mac::<HMAC_SM3>(
+        test_hmac::<SM3>(
             &KeyMaterial::<4>::from_bytes_as_type(b"Jefe", KeyType::MACKey).unwrap(),
             b"what do ya want for nothing?",
             &hex::decode("2e87f1d16862e6d964b50a5200bf2b10b764faa9680a296a2405f24bec39f882")
                 .unwrap(),
         );
         // RFC4231 Test Case 6 key/message: key larger than the 64-byte block, so it is hashed first
-        test_framework.test_mac::<HMAC_SM3>(
+        test_hmac::<SM3>(
             &KeyMaterial::<131>::from_bytes_as_type(&[0xaa; 131], KeyType::MACKey).unwrap(),
             b"Test Using Larger Than Block-Size Key - Hash Key First",
             &hex::decode("b4fd844e13342002f0b2e0690ea7741f1497d993a70494cea601e657bedf67a0")
                 .unwrap(),
         );
 
-        // zero-length key (weak; needs new_allow_weak_key)
+        // zero-length key (weak; needs the weak form)
         let mut zero_length_key = KeyMaterial256::default();
         do_hazardous_operations(&mut zero_length_key, |k| k.set_key_type(KeyType::MACKey)).unwrap();
-        let mut mac = HMAC_SM3::new_allow_weak_key(&zero_length_key).unwrap();
+        let mac_key = HmacKey::<SM3>::from_key_material_allow_weak(&zero_length_key).unwrap();
+        let mut mac = mac_key.create_generator();
         mac.do_update(b"abc");
         assert_eq!(
             mac.do_final(),
@@ -764,10 +805,11 @@ mod hmac_tests {
         );
 
         assert_eq!(
-            HMAC_SM3::new(
+            HmacKey::<SM3>::from_key_material(
                 &KeyMaterial256::from_bytes_as_type(&DUMMY_SEED[..32], KeyType::MACKey).unwrap()
             )
             .unwrap()
+            .create_generator()
             .output_len(),
             32
         );
@@ -784,17 +826,14 @@ mod hmac_tests {
         let msg = b"Colorless green ideas sleep furiously";
 
         // A helper that exercises the full round-trip for one HMAC variant. HMAC is keyed, so the
-        // key is NOT in the serialized state -- it is re-supplied (by reference) to
-        // from_serialized_state.
-        // The `+ 'static` on the trait object matches the associated type `type Key = dyn
-        // KeyMaterialTrait` (a bare `dyn` in an associated type defaults to `'static`). The concrete
-        // key types are owned, so they satisfy it.
-        fn round_trip<const N: usize, H>(
+        // key is NOT in the serialized state -- the key object is re-supplied (by reference) to
+        // from_suspended.
+        fn round_trip<'k, const N: usize, H>(
             mut hmac: H,
-            key: &(dyn KeyMaterialTrait + 'static),
+            key: &'k <H as SuspendableKeyed<'k, N>>::Key,
             input: &[u8],
         ) where
-            H: MAC + Clone + SuspendableKeyed<N, Key = dyn KeyMaterialTrait>,
+            H: MAC + Clone + SuspendableKeyed<'k, N>,
         {
             hmac.do_update(&input[..10]);
 
@@ -826,17 +865,24 @@ mod hmac_tests {
             }
         }
 
-        round_trip(HMAC_SHA256::new(&key).unwrap(), &key, msg);
-        round_trip(HMAC_SHA512::new(&key).unwrap(), &key, msg);
-        round_trip(HMAC_SHA512_224::new(&key).unwrap(), &key, msg);
-        round_trip(HMAC_SHA512_256::new(&key).unwrap(), &key, msg);
-        round_trip(HMAC_SHA3_256::new(&key).unwrap(), &key, msg);
-        round_trip(HMAC_SM3::new(&key).unwrap(), &key, msg);
+        let hmac_key = HmacKey::<SHA256>::from_key_material(&key).unwrap();
+        round_trip(hmac_key.create_generator(), &hmac_key, msg);
+        let hmac_key = HmacKey::<SHA512>::from_key_material(&key).unwrap();
+        round_trip(hmac_key.create_generator(), &hmac_key, msg);
+        let hmac_key = HmacKey::<SHA512_224>::from_key_material(&key).unwrap();
+        round_trip(hmac_key.create_generator(), &hmac_key, msg);
+        let hmac_key = HmacKey::<SHA512_256>::from_key_material(&key).unwrap();
+        round_trip(hmac_key.create_generator(), &hmac_key, msg);
+        let hmac_key = HmacKey::<SHA3_256>::from_key_material(&key).unwrap();
+        round_trip(hmac_key.create_generator(), &hmac_key, msg);
+        let hmac_key = HmacKey::<SM3>::from_key_material(&key).unwrap();
+        round_trip(hmac_key.create_generator(), &hmac_key, msg);
 
         // test suspend / resume with a key larger than block size
         let long_key =
             KeyMaterial::<200>::from_bytes_as_type(&DUMMY_SEED[..200], KeyType::MACKey).unwrap();
-        round_trip(HMAC_SHA256::new(&long_key).unwrap(), &long_key, msg);
+        let hmac_key = HmacKey::<SHA256>::from_key_material(&long_key).unwrap();
+        round_trip(hmac_key.create_generator(), &hmac_key, msg);
     }
 
     /// Tests that no private data is displayed
@@ -847,7 +893,8 @@ mod hmac_tests {
             KeyType::MACKey,
         )
         .unwrap();
-        let hmac = HMAC_SHA256::new(&key).unwrap();
+        let hmac_key = HmacKey::<SHA256>::from_key_material(&key).unwrap();
+        let hmac = hmac_key.create_generator();
 
         // test fmt
         let fmt_str = format!("{}", &hmac);
@@ -860,12 +907,12 @@ mod hmac_tests {
     /// Exercises the `keygen_from_rng()` function of each HMAC type alias:
     ///   * the generated key must not be the all-zero array,
     ///   * `keygen_from_rng()` returns a ready-to-use `KeyType::MACKey` key, so that
-    ///   * `HMAC::new(&key)` accepts the freshly generated key, without error.
+    ///   * `HmacKey::from_key_material(&key)` accepts the freshly generated key, without error.
     ///
     /// HashDRBG_SHA512 is used throughout because it is the only built-in DRBG that meets the
     /// 256-bit strength that HMAC-SHA512 and HMAC-SHA3-512 claim; see `keygen_rejects_weak_rng`.
     macro_rules! keygen_test {
-        ($test_name:ident, $hmac:ident, $n:literal) => {
+        ($test_name:ident, $hmac:ident, $hash:ident, $n:literal) => {
             #[test]
             fn $test_name() {
                 let mut rng = HashDRBG_SHA512::new_from_os();
@@ -878,22 +925,23 @@ mod hmac_tests {
                     "keygen produced an all-zero key"
                 );
 
-                $hmac::new(&key).expect("HMAC::new should accept a freshly generated key");
+                HmacKey::<$hash>::from_key_material(&key)
+                    .expect("HmacKey should accept a freshly generated key");
             }
         };
     }
 
-    keygen_test!(keygen_hmac_sha224, HMAC_SHA224, 28);
-    keygen_test!(keygen_hmac_sha256, HMAC_SHA256, 32);
-    keygen_test!(keygen_hmac_sha384, HMAC_SHA384, 48);
-    keygen_test!(keygen_hmac_sha512, HMAC_SHA512, 64);
-    keygen_test!(keygen_hmac_sha512_224, HMAC_SHA512_224, 28);
-    keygen_test!(keygen_hmac_sha512_256, HMAC_SHA512_256, 32);
-    keygen_test!(keygen_hmac_sha3_224, HMAC_SHA3_224, 28);
-    keygen_test!(keygen_hmac_sha3_256, HMAC_SHA3_256, 32);
-    keygen_test!(keygen_hmac_sha3_384, HMAC_SHA3_384, 48);
-    keygen_test!(keygen_hmac_sha3_512, HMAC_SHA3_512, 64);
-    keygen_test!(keygen_hmac_sm3, HMAC_SM3, 32);
+    keygen_test!(keygen_hmac_sha224, HMAC_SHA224, SHA224, 28);
+    keygen_test!(keygen_hmac_sha256, HMAC_SHA256, SHA256, 32);
+    keygen_test!(keygen_hmac_sha384, HMAC_SHA384, SHA384, 48);
+    keygen_test!(keygen_hmac_sha512, HMAC_SHA512, SHA512, 64);
+    keygen_test!(keygen_hmac_sha512_224, HMAC_SHA512_224, SHA512_224, 28);
+    keygen_test!(keygen_hmac_sha512_256, HMAC_SHA512_256, SHA512_256, 32);
+    keygen_test!(keygen_hmac_sha3_224, HMAC_SHA3_224, SHA3_224, 28);
+    keygen_test!(keygen_hmac_sha3_256, HMAC_SHA3_256, SHA3_256, 32);
+    keygen_test!(keygen_hmac_sha3_384, HMAC_SHA3_384, SHA3_384, 48);
+    keygen_test!(keygen_hmac_sha3_512, HMAC_SHA3_512, SHA3_512, 64);
+    keygen_test!(keygen_hmac_sm3, HMAC_SM3, SM3, 32);
 
     /// `keygen_from_rng` must refuse an RNG whose security strength is below the strength the HMAC
     /// claims, otherwise the returned key would be tagged stronger than the entropy behind it.

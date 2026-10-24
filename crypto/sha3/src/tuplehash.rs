@@ -140,7 +140,7 @@ impl<PARAMS: SHAKEParams> TupleHashInternal<PARAMS> {
     }
 }
 
-impl<PARAMS: SHAKEParams> SuspendableComponent for TupleHashInternal<PARAMS> {
+impl<'k, PARAMS: SHAKEParams> SuspendableComponent<'k> for TupleHashInternal<PARAMS> {
     const STATE_LEN: usize = CSHAKE_COMPONENT_LEN + 8;
     type Key = ();
 
@@ -152,7 +152,7 @@ impl<PARAMS: SHAKEParams> SuspendableComponent for TupleHashInternal<PARAMS> {
         debug_assert!(w.is_done());
     }
 
-    fn read_state(state: &[u8], _key: &()) -> Result<Self, SuspendableError> {
+    fn read_state(state: &[u8], _key: &'k ()) -> Result<Self, SuspendableError> {
         let (cshake, rest) = state.split_at(CSHAKE_COMPONENT_LEN);
         let cshake = CSHAKEInternal::read_tagged_customized(cshake, PARAMS::TUPLEHASH_STATE_TAG)?;
         let mut r = Cursor::new(rest);
@@ -293,7 +293,7 @@ impl<PARAMS: SHAKEParams> TupleHashXOFInternal<PARAMS> {
     }
 }
 
-impl<PARAMS: SHAKEParams> SuspendableComponent for TupleHashXOFInternal<PARAMS> {
+impl<'k, PARAMS: SHAKEParams> SuspendableComponent<'k> for TupleHashXOFInternal<PARAMS> {
     const STATE_LEN: usize = CSHAKE_COMPONENT_LEN;
     type Key = ();
 
@@ -301,7 +301,7 @@ impl<PARAMS: SHAKEParams> SuspendableComponent for TupleHashXOFInternal<PARAMS> 
         self.cshake.write_tagged(PARAMS::TUPLEHASHXOF_STATE_TAG, out)
     }
 
-    fn read_state(state: &[u8], _key: &()) -> Result<Self, SuspendableError> {
+    fn read_state(state: &[u8], _key: &'k ()) -> Result<Self, SuspendableError> {
         let cshake = CSHAKEInternal::read_tagged_customized(state, PARAMS::TUPLEHASHXOF_STATE_TAG)?;
         Ok(Self { cshake })
     }

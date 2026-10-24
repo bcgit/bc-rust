@@ -26,8 +26,8 @@
 //! As a stream cipher producing an XOR key stream, the forward (encryption) and reverse (decryption)
 //! are the same: both directions apply `CIPH_K`.
 //!
-//! So [`Cfb<P, Decrypting, ..>`](Cfb) is implemented over a permutation that impls [`ElectronicCodeBook`],
-//! but never calls [`ElectronicCodeBook::decrypt_block`]. A permutation that implements only the
+//! So [`Cfb<'k, P, Decrypting, ..>`](Cfb) is implemented over a permutation that impls [`ElectronicCodeBook`],
+//! but never calls [`BlockPermutation::decrypt_block`]. A permutation that implements only the
 //! forward direction would still work here. The two directions differ only in which of the two
 //! values -- the byte that came in, or the byte that went out -- is the ciphertext to be fed back into
 //! the next block.
@@ -40,44 +40,50 @@
 //! decryption, the required forward cipher operations can be performed in parallel if the input
 //! blocks are first constructed (in series) from the IV and the ciphertext."
 //!
-//! This implementation follows: encryption handles blocks singly via [`ElectronicCodeBook::encrypt_block`],
+//! This implementation follows: encryption handles blocks singly via [`BlockPermutation::encrypt_block`],
 //! while decryption can batch-process two or four blocks at a time via
-//! [`ElectronicCodeBook::encrypt_2blocks`] or [`ElectronicCodeBook::encrypt_4blocks`], which may
+//! [`BlockPermutation::encrypt_2blocks`] or [`BlockPermutation::encrypt_4blocks`], which may
 //! yield a performance gain, depending on the implementation of the underlying permutation.
 //!
 //! # Usage Examples
 //!
-//! The direction is part of the type: [`Cfb<P, Encrypting, ..>`](Cfb) implements
-//! [`StreamCipherEncryptor`] and nothing else, and [`Cfb<P, Decrypting, ..>`](Cfb) implements
+//! The direction is part of the type: [`Cfb<'k, P, Encrypting, ..>`](Cfb) implements
+//! [`StreamCipherEncryptor`] and nothing else, and [`Cfb<'k, P, Decrypting, ..>`](Cfb) implements
 //! [`StreamCipherDecryptor`] and nothing else.
 //!
 //! They take a `&mut [u8]` of any length; there is no padding layer and the ciphertext is exactly
 //! as long as the plaintext:
 //!
+//! The pair is reached through a mode-bound key, [`CFB`] or [`CFB8`](crate::modes::CFB8) on a key type such as
+//! `bouncycastle_aes::AES128Key<CFB>`, whose role traits carry the one-shots. The key holds the
+//! mode's key state and calls the mode traits shown here, which is the route over the toy
+//! permutation:
+//!
 //! ```
 //! # mod toy { include!("../../tests/common/toy_block_cipher.rs"); }
 //! # use toy::ToyBlockCipher;
+//! use bouncycastle_core::hazmat::{ElectronicCodeBook, Mode, SymmetricDecryptMode, SymmetricEncryptMode};
 //! use bouncycastle_core::key_material::{KeyMaterial128, KeyType};
 //! use bouncycastle_core::traits::{StreamCipherDecryptor, StreamCipherEncryptor};
-//! use bouncycastle_cipher::modes::{Cfb, Cfb8};
-//! use bouncycastle_cipher::{Decrypting, Encrypting};
-//!
-//! type ToyCfb<Dir> = Cfb<ToyBlockCipher, Dir, 16, 16>;
-//! type ToyCfb8<Dir> = Cfb8<ToyBlockCipher, Dir, 16, 16>;
+//! use bouncycastle_cipher::modes::CFB;
+//! use bouncycastle_rng::HashDRBG_SHA512;
 //!
 //! let key = KeyMaterial128::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
 //!     .expect("a 16-byte symmetric cipher key");
+//! let state = <CFB as Mode<ToyBlockCipher>>::key_state(ToyBlockCipher::new(&key).unwrap());
+//! let mut rng = HashDRBG_SHA512::new_from_os();
 //!
 //! // Start with the plaintext.
 //! let plaintext = b"the quick brown fox!!";
 //! let mut data = *plaintext;
 //!
-//! let (bytes_written, iv) = ToyCfb::<Encrypting>::encrypt_inplace(&key, &mut data).expect("encryption");
+//! let (mut enc, iv) = CFB::encrypt_init(&state, &mut rng).expect("iv draw");
+//! let bytes_written = enc.do_encrypt_inplace(&mut data).expect("encryption");
 //! assert_eq!(bytes_written, plaintext.len());
 //!
 //! // `data` now contains the ciphertext
 //!
-//! ToyCfb::<Decrypting>::decrypt_inplace(&key, &iv, &mut data).expect("decryption");
+//! CFB::decrypt_init(&state, &iv).do_decrypt_inplace(&mut data).expect("decryption");
 //! assert_eq!(data, *b"the quick brown fox!!");
 //! ```
 //!
@@ -86,20 +92,19 @@
 //! ```
 //! # mod toy { include!("../../tests/common/toy_block_cipher.rs"); }
 //! # use toy::ToyBlockCipher;
+//! use bouncycastle_core::hazmat::{ElectronicCodeBook, Mode, SymmetricDecryptMode, SymmetricEncryptMode};
 //! use bouncycastle_core::key_material::{KeyMaterial128, KeyType};
-//! use bouncycastle_core::traits::{
-//!     StreamCipherDecryptor, StreamCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor
-//! };
-//! use bouncycastle_cipher::modes::Cfb;
-//! use bouncycastle_cipher::{Decrypting, Encrypting};
-//!
-//! type ToyCfb<Dir> = Cfb<ToyBlockCipher, Dir, 16, 16>;
+//! use bouncycastle_core::traits::{StreamCipherDecryptor, StreamCipherEncryptor};
+//! use bouncycastle_cipher::modes::CFB;
+//! use bouncycastle_rng::HashDRBG_SHA512;
 //!
 //! let key = KeyMaterial128::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
 //!     .expect("a 16-byte symmetric cipher key");
+//! let state = <CFB as Mode<ToyBlockCipher>>::key_state(ToyBlockCipher::new(&key).unwrap());
 //! let mut data = [0x5Au8; 40];
 //!
-//! let (mut encryptor, iv) = ToyCfb::<Encrypting>::do_encrypt_init(&key).expect("init");
+//! let (mut encryptor, iv) =
+//!     CFB::encrypt_init(&state, &mut HashDRBG_SHA512::new_from_os()).expect("iv draw");
 //!
 //! // Just to prove that this can handle arbitrary sizes, we'll feed in
 //! //  7 bytes, then 33: neither is a whole block.
@@ -110,7 +115,7 @@
 //! assert_eq!(bytes_written, 33);
 //!
 //! // Decrypting in a different chunking must also agree.
-//! let mut decryptor = ToyCfb::<Decrypting>::do_decrypt_init(&key, &iv).expect("init");
+//! let mut decryptor = CFB::decrypt_init(&state, &iv);
 //! decryptor.do_decrypt_inplace(&mut data[..19]).expect("first chunk");
 //! decryptor.do_decrypt_inplace(&mut data[19..]).expect("the rest");
 //! assert_eq!(data, [0x5Au8; 40]);
@@ -174,14 +179,15 @@ use crate::modes::iv::random_iv;
 use crate::stream::{stream_do_final, stream_update_out};
 use crate::{Decrypting, Encrypting};
 use bouncycastle_core::errors::{SuspendableError, SymmetricCipherError};
-use bouncycastle_core::hazmat::ElectronicCodeBook;
-use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait};
+use bouncycastle_core::hazmat::{
+    BlockPermutation, ElectronicCodeBook, Mode, SymmetricDecryptMode, SymmetricEncryptMode,
+};
+use bouncycastle_core::key_material::KeyType;
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{
     Algorithm, RNG, StreamCipherDecryptor, StreamCipherEncryptor, SuspendableKeyed,
     SymmetricCipherDecryptor, SymmetricCipherEncryptor,
 };
-use bouncycastle_rng::HashDRBG_SHA512;
 use bouncycastle_utils::suspendable_state::{
     Cursor, CursorMut, LIB_VERSION_LEN, SuspendableComponent, bounded_usize, resume_component,
     suspend_component,
@@ -193,6 +199,59 @@ use core::marker::PhantomData;
 use crate::modes::cfb8;
 // End imports needed for docs
 
+/// The CFB mode type: the `M` of a mode-bound key such as `AES128Key<CFB>`, on the symmetric key
+/// path with [`Cfb`] as its worker. Its key state is the keyed permutation alone.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CFB;
+
+impl<P: Clone + ModeNames> Mode<P> for CFB {
+    type KeyState = P;
+    const KEY_TYPE: KeyType = KeyType::SymmetricCipherKey;
+    const ALG_NAME: &'static str = P::CFB_ALG_NAME;
+
+    fn key_state(perm: P) -> Self::KeyState {
+        perm
+    }
+}
+
+impl<P, const KEY_LEN: usize, const BLOCK_LEN: usize> SymmetricEncryptMode<P, KEY_LEN, BLOCK_LEN, 0>
+    for CFB
+where
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames + Clone,
+{
+    type Encryptor<'k>
+        = Cfb<'k, P, Encrypting, BLOCK_LEN>
+    where
+        P: 'k;
+
+    fn encrypt_init<'k>(
+        state: &'k Self::KeyState,
+        rng: &mut dyn RNG,
+    ) -> Result<(Self::Encryptor<'k>, [u8; BLOCK_LEN]), SymmetricCipherError> {
+        // `I1 = IV`.
+        let iv = random_iv::<BLOCK_LEN>(rng)?;
+        Ok((Cfb::start(state, iv), iv))
+    }
+}
+
+impl<P, const KEY_LEN: usize, const BLOCK_LEN: usize> SymmetricDecryptMode<P, KEY_LEN, BLOCK_LEN, 0>
+    for CFB
+where
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames + Clone,
+{
+    type Decryptor<'k>
+        = Cfb<'k, P, Decrypting, BLOCK_LEN>
+    where
+        P: 'k;
+
+    fn decrypt_init<'k>(
+        state: &'k Self::KeyState,
+        init_data: &[u8; BLOCK_LEN],
+    ) -> Self::Decryptor<'k> {
+        Cfb::start(state, *init_data)
+    }
+}
+
 /// CFB mode over any [`ElectronicCodeBook`], as a stream cipher, with the direction encoded in the
 /// type.
 ///
@@ -201,17 +260,17 @@ use crate::modes::cfb8;
 /// blocks is handled.
 ///
 /// `Dir` is [`Encrypting`] or [`Decrypting`]. [`StreamCipherEncryptor`] is implemented only for the
-/// former and [`StreamCipherDecryptor`] only for the latter, so a `Cfb<_, Encrypting, _, _>` has no
+/// former and [`StreamCipherDecryptor`] only for the latter, so a `Cfb<'k, _, Encrypting, _, _>` has no
 /// decryption methods at all -- using one in the wrong direction is a compile error rather than a
 /// runtime check.
 ///
 /// The initialization data is one block, so `INIT_DATA_LEN == BLOCK_LEN`.
 #[derive(Clone)]
-pub struct Cfb<P, Dir, const KEY_LEN: usize, const BLOCK_LEN: usize>
+pub struct Cfb<'k, P, Dir, const BLOCK_LEN: usize>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
+    P: BlockPermutation<BLOCK_LEN> + ModeNames,
 {
-    perm: P,
+    perm: &'k P,
     /// `buf[..used]` is the ciphertext of the current segment so far, i.e. the head of `I_{j+1}`;
     /// `buf[used..]` is the unused tail of `Oj`. When `used == BLOCK_LEN` the whole buffer is the
     /// next input block (initially `I1 = IV`) and no keystream is pending.
@@ -233,17 +292,17 @@ where
     _dir: PhantomData<Dir>,
 }
 
-impl<P, Dir, const KEY_LEN: usize, const BLOCK_LEN: usize> Cfb<P, Dir, KEY_LEN, BLOCK_LEN>
+impl<'k, P, Dir, const BLOCK_LEN: usize> Cfb<'k, P, Dir, BLOCK_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
+    P: BlockPermutation<BLOCK_LEN> + ModeNames,
 {
-    /// The `N` of this type's [`SuspendableKeyed<N>`] impl: the version header, the segment
+    /// The `N` of this type's [`SuspendableKeyed<'k, N>`] impl: the version header, the segment
     /// buffer and the `used` count as a `u64`. See [`bouncycastle_utils::suspendable_state`].
     pub const SUSPENDED_STATE_LEN: usize = LIB_VERSION_LEN + BLOCK_LEN + 8;
 
     /// `I1 = IV`, with no segment open: the first byte in either direction will compute `O1`.
     #[inline]
-    fn start(perm: P, iv: [u8; BLOCK_LEN]) -> Self {
+    fn start(perm: &'k P, iv: [u8; BLOCK_LEN]) -> Self {
         Self { perm, buf: iv, used: BLOCK_LEN, _dir: PhantomData }
     }
 
@@ -319,7 +378,7 @@ where
         self.buf = cj;
     }
 
-    /// Decrypts two consecutive blocks with one [`ElectronicCodeBook::encrypt_2blocks`] call.
+    /// Decrypts two consecutive blocks with one [`BlockPermutation::encrypt_2blocks`] call.
     ///
     /// Writing the pair as `Cj, Cj+1` with `Ij` the incoming input block, the `s = b` equations
     /// give
@@ -353,7 +412,7 @@ where
         }
     }
 
-    /// Decrypts four consecutive blocks with one [`ElectronicCodeBook::encrypt_4blocks`] call.
+    /// Decrypts four consecutive blocks with one [`BlockPermutation::encrypt_4blocks`] call.
     ///
     /// The same construction as [`Self::decrypt_pair`] widened to four: the input blocks are the
     /// incoming input block followed by the first three ciphertext blocks, all known before any
@@ -388,10 +447,9 @@ where
     }
 }
 
-impl<P, Dir, const KEY_LEN: usize, const BLOCK_LEN: usize> Algorithm
-    for Cfb<P, Dir, KEY_LEN, BLOCK_LEN>
+impl<'k, P, Dir, const BLOCK_LEN: usize> Algorithm for Cfb<'k, P, Dir, BLOCK_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
+    P: BlockPermutation<BLOCK_LEN> + ModeNames,
 {
     /// The permutation's name for this mode, [`ModeNames::CFB_ALG_NAME`].
     const ALG_NAME: &'static str = P::CFB_ALG_NAME;
@@ -399,31 +457,11 @@ where
     const MAX_SECURITY_STRENGTH: SecurityStrength = P::MAX_SECURITY_STRENGTH;
 }
 
-impl<P, const KEY_LEN: usize, const BLOCK_LEN: usize>
-    SymmetricCipherEncryptor<KEY_LEN, BLOCK_LEN, 0> for Cfb<P, Encrypting, KEY_LEN, BLOCK_LEN>
+impl<'k, P, const BLOCK_LEN: usize> SymmetricCipherEncryptor<BLOCK_LEN, 0>
+    for Cfb<'k, P, Encrypting, BLOCK_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
+    P: BlockPermutation<BLOCK_LEN> + ModeNames,
 {
-    /// Begins an encryption flow, generating the IV from the library's default OS-backed DRBG.
-    fn do_encrypt_init(
-        key: &KeyMaterial<KEY_LEN>,
-    ) -> Result<(Self, [u8; BLOCK_LEN]), SymmetricCipherError> {
-        let mut rng = HashDRBG_SHA512::new_from_os();
-        Self::do_encrypt_init_rng(key, &mut rng)
-    }
-
-    /// As [`SymmetricCipherEncryptor::do_encrypt_init`], but takes the IV from the provided RNG.
-    fn do_encrypt_init_rng(
-        key: &KeyMaterial<KEY_LEN>,
-        rng: &mut dyn RNG,
-    ) -> Result<(Self, [u8; BLOCK_LEN]), SymmetricCipherError> {
-        key.check_algorithm(Self::ALG_NAME)?;
-        let perm = P::new(key)?;
-        // `I1 = IV`.
-        let iv = random_iv::<BLOCK_LEN>(rng)?;
-        Ok((Self::start(perm, iv), iv))
-    }
-
     /// Every input byte produces exactly one output byte.
     fn do_encrypt_out_len(&self, input_len: usize) -> usize {
         input_len
@@ -450,10 +488,10 @@ where
     }
 }
 
-impl<P, const KEY_LEN: usize, const BLOCK_LEN: usize> StreamCipherEncryptor<KEY_LEN, BLOCK_LEN>
-    for Cfb<P, Encrypting, KEY_LEN, BLOCK_LEN>
+impl<'k, P, const BLOCK_LEN: usize> StreamCipherEncryptor<BLOCK_LEN>
+    for Cfb<'k, P, Encrypting, BLOCK_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
+    P: BlockPermutation<BLOCK_LEN> + ModeNames,
 {
     /// Encrypts `data`, of any length, in place.
     ///
@@ -475,23 +513,11 @@ where
     }
 }
 
-impl<P, const KEY_LEN: usize, const BLOCK_LEN: usize>
-    SymmetricCipherDecryptor<KEY_LEN, BLOCK_LEN, 0> for Cfb<P, Decrypting, KEY_LEN, BLOCK_LEN>
+impl<'k, P, const BLOCK_LEN: usize> SymmetricCipherDecryptor<BLOCK_LEN, 0>
+    for Cfb<'k, P, Decrypting, BLOCK_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
+    P: BlockPermutation<BLOCK_LEN> + ModeNames,
 {
-    /// Begins a decryption flow from the IV returned by
-    /// [`SymmetricCipherEncryptor::do_encrypt_init`].
-    fn do_decrypt_init(
-        key: &KeyMaterial<KEY_LEN>,
-        init_data: &[u8; BLOCK_LEN],
-    ) -> Result<Self, SymmetricCipherError> {
-        key.check_algorithm(Self::ALG_NAME)?;
-        let perm = P::new(key)?;
-        // `I1 = IV`, exactly as on the encrypt side.
-        Ok(Self::start(perm, *init_data))
-    }
-
     /// Nothing is held back, so every input byte can be released immediately.
     fn do_decrypt_out_len(&self, input_len: usize) -> usize {
         input_len
@@ -518,10 +544,10 @@ where
     }
 }
 
-impl<P, const KEY_LEN: usize, const BLOCK_LEN: usize> StreamCipherDecryptor<KEY_LEN, BLOCK_LEN>
-    for Cfb<P, Decrypting, KEY_LEN, BLOCK_LEN>
+impl<'k, P, const BLOCK_LEN: usize> StreamCipherDecryptor<BLOCK_LEN>
+    for Cfb<'k, P, Decrypting, BLOCK_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
+    P: BlockPermutation<BLOCK_LEN> + ModeNames,
 {
     /// Decrypts `data`, of any length, in place.
     ///
@@ -551,15 +577,14 @@ where
 }
 
 /// The suspended state is `buf` and `used` -- the open segment, which is public ciphertext and
-/// the keystream not yet used against it -- in both directions; the permutation is rebuilt from
-/// the re-supplied key. See [`bouncycastle_utils::suspendable_state`].
-impl<P, Dir, const KEY_LEN: usize, const BLOCK_LEN: usize> SuspendableComponent
-    for Cfb<P, Dir, KEY_LEN, BLOCK_LEN>
+/// the keystream not yet used against it -- in both directions; the permutation is the key's,
+/// re-supplied by reference. See [`bouncycastle_utils::suspendable_state`].
+impl<'k, P, Dir, const BLOCK_LEN: usize> SuspendableComponent<'k> for Cfb<'k, P, Dir, BLOCK_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
+    P: BlockPermutation<BLOCK_LEN> + ModeNames,
 {
     const STATE_LEN: usize = BLOCK_LEN + 8;
-    type Key = KeyMaterial<KEY_LEN>;
+    type Key = P;
 
     fn write_state(&self, out: &mut [u8]) {
         let mut w = CursorMut::new(out);
@@ -568,9 +593,8 @@ where
         debug_assert!(w.is_done());
     }
 
-    fn read_state(state: &[u8], key: &Self::Key) -> Result<Self, SuspendableError> {
-        key.check_algorithm(Self::ALG_NAME).map_err(|_| SuspendableError::InvalidData)?;
-        let perm = P::new(key).map_err(|_| SuspendableError::InvalidData)?;
+    fn read_state(state: &[u8], key: &'k Self::Key) -> Result<Self, SuspendableError> {
+        let perm = key;
         let mut r = Cursor::new(state);
         let buf = r.array::<BLOCK_LEN>();
         // `used` is `0..=BLOCK_LEN`; anything past the buffer would index out of it.
@@ -581,18 +605,18 @@ where
 }
 
 /// `N` must be [`Cfb::SUSPENDED_STATE_LEN`]; anything else is a compile error.
-impl<P, Dir, const KEY_LEN: usize, const BLOCK_LEN: usize, const N: usize> SuspendableKeyed<N>
-    for Cfb<P, Dir, KEY_LEN, BLOCK_LEN>
+impl<'k, P, Dir, const BLOCK_LEN: usize, const N: usize> SuspendableKeyed<'k, N>
+    for Cfb<'k, P, Dir, BLOCK_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
+    P: BlockPermutation<BLOCK_LEN> + ModeNames,
 {
-    type Key = KeyMaterial<KEY_LEN>;
+    type Key = P;
 
     fn suspend(self) -> [u8; N] {
         suspend_component(&self)
     }
 
-    fn from_suspended(state: [u8; N], key: &Self::Key) -> Result<Self, SuspendableError> {
+    fn from_suspended(state: [u8; N], key: &'k Self::Key) -> Result<Self, SuspendableError> {
         resume_component(&state, key)
     }
 }

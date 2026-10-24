@@ -8,36 +8,53 @@
 
 use bouncycastle_aes::hazmat::AES128Internal;
 use bouncycastle_aes::hazmat::{AES_ECB_128, AES_ECB_192, AES_ECB_256};
-use bouncycastle_cipher::modes::hazmat::Ecb;
+use bouncycastle_aes::{AES128Key, AES192Key, AES256Key};
+use bouncycastle_cipher::modes::hazmat::{ECB, Ecb};
 use bouncycastle_cipher::padding::{
     NoPadding, PKCS7, PaddedBlockCipherDecryptor, PaddedBlockCipherEncryptor,
 };
 use bouncycastle_cipher::{Decrypting, Encrypting};
+use bouncycastle_core::hazmat::Mode;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
+use bouncycastle_core::symmetric_key::{
+    FromKeyMaterial, SymmetricDecryptionKey, SymmetricEncryptionKey,
+};
+use bouncycastle_rng::HashDRBG_SHA512;
 
-fn key<const N: usize>() -> KeyMaterial<N> {
+fn material<const N: usize>() -> KeyMaterial<N> {
     let bytes: [u8; N] = core::array::from_fn(|i| (i as u8).wrapping_mul(7).wrapping_add(1));
     KeyMaterial::<N>::from_bytes_as_type(&bytes, KeyType::SymmetricCipherKey).expect("a valid key")
 }
 
-/// The aliases must resolve to exactly the adapters they claim to, with `INIT_DATA_LEN = 0`.
+fn key_for<M: Mode<AES128Internal>>() -> AES128Key<M> {
+    AES128Key::from_key_material(&material::<16>()).expect("a valid key")
+}
+
+fn rng() -> HashDRBG_SHA512 {
+    HashDRBG_SHA512::new_from_os()
+}
+
+/// The aliases must resolve to exactly the adapters they claim to, with `INIT_DATA_LEN = 0`, and
+/// be what the keys hand out.
 #[test]
 fn the_aliases_name_the_expected_types() {
     use core::mem::size_of;
 
     assert_eq!(
-        size_of::<AES_ECB_128<Encrypting, PKCS7>>(),
-        size_of::<
-            PaddedBlockCipherEncryptor<Ecb<AES128Internal, Encrypting, 16, 16>, PKCS7, 16, 0, 16>,
-        >()
+        size_of::<AES_ECB_128<'_, Encrypting, PKCS7>>(),
+        size_of::<PaddedBlockCipherEncryptor<Ecb<'_, AES128Internal, Encrypting, 16>, PKCS7, 0, 16>>(
+        )
     );
     assert_eq!(
-        size_of::<AES_ECB_128<Decrypting, PKCS7>>(),
-        size_of::<
-            PaddedBlockCipherDecryptor<Ecb<AES128Internal, Decrypting, 16, 16>, PKCS7, 16, 0, 16>,
-        >()
+        size_of::<AES_ECB_128<'_, Decrypting, PKCS7>>(),
+        size_of::<PaddedBlockCipherDecryptor<Ecb<'_, AES128Internal, Decrypting, 16>, PKCS7, 0, 16>>(
+        )
     );
+
+    let key = key_for::<ECB<PKCS7>>();
+    let (enc, no_iv) = key.create_encryptor(&mut rng()).unwrap();
+    let _: AES_ECB_128<'_, Encrypting, PKCS7> = enc;
+    let _: AES_ECB_128<'_, Decrypting, PKCS7> = key.create_decryptor(&no_iv);
 }
 
 /// ECB has no IV, so the init data is an empty array and the ciphertext is exactly the padded
@@ -45,13 +62,12 @@ fn the_aliases_name_the_expected_types() {
 /// the `INIT_DATA_LEN = 0` the projection is given.
 #[test]
 fn there_is_no_iv() {
-    let (no_iv, ciphertext) =
-        AES_ECB_128::<Encrypting, PKCS7>::encrypt(&key::<16>(), b"hello").expect("encryption");
+    let key = key_for::<ECB<PKCS7>>();
+    let (no_iv, ciphertext) = key.encrypt(&mut rng(), b"hello").expect("encryption");
     assert_eq!(no_iv, [0u8; 0], "ECB has no IV, so the init data is empty");
     assert_eq!(ciphertext.len(), 16, "five bytes padded to one block, nothing prepended");
 
-    let recovered =
-        AES_ECB_128::<Decrypting, PKCS7>::decrypt(&key::<16>(), &no_iv, &ciphertext).unwrap();
+    let recovered = key.decrypt(&no_iv, &ciphertext).unwrap();
     assert_eq!(recovered, b"hello");
 }
 
@@ -59,14 +75,14 @@ fn there_is_no_iv() {
 /// not.
 #[test]
 fn every_key_length_round_trips() {
-    fn check<const N: usize, Enc, Dec>(name: &str)
+    fn check<const N: usize, K>(name: &str)
     where
-        Enc: SymmetricCipherEncryptor<N, 0, 16>,
-        Dec: SymmetricCipherDecryptor<N, 0, 16>,
+        K: FromKeyMaterial<N> + SymmetricEncryptionKey<N, 0, 16> + SymmetricDecryptionKey<N, 0, 16>,
     {
+        let key = K::from_key_material(&material::<N>()).expect("a valid key");
         for len in [0usize, 1, 15, 16, 17, 64] {
             let plaintext: Vec<u8> = (0..len).map(|i| (i * 11 + 3) as u8).collect();
-            let (no_iv, ciphertext) = Enc::encrypt(&key::<N>(), &plaintext).expect("encryption");
+            let (no_iv, ciphertext) = key.encrypt(&mut rng(), &plaintext).expect("encryption");
             assert_eq!(no_iv, [0u8; 0], "{name}: no IV");
             assert_eq!(
                 ciphertext.len(),
@@ -74,29 +90,41 @@ fn every_key_length_round_trips() {
                 "{name}, len {len}: PKCS7 pads up to the next whole block"
             );
 
-            let recovered = Dec::decrypt(&key::<N>(), &no_iv, &ciphertext).expect("decryption");
+            let recovered = key.decrypt(&no_iv, &ciphertext).expect("decryption");
             assert_eq!(recovered, plaintext, "{name}, len {len}: round trip");
         }
     }
 
-    check::<16, AES_ECB_128<Encrypting, PKCS7>, AES_ECB_128<Decrypting, PKCS7>>("AES-128");
-    check::<24, AES_ECB_192<Encrypting, PKCS7>, AES_ECB_192<Decrypting, PKCS7>>("AES-192");
-    check::<32, AES_ECB_256<Encrypting, PKCS7>, AES_ECB_256<Decrypting, PKCS7>>("AES-256");
+    check::<16, AES128Key<ECB<PKCS7>>>("AES-128");
+    check::<24, AES192Key<ECB<PKCS7>>>("AES-192");
+    check::<32, AES256Key<ECB<PKCS7>>>("AES-256");
+
+    // The other two aliases are the same projection at the other key lengths.
+    let _: AES_ECB_192<'_, Encrypting, PKCS7> =
+        AES192Key::<ECB<PKCS7>>::from_key_material(&material::<24>())
+            .unwrap()
+            .create_encryptor(&mut rng())
+            .unwrap()
+            .0;
+    let _: AES_ECB_256<'_, Encrypting, PKCS7> =
+        AES256Key::<ECB<PKCS7>>::from_key_material(&material::<32>())
+            .unwrap()
+            .create_encryptor(&mut rng())
+            .unwrap()
+            .0;
 }
 
 /// The padding parameter must select the scheme here too.
 #[test]
 fn the_padding_parameter_selects_the_scheme() {
     let aligned = [0x5Au8; 16];
-    let (_, pkcs7) =
-        AES_ECB_128::<Encrypting, PKCS7>::encrypt(&key::<16>(), &aligned).expect("PKCS7");
-    let (_, nopad) =
-        AES_ECB_128::<Encrypting, NoPadding>::encrypt(&key::<16>(), &aligned).expect("NoPadding");
+    let (_, pkcs7) = key_for::<ECB<PKCS7>>().encrypt(&mut rng(), &aligned).expect("PKCS7");
+    let (_, nopad) = key_for::<ECB<NoPadding>>().encrypt(&mut rng(), &aligned).expect("NoPadding");
     assert_eq!(pkcs7.len(), 32, "PKCS7 adds a whole block to aligned data");
     assert_eq!(nopad.len(), 16, "NoPadding adds nothing");
 
     assert!(
-        AES_ECB_128::<Encrypting, NoPadding>::encrypt(&key::<16>(), b"hello").is_err(),
+        key_for::<ECB<NoPadding>>().encrypt(&mut rng(), b"hello").is_err(),
         "NoPadding must refuse a partial block"
     );
 }
@@ -107,12 +135,12 @@ fn the_padding_parameter_selects_the_scheme() {
 #[test]
 fn padding_does_not_hide_the_codebook_property() {
     // Two identical blocks give two identical ciphertext blocks.
-    let (_, ciphertext) =
-        AES_ECB_128::<Encrypting, NoPadding>::encrypt(&key::<16>(), &[0x5Au8; 32]).unwrap();
+    let (_, ciphertext) = key_for::<ECB<NoPadding>>().encrypt(&mut rng(), &[0x5Au8; 32]).unwrap();
     assert_eq!(ciphertext[..16], ciphertext[16..], "ECB is a codebook, padded or not");
 
     // ...and encryption is deterministic, there being no IV to vary.
-    let (_, a) = AES_ECB_128::<Encrypting, PKCS7>::encrypt(&key::<16>(), b"hello").unwrap();
-    let (_, b) = AES_ECB_128::<Encrypting, PKCS7>::encrypt(&key::<16>(), b"hello").unwrap();
+    let key = key_for::<ECB<PKCS7>>();
+    let (_, a) = key.encrypt(&mut rng(), b"hello").unwrap();
+    let (_, b) = key.encrypt(&mut rng(), b"hello").unwrap();
     assert_eq!(a, b, "the same message encrypts the same way every time");
 }

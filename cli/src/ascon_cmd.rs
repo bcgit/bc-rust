@@ -1,15 +1,15 @@
 use std::io::{self, Read};
 use std::process::exit;
 
-use bouncycastle::ascon::Ascon_AEAD128;
+use bouncycastle::ascon::AsconAEAD128Key;
 use bouncycastle::ascon::AsconCXof128;
 use bouncycastle::ascon::AsconHash256;
 use bouncycastle::ascon::AsconXof128;
-use bouncycastle::cipher::{Decrypting, Encrypting};
 use bouncycastle::core::errors::SymmetricCipherError;
 use bouncycastle::core::hazmat::do_hazardous_operations;
 use bouncycastle::core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle::core::security_strength::SecurityStrength;
+use bouncycastle::core::symmetric_key::{AeadDecryptionKey, AeadEncryptionKey, FromKeyMaterial};
 use bouncycastle::core::traits::{
     AEADCipherDecryptor, AEADCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
 };
@@ -56,9 +56,9 @@ fn require_16(bytes: Vec<u8>, label: &str) -> [u8; 16] {
     })
 }
 
-/// Build a `KeyMaterial<16>` for the AEAD key, warning (and forcing usable metadata) only if the
-/// key turns out to be low-entropy (e.g. all-zero), the same way `helpers::parse_seed` does.
-fn load_key_material(key_bytes: &[u8; 16]) -> KeyMaterial<16> {
+/// Build the AEAD key, warning (and forcing usable metadata on the material) only if the key
+/// turns out to be low-entropy (e.g. all-zero), the same way `helpers::parse_seed` does.
+fn load_aead_key(key_bytes: &[u8; 16]) -> AsconAEAD128Key {
     let mut key =
         KeyMaterial::<16>::from_bytes_as_type(key_bytes, KeyType::SymmetricCipherKey).unwrap();
     if key.key_type() == KeyType::Zeroized || key.security_strength() < SecurityStrength::_128bit {
@@ -71,7 +71,10 @@ fn load_key_material(key_bytes: &[u8; 16]) -> KeyMaterial<16> {
         })
         .unwrap();
     }
-    key
+    AsconAEAD128Key::from_key_material(&key).unwrap_or_else(|e| {
+        eprintln!("Error: couldn't load the key: {e:?}");
+        exit(-1);
+    })
 }
 
 /// Ascon-Hash256 of stdin. Streaming update; 256-bit digest.
@@ -123,7 +126,7 @@ pub(crate) fn aead128_cmd(
     decrypt: bool,
     output_hex: bool,
 ) {
-    let key = load_key_material(&require_16(load_bytes(key, key_file, "key"), "key"));
+    let key = load_aead_key(&require_16(load_bytes(key, key_file, "key"), "key"));
     let nonce =
         load_optional_bytes(nonce, nonce_file, "nonce").map(|bytes| require_16(bytes, "nonce"));
     let ad_bytes = match ad {
@@ -142,25 +145,26 @@ pub(crate) fn aead128_cmd(
     }
 }
 
-/// Drives [`Ascon_AEAD128<Encrypting>`] in the inline `ciphertext || tag` layout (the inherited
-/// [`SymmetricCipherEncryptor::do_encrypt_final_out`]). With no nonce given one is generated and
-/// written ahead of the stream; a caller-supplied nonce is not written, since the caller has it.
+/// Drives the key's encryptor in the inline `ciphertext || tag` layout (the inherited
+/// [`SymmetricCipherEncryptor::do_encrypt_final_out`]). With no nonce given one is drawn from the
+/// OS-backed DRBG and written ahead of the stream; a caller-supplied nonce is not written, since
+/// the caller has it.
 fn aead128_encrypt_stream(
-    key: &KeyMaterial<16>,
+    key: &AsconAEAD128Key,
     nonce: Option<&[u8; 16]>,
     ad_opt: Option<&[u8]>,
     output_hex: bool,
 ) {
-    let start = match nonce {
-        Some(nonce) => {
-            Ascon_AEAD128::<Encrypting>::do_encrypt_init_nonce(key, nonce).map(|c| (c, None))
-        }
-        None => Ascon_AEAD128::<Encrypting>::do_encrypt_init(key).map(|(c, n)| (c, Some(n))),
+    let (mut cipher, generated_nonce) = match nonce {
+        Some(nonce) => (key.create_encryptor_nonce(nonce), None),
+        None => key
+            .create_encryptor(&mut bouncycastle::rng::HashDRBG_SHA512::new_from_os())
+            .map(|(c, n)| (c, Some(n)))
+            .unwrap_or_else(|e| {
+                eprintln!("Error: couldn't start encryption: {e:?}");
+                exit(-1);
+            }),
     };
-    let (mut cipher, generated_nonce) = start.unwrap_or_else(|e| {
-        eprintln!("Error: couldn't start encryption: {e:?}");
-        exit(-1);
-    });
     if let Some(ad) = ad_opt {
         // infallible: `do_update_aad` only refuses AAD once plaintext has been fed in, and none
         // has been yet.
@@ -193,11 +197,11 @@ fn aead128_encrypt_stream(
 }
 
 /// Decrypts a stream whose final 16 bytes are the tag, which is only known once EOF is reached.
-/// [`Ascon_AEAD128<Decrypting>`] holds the last 16 bytes it has seen back itself, releasing everything
+/// The key's decryptor holds the last 16 bytes it has seen back itself, releasing everything
 /// before them as soon as it is known not to be part of the tag; at EOF
 /// [`SymmetricCipherDecryptor::do_decrypt_final`] checks what it held back as the tag.
 fn aead128_decrypt_stream(
-    key: &KeyMaterial<16>,
+    key: &AsconAEAD128Key,
     nonce: Option<&[u8; 16]>,
     ad_opt: Option<&[u8]>,
     output_hex: bool,
@@ -218,11 +222,7 @@ fn aead128_decrypt_stream(
         }
     };
 
-    let mut cipher =
-        Ascon_AEAD128::<Decrypting>::do_decrypt_init(key, &nonce).unwrap_or_else(|e| {
-            eprintln!("Error: couldn't start decryption: {e:?}");
-            exit(-1);
-        });
+    let mut cipher = key.create_decryptor(&nonce);
     if let Some(ad) = ad_opt {
         // infallible: as on the encrypt side, no ciphertext has been fed in yet.
         cipher.do_update_aad(ad).unwrap();

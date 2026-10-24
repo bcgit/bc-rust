@@ -1,23 +1,28 @@
 //! KMAC, the Keccak Message Authentication Code of NIST SP 800-185 Sec 4.
 //!
 //! # KMAC
-//! KMAC is a [`MAC`]. [`MAC::new`] takes a key tagged [`KeyType::MACKey`] and produces the nominal
-//! output length; [`KMACInternal::new_with_params`] chooses `S` and the output length, which is
-//! bound into the function rather than a truncation of it (see [`KMAC128`]):
+//! KMAC is a [`MAC`], reached through a [`KMAC128Key`] / [`KMAC256Key`]. The key takes material
+//! tagged [`KeyType::MACKey`]; `from_key_material` gives the nominal output length and
+//! [`KMACKeyInternal::with_params`] chooses `S` and the output length, which is bound into the
+//! function rather than a truncation of it (see [`KMAC128`]):
 //! ```
 //! use bouncycastle_core::key_material::{KeyMaterial256, KeyType};
+//! use bouncycastle_core::symmetric_key::{FromAnyKeyMaterial, MacGenerationKey, MacVerificationKey};
 //! use bouncycastle_core::traits::MAC;
-//! use bouncycastle_sha3::kmac::KMAC128;
+//! use bouncycastle_sha3::kmac::KMAC128Key;
 //!
-//! let key = KeyMaterial256::from_bytes_as_type(&[0x42u8; 32], KeyType::MACKey).unwrap();
+//! let material = KeyMaterial256::from_bytes_as_type(&[0x42u8; 32], KeyType::MACKey).unwrap();
+//! let key = KMAC128Key::from_key_material(&material).unwrap();
 //!
-//! let tag: Vec<u8> = KMAC128::new(&key).unwrap().mac(b"Hello, world!");
-//! assert!(KMAC128::new(&key).unwrap().verify(b"Hello, world!", &tag));
+//! let tag: Vec<u8> = key.mac(b"Hello, world!");
+//! assert!(key.verify(b"Hello, world!", &tag));
 //!
-//! // 16-byte tags, under a customization string.
-//! let kmac = KMAC128::new_with_params(&key, b"My Tagged Application", 16, false).unwrap();
-//! let short_tag: Vec<u8> = kmac.mac(b"Hello, world!");
-//! assert_eq!(short_tag.len(), 16);
+//! // 16-byte tags, under a customization string: a different function, so a different key.
+//! let short = KMAC128Key::with_params(&material, b"My Tagged Application", 16).unwrap();
+//! let mut kmac = short.create_generator();
+//! kmac.do_update(b"Hello, ");
+//! kmac.do_update(b"world!");
+//! assert_eq!(kmac.do_final().len(), 16);
 //! ```
 //!
 //! # KMACXOF
@@ -32,8 +37,9 @@
 //! Example of `KMACXOF128`:
 //! ```
 //! use bouncycastle_core::key_material::{KeyMaterial256, KeyType};
-//! use bouncycastle_core::traits::{Hash, MAC, XOF, XOFSqueezer};
-//! use bouncycastle_sha3::kmac::{KMAC128, KMACXOF128};
+//! use bouncycastle_core::symmetric_key::{FromAnyKeyMaterial, MacGenerationKey};
+//! use bouncycastle_core::traits::{Hash, XOF, XOFSqueezer};
+//! use bouncycastle_sha3::kmac::{KMAC128Key, KMACXOF128};
 //!
 //! let key = KeyMaterial256::from_bytes_as_type(&[0x42u8; 32], KeyType::MACKey).unwrap();
 //!
@@ -45,16 +51,18 @@
 //!
 //! // A final read of 32 bytes is KMAC128 at its nominal length, not a prefix of the stream above.
 //! let bound: Vec<u8> = KMACXOF128::new(&key, b"", false).unwrap().xof(b"Hello, world!", 32);
-//! assert_eq!(bound, KMAC128::new(&key).unwrap().mac(b"Hello, world!"));
+//! assert_eq!(bound, KMAC128Key::from_key_material(&key).unwrap().mac(b"Hello, world!"));
 //! assert_ne!(bound[..16], first[..]);
 //! ```
 
 use crate::cshake::{CSHAKE_COMPONENT_LEN, CSHAKEInternal, CSHAKESqueezer, right_encode};
 use crate::{SHAKE128Params, SHAKE256Params, SHAKEParams};
 use bouncycastle_core::errors::{HashError, KeyMaterialError, MACError, SuspendableError};
-use bouncycastle_core::key_material::{KeyMaterialTrait, KeyType};
+use bouncycastle_core::hazmat::do_hazardous_operations;
+use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::traits::{Algorithm, Hash, MAC, Suspendable, XOF, XOFSqueezer};
+use bouncycastle_core::symmetric_key::{FromAnyKeyMaterial, MacGenerationKey, MacVerificationKey};
+use bouncycastle_core::traits::{Algorithm, Hash, MAC, RNG, Suspendable, XOF, XOFSqueezer};
 use bouncycastle_utils::ct;
 use bouncycastle_utils::suspendable_state::{
     Cursor, CursorMut, LIB_VERSION_LEN, SuspendableComponent, bounded_usize, resume_component,
@@ -72,9 +80,10 @@ pub const KMACXOF256_NAME: &str = "KMACXOF256";
 
 /// KMAC128: the Keccak MAC of NIST SP 800-185 Sec 4, at a 128-bit security strength.
 ///
-/// [`bouncycastle_core::traits::MAC::new`] gives the common case -- no customization, 32-byte
-/// output. [`KMACInternal::new_with_params`] chooses the customization string and output length,
-/// [`KMACXOF128`] is the separate arbitrary-length function of Sec 4.3.1.
+/// The worker a [`KMAC128Key`] hands out: `from_key_material` gives the common case -- no
+/// customization, 32-byte output -- and [`KMACKeyInternal::with_params`] chooses the
+/// customization string and output length. [`KMACXOF128`] is the separate arbitrary-length
+/// function of Sec 4.3.1.
 pub type KMAC128 = KMACInternal<SHAKE128Params>;
 /// KMAC256: the Keccak MAC of NIST SP 800-185 Sec 4, at a 256-bit security strength.
 ///
@@ -100,6 +109,150 @@ pub const SUSPENDED_KMACXOF_STATE_LEN: usize = LIB_VERSION_LEN + CSHAKE_COMPONEN
 /// it is what separates KMAC from any other cSHAKE-derived function.
 const KMAC_FUNCTION_NAME: &[u8] = b"KMAC";
 
+/// Internal struct for the KMAC key. Use [`KMAC128Key`] or [`KMAC256Key`].
+///
+/// The key is the cSHAKE state after the key binding of Sec 4.3 step 1, `bytepad(encode_string(K),
+/// rate)`, plus the customization and the output length chosen for it, so every worker starts
+/// from that state and absorbs only its message. A different `S` or `L` is a different KMAC
+/// function (Sec 1), and so a different key object over the same material.
+#[derive(Clone)]
+pub struct KMACKeyInternal<PARAMS: SHAKEParams> {
+    cshake: CSHAKEInternal<PARAMS>,
+    output_len: usize,
+    strength: SecurityStrength,
+}
+
+/// A KMAC128 key: see [`KMACKeyInternal`].
+pub type KMAC128Key = KMACKeyInternal<SHAKE128Params>;
+/// A KMAC256 key: see [`KMACKeyInternal`].
+pub type KMAC256Key = KMACKeyInternal<SHAKE256Params>;
+
+impl<PARAMS: SHAKEParams> KMACKeyInternal<PARAMS> {
+    /// The nominal output length: 32 bytes for KMAC128 and 64 for KMAC256.
+    const NOMINAL_OUTPUT_LEN: usize = (PARAMS::SIZE as usize) / 4;
+
+    /// A key for KMAC under a customization string and an output length of the caller's
+    /// choosing. `output_len` is `L` in bytes and is bound into the computation, so it must be
+    /// the length the verifier will use; `customization` may be empty.
+    ///
+    /// Sec 8.4.1 requires the key to be at least as long as the security strength for approved
+    /// use; that is enforced through the key's [`SecurityStrength`] tag, exactly as HMAC does,
+    /// and [`Self::with_params_allow_weak`] is the escape hatch.
+    ///
+    /// # Errors
+    /// [`MACError::KeyMaterialError`] if the key is not tagged as a MAC key, or is tagged below
+    /// this KMAC's security strength.
+    pub fn with_params(
+        key: &dyn KeyMaterialTrait,
+        customization: &[u8],
+        output_len: usize,
+    ) -> Result<Self, MACError> {
+        Self::with_params_checked(key, customization, output_len, false)
+    }
+
+    /// As [`with_params`](Self::with_params) without the strength check.
+    ///
+    /// # Errors
+    /// [`MACError::KeyMaterialError`] if the key is not tagged as a MAC key.
+    pub fn with_params_allow_weak(
+        key: &dyn KeyMaterialTrait,
+        customization: &[u8],
+        output_len: usize,
+    ) -> Result<Self, MACError> {
+        Self::with_params_checked(key, customization, output_len, true)
+    }
+
+    fn with_params_checked(
+        key: &dyn KeyMaterialTrait,
+        customization: &[u8],
+        output_len: usize,
+        allow_weak_key: bool,
+    ) -> Result<Self, MACError> {
+        // Same stance as HMAC: an all-zero key is Zeroized rather than MACKey, and is allowed
+        // through so callers are not forced to re-tag it.
+        if !(key.key_type() == KeyType::Zeroized || key.key_type() == KeyType::MACKey) {
+            return Err(MACError::KeyMaterialError(KeyMaterialError::InvalidKeyType(
+                "Key type must be a MAC key.",
+            )));
+        }
+        let strength = SecurityStrength::from_bits(PARAMS::SIZE as usize);
+        if !allow_weak_key && key.security_strength() < strength {
+            Err(KeyMaterialError::SecurityStrength(
+                "KMAC: provided key has a lower security strength than the instantiated KMAC",
+            ))?
+        }
+
+        let mut cshake = CSHAKEInternal::<PARAMS>::new(KMAC_FUNCTION_NAME, customization);
+        // Sec 4.3 step 1: bytepad(encode_string(K), rate), absorbed rather than materialised.
+        crate::cshake::absorb_bytepad_strings(&mut cshake, &[key.ref_to_bytes()]);
+
+        Ok(Self { cshake, output_len, strength })
+    }
+}
+
+impl<PARAMS: SHAKEParams> FromAnyKeyMaterial for KMACKeyInternal<PARAMS> {
+    /// No customization string and the nominal output length, 32 bytes for KMAC128 and 64 for
+    /// KMAC256; the errors are [`with_params`](Self::with_params)'s.
+    fn from_key_material(key: &dyn KeyMaterialTrait) -> Result<Self, MACError> {
+        Self::with_params(key, &[], Self::NOMINAL_OUTPUT_LEN)
+    }
+
+    /// As [`from_key_material`](Self::from_key_material) without the strength check.
+    fn from_key_material_allow_weak(key: &dyn KeyMaterialTrait) -> Result<Self, MACError> {
+        Self::with_params_allow_weak(key, &[], Self::NOMINAL_OUTPUT_LEN)
+    }
+
+    /// Draws a key of the security strength's length (Sec 8.4.1: 16 bytes for KMAC128, 32 for
+    /// KMAC256) from `rng`, tagged [`KeyType::MACKey`] at the RNG's strength, and builds the key
+    /// from it with no customization and the nominal output length.
+    ///
+    /// # Errors
+    /// [`MACError::KeyMaterialError`] if the RNG fails, or with
+    /// [`KeyMaterialError::SecurityStrength`] if its strength is below the KMAC's.
+    fn generate(rng: &mut dyn RNG) -> Result<Self, MACError> {
+        let key_len = (PARAMS::SIZE as usize) / 8;
+        let mut key = KeyMaterial::<32>::new();
+        do_hazardous_operations(&mut key, |key| {
+            rng.next_bytes_out(&mut key.ref_to_bytes_mut()?[..key_len])
+                .map_err(|_| KeyMaterialError::GenericError("RNG failed."))?;
+            key.set_key_len(key_len)?;
+            key.set_key_type(KeyType::MACKey)?;
+            // The RNG's strength, capped at what the length carries, as KeyMaterial::from_rng
+            // does: a 16-byte KMAC128 key from a 256-bit DRBG is a 128-bit key.
+            let by_len = SecurityStrength::from_bits(key_len * 8);
+            let by_rng = rng.security_strength();
+            key.set_security_strength(if by_rng < by_len { by_rng } else { by_len })
+        })?;
+        Self::from_key_material(&key)
+    }
+}
+
+impl<PARAMS: SHAKEParams> MacGenerationKey for KMACKeyInternal<PARAMS> {
+    type Generator<'k>
+        = KMACInternal<PARAMS>
+    where
+        Self: 'k;
+
+    fn create_generator<'k>(&'k self) -> Self::Generator<'k> {
+        KMACInternal {
+            cshake: self.cshake.clone(),
+            output_len: self.output_len,
+            strength: self.strength,
+        }
+    }
+}
+
+impl<PARAMS: SHAKEParams> MacVerificationKey for KMACKeyInternal<PARAMS> {
+    type Verifier<'k>
+        = KMACInternal<PARAMS>
+    where
+        Self: 'k;
+
+    fn create_verifier<'k>(&'k self) -> Self::Verifier<'k> {
+        self.create_generator()
+    }
+}
+
 /// Internal struct for KMAC. Use [`KMAC128`] or [`KMAC256`].
 ///
 /// KMAC is cSHAKE with the function name `"KMAC"`, the key bound to the front of the message and
@@ -114,8 +267,8 @@ const KMAC_FUNCTION_NAME: &[u8] = b"KMAC";
 ///
 /// The output length is *absorbed*, so KMAC at one length is unrelated to KMAC at another --
 /// Sec 1 puts it as "any change in the requested output length completely changes the function".
-/// That is why [`Self::new_with_params`] takes the length up front and [`MAC::do_final`] produces
-/// exactly that many bytes.
+/// That is why [`KMACKeyInternal::with_params`] takes the length up front and [`MAC::do_final`]
+/// produces exactly that many bytes.
 ///
 /// [`KMACXOFInternal`] is the separate function of Sec 4.3.1, KMACXOF, which binds
 /// `right_encode(0)` instead and produces as much output as asked for. Its bytes are *not* a
@@ -133,46 +286,6 @@ impl<PARAMS: SHAKEParams> Algorithm for KMACInternal<PARAMS> {
 }
 
 impl<PARAMS: SHAKEParams> KMACInternal<PARAMS> {
-    /// A new KMAC with a customization string and an output length of the caller's choosing.
-    ///
-    /// `output_len` is `L` in bytes and is bound into the computation, so it must be the length the
-    /// verifier will use. `customization` may be empty. [`MAC::new`] is this with no customization
-    /// and the nominal output length.
-    ///
-    /// Sec 8.4.1 requires the key to be at least as long as the security strength for approved use;
-    /// that is enforced through the key's [`SecurityStrength`] tag, exactly as `HMAC` does, and
-    /// [`MAC::new_allow_weak_key`] is the escape hatch.
-    ///
-    /// # Errors
-    /// [`MACError::KeyMaterialError`] if the key is not tagged as a MAC key, or -- unless
-    /// `allow_weak_key` -- if it is tagged below this KMAC's security strength.
-    pub fn new_with_params(
-        key: &impl KeyMaterialTrait,
-        customization: &[u8],
-        output_len: usize,
-        allow_weak_key: bool,
-    ) -> Result<Self, MACError> {
-        // Same stance as HMAC: an all-zero key is Zeroized rather than MACKey, and is allowed
-        // through so callers are not forced to re-tag it.
-        if !(key.key_type() == KeyType::Zeroized || key.key_type() == KeyType::MACKey) {
-            return Err(MACError::KeyMaterialError(KeyMaterialError::InvalidKeyType(
-                "Key type must be a MAC key.",
-            )));
-        }
-        let strength = SecurityStrength::from_bits(PARAMS::SIZE as usize);
-        if !allow_weak_key && key.security_strength() < strength {
-            Err(KeyMaterialError::SecurityStrength(
-                "KMAC::new(): provided key has a lower security strength than the instantiated KMAC",
-            ))?
-        }
-
-        let mut cshake = CSHAKEInternal::<PARAMS>::new(KMAC_FUNCTION_NAME, customization);
-        // Sec 4.3 step 1: bytepad(encode_string(K), rate), absorbed rather than materialised.
-        crate::cshake::absorb_bytepad_strings(&mut cshake, &[key.ref_to_bytes()]);
-
-        Ok(Self { cshake, output_len, strength })
-    }
-
     /// Absorbs `right_encode(value)`, the length binding of Sec 4.3 step 1.
     fn absorb_right_encode(&mut self, value: u64) {
         let (buf, len) = right_encode(value);
@@ -180,7 +293,7 @@ impl<PARAMS: SHAKEParams> KMACInternal<PARAMS> {
     }
 }
 
-impl<PARAMS: SHAKEParams> SuspendableComponent for KMACInternal<PARAMS> {
+impl<'k, PARAMS: SHAKEParams> SuspendableComponent<'k> for KMACInternal<PARAMS> {
     const STATE_LEN: usize = CSHAKE_COMPONENT_LEN + 8;
     type Key = ();
 
@@ -192,13 +305,13 @@ impl<PARAMS: SHAKEParams> SuspendableComponent for KMACInternal<PARAMS> {
         debug_assert!(w.is_done());
     }
 
-    fn read_state(state: &[u8], _key: &()) -> Result<Self, SuspendableError> {
+    fn read_state(state: &[u8], _key: &'k ()) -> Result<Self, SuspendableError> {
         let (cshake, rest) = state.split_at(CSHAKE_COMPONENT_LEN);
         let cshake = CSHAKEInternal::read_tagged_customized(cshake, PARAMS::KMAC_STATE_TAG)?;
         let mut r = Cursor::new(rest);
         let output_len = bounded_usize(r.u64(), usize::MAX)?;
         debug_assert!(r.is_done());
-        // The strength is fixed by the parameter set (see `new_with_params`), not stored.
+        // The strength is fixed by the parameter set (see `with_params`), not stored.
         Ok(Self {
             cshake,
             output_len,
@@ -209,7 +322,7 @@ impl<PARAMS: SHAKEParams> SuspendableComponent for KMACInternal<PARAMS> {
 
 // `Suspendable` rather than `SuspendableKeyed`, keyed though KMAC is. `SuspendableKeyed` lets a
 // state omit the key because the key is wanted again at resume -- HMAC needs it for the outer
-// `K xor opad` step. KMAC's key goes into the sponge in `new_with_params` and is never touched
+// `K xor opad` step. KMAC's key goes into the sponge in `with_params` and is never touched
 // again, so a re-supplied key could neither rebuild anything nor be checked.
 /// The suspended state is not key-free: Keccak-f is a permutation, so anyone holding the state
 /// and the data absorbed so far can invert it back to the key. Store it as securely as the key.
@@ -224,18 +337,6 @@ impl<PARAMS: SHAKEParams> Suspendable<SUSPENDED_KMAC_STATE_LEN> for KMACInternal
 }
 
 impl<PARAMS: SHAKEParams> MAC for KMACInternal<PARAMS> {
-    /// A KMAC with no customization string, producing the nominal output length -- 32 bytes for
-    /// KMAC128 and 64 for KMAC256. Use [`Self::new_with_params`] to choose either.
-    fn new(key: &impl KeyMaterialTrait) -> Result<Self, MACError> {
-        let len = (PARAMS::SIZE as usize) / 4;
-        Self::new_with_params(key, &[], len, false)
-    }
-
-    fn new_allow_weak_key(key: &impl KeyMaterialTrait) -> Result<Self, MACError> {
-        let len = (PARAMS::SIZE as usize) / 4;
-        Self::new_with_params(key, &[], len, true)
-    }
-
     fn output_len(&self) -> usize {
         self.output_len
     }
@@ -337,7 +438,7 @@ impl<PARAMS: SHAKEParams> Algorithm for KMACXOFInternal<PARAMS> {
 impl<PARAMS: SHAKEParams> KMACXOFInternal<PARAMS> {
     /// A new KMACXOF under `key`, optionally customized by `customization`.
     ///
-    /// The key requirements are [`KMACInternal::new_with_params`]'s: tagged as a MAC key, and at
+    /// The key requirements are [`KMACKeyInternal::with_params`]'s: tagged as a MAC key, and at
     /// least the security strength unless `allow_weak_key`.
     ///
     /// # Errors
@@ -349,12 +450,13 @@ impl<PARAMS: SHAKEParams> KMACXOFInternal<PARAMS> {
     ) -> Result<Self, MACError> {
         // The key binding is identical to KMAC's; only the length encoding differs, and that is
         // applied when output begins.
-        let kmac = KMACInternal::<PARAMS>::new_with_params(key, customization, 0, allow_weak_key)?;
+        let kmac =
+            KMACKeyInternal::<PARAMS>::with_params_checked(key, customization, 0, allow_weak_key)?;
         Ok(Self { cshake: kmac.cshake, strength: kmac.strength })
     }
 }
 
-impl<PARAMS: SHAKEParams> SuspendableComponent for KMACXOFInternal<PARAMS> {
+impl<'k, PARAMS: SHAKEParams> SuspendableComponent<'k> for KMACXOFInternal<PARAMS> {
     const STATE_LEN: usize = CSHAKE_COMPONENT_LEN;
     type Key = ();
 
@@ -362,7 +464,7 @@ impl<PARAMS: SHAKEParams> SuspendableComponent for KMACXOFInternal<PARAMS> {
         self.cshake.write_tagged(PARAMS::KMACXOF_STATE_TAG, out)
     }
 
-    fn read_state(state: &[u8], _key: &()) -> Result<Self, SuspendableError> {
+    fn read_state(state: &[u8], _key: &'k ()) -> Result<Self, SuspendableError> {
         let cshake = CSHAKEInternal::read_tagged_customized(state, PARAMS::KMACXOF_STATE_TAG)?;
         Ok(Self { cshake, strength: SecurityStrength::from_bits(PARAMS::SIZE as usize) })
     }

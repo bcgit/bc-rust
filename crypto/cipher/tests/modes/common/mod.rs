@@ -20,7 +20,7 @@
 
 use bouncycastle_cipher::modes::ModeNames;
 use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
-use bouncycastle_core::hazmat::ElectronicCodeBook;
+use bouncycastle_core::hazmat::{BlockPermutation, ElectronicCodeBook};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::Algorithm;
@@ -79,7 +79,9 @@ impl ElectronicCodeBook<TOY_LEN, TOY_LEN> for Toy {
         bytes.copy_from_slice(key.ref_to_bytes());
         Ok(Self { key: bytes })
     }
+}
 
+impl BlockPermutation<TOY_LEN> for Toy {
     fn encrypt_block(&self, block: &mut [u8; TOY_LEN]) {
         for (b, k) in block.iter_mut().zip(self.key.iter()) {
             *b = b.rotate_left(1) ^ *k;
@@ -152,7 +154,9 @@ impl ElectronicCodeBook<TOY_LEN, TOY_LEN> for SwappedPairToy {
     fn new(key: &KeyMaterial<TOY_LEN>) -> Result<Self, SymmetricCipherError> {
         Ok(Self { inner: Toy::new(key)? })
     }
+}
 
+impl BlockPermutation<TOY_LEN> for SwappedPairToy {
     fn encrypt_block(&self, block: &mut [u8; TOY_LEN]) {
         self.inner.encrypt_block(block);
     }
@@ -228,7 +232,9 @@ impl ElectronicCodeBook<TOY_LEN, TOY_LEN> for ForwardOnlyToy {
     fn new(key: &KeyMaterial<TOY_LEN>) -> Result<Self, SymmetricCipherError> {
         Ok(Self { inner: Toy::new(key)? })
     }
+}
 
+impl BlockPermutation<TOY_LEN> for ForwardOnlyToy {
     fn encrypt_block(&self, block: &mut [u8; TOY_LEN]) {
         self.inner.encrypt_block(block);
     }
@@ -286,7 +292,9 @@ impl ElectronicCodeBook<TOY_LEN, TOY_LEN> for SwappedFourToy {
     fn new(key: &KeyMaterial<TOY_LEN>) -> Result<Self, SymmetricCipherError> {
         Ok(Self { inner: Toy::new(key)? })
     }
+}
 
+impl BlockPermutation<TOY_LEN> for SwappedFourToy {
     fn encrypt_block(&self, block: &mut [u8; TOY_LEN]) {
         self.inner.encrypt_block(block);
     }

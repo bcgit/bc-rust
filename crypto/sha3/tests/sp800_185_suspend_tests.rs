@@ -7,6 +7,7 @@
 
 use bouncycastle_core::errors::SuspendableError;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
+use bouncycastle_core::symmetric_key::{FromAnyKeyMaterial, MacGenerationKey};
 use bouncycastle_core::traits::{Hash, MAC, Suspendable, XOF, XOFSqueezer};
 use bouncycastle_core_test_framework::suspendable_state::TestFrameworkSuspendableState;
 use bouncycastle_sha3::kmac::*;
@@ -92,10 +93,10 @@ fn kmac_round_trips() {
         resumed.do_update(PART2);
         assert!(resumed.do_verify_final(&expected));
     }
-    mac_round_trip(|| KMAC128::new(&key()).unwrap());
-    mac_round_trip(|| KMAC256::new(&key()).unwrap());
+    mac_round_trip(|| KMAC128Key::from_key_material(&key()).unwrap().create_generator());
+    mac_round_trip(|| KMAC256Key::from_key_material(&key()).unwrap().create_generator());
     mac_round_trip(|| {
-        KMAC128::new_with_params(&key(), b"My Tagged Application", 16, false).unwrap()
+        KMAC128Key::with_params(&key(), b"My Tagged Application", 16).unwrap().create_generator()
     });
 }
 
@@ -156,7 +157,9 @@ fn each_type_rejects_the_others() {
     rejected::<_, KMACXOF128>(squeezer.clone().suspend(), "an unbound squeezer in KMACXOF128");
     rejected::<_, CSHAKE128>(squeezer.suspend(), "an unbound squeezer in cSHAKE128");
 
-    let mut k = KMAC128::new(&key()).unwrap();
+    let k_key = KMAC128Key::from_key_material(&key()).unwrap();
+
+    let mut k = k_key.create_generator();
     k.do_update(PART1);
     rejected::<_, TupleHash128>(k.clone().suspend(), "a KMAC128 state in TupleHash128");
     rejected::<_, KMAC256>(k.suspend(), "a KMAC128 state in KMAC256");
@@ -191,7 +194,9 @@ fn corrupt_fields_are_rejected() {
     bad[SQUEEZING_FLAG] = 1;
     rejected::<_, CSHAKE128>(bad, "a squeezing sponge in an absorbing cSHAKE");
 
-    let mut k = KMAC128::new(&key()).unwrap();
+    let k_key = KMAC128Key::from_key_material(&key()).unwrap();
+
+    let mut k = k_key.create_generator();
     k.do_update(PART1);
     let mut bad = k.suspend();
     bad[CUSTOMIZED] = 0;
@@ -241,7 +246,7 @@ fn state_tags_are_distinct() {
         tag(SHAKE128::new()),
         tag(SHAKE256::new()),
         tag(CSHAKE128::new(b"", b"S")),
-        tag(KMAC128::new(&key()).unwrap()),
+        tag(KMAC128Key::from_key_material(&key()).unwrap().create_generator()),
         tag(KMACXOF128::new(&key(), b"", false).unwrap()),
         tag(TupleHash128::new(b"", 32)),
         tag(TupleHashXOF128::new(b"")),
@@ -249,7 +254,7 @@ fn state_tags_are_distinct() {
         tag(ParallelHashXOF128::new(8, b"")),
         tag(TupleHashXOF128::new(b"").into_squeezer()),
         tag(CSHAKE256::new(b"", b"S")),
-        tag(KMAC256::new(&key()).unwrap()),
+        tag(KMAC256Key::from_key_material(&key()).unwrap().create_generator()),
         tag(KMACXOF256::new(&key(), b"", false).unwrap()),
         tag(TupleHash256::new(b"", 32)),
         tag(TupleHashXOF256::new(b"")),

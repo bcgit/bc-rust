@@ -23,9 +23,9 @@
 //! * [AES_GCM](crate::gcm)
 //! * [AES_GMAC](crate::gmac), a nonce-based MAC rather than a cipher
 //!
-//! A key that will encrypt many messages is better held as a mode-bound key object such as
-//! [`AES256Key<GCM>`](AES256Key), which validates and expands once and hands out the mode's
-//! encryptors and decryptors; see [`key`].
+//! Each mode is used through a mode-bound key object such as [`AES256Key<GCM>`](AES256Key),
+//! which validates and expands the material once and hands out the mode's encryptors and
+//! decryptors; see [`key`].
 //!
 //! AES in ECB mode, [`AES_ECB_128`](hazmat::AES_ECB_128) and friends, is under [`hazmat`] because
 //! it is a building block for other modes, not itself a confidentiality mode for data.

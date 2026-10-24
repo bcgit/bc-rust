@@ -11,18 +11,19 @@
 //!
 //! A key of any length is accepted: per RFC 2104, a key longer than the hash's block -- the 512-bit
 //! block GB/T 32905-2016 s. 5.2 pads to -- is pre-hashed to the output length. The key's two pad
-//! states are computed once, when an [`HmacKey`](bouncycastle_hmac::HmacKey) is built or a worker
-//! is constructed from key material.
+//! states are computed once, when the [`HmacKey`] is built.
 //!
 //! # Usage Examples
 //!
 //! ```
 //! use bouncycastle_core::key_material::{KeyMaterial256, KeyType};
-//! use bouncycastle_core::traits::MAC;
-//! use bouncycastle_sm3::hmac::HMAC_SM3;
+//! use bouncycastle_core::symmetric_key::{FromAnyKeyMaterial, MacGenerationKey};
+//! use bouncycastle_hmac::HmacKey;
+//! use bouncycastle_sm3::SM3;
 //!
-//! let key = KeyMaterial256::from_bytes_as_type(&[0x0b; 32], KeyType::MACKey).unwrap();
-//! let tag = HMAC_SM3::new(&key).unwrap().mac(b"Hi There");
+//! let key_material = KeyMaterial256::from_bytes_as_type(&[0x0b; 32], KeyType::MACKey).unwrap();
+//! let key = HmacKey::<SM3>::from_key_material(&key_material).unwrap();
+//! let tag = key.mac(b"Hi There");
 //! assert_eq!(tag.len(), 32);
 //! ```
 //!
@@ -52,7 +53,7 @@ use bouncycastle_core::key_material::KeyType;
 #[allow(unused_imports)]
 use bouncycastle_core::traits::MAC;
 #[allow(unused_imports)]
-use bouncycastle_hmac::MIN_FIPS_DIGEST_LEN;
+use bouncycastle_hmac::{HmacKey, MIN_FIPS_DIGEST_LEN};
 /*** end of doc-only imports ***/
 
 /*** String constants ***/
@@ -62,7 +63,7 @@ pub const HMAC_SM3_NAME: &str = "HMAC-SM3";
 /*** Type aliases ***/
 /// Public type for HMAC using SM3.
 #[allow(non_camel_case_types)]
-pub type HMAC_SM3 = HMAC<SM3>;
+pub type HMAC_SM3<'k> = HMAC<'k, SM3>;
 impl HMACParams for SM3 {
     type MACKey = KeyMaterial<{ <SM3 as HashAlgParams>::OUTPUT_LEN }>;
     const HMAC_ALG_NAME: &'static str = HMAC_SM3_NAME;
