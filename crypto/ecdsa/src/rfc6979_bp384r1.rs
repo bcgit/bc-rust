@@ -7,6 +7,14 @@
 //! brainpoolP256r1's own case: brainpoolP384r1's `n` has its top bit set (`n > 2^383`), so `2n >
 //! 2^384` and any 384-bit input is already `< 2n`, despite `n` not being close to `2^384` itself.
 //!
+//! `n` not being close to `2^384` has a second consequence: the step h.3 rejection loop is a
+//! normal control path on this curve, not the near-dead branch it is on the NIST curves -- and
+//! the most-taken in the crate: a uniform 384-bit candidate is `>= n` with probability `1 -
+//! n/2^384 = 0.4503`, so nearly half of all messages take at least one extra HMAC round and a
+//! fifth take two or more. (RFC 6979 §3.4 calls rejection "utterly improbable"; that assumes `n`
+//! close to `2^qlen`, which `qlen == hlen` alone does not give.) [`generate_k`]'s docs give the
+//! constant-time argument that holds at this rejection rate.
+//!
 //! RFC 6979 has no official Appendix A.2.x-style test vectors for brainpool curves;
 //! `rfc6979_bp384r1_vectors_tests.rs` cross-checks this implementation against an independent
 //! Python implementation of the same RFC instead.
@@ -66,8 +74,24 @@ fn candidate_in_range(candidate: &[u8; HLEN]) -> bool {
 }
 
 /// RFC 6979 §3.2 steps a-h: the deterministic per-message secret `k` for private key `d` and
-/// message hash `h1 = H(m)`. See [`crate::rfc6979::generate_k`]'s docs for the rejection-loop
-/// constant-time argument, which applies unchanged here.
+/// message hash `h1 = H(m)`.
+///
+/// # The rejection loop is a normal path on this curve
+///
+/// [`crate::rfc6979::generate_k`]'s rejection-loop argument does not transfer here: a candidate
+/// is rejected not with negligible probability but with `1 - n/2^384 = 0.4503`, so 45 % of
+/// signatures run step h.3's "otherwise" branch at least once and a fifth at least twice (mean
+/// 0.82 extra iterations), and each extra iteration is two more HMAC-SHA-384 calls -- a timing
+/// difference a remote observer can see. The argument that holds instead (and does not lean on
+/// the rejected candidate being discarded, which RFC 6979's chaining never satisfies: the
+/// accepted `k` is an HMAC of the rejected `V`): the iteration count is a function of the
+/// HMAC-DRBG output stream, i.e. of PRF outputs under a key derived from `(d, h1)`, so under the
+/// PRF assumption it is independent of the accepted `k` -- which, conditioned on the count, is
+/// uniform on `[1, n-1]` -- and reveals nothing about `d`. Two consequences worth knowing: the
+/// count is deterministic per `(d, msg)`, so the timing pattern over chosen messages is a
+/// fingerprint worth about a bit per message -- useless for recovering `d`, usable for confirming
+/// a candidate `d` an attacker already holds -- and what must be constant time is everything done
+/// with the accepted `k`, which is the rest of this crate's concern.
 pub fn generate_k(d: &Bp384r1Scalar, h1: &[u8; HLEN]) -> Bp384r1Scalar {
     let mut int2octets_d = Secret::<[u8; HLEN]>::new();
     *int2octets_d = d.to_be_bytes(); // §2.3.3, d already in [1, n-1]
@@ -102,11 +126,12 @@ pub fn generate_k(d: &Bp384r1Scalar, h1: &[u8; HLEN]) -> Bp384r1Scalar {
     }
 }
 
-// `candidate_in_range` is private and, through `generate_k`'s rejection loop, only ever reached on
-// candidates that -- for any real message/key input -- are essentially always in range, so no
-// realistic integration test exercises its reject path; the QUALITY_AND_STYLE.md private-function
-// exception applies. Known answers: `0` and `n` are the immediate out-of-range neighbours of the
-// valid interval `[1, n-1]`.
+// `candidate_in_range`'s reject path is ordinary control flow on this curve -- nearly half of
+// real messages take it (see the module docs) -- and the integration tests exercise it
+// deliberately: in `rfc6979_bp384r1_vectors_tests.rs`, CASE_0 rejects two candidates before its
+// `k`, CASE_4 one, and CASE_5 six in a row. What integration tests cannot pin are the exact
+// boundaries, which no realistic input lands on: `0` and `n`, the immediate out-of-range
+// neighbours of the valid interval `[1, n-1]` -- the known answers below.
 #[cfg(test)]
 mod tests {
     use super::*;

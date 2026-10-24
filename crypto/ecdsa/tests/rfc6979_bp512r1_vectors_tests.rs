@@ -4,6 +4,14 @@
 //! pairs (empty, short ASCII, longer ASCII, all-zero, all-`0xff`), each with the deterministic
 //! `k`, the resulting `(r, s)`, and `Q = [d]G` computed via the standard affine group law (general
 //! `a`), `random.seed 1234567`.
+//!
+//! On this curve the §3.2 step h.3 rejection loop runs on a third of real messages (see
+//! `rfc6979_bp512r1`'s module docs), and these vectors pin it deliberately: CASE_0 and CASE_1
+//! each reject one candidate before their `k`, and a sixth pair, CASE_5, is chosen so that five
+//! in a row are rejected, exercising the `K = HMAC_K(V || 0x00)` re-key five times. Every vector,
+//! including all three rejecting ones, is additionally reproduced by python-ecdsa 0.19.2 (its own
+//! pure-Python RFC 6979) and by OpenSSL 4.0.2's deterministic ECDSA (through the cryptography
+//! 50.0.1 bindings), which also anchors the curve constants a second way.
 
 use bouncycastle_core::traits::Hash;
 use bouncycastle_core::traits::{
@@ -27,6 +35,7 @@ struct Vector {
     uy: &'static str,
 }
 
+// One h.3 rejection: the accepted k is the second candidate, after one re-key of the HMAC chain.
 const CASE_0: Vector = Vector {
     d: "330EC367DE3D130E41B64A8D9CA805E18BE822EDD22F87F9914BFAF280DD7C1531A01101800F36D7D7F978F0A674894EAF61ACFE376CEAE9AE8692ADE621E465",
     msg: b"",
@@ -37,6 +46,7 @@ const CASE_0: Vector = Vector {
     uy: "3B7A607F3E359062492F5D078FEBD595B14A898C4117CFF633CAFB6A57EC5F38390BE97E618B482F10C657D89CC47A16FA93F73A8C99FE050907DDC758DA1BA1",
 };
 
+// One h.3 rejection: the accepted k is the second candidate, after one re-key of the HMAC chain.
 const CASE_1: Vector = Vector {
     d: "17BAA6642A507BD5336ED46492D516FEE5A381A0C9D32A03D4CCAF167412C30CA67E90EC30BC65D57594E68E791FA9ADF8E3DD706ECB52454C5082AF09E88A09",
     msg: b"sample",
@@ -77,7 +87,19 @@ const CASE_4: Vector = Vector {
     uy: "073A8842B4732D73B6F7213F2DAAC046316A3CDA5D9C4B81B894FEF063340379103826C1CB111DA3161B630FCB6952B49E709903286B6914C1043F75450C1EEB",
 };
 
-const CASES: [&Vector; 5] = [&CASE_0, &CASE_1, &CASE_2, &CASE_3, &CASE_4];
+// Pins the h.3 continue-chain deliberately: five candidates in a row are >= n, so the accepted k
+// follows five `K = HMAC_K(V || 0x00)` re-keys -- the (d, msg) pair was searched for exactly that.
+const CASE_5: Vector = Vector {
+    d: "2ACDAFAA028C371E193290ECD1F609D3D83EE2CEA56DFBB70023B9242AF6DF75D55ABB2A9EC6C836EE206890D5425531336AC8A86FB7A41E074AA01D2C395E5C",
+    msg: b"brainpoolP512r1 rejection test 113",
+    k: "4ECFD8C45E6ED73F9B59A4F4BE2ACB4398D1CD73FAFD46CD5AF37A7E30B711195F9D6B12D6E8237CDC5F6B67AB7CC36A381335F3811935E1F76BA1E02363EB12",
+    r: "006EAB155B1A7883362C9FE0A0E84A47A8F4086D594F5F12A3BAC0A0628255DC6860A0649095F365C5B0F571144D00F044188B0DD2471E41BDF100A6FFA85762",
+    s: "92A29C2A899A8F513957A66A0D42F4F7B8E330ECF44A0272AF82568A3EB981169EBB81716A6AE8B395699E64F7C63FAA06C80514717E6F72E8D31536796D0117",
+    ux: "048760C2E0AC7AE2D36049ACB2406A37C6CC4160871B6E0BD69C0F92D95DD626CCFD90717F180EFF435820E8817756AB03D741480C80322C370FA9B8C3C2DBD2",
+    uy: "686B835D888512359FD2EBF73E233E0CFD5C82EDCE1FC9E891BD253C981D55A36D8FEAB7FC1EAAE1DE6E9D4ADD1A6A79A38FC553EA92A75A326ED6FAE1BEF499",
+};
+
+const CASES: [&Vector; 6] = [&CASE_0, &CASE_1, &CASE_2, &CASE_3, &CASE_4, &CASE_5];
 
 fn bytes64(hex: &str) -> [u8; 64] {
     hex_decode(hex).unwrap().try_into().unwrap()
