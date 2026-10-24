@@ -24,9 +24,10 @@
 use crate::helpers::block_mode_helpers::{BLOCK_LEN, CipherDirection, load_key};
 use crate::helpers::stream_mode_helpers::run_stream_mode;
 use bouncycastle::aria::hazmat::{ARIA_128, ARIA_192, ARIA_256};
+use bouncycastle::cipher::modes::Cfb;
+use bouncycastle::cipher::{Decrypting, Encrypting};
 use bouncycastle::core::hazmat::ElectronicCodeBook;
 use bouncycastle::core::key_material::KeyMaterial;
-use bouncycastle::modes::{Cfb, Decrypting, Encrypting};
 
 pub(crate) fn aria128_cfb_cmd(
     action: &CipherDirection,
