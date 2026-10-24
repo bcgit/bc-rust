@@ -21,13 +21,12 @@
 //! attacker edits the block they aimed at. Do not decrypt data you have not authenticated
 //! separately.
 
-use crate::helpers::block_mode_helpers::{BLOCK_LEN, CipherDirection, load_key};
+use crate::helpers::block_mode_helpers::{CipherDirection, load_key_object};
 use crate::helpers::stream_mode_helpers::run_stream_mode;
-use bouncycastle::aria::hazmat::{ARIA_128, ARIA_192, ARIA_256};
-use bouncycastle::cipher::modes::Cfb;
-use bouncycastle::cipher::{Decrypting, Encrypting};
-use bouncycastle::core::hazmat::ElectronicCodeBook;
-use bouncycastle::core::key_material::KeyMaterial;
+use bouncycastle::aria::{ARIA128Key, ARIA192Key, ARIA256Key, BLOCK_LEN};
+use bouncycastle::cipher::modes::CFB;
+use bouncycastle::core::symmetric_key::{SymmetricDecryptionKey, SymmetricEncryptionKey};
+use bouncycastle::core::traits::{StreamCipherDecryptor, StreamCipherEncryptor};
 
 pub(crate) fn aria128_cfb_cmd(
     action: &CipherDirection,
@@ -35,7 +34,11 @@ pub(crate) fn aria128_cfb_cmd(
     key_file: &Option<String>,
     output_hex: bool,
 ) {
-    run::<ARIA_128, 16>(action, &load_key::<16>(key, key_file, "ARIA-128"), output_hex);
+    run::<_, 16>(
+        action,
+        &load_key_object::<ARIA128Key<CFB>, 16>(key, key_file, "ARIA-128"),
+        output_hex,
+    );
 }
 
 pub(crate) fn aria192_cfb_cmd(
@@ -44,7 +47,11 @@ pub(crate) fn aria192_cfb_cmd(
     key_file: &Option<String>,
     output_hex: bool,
 ) {
-    run::<ARIA_192, 24>(action, &load_key::<24>(key, key_file, "ARIA-192"), output_hex);
+    run::<_, 24>(
+        action,
+        &load_key_object::<ARIA192Key<CFB>, 24>(key, key_file, "ARIA-192"),
+        output_hex,
+    );
 }
 
 pub(crate) fn aria256_cfb_cmd(
@@ -53,21 +60,21 @@ pub(crate) fn aria256_cfb_cmd(
     key_file: &Option<String>,
     output_hex: bool,
 ) {
-    run::<ARIA_256, 32>(action, &load_key::<32>(key, key_file, "ARIA-256"), output_hex);
+    run::<_, 32>(
+        action,
+        &load_key_object::<ARIA256Key<CFB>, 32>(key, key_file, "ARIA-256"),
+        output_hex,
+    );
 }
 
-/// Dispatches to the shared streaming loops with `Cfb` filled in as the mode.
-fn run<P, const KEY_LEN: usize>(
-    action: &CipherDirection,
-    key: &KeyMaterial<KEY_LEN>,
-    output_hex: bool,
-) where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+/// Dispatches to the shared streaming loops with `Cfb` filled in as the mode; the init data
+/// travels in band, as the command's contract says.
+fn run<'k, K, const KEY_LEN: usize>(action: &CipherDirection, key: &'k K, output_hex: bool)
+where
+    K: SymmetricEncryptionKey<KEY_LEN, BLOCK_LEN, 0>
+        + SymmetricDecryptionKey<KEY_LEN, BLOCK_LEN, 0>,
+    K::Encryptor<'k>: StreamCipherEncryptor<BLOCK_LEN>,
+    K::Decryptor<'k>: StreamCipherDecryptor<BLOCK_LEN>,
 {
-    run_stream_mode::<
-        Cfb<P, Encrypting, KEY_LEN, BLOCK_LEN>,
-        Cfb<P, Decrypting, KEY_LEN, BLOCK_LEN>,
-        KEY_LEN,
-        BLOCK_LEN,
-    >(action, key, output_hex)
+    run_stream_mode::<K, KEY_LEN, BLOCK_LEN>(action, key, None, output_hex)
 }

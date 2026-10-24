@@ -35,8 +35,8 @@
 #![allow(unused_imports)]
 
 use bouncycastle::aria::LANES;
-use bouncycastle::aria::hazmat::{ARIA_128, ARIA_192, ARIA_256};
-use bouncycastle::core::hazmat::ElectronicCodeBook;
+use bouncycastle::aria::hazmat::{ARIA128Internal, ARIA192Internal, ARIA256Internal};
+use bouncycastle::core::hazmat::{BlockPermutation, ElectronicCodeBook};
 use bouncycastle::core::key_material::{KeyMaterial, KeyType};
 
 /// This exists so /usr/bin/time can measure the base memory footprint of the harness itself.
@@ -51,9 +51,9 @@ fn print_struct_sizes() {
     use core::mem::size_of;
 
     // RFC 5794 Sec 2.2: ek1 .. ek{n+1} for n = 12, 14, 16 rounds -- 13, 15 or 17 keys of 16 bytes.
-    println!("size_of<ARIA_128>: {}", size_of::<ARIA_128>());
-    println!("size_of<ARIA_192>: {}", size_of::<ARIA_192>());
-    println!("size_of<ARIA_256>: {}", size_of::<ARIA_256>());
+    println!("size_of<ARIA128Internal>: {}", size_of::<ARIA128Internal>());
+    println!("size_of<ARIA192Internal>: {}", size_of::<ARIA192Internal>());
+    println!("size_of<ARIA256Internal>: {}", size_of::<ARIA256Internal>());
 }
 
 fn key<const KEY_LEN: usize>() -> KeyMaterial<KEY_LEN> {
@@ -66,41 +66,41 @@ fn key<const KEY_LEN: usize>() -> KeyMaterial<KEY_LEN> {
 }
 
 fn bench_aria128_key_expansion() {
-    eprintln!("ARIA_128::new (key expansion)");
+    eprintln!("ARIA128Internal::new (key expansion)");
 
-    let aria = ARIA_128::new(&key()).unwrap();
+    let aria = ARIA128Internal::new(&key()).unwrap();
     print!("{aria:?}");
 }
 
 fn bench_aria256_key_expansion() {
-    eprintln!("ARIA_256::new (key expansion)");
+    eprintln!("ARIA256Internal::new (key expansion)");
 
-    let aria = ARIA_256::new(&key()).unwrap();
+    let aria = ARIA256Internal::new(&key()).unwrap();
     print!("{aria:?}");
 }
 
 fn bench_aria128_encrypt_block() {
-    eprintln!("ARIA_128::encrypt_block");
+    eprintln!("ARIA128Internal::encrypt_block");
 
-    let aria = ARIA_128::new(&key()).unwrap();
+    let aria = ARIA128Internal::new(&key()).unwrap();
     let mut block = [0x11u8; 16];
     aria.encrypt_block(&mut block);
     print!("{block:x?}");
 }
 
 fn bench_aria256_decrypt_block() {
-    eprintln!("ARIA_256::decrypt_block");
+    eprintln!("ARIA256Internal::decrypt_block");
 
-    let aria = ARIA_256::new(&key()).unwrap();
+    let aria = ARIA256Internal::new(&key()).unwrap();
     let mut block = [0x11u8; 16];
     aria.decrypt_block(&mut block);
     print!("{block:x?}");
 }
 
 fn bench_aria256_encrypt_4blocks() {
-    eprintln!("ARIA_256::encrypt_4blocks");
+    eprintln!("ARIA256Internal::encrypt_4blocks");
 
-    let aria = ARIA_256::new(&key()).unwrap();
+    let aria = ARIA256Internal::new(&key()).unwrap();
     let mut blocks: [[u8; 16]; LANES] = core::array::from_fn(|i| [0x11 * (i as u8 + 1); 16]);
     aria.encrypt_4blocks(&mut blocks);
     print!("{blocks:x?}");

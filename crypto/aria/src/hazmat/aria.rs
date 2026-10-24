@@ -3,8 +3,9 @@
 use crate::round::{RoundKey, diffuse, rounds};
 use crate::schedule::{ARIA128Params, ARIA192Params, ARIA256Params, ARIAParams, ek, expand};
 use crate::{BLOCK_LEN, LANES};
+use bouncycastle_cipher::modes::ModeNames;
 use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
-use bouncycastle_core::hazmat::ElectronicCodeBook;
+use bouncycastle_core::hazmat::{BlockPermutation, ElectronicCodeBook};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::Algorithm;
@@ -13,10 +14,12 @@ use bouncycastle_utils::secret::Secret;
 /// One ARIA block.
 pub type Block = [u8; BLOCK_LEN];
 
-/// The ARIA keyed permutation, parameterised by key length, constant-time.
+/// The ARIA keyed permutation, parameterised by key length, constant-time: the engine under
+/// [`ARIAKey`](crate::ARIAKey).
 ///
-/// Use the aliases [`ARIA_128`], [`ARIA_192`] and [`ARIA_256`] rather than naming this directly. `P`
-/// is sealed to the three parameter sets of RFC 5794, so no fourth instantiation exists.
+/// Use the aliases [`ARIA128Internal`], [`ARIA192Internal`] and [`ARIA256Internal`] rather than
+/// naming this directly. `P` is sealed to the three parameter sets of RFC 5794, so no fourth
+/// instantiation exists.
 ///
 /// The only state is the encryption round keys, held in a [`Secret`] so that they are zeroized on
 /// drop and redacted from `Debug`. There is no direction flag and no initialisation state:
@@ -25,21 +28,22 @@ pub type Block = [u8; BLOCK_LEN];
 /// each round needs them, so both directions work from one stored schedule and a constructed
 /// value is always ready to use -- there is no `init()` or `reset()`, unlike an engine that lays
 /// the keys out differently depending on the direction it is initialised for.
-pub struct ARIA<P: ARIAParams> {
+#[derive(Clone)]
+pub struct ARIAInternal<P: ARIAParams> {
     schedule: Secret<P::Schedule>,
 }
 
 /// ARIA-128: 16-byte key, 12 rounds (RFC 5794 Sec 2.3.1.1).
 #[allow(non_camel_case_types)]
-pub type ARIA_128 = ARIA<ARIA128Params>;
+pub type ARIA128Internal = ARIAInternal<ARIA128Params>;
 /// ARIA-192: 24-byte key, 14 rounds (RFC 5794 Sec 2.3.1.2).
 #[allow(non_camel_case_types)]
-pub type ARIA_192 = ARIA<ARIA192Params>;
+pub type ARIA192Internal = ARIAInternal<ARIA192Params>;
 /// ARIA-256: 32-byte key, 16 rounds (RFC 5794 Sec 2.3.1.3).
 #[allow(non_camel_case_types)]
-pub type ARIA_256 = ARIA<ARIA256Params>;
+pub type ARIA256Internal = ARIAInternal<ARIA256Params>;
 
-impl<P: ARIAParams> ARIA<P> {
+impl<P: ARIAParams> ARIAInternal<P> {
     /// Checks a key is fit to use before it is expanded.
     ///
     /// The key must be tagged [`KeyType::SymmetricCipherKey`], must be exactly `P::KEY_LEN` bytes
@@ -80,7 +84,7 @@ impl<P: ARIAParams> ARIA<P> {
     /// the `ElectronicCodeBook` four-block batch; CBC encryption cannot, since its blocks
     /// are serially dependent.
     ///
-    /// Infallible: a constructed [`ARIA`] is always usable and every input length is fixed.
+    /// Infallible: a constructed [`ARIAInternal`] is always usable and every input length is fixed.
     pub fn encrypt_4blocks(&self, blocks: &mut [Block; LANES]) {
         let s = self.schedule.as_ref();
         rounds(blocks, P::ROUNDS, |i| ek(s, i));
@@ -89,7 +93,7 @@ impl<P: ARIAParams> ARIA<P> {
     /// Decrypts four independent blocks in place (Sec 2.3.2): "the same as the encryption process
     /// except that encryption round keys are replaced by decryption round keys", with Sec 2.2's
     /// `dk1 = ek{n+1}`, `dk{i} = A(ek{n+2-i})` for `i = 2 .. n`, and `dk{n+1} = ek1`, each derived
-    /// from the stored encryption keys as the round needs it. See [`ARIA::encrypt_4blocks`].
+    /// from the stored encryption keys as the round needs it. See [`ARIAInternal::encrypt_4blocks`].
     pub fn decrypt_4blocks(&self, blocks: &mut [Block; LANES]) {
         let s = self.schedule.as_ref();
         let n = P::ROUNDS;
@@ -110,7 +114,7 @@ impl<P: ARIAParams> ARIA<P> {
     ///
     /// The circuits always process four lanes, so a single-block call puts the block in every
     /// lane and discards three results: it does four blocks' worth of work. Use
-    /// [`ARIA::encrypt_4blocks`] where independent blocks are
+    /// [`ARIAInternal::encrypt_4blocks`] where independent blocks are
     /// available.
     ///
     /// Filling the spare lanes with copies costs exactly what zeros would, and buys a free
@@ -150,7 +154,7 @@ impl<P: ARIAParams> ARIA<P> {
     }
 }
 
-impl ARIA_128 {
+impl ARIA128Internal {
     /// Expands a 16-byte key into the ARIA-128 round keys (Sec 2.2).
     ///
     /// # Errors
@@ -163,7 +167,7 @@ impl ARIA_128 {
     }
 }
 
-impl ARIA_192 {
+impl ARIA192Internal {
     /// Expands a 24-byte key into the ARIA-192 round keys. See [`ElectronicCodeBook::new`] for the error
     /// cases.
     pub(crate) fn new(key: &KeyMaterial<24>) -> Result<Self, SymmetricCipherError> {
@@ -172,7 +176,7 @@ impl ARIA_192 {
     }
 }
 
-impl ARIA_256 {
+impl ARIA256Internal {
     /// Expands a 32-byte key into the ARIA-256 round keys. See [`ElectronicCodeBook::new`] for the error
     /// cases.
     pub(crate) fn new(key: &KeyMaterial<32>) -> Result<Self, SymmetricCipherError> {
@@ -181,101 +185,150 @@ impl ARIA_256 {
     }
 }
 
-impl Algorithm for ARIA_128 {
+impl Algorithm for ARIA128Internal {
     const ALG_NAME: &'static str = ARIA128Params::ALG_NAME;
     const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_128bit;
 }
 
-impl Algorithm for ARIA_192 {
+impl Algorithm for ARIA192Internal {
     const ALG_NAME: &'static str = ARIA192Params::ALG_NAME;
     const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_192bit;
 }
 
-impl Algorithm for ARIA_256 {
+impl Algorithm for ARIA256Internal {
     const ALG_NAME: &'static str = ARIA256Params::ALG_NAME;
     const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_256bit;
 }
 
-// The three `ElectronicCodeBook` impls are one-line delegations to the inherent methods above,
+// The three `ElectronicCodeBook` / `BlockPermutation` impl pairs are one-line delegations to the
+// inherent methods above,
 // written out longhand rather than generated because `cargo mutants` cannot see into macro bodies.
 //
 // Each fills the lanes in its pair and four-block methods: two blocks in two of the four lanes
 // cost one set of circuit passes per round where two single-block calls would cost two, and four
 // blocks are one full pass where two pair calls would be two.
 
-impl ElectronicCodeBook<16, BLOCK_LEN> for ARIA_128 {
+impl ElectronicCodeBook<16, BLOCK_LEN> for ARIA128Internal {
     fn new(key: &KeyMaterial<16>) -> Result<Self, SymmetricCipherError> {
-        ARIA_128::new(key)
-    }
-    fn encrypt_block(&self, block: &mut Block) {
-        ARIA::encrypt_block(self, block)
-    }
-    fn decrypt_block(&self, block: &mut Block) {
-        ARIA::decrypt_block(self, block)
-    }
-    fn encrypt_2blocks(&self, blocks: &mut [Block; 2]) {
-        ARIA::encrypt_2blocks(self, blocks)
-    }
-    fn decrypt_2blocks(&self, blocks: &mut [Block; 2]) {
-        ARIA::decrypt_2blocks(self, blocks)
-    }
-    fn encrypt_4blocks(&self, blocks: &mut [Block; LANES]) {
-        ARIA::encrypt_4blocks(self, blocks)
-    }
-    fn decrypt_4blocks(&self, blocks: &mut [Block; LANES]) {
-        ARIA::decrypt_4blocks(self, blocks)
+        ARIA128Internal::new(key)
     }
 }
 
-impl ElectronicCodeBook<24, BLOCK_LEN> for ARIA_192 {
+impl BlockPermutation<BLOCK_LEN> for ARIA128Internal {
+    fn encrypt_block(&self, block: &mut Block) {
+        ARIAInternal::encrypt_block(self, block)
+    }
+    fn decrypt_block(&self, block: &mut Block) {
+        ARIAInternal::decrypt_block(self, block)
+    }
+    fn encrypt_2blocks(&self, blocks: &mut [Block; 2]) {
+        ARIAInternal::encrypt_2blocks(self, blocks)
+    }
+    fn decrypt_2blocks(&self, blocks: &mut [Block; 2]) {
+        ARIAInternal::decrypt_2blocks(self, blocks)
+    }
+    fn encrypt_4blocks(&self, blocks: &mut [Block; LANES]) {
+        ARIAInternal::encrypt_4blocks(self, blocks)
+    }
+    fn decrypt_4blocks(&self, blocks: &mut [Block; LANES]) {
+        ARIAInternal::decrypt_4blocks(self, blocks)
+    }
+}
+
+impl ElectronicCodeBook<24, BLOCK_LEN> for ARIA192Internal {
     fn new(key: &KeyMaterial<24>) -> Result<Self, SymmetricCipherError> {
-        ARIA_192::new(key)
-    }
-    fn encrypt_block(&self, block: &mut Block) {
-        ARIA::encrypt_block(self, block)
-    }
-    fn decrypt_block(&self, block: &mut Block) {
-        ARIA::decrypt_block(self, block)
-    }
-    fn encrypt_2blocks(&self, blocks: &mut [Block; 2]) {
-        ARIA::encrypt_2blocks(self, blocks)
-    }
-    fn decrypt_2blocks(&self, blocks: &mut [Block; 2]) {
-        ARIA::decrypt_2blocks(self, blocks)
-    }
-    fn encrypt_4blocks(&self, blocks: &mut [Block; LANES]) {
-        ARIA::encrypt_4blocks(self, blocks)
-    }
-    fn decrypt_4blocks(&self, blocks: &mut [Block; LANES]) {
-        ARIA::decrypt_4blocks(self, blocks)
+        ARIA192Internal::new(key)
     }
 }
 
-impl ElectronicCodeBook<32, BLOCK_LEN> for ARIA_256 {
+impl BlockPermutation<BLOCK_LEN> for ARIA192Internal {
+    fn encrypt_block(&self, block: &mut Block) {
+        ARIAInternal::encrypt_block(self, block)
+    }
+    fn decrypt_block(&self, block: &mut Block) {
+        ARIAInternal::decrypt_block(self, block)
+    }
+    fn encrypt_2blocks(&self, blocks: &mut [Block; 2]) {
+        ARIAInternal::encrypt_2blocks(self, blocks)
+    }
+    fn decrypt_2blocks(&self, blocks: &mut [Block; 2]) {
+        ARIAInternal::decrypt_2blocks(self, blocks)
+    }
+    fn encrypt_4blocks(&self, blocks: &mut [Block; LANES]) {
+        ARIAInternal::encrypt_4blocks(self, blocks)
+    }
+    fn decrypt_4blocks(&self, blocks: &mut [Block; LANES]) {
+        ARIAInternal::decrypt_4blocks(self, blocks)
+    }
+}
+
+impl ElectronicCodeBook<32, BLOCK_LEN> for ARIA256Internal {
     fn new(key: &KeyMaterial<32>) -> Result<Self, SymmetricCipherError> {
-        ARIA_256::new(key)
-    }
-    fn encrypt_block(&self, block: &mut Block) {
-        ARIA::encrypt_block(self, block)
-    }
-    fn decrypt_block(&self, block: &mut Block) {
-        ARIA::decrypt_block(self, block)
-    }
-    fn encrypt_2blocks(&self, blocks: &mut [Block; 2]) {
-        ARIA::encrypt_2blocks(self, blocks)
-    }
-    fn decrypt_2blocks(&self, blocks: &mut [Block; 2]) {
-        ARIA::decrypt_2blocks(self, blocks)
-    }
-    fn encrypt_4blocks(&self, blocks: &mut [Block; LANES]) {
-        ARIA::encrypt_4blocks(self, blocks)
-    }
-    fn decrypt_4blocks(&self, blocks: &mut [Block; LANES]) {
-        ARIA::decrypt_4blocks(self, blocks)
+        ARIA256Internal::new(key)
     }
 }
 
-impl<P: ARIAParams> core::fmt::Debug for ARIA<P> {
+impl BlockPermutation<BLOCK_LEN> for ARIA256Internal {
+    fn encrypt_block(&self, block: &mut Block) {
+        ARIAInternal::encrypt_block(self, block)
+    }
+    fn decrypt_block(&self, block: &mut Block) {
+        ARIAInternal::decrypt_block(self, block)
+    }
+    fn encrypt_2blocks(&self, blocks: &mut [Block; 2]) {
+        ARIAInternal::encrypt_2blocks(self, blocks)
+    }
+    fn decrypt_2blocks(&self, blocks: &mut [Block; 2]) {
+        ARIAInternal::decrypt_2blocks(self, blocks)
+    }
+    fn encrypt_4blocks(&self, blocks: &mut [Block; LANES]) {
+        ARIAInternal::encrypt_4blocks(self, blocks)
+    }
+    fn decrypt_4blocks(&self, blocks: &mut [Block; LANES]) {
+        ARIAInternal::decrypt_4blocks(self, blocks)
+    }
+}
+
+// RFC 5794 Appendix B assigns object identifiers to ARIA in every one of these modes, so each is
+// named; this crate aliases CBC, CFB, CFB8 and CTR, and a key under the other modes is made by
+// naming the mode directly.
+impl ModeNames for ARIA128Internal {
+    const CBC_ALG_NAME: &'static str = "ARIA_CBC_128";
+    const CCM_ALG_NAME: &'static str = "ARIA_CCM_128";
+    const CFB_ALG_NAME: &'static str = "ARIA_CFB_128";
+    const CFB8_ALG_NAME: &'static str = "ARIA_CFB8_128";
+    const CMAC_ALG_NAME: &'static str = "ARIA_CMAC_128";
+    const CTR_ALG_NAME: &'static str = "ARIA_CTR_128";
+    const ECB_ALG_NAME: &'static str = "ARIA_ECB_128";
+    const GCM_ALG_NAME: &'static str = "ARIA_GCM_128";
+    const GMAC_ALG_NAME: &'static str = "ARIA_GMAC_128";
+}
+
+impl ModeNames for ARIA192Internal {
+    const CBC_ALG_NAME: &'static str = "ARIA_CBC_192";
+    const CCM_ALG_NAME: &'static str = "ARIA_CCM_192";
+    const CFB_ALG_NAME: &'static str = "ARIA_CFB_192";
+    const CFB8_ALG_NAME: &'static str = "ARIA_CFB8_192";
+    const CMAC_ALG_NAME: &'static str = "ARIA_CMAC_192";
+    const CTR_ALG_NAME: &'static str = "ARIA_CTR_192";
+    const ECB_ALG_NAME: &'static str = "ARIA_ECB_192";
+    const GCM_ALG_NAME: &'static str = "ARIA_GCM_192";
+    const GMAC_ALG_NAME: &'static str = "ARIA_GMAC_192";
+}
+
+impl ModeNames for ARIA256Internal {
+    const CBC_ALG_NAME: &'static str = "ARIA_CBC_256";
+    const CCM_ALG_NAME: &'static str = "ARIA_CCM_256";
+    const CFB_ALG_NAME: &'static str = "ARIA_CFB_256";
+    const CFB8_ALG_NAME: &'static str = "ARIA_CFB8_256";
+    const CMAC_ALG_NAME: &'static str = "ARIA_CMAC_256";
+    const CTR_ALG_NAME: &'static str = "ARIA_CTR_256";
+    const ECB_ALG_NAME: &'static str = "ARIA_ECB_256";
+    const GCM_ALG_NAME: &'static str = "ARIA_GCM_256";
+    const GMAC_ALG_NAME: &'static str = "ARIA_GMAC_256";
+}
+
+impl<P: ARIAParams> core::fmt::Debug for ARIAInternal<P> {
     /// Prints the algorithm name only. The round keys are secret and are never formatted.
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.write_str(P::ALG_NAME)
@@ -290,26 +343,26 @@ mod tests {
     fn test_engine_sizes_are_exactly_the_round_keys() {
         // The "Memory Usage" table in the crate docs quotes these: 13, 15 or 17 round keys of 16
         // bytes and nothing else -- no direction flag, no round counter, no initialised marker.
-        assert_eq!(size_of::<ARIA_128>(), 208);
-        assert_eq!(size_of::<ARIA_192>(), 240);
-        assert_eq!(size_of::<ARIA_256>(), 272);
+        assert_eq!(size_of::<ARIA128Internal>(), 208);
+        assert_eq!(size_of::<ARIA192Internal>(), 240);
+        assert_eq!(size_of::<ARIA256Internal>(), 272);
     }
 
     #[test]
     fn test_alg_names_and_strengths() {
-        assert_eq!(<ARIA_128 as Algorithm>::ALG_NAME, "ARIA-128");
-        assert_eq!(<ARIA_192 as Algorithm>::ALG_NAME, "ARIA-192");
-        assert_eq!(<ARIA_256 as Algorithm>::ALG_NAME, "ARIA-256");
+        assert_eq!(<ARIA128Internal as Algorithm>::ALG_NAME, "ARIA-128");
+        assert_eq!(<ARIA192Internal as Algorithm>::ALG_NAME, "ARIA-192");
+        assert_eq!(<ARIA256Internal as Algorithm>::ALG_NAME, "ARIA-256");
         assert_eq!(
-            <ARIA_128 as Algorithm>::MAX_SECURITY_STRENGTH,
+            <ARIA128Internal as Algorithm>::MAX_SECURITY_STRENGTH,
             SecurityStrength::from_bytes(ARIA128Params::KEY_LEN)
         );
         assert_eq!(
-            <ARIA_192 as Algorithm>::MAX_SECURITY_STRENGTH,
+            <ARIA192Internal as Algorithm>::MAX_SECURITY_STRENGTH,
             SecurityStrength::from_bytes(ARIA192Params::KEY_LEN)
         );
         assert_eq!(
-            <ARIA_256 as Algorithm>::MAX_SECURITY_STRENGTH,
+            <ARIA256Internal as Algorithm>::MAX_SECURITY_STRENGTH,
             SecurityStrength::from_bytes(ARIA256Params::KEY_LEN)
         );
     }
@@ -351,7 +404,7 @@ mod tests {
         let key_bytes: [u8; 16] = core::array::from_fn(|i| i as u8);
         let key =
             KeyMaterial::<16>::from_bytes_as_type(&key_bytes, KeyType::SymmetricCipherKey).unwrap();
-        let aria = ARIA_128::new(&key).unwrap();
+        let aria = ARIA128Internal::new(&key).unwrap();
         let s = aria.schedule.as_ref();
         let to_state = |v: u128| -> RoundKey {
             let b = v.to_be_bytes();

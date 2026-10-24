@@ -7,20 +7,20 @@
 //! pair and four-block methods, so this is what pins those overrides to the trait's contract.
 
 use bouncycastle_aria::BLOCK_LEN;
-use bouncycastle_aria::hazmat::{ARIA_128, ARIA_192, ARIA_256};
+use bouncycastle_aria::hazmat::{ARIA128Internal, ARIA192Internal, ARIA256Internal};
 use bouncycastle_core_test_framework::electronic_code_book::TestFrameworkElectronicCodeBook;
 
 #[test]
 fn aria128_conforms_to_electronic_code_book() {
-    TestFrameworkElectronicCodeBook::new().test::<16, BLOCK_LEN, ARIA_128>();
+    TestFrameworkElectronicCodeBook::new().test::<16, BLOCK_LEN, ARIA128Internal>();
 }
 
 #[test]
 fn aria192_conforms_to_electronic_code_book() {
-    TestFrameworkElectronicCodeBook::new().test::<24, BLOCK_LEN, ARIA_192>();
+    TestFrameworkElectronicCodeBook::new().test::<24, BLOCK_LEN, ARIA192Internal>();
 }
 
 #[test]
 fn aria256_conforms_to_electronic_code_book() {
-    TestFrameworkElectronicCodeBook::new().test::<32, BLOCK_LEN, ARIA_256>();
+    TestFrameworkElectronicCodeBook::new().test::<32, BLOCK_LEN, ARIA256Internal>();
 }

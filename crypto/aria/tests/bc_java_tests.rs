@@ -13,7 +13,7 @@
 mod common;
 
 use bouncycastle_aria::BLOCK_LEN;
-use bouncycastle_aria::hazmat::{ARIA_128, ARIA_192, ARIA_256};
+use bouncycastle_aria::hazmat::{ARIA128Internal, ARIA192Internal, ARIA256Internal};
 use bouncycastle_core::hazmat::ElectronicCodeBook;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use common::{SB1, SB2, bytes, sb3, sb4};
@@ -69,9 +69,9 @@ fn check_test_vector<const KEY_LEN: usize, P: ElectronicCodeBook<KEY_LEN, 16>>(
 #[test]
 fn check_test_vectors_rfc5794() {
     let [v128, v192, v256] = TEST_VECTORS_RFC5794;
-    check_test_vector::<16, ARIA_128>(v128.0, v128.1, v128.2, v128.3);
-    check_test_vector::<24, ARIA_192>(v192.0, v192.1, v192.2, v192.3);
-    check_test_vector::<32, ARIA_256>(v256.0, v256.1, v256.2, v256.3);
+    check_test_vector::<16, ARIA128Internal>(v128.0, v128.1, v128.2, v128.3);
+    check_test_vector::<24, ARIA192Internal>(v192.0, v192.1, v192.2, v192.3);
+    check_test_vector::<32, ARIA256Internal>(v256.0, v256.1, v256.2, v256.3);
 }
 
 /// `checkRandomRoundtrips()`: for each key length, a random key and block; 100 times, encrypt,
@@ -95,9 +95,9 @@ fn random_roundtrips<const KEY_LEN: usize, P: ElectronicCodeBook<KEY_LEN, 16>>(s
 fn check_random_roundtrips() {
     let mut seed = 0xA51A_0001;
     for _ in 0..100 {
-        random_roundtrips::<16, ARIA_128>(&mut seed);
-        random_roundtrips::<24, ARIA_192>(&mut seed);
-        random_roundtrips::<32, ARIA_256>(&mut seed);
+        random_roundtrips::<16, ARIA128Internal>(&mut seed);
+        random_roundtrips::<24, ARIA192Internal>(&mut seed);
+        random_roundtrips::<32, ARIA256Internal>(&mut seed);
     }
 }
 

@@ -7,9 +7,9 @@
 //! the round keys in the decryption order). ARIA-192 sits between the other two in rounds, so only
 //! the 12-round ARIA-128 and the 16-round ARIA-256 are benchmarked.
 
-use bouncycastle_aria::hazmat::{ARIA_128, ARIA_256};
+use bouncycastle_aria::hazmat::{ARIA128Internal, ARIA256Internal};
 use bouncycastle_aria::{BLOCK_LEN, LANES};
-use bouncycastle_core::hazmat::ElectronicCodeBook;
+use bouncycastle_core::hazmat::{BlockPermutation, ElectronicCodeBook};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::traits::RNG;
 use bouncycastle_rng as rng;
@@ -39,22 +39,22 @@ fn bench_key_expansion(c: &mut Criterion) {
     let mut group = c.benchmark_group("aria::key expansion");
 
     let key128 = key::<16>();
-    group.bench_function("ARIA_128::new()", |b| {
-        b.iter(|| black_box(ARIA_128::new(black_box(&key128)).unwrap()))
+    group.bench_function("ARIA128Internal::new()", |b| {
+        b.iter(|| black_box(ARIA128Internal::new(black_box(&key128)).unwrap()))
     });
     let key256 = key::<32>();
-    group.bench_function("ARIA_256::new()", |b| {
-        b.iter(|| black_box(ARIA_256::new(black_box(&key256)).unwrap()))
+    group.bench_function("ARIA256Internal::new()", |b| {
+        b.iter(|| black_box(ARIA256Internal::new(black_box(&key256)).unwrap()))
     });
 
     group.finish();
 }
 
 fn bench_aria128(c: &mut Criterion) {
-    let aria = ARIA_128::new(&key::<16>()).unwrap();
+    let aria = ARIA128Internal::new(&key::<16>()).unwrap();
     let blocks = random_blocks();
 
-    let mut group = c.benchmark_group("aria::ARIA_128");
+    let mut group = c.benchmark_group("aria::ARIA128Internal");
     group.throughput(Throughput::Bytes(DATA_LEN as u64));
 
     group.bench_function("16KiB -- .encrypt_block() x1024", |b| {
@@ -101,10 +101,10 @@ fn bench_aria128(c: &mut Criterion) {
 }
 
 fn bench_aria256(c: &mut Criterion) {
-    let aria = ARIA_256::new(&key::<32>()).unwrap();
+    let aria = ARIA256Internal::new(&key::<32>()).unwrap();
     let blocks = random_blocks();
 
-    let mut group = c.benchmark_group("aria::ARIA_256");
+    let mut group = c.benchmark_group("aria::ARIA256Internal");
     group.throughput(Throughput::Bytes(DATA_LEN as u64));
 
     group.bench_function("16KiB -- .encrypt_block() x1024", |b| {

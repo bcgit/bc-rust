@@ -12,13 +12,12 @@
 //! data you have not authenticated separately.
 
 use crate::helpers::block_mode_helpers::{
-    BLOCK_LEN, CipherDirection, decrypt_stream, encrypt_stream, load_key,
+    CipherDirection, decrypt_stream, encrypt_stream, load_key_object, start_encryptor,
 };
-use bouncycastle::aria::hazmat::{ARIA_128, ARIA_192, ARIA_256};
-use bouncycastle::cipher::modes::Cbc;
-use bouncycastle::cipher::{Decrypting, Encrypting};
-use bouncycastle::core::hazmat::ElectronicCodeBook;
-use bouncycastle::core::key_material::KeyMaterial;
+use bouncycastle::aria::{ARIA128Key, ARIA192Key, ARIA256Key, BLOCK_LEN};
+use bouncycastle::cipher::modes::CBC;
+use bouncycastle::cipher::padding::NoPadding;
+use bouncycastle::core::symmetric_key::{SymmetricDecryptionKey, SymmetricEncryptionKey};
 
 /// Names the mode in error messages.
 const MODE: &str = "CBC";
@@ -29,7 +28,11 @@ pub(crate) fn aria128_cbc_cmd(
     key_file: &Option<String>,
     output_hex: bool,
 ) {
-    run::<ARIA_128, 16>(action, &load_key::<16>(key, key_file, "ARIA-128"), output_hex);
+    run::<_, 16>(
+        action,
+        &load_key_object::<ARIA128Key<CBC<NoPadding>>, 16>(key, key_file, "ARIA-128"),
+        output_hex,
+    );
 }
 
 pub(crate) fn aria192_cbc_cmd(
@@ -38,7 +41,11 @@ pub(crate) fn aria192_cbc_cmd(
     key_file: &Option<String>,
     output_hex: bool,
 ) {
-    run::<ARIA_192, 24>(action, &load_key::<24>(key, key_file, "ARIA-192"), output_hex);
+    run::<_, 24>(
+        action,
+        &load_key_object::<ARIA192Key<CBC<NoPadding>>, 24>(key, key_file, "ARIA-192"),
+        output_hex,
+    );
 }
 
 pub(crate) fn aria256_cbc_cmd(
@@ -47,27 +54,30 @@ pub(crate) fn aria256_cbc_cmd(
     key_file: &Option<String>,
     output_hex: bool,
 ) {
-    run::<ARIA_256, 32>(action, &load_key::<32>(key, key_file, "ARIA-256"), output_hex);
+    run::<_, 32>(
+        action,
+        &load_key_object::<ARIA256Key<CBC<NoPadding>>, 32>(key, key_file, "ARIA-256"),
+        output_hex,
+    );
 }
 
-/// Dispatches to the shared streaming loops with `Cbc` filled in as the mode.
-fn run<P, const KEY_LEN: usize>(
-    action: &CipherDirection,
-    key: &KeyMaterial<KEY_LEN>,
-    output_hex: bool,
-) where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>,
+/// Dispatches to the shared streaming loops under the key's CBC mode. `NoPadding` keeps the
+/// command's contract: whole blocks only, with the IV in band.
+fn run<K, const KEY_LEN: usize>(action: &CipherDirection, key: &K, output_hex: bool)
+where
+    K: SymmetricEncryptionKey<KEY_LEN, BLOCK_LEN, BLOCK_LEN>
+        + SymmetricDecryptionKey<KEY_LEN, BLOCK_LEN, BLOCK_LEN>,
 {
     match action {
         CipherDirection::Encrypt => {
-            encrypt_stream::<Cbc<P, Encrypting, KEY_LEN, BLOCK_LEN>, KEY_LEN, BLOCK_LEN>(
-                key, output_hex, MODE,
-            )
+            let (enc, generated_iv) = start_encryptor(None, |rng| key.create_encryptor(rng));
+            encrypt_stream::<_, BLOCK_LEN>(enc, generated_iv.as_ref(), output_hex, Some(MODE))
         }
-        CipherDirection::Decrypt => {
-            decrypt_stream::<Cbc<P, Decrypting, KEY_LEN, BLOCK_LEN>, KEY_LEN, BLOCK_LEN>(
-                key, output_hex, MODE,
-            )
-        }
+        CipherDirection::Decrypt => decrypt_stream::<_, BLOCK_LEN>(
+            None,
+            |iv| key.create_decryptor(iv),
+            output_hex,
+            Some(MODE),
+        ),
     }
 }
