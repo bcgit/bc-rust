@@ -4,7 +4,7 @@
 //! and behave as the mode they claim to be: the direction selects the encryptor or the decryptor,
 //! the init data is the length the mode defines, and the three modes are distinct from each other.
 //! The known-answer coverage is in `stream_mode_tests.rs`, and the modes themselves are tested in
-//! their own right in `bouncycastle-modes`; this checks the wiring between them.
+//! their own right in `bouncycastle_cipher::modes`; this checks the wiring between them.
 
 use bouncycastle_camellia::hazmat::{Camellia_128, Camellia_192, Camellia_256};
 use bouncycastle_camellia::{
@@ -12,12 +12,13 @@ use bouncycastle_camellia::{
     Camellia_CFB8_128, Camellia_CFB8_192, Camellia_CFB8_256, Camellia_CTR_128, Camellia_CTR_192,
     Camellia_CTR_256,
 };
+use bouncycastle_cipher::modes::{Cfb, Cfb8, Ctr};
+use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::traits::{
     StreamCipherDecryptor, StreamCipherEncryptor, SymmetricCipherEncryptor,
 };
 use bouncycastle_core_test_framework::FixedSeedRNG;
-use bouncycastle_modes::{Cfb, Cfb8, Ctr, Decrypting, Encrypting};
 
 fn key<const N: usize>() -> KeyMaterial<N> {
     let bytes: [u8; N] = core::array::from_fn(|i| (i as u8).wrapping_mul(7).wrapping_add(1));
