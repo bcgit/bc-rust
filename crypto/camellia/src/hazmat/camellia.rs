@@ -6,9 +6,10 @@ use crate::schedule::{
 };
 use crate::{BLOCK_LEN, LANES};
 use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
+use bouncycastle_core::hazmat::ElectronicCodeBook;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::traits::{Algorithm, ElectronicCodeBook};
+use bouncycastle_core::traits::Algorithm;
 use bouncycastle_utils::secret::Secret;
 
 /// One Camellia block.

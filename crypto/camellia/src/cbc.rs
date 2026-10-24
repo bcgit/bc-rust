@@ -1,7 +1,7 @@
 //! Type aliases for Camellia (RFC 3713) in CBC mode (NIST SP 800-38A Sec 6.2), with padding.
 //!
-//! `bouncycastle-modes` is deliberately cipher-agnostic, so `Cbc` takes the permutation, the
-//! direction, and the `KEY_LEN` / `BLOCK_LEN` const parameters, and `bouncycastle-padding`'s
+//! `bouncycastle_cipher::modes` is deliberately cipher-agnostic, so `Cbc` takes the permutation, the
+//! direction, and the `KEY_LEN` / `BLOCK_LEN` const parameters, and `bouncycastle_cipher::padding`'s
 //! adapters take five more. These aliases pin all of them except the two choices a caller actually
 //! makes: the direction and the padding scheme. They add nothing to the engine: the permutation
 //! still implements none of the data-encryption traits itself (see the crate docs), the mode does.
@@ -15,21 +15,22 @@
 //! always CBC *plus a padding scheme*, and the scheme changes the ciphertext and must be agreed by
 //! both ends. Naming it in the type makes that choice explicit and makes a mismatched pair a
 //! compile error. The block-aligned API -- whole blocks in place, length checked at compile time --
-//! is `bouncycastle_modes::Cbc` itself, which these wrap. See
-//! [`Direction::Select`](bouncycastle_core::stream_cipher::Direction) for how one alias covers both
+//! is `bouncycastle_cipher::modes::Cbc` itself, which these wrap. See
+//! [`Direction::Select`](bouncycastle_cipher::Direction) for how one alias covers both
 //! directions.
 
 use crate::BLOCK_LEN;
 use crate::hazmat::{Camellia_128, Camellia_192, Camellia_256};
-use bouncycastle_core::stream_cipher::Direction;
-use bouncycastle_modes::{Cbc, Decrypting, Encrypting};
-use bouncycastle_padding::{PaddedBlockCipherDecryptor, PaddedBlockCipherEncryptor};
+use bouncycastle_cipher::Direction;
+use bouncycastle_cipher::modes::Cbc;
+use bouncycastle_cipher::padding::{PaddedBlockCipherDecryptor, PaddedBlockCipherEncryptor};
+use bouncycastle_cipher::{Decrypting, Encrypting};
 
 // Imports needed for docs
 #[allow(unused_imports)]
-use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
+use bouncycastle_cipher::padding::{NoPadding, PKCS7};
 #[allow(unused_imports)]
-use bouncycastle_padding::{NoPadding, PKCS7};
+use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
 // end of imports needed for docs
 
 /// Camellia-128 in CBC mode with a padding scheme.
@@ -42,8 +43,8 @@ use bouncycastle_padding::{NoPadding, PKCS7};
 /// use bouncycastle_camellia::Camellia_CBC_128;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
-/// use bouncycastle_modes::{Decrypting, Encrypting};
-/// use bouncycastle_padding::PKCS7;
+/// use bouncycastle_cipher::{Decrypting, Encrypting};
+/// use bouncycastle_cipher::padding::PKCS7;
 ///
 /// let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
 ///     .expect("a 16-byte symmetric cipher key");
@@ -83,8 +84,8 @@ pub type Camellia_CBC_128<Dir, Pad> = <Dir as Direction>::Select<
 /// use bouncycastle_camellia::Camellia_CBC_192;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
-/// use bouncycastle_modes::{Decrypting, Encrypting};
-/// use bouncycastle_padding::PKCS7;
+/// use bouncycastle_cipher::{Decrypting, Encrypting};
+/// use bouncycastle_cipher::padding::PKCS7;
 ///
 /// let key = KeyMaterial::<24>::from_bytes_as_type(&[0x42; 24], KeyType::SymmetricCipherKey)
 ///     .expect("a 24-byte symmetric cipher key");
@@ -124,8 +125,8 @@ pub type Camellia_CBC_192<Dir, Pad> = <Dir as Direction>::Select<
 /// use bouncycastle_camellia::Camellia_CBC_256;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
-/// use bouncycastle_modes::{Decrypting, Encrypting};
-/// use bouncycastle_padding::PKCS7;
+/// use bouncycastle_cipher::{Decrypting, Encrypting};
+/// use bouncycastle_cipher::padding::PKCS7;
 ///
 /// let key = KeyMaterial::<32>::from_bytes_as_type(&[0x42; 32], KeyType::SymmetricCipherKey)
 ///     .expect("a 32-byte symmetric cipher key");

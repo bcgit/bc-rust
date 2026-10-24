@@ -19,9 +19,10 @@
 use crate::helpers::block_mode_helpers::{BLOCK_LEN, CipherDirection, load_key};
 use crate::helpers::stream_mode_helpers::run_stream_mode;
 use bouncycastle::camellia::hazmat::{Camellia_128, Camellia_192, Camellia_256};
+use bouncycastle::cipher::modes::Cfb8;
+use bouncycastle::cipher::{Decrypting, Encrypting};
 use bouncycastle::core::hazmat::ElectronicCodeBook;
 use bouncycastle::core::key_material::KeyMaterial;
-use bouncycastle::modes::{Cfb8, Decrypting, Encrypting};
 
 pub(crate) fn camellia128_cfb8_cmd(
     action: &CipherDirection,

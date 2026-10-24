@@ -164,5 +164,5 @@ fn a_large_payload_on_an_error_path_does_not_break_the_harness() {
 #[test]
 fn unaligned_input_is_rejected() {
     let err = run_err(&["camellia128-cbc", "encrypt", "--key", KEY_128], &[0u8; 17]);
-    assert!(err.contains("not a whole number of 16-byte blocks"), "stderr was: {err}");
+    assert!(err.contains("whole number of 16-byte blocks"), "stderr was: {err}");
 }

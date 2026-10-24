@@ -8,6 +8,12 @@ mod aes_ctr_cmd;
 mod aes_ecb_cmd;
 mod aes_gcm_cmd;
 mod ascon_cmd;
+mod camellia_cbc_cmd;
+mod camellia_ccm_cmd;
+mod camellia_cfb8_cmd;
+mod camellia_cfb_cmd;
+mod camellia_ctr_cmd;
+mod camellia_gcm_cmd;
 mod encoders_cmd;
 mod helpers;
 mod hkdf_cmd;
@@ -2359,6 +2365,755 @@ enum Subcommands {
         x: bool,
     },
 
+    /// Camellia-128 in CBC mode (RFC 3713 block cipher; NIST SP 800-38A Sec 6.2 mode) with PKCS7
+    /// padding, streaming stdin to stdout.
+    ///
+    /// On `encrypt`, a fresh unpredictable IV is generated and written as the FIRST 16 BYTES of
+    /// the output; on `decrypt` it is read back from the first 16 bytes of the input, so the two
+    /// compose directly in a pipeline. With `--iv` (hex) or `--iv-file` (raw bytes), the IV is
+    /// supplied instead: `encrypt` uses it and writes ONLY the ciphertext, and `decrypt` reads
+    /// ONLY ciphertext from stdin.
+    ///
+    /// Input may be any length: it is padded with PKCS7 to a whole number of 16-byte blocks.
+    ///
+    /// See `aes128-cbc` for the full IV convention, the padding rule and the warnings; the key
+    /// and block are both 16 bytes, as for AES-128.
+    CAMELLIA128_CBC {
+        #[arg(short, long)]
+        direction: CipherDirection,
+
+        /// The 16-byte Camellia key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 16-byte Camellia key (raw bytes; hex with --hex-input).
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        /// The 16-byte IV in hex. Supplied instead of generated: `encrypt` then writes no IV and
+        /// `decrypt` reads none. See the IV paragraph above.
+        #[arg(long)]
+        iv: Option<String>,
+
+        /// A file containing the 16-byte IV, (raw bytes; hex with --hex-input).
+        /// If both iv and iv_file options are provided, the file will be used.
+        #[arg(long)]
+        iv_file: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+    /// Camellia-192 in CBC mode (RFC 3713 block cipher; NIST SP 800-38A Sec 6.2 mode) with PKCS7
+    /// padding, streaming stdin to stdout.
+    ///
+    /// See `camellia128-cbc` for the IV convention, the padding rule and the warnings; only the
+    /// key length differs.
+    CAMELLIA192_CBC {
+        #[arg(short, long)]
+        direction: CipherDirection,
+
+        /// The 24-byte Camellia key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 24-byte Camellia key (raw bytes; hex with --hex-input).
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        /// The 16-byte IV in hex. Supplied instead of generated: `encrypt` then writes no IV and
+        /// `decrypt` reads none. See the IV paragraph above.
+        #[arg(long)]
+        iv: Option<String>,
+
+        /// A file containing the 16-byte IV, (raw bytes; hex with --hex-input).
+        /// If both iv and iv_file options are provided, the file will be used.
+        #[arg(long)]
+        iv_file: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+    /// Camellia-256 in CBC mode (RFC 3713 block cipher; NIST SP 800-38A Sec 6.2 mode) with PKCS7
+    /// padding, streaming stdin to stdout.
+    ///
+    /// See `camellia128-cbc` for the IV convention, the padding rule and the warnings; only the
+    /// key length differs.
+    CAMELLIA256_CBC {
+        #[arg(short, long)]
+        direction: CipherDirection,
+
+        /// The 32-byte Camellia key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 32-byte Camellia key (raw bytes; hex with --hex-input).
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        /// The 16-byte IV in hex. Supplied instead of generated: `encrypt` then writes no IV and
+        /// `decrypt` reads none. See the IV paragraph above.
+        #[arg(long)]
+        iv: Option<String>,
+
+        /// A file containing the 16-byte IV, (raw bytes; hex with --hex-input).
+        /// If both iv and iv_file options are provided, the file will be used.
+        #[arg(long)]
+        iv_file: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+    /// Camellia-128 in CCM mode (NIST SP 800-38C): authenticated encryption of stdin to stdout.
+    ///
+    /// CCM is an AEAD: it protects both confidentiality and authenticity, and `decrypt` either
+    /// writes the plaintext or fails, unlike aes*-cbc/-cfb/-ctr, which cannot detect tampering.
+    ///
+    /// The output of `encrypt` is `ciphertext || tag` -- SP 800-38C Sec 6.1 step 8's own layout --
+    /// so it is `--tag-len` bytes longer than the input, and `decrypt` reads the tag back off the
+    /// end. Both directions authenticate `--aad` as well as the payload.
+    ///
+    /// THE NONCE IS SUPPLIED, NOT GENERATED, and this is the only cipher command here that takes
+    /// one. The other modes need an unpredictable IV, so they generate it; CCM needs the nonce to
+    /// be UNIQUE but not unpredictable (Sec 5.3: "The nonce is not required to be random"), and a
+    /// caller with a message counter can guarantee uniqueness better than a random draw. The nonce
+    /// is NOT written to the output, so `decrypt` needs the same `--nonce` as `encrypt`.
+    ///
+    /// WARNING: never reuse a nonce under one key. For CCM a repeat is worse than for CTR: it
+    /// reuses the keystream AND lets an attacker who can replay the nonce flip any chosen bit of
+    /// the payload (Appendix B.1). Use a counter, or a random value long enough that a collision is
+    /// negligible.
+    ///
+    /// Nonce length must be 7 to 13 bytes and `--tag-len` one of 4, 6, 8, 10, 12, 14, 16
+    /// (Appendix A.1). The two are linked to the payload limit and the forgery bound respectively:
+    /// a nonce of n bytes caps the payload at 2^(8*(15-n)) - 1 bytes, so 13 bytes allows only
+    /// 64 KiB - 1 while 7 bytes is effectively unlimited; and Sec B.2 says a tag shorter than
+    /// 8 bytes "shall not be used without a careful analysis of the risks". A 12-byte nonce with a
+    /// 16-byte tag is the usual choice; `--tag-len` defaults to 16, while the nonce must be given.
+    ///
+    /// UNLIKE EVERY OTHER CIPHER COMMAND HERE, THIS ONE DOES NOT STREAM: it reads all of stdin
+    /// before doing any work, so memory use is proportional to the input. That is inherent to CCM,
+    /// not a limitation of this implementation -- Sec 3: "CCM is not designed to support partial
+    /// processing or stream processing", because Appendix A.2.1 puts the payload length inside the
+    /// first block the MAC covers. It does buy one thing: on `decrypt` NO plaintext is written
+    /// until the tag has verified, so unlike `ascon-aead128` a non-zero exit leaves nothing to
+    /// discard. For large inputs use `ascon-aead128`, which streams. The AAD is read whole as well.
+    ///
+    /// Input may be any length: CCM pads internally and the payload is not block-aligned.
+    ///
+    /// Note: in production uses, secrets should not be passed on the command-line because they get
+    /// logged in shell history. Use the file-based input instead.
+    CAMELLIA128_CCM {
+        #[arg(short, long)]
+        direction: CipherDirection,
+
+        /// The 16-byte Camellia key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 16-byte Camellia key (raw bytes; hex with --hex-input).
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        /// The nonce in hex, 7 to 13 bytes. MUST be unique per encryption under a given key.
+        #[arg(long)]
+        nonce: Option<String>,
+
+        /// A file containing the nonce, (raw bytes; hex with --hex-input).
+        #[arg(long)]
+        nonce_file: Option<String>,
+
+        /// Associated data in hex: authenticated but not encrypted. Must match on decrypt.
+        #[arg(long)]
+        aad: Option<String>,
+
+        /// A file containing the associated data (raw bytes; hex with --hex-input). If both aad and
+        /// aad_file options are provided, the file will be used.
+        #[arg(long)]
+        aad_file: Option<String>,
+
+        /// Tag length in bytes: one of 4, 6, 8, 10, 12, 14, 16. Must match on decrypt.
+        #[arg(long, default_value_t = 16)]
+        tag_len: usize,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// Camellia-128 in CFB128 mode (RFC 3713 block cipher; NIST SP 800-38A Sec 6.3 mode),
+    /// streaming stdin to stdout.
+    ///
+    /// The segment size is the full block, i.e. CFB128. The 8-bit variant is a different,
+    /// non-interoperable mode; use `camellia128-cfb8` for that.
+    ///
+    /// On `encrypt`, a fresh unpredictable IV is generated and written as the FIRST 16 BYTES of
+    /// the output; on `decrypt` it is read back from the first 16 bytes of the input. With `--iv`
+    /// (hex) or `--iv-file` (raw bytes; hex with --hex-input), the IV is supplied instead and only ciphertext is written
+    /// or read. Input may be ANY length: nothing is padded.
+    ///
+    /// See `aes128-cfb` for the full IV convention, input-length rule and warnings; the key and
+    /// block are both 16 bytes, as for AES-128.
+    CAMELLIA128_CFB {
+        #[arg(short, long)]
+        direction: CipherDirection,
+
+        /// The 16-byte Camellia key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 16-byte Camellia key (raw bytes; hex with --hex-input).
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        /// The 16-byte IV in hex. Supplied instead of generated: `encrypt` then writes no IV and
+        /// `decrypt` reads none. See the IV paragraph above.
+        #[arg(long)]
+        iv: Option<String>,
+
+        /// A file containing the 16-byte IV, (raw bytes; hex with --hex-input).
+        /// If both iv and iv_file options are provided, the file will be used.
+        #[arg(long)]
+        iv_file: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+    /// Camellia-192 in CCM mode (NIST SP 800-38C), authenticated encryption of stdin to stdout.
+    ///
+    /// See `aes128-ccm` for the nonce convention, the length rules, the non-streaming note and the
+    /// warnings; only the key length differs.
+    CAMELLIA192_CCM {
+        #[arg(short, long)]
+        direction: CipherDirection,
+
+        /// The 24-byte Camellia key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 24-byte Camellia key (raw bytes; hex with --hex-input).
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        /// The nonce in hex, 7 to 13 bytes. MUST be unique per encryption under a given key.
+        #[arg(long)]
+        nonce: Option<String>,
+
+        /// A file containing the nonce, (raw bytes; hex with --hex-input).
+        #[arg(long)]
+        nonce_file: Option<String>,
+
+        /// Associated data in hex: authenticated but not encrypted. Must match on decrypt.
+        #[arg(long)]
+        aad: Option<String>,
+
+        /// A file containing the associated data (raw bytes; hex with --hex-input). If both aad and
+        /// aad_file options are provided, the file will be used.
+        #[arg(long)]
+        aad_file: Option<String>,
+
+        /// Tag length in bytes: one of 4, 6, 8, 10, 12, 14, 16. Must match on decrypt.
+        #[arg(long, default_value_t = 16)]
+        tag_len: usize,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// Camellia-192 in CFB128 mode (RFC 3713 block cipher; NIST SP 800-38A Sec 6.3 mode),
+    /// streaming stdin to stdout.
+    ///
+    /// See `camellia128-cfb` for the IV convention, input-length rule and warnings; only the key
+    /// length differs.
+    CAMELLIA192_CFB {
+        #[arg(short, long)]
+        direction: CipherDirection,
+
+        /// The 24-byte Camellia key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 24-byte Camellia key (raw bytes; hex with --hex-input).
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        /// The 16-byte IV in hex. Supplied instead of generated: `encrypt` then writes no IV and
+        /// `decrypt` reads none. See the IV paragraph above.
+        #[arg(long)]
+        iv: Option<String>,
+
+        /// A file containing the 16-byte IV, (raw bytes; hex with --hex-input).
+        /// If both iv and iv_file options are provided, the file will be used.
+        #[arg(long)]
+        iv_file: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+    /// Camellia-256 in CCM mode (NIST SP 800-38C), authenticated encryption of stdin to stdout.
+    ///
+    /// See `aes128-ccm` for the nonce convention, the length rules, the non-streaming note and the
+    /// warnings; only the key length differs.
+    CAMELLIA256_CCM {
+        #[arg(short, long)]
+        direction: CipherDirection,
+
+        /// The 32-byte Camellia key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 32-byte Camellia key (raw bytes; hex with --hex-input).
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        /// The nonce in hex, 7 to 13 bytes. MUST be unique per encryption under a given key.
+        #[arg(long)]
+        nonce: Option<String>,
+
+        /// A file containing the nonce, (raw bytes; hex with --hex-input).
+        #[arg(long)]
+        nonce_file: Option<String>,
+
+        /// Associated data in hex: authenticated but not encrypted. Must match on decrypt.
+        #[arg(long)]
+        aad: Option<String>,
+
+        /// A file containing the associated data (raw bytes; hex with --hex-input). If both aad and
+        /// aad_file options are provided, the file will be used.
+        #[arg(long)]
+        aad_file: Option<String>,
+
+        /// Tag length in bytes: one of 4, 6, 8, 10, 12, 14, 16. Must match on decrypt.
+        #[arg(long, default_value_t = 16)]
+        tag_len: usize,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// Camellia-256 in CFB128 mode (RFC 3713 block cipher; NIST SP 800-38A Sec 6.3 mode),
+    /// streaming stdin to stdout.
+    ///
+    /// See `camellia128-cfb` for the IV convention, input-length rule and warnings; only the key
+    /// length differs.
+    CAMELLIA256_CFB {
+        #[arg(short, long)]
+        direction: CipherDirection,
+
+        /// The 32-byte Camellia key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 32-byte Camellia key (raw bytes; hex with --hex-input).
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        /// The 16-byte IV in hex. Supplied instead of generated: `encrypt` then writes no IV and
+        /// `decrypt` reads none. See the IV paragraph above.
+        #[arg(long)]
+        iv: Option<String>,
+
+        /// A file containing the 16-byte IV, (raw bytes; hex with --hex-input).
+        /// If both iv and iv_file options are provided, the file will be used.
+        #[arg(long)]
+        iv_file: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+    /// Camellia-128 in CFB8 mode (RFC 3713 block cipher; NIST SP 800-38A Sec 6.3 mode, s = 8),
+    /// streaming stdin to stdout.
+    ///
+    /// The segment size is one byte. This is a DIFFERENT, NON-INTEROPERABLE mode from the CFB128 of
+    /// `camellia128-cfb`: the two ciphertexts agree only on their first byte. It also costs one
+    /// Camellia call per byte, sixteen times the work, so prefer `camellia128-cfb` unless a
+    /// byte-granular self-synchronising stream is required or the format demands CFB8.
+    ///
+    /// On `encrypt`, a fresh unpredictable IV is generated and written as the FIRST 16 BYTES of
+    /// the output; on `decrypt` it is read back from the first 16 bytes of the input. With `--iv`
+    /// (hex) or `--iv-file` (raw bytes; hex with --hex-input), the IV is supplied instead and only ciphertext is written
+    /// or read. Input may be ANY length: nothing is padded.
+    ///
+    /// See `aes128-cfb8` for the full IV convention, input-length rule and warnings; the key and
+    /// block are both 16 bytes, as for AES-128.
+    CAMELLIA128_CFB8 {
+        #[arg(short, long)]
+        direction: CipherDirection,
+
+        /// The 16-byte Camellia key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 16-byte Camellia key (raw bytes; hex with --hex-input).
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        /// The 16-byte IV in hex. Supplied instead of generated: `encrypt` then writes no IV and
+        /// `decrypt` reads none. See the IV paragraph above.
+        #[arg(long)]
+        iv: Option<String>,
+
+        /// A file containing the 16-byte IV, (raw bytes; hex with --hex-input).
+        /// If both iv and iv_file options are provided, the file will be used.
+        #[arg(long)]
+        iv_file: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+    /// Camellia-192 in CFB8 mode (RFC 3713 block cipher; NIST SP 800-38A Sec 6.3 mode, s = 8),
+    /// streaming stdin to stdout.
+    ///
+    /// See `camellia128-cfb8` for the IV convention, input-length rule and warnings; only the key
+    /// length differs.
+    CAMELLIA192_CFB8 {
+        #[arg(short, long)]
+        direction: CipherDirection,
+
+        /// The 24-byte Camellia key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 24-byte Camellia key (raw bytes; hex with --hex-input).
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        /// The 16-byte IV in hex. Supplied instead of generated: `encrypt` then writes no IV and
+        /// `decrypt` reads none. See the IV paragraph above.
+        #[arg(long)]
+        iv: Option<String>,
+
+        /// A file containing the 16-byte IV, (raw bytes; hex with --hex-input).
+        /// If both iv and iv_file options are provided, the file will be used.
+        #[arg(long)]
+        iv_file: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+    /// Camellia-256 in CFB8 mode (RFC 3713 block cipher; NIST SP 800-38A Sec 6.3 mode, s = 8),
+    /// streaming stdin to stdout.
+    ///
+    /// See `camellia128-cfb8` for the IV convention, input-length rule and warnings; only the key
+    /// length differs.
+    CAMELLIA256_CFB8 {
+        #[arg(short, long)]
+        direction: CipherDirection,
+
+        /// The 32-byte Camellia key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 32-byte Camellia key (raw bytes; hex with --hex-input).
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        /// The 16-byte IV in hex. Supplied instead of generated: `encrypt` then writes no IV and
+        /// `decrypt` reads none. See the IV paragraph above.
+        #[arg(long)]
+        iv: Option<String>,
+
+        /// A file containing the 16-byte IV, (raw bytes; hex with --hex-input).
+        /// If both iv and iv_file options are provided, the file will be used.
+        #[arg(long)]
+        iv_file: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+    /// Camellia-128 in CTR mode (RFC 3713 block cipher; NIST SP 800-38A Sec 6.5 mode), streaming
+    /// stdin to stdout.
+    ///
+    /// The counter block is a 12-byte nonce followed by a 4-byte counter starting at zero, so one
+    /// message can be up to 2^32 blocks (64 GiB); past that the command errors rather than
+    /// repeating keystream. On `encrypt` the nonce is written as the FIRST 12 BYTES of the output
+    /// and on `decrypt` it is read back from there -- 12, not the 16 the other modes write. With
+    /// `--iv` (hex) or `--iv-file` (raw bytes), the 12-byte nonce is supplied instead and only
+    /// ciphertext is written or read; it MUST then be unique per message under one key. This is
+    /// SP 800-38A Appendix B.2's construction, not RFC 5528's, so ciphertexts do not interoperate
+    /// with an RFC 5528 implementation.
+    ///
+    /// See `aes128-ctr` for the full nonce convention, input-length rule and warnings, including
+    /// why a repeated nonce is fatal and why CTR is the most malleable mode here.
+    CAMELLIA128_CTR {
+        #[arg(short, long)]
+        direction: CipherDirection,
+
+        /// The 16-byte Camellia key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 16-byte Camellia key (raw bytes; hex with --hex-input).
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        /// The 12-byte nonce in hex. Supplied instead of generated: `encrypt` then writes none
+        /// and `decrypt` reads none. See the nonce paragraph above.
+        #[arg(long)]
+        iv: Option<String>,
+
+        /// A file containing the 12-byte nonce, as raw bytes exactly as they are (no hex
+        /// decoding). If both iv and iv_file options are provided, the file will be used.
+        #[arg(long)]
+        iv_file: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// Camellia-128 in GCM (NIST SP 800-38D), streaming stdin to stdout.
+    ///
+    /// AUTHENTICATED, unlike the other Camellia modes here: tampering with the ciphertext, the AAD or
+    /// the IV is detected rather than merely producing wrong plaintext.
+    ///
+    /// On `encrypt`, a fresh 12-byte IV is generated and written as the FIRST 12 BYTES of the
+    /// output, the ciphertext follows, and the 16-byte tag is written last. `decrypt` reads the IV
+    /// back from the first 12 bytes of input and streams the rest, checking the tag once input is
+    /// exhausted. (SP 800-38D calls this value the IV, and defines it as a nonce.)
+    ///
+    /// With `--iv` (hex) or `--iv-file` (raw bytes; hex with --hex-input), the IV is supplied instead: `encrypt` uses it
+    /// and writes ONLY `ciphertext || tag`, and `decrypt` reads ONLY that from stdin. The IV MUST
+    /// be unique per message under one key (Sec 8), and a repeat is worse here than merely
+    /// unwise: it lets an attacker recover the hash subkey (Appendix A). The default takes care of
+    /// that; with `--iv` it is on the caller.
+    ///
+    /// `--aad` (hex) or `--aad-file` (raw bytes; hex with --hex-input) supply the additional authenticated data,
+    /// which is covered by the tag but not encrypted; if neither is given, AAD is empty.
+    ///
+    /// Input may be ANY length: GCM needs no padding.
+    ///
+    /// WARNING: on `decrypt`, a tag failure may be reported only after plaintext has already been
+    /// written to stdout, because this command streams the inline decryptor. A script MUST check
+    /// the exit code before trusting anything already written; on failure this command prints
+    /// `Error: authentication failed` and exits non-zero.
+    ///
+    /// Note: in production uses, secrets should not be passed on the command-line because they get
+    /// logged in shell history. Use the file-based input instead.
+    CAMELLIA128_GCM {
+        #[arg(short, long)]
+        direction: CipherDirection,
+
+        /// The 16-byte Camellia key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 16-byte Camellia key (raw bytes; hex with --hex-input).
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        /// The 12-byte IV in hex. Supplied instead of generated: `encrypt` then writes none and
+        /// `decrypt` reads none. See the IV paragraph above.
+        #[arg(long)]
+        iv: Option<String>,
+
+        /// A file containing the 12-byte IV, (raw bytes; hex with --hex-input).
+        /// If both iv and iv_file options are provided, the file will be used.
+        #[arg(long)]
+        iv_file: Option<String>,
+
+        /// The additional authenticated data, in hex. Covered by the tag but not encrypted.
+        #[arg(long)]
+        aad: Option<String>,
+
+        /// A file containing the additional authenticated data (raw bytes; hex with --hex-input).
+        /// If both aad and aad_file options are provided, the file will be used.
+        #[arg(long)]
+        aad_file: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+    /// Camellia-192 in CTR mode (RFC 3713 block cipher; NIST SP 800-38A Sec 6.5 mode), streaming
+    /// stdin to stdout.
+    ///
+    /// See `camellia128-ctr` for the nonce convention, input-length rule and warnings; only the key
+    /// length differs.
+    CAMELLIA192_CTR {
+        #[arg(short, long)]
+        direction: CipherDirection,
+
+        /// The 24-byte Camellia key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 24-byte Camellia key (raw bytes; hex with --hex-input).
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        /// The 12-byte nonce in hex. Supplied instead of generated: `encrypt` then writes none
+        /// and `decrypt` reads none. See the nonce paragraph above.
+        #[arg(long)]
+        iv: Option<String>,
+
+        /// A file containing the 12-byte nonce, as raw bytes exactly as they are (no hex
+        /// decoding). If both iv and iv_file options are provided, the file will be used.
+        #[arg(long)]
+        iv_file: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// Camellia-192 in GCM (NIST SP 800-38D), streaming stdin to stdout.
+    ///
+    /// See `aes128-gcm` for the IV/tag framing, the AAD flags and the warnings; only the key
+    /// length differs.
+    CAMELLIA192_GCM {
+        #[arg(short, long)]
+        direction: CipherDirection,
+
+        /// The 24-byte Camellia key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 24-byte Camellia key (raw bytes; hex with --hex-input).
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        /// The 12-byte IV in hex. Supplied instead of generated: `encrypt` then writes none and
+        /// `decrypt` reads none. See the IV paragraph above.
+        #[arg(long)]
+        iv: Option<String>,
+
+        /// A file containing the 12-byte IV, (raw bytes; hex with --hex-input).
+        /// If both iv and iv_file options are provided, the file will be used.
+        #[arg(long)]
+        iv_file: Option<String>,
+
+        /// The additional authenticated data, in hex. Covered by the tag but not encrypted.
+        #[arg(long)]
+        aad: Option<String>,
+
+        /// A file containing the additional authenticated data (raw bytes; hex with --hex-input).
+        /// If both aad and aad_file options are provided, the file will be used.
+        #[arg(long)]
+        aad_file: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+    /// Camellia-256 in CTR mode (RFC 3713 block cipher; NIST SP 800-38A Sec 6.5 mode), streaming
+    /// stdin to stdout.
+    ///
+    /// See `camellia128-ctr` for the nonce convention, input-length rule and warnings; only the key
+    /// length differs.
+    CAMELLIA256_CTR {
+        #[arg(short, long)]
+        direction: CipherDirection,
+
+        /// The 32-byte Camellia key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 32-byte Camellia key (raw bytes; hex with --hex-input).
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        /// The 12-byte nonce in hex. Supplied instead of generated: `encrypt` then writes none
+        /// and `decrypt` reads none. See the nonce paragraph above.
+        #[arg(long)]
+        iv: Option<String>,
+
+        /// A file containing the 12-byte nonce, as raw bytes exactly as they are (no hex
+        /// decoding). If both iv and iv_file options are provided, the file will be used.
+        #[arg(long)]
+        iv_file: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// Camellia-256 in GCM (NIST SP 800-38D), streaming stdin to stdout.
+    ///
+    /// See `aes128-gcm` for the IV/tag framing, the AAD flags and the warnings; only the key
+    /// length differs.
+    CAMELLIA256_GCM {
+        #[arg(short, long)]
+        direction: CipherDirection,
+
+        /// The 32-byte Camellia key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 32-byte Camellia key (raw bytes; hex with --hex-input).
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        /// The 12-byte IV in hex. Supplied instead of generated: `encrypt` then writes none and
+        /// `decrypt` reads none. See the IV paragraph above.
+        #[arg(long)]
+        iv: Option<String>,
+
+        /// A file containing the 12-byte IV, (raw bytes; hex with --hex-input).
+        /// If both iv and iv_file options are provided, the file will be used.
+        #[arg(long)]
+        iv_file: Option<String>,
+
+        /// The additional authenticated data, in hex. Covered by the tag but not encrypted.
+        #[arg(long)]
+        aad: Option<String>,
+
+        /// A file containing the additional authenticated data (raw bytes; hex with --hex-input).
+        /// If both aad and aad_file options are provided, the file will be used.
+        #[arg(long)]
+        aad_file: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
     /// Perform TupleHash128 (NIST SP 800-185 Sec 5) over a tuple of strings. The tuple is given
     /// by repeated --element flags, each in hex; with none, stdin is hashed as a single element.
     /// The boundaries between elements are part of the hash.
@@ -2925,6 +3680,129 @@ fn run() {
         }
         Some(Subcommands::SM3 { x }) => {
             sm3_cmd::sm3_cmd(*x);
+        }
+        Some(Subcommands::CAMELLIA128_CBC { direction, key, key_file, iv, iv_file, x }) => {
+            camellia_cbc_cmd::camellia128_cbc_cmd(direction, key, key_file, iv, iv_file, *x);
+        }
+        Some(Subcommands::CAMELLIA192_CBC { direction, key, key_file, iv, iv_file, x }) => {
+            camellia_cbc_cmd::camellia192_cbc_cmd(direction, key, key_file, iv, iv_file, *x);
+        }
+        Some(Subcommands::CAMELLIA256_CBC { direction, key, key_file, iv, iv_file, x }) => {
+            camellia_cbc_cmd::camellia256_cbc_cmd(direction, key, key_file, iv, iv_file, *x);
+        }
+        Some(Subcommands::CAMELLIA128_CCM {
+            direction,
+            key,
+            key_file,
+            nonce,
+            nonce_file,
+            aad,
+            aad_file,
+            tag_len,
+            x,
+        }) => {
+            camellia_ccm_cmd::camellia128_ccm_cmd(
+                direction, key, key_file, nonce, nonce_file, aad, aad_file, *tag_len, *x,
+            );
+        }
+        Some(Subcommands::CAMELLIA128_CFB { direction, key, key_file, iv, iv_file, x }) => {
+            camellia_cfb_cmd::camellia128_cfb_cmd(direction, key, key_file, iv, iv_file, *x);
+        }
+        Some(Subcommands::CAMELLIA192_CCM {
+            direction,
+            key,
+            key_file,
+            nonce,
+            nonce_file,
+            aad,
+            aad_file,
+            tag_len,
+            x,
+        }) => {
+            camellia_ccm_cmd::camellia192_ccm_cmd(
+                direction, key, key_file, nonce, nonce_file, aad, aad_file, *tag_len, *x,
+            );
+        }
+        Some(Subcommands::CAMELLIA192_CFB { direction, key, key_file, iv, iv_file, x }) => {
+            camellia_cfb_cmd::camellia192_cfb_cmd(direction, key, key_file, iv, iv_file, *x);
+        }
+        Some(Subcommands::CAMELLIA256_CCM {
+            direction,
+            key,
+            key_file,
+            nonce,
+            nonce_file,
+            aad,
+            aad_file,
+            tag_len,
+            x,
+        }) => {
+            camellia_ccm_cmd::camellia256_ccm_cmd(
+                direction, key, key_file, nonce, nonce_file, aad, aad_file, *tag_len, *x,
+            );
+        }
+        Some(Subcommands::CAMELLIA256_CFB { direction, key, key_file, iv, iv_file, x }) => {
+            camellia_cfb_cmd::camellia256_cfb_cmd(direction, key, key_file, iv, iv_file, *x);
+        }
+        Some(Subcommands::CAMELLIA128_CFB8 { direction, key, key_file, iv, iv_file, x }) => {
+            camellia_cfb8_cmd::camellia128_cfb8_cmd(direction, key, key_file, iv, iv_file, *x);
+        }
+        Some(Subcommands::CAMELLIA192_CFB8 { direction, key, key_file, iv, iv_file, x }) => {
+            camellia_cfb8_cmd::camellia192_cfb8_cmd(direction, key, key_file, iv, iv_file, *x);
+        }
+        Some(Subcommands::CAMELLIA256_CFB8 { direction, key, key_file, iv, iv_file, x }) => {
+            camellia_cfb8_cmd::camellia256_cfb8_cmd(direction, key, key_file, iv, iv_file, *x);
+        }
+        Some(Subcommands::CAMELLIA128_CTR { direction, key, key_file, iv, iv_file, x }) => {
+            camellia_ctr_cmd::camellia128_ctr_cmd(direction, key, key_file, iv, iv_file, *x);
+        }
+        Some(Subcommands::CAMELLIA128_GCM {
+            direction,
+            key,
+            key_file,
+            iv,
+            iv_file,
+            aad,
+            aad_file,
+            x,
+        }) => {
+            camellia_gcm_cmd::camellia128_gcm_cmd(
+                direction, key, key_file, iv, iv_file, aad, aad_file, *x,
+            );
+        }
+        Some(Subcommands::CAMELLIA192_CTR { direction, key, key_file, iv, iv_file, x }) => {
+            camellia_ctr_cmd::camellia192_ctr_cmd(direction, key, key_file, iv, iv_file, *x);
+        }
+        Some(Subcommands::CAMELLIA192_GCM {
+            direction,
+            key,
+            key_file,
+            iv,
+            iv_file,
+            aad,
+            aad_file,
+            x,
+        }) => {
+            camellia_gcm_cmd::camellia192_gcm_cmd(
+                direction, key, key_file, iv, iv_file, aad, aad_file, *x,
+            );
+        }
+        Some(Subcommands::CAMELLIA256_CTR { direction, key, key_file, iv, iv_file, x }) => {
+            camellia_ctr_cmd::camellia256_ctr_cmd(direction, key, key_file, iv, iv_file, *x);
+        }
+        Some(Subcommands::CAMELLIA256_GCM {
+            direction,
+            key,
+            key_file,
+            iv,
+            iv_file,
+            aad,
+            aad_file,
+            x,
+        }) => {
+            camellia_gcm_cmd::camellia256_gcm_cmd(
+                direction, key, key_file, iv, iv_file, aad, aad_file, *x,
+            );
         }
         Some(Subcommands::TUPLEHASH128 {
             length,
