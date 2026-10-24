@@ -1,6 +1,6 @@
 //! Known-answer tests against the NIST CAVP "TDES Multi block Message Test" vectors from the
 //! `bc-test-data` repository: `TECBMMT3`, `TCBCMMT3`, `TCFB64MMT3`, `TCFB8MMT3` (three-key, for
-//! [`TDES`]) and `TECBMMT2`, `TCBCMMT2`, `TCFB64MMT2`, `TCFB8MMT2` (two-key, for [`TDES2Key`]).
+//! [`TDES3Key`]) and `TECBMMT2`, `TCBCMMT2`, `TCFB64MMT2`, `TCFB8MMT2` (two-key, for [`TDES2Key`]).
 //!
 //! Requires `bc-test-data` to be cloned alongside this repository, i.e. at `../bc-test-data`
 //! relative to the root of this git project, with the response files from NIST's `tdesmmt.zip`
@@ -19,33 +19,34 @@
 //! ECB vectors are block-permutation vectors and go through the engine directly, one block at a
 //! time, as well as through the four-block path where the message is long enough.
 //!
-//! The CBC and CFB vectors carry an IV, and `bouncycastle_cipher::modes` has no API for a caller-supplied
-//! IV. Three-key encryption therefore uses `do_encrypt_init_rng` with a `FixedSeedRNG` that emits
-//! the vector's IV, and the returned init data is asserted equal to it before any ciphertext is
-//! compared; decryption takes the IV directly. The `TDES_*` aliases are used, so the aliases'
-//! parameter choices (a 24-byte key, an 8-byte block, an 8-byte IV) are what is under test.
+//! The CBC and CFB vectors carry an IV, and a key's `create_encryptor` draws the IV from the RNG
+//! it is given, so three-key encryption passes a `FixedSeedRNG` that emits the vector's IV, and the
+//! returned init data is asserted equal to it before any ciphertext is compared; decryption takes
+//! the IV directly. The keys are made under the modes the `TDES_*` aliases name, so the aliases'
+//! parameter choices (an 8-byte block, an 8-byte IV) are what is under test.
 //!
-//! Two-key TDEA is decryption-only -- the encrypting modes do not compile over [`TDES2Key`] -- so
-//! its CBC and CFB vectors are checked by decrypting `CIPHERTEXT` through the `TDES2_*` aliases
-//! (both sections), and the forward direction is checked on the ECB vectors through the raw
-//! permutation, which CFB decryption is built on anyway.
+//! Two-key TDEA is decryption-only -- `create_encryptor` does not compile on [`TDES2Key`] -- so
+//! its CBC and CFB vectors are checked by decrypting `CIPHERTEXT` (both sections), and the forward
+//! direction is checked on the ECB vectors through the raw permutation, which CFB decryption is
+//! built on anyway.
 //!
 //! The Monte Carlo Test files (`tdesmct_intermediate.zip`) are **not** used: their chained update
 //! rule is defined by SP 800-20, and implementing it is a separate piece of work from the engine.
 
-use bouncycastle_cipher::modes::Cbc;
-use bouncycastle_cipher::{Decrypting, Encrypting};
-use bouncycastle_core::hazmat::ElectronicCodeBook;
+use bouncycastle_cipher::modes::{Blocks, CBC, CFB, CFB8};
+use bouncycastle_core::hazmat::{BlockPermutation, ElectronicCodeBook, Mode};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
+use bouncycastle_core::symmetric_key::{
+    BlockDecryptionKey, BlockEncryptionKey, FromKeyMaterial, SymmetricDecryptionKey,
+    SymmetricEncryptionKey,
+};
 use bouncycastle_core::traits::{
     BlockCipherDecryptor, BlockCipherEncryptor, StreamCipherDecryptor, StreamCipherEncryptor,
 };
 use bouncycastle_core_test_framework::FixedSeedRNG;
 use bouncycastle_hex as hex;
-use bouncycastle_tdes::hazmat::{TDES, TDES2Key};
-use bouncycastle_tdes::{
-    BLOCK_LEN, KEY_LEN, KEY_LEN_2KEY, TDES_CFB, TDES_CFB8, TDES2_CFB, TDES2_CFB8,
-};
+use bouncycastle_tdes::hazmat::{TDES2Internal, TDESInternal};
+use bouncycastle_tdes::{BLOCK_LEN, KEY_LEN, KEY_LEN_2KEY, TDES2Key, TDES3Key};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -138,7 +139,7 @@ fn load(file: &str) -> Option<Vec<MmtCase>> {
     Some(cases)
 }
 
-fn key3(case: &MmtCase) -> KeyMaterial<KEY_LEN> {
+fn material3(case: &MmtCase) -> KeyMaterial<KEY_LEN> {
     let bytes: Vec<u8> = [&case.key1[..], &case.key2[..], &case.key3[..]].concat();
     assert_eq!(bytes.len(), KEY_LEN);
     KeyMaterial::<KEY_LEN>::from_bytes_as_type(&bytes, KeyType::SymmetricCipherKey)
@@ -146,11 +147,19 @@ fn key3(case: &MmtCase) -> KeyMaterial<KEY_LEN> {
 }
 
 /// The two-key files carry `KEY3 = KEY1`; the engine takes `KEY1 || KEY2`.
-fn key2(case: &MmtCase) -> KeyMaterial<KEY_LEN_2KEY> {
+fn material2(case: &MmtCase) -> KeyMaterial<KEY_LEN_2KEY> {
     assert_eq!(case.key1, case.key3, "a two-key vector has KEY3 = KEY1");
     let bytes: Vec<u8> = [&case.key1[..], &case.key2[..]].concat();
     KeyMaterial::<KEY_LEN_2KEY>::from_bytes_as_type(&bytes, KeyType::SymmetricCipherKey)
         .expect("a valid symmetric cipher key")
+}
+
+fn key3<M: Mode<TDESInternal>>(case: &MmtCase) -> TDES3Key<M> {
+    TDES3Key::from_key_material(&material3(case)).expect("a valid CAVP key bundle")
+}
+
+fn key2<M: Mode<TDES2Internal>>(case: &MmtCase) -> TDES2Key<M> {
+    TDES2Key::from_key_material(&material2(case)).expect("a valid CAVP two-key bundle")
 }
 
 fn iv(case: &MmtCase) -> [u8; BLOCK_LEN] {
@@ -162,11 +171,7 @@ fn label(file: &str, case: &MmtCase) -> String {
 }
 
 /// ECB through a raw permutation: single blocks, then the four-block path.
-fn check_ecb<const KEY_LEN: usize, P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>>(
-    file: &str,
-    case: &MmtCase,
-    perm: &P,
-) {
+fn check_ecb<P: BlockPermutation<BLOCK_LEN>>(file: &str, case: &MmtCase, perm: &P) {
     let name = label(file, case);
     assert_eq!(case.plaintext.len(), case.ciphertext.len());
     assert_eq!(case.plaintext.len() % BLOCK_LEN, 0, "{name}: whole blocks");
@@ -211,7 +216,7 @@ fn check_ecb<const KEY_LEN: usize, P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN>>(
 fn tecbmmt3() {
     let Some(cases) = load("TECBMMT3.rsp") else { return };
     for case in &cases {
-        let tdes = TDES::new(&key3(case)).expect("a valid CAVP key bundle");
+        let tdes = TDESInternal::new(&material3(case)).expect("a valid CAVP key bundle");
         check_ecb("TECBMMT3", case, &tdes);
     }
 }
@@ -220,129 +225,126 @@ fn tecbmmt3() {
 fn tecbmmt2() {
     let Some(cases) = load("TECBMMT2.rsp") else { return };
     for case in &cases {
-        let tdes = TDES2Key::new(&key2(case)).expect("a valid CAVP two-key bundle");
+        let tdes = TDES2Internal::new(&material2(case)).expect("a valid CAVP two-key bundle");
         check_ecb("TECBMMT2", case, &tdes);
     }
 }
 
 #[test]
 fn tcbcmmt3() {
-    type Enc = Cbc<TDES, Encrypting, KEY_LEN, BLOCK_LEN>;
-    type Dec = Cbc<TDES, Decrypting, KEY_LEN, BLOCK_LEN>;
     let Some(cases) = load("TCBCMMT3.rsp") else { return };
 
     for case in &cases {
-        let key = key3(case);
+        let key = key3::<CBC<Blocks>>(case);
         let iv = iv(case);
         let name = label("TCBCMMT3", case);
 
-        let (mut enc, got_iv) = Enc::do_encrypt_init_rng(&key, &mut FixedSeedRNG::new(iv)).unwrap();
+        let (mut enc, got_iv) = key.create_encryptor(&mut FixedSeedRNG::new(iv)).unwrap();
         assert_eq!(got_iv, iv, "{name}: the pinned RNG should reproduce the vector's IV");
         let mut buf = case.plaintext.clone();
-        for block in buf.as_chunks_mut::<BLOCK_LEN>().0 {
-            enc.do_encrypt(block).unwrap();
-        }
+        enc.do_encrypt_blocks_inplace(buf.as_chunks_mut::<BLOCK_LEN>().0).unwrap();
         assert_eq!(buf, case.ciphertext, "{name}: encrypt");
 
-        let mut dec = Dec::do_decrypt_init(&key, &iv).unwrap();
-        for block in buf.as_chunks_mut::<BLOCK_LEN>().0 {
-            dec.do_decrypt(block).unwrap();
-        }
+        let mut dec = key.create_decryptor(&iv);
+        dec.do_decrypt_blocks_inplace(buf.as_chunks_mut::<BLOCK_LEN>().0).unwrap();
         assert_eq!(buf, case.plaintext, "{name}: decrypt");
     }
 }
 
 #[test]
 fn tcbcmmt2_decrypts() {
-    type Dec = Cbc<TDES2Key, Decrypting, KEY_LEN_2KEY, BLOCK_LEN>;
     let Some(cases) = load("TCBCMMT2.rsp") else { return };
 
     for case in &cases {
         let name = label("TCBCMMT2", case);
-        let mut dec = Dec::do_decrypt_init(&key2(case), &iv(case)).unwrap();
+        let key = key2::<CBC<Blocks>>(case);
+        let mut dec = key.create_decryptor(&iv(case));
         let mut buf = case.ciphertext.clone();
-        for block in buf.as_chunks_mut::<BLOCK_LEN>().0 {
-            dec.do_decrypt(block).unwrap();
-        }
+        dec.do_decrypt_blocks_inplace(buf.as_chunks_mut::<BLOCK_LEN>().0).unwrap();
         assert_eq!(buf, case.plaintext, "{name}: decrypt");
     }
 }
 
-/// CFB64 and CFB8 share a shape: stream cipher, 8-byte IV, any length. Three-key: both directions.
-fn check_stream3<E, D>(file: &str)
+/// One CFB64 or CFB8 case through a three-key key: both directions, whole and byte by byte.
+fn check_stream3_case<'k, K>(name: &str, key: &'k K, case: &MmtCase)
 where
-    E: StreamCipherEncryptor<KEY_LEN, BLOCK_LEN>,
-    D: StreamCipherDecryptor<KEY_LEN, BLOCK_LEN>,
+    K: SymmetricEncryptionKey<KEY_LEN, BLOCK_LEN, 0>
+        + SymmetricDecryptionKey<KEY_LEN, BLOCK_LEN, 0>,
+    K::Encryptor<'k>: StreamCipherEncryptor<BLOCK_LEN>,
+    K::Decryptor<'k>: StreamCipherDecryptor<BLOCK_LEN>,
 {
-    let Some(cases) = load(file) else { return };
-    for case in &cases {
-        let key = key3(case);
-        let iv = iv(case);
-        let name = label(file, case);
+    let iv = iv(case);
 
-        let (mut enc, got_iv) = E::do_encrypt_init_rng(&key, &mut FixedSeedRNG::new(iv)).unwrap();
-        assert_eq!(got_iv, iv, "{name}: the pinned RNG should reproduce the vector's IV");
-        let mut buf = case.plaintext.clone();
-        enc.do_encrypt(&mut buf).unwrap();
-        assert_eq!(buf, case.ciphertext, "{name}: encrypt");
+    let (mut enc, got_iv) = key.create_encryptor(&mut FixedSeedRNG::new(iv)).unwrap();
+    assert_eq!(got_iv, iv, "{name}: the pinned RNG should reproduce the vector's IV");
+    let mut buf = case.plaintext.clone();
+    enc.do_encrypt_inplace(&mut buf).unwrap();
+    assert_eq!(buf, case.ciphertext, "{name}: encrypt");
 
-        let mut dec = D::do_decrypt_init(&key, &iv).unwrap();
-        dec.do_decrypt(&mut buf).unwrap();
-        assert_eq!(buf, case.plaintext, "{name}: decrypt");
+    let mut dec = key.create_decryptor(&iv);
+    dec.do_decrypt_inplace(&mut buf).unwrap();
+    assert_eq!(buf, case.plaintext, "{name}: decrypt");
 
-        // The same message fed one byte at a time must give the same ciphertext.
-        let (mut enc, _) = E::do_encrypt_init_rng(&key, &mut FixedSeedRNG::new(iv)).unwrap();
-        let mut buf = case.plaintext.clone();
-        for byte in buf.iter_mut() {
-            enc.do_encrypt(core::slice::from_mut(byte)).unwrap();
-        }
-        assert_eq!(buf, case.ciphertext, "{name}: encrypt byte by byte");
+    // The same message fed one byte at a time must give the same ciphertext.
+    let (mut enc, _) = key.create_encryptor(&mut FixedSeedRNG::new(iv)).unwrap();
+    let mut buf = case.plaintext.clone();
+    for byte in buf.iter_mut() {
+        enc.do_encrypt_inplace(core::slice::from_mut(byte)).unwrap();
     }
+    assert_eq!(buf, case.ciphertext, "{name}: encrypt byte by byte");
 }
 
-/// Two-key: decryption only, whole and byte by byte.
-fn check_stream2<D>(file: &str)
+/// One case through a two-key key: decryption only, whole and byte by byte.
+fn check_stream2_case<'k, K>(name: &str, key: &'k K, case: &MmtCase)
 where
-    D: StreamCipherDecryptor<KEY_LEN_2KEY, BLOCK_LEN>,
+    K: SymmetricDecryptionKey<KEY_LEN_2KEY, BLOCK_LEN, 0>,
+    K::Decryptor<'k>: StreamCipherDecryptor<BLOCK_LEN>,
 {
-    let Some(cases) = load(file) else { return };
-    for case in &cases {
-        let key = key2(case);
-        let iv = iv(case);
-        let name = label(file, case);
+    let iv = iv(case);
 
-        let mut dec = D::do_decrypt_init(&key, &iv).unwrap();
-        let mut buf = case.ciphertext.clone();
-        dec.do_decrypt(&mut buf).unwrap();
-        assert_eq!(buf, case.plaintext, "{name}: decrypt");
+    let mut dec = key.create_decryptor(&iv);
+    let mut buf = case.ciphertext.clone();
+    dec.do_decrypt_inplace(&mut buf).unwrap();
+    assert_eq!(buf, case.plaintext, "{name}: decrypt");
 
-        let mut dec = D::do_decrypt_init(&key, &iv).unwrap();
-        let mut buf = case.ciphertext.clone();
-        for byte in buf.iter_mut() {
-            dec.do_decrypt(core::slice::from_mut(byte)).unwrap();
-        }
-        assert_eq!(buf, case.plaintext, "{name}: decrypt byte by byte");
+    let mut dec = key.create_decryptor(&iv);
+    let mut buf = case.ciphertext.clone();
+    for byte in buf.iter_mut() {
+        dec.do_decrypt_inplace(core::slice::from_mut(byte)).unwrap();
     }
+    assert_eq!(buf, case.plaintext, "{name}: decrypt byte by byte");
 }
 
 #[test]
 fn tcfb64mmt3() {
-    check_stream3::<TDES_CFB<Encrypting>, TDES_CFB<Decrypting>>("TCFB64MMT3.rsp");
+    let Some(cases) = load("TCFB64MMT3.rsp") else { return };
+    for case in &cases {
+        check_stream3_case(&label("TCFB64MMT3", case), &key3::<CFB>(case), case);
+    }
 }
 
 #[test]
 fn tcfb8mmt3() {
-    check_stream3::<TDES_CFB8<Encrypting>, TDES_CFB8<Decrypting>>("TCFB8MMT3.rsp");
+    let Some(cases) = load("TCFB8MMT3.rsp") else { return };
+    for case in &cases {
+        check_stream3_case(&label("TCFB8MMT3", case), &key3::<CFB8>(case), case);
+    }
 }
 
 #[test]
 fn tcfb64mmt2_decrypts() {
-    check_stream2::<TDES2_CFB>("TCFB64MMT2.rsp");
+    let Some(cases) = load("TCFB64MMT2.rsp") else { return };
+    for case in &cases {
+        check_stream2_case(&label("TCFB64MMT2", case), &key2::<CFB>(case), case);
+    }
 }
 
 #[test]
 fn tcfb8mmt2_decrypts() {
-    check_stream2::<TDES2_CFB8>("TCFB8MMT2.rsp");
+    let Some(cases) = load("TCFB8MMT2.rsp") else { return };
+    for case in &cases {
+        check_stream2_case(&label("TCFB8MMT2", case), &key2::<CFB8>(case), case);
+    }
 }
 
 #[test]

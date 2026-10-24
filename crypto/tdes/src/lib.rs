@@ -1,20 +1,76 @@
-//! A constant-time, table-free Triple DES block cipher engine (NIST SP 800-67 Rev 2, TDEA).
+//! A constant-time, table-free Triple DES block cipher (NIST SP 800-67 Rev 2, TDEA), under the
+//! library's key objects.
 //!
-//! This crate provides the raw three-key TDEA keyed permutation, [`TDES`], and a decryption-only
-//! two-key one, [`TDES2Key`], implemented as a Boolean circuit over bit-planes rather than by
-//! lookups in S-box tables. That makes them constant-time; see [Design](#design). They are
+//! [`TDES3Key<M>`] is a three-key TDEA bundle under the mode `M`, and the decryption-only
+//! [`TDES2Key<M>`] a two-key one; each hands out the mode's workers through the role traits in
+//! `bouncycastle_core::symmetric_key`. The engines underneath, [`TDESInternal`] and
+//! [`TDES2Internal`], are implemented as a Boolean circuit over bit-planes rather than by lookups
+//! in S-box tables, which makes them constant-time; see [Design](#design). They are
 //! *permutations*, not ciphers you can encrypt data with, which is why they live under [`hazmat`],
 //! and TDEA is a **legacy algorithm**: see [Security Considerations](#security-considerations)
 //! before using it for anything new.
 //!
 //! # Usage Examples
 //!
-//! ## Encrypting and decrypting a single block
+//! ## Modes of operation
+//!
+//! A key is built once, under a mode from `bouncycastle_cipher::modes`, and used for as many
+//! messages as the data limit allows: `CBC<PKCS7>` for CBC (SP 800-38A Sec 6.2) with PKCS#7
+//! padding, `CFB` for CFB64 (Sec 6.3), `CFB8` for the `s = 8` segment size, a different and
+//! non-interoperable mode costing one TDES call per byte, `CTR<6, 8>` for CTR (Sec 6.5) with a
+//! 6-byte nonce and a 2-byte counter, and `ECB<PKCS7>` for ECB (Sec 6.1), which has no IV and is
+//! for interoperability and test vectors only -- see
+//! [A block permutation is not a cipher](#a-block-permutation-is-not-a-cipher). The aliases
+//! [`TDES_CBC`], [`TDES_CFB`], [`TDES_CFB8`], [`TDES_CTR`] and [`TDES_ECB`] name the workers the
+//! key hands out.
+//!
+//! SP 800-38A Appendix E is what makes these the standard TDEA modes: TECB, TCBC and TCFB of ANSI
+//! X9.52 "are equivalent to" ECB, CBC and CFB "with the TDEA as the underlying block cipher", and
+//! CTR with TDEA is explicitly allowed as well.
+//!
+//! CBC is a block cipher, so it is defined only on whole blocks and the key's mode carries a
+//! padding scheme to bridge the difference; the CFB modes and CTR are stream ciphers and take any
+//! length with no padding at all. See the `bouncycastle_cipher::modes` crate docs for the
+//! comparison, and [`TDES_CBC`] for why the scheme is named in the type.
 //!
 //! ```
-//! use bouncycastle_tdes::hazmat::TDES;
+//! use bouncycastle_tdes::TDES3Key;
+//! use bouncycastle_cipher::modes::CBC;
+//! use bouncycastle_cipher::padding::PKCS7;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-//! use bouncycastle_core::hazmat::ElectronicCodeBook;
+//! use bouncycastle_core::symmetric_key::{FromKeyMaterial, SymmetricDecryptionKey, SymmetricEncryptionKey};
+//! use bouncycastle_rng::HashDRBG_SHA512;
+//!
+//! let mut rng = HashDRBG_SHA512::new_from_os();   // one RNG, held across messages
+//!
+//! // Three distinct component keys; see `TDESInternal` for what a key bundle must satisfy.
+//! let bytes: [u8; 24] = core::array::from_fn(|i| (i as u8).wrapping_mul(7).wrapping_add(1));
+//! let material = KeyMaterial::<24>::from_bytes_as_type(&bytes, KeyType::SymmetricCipherKey)
+//!     .expect("a 24-byte symmetric cipher key");
+//! let key = TDES3Key::<CBC<PKCS7>>::from_key_material(&material).expect("a valid key bundle");
+//!
+//! // Any length: PKCS#7 pads it out to whole blocks, so 50 bytes is as good as 48.
+//! let plaintext = [0x5Au8; 50];
+//!
+//! // The IV is drawn from `rng` and returned; there is no API for supplying one.
+//! let (iv, ciphertext) = key.encrypt(&mut rng, &plaintext).expect("encryption");
+//! assert_eq!(ciphertext.len(), 56, "50 bytes padded out to seven 8-byte blocks");
+//!
+//! let recovered = key.decrypt(&iv, &ciphertext).expect("decryption");
+//! assert_eq!(recovered, plaintext);
+//! ```
+//!
+//! For the block-aligned API -- whole blocks in place, through the block role pair -- make the
+//! key under `CBC<Blocks>`; the padded aliases wrap the same worker.
+//!
+//! ## The raw permutation
+//!
+//! The engine transforms one block, and `ElectronicCodeBook::new` on it is the one-shot:
+//!
+//! ```
+//! use bouncycastle_tdes::hazmat::TDESInternal;
+//! use bouncycastle_core::hazmat::{BlockPermutation, ElectronicCodeBook};
+//! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 //!
 //! // NIST CAVP TECBMMT3.rsp, [ENCRYPT] COUNT = 0: KEY1 || KEY2 || KEY3.
 //! let key = KeyMaterial::<24>::from_bytes_as_type(
@@ -24,7 +80,7 @@
 //!     KeyType::SymmetricCipherKey,
 //! ).expect("a 24-byte symmetric cipher key");
 //!
-//! let tdes = TDES::new(&key).expect("a valid TDES key bundle");
+//! let tdes = TDESInternal::new(&key).expect("a valid TDES key bundle");
 //!
 //! let mut block = [0x46, 0x56, 0xed, 0x81, 0xa8, 0xbc, 0x58, 0xa9];
 //! tdes.encrypt_block(&mut block);
@@ -35,90 +91,40 @@
 //! assert_eq!(block, [0x46, 0x56, 0xed, 0x81, 0xa8, 0xbc, 0x58, 0xa9]);
 //! ```
 //!
-//! ## Modes of operation
-//!
-//! To encrypt more than one block, use a mode of operation from `bouncycastle_cipher::modes`. This crate
-//! provides aliases that fill in the const parameters, leaving only the choices a caller actually
-//! makes: [`TDES_CBC`] for CBC (SP 800-38A Sec 6.2), which takes the direction **and a padding
-//! scheme**, and [`TDES_CFB`] for CFB64 (Sec 6.3), which takes only the direction. [`TDES_CFB8`]
-//! gives CFB8, the `s = 8` segment size, a different and non-interoperable mode costing one TDES
-//! call per byte. [`TDES_CTR`] gives CTR (Sec 6.5) with a 6-byte nonce and a 2-byte counter.
-//! [`TDES_ECB`] gives ECB (Sec 6.1), which takes a padding scheme like CBC and has no IV, for
-//! interoperability and test vectors only -- see
-//! [A block permutation is not a cipher](#a-block-permutation-is-not-a-cipher).
-//!
-//! SP 800-38A Appendix E is what makes these the standard TDEA modes: TECB, TCBC and TCFB of ANSI
-//! X9.52 "are equivalent to" ECB, CBC and CFB "with the TDEA as the underlying block cipher", and
-//! CTR with TDEA is explicitly allowed as well.
-//!
-//! CBC is a block cipher, so it is defined only on whole blocks and the alias carries a padding
-//! scheme to bridge the difference; the CFB modes and CTR are stream ciphers and take any length
-//! with no padding at all. See the `bouncycastle_cipher::modes` crate docs for the comparison, and
-//! [`TDES_CBC`] for why the scheme is named in the type.
-//!
-//! ```
-//! use bouncycastle_tdes::TDES_CBC;
-//! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-//! use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
-//! use bouncycastle_cipher::{Decrypting, Encrypting};
-//! use bouncycastle_cipher::padding::PKCS7;
-//!
-//! // Three distinct component keys; see `TDES::new` for what a key bundle must satisfy.
-//! let bytes: [u8; 24] = core::array::from_fn(|i| (i as u8).wrapping_mul(7).wrapping_add(1));
-//! let key = KeyMaterial::<24>::from_bytes_as_type(&bytes, KeyType::SymmetricCipherKey)
-//!     .expect("a 24-byte symmetric cipher key");
-//! // Any length: PKCS#7 pads it out to whole blocks, so 50 bytes is as good as 48.
-//! let plaintext = [0x5Au8; 50];
-//!
-//! // The IV is generated for you and returned; there is no API for supplying one.
-//! let (iv, ciphertext) =
-//!     TDES_CBC::<Encrypting, PKCS7>::encrypt(&key, &plaintext).expect("encryption");
-//! assert_eq!(ciphertext.len(), 56, "50 bytes padded out to seven 8-byte blocks");
-//!
-//! let recovered =
-//!     TDES_CBC::<Decrypting, PKCS7>::decrypt(&key, &iv, &ciphertext).expect("decryption");
-//! assert_eq!(recovered, plaintext);
-//! ```
-//!
-//! For the block-aligned API -- whole blocks in place, with the length checked at compile time --
-//! name `bouncycastle_cipher::modes::Cbc` directly; that is what these aliases wrap.
-//!
-//! There is no one-shot static on the permutation, because `TDES::new(&key)?.encrypt_block(..)`
-//! already *is* the one shot. Data-level one-shots belong to the modes of operation, which take
-//! arbitrary-length input and generate their own initialisation data.
-//!
 //! ## What a key bundle must satisfy
 //!
-//! `TDES::new` takes a 24-byte `Key1 || Key2 || Key3` and rejects it if the three component keys
-//! are not pairwise distinct (SP 800-67r2 Sec 3.1) or if any of them is one of the 64 weak,
+//! A [`TDES3Key`] takes a 24-byte `Key1 || Key2 || Key3` and rejects it if the three component
+//! keys are not pairwise distinct (SP 800-67r2 Sec 3.1) or if any of them is one of the 64 weak,
 //! semi-weak or possibly weak DES keys (Sec 3.3.2). Parity bits are ignored throughout, as the
-//! algorithm ignores them.
+//! algorithm ignores them. The checks are listed at [`TDESInternal`].
 //!
 //! ## Two-key TDEA: decryption only
 //!
 //! [`TDES2Key`] takes the 16-byte `Key1 || Key2` of two-key TDEA (`Key3 = Key1`), which
 //! SP 800-131A Rev 2 Table 1 lists as "Disallowed" for encryption and "Legacy use" for decryption.
-//! It sets `ElectronicCodeBook::ENCRYPTION_APPROVED` to `false`, so the `Encrypting` direction of
-//! every mode refuses to compile over it, while the `Decrypting` direction works. The aliases
+//! Its engine sets `ElectronicCodeBook::ENCRYPTION_APPROVED` to `false`, so the key's
+//! `create_encryptor` refuses to compile under every mode, while its decryptors work. The aliases
 //! [`TDES2_CBC`], [`TDES2_CFB`], [`TDES2_CFB8`], [`TDES2_CTR`] and [`TDES2_ECB`] are those
 //! decryptors, with the IV or nonce supplied by the caller as it was received:
 //!
 //! ```
-//! use bouncycastle_tdes::TDES2_CBC;
-//! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-//! use bouncycastle_core::traits::SymmetricCipherDecryptor;
+//! use bouncycastle_tdes::TDES2Key;
+//! use bouncycastle_cipher::modes::CBC;
 //! use bouncycastle_cipher::padding::NoPadding;
+//! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
+//! use bouncycastle_core::symmetric_key::{FromKeyMaterial, SymmetricDecryptionKey};
 //!
 //! // NIST CAVP TCBCMMT2.rsp, [DECRYPT] COUNT = 0.
-//! let key = KeyMaterial::<16>::from_bytes_as_type(
+//! let material = KeyMaterial::<16>::from_bytes_as_type(
 //!     &[0xbc, 0xfe, 0x7f, 0x25, 0xf2, 0xb0, 0xa7, 0x2c,
 //!       0x62, 0x76, 0xae, 0x1f, 0x38, 0x9d, 0x8a, 0xe9],
 //!     KeyType::SymmetricCipherKey,
 //! ).expect("a 16-byte symmetric cipher key");
+//! let key = TDES2Key::<CBC<NoPadding>>::from_key_material(&material).expect("a valid two-key bundle");
 //! let iv = [0xf2, 0x9d, 0x4b, 0xa5, 0x17, 0x2f, 0xd2, 0x97];
 //! let ciphertext = [0x1b, 0x38, 0x89, 0xc9, 0xdb, 0xe1, 0x0d, 0x03];
 //!
-//! let plaintext = TDES2_CBC::<NoPadding>::decrypt(&key, &iv, &ciphertext).expect("decryption");
+//! let plaintext = key.decrypt(&iv, &ciphertext).expect("decryption");
 //! assert_eq!(plaintext, [0x06, 0x11, 0xa4, 0x74, 0xfb, 0x09, 0x09, 0x78]);
 //! ```
 //!
@@ -152,24 +158,32 @@
 //!
 //! SP 800-67r2 Sec 2.2: the inverse transformation is "the very same algorithm" with the round
 //! keys used in the opposite order. So the inverse cipher operation reads the same stored schedule
-//! backwards, and one [`TDES`] value encrypts and decrypts. TDEA's `IP^-1` at the end of one DEA
-//! transformation and `IP` at the start of the next cancel, and are skipped, which changes no
-//! intermediate value the spec defines.
+//! backwards, and one [`TDESInternal`] value encrypts and decrypts. TDEA's `IP^-1` at the end of
+//! one DEA transformation and `IP` at the start of the next cancel, and are skipped, which changes
+//! no intermediate value the spec defines.
+//!
+//! ## The key holds the engine, the workers borrow it
+//!
+//! For every TDEA mode the key's state is the expanded engine itself, and the workers a key hands
+//! out borrow it, so `create_encryptor` and `create_decryptor` copy no schedule. That is the
+//! shape `bouncycastle-aes` has, and [`TDESKey`] is generic over the engine for the same reason
+//! `AESKey` is over its parameters.
 //!
 //! # Memory Usage
 //!
-//! There are no lookup tables and no heap allocation. The only persistent state is the three DEA
-//! key schedules:
+//! There are no lookup tables and no heap allocation. The only persistent state is the DEA key
+//! schedules, held once in the key:
 //!
 //! | Type | Key | Rounds | Schedule (persistent) | Tables |
 //! |---|---|---|---|---|
-//! | [`TDES`] | 24 B | 3 x 16 | 384 B | 0 B |
-//! | [`TDES2Key`] | 16 B | 3 x 16 | 256 B | 0 B |
+//! | [`TDESInternal`] | 24 B | 3 x 16 | 384 B | 0 B |
+//! | [`TDES2Internal`] | 16 B | 3 x 16 | 256 B | 0 B |
 //!
 //! Each round key is 48 bits stored as two 32-bit words (see the `schedule` module for the
 //! packing), so 128 bytes per DEA key. Per-call stack usage is a few words of block state, the
 //! six 4-byte input planes, and a 128-byte working array for the ANF evaluation, most of which the
-//! compiler keeps in registers.
+//! compiler keeps in registers. A worker adds the mode's own state (an IV or counter block) and a
+//! reference to the key.
 //!
 //! For comparison, the table-driven `DESEngine` carries 2 KiB of combined S/P tables.
 //!
@@ -185,7 +199,7 @@
 //! SP 800-131A Rev 2, Table 1, gives the transition: three-key TDEA encryption "Deprecated through
 //! 2023, Disallowed after 2023", three-key decryption "Legacy use", two-key encryption
 //! "Disallowed". SP 800-57 Part 1 Rev 5, Table 2, rates 3TDEA at 112 bits of security, which is
-//! what [`TDES`] reports as its maximum strength.
+//! what [`TDESInternal`] reports as its maximum strength.
 //!
 //! This crate exists so that data and protocols that still depend on TDEA can be handled. Do not
 //! choose it for a new design; use AES from `bouncycastle-aes`.
@@ -203,7 +217,7 @@
 //!
 //! ## A block permutation is not a cipher
 //!
-//! [`TDES`] transforms exactly 8 bytes. Using it directly on data means ECB, which is not
+//! [`TDESInternal`] transforms exactly 8 bytes. Using it directly on data means ECB, which is not
 //! confidential: identical plaintext blocks produce identical ciphertext blocks, so structure in the
 //! plaintext survives encryption. **Do not do it.** Use a mode of operation, and prefer an
 //! authenticated one so that ciphertext tampering is detected.
@@ -249,7 +263,7 @@
 //! * Behavioural cross-reference: Bouncy Castle Java's `DESedeEngine` and `DESedeParameters`.
 //!   Where this crate is stricter -- it rejects the 48 possibly-weak keys as well as the 16 weak
 //!   and semi-weak ones, requires distinct component keys, and confines two-key TDEA to a
-//!   decryption-only type -- the crate docs say so and cite the SP 800-67r2 and SP 800-131A Rev 2
+//!   decryption-only key -- the crate docs say so and cite the SP 800-67r2 and SP 800-131A Rev 2
 //!   text that motivates it.
 //! * Verified against the NIST CAVP TDES Multi-block Message Test vectors `TECBMMT{2,3}`,
 //!   `TCBCMMT{2,3}`, `TCFB64MMT{2,3}` and `TCFB8MMT{2,3}`, from the `bc-test-data` repository.
@@ -264,6 +278,7 @@ mod cfb8;
 mod ctr;
 mod des;
 pub mod hazmat;
+mod key;
 mod sbox;
 mod schedule;
 
@@ -282,8 +297,9 @@ pub use cbc::{TDES_CBC, TDES2_CBC};
 pub use cfb::{TDES_CFB, TDES2_CFB};
 pub use cfb8::{TDES_CFB8, TDES2_CFB8};
 pub use ctr::{CTR_NONCE_LEN, TDES_CTR, TDES2_CTR};
+pub use key::{TDES2Key, TDES3Key, TDESEngine, TDESKey};
 
 // Imports needed for docs
 #[allow(unused_imports)]
-use hazmat::{TDES, TDES_ECB, TDES2_ECB, TDES2Key};
+use hazmat::{TDES_ECB, TDES2_ECB, TDES2Internal, TDESInternal};
 // end of imports needed for docs

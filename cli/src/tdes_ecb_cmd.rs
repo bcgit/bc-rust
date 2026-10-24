@@ -19,12 +19,12 @@
 //! the `bouncycastle-tdes` crate docs.
 
 use crate::helpers::block_mode_helpers::{
-    CipherDirection, decrypt_stream, encrypt_stream, load_key,
+    CipherDirection, decrypt_stream, encrypt_stream, load_key_object, start_encryptor,
 };
-use bouncycastle::cipher::modes::hazmat::Ecb;
-use bouncycastle::cipher::{Decrypting, Encrypting};
-use bouncycastle::tdes::hazmat::TDES;
-use bouncycastle::tdes::{BLOCK_LEN, KEY_LEN};
+use bouncycastle::cipher::modes::hazmat::ecb::ECB;
+use bouncycastle::cipher::padding::NoPadding;
+use bouncycastle::core::symmetric_key::{SymmetricDecryptionKey, SymmetricEncryptionKey};
+use bouncycastle::tdes::{BLOCK_LEN, KEY_LEN, TDES3Key};
 
 /// Names the mode in error messages.
 const MODE: &str = "ECB";
@@ -35,17 +35,18 @@ pub(crate) fn tdes_ecb_cmd(
     key_file: &Option<String>,
     output_hex: bool,
 ) {
-    let key = load_key::<KEY_LEN>(key, key_file, "TDES");
+    let key = load_key_object::<TDES3Key<ECB<NoPadding>>, KEY_LEN>(key, key_file, "TDES");
     match action {
         CipherDirection::Encrypt => {
-            encrypt_stream::<Ecb<TDES, Encrypting, KEY_LEN, BLOCK_LEN>, KEY_LEN, 0, BLOCK_LEN>(
-                &key, output_hex, MODE,
-            )
+            // ECB has no IV: the constructor's RNG draws nothing, and nothing is written.
+            let (enc, _) = start_encryptor(None, |rng| key.create_encryptor(rng));
+            encrypt_stream::<_, 0, BLOCK_LEN>(enc, None, output_hex, Some(MODE))
         }
-        CipherDirection::Decrypt => {
-            decrypt_stream::<Ecb<TDES, Decrypting, KEY_LEN, BLOCK_LEN>, KEY_LEN, 0, BLOCK_LEN>(
-                &key, output_hex, MODE,
-            )
-        }
+        CipherDirection::Decrypt => decrypt_stream::<_, 0, BLOCK_LEN>(
+            None,
+            |no_iv| key.create_decryptor(no_iv),
+            output_hex,
+            Some(MODE),
+        ),
     }
 }

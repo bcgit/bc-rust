@@ -23,7 +23,7 @@
 //!
 //! # What to expect
 //!
-//! Like AES, TDES has no interesting stack profile: peak usage is a small constant plus the key
+//! Like AES, TDESInternal has no interesting stack profile: peak usage is a small constant plus the key
 //! schedule. The numbers worth recording in the crate docs are the persistent size of the engine
 //! (three packed DEA schedules, 384 bytes) and the confirmation that per-block work is a fixed,
 //! small amount of stack -- the six input planes and the 128-byte working array of the S-box
@@ -35,9 +35,9 @@
 #![allow(dead_code)]
 #![allow(unused_imports)]
 
-use bouncycastle::core::hazmat::ElectronicCodeBook;
+use bouncycastle::core::hazmat::{BlockPermutation, ElectronicCodeBook};
 use bouncycastle::core::key_material::{KeyMaterial, KeyType};
-use bouncycastle::tdes::hazmat::{TDES, TDES2Key};
+use bouncycastle::tdes::hazmat::{TDES2Internal, TDESInternal};
 use bouncycastle::tdes::{BLOCK_LEN, KEY_LEN};
 
 /// This exists so /usr/bin/time can measure the base memory footprint of the harness itself.
@@ -52,9 +52,9 @@ fn print_struct_sizes() {
     use core::mem::size_of;
 
     // Three DEA keys, sixteen round keys each, two words per round key: 3 * 16 * 2 * 4 = 384.
-    println!("size_of<TDES>: {}", size_of::<TDES>());
+    println!("size_of<TDESInternal>: {}", size_of::<TDESInternal>());
     // Two DEA keys: 2 * 16 * 2 * 4 = 256.
-    println!("size_of<TDES2Key>: {}", size_of::<TDES2Key>());
+    println!("size_of<TDES2Internal>: {}", size_of::<TDES2Internal>());
 }
 
 fn key() -> KeyMaterial<KEY_LEN> {
@@ -70,14 +70,14 @@ fn key() -> KeyMaterial<KEY_LEN> {
 fn bench_tdes_key_expansion() {
     eprintln!("TDES::new (key expansion)");
 
-    let tdes = TDES::new(&key()).unwrap();
+    let tdes = TDESInternal::new(&key()).unwrap();
     print!("{tdes:?}");
 }
 
 fn bench_tdes_encrypt_block() {
     eprintln!("TDES::encrypt_block");
 
-    let tdes = TDES::new(&key()).unwrap();
+    let tdes = TDESInternal::new(&key()).unwrap();
     let mut block = [0x11u8; BLOCK_LEN];
     tdes.encrypt_block(&mut block);
     print!("{block:x?}");
@@ -86,7 +86,7 @@ fn bench_tdes_encrypt_block() {
 fn bench_tdes_decrypt_block() {
     eprintln!("TDES::decrypt_block");
 
-    let tdes = TDES::new(&key()).unwrap();
+    let tdes = TDESInternal::new(&key()).unwrap();
     let mut block = [0x11u8; BLOCK_LEN];
     tdes.decrypt_block(&mut block);
     print!("{block:x?}");
@@ -95,7 +95,7 @@ fn bench_tdes_decrypt_block() {
 fn bench_tdes_encrypt_4blocks() {
     eprintln!("TDES::encrypt_4blocks");
 
-    let tdes = TDES::new(&key()).unwrap();
+    let tdes = TDESInternal::new(&key()).unwrap();
     let mut blocks = [[0x11u8; BLOCK_LEN]; 4];
     tdes.encrypt_4blocks(&mut blocks);
     print!("{blocks:x?}");

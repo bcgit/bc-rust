@@ -84,6 +84,13 @@ pub(crate) enum CipherDirection {
     Decrypt,
 }
 
+/// The one action a decryption-only command offers. A separate enum rather than a flag, so that
+/// `tdes2-* encrypt` is rejected by the parser with the list of valid values, not by the command.
+#[derive(ValueEnum, Clone, Debug)]
+pub(crate) enum DecryptOnlyAction {
+    Decrypt,
+}
+
 /// Loads the key from `--key-file` (raw bytes; hex with `--hex-input`) or `--key` (hex), and
 /// checks its length.
 ///
