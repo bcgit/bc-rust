@@ -171,6 +171,12 @@ where
         state: &'k Self::KeyState,
         rng: &mut dyn RNG,
     ) -> Result<(Self::Encryptor<'k>, [u8; NONCE_LEN]), SymmetricCipherError> {
+        const {
+            assert!(
+                P::ENCRYPTION_APPROVED,
+                "this permutation is approved for decryption only (ElectronicCodeBook::ENCRYPTION_APPROVED is false)"
+            )
+        };
         let nonce = random_iv::<NONCE_LEN>(rng)?;
         Ok((StreamCipher::from_keystream(CtrKeyStream::from_perm(state, nonce)), nonce))
     }

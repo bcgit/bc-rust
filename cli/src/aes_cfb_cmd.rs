@@ -26,9 +26,9 @@
 //! of the plaintext in the *same* block, so an attacker edits the block they aimed at, at the cost
 //! of randomising the next one. Do not decrypt data you have not authenticated separately.
 
-use crate::helpers::block_mode_helpers::{BLOCK_LEN, CipherDirection, load_iv, load_key_object};
+use crate::helpers::block_mode_helpers::{CipherDirection, load_iv, load_key_object};
 use crate::helpers::stream_mode_helpers::run_stream_mode;
-use bouncycastle::aes::{AES128Key, AES192Key, AES256Key};
+use bouncycastle::aes::{AES_BLOCK_LEN, AES128Key, AES192Key, AES256Key};
 use bouncycastle::cipher::modes::CFB;
 use bouncycastle::core::symmetric_key::{SymmetricDecryptionKey, SymmetricEncryptionKey};
 use bouncycastle::core::traits::{StreamCipherDecryptor, StreamCipherEncryptor};
@@ -44,7 +44,7 @@ pub(crate) fn aes128_cfb_cmd(
     run::<_, 16>(
         action,
         &load_key_object::<AES128Key<CFB>, 16>(key, key_file, "AES-128"),
-        load_iv::<BLOCK_LEN>(iv, iv_file),
+        load_iv::<AES_BLOCK_LEN>(iv, iv_file),
         output_hex,
     );
 }
@@ -60,7 +60,7 @@ pub(crate) fn aes192_cfb_cmd(
     run::<_, 24>(
         action,
         &load_key_object::<AES192Key<CFB>, 24>(key, key_file, "AES-192"),
-        load_iv::<BLOCK_LEN>(iv, iv_file),
+        load_iv::<AES_BLOCK_LEN>(iv, iv_file),
         output_hex,
     );
 }
@@ -76,7 +76,7 @@ pub(crate) fn aes256_cfb_cmd(
     run::<_, 32>(
         action,
         &load_key_object::<AES256Key<CFB>, 32>(key, key_file, "AES-256"),
-        load_iv::<BLOCK_LEN>(iv, iv_file),
+        load_iv::<AES_BLOCK_LEN>(iv, iv_file),
         output_hex,
     );
 }
@@ -85,13 +85,13 @@ pub(crate) fn aes256_cfb_cmd(
 fn run<'k, K, const KEY_LEN: usize>(
     action: &CipherDirection,
     key: &'k K,
-    iv: Option<[u8; BLOCK_LEN]>,
+    iv: Option<[u8; AES_BLOCK_LEN]>,
     output_hex: bool,
 ) where
-    K: SymmetricEncryptionKey<KEY_LEN, BLOCK_LEN, 0>
-        + SymmetricDecryptionKey<KEY_LEN, BLOCK_LEN, 0>,
-    K::Encryptor<'k>: StreamCipherEncryptor<BLOCK_LEN>,
-    K::Decryptor<'k>: StreamCipherDecryptor<BLOCK_LEN>,
+    K: SymmetricEncryptionKey<KEY_LEN, AES_BLOCK_LEN, 0>
+        + SymmetricDecryptionKey<KEY_LEN, AES_BLOCK_LEN, 0>,
+    K::Encryptor<'k>: StreamCipherEncryptor<AES_BLOCK_LEN>,
+    K::Decryptor<'k>: StreamCipherDecryptor<AES_BLOCK_LEN>,
 {
-    run_stream_mode::<K, KEY_LEN, BLOCK_LEN>(action, key, iv, output_hex)
+    run_stream_mode::<K, KEY_LEN, AES_BLOCK_LEN>(action, key, iv, output_hex)
 }
