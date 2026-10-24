@@ -145,7 +145,7 @@ use bouncycastle_core::traits::{
 };
 use bouncycastle_mlkem_common::aux_functions::sample_poly_CBD;
 use bouncycastle_mlkem_common::polynomial::Polynomial;
-use bouncycastle_utils::ct::{conditional_copy_bytes, ct_eq_bytes_mask};
+use bouncycastle_utils::ct::{conditional_copy_bytes, ct_eq_bytes_condition};
 use bouncycastle_utils::secret::Secret;
 use core::marker::PhantomData;
 /*** Constants ***/
@@ -579,7 +579,7 @@ impl<P: MLKEMParams> MLKEM<P> {
         // 10: 𝐾′ ← 𝐾_bar
         //  ▷ if ciphertexts do not match, “implicitly reject"
         let mut K_out = Secret::<[u8; MLKEM_SS_LEN]>::new();
-        conditional_copy_bytes(&K_prime, &K_bar, &mut K_out, ct_eq_bytes_mask(c, &c_prime));
+        conditional_copy_bytes(&K_prime, &K_bar, &mut K_out, ct_eq_bytes_condition(c, &c_prime));
 
         K_out
     }
