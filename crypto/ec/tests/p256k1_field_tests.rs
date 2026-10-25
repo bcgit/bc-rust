@@ -335,11 +335,11 @@ fn known_answer_mul_at_the_reduction_bounds() {
 /// leave the accumulator at or above `2^256`, so that `reduce`'s masked third fold (see its
 /// comment in `p256k1.rs`) is the step that produces the right answer. None of the cases above
 /// reach it -- `(p-1)^2` gives the first fold a high half of `C - 1`, one short of its bound, and
-/// still falls about `2^190` short -- and neither does random sampling: it needs the low half
-/// after the first fold to lie within `hi_1 * C <= 2^66` of `2^256`, probability about `2^-190`
-/// per product. The operands are constructed instead, with `a = 2^255` so that `a * b = (b/2) *
-/// 2^256` has an all-zero low half and `b/2` chosen so that `(b/2) * C` has every low bit set;
-/// computed in Python, independently of this crate's arithmetic:
+/// its two folds leave exactly `p + 1`, short of `2^256` by `C - 1` -- and neither does random
+/// sampling: it needs the low half after the first fold to lie within `hi_1 * C <= 2^66` of
+/// `2^256`, probability about `2^-190` per product. The operands are constructed instead, with
+/// `a = 2^255` so that `a * b = (b/2) * 2^256` has an all-zero low half and `b/2` chosen so that
+/// `(b/2) * C` has every low bit set; computed in Python, independently of this crate's arithmetic:
 ///
 /// ```text
 /// p = 2**256 - 2**32 - 2**9 - 2**8 - 2**7 - 2**6 - 2**4 - 1

@@ -81,8 +81,9 @@ fn candidate_in_range(candidate: &[u8; HLEN]) -> bool {
 /// [`crate::rfc6979::generate_k`]'s rejection-loop argument does not transfer here: a candidate
 /// is rejected not with negligible probability but with `1 - n/2^384 = 0.4503`, so 45 % of
 /// signatures run step h.3's "otherwise" branch at least once and a fifth at least twice (mean
-/// 0.82 extra iterations), and each extra iteration is two more HMAC-SHA-384 calls -- a timing
-/// difference a remote observer can see. The argument that holds instead (and does not lean on
+/// 0.82 extra iterations), and each extra iteration is three more HMAC-SHA-384 calls (two for the
+/// re-key, one for the next candidate) -- a timing difference a remote observer can see. The
+/// argument that holds instead (and does not lean on
 /// the rejected candidate being discarded, which RFC 6979's chaining never satisfies: the
 /// accepted `k` is an HMAC of the rejected `V`): the iteration count is a function of the
 /// HMAC-DRBG output stream, i.e. of PRF outputs under a key derived from `(d, h1)`, so under the
