@@ -166,3 +166,34 @@ fn two_key_keys_decrypt() {
     perm.encrypt_block(&mut ct);
     assert_eq!(key2::<ECB<PKCS7>>().decrypt(&[], &ct).unwrap(), b"hello");
 }
+
+/// `material::<N>()` with one bit of its last byte flipped.
+fn material_flipped<const N: usize>(bit: u8) -> KeyMaterial<N> {
+    let mut bytes: [u8; N] = core::array::from_fn(|i| (i as u8).wrapping_mul(7).wrapping_add(1));
+    bytes[N - 1] ^= bit;
+    KeyMaterial::<N>::from_bytes_as_type(&bytes, KeyType::SymmetricCipherKey).expect("a valid key")
+}
+
+/// Equality is over the expanded schedule, so it follows the material as the engine sees it: the
+/// same bytes compare equal, as does a clone, a flipped key bit does not, and a flipped parity bit
+/// (the last bit of a key byte, which PC-1 drops) still does. Keys have no `Debug`, hence
+/// `assert!` over `==`.
+#[test]
+fn keys_compare_equal_exactly_when_their_material_does_to_the_engine() {
+    let key = key3::<Ctr6>();
+    assert!(key == key.clone());
+    assert!(key == key3::<Ctr6>());
+    assert!(
+        key != TDES3Key::<Ctr6>::from_key_material(&material_flipped::<KEY_LEN>(0x02)).unwrap()
+    );
+    assert!(
+        key == TDES3Key::<Ctr6>::from_key_material(&material_flipped::<KEY_LEN>(0x01)).unwrap()
+    );
+
+    let key = key2::<Ctr6>();
+    assert!(key == key2::<Ctr6>());
+    assert!(
+        key != TDES2Key::<Ctr6>::from_key_material(&material_flipped::<KEY_LEN_2KEY>(0x02))
+            .unwrap()
+    );
+}

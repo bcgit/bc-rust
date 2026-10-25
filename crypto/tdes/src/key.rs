@@ -69,6 +69,19 @@ impl<P: TDESEngine, M: Mode<P>> Clone for TDESKey<P, M> {
     }
 }
 
+// Likewise for equality: two keys are equal when their mode states are, which every state over
+// the engine decides in constant time, so the comparison follows the material without exposing it.
+impl<P: TDESEngine, M: Mode<P>> PartialEq for TDESKey<P, M>
+where
+    M::KeyState: PartialEq,
+{
+    fn eq(&self, other: &Self) -> bool {
+        self.state == other.state
+    }
+}
+
+impl<P: TDESEngine, M: Mode<P>> Eq for TDESKey<P, M> where M::KeyState: Eq {}
+
 /// Every TDEA mode is a cipher mode, so the material must be a `SymmetricCipherKey`; the engine's
 /// constructor checks that too, but this is the error the role contract names.
 fn check_key_type(
