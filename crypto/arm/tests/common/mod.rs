@@ -10,7 +10,7 @@ use bouncycastle_hex as hex;
 pub fn cx() -> Option<CryptoExtensions> {
     let cx = CryptoExtensions::detect();
     if cx.is_none() {
-        println!("WARNING: this CPU lacks FEAT_AES; skipping");
+        println!("WARNING: this CPU lacks FEAT_AES or FEAT_PMULL; skipping");
     }
     cx
 }

@@ -19,9 +19,9 @@
 
 // What this proves depends on the build:
 // * `aes` declared: `Arm` against `Bitsliced`.
-// * `-aes` with `std`: `Detected` against `Bitsliced`. On a CPU with FEAT_AES that is `Arm`
-//   again; on one without, `Detected` runs `Bitsliced`, so the test compares `Bitsliced` with
-//   itself and proves nothing about the fallback beyond that it runs.
+// * `-aes` with `std`: `Detected` against `Bitsliced`. On a CPU with FEAT_AES and FEAT_PMULL
+//   that is `Arm` again; on one without, `Detected` runs `Bitsliced`, so the test compares
+//   `Bitsliced` with itself and proves nothing about the fallback beyond that it runs.
 // * `-aes` without `std`: the gate is false and the file compiles to nothing.
 #![cfg(all(
     target_arch = "aarch64",

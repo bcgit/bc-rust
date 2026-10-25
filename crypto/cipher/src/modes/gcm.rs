@@ -900,8 +900,8 @@ mod ghash {
     //!
     //! # The AArch64 path
     //!
-    //! On little-endian AArch64, where the CPU has `PMULL` (part of `FEAT_AES`) -- always, on a build
-    //! that declares `target_feature = "aes"`; as found at run time, on one with the `std` feature --
+    //! On little-endian AArch64, where the CPU has `FEAT_AES`, `FEAT_PMULL` and NEON -- always, on a
+    //! build that declares `target_feature = "aes"`; as found at run time, on one with `std` --
     //! [`mul`] is `bouncycastle_arm`'s `PMULL` kernel and [`Ghash::update`] folds whole blocks four at
     //! a time through its four-product kernel, which sums four products under one reduction. That is
     //! Sec 6.4's "In effect, the GHASH function calculates `X1•H^m ⊕ X2•H^(m-1) ⊕ ... ⊕ Xm•H`"

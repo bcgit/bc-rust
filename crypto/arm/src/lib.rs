@@ -11,7 +11,7 @@
 //! # Availability
 //!
 //! The crate has content only on little-endian AArch64 with NEON, and only when the code using
-//! it can be sure the CPU has `FEAT_AES` (which includes `PMULL`):
+//! it can be sure the CPU has `FEAT_AES`, `FEAT_PMULL` and NEON:
 //!
 //! * **The build declares it** (`target_feature = "aes"`), as `aarch64-apple-darwin` does by
 //!   default and `RUSTFLAGS="-C target-feature=+aes"` does elsewhere. Every CPU the binary may
@@ -108,10 +108,10 @@
 //! ## A binary built with `aes` requires the hardware
 //!
 //! Declaring `target_feature = "aes"` is a promise to the compiler, not a request. Running the
-//! result on a CPU without `FEAT_AES` is undefined behaviour and in practice an illegal
-//! instruction fault. Whoever builds the final binary is the one who can make that promise. A
-//! build that cannot, such as a distribution package, should use the `std` feature instead,
-//! which checks at run time.
+//! result on a CPU without `FEAT_AES` and `FEAT_PMULL` is undefined behaviour and in practice an
+//! illegal instruction fault. Whoever builds the final binary is the one who can make that
+//! promise. A build that cannot, such as a distribution package, should use the `std` feature
+//! instead, which checks at run time.
 //!
 //! ## Timing
 //!

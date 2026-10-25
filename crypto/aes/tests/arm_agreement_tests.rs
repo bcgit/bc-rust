@@ -163,7 +163,8 @@ fn the_default_engine_on_this_target_is_detected_and_follows_the_cpu() {
     {
         matches!(<Detected<P> as Engine<P>>::expand(key), Detected::Arm(_))
     }
-    let has_aes = std::arch::is_aarch64_feature_detected!("aes");
+    let has_aes = std::arch::is_aarch64_feature_detected!("aes")
+        && std::arch::is_aarch64_feature_detected!("pmull");
     assert_eq!(picked_arm::<AES128Params>(&[0; 16]), has_aes);
     assert_eq!(picked_arm::<AES192Params>(&[0; 24]), has_aes);
     assert_eq!(picked_arm::<AES256Params>(&[0; 32]), has_aes);
