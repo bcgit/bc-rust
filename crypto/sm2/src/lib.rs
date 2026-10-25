@@ -69,7 +69,7 @@
 //!
 //! Keys use the same SEC 1 encodings as `bouncycastle-ecdsa` -- `04 || X || Y` for a public key
 //! (the 33-byte compressed form is also accepted on decode), a 32-byte big-endian integer for a
-//! private key, with `dA` required to be in `[1, n-1]`:
+//! private key, with `dA` required to be in `[1, n-2]`:
 //!
 //! ```
 //! use bouncycastle_core::traits::{SignaturePrivateKey, SignaturePublicKey};
