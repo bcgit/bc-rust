@@ -298,26 +298,37 @@ fn private_key_rejects_zero() {
     }
 }
 
-/// `draft-shen-sm2-ecdsa-02` §4 puts `dA` in `[1, n-1]`, so an encoding of `n` or above is not a
-/// key. Reducing such an encoding mod `n` rather than rejecting it would give one key many
-/// valid-looking encodings: `dA = n + 1` would load as `dA = 1`.
+/// GB/T 32918.1-2016 §6.1 a) puts `dA` in `[1, n-2]`, so an encoding of `n - 1` or above is not
+/// a key. `n - 1` cannot sign (step A6 would invert `1 + dA = n`, i.e. `0`), and reducing an
+/// encoding of `n` or above mod `n` rather than rejecting it would give one key many
+/// valid-looking encodings: `dA = n + 1` would load as `dA = 1`. `n - 2` is the top of the range
+/// and the one value for which step A6 divides by `n - 1`, i.e. by `-1`.
 #[test]
-fn private_key_rejects_values_at_or_above_the_group_order() {
+fn private_key_rejects_values_outside_1_to_n_minus_2() {
     let n = be_bytes_from_limbs(&N_LIMBS);
 
+    // N_LIMBS[0] ends 0x23, so none of the +-1/-2 adjustments below carries or borrows.
+    let mut n_minus_1 = n;
+    n_minus_1[31] -= 1;
     let mut n_plus_1 = n;
-    n_plus_1[31] += 1; // N_LIMBS[0] ends 0x23, so this never carries
-    for (name, bytes) in [("n", n), ("n + 1", n_plus_1), ("2^256 - 1", [0xffu8; 32])] {
+    n_plus_1[31] += 1;
+    for (name, bytes) in
+        [("n - 1", n_minus_1), ("n", n), ("n + 1", n_plus_1), ("2^256 - 1", [0xffu8; 32])]
+    {
         match SM2PrivateKey::from_bytes(&bytes) {
             Err(SignatureError::DecodingError(_)) => {}
             other => panic!("dA = {name} should have been rejected, got {other:?}"),
         }
     }
 
-    let mut n_minus_1 = n;
-    n_minus_1[31] -= 1;
-    let sk = SM2PrivateKey::from_bytes(&n_minus_1).expect("dA = n - 1 is in range");
-    assert_eq!(sk.encode(), n_minus_1, "dA = n - 1 must round-trip unchanged");
+    let mut n_minus_2 = n;
+    n_minus_2[31] -= 2;
+    let sk = SM2PrivateKey::from_bytes(&n_minus_2).expect("dA = n - 2 is in range");
+    assert_eq!(sk.encode(), n_minus_2, "dA = n - 2 must round-trip unchanged");
+
+    let msg = b"dA = n - 2: step A6 divides by 1 + dA = n - 1";
+    let sig = SM2::sign(&sk, msg, Some(ID)).expect("dA = n - 2 must sign");
+    SM2::verify(&sk.derive_pk(), msg, Some(ID), &sig).expect("and its signature must verify");
 }
 
 #[test]
