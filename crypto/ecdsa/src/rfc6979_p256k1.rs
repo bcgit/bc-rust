@@ -64,7 +64,8 @@ fn candidate_in_range(candidate: &[u8; HLEN]) -> bool {
 
 /// RFC 6979 §3.2 steps a-h: the deterministic per-message secret `k` for private key `d` and
 /// message hash `h1 = H(m)`. See [`crate::rfc6979::generate_k`]'s docs for the rejection-loop
-/// constant-time argument, which applies unchanged here.
+/// constant-time argument, which applies unchanged here; `n` is within `2^-127` of `2^256`, so a
+/// candidate is rejected with probability about `2^-128`.
 pub fn generate_k(d: &P256K1Scalar, h1: &[u8; HLEN]) -> P256K1Scalar {
     let mut int2octets_d = Secret::<[u8; HLEN]>::new();
     *int2octets_d = d.to_be_bytes(); // §2.3.3, d already in [1, n-1]
