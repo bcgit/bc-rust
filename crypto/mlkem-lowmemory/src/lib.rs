@@ -76,39 +76,36 @@
 //!
 //! ## Algorithm Peak Memory Usage
 //!
-//! The table below shows peak memory usage of the ML-KEM algorithms and the rough performanc (throughput) impact.
-//!
-//! Measuring peak application memory usage can be a bit tricky, and the numbers that are obtained depend heavily on how the
-//! measurement harness is designed. Here, we aim to provide a conservative measurement, meaning that we are aiming for an
-//! over-estimate so that any deployment within an existing application will use incrementally less additional memory
-//! than the amount stated here.
-//!
-//! Our measurement methodology is to compile a simple standalone HelloWorld application that only calls the function under test
-//! with as minimal as possible hard-coded data (such as keys or ciphertexts) and measure the peak memory usage of running
-//! the compiled binary using `valgrind --tool=massif --heap=no --stack=yes`. The flags for heap and stack
-//! reflect the fact that this is a `no_std` rust application and therefore the cryptographic functions use no heap memory.
-//! The measurements may over-estimate by as much as 3 kb since that that's the measured peak memory usage of a do-nothing
-//! HelloWorld rust application.
+//! The table below shows peak memory usage of the ML-KEM algorithms and the rough performance (throughput) impact.
 //!
 //! | Algorithm                  | Peak stack memory usage (kB) | Throughput (Kops/s) |
-//! |----------------------------|------------------------|-------------------|
-//! | MLKEM512_lowmemory/KeyGen  | 5.8 (21.7)             | 50.1 (48.7) |
-//! | MLKEM512_lowmemory/KeyGen  | 7.3 (28.9)             | 28.3 (28.8) |
-//! | MLKEM1024_lowmemory/KeyGen | 9.3 (41.4)             | 16.9 (18.1) |
-//! | MLKEM512_lowmemory/Encaps  | 8.9 (18.8)             | 37.8 (43.7) |
-//! | MLKEM768_lowmemory/Encaps  | 9.9 (27.9)             | 22.3 (26.0) |
-//! | MLKEM1024_lowmemory/Encaps | 11.2 (44.2)            | 14.2 (15.6) |
-//! | MLKEM512_lowmemory/Decaps  | 13.6 (25.7)            | 13.4 (31.6) |
-//! | MLKEM768_lowmemory/Decaps  | 16.6 (40.6)            | 7.8 (21.0) |
-//! | MLKEM1024_lowmemory/Decaps | 20.5 (58.4)            | 4.9 (13.6) |
+//! |----------------------------|------------------------------|-------------------|
+//! | MLKEM512_lowmemory/KeyGen  | 7.7 (13.2)                   | 51.8 (52.7)       |
+//! | MLKEM768_lowmemory/KeyGen  | 9.5 (19.7)                   | 29.9 (32.0)       |
+//! | MLKEM1024_lowmemory/KeyGen | 11.4 (29.2)                  | 18.3 (21.0)       |
+//! | MLKEM512_lowmemory/Encaps  | 9.3 (14.4)                   | 39.4 (47.2)       |
+//! | MLKEM768_lowmemory/Encaps  | 11.0 (24.3)                  | 23.2 (28.6)       |
+//! | MLKEM1024_lowmemory/Encaps | 13.3 (35.0)                  | 15.2 (19.6)       |
+//! | MLKEM512_lowmemory/Decaps  | 11.9 (21.6)                  | 13.8 (36.8)       |
+//! | MLKEM768_lowmemory/Decaps  | 13.6 (33.4)                  | 8.1 (22.8)        |
+//! | MLKEM1024_lowmemory/Decaps | 15.8 (49.2)                  | 5.2 (16.1)        |
 //!
-//! Values in parentheses are the comparison values from the un-optimized implementation in the \[bouncycastle_mldsa] crate.
+//! Values in parentheses are the comparison values from the un-optimized implementation in the \[bouncycastle_mlkem] crate.
+//!
+//! **Caveates**
+//!
+//! Throughput numbers are meant to show relative difference between the two implementations and not be
+//! absolute performance measurements.
+//!
 //! Size numbers were collected with valgrind using a simple main program that calls only the measured function.
-//! Performance throughput numbers were collected on my laptop using the library's provided benchmarks, so
-//! performance they should be taken with an extreme grain of salt.
-//!
+//! Measurements include the public key and signature buffer, which is a realistic setting, but
+//! numbers would be lower if those were on the heap and excluded from the measurement.
 //! Actual values may vary based on build configuration and target architecture.
-//!
+//! The peak also depends on how the compiler lays out the measured function's stack frame relative
+//! to its caller and whether it elides copies at the call boundary, which is outside
+//! the library's control. The memory benchmarking framework included in the library attempts to
+//! This effect is small for the low-memory crates (well under 1 kB) and larger for the full implementations
+//! in parentheses (a few kB), so treat the latter as approximate.
 //!
 //! # Usage
 //!
