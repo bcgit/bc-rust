@@ -111,12 +111,16 @@
 //! constant-time inversion for a value that never changes. See [`keys::SM2PrivateKey`]'s own
 //! docs.
 //!
-//! # Security Considerations
+//! # 🚨 Security Considerations 🚨
 //!
-//! - **The private key `dA` and the per-message secret `k` are never handled in variable time.**
-//!   `dA` lives in [`bouncycastle_ec::sm2_scalar::Sm2Scalar`] (a [`bouncycastle_utils::secret::Secret`]);
-//!   every operation performed on it or on `k` -- inversion, multiplication, the fixed-base scalar
-//!   multiplication `[k]G` -- is branch-free and does not index memory by their value.
+//! - **Everything done with the private key `dA` and the used per-message secret `k` is
+//!   branch-free and does not index memory by their value**: the inversion of `1 + dA`,
+//!   multiplication, the fixed-base scalar multiplication `[k]G`. `dA` lives in
+//!   [`bouncycastle_ec::sm2_scalar::Sm2Scalar`] (a [`bouncycastle_utils::secret::Secret`]). The
+//!   exceptions are GB/T 32918.2-2016 §6.1's two retry checks, step A5's `r = 0` or `r + k = n`
+//!   and step A6's `s = 0`: each is a branch, taken with probability about `2^-255`, and a taken
+//!   branch discards that `k` (the signer returns an error and the caller draws a fresh one), so
+//!   neither reveals anything about a `k` that is used.
 //! - **`k` must never repeat across two signatures under the same key with different messages.** As
 //!   with ECDSA, a repeated `k` leaks `dA` directly from two signatures' `(r, s)` pairs. Unlike
 //!   `bouncycastle-ecdsa`'s curves, there is no deterministic (RFC 6979-style) default here: the
