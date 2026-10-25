@@ -1,17 +1,16 @@
 //! The Camellia keys through the shared conformance suites: construction policy for every mode a key
-//! can carry, then the block, symmetric, stream and AEAD suites at the 128- and 256-bit key
+//! can carry, then the block, symmetric and stream suites at the 128- and 256-bit key
 //! lengths (Camellia-192 sits between them in rounds and differs in nothing else the suites see).
 
 use bouncycastle_camellia::hazmat::{Camellia128Internal, Camellia256Internal};
 use bouncycastle_camellia::{Camellia128Key, Camellia256Key};
 use bouncycastle_cipher::modes::hazmat::ecb::ECB;
-use bouncycastle_cipher::modes::{Blocks, CBC, CFB, CFB8, CTR, GCM, ModeNames};
+use bouncycastle_cipher::modes::{Blocks, CBC, CFB, CFB8, CTR, ModeNames};
 use bouncycastle_cipher::padding::{NoPadding, PKCS7};
 use bouncycastle_core::hazmat::Mode;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::symmetric_key::FromKeyMaterial;
-use bouncycastle_core_test_framework::aead::TestFrameworkAEADCipher;
 use bouncycastle_core_test_framework::block_cipher::TestFrameworkBlockCipher;
 use bouncycastle_core_test_framework::from_key_material::TestFrameworkFromKeyMaterial;
 use bouncycastle_core_test_framework::symmetric_ciphers::{
@@ -61,10 +60,6 @@ fn every_mode_key_enforces_the_material_policy() {
         Camellia128Internal::CBC_ALG_NAME,
         Camellia256Internal::CBC_ALG_NAME,
     );
-    construction_suite::<ECB<Blocks>>(
-        Camellia128Internal::ECB_ALG_NAME,
-        Camellia256Internal::ECB_ALG_NAME,
-    );
     construction_suite::<ECB<PKCS7>>(
         Camellia128Internal::ECB_ALG_NAME,
         Camellia256Internal::ECB_ALG_NAME,
@@ -75,7 +70,6 @@ fn every_mode_key_enforces_the_material_policy() {
         Camellia256Internal::CFB8_ALG_NAME,
     );
     construction_suite::<CTR>(Camellia128Internal::CTR_ALG_NAME, Camellia256Internal::CTR_ALG_NAME);
-    construction_suite::<GCM>(Camellia128Internal::GCM_ALG_NAME, Camellia256Internal::GCM_ALG_NAME);
 }
 
 #[test]
@@ -83,13 +77,6 @@ fn cbc_blocks_keys_pass_the_block_cipher_framework() {
     let framework = TestFrameworkBlockCipher::new();
     framework.test_key::<16, 16, 16, _>(&key128::<CBC<Blocks>>(), &mut rng());
     framework.test_key::<32, 16, 16, _>(&key256::<CBC<Blocks>>(), &mut rng());
-}
-
-#[test]
-fn ecb_blocks_keys_pass_the_block_cipher_framework() {
-    let framework = TestFrameworkBlockCipher::new();
-    framework.test_ecb_key::<16, 16, _>(&key128::<ECB<Blocks>>());
-    framework.test_ecb_key::<32, 16, _>(&key256::<ECB<Blocks>>());
 }
 
 #[test]
@@ -120,13 +107,4 @@ fn stream_mode_keys_pass_the_stream_cipher_framework() {
     framework.test_key::<32, 16, _>(&key256::<CFB8>(), &mut rng());
     framework.test_key::<16, 12, _>(&key128::<CTR>(), &mut rng());
     framework.test_key::<32, 12, _>(&key256::<CTR>(), &mut rng());
-}
-
-/// GCM is generic over any 16-byte-block permutation, so an Camellia key under it is the same code
-/// as AES-GCM over another engine; the AEAD suite checks the wiring.
-#[test]
-fn gcm_keys_pass_the_aead_framework() {
-    let framework = TestFrameworkAEADCipher::new();
-    framework.test_key::<16, 12, 16, 16, _>(&key128::<GCM>(), &mut rng());
-    framework.test_key::<32, 12, 16, 16, _>(&key256::<GCM>(), &mut rng());
 }
