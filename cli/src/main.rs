@@ -18,6 +18,12 @@ mod rng_cmd;
 mod sha2_cmd;
 mod sha3_cmd;
 mod sm3_cmd;
+mod sm4_cbc_cmd;
+mod sm4_ccm_cmd;
+mod sm4_cfb8_cmd;
+mod sm4_cfb_cmd;
+mod sm4_ctr_cmd;
+mod sm4_gcm_cmd;
 
 use crate::hkdf_cmd::HKDFVariant;
 use crate::mac_cmd::HMACVariant;
@@ -2359,6 +2365,307 @@ enum Subcommands {
         x: bool,
     },
 
+    /// SM4 in CBC mode (GB/T 32907-2016 block cipher; NIST SP 800-38A Sec 6.2 mode) with PKCS7
+    /// padding, streaming stdin to stdout.
+    ///
+    /// On `encrypt`, a fresh unpredictable IV is generated and written as the FIRST 16 BYTES of
+    /// the output; on `decrypt` it is read back from the first 16 bytes of the input, so the two
+    /// compose directly in a pipeline. With `--iv` (hex) or `--iv-file` (raw bytes), the IV is
+    /// supplied instead: `encrypt` uses it and writes ONLY the ciphertext, and `decrypt` reads
+    /// ONLY ciphertext from stdin.
+    ///
+    /// Input may be any length: it is padded with PKCS7 to a whole number of 16-byte blocks.
+    ///
+    /// See `aes128-cbc` for the full IV convention, the padding rule and the warnings; the key
+    /// and block are both 16 bytes, as for AES-128.
+    SM4_CBC {
+        #[arg(short, long)]
+        direction: CipherDirection,
+
+        /// The 16-byte SM4 key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 16-byte SM4 key (raw bytes; hex with --hex-input).
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        /// The 16-byte IV in hex. Supplied instead of generated: `encrypt` then writes no IV and
+        /// `decrypt` reads none. See the IV paragraph above.
+        #[arg(long)]
+        iv: Option<String>,
+
+        /// A file containing the 16-byte IV, (raw bytes; hex with --hex-input).
+        /// If both iv and iv_file options are provided, the file will be used.
+        #[arg(long)]
+        iv_file: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// SM4 in CCM mode (NIST SP 800-38C): authenticated encryption of stdin to stdout.
+    ///
+    /// CCM is an AEAD: it protects both confidentiality and authenticity, and `decrypt` either
+    /// writes the plaintext or fails, unlike aes*-cbc/-cfb/-ctr, which cannot detect tampering.
+    ///
+    /// The output of `encrypt` is `ciphertext || tag` -- SP 800-38C Sec 6.1 step 8's own layout --
+    /// so it is `--tag-len` bytes longer than the input, and `decrypt` reads the tag back off the
+    /// end. Both directions authenticate `--aad` as well as the payload.
+    ///
+    /// THE NONCE IS SUPPLIED, NOT GENERATED, and this is the only cipher command here that takes
+    /// one. The other modes need an unpredictable IV, so they generate it; CCM needs the nonce to
+    /// be UNIQUE but not unpredictable (Sec 5.3: "The nonce is not required to be random"), and a
+    /// caller with a message counter can guarantee uniqueness better than a random draw. The nonce
+    /// is NOT written to the output, so `decrypt` needs the same `--nonce` as `encrypt`.
+    ///
+    /// WARNING: never reuse a nonce under one key. For CCM a repeat is worse than for CTR: it
+    /// reuses the keystream AND lets an attacker who can replay the nonce flip any chosen bit of
+    /// the payload (Appendix B.1). Use a counter, or a random value long enough that a collision is
+    /// negligible.
+    ///
+    /// Nonce length must be 7 to 13 bytes and `--tag-len` one of 4, 6, 8, 10, 12, 14, 16
+    /// (Appendix A.1). The two are linked to the payload limit and the forgery bound respectively:
+    /// a nonce of n bytes caps the payload at 2^(8*(15-n)) - 1 bytes, so 13 bytes allows only
+    /// 64 KiB - 1 while 7 bytes is effectively unlimited; and Sec B.2 says a tag shorter than
+    /// 8 bytes "shall not be used without a careful analysis of the risks". A 12-byte nonce with a
+    /// 16-byte tag is the usual choice; `--tag-len` defaults to 16, while the nonce must be given.
+    ///
+    /// UNLIKE EVERY OTHER CIPHER COMMAND HERE, THIS ONE DOES NOT STREAM: it reads all of stdin
+    /// before doing any work, so memory use is proportional to the input. That is inherent to CCM,
+    /// not a limitation of this implementation -- Sec 3: "CCM is not designed to support partial
+    /// processing or stream processing", because Appendix A.2.1 puts the payload length inside the
+    /// first block the MAC covers. It does buy one thing: on `decrypt` NO plaintext is written
+    /// until the tag has verified, so unlike `ascon-aead128` a non-zero exit leaves nothing to
+    /// discard. For large inputs use `ascon-aead128`, which streams. The AAD is read whole as well.
+    ///
+    /// Input may be any length: CCM pads internally and the payload is not block-aligned.
+    ///
+    /// Note: in production uses, secrets should not be passed on the command-line because they get
+    /// logged in shell history. Use the file-based input instead.
+    SM4_CCM {
+        #[arg(short, long)]
+        direction: CipherDirection,
+
+        /// The 16-byte SM4 key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 16-byte SM4 key (raw bytes; hex with --hex-input).
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        /// The nonce in hex, 7 to 13 bytes. MUST be unique per encryption under a given key.
+        #[arg(long)]
+        nonce: Option<String>,
+
+        /// A file containing the nonce, (raw bytes; hex with --hex-input).
+        #[arg(long)]
+        nonce_file: Option<String>,
+
+        /// Associated data in hex: authenticated but not encrypted. Must match on decrypt.
+        #[arg(long)]
+        aad: Option<String>,
+
+        /// A file containing the associated data (raw bytes; hex with --hex-input). If both aad and
+        /// aad_file options are provided, the file will be used.
+        #[arg(long)]
+        aad_file: Option<String>,
+
+        /// Tag length in bytes: one of 4, 6, 8, 10, 12, 14, 16. Must match on decrypt.
+        #[arg(long, default_value_t = 16)]
+        tag_len: usize,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// SM4 in CFB128 mode (GB/T 32907-2016 block cipher; NIST SP 800-38A Sec 6.3 mode), streaming
+    /// stdin to stdout.
+    ///
+    /// The segment size is the full block: draft-ribose-cfrg-sm4-10 calls this SM4-CFB-128. Its
+    /// 8-bit variant is a different, non-interoperable mode; use `sm4-cfb8` for that.
+    ///
+    /// On `encrypt`, a fresh unpredictable IV is generated and written as the FIRST 16 BYTES of
+    /// the output; on `decrypt` it is read back from the first 16 bytes of the input. With `--iv`
+    /// (hex) or `--iv-file` (raw bytes; hex with --hex-input), the IV is supplied instead and only ciphertext is written
+    /// or read. Input may be ANY length: nothing is padded.
+    ///
+    /// See `aes128-cfb` for the full IV convention, input-length rule and warnings; the key and
+    /// block are both 16 bytes, as for AES-128.
+    SM4_CFB {
+        #[arg(short, long)]
+        direction: CipherDirection,
+
+        /// The 16-byte SM4 key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 16-byte SM4 key (raw bytes; hex with --hex-input).
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        /// The 16-byte IV in hex. Supplied instead of generated: `encrypt` then writes no IV and
+        /// `decrypt` reads none. See the IV paragraph above.
+        #[arg(long)]
+        iv: Option<String>,
+
+        /// A file containing the 16-byte IV, (raw bytes; hex with --hex-input).
+        /// If both iv and iv_file options are provided, the file will be used.
+        #[arg(long)]
+        iv_file: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// SM4 in CFB8 mode (GB/T 32907-2016 block cipher; NIST SP 800-38A Sec 6.3 mode, s = 8),
+    /// streaming stdin to stdout.
+    ///
+    /// The segment size is one byte. This is a DIFFERENT, NON-INTEROPERABLE mode from the CFB128 of
+    /// `sm4-cfb`: the two ciphertexts agree only on their first byte. It also costs one SM4 call
+    /// per byte, sixteen times the work of `sm4-cfb`, so prefer that unless a byte-granular
+    /// self-synchronising stream is required or the format demands CFB8.
+    ///
+    /// On `encrypt`, a fresh unpredictable IV is generated and written as the FIRST 16 BYTES of
+    /// the output; on `decrypt` it is read back from the first 16 bytes of the input. With `--iv`
+    /// (hex) or `--iv-file` (raw bytes; hex with --hex-input), the IV is supplied instead and only ciphertext is written
+    /// or read. Input may be ANY length: nothing is padded.
+    ///
+    /// See `aes128-cfb8` for the full IV convention, input-length rule and warnings; the key and
+    /// block are both 16 bytes, as for AES-128.
+    SM4_CFB8 {
+        #[arg(short, long)]
+        direction: CipherDirection,
+
+        /// The 16-byte SM4 key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 16-byte SM4 key (raw bytes; hex with --hex-input).
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        /// The 16-byte IV in hex. Supplied instead of generated: `encrypt` then writes no IV and
+        /// `decrypt` reads none. See the IV paragraph above.
+        #[arg(long)]
+        iv: Option<String>,
+
+        /// A file containing the 16-byte IV, (raw bytes; hex with --hex-input).
+        /// If both iv and iv_file options are provided, the file will be used.
+        #[arg(long)]
+        iv_file: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// SM4 in CTR mode (GB/T 32907-2016 block cipher; NIST SP 800-38A Sec 6.5 mode), streaming
+    /// stdin to stdout.
+    ///
+    /// The counter block is a 12-byte nonce followed by a 4-byte counter starting at zero, so one
+    /// message can be up to 2^32 blocks (64 GiB); past that the command errors rather than
+    /// repeating keystream. On `encrypt` the nonce is written as the FIRST 12 BYTES of the output
+    /// and on `decrypt` it is read back from there -- 12, not the 16 the other modes write. With
+    /// `--iv` (hex) or `--iv-file` (raw bytes), the 12-byte nonce is supplied instead and only
+    /// ciphertext is written or read; it MUST then be unique per message under one key.
+    ///
+    /// See `aes128-ctr` for the full nonce convention, input-length rule and warnings, including
+    /// why a repeated nonce is fatal and why CTR is the most malleable mode here; the key and
+    /// block are both 16 bytes, as for AES-128.
+    SM4_CTR {
+        #[arg(short, long)]
+        direction: CipherDirection,
+
+        /// The 16-byte SM4 key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 16-byte SM4 key (raw bytes; hex with --hex-input).
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        /// The 12-byte nonce in hex. Supplied instead of generated: `encrypt` then writes none
+        /// and `decrypt` reads none. See the nonce paragraph above.
+        #[arg(long)]
+        iv: Option<String>,
+
+        /// A file containing the 12-byte nonce, as raw bytes exactly as they are (no hex
+        /// decoding). If both iv and iv_file options are provided, the file will be used.
+        #[arg(long)]
+        iv_file: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// SM4 in GCM (GB/T 32907-2016 block cipher; NIST SP 800-38D mode; RFC 8998 Sec 3.5.1's
+    /// AEAD_SM4_GCM), streaming stdin to stdout.
+    ///
+    /// AUTHENTICATED, unlike the other SM4 modes here: tampering with the ciphertext, the AAD or
+    /// the IV is detected rather than merely producing wrong plaintext. The framing is
+    /// `aes128-gcm`'s: on `encrypt` a fresh 12-byte IV is written first, the ciphertext follows
+    /// and the 16-byte tag comes last; `decrypt` reads the same layout back and checks the tag
+    /// once input is exhausted. With `--iv` / `--iv-file` the IV is supplied and not written or
+    /// read, and MUST then be unique per message under one key. `--aad` (hex) or `--aad-file`
+    /// (raw bytes) supply the additional authenticated data; if neither is given, AAD is empty.
+    ///
+    /// See `aes128-gcm` for the full contract and the warnings, including that on `decrypt` a tag
+    /// failure may be reported only after plaintext has already been written to stdout, so a
+    /// script MUST check the exit code; the key and block are both 16 bytes, as for AES-128.
+    SM4_GCM {
+        #[arg(short, long)]
+        direction: CipherDirection,
+
+        /// The 16-byte SM4 key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 16-byte SM4 key (raw bytes; hex with --hex-input).
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        /// The 12-byte IV in hex. Supplied instead of generated: `encrypt` then writes none and
+        /// `decrypt` reads none. See the IV paragraph above.
+        #[arg(long)]
+        iv: Option<String>,
+
+        /// A file containing the 12-byte IV, (raw bytes; hex with --hex-input).
+        /// If both iv and iv_file options are provided, the file will be used.
+        #[arg(long)]
+        iv_file: Option<String>,
+
+        /// The additional authenticated data, in hex. Covered by the tag but not encrypted.
+        #[arg(long)]
+        aad: Option<String>,
+
+        /// A file containing the additional authenticated data (raw bytes; hex with --hex-input).
+        /// If both aad and aad_file options are provided, the file will be used.
+        #[arg(long)]
+        aad_file: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
     /// Perform TupleHash128 (NIST SP 800-185 Sec 5) over a tuple of strings. The tuple is given
     /// by repeated --element flags, each in hex; with none, stdin is hashed as a single element.
     /// The boundaries between elements are part of the hash.
@@ -2925,6 +3232,36 @@ fn run() {
         }
         Some(Subcommands::SM3 { x }) => {
             sm3_cmd::sm3_cmd(*x);
+        }
+        Some(Subcommands::SM4_CBC { direction, key, key_file, iv, iv_file, x }) => {
+            sm4_cbc_cmd::sm4_cbc_cmd(direction, key, key_file, iv, iv_file, *x);
+        }
+        Some(Subcommands::SM4_CCM {
+            direction,
+            key,
+            key_file,
+            nonce,
+            nonce_file,
+            aad,
+            aad_file,
+            tag_len,
+            x,
+        }) => {
+            sm4_ccm_cmd::sm4_ccm_cmd(
+                direction, key, key_file, nonce, nonce_file, aad, aad_file, *tag_len, *x,
+            );
+        }
+        Some(Subcommands::SM4_CFB { direction, key, key_file, iv, iv_file, x }) => {
+            sm4_cfb_cmd::sm4_cfb_cmd(direction, key, key_file, iv, iv_file, *x);
+        }
+        Some(Subcommands::SM4_CFB8 { direction, key, key_file, iv, iv_file, x }) => {
+            sm4_cfb8_cmd::sm4_cfb8_cmd(direction, key, key_file, iv, iv_file, *x);
+        }
+        Some(Subcommands::SM4_CTR { direction, key, key_file, iv, iv_file, x }) => {
+            sm4_ctr_cmd::sm4_ctr_cmd(direction, key, key_file, iv, iv_file, *x);
+        }
+        Some(Subcommands::SM4_GCM { direction, key, key_file, iv, iv_file, aad, aad_file, x }) => {
+            sm4_gcm_cmd::sm4_gcm_cmd(direction, key, key_file, iv, iv_file, aad, aad_file, *x);
         }
         Some(Subcommands::TUPLEHASH128 {
             length,
