@@ -239,7 +239,7 @@ impl BlockPermutation<BLOCK_LEN> for SM4Internal {
 
 // SM4 has published modes beyond the four this crate aliases -- draft-ribose-cfrg-sm4-10 Sec 8
 // defines ECB, and RFC 8998 Sec 3.5 defines AEAD_SM4_GCM and AEAD_SM4_CCM -- so every mode is
-// named; a key under the others is made by naming the mode.
+// named, although the keys hand out workers for the four aliased modes only.
 impl ModeNames for SM4Internal {
     const CBC_ALG_NAME: &'static str = "SM4_CBC";
     const CCM_ALG_NAME: &'static str = "SM4_CCM";

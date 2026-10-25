@@ -1,20 +1,22 @@
-//! The SM4-GCM and SM4-CCM test vectors of RFC 8998 Appendix A, through `SM4Key<GCM>` and
-//! `SM4Key<CCM<12, 16>>`.
+//! The SM4-GCM and SM4-CCM test vectors of RFC 8998 Appendix A, through the `GCM` and
+//! `CCM<12, 16>` modes over `SM4Internal`.
 //!
 //! RFC 8998 Sec 3.5 defines `AEAD_SM4_GCM` and `AEAD_SM4_CCM` for TLS 1.3 as GCM and CCM over
 //! SM4 with a 12-byte nonce and a 16-byte tag; its Appendix A gives one vector for each, the same
-//! key, nonce, plaintext and associated data. The key objects reach both modes by naming them, so
-//! these are the published answers for the two AEAD roles the key carries. All values are
-//! transcribed from the downloaded text of the RFC.
+//! key, nonce, plaintext and associated data. `SM4Key` carries no AEAD role, since this crate
+//! aliases no AEAD mode, so the vectors run through the `hazmat` mode traits over the
+//! permutation's key state, which is what a key under those modes would forward to. All values
+//! are transcribed from the downloaded text of the RFC.
 
 use bouncycastle_cipher::modes::{CCM, GCM};
-use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-use bouncycastle_core::symmetric_key::{
-    AeadDeclaredDecryptionKey, AeadDeclaredEncryptionKey, AeadDecryptionKey, AeadEncryptionKey,
-    FromKeyMaterial,
+use bouncycastle_core::hazmat::{
+    AeadDeclaredDecryptMode, AeadDeclaredEncryptMode, AeadDecryptMode, AeadEncryptMode,
+    ElectronicCodeBook, Mode,
 };
+use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_hex as hex;
-use bouncycastle_sm4::{KEY_LEN, SM4Key};
+use bouncycastle_sm4::KEY_LEN;
+use bouncycastle_sm4::hazmat::SM4Internal;
 
 const NONCE: &str = "00001234567800000000ABCD";
 const KEY: &str = "0123456789ABCDEFFEDCBA9876543210";
@@ -44,49 +46,65 @@ const CCM_CT: &str = concat!(
 );
 const CCM_TAG: &str = "16842D4FA186F56AB33256971FA110F4";
 
+type Sm4Ccm = CCM<12, 16>;
+
 fn bytes<const N: usize>(hex_str: &str) -> [u8; N] {
     hex::decode(hex_str).expect("valid hex").try_into().expect("expected length")
 }
 
-fn material() -> KeyMaterial<KEY_LEN> {
-    KeyMaterial::<KEY_LEN>::from_bytes_as_type(&bytes::<KEY_LEN>(KEY), KeyType::SymmetricCipherKey)
-        .expect("a valid symmetric cipher key")
+fn permutation() -> SM4Internal {
+    let material = KeyMaterial::<KEY_LEN>::from_bytes_as_type(
+        &bytes::<KEY_LEN>(KEY),
+        KeyType::SymmetricCipherKey,
+    )
+    .expect("a valid symmetric cipher key");
+    SM4Internal::new(&material).expect("a valid SM4 key")
 }
 
 #[test]
 fn a_1_sm4_gcm() {
-    let key = SM4Key::<GCM>::from_key_material(&material()).unwrap();
+    let state = <GCM as Mode<SM4Internal>>::key_state(permutation());
     let nonce: [u8; 12] = bytes(NONCE);
     let aad: [u8; 20] = bytes(AAD);
 
     let mut buf: [u8; 64] = bytes(PLAINTEXT);
-    let tag = key.encrypt_detached_in_place_nonce(&nonce, &aad, &mut buf).expect("encryption");
+    let tag = <GCM as AeadEncryptMode<SM4Internal, KEY_LEN, 12, 16, 16>>::encrypt_detached_in_place_nonce(
+        &state, &nonce, &aad, &mut buf,
+    )
+    .expect("encryption");
     assert_eq!(buf, bytes::<64>(GCM_CT), "A.1 ciphertext");
     assert_eq!(tag, bytes::<16>(GCM_TAG), "A.1 tag");
 
-    key.decrypt_detached_in_place(&nonce, &aad, &mut buf, &tag).expect("decryption");
+    let decrypt =
+        <GCM as AeadDecryptMode<SM4Internal, KEY_LEN, 12, 16, 16>>::decrypt_detached_in_place;
+    decrypt(&state, &nonce, &aad, &mut buf, &tag).expect("decryption");
     assert_eq!(buf, bytes::<64>(PLAINTEXT), "A.1 plaintext back");
 
     let mut tampered = tag;
     tampered[0] ^= 1;
-    assert!(key.decrypt_detached_in_place(&nonce, &aad, &mut buf, &tampered).is_err());
+    assert!(decrypt(&state, &nonce, &aad, &mut buf, &tampered).is_err());
 }
 
 #[test]
 fn a_2_sm4_ccm() {
-    let key = SM4Key::<CCM<12, 16>>::from_key_material(&material()).unwrap();
+    let state = <Sm4Ccm as Mode<SM4Internal>>::key_state(permutation());
     let nonce: [u8; 12] = bytes(NONCE);
     let aad: [u8; 20] = bytes(AAD);
 
     let mut buf: [u8; 64] = bytes(PLAINTEXT);
-    let tag = key.encrypt_detached_in_place_nonce(&nonce, &aad, &mut buf).expect("encryption");
+    let tag = <Sm4Ccm as AeadDeclaredEncryptMode<SM4Internal, KEY_LEN, 12, 16, 16>>::encrypt_detached_in_place_nonce(
+        &state, &nonce, &aad, &mut buf,
+    )
+    .expect("encryption");
     assert_eq!(buf, bytes::<64>(CCM_CT), "A.2 ciphertext");
     assert_eq!(tag, bytes::<16>(CCM_TAG), "A.2 tag");
 
-    key.decrypt_detached_in_place(&nonce, &aad, &mut buf, &tag).expect("decryption");
+    let decrypt =
+        <Sm4Ccm as AeadDeclaredDecryptMode<SM4Internal, KEY_LEN, 12, 16, 16>>::decrypt_detached_in_place;
+    decrypt(&state, &nonce, &aad, &mut buf, &tag).expect("decryption");
     assert_eq!(buf, bytes::<64>(PLAINTEXT), "A.2 plaintext back");
 
     let mut tampered = tag;
     tampered[0] ^= 1;
-    assert!(key.decrypt_detached_in_place(&nonce, &aad, &mut buf, &tampered).is_err());
+    assert!(decrypt(&state, &nonce, &aad, &mut buf, &tampered).is_err());
 }
