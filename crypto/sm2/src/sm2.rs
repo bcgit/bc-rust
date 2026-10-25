@@ -1,14 +1,16 @@
-//! `SM2`: `draft-shen-sm2-ecdsa-02` §5.1 (signature generation) and §5.2 (verification), the actual
-//! SM2 Digital Signature Algorithm -- distinct from ECDSA, despite both being built on Weierstrass
-//! elliptic-curve arithmetic: SM2's signing equation `s = (1+dA)^-1 * (k - r*dA) mod n` and its
-//! identity-binding `ZA` digest (see [`crate::za`]) have no ECDSA equivalent. Fixed to SM3 (the
-//! draft's own hash, §5's worked example and every citation of "the cryptographic hash function"
-//! throughout use SM3; `draft-shen-sm2-ecdsa-02` does not sanction substituting another hash).
+//! `SM2`: GB/T 32918.2-2016 §6.1 (signature generation) and §7.1 (verification), the draft's §5.2
+//! and §5.3 -- the actual SM2 Digital Signature Algorithm, distinct from ECDSA despite both being
+//! built on Weierstrass elliptic-curve arithmetic: SM2's signing equation `s = (1+dA)^-1 * (k -
+//! r*dA) mod n` and its identity-binding `ZA` digest (see [`crate::za`]) have no ECDSA
+//! equivalent. Fixed to SM3: GB/T 32918.2-2016 §5.4.2 (the draft's §5.1.4.2) admits any approved
+//! hash "such as SM3", but SM3 is what the standard's own Appendix A example, the draft's, and
+//! every deployed implementation use, so no other hash is offered.
 //!
 //! # `ctx` carries the signer's identity `IDA`
 //!
-//! Every operation here (§5.1 step 1 / §5.2 step 1) needs `IDA`, the signer's identity octet
-//! string, to compute `ZA`. [`bouncycastle_core::traits::Signer::sign`]'s own documentation sanctions using
+//! Every operation here (`ZA` is prepended to the message in §6.1 step A1 / §7.1 step B3) needs
+//! `IDA`, the signer's identity octet string (§5.5), to compute `ZA`.
+//! [`bouncycastle_core::traits::Signer::sign`]'s own documentation sanctions using
 //! `ctx` "in a non-standard way" when a primitive doesn't natively support a context-binding value
 //! the way the trait envisions: this crate treats `ctx: Option<&[u8]>` as literally `IDA`, and
 //! returns [`SignatureError::GenericError`] if `ctx` is `None` -- there is no default identity in
@@ -17,8 +19,9 @@
 //!
 //! # Randomness, not determinism
 //!
-//! The draft's §5.1.3 step A3 says only to "pick a random number `k`... using a random number
-//! generator"; there is no SM2 analogue of RFC 6979 in this draft, so (unlike every curve in
+//! GB/T 32918.2-2016 §6.1 step A3 says only to produce `k` in `[1, n-1]` with a random number
+//! generator (the draft's §5.2.1: "pick a random number `k`... using a random number
+//! generator"); there is no SM2 analogue of RFC 6979 in either, so (unlike every curve in
 //! `bouncycastle-ecdsa`) there is no deterministic default here. [`bouncycastle_core::traits::Signer`]'s
 //! own docs say its trait is "assumed to source all its randomness from bouncycastle's default
 //! os-backed RNG", so [`Signer::sign`]/[`Signer::do_sign_final`] do exactly that (via [`bouncycastle_rng::DefaultRNG`]);
@@ -32,16 +35,16 @@
 //! draw a new `k`. Matching every curve's `sign_with_k` in `bouncycastle-ecdsa` (which returns `Err`
 //! with a "regenerate k and retry" message rather than looping internally), this crate does the
 //! same rather than retrying in a loop -- a deliberate consistency choice with this workspace's
-//! established pattern, not mandated by the draft itself.
+//! established pattern, not mandated by the standard itself.
 //!
 //! # No DER encoding
 //!
-//! The draft has no ASN.1/DER encoding for `(r, s)`; [`SIG_LEN`] is raw `r || s`, 64 bytes, each a
+//! GB/T 32918.2-2016 has no ASN.1/DER encoding for `(r, s)`; [`SIG_LEN`] is raw `r || s`, 64 bytes, each a
 //! 32-byte big-endian integer -- the same convention `bouncycastle-ecdsa` uses as its own default.
 //!
 //! # Extracting `x1` from a secret-derived `[k]G`
 //!
-//! `[k]G` (§5.1.3 step A4) is Jacobian-coordinate output of a *secret* scalar multiplication, so
+//! `[k]G` (§6.1 step A4) is Jacobian-coordinate output of a *secret* scalar multiplication, so
 //! converting it to affine cannot use [`Sm2JacobianPoint::to_affine`] -- that function's own docs
 //! say it branches on infinity and is "not for use on a secret intermediate value".
 //! [`x_affine_of_signing_point`] instead always computes `X * Z^-2`, branch-free; see its docs for
@@ -73,14 +76,14 @@ pub const SIG_LEN: usize = 64;
 /// `bouncycastle-ecdsa`'s curves, the hash absorbed here already has `ZA` prepended by
 /// [`Signer::do_sign_init`]/[`SignatureVerifier::do_verify_init`], so a later [`Signer::do_sign_final`]/
 /// [`SignatureVerifier::do_verify_final`] need only finish hashing `M` to get `e = SM3(ZA || M)`
-/// (`draft-shen-sm2-ecdsa-02` §5.1.3 step 1 / §5.2.3 step 1).
+/// (GB/T 32918.2-2016 §6.1 steps A1-A2 / §7.1 steps B3-B4).
 pub struct SM2 {
     hash: SM3,
     sk: Option<SM2PrivateKey>,
     pk: Option<SM2PublicKey>,
 }
 
-/// `e` from the (already `ZA`-prefixed) running hash, per §5.1.3 step 1 / §5.2.3 step 1.
+/// `e` from the (already `ZA`-prefixed) running hash, per §6.1 step A2 / §7.1 step B4.
 fn e_from_hash(hash: SM3) -> Sm2ScalarField {
     let mut e_bytes = [0u8; 32];
     hash.do_final_out(&mut e_bytes);
@@ -102,7 +105,7 @@ fn x_affine_of_signing_point(point: &Sm2JacobianPoint) -> Sm2FieldElement {
     point.x.mul(&z_inv.mul(&z_inv))
 }
 
-/// §5.1.3 steps A4-A7, given `k` already generated (step A3) by one of `SM2`'s randomised methods.
+/// §6.1 steps A4-A7, given `k` already generated (step A3) by one of `SM2`'s randomised methods.
 /// Returns `Err` for step A5's `r = 0`/`r + k = n` or step A6's `s = 0` -- see the module docs on
 /// this crate's retry convention.
 fn sign_with_k(
@@ -157,7 +160,7 @@ fn sign_with_k(
     Ok(sig) // step A7
 }
 
-/// §5.1.3 step A5's `r = 0` or `r + k = n` check, named so it has something to unit test directly:
+/// §6.1 step A5's `r = 0` or `r + k = n` check, named so it has something to unit test directly:
 /// reaching either branch through `sign_with_k` needs an `r`/`r + k` value that is astronomically
 /// unlikely for any real `k`/`e` (see `sign_with_k`'s call site).
 fn r_is_zero_or_r_plus_k_is_zero(r: &Sm2ScalarField, r_plus_k: &Sm2ScalarField) -> bool {
@@ -165,7 +168,7 @@ fn r_is_zero_or_r_plus_k_is_zero(r: &Sm2ScalarField, r_plus_k: &Sm2ScalarField) 
 }
 
 impl SM2 {
-    /// §5.1 with `k` drawn from the caller-provided RNG -- an additional capability alongside
+    /// §6.1 with `k` drawn from the caller-provided RNG -- an additional capability alongside
     /// [`Signer::sign`] (which sources `k` from the library's default RNG instead). See the module
     /// docs for why there is no deterministic alternative to offer here, unlike
     /// `bouncycastle-ecdsa`'s curves.
@@ -219,8 +222,8 @@ impl Signer<SM2PrivateKey, SK_LEN, SIG_LEN> for SM2 {
 
     fn do_sign_init(sk: &SM2PrivateKey, ctx: Option<&[u8]>) -> Result<Self, SignatureError> {
         let id = ctx.ok_or(SignatureError::GenericError(
-            "SM2 requires ctx to carry the signer's identity IDA (draft-shen-sm2-ecdsa-02 S5.1.2); \
-             see bouncycastle-sm2's crate docs",
+            "SM2 requires ctx to carry the signer's identity IDA (GB/T 32918.2-2016 S5.5); see \
+             bouncycastle-sm2's crate docs",
         ))?;
         // PA is carried by the key, not recomputed: see SM2PrivateKey's docs.
         let (x, y) = sk.derive_pk().affine();
@@ -272,8 +275,8 @@ impl SignatureVerifier<SM2PublicKey, PK_LEN, SIG_LEN> for SM2 {
 
     fn do_verify_init(pk: &SM2PublicKey, ctx: Option<&[u8]>) -> Result<Self, SignatureError> {
         let id = ctx.ok_or(SignatureError::GenericError(
-            "SM2 requires ctx to carry the signer's identity IDA (draft-shen-sm2-ecdsa-02 S5.2.2); \
-             see bouncycastle-sm2's crate docs",
+            "SM2 requires ctx to carry the signer's identity IDA (GB/T 32918.2-2016 S5.5); see \
+             bouncycastle-sm2's crate docs",
         ))?;
         let (x, y) = pk.affine();
         let za = za::compute(id, &x, &y)?;
@@ -302,7 +305,7 @@ impl SignatureVerifier<SM2PublicKey, PK_LEN, SIG_LEN> for SM2 {
             return Err(SignatureError::SignatureVerificationFailed);
         }
 
-        // step B1: r', s' in [1, n-1], rejected (not reduced) if out of range.
+        // steps B1-B2: r', s' in [1, n-1], rejected (not reduced) if out of range.
         let r_limbs = sm2_sec1::limbs_from_be_bytes(&sig[..32].try_into().unwrap());
         let s_limbs = sm2_sec1::limbs_from_be_bytes(&sig[32..64].try_into().unwrap());
         if either_out_of_range(&r_limbs, &s_limbs) {
@@ -311,9 +314,9 @@ impl SignatureVerifier<SM2PublicKey, PK_LEN, SIG_LEN> for SM2 {
         let r = Sm2ScalarField::from_limbs(r_limbs);
         let s = Sm2ScalarField::from_limbs(s_limbs);
 
-        let e = e_from_hash(self.hash); // steps B2-B3
+        let e = e_from_hash(self.hash); // steps B3-B4
 
-        let t = r.add(&s); // step B4
+        let t = r.add(&s); // step B5
         if t == Sm2ScalarField::ZERO {
             return Err(SignatureError::SignatureVerificationFailed);
         }
@@ -321,20 +324,20 @@ impl SignatureVerifier<SM2PublicKey, PK_LEN, SIG_LEN> for SM2 {
         let q = Sm2JacobianPoint::from_affine(pk.x, pk.y);
         let s_pub = Sm2PublicScalar::from_limbs(s.to_limbs());
         let t_pub = Sm2PublicScalar::from_limbs(t.to_limbs());
-        let point = shamir_multiply(&s_pub, &t_pub, &q); // step B5
+        let point = shamir_multiply(&s_pub, &t_pub, &q); // step B6
 
         if point.is_infinity().to_bool() {
             return Err(SignatureError::SignatureVerificationFailed);
         }
         let (x1, _) = point.to_affine().expect("just checked point is not the point at infinity");
-        let r1 = e.add(&Sm2ScalarField::from_limbs(x1.to_limbs())); // step B6
+        let r1 = e.add(&Sm2ScalarField::from_limbs(x1.to_limbs())); // step B7's R
 
         if r1 == r { Ok(()) } else { Err(SignatureError::SignatureVerificationFailed) } // step B7
     }
 }
 
-/// `true` iff `limbs`, read as a big-endian-decoded integer, is in `[1, n-1]` -- §5.2.2 step B1's
-/// range check on `r'` and `s'`. On public signature data, so plain (not branch-free).
+/// `true` iff `limbs`, read as a big-endian-decoded integer, is in `[1, n-1]` -- §7.1 steps
+/// B1-B2's range check on `r'` and `s'`. On public signature data, so plain (not branch-free).
 fn in_range(limbs: &[u64; 4]) -> bool {
     if *limbs == [0, 0, 0, 0] {
         return false;
@@ -343,7 +346,7 @@ fn in_range(limbs: &[u64; 4]) -> bool {
     borrow == 1
 }
 
-/// `true` iff either `r'` or `s'` is outside `[1, n-1]` -- §5.2.2 step B1's range check, named so
+/// `true` iff either `r'` or `s'` is outside `[1, n-1]` -- §7.1 steps B1-B2's range check, named so
 /// the OR-of-two-checks combination has something to unit test directly (mirroring
 /// `bouncycastle_ec::sm2_sec1::either_out_of_range`'s own naming and reasoning).
 fn either_out_of_range(r_limbs: &[u64; 4], s_limbs: &[u64; 4]) -> bool {

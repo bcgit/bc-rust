@@ -1,5 +1,7 @@
 //! The SM2 scalar field, arithmetic mod the curve order `n` (`draft-shen-sm2-ecdsa-02` Appendix
-//! D), needed for `k⁻¹` and `s = k⁻¹(e + rd) mod n` in ECDSA-shaped signing.
+//! D), for SM2 signing's `r = e + x1` and `s = (1 + dA)^-1 (k - r dA) mod n` (GB/T 32918.2-2016
+//! §6.1 steps A5-A6, with `(1 + dA)^-1` inverted once per key) and verification's `t = r' + s'`
+//! (§7.1 step B5). SM2 has no `k^-1`.
 //!
 //! Unlike `p`, `n` is not a Solinas prime -- there is no special shape to exploit for reduction --
 //! so this uses Montgomery arithmetic instead: [`Sm2ScalarField`] holds its value as `x*R mod n`
@@ -126,13 +128,13 @@ impl Sm2ScalarField {
 
     /// Overwrites this value with zero, through a write the compiler may not elide.
     ///
-    /// For the signing path, where a value of this type holds `d`, `k` or `k^-1` and would
+    /// For the signing path, where a value of this type holds `d`, `k` or `(1 + d)^-1` and would
     /// otherwise stay legible on the stack after the signature is returned. This type is `Copy`
-    /// and carries public values too (verification's `u`, `v`, `e`, `r`, `s`), so it is not
+    /// and carries public values too (verification's `e`, `r'`, `s'`, `t`), so it is not
     /// wrapped in [`bouncycastle_utils::secret::Secret`] -- that would cost its `Copy`, its `const
     /// ZERO`/`ONE`, and a scrub on every intermediate including the public ones. The trade is that
     /// scrubbing is the caller's job, on every path out of the function; see
-    /// `bouncycastle_ecdsa`'s `sign_with_k` for the intended use.
+    /// `bouncycastle_sm2`'s `sign_with_k` for the intended use.
     ///
     /// This does not reach values the compiler kept in registers or spilled itself, and is
     /// defence in depth rather than a guarantee.
@@ -143,19 +145,16 @@ impl Sm2ScalarField {
     /// `self^2`, via a dedicated squaring rather than `self.mul(self)` -- see
     /// [`widening_square`].
     ///
-    /// Used by the exponentiation loops ([`Self::invert`] and friends), which call it hundreds of
-    /// times in a row with nothing else competing for registers. Deliberately *not* used by this
-    /// curve's point arithmetic, which squares by calling `mul` with equal arguments: that was
-    /// tried and measured on P-256, and despite `square` being ~9% cheaper than `mul` in
-    /// isolation it made the constant-time comb multiplier consistently slower, because inlining
-    /// a third wide-multiply routine into that loop costs more than the saved partial products
-    /// return. See [`crate::p256::P256FieldElement::square`] for the numbers.
+    /// Used only by [`Self::invert`]'s exponentiation loop, which calls it hundreds of times in
+    /// a row with nothing else competing for registers. (The point arithmetic is on the base
+    /// field, whose own `square` is likewise kept out of it; see
+    /// [`crate::p256::P256FieldElement::square`] for the measurements behind that.)
     pub fn square(&self) -> Self {
         Self(redc(&widening_square(&self.0)))
     }
 
-    /// Converts a secret scalar (`d` or `k`) into Montgomery form for field arithmetic (`k⁻¹`, `r*d`,
-    /// ...). Reads the secret's limbs once into a plain value, the same "protects storage, not
+    /// Converts a secret scalar (`d` or `k`) into Montgomery form for field arithmetic (`r*d`,
+    /// `k - r*d`, ...). Reads the secret's limbs once into a plain value, the same "protects storage, not
     /// every derived computation" boundary [`crate::sm2_comb::comb_multiply_base_point`] already
     /// crosses to read `k`'s bits.
     pub fn from_secret(secret: &Sm2Scalar) -> Self {
@@ -386,7 +385,7 @@ impl Sm2Scalar {
         Self::from_limbs(crate::sm2_sec1::limbs_from_be_bytes(bytes))
     }
 
-    /// Encodes to SEC 1 §2.3.7 big-endian octets -- the wire form of an ECDSA private key.
+    /// Encodes to SEC 1 §2.3.7 big-endian octets -- the wire form of an SM2 private key.
     /// Momentarily holds the plain value in the returned array, same as any other `encode()` on a
     /// `SignaturePrivateKey`: the caller asked for the bytes.
     pub fn to_be_bytes(&self) -> [u8; 32] {
@@ -402,9 +401,9 @@ impl Sm2Scalar {
 }
 
 /// A scalar mod `n`, `< n`, held as a plain (non-secret) value -- for a value that is public by
-/// construction: the `u`, `v` scalars ECDSA verification computes from a signature and public
-/// data, or a message-derived value. See [`Sm2Scalar`]'s docs for why there is no conversion the
-/// other way.
+/// construction: the `s'` and `t = r' + s'` scalars SM2 verification computes from a signature
+/// and public data, or a message-derived value. See [`Sm2Scalar`]'s docs for why there is no
+/// conversion the other way.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Sm2PublicScalar([u64; 4]);
 
@@ -420,10 +419,11 @@ impl Sm2PublicScalar {
     }
 
     /// `self^-1 mod n` in **variable time**, as a [`Sm2ScalarField`] ready for the arithmetic
-    /// that follows, or `0` for `0`. For ECDSA verification's `s` (FIPS 186-5 §6.4.2 step 4),
-    /// which is part of the signature and so already public; nothing derived from a private key
-    /// or a per-message secret may reach this, which is why it lives on the public scalar type
-    /// and not on [`Sm2ScalarField`], whose `invert` is the constant-time one. See
+    /// that follows, or `0` for `0`. SM2 verification (GB/T 32918.2-2016 §7.1) inverts nothing,
+    /// so `bouncycastle-sm2` never calls this; it is kept for parity with the ECDSA curves'
+    /// public scalar types, for a value that is public by construction. Nothing derived from a
+    /// private key or a per-message secret may reach this, which is why it lives on the public
+    /// scalar type and not on [`Sm2ScalarField`], whose `invert` is the constant-time one. See
     /// [`crate::inverse_vartime`].
     pub fn invert_vartime(&self) -> Sm2ScalarField {
         Sm2ScalarField::from_limbs(crate::inverse_vartime::mod_inverse(&self.0, &N_LIMBS))

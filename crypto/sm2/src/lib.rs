@@ -1,9 +1,9 @@
 //! SM2: the Chinese national-standard elliptic-curve Digital Signature Algorithm (GB/T
-//! 32918.2-2016, mirrored by the IETF informational draft `draft-shen-sm2-ecdsa-02`). This crate
-//! implements only the Digital Signature Algorithm ([`sm2`]'s §5) -- key generation ([`keys`]) and
-//! signing/verification ([`sm2::SM2`]) -- built on [`bouncycastle_ec::sm2`]'s field/scalar/point
-//! arithmetic, SEC 1 encoding, and comb/wNAF multipliers, and [`bouncycastle_sm3`] for the hash the
-//! draft mandates throughout.
+//! 32918.2-2016, mirrored by the IETF informational draft `draft-shen-sm2-ecdsa-02`, whose §5
+//! is the same algorithm). This crate implements only the Digital Signature Algorithm -- key
+//! generation ([`keys`]) and signing/verification ([`sm2::SM2`]) -- built on
+//! [`bouncycastle_ec::sm2`]'s field/scalar/point arithmetic, SEC 1 encoding, and comb/wNAF
+//! multipliers, and [`bouncycastle_sm3`] for the hash (see [`sm2`]'s docs on why only SM3).
 //!
 //! # Scope
 //!
@@ -15,8 +15,9 @@
 //!
 //! # `ctx` carries the signer's identity
 //!
-//! Every SM2 signing/verification operation needs the signer's identity octet string `IDA` (the
-//! draft's §5.1.2/§5.2.2 step 1). This crate repurposes [`bouncycastle_core::traits::Signer`]'s
+//! Every SM2 signing/verification operation needs the signer's identity octet string `IDA`, which
+//! `ZA` binds into the hash (GB/T 32918.2-2016 §5.5; the draft's §5.1.4.4). This crate
+//! repurposes [`bouncycastle_core::traits::Signer`]'s
 //! `ctx` parameter to carry it -- see [`sm2`]'s module docs for the full reasoning and the
 //! resulting requirement that `ctx` must be `Some`.
 //!
@@ -119,7 +120,7 @@
 //! - **`k` must never repeat across two signatures under the same key with different messages.** As
 //!   with ECDSA, a repeated `k` leaks `dA` directly from two signatures' `(r, s)` pairs. Unlike
 //!   `bouncycastle-ecdsa`'s curves, there is no deterministic (RFC 6979-style) default here: the
-//!   draft only specifies randomised `k` generation (§5.1.3 step A3), so
+//!   standard only specifies randomised `k` generation (GB/T 32918.2-2016 §6.1 step A3), so
 //!   [`bouncycastle_core::traits::Signer::sign`] sources `k` from the library's default OS-backed
 //!   RNG on every call -- see [`sm2`]'s module docs.
 
