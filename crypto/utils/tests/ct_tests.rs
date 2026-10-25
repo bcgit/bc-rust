@@ -126,6 +126,15 @@ mod unsigned_u64_tests {
     }
 
     #[test]
+    fn and() {
+        let (t, f) = (Condition::<u64>::TRUE, Condition::<u64>::FALSE);
+        assert_canonical(t.and(t), true);
+        assert_canonical(t.and(f), false);
+        assert_canonical(f.and(t), false);
+        assert_canonical(f.and(f), false);
+    }
+
+    #[test]
     fn from_bool() {
         assert_canonical(Condition::<u64>::from_bool_const::<true>(), true);
         assert_canonical(Condition::<u64>::from_bool_const::<false>(), false);
@@ -272,6 +281,15 @@ mod unsigned_u32_tests {
     fn consts() {
         assert_canonical(Condition::<u32>::TRUE, true);
         assert_canonical(Condition::<u32>::FALSE, false);
+    }
+
+    #[test]
+    fn and() {
+        let (t, f) = (Condition::<u32>::TRUE, Condition::<u32>::FALSE);
+        assert_canonical(t.and(t), true);
+        assert_canonical(t.and(f), false);
+        assert_canonical(f.and(t), false);
+        assert_canonical(f.and(f), false);
     }
 
     #[test]

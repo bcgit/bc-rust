@@ -7,6 +7,7 @@ use crate::mlkem::{N, q};
 use crate::params::MLKEMParams;
 use crate::polynomial;
 use crate::polynomial::Polynomial;
+use bouncycastle_utils::ct::Condition;
 use bouncycastle_utils::secret::ZeroizablePrimitive;
 
 /// The operations this crate performs on a vector of polynomials, i.e. on an element of 𝑅^LEN.
@@ -157,6 +158,9 @@ impl<const k: usize> IndexMut<usize> for Vector<k> {
 
 impl<const k: usize> ZeroizablePrimitive for Vector<k> {
     const ZEROED: Self = Self::new();
+    fn ct_eq(&self, other: &Self) -> Condition<u32> {
+        self.elems.ct_eq(&other.elems)
+    }
 }
 
 impl<const k: usize> Vector<k> {

@@ -8,6 +8,7 @@ mod test_secret {
     use std::fmt::Formatter;
     use std::format;
 
+    use bouncycastle_utils::ct::Condition;
     use bouncycastle_utils::secret::{Secret, ZeroizablePrimitive};
 
     #[test]
@@ -127,6 +128,9 @@ mod test_secret {
         // So that it's valid for Secret<T: ZeroizablePrimitive>
         impl ZeroizablePrimitive for Thing {
             const ZEROED: Self = Self { value: 0 };
+            fn ct_eq(&self, other: &Self) -> Condition<u32> {
+                self.value.ct_eq(&other.value)
+            }
         }
 
         // Thing can be debugged and displayed with the inner value
@@ -143,6 +147,13 @@ mod test_secret {
 
         assert!(format!("{:?}", secret_thing).contains("<redacted>"));
         assert!(!format!("{:?}", secret_thing).contains("42"));
+
+        // Equality goes through Thing's `ct_eq`.
+        let mut same_thing = Secret::<Thing>::new();
+        same_thing.value = 42;
+        assert!(secret_thing == same_thing);
+        same_thing.value = 41;
+        assert!(secret_thing != same_thing);
 
         // still behaves properly after zeroization
         secret_thing.zeroize();
@@ -199,6 +210,101 @@ mod test_secret {
         k2[15] = 0x42;
         k2[0] = 0x43; // flip only the first byte
         assert_ne!(k1, k2);
+    }
+
+    /// `Secret`s holding `a` and `b`, compared.
+    fn secrets_equal<T: ZeroizablePrimitive>(a: T, b: T) -> bool {
+        let mut sa = Secret::<T>::new();
+        *sa = a;
+        let mut sb = Secret::<T>::new();
+        *sb = b;
+        sa == sb
+    }
+
+    /// Every integer width compares its whole value: a difference in only the lowest or only the
+    /// highest bit is seen.
+    #[test]
+    fn eq_every_integer_width() {
+        assert!(secrets_equal(0xA5u8, 0xA5));
+        assert!(!secrets_equal(0xA5u8, 0xA4));
+        assert!(!secrets_equal(0x25u8, 0xA5));
+        assert!(secrets_equal(0xA5A5u16, 0xA5A5));
+        assert!(!secrets_equal(0xA5A5u16, 0xA5A4));
+        assert!(!secrets_equal(0x25A5u16, 0xA5A5));
+        assert!(secrets_equal(0xA5A5_A5A5u32, 0xA5A5_A5A5));
+        assert!(!secrets_equal(0xA5A5_A5A5u32, 0xA5A5_A5A4));
+        assert!(!secrets_equal(0x25A5_A5A5u32, 0xA5A5_A5A5));
+        assert!(secrets_equal(u64::MAX, u64::MAX));
+        assert!(!secrets_equal(u64::MAX, u64::MAX - 1));
+        assert!(!secrets_equal(u64::MAX >> 1, u64::MAX));
+        assert!(secrets_equal(u128::MAX, u128::MAX));
+        assert!(!secrets_equal(u128::MAX, u128::MAX - 1));
+        assert!(!secrets_equal(u128::MAX >> 1, u128::MAX));
+        assert!(secrets_equal(usize::MAX, usize::MAX));
+        assert!(!secrets_equal(usize::MAX, usize::MAX - 1));
+        assert!(!secrets_equal(usize::MAX >> 1, usize::MAX));
+        assert!(secrets_equal(-1i8, -1));
+        assert!(!secrets_equal(-1i8, -2));
+        assert!(!secrets_equal(i8::MAX, -1));
+        assert!(secrets_equal(-1i16, -1));
+        assert!(!secrets_equal(-1i16, -2));
+        assert!(!secrets_equal(i16::MAX, -1));
+        assert!(secrets_equal(-1i32, -1));
+        assert!(!secrets_equal(-1i32, -2));
+        assert!(!secrets_equal(i32::MAX, -1));
+        assert!(secrets_equal(-1i64, -1));
+        assert!(!secrets_equal(-1i64, -2));
+        assert!(!secrets_equal(i64::MAX, -1));
+        assert!(secrets_equal(-1i128, -1));
+        assert!(!secrets_equal(-1i128, -2));
+        assert!(!secrets_equal(i128::MAX, -1));
+        assert!(secrets_equal(-1isize, -1));
+        assert!(!secrets_equal(-1isize, -2));
+        assert!(!secrets_equal(isize::MAX, -1));
+    }
+
+    #[test]
+    fn eq_bool_and_char() {
+        assert!(secrets_equal(true, true));
+        assert!(secrets_equal(false, false));
+        assert!(!secrets_equal(true, false));
+        assert!(secrets_equal('é', 'é'));
+        assert!(!secrets_equal('é', 'e'));
+        // Differ only above the low byte.
+        assert!(!secrets_equal('\u{0141}', '\u{0041}'));
+    }
+
+    /// An array compares every element: a difference in only the first or only the last element is
+    /// seen, which an early return on the first element or a loop that stops short would miss.
+    #[test]
+    fn eq_arrays_visit_every_element() {
+        let base = [0x1111_2222_3333_4444u64; 4];
+        assert!(secrets_equal(base, base));
+        let mut first = base;
+        first[0] ^= 1 << 63;
+        assert!(!secrets_equal(base, first));
+        let mut last = base;
+        last[3] ^= 1;
+        assert!(!secrets_equal(base, last));
+
+        // Nested arrays recurse through the element type's `ct_eq`.
+        let nested = [[0x5Au8; 3]; 2];
+        assert!(secrets_equal(nested, nested));
+        let mut nested_last = nested;
+        nested_last[1][2] = 0x5B;
+        assert!(!secrets_equal(nested, nested_last));
+
+        // The empty array is equal to itself.
+        assert!(secrets_equal([0u32; 0], [0u32; 0]));
+    }
+
+    /// `ct_eq` itself returns the all-ones mask for equal values and the zero mask otherwise.
+    #[test]
+    fn ct_eq_mask_values() {
+        assert!([1u32, 2, 3].ct_eq(&[1, 2, 3]).to_bool());
+        assert!(![1u32, 2, 3].ct_eq(&[1, 2, 4]).to_bool());
+        assert!(7u16.ct_eq(&7).to_bool());
+        assert!(!7u16.ct_eq(&8).to_bool());
     }
 
     /// The Secret wrapper does not add any memory overhead.

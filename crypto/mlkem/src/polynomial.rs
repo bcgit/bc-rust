@@ -1,5 +1,7 @@
 //! Represents a polynomial over the ML-KEM ring.
 
+use bouncycastle_utils::ct::Condition;
+use bouncycastle_utils::secret::ZeroizablePrimitive;
 use core::ops::{Index, IndexMut};
 
 use crate::aux_functions::{
@@ -34,6 +36,14 @@ impl Index<usize> for Polynomial {
 impl IndexMut<usize> for Polynomial {
     fn index_mut(&mut self, index: usize) -> &mut Self::Output {
         &mut self.coeffs[index]
+    }
+}
+
+// So that a `Vector` can compare its polynomials through the array impl of `ct_eq`.
+impl ZeroizablePrimitive for Polynomial {
+    const ZEROED: Self = Self::new();
+    fn ct_eq(&self, other: &Self) -> Condition<u32> {
+        self.coeffs.ct_eq(&other.coeffs)
     }
 }
 

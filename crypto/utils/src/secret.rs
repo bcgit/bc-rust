@@ -36,10 +36,9 @@
 //! library that keeps all of its secrets in stack-allocated variables, this is not a problem that
 //! needs to be solved for internal library use.
 
-use crate::ct;
+use crate::ct::{self, Condition};
 use core::any::type_name;
 use core::fmt;
-use core::mem::size_of;
 use core::ops::{Deref, DerefMut};
 use core::ptr;
 use core::sync::atomic::{Ordering, compiler_fence};
@@ -63,30 +62,131 @@ pub trait ZeroizablePrimitive: Copy + Sized {
     /// convert into a byte array and use to overwrite the memory location of the given instance of
     /// the primitive.
     const ZEROED: Self;
+
+    /// Constant-time equality: [`Condition::TRUE`] iff `self` and `other` are equal, with a
+    /// running time that does not depend on their contents. [`Secret`]'s `PartialEq` is this.
+    ///
+    /// Compare field by field (or element by element), through each field's own `ct_eq`, never by
+    /// viewing the value as bytes: that way padding between fields is never read. Visit every
+    /// field whatever the earlier ones gave, and combine with [`Condition::and`], which is `&`
+    /// through the optimisation barrier; never with `&&`, `==` or an early return.
+    fn ct_eq(&self, other: &Self) -> Condition<u32>;
 }
 
-macro_rules! impl_zero_init {
-    ($($t:ty),+ $(,)?) => {$(
-        impl ZeroizablePrimitive for $t {
-            const ZEROED: Self = 0 as $t;
-        }
-    )+};
+// The integer impls are written out per width rather than macro-generated, as in `ct.rs`:
+// `cargo mutants` cannot see into a macro body.
+
+impl ZeroizablePrimitive for u8 {
+    const ZEROED: Self = 0;
+    fn ct_eq(&self, other: &Self) -> Condition<u32> {
+        ct::ct_eq_bytes_mask(&self.to_ne_bytes(), &other.to_ne_bytes())
+    }
 }
 
-impl_zero_init!(u8, u16, u32, u64, u128, usize, i8, i16, i32, i64, i128, isize);
+impl ZeroizablePrimitive for u16 {
+    const ZEROED: Self = 0;
+    fn ct_eq(&self, other: &Self) -> Condition<u32> {
+        ct::ct_eq_bytes_mask(&self.to_ne_bytes(), &other.to_ne_bytes())
+    }
+}
+
+impl ZeroizablePrimitive for u32 {
+    const ZEROED: Self = 0;
+    fn ct_eq(&self, other: &Self) -> Condition<u32> {
+        ct::ct_eq_bytes_mask(&self.to_ne_bytes(), &other.to_ne_bytes())
+    }
+}
+
+impl ZeroizablePrimitive for u64 {
+    const ZEROED: Self = 0;
+    fn ct_eq(&self, other: &Self) -> Condition<u32> {
+        ct::ct_eq_bytes_mask(&self.to_ne_bytes(), &other.to_ne_bytes())
+    }
+}
+
+impl ZeroizablePrimitive for u128 {
+    const ZEROED: Self = 0;
+    fn ct_eq(&self, other: &Self) -> Condition<u32> {
+        ct::ct_eq_bytes_mask(&self.to_ne_bytes(), &other.to_ne_bytes())
+    }
+}
+
+impl ZeroizablePrimitive for usize {
+    const ZEROED: Self = 0;
+    fn ct_eq(&self, other: &Self) -> Condition<u32> {
+        ct::ct_eq_bytes_mask(&self.to_ne_bytes(), &other.to_ne_bytes())
+    }
+}
+
+impl ZeroizablePrimitive for i8 {
+    const ZEROED: Self = 0;
+    fn ct_eq(&self, other: &Self) -> Condition<u32> {
+        ct::ct_eq_bytes_mask(&self.to_ne_bytes(), &other.to_ne_bytes())
+    }
+}
+
+impl ZeroizablePrimitive for i16 {
+    const ZEROED: Self = 0;
+    fn ct_eq(&self, other: &Self) -> Condition<u32> {
+        ct::ct_eq_bytes_mask(&self.to_ne_bytes(), &other.to_ne_bytes())
+    }
+}
+
+impl ZeroizablePrimitive for i32 {
+    const ZEROED: Self = 0;
+    fn ct_eq(&self, other: &Self) -> Condition<u32> {
+        ct::ct_eq_bytes_mask(&self.to_ne_bytes(), &other.to_ne_bytes())
+    }
+}
+
+impl ZeroizablePrimitive for i64 {
+    const ZEROED: Self = 0;
+    fn ct_eq(&self, other: &Self) -> Condition<u32> {
+        ct::ct_eq_bytes_mask(&self.to_ne_bytes(), &other.to_ne_bytes())
+    }
+}
+
+impl ZeroizablePrimitive for i128 {
+    const ZEROED: Self = 0;
+    fn ct_eq(&self, other: &Self) -> Condition<u32> {
+        ct::ct_eq_bytes_mask(&self.to_ne_bytes(), &other.to_ne_bytes())
+    }
+}
+
+impl ZeroizablePrimitive for isize {
+    const ZEROED: Self = 0;
+    fn ct_eq(&self, other: &Self) -> Condition<u32> {
+        ct::ct_eq_bytes_mask(&self.to_ne_bytes(), &other.to_ne_bytes())
+    }
+}
 
 impl ZeroizablePrimitive for bool {
     const ZEROED: Self = false;
+    fn ct_eq(&self, other: &Self) -> Condition<u32> {
+        Condition::<u32>::is_equal(*self as u32, *other as u32)
+    }
 }
 
 impl ZeroizablePrimitive for char {
     const ZEROED: Self = '\0';
+    fn ct_eq(&self, other: &Self) -> Condition<u32> {
+        Condition::<u32>::is_equal(*self as u32, *other as u32)
+    }
 }
 
 /// Blanket impl for fixed-size arrays of any length.
 /// This is an alternative to `[T; N]: Default` which is capped at `N <= 32`.
 impl<T: ZeroizablePrimitive, const N: usize> ZeroizablePrimitive for [T; N] {
     const ZEROED: Self = [T::ZEROED; N];
+
+    /// Every element is compared, whatever the earlier ones gave.
+    fn ct_eq(&self, other: &Self) -> Condition<u32> {
+        let mut equal = Condition::<u32>::TRUE;
+        for (x, y) in self.iter().zip(other) {
+            equal = equal.and(x.ct_eq(y));
+        }
+        equal
+    }
 }
 
 /// A wrapper that holds a secret value of any primitive or fixed-size array type
@@ -164,6 +264,7 @@ impl<T: ZeroizablePrimitive, const N: usize> ZeroizablePrimitive for [T; N] {
 /// Toy Example:
 ///
 /// ```
+/// use bouncycastle_utils::ct::Condition;
 /// use bouncycastle_utils::secret::{Secret, ZeroizablePrimitive};
 ///
 /// /// Holds a system user
@@ -173,9 +274,13 @@ impl<T: ZeroizablePrimitive, const N: usize> ZeroizablePrimitive for [T; N] {
 ///     name: [u8; 64],
 /// }
 ///
-/// /// Provide the const ZEROED value for the type.
+/// /// Provide the const ZEROED value for the type, and equality field by field.
 /// impl ZeroizablePrimitive for User {
 ///     const ZEROED: Self = Self{ userid: 0i32, name: [0u8; 64] };
+///
+///     fn ct_eq(&self, other: &Self) -> Condition<u32> {
+///         self.userid.ct_eq(&other.userid).and(self.name.ct_eq(&other.name))
+///     }
 /// }
 ///
 /// /// We will tag the admins as Secret<User> to give them extra protections against
@@ -332,22 +437,11 @@ impl<T: ZeroizablePrimitive> fmt::Display for Secret<T> {
     }
 }
 
-/// Checks for equality of the secret data by casting to bytes and using a constant-time comparison.
-///
-/// Both operands are the same type `T`, so both views are exactly `size_of::<T>()` bytes and the
-/// comparison never short-circuits: it always inspects every byte, avoiding a timing side channel
-/// that would otherwise leak how many leading bytes of two secrets match.
+/// Constant-time equality of the secret data, through [`ZeroizablePrimitive::ct_eq`]: the running
+/// time does not depend on the contents or on where they first differ.
 impl<T: ZeroizablePrimitive> PartialEq for Secret<T> {
     fn eq(&self, other: &Self) -> bool {
-        let len = size_of::<T>();
-        // SAFETY: `self.0` / `other.0` are live, initialized `T` values, so the `len` bytes starting
-        // at each address lie within that single object. `u8` has alignment 1, so every byte address
-        // is well aligned, and the slices are read-only and used only within this call. `T: Copy`
-        // (via `ZeroizablePrimitive`) means there is no interior mutability or drop glue to worry
-        // about.
-        let a = unsafe { core::slice::from_raw_parts((&self.0 as *const T).cast::<u8>(), len) };
-        let b = unsafe { core::slice::from_raw_parts((&other.0 as *const T).cast::<u8>(), len) };
-        ct::ct_eq_bytes(a, b)
+        self.0.ct_eq(&other.0).to_bool()
     }
 }
 impl<T: ZeroizablePrimitive> Eq for Secret<T> {}

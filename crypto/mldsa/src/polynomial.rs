@@ -5,6 +5,7 @@ use crate::aux_functions::{
 };
 use crate::mldsa::{N, d, q};
 use crate::params::{GAMMA2_Q_MINUS_1_OVER_32, GAMMA2_Q_MINUS_1_OVER_88, MLDSAParams};
+use bouncycastle_utils::ct::Condition;
 use bouncycastle_utils::secret::ZeroizablePrimitive;
 use core::ops::{Index, IndexMut};
 
@@ -34,6 +35,14 @@ impl Index<usize> for Polynomial {
 impl IndexMut<usize> for Polynomial {
     fn index_mut(&mut self, index: usize) -> &mut Self::Output {
         &mut self.coeffs[index]
+    }
+}
+
+// So that a `Vector` can compare its polynomials through the array impl of `ct_eq`.
+impl ZeroizablePrimitive for Polynomial {
+    const ZEROED: Self = Self::new();
+    fn ct_eq(&self, other: &Self) -> Condition<u32> {
+        self.coeffs.ct_eq(&other.coeffs)
     }
 }
 

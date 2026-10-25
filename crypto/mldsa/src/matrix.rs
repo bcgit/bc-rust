@@ -6,6 +6,7 @@ use crate::mldsa::H;
 use crate::params::MLDSAParams;
 use crate::polynomial::Polynomial;
 use bouncycastle_core::traits::Hash;
+use bouncycastle_utils::ct::Condition;
 use bouncycastle_utils::secret::ZeroizablePrimitive;
 use core::ops::{Index, IndexMut};
 
@@ -173,6 +174,9 @@ impl<const LEN: usize> IndexMut<usize> for Vector<LEN> {
 
 impl<const LEN: usize> ZeroizablePrimitive for Vector<LEN> {
     const ZEROED: Self = Self::new();
+    fn ct_eq(&self, other: &Self) -> Condition<u32> {
+        self.elems.ct_eq(&other.elems)
+    }
 }
 
 impl<const LEN: usize> Vector<LEN> {

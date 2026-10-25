@@ -451,6 +451,12 @@ impl Condition<u64> {
         let t = (lhs ^ rhs) & self.barrier().0;
         (lhs ^ t, rhs ^ t)
     }
+    /// `self & other` through the optimisation barrier (section comment above). Fold a sequence of
+    /// masks with this rather than `&`, which leaves the compiler free to stop the fold once the
+    /// accumulator is FALSE.
+    pub fn and(self, other: Self) -> Self {
+        Self(value_barrier(self.0 & other.0))
+    }
     /// Convert the mask to a runtime boolean. Only use this at genuine public
     /// decision points: branching on the result leaks the condition's value.
     pub const fn to_bool(self) -> bool {
@@ -530,6 +536,12 @@ impl Condition<u32> {
         // One barrier serves both outputs: `t` is `lhs ^ rhs` under TRUE and zero under FALSE.
         let t = (lhs ^ rhs) & self.barrier().0;
         (lhs ^ t, rhs ^ t)
+    }
+    /// `self & other` through the optimisation barrier (section comment above). Fold a sequence of
+    /// masks with this rather than `&`, which leaves the compiler free to stop the fold once the
+    /// accumulator is FALSE.
+    pub fn and(self, other: Self) -> Self {
+        Self(value_barrier(self.0 & other.0))
     }
     /// Convert the mask to a runtime boolean. Only use this at genuine public
     /// decision points: branching on the result leaks the condition's value.
