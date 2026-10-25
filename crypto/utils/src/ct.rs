@@ -226,6 +226,15 @@ impl Condition<i64> {
         // branching on its constituents; it is volatile, hence this is not `const`.
         self.barrier().0 != 0
     }
+
+    /// [`to_bool`](Self::to_bool) for a public decision computed from secret inputs: the test is
+    /// made on the whole mask, and the compiler cannot split it into tests on the inputs that
+    /// built the mask.
+    pub fn to_bool_opaque(self) -> bool {
+        // The barrier (section comment above) is what stops LLVM from folding the mask away and
+        // branching on its constituents; it is volatile, hence this is not `const`.
+        self.barrier().0 != 0
+    }
 }
 
 impl Condition<i32> {
@@ -357,6 +366,15 @@ impl Condition<i32> {
         // branching on its constituents; it is volatile, hence this is not `const`.
         self.barrier().0 != 0
     }
+
+    /// [`to_bool`](Self::to_bool) for a public decision computed from secret inputs: the test is
+    /// made on the whole mask, and the compiler cannot split it into tests on the inputs that
+    /// built the mask.
+    pub fn to_bool_opaque(self) -> bool {
+        // The barrier (section comment above) is what stops LLVM from folding the mask away and
+        // branching on its constituents; it is volatile, hence this is not `const`.
+        self.barrier().0 != 0
+    }
 }
 
 // TODO: We should do Condition<u8>.
@@ -458,6 +476,15 @@ impl Condition<u64> {
         // branching on its constituents; it is volatile, hence this is not `const`.
         self.barrier().0 != 0
     }
+
+    /// [`to_bool`](Self::to_bool) for a public decision computed from secret inputs: the test is
+    /// made on the whole mask, and the compiler cannot split it into tests on the inputs that
+    /// built the mask.
+    pub fn to_bool_opaque(self) -> bool {
+        // The barrier (section comment above) is what stops LLVM from folding the mask away and
+        // branching on its constituents; it is volatile, hence this is not `const`.
+        self.barrier().0 != 0
+    }
 }
 
 impl Condition<u32> {
@@ -544,6 +571,15 @@ impl Condition<u32> {
     /// the condition's value itself must stay secret, do not convert it: keep the mask and use
     /// [`Self::select`].
     pub fn to_bool(self) -> bool {
+        // The barrier (section comment above) is what stops LLVM from folding the mask away and
+        // branching on its constituents; it is volatile, hence this is not `const`.
+        self.barrier().0 != 0
+    }
+
+    /// [`to_bool`](Self::to_bool) for a public decision computed from secret inputs: the test is
+    /// made on the whole mask, and the compiler cannot split it into tests on the inputs that
+    /// built the mask.
+    pub fn to_bool_opaque(self) -> bool {
         // The barrier (section comment above) is what stops LLVM from folding the mask away and
         // branching on its constituents; it is volatile, hence this is not `const`.
         self.barrier().0 != 0
