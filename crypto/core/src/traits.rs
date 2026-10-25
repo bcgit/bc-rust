@@ -1230,11 +1230,12 @@ pub trait BlockCipherPadding<const BLOCK_LEN: usize> {
 /// Pre-Hashed Signature Verifier is an extension to [`SignatureVerifier`] that adds functionality specific to signature
 /// primatives that can operate on a pre-hashed message instead of the full message.
 pub trait PHSignatureVerifier<
-    PK: SignaturePublicKey<PK_LEN>,
+    'pk_lifetime,
+    PK: SignaturePublicKey<PK_LEN> + 'pk_lifetime,
     const PK_LEN: usize,
     const SIG_LEN: usize,
     const PH_LEN: usize,
->: SignatureVerifier<PK, PK_LEN, SIG_LEN>
+>: SignatureVerifier<'pk_lifetime, PK, PK_LEN, SIG_LEN>
 {
     /// On success, returns Ok(())
     /// On failure, returns Err([`SignatureError::SignatureVerificationFailed`]); may also return other types of [`SignatureError`] as appropriate (such as for invalid-length inputs).
@@ -1249,13 +1250,14 @@ pub trait PHSignatureVerifier<
 /// Pre-Hashed Signer is an extension to [`Signer`] that adds functionality specific to signature
 /// primatives that can operate on a pre-hashed message instead of the full message.
 pub trait PHSigner<
+    'sk_lifetime,
     PK: SignaturePublicKey<PK_LEN>,
-    SK: SignaturePrivateKey<SK_LEN>,
+    SK: SignaturePrivateKey<SK_LEN> + 'sk_lifetime,
     const PK_LEN: usize,
     const SK_LEN: usize,
     const SIG_LEN: usize,
     const PH_LEN: usize,
->: Signer<SK, SK_LEN, SIG_LEN>
+>: Signer<'sk_lifetime, SK, SK_LEN, SIG_LEN>
 {
     /// Produce a signature for the provided pre-hashed message and context.
     ///
@@ -1380,7 +1382,8 @@ pub trait SignaturePublicKey<const PK_LEN: usize>:
 /// the fallibility of the library. This design choice could make this trait complicated to apply
 /// to a signature algorithm that do not have fixed sizes for the encodings of these objects.
 pub trait SignatureVerifier<
-    PK: SignaturePublicKey<PK_LEN>,
+    'pk_lifetime,
+    PK: SignaturePublicKey<PK_LEN> + 'pk_lifetime,
     const PK_LEN: usize,
     const SIG_LEN: usize,
 >: Sized
@@ -1390,7 +1393,8 @@ pub trait SignatureVerifier<
     fn verify(pk: &PK, msg: &[u8], ctx: Option<&[u8]>, sig: &[u8]) -> Result<(), SignatureError>;
 
     /// streaming verification API
-    fn do_verify_init(pk: &PK, ctx: Option<&[u8]>) -> Result<Self, SignatureError>;
+    /// The verifier may borrow `pk` rather than copy it, so `pk` must outlive the returned verifier.
+    fn do_verify_init(pk: &'pk_lifetime PK, ctx: Option<&[u8]>) -> Result<Self, SignatureError>;
 
     // todo: make this a AsRef<[u8]> ?
     /// Update the verifier with the next chunk of data.
@@ -1423,8 +1427,12 @@ pub trait SignatureVerifier<
 /// because this allows us to safely remove runtime checks for array lengths, which overall reduces
 /// the fallibility of the library. This design choice could make this trait complicated to apply
 /// to a signature algorithm that do not have fixed sizes for the encodings of these objects.
-pub trait Signer<SK: SignaturePrivateKey<SK_LEN>, const SK_LEN: usize, const SIG_LEN: usize>:
-    Sized
+pub trait Signer<
+    'sk_lifetime,
+    SK: SignaturePrivateKey<SK_LEN> + 'sk_lifetime,
+    const SK_LEN: usize,
+    const SIG_LEN: usize,
+>: Sized
 {
     /// Produce a signature for the provided message and context.
     /// Both the `msg` and `ctx` accept zero-length byte arrays.
@@ -1462,7 +1470,8 @@ pub trait Signer<SK: SignaturePrivateKey<SK_LEN>, const SK_LEN: usize, const SIG
 
     /* streaming signing API */
     /// Initialize a signer for streaming mode with the provided private key.
-    fn do_sign_init(sk: &SK, ctx: Option<&[u8]>) -> Result<Self, SignatureError>;
+    /// The signer may borrow `sk` rather than copy it, so `sk` must outlive the returned signer.
+    fn do_sign_init(sk: &'sk_lifetime SK, ctx: Option<&[u8]>) -> Result<Self, SignatureError>;
 
     // todo: make this a AsRef<[u8]> ?
     /// Update the signer with the next chunk of data.

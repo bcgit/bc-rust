@@ -478,7 +478,9 @@ pub(crate) type G = SHAKE128;
 /*** Pub Types ***/
 
 /// The ML-DSA-44 algorithm.
-pub type MLDSA44 = MLDSA<
+pub type MLDSA44<'sk_lifetime, 'pk_lifetime> = MLDSA<
+    'sk_lifetime,
+    'pk_lifetime,
     MLDSA44Params,
     MLDSA44PublicKey,
     MLDSA44PrivateKey,
@@ -489,7 +491,9 @@ pub type MLDSA44 = MLDSA<
 >;
 
 /// The ML-DSA-65 algorithm.
-pub type MLDSA65 = MLDSA<
+pub type MLDSA65<'sk_lifetime, 'pk_lifetime> = MLDSA<
+    'sk_lifetime,
+    'pk_lifetime,
     MLDSA65Params,
     MLDSA65PublicKey,
     MLDSA65PrivateKey,
@@ -500,7 +504,9 @@ pub type MLDSA65 = MLDSA<
 >;
 
 /// The ML-DSA-87 algorithm.
-pub type MLDSA87 = MLDSA<
+pub type MLDSA87<'sk_lifetime, 'pk_lifetime> = MLDSA<
+    'sk_lifetime,
+    'pk_lifetime,
     MLDSA87Params,
     MLDSA87PublicKey,
     MLDSA87PrivateKey,
@@ -511,6 +517,8 @@ pub type MLDSA87 = MLDSA<
 >;
 
 impl<
+    'sk_lifetime,
+    'pk_lifetime,
     P: MLDSAParams,
     PK: MLDSAPublicKeyTrait<P, PK_LEN> + MLDSAPublicKeyInternalTrait<P, PK_LEN>,
     SK: MLDSAPrivateKeyTrait<P, PK_LEN, SK_LEN, FULL_SK_LEN>
@@ -519,7 +527,7 @@ impl<
     const SK_LEN: usize,
     const FULL_SK_LEN: usize,
     const SIG_LEN: usize,
-> Algorithm for MLDSA<P, PK, SK, PK_LEN, SK_LEN, FULL_SK_LEN, SIG_LEN>
+> Algorithm for MLDSA<'sk_lifetime, 'pk_lifetime, P, PK, SK, PK_LEN, SK_LEN, FULL_SK_LEN, SIG_LEN>
 {
     const ALG_NAME: &'static str = P::ALG_NAME;
     const MAX_SECURITY_STRENGTH: SecurityStrength = P::MAX_SECURITY_STRENGTH;
@@ -529,6 +537,8 @@ impl<
 /// id-ml-dsa-65 { sigAlgs 18 } and id-ml-dsa-87 { sigAlgs 19 }. As with [`Algorithm`], the values
 /// belong to the parameter set, so one impl covers all three.
 impl<
+    'sk_lifetime,
+    'pk_lifetime,
     P: MLDSAParams,
     PK: MLDSAPublicKeyTrait<P, PK_LEN> + MLDSAPublicKeyInternalTrait<P, PK_LEN>,
     SK: MLDSAPrivateKeyTrait<P, PK_LEN, SK_LEN, FULL_SK_LEN>
@@ -537,7 +547,8 @@ impl<
     const SK_LEN: usize,
     const FULL_SK_LEN: usize,
     const SIG_LEN: usize,
-> AlgorithmOID for MLDSA<P, PK, SK, PK_LEN, SK_LEN, FULL_SK_LEN, SIG_LEN>
+> AlgorithmOID
+    for MLDSA<'sk_lifetime, 'pk_lifetime, P, PK, SK, PK_LEN, SK_LEN, FULL_SK_LEN, SIG_LEN>
 {
     const OID: &'static [u32] = P::OID;
     const OID_DER: &'static [u8] = P::OID_DER;
@@ -546,7 +557,14 @@ impl<
 /// The core internal implementation of the ML-DSA algorithm.
 /// This needs to be public for the compiler to be able to find it, but there shouldn't ever
 /// be a need to use this directly. Please use the named public types.
+///
+/// `'sk_lifetime` allows the compiler to enforce that the MLDSA signer object cannot
+/// outlive the sk that it's borrowing in [`Signer::do_sign_init`], and `'pk_lifetime` does the same
+/// for the pk borrowed in [`SignatureVerifier::do_verify_init`];
+/// the compiler infers both lifetimes, so callers never need to name them.
 pub struct MLDSA<
+    'sk_lifetime,
+    'pk_lifetime,
     P: MLDSAParams,
     PK: MLDSAPublicKeyTrait<P, PK_LEN> + MLDSAPublicKeyInternalTrait<P, PK_LEN>,
     SK: MLDSAPrivateKeyTrait<P, PK_LEN, SK_LEN, FULL_SK_LEN>
@@ -564,16 +582,18 @@ pub struct MLDSA<
     signer_rnd: Option<[u8; MLDSA_RND_LEN]>,
 
     /// only used in streaming sign operations
-    sk: Option<SK>,
+    sk: Option<&'sk_lifetime SK>,
 
     /// only used in streaming sign operations instead of sk
     seed: Option<KeyMaterial<32>>,
 
     /// only used in streaming verify operations
-    pk: Option<PK>,
+    pk: Option<&'pk_lifetime PK>,
 }
 
 impl<
+    'sk_lifetime,
+    'pk_lifetime,
     P: MLDSAParams,
     PK: MLDSAPublicKeyTrait<P, PK_LEN> + MLDSAPublicKeyInternalTrait<P, PK_LEN>,
     SK: MLDSAPrivateKeyTrait<P, PK_LEN, SK_LEN, FULL_SK_LEN>
@@ -582,7 +602,7 @@ impl<
     const SK_LEN: usize,
     const FULL_SK_LEN: usize,
     const SIG_LEN: usize,
-> MLDSA<P, PK, SK, PK_LEN, SK_LEN, FULL_SK_LEN, SIG_LEN>
+> MLDSA<'sk_lifetime, 'pk_lifetime, P, PK, SK, PK_LEN, SK_LEN, FULL_SK_LEN, SIG_LEN>
 {
     /// Performs the first step of key generation to transform the single provided seed into a set of internal intermediate seeds.
     ///
@@ -601,6 +621,8 @@ impl<
 }
 
 impl<
+    'sk_lifetime,
+    'pk_lifetime,
     P: MLDSAParams,
     PK: MLDSAPublicKeyTrait<P, PK_LEN> + MLDSAPublicKeyInternalTrait<P, PK_LEN>,
     SK: MLDSAPrivateKeyTrait<P, PK_LEN, SK_LEN, FULL_SK_LEN>
@@ -610,7 +632,7 @@ impl<
     const FULL_SK_LEN: usize,
     const SIG_LEN: usize,
 > MLDSATrait<P, PK, SK, PK_LEN, SK_LEN, FULL_SK_LEN, SIG_LEN>
-    for MLDSA<P, PK, SK, PK_LEN, SK_LEN, FULL_SK_LEN, SIG_LEN>
+    for MLDSA<'sk_lifetime, 'pk_lifetime, P, PK, SK, PK_LEN, SK_LEN, FULL_SK_LEN, SIG_LEN>
 {
     /*** Key Generation and PK / SK consistency checks ***/
 
@@ -1262,6 +1284,8 @@ pub trait MLDSATrait<
 }
 
 impl<
+    'sk_lifetime,
+    'pk_lifetime,
     P: MLDSAParams,
     PK: MLDSAPublicKeyTrait<P, PK_LEN> + MLDSAPublicKeyInternalTrait<P, PK_LEN>,
     SK: MLDSAPrivateKeyTrait<P, PK_LEN, SK_LEN, FULL_SK_LEN>
@@ -1270,7 +1294,8 @@ impl<
     const SK_LEN: usize,
     const FULL_SK_LEN: usize,
     const SIG_LEN: usize,
-> Signer<SK, SK_LEN, SIG_LEN> for MLDSA<P, PK, SK, PK_LEN, SK_LEN, FULL_SK_LEN, SIG_LEN>
+> Signer<'sk_lifetime, SK, SK_LEN, SIG_LEN>
+    for MLDSA<'sk_lifetime, 'pk_lifetime, P, PK, SK, PK_LEN, SK_LEN, FULL_SK_LEN, SIG_LEN>
 {
     fn sign(sk: &SK, msg: &[u8], ctx: Option<&[u8]>) -> Result<[u8; SIG_LEN], SignatureError> {
         let mut out = [0u8; SIG_LEN];
@@ -1293,12 +1318,12 @@ impl<
         Ok(bytes_written)
     }
 
-    fn do_sign_init(sk: &SK, ctx: Option<&[u8]>) -> Result<Self, SignatureError> {
+    fn do_sign_init(sk: &'sk_lifetime SK, ctx: Option<&[u8]>) -> Result<Self, SignatureError> {
         Ok(Self {
             _phantom: PhantomData,
             mu_builder: MuBuilder::do_init(&sk.tr(), ctx)?,
             signer_rnd: None,
-            sk: Some(sk.clone()),
+            sk: Some(sk),
             seed: None,
             pk: None,
         })
@@ -1327,10 +1352,10 @@ impl<
 
         if self.sk.is_some() {
             if self.signer_rnd.is_none() {
-                Self::sign_mu_out(&self.sk.unwrap(), &mu, output)
+                Self::sign_mu_out(self.sk.unwrap(), &mu, output)
             } else {
                 Self::sign_mu_deterministic_out(
-                    &self.sk.unwrap(),
+                    self.sk.unwrap(),
                     &mu,
                     self.signer_rnd.unwrap(),
                     output,
@@ -1352,6 +1377,8 @@ impl<
 }
 
 impl<
+    'sk_lifetime,
+    'pk_lifetime,
     P: MLDSAParams,
     PK: MLDSAPublicKeyTrait<P, PK_LEN> + MLDSAPublicKeyInternalTrait<P, PK_LEN>,
     SK: MLDSAPrivateKeyTrait<P, PK_LEN, SK_LEN, FULL_SK_LEN>
@@ -1360,8 +1387,8 @@ impl<
     const SK_LEN: usize,
     const FULL_SK_LEN: usize,
     const SIG_LEN: usize,
-> SignatureVerifier<PK, PK_LEN, SIG_LEN>
-    for MLDSA<P, PK, SK, PK_LEN, SK_LEN, FULL_SK_LEN, SIG_LEN>
+> SignatureVerifier<'pk_lifetime, PK, PK_LEN, SIG_LEN>
+    for MLDSA<'sk_lifetime, 'pk_lifetime, P, PK, SK, PK_LEN, SK_LEN, FULL_SK_LEN, SIG_LEN>
 {
     fn verify(pk: &PK, msg: &[u8], ctx: Option<&[u8]>, sig: &[u8]) -> Result<(), SignatureError> {
         let mu = MuBuilder::compute_mu(&pk.compute_tr(), msg, ctx)?;
@@ -1372,14 +1399,14 @@ impl<
         Self::verify_mu(pk, &mu, &sig.try_into().unwrap())
     }
 
-    fn do_verify_init(pk: &PK, ctx: Option<&[u8]>) -> Result<Self, SignatureError> {
+    fn do_verify_init(pk: &'pk_lifetime PK, ctx: Option<&[u8]>) -> Result<Self, SignatureError> {
         Ok(Self {
             _phantom: Default::default(),
             mu_builder: MuBuilder::do_init(&pk.compute_tr(), ctx)?,
             signer_rnd: None,
             sk: None,
             seed: None,
-            pk: Some(pk.clone()),
+            pk: Some(pk),
         })
     }
 
@@ -1399,7 +1426,7 @@ impl<
             return Err(SignatureError::LengthError("Signature value is not the correct length."));
         }
 
-        Self::verify_mu(&self.pk.unwrap(), &mu, &sig.try_into().unwrap())
+        Self::verify_mu(self.pk.unwrap(), &mu, &sig.try_into().unwrap())
     }
 }
 

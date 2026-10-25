@@ -561,7 +561,9 @@ pub(crate) type G = SHAKE128;
 /*** Pub Types ***/
 
 /// The ML-DSA-44 algorithm.
-pub type MLDSA44 = MLDSA<
+pub type MLDSA44<'sk_lifetime, 'pk_lifetime> = MLDSA<
+    'sk_lifetime,
+    'pk_lifetime,
     MLDSA44Params,
     MLDSA44PublicKey,
     MLDSA44PrivateKey,
@@ -571,7 +573,9 @@ pub type MLDSA44 = MLDSA<
 >;
 
 /// The ML-DSA-65 algorithm.
-pub type MLDSA65 = MLDSA<
+pub type MLDSA65<'sk_lifetime, 'pk_lifetime> = MLDSA<
+    'sk_lifetime,
+    'pk_lifetime,
     MLDSA65Params,
     MLDSA65PublicKey,
     MLDSA65PrivateKey,
@@ -581,7 +585,9 @@ pub type MLDSA65 = MLDSA<
 >;
 
 /// The ML-DSA-87 algorithm.
-pub type MLDSA87 = MLDSA<
+pub type MLDSA87<'sk_lifetime, 'pk_lifetime> = MLDSA<
+    'sk_lifetime,
+    'pk_lifetime,
     MLDSA87Params,
     MLDSA87PublicKey,
     MLDSA87PrivateKey,
@@ -593,13 +599,15 @@ pub type MLDSA87 = MLDSA<
 /// The name and claimed strength of an ML-DSA algorithm are properties of its parameter set, so
 /// one impl covers all three; `MLDSAParams` is sealed, so those are the only three that exist.
 impl<
+    'sk_lifetime,
+    'pk_lifetime,
     P: MLDSAParams,
     PK: MLDSAPublicKeyTrait<P, PK_LEN> + MLDSAPublicKeyInternalTrait<P, PK_LEN>,
     SK: MLDSAPrivateKeyTrait<P, SK_LEN, PK_LEN> + MLDSAPrivateKeyInternalTrait<P, SK_LEN, PK_LEN>,
     const PK_LEN: usize,
     const SK_LEN: usize,
     const SIG_LEN: usize,
-> Algorithm for MLDSA<P, PK, SK, PK_LEN, SK_LEN, SIG_LEN>
+> Algorithm for MLDSA<'sk_lifetime, 'pk_lifetime, P, PK, SK, PK_LEN, SK_LEN, SIG_LEN>
 {
     const ALG_NAME: &'static str = P::ALG_NAME;
     const MAX_SECURITY_STRENGTH: SecurityStrength = P::MAX_SECURITY_STRENGTH;
@@ -609,13 +617,15 @@ impl<
 /// id-ml-dsa-65 { sigAlgs 18 } and id-ml-dsa-87 { sigAlgs 19 }. As with [`Algorithm`], the values
 /// belong to the parameter set, so one impl covers all three.
 impl<
+    'sk_lifetime,
+    'pk_lifetime,
     P: MLDSAParams,
     PK: MLDSAPublicKeyTrait<P, PK_LEN> + MLDSAPublicKeyInternalTrait<P, PK_LEN>,
     SK: MLDSAPrivateKeyTrait<P, SK_LEN, PK_LEN> + MLDSAPrivateKeyInternalTrait<P, SK_LEN, PK_LEN>,
     const PK_LEN: usize,
     const SK_LEN: usize,
     const SIG_LEN: usize,
-> AlgorithmOID for MLDSA<P, PK, SK, PK_LEN, SK_LEN, SIG_LEN>
+> AlgorithmOID for MLDSA<'sk_lifetime, 'pk_lifetime, P, PK, SK, PK_LEN, SK_LEN, SIG_LEN>
 {
     const OID: &'static [u32] = P::OID;
     const OID_DER: &'static [u8] = P::OID_DER;
@@ -625,7 +635,14 @@ impl<
 /// This needs to be public for the compiler to be able to find it,
 /// but it shouldn't ever need to be used directly.
 /// Please use the named public types [`MLDSA44`], [`MLDSA65`], [`MLDSA87`] instead.
+///
+/// `'sk_lifetime` allows the compiler to enforce that the MLDSA signer object cannot
+/// outlive the sk that it's borrowing in [`Signer::do_sign_init`], and `'pk_lifetime` does the same
+/// for the pk borrowed in [`SignatureVerifier::do_verify_init`];
+/// the compiler infers both lifetimes, so callers never need to name them.
 pub struct MLDSA<
+    'sk_lifetime,
+    'pk_lifetime,
     P: MLDSAParams,
     PK: MLDSAPublicKeyTrait<P, PK_LEN> + MLDSAPublicKeyInternalTrait<P, PK_LEN>,
     SK: MLDSAPrivateKeyTrait<P, SK_LEN, PK_LEN> + MLDSAPrivateKeyInternalTrait<P, SK_LEN, PK_LEN>,
@@ -641,23 +658,25 @@ pub struct MLDSA<
     signer_rnd: Option<[u8; MLDSA_RND_LEN]>,
 
     /// only used in streaming sign operations
-    sk: Option<SK>,
+    sk: Option<&'sk_lifetime SK>,
 
     /// only used in streaming sign operations instead of sk
     seed: Option<KeyMaterial<32>>,
 
     /// only used in streaming verify operations
-    pk: Option<PK>,
+    pk: Option<&'pk_lifetime PK>,
 }
 
 impl<
+    'sk_lifetime,
+    'pk_lifetime,
     P: MLDSAParams,
     PK: MLDSAPublicKeyTrait<P, PK_LEN> + MLDSAPublicKeyInternalTrait<P, PK_LEN>,
     SK: MLDSAPrivateKeyTrait<P, SK_LEN, PK_LEN> + MLDSAPrivateKeyInternalTrait<P, SK_LEN, PK_LEN>,
     const PK_LEN: usize,
     const SK_LEN: usize,
     const SIG_LEN: usize,
-> MLDSA<P, PK, SK, PK_LEN, SK_LEN, SIG_LEN>
+> MLDSA<'sk_lifetime, 'pk_lifetime, P, PK, SK, PK_LEN, SK_LEN, SIG_LEN>
 {
     /// Implements Algorithm 6 of FIPS 204
     /// Note: NIST has made a special exception in the FIPS 204 FAQ that this _internal function
@@ -1050,13 +1069,16 @@ impl<
 }
 
 impl<
+    'sk_lifetime,
+    'pk_lifetime,
     P: MLDSAParams,
     PK: MLDSAPublicKeyTrait<P, PK_LEN> + MLDSAPublicKeyInternalTrait<P, PK_LEN>,
     SK: MLDSAPrivateKeyTrait<P, SK_LEN, PK_LEN> + MLDSAPrivateKeyInternalTrait<P, SK_LEN, PK_LEN>,
     const PK_LEN: usize,
     const SK_LEN: usize,
     const SIG_LEN: usize,
-> MLDSATrait<P, PK, SK, PK_LEN, SK_LEN, SIG_LEN> for MLDSA<P, PK, SK, PK_LEN, SK_LEN, SIG_LEN>
+> MLDSATrait<P, PK, SK, PK_LEN, SK_LEN, SIG_LEN>
+    for MLDSA<'sk_lifetime, 'pk_lifetime, P, PK, SK, PK_LEN, SK_LEN, SIG_LEN>
 {
     fn keygen_from_seed(seed: &KeyMaterial<32>) -> Result<(PK, SK), SignatureError> {
         Self::keygen_internal(seed)
@@ -1800,13 +1822,16 @@ pub trait MLDSATrait<
 }
 
 impl<
+    'sk_lifetime,
+    'pk_lifetime,
     P: MLDSAParams,
     PK: MLDSAPublicKeyTrait<P, PK_LEN> + MLDSAPublicKeyInternalTrait<P, PK_LEN>,
     SK: MLDSAPrivateKeyTrait<P, SK_LEN, PK_LEN> + MLDSAPrivateKeyInternalTrait<P, SK_LEN, PK_LEN>,
     const PK_LEN: usize,
     const SK_LEN: usize,
     const SIG_LEN: usize,
-> Signer<SK, SK_LEN, SIG_LEN> for MLDSA<P, PK, SK, PK_LEN, SK_LEN, SIG_LEN>
+> Signer<'sk_lifetime, SK, SK_LEN, SIG_LEN>
+    for MLDSA<'sk_lifetime, 'pk_lifetime, P, PK, SK, PK_LEN, SK_LEN, SIG_LEN>
 {
     fn sign(sk: &SK, msg: &[u8], ctx: Option<&[u8]>) -> Result<[u8; SIG_LEN], SignatureError> {
         let mut out = [0u8; SIG_LEN];
@@ -1829,12 +1854,12 @@ impl<
         Ok(bytes_written)
     }
 
-    fn do_sign_init(sk: &SK, ctx: Option<&[u8]>) -> Result<Self, SignatureError> {
+    fn do_sign_init(sk: &'sk_lifetime SK, ctx: Option<&[u8]>) -> Result<Self, SignatureError> {
         Ok(Self {
             _phantom: PhantomData,
             mu_builder: MuBuilder::do_init(&sk.tr(), ctx)?,
             signer_rnd: None,
-            sk: Some(sk.clone()),
+            sk: Some(sk),
             seed: None,
             pk: None,
         })
@@ -1864,10 +1889,10 @@ impl<
 
         if self.sk.is_some() {
             if self.signer_rnd.is_none() {
-                Self::sign_mu_out(&self.sk.unwrap(), None, &mu, output)
+                Self::sign_mu_out(self.sk.unwrap(), None, &mu, output)
             } else {
                 Self::sign_mu_deterministic_out(
-                    &self.sk.unwrap(),
+                    self.sk.unwrap(),
                     None,
                     &mu,
                     self.signer_rnd.unwrap(),
@@ -1890,13 +1915,16 @@ impl<
 }
 
 impl<
+    'sk_lifetime,
+    'pk_lifetime,
     P: MLDSAParams,
     PK: MLDSAPublicKeyTrait<P, PK_LEN> + MLDSAPublicKeyInternalTrait<P, PK_LEN>,
     SK: MLDSAPrivateKeyTrait<P, SK_LEN, PK_LEN> + MLDSAPrivateKeyInternalTrait<P, SK_LEN, PK_LEN>,
     const PK_LEN: usize,
     const SK_LEN: usize,
     const SIG_LEN: usize,
-> SignatureVerifier<PK, PK_LEN, SIG_LEN> for MLDSA<P, PK, SK, PK_LEN, SK_LEN, SIG_LEN>
+> SignatureVerifier<'pk_lifetime, PK, PK_LEN, SIG_LEN>
+    for MLDSA<'sk_lifetime, 'pk_lifetime, P, PK, SK, PK_LEN, SK_LEN, SIG_LEN>
 {
     fn verify(pk: &PK, msg: &[u8], ctx: Option<&[u8]>, sig: &[u8]) -> Result<(), SignatureError> {
         let mu = MuBuilder::compute_mu(&pk.compute_tr(), msg, ctx)?;
@@ -1906,14 +1934,14 @@ impl<
         Self::verify_mu(pk, Some(&pk.A_hat()), &mu, sig)
     }
 
-    fn do_verify_init(pk: &PK, ctx: Option<&[u8]>) -> Result<Self, SignatureError> {
+    fn do_verify_init(pk: &'pk_lifetime PK, ctx: Option<&[u8]>) -> Result<Self, SignatureError> {
         Ok(Self {
             _phantom: Default::default(),
             mu_builder: MuBuilder::do_init(&pk.compute_tr(), ctx)?,
             signer_rnd: None,
             sk: None,
             seed: None,
-            pk: Some(pk.clone()),
+            pk: Some(pk),
         })
     }
 
@@ -1926,7 +1954,6 @@ impl<
 
         let pk: &PK = self
             .pk
-            .as_ref()
             .ok_or(SignatureError::GenericError("No public key set on streaming verifier."))?;
         let sig: &[u8; SIG_LEN] = sig.try_into().map_err(|_| {
             SignatureError::LengthError("Signature value is not the correct length.")
