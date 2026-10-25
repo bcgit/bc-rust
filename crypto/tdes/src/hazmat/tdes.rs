@@ -32,6 +32,17 @@ pub struct TDESInternal {
     schedule: Secret<[Subkeys; 3]>,
 }
 
+// `Secret`'s equality inspects every byte of the schedule, so the time taken does not say where two
+// differ. The parity bits are not in the schedule (PC-1 drops them), so two bundles differing only
+// in parity are equal, as they are to the engine.
+impl PartialEq for TDESInternal {
+    fn eq(&self, other: &Self) -> bool {
+        self.schedule == other.schedule
+    }
+}
+
+impl Eq for TDESInternal {}
+
 /// Checks the [`KeyMaterial`] wrapper before the key bytes are looked at.
 ///
 /// The key must be tagged [`KeyType::SymmetricCipherKey`], must be exactly `key_len` bytes, and

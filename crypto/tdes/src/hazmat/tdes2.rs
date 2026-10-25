@@ -79,6 +79,16 @@ pub struct TDES2Internal {
     schedule: Secret<[Subkeys; 2]>,
 }
 
+// `Secret`'s equality inspects every byte of the schedule, so the time taken does not say where two
+// differ. Parity bits are not in the schedule, as for `TDESInternal`.
+impl PartialEq for TDES2Internal {
+    fn eq(&self, other: &Self) -> bool {
+        self.schedule == other.schedule
+    }
+}
+
+impl Eq for TDES2Internal {}
+
 impl Algorithm for TDES2Internal {
     const ALG_NAME: &'static str = "TDES-2KEY";
     /// SP 800-57 Part 1 Rev 5, Sec 5.6.1 Table 2: 2TDEA provides at most 80 bits, below the lowest
