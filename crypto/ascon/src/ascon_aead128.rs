@@ -19,14 +19,16 @@
 use core::fmt::{self, Debug, Display, Formatter};
 
 use bouncycastle_cipher::{Decrypting, Encrypting};
-use bouncycastle_core::errors::{KeyMaterialError, SuspendableError, SymmetricCipherError};
+use bouncycastle_core::errors::{
+    KeyMaterialError, RNGError, SuspendableError, SymmetricCipherError,
+};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{
     AEADCipherDecryptor, AEADCipherEncryptor, Algorithm, RNG, SuspendableKeyed,
-    SymmetricCipherDecryptor, SymmetricCipherEncryptor,
+    SymmetricCipherDecryptor, SymmetricCipherEncryptor, SymmetricCipherKey,
 };
-use bouncycastle_rng::HashDRBG_SHA512;
+use bouncycastle_rng::{HashDRBG_SHA256, HashDRBG_SHA512};
 use bouncycastle_utils::ct::ct_eq_bytes;
 use bouncycastle_utils::secret::Secret;
 use bouncycastle_utils::suspendable_state::{add_lib_ver, check_lib_ver};
@@ -86,16 +88,14 @@ impl Phase {
 /// associated data and the tag inline:
 ///
 /// ```
-/// use bouncycastle_ascon::Ascon_AEAD128;
-/// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
+/// use bouncycastle_ascon::{Ascon_AEAD128, Ascon_AEAD128_Key};
 /// use bouncycastle_cipher::{Decrypting, Encrypting};
-/// use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
+/// use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor, SymmetricCipherKey};
 ///
 /// type Enc = Ascon_AEAD128<Encrypting>;
 /// type Dec = Ascon_AEAD128<Decrypting>;
 ///
-/// let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
-///     .expect("a 16-byte symmetric cipher key");
+/// let key = Ascon_AEAD128_Key::new_from_os().expect("a fresh key");
 ///
 /// let message = b"hello";
 /// let mut ciphertext = [0u8; 5 + 16]; // Enc::encrypt_out_len(5): ciphertext || tag
@@ -121,11 +121,10 @@ impl Phase {
 /// so they need no [`Secret`] wrapper; the encrypting side carries the same fields unused.
 ///
 /// ```compile_fail
-/// # use bouncycastle_ascon::Ascon_AEAD128;
+/// # use bouncycastle_ascon::{Ascon_AEAD128, Ascon_AEAD128_Key};
 /// # use bouncycastle_cipher::Decrypting;
-/// # use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-/// # use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
-/// # let key = KeyMaterial::<16>::from_bytes_as_type(&[7; 16], KeyType::SymmetricCipherKey).unwrap();
+/// # use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor, SymmetricCipherKey};
+/// # let key = Ascon_AEAD128_Key::from_bytes(&[7; 16]).unwrap();
 /// let mut dec = Ascon_AEAD128::<Decrypting>::do_decrypt_init(&key, &[0u8; 16]).unwrap();
 /// dec.do_encrypt_out(&[0u8; 4], &mut [0u8; 4]);   // no such method on the decrypting type
 /// ```
@@ -177,37 +176,18 @@ fn fresh_nonce() -> Result<[u8; NONCE_LEN], SymmetricCipherError> {
 }
 
 impl<Dir> Ascon_AEAD128<Dir> {
-    /// Validate a [`KeyMaterial`] for use with Ascon-AEAD128 and return its key words.
-    /// The key must be tagged as a [`KeyType::SymmetricCipherKey`] and carry at least the
-    /// algorithm's 128-bit security strength (SP 800-232 R1/R2).
-    fn checked_key(key: &KeyMaterial<KEY_LEN>) -> Result<[u64; 2], SymmetricCipherError> {
-        if key.key_type() != KeyType::SymmetricCipherKey {
-            return Err(KeyMaterialError::InvalidKeyType(
-                "Ascon-AEAD128 requires a SymmetricCipherKey",
-            )
-            .into());
-        }
-        if key.security_strength() < SecurityStrength::_128bit {
-            return Err(KeyMaterialError::SecurityStrength(
-                "Ascon-AEAD128 requires a key with at least 128-bit security strength",
-            )
-            .into());
-        }
-        let bytes = key.ref_to_bytes();
-        if bytes.len() != KEY_LEN {
-            return Err(KeyMaterialError::InvalidLength.into());
-        }
-        Ok([load_u64_le(bytes, 0), load_u64_le(bytes, 8)])
+    /// The key as two words. The key policy (SP 800-232 R1/R2) is [`Ascon_AEAD128_Key`]'s, checked
+    /// when the key is made, so there is nothing left to fail here.
+    fn key_words(key: &Ascon_AEAD128_Key) -> [u64; 2] {
+        let bytes = key.get_key().ref_to_bytes();
+        [load_u64_le(bytes, 0), load_u64_le(bytes, 8)]
     }
 
-    /// SP 800-232 Sec 4.1.1 / 4.1.2 step 1, the same in both directions: validates `key` as a
-    /// [`KeyType::SymmetricCipherKey`] of at least 128-bit strength and initialises the state
-    /// under `nonce`. The direction is whatever type this is called on.
-    fn new(
-        key: &KeyMaterial<KEY_LEN>,
-        nonce: &[u8; NONCE_LEN],
-    ) -> Result<Self, SymmetricCipherError> {
-        let key_words = Self::checked_key(key)?;
+    /// SP 800-232 Sec 4.1.1 / 4.1.2 step 1, the same in both directions: initialises the state
+    /// under `key` and `nonce`. The key policy is [`Ascon_AEAD128_Key`]'s, checked when the key is
+    /// made. The direction is whatever type this is called on.
+    fn new(key: &Ascon_AEAD128_Key, nonce: &[u8; NONCE_LEN]) -> Result<Self, SymmetricCipherError> {
+        let key_words = Self::key_words(key);
         let mut key_secret: Secret<[u64; 2]> = Secret::new();
         *key_secret = key_words;
 
@@ -441,16 +421,18 @@ impl<Dir> Algorithm for Ascon_AEAD128<Dir> {
     const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_128bit;
 }
 
-impl SymmetricCipherEncryptor<KEY_LEN, NONCE_LEN, TAG_LEN> for Ascon_AEAD128<Encrypting> {
+impl SymmetricCipherEncryptor<Ascon_AEAD128_Key, KEY_LEN, NONCE_LEN, TAG_LEN>
+    for Ascon_AEAD128<Encrypting>
+{
     fn do_encrypt_init(
-        key: &KeyMaterial<KEY_LEN>,
+        key: &Ascon_AEAD128_Key,
     ) -> Result<(Self, [u8; NONCE_LEN]), SymmetricCipherError> {
         let nonce = fresh_nonce()?;
         Ok((Self::new(key, &nonce)?, nonce))
     }
 
     fn do_encrypt_init_rng(
-        key: &KeyMaterial<KEY_LEN>,
+        key: &Ascon_AEAD128_Key,
         rng: &mut dyn RNG,
     ) -> Result<(Self, [u8; NONCE_LEN]), SymmetricCipherError> {
         let mut nonce = [0u8; NONCE_LEN];
@@ -489,13 +471,15 @@ impl SymmetricCipherEncryptor<KEY_LEN, NONCE_LEN, TAG_LEN> for Ascon_AEAD128<Enc
     }
 }
 
-impl AEADCipherEncryptor<KEY_LEN, NONCE_LEN, TAG_LEN, TAG_LEN> for Ascon_AEAD128<Encrypting> {
+impl AEADCipherEncryptor<Ascon_AEAD128_Key, KEY_LEN, NONCE_LEN, TAG_LEN, TAG_LEN>
+    for Ascon_AEAD128<Encrypting>
+{
     fn do_update_aad(&mut self, aad: &[u8]) -> Result<(), SymmetricCipherError> {
         self.absorb_aad(aad)
     }
 
     fn do_encrypt_init_nonce(
-        key: &KeyMaterial<KEY_LEN>,
+        key: &Ascon_AEAD128_Key,
         nonce: &[u8; NONCE_LEN],
     ) -> Result<Self, SymmetricCipherError> {
         Self::new(key, nonce)
@@ -511,9 +495,11 @@ impl AEADCipherEncryptor<KEY_LEN, NONCE_LEN, TAG_LEN, TAG_LEN> for Ascon_AEAD128
     }
 }
 
-impl SymmetricCipherDecryptor<KEY_LEN, NONCE_LEN, TAG_LEN> for Ascon_AEAD128<Decrypting> {
+impl SymmetricCipherDecryptor<Ascon_AEAD128_Key, KEY_LEN, NONCE_LEN, TAG_LEN>
+    for Ascon_AEAD128<Decrypting>
+{
     fn do_decrypt_init(
-        key: &KeyMaterial<KEY_LEN>,
+        key: &Ascon_AEAD128_Key,
         nonce: &[u8; NONCE_LEN],
     ) -> Result<Self, SymmetricCipherError> {
         Self::new(key, nonce)
@@ -574,7 +560,9 @@ impl SymmetricCipherDecryptor<KEY_LEN, NONCE_LEN, TAG_LEN> for Ascon_AEAD128<Dec
     }
 }
 
-impl AEADCipherDecryptor<KEY_LEN, NONCE_LEN, TAG_LEN, TAG_LEN> for Ascon_AEAD128<Decrypting> {
+impl AEADCipherDecryptor<Ascon_AEAD128_Key, KEY_LEN, NONCE_LEN, TAG_LEN, TAG_LEN>
+    for Ascon_AEAD128<Decrypting>
+{
     /// # Errors
     /// [`SymmetricCipherError::StateError`] if `aad` is non-empty and
     /// [`SymmetricCipherDecryptor::do_decrypt_out`] has already been called.
@@ -645,6 +633,39 @@ impl Ascon_AEAD128<Decrypting> {
     }
 }
 
+/// An Ascon-AEAD128 key: a [`KeyType::SymmetricCipherKey`] of at least 128-bit strength
+/// (SP 800-232 R1/R2).
+#[derive(Clone, PartialEq, Eq)]
+#[allow(non_camel_case_types)]
+pub struct Ascon_AEAD128_Key(KeyMaterial<KEY_LEN>);
+
+impl SymmetricCipherKey<KEY_LEN> for Ascon_AEAD128_Key {
+    fn from_keymaterial(key: KeyMaterial<KEY_LEN>) -> Result<Self, KeyMaterialError> {
+        if key.key_type() != KeyType::SymmetricCipherKey {
+            return Err(KeyMaterialError::InvalidKeyType(
+                "Ascon-AEAD128 requires a SymmetricCipherKey",
+            ));
+        }
+        if key.security_strength() < SecurityStrength::_128bit {
+            return Err(KeyMaterialError::SecurityStrength(
+                "Ascon-AEAD128 requires a key with at least 128-bit security strength",
+            ));
+        }
+        if key.key_len() != KEY_LEN {
+            return Err(KeyMaterialError::InvalidLength);
+        }
+        Ok(Self(key))
+    }
+
+    fn get_key(&self) -> &KeyMaterial<KEY_LEN> {
+        &self.0
+    }
+
+    fn new_from_os() -> Result<Self, RNGError> {
+        Self::new_from_rng(&mut HashDRBG_SHA256::new_from_os())
+    }
+}
+
 impl<Dir> Debug for Ascon_AEAD128<Dir> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "Ascon-AEAD128 (key/state masked)")
@@ -685,9 +706,8 @@ const ENC_DIR_BITS: u8 = 0;
 const DEC_DIR_BITS: u8 = 4;
 
 impl SuspendableKeyed<SUSPENDED_ASCON_AEAD128_ENCRYPTOR_STATE_LEN> for Ascon_AEAD128<Encrypting> {
-    // The 128-bit key must be re-supplied when resuming; it is never part of the serialized state,
-    // and is re-validated exactly as construction validates it.
-    type Key = KeyMaterial<KEY_LEN>;
+    // The 128-bit key must be re-supplied when resuming; it is never part of the serialized state.
+    type Key = Ascon_AEAD128_Key;
 
     fn suspend(self) -> [u8; SUSPENDED_ASCON_AEAD128_ENCRYPTOR_STATE_LEN] {
         self.suspend_as(ENC_DIR_BITS)
@@ -705,7 +725,7 @@ impl SuspendableKeyed<SUSPENDED_ASCON_AEAD128_ENCRYPTOR_STATE_LEN> for Ascon_AEA
 /// The core's state, then the held-back bytes and their count; see
 /// [`SUSPENDED_ASCON_AEAD128_DECRYPTOR_STATE_LEN`].
 impl SuspendableKeyed<SUSPENDED_ASCON_AEAD128_DECRYPTOR_STATE_LEN> for Ascon_AEAD128<Decrypting> {
-    type Key = KeyMaterial<KEY_LEN>;
+    type Key = Ascon_AEAD128_Key;
 
     fn suspend(self) -> [u8; SUSPENDED_ASCON_AEAD128_DECRYPTOR_STATE_LEN] {
         let mut out = [0u8; SUSPENDED_ASCON_AEAD128_DECRYPTOR_STATE_LEN];
@@ -758,7 +778,7 @@ impl<Dir> Ascon_AEAD128<Dir> {
     /// direction is not `dir_bits` is refused, so a state never resumes in the other direction.
     fn resume_as(
         serialized_state: [u8; CIPHER_STATE_LEN],
-        key: &KeyMaterial<KEY_LEN>,
+        key: &Ascon_AEAD128_Key,
         dir_bits: u8,
     ) -> Result<Self, SuspendableError> {
         // infallible: check_lib_ver returns a slice of exactly CIPHER_STATE_LEN - 3 = 43 bytes.
@@ -789,7 +809,7 @@ impl<Dir> Ascon_AEAD128<Dir> {
             return Err(SuspendableError::InvalidData);
         }
 
-        let key_words = Self::checked_key(key).map_err(|_| SuspendableError::InvalidData)?;
+        let key_words = Self::key_words(key);
         let mut key_secret = Secret::<[u64; 2]>::new();
         *key_secret = key_words;
 

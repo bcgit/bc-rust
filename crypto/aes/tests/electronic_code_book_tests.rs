@@ -8,20 +8,24 @@
 //! paths, so the default implementations are not what runs.
 
 use bouncycastle_aes::AES_BLOCK_LEN;
+use bouncycastle_aes::hazmat::{AES_ECB_128_Key, AES_ECB_192_Key, AES_ECB_256_Key};
 use bouncycastle_aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
 use bouncycastle_core_test_framework::electronic_code_book::TestFrameworkElectronicCodeBook;
 
 #[test]
 fn aes128_conforms_to_electronic_code_book() {
-    TestFrameworkElectronicCodeBook::new().test::<16, AES_BLOCK_LEN, AES128Internal>();
+    TestFrameworkElectronicCodeBook::new()
+        .test::<16, AES_BLOCK_LEN, AES_ECB_128_Key, AES128Internal>();
 }
 
 #[test]
 fn aes192_conforms_to_electronic_code_book() {
-    TestFrameworkElectronicCodeBook::new().test::<24, AES_BLOCK_LEN, AES192Internal>();
+    TestFrameworkElectronicCodeBook::new()
+        .test::<24, AES_BLOCK_LEN, AES_ECB_192_Key, AES192Internal>();
 }
 
 #[test]
 fn aes256_conforms_to_electronic_code_book() {
-    TestFrameworkElectronicCodeBook::new().test::<32, AES_BLOCK_LEN, AES256Internal>();
+    TestFrameworkElectronicCodeBook::new()
+        .test::<32, AES_BLOCK_LEN, AES_ECB_256_Key, AES256Internal>();
 }

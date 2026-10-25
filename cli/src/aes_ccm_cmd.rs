@@ -53,14 +53,15 @@ use std::marker::PhantomData;
 use std::process::exit;
 
 use bouncycastle::aes::{
-    AES_CCM_128_Packet, AES_CCM_192_Packet, AES_CCM_256_Packet, CCM_NONCE_LEN, CCM_TAG_LEN,
+    AES_CCM_128_Key, AES_CCM_128_Packet, AES_CCM_192_Key, AES_CCM_192_Packet, AES_CCM_256_Key,
+    AES_CCM_256_Packet, CCM_NONCE_LEN, CCM_TAG_LEN,
 };
 use bouncycastle::cipher::modes::CcmPacket;
 use bouncycastle::cipher::modes::ModeNames;
 use bouncycastle::cipher::{Decrypting, Encrypting};
 use bouncycastle::core::errors::SymmetricCipherError;
 use bouncycastle::core::hazmat::ElectronicCodeBook;
-use bouncycastle::core::key_material::KeyMaterial;
+use bouncycastle::core::traits::SymmetricCipherKey;
 use bouncycastle::hex;
 
 use crate::helpers;
@@ -84,7 +85,7 @@ pub(crate) fn aes128_ccm_cmd(
     run(
         PhantomData::<AES_CCM_128_Packet<Encrypting, CCM_NONCE_LEN, CCM_TAG_LEN>>,
         action,
-        &load_key::<16>(key, key_file, "AES-128"),
+        &load_key::<AES_CCM_128_Key, 16>(key, key_file, "AES-128"),
         nonce,
         nonce_file,
         aad,
@@ -109,7 +110,7 @@ pub(crate) fn aes192_ccm_cmd(
     run(
         PhantomData::<AES_CCM_192_Packet<Encrypting, CCM_NONCE_LEN, CCM_TAG_LEN>>,
         action,
-        &load_key::<24>(key, key_file, "AES-192"),
+        &load_key::<AES_CCM_192_Key, 24>(key, key_file, "AES-192"),
         nonce,
         nonce_file,
         aad,
@@ -134,7 +135,7 @@ pub(crate) fn aes256_ccm_cmd(
     run(
         PhantomData::<AES_CCM_256_Packet<Encrypting, CCM_NONCE_LEN, CCM_TAG_LEN>>,
         action,
-        &load_key::<32>(key, key_file, "AES-256"),
+        &load_key::<AES_CCM_256_Key, 32>(key, key_file, "AES-256"),
         nonce,
         nonce_file,
         aad,
@@ -255,11 +256,12 @@ fn load_aad(aad: &Option<String>, aad_file: &Option<String>) -> Aad {
 /// is being read, the declared length is wrong, and the tag would be computed over a length
 /// encoding that does not match the AAD; that is reported and the command exits rather than
 /// producing it.
-fn feed_aad<P, Dir, const KEY_LEN: usize, const NONCE_LEN: usize, const TAG_LEN: usize>(
-    ccm: &mut CcmPacket<P, Dir, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN>,
+fn feed_aad<P, Dir, K, const KEY_LEN: usize, const NONCE_LEN: usize, const TAG_LEN: usize>(
+    ccm: &mut CcmPacket<P, Dir, K, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN>,
     aad: &mut Aad,
 ) where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
+    K: SymmetricCipherKey<KEY_LEN>,
+    P: ElectronicCodeBook<K, KEY_LEN, BLOCK_LEN> + ModeNames,
 {
     match aad {
         Aad::Bytes(bytes) => {
@@ -308,10 +310,10 @@ fn read_all_stdin() -> Vec<u8> {
 /// conditions compile-time checks rather than runtime ones -- so a command-line value has to be
 /// matched into one of the permitted instantiations. The two nested matches are the price of that,
 /// and they are exhaustive over A.1's sets: 7 nonce lengths x 7 tag lengths.
-fn run<P, const KEY_LEN: usize>(
-    _aes: PhantomData<CcmPacket<P, Encrypting, KEY_LEN, BLOCK_LEN, CCM_NONCE_LEN, CCM_TAG_LEN>>,
+fn run<P, K, const KEY_LEN: usize>(
+    _aes: PhantomData<CcmPacket<P, Encrypting, K, KEY_LEN, BLOCK_LEN, CCM_NONCE_LEN, CCM_TAG_LEN>>,
     action: &CipherDirection,
-    key: &KeyMaterial<KEY_LEN>,
+    key: &K,
     nonce: &Option<String>,
     nonce_file: &Option<String>,
     aad: &Option<String>,
@@ -319,7 +321,8 @@ fn run<P, const KEY_LEN: usize>(
     tag_len: usize,
     output_hex: bool,
 ) where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
+    K: SymmetricCipherKey<KEY_LEN>,
+    P: ElectronicCodeBook<K, KEY_LEN, BLOCK_LEN> + ModeNames,
 {
     // Reject this before opening nonce/AAD files or waiting for stdin. Appendix A.1: "t is an
     // element of {4, 6, 8, 10, 12, 14, 16}".
@@ -339,25 +342,25 @@ fn run<P, const KEY_LEN: usize>(
     macro_rules! with_tag_len {
         ($n:literal) => {
             match tag_len {
-                4 => {
-                    go::<P, KEY_LEN, $n, 4>(key, &nonce_bytes, &mut aad, input, encrypt, output_hex)
-                }
-                6 => {
-                    go::<P, KEY_LEN, $n, 6>(key, &nonce_bytes, &mut aad, input, encrypt, output_hex)
-                }
-                8 => {
-                    go::<P, KEY_LEN, $n, 8>(key, &nonce_bytes, &mut aad, input, encrypt, output_hex)
-                }
-                10 => go::<P, KEY_LEN, $n, 10>(
+                4 => go::<P, K, KEY_LEN, $n, 4>(
                     key, &nonce_bytes, &mut aad, input, encrypt, output_hex,
                 ),
-                12 => go::<P, KEY_LEN, $n, 12>(
+                6 => go::<P, K, KEY_LEN, $n, 6>(
                     key, &nonce_bytes, &mut aad, input, encrypt, output_hex,
                 ),
-                14 => go::<P, KEY_LEN, $n, 14>(
+                8 => go::<P, K, KEY_LEN, $n, 8>(
                     key, &nonce_bytes, &mut aad, input, encrypt, output_hex,
                 ),
-                16 => go::<P, KEY_LEN, $n, 16>(
+                10 => go::<P, K, KEY_LEN, $n, 10>(
+                    key, &nonce_bytes, &mut aad, input, encrypt, output_hex,
+                ),
+                12 => go::<P, K, KEY_LEN, $n, 12>(
+                    key, &nonce_bytes, &mut aad, input, encrypt, output_hex,
+                ),
+                14 => go::<P, K, KEY_LEN, $n, 14>(
+                    key, &nonce_bytes, &mut aad, input, encrypt, output_hex,
+                ),
+                16 => go::<P, K, KEY_LEN, $n, 16>(
                     key, &nonce_bytes, &mut aad, input, encrypt, output_hex,
                 ),
                 _ => unreachable!("tag length was validated before stdin was read"),
@@ -387,19 +390,26 @@ fn run<P, const KEY_LEN: usize>(
 /// The only [`SymmetricCipherError::GenericError`] it can return is that limit: A.1's
 /// `p < 2^8q`, where `q = 15 - n`. Both directions hit it -- the decrypt side on the input minus
 /// its tag -- so both report it here, with the numbers, since the fix is a shorter nonce.
-fn payload_past_the_q_limit<P, const KEY_LEN: usize, const NONCE_LEN: usize, const TAG_LEN: usize>(
+fn payload_past_the_q_limit<
+    P,
+    K,
+    const KEY_LEN: usize,
+    const NONCE_LEN: usize,
+    const TAG_LEN: usize,
+>(
     msg: &str,
     payload_len: usize,
 ) -> !
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
+    K: SymmetricCipherKey<KEY_LEN>,
+    P: ElectronicCodeBook<K, KEY_LEN, BLOCK_LEN> + ModeNames,
 {
     eprintln!("Error: {msg}");
     eprintln!(
         "       Payload is {payload_len} bytes; with a {NONCE_LEN}-byte nonce, q = {} and the \
          limit is {} bytes.",
         15 - NONCE_LEN,
-        CcmPacket::<P, Encrypting, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN>::MAX_PAYLOAD_LEN,
+        CcmPacket::<P, Encrypting, K, KEY_LEN, BLOCK_LEN, NONCE_LEN, TAG_LEN>::MAX_PAYLOAD_LEN,
     );
     eprintln!("       Use a shorter nonce for a larger payload.");
     exit(-1)
@@ -412,20 +422,21 @@ where
 /// the size of `input`: the declared-length constructor already has everything a one-shot needs,
 /// so there is no second buffer to allocate or copy into. The AAD goes in through
 /// [`CcmPacket::new_with_lengths`] and [`feed_aad`], so a `--aad-file` is streamed rather than loaded.
-fn go<P, const KEY_LEN: usize, const NONCE_LEN: usize, const TAG_LEN: usize>(
-    key: &KeyMaterial<KEY_LEN>,
+fn go<P, K, const KEY_LEN: usize, const NONCE_LEN: usize, const TAG_LEN: usize>(
+    key: &K,
     nonce_bytes: &[u8],
     aad: &mut Aad,
     mut input: Vec<u8>,
     encrypt: bool,
     output_hex: bool,
 ) where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
+    K: SymmetricCipherKey<KEY_LEN>,
+    P: ElectronicCodeBook<K, KEY_LEN, BLOCK_LEN> + ModeNames,
 {
-    type Enc<P, const K: usize, const N: usize, const T: usize> =
-        CcmPacket<P, Encrypting, K, BLOCK_LEN, N, T>;
-    type Dec<P, const K: usize, const N: usize, const T: usize> =
-        CcmPacket<P, Decrypting, K, BLOCK_LEN, N, T>;
+    type Enc<P, K, const KL: usize, const N: usize, const T: usize> =
+        CcmPacket<P, Encrypting, K, KL, BLOCK_LEN, N, T>;
+    type Dec<P, K, const KL: usize, const N: usize, const T: usize> =
+        CcmPacket<P, Decrypting, K, KL, BLOCK_LEN, N, T>;
 
     // `run` dispatched on this exact length, so the conversion cannot fail.
     let Ok(nonce) = <[u8; NONCE_LEN]>::try_from(nonce_bytes) else {
@@ -434,7 +445,7 @@ fn go<P, const KEY_LEN: usize, const NONCE_LEN: usize, const TAG_LEN: usize>(
     };
 
     if encrypt {
-        match Enc::<P, KEY_LEN, NONCE_LEN, TAG_LEN>::new_with_lengths(
+        match Enc::<P, K, KEY_LEN, NONCE_LEN, TAG_LEN>::new_with_lengths(
             key,
             &nonce,
             aad.len(),
@@ -455,7 +466,7 @@ fn go<P, const KEY_LEN: usize, const NONCE_LEN: usize, const TAG_LEN: usize>(
                 }
             }
             Err(SymmetricCipherError::GenericError(msg)) => {
-                payload_past_the_q_limit::<P, KEY_LEN, NONCE_LEN, TAG_LEN>(msg, input.len())
+                payload_past_the_q_limit::<P, K, KEY_LEN, NONCE_LEN, TAG_LEN>(msg, input.len())
             }
             Err(e) => {
                 eprintln!("Error: AES-CCM encryption failed: {e:?}");
@@ -473,7 +484,7 @@ fn go<P, const KEY_LEN: usize, const NONCE_LEN: usize, const TAG_LEN: usize>(
             );
             exit(-1)
         };
-        match Dec::<P, KEY_LEN, NONCE_LEN, TAG_LEN>::new_with_lengths(
+        match Dec::<P, K, KEY_LEN, NONCE_LEN, TAG_LEN>::new_with_lengths(
             key,
             &nonce,
             aad.len(),
@@ -507,7 +518,7 @@ fn go<P, const KEY_LEN: usize, const NONCE_LEN: usize, const TAG_LEN: usize>(
                 }
             }
             Err(SymmetricCipherError::GenericError(msg)) => {
-                payload_past_the_q_limit::<P, KEY_LEN, NONCE_LEN, TAG_LEN>(msg, data.len())
+                payload_past_the_q_limit::<P, K, KEY_LEN, NONCE_LEN, TAG_LEN>(msg, data.len())
             }
             Err(e) => {
                 eprintln!("Error: AES-CCM decryption failed: {e:?}");

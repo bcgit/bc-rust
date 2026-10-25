@@ -20,4 +20,6 @@ mod aes_internal;
 mod ecb;
 
 pub use aes_internal::{AES128Internal, AES192Internal, AES256Internal, AESInternal};
-pub use ecb::{AES_ECB_128, AES_ECB_192, AES_ECB_256};
+pub use ecb::{
+    AES_ECB_128, AES_ECB_128_Key, AES_ECB_192, AES_ECB_192_Key, AES_ECB_256, AES_ECB_256_Key,
+};

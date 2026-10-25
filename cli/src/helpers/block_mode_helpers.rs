@@ -62,6 +62,7 @@ use bouncycastle::core::errors::RNGError;
 use bouncycastle::core::hazmat::do_hazardous_operations;
 use bouncycastle::core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle::core::security_strength::SecurityStrength;
+use bouncycastle::core::traits::SymmetricCipherKey;
 use bouncycastle::core::traits::{RNG, SymmetricCipherDecryptor, SymmetricCipherEncryptor};
 use bouncycastle::hex;
 use clap::ValueEnum;
@@ -90,11 +91,11 @@ pub(crate) enum CipherDirection {
 ///
 /// `KEY_LEN` is exact: AES has three key lengths and the command selects one, so a key of the
 /// wrong length is a mistake rather than something to truncate or pad.
-pub(crate) fn load_key<const KEY_LEN: usize>(
+pub(crate) fn load_key<K: SymmetricCipherKey<KEY_LEN>, const KEY_LEN: usize>(
     key: &Option<String>,
     key_file: &Option<String>,
     alg: &str,
-) -> KeyMaterial<KEY_LEN> {
+) -> K {
     let key_bytes: Vec<u8> = if let Some(key_file) = key_file {
         // A file may hold raw bytes or hex; `read_from_file` tries hex first, as the other
         // commands do.
@@ -144,7 +145,10 @@ pub(crate) fn load_key<const KEY_LEN: usize>(
         });
     }
 
-    key
+    K::from_keymaterial(key).unwrap_or_else(|e| {
+        eprintln!("Error: couldn't load the key: {e:?}");
+        exit(-1);
+    })
 }
 
 /// An [`RNG`] that yields the caller's IV once, so `--iv` can reach a mode whose only
@@ -236,13 +240,14 @@ pub(crate) fn load_iv<const INIT_DATA_LEN: usize>(
 /// `INIT_DATA_LEN` is the mode's: one block for CBC, 0 for ECB, in which case nothing is written
 /// ahead of the ciphertext. `aligned_mode` is `Some(mode name)` for a mode that pads nothing, whose
 /// input must therefore be a whole number of blocks; the name appears in the error message.
-pub(crate) fn encrypt_stream<E, const KEY_LEN: usize, const INIT_DATA_LEN: usize>(
-    key: &KeyMaterial<KEY_LEN>,
+pub(crate) fn encrypt_stream<E, K, const KEY_LEN: usize, const INIT_DATA_LEN: usize>(
+    key: &K,
     iv: Option<[u8; INIT_DATA_LEN]>,
     output_hex: bool,
     aligned_mode: Option<&str>,
 ) where
-    E: SymmetricCipherEncryptor<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
+    K: SymmetricCipherKey<KEY_LEN>,
+    E: SymmetricCipherEncryptor<K, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
 {
     let init = match iv {
         Some(iv) => E::do_encrypt_init_rng(key, &mut FixedIv::new(iv)),
@@ -284,13 +289,14 @@ pub(crate) fn encrypt_stream<E, const KEY_LEN: usize, const INIT_DATA_LEN: usize
 /// Decrypts stdin to stdout under the mode `D`, taking the init data (the IV) from `iv` if given
 /// and otherwise from the first `INIT_DATA_LEN` bytes of input -- one block for CBC, nothing for
 /// ECB. `aligned_mode` is as for [`encrypt_stream`].
-pub(crate) fn decrypt_stream<D, const KEY_LEN: usize, const INIT_DATA_LEN: usize>(
-    key: &KeyMaterial<KEY_LEN>,
+pub(crate) fn decrypt_stream<D, K, const KEY_LEN: usize, const INIT_DATA_LEN: usize>(
+    key: &K,
     iv: Option<[u8; INIT_DATA_LEN]>,
     output_hex: bool,
     aligned_mode: Option<&str>,
 ) where
-    D: SymmetricCipherDecryptor<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
+    K: SymmetricCipherKey<KEY_LEN>,
+    D: SymmetricCipherDecryptor<K, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
 {
     let iv = iv.unwrap_or_else(|| {
         // The leading bytes are the IV, not ciphertext. (None for ECB: the read is skipped.)

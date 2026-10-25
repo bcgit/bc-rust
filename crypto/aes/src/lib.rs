@@ -255,12 +255,24 @@ impl AESParams for AES256Params {
     type Schedule = [u32; 60]; // 4 * (14 + 1)
 }
 
-pub use cbc::{AES_CBC_128, AES_CBC_192, AES_CBC_256};
-pub use ccm::{
-    AES_CCM_128, AES_CCM_128_Packet, AES_CCM_192, AES_CCM_192_Packet, AES_CCM_256,
-    AES_CCM_256_Packet, CCM_NONCE_LEN, CCM_TAG_LEN,
+pub use cbc::{
+    AES_CBC_128, AES_CBC_128_Key, AES_CBC_192, AES_CBC_192_Key, AES_CBC_256, AES_CBC_256_Key,
 };
-pub use cfb::{AES_CFB_128, AES_CFB_192, AES_CFB_256};
-pub use cfb8::{AES_CFB8_128, AES_CFB8_192, AES_CFB8_256};
-pub use ctr::{AES_CTR_128, AES_CTR_192, AES_CTR_256, CTR_NONCE_LEN};
-pub use gcm::{AES_GCM_128, AES_GCM_192, AES_GCM_256};
+pub use ccm::{
+    AES_CCM_128, AES_CCM_128_Key, AES_CCM_128_Packet, AES_CCM_192, AES_CCM_192_Key,
+    AES_CCM_192_Packet, AES_CCM_256, AES_CCM_256_Key, AES_CCM_256_Packet, CCM_NONCE_LEN,
+    CCM_TAG_LEN,
+};
+pub use cfb::{
+    AES_CFB_128, AES_CFB_128_Key, AES_CFB_192, AES_CFB_192_Key, AES_CFB_256, AES_CFB_256_Key,
+};
+pub use cfb8::{
+    AES_CFB8_128, AES_CFB8_128_Key, AES_CFB8_192, AES_CFB8_192_Key, AES_CFB8_256, AES_CFB8_256_Key,
+};
+pub use ctr::{
+    AES_CTR_128, AES_CTR_128_Key, AES_CTR_192, AES_CTR_192_Key, AES_CTR_256, AES_CTR_256_Key,
+    CTR_NONCE_LEN,
+};
+pub use gcm::{
+    AES_GCM_128, AES_GCM_128_Key, AES_GCM_192, AES_GCM_192_Key, AES_GCM_256, AES_GCM_256_Key,
+};

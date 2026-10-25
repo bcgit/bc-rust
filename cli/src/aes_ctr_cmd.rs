@@ -36,6 +36,7 @@
 use crate::helpers::block_mode_helpers::{CipherDirection, load_iv, load_key};
 use crate::helpers::stream_mode_helpers::run_stream_mode;
 use bouncycastle::aes::{AES_CTR_128, AES_CTR_192, AES_CTR_256, CTR_NONCE_LEN};
+use bouncycastle::aes::{AES_CTR_128_Key, AES_CTR_192_Key, AES_CTR_256_Key};
 use bouncycastle::cipher::{Decrypting, Encrypting};
 
 pub(crate) fn aes128_ctr_cmd(
@@ -46,9 +47,15 @@ pub(crate) fn aes128_ctr_cmd(
     iv_file: &Option<String>,
     output_hex: bool,
 ) {
-    run_stream_mode::<AES_CTR_128<Encrypting>, AES_CTR_128<Decrypting>, 16, CTR_NONCE_LEN>(
+    run_stream_mode::<
+        AES_CTR_128<Encrypting>,
+        AES_CTR_128<Decrypting>,
+        AES_CTR_128_Key,
+        16,
+        CTR_NONCE_LEN,
+    >(
         action,
-        &load_key::<16>(key, key_file, "AES-128"),
+        &load_key::<AES_CTR_128_Key, 16>(key, key_file, "AES-128"),
         load_iv::<CTR_NONCE_LEN>(iv, iv_file),
         output_hex,
     );
@@ -62,9 +69,15 @@ pub(crate) fn aes192_ctr_cmd(
     iv_file: &Option<String>,
     output_hex: bool,
 ) {
-    run_stream_mode::<AES_CTR_192<Encrypting>, AES_CTR_192<Decrypting>, 24, CTR_NONCE_LEN>(
+    run_stream_mode::<
+        AES_CTR_192<Encrypting>,
+        AES_CTR_192<Decrypting>,
+        AES_CTR_192_Key,
+        24,
+        CTR_NONCE_LEN,
+    >(
         action,
-        &load_key::<24>(key, key_file, "AES-192"),
+        &load_key::<AES_CTR_192_Key, 24>(key, key_file, "AES-192"),
         load_iv::<CTR_NONCE_LEN>(iv, iv_file),
         output_hex,
     );
@@ -78,9 +91,15 @@ pub(crate) fn aes256_ctr_cmd(
     iv_file: &Option<String>,
     output_hex: bool,
 ) {
-    run_stream_mode::<AES_CTR_256<Encrypting>, AES_CTR_256<Decrypting>, 32, CTR_NONCE_LEN>(
+    run_stream_mode::<
+        AES_CTR_256<Encrypting>,
+        AES_CTR_256<Decrypting>,
+        AES_CTR_256_Key,
+        32,
+        CTR_NONCE_LEN,
+    >(
         action,
-        &load_key::<32>(key, key_file, "AES-256"),
+        &load_key::<AES_CTR_256_Key, 32>(key, key_file, "AES-256"),
         load_iv::<CTR_NONCE_LEN>(iv, iv_file),
         output_hex,
     );

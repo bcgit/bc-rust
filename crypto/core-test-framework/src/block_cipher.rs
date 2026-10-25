@@ -1,12 +1,12 @@
 //! Shared conformance tests for [`BlockCipherEncryptor`] / [`BlockCipherDecryptor`] implementors:
 //! the whole-block refinement of the symmetric cipher traits.
 
-use crate::{DUMMY_SEED, FixedSeedRNG};
+use crate::{DUMMY_SEED, FixedSeedRNG, with_key};
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::hazmat::do_hazardous_operations;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::traits::{BlockCipherDecryptor, BlockCipherEncryptor};
+use bouncycastle_core::traits::{BlockCipherDecryptor, BlockCipherEncryptor, SymmetricCipherKey};
 
 /// Instance of the test framework.
 pub struct TestFrameworkBlockCipher {
@@ -24,16 +24,13 @@ impl TestFrameworkBlockCipher {
         const KEY_LEN: usize,
         const INIT_DATA_LEN: usize,
         const BLOCK_LEN: usize,
-        E: BlockCipherEncryptor<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
-        D: BlockCipherDecryptor<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
+        K: SymmetricCipherKey<KEY_LEN>,
+        E: BlockCipherEncryptor<K, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
+        D: BlockCipherDecryptor<K, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
     >(
         &self,
     ) {
-        let key = KeyMaterial::<KEY_LEN>::from_bytes_as_type(
-            &DUMMY_SEED[..KEY_LEN],
-            KeyType::SymmetricCipherKey,
-        )
-        .unwrap();
+        let key = K::from_bytes(DUMMY_SEED[..KEY_LEN].try_into().unwrap()).unwrap();
 
         // multi-block (two at a time) through the implementor hook `do_*_blocks`: blocks encrypted together
         // must decrypt both together and one at a time, and blocks encrypted one at a time must
@@ -153,7 +150,7 @@ impl TestFrameworkBlockCipher {
         let mac_key =
             KeyMaterial::<KEY_LEN>::from_bytes_as_type(&DUMMY_SEED[..KEY_LEN], KeyType::MACKey)
                 .unwrap();
-        match E::do_encrypt_init(&mac_key) {
+        match with_key::<K, KEY_LEN, _>(mac_key.clone(), |k| E::do_encrypt_init(k)) {
             Err(SymmetricCipherError::KeyMaterialError(_)) => { /* good */ }
             _ => panic!("Unexpected error"),
         };
@@ -187,7 +184,7 @@ impl TestFrameworkBlockCipher {
             do_hazardous_operations(&mut key, |key| key.set_security_strength(ss.clone())).unwrap();
             strengths_tested += 1;
 
-            match E::do_encrypt_init(&key) {
+            match with_key::<K, KEY_LEN, _>(key.clone(), |k| E::do_encrypt_init(k)) {
                 Ok(_) => {
                     if ss >= &E::MAX_SECURITY_STRENGTH { /* good */
                     } else {

@@ -13,9 +13,8 @@
 //! Basic usage can be obtained via the [`SymmetricCipherEncryptor`] and [`SymmetricCipherDecryptor`] API:
 //!
 //! ```
-//! use bouncycastle_aes::AES_CBC_256;
-//! use bouncycastle_core::key_material::{KeyMaterial256, KeyType};
-//! use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
+//! use bouncycastle_aes::{AES_CBC_256, AES_CBC_256_Key};
+//! use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor, SymmetricCipherKey};
 //! use bouncycastle_cipher::{Decrypting, Encrypting};
 //! use bouncycastle_cipher::padding::PKCS7;
 //!
@@ -23,8 +22,7 @@
 //! type AESEnc = AES_CBC_256<Encrypting, PKCS7>;
 //! type AESDec = AES_CBC_256<Decrypting, PKCS7>;
 //!
-//! let key = KeyMaterial256::from_bytes_as_type(&[0x42; 32], KeyType::SymmetricCipherKey)
-//!     .expect("a 32-byte symmetric cipher key");
+//! let key = AES_CBC_256_Key::new_from_os().expect("a fresh key");
 //!
 //! // An arbitrary plaintext to encrypt
 //! // Any length: PKCS#7 pads it out to whole blocks, so 50 bytes is as good as 48.
@@ -43,9 +41,8 @@
 //! For data that arrives in pieces, the following APIs can be used:
 //!
 //! ```
-//! use bouncycastle_aes::{AES_CBC_128, AES_BLOCK_LEN};
-//! use bouncycastle_core::key_material::{KeyMaterial128, KeyType};
-//! use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
+//! use bouncycastle_aes::{AES_CBC_128, AES_BLOCK_LEN, AES_CBC_128_Key};
+//! use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor, SymmetricCipherKey};
 //! use bouncycastle_cipher::{Decrypting, Encrypting};
 //! use bouncycastle_cipher::padding::PKCS7;
 //!
@@ -54,8 +51,7 @@
 //! type AESDec = AES_CBC_128<Decrypting, PKCS7>;
 //!
 //!
-//! let key = KeyMaterial128::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
-//!     .expect("a 16-byte symmetric cipher key");
+//! let key = AES_CBC_128_Key::new_from_os().expect("a fresh key");
 //!
 //! // An arbitrary plaintext to encrypt
 //! let plaintext = [0x5Au8; 50];
@@ -101,16 +97,15 @@
 //! error at `do_encrypt_final` rather than something silently padded:
 //!
 //! ```
-//! use bouncycastle_aes::AES_CBC_128;
-//! use bouncycastle_core::key_material::{KeyMaterial128, KeyType};
-//! use bouncycastle_core::traits::SymmetricCipherEncryptor;
+//! use bouncycastle_aes::{AES_CBC_128, AES_CBC_128_Key};
+//! use bouncycastle_core::traits::{SymmetricCipherEncryptor, SymmetricCipherKey};
 //! use bouncycastle_cipher::Encrypting;
 //! use bouncycastle_cipher::padding::NoPadding;
 //!
 //! // Define ourselves a convenience type for the encryption direction with no padding.
 //! type Enc = AES_CBC_128<Encrypting, NoPadding>;
 //!
-//! let key = KeyMaterial128::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey).unwrap();
+//! let key = AES_CBC_128_Key::new_from_os().expect("a fresh key");
 //!
 //! // A whole block is fine, and comes out the same length.
 //! let mut out = [0u8; 16];
@@ -126,13 +121,12 @@
 //! interchanged. A value built with one will not satisfy a binding annotated with the other.
 //!
 //! ```compile_fail
-//! use bouncycastle_aes::AES_CBC_128;
-//! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-//! use bouncycastle_core::traits::SymmetricCipherEncryptor;
+//! use bouncycastle_aes::{AES_CBC_128, AES_CBC_128_Key};
+//! use bouncycastle_core::traits::{SymmetricCipherEncryptor, SymmetricCipherKey};
 //! use bouncycastle_cipher::Encrypting;
 //! use bouncycastle_cipher::padding::{NoPadding, PKCS7};
 //!
-//! let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey).unwrap();
+//! let key = AES_CBC_128_Key::new_from_os().expect("a fresh key");
 //!
 //! // Built as NoPadding, annotated as PKCS7: mismatched types.
 //! let (enc, _iv) = AES_CBC_128::<Encrypting, NoPadding>::do_encrypt_init(&key).unwrap();
@@ -155,63 +149,155 @@ use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_cipher::modes::cbc;
 #[allow(unused_imports)]
 use bouncycastle_cipher::padding::{NoPadding, PKCS7};
+use bouncycastle_core::errors::{KeyMaterialError, RNGError};
+use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
+use bouncycastle_core::security_strength::SecurityStrength;
+use bouncycastle_core::traits::SymmetricCipherKey;
 #[allow(unused_imports)]
 use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
+use bouncycastle_rng::{HashDRBG_SHA256, HashDRBG_SHA512};
 // end of imports needed for docs
 
 /// AES-128 in CBC mode with a padding scheme.
 #[allow(non_camel_case_types)]
 pub type AES_CBC_128<Dir, Pad> = <Dir as Direction>::Select<
     PaddedBlockCipherEncryptor<
-        Cbc<AES128Internal, Encrypting, 16, AES_BLOCK_LEN>,
+        Cbc<AES128Internal, Encrypting, AES_CBC_128_Key, 16, AES_BLOCK_LEN>,
         Pad,
+        AES_CBC_128_Key,
         16,
         AES_BLOCK_LEN,
         AES_BLOCK_LEN,
     >,
     PaddedBlockCipherDecryptor<
-        Cbc<AES128Internal, Decrypting, 16, AES_BLOCK_LEN>,
+        Cbc<AES128Internal, Decrypting, AES_CBC_128_Key, 16, AES_BLOCK_LEN>,
         Pad,
+        AES_CBC_128_Key,
         16,
         AES_BLOCK_LEN,
         AES_BLOCK_LEN,
     >,
 >;
+
+/// An AES-CBC-128 key.
+#[derive(Clone, PartialEq, Eq)]
+#[allow(non_camel_case_types)]
+pub struct AES_CBC_128_Key(KeyMaterial<16>);
+
+impl SymmetricCipherKey<16> for AES_CBC_128_Key {
+    fn from_keymaterial(key: KeyMaterial<16>) -> Result<Self, KeyMaterialError> {
+        if key.key_type() != KeyType::SymmetricCipherKey {
+            return Err(KeyMaterialError::InvalidKeyType("Must be SymmetricCipherKey"));
+        }
+        if key.security_strength() < SecurityStrength::_128bit {
+            return Err(KeyMaterialError::InvalidKeyType(
+                "Key's Security strength must be at least 128bit",
+            ));
+        }
+        Ok(Self(key))
+    }
+
+    fn get_key(&self) -> &KeyMaterial<16> {
+        &self.0
+    }
+
+    fn new_from_os() -> Result<Self, RNGError> {
+        Self::new_from_rng(&mut HashDRBG_SHA256::new_from_os())
+    }
+}
 
 /// AES-192 in CBC mode with a padding scheme.
 #[allow(non_camel_case_types)]
 pub type AES_CBC_192<Dir, Pad> = <Dir as Direction>::Select<
     PaddedBlockCipherEncryptor<
-        Cbc<AES192Internal, Encrypting, 24, AES_BLOCK_LEN>,
+        Cbc<AES192Internal, Encrypting, AES_CBC_192_Key, 24, AES_BLOCK_LEN>,
         Pad,
+        AES_CBC_192_Key,
         24,
         AES_BLOCK_LEN,
         AES_BLOCK_LEN,
     >,
     PaddedBlockCipherDecryptor<
-        Cbc<AES192Internal, Decrypting, 24, AES_BLOCK_LEN>,
+        Cbc<AES192Internal, Decrypting, AES_CBC_192_Key, 24, AES_BLOCK_LEN>,
         Pad,
+        AES_CBC_192_Key,
         24,
         AES_BLOCK_LEN,
         AES_BLOCK_LEN,
     >,
 >;
 
+/// An AES-CBC-192 key.
+#[derive(Clone, PartialEq, Eq)]
+#[allow(non_camel_case_types)]
+pub struct AES_CBC_192_Key(KeyMaterial<24>);
+
+impl SymmetricCipherKey<24> for AES_CBC_192_Key {
+    fn from_keymaterial(key: KeyMaterial<24>) -> Result<Self, KeyMaterialError> {
+        if key.key_type() != KeyType::SymmetricCipherKey {
+            return Err(KeyMaterialError::InvalidKeyType("Must be SymmetricCipherKey"));
+        }
+        if key.security_strength() < SecurityStrength::_192bit {
+            return Err(KeyMaterialError::InvalidKeyType(
+                "Key's Security strength must be at least 192bit",
+            ));
+        }
+        Ok(Self(key))
+    }
+
+    fn get_key(&self) -> &KeyMaterial<24> {
+        &self.0
+    }
+
+    fn new_from_os() -> Result<Self, RNGError> {
+        Self::new_from_rng(&mut HashDRBG_SHA512::new_from_os())
+    }
+}
+
 /// AES-256 in CBC mode with a padding scheme. See [`AES_CBC_128`].
 #[allow(non_camel_case_types)]
 pub type AES_CBC_256<Dir, Pad> = <Dir as Direction>::Select<
     PaddedBlockCipherEncryptor<
-        Cbc<AES256Internal, Encrypting, 32, AES_BLOCK_LEN>,
+        Cbc<AES256Internal, Encrypting, AES_CBC_256_Key, 32, AES_BLOCK_LEN>,
         Pad,
+        AES_CBC_256_Key,
         32,
         AES_BLOCK_LEN,
         AES_BLOCK_LEN,
     >,
     PaddedBlockCipherDecryptor<
-        Cbc<AES256Internal, Decrypting, 32, AES_BLOCK_LEN>,
+        Cbc<AES256Internal, Decrypting, AES_CBC_256_Key, 32, AES_BLOCK_LEN>,
         Pad,
+        AES_CBC_256_Key,
         32,
         AES_BLOCK_LEN,
         AES_BLOCK_LEN,
     >,
 >;
+
+/// An AES-CBC-256 key.
+#[derive(Clone, PartialEq, Eq)]
+#[allow(non_camel_case_types)]
+pub struct AES_CBC_256_Key(KeyMaterial<32>);
+
+impl SymmetricCipherKey<32> for AES_CBC_256_Key {
+    fn from_keymaterial(key: KeyMaterial<32>) -> Result<Self, KeyMaterialError> {
+        if key.key_type() != KeyType::SymmetricCipherKey {
+            return Err(KeyMaterialError::InvalidKeyType("Must be SymmetricCipherKey"));
+        }
+        if key.security_strength() < SecurityStrength::_256bit {
+            return Err(KeyMaterialError::InvalidKeyType(
+                "Key's Security strength must be at least 256bit",
+            ));
+        }
+        Ok(Self(key))
+    }
+
+    fn get_key(&self) -> &KeyMaterial<32> {
+        &self.0
+    }
+
+    fn new_from_os() -> Result<Self, RNGError> {
+        Self::new_from_rng(&mut HashDRBG_SHA512::new_from_os())
+    }
+}

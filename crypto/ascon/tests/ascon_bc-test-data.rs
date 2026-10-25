@@ -8,17 +8,17 @@
 //! These full sweeps (1025–1089 cases each) complement the small embedded vector sets in the
 //! per-primitive test files.
 
-use bouncycastle_ascon::Ascon_AEAD128;
 use bouncycastle_ascon::AsconCXof128;
 use bouncycastle_ascon::AsconHash256;
 use bouncycastle_ascon::AsconXof128;
+use bouncycastle_ascon::{Ascon_AEAD128, Ascon_AEAD128_Key};
 use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::hazmat::do_hazardous_operations;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{
     AEADCipherDecryptor, AEADCipherEncryptor, Hash, SymmetricCipherDecryptor,
-    SymmetricCipherEncryptor, XOF,
+    SymmetricCipherEncryptor, SymmetricCipherKey, XOF,
 };
 use bouncycastle_core_test_framework::test_data_loaders::bc_test_data;
 use bouncycastle_hex as hex;
@@ -88,7 +88,7 @@ fn to_16(bytes: &[u8], what: &str) -> [u8; 16] {
 /// (Count=1), which `KeyMaterial::from_bytes_as_type` would otherwise tag
 /// `KeyType::Zeroized` / `SecurityStrength::None`; force the type/strength the way a caller
 /// who knows the provenance of the key would (see `cli/src/helpers.rs::parse_seed`).
-fn key_material(key: &[u8; 16]) -> KeyMaterial<16> {
+fn key_material(key: &[u8; 16]) -> Ascon_AEAD128_Key {
     let mut km = KeyMaterial::<16>::from_bytes_as_type(key, KeyType::SymmetricCipherKey).unwrap();
 
     do_hazardous_operations(&mut km, |k| {
@@ -97,7 +97,7 @@ fn key_material(key: &[u8; 16]) -> KeyMaterial<16> {
     })
     .unwrap();
 
-    km
+    Ascon_AEAD128_Key::from_keymaterial(km).unwrap()
 }
 
 #[test]

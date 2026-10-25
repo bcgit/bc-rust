@@ -7,12 +7,14 @@
 //! report the same name. So must the `AES_CCM_*_Packet` aliases, which are a second API onto the
 //! same mode rather than another algorithm.
 
-use bouncycastle_aes::hazmat::{AES_ECB_128, AES_ECB_192, AES_ECB_256, AES128Internal};
+use bouncycastle_aes::hazmat::{
+    AES_ECB_128, AES_ECB_128_Key, AES_ECB_192, AES_ECB_256, AES128Internal,
+};
 use bouncycastle_aes::{
-    AES_CBC_128, AES_CBC_192, AES_CBC_256, AES_CCM_128, AES_CCM_128_Packet, AES_CCM_192,
-    AES_CCM_192_Packet, AES_CCM_256, AES_CCM_256_Packet, AES_CFB_128, AES_CFB_192, AES_CFB_256,
-    AES_CFB8_128, AES_CFB8_192, AES_CFB8_256, AES_CTR_128, AES_CTR_192, AES_CTR_256, AES_GCM_128,
-    AES_GCM_192, AES_GCM_256, CCM_NONCE_LEN, CCM_TAG_LEN,
+    AES_CBC_128, AES_CBC_128_Key, AES_CBC_192, AES_CBC_256, AES_CCM_128, AES_CCM_128_Packet,
+    AES_CCM_192, AES_CCM_192_Packet, AES_CCM_256, AES_CCM_256_Packet, AES_CFB_128, AES_CFB_192,
+    AES_CFB_256, AES_CFB8_128, AES_CFB8_192, AES_CFB8_256, AES_CTR_128, AES_CTR_192, AES_CTR_256,
+    AES_GCM_128, AES_GCM_128_Key, AES_GCM_192, AES_GCM_256, CCM_NONCE_LEN, CCM_TAG_LEN,
 };
 use bouncycastle_cipher::modes::hazmat::ecb::Ecb;
 use bouncycastle_cipher::modes::{Cbc, Gcm};
@@ -131,13 +133,27 @@ fn the_aliases_name_the_expected_types() {
     assert_eq!(
         size_of::<AES_CBC_128<Encrypting, PKCS7>>(),
         size_of::<
-            PaddedBlockCipherEncryptor<Cbc<AES128Internal, Encrypting, 16, 16>, PKCS7, 16, 16, 16>,
+            PaddedBlockCipherEncryptor<
+                Cbc<AES128Internal, Encrypting, AES_CBC_128_Key, 16, 16>,
+                PKCS7,
+                AES_CBC_128_Key,
+                16,
+                16,
+                16,
+            >,
         >()
     );
     assert_eq!(
         size_of::<AES_CBC_128<Decrypting, PKCS7>>(),
         size_of::<
-            PaddedBlockCipherDecryptor<Cbc<AES128Internal, Decrypting, 16, 16>, PKCS7, 16, 16, 16>,
+            PaddedBlockCipherDecryptor<
+                Cbc<AES128Internal, Decrypting, AES_CBC_128_Key, 16, 16>,
+                PKCS7,
+                AES_CBC_128_Key,
+                16,
+                16,
+                16,
+            >,
         >()
     );
     // The two directions are genuinely different types, so the encryptor and the decryptor do not
@@ -151,22 +167,36 @@ fn the_aliases_name_the_expected_types() {
     assert_eq!(
         size_of::<AES_ECB_128<Encrypting, PKCS7>>(),
         size_of::<
-            PaddedBlockCipherEncryptor<Ecb<AES128Internal, Encrypting, 16, 16>, PKCS7, 16, 0, 16>,
+            PaddedBlockCipherEncryptor<
+                Ecb<AES128Internal, Encrypting, AES_ECB_128_Key, 16, 16>,
+                PKCS7,
+                AES_ECB_128_Key,
+                16,
+                0,
+                16,
+            >,
         >()
     );
     assert_eq!(
         size_of::<AES_ECB_128<Decrypting, PKCS7>>(),
         size_of::<
-            PaddedBlockCipherDecryptor<Ecb<AES128Internal, Decrypting, 16, 16>, PKCS7, 16, 0, 16>,
+            PaddedBlockCipherDecryptor<
+                Ecb<AES128Internal, Decrypting, AES_ECB_128_Key, 16, 16>,
+                PKCS7,
+                AES_ECB_128_Key,
+                16,
+                0,
+                16,
+            >,
         >()
     );
 
     assert_eq!(
         size_of::<AES_GCM_128<Encrypting>>(),
-        size_of::<Gcm<AES128Internal, Encrypting, 16, 16>>()
+        size_of::<Gcm<AES128Internal, Encrypting, AES_GCM_128_Key, 16, 16>>()
     );
     assert_eq!(
         size_of::<AES_GCM_128<Decrypting>>(),
-        size_of::<Gcm<AES128Internal, Decrypting, 16, 16>>()
+        size_of::<Gcm<AES128Internal, Decrypting, AES_GCM_128_Key, 16, 16>>()
     );
 }

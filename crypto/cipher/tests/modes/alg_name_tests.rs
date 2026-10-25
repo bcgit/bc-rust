@@ -15,7 +15,7 @@ use bouncycastle_cipher::padding::{
 };
 use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::traits::Algorithm;
-use common::Toy;
+use common::{Toy, ToyCipherKey};
 
 fn check<A: Algorithm>(name: &str) {
     assert_eq!(A::ALG_NAME, name);
@@ -43,37 +43,65 @@ fn the_toy_names_every_mode_differently() {
 
 #[test]
 fn each_mode_reports_its_own_name() {
-    check::<Cbc<Toy, Encrypting, 16, 16>>(Toy::CBC_ALG_NAME);
-    check::<Cbc<Toy, Decrypting, 16, 16>>(Toy::CBC_ALG_NAME);
-    check::<Ecb<Toy, Encrypting, 16, 16>>(Toy::ECB_ALG_NAME);
-    check::<Ecb<Toy, Decrypting, 16, 16>>(Toy::ECB_ALG_NAME);
-    check::<Cfb<Toy, Encrypting, 16, 16>>(Toy::CFB_ALG_NAME);
-    check::<Cfb<Toy, Decrypting, 16, 16>>(Toy::CFB_ALG_NAME);
-    check::<Cfb8<Toy, Encrypting, 16, 16>>(Toy::CFB8_ALG_NAME);
-    check::<Cfb8<Toy, Decrypting, 16, 16>>(Toy::CFB8_ALG_NAME);
-    check::<Gcm<Toy, Encrypting, 16, 16>>(Toy::GCM_ALG_NAME);
-    check::<Gcm<Toy, Decrypting, 16, 16>>(Toy::GCM_ALG_NAME);
-    check::<CcmPacket<Toy, Encrypting, 16, 16, 12, 16>>(Toy::CCM_ALG_NAME);
-    check::<CcmPacket<Toy, Decrypting, 16, 16, 12, 16>>(Toy::CCM_ALG_NAME);
-    check::<CcmEncryptor<Toy, 16, 16, 12, 16, 16, 32>>(Toy::CCM_ALG_NAME);
-    check::<CcmDecryptor<Toy, 16, 16, 12, 16, 16, 32>>(Toy::CCM_ALG_NAME);
+    check::<Cbc<Toy, Encrypting, ToyCipherKey, 16, 16>>(Toy::CBC_ALG_NAME);
+    check::<Cbc<Toy, Decrypting, ToyCipherKey, 16, 16>>(Toy::CBC_ALG_NAME);
+    check::<Ecb<Toy, Encrypting, ToyCipherKey, 16, 16>>(Toy::ECB_ALG_NAME);
+    check::<Ecb<Toy, Decrypting, ToyCipherKey, 16, 16>>(Toy::ECB_ALG_NAME);
+    check::<Cfb<Toy, Encrypting, ToyCipherKey, 16, 16>>(Toy::CFB_ALG_NAME);
+    check::<Cfb<Toy, Decrypting, ToyCipherKey, 16, 16>>(Toy::CFB_ALG_NAME);
+    check::<Cfb8<Toy, Encrypting, ToyCipherKey, 16, 16>>(Toy::CFB8_ALG_NAME);
+    check::<Cfb8<Toy, Decrypting, ToyCipherKey, 16, 16>>(Toy::CFB8_ALG_NAME);
+    check::<Gcm<Toy, Encrypting, ToyCipherKey, 16, 16>>(Toy::GCM_ALG_NAME);
+    check::<Gcm<Toy, Decrypting, ToyCipherKey, 16, 16>>(Toy::GCM_ALG_NAME);
+    check::<CcmPacket<Toy, Encrypting, ToyCipherKey, 16, 16, 12, 16>>(Toy::CCM_ALG_NAME);
+    check::<CcmPacket<Toy, Decrypting, ToyCipherKey, 16, 16, 12, 16>>(Toy::CCM_ALG_NAME);
+    check::<CcmEncryptor<Toy, ToyCipherKey, 16, 16, 12, 16, 16, 32>>(Toy::CCM_ALG_NAME);
+    check::<CcmDecryptor<Toy, ToyCipherKey, 16, 16, 12, 16, 16, 32>>(Toy::CCM_ALG_NAME);
 }
 
 /// The padding layer and the stream-cipher wrapper add no name of their own.
 #[test]
 fn the_wrappers_forward_the_inner_name() {
-    check::<Ctr<Toy, Encrypting, 16, 16, 12>>(Toy::CTR_ALG_NAME);
-    check::<Ctr<Toy, Decrypting, 16, 16, 12>>(Toy::CTR_ALG_NAME);
-    check::<PaddedBlockCipherEncryptor<Cbc<Toy, Encrypting, 16, 16>, PKCS7, 16, 16, 16>>(
-        Toy::CBC_ALG_NAME,
-    );
-    check::<PaddedBlockCipherDecryptor<Cbc<Toy, Decrypting, 16, 16>, PKCS7, 16, 16, 16>>(
-        Toy::CBC_ALG_NAME,
-    );
-    check::<PaddedBlockCipherEncryptor<Ecb<Toy, Encrypting, 16, 16>, NoPadding, 16, 0, 16>>(
-        Toy::ECB_ALG_NAME,
-    );
-    check::<PaddedBlockCipherDecryptor<Ecb<Toy, Decrypting, 16, 16>, NoPadding, 16, 0, 16>>(
-        Toy::ECB_ALG_NAME,
-    );
+    check::<Ctr<Toy, Encrypting, ToyCipherKey, 16, 16, 12>>(Toy::CTR_ALG_NAME);
+    check::<Ctr<Toy, Decrypting, ToyCipherKey, 16, 16, 12>>(Toy::CTR_ALG_NAME);
+    check::<
+        PaddedBlockCipherEncryptor<
+            Cbc<Toy, Encrypting, ToyCipherKey, 16, 16>,
+            PKCS7,
+            ToyCipherKey,
+            16,
+            16,
+            16,
+        >,
+    >(Toy::CBC_ALG_NAME);
+    check::<
+        PaddedBlockCipherDecryptor<
+            Cbc<Toy, Decrypting, ToyCipherKey, 16, 16>,
+            PKCS7,
+            ToyCipherKey,
+            16,
+            16,
+            16,
+        >,
+    >(Toy::CBC_ALG_NAME);
+    check::<
+        PaddedBlockCipherEncryptor<
+            Ecb<Toy, Encrypting, ToyCipherKey, 16, 16>,
+            NoPadding,
+            ToyCipherKey,
+            16,
+            0,
+            16,
+        >,
+    >(Toy::ECB_ALG_NAME);
+    check::<
+        PaddedBlockCipherDecryptor<
+            Ecb<Toy, Decrypting, ToyCipherKey, 16, 16>,
+            NoPadding,
+            ToyCipherKey,
+            16,
+            0,
+            16,
+        >,
+    >(Toy::ECB_ALG_NAME);
 }

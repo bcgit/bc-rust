@@ -21,11 +21,10 @@
 use crate::{Decrypting, Encrypting};
 use bouncycastle_core::errors::{SuspendableError, SymmetricCipherError};
 use bouncycastle_core::hazmat::KeyStream;
-use bouncycastle_core::key_material::KeyMaterial;
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{
     Algorithm, RNG, StreamCipherDecryptor, StreamCipherEncryptor, SuspendableKeyed,
-    SymmetricCipherDecryptor, SymmetricCipherEncryptor,
+    SymmetricCipherDecryptor, SymmetricCipherEncryptor, SymmetricCipherKey,
 };
 use bouncycastle_rng::HashDRBG_SHA512;
 use bouncycastle_utils::secret::Secret;
@@ -59,11 +58,13 @@ use core::marker::PhantomData;
 pub struct StreamCipher<
     KS,
     Dir,
+    K,
     const KEY_LEN: usize,
     const INIT_DATA_LEN: usize,
     const BLOCK_LEN: usize,
 > where
-    KS: KeyStream<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
+    KS: KeyStream<K, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
+    K: SymmetricCipherKey<KEY_LEN>,
 {
     keystream: KS,
     /// The keystream block currently being consumed. Meaningful only while `used < BLOCK_LEN`.
@@ -72,12 +73,15 @@ pub struct StreamCipher<
     /// and the next byte needs a fresh keystream block.
     used: usize,
     _marker: PhantomData<Dir>,
+    /// Records `K`, which no other field mentions; without it `K` would be an unused parameter.
+    _key: PhantomData<K>,
 }
 
-impl<KS, Dir, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize>
-    StreamCipher<KS, Dir, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
+impl<KS, Dir, K, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize>
+    StreamCipher<KS, Dir, K, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
 where
-    KS: KeyStream<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
+    KS: KeyStream<K, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
+    K: SymmetricCipherKey<KEY_LEN>,
 {
     /// Wraps a keystream that has already been constructed and positioned, such as one that
     /// starts part-way into its counter space (GCM's GCTR starts at `inc32(J0)`).
@@ -88,7 +92,13 @@ where
     /// [`SymmetricCipherEncryptor`] constructors are the safe path.
     pub fn from_keystream(keystream: KS) -> Self {
         Self::check_shape();
-        Self { keystream, pending: Secret::new(), used: BLOCK_LEN, _marker: PhantomData }
+        Self {
+            keystream,
+            pending: Secret::new(),
+            used: BLOCK_LEN,
+            _marker: PhantomData,
+            _key: PhantomData,
+        }
     }
 
     /// The wrapped keystream, for a construction that shares its key schedule with something
@@ -162,10 +172,11 @@ where
     }
 }
 
-impl<KS, Dir, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize> Algorithm
-    for StreamCipher<KS, Dir, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
+impl<KS, Dir, K, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize> Algorithm
+    for StreamCipher<KS, Dir, K, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
 where
-    KS: KeyStream<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
+    KS: KeyStream<K, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
+    K: SymmetricCipherKey<KEY_LEN>,
 {
     /// The keystream's name.
     const ALG_NAME: &'static str = KS::ALG_NAME;
@@ -173,16 +184,15 @@ where
     const MAX_SECURITY_STRENGTH: SecurityStrength = KS::MAX_SECURITY_STRENGTH;
 }
 
-impl<KS, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize>
-    SymmetricCipherEncryptor<KEY_LEN, INIT_DATA_LEN, 0>
-    for StreamCipher<KS, Encrypting, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
+impl<KS, K, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize>
+    SymmetricCipherEncryptor<K, KEY_LEN, INIT_DATA_LEN, 0>
+    for StreamCipher<KS, Encrypting, K, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
 where
-    KS: KeyStream<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
+    KS: KeyStream<K, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
+    K: SymmetricCipherKey<KEY_LEN>,
 {
     /// Begins an encryption flow, drawing the init data from the library's default OS-backed DRBG.
-    fn do_encrypt_init(
-        key: &KeyMaterial<KEY_LEN>,
-    ) -> Result<(Self, [u8; INIT_DATA_LEN]), SymmetricCipherError> {
+    fn do_encrypt_init(key: &K) -> Result<(Self, [u8; INIT_DATA_LEN]), SymmetricCipherError> {
         let mut rng = HashDRBG_SHA512::new_from_os();
         Self::do_encrypt_init_rng(key, &mut rng)
     }
@@ -190,7 +200,7 @@ where
     /// As [`SymmetricCipherEncryptor::do_encrypt_init`], but draws the init data from `rng`.
     /// Never panics: `INIT_DATA_LEN == 0` is ruled out at compile time; see [`StreamCipher`].
     fn do_encrypt_init_rng(
-        key: &KeyMaterial<KEY_LEN>,
+        key: &K,
         rng: &mut dyn RNG,
     ) -> Result<(Self, [u8; INIT_DATA_LEN]), SymmetricCipherError> {
         Self::check_shape();
@@ -237,11 +247,12 @@ where
     }
 }
 
-impl<KS, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize>
-    StreamCipherEncryptor<KEY_LEN, INIT_DATA_LEN>
-    for StreamCipher<KS, Encrypting, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
+impl<KS, K, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize>
+    StreamCipherEncryptor<K, KEY_LEN, INIT_DATA_LEN>
+    for StreamCipher<KS, Encrypting, K, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
 where
-    KS: KeyStream<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
+    KS: KeyStream<K, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
+    K: SymmetricCipherKey<KEY_LEN>,
 {
     /// XORs the next `data.len()` keystream bytes into `data`.
     ///
@@ -253,16 +264,17 @@ where
     }
 }
 
-impl<KS, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize>
-    SymmetricCipherDecryptor<KEY_LEN, INIT_DATA_LEN, 0>
-    for StreamCipher<KS, Decrypting, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
+impl<KS, K, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize>
+    SymmetricCipherDecryptor<K, KEY_LEN, INIT_DATA_LEN, 0>
+    for StreamCipher<KS, Decrypting, K, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
 where
-    KS: KeyStream<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
+    KS: KeyStream<K, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
+    K: SymmetricCipherKey<KEY_LEN>,
 {
     /// Begins a decryption flow from the init data returned by
     /// [`SymmetricCipherEncryptor::do_encrypt_init`].
     fn do_decrypt_init(
-        key: &KeyMaterial<KEY_LEN>,
+        key: &K,
         init_data: &[u8; INIT_DATA_LEN],
     ) -> Result<Self, SymmetricCipherError> {
         Self::check_shape();
@@ -306,11 +318,12 @@ where
     }
 }
 
-impl<KS, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize>
-    StreamCipherDecryptor<KEY_LEN, INIT_DATA_LEN>
-    for StreamCipher<KS, Decrypting, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
+impl<KS, K, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize>
+    StreamCipherDecryptor<K, KEY_LEN, INIT_DATA_LEN>
+    for StreamCipher<KS, Decrypting, K, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
 where
-    KS: KeyStream<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
+    KS: KeyStream<K, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
+    K: SymmetricCipherKey<KEY_LEN>,
 {
     /// The same XOR as encryption.
     ///
@@ -321,10 +334,11 @@ where
     }
 }
 
-impl<KS, Dir, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize>
-    StreamCipher<KS, Dir, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
+impl<KS, Dir, K, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize>
+    StreamCipher<KS, Dir, K, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
 where
-    KS: KeyStream<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN> + SuspendableComponent,
+    KS: KeyStream<K, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN> + SuspendableComponent,
+    K: SymmetricCipherKey<KEY_LEN>,
 {
     /// The `N` of this type's [`SuspendableKeyed<N>`] impl: the version header, the keystream's
     /// state, the pending keystream block and the `used` count as a `u64`. See
@@ -336,10 +350,11 @@ where
 /// The suspended state is the keystream's own state followed by the pending keystream block and
 /// how much of it is used. The pending block is live keystream, which is why the whole state
 /// must be protected and never resumed twice; see [`bouncycastle_utils::suspendable_state`].
-impl<KS, Dir, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize>
-    SuspendableComponent for StreamCipher<KS, Dir, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
+impl<KS, Dir, K, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize>
+    SuspendableComponent for StreamCipher<KS, Dir, K, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
 where
-    KS: KeyStream<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN> + SuspendableComponent,
+    KS: KeyStream<K, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN> + SuspendableComponent,
+    K: SymmetricCipherKey<KEY_LEN>,
 {
     const STATE_LEN: usize = KS::STATE_LEN + BLOCK_LEN + 8;
     type Key = KS::Key;
@@ -364,7 +379,7 @@ where
         // `used` is `0..=BLOCK_LEN`, with `BLOCK_LEN` meaning nothing is pending.
         let used = bounded_usize(r.u64(), BLOCK_LEN)?;
         debug_assert!(r.is_done());
-        Ok(Self { keystream, pending, used, _marker: PhantomData })
+        Ok(Self { keystream, pending, used, _marker: PhantomData, _key: PhantomData })
     }
 }
 
@@ -372,13 +387,15 @@ where
 impl<
     KS,
     Dir,
+    K,
     const KEY_LEN: usize,
     const INIT_DATA_LEN: usize,
     const BLOCK_LEN: usize,
     const N: usize,
-> SuspendableKeyed<N> for StreamCipher<KS, Dir, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
+> SuspendableKeyed<N> for StreamCipher<KS, Dir, K, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
 where
-    KS: KeyStream<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN> + SuspendableComponent,
+    KS: KeyStream<K, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN> + SuspendableComponent,
+    K: SymmetricCipherKey<KEY_LEN>,
 {
     type Key = KS::Key;
 
