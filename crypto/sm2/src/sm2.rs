@@ -123,9 +123,12 @@ fn sign_with_k(
     // `r + k` is as sensitive as `k`: `r` is published in the signature, so anyone holding both
     // recovers `k` by subtraction. It is scrubbed on both ways out of the check below.
     let mut r_plus_k = r.add(&k_field);
-    // Astronomically unlikely for any real k/e (r, r+k range over ~2^256 values each); this
-    // comparison is the draft's own mandated success/failure branch on the just-computed public
-    // output r, not a constant-time violation on a secret intermediate.
+    // Step A5's check. Both disjuncts are compared in constant time (`PartialEq` on the field
+    // type is), and the branch below is one of the two data-dependent branches on the signing
+    // path (step A6's `s = 0` is the other). `r = 0` is a condition on the public output;
+    // `(r + k) mod n = 0`, i.e. `r + k = n` for `k` in `[1, n-1]` and `r` in `[0, n-1]`, is a
+    // function of `k`, but a taken branch discards that `k`, so it reveals nothing about a `k`
+    // that is used. Each disjunct is taken with probability `1/(n-1)` per signature.
     let r_out_of_range = r_is_zero_or_r_plus_k_is_zero(&r, &r_plus_k);
     r_plus_k.zeroize();
     if r_out_of_range {
