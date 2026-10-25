@@ -1066,7 +1066,7 @@ pub trait BlockEncryptionKey<
 
     /// One-shot: encrypts `LEN` bytes, a whole number of blocks, in place under init data drawn
     /// from `rng`, and returns the number of bytes written with the init data. `LEN % BLOCK_LEN
-    /// == 0` is checked at compile time, as for [`BlockCipherEncryptor::do_encrypt_inplace`].
+    /// == 0` is checked at compile time, as for [`BlockCipherEncryptor::do_encrypt_blocks_inplace`].
     ///
     /// # Errors
     /// As [`create_encryptor`](Self::create_encryptor), or the encryptor's own refusals.
