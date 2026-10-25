@@ -103,11 +103,10 @@ fn bits2int_521(v1: &[u8; HLEN], v2: &[u8; HLEN]) -> Secret<[u8; RLEN]> {
 /// n-1]`. See [`crate::rfc6979::candidate_in_range`]'s docs.
 fn candidate_in_range(candidate: &[u8; RLEN]) -> bool {
     let limbs = p521_sec1::limbs_from_be_bytes(candidate);
-    if limbs == [0; 9] {
-        return false;
-    }
+    let is_nonzero = !nat::is_zero(&limbs);
     let (_, borrow) = nat::sub(&limbs, &N_LIMBS);
-    borrow == 1
+    let is_below_n = Condition::<u64>::from_lsb(borrow);
+    (is_nonzero & is_below_n).to_bool_opaque()
 }
 
 /// RFC 6979 §3.2 steps a-h: the deterministic per-message secret `k` for private key `d` and

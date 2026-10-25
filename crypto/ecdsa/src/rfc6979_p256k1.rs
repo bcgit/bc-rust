@@ -56,11 +56,10 @@ fn bits2octets(h1: &[u8; HLEN]) -> [u8; HLEN] {
 /// n-1]` -- RFC 6979 step h.3's comparison against `q`.
 fn candidate_in_range(candidate: &[u8; HLEN]) -> bool {
     let limbs = p256k1_sec1::limbs_from_be_bytes(candidate);
-    if limbs == [0, 0, 0, 0] {
-        return false;
-    }
+    let is_nonzero = !nat::is_zero(&limbs);
     let (_, borrow) = nat::sub(&limbs, &N_LIMBS);
-    borrow == 1
+    let is_below_n = Condition::<u64>::from_lsb(borrow);
+    (is_nonzero & is_below_n).to_bool_opaque()
 }
 
 /// RFC 6979 §3.2 steps a-h: the deterministic per-message secret `k` for private key `d` and
