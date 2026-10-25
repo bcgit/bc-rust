@@ -39,7 +39,7 @@
 //! other GCM implementation given the same file.
 
 use crate::helpers::{flush_stdout, read_from_file_raw, write_bytes_or_hex, write_stdout};
-use bouncycastle::core::key_material::KeyMaterial;
+use bouncycastle::core::traits::SymmetricCipherKey;
 use bouncycastle::core::traits::{AEADCipherDecryptor, AEADCipherEncryptor};
 use bouncycastle::hex;
 use std::io;
@@ -72,13 +72,14 @@ pub fn load_aad(aad: &Option<String>, aad_file: &Option<String>) -> Vec<u8> {
 
 /// Encrypts stdin to stdout under GCM: writes the generated IV (unless `nonce` supplies one),
 /// then the ciphertext as it streams, then the tag.
-pub fn encrypt_gcm<E, const KEY_LEN: usize, const TAG_LEN: usize>(
-    key: &KeyMaterial<KEY_LEN>,
+pub fn encrypt_gcm<E, K, const KEY_LEN: usize, const TAG_LEN: usize>(
+    key: &K,
     nonce: Option<[u8; GCM_NONCE_LEN]>,
     aad: &[u8],
     output_hex: bool,
 ) where
-    E: AEADCipherEncryptor<KEY_LEN, GCM_NONCE_LEN, TAG_LEN, TAG_LEN>,
+    K: SymmetricCipherKey<KEY_LEN>,
+    E: AEADCipherEncryptor<K, KEY_LEN, GCM_NONCE_LEN, TAG_LEN, TAG_LEN>,
 {
     let mut enc = match nonce {
         Some(nonce) => E::do_encrypt_init_nonce(key, &nonce),
@@ -128,13 +129,14 @@ pub fn encrypt_gcm<E, const KEY_LEN: usize, const TAG_LEN: usize>(
 /// first, streams the rest through the inline decryptor, and checks the tag on
 /// `do_decrypt_final`. See the module docs for why plaintext may already be written to stdout by
 /// the time a tag failure is reported.
-pub fn decrypt_gcm<D, const KEY_LEN: usize, const TAG_LEN: usize>(
-    key: &KeyMaterial<KEY_LEN>,
+pub fn decrypt_gcm<D, K, const KEY_LEN: usize, const TAG_LEN: usize>(
+    key: &K,
     nonce: Option<[u8; GCM_NONCE_LEN]>,
     aad: &[u8],
     output_hex: bool,
 ) where
-    D: AEADCipherDecryptor<KEY_LEN, GCM_NONCE_LEN, TAG_LEN, TAG_LEN>,
+    K: SymmetricCipherKey<KEY_LEN>,
+    D: AEADCipherDecryptor<K, KEY_LEN, GCM_NONCE_LEN, TAG_LEN, TAG_LEN>,
 {
     let nonce = nonce.unwrap_or_else(|| {
         let mut nonce = [0u8; GCM_NONCE_LEN];

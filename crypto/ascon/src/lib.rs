@@ -45,12 +45,11 @@
 //!
 //! Authenticated encryption (one-shot, under a nonce the caller manages):
 //! ```
-//! use bouncycastle_ascon::Ascon_AEAD128;
+//! use bouncycastle_ascon::{Ascon_AEAD128, Ascon_AEAD128_Key};
 //! use bouncycastle_cipher::{Decrypting, Encrypting};
-//! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-//! use bouncycastle_core::traits::{AEADCipherDecryptor, AEADCipherEncryptor};
+//! use bouncycastle_core::traits::{AEADCipherDecryptor, AEADCipherEncryptor, SymmetricCipherKey};
 //!
-//! let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42u8; 16], KeyType::SymmetricCipherKey).unwrap();
+//! let key = Ascon_AEAD128_Key::new_from_os().expect("a fresh key");
 //! let nonce = [1u8; 16];           // MUST be unique per encryption under a given key
 //! let ad = b"associated data";
 //! let plaintext = b"secret message";
@@ -69,14 +68,14 @@
 //! bytes it has seen, in case they are an inline tag, so `do_decrypt_final_detached_out` is
 //! where they come out:
 //! ```
-//! use bouncycastle_ascon::Ascon_AEAD128;
+//! use bouncycastle_ascon::{Ascon_AEAD128, Ascon_AEAD128_Key};
 //! use bouncycastle_cipher::{Decrypting, Encrypting};
-//! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
+//! use bouncycastle_core::traits::SymmetricCipherKey;
 //! use bouncycastle_core::traits::{
 //!     AEADCipherDecryptor, AEADCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
 //! };
 //!
-//! let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42u8; 16], KeyType::SymmetricCipherKey).unwrap();
+//! let key = Ascon_AEAD128_Key::new_from_os().expect("a fresh key");
 //!
 //! let plaintext = b"secret message!!";
 //! let (mut enc, nonce) = Ascon_AEAD128::<Encrypting>::do_encrypt_init(&key).unwrap();
@@ -102,14 +101,14 @@
 //! [`bouncycastle_core::traits::AEADCipherEncryptor::encrypt_with_aad_out`] /
 //! [`bouncycastle_core::traits::AEADCipherDecryptor::decrypt_with_aad_out`] are the one-shots with AAD:
 //! ```
-//! use bouncycastle_ascon::Ascon_AEAD128;
+//! use bouncycastle_ascon::{Ascon_AEAD128, Ascon_AEAD128_Key};
 //! use bouncycastle_cipher::{Decrypting, Encrypting};
-//! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
+//! use bouncycastle_core::traits::SymmetricCipherKey;
 //! use bouncycastle_core::traits::{
 //!     AEADCipherDecryptor, AEADCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
 //! };
 //!
-//! let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42u8; 16], KeyType::SymmetricCipherKey).unwrap();
+//! let key = Ascon_AEAD128_Key::new_from_os().expect("a fresh key");
 //! let plaintext = b"secret message!!";
 //!
 //! // No AAD: just a symmetric cipher.
@@ -217,8 +216,9 @@ mod ascon_hash256;
 mod ascon_xof128;
 
 pub use ascon_aead128::{
-    Ascon_AEAD128, KEY_LEN, NONCE_LEN, SUSPENDED_ASCON_AEAD128_DECRYPTOR_STATE_LEN,
-    SUSPENDED_ASCON_AEAD128_ENCRYPTOR_STATE_LEN, TAG_LEN,
+    Ascon_AEAD128, Ascon_AEAD128_Key, KEY_LEN, NONCE_LEN,
+    SUSPENDED_ASCON_AEAD128_DECRYPTOR_STATE_LEN, SUSPENDED_ASCON_AEAD128_ENCRYPTOR_STATE_LEN,
+    TAG_LEN,
 };
 pub use ascon_cxof128::{AsconCXof128, AsconCXof128Squeezer, SUSPENDED_ASCON_CXOF128_STATE_LEN};
 pub use ascon_hash256::{AsconHash256, SUSPENDED_ASCON_HASH256_STATE_LEN};

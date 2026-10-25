@@ -56,7 +56,7 @@
 
 use core::hint::black_box;
 
-use bouncycastle::ascon::Ascon_AEAD128;
+use bouncycastle::ascon::{Ascon_AEAD128, Ascon_AEAD128_Key};
 use bouncycastle::ascon::{AsconCXof128, AsconCXof128Squeezer, SUSPENDED_ASCON_CXOF128_STATE_LEN};
 use bouncycastle::ascon::{AsconHash256, SUSPENDED_ASCON_HASH256_STATE_LEN};
 use bouncycastle::ascon::{AsconXof128, AsconXof128Squeezer, SUSPENDED_ASCON_XOF128_STATE_LEN};
@@ -66,11 +66,11 @@ use bouncycastle::ascon::{
 };
 use bouncycastle::cipher::{Decrypting, Encrypting};
 use bouncycastle::core::errors::{HashError, RNGError, SymmetricCipherError};
-use bouncycastle::core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
+use bouncycastle::core::key_material::KeyMaterialTrait;
 use bouncycastle::core::security_strength::SecurityStrength;
 use bouncycastle::core::traits::{
     AEADCipherDecryptor, AEADCipherEncryptor, Hash, RNG, SymmetricCipherDecryptor,
-    SymmetricCipherEncryptor, XOF, XOFSqueezer,
+    SymmetricCipherEncryptor, SymmetricCipherKey, XOF, XOFSqueezer,
 };
 
 type Enc = Ascon_AEAD128<Encrypting>;
@@ -177,8 +177,8 @@ fn measure(f: impl FnOnce()) {
 /// Wraps the hard-coded key. `#[inline(never)]` so the wrapping is a sibling frame of whatever
 /// uses the key, not part of it.
 #[inline(never)]
-fn key() -> KeyMaterial<KEY_LEN> {
-    KeyMaterial::<KEY_LEN>::from_bytes_as_type(&KEY, KeyType::SymmetricCipherKey).unwrap()
+fn key() -> Ascon_AEAD128_Key {
+    Ascon_AEAD128_Key::from_bytes(&KEY).unwrap()
 }
 
 /// A message filled at run time, so that its contents are not a constant the compiler could fold
@@ -283,9 +283,9 @@ fn bench_aead_encrypt_init() {
     let k = key();
     measure(|| {
         let op = black_box(
-            <Enc as SymmetricCipherEncryptor<KEY_LEN, NONCE_LEN, TAG_LEN>>::do_encrypt_init_rng
+            <Enc as SymmetricCipherEncryptor<Ascon_AEAD128_Key, KEY_LEN, NONCE_LEN, TAG_LEN>>::do_encrypt_init_rng
                 as fn(
-                    &KeyMaterial<KEY_LEN>,
+                    &Ascon_AEAD128_Key,
                     &mut dyn RNG,
                 ) -> Result<(Enc, [u8; NONCE_LEN]), CipherErr>,
         );
@@ -302,10 +302,16 @@ fn bench_aead_encrypt_update_aad() {
     let aad = black_box(message::<AAD_LEN>(0x5a));
     measure(move || {
         let mut enc = enc;
-        let op = black_box(
-            <Enc as AEADCipherEncryptor<KEY_LEN, NONCE_LEN, TAG_LEN, TAG_LEN>>::do_update_aad
-                as fn(&mut Enc, &[u8]) -> Result<(), CipherErr>,
-        );
+        let op =
+            black_box(
+                <Enc as AEADCipherEncryptor<
+                    Ascon_AEAD128_Key,
+                    KEY_LEN,
+                    NONCE_LEN,
+                    TAG_LEN,
+                    TAG_LEN,
+                >>::do_update_aad as fn(&mut Enc, &[u8]) -> Result<(), CipherErr>,
+            );
         op(&mut enc, &aad).unwrap();
         black_box(&enc);
     });
@@ -320,7 +326,7 @@ fn bench_aead_encrypt_out() {
         let mut enc = enc;
         let mut ct = [0u8; MSG_LEN];
         let op = black_box(
-            <Enc as SymmetricCipherEncryptor<KEY_LEN, NONCE_LEN, TAG_LEN>>::do_encrypt_out
+            <Enc as SymmetricCipherEncryptor<Ascon_AEAD128_Key, KEY_LEN, NONCE_LEN, TAG_LEN>>::do_encrypt_out
                 as fn(&mut Enc, &[u8], &mut [u8]) -> Result<usize, CipherErr>,
         );
         let n = op(&mut enc, &pt, &mut ct).unwrap();
@@ -335,7 +341,7 @@ fn bench_aead_encrypt_final() {
     let enc = black_box(encryptor_after_data());
     measure(move || {
         let op = black_box(
-            <Enc as SymmetricCipherEncryptor<KEY_LEN, NONCE_LEN, TAG_LEN>>::do_encrypt_final
+            <Enc as SymmetricCipherEncryptor<Ascon_AEAD128_Key, KEY_LEN, NONCE_LEN, TAG_LEN>>::do_encrypt_final
                 as fn(Enc) -> Result<([u8; TAG_LEN], usize), CipherErr>,
         );
         let (tag, n) = op(enc).unwrap();
@@ -349,10 +355,17 @@ fn bench_aead_encrypt_final_detached() {
     let enc = black_box(encryptor_after_data());
     measure(move || {
         let mut last = [0u8; TAG_LEN];
-        let op = black_box(
-            <Enc as AEADCipherEncryptor<KEY_LEN, NONCE_LEN, TAG_LEN, TAG_LEN>>::do_encrypt_final_detached_out
-                as fn(Enc, &mut [u8; TAG_LEN]) -> Result<(usize, [u8; TAG_LEN]), CipherErr>,
-        );
+        let op =
+            black_box(
+                <Enc as AEADCipherEncryptor<
+                    Ascon_AEAD128_Key,
+                    KEY_LEN,
+                    NONCE_LEN,
+                    TAG_LEN,
+                    TAG_LEN,
+                >>::do_encrypt_final_detached_out
+                    as fn(Enc, &mut [u8; TAG_LEN]) -> Result<(usize, [u8; TAG_LEN]), CipherErr>,
+            );
         let (_, tag) = op(enc, &mut last).unwrap();
         print!("{tag:x?}");
     });
@@ -367,16 +380,23 @@ fn bench_aead_encrypt_oneshot() {
     let pt = black_box(message::<MSG_LEN>(0xa5));
     measure(move || {
         let mut ct = [0u8; SEALED_LEN];
-        let op = black_box(
-            <Enc as AEADCipherEncryptor<KEY_LEN, NONCE_LEN, TAG_LEN, TAG_LEN>>::encrypt_with_aad_rng_out
-                as fn(
-                    &KeyMaterial<KEY_LEN>,
-                    &mut dyn RNG,
-                    &[u8],
-                    &[u8],
-                    &mut [u8],
-                ) -> Result<([u8; NONCE_LEN], usize), CipherErr>,
-        );
+        let op =
+            black_box(
+                <Enc as AEADCipherEncryptor<
+                    Ascon_AEAD128_Key,
+                    KEY_LEN,
+                    NONCE_LEN,
+                    TAG_LEN,
+                    TAG_LEN,
+                >>::encrypt_with_aad_rng_out
+                    as fn(
+                        &Ascon_AEAD128_Key,
+                        &mut dyn RNG,
+                        &[u8],
+                        &[u8],
+                        &mut [u8],
+                    ) -> Result<([u8; NONCE_LEN], usize), CipherErr>,
+            );
         let (_, n) = op(&k, &mut FixedNonce, &aad, &pt, &mut ct).unwrap();
         print!("{:x?}", &ct[..n]);
     });
@@ -390,8 +410,8 @@ fn bench_aead_decrypt_init() {
     let k = key();
     measure(|| {
         let op = black_box(
-            <Dec as SymmetricCipherDecryptor<KEY_LEN, NONCE_LEN, TAG_LEN>>::do_decrypt_init
-                as fn(&KeyMaterial<KEY_LEN>, &[u8; NONCE_LEN]) -> Result<Dec, CipherErr>,
+            <Dec as SymmetricCipherDecryptor<Ascon_AEAD128_Key, KEY_LEN, NONCE_LEN, TAG_LEN>>::do_decrypt_init
+                as fn(&Ascon_AEAD128_Key, &[u8; NONCE_LEN]) -> Result<Dec, CipherErr>,
         );
         let dec = op(&k, &NONCE).unwrap();
         black_box(&dec);
@@ -405,10 +425,16 @@ fn bench_aead_decrypt_update_aad() {
     let aad = black_box(message::<AAD_LEN>(0x5a));
     measure(move || {
         let mut dec = dec;
-        let op = black_box(
-            <Dec as AEADCipherDecryptor<KEY_LEN, NONCE_LEN, TAG_LEN, TAG_LEN>>::do_update_aad
-                as fn(&mut Dec, &[u8]) -> Result<(), CipherErr>,
-        );
+        let op =
+            black_box(
+                <Dec as AEADCipherDecryptor<
+                    Ascon_AEAD128_Key,
+                    KEY_LEN,
+                    NONCE_LEN,
+                    TAG_LEN,
+                    TAG_LEN,
+                >>::do_update_aad as fn(&mut Dec, &[u8]) -> Result<(), CipherErr>,
+            );
         op(&mut dec, &aad).unwrap();
         black_box(&dec);
     });
@@ -425,7 +451,7 @@ fn bench_aead_decrypt_out() {
         let mut dec = dec;
         let mut pt = [0u8; SEALED_LEN];
         let op = black_box(
-            <Dec as SymmetricCipherDecryptor<KEY_LEN, NONCE_LEN, TAG_LEN>>::do_decrypt_out
+            <Dec as SymmetricCipherDecryptor<Ascon_AEAD128_Key, KEY_LEN, NONCE_LEN, TAG_LEN>>::do_decrypt_out
                 as fn(&mut Dec, &[u8], &mut [u8]) -> Result<usize, CipherErr>,
         );
         let n = op(&mut dec, &ct, &mut pt).unwrap();
@@ -440,7 +466,7 @@ fn bench_aead_decrypt_final() {
     let dec = black_box(decryptor_holding_tag());
     measure(move || {
         let op = black_box(
-            <Dec as SymmetricCipherDecryptor<KEY_LEN, NONCE_LEN, TAG_LEN>>::do_decrypt_final
+            <Dec as SymmetricCipherDecryptor<Ascon_AEAD128_Key, KEY_LEN, NONCE_LEN, TAG_LEN>>::do_decrypt_final
                 as fn(Dec) -> Result<([u8; TAG_LEN], usize), CipherErr>,
         );
         let (_, n) = op(dec).unwrap();
@@ -456,10 +482,17 @@ fn bench_aead_decrypt_final_detached() {
     let tag: [u8; TAG_LEN] = black_box(sealed()[MSG_LEN..].try_into().unwrap());
     measure(move || {
         let mut last = [0u8; TAG_LEN];
-        let op = black_box(
-            <Dec as AEADCipherDecryptor<KEY_LEN, NONCE_LEN, TAG_LEN, TAG_LEN>>::do_decrypt_final_detached_out
-                as fn(Dec, &[u8; TAG_LEN], &mut [u8; TAG_LEN]) -> Result<usize, CipherErr>,
-        );
+        let op =
+            black_box(
+                <Dec as AEADCipherDecryptor<
+                    Ascon_AEAD128_Key,
+                    KEY_LEN,
+                    NONCE_LEN,
+                    TAG_LEN,
+                    TAG_LEN,
+                >>::do_decrypt_final_detached_out
+                    as fn(Dec, &[u8; TAG_LEN], &mut [u8; TAG_LEN]) -> Result<usize, CipherErr>,
+            );
         let n = op(dec, &tag, &mut last).unwrap();
         print!("{:x?}", &last[..n]);
     });
@@ -474,16 +507,23 @@ fn bench_aead_decrypt_oneshot() {
     let ct = black_box(sealed());
     measure(move || {
         let mut pt = [0u8; MSG_LEN];
-        let op = black_box(
-            <Dec as AEADCipherDecryptor<KEY_LEN, NONCE_LEN, TAG_LEN, TAG_LEN>>::decrypt_with_aad_out
-                as fn(
-                    &KeyMaterial<KEY_LEN>,
-                    &[u8; NONCE_LEN],
-                    &[u8],
-                    &[u8],
-                    &mut [u8],
-                ) -> Result<usize, CipherErr>,
-        );
+        let op =
+            black_box(
+                <Dec as AEADCipherDecryptor<
+                    Ascon_AEAD128_Key,
+                    KEY_LEN,
+                    NONCE_LEN,
+                    TAG_LEN,
+                    TAG_LEN,
+                >>::decrypt_with_aad_out
+                    as fn(
+                        &Ascon_AEAD128_Key,
+                        &[u8; NONCE_LEN],
+                        &[u8],
+                        &[u8],
+                        &mut [u8],
+                    ) -> Result<usize, CipherErr>,
+            );
         let n = op(&k, &NONCE, &aad, &ct, &mut pt).unwrap();
         print!("{:x?}", &pt[..n]);
     });

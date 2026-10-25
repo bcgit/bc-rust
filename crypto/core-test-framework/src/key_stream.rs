@@ -1,11 +1,12 @@
 //! Shared conformance tests for [`KeyStream`] implementors.
 
-use crate::DUMMY_SEED;
+use crate::{DUMMY_SEED, with_key};
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::hazmat::KeyStream;
 use bouncycastle_core::hazmat::do_hazardous_operations;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
+use bouncycastle_core::traits::SymmetricCipherKey;
 
 /// Instance of the test framework.
 pub struct TestFrameworkKeyStream {
@@ -43,15 +44,12 @@ impl TestFrameworkKeyStream {
         const KEY_LEN: usize,
         const INIT_DATA_LEN: usize,
         const BLOCK_LEN: usize,
-        KS: KeyStream<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
+        K: SymmetricCipherKey<KEY_LEN>,
+        KS: KeyStream<K, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
     >(
         &self,
     ) {
-        let key = KeyMaterial::<KEY_LEN>::from_bytes_as_type(
-            &DUMMY_SEED[..KEY_LEN],
-            KeyType::SymmetricCipherKey,
-        )
-        .unwrap();
+        let key = K::from_bytes(DUMMY_SEED[..KEY_LEN].try_into().unwrap()).unwrap();
         let init_data = [0xA5u8; INIT_DATA_LEN];
         let blocks = DUMMY_SEED.as_chunks::<BLOCK_LEN>().0;
         let n = blocks.len();
@@ -115,7 +113,7 @@ impl TestFrameworkKeyStream {
         let mac_key =
             KeyMaterial::<KEY_LEN>::from_bytes_as_type(&DUMMY_SEED[..KEY_LEN], KeyType::MACKey)
                 .unwrap();
-        match KS::new(&mac_key, &init_data) {
+        match with_key::<K, KEY_LEN, _>(mac_key.clone(), |k| KS::new(k, &init_data)) {
             Err(SymmetricCipherError::KeyMaterialError(_)) => { /* good */ }
             _ => panic!("A key that is not a SymmetricCipherKey should have been rejected"),
         };
@@ -145,7 +143,7 @@ impl TestFrameworkKeyStream {
             // Tag the key at an arbitrary strength for the purpose of this test.
             do_hazardous_operations(&mut key, |key| key.set_security_strength(ss.clone())).unwrap();
 
-            match KS::new(&key, &init_data) {
+            match with_key::<K, KEY_LEN, _>(key.clone(), |k| KS::new(k, &init_data)) {
                 Ok(_) => assert!(
                     ss >= &KS::MAX_SECURITY_STRENGTH,
                     "should have required a key at least as strong as the algorithm"

@@ -10,9 +10,10 @@
 mod toy_block_cipher;
 
 use bouncycastle_core_test_framework::electronic_code_book::TestFrameworkElectronicCodeBook;
-use toy_block_cipher::{TOY_BLOCK_LEN, ToyBlockCipher};
+use toy_block_cipher::{TOY_BLOCK_LEN, ToyBlockCipher, ToyCipherKey};
 
 #[test]
 fn the_toy_block_cipher_conforms_to_the_trait() {
-    TestFrameworkElectronicCodeBook::new().test::<TOY_BLOCK_LEN, TOY_BLOCK_LEN, ToyBlockCipher>();
+    TestFrameworkElectronicCodeBook::new()
+        .test::<TOY_BLOCK_LEN, TOY_BLOCK_LEN, ToyCipherKey, ToyBlockCipher>();
 }

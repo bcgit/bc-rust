@@ -2,13 +2,12 @@ use bouncycastle_rng as rng;
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 use std::hint::black_box;
 
-use bouncycastle_ascon::Ascon_AEAD128;
 use bouncycastle_ascon::AsconCXof128;
 use bouncycastle_ascon::AsconHash256;
 use bouncycastle_ascon::AsconXof128;
+use bouncycastle_ascon::{Ascon_AEAD128, Ascon_AEAD128_Key};
 use bouncycastle_cipher::Encrypting;
-use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-use bouncycastle_core::traits::{AEADCipherEncryptor, Hash, RNG, XOF};
+use bouncycastle_core::traits::{AEADCipherEncryptor, Hash, RNG, SymmetricCipherKey, XOF};
 
 const DATA_LEN: usize = 16 * 1024;
 
@@ -19,8 +18,7 @@ fn random_data(len: usize) -> Vec<u8> {
 }
 
 fn bench_aead128_encrypt(c: &mut Criterion) {
-    let key =
-        KeyMaterial::<16>::from_bytes_as_type(&[0x42u8; 16], KeyType::SymmetricCipherKey).unwrap();
+    let key = Ascon_AEAD128_Key::from_bytes(&[0x42u8; 16]).unwrap();
     let nonce = [0x24u8; 16];
     let data = random_data(DATA_LEN);
     let mut out = vec![0u8; DATA_LEN + 16];
