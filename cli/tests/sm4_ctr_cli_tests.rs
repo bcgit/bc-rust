@@ -8,7 +8,7 @@
 //! draft-ribose-cfrg-sm4-10's Appendix A.2.5 examples make the whole 16-byte IV the first counter
 //! block, which the 12-byte-nonce split these commands use cannot produce (see the `SM4_CTR` docs),
 //! so there is no vector to decrypt here. Instead the command is required to agree with
-//! `bouncycastle_modes::Ctr` over the SM4 permutation, which
+//! `bouncycastle_cipher::modes::Ctr` over the SM4 permutation, which
 //! `crypto/sm4/tests/stream_mode_tests.rs` pins against the Sec 8.7.1 equations.
 
 use std::io::{ErrorKind, Write};
@@ -96,9 +96,10 @@ fn pseudo_random(len: usize, seed: u32) -> Vec<u8> {
 }
 /// The library's answer for the same key, nonce and ciphertext, so the CLI can be held to it.
 fn library_ctr_decrypt(key_hex: &str, nonce: &[u8], data: &mut [u8]) {
+    use bouncycastle::cipher::Decrypting;
+    use bouncycastle::cipher::modes::Ctr;
     use bouncycastle::core::key_material::{KeyMaterial, KeyType};
     use bouncycastle::core::traits::StreamCipherDecryptor;
-    use bouncycastle::modes::{Ctr, Decrypting};
     use bouncycastle::sm4::CTR_NONCE_LEN;
     use bouncycastle::sm4::hazmat::SM4;
 

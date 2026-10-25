@@ -7,7 +7,7 @@
 //!
 //! draft-ribose-cfrg-sm4-10 defines SM4-CFB-8 (Sec 8.5.1) but publishes no example of it, so there
 //! is no vector to decrypt here. Instead the command is required to agree with
-//! `bouncycastle_modes::Cfb8` over the SM4 permutation, which
+//! `bouncycastle_cipher::modes::Cfb8` over the SM4 permutation, which
 //! `crypto/sm4/tests/stream_mode_tests.rs` pins against the Sec 8.5.2 equations. That is the same
 //! thing the AES CFB8 suite gets from SP 800-38A F.3, one step removed.
 
@@ -89,9 +89,10 @@ fn pseudo_random(len: usize, seed: u32) -> Vec<u8> {
 }
 /// The library's answer for the same key, IV and plaintext, so the CLI can be held to it.
 fn library_cfb8_decrypt(key_hex: &str, iv: &[u8], data: &mut [u8]) {
+    use bouncycastle::cipher::Decrypting;
+    use bouncycastle::cipher::modes::Cfb8;
     use bouncycastle::core::key_material::{KeyMaterial, KeyType};
     use bouncycastle::core::traits::StreamCipherDecryptor;
-    use bouncycastle::modes::{Cfb8, Decrypting};
     use bouncycastle::sm4::hazmat::SM4;
 
     let key_bytes: [u8; 16] = unhex(key_hex).try_into().expect("a 16-byte key");
