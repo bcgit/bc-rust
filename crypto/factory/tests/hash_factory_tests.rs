@@ -1,10 +1,12 @@
 #[cfg(test)]
 mod hash_factory_tests {
+    use bouncycastle_core::errors::HashError;
+    use bouncycastle_core::security_strength::SecurityStrength;
     use bouncycastle_core::traits::{Hash, XOF};
     use bouncycastle_core_test_framework::DUMMY_SEED;
-    use bouncycastle_factory::AlgorithmFactory;
     use bouncycastle_factory::hash_factory::HashFactory;
     use bouncycastle_factory::xof_factory::XOFFactory;
+    use bouncycastle_factory::{AlgorithmFactory, FactoryError};
 
     mod sha3_tests {
         use super::*;
@@ -168,7 +170,6 @@ mod hash_factory_tests {
         fn ascon_hash_tests() {
             use bouncycastle_ascon::ASCON_HASH256_NAME;
             use bouncycastle_ascon::AsconHash256;
-            use bouncycastle_factory::FactoryError;
 
             let direct = AsconHash256::new().hash(&DUMMY_SEED[..512]);
 
@@ -186,6 +187,136 @@ mod hash_factory_tests {
                 HashFactory::new("Ascon-Hash999"),
                 Err(FactoryError::UnsupportedAlgorithm(_))
             ));
+        }
+
+        /// Checks every `Hash` pass-through of the `name` variant against `expected`, the digest of
+        /// `msg`; and the byte-oriented partial-bit policy of the BLAKE crates (0 bits is the
+        /// whole-byte digest, 1..=7 is `InvalidInput`, more than 7 is `InvalidLength`).
+        fn check_blake_hash(
+            name: &str,
+            msg: &[u8],
+            expected: &[u8],
+            block_bitlen: usize,
+            strength: SecurityStrength,
+        ) {
+            let make = || HashFactory::new(name).unwrap();
+
+            assert_eq!(make().output_len(), expected.len(), "{name}: output_len");
+            assert_eq!(make().block_bitlen(), block_bitlen, "{name}: block_bitlen");
+            assert_eq!(make().max_security_strength(), strength, "{name}: max_security_strength");
+
+            assert_eq!(make().hash(msg), expected, "{name}: hash");
+
+            let mut out = vec![0xffu8; expected.len()];
+            assert_eq!(make().hash_out(msg, &mut out), expected.len(), "{name}: hash_out length");
+            assert_eq!(out, expected, "{name}: hash_out");
+
+            let mut h = make();
+            msg.chunks(7).for_each(|c| h.do_update(c));
+            assert_eq!(h.do_final(), expected, "{name}: do_update then do_final");
+
+            let mut h = make();
+            h.do_update(msg);
+            let mut out = vec![0xffu8; expected.len()];
+            assert_eq!(h.do_final_out(&mut out), expected.len(), "{name}: do_final_out length");
+            assert_eq!(out, expected, "{name}: do_final_out");
+
+            let mut h = make();
+            h.do_update(msg);
+            assert_eq!(h.do_final_partial_bits(0x00, 0).unwrap(), expected, "{name}: 0 bits");
+
+            let mut h = make();
+            h.do_update(msg);
+            let mut out = vec![0xffu8; expected.len()];
+            assert_eq!(
+                h.do_final_partial_bits_out(0x00, 0, &mut out).unwrap(),
+                expected.len(),
+                "{name}: do_final_partial_bits_out length"
+            );
+            assert_eq!(out, expected, "{name}: do_final_partial_bits_out");
+
+            let mut h = make();
+            h.do_update(msg);
+            assert!(
+                matches!(h.do_final_partial_bits(0x05, 3), Err(HashError::InvalidInput(_))),
+                "{name}: BLAKE is byte-oriented"
+            );
+            let mut out = vec![0u8; expected.len()];
+            assert!(
+                matches!(
+                    make().do_final_partial_bits_out(0x05, 3, &mut out),
+                    Err(HashError::InvalidInput(_))
+                ),
+                "{name}: BLAKE is byte-oriented (_out)"
+            );
+            assert!(
+                matches!(make().do_final_partial_bits(0xff, 8), Err(HashError::InvalidLength(_))),
+                "{name}: eight partial bits is not a partial byte"
+            );
+        }
+
+        /// BLAKE2b-512, BLAKE2s-256 and BLAKE3 through the factory, by name constant and by string.
+        ///
+        /// Expected values are copied from the vectors embedded in the algorithm crates' tests:
+        /// - BLAKE2b-512 / BLAKE2s-256 of "abc": RFC 7693 Appendix A / B (`RFC_ABC` in
+        ///   crypto/blake2/tests/blake2{b,s}_tests.rs);
+        /// - BLAKE2b-512 / BLAKE2s-256 of the 255 bytes 0, 1, ..., 254: the official BLAKE2 KAT,
+        ///   blake2-kat.json (the `KAT` entry for length 255 in the same files);
+        /// - BLAKE3 of the 1025-byte input `i % 251`: the official BLAKE3 test_vectors.json (the
+        ///   first 32 bytes of the `hash` field of the 1025 case in
+        ///   crypto/blake3/tests/vectors/mod.rs).
+        #[test]
+        fn blake_hash_tests() {
+            use bouncycastle_blake2::{BLAKE2B_512_NAME, BLAKE2S_256_NAME};
+            use bouncycastle_blake3::BLAKE3_NAME;
+            use bouncycastle_hex as hex;
+
+            let blake2b_abc = hex::decode("ba80a53f981c4d0d6a2797b69f12f6e94c212f14685ac4b74b12bb6fdbffa2d17d87c5392aab792dc252d5de4533cc9518d38aa8dbf1925ab92386edd4009923").unwrap();
+            let blake2b_255 = hex::decode("5b21c5fd8868367612474fa2e70e9cfa2201ffeee8fafab5797ad58fefa17c9b5b107da4a3db6320baaf2c8617d5a51df914ae88da3867c2d41f0cc14fa67928").unwrap();
+            let blake2s_abc =
+                hex::decode("508c5e8c327c14e2e1a72ba34eeb452f37458b209ed63a294d999b4c86675982")
+                    .unwrap();
+            let blake2s_255 =
+                hex::decode("f03f5789d3336b80d002d59fdf918bdb775b00956ed5528e86aa994acb38fe2d")
+                    .unwrap();
+            let blake3_1025 =
+                hex::decode("d00278ae47eb27b34faecf67b4fe263f82d5412916c1ffd97c8cb7fb814b8444")
+                    .unwrap();
+            let blake3_input: Vec<u8> = (0..1025).map(|i| (i % 251) as u8).collect();
+
+            for name in ["BLAKE2b-512", BLAKE2B_512_NAME] {
+                check_blake_hash(name, b"abc", &blake2b_abc, 1024, SecurityStrength::_256bit);
+                check_blake_hash(
+                    name,
+                    &DUMMY_SEED[..255],
+                    &blake2b_255,
+                    1024,
+                    SecurityStrength::_256bit,
+                );
+            }
+            for name in ["BLAKE2s-256", BLAKE2S_256_NAME] {
+                check_blake_hash(name, b"abc", &blake2s_abc, 512, SecurityStrength::_128bit);
+                check_blake_hash(
+                    name,
+                    &DUMMY_SEED[..255],
+                    &blake2s_255,
+                    512,
+                    SecurityStrength::_128bit,
+                );
+            }
+            for name in ["BLAKE3", BLAKE3_NAME] {
+                check_blake_hash(name, &blake3_input, &blake3_1025, 512, SecurityStrength::_128bit);
+            }
+
+            // Names are case-sensitive, and the MAC names are not hashes.
+            for name in
+                ["blake2b-512", "BLAKE2b-256", "BLAKE2b-512-MAC", "blake3", "BLAKE3-KeyedHash"]
+            {
+                assert!(
+                    matches!(HashFactory::new(name), Err(FactoryError::UnsupportedAlgorithm(_))),
+                    "{name:?} must not construct a Hash"
+                );
+            }
         }
 
         #[test]

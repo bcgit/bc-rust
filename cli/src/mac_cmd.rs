@@ -109,7 +109,7 @@ pub(crate) fn kmac_cmd(
     }
 }
 
-fn do_mac(mut mac: impl MAC, verify_val: &Option<String>, output_hex: bool) {
+pub(crate) fn do_mac(mut mac: impl MAC, verify_val: &Option<String>, output_hex: bool) {
     // read the content to be MAC'd from stdin
     let mut buf: [u8; 1024] = [0u8; 1024];
     let mut bytes_read = io::stdin().read(&mut buf).expect("Failed to read from stdin");
