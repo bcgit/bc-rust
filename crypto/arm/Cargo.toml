@@ -5,7 +5,7 @@ edition.workspace = true
 rust-version.workspace = true
 
 [features]
-# Run-time detection of the instructions, through `std::arch::is_aarch64_feature_detected!`.
+# Run-time detection of the instructions, by the crate's own `cpu` module; it uses no std.
 std = []
 
 [dependencies]
