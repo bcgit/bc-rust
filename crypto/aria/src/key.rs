@@ -3,12 +3,10 @@
 //!
 //! [`ARIA128Key<M>`], [`ARIA192Key<M>`] and [`ARIA256Key<M>`] are one type each per mode `M`, as
 //! `AES128Key<M>` and friends are in `bouncycastle-aes`: the key holds the mode's per-key state,
-//! the workers it hands out borrow it, and which role pair a key carries is decided by its mode --
+//! the workers it hands out borrow it, and which role pair a key carries is decided by its mode:
 //! the symmetric pair for the stream modes and the padded block modes (`CFB`, `CFB8`, `CTR`,
-//! `CBC<PKCS7>`, `ECB<PKCS7>`), the block pair for `CBC<Blocks>`, the `hazmat` ECB pair for
-//! `ECB<Blocks>`, the AEAD pairs for `GCM`, `CCM` and `CCM_Packet`, and the MAC pair for `CMAC`.
-//! This crate names the workers of the first four modes as the `ARIA_*` aliases; the others are
-//! reached by naming the mode.
+//! `CBC<PKCS7>`), the block pair for `CBC<Blocks>`. Those are the four modes this crate aliases
+//! as `ARIA_*`; a key under any other mode has no role here.
 //!
 //! # Usage Examples
 //!
@@ -32,23 +30,20 @@
 //! # Memory Usage
 //!
 //! A key is its mode's per-key state: the expanded schedule, 208, 240 or 272 bytes for ARIA-128,
-//! -192 and -256, plus whatever the mode keeps per key (16 bytes of hash subkey under `GCM`, 32
-//! bytes of subkeys under `CMAC`). The cost is paid per key, not per message.
+//! -192 and -256; the four aliased modes keep nothing else per key. The cost is paid per key, not
+//! per message.
 
 use crate::hazmat::{ARIA128Internal, ARIA192Internal, ARIA256Internal, ARIAInternal};
 use crate::schedule::{ARIA128Params, ARIA192Params, ARIA256Params, ARIAParams};
 use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
 use bouncycastle_core::hazmat::{
-    AeadDeclaredDecryptMode, AeadDeclaredEncryptMode, AeadDecryptMode, AeadEncryptMode,
-    BlockDecryptMode, BlockEncryptMode, EcbDecryptMode, EcbDecryptionKey, EcbEncryptMode,
-    EcbEncryptionKey, MacMode, Mode, ModeKey, SymmetricDecryptMode, SymmetricEncryptMode,
+    BlockDecryptMode, BlockEncryptMode, Mode, ModeKey, SymmetricDecryptMode, SymmetricEncryptMode,
     do_hazardous_operations,
 };
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::symmetric_key::{
-    AeadDeclaredDecryptionKey, AeadDeclaredEncryptionKey, AeadDecryptionKey, AeadEncryptionKey,
-    BlockDecryptionKey, BlockEncryptionKey, FromKeyMaterial, MacGenerationKey, MacVerificationKey,
-    SymmetricDecryptionKey, SymmetricEncryptionKey,
+    BlockDecryptionKey, BlockEncryptionKey, FromKeyMaterial, SymmetricDecryptionKey,
+    SymmetricEncryptionKey,
 };
 use bouncycastle_core::traits::RNG;
 
@@ -168,179 +163,9 @@ impl<P: ARIAParams, M: Mode<ARIAInternal<P>>> ModeKey<ARIAInternal<P>, M> for AR
     }
 }
 
-// The role impls forward to whichever mode traits `M` implements over this permutation, so which
-// roles a key type carries is decided by its mode, exactly as for `AESKey`.
-
-impl<
-    P,
-    M,
-    const KEY_LEN: usize,
-    const NONCE_LEN: usize,
-    const TAG_LEN: usize,
-    const FINAL_LEN: usize,
-> AeadEncryptionKey<KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN> for ARIAKey<P, M>
-where
-    P: ARIAParams,
-    M: AeadEncryptMode<ARIAInternal<P>, KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN>,
-{
-    type Encryptor<'k>
-        = M::Encryptor<'k>
-    where
-        Self: 'k;
-
-    fn create_encryptor<'k>(
-        &'k self,
-        rng: &mut dyn RNG,
-    ) -> Result<(Self::Encryptor<'k>, [u8; NONCE_LEN]), SymmetricCipherError> {
-        M::encrypt_init(&self.state, rng)
-    }
-
-    fn create_encryptor_nonce<'k>(&'k self, nonce: &[u8; NONCE_LEN]) -> Self::Encryptor<'k> {
-        M::encrypt_init_nonce(&self.state, nonce)
-    }
-
-    // Forwarded rather than left to the trait's provided body so that a mode can override it.
-    fn encrypt_detached_in_place(
-        &self,
-        rng: &mut dyn RNG,
-        aad: &[u8],
-        buf: &mut [u8],
-    ) -> Result<([u8; NONCE_LEN], [u8; TAG_LEN]), SymmetricCipherError> {
-        M::encrypt_detached_in_place(&self.state, rng, aad, buf)
-    }
-
-    fn encrypt_detached_in_place_nonce(
-        &self,
-        nonce: &[u8; NONCE_LEN],
-        aad: &[u8],
-        buf: &mut [u8],
-    ) -> Result<[u8; TAG_LEN], SymmetricCipherError> {
-        M::encrypt_detached_in_place_nonce(&self.state, nonce, aad, buf)
-    }
-}
-
-impl<
-    P,
-    M,
-    const KEY_LEN: usize,
-    const NONCE_LEN: usize,
-    const TAG_LEN: usize,
-    const FINAL_LEN: usize,
-> AeadDecryptionKey<KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN> for ARIAKey<P, M>
-where
-    P: ARIAParams,
-    M: AeadDecryptMode<ARIAInternal<P>, KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN>,
-{
-    type Decryptor<'k>
-        = M::Decryptor<'k>
-    where
-        Self: 'k;
-
-    fn create_decryptor<'k>(&'k self, nonce: &[u8; NONCE_LEN]) -> Self::Decryptor<'k> {
-        M::decrypt_init(&self.state, nonce)
-    }
-
-    fn decrypt_detached_in_place(
-        &self,
-        nonce: &[u8; NONCE_LEN],
-        aad: &[u8],
-        buf: &mut [u8],
-        tag: &[u8; TAG_LEN],
-    ) -> Result<(), SymmetricCipherError> {
-        M::decrypt_detached_in_place(&self.state, nonce, aad, buf, tag)
-    }
-}
-
-impl<
-    P,
-    M,
-    const KEY_LEN: usize,
-    const NONCE_LEN: usize,
-    const TAG_LEN: usize,
-    const FINAL_LEN: usize,
-> AeadDeclaredEncryptionKey<KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN> for ARIAKey<P, M>
-where
-    P: ARIAParams,
-    M: AeadDeclaredEncryptMode<ARIAInternal<P>, KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN>,
-{
-    type Encryptor<'k>
-        = M::Encryptor<'k>
-    where
-        Self: 'k;
-
-    fn create_encryptor<'k>(
-        &'k self,
-        rng: &mut dyn RNG,
-        aad_len: usize,
-        payload_len: usize,
-    ) -> Result<(Self::Encryptor<'k>, [u8; NONCE_LEN]), SymmetricCipherError> {
-        M::encrypt_init(&self.state, rng, aad_len, payload_len)
-    }
-
-    fn create_encryptor_nonce<'k>(
-        &'k self,
-        nonce: &[u8; NONCE_LEN],
-        aad_len: usize,
-        payload_len: usize,
-    ) -> Result<Self::Encryptor<'k>, SymmetricCipherError> {
-        M::encrypt_init_nonce(&self.state, nonce, aad_len, payload_len)
-    }
-
-    fn encrypt_detached_in_place(
-        &self,
-        rng: &mut dyn RNG,
-        aad: &[u8],
-        buf: &mut [u8],
-    ) -> Result<([u8; NONCE_LEN], [u8; TAG_LEN]), SymmetricCipherError> {
-        M::encrypt_detached_in_place(&self.state, rng, aad, buf)
-    }
-
-    fn encrypt_detached_in_place_nonce(
-        &self,
-        nonce: &[u8; NONCE_LEN],
-        aad: &[u8],
-        buf: &mut [u8],
-    ) -> Result<[u8; TAG_LEN], SymmetricCipherError> {
-        M::encrypt_detached_in_place_nonce(&self.state, nonce, aad, buf)
-    }
-}
-
-impl<
-    P,
-    M,
-    const KEY_LEN: usize,
-    const NONCE_LEN: usize,
-    const TAG_LEN: usize,
-    const FINAL_LEN: usize,
-> AeadDeclaredDecryptionKey<KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN> for ARIAKey<P, M>
-where
-    P: ARIAParams,
-    M: AeadDeclaredDecryptMode<ARIAInternal<P>, KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN>,
-{
-    type Decryptor<'k>
-        = M::Decryptor<'k>
-    where
-        Self: 'k;
-
-    fn create_decryptor<'k>(
-        &'k self,
-        nonce: &[u8; NONCE_LEN],
-        aad_len: usize,
-        payload_len: usize,
-    ) -> Result<Self::Decryptor<'k>, SymmetricCipherError> {
-        M::decrypt_init(&self.state, nonce, aad_len, payload_len)
-    }
-
-    fn decrypt_detached_in_place(
-        &self,
-        nonce: &[u8; NONCE_LEN],
-        aad: &[u8],
-        buf: &mut [u8],
-        tag: &[u8; TAG_LEN],
-    ) -> Result<(), SymmetricCipherError> {
-        M::decrypt_detached_in_place(&self.state, nonce, aad, buf, tag)
-    }
-}
+// The role impls forward to the mode traits `M` implements over this permutation: the symmetric
+// pair and the block pair, which between them cover the four modes this crate aliases. A key
+// under any other mode has no role here.
 
 impl<P, M, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const FINAL_LEN: usize>
     SymmetricEncryptionKey<KEY_LEN, INIT_DATA_LEN, FINAL_LEN> for ARIAKey<P, M>
@@ -409,59 +234,5 @@ where
 
     fn create_decryptor<'k>(&'k self, init_data: &[u8; INIT_DATA_LEN]) -> Self::Decryptor<'k> {
         M::decrypt_init(&self.state, init_data)
-    }
-}
-
-impl<P, M, const KEY_LEN: usize, const BLOCK_LEN: usize> EcbEncryptionKey<KEY_LEN, BLOCK_LEN>
-    for ARIAKey<P, M>
-where
-    P: ARIAParams,
-    M: EcbEncryptMode<ARIAInternal<P>, KEY_LEN, BLOCK_LEN>,
-{
-    type Encryptor<'k>
-        = M::Encryptor<'k>
-    where
-        Self: 'k;
-
-    fn create_encryptor<'k>(&'k self) -> Self::Encryptor<'k> {
-        M::encrypt_init(&self.state)
-    }
-}
-
-impl<P, M, const KEY_LEN: usize, const BLOCK_LEN: usize> EcbDecryptionKey<KEY_LEN, BLOCK_LEN>
-    for ARIAKey<P, M>
-where
-    P: ARIAParams,
-    M: EcbDecryptMode<ARIAInternal<P>, KEY_LEN, BLOCK_LEN>,
-{
-    type Decryptor<'k>
-        = M::Decryptor<'k>
-    where
-        Self: 'k;
-
-    fn create_decryptor<'k>(&'k self) -> Self::Decryptor<'k> {
-        M::decrypt_init(&self.state)
-    }
-}
-
-impl<P: ARIAParams, M: MacMode<ARIAInternal<P>>> MacGenerationKey for ARIAKey<P, M> {
-    type Generator<'k>
-        = M::Worker<'k>
-    where
-        Self: 'k;
-
-    fn create_generator<'k>(&'k self) -> Self::Generator<'k> {
-        M::mac_init(&self.state)
-    }
-}
-
-impl<P: ARIAParams, M: MacMode<ARIAInternal<P>>> MacVerificationKey for ARIAKey<P, M> {
-    type Verifier<'k>
-        = M::Worker<'k>
-    where
-        Self: 'k;
-
-    fn create_verifier<'k>(&'k self) -> Self::Verifier<'k> {
-        M::mac_init(&self.state)
     }
 }
