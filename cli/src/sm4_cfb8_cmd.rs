@@ -16,23 +16,19 @@
 //! CFB8 provides confidentiality only. It does not detect tampering, and neither the ciphertext nor
 //! the IV is authenticated. Do not decrypt data you have not authenticated separately.
 
-use crate::helpers::block_mode_helpers::{BLOCK_LEN, CipherDirection, load_key};
+use crate::helpers::block_mode_helpers::{CipherDirection, load_key_object};
 use crate::helpers::stream_mode_helpers::run_stream_mode;
-use bouncycastle::cipher::modes::Cfb8;
-use bouncycastle::cipher::{Decrypting, Encrypting};
-use bouncycastle::sm4::hazmat::SM4;
+use bouncycastle::cipher::modes::CFB8;
+use bouncycastle::sm4::{BLOCK_LEN, KEY_LEN, SM4Key};
 
+/// Dispatches to the shared streaming loops under the key's `CFB8` mode; the init data travels in
+/// band, as the command's contract says.
 pub(crate) fn sm4_cfb8_cmd(
     action: &CipherDirection,
     key: &Option<String>,
     key_file: &Option<String>,
     output_hex: bool,
 ) {
-    let key = load_key::<16>(key, key_file, "SM4");
-    run_stream_mode::<
-        Cfb8<SM4, Encrypting, 16, BLOCK_LEN>,
-        Cfb8<SM4, Decrypting, 16, BLOCK_LEN>,
-        16,
-        BLOCK_LEN,
-    >(action, &key, output_hex)
+    let key = load_key_object::<SM4Key<CFB8>, KEY_LEN>(key, key_file, "SM4");
+    run_stream_mode::<_, KEY_LEN, BLOCK_LEN>(action, &key, None, output_hex)
 }

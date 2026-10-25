@@ -16,11 +16,11 @@
 //! The two 1,000,000-iteration examples are ignored in unoptimised builds (see their attributes)
 //! and run under `cargo test --release`.
 
-use bouncycastle_core::hazmat::ElectronicCodeBook;
+use bouncycastle_core::hazmat::{BlockPermutation, ElectronicCodeBook};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_sm4::BLOCK_LEN;
-use bouncycastle_sm4::hazmat::SM4;
+use bouncycastle_sm4::hazmat::SM4Internal;
 
 /// Examples 1-3 key (and plaintext): `0123456789ABCDEFFEDCBA9876543210`.
 const KEY_1: [u8; 16] = [
@@ -61,7 +61,7 @@ fn key_material(bytes: &[u8; 16]) -> KeyMaterial<16> {
 
 #[test]
 fn a_1_1_example_1_encrypt() {
-    let sm4 = SM4::new(&key_material(&KEY_1)).unwrap();
+    let sm4 = SM4Internal::new(&key_material(&KEY_1)).unwrap();
     let mut block = PT_1;
     sm4.encrypt_block(&mut block);
     assert_eq!(block, CT_1);
@@ -69,7 +69,7 @@ fn a_1_1_example_1_encrypt() {
 
 #[test]
 fn a_1_2_example_2_decrypt() {
-    let sm4 = SM4::new(&key_material(&KEY_1)).unwrap();
+    let sm4 = SM4Internal::new(&key_material(&KEY_1)).unwrap();
     let mut block = CT_1;
     sm4.decrypt_block(&mut block);
     assert_eq!(block, PT_1);
@@ -81,7 +81,7 @@ fn a_1_2_example_2_decrypt() {
 #[cfg_attr(debug_assertions, ignore = "1,000,000 iterations; run with `cargo test --release`")]
 #[test]
 fn a_1_3_example_3_one_million_encryptions() {
-    let sm4 = SM4::new(&key_material(&KEY_1)).unwrap();
+    let sm4 = SM4Internal::new(&key_material(&KEY_1)).unwrap();
     let mut block = PT_1;
     for _ in 0..1_000_000 {
         sm4.encrypt_block(&mut block);
@@ -91,7 +91,7 @@ fn a_1_3_example_3_one_million_encryptions() {
 
 #[test]
 fn a_1_4_example_4_encrypt() {
-    let sm4 = SM4::new(&key_material(&KEY_4)).unwrap();
+    let sm4 = SM4Internal::new(&key_material(&KEY_4)).unwrap();
     let mut block = PT_4;
     sm4.encrypt_block(&mut block);
     assert_eq!(block, CT_4);
@@ -99,7 +99,7 @@ fn a_1_4_example_4_encrypt() {
 
 #[test]
 fn a_1_5_example_5_decrypt() {
-    let sm4 = SM4::new(&key_material(&KEY_4)).unwrap();
+    let sm4 = SM4Internal::new(&key_material(&KEY_4)).unwrap();
     let mut block = CT_4;
     sm4.decrypt_block(&mut block);
     assert_eq!(block, PT_4);
@@ -111,7 +111,7 @@ fn a_1_5_example_5_decrypt() {
 #[cfg_attr(debug_assertions, ignore = "1,000,000 iterations; run with `cargo test --release`")]
 #[test]
 fn a_1_6_example_6_one_million_encryptions() {
-    let sm4 = SM4::new(&key_material(&KEY_4)).unwrap();
+    let sm4 = SM4Internal::new(&key_material(&KEY_4)).unwrap();
     let mut block = PT_4;
     for _ in 0..1_000_000 {
         sm4.encrypt_block(&mut block);
@@ -122,17 +122,17 @@ fn a_1_6_example_6_one_million_encryptions() {
 /// The two-block trait methods must agree with the single-block known answers, in both slots.
 #[test]
 fn pair_methods_reproduce_the_appendix_ciphertexts() {
-    let sm4 = SM4::new(&key_material(&KEY_1)).unwrap();
+    let sm4 = SM4Internal::new(&key_material(&KEY_1)).unwrap();
 
     let other = [0xAAu8; 16];
     let mut other_alone = other;
     sm4.encrypt_block(&mut other_alone);
 
     let mut pair = [PT_1, other];
-    ElectronicCodeBook::encrypt_2blocks(&sm4, &mut pair);
+    BlockPermutation::encrypt_2blocks(&sm4, &mut pair);
     assert_eq!(pair, [CT_1, other_alone]);
 
-    ElectronicCodeBook::decrypt_2blocks(&sm4, &mut pair);
+    BlockPermutation::decrypt_2blocks(&sm4, &mut pair);
     assert_eq!(pair, [PT_1, other]);
 }
 
@@ -143,10 +143,10 @@ fn a_key_of_the_wrong_type_is_rejected() {
     // KeyType::Seed is not a cipher key: a seed reused directly as an SM4 key is a real mistake
     // and the type system tracks enough to catch it.
     let key = KeyMaterial::<16>::from_bytes_as_type(&KEY_1, KeyType::Seed).unwrap();
-    assert!(SM4::new(&key).is_err());
+    assert!(SM4Internal::new(&key).is_err());
 
     let key = KeyMaterial::<16>::from_bytes_as_type(&KEY_1, KeyType::MACKey).unwrap();
-    assert!(SM4::new(&key).is_err());
+    assert!(SM4Internal::new(&key).is_err());
 }
 
 #[test]
@@ -155,7 +155,7 @@ fn a_key_of_the_wrong_length_is_rejected() {
     // one SM4 key length. This is the one length error the const generic cannot catch by itself.
     let key =
         KeyMaterial::<16>::from_bytes_as_type(&KEY_1[..8], KeyType::SymmetricCipherKey).unwrap();
-    assert!(SM4::new(&key).is_err());
+    assert!(SM4Internal::new(&key).is_err());
 }
 
 #[test]
@@ -169,30 +169,30 @@ fn a_key_carrying_too_low_a_security_strength_is_rejected() {
 
     key.set_security_strength(SecurityStrength::_112bit).unwrap();
     assert!(
-        SM4::new(&key).is_err(),
+        SM4Internal::new(&key).is_err(),
         "SM4 must reject a 16-byte key only derived at the 112-bit strength"
     );
 
     // The same key at its full strength is fine, so the rejection is about the strength tag and
     // not about anything else having gone wrong with the key.
-    assert!(SM4::new(&key_material(&KEY_1)).is_ok());
+    assert!(SM4Internal::new(&key_material(&KEY_1)).is_ok());
 }
 
 #[test]
 fn an_all_zero_key_is_rejected_unless_explicitly_promoted() {
-    // `KeyMaterial` tags an all-zero buffer `Zeroized`, and `SM4::new` refuses it as the wrong key
+    // `KeyMaterial` tags an all-zero buffer `Zeroized`, and `SM4Internal::new` refuses it as the wrong key
     // type. BC Java's `SM4Test` runs its generic `CipherTest` checks under `new byte[16]`; a caller
     // who really wants that key must opt in through `do_hazardous_operations`, as the CLI does.
     let key =
         KeyMaterial::<16>::from_bytes_as_type(&[0u8; 16], KeyType::SymmetricCipherKey).unwrap();
     assert_eq!(key.key_type(), KeyType::Zeroized);
-    assert!(SM4::new(&key).is_err());
+    assert!(SM4Internal::new(&key).is_err());
 }
 
 #[test]
 fn debug_does_not_print_the_round_keys() {
     // The schedule is secret; `Debug` must not be a way to leak it.
-    let sm4 = SM4::new(&key_material(&KEY_1)).unwrap();
+    let sm4 = SM4Internal::new(&key_material(&KEY_1)).unwrap();
     let rendered = format!("{sm4:?}");
     assert_eq!(rendered, "SM4");
 }

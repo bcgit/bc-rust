@@ -94,21 +94,20 @@ fn pseudo_random(len: usize, seed: u32) -> Vec<u8> {
         })
         .collect()
 }
-/// The library's answer for the same key, nonce and ciphertext, so the CLI can be held to it.
+/// The library's answer for the same key, nonce and ciphertext, so the CLI can be held to it: the
+/// key object's in-place decryption under `CTR`.
 fn library_ctr_decrypt(key_hex: &str, nonce: &[u8], data: &mut [u8]) {
-    use bouncycastle::cipher::Decrypting;
-    use bouncycastle::cipher::modes::Ctr;
+    use bouncycastle::cipher::modes::CTR;
     use bouncycastle::core::key_material::{KeyMaterial, KeyType};
-    use bouncycastle::core::traits::StreamCipherDecryptor;
-    use bouncycastle::sm4::CTR_NONCE_LEN;
-    use bouncycastle::sm4::hazmat::SM4;
+    use bouncycastle::core::symmetric_key::{FromKeyMaterial, SymmetricDecryptionKey};
+    use bouncycastle::sm4::SM4Key;
 
     let key_bytes: [u8; 16] = unhex(key_hex).try_into().expect("a 16-byte key");
-    let key = KeyMaterial::<16>::from_bytes_as_type(&key_bytes, KeyType::SymmetricCipherKey)
+    let material = KeyMaterial::<16>::from_bytes_as_type(&key_bytes, KeyType::SymmetricCipherKey)
         .expect("a valid symmetric cipher key");
-    let nonce: [u8; CTR_NONCE_LEN] = nonce.try_into().expect("a 12-byte nonce");
-    Ctr::<SM4, Decrypting, 16, 16, CTR_NONCE_LEN>::decrypt_in_place(&key, &nonce, data)
-        .expect("decryption");
+    let key = SM4Key::<CTR>::from_key_material(&material).expect("a valid key");
+    let nonce: [u8; NONCE_LEN] = nonce.try_into().expect("a 12-byte nonce");
+    key.decrypt_inplace(&nonce, data).expect("decryption");
 }
 
 /// What the command emits must be exactly what `Ctr` over `SM4` produces.

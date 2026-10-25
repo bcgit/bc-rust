@@ -11,32 +11,35 @@
 //! you have not authenticated separately.
 
 use crate::helpers::block_mode_helpers::{
-    BLOCK_LEN, CipherDirection, decrypt_stream, encrypt_stream, load_key,
+    CipherDirection, decrypt_stream, encrypt_stream, load_key_object, start_encryptor,
 };
-use bouncycastle::cipher::modes::Cbc;
-use bouncycastle::cipher::{Decrypting, Encrypting};
-use bouncycastle::sm4::hazmat::SM4;
+use bouncycastle::cipher::modes::CBC;
+use bouncycastle::cipher::padding::NoPadding;
+use bouncycastle::core::symmetric_key::{SymmetricDecryptionKey, SymmetricEncryptionKey};
+use bouncycastle::sm4::{BLOCK_LEN, KEY_LEN, SM4Key};
 
 /// Names the mode in error messages.
 const MODE: &str = "CBC";
 
+/// Dispatches to the shared streaming loops under the key's CBC mode. `NoPadding` keeps the
+/// command's contract: whole blocks only, with the IV in band.
 pub(crate) fn sm4_cbc_cmd(
     action: &CipherDirection,
     key: &Option<String>,
     key_file: &Option<String>,
     output_hex: bool,
 ) {
-    let key = load_key::<16>(key, key_file, "SM4");
+    let key = load_key_object::<SM4Key<CBC<NoPadding>>, KEY_LEN>(key, key_file, "SM4");
     match action {
         CipherDirection::Encrypt => {
-            encrypt_stream::<Cbc<SM4, Encrypting, 16, BLOCK_LEN>, 16, BLOCK_LEN>(
-                &key, output_hex, MODE,
-            )
+            let (enc, generated_iv) = start_encryptor(None, |rng| key.create_encryptor(rng));
+            encrypt_stream::<_, BLOCK_LEN>(enc, generated_iv.as_ref(), output_hex, Some(MODE))
         }
-        CipherDirection::Decrypt => {
-            decrypt_stream::<Cbc<SM4, Decrypting, 16, BLOCK_LEN>, 16, BLOCK_LEN>(
-                &key, output_hex, MODE,
-            )
-        }
+        CipherDirection::Decrypt => decrypt_stream::<_, BLOCK_LEN>(
+            None,
+            |iv| key.create_decryptor(iv),
+            output_hex,
+            Some(MODE),
+        ),
     }
 }

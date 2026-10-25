@@ -32,10 +32,10 @@
 #![allow(dead_code)]
 #![allow(unused_imports)]
 
-use bouncycastle::core::hazmat::ElectronicCodeBook;
+use bouncycastle::core::hazmat::{BlockPermutation, ElectronicCodeBook};
 use bouncycastle::core::key_material::{KeyMaterial, KeyType};
 use bouncycastle::sm4::LANES;
-use bouncycastle::sm4::hazmat::SM4;
+use bouncycastle::sm4::hazmat::SM4Internal;
 
 /// This exists so /usr/bin/time can measure the base memory footprint of the harness itself.
 fn bench_do_nothing() {
@@ -49,7 +49,7 @@ fn print_struct_sizes() {
     use core::mem::size_of;
 
     // draft-ribose-cfrg-sm4-10 Sec 7.3: 32 round keys of 32 bits, so 128 bytes.
-    println!("size_of<SM4>: {}", size_of::<SM4>());
+    println!("size_of<SM4Internal>: {}", size_of::<SM4Internal>());
 }
 
 fn key() -> KeyMaterial<16> {
@@ -62,34 +62,34 @@ fn key() -> KeyMaterial<16> {
 }
 
 fn bench_sm4_key_expansion() {
-    eprintln!("SM4::new (key expansion)");
+    eprintln!("SM4Internal::new (key expansion)");
 
-    let sm4 = SM4::new(&key()).unwrap();
+    let sm4 = SM4Internal::new(&key()).unwrap();
     print!("{sm4:?}");
 }
 
 fn bench_sm4_encrypt_block() {
-    eprintln!("SM4::encrypt_block");
+    eprintln!("SM4Internal::encrypt_block");
 
-    let sm4 = SM4::new(&key()).unwrap();
+    let sm4 = SM4Internal::new(&key()).unwrap();
     let mut block = [0x11u8; 16];
     sm4.encrypt_block(&mut block);
     print!("{block:x?}");
 }
 
 fn bench_sm4_decrypt_block() {
-    eprintln!("SM4::decrypt_block");
+    eprintln!("SM4Internal::decrypt_block");
 
-    let sm4 = SM4::new(&key()).unwrap();
+    let sm4 = SM4Internal::new(&key()).unwrap();
     let mut block = [0x11u8; 16];
     sm4.decrypt_block(&mut block);
     print!("{block:x?}");
 }
 
 fn bench_sm4_encrypt_4blocks() {
-    eprintln!("SM4::encrypt_4blocks");
+    eprintln!("SM4Internal::encrypt_4blocks");
 
-    let sm4 = SM4::new(&key()).unwrap();
+    let sm4 = SM4Internal::new(&key()).unwrap();
     let mut blocks: [[u8; 16]; LANES] = core::array::from_fn(|i| [0x11 * (i as u8 + 1); 16]);
     sm4.encrypt_4blocks(&mut blocks);
     print!("{blocks:x?}");

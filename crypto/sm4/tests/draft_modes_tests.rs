@@ -6,32 +6,24 @@
 //! pair methods against published answers. (That is the only reason ECB appears in this crate;
 //! see the crate docs on why you must not use it to encrypt anything.)
 //!
-//! The CBC vectors go through `bouncycastle_cipher::modes`' `Cbc` over this permutation. There
-//! is no API for supplying an IV, so encryption is driven through
-//! [`BlockCipherEncryptor::do_encrypt_init_rng`] with a [`FixedSeedRNG`] whose stream is the
-//! vector's IV, and the test asserts the returned init data really is that IV before comparing
-//! any ciphertext. Decryption takes the IV directly.
+//! The CBC vectors go through `SM4Key<CBC<Blocks>>`, the block-aligned key the padded `SM4_CBC`
+//! alias wraps. There is no API for supplying an IV, so encryption is driven through the key's
+//! `create_encryptor` with a [`FixedSeedRNG`] whose stream is the vector's IV, and the test
+//! asserts the returned init data really is that IV before comparing any ciphertext. Decryption
+//! takes the IV directly.
 //!
 //! The draft notes these vectors "can be verified using" Botan and OpenSSL. All values are
 //! transcribed from the downloaded text of the draft.
 
-use bouncycastle_cipher::modes::Cbc;
-use bouncycastle_cipher::{Decrypting, Encrypting};
-use bouncycastle_core::hazmat::ElectronicCodeBook;
+use bouncycastle_cipher::modes::{Blocks, CBC};
+use bouncycastle_core::hazmat::{BlockPermutation, ElectronicCodeBook};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
+use bouncycastle_core::symmetric_key::{BlockDecryptionKey, BlockEncryptionKey, FromKeyMaterial};
 use bouncycastle_core::traits::{BlockCipherDecryptor, BlockCipherEncryptor};
 use bouncycastle_core_test_framework::FixedSeedRNG;
 use bouncycastle_hex as hex;
-use bouncycastle_sm4::hazmat::SM4;
-use bouncycastle_sm4::{BLOCK_LEN, KEY_LEN};
-
-/// CBC over SM4, block-aligned and in place -- what `SM4_CBC` wraps.
-///
-/// The A.2.2 vectors are whole blocks and are checked against the mode itself, not through the
-/// `SM4_CBC` alias: that alias carries a padding scheme, so it is the arbitrary-length API and
-/// would append a padding block to this already-aligned message. `cbc_alias_tests.rs` covers the
-/// alias.
-type Sm4Cbc<Dir> = Cbc<SM4, Dir, KEY_LEN, BLOCK_LEN>;
+use bouncycastle_sm4::hazmat::SM4Internal;
+use bouncycastle_sm4::{BLOCK_LEN, SM4Key};
 
 /// The two plaintext blocks shared by every A.2 example.
 const PLAINTEXT: &str = "aaaaaaaabbbbbbbbccccccccddddddddeeeeeeeeffffffffaaaaaaaabbbbbbbb";
@@ -70,7 +62,7 @@ fn key_material(hex_str: &str) -> KeyMaterial<16> {
 // ---- A.2.1  SM4-ECB ------------------------------------------------------------------------
 
 fn check_ecb(section: &str, key: &str, expected: &str) {
-    let sm4 = SM4::new(&key_material(key)).unwrap();
+    let sm4 = SM4Internal::new(&key_material(key)).unwrap();
     let pt = blocks(PLAINTEXT);
     let ct = blocks(expected);
 
@@ -106,39 +98,38 @@ fn a_2_1_2_ecb_example_2() {
 // ---- A.2.2  SM4-CBC ------------------------------------------------------------------------
 
 fn check_cbc(section: &str, key: &str, expected: &str) {
-    let key = key_material(key);
+    // The A.2.2 vectors are whole blocks, so they go through the block pair of a `CBC<Blocks>`
+    // key rather than the padded `SM4_CBC` alias, which would append a padding block to this
+    // already-aligned message. `padded_alias_tests.rs` covers the alias.
+    let key = SM4Key::<CBC<Blocks>>::from_key_material(&key_material(key)).unwrap();
     let iv: [u8; 16] = bytes(IV);
     let pt: [u8; 32] = bytes(PLAINTEXT);
     let ct: [u8; 32] = bytes(expected);
 
     // Encrypt, both blocks in one call, under the vector's IV.
-    let (mut enc, got_iv) =
-        Sm4Cbc::<Encrypting>::do_encrypt_init_rng(&key, &mut FixedSeedRNG::<16>::new(iv)).unwrap();
+    let (mut enc, got_iv) = key.create_encryptor(&mut FixedSeedRNG::<16>::new(iv)).unwrap();
     assert_eq!(got_iv, iv, "{section}: the pinned RNG should produce the vector's IV");
     let mut data = pt;
-    enc.do_encrypt(&mut data).unwrap();
+    enc.do_encrypt_blocks_inplace(data.as_chunks_mut::<BLOCK_LEN>().0).unwrap();
     assert_eq!(data, ct, "{section} encrypt, two blocks in one call");
 
     // Encrypt one block at a time.
-    let (mut enc, _) =
-        Sm4Cbc::<Encrypting>::do_encrypt_init_rng(&key, &mut FixedSeedRNG::<16>::new(iv)).unwrap();
+    let (mut enc, _) = key.create_encryptor(&mut FixedSeedRNG::<16>::new(iv)).unwrap();
     let mut data = pt;
-    let (chunks, _) = data.as_chunks_mut::<BLOCK_LEN>();
-    for block in chunks.iter_mut() {
-        enc.do_encrypt(block).unwrap();
+    for block in data.as_chunks_mut::<BLOCK_LEN>().0.iter_mut() {
+        enc.do_encrypt_blocks_inplace(core::slice::from_mut(block)).unwrap();
     }
     assert_eq!(data, ct, "{section} encrypt, one block at a time");
 
     // Decrypt with the IV as init data: one shot, and streaming.
     let mut data = ct;
-    Sm4Cbc::<Decrypting>::decrypt_in_place(&key, &iv, &mut data).unwrap();
+    key.decrypt_inplace(&iv, &mut data).unwrap();
     assert_eq!(data, pt, "{section} decrypt, one shot");
 
-    let mut dec = Sm4Cbc::<Decrypting>::do_decrypt_init(&key, &iv).unwrap();
+    let mut dec = key.create_decryptor(&iv);
     let mut data = ct;
-    let (chunks, _) = data.as_chunks_mut::<BLOCK_LEN>();
-    for block in chunks.iter_mut() {
-        dec.do_decrypt(block).unwrap();
+    for block in data.as_chunks_mut::<BLOCK_LEN>().0.iter_mut() {
+        dec.do_decrypt_blocks_inplace(core::slice::from_mut(block)).unwrap();
     }
     assert_eq!(data, pt, "{section} decrypt, one block at a time");
 }

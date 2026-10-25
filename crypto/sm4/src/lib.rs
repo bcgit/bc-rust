@@ -1,24 +1,93 @@
 //! A constant-time, table-free, low-memory SM4 block cipher engine (GB/T 32907-2016), ported from
 //! Bouncy Castle Java's `SM4Engine`.
 //!
-//! This crate provides the raw SM4 keyed permutation -- [`SM4`] -- a 128-bit block cipher with a
-//! single 128-bit key length, standardised by the State Cryptography Administration of China as
-//! GB/T 32907-2016 and described in English in the CFRG document `draft-ribose-cfrg-sm4-10`, which
-//! is the specification every comment in this crate cites. The S-box is evaluated as a Boolean
-//! circuit over bit-planes rather than looked up in a table, so the engine is constant-time and
-//! carries no table at all; the planes are 16 bits wide so that the working set stays small, which
-//! is what "lowmemory" means here. See [Design](#design).
+//! This crate provides SM4 -- a 128-bit block cipher with a single 128-bit key length,
+//! standardised by the State Cryptography Administration of China as GB/T 32907-2016 and described
+//! in English in the CFRG document `draft-ribose-cfrg-sm4-10`, which is the specification every
+//! comment in this crate cites -- under the library's key objects: [`SM4Key<M>`], a key bound to
+//! one mode `M`, validated and expanded once, handing out that mode's encryptors and decryptors.
+//! The engine underneath, [`SM4Internal`], evaluates the S-box as a Boolean circuit over
+//! bit-planes rather than looking it up in a table, so it is constant-time and carries no table at
+//! all; the planes are 16 bits wide so that the working set stays small, which is what "lowmemory"
+//! means here. See [Design](#design).
 //!
-//! It is a *permutation*, not a cipher you can encrypt data with, which is why it lives under
-//! [`hazmat`]. See [Security Considerations](#security-considerations).
+//! The engine is a *permutation*, not a cipher you can encrypt data with, which is why it lives
+//! under [`hazmat`]. See [Security Considerations](#security-considerations).
 //!
 //! # Usage Examples
 //!
-//! ## Encrypting and decrypting a single block
+//! ## Modes of operation
+//!
+//! A key is built once, under a mode from `bouncycastle_cipher::modes`, and used for as many
+//! messages as needed: `CBC<PKCS7>` for CBC (Sec 8.4; NIST SP 800-38A Sec 6.2) with PKCS#7
+//! padding, `CFB` for SM4-CFB-128 (Sec 8.5.1), `CFB8` for SM4-CFB-8, the `s = 8` segment size,
+//! which is a different and non-interoperable mode costing one SM4 call per byte, and `CTR` for
+//! CTR (Sec 8.7) with a 12-byte nonce and a 4-byte counter. The aliases [`SM4_CBC`], [`SM4_CFB`],
+//! [`SM4_CFB8`] and [`SM4_CTR`] name the workers the key hands out.
+//!
+//! CBC is a block cipher, so it is defined only on whole blocks and the key's mode carries a
+//! padding scheme to bridge the difference; the CFB modes and CTR are stream ciphers and take any
+//! length with no padding at all. See the `bouncycastle_cipher::modes` crate docs for the
+//! comparison, and [`SM4_CBC`] for why the scheme is named in the type.
 //!
 //! ```
-//! use bouncycastle_sm4::hazmat::SM4;
-//! use bouncycastle_core::hazmat::ElectronicCodeBook;
+//! use bouncycastle_sm4::SM4Key;
+//! use bouncycastle_cipher::modes::CBC;
+//! use bouncycastle_cipher::padding::PKCS7;
+//! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
+//! use bouncycastle_core::symmetric_key::{FromKeyMaterial, SymmetricDecryptionKey, SymmetricEncryptionKey};
+//! use bouncycastle_rng::HashDRBG_SHA512;
+//!
+//! let mut rng = HashDRBG_SHA512::new_from_os();   // one RNG, held across messages
+//! let material = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
+//!     .expect("a 16-byte symmetric cipher key");
+//! let key = SM4Key::<CBC<PKCS7>>::from_key_material(&material).expect("a valid SM4 key");
+//!
+//! // Any length: PKCS#7 pads it out to whole blocks, so 50 bytes is as good as 48.
+//! let plaintext = [0x5Au8; 50];
+//!
+//! // The IV is drawn from `rng` and returned; there is no API for supplying one.
+//! let (iv, ciphertext) = key.encrypt(&mut rng, &plaintext).expect("encryption");
+//! assert_eq!(ciphertext.len(), 64, "50 bytes padded out to four blocks");
+//!
+//! let recovered = key.decrypt(&iv, &ciphertext).expect("decryption");
+//! assert_eq!(recovered, plaintext);
+//! ```
+//!
+//! The stream modes take any length and return the initialisation data the same way:
+//!
+//! ```
+//! use bouncycastle_sm4::SM4Key;
+//! use bouncycastle_cipher::modes::CTR;
+//! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
+//! use bouncycastle_core::symmetric_key::{FromKeyMaterial, SymmetricDecryptionKey, SymmetricEncryptionKey};
+//! use bouncycastle_rng::HashDRBG_SHA512;
+//!
+//! let mut rng = HashDRBG_SHA512::new_from_os();
+//! let material = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
+//!     .expect("a 16-byte symmetric cipher key");
+//! let key = SM4Key::<CTR>::from_key_material(&material).expect("a valid SM4 key");
+//!
+//! // 50 bytes, and the ciphertext is 50 bytes: no padding anywhere.
+//! let plaintext = [0x5Au8; 50];
+//! let mut data = plaintext;
+//! let (_, nonce) = key.encrypt_inplace(&mut rng, &mut data).expect("encryption");
+//! assert_ne!(data, plaintext);
+//!
+//! key.decrypt_inplace(&nonce, &mut data).expect("decryption");
+//! assert_eq!(data, plaintext);
+//! ```
+//!
+//! For the block-aligned API -- whole blocks in place, through the block role pair -- make the
+//! key under `CBC<Blocks>`; the padded alias wraps the same worker.
+//!
+//! ## The raw permutation
+//!
+//! The engine transforms one block, and `ElectronicCodeBook::new` on it is the one-shot:
+//!
+//! ```
+//! use bouncycastle_sm4::hazmat::SM4Internal;
+//! use bouncycastle_core::hazmat::{BlockPermutation, ElectronicCodeBook};
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 //!
 //! // GB/T 32907-2016 Example 1 (draft-ribose-cfrg-sm4-10 Appendix A.1.1).
@@ -28,7 +97,7 @@
 //!     KeyType::SymmetricCipherKey,
 //! ).expect("a 16-byte symmetric cipher key");
 //!
-//! let sm4 = SM4::new(&key).expect("a valid SM4 key");
+//! let sm4 = SM4Internal::new(&key).expect("a valid SM4 key");
 //!
 //! let mut block = [0x01, 0x23, 0x45, 0x67, 0x89, 0xAB, 0xCD, 0xEF,
 //!                  0xFE, 0xDC, 0xBA, 0x98, 0x76, 0x54, 0x32, 0x10];
@@ -46,18 +115,18 @@
 //!
 //! The bit-sliced S-box substitutes 16 bytes per pass, and a round substitutes four bytes per
 //! block, so four independent blocks cost the same as one. Where a caller has four,
-//! [`SM4::encrypt_4blocks`] is four times the throughput of four [`ElectronicCodeBook::encrypt_block`](bouncycastle_core::hazmat::ElectronicCodeBook::encrypt_block) calls, and it
-//! is also the four-block batch [`ElectronicCodeBook::encrypt_4blocks`](bouncycastle_core::hazmat::ElectronicCodeBook::encrypt_4blocks) offers to modes:
+//! [`SM4Internal::encrypt_4blocks`] is four times the throughput of four [`BlockPermutation::encrypt_block`](bouncycastle_core::hazmat::BlockPermutation::encrypt_block) calls, and it
+//! is also the four-block batch [`BlockPermutation::encrypt_4blocks`](bouncycastle_core::hazmat::BlockPermutation::encrypt_4blocks) offers to modes:
 //!
 //! ```
-//! use bouncycastle_sm4::hazmat::SM4;
+//! use bouncycastle_sm4::hazmat::SM4Internal;
 //! use bouncycastle_sm4::LANES;
-//! use bouncycastle_core::hazmat::ElectronicCodeBook;
+//! use bouncycastle_core::hazmat::{BlockPermutation, ElectronicCodeBook};
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 //!
 //! let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
 //!     .expect("a 16-byte symmetric cipher key");
-//! let sm4 = SM4::new(&key).expect("a valid SM4 key");
+//! let sm4 = SM4Internal::new(&key).expect("a valid SM4 key");
 //!
 //! let mut blocks: [[u8; 16]; LANES] = core::array::from_fn(|i| [i as u8; 16]);
 //! let original = blocks;
@@ -65,74 +134,6 @@
 //! sm4.decrypt_4blocks(&mut blocks);
 //! assert_eq!(blocks, original);
 //! ```
-//!
-//! ## Modes of operation
-//!
-//! To encrypt more than one block, use a mode of operation from `bouncycastle_cipher::modes`. This crate
-//! provides aliases that fill in the const parameters, leaving only the choices a caller actually
-//! makes. [`SM4_CBC`] is CBC (Sec 8.4; NIST SP 800-38A Sec 6.2), which takes the direction **and a
-//! padding scheme**; [`SM4_CFB`] is SM4-CFB-128 (Sec 8.5.1) and [`SM4_CFB8`] is SM4-CFB-8, the
-//! `s = 8` segment size, which is a different and non-interoperable mode costing one SM4 call per
-//! byte; [`SM4_CTR`] is CTR (Sec 8.7) with a 12-byte nonce and a 4-byte counter. Each of those
-//! three takes only the direction.
-//!
-//! CBC is a block cipher, so it is defined only on whole blocks and the alias carries a padding
-//! scheme to bridge the difference; the CFB modes and CTR are stream ciphers and take any length
-//! with no padding at all. See the `bouncycastle_cipher::modes` crate docs for the comparison, and
-//! [`SM4_CBC`] for why the scheme is named in the type.
-//!
-//! ```
-//! use bouncycastle_sm4::SM4_CBC;
-//! use bouncycastle_core::hazmat::ElectronicCodeBook;
-//! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-//! use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
-//! use bouncycastle_cipher::{Decrypting, Encrypting};
-//! use bouncycastle_cipher::padding::PKCS7;
-//!
-//! let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
-//!     .expect("a 16-byte symmetric cipher key");
-//! // Any length: PKCS#7 pads it out to whole blocks, so 50 bytes is as good as 48.
-//! let plaintext = [0x5Au8; 50];
-//!
-//! // The IV is generated for you and returned; there is no API for supplying one.
-//! let (iv, ciphertext) =
-//!     SM4_CBC::<Encrypting, PKCS7>::encrypt(&key, &plaintext).expect("encryption");
-//! assert_eq!(ciphertext.len(), 64, "50 bytes padded out to four blocks");
-//!
-//! let recovered =
-//!     SM4_CBC::<Decrypting, PKCS7>::decrypt(&key, &iv, &ciphertext).expect("decryption");
-//! assert_eq!(recovered, plaintext);
-//! ```
-//!
-//! The stream modes take any length and return the initialisation data the same way:
-//!
-//! ```
-//! use bouncycastle_sm4::SM4_CTR;
-//! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-//! use bouncycastle_core::traits::{StreamCipherDecryptor, StreamCipherEncryptor};
-//! use bouncycastle_cipher::{Decrypting, Encrypting};
-//!
-//! let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
-//!     .expect("a 16-byte symmetric cipher key");
-//! // 50 bytes, and the ciphertext is 50 bytes: no padding anywhere.
-//! let plaintext = [0x5Au8; 50];
-//! let mut data = plaintext;
-//!
-//! // The nonce is generated for you and returned; there is no API for supplying one.
-//! let (written, nonce) = SM4_CTR::<Encrypting>::encrypt_in_place(&key, &mut data).expect("encryption");
-//! assert_eq!(written, 50);
-//! assert_ne!(data, plaintext);
-//!
-//! SM4_CTR::<Decrypting>::decrypt_in_place(&key, &nonce, &mut data).expect("decryption");
-//! assert_eq!(data, plaintext);
-//! ```
-//!
-//! For the block-aligned API -- whole blocks in place, with the length checked at compile time --
-//! name `bouncycastle_cipher::modes::Cbc` directly; that is what the CBC aliases wrap.
-//!
-//! There is no one-shot static on the permutation, because `SM4::new(&key)?.encrypt_block(..)`
-//! already *is* the one shot. Data-level one-shots belong to the modes of operation, which take
-//! arbitrary-length input and generate their own initialisation data.
 //!
 //! # Design
 //!
@@ -176,8 +177,8 @@
 //! Beyond the S-box, this port stores one schedule that serves both directions (a direction-aware
 //! engine typically expands the key in reverse when initialised for decryption); the block methods
 //! are infallible (the run-time buffer and initialisation checks are compile-time facts here); and
-//! [`ElectronicCodeBook::new`](bouncycastle_core::hazmat::ElectronicCodeBook::new) requires a key tagged as a symmetric cipher key of at least
-//! 128-bit strength, as every cipher in this workspace does.
+//! the constructors require a key tagged as a symmetric cipher key of at least 128-bit strength, as
+//! every cipher in this workspace does.
 //!
 //! ## Why "lowmemory"
 //!
@@ -189,11 +190,12 @@
 //!
 //! # Memory Usage
 //!
-//! No heap allocation and no lookup tables. The persistent state is the 32 round keys of Sec 7.3:
+//! No heap allocation and no lookup tables. The persistent state is the 32 round keys of Sec 7.3,
+//! held once in the key; a worker adds the mode's own state and a reference to the key:
 //!
 //! | Type | Key | Rounds | Schedule (persistent) | Tables |
 //! |---|---|---|---|---|
-//! | [`SM4`] | 16 B | 32 | 128 B | 0 B |
+//! | [`SM4Internal`] | 16 B | 32 | 128 B | 0 B |
 //!
 //! Per-call stack usage is the four-block working state -- four words per block, 64 bytes --
 //! plus the four `T` arguments (16 bytes), the eight `u16` planes of the S-box argument (16
@@ -207,12 +209,12 @@
 //!
 //! ## A block permutation is not a cipher
 //!
-//! [`SM4`] transforms exactly 16 bytes. Using it directly on data means ECB, which is not
+//! [`SM4Internal`] transforms exactly 16 bytes. Using it directly on data means ECB, which is not
 //! confidential: identical plaintext blocks produce identical ciphertext blocks, so structure in
 //! the plaintext survives encryption (the specification's own Sec 12 says SM4-ECB "SHOULD NOT be
 //! used in most cases"). **Do not do it.** Use a mode of operation, and prefer an authenticated
 //! one so that ciphertext tampering is detected.
-//! That is why [`SM4`] lives under [`hazmat`]; [`bouncycastle_core::hazmat`] lists the supported
+//! That is why [`SM4Internal`] lives under [`hazmat`]; [`bouncycastle_core::hazmat`] lists the supported
 //! uses.
 //!
 //! ## Constant-time properties
@@ -261,8 +263,8 @@
 //!   all 32 round keys and all 32 per-round outputs of Examples 1 and 4, and the two 1,000,000-fold
 //!   iterated ciphertexts -- the SM4-ECB, SM4-CBC and SM4-CFB vectors of Appendix A.2.1, A.2.2 and
 //!   A.2.4, the SM4-CTR vectors of Appendix A.2.5 (through a reference built from the Sec 8.7.1
-//!   equations, which the [`SM4_CTR`] alias is then held to -- see `tests/stream_mode_tests.rs` for
-//!   why the published counter blocks are not ones the alias produces), plus GB/T 32907-2016's own
+//!   equations, which the `CTR` key is then held to -- see `tests/stream_mode_tests.rs` for
+//!   why the published counter blocks are not ones it produces), plus GB/T 32907-2016's own
 //!   two examples as republished at <https://eprint.iacr.org/2008/329.pdf>.
 
 #![no_std]
@@ -275,6 +277,7 @@ mod cfb;
 mod cfb8;
 mod ctr;
 pub mod hazmat;
+mod key;
 mod sbox;
 mod schedule;
 
@@ -284,15 +287,17 @@ pub const BLOCK_LEN: usize = 16;
 /// The SM4 key length in bytes: 16 (Sec 4, "key length of 128 bits"). There is only one.
 pub const KEY_LEN: usize = 16;
 
-/// The number of blocks the bit-sliced S-box substitutes at once. See [`SM4::encrypt_4blocks`].
+/// The number of blocks the bit-sliced S-box substitutes at once. See
+/// [`SM4Internal::encrypt_4blocks`].
 pub const LANES: usize = 4;
 
 pub use cbc::SM4_CBC;
 pub use cfb::SM4_CFB;
 pub use cfb8::SM4_CFB8;
 pub use ctr::{CTR_NONCE_LEN, SM4_CTR};
+pub use key::SM4Key;
 
 // Imports needed for docs
 #[allow(unused_imports)]
-use hazmat::SM4;
+use hazmat::SM4Internal;
 // end of imports needed for docs
