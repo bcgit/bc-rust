@@ -82,13 +82,14 @@ impl AlgorithmOID for HMAC_SM3Params {
 }
 
 impl HMACParams for HMAC_SM3Params {
+    type Hash = SM3;
     type MACKey = KeyMaterial<{ <SM3 as HashAlgParams>::OUTPUT_LEN }>;
     type KeyBuf = [u8; <SM3 as HashAlgParams>::BLOCK_LEN];
 }
 
 /// Public type for HMAC using SM3.
 #[allow(non_camel_case_types)]
-pub type HMAC_SM3 = HMAC<SM3, HMAC_SM3Params>;
+pub type HMAC_SM3 = HMAC<HMAC_SM3Params>;
 
 /*** Serialized-state length constants ***/
 // HMAC's suspended state is exactly the inner hasher's state -- the key is deliberately excluded and

@@ -5,9 +5,9 @@
 //! [`HMAC_SHA256`], [`HMAC_SHA384`] and [`HMAC_SHA512`].
 //!
 //! HMAC itself is implemented generically in [`bouncycastle_hmac`]; this module declares one
-//! [`HMACParams`] marker type per instantiation (such as [`HMAC_SHA256Params`]), carrying that
-//! HMAC's name, claimed strength, OID and key type, and publishes the type alias pairing each
-//! marker with its hash. This mirrors how the hashes themselves are built, where `SHA256` is
+//! [`HMACParams`] marker type per instantiation (such as [`HMAC_SHA256Params`]), naming its hash
+//! and carrying that HMAC's name, claimed strength, OID and key type, and publishes the type alias
+//! for each marker. This mirrors how the hashes themselves are built, where `SHA256` is
 //! `SHA256Internal<SHA256Params>`. The upshot is that
 //! HMAC over a SHA2 hash is found in this crate, and [`bouncycastle_hmac`] serves as a utility crate
 //! rather than as part of library's public API.
@@ -317,13 +317,14 @@ impl AlgorithmOID for HMAC_SHA224Params {
 }
 
 impl HMACParams for HMAC_SHA224Params {
+    type Hash = SHA224;
     type MACKey = KeyMaterial<{ <SHA224 as HashAlgParams>::OUTPUT_LEN }>;
     type KeyBuf = [u8; <SHA224 as HashAlgParams>::BLOCK_LEN];
 }
 
 /// Public type for HMAC using SHA224.
 #[allow(non_camel_case_types)]
-pub type HMAC_SHA224 = HMAC<SHA224, HMAC_SHA224Params>;
+pub type HMAC_SHA224 = HMAC<HMAC_SHA224Params>;
 
 /// The parameters for HMAC-SHA256 -- see [`HMAC_SHA256`].
 #[derive(Clone)]
@@ -344,13 +345,14 @@ impl AlgorithmOID for HMAC_SHA256Params {
 }
 
 impl HMACParams for HMAC_SHA256Params {
+    type Hash = SHA256;
     type MACKey = KeyMaterial<{ <SHA256 as HashAlgParams>::OUTPUT_LEN }>;
     type KeyBuf = [u8; <SHA256 as HashAlgParams>::BLOCK_LEN];
 }
 
 /// Public type for HMAC using SHA256.
 #[allow(non_camel_case_types)]
-pub type HMAC_SHA256 = HMAC<SHA256, HMAC_SHA256Params>;
+pub type HMAC_SHA256 = HMAC<HMAC_SHA256Params>;
 
 /// The parameters for HMAC-SHA384 -- see [`HMAC_SHA384`].
 #[derive(Clone)]
@@ -371,13 +373,14 @@ impl AlgorithmOID for HMAC_SHA384Params {
 }
 
 impl HMACParams for HMAC_SHA384Params {
+    type Hash = SHA384;
     type MACKey = KeyMaterial<{ <SHA384 as HashAlgParams>::OUTPUT_LEN }>;
     type KeyBuf = [u8; <SHA384 as HashAlgParams>::BLOCK_LEN];
 }
 
 /// Public type for HMAC using SHA384.
 #[allow(non_camel_case_types)]
-pub type HMAC_SHA384 = HMAC<SHA384, HMAC_SHA384Params>;
+pub type HMAC_SHA384 = HMAC<HMAC_SHA384Params>;
 
 /// The parameters for HMAC-SHA512 -- see [`HMAC_SHA512`].
 #[derive(Clone)]
@@ -398,13 +401,14 @@ impl AlgorithmOID for HMAC_SHA512Params {
 }
 
 impl HMACParams for HMAC_SHA512Params {
+    type Hash = SHA512;
     type MACKey = KeyMaterial<{ <SHA512 as HashAlgParams>::OUTPUT_LEN }>;
     type KeyBuf = [u8; <SHA512 as HashAlgParams>::BLOCK_LEN];
 }
 
 /// Public type for HMAC using SHA512.
 #[allow(non_camel_case_types)]
-pub type HMAC_SHA512 = HMAC<SHA512, HMAC_SHA512Params>;
+pub type HMAC_SHA512 = HMAC<HMAC_SHA512Params>;
 
 /// The parameters for HMAC-SHA512/224 -- see [`HMAC_SHA512_224`].
 #[derive(Clone)]
@@ -425,13 +429,14 @@ impl AlgorithmOID for HMAC_SHA512_224Params {
 }
 
 impl HMACParams for HMAC_SHA512_224Params {
+    type Hash = SHA512_224;
     type MACKey = KeyMaterial<{ <SHA512_224 as HashAlgParams>::OUTPUT_LEN }>;
     type KeyBuf = [u8; <SHA512_224 as HashAlgParams>::BLOCK_LEN];
 }
 
 /// Public type for HMAC using SHA512/224.
 #[allow(non_camel_case_types)]
-pub type HMAC_SHA512_224 = HMAC<SHA512_224, HMAC_SHA512_224Params>;
+pub type HMAC_SHA512_224 = HMAC<HMAC_SHA512_224Params>;
 
 /// The parameters for HMAC-SHA512/256 -- see [`HMAC_SHA512_256`].
 #[derive(Clone)]
@@ -452,13 +457,14 @@ impl AlgorithmOID for HMAC_SHA512_256Params {
 }
 
 impl HMACParams for HMAC_SHA512_256Params {
+    type Hash = SHA512_256;
     type MACKey = KeyMaterial<{ <SHA512_256 as HashAlgParams>::OUTPUT_LEN }>;
     type KeyBuf = [u8; <SHA512_256 as HashAlgParams>::BLOCK_LEN];
 }
 
 /// Public type for HMAC using SHA512/256.
 #[allow(non_camel_case_types)]
-pub type HMAC_SHA512_256 = HMAC<SHA512_256, HMAC_SHA512_256Params>;
+pub type HMAC_SHA512_256 = HMAC<HMAC_SHA512_256Params>;
 
 /*** Serialized-state length constants ***/
 // HMAC's suspended state is exactly the inner hasher's state -- the key is deliberately excluded and

@@ -33,27 +33,28 @@ exposed parameters. If your application requires you to use the fully-parametriz
 these public APIs of BC-Rust's HKDF implementation:
 
 ```rust
-impl<H: Hash + Default> HKDF<H> {
-    do_extract_init(salt: & impl KeyMaterial) -> Result<usize, MACError>;
+impl<PARAMS: HMACParams, ...> HKDF<PARAMS, ...> {
+    do_extract_init(salt: & impl KeyMaterialTrait) -> Result<usize, MACError>;
 
-    do_extract_update_key(ikm: & impl KeyMaterial) -> Result<usize, MACError>;
+    do_extract_update_key(ikm: & impl KeyMaterialTrait) -> Result<usize, MACError>;
 
     do_extract_update_bytes(ikm_chunk: & [u8]) -> Result<usize, MACError>;
 
-    do_extract_final() -> Result<impl KeyMaterial, MACError>;
+    do_extract_final() -> Result<impl KeyMaterialTrait, MACError>;
 
     expand_out(
-    prk: & impl KeyMaterial,
+    prk: & impl KeyMaterialTrait,
     info: & [u8],
     L: usize,
-    okm: & mut impl KeyMaterial,
+    okm: & mut impl KeyMaterialTrait,
     ) -> Result<usize, KDFError>
 }
 ```
 
-That is, including the choice of hash function `H`, 7 adjustable input parameters spread across 5 function calls, which
-is enough to make a novice cryptographer's head spin! Plenty of rope to hang yourself with. To this end, we also offer a
-much simplified KDF trait and KDFFactory that lets you do the whole operation in two very straightforward lines of code:
+That is, including the choice of hash function (named by the HMAC parameters `PARAMS`), 7 adjustable input parameters
+spread across 5 function calls, which is enough to make a novice cryptographer's head spin! Plenty of rope to hang
+yourself with. To this end, we also offer a much simplified KDF trait and KDFFactory that lets you do the whole
+operation in two very straightforward lines of code:
 
 ```rust
 let mut kdf = KDFFactory::new("HKDF-SHA256") ?;

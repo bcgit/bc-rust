@@ -40,3 +40,5 @@
   HKDF_SHA256, and so on now live in the `bouncycastle_sha2::hmac`, `bouncycastle_sha3::hmac`, and
   `bouncycastle_sha2::hkdf` namespaces. At the same time, adjustments were made to the MAX_SECURITY_STRENGTH of the HMAC
   and HKDF algorithms because SP 800-107r1 allows them to be higher than what we had previously.
+* `HMAC` and `HKDF` take their hash from the new `HMACParams::Hash` associated type instead of a separate type
+  parameter, so `HMAC<H, P>` is now `HMAC<P>` and `HKDF<H, P, ..>` is now `HKDF<P, ..>`.

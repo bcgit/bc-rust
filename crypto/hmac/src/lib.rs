@@ -2,8 +2,8 @@
 //! taking into account NIST Implementation Guidance in FIPS 140-2 IG A.8 and NIST SP 800-107-r1.
 //!
 //! This is a utility crate and is not intended to be used directly. It provides [`HMAC`] -- the
-//! construction, generic over any struct that implements [`Hash`], paired with an [`HMACParams`]
-//! marker type that carries the metadata the resulting instantiation reports about itself.
+//! construction, generic over an [`HMACParams`] marker type that names the underlying [`Hash`] and
+//! carries the metadata the resulting instantiation reports about itself.
 //! The library provides the following concrete instantiations of HMAC:
 //!
 //! | Hash family | Instantiations                                                               |
@@ -17,7 +17,7 @@
 //!
 //! # Instantiating HMAC over a Hash
 //!
-//! HMAC works with any hash: [`HMAC<HASH>`](HMAC) needs only [`Hash`]. What HMAC cannot
+//! HMAC works with any hash: the construction itself needs only [`Hash`]. What HMAC cannot
 //! derive on its own is the *metadata* of the resulting construction -- the name "HMAC-SHA256" is not
 //! mechanically obtainable from "SHA256", and RFC 4231 assigns each hash/HMAC combination its own OID
 //! rather than deriving it from the hash's OID. Supplying that metadata is what makes an HMAC a
@@ -30,12 +30,12 @@
 //! 1. Have a hash type that implements [`Hash`] + [`HashAlgParams`] + [`Default`]. Implementing
 //!    [`Hash`] is documented in `bouncycastle-core`; nothing about it is HMAC-specific.
 //! 2. Declare a params type for the instantiation and give it [`Algorithm`] (the name and claimed
-//!    strength), [`AlgorithmOID`] (the OID and its DER encoding) and [`HMACParams`] (the key type
-//!    that [`HMAC::keygen_from_rng`] should return, and the internal key buffer). This crate then
+//!    strength), [`AlgorithmOID`] (the OID and its DER encoding) and [`HMACParams`] (the hash, the
+//!    key type that [`HMAC::keygen_from_rng`] should return, and the internal key buffer). This crate then
 //!    provides the blanket [`Algorithm`], [`AlgorithmOID`] and [`HMAC::keygen_from_rng`] impls for
 //!    any [`HMAC`]. Take the buffer from [`HashAlgParams::BLOCK_LEN`] rather than writing a literal,
 //!    so it cannot drift away from the hash it has to hold a block of.
-//! 3. Optionally, publish a type alias pairing the hash with the params.
+//! 3. Optionally, publish a type alias for `HMAC<Params>`.
 //! 4. Optionally, publish the suspended-state length as a convenience constant. [`SuspendableKeyed`] is
 //!    implemented automatically for any hash that implements [`Suspendable`], and HMAC's suspended
 //!    state is exactly the inner hash's -- the key is deliberately excluded -- so the constant is
@@ -63,11 +63,12 @@
 //! }
 //!
 //! impl HMACParams for HMAC_SHA256Params {
+//!     type Hash = SHA256;
 //!     type MACKey = KeyMaterial<{ <SHA256 as HashAlgParams>::OUTPUT_LEN }>;
 //!     type KeyBuf = [u8; <SHA256 as HashAlgParams>::BLOCK_LEN];
 //! }
 //!
-//! pub type HMAC_SHA256 = HMAC<SHA256, HMAC_SHA256Params>;
+//! pub type HMAC_SHA256 = HMAC<HMAC_SHA256Params>;
 //!
 //! pub const SUSPENDED_HMAC_SHA256_STATE_LEN: usize = SUSPENDED_SHA256_STATE_LEN;
 //! ```
@@ -119,24 +120,24 @@ use bouncycastle_core::errors::{KeyMaterialError, MACError, RNGError, Suspendabl
 use bouncycastle_core::key_material::{KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{
-    Algorithm, AlgorithmOID, Hash, MAC, RNG, Suspendable, SuspendableKeyed,
+    Algorithm, AlgorithmOID, Hash, HashAlgParams, MAC, RNG, Suspendable, SuspendableKeyed,
 };
 use bouncycastle_utils::secret::ZeroizablePrimitive;
 use bouncycastle_utils::{ct, secret::Secret};
 use core::fmt::{Debug, Display, Formatter};
 use core::marker::PhantomData;
 
-/*** Imports needed for docs ***/
-#[allow(unused_imports)]
-use bouncycastle_core::traits::HashAlgParams;
-
 /*** Parameters ***/
 
 /// The metadata of one concrete HMAC instantiation, supplied as a marker type.
 pub trait HMACParams: Algorithm + AlgorithmOID {
+    /// The hash function this HMAC is instantiated over.
+    type Hash: Hash + HashAlgParams + Default;
+
     /// The type of key that this HMAC instance needs, sized to the underlying hash's output length.
     ///
-    /// Implementors should set this to `KeyMaterial<{ <H as HashAlgParams>::OUTPUT_LEN }>`.
+    /// Implementors should set this to `KeyMaterial<{ <H as HashAlgParams>::OUTPUT_LEN }>`, where `H`
+    /// is the hash named by [`HMACParams::Hash`].
     ///
     // todo: once rust stabilizes generic_const_exprs, delete this and return
     //     `KeyMaterial<{Self::OUTPUT_LEN}>` from `keygen_from_rng` instead.
@@ -148,7 +149,8 @@ pub trait HMACParams: Algorithm + AlgorithmOID {
     /// a key no longer than the block is used verbatim, and only longer keys are pre-hashed down to
     /// the output length, so the buffer has to fit a whole block.
     ///
-    /// Implementors should set this to `[u8; { <H as HashAlgParams>::BLOCK_LEN }]`.
+    /// Implementors should set this to `[u8; { <H as HashAlgParams>::BLOCK_LEN }]`, where `H` is the
+    /// hash named by [`HMACParams::Hash`].
     type KeyBuf: ZeroizablePrimitive + AsRef<[u8]> + AsMut<[u8]>;
 }
 
@@ -156,22 +158,22 @@ pub trait HMACParams: Algorithm + AlgorithmOID {
 /// HMAC implements RFC 2104.
 /// Can, in theory, be instantiated with hash functions other than the ones provided by this crate (even custom ones).
 #[derive(Clone)]
-pub struct HMAC<HASH: Hash + Default, PARAMS: HMACParams> {
+pub struct HMAC<PARAMS: HMACParams> {
     _phantom_params: PhantomData<PARAMS>,
-    hasher: HASH,
+    hasher: PARAMS::Hash,
     // Sized by the params ([`HMACParams::KeyBuf`]), which take it from the hash's block length, so
     // the caller cannot pick a buffer that does not fit the hash.
     key: Secret<PARAMS::KeyBuf>,
     key_len: Secret<usize>, // Doing it this way to avoid needing a vec, so that this can be made no_std friendly.
 }
 
-impl<HASH: Hash + Default, PARAMS: HMACParams> Debug for HMAC<HASH, PARAMS> {
+impl<PARAMS: HMACParams> Debug for HMAC<PARAMS> {
     fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
         write!(f, "{} instance", PARAMS::ALG_NAME,)
     }
 }
 
-impl<HASH: Hash + Default, PARAMS: HMACParams> Display for HMAC<HASH, PARAMS> {
+impl<PARAMS: HMACParams> Display for HMAC<PARAMS> {
     fn fmt(&self, f: &mut Formatter<'_>) -> core::fmt::Result {
         write!(f, "{} instance", PARAMS::ALG_NAME,)
     }
@@ -193,7 +195,7 @@ const OPAD_BYTE: u8 = 0x5C;
 /// = 32 bits / 8 = 4 bytes;
 pub const MIN_FIPS_DIGEST_LEN: usize = 4;
 
-impl<HASH: Hash + Default, PARAMS: HMACParams> HMAC<HASH, PARAMS> {
+impl<PARAMS: HMACParams> HMAC<PARAMS> {
     fn pad_key_into_hasher(&mut self, padding: u8) {
         // TODO: it would be nice to be able to statically extract the length of HASH and not need a Vec or over-sized array here.
         // TODO: make this no_std-friendly
@@ -218,7 +220,8 @@ impl<HASH: Hash + Default, PARAMS: HMACParams> HMAC<HASH, PARAMS> {
     fn load_key_material(&mut self, key_bytes: &[u8]) {
         if key_bytes.len() > self.hasher.block_bitlen() / 8 {
             // then we have to pre-hash it -- use a new instance of the hasher rather than the internal one
-            HASH::default().hash_out(key_bytes, &mut self.key.as_mut()[..self.hasher.output_len()]);
+            PARAMS::Hash::default()
+                .hash_out(key_bytes, &mut self.key.as_mut()[..self.hasher.output_len()]);
             *self.key_len = self.hasher.output_len();
         } else {
             self.key.as_mut()[..key_bytes.len()].copy_from_slice(key_bytes);
@@ -286,7 +289,7 @@ impl<HASH: Hash + Default, PARAMS: HMACParams> HMAC<HASH, PARAMS> {
         core::mem::take(&mut self.hasher).do_final_out(&mut ihash);
 
         // ohash
-        self.hasher = HASH::default();
+        self.hasher = PARAMS::Hash::default();
         self.pad_key_into_hasher(OPAD_BYTE);
         self.hasher.do_update(&ihash);
         Ok(core::mem::take(&mut self.hasher).do_final_out(out))
@@ -298,11 +301,11 @@ impl<HASH: Hash + Default, PARAMS: HMACParams> HMAC<HASH, PARAMS> {
 // TODO: This is essentially a "batch mode" where you want to perform many MACs or Verifications with the same key
 // TODO: against different data.
 
-impl<HASH: Hash + Default, PARAMS: HMACParams> MAC for HMAC<HASH, PARAMS> {
+impl<PARAMS: HMACParams> MAC for HMAC<PARAMS> {
     fn new(key: &impl KeyMaterialTrait) -> Result<Self, MACError> {
         let mut hmac = Self {
             _phantom_params: PhantomData,
-            hasher: HASH::default(),
+            hasher: PARAMS::Hash::default(),
             key: Secret::new(),
             key_len: Secret::new(),
         };
@@ -313,7 +316,7 @@ impl<HASH: Hash + Default, PARAMS: HMACParams> MAC for HMAC<HASH, PARAMS> {
     fn new_allow_weak_key(key: &impl KeyMaterialTrait) -> Result<Self, MACError> {
         let mut hmac = Self {
             _phantom_params: PhantomData,
-            hasher: HASH::default(),
+            hasher: PARAMS::Hash::default(),
             key: Secret::new(),
             key_len: Secret::new(),
         };
@@ -360,7 +363,7 @@ impl<HASH: Hash + Default, PARAMS: HMACParams> MAC for HMAC<HASH, PARAMS> {
     }
 
     fn do_verify_final(self, mac: &[u8]) -> bool {
-        let mut out = vec![0_u8; HASH::default().output_len()];
+        let mut out = vec![0_u8; PARAMS::Hash::default().output_len()];
         let output_len = self.do_final_internal_out(&mut out).expect("HMAC::do_final(): should not have failed because we gave it a sufficiently large output buffer to meet FIPS rules.");
         if mac.len() != output_len {
             return false;
@@ -390,11 +393,10 @@ impl<HASH: Hash + Default, PARAMS: HMACParams> MAC for HMAC<HASH, PARAMS> {
 /// There is no way to detect a mismatched key on
 /// resume: the caller MUST supply the same key the HMAC was created with, otherwise the resumed
 /// operation will silently produce an incorrect MAC.
-impl<
-    const HASH_STATE_LEN: usize,
-    HASH: Hash + Default + Suspendable<HASH_STATE_LEN>,
-    PARAMS: HMACParams,
-> SuspendableKeyed<HASH_STATE_LEN> for HMAC<HASH, PARAMS>
+impl<const HASH_STATE_LEN: usize, PARAMS: HMACParams> SuspendableKeyed<HASH_STATE_LEN>
+    for HMAC<PARAMS>
+where
+    PARAMS::Hash: Suspendable<HASH_STATE_LEN>,
 {
     // HMAC accepts any key material, so the key type is the trait object `dyn KeyMaterialTrait`
     // rather than a single concrete key type. The key is only used (by reference) to reload the key
@@ -414,7 +416,7 @@ impl<
         key: &Self::Key,
     ) -> Result<Self, SuspendableError> {
         // Rebuild the inner hasher (version-compatibility is validated by the hash's impl).
-        let hasher = HASH::from_suspended(state)?;
+        let hasher = PARAMS::Hash::from_suspended(state)?;
 
         // Re-load the key material exactly as `new()` did (pre-hashing an over-length key), but do
         // NOT re-absorb `K ⊕ ipad` — the deserialized hasher already contains it. The key is only
@@ -433,7 +435,7 @@ impl<
 
 /* KeyGen functions */
 
-impl<HASH: Hash + Default, PARAMS: HMACParams> HMAC<HASH, PARAMS> {
+impl<PARAMS: HMACParams> HMAC<PARAMS> {
     /// Generates a key of the appropriate length for this HMAC from the provided RNG, tagged
     /// [`KeyType::MACKey`] and ready to hand to [`MAC::new`].
     ///
@@ -473,7 +475,7 @@ impl<HASH: Hash + Default, PARAMS: HMACParams> HMAC<HASH, PARAMS> {
     }
 }
 
-impl<HASH: Hash + Default, PARAMS: HMACParams> Algorithm for HMAC<HASH, PARAMS> {
+impl<PARAMS: HMACParams> Algorithm for HMAC<PARAMS> {
     const ALG_NAME: &'static str = PARAMS::ALG_NAME;
     // An HMAC claims the security strength of the hash underneath it. Reading it off the hash rather
     // than restating it per instantiation keeps the advertised strength identical to the one
@@ -481,7 +483,7 @@ impl<HASH: Hash + Default, PARAMS: HMACParams> Algorithm for HMAC<HASH, PARAMS> 
     const MAX_SECURITY_STRENGTH: SecurityStrength = PARAMS::MAX_SECURITY_STRENGTH;
 }
 
-impl<HASH: Hash + Default, PARAMS: HMACParams> AlgorithmOID for HMAC<HASH, PARAMS> {
+impl<PARAMS: HMACParams> AlgorithmOID for HMAC<PARAMS> {
     const OID: &'static [u32] = PARAMS::OID;
     const OID_DER: &'static [u8] = PARAMS::OID_DER;
 }

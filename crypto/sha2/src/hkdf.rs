@@ -221,7 +221,6 @@ use crate::hmac::{
     SUSPENDED_HMAC_SHA256_STATE_LEN, SUSPENDED_HMAC_SHA384_STATE_LEN,
     SUSPENDED_HMAC_SHA512_STATE_LEN,
 };
-use crate::{SHA256, SHA384, SHA512};
 use crate::{SUSPENDED_SHA256_STATE_LEN, SUSPENDED_SHA512_STATE_LEN};
 use bouncycastle_hkdf::HKDF;
 
@@ -256,7 +255,6 @@ pub const SUSPENDED_HKDF_SHA512_STATE_LEN: usize = SUSPENDED_HMAC_SHA512_STATE_L
 /// Public type for HKDF using SHA256.
 #[allow(non_camel_case_types)]
 pub type HKDF_SHA256 = HKDF<
-    SHA256,
     crate::hmac::HMAC_SHA256Params,
     SUSPENDED_SHA256_STATE_LEN,
     SUSPENDED_HKDF_SHA256_STATE_LEN,
@@ -265,7 +263,6 @@ pub type HKDF_SHA256 = HKDF<
 /// SHA-512's suspended-state length.
 #[allow(non_camel_case_types)]
 pub type HKDF_SHA384 = HKDF<
-    SHA384,
     crate::hmac::HMAC_SHA384Params,
     SUSPENDED_SHA512_STATE_LEN,
     SUSPENDED_HKDF_SHA384_STATE_LEN,
@@ -273,7 +270,6 @@ pub type HKDF_SHA384 = HKDF<
 /// Public type for HKDF using SHA512.
 #[allow(non_camel_case_types)]
 pub type HKDF_SHA512 = HKDF<
-    SHA512,
     crate::hmac::HMAC_SHA512Params,
     SUSPENDED_SHA512_STATE_LEN,
     SUSPENDED_HKDF_SHA512_STATE_LEN,

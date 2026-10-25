@@ -5,9 +5,9 @@
 //! [`HMAC_SHA3_256`], [`HMAC_SHA3_384`] and [`HMAC_SHA3_512`].
 //!
 //! HMAC itself is implemented generically in [`bouncycastle_hmac`]; this module declares one
-//! [`HMACParams`] marker type per instantiation (such as [`HMAC_SHA3_256Params`]), carrying that
-//! HMAC's name, claimed strength, OID and key type, and publishes the type alias pairing each
-//! marker with its hash. This mirrors how the hashes themselves are built, where `SHA256` is
+//! [`HMACParams`] marker type per instantiation (such as [`HMAC_SHA3_256Params`]), naming its hash
+//! and carrying that HMAC's name, claimed strength, OID and key type, and publishes the type alias
+//! for each marker. This mirrors how the hashes themselves are built, where `SHA256` is
 //! `SHA256Internal<SHA256Params>`. The upshot is that
 //! HMAC over a SHA3 hash is found in this crate, and [`bouncycastle_hmac`] serves as a utility crate
 //! rather than as part of library's public API.
@@ -328,13 +328,14 @@ impl AlgorithmOID for HMAC_SHA3_224Params {
 }
 
 impl HMACParams for HMAC_SHA3_224Params {
+    type Hash = SHA3_224;
     type MACKey = KeyMaterial<{ <SHA3_224 as HashAlgParams>::OUTPUT_LEN }>;
     type KeyBuf = [u8; <SHA3_224 as HashAlgParams>::BLOCK_LEN];
 }
 
 /// Public type for HMAC using SHA3_224.
 #[allow(non_camel_case_types)]
-pub type HMAC_SHA3_224 = HMAC<SHA3_224, HMAC_SHA3_224Params>;
+pub type HMAC_SHA3_224 = HMAC<HMAC_SHA3_224Params>;
 
 /// The parameters for HMAC-SHA3_256 -- see [`HMAC_SHA3_256`].
 #[derive(Clone)]
@@ -357,13 +358,14 @@ impl AlgorithmOID for HMAC_SHA3_256Params {
 }
 
 impl HMACParams for HMAC_SHA3_256Params {
+    type Hash = SHA3_256;
     type MACKey = KeyMaterial<{ <SHA3_256 as HashAlgParams>::OUTPUT_LEN }>;
     type KeyBuf = [u8; <SHA3_256 as HashAlgParams>::BLOCK_LEN];
 }
 
 /// Public type for HMAC using SHA3_256.
 #[allow(non_camel_case_types)]
-pub type HMAC_SHA3_256 = HMAC<SHA3_256, HMAC_SHA3_256Params>;
+pub type HMAC_SHA3_256 = HMAC<HMAC_SHA3_256Params>;
 
 /// The parameters for HMAC-SHA3_384 -- see [`HMAC_SHA3_384`].
 #[derive(Clone)]
@@ -386,13 +388,14 @@ impl AlgorithmOID for HMAC_SHA3_384Params {
 }
 
 impl HMACParams for HMAC_SHA3_384Params {
+    type Hash = SHA3_384;
     type MACKey = KeyMaterial<{ <SHA3_384 as HashAlgParams>::OUTPUT_LEN }>;
     type KeyBuf = [u8; <SHA3_384 as HashAlgParams>::BLOCK_LEN];
 }
 
 /// Public type for HMAC using SHA3_384.
 #[allow(non_camel_case_types)]
-pub type HMAC_SHA3_384 = HMAC<SHA3_384, HMAC_SHA3_384Params>;
+pub type HMAC_SHA3_384 = HMAC<HMAC_SHA3_384Params>;
 
 /// The parameters for HMAC-SHA3_512 -- see [`HMAC_SHA3_512`].
 #[derive(Clone)]
@@ -415,13 +418,14 @@ impl AlgorithmOID for HMAC_SHA3_512Params {
 }
 
 impl HMACParams for HMAC_SHA3_512Params {
+    type Hash = SHA3_512;
     type MACKey = KeyMaterial<{ <SHA3_512 as HashAlgParams>::OUTPUT_LEN }>;
     type KeyBuf = [u8; <SHA3_512 as HashAlgParams>::BLOCK_LEN];
 }
 
 /// Public type for HMAC using SHA3_512.
 #[allow(non_camel_case_types)]
-pub type HMAC_SHA3_512 = HMAC<SHA3_512, HMAC_SHA3_512Params>;
+pub type HMAC_SHA3_512 = HMAC<HMAC_SHA3_512Params>;
 
 /*** Serialized-state length constants ***/
 // HMAC's suspended state is exactly the inner hasher's state -- the key is deliberately excluded and
