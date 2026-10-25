@@ -18,7 +18,7 @@
 //!   an `Error:` line and exit status 255; a panic is never the answer to input.
 
 use bouncycastle::core::hazmat::do_hazardous_operations;
-use bouncycastle::core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
+use bouncycastle::core::key_material::{KeyMaterial, KeyMaterial512, KeyMaterialTrait, KeyType};
 use bouncycastle::core::security_strength::SecurityStrength;
 use bouncycastle::core::traits::{Hash, XOF, XOFSqueezer};
 use bouncycastle::hex;
@@ -240,6 +240,38 @@ pub(crate) fn strip_trailing_newline(bytes: &[u8]) -> &[u8] {
 }
 
 // ---- stdin as data ---------------------------------------------------------------------------
+
+/// The MAC key from `--key-file` or `--key` (hex), tagged as a MAC key, for the BLAKE2 and
+/// BLAKE3 keyed commands.
+///
+/// `max_len` is the longest key the algorithm takes; a longer key is refused here with a message
+/// naming the limit, rather than as an opaque error from the algorithm's constructor. An all-zero
+/// key comes back tagged [`KeyType::Zeroized`], which the BLAKE key objects accept, as HMAC's
+/// and KMAC's do.
+pub(crate) fn load_blake_mac_key(
+    key: &Option<String>,
+    key_file: &Option<String>,
+    alg_name: &str,
+    min_len: usize,
+    max_len: usize,
+) -> KeyMaterial512 {
+    let key_bytes = load_secret(key, key_file, "key");
+    let len = key_bytes.key_len();
+    if len < min_len || len > max_len {
+        if min_len == max_len {
+            eprintln!("Error: {alg_name} requires a {min_len}-byte key; got {len} bytes.");
+        } else {
+            eprintln!(
+                "Error: {alg_name} requires a key of {min_len} to {max_len} bytes; got {len} bytes."
+            );
+        }
+        exit(-1);
+    }
+
+    // infallible: the length is at most 64 (checked above, and no caller passes max_len > 64),
+    // which fits a KeyMaterial512, and MACKey is a valid type to load.
+    KeyMaterial512::from_bytes_as_type(key_bytes.ref_to_bytes(), KeyType::MACKey).unwrap()
+}
 
 /// One read from stdin into `buf`; a read error is reported, not a panic. Returns 0 at the end.
 pub(crate) fn read_stdin_chunk(buf: &mut [u8]) -> usize {
