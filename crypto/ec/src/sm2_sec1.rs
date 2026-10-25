@@ -14,7 +14,7 @@
 //! [`encode_uncompressed`] is SEC 1 §2.3.3 case 3 (`04 || X || Y`) and [`encode_compressed`] is
 //! case 2 (`02 || X` or `03 || X`, tag selected by `y mod 2`). Both take affine coordinates
 //! directly rather than a [`Sm2JacobianPoint`], not a `[u8; 1]` "point at infinity" case: SEC 1
-//! §2.3.3 case 1 encodes `∅` as a single `0x00` octet, but an ECDSA-shaped public key -- the only
+//! §2.3.3 case 1 encodes `∅` as a single `0x00` octet, but an SM2 public key -- the only
 //! caller -- can never legitimately be `∅`, so pushing the infinity check to the type (a caller
 //! must have already gotten `Some(x, y)` out of [`Sm2JacobianPoint::to_affine`]) makes encoding
 //! infinity a compile error instead of a runtime one.
@@ -127,7 +127,7 @@ pub fn encode_compressed(x: &Sm2FieldElement, y: &Sm2FieldElement) -> [u8; 33] {
 /// Decodes and validates a SEC 1 §2.3.4 point encoding: 33 bytes (compressed, tag `0x02`/`0x03`)
 /// or 65 bytes (uncompressed, tag `0x04`). See the module docs for exactly which SP 800-186
 /// Appendix D.1.1.1 checks this performs and why it constitutes full (not merely partial)
-/// validation for P-256. Returns `None` for anything invalid.
+/// validation for SM2. Returns `None` for anything invalid.
 pub fn decode(bytes: &[u8]) -> Option<(Sm2FieldElement, Sm2FieldElement)> {
     match bytes.len() {
         33 => {
@@ -187,7 +187,7 @@ pub fn decode_point(bytes: &[u8]) -> Option<Sm2JacobianPoint> {
 // check, so no integration test through the public API can pin either one's pass/fail boundary
 // independent of that coincidence -- the QUALITY_AND_STYLE.md "private function, known-answer,
 // can't be reached cleanly from outside the crate" exception applies to both. Known answers for
-// `limbs_less_than_p`: SP 800-186 S3.2.1.3 gives `p`; 0 and `p - 1` are its immediate neighbours
+// `limbs_less_than_p`: GB/T 32918.5-2017 (draft Appendix D) gives `p`; 0 and `p - 1` are its immediate neighbours
 // inside `[0, p)`, and `p` itself plus a value with only a non-adjacent limb bumped above `p`'s
 // are its immediate neighbours outside it. `either_out_of_range` is exercised over all four
 // in-range/out-of-range combinations of its two arguments, which is what pins OR against AND.

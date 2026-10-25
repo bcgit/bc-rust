@@ -21,7 +21,8 @@
 //! `SM2SignerTest.doSignerTestFpStandardSM3` case (`core/src/test/java/org/bouncycastle/crypto/
 //! test/SM2SignerTest.java`), on the same `sm2p256v1` curve with SM3. A separate implementation
 //! produced it, so it cross-checks this crate's domain constants, `ZA`, `e = SM3(ZA || M)` and the
-//! §5.2.3 verification equation against something external -- which the Python-generated vectors
+//! GB/T 32918.2-2016 §7.1 verification equation against something external -- which the
+//! Python-generated vectors
 //! above, sharing this crate's own `ZA` and signing logic, cannot do. It was additionally
 //! reproduced from scratch (in Python, not checked in: affine group law, `hashlib.new("sm3")`,
 //! and the draft's published domain parameters) before being written here, so it rests on two
@@ -120,7 +121,7 @@ fn known_answer_vectors_reject_wrong_id() {
 #[test]
 fn known_answer_za_matches_independent_python_computation() {
     // Cross-checks crate::za::compute directly, not just the end-to-end verify result -- pins the
-    // intermediate ZA value itself (draft-shen-sm2-ecdsa-02 S5.1.2), independent of e/r/s.
+    // intermediate ZA value itself (GB/T 32918.2-2016 S5.5), independent of e/r/s.
     let expected: [(&str, &str, &[u8], &str); 3] = [
         (V1.qx, V1.qy, V1.id, "bab69c9204aadd3d49ff244e8fdffb204e1d4249e36855f06a912abd81ddf167"),
         (

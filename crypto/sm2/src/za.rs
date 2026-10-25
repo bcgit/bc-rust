@@ -1,7 +1,8 @@
-//! `ZA` computation: `draft-shen-sm2-ecdsa-02` §5.1.2, `ZA = SM3(ENTLA || IDA || a || b || xG || yG
-//! || xA || yA)` -- the identity-and-domain-parameter digest that binds an SM2 signature to a
-//! specific signer's identity `IDA` and public key `(xA, yA)`, distinct from §5.1.3's `e = SM3(ZA ||
-//! M)` hash of the actual message. `ENTLA` is `IDA`'s bit length as a 2-byte big-endian integer; `a`,
+//! `ZA` computation: GB/T 32918.2-2016 §5.5 (the draft's §5.1.4.4), `ZA = SM3(ENTLA || IDA || a ||
+//! b || xG || yG || xA || yA)` -- the identity-and-domain-parameter digest that binds an SM2
+//! signature to a specific signer's identity `IDA` and public key `(xA, yA)`, distinct from §6.1
+//! steps A1-A2's `e = SM3(ZA || M)` hash of the actual message. `ENTLA` is `IDA`'s bit length as a
+//! 2-byte big-endian integer; `a`,
 //! `b`, `xG`, `yG`, `xA`, `yA` are each encoded as fixed-width 32-byte big-endian octets, matching
 //! this curve's field size.
 //!
@@ -33,7 +34,7 @@ fn a_limbs() -> [u64; 4] {
 }
 
 /// Computes `ZA` for the given identity `id` and public key affine coordinates
-/// (`draft-shen-sm2-ecdsa-02` §5.1.2). Returns [`SignatureError::GenericError`] if `id`'s bit length
+/// (GB/T 32918.2-2016 §5.5). Returns [`SignatureError::GenericError`] if `id`'s bit length
 /// doesn't fit in 16 bits, the limit `ENTLA`'s 2-byte encoding imposes.
 pub fn compute(
     id: &[u8],

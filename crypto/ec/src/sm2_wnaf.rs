@@ -1,6 +1,7 @@
-//! Interleaved windowed-NAF (wNAF) Shamir's-trick multiplication: `[u]G + [v]Q`, for ECDSA
-//! verification's `R' = [u]G + [v]Q` (FIPS 186-5 §6.4.2). Both scalars and both points are public
-//! -- `G` is the curve's fixed base point and `Q` a signer's public key -- so unlike
+//! Interleaved windowed-NAF (wNAF) Shamir's-trick multiplication: `[u]G + [v]Q`, for SM2
+//! verification's `(x1', y1') = [s']G + [t]PA` (GB/T 32918.2-2016 §7.1 step B6). Both scalars and
+//! both points are public -- `G` is the curve's fixed base point and `Q` a signer's public key --
+//! so unlike
 //! [`crate::sm2_comb`], this multiplier takes [`Sm2PublicScalar`], not [`crate::sm2_scalar::Sm2Scalar`],
 //! and is written for speed, not constant time: it branches freely on the digits it computes,
 //! and adds points with `add_vartime` rather than the constant-time `add` (see that method's

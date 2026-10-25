@@ -30,7 +30,7 @@ pub const SK_LEN: usize = 32;
 pub const PK_LEN: usize = 65;
 
 /// Requested output length, in bytes, from the DRBG for key generation and for the per-signature
-/// secret `k` (`draft-shen-sm2-ecdsa-02` §5.1.3 step A3): `320` bits (40 bytes) -- derived directly
+/// secret `k` (GB/T 32918.2-2016 §6.1 step A3): `320` bits (40 bytes) -- derived directly
 /// from FIPS 186-5 Appendix A.4.1's own bias-bound check for SM2's `n` (see [`crate::extra_bits`]'s
 /// docs), not copied from any other curve's table entry.
 pub(crate) const EXTRA_BITS_DRBG_OUTPUT_LEN: usize = 40;
@@ -40,8 +40,9 @@ pub(crate) const EXTRA_BITS_DRBG_OUTPUT_LEN: usize = 40;
 ///
 /// # Why the public key is carried alongside `dA`
 ///
-/// Unlike ECDSA, *every* SM2 signing operation needs the signer's own public key: §5.1.2's `ZA =
-/// SM3(ENTLA || IDA || a || b || xG || yG || xA || yA)` mixes `PA`'s affine coordinates into the
+/// Unlike ECDSA, *every* SM2 signing operation needs the signer's own public key: GB/T
+/// 32918.2-2016 §5.5's `ZA = SM3(ENTLA || IDA || a || b || xG || yG || xA || yA)` mixes `PA`'s
+/// affine coordinates into the
 /// message hash, so `sign` cannot proceed without them. Deriving `PA` on each call means a second
 /// fixed-base scalar multiplication per signature -- as expensive as the `[k]G` the signature
 /// actually needs, i.e. double the cost of signing, and measurably so: signing used to cost about
@@ -57,7 +58,7 @@ pub(crate) const EXTRA_BITS_DRBG_OUTPUT_LEN: usize = 40;
 ///
 /// # Why `(1 + dA)^-1` is carried too
 ///
-/// `draft-shen-sm2-ecdsa-02` §5.1.3 step A6 divides by `1 + dA`, and that inverse depends on the
+/// GB/T 32918.2-2016 §6.1 step A6 divides by `1 + dA`, and that inverse depends on the
 /// key alone, not on the message or `k`. Recomputing it per signature was a constant-time
 /// Fermat inversion each time -- roughly the same cost as `to_affine`'s field inversion, about a
 /// tenth of a signature on P-256-class hardware -- for a value that never changes. It is computed
@@ -203,8 +204,9 @@ pub fn keygen() -> Result<(SM2PublicKey, SM2PrivateKey), SignatureError> {
 }
 
 /// As [`keygen`], but sources the DRBG output from the caller-provided RNG, which must offer
-/// a security strength of at least 128 bits: the draft leaves this unstated (see the module
-/// docs on why key generation borrows FIPS 186-5's method wholesale), so this follows that
+/// a security strength of at least 128 bits: GB/T 32918.2-2016 §5.4.3 asks only for an approved
+/// random number generator and the draft says no more (see the module docs on why key generation
+/// borrows FIPS 186-5's method wholesale), so this follows that
 /// method's own Appendix A.2.1 step 3, requiring a DRBG strength "not less than" the one SP
 /// 800-57 Part 1 Rev. 5's Table 2 associates with SM2's 256-bit curve order (`f = 256-383` in
 /// that table's ECC column, giving 128-bit security).

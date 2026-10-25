@@ -42,7 +42,7 @@ fn sign_then_verify_round_trips() {
 
 #[test]
 fn sign_is_non_deterministic() {
-    // draft-shen-sm2-ecdsa-02 S5.1.3 step A3: k is drawn fresh from randomness each call, unlike
+    // GB/T 32918.2-2016 S6.1 step A3: k is drawn fresh from randomness each call, unlike
     // bouncycastle-ecdsa's RFC-6979-deterministic default.
     let (_, sk) = keygen().unwrap();
     let msg = b"same message, different k";
@@ -422,7 +422,7 @@ fn keygen_from_rng_rejects_an_rng_below_the_required_strength() {
     ));
 }
 
-/// `draft-shen-sm2-ecdsa-02` §5.2.2 step B1: `r'` and `s'` must each be in `[1, n-1]`, rejected
+/// GB/T 32918.2-2016 §7.1 steps B1-B2: `r'` and `s'` must each be in `[1, n-1]`, rejected
 /// rather than reduced. Each half of a valid signature is replaced in turn by `0`, by `n`, and by
 /// the all-ones pattern; the untouched half stays valid, so only the range check can be what
 /// rejects the result.
@@ -446,8 +446,8 @@ fn verify_rejects_r_or_s_outside_1_to_n_minus_1() {
     }
 }
 
-/// `draft-shen-sm2-ecdsa-02` §5.2.2 step B4: `t = (r' + s') mod n`, and `t = 0` fails verification
-/// outright. `s' = n - r'` is in `[1, n-1]` (so it passes step B1) and is the one value that makes
+/// GB/T 32918.2-2016 §7.1 step B5: `t = (r' + s') mod n`, and `t = 0` fails verification
+/// outright. `s' = n - r'` is in `[1, n-1]` (so it passes step B2) and is the one value that makes
 /// `t` zero -- a signature that would otherwise reach the point multiplication with `[0]PA`.
 #[test]
 fn verify_rejects_s_equal_to_n_minus_r() {
@@ -467,7 +467,8 @@ fn verify_rejects_s_equal_to_n_minus_r() {
     }
 }
 
-/// `ZA` encodes `IDA`'s bit length as the two-byte `ENTLA` (§5.1.2), so an identity of 8191 bytes
+/// `ZA` encodes `IDA`'s bit length as the two-byte `ENTLA` (GB/T 32918.2-2016 §5.5), so an
+/// identity of 8191 bytes
 /// (65528 bits) is the longest that fits and 8192 bytes (65536 bits) is the shortest that does
 /// not. The limit applies on both sides, since verification computes `ZA` too.
 #[test]
