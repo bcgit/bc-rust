@@ -308,8 +308,9 @@ fn reduce(t: &[u64; 8]) -> [u64; 4] {
     // The bit is folded in explicitly rather than assumed to be `0`. It is reachable from
     // canonical operands, but only by construction, not by sampling: by (2), fold 2 overflows iff
     // `lo_1` lies within `hi_1 * C <= 2^66` of `2^256`, a probability of about `2^-190` for a
-    // pseudo-random product, which is why 2,000,000 random trials and the `(p-1)*(p-1)` worst case
-    // never reached it. `a = 2^255` with `b = 2 * ((2^256 - 1) * C^-1 mod 2^256)` does reach it:
+    // pseudo-random product, which is why 2,000,000 random trials never reached it; `(p-1)*(p-1)`
+    // misses it too, by `C - 1`: its two folds leave exactly `p + 1`. `a = 2^255` with
+    // `b = 2 * ((2^256 - 1) * C^-1 mod 2^256)` does reach it:
     // `a * b = hi_0 * 2^256` with `hi_0 * C ≡ 2^256 - 1 (mod 2^256)`, so `lo_1 = 2^256 - 1`.
     // `p256k1_field_tests.rs` pins that product; without this fold its result is short by exactly
     // `C`, which is the P-384 bug the module docs describe.
