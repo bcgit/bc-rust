@@ -24,24 +24,19 @@
 //! DRBG and there is no way to supply one. Do not decrypt data you have not authenticated
 //! separately.
 
-use crate::helpers::block_mode_helpers::{BLOCK_LEN, CipherDirection, load_key};
+use crate::helpers::block_mode_helpers::{CipherDirection, load_key_object};
 use crate::helpers::stream_mode_helpers::run_stream_mode;
-use bouncycastle::cipher::modes::Ctr;
-use bouncycastle::cipher::{Decrypting, Encrypting};
-use bouncycastle::sm4::CTR_NONCE_LEN;
-use bouncycastle::sm4::hazmat::SM4;
+use bouncycastle::cipher::modes::CTR;
+use bouncycastle::sm4::{CTR_NONCE_LEN, KEY_LEN, SM4Key};
 
+/// Dispatches to the shared streaming loops under the key's `CTR` mode; the init data travels in
+/// band, as the command's contract says.
 pub(crate) fn sm4_ctr_cmd(
     action: &CipherDirection,
     key: &Option<String>,
     key_file: &Option<String>,
     output_hex: bool,
 ) {
-    let key = load_key::<16>(key, key_file, "SM4");
-    run_stream_mode::<
-        Ctr<SM4, Encrypting, 16, BLOCK_LEN, CTR_NONCE_LEN>,
-        Ctr<SM4, Decrypting, 16, BLOCK_LEN, CTR_NONCE_LEN>,
-        16,
-        CTR_NONCE_LEN,
-    >(action, &key, output_hex)
+    let key = load_key_object::<SM4Key<CTR>, KEY_LEN>(key, key_file, "SM4");
+    run_stream_mode::<_, KEY_LEN, CTR_NONCE_LEN>(action, &key, None, output_hex)
 }

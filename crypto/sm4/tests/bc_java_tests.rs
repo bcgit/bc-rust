@@ -19,11 +19,11 @@
 //! the decryption half of `test1000000()`, which the draft does not print. That test is ignored in
 //! unoptimised builds (see its attribute) and runs under `cargo test --release`.
 
-use bouncycastle_core::hazmat::ElectronicCodeBook;
+use bouncycastle_core::hazmat::{BlockPermutation, ElectronicCodeBook};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_hex as hex;
 use bouncycastle_sm4::BLOCK_LEN;
-use bouncycastle_sm4::hazmat::SM4;
+use bouncycastle_sm4::hazmat::SM4Internal;
 
 /// `SM4Test.tests[0]` and the provider `cipherTests`: `KeyParameter(Hex.decode(..))`.
 const KEY: &str = "0123456789abcdeffedcba9876543210";
@@ -38,10 +38,10 @@ fn block(hex_str: &str) -> [u8; BLOCK_LEN] {
     hex::decode(hex_str).expect("valid hex").try_into().expect("16 bytes")
 }
 
-fn engine() -> SM4 {
+fn engine() -> SM4Internal {
     let key = KeyMaterial::<16>::from_bytes_as_type(&block(KEY), KeyType::SymmetricCipherKey)
         .expect("a valid symmetric cipher key");
-    SM4::new(&key).expect("a valid SM4 key")
+    SM4Internal::new(&key).expect("a valid SM4 key")
 }
 
 /// `BlockCipherVectorTest`, encryption half: `engine.init(true, param)` then `processBlock`.

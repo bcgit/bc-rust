@@ -8,13 +8,13 @@
 
 mod common;
 
-use bouncycastle_core::hazmat::ElectronicCodeBook;
+use bouncycastle_core::hazmat::{BlockPermutation, ElectronicCodeBook};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-use bouncycastle_sm4::hazmat::SM4;
+use bouncycastle_sm4::hazmat::SM4Internal;
 use bouncycastle_sm4::{BLOCK_LEN, LANES};
 
-fn engine(key: &[u8; 16]) -> SM4 {
-    SM4::new(
+fn engine(key: &[u8; 16]) -> SM4Internal {
+    SM4Internal::new(
         &KeyMaterial::<16>::from_bytes_as_type(key, KeyType::SymmetricCipherKey)
             .expect("a valid symmetric cipher key"),
     )

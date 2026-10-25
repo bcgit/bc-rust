@@ -20,23 +20,19 @@
 //! so an attacker edits the block they aimed at. Do not decrypt data you have not authenticated
 //! separately.
 
-use crate::helpers::block_mode_helpers::{BLOCK_LEN, CipherDirection, load_key};
+use crate::helpers::block_mode_helpers::{CipherDirection, load_key_object};
 use crate::helpers::stream_mode_helpers::run_stream_mode;
-use bouncycastle::cipher::modes::Cfb;
-use bouncycastle::cipher::{Decrypting, Encrypting};
-use bouncycastle::sm4::hazmat::SM4;
+use bouncycastle::cipher::modes::CFB;
+use bouncycastle::sm4::{BLOCK_LEN, KEY_LEN, SM4Key};
 
+/// Dispatches to the shared streaming loops under the key's `CFB` mode; the init data travels in
+/// band, as the command's contract says.
 pub(crate) fn sm4_cfb_cmd(
     action: &CipherDirection,
     key: &Option<String>,
     key_file: &Option<String>,
     output_hex: bool,
 ) {
-    let key = load_key::<16>(key, key_file, "SM4");
-    run_stream_mode::<
-        Cfb<SM4, Encrypting, 16, BLOCK_LEN>,
-        Cfb<SM4, Decrypting, 16, BLOCK_LEN>,
-        16,
-        BLOCK_LEN,
-    >(action, &key, output_hex)
+    let key = load_key_object::<SM4Key<CFB>, KEY_LEN>(key, key_file, "SM4");
+    run_stream_mode::<_, KEY_LEN, BLOCK_LEN>(action, &key, None, output_hex)
 }

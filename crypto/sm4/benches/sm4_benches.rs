@@ -6,11 +6,11 @@
 //! uses) should be close to four times the throughput; the two-block path sits at half. Decryption
 //! costs the same as encryption (the same loop with the round keys read backwards).
 
-use bouncycastle_core::hazmat::ElectronicCodeBook;
+use bouncycastle_core::hazmat::{BlockPermutation, ElectronicCodeBook};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::traits::RNG;
 use bouncycastle_rng as rng;
-use bouncycastle_sm4::hazmat::SM4;
+use bouncycastle_sm4::hazmat::SM4Internal;
 use bouncycastle_sm4::{BLOCK_LEN, KEY_LEN, LANES};
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 use std::hint::black_box;
@@ -38,17 +38,18 @@ fn bench_key_expansion(c: &mut Criterion) {
     let mut group = c.benchmark_group("sm4::key expansion");
 
     let key = key();
-    group
-        .bench_function("SM4::new()", |b| b.iter(|| black_box(SM4::new(black_box(&key)).unwrap())));
+    group.bench_function("SM4Internal::new()", |b| {
+        b.iter(|| black_box(SM4Internal::new(black_box(&key)).unwrap()))
+    });
 
     group.finish();
 }
 
 fn bench_sm4(c: &mut Criterion) {
-    let sm4 = SM4::new(&key()).unwrap();
+    let sm4 = SM4Internal::new(&key()).unwrap();
     let blocks = random_blocks();
 
-    let mut group = c.benchmark_group("sm4::SM4");
+    let mut group = c.benchmark_group("sm4::SM4Internal");
     group.throughput(Throughput::Bytes(DATA_LEN as u64));
 
     group.bench_function("16KiB -- .encrypt_block() x1024", |b| {

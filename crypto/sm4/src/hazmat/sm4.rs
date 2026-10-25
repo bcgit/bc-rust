@@ -4,8 +4,9 @@
 use crate::sbox::tau;
 use crate::schedule::{RoundKeys, expand};
 use crate::{BLOCK_LEN, KEY_LEN, LANES};
+use bouncycastle_cipher::modes::ModeNames;
 use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
-use bouncycastle_core::hazmat::ElectronicCodeBook;
+use bouncycastle_core::hazmat::{BlockPermutation, ElectronicCodeBook};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::Algorithm;
@@ -14,7 +15,7 @@ use bouncycastle_utils::secret::Secret;
 /// One SM4 block.
 pub type Block = [u8; BLOCK_LEN];
 
-/// The SM4 keyed permutation, constant-time.
+/// The SM4 keyed permutation, constant-time: the engine under [`SM4Key`](crate::SM4Key).
 ///
 /// The only state is the 32 round keys, held in a [`Secret`] so that they are zeroized on drop and
 /// redacted from `Debug`. There is no direction flag and no initialisation state: decryption is
@@ -22,11 +23,12 @@ pub type Block = [u8; BLOCK_LEN];
 /// stored schedule, and a constructed value is always ready to use -- there is no `init()` or
 /// `reset()`, unlike an engine that expands the key differently depending on the direction it is
 /// initialised for.
-pub struct SM4 {
+#[derive(Clone)]
+pub struct SM4Internal {
     rk: Secret<RoundKeys>,
 }
 
-impl SM4 {
+impl SM4Internal {
     /// Checks a key is fit to use before it is expanded.
     ///
     /// The key must be tagged [`KeyType::SymmetricCipherKey`], must be exactly [`KEY_LEN`] bytes
@@ -77,14 +79,14 @@ impl SM4 {
     /// and CFB -- reach it as the `ElectronicCodeBook` four-block batch; CBC encryption cannot,
     /// since its blocks are serially dependent.
     ///
-    /// Infallible: a constructed [`SM4`] is always usable and every input length is fixed.
+    /// Infallible: a constructed [`SM4Internal`] is always usable and every input length is fixed.
     pub fn encrypt_4blocks(&self, blocks: &mut [Block; LANES]) {
         rounds(blocks, |i| self.rk[i]);
     }
 
     /// Decrypts four independent blocks in place (Sec 7.2): "an identical process as encryption,
     /// with the only difference the order of the round key sequence", `rk_31, rk_30, ..., rk_0`.
-    /// See [`SM4::encrypt_4blocks`].
+    /// See [`SM4Internal::encrypt_4blocks`].
     pub fn decrypt_4blocks(&self, blocks: &mut [Block; LANES]) {
         rounds(blocks, |i| self.rk[31 - i]);
     }
@@ -93,7 +95,7 @@ impl SM4 {
     ///
     /// The circuit always processes four lanes, so a single-block call puts the block in every
     /// lane and discards three results: it does four blocks' worth of work. Use
-    /// [`SM4::encrypt_4blocks`] where independent blocks are
+    /// [`SM4Internal::encrypt_4blocks`] where independent blocks are
     /// available.
     ///
     /// Filling the spare lanes with copies costs exactly what zeros would, and buys a free
@@ -195,7 +197,7 @@ fn rounds(blocks: &mut [Block; LANES], rk: impl Fn(usize) -> u32) {
     }
 }
 
-impl Algorithm for SM4 {
+impl Algorithm for SM4Internal {
     /// `"SM4"`.
     const ALG_NAME: &'static str = "SM4";
     /// 128 bits: the one key length SM4 has (Sec 4). Sec 12 positions it as "an alternative to
@@ -203,34 +205,54 @@ impl Algorithm for SM4 {
     const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_128bit;
 }
 
-/// One-line delegations to the inherent methods. The pair and four-block methods use the lanes:
-/// two blocks in two of the four lanes cost one circuit pass per round where two single-block
-/// calls would cost two, and four blocks are one full pass where two pair calls would be two.
-impl ElectronicCodeBook<KEY_LEN, BLOCK_LEN> for SM4 {
+// The `ElectronicCodeBook` / `BlockPermutation` impl pair is one-line delegations to the inherent
+// methods above. The pair and four-block methods use the lanes: two blocks in two of the four lanes
+// cost one circuit pass per round where two single-block calls would cost two, and four blocks
+// are one full pass where two pair calls would be two.
+
+impl ElectronicCodeBook<KEY_LEN, BLOCK_LEN> for SM4Internal {
     fn new(key: &KeyMaterial<KEY_LEN>) -> Result<Self, SymmetricCipherError> {
-        SM4::new(key)
-    }
-    fn encrypt_block(&self, block: &mut Block) {
-        SM4::encrypt_block(self, block)
-    }
-    fn decrypt_block(&self, block: &mut Block) {
-        SM4::decrypt_block(self, block)
-    }
-    fn encrypt_2blocks(&self, blocks: &mut [Block; 2]) {
-        SM4::encrypt_2blocks(self, blocks)
-    }
-    fn decrypt_2blocks(&self, blocks: &mut [Block; 2]) {
-        SM4::decrypt_2blocks(self, blocks)
-    }
-    fn encrypt_4blocks(&self, blocks: &mut [Block; LANES]) {
-        SM4::encrypt_4blocks(self, blocks)
-    }
-    fn decrypt_4blocks(&self, blocks: &mut [Block; LANES]) {
-        SM4::decrypt_4blocks(self, blocks)
+        SM4Internal::new(key)
     }
 }
 
-impl core::fmt::Debug for SM4 {
+impl BlockPermutation<BLOCK_LEN> for SM4Internal {
+    fn encrypt_block(&self, block: &mut Block) {
+        SM4Internal::encrypt_block(self, block)
+    }
+    fn decrypt_block(&self, block: &mut Block) {
+        SM4Internal::decrypt_block(self, block)
+    }
+    fn encrypt_2blocks(&self, blocks: &mut [Block; 2]) {
+        SM4Internal::encrypt_2blocks(self, blocks)
+    }
+    fn decrypt_2blocks(&self, blocks: &mut [Block; 2]) {
+        SM4Internal::decrypt_2blocks(self, blocks)
+    }
+    fn encrypt_4blocks(&self, blocks: &mut [Block; LANES]) {
+        SM4Internal::encrypt_4blocks(self, blocks)
+    }
+    fn decrypt_4blocks(&self, blocks: &mut [Block; LANES]) {
+        SM4Internal::decrypt_4blocks(self, blocks)
+    }
+}
+
+// SM4 has published modes beyond the four this crate aliases -- draft-ribose-cfrg-sm4-10 Sec 8
+// defines ECB, and RFC 8998 Sec 3.5 defines AEAD_SM4_GCM and AEAD_SM4_CCM -- so every mode is
+// named; a key under the others is made by naming the mode.
+impl ModeNames for SM4Internal {
+    const CBC_ALG_NAME: &'static str = "SM4_CBC";
+    const CCM_ALG_NAME: &'static str = "SM4_CCM";
+    const CFB_ALG_NAME: &'static str = "SM4_CFB";
+    const CFB8_ALG_NAME: &'static str = "SM4_CFB8";
+    const CMAC_ALG_NAME: &'static str = "SM4_CMAC";
+    const CTR_ALG_NAME: &'static str = "SM4_CTR";
+    const ECB_ALG_NAME: &'static str = "SM4_ECB";
+    const GCM_ALG_NAME: &'static str = "SM4_GCM";
+    const GMAC_ALG_NAME: &'static str = "SM4_GMAC";
+}
+
+impl core::fmt::Debug for SM4Internal {
     /// Prints the algorithm name only. The round keys are secret and are never formatted.
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.write_str(Self::ALG_NAME)
@@ -279,7 +301,7 @@ mod tests {
         expected_x: &[u32; 32],
         ciphertext: &Block,
     ) {
-        let sm4 = SM4::new(
+        let sm4 = SM4Internal::new(
             &KeyMaterial::<16>::from_bytes_as_type(key, KeyType::SymmetricCipherKey).unwrap(),
         )
         .unwrap();
@@ -366,15 +388,15 @@ mod tests {
     fn test_engine_size_is_exactly_the_round_keys() {
         // The "Memory Usage" table in the crate docs quotes 128 bytes: 32 round keys of 32 bits,
         // and nothing else -- no direction flag, no round counter, no initialised marker.
-        assert_eq!(size_of::<SM4>(), 128);
-        assert_eq!(size_of::<SM4>(), size_of::<RoundKeys>());
+        assert_eq!(size_of::<SM4Internal>(), 128);
+        assert_eq!(size_of::<SM4Internal>(), size_of::<RoundKeys>());
     }
 
     #[test]
     fn test_alg_name_and_strength() {
-        assert_eq!(<SM4 as Algorithm>::ALG_NAME, "SM4");
+        assert_eq!(<SM4Internal as Algorithm>::ALG_NAME, "SM4");
         assert_eq!(
-            <SM4 as Algorithm>::MAX_SECURITY_STRENGTH,
+            <SM4Internal as Algorithm>::MAX_SECURITY_STRENGTH,
             SecurityStrength::from_bytes(KEY_LEN)
         );
     }

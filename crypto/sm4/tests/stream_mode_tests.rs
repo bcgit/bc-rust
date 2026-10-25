@@ -1,41 +1,40 @@
 //! The stream modes of operation over SM4: the known-answer tests from draft-ribose-cfrg-sm4-10
-//! Appendix A.2 that cover them, and the wiring of the `SM4_CFB`, `SM4_CFB8` and `SM4_CTR` aliases.
+//! Appendix A.2 that cover them, through the `CFB`, `CFB8` and `CTR` keys.
 //!
 //! Appendix A.2 has an SM4-CFB section (A.2.4) and an SM4-CTR section (A.2.5), and the two are used
-//! differently here because only one of them lines up with the alias's parameters:
+//! differently here because only one of them lines up with the key's parameters:
 //!
-//! * **A.2.4, SM4-CFB.** Straight known-answer tests through `SM4_CFB`. There is no API for
-//!   supplying an IV, so encryption is driven through
-//!   [`StreamCipherEncryptor::do_encrypt_init_rng`] with a [`FixedSeedRNG`] whose stream is the
-//!   vector's IV, and the test asserts the returned init data really is that IV before comparing
-//!   any ciphertext. Decryption takes the IV directly.
+//! * **A.2.4, SM4-CFB.** Straight known-answer tests through `SM4Key<CFB>`. There is no API for
+//!   supplying an IV, so encryption is driven through the key's `create_encryptor` with a
+//!   [`FixedSeedRNG`] whose stream is the vector's IV, and the test asserts the returned init data
+//!   really is that IV before comparing any ciphertext. Decryption takes the IV directly.
 //! * **A.2.5, SM4-CTR.** The draft's counter sequence makes the whole 16-byte IV the first counter
 //!   block and increments it as a unit; `Ctr` splits the block into a 12-byte nonce and a 4-byte
 //!   counter that starts at zero (see the `SM4_CTR` docs, and Sec 8.7, which leaves the sequence to
 //!   the caller: "the counter could be any sequence that does not repeat within the block size").
-//!   The published counter blocks are therefore not ones the alias can produce. The vectors instead
+//!   The published counter blocks are therefore not ones the key can produce. The vectors instead
 //!   pin [`reference_ctr`], written straight from the Sec 8.7.1 equations over the permutation, and
-//!   `SM4_CTR` is then required to agree with that same reference on the counter blocks it does
+//!   `SM4Key<CTR>` is then required to agree with that same reference on the counter blocks it does
 //!   produce. Everything internal to the mode -- the counter increment, the short final block, the
 //!   chunking -- is covered by the ACVP vectors in `bouncycastle_cipher::modes`.
 //!
-//! The draft defines SM4-CFB-8 (Sec 8.5.1) but publishes no example of it, so `SM4_CFB8` is pinned
-//! the same way: against [`reference_cfb8`], the Sec 8.5.2 equations at `s = 8` evaluated over the
-//! permutation.
+//! The draft defines SM4-CFB-8 (Sec 8.5.1) but publishes no example of it, so `SM4Key<CFB8>` is
+//! pinned the same way: against [`reference_cfb8`], the Sec 8.5.2 equations at `s = 8` evaluated
+//! over the permutation.
 //!
 //! All vector values are transcribed from the downloaded text of the draft.
 
-use bouncycastle_cipher::{Decrypting, Encrypting};
-use bouncycastle_core::hazmat::ElectronicCodeBook;
+use bouncycastle_cipher::modes::{CFB, CFB8, CTR};
+use bouncycastle_core::hazmat::{BlockPermutation, ElectronicCodeBook};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-use bouncycastle_core::traits::{
-    StreamCipherDecryptor, StreamCipherEncryptor, SymmetricCipherDecryptor,
-    SymmetricCipherEncryptor,
+use bouncycastle_core::symmetric_key::{
+    FromKeyMaterial, SymmetricDecryptionKey, SymmetricEncryptionKey,
 };
+use bouncycastle_core::traits::{StreamCipherDecryptor, StreamCipherEncryptor};
 use bouncycastle_core_test_framework::FixedSeedRNG;
 use bouncycastle_hex as hex;
-use bouncycastle_sm4::hazmat::SM4;
-use bouncycastle_sm4::{BLOCK_LEN, CTR_NONCE_LEN, KEY_LEN, SM4_CFB, SM4_CFB8, SM4_CTR};
+use bouncycastle_sm4::hazmat::SM4Internal;
+use bouncycastle_sm4::{BLOCK_LEN, CTR_NONCE_LEN, KEY_LEN, SM4Key};
 
 /// A.2.x Example 1 key.
 const KEY_1: &str = "0123456789abcdeffedcba9876543210";
@@ -107,40 +106,38 @@ fn filler(len: usize, seed: u32) -> Vec<u8> {
 /// defines the mode on the whole message, and `Cfb` must give the same answer whatever the
 /// chunking.
 fn check_cfb(section: &str, key_hex: &str, expected: &str) {
-    let key = key_material(key_hex);
+    let key = SM4Key::<CFB>::from_key_material(&key_material(key_hex)).expect("a valid key");
     let iv = iv_bytes();
     let pt = bytes(CFB_PT);
     let ct = bytes(expected);
 
     // Encrypt in one call, under the vector's IV.
     let (mut enc, got_iv) =
-        SM4_CFB::<Encrypting>::do_encrypt_init_rng(&key, &mut FixedSeedRNG::<BLOCK_LEN>::new(iv))
-            .expect("encryption init");
+        key.create_encryptor(&mut FixedSeedRNG::<BLOCK_LEN>::new(iv)).expect("encryption init");
     assert_eq!(got_iv, iv, "{section}: the pinned RNG should produce the vector's IV");
     let mut data = pt.clone();
-    let written = enc.do_encrypt(&mut data).expect("encryption");
+    let written = enc.do_encrypt_inplace(&mut data).expect("encryption");
     assert_eq!(written, pt.len(), "{section}: a stream cipher writes exactly what it was given");
     assert_eq!(data, ct, "{section} encrypt, one call");
 
     // Encrypt one block at a time: same answer.
     let (mut enc, _) =
-        SM4_CFB::<Encrypting>::do_encrypt_init_rng(&key, &mut FixedSeedRNG::<BLOCK_LEN>::new(iv))
-            .expect("encryption init");
+        key.create_encryptor(&mut FixedSeedRNG::<BLOCK_LEN>::new(iv)).expect("encryption init");
     let mut data = pt.clone();
     for chunk in data.chunks_mut(BLOCK_LEN) {
-        enc.do_encrypt(chunk).expect("encryption");
+        enc.do_encrypt_inplace(chunk).expect("encryption");
     }
     assert_eq!(data, ct, "{section} encrypt, one block at a time");
 
     // Decrypt with the IV as init data: one shot, and streaming at an unaligned boundary.
     let mut data = ct.clone();
-    SM4_CFB::<Decrypting>::decrypt_in_place(&key, &iv, &mut data).expect("decryption");
+    key.decrypt_inplace(&iv, &mut data).expect("decryption");
     assert_eq!(data, pt, "{section} decrypt, one shot");
 
-    let mut dec = SM4_CFB::<Decrypting>::do_decrypt_init(&key, &iv).expect("decryption init");
+    let mut dec = key.create_decryptor(&iv);
     let mut data = ct.clone();
     for chunk in data.chunks_mut(7) {
-        dec.do_decrypt(chunk).expect("decryption");
+        dec.do_decrypt_inplace(chunk).expect("decryption");
     }
     assert_eq!(data, pt, "{section} decrypt, seven bytes at a time");
 }
@@ -170,7 +167,7 @@ fn a_2_4_2_cfb_example_2() {
 /// big-endian integer, which is what reproduces the A.2.5 ciphertexts. Encryption and decryption
 /// are the same operation, so one function serves both.
 fn reference_ctr(key: &KeyMaterial<KEY_LEN>, t1: [u8; BLOCK_LEN], data: &mut [u8]) {
-    let sm4 = SM4::new(key).expect("a valid SM4 key");
+    let sm4 = SM4Internal::new(key).expect("a valid SM4 key");
     let mut t = t1;
     for chunk in data.chunks_mut(BLOCK_LEN) {
         // O_i = SM4Encrypt(T_i); a short final chunk takes MSB(u, O_n) by simply stopping early.
@@ -190,7 +187,7 @@ fn reference_ctr(key: &KeyMaterial<KEY_LEN>, t1: [u8; BLOCK_LEN], data: &mut [u8
 }
 
 /// The reference reproduces both published A.2.5 ciphertexts with `T_1 = IV`, in both directions.
-/// This is what pins the reference; the alias is then checked against it below.
+/// This is what pins the reference; the key is then checked against it below.
 #[test]
 fn a_2_5_ctr_examples_pin_the_reference() {
     for (section, key_hex, expected) in [("A.2.5.1", KEY_1, CTR_CT_1), ("A.2.5.2", KEY_2, CTR_CT_2)]
@@ -208,12 +205,13 @@ fn a_2_5_ctr_examples_pin_the_reference() {
     }
 }
 
-/// `SM4_CTR` agrees with the pinned reference on the counter blocks it does produce: `nonce`
+/// `SM4Key<CTR>` agrees with the pinned reference on the counter blocks it does produce: `nonce`
 /// followed by a four-byte counter starting at zero. Lengths are chosen to cross the block
 /// boundary and to end on a short final block, which is where `MSB(u, O_n)` applies.
 #[test]
-fn the_ctr_alias_agrees_with_the_reference() {
-    let key = key_material(KEY_1);
+fn the_ctr_key_agrees_with_the_reference() {
+    let material = key_material(KEY_1);
+    let key = SM4Key::<CTR>::from_key_material(&material).expect("a valid key");
     let nonce: [u8; CTR_NONCE_LEN] =
         bytes("000102030405060708090a0b").try_into().expect("a 12-byte nonce");
 
@@ -225,23 +223,18 @@ fn the_ctr_alias_agrees_with_the_reference() {
         let plaintext = filler(len, len as u32);
 
         let mut expected = plaintext.clone();
-        reference_ctr(&key, t1, &mut expected);
+        reference_ctr(&material, t1, &mut expected);
 
         let mut data = plaintext.clone();
-        let mut enc = SM4_CTR::<Encrypting>::do_encrypt_init_rng(
-            &key,
-            &mut FixedSeedRNG::<CTR_NONCE_LEN>::new(nonce),
-        )
-        .map(|(enc, got)| {
-            assert_eq!(got, nonce, "the pinned RNG should produce the chosen nonce");
-            enc
-        })
-        .expect("encryption init");
-        enc.do_encrypt(&mut data).expect("encryption");
-        assert_eq!(data, expected, "len {len}: SM4_CTR should match the reference");
+        let (mut enc, got) = key
+            .create_encryptor(&mut FixedSeedRNG::<CTR_NONCE_LEN>::new(nonce))
+            .expect("encryption init");
+        assert_eq!(got, nonce, "the pinned RNG should produce the chosen nonce");
+        enc.do_encrypt_inplace(&mut data).expect("encryption");
+        assert_eq!(data, expected, "len {len}: SM4Key<CTR> should match the reference");
 
         // ...and decryption undoes it under the same nonce.
-        SM4_CTR::<Decrypting>::decrypt_in_place(&key, &nonce, &mut data).expect("decryption");
+        key.decrypt_inplace(&nonce, &mut data).expect("decryption");
         assert_eq!(data, plaintext, "len {len}: round trip");
     }
 }
@@ -265,7 +258,7 @@ fn reference_cfb8(
     data: &mut [u8],
     encrypting: bool,
 ) {
-    let sm4 = SM4::new(key).expect("a valid SM4 key");
+    let sm4 = SM4Internal::new(key).expect("a valid SM4 key");
     let mut i = iv;
     for byte in data.iter_mut() {
         let mut o = i;
@@ -280,33 +273,31 @@ fn reference_cfb8(
     }
 }
 
-/// `SM4_CFB8` agrees with the equations, both directions, at lengths either side of a block.
+/// `SM4Key<CFB8>` agrees with the equations, both directions, at lengths either side of a block.
 #[test]
-fn the_cfb8_alias_agrees_with_the_equations() {
-    let key = key_material(KEY_1);
+fn the_cfb8_key_agrees_with_the_equations() {
+    let material = key_material(KEY_1);
+    let key = SM4Key::<CFB8>::from_key_material(&material).expect("a valid key");
     let iv = iv_bytes();
 
     for len in [0usize, 1, 2, 15, 16, 17, 33, 64] {
         let plaintext = filler(len, len as u32 + 7);
 
         let mut expected = plaintext.clone();
-        reference_cfb8(&key, iv, &mut expected, true);
+        reference_cfb8(&material, iv, &mut expected, true);
 
         let mut data = plaintext.clone();
-        let (mut enc, got_iv) = SM4_CFB8::<Encrypting>::do_encrypt_init_rng(
-            &key,
-            &mut FixedSeedRNG::<BLOCK_LEN>::new(iv),
-        )
-        .expect("encryption init");
+        let (mut enc, got_iv) =
+            key.create_encryptor(&mut FixedSeedRNG::<BLOCK_LEN>::new(iv)).expect("encryption init");
         assert_eq!(got_iv, iv);
-        enc.do_encrypt(&mut data).expect("encryption");
-        assert_eq!(data, expected, "len {len}: SM4_CFB8 encrypt should match the equations");
+        enc.do_encrypt_inplace(&mut data).expect("encryption");
+        assert_eq!(data, expected, "len {len}: SM4Key<CFB8> encrypt should match the equations");
 
         let mut back = data.clone();
-        reference_cfb8(&key, iv, &mut back, false);
+        reference_cfb8(&material, iv, &mut back, false);
         assert_eq!(back, plaintext, "len {len}: the reference decrypts its own output");
 
-        SM4_CFB8::<Decrypting>::decrypt_in_place(&key, &iv, &mut data).expect("decryption");
-        assert_eq!(data, plaintext, "len {len}: SM4_CFB8 decrypt should match");
+        key.decrypt_inplace(&iv, &mut data).expect("decryption");
+        assert_eq!(data, plaintext, "len {len}: SM4Key<CFB8> decrypt should match");
     }
 }
