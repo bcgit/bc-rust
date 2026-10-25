@@ -33,6 +33,16 @@ pub struct ARIAInternal<P: ARIAParams> {
     schedule: Secret<P::Schedule>,
 }
 
+// Written out rather than derived so that `P`, a marker type, need not be `PartialEq`. `Secret`'s
+// equality inspects every byte of the schedule, so the time taken does not say where two differ.
+impl<P: ARIAParams> PartialEq for ARIAInternal<P> {
+    fn eq(&self, other: &Self) -> bool {
+        self.schedule == other.schedule
+    }
+}
+
+impl<P: ARIAParams> Eq for ARIAInternal<P> {}
+
 /// ARIA-128: 16-byte key, 12 rounds (RFC 5794 Sec 2.3.1.1).
 #[allow(non_camel_case_types)]
 pub type ARIA128Internal = ARIAInternal<ARIA128Params>;
