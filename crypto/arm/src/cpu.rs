@@ -6,7 +6,7 @@
 use crate::aes::{self, Block, RoundKeys128, RoundKeys192, RoundKeys256};
 use crate::ghash::{self, Element};
 
-/// Proof that the CPU running this code has `FEAT_AES` (which includes `PMULL`) and NEON.
+/// Proof that the CPU running this code has `FEAT_AES`, `FEAT_PMULL` and NEON.
 ///
 /// A value exists only if [`detect`](Self::detect) found the instructions or the build declared
 /// them, so holding one is what makes the `#[target_feature]` kernels in [`aes`] and [`ghash`]
@@ -25,8 +25,12 @@ impl CryptoExtensions {
     pub fn detect() -> Option<Self> {
         #[cfg(target_feature = "aes")]
         return Some(Self(()));
+        // The kernels' `aes` target feature covers `FEAT_PMULL` as well as `FEAT_AES`, but the
+        // run-time `"aes"` query does not: std_detect sets it on Linux from the kernel's `aes` and
+        // `asimd` hwcaps alone. So `PMULL`, which the GHASH kernels execute, is asked for itself.
         #[cfg(not(target_feature = "aes"))]
         return (std::arch::is_aarch64_feature_detected!("aes")
+            && std::arch::is_aarch64_feature_detected!("pmull")
             && std::arch::is_aarch64_feature_detected!("neon"))
         .then_some(Self(()));
     }
