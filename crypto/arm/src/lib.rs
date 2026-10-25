@@ -131,9 +131,6 @@
 #![forbid(missing_docs)]
 #![deny(unsafe_code)]
 
-#[cfg(all(feature = "std", not(target_feature = "aes")))]
-extern crate std;
-
 #[cfg(all(
     target_arch = "aarch64",
     target_endian = "little",
