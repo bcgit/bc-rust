@@ -9,6 +9,7 @@
 //! # for each i: (-vals[i]) % n, pow(vals[i], n-2, n) if vals[i] != 0 else 0
 //! ```
 
+use bouncycastle_ec::nat;
 use bouncycastle_ec::sm2_scalar::{N_LIMBS, Sm2PublicScalar, Sm2Scalar, Sm2ScalarField};
 
 const VALS_0: [u64; 4] =
@@ -410,6 +411,45 @@ fn known_answer_at_n_minus_1() {
     assert_eq!(n_minus_1.negate(), Sm2ScalarField::ONE, "-(n-1) == 1");
     assert_eq!(n_minus_1.invert(), n_minus_1, "(n-1)^-1 == n-1");
     assert_eq!(Sm2ScalarField::ONE.invert(), Sm2ScalarField::ONE, "1^-1 == 1");
+}
+
+/// Products whose REDC pre-reduction value lands in `[n, 2^256)` -- `acc[8] = 0` and `high >= n`
+/// -- so the final conditional subtraction is the step that produces the canonical result. That
+/// needs the canonical result below `2^224` and the wrong representative drawn, `2^-32` per
+/// reduction, so no pseudorandom or round-trip test reaches it; these were constructed, not
+/// searched (pick the Montgomery operand `a` and the target `u`, solve `m = uR * n^-1 mod a`,
+/// `b = (uR - mn) / a`). A plain `mul(..) == from_limbs(expected)` would NOT detect the
+/// subtraction's absence: `from_limbs` of the expected value takes the same step and would land
+/// on the same non-canonical representative. The two extra assertions are what pin it.
+#[test]
+fn known_answer_mul_reaching_the_final_subtraction() {
+    let cases: [([u64; 4], [u64; 4], [u64; 4]); 3] = [
+        (
+            [0xcc0763d7a2a61e2e, 0xe3e7e0e51c470ea0, 0x64d4afaca15a0fe5, 0xd39e2a14c5fad104],
+            [0x6fed21e2d993738d, 0xb256903f893f641e, 0x800c9d58bd0ed69d, 0xb3abdcfe03d26162],
+            [0xf7632108662761bb, 0x2ea1b6cc5a05df86, 0xf85446494d6ec949, 0x61814d697467fe93],
+        ),
+        (
+            [0x220bc6677cac3348, 0xbd56b3bef29ea6cf, 0xbc548b1d35fb72ca, 0x5436dcde311c8535],
+            [0x5fa32a181cc2adc6, 0x990944d795a06fd1, 0x256b1f9f049ff59a, 0x5c49581b3bcf99da],
+            [0xf7bb16069a9fbdd1, 0xa9b6720591dff91a, 0xcfb254d884a3a3df, 0x94aa57d7cb811c82],
+        ),
+        (
+            [0x91bafd07c6d8e402, 0x150e9d662c62dc0d, 0x0f9c4d1c16d2c93f, 0x52ac4d55133a8232],
+            [0xfba938138feff62d, 0xacbf42b139fd6682, 0xf78407c4c7c96c45, 0x521b875c9611d4fd],
+            [0xd6f27669b7a11bd9, 0x6c88bca9c0b127c4, 0x2f33d68c2e78a389, 0x2e4612ca50df6aac],
+        ),
+    ];
+    for (x, y, expected) in cases {
+        for (a, b) in [(x, y), (y, x)] {
+            let prod = fe(a).mul(&fe(b));
+            assert_eq!(prod.to_limbs(), expected, "a = {a:x?}");
+            // The output must be canonical: unchanged by adding zero, and negating to n - expected.
+            assert_eq!(prod, prod.add(&Sm2ScalarField::ZERO), "non-canonical output, a = {a:x?}");
+            let (n_minus_expected, _) = nat::sub(&N_LIMBS, &expected);
+            assert_eq!(prod.negate().to_limbs(), n_minus_expected, "a = {a:x?}");
+        }
+    }
 }
 
 /// The variable-time inverse on the public scalar type must agree with the constant-time
