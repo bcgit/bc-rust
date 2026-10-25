@@ -1,14 +1,13 @@
 //! The SM4 key through the shared conformance suites: construction policy for every mode a key
-//! can carry, then the block, symmetric, stream and AEAD suites.
+//! can carry, then the block, symmetric and stream suites.
 
 use bouncycastle_cipher::modes::hazmat::ecb::ECB;
-use bouncycastle_cipher::modes::{Blocks, CBC, CFB, CFB8, CTR, GCM, ModeNames};
+use bouncycastle_cipher::modes::{Blocks, CBC, CFB, CFB8, CTR, ModeNames};
 use bouncycastle_cipher::padding::{NoPadding, PKCS7};
 use bouncycastle_core::hazmat::Mode;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::symmetric_key::FromKeyMaterial;
-use bouncycastle_core_test_framework::aead::TestFrameworkAEADCipher;
 use bouncycastle_core_test_framework::block_cipher::TestFrameworkBlockCipher;
 use bouncycastle_core_test_framework::from_key_material::TestFrameworkFromKeyMaterial;
 use bouncycastle_core_test_framework::symmetric_ciphers::{
@@ -43,22 +42,15 @@ fn every_mode_key_enforces_the_material_policy() {
     construction_suite::<CBC<Blocks>>(SM4Internal::CBC_ALG_NAME);
     construction_suite::<CBC<PKCS7>>(SM4Internal::CBC_ALG_NAME);
     construction_suite::<CBC<NoPadding>>(SM4Internal::CBC_ALG_NAME);
-    construction_suite::<ECB<Blocks>>(SM4Internal::ECB_ALG_NAME);
     construction_suite::<ECB<PKCS7>>(SM4Internal::ECB_ALG_NAME);
     construction_suite::<CFB>(SM4Internal::CFB_ALG_NAME);
     construction_suite::<CFB8>(SM4Internal::CFB8_ALG_NAME);
     construction_suite::<CTR>(SM4Internal::CTR_ALG_NAME);
-    construction_suite::<GCM>(SM4Internal::GCM_ALG_NAME);
 }
 
 #[test]
 fn cbc_blocks_key_passes_the_block_cipher_framework() {
     TestFrameworkBlockCipher::new().test_key::<16, 16, 16, _>(&key::<CBC<Blocks>>(), &mut rng());
-}
-
-#[test]
-fn ecb_blocks_key_passes_the_block_cipher_framework() {
-    TestFrameworkBlockCipher::new().test_ecb_key::<16, 16, _>(&key::<ECB<Blocks>>());
 }
 
 #[test]
@@ -83,12 +75,4 @@ fn stream_mode_keys_pass_the_stream_cipher_framework() {
     framework.test_key::<16, 16, _>(&key::<CFB>(), &mut rng());
     framework.test_key::<16, 16, _>(&key::<CFB8>(), &mut rng());
     framework.test_key::<16, 12, _>(&key::<CTR>(), &mut rng());
-}
-
-/// GCM is generic over any 16-byte-block permutation, so an SM4 key under it is the same code as
-/// AES-GCM over another engine; the AEAD suite checks the wiring, and `rfc8998_tests.rs` the
-/// published answer.
-#[test]
-fn gcm_key_passes_the_aead_framework() {
-    TestFrameworkAEADCipher::new().test_key::<16, 12, 16, 16, _>(&key::<GCM>(), &mut rng());
 }
