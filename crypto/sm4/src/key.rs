@@ -59,6 +59,19 @@ impl<M: Mode<SM4Internal>> Clone for SM4Key<M> {
     }
 }
 
+// Likewise for equality: two keys are equal when their mode states are, which every state over
+// the engine decides in constant time, so the comparison follows the material without exposing it.
+impl<M: Mode<SM4Internal>> PartialEq for SM4Key<M>
+where
+    M::KeyState: PartialEq,
+{
+    fn eq(&self, other: &Self) -> bool {
+        self.state == other.state
+    }
+}
+
+impl<M: Mode<SM4Internal>> Eq for SM4Key<M> where M::KeyState: Eq {}
+
 /// The key-type check the mode asks for (`Mode::KEY_TYPE`), ahead of the permutation's own
 /// validation.
 fn check_key_type(

@@ -28,6 +28,16 @@ pub struct SM4Internal {
     rk: Secret<RoundKeys>,
 }
 
+// `Secret`'s equality inspects every byte of the schedule, so the time taken does not say where two
+// differ.
+impl PartialEq for SM4Internal {
+    fn eq(&self, other: &Self) -> bool {
+        self.rk == other.rk
+    }
+}
+
+impl Eq for SM4Internal {}
+
 impl SM4Internal {
     /// Checks a key is fit to use before it is expanded.
     ///

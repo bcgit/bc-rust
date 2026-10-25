@@ -76,3 +76,23 @@ fn stream_mode_keys_pass_the_stream_cipher_framework() {
     framework.test_key::<16, 16, _>(&key::<CFB8>(), &mut rng());
     framework.test_key::<16, 12, _>(&key::<CTR>(), &mut rng());
 }
+
+/// `material()` with one bit of its last byte flipped.
+fn material_flipped() -> KeyMaterial<KEY_LEN> {
+    let mut bytes: [u8; KEY_LEN] =
+        core::array::from_fn(|i| (i as u8).wrapping_mul(7).wrapping_add(1));
+    bytes[KEY_LEN - 1] ^= 1;
+    KeyMaterial::<KEY_LEN>::from_bytes_as_type(&bytes, KeyType::SymmetricCipherKey)
+        .expect("a valid key")
+}
+
+/// Equality is over the expanded schedule, so it follows the material: the same bytes compare
+/// equal, as does a clone, and a single flipped bit does not. Keys have no `Debug`, hence
+/// `assert!` over `==`.
+#[test]
+fn keys_compare_equal_exactly_when_their_material_does() {
+    let ctr_key = key::<CTR>();
+    assert!(ctr_key == ctr_key.clone());
+    assert!(ctr_key == key::<CTR>());
+    assert!(ctr_key != SM4Key::<CTR>::from_key_material(&material_flipped()).unwrap());
+}
