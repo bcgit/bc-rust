@@ -34,6 +34,16 @@ pub struct CamelliaInternal<P: CamelliaParams> {
     schedule: Secret<P::Schedule>,
 }
 
+// Written out rather than derived so that `P`, a marker type, need not be `PartialEq`. `Secret`'s
+// equality inspects every byte of the schedule, so the time taken does not say where two differ.
+impl<P: CamelliaParams> PartialEq for CamelliaInternal<P> {
+    fn eq(&self, other: &Self) -> bool {
+        self.schedule == other.schedule
+    }
+}
+
+impl<P: CamelliaParams> Eq for CamelliaInternal<P> {}
+
 /// Camellia-128: 16-byte key, 18 rounds (RFC 3713 Sec 2.3.1).
 #[allow(non_camel_case_types)]
 pub type Camellia128Internal = CamelliaInternal<Camellia128Params>;
