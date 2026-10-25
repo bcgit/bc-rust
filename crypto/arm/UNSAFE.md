@@ -24,7 +24,7 @@ illegal-instruction fault, so every value that reaches one must be in range by i
 
 ## CPU-feature proofs
 
-- A `CryptoExtensions` value comes only from `detect()` or `declared()`; its field stays private.
+- An `Aes` value comes only from `detect()` or `declared()`; its field stays private.
 - The features `detect()` queries cover every feature in the kernels' `#[target_feature]` attributes. They may
   cover more (`pmull` has no attribute of its own), never fewer.
 - `declared()` exists only under a cfg that names every feature in the kernel attribute.

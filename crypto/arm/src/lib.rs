@@ -16,14 +16,14 @@
 //! * **The build declares it** (`target_feature = "aes"`), as `aarch64-apple-darwin` does by
 //!   default and `RUSTFLAGS="-C target-feature=+aes"` does elsewhere. Every CPU the binary may
 //!   run on then has the instructions; see Security Considerations.
-//! * **The `std` feature is on**, and [`CryptoExtensions::detect`] asks the operating system at
+//! * **The `std` feature is on**, and [`Aes::detect`] asks the operating system at
 //!   run time. A binary built this way runs everywhere and uses the instructions where they are.
 //!
 //! Without either, the crate compiles to nothing, and `bouncycastle-aes` falls back to its
 //! portable engine.
 //!
 //! Every kernel is `#[target_feature(enable = "aes,neon")]`, so calling one directly is `unsafe`.
-//! The safe way in is a [`CryptoExtensions`] value, which exists only once the instructions are
+//! The safe way in is an [`Aes`] value, which exists only once the instructions are
 //! known to be present, and whose methods are the kernels.
 //!
 //! To exercise the run-time path on a host that declares `aes` by default, disable it for
@@ -37,8 +37,8 @@
 //!
 //! ```
 //! # #[cfg(all(target_arch = "aarch64", target_endian = "little", target_feature = "neon", any(target_feature = "aes", feature = "std")))]
-//! # if let Some(cx) = bouncycastle_arm::CryptoExtensions::detect() {
-//! // `cx` is a `CryptoExtensions`, from `CryptoExtensions::detect()`.
+//! # if let Some(cx) = bouncycastle_arm::Aes::detect() {
+//! // `cx` is an `Aes`, from `Aes::detect()`.
 //! let w = cx.expand_128(&[0x2b, 0x7e, 0x15, 0x16, 0x28, 0xae, 0xd2, 0xa6,
 //!                      0xab, 0xf7, 0x15, 0x88, 0x09, 0xcf, 0x4f, 0x3c]);
 //! let dw = cx.equivalent_inverse_round_keys(&w);
@@ -56,12 +56,12 @@
 //! ```
 //!
 //! The GHASH kernel multiplies elements in the `[u64; 2]` form `bouncycastle-cipher`'s GHASH
-//! uses, and [`ghash::mul4`] (here [`CryptoExtensions::ghash_mul4`]) sums four products under one reduction so a caller holding
+//! uses, and [`ghash::mul4`] (here [`Aes::ghash_mul4`]) sums four products under one reduction so a caller holding
 //! `H`, `H^2`, `H^3` and `H^4` can absorb four blocks per call:
 //!
 //! ```
 //! # #[cfg(all(target_arch = "aarch64", target_endian = "little", target_feature = "neon", any(target_feature = "aes", feature = "std")))]
-//! # if let Some(cx) = bouncycastle_arm::CryptoExtensions::detect() {
+//! # if let Some(cx) = bouncycastle_arm::Aes::detect() {
 //! let h = [0x6699_aabb_ccdd_ee00, 0x1122_3344_5566_7788];
 //! let h2 = cx.ghash_mul(&h, &h);
 //! let h3 = cx.ghash_mul(&h2, &h);
@@ -100,7 +100,7 @@
 //! bc-rust forbids `unsafe` everywhere except `bouncycastle-utils` and this crate. Here it is
 //! confined to two modules, and the crate root is `#![deny(unsafe_code)]` so an `unsafe` block
 //! anywhere else is a compile error. [`intrinsics`] holds the two load/store wrappers whose
-//! intrinsics take raw pointers. The `cpu` module holds [`CryptoExtensions`], whose methods
+//! intrinsics take raw pointers. The `cpu` module holds [`Aes`], whose methods
 //! call the `#[target_feature]` kernels: the compiler requires `unsafe` there because it
 //! cannot see that the CPU has the instructions, and the value's existence is the proof that it
 //! does.
@@ -172,4 +172,4 @@ mod cpu;
     target_feature = "neon",
     any(target_feature = "aes", feature = "std")
 ))]
-pub use cpu::CryptoExtensions;
+pub use cpu::Aes;
