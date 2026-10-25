@@ -911,7 +911,7 @@ mod ghash {
     //! on a CPU without `PMULL`, the portable multiplier runs; the tests pin the two against each
     //! other and both against Algorithm 1.
     //!
-    //! The CPU check is `bouncycastle_arm::CryptoExtensions::detect()`, made per multiply and per
+    //! The CPU check is `bouncycastle_arm::Aes::detect()`, made per multiply and per
     //! [`Ghash::update`] call: free when the build declares the instructions, and a cached flag read
     //! otherwise.
 
@@ -925,7 +925,7 @@ mod ghash {
         target_feature = "neon",
         any(target_feature = "aes", feature = "std")
     ))]
-    use bouncycastle_arm::CryptoExtensions;
+    use bouncycastle_arm::Aes;
 
     /// A block of `GF(2^128)`, in the two-`u64` form described in the module docs.
     type Block = [u64; 2];
@@ -1093,7 +1093,7 @@ mod ghash {
         any(target_feature = "aes", feature = "std")
     ))]
     pub(crate) fn mul(x: &Block, y: &Block) -> Block {
-        match CryptoExtensions::detect() {
+        match Aes::detect() {
             Some(cx) => cx.ghash_mul(x, y),
             None => mul_portable(x, y),
         }
@@ -1212,7 +1212,7 @@ mod ghash {
                 target_feature = "neon",
                 any(target_feature = "aes", feature = "std")
             ))]
-            let blocks = match CryptoExtensions::detect() {
+            let blocks = match Aes::detect() {
                 Some(cx) => {
                     let (quads, remainder) = blocks.as_chunks::<4>();
                     let mut x: Secret<[Block; 4]> = Secret::new();
@@ -1370,7 +1370,7 @@ mod ghash {
         ))]
         #[test]
         fn pmull_matches_the_portable_multiplier_on_ten_thousand_random_pairs() {
-            let Some(cx) = CryptoExtensions::detect() else { return };
+            let Some(cx) = Aes::detect() else { return };
             let mut rng = Lcg(0x94d0_49bb_1331_11eb);
             for _ in 0..10_000 {
                 let x = rng.next_block();

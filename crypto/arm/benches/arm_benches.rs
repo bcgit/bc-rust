@@ -13,7 +13,7 @@
     any(target_feature = "aes", feature = "std")
 ))]
 mod arm {
-    use bouncycastle_arm::CryptoExtensions;
+    use bouncycastle_arm::Aes;
     use bouncycastle_arm::aes::{BLOCK_LEN, Block};
     use bouncycastle_arm::ghash::Element;
     use criterion::measurement::WallTime;
@@ -59,7 +59,7 @@ mod arm {
     }
 
     fn bench_key_expansion(c: &mut Criterion) {
-        let Some(cx) = CryptoExtensions::detect() else { return };
+        let Some(cx) = Aes::detect() else { return };
         let mut group = c.benchmark_group("arm::aes::key expansion");
         let (k128, k192, k256) = (random_key::<16>(1), random_key::<24>(2), random_key::<32>(3));
         group.bench_function("expand_128", |b| b.iter(|| cx.expand_128(black_box(&k128))));
@@ -71,7 +71,7 @@ mod arm {
     /// The data benches work in place on one buffer across iterations, so no copy sits inside
     /// the timed closure; the permutation is a bijection, so the buffer stays random.
     fn bench_data_paths<const N: usize>(
-        cx: CryptoExtensions,
+        cx: Aes,
         group: &mut BenchmarkGroup<'_, WallTime>,
         w: &[Block; N],
     ) {
@@ -127,7 +127,7 @@ mod arm {
     }
 
     fn bench_aes128(c: &mut Criterion) {
-        let Some(cx) = CryptoExtensions::detect() else { return };
+        let Some(cx) = Aes::detect() else { return };
         let w = cx.expand_128(&random_key::<16>(1));
         let mut group = c.benchmark_group("arm::aes::AES-128");
         bench_data_paths(cx, &mut group, &w);
@@ -135,7 +135,7 @@ mod arm {
     }
 
     fn bench_aes192(c: &mut Criterion) {
-        let Some(cx) = CryptoExtensions::detect() else { return };
+        let Some(cx) = Aes::detect() else { return };
         let w = cx.expand_192(&random_key::<24>(2));
         let mut group = c.benchmark_group("arm::aes::AES-192");
         bench_data_paths(cx, &mut group, &w);
@@ -143,7 +143,7 @@ mod arm {
     }
 
     fn bench_aes256(c: &mut Criterion) {
-        let Some(cx) = CryptoExtensions::detect() else { return };
+        let Some(cx) = Aes::detect() else { return };
         let w = cx.expand_256(&random_key::<32>(3));
         let mut group = c.benchmark_group("arm::aes::AES-256");
         bench_data_paths(cx, &mut group, &w);
@@ -151,7 +151,7 @@ mod arm {
     }
 
     fn bench_ghash(c: &mut Criterion) {
-        let Some(cx) = CryptoExtensions::detect() else { return };
+        let Some(cx) = Aes::detect() else { return };
         let mut rng = Xorshift(5);
         let h: Element = [rng.next_u64(), rng.next_u64()];
         let h2 = cx.ghash_mul(&h, &h);

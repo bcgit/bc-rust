@@ -1,4 +1,4 @@
-//! [`CryptoExtensions`]: the proof that the CPU has the instructions, and the safe way into the
+//! [`Aes`]: the proof that the CPU has the instructions, and the safe way into the
 //! kernels.
 
 #![allow(unsafe_code)]
@@ -13,9 +13,9 @@ use crate::ghash::{self, Element};
 /// safe to call; its methods are those kernels. It is zero-sized and `Copy`: check once and
 /// keep it beside the data it will be used on.
 #[derive(Clone, Copy, Debug)]
-pub struct CryptoExtensions(());
+pub struct Aes(());
 
-impl CryptoExtensions {
+impl Aes {
     /// `Some` if the CPU has the instructions.
     ///
     /// When the build declares them (`target_feature = "aes"`) this is always `Some` and costs

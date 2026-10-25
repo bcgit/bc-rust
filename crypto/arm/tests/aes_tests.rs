@@ -19,7 +19,7 @@
 
 mod common;
 
-use bouncycastle_arm::CryptoExtensions;
+use bouncycastle_arm::Aes;
 use bouncycastle_arm::aes::{Block, RoundKeys128, RoundKeys192, RoundKeys256};
 use bouncycastle_hex as hex;
 use common::{Xorshift, hex_block, hex_bytes};
@@ -159,7 +159,7 @@ fn blocks4(hex: &[&str; 4]) -> [Block; 4] {
 
 /// Encrypts and decrypts F.1's four blocks through the four-block path, then checks that the
 /// one- and two-block paths give byte-identical results.
-fn check_ecb<const N: usize>(cx: CryptoExtensions, w: &[Block; N], ciphertext: &[&str; 4]) {
+fn check_ecb<const N: usize>(cx: Aes, w: &[Block; N], ciphertext: &[&str; 4]) {
     let plaintext = blocks4(&F1_PLAINTEXT);
     let expected = blocks4(ciphertext);
     let dw = cx.equivalent_inverse_round_keys(w);
@@ -267,12 +267,7 @@ const C3_IK_SCH: [&str; 15] = [
 
 /// Appendix C numbers the inverse cipher's rounds in the order they run, so `ik_sch[r]` is
 /// `dw[Nr - r]` in Algorithm 4's indexing.
-fn check_appendix_c<const N: usize>(
-    cx: CryptoExtensions,
-    w: &[Block; N],
-    ik_sch: &[&str; N],
-    ciphertext: &str,
-) {
+fn check_appendix_c<const N: usize>(cx: Aes, w: &[Block; N], ik_sch: &[&str; N], ciphertext: &str) {
     let nr = N - 1;
     let dw = cx.equivalent_inverse_round_keys(w);
     for (r, expected) in ik_sch.iter().enumerate() {
@@ -346,7 +341,7 @@ fn round_trips_on_random_keys_and_blocks() {
     }
 }
 
-fn check_round_trips<const N: usize>(cx: CryptoExtensions, w: &[Block; N], rng: &mut Xorshift) {
+fn check_round_trips<const N: usize>(cx: Aes, w: &[Block; N], rng: &mut Xorshift) {
     let dw = cx.equivalent_inverse_round_keys(w);
     let plaintext: [Block; 4] = core::array::from_fn(|_| rng.block());
 

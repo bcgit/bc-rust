@@ -5,7 +5,7 @@
 //! intrinsics themselves. Inside such a function the compiler accepts the intrinsic calls as
 //! safe, and in exchange calling one from code without the attribute is `unsafe`: the compiler
 //! will not let the precondition, that the CPU has the instructions, be forgotten. The kernels in
-//! [`crate::aes`] and [`crate::ghash`] carry the same attribute; [`crate::CryptoExtensions`] is
+//! [`crate::aes`] and [`crate::ghash`] carry the same attribute; [`crate::Aes`] is
 //! the one place that precondition is discharged.
 //!
 //! # SAFETY
