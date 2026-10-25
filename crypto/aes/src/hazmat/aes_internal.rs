@@ -101,6 +101,17 @@ pub struct AESInternal<P: AESParams> {
     schedule: Secret<P::Schedule>,
 }
 
+// Written out rather than derived so that `P`, a marker type, need not be `PartialEq`. Round key
+// 0 is the key itself (FIPS 197 Sec 5.2), so two schedules are equal exactly when the keys are;
+// `Secret`'s equality inspects every byte, so the time taken does not say where they differ.
+impl<P: AESParams> PartialEq for AESInternal<P> {
+    fn eq(&self, other: &Self) -> bool {
+        self.schedule == other.schedule
+    }
+}
+
+impl<P: AESParams> Eq for AESInternal<P> {}
+
 /// AES-128: 16-byte key, 10 rounds (FIPS 197 Table 3).
 #[allow(non_camel_case_types)]
 pub type AES128Internal = AESInternal<AES128Params>;

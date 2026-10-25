@@ -36,7 +36,8 @@ use crate::traits::{
 pub trait Mode<P> {
     /// What the mode keeps per key: the permutation plus anything derived from it once. A mode
     /// with nothing to derive sets `type KeyState = P`. Sensitive, and held so that it is zeroized
-    /// on drop as the schedule it contains is.
+    /// on drop as the schedule it contains is. A state that implements `PartialEq`, which gives the
+    /// key object its equality, must compare in constant time for the same reason.
     type KeyState: Clone;
 
     /// The [`KeyType`] a key for this mode must carry: [`KeyType::SymmetricCipherKey`] for a

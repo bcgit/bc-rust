@@ -636,6 +636,16 @@ impl Clone for AsconAEAD128Key {
     }
 }
 
+// `Secret`'s equality: every byte is inspected, so the time taken does not say where two keys
+// differ.
+impl PartialEq for AsconAEAD128Key {
+    fn eq(&self, other: &Self) -> bool {
+        self.key == other.key
+    }
+}
+
+impl Eq for AsconAEAD128Key {}
+
 impl FromKeyMaterial<KEY_LEN> for AsconAEAD128Key {
     const KEY_TYPE: KeyType = KeyType::SymmetricCipherKey;
 

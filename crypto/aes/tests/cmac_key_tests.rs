@@ -139,3 +139,13 @@ fn sizes() {
         [48, 48, 48]
     );
 }
+
+/// Equality follows the material through the CMAC state, subkeys included: the same bytes
+/// compare equal, as does a clone, and different bytes do not.
+#[test]
+fn cmac_keys_compare_equal_exactly_when_their_material_does() {
+    let key = AES128Key::<CMAC>::from_key_material(&mac_key::<16>(0x2b)).unwrap();
+    assert!(key == key.clone());
+    assert!(key == AES128Key::<CMAC>::from_key_material(&mac_key::<16>(0x2b)).unwrap());
+    assert!(key != AES128Key::<CMAC>::from_key_material(&mac_key::<16>(0x2c)).unwrap());
+}
