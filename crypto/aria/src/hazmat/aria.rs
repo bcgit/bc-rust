@@ -290,8 +290,7 @@ impl BlockPermutation<BLOCK_LEN> for ARIA256Internal {
 }
 
 // RFC 5794 Appendix B assigns object identifiers to ARIA in every one of these modes, so each is
-// named; this crate aliases CBC, CFB, CFB8 and CTR, and a key under the other modes is made by
-// naming the mode directly.
+// named, although the keys hand out workers for the four aliased modes (CBC, CFB, CFB8, CTR) only.
 impl ModeNames for ARIA128Internal {
     const CBC_ALG_NAME: &'static str = "ARIA_CBC_128";
     const CCM_ALG_NAME: &'static str = "ARIA_CCM_128";
