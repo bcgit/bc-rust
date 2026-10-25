@@ -2,8 +2,8 @@
 //! RFC 5869, as allowed by NIST SP 800-56Cr2.
 //!
 //! This is a utility crate and is not intended to be used directly. It provides [`HKDF`] -- the
-//! construction, generic over any struct that implements [`Hash`] and [`HashAlgParams`], the extension
-//! point through which a hash declares the metadata from which the HKDF instance is built.
+//! construction, generic over the [`HMACParams`] of the HMAC it is built on, which name the
+//! underlying [`Hash`].
 //! The library provides the following concrete instantiations of HKDF:
 //!
 //! | Hash family | Instantiations                                                           |
@@ -13,15 +13,15 @@
 //! # Instantiating HKDF over a hash
 //!
 //! HKDF uses HMAC as its underlying primitive, so it works with any hash that HMAC works with:
-//! [`HKDF`] needs only [`Hash`] + [`HashAlgParams`] + [`Default`]. Unlike HMAC there is no additional
-//! HKDF params trait to implement -- HKDF has no per-hash OIDs and derives its name from nothing --
+//! [`HKDF`] takes the HMAC's [`HMACParams`], and through them the hash. Unlike HMAC there is no
+//! additional HKDF params trait to implement -- HKDF has no per-hash OIDs and derives its name from nothing --
 //! so an instantiation is just a type alias plus, by convention, a name constant and a suspended-state
 //! length.
 //!
 //! What the alias has to supply is [`HKDF`]'s two const parameters:
 //!
 //! * `HASH_STATE_LEN` -- the hash's own suspended-state length, i.e. the `N` in
-//!   `H: Suspendable<N>`.
+//!   `PARAMS::Hash: Suspendable<N>`.
 //! * `HKDF_STATE_LEN` -- this HKDF's suspended-state length, which is always `HASH_STATE_LEN + 14`.
 //!
 //! Both are const parameters of the struct rather than being derived from the hash because
@@ -47,14 +47,15 @@
 //! use bouncycastle_core::key_material::{KeyMaterial256, KeyType};
 //! use bouncycastle_core::traits::{KDF, SuspendableKeyed};
 //! use bouncycastle_hkdf::HKDF;
-//! use bouncycastle_sha2::{SHA224, SUSPENDED_SHA256_STATE_LEN};
+//! use bouncycastle_sha2::hmac::HMAC_SHA224Params;
+//! use bouncycastle_sha2::SUSPENDED_SHA256_STATE_LEN;
 //!
 //! // SHA-224 is a member of the SHA-256 family, so its suspended state is the SHA-256 one.
 //! const SUSPENDED_HKDF_SHA224_STATE_LEN: usize = SUSPENDED_SHA256_STATE_LEN + 14;
 //!
 //! #[allow(non_camel_case_types)]
 //! pub type HKDF_SHA224 =
-//!     HKDF<SHA224, SUSPENDED_SHA256_STATE_LEN, SUSPENDED_HKDF_SHA224_STATE_LEN>;
+//!     HKDF<HMAC_SHA224Params, SUSPENDED_SHA256_STATE_LEN, SUSPENDED_HKDF_SHA224_STATE_LEN>;
 //!
 //! pub const HKDF_SHA224_NAME: &str = "HKDF-SHA224";
 //!
@@ -113,7 +114,7 @@ use bouncycastle_core::key_material::{
 };
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{Hash, HashAlgParams, KDF, MAC, Suspendable, SuspendableKeyed};
-use bouncycastle_hmac::HMAC;
+use bouncycastle_hmac::{HMAC, HMACParams};
 use bouncycastle_utils::suspendable_state::{add_lib_ver, check_lib_ver};
 use bouncycastle_utils::{max, min};
 use std::marker::PhantomData;
@@ -131,7 +132,7 @@ use bouncycastle_core::traits::XOF;
 /// TODO: This is a dirty dirty hack because correctly sizing the output key
 ///       really requires the generic_const_exprs feature, which is currently only available on
 ///       nightly Rust, and not on stable. Once they merge that feature, we will be able to get rid of this
-///       and declare `prk: &mut KeyMaterial<H::OUTPUT_LEN>` instead of this hack.
+///       and declare `prk: &mut KeyMaterial<PARAMS::Hash::OUTPUT_LEN>` instead of this hack.
 pub const MAX_HMAC_OUTPUT_LEN: usize = 64;
 
 /*** Types ***/
@@ -144,29 +145,26 @@ pub const MAX_HMAC_OUTPUT_LEN: usize = 64;
 ///
 /// # Const parameters
 ///
-/// `HASH_STATE_LEN` is the suspended-state length of `H` (as in `H: Suspendable<HASH_STATE_LEN>`) and
+/// `HASH_STATE_LEN` is the suspended-state length of the hash (as in
+/// `PARAMS::Hash: Suspendable<HASH_STATE_LEN>`) and
 /// `HKDF_STATE_LEN` is this HKDF's own suspended-state length, which is always `HASH_STATE_LEN + 14`
 /// (see the [`SuspendableKeyed`] impl below for the layout that accounts for those 14 bytes).
 ///
-/// Both are const parameters of the struct rather than being derived from `H` because `SuspendableKeyed`
+/// Both are const parameters of the struct rather than being derived from the hash because `SuspendableKeyed`
 /// takes its length as a const generic, and naming `HASH_STATE_LEN + 14` in that position requires
 /// the `generic_const_exprs` feature. Carrying both on the struct is what lets a single blanket
 /// `SuspendableKeyed` impl serve every hash while still pinning the two lengths together per concrete
 /// type. They are deliberately given no defaults: there is no value that is correct for more than one
 /// hash, so each instantiation must state them.
 /// todo: once rust stabilizes generic_const_exprs, delete both const parameters and write the impl as
-///     `SuspendableKeyed<{HASH_STATE_LEN + 14}>` over `H: Suspendable<HASH_STATE_LEN>`.
+///     `SuspendableKeyed<{HASH_STATE_LEN + 14}>` over `PARAMS::Hash: Suspendable<HASH_STATE_LEN>`.
 #[derive(Clone)]
-pub struct HKDF<
-    H: Hash + HashAlgParams + Default,
-    const HASH_STATE_LEN: usize,
-    const HKDF_STATE_LEN: usize,
-> {
+pub struct HKDF<PARAMS: HMACParams, const HASH_STATE_LEN: usize, const HKDF_STATE_LEN: usize> {
     // Optional because an HMAC cannot be constructed until a key is provided
     // to initialize it with.
     // None must correspond to a state of Uninitialized.
-    hmac: Option<HMAC<H>>,
-    entropy: HkdfEntropyTracker<H>,
+    hmac: Option<HMAC<PARAMS>>,
+    entropy: HkdfEntropyTracker<PARAMS::Hash>,
     state: HkdfStates,
 }
 
@@ -243,16 +241,16 @@ impl<H: Hash + HashAlgParams + Default> HkdfEntropyTracker<H> {
     }
 }
 
-impl<H: Hash + HashAlgParams + Default, const HASH_STATE_LEN: usize, const HKDF_STATE_LEN: usize>
-    Default for HKDF<H, HASH_STATE_LEN, HKDF_STATE_LEN>
+impl<PARAMS: HMACParams, const HASH_STATE_LEN: usize, const HKDF_STATE_LEN: usize> Default
+    for HKDF<PARAMS, HASH_STATE_LEN, HKDF_STATE_LEN>
 {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<H: Hash + HashAlgParams + Default, const HASH_STATE_LEN: usize, const HKDF_STATE_LEN: usize>
-    HKDF<H, HASH_STATE_LEN, HKDF_STATE_LEN>
+impl<PARAMS: HMACParams, const HASH_STATE_LEN: usize, const HKDF_STATE_LEN: usize>
+    HKDF<PARAMS, HASH_STATE_LEN, HKDF_STATE_LEN>
 {
     /// Get a new, uninstantiated HKDF object.
     pub fn new() -> Self {
@@ -362,7 +360,7 @@ impl<H: Hash + HashAlgParams + Default, const HASH_STATE_LEN: usize, const HKDF_
         //    (where the constant concatenated to the end of each T(n) is a
         //    single octet.)
 
-        let hash_len = H::OUTPUT_LEN;
+        let hash_len = PARAMS::Hash::OUTPUT_LEN;
         if L > 255 * hash_len {
             return Err(KDFError::InvalidLength(
                 "HMAC can not produce more than 255*HashLen bytes out output",
@@ -375,7 +373,7 @@ impl<H: Hash + HashAlgParams + Default, const HASH_STATE_LEN: usize, const HKDF_
             ));
         }
 
-        let mut entropy = HkdfEntropyTracker::<H>::new();
+        let mut entropy = HkdfEntropyTracker::<PARAMS::Hash>::new();
         entropy.credit_entropy(prk);
 
         #[allow(non_snake_case)]
@@ -398,7 +396,7 @@ impl<H: Hash + HashAlgParams + Default, const HASH_STATE_LEN: usize, const HKDF_
         do_hazardous_operations(okm, |okm| {
             let out = okm.ref_to_bytes_mut()?;
             while i < N {
-                let mut hmac = HMAC::<H>::new(&prk_as_mac_key)
+                let mut hmac = HMAC::<PARAMS>::new(&prk_as_mac_key)
                     .map_err(|_| KeyMaterialError::GenericError("HMAC initialization failed"))?;
                 hmac.do_update(&T[..t_len]);
                 hmac.do_update(info);
@@ -420,7 +418,7 @@ impl<H: Hash + HashAlgParams + Default, const HASH_STATE_LEN: usize, const HKDF_
         // HMAC for a `remaining`-octet output instead would be a truncated MAC, which HMAC refuses
         // below MIN_FIPS_DIGEST_LEN: that rejected every L with L mod HashLen in 1..=3.
         let remaining = L - bytes_written;
-        let mut hmac = HMAC::<H>::new(&prk_as_mac_key)?;
+        let mut hmac = HMAC::<PARAMS>::new(&prk_as_mac_key)?;
         hmac.do_update(&T[..t_len]);
         hmac.do_update(info);
         hmac.do_update(&[i]);
@@ -490,7 +488,7 @@ impl<H: Hash + HashAlgParams + Default, const HASH_STATE_LEN: usize, const HKDF_
         // Often HMAC is initialized with a zero salt,
         // Key strength errors are ignored here.
         // This will all be tabulated correctly via entropy.credit_entropy()
-        self.hmac = Some(HMAC::<H>::new_allow_weak_key(salt)?);
+        self.hmac = Some(HMAC::<PARAMS>::new_allow_weak_key(salt)?);
 
         let additional_entropy = self.entropy.credit_entropy(salt);
         self.state = HkdfStates::Initialized;
@@ -523,7 +521,7 @@ impl<H: Hash + HashAlgParams + Default, const HASH_STATE_LEN: usize, const HKDF_
         debug_assert!(self.hmac.is_some());
 
         let additional_entropy = self.entropy.credit_entropy(ikm);
-        let hmac_ref: &mut HMAC<H> = self.hmac.as_mut().unwrap();
+        let hmac_ref: &mut HMAC<PARAMS> = self.hmac.as_mut().unwrap();
         hmac_ref.do_update(ikm.ref_to_bytes());
         // self.hmac.as_mut().unwrap().do_update(ikm.ref_to_bytes());
 
@@ -598,7 +596,7 @@ impl<H: Hash + HashAlgParams + Default, const HASH_STATE_LEN: usize, const HKDF_
         })?;
         // By RFC5869, the output size of prk is HashLen denotes the length of the
         //                hash function output in octets
-        debug_assert_eq!(prk.key_len(), H::OUTPUT_LEN);
+        debug_assert_eq!(prk.key_len(), PARAMS::Hash::OUTPUT_LEN);
         Ok(bytes_written)
     }
 }
@@ -612,8 +610,8 @@ impl<H: Hash + HashAlgParams + Default, const HASH_STATE_LEN: usize, const HKDF_
 /// [`KDF::derive_key_from_multiple_out`], or by using the [`HKDF`] impl directly.
 ///
 /// Entropy tracking: this implementation will map entropy from the input keys to the output key.
-impl<H: Hash + HashAlgParams + Default, const HASH_STATE_LEN: usize, const HKDF_STATE_LEN: usize>
-    KDF for HKDF<H, HASH_STATE_LEN, HKDF_STATE_LEN>
+impl<PARAMS: HMACParams, const HASH_STATE_LEN: usize, const HKDF_STATE_LEN: usize> KDF
+    for HKDF<PARAMS, HASH_STATE_LEN, HKDF_STATE_LEN>
 {
     /// This invokes [`HKDF::extract_and_expand_out`] with a zero salt and using the provided key as ikm.
     /// This provides a fixed-length output, which may be truncated as needed.
@@ -624,7 +622,7 @@ impl<H: Hash + HashAlgParams + Default, const HASH_STATE_LEN: usize, const HKDF_
     ) -> Result<Box<dyn KeyMaterialTrait>, KDFError> {
         let mut output_key = KeyMaterial512::new();
         _ = self.derive_key_out(key, additional_input, &mut output_key)?;
-        output_key.set_key_len(H::OUTPUT_LEN)?;
+        output_key.set_key_len(PARAMS::Hash::OUTPUT_LEN)?;
         Ok(Box::new(output_key))
     }
 
@@ -662,7 +660,7 @@ impl<H: Hash + HashAlgParams + Default, const HASH_STATE_LEN: usize, const HKDF_
     ) -> Result<Box<dyn KeyMaterialTrait>, KDFError> {
         let mut output_key = KeyMaterial512::new();
         _ = self.derive_key_from_multiple_out(keys, additional_input, &mut output_key)?;
-        output_key.set_key_len(*min(&output_key.key_len(), &H::OUTPUT_LEN))?;
+        output_key.set_key_len(*min(&output_key.key_len(), &PARAMS::Hash::OUTPUT_LEN))?;
         Ok(Box::new(output_key))
     }
 
@@ -675,7 +673,7 @@ impl<H: Hash + HashAlgParams + Default, const HASH_STATE_LEN: usize, const HKDF_
         output_key: &mut impl KeyMaterialTrait,
     ) -> Result<usize, KDFError> {
         let mut hkdf = Self::new();
-        let mut entropy = HkdfEntropyTracker::<H>::new();
+        let mut entropy = HkdfEntropyTracker::<PARAMS::Hash>::new();
 
         if keys.len() >= 1 {
             hkdf.do_extract_init(keys[0])?;
@@ -710,7 +708,7 @@ impl<H: Hash + HashAlgParams + Default, const HASH_STATE_LEN: usize, const HKDF_
     }
 
     fn max_security_strength(&self) -> SecurityStrength {
-        H::default().max_security_strength()
+        PARAMS::Hash::default().max_security_strength()
     }
 }
 
@@ -739,10 +737,10 @@ impl<H: Hash + HashAlgParams + Default, const HASH_STATE_LEN: usize, const HKDF_
 /// So the total per HKDF variant is the 3-byte version header + 11 bytes of HKDF bookkeeping
 /// (present flag, state tag, entropy counter, security strength) + the inner HMAC's blob = `B + 14`,
 /// which is the relationship `HKDF_STATE_LEN == HASH_STATE_LEN + 14` asserted below.
-impl<H, const HASH_STATE_LEN: usize, const HKDF_STATE_LEN: usize> SuspendableKeyed<HKDF_STATE_LEN>
-    for HKDF<H, HASH_STATE_LEN, HKDF_STATE_LEN>
+impl<PARAMS: HMACParams, const HASH_STATE_LEN: usize, const HKDF_STATE_LEN: usize>
+    SuspendableKeyed<HKDF_STATE_LEN> for HKDF<PARAMS, HASH_STATE_LEN, HKDF_STATE_LEN>
 where
-    H: Hash + HashAlgParams + Default + Suspendable<HASH_STATE_LEN>,
+    PARAMS::Hash: Suspendable<HASH_STATE_LEN>,
 {
     // HMAC accepts any key material, so the key type is the trait object `dyn KeyMaterialTrait`
     // rather than a single concrete key type. The key is only used (by reference) to reload the key
@@ -788,7 +786,7 @@ where
         let hmac = match state[3] {
             0 => None,
             // infallible: the sub-slice is exactly HASH_STATE_LEN bytes by const construction.
-            1 => Some(HMAC::<H>::from_suspended(
+            1 => Some(HMAC::<PARAMS>::from_suspended(
                 state[4..4 + HASH_STATE_LEN].try_into().unwrap(),
                 salt,
             )?),

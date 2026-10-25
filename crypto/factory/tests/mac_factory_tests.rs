@@ -10,16 +10,19 @@ mod hash_factory_tests {
 
         #[test]
         fn sha2_hash_tests() {
-            // HMAC-SHA224
-            let key = KeyMaterial::<32>::from_bytes_as_type(
-                &hex::decode("0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b").unwrap(),
+            // HMAC-SHA224, RFC 4231 Test Case 6. MACFactory has no weak-key constructor, so this
+            // needs a vector whose key reaches the strength HMAC-SHA224 claims; Test Case 1's
+            // 20-byte key does not.
+            let key = KeyMaterial::<131>::from_bytes_as_type(
+                &hex::decode("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+                    .unwrap(),
                 KeyType::MACKey,
             )
             .unwrap();
             let hmac = MACFactory::new("HMAC-SHA224", &key).unwrap();
             assert!(hmac.verify(
-                b"Hi There",
-                &hex::decode("896fb1128abbdf196832107cd49df33f47b4b1169912ba4f53684b22").unwrap(),
+                b"Test Using Larger Than Block-Size Key - Hash Key First",
+                &hex::decode("95e9a0db962095adaebe9b2d6f0dbce2d499f112f2d2b7273fa6870e").unwrap(),
             ));
 
             // HMAC-SHA512/224 -- NIST ACVP HMAC-SHA2-512/224 2.0, tgId 1, tcId 106 (MAC truncated to 160 bits)
@@ -145,21 +148,18 @@ mod hash_factory_tests {
 
         #[test]
         fn hmac_sm3_tests() {
-            // RFC4231 Test Case 1 key/message; expected value from `openssl dgst -sm3 -mac HMAC`,
-            // confirmed with bc-java's HMac(new SM3Digest()).
-            let key = KeyMaterial::<32>::from_bytes_as_type(
-                &hex::decode("0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b").unwrap(),
-                KeyType::MACKey,
-            )
-            .unwrap();
+            // RFC4231 Test Case 6 key/message, for the same reason as HMAC-SHA224 above; expected
+            // value from `openssl dgst -sm3 -mac HMAC`, confirmed with bc-java's HMac(new SM3Digest()).
+            let key =
+                KeyMaterial::<131>::from_bytes_as_type(&[0xaa; 131], KeyType::MACKey).unwrap();
             for name in ["HMAC-SM3", bouncycastle_sm3::hmac::HMAC_SM3_NAME] {
                 let hmac = MACFactory::new(name, &key).unwrap();
                 assert_eq!(hmac.output_len(), 32);
                 assert!(
                     hmac.verify(
-                        b"Hi There",
+                        b"Test Using Larger Than Block-Size Key - Hash Key First",
                         &hex::decode(
-                            "51b00d1fb49832bfb01c3ce27848e59f871d9ba938dc563b338ca964755cce70"
+                            "b4fd844e13342002f0b2e0690ea7741f1497d993a70494cea601e657bedf67a0"
                         )
                         .unwrap(),
                     )
