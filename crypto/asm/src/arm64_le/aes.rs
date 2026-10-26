@@ -12,23 +12,8 @@
 //! does.
 
 use super::intrinsics::V128;
-
-/// The AES block length in bytes (FIPS 197 Sec 3.4: `Nb = 4` words).
-pub const BLOCK_LEN: usize = 16;
-
-/// One AES block.
-pub type Block = [u8; BLOCK_LEN];
-
-/// Round keys for AES-128: `4 * (Nr + 1)` words with `Nr = 10`, as 11 blocks.
-pub type RoundKeys128 = [Block; 11];
-/// Round keys for AES-192: `Nr = 12`, 13 blocks.
-pub type RoundKeys192 = [Block; 13];
-/// Round keys for AES-256: `Nr = 14`, 15 blocks.
-pub type RoundKeys256 = [Block; 15];
-
-/// Table 5 (Sec 5.2): the left-most byte of `Rcon[j]` for `1 <= j <= 10`; the other three bytes
-/// are zero. Indexed by the public round counter, never by key material.
-const RCON: [u8; 10] = [0x01, 0x02, 0x04, 0x08, 0x10, 0x20, 0x40, 0x80, 0x1b, 0x36];
+use crate::aes_common::{RCON, check_rounds};
+use crate::{BLOCK_LEN, Block, RoundKeys128, RoundKeys192, RoundKeys256};
 
 /// `ROTWORD([a0, a1, a2, a3]) = [a1, a2, a3, a0]` (Eq. 5.10).
 #[inline(always)]
@@ -119,14 +104,6 @@ pub fn expand_192(key: &[u8; 24]) -> RoundKeys192 {
 #[target_feature(enable = "aes,neon")]
 pub fn expand_256(key: &[u8; 32]) -> RoundKeys256 {
     expand(key)
-}
-
-/// The compile-time check that `N` is one of the three round-key counts of Table 3.
-#[inline(always)]
-const fn check_rounds<const N: usize>() {
-    const {
-        assert!(N == 11 || N == 13 || N == 15, "FIPS 197 Table 3: Nr + 1 is 11, 13 or 15");
-    };
 }
 
 /// Lines 19-22 of KEYEXPANSIONEIC() (Sec 5.3.5, Algorithm 5): `dw` is `w` with

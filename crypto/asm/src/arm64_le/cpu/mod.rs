@@ -3,7 +3,7 @@
 //!
 //! In a build that does not declare `aes`, [`Aes::detect`] reads a feature word that the
 //! library works out itself, without the standard library: in `os`, the file for the target's
-//! operating system makes one call to it and parses the answer into the word, and [`features`]
+//! operating system makes one call to it and parses the answer into the word, and [`FEATURES`]
 //! caches it.
 //!
 //! # What each proof requires
@@ -43,37 +43,20 @@
 
 // A build that declares `aes` proves `Aes` at compile time and never probes; the detector stays
 // compiled so that build type-checks its back end and runs the parser tests.
-#[cfg_attr(target_feature = "aes", allow(dead_code, reason = "a declared build never probes"))]
+#[cfg_attr(
+    target_feature = "aes",
+    allow(dead_code, unused_imports, reason = "a declared build never probes")
+)]
 mod os;
 
-use core::sync::atomic::{AtomicU32, Ordering};
+use super::aes;
+use super::ghash;
+use crate::cache::FeatureCache;
+use crate::{Block, Element, RoundKeys128, RoundKeys192, RoundKeys256};
 
-use super::aes::{self, Block, RoundKeys128, RoundKeys192, RoundKeys256};
-use super::ghash::{self, Element};
-
-/// The feature word, with [`INIT`] set once it has been probed.
+/// The CPU's feature word, probed on the first [`Aes::detect`] and cached.
 #[cfg_attr(target_feature = "aes", allow(dead_code, reason = "a declared build never probes"))]
-static FEATURES: AtomicU32 = AtomicU32::new(0);
-
-/// Set in [`FEATURES`] once the probe has run, so a CPU with no features is not probed again.
-#[cfg_attr(target_feature = "aes", allow(dead_code, reason = "a declared build never probes"))]
-const INIT: u32 = 1 << 31;
-
-/// The CPU's feature word, probed on the first call and cached.
-#[cfg_attr(target_feature = "aes", allow(dead_code, reason = "a declared build never probes"))]
-fn features() -> u32 {
-    // Two first callers may both probe. Both compute the same word, since what the operating
-    // system reports does not change while the process runs, and an aligned atomic store cannot
-    // tear, so the cache ends up holding that word. `Relaxed` is enough because nothing else is
-    // published through it.
-    let cached = FEATURES.load(Ordering::Relaxed);
-    if cached & INIT != 0 {
-        return cached;
-    }
-    let probed = os::probe() | INIT;
-    FEATURES.store(probed, Ordering::Relaxed);
-    probed
-}
+static FEATURES: FeatureCache = FeatureCache::new();
 
 /// Proof that the CPU running this code has `FEAT_AES`, `FEAT_PMULL` and NEON.
 ///
@@ -95,7 +78,7 @@ impl Aes {
         #[cfg(target_feature = "aes")]
         return Some(Self(()));
         #[cfg(not(target_feature = "aes"))]
-        return (features() & os::AES != 0).then_some(Self(()));
+        return (FEATURES.get(os::probe) & os::AES != 0).then_some(Self(()));
     }
 
     /// The proof, without a check: the build declares the instructions, so every CPU it may run
@@ -209,21 +192,5 @@ impl Aes {
         // because `self` exists: only `detect()`, which queries them, or `declared()` under
         // `cfg(target_feature = "aes")` builds one.
         unsafe { ghash::mul4(x, y) }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    //! A unit test because the cache is private: it is the only way to pin that the probe runs
-    //! once and its word is kept.
-
-    use super::*;
-
-    #[test]
-    fn the_cached_word_is_marked_and_kept() {
-        let first = features();
-        assert_ne!(first & INIT, 0, "INIT set after the first read: {first:#x}");
-        assert_eq!(FEATURES.load(Ordering::Relaxed), first);
-        assert_eq!(features(), first);
     }
 }

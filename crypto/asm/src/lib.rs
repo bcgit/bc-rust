@@ -176,6 +176,47 @@
 #![forbid(missing_docs)]
 #![deny(unsafe_code)]
 
+mod types;
+pub use types::{BLOCK_LEN, Block, Element, RoundKeys128, RoundKeys192, RoundKeys256};
+
+// Used by every back end; on a target that compiles none, nothing uses it.
+#[cfg_attr(
+    not(all(
+        target_arch = "aarch64",
+        target_endian = "little",
+        target_feature = "neon",
+        any(
+            target_feature = "aes",
+            target_os = "linux",
+            target_os = "android",
+            target_os = "macos",
+            target_os = "ios",
+            target_os = "windows"
+        )
+    )),
+    allow(dead_code, reason = "no back end on this target")
+)]
+mod aes_common;
+
+// Used by every back end that asks at run time; a build that declares `aes` never probes.
+#[cfg_attr(
+    not(all(
+        target_arch = "aarch64",
+        target_endian = "little",
+        target_feature = "neon",
+        not(target_feature = "aes"),
+        any(
+            target_os = "linux",
+            target_os = "android",
+            target_os = "macos",
+            target_os = "ios",
+            target_os = "windows"
+        )
+    )),
+    allow(dead_code, reason = "nothing on this target probes")
+)]
+mod cache;
+
 // The operating systems in this gate are the ones `arm64_le/cpu/os/` has a back end for: the two
 // lists change together.
 #[cfg(all(

@@ -2,7 +2,7 @@
 
 #![allow(dead_code)]
 
-use bouncycastle_asm::arm64_le::Aes;
+use bouncycastle_asm::Aes;
 use bouncycastle_hex as hex;
 
 /// The proof the kernels need, or `None` on a CPU without the instructions, where the test
