@@ -1,39 +1,42 @@
 //! The Key Wrap with Padding algorithm, KWP (NIST SP 800-38F Sec 6.3; RFC 5649), over any
 //! 128-bit block permutation.
 //!
-//! KWP is [`Kw`](crate::kw::Kw) for data of any length from 1 byte up to 2^32 - 1 bytes: the
-//! plaintext is prefixed with a 4-byte integrity check value and its 4-byte length, padded with
-//! zeros to a whole number of 8-byte semiblocks, and then put through the same wrapping function.
-//! The ciphertext is the plaintext rounded up to a multiple of 8, plus 8. Everything in the
-//! [`kw`](crate::kw) module docs -- the trait shape, the in-place wrapping function, the security
-//! notes -- applies here too; this module only documents what differs.
+//! KWP is [`Kw`](crate::modes::kw::Kw) for data of any length from 1 byte up to 2^32 - 1 bytes:
+//! the plaintext is prefixed with a 4-byte integrity check value and its 4-byte length, padded
+//! with zeros to a whole number of 8-byte semiblocks, and then put through the same wrapping
+//! function. The ciphertext is the plaintext rounded up to a multiple of 8, plus 8. Everything in
+//! the [`kw`](crate::modes::kw) module docs -- the key path, the trait shape, the in-place
+//! wrapping function, the security notes -- applies here too; this module only documents what
+//! differs. A key is bound to it through [`KWP`]: `AES128Key<KWP>`.
 //!
 //! The `AES_KWP_128` / `AES_KWP_192` / `AES_KWP_256` aliases are in `bouncycastle-aes`.
 //!
 //! # Usage Examples
 //!
 //! ```
-//! use bouncycastle_aes::aes_internal::AES128Internal;
+//! # mod toy { include!("../../tests/common/toy_block_cipher.rs"); }
+//! # use toy::ToyBlockCipher;
+//! use bouncycastle_cipher::modes::Kwp;
+//! use bouncycastle_core::hazmat::ElectronicCodeBook;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 //! use bouncycastle_core::traits::{KeyUnwrapper, KeyWrapper};
-//! use bouncycastle_modes::Kwp;
-//!
-//! type Aes128Kwp = Kwp<AES128Internal, 16>;
 //!
 //! let kek = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
 //!     .expect("a 16-byte symmetric cipher key");
+//! let state = ToyBlockCipher::new(&kek).unwrap();
+//! let kwp = Kwp::from_perm(&state);
 //!
 //! // 20 bytes pad to 24, plus the 8-byte header: 32 bytes of ciphertext.
 //! let data = [0x5Au8; 20];
-//! let wrapped: [u8; 32] = Aes128Kwp::wrap_key(&kek, &data).expect("wrapping");
-//! let recovered = Aes128Kwp::unwrap_key::<20, 32>(&kek, &wrapped).expect("unwrapping");
+//! let wrapped: [u8; 32] = kwp.wrap_key(&data).expect("wrapping");
+//! let recovered = kwp.unwrap_key::<20, 32>(&wrapped).expect("unwrapping");
 //! assert_eq!(*recovered, data);
 //!
 //! // Up to 8 bytes fit in a single block with the header, which is enciphered directly
 //! // (Algorithm 5, step 5) rather than through the wrapping function.
 //! let short = *b"short";
-//! let wrapped: [u8; 16] = Aes128Kwp::wrap_key(&kek, &short).expect("wrapping");
-//! assert_eq!(*Aes128Kwp::unwrap_key::<5, 16>(&kek, &wrapped).expect("unwrapping"), short);
+//! let wrapped: [u8; 16] = kwp.wrap_key(&short).expect("wrapping");
+//! assert_eq!(*kwp.unwrap_key::<5, 16>(&wrapped).expect("unwrapping"), short);
 //! ```
 //!
 //! # The recovered length is inside the ciphertext
@@ -54,14 +57,17 @@
 //! depend on the length field, but that field is public once unwrapping succeeds and never more
 //! than 7 bytes; there is no padding oracle to protect because the failure is the same either way.)
 
-use crate::kw::{KW_BLOCK_LEN, SEMIBLOCK_LEN, w, w_inv};
+use super::ModeNames;
+use super::kw::{KW_BLOCK_LEN, SEMIBLOCK_LEN, w, w_inv};
 use bouncycastle_core::errors::SymmetricCipherError;
-use bouncycastle_core::key_material::KeyMaterial;
+use bouncycastle_core::hazmat::{
+    BlockPermutation, ElectronicCodeBook, KeyUnwrapMode, KeyWrapMode, Mode,
+};
+use bouncycastle_core::key_material::KeyType;
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::traits::{Algorithm, ElectronicCodeBook, KeyUnwrapper, KeyWrapper};
+use bouncycastle_core::traits::{Algorithm, KeyUnwrapper, KeyWrapper};
 use bouncycastle_utils::ct::{ct_eq_bytes, ct_eq_zero_bytes};
 use bouncycastle_utils::secret::Secret;
-use core::marker::PhantomData;
 
 /// ICV2, the integrity check value of KWP (Algorithm 5, step 1): `0xA65959A6`.
 const ICV2: [u8; 4] = [0xA6, 0x59, 0x59, 0xA6];
@@ -94,35 +100,90 @@ pub const fn kwp_wrapped_len(len: usize) -> usize {
     len.div_ceil(SEMIBLOCK_LEN).saturating_mul(SEMIBLOCK_LEN).saturating_add(SEMIBLOCK_LEN)
 }
 
-/// KWP over any 128-bit permutation that impls [`ElectronicCodeBook`].
-///
-/// As [`Kw`](crate::kw::Kw): no state, no direction marker, `KEK_LEN` is the permutation's key
-/// length. See the module docs.
-pub struct Kwp<P, const KEK_LEN: usize>
+/// The KWP mode type, as a key type names it: `AES128Key<KWP>`. As [`KW`](super::kw::KW): its
+/// key state is the keyed permutation, and its workers are [`Kwp`] on both sides.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct KWP;
+
+impl<P> Mode<P> for KWP
 where
-    P: ElectronicCodeBook<KEK_LEN, KW_BLOCK_LEN>,
+    P: BlockPermutation<KW_BLOCK_LEN> + ModeNames + Clone,
 {
-    _perm: PhantomData<P>,
+    type KeyState = P;
+    const KEY_TYPE: KeyType = KeyType::SymmetricCipherKey;
+
+    fn key_state(perm: P) -> Self::KeyState {
+        perm
+    }
 }
 
-impl<P, const KEK_LEN: usize> Algorithm for Kwp<P, KEK_LEN>
+impl<P, const KEK_LEN: usize> KeyWrapMode<P, KEK_LEN> for KWP
 where
-    P: ElectronicCodeBook<KEK_LEN, KW_BLOCK_LEN>,
+    P: ElectronicCodeBook<KEK_LEN, KW_BLOCK_LEN> + ModeNames + Clone,
 {
-    /// The underlying permutation's name; the mode is in the type, as for [`Ecb`](crate::Ecb).
-    const ALG_NAME: &'static str = P::ALG_NAME;
+    type Wrapper<'k>
+        = Kwp<'k, P>
+    where
+        P: 'k;
+
+    fn wrap_init<'k>(state: &'k Self::KeyState) -> Self::Wrapper<'k> {
+        Kwp::from_perm(state)
+    }
+}
+
+impl<P, const KEK_LEN: usize> KeyUnwrapMode<P, KEK_LEN> for KWP
+where
+    P: ElectronicCodeBook<KEK_LEN, KW_BLOCK_LEN> + ModeNames + Clone,
+{
+    type Unwrapper<'k>
+        = Kwp<'k, P>
+    where
+        P: 'k;
+
+    fn unwrap_init<'k>(state: &'k Self::KeyState) -> Self::Unwrapper<'k> {
+        Kwp::from_perm(state)
+    }
+}
+
+/// KWP over any 128-bit permutation that impls [`BlockPermutation`]: the one-shot worker a
+/// [`KWP`]-bound key hands out, borrowing the keyed permutation for `'k`, as
+/// [`Kw`](super::kw::Kw) does. See the module docs.
+pub struct Kwp<'k, P>
+where
+    P: BlockPermutation<KW_BLOCK_LEN> + ModeNames,
+{
+    perm: &'k P,
+}
+
+impl<'k, P> Kwp<'k, P>
+where
+    P: BlockPermutation<KW_BLOCK_LEN> + ModeNames,
+{
+    /// Over an already-keyed permutation, which the worker borrows: what a [`KWP`]-bound key's
+    /// roles build.
+    pub fn from_perm(perm: &'k P) -> Self {
+        Self { perm }
+    }
+}
+
+impl<'k, P> Algorithm for Kwp<'k, P>
+where
+    P: BlockPermutation<KW_BLOCK_LEN> + ModeNames,
+{
+    /// The permutation's name for this mode, [`ModeNames::KWP_ALG_NAME`].
+    const ALG_NAME: &'static str = P::KWP_ALG_NAME;
     /// KWP does not change the strength of the underlying cipher.
     const MAX_SECURITY_STRENGTH: SecurityStrength = P::MAX_SECURITY_STRENGTH;
 }
 
-impl<P, const KEK_LEN: usize> KeyWrapper<KEK_LEN> for Kwp<P, KEK_LEN>
+impl<'k, P> KeyWrapper for Kwp<'k, P>
 where
-    P: ElectronicCodeBook<KEK_LEN, KW_BLOCK_LEN>,
+    P: BlockPermutation<KW_BLOCK_LEN> + ModeNames,
 {
     /// KWP-AE with the lengths fixed at compile time. `KEY_LEN` may be anything from 1 to
     /// 2^32 - 1 and `CT_LEN` must be [`kwp_wrapped_len`] of it; anything else fails to compile.
     fn wrap_key_out<const KEY_LEN: usize, const CT_LEN: usize>(
-        kek: &KeyMaterial<KEK_LEN>,
+        &self,
         key: &[u8; KEY_LEN],
         ciphertext: &mut [u8; CT_LEN],
     ) -> Result<usize, SymmetricCipherError> {
@@ -136,17 +197,17 @@ where
                 "a KWP ciphertext is the plaintext rounded up to a multiple of 8 bytes, plus 8"
             );
         }
-        Self::wrap_out(kek, key, ciphertext)
+        self.wrap_out(key, ciphertext)
     }
 
     /// The plaintext rounded up to a whole number of semiblocks, plus one.
-    fn wrap_out_len(plaintext_len: usize) -> usize {
+    fn wrap_out_len(&self, plaintext_len: usize) -> usize {
         kwp_wrapped_len(plaintext_len)
     }
 
     /// KWP-AE (SP 800-38F Algorithm 5).
     fn wrap_out(
-        kek: &KeyMaterial<KEK_LEN>,
+        &self,
         plaintext: &[u8],
         ciphertext: &mut [u8],
     ) -> Result<usize, SymmetricCipherError> {
@@ -159,7 +220,6 @@ where
                 "KWP wraps 1 to 2^32 - 1 bytes (SP 800-38F Table 1)",
             ));
         }
-        let perm = P::new(kek)?;
 
         // Steps 1-4: S = ICV2 || [len(P)/8]32 || P || PAD, assembled in the caller's buffer so the
         // plaintext is copied exactly once. The length is in octets and fits 32 bits: checked above.
@@ -175,20 +235,20 @@ where
         // directly; a longer one goes through W.
         if plaintext.len() <= SEMIBLOCK_LEN {
             let (blocks, _) = s.as_chunks_mut::<KW_BLOCK_LEN>();
-            perm.encrypt_block(&mut blocks[0]);
+            self.perm.encrypt_block(&mut blocks[0]);
         } else {
             let (a, r) = s.split_at_mut(SEMIBLOCK_LEN);
             let (a, _) = a.as_chunks_mut::<SEMIBLOCK_LEN>();
             let (r, _) = r.as_chunks_mut::<SEMIBLOCK_LEN>();
-            w(&perm, &mut a[0], r);
+            w(self.perm, &mut a[0], r);
         }
         Ok(ct_len)
     }
 }
 
-impl<P, const KEK_LEN: usize> KeyUnwrapper<KEK_LEN> for Kwp<P, KEK_LEN>
+impl<'k, P> KeyUnwrapper for Kwp<'k, P>
 where
-    P: ElectronicCodeBook<KEK_LEN, KW_BLOCK_LEN>,
+    P: BlockPermutation<KW_BLOCK_LEN> + ModeNames,
 {
     /// KWP-AD with the lengths fixed at compile time; the same pairs as
     /// [`wrap_key_out`](KeyWrapper::wrap_key_out) are accepted.
@@ -197,7 +257,7 @@ where
     /// allows, since up to eight plaintext lengths share one ciphertext length -- is reported as
     /// [`SymmetricCipherError::DecryptionFailed`], exactly as a forgery would be.
     fn unwrap_key_out<const KEY_LEN: usize, const CT_LEN: usize>(
-        kek: &KeyMaterial<KEK_LEN>,
+        &self,
         ciphertext: &[u8; CT_LEN],
         key: &mut Secret<[u8; KEY_LEN]>,
     ) -> Result<usize, SymmetricCipherError> {
@@ -214,7 +274,7 @@ where
         // The padded plaintext can be up to 7 bytes longer than `key`, so unwrap into scratch
         // that is scrubbed on drop, and only copy out once the recovered length is the expected one.
         let mut padded: Secret<[u8; CT_LEN]> = Secret::new();
-        match Self::unwrap_out(kek, ciphertext, &mut padded[..CT_LEN - SEMIBLOCK_LEN]) {
+        match self.unwrap_out(ciphertext, &mut padded[..CT_LEN - SEMIBLOCK_LEN]) {
             Ok(recovered_len) if recovered_len == KEY_LEN => {
                 key.copy_from_slice(&padded[..KEY_LEN]);
                 Ok(KEY_LEN)
@@ -232,18 +292,18 @@ where
 
     /// One semiblock less than the ciphertext: the padded plaintext, of which up to 7 bytes are
     /// padding, so this is an upper bound (module docs).
-    fn unwrap_out_max_len(ciphertext_len: usize) -> usize {
+    fn unwrap_out_max_len(&self, ciphertext_len: usize) -> usize {
         ciphertext_len.saturating_sub(SEMIBLOCK_LEN)
     }
 
     /// KWP-AD (SP 800-38F Algorithm 6).
     fn unwrap_out(
-        kek: &KeyMaterial<KEK_LEN>,
+        &self,
         ciphertext: &[u8],
         plaintext: &mut [u8],
     ) -> Result<usize, SymmetricCipherError> {
         // 8(n-1) bytes: the padded plaintext.
-        let padded_len = Self::unwrap_out_max_len(ciphertext.len());
+        let padded_len = self.unwrap_out_max_len(ciphertext.len());
         if plaintext.len() < padded_len {
             return Err(SymmetricCipherError::OutputBufferTooSmall(padded_len));
         }
@@ -254,7 +314,6 @@ where
                 "a KWP ciphertext is 2 to 2^29 whole 8-byte semiblocks (SP 800-38F Table 1)",
             ));
         }
-        let perm = P::new(kek)?;
 
         // Step 1: n, the number of semiblocks in C.
         let n = ciphertext.len() / SEMIBLOCK_LEN;
@@ -267,7 +326,7 @@ where
         if n == 2 {
             let mut block: Secret<[u8; KW_BLOCK_LEN]> = Secret::new();
             block.copy_from_slice(ciphertext);
-            perm.decrypt_block(&mut block);
+            self.perm.decrypt_block(&mut block);
             let (halves, _) = block.as_chunks::<SEMIBLOCK_LEN>();
             *a = halves[0];
             r.copy_from_slice(&halves[1]);
@@ -275,7 +334,7 @@ where
             a.copy_from_slice(&ciphertext[..SEMIBLOCK_LEN]);
             r.copy_from_slice(&ciphertext[SEMIBLOCK_LEN..]);
             let (r, _) = r.as_chunks_mut::<SEMIBLOCK_LEN>();
-            w_inv(&perm, &mut a, r);
+            w_inv(self.perm, &mut a, r);
         }
 
         // Steps 4-8: every check is made, and the verdicts combined with `&` rather than `&&`, so
