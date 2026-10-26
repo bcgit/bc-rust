@@ -41,11 +41,15 @@
 //!   the same bytes: that is the caller's to prevent, which is why the constructor is in
 //!   [`hazmat`].
 
+#![no_std]
 #![forbid(unsafe_code)]
 #![forbid(missing_docs)]
 
+extern crate alloc;
+
 pub mod hazmat;
 
+use alloc::vec::Vec;
 use bouncycastle_core::errors::MACError;
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{Algorithm, MAC};
@@ -139,18 +143,14 @@ impl Poly1305Key {
         Self { r, r5, pad }
     }
 
-    // The worker owns its copy of the key's words: the key is consumed by its one worker, so
-    // there is nothing for the worker to borrow. It is copied from `&self` rather than moved
-    // out, so this key's own `Secret`s are zeroized as it drops here.
-
     /// Consumes the key into the worker that computes the tag of its one message.
     pub fn into_generator(self) -> Poly1305 {
-        Poly1305::from_key(&self)
+        Poly1305::from_key(self)
     }
 
     /// Consumes the key into the worker that checks the tag of its one message.
     pub fn into_verifier(self) -> Poly1305 {
-        Poly1305::from_key(&self)
+        Poly1305::from_key(self)
     }
 }
 
@@ -167,11 +167,9 @@ impl Poly1305Key {
 /// The implementation has no secret-dependent branches or memory indices. Multiplication
 /// must have operand-independent timing on the target processor for constant-time execution.
 pub struct Poly1305 {
-    r: Secret<[u64; 5]>,
-    /// `5 * r[1..5]`, the multipliers of the product terms that wrap past 2^130; see
-    /// `process_block`. Computed once per key rather than per block.
-    r5: Secret<[u64; 4]>,
-    pad: Secret<[u32; 4]>,
+    // The key the worker was made from, moved in: a key makes one worker, so there is nothing to
+    // borrow it from.
+    key: Poly1305Key,
     h: Secret<[u64; 5]>,
     /// `process_block`'s product accumulator: a function of `h` and `r`, so kept in a `Secret`
     /// that lives with the instance rather than being re-allocated and zeroized every block.
@@ -187,16 +185,8 @@ impl Algorithm for Poly1305 {
 
 impl Poly1305 {
     /// A fresh message under `key`.
-    fn from_key(key: &Poly1305Key) -> Self {
-        Self {
-            r: key.r.clone(),
-            r5: key.r5.clone(),
-            pad: key.pad.clone(),
-            h: Secret::new(),
-            product: Secret::new(),
-            buffer: Secret::new(),
-            buffered: 0,
-        }
+    fn from_key(key: Poly1305Key) -> Self {
+        Self { key, h: Secret::new(), product: Secret::new(), buffer: Secret::new(), buffered: 0 }
     }
 
     fn process_block(&mut self) {
@@ -221,10 +211,10 @@ impl Poly1305 {
             for j in 0..5 {
                 let index = i + j;
                 if index < 5 {
-                    product[index] += self.h[i] * self.r[j];
+                    product[index] += self.h[i] * self.key.r[j];
                 } else {
                     // index >= 5 implies j >= 1. The same value as `5 * h[i] * r[j]`.
-                    product[index - 5] += self.h[i] * self.r5[j - 1];
+                    product[index - 5] += self.h[i] * self.key.r5[j - 1];
                 }
             }
         }
@@ -275,7 +265,7 @@ impl Poly1305 {
         words[3] = ((self.h[3] >> 18) | (self.h[4] << 8)) & 0xffffffff;
         let mut tag = [0u8; TAG_LEN];
         for i in 0..4 {
-            words[i] += u64::from(self.pad[i]);
+            words[i] += u64::from(self.key.pad[i]);
             if i != 0 {
                 words[i] += words[i - 1] >> 32;
             }
