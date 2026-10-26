@@ -22,6 +22,7 @@
 //! * [AES_CTR](crate::ctr)
 //! * [AES_GCM](crate::gcm)
 //! * [AES_GMAC](crate::gmac), a nonce-based MAC rather than a cipher
+//! * [AES_KW and AES_KWP](crate::kw), key wraps rather than ciphers
 //!
 //! Each mode is used through a mode-bound key object such as [`AES256Key<GCM>`](AES256Key),
 //! which validates and expands the material once and hands out the mode's encryptors and
@@ -29,7 +30,6 @@
 //!
 //! AES in ECB mode, [`AES_ECB_128`](hazmat::AES_ECB_128) and friends, is under [`hazmat`] because
 //! it is a building block for other modes, not itself a confidentiality mode for data.
-//! * [AES_KW and AES_KWP](crate::kw)
 //!
 //! # Design
 //!
