@@ -40,16 +40,18 @@
 //! let state = <CBC<Blocks> as Mode<ToyBlockCipher>>::key_state(ToyBlockCipher::new(&key).unwrap());
 //! let mut rng = HashDRBG_SHA512::new_from_os();
 //!
-//! // 48 bytes: three whole blocks. A length that is not a multiple of 16 would not compile.
-//! let plaintext: [u8; 48] = *b"The quick brown fox jumps over the lazy dog. OK!";
+//! // Three whole blocks: the workers take `&mut [[u8; 16]]`, so a partial block cannot be
+//! // expressed.
+//! let plaintext: [[u8; 16]; 3] =
+//!     [*b"The quick brown ", *b"fox jumps over t", *b"he lazy dog. OK!"];
 //!
 //! // In place, under a freshly drawn IV, which is returned.
 //! let mut data = plaintext;
 //! let (mut enc, iv) = CBC::<Blocks>::encrypt_init(&state, &mut rng).expect("iv draw");
-//! enc.do_encrypt_inplace(&mut data).expect("encryption");
+//! enc.do_encrypt_blocks_inplace(&mut data).expect("encryption");
 //! assert_ne!(data, plaintext);
 //!
-//! CBC::<Blocks>::decrypt_init(&state, &iv).do_decrypt_inplace(&mut data).expect("decryption");
+//! CBC::<Blocks>::decrypt_init(&state, &iv).do_decrypt_blocks_inplace(&mut data).expect("decryption");
 //! assert_eq!(data, plaintext);
 //! ```
 //!
@@ -71,16 +73,16 @@
 //!
 //! let (mut encryptor, iv) =
 //!     CBC::<Blocks>::encrypt_init(&state, &mut HashDRBG_SHA512::new_from_os()).expect("iv draw");
-//! let mut first = [0xAAu8; 16];
-//! let mut rest = [0xBBu8; 32];
-//! encryptor.do_encrypt_inplace(&mut first).expect("block 1");
-//! encryptor.do_encrypt_inplace(&mut rest).expect("blocks 2-3");
+//! let mut first = [[0xAAu8; 16]];
+//! let mut rest = [[0xBBu8; 16]; 2];
+//! encryptor.do_encrypt_blocks_inplace(&mut first).expect("block 1");
+//! encryptor.do_encrypt_blocks_inplace(&mut rest).expect("blocks 2-3");
 //!
 //! let mut decryptor = CBC::<Blocks>::decrypt_init(&state, &iv);
-//! decryptor.do_decrypt_inplace(&mut first).unwrap();
-//! decryptor.do_decrypt_inplace(&mut rest).unwrap();
-//! assert_eq!(first, [0xAAu8; 16]);
-//! assert_eq!(rest, [0xBBu8; 32]);
+//! decryptor.do_decrypt_blocks_inplace(&mut first).unwrap();
+//! decryptor.do_decrypt_blocks_inplace(&mut rest).unwrap();
+//! assert_eq!(first, [[0xAAu8; 16]]);
+//! assert_eq!(rest, [[0xBBu8; 16]; 2]);
 //! ```
 //!
 //! # Suspending and resuming execution
@@ -135,7 +137,6 @@ pub struct CBC<X>(core::marker::PhantomData<X>);
 impl<P: Clone + ModeNames, X> Mode<P> for CBC<X> {
     type KeyState = P;
     const KEY_TYPE: KeyType = KeyType::SymmetricCipherKey;
-    const ALG_NAME: &'static str = P::CBC_ALG_NAME;
 
     fn key_state(perm: P) -> Self::KeyState {
         perm
@@ -346,7 +347,7 @@ impl<'k, P, const BLOCK_LEN: usize> BlockCipherEncryptor<BLOCK_LEN, BLOCK_LEN>
 where
     P: BlockPermutation<BLOCK_LEN> + ModeNames,
 {
-    /// The implementor hook (the flat `do_encrypt_inplace` is provided over it).
+    /// The implementor hook.
     ///
     /// Strictly serial: `Cj` is the input to block `j + 1`, so there is no pair path here. See the
     /// module docs. Never fails: CBC has no per-IV data limit.
@@ -366,7 +367,7 @@ impl<'k, P, const BLOCK_LEN: usize> BlockCipherDecryptor<BLOCK_LEN, BLOCK_LEN>
 where
     P: BlockPermutation<BLOCK_LEN> + ModeNames,
 {
-    /// The implementor hook (the flat `do_decrypt_inplace` is provided over it).
+    /// The implementor hook.
     ///
     /// Walks the input in fours through `decrypt_4blocks`, then pairs through `decrypt_2blocks`,
     /// then the at-most-one block left over: Sec 6.2's parallelism, in the units the permutation

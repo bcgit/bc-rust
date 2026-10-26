@@ -25,10 +25,8 @@ const BLOCK_LIMIT: u64 = 1 << 32;
 /// [`Secret`], zeroized on drop, and a [`ChaCha20KeyStream`] borrows them rather than copying them.
 ///
 /// # 🚨 Security Considerations 🚨
-/// [`new`](Self::new) checks the material's type, length and strength but not its algorithm
-/// binding: that is the key object's, which checks it against its own name. Material bound to
-/// ChaCha20-Poly1305 is accepted here, and a keystream over it under that key's nonces is the
-/// AEAD's own keystream; see [`ChaCha20KeyStream`].
+/// The material of a ChaCha20-Poly1305 key makes the same state, and a keystream over it under
+/// that key's nonces is the AEAD's own keystream; see [`ChaCha20KeyStream`].
 #[derive(Clone)]
 pub struct ChaCha20KeyState {
     key: Secret<[u32; 8]>,

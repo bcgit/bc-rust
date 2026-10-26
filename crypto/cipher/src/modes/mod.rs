@@ -40,11 +40,11 @@
 //! CBC, CFB, CFB8 and CTR all generate their own init data: an IV for the first three, a nonce for
 //! CTR, which is shorter than a block because the rest of the counter block is the counter. ECB has
 //! none at all (`INIT_DATA_LEN = 0`) and is the raw permutation applied block by block, which is
-//! why it lives under [`hazmat`] -- see [`hazmat::Ecb`] and
+//! why it lives under [`hazmat`] -- see [`hazmat::ecb::Ecb`] and
 //! [Choosing between the modes](#choosing-between-the-modes).
 //!
 //! Each mode is also a **mode type** -- [`CBC`], [`CCM`], [`CCM_Packet`], [`CFB`], [`CFB8`],
-//! [`CTR`], [`GCM`], [`hazmat::ECB`], and the MACs [`CMAC`] and [`GMAC`] -- the `M` a mode-bound
+//! [`CTR`], [`GCM`], [`hazmat::ecb::ECB`], and the MACs [`CMAC`] and [`GMAC`] -- the `M` a mode-bound
 //! key such as `bouncycastle_aes::AES128Key<M>` is parameterised by. The mode type implements the
 //! hazmat mode traits of [`bouncycastle_core::hazmat`], which is how a key hands out the mode's
 //! encryptors and decryptors through the role traits of `bouncycastle_core::symmetric_key`; a
@@ -164,7 +164,6 @@ pub mod cfb8;
 pub mod cmac;
 pub mod ctr;
 pub mod gcm;
-mod ghash;
 pub mod gmac;
 pub mod hazmat;
 mod iv;
@@ -188,13 +187,9 @@ pub use gmac::{GMAC, Gmac};
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Blocks;
 
-/// The [`Algorithm::ALG_NAME`] each mode reports when built on `Self`.
+/// A table of algorithm names used to populate [`Algorithm`] for each Mode-Permutation-Size combination.
 ///
-/// A mode over a permutation is a different algorithm from the permutation -- AES-128 in CBC mode
-/// is `"AES_CBC_128"`, not `"AES-128"` -- and `&'static str`s cannot be concatenated in a `const`,
-/// so the permutation names the modes built on it, as a hash names its HMAC through
-/// `HMACParams::HMAC_ALG_NAME`. There are no defaults: a permutation that forgot one would
-/// otherwise report its own name for that mode.
+/// For permutations that do not implement all modes, simply leave the NAME for that mode as the empty-string.
 pub trait ModeNames {
     /// Reported by [`Cbc`].
     const CBC_ALG_NAME: &'static str;
@@ -206,9 +201,9 @@ pub trait ModeNames {
     const CFB8_ALG_NAME: &'static str;
     /// Reported by [`Cmac`].
     const CMAC_ALG_NAME: &'static str;
-    /// Reported by [`Ctr`], through its keystream [`hazmat::CtrKeyStream`].
+    /// Reported by [`Ctr`], through its keystream.
     const CTR_ALG_NAME: &'static str;
-    /// Reported by [`hazmat::Ecb`].
+    /// Reported by [`hazmat::ecb::Ecb`].
     const ECB_ALG_NAME: &'static str;
     /// Reported by [`Gcm`].
     const GCM_ALG_NAME: &'static str;

@@ -8,8 +8,9 @@
 //! ACVP set. (That is not hypothetical: a deliberately little-endian counter was checked against
 //! the ACVP suite while these tests were written, and it passed.)
 //!
-//! `ctr_tests.rs` covers the increment against the raw permutation, which is sound because that
-//! permutation is itself ACVP-validated, but it is our own code on both sides of the comparison.
+//! `crypto/cipher/tests/modes/ctr_tests.rs` covers the increment against the raw permutation,
+//! which is sound because that permutation is itself ACVP-validated, but it is our own code on both
+//! sides of the comparison.
 //! These vectors close that gap with an **independent implementation**: the ciphertexts below were
 //! produced by OpenSSL 3.0.13, following the same convention the SM3 and HMAC suites use for
 //! openssl-sourced values. They span five counter blocks, so they pin the increment end to end,

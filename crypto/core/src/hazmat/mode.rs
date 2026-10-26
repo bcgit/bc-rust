@@ -36,17 +36,13 @@ use crate::traits::{
 pub trait Mode<P> {
     /// What the mode keeps per key: the permutation plus anything derived from it once. A mode
     /// with nothing to derive sets `type KeyState = P`. Sensitive, and held so that it is zeroized
-    /// on drop as the schedule it contains is.
+    /// on drop as the schedule it contains is. A state that implements `PartialEq`, which gives the
+    /// key object its equality, must compare in constant time for the same reason.
     type KeyState: Clone;
 
     /// The [`KeyType`] a key for this mode must carry: [`KeyType::SymmetricCipherKey`] for a
     /// cipher mode, [`KeyType::MACKey`] for a MAC mode. The key's constructor checks it.
     const KEY_TYPE: KeyType;
-
-    /// The [`Algorithm::ALG_NAME`](crate::traits::Algorithm::ALG_NAME) of this mode over this
-    /// permutation, `"AES_GCM_128"` for instance. The key's constructor checks the material's
-    /// algorithm binding against it, so a key bound to one mode is refused by every other.
-    const ALG_NAME: &'static str;
 
     /// Builds the per-key state from an already-keyed permutation.
     fn key_state(perm: P) -> Self::KeyState;

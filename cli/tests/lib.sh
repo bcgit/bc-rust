@@ -119,6 +119,27 @@ flip_hex() {
     printf '%s%s%s' "${hex:0:$((2 * idx))}" "$byte" "${hex:$((2 * idx + 2))}"
 }
 
+# `xor_hex A B` prints the XOR of two equal-length hex strings, as hex.
+xor_hex() {
+    local a=$1 b=$2 out='' i
+    for ((i = 0; i < ${#a}; i += 2)); do
+        out+=$(printf '%02x' $((0x${a:i:2} ^ 0x${b:i:2})))
+    done
+    printf '%s' "$out"
+}
+
+# `cbc_pkcs7_block KEY PREV` prints, as hex, the CBC ciphertext block that a full block of PKCS7
+# padding (sixteen 0x10 bytes) encrypts to under KEY (hex) after the ciphertext block PREV (hex):
+# E_K(PREV xor 10..10), computed with the ECB command of KEY's length. Appending it to an unpadded
+# known-answer ciphertext whose plaintext is block-aligned gives the PKCS7 ciphertext of the same
+# plaintext, which is how the CBC commands now frame it.
+cbc_pkcs7_block() {
+    local key=$1 prev=$2
+    unhex "$(xor_hex "$prev" 10101010101010101010101010101010)" \
+        | "$BC_RUST" "aes$((${#key} * 4))-ecb" -d encrypt --key "$key" \
+        | "$BC_RUST" hex-encode
+}
+
 # `hex_out CMD...` runs CMD and prints its hex output as one line: `-x` output ends in a newline,
 # which is dropped here.
 hex_out() {

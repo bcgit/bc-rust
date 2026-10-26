@@ -98,7 +98,6 @@ where
 {
     type KeyState = CmacKeyState<P, BLOCK_LEN>;
     const KEY_TYPE: KeyType = KeyType::MACKey;
-    const ALG_NAME: &'static str = P::CMAC_ALG_NAME;
 
     fn key_state(perm: P) -> Self::KeyState {
         CmacKeyState::new(perm)
@@ -129,6 +128,16 @@ pub struct CmacKeyState<P, const BLOCK_LEN: usize> {
     /// Subkey `K2` (Sec 6.1 step 3), applied to a padded final block.
     k2: Secret<[u8; BLOCK_LEN]>,
 }
+
+// All three fields are compared, joined with `&` rather than `&&` so that the time taken does not
+// say which of them differed; see `GcmKeyState` for the expectation on `P`.
+impl<P: PartialEq, const BLOCK_LEN: usize> PartialEq for CmacKeyState<P, BLOCK_LEN> {
+    fn eq(&self, other: &Self) -> bool {
+        (self.perm == other.perm) & (self.k1 == other.k1) & (self.k2 == other.k2)
+    }
+}
+
+impl<P: Eq, const BLOCK_LEN: usize> Eq for CmacKeyState<P, BLOCK_LEN> {}
 
 impl<P, const BLOCK_LEN: usize> CmacKeyState<P, BLOCK_LEN> {
     /// The last byte of `R_b` (Sec 5.3): `R_128 = 0^120 || 10000111` and `R_64 = 0^59 || 11011`,

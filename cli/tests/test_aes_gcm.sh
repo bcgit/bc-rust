@@ -179,9 +179,9 @@ test_decrypt_input_shorter_than_the_nonce_is_rejected() {
     local len
     for len in 0 1 11; do
         rng "$len" >"$TMP/short"
-        expect_fail "$len bytes cannot hold a 12-byte nonce" \
+        expect_fail "$len bytes cannot hold a 12-byte IV" \
             "$BC_RUST" aes128-gcm -d decrypt --key-file "$TMP/key" <"$TMP/short"
-        assert_stderr_has "12-byte nonce"
+        assert_stderr_has "12-byte IV"
     done
 }
 

@@ -16,7 +16,7 @@ pub struct TestFrameworkSymmetricCipher {
     /// granularity the pair accepts. 1 (the default) means every length round-trips. A larger value
     /// -- the block length, for a `PaddedBlockCipherEncryptor` over `NoPadding` -- means only
     /// multiples of it round-trip, and every other length must be *rejected* by `do_encrypt_final`
-    /// / `encrypt_out` with a `PaddingError`, which the test then asserts instead.
+    /// / `encrypt_out` with `DataNotBlockAligned`, which the test then asserts instead.
     pub required_alignment: usize,
     /// For [`test_key`](Self::test_key): the one message length
     /// the pair's streaming methods accept, if they accept only one. `None` (the default) means
@@ -68,14 +68,17 @@ impl TestFrameworkSymmetricCipher {
             if !len.is_multiple_of(align) {
                 let mut ct = vec![0u8; encrypt_out_len(len) + FINAL_LEN];
                 match key.encrypt_out(rng, msg, &mut ct) {
-                    Err(SymmetricCipherError::PaddingError(_)) => {}
+                    Err(SymmetricCipherError::DataNotBlockAligned) => {}
                     other => panic!("len {len} is not aligned and must be refused, got {other:?}"),
                 }
                 let (mut enc, _) = key.create_encryptor(rng).unwrap();
                 let mut buf = vec![0u8; enc.do_encrypt_out_len(len)];
                 enc.do_encrypt_out(msg, &mut buf).unwrap();
                 assert!(
-                    matches!(enc.do_encrypt_final(), Err(SymmetricCipherError::PaddingError(_))),
+                    matches!(
+                        enc.do_encrypt_final(),
+                        Err(SymmetricCipherError::DataNotBlockAligned)
+                    ),
                     "len {len}: streaming do_encrypt_final must refuse an unaligned message"
                 );
                 continue;

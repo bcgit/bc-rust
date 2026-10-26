@@ -100,7 +100,9 @@ fn run_case<const KEY_LEN: usize, const TAG_LEN: usize, K>(
         assert_eq!(got_tag, tag, "tcId {tc_id}: tag mismatch");
     }
 
-    let mut plaintext = vec![0u8; expected_ct.len()];
+    // Pre-filled with a non-zero byte, so a buffer the decryptor never wrote is not mistaken for
+    // one it zeroized.
+    let mut plaintext = vec![0xEEu8; expected_ct.len()];
     match key.decrypt_detached_out(&iv, aad, expected_ct, &tag, &mut plaintext) {
         Ok(n) => {
             assert!(valid, "tcId {tc_id}: an invalid vector decrypted and verified anyway");

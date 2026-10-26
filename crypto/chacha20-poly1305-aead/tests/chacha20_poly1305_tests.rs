@@ -1,3 +1,4 @@
+use bouncycastle_chacha20::ChaCha20;
 use bouncycastle_chacha20_poly1305_aead::{
     ChaCha20_Poly1305, ChaCha20Poly1305Key, MAX_MESSAGE_LEN,
 };
@@ -35,11 +36,20 @@ fn core_aead_and_symmetric_contracts() {
     TestFrameworkAEADTaggedLayout::new().test_key::<32, 12, 16, 16, _>(&key);
 }
 
-/// The key's construction suite: the type, binding and strength policy of `from_key_material`.
+/// The key's construction suite: the type and strength policy of `from_key_material`.
 #[test]
 fn the_key_enforces_the_material_policy() {
     TestFrameworkFromKeyMaterial::new()
         .test::<32, ChaCha20Poly1305Key>(Enc::ALG_NAME, SecurityStrength::_256bit);
+}
+
+/// Both directions of each cipher report one name, and the AEAD's is not the keystream's.
+#[test]
+fn the_two_algorithms_have_distinct_names() {
+    assert_eq!(Enc::ALG_NAME, "ChaCha20-Poly1305");
+    assert_eq!(Dec::ALG_NAME, Enc::ALG_NAME);
+    assert_eq!(ChaCha20::<'static, Encrypting>::ALG_NAME, "ChaCha20");
+    assert_eq!(ChaCha20::<'static, Decrypting>::ALG_NAME, "ChaCha20");
 }
 
 /// RFC 8439 Sec 2.8: "P_MAX (maximum size of the plaintext) is 274,877,906,880 bytes".

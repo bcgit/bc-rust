@@ -72,11 +72,11 @@ pub mod hazmat;
 use bouncycastle_cipher::stream::StreamCipher;
 use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::errors::SymmetricCipherError;
-use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
+use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::symmetric_key::{
     FromKeyMaterial, SymmetricDecryptionKey, SymmetricEncryptionKey,
 };
-use bouncycastle_core::traits::{Algorithm, RNG};
+use bouncycastle_core::traits::RNG;
 use hazmat::{ChaCha20KeyState, ChaCha20KeyStream};
 
 /// Key length in bytes.
@@ -95,9 +95,8 @@ pub type ChaCha20<'k, Dir> = StreamCipher<ChaCha20KeyStream<'k>, Dir, NONCE_LEN,
 
 /// A ChaCha20 key: the 256-bit key of RFC 8439 Sec 2.3, validated once, from which the stream
 /// cipher for each message is made. Built through [`FromKeyMaterial`] from material tagged
-/// [`KeyType::SymmetricCipherKey`], unbound or bound to ChaCha20's [`Algorithm::ALG_NAME`], of
-/// 256-bit strength; material bound to ChaCha20-Poly1305 is refused. The key words live in a
-/// `Secret`, zeroized on drop; there is no `Debug` and no way to read them back.
+/// [`KeyType::SymmetricCipherKey`] of 256-bit strength. The key words live in a `Secret`,
+/// zeroized on drop; there is no `Debug` and no way to read them back.
 #[derive(Clone)]
 pub struct ChaCha20Key {
     state: ChaCha20KeyState,
@@ -107,12 +106,8 @@ impl FromKeyMaterial<KEY_LEN> for ChaCha20Key {
     const KEY_TYPE: KeyType = KeyType::SymmetricCipherKey;
 
     /// # Errors
-    /// * [`KeyMaterialError::InvalidKeyType`](bouncycastle_core::errors::KeyMaterialError::InvalidKeyType)
-    ///   if the key is bound to another algorithm (`KeyMaterialTrait::set_algorithm`), or is not
-    ///   a `SymmetricCipherKey`.
-    /// * As [`ChaCha20KeyState::new`] otherwise.
+    /// As [`ChaCha20KeyState::new`].
     fn from_key_material(key: &KeyMaterial<KEY_LEN>) -> Result<Self, SymmetricCipherError> {
-        key.check_algorithm(ChaCha20KeyStream::ALG_NAME)?;
         Ok(Self { state: ChaCha20KeyState::new(key)? })
     }
 }

@@ -33,7 +33,7 @@
 //! nonce is drawn from the OS-backed DRBG for exactly that reason, and there is no way to supply
 //! one.
 
-use crate::helpers::block_mode_helpers::{CipherDirection, load_key_object};
+use crate::helpers::block_mode_helpers::{CipherDirection, load_iv, load_key_object};
 use crate::helpers::stream_mode_helpers::run_stream_mode;
 use bouncycastle::aes::CTR_NONCE_LEN;
 use bouncycastle::aes::{AES128Key, AES192Key, AES256Key};
@@ -45,11 +45,14 @@ pub(crate) fn aes128_ctr_cmd(
     action: &CipherDirection,
     key: &Option<String>,
     key_file: &Option<String>,
+    iv: &Option<String>,
+    iv_file: &Option<String>,
     output_hex: bool,
 ) {
     run::<_, 16>(
         action,
         &load_key_object::<AES128Key<CTR<CTR_NONCE_LEN>>, 16>(key, key_file, "AES-128"),
+        load_iv::<CTR_NONCE_LEN>(iv, iv_file),
         output_hex,
     );
 }
@@ -58,11 +61,14 @@ pub(crate) fn aes192_ctr_cmd(
     action: &CipherDirection,
     key: &Option<String>,
     key_file: &Option<String>,
+    iv: &Option<String>,
+    iv_file: &Option<String>,
     output_hex: bool,
 ) {
     run::<_, 24>(
         action,
         &load_key_object::<AES192Key<CTR<CTR_NONCE_LEN>>, 24>(key, key_file, "AES-192"),
+        load_iv::<CTR_NONCE_LEN>(iv, iv_file),
         output_hex,
     );
 }
@@ -71,22 +77,29 @@ pub(crate) fn aes256_ctr_cmd(
     action: &CipherDirection,
     key: &Option<String>,
     key_file: &Option<String>,
+    iv: &Option<String>,
+    iv_file: &Option<String>,
     output_hex: bool,
 ) {
     run::<_, 32>(
         action,
         &load_key_object::<AES256Key<CTR<CTR_NONCE_LEN>>, 32>(key, key_file, "AES-256"),
+        load_iv::<CTR_NONCE_LEN>(iv, iv_file),
         output_hex,
     );
 }
 
 /// Dispatches to the shared streaming loops with `Ctr` filled in as the mode.
-fn run<'k, K, const KEY_LEN: usize>(action: &CipherDirection, key: &'k K, output_hex: bool)
-where
+fn run<'k, K, const KEY_LEN: usize>(
+    action: &CipherDirection,
+    key: &'k K,
+    iv: Option<[u8; CTR_NONCE_LEN]>,
+    output_hex: bool,
+) where
     K: SymmetricEncryptionKey<KEY_LEN, CTR_NONCE_LEN, 0>
         + SymmetricDecryptionKey<KEY_LEN, CTR_NONCE_LEN, 0>,
     K::Encryptor<'k>: StreamCipherEncryptor<CTR_NONCE_LEN>,
     K::Decryptor<'k>: StreamCipherDecryptor<CTR_NONCE_LEN>,
 {
-    run_stream_mode::<K, KEY_LEN, CTR_NONCE_LEN>(action, key, output_hex)
+    run_stream_mode::<K, KEY_LEN, CTR_NONCE_LEN>(action, key, iv, output_hex)
 }

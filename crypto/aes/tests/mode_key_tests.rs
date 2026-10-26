@@ -7,7 +7,7 @@
 
 use bouncycastle_aes::hazmat::{AES128Internal, AES256Internal};
 use bouncycastle_aes::{AES128Key, AES256Key};
-use bouncycastle_cipher::modes::hazmat::ECB;
+use bouncycastle_cipher::modes::hazmat::ecb::ECB;
 use bouncycastle_cipher::modes::{Blocks, CBC, CCM_Packet, CFB, CFB8, CTR, ModeNames};
 use bouncycastle_cipher::padding::{NoPadding, PKCS7};
 use bouncycastle_core::hazmat::{EcbEncryptionKey, Mode};
@@ -136,7 +136,7 @@ fn ecb_keys_take_no_init_data() {
     let key = key128::<ECB<Blocks>>();
     let mut padded_hello = *b"hello\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b";
     let mut enc = key.create_encryptor();
-    enc.do_encrypt_inplace(&mut padded_hello).unwrap();
+    enc.do_encrypt_blocks_inplace(core::slice::from_mut(&mut padded_hello)).unwrap();
     let mut again = *b"hello\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b\x0b";
     assert_eq!(key.encrypt_inplace(&mut again).unwrap(), 16);
     assert_eq!(again, padded_hello, "the worker and the one-shot are the same codebook");

@@ -193,11 +193,15 @@ fn tampered_final_block_is_rejected() {
         let (n, iv) = key.encrypt_out(&mut os_rng(), &msg(len), &mut ct).unwrap();
         // flipping the low bit of the final byte corrupts the PKCS7 length byte
         ct[n - 1] ^= 0x01;
-        let mut out = vec![0u8; n];
+        // Pre-filled with a non-zero byte, so a buffer the decryptor never wrote is not mistaken
+        // for one it zeroized. At `B + 5` the first block has been decrypted into `out` by the
+        // time the padding fails, and `decrypt_out` must wipe it.
+        let mut out = vec![0xEEu8; n];
         match key.decrypt_out(&iv, &ct, &mut out) {
             Err(SymmetricCipherError::PaddingError(PaddingError::InvalidPadding)) => {}
             other => panic!("len {len}: expected InvalidPadding, got {other:?}"),
         }
+        assert!(out.iter().all(|&b| b == 0), "len {len}: a failed decrypt must zeroize `out`");
     }
 }
 
@@ -215,12 +219,12 @@ fn malformed_ciphertext_lengths_are_rejected() {
     // not a multiple of the block length
     assert!(matches!(
         key.decrypt_out(&iv, &[0u8; B + 1], &mut out),
-        Err(SymmetricCipherError::DecryptionFailed)
+        Err(SymmetricCipherError::DataNotBlockAligned)
     ));
     // streaming: partial trailing block at final
     let mut dec = key.create_decryptor(&iv);
     dec.do_decrypt_out(&[0u8; B + 3], &mut out).unwrap();
-    assert!(matches!(dec.do_decrypt_final(), Err(SymmetricCipherError::DecryptionFailed)));
+    assert!(matches!(dec.do_decrypt_final(), Err(SymmetricCipherError::DataNotBlockAligned)));
     // streaming: nothing fed at all
     let dec = key.create_decryptor(&iv);
     assert!(matches!(dec.do_decrypt_final(), Err(SymmetricCipherError::DecryptionFailed)));
@@ -303,7 +307,7 @@ fn no_padding_adds_nothing_to_aligned_data() {
     }
 }
 
-/// An unaligned message is refused with `PaddingNotPermitted`, from the one-shot and from a
+/// An unaligned message is refused with `DataNotBlockAligned`, from the one-shot and from a
 /// streaming `do_encrypt_final`, and nothing is written for the final block.
 #[test]
 fn no_padding_refuses_unaligned_data() {
@@ -314,7 +318,7 @@ fn no_padding_refuses_unaligned_data() {
         assert!(
             matches!(
                 key_np.encrypt_out(&mut os_rng(), &pt, &mut ct),
-                Err(SymmetricCipherError::PaddingError(PaddingError::PaddingNotPermitted))
+                Err(SymmetricCipherError::DataNotBlockAligned)
             ),
             "len {len}: one-shot must refuse an unaligned message"
         );
@@ -324,10 +328,7 @@ fn no_padding_refuses_unaligned_data() {
         let mut buf = vec![0u8; whole];
         assert_eq!(enc.do_encrypt_out(&pt, &mut buf).unwrap(), whole, "whole blocks still stream");
         assert!(
-            matches!(
-                enc.do_encrypt_final(),
-                Err(SymmetricCipherError::PaddingError(PaddingError::PaddingNotPermitted))
-            ),
+            matches!(enc.do_encrypt_final(), Err(SymmetricCipherError::DataNotBlockAligned)),
             "len {len}: do_encrypt_final must refuse the buffered partial block"
         );
     }
@@ -349,7 +350,7 @@ fn no_padding_decryptor_accepts_empty_and_rejects_unaligned() {
         assert!(
             matches!(
                 key_np.decrypt_out(&iv, &msg(len), &mut out),
-                Err(SymmetricCipherError::DecryptionFailed)
+                Err(SymmetricCipherError::DataNotBlockAligned)
             ),
             "len {len}: an unaligned ciphertext is malformed"
         );

@@ -158,7 +158,8 @@ impl<const BLOCK_LEN: usize> BlockCipherPadding<BLOCK_LEN> for PKCS7 {
 /// whole block as data. Since [`ALWAYS_PADS`](BlockCipherPadding::ALWAYS_PADS) is `false`, a
 /// [`PaddedBlockCipherEncryptor`] over it emits no final block for an aligned message and fails at
 /// `do_encrypt_final` for an unaligned one, and a [`PaddedBlockCipherDecryptor`] releases every
-/// block as data. The adapters thereby turn "the caller must supply whole blocks" into a checked
+/// block as data. Both adapters report an unaligned length as
+/// [`SymmetricCipherError::DataNotBlockAligned`](bouncycastle_core::errors::SymmetricCipherError::DataNotBlockAligned). The adapters thereby turn "the caller must supply whole blocks" into a checked
 /// error instead of a silent assumption, which is what this scheme is for: interoperating with
 /// formats that are defined on whole blocks (and, when used with ECB, with the raw block-by-block
 /// operation they specify) while keeping the arbitrary-length API shape.

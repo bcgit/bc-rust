@@ -6,10 +6,8 @@
 //! buffer and the call site. Validation and key expansion happen once, in the constructor, and
 //! every message under the key starts from the stored schedule (and, for GCM, the stored hash
 //! subkey, or for CMAC the stored subkeys), which the workers borrow rather than copy. Using one key under two modes is two
-//! `from_key_material` calls on two key types; the accidental version does not compile, and
-//! material bound to an algorithm (`KeyMaterialTrait::set_algorithm`) is accepted only by that
-//! mode's key. A MAC mode's key takes `KeyType::MACKey` material, a cipher mode's
-//! `KeyType::SymmetricCipherKey`.
+//! `from_key_material` calls on two key types; the accidental version does not compile. A MAC
+//! mode's key takes `KeyType::MACKey` material, a cipher mode's `KeyType::SymmetricCipherKey`.
 //! Which workers a key hands out is decided by its mode: the symmetric pair for the stream modes
 //! and the padded block modes (`CFB`, `CFB8`, `CTR`, `CBC<PKCS7>`, `ECB<PKCS7>`), the block pair
 //! for `CBC<Blocks>`, the `hazmat` ECB pair for `ECB<Blocks>`, the AEAD pairs for `GCM`, `CCM`
@@ -115,6 +113,20 @@ impl<P: AESParams, M: Mode<AESInternal<P>>> Clone for AESKey<P, M> {
     }
 }
 
+// Likewise for equality: two keys are equal when their mode states are, which every state over
+// `AESInternal` decides in constant time, so the comparison follows the material without
+// exposing it.
+impl<P: AESParams, M: Mode<AESInternal<P>>> PartialEq for AESKey<P, M>
+where
+    M::KeyState: PartialEq,
+{
+    fn eq(&self, other: &Self) -> bool {
+        self.state == other.state
+    }
+}
+
+impl<P: AESParams, M: Mode<AESInternal<P>>> Eq for AESKey<P, M> where M::KeyState: Eq {}
+
 /// The key-type check the mode asks for (`Mode::KEY_TYPE`), ahead of the permutation's own
 /// validation.
 fn check_key_type(
@@ -156,13 +168,11 @@ impl<M: Mode<AES128Internal>> FromKeyMaterial<16> for AES128Key<M> {
     ///
     /// # Errors
     /// * [`KeyMaterialError::InvalidKeyType`] if the key is not of [`Self::KEY_TYPE`]: the
-    ///   `SymmetricCipherKey` a cipher mode asks for, or the `MACKey` a MAC mode does; or if it
-    ///   is bound to an algorithm other than this mode's (`KeyMaterialTrait::set_algorithm`).
+    ///   `SymmetricCipherKey` a cipher mode asks for, or the `MACKey` a MAC mode does.
     /// * [`KeyMaterialError::InvalidLength`] if the key is not 16 bytes long.
     /// * [`KeyMaterialError::SecurityStrength`] if the key carries a strength below 128 bits.
     fn from_key_material(key: &KeyMaterial<16>) -> Result<Self, SymmetricCipherError> {
         check_key_type(key, M::KEY_TYPE)?;
-        key.check_algorithm(M::ALG_NAME)?;
         let perm = match M::KEY_TYPE {
             KeyType::SymmetricCipherKey => AES128Internal::new(key)?,
             _ => AES128Internal::new(&as_cipher_key(key)?)?,
@@ -178,7 +188,6 @@ impl<M: Mode<AES192Internal>> FromKeyMaterial<24> for AES192Key<M> {
     /// bytes and 192 bits.
     fn from_key_material(key: &KeyMaterial<24>) -> Result<Self, SymmetricCipherError> {
         check_key_type(key, M::KEY_TYPE)?;
-        key.check_algorithm(M::ALG_NAME)?;
         let perm = match M::KEY_TYPE {
             KeyType::SymmetricCipherKey => AES192Internal::new(key)?,
             _ => AES192Internal::new(&as_cipher_key(key)?)?,
@@ -194,7 +203,6 @@ impl<M: Mode<AES256Internal>> FromKeyMaterial<32> for AES256Key<M> {
     /// bytes and 256 bits.
     fn from_key_material(key: &KeyMaterial<32>) -> Result<Self, SymmetricCipherError> {
         check_key_type(key, M::KEY_TYPE)?;
-        key.check_algorithm(M::ALG_NAME)?;
         let perm = match M::KEY_TYPE {
             KeyType::SymmetricCipherKey => AES256Internal::new(key)?,
             _ => AES256Internal::new(&as_cipher_key(key)?)?,

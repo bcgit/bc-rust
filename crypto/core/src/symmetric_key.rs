@@ -1066,17 +1066,20 @@ pub trait BlockEncryptionKey<
 
     /// One-shot: encrypts `LEN` bytes, a whole number of blocks, in place under init data drawn
     /// from `rng`, and returns the number of bytes written with the init data. `LEN % BLOCK_LEN
-    /// == 0` is checked at compile time, as for [`BlockCipherEncryptor::do_encrypt_inplace`].
+    /// == 0` is checked at compile time, as for [`BlockCipherEncryptor::do_encrypt_blocks_inplace`].
     ///
     /// # Errors
     /// As [`create_encryptor`](Self::create_encryptor), or the encryptor's own refusals.
-    fn encrypt_inplace<const LEN: usize>(
+    fn encrypt_inplace(
         &self,
         rng: &mut dyn RNG,
-        data: &mut [u8; LEN],
+        data: &mut [u8],
     ) -> Result<(usize, [u8; INIT_DATA_LEN]), SymmetricCipherError> {
+        let (blocks, []) = data.as_chunks_mut::<BLOCK_LEN>() else {
+            return Err(SymmetricCipherError::DataNotBlockAligned);
+        };
         let (mut enc, init_data) = self.create_encryptor(rng)?;
-        let written = enc.do_encrypt_inplace(data)?;
+        let written = enc.do_encrypt_blocks_inplace(blocks)?;
         Ok((written, init_data))
     }
 }
@@ -1104,12 +1107,15 @@ pub trait BlockDecryptionKey<
     ///
     /// # Errors
     /// The decryptor's own refusals.
-    fn decrypt_inplace<const LEN: usize>(
+    fn decrypt_inplace(
         &self,
         init_data: &[u8; INIT_DATA_LEN],
-        data: &mut [u8; LEN],
+        data: &mut [u8],
     ) -> Result<usize, SymmetricCipherError> {
-        self.create_decryptor(init_data).do_decrypt_inplace(data)
+        let (blocks, []) = data.as_chunks_mut::<BLOCK_LEN>() else {
+            return Err(SymmetricCipherError::DataNotBlockAligned);
+        };
+        self.create_decryptor(init_data).do_decrypt_blocks_inplace(blocks)
     }
 }
 

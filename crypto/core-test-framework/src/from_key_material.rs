@@ -1,8 +1,7 @@
 //! Generic behaviour tests for the key constructors [`FromKeyMaterial`] and
-//! [`FromAnyKeyMaterial`]: the key-type, algorithm-binding and security-strength policy that the
-//! cipher and MAC suites used to check at every `do_*_init`, now checked once where the key is made.
+//! [`FromAnyKeyMaterial`]: the key-type and security-strength policy that the cipher and MAC
+//! suites used to check at every `do_*_init`, now checked once where the key is made.
 
-use crate::key_binding::{assert_refused, bound_elsewhere, bound_to};
 use crate::{DUMMY_SEED, FixedSeedRNG};
 use bouncycastle_core::errors::{KeyMaterialError, MACError, SymmetricCipherError};
 use bouncycastle_core::hazmat::do_hazardous_operations;
@@ -34,7 +33,6 @@ impl TestFrameworkFromKeyMaterial {
     /// Checks, in order:
     /// * material of the right type, unbound or bound to `alg_name`, is accepted;
     /// * material of the wrong [`KeyType`] is refused with [`KeyMaterialError::InvalidKeyType`];
-    /// * material bound to another algorithm is refused the same way;
     /// * the security-strength policy matches `max_strength`;
     /// * [`FromKeyMaterial::generate`] draws a key from an RNG of sufficient strength, tagged
     ///   [`FromKeyMaterial::KEY_TYPE`], and refuses one instantiated below the key's strength.
@@ -45,9 +43,9 @@ impl TestFrameworkFromKeyMaterial {
     ) {
         let key = KeyMaterial::<KEY_LEN>::from_bytes_as_type(&DUMMY_SEED[..KEY_LEN], K::KEY_TYPE)
             .unwrap();
-        K::from_key_material(&key).expect("material of the key's own type must be accepted");
-        K::from_key_material(&bound_to(&key, alg_name))
-            .expect("material bound to this algorithm must be accepted");
+        K::from_key_material(&key).unwrap_or_else(|e| {
+            panic!("{alg_name}: material of the key's own type must be accepted: {e:?}")
+        });
 
         // the wrong key type
         let other_type = match K::KEY_TYPE {
@@ -61,9 +59,6 @@ impl TestFrameworkFromKeyMaterial {
             Ok(_) => panic!("a key of the wrong KeyType must be refused"),
             Err(e) => panic!("a key of the wrong KeyType must be refused as InvalidKeyType: {e:?}"),
         }
-
-        // bound to another algorithm
-        assert_refused(K::from_key_material(&bound_elsewhere(&key)), "from_key_material");
 
         // security strengths too weak, and strong enough
         let mut key = key;

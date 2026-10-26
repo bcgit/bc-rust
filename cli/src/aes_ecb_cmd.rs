@@ -16,12 +16,12 @@
 //! `aes*-cbc` or `aes*-cfb` under separate authentication, or better an AEAD.
 
 use crate::helpers::block_mode_helpers::{
-    BLOCK_LEN, CipherDirection, decrypt_stream, encrypt_stream, load_key_object,
+    BLOCK_LEN, CipherDirection, decrypt_stream, encrypt_stream, load_key_object, start_encryptor,
 };
 use bouncycastle::aes::{AES128Key, AES192Key, AES256Key};
-use bouncycastle::cipher::modes::Blocks;
-use bouncycastle::cipher::modes::hazmat::ECB;
-use bouncycastle::core::hazmat::{EcbDecryptionKey, EcbEncryptionKey};
+use bouncycastle::cipher::modes::hazmat::ecb::ECB;
+use bouncycastle::cipher::padding::NoPadding;
+use bouncycastle::core::symmetric_key::{SymmetricDecryptionKey, SymmetricEncryptionKey};
 
 /// Names the mode in error messages.
 const MODE: &str = "ECB";
@@ -34,7 +34,7 @@ pub(crate) fn aes128_ecb_cmd(
 ) {
     run::<_, 16>(
         action,
-        &load_key_object::<AES128Key<ECB<Blocks>>, 16>(key, key_file, "AES-128"),
+        &load_key_object::<AES128Key<ECB<NoPadding>>, 16>(key, key_file, "AES-128"),
         output_hex,
     );
 }
@@ -47,7 +47,7 @@ pub(crate) fn aes192_ecb_cmd(
 ) {
     run::<_, 24>(
         action,
-        &load_key_object::<AES192Key<ECB<Blocks>>, 24>(key, key_file, "AES-192"),
+        &load_key_object::<AES192Key<ECB<NoPadding>>, 24>(key, key_file, "AES-192"),
         output_hex,
     );
 }
@@ -60,23 +60,29 @@ pub(crate) fn aes256_ecb_cmd(
 ) {
     run::<_, 32>(
         action,
-        &load_key_object::<AES256Key<ECB<Blocks>>, 32>(key, key_file, "AES-256"),
+        &load_key_object::<AES256Key<ECB<NoPadding>>, 32>(key, key_file, "AES-256"),
         output_hex,
     );
 }
 
-/// Dispatches to the shared streaming loops with `Ecb` filled in as the mode. `INIT_DATA_LEN` is 0,
-/// so the loops write and read no IV.
+/// Dispatches to the shared streaming loops under the key's ECB mode. `INIT_DATA_LEN` is 0, so
+/// the loops write and read no IV, and `NoPadding` makes them refuse a partial final block.
 fn run<K, const KEY_LEN: usize>(action: &CipherDirection, key: &K, output_hex: bool)
 where
-    K: EcbEncryptionKey<KEY_LEN, BLOCK_LEN> + EcbDecryptionKey<KEY_LEN, BLOCK_LEN>,
+    K: SymmetricEncryptionKey<KEY_LEN, 0, BLOCK_LEN>
+        + SymmetricDecryptionKey<KEY_LEN, 0, BLOCK_LEN>,
 {
     match action {
         CipherDirection::Encrypt => {
-            encrypt_stream::<_, 0>(key.create_encryptor(), &[], output_hex, MODE)
+            // ECB has no IV: the constructor's RNG draws nothing, and nothing is written.
+            let (enc, _) = start_encryptor(None, |rng| key.create_encryptor(rng));
+            encrypt_stream::<_, 0>(enc, None, output_hex, Some(MODE))
         }
-        CipherDirection::Decrypt => {
-            decrypt_stream::<_, 0>(|_| key.create_decryptor(), output_hex, MODE)
-        }
+        CipherDirection::Decrypt => decrypt_stream::<_, 0>(
+            None,
+            |no_iv| key.create_decryptor(no_iv),
+            output_hex,
+            Some(MODE),
+        ),
     }
 }

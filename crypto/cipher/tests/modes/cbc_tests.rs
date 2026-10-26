@@ -54,26 +54,6 @@ fn dec_blocks<const N: usize>(
     blocks
 }
 
-/// The flat streaming method `do_encrypt_inplace`, by value.
-fn enc_flat<const LEN: usize>(
-    enc: &mut impl BlockCipherEncryptor<TOY_LEN, TOY_LEN>,
-    plaintext: &[u8; LEN],
-) -> [u8; LEN] {
-    let mut data = *plaintext;
-    enc.do_encrypt_inplace(&mut data).unwrap();
-    data
-}
-
-/// The flat streaming method `do_decrypt_inplace`, by value.
-fn dec_flat<const LEN: usize>(
-    dec: &mut impl BlockCipherDecryptor<TOY_LEN, TOY_LEN>,
-    ciphertext: &[u8; LEN],
-) -> [u8; LEN] {
-    let mut data = *ciphertext;
-    dec.do_decrypt_inplace(&mut data).unwrap();
-    data
-}
-
 // ---- the toy itself, and the mode, against the shared frameworks -------------------------
 
 /// The toy must be a real permutation before any conclusion drawn from it is worth anything.
@@ -116,7 +96,7 @@ fn call_grouping_does_not_change_the_result() {
     // The same eight blocks, grouped every way that exercises a different code path.
     let (mut enc, _) = key.create_encryptor(&mut pinned_rng()).unwrap();
     let mut got = [[0u8; TOY_LEN]; 8];
-    let a = enc_flat(&mut enc, &plaintext[0]); // one block, flat
+    let a = enc_blocks(&mut enc, &[plaintext[0]])[0]; // N = 1
     let b = enc_blocks(&mut enc, &[plaintext[1], plaintext[2]]); // N = 2
     let c = enc_blocks(&mut enc, &[plaintext[3], plaintext[4], plaintext[5]]); // N = 3
     let d = enc_blocks(&mut enc, &[plaintext[6], plaintext[7]]); // N = 2
@@ -141,7 +121,7 @@ fn call_grouping_does_not_change_the_result() {
         while at < 8 {
             match grouping {
                 1 => {
-                    out[at] = dec_flat(&mut dec, &ct[at]);
+                    out[at] = dec_blocks(&mut dec, &[ct[at]])[0];
                 }
                 2 => {
                     let p = dec_blocks(&mut dec, &[ct[at], ct[at + 1]]);
@@ -199,8 +179,8 @@ fn the_pair_path_is_really_used() {
     // Decrypting one block at a time avoids the pair path, so it is correct even for this toy.
     let key = swapped_key();
     let mut dec = key.create_decryptor(&iv);
-    let p0 = dec_flat(&mut dec, &ct[0]);
-    let p1 = dec_flat(&mut dec, &ct[1]);
+    let p0 = dec_blocks(&mut dec, &[ct[0]])[0];
+    let p1 = dec_blocks(&mut dec, &[ct[1]])[0];
     assert_eq!([p0, p1], plaintext, "the single-block path must not pair");
 }
 
@@ -249,30 +229,7 @@ fn the_four_block_path_is_really_used() {
         "fewer than four must not batch"
     );
     assert_eq!(&dec_blocks(&mut dec, &second)[..], &plaintext[2..4]);
-    assert_eq!(dec_flat(&mut dec, &ct[4]), plaintext[4]);
-}
-
-/// The flat streaming method must agree with the block-shaped implementor hook.
-#[test]
-fn flat_streaming_agrees_with_the_block_hook() {
-    let key = cbc_key();
-    let plaintext = [[0x11u8; TOY_LEN], [0x22u8; TOY_LEN], [0x33u8; TOY_LEN]];
-    let flat_plaintext: [u8; 3 * TOY_LEN] = plaintext.as_flattened().try_into().unwrap();
-
-    let (mut enc, iv) = key.create_encryptor(&mut os_rng()).unwrap();
-    let flat_ct = enc_flat(&mut enc, &flat_plaintext);
-
-    let (mut enc, iv2) = key
-        .create_encryptor(&mut bouncycastle_core_test_framework::FixedSeedRNG::<TOY_LEN>::new(iv))
-        .unwrap();
-    assert_eq!(iv2, iv, "the pinned RNG should reproduce the IV");
-    let block_ct = enc_blocks(&mut enc, &plaintext);
-    assert_eq!(*block_ct.as_flattened(), flat_ct, "flat streaming must equal the block hook");
-
-    let mut dec = key.create_decryptor(&iv);
-    assert_eq!(dec_blocks(&mut dec, &block_ct), plaintext);
-    let mut dec = key.create_decryptor(&iv);
-    assert_eq!(dec_flat(&mut dec, &flat_ct), flat_plaintext);
+    assert_eq!(dec_blocks(&mut dec, &[ct[4]])[0], plaintext[4]);
 }
 
 // ---- SP 800-38A Appendix D error propagation ---------------------------------------------

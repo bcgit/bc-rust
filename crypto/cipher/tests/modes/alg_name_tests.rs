@@ -6,7 +6,7 @@
 
 mod common;
 
-use bouncycastle_cipher::modes::hazmat::{CtrKeyStream, ECB, Ecb};
+use bouncycastle_cipher::modes::hazmat::ecb::{ECB, Ecb};
 use bouncycastle_cipher::modes::{
     Blocks, CBC, CCM, CCM_Packet, CFB, CFB8, CTR, Cbc, CcmPacketDecryptor, CcmPacketEncryptor, Cfb,
     Cfb8, Cmac, Ctr, Gcm, Gmac, ModeNames,
@@ -56,7 +56,6 @@ fn each_mode_reports_its_own_name() {
     check::<Cfb<'_, Toy, Decrypting, 16>>(Toy::CFB_ALG_NAME);
     check::<Cfb8<'_, Toy, Encrypting, 16>>(Toy::CFB8_ALG_NAME);
     check::<Cfb8<'_, Toy, Decrypting, 16>>(Toy::CFB8_ALG_NAME);
-    check::<CtrKeyStream<'_, Toy, 16, 12>>(Toy::CTR_ALG_NAME);
     check::<Gcm<'_, Toy, Encrypting, 16>>(Toy::GCM_ALG_NAME);
     check::<Gcm<'_, Toy, Decrypting, 16>>(Toy::GCM_ALG_NAME);
     check::<CcmPacketEncryptor<'_, Toy, 16, 12, 16, 16, 32>>(Toy::CCM_ALG_NAME);
@@ -85,12 +84,10 @@ fn the_wrappers_forward_the_inner_name() {
     );
 }
 
-/// A mode type's key reports the mode's name and asks for a cipher key, whatever the padding or
-/// frame parameters.
+/// A mode type asks for a cipher key, whatever the padding or frame parameters.
 #[test]
-fn each_mode_type_reports_its_mode_name() {
+fn each_mode_type_asks_for_a_cipher_key() {
     fn check<M: Mode<Toy>>(name: &str) {
-        assert_eq!(M::ALG_NAME, name);
         assert_eq!(M::KEY_TYPE, KeyType::SymmetricCipherKey, "{name}");
     }
     check::<CBC<Blocks>>(Toy::CBC_ALG_NAME);

@@ -80,7 +80,6 @@ where
 {
     type KeyState = GcmKeyState<P>;
     const KEY_TYPE: KeyType = KeyType::MACKey;
-    const ALG_NAME: &'static str = P::GMAC_ALG_NAME;
 
     fn key_state(perm: P) -> Self::KeyState {
         GcmKeyState::new(perm)

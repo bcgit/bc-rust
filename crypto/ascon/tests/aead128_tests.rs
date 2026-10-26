@@ -89,6 +89,18 @@ fn aead_key(key: &[u8; 16]) -> AsconAEAD128Key {
     AsconAEAD128Key::from_key_material(&key_material(key)).expect("a valid key")
 }
 
+/// Equality follows the material: the same bytes compare equal, as does a clone, and different
+/// bytes do not. The key has no `Debug`, hence `assert!` over `==`.
+#[test]
+fn keys_compare_equal_exactly_when_their_material_does() {
+    let key = aead_key(&[0x42; 16]);
+    assert!(key == key.clone());
+    assert!(key == aead_key(&[0x42; 16]));
+    let mut last_byte_differs = [0x42; 16];
+    last_byte_differs[15] ^= 1;
+    assert!(key != aead_key(&last_byte_differs));
+}
+
 fn enc_oneshot(key: &[u8; 16], nonce: &[u8; 16], ad: &[u8], pt: &[u8]) -> Vec<u8> {
     let km = aead_key(key);
     let mut out = vec![0u8; Ascon_AEAD128::<Encrypting>::encrypt_out_len(pt.len())];
@@ -353,10 +365,15 @@ fn detached_final_rejects_wrong_tag() {
     let mut buf = vec![0u8; pt.len()];
     d.do_decrypt_out(&pt, &mut buf).unwrap();
     let wrong_tag = [0xFFu8; 16];
+    // The final decrypts the 16 held-back bytes into this buffer before it checks the tag, so it
+    // must zeroize them on failure. Pre-filled with a non-zero byte, so a buffer the decryptor
+    // never wrote is not mistaken for one it zeroized.
+    let mut final_buf = [0xEEu8; 16];
     assert!(matches!(
-        d.do_decrypt_final_detached_out(&wrong_tag, &mut [0u8; 16]),
+        d.do_decrypt_final_detached_out(&wrong_tag, &mut final_buf),
         Err(SymmetricCipherError::AEADTagCheckFailed)
     ));
+    assert_eq!(final_buf, [0u8; 16], "the held-back tail must not survive a wrong tag");
 }
 
 /* -------------------------------------------------------------------------- */
@@ -420,11 +437,12 @@ fn aead_tamper_leaves_no_plaintext_in_output_buffer() {
 fn aead_short_ciphertext_is_error() {
     let short = [0u8; 8]; // shorter than the 16-byte tag
     let km = aead_key(&KEY);
-    let mut out = [0u8; 16];
+    let mut out = [0xEEu8; 16];
     match km.decrypt_with_aad_out(&NONCE, &[], &short, &mut out) {
         Err(SymmetricCipherError::DecryptionFailed) => {}
         other => panic!("expected DecryptionFailed for short ciphertext, got {other:?}"),
     }
+    assert_eq!(out, [0u8; 16], "a failed decrypt must leave the output buffer zeroized");
 }
 
 /* -------------------------------------------------------------------------- */

@@ -2,8 +2,8 @@
 //!
 //! Requires `bc-test-data` to be cloned alongside this repository, i.e. at `../bc-test-data`
 //! relative to the root of this git project. If it is absent the test prints a warning and passes,
-//! matching the convention used by the ML-KEM, ML-DSA, `aes` and AES-CBC suites --
-//! `cargo test` must stay green for someone who has only cloned this repository.
+//! matching the other vector suites in this crate and the ML-KEM and ML-DSA ones -- `cargo test`
+//! must stay green for someone who has only cloned this repository.
 //!
 //! This is the CFB8 counterpart to `cfb_bc-test-data.rs` (AES-CFB128), `cbc_bc-test-data.rs`
 //! (AES-CBC) and `ecb_bc-test-data.rs` (AES-ECB, the raw permutation). `ACVP-AES-CFB1` is
@@ -26,7 +26,7 @@
 //! [`BlockPermutation::encrypt_4blocks`] and [`BlockPermutation::encrypt_2blocks`] -- the
 //! *forward* function, even on the decrypt side -- and through the single-byte path, with the
 //! shift register carried across calls at every alignment. So all of that is exercised against real
-//! vectors and not only against the toys in `cfb8_tests.rs`.
+//! vectors and not only against the toys in `crypto/cipher/tests/modes/cfb8_tests.rs`.
 //!
 //! The 6 MCT (Monte Carlo Test) groups are **not** implemented: their expected output is a
 //! `resultsArray` produced by a chained update rule defined in the ACVP AES specification rather

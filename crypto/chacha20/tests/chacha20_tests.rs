@@ -46,7 +46,7 @@ fn core_stream_and_symmetric_contracts() {
         .test::<12, 64, _>(|nonce| ChaCha20KeyStream::start_at(&state, nonce, 0));
 }
 
-/// The key's construction suite: the type, binding and strength policy of `from_key_material`.
+/// The key's construction suite: the type and strength policy of `from_key_material`.
 #[test]
 fn the_key_enforces_the_material_policy() {
     TestFrameworkFromKeyMaterial::new()
@@ -114,20 +114,6 @@ fn start_at_matches_the_key_after_discarding_blocks() {
     from_key.do_decrypt_inplace(&mut a).unwrap();
     at(&state, &nonce, 2).do_encrypt_inplace(&mut b).unwrap();
     assert_eq!(a, b);
-}
-
-/// The key object refuses material bound to another algorithm (the construction suite checks
-/// that too); the hazmat key state leaves the check to the key object above it, so it accepts
-/// such material, which is how the ChaCha20-Poly1305 key builds its keystream.
-#[test]
-fn only_the_key_object_checks_the_algorithm_binding() {
-    let mut bound = material();
-    bound.set_algorithm(Some("ChaCha20-Poly1305")).unwrap();
-    assert!(matches!(
-        ChaCha20Key::from_key_material(&bound),
-        Err(SymmetricCipherError::KeyMaterialError(KeyMaterialError::InvalidKeyType(_)))
-    ));
-    assert!(ChaCha20KeyState::new(&bound).is_ok());
 }
 
 #[test]

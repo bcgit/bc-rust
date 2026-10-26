@@ -5,6 +5,7 @@ Possible additional modes or features to be added to this crate:
   a bit string whose length need not be a multiple of 8, which this crate has no type for.
 * **OFB**, the one remaining mode of SP 800-38A. It is a keystream mode and, like CFB,
   CFB8 and CTR, would implement [`StreamCipherEncryptor`] / [`StreamCipherDecryptor`].
+* **AES-XTS**: https://csrc.nist.gov/pubs/sp/800/38/e/final used primarily in full-disk-encryption systems.
 * **GCM with a nonce other than 96 bits** (SP 800-38D Algorithm 4 step 2's `len(IV) != 96`
   branch, which derives `J0` by GHASHing the IV). Sec 5.2.1.1 recommends restricting support to
   96 bits, and [`Gcm`] does.
@@ -13,4 +14,5 @@ Possible additional modes or features to be added to this crate:
 * **CCM with a formatting function other than Appendix A's.** SP 800-38C Sec 5.4 allows
   alternatives and says "Alternative formatting functions may be developed in the future";
   Appendix A's is the only one that exists in practice and the only one the mode implements.
-* Add GMAC and CMAC as top-level [`MAC']'s.
+* Add GMAC and CMAC as top-level [`MAC']'s -- note that these behave differently to generic [MAC]s since they require
+  both a key and a (non-zero) IV.

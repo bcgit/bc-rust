@@ -1,16 +1,13 @@
-//! AES-GCM through the shared conformance suites, plus the alias checks.
+//! AES-GCM through the shared conformance suites.
 //!
-//! The aliases are only type aliases, so what is worth testing is that they name the *right* type
-//! at both directions, that all three key lengths reach the shared `AeadEncryptionKey` /
+//! What is checked here is that all three key lengths reach the shared `AeadEncryptionKey` /
 //! `AeadDecryptionKey` conformance suite (`TestFrameworkAEADCipher`), that the inline
 //! `ciphertext || tag` layout holds at every byte-boundary edge (`TestFrameworkAEADTaggedLayout`),
 //! and that a fresh nonce is generated per encryption. Algorithm correctness itself is pinned by
 //! the ACVP and bc-java known-answer suites beside this file.
 
-use bouncycastle_aes::hazmat::AES128Internal;
-use bouncycastle_aes::{AES_GCM_128, AES128Key, AES192Key, AES256Key};
-use bouncycastle_cipher::modes::{GCM, Gcm};
-use bouncycastle_cipher::{Decrypting, Encrypting};
+use bouncycastle_aes::{AES128Key, AES192Key, AES256Key};
+use bouncycastle_cipher::modes::GCM;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::symmetric_key::{AeadDecryptionKey, AeadEncryptionKey, FromKeyMaterial};
 use bouncycastle_core_test_framework::aead::TestFrameworkAEADCipher;
@@ -28,21 +25,6 @@ fn key<const N: usize, K: FromKeyMaterial<N>>() -> K {
 
 fn os_rng() -> HashDRBG_SHA512 {
     HashDRBG_SHA512::new_from_os()
-}
-
-/// The alias must resolve to exactly the type it claims to, at both directions.
-#[test]
-fn the_alias_names_the_expected_type() {
-    use core::mem::size_of;
-
-    assert_eq!(
-        size_of::<AES_GCM_128<'_, Encrypting>>(),
-        size_of::<Gcm<'_, AES128Internal, Encrypting, 16>>()
-    );
-    assert_eq!(
-        size_of::<AES_GCM_128<'_, Decrypting>>(),
-        size_of::<Gcm<'_, AES128Internal, Decrypting, 16>>()
-    );
 }
 
 /// All three key lengths satisfy the shared AEAD conformance suite, which reaches the no-AAD

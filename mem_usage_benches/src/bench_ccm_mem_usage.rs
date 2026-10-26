@@ -227,13 +227,10 @@ fn bench_oneshot_encrypt_out_detached() {
 }
 
 fn main() {
-    let which = std::env::args().nth(1).unwrap_or_default();
-    match which.as_str() {
-        "nothing" => bench_do_nothing(),
-        "in_place" => bench_in_place_encrypt(),
-        "stream_enc" => bench_streaming_encrypt(),
-        "stream_dec" => bench_streaming_decrypt(),
-        "oneshot" => bench_oneshot_encrypt_out_detached(),
-        _ => print_struct_sizes(),
-    }
+    print_struct_sizes()
+    // bench_do_nothing()
+    // bench_in_place_encrypt()
+    // bench_streaming_encrypt()
+    // bench_streaming_decrypt()
+    // bench_oneshot_encrypt_out_detached()
 }

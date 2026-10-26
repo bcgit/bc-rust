@@ -7,7 +7,7 @@
 //! [`BlockCipherPadding::ALWAYS_PADS`] `false` (`NoPadding`) and an aligned message, nothing at
 //! all, in which case `do_encrypt_final` reports 0 of the `FINAL_LEN` bytes as output.
 
-use bouncycastle_core::errors::{SuspendableError, SymmetricCipherError};
+use bouncycastle_core::errors::{PaddingError, SuspendableError, SymmetricCipherError};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{
     Algorithm, BlockCipherDecryptor, BlockCipherEncryptor, BlockCipherPadding, SuspendableKeyed,
@@ -146,16 +146,20 @@ where
     /// untouched buffer and 0: there is no final block.
     ///
     /// The block is padded and encrypted inside the `Secret`, so what is copied out is ciphertext.
-    /// A scheme that adds no padding turns a buffered partial block into
-    /// [`SymmetricCipherError::PaddingError`] here, which is the alignment check such a scheme
-    /// exists to provide.
+    /// A scheme that adds no padding refuses a buffered partial block
+    /// ([`PaddingError::PaddingNotPermitted`]), which is the alignment check such a scheme exists to
+    /// provide; it is reported as [`SymmetricCipherError::DataNotBlockAligned`], as on the decrypt
+    /// side.
     fn do_encrypt_final(self) -> Result<([u8; BLOCK_LEN], usize), SymmetricCipherError> {
         let Self { encryptor: mut inner, mut buf, buf_len, .. } = self;
         if buf_len == 0 && !P::ALWAYS_PADS {
             return Ok(([0u8; BLOCK_LEN], 0));
         }
-        P::pad(&mut buf, buf_len)?;
-        inner.do_encrypt_inplace(&mut buf)?;
+        P::pad(&mut buf, buf_len).map_err(|e| match e {
+            PaddingError::PaddingNotPermitted => SymmetricCipherError::DataNotBlockAligned,
+            e => e.into(),
+        })?;
+        inner.do_encrypt_blocks_inplace(buf.as_chunks_mut().0)?;
         Ok((*buf, BLOCK_LEN))
     }
 
@@ -293,14 +297,15 @@ where
     }
 
     /// Decrypts and unpads the held final block. Returns the block and its data length; the rest is
-    /// padding. `DecryptionFailed` if the ciphertext was not block-aligned, or was empty under a
-    /// scheme that always pads (a padded message is at least one block); `PaddingError` if the
+    /// padding. `DataNotBlockAligned` if the ciphertext was not a whole number of blocks;
+    /// `DecryptionFailed` if it was empty under a scheme that always pads (a padded message is at
+    /// least one block); `PaddingError` if the
     /// padding is malformed. Under a scheme that adds nothing, an empty ciphertext is the empty
     /// message and every held block is entirely data.
     fn do_decrypt_final(self) -> Result<([u8; BLOCK_LEN], usize), SymmetricCipherError> {
         let Self { decryptor: mut inner, buf_len, held, .. } = self;
         if buf_len != 0 {
-            return Err(SymmetricCipherError::DecryptionFailed);
+            return Err(SymmetricCipherError::DataNotBlockAligned);
         }
         let Some(mut block) = held else {
             return if P::ALWAYS_PADS {
@@ -309,7 +314,7 @@ where
                 Ok(([0u8; BLOCK_LEN], 0))
             };
         };
-        inner.do_decrypt_inplace(&mut block)?;
+        inner.do_decrypt_blocks_inplace(block.as_chunks_mut().0)?;
         let data_len = P::unpad(&block)?;
         Ok((block, data_len))
     }

@@ -37,15 +37,15 @@
 //! let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey).unwrap();
 //! let state = <CBC<Blocks> as Mode<ToyBlockCipher>>::key_state(ToyBlockCipher::new(&key).unwrap());
 //! let (mut enc, _iv) = CBC::<Blocks>::encrypt_init(&state, &mut HashDRBG_SHA512::new_from_os()).unwrap();
-//! let mut first = [0x11u8; 16];
-//! enc.do_encrypt_inplace(&mut first).unwrap();
+//! let mut first = [[0x11u8; 16]];
+//! enc.do_encrypt_blocks_inplace(&mut first).unwrap();
 //!
 //! // Suspending consumes the cipher. The key is not in the suspended state; resume borrows the
 //! // key state again, as `create_encryptor` did.
 //! let suspended: [u8; STATE_LEN] = enc.suspend();
 //! let mut enc = ToyCbc::from_suspended(suspended, &state).unwrap();
-//! let mut second = [0x22u8; 16];
-//! enc.do_encrypt_inplace(&mut second).unwrap();
+//! let mut second = [[0x22u8; 16]];
+//! enc.do_encrypt_blocks_inplace(&mut second).unwrap();
 //! ```
 //!
 //! # Memory Usage

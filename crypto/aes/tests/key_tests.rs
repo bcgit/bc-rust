@@ -4,16 +4,15 @@
 
 use bouncycastle_aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
 use bouncycastle_aes::{AES_GCM_128, AES128Key, AES192Key, AES256Key};
-use bouncycastle_cipher::modes::{CCM, CMAC, GCM, GMAC, Gcm, GcmKeyState, ModeNames};
+use bouncycastle_cipher::modes::{CTR, GCM, Gcm, GcmKeyState, ModeNames};
 use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
-use bouncycastle_core::hazmat::{ElectronicCodeBook, Mode};
+use bouncycastle_core::hazmat::ElectronicCodeBook;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::symmetric_key::{AeadDecryptionKey, AeadEncryptionKey, FromKeyMaterial};
 use bouncycastle_core::traits::{
-    AEADCipherDecryptor, AEADCipherEncryptor, Algorithm, SymmetricCipherDecryptor,
-    SymmetricCipherEncryptor,
+    AEADCipherDecryptor, AEADCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
 };
 use bouncycastle_core_test_framework::FixedSeedRNG;
 
@@ -80,42 +79,6 @@ fn a_key_below_its_own_strength_is_refused_at_construction() {
         Err(SymmetricCipherError::KeyMaterialError(KeyMaterialError::SecurityStrength(_))) => {}
         other => panic!("expected SecurityStrength, got {:?}", other.err()),
     }
-}
-
-/// The material's algorithm binding is checked at construction against the mode's name over
-/// this permutation: a key bound to another mode, or to the same mode at another key length, is
-/// refused; one bound to this mode's name or unbound is accepted. Both key types.
-#[test]
-fn a_key_bound_to_another_algorithm_is_refused_at_construction() {
-    fn bound<const N: usize>(key_type: KeyType, alg: &'static str) -> KeyMaterial<N> {
-        let bytes: [u8; N] = core::array::from_fn(|i| (i as u8).wrapping_mul(7).wrapping_add(1));
-        let mut key = KeyMaterial::<N>::from_bytes_as_type(&bytes, key_type).unwrap();
-        key.set_algorithm(Some(alg)).unwrap();
-        key
-    }
-    fn refused<K>(result: Result<K, SymmetricCipherError>) -> bool {
-        matches!(
-            result,
-            Err(SymmetricCipherError::KeyMaterialError(KeyMaterialError::InvalidKeyType(_)))
-        )
-    }
-    let cipher = KeyType::SymmetricCipherKey;
-
-    assert!(refused(AES128Key::<GCM>::from_key_material(&bound(cipher, "AES_CBC_128"))));
-    assert!(refused(AES128Key::<CCM<12, 16>>::from_key_material(&bound(cipher, "AES_GCM_128"))));
-    assert!(refused(AES256Key::<GCM>::from_key_material(&bound(cipher, "AES_GCM_128"))));
-    assert!(AES128Key::<GCM>::from_key_material(&bound(cipher, "AES_GCM_128")).is_ok());
-    assert!(AES128Key::<CCM<12, 16>>::from_key_material(&bound(cipher, "AES_CCM_128")).is_ok());
-    assert!(AES128Key::<GCM>::from_key_material(&material::<16>()).is_ok());
-
-    let mac = KeyType::MACKey;
-    assert!(refused(AES128Key::<GMAC>::from_key_material(&bound(mac, "AES_CMAC_128"))));
-    assert!(refused(AES128Key::<CMAC>::from_key_material(&bound(mac, "AES_GMAC_128"))));
-    assert!(AES128Key::<CMAC>::from_key_material(&bound(mac, "AES_CMAC_128")).is_ok());
-    assert!(AES128Key::<GMAC>::from_key_material(&bound(mac, "AES_GMAC_128")).is_ok());
-
-    // The name checked is the one the mode's workers report.
-    assert_eq!(<GCM as Mode<AES128Internal>>::ALG_NAME, AES_GCM_128::<Encrypting>::ALG_NAME);
 }
 
 #[test]
@@ -340,6 +303,35 @@ fn a_cloned_key_is_the_same_key() {
     let (nonce, ct, tag) = encrypt_via_key::<16, _>(&key);
     assert_eq!(decrypt_via_key::<16, _>(&copy, &nonce, &ct, &tag).unwrap(), MSG);
     assert_eq!(encrypt_via_key::<16, _>(&copy), (nonce, ct, tag));
+}
+
+/// Equality is over the expanded state, so it follows the material: the same bytes under the same
+/// mode compare equal, as does a clone, and different bytes do not. Both shapes of state are
+/// covered: the bare schedule (`CTR`) and GCM's, which adds `H`. Keys have no `Debug`, hence
+/// `assert!` over `==` rather than `assert_eq!`.
+#[test]
+fn keys_compare_equal_exactly_when_their_material_does() {
+    let other = KeyMaterial::<16>::from_bytes_as_type(&[0x55; 16], KeyType::SymmetricCipherKey)
+        .expect("a valid key");
+
+    let key = AES128Key::<GCM>::from_key_material(&material::<16>()).unwrap();
+    assert!(key == key.clone());
+    assert!(key == AES128Key::<GCM>::from_key_material(&material::<16>()).unwrap());
+    assert!(key != AES128Key::<GCM>::from_key_material(&other).unwrap());
+
+    let key = AES128Key::<CTR>::from_key_material(&material::<16>()).unwrap();
+    assert!(key == key.clone());
+    assert!(key != AES128Key::<CTR>::from_key_material(&other).unwrap());
+
+    // The longer schedules are a different plane width; the comparison is over all of it.
+    let key = AES256Key::<GCM>::from_key_material(&material::<32>()).unwrap();
+    assert!(key == AES256Key::<GCM>::from_key_material(&material::<32>()).unwrap());
+    let mut bytes = [0u8; 32];
+    bytes.copy_from_slice(material::<32>().ref_to_bytes());
+    bytes[31] ^= 1;
+    let last_byte_differs =
+        KeyMaterial::<32>::from_bytes_as_type(&bytes, KeyType::SymmetricCipherKey).unwrap();
+    assert!(key != AES256Key::<GCM>::from_key_material(&last_byte_differs).unwrap());
 }
 
 /// Lengths either side of the 64-byte chunk the provided in-place bodies copy through, plus the

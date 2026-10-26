@@ -87,39 +87,7 @@
 //! assert_eq!(data, *b"the quick brown fox!!");
 //! ```
 //!
-//! Streaming works with chunks of any size:
-//!
-//! ```
-//! # mod toy { include!("../../tests/common/toy_block_cipher.rs"); }
-//! # use toy::ToyBlockCipher;
-//! use bouncycastle_core::hazmat::{ElectronicCodeBook, Mode, SymmetricDecryptMode, SymmetricEncryptMode};
-//! use bouncycastle_core::key_material::{KeyMaterial128, KeyType};
-//! use bouncycastle_core::traits::{StreamCipherDecryptor, StreamCipherEncryptor};
-//! use bouncycastle_cipher::modes::CFB;
-//! use bouncycastle_rng::HashDRBG_SHA512;
-//!
-//! let key = KeyMaterial128::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
-//!     .expect("a 16-byte symmetric cipher key");
-//! let state = <CFB as Mode<ToyBlockCipher>>::key_state(ToyBlockCipher::new(&key).unwrap());
-//! let mut data = [0x5Au8; 40];
-//!
-//! let (mut encryptor, iv) =
-//!     CFB::encrypt_init(&state, &mut HashDRBG_SHA512::new_from_os()).expect("iv draw");
-//!
-//! // Just to prove that this can handle arbitrary sizes, we'll feed in
-//! //  7 bytes, then 33: neither is a whole block.
-//! let bytes_written = encryptor.do_encrypt_inplace(&mut data[..7]).expect("first chunk");
-//! assert_eq!(bytes_written, 7);
-//!
-//! let bytes_written = encryptor.do_encrypt_inplace(&mut data[7..]).expect("the rest");
-//! assert_eq!(bytes_written, 33);
-//!
-//! // Decrypting in a different chunking must also agree.
-//! let mut decryptor = CFB::decrypt_init(&state, &iv);
-//! decryptor.do_decrypt_inplace(&mut data[..19]).expect("first chunk");
-//! decryptor.do_decrypt_inplace(&mut data[19..]).expect("the rest");
-//! assert_eq!(data, [0x5Au8; 40]);
-//! ```
+//! Other usage modes, such as streaming, behave the same as [`ctr`](crate::modes::ctr).
 //!
 //! # Suspending and resuming execution
 //!
@@ -176,7 +144,6 @@
 
 use crate::modes::ModeNames;
 use crate::modes::iv::random_iv;
-use crate::stream::{stream_do_final, stream_update_out};
 use crate::{Decrypting, Encrypting};
 use bouncycastle_core::errors::{SuspendableError, SymmetricCipherError};
 use bouncycastle_core::hazmat::{
@@ -207,7 +174,6 @@ pub struct CFB;
 impl<P: Clone + ModeNames> Mode<P> for CFB {
     type KeyState = P;
     const KEY_TYPE: KeyType = KeyType::SymmetricCipherKey;
-    const ALG_NAME: &'static str = P::CFB_ALG_NAME;
 
     fn key_state(perm: P) -> Self::KeyState {
         perm
@@ -467,19 +433,30 @@ where
         input_len
     }
 
-    /// See [`stream_update_out`].
+    /// Copies `plaintext` into `ciphertext` and works in place there, so the caller's input is left
+    /// untouched. The whole of `ciphertext` is zeroized first.
+    ///
+    /// # Errors
+    /// [`SymmetricCipherError::OutputBufferTooSmall`] if `ciphertext` is shorter than `plaintext`,
+    /// checked before anything is consumed.
     fn do_encrypt_out(
         &mut self,
         plaintext: &[u8],
         ciphertext: &mut [u8],
     ) -> Result<usize, SymmetricCipherError> {
         ciphertext.fill(0);
-        stream_update_out(plaintext, ciphertext, |data| self.do_encrypt_inplace(data))
+        if ciphertext.len() < plaintext.len() {
+            return Err(SymmetricCipherError::OutputBufferTooSmall(plaintext.len()));
+        }
+        let out = &mut ciphertext[..plaintext.len()];
+        out.copy_from_slice(plaintext);
+        self.do_encrypt_inplace(out)?;
+        Ok(plaintext.len())
     }
 
-    /// See [`stream_do_final`].
+    /// Nothing is held back, so there is nothing to finish.
     fn do_encrypt_final(self) -> Result<([u8; 0], usize), SymmetricCipherError> {
-        stream_do_final()
+        Ok(([], 0))
     }
 
     /// A stream cipher never changes the length of its data.
@@ -523,19 +500,30 @@ where
         input_len
     }
 
-    /// See [`stream_update_out`].
+    /// Copies `ciphertext` into `plaintext` and works in place there, so the caller's input is left
+    /// untouched. The whole of `plaintext` is zeroized first.
+    ///
+    /// # Errors
+    /// [`SymmetricCipherError::OutputBufferTooSmall`] if `plaintext` is shorter than `ciphertext`,
+    /// checked before anything is consumed.
     fn do_decrypt_out(
         &mut self,
         ciphertext: &[u8],
         plaintext: &mut [u8],
     ) -> Result<usize, SymmetricCipherError> {
         plaintext.fill(0);
-        stream_update_out(ciphertext, plaintext, |data| self.do_decrypt_inplace(data))
+        if plaintext.len() < ciphertext.len() {
+            return Err(SymmetricCipherError::OutputBufferTooSmall(ciphertext.len()));
+        }
+        let out = &mut plaintext[..ciphertext.len()];
+        out.copy_from_slice(ciphertext);
+        self.do_decrypt_inplace(out)?;
+        Ok(ciphertext.len())
     }
 
-    /// See [`stream_do_final`].
+    /// Nothing is held back, so there is nothing to finish.
     fn do_decrypt_final(self) -> Result<([u8; 0], usize), SymmetricCipherError> {
-        stream_do_final()
+        Ok(([], 0))
     }
 
     /// Exact rather than an upper bound: a stream cipher never changes the length of its data.

@@ -21,19 +21,19 @@
 //! use bouncycastle_core::hazmat::{EcbDecryptMode, EcbEncryptMode, ElectronicCodeBook, Mode};
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 //! use bouncycastle_core::traits::{BlockCipherDecryptor, BlockCipherEncryptor};
-//! use bouncycastle_cipher::modes::hazmat::ECB;
+//! use bouncycastle_cipher::modes::hazmat::ecb::ECB;
 //! use bouncycastle_cipher::modes::Blocks;
 //!
 //! let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
 //!     .expect("a 16-byte symmetric cipher key");
 //! let state = <ECB<Blocks> as Mode<ToyBlockCipher>>::key_state(ToyBlockCipher::new(&key).unwrap());
-//! let mut data = [0x5Au8; 32]; // two equal blocks
+//! let mut data = [[0x5Au8; 16]; 2]; // two equal blocks
 //!
-//! ECB::<Blocks>::encrypt_init(&state).do_encrypt_inplace(&mut data).expect("encryption");
-//! assert_eq!(data[..16], data[16..], "equal plaintext blocks give equal ciphertext blocks");
+//! ECB::<Blocks>::encrypt_init(&state).do_encrypt_blocks_inplace(&mut data).expect("encryption");
+//! assert_eq!(data[0], data[1], "equal plaintext blocks give equal ciphertext blocks");
 //!
-//! ECB::<Blocks>::decrypt_init(&state).do_decrypt_inplace(&mut data).expect("decryption");
-//! assert_eq!(data, [0x5Au8; 32]);
+//! ECB::<Blocks>::decrypt_init(&state).do_decrypt_blocks_inplace(&mut data).expect("decryption");
+//! assert_eq!(data, [[0x5Au8; 16]; 2]);
 //! ```
 //!
 //! # A mode with no state
@@ -112,7 +112,6 @@ pub struct ECB<X>(core::marker::PhantomData<X>);
 impl<P: Clone + ModeNames, X> Mode<P> for ECB<X> {
     type KeyState = P;
     const KEY_TYPE: KeyType = KeyType::SymmetricCipherKey;
-    const ALG_NAME: &'static str = P::ECB_ALG_NAME;
 
     fn key_state(perm: P) -> Self::KeyState {
         perm
@@ -239,7 +238,7 @@ impl<'k, P, const BLOCK_LEN: usize> BlockCipherEncryptor<0, BLOCK_LEN>
 where
     P: BlockPermutation<BLOCK_LEN> + ModeNames,
 {
-    /// The implementor hook (the flat `do_encrypt_inplace` is provided over it):
+    /// The implementor hook:
     /// `Cj = CIPH_K(Pj)` for every block, in place.
     ///
     /// Sec 6.1 allows the forward cipher functions to "be computed in parallel", so the blocks go
@@ -271,7 +270,7 @@ impl<'k, P, const BLOCK_LEN: usize> BlockCipherDecryptor<0, BLOCK_LEN>
 where
     P: BlockPermutation<BLOCK_LEN> + ModeNames,
 {
-    /// The implementor hook (the flat `do_decrypt_inplace` is provided over it):
+    /// The implementor hook:
     /// `Pj = CIPH^-1_K(Cj)` for every block, in place -- fours, then pairs, then the remaining
     /// block, as on the encrypt side. Never fails.
     fn do_decrypt_blocks_inplace(

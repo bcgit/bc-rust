@@ -120,7 +120,7 @@ impl TestFrameworkAEADCipher {
             if len >= 8 {
                 assert_ne!(&ct[..], msg, "len {len}: the ciphertext must not be the plaintext");
             }
-            let mut pt = vec![0u8; decrypt_detached_out_len(ct.len())];
+            let mut pt = vec![0xEEu8; decrypt_detached_out_len(ct.len())];
             let pt_len = key.decrypt_detached_out(&nonce, aad, &ct, &tag, &mut pt).unwrap();
             pt.truncate(pt_len);
             assert_eq!(&pt[..], msg, "one-shot round trip, len {len}");
@@ -151,7 +151,7 @@ impl TestFrameworkAEADCipher {
                 encrypt_detached_out_len(len) + TAG_LEN,
                 "encrypt_with_aad_out must write the ciphertext plus the tag, len {len}"
             );
-            let mut pt4 = vec![0u8; decrypt_out_len(inline_len)];
+            let mut pt4 = vec![0xEEu8; decrypt_out_len(inline_len)];
             let pt4_len = key
                 .decrypt_with_aad_out(&inline_nonce, aad, &inline[..inline_len], &mut pt4)
                 .unwrap();
@@ -447,7 +447,9 @@ impl TestFrameworkAEADCipher {
         }
 
         // tampering: every one of these must fail the tag check, and the one-shots must leave no
-        // plaintext behind when they do.
+        // plaintext behind when they do. Their buffers are pre-filled with a non-zero byte, so one
+        // the decryptor never wrote is not mistaken for one it zeroized. A message long enough to
+        // have a byte 3 to flip, unless the pair's fixed length says otherwise.
         let msg = &DUMMY_SEED[..self.fixed_message_len.unwrap_or(max_len.max(17))];
         let mut ct = vec![0u8; encrypt_detached_out_len(msg.len())];
         let (ct_len, nonce, tag) = key.encrypt_detached_out(rng, aad, msg, &mut ct).unwrap();
@@ -456,7 +458,7 @@ impl TestFrameworkAEADCipher {
         if ct.len() > 3 {
             let mut tampered = ct.clone();
             tampered[3] ^= 0xFF;
-            let mut buf = vec![0u8; decrypt_detached_out_len(tampered.len())];
+            let mut buf = vec![0xEEu8; decrypt_detached_out_len(tampered.len())];
             match key.decrypt_detached_out(&nonce, aad, &tampered, &tag, &mut buf) {
                 Err(SymmetricCipherError::AEADTagCheckFailed) => { /* good */ }
                 other => panic!("a modified ciphertext must fail the tag check, got {other:?}"),
@@ -480,7 +482,7 @@ impl TestFrameworkAEADCipher {
         tampered_inline.extend_from_slice(&tag);
         tampered_inline[3] ^= 0xFF;
         for with_aad in [false, true] {
-            let mut buf = vec![0u8; decrypt_out_len(tampered_inline.len())];
+            let mut buf = vec![0xEEu8; decrypt_out_len(tampered_inline.len())];
             let aad_used: &[u8] = if with_aad { aad } else { &[] };
             // Without the AAD the tag was never going to verify; either way what matters is the
             // failure and the zeroized buffer.
@@ -500,13 +502,14 @@ impl TestFrameworkAEADCipher {
 
         let mut wrong_tag = tag;
         wrong_tag[0] ^= 0xFF;
-        let mut buf = vec![0u8; decrypt_detached_out_len(ct.len())];
+        let mut buf = vec![0xEEu8; decrypt_detached_out_len(ct.len())];
         match key.decrypt_detached_out(&nonce, aad, &ct, &wrong_tag, &mut buf) {
             Err(SymmetricCipherError::AEADTagCheckFailed) => { /* good */ }
             other => panic!("a modified tag must fail the tag check, got {other:?}"),
         };
+        assert!(buf.iter().all(|&b| b == 0), "a modified tag must leave the buffer zeroized");
 
-        let mut buf = vec![0u8; decrypt_detached_out_len(ct.len())];
+        let mut buf = vec![0xEEu8; decrypt_detached_out_len(ct.len())];
         match key.decrypt_detached_out(
             &nonce,
             b"not the right associated data",
@@ -517,15 +520,17 @@ impl TestFrameworkAEADCipher {
             Err(SymmetricCipherError::AEADTagCheckFailed) => { /* good */ }
             other => panic!("a modified AAD must fail the tag check, got {other:?}"),
         };
+        assert!(buf.iter().all(|&b| b == 0), "a modified AAD must leave the buffer zeroized");
 
         if NONCE_LEN > 0 {
             let mut wrong_nonce = nonce;
             wrong_nonce[0] ^= 0xFF;
-            let mut buf = vec![0u8; decrypt_detached_out_len(ct.len())];
+            let mut buf = vec![0xEEu8; decrypt_detached_out_len(ct.len())];
             match key.decrypt_detached_out(&wrong_nonce, aad, &ct, &tag, &mut buf) {
                 Err(SymmetricCipherError::AEADTagCheckFailed) => { /* good */ }
                 other => panic!("a modified nonce must fail the tag check, got {other:?}"),
             };
+            assert!(buf.iter().all(|&b| b == 0), "a modified nonce must leave the buffer zeroized");
 
             // two encryptions under the same key must not reuse a nonce
             let (_enc1, nonce1) = key.create_encryptor(rng).unwrap();
@@ -670,7 +675,7 @@ impl TestFrameworkAEADTaggedLayout {
             let msg = &DUMMY_SEED[..len];
             let (ct, nonce) = tagged_ct(msg);
 
-            let mut pt = vec![0u8; decrypt_out_len(ct.len())];
+            let mut pt = vec![0xEEu8; decrypt_out_len(ct.len())];
             let n = key.decrypt_with_aad_out(&nonce, AAD, &ct, &mut pt).unwrap();
             assert_eq!(&pt[..n], msg, "len {len}: one-shot round trip");
 
@@ -747,7 +752,7 @@ impl TestFrameworkAEADTaggedLayout {
         let (ct, nonce) = tagged_ct(msg);
         let mut tampered = ct.clone();
         tampered[0] ^= 0xFF;
-        let mut pt = vec![0u8; tampered.len()];
+        let mut pt = vec![0xEEu8; tampered.len()];
         assert!(matches!(
             key.decrypt_with_aad_out(&nonce, AAD, &tampered, &mut pt),
             Err(SymmetricCipherError::AEADTagCheckFailed)
@@ -761,7 +766,7 @@ impl TestFrameworkAEADTaggedLayout {
         let mut wrong_tag = [0u8; TAG_LEN];
         wrong_tag.copy_from_slice(&ct[msg.len()..]);
         wrong_tag[0] ^= 0xFF;
-        let mut pt = vec![0u8; msg.len()];
+        let mut pt = vec![0xEEu8; msg.len()];
         assert!(matches!(
             key.decrypt_detached_out(&nonce, AAD, &ct[..msg.len()], &wrong_tag, &mut pt),
             Err(SymmetricCipherError::AEADTagCheckFailed)

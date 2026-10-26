@@ -30,7 +30,6 @@ pub mod test_data_loaders;
 pub mod xof;
 
 mod fixed_seed_rng;
-mod key_binding;
 pub use fixed_seed_rng::FixedSeedRNG;
 
 /// A dummy seed for use in tests which is \x00..\xFF repeated for 1024 bytes

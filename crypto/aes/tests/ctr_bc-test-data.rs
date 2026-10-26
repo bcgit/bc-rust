@@ -15,7 +15,8 @@
 //! With the 12-byte nonce used here (a 4-byte counter), **1853 of the 2138** functional cases
 //! qualify. The other 285 begin at a non-zero counter and are skipped with the count reported, so
 //! the gap stays visible; they test the cipher and the XOR, both of which the qualifying cases
-//! already cover, and not the counter construction, which `ctr_tests.rs` pins against the spec.
+//! already cover, and not the counter construction, which
+//! `crypto/cipher/tests/modes/ctr_tests.rs` pins against the spec.
 //!
 //! # Joining the request and response files
 //!
@@ -30,7 +31,7 @@
 //! in 8-byte calls and in 3-byte calls -- so the batch paths and the byte path are both exercised
 //! against real vectors. The payloads are a single block each, so counter *increment* is not
 //! covered here; `ctr_tests.rs` covers it against the raw permutation across a 255-to-256 carry,
-//! and the OpenSSL cross-check in `cli/tests/aes_ctr_cli_tests.rs` covers it end to end.
+//! and the OpenSSL cross-check in `cli/tests/test_aes_ctr.sh` covers it end to end.
 //!
 //! The 6 MCT (Monte Carlo Test) groups are **not** implemented: their expected output is a
 //! `resultsArray` produced by a chained update rule defined in the ACVP AES specification rather

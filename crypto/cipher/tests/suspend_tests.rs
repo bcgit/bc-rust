@@ -8,7 +8,7 @@
 //! The AES aliases get the same impls through these generic types, so this is where they are
 //! pinned; `bouncycastle-aes` only checks that each alias reaches them.
 
-use bouncycastle_cipher::modes::hazmat::{ECB, Ecb};
+use bouncycastle_cipher::modes::hazmat::ecb::{ECB, Ecb};
 use bouncycastle_cipher::modes::{
     Blocks, CBC, CCM_Packet, CFB, CFB8, CTR, Cbc, CcmPacketDecryptor, CcmPacketEncryptor, Cfb,
     Cfb8, Ctr, GCM, Gcm,
@@ -84,27 +84,27 @@ fn cbc_both_directions() {
     let key = key_for::<CBC<Blocks>>();
     let (mut enc, iv) = key.create_encryptor(&mut os_rng()).unwrap();
     let mut first = [0x11u8; 16];
-    enc.do_encrypt_inplace(&mut first).unwrap();
+    enc.do_encrypt_blocks_inplace(first.as_chunks_mut().0).unwrap();
     let rest = round_trip::<{ ToyCbc::<Encrypting>::SUSPENDED_STATE_LEN }, _>(
         enc,
         key.state(),
         |mut e| {
             let mut data = [0x22u8; 48];
-            e.do_encrypt_inplace(&mut data).unwrap();
+            e.do_encrypt_blocks_inplace(data.as_chunks_mut().0).unwrap();
             data.to_vec()
         },
     );
 
     let key = key_for::<CBC<Blocks>>();
     let mut dec = key.create_decryptor(&iv);
-    dec.do_decrypt_inplace(&mut first).unwrap();
+    dec.do_decrypt_blocks_inplace(first.as_chunks_mut().0).unwrap();
     assert_eq!(first, [0x11u8; 16]);
     let plain = round_trip::<{ ToyCbc::<Decrypting>::SUSPENDED_STATE_LEN }, _>(
         dec,
         key.state(),
         |mut d| {
             let mut data: [u8; 48] = rest.as_slice().try_into().unwrap();
-            d.do_decrypt_inplace(&mut data).unwrap();
+            d.do_decrypt_blocks_inplace(data.as_chunks_mut().0).unwrap();
             data.to_vec()
         },
     );
@@ -115,17 +115,17 @@ fn cbc_both_directions() {
 fn ecb_both_directions() {
     let key = key_for::<ECB<Blocks>>();
     let mut enc = key.create_encryptor();
-    enc.do_encrypt_inplace(&mut [0x11u8; 16]).unwrap();
+    enc.do_encrypt_blocks_inplace(&mut [[0x11u8; 16]]).unwrap();
     round_trip::<{ ToyEcb::<Encrypting>::SUSPENDED_STATE_LEN }, _>(enc, key.state(), |mut e| {
         let mut data = [0x22u8; 32];
-        e.do_encrypt_inplace(&mut data).unwrap();
+        e.do_encrypt_blocks_inplace(data.as_chunks_mut().0).unwrap();
         data.to_vec()
     });
     let key = key_for::<ECB<Blocks>>();
     let dec = key.create_decryptor();
     round_trip::<{ ToyEcb::<Decrypting>::SUSPENDED_STATE_LEN }, _>(dec, key.state(), |mut d| {
         let mut data = [0x33u8; 32];
-        d.do_decrypt_inplace(&mut data).unwrap();
+        d.do_decrypt_blocks_inplace(data.as_chunks_mut().0).unwrap();
         data.to_vec()
     });
 }

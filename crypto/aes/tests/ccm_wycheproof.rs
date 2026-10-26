@@ -66,7 +66,8 @@ fn cipher_key<const N: usize>(bytes: &[u8]) -> KeyMaterial<N> {
 /// For a `result: "valid"` case, `msg` must encrypt to exactly `expected_ct`/`expected_tag`, and
 /// `expected_ct`/`expected_tag` must decrypt back to `msg`. For `result: "invalid"`, only the
 /// decrypt direction is checked -- re-encrypting `msg` has no reason to reproduce a deliberately
-/// corrupted `ct`/`tag` -- and it must fail the tag check rather than return a payload.
+/// corrupted `ct`/`tag` -- and it must fail the tag check rather than return a payload, leaving
+/// the buffer zeroized as the mode's in-place decrypt documents.
 #[allow(clippy::too_many_arguments)]
 fn run_case<const KEY_LEN: usize, const NONCE_LEN: usize, const TAG_LEN: usize, P>(
     tc_id: u64,
@@ -107,6 +108,10 @@ fn run_case<const KEY_LEN: usize, const NONCE_LEN: usize, const TAG_LEN: usize, 
         }
         Err(SymmetricCipherError::AEADTagCheckFailed) => {
             assert!(!valid, "tcId {tc_id}: a valid vector failed its tag check");
+            assert!(
+                plaintext.iter().all(|&b| b == 0),
+                "tcId {tc_id}: a failed tag check must leave the output buffer zeroized"
+            );
         }
         Err(e) => panic!("tcId {tc_id}: unexpected CCM error: {e:?}"),
     }

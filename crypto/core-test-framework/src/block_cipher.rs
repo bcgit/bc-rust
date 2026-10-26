@@ -2,6 +2,7 @@
 //! the whole-block refinement of the symmetric cipher traits.
 
 use crate::{DUMMY_SEED, FixedSeedRNG};
+use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::hazmat::{EcbDecryptionKey, EcbEncryptionKey};
 use bouncycastle_core::symmetric_key::{BlockDecryptionKey, BlockEncryptionKey};
 use bouncycastle_core::traits::{BlockCipherDecryptor, BlockCipherEncryptor, RNG};
@@ -50,7 +51,7 @@ impl TestFrameworkBlockCipher {
         assert_eq!(buf, *one_block);
         let mut streamed = key.create_decryptor(&iv);
         let mut buf = ct;
-        streamed.do_decrypt_inplace(&mut buf).unwrap();
+        streamed.do_decrypt_blocks_inplace(core::slice::from_mut(&mut buf)).unwrap();
         assert_eq!(buf, *one_block);
 
         // the RNG-driven one-shot must give the streaming API's answer for the same RNG stream
@@ -58,13 +59,34 @@ impl TestFrameworkBlockCipher {
         let mut expected = *one_block;
         let (mut streamed, iv_streamed) =
             key.create_encryptor(&mut FixedSeedRNG::<INIT_DATA_LEN>::new(pinned)).unwrap();
-        streamed.do_encrypt_inplace(&mut expected).unwrap();
+        streamed.do_encrypt_blocks_inplace(core::slice::from_mut(&mut expected)).unwrap();
         let mut buf = *one_block;
         let (n, iv) =
             key.encrypt_inplace(&mut FixedSeedRNG::<INIT_DATA_LEN>::new(pinned), &mut buf).unwrap();
         assert_eq!(n, BLOCK_LEN, "encrypt_inplace must report the number of bytes written");
         assert_eq!(iv, iv_streamed);
         assert_eq!(buf, expected);
+
+        // The one-shots take a runtime length, so they must refuse data that is not a whole number
+        // of blocks, before touching it.
+        for len in [1, BLOCK_LEN - 1, BLOCK_LEN + 1, 2 * BLOCK_LEN + 1] {
+            let mut bad = DUMMY_SEED[..len].to_vec();
+            assert!(
+                matches!(
+                    key.encrypt_inplace(rng, &mut bad),
+                    Err(SymmetricCipherError::DataNotBlockAligned)
+                ),
+                "len {len}: an unaligned plaintext must be refused"
+            );
+            assert!(
+                matches!(
+                    key.decrypt_inplace(&iv, &mut bad),
+                    Err(SymmetricCipherError::DataNotBlockAligned)
+                ),
+                "len {len}: an unaligned ciphertext must be refused"
+            );
+            assert_eq!(bad, DUMMY_SEED[..len], "len {len}: refused data must be untouched");
+        }
 
         // the iv is random: not the same on two runs
         let (_encryptor, iv1) = key.create_encryptor(rng).unwrap();
@@ -101,8 +123,29 @@ impl TestFrameworkBlockCipher {
         assert_eq!(buf, *one_block);
         let mut streamed = key.create_decryptor();
         let mut buf = ct;
-        streamed.do_decrypt_inplace(&mut buf).unwrap();
+        streamed.do_decrypt_blocks_inplace(core::slice::from_mut(&mut buf)).unwrap();
         assert_eq!(buf, *one_block);
+
+        // The one-shots take a runtime length, so they must refuse data that is not a whole number
+        // of blocks, before touching it.
+        for len in [1, BLOCK_LEN - 1, BLOCK_LEN + 1] {
+            let mut bad = DUMMY_SEED[..len].to_vec();
+            assert!(
+                matches!(
+                    key.encrypt_inplace(&mut bad),
+                    Err(SymmetricCipherError::DataNotBlockAligned)
+                ),
+                "len {len}: an unaligned plaintext must be refused"
+            );
+            assert!(
+                matches!(
+                    key.decrypt_inplace(&mut bad),
+                    Err(SymmetricCipherError::DataNotBlockAligned)
+                ),
+                "len {len}: an unaligned ciphertext must be refused"
+            );
+            assert_eq!(bad, DUMMY_SEED[..len], "len {len}: refused data must be untouched");
+        }
 
         // with no init data the codebook is fixed: the same block encrypts the same way twice
         let mut again = *one_block;
@@ -122,8 +165,8 @@ impl TestFrameworkBlockCipher {
     ) {
         for msg_chunk in DUMMY_SEED.as_chunks::<BLOCK_LEN>().0.iter() {
             let mut buf = *msg_chunk;
-            encryptor.do_encrypt_inplace(&mut buf).unwrap();
-            decryptor.do_decrypt_inplace(&mut buf).unwrap();
+            encryptor.do_encrypt_blocks_inplace(core::slice::from_mut(&mut buf)).unwrap();
+            decryptor.do_decrypt_blocks_inplace(core::slice::from_mut(&mut buf)).unwrap();
             assert_eq!(msg_chunk, &buf);
         }
     }
@@ -149,13 +192,13 @@ impl TestFrameworkBlockCipher {
             let mut buf = *msg_pair;
             encryptor.do_encrypt_blocks_inplace(&mut buf).unwrap();
             for (msg_chunk, block) in msg_pair.iter().zip(buf.iter_mut()) {
-                decryptor.do_decrypt_inplace(block).unwrap();
+                decryptor.do_decrypt_blocks_inplace(block.as_chunks_mut().0).unwrap();
                 assert_eq!(msg_chunk, block);
             }
 
             let mut buf = *msg_pair;
             for block in buf.iter_mut() {
-                encryptor.do_encrypt_inplace(block).unwrap();
+                encryptor.do_encrypt_blocks_inplace(block.as_chunks_mut().0).unwrap();
             }
             decryptor.do_decrypt_blocks_inplace(&mut buf).unwrap();
             assert_eq!(msg_pair, &buf);

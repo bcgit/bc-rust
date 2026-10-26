@@ -1,4 +1,5 @@
-//! The [`KeyStream`] trait: a keyed keystream generator.
+//! A keyed keystream generator: the raw primitive under a stream cipher, as
+//! [`ElectronicCodeBook`] is the raw primitive under a block cipher mode.
 
 use crate::traits::Algorithm;
 

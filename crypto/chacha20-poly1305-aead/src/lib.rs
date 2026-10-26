@@ -94,7 +94,7 @@ use bouncycastle_chacha20::hazmat::{ChaCha20KeyState, ChaCha20KeyStream};
 use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::hazmat::KeyStream;
-use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
+use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::symmetric_key::{AeadDecryptionKey, AeadEncryptionKey, FromKeyMaterial};
 use bouncycastle_core::traits::{
@@ -393,10 +393,8 @@ impl AEADCipherDecryptor<NONCE_LEN, TAG_LEN, TAG_LEN> for ChaCha20_Poly1305<'_, 
 
 /// A ChaCha20-Poly1305 key: the 256-bit key of RFC 8439 Sec 2.8, validated once, from which the
 /// encryptor and decryptor for each message are made. Built through [`FromKeyMaterial`] from
-/// material tagged [`KeyType::SymmetricCipherKey`], unbound or bound to this AEAD's
-/// [`Algorithm::ALG_NAME`], of 256-bit strength; material bound to plain ChaCha20 is refused. The
-/// key words live in a `Secret`, zeroized on drop; there is no `Debug` and no way to read them
-/// back.
+/// material tagged [`KeyType::SymmetricCipherKey`] of 256-bit strength. The key words live in a
+/// `Secret`, zeroized on drop; there is no `Debug` and no way to read them back.
 #[derive(Clone)]
 pub struct ChaCha20Poly1305Key {
     state: ChaCha20KeyState,
@@ -406,14 +404,8 @@ impl FromKeyMaterial<KEY_LEN> for ChaCha20Poly1305Key {
     const KEY_TYPE: KeyType = KeyType::SymmetricCipherKey;
 
     /// # Errors
-    /// * [`KeyMaterialError::InvalidKeyType`](bouncycastle_core::errors::KeyMaterialError::InvalidKeyType)
-    ///   if the key is bound to another algorithm (`KeyMaterialTrait::set_algorithm`), or is not
-    ///   a `SymmetricCipherKey`.
-    /// * As [`ChaCha20KeyState::new`] otherwise.
+    /// As [`ChaCha20KeyState::new`].
     fn from_key_material(key: &KeyMaterial<KEY_LEN>) -> Result<Self, SymmetricCipherError> {
-        // The key is bound, if at all, to this AEAD. The key state, which the ChaCha20 key builds
-        // on too, leaves that check to its caller, as an AES key's permutation does.
-        key.check_algorithm(ChaCha20_Poly1305::<Encrypting>::ALG_NAME)?;
         Ok(Self { state: ChaCha20KeyState::new(key)? })
     }
 }

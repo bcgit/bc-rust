@@ -25,7 +25,6 @@ mod common;
 #[path = "../common/toy_key.rs"]
 mod toy_key;
 
-use bouncycastle_cipher::modes::hazmat::CtrKeyStream;
 use bouncycastle_cipher::modes::{CTR, Ctr, ModeNames};
 use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::errors::SymmetricCipherError;
@@ -38,7 +37,6 @@ use bouncycastle_core::symmetric_key::{
 use bouncycastle_core::traits::{StreamCipherDecryptor, StreamCipherEncryptor};
 use bouncycastle_core_test_framework::FixedSeedRNG;
 use bouncycastle_core_test_framework::from_key_material::TestFrameworkFromKeyMaterial;
-use bouncycastle_core_test_framework::key_stream::TestFrameworkKeyStream;
 use bouncycastle_core_test_framework::symmetric_ciphers::TestFrameworkStreamCipher;
 use common::{ForwardOnlyToy, SwappedFourToy, SwappedPairToy, TOY_LEN, Toy, toy_key};
 use toy_key::{ToyKey, os_rng};
@@ -138,25 +136,6 @@ const CHUNKINGS: [usize; 12] = [1, 3, 5, 7, 15, 16, 17, 31, 32, 33, 64, 100];
 #[test]
 fn ctr_conforms_to_the_stream_cipher_framework() {
     TestFrameworkStreamCipher::new().test_key::<TOY_LEN, NONCE_LEN, _>(&ctr_key(), &mut os_rng());
-}
-
-/// The keystream under the mode, on its own: over the toy at the default nonce length and at the
-/// one-byte-counter length, and over [`ForwardOnlyToy`] so that whatever the framework drives
-/// through the batch paths is shown to get there without the inverse cipher.
-#[test]
-fn ctr_keystream_conforms_to_the_key_stream_framework() {
-    let framework = TestFrameworkKeyStream::new();
-    let toy = Toy::new(&toy_key()).unwrap();
-    framework.test::<NONCE_LEN, TOY_LEN, _>(|nonce| {
-        CtrKeyStream::<Toy, TOY_LEN, NONCE_LEN>::from_perm(&toy, *nonce)
-    });
-    framework.test::<SHORT_CTR_NONCE_LEN, TOY_LEN, _>(|nonce| {
-        CtrKeyStream::<Toy, TOY_LEN, SHORT_CTR_NONCE_LEN>::from_perm(&toy, *nonce)
-    });
-    let forward_only = ForwardOnlyToy::new(&toy_key()).unwrap();
-    framework.test::<NONCE_LEN, TOY_LEN, _>(|nonce| {
-        CtrKeyStream::<ForwardOnlyToy, TOY_LEN, NONCE_LEN>::from_perm(&forward_only, *nonce)
-    });
 }
 
 // ---- the spec equations -------------------------------------------------------------------

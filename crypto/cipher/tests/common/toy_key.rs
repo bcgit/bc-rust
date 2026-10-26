@@ -84,7 +84,6 @@ where
             )
             .into());
         }
-        key.check_algorithm(M::ALG_NAME)?;
         let perm = match M::KEY_TYPE {
             KeyType::SymmetricCipherKey => P::new(key)?,
             _ => P::new(&as_cipher_key(key)?)?,

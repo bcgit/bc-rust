@@ -25,11 +25,11 @@ pub trait EcbEncryptionKey<const KEY_LEN: usize, const BLOCK_LEN: usize> {
     ///
     /// # Errors
     /// The encryptor's own refusals; ECB has none.
-    fn encrypt_inplace<const LEN: usize>(
-        &self,
-        data: &mut [u8; LEN],
-    ) -> Result<usize, SymmetricCipherError> {
-        self.create_encryptor().do_encrypt_inplace(data)
+    fn encrypt_inplace(&self, data: &mut [u8]) -> Result<usize, SymmetricCipherError> {
+        let (blocks, []) = data.as_chunks_mut::<BLOCK_LEN>() else {
+            return Err(SymmetricCipherError::DataNotBlockAligned);
+        };
+        self.create_encryptor().do_encrypt_blocks_inplace(blocks)
     }
 }
 
@@ -48,10 +48,10 @@ pub trait EcbDecryptionKey<const KEY_LEN: usize, const BLOCK_LEN: usize> {
     ///
     /// # Errors
     /// The decryptor's own refusals; ECB has none.
-    fn decrypt_inplace<const LEN: usize>(
-        &self,
-        data: &mut [u8; LEN],
-    ) -> Result<usize, SymmetricCipherError> {
-        self.create_decryptor().do_decrypt_inplace(data)
+    fn decrypt_inplace(&self, data: &mut [u8]) -> Result<usize, SymmetricCipherError> {
+        let (blocks, []) = data.as_chunks_mut::<BLOCK_LEN>() else {
+            return Err(SymmetricCipherError::DataNotBlockAligned);
+        };
+        self.create_decryptor().do_decrypt_blocks_inplace(blocks)
     }
 }

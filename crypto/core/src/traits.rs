@@ -231,13 +231,12 @@ pub trait AlgorithmOID {
 }
 
 /// The decryption half of a block cipher's streaming API; see [`BlockCipherEncryptor`], whose
-/// notes on in-place operation, compile-time lengths and the `Result` all apply here too.
+/// notes on in-place operation, lengths and the `Result` all apply here too.
 pub trait BlockCipherDecryptor<const INIT_DATA_LEN: usize, const BLOCK_LEN: usize>:
     Algorithm + Sized
 {
     /// The implementor hook: decrypts consecutive whole blocks in place. See
-    /// [`BlockCipherEncryptor::do_encrypt_blocks_inplace`]; callers should normally use the flat
-    /// [`BlockCipherDecryptor::do_decrypt_inplace`] instead. Returns the number of bytes written, which is
+    /// [`BlockCipherEncryptor::do_encrypt_blocks_inplace`]. Returns the number of bytes written, which is
     /// always `blocks.len() * BLOCK_LEN` since a block cipher mode never changes the length of its
     /// data, but the count is still returned for consistency with the rest of the library's
     /// output-buffer APIs.
@@ -245,24 +244,6 @@ pub trait BlockCipherDecryptor<const INIT_DATA_LEN: usize, const BLOCK_LEN: usiz
         &mut self,
         blocks: &mut [[u8; BLOCK_LEN]],
     ) -> Result<usize, SymmetricCipherError>;
-
-    /// Streaming: decrypts `LEN` bytes, a whole number of blocks, in place. `LEN % BLOCK_LEN == 0`
-    /// is checked at compile time, exactly as for [`BlockCipherEncryptor::do_encrypt_inplace`].
-    /// Returns the number of bytes written; see [`Self::do_decrypt_blocks_inplace`].
-    fn do_decrypt_inplace<const LEN: usize>(
-        &mut self,
-        data: &mut [u8; LEN],
-    ) -> Result<usize, SymmetricCipherError> {
-        const {
-            assert!(
-                LEN.is_multiple_of(BLOCK_LEN),
-                "length must be a whole number of BLOCK_LEN-byte blocks"
-            )
-        };
-        // The remainder is provably empty (asserted above) and ignored.
-        let (blocks, _) = data.as_chunks_mut::<BLOCK_LEN>();
-        self.do_decrypt_blocks_inplace(blocks)
-    }
 }
 
 /// The encryption half of a block cipher's API.
@@ -292,18 +273,17 @@ pub trait BlockCipherDecryptor<const INIT_DATA_LEN: usize, const BLOCK_LEN: usiz
 /// separate output buffer would only ever be a copy, and a copy of plaintext is one more thing to
 /// scrub. Callers that need to keep the plaintext copy it first.
 ///
-/// # Lengths are checked at compile time
+/// # Block alignment
 ///
-/// Every buffer is a `[u8; LEN]`, and `LEN % BLOCK_LEN == 0` is checked by an inline `const`
-/// assertion when the method is instantiated: a misaligned length is a compile error at the call
-/// site, not a runtime `Err`, which is why there is no length variant of [`SymmetricCipherError`]
-/// here. Data whose length is only known at run time is fed in block by block, or through the
-/// padding layer.
+/// The streaming methods take whole blocks, `&mut [[u8; BLOCK_LEN]]`, so a partial block cannot be
+/// expressed. The one-shots take a `&mut [u8]` and refuse one that is not a whole number of blocks
+/// with [`SymmetricCipherError::DataNotBlockAligned`], before doing any work. Data of any length
+/// goes through the padding layer.
 ///
 /// # Why the data methods still return `Result`
 ///
-/// Nothing about the buffer can go wrong, and a constructed value is always ready to use, so a
-/// mode like CBC never returns `Err` from them. The `Result` is for modes with a per-initialization
+/// Nothing about a whole-blocks buffer can go wrong, and a constructed value is always ready to
+/// use, so a mode like CBC never returns `Err` from the streaming methods. The `Result` is for modes with a per-initialization
 /// data limit -- a counter-based mode must refuse to encrypt past the point where its counter would
 /// repeat -- which a streaming API cannot check any earlier than the call that would cross it.
 pub trait BlockCipherEncryptor<const INIT_DATA_LEN: usize, const BLOCK_LEN: usize>:
@@ -318,7 +298,6 @@ pub trait BlockCipherEncryptor<const INIT_DATA_LEN: usize, const BLOCK_LEN: usiz
     /// no length invariant for a const parameter to carry, and because how to batch the blocks --
     /// singly, in pairs, in fours -- is the mode's decision, not the caller's: a mode whose
     /// permutation processes several blocks at once (CBC decryption, CTR) chunks the slice itself.
-    /// Callers should normally use the flat [`BlockCipherEncryptor::do_encrypt_inplace`] instead.
     /// Returns the number of bytes written, which is always `blocks.len() * BLOCK_LEN` since a
     /// block cipher mode never changes the length of its data, but the count is still returned for
     /// consistency with the rest of the library's output-buffer APIs.
@@ -326,27 +305,6 @@ pub trait BlockCipherEncryptor<const INIT_DATA_LEN: usize, const BLOCK_LEN: usiz
         &mut self,
         blocks: &mut [[u8; BLOCK_LEN]],
     ) -> Result<usize, SymmetricCipherError>;
-
-    /// Streaming: encrypts `LEN` bytes, a whole number of blocks, in place. A sequence of calls
-    /// is equivalent to one call over the concatenation. Returns the number of bytes written; see
-    /// [`Self::do_encrypt_blocks_inplace`].
-    ///
-    /// `LEN % BLOCK_LEN == 0` is checked **at compile time**; see the trait docs. The whole buffer
-    /// then goes to [`BlockCipherEncryptor::do_encrypt_blocks_inplace`] in one call.
-    fn do_encrypt_inplace<const LEN: usize>(
-        &mut self,
-        data: &mut [u8; LEN],
-    ) -> Result<usize, SymmetricCipherError> {
-        const {
-            assert!(
-                LEN.is_multiple_of(BLOCK_LEN),
-                "length must be a whole number of BLOCK_LEN-byte blocks"
-            )
-        };
-        // The remainder is provably empty (asserted above) and ignored.
-        let (blocks, _) = data.as_chunks_mut::<BLOCK_LEN>();
-        self.do_encrypt_blocks_inplace(blocks)
-    }
 }
 
 /// A hash function is a cryptographic primitive that takes an input of any length and produces a fixed-size output.
@@ -1239,8 +1197,9 @@ pub trait SymmetricCipherDecryptor<const INIT_DATA_LEN: usize, const FINAL_LEN: 
     /// used.
     ///
     /// # Errors
-    /// [`SymmetricCipherError::DecryptionFailed`] if the ciphertext was malformed (empty, not a
-    /// whole number of blocks, or not the length an implementor's type fixes);
+    /// [`SymmetricCipherError::DataNotBlockAligned`] if a block cipher's ciphertext was not a whole
+    /// number of blocks; [`SymmetricCipherError::DecryptionFailed`] if it was otherwise malformed
+    /// (empty, or not the length an implementor's type fixes);
     /// [`SymmetricCipherError::PaddingError`] or
     /// [`SymmetricCipherError::AEADTagCheckFailed`] if the check fails. In every error case the
     /// caller learns only that decryption failed, not where.

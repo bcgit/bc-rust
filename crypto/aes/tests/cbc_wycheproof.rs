@@ -78,7 +78,9 @@ enum Expected {
 /// For a valid case, `msg` must encrypt to exactly `expected_ct` under the vector's IV, and
 /// `expected_ct` must decrypt back to `msg`. For an invalid case only the decrypt direction is
 /// checked -- re-encrypting `msg` with correct padding has no reason to reproduce a deliberately
-/// mis-padded `ct` -- and it must fail with the variant the case's flags predict.
+/// mis-padded `ct` -- and it must fail with the variant the case's flags predict, leaving the
+/// output buffer zeroized: CBC writes plaintext before it reaches the padding, and the key's
+/// `decrypt_out` must wipe it when the final block does not unpad.
 fn run_case<K, const KEY_LEN: usize>(
     tc_id: u64,
     key_bytes: &[u8],
@@ -108,12 +110,20 @@ fn run_case<K, const KEY_LEN: usize>(
         assert_eq!(ct, expected_ct, "tcId {tc_id}: ciphertext mismatch");
     }
 
+    // Pre-filled with a non-zero byte, so a buffer the decryptor never wrote is not mistaken for
+    // one it zeroized.
     let pt_len =
         <K::Decryptor<'_> as SymmetricCipherDecryptor<BLOCK_LEN, BLOCK_LEN>>::decrypt_out_len(
             expected_ct.len(),
         );
-    let mut plaintext = vec![0u8; pt_len];
+    let mut plaintext = vec![0xEEu8; pt_len];
     let outcome = key.decrypt_out(&iv, expected_ct, &mut plaintext);
+    if outcome.is_err() {
+        assert!(
+            plaintext.iter().all(|&b| b == 0),
+            "tcId {tc_id}: a failed decrypt must leave the output buffer zeroized"
+        );
+    }
     match (expected, outcome) {
         (Expected::Valid, Ok(n)) => {
             plaintext.truncate(n);
