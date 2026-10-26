@@ -246,7 +246,7 @@ impl<'k, Dir> ChaCha20_Poly1305<'k, Dir> {
 
 impl ChaCha20_Poly1305<'_, Encrypting> {
     fn encrypt_bytes(&mut self, data: &mut [u8]) -> Result<(), SymmetricCipherError> {
-        self.check_data_len(data.len())?;
+        // do_encrypt_out, the only caller, has already checked the length.
         self.start_data();
         self.cipher.do_encrypt_inplace(data)?;
         self.mac.do_update(data);
