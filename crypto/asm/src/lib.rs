@@ -173,8 +173,8 @@
 #![forbid(missing_docs)]
 #![deny(unsafe_code)]
 
-// The operating systems in this gate are the ones `arm64_le/cpu/probe.rs` has a back end for: the
-// two lists change together.
+// The operating systems in this gate are the ones `arm64_le/cpu/os/` has a back end for: the two
+// lists change together.
 #[cfg(all(
     target_arch = "aarch64",
     target_endian = "little",
