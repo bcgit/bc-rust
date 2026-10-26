@@ -24,12 +24,19 @@
 //! criterion's untimed setup (`iter_batched`); the copy is not part of the timing.
 
 use bouncycastle_aes::hazmat::{AES128Internal, AES256Internal};
+use bouncycastle_aes::{
+    AES_CMAC_128, AES_CMAC_256, AES_GMAC_128, AES_GMAC_256, AES128Key, AES256Key,
+};
 use bouncycastle_cipher::modes::hazmat::ecb::Ecb;
-use bouncycastle_cipher::modes::{Cbc, CcmPacket, Cfb, Cfb8, Ctr, GCM_NONCE_LEN, Gcm};
+use bouncycastle_cipher::modes::{
+    CCM, CMAC, Cbc, CcmEncryptor, Cfb, Cfb8, Ctr, GCM_NONCE_LEN, GMAC, Gcm,
+};
 use bouncycastle_cipher::{Decrypting, Encrypting};
+use bouncycastle_core::hazmat::{AeadPacketEncryptMode, ElectronicCodeBook};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
+use bouncycastle_core::symmetric_key::{FromKeyMaterial, MacGenerationKey};
 use bouncycastle_core::traits::{
-    AEADCipherEncryptor, BlockCipherDecryptor, BlockCipherEncryptor, StreamCipherDecryptor,
+    AEADCipherEncryptor, BlockCipherDecryptor, BlockCipherEncryptor, MAC, StreamCipherDecryptor,
     StreamCipherEncryptor, SymmetricCipherEncryptor,
 };
 use bouncycastle_core_test_framework::FixedSeedRNG;
@@ -46,11 +53,26 @@ type Aes128Cfb<Dir> = Cfb<AES128Internal, Dir, 16, BLOCK_LEN>;
 type Aes128Cfb8<Dir> = Cfb8<AES128Internal, Dir, 16, BLOCK_LEN>;
 
 /// CCM at the parameters the ACVP vectors and most protocols use: a 12-byte nonce and a full
-/// 16-byte tag.
+/// 16-byte tag. The mode's in-place one-shots over the keyed permutation are the direct path;
+/// the frame parameters are unused by them.
 const CCM_NONCE_LEN: usize = 12;
 const CCM_TAG_LEN: usize = 16;
-type Aes128CcmEnc =
-    CcmPacket<AES128Internal, Encrypting, 16, BLOCK_LEN, CCM_NONCE_LEN, CCM_TAG_LEN>;
+type Aes128CcmMode = CCM<CCM_NONCE_LEN, CCM_TAG_LEN>;
+
+/// The trait adapter takes its frame size at compile time. Its one-shots are not bound by it,
+/// but using the same 4 KiB message keeps this comparison representative of the public alias a
+/// packet protocol would choose.
+const CCM_BUFFER_LEN: usize = 4096;
+const CCM_AAD_LEN: usize = 64;
+type Aes128CcmEncryptor = CcmEncryptor<
+    AES128Internal,
+    16,
+    BLOCK_LEN,
+    CCM_NONCE_LEN,
+    CCM_TAG_LEN,
+    CCM_AAD_LEN,
+    CCM_BUFFER_LEN,
+>;
 /// GCM with the full 16-byte tag, as the `AES_GCM_*` aliases fix it.
 const GCM_TAG_LEN: usize = 16;
 type Aes128Gcm<Dir> = Gcm<AES128Internal, Dir, 16, GCM_TAG_LEN>;
@@ -61,6 +83,12 @@ type Aes128Ecb<Dir> = Ecb<AES128Internal, Dir, 16, BLOCK_LEN>;
 fn key<const N: usize>() -> KeyMaterial<N> {
     let bytes: [u8; N] = core::array::from_fn(|i| (i as u8).wrapping_mul(7).wrapping_add(1));
     KeyMaterial::<N>::from_bytes_as_type(&bytes, KeyType::SymmetricCipherKey).unwrap()
+}
+
+/// [`key`]'s bytes as a `KeyType::MACKey`, which is what CMAC takes.
+fn mac_key<const N: usize>() -> KeyMaterial<N> {
+    let bytes: [u8; N] = core::array::from_fn(|i| (i as u8).wrapping_mul(7).wrapping_add(1));
+    KeyMaterial::<N>::from_bytes_as_type(&bytes, KeyType::MACKey).unwrap()
 }
 
 fn data() -> Vec<[u8; BLOCK_LEN]> {
@@ -328,7 +356,7 @@ fn bench_init(c: &mut Criterion) {
 /// Decryption does the same work in the opposite order (Sec 6.1 and Sec 6.2), and AAD alongside a
 /// payload costs the sum of the two measurements here, so neither is measured separately.
 fn bench_ccm_aes128(c: &mut Criterion) {
-    let key = key::<16>();
+    let perm = AES128Internal::new(&key::<16>()).unwrap();
     let nonce = [0x24u8; CCM_NONCE_LEN];
     let data = [0xA5u8; DATA_LEN];
     let no_aad: [u8; 0] = [];
@@ -338,15 +366,14 @@ fn bench_ccm_aes128(c: &mut Criterion) {
 
     group.bench_function("encrypt 16KiB, no AAD", |b| {
         b.iter_batched_ref(
-            || [0u8; DATA_LEN],
-            |out| {
+            || data,
+            |buf| {
                 black_box(
-                    Aes128CcmEnc::encrypt_detached_out(
-                        black_box(&key),
+                    Aes128CcmMode::encrypt_detached_in_place_nonce(
+                        black_box(&perm),
                         &nonce,
                         &no_aad,
-                        black_box(&data),
-                        out,
+                        buf,
                     )
                     .unwrap(),
                 )
@@ -361,16 +388,72 @@ fn bench_ccm_aes128(c: &mut Criterion) {
         b.iter(|| {
             let mut out: [u8; 0] = [];
             black_box(
-                Aes128CcmEnc::encrypt_detached_out(
-                    black_box(&key),
+                Aes128CcmMode::encrypt_detached_in_place_nonce(
+                    black_box(&perm),
                     &nonce,
                     black_box(&data),
-                    &no_aad,
                     &mut out,
                 )
                 .unwrap(),
             )
         })
+    });
+
+    group.finish();
+}
+
+/// The [`AEADCipherEncryptor`] one-shot against the mode's in-place one-shot on the same message.
+///
+/// Both end in the same packet implementation; the trait form copies the message into the
+/// caller's output buffer and draws the nonce. A cheap deterministic RNG, created once outside
+/// the timed loop, isolates that draw from OS entropy and DRBG construction.
+fn bench_ccm_one_shot_pair(c: &mut Criterion) {
+    let key = key::<16>();
+    let perm = AES128Internal::new(&key).unwrap();
+    let data = [0xA5u8; CCM_BUFFER_LEN];
+    let no_aad: [u8; 0] = [];
+    let nonce = [0x24u8; CCM_NONCE_LEN];
+    let mut rng = FixedSeedRNG::<CCM_NONCE_LEN>::new(nonce);
+
+    let mut group = c.benchmark_group("modes::ccm::one_shot");
+    group.throughput(Throughput::Bytes(CCM_BUFFER_LEN as u64));
+
+    group.bench_function("AEADCipherEncryptor::encrypt_detached_rng_out 4KiB", |b| {
+        b.iter_batched_ref(
+            || [0u8; CCM_BUFFER_LEN],
+            |out| {
+                black_box(
+                    Aes128CcmEncryptor::encrypt_detached_rng_out(
+                        black_box(&key),
+                        &mut rng,
+                        &no_aad,
+                        black_box(&data),
+                        out,
+                    )
+                    .unwrap(),
+                )
+            },
+            BatchSize::LargeInput,
+        )
+    });
+
+    // The same 4 KiB and nonce through the mode's in-place one-shot, for the ratio.
+    group.bench_function("CCM::encrypt_detached_in_place_nonce 4KiB", |b| {
+        b.iter_batched_ref(
+            || data,
+            |buf| {
+                black_box(
+                    Aes128CcmMode::encrypt_detached_in_place_nonce(
+                        black_box(&perm),
+                        &nonce,
+                        &no_aad,
+                        buf,
+                    )
+                    .unwrap(),
+                )
+            },
+            BatchSize::LargeInput,
+        )
     });
 
     group.finish();
@@ -464,8 +547,77 @@ fn bench_gcm_aes256(c: &mut Criterion) {
     group.finish();
 }
 
+/// CMAC is serial like CBC encryption (SP 800-38B Sec 6.2 step 6 chains every block), so it
+/// should come out close to `modes::cbc::AES_128` encryption. The key-object route skips the
+/// per-message subkey derivation, one block encryption, which is invisible at 16 KiB.
+fn bench_cmac(c: &mut Criterion) {
+    let data: Vec<u8> = data().concat();
+    let mut group = c.benchmark_group("modes::cmac");
+    group.throughput(Throughput::Bytes(DATA_LEN as u64));
+
+    let key128 = mac_key::<16>();
+    group.bench_function("AES_128 MAC::new 16KiB", |b| {
+        b.iter(|| black_box(AES_CMAC_128::new(&key128).unwrap().mac(black_box(&data))))
+    });
+    let key_object_128 = AES128Key::<CMAC>::from_key_material(&key128).unwrap();
+    group.bench_function("AES_128 key object 16KiB", |b| {
+        b.iter(|| black_box(key_object_128.mac(black_box(&data))))
+    });
+    let key256 = mac_key::<32>();
+    group.bench_function("AES_256 MAC::new 16KiB", |b| {
+        b.iter(|| black_box(AES_CMAC_256::new(&key256).unwrap().mac(black_box(&data))))
+    });
+    let key_object_256 = AES256Key::<CMAC>::from_key_material(&key256).unwrap();
+    group.bench_function("AES_256 key object 16KiB", |b| {
+        b.iter(|| black_box(key_object_256.mac(black_box(&data))))
+    });
+
+    group.finish();
+}
+
+/// GMAC is GHASH over the message plus two cipher calls, so it is several times faster than CMAC
+/// and the same as GCM's AAD-only measurement; the key object saves the schedule and `H` per tag.
+fn bench_gmac(c: &mut Criterion) {
+    let data: Vec<u8> = data().concat();
+    let mut group = c.benchmark_group("modes::gmac");
+    group.throughput(Throughput::Bytes(DATA_LEN as u64));
+    let mut rng = FixedSeedRNG::<GCM_NONCE_LEN>::new([0x24u8; GCM_NONCE_LEN]);
+
+    let key128 = mac_key::<16>();
+    group.bench_function("AES_128 Gmac::new 16KiB", |b| {
+        b.iter(|| {
+            let (gen_, _) = AES_GMAC_128::<Encrypting>::new(&key128, &mut rng).unwrap();
+            black_box(gen_.mac(black_box(&data)))
+        })
+    });
+    let key_object_128 = AES128Key::<GMAC>::from_key_material(&key128).unwrap();
+    group.bench_function("AES_128 key object 16KiB", |b| {
+        b.iter(|| {
+            let (gen_, _) = key_object_128.create_generator(&mut rng).unwrap();
+            black_box(gen_.mac(black_box(&data)))
+        })
+    });
+    let key256 = mac_key::<32>();
+    group.bench_function("AES_256 Gmac::new 16KiB", |b| {
+        b.iter(|| {
+            let (gen_, _) = AES_GMAC_256::<Encrypting>::new(&key256, &mut rng).unwrap();
+            black_box(gen_.mac(black_box(&data)))
+        })
+    });
+    let key_object_256 = AES256Key::<GMAC>::from_key_material(&key256).unwrap();
+    group.bench_function("AES_256 key object 16KiB", |b| {
+        b.iter(|| {
+            let (gen_, _) = key_object_256.create_generator(&mut rng).unwrap();
+            black_box(gen_.mac(black_box(&data)))
+        })
+    });
+
+    group.finish();
+}
+
 criterion_group!(
     benches, bench_aes128cbc, bench_cfb_aes128, bench_cfb8_aes128, bench_ctr_aes128,
-    bench_ecb_aes128, bench_ccm_aes128, bench_gcm_aes128, bench_gcm_aes256, bench_init
+    bench_ecb_aes128, bench_ccm_aes128, bench_ccm_one_shot_pair, bench_gcm_aes128,
+    bench_gcm_aes256, bench_init, bench_cmac, bench_gmac
 );
 criterion_main!(benches);

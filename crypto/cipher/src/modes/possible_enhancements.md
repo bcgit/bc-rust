@@ -13,6 +13,6 @@ Possible additional modes or features to be added to this crate:
   protocol to bound packet sizes and invocation counts, which this crate cannot enforce.
 * **CCM with a formatting function other than Appendix A's.** SP 800-38C Sec 5.4 allows
   alternatives and says "Alternative formatting functions may be developed in the future";
-  Appendix A's is the only one that exists in practice and the only one [`CcmPacket`] implements.
+  Appendix A's is the only one that exists in practice and the only one the mode implements.
 * Add GMAC and CMAC as top-level [`MAC']'s -- note that these behave differently to generic [MAC]s since they require
   both a key and a (non-zero) IV.

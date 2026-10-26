@@ -91,28 +91,36 @@ impl TestFrameworkMAC {
             ),
         }
 
+        // A MAC keyed by a block cipher (CMAC) accepts exactly one key length, so the weak key
+        // takes the length of the caller's key whenever that fits in the buffer, raised if need be
+        // to the shortest length `KeyMaterial` lets carry the lowered strength; the per-strength
+        // defaults apply only to a key that does not fit (empty, or longer than 64 bytes).
+        let weak_key_len = |default_len: usize, min_len: usize| match key.key_len() {
+            1..=64 => key.key_len().max(min_len),
+            _ => default_len,
+        };
         let mut low_security_key =
             KeyMaterial512::from_bytes_as_type(&DUMMY_SEED[..64], KeyType::MACKey).unwrap();
         do_hazardous_operations(&mut low_security_key, |low_security_key| {
             match M::new_allow_weak_key(key).unwrap().max_security_strength() {
                 SecurityStrength::None => {
-                    low_security_key.set_key_len(13).unwrap(); // truncates should be infallible
+                    low_security_key.set_key_len(weak_key_len(13, 0)).unwrap(); // truncates should be infallible
                     low_security_key.set_security_strength(SecurityStrength::None).unwrap();
                 }
                 SecurityStrength::_112bit => {
-                    low_security_key.set_key_len(28).unwrap(); // truncate should be infallible
+                    low_security_key.set_key_len(weak_key_len(28, 0)).unwrap(); // truncate should be infallible
                     low_security_key.set_security_strength(SecurityStrength::None).unwrap();
                 }
                 SecurityStrength::_128bit => {
-                    low_security_key.set_key_len(32).unwrap(); // truncate should be infallible
+                    low_security_key.set_key_len(weak_key_len(32, 14)).unwrap(); // truncate should be infallible
                     low_security_key.set_security_strength(SecurityStrength::_112bit).unwrap();
                 }
                 SecurityStrength::_192bit => {
-                    low_security_key.set_key_len(48).unwrap(); // truncate should be infallible
+                    low_security_key.set_key_len(weak_key_len(48, 16)).unwrap(); // truncate should be infallible
                     low_security_key.set_security_strength(SecurityStrength::_128bit).unwrap();
                 }
                 SecurityStrength::_256bit => {
-                    low_security_key.set_key_len(64).unwrap(); // truncate should be infallible
+                    low_security_key.set_key_len(weak_key_len(64, 24)).unwrap(); // truncate should be infallible
                     low_security_key.set_security_strength(SecurityStrength::_192bit).unwrap();
                 }
                 // `SecurityStrength` is `#[non_exhaustive]`, so this arm is required.

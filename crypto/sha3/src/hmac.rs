@@ -9,14 +9,11 @@
 //! HMAC over a SHA3 hash is found in this crate, and [`bouncycastle_hmac`] serves as a utility crate
 //! rather than as part of library's public API.
 //!
-//! The key buffer length of each alias is the underlying hash's block length: per RFC 2104, a key no
-//! longer than the block is used verbatim, and only longer keys are pre-hashed down to the output
-//! length, so the buffer must be able to hold a full block. It is taken from
-//! [`HashAlgParams::BLOCK_LEN`] -- the values FIPS 202 Table 3 ("Input block sizes for HMAC") gives
-//! for the SHA-3 hash functions -- rather than restated as a literal so the two cannot drift apart.
-//! Note that for SHA-3 the block length is the sponge *rate*, which *shrinks* as the output size
-//! grows, so HMAC-SHA3-224 has the largest key buffer (144 bytes) and HMAC-SHA3-512 the smallest
-//! (72 bytes) -- the opposite of the SHA-2 family.
+//! A key of any length is accepted: per RFC 2104, a key longer than the hash's block -- for SHA-3
+//! the sponge *rate*, FIPS 202 Table 3's "Input block sizes for HMAC", which shrinks as the output
+//! size grows -- is pre-hashed to the output length. The key's two pad states are computed once,
+//! when an [`HmacKey`](bouncycastle_hmac::HmacKey) is built or a worker is constructed from key
+//! material.
 //!
 //! # Usage
 //!
@@ -221,19 +218,15 @@
 //! No heap memory is used by the algorithm itself; the `Vec<u8>`-returning convenience methods
 //! allocate only the output buffer, and the `*_out` variants allocate nothing.
 //!
-//! | Object                                    | Size (bytes) |
-//! |-------------------------------------------|--------------|
-//! | `HMAC_SHA3_224`                           | 592          |
-//! | `HMAC_SHA3_256`                           | 584          |
-//! | `HMAC_SHA3_384`                           | 552          |
-//! | `HMAC_SHA3_512`                           | 520          |
-//! | Suspended state, all four ([`SuspendableKeyed`]) | 415   |
+//! | Object                                           | Size (bytes) |
+//! |--------------------------------------------------|--------------|
+//! | `HMAC_SHA3_224` .. `HMAC_SHA3_512`, and their `HmacKey` | 880   |
+//! | Suspended state, all four ([`SuspendableKeyed`]) | 415          |
 //!
-//! The object is the Keccak-f\[1600\] sponge (440 bytes, see the crate-level Memory Usage section),
-//! plus one block of key buffer, plus a `usize` recording the key length -- so 440 + 144 + 8 = 592
-//! for HMAC-SHA3-224 down to 440 + 72 + 8 = 520 for HMAC-SHA3-512. That is why the sizes *decrease*
-//! as the output size grows. The suspended state is exactly the inner hash's suspended state -- the
-//! key is deliberately excluded -- so all four share the sponge's single value.
+//! The worker and the key are each two Keccak-f\[1600\] sponges (440 bytes each, see the
+//! crate-level Memory Usage section): the inner hash and the outer pad state. The suspended state
+//! is exactly the inner hash's suspended state -- the key is deliberately excluded -- so all four
+//! share the sponge's single value.
 //!
 //! # 🚨 Security Considerations 🚨
 //!
@@ -283,7 +276,7 @@ pub const HMAC_SHA3_512_NAME: &str = "HMAC-SHA3-512";
 /*** Type aliases ***/
 /// Public type for HMAC using SHA3_224.
 #[allow(non_camel_case_types)]
-pub type HMAC_SHA3_224 = HMAC<SHA3_224, { <SHA3_224 as HashAlgParams>::BLOCK_LEN }>;
+pub type HMAC_SHA3_224 = HMAC<SHA3_224>;
 impl HMACParams for SHA3_224 {
     type MACKey = KeyMaterial<{ <SHA3_224 as HashAlgParams>::OUTPUT_LEN }>;
     const HMAC_ALG_NAME: &'static str = HMAC_SHA3_224_NAME;
@@ -296,7 +289,7 @@ impl HMACParams for SHA3_224 {
 
 /// Public type for HMAC using SHA3_256.
 #[allow(non_camel_case_types)]
-pub type HMAC_SHA3_256 = HMAC<SHA3_256, { <SHA3_256 as HashAlgParams>::BLOCK_LEN }>;
+pub type HMAC_SHA3_256 = HMAC<SHA3_256>;
 impl HMACParams for SHA3_256 {
     type MACKey = KeyMaterial<{ <SHA3_256 as HashAlgParams>::OUTPUT_LEN }>;
     const HMAC_ALG_NAME: &'static str = HMAC_SHA3_256_NAME;
@@ -309,7 +302,7 @@ impl HMACParams for SHA3_256 {
 
 /// Public type for HMAC using SHA3_384.
 #[allow(non_camel_case_types)]
-pub type HMAC_SHA3_384 = HMAC<SHA3_384, { <SHA3_384 as HashAlgParams>::BLOCK_LEN }>;
+pub type HMAC_SHA3_384 = HMAC<SHA3_384>;
 impl HMACParams for SHA3_384 {
     type MACKey = KeyMaterial<{ <SHA3_384 as HashAlgParams>::OUTPUT_LEN }>;
     const HMAC_ALG_NAME: &'static str = HMAC_SHA3_384_NAME;
@@ -322,7 +315,7 @@ impl HMACParams for SHA3_384 {
 
 /// Public type for HMAC using SHA3_512.
 #[allow(non_camel_case_types)]
-pub type HMAC_SHA3_512 = HMAC<SHA3_512, { <SHA3_512 as HashAlgParams>::BLOCK_LEN }>;
+pub type HMAC_SHA3_512 = HMAC<SHA3_512>;
 impl HMACParams for SHA3_512 {
     type MACKey = KeyMaterial<{ <SHA3_512 as HashAlgParams>::OUTPUT_LEN }>;
     const HMAC_ALG_NAME: &'static str = HMAC_SHA3_512_NAME;
