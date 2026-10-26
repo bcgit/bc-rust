@@ -17,7 +17,7 @@
 
 mod common;
 
-use bouncycastle_asm::arm64_le::ghash::Element;
+use bouncycastle_asm::Element;
 use common::Xorshift;
 
 /// `R = 11100001 || 0^120` (Sec 6.3): first byte `0xE1`, the rest zero, in the `[u64; 2]` form.

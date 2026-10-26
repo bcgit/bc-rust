@@ -27,9 +27,7 @@
 //! pairs in `tests/arm64_le_ghash_tests.rs`.
 
 use super::intrinsics::V128;
-
-/// A block of `GF(2^128)` as two big-endian `u64`s; see the module docs.
-pub type Element = [u64; 2];
+use crate::Element;
 
 /// An element in the byte-reversed order `PMULL` wants: the lane swap of the module docs.
 #[target_feature(enable = "aes,neon")]
