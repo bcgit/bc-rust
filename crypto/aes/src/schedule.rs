@@ -89,28 +89,23 @@ fn sub_word(word: u32) -> u32 {
 
 /// KEYEXPANSION() (FIPS 197 Sec 5.2, Algorithm 2), returning the bit-sliced schedule.
 ///
-/// `key` is `P::KEY_LEN` bytes by its type (`KEY_LEN == P::KEY_LEN` is asserted at compile time),
-/// so this cannot fail and takes no `Result`; [`crate::hazmat::AESInternal`]'s constructors hand
-/// over the array once `validate` has passed.
+/// `key`'s type is its length, `P::KEY_LEN` bytes, so this cannot fail and takes no `Result`.
 ///
 /// Algorithm 2 is followed literally -- lines 2-6 copy the key into `w[0..Nk]`, lines 7-16 derive
 /// the rest -- and then the finished schedule is rewritten in place into the storage form
 /// described in the module docs. Verified against the worked expansions in FIPS 197
 /// Appendix A.1, A.2 and A.3 by the tests at the bottom of this file, which unpack the stored
 /// schedule and compare every `w[i]`.
-pub(crate) fn expand<P: AESParams, const KEY_LEN: usize>(
-    key: &[u8; KEY_LEN],
-) -> Secret<P::Schedule> {
-    const { assert!(KEY_LEN == P::KEY_LEN, "the key array must be P::KEY_LEN bytes") };
-
+pub(crate) fn expand<P: AESParams>(key: &P::Key) -> Secret<P::Schedule> {
     let mut schedule = Secret::<P::Schedule>::new();
     let w = (*schedule).as_mut();
 
-    // Algorithm 2 lines 2-6: w[i] = key[4i .. 4i+3] for i < Nk. KEY_LEN == 4 * NK, so the
-    // array splits into exactly NK whole words with no remainder.
-    let (words, _) = key.as_chunks::<4>();
-    for (w_i, bytes) in w[..P::NK].iter_mut().zip(words) {
-        *w_i = u32::from_le_bytes(*bytes);
+    // Algorithm 2 lines 2-6: w[i] = key[4i .. 4i+3] for i < Nk. The key is `KEY_LEN = 4 * Nk`
+    // bytes, so it is `Nk` whole words and the remainder is empty by construction; the zip stops
+    // after them.
+    let (key_words, _) = key.as_ref().as_chunks::<4>();
+    for (wi, word) in w.iter_mut().zip(key_words) {
+        *wi = u32::from_le_bytes(*word);
     }
 
     // Algorithm 2 lines 7-16.
@@ -258,12 +253,8 @@ mod tests {
     /// Appendix A prints a word as the byte sequence `[a0,a1,a2,a3]` left to right, so the
     /// tabulated `u32` has `a0` in its *most* significant byte; words are held little-endian
     /// here, so `swap_bytes` is the conversion.
-    fn assert_expansion_matches<P: AESParams, const KEY_LEN: usize>(
-        key: &[u8; KEY_LEN],
-        expected: &[u32],
-        label: &str,
-    ) {
-        let schedule = expand::<P, KEY_LEN>(key);
+    fn assert_expansion_matches<P: AESParams>(key: &P::Key, expected: &[u32], label: &str) {
+        let schedule = expand::<P>(key);
         assert_eq!(expected.len(), 4 * (P::NR + 1), "{label}: table length");
         for (i, &want) in expected.iter().enumerate() {
             let got = classical_word::<P>(&schedule, i).swap_bytes();
@@ -277,7 +268,7 @@ mod tests {
             0x2b, 0x7e, 0x15, 0x16, 0x28, 0xae, 0xd2, 0xa6, 0xab, 0xf7, 0x15, 0x88, 0x09, 0xcf,
             0x4f, 0x3c,
         ];
-        assert_expansion_matches::<AES128Params, 16>(&key, &APPENDIX_A1_WORDS, "Appendix A.1");
+        assert_expansion_matches::<AES128Params>(&key, &APPENDIX_A1_WORDS, "Appendix A.1");
     }
 
     #[test]
@@ -286,7 +277,7 @@ mod tests {
             0x8e, 0x73, 0xb0, 0xf7, 0xda, 0x0e, 0x64, 0x52, 0xc8, 0x10, 0xf3, 0x2b, 0x80, 0x90,
             0x79, 0xe5, 0x62, 0xf8, 0xea, 0xd2, 0x52, 0x2c, 0x6b, 0x7b,
         ];
-        assert_expansion_matches::<AES192Params, 24>(&key, &APPENDIX_A2_WORDS, "Appendix A.2");
+        assert_expansion_matches::<AES192Params>(&key, &APPENDIX_A2_WORDS, "Appendix A.2");
     }
 
     #[test]
@@ -296,7 +287,7 @@ mod tests {
             0x77, 0x81, 0x1f, 0x35, 0x2c, 0x07, 0x3b, 0x61, 0x08, 0xd7, 0x2d, 0x98, 0x10, 0xa3,
             0x09, 0x14, 0xdf, 0xf4,
         ];
-        assert_expansion_matches::<AES256Params, 32>(&key, &APPENDIX_A3_WORDS, "Appendix A.3");
+        assert_expansion_matches::<AES256Params>(&key, &APPENDIX_A3_WORDS, "Appendix A.3");
     }
 
     #[test]
@@ -307,7 +298,7 @@ mod tests {
             0x2b, 0x7e, 0x15, 0x16, 0x28, 0xae, 0xd2, 0xa6, 0xab, 0xf7, 0x15, 0x88, 0x09, 0xcf,
             0x4f, 0x3c,
         ];
-        let schedule = expand::<AES128Params, 16>(&key);
+        let schedule = expand::<AES128Params>(&key);
         for i in 0..AES128Params::NK {
             let got = classical_word::<AES128Params>(&schedule, i);
             assert_eq!(got.to_le_bytes(), key[4 * i..4 * i + 4]);
@@ -353,7 +344,7 @@ mod tests {
             0x2b, 0x7e, 0x15, 0x16, 0x28, 0xae, 0xd2, 0xa6, 0xab, 0xf7, 0x15, 0x88, 0x09, 0xcf,
             0x4f, 0x3c,
         ];
-        let schedule = expand::<AES128Params, 16>(&key);
+        let schedule = expand::<AES128Params>(&key);
 
         // Recompute the classical schedule without the compression step.
         let mut w = [0u32; 44];

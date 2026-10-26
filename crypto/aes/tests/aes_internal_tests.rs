@@ -12,6 +12,9 @@
 use bouncycastle_aes::hazmat::engine::Bitsliced;
 use bouncycastle_aes::hazmat::{AES128Internal, AES192Internal, AES256Internal, AESInternal};
 use bouncycastle_aes::{AES128Params, AES192Params, AES256Params};
+use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
+use bouncycastle_core::hazmat::ElectronicCodeBook;
+use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::Algorithm;
 
@@ -90,4 +93,40 @@ fn the_engines_match_the_documented_memory_table_names_and_strengths() {
     assert_eq!(size_of::<AES128Internal>(), 176 * DEFAULT_ENGINE.0 + DEFAULT_ENGINE.1);
     assert_eq!(size_of::<AES192Internal>(), 208 * DEFAULT_ENGINE.0 + DEFAULT_ENGINE.1);
     assert_eq!(size_of::<AES256Internal>(), 240 * DEFAULT_ENGINE.0 + DEFAULT_ENGINE.1);
+}
+
+/// A `KeyMaterial<N>` holding one byte fewer than its capacity. The source is non-zero, since an
+/// all-zero one is tagged `Zeroized` and would fail the key-type check before the length check.
+fn one_byte_short<const N: usize>() -> KeyMaterial<N> {
+    let key = KeyMaterial::<N>::from_bytes_as_type(&[1u8; N][..N - 1], KeyType::SymmetricCipherKey)
+        .expect("a shorter source is accepted");
+    assert_eq!(key.key_len(), N - 1);
+    key
+}
+
+// `AESInternal::new` is reached through `ElectronicCodeBook::new`, the public path to it; it
+// checks the type, then the length, so a short key of the right type fails on the length.
+
+#[test]
+fn aes128_refuses_a_15_byte_key_with_invalid_length() {
+    assert!(matches!(
+        <AES128Internal as ElectronicCodeBook<16, 16>>::new(&one_byte_short::<16>()),
+        Err(SymmetricCipherError::KeyMaterialError(KeyMaterialError::InvalidLength))
+    ));
+}
+
+#[test]
+fn aes192_refuses_a_23_byte_key_with_invalid_length() {
+    assert!(matches!(
+        <AES192Internal as ElectronicCodeBook<24, 16>>::new(&one_byte_short::<24>()),
+        Err(SymmetricCipherError::KeyMaterialError(KeyMaterialError::InvalidLength))
+    ));
+}
+
+#[test]
+fn aes256_refuses_a_31_byte_key_with_invalid_length() {
+    assert!(matches!(
+        <AES256Internal as ElectronicCodeBook<32, 16>>::new(&one_byte_short::<32>()),
+        Err(SymmetricCipherError::KeyMaterialError(KeyMaterialError::InvalidLength))
+    ));
 }

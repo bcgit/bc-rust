@@ -219,12 +219,11 @@ impl<E: Engine<AES128Params>> AESInternal<AES128Params, E> {
     /// * [`KeyMaterialError::SecurityStrength`] if the key carries a strength below 128 bits.
     pub(crate) fn new(key: &KeyMaterial<16>) -> Result<Self, SymmetricCipherError> {
         Self::validate(key)?;
-        // `validate` checked key_len() == 16, which is exactly what ref_to_bytes() spans.
-        let bytes: &[u8; 16] = key
-            .ref_to_bytes()
-            .try_into()
-            .map_err(|_| SymmetricCipherError::KeyMaterialError(KeyMaterialError::InvalidLength))?;
-        Ok(Self { engine: E::expand(bytes), _params: PhantomData })
+        // `validate` has checked the length, so this cannot fail; it maps to the same error
+        // rather than panicking.
+        let key: &[u8; 16] =
+            key.ref_to_bytes().try_into().map_err(|_| KeyMaterialError::InvalidLength)?;
+        Ok(Self { engine: E::expand(key), _params: PhantomData })
     }
 }
 
@@ -232,12 +231,11 @@ impl<E: Engine<AES192Params>> AESInternal<AES192Params, E> {
     /// Expands a 24-byte key into an AES-192 schedule. See [`AES128Internal::new`] for the error cases.
     pub(crate) fn new(key: &KeyMaterial<24>) -> Result<Self, SymmetricCipherError> {
         Self::validate(key)?;
-        // `validate` checked key_len() == 24, which is exactly what ref_to_bytes() spans.
-        let bytes: &[u8; 24] = key
-            .ref_to_bytes()
-            .try_into()
-            .map_err(|_| SymmetricCipherError::KeyMaterialError(KeyMaterialError::InvalidLength))?;
-        Ok(Self { engine: E::expand(bytes), _params: PhantomData })
+        // `validate` has checked the length, so this cannot fail; it maps to the same error
+        // rather than panicking.
+        let key: &[u8; 24] =
+            key.ref_to_bytes().try_into().map_err(|_| KeyMaterialError::InvalidLength)?;
+        Ok(Self { engine: E::expand(key), _params: PhantomData })
     }
 }
 
@@ -245,12 +243,11 @@ impl<E: Engine<AES256Params>> AESInternal<AES256Params, E> {
     /// Expands a 32-byte key into an AES-256 schedule. See [`AES128Internal::new`] for the error cases.
     pub(crate) fn new(key: &KeyMaterial<32>) -> Result<Self, SymmetricCipherError> {
         Self::validate(key)?;
-        // `validate` checked key_len() == 32, which is exactly what ref_to_bytes() spans.
-        let bytes: &[u8; 32] = key
-            .ref_to_bytes()
-            .try_into()
-            .map_err(|_| SymmetricCipherError::KeyMaterialError(KeyMaterialError::InvalidLength))?;
-        Ok(Self { engine: E::expand(bytes), _params: PhantomData })
+        // `validate` has checked the length, so this cannot fail; it maps to the same error
+        // rather than panicking.
+        let key: &[u8; 32] =
+            key.ref_to_bytes().try_into().map_err(|_| KeyMaterialError::InvalidLength)?;
+        Ok(Self { engine: E::expand(key), _params: PhantomData })
     }
 }
 
