@@ -116,6 +116,10 @@ fn mul_no_reduce(a: V128, b: V128) -> (V128, V128) {
 }
 
 /// `X • Y` (Sec 6.3, Algorithm 1). A port of bc-fips `gfmul()`.
+///
+/// # Safety
+///
+/// Callable only through an [`Aes`](crate::Aes) proof, whose existence is the precondition.
 #[target_feature(enable = "aes,neon")]
 pub fn mul(x: &Element, y: &Element) -> Element {
     let (low, high) = mul_no_reduce(load(x), load(y));
@@ -127,6 +131,10 @@ pub fn mul(x: &Element, y: &Element) -> Element {
 /// reduced ones because reduction is linear.
 ///
 /// For GHASH pass `y = [H^4, H^3, H^2, H]` and `x[0] = Y ⊕ X1`, `x[1..] = X2, X3, X4`.
+///
+/// # Safety
+///
+/// Callable only through an [`Aes`](crate::Aes) proof, whose existence is the precondition.
 #[target_feature(enable = "aes,neon")]
 pub fn mul4(x: &[Element; 4], y: &[Element; 4]) -> Element {
     let (mut low, mut high) = mul_no_reduce(load(&x[0]), load(&y[0]));

@@ -38,6 +38,11 @@ pub struct V128(uint8x16_t);
 
 impl V128 {
     /// Loads sixteen bytes.
+    ///
+    /// # Safety
+    ///
+    /// Callable only from a kernel with the same `#[target_feature]`, reached through an
+    /// [`Aes`](crate::Aes) proof, whose existence is the precondition.
     #[target_feature(enable = "aes,neon")]
     #[inline]
     pub fn from_bytes(bytes: &[u8; 16]) -> V128 {
@@ -46,6 +51,11 @@ impl V128 {
     }
 
     /// Stores the sixteen bytes.
+    ///
+    /// # Safety
+    ///
+    /// Callable only from a kernel with the same `#[target_feature]`, reached through an
+    /// [`Aes`](crate::Aes) proof, whose existence is the precondition.
     #[target_feature(enable = "aes,neon")]
     #[inline]
     pub fn to_bytes(self) -> [u8; 16] {
@@ -56,6 +66,11 @@ impl V128 {
     }
 
     /// All zero.
+    ///
+    /// # Safety
+    ///
+    /// Callable only from a kernel with the same `#[target_feature]`, reached through an
+    /// [`Aes`](crate::Aes) proof, whose existence is the precondition.
     #[target_feature(enable = "aes,neon")]
     #[inline]
     pub fn zero() -> V128 {
@@ -63,6 +78,11 @@ impl V128 {
     }
 
     /// The same 32-bit word in all four lanes; its four bytes appear in memory order in each.
+    ///
+    /// # Safety
+    ///
+    /// Callable only from a kernel with the same `#[target_feature]`, reached through an
+    /// [`Aes`](crate::Aes) proof, whose existence is the precondition.
     #[target_feature(enable = "aes,neon")]
     #[inline]
     pub fn splat_u32(word: u32) -> V128 {
@@ -70,6 +90,11 @@ impl V128 {
     }
 
     /// 32-bit lane `L`.
+    ///
+    /// # Safety
+    ///
+    /// Callable only from a kernel with the same `#[target_feature]`, reached through an
+    /// [`Aes`](crate::Aes) proof, whose existence is the precondition.
     #[target_feature(enable = "aes,neon")]
     #[inline]
     pub fn lane_u32<const L: i32>(self) -> u32 {
@@ -77,6 +102,11 @@ impl V128 {
     }
 
     /// 64-bit lanes `lo` (bytes 0..8) and `hi` (bytes 8..16).
+    ///
+    /// # Safety
+    ///
+    /// Callable only from a kernel with the same `#[target_feature]`, reached through an
+    /// [`Aes`](crate::Aes) proof, whose existence is the precondition.
     #[target_feature(enable = "aes,neon")]
     #[inline]
     pub fn from_u64x2(lo: u64, hi: u64) -> V128 {
@@ -84,6 +114,11 @@ impl V128 {
     }
 
     /// 64-bit lane `L`.
+    ///
+    /// # Safety
+    ///
+    /// Callable only from a kernel with the same `#[target_feature]`, reached through an
+    /// [`Aes`](crate::Aes) proof, whose existence is the precondition.
     #[target_feature(enable = "aes,neon")]
     #[inline]
     pub fn lane_u64<const L: i32>(self) -> u64 {
@@ -91,6 +126,11 @@ impl V128 {
     }
 
     /// Bitwise XOR.
+    ///
+    /// # Safety
+    ///
+    /// Callable only from a kernel with the same `#[target_feature]`, reached through an
+    /// [`Aes`](crate::Aes) proof, whose existence is the precondition.
     #[target_feature(enable = "aes,neon")]
     #[inline]
     pub fn eor(self, other: V128) -> V128 {
@@ -98,6 +138,11 @@ impl V128 {
     }
 
     /// Bitwise OR.
+    ///
+    /// # Safety
+    ///
+    /// Callable only from a kernel with the same `#[target_feature]`, reached through an
+    /// [`Aes`](crate::Aes) proof, whose existence is the precondition.
     #[target_feature(enable = "aes,neon")]
     #[inline]
     pub fn orr(self, other: V128) -> V128 {
@@ -106,6 +151,11 @@ impl V128 {
 
     /// `AESE`: one AES encryption round without the column mixing, i.e.
     /// `SHIFTROWS(SUBBYTES(self XOR round_key))` in FIPS 197's terms (Sec 5.1.1, 5.1.2, 5.1.4).
+    ///
+    /// # Safety
+    ///
+    /// Callable only from a kernel with the same `#[target_feature]`, reached through an
+    /// [`Aes`](crate::Aes) proof, whose existence is the precondition.
     #[target_feature(enable = "aes,neon")]
     #[inline]
     pub fn aese(self, round_key: V128) -> V128 {
@@ -113,6 +163,11 @@ impl V128 {
     }
 
     /// `AESMC`: `MIXCOLUMNS(self)` (FIPS 197 Sec 5.1.3).
+    ///
+    /// # Safety
+    ///
+    /// Callable only from a kernel with the same `#[target_feature]`, reached through an
+    /// [`Aes`](crate::Aes) proof, whose existence is the precondition.
     #[target_feature(enable = "aes,neon")]
     #[inline]
     pub fn aesmc(self) -> V128 {
@@ -121,6 +176,11 @@ impl V128 {
 
     /// `AESD`: one AES decryption round without the column mixing, i.e.
     /// `INVSHIFTROWS(INVSUBBYTES(self XOR round_key))` (FIPS 197 Sec 5.3.1, 5.3.2, 5.3.4).
+    ///
+    /// # Safety
+    ///
+    /// Callable only from a kernel with the same `#[target_feature]`, reached through an
+    /// [`Aes`](crate::Aes) proof, whose existence is the precondition.
     #[target_feature(enable = "aes,neon")]
     #[inline]
     pub fn aesd(self, round_key: V128) -> V128 {
@@ -128,6 +188,11 @@ impl V128 {
     }
 
     /// `AESIMC`: `INVMIXCOLUMNS(self)` (FIPS 197 Sec 5.3.3).
+    ///
+    /// # Safety
+    ///
+    /// Callable only from a kernel with the same `#[target_feature]`, reached through an
+    /// [`Aes`](crate::Aes) proof, whose existence is the precondition.
     #[target_feature(enable = "aes,neon")]
     #[inline]
     pub fn aesimc(self) -> V128 {
@@ -135,6 +200,11 @@ impl V128 {
     }
 
     /// Reverses the byte order within each 64-bit lane.
+    ///
+    /// # Safety
+    ///
+    /// Callable only from a kernel with the same `#[target_feature]`, reached through an
+    /// [`Aes`](crate::Aes) proof, whose existence is the precondition.
     #[target_feature(enable = "aes,neon")]
     #[inline]
     pub fn rev64(self) -> V128 {
@@ -145,6 +215,11 @@ impl V128 {
     /// `a.ext::<N>(b)` is a window of width sixteen slid `N` bytes into the concatenation
     /// `a || b`. `self.ext::<N>(zero)` shifts `self` down by `N` bytes; `zero.ext::<N>(self)`
     /// shifts it up by `16 - N`.
+    ///
+    /// # Safety
+    ///
+    /// Callable only from a kernel with the same `#[target_feature]`, reached through an
+    /// [`Aes`](crate::Aes) proof, whose existence is the precondition.
     #[target_feature(enable = "aes,neon")]
     #[inline]
     pub fn ext<const N: i32>(self, other: V128) -> V128 {
@@ -152,6 +227,11 @@ impl V128 {
     }
 
     /// Logical right shift of each 32-bit lane by `N` bits, zero-filled.
+    ///
+    /// # Safety
+    ///
+    /// Callable only from a kernel with the same `#[target_feature]`, reached through an
+    /// [`Aes`](crate::Aes) proof, whose existence is the precondition.
     #[target_feature(enable = "aes,neon")]
     #[inline]
     pub fn shr32<const N: i32>(self) -> V128 {
@@ -159,6 +239,11 @@ impl V128 {
     }
 
     /// Left shift of each 32-bit lane by `N` bits, zero-filled.
+    ///
+    /// # Safety
+    ///
+    /// Callable only from a kernel with the same `#[target_feature]`, reached through an
+    /// [`Aes`](crate::Aes) proof, whose existence is the precondition.
     #[target_feature(enable = "aes,neon")]
     #[inline]
     pub fn shl32<const N: i32>(self) -> V128 {
@@ -166,6 +251,11 @@ impl V128 {
     }
 
     /// Wrapping addition of each 32-bit lane; carries never cross a lane.
+    ///
+    /// # Safety
+    ///
+    /// Callable only from a kernel with the same `#[target_feature]`, reached through an
+    /// [`Aes`](crate::Aes) proof, whose existence is the precondition.
     #[target_feature(enable = "aes,neon")]
     #[inline]
     pub fn add32(self, other: V128) -> V128 {
@@ -176,6 +266,11 @@ impl V128 {
     }
 
     /// `PMULL`: the 128-bit carry-less product of the low 64-bit lanes of `self` and `other`.
+    ///
+    /// # Safety
+    ///
+    /// Callable only from a kernel with the same `#[target_feature]`, reached through an
+    /// [`Aes`](crate::Aes) proof, whose existence is the precondition.
     #[target_feature(enable = "aes,neon")]
     #[inline]
     pub fn pmull_ll(self, other: V128) -> V128 {
@@ -186,6 +281,11 @@ impl V128 {
     }
 
     /// `PMULL`: the carry-less product of the high lane of `self` and the low lane of `other`.
+    ///
+    /// # Safety
+    ///
+    /// Callable only from a kernel with the same `#[target_feature]`, reached through an
+    /// [`Aes`](crate::Aes) proof, whose existence is the precondition.
     #[target_feature(enable = "aes,neon")]
     #[inline]
     pub fn pmull_hl(self, other: V128) -> V128 {
@@ -196,6 +296,11 @@ impl V128 {
     }
 
     /// `PMULL`: the carry-less product of the low lane of `self` and the high lane of `other`.
+    ///
+    /// # Safety
+    ///
+    /// Callable only from a kernel with the same `#[target_feature]`, reached through an
+    /// [`Aes`](crate::Aes) proof, whose existence is the precondition.
     #[target_feature(enable = "aes,neon")]
     #[inline]
     pub fn pmull_lh(self, other: V128) -> V128 {
@@ -206,6 +311,11 @@ impl V128 {
     }
 
     /// `PMULL2`: the 128-bit carry-less product of the high 64-bit lanes of `self` and `other`.
+    ///
+    /// # Safety
+    ///
+    /// Callable only from a kernel with the same `#[target_feature]`, reached through an
+    /// [`Aes`](crate::Aes) proof, whose existence is the precondition.
     #[target_feature(enable = "aes,neon")]
     #[inline]
     pub fn pmull_hh(self, other: V128) -> V128 {

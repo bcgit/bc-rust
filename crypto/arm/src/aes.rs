@@ -59,19 +59,21 @@ fn expand<const KEY_LEN: usize, const N: usize>(key: &[u8; KEY_LEN]) -> [Block; 
     };
     let nk = KEY_LEN / 4;
     let mut w = [[0u8; BLOCK_LEN]; N];
-    let word = |w: &[Block; N], i: usize| -> [u8; 4] {
-        w[i / 4][4 * (i % 4)..4 * (i % 4) + 4].try_into().expect("four bytes of a block")
-    };
+    // The 4 * N words, in order; both remainders are empty, since 16 * N and KEY_LEN are
+    // multiples of 4.
+    let (words, _) = w.as_flattened_mut().as_chunks_mut::<4>();
+    let (key_words, _) = key.as_chunks::<4>();
 
     // Lines 2-6: the first Nk words are the key itself.
-    for i in 0..nk {
-        w[i / 4][4 * (i % 4)..4 * (i % 4) + 4].copy_from_slice(&key[4 * i..4 * i + 4]);
+    for (word, key_word) in words.iter_mut().zip(key_words) {
+        *word = *key_word;
     }
 
-    // Lines 7-16.
+    // Lines 7-16. `i` runs over `nk..4 * N` with `nk >= 4`, so `i - 1`, `i - nk` and `i` all
+    // index within `words`, whose length is `4 * N`.
     for i in nk..4 * N {
         // Line 8: temp <- w[i - 1]
-        let mut temp = word(&w, i - 1);
+        let mut temp = words[i - 1];
         if i % nk == 0 {
             // Line 10: temp <- SUBWORD(ROTWORD(temp)) XOR Rcon[i / Nk]
             temp = sub_word(rot_word(temp));
@@ -81,10 +83,8 @@ fn expand<const KEY_LEN: usize, const N: usize>(key: &[u8; KEY_LEN]) -> [Block; 
             temp = sub_word(temp);
         }
         // Line 14: w[i] <- w[i - Nk] XOR temp
-        let prev = word(&w, i - nk);
-        for (b, (p, t)) in
-            w[i / 4][4 * (i % 4)..4 * (i % 4) + 4].iter_mut().zip(prev.iter().zip(temp))
-        {
+        let prev = words[i - nk];
+        for (b, (p, t)) in words[i].iter_mut().zip(prev.iter().zip(temp)) {
             *b = p ^ t;
         }
     }
@@ -92,18 +92,30 @@ fn expand<const KEY_LEN: usize, const N: usize>(key: &[u8; KEY_LEN]) -> [Block; 
 }
 
 /// KEYEXPANSION() for a 128-bit key (Sec 5.2): `Nk = 4`, `Nr = 10`.
+///
+/// # Safety
+///
+/// Callable only through an [`Aes`](crate::Aes) proof, whose existence is the precondition.
 #[target_feature(enable = "aes,neon")]
 pub fn expand_128(key: &[u8; 16]) -> RoundKeys128 {
     expand(key)
 }
 
 /// KEYEXPANSION() for a 192-bit key (Sec 5.2): `Nk = 6`, `Nr = 12`.
+///
+/// # Safety
+///
+/// Callable only through an [`Aes`](crate::Aes) proof, whose existence is the precondition.
 #[target_feature(enable = "aes,neon")]
 pub fn expand_192(key: &[u8; 24]) -> RoundKeys192 {
     expand(key)
 }
 
 /// KEYEXPANSION() for a 256-bit key (Sec 5.2): `Nk = 8`, `Nr = 14`.
+///
+/// # Safety
+///
+/// Callable only through an [`Aes`](crate::Aes) proof, whose existence is the precondition.
 #[target_feature(enable = "aes,neon")]
 pub fn expand_256(key: &[u8; 32]) -> RoundKeys256 {
     expand(key)
@@ -120,6 +132,10 @@ const fn check_rounds<const N: usize>() {
 /// Lines 19-22 of KEYEXPANSIONEIC() (Sec 5.3.5, Algorithm 5): `dw` is `w` with
 /// INVMIXCOLUMNS() applied to round keys `1..=Nr-1`; the first and last are unchanged. This is
 /// the schedule [`decrypt_blocks`] consumes.
+///
+/// # Safety
+///
+/// Callable only through an [`Aes`](crate::Aes) proof, whose existence is the precondition.
 #[target_feature(enable = "aes,neon")]
 pub fn equivalent_inverse_round_keys<const N: usize>(w: &[Block; N]) -> [Block; N] {
     check_rounds::<N>();
@@ -143,6 +159,10 @@ pub fn equivalent_inverse_round_keys<const N: usize>(w: &[Block; N]) -> [Block; 
 /// The `B` states advance together through each round so that independent `AESE`/`AESMC`
 /// chains overlap in the pipeline; the result is indistinguishable from `B` single-block
 /// calls.
+///
+/// # Safety
+///
+/// Callable only through an [`Aes`](crate::Aes) proof, whose existence is the precondition.
 #[target_feature(enable = "aes,neon")]
 pub fn encrypt_blocks<const N: usize, const B: usize>(w: &[Block; N], blocks: &mut [Block; B]) {
     check_rounds::<N>();
@@ -179,6 +199,10 @@ pub fn encrypt_blocks<const N: usize, const B: usize>(w: &[Block; N], blocks: &m
 /// first iteration's lines 5-6 are one `aesd`; each iteration's line 7 is an `aesimc` and its
 /// line 8 together with the next iteration's lines 5-6 is the next `aesd`; lines 10-12 end
 /// with a plain XOR with `dw[0]`.
+///
+/// # Safety
+///
+/// Callable only through an [`Aes`](crate::Aes) proof, whose existence is the precondition.
 #[target_feature(enable = "aes,neon")]
 pub fn decrypt_blocks<const N: usize, const B: usize>(dw: &[Block; N], blocks: &mut [Block; B]) {
     check_rounds::<N>();
