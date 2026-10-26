@@ -4,7 +4,7 @@
 
 use bouncycastle_aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
 use bouncycastle_aes::{AES_GCM_128, AES128Key, AES192Key, AES256Key};
-use bouncycastle_cipher::modes::{GCM, Gcm, GcmKeyState, ModeNames};
+use bouncycastle_cipher::modes::{CTR, GCM, Gcm, GcmKeyState, ModeNames};
 use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
 use bouncycastle_core::hazmat::ElectronicCodeBook;
@@ -303,6 +303,35 @@ fn a_cloned_key_is_the_same_key() {
     let (nonce, ct, tag) = encrypt_via_key::<16, _>(&key);
     assert_eq!(decrypt_via_key::<16, _>(&copy, &nonce, &ct, &tag).unwrap(), MSG);
     assert_eq!(encrypt_via_key::<16, _>(&copy), (nonce, ct, tag));
+}
+
+/// Equality is over the expanded state, so it follows the material: the same bytes under the same
+/// mode compare equal, as does a clone, and different bytes do not. Both shapes of state are
+/// covered: the bare schedule (`CTR`) and GCM's, which adds `H`. Keys have no `Debug`, hence
+/// `assert!` over `==` rather than `assert_eq!`.
+#[test]
+fn keys_compare_equal_exactly_when_their_material_does() {
+    let other = KeyMaterial::<16>::from_bytes_as_type(&[0x55; 16], KeyType::SymmetricCipherKey)
+        .expect("a valid key");
+
+    let key = AES128Key::<GCM>::from_key_material(&material::<16>()).unwrap();
+    assert!(key == key.clone());
+    assert!(key == AES128Key::<GCM>::from_key_material(&material::<16>()).unwrap());
+    assert!(key != AES128Key::<GCM>::from_key_material(&other).unwrap());
+
+    let key = AES128Key::<CTR>::from_key_material(&material::<16>()).unwrap();
+    assert!(key == key.clone());
+    assert!(key != AES128Key::<CTR>::from_key_material(&other).unwrap());
+
+    // The longer schedules are a different plane width; the comparison is over all of it.
+    let key = AES256Key::<GCM>::from_key_material(&material::<32>()).unwrap();
+    assert!(key == AES256Key::<GCM>::from_key_material(&material::<32>()).unwrap());
+    let mut bytes = [0u8; 32];
+    bytes.copy_from_slice(material::<32>().ref_to_bytes());
+    bytes[31] ^= 1;
+    let last_byte_differs =
+        KeyMaterial::<32>::from_bytes_as_type(&bytes, KeyType::SymmetricCipherKey).unwrap();
+    assert!(key != AES256Key::<GCM>::from_key_material(&last_byte_differs).unwrap());
 }
 
 /// Lengths either side of the 64-byte chunk the provided in-place bodies copy through, plus the

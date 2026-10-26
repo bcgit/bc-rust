@@ -2,6 +2,7 @@
 //!
 //! As with all Factory objects, this implements constructions from strings and defaults, and
 //! returns a [`XOFFactory`] object which itself implements the [`XOF`] trait as a pass-through to the underlying algorithm.
+//! See [`XOF`] for the full extendable-output API and the security distinction between XOFs and hashes.
 //!
 //! Example usage:
 //! ```

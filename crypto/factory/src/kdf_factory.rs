@@ -2,6 +2,7 @@
 //!
 //! As with all Factory objects, this implements constructions from strings and defaults, and
 //! returns a [`KDFFactory`] object which itself implements the [`KDF`] trait as a pass-through to the underlying algorithm.
+//! See [`KDF`] for the full key-derivation API, key-material handling rules, and additional-input semantics.
 //!
 //! Example usage:
 //! ```
