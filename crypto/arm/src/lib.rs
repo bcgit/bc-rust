@@ -109,6 +109,44 @@
 //! cannot see that the CPU has the instructions, and the value's existence is the proof that it
 //! does.
 //!
+//! ## What makes the kernels safe to call
+//!
+//! An [`Aes`] value comes only from [`Aes::detect`] or `Aes::declared`, and its field is
+//! private. `detect` asks for `FEAT_AES`, `FEAT_PMULL` and NEON (the table in the `cpu` module
+//! docs), which covers every feature the kernels' `#[target_feature]` attributes name; a proof
+//! may ask for more than its kernels need, never less. `declared` exists only under
+//! `cfg(target_feature = "aes")`, the feature those attributes name. The proof's methods take
+//! and return byte arrays and `[u64; 2]`, so no NEON vector type crosses it.
+//!
+//! Which kernels run depends on the CPU alone, never on the key or the data, and is decided once
+//! when the caller's value is built: `bouncycastle-aes`'s `Detected` engine chooses when it
+//! expands the key, and `bouncycastle-cipher`'s GHASH stores the proof when it is constructed.
+//!
+//! `dev_scripts/quality_stats.sh` counts the crate's `unsafe` blocks, functions, impls and traits
+//! by the keyword before `{`, `fn`, `impl` or `trait`, so the three `unsafe extern` declarations
+//! are not in it. The figure is 13: the eight proof methods, the two load/store wrappers and one
+//! operating-system call per back end. Any other figure is a review finding. A pull request
+//! that adds a kernel checks its attribute and proof parameters against the proof's row of the
+//! `cpu` table, confirms the proof asks for every feature the attribute names, says how the
+//! proof's `None` arm is exercised, and states the new figure.
+//!
+//! ## What the detector does not do
+//!
+//! The run-time detector reads what the operating system reports and nothing else. It has no
+//! counterpart to the standard library's Android workaround for the Samsung Exynos 9810, whose
+//! cores differ in features while kernels before Android 9 reported them for all cores: std
+//! 1.94.1 recognises that chip from the `ro.arch` system property and reports less. Nor does it
+//! fall back, as std does on Linux when `getauxval` is missing or returns zero for both words,
+//! to reading `/proc/self/auxv`: here two zero words mean no features.
+//!
+//! The crate has no test hook, neither an environment variable nor a cargo feature, so the
+//! `None` arms are exercised from outside the process, by intercepting the operating-system
+//! call. Otherwise the back ends read what std reads: `AT_HWCAP` and `AT_HWCAP2` on Linux and
+//! Android, and `PF_ARM_NEON_INSTRUCTIONS_AVAILABLE` and
+//! `PF_ARM_V8_CRYPTO_INSTRUCTIONS_AVAILABLE` on Windows. On macOS and iOS they read
+//! `hw.optional.arm.FEAT_AES` and `hw.optional.arm.FEAT_PMULL` as std does, but NEON as
+//! `hw.optional.neon`, because the `hw.optional.AdvSIMD` that std reads is gone from macOS 26.
+//!
 //! ## A binary built with `aes` requires the hardware
 //!
 //! Declaring `target_feature = "aes"` is a promise to the compiler, not a request. Running the
