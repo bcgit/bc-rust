@@ -902,9 +902,9 @@ mod ghash {
     //!
     //! On little-endian AArch64, where the CPU has `FEAT_AES`, `FEAT_PMULL` and NEON -- always, on a
     //! build that declares `target_feature = "aes"`; as found at run time, on a build for Linux,
-    //! Android, macOS, iOS or Windows that does not -- [`mul`] is `bouncycastle_arm`'s `PMULL`
-    //! kernel and [`Ghash::update`] folds whole blocks four at a time through its four-product
-    //! kernel, which sums four products under one reduction. That is
+    //! Android, macOS, iOS or Windows that does not -- every multiply is `bouncycastle_arm`'s
+    //! `PMULL` kernel and [`Ghash::update`] folds whole blocks four at a time through its
+    //! four-product kernel, which sums four products under one reduction. That is
     //! Sec 6.4's "In effect, the GHASH function calculates `X1•H^m ⊕ X2•H^(m-1) ⊕ ... ⊕ Xm•H`"
     //! taken four terms at a time: `Y = (Y ⊕ X1)•H^4 ⊕ X2•H^3 ⊕ X3•H^2 ⊕ X4•H`. The path keeps
     //! `H^2`, `H^3` and `H^4` beside `H`, 48 bytes more state; the suspended form is unchanged,
@@ -912,9 +912,11 @@ mod ghash {
     //! on a CPU without `PMULL`, the portable multiplier runs; the tests pin the two against each
     //! other and both against Algorithm 1.
     //!
-    //! The CPU check is `bouncycastle_arm::Aes::detect()`, made per multiply and per
-    //! [`Ghash::update`] call: free when the build declares the instructions, and a cached flag read
-    //! otherwise.
+    //! The CPU check is `bouncycastle_arm::Aes::detect()`, made once in [`Ghash::new`] and stored:
+    //! every multiply and every [`Ghash::update`] reads the stored proof. It is free when the build
+    //! declares the instructions, and one cached atomic load per construction otherwise. The
+    //! suspended state carries no choice, so a resumed worker, built by `new` before its state is
+    //! restored, follows the CPU it resumes on.
 
     use bouncycastle_core::errors::SuspendableError;
     use bouncycastle_utils::secret::Secret;
@@ -946,14 +948,13 @@ mod ghash {
 
     /// `x[0]` is the first eight bytes of `b` read big-endian, `x[1]` the last eight.
     fn block_from_bytes(b: &[u8; 16]) -> Block {
-        [
-            u64::from_be_bytes(
-                b[..8].try_into().expect("first half of a 16-byte block is 8 bytes"),
-            ),
-            u64::from_be_bytes(
-                b[8..].try_into().expect("second half of a 16-byte block is 8 bytes"),
-            ),
-        ]
+        // Two halves of eight, one per word; the remainder is empty by construction (16 = 2 x 8).
+        let (halves, _) = b.as_chunks::<8>();
+        let mut x = [0u64; 2];
+        for (w, c) in x.iter_mut().zip(halves) {
+            *w = u64::from_be_bytes(*c);
+        }
+        x
     }
 
     /// Inverse of [`block_from_bytes`]. Used only by the tests: [`Ghash::finish`] writes `S` straight
@@ -1081,44 +1082,27 @@ mod ghash {
         [z0, z1]
     }
 
-    /// `x . y` (Sec 6.3's `*` operator): the portable multiplier, on a target without `PMULL`.
-    #[cfg(not(all(
-        target_arch = "aarch64",
-        target_endian = "little",
-        target_feature = "neon",
-        any(
-            target_feature = "aes",
-            target_os = "linux",
-            target_os = "android",
-            target_os = "macos",
-            target_os = "ios",
-            target_os = "windows"
-        )
-    )))]
-    pub(crate) fn mul(x: &Block, y: &Block) -> Block {
-        mul_portable(x, y)
-    }
-
-    /// `x . y` (Sec 6.3's `*` operator) on `PMULL` where the CPU has it, else portable; see the module
-    /// docs.
-    #[cfg(all(
-        target_arch = "aarch64",
-        target_endian = "little",
-        target_feature = "neon",
-        any(
-            target_feature = "aes",
-            target_os = "linux",
-            target_os = "android",
-            target_os = "macos",
-            target_os = "ios",
-            target_os = "windows"
-        )
-    ))]
-    pub(crate) fn mul(x: &Block, y: &Block) -> Block {
-        match Aes::detect() {
-            Some(cx) => cx.ghash_mul(x, y),
-            None => mul_portable(x, y),
+    /// `x . y` (Sec 6.3's `*` operator) as a worker on this CPU computes it, for the tests: on
+    /// `PMULL` where the CPU has it, else portable. A worker reads the proof [`Ghash::new`] stored.
+    #[cfg(test)]
+    fn mul(x: &Block, y: &Block) -> Block {
+        #[cfg(all(
+            target_arch = "aarch64",
+            target_endian = "little",
+            target_feature = "neon",
+            any(
+                target_feature = "aes",
+                target_os = "linux",
+                target_os = "android",
+                target_os = "macos",
+                target_os = "ios",
+                target_os = "windows"
+            )
+        ))]
+        if let Some(cx) = Aes::detect() {
+            return cx.ghash_mul(x, y);
         }
+        mul_portable(x, y)
     }
 
     /// The `GHASH` accumulator (Algorithm 2, Sec 6.4).
@@ -1141,7 +1125,8 @@ mod ghash {
         /// The hash subkey `H = CIPH_K(0^128)`.
         h: Secret<Block>,
         /// `[H^4, H^3, H^2, H]`, in the order `mul4` pairs them with four consecutive blocks (see the
-        /// module docs). Derived from `h` and never suspended.
+        /// module docs). Derived from `h` when `aes` is `Some`, all zero and never read when it is
+        /// `None`, and never suspended.
         #[cfg(all(
             target_arch = "aarch64",
             target_endian = "little",
@@ -1156,11 +1141,31 @@ mod ghash {
             )
         ))]
         h_powers: Secret<[Block; 4]>,
+        /// The CPU proof, taken once in [`new`](Self::new): `Some` where the CPU has `FEAT_AES`,
+        /// `FEAT_PMULL` and NEON. Every multiply and [`update`](Self::update) reads it. Not
+        /// suspended: a resumed worker takes its own from the CPU it resumes on.
+        #[cfg(all(
+            target_arch = "aarch64",
+            target_endian = "little",
+            target_feature = "neon",
+            any(
+                target_feature = "aes",
+                target_os = "linux",
+                target_os = "android",
+                target_os = "macos",
+                target_os = "ios",
+                target_os = "windows"
+            )
+        ))]
+        aes: Option<Aes>,
         /// `Y_i` of Algorithm 2.
         y: Secret<Block>,
         /// Bytes of the current block not yet absorbed.
         pending: Secret<[u8; 16]>,
-        /// How many bytes of `pending` are meaningful, `0..=16`.
+        /// How many bytes of `pending` are meaningful: `0..=15` between calls, because
+        /// [`update`](Self::update) absorbs a block the moment it is complete and
+        /// [`restore_state`](Self::restore_state) rejects 16 and above. Each index and subtraction
+        /// on it below relies on this bound.
         pending_len: usize,
     }
 
@@ -1168,9 +1173,14 @@ mod ghash {
         /// `Y_0 = 0^128` (Algorithm 2 step 2), keyed by the hash subkey `H`.
         pub(crate) fn new(h: &[u8; 16]) -> Self {
             let mut hs: Secret<Block> = Secret::new();
-            hs[0] = u64::from_be_bytes(h[..8].try_into().expect("first half of H is 8 bytes"));
-            hs[1] = u64::from_be_bytes(h[8..].try_into().expect("second half of H is 8 bytes"));
-            // `H^2 = H . H`, `H^3 = H^2 . H`, `H^4 = H^3 . H` (Sec 6.3), stored highest power first.
+            // As in `block_from_bytes` (the remainder is empty, 16 = 2 x 8), but written straight
+            // into the `Secret` rather than through a stack `Block`.
+            let (halves, _) = h.as_chunks::<8>();
+            for (w, c) in hs.iter_mut().zip(halves) {
+                *w = u64::from_be_bytes(*c);
+            }
+            // The proof, asked for once; then `H^2 = H . H`, `H^3 = H^2 . H`, `H^4 = H^3 . H`
+            // (Sec 6.3), stored highest power first, only where `ghash_mul4` will read them.
             #[cfg(all(
                 target_arch = "aarch64",
                 target_endian = "little",
@@ -1184,13 +1194,16 @@ mod ghash {
                     target_os = "windows"
                 )
             ))]
-            let h_powers = {
+            let (aes, h_powers) = {
+                let aes = Aes::detect();
                 let mut p: Secret<[Block; 4]> = Secret::new();
-                p[3] = *hs;
-                p[2] = mul(&p[3], &hs);
-                p[1] = mul(&p[2], &hs);
-                p[0] = mul(&p[1], &hs);
-                p
+                if let Some(cx) = aes {
+                    p[3] = *hs;
+                    p[2] = cx.ghash_mul(&p[3], &hs);
+                    p[1] = cx.ghash_mul(&p[2], &hs);
+                    p[0] = cx.ghash_mul(&p[1], &hs);
+                }
+                (aes, p)
             };
             Self {
                 h: hs,
@@ -1208,21 +1221,49 @@ mod ghash {
                     )
                 ))]
                 h_powers,
+                #[cfg(all(
+                    target_arch = "aarch64",
+                    target_endian = "little",
+                    target_feature = "neon",
+                    any(
+                        target_feature = "aes",
+                        target_os = "linux",
+                        target_os = "android",
+                        target_os = "macos",
+                        target_os = "ios",
+                        target_os = "windows"
+                    )
+                ))]
+                aes,
                 y: Secret::new(),
                 pending: Secret::new(),
                 pending_len: 0,
             }
         }
 
-        /// `Y_i = (Y_{i-1} (+) X_i) . H` for one whole block `X_i`, updating `Y` in place.
-        ///
-        /// An associated function over the two fields rather than a `&mut self` method, so that
-        /// `pending` can be passed as `block` without first being copied out of its `Secret`.
-        fn absorb(y: &mut Secret<Block>, h: &Secret<Block>, block: &[u8; 16]) {
-            let xi = block_from_bytes(block);
-            y[0] ^= xi[0];
-            y[1] ^= xi[1];
-            **y = mul(y, h);
+        /// `Y_i = (Y_{i-1} (+) X_i) . H` for one whole block `X_i`, updating `Y` in place: on
+        /// `PMULL` through the stored proof where there is one, else portable.
+        fn absorb(&mut self, xi: Block) {
+            self.y[0] ^= xi[0];
+            self.y[1] ^= xi[1];
+            #[cfg(all(
+                target_arch = "aarch64",
+                target_endian = "little",
+                target_feature = "neon",
+                any(
+                    target_feature = "aes",
+                    target_os = "linux",
+                    target_os = "android",
+                    target_os = "macos",
+                    target_os = "ios",
+                    target_os = "windows"
+                )
+            ))]
+            if let Some(cx) = self.aes {
+                *self.y = cx.ghash_mul(&self.y, &self.h);
+                return;
+            }
+            *self.y = mul_portable(&self.y, &self.h);
         }
 
         /// Absorbs whole blocks of `data` immediately and buffers any remainder for the next call.
@@ -1230,6 +1271,10 @@ mod ghash {
         /// over the whole message.
         pub(crate) fn update(&mut self, mut data: &[u8]) {
             if self.pending_len > 0 {
+                // `pending_len` is `1..=15` here (the field's bound), so `need` is `1..=15`;
+                // `take <= need` keeps `pending_len + take <= 16`, which bounds the slice end
+                // and the new length, and `take <= data.len()` keeps both slices of `data` in
+                // range.
                 let need = 16 - self.pending_len;
                 let take = need.min(data.len());
                 (*self.pending)[self.pending_len..self.pending_len + take]
@@ -1239,7 +1284,7 @@ mod ghash {
                 if self.pending_len < 16 {
                     return;
                 }
-                Self::absorb(&mut self.y, &self.h, &self.pending);
+                self.absorb(block_from_bytes(&self.pending));
                 self.pending_len = 0;
             }
 
@@ -1262,7 +1307,7 @@ mod ghash {
                     target_os = "windows"
                 )
             ))]
-            let blocks = match Aes::detect() {
+            let blocks = match self.aes {
                 Some(cx) => {
                     let (quads, remainder) = blocks.as_chunks::<4>();
                     let mut x: Secret<[Block; 4]> = Secret::new();
@@ -1279,8 +1324,9 @@ mod ghash {
                 None => blocks,
             };
             for block in blocks {
-                Self::absorb(&mut self.y, &self.h, block);
+                self.absorb(block_from_bytes(block));
             }
+            // `rest.len() < 16` (an `as_chunks::<16>` remainder): in range, and within the bound.
             (*self.pending)[..rest.len()].copy_from_slice(rest);
             self.pending_len = rest.len();
         }
@@ -1292,8 +1338,9 @@ mod ghash {
             if self.pending_len == 0 {
                 return;
             }
+            // `pending_len` is `1..=15` here (the field's bound), so the slice start is in range.
             (*self.pending)[self.pending_len..].fill(0);
-            Self::absorb(&mut self.y, &self.h, &self.pending);
+            self.absorb(block_from_bytes(&self.pending));
             self.pending_len = 0;
         }
 
@@ -1314,7 +1361,7 @@ mod ghash {
             let mut len_block = [0u8; 16];
             len_block[..8].copy_from_slice(&aad_bits.to_be_bytes());
             len_block[8..].copy_from_slice(&data_bits.to_be_bytes());
-            Self::absorb(&mut self.y, &self.h, &len_block);
+            self.absorb(block_from_bytes(&len_block));
             out[..8].copy_from_slice(&self.y[0].to_be_bytes());
             out[8..].copy_from_slice(&self.y[1].to_be_bytes());
         }
@@ -1513,7 +1560,8 @@ mod ghash {
         /// Chunking independence: absorbing a 300-byte message in one call must equal absorbing it in
         /// two pieces, at every possible split point. Three hundred bytes is eighteen whole blocks
         /// and a partial one, so the splits land on every phase of the AArch64 path's four-block
-        /// grouping as well as inside blocks.
+        /// grouping as well as inside blocks. For `crypto/arm/UNSAFE.md`'s whole-block-loop rule,
+        /// that puts every pending length `0..=15` and every remainder `0..=3` before `update`.
         #[test]
         fn update_is_chunking_independent() {
             let h_bytes = [0x7eu8; 16];

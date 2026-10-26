@@ -45,13 +45,10 @@ illegal-instruction fault, so every value that reaches one must be in range by i
 
 ## Not yet met
 
-The crate's callers break these rules in three places:
+The crate's callers break these rules in one place:
 
 - `RoundKeys::expand` in `aes/src/hazmat/engine.rs` takes the key as `&[u8]` and converts it with
   `try_into().expect(..)`.
-- GHASH in `cipher/src/modes/gcm.rs` does `pending_len` arithmetic without bound comments, slices a `[u8; 16]` with
-  `expect` in `block_from_bytes` and `Ghash::new`, and has no resume test at `pending_len` 15 and 16.
-- GHASH asks the CPU on every call instead of storing the proof at construction.
 
 A PR is held to these rules for the code it adds or changes. Two further proposals wait on decisions and are not rules yet:
 denying `clippy::arithmetic_side_effects`, `indexing_slicing` and `cast_possible_truncation` (nothing in CI runs

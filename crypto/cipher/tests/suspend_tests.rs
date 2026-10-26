@@ -15,6 +15,7 @@ use bouncycastle_cipher::modes::{
 };
 use bouncycastle_cipher::padding::{PKCS7, PaddedBlockCipherDecryptor, PaddedBlockCipherEncryptor};
 use bouncycastle_cipher::{Decrypting, Encrypting};
+use bouncycastle_core::errors::SuspendableError;
 use bouncycastle_core::hazmat::{EcbDecryptionKey, EcbEncryptionKey, Mode};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::symmetric_key::{
@@ -270,6 +271,59 @@ fn gcm_both_directions_with_aad() {
         },
     );
     assert_eq!(plain, msg);
+}
+
+/// An encryptor with the AAD phase closed and 31 bytes encrypted, one whole block and 15 more, so
+/// GHASH holds 15 pending bytes: the most a legitimate state carries.
+fn gcm_with_fifteen_pending(key: &ToyKey<ToyBlockCipher, GCM<16>>) -> ToyGcm<'_, Encrypting> {
+    let (mut enc, _) = key.create_encryptor(&mut os_rng()).unwrap();
+    enc.do_update_aad(b"authenticated header").unwrap();
+    let mut out = [0u8; 31];
+    enc.do_encrypt_out(&message(31), &mut out).unwrap();
+    enc
+}
+
+#[test]
+fn gcm_resumes_with_fifteen_pending_bytes() {
+    let msg = message(20);
+    let key = key_for::<GCM<16>>();
+    round_trip::<{ ToyGcm::<Encrypting>::SUSPENDED_STATE_LEN }, _>(
+        gcm_with_fifteen_pending(&key),
+        key.state(),
+        |mut e| {
+            let mut out = vec![0u8; msg.len()];
+            e.do_encrypt_out(&msg, &mut out).unwrap();
+            let (tag, tag_len) = e.do_encrypt_final().unwrap();
+            out.extend_from_slice(&tag[..tag_len]);
+            out
+        },
+    );
+}
+
+#[test]
+fn gcm_rejects_a_suspended_state_with_a_whole_block_pending() {
+    const N: usize = ToyGcm::<Encrypting>::SUSPENDED_STATE_LEN;
+    // `ToyGcm`'s tag length, its last type parameter.
+    const TAG_LEN: usize = 16;
+    // The GHASH state is followed by `aad_len`, `data_len`, `phase`, `tail` and `tail_len`, and
+    // `pending_len` is its last 8 bytes.
+    const PENDING_LEN_AT: usize = N - (8 + 8 + 1 + TAG_LEN + 8) - 8;
+
+    let key = key_for::<GCM<16>>();
+    let mut state: [u8; N] = gcm_with_fifteen_pending(&key).suspend();
+    // The suspended `u64`s are little-endian (`CursorMut::u64`): read and written here with
+    // `u64::from_le_bytes` and `to_le_bytes`.
+    let field = &mut state[PENDING_LEN_AT..PENDING_LEN_AT + 8];
+    assert_eq!(
+        u64::from_le_bytes(field.try_into().unwrap()),
+        15,
+        "pending_len is not where the documented layout puts it"
+    );
+    field.copy_from_slice(&16u64.to_le_bytes());
+    assert!(matches!(
+        ToyGcm::<Encrypting>::from_suspended(state, key.state()),
+        Err(SuspendableError::InvalidData)
+    ));
 }
 
 #[test]
