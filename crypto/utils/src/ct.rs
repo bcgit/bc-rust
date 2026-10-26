@@ -49,9 +49,10 @@ where
 // says nothing about what the optimiser may still assume about the value stored. That LLVM
 // carries no facts across the store/load pair is observed behaviour, verified by inspecting the
 // release-build assembly of these functions on x86_64, i686, thumbv7em, riscv32imac, wasm32,
-// msp430 and avr; another backend gets no such promise. `core::hint::black_box`, used
-// previously, is weaker still: its documentation calls it "best-effort" and says it "does not
-// offer any guarantees for cryptographic or security purposes".
+// msp430, avr and aarch64 (2026-10-25); another backend gets no such promise.
+// `core::hint::black_box`, used previously, is weaker still: its documentation calls it
+// "best-effort" and says it "does not offer any guarantees for cryptographic or security
+// purposes".
 // ---------------------------------------------------------------------------------------------
 
 /// Returns `value` unchanged, via a volatile store to a stack slot and a volatile load back. The

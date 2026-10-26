@@ -108,41 +108,76 @@ impl Aes {
     }
 
     /// [`aes::expand_128`].
+    ///
+    /// A key of any other length does not compile:
+    ///
+    /// ```compile_fail,E0308
+    /// if let Some(cx) = bouncycastle_arm::Aes::detect() {
+    ///     let _ = cx.expand_128(&[0u8; 20]);
+    /// }
+    /// ```
     #[inline]
     pub fn expand_128(self, key: &[u8; 16]) -> RoundKeys128 {
-        // SAFETY: `self` exists, so the CPU has what the callee's `#[target_feature]` names.
+        // SAFETY: the callee's `#[target_feature]` needs FEAT_AES, FEAT_PMULL and NEON, present
+        // because `self` exists: only `detect()`, which queries them, or `declared()` under
+        // `cfg(target_feature = "aes")` builds one.
         unsafe { aes::expand_128(key) }
     }
 
     /// [`aes::expand_192`].
     #[inline]
     pub fn expand_192(self, key: &[u8; 24]) -> RoundKeys192 {
-        // SAFETY: `self` exists, so the CPU has what the callee's `#[target_feature]` names.
+        // SAFETY: the callee's `#[target_feature]` needs FEAT_AES, FEAT_PMULL and NEON, present
+        // because `self` exists: only `detect()`, which queries them, or `declared()` under
+        // `cfg(target_feature = "aes")` builds one.
         unsafe { aes::expand_192(key) }
     }
 
     /// [`aes::expand_256`].
     #[inline]
     pub fn expand_256(self, key: &[u8; 32]) -> RoundKeys256 {
-        // SAFETY: `self` exists, so the CPU has what the callee's `#[target_feature]` names.
+        // SAFETY: the callee's `#[target_feature]` needs FEAT_AES, FEAT_PMULL and NEON, present
+        // because `self` exists: only `detect()`, which queries them, or `declared()` under
+        // `cfg(target_feature = "aes")` builds one.
         unsafe { aes::expand_256(key) }
     }
 
     /// [`aes::equivalent_inverse_round_keys`].
+    ///
+    /// A schedule of other than 11, 13 or 15 round keys does not compile:
+    ///
+    /// ```compile_fail,E0080
+    /// if let Some(cx) = bouncycastle_arm::Aes::detect() {
+    ///     let _ = cx.equivalent_inverse_round_keys(&[[0u8; 16]; 12]);
+    /// }
+    /// ```
     #[inline]
     pub fn equivalent_inverse_round_keys<const N: usize>(self, w: &[Block; N]) -> [Block; N] {
-        // SAFETY: `self` exists, so the CPU has what the callee's `#[target_feature]` names.
+        // SAFETY: the callee's `#[target_feature]` needs FEAT_AES, FEAT_PMULL and NEON, present
+        // because `self` exists: only `detect()`, which queries them, or `declared()` under
+        // `cfg(target_feature = "aes")` builds one.
         unsafe { aes::equivalent_inverse_round_keys(w) }
     }
 
     /// [`aes::encrypt_blocks`].
+    ///
+    /// Other than one, two or four blocks does not compile:
+    ///
+    /// ```compile_fail,E0080
+    /// if let Some(cx) = bouncycastle_arm::Aes::detect() {
+    ///     let w = cx.expand_128(&[0u8; 16]);
+    ///     cx.encrypt_blocks(&w, &mut [[0u8; 16]; 3]);
+    /// }
+    /// ```
     #[inline]
     pub fn encrypt_blocks<const N: usize, const B: usize>(
         self,
         w: &[Block; N],
         blocks: &mut [Block; B],
     ) {
-        // SAFETY: `self` exists, so the CPU has what the callee's `#[target_feature]` names.
+        // SAFETY: the callee's `#[target_feature]` needs FEAT_AES, FEAT_PMULL and NEON, present
+        // because `self` exists: only `detect()`, which queries them, or `declared()` under
+        // `cfg(target_feature = "aes")` builds one.
         unsafe { aes::encrypt_blocks(w, blocks) }
     }
 
@@ -153,21 +188,27 @@ impl Aes {
         dw: &[Block; N],
         blocks: &mut [Block; B],
     ) {
-        // SAFETY: `self` exists, so the CPU has what the callee's `#[target_feature]` names.
+        // SAFETY: the callee's `#[target_feature]` needs FEAT_AES, FEAT_PMULL and NEON, present
+        // because `self` exists: only `detect()`, which queries them, or `declared()` under
+        // `cfg(target_feature = "aes")` builds one.
         unsafe { aes::decrypt_blocks(dw, blocks) }
     }
 
     /// [`ghash::mul`].
     #[inline]
     pub fn ghash_mul(self, x: &Element, y: &Element) -> Element {
-        // SAFETY: `self` exists, so the CPU has what the callee's `#[target_feature]` names.
+        // SAFETY: the callee's `#[target_feature]` needs FEAT_AES, FEAT_PMULL and NEON, present
+        // because `self` exists: only `detect()`, which queries them, or `declared()` under
+        // `cfg(target_feature = "aes")` builds one.
         unsafe { ghash::mul(x, y) }
     }
 
     /// [`ghash::mul4`].
     #[inline]
     pub fn ghash_mul4(self, x: &[Element; 4], y: &[Element; 4]) -> Element {
-        // SAFETY: `self` exists, so the CPU has what the callee's `#[target_feature]` names.
+        // SAFETY: the callee's `#[target_feature]` needs FEAT_AES, FEAT_PMULL and NEON, present
+        // because `self` exists: only `detect()`, which queries them, or `declared()` under
+        // `cfg(target_feature = "aes")` builds one.
         unsafe { ghash::mul4(x, y) }
     }
 }
