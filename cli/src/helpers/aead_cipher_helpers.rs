@@ -13,7 +13,7 @@
 //! rest of stdin through the inline decryptor. With `--iv`, the IV is the caller's and is
 //! neither written nor read: the format is `ciphertext || tag` (see
 //! [`crate::helpers::block_mode_helpers`] for the flag). The decryptor, per
-//! [`SymmetricCipherDecryptor`](bouncycastle::core::traits::SymmetricCipherDecryptor)'s contract,
+//! [`SymmetricCipherDecryptor`]'s contract,
 //! holds back the last 16 bytes it has seen because they might be the tag -- and checks the tag on
 //! `do_decrypt_final`.
 //!
