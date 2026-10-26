@@ -32,6 +32,37 @@ illegal-instruction fault, so every value that reaches one must be in range by i
 - The engine is chosen from the CPU alone, once, at construction; never from key or data.
 - Each `SAFETY` comment names every precondition of the callee and what discharges it: the proof for the features,
   the array type for pointer validity and length.
+- Every public function with a `#[target_feature]` attribute has a one-sentence `# Safety` section
+  naming the proof whose existence is its precondition, so clippy's `missing_safety_doc` stays at
+  zero.
+
+## Operating-system calls
+
+- The crate is `#![no_std]` and stays so. Detection asks the operating system through the
+  declarations in `cpu/probe.rs`, never through std, `libc` or any other dependency, and a target
+  without a back end gets no features. The table in the `cpu` module docs lists the back ends.
+- Each back end has one call site, declared in an `unsafe extern` block in `cpu/probe.rs` with the
+  documented signature; on Windows it carries `#[link(name = "kernel32")]`, since a `no_std` crate
+  names its import library itself.
+- A pointer passed to the call comes from a typed local whose size is `size_of::<T>()`, and a C
+  string is a `c"..."` literal.
+- Every return value and out-parameter is range-checked before use, as `sysctl_present` accepts an
+  answer only if `rc == 0 && len == size_of::<i32>() && value != 0`.
+- Each back end's parser has tests on crafted answers, the call itself has an error-path test where
+  the operating system allows one (`probe`'s unit test of a known and an unknown name on macOS), and
+  `tests/detect_matches_std.rs` checks the result against std.
+- There is no `asm!` in the crate. If the bare-metal opt-in that reads the ID registers is built,
+  its three `mrs` reads are the only `asm!` blocks, with `options(nomem, nostack, preserves_flags)`,
+  behind its cargo feature, with the EL1 contract documented and the parser tested on crafted
+  register words. This rule is not yet exercised.
+
+## The `unsafe` budget
+
+`dev_scripts/quality_stats.sh` counts `unsafe {`, `unsafe fn`, `unsafe impl` and `unsafe trait`, so
+the three `unsafe extern` blocks are declarations and are not counted. The figure is 13: the eight
+proof methods, the two load/store wrappers and one operating-system call per back end. A PR that
+changes it says why. The script matches text, doc comments included, so prose in a `.rs` file must
+not spell those four patterns out.
 
 ## Tests
 
@@ -43,7 +74,7 @@ illegal-instruction fault, so every value that reaches one must be in range by i
 - Run in the declared, run-time and portable configurations (see the crate docs).
 - `cargo mutants -p bouncycastle-arm` before a PR that touches the crate, with survivors explained in the PR.
 
-## Not yet met
+## Status
 
 The crate's callers meet these rules as of the 2026-10 migration (steps 1a-3, 2 and 3): typed
 keys into `RoundKeys::expand`, and GHASH's bounds and stored proof.
