@@ -110,6 +110,8 @@ pub const HASH_ML_DSA_87_WITH_SHA512_NAME: &str = "HashML-DSA-87_with_SHA512";
 /*** Pub Types ***/
 
 impl<
+    'sk_lifetime,
+    'pk_lifetime,
     P: HashMLDSAParams,
     PK: MLDSAPublicKeyTrait<P::MLDSA, PK_LEN> + MLDSAPublicKeyInternalTrait<P::MLDSA, PK_LEN>,
     SK: MLDSAPrivateKeyTrait<P::MLDSA, PK_LEN, SK_LEN, FULL_SK_LEN>
@@ -119,7 +121,19 @@ impl<
     const SK_LEN: usize,
     const FULL_SK_LEN: usize,
     const SIG_LEN: usize,
-> Algorithm for HashMLDSA<P, PK, SK, PH_LEN, PK_LEN, SK_LEN, FULL_SK_LEN, SIG_LEN>
+> Algorithm
+    for HashMLDSA<
+        'sk_lifetime,
+        'pk_lifetime,
+        P,
+        PK,
+        SK,
+        PH_LEN,
+        PK_LEN,
+        SK_LEN,
+        FULL_SK_LEN,
+        SIG_LEN,
+    >
 {
     const ALG_NAME: &'static str = P::ALG_NAME;
     const MAX_SECURITY_STRENGTH: SecurityStrength = P::MAX_SECURITY_STRENGTH;
@@ -127,7 +141,9 @@ impl<
 
 /// The HashML-DSA-44_with_SHA256 signature algorithm.
 #[allow(non_camel_case_types)]
-pub type HashMLDSA44_with_SHA256 = HashMLDSA<
+pub type HashMLDSA44_with_SHA256<'sk_lifetime, 'pk_lifetime> = HashMLDSA<
+    'sk_lifetime,
+    'pk_lifetime,
     HashMLDSA44_with_SHA256Params,
     MLDSA44PublicKey,
     MLDSA44PrivateKey,
@@ -140,7 +156,9 @@ pub type HashMLDSA44_with_SHA256 = HashMLDSA<
 
 /// The HashML-DSA-65_with_SHA256 signature algorithm.
 #[allow(non_camel_case_types)]
-pub type HashMLDSA65_with_SHA256 = HashMLDSA<
+pub type HashMLDSA65_with_SHA256<'sk_lifetime, 'pk_lifetime> = HashMLDSA<
+    'sk_lifetime,
+    'pk_lifetime,
     HashMLDSA65_with_SHA256Params,
     MLDSA65PublicKey,
     MLDSA65PrivateKey,
@@ -153,7 +171,9 @@ pub type HashMLDSA65_with_SHA256 = HashMLDSA<
 
 /// The HashML-DSA-87_with_SHA256 signature algorithm.
 #[allow(non_camel_case_types)]
-pub type HashMLDSA87_with_SHA256 = HashMLDSA<
+pub type HashMLDSA87_with_SHA256<'sk_lifetime, 'pk_lifetime> = HashMLDSA<
+    'sk_lifetime,
+    'pk_lifetime,
     HashMLDSA87_with_SHA256Params,
     MLDSA87PublicKey,
     MLDSA87PrivateKey,
@@ -166,7 +186,9 @@ pub type HashMLDSA87_with_SHA256 = HashMLDSA<
 
 /// The HashML-DSA-44_with_SHA512 signature algorithm.
 #[allow(non_camel_case_types)]
-pub type HashMLDSA44_with_SHA512 = HashMLDSA<
+pub type HashMLDSA44_with_SHA512<'sk_lifetime, 'pk_lifetime> = HashMLDSA<
+    'sk_lifetime,
+    'pk_lifetime,
     HashMLDSA44_with_SHA512Params,
     MLDSA44PublicKey,
     MLDSA44PrivateKey,
@@ -177,7 +199,7 @@ pub type HashMLDSA44_with_SHA512 = HashMLDSA<
     MLDSA44_SIG_LEN,
 >;
 /// Assigned by NIST in the Computer Security Objects Register: id-hash-ml-dsa-44-with-sha512 { sigAlgs 32 }
-impl AlgorithmOID for HashMLDSA44_with_SHA512 {
+impl AlgorithmOID for HashMLDSA44_with_SHA512<'_, '_> {
     const OID: &'static [u32] = &[2, 16, 840, 1, 101, 3, 4, 3, 32];
     const OID_DER: &'static [u8] =
         &[0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x03, 0x20];
@@ -185,7 +207,9 @@ impl AlgorithmOID for HashMLDSA44_with_SHA512 {
 
 /// The HashML-DSA-65_with_SHA512 signature algorithm.
 #[allow(non_camel_case_types)]
-pub type HashMLDSA65_with_SHA512 = HashMLDSA<
+pub type HashMLDSA65_with_SHA512<'sk_lifetime, 'pk_lifetime> = HashMLDSA<
+    'sk_lifetime,
+    'pk_lifetime,
     HashMLDSA65_with_SHA512Params,
     MLDSA65PublicKey,
     MLDSA65PrivateKey,
@@ -196,7 +220,7 @@ pub type HashMLDSA65_with_SHA512 = HashMLDSA<
     MLDSA65_SIG_LEN,
 >;
 /// Assigned by NIST in the Computer Security Objects Register: id-hash-ml-dsa-65-with-sha512 { sigAlgs 33 }
-impl AlgorithmOID for HashMLDSA65_with_SHA512 {
+impl AlgorithmOID for HashMLDSA65_with_SHA512<'_, '_> {
     const OID: &'static [u32] = &[2, 16, 840, 1, 101, 3, 4, 3, 33];
     const OID_DER: &'static [u8] =
         &[0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x03, 0x21];
@@ -204,7 +228,9 @@ impl AlgorithmOID for HashMLDSA65_with_SHA512 {
 
 /// The HashML-DSA-87_with_SHA512 signature algorithm.
 #[allow(non_camel_case_types)]
-pub type HashMLDSA87_with_SHA512 = HashMLDSA<
+pub type HashMLDSA87_with_SHA512<'sk_lifetime, 'pk_lifetime> = HashMLDSA<
+    'sk_lifetime,
+    'pk_lifetime,
     HashMLDSA87_with_SHA512Params,
     MLDSA87PublicKey,
     MLDSA87PrivateKey,
@@ -215,7 +241,7 @@ pub type HashMLDSA87_with_SHA512 = HashMLDSA<
     MLDSA87_SIG_LEN,
 >;
 /// Assigned by NIST in the Computer Security Objects Register: id-hash-ml-dsa-87-with-sha512 { sigAlgs 34 }
-impl AlgorithmOID for HashMLDSA87_with_SHA512 {
+impl AlgorithmOID for HashMLDSA87_with_SHA512<'_, '_> {
     const OID: &'static [u32] = &[2, 16, 840, 1, 101, 3, 4, 3, 34];
     const OID_DER: &'static [u8] =
         &[0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x03, 0x22];
@@ -227,7 +253,14 @@ impl AlgorithmOID for HashMLDSA87_with_SHA512 {
 /// without requiring modification of this source code; the user can add their own hash function
 /// by specifying the hash function to use (in the verifier), and specifying the bytes of the OID to
 /// to use as its domain separator in constructing the message representative M'.
+///
+/// `'sk_lifetime` allows the compiler to enforce that the HashMLDSA signer object cannot
+/// outlive the sk that it's borrowing in [`Signer::do_sign_init`], and `'pk_lifetime` does the same
+/// for the pk borrowed in [`SignatureVerifier::do_verify_init`];
+/// the compiler infers both lifetimes, so callers never need to name them.
 pub struct HashMLDSA<
+    'sk_lifetime,
+    'pk_lifetime,
     P: HashMLDSAParams,
     PK: MLDSAPublicKeyTrait<P::MLDSA, PK_LEN> + MLDSAPublicKeyInternalTrait<P::MLDSA, PK_LEN>,
     SK: MLDSAPrivateKeyTrait<P::MLDSA, PK_LEN, SK_LEN, FULL_SK_LEN>
@@ -243,13 +276,13 @@ pub struct HashMLDSA<
     signer_rnd: Option<[u8; MLDSA_RND_LEN]>,
 
     /// only used in streaming sign operations
-    sk: Option<SK>,
+    sk: Option<&'sk_lifetime SK>,
 
     /// only used in streaming sign operations instead of sk
     seed: Option<KeyMaterial<32>>,
 
     /// only used in streaming verify operations
-    pk: Option<PK>,
+    pk: Option<&'pk_lifetime PK>,
 
     /// Hash function instance for streaming message hashing
     hash: P::PreHash,
@@ -261,6 +294,8 @@ pub struct HashMLDSA<
 }
 
 impl<
+    'sk_lifetime,
+    'pk_lifetime,
     P: HashMLDSAParams,
     PK: MLDSAPublicKeyTrait<P::MLDSA, PK_LEN> + MLDSAPublicKeyInternalTrait<P::MLDSA, PK_LEN>,
     SK: MLDSAPrivateKeyTrait<P::MLDSA, PK_LEN, SK_LEN, FULL_SK_LEN>
@@ -270,7 +305,7 @@ impl<
     const SK_LEN: usize,
     const FULL_SK_LEN: usize,
     const SIG_LEN: usize,
-> HashMLDSA<P, PK, SK, PH_LEN, PK_LEN, SK_LEN, FULL_SK_LEN, SIG_LEN>
+> HashMLDSA<'sk_lifetime, 'pk_lifetime, P, PK, SK, PH_LEN, PK_LEN, SK_LEN, FULL_SK_LEN, SIG_LEN>
 {
     /// Generate a keypair, sourcing randomness from bouncycastle's default os-backed RNG.
     ///
@@ -408,6 +443,8 @@ impl<
 }
 
 impl<
+    'sk_lifetime,
+    'pk_lifetime,
     P: HashMLDSAParams,
     PK: MLDSAPublicKeyTrait<P::MLDSA, PK_LEN> + MLDSAPublicKeyInternalTrait<P::MLDSA, PK_LEN>,
     SK: MLDSAPrivateKeyTrait<P::MLDSA, PK_LEN, SK_LEN, FULL_SK_LEN>
@@ -417,8 +454,19 @@ impl<
     const SK_LEN: usize,
     const FULL_SK_LEN: usize,
     const SIG_LEN: usize,
-> Signer<SK, SK_LEN, SIG_LEN>
-    for HashMLDSA<P, PK, SK, PH_LEN, PK_LEN, SK_LEN, FULL_SK_LEN, SIG_LEN>
+> Signer<'sk_lifetime, SK, SK_LEN, SIG_LEN>
+    for HashMLDSA<
+        'sk_lifetime,
+        'pk_lifetime,
+        P,
+        PK,
+        SK,
+        PH_LEN,
+        PK_LEN,
+        SK_LEN,
+        FULL_SK_LEN,
+        SIG_LEN,
+    >
 {
     /// Algorithm 4 HashML-DSA.Sign(𝑠𝑘, 𝑀 , 𝑐𝑡𝑥, PH)
     /// Generate a “pre-hash” ML-DSA signature.
@@ -442,12 +490,12 @@ impl<
         Self::sign_ph_out(sk, &ph_m, ctx, output)
     }
 
-    fn do_sign_init(sk: &SK, ctx: Option<&[u8]>) -> Result<Self, SignatureError> {
+    fn do_sign_init(sk: &'sk_lifetime SK, ctx: Option<&[u8]>) -> Result<Self, SignatureError> {
         let (ctx, ctx_len) = Self::parse_ctx(ctx)?;
         Ok(Self {
             _phantom: PhantomData,
             signer_rnd: None,
-            sk: Some(sk.clone()),
+            sk: Some(sk),
             seed: None,
             pk: None,
             hash: <P::PreHash as Default>::default(),
@@ -479,10 +527,10 @@ impl<
 
         if self.sk.is_some() {
             if self.signer_rnd.is_none() {
-                Self::sign_ph_out(&self.sk.unwrap(), &ph, Some(&self.ctx[..self.ctx_len]), output)
+                Self::sign_ph_out(self.sk.unwrap(), &ph, Some(&self.ctx[..self.ctx_len]), output)
             } else {
                 Self::sign_ph_deterministic_out(
-                    &self.sk.unwrap(),
+                    self.sk.unwrap(),
                     Some(&self.ctx[..self.ctx_len]),
                     &ph,
                     self.signer_rnd.unwrap(),
@@ -508,6 +556,8 @@ impl<
 }
 
 impl<
+    'sk_lifetime,
+    'pk_lifetime,
     P: HashMLDSAParams,
     PK: MLDSAPublicKeyTrait<P::MLDSA, PK_LEN> + MLDSAPublicKeyInternalTrait<P::MLDSA, PK_LEN>,
     SK: MLDSAPrivateKeyTrait<P::MLDSA, PK_LEN, SK_LEN, FULL_SK_LEN>
@@ -517,8 +567,19 @@ impl<
     const SK_LEN: usize,
     const FULL_SK_LEN: usize,
     const SIG_LEN: usize,
-> SignatureVerifier<PK, PK_LEN, SIG_LEN>
-    for HashMLDSA<P, PK, SK, PH_LEN, PK_LEN, SK_LEN, FULL_SK_LEN, SIG_LEN>
+> SignatureVerifier<'pk_lifetime, PK, PK_LEN, SIG_LEN>
+    for HashMLDSA<
+        'sk_lifetime,
+        'pk_lifetime,
+        P,
+        PK,
+        SK,
+        PH_LEN,
+        PK_LEN,
+        SK_LEN,
+        FULL_SK_LEN,
+        SIG_LEN,
+    >
 {
     fn verify(pk: &PK, msg: &[u8], ctx: Option<&[u8]>, sig: &[u8]) -> Result<(), SignatureError> {
         let mut ph_m = [0u8; PH_LEN];
@@ -527,14 +588,14 @@ impl<
         Self::verify_ph(pk, &ph_m, ctx, sig)
     }
 
-    fn do_verify_init(pk: &PK, ctx: Option<&[u8]>) -> Result<Self, SignatureError> {
+    fn do_verify_init(pk: &'pk_lifetime PK, ctx: Option<&[u8]>) -> Result<Self, SignatureError> {
         let (ctx, ctx_len) = Self::parse_ctx(ctx)?;
         Ok(Self {
             _phantom: Default::default(),
             signer_rnd: None,
             sk: None,
             seed: None,
-            pk: Some(pk.clone()),
+            pk: Some(pk),
             hash: <P::PreHash as Default>::default(),
             ctx,
             ctx_len,
@@ -551,11 +612,13 @@ impl<
             "Somehow you managed to construct a streaming verifier without a public key, impressive!"
         );
         let ph: [u8; PH_LEN] = self.hash.do_final().try_into().unwrap();
-        Self::verify_ph(&self.pk.unwrap(), &ph, Some(&self.ctx[..self.ctx_len]), &sig[..SIG_LEN])
+        Self::verify_ph(self.pk.unwrap(), &ph, Some(&self.ctx[..self.ctx_len]), &sig[..SIG_LEN])
     }
 }
 
 impl<
+    'sk_lifetime,
+    'pk_lifetime,
     P: HashMLDSAParams,
     PK: MLDSAPublicKeyTrait<P::MLDSA, PK_LEN> + MLDSAPublicKeyInternalTrait<P::MLDSA, PK_LEN>,
     SK: MLDSAPrivateKeyTrait<P::MLDSA, PK_LEN, SK_LEN, FULL_SK_LEN>
@@ -565,8 +628,19 @@ impl<
     const SK_LEN: usize,
     const FULL_SK_LEN: usize,
     const SIG_LEN: usize,
-> PHSigner<PK, SK, PK_LEN, SK_LEN, SIG_LEN, PH_LEN>
-    for HashMLDSA<P, PK, SK, PH_LEN, PK_LEN, SK_LEN, FULL_SK_LEN, SIG_LEN>
+> PHSigner<'sk_lifetime, PK, SK, PK_LEN, SK_LEN, SIG_LEN, PH_LEN>
+    for HashMLDSA<
+        'sk_lifetime,
+        'pk_lifetime,
+        P,
+        PK,
+        SK,
+        PH_LEN,
+        PK_LEN,
+        SK_LEN,
+        FULL_SK_LEN,
+        SIG_LEN,
+    >
 {
     fn sign_ph(
         sk: &SK,
@@ -598,6 +672,8 @@ impl<
 }
 
 impl<
+    'sk_lifetime,
+    'pk_lifetime,
     P: HashMLDSAParams,
     PK: MLDSAPublicKeyTrait<P::MLDSA, PK_LEN> + MLDSAPublicKeyInternalTrait<P::MLDSA, PK_LEN>,
     SK: MLDSAPrivateKeyTrait<P::MLDSA, PK_LEN, SK_LEN, FULL_SK_LEN>
@@ -607,8 +683,19 @@ impl<
     const SK_LEN: usize,
     const FULL_SK_LEN: usize,
     const SIG_LEN: usize,
-> PHSignatureVerifier<PK, PK_LEN, SIG_LEN, PH_LEN>
-    for HashMLDSA<P, PK, SK, PH_LEN, PK_LEN, SK_LEN, FULL_SK_LEN, SIG_LEN>
+> PHSignatureVerifier<'pk_lifetime, PK, PK_LEN, SIG_LEN, PH_LEN>
+    for HashMLDSA<
+        'sk_lifetime,
+        'pk_lifetime,
+        P,
+        PK,
+        SK,
+        PH_LEN,
+        PK_LEN,
+        SK_LEN,
+        FULL_SK_LEN,
+        SIG_LEN,
+    >
 {
     fn verify_ph(
         pk: &PK,

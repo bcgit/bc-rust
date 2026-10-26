@@ -850,6 +850,6 @@ impl<
         let dk = SK::sk_decode(sk)?;
         let A_hat = dk.pk().A_hat();
 
-        Ok(Self { _phantom: core::marker::PhantomData, dk: dk.clone(), A_hat })
+        Ok(Self { _phantom: core::marker::PhantomData, dk, A_hat })
     }
 }

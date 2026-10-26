@@ -29,10 +29,12 @@ impl TestFrameworkSignature {
     /// Since key generation is not part of either signature trait, the caller supplies a
     /// `keygen` function pointer (the inherent `keygen` associated function on the algorithm struct).
     pub fn test_signature<
-        PK: SignaturePublicKey<PK_LEN>,
-        SK: SignaturePrivateKey<SK_LEN>,
-        SIGNER: Signer<SK, SK_LEN, SIG_LEN>,
-        VERIFIER: SignatureVerifier<PK, PK_LEN, SIG_LEN>,
+        'sk_lifetime,
+        'pk_lifetime,
+        PK: SignaturePublicKey<PK_LEN> + 'pk_lifetime,
+        SK: SignaturePrivateKey<SK_LEN> + 'sk_lifetime,
+        SIGNER: Signer<'sk_lifetime, SK, SK_LEN, SIG_LEN>,
+        VERIFIER: SignatureVerifier<'pk_lifetime, PK, PK_LEN, SIG_LEN>,
         const PK_LEN: usize,
         const SK_LEN: usize,
         const SIG_LEN: usize,
@@ -111,20 +113,26 @@ impl TestFrameworkSignature {
         let sig = SIGNER::sign(&sk, DUMMY_SEED, None).unwrap();
         VERIFIER::verify(&pk, DUMMY_SEED, None, &sig).unwrap();
 
-        // Test the streaming signing API
+        // Test the streaming signing API:
         // fn do_sign_init(&mut self, sk: &SK) -> Result<(), SignatureError>;
         // fn do_sign_update(&mut self, msg_chunk: &[u8]);
         // fn do_sign_final(&mut self, msg_chunk: &[u8], ctx: &[u8]) -> Result<Vec<u8>, SignatureError>;
         // fn do_sign_final_out(&mut self, msg_chunk: &[u8], ctx: &[u8], output: &mut [u8]) -> Result<(), SignatureError>;
 
+        // A streaming signer or verifier borrows its key for `'sk_lifetime` / `'pk_lifetime`, which
+        // the caller picks, so a key local to this function cannot be lent to it; leak them instead
+        // (a few KB, test-only).
+        let sk: &'sk_lifetime SK = Box::leak(Box::new(sk));
+        let pk: &'pk_lifetime PK = Box::leak(Box::new(pk));
+
         // First, test the streaming API with one call to .do_sign_update
-        let mut s = SIGNER::do_sign_init(&sk, Some(b"streaming API")).unwrap();
+        let mut s = SIGNER::do_sign_init(sk, Some(b"streaming API")).unwrap();
         s.do_sign_update(DUMMY_SEED);
         let sig_val = s.do_sign_final().unwrap();
         VERIFIER::verify(&pk, DUMMY_SEED, Some(b"streaming API"), &sig_val).unwrap();
 
         // Then with the message broken into chunks
-        let mut s = SIGNER::do_sign_init(&sk, Some(b"streaming API chunked")).unwrap();
+        let mut s = SIGNER::do_sign_init(sk, Some(b"streaming API chunked")).unwrap();
         for msg_chunk in DUMMY_SEED.chunks(100) {
             s.do_sign_update(msg_chunk);
         }
@@ -134,13 +142,13 @@ impl TestFrameworkSignature {
         // Test the streaming verification API
         // one-shot
         let sig = SIGNER::sign(&sk, DUMMY_SEED, Some(b"streaming API")).unwrap();
-        let mut v = VERIFIER::do_verify_init(&pk, Some(b"streaming API")).unwrap();
+        let mut v = VERIFIER::do_verify_init(pk, Some(b"streaming API")).unwrap();
         v.do_verify_update(DUMMY_SEED);
         v.do_verify_final(&sig).unwrap();
 
         // chunked
         let sig = SIGNER::sign(&sk, DUMMY_SEED, Some(b"streaming API")).unwrap();
-        let mut v = VERIFIER::do_verify_init(&pk, Some(b"streaming API")).unwrap();
+        let mut v = VERIFIER::do_verify_init(pk, Some(b"streaming API")).unwrap();
         for msg_chunk in DUMMY_SEED.chunks(100) {
             v.do_verify_update(msg_chunk);
         }
@@ -148,7 +156,7 @@ impl TestFrameworkSignature {
 
         // failure case for streaming verify
         let sig = SIGNER::sign(&sk, DUMMY_SEED, Some(b"streaming API")).unwrap();
-        let mut v = VERIFIER::do_verify_init(&pk, Some(b"streaming API")).unwrap();
+        let mut v = VERIFIER::do_verify_init(pk, Some(b"streaming API")).unwrap();
         v.do_verify_update(b"this is the wrong message");
         match v.do_verify_final(&sig) {
             Err(SignatureError::SignatureVerificationFailed) => (),
@@ -156,7 +164,7 @@ impl TestFrameworkSignature {
         }
 
         // test sign_out version of streaming API
-        let mut s = SIGNER::do_sign_init(&sk, Some(b"streaming API")).unwrap();
+        let mut s = SIGNER::do_sign_init(sk, Some(b"streaming API")).unwrap();
         s.do_sign_update(DUMMY_SEED);
         let mut sig_val = [0u8; SIG_LEN];
         let bytes_written = s.do_sign_final_out(&mut sig_val).unwrap();
@@ -175,11 +183,13 @@ impl TestFrameworkSignature {
     /// Since key generation is not part of either signature trait, the caller supplies a
     /// `keygen` function pointer (the inherent `keygen` associated function on the algorithm struct).
     pub fn test_ph_signature<
-        PK: SignaturePublicKey<PK_LEN>,
-        SK: SignaturePrivateKey<SK_LEN>,
+        'sk_lifetime,
+        'pk_lifetime,
+        PK: SignaturePublicKey<PK_LEN> + 'pk_lifetime,
+        SK: SignaturePrivateKey<SK_LEN> + 'sk_lifetime,
         // todo split this into two params: SIGNER: Signer and VERIFIER: SignatureVerifier
-        PHSIGNER: PHSigner<PK, SK, PK_LEN, SK_LEN, SIG_LEN, PH_LEN>,
-        PHVERIFIER: PHSignatureVerifier<PK, PK_LEN, SIG_LEN, PH_LEN>,
+        PHSIGNER: PHSigner<'sk_lifetime, PK, SK, PK_LEN, SK_LEN, SIG_LEN, PH_LEN>,
+        PHVERIFIER: PHSignatureVerifier<'pk_lifetime, PK, PK_LEN, SIG_LEN, PH_LEN>,
         HASH: Hash + Default,
         const PK_LEN: usize,
         const SK_LEN: usize,
