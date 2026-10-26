@@ -45,10 +45,8 @@ illegal-instruction fault, so every value that reaches one must be in range by i
 
 ## Not yet met
 
-The crate's callers break these rules in one place:
-
-- `RoundKeys::expand` in `aes/src/hazmat/engine.rs` takes the key as `&[u8]` and converts it with
-  `try_into().expect(..)`.
+The crate's callers meet these rules as of the 2026-10 migration (steps 1a-3, 2 and 3): typed
+keys into `RoundKeys::expand`, and GHASH's bounds and stored proof.
 
 A PR is held to these rules for the code it adds or changes. Two further proposals wait on decisions and are not rules yet:
 denying `clippy::arithmetic_side_effects`, `indexing_slicing` and `cast_possible_truncation` (nothing in CI runs

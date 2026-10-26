@@ -87,24 +87,23 @@ fn sub_word(word: u32) -> u32 {
 
 /// KEYEXPANSION() (FIPS 197 Sec 5.2, Algorithm 2), returning the bit-sliced schedule.
 ///
-/// `key` must be exactly `P::KEY_LEN` bytes; [`crate::hazmat::AESInternal`] checks that before calling, so this
-/// cannot fail and takes no `Result`.
+/// `key`'s type is its length, `P::KEY_LEN` bytes, so this cannot fail and takes no `Result`.
 ///
 /// Algorithm 2 is followed literally -- lines 2-6 copy the key into `w[0..Nk]`, lines 7-16 derive
 /// the rest -- and then the finished schedule is rewritten in place into the storage form
 /// described in the module docs. Verified against the worked expansions in FIPS 197
 /// Appendix A.1, A.2 and A.3 by the tests at the bottom of this file, which unpack the stored
 /// schedule and compare every `w[i]`.
-pub(crate) fn expand<P: AESParams>(key: &[u8]) -> Secret<P::Schedule> {
-    debug_assert_eq!(key.len(), P::KEY_LEN);
-
+pub(crate) fn expand<P: AESParams>(key: &P::Key) -> Secret<P::Schedule> {
     let mut schedule = Secret::<P::Schedule>::new();
     let w = (*schedule).as_mut();
 
-    // Algorithm 2 lines 2-6: w[i] = key[4i .. 4i+3] for i < Nk.
-    for i in 0..P::NK {
-        // Cannot fail: `key` is P::KEY_LEN == 4 * P::NK bytes, so this window is in bounds.
-        w[i] = u32::from_le_bytes(key[4 * i..4 * i + 4].try_into().unwrap());
+    // Algorithm 2 lines 2-6: w[i] = key[4i .. 4i+3] for i < Nk. The key is `KEY_LEN = 4 * Nk`
+    // bytes, so it is `Nk` whole words and the remainder is empty by construction; the zip stops
+    // after them.
+    let (key_words, _) = key.as_ref().as_chunks::<4>();
+    for (wi, word) in w.iter_mut().zip(key_words) {
+        *wi = u32::from_le_bytes(*word);
     }
 
     // Algorithm 2 lines 7-16.
@@ -252,7 +251,7 @@ mod tests {
     /// Appendix A prints a word as the byte sequence `[a0,a1,a2,a3]` left to right, so the
     /// tabulated `u32` has `a0` in its *most* significant byte; words are held little-endian
     /// here, so `swap_bytes` is the conversion.
-    fn assert_expansion_matches<P: AESParams>(key: &[u8], expected: &[u32], label: &str) {
+    fn assert_expansion_matches<P: AESParams>(key: &P::Key, expected: &[u32], label: &str) {
         let schedule = expand::<P>(key);
         assert_eq!(expected.len(), 4 * (P::NR + 1), "{label}: table length");
         for (i, &want) in expected.iter().enumerate() {

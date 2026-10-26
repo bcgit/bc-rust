@@ -250,9 +250,11 @@ pub trait AESParams: AESParamsInternalTrait {
     /// `[u32; 4 * (NR + 1)]` -- the bit-sliced schedule; its layout is
     /// described in `schedule.rs`.
     type Schedule: ZeroizablePrimitive + AsRef<[u32]> + AsMut<[u32]>;
+    /// `[u8; KEY_LEN]` -- the key as the engines expand it, its length carried by the type.
+    type Key: AsRef<[u8]>;
     /// `[[u8; 16]; NR + 1]` -- the round keys as sixteen-byte blocks, the form the hardware
     /// engines in [`hazmat::engine`] hold them in; see [`RoundKeys`](hazmat::engine::RoundKeys).
-    type RoundKeys: hazmat::engine::RoundKeys;
+    type RoundKeys: hazmat::engine::RoundKeys<Key = Self::Key>;
 }
 
 /// AES-128 parameters: 16-byte key, `Nk` = 4, `Nr` = 10 (FIPS 197 Table 3).
@@ -275,6 +277,7 @@ impl AESParams for AES128Params {
     const NR: usize = 10;
     const ALG_NAME: &'static str = "AES-128";
     type Schedule = [u32; 44]; // 4 * (10 + 1)
+    type Key = [u8; 16];
     type RoundKeys = [[u8; 16]; 11]; // 10 + 1
 }
 
@@ -284,6 +287,7 @@ impl AESParams for AES192Params {
     const NR: usize = 12;
     const ALG_NAME: &'static str = "AES-192";
     type Schedule = [u32; 52]; // 4 * (12 + 1)
+    type Key = [u8; 24];
     type RoundKeys = [[u8; 16]; 13]; // 12 + 1
 }
 
@@ -293,6 +297,7 @@ impl AESParams for AES256Params {
     const NR: usize = 14;
     const ALG_NAME: &'static str = "AES-256";
     type Schedule = [u32; 60]; // 4 * (14 + 1)
+    type Key = [u8; 32];
     type RoundKeys = [[u8; 16]; 15]; // 14 + 1
 }
 

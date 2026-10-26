@@ -164,7 +164,7 @@ fn the_default_engine_on_this_target_is_detected_and_follows_the_cpu() {
     is_detected_192(&AES192Internal::new(&random_key::<24>(&mut rng)).unwrap());
     is_detected_256(&AES256Internal::new(&random_key::<32>(&mut rng)).unwrap());
 
-    fn picked_arm<P: bouncycastle_aes::AESParams>(key: &[u8]) -> bool
+    fn picked_arm<P: bouncycastle_aes::AESParams>(key: &P::Key) -> bool
     where
         Detected<P>: Engine<P>,
     {
