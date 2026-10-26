@@ -66,6 +66,25 @@ fn streaming_and_output_buffer_contract() {
     }
 }
 
+/// One message fed in pieces of 1, 15, 16, 17 and 33 bytes, which between them top up a buffered
+/// block exactly, pass whole blocks straight from the input, and leave a tail before and after a
+/// top-up, gives the one-shot tag.
+#[test]
+fn pieces_of_1_15_16_17_and_33_bytes_give_the_one_shot_tag() {
+    let pieces = [1, 15, 16, 17, 33];
+    let msg: Vec<u8> =
+        (0..pieces.iter().sum()).map(|i: usize| (i as u8).wrapping_mul(13)).collect();
+    let expected = generator().mac(&msg);
+    let mut mac = generator();
+    let mut rest = &msg[..];
+    for n in pieces {
+        let (piece, tail) = rest.split_at(n);
+        mac.do_update(piece);
+        rest = tail;
+    }
+    assert_eq!(&mac.finalize()[..], &expected[..]);
+}
+
 #[test]
 fn full_tags_are_required() {
     for len in 0..16 {

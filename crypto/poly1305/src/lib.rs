@@ -65,6 +65,9 @@ pub const BLOCK_LEN: usize = 16;
 
 const MASK: u64 = (1 << 26) - 1;
 
+/// A full block's 2^128, as bit 24 of the top radix-2^26 limb.
+const FULL_BLOCK_BIT: u64 = 1 << 24;
+
 /// A Poly1305 key: the one-time key `r || s` of RFC 8439 Sec 2.5, clamped and split, made by
 /// [`hazmat::key_from_bytes`] and consumed by the one [`Poly1305`] worker it makes. The key words
 /// live in [`Secret`]s, zeroized on drop; there is no `Debug` and no way to read them back.
@@ -189,20 +192,15 @@ impl Poly1305 {
         Self { key, h: Secret::new(), product: Secret::new(), buffer: Secret::new(), buffered: 0 }
     }
 
-    fn process_block(&mut self) {
-        // Append one bit immediately above the message bytes, even on a partial block.
-        let high_bit = if self.buffered == BLOCK_LEN {
-            1 << 24
-        } else {
-            self.buffer[self.buffered] = 1;
-            self.buffer[self.buffered + 1..].fill(0);
-            0
-        };
-        self.h[0] += load32(&self.buffer[0..4]) & MASK;
-        self.h[1] += (load32(&self.buffer[3..7]) >> 2) & MASK;
-        self.h[2] += (load32(&self.buffer[6..10]) >> 4) & MASK;
-        self.h[3] += (load32(&self.buffer[9..13]) >> 6) & MASK;
-        self.h[4] += (load32(&self.buffer[12..16]) >> 8) | high_bit;
+    /// RFC 8439 Sec 2.5's `Acc = ((Acc+block)*r) % p` for one 16-byte block, with `high_bit` its
+    /// "one bit beyond the number of octets": `FULL_BLOCK_BIT` for a full block, or 0 for the
+    /// final partial one, which carries that bit as a `0x01` byte the caller has written in.
+    fn process_block(&mut self, block: &[u8; BLOCK_LEN], high_bit: u64) {
+        self.h[0] += load32(&block[0..4]) & MASK;
+        self.h[1] += (load32(&block[3..7]) >> 2) & MASK;
+        self.h[2] += (load32(&block[6..10]) >> 4) & MASK;
+        self.h[3] += (load32(&block[9..13]) >> 6) & MASK;
+        self.h[4] += (load32(&block[12..16]) >> 8) | high_bit;
 
         // 2^130 = 5 (mod 2^130 - 5). Each sum is below 2^58, so u64 suffices.
         let product = &mut *self.product;
@@ -226,13 +224,16 @@ impl Poly1305 {
         self.h[0] += 5 * (product[4] >> 26);
         self.h[1] += self.h[0] >> 26;
         self.h[0] &= MASK;
-        self.buffered = 0;
     }
 
     /// Consumes this message and returns its full authentication tag without allocation.
     pub fn finalize(mut self) -> [u8; TAG_LEN] {
         if self.buffered != 0 {
-            self.process_block();
+            // The last, partial block: Sec 2.5.1's `| [0x01]` after its bytes, then zeros.
+            let mut block = core::mem::replace(&mut self.buffer, Secret::new());
+            block[self.buffered] = 1;
+            block[self.buffered + 1..].fill(0);
+            self.process_block(&block, 0);
         }
         for i in 1..4 {
             self.h[i + 1] += self.h[i] >> 26;
@@ -300,15 +301,26 @@ impl MAC for Poly1305 {
     }
 
     fn do_update(&mut self, mut data: &[u8]) {
-        while !data.is_empty() {
+        // A partial block left by an earlier call is topped up first, and is the only data
+        // that goes through the buffer apart from this call's own tail.
+        if self.buffered != 0 {
             let n = (BLOCK_LEN - self.buffered).min(data.len());
             self.buffer[self.buffered..self.buffered + n].copy_from_slice(&data[..n]);
             self.buffered += n;
             data = &data[n..];
-            if self.buffered == BLOCK_LEN {
-                self.process_block();
+            if self.buffered < BLOCK_LEN {
+                return;
             }
+            let block = core::mem::replace(&mut self.buffer, Secret::new());
+            self.process_block(&block, FULL_BLOCK_BIT);
+            self.buffered = 0;
         }
+        let (blocks, tail) = data.as_chunks::<BLOCK_LEN>();
+        for block in blocks {
+            self.process_block(block, FULL_BLOCK_BIT);
+        }
+        self.buffer[..tail.len()].copy_from_slice(tail);
+        self.buffered = tail.len();
     }
 
     fn do_final(self) -> Vec<u8> {
