@@ -11,7 +11,7 @@
 //! zeroize-on-drop wrapper (`bouncycastle_utils::secret::Secret`), as `bouncycastle-aes`
 //! does.
 
-use crate::intrinsics::V128;
+use super::intrinsics::V128;
 
 /// The AES block length in bytes (FIPS 197 Sec 3.4: `Nb = 4` words).
 pub const BLOCK_LEN: usize = 16;
@@ -95,7 +95,7 @@ fn expand<const KEY_LEN: usize, const N: usize>(key: &[u8; KEY_LEN]) -> [Block; 
 ///
 /// # Safety
 ///
-/// Callable only through an [`Aes`](crate::Aes) proof, whose existence is the precondition.
+/// Callable only through an [`Aes`](super::Aes) proof, whose existence is the precondition.
 #[target_feature(enable = "aes,neon")]
 pub fn expand_128(key: &[u8; 16]) -> RoundKeys128 {
     expand(key)
@@ -105,7 +105,7 @@ pub fn expand_128(key: &[u8; 16]) -> RoundKeys128 {
 ///
 /// # Safety
 ///
-/// Callable only through an [`Aes`](crate::Aes) proof, whose existence is the precondition.
+/// Callable only through an [`Aes`](super::Aes) proof, whose existence is the precondition.
 #[target_feature(enable = "aes,neon")]
 pub fn expand_192(key: &[u8; 24]) -> RoundKeys192 {
     expand(key)
@@ -115,7 +115,7 @@ pub fn expand_192(key: &[u8; 24]) -> RoundKeys192 {
 ///
 /// # Safety
 ///
-/// Callable only through an [`Aes`](crate::Aes) proof, whose existence is the precondition.
+/// Callable only through an [`Aes`](super::Aes) proof, whose existence is the precondition.
 #[target_feature(enable = "aes,neon")]
 pub fn expand_256(key: &[u8; 32]) -> RoundKeys256 {
     expand(key)
@@ -135,7 +135,7 @@ const fn check_rounds<const N: usize>() {
 ///
 /// # Safety
 ///
-/// Callable only through an [`Aes`](crate::Aes) proof, whose existence is the precondition.
+/// Callable only through an [`Aes`](super::Aes) proof, whose existence is the precondition.
 #[target_feature(enable = "aes,neon")]
 pub fn equivalent_inverse_round_keys<const N: usize>(w: &[Block; N]) -> [Block; N] {
     check_rounds::<N>();
@@ -162,7 +162,7 @@ pub fn equivalent_inverse_round_keys<const N: usize>(w: &[Block; N]) -> [Block; 
 ///
 /// # Safety
 ///
-/// Callable only through an [`Aes`](crate::Aes) proof, whose existence is the precondition.
+/// Callable only through an [`Aes`](super::Aes) proof, whose existence is the precondition.
 #[target_feature(enable = "aes,neon")]
 pub fn encrypt_blocks<const N: usize, const B: usize>(w: &[Block; N], blocks: &mut [Block; B]) {
     check_rounds::<N>();
@@ -202,7 +202,7 @@ pub fn encrypt_blocks<const N: usize, const B: usize>(w: &[Block; N], blocks: &m
 ///
 /// # Safety
 ///
-/// Callable only through an [`Aes`](crate::Aes) proof, whose existence is the precondition.
+/// Callable only through an [`Aes`](super::Aes) proof, whose existence is the precondition.
 #[target_feature(enable = "aes,neon")]
 pub fn decrypt_blocks<const N: usize, const B: usize>(dw: &[Block; N], blocks: &mut [Block; B]) {
     check_rounds::<N>();

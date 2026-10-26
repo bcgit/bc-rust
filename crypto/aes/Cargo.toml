@@ -9,9 +9,9 @@ bouncycastle-utils.workspace = true
 bouncycastle-cipher.workspace = true
 
 # The AArch64 Crypto Extensions engine; see `hazmat::engine`. Empty unless the build declares
-# the instructions or targets an operating system the arm crate can ask.
+# the instructions or targets an operating system the asm crate can ask.
 [target.'cfg(all(target_arch = "aarch64", target_endian = "little"))'.dependencies]
-bouncycastle-arm.workspace = true
+bouncycastle-asm.workspace = true
 
 [dev-dependencies]
 bouncycastle-core-test-framework.workspace = true

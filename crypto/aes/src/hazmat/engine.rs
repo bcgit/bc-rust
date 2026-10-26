@@ -3,7 +3,7 @@
 //! built on it are written once whichever implementation runs the rounds.
 //!
 //! [`Bitsliced`] is the portable, table-free engine the crate docs describe. `Arm` runs the
-//! rounds on the AArch64 Crypto Extensions through `bouncycastle-arm`'s kernels, and `Detected`
+//! rounds on the AArch64 Crypto Extensions through `bouncycastle-asm`'s kernels, and `Detected`
 //! picks one of those two when the key is set, by asking the CPU. [`DefaultEngine`] is:
 //!
 //! * `Arm` on a little-endian AArch64 build that declares `target_feature = "aes"`;
@@ -37,7 +37,7 @@ use crate::schedule::{expand, round_key};
         target_os = "windows"
     )
 ))]
-use bouncycastle_arm::Aes;
+use bouncycastle_asm::Aes;
 use bouncycastle_utils::secret::{Secret, ZeroizablePrimitive};
 
 /// Prevents an engine from being added outside this crate: every engine is reviewed against the
@@ -162,13 +162,12 @@ impl RoundKeys for [Block; 15] {
 /// [`AESParams::RoundKeys`], sealed and implemented for the three
 /// AES sizes, carrying the [`Arm`] engine's kernels for that size.
 ///
-/// The kernels in `bouncycastle_arm::aes` take the round keys as `[Block; Nr + 1]`, and `Nr + 1`
-/// cannot be written as an expression over `P` on stable const generics (the same reason
-/// `AESParams::Schedule` is an associated type). An engine must implement [`Engine<P>`] for
-/// every `P`, since the key types name `AESInternal<P>` for any `P`, so [`Arm`] reaches the
-/// kernels for its size through this trait rather than naming `N`. Only `expand` differs between
-/// the sizes; the block functions are the same kernels. Every method takes the
-/// [`Aes`] proof the kernels need.
+/// The kernels in `bouncycastle_asm::arm64_le::aes` take the round keys as `[Block; Nr + 1]`, and
+/// `Nr + 1` cannot be written as an expression over `P` on stable const generics (the same reason
+/// `AESParams::Schedule` is an associated type). An engine must implement [`Engine<P>`] for every
+/// `P`, since the key types name `AESInternal<P>` for any `P`, so [`Arm`] reaches the kernels for
+/// its size through this trait rather than naming `N`. Only `expand` differs between the sizes; the
+/// block functions are the same kernels. Every method takes the [`Aes`] proof the kernels need.
 #[cfg(all(
     target_arch = "aarch64",
     target_endian = "little",
@@ -384,14 +383,14 @@ impl<P: AESParams> Engine<P> for Bitsliced<P> {
     }
 }
 
-/// The AArch64 Crypto Extensions engine, over the kernels in `bouncycastle_arm::aes`.
+/// The AArch64 Crypto Extensions engine, over the kernels in `bouncycastle_asm::arm64_le::aes`.
 ///
-/// CIPHER() runs on `AESE`/`AESMC` and decryption is the equivalent inverse cipher of FIPS 197
-/// Sec 5.3.5 on `AESD`/`AESIMC`, which is what those instructions compute, so this engine holds
-/// both schedules: `w` from KEYEXPANSION() and `dw` from KEYEXPANSIONEIC(). That is twice the
-/// state of [`Bitsliced`], 352, 416 or 480 bytes; a build that only encrypts, as CTR, GCM and
-/// CCM do, still pays for `dw`, which is the price of one type serving both directions. The
-/// expansion itself is table-free: SUBWORD() goes through `AESE`, see `bouncycastle_arm::aes`.
+/// CIPHER() runs on `AESE`/`AESMC` and decryption is the equivalent inverse cipher of FIPS 197 Sec
+/// 5.3.5 on `AESD`/`AESIMC`, which is what those instructions compute, so this engine holds both
+/// schedules: `w` from KEYEXPANSION() and `dw` from KEYEXPANSIONEIC(). That is twice the state of
+/// [`Bitsliced`], 352, 416 or 480 bytes; a build that only encrypts, as CTR, GCM and CCM do, still
+/// pays for `dw`, which is the price of one type serving both directions. The expansion itself is
+/// table-free: SUBWORD() goes through `AESE`, see `bouncycastle_asm::arm64_le::aes`.
 ///
 /// The expanded arrays are moved into their [`Secret`]s; the compiler may leave a copy of each
 /// in the dead frame of the kernel that produced it, which is the same caveat the crate's
@@ -441,7 +440,7 @@ mod arm {
     use super::{Arm, EngineInternalTrait, RoundKeys};
     use crate::AESParams;
     use crate::bitslice::Block;
-    use bouncycastle_arm::Aes;
+    use bouncycastle_asm::Aes;
     use bouncycastle_utils::secret::Secret;
 
     impl<P: AESParams> Clone for Arm<P> {
@@ -607,7 +606,7 @@ mod detected {
     use super::{Arm, Bitsliced, Detected, Engine, EngineInternalTrait};
     use crate::AESParams;
     use crate::bitslice::Block;
-    use bouncycastle_arm::Aes;
+    use bouncycastle_asm::Aes;
 
     // Written out rather than derived, for the reason `Bitsliced`'s is.
     impl<P: AESParams> Clone for Detected<P> {

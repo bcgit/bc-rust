@@ -54,7 +54,7 @@ rust code by placing:
 ```
 
 at the top of every sub-crate, with two exceptions that each confine their `unsafe` to a few audited lines:
-`bouncycastle-utils` (constant-time barriers and zeroization) and `bouncycastle-arm` (the AArch64 Crypto Extensions
+`bouncycastle-utils` (constant-time barriers and zeroization) and `bouncycastle-asm` (the AArch64 Crypto Extensions
 intrinsics behind the hardware AES and GHASH kernels, used only where the build declares those instructions or the CPU
 is found to have them at run time). We
 also avoid (except where absolutely necessary) third-party depencendencies which could

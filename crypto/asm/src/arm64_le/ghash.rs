@@ -24,9 +24,9 @@
 //! `reduce()` / `gfmul_multi_reduce()` (`native_c/arm/gcm/gcm_neon.c`), themselves the
 //! shift-based reduction of Gueron and Kounavis's CLMUL white paper for the bit-reflected
 //! representation. The port is checked against Sec 6.3 Algorithm 1 bit by bit and on random
-//! pairs in `tests/ghash_tests.rs`.
+//! pairs in `tests/arm64_le_ghash_tests.rs`.
 
-use crate::intrinsics::V128;
+use super::intrinsics::V128;
 
 /// A block of `GF(2^128)` as two big-endian `u64`s; see the module docs.
 pub type Element = [u64; 2];
@@ -119,7 +119,7 @@ fn mul_no_reduce(a: V128, b: V128) -> (V128, V128) {
 ///
 /// # Safety
 ///
-/// Callable only through an [`Aes`](crate::Aes) proof, whose existence is the precondition.
+/// Callable only through an [`Aes`](super::Aes) proof, whose existence is the precondition.
 #[target_feature(enable = "aes,neon")]
 pub fn mul(x: &Element, y: &Element) -> Element {
     let (low, high) = mul_no_reduce(load(x), load(y));
@@ -134,7 +134,7 @@ pub fn mul(x: &Element, y: &Element) -> Element {
 ///
 /// # Safety
 ///
-/// Callable only through an [`Aes`](crate::Aes) proof, whose existence is the precondition.
+/// Callable only through an [`Aes`](super::Aes) proof, whose existence is the precondition.
 #[target_feature(enable = "aes,neon")]
 pub fn mul4(x: &[Element; 4], y: &[Element; 4]) -> Element {
     let (mut low, mut high) = mul_no_reduce(load(&x[0]), load(&y[0]));

@@ -15,7 +15,7 @@
     )
 ))]
 
-use bouncycastle_arm::Aes;
+use bouncycastle_asm::arm64_le::Aes;
 use std::arch::is_aarch64_feature_detected;
 
 #[test]

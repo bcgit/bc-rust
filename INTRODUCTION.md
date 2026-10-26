@@ -81,13 +81,14 @@ A few other design principles that we employ are described below.
 
 Yes, in many cases you can improve performance by skirting the strict type and memory safety system of Rust, including
 by directly embedding assembly code. But to us, this undermines the primary reason that you're developing in Rust in the
-first place. Every crate carries `#![forbid(unsafe_code)]`, with two exceptions. `bouncycastle-utils` holds constant-time
-and secure-zeroization code that cannot be accomplished reliably within safe rust. `bouncycastle-arm` holds the AArch64
-Crypto Extensions kernels for AES and GHASH, which the compiler will not let safe code call without proof that the CPU
-has the instructions; it is `#![deny(unsafe_code)]`, and only two modules opt back in: `intrinsics`, for the two
-load/store wrappers that take raw pointers, and `cpu`, whose `Aes` value is that proof, obtained from the
-build's declaration or by asking the CPU at run time. In both crates each instance of unsafe is a few lines with its safety
-argument alongside, and all unsafe is jailed to those two crates so that everything built on them stays in safe Rust.
+first place. Every crate carries `#![forbid(unsafe_code)]`, with two exceptions. `bouncycastle-utils` holds
+constant-time and secure-zeroization code that cannot be accomplished reliably within safe rust. `bouncycastle-asm`
+holds the AArch64 Crypto Extensions kernels for AES and GHASH, which the compiler will not let safe code call without
+proof that the CPU has the instructions; it is `#![deny(unsafe_code)]`, and only two modules opt back in:
+`arm64_le::intrinsics`, for the two load/store wrappers that take raw pointers, and `arm64_le::cpu`, whose `Aes` value
+is that proof, obtained from the build's declaration or by asking the CPU at run time. In both crates each instance of
+unsafe is a few lines with its safety argument alongside, and all unsafe is jailed to those two crates so that
+everything built on them stays in safe Rust.
 
 ### If it compiles, then it's safe
 

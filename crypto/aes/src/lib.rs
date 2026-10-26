@@ -93,7 +93,7 @@
 //! [`Bitsliced`](hazmat::engine::Bitsliced) is the engine described above. On little-endian
 //! AArch64 the `Arm` engine runs CIPHER() on the `AESE`/`AESMC` instructions and the equivalent
 //! inverse cipher of FIPS 197 Sec 5.3.5 on `AESD`/`AESIMC`, through the kernels in
-//! `bouncycastle-arm`. Which one [`DefaultEngine`](hazmat::engine::DefaultEngine) is depends on
+//! `bouncycastle-asm`. Which one [`DefaultEngine`](hazmat::engine::DefaultEngine) is depends on
 //! the build:
 //!
 //! * a build that declares `target_feature = "aes"`, as `aarch64-apple-darwin` does by default,
@@ -157,7 +157,7 @@
 //! in the cipher (sbox) *or* in the key load (key schedule expansion)
 //! The only branches are the round loops, which count over the public `Nr`. The `Arm` engine's
 //! instructions work on registers, so the same holds there; whether their latency is
-//! data-independent is a property of the CPU, as `bouncycastle-arm`'s docs say.
+//! data-independent is a property of the CPU, as `bouncycastle-asm`'s docs say.
 //!
 //! This guarantee is "by construction" at the source code level only since no guarantees can be made
 //! against the compiler optimizing the provided code into non-constant time assembly. For uses that

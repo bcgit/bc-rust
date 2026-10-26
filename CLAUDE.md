@@ -123,10 +123,10 @@ crypto/<name>/
   benches/*.rs        # criterion benches (declared as [[bench]] with harness=false)
 ```
 
-`#![forbid(unsafe_code)]` has two exceptions, `utils` and `arm`; INTRODUCTION.md's "No unsafe code!" section is the
-authority on what each may hold and how it is confined (`arm` is `#![deny(unsafe_code)]` with its `intrinsics` and
-`cpu` modules allowed to opt back in, and has content on little-endian AArch64 only under `target_feature = "aes"` or
-on an operating system its detector can ask (Linux, Android, macOS, iOS, Windows)).
+`#![forbid(unsafe_code)]` has two exceptions, `utils` and `asm`; INTRODUCTION.md's "No unsafe code!" section is the
+authority on what each may hold and how it is confined (`asm` is `#![deny(unsafe_code)]` with its `arm64_le::intrinsics`
+and `arm64_le::cpu` modules allowed to opt back in, and has content on little-endian AArch64 only under
+`target_feature = "aes"` or on an operating system its detector can ask (Linux, Android, macOS, iOS, Windows)).
 
 `#![no_std]` is the long-term goal but the `core` crate still has a `Vec`-removal TODO blocking it (see the comment at the top of `crypto/core/src/lib.rs`). Don't add new `Vec` usage where a const-sized array would do.
 

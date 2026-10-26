@@ -10,9 +10,9 @@ bouncycastle-rng.workspace = true
 bouncycastle-utils.workspace = true
 
 # The PMULL GHASH multiply behind GCM's `ghash` module. Empty unless the build declares the
-# instructions or targets an operating system the arm crate can ask.
+# instructions or targets an operating system the asm crate can ask.
 [target.'cfg(all(target_arch = "aarch64", target_endian = "little"))'.dependencies]
-bouncycastle-arm.workspace = true
+bouncycastle-asm.workspace = true
 
 [dev-dependencies]
 bouncycastle-core-test-framework.workspace = true

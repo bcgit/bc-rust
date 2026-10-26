@@ -902,7 +902,7 @@ mod ghash {
     //!
     //! On little-endian AArch64, where the CPU has `FEAT_AES`, `FEAT_PMULL` and NEON -- always, on a
     //! build that declares `target_feature = "aes"`; as found at run time, on a build for Linux,
-    //! Android, macOS, iOS or Windows that does not -- every multiply is `bouncycastle_arm`'s
+    //! Android, macOS, iOS or Windows that does not -- every multiply is `bouncycastle_asm`'s
     //! `PMULL` kernel and [`Ghash::update`] folds whole blocks four at a time through its
     //! four-product kernel, which sums four products under one reduction. That is
     //! Sec 6.4's "In effect, the GHASH function calculates `X1•H^m ⊕ X2•H^(m-1) ⊕ ... ⊕ Xm•H`"
@@ -912,7 +912,7 @@ mod ghash {
     //! on a CPU without `PMULL`, the portable multiplier runs; the tests pin the two against each
     //! other and both against Algorithm 1.
     //!
-    //! The CPU check is `bouncycastle_arm::Aes::detect()`, made once in [`Ghash::new`] and stored:
+    //! The CPU check is `bouncycastle_asm::Aes::detect()`, made once in [`Ghash::new`] and stored:
     //! every multiply and every [`Ghash::update`] reads the stored proof. It is free when the build
     //! declares the instructions, and one cached atomic load per construction otherwise. The
     //! suspended state carries no choice, so a resumed worker, built by `new` before its state is
@@ -935,7 +935,7 @@ mod ghash {
             target_os = "windows"
         )
     ))]
-    use bouncycastle_arm::Aes;
+    use bouncycastle_asm::Aes;
 
     /// A block of `GF(2^128)`, in the two-`u64` form described in the module docs.
     type Block = [u64; 2];
@@ -1560,7 +1560,7 @@ mod ghash {
         /// Chunking independence: absorbing a 300-byte message in one call must equal absorbing it in
         /// two pieces, at every possible split point. Three hundred bytes is eighteen whole blocks
         /// and a partial one, so the splits land on every phase of the AArch64 path's four-block
-        /// grouping as well as inside blocks. For `crypto/arm/UNSAFE.md`'s whole-block-loop rule,
+        /// grouping as well as inside blocks. For `crypto/asm/UNSAFE.md`'s whole-block-loop rule,
         /// that puts every pending length `0..=15` and every remainder `0..=3` before `update`.
         #[test]
         fn update_is_chunking_independent() {
