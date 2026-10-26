@@ -94,13 +94,13 @@
 //! AArch64 the `Arm` engine runs CIPHER() on the `AESE`/`AESMC` instructions and the equivalent
 //! inverse cipher of FIPS 197 Sec 5.3.5 on `AESD`/`AESIMC`, through the kernels in
 //! `bouncycastle-asm`. Which one [`DefaultEngine`](hazmat::engine::DefaultEngine) is depends on
-//! the build:
+//! the build and on the `asm` feature, which is on by default:
 //!
 //! * a build that declares `target_feature = "aes"`, as `aarch64-apple-darwin` does by default,
 //!   uses `Arm`, and requires the instructions on every CPU it runs on;
 //! * any other AArch64 build for Linux, Android, macOS, iOS or Windows uses `Detected`, which
 //!   asks the CPU once per key and runs `Arm` if it has the instructions and `Bitsliced` if not;
-//! * everything else uses `Bitsliced`.
+//! * everything else, and every build without `asm`, uses `Bitsliced`.
 //!
 //! Naming the engine, as `AESInternal<AES128Params, Bitsliced<AES128Params>>`, pins one; the
 //! crate's `arm_agreement_tests` run the default against `Bitsliced` on the same random inputs.

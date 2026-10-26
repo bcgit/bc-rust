@@ -9,10 +9,16 @@ bouncycastle-core.workspace = true
 bouncycastle-rng.workspace = true
 bouncycastle-utils.workspace = true
 
+[features]
+# On by default: GCM's GHASH uses `PMULL` where the target and the CPU have it. Off, the
+# portable multiplier only, and the asm crate is not built.
+default = ["asm"]
+asm = ["dep:bouncycastle-asm"]
+
 # The PMULL GHASH multiply behind GCM's `ghash` module. Empty unless the build declares the
 # instructions or targets an operating system the asm crate can ask.
 [target.'cfg(all(target_arch = "aarch64", target_endian = "little"))'.dependencies]
-bouncycastle-asm.workspace = true
+bouncycastle-asm = { workspace = true, optional = true }
 
 [dev-dependencies]
 bouncycastle-core-test-framework.workspace = true

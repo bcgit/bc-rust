@@ -24,6 +24,9 @@
 //! Without either, the crate compiles to nothing, and `bouncycastle-aes` falls back to its
 //! portable engine.
 //!
+//! `bouncycastle-aes` and `bouncycastle-cipher` pull this crate in under their `asm` feature, on
+//! by default, and `--no-default-features` leaves it out of the build.
+//!
 //! Every kernel is `#[target_feature(enable = "aes,neon")]`, so calling one directly is `unsafe`.
 //! The safe way in is an [`Aes`] value, which exists only once the instructions are known to be
 //! present, and whose methods are the kernels.

@@ -900,9 +900,10 @@ mod ghash {
     //!
     //! # The AArch64 path
     //!
-    //! On little-endian AArch64, where the CPU has `FEAT_AES`, `FEAT_PMULL` and NEON -- always, on a
-    //! build that declares `target_feature = "aes"`; as found at run time, on a build for Linux,
-    //! Android, macOS, iOS or Windows that does not -- every multiply is `bouncycastle_asm`'s
+    //! On little-endian AArch64 with the `asm` feature (on by default), where the CPU has
+    //! `FEAT_AES`, `FEAT_PMULL` and NEON -- always, on a build that declares
+    //! `target_feature = "aes"`; as found at run time, on a build for Linux, Android, macOS, iOS
+    //! or Windows that does not -- every multiply is `bouncycastle_asm`'s
     //! `PMULL` kernel and [`Ghash::update`] folds whole blocks four at a time through its
     //! four-product kernel, which sums four products under one reduction. That is
     //! Sec 6.4's "In effect, the GHASH function calculates `X1•H^m ⊕ X2•H^(m-1) ⊕ ... ⊕ Xm•H`"
@@ -923,6 +924,7 @@ mod ghash {
     use bouncycastle_utils::suspendable_state::{Cursor, CursorMut, bounded_usize};
 
     #[cfg(all(
+        feature = "asm",
         target_arch = "aarch64",
         target_endian = "little",
         target_feature = "neon",
@@ -1087,6 +1089,7 @@ mod ghash {
     #[cfg(test)]
     fn mul(x: &Block, y: &Block) -> Block {
         #[cfg(all(
+            feature = "asm",
             target_arch = "aarch64",
             target_endian = "little",
             target_feature = "neon",
@@ -1128,6 +1131,7 @@ mod ghash {
         /// module docs). Derived from `h` when `aes` is `Some`, all zero and never read when it is
         /// `None`, and never suspended.
         #[cfg(all(
+            feature = "asm",
             target_arch = "aarch64",
             target_endian = "little",
             target_feature = "neon",
@@ -1145,6 +1149,7 @@ mod ghash {
         /// `FEAT_PMULL` and NEON. Every multiply and [`update`](Self::update) reads it. Not
         /// suspended: a resumed worker takes its own from the CPU it resumes on.
         #[cfg(all(
+            feature = "asm",
             target_arch = "aarch64",
             target_endian = "little",
             target_feature = "neon",
@@ -1182,6 +1187,7 @@ mod ghash {
             // The proof, asked for once; then `H^2 = H . H`, `H^3 = H^2 . H`, `H^4 = H^3 . H`
             // (Sec 6.3), stored highest power first, only where `ghash_mul4` will read them.
             #[cfg(all(
+                feature = "asm",
                 target_arch = "aarch64",
                 target_endian = "little",
                 target_feature = "neon",
@@ -1208,6 +1214,7 @@ mod ghash {
             Self {
                 h: hs,
                 #[cfg(all(
+                    feature = "asm",
                     target_arch = "aarch64",
                     target_endian = "little",
                     target_feature = "neon",
@@ -1222,6 +1229,7 @@ mod ghash {
                 ))]
                 h_powers,
                 #[cfg(all(
+                    feature = "asm",
                     target_arch = "aarch64",
                     target_endian = "little",
                     target_feature = "neon",
@@ -1247,6 +1255,7 @@ mod ghash {
             self.y[0] ^= xi[0];
             self.y[1] ^= xi[1];
             #[cfg(all(
+                feature = "asm",
                 target_arch = "aarch64",
                 target_endian = "little",
                 target_feature = "neon",
@@ -1295,6 +1304,7 @@ mod ghash {
             // four inputs sit in a `Secret` because the first carries `Y`, and one `Secret` serves the
             // whole call so it is zeroized once.
             #[cfg(all(
+                feature = "asm",
                 target_arch = "aarch64",
                 target_endian = "little",
                 target_feature = "neon",
@@ -1460,6 +1470,7 @@ mod ghash {
         /// Where the CPU has `PMULL`, `mul` and the four-block path use it; the kernel must agree with
         /// the portable multiplier it replaces, not only with the bit-serial reference.
         #[cfg(all(
+            feature = "asm",
             target_arch = "aarch64",
             target_endian = "little",
             target_feature = "neon",

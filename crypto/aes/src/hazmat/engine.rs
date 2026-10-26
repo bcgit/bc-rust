@@ -4,12 +4,13 @@
 //!
 //! [`Bitsliced`] is the portable, table-free engine the crate docs describe. `Arm` runs the
 //! rounds on the AArch64 Crypto Extensions through `bouncycastle-asm`'s kernels, and `Detected`
-//! picks one of those two when the key is set, by asking the CPU. [`DefaultEngine`] is:
+//! picks one of those two when the key is set, by asking the CPU. [`DefaultEngine`] is, with the
+//! `asm` feature (on by default):
 //!
 //! * `Arm` on a little-endian AArch64 build that declares `target_feature = "aes"`;
 //! * `Detected` on any other little-endian AArch64 build for Linux, Android, macOS, iOS or
 //!   Windows;
-//! * [`Bitsliced`] everywhere else.
+//! * [`Bitsliced`] everywhere else, and on every build without the feature.
 //!
 //! `AES128Internal` and friends use the default; naming an engine explicitly, as
 //! `AESInternal<AES128Params, Bitsliced<AES128Params>>`, is for tests that compare engines and
@@ -25,6 +26,7 @@ use crate::round::{add_round_key, inv_mix_columns, inv_shift_rows, mix_columns, 
 use crate::sbox::{inv_sbox, sbox};
 use crate::schedule::{expand, round_key};
 #[cfg(all(
+    feature = "asm",
     target_arch = "aarch64",
     target_endian = "little",
     target_feature = "neon",
@@ -92,6 +94,7 @@ impl RoundKeysInternalTrait for [Block; 15] {}
 /// name `AESInternal<P>` for any `P`, so one that holds its schedule in that form reaches the
 /// kernels for its size through this trait rather than naming `N`.
 #[cfg(not(all(
+    feature = "asm",
     target_arch = "aarch64",
     target_endian = "little",
     target_feature = "neon",
@@ -110,6 +113,7 @@ pub trait RoundKeys: ZeroizablePrimitive + RoundKeysInternalTrait {
 }
 
 #[cfg(not(all(
+    feature = "asm",
     target_arch = "aarch64",
     target_endian = "little",
     target_feature = "neon",
@@ -126,6 +130,7 @@ impl RoundKeys for [Block; 11] {
     type Key = [u8; 16];
 }
 #[cfg(not(all(
+    feature = "asm",
     target_arch = "aarch64",
     target_endian = "little",
     target_feature = "neon",
@@ -142,6 +147,7 @@ impl RoundKeys for [Block; 13] {
     type Key = [u8; 24];
 }
 #[cfg(not(all(
+    feature = "asm",
     target_arch = "aarch64",
     target_endian = "little",
     target_feature = "neon",
@@ -169,6 +175,7 @@ impl RoundKeys for [Block; 15] {
 /// its size through this trait rather than naming `N`. Only `expand` differs between the sizes; the
 /// block functions are the same kernels. Every method takes the [`Aes`] proof the kernels need.
 #[cfg(all(
+    feature = "asm",
     target_arch = "aarch64",
     target_endian = "little",
     target_feature = "neon",
@@ -197,6 +204,7 @@ pub trait RoundKeys: ZeroizablePrimitive + RoundKeysInternalTrait {
 /// The engine `AESInternal` uses unless one is named: [`Bitsliced`], because this build can
 /// neither assume nor detect the AArch64 Crypto Extensions.
 #[cfg(not(all(
+    feature = "asm",
     target_arch = "aarch64",
     target_endian = "little",
     target_feature = "neon",
@@ -214,6 +222,7 @@ pub type DefaultEngine<P> = Bitsliced<P>;
 /// The engine `AESInternal` uses unless one is named: [`Arm`], because this build declares the
 /// AArch64 Crypto Extensions.
 #[cfg(all(
+    feature = "asm",
     target_arch = "aarch64",
     target_endian = "little",
     target_feature = "aes",
@@ -224,6 +233,7 @@ pub type DefaultEngine<P> = Arm<P>;
 /// The engine `AESInternal` uses unless one is named: [`Detected`], because this build can ask
 /// the CPU whether it has the AArch64 Crypto Extensions.
 #[cfg(all(
+    feature = "asm",
     target_arch = "aarch64",
     target_endian = "little",
     target_feature = "neon",
@@ -400,6 +410,7 @@ impl<P: AESParams> Engine<P> for Bitsliced<P> {
 /// `target_feature = "aes"` implements [`Engine`] for it with `Aes::declared()`; on any other
 /// build only `Detected` builds one, with the proof `Aes::detect()` returned.
 #[cfg(all(
+    feature = "asm",
     target_arch = "aarch64",
     target_endian = "little",
     target_feature = "neon",
@@ -422,6 +433,7 @@ pub struct Arm<P: AESParams> {
 }
 
 #[cfg(all(
+    feature = "asm",
     target_arch = "aarch64",
     target_endian = "little",
     target_feature = "neon",
@@ -563,13 +575,14 @@ mod arm {
 
 /// The engine chosen when the key is set: [`Arm`] if the CPU has the AArch64 Crypto Extensions,
 /// [`Bitsliced`] if not. [`DefaultEngine`] on an AArch64 build for Linux, Android, macOS, iOS or
-/// Windows that does not declare the instructions, so that one binary uses them wherever it runs
-/// on them.
+/// Windows that has the `asm` feature (on by default) and does not declare the instructions, so
+/// that one binary uses them wherever it runs on them.
 ///
 /// The CPU is asked once per key, in key expansion, and the operating-system query behind that
 /// caches its answer. Each block call is then a match on the variant, which depends on the CPU
 /// and never on the key or data. The size is [`Arm`]'s plus the discriminant.
 #[cfg(all(
+    feature = "asm",
     target_arch = "aarch64",
     target_endian = "little",
     target_feature = "neon",
@@ -590,6 +603,7 @@ pub enum Detected<P: AESParams> {
 }
 
 #[cfg(all(
+    feature = "asm",
     target_arch = "aarch64",
     target_endian = "little",
     target_feature = "neon",
