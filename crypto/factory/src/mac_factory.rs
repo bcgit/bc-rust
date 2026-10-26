@@ -4,6 +4,7 @@
 //! returns a [`MACFactory`] object: a key, which implements [`MacGenerationKey`] and
 //! [`MacVerificationKey`] as a pass-through to the underlying key type, and whose workers,
 //! [`MACFactoryWorker`], implement [`MAC`] the same way.
+//! See [`MAC`] for the full message-authentication API, key handling, streaming workflow, and verification guidance.
 //!
 //! Example usage:
 //! Generating and verifying a MAC value for a given piece of data:
