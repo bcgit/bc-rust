@@ -17,8 +17,8 @@ use bouncycastle_core::traits::Algorithm;
 
 /// How many schedules the default engine holds on this target, and what it holds besides: two
 /// where the default is `Arm` or `Detected` (an AArch64 build that declares the Crypto
-/// Extensions or enables `std`), one everywhere else, and for `Detected` a 4-byte variant tag
-/// (the enum takes `Bitsliced`'s `u32` alignment).
+/// Extensions or targets an operating system the arm crate can ask), one everywhere else, and
+/// for `Detected` a 4-byte variant tag (the enum takes `Bitsliced`'s `u32` alignment).
 #[cfg(all(
     target_arch = "aarch64",
     target_endian = "little",
@@ -31,14 +31,27 @@ const DEFAULT_ENGINE: (usize, usize) = (2, 0);
     target_endian = "little",
     target_feature = "neon",
     not(target_feature = "aes"),
-    feature = "std"
+    any(
+        target_os = "linux",
+        target_os = "android",
+        target_os = "macos",
+        target_os = "ios",
+        target_os = "windows"
+    )
 ))]
 const DEFAULT_ENGINE: (usize, usize) = (2, 4);
 #[cfg(not(all(
     target_arch = "aarch64",
     target_endian = "little",
     target_feature = "neon",
-    any(target_feature = "aes", feature = "std")
+    any(
+        target_feature = "aes",
+        target_os = "linux",
+        target_os = "android",
+        target_os = "macos",
+        target_os = "ios",
+        target_os = "windows"
+    )
 )))]
 const DEFAULT_ENGINE: (usize, usize) = (1, 0);
 

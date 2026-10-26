@@ -6,7 +6,7 @@ edition.workspace = true
 [dependencies]
 clap = { version = "4.5.51", features = ["derive"] }
 
-bouncycastle = { workspace = true, features = ["std"] }
+bouncycastle.workspace = true
 
 [[bin]]
 name = "bc-rust"

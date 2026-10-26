@@ -98,8 +98,8 @@
 //!
 //! * a build that declares `target_feature = "aes"`, as `aarch64-apple-darwin` does by default,
 //!   uses `Arm`, and requires the instructions on every CPU it runs on;
-//! * any other AArch64 build with the `std` feature uses `Detected`, which asks the CPU once per
-//!   key and runs `Arm` if it has the instructions and `Bitsliced` if not;
+//! * any other AArch64 build for Linux, Android, macOS, iOS or Windows uses `Detected`, which
+//!   asks the CPU once per key and runs `Arm` if it has the instructions and `Bitsliced` if not;
 //! * everything else uses `Bitsliced`.
 //!
 //! Naming the engine, as `AESInternal<AES128Params, Bitsliced<AES128Params>>`, pins one; the

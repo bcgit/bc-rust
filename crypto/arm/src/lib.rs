@@ -16,8 +16,9 @@
 //! * **The build declares it** (`target_feature = "aes"`), as `aarch64-apple-darwin` does by
 //!   default and `RUSTFLAGS="-C target-feature=+aes"` does elsewhere. Every CPU the binary may
 //!   run on then has the instructions; see Security Considerations.
-//! * **The `std` feature is on**, and [`Aes::detect`] asks the operating system at
-//!   run time. A binary built this way runs everywhere and uses the instructions where they are.
+//! * **The target is Linux, Android, macOS, iOS or Windows**, and [`Aes::detect`] asks the
+//!   operating system at run time. A binary built this way runs everywhere and uses the
+//!   instructions where they are.
 //!
 //! Without either, the crate compiles to nothing, and `bouncycastle-aes` falls back to its
 //! portable engine.
@@ -28,15 +29,16 @@
 //!
 //! To exercise the run-time path on a host that declares `aes` by default, disable it for
 //! rustdoc as well as rustc, since cargo hands `RUSTFLAGS` only to the latter:
-//! `RUSTFLAGS="-C target-feature=-aes" RUSTDOCFLAGS="-C target-feature=-aes" cargo test
-//! --features std`.
+//! `RUSTFLAGS="-C target-feature=-aes" RUSTDOCFLAGS="-C target-feature=-aes" cargo test`.
 //!
 //! # Usage Examples
 //!
 //! The AES kernels work on round keys expanded from a raw key and on arrays of whole blocks:
 //!
 //! ```
-//! # #[cfg(all(target_arch = "aarch64", target_endian = "little", target_feature = "neon", any(target_feature = "aes", feature = "std")))]
+//! # #[cfg(all(target_arch = "aarch64", target_endian = "little", target_feature = "neon",
+//! #     any(target_feature = "aes", target_os = "linux", target_os = "android",
+//! #     target_os = "macos", target_os = "ios", target_os = "windows")))]
 //! # if let Some(cx) = bouncycastle_arm::Aes::detect() {
 //! // `cx` is an `Aes`, from `Aes::detect()`.
 //! let w = cx.expand_128(&[0x2b, 0x7e, 0x15, 0x16, 0x28, 0xae, 0xd2, 0xa6,
@@ -60,7 +62,9 @@
 //! `H`, `H^2`, `H^3` and `H^4` can absorb four blocks per call:
 //!
 //! ```
-//! # #[cfg(all(target_arch = "aarch64", target_endian = "little", target_feature = "neon", any(target_feature = "aes", feature = "std")))]
+//! # #[cfg(all(target_arch = "aarch64", target_endian = "little", target_feature = "neon",
+//! #     any(target_feature = "aes", target_os = "linux", target_os = "android",
+//! #     target_os = "macos", target_os = "ios", target_os = "windows")))]
 //! # if let Some(cx) = bouncycastle_arm::Aes::detect() {
 //! let h = [0x6699_aabb_ccdd_ee00, 0x1122_3344_5566_7788];
 //! let h2 = cx.ghash_mul(&h, &h);
@@ -110,8 +114,8 @@
 //! Declaring `target_feature = "aes"` is a promise to the compiler, not a request. Running the
 //! result on a CPU without `FEAT_AES` and `FEAT_PMULL` is undefined behaviour and in practice an
 //! illegal instruction fault. Whoever builds the final binary is the one who can make that
-//! promise. A build that cannot, such as a distribution package, should use the `std` feature
-//! instead, which checks at run time.
+//! promise. A build that cannot, such as a distribution package, should leave `aes` undeclared
+//! and let the crate check at run time.
 //!
 //! ## Timing
 //!
@@ -131,11 +135,20 @@
 #![forbid(missing_docs)]
 #![deny(unsafe_code)]
 
+// The operating systems in these gates are the ones `cpu/probe.rs` has a back end for: the two
+// lists change together.
 #[cfg(all(
     target_arch = "aarch64",
     target_endian = "little",
     target_feature = "neon",
-    any(target_feature = "aes", feature = "std")
+    any(
+        target_feature = "aes",
+        target_os = "linux",
+        target_os = "android",
+        target_os = "macos",
+        target_os = "ios",
+        target_os = "windows"
+    )
 ))]
 pub mod intrinsics;
 
@@ -143,7 +156,14 @@ pub mod intrinsics;
     target_arch = "aarch64",
     target_endian = "little",
     target_feature = "neon",
-    any(target_feature = "aes", feature = "std")
+    any(
+        target_feature = "aes",
+        target_os = "linux",
+        target_os = "android",
+        target_os = "macos",
+        target_os = "ios",
+        target_os = "windows"
+    )
 ))]
 pub mod aes;
 
@@ -151,7 +171,14 @@ pub mod aes;
     target_arch = "aarch64",
     target_endian = "little",
     target_feature = "neon",
-    any(target_feature = "aes", feature = "std")
+    any(
+        target_feature = "aes",
+        target_os = "linux",
+        target_os = "android",
+        target_os = "macos",
+        target_os = "ios",
+        target_os = "windows"
+    )
 ))]
 pub mod ghash;
 
@@ -159,7 +186,14 @@ pub mod ghash;
     target_arch = "aarch64",
     target_endian = "little",
     target_feature = "neon",
-    any(target_feature = "aes", feature = "std")
+    any(
+        target_feature = "aes",
+        target_os = "linux",
+        target_os = "android",
+        target_os = "macos",
+        target_os = "ios",
+        target_os = "windows"
+    )
 ))]
 mod cpu;
 
@@ -167,6 +201,13 @@ mod cpu;
     target_arch = "aarch64",
     target_endian = "little",
     target_feature = "neon",
-    any(target_feature = "aes", feature = "std")
+    any(
+        target_feature = "aes",
+        target_os = "linux",
+        target_os = "android",
+        target_os = "macos",
+        target_os = "ios",
+        target_os = "windows"
+    )
 ))]
 pub use cpu::Aes;

@@ -10,7 +10,14 @@
     target_arch = "aarch64",
     target_endian = "little",
     target_feature = "neon",
-    any(target_feature = "aes", feature = "std")
+    any(
+        target_feature = "aes",
+        target_os = "linux",
+        target_os = "android",
+        target_os = "macos",
+        target_os = "ios",
+        target_os = "windows"
+    )
 ))]
 mod arm {
     use bouncycastle_arm::Aes;
@@ -194,7 +201,14 @@ mod arm {
     target_arch = "aarch64",
     target_endian = "little",
     target_feature = "neon",
-    any(target_feature = "aes", feature = "std")
+    any(
+        target_feature = "aes",
+        target_os = "linux",
+        target_os = "android",
+        target_os = "macos",
+        target_os = "ios",
+        target_os = "windows"
+    )
 ))]
 criterion::criterion_main!(arm::benches);
 
@@ -202,6 +216,13 @@ criterion::criterion_main!(arm::benches);
     target_arch = "aarch64",
     target_endian = "little",
     target_feature = "neon",
-    any(target_feature = "aes", feature = "std")
+    any(
+        target_feature = "aes",
+        target_os = "linux",
+        target_os = "android",
+        target_os = "macos",
+        target_os = "ios",
+        target_os = "windows"
+    )
 )))]
 fn main() {}

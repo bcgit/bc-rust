@@ -7,7 +7,8 @@
 //! picks one of those two when the key is set, by asking the CPU. [`DefaultEngine`] is:
 //!
 //! * `Arm` on a little-endian AArch64 build that declares `target_feature = "aes"`;
-//! * `Detected` on any other little-endian AArch64 build with the `std` feature;
+//! * `Detected` on any other little-endian AArch64 build for Linux, Android, macOS, iOS or
+//!   Windows;
 //! * [`Bitsliced`] everywhere else.
 //!
 //! `AES128Internal` and friends use the default; naming an engine explicitly, as
@@ -27,7 +28,14 @@ use crate::schedule::{expand, round_key};
     target_arch = "aarch64",
     target_endian = "little",
     target_feature = "neon",
-    any(target_feature = "aes", feature = "std")
+    any(
+        target_feature = "aes",
+        target_os = "linux",
+        target_os = "android",
+        target_os = "macos",
+        target_os = "ios",
+        target_os = "windows"
+    )
 ))]
 use bouncycastle_arm::Aes;
 use bouncycastle_utils::secret::{Secret, ZeroizablePrimitive};
@@ -88,7 +96,14 @@ impl RoundKeysInternalTrait for [Block; 15] {}
     target_arch = "aarch64",
     target_endian = "little",
     target_feature = "neon",
-    any(target_feature = "aes", feature = "std")
+    any(
+        target_feature = "aes",
+        target_os = "linux",
+        target_os = "android",
+        target_os = "macos",
+        target_os = "ios",
+        target_os = "windows"
+    )
 )))]
 pub trait RoundKeys: ZeroizablePrimitive + RoundKeysInternalTrait {}
 
@@ -96,21 +111,42 @@ pub trait RoundKeys: ZeroizablePrimitive + RoundKeysInternalTrait {}
     target_arch = "aarch64",
     target_endian = "little",
     target_feature = "neon",
-    any(target_feature = "aes", feature = "std")
+    any(
+        target_feature = "aes",
+        target_os = "linux",
+        target_os = "android",
+        target_os = "macos",
+        target_os = "ios",
+        target_os = "windows"
+    )
 )))]
 impl RoundKeys for [Block; 11] {}
 #[cfg(not(all(
     target_arch = "aarch64",
     target_endian = "little",
     target_feature = "neon",
-    any(target_feature = "aes", feature = "std")
+    any(
+        target_feature = "aes",
+        target_os = "linux",
+        target_os = "android",
+        target_os = "macos",
+        target_os = "ios",
+        target_os = "windows"
+    )
 )))]
 impl RoundKeys for [Block; 13] {}
 #[cfg(not(all(
     target_arch = "aarch64",
     target_endian = "little",
     target_feature = "neon",
-    any(target_feature = "aes", feature = "std")
+    any(
+        target_feature = "aes",
+        target_os = "linux",
+        target_os = "android",
+        target_os = "macos",
+        target_os = "ios",
+        target_os = "windows"
+    )
 )))]
 impl RoundKeys for [Block; 15] {}
 
@@ -129,7 +165,14 @@ impl RoundKeys for [Block; 15] {}
     target_arch = "aarch64",
     target_endian = "little",
     target_feature = "neon",
-    any(target_feature = "aes", feature = "std")
+    any(
+        target_feature = "aes",
+        target_os = "linux",
+        target_os = "android",
+        target_os = "macos",
+        target_os = "ios",
+        target_os = "windows"
+    )
 ))]
 pub trait RoundKeys: ZeroizablePrimitive + RoundKeysInternalTrait {
     /// KEYEXPANSION()'s `w` for a key of this size. `key` is exactly that size's `KEY_LEN`
@@ -149,7 +192,14 @@ pub trait RoundKeys: ZeroizablePrimitive + RoundKeysInternalTrait {
     target_arch = "aarch64",
     target_endian = "little",
     target_feature = "neon",
-    any(target_feature = "aes", feature = "std")
+    any(
+        target_feature = "aes",
+        target_os = "linux",
+        target_os = "android",
+        target_os = "macos",
+        target_os = "ios",
+        target_os = "windows"
+    )
 )))]
 pub type DefaultEngine<P> = Bitsliced<P>;
 
@@ -170,7 +220,13 @@ pub type DefaultEngine<P> = Arm<P>;
     target_endian = "little",
     target_feature = "neon",
     not(target_feature = "aes"),
-    feature = "std"
+    any(
+        target_os = "linux",
+        target_os = "android",
+        target_os = "macos",
+        target_os = "ios",
+        target_os = "windows"
+    )
 ))]
 pub type DefaultEngine<P> = Detected<P>;
 
@@ -340,7 +396,14 @@ impl<P: AESParams> Engine<P> for Bitsliced<P> {
     target_arch = "aarch64",
     target_endian = "little",
     target_feature = "neon",
-    any(target_feature = "aes", feature = "std")
+    any(
+        target_feature = "aes",
+        target_os = "linux",
+        target_os = "android",
+        target_os = "macos",
+        target_os = "ios",
+        target_os = "windows"
+    )
 ))]
 pub struct Arm<P: AESParams> {
     /// Proof that the CPU has the instructions, which the kernels need. Zero-sized.
@@ -355,7 +418,14 @@ pub struct Arm<P: AESParams> {
     target_arch = "aarch64",
     target_endian = "little",
     target_feature = "neon",
-    any(target_feature = "aes", feature = "std")
+    any(
+        target_feature = "aes",
+        target_os = "linux",
+        target_os = "android",
+        target_os = "macos",
+        target_os = "ios",
+        target_os = "windows"
+    )
 ))]
 mod arm {
     use super::{Arm, Engine, EngineInternalTrait, RoundKeys};
@@ -478,8 +548,9 @@ mod arm {
 }
 
 /// The engine chosen when the key is set: [`Arm`] if the CPU has the AArch64 Crypto Extensions,
-/// [`Bitsliced`] if not. [`DefaultEngine`] on an AArch64 build with the `std` feature that does
-/// not declare the instructions, so that one binary uses them wherever it runs on them.
+/// [`Bitsliced`] if not. [`DefaultEngine`] on an AArch64 build for Linux, Android, macOS, iOS or
+/// Windows that does not declare the instructions, so that one binary uses them wherever it runs
+/// on them.
 ///
 /// The CPU is asked once per key, in key expansion, and the operating-system query behind that
 /// caches its answer. Each block call is then a match on the variant, which depends on the CPU
@@ -489,7 +560,13 @@ mod arm {
     target_endian = "little",
     target_feature = "neon",
     not(target_feature = "aes"),
-    feature = "std"
+    any(
+        target_os = "linux",
+        target_os = "android",
+        target_os = "macos",
+        target_os = "ios",
+        target_os = "windows"
+    )
 ))]
 pub enum Detected<P: AESParams> {
     /// The CPU has the instructions.
@@ -503,7 +580,13 @@ pub enum Detected<P: AESParams> {
     target_endian = "little",
     target_feature = "neon",
     not(target_feature = "aes"),
-    feature = "std"
+    any(
+        target_os = "linux",
+        target_os = "android",
+        target_os = "macos",
+        target_os = "ios",
+        target_os = "windows"
+    )
 ))]
 mod detected {
     use super::{Arm, Bitsliced, Detected, Engine, EngineInternalTrait};

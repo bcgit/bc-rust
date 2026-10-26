@@ -47,10 +47,6 @@ name = "bouncycastle"
 version.workspace = true
 edition.workspace = true
 
-[features]
-# Run-time CPU feature detection where a crate can use it: the AES engine and GCM's GHASH.
-std = ["bouncycastle-aes/std", "bouncycastle-cipher/std"]
-
 [dependencies]
 bouncycastle-aes.workspace = true
 bouncycastle-ascon.workspace = true

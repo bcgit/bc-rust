@@ -8,14 +8,8 @@ bouncycastle-core.workspace = true
 bouncycastle-utils.workspace = true
 bouncycastle-cipher.workspace = true
 
-[features]
-# On AArch64 builds that do not declare `aes`, detect the Crypto Extensions at run time and use
-# them where present, for the AES engine (`hazmat::engine::Detected`) and for GCM's GHASH. No
-# effect elsewhere.
-std = ["bouncycastle-arm/std", "bouncycastle-cipher/std"]
-
 # The AArch64 Crypto Extensions engine; see `hazmat::engine`. Empty unless the build declares
-# the instructions or enables `std`.
+# the instructions or targets an operating system the arm crate can ask.
 [target.'cfg(all(target_arch = "aarch64", target_endian = "little"))'.dependencies]
 bouncycastle-arm.workspace = true
 
