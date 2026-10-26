@@ -67,11 +67,11 @@ impl ChaCha20KeyState {
 /// through [`ChaCha20`](crate::ChaCha20).
 ///
 /// # 🚨 Security Considerations 🚨
-/// A raw [`KeyStream`]: constructed directly, it takes the nonce from the caller and does not
-/// refuse to run past the counter. In particular, never use it with the key and nonce of a
-/// ChaCha20-Poly1305 message: block 0 of that pair is the message's one-time Poly1305 key (RFC 8439
-/// Sec 2.6). See [`KeyStream`]'s security notes and [`bouncycastle_core::hazmat`] for the
-/// supported uses.
+/// A raw [`KeyStream`]: constructed directly, it takes the nonce from the caller, and running it
+/// past the counter panics rather than returning an error. In particular, never use it with the
+/// key and nonce of a ChaCha20-Poly1305 message: block 0 of that pair is the message's one-time
+/// Poly1305 key (RFC 8439 Sec 2.6). See [`KeyStream`]'s security notes and
+/// [`bouncycastle_core::hazmat`] for the supported uses.
 ///
 /// # State
 ///
@@ -116,7 +116,7 @@ impl Algorithm for ChaCha20KeyStream<'_> {
 impl KeyStream<NONCE_LEN, BLOCK_LEN> for ChaCha20KeyStream<'_> {
     /// One block for every counter value left below `2^32`.
     fn remaining_blocks(&self) -> u64 {
-        BLOCK_LIMIT - self.next_counter
+        BLOCK_LIMIT.saturating_sub(self.next_counter)
     }
 
     /// RFC 8439 Sec 2.4.1, `block ^ key_stream` for the next `blocks.len()` counter values.
@@ -136,7 +136,9 @@ impl KeyStream<NONCE_LEN, BLOCK_LEN> for ChaCha20KeyStream<'_> {
         // Live keystream until it has been XORed in, so it is a `Secret`, one per call.
         let mut working: Secret<[u32; 16]> = Secret::new();
         for block in blocks.iter_mut() {
-            debug_assert!(self.next_counter < BLOCK_LIMIT, "the caller checks remaining_blocks");
+            // In release builds too: past the last counter, word 12 would wrap to 0 and repeat the
+            // keystream, which the trait lets an implementor refuse by panicking.
+            assert!(self.next_counter < BLOCK_LIMIT, "the caller checks remaining_blocks");
             state[12] = self.next_counter as u32;
             block_function(&state, &mut working);
             // Sec 2.3 serialises each word little-endian and Sec 2.4 XORs bytewise; XORing the
