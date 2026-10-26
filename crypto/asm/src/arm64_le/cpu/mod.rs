@@ -2,8 +2,9 @@
 //! kernels.
 //!
 //! In a build that does not declare `aes`, [`Aes::detect`] reads a feature word that the
-//! library works out itself, without the standard library: `probe` makes one call to the
-//! operating system, `parse` turns the answer into the word, and [`features`] caches it.
+//! library works out itself, without the standard library: in `os`, the file for the target's
+//! operating system makes one call to it and parses the answer into the word, and [`features`]
+//! caches it.
 //!
 //! # What each proof requires
 //!
@@ -34,18 +35,16 @@
 //! | 8 | `Aes::decrypt_blocks` | the same | the same | the same | the same |
 //! | 9 | `Aes::ghash_mul` | two `&[u64; 2]` | FEAT_PMULL, NEON | the proof | `tests/arm64_le_ghash_tests.rs`, against Algorithm 1 |
 //! | 10 | `Aes::ghash_mul4` | two `&[[u64; 2]; 4]` | the same | the proof | `tests/arm64_le_ghash_tests.rs`, against four `mul`s |
-//! | 11 | `probe` on Linux, Android: `getauxval` twice | the named constants `AT_HWCAP`, `AT_HWCAP2` | the symbol is in the C library the target links | integers in and out; glibc >= 2.16, musl and bionic have it | `tests/arm64_le_detect_matches_std.rs`; the parser tests |
-//! | 12 | `probe` on macOS, iOS: `sysctlbyname` | a `c"..."` literal, a local `i32`, `len = size_of::<i32>()` | NUL-terminated name; buffer valid for `len` bytes | the literal; the typed local; accepted only if `rc == 0 && len == 4` | `probe`'s unit test of a known and an unknown name; `tests/arm64_le_detect_matches_std.rs`; the parser tests |
-//! | 13 | `probe` on Windows: `IsProcessorFeaturePresent` | a `PfFeature` | the symbol is in kernel32 | `#[link(name = "kernel32")]`; the enum holds only constants from `winnt.h` | `tests/arm64_le_detect_matches_std.rs` on Windows; the parser tests |
+//! | 11 | `os/linux.rs`'s `ffi`, Linux and Android: `getauxval` twice | the named constants `AT_HWCAP`, `AT_HWCAP2` | the symbol is in the C library the target links | integers in and out; glibc >= 2.16, musl and bionic have it | `tests/arm64_le_detect_matches_std.rs`; the parser tests |
+//! | 12 | `os/macos.rs`'s `ffi`, macOS and iOS: `sysctlbyname` | a `c"..."` literal, a local `i32`, `len = size_of::<i32>()` | NUL-terminated name; buffer valid for `len` bytes | the literal; the typed local; accepted only if `rc == 0 && len == 4` | `os/macos.rs`'s unit test of a known and an unknown name; `tests/arm64_le_detect_matches_std.rs`; the parser tests |
+//! | 13 | `os/windows.rs`'s `ffi`, Windows: `IsProcessorFeaturePresent` | a `PfFeature` | the symbol is in kernel32 | `#[link(name = "kernel32")]`; the enum holds only constants from `winnt.h` | `tests/arm64_le_detect_matches_std.rs` on Windows; the parser tests |
 
 #![allow(unsafe_code)]
 
 // A build that declares `aes` proves `Aes` at compile time and never probes; the detector stays
 // compiled so that build type-checks its back end and runs the parser tests.
 #[cfg_attr(target_feature = "aes", allow(dead_code, reason = "a declared build never probes"))]
-mod parse;
-#[cfg_attr(target_feature = "aes", allow(dead_code, reason = "a declared build never probes"))]
-mod probe;
+mod os;
 
 use core::sync::atomic::{AtomicU32, Ordering};
 
@@ -71,7 +70,7 @@ fn features() -> u32 {
     if cached & INIT != 0 {
         return cached;
     }
-    let probed = probe::probe() | INIT;
+    let probed = os::probe() | INIT;
     FEATURES.store(probed, Ordering::Relaxed);
     probed
 }
@@ -96,7 +95,7 @@ impl Aes {
         #[cfg(target_feature = "aes")]
         return Some(Self(()));
         #[cfg(not(target_feature = "aes"))]
-        return (features() & parse::AES != 0).then_some(Self(()));
+        return (features() & os::AES != 0).then_some(Self(()));
     }
 
     /// The proof, without a check: the build declares the instructions, so every CPU it may run
