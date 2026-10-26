@@ -1,7 +1,9 @@
 //! AES key wrap (KW, NIST SP 800-38F Sec 6.2 / RFC 3394) and key wrap with padding (KWP, Sec 6.3
-//! / RFC 5649): `aes{128,192,256}-{kw,kwp} wrap|unwrap`, stdin to stdout.
+//! / RFC 5649): `aes{128,192,256}-{kw,kwp} -d encrypt|decrypt`, stdin to stdout. `encrypt` wraps
+//! and `decrypt` unwraps: the spelling is shared with every other cipher command, and SP 800-38F
+//! itself calls the two halves authenticated encryption and decryption (KW-AE, KW-AD).
 //!
-//! Key loading is shared with the other AES commands ([`crate::helpers::block_mode_helpers::load_key`]),
+//! Key loading is shared with the other AES commands ([`crate::helpers::block_mode_helpers::load_key_object`]),
 //! so `--key` / `--key-file` behave identically. Everything else differs from the streaming
 //! commands, because key wrap is a one-shot algorithm:
 //!
@@ -28,8 +30,9 @@
 //! # Unwrap fails closed
 //!
 //! Both algorithms are authenticated. A ciphertext that was tampered with, was wrapped under a
-//! different KEK, or was produced by the other algorithm (KW vs KWP) makes `unwrap` exit non-zero
-//! with nothing written to stdout. It does not say which of those it was; that is deliberate.
+//! different KEK, or was produced by the other algorithm (KW vs KWP) makes `decrypt` exit
+//! non-zero with nothing written to stdout. It does not say which of those it was; that is
+//! deliberate.
 //!
 //! # Binary in, binary out
 //!
@@ -38,124 +41,107 @@
 //!
 //! ```text
 //! echo -n 00112233445566778899aabbccddeeff | bc-rust hex-decode \
-//!     | bc-rust aes128-kw wrap --key 000102030405060708090a0b0c0d0e0f -x
+//!     | bc-rust aes128-kw -d encrypt --key 000102030405060708090a0b0c0d0e0f -x
 //! ```
 
-use crate::helpers::block_mode_helpers::load_key;
+use crate::helpers::block_mode_helpers::{CipherDirection, load_key_object};
 use crate::helpers::write_bytes_or_hex;
-use bouncycastle::aes::{
-    AES_KW_128, AES_KW_192, AES_KW_256, AES_KWP_128, AES_KWP_192, AES_KWP_256,
-};
+use bouncycastle::aes::{AES128Key, AES192Key, AES256Key};
+use bouncycastle::cipher::modes::{KW, KWP};
 use bouncycastle::core::errors::SymmetricCipherError;
-use bouncycastle::core::key_material::KeyMaterial;
-use bouncycastle::core::traits::{KeyUnwrapper, KeyWrapper};
-use clap::ValueEnum;
+use bouncycastle::core::symmetric_key::{KeyUnwrappingKey, KeyWrappingKey};
 use std::io::Read;
 use std::process::exit;
 
-/// Which direction to run.
-#[derive(ValueEnum, Clone, Debug)]
-pub(crate) enum KeyWrapAction {
-    /// Wrap stdin under the KEK and write the ciphertext to stdout.
-    Wrap,
-    /// Unwrap stdin under the KEK and write the recovered data to stdout, or exit non-zero if
-    /// the ciphertext is not authentic.
-    Unwrap,
-}
-
 pub(crate) fn aes128_kw_cmd(
-    action: &KeyWrapAction,
+    direction: &CipherDirection,
     key: &Option<String>,
     key_file: &Option<String>,
     output_hex: bool,
 ) {
-    run::<AES_KW_128, 16>(
-        action,
-        &load_key::<16>(key, key_file, "AES-128-KW"),
+    run::<_, 16>(
+        direction,
+        &load_key_object::<AES128Key<KW>, 16>(key, key_file, "AES-128-KW"),
         output_hex,
         "AES-128-KW",
     );
 }
 
 pub(crate) fn aes192_kw_cmd(
-    action: &KeyWrapAction,
+    direction: &CipherDirection,
     key: &Option<String>,
     key_file: &Option<String>,
     output_hex: bool,
 ) {
-    run::<AES_KW_192, 24>(
-        action,
-        &load_key::<24>(key, key_file, "AES-192-KW"),
+    run::<_, 24>(
+        direction,
+        &load_key_object::<AES192Key<KW>, 24>(key, key_file, "AES-192-KW"),
         output_hex,
         "AES-192-KW",
     );
 }
 
 pub(crate) fn aes256_kw_cmd(
-    action: &KeyWrapAction,
+    direction: &CipherDirection,
     key: &Option<String>,
     key_file: &Option<String>,
     output_hex: bool,
 ) {
-    run::<AES_KW_256, 32>(
-        action,
-        &load_key::<32>(key, key_file, "AES-256-KW"),
+    run::<_, 32>(
+        direction,
+        &load_key_object::<AES256Key<KW>, 32>(key, key_file, "AES-256-KW"),
         output_hex,
         "AES-256-KW",
     );
 }
 
 pub(crate) fn aes128_kwp_cmd(
-    action: &KeyWrapAction,
+    direction: &CipherDirection,
     key: &Option<String>,
     key_file: &Option<String>,
     output_hex: bool,
 ) {
-    run::<AES_KWP_128, 16>(
-        action,
-        &load_key::<16>(key, key_file, "AES-128-KWP"),
+    run::<_, 16>(
+        direction,
+        &load_key_object::<AES128Key<KWP>, 16>(key, key_file, "AES-128-KWP"),
         output_hex,
         "AES-128-KWP",
     );
 }
 
 pub(crate) fn aes192_kwp_cmd(
-    action: &KeyWrapAction,
+    direction: &CipherDirection,
     key: &Option<String>,
     key_file: &Option<String>,
     output_hex: bool,
 ) {
-    run::<AES_KWP_192, 24>(
-        action,
-        &load_key::<24>(key, key_file, "AES-192-KWP"),
+    run::<_, 24>(
+        direction,
+        &load_key_object::<AES192Key<KWP>, 24>(key, key_file, "AES-192-KWP"),
         output_hex,
         "AES-192-KWP",
     );
 }
 
 pub(crate) fn aes256_kwp_cmd(
-    action: &KeyWrapAction,
+    direction: &CipherDirection,
     key: &Option<String>,
     key_file: &Option<String>,
     output_hex: bool,
 ) {
-    run::<AES_KWP_256, 32>(
-        action,
-        &load_key::<32>(key, key_file, "AES-256-KWP"),
+    run::<_, 32>(
+        direction,
+        &load_key_object::<AES256Key<KWP>, 32>(key, key_file, "AES-256-KWP"),
         output_hex,
         "AES-256-KWP",
     );
 }
 
-/// Reads all of stdin, wraps or unwraps it under `kek` with the algorithm `W`, and writes the
-/// result. `alg` names the algorithm in error messages.
-fn run<W, const KEK_LEN: usize>(
-    action: &KeyWrapAction,
-    kek: &KeyMaterial<KEK_LEN>,
-    output_hex: bool,
-    alg: &str,
-) where
-    W: KeyWrapper<KEK_LEN> + KeyUnwrapper<KEK_LEN>,
+/// Reads all of stdin, wraps or unwraps it under `kek`, and writes the result. `alg` names the
+/// algorithm in error messages.
+fn run<K, const KEK_LEN: usize>(direction: &CipherDirection, kek: &K, output_hex: bool, alg: &str)
+where
+    K: KeyWrappingKey<KEK_LEN> + KeyUnwrappingKey<KEK_LEN>,
 {
     let mut input = Vec::new();
     if let Err(e) = std::io::stdin().read_to_end(&mut input) {
@@ -163,14 +149,14 @@ fn run<W, const KEK_LEN: usize>(
         exit(-1);
     }
 
-    let (result, mut output) = match action {
-        KeyWrapAction::Wrap => {
-            let mut output = vec![0u8; W::wrap_out_len(input.len())];
-            (W::wrap_out(kek, &input, &mut output), output)
+    let (result, mut output) = match direction {
+        CipherDirection::Encrypt => {
+            let mut output = vec![0u8; kek.wrap_out_len(input.len())];
+            (kek.wrap_out(&input, &mut output), output)
         }
-        KeyWrapAction::Unwrap => {
-            let mut output = vec![0u8; W::unwrap_out_max_len(input.len())];
-            (W::unwrap_out(kek, &input, &mut output), output)
+        CipherDirection::Decrypt => {
+            let mut output = vec![0u8; kek.unwrap_out_max_len(input.len())];
+            (kek.unwrap_out(&input, &mut output), output)
         }
     };
 
