@@ -17,7 +17,8 @@
 //! split and corrupted bit comes from a seeded xorshift generator, and each failure message
 //! carries the seed and the lengths, so a failure reproduces from the source alone.
 
-// What this proves depends on the build:
+// What this proves depends on the build, all with the `asm` feature (without it the file compiles
+// to nothing):
 // * `aes` declared: `Arm` against `Bitsliced`.
 // * `-aes` on Linux, Android, macOS, iOS or Windows: `Detected` against `Bitsliced`. On a CPU
 //   with FEAT_AES and FEAT_PMULL that is `Arm` again; on one without, `Detected` runs
@@ -25,6 +26,7 @@
 //   fallback beyond that it runs.
 // * any other target: the gate is false and the file compiles to nothing.
 #![cfg(all(
+    feature = "asm",
     target_arch = "aarch64",
     target_endian = "little",
     target_feature = "neon",

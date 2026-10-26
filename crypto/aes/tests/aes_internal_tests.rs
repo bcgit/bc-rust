@@ -23,6 +23,7 @@ use bouncycastle_core::traits::Algorithm;
 /// Extensions or targets an operating system the arm crate can ask), one everywhere else, and
 /// for `Detected` a 4-byte variant tag (the enum takes `Bitsliced`'s `u32` alignment).
 #[cfg(all(
+    feature = "asm",
     target_arch = "aarch64",
     target_endian = "little",
     target_feature = "aes",
@@ -30,6 +31,7 @@ use bouncycastle_core::traits::Algorithm;
 ))]
 const DEFAULT_ENGINE: (usize, usize) = (2, 0);
 #[cfg(all(
+    feature = "asm",
     target_arch = "aarch64",
     target_endian = "little",
     target_feature = "neon",
@@ -44,6 +46,7 @@ const DEFAULT_ENGINE: (usize, usize) = (2, 0);
 ))]
 const DEFAULT_ENGINE: (usize, usize) = (2, 4);
 #[cfg(not(all(
+    feature = "asm",
     target_arch = "aarch64",
     target_endian = "little",
     target_feature = "neon",

@@ -11,13 +11,13 @@ version = "0.1.4"
 
 # *** Internal Dependencies ***
 bouncycastle = { path = "./" }
-bouncycastle-aes = { path = "./crypto/aes" }
+bouncycastle-aes = { path = "./crypto/aes", default-features = false }
 bouncycastle-ascon = { path = "./crypto/ascon" }
 bouncycastle-asm = { path = "./crypto/asm" }
 bouncycastle-base64 = { path = "./crypto/base64" }
 bouncycastle-chacha20 = { path = "./crypto/chacha20" }
 bouncycastle-chacha20-poly1305-aead = { path = "./crypto/chacha20-poly1305-aead" }
-bouncycastle-cipher = { path = "./crypto/cipher" }
+bouncycastle-cipher = { path = "./crypto/cipher", default-features = false }
 bouncycastle-core = { path = "crypto/core" }
 bouncycastle-core-test-framework = { path = "./crypto/core-test-framework" }
 bouncycastle-factory = { path = "./crypto/factory" }
@@ -60,6 +60,13 @@ codegen-units = 16
 name = "bouncycastle"
 version.workspace = true
 edition.workspace = true
+
+[features]
+# The hardware back ends (issue #168), on by default: the AES engine and GCM's GHASH use the
+# CPU's instructions where the target and the CPU have them. `--no-default-features` builds the
+# portable code only, without `bouncycastle-asm`.
+default = ["asm"]
+asm = ["bouncycastle-aes/asm", "bouncycastle-cipher/asm"]
 
 [dependencies]
 bouncycastle-aes.workspace = true

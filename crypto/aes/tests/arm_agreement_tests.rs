@@ -7,6 +7,7 @@
 //! key size, both directions and all three widths, and pins which engine the default is.
 
 #![cfg(all(
+    feature = "asm",
     target_arch = "aarch64",
     target_endian = "little",
     target_feature = "neon",

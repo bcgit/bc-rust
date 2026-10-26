@@ -8,10 +8,16 @@ bouncycastle-core.workspace = true
 bouncycastle-utils.workspace = true
 bouncycastle-cipher.workspace = true
 
+[features]
+# On by default: the AES engine and GCM's GHASH use the CPU's instructions where the target and
+# the CPU have them. Off, the portable code only, and the asm crate is not built.
+default = ["asm"]
+asm = ["dep:bouncycastle-asm", "bouncycastle-cipher/asm"]
+
 # The AArch64 Crypto Extensions engine; see `hazmat::engine`. Empty unless the build declares
 # the instructions or targets an operating system the asm crate can ask.
 [target.'cfg(all(target_arch = "aarch64", target_endian = "little"))'.dependencies]
-bouncycastle-asm.workspace = true
+bouncycastle-asm = { workspace = true, optional = true }
 
 [dev-dependencies]
 bouncycastle-core-test-framework.workspace = true
