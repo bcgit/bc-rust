@@ -1566,6 +1566,8 @@ mod tests {
         const ECB_ALG_NAME: &'static str = "identity_ECB";
         const GCM_ALG_NAME: &'static str = "identity_GCM";
         const GMAC_ALG_NAME: &'static str = "identity_GMAC";
+        const KW_ALG_NAME: &'static str = "identity_KW";
+        const KWP_ALG_NAME: &'static str = "identity_KWP";
     }
 
     impl ElectronicCodeBook<16, 16> for Identity {

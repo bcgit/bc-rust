@@ -11,14 +11,14 @@ use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
 use bouncycastle_core::hazmat::{
     AeadDeclaredDecryptMode, AeadDeclaredEncryptMode, AeadDecryptMode, AeadEncryptMode,
     BlockDecryptMode, BlockEncryptMode, BlockPermutation, EcbDecryptMode, EcbDecryptionKey,
-    EcbEncryptMode, EcbEncryptionKey, ElectronicCodeBook, MacMode, Mode, ModeKey,
-    SymmetricDecryptMode, SymmetricEncryptMode, do_hazardous_operations,
+    EcbEncryptMode, EcbEncryptionKey, ElectronicCodeBook, KeyUnwrapMode, KeyWrapMode, MacMode,
+    Mode, ModeKey, SymmetricDecryptMode, SymmetricEncryptMode, do_hazardous_operations,
 };
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::symmetric_key::{
     AeadDeclaredDecryptionKey, AeadDeclaredEncryptionKey, AeadDecryptionKey, AeadEncryptionKey,
-    BlockDecryptionKey, BlockEncryptionKey, FromKeyMaterial, MacGenerationKey, MacVerificationKey,
-    SymmetricDecryptionKey, SymmetricEncryptionKey,
+    BlockDecryptionKey, BlockEncryptionKey, FromKeyMaterial, KeyUnwrappingKey, KeyWrappingKey,
+    MacGenerationKey, MacVerificationKey, SymmetricDecryptionKey, SymmetricEncryptionKey,
 };
 use bouncycastle_core::traits::RNG;
 
@@ -375,6 +375,34 @@ impl<P, M: MacMode<P>> MacVerificationKey for ToyKey<P, M> {
 
     fn create_verifier<'k>(&'k self) -> Self::Verifier<'k> {
         M::mac_init(&self.state)
+    }
+}
+
+impl<P, M, const KEK_LEN: usize> KeyWrappingKey<KEK_LEN> for ToyKey<P, M>
+where
+    M: KeyWrapMode<P, KEK_LEN>,
+{
+    type Wrapper<'k>
+        = M::Wrapper<'k>
+    where
+        Self: 'k;
+
+    fn create_wrapper<'k>(&'k self) -> Self::Wrapper<'k> {
+        M::wrap_init(&self.state)
+    }
+}
+
+impl<P, M, const KEK_LEN: usize> KeyUnwrappingKey<KEK_LEN> for ToyKey<P, M>
+where
+    M: KeyUnwrapMode<P, KEK_LEN>,
+{
+    type Unwrapper<'k>
+        = M::Unwrapper<'k>
+    where
+        Self: 'k;
+
+    fn create_unwrapper<'k>(&'k self) -> Self::Unwrapper<'k> {
+        M::unwrap_init(&self.state)
     }
 }
 

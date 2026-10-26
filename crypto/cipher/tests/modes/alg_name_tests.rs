@@ -9,7 +9,7 @@ mod common;
 use bouncycastle_cipher::modes::hazmat::ecb::{ECB, Ecb};
 use bouncycastle_cipher::modes::{
     Blocks, CBC, CCM, CCM_Packet, CFB, CFB8, CTR, Cbc, CcmPacketDecryptor, CcmPacketEncryptor, Cfb,
-    Cfb8, Cmac, Ctr, Gcm, Gmac, ModeNames,
+    Cfb8, Cmac, Ctr, Gcm, Gmac, Kw, Kwp, ModeNames,
 };
 use bouncycastle_cipher::padding::{
     NoPadding, PKCS7, PaddedBlockCipherDecryptor, PaddedBlockCipherEncryptor,
@@ -38,6 +38,8 @@ fn the_toy_names_every_mode_differently() {
         Toy::ECB_ALG_NAME,
         Toy::GCM_ALG_NAME,
         Toy::GMAC_ALG_NAME,
+        Toy::KW_ALG_NAME,
+        Toy::KWP_ALG_NAME,
     ];
     for (i, a) in names.iter().enumerate() {
         for b in &names[i + 1..] {
@@ -63,6 +65,8 @@ fn each_mode_reports_its_own_name() {
     check::<Cmac<'_, Toy, 16>>(Toy::CMAC_ALG_NAME);
     check::<Gmac<'_, Toy, Encrypting, 16>>(Toy::GMAC_ALG_NAME);
     check::<Gmac<'_, Toy, Decrypting, 16>>(Toy::GMAC_ALG_NAME);
+    check::<Kw<'_, Toy>>(Toy::KW_ALG_NAME);
+    check::<Kwp<'_, Toy>>(Toy::KWP_ALG_NAME);
 }
 
 /// The padding layer and the stream-cipher wrapper add no name of their own.
