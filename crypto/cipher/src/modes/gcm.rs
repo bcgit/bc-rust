@@ -292,6 +292,17 @@ pub struct GcmKeyState<P> {
     h: Secret<[u8; 16]>,
 }
 
+// Both fields are compared, joined with `&` rather than `&&` so that the time taken does not say
+// which of them differed. `P`'s equality is expected to be constant-time, as a keyed permutation's
+// must be; `H`'s is `Secret`'s.
+impl<P: PartialEq> PartialEq for GcmKeyState<P> {
+    fn eq(&self, other: &Self) -> bool {
+        (self.perm == other.perm) & (self.h == other.h)
+    }
+}
+
+impl<P: Eq> Eq for GcmKeyState<P> {}
+
 impl<P> GcmKeyState<P> {
     /// Derives `H` from `perm`.
     pub fn new(perm: P) -> Self

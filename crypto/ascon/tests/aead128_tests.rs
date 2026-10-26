@@ -89,6 +89,18 @@ fn aead_key(key: &[u8; 16]) -> AsconAEAD128Key {
     AsconAEAD128Key::from_key_material(&key_material(key)).expect("a valid key")
 }
 
+/// Equality follows the material: the same bytes compare equal, as does a clone, and different
+/// bytes do not. The key has no `Debug`, hence `assert!` over `==`.
+#[test]
+fn keys_compare_equal_exactly_when_their_material_does() {
+    let key = aead_key(&[0x42; 16]);
+    assert!(key == key.clone());
+    assert!(key == aead_key(&[0x42; 16]));
+    let mut last_byte_differs = [0x42; 16];
+    last_byte_differs[15] ^= 1;
+    assert!(key != aead_key(&last_byte_differs));
+}
+
 fn enc_oneshot(key: &[u8; 16], nonce: &[u8; 16], ad: &[u8], pt: &[u8]) -> Vec<u8> {
     let km = aead_key(key);
     let mut out = vec![0u8; Ascon_AEAD128::<Encrypting>::encrypt_out_len(pt.len())];
