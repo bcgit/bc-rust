@@ -1473,16 +1473,17 @@ enum Subcommands {
         x: bool,
     },
 
-    /// AES-128 Key Wrap (NIST SP 800-38F Sec 6.2, RFC 3394): `wrap` or `unwrap` stdin to stdout.
+    /// AES-128 Key Wrap (NIST SP 800-38F Sec 6.2, RFC 3394): `-d encrypt` wraps stdin to stdout,
+    /// `-d decrypt` unwraps it.
     ///
     /// Wraps a key -- or any data that is a whole number of 8-byte blocks, at least 16 bytes --
     /// under the given key-encryption key (KEK). The output is 8 bytes longer than the input.
-    /// There is NO IV: wrapping is deterministic, and nothing is prepended on `wrap` or consumed
-    /// on `unwrap`.
+    /// There is NO IV: wrapping is deterministic, and nothing is prepended on `encrypt` or
+    /// consumed on `decrypt`.
     ///
-    /// `unwrap` is authenticated. A ciphertext that was tampered with, wrapped under a different
+    /// Unwrapping is authenticated. A ciphertext that was tampered with, wrapped under a different
     /// KEK, or produced by aes*-kwp makes the command exit non-zero with nothing written. Input to
-    /// `unwrap` must be a whole number of 8-byte blocks, at least 24 bytes.
+    /// `decrypt` must be a whole number of 8-byte blocks, at least 24 bytes.
     ///
     /// This command is not streaming: all of stdin is read before anything is written, because
     /// the algorithm makes six passes over the whole input. For data that is not a multiple of
@@ -1491,7 +1492,8 @@ enum Subcommands {
     /// Note: in production uses, secrets should not be passed on the command-line because they get
     /// logged in shell history. Use the file-based input instead.
     AES128_KW {
-        action: aes_kw_cmd::KeyWrapAction,
+        #[arg(short, long)]
+        direction: CipherDirection,
 
         /// The 16-byte AES key-encryption key in hex.
         /// The `key_file` option is preferred to avoid leaving key material in command history.
@@ -1508,12 +1510,14 @@ enum Subcommands {
         x: bool,
     },
 
-    /// AES-192 Key Wrap (NIST SP 800-38F Sec 6.2, RFC 3394): `wrap` or `unwrap` stdin to stdout.
+    /// AES-192 Key Wrap (NIST SP 800-38F Sec 6.2, RFC 3394): `-d encrypt` wraps stdin to stdout,
+    /// `-d decrypt` unwraps it.
     ///
     /// See `aes128-kw` for the input-length rules, the absence of an IV and the non-streaming
     /// note; only the key length differs.
     AES192_KW {
-        action: aes_kw_cmd::KeyWrapAction,
+        #[arg(short, long)]
+        direction: CipherDirection,
 
         /// The 24-byte AES key-encryption key in hex.
         /// The `key_file` option is preferred to avoid leaving key material in command history.
@@ -1530,12 +1534,14 @@ enum Subcommands {
         x: bool,
     },
 
-    /// AES-256 Key Wrap (NIST SP 800-38F Sec 6.2, RFC 3394): `wrap` or `unwrap` stdin to stdout.
+    /// AES-256 Key Wrap (NIST SP 800-38F Sec 6.2, RFC 3394): `-d encrypt` wraps stdin to stdout,
+    /// `-d decrypt` unwraps it.
     ///
     /// See `aes128-kw` for the input-length rules, the absence of an IV and the non-streaming
     /// note; only the key length differs.
     AES256_KW {
-        action: aes_kw_cmd::KeyWrapAction,
+        #[arg(short, long)]
+        direction: CipherDirection,
 
         /// The 32-byte AES key-encryption key in hex.
         /// The `key_file` option is preferred to avoid leaving key material in command history.
@@ -1552,18 +1558,19 @@ enum Subcommands {
         x: bool,
     },
 
-    /// AES-128 Key Wrap with Padding (NIST SP 800-38F Sec 6.3, RFC 5649): `wrap` or `unwrap`
-    /// stdin to stdout.
+    /// AES-128 Key Wrap with Padding (NIST SP 800-38F Sec 6.3, RFC 5649): `-d encrypt` wraps
+    /// stdin to stdout, `-d decrypt` unwraps it.
     ///
     /// As aes128-kw, but for data of any length from 1 byte up: the input is padded to a whole
     /// number of 8-byte blocks and the output is that length plus 8. Its ciphertexts are not
-    /// interchangeable with aes128-kw's. Input to `unwrap` must be a whole number of 8-byte
+    /// interchangeable with aes128-kw's. Input to `decrypt` must be a whole number of 8-byte
     /// blocks, at least 16 bytes.
     ///
-    /// See `aes128-kw` for the absence of an IV, the authenticated `unwrap` and the non-streaming
+    /// See `aes128-kw` for the absence of an IV, the authenticated `decrypt` and the non-streaming
     /// note.
     AES128_KWP {
-        action: aes_kw_cmd::KeyWrapAction,
+        #[arg(short, long)]
+        direction: CipherDirection,
 
         /// The 16-byte AES key-encryption key in hex.
         /// The `key_file` option is preferred to avoid leaving key material in command history.
@@ -1580,12 +1587,13 @@ enum Subcommands {
         x: bool,
     },
 
-    /// AES-192 Key Wrap with Padding (NIST SP 800-38F Sec 6.3, RFC 5649): `wrap` or `unwrap`
-    /// stdin to stdout.
+    /// AES-192 Key Wrap with Padding (NIST SP 800-38F Sec 6.3, RFC 5649): `-d encrypt` wraps
+    /// stdin to stdout, `-d decrypt` unwraps it.
     ///
     /// See `aes128-kwp`; only the key length differs.
     AES192_KWP {
-        action: aes_kw_cmd::KeyWrapAction,
+        #[arg(short, long)]
+        direction: CipherDirection,
 
         /// The 24-byte AES key-encryption key in hex.
         /// The `key_file` option is preferred to avoid leaving key material in command history.
@@ -1602,12 +1610,13 @@ enum Subcommands {
         x: bool,
     },
 
-    /// AES-256 Key Wrap with Padding (NIST SP 800-38F Sec 6.3, RFC 5649): `wrap` or `unwrap`
-    /// stdin to stdout.
+    /// AES-256 Key Wrap with Padding (NIST SP 800-38F Sec 6.3, RFC 5649): `-d encrypt` wraps
+    /// stdin to stdout, `-d decrypt` unwraps it.
     ///
     /// See `aes128-kwp`; only the key length differs.
     AES256_KWP {
-        action: aes_kw_cmd::KeyWrapAction,
+        #[arg(short, long)]
+        direction: CipherDirection,
 
         /// The 32-byte AES key-encryption key in hex.
         /// The `key_file` option is preferred to avoid leaving key material in command history.
@@ -2130,23 +2139,23 @@ fn run() {
         Some(Subcommands::MLDSA87 { action, ctxfile, skfile, pkfile, sigfile, x }) => {
             mldsa_cmd::mldsa87_cmd(action, ctxfile, skfile, pkfile, sigfile, *x);
         }
-        Some(Subcommands::AES128_KW { action, key, key_file, x }) => {
-            aes_kw_cmd::aes128_kw_cmd(action, key, key_file, *x);
+        Some(Subcommands::AES128_KW { direction, key, key_file, x }) => {
+            aes_kw_cmd::aes128_kw_cmd(direction, key, key_file, *x);
         }
-        Some(Subcommands::AES192_KW { action, key, key_file, x }) => {
-            aes_kw_cmd::aes192_kw_cmd(action, key, key_file, *x);
+        Some(Subcommands::AES192_KW { direction, key, key_file, x }) => {
+            aes_kw_cmd::aes192_kw_cmd(direction, key, key_file, *x);
         }
-        Some(Subcommands::AES256_KW { action, key, key_file, x }) => {
-            aes_kw_cmd::aes256_kw_cmd(action, key, key_file, *x);
+        Some(Subcommands::AES256_KW { direction, key, key_file, x }) => {
+            aes_kw_cmd::aes256_kw_cmd(direction, key, key_file, *x);
         }
-        Some(Subcommands::AES128_KWP { action, key, key_file, x }) => {
-            aes_kw_cmd::aes128_kwp_cmd(action, key, key_file, *x);
+        Some(Subcommands::AES128_KWP { direction, key, key_file, x }) => {
+            aes_kw_cmd::aes128_kwp_cmd(direction, key, key_file, *x);
         }
-        Some(Subcommands::AES192_KWP { action, key, key_file, x }) => {
-            aes_kw_cmd::aes192_kwp_cmd(action, key, key_file, *x);
+        Some(Subcommands::AES192_KWP { direction, key, key_file, x }) => {
+            aes_kw_cmd::aes192_kwp_cmd(direction, key, key_file, *x);
         }
-        Some(Subcommands::AES256_KWP { action, key, key_file, x }) => {
-            aes_kw_cmd::aes256_kwp_cmd(action, key, key_file, *x);
+        Some(Subcommands::AES256_KWP { direction, key, key_file, x }) => {
+            aes_kw_cmd::aes256_kwp_cmd(direction, key, key_file, *x);
         }
         Some(Subcommands::MLKEM512 { action, skfile, pkfile, ctfile, x }) => {
             mlkem_cmd::mlkem512_cmd(action, skfile, pkfile, ctfile, *x);
