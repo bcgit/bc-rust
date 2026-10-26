@@ -5,7 +5,7 @@
 //! intrinsics themselves. Inside such a function the compiler accepts the intrinsic calls as
 //! safe, and in exchange calling one from code without the attribute is `unsafe`: the compiler
 //! will not let the precondition, that the CPU has the instructions, be forgotten. The kernels in
-//! [`crate::aes`] and [`crate::ghash`] carry the same attribute; [`crate::Aes`] is
+//! [`super::aes`] and [`super::ghash`] carry the same attribute; [`super::Aes`] is
 //! the one place that precondition is discharged.
 //!
 //! # SAFETY
@@ -42,7 +42,7 @@ impl V128 {
     /// # Safety
     ///
     /// Callable only from a kernel with the same `#[target_feature]`, reached through an
-    /// [`Aes`](crate::Aes) proof, whose existence is the precondition.
+    /// [`Aes`](super::Aes) proof, whose existence is the precondition.
     #[target_feature(enable = "aes,neon")]
     #[inline]
     pub fn from_bytes(bytes: &[u8; 16]) -> V128 {
@@ -55,7 +55,7 @@ impl V128 {
     /// # Safety
     ///
     /// Callable only from a kernel with the same `#[target_feature]`, reached through an
-    /// [`Aes`](crate::Aes) proof, whose existence is the precondition.
+    /// [`Aes`](super::Aes) proof, whose existence is the precondition.
     #[target_feature(enable = "aes,neon")]
     #[inline]
     pub fn to_bytes(self) -> [u8; 16] {
@@ -70,7 +70,7 @@ impl V128 {
     /// # Safety
     ///
     /// Callable only from a kernel with the same `#[target_feature]`, reached through an
-    /// [`Aes`](crate::Aes) proof, whose existence is the precondition.
+    /// [`Aes`](super::Aes) proof, whose existence is the precondition.
     #[target_feature(enable = "aes,neon")]
     #[inline]
     pub fn zero() -> V128 {
@@ -82,7 +82,7 @@ impl V128 {
     /// # Safety
     ///
     /// Callable only from a kernel with the same `#[target_feature]`, reached through an
-    /// [`Aes`](crate::Aes) proof, whose existence is the precondition.
+    /// [`Aes`](super::Aes) proof, whose existence is the precondition.
     #[target_feature(enable = "aes,neon")]
     #[inline]
     pub fn splat_u32(word: u32) -> V128 {
@@ -94,7 +94,7 @@ impl V128 {
     /// # Safety
     ///
     /// Callable only from a kernel with the same `#[target_feature]`, reached through an
-    /// [`Aes`](crate::Aes) proof, whose existence is the precondition.
+    /// [`Aes`](super::Aes) proof, whose existence is the precondition.
     #[target_feature(enable = "aes,neon")]
     #[inline]
     pub fn lane_u32<const L: i32>(self) -> u32 {
@@ -106,7 +106,7 @@ impl V128 {
     /// # Safety
     ///
     /// Callable only from a kernel with the same `#[target_feature]`, reached through an
-    /// [`Aes`](crate::Aes) proof, whose existence is the precondition.
+    /// [`Aes`](super::Aes) proof, whose existence is the precondition.
     #[target_feature(enable = "aes,neon")]
     #[inline]
     pub fn from_u64x2(lo: u64, hi: u64) -> V128 {
@@ -118,7 +118,7 @@ impl V128 {
     /// # Safety
     ///
     /// Callable only from a kernel with the same `#[target_feature]`, reached through an
-    /// [`Aes`](crate::Aes) proof, whose existence is the precondition.
+    /// [`Aes`](super::Aes) proof, whose existence is the precondition.
     #[target_feature(enable = "aes,neon")]
     #[inline]
     pub fn lane_u64<const L: i32>(self) -> u64 {
@@ -130,7 +130,7 @@ impl V128 {
     /// # Safety
     ///
     /// Callable only from a kernel with the same `#[target_feature]`, reached through an
-    /// [`Aes`](crate::Aes) proof, whose existence is the precondition.
+    /// [`Aes`](super::Aes) proof, whose existence is the precondition.
     #[target_feature(enable = "aes,neon")]
     #[inline]
     pub fn eor(self, other: V128) -> V128 {
@@ -142,7 +142,7 @@ impl V128 {
     /// # Safety
     ///
     /// Callable only from a kernel with the same `#[target_feature]`, reached through an
-    /// [`Aes`](crate::Aes) proof, whose existence is the precondition.
+    /// [`Aes`](super::Aes) proof, whose existence is the precondition.
     #[target_feature(enable = "aes,neon")]
     #[inline]
     pub fn orr(self, other: V128) -> V128 {
@@ -155,7 +155,7 @@ impl V128 {
     /// # Safety
     ///
     /// Callable only from a kernel with the same `#[target_feature]`, reached through an
-    /// [`Aes`](crate::Aes) proof, whose existence is the precondition.
+    /// [`Aes`](super::Aes) proof, whose existence is the precondition.
     #[target_feature(enable = "aes,neon")]
     #[inline]
     pub fn aese(self, round_key: V128) -> V128 {
@@ -167,7 +167,7 @@ impl V128 {
     /// # Safety
     ///
     /// Callable only from a kernel with the same `#[target_feature]`, reached through an
-    /// [`Aes`](crate::Aes) proof, whose existence is the precondition.
+    /// [`Aes`](super::Aes) proof, whose existence is the precondition.
     #[target_feature(enable = "aes,neon")]
     #[inline]
     pub fn aesmc(self) -> V128 {
@@ -180,7 +180,7 @@ impl V128 {
     /// # Safety
     ///
     /// Callable only from a kernel with the same `#[target_feature]`, reached through an
-    /// [`Aes`](crate::Aes) proof, whose existence is the precondition.
+    /// [`Aes`](super::Aes) proof, whose existence is the precondition.
     #[target_feature(enable = "aes,neon")]
     #[inline]
     pub fn aesd(self, round_key: V128) -> V128 {
@@ -192,7 +192,7 @@ impl V128 {
     /// # Safety
     ///
     /// Callable only from a kernel with the same `#[target_feature]`, reached through an
-    /// [`Aes`](crate::Aes) proof, whose existence is the precondition.
+    /// [`Aes`](super::Aes) proof, whose existence is the precondition.
     #[target_feature(enable = "aes,neon")]
     #[inline]
     pub fn aesimc(self) -> V128 {
@@ -204,7 +204,7 @@ impl V128 {
     /// # Safety
     ///
     /// Callable only from a kernel with the same `#[target_feature]`, reached through an
-    /// [`Aes`](crate::Aes) proof, whose existence is the precondition.
+    /// [`Aes`](super::Aes) proof, whose existence is the precondition.
     #[target_feature(enable = "aes,neon")]
     #[inline]
     pub fn rev64(self) -> V128 {
@@ -219,7 +219,7 @@ impl V128 {
     /// # Safety
     ///
     /// Callable only from a kernel with the same `#[target_feature]`, reached through an
-    /// [`Aes`](crate::Aes) proof, whose existence is the precondition.
+    /// [`Aes`](super::Aes) proof, whose existence is the precondition.
     #[target_feature(enable = "aes,neon")]
     #[inline]
     pub fn ext<const N: i32>(self, other: V128) -> V128 {
@@ -231,7 +231,7 @@ impl V128 {
     /// # Safety
     ///
     /// Callable only from a kernel with the same `#[target_feature]`, reached through an
-    /// [`Aes`](crate::Aes) proof, whose existence is the precondition.
+    /// [`Aes`](super::Aes) proof, whose existence is the precondition.
     #[target_feature(enable = "aes,neon")]
     #[inline]
     pub fn shr32<const N: i32>(self) -> V128 {
@@ -243,7 +243,7 @@ impl V128 {
     /// # Safety
     ///
     /// Callable only from a kernel with the same `#[target_feature]`, reached through an
-    /// [`Aes`](crate::Aes) proof, whose existence is the precondition.
+    /// [`Aes`](super::Aes) proof, whose existence is the precondition.
     #[target_feature(enable = "aes,neon")]
     #[inline]
     pub fn shl32<const N: i32>(self) -> V128 {
@@ -255,7 +255,7 @@ impl V128 {
     /// # Safety
     ///
     /// Callable only from a kernel with the same `#[target_feature]`, reached through an
-    /// [`Aes`](crate::Aes) proof, whose existence is the precondition.
+    /// [`Aes`](super::Aes) proof, whose existence is the precondition.
     #[target_feature(enable = "aes,neon")]
     #[inline]
     pub fn add32(self, other: V128) -> V128 {
@@ -270,7 +270,7 @@ impl V128 {
     /// # Safety
     ///
     /// Callable only from a kernel with the same `#[target_feature]`, reached through an
-    /// [`Aes`](crate::Aes) proof, whose existence is the precondition.
+    /// [`Aes`](super::Aes) proof, whose existence is the precondition.
     #[target_feature(enable = "aes,neon")]
     #[inline]
     pub fn pmull_ll(self, other: V128) -> V128 {
@@ -285,7 +285,7 @@ impl V128 {
     /// # Safety
     ///
     /// Callable only from a kernel with the same `#[target_feature]`, reached through an
-    /// [`Aes`](crate::Aes) proof, whose existence is the precondition.
+    /// [`Aes`](super::Aes) proof, whose existence is the precondition.
     #[target_feature(enable = "aes,neon")]
     #[inline]
     pub fn pmull_hl(self, other: V128) -> V128 {
@@ -300,7 +300,7 @@ impl V128 {
     /// # Safety
     ///
     /// Callable only from a kernel with the same `#[target_feature]`, reached through an
-    /// [`Aes`](crate::Aes) proof, whose existence is the precondition.
+    /// [`Aes`](super::Aes) proof, whose existence is the precondition.
     #[target_feature(enable = "aes,neon")]
     #[inline]
     pub fn pmull_lh(self, other: V128) -> V128 {
@@ -315,7 +315,7 @@ impl V128 {
     /// # Safety
     ///
     /// Callable only from a kernel with the same `#[target_feature]`, reached through an
-    /// [`Aes`](crate::Aes) proof, whose existence is the precondition.
+    /// [`Aes`](super::Aes) proof, whose existence is the precondition.
     #[target_feature(enable = "aes,neon")]
     #[inline]
     pub fn pmull_hh(self, other: V128) -> V128 {

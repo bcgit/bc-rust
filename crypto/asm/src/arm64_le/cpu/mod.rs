@@ -24,19 +24,19 @@
 //!
 //! | # | Site | Value reaching it | Preconditions | Guarantee | Pinned by |
 //! |---|---|---|---|---|---|
-//! | 1 | `V128::from_bytes`: `vld1q_u8` | `&[u8; 16]` | pointer valid for 16 bytes of reads; NEON | the type; the function's `#[target_feature]`, reached only through a proof | `tests/intrinsics_tests.rs` |
+//! | 1 | `V128::from_bytes`: `vld1q_u8` | `&[u8; 16]` | pointer valid for 16 bytes of reads; NEON | the type; the function's `#[target_feature]`, reached only through a proof | `tests/arm64_le_intrinsics_tests.rs` |
 //! | 2 | `V128::to_bytes`: `vst1q_u8` | local `[u8; 16]` | pointer valid for 16 bytes of writes; NEON | the same | the same |
-//! | 3 | `Aes::expand_128` | `&[u8; 16]` | FEAT_AES, FEAT_PMULL, NEON | `self` exists: only `detect()`, which queries all three, or `declared()` under `cfg(target_feature = "aes")` builds one | `tests/aes_tests.rs`, FIPS 197 Appendix A |
+//! | 3 | `Aes::expand_128` | `&[u8; 16]` | FEAT_AES, FEAT_PMULL, NEON | `self` exists: only `detect()`, which queries all three, or `declared()` under `cfg(target_feature = "aes")` builds one | `tests/arm64_le_aes_tests.rs`, FIPS 197 Appendix A |
 //! | 4 | `Aes::expand_192` | `&[u8; 24]` | the same | the same | Appendix A |
 //! | 5 | `Aes::expand_256` | `&[u8; 32]` | the same | the same | Appendix A |
 //! | 6 | `Aes::equivalent_inverse_round_keys` | `&[Block; N]` | the same; `N` in {11, 13, 15} | the proof; a const assert on `N` | Appendix C |
 //! | 7 | `Aes::encrypt_blocks` | `&[Block; N]`, `&mut [Block; B]` | the same; `B` in {1, 2, 4} | the proof; const asserts on `N` and `B` | Appendices B and C, SP 800-38A F.1, the aes crate's agreement tests |
 //! | 8 | `Aes::decrypt_blocks` | the same | the same | the same | the same |
-//! | 9 | `Aes::ghash_mul` | two `&[u64; 2]` | FEAT_PMULL, NEON | the proof | `tests/ghash_tests.rs`, against Algorithm 1 |
-//! | 10 | `Aes::ghash_mul4` | two `&[[u64; 2]; 4]` | the same | the proof | `tests/ghash_tests.rs`, against four `mul`s |
-//! | 11 | `probe` on Linux, Android: `getauxval` twice | the named constants `AT_HWCAP`, `AT_HWCAP2` | the symbol is in the C library the target links | integers in and out; glibc >= 2.16, musl and bionic have it | `tests/detect_matches_std.rs`; the parser tests |
-//! | 12 | `probe` on macOS, iOS: `sysctlbyname` | a `c"..."` literal, a local `i32`, `len = size_of::<i32>()` | NUL-terminated name; buffer valid for `len` bytes | the literal; the typed local; accepted only if `rc == 0 && len == 4` | `probe`'s unit test of a known and an unknown name; `tests/detect_matches_std.rs`; the parser tests |
-//! | 13 | `probe` on Windows: `IsProcessorFeaturePresent` | a `PfFeature` | the symbol is in kernel32 | `#[link(name = "kernel32")]`; the enum holds only constants from `winnt.h` | `tests/detect_matches_std.rs` on Windows; the parser tests |
+//! | 9 | `Aes::ghash_mul` | two `&[u64; 2]` | FEAT_PMULL, NEON | the proof | `tests/arm64_le_ghash_tests.rs`, against Algorithm 1 |
+//! | 10 | `Aes::ghash_mul4` | two `&[[u64; 2]; 4]` | the same | the proof | `tests/arm64_le_ghash_tests.rs`, against four `mul`s |
+//! | 11 | `probe` on Linux, Android: `getauxval` twice | the named constants `AT_HWCAP`, `AT_HWCAP2` | the symbol is in the C library the target links | integers in and out; glibc >= 2.16, musl and bionic have it | `tests/arm64_le_detect_matches_std.rs`; the parser tests |
+//! | 12 | `probe` on macOS, iOS: `sysctlbyname` | a `c"..."` literal, a local `i32`, `len = size_of::<i32>()` | NUL-terminated name; buffer valid for `len` bytes | the literal; the typed local; accepted only if `rc == 0 && len == 4` | `probe`'s unit test of a known and an unknown name; `tests/arm64_le_detect_matches_std.rs`; the parser tests |
+//! | 13 | `probe` on Windows: `IsProcessorFeaturePresent` | a `PfFeature` | the symbol is in kernel32 | `#[link(name = "kernel32")]`; the enum holds only constants from `winnt.h` | `tests/arm64_le_detect_matches_std.rs` on Windows; the parser tests |
 
 #![allow(unsafe_code)]
 
@@ -49,8 +49,8 @@ mod probe;
 
 use core::sync::atomic::{AtomicU32, Ordering};
 
-use crate::aes::{self, Block, RoundKeys128, RoundKeys192, RoundKeys256};
-use crate::ghash::{self, Element};
+use super::aes::{self, Block, RoundKeys128, RoundKeys192, RoundKeys256};
+use super::ghash::{self, Element};
 
 /// The feature word, with [`INIT`] set once it has been probed.
 #[cfg_attr(target_feature = "aes", allow(dead_code, reason = "a declared build never probes"))]
@@ -112,7 +112,7 @@ impl Aes {
     /// A key of any other length does not compile:
     ///
     /// ```compile_fail,E0308
-    /// if let Some(cx) = bouncycastle_arm::Aes::detect() {
+    /// if let Some(cx) = bouncycastle_asm::Aes::detect() {
     ///     let _ = cx.expand_128(&[0u8; 20]);
     /// }
     /// ```
@@ -147,7 +147,7 @@ impl Aes {
     /// A schedule of other than 11, 13 or 15 round keys does not compile:
     ///
     /// ```compile_fail,E0080
-    /// if let Some(cx) = bouncycastle_arm::Aes::detect() {
+    /// if let Some(cx) = bouncycastle_asm::Aes::detect() {
     ///     let _ = cx.equivalent_inverse_round_keys(&[[0u8; 16]; 12]);
     /// }
     /// ```
@@ -164,7 +164,7 @@ impl Aes {
     /// Other than one, two or four blocks does not compile:
     ///
     /// ```compile_fail,E0080
-    /// if let Some(cx) = bouncycastle_arm::Aes::detect() {
+    /// if let Some(cx) = bouncycastle_asm::Aes::detect() {
     ///     let w = cx.expand_128(&[0u8; 16]);
     ///     cx.encrypt_blocks(&w, &mut [[0u8; 16]; 3]);
     /// }

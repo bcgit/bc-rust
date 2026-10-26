@@ -1,4 +1,4 @@
-# Rules for code that reaches `unsafe` in `bouncycastle-arm`
+# Rules for code that reaches `unsafe` in `bouncycastle-asm`
 
 These add to QUALITY_AND_STYLE.md and CONTRIBUTING.md. They cover this crate and the code in `bouncycastle-aes` and
 `bouncycastle-cipher` that builds the values its kernels take. Across an `unsafe` boundary a wrong length or index is
@@ -39,18 +39,19 @@ illegal-instruction fault, so every value that reaches one must be in range by i
 ## Operating-system calls
 
 - The crate is `#![no_std]` and stays so. Detection asks the operating system through the
-  declarations in `cpu/probe.rs`, never through std, `libc` or any other dependency, and a target
-  without a back end gets no features. The table in the `cpu` module docs lists the back ends.
-- Each back end has one call site, declared in an `unsafe extern` block in `cpu/probe.rs` with the
-  documented signature; on Windows it carries `#[link(name = "kernel32")]`, since a `no_std` crate
-  names its import library itself.
+  declarations in `src/arm64_le/cpu/probe.rs`, never through std, `libc` or any other dependency,
+  and a target without a back end gets no features. The table in the `arm64_le::cpu` module docs
+  lists the back ends.
+- Each back end has one call site, declared in an `unsafe extern` block in
+  `src/arm64_le/cpu/probe.rs` with the documented signature; on Windows it carries
+  `#[link(name = "kernel32")]`, since a `no_std` crate names its import library itself.
 - A pointer passed to the call comes from a typed local whose size is `size_of::<T>()`, and a C
   string is a `c"..."` literal.
 - Every return value and out-parameter is range-checked before use, as `sysctl_present` accepts an
   answer only if `rc == 0 && len == size_of::<i32>() && value != 0`.
 - Each back end's parser has tests on crafted answers, the call itself has an error-path test where
   the operating system allows one (`probe`'s unit test of a known and an unknown name on macOS), and
-  `tests/detect_matches_std.rs` checks the result against std.
+  `tests/arm64_le_detect_matches_std.rs` checks the result against std.
 - There is no `asm!` in the crate. If the bare-metal opt-in that reads the ID registers is built,
   its three `mrs` reads are the only `asm!` blocks, with `options(nomem, nostack, preserves_flags)`,
   behind its cargo feature, with the EL1 contract documented and the parser tested on crafted
@@ -72,7 +73,7 @@ not spell those four patterns out.
 - Every whole-block loop is fed each length from 0 to two blocks plus one and across each batching boundary (four
   blocks for GHASH), against the one-shot result.
 - Run in the declared, run-time and portable configurations (see the crate docs).
-- `cargo mutants -p bouncycastle-arm` before a PR that touches the crate, with survivors explained in the PR.
+- `cargo mutants -p bouncycastle-asm` before a PR that touches the crate, with survivors explained in the PR.
 
 ## Status
 

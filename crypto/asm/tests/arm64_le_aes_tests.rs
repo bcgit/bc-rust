@@ -26,8 +26,8 @@
 
 mod common;
 
-use bouncycastle_arm::Aes;
-use bouncycastle_arm::aes::{Block, RoundKeys128, RoundKeys192, RoundKeys256};
+use bouncycastle_asm::arm64_le::Aes;
+use bouncycastle_asm::arm64_le::aes::{Block, RoundKeys128, RoundKeys192, RoundKeys256};
 use bouncycastle_hex as hex;
 use common::{Xorshift, hex_block, hex_bytes};
 

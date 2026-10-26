@@ -1,5 +1,5 @@
 [package]
-name = "bouncycastle-arm"
+name = "bouncycastle-asm"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
@@ -11,5 +11,5 @@ bouncycastle-hex.workspace = true
 criterion.workspace = true
 
 [[bench]]
-name = "arm_benches"
+name = "arm64_le_benches"
 harness = false

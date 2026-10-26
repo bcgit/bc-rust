@@ -22,7 +22,7 @@
 
 mod common;
 
-use bouncycastle_arm::intrinsics::V128;
+use bouncycastle_asm::arm64_le::intrinsics::V128;
 use common::Xorshift;
 
 /// Runs a `#[target_feature(enable = "aes,neon")]` test body, or returns early on a CPU

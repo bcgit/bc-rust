@@ -1,12 +1,13 @@
-//! AArch64 Crypto Extensions kernels for AES (FIPS 197) and the GHASH multiplication of GCM
-//! (NIST SP 800-38D Sec 6.3): the AES round functions on the `AESE`/`AESMC`/`AESD`/`AESIMC`
-//! instructions and the `GF(2^128)` product on `PMULL`/`PMULL2`.
+//! The hardware back ends for AES (FIPS 197) and the GHASH multiplication of GCM (NIST SP 800-38D
+//! Sec 6.3), one module per architecture. Today there is one, [`arm64_le`]: the AArch64 Crypto
+//! Extensions, with the AES round functions on the `AESE`/`AESMC`/`AESD`/`AESIMC` instructions and
+//! the `GF(2^128)` product on `PMULL`/`PMULL2`. The x86 back end is to follow beside it.
 //!
-//! This crate is a building block for `bouncycastle-aes` and `bouncycastle-cipher`, not a
-//! primitive for applications. Nothing here is a cipher: [`aes`] transforms exactly one, two or
-//! four blocks and [`ghash`] multiplies field elements. The modes of operation that make those
-//! safe to use on data live in `bouncycastle-cipher`, and the AES types applications use live in
-//! `bouncycastle-aes`.
+//! This crate is a building block for `bouncycastle-aes` and `bouncycastle-cipher`, not a primitive
+//! for applications. Nothing here is a cipher: [`arm64_le::aes`] transforms exactly one, two or
+//! four blocks and [`arm64_le::ghash`] multiplies field elements. The modes of operation that make
+//! those safe to use on data live in `bouncycastle-cipher`, and the AES types applications use live
+//! in `bouncycastle-aes`.
 //!
 //! # Availability
 //!
@@ -24,8 +25,8 @@
 //! portable engine.
 //!
 //! Every kernel is `#[target_feature(enable = "aes,neon")]`, so calling one directly is `unsafe`.
-//! The safe way in is an [`Aes`] value, which exists only once the instructions are
-//! known to be present, and whose methods are the kernels.
+//! The safe way in is an [`Aes`] value, which exists only once the instructions are known to be
+//! present, and whose methods are the kernels.
 //!
 //! To exercise the run-time path on a host that declares `aes` by default, disable it for
 //! rustdoc as well as rustc, since cargo hands `RUSTFLAGS` only to the latter:
@@ -39,7 +40,7 @@
 //! # #[cfg(all(target_arch = "aarch64", target_endian = "little", target_feature = "neon",
 //! #     any(target_feature = "aes", target_os = "linux", target_os = "android",
 //! #     target_os = "macos", target_os = "ios", target_os = "windows")))]
-//! # if let Some(cx) = bouncycastle_arm::Aes::detect() {
+//! # if let Some(cx) = bouncycastle_asm::Aes::detect() {
 //! // `cx` is an `Aes`, from `Aes::detect()`.
 //! let w = cx.expand_128(&[0x2b, 0x7e, 0x15, 0x16, 0x28, 0xae, 0xd2, 0xa6,
 //!                      0xab, 0xf7, 0x15, 0x88, 0x09, 0xcf, 0x4f, 0x3c]);
@@ -57,15 +58,15 @@
 //! # }
 //! ```
 //!
-//! The GHASH kernel multiplies elements in the `[u64; 2]` form `bouncycastle-cipher`'s GHASH
-//! uses, and [`ghash::mul4`] (here [`Aes::ghash_mul4`]) sums four products under one reduction so a caller holding
-//! `H`, `H^2`, `H^3` and `H^4` can absorb four blocks per call:
+//! The GHASH kernel multiplies elements in the `[u64; 2]` form `bouncycastle-cipher`'s GHASH uses,
+//! and [`arm64_le::ghash::mul4`] (here [`Aes::ghash_mul4`]) sums four products under one reduction
+//! so a caller holding `H`, `H^2`, `H^3` and `H^4` can absorb four blocks per call:
 //!
 //! ```
 //! # #[cfg(all(target_arch = "aarch64", target_endian = "little", target_feature = "neon",
 //! #     any(target_feature = "aes", target_os = "linux", target_os = "android",
 //! #     target_os = "macos", target_os = "ios", target_os = "windows")))]
-//! # if let Some(cx) = bouncycastle_arm::Aes::detect() {
+//! # if let Some(cx) = bouncycastle_asm::Aes::detect() {
 //! let h = [0x6699_aabb_ccdd_ee00, 0x1122_3344_5566_7788];
 //! let h2 = cx.ghash_mul(&h, &h);
 //! let h3 = cx.ghash_mul(&h2, &h);
@@ -103,20 +104,19 @@
 //!
 //! bc-rust forbids `unsafe` everywhere except `bouncycastle-utils` and this crate. Here it is
 //! confined to two modules, and the crate root is `#![deny(unsafe_code)]` so an `unsafe` block
-//! anywhere else is a compile error. [`intrinsics`] holds the two load/store wrappers whose
-//! intrinsics take raw pointers. The `cpu` module holds [`Aes`], whose methods
-//! call the `#[target_feature]` kernels: the compiler requires `unsafe` there because it
-//! cannot see that the CPU has the instructions, and the value's existence is the proof that it
-//! does.
+//! anywhere else is a compile error. [`arm64_le::intrinsics`] holds the two load/store wrappers
+//! whose intrinsics take raw pointers. The `arm64_le::cpu` module holds [`Aes`], whose methods call
+//! the `#[target_feature]` kernels: the compiler requires `unsafe` there because it cannot see that
+//! the CPU has the instructions, and the value's existence is the proof that it does.
 //!
 //! ## What makes the kernels safe to call
 //!
-//! An [`Aes`] value comes only from [`Aes::detect`] or `Aes::declared`, and its field is
-//! private. `detect` asks for `FEAT_AES`, `FEAT_PMULL` and NEON (the table in the `cpu` module
-//! docs), which covers every feature the kernels' `#[target_feature]` attributes name; a proof
-//! may ask for more than its kernels need, never less. `declared` exists only under
-//! `cfg(target_feature = "aes")`, the feature those attributes name. The proof's methods take
-//! and return byte arrays and `[u64; 2]`, so no NEON vector type crosses it.
+//! An [`Aes`] value comes only from [`Aes::detect`] or `Aes::declared`, and its field is private.
+//! `detect` asks for `FEAT_AES`, `FEAT_PMULL` and NEON (the table in the `arm64_le::cpu` module
+//! docs), which covers every feature the kernels' `#[target_feature]` attributes name; a proof may
+//! ask for more than its kernels need, never less. `declared` exists only under
+//! `cfg(target_feature = "aes")`, the feature those attributes name. The proof's methods take and
+//! return byte arrays and `[u64; 2]`, so no NEON vector type crosses it.
 //!
 //! Which kernels run depends on the CPU alone, never on the key or the data, and is decided once
 //! when the caller's value is built: `bouncycastle-aes`'s `Detected` engine chooses when it
@@ -125,10 +125,10 @@
 //! `dev_scripts/quality_stats.sh` counts the crate's `unsafe` blocks, functions, impls and traits
 //! by the keyword before `{`, `fn`, `impl` or `trait`, so the three `unsafe extern` declarations
 //! are not in it. The figure is 13: the eight proof methods, the two load/store wrappers and one
-//! operating-system call per back end. Any other figure is a review finding. A pull request
-//! that adds a kernel checks its attribute and proof parameters against the proof's row of the
-//! `cpu` table, confirms the proof asks for every feature the attribute names, says how the
-//! proof's `None` arm is exercised, and states the new figure.
+//! operating-system call per back end. Any other figure is a review finding. A pull request that
+//! adds a kernel checks its attribute and proof parameters against the proof's row of the
+//! `arm64_le::cpu` table, confirms the proof asks for every feature the attribute names, says how
+//! the proof's `None` arm is exercised, and states the new figure.
 //!
 //! ## What the detector does not do
 //!
@@ -173,8 +173,8 @@
 #![forbid(missing_docs)]
 #![deny(unsafe_code)]
 
-// The operating systems in these gates are the ones `cpu/probe.rs` has a back end for: the two
-// lists change together.
+// The operating systems in this gate are the ones `arm64_le/cpu/probe.rs` has a back end for: the
+// two lists change together.
 #[cfg(all(
     target_arch = "aarch64",
     target_endian = "little",
@@ -188,8 +188,13 @@
         target_os = "windows"
     )
 ))]
-pub mod intrinsics;
+pub mod arm64_le;
 
+/// The CPU proof for this target's back end, [`arm64_le::Aes`] on AArch64. Every back end exports
+/// one under this name with the same methods (`expand_128`, `expand_192`, `expand_256`,
+/// `equivalent_inverse_round_keys`, `encrypt_blocks`, `decrypt_blocks`, `ghash_mul`,
+/// `ghash_mul4`), so callers never name an architecture. The x86_64 back end will re-export its
+/// own, and later proofs (`Sha2`, `Sha3`, `Sm4`, one per feature) are re-exported the same way.
 #[cfg(all(
     target_arch = "aarch64",
     target_endian = "little",
@@ -203,49 +208,4 @@ pub mod intrinsics;
         target_os = "windows"
     )
 ))]
-pub mod aes;
-
-#[cfg(all(
-    target_arch = "aarch64",
-    target_endian = "little",
-    target_feature = "neon",
-    any(
-        target_feature = "aes",
-        target_os = "linux",
-        target_os = "android",
-        target_os = "macos",
-        target_os = "ios",
-        target_os = "windows"
-    )
-))]
-pub mod ghash;
-
-#[cfg(all(
-    target_arch = "aarch64",
-    target_endian = "little",
-    target_feature = "neon",
-    any(
-        target_feature = "aes",
-        target_os = "linux",
-        target_os = "android",
-        target_os = "macos",
-        target_os = "ios",
-        target_os = "windows"
-    )
-))]
-mod cpu;
-
-#[cfg(all(
-    target_arch = "aarch64",
-    target_endian = "little",
-    target_feature = "neon",
-    any(
-        target_feature = "aes",
-        target_os = "linux",
-        target_os = "android",
-        target_os = "macos",
-        target_os = "ios",
-        target_os = "windows"
-    )
-))]
-pub use cpu::Aes;
+pub use arm64_le::Aes;

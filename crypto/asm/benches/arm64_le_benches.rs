@@ -20,9 +20,9 @@
     )
 ))]
 mod arm {
-    use bouncycastle_arm::Aes;
-    use bouncycastle_arm::aes::{BLOCK_LEN, Block};
-    use bouncycastle_arm::ghash::Element;
+    use bouncycastle_asm::arm64_le::Aes;
+    use bouncycastle_asm::arm64_le::aes::{BLOCK_LEN, Block};
+    use bouncycastle_asm::arm64_le::ghash::Element;
     use criterion::measurement::WallTime;
     use criterion::{BenchmarkGroup, Criterion, Throughput, criterion_group};
     use std::hint::black_box;
