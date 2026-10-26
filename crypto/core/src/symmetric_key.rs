@@ -17,7 +17,8 @@
 //!   know the lengths up front, [`SymmetricEncryptionKey`] / [`SymmetricDecryptionKey`] for the
 //!   unauthenticated modes that take data of any length (padded CBC, CFB, CFB8, CTR),
 //!   [`BlockEncryptionKey`] / [`BlockDecryptionKey`] for the whole-block modes, the ECB pair in
-//!   [`crate::hazmat`], and [`MacGenerationKey`] / [`MacVerificationKey`]. A key type
+//!   [`crate::hazmat`], [`MacGenerationKey`] / [`MacVerificationKey`], and
+//!   [`KeyWrappingKey`] / [`KeyUnwrappingKey`] for the key-wrap modes. A key type
 //!   implements the sides it is allowed to use, so a decrypt-only or verify-only key refuses the
 //!   other side at compile time. The one-shots are provided methods over `create_*` and the
 //!   worker's streaming methods, the cipher traits in [`crate::traits`].
@@ -49,10 +50,11 @@ use crate::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 #[cfg(feature = "std")]
 use crate::traits::AEADEncryptedTuple;
 use crate::traits::{
-    AEADCipherDecryptor, AEADCipherEncryptor, BlockCipherDecryptor, BlockCipherEncryptor, MAC, RNG,
-    StreamCipherDecryptor, StreamCipherEncryptor, SymmetricCipherDecryptor,
-    SymmetricCipherEncryptor,
+    AEADCipherDecryptor, AEADCipherEncryptor, BlockCipherDecryptor, BlockCipherEncryptor,
+    KeyUnwrapper, KeyWrapper, MAC, RNG, StreamCipherDecryptor, StreamCipherEncryptor,
+    SymmetricCipherDecryptor, SymmetricCipherEncryptor,
 };
+use bouncycastle_utils::secret::Secret;
 
 /// Construction of a key object from exactly `KEY_LEN` bytes of key material.
 ///
@@ -1174,5 +1176,123 @@ pub trait MacVerificationKey {
         let mut ver = self.create_verifier();
         ver.do_update(data);
         ver.do_verify_final(mac)
+    }
+}
+
+/// A key that can wrap keys: a key encryption key (KEK) bound to a key-wrap mode such as KW or
+/// KWP (NIST SP 800-38F). The worker is a [`KeyWrapper`] borrowing the key for `'k`. Key wrap is
+/// one-shot, so the provided methods here are the API in practice; the worker is there for the
+/// trait pair's sake and for a caller that wants to hold the borrow. A key may implement
+/// [`KeyUnwrappingKey`] and not this, which is what an unwrap-only key is.
+///
+/// The KEK's type and strength were checked when the key was made, so the only errors left are
+/// the lengths and, on unwrapping, authenticity; see [`KeyWrapper`] and [`KeyUnwrapper`].
+pub trait KeyWrappingKey<const KEK_LEN: usize> {
+    /// The one-shot worker this key produces for wrapping, borrowing the key for `'k`.
+    type Wrapper<'k>: KeyWrapper
+    where
+        Self: 'k;
+
+    /// A wrapper over this key. Infallible: there is nothing to draw and nothing left to check.
+    fn create_wrapper<'k>(&'k self) -> Self::Wrapper<'k>;
+
+    /// One-shot: wraps `key`, whose length is fixed at compile time, returning the ciphertext.
+    /// `(KEY_LEN, CT_LEN)` must be a pair the mode defines; see [`KeyWrapper::wrap_key_out`].
+    ///
+    /// # Errors
+    /// None for a valid pair of lengths.
+    fn wrap_key<const KEY_LEN: usize, const CT_LEN: usize>(
+        &self,
+        key: &[u8; KEY_LEN],
+    ) -> Result<[u8; CT_LEN], SymmetricCipherError> {
+        self.create_wrapper().wrap_key(key)
+    }
+
+    /// One-shot: as [`wrap_key`](Self::wrap_key), into `ciphertext`; returns the number of bytes
+    /// written, always `CT_LEN`.
+    ///
+    /// # Errors
+    /// None for a valid pair of lengths.
+    fn wrap_key_out<const KEY_LEN: usize, const CT_LEN: usize>(
+        &self,
+        key: &[u8; KEY_LEN],
+        ciphertext: &mut [u8; CT_LEN],
+    ) -> Result<usize, SymmetricCipherError> {
+        self.create_wrapper().wrap_key_out(key, ciphertext)
+    }
+
+    /// The exact ciphertext length for a plaintext of `plaintext_len` bytes: what
+    /// [`wrap_out`](Self::wrap_out) needs. See [`KeyWrapper::wrap_out_len`].
+    fn wrap_out_len(&self, plaintext_len: usize) -> usize {
+        self.create_wrapper().wrap_out_len(plaintext_len)
+    }
+
+    /// One-shot: wraps `plaintext`, whose length is only known at run time, into `ciphertext`;
+    /// returns the number of bytes written.
+    ///
+    /// # Errors
+    /// As [`KeyWrapper::wrap_out`].
+    fn wrap_out(
+        &self,
+        plaintext: &[u8],
+        ciphertext: &mut [u8],
+    ) -> Result<usize, SymmetricCipherError> {
+        self.create_wrapper().wrap_out(plaintext, ciphertext)
+    }
+}
+
+/// A key that can unwrap keys; see [`KeyWrappingKey`] for the shape and the lifetime of the
+/// worker, and [`KeyUnwrapper`] for the `Secret` output and the single authenticity error.
+pub trait KeyUnwrappingKey<const KEK_LEN: usize> {
+    /// The one-shot worker this key produces for unwrapping, borrowing the key for `'k`.
+    type Unwrapper<'k>: KeyUnwrapper
+    where
+        Self: 'k;
+
+    /// An unwrapper over this key. Infallible.
+    fn create_unwrapper<'k>(&'k self) -> Self::Unwrapper<'k>;
+
+    /// One-shot: unwraps `ciphertext`, whose length is fixed at compile time, into a fresh
+    /// `Secret`. `(KEY_LEN, CT_LEN)` must be a pair the mode defines.
+    ///
+    /// # Errors
+    /// [`SymmetricCipherError::DecryptionFailed`] for any authenticity failure.
+    fn unwrap_key<const KEY_LEN: usize, const CT_LEN: usize>(
+        &self,
+        ciphertext: &[u8; CT_LEN],
+    ) -> Result<Secret<[u8; KEY_LEN]>, SymmetricCipherError> {
+        self.create_unwrapper().unwrap_key(ciphertext)
+    }
+
+    /// One-shot: as [`unwrap_key`](Self::unwrap_key), into `key`; returns the number of bytes
+    /// written, always `KEY_LEN`. `key` is zeroized on error.
+    ///
+    /// # Errors
+    /// [`SymmetricCipherError::DecryptionFailed`] for any authenticity failure.
+    fn unwrap_key_out<const KEY_LEN: usize, const CT_LEN: usize>(
+        &self,
+        ciphertext: &[u8; CT_LEN],
+        key: &mut Secret<[u8; KEY_LEN]>,
+    ) -> Result<usize, SymmetricCipherError> {
+        self.create_unwrapper().unwrap_key_out(ciphertext, key)
+    }
+
+    /// An upper bound on the plaintext length of a `ciphertext_len`-byte ciphertext: what
+    /// [`unwrap_out`](Self::unwrap_out) needs. See [`KeyUnwrapper::unwrap_out_max_len`].
+    fn unwrap_out_max_len(&self, ciphertext_len: usize) -> usize {
+        self.create_unwrapper().unwrap_out_max_len(ciphertext_len)
+    }
+
+    /// One-shot: unwraps `ciphertext`, whose length is only known at run time, into `plaintext`;
+    /// returns the number of plaintext bytes written. The whole buffer is zeroized on error.
+    ///
+    /// # Errors
+    /// As [`KeyUnwrapper::unwrap_out`].
+    fn unwrap_out(
+        &self,
+        ciphertext: &[u8],
+        plaintext: &mut [u8],
+    ) -> Result<usize, SymmetricCipherError> {
+        self.create_unwrapper().unwrap_out(ciphertext, plaintext)
     }
 }

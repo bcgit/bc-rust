@@ -23,6 +23,6 @@ pub use hazardous_operations::do_hazardous_operations;
 pub use key_stream::KeyStream;
 pub use mode::{
     AeadDeclaredDecryptMode, AeadDeclaredEncryptMode, AeadDecryptMode, AeadEncryptMode,
-    BlockDecryptMode, BlockEncryptMode, EcbDecryptMode, EcbEncryptMode, MacMode, Mode, ModeKey,
-    SymmetricDecryptMode, SymmetricEncryptMode,
+    BlockDecryptMode, BlockEncryptMode, EcbDecryptMode, EcbEncryptMode, KeyUnwrapMode, KeyWrapMode,
+    MacMode, Mode, ModeKey, SymmetricDecryptMode, SymmetricEncryptMode,
 };

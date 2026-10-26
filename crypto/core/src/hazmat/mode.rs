@@ -13,7 +13,9 @@
 //! data of any length (padded CBC, CFB, CFB8, CTR), [`BlockEncryptMode`] / [`BlockDecryptMode`]
 //! for one that takes whole blocks (CBC with no padding layer), and [`EcbEncryptMode`] /
 //! [`EcbDecryptMode`] for ECB, which has no init data and so takes no RNG. A MAC mode -- CMAC --
-//! implements [`MacMode`], whose worker takes no nonce and serves both roles.
+//! implements [`MacMode`], whose worker takes no nonce and serves both roles. A key-wrap mode --
+//! KW, KWP -- implements [`KeyWrapMode`] / [`KeyUnwrapMode`], whose workers are one-shot and take
+//! no nonce either.
 //!
 //! Every worker borrows the key state it is made from, for the lifetime `'k` on the mode's
 //! associated worker type: the schedule stays in the key and is read through the reference, so
@@ -24,8 +26,8 @@
 use crate::errors::SymmetricCipherError;
 use crate::key_material::KeyType;
 use crate::traits::{
-    AEADCipherDecryptor, AEADCipherEncryptor, BlockCipherDecryptor, BlockCipherEncryptor, MAC, RNG,
-    SymmetricCipherDecryptor, SymmetricCipherEncryptor,
+    AEADCipherDecryptor, AEADCipherEncryptor, BlockCipherDecryptor, BlockCipherEncryptor,
+    KeyUnwrapper, KeyWrapper, MAC, RNG, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
 };
 
 /// A mode's per-key state over the permutation `P`.
@@ -433,4 +435,32 @@ pub trait MacMode<P>: Mode<P> {
     /// Begins a MAC over a new message from `state`. Infallible: the state is keyed and there is
     /// nothing to draw.
     fn mac_init<'k>(state: &'k Self::KeyState) -> Self::Worker<'k>;
+}
+
+/// The wrapping side of a key-wrap mode over `P`: the mode's own constructor for its
+/// [`KeyWrapper`], which the role trait [`crate::symmetric_key::KeyWrappingKey`] forwards to.
+/// `KEK_LEN` ties the key's length to the permutation's, as `KEY_LEN` does on the cipher modes.
+pub trait KeyWrapMode<P, const KEK_LEN: usize>: Mode<P> {
+    /// The one-shot wrapper this mode produces over `P`. It borrows the key state it was made
+    /// from for `'k`: the schedule is read through the reference, never copied into the worker,
+    /// and the worker cannot outlive the state.
+    type Wrapper<'k>: KeyWrapper
+    where
+        P: 'k;
+
+    /// A wrapper over `state`. Infallible: the state is keyed and there is nothing to draw.
+    fn wrap_init<'k>(state: &'k Self::KeyState) -> Self::Wrapper<'k>;
+}
+
+/// The unwrapping side of a key-wrap mode over `P`; see [`KeyWrapMode`]. The role trait
+/// [`crate::symmetric_key::KeyUnwrappingKey`] forwards to it.
+pub trait KeyUnwrapMode<P, const KEK_LEN: usize>: Mode<P> {
+    /// The one-shot unwrapper this mode produces over `P`, borrowing the key state for `'k` as
+    /// [`KeyWrapMode::Wrapper`] does.
+    type Unwrapper<'k>: KeyUnwrapper
+    where
+        P: 'k;
+
+    /// An unwrapper over `state`. Infallible.
+    fn unwrap_init<'k>(state: &'k Self::KeyState) -> Self::Unwrapper<'k>;
 }
