@@ -19,15 +19,23 @@
 
 // What this proves depends on the build:
 // * `aes` declared: `Arm` against `Bitsliced`.
-// * `-aes` with `std`: `Detected` against `Bitsliced`. On a CPU with FEAT_AES and FEAT_PMULL
-//   that is `Arm` again; on one without, `Detected` runs `Bitsliced`, so the test compares
-//   `Bitsliced` with itself and proves nothing about the fallback beyond that it runs.
-// * `-aes` without `std`: the gate is false and the file compiles to nothing.
+// * `-aes` on Linux, Android, macOS, iOS or Windows: `Detected` against `Bitsliced`. On a CPU
+//   with FEAT_AES and FEAT_PMULL that is `Arm` again; on one without, `Detected` runs
+//   `Bitsliced`, so the test compares `Bitsliced` with itself and proves nothing about the
+//   fallback beyond that it runs.
+// * any other target: the gate is false and the file compiles to nothing.
 #![cfg(all(
     target_arch = "aarch64",
     target_endian = "little",
     target_feature = "neon",
-    any(target_feature = "aes", feature = "std")
+    any(
+        target_feature = "aes",
+        target_os = "linux",
+        target_os = "android",
+        target_os = "macos",
+        target_os = "ios",
+        target_os = "windows"
+    )
 ))]
 
 use bouncycastle_aes::hazmat::AESInternal;

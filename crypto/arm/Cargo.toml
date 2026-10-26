@@ -4,10 +4,6 @@ version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 
-[features]
-# Run-time detection of the instructions, by the crate's own `cpu` module; it uses no std.
-std = []
-
 [dependencies]
 
 [dev-dependencies]

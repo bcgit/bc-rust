@@ -6,7 +6,8 @@ use bouncycastle_arm::Aes;
 use bouncycastle_hex as hex;
 
 /// The proof the kernels need, or `None` on a CPU without the instructions, where the test
-/// returns early. Only a `std` build can reach `None`; one that declares `aes` always has it.
+/// returns early. Only a build that does not declare `aes` can reach `None`; one that declares it
+/// always has it.
 pub fn cx() -> Option<Aes> {
     let cx = Aes::detect();
     if cx.is_none() {

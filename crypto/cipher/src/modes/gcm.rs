@@ -792,9 +792,10 @@ mod ghash {
     //! # The AArch64 path
     //!
     //! On little-endian AArch64, where the CPU has `FEAT_AES`, `FEAT_PMULL` and NEON -- always, on a
-    //! build that declares `target_feature = "aes"`; as found at run time, on one with `std` --
-    //! [`mul`] is `bouncycastle_arm`'s `PMULL` kernel and [`Ghash::update`] folds whole blocks four at
-    //! a time through its four-product kernel, which sums four products under one reduction. That is
+    //! build that declares `target_feature = "aes"`; as found at run time, on a build for Linux,
+    //! Android, macOS, iOS or Windows that does not -- [`mul`] is `bouncycastle_arm`'s `PMULL`
+    //! kernel and [`Ghash::update`] folds whole blocks four at a time through its four-product
+    //! kernel, which sums four products under one reduction. That is
     //! Sec 6.4's "In effect, the GHASH function calculates `X1•H^m ⊕ X2•H^(m-1) ⊕ ... ⊕ Xm•H`"
     //! taken four terms at a time: `Y = (Y ⊕ X1)•H^4 ⊕ X2•H^3 ⊕ X3•H^2 ⊕ X4•H`. The path keeps
     //! `H^2`, `H^3` and `H^4` beside `H`, 48 bytes more state; the suspended form is unchanged,
@@ -812,7 +813,14 @@ mod ghash {
         target_arch = "aarch64",
         target_endian = "little",
         target_feature = "neon",
-        any(target_feature = "aes", feature = "std")
+        any(
+            target_feature = "aes",
+            target_os = "linux",
+            target_os = "android",
+            target_os = "macos",
+            target_os = "ios",
+            target_os = "windows"
+        )
     ))]
     use bouncycastle_arm::Aes;
 
@@ -967,7 +975,14 @@ mod ghash {
         target_arch = "aarch64",
         target_endian = "little",
         target_feature = "neon",
-        any(target_feature = "aes", feature = "std")
+        any(
+            target_feature = "aes",
+            target_os = "linux",
+            target_os = "android",
+            target_os = "macos",
+            target_os = "ios",
+            target_os = "windows"
+        )
     )))]
     pub(crate) fn mul(x: &Block, y: &Block) -> Block {
         mul_portable(x, y)
@@ -979,7 +994,14 @@ mod ghash {
         target_arch = "aarch64",
         target_endian = "little",
         target_feature = "neon",
-        any(target_feature = "aes", feature = "std")
+        any(
+            target_feature = "aes",
+            target_os = "linux",
+            target_os = "android",
+            target_os = "macos",
+            target_os = "ios",
+            target_os = "windows"
+        )
     ))]
     pub(crate) fn mul(x: &Block, y: &Block) -> Block {
         match Aes::detect() {
@@ -1010,7 +1032,14 @@ mod ghash {
             target_arch = "aarch64",
             target_endian = "little",
             target_feature = "neon",
-            any(target_feature = "aes", feature = "std")
+            any(
+                target_feature = "aes",
+                target_os = "linux",
+                target_os = "android",
+                target_os = "macos",
+                target_os = "ios",
+                target_os = "windows"
+            )
         ))]
         h_powers: Secret<[Block; 4]>,
         /// `Y_i` of Algorithm 2.
@@ -1032,7 +1061,14 @@ mod ghash {
                 target_arch = "aarch64",
                 target_endian = "little",
                 target_feature = "neon",
-                any(target_feature = "aes", feature = "std")
+                any(
+                    target_feature = "aes",
+                    target_os = "linux",
+                    target_os = "android",
+                    target_os = "macos",
+                    target_os = "ios",
+                    target_os = "windows"
+                )
             ))]
             let h_powers = {
                 let mut p: Secret<[Block; 4]> = Secret::new();
@@ -1048,7 +1084,14 @@ mod ghash {
                     target_arch = "aarch64",
                     target_endian = "little",
                     target_feature = "neon",
-                    any(target_feature = "aes", feature = "std")
+                    any(
+                        target_feature = "aes",
+                        target_os = "linux",
+                        target_os = "android",
+                        target_os = "macos",
+                        target_os = "ios",
+                        target_os = "windows"
+                    )
                 ))]
                 h_powers,
                 y: Secret::new(),
@@ -1096,7 +1139,14 @@ mod ghash {
                 target_arch = "aarch64",
                 target_endian = "little",
                 target_feature = "neon",
-                any(target_feature = "aes", feature = "std")
+                any(
+                    target_feature = "aes",
+                    target_os = "linux",
+                    target_os = "android",
+                    target_os = "macos",
+                    target_os = "ios",
+                    target_os = "windows"
+                )
             ))]
             let blocks = match Aes::detect() {
                 Some(cx) => {
@@ -1222,7 +1272,14 @@ mod ghash {
             target_arch = "aarch64",
             target_endian = "little",
             target_feature = "neon",
-            any(target_feature = "aes", feature = "std")
+            any(
+                target_feature = "aes",
+                target_os = "linux",
+                target_os = "android",
+                target_os = "macos",
+                target_os = "ios",
+                target_os = "windows"
+            )
         ))]
         #[test]
         fn pmull_matches_the_portable_multiplier_on_ten_thousand_random_pairs() {
