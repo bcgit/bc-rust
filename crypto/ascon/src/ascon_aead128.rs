@@ -650,8 +650,7 @@ impl FromKeyMaterial<KEY_LEN> for AsconAEAD128Key {
     const KEY_TYPE: KeyType = KeyType::SymmetricCipherKey;
 
     /// # Errors
-    /// * [`KeyMaterialError::InvalidKeyType`] if the key is not a `SymmetricCipherKey`, or is
-    ///   bound to another algorithm (`KeyMaterialTrait::set_algorithm`).
+    /// * [`KeyMaterialError::InvalidKeyType`] if the key is not a `SymmetricCipherKey`.
     /// * [`KeyMaterialError::InvalidLength`] if the key is not 16 bytes long.
     /// * [`KeyMaterialError::SecurityStrength`] if the key carries a strength below 128 bits.
     fn from_key_material(key: &KeyMaterial<KEY_LEN>) -> Result<Self, SymmetricCipherError> {
