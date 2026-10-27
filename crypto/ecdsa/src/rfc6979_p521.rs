@@ -106,7 +106,7 @@ fn candidate_in_range(candidate: &[u8; RLEN]) -> bool {
     let is_nonzero = !nat::is_zero(&limbs);
     let (_, borrow) = nat::sub(&limbs, &N_LIMBS);
     let is_below_n = Condition::<u64>::from_lsb(borrow);
-    (is_nonzero & is_below_n).to_bool_opaque()
+    (is_nonzero & is_below_n).to_bool()
 }
 
 /// RFC 6979 §3.2 steps a-h: the deterministic per-message secret `k` for private key `d` and

@@ -69,14 +69,15 @@ fn bits2octets(h1: &[u8; HLEN]) -> [u8; HLEN] {
 /// step h).
 ///
 /// The comparison is on the candidate's own bits, so it is done as masks and converted with
-/// `Condition::to_bool_opaque`: the one branch is `generate_k`'s loop decision, which the crate
-/// docs list as a timing exception. The other curves' copies of this function do the same.
+/// `Condition::to_bool`, which tests the combined mask after the optimisation barrier: the one
+/// branch is `generate_k`'s loop decision, which the crate docs list as a timing exception. The
+/// other curves' copies of this function do the same.
 fn candidate_in_range(candidate: &[u8; HLEN]) -> bool {
     let limbs = p256_sec1::limbs_from_be_bytes(candidate);
     let is_nonzero = !nat::is_zero(&limbs);
     let (_, borrow) = nat::sub(&limbs, &N_LIMBS);
     let is_below_n = Condition::<u64>::from_lsb(borrow);
-    (is_nonzero & is_below_n).to_bool_opaque()
+    (is_nonzero & is_below_n).to_bool()
 }
 
 /// RFC 6979 §3.2 steps a-h: the deterministic per-message secret `k` for private key `d` and

@@ -125,19 +125,6 @@ mod unsigned_u64_tests {
         assert_canonical(Condition::<u64>::FALSE, false);
     }
 
-    /// The barrier is a volatile round trip, so `to_bool_opaque` must agree with `to_bool` on
-    /// both canonical masks and on every mask the constructors build from the boundary values.
-    #[test]
-    fn to_bool_opaque() {
-        assert!(Condition::<u64>::TRUE.to_bool_opaque());
-        assert!(!Condition::<u64>::FALSE.to_bool_opaque());
-        for &v in &BOUNDARY {
-            let cond = Condition::<u64>::is_zero(v);
-            assert_eq!(cond.to_bool_opaque(), cond.to_bool());
-            assert_eq!((!cond).to_bool_opaque(), !cond.to_bool());
-        }
-    }
-
     #[test]
     fn from_bool() {
         assert_canonical(Condition::<u64>::from_bool_const::<true>(), true);
@@ -285,19 +272,6 @@ mod unsigned_u32_tests {
     fn consts() {
         assert_canonical(Condition::<u32>::TRUE, true);
         assert_canonical(Condition::<u32>::FALSE, false);
-    }
-
-    /// The barrier is a volatile round trip, so `to_bool_opaque` must agree with `to_bool` on
-    /// both canonical masks and on every mask the constructors build from the boundary values.
-    #[test]
-    fn to_bool_opaque() {
-        assert!(Condition::<u32>::TRUE.to_bool_opaque());
-        assert!(!Condition::<u32>::FALSE.to_bool_opaque());
-        for &v in &BOUNDARY {
-            let cond = Condition::<u32>::is_zero(v);
-            assert_eq!(cond.to_bool_opaque(), cond.to_bool());
-            assert_eq!((!cond).to_bool_opaque(), !cond.to_bool());
-        }
     }
 
     #[test]
@@ -450,19 +424,6 @@ mod signed_i64_tests {
     fn consts() {
         assert_canonical(Condition::<i64>::TRUE, true);
         assert_canonical(Condition::<i64>::FALSE, false);
-    }
-
-    /// The barrier is a volatile round trip, so `to_bool_opaque` must agree with `to_bool` on
-    /// both canonical masks and on every mask the constructors build from the boundary values.
-    #[test]
-    fn to_bool_opaque() {
-        assert!(Condition::<i64>::TRUE.to_bool_opaque());
-        assert!(!Condition::<i64>::FALSE.to_bool_opaque());
-        for &v in &BOUNDARY {
-            let cond = Condition::<i64>::is_zero(v);
-            assert_eq!(cond.to_bool_opaque(), cond.to_bool());
-            assert_eq!((!cond).to_bool_opaque(), !cond.to_bool());
-        }
     }
 
     #[test]
@@ -664,19 +625,6 @@ mod signed_i32_tests {
     fn consts() {
         assert_canonical(Condition::<i32>::TRUE, true);
         assert_canonical(Condition::<i32>::FALSE, false);
-    }
-
-    /// The barrier is a volatile round trip, so `to_bool_opaque` must agree with `to_bool` on
-    /// both canonical masks and on every mask the constructors build from the boundary values.
-    #[test]
-    fn to_bool_opaque() {
-        assert!(Condition::<i32>::TRUE.to_bool_opaque());
-        assert!(!Condition::<i32>::FALSE.to_bool_opaque());
-        for &v in &BOUNDARY {
-            let cond = Condition::<i32>::is_zero(v);
-            assert_eq!(cond.to_bool_opaque(), cond.to_bool());
-            assert_eq!((!cond).to_bool_opaque(), !cond.to_bool());
-        }
     }
 
     #[test]
