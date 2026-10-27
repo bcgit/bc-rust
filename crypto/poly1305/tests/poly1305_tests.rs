@@ -1,8 +1,9 @@
-use bouncycastle_core::errors::MACError;
+use bouncycastle_core::errors::{MACError, SuspendableError};
 use bouncycastle_core::traits::MAC;
 use bouncycastle_core_test_framework::mac::TestFrameworkMAC;
 use bouncycastle_poly1305::hazmat::key_from_bytes;
 use bouncycastle_poly1305::{Poly1305, Poly1305Key};
+use bouncycastle_utils::suspendable_state::SuspendableComponent;
 
 /// A public test key, so these tests make as many keys from it as they like; a real one-time key
 /// authenticates one message.
@@ -64,6 +65,79 @@ fn streaming_and_output_buffer_contract() {
         assert!(!verify(&msg, &expected[..15]));
         assert!(!verify(&msg, &[0; 17]));
     }
+}
+
+/// One message fed in pieces of 1, 15, 16, 17 and 33 bytes, which between them top up a buffered
+/// block exactly, pass whole blocks straight from the input, and leave a tail before and after a
+/// top-up, gives the one-shot tag.
+#[test]
+fn pieces_of_1_15_16_17_and_33_bytes_give_the_one_shot_tag() {
+    let pieces = [1, 15, 16, 17, 33];
+    let msg: Vec<u8> =
+        (0..pieces.iter().sum()).map(|i: usize| (i as u8).wrapping_mul(13)).collect();
+    let expected = generator().mac(&msg);
+    let mut mac = generator();
+    let mut rest = &msg[..];
+    for n in pieces {
+        let (piece, tail) = rest.split_at(n);
+        mac.do_update(piece);
+        rest = tail;
+    }
+    assert_eq!(&mac.finalize()[..], &expected[..]);
+}
+
+const STATE_LEN: usize = <Poly1305 as SuspendableComponent<'static>>::STATE_LEN;
+
+/// A message suspended part-way, with or without a partial block buffered, resumes under its key
+/// to the tag the uninterrupted message gets. The key is not in the state: another key gives
+/// another tag.
+#[test]
+fn a_suspended_message_resumes_to_the_same_tag() {
+    let msg: Vec<u8> = (0..100u8).collect();
+    let expected = generator().mac(&msg);
+    for split in [0, 1, 15, 16, 17, 33, 100] {
+        let mut mac = generator();
+        mac.do_update(&msg[..split]);
+        let mut state = [0u8; STATE_LEN];
+        mac.write_state(&mut state);
+        let mut resumed = Poly1305::read_state(&state, &KEY).unwrap();
+        resumed.do_update(&msg[split..]);
+        assert_eq!(&resumed.finalize()[..], &expected[..], "split at {split}");
+
+        let mut other = Poly1305::read_state(&state, &[0x24; 32]).unwrap();
+        other.do_update(&msg[split..]);
+        assert_ne!(&other.finalize()[..], &expected[..], "split at {split}, another key");
+    }
+}
+
+/// The layout: the five limbs of `h`, the 16-byte buffer and the buffered length, each as written
+/// by the worker. A limb wider than the worker leaves it, or a whole buffered block, is refused.
+#[test]
+fn a_state_outside_the_bounds_the_worker_keeps_is_refused() {
+    const MASK: u64 = (1 << 26) - 1;
+    assert_eq!(STATE_LEN, 5 * 8 + 16 + 8);
+    let mut mac = generator();
+    mac.do_update(&[0x5a; 21]);
+    let mut state = [0u8; STATE_LEN];
+    mac.write_state(&mut state);
+    let with = |offset: usize, value: u64| {
+        let mut s = state;
+        s[offset..offset + 8].copy_from_slice(&value.to_le_bytes());
+        s
+    };
+    let refused = |s: [u8; STATE_LEN]| {
+        matches!(Poly1305::read_state(&s, &KEY), Err(SuspendableError::InvalidData))
+    };
+    assert!(Poly1305::read_state(&state, &KEY).is_ok());
+    for limb in [0, 2, 3, 4] {
+        assert!(Poly1305::read_state(&with(8 * limb, MASK), &KEY).is_ok(), "h[{limb}] at 26 bits");
+        assert!(refused(with(8 * limb, MASK + 1)), "h[{limb}] past 26 bits");
+    }
+    // h[1] alone can carry over 26 bits.
+    assert!(Poly1305::read_state(&with(8, (1 << 27) - 1), &KEY).is_ok());
+    assert!(refused(with(8, 1 << 27)));
+    assert!(Poly1305::read_state(&with(56, 15), &KEY).is_ok());
+    assert!(refused(with(56, 16)), "a whole block is never left buffered");
 }
 
 #[test]

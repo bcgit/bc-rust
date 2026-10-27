@@ -41,16 +41,23 @@
 //!   the same bytes: that is the caller's to prevent, which is why the constructor is in
 //!   [`hazmat`].
 
+#![no_std]
 #![forbid(unsafe_code)]
 #![forbid(missing_docs)]
 
+extern crate alloc;
+
 pub mod hazmat;
 
-use bouncycastle_core::errors::MACError;
+use alloc::vec::Vec;
+use bouncycastle_core::errors::{MACError, SuspendableError};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{Algorithm, MAC};
 use bouncycastle_utils::ct::{self, Condition};
 use bouncycastle_utils::secret::Secret;
+use bouncycastle_utils::suspendable_state::{
+    Cursor, CursorMut, SuspendableComponent, bounded_usize,
+};
 
 /// One-time key length in bytes.
 pub const KEY_LEN: usize = 32;
@@ -60,6 +67,9 @@ pub const TAG_LEN: usize = 16;
 pub const BLOCK_LEN: usize = 16;
 
 const MASK: u64 = (1 << 26) - 1;
+
+/// A full block's 2^128, as bit 24 of the top radix-2^26 limb.
+const FULL_BLOCK_BIT: u64 = 1 << 24;
 
 /// A Poly1305 key: the one-time key `r || s` of RFC 8439 Sec 2.5, clamped and split, made by
 /// [`hazmat::key_from_bytes`] and consumed by the one [`Poly1305`] worker it makes. The key words
@@ -139,18 +149,14 @@ impl Poly1305Key {
         Self { r, r5, pad }
     }
 
-    // The worker owns its copy of the key's words: the key is consumed by its one worker, so
-    // there is nothing for the worker to borrow. It is copied from `&self` rather than moved
-    // out, so this key's own `Secret`s are zeroized as it drops here.
-
     /// Consumes the key into the worker that computes the tag of its one message.
     pub fn into_generator(self) -> Poly1305 {
-        Poly1305::from_key(&self)
+        Poly1305::from_key(self)
     }
 
     /// Consumes the key into the worker that checks the tag of its one message.
     pub fn into_verifier(self) -> Poly1305 {
-        Poly1305::from_key(&self)
+        Poly1305::from_key(self)
     }
 }
 
@@ -167,11 +173,9 @@ impl Poly1305Key {
 /// The implementation has no secret-dependent branches or memory indices. Multiplication
 /// must have operand-independent timing on the target processor for constant-time execution.
 pub struct Poly1305 {
-    r: Secret<[u64; 5]>,
-    /// `5 * r[1..5]`, the multipliers of the product terms that wrap past 2^130; see
-    /// `process_block`. Computed once per key rather than per block.
-    r5: Secret<[u64; 4]>,
-    pad: Secret<[u32; 4]>,
+    // The key the worker was made from, moved in: a key makes one worker, so there is nothing to
+    // borrow it from.
+    key: Poly1305Key,
     h: Secret<[u64; 5]>,
     /// `process_block`'s product accumulator: a function of `h` and `r`, so kept in a `Secret`
     /// that lives with the instance rather than being re-allocated and zeroized every block.
@@ -187,32 +191,19 @@ impl Algorithm for Poly1305 {
 
 impl Poly1305 {
     /// A fresh message under `key`.
-    fn from_key(key: &Poly1305Key) -> Self {
-        Self {
-            r: key.r.clone(),
-            r5: key.r5.clone(),
-            pad: key.pad.clone(),
-            h: Secret::new(),
-            product: Secret::new(),
-            buffer: Secret::new(),
-            buffered: 0,
-        }
+    fn from_key(key: Poly1305Key) -> Self {
+        Self { key, h: Secret::new(), product: Secret::new(), buffer: Secret::new(), buffered: 0 }
     }
 
-    fn process_block(&mut self) {
-        // Append one bit immediately above the message bytes, even on a partial block.
-        let high_bit = if self.buffered == BLOCK_LEN {
-            1 << 24
-        } else {
-            self.buffer[self.buffered] = 1;
-            self.buffer[self.buffered + 1..].fill(0);
-            0
-        };
-        self.h[0] += load32(&self.buffer[0..4]) & MASK;
-        self.h[1] += (load32(&self.buffer[3..7]) >> 2) & MASK;
-        self.h[2] += (load32(&self.buffer[6..10]) >> 4) & MASK;
-        self.h[3] += (load32(&self.buffer[9..13]) >> 6) & MASK;
-        self.h[4] += (load32(&self.buffer[12..16]) >> 8) | high_bit;
+    /// RFC 8439 Sec 2.5's `Acc = ((Acc+block)*r) % p` for one 16-byte block, with `high_bit` its
+    /// "one bit beyond the number of octets": `FULL_BLOCK_BIT` for a full block, or 0 for the
+    /// final partial one, which carries that bit as a `0x01` byte the caller has written in.
+    fn process_block(&mut self, block: &[u8; BLOCK_LEN], high_bit: u64) {
+        self.h[0] += load32(&block[0..4]) & MASK;
+        self.h[1] += (load32(&block[3..7]) >> 2) & MASK;
+        self.h[2] += (load32(&block[6..10]) >> 4) & MASK;
+        self.h[3] += (load32(&block[9..13]) >> 6) & MASK;
+        self.h[4] += (load32(&block[12..16]) >> 8) | high_bit;
 
         // 2^130 = 5 (mod 2^130 - 5). Each sum is below 2^58, so u64 suffices.
         let product = &mut *self.product;
@@ -221,10 +212,10 @@ impl Poly1305 {
             for j in 0..5 {
                 let index = i + j;
                 if index < 5 {
-                    product[index] += self.h[i] * self.r[j];
+                    product[index] += self.h[i] * self.key.r[j];
                 } else {
                     // index >= 5 implies j >= 1. The same value as `5 * h[i] * r[j]`.
-                    product[index - 5] += self.h[i] * self.r5[j - 1];
+                    product[index - 5] += self.h[i] * self.key.r5[j - 1];
                 }
             }
         }
@@ -236,13 +227,16 @@ impl Poly1305 {
         self.h[0] += 5 * (product[4] >> 26);
         self.h[1] += self.h[0] >> 26;
         self.h[0] &= MASK;
-        self.buffered = 0;
     }
 
     /// Consumes this message and returns its full authentication tag without allocation.
     pub fn finalize(mut self) -> [u8; TAG_LEN] {
         if self.buffered != 0 {
-            self.process_block();
+            // The last, partial block: Sec 2.5.1's `| [0x01]` after its bytes, then zeros.
+            let mut block = core::mem::replace(&mut self.buffer, Secret::new());
+            block[self.buffered] = 1;
+            block[self.buffered + 1..].fill(0);
+            self.process_block(&block, 0);
         }
         for i in 1..4 {
             self.h[i + 1] += self.h[i] >> 26;
@@ -275,7 +269,7 @@ impl Poly1305 {
         words[3] = ((self.h[3] >> 18) | (self.h[4] << 8)) & 0xffffffff;
         let mut tag = [0u8; TAG_LEN];
         for i in 0..4 {
-            words[i] += u64::from(self.pad[i]);
+            words[i] += u64::from(self.key.pad[i]);
             if i != 0 {
                 words[i] += words[i - 1] >> 32;
             }
@@ -310,15 +304,26 @@ impl MAC for Poly1305 {
     }
 
     fn do_update(&mut self, mut data: &[u8]) {
-        while !data.is_empty() {
+        // A partial block left by an earlier call is topped up first, and is the only data
+        // that goes through the buffer apart from this call's own tail.
+        if self.buffered != 0 {
             let n = (BLOCK_LEN - self.buffered).min(data.len());
             self.buffer[self.buffered..self.buffered + n].copy_from_slice(&data[..n]);
             self.buffered += n;
             data = &data[n..];
-            if self.buffered == BLOCK_LEN {
-                self.process_block();
+            if self.buffered < BLOCK_LEN {
+                return;
             }
+            let block = core::mem::replace(&mut self.buffer, Secret::new());
+            self.process_block(&block, FULL_BLOCK_BIT);
+            self.buffered = 0;
         }
+        let (blocks, tail) = data.as_chunks::<BLOCK_LEN>();
+        for block in blocks {
+            self.process_block(block, FULL_BLOCK_BIT);
+        }
+        self.buffer[..tail.len()].copy_from_slice(tail);
+        self.buffered = tail.len();
     }
 
     fn do_final(self) -> Vec<u8> {
@@ -342,5 +347,49 @@ impl MAC for Poly1305 {
 
     fn max_security_strength(&self) -> SecurityStrength {
         Self::MAX_SECURITY_STRENGTH
+    }
+}
+
+/// The suspended state is the accumulator `h` as five little-endian `u64` limbs, the buffered
+/// partial block and its length, for a construction that suspends a message in progress, as
+/// ChaCha20-Poly1305 does. The one-time key is not in it: `Key` is the 32-byte key, re-supplied on
+/// resume. There is no `SuspendableKeyed` impl, since a [`Poly1305Key`] is consumed by the one
+/// worker it makes and so cannot be re-supplied.
+///
+/// # 🚨 Security Considerations 🚨
+/// Resuming makes a worker from the raw key bytes, as [`hazmat::key_from_bytes`] does, with the
+/// same obligation: the key authenticates one message, so resume a state once, under the key it
+/// was suspended with.
+impl<'k> SuspendableComponent<'k> for Poly1305 {
+    const STATE_LEN: usize = 5 * 8 + BLOCK_LEN + 8;
+    type Key = [u8; KEY_LEN];
+
+    fn write_state(&self, out: &mut [u8]) {
+        let mut w = CursorMut::new(out);
+        for limb in self.h.iter() {
+            w.u64(*limb);
+        }
+        w.bytes(&*self.buffer);
+        w.u64(self.buffered as u64);
+        debug_assert!(w.is_done());
+    }
+
+    fn read_state(state: &[u8], key: &'k Self::Key) -> Result<Self, SuspendableError> {
+        let mut mac = Poly1305::from_key(Poly1305Key::from_key_bytes(key));
+        let mut r = Cursor::new(state);
+        for (i, limb) in mac.h.iter_mut().enumerate() {
+            *limb = r.u64();
+            // process_block leaves every limb within 26 bits but h[1], which can carry a little
+            // over; anything wider is not a state it writes, and could overflow its products.
+            let max = if i == 1 { (1 << 27) - 1 } else { MASK };
+            if *limb > max {
+                return Err(SuspendableError::InvalidData);
+            }
+        }
+        (*mac.buffer).copy_from_slice(r.bytes(BLOCK_LEN));
+        // A full block is processed as soon as it is complete, so at most 15 bytes are buffered.
+        mac.buffered = bounded_usize(r.u64(), BLOCK_LEN - 1)?;
+        debug_assert!(r.is_done());
+        Ok(mac)
     }
 }

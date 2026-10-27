@@ -100,6 +100,30 @@ fn last_two_blocks_work_in_arbitrary_chunks() {
     assert_eq!(ChaCha20KeyStream::start_at(&state, &nonce, 1).remaining_blocks(), u32::MAX as u64);
 }
 
+/// The raw keystream run to its last counter value has nothing left, and a stream cipher made
+/// over it refuses more data rather than carrying on.
+#[test]
+fn a_keystream_at_its_last_counter_has_no_blocks_left() {
+    let state = state();
+    let mut ks = ChaCha20KeyStream::start_at(&state, &[7; 12], u32::MAX);
+    ks.apply_blocks(&mut [[0u8; 64]; 1]);
+    assert_eq!(ks.remaining_blocks(), 0);
+    assert!(matches!(
+        ChaCha20::<Encrypting>::from_keystream(ks).do_encrypt_inplace(&mut [0u8; 1]),
+        Err(SymmetricCipherError::DataLimitExceeded)
+    ));
+}
+
+/// Past the last counter value the raw keystream panics, as the trait allows, rather than
+/// wrapping word 12 to 0 and repeating the keystream; in release builds too.
+#[test]
+#[should_panic(expected = "the caller checks remaining_blocks")]
+fn applying_blocks_past_the_last_counter_panics() {
+    let state = state();
+    let mut ks = ChaCha20KeyStream::start_at(&state, &[7; 12], u32::MAX);
+    ks.apply_blocks(&mut [[0u8; 64]; 2]);
+}
+
 /// The key's workers start at block counter 0: two blocks in, they match a keystream started at
 /// counter 2.
 #[test]
