@@ -30,8 +30,9 @@
 //!
 //! A repeated nonce is fatal here rather than merely unwise: the same nonce under the same key
 //! gives the same keystream, and two messages XORed with the same keystream leak their XOR. The
-//! nonce is drawn from the OS-backed DRBG for exactly that reason, and there is no way to supply
-//! one.
+//! nonce is drawn from the OS-backed DRBG for exactly that reason. `--iv` / `--iv-file` exist for
+//! reproducing published vectors and for formats that carry the nonce themselves; with them, its
+//! uniqueness under the key is the caller's to keep.
 
 use crate::helpers::block_mode_helpers::{CipherDirection, load_iv, load_key_object};
 use crate::helpers::stream_mode_helpers::run_stream_mode;

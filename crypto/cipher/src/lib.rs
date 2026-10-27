@@ -119,12 +119,19 @@ mod sealed {
 pub trait Direction: sealed::Sealed {
     /// `Enc` for [`Encrypting`], `Dec` for [`Decrypting`].
     type Select<Enc, Dec>;
+
+    /// The bits that mark this direction in a suspended call-state byte, above the low nibble a
+    /// mode keeps for its phase: `0x10` encrypting, `0x20` decrypting. A state resumed under the
+    /// other marker is refused, so an encryptor's state never continues as a decryptor.
+    const STATE_BITS: u8;
 }
 
 impl Direction for Encrypting {
     type Select<Enc, Dec> = Enc;
+    const STATE_BITS: u8 = 0x10;
 }
 
 impl Direction for Decrypting {
     type Select<Enc, Dec> = Dec;
+    const STATE_BITS: u8 = 0x20;
 }
