@@ -39,6 +39,7 @@
 use crate::{AlgorithmFactory, FactoryError};
 use bouncycastle_ascon::ASCON_XOF128_NAME;
 use bouncycastle_ascon::AsconXof128;
+use bouncycastle_blake3::{BLAKE3, BLAKE3_NAME};
 use bouncycastle_core::errors::HashError;
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{Algorithm, Hash, XOF, XOFSqueezer};
@@ -64,6 +65,11 @@ pub enum XOFFactory {
     SHAKE256(sha3::SHAKE256),
     ///
     AsconXof128(AsconXof128),
+    /// BLAKE3 in `hash` mode. Its [`Hash`] view is the default 32-byte output, which is the
+    /// first 32 bytes of the XOF stream (BLAKE3 spec s. 2.6). For the `derive_key` mode, which
+    /// needs a context string the factory has no channel for, construct
+    /// `bouncycastle_blake3::BLAKE3::new_derive_key` directly.
+    BLAKE3(BLAKE3),
 }
 
 impl Default for XOFFactory {
@@ -86,6 +92,7 @@ impl AlgorithmFactory for XOFFactory {
             SHAKE128_NAME => Ok(Self::SHAKE128(sha3::SHAKE128::new())),
             SHAKE256_NAME => Ok(Self::SHAKE256(sha3::SHAKE256::new())),
             ASCON_XOF128_NAME => Ok(Self::AsconXof128(AsconXof128::new())),
+            BLAKE3_NAME => Ok(Self::BLAKE3(BLAKE3::new())),
             _ => Err(FactoryError::UnsupportedAlgorithm(format!(
                 "The algorithm: \"{}\" is not a known XOF",
                 alg_name
@@ -116,6 +123,9 @@ pub enum XOFFactorySqueezer {
 
     /// Ascon-XOF128 output.
     AsconXof128(<AsconXof128 as XOF>::Squeezer),
+
+    /// BLAKE3 output.
+    BLAKE3(<BLAKE3 as XOF>::Squeezer),
 }
 
 impl XOFSqueezer for XOFFactorySqueezer {
@@ -124,6 +134,7 @@ impl XOFSqueezer for XOFFactorySqueezer {
             Self::SHAKE128(o) => o.do_output(num_bytes),
             Self::SHAKE256(o) => o.do_output(num_bytes),
             Self::AsconXof128(o) => o.do_output(num_bytes),
+            Self::BLAKE3(o) => o.do_output(num_bytes),
         }
     }
 
@@ -132,6 +143,7 @@ impl XOFSqueezer for XOFFactorySqueezer {
             Self::SHAKE128(o) => o.do_output_out(output),
             Self::SHAKE256(o) => o.do_output_out(output),
             Self::AsconXof128(o) => o.do_output_out(output),
+            Self::BLAKE3(o) => o.do_output_out(output),
         }
     }
 }
@@ -142,6 +154,7 @@ impl Hash for XOFFactory {
             Self::SHAKE128(h) => h.block_bitlen(),
             Self::SHAKE256(h) => h.block_bitlen(),
             Self::AsconXof128(h) => h.block_bitlen(),
+            Self::BLAKE3(h) => h.block_bitlen(),
         }
     }
 
@@ -150,6 +163,7 @@ impl Hash for XOFFactory {
             Self::SHAKE128(h) => h.output_len(),
             Self::SHAKE256(h) => h.output_len(),
             Self::AsconXof128(h) => h.output_len(),
+            Self::BLAKE3(h) => h.output_len(),
         }
     }
 
@@ -158,6 +172,7 @@ impl Hash for XOFFactory {
             Self::SHAKE128(h) => h.hash(data),
             Self::SHAKE256(h) => h.hash(data),
             Self::AsconXof128(h) => h.hash(data),
+            Self::BLAKE3(h) => h.hash(data),
         }
     }
 
@@ -166,6 +181,7 @@ impl Hash for XOFFactory {
             Self::SHAKE128(h) => h.hash_out(data, output),
             Self::SHAKE256(h) => h.hash_out(data, output),
             Self::AsconXof128(h) => h.hash_out(data, output),
+            Self::BLAKE3(h) => h.hash_out(data, output),
         }
     }
 
@@ -174,6 +190,7 @@ impl Hash for XOFFactory {
             Self::SHAKE128(h) => h.do_update(data),
             Self::SHAKE256(h) => h.do_update(data),
             Self::AsconXof128(h) => h.do_update(data),
+            Self::BLAKE3(h) => h.do_update(data),
         }
     }
 
@@ -182,6 +199,7 @@ impl Hash for XOFFactory {
             Self::SHAKE128(h) => h.do_final(),
             Self::SHAKE256(h) => h.do_final(),
             Self::AsconXof128(h) => h.do_final(),
+            Self::BLAKE3(h) => h.do_final(),
         }
     }
 
@@ -190,6 +208,7 @@ impl Hash for XOFFactory {
             Self::SHAKE128(h) => h.do_final_out(output),
             Self::SHAKE256(h) => h.do_final_out(output),
             Self::AsconXof128(h) => h.do_final_out(output),
+            Self::BLAKE3(h) => h.do_final_out(output),
         }
     }
 
@@ -202,6 +221,7 @@ impl Hash for XOFFactory {
             Self::SHAKE128(h) => h.do_final_partial_bits(partial_byte, num_bits),
             Self::SHAKE256(h) => h.do_final_partial_bits(partial_byte, num_bits),
             Self::AsconXof128(h) => h.do_final_partial_bits(partial_byte, num_bits),
+            Self::BLAKE3(h) => h.do_final_partial_bits(partial_byte, num_bits),
         }
     }
 
@@ -215,6 +235,7 @@ impl Hash for XOFFactory {
             Self::SHAKE128(h) => h.do_final_partial_bits_out(partial_byte, num_bits, output),
             Self::SHAKE256(h) => h.do_final_partial_bits_out(partial_byte, num_bits, output),
             Self::AsconXof128(h) => h.do_final_partial_bits_out(partial_byte, num_bits, output),
+            Self::BLAKE3(h) => h.do_final_partial_bits_out(partial_byte, num_bits, output),
         }
     }
 
@@ -223,6 +244,7 @@ impl Hash for XOFFactory {
             Self::SHAKE128(h) => Hash::max_security_strength(h),
             Self::SHAKE256(h) => Hash::max_security_strength(h),
             Self::AsconXof128(h) => Hash::max_security_strength(h),
+            Self::BLAKE3(h) => Hash::max_security_strength(h),
         }
     }
 }
@@ -235,6 +257,7 @@ impl XOF for XOFFactory {
             Self::SHAKE128(h) => XOFFactorySqueezer::SHAKE128(h.into_squeezer()),
             Self::SHAKE256(h) => XOFFactorySqueezer::SHAKE256(h.into_squeezer()),
             Self::AsconXof128(h) => XOFFactorySqueezer::AsconXof128(h.into_squeezer()),
+            Self::BLAKE3(h) => XOFFactorySqueezer::BLAKE3(h.into_squeezer()),
         }
     }
 
@@ -253,6 +276,9 @@ impl XOF for XOFFactory {
             Self::AsconXof128(h) => XOFFactorySqueezer::AsconXof128(
                 h.into_squeezer_partial_bits(partial_byte, num_bits)?,
             ),
+            Self::BLAKE3(h) => {
+                XOFFactorySqueezer::BLAKE3(h.into_squeezer_partial_bits(partial_byte, num_bits)?)
+            }
         })
     }
 
@@ -261,6 +287,7 @@ impl XOF for XOFFactory {
             Self::SHAKE128(h) => h.xof(data, result_len),
             Self::SHAKE256(h) => h.xof(data, result_len),
             Self::AsconXof128(h) => h.xof(data, result_len),
+            Self::BLAKE3(h) => h.xof(data, result_len),
         }
     }
 
@@ -271,6 +298,7 @@ impl XOF for XOFFactory {
             Self::SHAKE128(h) => h.xof_out(data, output),
             Self::SHAKE256(h) => h.xof_out(data, output),
             Self::AsconXof128(h) => h.xof_out(data, output),
+            Self::BLAKE3(h) => h.xof_out(data, output),
         }
     }
 }

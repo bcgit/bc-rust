@@ -4,11 +4,13 @@
 
 use bouncycastle_ascon::ASCON_XOF128_NAME;
 use bouncycastle_ascon::AsconXof128;
+use bouncycastle_blake3::{BLAKE3, BLAKE3_NAME};
 use bouncycastle_core::errors::HashError;
 use bouncycastle_core::traits::{Hash, XOF, XOFSqueezer};
 use bouncycastle_core_test_framework::xof::TestFrameworkXOF;
 use bouncycastle_factory::xof_factory::XOFFactory;
 use bouncycastle_factory::{AlgorithmFactory, FactoryError};
+use bouncycastle_hex as hex;
 use bouncycastle_sha3::{SHAKE128, SHAKE128_NAME, SHAKE256, SHAKE256_NAME};
 
 const MSG: &[u8] = b"The quick brown fox jumps over the lazy dog";
@@ -140,6 +142,102 @@ fn ascon_xof128_by_name_matches_the_direct_type() {
     );
 }
 
+/// The official BLAKE3 vector (test_vectors.json, github.com/BLAKE3-team/BLAKE3) for the
+/// 1025-byte input `i % 251` -- one full chunk plus one byte, so the root is a parent node: the
+/// 131-byte `hash` output, copied from crypto/blake3/tests/vectors/mod.rs.
+const BLAKE3_1025_HASH: &str = "d00278ae47eb27b34faecf67b4fe263f82d5412916c1ffd97c8cb7fb814b8444f4c4a22b4b399155358a994e52bf255de60035742ec71bd08ac275a1b51cc6bfe332b0ef84b409108cda080e6269ed4b3e2c3f7d722aa4cdc98d16deb554e5627be8f955c98e1d5f9565a9194cad0c4285f93700062d9595adb992ae68ff12800ab67a";
+
+/// BLAKE3 by name: the official extended-output vector through every `Hash`, `XOF` and
+/// `XOFSqueezer` pass-through, plus BLAKE3's byte-oriented partial-bit policy (which is why it
+/// cannot use `check_against`, whose partial-bit checks assume SHAKE's bit-oriented input).
+#[test]
+fn blake3_by_name_matches_the_official_vector() {
+    let input: Vec<u8> = (0..1025).map(|i| (i % 251) as u8).collect();
+    let long = hex::decode(BLAKE3_1025_HASH).unwrap();
+    // BLAKE3 spec s. 2.6: "Shorter outputs are prefixes of longer ones." The default-length hash
+    // is 32 bytes (s. 2.1), so the Hash view is the first 32 bytes of the stream.
+    let n = 32;
+
+    for (name, ctx) in [(BLAKE3_NAME, "BLAKE3 by constant"), ("BLAKE3", "BLAKE3 by string")] {
+        let make = || XOFFactory::new(name).unwrap();
+
+        // metadata
+        assert_eq!(make().block_bitlen(), 512, "{ctx}: block_bitlen");
+        assert_eq!(make().output_len(), n, "{ctx}: output_len");
+        assert_eq!(
+            Hash::max_security_strength(&make()),
+            Hash::max_security_strength(&BLAKE3::new()),
+            "{ctx}: max_security_strength"
+        );
+
+        // the Hash view
+        assert_eq!(make().hash(&input), &long[..n], "{ctx}: hash");
+        let mut out = vec![0xFFu8; n];
+        assert_eq!(make().hash_out(&input, &mut out), n, "{ctx}: hash_out returns the length");
+        assert_eq!(out, &long[..n], "{ctx}: hash_out");
+
+        let mut f = make();
+        input.chunks(100).for_each(|c| f.do_update(c));
+        assert_eq!(f.do_final(), &long[..n], "{ctx}: do_update then do_final");
+
+        let mut f = make();
+        f.do_update(&input);
+        let mut out = vec![0xFFu8; n];
+        assert_eq!(f.do_final_out(&mut out), n, "{ctx}: do_final_out returns the length");
+        assert_eq!(out, &long[..n], "{ctx}: do_final_out");
+
+        // byte-oriented: 0 partial bits is the whole-byte digest, 1..=7 refused, > 7 refused
+        let mut f = make();
+        f.do_update(&input);
+        assert_eq!(f.do_final_partial_bits(0, 0).unwrap(), &long[..n], "{ctx}: 0 bits");
+
+        let mut f = make();
+        f.do_update(&input);
+        let mut out = vec![0xFFu8; n];
+        assert_eq!(f.do_final_partial_bits_out(0, 0, &mut out).unwrap(), n, "{ctx}: ..._out");
+        assert_eq!(out, &long[..n], "{ctx}: do_final_partial_bits_out");
+
+        assert!(matches!(make().do_final_partial_bits(0x05, 3), Err(HashError::InvalidInput(_))));
+        let mut out = vec![0u8; n];
+        assert!(matches!(
+            make().do_final_partial_bits_out(0x05, 3, &mut out),
+            Err(HashError::InvalidInput(_))
+        ));
+        assert!(matches!(make().do_final_partial_bits(0xFF, 8), Err(HashError::InvalidLength(_))));
+
+        // the XOF view: one continuous stream across reads
+        let mut f = make();
+        f.do_update(&input);
+        let mut fo = f.into_squeezer();
+        assert_eq!(fo.do_output(n), &long[..n], "{ctx}: do_output");
+        let mut buf = vec![0u8; long.len() - n];
+        assert_eq!(fo.do_output_out(&mut buf), long.len() - n, "{ctx}: do_output_out length");
+        assert_eq!(buf, &long[n..], "{ctx}: do_output_out continues the stream");
+
+        let mut f = make();
+        f.do_update(&input);
+        assert_eq!(
+            f.into_squeezer_partial_bits(0, 0).unwrap().do_output(long.len()),
+            long,
+            "{ctx}: into_squeezer_partial_bits(0, 0)"
+        );
+        assert!(matches!(
+            make().into_squeezer_partial_bits(0x05, 3),
+            Err(HashError::InvalidInput(_))
+        ));
+        assert!(matches!(
+            make().into_squeezer_partial_bits(0xFF, 8),
+            Err(HashError::InvalidLength(_))
+        ));
+
+        // the one-shots
+        assert_eq!(make().xof(&input, long.len()), long, "{ctx}: xof");
+        let mut out = vec![0xFFu8; long.len()];
+        assert_eq!(make().xof_out(&input, &mut out), long.len(), "{ctx}: xof_out length");
+        assert_eq!(out, long, "{ctx}: xof_out");
+    }
+}
+
 /// The configured defaults: SHAKE128 for the general and 128-bit defaults, SHAKE256 for 256-bit.
 #[test]
 fn defaults() {
@@ -150,7 +248,9 @@ fn defaults() {
 
 #[test]
 fn unknown_names_are_refused() {
-    for name in ["SHAKE512", "shake128", "", "cSHAKE128", "Ascon-XOF999"] {
+    for name in
+        ["SHAKE512", "shake128", "", "cSHAKE128", "Ascon-XOF999", "blake3", "BLAKE3-KeyedHash"]
+    {
         assert!(
             matches!(XOFFactory::new(name), Err(FactoryError::UnsupportedAlgorithm(_))),
             "{name:?} must not construct a XOF"
@@ -173,5 +273,14 @@ fn test_framework_xof() {
         || XOFFactory::new(SHAKE256_NAME).unwrap(),
         MSG,
         &SHAKE256::new().xof(MSG, 100),
+    );
+
+    // BLAKE3 is byte-oriented, so the suite's partial-byte checks do not apply to it.
+    let byte_oriented =
+        TestFrameworkXOF { enable_partial_byte_tests: false, do_final_binds_output_length: false };
+    byte_oriented.test_xof(
+        || XOFFactory::new(BLAKE3_NAME).unwrap(),
+        MSG,
+        &BLAKE3::new().xof(MSG, 100),
     );
 }

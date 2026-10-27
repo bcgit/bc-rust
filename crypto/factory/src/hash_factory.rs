@@ -31,6 +31,10 @@ use crate::{AlgorithmFactory, FactoryError};
 use crate::{DEFAULT, DEFAULT_128_BIT, DEFAULT_256_BIT};
 use bouncycastle_ascon as ascon;
 use bouncycastle_ascon::ASCON_HASH256_NAME;
+use bouncycastle_blake2 as blake2;
+use bouncycastle_blake2::{BLAKE2B_512_NAME, BLAKE2S_256_NAME};
+use bouncycastle_blake3 as blake3;
+use bouncycastle_blake3::BLAKE3_NAME;
 use bouncycastle_core::errors::HashError;
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{Algorithm, Hash};
@@ -72,6 +76,19 @@ pub enum HashFactory {
     SM3(sm3::SM3),
     ///
     AsconHash256(ascon::AsconHash256),
+    /// BLAKE2b with a 64-byte digest (RFC 7693), unkeyed. The keyed mode is in
+    /// [`MACFactory`](crate::mac_factory::MACFactory).
+    #[allow(non_camel_case_types)]
+    BLAKE2b_512(blake2::BLAKE2b_512),
+    /// BLAKE2s with a 32-byte digest (RFC 7693), unkeyed. The keyed mode is in
+    /// [`MACFactory`](crate::mac_factory::MACFactory).
+    #[allow(non_camel_case_types)]
+    BLAKE2s_256(blake2::BLAKE2s_256),
+    /// BLAKE3 in `hash` mode, with the default 32-byte output. For longer output use
+    /// [`XOFFactory`](crate::xof_factory::XOFFactory); for the `derive_key` mode, which needs a
+    /// context string the factory has no channel for, construct
+    /// `bouncycastle_blake3::BLAKE3::new_derive_key` directly.
+    BLAKE3(blake3::BLAKE3),
 }
 
 impl Default for HashFactory {
@@ -105,6 +122,9 @@ impl AlgorithmFactory for HashFactory {
             SHA3_512_NAME => Ok(Self::SHA3_512(sha3::SHA3_512::new())),
             SM3_NAME => Ok(Self::SM3(sm3::SM3::new())),
             ASCON_HASH256_NAME => Ok(Self::AsconHash256(ascon::AsconHash256::new())),
+            BLAKE2B_512_NAME => Ok(Self::BLAKE2b_512(blake2::BLAKE2b_512::new())),
+            BLAKE2S_256_NAME => Ok(Self::BLAKE2s_256(blake2::BLAKE2s_256::new())),
+            BLAKE3_NAME => Ok(Self::BLAKE3(blake3::BLAKE3::new())),
             _ => Err(FactoryError::UnsupportedAlgorithm(format!(
                 "The algorithm: \"{}\" is not a known Hash",
                 alg_name
@@ -137,6 +157,9 @@ impl Hash for HashFactory {
             Self::SHA3_512(h) => h.block_bitlen(),
             Self::SM3(h) => h.block_bitlen(),
             Self::AsconHash256(h) => h.block_bitlen(),
+            Self::BLAKE2b_512(h) => h.block_bitlen(),
+            Self::BLAKE2s_256(h) => h.block_bitlen(),
+            Self::BLAKE3(h) => h.block_bitlen(),
         }
     }
 
@@ -154,6 +177,9 @@ impl Hash for HashFactory {
             Self::SHA3_512(h) => h.output_len(),
             Self::SM3(h) => h.output_len(),
             Self::AsconHash256(h) => h.output_len(),
+            Self::BLAKE2b_512(h) => h.output_len(),
+            Self::BLAKE2s_256(h) => h.output_len(),
+            Self::BLAKE3(h) => h.output_len(),
         }
     }
 
@@ -171,6 +197,9 @@ impl Hash for HashFactory {
             Self::SHA3_512(h) => h.hash(data),
             Self::SM3(h) => h.hash(data),
             Self::AsconHash256(h) => h.hash(data),
+            Self::BLAKE2b_512(h) => h.hash(data),
+            Self::BLAKE2s_256(h) => h.hash(data),
+            Self::BLAKE3(h) => h.hash(data),
         }
     }
 
@@ -190,6 +219,9 @@ impl Hash for HashFactory {
             Self::SHA3_512(h) => h.hash_out(data, output),
             Self::SM3(h) => h.hash_out(data, output),
             Self::AsconHash256(h) => h.hash_out(data, output),
+            Self::BLAKE2b_512(h) => h.hash_out(data, output),
+            Self::BLAKE2s_256(h) => h.hash_out(data, output),
+            Self::BLAKE3(h) => h.hash_out(data, output),
         }
     }
 
@@ -207,6 +239,9 @@ impl Hash for HashFactory {
             Self::SHA3_512(h) => h.do_update(data),
             Self::SM3(h) => h.do_update(data),
             Self::AsconHash256(h) => h.do_update(data),
+            Self::BLAKE2b_512(h) => h.do_update(data),
+            Self::BLAKE2s_256(h) => h.do_update(data),
+            Self::BLAKE3(h) => h.do_update(data),
         }
     }
 
@@ -224,6 +259,9 @@ impl Hash for HashFactory {
             Self::SHA3_512(h) => h.do_final(),
             Self::SM3(h) => h.do_final(),
             Self::AsconHash256(h) => h.do_final(),
+            Self::BLAKE2b_512(h) => h.do_final(),
+            Self::BLAKE2s_256(h) => h.do_final(),
+            Self::BLAKE3(h) => h.do_final(),
         }
     }
 
@@ -243,6 +281,9 @@ impl Hash for HashFactory {
             Self::SHA3_512(h) => h.do_final_out(output),
             Self::SM3(h) => h.do_final_out(output),
             Self::AsconHash256(h) => h.do_final_out(output),
+            Self::BLAKE2b_512(h) => h.do_final_out(output),
+            Self::BLAKE2s_256(h) => h.do_final_out(output),
+            Self::BLAKE3(h) => h.do_final_out(output),
         }
     }
 
@@ -264,6 +305,9 @@ impl Hash for HashFactory {
             Self::SHA3_512(h) => h.do_final_partial_bits(partial_byte, num_partial_bits),
             Self::SM3(h) => h.do_final_partial_bits(partial_byte, num_partial_bits),
             Self::AsconHash256(h) => h.do_final_partial_bits(partial_byte, num_partial_bits),
+            Self::BLAKE2b_512(h) => h.do_final_partial_bits(partial_byte, num_partial_bits),
+            Self::BLAKE2s_256(h) => h.do_final_partial_bits(partial_byte, num_partial_bits),
+            Self::BLAKE3(h) => h.do_final_partial_bits(partial_byte, num_partial_bits),
         }
     }
 
@@ -300,6 +344,13 @@ impl Hash for HashFactory {
             Self::AsconHash256(h) => {
                 h.do_final_partial_bits_out(partial_byte, num_partial_bits, output)
             }
+            Self::BLAKE2b_512(h) => {
+                h.do_final_partial_bits_out(partial_byte, num_partial_bits, output)
+            }
+            Self::BLAKE2s_256(h) => {
+                h.do_final_partial_bits_out(partial_byte, num_partial_bits, output)
+            }
+            Self::BLAKE3(h) => h.do_final_partial_bits_out(partial_byte, num_partial_bits, output),
         }
     }
 
@@ -317,6 +368,9 @@ impl Hash for HashFactory {
             Self::SHA3_512(h) => h.max_security_strength(),
             Self::SM3(h) => h.max_security_strength(),
             Self::AsconHash256(h) => h.max_security_strength(),
+            Self::BLAKE2b_512(h) => h.max_security_strength(),
+            Self::BLAKE2s_256(h) => h.max_security_strength(),
+            Self::BLAKE3(h) => h.max_security_strength(),
         }
     }
 }

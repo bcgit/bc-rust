@@ -6,6 +6,8 @@ mod aes_ctr_cmd;
 mod aes_ecb_cmd;
 mod aes_gcm_cmd;
 mod ascon_cmd;
+mod blake2_cmd;
+mod blake3_cmd;
 mod encoders_cmd;
 mod helpers;
 mod hkdf_cmd;
@@ -17,6 +19,7 @@ mod sha2_cmd;
 mod sha3_cmd;
 mod sm3_cmd;
 
+use crate::blake2_cmd::BLAKE2Variant;
 use crate::mac_cmd::HMACVariant;
 use crate::mldsa_cmd::MLDSAAction;
 use crate::sha2_cmd::SHA2Variant;
@@ -1006,6 +1009,137 @@ enum Subcommands {
     /// Supports streaming for low memory footprint and continuous processing from stdin to stdout.
     Base64Encode,
 
+    /// Perform BLAKE2b-512 (RFC 7693) of the content provided on stdin.
+    /// Supports streaming update for low memory footprint.
+    BLAKE2b_512 {
+        #[arg(short)]
+        /// Output the digest in hex format.
+        x: bool,
+    },
+
+    /// Perform BLAKE2s-256 (RFC 7693) of the content provided on stdin.
+    /// Supports streaming update for low memory footprint.
+    BLAKE2s_256 {
+        #[arg(short)]
+        /// Output the digest in hex format.
+        x: bool,
+    },
+
+    /// Perform keyed BLAKE2b-512 (RFC 7693 Sec 3.3, BLAKE2's built-in MAC; not HMAC) of the
+    /// content provided on stdin. The key is 1 to 64 bytes.
+    /// Supports streaming update for low memory footprint.
+    /// Note: in production uses, secrets should not be passed on the command-line because they get
+    /// logged in shell history. Use the file-based input instead.
+    BLAKE2b_512_MAC {
+        /// The MAC key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the MAC key in binary.
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        /// A MAC value to be verified.
+        /// The command will output either 0 for success or -1 for verification failure.
+        #[arg(short, long)]
+        verify: Option<String>,
+
+        #[arg(short)]
+        /// Output the tag in hex format.
+        x: bool,
+    },
+
+    /// Perform keyed BLAKE2s-256 (RFC 7693 Sec 3.3, BLAKE2's built-in MAC; not HMAC) of the
+    /// content provided on stdin. The key is 1 to 32 bytes.
+    /// Supports streaming update for low memory footprint.
+    /// Note: in production uses, secrets should not be passed on the command-line because they get
+    /// logged in shell history. Use the file-based input instead.
+    BLAKE2s_256_MAC {
+        /// The MAC key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the MAC key in binary.
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        /// A MAC value to be verified.
+        /// The command will output either 0 for success or -1 for verification failure.
+        #[arg(short, long)]
+        verify: Option<String>,
+
+        #[arg(short)]
+        /// Output the tag in hex format.
+        x: bool,
+    },
+
+    /// Perform BLAKE3 of the content provided on stdin, with output of any length (32 bytes by
+    /// default). Shorter outputs are prefixes of longer ones.
+    /// Supports streaming update for low memory footprint.
+    BLAKE3 {
+        /// Length of the output in bytes.
+        #[arg(short, long, default_value_t = blake3_cmd::BLAKE3_DEFAULT_OUT_LEN)]
+        length: usize,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// Perform BLAKE3 in keyed_hash mode (a MAC and PRF) of the content provided on stdin. The key
+    /// must be exactly 32 bytes. Output of any length (32 bytes by default); --verify checks the
+    /// 32-byte tag.
+    /// Supports streaming update for low memory footprint.
+    /// Note: in production uses, secrets should not be passed on the command-line because they get
+    /// logged in shell history. Use the file-based input instead.
+    BLAKE3_KeyedHash {
+        /// The 32-byte MAC key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 32-byte MAC key in binary.
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        /// A 32-byte tag (hex) to be verified. Cannot be combined with --length.
+        /// The command will output either 0 for success or -1 for verification failure.
+        #[arg(short, long)]
+        verify: Option<String>,
+
+        /// Length of the output in bytes.
+        #[arg(short, long, default_value_t = blake3_cmd::BLAKE3_DEFAULT_OUT_LEN)]
+        length: usize,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// Perform BLAKE3 in derive_key mode: derive a key of any length (32 bytes by default) from
+    /// the key material provided on stdin, under a context string. The context string should be
+    /// hardcoded, globally unique and application-specific (BLAKE3 spec Sec 6.2).
+    /// Supports streaming update for low memory footprint.
+    BLAKE3_DeriveKey {
+        /// The context string, e.g. "example.com 2019-12-25 16:18:03 session tokens v1" (BLAKE3
+        /// spec Sec 6.2).
+        #[arg(short, long)]
+        context: String,
+
+        /// Length of the derived key in bytes.
+        #[arg(short, long, default_value_t = blake3_cmd::BLAKE3_DEFAULT_OUT_LEN)]
+        length: usize,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
     /// The HashML-DSA-44 signature algorithm.
     HashMLDSA44 {
         action: MLDSAAction,
@@ -1893,6 +2027,25 @@ fn run() {
         }
         Some(Subcommands::Base64Encode) => {
             encoders_cmd::base64_encode_cmd();
+        }
+        Some(Subcommands::BLAKE2b_512 { x }) => {
+            blake2_cmd::blake2_cmd(BLAKE2Variant::BLAKE2b_512, *x);
+        }
+        Some(Subcommands::BLAKE2s_256 { x }) => {
+            blake2_cmd::blake2_cmd(BLAKE2Variant::BLAKE2s_256, *x);
+        }
+        Some(Subcommands::BLAKE2b_512_MAC { key, key_file, verify, x }) => {
+            blake2_cmd::blake2_mac_cmd(BLAKE2Variant::BLAKE2b_512, key, key_file, verify, *x)
+        }
+        Some(Subcommands::BLAKE2s_256_MAC { key, key_file, verify, x }) => {
+            blake2_cmd::blake2_mac_cmd(BLAKE2Variant::BLAKE2s_256, key, key_file, verify, *x)
+        }
+        Some(Subcommands::BLAKE3 { length, x }) => blake3_cmd::blake3_cmd(*length, *x),
+        Some(Subcommands::BLAKE3_KeyedHash { key, key_file, verify, length, x }) => {
+            blake3_cmd::blake3_keyed_hash_cmd(key, key_file, verify, *length, *x)
+        }
+        Some(Subcommands::BLAKE3_DeriveKey { context, length, x }) => {
+            blake3_cmd::blake3_derive_key_cmd(context, *length, *x)
         }
         Some(Subcommands::HashMLDSA44 { action, ctxfile, skfile, pkfile, sigfile, x }) => {
             mldsa_cmd::hash_mldsa44_sha512_cmd(action, ctxfile, skfile, pkfile, sigfile, *x);

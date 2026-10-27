@@ -1,5 +1,5 @@
 use bouncycastle::core::hazmat::do_hazardous_operations;
-use bouncycastle::core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
+use bouncycastle::core::key_material::{KeyMaterial, KeyMaterial512, KeyMaterialTrait, KeyType};
 use bouncycastle::core::security_strength::SecurityStrength;
 use bouncycastle::core::traits::{Hash, XOF, XOFSqueezer};
 use bouncycastle::hex;
@@ -56,6 +56,54 @@ pub(crate) fn hex_or_raw(buf: Vec<u8>) -> Vec<u8> {
         Ok(decoded) => decoded,
         Err(_) => buf,
     }
+}
+
+/// Loads a MAC key from `--key` (hex) or `--key-file` (raw bytes), tagged as a MAC key, for the
+/// BLAKE2 and BLAKE3 keyed commands.
+///
+/// `max_len` is the longest key the algorithm takes; a longer key is refused here with a message
+/// naming the limit, rather than as an opaque error from the algorithm's constructor. An all-zero
+/// key comes back tagged [`KeyType::Zeroized`], which the BLAKE key objects accept, as HMAC's
+/// and KMAC's do.
+pub(crate) fn load_blake_mac_key(
+    key: &Option<String>,
+    key_file: &Option<String>,
+    alg_name: &str,
+    min_len: usize,
+    max_len: usize,
+) -> KeyMaterial512 {
+    // The file wins if both are given, as the HMAC/KMAC help text promises (their loader,
+    // `mac_cmd::load_mac_key`, currently does the opposite).
+    let key_bytes: Vec<u8> = if let Some(file) = key_file {
+        read_from_file_raw(file)
+    } else if let Some(k) = key {
+        hex::decode(k).unwrap_or_else(|_| {
+            eprintln!("Error: --key is not valid hex.");
+            exit(-1)
+        })
+    } else {
+        eprintln!("Error: either `key` or `key-file` must be supplied.");
+        exit(-1)
+    };
+
+    if key_bytes.len() < min_len || key_bytes.len() > max_len {
+        if min_len == max_len {
+            eprintln!(
+                "Error: {alg_name} requires a {min_len}-byte key; got {} bytes.",
+                key_bytes.len()
+            );
+        } else {
+            eprintln!(
+                "Error: {alg_name} requires a key of {min_len} to {max_len} bytes; got {} bytes.",
+                key_bytes.len()
+            );
+        }
+        exit(-1);
+    }
+
+    // infallible: the length is at most 64 (checked above, and no caller passes max_len > 64),
+    // which fits a KeyMaterial512, and MACKey is a valid type to load.
+    KeyMaterial512::from_bytes_as_type(&key_bytes, KeyType::MACKey).unwrap()
 }
 
 /// Reads either bin or hex

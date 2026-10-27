@@ -30,3 +30,11 @@ path = "src/bench_ccm_mem_usage.rs"
 [[bin]]
 name = "bench_ascon_mem_usage"
 path = "src/bench_ascon_mem_usage.rs"
+
+[[bin]]
+name = "bench_blake2_mem_usage"
+path = "src/bench_blake2_mem_usage.rs"
+
+[[bin]]
+name = "bench_blake3_mem_usage"
+path = "src/bench_blake3_mem_usage.rs"
