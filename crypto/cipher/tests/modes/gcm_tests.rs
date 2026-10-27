@@ -10,12 +10,14 @@ mod common;
 #[path = "../common/toy_key.rs"]
 mod toy_key;
 
-use bouncycastle_cipher::modes::{GCM, ModeNames};
-use bouncycastle_core::errors::SymmetricCipherError;
+use bouncycastle_cipher::modes::{GCM, Gcm, ModeNames};
+use bouncycastle_cipher::{Decrypting, Encrypting};
+use bouncycastle_core::errors::{SuspendableError, SymmetricCipherError};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::symmetric_key::{AeadDecryptionKey, AeadEncryptionKey, FromKeyMaterial};
 use bouncycastle_core::traits::{
-    AEADCipherDecryptor, AEADCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
+    AEADCipherDecryptor, AEADCipherEncryptor, SuspendableKeyed, SymmetricCipherDecryptor,
+    SymmetricCipherEncryptor,
 };
 use bouncycastle_core_test_framework::FixedSeedRNG;
 use bouncycastle_core_test_framework::from_key_material::TestFrameworkFromKeyMaterial;
@@ -330,4 +332,43 @@ fn the_key_one_shots_release_nothing_on_forgery() {
         Err(SymmetricCipherError::AEADTagCheckFailed)
     ));
     assert_eq!(out, [0u8; 32], "decrypt_detached_out must zeroize on a failed tag check");
+}
+
+/// A suspended state carries the direction it was suspended in, and the other direction refuses
+/// it: an encryptor's state cannot continue as a decryptor, whose hold-back and tag check it
+/// never went through, nor the reverse.
+#[test]
+fn a_state_resumes_only_in_its_own_direction() {
+    const N: usize = Gcm::<'static, Toy, Encrypting, 16>::SUSPENDED_STATE_LEN;
+    let key = gcm_key::<16>();
+
+    let (mut enc, nonce) = key.create_encryptor(&mut os_rng()).unwrap();
+    enc.do_update_aad(b"header").unwrap();
+    let state: [u8; N] = enc.suspend();
+    assert!(matches!(
+        <Gcm<'_, Toy, Decrypting, 16> as SuspendableKeyed<'_, N>>::from_suspended(
+            state,
+            key.state()
+        ),
+        Err(SuspendableError::InvalidData)
+    ));
+    let enc = <Gcm<'_, Toy, Encrypting, 16> as SuspendableKeyed<'_, N>>::from_suspended(
+        state,
+        key.state(),
+    )
+    .expect("its own direction");
+    let _ = enc.do_encrypt_final_detached().unwrap();
+
+    let mut dec = key.create_decryptor(&nonce);
+    dec.do_update_aad(b"header").unwrap();
+    let state: [u8; N] = dec.suspend();
+    assert!(matches!(
+        <Gcm<'_, Toy, Encrypting, 16> as SuspendableKeyed<'_, N>>::from_suspended(
+            state,
+            key.state()
+        ),
+        Err(SuspendableError::InvalidData)
+    ));
+    <Gcm<'_, Toy, Decrypting, 16> as SuspendableKeyed<'_, N>>::from_suspended(state, key.state())
+        .expect("its own direction");
 }

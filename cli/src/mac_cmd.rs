@@ -1,7 +1,8 @@
+use std::io;
 use std::io::Read;
 use std::process::exit;
-use std::{fs, io};
 
+use crate::helpers::read_from_file_raw;
 use bouncycastle::core::hazmat::do_hazardous_operations;
 use bouncycastle::core::key_material::{KeyMaterial512, KeyMaterialTrait, KeyType};
 use bouncycastle::core::symmetric_key::{FromAnyKeyMaterial, MacGenerationKey};
@@ -25,10 +26,13 @@ pub(crate) enum HMACVariant {
 
 /// Loads a MAC key from `--key` (hex) or `--key-file` (raw), tagged as a MAC key.
 fn load_mac_key(key: &Option<String>, key_file: &Option<String>) -> KeyMaterial512 {
-    let key_bytes: Vec<u8> = if key.is_some() {
-        hex::decode(key.as_ref().unwrap()).unwrap()
-    } else if key_file.is_some() {
-        fs::read(key_file.as_ref().unwrap()).unwrap()
+    let key_bytes: Vec<u8> = if let Some(key) = key {
+        hex::decode(key).unwrap_or_else(|_| {
+            eprintln!("Error: `--key` must be hex. Use `--key-file` for raw bytes.");
+            exit(-1);
+        })
+    } else if let Some(key_file) = key_file {
+        read_from_file_raw(key_file)
     } else {
         eprintln!("Error: either `key` or `key-file` must be supplied.");
         exit(-1)
@@ -38,8 +42,16 @@ fn load_mac_key(key: &Option<String>, key_file: &Option<String>) -> KeyMaterial5
         eprintln!("Error: CLI only supports MAC keys 64 bytes.");
         exit(-1);
     }
-    let mut key = KeyMaterial512::from_bytes(&key_bytes).unwrap();
-    do_hazardous_operations(&mut key, |key| key.set_key_type(KeyType::MACKey)).unwrap();
+    let mut key = KeyMaterial512::from_bytes(&key_bytes).unwrap_or_else(|e| {
+        eprintln!("Error: couldn't load the key: {e:?}");
+        exit(-1);
+    });
+    do_hazardous_operations(&mut key, |key| key.set_key_type(KeyType::MACKey)).unwrap_or_else(
+        |e| {
+            eprintln!("Error: couldn't load the key: {e:?}");
+            exit(-1);
+        },
+    );
     key
 }
 
@@ -146,10 +158,10 @@ fn do_mac(mut mac: impl MAC, verify_val: &Option<String>, output_hex: bool) {
         crate::helpers::write_stdout(b"\n");
     } else {
         // verify a MAC
-        if mac.do_verify_final(&hex::decode(verify_val.as_ref().unwrap()).unwrap()) {
-            exit(0)
-        } else {
-            exit(-1)
-        }
+        let expected = hex::decode(verify_val.as_ref().unwrap()).unwrap_or_else(|_| {
+            eprintln!("Error: the MAC to verify must be hex.");
+            exit(-1);
+        });
+        if mac.do_verify_final(&expected) { exit(0) } else { exit(-1) }
     }
 }

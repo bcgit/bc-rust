@@ -151,8 +151,9 @@
 //!
 //! [`Gcm`] implements [`SuspendableKeyed`], so a message in progress can be suspended to a byte
 //! array and resumed later over the re-supplied key state. The state is the CTR half, the running
-//! GHASH, the byte counts and whatever a decryptor is holding back as a possible tag; `H` is the
-//! key state's and the tag mask is re-derived from it. The array length is `Gcm::SUSPENDED_STATE_LEN`; see [the crate
+//! GHASH, the byte counts, the phase with the direction it was suspended in, and whatever a
+//! decryptor is holding back as a possible tag; `H` is the key state's and the tag mask is
+//! re-derived from it. A state resumes only in its own direction: the other type refuses it. The array length is `Gcm::SUSPENDED_STATE_LEN`; see [the crate
 //! docs](crate#suspending-and-resuming-execution) for an example.
 //!
 //! # 🚨 Security Considerations 🚨
@@ -197,7 +198,7 @@
 use crate::modes::Ctr;
 use crate::modes::ModeNames;
 use crate::modes::hazmat::ctr_key_stream::CtrKeyStream;
-use crate::{Decrypting, Encrypting};
+use crate::{Decrypting, Direction, Encrypting};
 use bouncycastle_core::errors::{SuspendableError, SymmetricCipherError};
 use bouncycastle_core::hazmat::{
     AeadDecryptMode, AeadEncryptMode, BlockPermutation, ElectronicCodeBook, Mode,
@@ -377,8 +378,12 @@ where
     /// The `N` of this type's [`SuspendableKeyed<'k, N>`] impl: the version header, the CTR state,
     /// the GHASH state, the two byte counts, the phase, the held-back tail and its length. See
     /// [`bouncycastle_utils::suspendable_state`].
-    pub const SUSPENDED_STATE_LEN: usize =
-        LIB_VERSION_LEN + <Self as SuspendableComponent<'k>>::STATE_LEN;
+    pub const SUSPENDED_STATE_LEN: usize = LIB_VERSION_LEN + Self::COMPONENT_STATE_LEN;
+
+    /// The component's share, spelled out here rather than read through the trait so that it is
+    /// nameable for any `Dir`; the trait impl's `STATE_LEN` is this constant.
+    const COMPONENT_STATE_LEN: usize =
+        Self::CTR_STATE_LEN + GHASH_STATE_LEN + 8 + 8 + 1 + TAG_LEN + 8;
 
     /// The CTR half's share of the suspended state.
     const CTR_STATE_LEN: usize =
@@ -770,8 +775,9 @@ where
 impl<'k, P, Dir, const TAG_LEN: usize> SuspendableComponent<'k> for Gcm<'k, P, Dir, TAG_LEN>
 where
     P: BlockPermutation<16> + ModeNames,
+    Dir: Direction,
 {
-    const STATE_LEN: usize = Self::CTR_STATE_LEN + GHASH_STATE_LEN + 8 + 8 + 1 + TAG_LEN + 8;
+    const STATE_LEN: usize = Self::COMPONENT_STATE_LEN;
     type Key = GcmKeyState<P>;
 
     fn write_state(&self, out: &mut [u8]) {
@@ -782,7 +788,9 @@ where
         let mut w = CursorMut::new(rest);
         w.u64(self.aad_len);
         w.u64(self.data_len);
-        w.u8(self.phase as u8);
+        // The phase in the low nibble, the direction above it, so that a state suspended while
+        // encrypting cannot be resumed as a decryptor or the reverse.
+        w.u8(Dir::STATE_BITS | self.phase as u8);
         w.bytes(&*self.tail);
         w.u64(self.tail_len as u64);
         debug_assert!(w.is_done());
@@ -806,7 +814,11 @@ where
         let mut r = Cursor::new(rest);
         gcm.aad_len = r.u64();
         gcm.data_len = r.u64();
-        gcm.phase = Phase::from_u8(r.u8())?;
+        let call_state = r.u8();
+        if call_state & 0xF0 != Dir::STATE_BITS {
+            return Err(SuspendableError::InvalidData);
+        }
+        gcm.phase = Phase::from_u8(call_state & 0x0F)?;
         (*gcm.tail).copy_from_slice(r.bytes(TAG_LEN));
         gcm.tail_len = bounded_usize(r.u64(), TAG_LEN)?;
         debug_assert!(r.is_done());
@@ -819,6 +831,7 @@ impl<'k, P, Dir, const TAG_LEN: usize, const N: usize> SuspendableKeyed<'k, N>
     for Gcm<'k, P, Dir, TAG_LEN>
 where
     P: BlockPermutation<16> + ModeNames,
+    Dir: Direction,
 {
     type Key = GcmKeyState<P>;
 
