@@ -239,15 +239,27 @@ impl KeccakInternal {
         debug_assert!(self.bits_in_queue & 7 == 0, "attempt to absorb with odd length queue");
         debug_assert!(!self.squeezing, "attempt to absorb while squeezing");
 
-        for byte in data {
-            self.data_queue[self.bits_in_queue >> 3] = *byte;
-            self.bits_in_queue += 8;
-
-            if self.bits_in_queue == self.rate {
-                self.state.absorb(&*self.data_queue);
-                self.bits_in_queue = 0;
+        let rate_bytes = self.rate >> 3;
+        let mut in_queue = self.bits_in_queue >> 3;
+        let mut data = data;
+        if in_queue > 0 {
+            let take = (rate_bytes - in_queue).min(data.len());
+            self.data_queue[in_queue..in_queue + take].copy_from_slice(&data[..take]);
+            in_queue += take;
+            data = &data[take..];
+            if in_queue < rate_bytes {
+                self.bits_in_queue = in_queue << 3;
+                return;
             }
+            self.state.absorb(&*self.data_queue);
         }
+        // Whole blocks are absorbed straight from `data`; only a partial block is buffered.
+        while data.len() >= rate_bytes {
+            self.state.absorb(&data[..rate_bytes]);
+            data = &data[rate_bytes..];
+        }
+        self.data_queue[..data.len()].copy_from_slice(data);
+        self.bits_in_queue = data.len() << 3;
     }
 
     /// Absorbs the final `bits` (0..=7, in the least significant bits of `data`, FIPS 202 B.1 order;
