@@ -25,7 +25,7 @@ fn bench_poly1305(c: &mut Criterion) {
     group.bench_function(format!("{DATA_LEN} bytes -- ::mac_out()"), |b| {
         // A key is consumed by its one message, so each iteration is given its own.
         b.iter_batched(
-            || key_from_bytes(&key).into_generator(),
+            || key_from_bytes(&key).into_mac(),
             |mac| {
                 mac.mac_out(black_box(&data), &mut tag).unwrap();
                 black_box(&tag);

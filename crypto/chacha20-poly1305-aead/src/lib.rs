@@ -194,7 +194,7 @@ impl<'k, Dir> ChaCha20_Poly1305<'k, Dir> {
         let mut block = Secret::new();
         // A derived one-time key, including the (possible) all-zero value. Key strength was
         // already enforced on the parent cipher key; no entropy heuristic applies here.
-        let mac = key_from_bytes(poly1305_key_gen(&mut keystream, &mut block)).into_generator();
+        let mac = key_from_bytes(poly1305_key_gen(&mut keystream, &mut block)).into_mac();
         Self {
             cipher: ChaCha20::from_keystream(keystream),
             mac,

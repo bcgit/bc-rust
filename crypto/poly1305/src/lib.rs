@@ -1,9 +1,9 @@
 //! Poly1305 one-time authentication from [RFC 8439, section 2.5](https://www.rfc-editor.org/rfc/rfc8439#section-2.5).
 //!
-//! A [`Poly1305Key`] authenticates exactly one message: [`Poly1305Key::into_generator`] and
-//! [`Poly1305Key::into_verifier`] consume it into the one [`Poly1305`] worker it makes, which
-//! implements [`MAC`] with full 16-byte tags only: truncation is rejected. Streaming and
-//! output-buffer methods do not allocate. Secret state is zeroized on drop.
+//! A [`Poly1305Key`] authenticates exactly one message: [`Poly1305Key::into_mac`] consumes it into
+//! the one [`Poly1305`] worker it makes, which implements [`MAC`] with full 16-byte tags only:
+//! truncation is rejected. Streaming and output-buffer methods do not allocate. Secret state is
+//! zeroized on drop.
 //!
 //! A key is made from raw bytes by [`hazmat::key_from_bytes`], for a construction that derives a
 //! fresh key for every message, as ChaCha20-Poly1305 does. For a key that authenticates any
@@ -17,10 +17,10 @@
 //! use bouncycastle_poly1305::hazmat::key_from_bytes;
 //! // Illustrative key only; a real one-time key is fresh, unpredictable and used once.
 //! let one_time_key = [0x42; 32];
-//! let mut mac = key_from_bytes(&one_time_key).into_generator();
+//! let mut mac = key_from_bytes(&one_time_key).into_mac();
 //! mac.do_update(b"message");
 //! let tag = mac.finalize();
-//! assert!(key_from_bytes(&one_time_key).into_verifier().verify(b"message", &tag));
+//! assert!(key_from_bytes(&one_time_key).into_mac().verify(b"message", &tag));
 //! ```
 //!
 //! # Memory Usage
@@ -84,8 +84,8 @@ const FULL_BLOCK_BIT: u64 = 1 << 24;
 /// # use bouncycastle_core::traits::MAC;
 /// # use bouncycastle_poly1305::hazmat::key_from_bytes;
 /// let key = key_from_bytes(&[0x42; 32]);
-/// let first = key.into_generator().mac(b"first message");
-/// let second = key.into_generator().mac(b"second message");
+/// let first = key.into_mac().mac(b"first message");
+/// let second = key.into_mac().mac(b"second message");
 /// ```
 /// ```compile_fail
 /// # use bouncycastle_poly1305::Poly1305Key;
@@ -113,7 +113,7 @@ const FULL_BLOCK_BIT: u64 = 1 << 24;
 /// # use bouncycastle_poly1305::hazmat::key_from_bytes;
 /// # use bouncycastle_poly1305::{Poly1305, Poly1305Key};
 /// let key = key_from_bytes(&[0x42; 32]);
-/// let first = key.into_generator().mac(b"first message");
+/// let first = key.into_mac().mac(b"first message");
 /// fn cloneable<T: Clone>() {}
 /// fn generation_key<K: MacGenerationKey>() {}
 /// fn verification_key<K: MacVerificationKey>() {}
@@ -149,20 +149,16 @@ impl Poly1305Key {
         Self { r, r5, pad }
     }
 
-    /// Consumes the key into the worker that computes the tag of its one message.
-    pub fn into_generator(self) -> Poly1305 {
-        Poly1305::from_key(self)
-    }
-
-    /// Consumes the key into the worker that checks the tag of its one message.
-    pub fn into_verifier(self) -> Poly1305 {
+    /// Consumes the key into the [`MAC`] worker for its one message, which can compute the tag
+    /// or check one.
+    pub fn into_mac(self) -> Poly1305 {
         Poly1305::from_key(self)
     }
 }
 
-/// The worker for a single Poly1305 message, made by [`Poly1305Key::into_generator`] or
-/// [`Poly1305Key::into_verifier`], using five radix-2^26 limbs and 64-bit products. It cannot be
-/// cloned, since two workers under one key could authenticate two messages:
+/// The worker for a single Poly1305 message, made by [`Poly1305Key::into_mac`], using five
+/// radix-2^26 limbs and 64-bit products. It cannot be cloned, since two workers under one key
+/// could authenticate two messages:
 ///
 /// ```compile_fail
 /// # use bouncycastle_poly1305::Poly1305;

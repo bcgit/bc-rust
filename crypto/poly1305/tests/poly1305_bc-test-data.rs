@@ -16,7 +16,7 @@ fn rfc8439_poly1305_including_reduction_edge_cases() {
         let tag = decode("tag");
         let id = case["id"].as_str().unwrap();
         // A published key, so a test may make as many keys from it as it likes.
-        let generator = || key_from_bytes(&key).into_generator();
+        let generator = || key_from_bytes(&key).into_mac();
         // Under `r = 0` (A.3.1, A.3.2) the tag is `s` whatever the message, which the generic
         // suite's check that another message gets another tag cannot allow for.
         if key[..16] != [0; 16] {
@@ -27,7 +27,7 @@ fn rfc8439_poly1305_including_reduction_edge_cases() {
         assert_eq!(generator().mac_out(&msg, &mut out).unwrap(), 16);
         assert_eq!(&out[..16], tag);
         assert_eq!(&out[16..], &[0; 8]);
-        assert!(key_from_bytes(&key).into_verifier().verify(&msg, &tag));
+        assert!(key_from_bytes(&key).into_mac().verify(&msg, &tag));
         // Every split of each published message exercises full and partial buffered blocks.
         for split in 0..=msg.len() {
             let mut mac = generator();

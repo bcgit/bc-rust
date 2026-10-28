@@ -138,7 +138,7 @@ pub(crate) fn poly1305_cmd(
         eprintln!("Error: Poly1305 needs a 32-byte one-time key, got {} bytes.", key.key_len());
         exit(-1)
     };
-    do_mac(key_from_bytes(bytes).into_generator(), verify_val, output_hex);
+    do_mac(key_from_bytes(bytes).into_mac(), verify_val, output_hex);
 }
 
 fn do_mac(mut mac: impl MAC, verify_val: &Option<String>, output_hex: bool) {

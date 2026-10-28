@@ -10,11 +10,11 @@ use bouncycastle_utils::suspendable_state::SuspendableComponent;
 const KEY: [u8; 32] = [0x42; 32];
 
 fn generator() -> Poly1305 {
-    key_from_bytes(&KEY).into_generator()
+    key_from_bytes(&KEY).into_mac()
 }
 
 fn verify(msg: &[u8], tag: &[u8]) -> bool {
-    key_from_bytes(&KEY).into_verifier().verify(msg, tag)
+    key_from_bytes(&KEY).into_mac().verify(msg, tag)
 }
 
 /// The framework's API-contract checks, which need no external data. The tag's correctness is
@@ -29,13 +29,6 @@ fn core_mac_contract() {
 #[test]
 fn empty_message_returns_the_additive_key_half() {
     assert_eq!(generator().finalize(), KEY[16..]);
-}
-
-/// The two ways to consume a key make the same worker.
-#[test]
-fn the_verifier_computes_the_generators_tag() {
-    let msg = b"message";
-    assert_eq!(key_from_bytes(&KEY).into_verifier().mac(msg), generator().mac(msg));
 }
 
 #[test]
@@ -156,7 +149,7 @@ fn full_tags_are_required() {
 /// `s = 0` every tag is zero.
 #[test]
 fn the_all_zero_key_is_accepted() {
-    assert_eq!(key_from_bytes(&[0; 32]).into_generator().mac(b"zero-key test"), [0; 16]);
+    assert_eq!(key_from_bytes(&[0; 32]).into_mac().mac(b"zero-key test"), [0; 16]);
 }
 
 /// One full block under a key whose clamped `r` is the single limb `r0 < 2^26` and whose `s` is
@@ -176,7 +169,7 @@ fn final_carry_out_of_h0() {
         let mut key = [0u8; 32];
         key[..4].copy_from_slice(&r0.to_le_bytes());
         assert_eq!(
-            key_from_bytes(&key).into_generator().mac(&block),
+            key_from_bytes(&key).into_mac().mac(&block),
             reference_tag(r0, &block),
             "r0 = {r0:#x}"
         );
