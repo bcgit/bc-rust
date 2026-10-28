@@ -1,18 +1,19 @@
 //! SM4-CTR encryption and decryption, streaming stdin to stdout.
 //!
 //! Only the cipher wiring lives here: the nonce convention, key loading and stdin framing are in
-//! [`crate::helpers::stream_mode_helpers`] (and [`crate::helpers::block_mode_helpers`] for the key loader), shared with the
-//! `aes*-ctr` commands. See those modules for the command-line contract.
+//! [`crate::helpers::stream_mode_helpers`] (and [`crate::helpers::block_mode_helpers`] for the
+//! key and nonce loaders), shared with the `aes*-ctr` commands. See those modules for the
+//! command-line contract.
 //!
-//! `sm4-ctr` is the same command as `aes128-ctr` over the SM4 permutation (GB/T 32907-2016; 16-byte
-//! key, 16-byte block), so every remark there applies unchanged, including the split of the counter
-//! block: the nonce is **12 bytes** and the counter the remaining 4, giving 2^32 blocks -- 64 GiB
-//! -- in a single message. draft-ribose-cfrg-sm4-10 Sec 8.7 takes the counter sequence as an input
-//! and requires only that it "does not repeat within the block size", so this is one admissible
-//! choice; it is NIST SP 800-38A Appendix B.2's.
+//! `sm4-ctr` is the same command as `aes128-ctr` over the SM4 permutation (GB/T 32907-2016;
+//! 16-byte key, 16-byte block), so every remark there applies unchanged, including the split of
+//! the counter block: the nonce is **12 bytes** and the counter the remaining 4, giving 2^32
+//! blocks -- 64 GiB -- in a single message. draft-ribose-cfrg-sm4-10 Sec 8.7 takes the counter
+//! sequence as an input and requires only that it "does not repeat within the block size", so
+//! this is one admissible choice; it is NIST SP 800-38A Appendix B.2's.
 //!
-//! `encrypt` writes that 12-byte nonce as the first bytes of its output and `decrypt` reads it back,
-//! exactly as the other modes do with their IVs; note that it is 12 bytes here, not 16.
+//! `encrypt` writes that 12-byte nonce as the first bytes of its output and `decrypt` reads it
+//! back, exactly as the other modes do with their IVs; note that it is 12 bytes here, not 16.
 //!
 //! # Warning
 //!
@@ -21,22 +22,23 @@
 //! Appendix D, Table D.2), so an attacker can edit the plaintext at will with no garbling to give
 //! it away. A repeated nonce under one key is fatal rather than merely unwise -- the same keystream
 //! twice leaks the XOR of the two messages -- which is why the nonce is drawn from the OS-backed
-//! DRBG and there is no way to supply one. Do not decrypt data you have not authenticated
-//! separately.
+//! DRBG unless `--iv` / `--iv-file` supplies one, and then its uniqueness under the key is the
+//! caller's to keep. Do not decrypt data you have not authenticated separately.
 
-use crate::helpers::block_mode_helpers::{CipherDirection, load_key_object};
+use crate::helpers::block_mode_helpers::{CipherDirection, load_iv, load_key_object};
 use crate::helpers::stream_mode_helpers::run_stream_mode;
 use bouncycastle::cipher::modes::CTR;
 use bouncycastle::sm4::{CTR_NONCE_LEN, KEY_LEN, SM4Key};
 
-/// Dispatches to the shared streaming loops under the key's `CTR` mode; the init data travels in
-/// band, as the command's contract says.
+/// Dispatches to the shared streaming loops under the key's `CTR` mode.
 pub(crate) fn sm4_ctr_cmd(
     action: &CipherDirection,
     key: &Option<String>,
     key_file: &Option<String>,
+    iv: &Option<String>,
+    iv_file: &Option<String>,
     output_hex: bool,
 ) {
     let key = load_key_object::<SM4Key<CTR>, KEY_LEN>(key, key_file, "SM4");
-    run_stream_mode::<_, KEY_LEN, CTR_NONCE_LEN>(action, &key, None, output_hex)
+    run_stream_mode::<_, KEY_LEN, CTR_NONCE_LEN>(action, &key, load_iv(iv, iv_file), output_hex)
 }

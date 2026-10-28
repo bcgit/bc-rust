@@ -1,9 +1,10 @@
 //! Tests for the `sm4-cfb8` subcommand.
 //!
-//! `sm4-cfb8` shares its key loader, streaming loops and error paths with the `aes*-cfb8` commands
-//! (`cli/src/stream_mode_cmd.rs`), and `aes_cfb8_cli_tests.rs` covers those exhaustively. This file
-//! pins what is specific to SM4: the 16-byte key length, that the command exists and round-trips at
-//! any length, and that what comes out really is CFB8 over SM4 rather than some other mode.
+//! `sm4-cfb8` shares its key and IV loaders, streaming loops and error paths with the `aes*-cfb8`
+//! commands (`cli/src/helpers/stream_mode_helpers.rs`), and `test_aes_cfb8.sh` covers those
+//! exhaustively. This file pins what is specific to SM4: the 16-byte key length, that the command
+//! exists and round-trips at any length, and that what comes out really is CFB8 over SM4 rather
+//! than some other mode.
 //!
 //! draft-ribose-cfrg-sm4-10 defines SM4-CFB-8 (Sec 8.5.1) but publishes no example of it, so there
 //! is no vector to decrypt here. Instead the command is required to agree with
@@ -109,7 +110,7 @@ fn library_cfb8_decrypt(key_hex: &str, iv: &[u8], data: &mut [u8]) {
 fn the_command_is_cfb8_over_sm4() {
     for len in [1usize, 5, 16, 17, 64] {
         let plaintext = pseudo_random(len, len as u32);
-        let out = run_ok(&["sm4-cfb8", "encrypt", "--key", KEY], &plaintext);
+        let out = run_ok(&["sm4-cfb8", "-d", "encrypt", "--key", KEY], &plaintext);
         assert_eq!(out.len(), 16 + len, "len {len}: IV block plus an equal-length body");
 
         let (iv, body) = out.split_at(16);
@@ -119,16 +120,33 @@ fn the_command_is_cfb8_over_sm4() {
     }
 }
 
+/// With `--iv` the output is the ciphertext alone, and it is still `Cfb8` over `SM4` under that
+/// IV.
+#[test]
+fn a_supplied_iv_is_used_and_not_written() {
+    let iv = "000102030405060708090a0b0c0d0e0f";
+    let plaintext = pseudo_random(37, 5);
+    let out = run_ok(&["sm4-cfb8", "-d", "encrypt", "--key", KEY, "--iv", iv], &plaintext);
+    assert_eq!(out.len(), plaintext.len(), "ciphertext only, no IV in band");
+
+    let mut recovered = out.clone();
+    library_cfb8_decrypt(KEY, &unhex(iv), &mut recovered);
+    assert_eq!(recovered, plaintext, "the CLI should agree with the library under that IV");
+
+    let back = run_ok(&["sm4-cfb8", "-d", "decrypt", "--key", KEY, "--iv", iv], &out);
+    assert_eq!(back, plaintext);
+}
+
 /// `encrypt | decrypt` composes: the IV rides in the first block, and the plaintext comes back.
 #[test]
 fn encrypt_then_decrypt_round_trips() {
     let plaintext = pseudo_random(4096, 0xC0FFEE);
 
-    let ciphertext = run_ok(&["sm4-cfb8", "encrypt", "--key", KEY], &plaintext);
+    let ciphertext = run_ok(&["sm4-cfb8", "-d", "encrypt", "--key", KEY], &plaintext);
     assert_eq!(ciphertext.len(), 16 + plaintext.len(), "IV block plus an equal-length body");
     assert_ne!(&ciphertext[16..], &plaintext[..]);
 
-    let recovered = run_ok(&["sm4-cfb8", "decrypt", "--key", KEY], &ciphertext);
+    let recovered = run_ok(&["sm4-cfb8", "-d", "decrypt", "--key", KEY], &ciphertext);
     assert_eq!(recovered, plaintext);
 }
 
@@ -137,9 +155,9 @@ fn encrypt_then_decrypt_round_trips() {
 fn any_input_length_is_accepted() {
     for len in [0usize, 1, 15, 17, 33] {
         let plaintext = pseudo_random(len, len as u32);
-        let ciphertext = run_ok(&["sm4-cfb8", "encrypt", "--key", KEY], &plaintext);
+        let ciphertext = run_ok(&["sm4-cfb8", "-d", "encrypt", "--key", KEY], &plaintext);
         assert_eq!(ciphertext.len(), 16 + len, "len {len}: IV plus an equal-length body");
-        let recovered = run_ok(&["sm4-cfb8", "decrypt", "--key", KEY], &ciphertext);
+        let recovered = run_ok(&["sm4-cfb8", "-d", "decrypt", "--key", KEY], &ciphertext);
         assert_eq!(recovered, plaintext, "len {len}: round trip");
     }
 }
@@ -152,8 +170,8 @@ fn sm4_cfb8_is_not_sm4_cfb() {
     let body = "aaaaaaaabbbbbbbbccccccccddddddddeeeeeeeeffffffffaaaaaaaabbbbbbbb";
     let input = unhex(&format!("{iv}{body}"));
 
-    let as_cfb8 = run_ok(&["sm4-cfb8", "decrypt", "--key", KEY], &input);
-    let as_cfb = run_ok(&["sm4-cfb", "decrypt", "--key", KEY], &input);
+    let as_cfb8 = run_ok(&["sm4-cfb8", "-d", "decrypt", "--key", KEY], &input);
+    let as_cfb = run_ok(&["sm4-cfb", "-d", "decrypt", "--key", KEY], &input);
 
     assert_eq!(
         as_cfb8[0], as_cfb[0],
@@ -166,7 +184,7 @@ fn sm4_cfb8_is_not_sm4_cfb() {
 #[test]
 fn a_key_of_the_wrong_length_is_rejected() {
     let key_256 = "603deb1015ca71be2b73aef0857d77811f352c073b6108d72d9810a30914dff4";
-    let err = run_err(&["sm4-cfb8", "encrypt", "--key", key_256], &[0u8; 16]);
+    let err = run_err(&["sm4-cfb8", "-d", "encrypt", "--key", key_256], &[0u8; 16]);
     assert!(err.contains("SM4 needs a 16-byte key, got 32 bytes"), "stderr was: {err}");
 }
 
@@ -180,6 +198,7 @@ fn a_large_payload_on_an_error_path_does_not_break_the_harness() {
     let err = run_err(
         &[
             "sm4-cfb8",
+            "-d",
             "encrypt",
             "--key",
             "603deb1015ca71be2b73aef0857d77811f352c073b6108d72d9810a30914dff4",
