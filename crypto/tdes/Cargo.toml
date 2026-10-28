@@ -6,10 +6,9 @@ edition.workspace = true
 [dependencies]
 bouncycastle-core.workspace = true
 bouncycastle-utils.workspace = true
-# Only for the TDES mode type aliases in `cbc.rs`, `cfb.rs`, `cfb8.rs`, `ctr.rs` and `ecb.rs`; the
-# engine itself does not use it.
+# The modes the keys hand out, the `ModeNames` impls and the `TDES_*` / `TDES2_*` aliases; the
+# engines themselves do not use it.
 bouncycastle-cipher.workspace = true
-# Only for the padded TDES-CBC and TDES-ECB aliases; the engine itself does not use it.
 
 [dev-dependencies]
 bouncycastle-core-test-framework.workspace = true

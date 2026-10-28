@@ -34,7 +34,8 @@ use bouncycastle_utils::secret::Secret;
 /// use bouncycastle_rng::HashDRBG_SHA512;
 ///
 /// let bytes: [u8; 16] = core::array::from_fn(|i| (i as u8).wrapping_mul(7).wrapping_add(1));
-/// let material = KeyMaterial::<16>::from_bytes_as_type(&bytes, KeyType::SymmetricCipherKey).unwrap();
+/// let material = KeyMaterial::<16>::from_bytes_as_type(&bytes, KeyType::SymmetricCipherKey)
+///     .unwrap();
 /// let key = TDES2Key::<CBC<PKCS7>>::from_key_material(&material).unwrap();
 ///
 /// // Two-key TDEA may not apply protection: this does not compile.
@@ -52,7 +53,8 @@ use bouncycastle_utils::secret::Secret;
 /// use bouncycastle_rng::HashDRBG_SHA512;
 ///
 /// let bytes: [u8; 16] = core::array::from_fn(|i| (i as u8).wrapping_mul(7).wrapping_add(1));
-/// let material = KeyMaterial::<16>::from_bytes_as_type(&bytes, KeyType::SymmetricCipherKey).unwrap();
+/// let material = KeyMaterial::<16>::from_bytes_as_type(&bytes, KeyType::SymmetricCipherKey)
+///     .unwrap();
 /// let key = TDES2Key::<CTR<CTR_NONCE_LEN, BLOCK_LEN>>::from_key_material(&material).unwrap();
 ///
 /// // Two-key TDEA may not apply protection through CTR either: this does not compile.
@@ -60,8 +62,9 @@ use bouncycastle_utils::secret::Secret;
 /// ```
 ///
 /// `create_decryptor` on every mode works, and this crate names those decryptors
-/// [`TDES2_CBC`](crate::TDES2_CBC), [`TDES2_CFB`](crate::TDES2_CFB), [`TDES2_CFB8`](crate::TDES2_CFB8),
-/// [`TDES2_CTR`](crate::TDES2_CTR) and [`TDES2_ECB`](crate::TDES2_ECB). The raw
+/// [`TDES2_CBC`](crate::TDES2_CBC), [`TDES2_CFB`](crate::TDES2_CFB),
+/// [`TDES2_CFB8`](crate::TDES2_CFB8), [`TDES2_CTR`](crate::TDES2_CTR) and
+/// [`TDES2_ECB`](crate::TDES2_ECB). The raw
 /// [`BlockPermutation::encrypt_block`] is still present, because CFB and CTR decryption are
 /// built on the forward cipher function; a raw permutation is not something to encrypt data with
 /// anyway (see the crate docs).
@@ -105,8 +108,8 @@ impl ElectronicCodeBook<KEY_LEN_2KEY, BLOCK_LEN> for TDES2Internal {
     /// * [`KeyMaterialError::InvalidKeyType`] if the key is not `KeyType::SymmetricCipherKey`.
     /// * [`KeyMaterialError::InvalidLength`] if the key is not 16 bytes long.
     /// * [`KeyMaterialError::WeakKey`] if `Key1 = Key2` (with parity ignored), which collapses the
-    ///   three DEA transformations to single DES -- Sec 3.1 requires `Key1 != Key2` for two-key TDEA
-    ///   as well.
+    ///   three DEA transformations to single DES -- Sec 3.1 requires `Key1 != Key2` for two-key
+    ///   TDEA as well.
     /// * [`KeyMaterialError::WeakKey`] if either component is one of the 64 weak, semi-weak or
     ///   possibly weak DEA keys of Sec 3.3.2.
     fn new(key: &KeyMaterial<KEY_LEN_2KEY>) -> Result<Self, SymmetricCipherError> {
@@ -187,25 +190,5 @@ impl core::fmt::Debug for TDES2Internal {
     /// Prints the algorithm name only. The key schedule is secret and is never formatted.
     fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
         f.write_str(Self::ALG_NAME)
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_engine_size_is_exactly_the_two_schedules() {
-        assert_eq!(size_of::<TDES2Internal>(), 2 * 16 * 2 * 4);
-        assert_eq!(size_of::<TDES2Internal>(), 256);
-    }
-
-    #[test]
-    fn test_alg_name_strength_and_gate() {
-        assert_eq!(<TDES2Internal as Algorithm>::ALG_NAME, "TDES-2KEY");
-        assert_eq!(<TDES2Internal as Algorithm>::MAX_SECURITY_STRENGTH, SecurityStrength::None);
-        assert!(
-            !<TDES2Internal as ElectronicCodeBook<KEY_LEN_2KEY, BLOCK_LEN>>::ENCRYPTION_APPROVED
-        );
     }
 }

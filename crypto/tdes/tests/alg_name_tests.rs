@@ -12,7 +12,7 @@ use bouncycastle_cipher::padding::{
     NoPadding, PKCS7, PaddedBlockCipherDecryptor, PaddedBlockCipherEncryptor,
 };
 use bouncycastle_cipher::{Decrypting, Encrypting};
-use bouncycastle_core::hazmat::Mode;
+use bouncycastle_core::hazmat::{ElectronicCodeBook, Mode};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::symmetric_key::{
@@ -22,8 +22,8 @@ use bouncycastle_core::traits::Algorithm;
 use bouncycastle_rng::HashDRBG_SHA512;
 use bouncycastle_tdes::hazmat::{TDES_ECB, TDES2_ECB, TDES2Internal, TDESInternal};
 use bouncycastle_tdes::{
-    BLOCK_LEN, CTR_NONCE_LEN, KEY_LEN, TDES_CBC, TDES_CFB, TDES_CFB8, TDES_CTR, TDES2_CBC,
-    TDES2_CFB, TDES2_CFB8, TDES2_CTR, TDES3Key,
+    BLOCK_LEN, CTR_NONCE_LEN, KEY_LEN, KEY_LEN_2KEY, TDES_CBC, TDES_CFB, TDES_CFB8, TDES_CTR,
+    TDES2_CBC, TDES2_CFB, TDES2_CFB8, TDES2_CTR, TDES3Key,
 };
 use core::mem::size_of;
 
@@ -80,6 +80,22 @@ fn the_engines_keep_their_own_names() {
     assert_eq!(TDESInternal::MAX_SECURITY_STRENGTH, SecurityStrength::_112bit);
     assert_eq!(TDES2Internal::ALG_NAME, "TDES-2KEY");
     assert_eq!(TDES2Internal::MAX_SECURITY_STRENGTH, SecurityStrength::None);
+}
+
+/// Three-key TDEA may encrypt; two-key TDEA may not (SP 800-131A Rev 2 Table 1), which is the
+/// gate the modes check at compile time.
+#[test]
+fn only_the_three_key_engine_is_approved_for_encryption() {
+    assert!(<TDESInternal as ElectronicCodeBook<KEY_LEN, BLOCK_LEN>>::ENCRYPTION_APPROVED);
+    assert!(!<TDES2Internal as ElectronicCodeBook<KEY_LEN_2KEY, BLOCK_LEN>>::ENCRYPTION_APPROVED);
+}
+
+/// The engines are exactly their packed schedules, the sizes the crate docs quote: sixteen
+/// two-word round keys per DEA key, three or two keys, and nothing else.
+#[test]
+fn the_engines_are_exactly_their_schedules() {
+    assert_eq!(size_of::<TDESInternal>(), 3 * 16 * 2 * 4);
+    assert_eq!(size_of::<TDES2Internal>(), 2 * 16 * 2 * 4);
 }
 
 fn key_for<M: Mode<TDESInternal>>() -> TDES3Key<M> {

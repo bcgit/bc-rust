@@ -21,16 +21,27 @@
 //! Main is at the bottom, and controls which of these actually runs -- measure one at a time,
 //! because massif reports the peak across the whole process.
 //!
-//! # What to expect
+//! # What to expect, and why massif cannot see it
 //!
-//! Like AES, TDESInternal has no interesting stack profile: peak usage is a small constant plus the key
-//! schedule. The numbers worth recording in the crate docs are the persistent size of the engine
-//! (three packed DEA schedules, 384 bytes) and the confirmation that per-block work is a fixed,
-//! small amount of stack -- the six input planes and the 128-byte working array of the S-box
-//! layer's ANF evaluation.
+//! Like AES, TDEA has no interesting stack profile: a call needs a few hundred bytes -- the six
+//! input planes, the 128-byte working array of the S-box layer's ANF evaluation and a few words
+//! of block state -- which is below what massif resolves, since the process's own start-up
+//! reaches about 7.7 kB of stack before `main` runs. So the massif number is the floor, not a
+//! measurement.
 //!
-//! The point of comparison is that a table-driven Triple DES carries 2 KiB of combined S/P tables
-//! on top of its schedules; this implementation carries none.
+//! The numbers that do mean something come from the compiler's frame-layout remarks, as for
+//! `bench_aes_mem_usage`: build this binary with
+//! `RUSTFLAGS="-C remark=prologepilog -C remark=stack-frame-layout"` and read the frame of each
+//! `measure` closure, which is the operation's frame with nothing else in it. The engine is built
+//! in an `#[inline(never)]` helper so its frame is a sibling of the operation's, and the
+//! operation runs in a non-inlined, non-returning closure so nothing crosses back across the
+//! boundary. The persistent cost, the packed schedules, is what `print_struct_sizes` prints. A
+//! table-driven Triple DES carries 2 KiB of combined S/P tables on top; this one carries none.
+//! The two-key engine is decryption-only, so only its decrypting entry points are measured.
+//!
+//! With rustc 1.97 nightly on x86-64 the closure frames are 792 B for `TDESInternal::new` and
+//! 536 B for `TDES2Internal::new`, and 40, 72 and 104 B for the one-, two- and four-block entry
+//! points of either engine; the crate docs tabulate them with the 8-byte return address added.
 
 #![allow(dead_code)]
 #![allow(unused_imports)]
@@ -38,7 +49,7 @@
 use bouncycastle::core::hazmat::{BlockPermutation, ElectronicCodeBook};
 use bouncycastle::core::key_material::{KeyMaterial, KeyType};
 use bouncycastle::tdes::hazmat::{TDES2Internal, TDESInternal};
-use bouncycastle::tdes::{BLOCK_LEN, KEY_LEN};
+use bouncycastle::tdes::{BLOCK_LEN, KEY_LEN, KEY_LEN_2KEY};
 
 /// This exists so /usr/bin/time can measure the base memory footprint of the harness itself.
 fn bench_do_nothing() {
@@ -47,7 +58,7 @@ fn bench_do_nothing() {
     print!("{}", 1 + 1);
 }
 
-/// Prints the in-memory size of the engine, i.e. the persistent cost of holding a key schedule.
+/// Prints the in-memory size of each engine, i.e. the persistent cost of holding the schedules.
 fn print_struct_sizes() {
     use core::mem::size_of;
 
@@ -57,55 +68,171 @@ fn print_struct_sizes() {
     println!("size_of<TDES2Internal>: {}", size_of::<TDES2Internal>());
 }
 
-fn key() -> KeyMaterial<KEY_LEN> {
-    // A fixed pattern whose three 8-byte components are distinct and not weak; an all-zero buffer
-    // would be tagged KeyType::Zeroized and rejected.
-    let mut bytes = [0u8; KEY_LEN];
-    for (i, b) in bytes.iter_mut().enumerate() {
-        *b = (i as u8).wrapping_mul(7).wrapping_add(1);
-    }
-    KeyMaterial::<KEY_LEN>::from_bytes_as_type(&bytes, KeyType::SymmetricCipherKey).unwrap()
+/// Runs the operation in its own frame. Returns nothing, so no result crosses the boundary and
+/// the closure's frame is exactly the operation's.
+#[inline(never)]
+fn measure(f: impl FnOnce()) {
+    f()
 }
+
+/// The NIST CAVP TECBMMT3.rsp [ENCRYPT] COUNT = 0 bundle, so the engine under measurement is a
+/// known one; the two-key bundle is its first two components.
+const KEY_3: [u8; KEY_LEN] = [
+    0xe9, 0x7c, 0x83, 0x13, 0xba, 0x26, 0x5d, 0x43, 0x25, 0x4c, 0xbf, 0x9e, 0x8f, 0x7c, 0x2a, 0xa8,
+    0xa7, 0x54, 0xd6, 0x5e, 0x8a, 0xe9, 0x97, 0xe3,
+];
+
+/// Wraps a hard-coded key. `#[inline(never)]` so the wrapping is a sibling frame of whatever
+/// uses the key, not part of it.
+#[inline(never)]
+fn key<const N: usize>(bytes: &[u8; N]) -> KeyMaterial<N> {
+    KeyMaterial::<N>::from_bytes_as_type(bytes, KeyType::SymmetricCipherKey).unwrap()
+}
+
+/// Expands the key into an engine, in its own frame, so the expansion's temporaries are popped
+/// before an operation on the engine runs.
+#[inline(never)]
+fn load_tdes() -> TDESInternal {
+    TDESInternal::new(&key(&KEY_3)).unwrap()
+}
+#[inline(never)]
+fn load_tdes2() -> TDES2Internal {
+    let two: [u8; KEY_LEN_2KEY] = KEY_3[..KEY_LEN_2KEY].try_into().unwrap();
+    TDES2Internal::new(&key(&two)).unwrap()
+}
+
+// ---- key expansion: the expansion is the operation, so it runs inside `measure` ------------
 
 fn bench_tdes_key_expansion() {
-    eprintln!("TDES::new (key expansion)");
-
-    let tdes = TDESInternal::new(&key()).unwrap();
-    print!("{tdes:?}");
+    eprintln!("TDESInternal::new (key expansion)");
+    let key = key(&KEY_3);
+    measure(|| {
+        let tdes = TDESInternal::new(&key).unwrap();
+        print!("{tdes:?}");
+    });
 }
 
-fn bench_tdes_encrypt_block() {
-    eprintln!("TDES::encrypt_block");
+fn bench_tdes2_key_expansion() {
+    eprintln!("TDES2Internal::new (key expansion)");
+    let two: [u8; KEY_LEN_2KEY] = KEY_3[..KEY_LEN_2KEY].try_into().unwrap();
+    let key = key(&two);
+    measure(|| {
+        let tdes = TDES2Internal::new(&key).unwrap();
+        print!("{tdes:?}");
+    });
+}
 
-    let tdes = TDESInternal::new(&key()).unwrap();
-    let mut block = [0x11u8; BLOCK_LEN];
-    tdes.encrypt_block(&mut block);
-    print!("{block:x?}");
+// ---- the block entry points -----------------------------------------------------------------
+//
+// The engine has no natural unit larger than one block, so the pair and four-block methods are
+// single-block loops over the same state. The blocks are stack arrays in the closure, never a
+// heap buffer, so massif's --heap=no does not hide them.
+
+fn bench_tdes_encrypt_block() {
+    eprintln!("TDESInternal::encrypt_block");
+    let tdes = load_tdes();
+    measure(|| {
+        let mut block = [0x11u8; BLOCK_LEN];
+        tdes.encrypt_block(&mut block);
+        print!("{block:x?}");
+    });
 }
 
 fn bench_tdes_decrypt_block() {
-    eprintln!("TDES::decrypt_block");
+    eprintln!("TDESInternal::decrypt_block");
+    let tdes = load_tdes();
+    measure(|| {
+        let mut block = [0x11u8; BLOCK_LEN];
+        tdes.decrypt_block(&mut block);
+        print!("{block:x?}");
+    });
+}
 
-    let tdes = TDESInternal::new(&key()).unwrap();
-    let mut block = [0x11u8; BLOCK_LEN];
-    tdes.decrypt_block(&mut block);
-    print!("{block:x?}");
+fn bench_tdes_encrypt_2blocks() {
+    eprintln!("TDESInternal::encrypt_2blocks");
+    let tdes = load_tdes();
+    measure(|| {
+        let mut blocks = [[0x11u8; BLOCK_LEN], [0x22u8; BLOCK_LEN]];
+        tdes.encrypt_2blocks(&mut blocks);
+        print!("{blocks:x?}");
+    });
+}
+
+fn bench_tdes_decrypt_2blocks() {
+    eprintln!("TDESInternal::decrypt_2blocks");
+    let tdes = load_tdes();
+    measure(|| {
+        let mut blocks = [[0x11u8; BLOCK_LEN], [0x22u8; BLOCK_LEN]];
+        tdes.decrypt_2blocks(&mut blocks);
+        print!("{blocks:x?}");
+    });
 }
 
 fn bench_tdes_encrypt_4blocks() {
-    eprintln!("TDES::encrypt_4blocks");
+    eprintln!("TDESInternal::encrypt_4blocks");
+    let tdes = load_tdes();
+    measure(|| {
+        let mut blocks =
+            [[0x11u8; BLOCK_LEN], [0x22u8; BLOCK_LEN], [0x33u8; BLOCK_LEN], [0x44u8; BLOCK_LEN]];
+        tdes.encrypt_4blocks(&mut blocks);
+        print!("{blocks:x?}");
+    });
+}
 
-    let tdes = TDESInternal::new(&key()).unwrap();
-    let mut blocks = [[0x11u8; BLOCK_LEN]; 4];
-    tdes.encrypt_4blocks(&mut blocks);
-    print!("{blocks:x?}");
+fn bench_tdes_decrypt_4blocks() {
+    eprintln!("TDESInternal::decrypt_4blocks");
+    let tdes = load_tdes();
+    measure(|| {
+        let mut blocks =
+            [[0x11u8; BLOCK_LEN], [0x22u8; BLOCK_LEN], [0x33u8; BLOCK_LEN], [0x44u8; BLOCK_LEN]];
+        tdes.decrypt_4blocks(&mut blocks);
+        print!("{blocks:x?}");
+    });
+}
+
+fn bench_tdes2_decrypt_block() {
+    eprintln!("TDES2Internal::decrypt_block");
+    let tdes = load_tdes2();
+    measure(|| {
+        let mut block = [0x11u8; BLOCK_LEN];
+        tdes.decrypt_block(&mut block);
+        print!("{block:x?}");
+    });
+}
+
+fn bench_tdes2_decrypt_2blocks() {
+    eprintln!("TDES2Internal::decrypt_2blocks");
+    let tdes = load_tdes2();
+    measure(|| {
+        let mut blocks = [[0x11u8; BLOCK_LEN], [0x22u8; BLOCK_LEN]];
+        tdes.decrypt_2blocks(&mut blocks);
+        print!("{blocks:x?}");
+    });
+}
+
+fn bench_tdes2_decrypt_4blocks() {
+    eprintln!("TDES2Internal::decrypt_4blocks");
+    let tdes = load_tdes2();
+    measure(|| {
+        let mut blocks =
+            [[0x11u8; BLOCK_LEN], [0x22u8; BLOCK_LEN], [0x33u8; BLOCK_LEN], [0x44u8; BLOCK_LEN]];
+        tdes.decrypt_4blocks(&mut blocks);
+        print!("{blocks:x?}");
+    });
 }
 
 fn main() {
     print_struct_sizes()
     // bench_do_nothing()
     // bench_tdes_key_expansion()
+    // bench_tdes2_key_expansion()
     // bench_tdes_encrypt_block()
     // bench_tdes_decrypt_block()
+    // bench_tdes_encrypt_2blocks()
+    // bench_tdes_decrypt_2blocks()
     // bench_tdes_encrypt_4blocks()
+    // bench_tdes_decrypt_4blocks()
+    // bench_tdes2_decrypt_block()
+    // bench_tdes2_decrypt_2blocks()
+    // bench_tdes2_decrypt_4blocks()
 }

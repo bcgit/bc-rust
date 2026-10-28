@@ -51,7 +51,8 @@ use bouncycastle_core::symmetric_key::{SymmetricDecryptionKey, SymmetricEncrypti
 /// use bouncycastle_cipher::modes::hazmat::ecb::ECB;
 /// use bouncycastle_cipher::padding::PKCS7;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-/// use bouncycastle_core::symmetric_key::{FromKeyMaterial, SymmetricDecryptionKey, SymmetricEncryptionKey};
+/// use bouncycastle_core::symmetric_key::{FromKeyMaterial, SymmetricDecryptionKey};
+/// use bouncycastle_core::symmetric_key::SymmetricEncryptionKey;
 /// use bouncycastle_rng::HashDRBG_SHA512;
 ///
 /// let mut rng = HashDRBG_SHA512::new_from_os();
@@ -82,7 +83,8 @@ use bouncycastle_core::symmetric_key::{SymmetricDecryptionKey, SymmetricEncrypti
 /// use bouncycastle_rng::HashDRBG_SHA512;
 ///
 /// let bytes: [u8; 24] = core::array::from_fn(|i| (i as u8).wrapping_mul(7).wrapping_add(1));
-/// let material = KeyMaterial::<24>::from_bytes_as_type(&bytes, KeyType::SymmetricCipherKey).unwrap();
+/// let material = KeyMaterial::<24>::from_bytes_as_type(&bytes, KeyType::SymmetricCipherKey)
+///     .unwrap();
 /// let key = TDES3Key::<ECB<NoPadding>>::from_key_material(&material).unwrap();
 ///
 /// // Two identical blocks in...
@@ -117,7 +119,8 @@ pub type TDES_ECB<'k, Dir, Pad> = <Dir as Direction>::Select<
 ///       0x4a, 0x76, 0x3b, 0xd5, 0x4a, 0x46, 0xa4, 0x45],
 ///     KeyType::SymmetricCipherKey,
 /// ).expect("a 16-byte symmetric cipher key");
-/// let key = TDES2Key::<ECB<NoPadding>>::from_key_material(&material).expect("a valid two-key bundle");
+/// let key = TDES2Key::<ECB<NoPadding>>::from_key_material(&material)
+///     .expect("a valid two-key bundle");
 ///
 /// let ciphertext = [0x89, 0x32, 0x1b, 0xa7, 0x5b, 0xa5, 0x45, 0xdb];
 /// let plaintext = key.decrypt(&[], &ciphertext).expect("decryption");

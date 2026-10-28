@@ -13,22 +13,25 @@
 //! the same roles, but every encrypting worker over it is a compile error at the call site: the
 //! modes check [`ElectronicCodeBook::ENCRYPTION_APPROVED`] when they make one, and two-key TDEA
 //! is disallowed for encryption. See [`TDES2Internal`].
-//!
-//! [`ElectronicCodeBook::ENCRYPTION_APPROVED`]: bouncycastle_core::hazmat::ElectronicCodeBook::ENCRYPTION_APPROVED
 
 use crate::hazmat::{TDES2Internal, TDESInternal};
-use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
+use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::hazmat::{
     BlockDecryptMode, BlockEncryptMode, EcbDecryptMode, EcbDecryptionKey, EcbEncryptMode,
     EcbEncryptionKey, ElectronicCodeBook, Mode, ModeKey, SymmetricDecryptMode,
     SymmetricEncryptMode,
 };
-use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
+use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::symmetric_key::{
     BlockDecryptionKey, BlockEncryptionKey, FromKeyMaterial, SymmetricDecryptionKey,
     SymmetricEncryptionKey,
 };
 use bouncycastle_core::traits::RNG;
+
+// Imports needed for docs
+#[allow(unused_imports)]
+use bouncycastle_core::errors::KeyMaterialError;
+// end of imports needed for docs
 
 mod sealed {
     pub trait Sealed {}
@@ -82,38 +85,23 @@ where
 
 impl<P: TDESEngine, M: Mode<P>> Eq for TDESKey<P, M> where M::KeyState: Eq {}
 
-/// Every TDEA mode is a cipher mode, so the material must be a `SymmetricCipherKey`; the engine's
-/// constructor checks that too, but this is the error the role contract names.
-fn check_key_type(
-    key: &dyn KeyMaterialTrait,
-    expected: KeyType,
-) -> Result<(), SymmetricCipherError> {
-    if key.key_type() != expected {
-        return Err(KeyMaterialError::InvalidKeyType(
-            "The key is not of the KeyType this mode requires.",
-        )
-        .into());
-    }
-    Ok(())
-}
-
 // The constructors are per engine rather than once over `P`, because stable Rust cannot name
 // `KeyMaterial<{ P::KEY_LEN }>` in a generic signature; the fixed-capacity argument is what makes
 // a wrong-length bundle a compile error rather than a runtime one.
 impl<M: Mode<TDESInternal>> FromKeyMaterial<{ crate::KEY_LEN }> for TDES3Key<M> {
     const KEY_TYPE: KeyType = M::KEY_TYPE;
 
-    /// Checks and expands a 24-byte `Key1 || Key2 || Key3` bundle.
+    /// Checks and expands a 24-byte `Key1 || Key2 || Key3` bundle. The checks are the engine's:
+    /// every TDEA mode is a cipher mode and asks for the `SymmetricCipherKey` it requires.
     ///
     /// # Errors
-    /// * [`KeyMaterialError::InvalidKeyType`] if the key is not of [`Self::KEY_TYPE`].
+    /// * [`KeyMaterialError::InvalidKeyType`] if the key is not a `SymmetricCipherKey`.
     /// * [`KeyMaterialError::SecurityStrength`] if the key carries a strength below 112 bits.
     /// * [`KeyMaterialError::WeakKey`] if the three components are not pairwise distinct, or any
     ///   of them is a weak, semi-weak or possibly weak DEA key; see [`TDESInternal::new`].
     fn from_key_material(
         key: &KeyMaterial<{ crate::KEY_LEN }>,
     ) -> Result<Self, SymmetricCipherError> {
-        check_key_type(key, M::KEY_TYPE)?;
         Ok(Self { state: M::key_state(TDESInternal::new(key)?) })
     }
 }
@@ -121,17 +109,16 @@ impl<M: Mode<TDESInternal>> FromKeyMaterial<{ crate::KEY_LEN }> for TDES3Key<M> 
 impl<M: Mode<TDES2Internal>> FromKeyMaterial<{ crate::KEY_LEN_2KEY }> for TDES2Key<M> {
     const KEY_TYPE: KeyType = M::KEY_TYPE;
 
-    /// Checks and expands a 16-byte `Key1 || Key2` bundle.
+    /// Checks and expands a 16-byte `Key1 || Key2` bundle; the checks are the engine's.
     ///
     /// # Errors
-    /// * [`KeyMaterialError::InvalidKeyType`] if the key is not of [`Self::KEY_TYPE`].
+    /// * [`KeyMaterialError::InvalidKeyType`] if the key is not a `SymmetricCipherKey`.
     /// * [`KeyMaterialError::WeakKey`] if `Key1 = Key2`, or either component is a weak, semi-weak
     ///   or possibly weak DEA key; see [`TDES2Internal::new`]. No strength is too low for two-key
     ///   TDEA, whose own rating is below the lowest level modelled.
     fn from_key_material(
         key: &KeyMaterial<{ crate::KEY_LEN_2KEY }>,
     ) -> Result<Self, SymmetricCipherError> {
-        check_key_type(key, M::KEY_TYPE)?;
         Ok(Self { state: M::key_state(TDES2Internal::new(key)?) })
     }
 }

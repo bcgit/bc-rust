@@ -7,7 +7,7 @@
 //! [`TDES2Internal`], are implemented as a Boolean circuit over bit-planes rather than by lookups
 //! in S-box tables, which makes them constant-time; see [Design](#design). They are
 //! *permutations*, not ciphers you can encrypt data with, which is why they live under [`hazmat`],
-//! and TDEA is a **legacy algorithm**: see [Security Considerations](#security-considerations)
+//! and TDEA is a **legacy algorithm**: see [Security Considerations](#-security-considerations-)
 //! before using it for anything new.
 //!
 //! # Usage Examples
@@ -38,7 +38,8 @@
 //! use bouncycastle_cipher::modes::CBC;
 //! use bouncycastle_cipher::padding::PKCS7;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-//! use bouncycastle_core::symmetric_key::{FromKeyMaterial, SymmetricDecryptionKey, SymmetricEncryptionKey};
+//! use bouncycastle_core::symmetric_key::{FromKeyMaterial, SymmetricDecryptionKey};
+//! use bouncycastle_core::symmetric_key::SymmetricEncryptionKey;
 //! use bouncycastle_rng::HashDRBG_SHA512;
 //!
 //! let mut rng = HashDRBG_SHA512::new_from_os();   // one RNG, held across messages
@@ -120,7 +121,8 @@
 //!       0x62, 0x76, 0xae, 0x1f, 0x38, 0x9d, 0x8a, 0xe9],
 //!     KeyType::SymmetricCipherKey,
 //! ).expect("a 16-byte symmetric cipher key");
-//! let key = TDES2Key::<CBC<NoPadding>>::from_key_material(&material).expect("a valid two-key bundle");
+//! let key = TDES2Key::<CBC<NoPadding>>::from_key_material(&material)
+//!     .expect("a valid two-key bundle");
 //! let iv = [0xf2, 0x9d, 0x4b, 0xa5, 0x17, 0x2f, 0xd2, 0x97];
 //! let ciphertext = [0x1b, 0x38, 0x89, 0xc9, 0xdb, 0xe1, 0x0d, 0x03];
 //!
@@ -183,13 +185,21 @@
 //! packing), so 128 bytes per DEA key. Per-call stack usage is a few words of block state, the
 //! six 4-byte input planes, and a 128-byte working array for the ANF evaluation, most of which the
 //! compiler keeps in registers. A worker adds the mode's own state (an IV or counter block) and a
-//! reference to the key.
+//! reference to the key. Measured as the frame of each entry point's `measure` closure in
+//! `mem_usage_benches/src/bench_tdes_mem_usage.rs`, from the compiler's frame-layout remarks in
+//! the release build (x86-64, rustc 1.97 nightly, return address included); the two-key engine
+//! is decryption-only, so only its decrypting entry points are measured:
+//!
+//! | Entry point | [`TDESInternal`] | [`TDES2Internal`] |
+//! |---|---|---|
+//! | `new` (key expansion) | 800 B | 544 B |
+//! | `encrypt_block` / `decrypt_block` | 48 B | 48 B (decrypt) |
+//! | `encrypt_2blocks` / `decrypt_2blocks` | 80 B | 80 B (decrypt) |
+//! | `encrypt_4blocks` / `decrypt_4blocks` | 112 B | 112 B (decrypt) |
 //!
 //! For comparison, the table-driven `DESEngine` carries 2 KiB of combined S/P tables.
 //!
-//! Measure with `cargo run --release -p mem_usage_benches --bin bench_tdes_mem_usage`.
-//!
-//! # Security Considerations
+//! # 🚨 Security Considerations 🚨
 //!
 //! ## TDEA is a legacy algorithm
 //!
@@ -218,15 +228,15 @@
 //! ## A block permutation is not a cipher
 //!
 //! [`TDESInternal`] transforms exactly 8 bytes. Using it directly on data means ECB, which is not
-//! confidential: identical plaintext blocks produce identical ciphertext blocks, so structure in the
-//! plaintext survives encryption. **Do not do it.** Use a mode of operation, and prefer an
+//! confidential: identical plaintext blocks produce identical ciphertext blocks, so structure in
+//! the plaintext survives encryption. **Do not do it.** Use a mode of operation, and prefer an
 //! authenticated one so that ciphertext tampering is detected.
 //!
-//! The [`TDES_ECB`] alias gives that same block-by-block operation the mode API, so that systems and
-//! specifications which require ECB -- and test-vector harnesses -- can use it through the same
-//! interface as the other modes. Like the CBC alias it carries a padding scheme, which is what lets
-//! it accept data of any length. Neither the mode API nor the padding makes ECB confidential.
-//! That is why the permutations and the ECB aliases live under [`hazmat`];
+//! The [`TDES_ECB`] alias gives that same block-by-block operation the mode API, so that systems
+//! and specifications which require ECB -- and test-vector harnesses -- can use it through the
+//! same interface as the other modes. Like the CBC alias it carries a padding scheme, which is
+//! what lets it accept data of any length. Neither the mode API nor the padding makes ECB
+//! confidential. That is why the permutations and the ECB aliases live under [`hazmat`];
 //! [`bouncycastle_core::hazmat`] lists the supported uses.
 //!
 //! ## Constant-time properties
