@@ -1,7 +1,8 @@
 //! TDES-CTR encryption and decryption, streaming stdin to stdout.
 //!
 //! Only the mode wiring lives here: the nonce convention, key loading and stdin framing are in
-//! [`crate::helpers::stream_mode_helpers`] (and [`crate::helpers::block_mode_helpers`] for the key loader), shared with the
+//! [`crate::helpers::stream_mode_helpers`] (and [`crate::helpers::block_mode_helpers`] for the
+//! key and nonce loaders), shared with the
 //! AES stream commands and `tdes-cfb` / `tdes-cfb8`. See those modules for the command-line
 //! contract.
 //!
@@ -29,14 +30,15 @@
 //! Appendix D). Do not decrypt data you have not authenticated separately.
 //!
 //! A repeated nonce is fatal here rather than merely unwise: the same nonce under the same key
-//! gives the same keystream. The nonce is drawn from the OS-backed DRBG and there is no way to
-//! supply one, but with only 48 bits of nonce the number of messages under one key bundle must
-//! stay small -- which SP 800-67 Rev 2 Sec 3.4's limit of 2^20 blocks per bundle already demands.
+//! gives the same keystream. The nonce is drawn from the OS-backed DRBG unless `--iv` /
+//! `--iv-file` supplies one, and then its uniqueness under the key is the caller's to keep; with
+//! only 48 bits of nonce the number of messages under one key bundle must stay small either way
+//! -- which SP 800-67 Rev 2 Sec 3.4's limit of 2^20 blocks per bundle already demands.
 //!
 //! TDEA is a legacy algorithm, disallowed for encryption by NIST SP 800-131A Rev 2 after 2023; see
 //! the `bouncycastle-tdes` crate docs.
 
-use crate::helpers::block_mode_helpers::{CipherDirection, load_key_object};
+use crate::helpers::block_mode_helpers::{CipherDirection, load_iv, load_key_object};
 use crate::helpers::stream_mode_helpers::run_stream_mode;
 use bouncycastle::cipher::modes::CTR;
 use bouncycastle::tdes::{BLOCK_LEN, CTR_NONCE_LEN, KEY_LEN, TDES3Key};
@@ -45,9 +47,12 @@ pub(crate) fn tdes_ctr_cmd(
     action: &CipherDirection,
     key: &Option<String>,
     key_file: &Option<String>,
+    iv: &Option<String>,
+    iv_file: &Option<String>,
     output_hex: bool,
 ) {
     let key =
         load_key_object::<TDES3Key<CTR<CTR_NONCE_LEN, BLOCK_LEN>>, KEY_LEN>(key, key_file, "TDES");
-    run_stream_mode::<_, KEY_LEN, CTR_NONCE_LEN>(action, &key, None, output_hex)
+    let nonce = load_iv::<CTR_NONCE_LEN>(iv, iv_file);
+    run_stream_mode::<_, KEY_LEN, CTR_NONCE_LEN>(action, &key, nonce, output_hex)
 }
