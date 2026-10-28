@@ -1706,16 +1706,19 @@ enum Subcommands {
         x: bool,
     },
 
-    /// Triple DES (three-key TDEA, NIST SP 800-67 Rev 2) in CBC mode (SP 800-38A Sec 6.2),
-    /// streaming stdin to stdout. LEGACY: NIST disallows TDEA for encryption after 2023
-    /// (SP 800-131A Rev 2); this exists for data and protocols that still depend on it.
+    /// Triple DES (three-key TDEA, NIST SP 800-67 Rev 2) in CBC mode (SP 800-38A Sec 6.2) with
+    /// PKCS7 padding, streaming stdin to stdout. LEGACY: NIST disallows TDEA for encryption after
+    /// 2023 (SP 800-131A Rev 2); this exists for data and protocols that still depend on it.
     ///
     /// On `encrypt`, a fresh unpredictable IV is generated and written as the FIRST 8 BYTES of the
     /// output; on `decrypt` it is read back from the first 8 bytes of the input, so the two compose
-    /// directly in a pipeline. There is deliberately no `--iv` flag.
+    /// directly in a pipeline. With `--iv` (hex) or `--iv-file` (raw bytes), the IV is supplied
+    /// instead: `encrypt` uses it and writes ONLY the ciphertext, and `decrypt` reads ONLY
+    /// ciphertext from stdin, as for `aes128-cbc`.
     ///
-    /// Input must be a whole number of 8-byte blocks: CBC is defined only on whole blocks and this
-    /// command applies no padding, so unaligned input is rejected rather than padded.
+    /// Input may be any length: it is padded with PKCS7 to a whole number of 8-byte blocks, so the
+    /// ciphertext after the IV is 1 to 8 bytes longer than the plaintext, and `decrypt` rejects a
+    /// ciphertext whose padding is malformed.
     ///
     /// The key is 24 bytes, KEY1 || KEY2 || KEY3, with three distinct component keys none of which
     /// is a weak DES key (SP 800-67 Rev 2 Sec 3.1 and 3.3.2). Two-key TDEA is not supported.
@@ -1727,6 +1730,7 @@ enum Subcommands {
     /// Note: in production uses, secrets should not be passed on the command-line because they get
     /// logged in shell history. Use the file-based input instead.
     TDES_CBC {
+        #[arg(short, long)]
         direction: CipherDirection,
 
         /// The 24-byte TDES key bundle in hex.
@@ -1738,6 +1742,16 @@ enum Subcommands {
         /// If both key and key_file options are provided, the file will be used.
         #[arg(short, long)]
         key_file: Option<String>,
+
+        /// The 8-byte IV in hex. Supplied instead of generated: `encrypt` then writes no IV and
+        /// `decrypt` reads none. See the IV paragraph above.
+        #[arg(long)]
+        iv: Option<String>,
+
+        /// A file containing the 8-byte IV, as raw bytes exactly as they are (no hex decoding).
+        /// If both iv and iv_file options are provided, the file will be used.
+        #[arg(long)]
+        iv_file: Option<String>,
 
         #[arg(short)]
         /// Output in hex format.
@@ -1751,14 +1765,16 @@ enum Subcommands {
     /// different, non-interoperable mode; use `tdes-cfb8` for that.
     ///
     /// On `encrypt`, a fresh unpredictable IV is generated and written as the FIRST 8 BYTES of the
-    /// output; on `decrypt` it is read back from the first 8 bytes of the input. There is
-    /// deliberately no `--iv` flag.
+    /// output; on `decrypt` it is read back from the first 8 bytes of the input. With `--iv` (hex)
+    /// or `--iv-file` (raw bytes), the IV is supplied instead and only ciphertext is written or
+    /// read.
     ///
     /// Input may be ANY length: CFB is a stream cipher, so nothing is padded and the ciphertext is
     /// exactly as long as the plaintext.
     ///
     /// See `tdes-cbc` for the key format and the warnings, which apply unchanged.
     TDES_CFB {
+        #[arg(short, long)]
         direction: CipherDirection,
 
         /// The 24-byte TDES key bundle in hex.
@@ -1770,6 +1786,16 @@ enum Subcommands {
         /// If both key and key_file options are provided, the file will be used.
         #[arg(short, long)]
         key_file: Option<String>,
+
+        /// The 8-byte IV in hex. Supplied instead of generated: `encrypt` then writes no IV and
+        /// `decrypt` reads none. See the IV paragraph above.
+        #[arg(long)]
+        iv: Option<String>,
+
+        /// A file containing the 8-byte IV, as raw bytes exactly as they are (no hex decoding).
+        /// If both iv and iv_file options are provided, the file will be used.
+        #[arg(long)]
+        iv_file: Option<String>,
 
         #[arg(short)]
         /// Output in hex format.
@@ -1786,6 +1812,7 @@ enum Subcommands {
     /// See `tdes-cfb` for the IV convention and input-length rule, and `tdes-cbc` for the key
     /// format and the warnings, which apply unchanged.
     TDES_CFB8 {
+        #[arg(short, long)]
         direction: CipherDirection,
 
         /// The 24-byte TDES key bundle in hex.
@@ -1797,6 +1824,16 @@ enum Subcommands {
         /// If both key and key_file options are provided, the file will be used.
         #[arg(short, long)]
         key_file: Option<String>,
+
+        /// The 8-byte IV in hex. Supplied instead of generated: `encrypt` then writes no IV and
+        /// `decrypt` reads none. See the IV paragraph above.
+        #[arg(long)]
+        iv: Option<String>,
+
+        /// A file containing the 8-byte IV, as raw bytes exactly as they are (no hex decoding).
+        /// If both iv and iv_file options are provided, the file will be used.
+        #[arg(long)]
+        iv_file: Option<String>,
 
         #[arg(short)]
         /// Output in hex format.
@@ -1807,9 +1844,11 @@ enum Subcommands {
     /// streaming stdin to stdout. LEGACY: see `tdes-cbc`.
     ///
     /// On `encrypt`, a fresh 6-BYTE NONCE is generated and written as the first 6 bytes of the
-    /// output; on `decrypt` it is read back from the first 6 bytes of the input. The remaining 2
-    /// bytes of the 8-byte counter block are the counter, so a single message is limited to
-    /// 65 536 blocks (512 KiB); longer input fails rather than repeating a counter block.
+    /// output; on `decrypt` it is read back from the first 6 bytes of the input. With `--iv` (hex)
+    /// or `--iv-file` (raw bytes), the nonce is supplied instead and only ciphertext is written or
+    /// read; it MUST then be unique per message under one key bundle. The remaining 2 bytes of the
+    /// 8-byte counter block are the counter, so a single message is limited to 65 536 blocks
+    /// (512 KiB); longer input fails rather than repeating a counter block.
     ///
     /// Input may be any length up to that limit: CTR is a stream cipher, so nothing is padded and
     /// the ciphertext is exactly as long as the plaintext.
@@ -1819,6 +1858,7 @@ enum Subcommands {
     /// one key is fatal, and the nonce is only 48 bits, so the number of messages under one key
     /// bundle must stay small. See `tdes-cbc` for the key format and the other warnings.
     TDES_CTR {
+        #[arg(short, long)]
         direction: CipherDirection,
 
         /// The 24-byte TDES key bundle in hex.
@@ -1830,6 +1870,16 @@ enum Subcommands {
         /// If both key and key_file options are provided, the file will be used.
         #[arg(short, long)]
         key_file: Option<String>,
+
+        /// The 6-byte nonce in hex. Supplied instead of generated: `encrypt` then writes none
+        /// and `decrypt` reads none. See the nonce paragraph above.
+        #[arg(long)]
+        iv: Option<String>,
+
+        /// A file containing the 6-byte nonce, as raw bytes exactly as they are (no hex
+        /// decoding). If both iv and iv_file options are provided, the file will be used.
+        #[arg(long)]
+        iv_file: Option<String>,
 
         #[arg(short)]
         /// Output in hex format.
@@ -1853,6 +1903,7 @@ enum Subcommands {
     ///
     /// See `tdes-cbc` for the key format.
     TDES_ECB {
+        #[arg(short, long)]
         direction: CipherDirection,
 
         /// The 24-byte TDES key bundle in hex.
@@ -1874,8 +1925,8 @@ enum Subcommands {
     /// stdout. NIST SP 800-131A Rev 2 Table 1 disallows two-key TDEA for encryption and allows
     /// decryption for legacy use, so `encrypt` does not exist for this command.
     ///
-    /// The first 8 bytes of input are the IV, as the `tdes-cbc decrypt` convention; the rest must
-    /// be a whole number of 8-byte blocks and is decrypted without unpadding.
+    /// The first 8 bytes of input are the IV, as the `tdes-cbc decrypt` convention, unless `--iv`
+    /// or `--iv-file` supplies it; the rest is PKCS7-padded ciphertext, as `tdes-cbc` writes it.
     ///
     /// The key is 16 bytes, KEY1 || KEY2, with two distinct component keys neither of which is a
     /// weak DES key (SP 800-67 Rev 2 Sec 3.1 and 3.3.2).
@@ -1883,6 +1934,7 @@ enum Subcommands {
     /// Note: in production uses, secrets should not be passed on the command-line because they get
     /// logged in shell history. Use the file-based input instead.
     TDES2_CBC {
+        #[arg(short = 'd', long = "direction")]
         action: DecryptOnlyAction,
 
         /// The 16-byte two-key TDES bundle in hex.
@@ -1894,6 +1946,16 @@ enum Subcommands {
         /// If both key and key_file options are provided, the file will be used.
         #[arg(short, long)]
         key_file: Option<String>,
+
+        /// The 8-byte IV in hex. Supplied instead of read from the input, which is then
+        /// ciphertext only.
+        #[arg(long)]
+        iv: Option<String>,
+
+        /// A file containing the 8-byte IV, as raw bytes exactly as they are (no hex decoding).
+        /// If both iv and iv_file options are provided, the file will be used.
+        #[arg(long)]
+        iv_file: Option<String>,
 
         #[arg(short)]
         /// Output in hex format.
@@ -1901,9 +1963,10 @@ enum Subcommands {
     },
 
     /// Two-key Triple DES (2TDEA) in CFB64 mode, DECRYPTION ONLY. See `tdes2-cbc` for why there is
-    /// no `encrypt`, and `tdes-cfb` for the IV convention (first 8 bytes of input) and the
-    /// any-length input rule.
+    /// no `encrypt`, and `tdes-cfb` for the IV convention (first 8 bytes of input, or `--iv`) and
+    /// the any-length input rule.
     TDES2_CFB {
+        #[arg(short = 'd', long = "direction")]
         action: DecryptOnlyAction,
 
         /// The 16-byte two-key TDES bundle in hex.
@@ -1915,6 +1978,16 @@ enum Subcommands {
         /// If both key and key_file options are provided, the file will be used.
         #[arg(short, long)]
         key_file: Option<String>,
+
+        /// The 8-byte IV in hex. Supplied instead of read from the input, which is then
+        /// ciphertext only.
+        #[arg(long)]
+        iv: Option<String>,
+
+        /// A file containing the 8-byte IV, as raw bytes exactly as they are (no hex decoding).
+        /// If both iv and iv_file options are provided, the file will be used.
+        #[arg(long)]
+        iv_file: Option<String>,
 
         #[arg(short)]
         /// Output in hex format.
@@ -1924,6 +1997,7 @@ enum Subcommands {
     /// Two-key Triple DES (2TDEA) in CFB8 mode, DECRYPTION ONLY. See `tdes2-cbc` for why there is
     /// no `encrypt`, and `tdes-cfb8` for the IV convention and the difference from CFB64.
     TDES2_CFB8 {
+        #[arg(short = 'd', long = "direction")]
         action: DecryptOnlyAction,
 
         /// The 16-byte two-key TDES bundle in hex.
@@ -1935,6 +2009,16 @@ enum Subcommands {
         /// If both key and key_file options are provided, the file will be used.
         #[arg(short, long)]
         key_file: Option<String>,
+
+        /// The 8-byte IV in hex. Supplied instead of read from the input, which is then
+        /// ciphertext only.
+        #[arg(long)]
+        iv: Option<String>,
+
+        /// A file containing the 8-byte IV, as raw bytes exactly as they are (no hex decoding).
+        /// If both iv and iv_file options are provided, the file will be used.
+        #[arg(long)]
+        iv_file: Option<String>,
 
         #[arg(short)]
         /// Output in hex format.
@@ -1942,9 +2026,10 @@ enum Subcommands {
     },
 
     /// Two-key Triple DES (2TDEA) in CTR mode, DECRYPTION ONLY. See `tdes2-cbc` for why there is
-    /// no `encrypt`, and `tdes-ctr` for the nonce convention (first 6 bytes of input) and the
-    /// 512 KiB per-message limit.
+    /// no `encrypt`, and `tdes-ctr` for the nonce convention (first 6 bytes of input, or `--iv`)
+    /// and the 512 KiB per-message limit.
     TDES2_CTR {
+        #[arg(short = 'd', long = "direction")]
         action: DecryptOnlyAction,
 
         /// The 16-byte two-key TDES bundle in hex.
@@ -1956,6 +2041,16 @@ enum Subcommands {
         /// If both key and key_file options are provided, the file will be used.
         #[arg(short, long)]
         key_file: Option<String>,
+
+        /// The 6-byte nonce in hex. Supplied instead of read from the input, which is then
+        /// ciphertext only.
+        #[arg(long)]
+        iv: Option<String>,
+
+        /// A file containing the 6-byte nonce, as raw bytes exactly as they are (no hex
+        /// decoding). If both iv and iv_file options are provided, the file will be used.
+        #[arg(long)]
+        iv_file: Option<String>,
 
         #[arg(short)]
         /// Output in hex format.
@@ -1966,6 +2061,7 @@ enum Subcommands {
     /// no `encrypt`, and `tdes-ecb` for the ECB warning: no IV, input a whole number of 8-byte
     /// blocks, no unpadding.
     TDES2_ECB {
+        #[arg(short = 'd', long = "direction")]
         action: DecryptOnlyAction,
 
         /// The 16-byte two-key TDES bundle in hex.
@@ -2320,32 +2416,32 @@ fn run() {
         Some(Subcommands::SM3 { x }) => {
             sm3_cmd::sm3_cmd(*x);
         }
-        Some(Subcommands::TDES_CBC { direction, key, key_file, x }) => {
-            tdes_cbc_cmd::tdes_cbc_cmd(direction, key, key_file, *x);
+        Some(Subcommands::TDES_CBC { direction, key, key_file, iv, iv_file, x }) => {
+            tdes_cbc_cmd::tdes_cbc_cmd(direction, key, key_file, iv, iv_file, *x);
         }
-        Some(Subcommands::TDES_CFB { direction, key, key_file, x }) => {
-            tdes_cfb_cmd::tdes_cfb_cmd(direction, key, key_file, *x);
+        Some(Subcommands::TDES_CFB { direction, key, key_file, iv, iv_file, x }) => {
+            tdes_cfb_cmd::tdes_cfb_cmd(direction, key, key_file, iv, iv_file, *x);
         }
-        Some(Subcommands::TDES_CFB8 { direction, key, key_file, x }) => {
-            tdes_cfb8_cmd::tdes_cfb8_cmd(direction, key, key_file, *x);
+        Some(Subcommands::TDES_CFB8 { direction, key, key_file, iv, iv_file, x }) => {
+            tdes_cfb8_cmd::tdes_cfb8_cmd(direction, key, key_file, iv, iv_file, *x);
         }
-        Some(Subcommands::TDES_CTR { direction, key, key_file, x }) => {
-            tdes_ctr_cmd::tdes_ctr_cmd(direction, key, key_file, *x);
+        Some(Subcommands::TDES_CTR { direction, key, key_file, iv, iv_file, x }) => {
+            tdes_ctr_cmd::tdes_ctr_cmd(direction, key, key_file, iv, iv_file, *x);
         }
         Some(Subcommands::TDES_ECB { direction, key, key_file, x }) => {
             tdes_ecb_cmd::tdes_ecb_cmd(direction, key, key_file, *x);
         }
-        Some(Subcommands::TDES2_CBC { action, key, key_file, x }) => {
-            tdes2_cbc_cmd::tdes2_cbc_cmd(action, key, key_file, *x);
+        Some(Subcommands::TDES2_CBC { action, key, key_file, iv, iv_file, x }) => {
+            tdes2_cbc_cmd::tdes2_cbc_cmd(action, key, key_file, iv, iv_file, *x);
         }
-        Some(Subcommands::TDES2_CFB { action, key, key_file, x }) => {
-            tdes2_cfb_cmd::tdes2_cfb_cmd(action, key, key_file, *x);
+        Some(Subcommands::TDES2_CFB { action, key, key_file, iv, iv_file, x }) => {
+            tdes2_cfb_cmd::tdes2_cfb_cmd(action, key, key_file, iv, iv_file, *x);
         }
-        Some(Subcommands::TDES2_CFB8 { action, key, key_file, x }) => {
-            tdes2_cfb8_cmd::tdes2_cfb8_cmd(action, key, key_file, *x);
+        Some(Subcommands::TDES2_CFB8 { action, key, key_file, iv, iv_file, x }) => {
+            tdes2_cfb8_cmd::tdes2_cfb8_cmd(action, key, key_file, iv, iv_file, *x);
         }
-        Some(Subcommands::TDES2_CTR { action, key, key_file, x }) => {
-            tdes2_ctr_cmd::tdes2_ctr_cmd(action, key, key_file, *x);
+        Some(Subcommands::TDES2_CTR { action, key, key_file, iv, iv_file, x }) => {
+            tdes2_ctr_cmd::tdes2_ctr_cmd(action, key, key_file, iv, iv_file, *x);
         }
         Some(Subcommands::TDES2_ECB { action, key, key_file, x }) => {
             tdes2_ecb_cmd::tdes2_ecb_cmd(action, key, key_file, *x);

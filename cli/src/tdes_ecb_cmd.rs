@@ -1,8 +1,9 @@
 //! TDES-ECB encryption and decryption, streaming stdin to stdout.
 //!
 //! Only the mode wiring lives here: key loading, stdin framing and block-alignment enforcement are
-//! all in [`crate::helpers::block_mode_helpers`], shared with the AES commands and `tdes-cbc`. See that module
-//! for the command-line contract. ECB has no IV (`INIT_DATA_LEN = 0`), so nothing is prepended to
+//! all in [`crate::helpers::block_mode_helpers`], shared with the AES commands and `tdes-cbc`. See
+//! that module for the command-line contract. ECB has no IV (`INIT_DATA_LEN = 0`), so nothing is
+//! prepended to
 //! the output or consumed from the input: the ciphertext is exactly as long as the plaintext. The
 //! block is 8 bytes.
 //!

@@ -1,53 +1,47 @@
 //! TDES-CBC encryption and decryption, streaming stdin to stdout.
 //!
-//! Only the mode wiring lives here: the IV convention, key loading, stdin framing and
-//! block-alignment enforcement are all in [`crate::helpers::block_mode_helpers`], shared with the AES commands
-//! and `tdes-ecb`. See that module for the command-line contract. The block, and so the IV, is
-//! 8 bytes.
+//! Only the mode wiring lives here: the IV convention, key loading and stdin framing are all in
+//! [`crate::helpers::block_mode_helpers`], shared with the AES commands and `tdes-ecb`. See that
+//! module for the command-line contract. The block, and so the IV, is 8 bytes, and input is
+//! padded with PKCS7, so it may be any length.
 //!
 //! CBC (NIST SP 800-38A Sec 6.2; TCBC in its Appendix E) provides confidentiality only. It does not
 //! detect tampering, and neither the ciphertext nor the IV is authenticated -- a flipped ciphertext
-//! bit flips the same bit of the *next* block's plaintext (Appendix D). Do not decrypt data you have
-//! not authenticated separately.
+//! bit flips the same bit of the *next* block's plaintext (Appendix D). Do not decrypt data you
+//! have not authenticated separately.
 //!
 //! TDEA is a legacy algorithm, disallowed for encryption by NIST SP 800-131A Rev 2 after 2023; see
-//! the `bouncycastle-tdes` crate docs. One key bundle must not protect more than 2^20 blocks (8 MiB)
-//! in total (SP 800-67 Rev 2 Sec 3.4); the command does not count across invocations.
+//! the `bouncycastle-tdes` crate docs. One key bundle must not protect more than 2^20 blocks
+//! (8 MiB) in total (SP 800-67 Rev 2 Sec 3.4); the command does not count across invocations.
 
 use crate::helpers::block_mode_helpers::{
-    CipherDirection, decrypt_stream, encrypt_stream, load_key_object, start_encryptor,
+    CipherDirection, decrypt_stream, encrypt_stream, load_iv, load_key_object, start_encryptor,
 };
 use bouncycastle::cipher::modes::CBC;
-use bouncycastle::cipher::padding::NoPadding;
+use bouncycastle::cipher::padding::PKCS7;
 use bouncycastle::core::symmetric_key::{SymmetricDecryptionKey, SymmetricEncryptionKey};
 use bouncycastle::tdes::{BLOCK_LEN, KEY_LEN, TDES3Key};
-
-/// Names the mode in error messages.
-const MODE: &str = "CBC";
 
 pub(crate) fn tdes_cbc_cmd(
     action: &CipherDirection,
     key: &Option<String>,
     key_file: &Option<String>,
+    iv: &Option<String>,
+    iv_file: &Option<String>,
     output_hex: bool,
 ) {
-    // `NoPadding`: whole blocks only, as the command's contract says.
-    let key = load_key_object::<TDES3Key<CBC<NoPadding>>, KEY_LEN>(key, key_file, "TDES");
+    let key = load_key_object::<TDES3Key<CBC<PKCS7>>, KEY_LEN>(key, key_file, "TDES");
+    let iv = load_iv::<BLOCK_LEN>(iv, iv_file);
     match action {
         CipherDirection::Encrypt => {
-            let (enc, generated_iv) = start_encryptor(None, |rng| key.create_encryptor(rng));
-            encrypt_stream::<_, BLOCK_LEN, BLOCK_LEN>(
-                enc,
-                generated_iv.as_ref(),
-                output_hex,
-                Some(MODE),
-            )
+            let (enc, generated_iv) = start_encryptor(iv, |rng| key.create_encryptor(rng));
+            encrypt_stream::<_, BLOCK_LEN, BLOCK_LEN>(enc, generated_iv.as_ref(), output_hex, None)
         }
         CipherDirection::Decrypt => decrypt_stream::<_, BLOCK_LEN, BLOCK_LEN>(
-            None,
+            iv,
             |iv| key.create_decryptor(iv),
             output_hex,
-            Some(MODE),
+            None,
         ),
     }
 }

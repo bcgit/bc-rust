@@ -1,7 +1,8 @@
 //! TDES-CFB64 encryption and decryption, streaming stdin to stdout.
 //!
 //! Only the mode wiring lives here: the IV convention, key loading and stdin framing are in
-//! [`crate::helpers::stream_mode_helpers`] (and [`crate::helpers::block_mode_helpers`] for the key loader), shared with the
+//! [`crate::helpers::stream_mode_helpers`] (and [`crate::helpers::block_mode_helpers`] for the
+//! key and IV loaders), shared with the
 //! AES stream commands and `tdes-cfb8` / `tdes-ctr`. See those modules for the command-line
 //! contract. The block, and so the IV, is 8 bytes; the segment is the full block, so this is CFB64
 //! -- the TCFB mode of SP 800-38A Appendix E with `s = 64`.
@@ -19,7 +20,7 @@
 //! TDEA is a legacy algorithm, disallowed for encryption by NIST SP 800-131A Rev 2 after 2023; see
 //! the `bouncycastle-tdes` crate docs.
 
-use crate::helpers::block_mode_helpers::{CipherDirection, load_key_object};
+use crate::helpers::block_mode_helpers::{CipherDirection, load_iv, load_key_object};
 use crate::helpers::stream_mode_helpers::run_stream_mode;
 use bouncycastle::cipher::modes::CFB;
 use bouncycastle::tdes::{BLOCK_LEN, KEY_LEN, TDES3Key};
@@ -28,8 +29,10 @@ pub(crate) fn tdes_cfb_cmd(
     action: &CipherDirection,
     key: &Option<String>,
     key_file: &Option<String>,
+    iv: &Option<String>,
+    iv_file: &Option<String>,
     output_hex: bool,
 ) {
     let key = load_key_object::<TDES3Key<CFB>, KEY_LEN>(key, key_file, "TDES");
-    run_stream_mode::<_, KEY_LEN, BLOCK_LEN>(action, &key, None, output_hex)
+    run_stream_mode::<_, KEY_LEN, BLOCK_LEN>(action, &key, load_iv(iv, iv_file), output_hex)
 }

@@ -4,7 +4,8 @@
 //! `TDES2Key::create_encryptor` does not compile, and
 //! [`DecryptOnlyAction`] has no `encrypt`. Everything else is `tdes-ecb decrypt` -- no IV, input a
 //! whole number of 8-byte blocks, no unpadding -- see [`crate::tdes_ecb_cmd`] for the ECB warning
-//! and [`crate::helpers::block_mode_helpers`] for the framing. The key is the 16-byte `KEY1 || KEY2`.
+//! and [`crate::helpers::block_mode_helpers`] for the framing. The key is the 16-byte
+//! `KEY1 || KEY2`.
 
 use crate::helpers::block_mode_helpers::{DecryptOnlyAction, decrypt_stream, load_key_object};
 use bouncycastle::cipher::modes::hazmat::ecb::ECB;
