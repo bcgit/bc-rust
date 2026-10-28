@@ -21,13 +21,15 @@ use bouncycastle_core::symmetric_key::{SymmetricDecryptionKey, SymmetricEncrypti
 // end of imports needed for docs
 
 /// TDES in CFB8 mode. `Dir` is [`bouncycastle_cipher::Encrypting`] or
-/// [`bouncycastle_cipher::Decrypting`]; the wrong direction is a compile error, not a runtime check.
+/// [`bouncycastle_cipher::Decrypting`]; the wrong direction is a compile error, not a runtime
+/// check.
 ///
 /// ```
 /// use bouncycastle_tdes::TDES3Key;
 /// use bouncycastle_cipher::modes::{CFB, CFB8};
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-/// use bouncycastle_core::symmetric_key::{FromKeyMaterial, SymmetricDecryptionKey, SymmetricEncryptionKey};
+/// use bouncycastle_core::symmetric_key::{FromKeyMaterial, SymmetricDecryptionKey};
+/// use bouncycastle_core::symmetric_key::SymmetricEncryptionKey;
 /// use bouncycastle_rng::HashDRBG_SHA512;
 ///
 /// let mut rng = HashDRBG_SHA512::new_from_os();

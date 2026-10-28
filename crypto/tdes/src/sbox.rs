@@ -3,8 +3,8 @@
 //!
 //! # The tables are only used at compile time
 //!
-//! [`S_BOXES`] is Appendix A transcribed verbatim, in the spec's own row/column layout so that it can
-//! be checked against the document by eye. Nothing indexes it at run time. Instead [`ANF`] is
+//! [`S_BOXES`] is Appendix A transcribed verbatim, in the spec's own row/column layout so that it
+//! can be checked against the document by eye. Nothing indexes it at run time. Instead [`ANF`] is
 //! derived from it in a `const fn`, and the run-time S-box layer is a fixed straight-line program
 //! over that derived constant: every step is an AND or an XOR of whole words, so no memory access
 //! and no branch depends on the data.

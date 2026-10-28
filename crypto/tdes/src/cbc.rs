@@ -49,7 +49,8 @@ use bouncycastle_core::symmetric_key::{SymmetricDecryptionKey, SymmetricEncrypti
 /// use bouncycastle_cipher::modes::CBC;
 /// use bouncycastle_cipher::padding::PKCS7;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-/// use bouncycastle_core::symmetric_key::{FromKeyMaterial, SymmetricDecryptionKey, SymmetricEncryptionKey};
+/// use bouncycastle_core::symmetric_key::{FromKeyMaterial, SymmetricDecryptionKey};
+/// use bouncycastle_core::symmetric_key::SymmetricEncryptionKey;
 /// use bouncycastle_rng::HashDRBG_SHA512;
 ///
 /// let mut rng = HashDRBG_SHA512::new_from_os();
@@ -80,7 +81,8 @@ use bouncycastle_core::symmetric_key::{SymmetricDecryptionKey, SymmetricEncrypti
 ///
 /// let mut rng = HashDRBG_SHA512::new_from_os();
 /// let bytes: [u8; 24] = core::array::from_fn(|i| (i as u8).wrapping_mul(7).wrapping_add(1));
-/// let material = KeyMaterial::<24>::from_bytes_as_type(&bytes, KeyType::SymmetricCipherKey).unwrap();
+/// let material = KeyMaterial::<24>::from_bytes_as_type(&bytes, KeyType::SymmetricCipherKey)
+///     .unwrap();
 /// let key = TDES3Key::<CBC<NoPadding>>::from_key_material(&material).unwrap();
 ///
 /// // A whole block is fine, and comes out the same length.
@@ -106,7 +108,8 @@ use bouncycastle_core::symmetric_key::{SymmetricDecryptionKey, SymmetricEncrypti
 /// use bouncycastle_rng::HashDRBG_SHA512;
 ///
 /// let bytes: [u8; 24] = core::array::from_fn(|i| (i as u8).wrapping_mul(7).wrapping_add(1));
-/// let material = KeyMaterial::<24>::from_bytes_as_type(&bytes, KeyType::SymmetricCipherKey).unwrap();
+/// let material = KeyMaterial::<24>::from_bytes_as_type(&bytes, KeyType::SymmetricCipherKey)
+///     .unwrap();
 /// let key = TDES3Key::<CBC<NoPadding>>::from_key_material(&material).unwrap();
 ///
 /// // Built from a NoPadding key, annotated as PKCS7: mismatched types.
@@ -150,7 +153,8 @@ pub type TDES_CBC<'k, Dir, Pad> = <Dir as Direction>::Select<
 ///       0x62, 0x76, 0xae, 0x1f, 0x38, 0x9d, 0x8a, 0xe9],
 ///     KeyType::SymmetricCipherKey,
 /// ).expect("a 16-byte symmetric cipher key");
-/// let key = TDES2Key::<CBC<NoPadding>>::from_key_material(&material).expect("a valid two-key bundle");
+/// let key = TDES2Key::<CBC<NoPadding>>::from_key_material(&material)
+///     .expect("a valid two-key bundle");
 /// let iv = [0xf2, 0x9d, 0x4b, 0xa5, 0x17, 0x2f, 0xd2, 0x97];
 /// let ciphertext = [0x1b, 0x38, 0x89, 0xc9, 0xdb, 0xe1, 0x0d, 0x03];
 ///

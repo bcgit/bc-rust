@@ -203,7 +203,8 @@ fn a_non_parity_bit_does_change_the_cipher() {
     for position in 0..3 {
         for bit in 0..64u32 {
             if bit % 8 == 0 {
-                continue; // a parity bit: bits 8, 16, ..., 64 in spec numbering are word bits 56, 48, .., 0
+                // A parity bit: bits 8, 16, ..., 64 in spec numbering are word bits 56, 48, .., 0.
+                continue;
             }
             let mut k = GOOD;
             k[position] ^= 1u64 << bit;
@@ -228,7 +229,8 @@ fn the_key_material_checks() {
         Err(SymmetricCipherError::KeyMaterialError(KeyMaterialError::InvalidKeyType(_)))
     ));
 
-    // Too weak a strength: 3TDEA is 112 bits (SP 800-57 Part 1 Rev 5 Table 2), and that is the floor.
+    // Too weak a strength: 3TDEA is 112 bits (SP 800-57 Part 1 Rev 5 Table 2), and that is the
+    // floor.
     let mut key = bundle(GOOD);
     do_hazardous_operations(&mut key, |k| k.set_security_strength(SecurityStrength::None)).unwrap();
     assert!(matches!(
@@ -274,10 +276,10 @@ fn is_weak_key_error2(result: Result<TDES2Internal, SymmetricCipherError>) -> bo
 #[test]
 fn two_key_bundle_is_the_three_key_bundle_with_key3_equal_to_key1() {
     // Sec 3.1: 2TDEA is `Key3 = Key1`. `TDES` refuses that bundle; `TDES2Key` computes it. Check
-    // against a three-key engine built by hand from the same DEA keys is impossible (TDESInternal rejects
-    // it), so check the definition directly: F_K1(I_K2(F_K1(d))) via the single-DES identity
-    // F_K1(I_K1(x)) = x -- encrypting with (K1, K2) then decrypting with (K1, K2) round-trips, and
-    // the result differs from three-key TDEA with an unrelated third key.
+    // against a three-key engine built by hand from the same DEA keys is impossible (TDESInternal
+    // rejects it), so check the definition directly: F_K1(I_K2(F_K1(d))) via the single-DES
+    // identity F_K1(I_K1(x)) = x -- encrypting with (K1, K2) then decrypting with (K1, K2)
+    // round-trips, and the result differs from three-key TDEA with an unrelated third key.
     let [a, b, c] = GOOD;
     let two = TDES2Internal::new(&bundle2([a, b])).unwrap();
     let three = TDESInternal::new(&bundle([a, b, c])).unwrap();

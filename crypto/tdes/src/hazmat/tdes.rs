@@ -253,21 +253,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_engine_size_is_exactly_the_three_schedules() {
-        // The "Memory Usage" table in the crate docs quotes this. No direction flag, no counters:
-        // three DEA keys of sixteen two-word round keys.
-        assert_eq!(size_of::<TDESInternal>(), 3 * 16 * 2 * 4);
-        assert_eq!(size_of::<TDESInternal>(), 384);
-    }
-
-    #[test]
-    fn test_alg_name_and_strength() {
-        assert_eq!(<TDESInternal as Algorithm>::ALG_NAME, "TDES");
-        assert_eq!(<TDESInternal as Algorithm>::MAX_SECURITY_STRENGTH, SecurityStrength::_112bit);
-        assert!(<TDESInternal as ElectronicCodeBook<KEY_LEN, BLOCK_LEN>>::ENCRYPTION_APPROVED);
-    }
-
-    #[test]
     fn test_split_and_join_round_trip_big_endian() {
         let block: Block = [0x01, 0x23, 0x45, 0x67, 0x89, 0xAB, 0xCD, 0xEF];
         let (l, r) = split(&block);

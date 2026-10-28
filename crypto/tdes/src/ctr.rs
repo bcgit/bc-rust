@@ -46,7 +46,8 @@ use bouncycastle_core::symmetric_key::{SymmetricDecryptionKey, SymmetricEncrypti
 pub const CTR_NONCE_LEN: usize = 6;
 
 /// TDES in CTR mode with a 6-byte nonce. `Dir` is [`bouncycastle_cipher::Encrypting`] or
-/// [`bouncycastle_cipher::Decrypting`]; the wrong direction is a compile error, not a runtime check.
+/// [`bouncycastle_cipher::Decrypting`]; the wrong direction is a compile error, not a runtime
+/// check.
 ///
 /// A message longer than 65 536 blocks (512 KiB) is an error, not a repeated counter; see the
 /// module docs.
@@ -55,7 +56,8 @@ pub const CTR_NONCE_LEN: usize = 6;
 /// use bouncycastle_tdes::{BLOCK_LEN, CTR_NONCE_LEN, TDES3Key};
 /// use bouncycastle_cipher::modes::CTR;
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-/// use bouncycastle_core::symmetric_key::{FromKeyMaterial, SymmetricDecryptionKey, SymmetricEncryptionKey};
+/// use bouncycastle_core::symmetric_key::{FromKeyMaterial, SymmetricDecryptionKey};
+/// use bouncycastle_core::symmetric_key::SymmetricEncryptionKey;
 /// use bouncycastle_core::traits::{StreamCipherDecryptor, StreamCipherEncryptor};
 /// use bouncycastle_rng::HashDRBG_SHA512;
 ///
@@ -108,7 +110,8 @@ pub type TDES_CTR<'k, Dir> = Ctr<'k, TDESInternal, Dir, BLOCK_LEN, CTR_NONCE_LEN
 /// use bouncycastle_core::symmetric_key::{FromKeyMaterial, SymmetricDecryptionKey};
 ///
 /// let bytes: [u8; 16] = core::array::from_fn(|i| (i as u8).wrapping_mul(7).wrapping_add(1));
-/// let material = KeyMaterial::<16>::from_bytes_as_type(&bytes, KeyType::SymmetricCipherKey).unwrap();
+/// let material = KeyMaterial::<16>::from_bytes_as_type(&bytes, KeyType::SymmetricCipherKey)
+///     .unwrap();
 /// let nonce = [1, 2, 3, 4, 5, 6];
 ///
 /// // What a legacy sender would have produced: the first counter block, through the permutation.

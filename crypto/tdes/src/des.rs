@@ -6,19 +6,21 @@
 //! The spec numbers the bits of a block from 1 at the left (footnote 10). A 64-bit block is held as
 //! two `u32` words `L` and `R`, `L` being the first four bytes big-endian, so spec bit `k` of `L`
 //! (1..32) is word bit `32 - k`, and spec bit `k` of the block (1..64) is bit `32 - k` of `L` for
-//! `k <= 32` and bit `64 - k` of `R` otherwise. The same convention is used for the 32-bit input and
-//! output of `f` and `P`. All constants below are written against this layout and the tests check
-//! each one against the spec's table with every unit vector, which for a bit permutation is a proof.
+//! `k <= 32` and bit `64 - k` of `R` otherwise. The same convention is used for the 32-bit input
+//! and output of `f` and `P`. All constants below are written against this layout and the tests
+//! check each one against the spec's table with every unit vector, which for a bit permutation is a
+//! proof.
 //!
 //! # The six input planes
 //!
-//! `E` (Table 1) maps the 32 bits of `R` to eight 6-bit blocks `B1..B8`: block `i` is bits
-//! `4i-4, 4i-3, 4i-2, 4i-1, 4i, 4i+1` of `R` (indices taken modulo 32 in 1..32). The middle four are
+//! `E` (Table 1) maps the 32 bits of `R` to eight 6-bit blocks `B1..B8`: block `i` is bits `4i-4,
+//! 4i-3, 4i-2, 4i-1, 4i, 4i+1` of `R` (indices taken modulo 32 in 1..32). The middle four are
 //! exactly the `i`-th nibble of `R`; the first is the last bit of the nibble before it and the last
 //! is the first bit of the nibble after it. So `E` never needs to be materialised as a 48-bit
 //! value: [`planes`] builds six words, one per input-bit position, in which nibble `i` holds bit
-//! `j` of `Bi` replicated four times. That is precisely the input layout [`crate::sbox::sbox_layer`]
-//! wants, and it is obtained with masks, shifts and two rotations by a whole nibble.
+//! `j` of `Bi` replicated four times. That is precisely the input layout
+//! [`crate::sbox::sbox_layer`] wants, and it is obtained with masks, shifts and two rotations by a
+//! whole nibble.
 //!
 //! The round key `Kn` is XORed in the same layout (eq (6), `B1..B8 = K xor E(R)`). The key schedule
 //! stores each `Kn` as two words shaped to make that cheap; see [`crate::schedule`].
@@ -310,8 +312,8 @@ mod tests {
         }
     }
 
-    /// `E(R)` per Table 1, as the six planes the S-box layer expects: plane `j` holds bit `j + 1` of
-    /// `Bi` in all four bits of nibble `i`.
+    /// `E(R)` per Table 1, as the six planes the S-box layer expects: plane `j` holds bit `j + 1`
+    /// of `Bi` in all four bits of nibble `i`.
     fn e_planes_reference(r: u32) -> [u32; 6] {
         let mut x = [0u32; 6];
         for (k, &src) in E_TABLE.iter().enumerate() {
