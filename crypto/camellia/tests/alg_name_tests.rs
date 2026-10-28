@@ -1,9 +1,10 @@
 //! What each public Camellia alias is: the algorithm it reports and the type it resolves to.
 //!
 //! Each alias reports its own algorithm through `Algorithm`, not the engine it is built on:
-//! `Camellia_CBC_128` is `"Camellia_CBC_128"`, while `Camellia128Internal` stays `"Camellia-128"`. The strength
-//! is the key's. The direction and the padding are type parameters of one algorithm, not
-//! different algorithms, so every combination of them must report the same name.
+//! `Camellia_CBC_128` is `"Camellia_CBC_128"`, while `Camellia128Internal` stays
+//! `"Camellia-128"`. The strength is the key's. The direction and the padding are type parameters
+//! of one algorithm, not different algorithms, so every combination of them must report the same
+//! name.
 
 use bouncycastle_camellia::hazmat::{
     Camellia128Internal, Camellia192Internal, Camellia256Internal,
@@ -11,7 +12,7 @@ use bouncycastle_camellia::hazmat::{
 use bouncycastle_camellia::{
     BLOCK_LEN, CTR_NONCE_LEN, Camellia_CBC_128, Camellia_CBC_192, Camellia_CBC_256,
     Camellia_CFB_128, Camellia_CFB_192, Camellia_CFB_256, Camellia_CFB8_128, Camellia_CFB8_192,
-    Camellia_CFB8_256, Camellia_CTR_128, Camellia_CTR_192, Camellia_CTR_256, Camellia128Key,
+    Camellia_CFB8_256, Camellia_CTR_128, Camellia_CTR_192, Camellia_CTR_256, Camellia128Key, LANES,
 };
 use bouncycastle_cipher::modes::{CBC, CFB, CFB8, CTR, Cbc, Cfb, Cfb8, Ctr};
 use bouncycastle_cipher::padding::{
@@ -41,9 +42,9 @@ fn cbc() {
     check::<Camellia_CBC_128<'_, Encrypting, PKCS7>, Camellia_CBC_128<'_, Decrypting, PKCS7>>(
         "Camellia_CBC_128", _128bit,
     );
-    check::<Camellia_CBC_128<'_, Encrypting, NoPadding>, Camellia_CBC_128<'_, Decrypting, NoPadding>>(
-        "Camellia_CBC_128", _128bit,
-    );
+    type NoPadEnc<'k> = Camellia_CBC_128<'k, Encrypting, NoPadding>;
+    type NoPadDec<'k> = Camellia_CBC_128<'k, Decrypting, NoPadding>;
+    check::<NoPadEnc<'_>, NoPadDec<'_>>("Camellia_CBC_128", _128bit);
     check::<Camellia_CBC_192<'_, Encrypting, PKCS7>, Camellia_CBC_192<'_, Decrypting, PKCS7>>(
         "Camellia_CBC_192", _192bit,
     );
@@ -197,9 +198,21 @@ fn the_aliases_name_the_expected_types() {
     let _: Camellia_CTR_128<'_, Decrypting> = key.create_decryptor(&nonce);
 }
 
-/// The const parameters are Camellia's, and CTR's nonce leaves the four-byte counter the mode caps at.
+/// The const parameters are Camellia's, CTR's nonce leaves the four-byte counter the mode caps
+/// at, and four lanes of eight-byte F-function inputs fill the 32 byte positions of the `u32`
+/// planes.
 #[test]
 fn the_const_parameters_are_camellias() {
     assert_eq!(BLOCK_LEN, 16);
     assert_eq!(CTR_NONCE_LEN, 12, "a 12-byte nonce leaves the 4-byte counter CTR caps at");
+    assert_eq!(LANES * 8, 32, "four lanes of one F-function input each fill the circuit");
+}
+
+/// The engines are exactly their subkeys, the sizes the crate docs quote: 26 or 34 subkeys of 64
+/// bits and nothing else, no direction flag, no round counter, no initialised marker.
+#[test]
+fn the_engines_are_exactly_their_subkeys() {
+    assert_eq!(size_of::<Camellia128Internal>(), 208);
+    assert_eq!(size_of::<Camellia192Internal>(), 272);
+    assert_eq!(size_of::<Camellia256Internal>(), 272);
 }

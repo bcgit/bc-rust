@@ -1,12 +1,13 @@
 //! The test vectors of Bouncy Castle Java's Camellia tests, run against this port.
 //!
 //! `core/src/test/java/org/bouncycastle/crypto/test/CamelliaTest.java` (and the identical
-//! `CamelliaLightTest.java`) is a `CipherTest` over nine `BlockCipherVectorTest`s -- key, plaintext,
-//! ciphertext, checked in both directions -- whose header credits them to the NESSIE test vectors
-//! (<https://www.cosic.esat.kuleuven.be/nessie/testvectors/>) and RFC 3713. Vectors 2, 3 and 6 are
-//! the three of RFC 3713 Appendix A (also in `rfc3713_tests.rs`); the others are NESSIE's, and
-//! coincide with entries in NTT's file (`ntt_cryptrec_tests.rs`). They are kept as a separate file
-//! so that agreement with the source implementation's own test suite is asserted in its own terms.
+//! `CamelliaLightTest.java`) is a `CipherTest` over nine `BlockCipherVectorTest`s -- key,
+//! plaintext, ciphertext, checked in both directions -- whose header credits them to the NESSIE
+//! test vectors (<https://www.cosic.esat.kuleuven.be/nessie/testvectors/>) and RFC 3713. Vectors 2,
+//! 3 and 6 are the three of RFC 3713 Appendix A (also in `rfc3713_tests.rs`); the others are
+//! NESSIE's, and coincide with entries in NTT's file (`ntt_cryptrec_tests.rs`). They are kept as a
+//! separate file so that agreement with the source implementation's own test suite is asserted in
+//! its own terms.
 
 mod common;
 

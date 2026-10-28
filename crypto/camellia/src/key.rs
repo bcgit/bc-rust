@@ -1,12 +1,12 @@
-//! Camellia key objects: a key bound to one Camellia variant and one mode, validated and expanded once,
-//! from which the mode's encryptors and decryptors are made.
+//! Camellia key objects: a key bound to one Camellia variant and one mode, validated and expanded
+//! once, from which the mode's encryptors and decryptors are made.
 //!
 //! [`Camellia128Key<M>`], [`Camellia192Key<M>`] and [`Camellia256Key<M>`] are one type each per
 //! mode `M`, as `AES128Key<M>` and friends are in `bouncycastle-aes`: the key holds the mode's
 //! per-key state, the workers it hands out borrow it, and which role pair a key carries is decided
 //! by its mode: the symmetric pair for the stream modes and the padded block modes (`CFB`, `CFB8`,
-//! `CTR`, `CBC<PKCS7>`), the block pair for `CBC<Blocks>`. Those are the four modes this crate
-//! aliases as `Camellia_*`; a key under any other mode has no role here.
+//! `CTR`, `CBC<PKCS7>`, `ECB<PKCS7>`), the block pair for `CBC<Blocks>`. The four modes this crate
+//! aliases as `Camellia_*` are among them; a key under any other mode has no role here.
 //!
 //! # Usage Examples
 //!
@@ -15,13 +15,15 @@
 //! use bouncycastle_cipher::modes::CBC;
 //! use bouncycastle_cipher::padding::PKCS7;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-//! use bouncycastle_core::symmetric_key::{FromKeyMaterial, SymmetricDecryptionKey, SymmetricEncryptionKey};
+//! use bouncycastle_core::symmetric_key::{FromKeyMaterial, SymmetricDecryptionKey};
+//! use bouncycastle_core::symmetric_key::SymmetricEncryptionKey;
 //! use bouncycastle_rng::HashDRBG_SHA512;
 //!
 //! let mut rng = HashDRBG_SHA512::new_from_os();   // one RNG, held across messages
 //! let material = KeyMaterial::<32>::from_bytes_as_type(&[0x42; 32], KeyType::SymmetricCipherKey)
 //!     .expect("a 32-byte symmetric cipher key");
-//! let key = Camellia256Key::<CBC<PKCS7>>::from_key_material(&material).expect("a valid Camellia-256 key");
+//! let key = Camellia256Key::<CBC<PKCS7>>::from_key_material(&material)
+//!     .expect("a valid Camellia-256 key");
 //!
 //! let (iv, ciphertext) = key.encrypt(&mut rng, b"a message of no particular length").unwrap();
 //! assert_eq!(key.decrypt(&iv, &ciphertext).unwrap(), b"a message of no particular length");
@@ -37,20 +39,24 @@ use crate::hazmat::{
     Camellia128Internal, Camellia192Internal, Camellia256Internal, CamelliaInternal,
 };
 use crate::schedule::{Camellia128Params, Camellia192Params, Camellia256Params, CamelliaParams};
-use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
+use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::hazmat::{
     BlockDecryptMode, BlockEncryptMode, Mode, ModeKey, SymmetricDecryptMode, SymmetricEncryptMode,
-    do_hazardous_operations,
 };
-use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
+use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::symmetric_key::{
     BlockDecryptionKey, BlockEncryptionKey, FromKeyMaterial, SymmetricDecryptionKey,
     SymmetricEncryptionKey,
 };
 use bouncycastle_core::traits::RNG;
 
-/// An Camellia key for the mode `M`, parameterised by key length. Use the aliases [`Camellia128Key`],
-/// [`Camellia192Key`] and [`Camellia256Key`] rather than naming this directly.
+// Imports needed for docs
+#[allow(unused_imports)]
+use bouncycastle_core::errors::KeyMaterialError;
+// end of imports needed for docs
+
+/// A Camellia key for the mode `M`, parameterised by key length. Use the aliases
+/// [`Camellia128Key`], [`Camellia192Key`] and [`Camellia256Key`] rather than naming this directly.
 ///
 /// The only state is the mode's per-key state, which holds the expanded schedule in a `Secret`
 /// and so is zeroized on drop; the key has no `Debug` and no way to read the material back.
@@ -58,13 +64,13 @@ pub struct CamelliaKey<P: CamelliaParams, M: Mode<CamelliaInternal<P>>> {
     state: M::KeyState,
 }
 
-/// An Camellia-128 key for the mode `M`: 16 bytes of material, expanded to the 18-round subkeys.
+/// A Camellia-128 key for the mode `M`: 16 bytes of material, expanded to the 18-round subkeys.
 #[allow(non_camel_case_types)]
 pub type Camellia128Key<M> = CamelliaKey<Camellia128Params, M>;
-/// An Camellia-192 key for the mode `M`: 24 bytes of material, expanded to the 24-round subkeys.
+/// A Camellia-192 key for the mode `M`: 24 bytes of material, expanded to the 24-round subkeys.
 #[allow(non_camel_case_types)]
 pub type Camellia192Key<M> = CamelliaKey<Camellia192Params, M>;
-/// An Camellia-256 key for the mode `M`: 32 bytes of material, expanded to the 24-round subkeys.
+/// A Camellia-256 key for the mode `M`: 32 bytes of material, expanded to the 24-round subkeys.
 #[allow(non_camel_case_types)]
 pub type Camellia256Key<M> = CamelliaKey<Camellia256Params, M>;
 
@@ -86,36 +92,12 @@ where
     }
 }
 
-impl<P: CamelliaParams, M: Mode<CamelliaInternal<P>>> Eq for CamelliaKey<P, M> where M::KeyState: Eq {}
-
-/// The key-type check the mode asks for (`Mode::KEY_TYPE`), ahead of the permutation's own
-/// validation.
-fn check_key_type(
-    key: &dyn KeyMaterialTrait,
-    expected: KeyType,
-) -> Result<(), SymmetricCipherError> {
-    if key.key_type() != expected {
-        return Err(KeyMaterialError::InvalidKeyType(
-            "The key is not of the KeyType this mode requires.",
-        )
-        .into());
-    }
-    Ok(())
-}
-
-/// The permutation accepts only a `SymmetricCipherKey`, so a MAC mode's key -- already checked to
-/// be the `MACKey` the mode asks for -- is handed to it as a copy retagged at the same strength,
-/// used for nothing else. The strength check in the permutation's constructor still applies.
-fn as_cipher_key<const N: usize>(
-    key: &KeyMaterial<N>,
-) -> Result<KeyMaterial<N>, SymmetricCipherError> {
-    let mut cipher_key =
-        KeyMaterial::<N>::from_bytes_as_type(key.ref_to_bytes(), KeyType::SymmetricCipherKey)?;
-    do_hazardous_operations(&mut cipher_key, |k| {
-        k.set_key_type(KeyType::SymmetricCipherKey)?;
-        k.set_security_strength(key.security_strength())
-    })?;
-    Ok(cipher_key)
+impl<P, M> Eq for CamelliaKey<P, M>
+where
+    P: CamelliaParams,
+    M: Mode<CamelliaInternal<P>>,
+    M::KeyState: Eq,
+{
 }
 
 // The constructors are implemented per key length rather than once over `P`, because stable Rust
@@ -125,20 +107,15 @@ fn as_cipher_key<const N: usize>(
 impl<M: Mode<Camellia128Internal>> FromKeyMaterial<16> for Camellia128Key<M> {
     const KEY_TYPE: KeyType = M::KEY_TYPE;
 
-    /// Validates and expands a 16-byte key.
+    /// Validates and expands a 16-byte key. The checks are the permutation's: every mode with a
+    /// role here asks for the `SymmetricCipherKey` it requires.
     ///
     /// # Errors
-    /// * [`KeyMaterialError::InvalidKeyType`] if the key is not of [`Self::KEY_TYPE`]: the
-    ///   `SymmetricCipherKey` a cipher mode asks for, or the `MACKey` a MAC mode does.
+    /// * [`KeyMaterialError::InvalidKeyType`] if the key is not a `SymmetricCipherKey`.
     /// * [`KeyMaterialError::InvalidLength`] if the key is not 16 bytes long.
     /// * [`KeyMaterialError::SecurityStrength`] if the key carries a strength below 128 bits.
     fn from_key_material(key: &KeyMaterial<16>) -> Result<Self, SymmetricCipherError> {
-        check_key_type(key, M::KEY_TYPE)?;
-        let perm = match M::KEY_TYPE {
-            KeyType::SymmetricCipherKey => Camellia128Internal::new(key)?,
-            _ => Camellia128Internal::new(&as_cipher_key(key)?)?,
-        };
-        Ok(Self { state: M::key_state(perm) })
+        Ok(Self { state: M::key_state(Camellia128Internal::new(key)?) })
     }
 }
 
@@ -148,12 +125,7 @@ impl<M: Mode<Camellia192Internal>> FromKeyMaterial<24> for Camellia192Key<M> {
     /// Validates and expands a 24-byte key; the errors are those of the 16-byte form, at 24
     /// bytes and 192 bits.
     fn from_key_material(key: &KeyMaterial<24>) -> Result<Self, SymmetricCipherError> {
-        check_key_type(key, M::KEY_TYPE)?;
-        let perm = match M::KEY_TYPE {
-            KeyType::SymmetricCipherKey => Camellia192Internal::new(key)?,
-            _ => Camellia192Internal::new(&as_cipher_key(key)?)?,
-        };
-        Ok(Self { state: M::key_state(perm) })
+        Ok(Self { state: M::key_state(Camellia192Internal::new(key)?) })
     }
 }
 
@@ -163,12 +135,7 @@ impl<M: Mode<Camellia256Internal>> FromKeyMaterial<32> for Camellia256Key<M> {
     /// Validates and expands a 32-byte key; the errors are those of the 16-byte form, at 32
     /// bytes and 256 bits.
     fn from_key_material(key: &KeyMaterial<32>) -> Result<Self, SymmetricCipherError> {
-        check_key_type(key, M::KEY_TYPE)?;
-        let perm = match M::KEY_TYPE {
-            KeyType::SymmetricCipherKey => Camellia256Internal::new(key)?,
-            _ => Camellia256Internal::new(&as_cipher_key(key)?)?,
-        };
-        Ok(Self { state: M::key_state(perm) })
+        Ok(Self { state: M::key_state(Camellia256Internal::new(key)?) })
     }
 }
 

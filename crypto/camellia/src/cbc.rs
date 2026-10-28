@@ -2,7 +2,8 @@
 //!
 //! See `bouncycastle_cipher::modes::cbc` for the construction. The aliases name the padded
 //! workers, which accept input of any size; `NoPadding` accepts only whole blocks but goes through
-//! the same adapter. The workers come from a key: [`Camellia128Key<CBC<PKCS7>>`](crate::Camellia128Key)
+//! the same adapter. The workers come from a key:
+//! [`Camellia128Key<CBC<PKCS7>>`](crate::Camellia128Key)
 //! (or `CBC<NoPadding>`) hands them out through the [`SymmetricEncryptionKey`] /
 //! [`SymmetricDecryptionKey`] pair, and `Camellia128Key<CBC<Blocks>>` hands out the unpadded `Cbc`
 //! itself through the block pair.
@@ -17,13 +18,15 @@
 //! use bouncycastle_cipher::modes::CBC;
 //! use bouncycastle_cipher::padding::PKCS7;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-//! use bouncycastle_core::symmetric_key::{FromKeyMaterial, SymmetricDecryptionKey, SymmetricEncryptionKey};
+//! use bouncycastle_core::symmetric_key::{FromKeyMaterial, SymmetricDecryptionKey};
+//! use bouncycastle_core::symmetric_key::SymmetricEncryptionKey;
 //! use bouncycastle_rng::HashDRBG_SHA512;
 //!
 //! let mut rng = HashDRBG_SHA512::new_from_os();
 //! let material = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
 //!     .expect("a 16-byte symmetric cipher key");
-//! let key = Camellia128Key::<CBC<PKCS7>>::from_key_material(&material).expect("a valid Camellia-128 key");
+//! let key = Camellia128Key::<CBC<PKCS7>>::from_key_material(&material)
+//!     .expect("a valid Camellia-128 key");
 //! let message = b"a message of no particular length";
 //!
 //! // The IV is drawn from `rng` and returned; there is no API for supplying one.
@@ -44,7 +47,8 @@
 //! use bouncycastle_rng::HashDRBG_SHA512;
 //!
 //! let mut rng = HashDRBG_SHA512::new_from_os();
-//! let material = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey).unwrap();
+//! let material = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
+//!     .unwrap();
 //! let key = Camellia128Key::<CBC<NoPadding>>::from_key_material(&material).unwrap();
 //!
 //! let mut out = [0u8; 16];
@@ -67,9 +71,10 @@ use bouncycastle_cipher::padding::{NoPadding, PKCS7};
 use bouncycastle_core::symmetric_key::{SymmetricDecryptionKey, SymmetricEncryptionKey};
 // end of imports needed for docs
 
-/// Camellia-128 in CBC mode with a padding scheme: what an [`Camellia128Key`](crate::Camellia128Key) under
-/// `CBC<Pad>` hands out. `Dir` is [`Encrypting`] or [`Decrypting`] and `Pad` is [`PKCS7`] or
-/// [`NoPadding`]; the wrong direction is a compile error, not a runtime check.
+/// Camellia-128 in CBC mode with a padding scheme: what an
+/// [`Camellia128Key`](crate::Camellia128Key) under `CBC<Pad>` hands out. `Dir` is [`Encrypting`] or
+/// [`Decrypting`] and `Pad` is [`PKCS7`] or [`NoPadding`]; the wrong direction is a compile error,
+/// not a runtime check.
 #[allow(non_camel_case_types)]
 pub type Camellia_CBC_128<'k, Dir, Pad> = <Dir as Direction>::Select<
     PaddedBlockCipherEncryptor<

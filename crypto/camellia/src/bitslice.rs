@@ -30,10 +30,10 @@
 //!
 //! # Provenance
 //!
-//! The three-stage masked-swap transpose is the same one `bouncycastle-aes` and
-//! `bouncycastle-sm4` use, all three translated from BearSSL `src/symcipher/aes_ct.c`
-//! (`br_aes_ct_ortho`) by Thomas Pornin, MIT licensed. It is duplicated rather than shared because
-//! it is each crate's private detail and none should depend on another.
+//! The three-stage masked-swap transpose is the same one `bouncycastle-aes` uses, both
+//! translated from BearSSL `src/symcipher/aes_ct.c` (`br_aes_ct_ortho`) by Thomas Pornin, MIT
+//! licensed. It is duplicated rather than shared because it is each crate's private detail and
+//! neither should depend on the other.
 
 /// The eight bit-planes holding the two 32-bit halves of one word from each of four blocks. See
 /// the module docs.

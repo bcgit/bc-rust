@@ -12,7 +12,7 @@
 //! that the working set stays small, which is what "lowmemory" means here. See [Design](#design).
 //!
 //! An engine is a *permutation*, not a cipher you can encrypt data with, which is why it lives
-//! under [`hazmat`]. See [Security Considerations](#security-considerations).
+//! under [`hazmat`]. See [Security Considerations](#-security-considerations-).
 //!
 //! # Usage Examples
 //!
@@ -35,13 +35,15 @@
 //! use bouncycastle_cipher::modes::CBC;
 //! use bouncycastle_cipher::padding::PKCS7;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-//! use bouncycastle_core::symmetric_key::{FromKeyMaterial, SymmetricDecryptionKey, SymmetricEncryptionKey};
+//! use bouncycastle_core::symmetric_key::{FromKeyMaterial, SymmetricDecryptionKey};
+//! use bouncycastle_core::symmetric_key::SymmetricEncryptionKey;
 //! use bouncycastle_rng::HashDRBG_SHA512;
 //!
 //! let mut rng = HashDRBG_SHA512::new_from_os();   // one RNG, held across messages
 //! let material = KeyMaterial::<32>::from_bytes_as_type(&[0x42; 32], KeyType::SymmetricCipherKey)
 //!     .expect("a 32-byte symmetric cipher key");
-//! let key = Camellia256Key::<CBC<PKCS7>>::from_key_material(&material).expect("a valid Camellia-256 key");
+//! let key = Camellia256Key::<CBC<PKCS7>>::from_key_material(&material)
+//!     .expect("a valid Camellia-256 key");
 //!
 //! // Any length: PKCS#7 pads it out to whole blocks, so 50 bytes is as good as 48.
 //! let plaintext = [0x5Au8; 50];
@@ -60,13 +62,15 @@
 //! use bouncycastle_camellia::Camellia256Key;
 //! use bouncycastle_cipher::modes::CTR;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-//! use bouncycastle_core::symmetric_key::{FromKeyMaterial, SymmetricDecryptionKey, SymmetricEncryptionKey};
+//! use bouncycastle_core::symmetric_key::{FromKeyMaterial, SymmetricDecryptionKey};
+//! use bouncycastle_core::symmetric_key::SymmetricEncryptionKey;
 //! use bouncycastle_rng::HashDRBG_SHA512;
 //!
 //! let mut rng = HashDRBG_SHA512::new_from_os();
 //! let material = KeyMaterial::<32>::from_bytes_as_type(&[0x42; 32], KeyType::SymmetricCipherKey)
 //!     .expect("a 32-byte symmetric cipher key");
-//! let key = Camellia256Key::<CTR>::from_key_material(&material).expect("a valid Camellia-256 key");
+//! let key = Camellia256Key::<CTR>::from_key_material(&material)
+//!     .expect("a valid Camellia-256 key");
 //!
 //! // 50 bytes, and the ciphertext is 50 bytes: no padding anywhere.
 //! let plaintext = [0x5Au8; 50];
@@ -111,16 +115,16 @@
 //!                    0xfe, 0xdc, 0xba, 0x98, 0x76, 0x54, 0x32, 0x10]);
 //! ```
 //!
-//! The 192- and 256-bit variants are [`Camellia192Internal`] and [`Camellia256Internal`], constructed from a
-//! `KeyMaterial<24>` and a `KeyMaterial<32>`; a key of the wrong length does not compile.
+//! The 192- and 256-bit variants are [`Camellia192Internal`] and [`Camellia256Internal`],
+//! constructed from a `KeyMaterial<24>` and a `KeyMaterial<32>`; a key of the wrong length does
+//! not compile.
 //!
 //! ## Four blocks at a time
 //!
 //! The bit-sliced S-box layer substitutes 32 bytes per pass, and a round substitutes eight bytes
 //! per block, so four independent blocks cost the same as one. Where a caller has four,
-//! [`CamelliaInternal::encrypt_4blocks`] is four times the throughput of four [`BlockPermutation::encrypt_block`](bouncycastle_core::hazmat::BlockPermutation::encrypt_block)
-//! calls, and it is also the four-block batch [`BlockPermutation::encrypt_4blocks`](bouncycastle_core::hazmat::BlockPermutation::encrypt_4blocks)
-//! offers to modes:
+//! [`CamelliaInternal::encrypt_4blocks`] is four times the throughput of four `encrypt_block`
+//! calls, and it is also the four-block batch `BlockPermutation::encrypt_4blocks` offers to modes:
 //!
 //! ```
 //! use bouncycastle_camellia::hazmat::Camellia256Internal;
@@ -218,23 +222,32 @@
 //! Per-call stack usage is the four-block working state -- two 64-bit halves per block, 64
 //! bytes -- plus the eight `u32` planes of the S-box argument (32 bytes), their copy during the
 //! rotations (32 bytes), and the circuit's temporaries, most of which the compiler keeps in
-//! registers.
-//! Measure with `cargo run --release -p mem_usage_benches --bin bench_camellia_mem_usage`.
+//! registers. Every entry point runs the same four-lane circuit, so the one-, two- and four-block
+//! calls cost the same working state, and only key expansion depends on the key length. Measured
+//! as the frame of each entry point's `measure` closure in
+//! `mem_usage_benches/src/bench_camellia_mem_usage.rs`, from the compiler's frame-layout remarks
+//! in the release build (x86-64, rustc 1.97 nightly, return address included):
+//!
+//! | Entry point | Camellia-128 | Camellia-192 | Camellia-256 |
+//! |---|---|---|---|
+//! | `new` (key expansion) | 464 B | 592 B | 592 B |
+//! | `encrypt_block` / `decrypt_block` | 96 B | 96 B | 96 B |
+//! | `encrypt_2blocks` / `decrypt_2blocks` | 112 B | 112 B | 112 B |
+//! | `encrypt_4blocks` / `decrypt_4blocks` | 96 B | 96 B | 96 B |
 //!
 //! For comparison, a table-driven implementation carries anywhere from 256 bytes to 4 KiB of
 //! tables on top of a 272-byte subkey array sized for the largest key.
 //!
-//! # Security Considerations
+//! # 🚨 Security Considerations 🚨
 //!
 //! ## A block permutation is not a cipher
 //!
-//! [`Camellia128Internal`] and its siblings transform exactly 16 bytes. Using one directly on data means
-//! ECB, which is not confidential: identical plaintext blocks produce identical ciphertext blocks,
-//! so structure in the plaintext survives encryption. **Do not do it.** Use a mode of operation,
-//! and prefer an authenticated one so that ciphertext tampering is detected. RFC 3713 Sec 3 itself
-//! assigns object identifiers only to Camellia in CBC mode.
-//! That is why the permutation lives under [`hazmat`]; [`bouncycastle_core::hazmat`] lists the
-//! supported uses.
+//! [`Camellia128Internal`] and its siblings transform exactly 16 bytes. Using one directly on
+//! data means ECB, which is not confidential: identical plaintext blocks produce identical
+//! ciphertext blocks, so structure in the plaintext survives encryption. **Do not do it.** Use a
+//! mode of operation, and prefer an authenticated one so that ciphertext tampering is detected.
+//! RFC 3713 Sec 3 itself assigns object identifiers only to Camellia in CBC mode. That is why the
+//! permutation lives under [`hazmat`]; [`bouncycastle_core::hazmat`] lists the supported uses.
 //!
 //! ## Constant-time properties
 //!
@@ -283,6 +296,8 @@
 //!   SP 800-38A Sec 6.5 equations which the CTR keys are then held to (see
 //!   `tests/stream_mode_tests.rs` for why RFC 5528's counter blocks are not ones they produce);
 //!   and the transcription of `CamelliaLightEngine` on thousands of keys and blocks in every lane.
+//!   Project Wycheproof's `camellia_cbc_pkcs5_test.json` runs through the padded CBC keys and
+//!   its `camellia_ccm_test.json` through the `CCM` mode traits over the engines.
 
 #![no_std]
 #![forbid(unsafe_code)]

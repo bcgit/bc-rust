@@ -11,10 +11,11 @@
 //! the right ciphertext. Wycheproof's value is the other half. Of its 216 cases, **72 are valid and
 //! 144 are invalid**, and 141 of those carry the `BadPadding` flag: ciphertexts whose plaintext
 //! does not end in well-formed PKCS#7 padding, which decryption must **reject**. That is the path
-//! `bouncycastle_cipher::padding`'s constant-time `unpad` exists for, and nothing else in the tree drives
-//! it with adversarially chosen input.
+//! `bouncycastle_cipher::padding`'s constant-time `unpad` exists for, and nothing else in the tree
+//! drives it with adversarially chosen input.
 //!
-//! PKCS#5 and PKCS#7 are the same padding for a 16-byte block; the name in the file is Wycheproof's.
+//! PKCS#5 and PKCS#7 are the same padding for a 16-byte block; the name in the file is
+//! Wycheproof's.
 //!
 //! # How the vectors map onto this API
 //!

@@ -2,13 +2,14 @@
 //! block-aligned keys the padded `Camellia_CBC_*` aliases wrap.
 //!
 //! RFC 3713 has no CBC vectors (it only assigns the `id-camellia*-cbc` identifiers, Sec 3), so
-//! these are the `CAMELLIA-*-CBC` entries of OpenSSL's `test/recipes/30-test_evp_data/evpciph_camellia.txt`
-//! (OpenSSL 3.6.2), transcribed from the file. For each key length the first three entries chain
-//! -- each `IV` is the previous `Ciphertext` -- so they form one three-block CBC message under the
-//! IV `000102..0f`; that is what is checked here, in one call and block by block, both directions.
-//! (The fourth 128-bit entry has an IV unrelated to the third's ciphertext and is checked on its
-//! own.) The plaintext blocks and the 128/192/256-bit keys are those of NIST SP 800-38A Appendix F,
-//! so a CBC vector here is also a cross-check of the single-block cipher under fresh keys.
+//! these are the `CAMELLIA-*-CBC` entries of OpenSSL's
+//! `test/recipes/30-test_evp_data/evpciph_camellia.txt` (OpenSSL 3.6.2), transcribed from the file.
+//! For each key length the first three entries chain -- each `IV` is the previous `Ciphertext` --
+//! so they form one three-block CBC message under the IV `000102..0f`; that is what is checked
+//! here, in one call and block by block, both directions. (The fourth 128-bit entry has an IV
+//! unrelated to the third's ciphertext and is checked on its own.) The plaintext blocks and the
+//! 128/192/256-bit keys are those of NIST SP 800-38A Appendix F, so a CBC vector here is also a
+//! cross-check of the single-block cipher under fresh keys.
 //!
 //! There is no API for supplying an IV, so encryption is driven through the key's
 //! `create_encryptor` with a [`FixedSeedRNG`] whose stream is the vector's IV, and the test asserts

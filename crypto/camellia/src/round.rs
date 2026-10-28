@@ -103,9 +103,9 @@ pub(crate) fn flinv(flinv_in: u64, ke: u64) -> u64 {
 /// * `D1 = M >> 64; D2 = M & MASK64` -- the block as two big-endian 64-bit words;
 /// * `D1 = D1 ^ kw1; D2 = D2 ^ kw2` -- prewhitening;
 /// * round `i`: `D2 = D2 ^ F(D1, k_i)` for odd `i`, `D1 = D1 ^ F(D2, k_i)` for even `i`;
-/// * after rounds 6, 12 (and 18 when there are 24), `D1 = FL(D1, ke_{2m-1}); D2 = FLINV(D2, ke_{2m})`
-///   for the `m`-th FL layer -- "FL- and FLINV-functions inserted every 6 rounds", but not after
-///   the last round;
+/// * after rounds 6, 12 (and 18 when there are 24), for the `m`-th FL layer:
+///   `D1 = FL(D1, ke_{2m-1}); D2 = FLINV(D2, ke_{2m})` -- "FL- and FLINV-functions inserted every
+///   6 rounds", but not after the last round;
 /// * `D2 = D2 ^ kw3; D1 = D1 ^ kw4` -- postwhitening;
 /// * `C = (D2 << 64) | D1` -- the halves swap on output.
 ///
