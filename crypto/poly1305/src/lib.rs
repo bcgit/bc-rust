@@ -64,7 +64,7 @@ pub const KEY_LEN: usize = 32;
 /// Authentication tag length in bytes.
 pub const TAG_LEN: usize = 16;
 /// Message block length in bytes.
-pub const BLOCK_LEN: usize = 16;
+const BLOCK_LEN: usize = 16;
 
 const MASK: u64 = (1 << 26) - 1;
 
