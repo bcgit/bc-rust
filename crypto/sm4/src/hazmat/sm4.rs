@@ -86,7 +86,7 @@ impl SM4Internal {
     /// This is the natural unit of work. The S-box circuit substitutes 16 bytes per pass and a
     /// round substitutes four bytes per block, so four blocks fill it exactly; fewer blocks cost
     /// the same. Modes whose blocks are independent -- CTR, and the decryption direction of CBC
-    /// and CFB -- reach it as the `ElectronicCodeBook` four-block batch; CBC encryption cannot,
+    /// and CFB -- reach it as the `BlockPermutation` four-block batch; CBC encryption cannot,
     /// since its blocks are serially dependent.
     ///
     /// Infallible: a constructed [`SM4Internal`] is always usable and every input length is fixed.
@@ -118,7 +118,8 @@ impl SM4Internal {
         *block = lanes[0];
     }
 
-    /// Decrypts one block in place. See [`ElectronicCodeBook::encrypt_block`] for the four-lane caveat.
+    /// Decrypts one block in place. See [`BlockPermutation::encrypt_block`] for the four-lane
+    /// caveat.
     pub(crate) fn decrypt_block(&self, block: &mut Block) {
         let mut lanes = [*block; LANES];
         self.decrypt_4blocks(&mut lanes);
@@ -128,7 +129,7 @@ impl SM4Internal {
 
     /// Encrypts two blocks in place, in lanes 0 and 1; the other two lanes carry copies of the
     /// first and are discarded. Two blocks for the price of four, but twice as good as two
-    /// [`ElectronicCodeBook::encrypt_block`] calls, which is why the trait method uses it.
+    /// [`BlockPermutation::encrypt_block`] calls, which is why the trait method uses it.
     pub(crate) fn encrypt_2blocks(&self, blocks: &mut [Block; 2]) {
         let mut lanes = [blocks[0]; LANES];
         lanes[1] = blocks[1];
@@ -136,7 +137,7 @@ impl SM4Internal {
         *blocks = [lanes[0], lanes[1]];
     }
 
-    /// Decrypts two blocks in place. See [`ElectronicCodeBook::encrypt_2blocks`].
+    /// Decrypts two blocks in place. See [`BlockPermutation::encrypt_2blocks`].
     pub(crate) fn decrypt_2blocks(&self, blocks: &mut [Block; 2]) {
         let mut lanes = [blocks[0]; LANES];
         lanes[1] = blocks[1];
@@ -392,34 +393,6 @@ mod tests {
             0xB5, 0x94,
         ];
         check_example(&key, &plaintext, &expected_x, &ciphertext);
-    }
-
-    #[test]
-    fn test_engine_size_is_exactly_the_round_keys() {
-        // The "Memory Usage" table in the crate docs quotes 128 bytes: 32 round keys of 32 bits,
-        // and nothing else -- no direction flag, no round counter, no initialised marker.
-        assert_eq!(size_of::<SM4Internal>(), 128);
-        assert_eq!(size_of::<SM4Internal>(), size_of::<RoundKeys>());
-    }
-
-    #[test]
-    fn test_alg_name_and_strength() {
-        assert_eq!(<SM4Internal as Algorithm>::ALG_NAME, "SM4");
-        assert_eq!(
-            <SM4Internal as Algorithm>::MAX_SECURITY_STRENGTH,
-            SecurityStrength::from_bytes(KEY_LEN)
-        );
-    }
-
-    #[test]
-    fn test_lanes_constant() {
-        // The "Memory Usage" docs and the two-block override both assume four lanes.
-        assert_eq!(LANES, 4);
-        assert_eq!(
-            LANES * 4,
-            16,
-            "four four-byte words fill the 16 byte positions of the u16 planes"
-        );
     }
 
     #[test]

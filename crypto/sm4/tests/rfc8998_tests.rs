@@ -68,10 +68,9 @@ fn a_1_sm4_gcm() {
     let aad: [u8; 20] = bytes(AAD);
 
     let mut buf: [u8; 64] = bytes(PLAINTEXT);
-    let tag = <GCM as AeadEncryptMode<SM4Internal, KEY_LEN, 12, 16, 16>>::encrypt_detached_in_place_nonce(
-        &state, &nonce, &aad, &mut buf,
-    )
-    .expect("encryption");
+    let encrypt =
+        <GCM as AeadEncryptMode<SM4Internal, KEY_LEN, 12, 16, 16>>::encrypt_detached_in_place_nonce;
+    let tag = encrypt(&state, &nonce, &aad, &mut buf).expect("encryption");
     assert_eq!(buf, bytes::<64>(GCM_CT), "A.1 ciphertext");
     assert_eq!(tag, bytes::<16>(GCM_TAG), "A.1 tag");
 
@@ -92,15 +91,14 @@ fn a_2_sm4_ccm() {
     let aad: [u8; 20] = bytes(AAD);
 
     let mut buf: [u8; 64] = bytes(PLAINTEXT);
-    let tag = <Sm4Ccm as AeadDeclaredEncryptMode<SM4Internal, KEY_LEN, 12, 16, 16>>::encrypt_detached_in_place_nonce(
-        &state, &nonce, &aad, &mut buf,
-    )
-    .expect("encryption");
+    let encrypt = <Sm4Ccm as AeadDeclaredEncryptMode<SM4Internal, KEY_LEN, 12, 16, 16>>::
+        encrypt_detached_in_place_nonce;
+    let tag = encrypt(&state, &nonce, &aad, &mut buf).expect("encryption");
     assert_eq!(buf, bytes::<64>(CCM_CT), "A.2 ciphertext");
     assert_eq!(tag, bytes::<16>(CCM_TAG), "A.2 tag");
 
-    let decrypt =
-        <Sm4Ccm as AeadDeclaredDecryptMode<SM4Internal, KEY_LEN, 12, 16, 16>>::decrypt_detached_in_place;
+    let decrypt = <Sm4Ccm as AeadDeclaredDecryptMode<SM4Internal, KEY_LEN, 12, 16, 16>>::
+        decrypt_detached_in_place;
     decrypt(&state, &nonce, &aad, &mut buf, &tag).expect("decryption");
     assert_eq!(buf, bytes::<64>(PLAINTEXT), "A.2 plaintext back");
 

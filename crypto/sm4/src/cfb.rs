@@ -14,15 +14,16 @@
 //!
 //! Sec 8.5 says the plaintext "must be a multiple of the block size". `Cfb` accepts any length and
 //! treats a short tail as a final segment of `s = 8r`, which is what every streaming CFB128
-//! implementation does; see "The final partial segment" in the `bouncycastle_cipher::modes::Cfb` docs for
-//! why that is well defined. On whole blocks -- the only lengths the draft's Appendix A.2.4 vectors
-//! cover -- the two readings coincide.
+//! implementation does; see "The final partial segment" in the `bouncycastle_cipher::modes::Cfb`
+//! docs for why that is well defined. On whole blocks -- the only lengths the draft's Appendix
+//! A.2.4 vectors cover -- the two readings coincide.
 //!
 //! ```
 //! use bouncycastle_sm4::SM4Key;
 //! use bouncycastle_cipher::modes::CFB;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-//! use bouncycastle_core::symmetric_key::{FromKeyMaterial, SymmetricDecryptionKey, SymmetricEncryptionKey};
+//! use bouncycastle_core::symmetric_key::{FromKeyMaterial, SymmetricDecryptionKey};
+//! use bouncycastle_core::symmetric_key::SymmetricEncryptionKey;
 //! use bouncycastle_core::traits::{StreamCipherDecryptor, StreamCipherEncryptor};
 //! use bouncycastle_rng::HashDRBG_SHA512;
 //!
@@ -62,6 +63,7 @@ use bouncycastle_core::symmetric_key::{SymmetricDecryptionKey, SymmetricEncrypti
 // end of imports needed for docs
 
 /// SM4 in CFB128 mode. `Dir` is [`bouncycastle_cipher::Encrypting`] or
-/// [`bouncycastle_cipher::Decrypting`]; the wrong direction is a compile error, not a runtime check.
+/// [`bouncycastle_cipher::Decrypting`]; the wrong direction is a compile error, not a runtime
+/// check.
 #[allow(non_camel_case_types)]
 pub type SM4_CFB<'k, Dir> = Cfb<'k, SM4Internal, Dir, BLOCK_LEN>;

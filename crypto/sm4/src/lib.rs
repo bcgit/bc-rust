@@ -12,7 +12,7 @@
 //! means here. See [Design](#design).
 //!
 //! The engine is a *permutation*, not a cipher you can encrypt data with, which is why it lives
-//! under [`hazmat`]. See [Security Considerations](#security-considerations).
+//! under [`hazmat`]. See [Security Considerations](#-security-considerations-).
 //!
 //! # Usage Examples
 //!
@@ -35,7 +35,8 @@
 //! use bouncycastle_cipher::modes::CBC;
 //! use bouncycastle_cipher::padding::PKCS7;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-//! use bouncycastle_core::symmetric_key::{FromKeyMaterial, SymmetricDecryptionKey, SymmetricEncryptionKey};
+//! use bouncycastle_core::symmetric_key::{FromKeyMaterial, SymmetricDecryptionKey};
+//! use bouncycastle_core::symmetric_key::SymmetricEncryptionKey;
 //! use bouncycastle_rng::HashDRBG_SHA512;
 //!
 //! let mut rng = HashDRBG_SHA512::new_from_os();   // one RNG, held across messages
@@ -60,7 +61,8 @@
 //! use bouncycastle_sm4::SM4Key;
 //! use bouncycastle_cipher::modes::CTR;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-//! use bouncycastle_core::symmetric_key::{FromKeyMaterial, SymmetricDecryptionKey, SymmetricEncryptionKey};
+//! use bouncycastle_core::symmetric_key::{FromKeyMaterial, SymmetricDecryptionKey};
+//! use bouncycastle_core::symmetric_key::SymmetricEncryptionKey;
 //! use bouncycastle_rng::HashDRBG_SHA512;
 //!
 //! let mut rng = HashDRBG_SHA512::new_from_os();
@@ -115,8 +117,8 @@
 //!
 //! The bit-sliced S-box substitutes 16 bytes per pass, and a round substitutes four bytes per
 //! block, so four independent blocks cost the same as one. Where a caller has four,
-//! [`SM4Internal::encrypt_4blocks`] is four times the throughput of four [`BlockPermutation::encrypt_block`](bouncycastle_core::hazmat::BlockPermutation::encrypt_block) calls, and it
-//! is also the four-block batch [`BlockPermutation::encrypt_4blocks`](bouncycastle_core::hazmat::BlockPermutation::encrypt_4blocks) offers to modes:
+//! [`SM4Internal::encrypt_4blocks`] is four times the throughput of four `encrypt_block` calls,
+//! and it is also the four-block batch `BlockPermutation::encrypt_4blocks` offers to modes:
 //!
 //! ```
 //! use bouncycastle_sm4::hazmat::SM4Internal;
@@ -199,13 +201,22 @@
 //!
 //! Per-call stack usage is the four-block working state -- four words per block, 64 bytes --
 //! plus the four `T` arguments (16 bytes), the eight `u16` planes of the S-box argument (16
-//! bytes) and the circuit's temporaries, most of
-//! which the compiler keeps in registers. Measure with
-//! `cargo run --release -p mem_usage_benches --bin bench_sm4_mem_usage`.
+//! bytes) and the circuit's temporaries, most of which the compiler keeps in registers. Every
+//! entry point runs the same four-lane circuit, so the one-, two- and four-block calls cost the
+//! same working state. Measured as the frame of each entry point's `measure` closure in
+//! `mem_usage_benches/src/bench_sm4_mem_usage.rs`, from the compiler's frame-layout remarks in
+//! the release build (x86-64, rustc 1.97 nightly, return address included):
+//!
+//! | Entry point | Stack |
+//! |---|---|
+//! | `new` (key expansion) | 272 B |
+//! | `encrypt_block` / `decrypt_block` | 96 B |
+//! | `encrypt_2blocks` / `decrypt_2blocks` | 112 B |
+//! | `encrypt_4blocks` / `decrypt_4blocks` | 96 B |
 //!
 //! For comparison, a table-driven engine carries a 256-byte table on top of the same schedule.
 //!
-//! # Security Considerations
+//! # 🚨 Security Considerations 🚨
 //!
 //! ## A block permutation is not a cipher
 //!
@@ -213,9 +224,8 @@
 //! confidential: identical plaintext blocks produce identical ciphertext blocks, so structure in
 //! the plaintext survives encryption (the specification's own Sec 12 says SM4-ECB "SHOULD NOT be
 //! used in most cases"). **Do not do it.** Use a mode of operation, and prefer an authenticated
-//! one so that ciphertext tampering is detected.
-//! That is why [`SM4Internal`] lives under [`hazmat`]; [`bouncycastle_core::hazmat`] lists the supported
-//! uses.
+//! one so that ciphertext tampering is detected. That is why [`SM4Internal`] lives under
+//! [`hazmat`]; [`bouncycastle_core::hazmat`] lists the supported uses.
 //!
 //! ## Constant-time properties
 //!

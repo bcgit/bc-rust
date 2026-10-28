@@ -19,7 +19,7 @@ use bouncycastle_core::traits::Algorithm;
 use bouncycastle_rng::HashDRBG_SHA512;
 use bouncycastle_sm4::hazmat::SM4Internal;
 use bouncycastle_sm4::{
-    BLOCK_LEN, CTR_NONCE_LEN, KEY_LEN, SM4_CBC, SM4_CFB, SM4_CFB8, SM4_CTR, SM4Key,
+    BLOCK_LEN, CTR_NONCE_LEN, KEY_LEN, LANES, SM4_CBC, SM4_CFB, SM4_CFB8, SM4_CTR, SM4Key,
 };
 use core::mem::size_of;
 
@@ -141,11 +141,20 @@ fn the_aliases_name_the_expected_types() {
     let _: SM4_CTR<'_, Decrypting> = key.create_decryptor(&nonce);
 }
 
-/// The const parameters SM4 fills in are the ones the crate exports, and CTR's nonce leaves the
-/// four-byte counter the mode's maximum.
+/// The const parameters SM4 fills in are the ones the crate exports, CTR's nonce leaves the
+/// four-byte counter the mode's maximum, and four lanes of four-byte words fill the 16 byte
+/// positions of the `u16` planes.
 #[test]
 fn the_const_parameters_are_sm4s() {
     assert_eq!(KEY_LEN, 16);
     assert_eq!(BLOCK_LEN, 16);
     assert_eq!(CTR_NONCE_LEN, 12, "a 12-byte nonce leaves the 4-byte counter CTR caps at");
+    assert_eq!(LANES * 4, BLOCK_LEN, "four lanes of one word each fill the circuit's 16 bytes");
+}
+
+/// The engine is exactly the 32 round keys the crate docs quote as 128 bytes: no direction
+/// flag, no round counter, no initialised marker.
+#[test]
+fn the_engine_is_exactly_the_round_keys() {
+    assert_eq!(size_of::<SM4Internal>(), 128);
 }

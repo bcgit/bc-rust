@@ -6,9 +6,9 @@ edition.workspace = true
 [dependencies]
 bouncycastle-core.workspace = true
 bouncycastle-utils.workspace = true
-# Only for the SM4-CBC type alias in `cbc.rs`; the engine itself does not use it.
+# The modes the key hands out, the `ModeNames` impl and the four `SM4_*` aliases; the engine
+# itself does not use it.
 bouncycastle-cipher.workspace = true
-# Only for the padded CBC aliases in `cbc.rs`; the engine itself does not use it.
 
 [dev-dependencies]
 bouncycastle-core-test-framework.workspace = true

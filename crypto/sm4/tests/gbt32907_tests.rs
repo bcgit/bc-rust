@@ -8,8 +8,8 @@
 //! The per-round `rk_i` and `X_i` columns that Appendix A.1 also prints are **not** tested here:
 //! the round keys are deliberately not public API (a `Secret` field) and the round outputs are
 //! internal to the round loop, so both are pinned in the `#[cfg(test)]` modules of
-//! `src/schedule.rs` and `src/sm4.rs`, where they can be reached. A round trip through the cipher
-//! cannot check either -- a wrong `rk_i` is used by encryption and decryption alike.
+//! `src/schedule.rs` and `src/hazmat/sm4.rs`, where they can be reached. A round trip through
+//! the cipher cannot check either -- a wrong `rk_i` is used by encryption and decryption alike.
 //!
 //! Key-handling behaviour (type, length, strength, `Debug` redaction) is tested here too.
 //!
@@ -180,9 +180,10 @@ fn a_key_carrying_too_low_a_security_strength_is_rejected() {
 
 #[test]
 fn an_all_zero_key_is_rejected_unless_explicitly_promoted() {
-    // `KeyMaterial` tags an all-zero buffer `Zeroized`, and `SM4Internal::new` refuses it as the wrong key
-    // type. BC Java's `SM4Test` runs its generic `CipherTest` checks under `new byte[16]`; a caller
-    // who really wants that key must opt in through `do_hazardous_operations`, as the CLI does.
+    // `KeyMaterial` tags an all-zero buffer `Zeroized`, and `SM4Internal::new` refuses it as the
+    // wrong key type. BC Java's `SM4Test` runs its generic `CipherTest` checks under
+    // `new byte[16]`; a caller who really wants that key must opt in through
+    // `do_hazardous_operations`, as the CLI does.
     let key =
         KeyMaterial::<16>::from_bytes_as_type(&[0u8; 16], KeyType::SymmetricCipherKey).unwrap();
     assert_eq!(key.key_type(), KeyType::Zeroized);

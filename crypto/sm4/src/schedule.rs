@@ -4,8 +4,8 @@
 //! The schedule is the 32 round keys `rk_0 .. rk_31`, one 32-bit word each, so 128 bytes. It is
 //! computed once by [`expand`] and stored in a [`Secret`]. Decryption uses the same words in the
 //! reverse order (Sec 7.2), so there is no second schedule: this crate stores the encryption order
-//! and lets [`crate::SM4::decrypt_block`] index it backwards, rather than expanding a second copy
-//! for decryption.
+//! and lets [`SM4Internal::decrypt_4blocks`](crate::hazmat::SM4Internal::decrypt_4blocks) index
+//! it backwards, rather than expanding a second copy for decryption.
 //!
 //! Every word is big-endian, as the worked examples in Appendix A.1 require: with the Example 1
 //! key `01 23 45 67 ...`, `MK_0` is `0x01234567`.
@@ -61,7 +61,8 @@ fn t_prime(z: u32) -> u32 {
 ///
 /// * `MK = (MK_0, MK_1, MK_2, MK_3)` -- the key as four big-endian words;
 /// * `(K_0, K_1, K_2, K_3) = (MK_0 xor FK_0, MK_1 xor FK_1, MK_2 xor FK_2, MK_3 xor FK_3)`;
-/// * for `i = 0, 1, ..., 31`: `rk_i = K_{i+4} = K_i xor T'(K_{i+1} xor K_{i+2} xor K_{i+3} xor CK_i)`.
+/// * for `i = 0, 1, ..., 31`:
+///   `rk_i = K_{i+4} = K_i xor T'(K_{i+1} xor K_{i+2} xor K_{i+3} xor CK_i)`.
 ///
 /// Only the four most recent `K` words are ever read, so they are kept in a sliding four-word
 /// window rather than a 36-word array; `test_round_keys_match_appendix_a_1_1` and
@@ -91,8 +92,8 @@ mod tests {
 
     #[test]
     fn test_ck_matches_its_defining_formula() {
-        // Sec 7.3.2: ck_{i,j} = (4i + j) x 7 (mod 256), CK_i = (ck_{i,0}, ck_{i,1}, ck_{i,2}, ck_{i,3})
-        // with ck_{i,0} the most significant byte.
+        // Sec 7.3.2: ck_{i,j} = (4i + j) x 7 (mod 256) and
+        // CK_i = (ck_{i,0}, ck_{i,1}, ck_{i,2}, ck_{i,3}), with ck_{i,0} the most significant byte.
         for (i, &ck) in CK.iter().enumerate() {
             let bytes: [u8; 4] = core::array::from_fn(|j| (((4 * i + j) * 7) % 256) as u8);
             assert_eq!(ck, u32::from_be_bytes(bytes), "CK_{i}");
