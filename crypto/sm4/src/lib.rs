@@ -275,7 +275,9 @@
 //!   A.2.4, the SM4-CTR vectors of Appendix A.2.5 (through a reference built from the Sec 8.7.1
 //!   equations, which the `CTR` key is then held to -- see `tests/stream_mode_tests.rs` for
 //!   why the published counter blocks are not ones it produces), plus GB/T 32907-2016's own
-//!   two examples as republished at <https://eprint.iacr.org/2008/329.pdf>.
+//!   two examples as republished at <https://eprint.iacr.org/2008/329.pdf>. RFC 8998 Appendix A
+//!   and Project Wycheproof's `sm4_gcm_test.json` and `sm4_ccm_test.json` are run through the
+//!   `GCM` and `CCM` mode traits over the engine.
 
 #![no_std]
 #![forbid(unsafe_code)]
