@@ -1,9 +1,9 @@
 //! Tests for the `camellia128-ctr`, `camellia192-ctr` and `camellia256-ctr` subcommands.
 //!
-//! They share their key loader, streaming loops and error paths with the `aes*-ctr` commands
-//! (`cli/src/stream_mode_cmd.rs`), and `aes_ctr_cli_tests.rs` covers those exhaustively. This file
-//! pins what is specific to Camellia: the three key lengths, the **12-byte** nonce, and that what
-//! comes out really is CTR over Camellia.
+//! They share their key and nonce loaders, streaming loops and error paths with the `aes*-ctr`
+//! commands (`cli/src/helpers/stream_mode_helpers.rs`), and `test_aes_ctr.sh` covers those
+//! exhaustively. This file pins what is specific to Camellia: the three key lengths, the
+//! **12-byte** nonce, and that what comes out really is CTR over Camellia.
 //!
 //! RFC 5528's nine Camellia-CTR vectors divide the counter block differently -- a 4-octet nonce, an
 //! 8-octet IV and a counter starting at one -- so they are not ones these commands can produce (see
@@ -120,6 +120,31 @@ where
     K::from_key_material(&key).expect("a valid key")
 }
 
+/// With `--iv` the 12-byte nonce is supplied, the output is the ciphertext alone, and it is still
+/// `Ctr` over Camellia under that nonce.
+#[test]
+fn a_supplied_nonce_is_used_and_not_written() {
+    use bouncycastle::camellia::Camellia128Key;
+    use bouncycastle::cipher::modes::CTR;
+
+    let nonce = "000102030405060708090a0b";
+    let plaintext = pseudo_random(37, 5);
+    let out =
+        run_ok(&["camellia128-ctr", "-d", "encrypt", "--key", KEY_128, "--iv", nonce], &plaintext);
+    assert_eq!(out.len(), plaintext.len(), "ciphertext only, no nonce in band");
+
+    let mut recovered = out.clone();
+    library_ctr_decrypt::<16, _>(
+        &key_object::<16, Camellia128Key<CTR>>(KEY_128),
+        &unhex(nonce),
+        &mut recovered,
+    );
+    assert_eq!(recovered, plaintext, "the CLI should agree with the library under that nonce");
+
+    let back = run_ok(&["camellia128-ctr", "-d", "decrypt", "--key", KEY_128, "--iv", nonce], &out);
+    assert_eq!(back, plaintext);
+}
+
 /// What each command emits must be exactly what `Ctr` over the matching permutation produces.
 #[test]
 fn the_commands_are_ctr_over_camellia() {
@@ -129,7 +154,7 @@ fn the_commands_are_ctr_over_camellia() {
     for len in [1usize, 5, 16, 17, 64] {
         let plaintext = pseudo_random(len, len as u32);
 
-        let out = run_ok(&["camellia128-ctr", "encrypt", "--key", KEY_128], &plaintext);
+        let out = run_ok(&["camellia128-ctr", "-d", "encrypt", "--key", KEY_128], &plaintext);
         let (nonce, body) = out.split_at(NONCE_LEN);
         let mut recovered = body.to_vec();
         library_ctr_decrypt::<16, _>(
@@ -139,7 +164,7 @@ fn the_commands_are_ctr_over_camellia() {
         );
         assert_eq!(recovered, plaintext, "camellia128-ctr, len {len}");
 
-        let out = run_ok(&["camellia192-ctr", "encrypt", "--key", KEY_192], &plaintext);
+        let out = run_ok(&["camellia192-ctr", "-d", "encrypt", "--key", KEY_192], &plaintext);
         let (nonce, body) = out.split_at(NONCE_LEN);
         let mut recovered = body.to_vec();
         library_ctr_decrypt::<24, _>(
@@ -149,7 +174,7 @@ fn the_commands_are_ctr_over_camellia() {
         );
         assert_eq!(recovered, plaintext, "camellia192-ctr, len {len}");
 
-        let out = run_ok(&["camellia256-ctr", "encrypt", "--key", KEY_256], &plaintext);
+        let out = run_ok(&["camellia256-ctr", "-d", "encrypt", "--key", KEY_256], &plaintext);
         let (nonce, body) = out.split_at(NONCE_LEN);
         let mut recovered = body.to_vec();
         library_ctr_decrypt::<32, _>(
@@ -167,13 +192,13 @@ fn the_commands_are_ctr_over_camellia() {
 #[test]
 fn the_nonce_is_twelve_bytes_not_sixteen() {
     let plaintext = pseudo_random(64, 7);
-    let out = run_ok(&["camellia128-ctr", "encrypt", "--key", KEY_128], &plaintext);
+    let out = run_ok(&["camellia128-ctr", "-d", "encrypt", "--key", KEY_128], &plaintext);
     assert_eq!(out.len(), plaintext.len() + NONCE_LEN, "a 12-byte nonce plus the ciphertext");
 
-    let via_cfb = run_ok(&["camellia128-cfb", "encrypt", "--key", KEY_128], &plaintext);
+    let via_cfb = run_ok(&["camellia128-cfb", "-d", "encrypt", "--key", KEY_128], &plaintext);
     assert_eq!(via_cfb.len(), plaintext.len() + 16, "camellia128-cfb writes a 16-byte IV");
 
-    let back = run_ok(&["camellia128-ctr", "decrypt", "--key", KEY_128], &out);
+    let back = run_ok(&["camellia128-ctr", "-d", "decrypt", "--key", KEY_128], &out);
     assert_eq!(back, plaintext);
 }
 
@@ -185,9 +210,9 @@ fn any_input_length_is_accepted_and_round_trips() {
     {
         for len in [0usize, 1, 15, 17, 33, 4096] {
             let plaintext = pseudo_random(len, len as u32);
-            let ciphertext = run_ok(&[cmd, "encrypt", "--key", key], &plaintext);
+            let ciphertext = run_ok(&[cmd, "-d", "encrypt", "--key", key], &plaintext);
             assert_eq!(ciphertext.len(), NONCE_LEN + len, "{cmd}, len {len}: nonce plus body");
-            let recovered = run_ok(&[cmd, "decrypt", "--key", key], &ciphertext);
+            let recovered = run_ok(&[cmd, "-d", "decrypt", "--key", key], &ciphertext);
             assert_eq!(recovered, plaintext, "{cmd}, len {len}: round trip");
         }
     }
@@ -201,9 +226,11 @@ fn each_invocation_uses_a_fresh_nonce() {
     let mut seen = std::collections::BTreeSet::new();
 
     for _ in 0..8 {
-        let ciphertext = run_ok(&["camellia128-ctr", "encrypt", "--key", KEY_128], &plaintext);
+        let ciphertext =
+            run_ok(&["camellia128-ctr", "-d", "encrypt", "--key", KEY_128], &plaintext);
         assert!(seen.insert(ciphertext[..NONCE_LEN].to_vec()), "the CLI reused a nonce");
-        let recovered = run_ok(&["camellia128-ctr", "decrypt", "--key", KEY_128], &ciphertext);
+        let recovered =
+            run_ok(&["camellia128-ctr", "-d", "decrypt", "--key", KEY_128], &ciphertext);
         assert_eq!(recovered, plaintext);
     }
 }
@@ -212,10 +239,11 @@ fn each_invocation_uses_a_fresh_nonce() {
 #[test]
 fn hex_output_matches_binary_output() {
     let plaintext = pseudo_random(32, 3);
-    let ciphertext = run_ok(&["camellia256-ctr", "encrypt", "--key", KEY_256], &plaintext);
+    let ciphertext = run_ok(&["camellia256-ctr", "-d", "encrypt", "--key", KEY_256], &plaintext);
 
-    let binary = run_ok(&["camellia256-ctr", "decrypt", "--key", KEY_256], &ciphertext);
-    let hex_out = run_ok(&["camellia256-ctr", "decrypt", "--key", KEY_256, "-x"], &ciphertext);
+    let binary = run_ok(&["camellia256-ctr", "-d", "decrypt", "--key", KEY_256], &ciphertext);
+    let hex_out =
+        run_ok(&["camellia256-ctr", "-d", "decrypt", "--key", KEY_256, "-x"], &ciphertext);
     let hex_str = String::from_utf8(hex_out).expect("hex output is text");
 
     assert_eq!(hex_str, format!("{}\n", tohex(&binary)));
@@ -226,11 +254,11 @@ fn hex_output_matches_binary_output() {
 /// are errors naming the algorithm.
 #[test]
 fn a_key_of_the_wrong_length_is_rejected() {
-    let err = run_err(&["camellia128-ctr", "encrypt", "--key", KEY_256], &[0u8; 16]);
+    let err = run_err(&["camellia128-ctr", "-d", "encrypt", "--key", KEY_256], &[0u8; 16]);
     assert!(err.contains("Camellia-128 needs a 16-byte key, got 32 bytes"), "stderr was: {err}");
-    let err = run_err(&["camellia192-ctr", "encrypt", "--key", KEY_128], &[0u8; 16]);
+    let err = run_err(&["camellia192-ctr", "-d", "encrypt", "--key", KEY_128], &[0u8; 16]);
     assert!(err.contains("Camellia-192 needs a 24-byte key, got 16 bytes"), "stderr was: {err}");
-    let err = run_err(&["camellia256-ctr", "encrypt", "--key", KEY_192], &[0u8; 16]);
+    let err = run_err(&["camellia256-ctr", "-d", "encrypt", "--key", KEY_192], &[0u8; 16]);
     assert!(err.contains("Camellia-256 needs a 32-byte key, got 24 bytes"), "stderr was: {err}");
 }
 

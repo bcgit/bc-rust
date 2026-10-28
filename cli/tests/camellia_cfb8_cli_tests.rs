@@ -1,9 +1,10 @@
 //! Tests for the `camellia128-cfb8`, `camellia192-cfb8` and `camellia256-cfb8` subcommands.
 //!
-//! They share their key loader, streaming loops and error paths with the `aes*-cfb8` commands
-//! (`cli/src/stream_mode_cmd.rs`), and `aes_cfb8_cli_tests.rs` covers those exhaustively. This file
-//! pins what is specific to Camellia: the three key lengths, that the commands exist and round-trip
-//! at any length, and that what comes out really is CFB8 over Camellia.
+//! They share their key and IV loaders, streaming loops and error paths with the `aes*-cfb8`
+//! commands (`cli/src/helpers/stream_mode_helpers.rs`), and `test_aes_cfb8.sh` covers those
+//! exhaustively. This file pins what is specific to Camellia: the three key lengths, that the
+//! commands exist and round-trip at any length, and that what comes out really is CFB8 over
+//! Camellia.
 //!
 //! There is no published Camellia CFB8 vector -- OpenSSL's `evpciph_camellia.txt` says in as many
 //! words that it does not carry `CFB{1,8}-CAMELLIAxxx` -- so instead the commands are required to
@@ -122,7 +123,7 @@ fn the_commands_are_cfb8_over_camellia() {
     for len in [1usize, 5, 16, 17, 64] {
         let plaintext = pseudo_random(len, len as u32);
 
-        let out = run_ok(&["camellia128-cfb8", "encrypt", "--key", KEY_128], &plaintext);
+        let out = run_ok(&["camellia128-cfb8", "-d", "encrypt", "--key", KEY_128], &plaintext);
         let (iv, body) = out.split_at(16);
         let mut recovered = body.to_vec();
         library_cfb8_decrypt::<16, _>(
@@ -132,7 +133,7 @@ fn the_commands_are_cfb8_over_camellia() {
         );
         assert_eq!(recovered, plaintext, "camellia128-cfb8, len {len}");
 
-        let out = run_ok(&["camellia192-cfb8", "encrypt", "--key", KEY_192], &plaintext);
+        let out = run_ok(&["camellia192-cfb8", "-d", "encrypt", "--key", KEY_192], &plaintext);
         let (iv, body) = out.split_at(16);
         let mut recovered = body.to_vec();
         library_cfb8_decrypt::<24, _>(
@@ -142,7 +143,7 @@ fn the_commands_are_cfb8_over_camellia() {
         );
         assert_eq!(recovered, plaintext, "camellia192-cfb8, len {len}");
 
-        let out = run_ok(&["camellia256-cfb8", "encrypt", "--key", KEY_256], &plaintext);
+        let out = run_ok(&["camellia256-cfb8", "-d", "encrypt", "--key", KEY_256], &plaintext);
         let (iv, body) = out.split_at(16);
         let mut recovered = body.to_vec();
         library_cfb8_decrypt::<32, _>(
@@ -152,6 +153,31 @@ fn the_commands_are_cfb8_over_camellia() {
         );
         assert_eq!(recovered, plaintext, "camellia256-cfb8, len {len}");
     }
+}
+
+/// With `--iv` the output is the ciphertext alone, and it is still `Cfb8` over Camellia under
+/// that IV.
+#[test]
+fn a_supplied_iv_is_used_and_not_written() {
+    use bouncycastle::camellia::Camellia128Key;
+    use bouncycastle::cipher::modes::CFB8;
+
+    let iv = "000102030405060708090a0b0c0d0e0f";
+    let plaintext = pseudo_random(37, 5);
+    let out =
+        run_ok(&["camellia128-cfb8", "-d", "encrypt", "--key", KEY_128, "--iv", iv], &plaintext);
+    assert_eq!(out.len(), plaintext.len(), "ciphertext only, no IV in band");
+
+    let mut recovered = out.clone();
+    library_cfb8_decrypt::<16, _>(
+        &key_object::<16, Camellia128Key<CFB8>>(KEY_128),
+        &unhex(iv),
+        &mut recovered,
+    );
+    assert_eq!(recovered, plaintext, "the CLI should agree with the library under that IV");
+
+    let back = run_ok(&["camellia128-cfb8", "-d", "decrypt", "--key", KEY_128, "--iv", iv], &out);
+    assert_eq!(back, plaintext);
 }
 
 /// `encrypt | decrypt` composes at any length, with nothing padded.
@@ -165,13 +191,13 @@ fn any_input_length_is_accepted_and_round_trips() {
         };
         for len in [0usize, 1, 15, 17, 33, 1024] {
             let plaintext = pseudo_random(len, len as u32);
-            let ciphertext = run_ok(&[cmd, "encrypt", "--key", key], &plaintext);
+            let ciphertext = run_ok(&[cmd, "-d", "encrypt", "--key", key], &plaintext);
             assert_eq!(
                 ciphertext.len(),
                 16 + len,
                 "{cmd}, len {len}: IV plus an equal-length body"
             );
-            let recovered = run_ok(&[cmd, "decrypt", "--key", key], &ciphertext);
+            let recovered = run_ok(&[cmd, "-d", "decrypt", "--key", key], &ciphertext);
             assert_eq!(recovered, plaintext, "{cmd}, len {len}: round trip");
         }
     }
@@ -186,8 +212,8 @@ fn cfb8_is_not_cfb() {
     let body = "6bc1bee22e409f96e93d7e117393172aae2d8a571e03ac9c9eb76fac45af8e51";
     let input = unhex(&format!("{iv}{body}"));
 
-    let as_cfb8 = run_ok(&["camellia128-cfb8", "decrypt", "--key", KEY_128], &input);
-    let as_cfb = run_ok(&["camellia128-cfb", "decrypt", "--key", KEY_128], &input);
+    let as_cfb8 = run_ok(&["camellia128-cfb8", "-d", "decrypt", "--key", KEY_128], &input);
+    let as_cfb = run_ok(&["camellia128-cfb", "-d", "decrypt", "--key", KEY_128], &input);
 
     assert_eq!(
         as_cfb8[0], as_cfb[0],
@@ -200,11 +226,11 @@ fn cfb8_is_not_cfb() {
 /// are errors naming the algorithm.
 #[test]
 fn a_key_of_the_wrong_length_is_rejected() {
-    let err = run_err(&["camellia128-cfb8", "encrypt", "--key", KEY_256], &[0u8; 16]);
+    let err = run_err(&["camellia128-cfb8", "-d", "encrypt", "--key", KEY_256], &[0u8; 16]);
     assert!(err.contains("Camellia-128 needs a 16-byte key, got 32 bytes"), "stderr was: {err}");
-    let err = run_err(&["camellia192-cfb8", "encrypt", "--key", KEY_128], &[0u8; 16]);
+    let err = run_err(&["camellia192-cfb8", "-d", "encrypt", "--key", KEY_128], &[0u8; 16]);
     assert!(err.contains("Camellia-192 needs a 24-byte key, got 16 bytes"), "stderr was: {err}");
-    let err = run_err(&["camellia256-cfb8", "encrypt", "--key", KEY_192], &[0u8; 16]);
+    let err = run_err(&["camellia256-cfb8", "-d", "encrypt", "--key", KEY_192], &[0u8; 16]);
     assert!(err.contains("Camellia-256 needs a 32-byte key, got 24 bytes"), "stderr was: {err}");
 }
 
@@ -215,8 +241,10 @@ fn a_key_of_the_wrong_length_is_rejected() {
 /// for copy, the sibling cfb and ctr suites -- depends on.
 #[test]
 fn a_large_payload_on_an_error_path_does_not_break_the_harness() {
-    let err =
-        run_err(&["camellia128-cfb8", "encrypt", "--key", KEY_256], &vec![0u8; 4 * 1024 * 1024]);
+    let err = run_err(
+        &["camellia128-cfb8", "-d", "encrypt", "--key", KEY_256],
+        &vec![0u8; 4 * 1024 * 1024],
+    );
     assert!(err.contains("Camellia-128 needs a 16-byte key"), "stderr was: {err}");
 }
 
