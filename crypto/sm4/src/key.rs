@@ -4,8 +4,9 @@
 //! [`SM4Key<M>`] is one type per mode `M`, as `AES128Key<M>` is in `bouncycastle-aes`: the key
 //! holds the mode's per-key state, the workers it hands out borrow it, and which role pair a key
 //! carries is decided by its mode: the symmetric pair for the stream modes and the padded block
-//! modes (`CFB`, `CFB8`, `CTR`, `CBC<PKCS7>`), the block pair for `CBC<Blocks>`. Those are the four
-//! modes this crate aliases as `SM4_*`; a key under any other mode has no role here.
+//! modes (`CFB`, `CFB8`, `CTR`, `CBC<PKCS7>`, `ECB<PKCS7>`), the block pair for `CBC<Blocks>`.
+//! The four modes this crate aliases as `SM4_*` are among them; a key under any other mode has
+//! no role here.
 //!
 //! # Usage Examples
 //!
@@ -14,7 +15,8 @@
 //! use bouncycastle_cipher::modes::CBC;
 //! use bouncycastle_cipher::padding::PKCS7;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-//! use bouncycastle_core::symmetric_key::{FromKeyMaterial, SymmetricDecryptionKey, SymmetricEncryptionKey};
+//! use bouncycastle_core::symmetric_key::{FromKeyMaterial, SymmetricDecryptionKey};
+//! use bouncycastle_core::symmetric_key::SymmetricEncryptionKey;
 //! use bouncycastle_rng::HashDRBG_SHA512;
 //!
 //! let mut rng = HashDRBG_SHA512::new_from_os();   // one RNG, held across messages
@@ -32,17 +34,21 @@
 //! nothing else per key. The cost is paid per key, not per message.
 
 use crate::hazmat::SM4Internal;
-use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
+use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::hazmat::{
     BlockDecryptMode, BlockEncryptMode, Mode, ModeKey, SymmetricDecryptMode, SymmetricEncryptMode,
-    do_hazardous_operations,
 };
-use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
+use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::symmetric_key::{
     BlockDecryptionKey, BlockEncryptionKey, FromKeyMaterial, SymmetricDecryptionKey,
     SymmetricEncryptionKey,
 };
 use bouncycastle_core::traits::RNG;
+
+// Imports needed for docs
+#[allow(unused_imports)]
+use bouncycastle_core::errors::KeyMaterialError;
+// end of imports needed for docs
 
 /// An SM4 key for the mode `M`: 16 bytes of material, expanded to the 32 round keys.
 ///
@@ -72,55 +78,20 @@ where
 
 impl<M: Mode<SM4Internal>> Eq for SM4Key<M> where M::KeyState: Eq {}
 
-/// The key-type check the mode asks for (`Mode::KEY_TYPE`), ahead of the permutation's own
-/// validation.
-fn check_key_type(
-    key: &dyn KeyMaterialTrait,
-    expected: KeyType,
-) -> Result<(), SymmetricCipherError> {
-    if key.key_type() != expected {
-        return Err(KeyMaterialError::InvalidKeyType(
-            "The key is not of the KeyType this mode requires.",
-        )
-        .into());
-    }
-    Ok(())
-}
-
-/// The permutation accepts only a `SymmetricCipherKey`, so a MAC mode's key -- already checked to
-/// be the `MACKey` the mode asks for -- is handed to it as a copy retagged at the same strength,
-/// used for nothing else. The strength check in the permutation's constructor still applies.
-fn as_cipher_key<const N: usize>(
-    key: &KeyMaterial<N>,
-) -> Result<KeyMaterial<N>, SymmetricCipherError> {
-    let mut cipher_key =
-        KeyMaterial::<N>::from_bytes_as_type(key.ref_to_bytes(), KeyType::SymmetricCipherKey)?;
-    do_hazardous_operations(&mut cipher_key, |k| {
-        k.set_key_type(KeyType::SymmetricCipherKey)?;
-        k.set_security_strength(key.security_strength())
-    })?;
-    Ok(cipher_key)
-}
-
 impl<M: Mode<SM4Internal>> FromKeyMaterial<{ crate::KEY_LEN }> for SM4Key<M> {
     const KEY_TYPE: KeyType = M::KEY_TYPE;
 
-    /// Validates and expands a 16-byte key.
+    /// Validates and expands a 16-byte key. The checks are the permutation's: every mode with a
+    /// role here asks for the `SymmetricCipherKey` it requires.
     ///
     /// # Errors
-    /// * [`KeyMaterialError::InvalidKeyType`] if the key is not of [`Self::KEY_TYPE`]: the
-    ///   `SymmetricCipherKey` a cipher mode asks for, or the `MACKey` a MAC mode does.
+    /// * [`KeyMaterialError::InvalidKeyType`] if the key is not a `SymmetricCipherKey`.
     /// * [`KeyMaterialError::InvalidLength`] if the key is not 16 bytes long.
     /// * [`KeyMaterialError::SecurityStrength`] if the key carries a strength below 128 bits.
     fn from_key_material(
         key: &KeyMaterial<{ crate::KEY_LEN }>,
     ) -> Result<Self, SymmetricCipherError> {
-        check_key_type(key, M::KEY_TYPE)?;
-        let perm = match M::KEY_TYPE {
-            KeyType::SymmetricCipherKey => SM4Internal::new(key)?,
-            _ => SM4Internal::new(&as_cipher_key(key)?)?,
-        };
-        Ok(Self { state: M::key_state(perm) })
+        Ok(Self { state: M::key_state(SM4Internal::new(key)?) })
     }
 }
 

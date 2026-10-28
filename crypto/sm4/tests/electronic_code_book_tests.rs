@@ -2,9 +2,9 @@
 //!
 //! The framework checks the properties every implementor must have -- both directions are
 //! inverses, the permutation is injective, the pair methods are indistinguishable from two
-//! single-block calls, and the key checks behave. `SM4Internal`'s pair and four-block methods fill the
-//! circuit's lanes rather than calling the single-block path, so the equivalence is not true by
-//! construction.
+//! single-block calls, and the key checks behave. `SM4Internal`'s pair and four-block methods
+//! fill the circuit's lanes rather than calling the single-block path, so the equivalence is not
+//! true by construction.
 
 use bouncycastle_core_test_framework::electronic_code_book::TestFrameworkElectronicCodeBook;
 use bouncycastle_sm4::hazmat::SM4Internal;

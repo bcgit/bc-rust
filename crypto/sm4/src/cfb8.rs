@@ -9,8 +9,8 @@
 //! This is the draft's **SM4-CFB-8**, named in Sec 8.5.1 as "the 8-bit SM4-CFB mode, where s is set
 //! to 8". It is a **different, non-interoperable mode** from SM4-CFB-128, not a variant of it:
 //! their ciphertexts differ from the second byte, and it costs a full SM4 call per byte, sixteen
-//! times the work of [`SM4_CFB`](crate::SM4_CFB). See the `bouncycastle_cipher::modes::Cfb8` docs for when
-//! that is the right trade.
+//! times the work of [`SM4_CFB`](crate::SM4_CFB). See the `bouncycastle_cipher::modes::Cfb8` docs
+//! for when that is the right trade.
 //!
 //! The draft defines the mode but publishes no example for it -- Appendix A.2.4's vectors are all
 //! `s = 128` -- so `tests/stream_mode_tests.rs` pins this alias against the Sec 8.5.2 equations
@@ -20,7 +20,8 @@
 //! use bouncycastle_sm4::SM4Key;
 //! use bouncycastle_cipher::modes::{CFB, CFB8};
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-//! use bouncycastle_core::symmetric_key::{FromKeyMaterial, SymmetricDecryptionKey, SymmetricEncryptionKey};
+//! use bouncycastle_core::symmetric_key::{FromKeyMaterial, SymmetricDecryptionKey};
+//! use bouncycastle_core::symmetric_key::SymmetricEncryptionKey;
 //! use bouncycastle_rng::HashDRBG_SHA512;
 //!
 //! let mut rng = HashDRBG_SHA512::new_from_os();
@@ -56,6 +57,7 @@ use bouncycastle_core::symmetric_key::{SymmetricDecryptionKey, SymmetricEncrypti
 // end of imports needed for docs
 
 /// SM4 in CFB8 mode. `Dir` is [`bouncycastle_cipher::Encrypting`] or
-/// [`bouncycastle_cipher::Decrypting`]; the wrong direction is a compile error, not a runtime check.
+/// [`bouncycastle_cipher::Decrypting`]; the wrong direction is a compile error, not a runtime
+/// check.
 #[allow(non_camel_case_types)]
 pub type SM4_CFB8<'k, Dir> = Cfb8<'k, SM4Internal, Dir, BLOCK_LEN>;
