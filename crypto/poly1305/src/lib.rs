@@ -14,12 +14,14 @@
 //!
 //! ```
 //! use bouncycastle_core::traits::MAC;
+//! use bouncycastle_poly1305::TAG_LEN;
 //! use bouncycastle_poly1305::hazmat::key_from_bytes;
 //! // Illustrative key only; a real one-time key is fresh, unpredictable and used once.
 //! let one_time_key = [0x42; 32];
 //! let mut mac = key_from_bytes(&one_time_key).into_mac();
 //! mac.do_update(b"message");
-//! let tag = mac.finalize();
+//! let mut tag = [0u8; TAG_LEN];
+//! mac.do_final_out(&mut tag).unwrap();
 //! assert!(key_from_bytes(&one_time_key).into_mac().verify(b"message", &tag));
 //! ```
 //!
@@ -225,8 +227,9 @@ impl Poly1305 {
         self.h[0] &= MASK;
     }
 
-    /// Consumes this message and returns its full authentication tag without allocation.
-    pub fn finalize(mut self) -> [u8; TAG_LEN] {
+    /// Consumes this message and returns its full authentication tag: the body of the `MAC`
+    /// impl's three finals.
+    fn finalize(mut self) -> [u8; TAG_LEN] {
         if self.buffered != 0 {
             // The last, partial block: Sec 2.5.1's `| [0x01]` after its bytes, then zeros.
             let mut block = core::mem::replace(&mut self.buffer, Secret::new());

@@ -28,7 +28,7 @@ fn core_mac_contract() {
 
 #[test]
 fn empty_message_returns_the_additive_key_half() {
-    assert_eq!(generator().finalize(), KEY[16..]);
+    assert_eq!(generator().do_final(), KEY[16..]);
 }
 
 #[test]
@@ -76,7 +76,7 @@ fn pieces_of_1_15_16_17_and_33_bytes_give_the_one_shot_tag() {
         mac.do_update(piece);
         rest = tail;
     }
-    assert_eq!(&mac.finalize()[..], &expected[..]);
+    assert_eq!(mac.do_final(), expected);
 }
 
 const STATE_LEN: usize = <Poly1305 as SuspendableComponent<'static>>::STATE_LEN;
@@ -95,11 +95,11 @@ fn a_suspended_message_resumes_to_the_same_tag() {
         mac.write_state(&mut state);
         let mut resumed = Poly1305::read_state(&state, &KEY).unwrap();
         resumed.do_update(&msg[split..]);
-        assert_eq!(&resumed.finalize()[..], &expected[..], "split at {split}");
+        assert_eq!(resumed.do_final(), expected, "split at {split}");
 
         let mut other = Poly1305::read_state(&state, &[0x24; 32]).unwrap();
         other.do_update(&msg[split..]);
-        assert_ne!(&other.finalize()[..], &expected[..], "split at {split}, another key");
+        assert_ne!(other.do_final(), expected, "split at {split}, another key");
     }
 }
 
