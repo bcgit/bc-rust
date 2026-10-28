@@ -1,6 +1,6 @@
-//! The Camellia keys through the shared conformance suites: construction policy for every mode a key
-//! can carry, then the block, symmetric and stream suites at the 128- and 256-bit key
-//! lengths (Camellia-192 sits between them in rounds and differs in nothing else the suites see).
+//! The Camellia keys through the shared conformance suites: construction policy for every mode a
+//! key can carry, then the block, symmetric and stream suites at the 128- and 256-bit key lengths
+//! (Camellia-192 sits between them in rounds and differs in nothing else the suites see).
 
 use bouncycastle_camellia::hazmat::{Camellia128Internal, Camellia256Internal};
 use bouncycastle_camellia::{Camellia128Key, Camellia256Key};

@@ -7,8 +7,8 @@
 //! words (272 bytes) for 192- and 256-bit keys. It is computed once by [`expand`] and stored in a
 //! [`Secret`]. Decryption uses the same words in the swapped order of Sec 2.3.3, so there is no
 //! second schedule: this crate stores the encryption order and lets
-//! [`crate::hazmat::CamelliaInternal::decrypt_4blocks`] index it the other way, rather than writing the subkeys
-//! into decryption positions when initialised for decryption.
+//! [`crate::hazmat::CamelliaInternal::decrypt_4blocks`] index it the other way, rather than
+//! writing the subkeys into decryption positions when initialised for decryption.
 //!
 //! # Layout
 //!

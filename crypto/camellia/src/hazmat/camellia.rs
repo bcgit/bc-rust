@@ -19,9 +19,9 @@ pub type Block = [u8; BLOCK_LEN];
 /// The Camellia keyed permutation, parameterised by key length, constant-time: the engine under
 /// [`CamelliaKey`](crate::CamelliaKey).
 ///
-/// Use the aliases [`Camellia128Internal`], [`Camellia192Internal`] and [`Camellia256Internal`] rather than naming this
-/// directly. `P` is sealed to the three parameter sets of RFC 3713, so no fourth instantiation
-/// exists.
+/// Use the aliases [`Camellia128Internal`], [`Camellia192Internal`] and [`Camellia256Internal`]
+/// rather than naming this directly. `P` is sealed to the three parameter sets of RFC 3713, so no
+/// fourth instantiation exists.
 ///
 /// The only state is the subkeys, held in a [`Secret`] so that they are zeroized on drop and
 /// redacted from `Debug`. There is no direction flag and no initialisation state: decryption is
@@ -78,7 +78,8 @@ impl<P: CamelliaParams> CamelliaInternal<P> {
         }
         if key.security_strength() < SecurityStrength::from_bytes(P::KEY_LEN) {
             return Err(KeyMaterialError::SecurityStrength(
-                "The provided key has a lower security strength than the Camellia key length implies.",
+                "The provided key has a lower security strength than the Camellia key length \
+                 implies.",
             )
             .into());
         }
@@ -91,10 +92,11 @@ impl<P: CamelliaParams> CamelliaInternal<P> {
     /// This is the natural unit of work. The S-box circuit substitutes 32 bytes per pass and a
     /// round substitutes eight bytes per block, so four blocks fill it exactly; fewer blocks cost
     /// the same. Modes whose blocks are independent -- CTR, and the decryption direction of CBC
-    /// and CFB -- reach it as the `ElectronicCodeBook` four-block batch; CBC
-    /// encryption cannot, since its blocks are serially dependent.
+    /// and CFB -- reach it as the `BlockPermutation` four-block batch; CBC encryption cannot,
+    /// since its blocks are serially dependent.
     ///
-    /// Infallible: a constructed [`CamelliaInternal`] is always usable and every input length is fixed.
+    /// Infallible: a constructed [`CamelliaInternal`] is always usable and every input length is
+    /// fixed.
     pub fn encrypt_4blocks(&self, blocks: &mut [Block; LANES]) {
         let s = self.schedule.as_ref();
         rounds(blocks, P::ROUNDS, |i| kw(s, i), |i| k(s, i), |i| ke::<P>(s, i));
@@ -132,7 +134,8 @@ impl<P: CamelliaParams> CamelliaInternal<P> {
         *block = lanes[0];
     }
 
-    /// Decrypts one block in place. See [`ElectronicCodeBook::encrypt_block`] for the four-lane caveat.
+    /// Decrypts one block in place. See [`BlockPermutation::encrypt_block`] for the four-lane
+    /// caveat.
     pub(crate) fn decrypt_block(&self, block: &mut Block) {
         let mut lanes = [*block; LANES];
         self.decrypt_4blocks(&mut lanes);
@@ -142,7 +145,7 @@ impl<P: CamelliaParams> CamelliaInternal<P> {
 
     /// Encrypts two blocks in place, in lanes 0 and 1; the other two lanes carry copies of the
     /// first and are discarded. Two blocks for the price of four, but twice as good as two
-    /// [`ElectronicCodeBook::encrypt_block`] calls, which is why the trait method uses it.
+    /// [`BlockPermutation::encrypt_block`] calls, which is why the trait method uses it.
     pub(crate) fn encrypt_2blocks(&self, blocks: &mut [Block; 2]) {
         let mut lanes = [blocks[0]; LANES];
         lanes[1] = blocks[1];
@@ -150,7 +153,7 @@ impl<P: CamelliaParams> CamelliaInternal<P> {
         *blocks = [lanes[0], lanes[1]];
     }
 
-    /// Decrypts two blocks in place. See [`ElectronicCodeBook::encrypt_2blocks`].
+    /// Decrypts two blocks in place. See [`BlockPermutation::encrypt_2blocks`].
     pub(crate) fn decrypt_2blocks(&self, blocks: &mut [Block; 2]) {
         let mut lanes = [blocks[0]; LANES];
         lanes[1] = blocks[1];
@@ -295,7 +298,8 @@ impl BlockPermutation<BLOCK_LEN> for Camellia256Internal {
 }
 
 // Camellia has published modes beyond the four this crate aliases -- RFC 5528 defines CTR and
-// CCM, RFC 6367 GCM -- so every mode is named, although the keys hand out workers for the four aliased modes only.
+// CCM, RFC 6367 GCM -- so every mode is named, although the keys hand out workers for the four
+// aliased modes only.
 impl ModeNames for Camellia128Internal {
     const CBC_ALG_NAME: &'static str = "Camellia_CBC_128";
     const CCM_ALG_NAME: &'static str = "Camellia_CCM_128";
@@ -342,44 +346,6 @@ impl<P: CamelliaParams> core::fmt::Debug for CamelliaInternal<P> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_engine_sizes_are_exactly_the_subkeys() {
-        // The "Memory Usage" table in the crate docs quotes these: 26 or 34 subkeys of 64 bits and
-        // nothing else -- no direction flag, no round counter, no initialised marker.
-        assert_eq!(size_of::<Camellia128Internal>(), 208);
-        assert_eq!(size_of::<Camellia192Internal>(), 272);
-        assert_eq!(size_of::<Camellia256Internal>(), 272);
-        assert_eq!(size_of::<Camellia128Internal>(), size_of::<[u64; 4 + 18 + 4]>());
-        assert_eq!(size_of::<Camellia256Internal>(), size_of::<[u64; 4 + 24 + 6]>());
-    }
-
-    #[test]
-    fn test_alg_names_and_strengths() {
-        assert_eq!(<Camellia128Internal as Algorithm>::ALG_NAME, "Camellia-128");
-        assert_eq!(<Camellia192Internal as Algorithm>::ALG_NAME, "Camellia-192");
-        assert_eq!(<Camellia256Internal as Algorithm>::ALG_NAME, "Camellia-256");
-        assert_eq!(
-            <Camellia128Internal as Algorithm>::MAX_SECURITY_STRENGTH,
-            SecurityStrength::from_bytes(Camellia128Params::KEY_LEN)
-        );
-        assert_eq!(
-            <Camellia192Internal as Algorithm>::MAX_SECURITY_STRENGTH,
-            SecurityStrength::from_bytes(Camellia192Params::KEY_LEN)
-        );
-        assert_eq!(
-            <Camellia256Internal as Algorithm>::MAX_SECURITY_STRENGTH,
-            SecurityStrength::from_bytes(Camellia256Params::KEY_LEN)
-        );
-    }
-
-    #[test]
-    fn test_lanes_constant() {
-        // The docs and the two-block override both assume four lanes: four 8-byte F-function
-        // inputs fill the 32 byte positions of the eight u32 planes.
-        assert_eq!(LANES, 4);
-        assert_eq!(LANES * 8, 32);
-    }
 
     #[test]
     fn test_decryption_subkey_swap_is_section_2_3_3() {

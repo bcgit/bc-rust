@@ -24,7 +24,8 @@
 //!   `s = 8` over the permutation, and the `CFB8` keys are held to it.
 //!
 //! Everything internal to the modes -- the counter increment, the short final block, the shift
-//! register, the chunking -- is covered by the SP 800-38A and ACVP vectors in `bouncycastle_cipher::modes`.
+//! register, the chunking -- is covered by the SP 800-38A and ACVP vectors in
+//! `bouncycastle_cipher::modes`.
 
 mod common;
 

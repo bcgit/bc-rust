@@ -2,9 +2,9 @@
 //!
 //! See `bouncycastle_cipher::modes::ctr` for the construction. The aliases are stream ciphers:
 //! the data is a `&mut [u8]` of any length, encrypted or decrypted in place. They come from a key,
-//! [`Camellia128Key<CTR>`](crate::Camellia128Key) and friends, through the [`SymmetricEncryptionKey`] /
-//! [`SymmetricDecryptionKey`] pair; the nonce is drawn from the caller's RNG by encryption and
-//! returned, and there is no API for supplying one.
+//! [`Camellia128Key<CTR>`](crate::Camellia128Key) and friends, through the
+//! [`SymmetricEncryptionKey`] / [`SymmetricDecryptionKey`] pair; the nonce is drawn from the
+//! caller's RNG by encryption and returned, and there is no API for supplying one.
 //!
 //! # The nonce length is 12, so the counter is 4
 //!
@@ -26,14 +26,16 @@
 //! use bouncycastle_camellia::Camellia128Key;
 //! use bouncycastle_cipher::modes::CTR;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-//! use bouncycastle_core::symmetric_key::{FromKeyMaterial, SymmetricDecryptionKey, SymmetricEncryptionKey};
+//! use bouncycastle_core::symmetric_key::{FromKeyMaterial, SymmetricDecryptionKey};
+//! use bouncycastle_core::symmetric_key::SymmetricEncryptionKey;
 //! use bouncycastle_core::traits::{StreamCipherDecryptor, StreamCipherEncryptor};
 //! use bouncycastle_rng::HashDRBG_SHA512;
 //!
 //! let mut rng = HashDRBG_SHA512::new_from_os();
 //! let material = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
 //!     .expect("a 16-byte symmetric cipher key");
-//! let key = Camellia128Key::<CTR>::from_key_material(&material).expect("a valid Camellia-128 key");
+//! let key = Camellia128Key::<CTR>::from_key_material(&material)
+//!     .expect("a valid Camellia-128 key");
 //!
 //! // 47 bytes: a stream cipher does not need a whole number of blocks.
 //! let message = [0u8; 47];
@@ -70,7 +72,8 @@ use bouncycastle_core::symmetric_key::{SymmetricDecryptionKey, SymmetricEncrypti
 pub const CTR_NONCE_LEN: usize = 12;
 
 /// Camellia-128 in CTR mode with a 12-byte nonce. `Dir` is [`bouncycastle_cipher::Encrypting`] or
-/// [`bouncycastle_cipher::Decrypting`]; the wrong direction is a compile error, not a runtime check.
+/// [`bouncycastle_cipher::Decrypting`]; the wrong direction is a compile error, not a runtime
+/// check.
 #[allow(non_camel_case_types)]
 pub type Camellia_CTR_128<'k, Dir> = Ctr<'k, Camellia128Internal, Dir, BLOCK_LEN, CTR_NONCE_LEN>;
 

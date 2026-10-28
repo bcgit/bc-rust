@@ -3,10 +3,10 @@
 //! The comparison that matters is `encrypt_block` against `encrypt_2blocks` and `encrypt_4blocks`
 //! over the same number of bytes. The S-box circuit always processes four lanes, so a single-block
 //! call does four blocks' worth of work and the four-block path (what the CBC mode's decryption
-//! uses) should be close to four times the throughput; the two-block path sits at half. Decryption costs the same as encryption (the same rounds with
-//! the subkeys read in the swapped order). Camellia-192
-//! and Camellia-256 share the 24-round schedule, so only the 256-bit variant is benchmarked
-//! alongside the 18-round Camellia-128.
+//! uses) should be close to four times the throughput; the two-block path sits at half. Decryption
+//! costs the same as encryption (the same rounds with the subkeys read in the swapped order).
+//! Camellia-192 and Camellia-256 share the 24-round schedule, so only the 256-bit variant is
+//! benchmarked alongside the 18-round Camellia-128.
 
 use bouncycastle_camellia::hazmat::{Camellia128Internal, Camellia256Internal};
 use bouncycastle_camellia::{BLOCK_LEN, LANES};

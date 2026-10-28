@@ -1,26 +1,28 @@
 //! Type aliases for Camellia (RFC 3713) in CFB8 mode (NIST SP 800-38A Sec 6.3, `s = 8`).
 //!
-//! See `bouncycastle_cipher::modes::cfb8` for the construction. The aliases are stream ciphers
-//! with a one-byte segment, and come from a key, [`Camellia128Key<CFB8>`](crate::Camellia128Key) and
-//! friends, through the [`SymmetricEncryptionKey`] / [`SymmetricDecryptionKey`] pair; the IV is
-//! one block, drawn from the caller's RNG by encryption and returned.
+//! See `bouncycastle_cipher::modes::cfb8` for the construction. The aliases are stream ciphers with
+//! a one-byte segment, and come from a key, [`Camellia128Key<CFB8>`](crate::Camellia128Key) and
+//! friends, through the [`SymmetricEncryptionKey`] / [`SymmetricDecryptionKey`] pair; the IV is one
+//! block, drawn from the caller's RNG by encryption and returned.
 //!
 //! CFB8 is a **different, non-interoperable mode** from CFB128, not a variant of it: their
-//! ciphertexts differ from the second byte, and it costs a full Camellia call per byte, sixteen times
-//! the work of [`Camellia_CFB_128`](crate::Camellia_CFB_128). See the `bouncycastle_cipher::modes::Cfb8`
-//! docs for when that is the right trade.
+//! ciphertexts differ from the second byte, and it costs a full Camellia call per byte, sixteen
+//! times the work of [`Camellia_CFB_128`](crate::Camellia_CFB_128). See the
+//! `bouncycastle_cipher::modes::Cfb8` docs for when that is the right trade.
 //!
 //! ```
 //! use bouncycastle_camellia::Camellia128Key;
 //! use bouncycastle_cipher::modes::{CFB, CFB8};
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-//! use bouncycastle_core::symmetric_key::{FromKeyMaterial, SymmetricDecryptionKey, SymmetricEncryptionKey};
+//! use bouncycastle_core::symmetric_key::{FromKeyMaterial, SymmetricDecryptionKey};
+//! use bouncycastle_core::symmetric_key::SymmetricEncryptionKey;
 //! use bouncycastle_rng::HashDRBG_SHA512;
 //!
 //! let mut rng = HashDRBG_SHA512::new_from_os();
 //! let material = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
 //!     .expect("a 16-byte symmetric cipher key");
-//! let cfb8_key = Camellia128Key::<CFB8>::from_key_material(&material).expect("a valid Camellia-128 key");
+//! let cfb8_key = Camellia128Key::<CFB8>::from_key_material(&material)
+//!     .expect("a valid Camellia-128 key");
 //!
 //! // 5 bytes: CFB8's segment is one byte, so any length at all is fine.
 //! let message = *b"hello";
@@ -49,7 +51,8 @@ use bouncycastle_core::symmetric_key::{SymmetricDecryptionKey, SymmetricEncrypti
 // end of imports needed for docs
 
 /// Camellia-128 in CFB8 mode. `Dir` is [`bouncycastle_cipher::Encrypting`] or
-/// [`bouncycastle_cipher::Decrypting`]; the wrong direction is a compile error, not a runtime check.
+/// [`bouncycastle_cipher::Decrypting`]; the wrong direction is a compile error, not a runtime
+/// check.
 #[allow(non_camel_case_types)]
 pub type Camellia_CFB8_128<'k, Dir> = Cfb8<'k, Camellia128Internal, Dir, BLOCK_LEN>;
 
