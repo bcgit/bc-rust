@@ -110,10 +110,10 @@ use bouncycastle_core::traits::{
 };
 use bouncycastle_poly1305::Poly1305;
 use bouncycastle_poly1305::hazmat::key_from_bytes;
+use bouncycastle_utils::secret::Secret;
 use bouncycastle_utils::suspendable_state::{
     Cursor, CursorMut, LIB_VERSION_LEN, SuspendableComponent, add_lib_ver, check_lib_ver,
 };
-use bouncycastle_utils::{ct, secret::Secret};
 
 /// Key length in bytes.
 pub const KEY_LEN: usize = 32;
@@ -241,12 +241,21 @@ impl<'k, Dir> ChaCha20_Poly1305<'k, Dir> {
         }
     }
 
-    fn finish_tag(mut self) -> [u8; TAG_LEN] {
+    /// The MAC with the rest of RFC 8439 Sec 2.8's input absorbed, the data's padding and the two
+    /// lengths, ready for its final.
+    fn finish_mac(mut self) -> Poly1305 {
         self.start_data();
         self.mac.do_update(&[0u8; 15][..padding_len(self.data_len)]);
         self.mac.do_update(&self.aad_len.to_le_bytes());
         self.mac.do_update(&self.data_len.to_le_bytes());
-        self.mac.finalize()
+        self.mac
+    }
+
+    fn finish_tag(self) -> [u8; TAG_LEN] {
+        let mut tag = [0u8; TAG_LEN];
+        // infallible: Poly1305 refuses only a buffer shorter than its tag.
+        self.finish_mac().do_final_out(&mut tag).unwrap();
+        tag
     }
 }
 
@@ -272,7 +281,8 @@ impl ChaCha20_Poly1305<'_, Decrypting> {
     }
 
     fn verify_tag(self, tag: &[u8; TAG_LEN]) -> Result<(), SymmetricCipherError> {
-        if ct::ct_eq_bytes(&self.finish_tag(), tag) {
+        // Poly1305's do_verify_final compares in constant time.
+        if self.finish_mac().do_verify_final(tag) {
             Ok(())
         } else {
             Err(SymmetricCipherError::AEADTagCheckFailed)
