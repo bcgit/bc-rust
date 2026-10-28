@@ -1,9 +1,9 @@
 //! Tests for the `sm4-ctr` subcommand.
 //!
-//! `sm4-ctr` shares its key loader, streaming loops and error paths with the `aes*-ctr` commands
-//! (`cli/src/stream_mode_cmd.rs`), and `aes_ctr_cli_tests.rs` covers those exhaustively. This file
-//! pins what is specific to SM4: the 16-byte key length, the **12-byte** nonce, and that what comes
-//! out really is CTR over SM4.
+//! `sm4-ctr` shares its key and nonce loaders, streaming loops and error paths with the
+//! `aes*-ctr` commands (`cli/src/helpers/stream_mode_helpers.rs`), and `test_aes_ctr.sh` covers
+//! those exhaustively. This file pins what is specific to SM4: the 16-byte key length, the
+//! **12-byte** nonce, and that what comes out really is CTR over SM4.
 //!
 //! draft-ribose-cfrg-sm4-10's Appendix A.2.5 examples make the whole 16-byte IV the first counter
 //! block, which the 12-byte-nonce split these commands use cannot produce (see the `SM4_CTR` docs),
@@ -115,7 +115,7 @@ fn library_ctr_decrypt(key_hex: &str, nonce: &[u8], data: &mut [u8]) {
 fn the_command_is_ctr_over_sm4() {
     for len in [1usize, 5, 16, 17, 64] {
         let plaintext = pseudo_random(len, len as u32);
-        let out = run_ok(&["sm4-ctr", "encrypt", "--key", KEY], &plaintext);
+        let out = run_ok(&["sm4-ctr", "-d", "encrypt", "--key", KEY], &plaintext);
         assert_eq!(out.len(), NONCE_LEN + len, "len {len}: nonce plus an equal-length body");
 
         let (nonce, body) = out.split_at(NONCE_LEN);
@@ -125,19 +125,36 @@ fn the_command_is_ctr_over_sm4() {
     }
 }
 
+/// With `--iv` the 12-byte nonce is supplied, the output is the ciphertext alone, and it is still
+/// `Ctr` over `SM4` under that nonce.
+#[test]
+fn a_supplied_nonce_is_used_and_not_written() {
+    let nonce = "000102030405060708090a0b";
+    let plaintext = pseudo_random(37, 5);
+    let out = run_ok(&["sm4-ctr", "-d", "encrypt", "--key", KEY, "--iv", nonce], &plaintext);
+    assert_eq!(out.len(), plaintext.len(), "ciphertext only, no nonce in band");
+
+    let mut recovered = out.clone();
+    library_ctr_decrypt(KEY, &unhex(nonce), &mut recovered);
+    assert_eq!(recovered, plaintext, "the CLI should agree with the library under that nonce");
+
+    let back = run_ok(&["sm4-ctr", "-d", "decrypt", "--key", KEY, "--iv", nonce], &out);
+    assert_eq!(back, plaintext);
+}
+
 /// CTR writes a **12-byte** nonce where the other SM4 modes write a 16-byte IV, so the output is 12
 /// bytes longer than the input rather than 16. Getting this wrong would shift every byte of the
 /// payload.
 #[test]
 fn the_nonce_is_twelve_bytes_not_sixteen() {
     let plaintext = pseudo_random(64, 7);
-    let out = run_ok(&["sm4-ctr", "encrypt", "--key", KEY], &plaintext);
+    let out = run_ok(&["sm4-ctr", "-d", "encrypt", "--key", KEY], &plaintext);
     assert_eq!(out.len(), plaintext.len() + NONCE_LEN, "a 12-byte nonce plus the ciphertext");
 
-    let via_cfb = run_ok(&["sm4-cfb", "encrypt", "--key", KEY], &plaintext);
+    let via_cfb = run_ok(&["sm4-cfb", "-d", "encrypt", "--key", KEY], &plaintext);
     assert_eq!(via_cfb.len(), plaintext.len() + 16, "sm4-cfb writes a 16-byte IV");
 
-    let back = run_ok(&["sm4-ctr", "decrypt", "--key", KEY], &out);
+    let back = run_ok(&["sm4-ctr", "-d", "decrypt", "--key", KEY], &out);
     assert_eq!(back, plaintext);
 }
 
@@ -146,9 +163,9 @@ fn the_nonce_is_twelve_bytes_not_sixteen() {
 fn any_input_length_is_accepted_and_round_trips() {
     for len in [0usize, 1, 15, 17, 33, 4096] {
         let plaintext = pseudo_random(len, len as u32);
-        let ciphertext = run_ok(&["sm4-ctr", "encrypt", "--key", KEY], &plaintext);
+        let ciphertext = run_ok(&["sm4-ctr", "-d", "encrypt", "--key", KEY], &plaintext);
         assert_eq!(ciphertext.len(), NONCE_LEN + len, "len {len}: nonce plus an equal-length body");
-        let recovered = run_ok(&["sm4-ctr", "decrypt", "--key", KEY], &ciphertext);
+        let recovered = run_ok(&["sm4-ctr", "-d", "decrypt", "--key", KEY], &ciphertext);
         assert_eq!(recovered, plaintext, "len {len}: round trip");
     }
 }
@@ -161,9 +178,9 @@ fn each_invocation_uses_a_fresh_nonce() {
     let mut seen = std::collections::BTreeSet::new();
 
     for _ in 0..8 {
-        let ciphertext = run_ok(&["sm4-ctr", "encrypt", "--key", KEY], &plaintext);
+        let ciphertext = run_ok(&["sm4-ctr", "-d", "encrypt", "--key", KEY], &plaintext);
         assert!(seen.insert(ciphertext[..NONCE_LEN].to_vec()), "the CLI reused a nonce");
-        let recovered = run_ok(&["sm4-ctr", "decrypt", "--key", KEY], &ciphertext);
+        let recovered = run_ok(&["sm4-ctr", "-d", "decrypt", "--key", KEY], &ciphertext);
         assert_eq!(recovered, plaintext);
     }
 }
@@ -172,10 +189,10 @@ fn each_invocation_uses_a_fresh_nonce() {
 #[test]
 fn hex_output_matches_binary_output() {
     let plaintext = pseudo_random(32, 3);
-    let ciphertext = run_ok(&["sm4-ctr", "encrypt", "--key", KEY], &plaintext);
+    let ciphertext = run_ok(&["sm4-ctr", "-d", "encrypt", "--key", KEY], &plaintext);
 
-    let binary = run_ok(&["sm4-ctr", "decrypt", "--key", KEY], &ciphertext);
-    let hex_out = run_ok(&["sm4-ctr", "decrypt", "--key", KEY, "-x"], &ciphertext);
+    let binary = run_ok(&["sm4-ctr", "-d", "decrypt", "--key", KEY], &ciphertext);
+    let hex_out = run_ok(&["sm4-ctr", "-d", "decrypt", "--key", KEY, "-x"], &ciphertext);
     let hex_str = String::from_utf8(hex_out).expect("hex output is text");
 
     assert_eq!(hex_str, format!("{}\n", tohex(&binary)));
@@ -186,7 +203,7 @@ fn hex_output_matches_binary_output() {
 #[test]
 fn a_key_of_the_wrong_length_is_rejected() {
     let key_256 = "603deb1015ca71be2b73aef0857d77811f352c073b6108d72d9810a30914dff4";
-    let err = run_err(&["sm4-ctr", "encrypt", "--key", key_256], &[0u8; 16]);
+    let err = run_err(&["sm4-ctr", "-d", "encrypt", "--key", key_256], &[0u8; 16]);
     assert!(err.contains("SM4 needs a 16-byte key, got 32 bytes"), "stderr was: {err}");
 }
 

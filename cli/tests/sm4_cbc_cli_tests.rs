@@ -1,11 +1,13 @@
 //! Tests for the `sm4-cbc` subcommand.
 //!
-//! `sm4-cbc` shares its key loader, streaming loops and error paths with the `aes*-cbc` commands
-//! (`cli/src/cbc_cmd.rs`), and `aes_cbc_cli_tests.rs` covers those exhaustively. This file pins
-//! what is specific to SM4: the known-answer vectors, the 16-byte key length, and that the
-//! command exists and round-trips.
+//! `sm4-cbc` shares its key and IV loaders, streaming loops and error paths with the `aes*-cbc`
+//! commands (`cli/src/helpers/block_mode_helpers.rs`), and `test_aes_cbc.sh` covers those
+//! exhaustively. This file pins what is specific to SM4: the known-answer vectors in both
+//! directions, the 16-byte key length, and that the command exists and round-trips.
 //!
-//! Vectors are the SM4-CBC examples of draft-ribose-cfrg-sm4-10 Appendix A.2.2.
+//! Vectors are the SM4-CBC examples of draft-ribose-cfrg-sm4-10 Appendix A.2.2. The appendix
+//! applies no padding, so under the command's PKCS7 framing its two ciphertext blocks are
+//! followed by one block of padding, computed here from the permutation.
 
 use std::io::{ErrorKind, Write};
 use std::process::{Command, Output, Stdio};
@@ -86,17 +88,48 @@ fn tohex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }
 
+/// The CBC ciphertext block that a full block of PKCS7 padding (sixteen `0x10` bytes) encrypts
+/// to under `key_hex` after the ciphertext block `prev_hex`: `E_K(prev xor 10..10)`, from the
+/// permutation. Appended to an unpadded known-answer ciphertext whose plaintext is
+/// block-aligned, it gives the PKCS7 ciphertext of the same plaintext, which is how the command
+/// frames it.
+fn pkcs7_block(key_hex: &str, prev_hex: &str) -> String {
+    use bouncycastle::core::hazmat::{BlockPermutation, ElectronicCodeBook};
+    use bouncycastle::core::key_material::{KeyMaterial, KeyType};
+    use bouncycastle::sm4::hazmat::SM4Internal;
+
+    let key_bytes: [u8; 16] = unhex(key_hex).try_into().expect("a 16-byte key");
+    let material = KeyMaterial::<16>::from_bytes_as_type(&key_bytes, KeyType::SymmetricCipherKey)
+        .expect("a valid symmetric cipher key");
+    let sm4 = SM4Internal::new(&material).expect("a valid key");
+    let mut block: [u8; 16] = unhex(prev_hex).try_into().expect("a 16-byte block");
+    block.iter_mut().for_each(|b| *b ^= 0x10);
+    sm4.encrypt_block(&mut block);
+    tohex(&block)
+}
+
+/// `encrypt --iv` reproduces the draft's ciphertext for both Appendix A.2.2 examples, followed
+/// by the PKCS7 block, and `decrypt --iv` takes that back to the plaintext.
+#[test]
+fn encrypt_matches_appendix_a_2_2_vectors() {
+    for (section, key, ct) in [("A.2.2.1", KEY_1, CT_1), ("A.2.2.2", KEY_2, CT_2)] {
+        let out =
+            run_ok(&["sm4-cbc", "-d", "encrypt", "--key", key, "--iv", IV], &unhex(PLAINTEXT));
+        let want = format!("{ct}{}", pkcs7_block(key, &ct[32..]));
+        assert_eq!(tohex(&out), want, "{section}: sm4-cbc encrypt --iv should give the ciphertext");
+
+        let back = run_ok(&["sm4-cbc", "-d", "decrypt", "--key", key, "--iv", IV], &out);
+        assert_eq!(tohex(&back), PLAINTEXT, "{section}: and decrypt --iv takes it back");
+    }
+}
+
 /// `decrypt` reproduces the draft's plaintext when handed the draft's IV followed by its
-/// ciphertext, for both Appendix A.2.2 examples.
-///
-/// This is the direction that can be pinned exactly: `encrypt` picks its own IV, so it cannot be
-/// asked to reproduce a published ciphertext. `encrypt` is covered by the round trip below and, at
-/// the library level, by `crypto/sm4/tests/draft_modes_tests.rs`.
+/// ciphertext and the PKCS7 block, for both Appendix A.2.2 examples.
 #[test]
 fn decrypt_matches_appendix_a_2_2_vectors() {
     for (section, key, ct) in [("A.2.2.1", KEY_1, CT_1), ("A.2.2.2", KEY_2, CT_2)] {
-        let input = unhex(&format!("{IV}{ct}"));
-        let out = run_ok(&["sm4-cbc", "decrypt", "--key", key], &input);
+        let input = unhex(&format!("{IV}{ct}{}", pkcs7_block(key, &ct[32..])));
+        let out = run_ok(&["sm4-cbc", "-d", "decrypt", "--key", key], &input);
         assert_eq!(tohex(&out), PLAINTEXT, "{section}: sm4-cbc decrypt should give the plaintext");
     }
 }
@@ -104,8 +137,8 @@ fn decrypt_matches_appendix_a_2_2_vectors() {
 /// The same with `-x`: identical answer in hex plus a trailing newline.
 #[test]
 fn hex_output_matches_binary_output() {
-    let input = unhex(&format!("{IV}{CT_1}"));
-    let out = run_ok(&["sm4-cbc", "decrypt", "--key", KEY_1, "-x"], &input);
+    let input = unhex(&format!("{IV}{CT_1}{}", pkcs7_block(KEY_1, &CT_1[32..])));
+    let out = run_ok(&["sm4-cbc", "-d", "decrypt", "--key", KEY_1, "-x"], &input);
     assert_eq!(String::from_utf8_lossy(&out), format!("{PLAINTEXT}\n"));
 }
 
@@ -114,19 +147,31 @@ fn hex_output_matches_binary_output() {
 fn encrypt_then_decrypt_round_trips() {
     let plaintext: Vec<u8> = (0..4096u32).map(|i| (i.wrapping_mul(31) >> 3) as u8).collect();
 
-    let ciphertext = run_ok(&["sm4-cbc", "encrypt", "--key", KEY_1], &plaintext);
-    assert_eq!(ciphertext.len(), 16 + plaintext.len(), "IV block plus one block per input block");
+    let ciphertext = run_ok(&["sm4-cbc", "-d", "encrypt", "--key", KEY_1], &plaintext);
+    assert_eq!(ciphertext.len(), 16 + plaintext.len() + 16, "IV, the blocks, a padding block");
     assert_ne!(&ciphertext[16..], &plaintext[..]);
 
-    let recovered = run_ok(&["sm4-cbc", "decrypt", "--key", KEY_1], &ciphertext);
+    let recovered = run_ok(&["sm4-cbc", "-d", "decrypt", "--key", KEY_1], &ciphertext);
     assert_eq!(recovered, plaintext);
+}
+
+/// Any length is accepted and padded to the next whole block, as for the AES commands.
+#[test]
+fn any_input_length_is_accepted_and_padded() {
+    for len in [0usize, 1, 15, 16, 17, 33] {
+        let plaintext = vec![0x5Au8; len];
+        let ciphertext = run_ok(&["sm4-cbc", "-d", "encrypt", "--key", KEY_1], &plaintext);
+        assert_eq!(ciphertext.len(), 16 + (len / 16 + 1) * 16, "len {len}: IV plus padded body");
+        let recovered = run_ok(&["sm4-cbc", "-d", "decrypt", "--key", KEY_1], &ciphertext);
+        assert_eq!(recovered, plaintext, "len {len}: round trip");
+    }
 }
 
 /// SM4 has exactly one key length. An AES-256-sized key is an error naming the algorithm.
 #[test]
 fn a_key_of_the_wrong_length_is_rejected() {
     let key_256 = "603deb1015ca71be2b73aef0857d77811f352c073b6108d72d9810a30914dff4";
-    let err = run_err(&["sm4-cbc", "encrypt", "--key", key_256], &[0u8; 16]);
+    let err = run_err(&["sm4-cbc", "-d", "encrypt", "--key", key_256], &[0u8; 16]);
     assert!(err.contains("SM4 needs a 16-byte key, got 32 bytes"), "stderr was: {err}");
 }
 
@@ -139,6 +184,7 @@ fn a_large_payload_on_an_error_path_does_not_break_the_harness() {
     let err = run_err(
         &[
             "sm4-cbc",
+            "-d",
             "encrypt",
             "--key",
             "603deb1015ca71be2b73aef0857d77811f352c073b6108d72d9810a30914dff4",
@@ -148,9 +194,11 @@ fn a_large_payload_on_an_error_path_does_not_break_the_harness() {
     assert!(err.contains("SM4 needs a 16-byte key"), "stderr was: {err}");
 }
 
-/// Unaligned input is rejected, as for the AES commands.
+/// A ciphertext without PKCS7 padding is rejected: the bare A.2.2.1 ciphertext ends in a block
+/// that does not unpad.
 #[test]
-fn unaligned_input_is_rejected() {
-    let err = run_err(&["sm4-cbc", "encrypt", "--key", KEY_1], &[0u8; 17]);
-    assert!(err.contains("whole number of 16-byte blocks"), "stderr was: {err}");
+fn a_ciphertext_without_pkcs7_padding_is_rejected() {
+    let input = unhex(&format!("{IV}{CT_1}"));
+    let err = run_err(&["sm4-cbc", "-d", "decrypt", "--key", KEY_1], &input);
+    assert!(err.contains("decryption failed"), "stderr was: {err}");
 }

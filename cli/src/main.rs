@@ -1700,12 +1700,21 @@ enum Subcommands {
         x: bool,
     },
 
-    /// SM4 in CBC mode (GB/T 32907-2016 block cipher; NIST SP 800-38A Sec 6.2 mode), streaming
-    /// stdin to stdout.
+    /// SM4 in CBC mode (GB/T 32907-2016 block cipher; NIST SP 800-38A Sec 6.2 mode) with PKCS7
+    /// padding, streaming stdin to stdout.
     ///
-    /// See `aes128-cbc` for the IV convention, block-alignment requirement and warnings; the key
+    /// On `encrypt`, a fresh unpredictable IV is generated and written as the FIRST 16 BYTES of
+    /// the output; on `decrypt` it is read back from the first 16 bytes of the input, so the two
+    /// compose directly in a pipeline. With `--iv` (hex) or `--iv-file` (raw bytes), the IV is
+    /// supplied instead: `encrypt` uses it and writes ONLY the ciphertext, and `decrypt` reads
+    /// ONLY ciphertext from stdin.
+    ///
+    /// Input may be any length: it is padded with PKCS7 to a whole number of 16-byte blocks.
+    ///
+    /// See `aes128-cbc` for the full IV convention, the padding rule and the warnings; the key
     /// and block are both 16 bytes, as for AES-128.
     SM4_CBC {
+        #[arg(short, long)]
         direction: CipherDirection,
 
         /// The 16-byte SM4 key in hex.
@@ -1717,6 +1726,16 @@ enum Subcommands {
         /// If both key and key_file options are provided, the file will be used.
         #[arg(short, long)]
         key_file: Option<String>,
+
+        /// The 16-byte IV in hex. Supplied instead of generated: `encrypt` then writes no IV and
+        /// `decrypt` reads none. See the IV paragraph above.
+        #[arg(long)]
+        iv: Option<String>,
+
+        /// A file containing the 16-byte IV, as raw bytes exactly as they are (no hex decoding).
+        /// If both iv and iv_file options are provided, the file will be used.
+        #[arg(long)]
+        iv_file: Option<String>,
 
         #[arg(short)]
         /// Output in hex format.
@@ -1729,9 +1748,15 @@ enum Subcommands {
     /// The segment size is the full block: draft-ribose-cfrg-sm4-10 calls this SM4-CFB-128. Its
     /// 8-bit variant is a different, non-interoperable mode; use `sm4-cfb8` for that.
     ///
-    /// See `aes128-cfb` for the IV convention, input-length rule and warnings; the key and block
-    /// are both 16 bytes, as for AES-128.
+    /// On `encrypt`, a fresh unpredictable IV is generated and written as the FIRST 16 BYTES of
+    /// the output; on `decrypt` it is read back from the first 16 bytes of the input. With `--iv`
+    /// (hex) or `--iv-file` (raw bytes), the IV is supplied instead and only ciphertext is written
+    /// or read. Input may be ANY length: nothing is padded.
+    ///
+    /// See `aes128-cfb` for the full IV convention, input-length rule and warnings; the key and
+    /// block are both 16 bytes, as for AES-128.
     SM4_CFB {
+        #[arg(short, long)]
         direction: CipherDirection,
 
         /// The 16-byte SM4 key in hex.
@@ -1743,6 +1768,16 @@ enum Subcommands {
         /// If both key and key_file options are provided, the file will be used.
         #[arg(short, long)]
         key_file: Option<String>,
+
+        /// The 16-byte IV in hex. Supplied instead of generated: `encrypt` then writes no IV and
+        /// `decrypt` reads none. See the IV paragraph above.
+        #[arg(long)]
+        iv: Option<String>,
+
+        /// A file containing the 16-byte IV, as raw bytes exactly as they are (no hex decoding).
+        /// If both iv and iv_file options are provided, the file will be used.
+        #[arg(long)]
+        iv_file: Option<String>,
 
         #[arg(short)]
         /// Output in hex format.
@@ -1757,9 +1792,15 @@ enum Subcommands {
     /// per byte, sixteen times the work of `sm4-cfb`, so prefer that unless a byte-granular
     /// self-synchronising stream is required or the format demands CFB8.
     ///
-    /// See `aes128-cfb8` for the IV convention, input-length rule and warnings; the key and block
-    /// are both 16 bytes, as for AES-128.
+    /// On `encrypt`, a fresh unpredictable IV is generated and written as the FIRST 16 BYTES of
+    /// the output; on `decrypt` it is read back from the first 16 bytes of the input. With `--iv`
+    /// (hex) or `--iv-file` (raw bytes), the IV is supplied instead and only ciphertext is written
+    /// or read. Input may be ANY length: nothing is padded.
+    ///
+    /// See `aes128-cfb8` for the full IV convention, input-length rule and warnings; the key and
+    /// block are both 16 bytes, as for AES-128.
     SM4_CFB8 {
+        #[arg(short, long)]
         direction: CipherDirection,
 
         /// The 16-byte SM4 key in hex.
@@ -1771,6 +1812,16 @@ enum Subcommands {
         /// If both key and key_file options are provided, the file will be used.
         #[arg(short, long)]
         key_file: Option<String>,
+
+        /// The 16-byte IV in hex. Supplied instead of generated: `encrypt` then writes no IV and
+        /// `decrypt` reads none. See the IV paragraph above.
+        #[arg(long)]
+        iv: Option<String>,
+
+        /// A file containing the 16-byte IV, as raw bytes exactly as they are (no hex decoding).
+        /// If both iv and iv_file options are provided, the file will be used.
+        #[arg(long)]
+        iv_file: Option<String>,
 
         #[arg(short)]
         /// Output in hex format.
@@ -1783,12 +1834,15 @@ enum Subcommands {
     /// The counter block is a 12-byte nonce followed by a 4-byte counter starting at zero, so one
     /// message can be up to 2^32 blocks (64 GiB); past that the command errors rather than
     /// repeating keystream. On `encrypt` the nonce is written as the FIRST 12 BYTES of the output
-    /// and on `decrypt` it is read back from there -- 12, not the 16 the other modes write.
+    /// and on `decrypt` it is read back from there -- 12, not the 16 the other modes write. With
+    /// `--iv` (hex) or `--iv-file` (raw bytes), the 12-byte nonce is supplied instead and only
+    /// ciphertext is written or read; it MUST then be unique per message under one key.
     ///
-    /// See `aes128-ctr` for the nonce convention, input-length rule and warnings, including why a
-    /// repeated nonce is fatal and why CTR is the most malleable mode here; the key and block are
-    /// both 16 bytes, as for AES-128.
+    /// See `aes128-ctr` for the full nonce convention, input-length rule and warnings, including
+    /// why a repeated nonce is fatal and why CTR is the most malleable mode here; the key and
+    /// block are both 16 bytes, as for AES-128.
     SM4_CTR {
+        #[arg(short, long)]
         direction: CipherDirection,
 
         /// The 16-byte SM4 key in hex.
@@ -1800,6 +1854,16 @@ enum Subcommands {
         /// If both key and key_file options are provided, the file will be used.
         #[arg(short, long)]
         key_file: Option<String>,
+
+        /// The 12-byte nonce in hex. Supplied instead of generated: `encrypt` then writes none
+        /// and `decrypt` reads none. See the nonce paragraph above.
+        #[arg(long)]
+        iv: Option<String>,
+
+        /// A file containing the 12-byte nonce, as raw bytes exactly as they are (no hex
+        /// decoding). If both iv and iv_file options are provided, the file will be used.
+        #[arg(long)]
+        iv_file: Option<String>,
 
         #[arg(short)]
         /// Output in hex format.
@@ -2143,17 +2207,17 @@ fn run() {
         Some(Subcommands::SM3 { x }) => {
             sm3_cmd::sm3_cmd(*x);
         }
-        Some(Subcommands::SM4_CBC { direction, key, key_file, x }) => {
-            sm4_cbc_cmd::sm4_cbc_cmd(direction, key, key_file, *x);
+        Some(Subcommands::SM4_CBC { direction, key, key_file, iv, iv_file, x }) => {
+            sm4_cbc_cmd::sm4_cbc_cmd(direction, key, key_file, iv, iv_file, *x);
         }
-        Some(Subcommands::SM4_CFB { direction, key, key_file, x }) => {
-            sm4_cfb_cmd::sm4_cfb_cmd(direction, key, key_file, *x);
+        Some(Subcommands::SM4_CFB { direction, key, key_file, iv, iv_file, x }) => {
+            sm4_cfb_cmd::sm4_cfb_cmd(direction, key, key_file, iv, iv_file, *x);
         }
-        Some(Subcommands::SM4_CFB8 { direction, key, key_file, x }) => {
-            sm4_cfb8_cmd::sm4_cfb8_cmd(direction, key, key_file, *x);
+        Some(Subcommands::SM4_CFB8 { direction, key, key_file, iv, iv_file, x }) => {
+            sm4_cfb8_cmd::sm4_cfb8_cmd(direction, key, key_file, iv, iv_file, *x);
         }
-        Some(Subcommands::SM4_CTR { direction, key, key_file, x }) => {
-            sm4_ctr_cmd::sm4_ctr_cmd(direction, key, key_file, *x);
+        Some(Subcommands::SM4_CTR { direction, key, key_file, iv, iv_file, x }) => {
+            sm4_ctr_cmd::sm4_ctr_cmd(direction, key, key_file, iv, iv_file, *x);
         }
         Some(Subcommands::TUPLEHASH128 { length, elements, customization, x }) => {
             sha3_cmd::tuplehash_cmd(128, *length, elements, customization, *x);
