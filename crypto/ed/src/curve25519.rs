@@ -467,9 +467,10 @@ impl CoordField {
     /// Verified against a reference modular inverse over 305 values, edge cases included.
     ///
     /// Scope: both x25519 and ed25519.
-    // TODO -- `modular::mod_odd_inverse` would be asymptotically cheaper, and P64 above is the
-    //          constant it wants, but crypto/math is still the cargo template. Only worth revisiting
-    //          if this shows up in a profile -- it is one call per scalar_mult.
+    // TODO -- a safegcd-style `mod_odd_inverse` (a commented-out draft was in the since-deleted
+    //          crypto/math crate) would be asymptotically cheaper, and P64 above is the constant it
+    //          wants. Only worth revisiting if this shows up in a profile -- it is one call per
+    //          scalar_mult.
     // TODO: Claude-generated, double-check
     pub const fn inv(&self) -> Self {
         let (x_cubed, t) = self.pow_p_sub5_div8();

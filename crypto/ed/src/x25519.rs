@@ -8,9 +8,15 @@ use crate::curve25519::CoordField;
 pub const POINT_SIZE: usize = 32;
 pub const SCALAR_SIZE: usize = 32;
 
-// TODO -- what is this?
+/// The coefficient A of curve25519, `v^2 = u^3 + A*u^2 + u` (RFC 7748 §4.1).
 const C_A: u32 = 486662;
-// TODO -- what is this?
+
+/// `(A + 2) / 4 = 121666`, the ladder's doubling constant.
+///
+/// Deviation from the RFC: RFC 7748 §5 uses `a24 = (486662 - 2) / 4 = 121665` in
+/// `z_2 = E * (AA + a24 * E)`. Since `E = AA - BB`, `AA + a24 * E = BB + (a24 + 1) * E`, so pairing
+/// the constant with BB instead needs `a24 + 1 = (A + 2) / 4`. [`scalar_mult`] and
+/// [`point_double`] both use that form.
 const C_A24: u32 = (C_A + 2) / 4;
 
 // TODO -- impl KeyAgreement trait (will need to add to traits.rs), and a KEM trait
