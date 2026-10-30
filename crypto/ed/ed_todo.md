@@ -46,12 +46,10 @@ Within each, the priority order is:
 
 ## Phase 2: Traits, Bells & Whistles
 
-- [ ] Finish the `KeyAgreement` / `KeyAgreementPublicKey` / `KeyAgreementPrivateKey` traits in
+- [x] Finish the `KeyAgreement` / `KeyAgreementPublicKey` / `KeyAgreementPrivateKey` traits in
   `traits.rs`. They need:
-    - [ ] key `from_bytes`/encoding, by analogy with `KEMPublicKey`/`KEMPrivateKey` (lengths as
-      const generics). Partly there: `KeyAgreementPublicKey` requires `AsRef<[u8]>`, and the X25519
-      keys get `from_bytes`/`encode` from `KEMPublicKey`/`KEMPrivateKey`, but the `KeyAgreement*`
-      traits themselves have no decoding.
+    - [x] key `from_bytes`/encoding, by analogy with `KEMPublicKey`/`KEMPrivateKey` (lengths as
+      const generics). The X25519 `KEMPublicKey`/`KEMPrivateKey` impls delegate to these.
     - [x] the output type. Decided: `key_agreement` returns a `PK`, and the caller applies a KDF;
       the KEM traits are the API that hands back a `KeyMaterial` shared secret.
     - [x] an error type: `KeyAgreementError`.
@@ -68,7 +66,7 @@ Within each, the priority order is:
   rejects it with `KeyAgreementError::InvalidPublicKey`. RFC 7748 §6.1 makes the check a MAY;
   RFC 8446 §7.4.2 and RFC 9180 §7.1.4 make it a MUST.
     - [ ] Open: detect a small-order public key before the private-key operation, rather than
-      from the output.
+      from the output. Is this even possible? Possible in constant-time?
 - [x] A `KEM` impl over X25519: `KEMEncapsulator`/`KEMDecapsulator` on `X25519` as DHKEM (X25519,
   HKDF-SHA256) (RFC 9180 §4.1), built on the generic `DHKEM` in the new `bouncycastle-hpke`
   utility crate. Tested against RFC 9180 A.1.1/A.1.2 and the core-test-framework KEM suites.

@@ -1087,7 +1087,13 @@ pub trait KEMPublicKey<const PK_LEN: usize>:
 /// A Key Agreement algorithm, often called a Diffie-Hellman algorithm.
 /// The core function is `key_agreement(&pk, &sk)`, which combines one party's public key with the
 /// other party's private key, and returns the shared secret as a value of the public key type `PK`.
-pub trait KeyAgreement<PK: KeyAgreementPublicKey, SK: KeyAgreementPrivateKey>: Sized {
+pub trait KeyAgreement<
+    PK: KeyAgreementPublicKey<PK_LEN>,
+    SK: KeyAgreementPrivateKey<SK_LEN>,
+    const PK_LEN: usize,
+    const SK_LEN: usize,
+>: Sized
+{
     /// Perform a key agreement.
     /// Note that this returns a public key. The caller is responsible for using a [`KDF`] to
     /// derive a shared symmetric key from it.
@@ -1100,10 +1106,26 @@ pub trait KeyAgreement<PK: KeyAgreementPublicKey, SK: KeyAgreementPrivateKey>: S
 /// The bound on `AsRef<[u8]>` is because a Diffie-Hellman key agreement returns a public key as
 /// the shared secret value, so it must be easy to convert this to bytes in a cannonical representation
 /// so that it can be fed into a [`KDF`].
-pub trait KeyAgreementPublicKey: Sized + AsRef<[u8]> {}
+pub trait KeyAgreementPublicKey<const PK_LEN: usize>: Sized + AsRef<[u8]> {
+    /// Write it out to bytes in its standard encoding.
+    fn encode(&self) -> [u8; PK_LEN];
+    /// Write it out to bytes in its standard encoding.
+    /// The entire output buffer is zeroized before the encoding is written.
+    fn encode_out(&self, out: &mut [u8; PK_LEN]) -> usize;
+    /// Read it in from bytes in its standard encoding.
+    fn from_bytes(bytes: &[u8]) -> Result<Self, KeyAgreementError>;
+}
 
 /// A private key for a KeyAgreement (Diffie-Hellman) algorithm, often denoted "sk" (for "secret key").
-pub trait KeyAgreementPrivateKey: Sized {}
+pub trait KeyAgreementPrivateKey<const SK_LEN: usize>: Sized {
+    /// Write it out to bytes in its standard encoding.
+    fn encode(&self) -> [u8; SK_LEN];
+    /// Write it out to bytes in its standard encoding.
+    /// The entire output buffer is zeroized before the encoding is written.
+    fn encode_out(&self, out: &mut [u8; SK_LEN]) -> usize;
+    /// Read it in from bytes in its standard encoding.
+    fn from_bytes(bytes: &[u8]) -> Result<Self, KeyAgreementError>;
+}
 
 /// A Message Authentication Code algorithm is a keyed hash function that behaves somewhat like a symmetric signature function.
 /// A MAC algorithm takes in a key and some data, and produces a MAC (message authentication code) that

@@ -292,7 +292,7 @@ impl X25519 {
     }
 }
 
-impl KeyAgreement<X25519PublicKey, X25519PrivateKey> for X25519 {
+impl KeyAgreement<X25519PublicKey, X25519PrivateKey, POINT_SIZE, SCALAR_SIZE> for X25519 {
     /// The X25519 Diffie-Hellman of RFC 7748 §6.1: computes the shared secret
     /// `K = X25519(sk, pk)`, the u-coordinate of the scalar multiple of the peer's public key by
     /// our private key, as its canonical 32-byte little-endian encoding.
@@ -388,7 +388,35 @@ impl X25519PrivateKey {
     }
 }
 
-impl KeyAgreementPrivateKey for X25519PrivateKey {}
+/// The encoding is the 32 key bytes, clamped (the bit operations of `decodeScalar25519`, RFC 7748
+/// §5), so keys that compare equal have the same encoding. This is also the DHKEM serialization:
+/// RFC 9180 §7.1.2 says "The SerializePrivateKey() function MUST clamp its output and the
+/// DeserializePrivateKey() function MUST clamp its input".
+impl KeyAgreementPrivateKey<SCALAR_SIZE> for X25519PrivateKey {
+    fn encode(&self) -> [u8; SCALAR_SIZE] {
+        *self.clamped()
+    }
+
+    fn encode_out(&self, out: &mut [u8; SCALAR_SIZE]) -> usize {
+        out.fill(0);
+        *out = *self.clamped();
+        SCALAR_SIZE
+    }
+
+    /// Any 32 bytes are a valid private key; they are clamped on the way in.
+    ///
+    /// # Errors
+    ///
+    /// [`KeyAgreementError::DecodingError`] if `bytes` is not 32 bytes.
+    fn from_bytes(bytes: &[u8]) -> Result<Self, KeyAgreementError> {
+        let bytes: &[u8; SCALAR_SIZE] = bytes.try_into().map_err(|_| {
+            KeyAgreementError::DecodingError("An X25519 private key must be 32 bytes")
+        })?;
+        let mut k: Secret<[u8; SCALAR_SIZE]> = Secret::new();
+        *k = *bytes;
+        Ok(Self(X25519PrivateKey(k).clamped()))
+    }
+}
 
 /// Constant-time comparison of the clamped scalars.
 impl PartialEq for X25519PrivateKey {
@@ -428,7 +456,31 @@ impl X25519PublicKey {
     }
 }
 
-impl KeyAgreementPublicKey for X25519PublicKey {}
+/// The encoding is the 32 bytes of the u-coordinate, as is (RFC 7748 §5).
+impl KeyAgreementPublicKey<POINT_SIZE> for X25519PublicKey {
+    fn encode(&self) -> [u8; POINT_SIZE] {
+        self.0
+    }
+
+    fn encode_out(&self, out: &mut [u8; POINT_SIZE]) -> usize {
+        out.fill(0);
+        *out = self.0;
+        POINT_SIZE
+    }
+
+    /// Any 32 bytes are accepted: RFC 7748 §5 requires bit 255 to be ignored and values `>= p` to
+    /// be processed as if reduced mod p.
+    ///
+    /// # Errors
+    ///
+    /// [`KeyAgreementError::DecodingError`] if `bytes` is not 32 bytes.
+    fn from_bytes(bytes: &[u8]) -> Result<Self, KeyAgreementError> {
+        let bytes: &[u8; POINT_SIZE] = bytes.try_into().map_err(|_| {
+            KeyAgreementError::DecodingError("An X25519 public key must be 32 bytes")
+        })?;
+        Ok(Self(*bytes))
+    }
+}
 
 impl AsRef<[u8]> for X25519PublicKey {
     fn as_ref(&self) -> &[u8] {
@@ -794,52 +846,42 @@ impl KEMDecapsulator<X25519PrivateKey, SCALAR_SIZE, POINT_SIZE, DHKEM_SS_LEN> fo
     }
 }
 
-/// The encoding is the 32 key bytes, clamped: RFC 9180 §7.1.2 says "The SerializePrivateKey()
-/// function MUST clamp its output and the DeserializePrivateKey() function MUST clamp its input".
+/// The same clamped encoding as the [`KeyAgreementPrivateKey`] impl, which RFC 9180 §7.1.2 requires
+/// of a DHKEM.
 impl KEMPrivateKey<SCALAR_SIZE> for X25519PrivateKey {
     fn encode(&self) -> [u8; SCALAR_SIZE] {
-        *self.clamped()
+        <Self as KeyAgreementPrivateKey<SCALAR_SIZE>>::encode(self)
     }
 
     fn encode_out(&self, out: &mut [u8; SCALAR_SIZE]) -> usize {
-        out.fill(0);
-        *out = *self.clamped();
-        SCALAR_SIZE
+        <Self as KeyAgreementPrivateKey<SCALAR_SIZE>>::encode_out(self, out)
     }
 
     /// # Errors
     ///
     /// [`KEMError::DecodingError`] if `bytes` is not 32 bytes.
     fn from_bytes(bytes: &[u8]) -> Result<Self, KEMError> {
-        let bytes: &[u8; SCALAR_SIZE] = bytes
-            .try_into()
-            .map_err(|_| KEMError::DecodingError("An X25519 private key must be 32 bytes"))?;
-        let mut k: Secret<[u8; SCALAR_SIZE]> = Secret::new();
-        *k = *bytes;
-        Ok(Self(X25519PrivateKey(k).clamped()))
+        <Self as KeyAgreementPrivateKey<SCALAR_SIZE>>::from_bytes(bytes)
+            .map_err(|_| KEMError::DecodingError("An X25519 private key must be 32 bytes"))
     }
 }
 
-/// The encoding is the 32 bytes of the u-coordinate, as is: RFC 9180 §7.1.1 makes serialization
-/// the identity function for X25519.
+/// The same encoding as the [`KeyAgreementPublicKey`] impl: RFC 9180 §7.1.1 makes serialization the
+/// identity function for X25519.
 impl KEMPublicKey<POINT_SIZE> for X25519PublicKey {
     fn encode(&self) -> [u8; POINT_SIZE] {
-        self.0
+        <Self as KeyAgreementPublicKey<POINT_SIZE>>::encode(self)
     }
 
     fn encode_out(&self, out: &mut [u8; POINT_SIZE]) -> usize {
-        out.fill(0);
-        *out = self.0;
-        POINT_SIZE
+        <Self as KeyAgreementPublicKey<POINT_SIZE>>::encode_out(self, out)
     }
 
     /// # Errors
     ///
     /// [`KEMError::DecodingError`] if `bytes` is not 32 bytes.
     fn from_bytes(bytes: &[u8]) -> Result<Self, KEMError> {
-        let bytes: &[u8; POINT_SIZE] = bytes
-            .try_into()
-            .map_err(|_| KEMError::DecodingError("An X25519 public key must be 32 bytes"))?;
-        Ok(Self(*bytes))
+        <Self as KeyAgreementPublicKey<POINT_SIZE>>::from_bytes(bytes)
+            .map_err(|_| KEMError::DecodingError("An X25519 public key must be 32 bytes"))
     }
 }
