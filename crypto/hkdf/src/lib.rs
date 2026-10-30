@@ -116,7 +116,7 @@ use bouncycastle_core::symmetric_key::{FromAnyKeyMaterial, MacGenerationKey};
 use bouncycastle_core::traits::{Hash, HashAlgParams, KDF, MAC, Suspendable, SuspendableKeyed};
 use bouncycastle_hmac::HmacKey;
 use bouncycastle_hmac::hazmat as hmac_hazmat;
-use bouncycastle_utils::suspendable_state::{add_lib_ver, check_lib_ver};
+use bouncycastle_utils::suspendable_state::{add_lib_ver, bounded_usize, check_lib_ver};
 use bouncycastle_utils::{max, min};
 use std::marker::PhantomData;
 // Imports needed only for docs
@@ -230,7 +230,8 @@ impl<H: Hash + HashAlgParams + Default> HkdfEntropyTracker<H> {
     /// Returns the amount of entropy credited.
     fn credit_entropy(&mut self, key: &impl KeyMaterialTrait) -> usize {
         let additional_entropy = if key.is_full_entropy() { key.key_len() } else { 0 };
-        self.entropy += additional_entropy;
+        // Saturating: the counter is bookkeeping, and a resumed state may carry any value.
+        self.entropy = self.entropy.saturating_add(additional_entropy);
         self.security_strength = max(&self.security_strength, &key.security_strength()).clone();
         self.security_strength =
             min(&self.security_strength, &SecurityStrength::from_bytes(H::OUTPUT_LEN / 2)).clone();
@@ -817,10 +818,12 @@ where
             return Err(SuspendableError::InvalidData);
         }
 
-        // infallible: the sub-slice is exactly 8 bytes by const construction.
-        let entropy =
-            u64::from_le_bytes(state[5 + HASH_STATE_LEN..13 + HASH_STATE_LEN].try_into().unwrap())
-                as usize;
+        // infallible: the sub-slice is exactly 8 bytes by const construction. The counter is
+        // refused rather than truncated where `usize` is narrower than the encoding.
+        let entropy = bounded_usize(
+            u64::from_le_bytes(state[5 + HASH_STATE_LEN..13 + HASH_STATE_LEN].try_into().unwrap()),
+            usize::MAX,
+        )?;
         let security_strength = SecurityStrength::try_from(state[13 + HASH_STATE_LEN])?;
 
         Ok(HKDF {
