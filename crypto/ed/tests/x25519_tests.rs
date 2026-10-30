@@ -1,39 +1,8 @@
-use bouncycastle_ed::x25519::*;
+use bouncycastle_core::errors::KeyAgreementError;
+use bouncycastle_core::key_material::{KeyMaterial256, KeyType};
+use bouncycastle_core::traits::KeyAgreement;
+use bouncycastle_ed::x25519::{POINT_SIZE, SCALAR_SIZE, X25519, X25519PrivateKey, X25519PublicKey};
 use bouncycastle_hex as hex;
-
-// todo -- debug and turn back on
-// #[test]
-// fn agreement() {
-//     // todo ???
-//     precompute();
-//
-//     let mut ka = [0_u8; SCALAR_SIZE];
-//     let mut kb = [0_u8; SCALAR_SIZE];
-//     let mut qa = [0_u8; POINT_SIZE];
-//     let mut qb = [0_u8; POINT_SIZE];
-//     let mut sa = [0_u8; POINT_SIZE];
-//     let mut sb = [0_u8; POINT_SIZE];
-//
-//     let mut rng = bouncycastle_rng::DefaultRNG::new();
-//
-//     for i in 1..=100 {
-//         // Each party generates an ephemeral private key, ...
-//         generate_private_key_rng(&mut rng, &mut ka);
-//         generate_private_key(&mut rng, &mut kb);
-//
-//         // ... publishes their public key, ...
-//         generate_public_key(&ka, &mut qa);
-//         generate_public_key(&kb, &mut qb);
-//
-//         // ... computes the shared secret, ...
-//         let ra = calculate_agreement(&ka, &qb, &mut sa);
-//         let rb = calculate_agreement(&kb, &qa, &mut sb);
-//
-//         // ... which is the same for both parties.
-//         assert_eq!(ra, rb, "ECDH #{}", i);
-//         assert_eq!(sa, sb, "ECDH #{}", i);
-//     }
-// }
 
 #[test]
 fn iterated() {
@@ -72,15 +41,15 @@ fn vector_2() {
 /// shared secret K that each derives from their own private key and the other's public key.
 #[test]
 fn rfc7748_section_6_1() {
-    let alice_sk = X25519Scalar::from_bytes(&decode_32(
+    let alice_sk = sk_from_bytes(&decode_32(
         "77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a",
     ));
-    let bob_sk = X25519Scalar::from_bytes(&decode_32(
+    let bob_sk = sk_from_bytes(&decode_32(
         "5dab087e624a8a4b79e17f8b83800ee66f3bb1292618b6fd1c2f8b27ff88e0eb",
     ));
 
-    let alice_pk = generate_public_key(&alice_sk);
-    let bob_pk = generate_public_key(&bob_sk);
+    let alice_pk = alice_sk.pk();
+    let bob_pk = bob_sk.pk();
     check_value(
         alice_pk.as_bytes(),
         "Section 6.1 Alice's public key",
@@ -93,30 +62,41 @@ fn rfc7748_section_6_1() {
     );
 
     let k = "4a5d9d5ba4ce2de1728e3bf480350f25e07e21c947d19e3376f09b3c1e161742";
-    let mut alice_k = [0_u8; POINT_SIZE];
-    let mut bob_k = [0_u8; POINT_SIZE];
-    assert!(calculate_agreement(&alice_sk, &bob_pk, &mut alice_k));
-    assert!(calculate_agreement(&bob_sk, &alice_pk, &mut bob_k));
-    check_value(&alice_k, "Section 6.1 K (Alice)", k);
-    check_value(&bob_k, "Section 6.1 K (Bob)", k);
+    let alice_k = X25519::key_agreement(&bob_pk, alice_sk).unwrap();
+    let bob_k = X25519::key_agreement(&alice_pk, bob_sk).unwrap();
+    check_value(alice_k.as_bytes(), "Section 6.1 K (Alice)", k);
+    check_value(bob_k.as_bytes(), "Section 6.1 K (Bob)", k);
 }
 
-/// u = 0 is a point of low order, so X25519(k, 0) is the all-zero value for every scalar, the case
-/// RFC 7748 Section 6.1 describes checking for. `calculate_agreement` must write the zeros and
-/// return `false`.
+/// [`X25519::key_agreement`] rejects a public key that gives an all-zero shared secret, however
+/// that key is encoded: u = 0, u = p (non-canonical, reduces to 0), and u = 0 with the ignored
+/// bit 255 set.
 #[test]
-fn low_order_point_gives_all_zero_shared_secret() {
-    let k = X25519Scalar::from_bytes(&decode_32(
-        "77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a",
-    ));
-    // Start from a non-zero buffer so a missing write cannot pass by accident.
-    let mut out = [0xFF_u8; POINT_SIZE];
-    assert!(!calculate_agreement(&k, &X25519Point::from_bytes([0; POINT_SIZE]), &mut out));
-    assert_eq!(out, [0; POINT_SIZE]);
+fn key_agreement_rejects_all_zero_shared_secret() {
+    let zero = [0_u8; POINT_SIZE];
+    let p = decode_32("edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f");
+    let mut zero_bit_255 = zero;
+    zero_bit_255[31] = 0x80;
+
+    for u in [zero, p, zero_bit_255] {
+        let sk = sk_from_bytes(&decode_32(
+            "77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a",
+        ));
+        match X25519::key_agreement(&X25519PublicKey::from_bytes(u), sk) {
+            Err(KeyAgreementError::InvalidPublicKey(_)) => { /* good */ }
+            other => panic!("expected InvalidPublicKey for u = {u:02x?}, got {other:?}"),
+        }
+    }
 }
 
 fn decode_32(s: &str) -> [u8; 32] {
     hex::decode(s).unwrap().try_into().unwrap()
+}
+
+/// A private key from its 32 bytes, via [`X25519::keygen_from_seed`].
+fn sk_from_bytes(bytes: &[u8]) -> X25519PrivateKey {
+    let seed = KeyMaterial256::from_bytes_as_type(bytes, KeyType::Seed).unwrap();
+    X25519::keygen_from_seed(&seed).unwrap().1
 }
 
 /// The iterated test of RFC 7748 Section 5.2: starting from k = u = 9, each iteration sets k to
@@ -132,14 +112,12 @@ fn rfc7748_check_iterated(count: usize) {
     k[0] = 9;
     let mut u = [0_u8; POINT_SIZE];
     u[0] = 9;
-    let mut r = [0_u8; POINT_SIZE];
-
     let mut iterations = 0;
     while iterations < count {
-        calculate_agreement(&X25519Scalar::from_bytes(&k), &X25519Point::from_bytes(u), &mut r);
+        let r = X25519::key_agreement(&X25519PublicKey::from_bytes(u), sk_from_bytes(&k)).unwrap();
 
         u = k;
-        k = r;
+        k = *r.as_bytes();
 
         iterations += 1;
 
@@ -170,10 +148,9 @@ fn check_value(n: &[u8], text: &str, se: &str) {
 }
 
 fn check_vector(sk: &str, su: &str, se: &str, text: &str) {
-    let k = X25519Scalar::from_bytes(&decode_32(sk));
-    let u = X25519Point::from_bytes(decode_32(su));
+    let k = sk_from_bytes(&decode_32(sk));
+    let u = X25519PublicKey::from_bytes(decode_32(su));
 
-    let mut r = [0_u8; POINT_SIZE];
-    calculate_agreement(&k, &u, &mut r);
-    check_value(&r, text, se);
+    let r = X25519::key_agreement(&u, k).unwrap();
+    check_value(r.as_bytes(), text, se);
 }

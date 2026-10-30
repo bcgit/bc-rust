@@ -8,13 +8,14 @@
 //! Every case is either `valid` or `acceptable`, and every case has an expected shared secret, so
 //! each one is checked for exact output. The `acceptable` cases are low-order, twist and
 //! non-canonical public keys, which RFC 7748 Section 5 requires to be processed rather than
-//! rejected. Those whose shared secret is all zeros (flag `ZeroSharedSecret`) are also where
-//! `calculate_agreement` returns `false`.
+//! rejected. The exception is those whose shared secret is all zeros (flag `ZeroSharedSecret`),
+//! which `key_agreement` rejects with `KeyAgreementError::InvalidPublicKey`.
 
+use bouncycastle_core::errors::KeyAgreementError;
+use bouncycastle_core::key_material::{KeyMaterial256, KeyType};
+use bouncycastle_core::traits::KeyAgreement;
 use bouncycastle_core_test_framework::test_data_loaders::{Value, hex_field, wycheproof_json};
-use bouncycastle_ed::x25519::{
-    POINT_SIZE, SCALAR_SIZE, X25519Point, X25519Scalar, calculate_agreement,
-};
+use bouncycastle_ed::x25519::{POINT_SIZE, SCALAR_SIZE, X25519, X25519PrivateKey, X25519PublicKey};
 
 #[test]
 fn wycheproof_x25519() {
@@ -42,12 +43,15 @@ fn wycheproof_x25519() {
                 hex_field(test, "public", tc_id).try_into().expect("a 32-byte public key");
             let shared = hex_field(test, "shared", tc_id);
 
-            let mut out = [0u8; POINT_SIZE];
-            let (k, u) = (X25519Scalar::from_bytes(&k), X25519Point::from_bytes(u));
-            let nonzero = calculate_agreement(&k, &u, &mut out);
-            assert_eq!(out.as_slice(), shared.as_slice(), "{ctx}: shared secret");
-            assert_eq!(nonzero, shared.iter().any(|&b| b != 0), "{ctx}: return value");
-            zero_shared += usize::from(!nonzero);
+            let (k, u) = (sk_from_bytes(&k), X25519PublicKey::from_bytes(u));
+            match X25519::key_agreement(&u, k) {
+                Ok(r) => assert_eq!(r.as_bytes(), shared.as_slice(), "{ctx}: shared secret"),
+                Err(KeyAgreementError::InvalidPublicKey(_)) => {
+                    assert!(shared.iter().all(|&b| b == 0), "{ctx}: rejected a non-zero secret");
+                    zero_shared += 1;
+                }
+                Err(e) => panic!("{ctx}: unexpected error {e:?}"),
+            }
         }
     }
 
@@ -60,4 +64,10 @@ fn wycheproof_x25519() {
         valid > 0 && acceptable > 0 && zero_shared > 0,
         "{filename}: expected every kind of case"
     );
+}
+
+/// A private key from its 32 bytes, via [`X25519::keygen_from_seed`].
+fn sk_from_bytes(bytes: &[u8]) -> X25519PrivateKey {
+    let seed = KeyMaterial256::from_bytes_as_type(bytes, KeyType::Seed).unwrap();
+    X25519::keygen_from_seed(&seed).unwrap().1
 }

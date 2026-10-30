@@ -42,7 +42,7 @@ Within each, the priority order is:
     - [x] Identify `C_A` (486662) and `C_A24` and document them against RFC 7748.
 - [x] Remove the dead code: `precompute()` is gone, and `P32`, `P64` and the methods X25519 does
   not use are commented out; the crate builds with no warnings.
-- [ ] `cargo mutants -p bouncycastle-ed` (without Wycheproof).
+- [x] `cargo mutants -p bouncycastle-ed` (without Wycheproof).
 
 ## Phase 2: Traits, Bells & Whistles
 
@@ -52,23 +52,25 @@ Within each, the priority order is:
       const generics);
     - [ ] the output type, wrapped in `KeyMaterial` (the shared secret is sensitive);
     - [ ] an error type.
-- [x] Add X25519 key types: `X25519Scalar` (`Secret`-backed, zeroized, redacted `Debug`) and
-  `X25519Point`, used by `calculate_agreement` and `generate_public_key`.
+- [x] Add X25519 key types: `X25519PrivateKey` (`Secret`-backed, zeroized, redacted `Debug`) and
+  `X25519PublicKey`, used by `X25519::key_agreement` and `X25519PrivateKey::pk`.
+- [x] Add `struct X25519` (`Algorithm`), and re-export it and the key types at the crate root.
 - [ ] Implement the traits for X25519. Move the Wycheproof and RFC suites onto the trait API.
-- [ ] Re-enable the `agreement` round-trip test. It currently calls a non-existent
-  `generate_private_key_rng`.
+- [x] Re-enable the `agreement` round-trip test, now in `x25519_key_tests.rs` on `X25519::keygen`.
 - [ ] Add a shared `KeyAgreement` conformance suite in `core-test-framework` and invoke it from
   X25519.
-- [ ] Decide what happens on an all-zero shared secret (low-order public key). Today
-  `calculate_agreement` outputs zeros and returns `false`; Wycheproof marks these vectors
-  "acceptable". Reject, or pass through? This maybe requires some research to see if this condition can be detected on
-  the public inputs before peforming the private key operations (would be better for constan-time concerns).
+- [x] Decide what happens on an all-zero shared secret (low-order public key): `key_agreement`
+  rejects it with `KeyAgreementError::InvalidPublicKey`. RFC 7748 §6.1 makes the check a MAY;
+  RFC 8446 §7.4.2 and RFC 9180 §7.1.4 make it a MUST.
+    - [ ] Open: detect a small-order public key before the private-key operation, rather than
+      from the output.
 - [ ] A `KEM` impl over X25519 (DHKEM-style). Mentioned in an `x25519.rs` TODO; decide if it
   belongs here.
-- [ ] Keygen:
-    - [ ] random keygen from an `RNG`;
-    - [ ] deterministic keygen from a supplied 32-byte seed;
-    - [ ] public-from-private derivation and consistency-check.
+- [x] Keygen, mirroring ML-KEM, on `X25519` with `KeyAgreementError` (added to `core`):
+    - [x] `keygen` (OS-seeded `HashDRBG_SHA512`) and `keygen_from_rng`;
+    - [x] `keygen_from_seed`, from a 32-byte `KeyMaterial256`;
+    - [x] `keypair_consistency_check`. No `keygen_from_seed_and_encoded`: the seed *is* the
+      private key encoding, so there is nothing to compare.
 - [ ] Fast fixed-base `scalar_mult_base`. Today it runs the generic ladder with u = 9; there is a
   commented-out Edwards-form path.
 - [ ] Wire into the factory (a `KeyAgreementFactory`, if that fits the factory pattern) and add a
@@ -78,8 +80,7 @@ Within each, the priority order is:
 ## Phase 3: Docs and ergonomics
 
 - [x] `FieldElement25519` and its methods are `pub(crate)`.
-- [ ] Make `calculate_agreement` (and the other `x25519.rs` free functions) `pub(crate)` once the
-  Phase 2 trait API replaces them; the tests in `tests/` call them today.
+- [x] Remove `calculate_agreement`; the tests and Wycheproof suite use `X25519::key_agreement`.
 - [x] `FieldElement25519` cleanups:
     - [x] `[Secret<i64>; 5]`? Block `Debug`? Prune the derive list.
     - [x] In-place methods (`*_mut`, `cmov`, `cnegate`) return `()`, not `&mut Self`.
@@ -92,6 +93,7 @@ Within each, the priority order is:
     - [ ] Write the crate doc sections required by QUALITY_AND_STYLE.md.
     - [ ] Is XDH in a NIST document? (`lib.rs` `# Standards`.)
 - [ ] Benches: criterion, plus a `mem_usage_benches` harness and a `# Memory Usage` docs section.
+- [ ] Rethink the name of this crate: `bouncycastle-ed` is kindo the wrong name (but maybe nothing better exists?)
 
 ---
 

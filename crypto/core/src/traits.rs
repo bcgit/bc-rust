@@ -1088,9 +1088,14 @@ pub trait KEMPublicKey<const PK_LEN: usize>:
 /// The core function is `key_agreement(&pk, &sk) -> OutputType` which acts on one public key and one private key.
 /// The return type of `key_agreement` will depend on the specific algorithm -- often it will be a `[u8]`, but it
 /// may be a struct, such as a public key.
-pub trait KeyAgreement<PK: KeyAgreementPublicKey, SK: KeyAgreementPrivateKey, OutputType> {
+pub trait KeyAgreement<PK: KeyAgreementPublicKey, SK: KeyAgreementPrivateKey>: Sized {
+    /// The output type of [`KeyAgreement::key_agreement`].
+    /// It may be any type that makes sense, but it must impl `AsRef<[u8]>` so that it can be, for
+    /// example, trivially used as input to a KDF or hash function.
+    type SharedSecretType: AsRef<[u8]>;
+
     /// Perform a key agreement
-    fn key_agreement(pk: &PK, sk: SK) -> OutputType;
+    fn key_agreement(pk: &PK, sk: SK) -> Result<Self::SharedSecretType, KeyAgreementError>;
 }
 
 /// A public key for a KeyAgreement (Diffie-Hellman) algorithm, often denoted "pk".

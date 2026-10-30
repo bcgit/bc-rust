@@ -11,6 +11,10 @@
 //!
 //! TODO -- is XDH specified in a NIST doc?
 //!
+//! # Usage Examples
+//!
+//! See the [`x25519`] module for X25519 key generation and an Alice-and-Bob key agreement that
+//! derives a symmetric key from the shared secret.
 
 #![no_std]
 #![forbid(unsafe_code)]
@@ -18,6 +22,7 @@
 // TODO -- #![forbid(missing_docs)]
 //          Add back at the end
 
+// TODO -- why is this needed?
 extern crate alloc;
 
 mod curve25519;

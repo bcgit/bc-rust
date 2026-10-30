@@ -1,3 +1,91 @@
+//! # Usage Examples
+//!
+//! ## Generating keys
+//!
+//! ```rust
+//! use bouncycastle_ed::x25519::X25519;
+//!
+//! let (pk, sk) = X25519::keygen().unwrap();
+//! ```
+//! That will use the library's default OS-backed RNG. To supply your own randomness, use
+//! [`X25519::keygen_from_rng`], or [`X25519::keygen_from_seed`] with a 32-byte seed, which is also
+//! how an existing private key is imported.
+//!
+//! ## X25519 key agreement
+//!
+//! Alice and Bob each generate a key pair and send each other their public keys. Each then combines
+//! their own private key with the other's public key in
+//! [`X25519::key_agreement`](X25519#method.key_agreement), and both arrive
+//! at the same shared secret `K`.
+//!
+//! `K` is the 32-byte representation of the U-coordinate of a point on curve25519 -- **its bytes are
+//! not uniformly random**, so it should not be used as a key directly: put it through a KDF,
+//! along with both public keys (RFC 7748 §6.1). Here that is HKDF-SHA256, with `K` as the input key
+//! material and `Alice's public key || Bob's public key` as the context. Both parties must put the
+//! public keys in the same order.
+//!
+//! ```rust
+//! use bouncycastle_core::key_material::{KeyMaterial256, KeyMaterialTrait, KeyType};
+//! use bouncycastle_core::security_strength::SecurityStrength;
+//! use bouncycastle_core::traits::{KDF, KeyAgreement};
+//! use bouncycastle_ed::x25519::{X25519, X25519PublicKey};
+//! use bouncycastle_sha2::hkdf::HKDF_SHA256;
+//!
+//! // Alice and Bob each generate a key pair, and exchange public keys.
+//! let (alice_pk, alice_sk) = X25519::keygen().unwrap();
+//! let (bob_pk, bob_sk) = X25519::keygen().unwrap();
+//!
+//! // Each computes the shared secret K from their own private key and the other's public key.
+//! // An error here means the other party's public key is unusable; abort the exchange.
+//! let alice_k = X25519::key_agreement(&bob_pk, alice_sk).expect("Bad public key");
+//! let bob_k = X25519::key_agreement(&alice_pk, bob_sk).expect("Bad public key");
+//!
+//! // Both derive the symmetric key from K, with both public keys as context,
+//! // as recommended in RFC 7748 §6.1.
+//! fn derive_key_rfc7748(
+//!     k: &X25519PublicKey,
+//!     alice_pk: &X25519PublicKey,
+//!     bob_pk: &X25519PublicKey) -> KeyMaterial256 {
+//!     let mut ikm =
+//!         KeyMaterial256::from_bytes_as_type(k.as_ref(), KeyType::CryptographicRandom).unwrap();
+//!     // X25519 provides 128-bit security, not the 256 bits a 32-byte key would imply.
+//!     // This is related to the fact that an X25519PublicKey encodes to 32 bytes,
+//!     // but does not contain 32 bytes of entropy.
+//!     ikm.set_security_strength(SecurityStrength::_128bit).unwrap();
+//!
+//!     let mut context = [0u8; 64];
+//!     context[..32].copy_from_slice(alice_pk.as_ref());
+//!     context[32..].copy_from_slice(bob_pk.as_ref());
+//!
+//!     let mut key = KeyMaterial256::new();
+//!     HKDF_SHA256::new().derive_key_out(&ikm, &context, &mut key).unwrap();
+//!     key
+//! }
+//!
+//! // Each derives `key` independently.
+//! // Note that they have to agree on whose key goes in first;
+//! // if Alice does `(alice_pk, bob_pk)` and bob does `(bob_pk, alice_pk)` then they will
+//! // arrive at different output keys.
+//! // Typically this will be specified unambiguously by the protocol, such as
+//! // (sender_pk, recipient_pk).
+//! let alice_key = derive_key_rfc7748(&alice_k, &alice_pk, &bob_pk);
+//! let bob_key   = derive_key_rfc7748(&bob_k, &alice_pk, &bob_pk);
+//!
+//! // Alice and Bob now hold the same 32-byte, 128-bit-strength symmetric KeyMaterial.
+//! assert!(alice_key.equals(&bob_key));
+//! assert_eq!(alice_key.key_len(), 32);
+//! assert_eq!(alice_key.key_type(), KeyType::CryptographicRandom);
+//! assert_eq!(alice_key.security_strength(), SecurityStrength::_128bit);
+//! ```
+//!
+
+use bouncycastle_core::errors::{KeyAgreementError, RNGError};
+use bouncycastle_core::key_material::{KeyMaterial256, KeyMaterialTrait, KeyType};
+use bouncycastle_core::security_strength::SecurityStrength;
+use bouncycastle_core::traits::{
+    Algorithm, KeyAgreement, KeyAgreementPrivateKey, KeyAgreementPublicKey, RNG,
+};
+use bouncycastle_rng::HashDRBG_SHA512;
 use bouncycastle_utils::ct::{Condition, ct_eq_zero_bytes};
 use bouncycastle_utils::secret::Secret;
 
@@ -11,22 +99,160 @@ use crate::curve25519::FieldElement25519;
 pub const POINT_SIZE: usize = 32;
 pub const SCALAR_SIZE: usize = 32;
 
+/// String name of the X25519 algorithm.
+pub const X25519_NAME: &str = "X25519";
+
+/// The X25519 key agreement algorithm of RFC 7748 §5.
+pub struct X25519;
+
+impl Algorithm for X25519 {
+    const ALG_NAME: &'static str = X25519_NAME;
+    // RFC 7748 §7: "the security level ... of curve25519 is slightly under the standard 128-bit
+    // level", which it argues is acceptable; it is classed here at the conventional 128 bits.
+    const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_128bit;
+}
+
+impl X25519 {
+    /// Generates a fresh key pair using the library's default RNG, seeded from the OS.
+    /// In environments where the default OS based RNG is not available, use instead
+    /// [`X25519::keygen_from_rng`] and explicitly provide an [`RNG`] implementation, or use
+    /// [`X25519::keygen_from_seed`] and provide the private key seed directly.
+    pub fn keygen() -> Result<(X25519PublicKey, X25519PrivateKey), KeyAgreementError> {
+        let mut os_rng = HashDRBG_SHA512::new_from_os();
+        Self::keygen_from_rng(&mut os_rng)
+    }
+
+    /// Generates a key pair using the provided RNG implementation.
+    pub fn keygen_from_rng(
+        rng: &mut dyn RNG,
+    ) -> Result<(X25519PublicKey, X25519PrivateKey), KeyAgreementError> {
+        if rng.security_strength() < Self::MAX_SECURITY_STRENGTH {
+            return Err(RNGError::SecurityStrengthInsufficientForAlgorithm)?;
+        }
+        let mut seed = KeyMaterial256::new();
+        rng.fill_keymaterial_out(&mut seed)?;
+        Self::keygen_from_seed(&seed)
+    }
+
+    /// Generates a key pair from a 32-byte seed, which must have [`KeyType::Seed`] or
+    /// [`KeyType::CryptographicRandom`] and at least [`SecurityStrength::_128bit`].
+    ///
+    /// RFC 7748 §6.1: "Alice generates 32 random bytes in `a[0]` to `a[31]` and transmits
+    /// K_A = X25519(a, 9) to Bob". The seed is used as the private key unchanged, so this is also
+    /// how to import an existing private key along with its public key.
+    pub fn keygen_from_seed(
+        seed: &KeyMaterial256,
+    ) -> Result<(X25519PublicKey, X25519PrivateKey), KeyAgreementError> {
+        if !(seed.key_type() == KeyType::Seed || seed.key_type() == KeyType::CryptographicRandom)
+            || seed.key_len() != SCALAR_SIZE
+        {
+            return Err(KeyAgreementError::KeyGenError(
+                "Seed must be 32 bytes and KeyType::Seed or KeyType::CryptographicRandom.",
+            ));
+        }
+
+        if seed.security_strength() < Self::MAX_SECURITY_STRENGTH {
+            return Err(KeyAgreementError::KeyGenError(
+                "Seed SecurityStrength must match algorithm security strength",
+            ));
+        }
+
+        let mut k: Secret<[u8; SCALAR_SIZE]> = Secret::new();
+        // Cannot panic: the length was checked above.
+        k.copy_from_slice(seed.ref_to_bytes());
+        let sk = X25519PrivateKey(k);
+
+        Ok((sk.pk(), sk))
+    }
+
+    /// Checks that `pk` is the public key of `sk`, by deriving it from `sk` and comparing.
+    ///
+    /// Returns either `()` or [`KeyAgreementError::ConsistencyCheckFailed`].
+    pub fn keypair_consistency_check(
+        pk: &X25519PublicKey,
+        sk: &X25519PrivateKey,
+    ) -> Result<(), KeyAgreementError> {
+        sk.consistency_check(pk)
+    }
+}
+
+impl KeyAgreement<X25519PublicKey, X25519PrivateKey> for X25519 {
+    type SharedSecretType = X25519PublicKey;
+
+    /// The X25519 Diffie-Hellman of RFC 7748 §6.1: computes the shared secret
+    /// `K = X25519(sk, pk)`, the u-coordinate of the scalar multiple of the peer's public key by
+    /// our private key, as its canonical 32-byte little-endian encoding.
+    ///
+    /// Alice computes `X25519(a, K_B)` and Bob `X25519(b, K_A)`, and §6.1 shows both equal
+    /// `X25519(a, X25519(b, 9)) = X25519(b, X25519(a, 9))`. §6.1 also says to then "use a
+    /// key-derivation function that includes K, K_A, and K_B to derive a symmetric key": `K` is
+    /// not uniformly random, so it should not be used as a key directly.
+    ///
+    /// Any 32 bytes are accepted as `pk`: per RFC 7748 §5, bit 255 is ignored and values `>= p`
+    /// are processed as if reduced mod p.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`KeyAgreementError::InvalidPublicKey`] if `K` is all zeros. RFC 7748 §6.1: "The
+    /// check for the all-zero value results from the fact that the X25519 function produces that
+    /// value if it operates on an input corresponding to a point with small order". Such a point
+    /// "will eliminate any contribution from the other party's private key" (§7), so `K` is the
+    /// same for every private key and is known to whoever chose `pk`.
+    ///
+    /// RFC 7748 makes the check optional: both parties "MAY check, without leaking extra
+    /// information about the value of K, whether K is the all-zero value and abort if so". This
+    /// implementation always performs it, as the protocols built on X25519 require:
+    ///  * RFC 8446 (TLS 1.3) §7.4.2: "Implementations MUST check whether the computed
+    ///    Diffie-Hellman shared secret is the all-zero value and abort if so".
+    ///  * RFC 9180 (HPKE) §7.1.4: "recipients MUST check whether the Diffie-Hellman shared secret
+    ///    is the all-zero value and abort if so".
+    ///
+    /// The check is constant time, ORing all the bytes together as §6.1 suggests, so the only
+    /// information it reveals about `K` is whether it is zero.
+    fn key_agreement(
+        pk: &X25519PublicKey,
+        sk: X25519PrivateKey,
+    ) -> Result<X25519PublicKey, KeyAgreementError> {
+        let r = scalar_mult(&sk, pk);
+        if r.is_zero() {
+            return Err(KeyAgreementError::InvalidPublicKey(
+                "Public key has small order: the shared secret is all zeros",
+            ));
+        }
+        Ok(r)
+    }
+}
+
 /// An X25519 private key: a 32-byte scalar, as defined in Section 5 of RFC7748.
 ///
 /// Any 32 bytes are a valid scalar. The fixed bits `decodeScalar25519` sets and clears are applied
 /// each time the scalar is used, not on construction, so the stored bytes are exactly the ones the
 /// caller supplied. Held in a [`Secret`], so it is zeroized on drop and redacted from `Debug`.
-pub struct X25519Scalar(Secret<[u8; SCALAR_SIZE]>);
+pub struct X25519PrivateKey(Secret<[u8; SCALAR_SIZE]>);
 
-impl X25519Scalar {
-    /// Copies 32 bytes into a new scalar. The copy lives in zeroizing storage; the caller's buffer
-    /// is not cleared.
-    pub fn from_bytes(bytes: &[u8; SCALAR_SIZE]) -> Self {
-        let mut k: Secret<[u8; SCALAR_SIZE]> = Secret::new();
-        *k = *bytes;
-        Self(k)
+impl X25519PrivateKey {
+    /// Computes the public key, `X25519(k, 9)` (RFC 7748 §6.1).
+    ///
+    /// The public key is not stored with the private key, so each call runs a full scalar
+    /// multiplication.
+    pub fn pk(&self) -> X25519PublicKey {
+        scalar_mult_base(self)
+    }
+
+    /// Checks that `pk` is this private key's public key, by computing it with [`Self::pk`] and
+    /// comparing.
+    ///
+    /// Returns either `()` or [`KeyAgreementError::ConsistencyCheckFailed`].
+    pub fn consistency_check(&self, pk: &X25519PublicKey) -> Result<(), KeyAgreementError> {
+        if self.pk() == *pk {
+            Ok(())
+        } else {
+            Err(KeyAgreementError::ConsistencyCheckFailed("Public key does not match private key"))
+        }
     }
 }
+
+impl KeyAgreementPrivateKey for X25519PrivateKey {}
 
 /// An X25519 public value: the u-coordinate of a point on curve25519, as 32 little-endian bytes
 /// (Section 5 of RFC7748).
@@ -34,9 +260,9 @@ impl X25519Scalar {
 /// Any 32 bytes are accepted: Section 5 requires bit 255 to be ignored and values `>= p` to be
 /// processed as if reduced mod p. Public data, so it is `Copy` and its `Debug` shows the bytes.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct X25519Point([u8; POINT_SIZE]);
+pub struct X25519PublicKey([u8; POINT_SIZE]);
 
-impl X25519Point {
+impl X25519PublicKey {
     /// Wraps 32 bytes as a u-coordinate.
     pub const fn from_bytes(bytes: [u8; POINT_SIZE]) -> Self {
         Self(bytes)
@@ -46,13 +272,30 @@ impl X25519Point {
     pub const fn as_bytes(&self) -> &[u8; POINT_SIZE] {
         &self.0
     }
+
+    /// Constant-time test for all 32 bytes being zero.
+    ///
+    /// This tests the encoding, not the value: it equals "u = 0" only for canonical encodings,
+    /// such as [`scalar_mult`]'s output. A non-canonical encoding of 0 (`p`, or bit 255 set)
+    /// returns `false`.
+    fn is_zero(&self) -> bool {
+        ct_eq_zero_bytes(&self.0)
+    }
+}
+
+impl KeyAgreementPublicKey for X25519PublicKey {}
+
+impl AsRef<[u8]> for X25519PublicKey {
+    fn as_ref(&self) -> &[u8] {
+        &self.0
+    }
 }
 
 /// The base point of curve25519, `U(P) = 9` (Section 4.1 of RFC7748).
-const BASE_POINT: X25519Point = {
+const BASE_POINT: X25519PublicKey = {
     let mut u = [0_u8; POINT_SIZE];
     u[0] = 9;
-    X25519Point(u)
+    X25519PublicKey(u)
 };
 
 /// The coefficient A of curve25519, `v^2 = u^3 + A*u^2 + u` (RFC 7748 §4.1).
@@ -65,15 +308,6 @@ const C_A: u32 = 486662;
 /// the constant with BB instead needs `a24 + 1 = (A + 2) / 4`. [`scalar_mult`] and
 /// [`ladder_double`] both use that form.
 const C_A24: u32 = (C_A + 2) / 4;
-
-// TODO -- impl KeyAgreement trait (will need to add to traits.rs), and a KEM trait
-
-// TODO -- remove pub visibility once I have the traits impl'd
-// TODO -- the shared secret is still written to bare bytes; Phase 2 decides its type (KeyMaterial).
-pub fn calculate_agreement(k: &X25519Scalar, u: &X25519Point, r: &mut [u8; POINT_SIZE]) -> bool {
-    scalar_mult(k, u, r);
-    !ct_eq_zero_bytes(r)
-}
 
 /// `decodeScalar25519(k)` as defined in Section 5 of RFC7748:
 ///
@@ -106,7 +340,7 @@ pub fn calculate_agreement(k: &X25519Scalar, u: &X25519Point, r: &mut [u8; POINT
 ///
 /// Input: A 32-byte little-endian scalar.
 /// Output: The decoded scalar, written to `n` as eight little-endian 32-bit words.
-fn decode_scalar_25519(k: &X25519Scalar, n: &mut [u32; 8]) {
+fn decode_scalar_25519(k: &X25519PrivateKey, n: &mut [u32; 8]) {
     let (words, _) = k.0.as_chunks::<4>(); // 32 bytes: exactly 8 chunks, no remainder
     for (n_i, w) in n.iter_mut().zip(words) {
         *n_i = u32::from_le_bytes(*w);
@@ -141,7 +375,7 @@ fn decode_scalar_25519(k: &X25519Scalar, n: &mut [u32; 8]) {
 ///
 /// Input: A 32-byte little-endian u-coordinate.
 /// Output: The u-coordinate as a [`FieldElement25519`], not normalized.
-fn decode_u_coordinate(u: &X25519Point) -> FieldElement25519 {
+fn decode_u_coordinate(u: &X25519PublicKey) -> FieldElement25519 {
     FieldElement25519::decode_255(&u.0)
 }
 
@@ -155,22 +389,6 @@ fn decode_u_coordinate(u: &X25519Point) -> FieldElement25519 {
 /// Output: The canonical 32-byte little-endian encoding of that value, written to `r`.
 fn encode_u_coordinate(u: &FieldElement25519, r: &mut [u8; POINT_SIZE]) {
     u.normalize().encode_255(r);
-}
-
-// // TODO make this match the style of MLDSA keygen
-// pub fn generate_private_key(random: &mut dyn RngCore, k: &mut [u8; SCALAR_SIZE]) {
-//     random.fill_bytes(&mut k[..]);
-//
-//     k[0] &= 0xF8;
-//     k[SCALAR_SIZE - 1] &= 0x7F;
-//     k[SCALAR_SIZE - 1] |= 0x40;
-// }
-
-// TODO make this match the style of MLDSA keygen
-pub fn generate_public_key(k: &X25519Scalar) -> X25519Point {
-    let mut u = [0_u8; POINT_SIZE];
-    scalar_mult_base(k, &mut u);
-    X25519Point(u)
 }
 
 /// Doubles one point, held projectively as the pair `(x : z)` representing `u = x / z`
@@ -213,9 +431,8 @@ fn ladder_double(x: &mut FieldElement25519, z: &mut FieldElement25519) {
 /// # Inputs
 ///  * `k`, a 32-byte scalar
 ///  * `u`, a 32-byte little-endian u-coordinate
-///  * `out`, a 32-byte output buffer.
-/// Output: The canonical little-endian encoding of the u-coordinate of `k * u`, written to `out`.
-fn scalar_mult(k: &X25519Scalar, u: &X25519Point, out: &mut [u8; POINT_SIZE]) {
+/// Output: The canonical little-endian encoding of the u-coordinate of `k * u`.
+fn scalar_mult(k: &X25519PrivateKey, u: &X25519PublicKey) -> X25519PublicKey {
     // The decoded scalar is as secret as `k` itself.
     let mut n: Secret<[u32; 8]> = Secret::new();
     decode_scalar_25519(k, &mut n);
@@ -320,11 +537,13 @@ fn scalar_mult(k: &X25519Scalar, u: &X25519Point, out: &mut [u8; POINT_SIZE]) {
     }
 
     x2 = x2.mul(&z2.inv());
-    encode_u_coordinate(&x2, out);
+    let mut out = [0_u8; POINT_SIZE];
+    encode_u_coordinate(&x2, &mut out);
+    X25519PublicKey(out)
 }
 
-fn scalar_mult_base(k: &X25519Scalar, r: &mut [u8; POINT_SIZE]) {
+fn scalar_mult_base(k: &X25519PrivateKey) -> X25519PublicKey {
     // Equivalent (but much slower) -- since the BASE_POINT never changes, you can
     //         precompute lookup tables for the multiples of BASE_POINT. TODO
-    scalar_mult(k, &BASE_POINT, r);
+    scalar_mult(k, &BASE_POINT)
 }

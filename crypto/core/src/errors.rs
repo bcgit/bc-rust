@@ -86,6 +86,22 @@ pub enum KEMError {
 ///
 #[derive(Debug, PartialEq, Eq)]
 #[non_exhaustive]
+pub enum KeyAgreementError {
+    ///
+    GenericError(&'static str),
+    ///
+    ConsistencyCheckFailed(&'static str),
+    /// The peer's public key is unusable for key agreement, for example a point of small order.
+    InvalidPublicKey(&'static str),
+    ///
+    KeyGenError(&'static str),
+    ///
+    RNGError(RNGError),
+}
+
+///
+#[derive(Debug, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum MACError {
     ///
     GenericError(&'static str),
@@ -254,6 +270,12 @@ impl From<KeyMaterialError> for KEMError {
 
 impl From<RNGError> for KEMError {
     fn from(e: RNGError) -> KEMError {
+        Self::RNGError(e)
+    }
+}
+
+impl From<RNGError> for KeyAgreementError {
+    fn from(e: RNGError) -> KeyAgreementError {
         Self::RNGError(e)
     }
 }
