@@ -896,10 +896,9 @@ where
 /// `FINAL_LEN` is `TAG_LEN`, exactly as for GCM. The price is that they accept exactly
 /// `DATA_LEN` bytes of payload -- the fixed frame of SP 800-38C Sec 3's "packet environment" --
 /// and refuse any other amount, more at the update that would exceed it and less at the final.
-/// The one-shots are not bound by either parameter: with the whole message in hand there is
-/// nothing to declare up front and nothing to hold back, so they are `Ccm`'s own one-shots
-/// under a generated nonce, for a payload and AAD of any length, and the AAD buffer is never
-/// built. `DATA_LEN` and `AAD_LEN` govern the streaming methods only.
+/// The one-shots a key bound to [`CCM_Packet`] provides are written over this worker, so they
+/// carry the same frame: a payload of exactly `DATA_LEN` bytes and up to `AAD_LEN` of AAD. A
+/// message of another length goes through [`CCM`], whose constructors take the lengths.
 ///
 /// `AAD_LEN` is a capacity, not an exact length: the trait's AAD is optional and open-ended, and
 /// the inherited [`SymmetricCipherEncryptor`] methods are this AEAD with none at all. Up to
@@ -1252,8 +1251,8 @@ where
 /// ciphertext and are decrypted and released by the call that brings them; anything after them
 /// can only be an inline tag (Sec 6.2 step 6's `LSB_Tlen(C)`), and only those bytes -- at most
 /// `TAG_LEN` -- are held back for the final to check. A `C` of any other length than `DATA_LEN`
-/// (detached) or `DATA_LEN + TAG_LEN` (inline) is refused as malformed. The one-shots are
-/// `Ccm`'s own and take a `C` of any length; see [`CcmPacketEncryptor`].
+/// (detached) or `DATA_LEN + TAG_LEN` (inline) is refused as malformed, by the one-shots of a key
+/// bound to [`CCM_Packet`] as much as by the streaming methods; see [`CcmPacketEncryptor`].
 ///
 /// # 🚨 Security Considerations 🚨
 ///
@@ -1415,15 +1414,15 @@ where
         Ok(([0u8; TAG_LEN], 0))
     }
 
-    /// `C` less its inline tag, as for any AEAD: the one-shots take a `C` of any length. The
-    /// streaming side's own bound is [`do_decrypt_out_len`](Self::do_decrypt_out_len).
+    /// `C` less its inline tag, as for any AEAD; the frame's own bound is
+    /// [`do_decrypt_out_len`](Self::do_decrypt_out_len).
     fn decrypt_out_len(ciphertext_len: usize) -> usize {
         ciphertext_len.saturating_sub(TAG_LEN)
     }
 }
 
-/// The AEAD view, with `FINAL_LEN = TAG_LEN`. The one-shots are `Ccm`'s own, for a `C` and
-/// AAD of any length; see [`CcmPacketEncryptor`].
+/// The AEAD view, with `FINAL_LEN = TAG_LEN`; the one-shots over it carry the frame, see
+/// [`CcmPacketEncryptor`].
 impl<
     'k,
     P,
