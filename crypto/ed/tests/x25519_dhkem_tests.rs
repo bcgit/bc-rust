@@ -80,7 +80,7 @@ fn keygen() -> Result<(X25519PublicKey, X25519PrivateKey), KEMError> {
 #[test]
 fn rfc9180_encaps() {
     for (i, v) in VECTORS.iter().enumerate() {
-        let pk_r = X25519PublicKey::from_bytes(decode_32(v.pk_rm));
+        let pk_r = X25519PublicKey::from_bytes(&decode_32(v.pk_rm)).unwrap();
         let mut rng = FixedSeedRNG::new(decode_32(v.sk_em));
         let (ss, enc) = X25519::encaps_rng(&pk_r, &mut rng).unwrap();
         assert_eq!(enc, decode_32(v.enc), "vector {i}: enc");
@@ -235,7 +235,7 @@ fn rejects_low_order_public_key() {
     let p = decode_32("edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f");
 
     for u in [[0_u8; 32], p, zero_bit_255] {
-        match X25519::encaps(&X25519PublicKey::from_bytes(u)) {
+        match X25519::encaps(&X25519PublicKey::from_bytes(&u).unwrap()) {
             Err(KEMError::InvalidPublicKey(_)) => { /* good */ }
             other => panic!("encaps: expected InvalidPublicKey for u = {u:02x?}, got {other:?}"),
         }

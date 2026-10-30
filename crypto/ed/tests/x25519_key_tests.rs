@@ -166,7 +166,7 @@ fn clamp(mut k: [u8; 32]) -> [u8; 32] {
 #[test]
 fn public_key_encoding() {
     let bytes = decode_32(ALICE_PK);
-    let pk = X25519PublicKey::from_bytes(bytes);
+    let pk = X25519PublicKey::from_bytes(&bytes).unwrap();
     assert_eq!(KeyAgreementPublicKey::encode(&pk), bytes);
 
     let mut out = [0xFF_u8; 32];

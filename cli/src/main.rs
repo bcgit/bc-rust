@@ -16,6 +16,7 @@ mod rng_cmd;
 mod sha2_cmd;
 mod sha3_cmd;
 mod sm3_cmd;
+mod x25519_cmd;
 
 use crate::mac_cmd::HMACVariant;
 use crate::mldsa_cmd::MLDSAAction;
@@ -1737,6 +1738,28 @@ enum Subcommands {
         /// Output the hashes in hex format.
         x: bool,
     },
+
+    /// The X25519 key agreement algorithm (RFC 7748), and the DHKEM(X25519, HKDF-SHA256) key
+    /// encapsulation built on it (RFC 9180).
+    X25519 {
+        action: x25519_cmd::X25519Action,
+
+        #[arg(long)]
+        /// The private key file (in hex or binary) for agree and decaps
+        skfile: Option<String>,
+
+        #[arg(long)]
+        /// The public key file (in hex or binary) for agree and encaps
+        pkfile: Option<String>,
+
+        #[arg(long)]
+        /// The ciphertext value file (in hex or binary) either for encaps to output to, or for decaps to read from.
+        ctfile: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
 }
 
 fn main() {
@@ -2042,6 +2065,9 @@ fn run() {
         }
         Some(Subcommands::TUPLEHASH256 { length, elements, customization, x }) => {
             sha3_cmd::tuplehash_cmd(256, *length, elements, customization, *x);
+        }
+        Some(Subcommands::X25519 { action, skfile, pkfile, ctfile, x }) => {
+            x25519_cmd::x25519_cmd(action, skfile, pkfile, ctfile, *x);
         }
         None => {
             eprintln!("No command provided. See -h")

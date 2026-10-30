@@ -436,11 +436,6 @@ impl Eq for X25519PrivateKey {}
 pub struct X25519PublicKey([u8; POINT_SIZE]);
 
 impl X25519PublicKey {
-    /// Wraps 32 bytes as a u-coordinate.
-    pub const fn from_bytes(bytes: [u8; POINT_SIZE]) -> Self {
-        Self(bytes)
-    }
-
     /// The 32 encoded bytes.
     pub const fn as_bytes(&self) -> &[u8; POINT_SIZE] {
         &self.0

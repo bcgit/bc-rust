@@ -1,6 +1,6 @@
 use bouncycastle_core::errors::KeyAgreementError;
 use bouncycastle_core::key_material::{KeyMaterial256, KeyType};
-use bouncycastle_core::traits::KeyAgreement;
+use bouncycastle_core::traits::{KeyAgreement, KeyAgreementPublicKey};
 use bouncycastle_ed::x25519::{POINT_SIZE, SCALAR_SIZE, X25519, X25519PrivateKey, X25519PublicKey};
 use bouncycastle_hex as hex;
 
@@ -97,7 +97,7 @@ fn key_agreement_rejects_all_zero_shared_secret() {
         let sk = sk_from_bytes(&decode_32(
             "77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a",
         ));
-        match X25519::key_agreement(&X25519PublicKey::from_bytes(u), &sk) {
+        match X25519::key_agreement(&X25519PublicKey::from_bytes(&u).unwrap(), &sk) {
             Err(KeyAgreementError::InvalidPublicKey(_)) => { /* good */ }
             other => panic!("expected InvalidPublicKey for u = {u:02x?}, got {other:?}"),
         }
@@ -129,7 +129,9 @@ fn rfc7748_check_iterated(count: usize) {
     u[0] = 9;
     let mut iterations = 0;
     while iterations < count {
-        let r = X25519::key_agreement(&X25519PublicKey::from_bytes(u), &sk_from_bytes(&k)).unwrap();
+        let r =
+            X25519::key_agreement(&X25519PublicKey::from_bytes(&u).unwrap(), &sk_from_bytes(&k))
+                .unwrap();
 
         u = k;
         k = *r.as_bytes();
@@ -164,7 +166,7 @@ fn check_value(n: &[u8], text: &str, se: &str) {
 
 fn check_vector(sk: &str, su: &str, se: &str, text: &str) {
     let k = sk_from_bytes(&decode_32(sk));
-    let u = X25519PublicKey::from_bytes(decode_32(su));
+    let u = X25519PublicKey::from_bytes(&decode_32(su)).unwrap();
 
     let r = X25519::key_agreement(&u, &k).unwrap();
     check_value(r.as_bytes(), text, se);

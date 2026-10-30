@@ -65,8 +65,9 @@ Within each, the priority order is:
 - [x] Decide what happens on an all-zero shared secret (low-order public key): `key_agreement`
   rejects it with `KeyAgreementError::InvalidPublicKey`. RFC 7748 §6.1 makes the check a MAY;
   RFC 8446 §7.4.2 and RFC 9180 §7.1.4 make it a MUST.
-    - [ ] Open: detect a small-order public key before the private-key operation, rather than
-      from the output. Is this even possible? Possible in constant-time?
+    - [x] Open: detect a small-order public key before the private-key operation, rather than
+      from the output. Is this even possible? Possible in constant-time? After analysis, while it's possible, there is
+      no reason to do this; it detects exactly the same bad public keys for no extra security.
 - [x] A `KEM` impl over X25519: `KEMEncapsulator`/`KEMDecapsulator` on `X25519` as DHKEM (X25519,
   HKDF-SHA256) (RFC 9180 §4.1), built on the generic `DHKEM` in the new `bouncycastle-hpke`
   utility crate. Tested against RFC 9180 A.1.1/A.1.2 and the core-test-framework KEM suites.
@@ -75,7 +76,8 @@ Within each, the priority order is:
     - [x] `keygen_from_seed`, from a 32-byte `KeyMaterial256`;
     - [x] `keypair_consistency_check`. No `keygen_from_seed_and_encoded`: the seed *is* the
       private key encoding, so there is nothing to compare.
-- [ ] Wire into the cli (we are going to skip Factory)
+- [x] Wire into the cli (we are going to skip Factory): `bc-rust x25519` in `cli/src/x25519_cmd.rs`,
+  with keygen, pk-from-sk, check-consistency, agree, and DHKEM encaps/decaps.
 - [ ] `cargo mutants -p bouncycastle-ed` (without Wycheproof). Scoped runs done on the KEM code (one survivor: an
   error-mapping arm unreachable with a well-behaved RNG) and on `bouncycastle-hpke`;
   a full-crate run is still to do.

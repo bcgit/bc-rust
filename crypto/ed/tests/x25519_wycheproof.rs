@@ -13,7 +13,7 @@
 
 use bouncycastle_core::errors::KeyAgreementError;
 use bouncycastle_core::key_material::{KeyMaterial256, KeyType};
-use bouncycastle_core::traits::KeyAgreement;
+use bouncycastle_core::traits::{KeyAgreement, KeyAgreementPublicKey};
 use bouncycastle_core_test_framework::test_data_loaders::{Value, hex_field, wycheproof_json};
 use bouncycastle_ed::x25519::{POINT_SIZE, SCALAR_SIZE, X25519, X25519PrivateKey, X25519PublicKey};
 
@@ -43,7 +43,7 @@ fn wycheproof_x25519() {
                 hex_field(test, "public", tc_id).try_into().expect("a 32-byte public key");
             let shared = hex_field(test, "shared", tc_id);
 
-            let (k, u) = (sk_from_bytes(&k), X25519PublicKey::from_bytes(u));
+            let (k, u) = (sk_from_bytes(&k), X25519PublicKey::from_bytes(&u).unwrap());
             match X25519::key_agreement(&u, &k) {
                 Ok(r) => assert_eq!(r.as_bytes(), shared.as_slice(), "{ctx}: shared secret"),
                 Err(KeyAgreementError::InvalidPublicKey(_)) => {
