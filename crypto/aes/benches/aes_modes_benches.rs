@@ -117,7 +117,7 @@ fn bench_aes128cbc(c: &mut Criterion) {
         )
     });
 
-    // ---- decryption: parallel, uses decrypt_2blocks for every pair ----
+    // ---- decryption: parallel, uses decrypt_4blocks for every four ----
     let (mut enc, iv) = key.create_encryptor(&mut rng).unwrap();
     let mut ciphertext = blocks.clone();
     for chunk in ciphertext.chunks_exact_mut(8) {
@@ -138,8 +138,6 @@ fn bench_aes128cbc(c: &mut Criterion) {
         )
     });
 
-    // The controlled comparison: identical N, identical cipher, bit-sliced pair vs single-block loops.
-    // This pair of numbers -- and only this pair -- measures what `decrypt_2blocks` buys.
     group.finish();
 }
 
@@ -178,20 +176,17 @@ fn bench_cfb_aes128(c: &mut Criterion) {
     group.throughput(Throughput::Bytes(DATA_LEN as u64));
 
     // ---- encryption: serial. Oj+1 = CIPH_K(Cj), and Cj is the previous call's output ----
-    for (name, call_len) in [("16KiB encrypt -- N=8", 8 * BLOCK_LEN)] {
-        group.bench_function(name, |b| {
-            b.iter_batched(
-                || flat.clone(),
-                |mut scratch| {
-                    let (enc, _): (Aes128Cfb<Encrypting>, _) =
-                        key.create_encryptor(&mut rng).unwrap();
-                    stream_encrypt_in_calls(enc, &mut scratch, call_len);
-                    black_box(&scratch);
-                },
-                BatchSize::LargeInput,
-            )
-        });
-    }
+    group.bench_function("16KiB encrypt -- N=8", |b| {
+        b.iter_batched(
+            || flat.clone(),
+            |mut scratch| {
+                let (enc, _): (Aes128Cfb<Encrypting>, _) = key.create_encryptor(&mut rng).unwrap();
+                stream_encrypt_in_calls(enc, &mut scratch, 8 * BLOCK_LEN);
+                black_box(&scratch);
+            },
+            BatchSize::LargeInput,
+        )
+    });
 
     // ---- decryption: parallel, and uses `encrypt_4blocks` / `encrypt_2blocks` -- the FORWARD
     // batch methods ----
@@ -199,19 +194,17 @@ fn bench_cfb_aes128(c: &mut Criterion) {
     let mut ciphertext = flat.clone();
     enc.do_encrypt_inplace(&mut ciphertext).unwrap();
 
-    for (name, call_len) in [("16KiB decrypt -- N=8 (all fours)", 8 * BLOCK_LEN)] {
-        group.bench_function(name, |b| {
-            b.iter_batched(
-                || ciphertext.clone(),
-                |mut scratch| {
-                    let dec: Aes128Cfb<Decrypting> = key.create_decryptor(&iv);
-                    stream_decrypt_in_calls(dec, &mut scratch, call_len);
-                    black_box(&scratch);
-                },
-                BatchSize::LargeInput,
-            )
-        });
-    }
+    group.bench_function("16KiB decrypt -- N=8 (all fours)", |b| {
+        b.iter_batched(
+            || ciphertext.clone(),
+            |mut scratch| {
+                let dec: Aes128Cfb<Decrypting> = key.create_decryptor(&iv);
+                stream_decrypt_in_calls(dec, &mut scratch, 8 * BLOCK_LEN);
+                black_box(&scratch);
+            },
+            BatchSize::LargeInput,
+        )
+    });
 
     group.finish();
 }
@@ -246,22 +239,18 @@ fn bench_cfb8_aes128(c: &mut Criterion) {
     let mut ciphertext = flat.clone();
     enc.do_encrypt_inplace(&mut ciphertext).unwrap();
 
-    for (name, call_len) in [
-        // One call: fours, then pairs, then the tail. This is the batched path.
-        ("16KiB decrypt -- whole message in one call (batched)", DATA_LEN),
-    ] {
-        group.bench_function(name, |b| {
-            b.iter_batched(
-                || ciphertext.clone(),
-                |mut scratch| {
-                    let dec: Aes128Cfb8<Decrypting> = key.create_decryptor(&iv);
-                    stream_decrypt_in_calls(dec, &mut scratch, call_len);
-                    black_box(&scratch);
-                },
-                BatchSize::LargeInput,
-            )
-        });
-    }
+    // One call: fours, then pairs, then the tail. This is the batched path.
+    group.bench_function("16KiB decrypt -- whole message in one call (batched)", |b| {
+        b.iter_batched(
+            || ciphertext.clone(),
+            |mut scratch| {
+                let dec: Aes128Cfb8<Decrypting> = key.create_decryptor(&iv);
+                stream_decrypt_in_calls(dec, &mut scratch, DATA_LEN);
+                black_box(&scratch);
+            },
+            BatchSize::LargeInput,
+        )
+    });
 
     group.finish();
 }
@@ -277,20 +266,17 @@ fn bench_ctr_aes128(c: &mut Criterion) {
     let mut group = c.benchmark_group("modes::ctr::AES_128");
     group.throughput(Throughput::Bytes(DATA_LEN as u64));
 
-    for (name, call_len) in [("16KiB encrypt -- N=8 (two fours per call)", 8 * BLOCK_LEN)] {
-        group.bench_function(name, |b| {
-            b.iter_batched(
-                || flat.clone(),
-                |mut scratch| {
-                    let (enc, _): (Aes128Ctr<Encrypting>, _) =
-                        key.create_encryptor(&mut rng).unwrap();
-                    stream_encrypt_in_calls(enc, &mut scratch, call_len);
-                    black_box(&scratch);
-                },
-                BatchSize::LargeInput,
-            )
-        });
-    }
+    group.bench_function("16KiB encrypt -- N=8 (two fours per call)", |b| {
+        b.iter_batched(
+            || flat.clone(),
+            |mut scratch| {
+                let (enc, _): (Aes128Ctr<Encrypting>, _) = key.create_encryptor(&mut rng).unwrap();
+                stream_encrypt_in_calls(enc, &mut scratch, 8 * BLOCK_LEN);
+                black_box(&scratch);
+            },
+            BatchSize::LargeInput,
+        )
+    });
 
     group.finish();
 }
@@ -318,15 +304,14 @@ fn bench_ecb_aes128(c: &mut Criterion) {
         )
     });
 
-    // The controlled comparison: identical N, identical cipher, bit-sliced pair vs single-block loops.
     group.finish();
 }
 
 /// What a message pays before its first byte, split as the key path splits it: `from_key_material`
-/// is the key expansion, paid once per key; `create_encryptor` is a clone of the stored schedule
-/// plus an IV draw, and `create_decryptor` the clone alone, paid per message. The IV comes from
-/// the cheap deterministic RNG, so the draw's cost is the copy and not a DRBG. Worth its own
-/// measurement, because for short messages construction dominates.
+/// is the key expansion, paid once per key; `create_encryptor` borrows the key and draws an IV,
+/// and `create_decryptor` only borrows it, paid per message. The IV comes from the cheap
+/// deterministic RNG, so the draw's cost is the copy and not a DRBG. Worth its own measurement,
+/// because for short messages construction dominates.
 fn bench_init(c: &mut Criterion) {
     let k128 = key::<16>();
     let k256 = key::<32>();
@@ -343,23 +328,23 @@ fn bench_init(c: &mut Criterion) {
     group.bench_function("AES_256 from_key_material, CBC (key schedule)", |b| {
         b.iter(|| black_box(AES256Key::<CBC<Blocks>>::from_key_material(black_box(&k256)).unwrap()))
     });
-    group.bench_function("AES_128 create_encryptor, CBC (schedule clone + IV draw)", |b| {
+    group.bench_function("AES_128 create_encryptor, CBC (borrow + IV draw)", |b| {
         b.iter(|| black_box(black_box(&cbc128).create_encryptor(&mut rng).unwrap().1))
     });
-    group.bench_function("AES_128 create_decryptor, CBC (schedule clone)", |b| {
+    group.bench_function("AES_128 create_decryptor, CBC (borrow)", |b| {
         b.iter(|| black_box(black_box(&cbc128).create_decryptor(&iv)))
     });
 
-    // CFB does exactly the same work here -- one key expansion per key, one clone plus an IV
+    // CFB does exactly the same work here -- one key expansion per key, one borrow plus an IV
     // draw per encryptor -- so these should match the CBC numbers. A divergence would mean one
     // mode is doing something extra at construction time.
     group.bench_function("AES_128 from_key_material, CFB (key schedule)", |b| {
         b.iter(|| black_box(AES128Key::<CFB>::from_key_material(black_box(&k128)).unwrap()))
     });
-    group.bench_function("AES_128 create_encryptor, CFB (schedule clone + IV draw)", |b| {
+    group.bench_function("AES_128 create_encryptor, CFB (borrow + IV draw)", |b| {
         b.iter(|| black_box(black_box(&cfb128).create_encryptor(&mut rng).unwrap().1))
     });
-    group.bench_function("AES_128 create_decryptor, CFB (schedule clone)", |b| {
+    group.bench_function("AES_128 create_decryptor, CFB (borrow)", |b| {
         b.iter(|| black_box(black_box(&cfb128).create_decryptor(&iv)))
     });
 
