@@ -176,8 +176,12 @@ impl Camellia128Internal {
 }
 
 impl Camellia192Internal {
-    /// Expands a 24-byte key into the Camellia-192 subkeys. See [`ElectronicCodeBook::new`] for the
-    /// error cases.
+    /// Expands a 24-byte key into the Camellia-192 subkeys (Sec 2.2).
+    ///
+    /// # Errors
+    /// * [`KeyMaterialError::InvalidKeyType`] if the key is not [`KeyType::SymmetricCipherKey`].
+    /// * [`KeyMaterialError::InvalidLength`] if the key is not 24 bytes long.
+    /// * [`KeyMaterialError::SecurityStrength`] if the key carries a strength below 128 bits.
     pub(crate) fn new(key: &KeyMaterial<24>) -> Result<Self, SymmetricCipherError> {
         Self::validate(key)?;
         Ok(Self { schedule: expand::<Camellia192Params>(key.ref_to_bytes()) })
@@ -185,8 +189,12 @@ impl Camellia192Internal {
 }
 
 impl Camellia256Internal {
-    /// Expands a 32-byte key into the Camellia-256 subkeys. See [`ElectronicCodeBook::new`] for the
-    /// error cases.
+    /// Expands a 32-byte key into the Camellia-256 subkeys (Sec 2.2).
+    ///
+    /// # Errors
+    /// * [`KeyMaterialError::InvalidKeyType`] if the key is not [`KeyType::SymmetricCipherKey`].
+    /// * [`KeyMaterialError::InvalidLength`] if the key is not 32 bytes long.
+    /// * [`KeyMaterialError::SecurityStrength`] if the key carries a strength below 128 bits.
     pub(crate) fn new(key: &KeyMaterial<32>) -> Result<Self, SymmetricCipherError> {
         Self::validate(key)?;
         Ok(Self { schedule: expand::<Camellia256Params>(key.ref_to_bytes()) })

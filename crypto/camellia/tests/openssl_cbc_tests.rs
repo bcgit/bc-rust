@@ -75,9 +75,9 @@ fn concat<const N: usize>(blocks: &[&str]) -> [u8; N] {
 
 /// A chained CBC message of `N` bytes under `IV`, through a `CBC<Blocks>` key: one call, block by
 /// block, both directions.
-fn check_chain<'k, const KEY_LEN: usize, K, const N: usize>(
+fn check_chain<const KEY_LEN: usize, K, const N: usize>(
     name: &str,
-    key: &'k K,
+    key: &K,
     pt: &[u8; N],
     ct: &[u8; N],
 ) where
