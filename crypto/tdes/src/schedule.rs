@@ -170,9 +170,9 @@ mod tests {
     /// `KS(n, KEY)` written out the long way from Appendix A, as a 48-bit value.
     fn ks_reference(n: usize, key: u64) -> u64 {
         let (mut c, mut d) = pc1(key);
-        for i in 0..n {
-            c = rotl28(c, SHIFTS[i]);
-            d = rotl28(d, SHIFTS[i]);
+        for &shift in &SHIFTS[..n] {
+            c = rotl28(c, shift);
+            d = rotl28(d, shift);
         }
         let cd = ((c as u64) << 28) | d as u64;
         let mut k = 0u64;

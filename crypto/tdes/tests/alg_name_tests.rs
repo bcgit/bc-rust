@@ -82,13 +82,12 @@ fn the_engines_keep_their_own_names() {
     assert_eq!(TDES2Internal::MAX_SECURITY_STRENGTH, SecurityStrength::None);
 }
 
-/// Three-key TDEA may encrypt; two-key TDEA may not (SP 800-131A Rev 2 Table 1), which is the
-/// gate the modes check at compile time.
-#[test]
-fn only_the_three_key_engine_is_approved_for_encryption() {
+// Three-key TDEA may encrypt; two-key TDEA may not (SP 800-131A Rev 2 Table 1), which is the
+// gate the modes check at compile time -- so this is checked at compile time too.
+const _: () =
     assert!(<TDESInternal as ElectronicCodeBook<KEY_LEN, BLOCK_LEN>>::ENCRYPTION_APPROVED);
+const _: () =
     assert!(!<TDES2Internal as ElectronicCodeBook<KEY_LEN_2KEY, BLOCK_LEN>>::ENCRYPTION_APPROVED);
-}
 
 /// The engines are exactly their packed schedules, the sizes the crate docs quote: sixteen
 /// two-word round keys per DEA key, three or two keys, and nothing else.
