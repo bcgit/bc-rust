@@ -72,9 +72,7 @@ pub trait AeadEncryptMode<
     const FINAL_LEN: usize,
 >: Mode<P>
 {
-    /// The streaming encryptor this mode produces over `P`. It borrows the key state it was made
-    /// from for `'k`: the schedule is read through the reference, never copied into the worker,
-    /// and the worker cannot outlive the state.
+    /// The streaming encryptor this mode produces over `P`, borrowing the key state for `'k`.
     type Encryptor<'k>: AEADCipherEncryptor<NONCE_LEN, TAG_LEN, FINAL_LEN>
     where
         P: 'k;
@@ -139,9 +137,7 @@ pub trait AeadDecryptMode<
     const FINAL_LEN: usize,
 >: Mode<P>
 {
-    /// The streaming decryptor this mode produces over `P`. It borrows the key state it was made
-    /// from for `'k`: the schedule is read through the reference, never copied into the worker,
-    /// and the worker cannot outlive the state.
+    /// The streaming decryptor this mode produces over `P`, borrowing the key state for `'k`.
     type Decryptor<'k>: AEADCipherDecryptor<NONCE_LEN, TAG_LEN, FINAL_LEN>
     where
         P: 'k;
@@ -180,9 +176,7 @@ pub trait AeadDeclaredEncryptMode<
     const FINAL_LEN: usize,
 >: Mode<P>
 {
-    /// The streaming encryptor this mode produces over `P`. It borrows the key state it was made
-    /// from for `'k`: the schedule is read through the reference, never copied into the worker,
-    /// and the worker cannot outlive the state.
+    /// The streaming encryptor this mode produces over `P`, borrowing the key state for `'k`.
     type Encryptor<'k>: AEADCipherEncryptor<NONCE_LEN, TAG_LEN, FINAL_LEN>
     where
         P: 'k;
@@ -256,9 +250,7 @@ pub trait AeadDeclaredDecryptMode<
     const FINAL_LEN: usize,
 >: Mode<P>
 {
-    /// The streaming decryptor this mode produces over `P`. It borrows the key state it was made
-    /// from for `'k`: the schedule is read through the reference, never copied into the worker,
-    /// and the worker cannot outlive the state.
+    /// The streaming decryptor this mode produces over `P`, borrowing the key state for `'k`.
     type Decryptor<'k>: AEADCipherDecryptor<NONCE_LEN, TAG_LEN, FINAL_LEN>
     where
         P: 'k;
@@ -303,9 +295,7 @@ pub trait SymmetricEncryptMode<
     const FINAL_LEN: usize,
 >: Mode<P>
 {
-    /// The streaming encryptor this mode produces over `P`. It borrows the key state it was made
-    /// from for `'k`: the schedule is read through the reference, never copied into the worker,
-    /// and the worker cannot outlive the state.
+    /// The streaming encryptor this mode produces over `P`, borrowing the key state for `'k`.
     type Encryptor<'k>: SymmetricCipherEncryptor<INIT_DATA_LEN, FINAL_LEN>
     where
         P: 'k;
@@ -328,9 +318,7 @@ pub trait SymmetricDecryptMode<
     const FINAL_LEN: usize,
 >: Mode<P>
 {
-    /// The streaming decryptor this mode produces over `P`. It borrows the key state it was made
-    /// from for `'k`: the schedule is read through the reference, never copied into the worker,
-    /// and the worker cannot outlive the state.
+    /// The streaming decryptor this mode produces over `P`, borrowing the key state for `'k`.
     type Decryptor<'k>: SymmetricCipherDecryptor<INIT_DATA_LEN, FINAL_LEN>
     where
         P: 'k;
@@ -352,9 +340,7 @@ pub trait BlockEncryptMode<
     const BLOCK_LEN: usize,
 >: Mode<P>
 {
-    /// The streaming encryptor this mode produces over `P`. It borrows the key state it was made
-    /// from for `'k`: the schedule is read through the reference, never copied into the worker,
-    /// and the worker cannot outlive the state.
+    /// The streaming encryptor this mode produces over `P`, borrowing the key state for `'k`.
     type Encryptor<'k>: BlockCipherEncryptor<INIT_DATA_LEN, BLOCK_LEN>
     where
         P: 'k;
@@ -377,9 +363,7 @@ pub trait BlockDecryptMode<
     const BLOCK_LEN: usize,
 >: Mode<P>
 {
-    /// The streaming decryptor this mode produces over `P`. It borrows the key state it was made
-    /// from for `'k`: the schedule is read through the reference, never copied into the worker,
-    /// and the worker cannot outlive the state.
+    /// The streaming decryptor this mode produces over `P`, borrowing the key state for `'k`.
     type Decryptor<'k>: BlockCipherDecryptor<INIT_DATA_LEN, BLOCK_LEN>
     where
         P: 'k;
@@ -395,9 +379,7 @@ pub trait BlockDecryptMode<
 /// takes no RNG and cannot fail. Its own pair rather than [`BlockEncryptMode`] with
 /// `INIT_DATA_LEN = 0`, so that nothing is handed an RNG it has no use for.
 pub trait EcbEncryptMode<P, const KEY_LEN: usize, const BLOCK_LEN: usize>: Mode<P> {
-    /// The streaming encryptor this mode produces over `P`. It borrows the key state it was made
-    /// from for `'k`: the schedule is read through the reference, never copied into the worker,
-    /// and the worker cannot outlive the state.
+    /// The streaming encryptor this mode produces over `P`, borrowing the key state for `'k`.
     type Encryptor<'k>: BlockCipherEncryptor<0, BLOCK_LEN>
     where
         P: 'k;
@@ -408,9 +390,7 @@ pub trait EcbEncryptMode<P, const KEY_LEN: usize, const BLOCK_LEN: usize>: Mode<
 
 /// The decryption side of ECB over `P`; see [`EcbEncryptMode`].
 pub trait EcbDecryptMode<P, const KEY_LEN: usize, const BLOCK_LEN: usize>: Mode<P> {
-    /// The streaming decryptor this mode produces over `P`. It borrows the key state it was made
-    /// from for `'k`: the schedule is read through the reference, never copied into the worker,
-    /// and the worker cannot outlive the state.
+    /// The streaming decryptor this mode produces over `P`, borrowing the key state for `'k`.
     type Decryptor<'k>: BlockCipherDecryptor<0, BLOCK_LEN>
     where
         P: 'k;
