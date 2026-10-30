@@ -22,9 +22,8 @@
 //! `bouncycastle-ecdsa`) there is no deterministic default here. [`bouncycastle_core::traits::Signer`]'s
 //! own docs say its trait is "assumed to source all its randomness from bouncycastle's default
 //! os-backed RNG", so [`Signer::sign`]/[`Signer::do_sign_final`] do exactly that (via [`bouncycastle_rng::DefaultRNG`]);
-//! [`SM2::sign_randomized`] is offered alongside for a caller-supplied RNG, the same "additional
-//! capability" shape `bouncycastle-ecdsa`'s curves offer for their own randomised alternative to
-//! RFC 6979.
+//! [`SM2::sign_randomized`] is offered alongside for a caller-supplied RNG, as `bouncycastle-ecdsa`'s
+//! randomised signers offer `sign_rng`.
 //!
 //! # Retry convention
 //!

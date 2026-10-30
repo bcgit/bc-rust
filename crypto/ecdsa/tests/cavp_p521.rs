@@ -115,7 +115,7 @@ fn cavp_keypair_consistency() {
 
 /// `ECDSA_SigGen.txt` -- NIST's `SigGen.txt` from `186-4ecdsatestvectors.zip`, the form of the
 /// SigGen vectors that carries `d` and the per-message secret `k`, which the response-file form
-/// `ECDSA_SigGen.rsp` omits. `k` is injected through [`FixedBytesRng`] and `sign_randomized`
+/// `ECDSA_SigGen.rsp` omits. `k` is injected through [`FixedBytesRng`] and `sign_rng`
 /// (see that type's docs for why an RNG returning `k - 1` yields exactly `k`), so this pins
 /// signing output against NIST's values through the public API. RFC 6979's own vectors pin the
 /// deterministic path; this is the only NIST check on the randomised one.
@@ -143,7 +143,7 @@ fn cavp_siggen() {
             .expect("CAVP Q must be a valid public key");
 
         let mut rng = FixedBytesRng::new(k_minus_1);
-        let sig = ECDSAP521::sign_randomized(&sk, &msg, &mut rng)
+        let sig = ECDSAP521::sign_rng(&sk, &msg, None, &mut rng)
             .expect("signing with a valid key and k must succeed");
         assert_eq!(sig, signature_bytes(&r, &s), "mismatch for record {:?}", record.fields);
         ECDSAP521::verify(&pk, &msg, None, &sig).expect("NIST's own signature must verify");
