@@ -961,8 +961,6 @@ enum Subcommands {
         nonce_file: Option<String>,
 
         /// Associated data in hex (authenticated but not encrypted).
-
-        /// Associated data in hex (authenticated but not encrypted).
         #[arg(long)]
         ad: Option<String>,
 
