@@ -161,8 +161,9 @@
 //! ## Nonce uniqueness
 //!
 //! As with all symmetric cipher modes, repeated key and nonce for multiple messages is catastrophic
-//! for security, which is why the nonce is always drawn from the library's default RNG or a provided
-//! RNG and never accepted from the caller.
+//! for security, which is why the key's `create_encryptor` draws the nonce from the caller's RNG.
+//! The forms that take a supplied nonce, `create_encryptor_nonce` and the `_nonce` one-shots on
+//! the key and [`Gcm::from_key_state_nonce`] here, leave uniqueness to the caller.
 //!
 //! ## Invocation limit
 //!
