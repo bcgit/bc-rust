@@ -31,16 +31,23 @@
 //!
 //! The numbers that do mean something come from the compiler's frame-layout remarks, as for
 //! `bench_aes_mem_usage`: build this binary with
-//! `RUSTFLAGS="-C remark=prologepilog -C remark=stack-frame-layout"` and read the frame of each
-//! `measure` closure, which is the operation's frame with nothing else in it. The engine is built
-//! in an `#[inline(never)]` helper so its frame is a sibling of the operation's, and the
-//! operation runs in a non-inlined, non-returning closure so nothing crosses back across the
-//! boundary. The persistent cost, the subkeys, is what `print_struct_sizes` prints. There are no
-//! lookup tables; a table-driven engine adds anywhere from 256 bytes to 4 KiB of them on top.
+//! `RUSTFLAGS="-C remark=prologepilog -C remark=stack-frame-layout"`, with `main` calling every
+//! bench so none is dead-stripped, and sum the deepest chain of frames below each `measure`
+//! closure. The closure is not the whole cost: `encrypt_4blocks` (or the schedule's `expand`),
+//! `f` and `ortho` keep their own frames under it (`objdump -d` shows the calls), each with its
+//! 8-byte return address. The engine is built in an `#[inline(never)]` helper so its frame is a
+//! sibling of the operation's, and the operation runs in a non-inlined, non-returning closure so
+//! nothing crosses back across the boundary. The persistent cost, the subkeys, is what
+//! `print_struct_sizes` prints. There are no lookup tables; a table-driven engine adds anywhere
+//! from 256 bytes to 4 KiB of them on top.
 //!
-//! With rustc 1.97 nightly on x86-64 the closure frames are 456 B for Camellia-128's `new` and
+//! With rustc 1.97 nightly on x86-64 the frames are: closures 456 B for Camellia-128's `new`,
 //! 584 B for the other two, 88 B for the one- and four-block entry points and 104 B for the
-//! two-block ones; the crate docs tabulate them with the 8-byte return address added.
+//! two-block ones; `expand` 248 B for Camellia-128 and 328 B for the other two; `encrypt_4blocks`
+//! and `decrypt_4blocks` 200 B, or 232 B and 216 B for the copies the four-block closures call;
+//! `f` 152 B; `ortho` 24 B. The crate docs tabulate the chains: `new` 720 B for Camellia-128 and
+//! 1120 B for the other two, 496 B for the one-block calls, 512 B for the two-block calls and
+//! `decrypt_4blocks`, 528 B for `encrypt_4blocks`.
 
 #![allow(dead_code)]
 #![allow(unused_imports)]

@@ -221,19 +221,21 @@
 //!
 //! Per-call stack usage is the four-block working state -- two 64-bit halves per block, 64
 //! bytes -- plus the eight `u32` planes of the S-box argument (32 bytes), their copy during the
-//! rotations (32 bytes), and the circuit's temporaries, most of which the compiler keeps in
-//! registers. Every entry point runs the same four-lane circuit, so the one-, two- and four-block
-//! calls cost the same working state, and only key expansion depends on the key length. Measured
-//! as the frame of each entry point's `measure` closure in
-//! `mem_usage_benches/src/bench_camellia_mem_usage.rs`, from the compiler's frame-layout remarks
-//! in the release build (x86-64, rustc 1.97 nightly, return address included):
+//! rotations (32 bytes), and the circuit's spills. Every entry point runs the same four-lane
+//! circuit, so the one-, two- and four-block calls cost the same working state, and only key
+//! expansion depends on the key length. Measured as the deepest frame chain below each entry
+//! point's `measure` closure in `mem_usage_benches/src/bench_camellia_mem_usage.rs`: the
+//! closure, then the out-of-line `encrypt_4blocks` (or the schedule's `expand`), `f` and
+//! `ortho` frames under it, from the compiler's frame-layout remarks and the disassembly of the
+//! release build (x86-64, rustc 1.97 nightly, return addresses included):
 //!
 //! | Entry point | Camellia-128 | Camellia-192 | Camellia-256 |
 //! |---|---|---|---|
-//! | `new` (key expansion) | 464 B | 592 B | 592 B |
-//! | `encrypt_block` / `decrypt_block` | 96 B | 96 B | 96 B |
-//! | `encrypt_2blocks` / `decrypt_2blocks` | 112 B | 112 B | 112 B |
-//! | `encrypt_4blocks` / `decrypt_4blocks` | 96 B | 96 B | 96 B |
+//! | `new` (key expansion) | 720 B | 1120 B | 1120 B |
+//! | `encrypt_block` / `decrypt_block` | 496 B | 496 B | 496 B |
+//! | `encrypt_2blocks` / `decrypt_2blocks` | 512 B | 512 B | 512 B |
+//! | `encrypt_4blocks` | 528 B | 528 B | 528 B |
+//! | `decrypt_4blocks` | 512 B | 512 B | 512 B |
 //!
 //! For comparison, a table-driven implementation carries anywhere from 256 bytes to 4 KiB of
 //! tables on top of a 272-byte subkey array sized for the largest key.
