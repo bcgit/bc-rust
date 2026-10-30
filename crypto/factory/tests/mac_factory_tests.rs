@@ -3,6 +3,7 @@ mod hash_factory_tests {
     use bouncycastle_core::key_material::{KeyMaterial, KeyType};
     use bouncycastle_core::symmetric_key::{MacGenerationKey, MacVerificationKey};
     use bouncycastle_core::traits::MAC;
+    use bouncycastle_factory::FactoryError;
     use bouncycastle_factory::mac_factory::MACFactory;
     use bouncycastle_hex as hex;
 
@@ -174,6 +175,18 @@ mod hash_factory_tests {
                     )
                 );
             }
+        }
+
+        /// A factory key authenticates any number of messages, which a Poly1305 key must never
+        /// do, so the name is refused even with a key every other MAC here accepts.
+        #[test]
+        fn poly1305_is_not_offered() {
+            let key = KeyMaterial::<32>::from_bytes_as_type(&[0x42; 32], KeyType::MACKey).unwrap();
+            assert!(MACFactory::new(bouncycastle_sm3::hmac::HMAC_SM3_NAME, &key).is_ok());
+            assert!(matches!(
+                MACFactory::new("Poly1305", &key),
+                Err(FactoryError::UnsupportedAlgorithm(_))
+            ));
         }
     }
 }

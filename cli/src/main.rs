@@ -6,6 +6,8 @@ mod aes_ctr_cmd;
 mod aes_ecb_cmd;
 mod aes_gcm_cmd;
 mod ascon_cmd;
+mod chacha20_cmd;
+mod chacha20_poly1305_cmd;
 mod encoders_cmd;
 mod helpers;
 mod hkdf_cmd;
@@ -1006,6 +1008,115 @@ enum Subcommands {
     /// Supports streaming for low memory footprint and continuous processing from stdin to stdout.
     Base64Encode,
 
+    /// ChaCha20 (RFC 8439 Sec 2.4), streaming stdin to stdout.
+    ///
+    /// On `encrypt`, a fresh nonce is generated and written as the FIRST 12 BYTES of the output;
+    /// on `decrypt` it is read back from the first 12 bytes of the input, so the two compose
+    /// directly in a pipeline. The block counter starts at 0.
+    ///
+    /// With `--iv` (hex) or `--iv-file` (raw bytes), the 12-byte nonce is supplied instead:
+    /// `encrypt` uses it and writes ONLY the ciphertext, and `decrypt` reads ONLY ciphertext from
+    /// stdin, so a nonce left at the front of the input is decrypted as ciphertext. The nonce MUST
+    /// be unique per message under one key: a repeat gives the same keystream, and the XOR of the
+    /// two ciphertexts is then the XOR of the two plaintexts (RFC 8439 Sec 4). That is the
+    /// caller's responsibility, which the default takes care of.
+    ///
+    /// Input may be ANY length, up to 2^32 64-byte blocks (256 GiB) per message, and the
+    /// ciphertext is exactly as long as the plaintext.
+    ///
+    /// WARNING: ChaCha20 provides confidentiality only and is as malleable as CTR: flipping a
+    /// ciphertext bit flips the same plaintext bit. Use `chacha20-poly1305` unless the ciphertext
+    /// is authenticated separately.
+    ///
+    /// Note: in production uses, secrets should not be passed on the command-line because they get
+    /// logged in shell history. Use the file-based input instead.
+    CHACHA20 {
+        #[arg(short, long)]
+        direction: CipherDirection,
+
+        /// The 32-byte key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 32-byte key, in binary or hex.
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        /// The 12-byte nonce in hex. Supplied instead of generated: `encrypt` then writes none
+        /// and `decrypt` reads none. See the nonce paragraph above.
+        #[arg(long)]
+        iv: Option<String>,
+
+        /// A file containing the 12-byte nonce, as raw bytes exactly as they are (no hex
+        /// decoding). If both iv and iv_file options are provided, the file will be used.
+        #[arg(long)]
+        iv_file: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// ChaCha20-Poly1305 (RFC 8439 Sec 2.8), streaming stdin to stdout.
+    ///
+    /// On `encrypt`, a fresh 12-byte nonce is generated and written as the FIRST 12 BYTES of the
+    /// output, the ciphertext follows, and the 16-byte tag is written last. `decrypt` reads the
+    /// nonce back from the first 12 bytes of input and streams the rest, checking the tag once
+    /// input is exhausted.
+    ///
+    /// With `--iv` (hex) or `--iv-file` (raw bytes), the nonce is supplied instead: `encrypt` uses
+    /// it and writes ONLY `ciphertext || tag`, and `decrypt` reads ONLY that from stdin, so a nonce
+    /// left at the front of the input fails the tag check. The nonce MUST be unique per message
+    /// under one key (RFC 8439 Sec 2.8), and a repeat is worse here than for `chacha20`: the two
+    /// messages then share the keystream, which reveals the XOR of their plaintexts, and the
+    /// one-time Poly1305 key (Sec 4), which must be unique per message (Sec 2.5) because two tags
+    /// under it let an attacker forge others. The default takes care of that; with `--iv` it is on
+    /// the caller.
+    ///
+    /// See `aes128-gcm` for the AAD flags and the streaming warning, which apply here unchanged.
+    ///
+    /// Note: in production uses, secrets should not be passed on the command-line because they get
+    /// logged in shell history. Use the file-based input instead.
+    CHACHA20_POLY1305 {
+        #[arg(short, long)]
+        direction: CipherDirection,
+
+        /// The 32-byte key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 32-byte key, in binary or hex.
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        /// The 12-byte nonce in hex. Supplied instead of generated: `encrypt` then writes none and
+        /// `decrypt` reads none. See the nonce paragraph above.
+        #[arg(long)]
+        iv: Option<String>,
+
+        /// A file containing the 12-byte nonce, as raw bytes exactly as they are (no hex
+        /// decoding). If both iv and iv_file options are provided, the file will be used.
+        #[arg(long)]
+        iv_file: Option<String>,
+
+        /// The additional authenticated data, in hex. Covered by the tag but not encrypted.
+        #[arg(long)]
+        aad: Option<String>,
+
+        /// A file containing the additional authenticated data, as raw bytes (never hex-decoded).
+        /// If both aad and aad_file options are provided, the file will be used.
+        #[arg(long)]
+        aad_file: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
     /// The HashML-DSA-44 signature algorithm.
     HashMLDSA44 {
         action: MLDSAAction,
@@ -1574,6 +1685,31 @@ enum Subcommands {
         x: bool,
     },
 
+    /// Compute or verify a Poly1305 tag (RFC 8439 Sec 2.5) over the content provided on stdin.
+    ///
+    /// WARNING: the key is ONE-TIME. MACing two messages under the same 32-byte key lets an
+    /// attacker forge tags. For general-purpose authentication use an HMAC or KMAC command, or
+    /// `chacha20-poly1305`, which derives a fresh Poly1305 key for every message.
+    POLY1305 {
+        /// The 32-byte one-time key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 32-byte one-time key in binary.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        /// A 16-byte tag to be verified.
+        /// The command will output either 0 for success or -1 for verification failure.
+        #[arg(short, long)]
+        verify: Option<String>,
+
+        #[arg(short)]
+        /// Output the tag in hex format.
+        x: bool,
+    },
+
     /// Generate cryptographically-secure random bytes, seeded from the operating system's entropy source (/dev/random or equivalent).
     /// Uses the library's default 256-bit secure RNG algorithm.
     RNG {
@@ -1894,6 +2030,23 @@ fn run() {
         Some(Subcommands::Base64Encode) => {
             encoders_cmd::base64_encode_cmd();
         }
+        Some(Subcommands::CHACHA20 { direction, key, key_file, iv, iv_file, x }) => {
+            chacha20_cmd::chacha20_cmd(direction, key, key_file, iv, iv_file, *x);
+        }
+        Some(Subcommands::CHACHA20_POLY1305 {
+            direction,
+            key,
+            key_file,
+            iv,
+            iv_file,
+            aad,
+            aad_file,
+            x,
+        }) => {
+            chacha20_poly1305_cmd::chacha20_poly1305_cmd(
+                direction, key, key_file, iv, iv_file, aad, aad_file, *x,
+            );
+        }
         Some(Subcommands::HashMLDSA44 { action, ctxfile, skfile, pkfile, sigfile, x }) => {
             mldsa_cmd::hash_mldsa44_sha512_cmd(action, ctxfile, skfile, pkfile, sigfile, *x);
         }
@@ -1992,6 +2145,9 @@ fn run() {
         }
         Some(Subcommands::PARALLELHASH256 { length, block_size, customization, x }) => {
             sha3_cmd::parallelhash_cmd(256, *length, *block_size, customization, *x);
+        }
+        Some(Subcommands::POLY1305 { key, key_file, verify, x }) => {
+            mac_cmd::poly1305_cmd(key, key_file, verify, *x)
         }
         Some(Subcommands::RNG { len, x }) => rng_cmd::rng_cmd(*len, *x),
         Some(Subcommands::SHA3_224 { x }) => {
