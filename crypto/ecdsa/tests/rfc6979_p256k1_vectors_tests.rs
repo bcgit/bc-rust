@@ -12,7 +12,7 @@ use bouncycastle_core::traits::{
 };
 use bouncycastle_ec::p256k1_comb::comb_multiply_base_point;
 use bouncycastle_ec::p256k1_scalar::P256K1Scalar;
-use bouncycastle_ecdsa::ecdsa_p256k1::ECDSASecp256K1;
+use bouncycastle_ecdsa::ecdsa_p256k1::ECDetDSASecp256K1;
 use bouncycastle_ecdsa::keys_p256k1::{ECDSASecp256K1PrivateKey, ECDSASecp256K1PublicKey};
 use bouncycastle_ecdsa::rfc6979_p256k1::generate_k;
 use bouncycastle_hex::decode as hex_decode;
@@ -127,7 +127,7 @@ fn generate_k_matches_vectors() {
 fn deterministic_sign_matches_vectors() {
     for v in CASES {
         let sk = ECDSASecp256K1PrivateKey::from_bytes(&bytes32(v.d)).unwrap();
-        let sig = ECDSASecp256K1::sign(&sk, v.msg, None).unwrap();
+        let sig = ECDetDSASecp256K1::sign(&sk, v.msg, None).unwrap();
         let mut expected = [0u8; 64];
         expected[..32].copy_from_slice(&bytes32(v.r));
         expected[32..].copy_from_slice(&bytes32(v.s));
@@ -140,7 +140,7 @@ fn deterministic_signature_verifies() {
     for v in CASES {
         let sk = ECDSASecp256K1PrivateKey::from_bytes(&bytes32(v.d)).unwrap();
         let pk = public_key_for(v);
-        let sig = ECDSASecp256K1::sign(&sk, v.msg, None).unwrap();
-        ECDSASecp256K1::verify(&pk, v.msg, None, &sig).unwrap();
+        let sig = ECDetDSASecp256K1::sign(&sk, v.msg, None).unwrap();
+        ECDetDSASecp256K1::verify(&pk, v.msg, None, &sig).unwrap();
     }
 }

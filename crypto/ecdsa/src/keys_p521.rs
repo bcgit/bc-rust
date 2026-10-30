@@ -15,7 +15,7 @@
 //! than `n`'s 521 (SEC 1 octets are byte-aligned and 521 is not a multiple of 8), so a raw draw
 //! reinterpreted as a 9-limb integer can be as large as `2^528 - 1`, far past the `< 2(n-1)` a
 //! single conditional subtraction of `n - 1` assumes, and one subtraction silently leaves most of
-//! the value unreduced (a bug this module's own tests caught: `keygen`/`sign_randomized` produced
+//! the value unreduced (a bug this module's own tests caught: `keygen`/`ECDSAP521::sign` produced
 //! keys/signatures too broken to round-trip through sign+verify, despite every fixed-input KAT --
 //! which never exercises a raw, unbounded DRBG value -- passing). [`reduce_wide_bits_mod_n_minus_1`]
 //! is this module's own reduction, a single fold at bit 521 -- see its docs for why P-521 gets
@@ -239,7 +239,7 @@ pub fn keygen_from_rng(
     Ok((ECDSAP521PublicKey { x, y }, ECDSAP521PrivateKey(d)))
 }
 
-// `reduce_wide_bits_mod_n_minus_1` is private and, through `keygen`/`sign_randomized`, only ever
+// `reduce_wide_bits_mod_n_minus_1` is private and, through `keygen`/`ECDSAP521::sign`, only ever
 // reached on genuinely random DRBG output, so there is no fixed public-API input to pin a KAT
 // against -- the QUALITY_AND_STYLE.md private-function exception applies. Expected values
 // computed independently in Python via `(int.from_bytes(bytes, 'big') % (n - 1)) + 1`, not from
@@ -251,7 +251,7 @@ mod tests {
 
     #[test]
     fn known_answer_all_ff_at_the_drbg_width() {
-        // 74 bytes of 0xff: the width keygen and sign_randomized actually draw. Expected value is
+        // 74 bytes of 0xff: the width keygen and ECDSAP521 actually draw. Expected value is
         // Python's ((2^592 - 1) % (n - 1)) + 1.
         let input = [0xffu8; EXTRA_BITS_DRBG_OUTPUT_LEN];
         let expected: [u64; 9] = [

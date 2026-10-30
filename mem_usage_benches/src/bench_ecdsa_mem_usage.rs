@@ -29,9 +29,13 @@ use bouncycastle::core::traits::{
 };
 use bouncycastle::ecdsa::keys_common::DerivePublicKey;
 use bouncycastle::ecdsa::{
-    ecdsa_bp256r1::ECDSABp256r1, ecdsa_bp384r1::ECDSABp384r1, ecdsa_bp512r1::ECDSABp512r1,
-    ecdsa_p256::ECDSAP256, ecdsa_p256k1::ECDSASecp256K1, ecdsa_p384::ECDSAP384,
-    ecdsa_p521::ECDSAP521,
+    ecdsa_bp256r1::{ECDSABp256r1, ECDetDSABp256r1},
+    ecdsa_bp384r1::{ECDSABp384r1, ECDetDSABp384r1},
+    ecdsa_bp512r1::{ECDSABp512r1, ECDetDSABp512r1},
+    ecdsa_p256::{ECDSAP256, ECDetDSAP256},
+    ecdsa_p256k1::{ECDSASecp256K1, ECDetDSASecp256K1},
+    ecdsa_p384::{ECDSAP384, ECDetDSAP384},
+    ecdsa_p521::{ECDSAP521, ECDetDSAP521},
 };
 use bouncycastle::ecdsa::{
     keys as keys_p256, keys_bp256r1, keys_bp384r1, keys_bp512r1, keys_p256k1, keys_p384, keys_p521,
@@ -140,6 +144,19 @@ fn bench_p256_sign() {
     println!("{:x?}", sig);
 }
 
+fn bench_p256_sign_deterministic() {
+    eprintln!("ECDetDSA P-256/Sign");
+
+    // d = 42, well within [1, n-1] -- same fixed-key trick the crate's own tests use, so keygen's
+    // own stack cost is not folded into this measurement.
+    let mut bytes = [0u8; keys_p256::SK_LEN];
+    bytes[keys_p256::SK_LEN - 1] = 0x2A;
+    let sk = keys_p256::ECDSAP256PrivateKey::from_bytes(&bytes).unwrap();
+
+    let sig = ECDetDSAP256::sign(&sk, MSG, None).unwrap();
+    println!("{:x?}", sig);
+}
+
 fn bench_p256_verify() {
     eprintln!("ECDSA P-256/Verify");
 
@@ -171,6 +188,17 @@ fn bench_p384_sign() {
     let sk = keys_p384::ECDSAP384PrivateKey::from_bytes(&bytes).unwrap();
 
     let sig = ECDSAP384::sign(&sk, MSG, None).unwrap();
+    println!("{:x?}", sig);
+}
+
+fn bench_p384_sign_deterministic() {
+    eprintln!("ECDetDSA P-384/Sign");
+
+    let mut bytes = [0u8; keys_p384::SK_LEN];
+    bytes[keys_p384::SK_LEN - 1] = 0x2A;
+    let sk = keys_p384::ECDSAP384PrivateKey::from_bytes(&bytes).unwrap();
+
+    let sig = ECDetDSAP384::sign(&sk, MSG, None).unwrap();
     println!("{:x?}", sig);
 }
 
@@ -208,6 +236,17 @@ fn bench_p521_sign() {
     println!("{:x?}", sig);
 }
 
+fn bench_p521_sign_deterministic() {
+    eprintln!("ECDetDSA P-521/Sign");
+
+    let mut bytes = [0u8; keys_p521::SK_LEN];
+    bytes[keys_p521::SK_LEN - 1] = 0x2A;
+    let sk = keys_p521::ECDSAP521PrivateKey::from_bytes(&bytes).unwrap();
+
+    let sig = ECDetDSAP521::sign(&sk, MSG, None).unwrap();
+    println!("{:x?}", sig);
+}
+
 fn bench_p521_verify() {
     eprintln!("ECDSA P-521/Verify");
 
@@ -239,6 +278,17 @@ fn bench_secp256k1_sign() {
     let sk = keys_p256k1::ECDSASecp256K1PrivateKey::from_bytes(&bytes).unwrap();
 
     let sig = ECDSASecp256K1::sign(&sk, MSG, None).unwrap();
+    println!("{:x?}", sig);
+}
+
+fn bench_secp256k1_sign_deterministic() {
+    eprintln!("ECDetDSA secp256k1/Sign");
+
+    let mut bytes = [0u8; keys_p256k1::SK_LEN];
+    bytes[keys_p256k1::SK_LEN - 1] = 0x2A;
+    let sk = keys_p256k1::ECDSASecp256K1PrivateKey::from_bytes(&bytes).unwrap();
+
+    let sig = ECDetDSASecp256K1::sign(&sk, MSG, None).unwrap();
     println!("{:x?}", sig);
 }
 
@@ -276,6 +326,17 @@ fn bench_bp256r1_sign() {
     println!("{:x?}", sig);
 }
 
+fn bench_bp256r1_sign_deterministic() {
+    eprintln!("ECDetDSA brainpoolP256r1/Sign");
+
+    let mut bytes = [0u8; keys_bp256r1::SK_LEN];
+    bytes[keys_bp256r1::SK_LEN - 1] = 0x2A;
+    let sk = keys_bp256r1::ECDSABp256r1PrivateKey::from_bytes(&bytes).unwrap();
+
+    let sig = ECDetDSABp256r1::sign(&sk, MSG, None).unwrap();
+    println!("{:x?}", sig);
+}
+
 fn bench_bp256r1_verify() {
     eprintln!("ECDSA brainpoolP256r1/Verify");
 
@@ -307,6 +368,17 @@ fn bench_bp384r1_sign() {
     let sk = keys_bp384r1::ECDSABp384r1PrivateKey::from_bytes(&bytes).unwrap();
 
     let sig = ECDSABp384r1::sign(&sk, MSG, None).unwrap();
+    println!("{:x?}", sig);
+}
+
+fn bench_bp384r1_sign_deterministic() {
+    eprintln!("ECDetDSA brainpoolP384r1/Sign");
+
+    let mut bytes = [0u8; keys_bp384r1::SK_LEN];
+    bytes[keys_bp384r1::SK_LEN - 1] = 0x2A;
+    let sk = keys_bp384r1::ECDSABp384r1PrivateKey::from_bytes(&bytes).unwrap();
+
+    let sig = ECDetDSABp384r1::sign(&sk, MSG, None).unwrap();
     println!("{:x?}", sig);
 }
 
@@ -344,6 +416,17 @@ fn bench_bp512r1_sign() {
     println!("{:x?}", sig);
 }
 
+fn bench_bp512r1_sign_deterministic() {
+    eprintln!("ECDetDSA brainpoolP512r1/Sign");
+
+    let mut bytes = [0u8; keys_bp512r1::SK_LEN];
+    bytes[keys_bp512r1::SK_LEN - 1] = 0x2A;
+    let sk = keys_bp512r1::ECDSABp512r1PrivateKey::from_bytes(&bytes).unwrap();
+
+    let sig = ECDetDSABp512r1::sign(&sk, MSG, None).unwrap();
+    println!("{:x?}", sig);
+}
+
 fn bench_bp512r1_verify() {
     eprintln!("ECDSA brainpoolP512r1/Verify");
 
@@ -365,23 +448,30 @@ fn main() {
     // bench_do_nothing()
     // bench_p256_keygen()
     // bench_p256_sign()
+    // bench_p256_sign_deterministic()
     // bench_p256_verify()
     // bench_p384_keygen()
     // bench_p384_sign()
+    // bench_p384_sign_deterministic()
     // bench_p384_verify()
     // bench_p521_keygen()
     // bench_p521_sign()
+    // bench_p521_sign_deterministic()
     // bench_p521_verify()
     // bench_secp256k1_keygen()
     // bench_secp256k1_sign()
+    // bench_secp256k1_sign_deterministic()
     // bench_secp256k1_verify()
     // bench_bp256r1_keygen()
     // bench_bp256r1_sign()
+    // bench_bp256r1_sign_deterministic()
     // bench_bp256r1_verify()
     // bench_bp384r1_keygen()
     // bench_bp384r1_sign()
+    // bench_bp384r1_sign_deterministic()
     // bench_bp384r1_verify()
     // bench_bp512r1_keygen()
     // bench_bp512r1_sign()
+    // bench_bp512r1_sign_deterministic()
     // bench_bp512r1_verify()
 }

@@ -17,7 +17,7 @@
 //! Appendix A.3.1 is stricter than Table A.2, though. Its step 2 returns FAILURE if `t < 64` and
 //! its step 3 says: *"Obtain a bit string of N+t returned_bits from the established DRBG"*. That
 //! is a requirement on the per-message secret's draw independent of how close `n` is to a power
-//! of two, and 384 bits does not meet it. So `sign_randomized` now draws `N + 64 = 448` bits (56
+//! of two, and 384 bits does not meet it. So `ECDSAP384` now draws `N + 64 = 448` bits (56
 //! bytes, [`crate::keys_p384::EXTRA_BITS_DRBG_OUTPUT_LEN`]) and reduces them with this module.
 //! Key generation draws the same 56 bytes: Table A.2's 384 is a minimum ("not less than"), so
 //! the wider draw is permitted there too, and one reduction path per curve is simpler than two.

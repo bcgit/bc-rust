@@ -2,7 +2,7 @@ use criterion::{Criterion, criterion_group, criterion_main};
 use std::hint::black_box;
 
 use bouncycastle_core::traits::{SignatureVerifier, Signer};
-use bouncycastle_ecdsa::ecdsa_p521::ECDSAP521;
+use bouncycastle_ecdsa::ecdsa_p521::{ECDSAP521, ECDetDSAP521};
 use bouncycastle_ecdsa::keys_p521::keygen;
 use bouncycastle_rng::DefaultRNG;
 
@@ -17,17 +17,22 @@ fn bench_ecdsa_p521(c: &mut Criterion) {
     group.bench_function("sign", |bencher| {
         bencher.iter(|| black_box(ECDSAP521::sign(black_box(&sk), black_box(MSG), None).unwrap()))
     });
-    group.bench_function("sign_randomized", |bencher| {
+    group.bench_function("sign_rng", |bencher| {
         bencher.iter(|| {
             black_box(
-                ECDSAP521::sign_randomized(
+                ECDSAP521::sign_rng(
                     black_box(&sk),
                     black_box(MSG),
+                    None,
                     &mut DefaultRNG::default(),
                 )
                 .unwrap(),
             )
         })
+    });
+    group.bench_function("sign_deterministic", |bencher| {
+        bencher
+            .iter(|| black_box(ECDetDSAP521::sign(black_box(&sk), black_box(MSG), None).unwrap()))
     });
     group.bench_function("verify", |bencher| {
         bencher.iter(|| {

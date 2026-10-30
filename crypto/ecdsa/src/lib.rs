@@ -1,49 +1,71 @@
 //! ECDSA over seven curves: key generation (FIPS 186-5 Appendix A.2.1), signature generation
-//! (§6.4.1, deterministic per §6.3.2/Appendix A.3.3/RFC 6979 by default, randomised per
-//! §6.3.1/Appendix A.3.1 as an additional API), and verification (§6.4.2), built on
-//! [`bouncycastle_ec`]'s field/scalar/point arithmetic, SEC 1 encodings, and comb/wNAF
-//! multipliers. Raw `r || s` is the default signature encoding; [`der`] offers DER `SEQUENCE { r,
-//! s }` (RFC 3279 §2.2.3) as an alternative for interop that needs it.
+//! (§6.4.1) and verification (§6.4.2), built on [`bouncycastle_ec`]'s field/scalar/point
+//! arithmetic, SEC 1 encodings, and comb/wNAF multipliers. Each curve has one algorithm marker
+//! (`ECDSAP256`, `ECDSAP384`, ...) and a key pair; the private key signs through the `core` key
+//! role traits, [`SigningKey`](bouncycastle_core::signature_key::SigningKey) with a random
+//! per-message `k` (§6.3.1, Appendix A.3.1) and
+//! [`DeterministicSigningKey`](bouncycastle_core::signature_key::DeterministicSigningKey) with
+//! `k` derived from the private key and the message hash (§6.3.2, Appendix A.3.3, RFC 6979), and
+//! the public key verifies through
+//! [`VerifyingKey`](bouncycastle_core::signature_key::VerifyingKey). Since the choice of `k`
+//! "does not impact the signature verification process" (FIPS 186-5 §6), one verifier serves
+//! both, and the RFC 6979 signer reports its own name (`ECDetDSA-P256`) from `alg_name()`. Raw
+//! `r || s` is the default signature encoding; [`der`] offers DER `SEQUENCE { r, s }` (RFC 3279
+//! §2.2.3) as an alternative for interop that needs it.
 //!
 //! # Usage Examples
 //!
-//! Signing is deterministic (RFC 6979), so the same key and message always produce the same
-//! signature:
+//! `sign` draws a fresh `k` from the RNG it is given, so two signatures of one message differ;
+//! `sign_deterministic` takes no RNG and reproduces the same signature every time:
 //!
 //! ```
-//! use bouncycastle_core::traits::{SignatureVerifier, Signer};
-//! use bouncycastle_ecdsa::ecdsa_p256::ECDSAP256;
-//! use bouncycastle_ecdsa::keys::keygen;
+//! use bouncycastle_core::signature_key::{DeterministicSigningKey, SigningKey, VerifyingKey};
+//! use bouncycastle_ecdsa::keys_p256::keygen;
+//! use bouncycastle_rng::HashDRBG_SHA512;
 //!
-//! let (pk, sk) = keygen()?;
+//! let (pk, sk) = keygen(&mut HashDRBG_SHA512::new_from_os())?;
+//! let mut rng = HashDRBG_SHA512::new_from_os();
 //! let message = b"the message to sign";
 //!
-//! // ECDSA has no context string; the trait's `ctx` parameter is accepted and ignored.
-//! let signature = ECDSAP256::sign(&sk, message, None)?;
-//! assert_eq!(signature, ECDSAP256::sign(&sk, message, None)?, "RFC 6979 is deterministic");
+//! // ECDSA has no context string; the traits' `ctx` parameter is accepted and ignored.
+//! let random = sk.sign(&mut rng, message, None)?;
+//! assert_ne!(random, sk.sign(&mut rng, message, None)?, "a fresh k each time");
 //!
-//! ECDSAP256::verify(&pk, message, None, &signature)?;
-//! assert!(ECDSAP256::verify(&pk, b"a different message", None, &signature).is_err());
+//! let deterministic = sk.sign_deterministic(message, None)?;
+//! assert_eq!(deterministic, sk.sign_deterministic(message, None)?, "RFC 6979");
+//!
+//! // One verifier for both.
+//! pk.verify(message, None, &random)?;
+//! pk.verify(message, None, &deterministic)?;
+//! assert!(pk.verify(b"a different message", None, &random).is_err());
 //! # Ok::<(), bouncycastle_core::errors::SignatureError>(())
 //! ```
 //!
-//! Streaming, for a message you do not want to hold in memory at once:
+//! Streaming, for a message you do not want to hold in memory at once. The random `k` is drawn
+//! when the signer is created, so the worker itself only hashes:
 //!
 //! ```
-//! use bouncycastle_core::traits::{SignatureVerifier, Signer};
-//! use bouncycastle_ecdsa::ecdsa_p256::ECDSAP256;
-//! use bouncycastle_ecdsa::keys::keygen;
+//! use bouncycastle_core::signature_key::{DeterministicSigningKey, SigningKey, VerifyingKey};
+//! use bouncycastle_core::traits::{AlgorithmInfo, SignatureSigner, SignatureVerifier};
+//! use bouncycastle_ecdsa::keys_p256::keygen;
+//! use bouncycastle_rng::HashDRBG_SHA512;
 //!
-//! let (pk, sk) = keygen()?;
+//! let (pk, sk) = keygen(&mut HashDRBG_SHA512::new_from_os())?;
 //!
-//! let mut signer = ECDSAP256::sign_init(&sk, None)?;
-//! signer.sign_update(b"the first chunk, ");
-//! signer.sign_update(b"then the second");
-//! let signature = signer.sign_final()?;
+//! let mut signer = sk.create_signer(&mut HashDRBG_SHA512::new_from_os(), None)?;
+//! assert_eq!(signer.alg_name(), "ECDSA-P256");
+//! signer.do_update(b"the first chunk, ");
+//! signer.do_update(b"then the second");
+//! let signature = signer.do_final()?;
 //!
-//! let mut verifier = ECDSAP256::verify_init(&pk, None)?;
-//! verifier.verify_update(b"the first chunk, then the second");
-//! verifier.verify_final(&signature)?;
+//! let mut verifier = pk.create_verifier(None)?;
+//! verifier.do_update(b"the first chunk, then the second");
+//! verifier.do_verify_final(&signature)?;
+//!
+//! let mut signer = sk.create_signer_deterministic(None)?;
+//! assert_eq!(signer.alg_name(), "ECDetDSA-P256");
+//! signer.do_update(b"the first chunk, then the second");
+//! pk.verify(b"the first chunk, then the second", None, &signer.do_final()?)?;
 //! # Ok::<(), bouncycastle_core::errors::SignatureError>(())
 //! ```
 //!
@@ -52,10 +74,11 @@
 //! malformed input rather than reinterpreting it:
 //!
 //! ```
+//! use bouncycastle_rng::HashDRBG_SHA512;
 //! use bouncycastle_core::traits::{SignaturePrivateKey, SignaturePublicKey};
-//! use bouncycastle_ecdsa::keys::{ECDSAP256PrivateKey, ECDSAP256PublicKey, keygen};
+//! use bouncycastle_ecdsa::keys_p256::{ECDSAP256PrivateKey, ECDSAP256PublicKey, keygen};
 //!
-//! let (pk, sk) = keygen()?;
+//! let (pk, sk) = keygen(&mut HashDRBG_SHA512::new_from_os())?;
 //!
 //! let pk_bytes = pk.encode();
 //! assert_eq!(pk_bytes[0], 0x04);
@@ -70,19 +93,22 @@
 //! # Ok::<(), bouncycastle_core::errors::SignatureError>(())
 //! ```
 //!
-//! For interop that needs DER `SEQUENCE { r, s }` rather than raw `r || s`:
+//! For interop that needs DER `SEQUENCE { r, s }` rather than raw `r || s`, the keys have
+//! `sign_der` / `sign_der_deterministic` and `verify_der`:
 //!
 //! ```
-//! use bouncycastle_ecdsa::ecdsa_p256::ECDSAP256;
-//! use bouncycastle_ecdsa::keys::keygen;
+//! use bouncycastle_ecdsa::keys_p256::keygen;
+//! use bouncycastle_rng::HashDRBG_SHA512;
 //!
-//! let (pk, sk) = keygen()?;
-//! let (der, der_len) = ECDSAP256::sign_der(&sk, b"message", None)?;
-//! ECDSAP256::verify_der(&pk, b"message", None, &der[..der_len])?;
+//! let (pk, sk) = keygen(&mut HashDRBG_SHA512::new_from_os())?;
+//! let (der, der_len) = sk.sign_der(&mut HashDRBG_SHA512::new_from_os(), b"message", None)?;
+//! pk.verify_der(b"message", None, &der[..der_len])?;
+//! let (der, der_len) = sk.sign_der_deterministic(b"message", None)?;
+//! pk.verify_der(b"message", None, &der[..der_len])?;
 //! # Ok::<(), bouncycastle_core::errors::SignatureError>(())
 //! ```
 //!
-//! Every curve follows the same shape, in its own module pair: `ecdsa_p256`/`keys`,
+//! Every curve follows the same shape, in its own module pair: `ecdsa_p256`/`keys_p256`,
 //! `ecdsa_p384`/`keys_p384`, `ecdsa_p521`/`keys_p521`, `ecdsa_p256k1`/`keys_p256k1`,
 //! `ecdsa_bp256r1`/`keys_bp256r1`, `ecdsa_bp384r1`/`keys_bp384r1`,
 //! `ecdsa_bp512r1`/`keys_bp512r1`.
@@ -117,29 +143,47 @@
 //! also the stack-usage measurement harness (see its own doc comment for the `valgrind`/`massif`
 //! invocation).
 //!
-//! # Security Considerations
+//! # 🚨 Security Considerations 🚨
 //!
-//! - **The private key `d` and the per-message secret `k` are never handled in variable time.**
-//!   `d` lives in [`bouncycastle_ec::p256_scalar::P256Scalar`] (a [`bouncycastle_utils::secret::Secret`]);
-//!   every operation performed on it or on `k` -- inversion, multiplication, the fixed-base
-//!   scalar multiplication `[k]G` -- is branch-free and does not index memory by their value. See
-//!   [`bouncycastle_ec`]'s own module docs for the constant-time discipline this crate builds on.
+//! - **Everything done with the private key `d` and the accepted per-message secret `k` is
+//!   branch-free and does not index memory by their value**: inversion, multiplication, the
+//!   fixed-base scalar multiplication `[k]G`. `d` lives in
+//!   [`bouncycastle_ec::p256_scalar::P256Scalar`] (a [`bouncycastle_utils::secret::Secret`]); see
+//!   [`bouncycastle_ec`]'s own module docs for the constant-time discipline this crate builds on
+//!   and the exceptions it documents. This crate adds two exceptions of its own:
+//!   - The RFC 6979 candidate loop of the deterministic signers runs a data-dependent number of
+//!     iterations (the random-`k` signers draw `k` per FIPS 186-5 Appendix A.3.1, which has no
+//!     rejection loop). On the NIST curves
+//!     and secp256k1 a candidate is rejected with negligible probability; on the brainpool curves
+//!     33 % to 45 % of signatures reject at least one. Under the PRF assumption the count is
+//!     independent of the accepted `k` and reveals nothing about `d`, but it is deterministic per
+//!     `(d, message)`, so a remote observer gets a per-message timing fingerprint. See
+//!     [`rfc6979_p256::generate_k`]'s docs for the argument, the brainpool modules' for the rates, and
+//!     [`rfc6979_bp256r1::generate_k`]'s for what the fingerprint is worth.
+//!   - On `r = 0` or `s = 0`, FIPS 186-5 §6.4.1 step 11 has the random-`k` signer draw another
+//!     `k` and the deterministic one output failure (RFC 6979 §3.4 would continue its loop
+//!     instead). Both signers here report failure: the random `k` is drawn when the signer is
+//!     created and there is no RNG at `do_final` to draw another from, so the caller makes a fresh
+//!     signer. Either branch is on a public outcome, taken with probability about `2^-(len(n)-1)`.
 //! - **`k` must never repeat across two signatures under the same key with different messages.**
 //!   A repeated `k` leaks `d` directly from two signatures' `(r, s)` pairs (elementary algebra on
-//!   the ECDSA equation). This is why deterministic generation (RFC 6979) is the default here: `k`
-//!   is a function of `d` and the message hash, so the same `(d, message)` pair always regenerates
-//!   the same `k` rather than depending on a caller's RNG being correctly seeded every time.
+//!   the ECDSA equation). The random-`k` signer therefore depends on the RNG handed to
+//!   `create_signer` / `sign` being correctly seeded for every signature. The deterministic signer
+//!   removes that dependency: `k` is a function of `d` and the message hash, so the same
+//!   `(d, message)` pair always regenerates the same `k` and distinct messages give distinct `k`
+//!   (FIPS 186-5 §6.3.2: "This protects against attacks arising from generating signatures with
+//!   insufficient randomness in the per-message secret number").
 //! - **Deterministic signatures are a fault-attack target** (FIPS 186-5 §6, first paragraph): an
 //!   attacker who can induce a computational fault and observe the faulty signature may be able to
 //!   recover `d`, because a deterministic scheme will reproduce the exact same `k` on a retry. This
 //!   is a property of determinism itself, not a defect in this implementation; see FIPS 186-5's
 //!   references \[17\]-\[22\] for mitigations at the deployment level (e.g. verifying a signature
-//!   in-device before releasing it).
+//!   in-device before releasing it). Where that attacker is in the threat model and the RNG is
+//!   trusted, the random-`k` signer (`SigningKey`) is the one to use.
 //! - **`ctx` is accepted but ignored.** ECDSA (FIPS 186-5, SEC 1) has no context-string input;
-//!   `Signer`/`SignatureVerifier`'s `ctx` parameter is accepted for trait conformance and silently
-//!   discarded, per the sanctioned behaviour `core::traits::Signer`'s own docs list ("ignore the
-//!   provided ctx value"). A caller relying on `ctx` to bind a signature to an application context
-//!   gets no such binding from ECDSA.
+//!   the key traits' `ctx` parameter is accepted for trait conformance and silently discarded. A
+//!   caller relying on `ctx` to bind a signature to an application context gets no such binding
+//!   from ECDSA.
 
 #![no_std]
 #![forbid(unsafe_code)]
@@ -153,24 +197,24 @@ pub mod ecdsa_p256;
 pub mod ecdsa_p256k1;
 pub mod ecdsa_p384;
 pub mod ecdsa_p521;
-pub mod extra_bits;
 pub mod extra_bits_bp256r1;
 pub mod extra_bits_bp384r1;
 pub mod extra_bits_bp512r1;
+pub mod extra_bits_p256;
 pub mod extra_bits_p256k1;
 pub mod extra_bits_p384;
-pub mod keys;
 pub mod keys_bp256r1;
 pub mod keys_bp384r1;
 pub mod keys_bp512r1;
 pub mod keys_common;
+pub mod keys_p256;
 pub mod keys_p256k1;
 pub mod keys_p384;
 pub mod keys_p521;
-pub mod rfc6979;
 pub mod rfc6979_bp256r1;
 pub mod rfc6979_bp384r1;
 pub mod rfc6979_bp512r1;
+pub mod rfc6979_p256;
 pub mod rfc6979_p256k1;
 pub mod rfc6979_p384;
 pub mod rfc6979_p521;

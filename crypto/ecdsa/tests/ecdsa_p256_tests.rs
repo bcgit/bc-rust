@@ -1,7 +1,7 @@
 //! Behavioural tests for [`ECDSAP256`]: the shared `core-test-framework` conformance suite (per
 //! QUALITY_AND_STYLE's rule that trait conformance lives there, not per-implementation), key
 //! encode/decode boundary conditions, and this crate's own additions the generic suite doesn't
-//! cover -- the randomised (Appendix A.3.1) signing path and public-key encoding round trips.
+//! cover -- the `sign_rng` path and public-key encoding round trips.
 
 use bouncycastle_core::errors::SignatureError;
 use bouncycastle_core::traits::{
@@ -12,7 +12,7 @@ use bouncycastle_core_test_framework::signature::{
 };
 use bouncycastle_ec::p256_scalar::N_LIMBS;
 use bouncycastle_ec::p256_sec1::be_bytes_from_limbs;
-use bouncycastle_ecdsa::ecdsa_p256::ECDSAP256;
+use bouncycastle_ecdsa::ecdsa_p256::{ECDSAP256, ECDetDSAP256};
 use bouncycastle_ecdsa::keys::{ECDSAP256PrivateKey, ECDSAP256PublicKey, keygen};
 use bouncycastle_ecdsa::keys_common::DerivePublicKey;
 use bouncycastle_rng::DefaultRNG;
@@ -23,16 +23,39 @@ fn derive_pk_matches_keygen() {
     assert_eq!(sk.derive_pk(), pk);
 }
 
-/// RFC 6979 §3.4/§3.6: `k` is a deterministic function of `d` and the message, so `sign` always
-/// reproduces the same `(r, s)`; ECDSA has no `ctx` input at all, so it ignores the one the
-/// [`Signer`]/[`SignatureVerifier`] traits offer.
+/// [`ECDSAP256`] draws a fresh `k` per signature (FIPS 186-5 Appendix A.3.1), so the suite expects
+/// two signatures of one message to differ. ECDSA has no `ctx` input at all, so it ignores the one
+/// the [`Signer`]/[`SignatureVerifier`] traits offer.
 #[test]
 fn conformance_suite() {
-    let framework = TestFrameworkSignature::new(true, false);
+    let framework = TestFrameworkSignature::new(false, false);
     framework.test_signature::<ECDSAP256PublicKey, ECDSAP256PrivateKey, ECDSAP256, ECDSAP256, 65, 32, 64>(
         keygen,
         true,
     );
+}
+
+/// RFC 6979 §3.4/§3.6: `k` is a deterministic function of `d` and the message, so [`ECDetDSAP256`]
+/// always reproduces the same `(r, s)`.
+#[test]
+fn deterministic_conformance_suite() {
+    let framework = TestFrameworkSignature::new(true, false);
+    framework.test_signature::<ECDSAP256PublicKey, ECDSAP256PrivateKey, ECDetDSAP256, ECDetDSAP256, 65, 32, 64>(
+        keygen,
+        true,
+    );
+}
+
+/// FIPS 186-5 §6: Deterministic ECDSA "does not impact the signature verification process", so
+/// either type's signature verifies under the other.
+#[test]
+fn signatures_verify_across_the_two_types() {
+    let (pk, sk) = keygen().unwrap();
+    let msg = b"one verifier for both kinds of k";
+    let random = ECDSAP256::sign(&sk, msg, None).unwrap();
+    let deterministic = ECDetDSAP256::sign(&sk, msg, None).unwrap();
+    ECDetDSAP256::verify(&pk, msg, None, &random).unwrap();
+    ECDSAP256::verify(&pk, msg, None, &deterministic).unwrap();
 }
 
 #[test]
@@ -42,12 +65,12 @@ fn key_boundary_conditions() {
 }
 
 #[test]
-fn sign_randomized_produces_distinct_valid_signatures() {
+fn sign_rng_produces_distinct_valid_signatures() {
     let (pk, sk) = keygen().unwrap();
     let msg = b"randomised ECDSA signing";
 
-    let sig1 = ECDSAP256::sign_randomized(&sk, msg, &mut DefaultRNG::default()).unwrap();
-    let sig2 = ECDSAP256::sign_randomized(&sk, msg, &mut DefaultRNG::default()).unwrap();
+    let sig1 = ECDSAP256::sign_rng(&sk, msg, None, &mut DefaultRNG::default()).unwrap();
+    let sig2 = ECDSAP256::sign_rng(&sk, msg, None, &mut DefaultRNG::default()).unwrap();
     assert_ne!(sig1, sig2, "Appendix A.3.1's k comes from fresh randomness each call");
 
     ECDSAP256::verify(&pk, msg, None, &sig1).unwrap();
@@ -55,11 +78,11 @@ fn sign_randomized_produces_distinct_valid_signatures() {
 }
 
 #[test]
-fn sign_randomized_signature_rejected_under_wrong_key() {
+fn sign_rng_signature_rejected_under_wrong_key() {
     let (_, sk) = keygen().unwrap();
     let (other_pk, _) = keygen().unwrap();
     let msg = b"message";
-    let sig = ECDSAP256::sign_randomized(&sk, msg, &mut DefaultRNG::default()).unwrap();
+    let sig = ECDSAP256::sign_rng(&sk, msg, None, &mut DefaultRNG::default()).unwrap();
     match ECDSAP256::verify(&other_pk, msg, None, &sig) {
         Err(SignatureError::SignatureVerificationFailed) => {}
         other => panic!("expected SignatureVerificationFailed, got {other:?}"),
@@ -71,8 +94,8 @@ fn sign_der_matches_raw_sign_and_round_trips_through_verify_der() {
     let (pk, sk) = keygen().unwrap();
     let msg = b"DER-encoded ECDSA signing";
 
-    let raw = ECDSAP256::sign(&sk, msg, None).unwrap();
-    let (der, der_len) = ECDSAP256::sign_der(&sk, msg, None).unwrap();
+    let raw = ECDetDSAP256::sign(&sk, msg, None).unwrap();
+    let (der, der_len) = ECDetDSAP256::sign_der(&sk, msg, None).unwrap();
 
     let mut r_out = [0u8; 32];
     let mut s_out = [0u8; 32];
@@ -81,14 +104,23 @@ fn sign_der_matches_raw_sign_and_round_trips_through_verify_der() {
     assert_eq!(r_out, raw[..32], "DER-decoded r must match sign's raw r");
     assert_eq!(s_out, raw[32..], "DER-decoded s must match sign's raw s");
 
-    ECDSAP256::verify_der(&pk, msg, None, &der[..der_len]).unwrap();
+    ECDetDSAP256::verify_der(&pk, msg, None, &der[..der_len]).unwrap();
 
     let mut tampered = der;
     tampered[der_len - 1] ^= 0xFF;
     assert!(
-        ECDSAP256::verify_der(&pk, msg, None, &tampered[..der_len]).is_err(),
+        ECDetDSAP256::verify_der(&pk, msg, None, &tampered[..der_len]).is_err(),
         "a corrupted DER signature must not verify"
     );
+}
+
+#[test]
+fn sign_der_round_trips_through_either_verify_der() {
+    let (pk, sk) = keygen().unwrap();
+    let msg = b"DER-encoded ECDSA signing, random k";
+    let (der, der_len) = ECDSAP256::sign_der(&sk, msg, None).unwrap();
+    ECDSAP256::verify_der(&pk, msg, None, &der[..der_len]).unwrap();
+    ECDetDSAP256::verify_der(&pk, msg, None, &der[..der_len]).unwrap();
 }
 
 #[test]
@@ -317,9 +349,9 @@ fn verify_rejects_r_or_s_outside_1_to_n_minus_1() {
     }
 }
 
-/// One `ECDSAP256` value serves both the [`Signer`] and [`SignatureVerifier`] streaming APIs, holding
-/// whichever key its `_init` was given. Finishing with the other trait's `_final` is a caller
-/// error and must be reported as one, not panic and not produce output.
+/// One `ECDSAP256` (or `ECDetDSAP256`) value serves both the [`Signer`] and [`SignatureVerifier`]
+/// streaming APIs, holding whichever key its `_init` was given. Finishing with the other trait's
+/// `_final` is a caller error and must be reported as one, not panic and not produce output.
 #[test]
 fn sign_final_on_verify_initialized_state_errors() {
     let (pk, _) = keygen().unwrap();
@@ -338,4 +370,13 @@ fn verify_final_on_sign_initialized_state_errors() {
         Err(SignatureError::GenericError(_)) => {}
         other => panic!("expected GenericError, got {other:?}"),
     }
+}
+
+#[test]
+fn deterministic_state_misuse_errors() {
+    let (pk, sk) = keygen().unwrap();
+    let v = ECDetDSAP256::do_verify_init(&pk, None).unwrap();
+    assert!(matches!(v.do_sign_final(), Err(SignatureError::GenericError(_))));
+    let s = ECDetDSAP256::do_sign_init(&sk, None).unwrap();
+    assert!(matches!(s.do_verify_final(&[0u8; 64]), Err(SignatureError::GenericError(_))));
 }
