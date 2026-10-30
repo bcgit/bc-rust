@@ -27,11 +27,11 @@ impl TestFrameworkFromKeyMaterial {
         Self {}
     }
 
-    /// Exercises the [`FromKeyMaterial`] contract for one key type, whose workers report
-    /// `alg_name` and whose strength is `max_strength`.
+    /// Exercises the [`FromKeyMaterial`] contract for one key type, named `alg_name` in the
+    /// failure messages, whose strength is `max_strength`.
     ///
     /// Checks, in order:
-    /// * material of the right type, unbound or bound to `alg_name`, is accepted;
+    /// * material of the right type is accepted;
     /// * material of the wrong [`KeyType`] is refused with [`KeyMaterialError::InvalidKeyType`];
     /// * the security-strength policy matches `max_strength`;
     /// * [`FromKeyMaterial::generate`] draws a key from an RNG of sufficient strength, tagged
