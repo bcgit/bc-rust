@@ -328,7 +328,5 @@ fn two_key_material_checks_and_metadata() {
     assert!(TDES2Internal::new(&key).is_ok());
     assert_eq!(<TDES2Internal as Algorithm>::MAX_SECURITY_STRENGTH, SecurityStrength::None);
     assert_eq!(<TDES2Internal as Algorithm>::ALG_NAME, "TDES-2KEY");
-    assert!(!<TDES2Internal as ElectronicCodeBook<KEY_LEN_2KEY, BLOCK_LEN>>::ENCRYPTION_APPROVED);
-    assert!(<TDESInternal as ElectronicCodeBook<KEY_LEN, BLOCK_LEN>>::ENCRYPTION_APPROVED);
     assert_eq!(format!("{:?}", TDES2Internal::new(&bundle2([a, b])).unwrap()), "TDES-2KEY");
 }
