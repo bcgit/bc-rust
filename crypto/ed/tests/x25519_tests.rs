@@ -101,6 +101,20 @@ fn rfc7748_section_6_1() {
     check_value(&bob_k, "Section 6.1 K (Bob)", k);
 }
 
+/// u = 0 is a point of low order, so X25519(k, 0) is the all-zero value for every scalar, the case
+/// RFC 7748 Section 6.1 describes checking for. `calculate_agreement` must write the zeros and
+/// return `false`.
+#[test]
+fn low_order_point_gives_all_zero_shared_secret() {
+    let k = X25519Scalar::from_bytes(&decode_32(
+        "77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a",
+    ));
+    // Start from a non-zero buffer so a missing write cannot pass by accident.
+    let mut out = [0xFF_u8; POINT_SIZE];
+    assert!(!calculate_agreement(&k, &X25519Point::from_bytes([0; POINT_SIZE]), &mut out));
+    assert_eq!(out, [0; POINT_SIZE]);
+}
+
 fn decode_32(s: &str) -> [u8; 32] {
     hex::decode(s).unwrap().try_into().unwrap()
 }

@@ -810,6 +810,24 @@ mod tests {
         assert_eq!(n.0.0, [0, 0, 0, 0, 1]);
     }
 
+    /// The values either side of p, where the `y` adjustment in normalize decides the answer. Not
+    /// reachable through the public API: X25519 only normalizes ladder outputs, which land in
+    /// `[p, 2^255)` with negligible probability.
+    #[test]
+    fn normalize_edge_values() {
+        // p - 1 = 2^255 - 20: already canonical, unchanged.
+        let n = FieldElement25519([M51 - 19, M51, M51, M51, M51]).normalize();
+        assert_eq!(n.0.0, [M51 - 19, M51, M51, M51, M51]);
+
+        // p = 2^255 - 19: reduces to 0.
+        let n = FieldElement25519([M51 - 18, M51, M51, M51, M51]).normalize();
+        assert_eq!(n.0.0, [0, 0, 0, 0, 0]);
+
+        // 2^255 - 1, the largest non-canonical value: reduces to 18.
+        let n = FieldElement25519([M51, M51, M51, M51, M51]).normalize();
+        assert_eq!(n.0.0, [18, 0, 0, 0, 0]);
+    }
+
     #[test]
     fn encode_255_known_value() {
         // Start from a non-zero buffer so a partial write cannot pass by accident.
