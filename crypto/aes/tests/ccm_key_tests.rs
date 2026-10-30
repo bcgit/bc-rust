@@ -205,3 +205,43 @@ fn worker_sizes_match_the_documented_memory_table() {
     assert_eq!(size_of::<CcmDecryptor<'_, AES192Internal, 12, 16>>(), 120);
     assert_eq!(size_of::<CcmDecryptor<'_, AES256Internal, 12, 16>>(), 120);
 }
+
+/// A refused `do_encrypt_out` / `do_decrypt_out` leaves nothing of the input in the caller's
+/// buffer, and zeroes the buffer first as every `_out` method must: payload offered while declared
+/// AAD is still owed, and payload past the declared length, on both sides.
+#[test]
+fn a_refused_update_leaves_no_payload_in_the_output_buffer() {
+    use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
+
+    let key = AES128Key::<CCM<12, 16>>::from_key_material(&material::<16>()).unwrap();
+    let nonce = [0x11u8; 12];
+    let payload = [0x5Au8; 16];
+
+    // AAD still owed: the four bytes declared have not been supplied.
+    let mut enc = key.create_encryptor_nonce(&nonce, 4, 16).unwrap();
+    let mut out = [0xEEu8; 32];
+    assert!(matches!(
+        enc.do_encrypt_out(&payload, &mut out),
+        Err(SymmetricCipherError::StateError(_))
+    ));
+    assert_eq!(out, [0u8; 32], "a refused encrypt must leave only zeros behind");
+
+    // Past the declared payload length.
+    let mut enc = key.create_encryptor_nonce(&nonce, 0, 8).unwrap();
+    let mut out = [0xEEu8; 32];
+    assert!(matches!(
+        enc.do_encrypt_out(&payload, &mut out),
+        Err(SymmetricCipherError::StateError(_))
+    ));
+    assert_eq!(out, [0u8; 32], "an over-length encrypt must leave only zeros behind");
+
+    // The decryptor, with AAD still owed: the sixteen bytes are within the declared payload, so
+    // they are not held back as a tag, and must not be copied either.
+    let mut dec = key.create_decryptor(&nonce, 4, 16).unwrap();
+    let mut out = [0xEEu8; 32];
+    assert!(matches!(
+        dec.do_decrypt_out(&payload, &mut out),
+        Err(SymmetricCipherError::StateError(_))
+    ));
+    assert_eq!(out, [0u8; 32], "a refused decrypt must leave only zeros behind");
+}
