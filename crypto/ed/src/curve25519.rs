@@ -357,9 +357,24 @@ impl FieldElement25519 {
     /// This `reduce(y).reduce(-y)` is exact on all of `[0, 2^255)`, which is the entire range
     /// [`Self::decode_255`] can produce. It first fails at `2^255`, outside the input domain.
     ///
-    /// Requires limbs inside [`Self::reduce`]'s magnitude bound. That bound is the one precondition
-    /// the [`NormalizedFieldElement25519`] typestate does not enforce.
+    /// Requires the value in `[0, 2^255)`, the domain above that this is verified on. Individual
+    /// limbs may exceed 51 bits: [`Self::mul`] can return a limb of exactly `2^51` (Wycheproof
+    /// X25519 tcId 115 and 116), which the carry chain in [`Self::reduce`] handles. Checked by a
+    /// `debug_assert` in debug builds; the [`NormalizedFieldElement25519`] typestate cannot enforce
+    /// it.
     pub(crate) const fn normalize(&self) -> NormalizedFieldElement25519 {
+        // Carry the limbs through without folding: the value is in [0, 2^255) exactly when the
+        // carried top limb is in [0, 2^51).
+        let [x0, x1, x2, x3, x4] = self.0;
+        debug_assert!(
+            {
+                let c = ((((x0 >> 51) + x1) >> 51) + x2) >> 51;
+                let top = ((c + x3) >> 51) + x4;
+                0 <= top && top <= M51
+            },
+            "normalize: value out of [0, 2^255)"
+        );
+
         let y = (self.0[4] >> (51 - 1)) & 1;
         NormalizedFieldElement25519(self.reduce(y).reduce(-y))
     }
@@ -606,6 +621,28 @@ impl FieldElement25519 {
 pub(crate) struct NormalizedFieldElement25519(FieldElement25519);
 
 impl NormalizedFieldElement25519 {
+    /// Debug-only check of the invariant this type carries: every limb in `[0, 2^51)` and the
+    /// value below p. Every method calls it first; it compiles to nothing in release builds.
+    ///
+    /// p's limbs are `[2^51 - 19, 2^51 - 1, 2^51 - 1, 2^51 - 1, 2^51 - 1]`, so a value with every
+    /// limb in range is `>= p` exactly when limbs 1..4 are all `2^51 - 1` and limb 0 is at least
+    /// `2^51 - 19`.
+    ///
+    /// Branches on the limbs, so it is not constant time. That is acceptable only because it is
+    /// compiled out of release builds.
+    const fn debug_check_range(&self) {
+        let [x0, x1, x2, x3, x4] = self.0.0;
+        debug_assert!(0 <= x0 && x0 <= M51, "limb 0 out of [0, 2^51)");
+        debug_assert!(0 <= x1 && x1 <= M51, "limb 1 out of [0, 2^51)");
+        debug_assert!(0 <= x2 && x2 <= M51, "limb 2 out of [0, 2^51)");
+        debug_assert!(0 <= x3 && x3 <= M51, "limb 3 out of [0, 2^51)");
+        debug_assert!(0 <= x4 && x4 <= M51, "limb 4 out of [0, 2^51)");
+        debug_assert!(
+            !(x1 == M51 && x2 == M51 && x3 == M51 && x4 == M51 && x0 >= M51 - 18),
+            "value >= p"
+        );
+    }
+
     // /// Constant-time equality of two field elements.
     // ///
     // /// Compares representations, not residue classes, so it is only correct on the normalized
@@ -613,6 +650,8 @@ impl NormalizedFieldElement25519 {
     // ///
     // // TODO -- add back once we get to implementing Ed25519
     // pub(crate) const fn are_equal(lhs: &Self, rhs: &Self) -> Condition<i64> {
+    //     lhs.debug_check_range();
+    //     rhs.debug_check_range();
     //     let [x0, x1, x2, x3, x4] = lhs.0.0;
     //     let [y0, y1, y2, y3, y4] = rhs.0.0;
     //     Condition::<i64>::is_zero((x0 ^ y0) | (x1 ^ y1) | (x2 ^ y2) | (x3 ^ y3) | (x4 ^ y4))
@@ -628,6 +667,7 @@ impl NormalizedFieldElement25519 {
     /// Input: self; a 32-byte output buffer.
     /// Output: The value written to `bytes` as a 255-bit little-endian integer.
     pub(crate) fn encode_255(&self, bytes: &mut [u8; 32]) {
+        self.debug_check_range();
         let [w0, w1, w2, w3] = self.encode64_255();
         let (a, b, c, d) = (w0.to_le_bytes(), w1.to_le_bytes(), w2.to_le_bytes(), w3.to_le_bytes());
         // Each word fills a fixed 8-byte window, least significant word first. Every index is a
@@ -655,6 +695,7 @@ impl NormalizedFieldElement25519 {
     /// Input: self.
     /// Output: The value as four little-endian 64-bit words, least significant word first.
     const fn encode64_255(&self) -> [u64; 4] {
+        self.debug_check_range();
         let [x0, x1, x2, x3, x4] = self.0.0;
         let z0 = (x0 | x1 << 51) as u64;
         let z1 = (x1 >> 13 | x2 << 38) as u64;
@@ -670,6 +711,7 @@ impl NormalizedFieldElement25519 {
     // ///
     // // TODO -- add back once we get to implementing Ed25519
     // pub(crate) const fn is_one(&self) -> Condition<i64> {
+    //     self.debug_check_range();
     //     let [x0, x1, x2, x3, x4] = self.0.0;
     //     let x0 = x0 ^ 1;
     //     Condition::<i64>::is_zero(x0 | x1 | x2 | x3 | x4)
@@ -682,6 +724,7 @@ impl NormalizedFieldElement25519 {
     // ///
     // // TODO -- add back once we get to implementing Ed25519
     // pub(crate) const fn is_zero(&self) -> Condition<i64> {
+    //     self.debug_check_range();
     //     let [x0, x1, x2, x3, x4] = self.0.0;
     //     Condition::<i64>::is_zero(x0 | x1 | x2 | x3 | x4)
     // }
@@ -693,6 +736,7 @@ impl NormalizedFieldElement25519 {
     // /// a wrong answer, not merely a non-canonical one.
     // // TODO -- add back once we get to implementing Ed25519
     // pub(crate) const fn is_odd(&self) -> u8 {
+    //     self.debug_check_range();
     //     (self.0.0[0] & 1) as u8
     // }
 }
@@ -724,6 +768,46 @@ mod tests {
         let mut bit_255_set = KNOWN_VALUE;
         bit_255_set[31] |= 0x80;
         assert_eq!(FieldElement25519::decode_255(&bit_255_set).0, KNOWN_LIMBS);
+    }
+
+    /// p - 1 = 2^255 - 20, the largest canonical value, passes the range check.
+    #[test]
+    fn debug_check_range_accepts_p_minus_1() {
+        NormalizedFieldElement25519(FieldElement25519([M51 - 19, M51, M51, M51, M51]))
+            .debug_check_range();
+    }
+
+    /// p itself is not canonical; the range check must reject it.
+    #[test]
+    #[cfg(debug_assertions)]
+    #[should_panic(expected = "value >= p")]
+    fn debug_check_range_rejects_p() {
+        NormalizedFieldElement25519(FieldElement25519([M51 - 18, M51, M51, M51, M51]))
+            .debug_check_range();
+    }
+
+    /// A limb at 2^51 is out of range even though the value is below p.
+    #[test]
+    #[cfg(debug_assertions)]
+    #[should_panic(expected = "limb 0 out of [0, 2^51)")]
+    fn debug_check_range_rejects_wide_limb() {
+        NormalizedFieldElement25519(FieldElement25519([M51 + 1, 0, 0, 0, 0])).debug_check_range();
+    }
+
+    /// A value of `2^255` or more is outside the domain normalize is verified on.
+    #[test]
+    #[cfg(debug_assertions)]
+    #[should_panic(expected = "normalize: value out of [0, 2^255)")]
+    fn normalize_rejects_value_2_pow_255() {
+        let _ = FieldElement25519([0, 0, 0, 0, M51 + 1]).normalize();
+    }
+
+    /// The shape of input Wycheproof X25519 tcId 115 produces: limb 1 is exactly `2^51`, but the
+    /// value is `2^51 * 2^51 + (2^51 - 1) * (2^102 + 2^153) = 2^204`, well inside the domain.
+    #[test]
+    fn normalize_accepts_limb_of_2_pow_51() {
+        let n = FieldElement25519([0, 1 << 51, M51, M51, 0]).normalize();
+        assert_eq!(n.0.0, [0, 0, 0, 0, 1]);
     }
 
     #[test]

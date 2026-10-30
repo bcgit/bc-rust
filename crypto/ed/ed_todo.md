@@ -17,79 +17,31 @@ Within each, the priority order is:
 
 # X25519 (RFC 7748)
 
-## Status and Gap analysis (2026-10-28)
-
-Status as of 2026-10-28: X25519 passes every RFC 7748 vector and all 518 Wycheproof
-`x25519_test.json` vectors, all checked in as tests (`x25519_tests.rs`,
-`x25519_wycheproof.rs`). X448, Ed25519 and Ed448 are not started on this
-branch; `../bc-rust-nursery/crates/{x448,ed25519,ed448,curve448}` hold earlier work to port from.
-bc-test-data has no vectors for any of the four.
-
-The vector-suite loaders will skip silently here: the local bc-test-data checkout is named
-`bc-test-data.donttest`, so `core-test-framework`'s loaders would skip it with a warning. That has
-no effect today because it has no vectors for these algorithms, but bear it in mind when adding
-suites.
-
-How each vector source fares on `feature/x25519` at `cf2677ba`. "Checked in" means a test in
-`tests/` runs it.
-
-| Source                                      | X25519                                | Checked in?                 |
-|---------------------------------------------|---------------------------------------|-----------------------------|
-| RFC 7748 §5.2 single-call vectors (2)       | pass                                  | yes: `vector_1`, `vector_2` |
-| RFC 7748 §5.2 iterated, 1 and 1,000 rounds  | pass                                  | yes: `iterated`             |
-| RFC 7748 §5.2 iterated, 1,000,000 rounds    | pass (~39 s in release)               | yes, but `#[ignore]`        |
-| RFC 7748 §6.1 Diffie-Hellman                | pass (both public keys and K)         | yes: `rfc7748_section_6_1`  |
-| Wycheproof `x25519_test.json`               | 518/518 output bytes match            | yes: `x25519_wycheproof.rs` |
-| Wycheproof `x25519_{asn,jwk,pem}_test.json` | not run (needs key decoding, Phase 3) | no                          |
-| bc-test-data                                | no X25519 vectors exist               | n/a                         |
-
-What the analysis found:
-
-- **X25519 arithmetic is correct.** The Wycheproof run covered the flags `EdgeCaseMultiplication`,
-  `EdgeCasePrivateKey`, `EdgeCaseShared`, `Ktv`, `LowOrderPublic`, `NonCanonicalPublic`,
-  `Normal`, `SmallPublicKey`, `SpecialPublicKey`, `Twist` and `ZeroSharedSecret`. So the open
-  TODO comments about RFC §5 masking and non-canonical input describe missing tests, not missing
-  behaviour.
-- **Low-order public keys** produce the all-zero shared secret, which matches Wycheproof's bytes.
-  `calculate_agreement` returns `false` for these. Wycheproof grades them "acceptable", so
-  whether to reject them is still an API decision (Phase 2).
-- **The X25519 gaps are test coverage and API, not correctness.** The only callable surface is
-  free functions over `[u8; 32]` (`calculate_agreement`, `generate_public_key`). There is no
-  private-key generation, and the round-trip test `agreement` is commented out.
-- **Build warnings:** 7 dead-code warnings in the lib and 2 unused imports in the test.
-
 ## Phase 1: Functional
 
 - [x] Add a Wycheproof suite `tests/x25519_wycheproof.rs` over `x25519_test.json`: 518 vectors,
   264 valid and 254 acceptable, 31 with an all-zero shared secret. (maybe need to be renamed / refactored to match other
   crates)
-- [ ] Decide what happens on an all-zero shared secret (low-order public key). Today
-  `calculate_agreement` outputs zeros and returns `false`; Wycheproof marks these vectors
-  "acceptable". Reject, or pass through? This maybe requires some research to see if this condition can be detected on
-  the public inputs before peforming the private key operations (would be better for constan-time concerns).
-- [ ] Close the TODO comments in `x25519.rs` and `curve25519.rs` about RFC §5 top-bit masking and
+- [x] Close the TODO comments in `x25519.rs` and `curve25519.rs` about RFC §5 top-bit masking and
   non-canonical input; the Wycheproof suite now covers both.
 - [x] Add the RFC 7748 §6.1 Diffie-Hellman vectors: Alice's and Bob's public keys and the shared
   secret K.
 - [x] Document `check_iterated` as the RFC 7748 §5.2 iterated test.
 - [x] Label `vector_1`/`vector_2` as RFC 7748 §5.2, and drop the stale comment on `scalar_mult`
   that said these vectors are not exercised.
-- [ ] Re-enable the `agreement` round-trip test. It currently calls a non-existent
-  `generate_private_key_rng`.
-- [ ] Remove the unused imports (`bouncycastle_core`, `bouncycastle_rng`) and the commented-out
-  `decode_hex` from `x25519_tests.rs`.
-- [ ] Review `FieldElement25519` in `curve25519.rs`. Ed25519 reuses it, so get it right here first:
-    - [ ] Review every method marked `// TODO: Claude-generated, double-check`, plus
+- [x] Remove the unused imports (`bouncycastle_core`, `bouncycastle_rng`) from `x25519_tests.rs`.
+- [x] Remove the commented-out `decode_hex` from `x25519_tests.rs`.
+- [x] Review `FieldElement25519` in `curve25519.rs`. Ed25519 reuses it, so get it right here first:
+    - [x] Review every method marked `// TODO: Claude-generated, double-check`, plus
       `decode_scalar_25519` and `scalar_mult` in `x25519.rs`.
-    - [ ] Think about whether each field-arithmetic function needs a basic unit test.
     - [x] Enforce the normalization precondition: typestate. `normalize` returns a
       `NormalizedFieldElement25519`, which alone has `encode_255`, `is_zero`/`is_one`, `parity`
       and (once restored) `are_equal`.
-    - [ ] `normalize`'s own input bound (limbs within `reduce`'s magnitude limit) is still only
-      documented; debug-only magnitude tracking would check it in tests.
+    - [x] `normalize`'s own input bound: the value in `[0, 2^255)` (limbs may exceed 51 bits),
+      checked by a `debug_assert` at its top. Output range checked by `NormalizedFieldElement25519::debug_check_range`.
     - [x] Identify `C_A` (486662) and `C_A24` and document them against RFC 7748.
-- [ ] Remove the dead code:
-  `P32`, `P64`, and the empty `precompute()`. Or finish them, if Phase 3 wants them.
+- [x] Remove the dead code: `precompute()` is gone, and `P32`, `P64` and the methods X25519 does
+  not use are commented out; the crate builds with no warnings.
 - [ ] `cargo mutants -p bouncycastle-ed` (without Wycheproof).
 
 ## Phase 2: Traits, Bells & Whistles
@@ -100,10 +52,17 @@ What the analysis found:
       const generics);
     - [ ] the output type, wrapped in `KeyMaterial` (the shared secret is sensitive);
     - [ ] an error type.
-- [ ] Add X25519 key types: `Secret`-backed private keys, zeroized, no `Debug` leak.
+- [x] Add X25519 key types: `X25519Scalar` (`Secret`-backed, zeroized, redacted `Debug`) and
+  `X25519Point`, used by `calculate_agreement` and `generate_public_key`.
 - [ ] Implement the traits for X25519. Move the Wycheproof and RFC suites onto the trait API.
+- [ ] Re-enable the `agreement` round-trip test. It currently calls a non-existent
+  `generate_private_key_rng`.
 - [ ] Add a shared `KeyAgreement` conformance suite in `core-test-framework` and invoke it from
   X25519.
+- [ ] Decide what happens on an all-zero shared secret (low-order public key). Today
+  `calculate_agreement` outputs zeros and returns `false`; Wycheproof marks these vectors
+  "acceptable". Reject, or pass through? This maybe requires some research to see if this condition can be detected on
+  the public inputs before peforming the private key operations (would be better for constan-time concerns).
 - [ ] A `KEM` impl over X25519 (DHKEM-style). Mentioned in an `x25519.rs` TODO; decide if it
   belongs here.
 - [ ] Keygen:
@@ -114,19 +73,20 @@ What the analysis found:
   commented-out Edwards-form path.
 - [ ] Wire into the factory (a `KeyAgreementFactory`, if that fits the factory pattern) and add a
   CLI subcommand (`cli/src/*_cmd.rs`).
+- [ ] `cargo mutants -p bouncycastle-ed` (without Wycheproof).
 
 ## Phase 3: Docs and ergonomics
 
 - [x] `FieldElement25519` and its methods are `pub(crate)`.
 - [ ] Make `calculate_agreement` (and the other `x25519.rs` free functions) `pub(crate)` once the
   Phase 2 trait API replaces them; the tests in `tests/` call them today.
-- [ ] `FieldElement25519` cleanups:
+- [x] `FieldElement25519` cleanups:
     - [x] `[Secret<i64>; 5]`? Block `Debug`? Prune the derive list.
     - [x] In-place methods (`*_mut`, `cmov`, `cnegate`) return `()`, not `&mut Self`.
-    - [ ] Do we need both value and `_mut` forms? Only `sqr_mut` has a caller today.
-    - [ ] Construct from `[u64; 4]` / `Nat<4>` instead of `new(x0..x4)`.
-    - [ ] Rename `parity` (to `is_odd`?).
-    - [ ] Remove the answered "why are we cloning?" TODO.
+    - [x] Do we need both value and `_mut` forms? No: only the value forms remain.
+    - [x] Construct from `[u64; 4]` / `Nat<4>` instead of `new(x0..x4)`. Moot: `new` is removed.
+    - [x] Rename `parity` (to `is_odd`?).
+    - [x] Remove the answered "why are we cloning?" TODO.
 - [ ] Docs:
     - [ ] Re-enable `#![forbid(missing_docs)]`.
     - [ ] Write the crate doc sections required by QUALITY_AND_STYLE.md.

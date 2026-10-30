@@ -163,9 +163,3 @@ fn check_vector(sk: &str, su: &str, se: &str, text: &str) {
     calculate_agreement(&k, &u, &mut r);
     check_value(&r, text, se);
 }
-
-// fn decode_hex<const N: usize>(hex: &str) -> [u8; N] {
-//     let mut result = [0; N];
-//     hex::decode_to_slice(hex, &mut result).unwrap();
-//     result
-// }
