@@ -20,11 +20,12 @@
 //! Python implementation of the same RFC instead.
 
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
+use bouncycastle_core::symmetric_key::{FromAnyKeyMaterial, MacGenerationKey};
 use bouncycastle_core::traits::MAC;
 use bouncycastle_ec::bp512r1_scalar::{Bp512r1Scalar, N_LIMBS};
 use bouncycastle_ec::bp512r1_sec1;
 use bouncycastle_ec::nat;
-use bouncycastle_hmac::HMAC;
+use bouncycastle_hmac::HmacKey;
 use bouncycastle_sha2::SHA512;
 use bouncycastle_utils::ct;
 use bouncycastle_utils::ct::Condition;
@@ -41,8 +42,9 @@ const _: () =
 fn hmac_k(key: &[u8; HLEN], data: &[&[u8]]) -> Secret<[u8; HLEN]> {
     let key_material = KeyMaterial::<HLEN>::from_bytes_as_type(key, KeyType::MACKey)
         .expect("HLEN-byte key always fits");
-    let mut hmac =
-        HMAC::<SHA512>::new_allow_weak_key(&key_material).expect("weak key always allowed");
+    let hmac_key = HmacKey::<SHA512>::from_key_material_allow_weak(&key_material)
+        .expect("weak key always allowed");
+    let mut hmac = hmac_key.create_generator();
     for piece in data {
         hmac.do_update(piece);
     }

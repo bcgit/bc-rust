@@ -8,14 +8,15 @@
 //! These full sweeps (1025–1089 cases each) complement the small embedded vector sets in the
 //! per-primitive test files.
 
-use bouncycastle_ascon::Ascon_AEAD128;
 use bouncycastle_ascon::AsconCXof128;
 use bouncycastle_ascon::AsconHash256;
 use bouncycastle_ascon::AsconXof128;
+use bouncycastle_ascon::{Ascon_AEAD128, AsconAEAD128Key};
 use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::hazmat::do_hazardous_operations;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
+use bouncycastle_core::symmetric_key::{AeadDecryptionKey, AeadEncryptionKey, FromKeyMaterial};
 use bouncycastle_core::traits::{
     AEADCipherDecryptor, AEADCipherEncryptor, Hash, SymmetricCipherDecryptor,
     SymmetricCipherEncryptor, XOF,
@@ -100,6 +101,10 @@ fn key_material(key: &[u8; 16]) -> KeyMaterial<16> {
     km
 }
 
+fn aead_key(key: &[u8; 16]) -> AsconAEAD128Key {
+    AsconAEAD128Key::from_key_material(&key_material(key)).expect("a valid key")
+}
+
 #[test]
 fn ascon_aead128_kat() {
     let Some(contents) = bc_test_data(TEST_DATA_DIR, "asconaead128/LWC_AEAD_KAT_128_128.txt")
@@ -111,7 +116,7 @@ fn ascon_aead128_kat() {
     assert!(!cases.is_empty(), "no AEAD cases parsed");
 
     for case in &cases {
-        let key = key_material(&to_16(&decode_hex(field(case, &["Key", "K"])), "key"));
+        let key = aead_key(&to_16(&decode_hex(field(case, &["Key", "K"])), "key"));
         let nonce = to_16(&decode_hex(field(case, &["Nonce", "N"])), "nonce");
         let ad = decode_hex(field(case, &["AD", "A"]));
         let pt = decode_hex(field(case, &["PT", "P"]));
@@ -119,27 +124,23 @@ fn ascon_aead128_kat() {
 
         // One-shot encrypt.
         let mut ct = vec![0u8; Ascon_AEAD128::<Encrypting>::encrypt_out_len(pt.len())];
-        let n = Ascon_AEAD128::<Encrypting>::encrypt_with_aad_nonce_out(
-            &key, &nonce, &ad, &pt, &mut ct,
-        )
-        .unwrap();
+        let n = key.encrypt_with_aad_nonce_out(&nonce, &ad, &pt, &mut ct).unwrap();
         ct.truncate(n);
 
         assert_eq!(ct, expected_ct, "encrypt mismatch (Count {})", field(case, &["Count"]));
 
         // One-shot decrypt round-trip.
         let mut pt_out = vec![0u8; Ascon_AEAD128::<Decrypting>::decrypt_out_len(expected_ct.len())];
-        let m = Ascon_AEAD128::<Decrypting>::decrypt_with_aad_out(
-            &key, &nonce, &ad, &expected_ct, &mut pt_out,
-        )
-        .expect("decrypt should authenticate");
+        let m = key
+            .decrypt_with_aad_out(&nonce, &ad, &expected_ct, &mut pt_out)
+            .expect("decrypt should authenticate");
 
         pt_out.truncate(m);
 
         assert_eq!(pt_out, pt, "decrypt mismatch (Count {})", field(case, &["Count"]));
 
         // Byte-at-a-time streaming encrypt/decrypt.
-        let mut enc = Ascon_AEAD128::<Encrypting>::do_encrypt_init_nonce(&key, &nonce).unwrap();
+        let mut enc = key.create_encryptor_nonce(&nonce);
         enc.do_update_aad(&ad).unwrap();
         let mut stream_ct = Vec::with_capacity(expected_ct.len());
 
@@ -159,7 +160,7 @@ fn ascon_aead128_kat() {
             field(case, &["Count"])
         );
 
-        let mut dec = Ascon_AEAD128::<Decrypting>::do_decrypt_init(&key, &nonce).unwrap();
+        let mut dec = key.create_decryptor(&nonce);
         dec.do_update_aad(&ad).unwrap();
         let mut stream_pt = Vec::with_capacity(pt.len());
 

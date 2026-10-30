@@ -12,27 +12,52 @@
 
 mod common;
 
-use bouncycastle_cipher::modes::Cbc;
-use bouncycastle_cipher::modes::hazmat::ecb::Ecb;
-use bouncycastle_cipher::padding::{PKCS7, PaddedBlockCipherDecryptor, PaddedBlockCipherEncryptor};
+#[path = "../common/toy_key.rs"]
+mod toy_key;
+
+use bouncycastle_cipher::modes::hazmat::ecb::{ECB, Ecb};
+use bouncycastle_cipher::modes::{Blocks, CBC, Cbc, ModeNames};
+use bouncycastle_cipher::padding::PKCS7;
 use bouncycastle_cipher::{Decrypting, Encrypting};
-use bouncycastle_core::hazmat::ElectronicCodeBook;
-use bouncycastle_core::key_material::{KeyMaterial, KeyType};
+use bouncycastle_core::hazmat::{
+    BlockPermutation, EcbDecryptionKey, EcbEncryptionKey, ElectronicCodeBook,
+};
+use bouncycastle_core::security_strength::SecurityStrength;
+use bouncycastle_core::symmetric_key::{
+    BlockEncryptionKey, FromKeyMaterial, SymmetricDecryptionKey, SymmetricEncryptionKey,
+};
 use bouncycastle_core::traits::{
     BlockCipherDecryptor, BlockCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
 };
 use bouncycastle_core_test_framework::FixedSeedRNG;
 use bouncycastle_core_test_framework::block_cipher::TestFrameworkBlockCipher;
+use bouncycastle_core_test_framework::from_key_material::TestFrameworkFromKeyMaterial;
 use common::{SwappedFourToy, SwappedPairToy, TOY_LEN, Toy, toy_key};
+use toy_key::ToyKey;
 
-type ToyEcb<Dir> = Ecb<Toy, Dir, TOY_LEN, TOY_LEN>;
-type SwappedEcb<Dir> = Ecb<SwappedPairToy, Dir, TOY_LEN, TOY_LEN>;
-type SwappedFourEcb<Dir> = Ecb<SwappedFourToy, Dir, TOY_LEN, TOY_LEN>;
+type ToyEcb<'k, Dir> = Ecb<'k, Toy, Dir, TOY_LEN>;
+type ToyEcbKey = ToyKey<Toy, ECB<Blocks>>;
+
+fn ecb_key() -> ToyEcbKey {
+    ToyEcbKey::from_key_material(&toy_key()).expect("the toy key")
+}
+
+/// The key the worker helpers below hand out borrowed workers over; a worker cannot outlive
+/// its key, so the helpers' key lives for the whole test binary.
+static KEY: std::sync::LazyLock<ToyEcbKey> = std::sync::LazyLock::new(ecb_key);
+
+fn swapped_key() -> ToyKey<SwappedPairToy, ECB<Blocks>> {
+    ToyKey::from_key_material(&toy_key()).expect("the toy key")
+}
+
+fn swapped_four_key() -> ToyKey<SwappedFourToy, ECB<Blocks>> {
+    ToyKey::from_key_material(&toy_key()).expect("the toy key")
+}
 
 /// The implementor hook `do_encrypt_blocks_inplace`, by value, for tests whose data is
 /// block-shaped.
 fn enc_blocks<const N: usize>(
-    enc: &mut impl BlockCipherEncryptor<TOY_LEN, 0, TOY_LEN>,
+    enc: &mut impl BlockCipherEncryptor<0, TOY_LEN>,
     plaintext: &[[u8; TOY_LEN]; N],
 ) -> [[u8; TOY_LEN]; N] {
     let mut blocks = *plaintext;
@@ -42,7 +67,7 @@ fn enc_blocks<const N: usize>(
 
 /// The implementor hook `do_decrypt_blocks_inplace`, by value.
 fn dec_blocks<const N: usize>(
-    dec: &mut impl BlockCipherDecryptor<TOY_LEN, 0, TOY_LEN>,
+    dec: &mut impl BlockCipherDecryptor<0, TOY_LEN>,
     ciphertext: &[[u8; TOY_LEN]; N],
 ) -> [[u8; TOY_LEN]; N] {
     let mut blocks = *ciphertext;
@@ -50,20 +75,19 @@ fn dec_blocks<const N: usize>(
     blocks
 }
 
-fn encryptor() -> ToyEcb<Encrypting> {
-    ToyEcb::<Encrypting>::do_encrypt_init(&toy_key()).unwrap().0
+fn encryptor() -> ToyEcb<'static, Encrypting> {
+    KEY.create_encryptor()
 }
 
-fn decryptor() -> ToyEcb<Decrypting> {
-    ToyEcb::<Decrypting>::do_decrypt_init(&toy_key(), &[]).unwrap()
+fn decryptor() -> ToyEcb<'static, Decrypting> {
+    KEY.create_decryptor()
 }
 
 // ---- the mode against the shared framework ------------------------------------------------
 
 #[test]
 fn ecb_conforms_to_the_block_cipher_framework() {
-    TestFrameworkBlockCipher::new()
-        .test::<TOY_LEN, 0, TOY_LEN, ToyEcb<Encrypting>, ToyEcb<Decrypting>>();
+    TestFrameworkBlockCipher::new().test_ecb_key::<TOY_LEN, TOY_LEN, _>(&ecb_key());
 }
 
 // ---- the spec equations -------------------------------------------------------------------
@@ -96,14 +120,11 @@ fn reference_ecb(perm: &Toy, input: &[[u8; TOY_LEN]], encrypt: bool) -> Vec<[u8;
 /// first block, since CBC XORs the IV in before the cipher call.
 #[test]
 fn the_mode_matches_the_spec_equations() {
-    let key = toy_key();
-    let perm = <Toy as ElectronicCodeBook<TOY_LEN, TOY_LEN>>::new(&key).unwrap();
+    let perm = <Toy as ElectronicCodeBook<TOY_LEN, TOY_LEN>>::new(&toy_key()).unwrap();
     let plaintext: [[u8; TOY_LEN]; 5] =
         core::array::from_fn(|i| core::array::from_fn(|j| (i * 31 + j * 7 + 1) as u8));
 
-    let (mut enc, init) = ToyEcb::<Encrypting>::do_encrypt_init(&key).unwrap();
-    assert_eq!(init, [0u8; 0], "ECB has no init data");
-    let ct = enc_blocks(&mut enc, &plaintext);
+    let ct = enc_blocks(&mut encryptor(), &plaintext);
     assert_eq!(
         ct.to_vec(),
         reference_ecb(&perm, &plaintext, true),
@@ -128,11 +149,8 @@ fn the_mode_matches_the_spec_equations() {
 
     // ...and ECB is not CBC: CBC computes CIPH_K(P1 XOR IV), ECB computes CIPH_K(P1).
     let iv: [u8; TOY_LEN] = core::array::from_fn(|i| 0xF0 ^ (i as u8));
-    let (mut cbc, _) = Cbc::<Toy, Encrypting, TOY_LEN, TOY_LEN>::do_encrypt_init_rng(
-        &key,
-        &mut FixedSeedRNG::<TOY_LEN>::new(iv),
-    )
-    .unwrap();
+    let cbc_key = ToyKey::<Toy, CBC<Blocks>>::from_key_material(&toy_key()).unwrap();
+    let (mut cbc, _) = cbc_key.create_encryptor(&mut FixedSeedRNG::<TOY_LEN>::new(iv)).unwrap();
     let mut first = plaintext[0];
     cbc.do_encrypt_blocks_inplace(first.as_chunks_mut().0).unwrap();
     assert_ne!(first, ct[0], "ECB must not agree with CBC");
@@ -146,7 +164,7 @@ fn the_mode_matches_the_spec_equations() {
 /// counter and stop being ECB.
 #[test]
 fn ecb_is_deterministic_and_leaks_equal_blocks() {
-    let key = toy_key();
+    let key = ecb_key();
     let block = [0x5Au8; TOY_LEN];
     let plaintext = [block, [0x11; TOY_LEN], block, block];
 
@@ -158,48 +176,17 @@ fn ecb_is_deterministic_and_leaks_equal_blocks() {
     assert_eq!(ct_a[0], ct_a[3]);
     assert_ne!(ct_a[0], ct_a[1], "different plaintext blocks give different ciphertext blocks");
 
-    // The one-shot sees the same thing: `encrypt` returns the empty init data and is repeatable.
-    // (The RNG-taking one-shot is not an alternative here -- it panics; see below.)
+    // The one-shot sees the same thing: the ECB key path takes no RNG and returns no init data,
+    // so it is repeatable.
     let flat: [u8; 4 * TOY_LEN] = plaintext.as_flattened().try_into().unwrap();
     let mut once = flat;
-    let (n_a, init_a): (usize, [u8; 0]) =
-        ToyEcb::<Encrypting>::encrypt_inplace(&key, &mut once).unwrap();
+    let n_a = key.encrypt_inplace(&mut once).unwrap();
     assert_eq!(n_a, once.len(), "encrypt must report the number of bytes written");
     let mut twice = flat;
-    let (n_b, init_b) = ToyEcb::<Encrypting>::encrypt_inplace(&key, &mut twice).unwrap();
+    let n_b = key.encrypt_inplace(&mut twice).unwrap();
     assert_eq!(n_b, twice.len(), "encrypt must report the number of bytes written");
-    assert_eq!(init_a, init_b);
     assert_eq!(once, twice, "no init data and no randomness, so the one-shot is repeatable");
     assert_eq!(once, *ct_a.as_flattened());
-}
-
-/// The RNG-taking constructor must panic rather than quietly ignore the RNG. ECB has no init data
-/// to generate (SP 800-38A Table D.2 lists its IV column as "Not applicable"), so a caller reaching
-/// for `do_encrypt_init_rng` has mistaken ECB for a randomized mode;
-/// [`BlockCipherEncryptor::do_encrypt_init_rng`]'s contract requires an implementation with
-/// `INIT_DATA_LEN == 0` to say so. It is a programmer error, not bad input, hence a panic and not a
-/// [`SymmetricCipherError`].
-#[test]
-#[should_panic(expected = "ECB has no initialization data")]
-fn the_rng_constructor_panics() {
-    let key = toy_key();
-    let mut rng = FixedSeedRNG::<0>::new([]);
-    let _ = ToyEcb::<Encrypting>::do_encrypt_init_rng(&key, &mut rng);
-}
-
-/// ...and so does the one-shot provided over it: `encrypt_rng_inplace` is `do_encrypt_init_rng`
-/// followed by `do_encrypt_inplace`, so it panics in the same case and for the same reason. Pinned
-/// separately because it is the call a user is most likely to reach for.
-#[test]
-#[should_panic(expected = "ECB has no initialization data")]
-fn the_rng_one_shot_panics() {
-    let key = toy_key();
-    let mut block = [0x42u8; TOY_LEN];
-    let _ = ToyEcb::<Encrypting>::encrypt_rng_inplace(
-        &key,
-        &mut FixedSeedRNG::<0>::new([]),
-        &mut block,
-    );
 }
 
 // ---- batching: pairs and fours, in both directions ----------------------------------------
@@ -210,30 +197,33 @@ fn the_rng_one_shot_panics() {
 /// handed over singly come out right.
 #[test]
 fn the_pair_path_is_used_in_both_directions() {
-    let key = toy_key();
     let plaintext = [[0xA5u8; TOY_LEN], [0x5Au8; TOY_LEN]];
     let ct = enc_blocks(&mut encryptor(), &plaintext);
 
     // Encryption: a pair goes through encrypt_2blocks, so the swapped toy returns them swapped.
-    let (mut enc, _) = SwappedEcb::<Encrypting>::do_encrypt_init(&key).unwrap();
+    let key = swapped_key();
+    let mut enc = key.create_encryptor();
     let swapped_ct = enc_blocks(&mut enc, &plaintext);
     assert_eq!(swapped_ct, [ct[1], ct[0]], "encrypting a pair must go through encrypt_2blocks");
 
     // ...and one block at a time avoids the pair path.
-    let (mut enc, _) = SwappedEcb::<Encrypting>::do_encrypt_init(&key).unwrap();
+    let key = swapped_key();
+    let mut enc = key.create_encryptor();
     assert_eq!(
         [enc_blocks(&mut enc, &[plaintext[0]])[0], enc_blocks(&mut enc, &[plaintext[1]])[0]],
         ct
     );
 
     // Decryption likewise.
-    let mut dec = SwappedEcb::<Decrypting>::do_decrypt_init(&key, &[]).unwrap();
+    let key = swapped_key();
+    let mut dec = key.create_decryptor();
     assert_eq!(
         dec_blocks(&mut dec, &ct),
         [plaintext[1], plaintext[0]],
         "decrypting a pair must go through decrypt_2blocks"
     );
-    let mut dec = SwappedEcb::<Decrypting>::do_decrypt_init(&key, &[]).unwrap();
+    let key = swapped_key();
+    let mut dec = key.create_decryptor();
     assert_eq!([dec_blocks(&mut dec, &[ct[0]])[0], dec_blocks(&mut dec, &[ct[1]])[0]], plaintext);
 }
 
@@ -243,25 +233,31 @@ fn the_pair_path_is_used_in_both_directions() {
 /// same blocks as two pairs or singly are right.
 #[test]
 fn the_four_block_path_is_used_in_both_directions() {
-    let key = toy_key();
     let plaintext: [[u8; TOY_LEN]; 5] = core::array::from_fn(|i| [0x10 * i as u8 + 1; TOY_LEN]);
     let ct = enc_blocks(&mut encryptor(), &plaintext);
     assert_eq!(dec_blocks(&mut decryptor(), &ct), plaintext);
 
-    let (mut enc, _) = SwappedFourEcb::<Encrypting>::do_encrypt_init(&key).unwrap();
+    let key = swapped_four_key();
+
+    let mut enc = key.create_encryptor();
     let rotated = enc_blocks(&mut enc, &plaintext);
     assert_ne!(rotated, ct, "five blocks must go through encrypt_4blocks");
     assert_eq!(rotated[4], ct[4], "the fifth block goes through the single path and is right");
     assert_eq!(&rotated[..4], &[ct[1], ct[2], ct[3], ct[0]], "four rotated");
 
-    let (mut enc, _) = SwappedFourEcb::<Encrypting>::do_encrypt_init(&key).unwrap();
+    let key = swapped_four_key();
+
+    let mut enc = key.create_encryptor();
     let a = enc_blocks(&mut enc, &[plaintext[0], plaintext[1]]);
     let b = enc_blocks(&mut enc, &[plaintext[2], plaintext[3]]);
     assert_eq!([a, b].as_flattened(), &ct[..4], "pairs use the pair path only");
 
-    let mut dec = SwappedFourEcb::<Decrypting>::do_decrypt_init(&key, &[]).unwrap();
+    let key = swapped_four_key();
+
+    let mut dec = key.create_decryptor();
     assert_ne!(dec_blocks(&mut dec, &ct), plaintext, "five blocks must go through decrypt_4blocks");
-    let mut dec = SwappedFourEcb::<Decrypting>::do_decrypt_init(&key, &[]).unwrap();
+    let key = swapped_four_key();
+    let mut dec = key.create_decryptor();
     for (c, p) in ct.iter().zip(plaintext.iter()) {
         assert_eq!(&dec_blocks(&mut dec, &[*c])[0], p, "the single-block path must not batch");
     }
@@ -298,16 +294,16 @@ fn call_grouping_does_not_change_the_result() {
 /// The one-shots must agree with the block-shaped hook.
 #[test]
 fn one_shots_agree_with_the_block_hook() {
-    let key = toy_key();
+    let key = ecb_key();
     let plaintext = [[0x11u8; TOY_LEN], [0x22u8; TOY_LEN], [0x33u8; TOY_LEN]];
     let flat_plaintext: [u8; 3 * TOY_LEN] = plaintext.as_flattened().try_into().unwrap();
 
     let block_ct = enc_blocks(&mut encryptor(), &plaintext);
 
     let mut buf = flat_plaintext;
-    let (_, init) = ToyEcb::<Encrypting>::encrypt_inplace(&key, &mut buf).unwrap();
+    key.encrypt_inplace(&mut buf).unwrap();
     assert_eq!(buf, *block_ct.as_flattened(), "one-shot must equal streaming");
-    ToyEcb::<Decrypting>::decrypt_inplace(&key, &init, &mut buf).unwrap();
+    key.decrypt_inplace(&mut buf).unwrap();
     assert_eq!(buf, flat_plaintext);
 
     assert_eq!(dec_blocks(&mut decryptor(), &block_ct), plaintext);
@@ -348,49 +344,56 @@ fn a_ciphertext_bit_error_affects_only_its_own_block() {
 
 // ---- key handling ------------------------------------------------------------------------
 
+/// The key's construction suite: the type, binding and strength policy of `from_key_material`,
+/// for both the block-aligned and the padded key.
 #[test]
-fn a_key_of_the_wrong_type_is_rejected() {
-    let bytes: [u8; TOY_LEN] = core::array::from_fn(|i| (i as u8) + 1);
-    let seed = KeyMaterial::<TOY_LEN>::from_bytes_as_type(&bytes, KeyType::Seed).unwrap();
-    assert!(ToyEcb::<Encrypting>::do_encrypt_init(&seed).is_err());
-    assert!(ToyEcb::<Decrypting>::do_decrypt_init(&seed, &[]).is_err());
+fn the_keys_enforce_the_material_policy() {
+    let framework = TestFrameworkFromKeyMaterial::new();
+    framework.test::<TOY_LEN, ToyEcbKey>(Toy::ECB_ALG_NAME, SecurityStrength::_128bit);
+    framework
+        .test::<TOY_LEN, ToyKey<Toy, ECB<PKCS7>>>(Toy::ECB_ALG_NAME, SecurityStrength::_128bit);
 }
 
 // ---- composition with the padding layer --------------------------------------------------
 
 /// ECB is block-aligned by contract, so arbitrary-length data goes through `bouncycastle_cipher::padding`
-/// like the other modes; its `INIT_DATA_LEN` of 0 flows through the adapters as an empty array.
+/// like the other modes: `ECB<PKCS7>` is the symmetric key path over the adapters, with its
+/// `INIT_DATA_LEN` of 0 flowing through as an empty array and the RNG unused. The RNG is a
+/// `FixedSeedRNG` with no bytes at all, which refuses any draw, so this also pins that the padded
+/// path draws nothing.
 #[test]
 fn the_padding_layer_round_trips_every_length() {
-    type Enc = PaddedBlockCipherEncryptor<ToyEcb<Encrypting>, PKCS7, TOY_LEN, 0, TOY_LEN>;
-    type Dec = PaddedBlockCipherDecryptor<ToyEcb<Decrypting>, PKCS7, TOY_LEN, 0, TOY_LEN>;
+    type Key = ToyKey<Toy, ECB<PKCS7>>;
+    type Enc<'k> = <Key as SymmetricEncryptionKey<TOY_LEN, 0, TOY_LEN>>::Encryptor<'k>;
+    type Dec<'k> = <Key as SymmetricDecryptionKey<TOY_LEN, 0, TOY_LEN>>::Decryptor<'k>;
+    let key = Key::from_key_material(&toy_key()).expect("the toy key");
 
     for len in 0..=(3 * TOY_LEN + 1) {
         let plaintext: Vec<u8> = (0..len).map(|i| (i * 5 + 3) as u8).collect();
         let mut ciphertext = vec![0u8; Enc::encrypt_out_len(len)];
-        let (init, written) =
-            Enc::encrypt_out(&toy_key(), &plaintext, &mut ciphertext).expect("padded encryption");
+        let (written, init) = key
+            .encrypt_out(&mut FixedSeedRNG::<0>::new([]), &plaintext, &mut ciphertext)
+            .expect("padded encryption draws nothing from the RNG");
         assert_eq!(init, [0u8; 0]);
         assert_eq!(written, ciphertext.len(), "len {len}");
         let mut recovered = vec![0u8; Dec::decrypt_out_len(written)];
-        let n = Dec::decrypt_out(&toy_key(), &init, &ciphertext, &mut recovered)
-            .expect("padded decryption");
+        let n = key.decrypt_out(&init, &ciphertext, &mut recovered).expect("padded decryption");
         assert_eq!(&recovered[..n], &plaintext[..], "len {len}: round trip through PKCS7");
     }
 }
 
 // ---- memory ------------------------------------------------------------------------------
 
-/// Pins the module docs' claim that an ECB value is exactly the permutation:
-/// `size_of::<Ecb<P, ..>>() == size_of::<P>()`.
+/// Pins the module docs' claim that an ECB value is a reference to the permutation and nothing
+/// else.
 #[test]
 fn sizes_match_the_documented_memory_table() {
     use core::mem::size_of;
-    assert_eq!(size_of::<ToyEcb<Encrypting>>(), size_of::<Toy>());
+    assert_eq!(size_of::<ToyEcb<Encrypting>>(), size_of::<&Toy>());
     assert_eq!(size_of::<ToyEcb<Encrypting>>(), size_of::<ToyEcb<Decrypting>>());
     // One block smaller than CBC, which stores a chaining value.
     assert_eq!(
         size_of::<ToyEcb<Encrypting>>() + TOY_LEN,
-        size_of::<Cbc<Toy, Encrypting, TOY_LEN, TOY_LEN>>()
+        size_of::<Cbc<'_, Toy, Encrypting, TOY_LEN>>()
     );
 }

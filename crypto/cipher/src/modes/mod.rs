@@ -13,11 +13,13 @@
 //! |---|---|---|---|
 //! | CBC | [`cbc`] | SP 800-38A Sec 6.2 | Cipher Block Chaining |
 //! | CCM | [`ccm`] | SP 800-38C | Counter with CBC-MAC. **Authenticated**: CTR plus CBC-MAC, with a tag and AAD |
+//! | CMAC | [`cmac`] | SP 800-38B | A MAC ([`MAC`]), not a cipher: 64- or 128-bit block ciphers, tags truncatable to 64 bits |
 //! | CFB | [`cfb`] | SP 800-38A Sec 6.3 | Cipher Feedback, full-block segment (`s = b`), i.e. CFB128 for AES |
 //! | CFB8 | [`cfb8`] | SP 800-38A Sec 6.3 | Cipher Feedback, 8-bit segment (`s = 8`) |
 //! | CTR | [`ctr`] | SP 800-38A Sec 6.5 | Counter. Nonce plus counter, both directions parallel |
 //! | ECB | [`hazmat`] | SP 800-38A Sec 6.1 | Electronic Codebook. **Not confidential for data**; interoperability and test vectors only |
 //! | GCM | [`gcm`] | SP 800-38D | **Authenticated**: 96-bit nonce, 96-128-bit tag, no padding; AAD before data |
+//! | GMAC | [`gmac`] | SP 800-38D Sec 5.2 | A MAC, not a cipher: GCM with no plaintext, so the tag is bound to a 96-bit nonce |
 //!
 //! They divide three ways.
 //!
@@ -40,6 +42,15 @@
 //! none at all (`INIT_DATA_LEN = 0`) and is the raw permutation applied block by block, which is
 //! why it lives under [`hazmat`] -- see [`hazmat::ecb::Ecb`] and
 //! [Choosing between the modes](#choosing-between-the-modes).
+//!
+//! Each mode is also a **mode type** -- [`CBC`], [`CCM`], [`CCM_Packet`], [`CFB`], [`CFB8`],
+//! [`CTR`], [`GCM`], [`hazmat::ecb::ECB`], and the MACs [`CMAC`] and [`GMAC`] -- the `M` a mode-bound
+//! key such as `bouncycastle_aes::AES128Key<M>` is parameterised by. The mode type implements the
+//! hazmat mode traits of [`bouncycastle_core::hazmat`], which is how a key hands out the mode's
+//! encryptors and decryptors through the role traits of `bouncycastle_core::symmetric_key`; a
+//! key is bound to one mode, and which role traits it carries follow from that mode. The modes
+//! with a padded and a whole-block form, CBC and ECB, take the padding scheme or [`Blocks`] as a
+//! parameter, and the two forms are two key types.
 //!
 //! [Choosing between the modes](#choosing-between-the-modes) covers when each is the right answer
 //! -- which, for a new design, one of them usually is.
@@ -65,34 +76,37 @@
 //! `AES_GCM_128` and friends from `bouncycastle-aes`. Those aliases are not all the same shape: the
 //! two block modes take a padding scheme as well as a direction, since neither is usable on data of
 //! arbitrary length without one, the three stream modes take only the direction, CCM takes the
-//! direction too, plus its nonce and tag lengths and, for the trait-implementing alias, its AAD
-//! capacity and frame length (`AES_CCM_128_Packet` is the inherent, per-message-length API), and
-//! GCM takes the direction and its tag length:
+//! direction in its type name, plus its nonce and tag lengths, its AAD capacity and its frame
+//! length, and GCM takes the direction and its tag length:
 //!
 //! ```
 //! # mod toy { include!("../../tests/common/toy_block_cipher.rs"); }
 //! # use toy::ToyBlockCipher;
-//! use bouncycastle_cipher::modes::{Cbc, CcmPacket, Cfb, Cfb8, Ctr, Gcm};
+//! use bouncycastle_cipher::modes::{Cbc, CcmPacketDecryptor, CcmPacketEncryptor, Cfb, Cfb8, Ctr, Gcm};
 //!
-//! // CBC, CFB, and CFB8 take a permutation, a direction, key length, and a block length.
-//! type ToyCbc<Dir> = Cbc<ToyBlockCipher, Dir, 16, 16>;
-//! type ToyCfb<Dir> = Cfb<ToyBlockCipher, Dir, 16, 16>;
-//! type ToyCfb8<Dir> = Cfb8<ToyBlockCipher, Dir, 16, 16>;
+//! // Every worker borrows its key state for `'k`. CBC, CFB, and CFB8 then take a permutation, a
+//! // direction and a block length; the key length is the key's business, not the worker's.
+//! type ToyCbc<'k, Dir> = Cbc<'k, ToyBlockCipher, Dir, 16>;
+//! type ToyCfb<'k, Dir> = Cfb<'k, ToyBlockCipher, Dir, 16>;
+//! type ToyCfb8<'k, Dir> = Cfb8<'k, ToyBlockCipher, Dir, 16>;
 //!
 //! // CTR takes one more parameter: the nonce length, which fixes the counter width at
 //! // `BLOCK_LEN - NONCE_LEN`. 12 bytes of nonce leaves the maximum 4-byte counter.
-//! type ToyCtr<Dir> = Ctr<ToyBlockCipher, Dir, 16, 16, 12>;
+//! type ToyCtr<'k, Dir> = Ctr<'k, ToyBlockCipher, Dir, 16, 12>;
 //!
-//! // CCM takes the permutation, a direction, key length, and a block length like the rest,
-//! // plus the nonce length and the tag length -- both CCM-specific choices rather than cipher params.
+//! // CCM takes the permutation and block length like the rest, plus the nonce length and the
+//! // tag length -- both CCM-specific choices rather than cipher params.
 //! // The nonce length caps the payload (SP 800-38C A.1: `n + q = 15`, `p < 2^8q`) and the tag
 //! // length is the forgery bound; 12 and 16 are the usual pair.
-//! type ToyCcm<Dir> = CcmPacket<ToyBlockCipher, Dir, 16, 16, 12, 16>;
+//! // Each direction is its own type here, and the frame follows: `AAD_LEN` of AAD capacity and
+//! // frames of exactly `DATA_LEN` bytes, since CCM commits to the payload length up front.
+//! type ToyCcmEnc<'k> = CcmPacketEncryptor<'k, ToyBlockCipher, 16, 12, 16, 64, 1024>;
+//! type ToyCcmDec<'k> = CcmPacketDecryptor<'k, ToyBlockCipher, 16, 12, 16, 64, 1024>;
 //!
 //! // GCM mode is specified in NIST SP 800-38D. `Gcm` fixes the nonce at 12 bytes (Sec 5.2.1.1
 //! // recommends restricting support to 96 bits), and the block is always 16, so neither is a
 //! // parameter.
-//! type ToyGcm<Dir> = Gcm<ToyBlockCipher, Dir, 16, 16>;
+//! type ToyGcm<'k, Dir> = Gcm<'k, ToyBlockCipher, Dir, 16>;
 //! ```
 //!
 //! ## Encrypting and decrypting
@@ -147,17 +161,31 @@ pub mod cbc;
 pub mod ccm;
 pub mod cfb;
 pub mod cfb8;
+pub mod cmac;
 pub mod ctr;
 pub mod gcm;
+pub mod gmac;
 pub mod hazmat;
 mod iv;
 
-pub use cbc::Cbc;
-pub use ccm::{CcmDecryptor, CcmEncryptor, CcmPacket};
-pub use cfb::Cfb;
-pub use cfb8::Cfb8;
-pub use ctr::Ctr;
-pub use gcm::{GCM_NONCE_LEN, Gcm};
+pub use cbc::{CBC, Cbc};
+pub use ccm::{
+    CCM, CCM_Packet, CcmDecryptor, CcmEncryptor, CcmPacketDecryptor, CcmPacketEncryptor,
+};
+pub use cfb::{CFB, Cfb};
+pub use cfb8::{CFB8, Cfb8};
+pub use cmac::{CMAC, CMAC_MIN_TAG_LEN, Cmac, CmacKeyState};
+pub use ctr::{CTR, Ctr};
+pub use gcm::{GCM, GCM_NONCE_LEN, Gcm, GcmKeyState};
+pub use gmac::{GMAC, Gmac};
+
+/// Selects the whole-block form of a mode that also has a padded form: `CBC<Blocks>` is a key
+/// for the block-aligned [`Cbc`] itself, on the block key path, where `CBC<PKCS7>` is one for
+/// the padded adapter over it, on the symmetric path. Likewise `ECB<Blocks>` under
+/// [`hazmat`]. Not a padding scheme: it adds nothing, and the lengths it accepts are checked at
+/// compile time rather than refused at the final as `NoPadding` does.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Blocks;
 
 /// A table of algorithm names used to populate [`Algorithm`] for each Mode-Permutation-Size combination.
 ///
@@ -165,18 +193,22 @@ pub use gcm::{GCM_NONCE_LEN, Gcm};
 pub trait ModeNames {
     /// Reported by [`Cbc`].
     const CBC_ALG_NAME: &'static str;
-    /// Reported by [`CcmPacket`], [`CcmEncryptor`] and [`CcmDecryptor`].
+    /// Reported by [`CcmPacketEncryptor`] and [`CcmPacketDecryptor`].
     const CCM_ALG_NAME: &'static str;
     /// Reported by [`Cfb`].
     const CFB_ALG_NAME: &'static str;
     /// Reported by [`Cfb8`].
     const CFB8_ALG_NAME: &'static str;
+    /// Reported by [`Cmac`].
+    const CMAC_ALG_NAME: &'static str;
     /// Reported by [`Ctr`], through its keystream.
     const CTR_ALG_NAME: &'static str;
     /// Reported by [`hazmat::ecb::Ecb`].
     const ECB_ALG_NAME: &'static str;
     /// Reported by [`Gcm`].
     const GCM_ALG_NAME: &'static str;
+    /// Reported by [`Gmac`].
+    const GMAC_ALG_NAME: &'static str;
 }
 
 // Imports needed for docs
@@ -185,7 +217,7 @@ use bouncycastle_core::hazmat::ElectronicCodeBook;
 #[allow(unused_imports)]
 use bouncycastle_core::traits::{
     AEADCipherDecryptor, AEADCipherEncryptor, Algorithm, BlockCipherDecryptor,
-    BlockCipherEncryptor, StreamCipherDecryptor, StreamCipherEncryptor, SymmetricCipherDecryptor,
-    SymmetricCipherEncryptor,
+    BlockCipherEncryptor, MAC, StreamCipherDecryptor, StreamCipherEncryptor,
+    SymmetricCipherDecryptor, SymmetricCipherEncryptor,
 };
 // end of imports needed for docs

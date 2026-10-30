@@ -121,8 +121,7 @@ enum Subcommands {
     /// processing or stream processing", because Appendix A.2.1 puts the payload length inside the
     /// first block the MAC covers. It does buy one thing: on `decrypt` NO plaintext is written
     /// until the tag has verified, so unlike `ascon-aead128` a non-zero exit leaves nothing to
-    /// discard. For large inputs use `ascon-aead128`, which streams. The AAD is the exception:
-    /// `--aad-file` is streamed, because a file's size can be declared before it is read.
+    /// discard. For large inputs use `ascon-aead128`, which streams. The AAD is read whole as well.
     ///
     /// Input may be any length: CCM pads internally and the payload is not block-aligned.
     ///
@@ -154,9 +153,8 @@ enum Subcommands {
         #[arg(long)]
         aad: Option<String>,
 
-        /// A file containing the associated data, as raw bytes (never hex-decoded). A regular file
-        /// is streamed rather than loaded. If both aad and aad_file options are provided, the file
-        /// will be used.
+        /// A file containing the associated data, as raw bytes (never hex-decoded). If both aad and
+        /// aad_file options are provided, the file will be used.
         #[arg(long)]
         aad_file: Option<String>,
 
@@ -499,9 +497,8 @@ enum Subcommands {
         #[arg(long)]
         aad: Option<String>,
 
-        /// A file containing the associated data, as raw bytes (never hex-decoded). A regular file
-        /// is streamed rather than loaded. If both aad and aad_file options are provided, the file
-        /// will be used.
+        /// A file containing the associated data, as raw bytes (never hex-decoded). If both aad and
+        /// aad_file options are provided, the file will be used.
         #[arg(long)]
         aad_file: Option<String>,
 
@@ -741,9 +738,8 @@ enum Subcommands {
         #[arg(long)]
         aad: Option<String>,
 
-        /// A file containing the associated data, as raw bytes (never hex-decoded). A regular file
-        /// is streamed rather than loaded. If both aad and aad_file options are provided, the file
-        /// will be used.
+        /// A file containing the associated data, as raw bytes (never hex-decoded). If both aad and
+        /// aad_file options are provided, the file will be used.
         #[arg(long)]
         aad_file: Option<String>,
 
@@ -1544,7 +1540,7 @@ enum Subcommands {
     /// The tag length and customization string are bound into the computation, so the verifier
     /// must use the same values.
     KMAC128 {
-        /// Length of the tag in bytes.
+        /// Length of the tag in bytes, at least 4 (SP 800-185 Sec 8.4.2).
         length: usize,
 
         #[arg(short = 's', long)]
@@ -1571,7 +1567,7 @@ enum Subcommands {
     /// Compute or verify a KMAC256 (NIST SP 800-185 Sec 4) over the content provided on stdin.
     /// See kmac128.
     KMAC256 {
-        /// Length of the tag in bytes.
+        /// Length of the tag in bytes, at least 4 (SP 800-185 Sec 8.4.2).
         length: usize,
 
         #[arg(short = 's', long)]

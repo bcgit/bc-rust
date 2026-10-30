@@ -1,10 +1,6 @@
-//! Generic behaviour tests for anything that implements [`MAC`].
+//! Generic behaviour tests for any MAC key object, through the [`MAC`] workers it hands out.
 
-use crate::DUMMY_SEED;
-use bouncycastle_core::errors::{KeyMaterialError, MACError};
-use bouncycastle_core::hazmat::do_hazardous_operations;
-use bouncycastle_core::key_material::{KeyMaterial512, KeyMaterialTrait, KeyType};
-use bouncycastle_core::security_strength::SecurityStrength;
+use bouncycastle_core::symmetric_key::{MacGenerationKey, MacVerificationKey};
 use bouncycastle_core::traits::MAC;
 
 /// Instance of the test framework.
@@ -18,129 +14,74 @@ impl TestFrameworkMAC {
         Self {}
     }
 
-    /// Test all the members of trait Hash against the given input-output pair.
-    /// This gives good baseline test coverage, but is not exhaustive.
-    pub fn test_mac<M: MAC>(
+    /// The one-shots and the workers a [`MacGenerationKey`] / [`MacVerificationKey`] hands out,
+    /// against the given input-output pair. This gives good baseline test coverage, but is not
+    /// exhaustive; the key-policy checks are `TestFrameworkFromAnyKeyMaterial`'s.
+    pub fn test_mac_key<K: MacGenerationKey + MacVerificationKey>(
         &self,
-        key: &impl KeyMaterialTrait,
+        key: &K,
         input: &[u8],
         expected_output: &[u8],
     ) {
-        // Test ::mac()
-        let out = M::new_allow_weak_key(key).unwrap().mac(input);
-        assert_eq!(out, expected_output);
-
-        // Test ::mac_out
+        // the key's one-shots
+        assert_eq!(key.mac(input), expected_output);
         let mut out = vec![0u8; expected_output.len()];
-        let bytes_written = M::new_allow_weak_key(key).unwrap().mac_out(input, &mut out).unwrap();
+        let bytes_written = key.mac_out(input, &mut out).unwrap();
         assert_eq!(bytes_written, expected_output.len());
         assert_eq!(out, expected_output);
-
-        // Test an output buffer that's too small (should truncate)
+        // an output buffer that's too small truncates
         let mut out = vec![0u8; expected_output.len() - 2];
-        let bytes_written = M::new_allow_weak_key(key).unwrap().mac_out(input, &mut out).unwrap();
+        let bytes_written = key.mac_out(input, &mut out).unwrap();
         assert_eq!(bytes_written, expected_output.len() - 2);
         assert_eq!(out, expected_output[..expected_output.len() - 2]);
-
-        // Test an output buffer that's too big (expect the first L bytes to get filled)
-        let mut out = vec![0u8; 2 * expected_output.len()];
-        let bytes_written = M::new_allow_weak_key(key).unwrap().mac_out(input, &mut out).unwrap();
+        // an output buffer that's too big gets the first L bytes filled and the rest zeroed
+        let mut out = vec![0xA5u8; 2 * expected_output.len()];
+        let bytes_written = key.mac_out(input, &mut out).unwrap();
         assert_eq!(bytes_written, expected_output.len());
         assert_eq!(&out[..expected_output.len()], expected_output);
         assert_eq!(&out[expected_output.len()..], vec![0u8; expected_output.len()]);
+        assert!(key.verify(input, expected_output));
+        assert!(!key.verify(input, &expected_output[..expected_output.len() - 1]));
+        assert!(!key.verify(b"not the input", expected_output));
 
-        // Test ::verify()
-        assert!(M::new_allow_weak_key(key).unwrap().verify(input, expected_output));
-
-        // Test .new(), .do_update(), .do_mac_final()
-        // At the same time, test .output_len()
-        let mut mac = M::new_allow_weak_key(key).unwrap();
-        let output_len = mac.output_len();
-        mac.do_update(input);
-        let out = mac.do_final();
+        // the workers' streaming methods, and the consuming one-shots on the workers
+        let mut generator = key.create_generator();
+        let output_len = generator.output_len();
+        generator.do_update(input);
+        let out = generator.do_final();
         assert_eq!(out, expected_output);
-
-        // Test .output_len()
         assert_eq!(output_len, out.len());
 
-        // Test .init(), .do_update(), .do_mac_final_out()
-        let mut mac = M::new_allow_weak_key(key).unwrap();
-        mac.do_update(input);
-        let mut out = vec![0u8; mac.output_len()];
-        let out_len = mac.do_final_out(&mut *out).unwrap();
+        let mut generator = key.create_generator();
+        generator.do_update(input);
+        let mut out = vec![0u8; generator.output_len()];
+        let out_len = generator.do_final_out(&mut *out).unwrap();
         assert_eq!(out, expected_output);
         assert_eq!(out_len, out.len());
 
-        // Test .init(), .do_update(), .do_verify_final_out()
-        let mut mac = M::new_allow_weak_key(key).unwrap();
-        mac.do_update(input);
-        mac.do_verify_final(expected_output);
+        assert_eq!(key.create_generator().mac(input), expected_output);
+        let mut out = vec![0u8; expected_output.len()];
+        assert_eq!(key.create_generator().mac_out(input, &mut out).unwrap(), out.len());
+        assert_eq!(out, expected_output);
+        assert!(key.create_verifier().verify(input, expected_output));
 
-        // entropy of input key
+        let mut verifier = key.create_verifier();
+        verifier.do_update(input);
+        assert!(verifier.do_verify_final(expected_output));
+        let mut verifier = key.create_verifier();
+        verifier.do_update(input);
+        assert!(!verifier.do_verify_final(&expected_output[1..]));
 
-        // MACs of all security strengths should throw an error on a no-security (and non-zero) key.
-
-        let mut key_none =
-            KeyMaterial512::from_bytes_as_type(&DUMMY_SEED[0..64], KeyType::MACKey).unwrap();
-        key_none.set_security_strength(SecurityStrength::None).unwrap();
-
-        match M::new(&key_none) {
-            Err(MACError::KeyMaterialError(KeyMaterialError::SecurityStrength(_))) => { /* fine */ }
-            _ => panic!(
-                "This should have thrown a KeyMaterialError::SecurityStrength error but it didn't"
-            ),
-        }
-
-        let mut low_security_key =
-            KeyMaterial512::from_bytes_as_type(&DUMMY_SEED[..64], KeyType::MACKey).unwrap();
-        do_hazardous_operations(&mut low_security_key, |low_security_key| {
-            match M::new_allow_weak_key(key).unwrap().max_security_strength() {
-                SecurityStrength::None => {
-                    low_security_key.set_key_len(13).unwrap(); // truncates should be infallible
-                    low_security_key.set_security_strength(SecurityStrength::None).unwrap();
-                }
-                SecurityStrength::_112bit => {
-                    low_security_key.set_key_len(28).unwrap(); // truncate should be infallible
-                    low_security_key.set_security_strength(SecurityStrength::None).unwrap();
-                }
-                SecurityStrength::_128bit => {
-                    low_security_key.set_key_len(32).unwrap(); // truncate should be infallible
-                    low_security_key.set_security_strength(SecurityStrength::_112bit).unwrap();
-                }
-                SecurityStrength::_192bit => {
-                    low_security_key.set_key_len(48).unwrap(); // truncate should be infallible
-                    low_security_key.set_security_strength(SecurityStrength::_128bit).unwrap();
-                }
-                SecurityStrength::_256bit => {
-                    low_security_key.set_key_len(64).unwrap(); // truncate should be infallible
-                    low_security_key.set_security_strength(SecurityStrength::_192bit).unwrap();
-                }
-                // `SecurityStrength` is `#[non_exhaustive]`, so this arm is required.
-                _ => panic!(
-                    "unhandled SecurityStrength variant -- add a case for it in the MAC test framework"
-                ),
-            };
-            Ok(())
-        })
-        .unwrap();
-
-        // init
-        assert!(
-            low_security_key.security_strength()
-                < M::new_allow_weak_key(key).unwrap().max_security_strength()
-        );
-        // complains at first
-        match M::new(&low_security_key) {
-            Err(MACError::KeyMaterialError(KeyMaterialError::SecurityStrength(_))) => { /* fine */ }
-            _ => {
-                panic!(
-                    "This should have thrown a KeyMaterialError::SecurityStrength error but it didn't"
-                )
-            }
-        }
-        // but fine if you do it with .allow_weak_keys()
-        let mut hmac = M::new_allow_weak_key(&low_security_key).unwrap();
-        hmac.do_update(b"Hi There");
-        hmac.do_final();
+        // several workers in flight from one key, finished in the other order, and the key
+        // unchanged by use
+        let mut a = key.create_generator();
+        let mut b = key.create_generator();
+        a.do_update(input);
+        b.do_update(b"another message");
+        let tag_b = b.do_final();
+        let tag_a = a.do_final();
+        assert_eq!(tag_a, expected_output);
+        assert_eq!(tag_b, key.mac(b"another message"));
+        assert_eq!(key.mac(input), expected_output);
     }
 }

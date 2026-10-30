@@ -1,7 +1,9 @@
 use bouncycastle_core::key_material::{KeyMaterial256, KeyMaterial512, KeyType};
-use bouncycastle_core::traits::{MAC, RNG};
+use bouncycastle_core::symmetric_key::{FromAnyKeyMaterial, MacGenerationKey};
+use bouncycastle_core::traits::RNG;
+use bouncycastle_hmac::HmacKey;
 use bouncycastle_rng as rng;
-use bouncycastle_sha3::hmac::{HMAC_SHA3_256, HMAC_SHA3_512};
+use bouncycastle_sha3::{SHA3_256, SHA3_512};
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 use std::hint::black_box;
 
@@ -15,13 +17,14 @@ fn bench_hmac_sha3_256(c: &mut Criterion) {
     }
 
     let hmac_key = KeyMaterial256::from_bytes_as_type(&data_block[..32], KeyType::MACKey).unwrap();
+    let key = HmacKey::<SHA3_256>::from_key_material(&hmac_key).unwrap();
     let mut out = [0u8; 32];
 
-    let mut group = c.benchmark_group("hmac::HMAC_SHA256::mac_out() -- 16x1024 one-shot");
+    let mut group = c.benchmark_group("hmac::HmacKey<SHA3_256>::mac_out() -- 16x1024 one-shot");
     group.throughput(Throughput::Bytes(big_data.len() as u64));
-    group.bench_function(format!("{} bytes -- ::hashes()", big_data.len() as u64), |b| {
+    group.bench_function(format!("{} bytes -- key.mac_out()", big_data.len() as u64), |b| {
         b.iter(|| {
-            HMAC_SHA3_256::new(&hmac_key).unwrap().mac_out(black_box(&big_data), &mut out).unwrap();
+            key.mac_out(black_box(&big_data), &mut out).unwrap();
             black_box(&out);
         })
     });
@@ -38,13 +41,14 @@ fn bench_hmac_sha3_512(c: &mut Criterion) {
     }
 
     let hmac_key = KeyMaterial512::from_bytes_as_type(&data_block[..64], KeyType::MACKey).unwrap();
+    let key = HmacKey::<SHA3_512>::from_key_material(&hmac_key).unwrap();
     let mut out = [0u8; 64];
 
-    let mut group = c.benchmark_group("hmac::HMAC_SHA512::mac_out() -- 16x1024 one-shot");
+    let mut group = c.benchmark_group("hmac::HmacKey<SHA3_512>::mac_out() -- 16x1024 one-shot");
     group.throughput(Throughput::Bytes(big_data.len() as u64));
-    group.bench_function(format!("{} bytes -- ::hashes()", big_data.len() as u64), |b| {
+    group.bench_function(format!("{} bytes -- key.mac_out()", big_data.len() as u64), |b| {
         b.iter(|| {
-            HMAC_SHA3_512::new(&hmac_key).unwrap().mac_out(black_box(&big_data), &mut out).unwrap();
+            key.mac_out(black_box(&big_data), &mut out).unwrap();
             black_box(&out);
         })
     });

@@ -17,6 +17,7 @@
 pub mod aead;
 pub mod block_cipher;
 pub mod electronic_code_book;
+pub mod from_key_material;
 pub mod hash;
 pub mod kdf;
 pub mod kem;
