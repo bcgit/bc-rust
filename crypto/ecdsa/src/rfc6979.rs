@@ -11,11 +11,12 @@
 //! below fails to compile if this crate ever gains a curve/hash pairing where they don't hold.
 
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
+use bouncycastle_core::symmetric_key::{FromAnyKeyMaterial, MacGenerationKey};
 use bouncycastle_core::traits::MAC;
 use bouncycastle_ec::nat;
 use bouncycastle_ec::p256_scalar::{N_LIMBS, P256Scalar};
 use bouncycastle_ec::p256_sec1;
-use bouncycastle_hmac::HMAC;
+use bouncycastle_hmac::HmacKey;
 use bouncycastle_sha2::SHA256;
 use bouncycastle_utils::ct;
 use bouncycastle_utils::ct::Condition;
@@ -33,14 +34,15 @@ const _: () =
 /// from the private key, and the last one produced *is* `k`. Returning `Secret` means each is
 /// scrubbed when it is dropped -- including the previous `key`/`v` that [`generate_k`]'s next step
 /// overwrites -- without disturbing that function's one-line-per-RFC-step shape.
-/// `new_allow_weak_key`: every `K` used here is 32 synthetic bytes from this same construction
+/// `from_key_material_allow_weak`: every `K` used here is 32 synthetic bytes from this same construction
 /// (starting from `0x00...00` in step c), not an application key, so there is no real "security
 /// strength" for [`KeyMaterial::from_bytes`] to have under- or over-estimated.
 fn hmac_k(key: &[u8; HLEN], data: &[&[u8]]) -> Secret<[u8; HLEN]> {
     let key_material = KeyMaterial::<HLEN>::from_bytes_as_type(key, KeyType::MACKey)
         .expect("HLEN-byte key always fits");
-    let mut hmac =
-        HMAC::<SHA256>::new_allow_weak_key(&key_material).expect("weak key always allowed");
+    let hmac_key = HmacKey::<SHA256>::from_key_material_allow_weak(&key_material)
+        .expect("weak key always allowed");
+    let mut hmac = hmac_key.create_generator();
     for piece in data {
         hmac.do_update(piece);
     }
