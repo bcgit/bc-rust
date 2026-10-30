@@ -961,8 +961,6 @@ enum Subcommands {
         nonce_file: Option<String>,
 
         /// Associated data in hex (authenticated but not encrypted).
-
-        /// Associated data in hex (authenticated but not encrypted).
         #[arg(long)]
         ad: Option<String>,
 
@@ -1016,8 +1014,8 @@ enum Subcommands {
     /// Supports streaming for low memory footprint and continuous processing from stdin to stdout.
     Base64Encode,
 
-    /// The ECDSA signature algorithm over NIST P-256 (FIPS 186-5), deterministic (RFC 6979) by
-    /// default. `ctx` has no effect: ECDSA has no context-string input.
+    /// The ECDSA signature algorithm over NIST P-256 (FIPS 186-5); `--deterministic` selects
+    /// Deterministic ECDSA (RFC 6979). `ctx` has no effect: ECDSA has no context-string input.
     ECDSA_P256 {
         action: ECDSAAction,
 
@@ -1036,6 +1034,12 @@ enum Subcommands {
         #[arg(short)]
         /// Output in hex format.
         x: bool,
+
+        #[arg(long)]
+        /// Deterministic ECDSA (FIPS 186-5 Section 6.3.2, RFC 6979): `k` is derived from the key
+        /// and the message rather than drawn from the RNG, so signing is repeatable. Verification
+        /// is the same either way.
+        deterministic: bool,
     },
 
     /// The ECDSA signature algorithm over NIST P-384 (FIPS 186-5). See ecdsa-p256.
@@ -1057,6 +1061,12 @@ enum Subcommands {
         #[arg(short)]
         /// Output in hex format.
         x: bool,
+
+        #[arg(long)]
+        /// Deterministic ECDSA (FIPS 186-5 Section 6.3.2, RFC 6979): `k` is derived from the key
+        /// and the message rather than drawn from the RNG, so signing is repeatable. Verification
+        /// is the same either way.
+        deterministic: bool,
     },
 
     /// The ECDSA signature algorithm over NIST P-521 (FIPS 186-5). See ecdsa-p256.
@@ -1078,6 +1088,12 @@ enum Subcommands {
         #[arg(short)]
         /// Output in hex format.
         x: bool,
+
+        #[arg(long)]
+        /// Deterministic ECDSA (FIPS 186-5 Section 6.3.2, RFC 6979): `k` is derived from the key
+        /// and the message rather than drawn from the RNG, so signing is repeatable. Verification
+        /// is the same either way.
+        deterministic: bool,
     },
 
     /// The ECDSA signature algorithm over secp256k1 (SEC 2). See ecdsa-p256.
@@ -1099,6 +1115,12 @@ enum Subcommands {
         #[arg(short)]
         /// Output in hex format.
         x: bool,
+
+        #[arg(long)]
+        /// Deterministic ECDSA (FIPS 186-5 Section 6.3.2, RFC 6979): `k` is derived from the key
+        /// and the message rather than drawn from the RNG, so signing is repeatable. Verification
+        /// is the same either way.
+        deterministic: bool,
     },
 
     /// The ECDSA signature algorithm over brainpoolP256r1 (RFC 5639). See ecdsa-p256.
@@ -1120,6 +1142,12 @@ enum Subcommands {
         #[arg(short)]
         /// Output in hex format.
         x: bool,
+
+        #[arg(long)]
+        /// Deterministic ECDSA (FIPS 186-5 Section 6.3.2, RFC 6979): `k` is derived from the key
+        /// and the message rather than drawn from the RNG, so signing is repeatable. Verification
+        /// is the same either way.
+        deterministic: bool,
     },
 
     /// The ECDSA signature algorithm over brainpoolP384r1 (RFC 5639). See ecdsa-p256.
@@ -1141,6 +1169,12 @@ enum Subcommands {
         #[arg(short)]
         /// Output in hex format.
         x: bool,
+
+        #[arg(long)]
+        /// Deterministic ECDSA (FIPS 186-5 Section 6.3.2, RFC 6979): `k` is derived from the key
+        /// and the message rather than drawn from the RNG, so signing is repeatable. Verification
+        /// is the same either way.
+        deterministic: bool,
     },
 
     /// The ECDSA signature algorithm over brainpoolP512r1 (RFC 5639). See ecdsa-p256.
@@ -1162,6 +1196,12 @@ enum Subcommands {
         #[arg(short)]
         /// Output in hex format.
         x: bool,
+
+        #[arg(long)]
+        /// Deterministic ECDSA (FIPS 186-5 Section 6.3.2, RFC 6979): `k` is derived from the key
+        /// and the message rather than drawn from the RNG, so signing is repeatable. Verification
+        /// is the same either way.
+        deterministic: bool,
     },
 
     /// The HashML-DSA-44 signature algorithm.
@@ -2081,26 +2121,33 @@ fn run() {
         Some(Subcommands::Base64Encode) => {
             encoders_cmd::base64_encode_cmd();
         }
-        Some(Subcommands::ECDSA_P256 { action, skfile, pkfile, sigfile, x }) => {
-            ecdsa_cmd::ecdsa_p256_cmd(action, skfile, pkfile, sigfile, *x);
+        Some(Subcommands::ECDSA_P256 { action, skfile, pkfile, sigfile, x, deterministic }) => {
+            ecdsa_cmd::ecdsa_p256_cmd(action, skfile, pkfile, sigfile, *x, *deterministic);
         }
-        Some(Subcommands::ECDSA_P384 { action, skfile, pkfile, sigfile, x }) => {
-            ecdsa_cmd::ecdsa_p384_cmd(action, skfile, pkfile, sigfile, *x);
+        Some(Subcommands::ECDSA_P384 { action, skfile, pkfile, sigfile, x, deterministic }) => {
+            ecdsa_cmd::ecdsa_p384_cmd(action, skfile, pkfile, sigfile, *x, *deterministic);
         }
-        Some(Subcommands::ECDSA_P521 { action, skfile, pkfile, sigfile, x }) => {
-            ecdsa_cmd::ecdsa_p521_cmd(action, skfile, pkfile, sigfile, *x);
+        Some(Subcommands::ECDSA_P521 { action, skfile, pkfile, sigfile, x, deterministic }) => {
+            ecdsa_cmd::ecdsa_p521_cmd(action, skfile, pkfile, sigfile, *x, *deterministic);
         }
-        Some(Subcommands::ECDSA_SECP256K1 { action, skfile, pkfile, sigfile, x }) => {
-            ecdsa_cmd::ecdsa_secp256k1_cmd(action, skfile, pkfile, sigfile, *x);
+        Some(Subcommands::ECDSA_SECP256K1 {
+            action,
+            skfile,
+            pkfile,
+            sigfile,
+            x,
+            deterministic,
+        }) => {
+            ecdsa_cmd::ecdsa_secp256k1_cmd(action, skfile, pkfile, sigfile, *x, *deterministic);
         }
-        Some(Subcommands::ECDSA_BP256R1 { action, skfile, pkfile, sigfile, x }) => {
-            ecdsa_cmd::ecdsa_bp256r1_cmd(action, skfile, pkfile, sigfile, *x);
+        Some(Subcommands::ECDSA_BP256R1 { action, skfile, pkfile, sigfile, x, deterministic }) => {
+            ecdsa_cmd::ecdsa_bp256r1_cmd(action, skfile, pkfile, sigfile, *x, *deterministic);
         }
-        Some(Subcommands::ECDSA_BP384R1 { action, skfile, pkfile, sigfile, x }) => {
-            ecdsa_cmd::ecdsa_bp384r1_cmd(action, skfile, pkfile, sigfile, *x);
+        Some(Subcommands::ECDSA_BP384R1 { action, skfile, pkfile, sigfile, x, deterministic }) => {
+            ecdsa_cmd::ecdsa_bp384r1_cmd(action, skfile, pkfile, sigfile, *x, *deterministic);
         }
-        Some(Subcommands::ECDSA_BP512R1 { action, skfile, pkfile, sigfile, x }) => {
-            ecdsa_cmd::ecdsa_bp512r1_cmd(action, skfile, pkfile, sigfile, *x);
+        Some(Subcommands::ECDSA_BP512R1 { action, skfile, pkfile, sigfile, x, deterministic }) => {
+            ecdsa_cmd::ecdsa_bp512r1_cmd(action, skfile, pkfile, sigfile, *x, *deterministic);
         }
         Some(Subcommands::HashMLDSA44 { action, ctxfile, skfile, pkfile, sigfile, x }) => {
             mldsa_cmd::hash_mldsa44_sha512_cmd(action, ctxfile, skfile, pkfile, sigfile, *x);

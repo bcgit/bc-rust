@@ -43,7 +43,7 @@ pub fn get_test_data(filename: &str) -> String {
 
 /// An [`RNG`] that hands out one fixed big-endian value, zero-padded on the left to whatever width
 /// is asked for. This is how `ECDSA_SigGen.txt`'s per-message secret `k` is injected: every
-/// curve's `sign_randomized` draws its DRBG bytes and reduces them per FIPS 186-5 Appendix A.4.1
+/// curve's `sign_rng` draws its DRBG bytes and reduces them per FIPS 186-5 Appendix A.4.1
 /// (`x mod (n-1)`, then `+ 1`), so an RNG returning `k - 1` -- which is `< n - 1`, making the
 /// reduction the identity -- produces exactly `k`, through the public API and with no test-only
 /// hook in the crate. Only `next_bytes_out`/`next_bytes` are meaningful; nothing in the signing
