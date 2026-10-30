@@ -220,8 +220,8 @@ impl Reference {
                 k[7] = !k[5];
             }
             32 => {
-                for i in 0..8 {
-                    k[i] = bytes2int(key, 4 * i);
+                for (i, ki) in k.iter_mut().enumerate() {
+                    *ki = bytes2int(key, 4 * i);
                 }
             }
             _ => panic!("key sizes are only 16/24/32 bytes."),
@@ -378,8 +378,8 @@ impl Reference {
     /// `processBlock`: `processBlock128` or `processBlock192or256` by key size.
     pub fn process_block(&self, input: &[u8; 16], out: &mut [u8; 16]) {
         let mut state = [0u32; 4];
-        for i in 0..4 {
-            state[i] = bytes2int(input, i * 4) ^ self.kw[i];
+        for (i, s) in state.iter_mut().enumerate() {
+            *s = bytes2int(input, i * 4) ^ self.kw[i];
         }
 
         camellia_f2(&mut state, &self.subkey, 0);

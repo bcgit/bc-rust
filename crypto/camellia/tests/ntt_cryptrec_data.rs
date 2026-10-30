@@ -20,7 +20,7 @@ pub struct KeySet {
 }
 
 /// `Camellia with 128-bit key`: `K No.001` .. `K No.010`.
-pub const CAMELLIA_128: [KeySet; 10] = [
+pub static CAMELLIA_128: [KeySet; 10] = [
     // K No.001
     KeySet {
         key: "00000000000000000000000000000000",
@@ -1364,7 +1364,7 @@ pub const CAMELLIA_128: [KeySet; 10] = [
 ];
 
 /// `Camellia with 192-bit key`: `K No.001` .. `K No.010`.
-pub const CAMELLIA_192: [KeySet; 10] = [
+pub static CAMELLIA_192: [KeySet; 10] = [
     // K No.001
     KeySet {
         key: "000000000000000000000000000000000000000000000000",
@@ -2708,7 +2708,7 @@ pub const CAMELLIA_192: [KeySet; 10] = [
 ];
 
 /// `Camellia with 256-bit key`: `K No.001` .. `K No.010`.
-pub const CAMELLIA_256: [KeySet; 10] = [
+pub static CAMELLIA_256: [KeySet; 10] = [
     // K No.001
     KeySet {
         key: "0000000000000000000000000000000000000000000000000000000000000000",

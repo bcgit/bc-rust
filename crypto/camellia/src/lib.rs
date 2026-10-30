@@ -328,7 +328,7 @@ pub use cfb::{Camellia_CFB_128, Camellia_CFB_192, Camellia_CFB_256};
 pub use cfb8::{Camellia_CFB8_128, Camellia_CFB8_192, Camellia_CFB8_256};
 pub use ctr::{CTR_NONCE_LEN, Camellia_CTR_128, Camellia_CTR_192, Camellia_CTR_256};
 pub use key::{Camellia128Key, Camellia192Key, Camellia256Key, CamelliaKey};
-pub use schedule::CamelliaParams;
+pub use schedule::{Camellia128Params, Camellia192Params, Camellia256Params, CamelliaParams};
 
 // Imports needed for docs
 #[allow(unused_imports)]

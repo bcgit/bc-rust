@@ -26,9 +26,19 @@
 use crate::round::f1;
 use bouncycastle_utils::secret::{Secret, ZeroizablePrimitive};
 
-/// Sealed: the three parameter sets are the only implementors.
+/// Sealed: the three parameter sets are the only implementors. The key-schedule steps that
+/// differ by key length live here, off the public trait.
 mod sealed {
-    pub trait CamelliaParamsInternalTrait {}
+    pub trait CamelliaParamsInternalTrait {
+        /// `KL` and `KR` from the key (Sec 2.2, "128-bit key K:" / "192-bit key K:" / "256-bit
+        /// key K:"). `k` is the key as big-endian 64-bit words, `KEY_LEN / 8` of them -- the
+        /// engine checks the length before calling, so the indexing here is in bounds by
+        /// construction.
+        fn kl_kr(k: &[u64]) -> (u128, u128);
+
+        /// Fills the schedule from `KL`, `KR`, `KA`, `KB` (Sec 2.2, the subkey tables).
+        fn subkeys(kl: u128, kr: u128, ka: u128, kb: u128, schedule: &mut [u64]);
+    }
 }
 pub(crate) use sealed::CamelliaParamsInternalTrait;
 
@@ -49,14 +59,6 @@ pub trait CamelliaParams: CamelliaParamsInternalTrait {
     const ALG_NAME: &'static str;
     /// `[u64; 4 + ROUNDS + FL_KEYS]` -- the subkeys. See the module docs for the layout.
     type Schedule: ZeroizablePrimitive + AsRef<[u64]> + AsMut<[u64]>;
-
-    /// `KL` and `KR` from the key (Sec 2.2, "128-bit key K:" / "192-bit key K:" / "256-bit key
-    /// K:"). `k` is the key as big-endian 64-bit words, `KEY_LEN / 8` of them -- the engine checks
-    /// the length before calling, so the indexing here is in bounds by construction.
-    fn kl_kr(k: &[u64]) -> (u128, u128);
-
-    /// Fills the schedule from `KL`, `KR`, `KA`, `KB` (Sec 2.2, the subkey tables).
-    fn subkeys(kl: u128, kr: u128, ka: u128, kb: u128, schedule: &mut [u64]);
 }
 
 /// Camellia-128 parameters: 16-byte key, 18 rounds, `ke1 .. ke4`.
@@ -69,9 +71,39 @@ pub struct Camellia192Params;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Camellia256Params;
 
-impl CamelliaParamsInternalTrait for Camellia128Params {}
-impl CamelliaParamsInternalTrait for Camellia192Params {}
-impl CamelliaParamsInternalTrait for Camellia256Params {}
+impl CamelliaParamsInternalTrait for Camellia128Params {
+    /// `KL = K; KR = 0;`
+    fn kl_kr(k: &[u64]) -> (u128, u128) {
+        (join(k[0], k[1]), 0)
+    }
+
+    fn subkeys(kl: u128, kr: u128, ka: u128, kb: u128, schedule: &mut [u64]) {
+        subkeys_128(kl, kr, ka, kb, schedule)
+    }
+}
+
+impl CamelliaParamsInternalTrait for Camellia192Params {
+    /// `KL = K >> 64; KR = ((K & MASK64) << 64) | (~(K & MASK64));` -- the leftmost 128 bits are
+    /// `KL`, and `KR` is the rightmost 64 bits followed by their complement.
+    fn kl_kr(k: &[u64]) -> (u128, u128) {
+        (join(k[0], k[1]), join(k[2], !k[2]))
+    }
+
+    fn subkeys(kl: u128, kr: u128, ka: u128, kb: u128, schedule: &mut [u64]) {
+        subkeys_192_256(kl, kr, ka, kb, schedule)
+    }
+}
+
+impl CamelliaParamsInternalTrait for Camellia256Params {
+    /// `KL = K >> 128; KR = K & MASK128;`
+    fn kl_kr(k: &[u64]) -> (u128, u128) {
+        (join(k[0], k[1]), join(k[2], k[3]))
+    }
+
+    fn subkeys(kl: u128, kr: u128, ka: u128, kb: u128, schedule: &mut [u64]) {
+        subkeys_192_256(kl, kr, ka, kb, schedule)
+    }
+}
 
 /// `(hi << 64) | lo`: joins two 64-bit words into a 128-bit value.
 ///
@@ -88,15 +120,6 @@ impl CamelliaParams for Camellia128Params {
     const FL_KEYS: usize = 4;
     const ALG_NAME: &'static str = "Camellia-128";
     type Schedule = [u64; 26]; // 4 + 18 + 4
-
-    /// `KL = K; KR = 0;`
-    fn kl_kr(k: &[u64]) -> (u128, u128) {
-        (join(k[0], k[1]), 0)
-    }
-
-    fn subkeys(kl: u128, kr: u128, ka: u128, kb: u128, schedule: &mut [u64]) {
-        subkeys_128(kl, kr, ka, kb, schedule)
-    }
 }
 
 impl CamelliaParams for Camellia192Params {
@@ -105,16 +128,6 @@ impl CamelliaParams for Camellia192Params {
     const FL_KEYS: usize = 6;
     const ALG_NAME: &'static str = "Camellia-192";
     type Schedule = [u64; 34]; // 4 + 24 + 6
-
-    /// `KL = K >> 64; KR = ((K & MASK64) << 64) | (~(K & MASK64));` -- the leftmost 128 bits are
-    /// `KL`, and `KR` is the rightmost 64 bits followed by their complement.
-    fn kl_kr(k: &[u64]) -> (u128, u128) {
-        (join(k[0], k[1]), join(k[2], !k[2]))
-    }
-
-    fn subkeys(kl: u128, kr: u128, ka: u128, kb: u128, schedule: &mut [u64]) {
-        subkeys_192_256(kl, kr, ka, kb, schedule)
-    }
 }
 
 impl CamelliaParams for Camellia256Params {
@@ -123,15 +136,6 @@ impl CamelliaParams for Camellia256Params {
     const FL_KEYS: usize = 6;
     const ALG_NAME: &'static str = "Camellia-256";
     type Schedule = [u64; 34]; // 4 + 24 + 6
-
-    /// `KL = K >> 128; KR = K & MASK128;`
-    fn kl_kr(k: &[u64]) -> (u128, u128) {
-        (join(k[0], k[1]), join(k[2], k[3]))
-    }
-
-    fn subkeys(kl: u128, kr: u128, ka: u128, kb: u128, schedule: &mut [u64]) {
-        subkeys_192_256(kl, kr, ka, kb, schedule)
-    }
 }
 
 /// `Sigma1 .. Sigma6` (Sec 2.2), "used as 'keys' in the F-function" when deriving `KA` and `KB`.
