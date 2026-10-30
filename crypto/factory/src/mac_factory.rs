@@ -112,8 +112,8 @@ pub const DEFAULT_256BIT_MAC_NAME: &str = HMAC_SHA256_NAME;
 pub enum MACFactory {
     /// KMAC128 with no customization string and a 32-byte tag (NIST SP 800-185 Sec 4).
     /// For a customization string or a different output length, construct
-    /// `bouncycastle_sha3::KMAC128Key` directly -- the factory selects by name alone and has no
-    /// channel for those parameters.
+    /// `bouncycastle_sha3::kmac::KMAC128Key` directly -- the factory selects by name alone and has
+    /// no channel for those parameters.
     KMAC128(KMAC128Key),
     /// KMAC256 with no customization string and a 64-byte tag. See [`MACFactory::KMAC128`].
     KMAC256(KMAC256Key),
