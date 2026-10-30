@@ -6,6 +6,7 @@ mod aes_ctr_cmd;
 mod aes_ecb_cmd;
 mod aes_gcm_cmd;
 mod ascon_cmd;
+mod ecdsa_cmd;
 mod encoders_cmd;
 mod helpers;
 mod hkdf_cmd;
@@ -15,11 +16,14 @@ mod mlkem_cmd;
 mod rng_cmd;
 mod sha2_cmd;
 mod sha3_cmd;
+mod sm2_cmd;
 mod sm3_cmd;
 
+use crate::ecdsa_cmd::ECDSAAction;
 use crate::mac_cmd::HMACVariant;
 use crate::mldsa_cmd::MLDSAAction;
 use crate::sha2_cmd::SHA2Variant;
+use crate::sm2_cmd::SM2Action;
 use clap::{Parser, Subcommand};
 use helpers::block_mode_helpers::CipherDirection;
 
@@ -1006,6 +1010,196 @@ enum Subcommands {
     /// Supports streaming for low memory footprint and continuous processing from stdin to stdout.
     Base64Encode,
 
+    /// The ECDSA signature algorithm over NIST P-256 (FIPS 186-5); `--deterministic` selects
+    /// Deterministic ECDSA (RFC 6979). `ctx` has no effect: ECDSA has no context-string input.
+    ECDSA_P256 {
+        action: ECDSAAction,
+
+        #[arg(long)]
+        /// The private key file (in hex or binary) for signing
+        skfile: Option<String>,
+
+        #[arg(long)]
+        /// The public key file (in hex or binary) for verifying
+        pkfile: Option<String>,
+
+        #[arg(long)]
+        /// The signature value file (in hex or binary) for verifying
+        sigfile: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+
+        #[arg(long)]
+        /// Deterministic ECDSA (FIPS 186-5 Section 6.3.2, RFC 6979): `k` is derived from the key
+        /// and the message rather than drawn from the RNG, so signing is repeatable. Verification
+        /// is the same either way.
+        deterministic: bool,
+    },
+
+    /// The ECDSA signature algorithm over NIST P-384 (FIPS 186-5). See ecdsa-p256.
+    ECDSA_P384 {
+        action: ECDSAAction,
+
+        #[arg(long)]
+        /// The private key file (in hex or binary) for signing
+        skfile: Option<String>,
+
+        #[arg(long)]
+        /// The public key file (in hex or binary) for verifying
+        pkfile: Option<String>,
+
+        #[arg(long)]
+        /// The signature value file (in hex or binary) for verifying
+        sigfile: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+
+        #[arg(long)]
+        /// Deterministic ECDSA (FIPS 186-5 Section 6.3.2, RFC 6979): `k` is derived from the key
+        /// and the message rather than drawn from the RNG, so signing is repeatable. Verification
+        /// is the same either way.
+        deterministic: bool,
+    },
+
+    /// The ECDSA signature algorithm over NIST P-521 (FIPS 186-5). See ecdsa-p256.
+    ECDSA_P521 {
+        action: ECDSAAction,
+
+        #[arg(long)]
+        /// The private key file (in hex or binary) for signing
+        skfile: Option<String>,
+
+        #[arg(long)]
+        /// The public key file (in hex or binary) for verifying
+        pkfile: Option<String>,
+
+        #[arg(long)]
+        /// The signature value file (in hex or binary) for verifying
+        sigfile: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+
+        #[arg(long)]
+        /// Deterministic ECDSA (FIPS 186-5 Section 6.3.2, RFC 6979): `k` is derived from the key
+        /// and the message rather than drawn from the RNG, so signing is repeatable. Verification
+        /// is the same either way.
+        deterministic: bool,
+    },
+
+    /// The ECDSA signature algorithm over secp256k1 (SEC 2). See ecdsa-p256.
+    ECDSA_SECP256K1 {
+        action: ECDSAAction,
+
+        #[arg(long)]
+        /// The private key file (in hex or binary) for signing
+        skfile: Option<String>,
+
+        #[arg(long)]
+        /// The public key file (in hex or binary) for verifying
+        pkfile: Option<String>,
+
+        #[arg(long)]
+        /// The signature value file (in hex or binary) for verifying
+        sigfile: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+
+        #[arg(long)]
+        /// Deterministic ECDSA (FIPS 186-5 Section 6.3.2, RFC 6979): `k` is derived from the key
+        /// and the message rather than drawn from the RNG, so signing is repeatable. Verification
+        /// is the same either way.
+        deterministic: bool,
+    },
+
+    /// The ECDSA signature algorithm over brainpoolP256r1 (RFC 5639). See ecdsa-p256.
+    ECDSA_BP256R1 {
+        action: ECDSAAction,
+
+        #[arg(long)]
+        /// The private key file (in hex or binary) for signing
+        skfile: Option<String>,
+
+        #[arg(long)]
+        /// The public key file (in hex or binary) for verifying
+        pkfile: Option<String>,
+
+        #[arg(long)]
+        /// The signature value file (in hex or binary) for verifying
+        sigfile: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+
+        #[arg(long)]
+        /// Deterministic ECDSA (FIPS 186-5 Section 6.3.2, RFC 6979): `k` is derived from the key
+        /// and the message rather than drawn from the RNG, so signing is repeatable. Verification
+        /// is the same either way.
+        deterministic: bool,
+    },
+
+    /// The ECDSA signature algorithm over brainpoolP384r1 (RFC 5639). See ecdsa-p256.
+    ECDSA_BP384R1 {
+        action: ECDSAAction,
+
+        #[arg(long)]
+        /// The private key file (in hex or binary) for signing
+        skfile: Option<String>,
+
+        #[arg(long)]
+        /// The public key file (in hex or binary) for verifying
+        pkfile: Option<String>,
+
+        #[arg(long)]
+        /// The signature value file (in hex or binary) for verifying
+        sigfile: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+
+        #[arg(long)]
+        /// Deterministic ECDSA (FIPS 186-5 Section 6.3.2, RFC 6979): `k` is derived from the key
+        /// and the message rather than drawn from the RNG, so signing is repeatable. Verification
+        /// is the same either way.
+        deterministic: bool,
+    },
+
+    /// The ECDSA signature algorithm over brainpoolP512r1 (RFC 5639). See ecdsa-p256.
+    ECDSA_BP512R1 {
+        action: ECDSAAction,
+
+        #[arg(long)]
+        /// The private key file (in hex or binary) for signing
+        skfile: Option<String>,
+
+        #[arg(long)]
+        /// The public key file (in hex or binary) for verifying
+        pkfile: Option<String>,
+
+        #[arg(long)]
+        /// The signature value file (in hex or binary) for verifying
+        sigfile: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+
+        #[arg(long)]
+        /// Deterministic ECDSA (FIPS 186-5 Section 6.3.2, RFC 6979): `k` is derived from the key
+        /// and the message rather than drawn from the RNG, so signing is repeatable. Verification
+        /// is the same either way.
+        deterministic: bool,
+    },
+
     /// The HashML-DSA-44 signature algorithm.
     HashMLDSA44 {
         action: MLDSAAction,
@@ -1688,6 +1882,35 @@ enum Subcommands {
         x: bool,
     },
 
+    /// The SM2 Digital Signature Algorithm (draft-shen-sm2-ecdsa-02 S5, GB/T 32918.2-2016),
+    /// randomised only (the draft specifies no deterministic scheme). `--idfile` is mandatory for
+    /// signing and verifying: it carries the signer's identity IDA, which every SM2 operation
+    /// needs and which has no default value in the draft.
+    SM2 {
+        action: SM2Action,
+
+        #[arg(long)]
+        /// The file containing the signer's identity IDA (raw bytes), mandatory for signing and
+        /// verifying
+        idfile: Option<String>,
+
+        #[arg(long)]
+        /// The private key file (in hex or binary) for signing
+        skfile: Option<String>,
+
+        #[arg(long)]
+        /// The public key file (in hex or binary) for verifying
+        pkfile: Option<String>,
+
+        #[arg(long)]
+        /// The signature value file (in hex or binary) for verifying
+        sigfile: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
     /// Perform SM3 of the content provided on stdin.
     /// Supports streaming update for low memory footprint.
     SM3 {
@@ -1894,6 +2117,34 @@ fn run() {
         Some(Subcommands::Base64Encode) => {
             encoders_cmd::base64_encode_cmd();
         }
+        Some(Subcommands::ECDSA_P256 { action, skfile, pkfile, sigfile, x, deterministic }) => {
+            ecdsa_cmd::ecdsa_p256_cmd(action, skfile, pkfile, sigfile, *x, *deterministic);
+        }
+        Some(Subcommands::ECDSA_P384 { action, skfile, pkfile, sigfile, x, deterministic }) => {
+            ecdsa_cmd::ecdsa_p384_cmd(action, skfile, pkfile, sigfile, *x, *deterministic);
+        }
+        Some(Subcommands::ECDSA_P521 { action, skfile, pkfile, sigfile, x, deterministic }) => {
+            ecdsa_cmd::ecdsa_p521_cmd(action, skfile, pkfile, sigfile, *x, *deterministic);
+        }
+        Some(Subcommands::ECDSA_SECP256K1 {
+            action,
+            skfile,
+            pkfile,
+            sigfile,
+            x,
+            deterministic,
+        }) => {
+            ecdsa_cmd::ecdsa_secp256k1_cmd(action, skfile, pkfile, sigfile, *x, *deterministic);
+        }
+        Some(Subcommands::ECDSA_BP256R1 { action, skfile, pkfile, sigfile, x, deterministic }) => {
+            ecdsa_cmd::ecdsa_bp256r1_cmd(action, skfile, pkfile, sigfile, *x, *deterministic);
+        }
+        Some(Subcommands::ECDSA_BP384R1 { action, skfile, pkfile, sigfile, x, deterministic }) => {
+            ecdsa_cmd::ecdsa_bp384r1_cmd(action, skfile, pkfile, sigfile, *x, *deterministic);
+        }
+        Some(Subcommands::ECDSA_BP512R1 { action, skfile, pkfile, sigfile, x, deterministic }) => {
+            ecdsa_cmd::ecdsa_bp512r1_cmd(action, skfile, pkfile, sigfile, *x, *deterministic);
+        }
         Some(Subcommands::HashMLDSA44 { action, ctxfile, skfile, pkfile, sigfile, x }) => {
             mldsa_cmd::hash_mldsa44_sha512_cmd(action, ctxfile, skfile, pkfile, sigfile, *x);
         }
@@ -2029,6 +2280,9 @@ fn run() {
         }
         Some(Subcommands::SHAKE256 { length, x }) => {
             sha3_cmd::shake_cmd(256, *length, *x);
+        }
+        Some(Subcommands::SM2 { action, idfile, skfile, pkfile, sigfile, x }) => {
+            sm2_cmd::sm2_cmd(action, idfile, skfile, pkfile, sigfile, *x);
         }
         Some(Subcommands::SM3 { x }) => {
             sm3_cmd::sm3_cmd(*x);
