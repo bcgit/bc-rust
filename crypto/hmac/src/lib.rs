@@ -3,10 +3,10 @@
 //!
 //! This is a utility crate and is not intended to be used directly. It provides [`HmacKey`] -- the
 //! key object, which holds the two precomputed pad states RFC 2104 Section 4 describes and hands
-//! out workers -- and [`HMAC`] -- the worker, one per message, which borrows the key it came from. Both are generic over any struct
-//! that implements [`Hash`] and [`HMACParams`], the extension point through which a hash declares
-//! the metadata from which the HMAC instance is built. The library provides the following concrete
-//! instantiations of HMAC:
+//! out workers -- and [`HMAC`] -- the worker, one per message, which borrows the key it came from.
+//! Both are generic over any struct that implements [`Hash`] and [`HMACParams`], the extension
+//! point through which a hash declares the metadata from which the HMAC instance is built. The
+//! library provides the following concrete instantiations of HMAC:
 //!
 //! | Hash family | Instantiations                                                               |
 //! |-------------|------------------------------------------------------------------------------|
