@@ -16,10 +16,11 @@ use crate::traits::{BlockCipherEncryptor, StreamCipherDecryptor, StreamCipherEnc
 /// [`ElectronicCodeBook`] is the raw primitive under a block cipher mode.
 ///
 /// It is positioned by its init data over an already-keyed permutation it borrows, and XORs
-/// successive keystream blocks into whatever it is handed. It has no direction and no init-data policy: generating the nonce, buffering a
-/// partly-used block between calls, and refusing a call that would run past the end of the
-/// keystream all belong to `bouncycastle_cipher::stream::StreamCipher`, which turns any
-/// `KeyStream` into a [`StreamCipherEncryptor`] / [`StreamCipherDecryptor`] pair.
+/// successive keystream blocks into whatever it is handed. It has no direction and no init-data
+/// policy: generating the nonce, buffering a partly-used block between calls, and refusing a call
+/// that would run past the end of the keystream all belong to
+/// `bouncycastle_cipher::stream::StreamCipher`, which turns any `KeyStream` into a
+/// [`StreamCipherEncryptor`] / [`StreamCipherDecryptor`] pair.
 ///
 /// Only a keystream that is independent of the data fits: CTR does, CFB does not, since its next
 /// keystream block is the encryption of the last ciphertext block.
