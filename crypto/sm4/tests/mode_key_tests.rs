@@ -2,8 +2,9 @@
 //! can carry, then the block, symmetric and stream suites.
 
 use bouncycastle_cipher::modes::hazmat::ecb::ECB;
-use bouncycastle_cipher::modes::{Blocks, CBC, CFB, CFB8, CTR, ModeNames};
+use bouncycastle_cipher::modes::{Blocks, CBC, CFB, CFB8, CMAC, CTR, ModeNames};
 use bouncycastle_cipher::padding::{NoPadding, PKCS7};
+use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
 use bouncycastle_core::hazmat::Mode;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
@@ -46,6 +47,26 @@ fn every_mode_key_enforces_the_material_policy() {
     construction_suite::<CFB>(SM4Internal::CFB_ALG_NAME);
     construction_suite::<CFB8>(SM4Internal::CFB8_ALG_NAME);
     construction_suite::<CTR>(SM4Internal::CTR_ALG_NAME);
+}
+
+/// A key under a MAC mode has no role here, and its `KEY_TYPE` is the `MACKey` the mode asks
+/// for: cipher material is refused for its type, and MAC material by the permutation, so the
+/// constructor never contradicts the constant and `generate` fails the same way.
+#[test]
+fn a_mac_mode_key_refuses_every_material_consistently() {
+    type MacKey = SM4Key<CMAC<16>>;
+    assert_eq!(MacKey::KEY_TYPE, KeyType::MACKey);
+    let refused = |r: Result<MacKey, SymmetricCipherError>| {
+        assert!(matches!(
+            r,
+            Err(SymmetricCipherError::KeyMaterialError(KeyMaterialError::InvalidKeyType(_)))
+        ));
+    };
+    refused(MacKey::from_key_material(&material()));
+    let mac_material =
+        KeyMaterial::<KEY_LEN>::from_bytes_as_type(&[0x42; KEY_LEN], KeyType::MACKey).unwrap();
+    refused(MacKey::from_key_material(&mac_material));
+    refused(MacKey::generate(&mut rng()));
 }
 
 #[test]
