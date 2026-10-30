@@ -2,7 +2,7 @@
 //! 3-5): `x = bits2int(X)`, `x = x mod (n-1)`, `x = x + 1`. Expected values computed independently
 //! in Python via `(int.from_bytes(bytes, 'big') % (n - 1)) + 1` with `n` from RFC 5639 §3.4, not
 //! derived from this crate's own reduction code -- existing round-trip tests elsewhere
-//! (`keygen`/`sign_randomized`) only ever check that the reduced value is self-consistent with
+//! (`keygen`/`sign_rng`) only ever check that the reduced value is self-consistent with
 //! itself, which can't distinguish a correct reduction from a systematically wrong one. This is
 //! exactly what a `cargo mutants` run on `reduce_wide_bits_mod_n_minus_1` and its
 //! `N_MINUS_1_LIMBS` constant surfaced: several bit-level and off-by-one mutants survived because

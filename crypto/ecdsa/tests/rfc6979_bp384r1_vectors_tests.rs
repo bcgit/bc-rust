@@ -11,7 +11,7 @@ use bouncycastle_core::traits::{
 };
 use bouncycastle_ec::bp384r1_comb::comb_multiply_base_point;
 use bouncycastle_ec::bp384r1_scalar::Bp384r1Scalar;
-use bouncycastle_ecdsa::ecdsa_bp384r1::ECDSABp384r1;
+use bouncycastle_ecdsa::ecdsa_bp384r1::ECDetDSABp384r1;
 use bouncycastle_ecdsa::keys_bp384r1::{ECDSABp384r1PrivateKey, ECDSABp384r1PublicKey};
 use bouncycastle_ecdsa::rfc6979_bp384r1::generate_k;
 use bouncycastle_hex::decode as hex_decode;
@@ -126,7 +126,7 @@ fn generate_k_matches_vectors() {
 fn deterministic_sign_matches_vectors() {
     for v in CASES {
         let sk = ECDSABp384r1PrivateKey::from_bytes(&bytes48(v.d)).unwrap();
-        let sig = ECDSABp384r1::sign(&sk, v.msg, None).unwrap();
+        let sig = ECDetDSABp384r1::sign(&sk, v.msg, None).unwrap();
         let mut expected = [0u8; 96];
         expected[..48].copy_from_slice(&bytes48(v.r));
         expected[48..].copy_from_slice(&bytes48(v.s));
@@ -139,7 +139,7 @@ fn deterministic_signature_verifies() {
     for v in CASES {
         let sk = ECDSABp384r1PrivateKey::from_bytes(&bytes48(v.d)).unwrap();
         let pk = public_key_for(v);
-        let sig = ECDSABp384r1::sign(&sk, v.msg, None).unwrap();
-        ECDSABp384r1::verify(&pk, v.msg, None, &sig).unwrap();
+        let sig = ECDetDSABp384r1::sign(&sk, v.msg, None).unwrap();
+        ECDetDSABp384r1::verify(&pk, v.msg, None, &sig).unwrap();
     }
 }
