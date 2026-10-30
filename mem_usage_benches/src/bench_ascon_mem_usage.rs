@@ -94,7 +94,8 @@ const NONCE: [u8; NONCE_LEN] = [
 
 /// Stands in for the caller's RNG and hands back [`NONCE`], so that the encrypting init runs
 /// Ascon's initialization and nothing else: a DRBG's generate would be the deepest part of that
-/// chain, and a DRBG's own stack is outside what the frame remarks can see. Not a random number generator; it exists only for this harness.
+/// chain, and a DRBG's own stack is outside what the frame remarks can see. Not a random number
+/// generator; it exists only for this harness.
 struct FixedNonce;
 
 impl RNG for FixedNonce {
