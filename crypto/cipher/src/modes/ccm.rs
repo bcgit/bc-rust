@@ -1543,298 +1543,14 @@ where
     }
 }
 
-#[cfg(test)]
-mod tests {
-    //! Tests for the private formatting helpers, which are what a reviewer with SP 800-38C open
-    //! most needs to check and which no public API exposes directly.
-    //!
-    //! The expected values are the `B` and `Ctr_i` strings printed in the spec's own Appendix C
-    //! examples, transcribed from the errata-updated PDF. Appendix C gives the formatted block
-    //! string for each example, so these pin the flags octet, the placement of `N` and `Q`, and
-    //! the AAD length encoding against the document rather than against this implementation.
-
-    use super::*;
-    use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-
-    /// A stand-in permutation: the identity. `B0` and `Ctr_i` are formatted *before* any cipher
-    /// call, so the identity is enough to read them back out of the state, and it keeps these
-    /// tests about the formatting function rather than about AES.
-    struct Identity;
-
-    impl Algorithm for Identity {
-        const ALG_NAME: &'static str = "identity";
-        const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_128bit;
-    }
-
-    impl ModeNames for Identity {
-        const CBC_ALG_NAME: &'static str = "identity_CBC";
-        const CCM_ALG_NAME: &'static str = "identity_CCM";
-        const CFB_ALG_NAME: &'static str = "identity_CFB";
-        const CFB8_ALG_NAME: &'static str = "identity_CFB8";
-        const CMAC_ALG_NAME: &'static str = "identity_CMAC";
-        const CTR_ALG_NAME: &'static str = "identity_CTR";
-        const ECB_ALG_NAME: &'static str = "identity_ECB";
-        const GCM_ALG_NAME: &'static str = "identity_GCM";
-        const GMAC_ALG_NAME: &'static str = "identity_GMAC";
-    }
-
-    impl ElectronicCodeBook<16, 16> for Identity {
-        fn new(_key: &KeyMaterial<16>) -> Result<Self, SymmetricCipherError> {
-            Ok(Identity)
-        }
-    }
-
-    impl BlockPermutation<16> for Identity {
-        fn encrypt_block(&self, _block: &mut [u8; 16]) {}
-        fn decrypt_block(&self, _block: &mut [u8; 16]) {}
-        fn encrypt_2blocks(&self, _blocks: &mut [[u8; 16]; 2]) {}
-        fn decrypt_2blocks(&self, _blocks: &mut [[u8; 16]; 2]) {}
-        fn encrypt_4blocks(&self, _blocks: &mut [[u8; 16]; 4]) {}
-        fn decrypt_4blocks(&self, _blocks: &mut [[u8; 16]; 4]) {}
-    }
-
-    fn key() -> KeyMaterial<16> {
-        KeyMaterial::<16>::from_bytes_as_type(
-            &[
-                0x40, 0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x48, 0x49, 0x4a, 0x4b, 0x4c, 0x4d,
-                0x4e, 0x4f,
-            ],
-            KeyType::SymmetricCipherKey,
-        )
-        .expect("Appendix C's 128-bit key")
-    }
-
-    /// Appendix C.1: `Tlen=32, Nlen=56, Alen=64, Plen=32`, so `t = 4`, `n = 7`, `q = 8`.
-    ///
-    /// The spec prints `B` as
-    /// `4f101112 13141516 00000000 00000004 | 00080001 02030405 06070000 00000000 | ...`,
-    /// so `B0` is `4f` then the 7-byte nonce then `[4]_64`, and `B1` is `[8]_16` then the 8-byte
-    /// AAD then six zero bytes of pad.
-    ///
-    /// C.1's AAD is 8 bytes, so its Adata bit is set.
-    #[test]
-    fn c1_b0_matches_the_spec() {
-        let nonce = [0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16];
-        assert_eq!(
-            Ccm::<Identity, Encrypting, 16, 7, 4>::format_b0(&nonce, true, 4),
-            [0x4f, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0, 0, 0, 0, 0, 0, 0, 4],
-            "C.1 B0: flags 0x4f = Adata 1 | [(4-2)/2]_3 = 001 | [8-1]_3 = 111, then Q = [4]_64"
-        );
-    }
-
-    /// A.2.2: the Adata bit is "'0' if a=0 and '1' if a>0", and it is bit 6 -- so clearing it must
-    /// take C.1's `0x4f` to `0x0f` and change nothing else in the block.
-    #[test]
-    fn adata_flag_is_bit_6_of_the_flags_octet() {
-        let nonce = [0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16];
-        let with = Ccm::<Identity, Encrypting, 16, 7, 4>::format_b0(&nonce, true, 4);
-        let without = Ccm::<Identity, Encrypting, 16, 7, 4>::format_b0(&nonce, false, 4);
-        assert_eq!(without[0], 0x0f, "a = 0 clears bit 6, leaving the t and q fields alone");
-        assert_eq!(with[0] ^ without[0], 1 << 6, "Adata is bit 6 and nothing else");
-        assert_eq!(with[1..], without[1..], "the flag must not disturb N or Q");
-    }
-
-    /// The constructor really does absorb the `B0` that [`Ccm::format_b0`] built. With the identity
-    /// permutation the CBC-MAC chaining value after one block is that block itself, so a
-    /// no-AAD, no-payload construction leaves `B0` sitting in `y`.
-    ///
-    /// Without this, `format_b0` could be correct and unused.
-    #[test]
-    fn the_constructor_absorbs_b0() {
-        let nonce = [0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16];
-        let identity = Identity::new(&key()).unwrap();
-        let ccm =
-            Ccm::<Identity, Encrypting, 16, 7, 4>::from_perm_with_lengths(&identity, &nonce, 0, 4)
-                .unwrap();
-        assert_eq!(*ccm.y, Ccm::<Identity, Encrypting, 16, 7, 4>::format_b0(&nonce, false, 4));
-        assert_eq!(ccm.mac_pos, 0, "a whole block was absorbed, so nothing is part-filled");
-    }
-
-    /// Appendix C.4: `Tlen=112, Nlen=104, Plen=256`, so `t = 14`, `n = 13`, `q = 2`; the spec
-    /// prints `B0` as `71101112 13141516 1718191a 1b1c0020`.
-    ///
-    /// This is the other end of the `q` range from C.1, so between them the two tests pin the
-    /// `[q-1]_3` encoding and the fact that `Q` is `q` octets wide, not a fixed width.
-    #[test]
-    fn c4_b0_matches_the_spec() {
-        let nonce = [0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c];
-        assert_eq!(
-            Ccm::<Identity, Encrypting, 16, 13, 14>::format_b0(&nonce, true, 32),
-            [
-                0x71, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c,
-                0x00, 0x20
-            ],
-            "C.4 B0: flags 0x71 = Adata 1 | [(14-2)/2]_3 = 110 | [2-1]_3 = 001, then Q = [32]_16"
-        );
-    }
-
-    /// Appendix C.1 prints `Ctr0` as `07101112 13141516 00000000 00000000` and `Ctr1` as the same
-    /// with a trailing `01`; C.4's are `01101112 ... 1b1c0000` and `... 1b1c0001`.
-    ///
-    /// Table 4 makes the counter flags `[q-1]_3` alone, with every other bit zero -- which is what
-    /// keeps them distinct from `B0`, whose `t` field cannot be zero.
-    #[test]
-    fn counter_blocks_match_the_spec() {
-        let nonce_c1 = [0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16];
-        let mut ks = CcmKeyStream::<Identity, 16, 7>::from_perm(&Identity, &nonce_c1);
-        // `Ctr0` is the template with a zero counter field.
-        let ctr0 = CcmKeyStream::<Identity, 16, 7>::counter_block(&ks.ctr_template, 0);
-        assert_eq!(
-            ctr0,
-            [0x07, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0, 0, 0, 0, 0, 0, 0, 0],
-            "C.1 Ctr0"
-        );
-        // The first payload keystream block is `S1`, so the first block the keystream XORs in must
-        // be `Ctr1`: under the identity permutation, XORed into zeros, that is `Ctr1` itself.
-        let mut s1 = [[0u8; 16]];
-        ks.apply_blocks(&mut s1);
-        let mut ctr1 = ctr0;
-        ctr1[15] = 1;
-        assert_eq!(s1[0], ctr1, "C.1 Ctr1 (the identity permutation leaves S1 = Ctr1)");
-
-        let nonce_c4 =
-            [0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c];
-        let ks4 = CcmKeyStream::<Identity, 16, 13>::from_perm(&Identity, &nonce_c4);
-        assert_eq!(
-            CcmKeyStream::<Identity, 16, 13>::counter_block(&ks4.ctr_template, 0),
-            [
-                0x01, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c,
-                0x00, 0x00
-            ],
-            "C.4 Ctr0"
-        );
-    }
-
-    /// A fresh keystream has every counter value but `Ctr0` left: step 7's `S1 || S2 || ...` runs
-    /// from `j = 1` to the largest `q`-octet counter, `2^8q - 1`, and `S0` is the tag mask. Pinned
-    /// absolutely because the limit can never bind through the public API -- A.1 caps the payload
-    /// at `2^8q - 1` bytes, far fewer than that many blocks -- so nothing else would notice an
-    /// off-by-one here.
-    #[test]
-    fn a_fresh_keystream_has_every_counter_but_ctr0_left() {
-        // n = 13, so q = 2: counters 1 ..= 65535.
-        let ks = CcmKeyStream::<Identity, 16, 13>::from_perm(&Identity, &[0u8; 13]);
-        assert_eq!(ks.remaining_blocks(), 65535);
-        // n = 7, so q = 8: counters 1 ..= 2^64 - 1, which is `u64::MAX` of them.
-        let ks = CcmKeyStream::<Identity, 16, 7>::from_perm(&Identity, &[0u8; 7]);
-        assert_eq!(ks.remaining_blocks(), u64::MAX);
-    }
-
-    /// CCM's keystream against the shared [`KeyStream`] conformance suite. A unit test rather than
-    /// an integration test because `CcmKeyStream` is crate-private. Over the keyed toy rather than
-    /// the identity, which ignores the key and so could not pass the key-policy checks.
-    #[test]
-    fn ccm_keystream_conforms_to_the_key_stream_framework() {
-        mod toy {
-            include!("../../tests/common/toy_block_cipher.rs");
-        }
-        use bouncycastle_core_test_framework::key_stream::TestFrameworkKeyStream;
-        use toy::ToyBlockCipher;
-        let perm = ToyBlockCipher::new(&key()).unwrap();
-        let framework = TestFrameworkKeyStream::new();
-        framework.test::<7, 16, _>(|nonce| {
-            CcmKeyStream::<ToyBlockCipher, 16, 7>::from_perm(&perm, nonce)
-        });
-        framework.test::<13, 16, _>(|nonce| {
-            CcmKeyStream::<ToyBlockCipher, 16, 13>::from_perm(&perm, nonce)
-        });
-    }
-
-    /// A.2.2's three AAD length encodings, at and around both boundaries.
-    ///
-    /// Two of these values come from the spec itself: C.1's `a = 8` is printed as `0008`, and
-    /// C.4's `a = 65536` (`Alen = 524288` bits) is printed as
-    /// `11111111 11111110 00000000 00000001 00000000 00000000`, i.e. `ff fe 00 01 00 00`.
-    ///
-    /// The rest pin the boundaries, which is the part no end-to-end test can reach: the first is
-    /// `2^16 - 2^8` = 65280 rather than the obvious-but-wrong `2^16`, and the second is `2^32`,
-    /// which through the public API would need a 4 GiB AAD.
-    #[test]
-    fn aad_length_encoding_matches_a_2_2() {
-        type Mode<'k> = Ccm<'k, Identity, Encrypting, 16, 7, 4>;
-
-        // Case 1: 0 < a < 2^16 - 2^8, two octets, `[a]_16`.
-        assert_eq!(
-            Mode::encode_aad_len(8),
-            ([0x00, 0x08, 0, 0, 0, 0, 0, 0, 0, 0], 2),
-            "C.1's a = 8"
-        );
-        assert_eq!(Mode::encode_aad_len(1).1, 2);
-        // 65279 = 2^16 - 2^8 - 1 is the largest value still in the first case.
-        assert_eq!(
-            Mode::encode_aad_len(65279),
-            ([0xfe, 0xff, 0, 0, 0, 0, 0, 0, 0, 0], 2),
-            "65279 is still [a]_16"
-        );
-
-        // Case 2: 2^16 - 2^8 <= a < 2^32, six octets, `0xff || 0xfe || [a]_32`. 65280 is the first.
-        assert_eq!(
-            Mode::encode_aad_len(65280),
-            ([0xff, 0xfe, 0x00, 0x00, 0xff, 0x00, 0, 0, 0, 0], 6),
-            "65280 crosses into the six-octet case; a two-octet 0xff00 would be ambiguous"
-        );
-        assert_eq!(
-            Mode::encode_aad_len(65536),
-            ([0xff, 0xfe, 0x00, 0x01, 0x00, 0x00, 0, 0, 0, 0], 6),
-            "C.4's a = 65536"
-        );
-        // 2^32 - 1 is the largest value still in the second case.
-        assert_eq!(
-            Mode::encode_aad_len(u32::MAX as u64),
-            ([0xff, 0xfe, 0xff, 0xff, 0xff, 0xff, 0, 0, 0, 0], 6),
-            "2^32 - 1 is still the six-octet case"
-        );
-
-        // Case 3: 2^32 <= a < 2^64, ten octets, `0xff || 0xff || [a]_64`.
-        assert_eq!(
-            Mode::encode_aad_len(1u64 << 32),
-            ([0xff, 0xff, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00], 10),
-            "2^32 is the first ten-octet case"
-        );
-        assert_eq!(
-            Mode::encode_aad_len(u64::MAX),
-            ([0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff], 10)
-        );
-
-        // A.2.2's whole point: the three cases are distinguishable by their leading octets, so no
-        // two distinct lengths can encode to the same prefix. The first octet is 0xff only in the
-        // second and third cases, and the second octet separates those.
-        for a in [1u64, 8, 65279] {
-            assert_ne!(Mode::encode_aad_len(a).0[0], 0xff, "case 1 must not lead with 0xff");
-        }
-    }
-
-    /// The constructor really uses `Ccm::encode_aad_len`, and puts it *before* the AAD.
-    ///
-    /// With the identity permutation the CBC-MAC is `y = B0 ^ B1 ^ ... ^ Br`, so with a one-block
-    /// all-zero AAD the only nonzero contributions are `B0` and the length encoding. That makes the
-    /// encoding readable back out, which is what pins the ordering rather than just the value.
-    #[test]
-    fn the_constructor_prefixes_the_aad_with_its_length() {
-        type Mode<'k> = Ccm<'k, Identity, Encrypting, 16, 7, 4>;
-        let nonce = [0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16];
-        // 14 zero bytes of AAD: the 2-byte length plus 14 bytes is exactly one 16-byte block, so
-        // there is no padding to reason about.
-        let identity = Identity::new(&key()).unwrap();
-        let mut ccm = Mode::from_perm_with_lengths(&identity, &nonce, 14, 0).unwrap();
-        ccm.absorb_aad(&[0u8; 14]);
-
-        let b0 = Mode::format_b0(&nonce, true, 0);
-        let mut b1 = [0u8; 16];
-        b1[..2].copy_from_slice(&14u16.to_be_bytes());
-        let expected: [u8; 16] = core::array::from_fn(|i| b0[i] ^ b1[i]);
-        assert_eq!(*ccm.y, expected, "y must be B0 ^ B1, with B1 starting with [14]_16");
-    }
-}
-
 /// The CCM mode type: the `M` of a mode-bound key such as `AES128Key<CCM<12, 16>>`.
 ///
 /// CCM must commit to the AAD and payload lengths before its first byte (`B0` carries the
 /// payload length, A.2.2 length-prefixes the AAD), so the key's constructors take them: `CCM`
 /// implements the declared-length mode traits, and its workers, [`CcmEncryptor`] /
 /// [`CcmDecryptor`], then take exactly those amounts in any chunking and hold nothing
-/// back. The generic-trait pair with the frame in its type, [`CcmPacketEncryptor`] / [`CcmPacketDecryptor`],
-/// is the other way onto the same mode.
+/// back. The generic-trait pair with the frame in its type, [`CcmPacketEncryptor`] /
+/// [`CcmPacketDecryptor`], is the other way onto the same mode.
 pub struct CCM<const NONCE_LEN: usize, const TAG_LEN: usize>;
 
 impl<const NONCE_LEN: usize, const TAG_LEN: usize> CCM<NONCE_LEN, TAG_LEN> {
@@ -2458,5 +2174,289 @@ where
 
     fn from_suspended(state: [u8; N], key: &'k Self::Key) -> Result<Self, SuspendableError> {
         resume_component(&state, key)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    //! Tests for the private formatting helpers, which are what a reviewer with SP 800-38C open
+    //! most needs to check and which no public API exposes directly.
+    //!
+    //! The expected values are the `B` and `Ctr_i` strings printed in the spec's own Appendix C
+    //! examples, transcribed from the errata-updated PDF. Appendix C gives the formatted block
+    //! string for each example, so these pin the flags octet, the placement of `N` and `Q`, and
+    //! the AAD length encoding against the document rather than against this implementation.
+
+    use super::*;
+    use bouncycastle_core::key_material::{KeyMaterial, KeyType};
+
+    /// A stand-in permutation: the identity. `B0` and `Ctr_i` are formatted *before* any cipher
+    /// call, so the identity is enough to read them back out of the state, and it keeps these
+    /// tests about the formatting function rather than about AES.
+    struct Identity;
+
+    impl Algorithm for Identity {
+        const ALG_NAME: &'static str = "identity";
+        const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_128bit;
+    }
+
+    impl ModeNames for Identity {
+        const CBC_ALG_NAME: &'static str = "identity_CBC";
+        const CCM_ALG_NAME: &'static str = "identity_CCM";
+        const CFB_ALG_NAME: &'static str = "identity_CFB";
+        const CFB8_ALG_NAME: &'static str = "identity_CFB8";
+        const CMAC_ALG_NAME: &'static str = "identity_CMAC";
+        const CTR_ALG_NAME: &'static str = "identity_CTR";
+        const ECB_ALG_NAME: &'static str = "identity_ECB";
+        const GCM_ALG_NAME: &'static str = "identity_GCM";
+        const GMAC_ALG_NAME: &'static str = "identity_GMAC";
+    }
+
+    impl ElectronicCodeBook<16, 16> for Identity {
+        fn new(_key: &KeyMaterial<16>) -> Result<Self, SymmetricCipherError> {
+            Ok(Identity)
+        }
+    }
+
+    impl BlockPermutation<16> for Identity {
+        fn encrypt_block(&self, _block: &mut [u8; 16]) {}
+        fn decrypt_block(&self, _block: &mut [u8; 16]) {}
+        fn encrypt_2blocks(&self, _blocks: &mut [[u8; 16]; 2]) {}
+        fn decrypt_2blocks(&self, _blocks: &mut [[u8; 16]; 2]) {}
+        fn encrypt_4blocks(&self, _blocks: &mut [[u8; 16]; 4]) {}
+        fn decrypt_4blocks(&self, _blocks: &mut [[u8; 16]; 4]) {}
+    }
+
+    fn key() -> KeyMaterial<16> {
+        KeyMaterial::<16>::from_bytes_as_type(
+            &[
+                0x40, 0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x48, 0x49, 0x4a, 0x4b, 0x4c, 0x4d,
+                0x4e, 0x4f,
+            ],
+            KeyType::SymmetricCipherKey,
+        )
+        .expect("Appendix C's 128-bit key")
+    }
+
+    /// Appendix C.1: `Tlen=32, Nlen=56, Alen=64, Plen=32`, so `t = 4`, `n = 7`, `q = 8`.
+    ///
+    /// The spec prints `B` as
+    /// `4f101112 13141516 00000000 00000004 | 00080001 02030405 06070000 00000000 | ...`,
+    /// so `B0` is `4f` then the 7-byte nonce then `[4]_64`, and `B1` is `[8]_16` then the 8-byte
+    /// AAD then six zero bytes of pad.
+    ///
+    /// C.1's AAD is 8 bytes, so its Adata bit is set.
+    #[test]
+    fn c1_b0_matches_the_spec() {
+        let nonce = [0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16];
+        assert_eq!(
+            Ccm::<Identity, Encrypting, 16, 7, 4>::format_b0(&nonce, true, 4),
+            [0x4f, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0, 0, 0, 0, 0, 0, 0, 4],
+            "C.1 B0: flags 0x4f = Adata 1 | [(4-2)/2]_3 = 001 | [8-1]_3 = 111, then Q = [4]_64"
+        );
+    }
+
+    /// A.2.2: the Adata bit is "'0' if a=0 and '1' if a>0", and it is bit 6 -- so clearing it must
+    /// take C.1's `0x4f` to `0x0f` and change nothing else in the block.
+    #[test]
+    fn adata_flag_is_bit_6_of_the_flags_octet() {
+        let nonce = [0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16];
+        let with = Ccm::<Identity, Encrypting, 16, 7, 4>::format_b0(&nonce, true, 4);
+        let without = Ccm::<Identity, Encrypting, 16, 7, 4>::format_b0(&nonce, false, 4);
+        assert_eq!(without[0], 0x0f, "a = 0 clears bit 6, leaving the t and q fields alone");
+        assert_eq!(with[0] ^ without[0], 1 << 6, "Adata is bit 6 and nothing else");
+        assert_eq!(with[1..], without[1..], "the flag must not disturb N or Q");
+    }
+
+    /// The constructor really does absorb the `B0` that [`Ccm::format_b0`] built. With the identity
+    /// permutation the CBC-MAC chaining value after one block is that block itself, so a
+    /// no-AAD, no-payload construction leaves `B0` sitting in `y`.
+    ///
+    /// Without this, `format_b0` could be correct and unused.
+    #[test]
+    fn the_constructor_absorbs_b0() {
+        let nonce = [0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16];
+        let identity = Identity::new(&key()).unwrap();
+        let ccm =
+            Ccm::<Identity, Encrypting, 16, 7, 4>::from_perm_with_lengths(&identity, &nonce, 0, 4)
+                .unwrap();
+        assert_eq!(*ccm.y, Ccm::<Identity, Encrypting, 16, 7, 4>::format_b0(&nonce, false, 4));
+        assert_eq!(ccm.mac_pos, 0, "a whole block was absorbed, so nothing is part-filled");
+    }
+
+    /// Appendix C.4: `Tlen=112, Nlen=104, Plen=256`, so `t = 14`, `n = 13`, `q = 2`; the spec
+    /// prints `B0` as `71101112 13141516 1718191a 1b1c0020`.
+    ///
+    /// This is the other end of the `q` range from C.1, so between them the two tests pin the
+    /// `[q-1]_3` encoding and the fact that `Q` is `q` octets wide, not a fixed width.
+    #[test]
+    fn c4_b0_matches_the_spec() {
+        let nonce = [0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c];
+        assert_eq!(
+            Ccm::<Identity, Encrypting, 16, 13, 14>::format_b0(&nonce, true, 32),
+            [
+                0x71, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c,
+                0x00, 0x20
+            ],
+            "C.4 B0: flags 0x71 = Adata 1 | [(14-2)/2]_3 = 110 | [2-1]_3 = 001, then Q = [32]_16"
+        );
+    }
+
+    /// Appendix C.1 prints `Ctr0` as `07101112 13141516 00000000 00000000` and `Ctr1` as the same
+    /// with a trailing `01`; C.4's are `01101112 ... 1b1c0000` and `... 1b1c0001`.
+    ///
+    /// Table 4 makes the counter flags `[q-1]_3` alone, with every other bit zero -- which is what
+    /// keeps them distinct from `B0`, whose `t` field cannot be zero.
+    #[test]
+    fn counter_blocks_match_the_spec() {
+        let nonce_c1 = [0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16];
+        let mut ks = CcmKeyStream::<Identity, 16, 7>::from_perm(&Identity, &nonce_c1);
+        // `Ctr0` is the template with a zero counter field.
+        let ctr0 = CcmKeyStream::<Identity, 16, 7>::counter_block(&ks.ctr_template, 0);
+        assert_eq!(
+            ctr0,
+            [0x07, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0, 0, 0, 0, 0, 0, 0, 0],
+            "C.1 Ctr0"
+        );
+        // The first payload keystream block is `S1`, so the first block the keystream XORs in must
+        // be `Ctr1`: under the identity permutation, XORed into zeros, that is `Ctr1` itself.
+        let mut s1 = [[0u8; 16]];
+        ks.apply_blocks(&mut s1);
+        let mut ctr1 = ctr0;
+        ctr1[15] = 1;
+        assert_eq!(s1[0], ctr1, "C.1 Ctr1 (the identity permutation leaves S1 = Ctr1)");
+
+        let nonce_c4 =
+            [0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c];
+        let ks4 = CcmKeyStream::<Identity, 16, 13>::from_perm(&Identity, &nonce_c4);
+        assert_eq!(
+            CcmKeyStream::<Identity, 16, 13>::counter_block(&ks4.ctr_template, 0),
+            [
+                0x01, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c,
+                0x00, 0x00
+            ],
+            "C.4 Ctr0"
+        );
+    }
+
+    /// A fresh keystream has every counter value but `Ctr0` left: step 7's `S1 || S2 || ...` runs
+    /// from `j = 1` to the largest `q`-octet counter, `2^8q - 1`, and `S0` is the tag mask. Pinned
+    /// absolutely because the limit can never bind through the public API -- A.1 caps the payload
+    /// at `2^8q - 1` bytes, far fewer than that many blocks -- so nothing else would notice an
+    /// off-by-one here.
+    #[test]
+    fn a_fresh_keystream_has_every_counter_but_ctr0_left() {
+        // n = 13, so q = 2: counters 1 ..= 65535.
+        let ks = CcmKeyStream::<Identity, 16, 13>::from_perm(&Identity, &[0u8; 13]);
+        assert_eq!(ks.remaining_blocks(), 65535);
+        // n = 7, so q = 8: counters 1 ..= 2^64 - 1, which is `u64::MAX` of them.
+        let ks = CcmKeyStream::<Identity, 16, 7>::from_perm(&Identity, &[0u8; 7]);
+        assert_eq!(ks.remaining_blocks(), u64::MAX);
+    }
+
+    /// CCM's keystream against the shared [`KeyStream`] conformance suite. A unit test rather than
+    /// an integration test because `CcmKeyStream` is crate-private. Over the keyed toy rather than
+    /// the identity, which ignores the key and so could not pass the key-policy checks.
+    #[test]
+    fn ccm_keystream_conforms_to_the_key_stream_framework() {
+        mod toy {
+            include!("../../tests/common/toy_block_cipher.rs");
+        }
+        use bouncycastle_core_test_framework::key_stream::TestFrameworkKeyStream;
+        use toy::ToyBlockCipher;
+        let perm = ToyBlockCipher::new(&key()).unwrap();
+        let framework = TestFrameworkKeyStream::new();
+        framework.test::<7, 16, _>(|nonce| {
+            CcmKeyStream::<ToyBlockCipher, 16, 7>::from_perm(&perm, nonce)
+        });
+        framework.test::<13, 16, _>(|nonce| {
+            CcmKeyStream::<ToyBlockCipher, 16, 13>::from_perm(&perm, nonce)
+        });
+    }
+
+    /// A.2.2's three AAD length encodings, at and around both boundaries.
+    ///
+    /// Two of these values come from the spec itself: C.1's `a = 8` is printed as `0008`, and
+    /// C.4's `a = 65536` (`Alen = 524288` bits) is printed as
+    /// `11111111 11111110 00000000 00000001 00000000 00000000`, i.e. `ff fe 00 01 00 00`.
+    ///
+    /// The rest pin the boundaries, which is the part no end-to-end test can reach: the first is
+    /// `2^16 - 2^8` = 65280 rather than the obvious-but-wrong `2^16`, and the second is `2^32`,
+    /// which through the public API would need a 4 GiB AAD.
+    #[test]
+    fn aad_length_encoding_matches_a_2_2() {
+        type Mode<'k> = Ccm<'k, Identity, Encrypting, 16, 7, 4>;
+
+        // Case 1: 0 < a < 2^16 - 2^8, two octets, `[a]_16`.
+        assert_eq!(
+            Mode::encode_aad_len(8),
+            ([0x00, 0x08, 0, 0, 0, 0, 0, 0, 0, 0], 2),
+            "C.1's a = 8"
+        );
+        assert_eq!(Mode::encode_aad_len(1).1, 2);
+        // 65279 = 2^16 - 2^8 - 1 is the largest value still in the first case.
+        assert_eq!(
+            Mode::encode_aad_len(65279),
+            ([0xfe, 0xff, 0, 0, 0, 0, 0, 0, 0, 0], 2),
+            "65279 is still [a]_16"
+        );
+
+        // Case 2: 2^16 - 2^8 <= a < 2^32, six octets, `0xff || 0xfe || [a]_32`. 65280 is the first.
+        assert_eq!(
+            Mode::encode_aad_len(65280),
+            ([0xff, 0xfe, 0x00, 0x00, 0xff, 0x00, 0, 0, 0, 0], 6),
+            "65280 crosses into the six-octet case; a two-octet 0xff00 would be ambiguous"
+        );
+        assert_eq!(
+            Mode::encode_aad_len(65536),
+            ([0xff, 0xfe, 0x00, 0x01, 0x00, 0x00, 0, 0, 0, 0], 6),
+            "C.4's a = 65536"
+        );
+        // 2^32 - 1 is the largest value still in the second case.
+        assert_eq!(
+            Mode::encode_aad_len(u32::MAX as u64),
+            ([0xff, 0xfe, 0xff, 0xff, 0xff, 0xff, 0, 0, 0, 0], 6),
+            "2^32 - 1 is still the six-octet case"
+        );
+
+        // Case 3: 2^32 <= a < 2^64, ten octets, `0xff || 0xff || [a]_64`.
+        assert_eq!(
+            Mode::encode_aad_len(1u64 << 32),
+            ([0xff, 0xff, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00], 10),
+            "2^32 is the first ten-octet case"
+        );
+        assert_eq!(
+            Mode::encode_aad_len(u64::MAX),
+            ([0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff], 10)
+        );
+
+        // A.2.2's whole point: the three cases are distinguishable by their leading octets, so no
+        // two distinct lengths can encode to the same prefix. The first octet is 0xff only in the
+        // second and third cases, and the second octet separates those.
+        for a in [1u64, 8, 65279] {
+            assert_ne!(Mode::encode_aad_len(a).0[0], 0xff, "case 1 must not lead with 0xff");
+        }
+    }
+
+    /// The constructor really uses `Ccm::encode_aad_len`, and puts it *before* the AAD.
+    ///
+    /// With the identity permutation the CBC-MAC is `y = B0 ^ B1 ^ ... ^ Br`, so with a one-block
+    /// all-zero AAD the only nonzero contributions are `B0` and the length encoding. That makes the
+    /// encoding readable back out, which is what pins the ordering rather than just the value.
+    #[test]
+    fn the_constructor_prefixes_the_aad_with_its_length() {
+        type Mode<'k> = Ccm<'k, Identity, Encrypting, 16, 7, 4>;
+        let nonce = [0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16];
+        // 14 zero bytes of AAD: the 2-byte length plus 14 bytes is exactly one 16-byte block, so
+        // there is no padding to reason about.
+        let identity = Identity::new(&key()).unwrap();
+        let mut ccm = Mode::from_perm_with_lengths(&identity, &nonce, 14, 0).unwrap();
+        ccm.absorb_aad(&[0u8; 14]);
+
+        let b0 = Mode::format_b0(&nonce, true, 0);
+        let mut b1 = [0u8; 16];
+        b1[..2].copy_from_slice(&14u16.to_be_bytes());
+        let expected: [u8; 16] = core::array::from_fn(|i| b0[i] ^ b1[i]);
+        assert_eq!(*ccm.y, expected, "y must be B0 ^ B1, with B1 starting with [14]_16");
     }
 }
