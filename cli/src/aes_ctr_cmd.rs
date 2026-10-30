@@ -30,13 +30,17 @@
 //!
 //! A repeated nonce is fatal here rather than merely unwise: the same nonce under the same key
 //! gives the same keystream, and two messages XORed with the same keystream leak their XOR. The
-//! nonce is drawn from the OS-backed DRBG for exactly that reason, and there is no way to supply
-//! one.
+//! nonce is drawn from the OS-backed DRBG for exactly that reason. `--iv` / `--iv-file` exist for
+//! reproducing published vectors and for formats that carry the nonce themselves; with them, its
+//! uniqueness under the key is the caller's to keep.
 
-use crate::helpers::block_mode_helpers::{CipherDirection, load_iv, load_key};
+use crate::helpers::block_mode_helpers::{CipherDirection, load_iv, load_key_object};
 use crate::helpers::stream_mode_helpers::run_stream_mode;
-use bouncycastle::aes::{AES_CTR_128, AES_CTR_192, AES_CTR_256, CTR_NONCE_LEN};
-use bouncycastle::cipher::{Decrypting, Encrypting};
+use bouncycastle::aes::CTR_NONCE_LEN;
+use bouncycastle::aes::{AES128Key, AES192Key, AES256Key};
+use bouncycastle::cipher::modes::CTR;
+use bouncycastle::core::symmetric_key::{SymmetricDecryptionKey, SymmetricEncryptionKey};
+use bouncycastle::core::traits::{StreamCipherDecryptor, StreamCipherEncryptor};
 
 pub(crate) fn aes128_ctr_cmd(
     action: &CipherDirection,
@@ -46,9 +50,9 @@ pub(crate) fn aes128_ctr_cmd(
     iv_file: &Option<String>,
     output_hex: bool,
 ) {
-    run_stream_mode::<AES_CTR_128<Encrypting>, AES_CTR_128<Decrypting>, 16, CTR_NONCE_LEN>(
+    run::<_, 16>(
         action,
-        &load_key::<16>(key, key_file, "AES-128"),
+        &load_key_object::<AES128Key<CTR<CTR_NONCE_LEN>>, 16>(key, key_file, "AES-128"),
         load_iv::<CTR_NONCE_LEN>(iv, iv_file),
         output_hex,
     );
@@ -62,9 +66,9 @@ pub(crate) fn aes192_ctr_cmd(
     iv_file: &Option<String>,
     output_hex: bool,
 ) {
-    run_stream_mode::<AES_CTR_192<Encrypting>, AES_CTR_192<Decrypting>, 24, CTR_NONCE_LEN>(
+    run::<_, 24>(
         action,
-        &load_key::<24>(key, key_file, "AES-192"),
+        &load_key_object::<AES192Key<CTR<CTR_NONCE_LEN>>, 24>(key, key_file, "AES-192"),
         load_iv::<CTR_NONCE_LEN>(iv, iv_file),
         output_hex,
     );
@@ -78,10 +82,25 @@ pub(crate) fn aes256_ctr_cmd(
     iv_file: &Option<String>,
     output_hex: bool,
 ) {
-    run_stream_mode::<AES_CTR_256<Encrypting>, AES_CTR_256<Decrypting>, 32, CTR_NONCE_LEN>(
+    run::<_, 32>(
         action,
-        &load_key::<32>(key, key_file, "AES-256"),
+        &load_key_object::<AES256Key<CTR<CTR_NONCE_LEN>>, 32>(key, key_file, "AES-256"),
         load_iv::<CTR_NONCE_LEN>(iv, iv_file),
         output_hex,
     );
+}
+
+/// Dispatches to the shared streaming loops with `Ctr` filled in as the mode.
+fn run<'k, K, const KEY_LEN: usize>(
+    action: &CipherDirection,
+    key: &'k K,
+    iv: Option<[u8; CTR_NONCE_LEN]>,
+    output_hex: bool,
+) where
+    K: SymmetricEncryptionKey<KEY_LEN, CTR_NONCE_LEN, 0>
+        + SymmetricDecryptionKey<KEY_LEN, CTR_NONCE_LEN, 0>,
+    K::Encryptor<'k>: StreamCipherEncryptor<CTR_NONCE_LEN>,
+    K::Decryptor<'k>: StreamCipherDecryptor<CTR_NONCE_LEN>,
+{
+    run_stream_mode::<K, KEY_LEN, CTR_NONCE_LEN>(action, key, iv, output_hex)
 }

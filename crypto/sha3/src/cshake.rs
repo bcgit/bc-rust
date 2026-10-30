@@ -200,7 +200,7 @@ impl<PARAMS: SHAKEParams> CSHAKEInternal<PARAMS> {
     }
 }
 
-impl<PARAMS: SHAKEParams> SuspendableComponent for CSHAKEInternal<PARAMS> {
+impl<'k, PARAMS: SHAKEParams> SuspendableComponent<'k> for CSHAKEInternal<PARAMS> {
     const STATE_LEN: usize = CSHAKE_COMPONENT_LEN;
     type Key = ();
 
@@ -208,7 +208,7 @@ impl<PARAMS: SHAKEParams> SuspendableComponent for CSHAKEInternal<PARAMS> {
         self.write_tagged(PARAMS::CSHAKE_STATE_TAG, out)
     }
 
-    fn read_state(state: &[u8], _key: &()) -> Result<Self, SuspendableError> {
+    fn read_state(state: &[u8], _key: &'k ()) -> Result<Self, SuspendableError> {
         Self::read_tagged(state, PARAMS::CSHAKE_STATE_TAG)
     }
 }
@@ -470,7 +470,7 @@ impl<PARAMS: SHAKEParams> CSHAKESqueezer<PARAMS> {
 
 /// Both phases suspend. The sponge's own phase flag records which, so the state is the cSHAKE
 /// layout under one tag, and a resumed `Unbound` squeezer still has its first read to make.
-impl<PARAMS: SHAKEParams> SuspendableComponent for CSHAKESqueezer<PARAMS> {
+impl<'k, PARAMS: SHAKEParams> SuspendableComponent<'k> for CSHAKESqueezer<PARAMS> {
     const STATE_LEN: usize = CSHAKE_COMPONENT_LEN;
     type Key = ();
 
@@ -490,7 +490,7 @@ impl<PARAMS: SHAKEParams> SuspendableComponent for CSHAKESqueezer<PARAMS> {
         }
     }
 
-    fn read_state(state: &[u8], _key: &()) -> Result<Self, SuspendableError> {
+    fn read_state(state: &[u8], _key: &'k ()) -> Result<Self, SuspendableError> {
         let (family, rest) = state.split_at(SHA3_FAMILY_STATE_LEN);
         let shake = SHAKEInternal::<PARAMS>::read_family_state(
             family,

@@ -224,7 +224,7 @@
 //! * The sponge state and queue are held in [`bouncycastle_utils::secret::Secret`] and zeroized on
 //!   drop.
 //! * KMAC's security rests on its key and output lengths (SP 800-185 Sec 8.4): the key check is
-//!   [`kmac::KMACInternal::new_with_params`]'s, with `allow_weak_key` as the bypass, and an output
+//!   [`kmac::KMACKeyInternal::with_params`]'s, with `with_params_allow_weak` as the bypass, and an output
 //!   shorter than 8 bytes is the caller's to justify (Sec 8.4.2: never below 4, and below 8
 //!   only after a risk analysis).
 //! * cSHAKE has SHAKE's prefix property; the fixed-length KMAC, TupleHash and ParallelHash do

@@ -9,12 +9,10 @@
 //! transcribed below, verified against the bc-java source read this session, with all-zero fields
 //! built programmatically rather than typed out (a zero key or plaintext cannot be mistyped).
 
-use bouncycastle_aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
-use bouncycastle_cipher::modes::Gcm;
-use bouncycastle_cipher::modes::ModeNames;
-use bouncycastle_cipher::{Decrypting, Encrypting};
+use bouncycastle_aes::{AES128Key, AES192Key, AES256Key};
+use bouncycastle_cipher::modes::GCM;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
-use bouncycastle_core::traits::{AEADCipherDecryptor, AEADCipherEncryptor};
+use bouncycastle_core::symmetric_key::{AeadDecryptionKey, AeadEncryptionKey, FromKeyMaterial};
 use bouncycastle_core_test_framework::FixedSeedRNG;
 use bouncycastle_hex as hex;
 
@@ -180,9 +178,11 @@ fn cases() -> Vec<Case> {
     ]
 }
 
-fn run<P, const KEY_LEN: usize>(case: &Case)
+fn run<K, const KEY_LEN: usize>(case: &Case)
 where
-    P: bouncycastle_core::hazmat::ElectronicCodeBook<KEY_LEN, 16> + ModeNames,
+    K: FromKeyMaterial<KEY_LEN>
+        + AeadEncryptionKey<KEY_LEN, 12, 16, 16>
+        + AeadDecryptionKey<KEY_LEN, 12, 16, 16>,
 {
     let key_bytes = hex::decode(&case.key).expect("valid hex key");
     // `KeyMaterial` tags an all-zero buffer as `KeyType::Zeroized` regardless of the type
@@ -208,15 +208,11 @@ where
     let expected_ct = hex::decode(&case.ct).expect("valid hex ct");
     let expected_tag = hex::decode(case.tag).expect("valid hex tag");
 
+    let key = K::from_key_material(&key).expect("a valid key");
     let mut data = vec![0u8; pt.len()];
-    let (got_iv, _, tag) = Gcm::<P, Encrypting, KEY_LEN, 16>::encrypt_detached_rng_out(
-        &key,
-        &mut FixedSeedRNG::<12>::new(iv),
-        &aad,
-        &pt,
-        &mut data,
-    )
-    .expect("encrypt");
+    let (_, got_iv, tag) = key
+        .encrypt_detached_out(&mut FixedSeedRNG::<12>::new(iv), &aad, &pt, &mut data)
+        .expect("encrypt");
     assert_eq!(got_iv, iv, "{}: the pinned RNG should reproduce the vector's IV", case.name);
 
     assert_eq!(data, expected_ct, "{}: ciphertext mismatch", case.name);
@@ -224,10 +220,8 @@ where
 
     let tag_arr: [u8; 16] = expected_tag.try_into().expect("16-byte tag");
     let mut recovered = vec![0u8; data.len()];
-    Gcm::<P, Decrypting, KEY_LEN, 16>::decrypt_detached_out(
-        &key, &iv, &aad, &data, &tag_arr, &mut recovered,
-    )
-    .unwrap_or_else(|e| panic!("{}: decrypt should have verified, got {e:?}", case.name));
+    key.decrypt_detached_out(&iv, &aad, &data, &tag_arr, &mut recovered)
+        .unwrap_or_else(|e| panic!("{}: decrypt should have verified, got {e:?}", case.name));
     assert_eq!(recovered, pt, "{}: decrypted plaintext mismatch", case.name);
 }
 
@@ -237,9 +231,9 @@ fn bc_java_test_vectors_with_a_96_bit_iv() {
     for case in cases() {
         let key_len_bytes = case.key.len() / 2;
         match key_len_bytes {
-            16 => run::<AES128Internal, 16>(&case),
-            24 => run::<AES192Internal, 24>(&case),
-            32 => run::<AES256Internal, 32>(&case),
+            16 => run::<AES128Key<GCM>, 16>(&case),
+            24 => run::<AES192Key<GCM>, 24>(&case),
+            32 => run::<AES256Key<GCM>, 32>(&case),
             other => panic!("{}: unexpected key length {other} bytes", case.name),
         }
         checked += 1;

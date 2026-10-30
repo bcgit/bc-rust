@@ -743,13 +743,14 @@ mod hkdf_tests {
         // A helper that exercises the full round-trip for one HKDF variant. A concrete `&KeyMaterial128`
         // works for `do_extract_init` (which wants a `Sized` `&impl KeyMaterialTrait`) and coerces to
         // `&dyn KeyMaterialTrait` for the serialization APIs.
-        fn round_trip<const HASH_LEN: usize, const LEN: usize, H>(
-            salt: &KeyMaterial128,
+        fn round_trip<'k, const HASH_LEN: usize, const LEN: usize, H>(
+            salt: &'k KeyMaterial128,
             part1: &[u8],
             part2: &[u8],
         ) where
             H: Hash + HashAlgParams + Default,
-            HKDF<H, HASH_LEN, LEN>: Clone + SuspendableKeyed<LEN, Key = dyn KeyMaterialTrait>,
+            HKDF<H, HASH_LEN, LEN>:
+                Clone + SuspendableKeyed<'k, LEN, Key = dyn KeyMaterialTrait + 'static>,
         {
             let hkdf = HKDF::<H, HASH_LEN, LEN>::new();
 
@@ -825,6 +826,30 @@ mod hkdf_tests {
             HKDF_SHA256::from_suspended(corrupt, &salt),
             Err(SuspendableError::InvalidData)
         ));
+    }
+
+    /// The entropy counter is bookkeeping a resumed state may set to anything: the next credit
+    /// saturates rather than overflowing.
+    #[test]
+    fn a_resumed_entropy_counter_saturates() {
+        use bouncycastle_core::traits::SuspendableKeyed;
+        use bouncycastle_sha2::hkdf::SUSPENDED_HKDF_SHA256_STATE_LEN;
+
+        let salt = KeyMaterial128::from_bytes_as_type(&DUMMY_SEED[..16], KeyType::MACKey).unwrap();
+        let full_entropy =
+            KeyMaterial128::from_bytes_as_type(&DUMMY_SEED[16..32], KeyType::CryptographicRandom)
+                .unwrap();
+        let mut hkdf = HKDF_SHA256::new();
+        hkdf.do_extract_init(&salt).unwrap();
+        let mut state = hkdf.suspend();
+        // Layout: [version(3) | present flag | hmac blob | state | entropy(8) | strength].
+        let entropy_idx = SUSPENDED_HKDF_SHA256_STATE_LEN - 9;
+        state[entropy_idx..entropy_idx + 8].copy_from_slice(&u64::MAX.to_le_bytes());
+
+        let mut resumed = HKDF_SHA256::from_suspended(state, &salt).unwrap();
+        assert_eq!(resumed.get_entropy(), usize::MAX);
+        assert_eq!(resumed.do_extract_update_key(&full_entropy).unwrap(), 16);
+        assert_eq!(resumed.get_entropy(), usize::MAX);
     }
 
     /// RFC 5869 Sec 2.3: "OKM = first L octets of T", for any L up to 255 * HashLen, so a shorter

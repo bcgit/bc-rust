@@ -305,7 +305,7 @@ impl<const KEY_LEN: usize> KeyMaterial<KEY_LEN> {
     }
 
     /// Creates a new instance of KeyMaterial containing random bytes from the provided random number generator.
-    pub fn from_rng(rng: &mut impl RNG) -> Result<Self, KeyMaterialError> {
+    pub fn from_rng(rng: &mut (impl RNG + ?Sized)) -> Result<Self, KeyMaterialError> {
         let mut key = Self::new();
 
         do_hazardous_operations(&mut key, |key| {
@@ -316,7 +316,12 @@ impl<const KEY_LEN: usize> KeyMaterial<KEY_LEN> {
 
         *key.key_len = KEY_LEN;
         key.key_type = KeyType::CryptographicRandom;
-        key.security_strength = rng.security_strength();
+        // The RNG's strength, capped at what `KEY_LEN` bytes can carry: a 16-byte key drawn from
+        // a 256-bit DRBG is a 128-bit key, and `set_security_strength` would refuse the higher
+        // figure.
+        let by_len = SecurityStrength::from_bits(KEY_LEN * 8);
+        let by_rng = rng.security_strength();
+        key.security_strength = if by_rng < by_len { by_rng } else { by_len };
         Ok(key)
     }
 

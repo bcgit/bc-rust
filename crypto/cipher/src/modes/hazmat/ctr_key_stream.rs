@@ -3,9 +3,8 @@
 
 use crate::modes::ModeNames;
 use crate::modes::ctr::apply_counter_blocks;
-use bouncycastle_core::errors::{SuspendableError, SymmetricCipherError};
-use bouncycastle_core::hazmat::{ElectronicCodeBook, KeyStream};
-use bouncycastle_core::key_material::KeyMaterial;
+use bouncycastle_core::errors::SuspendableError;
+use bouncycastle_core::hazmat::{BlockPermutation, KeyStream};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::Algorithm;
 use bouncycastle_utils::suspendable_state::{Cursor, CursorMut, SuspendableComponent};
@@ -17,7 +16,7 @@ use crate::modes::Ctr;
 use crate::stream::StreamCipher;
 // end of imports needed for docs
 
-/// The CTR keystream `Oj = CIPH_K(Tj)` (SP 800-38A Sec 6.5) over any [`ElectronicCodeBook`], with
+/// The CTR keystream `Oj = CIPH_K(Tj)` (SP 800-38A Sec 6.5) over any [`BlockPermutation`], with
 /// `Tj = N | [j]m` (SP 800-38A Appendix B.2); see the module docs. Use it through [`Ctr`].
 ///
 /// # 🚨 Security Considerations 🚨
@@ -27,14 +26,15 @@ use crate::stream::StreamCipher;
 ///
 /// # State
 ///
-/// The permutation, the nonce and the next counter value. The nonce and the counter are both
-/// public, so they are plain fields; no keystream is kept between calls.
+/// A reference to the permutation, which the key owns, the nonce and the next counter value. The
+/// nonce and the counter are both public, so they are plain fields; no keystream is kept between
+/// calls.
 #[derive(Clone)]
-pub struct CtrKeyStream<P, const KEY_LEN: usize, const BLOCK_LEN: usize, const INIT_DATA_LEN: usize>
+pub struct CtrKeyStream<'k, P, const BLOCK_LEN: usize, const INIT_DATA_LEN: usize>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
+    P: BlockPermutation<BLOCK_LEN> + ModeNames,
 {
-    perm: P,
+    perm: &'k P,
     /// `N`: the message nonce, the leading bytes of every counter block.
     nonce: [u8; INIT_DATA_LEN],
     /// The counter of the *next* block to use, as an integer: `Tj = N | [next_counter]m`.
@@ -46,10 +46,10 @@ where
     next_counter: u64,
 }
 
-impl<P, const KEY_LEN: usize, const BLOCK_LEN: usize, const INIT_DATA_LEN: usize>
-    CtrKeyStream<P, KEY_LEN, BLOCK_LEN, INIT_DATA_LEN>
+impl<'k, P, const BLOCK_LEN: usize, const INIT_DATA_LEN: usize>
+    CtrKeyStream<'k, P, BLOCK_LEN, INIT_DATA_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
+    P: BlockPermutation<BLOCK_LEN> + ModeNames,
 {
     /// Bytes of counter at the end of each block: whatever the nonce leaves.
     const CTR_LEN: usize = BLOCK_LEN - INIT_DATA_LEN;
@@ -79,19 +79,20 @@ where
         };
     }
 
-    /// `T1 = N | [0]m`: the nonce, then a zero counter.
+    /// `T1 = N | [0]m`: the nonce, then a zero counter, over a key's stored permutation, which
+    /// the keystream borrows. What the [`CTR`](crate::modes::CTR) mode impls build.
     #[inline]
-    fn start(perm: P, nonce: [u8; INIT_DATA_LEN]) -> Self {
+    pub fn from_perm(perm: &'k P, nonce: [u8; INIT_DATA_LEN]) -> Self {
         Self::start_at(perm, nonce, 0)
     }
 
-    /// As [`start`](Self::start), but the counter of the *next* block is `counter` instead of 0.
+    /// As [`from_perm`](Self::from_perm), but the counter of the *next* block is `counter` instead of 0.
     ///
     /// GCM's GCTR (SP 800-38D Sec 6.5) runs the data through this mode starting at `inc32(J0)`,
     /// whose counter field is `2` -- see `gcm.rs`. Crate-private because the public API's contract
     /// is that a message starts at counter 0; only `gcm.rs` needs otherwise.
     #[inline]
-    pub(crate) fn start_at(perm: P, nonce: [u8; INIT_DATA_LEN], counter: u64) -> Self {
+    pub(crate) fn start_at(perm: &'k P, nonce: [u8; INIT_DATA_LEN], counter: u64) -> Self {
         Self::check_shape();
         debug_assert!(
             counter < Self::BLOCK_LIMIT,
@@ -100,7 +101,7 @@ where
         Self { perm, nonce, next_counter: counter }
     }
 
-    /// The nonce `N` of a suspended keystream, read out of the state [`SuspendableComponent`]
+    /// The nonce `N` of a suspended keystream, read out of the state [`SuspendableComponent<'k>`]
     /// writes without rebuilding the keystream: it is the leading `INIT_DATA_LEN` bytes. For a
     /// composite that needs the nonce before it can afford the key schedule (GCM derives `H` and
     /// the tag mask from it).
@@ -124,10 +125,10 @@ where
     }
 }
 
-impl<P, const KEY_LEN: usize, const BLOCK_LEN: usize, const INIT_DATA_LEN: usize> Algorithm
-    for CtrKeyStream<P, KEY_LEN, BLOCK_LEN, INIT_DATA_LEN>
+impl<'k, P, const BLOCK_LEN: usize, const INIT_DATA_LEN: usize> Algorithm
+    for CtrKeyStream<'k, P, BLOCK_LEN, INIT_DATA_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
+    P: BlockPermutation<BLOCK_LEN> + ModeNames,
 {
     /// The permutation's name for this mode, [`ModeNames::CTR_ALG_NAME`].
     const ALG_NAME: &'static str = P::CTR_ALG_NAME;
@@ -135,22 +136,11 @@ where
     const MAX_SECURITY_STRENGTH: SecurityStrength = P::MAX_SECURITY_STRENGTH;
 }
 
-impl<P, const KEY_LEN: usize, const BLOCK_LEN: usize, const INIT_DATA_LEN: usize>
-    KeyStream<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
-    for CtrKeyStream<P, KEY_LEN, BLOCK_LEN, INIT_DATA_LEN>
+impl<'k, P, const BLOCK_LEN: usize, const INIT_DATA_LEN: usize> KeyStream<INIT_DATA_LEN, BLOCK_LEN>
+    for CtrKeyStream<'k, P, BLOCK_LEN, INIT_DATA_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
+    P: BlockPermutation<BLOCK_LEN> + ModeNames,
 {
-    /// Expands the key; the keystream starts at `T1 = N | [0]m`.
-    fn new(
-        key: &KeyMaterial<KEY_LEN>,
-        init_data: &[u8; INIT_DATA_LEN],
-    ) -> Result<Self, SymmetricCipherError> {
-        Self::check_shape();
-        let perm = P::new(key)?;
-        Ok(Self::start(perm, *init_data))
-    }
-
     /// A whole block for every counter value left.
     fn remaining_blocks(&self) -> u64 {
         Self::BLOCK_LIMIT - self.next_counter
@@ -161,7 +151,7 @@ where
     fn apply_blocks(&mut self, blocks: &mut [[u8; BLOCK_LEN]]) {
         let nonce = &self.nonce;
         apply_counter_blocks(
-            &self.perm,
+            self.perm,
             &mut self.next_counter,
             |j| Self::counter_block(nonce, j),
             blocks,
@@ -169,15 +159,15 @@ where
     }
 }
 
-/// The suspended state is the nonce and the next counter value; the permutation is rebuilt from
-/// the re-supplied key. See [`bouncycastle_utils::suspendable_state`].
-impl<P, const KEY_LEN: usize, const BLOCK_LEN: usize, const INIT_DATA_LEN: usize>
-    SuspendableComponent for CtrKeyStream<P, KEY_LEN, BLOCK_LEN, INIT_DATA_LEN>
+/// The suspended state is the nonce and the next counter value; the permutation is the key's,
+/// re-supplied by reference. See [`bouncycastle_utils::suspendable_state`].
+impl<'k, P, const BLOCK_LEN: usize, const INIT_DATA_LEN: usize> SuspendableComponent<'k>
+    for CtrKeyStream<'k, P, BLOCK_LEN, INIT_DATA_LEN>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
+    P: BlockPermutation<BLOCK_LEN> + ModeNames,
 {
     const STATE_LEN: usize = INIT_DATA_LEN + 8;
-    type Key = KeyMaterial<KEY_LEN>;
+    type Key = P;
 
     fn write_state(&self, out: &mut [u8]) {
         let mut w = CursorMut::new(out);
@@ -186,9 +176,9 @@ where
         debug_assert!(w.is_done());
     }
 
-    fn read_state(state: &[u8], key: &Self::Key) -> Result<Self, SuspendableError> {
+    fn read_state(state: &[u8], key: &'k Self::Key) -> Result<Self, SuspendableError> {
         Self::check_shape();
-        let perm = P::new(key).map_err(|_| SuspendableError::InvalidData)?;
+        let perm = key;
         let mut r = Cursor::new(state);
         let nonce = r.array::<INIT_DATA_LEN>();
         // The counter counts to `BLOCK_LIMIT` and stops there (that is the exhausted state, with
@@ -228,8 +218,8 @@ mod tests {
         include!("../../../tests/common/toy_block_cipher.rs");
     }
 
-    type ToyKeyStream = CtrKeyStream<ToyBlockCipher, 16, 16, 12>;
-    type ToyCtr = Ctr<ToyBlockCipher, Encrypting, 16, 16, 12>;
+    type ToyKeyStream<'k> = CtrKeyStream<'k, ToyBlockCipher, 16, 12>;
+    type ToyCtr<'k> = Ctr<'k, ToyBlockCipher, Encrypting, 16, 12>;
 
     fn key() -> KeyMaterial<16> {
         KeyMaterial::<16>::from_bytes_as_type(&[0x5Au8; 16], KeyType::SymmetricCipherKey)
@@ -243,18 +233,12 @@ mod tests {
     fn start_at_matches_start_after_discarding_blocks() {
         let nonce = [0x11u8; 12];
 
-        let mut from_start = ToyCtr::from_keystream(ToyKeyStream::start(
-            ToyBlockCipher::new(&key()).unwrap(),
-            nonce,
-        ));
+        let perm = ToyBlockCipher::new(&key()).unwrap();
+        let mut from_start = ToyCtr::from_keystream(ToyKeyStream::from_perm(&perm, nonce));
         let mut discarded = [0u8; 32];
         from_start.do_encrypt_inplace(&mut discarded).unwrap();
 
-        let mut from_start_at = ToyCtr::from_keystream(ToyKeyStream::start_at(
-            ToyBlockCipher::new(&key()).unwrap(),
-            nonce,
-            2,
-        ));
+        let mut from_start_at = ToyCtr::from_keystream(ToyKeyStream::start_at(&perm, nonce, 2));
 
         let mut a = [0x42u8; 48];
         let mut b = a;
@@ -268,7 +252,8 @@ mod tests {
     /// 128-bit blocks) that GCM relies on `Ctr`'s existing "counter exhausted" error to enforce.
     #[test]
     fn start_at_capacity_is_block_limit_minus_the_starting_counter() {
-        let ks = ToyKeyStream::start_at(ToyBlockCipher::new(&key()).unwrap(), [0u8; 12], 2);
+        let perm = ToyBlockCipher::new(&key()).unwrap();
+        let ks = ToyKeyStream::start_at(&perm, [0u8; 12], 2);
         assert_eq!(ks.remaining_blocks(), ToyKeyStream::BLOCK_LIMIT - 2);
     }
 
@@ -278,20 +263,24 @@ mod tests {
     #[test]
     fn ctr_keystream_conforms_to_the_key_stream_framework() {
         let framework = TestFrameworkKeyStream::new();
-        framework.test::<TOY_LEN, 12, TOY_LEN, CtrKeyStream<Toy, TOY_LEN, TOY_LEN, 12>>();
-        framework.test::<TOY_LEN, 15, TOY_LEN, CtrKeyStream<Toy, TOY_LEN, TOY_LEN, 15>>();
-        framework
-            .test::<TOY_LEN, 12, TOY_LEN, CtrKeyStream<ForwardOnlyToy, TOY_LEN, TOY_LEN, 12>>();
+        let toy = Toy::new(&key()).unwrap();
+        framework.test::<12, TOY_LEN, _>(|nonce| {
+            CtrKeyStream::<Toy, TOY_LEN, 12>::from_perm(&toy, *nonce)
+        });
+        framework.test::<15, TOY_LEN, _>(|nonce| {
+            CtrKeyStream::<Toy, TOY_LEN, 15>::from_perm(&toy, *nonce)
+        });
+        let forward_only = ForwardOnlyToy::new(&key()).unwrap();
+        framework.test::<12, TOY_LEN, _>(|nonce| {
+            CtrKeyStream::<ForwardOnlyToy, TOY_LEN, 12>::from_perm(&forward_only, *nonce)
+        });
     }
 
     /// The keystream reports the permutation's CTR name, not its bare `ALG_NAME`; `Ctr` forwards
     /// it, which `tests/modes/alg_name_tests.rs` checks.
     #[test]
     fn ctr_keystream_reports_the_ctr_name() {
-        assert_eq!(CtrKeyStream::<Toy, 16, 16, 12>::ALG_NAME, Toy::CTR_ALG_NAME);
-        assert_eq!(
-            CtrKeyStream::<Toy, 16, 16, 12>::MAX_SECURITY_STRENGTH,
-            Toy::MAX_SECURITY_STRENGTH
-        );
+        assert_eq!(CtrKeyStream::<Toy, 16, 12>::ALG_NAME, Toy::CTR_ALG_NAME);
+        assert_eq!(CtrKeyStream::<Toy, 16, 12>::MAX_SECURITY_STRENGTH, Toy::MAX_SECURITY_STRENGTH);
     }
 }

@@ -11,18 +11,18 @@
 //! KMAC of that size and goes through `verify`, as well as through `mac` for the valid ones.
 
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-use bouncycastle_core::traits::MAC;
+use bouncycastle_core::symmetric_key::{MacGenerationKey, MacVerificationKey};
 use bouncycastle_core_test_framework::test_data_loaders::{Value, hex_field, wycheproof_json};
-use bouncycastle_sha3::kmac::{KMAC128, KMAC256};
+use bouncycastle_sha3::kmac::{KMAC128Key, KMAC256Key};
 
 /// The longest key in either file is 129 bytes.
 const MAX_KEY_LEN: usize = 160;
 
-/// Runs every case in one KMAC file; `new_kmac(key, output_len)` builds the KMAC under test.
-fn run<M: MAC>(
+/// Runs every case in one KMAC file; `new_kmac(key, output_len)` builds the KMAC key under test.
+fn run<K: MacGenerationKey + MacVerificationKey>(
     filename: &str,
     algorithm: &str,
-    new_kmac: impl Fn(&KeyMaterial<MAX_KEY_LEN>, usize) -> M,
+    new_kmac: impl Fn(&KeyMaterial<MAX_KEY_LEN>, usize) -> K,
 ) {
     let Some(doc) = wycheproof_json(filename) else { return };
 
@@ -67,13 +67,13 @@ fn run<M: MAC>(
 #[test]
 fn wycheproof_kmac128() {
     run("kmac128_no_customization_test.json", "KMAC128", |key, output_len| {
-        KMAC128::new_with_params(key, b"", output_len, false).expect("a KMAC128 instance")
+        KMAC128Key::with_params(key, b"", output_len).expect("a KMAC128 key")
     });
 }
 
 #[test]
 fn wycheproof_kmac256() {
     run("kmac256_no_customization_test.json", "KMAC256", |key, output_len| {
-        KMAC256::new_with_params(key, b"", output_len, false).expect("a KMAC256 instance")
+        KMAC256Key::with_params(key, b"", output_len).expect("a KMAC256 key")
     });
 }

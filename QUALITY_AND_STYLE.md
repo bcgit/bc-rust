@@ -88,7 +88,13 @@ In addition, some library-specific naming conventions:
 ## APIs
 
 Where possible, primitives should expose "one-shot APIs" that simply take data and return a result as a static member
-function that does not require object instantiation.
+function that does not require object instantiation. The exception is anything keyed: a symmetric cipher or MAC is
+reached through a key object (`AES128Key<GCM>`, `HmacKey<SHA256>`, `KMAC128Key`, `AsconAEAD128Key`), built once from
+`KeyMaterial` by `FromKeyMaterial` / `FromAnyKeyMaterial`, and its one-shots and `create_*` constructors are methods on
+that key. The cipher and MAC traits in `core::traits` describe a worker that already exists and carry no constructor
+and no key-taking method, so a key's validation and expansion happen once, where the key is made, rather than per call.
+A worker borrows the key it came from, for the lifetime on the role trait's associated worker type, so making one
+copies no schedule and a worker cannot outlive its key.
 
 Other version of Bouncy Castle have a design pattern where stateful objects follow a pattern of new () -> init () ->
 do_update () -> do_final (), and then optionally reset () that sets the object back to an unitialized state. Instead,
@@ -123,17 +129,21 @@ Take, for example a one-shot API `fn encrypt(plaintext: &[u8]) -> Result<Vec<u8>
 The following prefixes can be applied:
 
 * `do_`: this implies that it is part of a stateful streaming API, will typically take `&mut self`, and is likely
-  accompanied by a `do_encrypt_init()` and `do_encrypt_final()`.
+  accompanied by a `do_encrypt_final()`; the object comes from a key's `create_encryptor()`.
+* `create_`: a key object's constructor for a worker -- `create_encryptor(&self, rng)`, `create_decryptor(&self,
+  init_data)`, `create_generator(&self)`, `create_verifier(&self)`. Whatever draws randomness takes a `&mut dyn RNG`
+  explicitly, so a key has no `_rng` twins and no method that reaches for a default RNG.
 
 The following suffixes can be applied
 
-* `_init / _update / _final`: indicates phase of a stateful streaming API. Other verbs can be used here as appropriate
-  to the primitive, such as `absorb / squeeze`, `encrypt / decrypt`, etc. `_init` is typically a static constructor
-  (though exceptions may exist), and `_final` indicates that this function call renders the object unusable afterwards
-  by consuming `self` via a move: `_final(self, ..)`.
+* `_update / _final`: indicates phase of a stateful streaming API. Other verbs can be used here as appropriate to the
+  primitive, such as `absorb / squeeze`, `encrypt / decrypt`, etc. `_final` indicates that this function call renders
+  the object unusable afterwards by consuming `self` via a move: `_final(self, ..)`.
 * `_rng`: indicates that this version of the function sources its random numbers from a provided `&mut dyn RNG` instead
-  of
-  from the default library RNG. `_rng(.., &mut dyn RNG)`.
+  of from the default library RNG. `_rng(.., &mut dyn RNG)`. Keyed primitives do not have it: their constructors and
+  one-shots take the RNG, full stop.
+* `_nonce`: on an AEAD key, the twin that takes the nonce from the caller instead of drawing it from the RNG, and so
+  does not return one.
 * `_out / _inplace`: indicates that the function works in the provided buffer. `_out` indicates that the function takes
   an output buffer, which may be oversized, and returns the number of bytes written to it:
   `_out(.., out: &mut [u8] -> Result<usize, SymmetricCipherError>`. `_inplace` indicates that the input and output are
