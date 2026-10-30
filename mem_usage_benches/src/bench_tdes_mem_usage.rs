@@ -31,17 +31,23 @@
 //!
 //! The numbers that do mean something come from the compiler's frame-layout remarks, as for
 //! `bench_aes_mem_usage`: build this binary with
-//! `RUSTFLAGS="-C remark=prologepilog -C remark=stack-frame-layout"` and read the frame of each
-//! `measure` closure, which is the operation's frame with nothing else in it. The engine is built
-//! in an `#[inline(never)]` helper so its frame is a sibling of the operation's, and the
-//! operation runs in a non-inlined, non-returning closure so nothing crosses back across the
-//! boundary. The persistent cost, the packed schedules, is what `print_struct_sizes` prints. A
-//! table-driven Triple DES carries 2 KiB of combined S/P tables on top; this one carries none.
+//! `RUSTFLAGS="-C remark=prologepilog -C remark=stack-frame-layout"`, with `main` calling every
+//! bench so none is dead-stripped, and sum the deepest chain of frames below each `measure`
+//! closure, each with its 8-byte return address. The closure is not always the whole cost:
+//! `objdump -d` shows the key-expansion closures calling the engine's `new` out of line, which
+//! calls the schedule's `expand`, and the one-block closures calling `encrypt_block` /
+//! `decrypt_block`; the two- and four-block entry points are inlined into their closures. The
+//! engine is built in an `#[inline(never)]` helper so its frame is a sibling of the operation's,
+//! and the operation runs in a non-inlined, non-returning closure so nothing crosses back across
+//! the boundary. The persistent cost, the packed schedules, is what `print_struct_sizes` prints.
+//! A table-driven Triple DES carries 2 KiB of combined S/P tables on top; this one carries none.
 //! The two-key engine is decryption-only, so only its decrypting entry points are measured.
 //!
-//! With rustc 1.97 nightly on x86-64 the closure frames are 792 B for `TDESInternal::new` and
+//! With rustc 1.97 nightly on x86-64 the frames are: closures 792 B for `TDESInternal::new` and
 //! 536 B for `TDES2Internal::new`, and 40, 72 and 104 B for the one-, two- and four-block entry
-//! points of either engine; the crate docs tabulate them with the 8-byte return address added.
+//! points of either engine; the engines' `new` 440 B and 312 B; `expand` 48 B; the one-block
+//! permutation methods 48 B. The crate docs tabulate the chains: `new` 1304 B and 920 B, the
+//! one-block calls 104 B, the two- and four-block calls 80 B and 112 B.
 
 #![allow(dead_code)]
 #![allow(unused_imports)]
@@ -75,7 +81,7 @@ fn measure(f: impl FnOnce()) {
     f()
 }
 
-/// The NIST CAVP TECBMMT3.rsp [ENCRYPT] COUNT = 0 bundle, so the engine under measurement is a
+/// The NIST CAVP TECBMMT3.rsp `[ENCRYPT]` COUNT = 0 bundle, so the engine under measurement is a
 /// known one; the two-key bundle is its first two components.
 const KEY_3: [u8; KEY_LEN] = [
     0xe9, 0x7c, 0x83, 0x13, 0xba, 0x26, 0x5d, 0x43, 0x25, 0x4c, 0xbf, 0x9e, 0x8f, 0x7c, 0x2a, 0xa8,
