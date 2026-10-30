@@ -170,6 +170,33 @@
 //! Like any unauthenticated Diffie-Hellman, this resists only passive eavesdroppers. An active
 //! attacker who can substitute public keys or pairwise values in transit can sit in the middle, so a
 //! real protocol must authenticate them, for example by signing them.
+//!
+//! # Memory Usage
+//!
+//! There are no lookup tables and no heap allocation, and no state is held between calls other
+//! than the keys:
+//!
+//! | Key Object | PK size on disk | PK size in memory | SK size on disk | SK size in memory |
+//! |------------|-----------------|-------------------|-----------------|-------------------|
+//! | X25519     | 32              | 32                | 32              | 64                |
+//!
+//! All values are in bytes. The "in memory" sizes are measured by rust's `std::mem::size_of`.
+//! [`X25519PrivateKey`] holds its public key alongside the 32-byte scalar.
+//!
+//! Per-call stack usage, measured as the deepest frame chain below each entry point in the release
+//! build (x86-64 Linux, rustc 1.99.0, return addresses included):
+//!
+//! | Entry point                     | Stack  |
+//! |---------------------------------|--------|
+//! | `X25519::keygen_from_seed`      | 1616 B |
+//! | `X25519PrivateKey::from_bytes`  | 1552 B |
+//! | `X25519::key_agreement`         | 1488 B |
+//! | `X25519::encaps` / `encaps_rng` | 2368 B |
+//! | `X25519::decaps`                | 1872 B |
+//!
+//! Key generation, decoding a private key, and key agreement each run one Montgomery ladder plus
+//! the field inversion. The KEM figures are set by the HKDF-SHA256 key schedule; for `encaps`, the
+//! default DRBG's chain is shallower, and for `encaps_rng`, the caller's RNG is not counted.
 
 use bouncycastle_core::errors::{KEMError, KeyAgreementError, RNGError};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterial256, KeyMaterialTrait, KeyType};
@@ -194,7 +221,11 @@ use crate::curve25519::FieldElement25519;
 
 /*** Constants ***/
 
+/// Size in bytes of the encoded representation of a point on curve25519,
+/// which are used as public keys.
 pub const POINT_SIZE: usize = 32;
+/// Size in bytes of the encoded representation of a scalar in the curve25519 field,
+/// which are used as private keys.
 pub const SCALAR_SIZE: usize = 32;
 
 /// String name of the X25519 algorithm.
@@ -276,7 +307,7 @@ impl X25519 {
         let mut k: Secret<[u8; SCALAR_SIZE]> = Secret::new();
         // Cannot panic: the length was checked above.
         k.copy_from_slice(seed.ref_to_bytes());
-        let sk = X25519PrivateKey(k);
+        let sk = X25519PrivateKey { pk: scalar_mult_base(&k), k };
 
         Ok((sk.pk(), sk))
     }
@@ -333,7 +364,7 @@ impl KeyAgreement<X25519PublicKey, X25519PrivateKey, POINT_SIZE, SCALAR_SIZE> fo
 
 /// `X25519(sk, pk)`, rejecting an all-zero output; see [`X25519::key_agreement`].
 fn dh(sk: &X25519PrivateKey, pk: &X25519PublicKey) -> Result<X25519PublicKey, KeyAgreementError> {
-    let r = scalar_mult(sk, pk);
+    let r = scalar_mult(&sk.k, pk);
     if r.is_zero() {
         return Err(KeyAgreementError::InvalidPublicKey(
             "Public key has small order: the shared secret is all zeros",
@@ -348,44 +379,52 @@ fn dh(sk: &X25519PrivateKey, pk: &X25519PublicKey) -> Result<X25519PublicKey, Ke
 /// ("clamping") are applied each time the scalar is used, so keys that differ only in those bits
 /// are the same key, and compare equal. Held in a [`Secret`], so it is zeroized on drop and
 /// redacted from `Debug`.
+///
+/// The public key is computed once, when the private key is created or decoded, and stored with
+/// it.
 #[derive(Clone)]
-pub struct X25519PrivateKey(Secret<[u8; SCALAR_SIZE]>);
+pub struct X25519PrivateKey {
+    k: Secret<[u8; SCALAR_SIZE]>,
+    pk: X25519PublicKey,
+}
 
 impl X25519PrivateKey {
-    /// Computes the public key, `X25519(k, 9)` (RFC 7748 §6.1).
-    ///
-    /// The public key is not stored with the private key, so each call runs a full scalar
-    /// multiplication.
+    /// The public key, `X25519(k, 9)` (RFC 7748 §6.1).
     pub fn pk(&self) -> X25519PublicKey {
-        scalar_mult_base(self)
+        self.pk
     }
 
-    /// Checks that `pk` is this private key's public key, by computing it with [`Self::pk`] and
+    /// Checks that `pk` is this private key's public key, by computing it from the scalar and
     /// comparing.
     ///
     /// Returns either `()` or [`KeyAgreementError::ConsistencyCheckFailed`].
     pub fn consistency_check(&self, pk: &X25519PublicKey) -> Result<(), KeyAgreementError> {
-        if self.pk() == *pk {
+        if scalar_mult_base(&self.k) == *pk {
             Ok(())
         } else {
             Err(KeyAgreementError::ConsistencyCheckFailed("Public key does not match private key"))
         }
     }
 
-    /// The key bytes with `decodeScalar25519`'s fixed bits applied (RFC 7748 §5):
-    ///
-    /// ```text
-    /// k_list[0] &= 248
-    /// k_list[31] &= 127
-    /// k_list[31] |= 64
-    /// ```
+    /// The key bytes, [`clamp`]ed.
     fn clamped(&self) -> Secret<[u8; SCALAR_SIZE]> {
-        let mut k = self.0.clone();
-        k[0] &= 248;
-        k[31] &= 127;
-        k[31] |= 64;
+        let mut k = self.k.clone();
+        clamp(&mut k);
         k
     }
+}
+
+/// Applies `decodeScalar25519`'s fixed bits to the key bytes `k` (RFC 7748 §5):
+///
+/// ```text
+/// k_list[0] &= 248
+/// k_list[31] &= 127
+/// k_list[31] |= 64
+/// ```
+fn clamp(k: &mut [u8; SCALAR_SIZE]) {
+    k[0] &= 248;
+    k[31] &= 127;
+    k[31] |= 64;
 }
 
 /// The encoding is the 32 key bytes, clamped (the bit operations of `decodeScalar25519`, RFC 7748
@@ -414,7 +453,8 @@ impl KeyAgreementPrivateKey<SCALAR_SIZE> for X25519PrivateKey {
         })?;
         let mut k: Secret<[u8; SCALAR_SIZE]> = Secret::new();
         *k = *bytes;
-        Ok(Self(X25519PrivateKey(k).clamped()))
+        clamp(&mut k);
+        Ok(Self { pk: scalar_mult_base(&k), k })
     }
 }
 
@@ -525,8 +565,8 @@ impl Display for X25519PublicKey {
 ///
 /// Input: A 32-byte little-endian scalar.
 /// Output: The decoded scalar, written to `n` as eight little-endian 32-bit words.
-fn decode_scalar_25519(k: &X25519PrivateKey, n: &mut [u32; 8]) {
-    let (words, _) = k.0.as_chunks::<4>(); // 32 bytes: exactly 8 chunks, no remainder
+fn decode_scalar_25519(k: &[u8; SCALAR_SIZE], n: &mut [u32; 8]) {
+    let (words, _) = k.as_chunks::<4>(); // 32 bytes: exactly 8 chunks, no remainder
     for (n_i, w) in n.iter_mut().zip(words) {
         *n_i = u32::from_le_bytes(*w);
     }
@@ -617,7 +657,7 @@ fn ladder_double(x: &mut FieldElement25519, z: &mut FieldElement25519) {
 ///  * `k`, a 32-byte scalar
 ///  * `u`, a 32-byte little-endian u-coordinate
 /// Output: The canonical little-endian encoding of the u-coordinate of `k * u`.
-fn scalar_mult(k: &X25519PrivateKey, u: &X25519PublicKey) -> X25519PublicKey {
+fn scalar_mult(k: &[u8; SCALAR_SIZE], u: &X25519PublicKey) -> X25519PublicKey {
     // The decoded scalar is as secret as `k` itself.
     let mut n: Secret<[u32; 8]> = Secret::new();
     decode_scalar_25519(k, &mut n);
@@ -727,7 +767,7 @@ fn scalar_mult(k: &X25519PrivateKey, u: &X25519PublicKey) -> X25519PublicKey {
     X25519PublicKey(out)
 }
 
-fn scalar_mult_base(k: &X25519PrivateKey) -> X25519PublicKey {
+fn scalar_mult_base(k: &[u8; SCALAR_SIZE]) -> X25519PublicKey {
     // Equivalent (but much slower) -- since the BASE_POINT never changes, you can
     //         precompute lookup tables for the multiples of BASE_POINT. TODO
     scalar_mult(k, &BASE_POINT)
@@ -766,7 +806,7 @@ impl DHKEMParams<POINT_SIZE, SCALAR_SIZE, POINT_SIZE> for X25519 {
     fn private_key_from_bytes(sk: &[u8; SCALAR_SIZE]) -> X25519PrivateKey {
         let mut k: Secret<[u8; SCALAR_SIZE]> = Secret::new();
         *k = *sk;
-        X25519PrivateKey(k)
+        X25519PrivateKey { pk: scalar_mult_base(&k), k }
     }
 
     fn pk(sk: &X25519PrivateKey) -> X25519PublicKey {

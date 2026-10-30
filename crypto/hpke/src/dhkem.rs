@@ -218,6 +218,9 @@ impl<
     ///
     /// The output is labelled as a full-entropy key at the group's strength: it is HKDF output, and
     /// so pseudorandom, unlike the DH output it is derived from.
+    // #[inline(never)]: inlined into encap_rng, its two HMAC states were allocated for the whole
+    // encapsulation, on top of the key generation that sets the peak.
+    #[inline(never)]
     fn extract_and_expand(dh: &[u8], kem_context: &[&[u8]]) -> KeyMaterial<N_SECRET> {
         // eae_prk = LabeledExtract("", "eae_prk", dh)
         let eae_prk = Self::labeled_extract(LABEL_EAE_PRK, dh);

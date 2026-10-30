@@ -21,9 +21,7 @@
 
 #![no_std]
 #![forbid(unsafe_code)]
-
-// TODO -- #![forbid(missing_docs)]
-//          Add back at the end
+#![forbid(missing_docs)]
 
 mod curve25519;
 pub mod x25519;

@@ -14,3 +14,8 @@ bouncycastle-utils.workspace = true
 bouncycastle-core-test-framework.workspace = true
 bouncycastle-hex.workspace = true
 bouncycastle-rng.workspace = true
+criterion.workspace = true
+
+[[bench]]
+name = "x25519_benches"
+harness = false

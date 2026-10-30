@@ -82,7 +82,8 @@ Within each, the priority order is:
   2 timeouts (`sqr_n`'s loop counter, which never terminates: kills), 8 missed. Seven are `|` -> `^`
   in `decode64_255`/`encode64_255`, where the OR'd operands have disjoint bits (equivalent). One is
   the `KeyGenError` arm in the DHKEM `generate_key_pair_rng`, reachable only with an RNG whose
-  `fill_keymaterial_out` returns a wrongly-typed seed.
+  `fill_keymaterial_out` returns a wrongly-typed seed. Run before `X25519PrivateKey` stored its
+  public key; re-run.
 
 ## Phase 3: Docs and ergonomics
 
@@ -96,15 +97,27 @@ Within each, the priority order is:
     - [x] Rename `parity` (to `is_odd`?).
     - [x] Remove the answered "why are we cloning?" TODO.
 - [ ] Docs:
-    - [ ] Re-enable `#![forbid(missing_docs)]`.
+    - [x] Re-enable `#![forbid(missing_docs)]`.
     - [ ] Write the crate doc sections required by QUALITY_AND_STYLE.md:
         - [x] Usage Examples (`lib.rs`, linking to the `x25519` module's examples);
-        - [ ] Memory Usage (needs the benches below);
+        - [x] Memory Usage (`x25519.rs` module docs);
         - [ ] Security Considerations.
     - [x] Is XDH in a NIST document? No: RFC 7748 only. SP 800-186 specifies the curves but does not
       list them for key establishment, and SP 800-56A Rev. 3 does not include XDH (`lib.rs`
       `# Standards`).
-- [ ] Benches: criterion, plus a `mem_usage_benches` harness and a `# Memory Usage` docs section.
+- [x] Benches: criterion, plus a `mem_usage_benches` harness and a `# Memory Usage` docs section.
+    - [x] criterion: `benches/x25519_benches.rs` (KeyGen, KeyAgreement, Encaps, Decaps).
+    - [x] `mem_usage_benches/src/bench_x25519_mem_usage.rs`. Every row reads 7696 B, the harness
+      floor (the dynamic loader, before `main`); the operations peak at 2.2 to 3.0 kB.
+    - [x] memory-hygiene pass: `extract_and_expand` made `#[inline(never)]` (Encaps -656 B).
+    - [x] `# Memory Usage` docs section (`x25519.rs` module docs): key sizes, and the deepest frame
+      chain per entry point, as AES and Ascon do, since every operation is below the massif
+      harness floor.
+- [x] `X25519PrivateKey` stores its public key (64 B in memory), computed once on keygen or decode:
+  `pk()` is free and Decaps no longer recomputes `pk(skR)` (about 48% faster).
+- [ ] Decide on splitting the ladder out of `scalar_mult` into an `#[inline(never)]` helper
+  (-416 B KeyGen, -424 B KeyAgreement, no measurable speed cost). Measured before the stored
+  public key; re-measure, and regenerate the `# Memory Usage` table if taken.
 - [ ] Rethink the name of this crate: `bouncycastle-ed` is kindo the wrong name (but maybe nothing better exists?)
 
 ---
