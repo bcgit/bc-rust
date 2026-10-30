@@ -201,18 +201,20 @@
 //!
 //! Per-call stack usage is the four-block working state -- four words per block, 64 bytes --
 //! plus the four `T` arguments (16 bytes), the eight `u16` planes of the S-box argument (16
-//! bytes) and the circuit's temporaries, most of which the compiler keeps in registers. Every
-//! entry point runs the same four-lane circuit, so the one-, two- and four-block calls cost the
-//! same working state. Measured as the frame of each entry point's `measure` closure in
-//! `mem_usage_benches/src/bench_sm4_mem_usage.rs`, from the compiler's frame-layout remarks in
-//! the release build (x86-64, rustc 1.97 nightly, return address included):
+//! bytes) and the circuit's spills. Every entry point runs the same four-lane circuit, so the
+//! one-, two- and four-block calls cost the same working state. Measured as the deepest frame
+//! chain below each entry point's `measure` closure in
+//! `mem_usage_benches/src/bench_sm4_mem_usage.rs`: the closure, then the out-of-line
+//! `encrypt_4blocks` (or `new`), `tau` and `ortho` frames under it, from the compiler's
+//! frame-layout remarks and the disassembly of the release build (x86-64, rustc 1.97 nightly,
+//! return addresses included):
 //!
 //! | Entry point | Stack |
 //! |---|---|
-//! | `new` (key expansion) | 272 B |
-//! | `encrypt_block` / `decrypt_block` | 96 B |
-//! | `encrypt_2blocks` / `decrypt_2blocks` | 112 B |
-//! | `encrypt_4blocks` / `decrypt_4blocks` | 96 B |
+//! | `new` (key expansion) | 704 B |
+//! | `encrypt_block` / `decrypt_block` | 416 B |
+//! | `encrypt_2blocks` / `decrypt_2blocks` | 432 B |
+//! | `encrypt_4blocks` / `decrypt_4blocks` | 416 B |
 //!
 //! For comparison, a table-driven engine carries a 256-byte table on top of the same schedule.
 //!

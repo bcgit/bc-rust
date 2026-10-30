@@ -30,16 +30,20 @@
 //!
 //! The numbers that do mean something come from the compiler's frame-layout remarks, as for
 //! `bench_aes_mem_usage`: build this binary with
-//! `RUSTFLAGS="-C remark=prologepilog -C remark=stack-frame-layout"` and read the frame of each
-//! `measure` closure, which is the operation's frame with nothing else in it. The engine is built
-//! in an `#[inline(never)]` helper so its frame is a sibling of the operation's, and the
-//! operation runs in a non-inlined, non-returning closure so nothing crosses back across the
-//! boundary. The persistent cost, the 128 bytes of round keys, is what `print_struct_sizes`
-//! prints. There are no lookup tables; a table-driven engine adds a 256-byte table on top.
+//! `RUSTFLAGS="-C remark=prologepilog -C remark=stack-frame-layout"`, with `main` calling every
+//! bench so none is dead-stripped, and sum the deepest chain of frames below each `measure`
+//! closure. The closure is not the whole cost: `encrypt_4blocks`, `tau` and `ortho` keep their
+//! own frames under it (`objdump -d` shows the calls), so the chain is closure, `encrypt_4blocks`
+//! or `new`, `tau`, `ortho`, each with its 8-byte return address. The engine is built in an
+//! `#[inline(never)]` helper so its frame is a sibling of the operation's, and the operation
+//! runs in a non-inlined, non-returning closure so nothing crosses back across the boundary.
+//! The persistent cost, the 128 bytes of round keys, is what `print_struct_sizes` prints. There
+//! are no lookup tables; a table-driven engine adds a 256-byte table on top.
 //!
-//! With rustc 1.97 nightly on x86-64 the closure frames are 264 B for `new`, 88 B for the
-//! one- and four-block entry points and 104 B for the two-block ones; the crate docs tabulate
-//! them with the 8-byte return address added.
+//! With rustc 1.97 nightly on x86-64 the frames are: closures 264 B for `new`, 88 B for the one-
+//! and four-block entry points and 104 B for the two-block ones; `new` 232 B; `encrypt_4blocks`
+//! and `decrypt_4blocks` 120 B; `tau` 152 B; `ortho` 24 B. The crate docs tabulate the chains,
+//! 704 B for `new`, 416 B for the one- and four-block calls and 432 B for the two-block ones.
 
 #![allow(dead_code)]
 #![allow(unused_imports)]
