@@ -526,3 +526,52 @@ fn the_keys_enforce_the_material_policy() {
     framework.test::<TOY_LEN, DeclaredKey<Toy>>(Toy::CCM_ALG_NAME, SecurityStrength::_128bit);
     framework.test::<TOY_LEN, FrameKey<Toy, 32>>(Toy::CCM_ALG_NAME, SecurityStrength::_128bit);
 }
+
+/// A refused `do_encrypt_out` / `do_decrypt_out` on the any-length workers leaves nothing of the
+/// input in the caller's buffer, and zeroes the buffer first as every `_out` method must: payload
+/// offered while declared AAD is still owed, and payload past the declared length, on both sides.
+/// The refusal must come before the copy; the inner `Ccm` refuses the same calls, but only after
+/// the bytes have been copied.
+#[test]
+fn a_refused_update_leaves_no_payload_in_the_output_buffer() {
+    let key = declared_key::<Toy>();
+    let nonce = pinned_nonce();
+    let payload = [0x5Au8; 16];
+
+    // AAD still owed: the four bytes declared have not been supplied. An empty update is still
+    // a no-op, not a refusal.
+    let mut enc = key.create_encryptor_nonce(&nonce, 4, 16).unwrap();
+    let mut out = [0xEEu8; 32];
+    assert_eq!(enc.do_encrypt_out(&[], &mut out).unwrap(), 0, "an empty update is accepted");
+    let mut out = [0xEEu8; 32];
+    assert!(matches!(
+        enc.do_encrypt_out(&payload, &mut out),
+        Err(SymmetricCipherError::StateError(_))
+    ));
+    assert_eq!(out, [0u8; 32], "a refused encrypt must leave only zeros behind");
+
+    // Past the declared payload length.
+    let mut enc = key.create_encryptor_nonce(&nonce, 0, 8).unwrap();
+    let mut out = [0xEEu8; 32];
+    assert!(matches!(
+        enc.do_encrypt_out(&payload, &mut out),
+        Err(SymmetricCipherError::StateError(_))
+    ));
+    assert_eq!(out, [0u8; 32], "an over-length encrypt must leave only zeros behind");
+
+    // The decryptor, with AAD still owed: the sixteen bytes are within the declared payload, so
+    // they are not held back as a tag, and must not be copied either.
+    let mut dec = key.create_decryptor(&nonce, 4, 16).unwrap();
+    let mut out = [0xEEu8; 32];
+    assert!(matches!(
+        dec.do_decrypt_out(&payload, &mut out),
+        Err(SymmetricCipherError::StateError(_))
+    ));
+    assert_eq!(out, [0u8; 32], "a refused decrypt must leave only zeros behind");
+
+    // An accepted update still zeroes the buffer past what it wrote.
+    let mut enc = key.create_encryptor_nonce(&nonce, 0, 16).unwrap();
+    let mut out = [0xEEu8; 32];
+    assert_eq!(enc.do_encrypt_out(&payload, &mut out).unwrap(), 16);
+    assert_eq!(out[16..], [0u8; 16], "the bytes past the ciphertext must be zeroed");
+}
