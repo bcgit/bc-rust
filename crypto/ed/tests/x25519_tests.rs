@@ -5,10 +5,25 @@ use bouncycastle_ed::x25519::{POINT_SIZE, SCALAR_SIZE, X25519, X25519PrivateKey,
 use bouncycastle_hex as hex;
 
 #[test]
+fn core_framework_tests() {
+    use bouncycastle_core_test_framework::key_agreement::TestFrameworkKeyAgreement;
+
+    let tf = TestFrameworkKeyAgreement::new();
+
+    tf.test_key_agreement::<X25519PublicKey, X25519PrivateKey, X25519, POINT_SIZE, SCALAR_SIZE>(
+        X25519::keygen,
+    );
+}
+
+#[test]
 fn iterated() {
     rfc7748_check_iterated(1000);
 }
 
+/// Ignored because it's quite slow, can be run with
+///     cargo test -p bouncycastle-ed -- --ignored
+/// or
+///     cargo test -p bouncycastle-ed -- --include-ignored
 #[ignore]
 #[test]
 fn iterated_full() {

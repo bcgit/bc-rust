@@ -1106,7 +1106,9 @@ pub trait KeyAgreement<
 /// The bound on `AsRef<[u8]>` is because a Diffie-Hellman key agreement returns a public key as
 /// the shared secret value, so it must be easy to convert this to bytes in a cannonical representation
 /// so that it can be fed into a [`KDF`].
-pub trait KeyAgreementPublicKey<const PK_LEN: usize>: Sized + AsRef<[u8]> {
+pub trait KeyAgreementPublicKey<const PK_LEN: usize>:
+    PartialEq + Eq + Clone + Debug + Display + Sized + AsRef<[u8]>
+{
     /// Write it out to bytes in its standard encoding.
     fn encode(&self) -> [u8; PK_LEN];
     /// Write it out to bytes in its standard encoding.

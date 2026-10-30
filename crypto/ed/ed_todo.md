@@ -60,7 +60,7 @@ Within each, the priority order is:
 - [x] Implement the traits for X25519. Move the Wycheproof and RFC suites onto the trait API.
 - [x] Re-enable the `agreement` round-trip test. Later removed as redundant: the RFC 7748 iterated
   and Wycheproof known answers, and the KEM framework round trip, cover it.
-- [ ] Add a shared `KeyAgreement` conformance suite in `core-test-framework` and invoke it from
+- [x] Add a shared `KeyAgreement` conformance suite in `core-test-framework` and invoke it from
   X25519.
 - [x] Decide what happens on an all-zero shared secret (low-order public key): `key_agreement`
   rejects it with `KeyAgreementError::InvalidPublicKey`. RFC 7748 §6.1 makes the check a MAY;
@@ -75,8 +75,7 @@ Within each, the priority order is:
     - [x] `keygen_from_seed`, from a 32-byte `KeyMaterial256`;
     - [x] `keypair_consistency_check`. No `keygen_from_seed_and_encoded`: the seed *is* the
       private key encoding, so there is nothing to compare.
-- [ ] Wire into the factory (a `KeyAgreementFactory`, if that fits the factory pattern) and add a
-  CLI subcommand (`cli/src/*_cmd.rs`).
+- [ ] Wire into the cli (we are going to skip Factory)
 - [ ] `cargo mutants -p bouncycastle-ed` (without Wycheproof). Scoped runs done on the KEM code (one survivor: an
   error-mapping arm unreachable with a well-behaved RNG) and on `bouncycastle-hpke`;
   a full-crate run is still to do.
