@@ -341,23 +341,18 @@ impl FieldElement25519 {
     ///
     /// Idempotent.
     ///
-    /// Two [`Self::reduce`] passes with `y` and then `-y`, where `y` is bit 254 of the value (bit 50
-    /// of limb `x4`, since `x4` sits at weight `2^204`). Each pass adds `19 * y` at the bottom
-    /// without a matching removal at the top, so neither pass alone is congruent mod p -- but the
-    /// `+19y` and `-19y` cancel exactly, leaving `value - (c + c') * p` for the two top-carry folds
-    /// `c`, `c'`.
+    /// Two [`Self::reduce`] passes, `reduce(1)` then `reduce(-1)`: the first adds 19 at the bottom
+    /// and the second removes it, with no matching change at the top. Neither pass alone is
+    /// congruent mod p, but the `+19` and `-19` cancel exactly, leaving `value - (c + c') * p` for
+    /// the two top-carry folds `c`, `c'`.
     ///
-    /// Adding `19 * y` in the first pass and removing it in the second makes the top carry fire
-    /// exactly when the value is `>= p`, since `v >= p` if and only if `v + 19 >= 2^255`. Only values
-    /// `>= 2^254` can be `>= p`, which is why `y` is bit 254.
+    /// The `+19` makes the first pass's top carry fire exactly when the value is `>= p`, since
+    /// `v >= p` if and only if `v + 19 >= 2^255`. This is what implements Section 5 of RFC7748's
+    /// "Implementations MUST accept non-canonical values and process them as if they had been
+    /// reduced modulo the field prime. The non-canonical values are 2^255 - 19 through 2^255 - 1".
+    /// The `normalize_edge_values` unit test pins `p - 1`, `p` and `2^255 - 1`.
     ///
-    /// This is what implements Section 5 of RFC7748's "Implementations MUST accept non-canonical
-    /// values and process them as if they had been reduced modulo the field prime. The non-canonical
-    /// values are 2^255 - 19 through 2^255 - 1".
-    /// This `reduce(y).reduce(-y)` is exact on all of `[0, 2^255)`, which is the entire range
-    /// [`Self::decode_255`] can produce. It first fails at `2^255`, outside the input domain.
-    ///
-    /// Requires the value in `[0, 2^255)`, the domain above that this is verified on. Individual
+    /// Requires the value in `[0, 2^255)`, which is what [`Self::decode_255`] produces. Individual
     /// limbs may exceed 51 bits: [`Self::mul`] can return a limb of exactly `2^51` (Wycheproof
     /// X25519 tcId 115 and 116), which the carry chain in [`Self::reduce`] handles. Checked by a
     /// `debug_assert` in debug builds; the [`NormalizedFieldElement25519`] typestate cannot enforce
@@ -375,8 +370,7 @@ impl FieldElement25519 {
             "normalize: value out of [0, 2^255)"
         );
 
-        let y = (self.0[4] >> (51 - 1)) & 1;
-        NormalizedFieldElement25519(self.reduce(y).reduce(-y))
+        NormalizedFieldElement25519(self.reduce(1).reduce(-1))
     }
 
     /// The multiplicative identity, 1, in canonical form.
@@ -810,7 +804,7 @@ mod tests {
         assert_eq!(n.0.0, [0, 0, 0, 0, 1]);
     }
 
-    /// The values either side of p, where the `y` adjustment in normalize decides the answer. Not
+    /// The values either side of p, where normalize's `+19` / `-19` passes decide the answer. Not
     /// reachable through the public API: X25519 only normalizes ladder outputs, which land in
     /// `[p, 2^255)` with negligible probability.
     #[test]

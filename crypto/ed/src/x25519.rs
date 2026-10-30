@@ -1,4 +1,4 @@
-use bouncycastle_utils::ct::Condition;
+use bouncycastle_utils::ct::{Condition, ct_eq_zero_bytes};
 use bouncycastle_utils::secret::Secret;
 
 use crate::curve25519::FieldElement25519;
@@ -68,19 +68,11 @@ const C_A24: u32 = (C_A + 2) / 4;
 
 // TODO -- impl KeyAgreement trait (will need to add to traits.rs), and a KEM trait
 
-fn are_all_zeros(r: &[u8]) -> bool {
-    let mut bits = 0;
-    for i in r.iter() {
-        bits |= i;
-    }
-    bits == 0
-}
-
 // TODO -- remove pub visibility once I have the traits impl'd
 // TODO -- the shared secret is still written to bare bytes; Phase 2 decides its type (KeyMaterial).
 pub fn calculate_agreement(k: &X25519Scalar, u: &X25519Point, r: &mut [u8; POINT_SIZE]) -> bool {
     scalar_mult(k, u, r);
-    !are_all_zeros(&r[..POINT_SIZE])
+    !ct_eq_zero_bytes(r)
 }
 
 /// `decodeScalar25519(k)` as defined in Section 5 of RFC7748:
