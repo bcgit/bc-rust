@@ -78,9 +78,11 @@ Within each, the priority order is:
       private key encoding, so there is nothing to compare.
 - [x] Wire into the cli (we are going to skip Factory): `bc-rust x25519` in `cli/src/x25519_cmd.rs`,
   with keygen, pk-from-sk, check-consistency, agree, and DHKEM encaps/decaps.
-- [ ] `cargo mutants -p bouncycastle-ed` (without Wycheproof). Scoped runs done on the KEM code (one survivor: an
-  error-mapping arm unreachable with a well-behaved RNG) and on `bouncycastle-hpke`;
-  a full-crate run is still to do.
+- [x] `cargo mutants -p bouncycastle-ed` (without Wycheproof): 432 mutants, 327 caught, 95 unviable,
+  2 timeouts (`sqr_n`'s loop counter, which never terminates: kills), 8 missed. Seven are `|` -> `^`
+  in `decode64_255`/`encode64_255`, where the OR'd operands have disjoint bits (equivalent). One is
+  the `KeyGenError` arm in the DHKEM `generate_key_pair_rng`, reachable only with an RNG whose
+  `fill_keymaterial_out` returns a wrongly-typed seed.
 
 ## Phase 3: Docs and ergonomics
 
