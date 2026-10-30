@@ -33,7 +33,7 @@ use bouncycastle_core_test_framework::FixedSeedRNG;
 use bouncycastle_core_test_framework::block_cipher::TestFrameworkBlockCipher;
 use bouncycastle_core_test_framework::from_key_material::TestFrameworkFromKeyMaterial;
 use common::{SwappedFourToy, SwappedPairToy, TOY_LEN, Toy, toy_key};
-use toy_key::{ToyKey, os_rng};
+use toy_key::ToyKey;
 
 type ToyEcb<'k, Dir> = Ecb<'k, Toy, Dir, TOY_LEN>;
 type ToyEcbKey = ToyKey<Toy, ECB<Blocks>>;
@@ -358,7 +358,9 @@ fn the_keys_enforce_the_material_policy() {
 
 /// ECB is block-aligned by contract, so arbitrary-length data goes through `bouncycastle_cipher::padding`
 /// like the other modes: `ECB<PKCS7>` is the symmetric key path over the adapters, with its
-/// `INIT_DATA_LEN` of 0 flowing through as an empty array and the RNG unused.
+/// `INIT_DATA_LEN` of 0 flowing through as an empty array and the RNG unused. The RNG is a
+/// `FixedSeedRNG` with no bytes at all, which refuses any draw, so this also pins that the padded
+/// path draws nothing.
 #[test]
 fn the_padding_layer_round_trips_every_length() {
     type Key = ToyKey<Toy, ECB<PKCS7>>;
@@ -369,8 +371,9 @@ fn the_padding_layer_round_trips_every_length() {
     for len in 0..=(3 * TOY_LEN + 1) {
         let plaintext: Vec<u8> = (0..len).map(|i| (i * 5 + 3) as u8).collect();
         let mut ciphertext = vec![0u8; Enc::encrypt_out_len(len)];
-        let (written, init) =
-            key.encrypt_out(&mut os_rng(), &plaintext, &mut ciphertext).expect("padded encryption");
+        let (written, init) = key
+            .encrypt_out(&mut FixedSeedRNG::<0>::new([]), &plaintext, &mut ciphertext)
+            .expect("padded encryption draws nothing from the RNG");
         assert_eq!(init, [0u8; 0]);
         assert_eq!(written, ciphertext.len(), "len {len}");
         let mut recovered = vec![0u8; Dec::decrypt_out_len(written)];

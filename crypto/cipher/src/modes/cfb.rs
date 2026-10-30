@@ -93,13 +93,14 @@
 //!
 //! [`Cfb`] implements [`SuspendableKeyed`], so a message in progress can be suspended to a byte
 //! array and resumed later with the re-supplied key. The state is the open segment and how much of
-//! it is used; the permutation is rebuilt from the key. The array length is
+//! it is used; the permutation is reached through the re-supplied key. The array length is
 //! `Cfb::SUSPENDED_STATE_LEN`; see [the crate docs](crate#suspending-and-resuming-execution) for an
 //! example.
 //!
 //! # Memory Usage
 //!
-//! The state consists of the underlying permutation struct, one block, `buf`, and a byte count, `used`.
+//! The state consists of a reference to the permutation, one block, `buf`, and a byte count,
+//! `used`.
 //!
 //! # 🚨 Security Considerations 🚨
 //!
@@ -604,6 +605,9 @@ where
         suspend_component(&self)
     }
 
+    /// The state carries no direction: one suspended by the other direction's worker is accepted
+    /// and resumes over the same chaining value, which gives wrong output rather than an error.
+    /// Only GCM, whose state means different things per direction, refuses the other one.
     fn from_suspended(state: [u8; N], key: &'k Self::Key) -> Result<Self, SuspendableError> {
         resume_component(&state, key)
     }

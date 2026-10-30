@@ -79,7 +79,7 @@
 //! [`CcmPacketEncryptor`] and [`CcmPacketDecryptor`] implement [`SuspendableKeyed`], so a message in progress
 //! can be suspended to a byte array and resumed later with the re-supplied key. The state is the
 //! CTR half, the CBC-MAC chaining value, the payload still owed and the AAD held back so far; the
-//! permutation is rebuilt from the key. The array length is each type's `SUSPENDED_STATE_LEN`;
+//! permutation is reached through the re-supplied key. The array length is each type's `SUSPENDED_STATE_LEN`;
 //! see [the crate docs](crate#suspending-and-resuming-execution) for an example.
 //!
 //! # 🚨 Security Considerations 🚨
@@ -268,7 +268,7 @@ where
     /// # Errors
     /// [`SymmetricCipherError::StateError`] if `aad` would take the total past the declared AAD
     /// length -- which includes any non-empty AAD once the declared amount is complete, and so any
-    /// after [`Self::new`], which declares exactly the AAD it is given. Nothing is absorbed in that
+    /// after construction, which declares exactly the AAD it is given. Nothing is absorbed in that
     /// case.
     pub(crate) fn do_update_aad(&mut self, aad: &[u8]) -> Result<(), SymmetricCipherError> {
         if aad.len() > self.aad_owed {
@@ -475,10 +475,12 @@ where
         }
     }
 
-    /// Debits `len` bytes from the payload length declared to [`Self::new`], refusing any payload
-    /// while declared AAD is still outstanding.
+    /// Whether `len` bytes of payload would be accepted now: refused while declared AAD is still
+    /// outstanding, or past the payload length declared at construction. Checked by the
+    /// `_out` workers before they copy anything into the caller's buffer, and again by
+    /// [`take_owed`](Self::take_owed) when the bytes are debited.
     #[inline]
-    fn take_owed(&mut self, len: usize) -> Result<(), SymmetricCipherError> {
+    pub(crate) fn accepts_payload(&self, len: usize) -> Result<(), SymmetricCipherError> {
         if len > 0 && self.aad_owed != 0 {
             return Err(SymmetricCipherError::StateError(
                 "CCM was given payload before all of the declared AAD; A.2.3 puts the payload \
@@ -490,6 +492,14 @@ where
                 "CCM was given more payload than the declared payload length, which B0 commits to",
             ));
         }
+        Ok(())
+    }
+
+    /// Debits `len` bytes from the payload length declared at construction, refusing any payload
+    /// while declared AAD is still outstanding.
+    #[inline]
+    fn take_owed(&mut self, len: usize) -> Result<(), SymmetricCipherError> {
+        self.accepts_payload(len)?;
         self.owed -= len;
         Ok(())
     }
@@ -550,7 +560,7 @@ where
     ///
     /// # Errors
     /// [`SymmetricCipherError::StateError`] if less payload was supplied than the length declared
-    /// to [`Self::new`] -- `B0` commits to that length, so a short message would produce a tag no
+    /// at construction -- `B0` commits to that length, so a short message would produce a tag no
     /// verifier could reproduce -- or less AAD than declared, for the same reason.
     pub(crate) fn do_encrypt_final(self) -> Result<[u8; TAG_LEN], SymmetricCipherError> {
         if self.aad_owed != 0 {
@@ -607,7 +617,7 @@ where
     /// # Errors
     /// [`SymmetricCipherError::AEADTagCheckFailed`] if the tag does not verify, and
     /// [`SymmetricCipherError::StateError`] if less ciphertext was supplied than the length declared
-    /// to [`Self::new`], or less AAD than declared.
+    /// at construction, or less AAD than declared.
     pub(crate) fn do_decrypt_final(self, tag: &[u8; TAG_LEN]) -> Result<(), SymmetricCipherError> {
         if self.aad_owed != 0 {
             return Err(SymmetricCipherError::StateError(
@@ -698,7 +708,7 @@ where
     /// Table 2) and the counter field of `Ctr_i` (A.3, Table 3), which occupy the same octets.
     ///
     /// `Q_LEN <= 8`, so the low `Q_LEN` bytes of a big-endian `u64` are exactly `[x]_8q`. Nothing
-    /// is ever truncated in a way that matters: `Ccm::new` refuses a payload above
+    /// is ever truncated in a way that matters: `Ccm`'s constructors refuse a payload above
     /// `Ccm::MAX_PAYLOAD_LEN`, and the counter cannot pass that either, since there is one
     /// counter block per `BLOCK_LEN` payload bytes.
     #[inline]
@@ -733,7 +743,7 @@ where
     P: BlockPermutation<BLOCK_LEN> + ModeNames,
 {
     /// Every counter value from `next_ctr` to `2^8q - 1`. Never the binding limit in practice:
-    /// `Ccm::new` caps the payload at `2^8q - 1` bytes, far fewer than that many blocks.
+    /// `Ccm`'s constructors cap the payload at `2^8q - 1` bytes, far fewer than that many blocks.
     fn remaining_blocks(&self) -> u64 {
         Self::MAX_COUNTER - self.next_ctr + 1
     }
@@ -810,7 +820,7 @@ where
     fn check_shape() {
         const {
             // `B0` could not carry it (A.1's `p < 2^8q`), and this is the one place the length is
-            // known at compile time, so it is a compile error rather than `Ccm::new`'s `Err`.
+            // known at compile time, so it is a compile error rather than the constructor's `Err`.
             assert!(
                 DATA_LEN as u64 <= Ccm::<P, Dir, BLOCK_LEN, NONCE_LEN, TAG_LEN>::MAX_PAYLOAD_LEN,
                 "CCM: DATA_LEN exceeds the payload limit 2^8q - 1 that NONCE_LEN implies (A.1)"
@@ -1880,14 +1890,14 @@ where
         plaintext: &[u8],
         ciphertext: &mut [u8],
     ) -> Result<usize, SymmetricCipherError> {
-        if plaintext.len() > self.0.owed {
-            return Err(SymmetricCipherError::StateError(
-                "CCM was given more payload than the declared payload length, which B0 commits to",
-            ));
-        }
+        ciphertext.fill(0);
         if ciphertext.len() < plaintext.len() {
             return Err(SymmetricCipherError::OutputBufferTooSmall(plaintext.len()));
         }
+        // Before the copy: `Ccm::do_encrypt_inplace` would refuse this too, but only after the
+        // plaintext had been copied into the caller's buffer, and a refused call must not leave
+        // plaintext there.
+        self.0.accepts_payload(plaintext.len())?;
         let out = &mut ciphertext[..plaintext.len()];
         out.copy_from_slice(plaintext);
         self.0.do_encrypt_inplace(out)?;
@@ -1949,6 +1959,7 @@ where
         ciphertext: &[u8],
         plaintext: &mut [u8],
     ) -> Result<usize, SymmetricCipherError> {
+        plaintext.fill(0);
         let take = ciphertext.len().min(self.ccm.owed);
         let rest = ciphertext.len() - take;
         if self.tag_len + rest > TAG_LEN {
@@ -1959,6 +1970,8 @@ where
         if plaintext.len() < take {
             return Err(SymmetricCipherError::OutputBufferTooSmall(take));
         }
+        // Before the copy, as for the encryptor: a refused call must leave nothing behind.
+        self.ccm.accepts_payload(take)?;
         let out = &mut plaintext[..take];
         out.copy_from_slice(&ciphertext[..take]);
         self.ccm.do_decrypt_inplace(out)?;
@@ -2192,9 +2205,6 @@ where
         CcmPacketDecryptor::from_perm(state, nonce)
     }
 }
-
-// The key-produced worker traits for the fixed-frame pair, forwarded to the cipher traits' own
-// methods while those still exist; named by path as `gcm.rs` names them.
 
 // ---- suspending the pair -----------------------------------------------------------------
 

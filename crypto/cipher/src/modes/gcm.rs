@@ -189,8 +189,8 @@
 //! the end of the ciphertext has been reached, and the `do_decrypt_final` /
 //! `do_decrypt_final_detached` succeeds.
 //!
-//! The one-shots (`decrypt_out`, `decrypt_detached_out`, `decrypt_with_aad_out`) verify the
-//! tag first and release nothing on failure, making them more robust.
+//! The one-shots (`decrypt_out`, `decrypt_detached_out`, `decrypt_with_aad_out`) zeroize their
+//! output buffer when the tag check fails, so nothing is released on failure.
 //!
 //! * **GMAC is GCM with no plaintext** (Sec 5.2): [`Gmac`](crate::modes::gmac) is this type fed
 //!   only AAD, with the plaintext-free API.
@@ -285,8 +285,8 @@ where
 
 /// What a GCM key keeps per key: the keyed permutation and the hash subkey `H = CIPH_K(0^128)`
 /// (SP 800-38D Algorithm 4 step 1), derived once here rather than once per message. It is the
-/// `KeyState` of [`GCM`] over any permutation, and is only built and consumed through the mode
-/// impls.
+/// `KeyState` of [`GCM`] over any permutation: built by [`new`](Self::new) or through the mode
+/// impls, and consumed through them.
 #[derive(Clone)]
 pub struct GcmKeyState<P> {
     perm: P,
@@ -737,8 +737,8 @@ where
 }
 
 /// The AEAD view: [`AEADCipherDecryptor`] over the [`SymmetricCipherDecryptor`] impl above, with
-/// `FINAL_LEN = TAG_LEN`. The one-shots are overridden, as `decrypt_out` is, to check the tag
-/// before any plaintext is written.
+/// `FINAL_LEN = TAG_LEN`. The one-shots are the key's provided ones, which zeroize the output on
+/// a failed tag check.
 impl<'k, P, const TAG_LEN: usize> AEADCipherDecryptor<GCM_NONCE_LEN, TAG_LEN, TAG_LEN>
     for Gcm<'k, P, Decrypting, TAG_LEN>
 where
@@ -844,9 +844,6 @@ where
     }
 }
 
-// The key-produced worker traits, forwarded to the cipher traits' own methods while those still
-// exist. Named by path rather than imported, since the method names coincide and an import would
-// make every call in this file ambiguous.
 mod ghash {
     //! GHASH: the universal hash function GCM builds its authentication on (NIST SP 800-38D Sec 6.3,
     //! 6.4), and the GF(2^128) multiplication it is defined over.
@@ -1108,9 +1105,8 @@ mod ghash {
         /// Appends `[aad_bits]_64 || [data_bits]_64` (Algorithm 4 step 5's final block) and writes
         /// `Y_m`, i.e. `S`, to `out` -- a `Secret`, since `S` is the tag with its mask removed.
         ///
-        /// Takes `&mut self` rather than `self` -- `Gcm`'s verify-before-decrypt one-shot needs the rest
-        /// of its own state (the `Ctr` field) after computing the tag, so consuming `Ghash` here would
-        /// force that caller to reconstruct it. Nothing asserts a "was padded" flag: the caller is
+        /// Takes `&mut self` rather than `self`, so that `Gcm` keeps the rest of its state around
+        /// the call. Nothing asserts a "was padded" flag: the caller is
         /// expected to have called [`pad_to_block`](Self::pad_to_block) for both the AAD and the data
         /// phase already (the `0^v` and `0^u` of step 5), so by the time `finish` runs there is nothing
         /// pending except this one final length block, and no caller should call `update` or
