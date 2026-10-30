@@ -99,8 +99,10 @@
 //! use bouncycastle_rng::HashDRBG_SHA512;
 //!
 //! let mut rng = HashDRBG_SHA512::new_from_os();
-//! let material = KeyMaterial128::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey).unwrap();
-//! let key = AES128Key::<CBC<NoPadding>>::from_key_material(&material).unwrap();
+//! let material = KeyMaterial128::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
+//!     .expect("a 16-byte symmetric cipher key");
+//! let key = AES128Key::<CBC<NoPadding>>::from_key_material(&material)
+//!     .expect("a valid AES-128 key");
 //!
 //! // A whole block is fine, and comes out the same length.
 //! let mut out = [0u8; 16];
@@ -124,11 +126,13 @@
 //! use bouncycastle_core::symmetric_key::{FromKeyMaterial, SymmetricEncryptionKey};
 //! use bouncycastle_rng::HashDRBG_SHA512;
 //!
-//! let material = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey).unwrap();
-//! let key = AES128Key::<CBC<NoPadding>>::from_key_material(&material).unwrap();
+//! let material = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
+//!     .expect("a 16-byte symmetric cipher key");
+//! let key = AES128Key::<CBC<NoPadding>>::from_key_material(&material)
+//!     .expect("a valid AES-128 key");
 //!
 //! // Built from a NoPadding key, annotated as PKCS7: mismatched types.
-//! let (enc, _iv) = key.create_encryptor(&mut HashDRBG_SHA512::new_from_os()).unwrap();
+//! let (enc, _iv) = key.create_encryptor(&mut HashDRBG_SHA512::new_from_os()).expect("an IV");
 //! let _mismatched: AES_CBC_128<Encrypting, PKCS7> = enc;
 //! ```
 //!

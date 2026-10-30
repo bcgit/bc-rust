@@ -91,16 +91,17 @@
 //! use bouncycastle_rng::HashDRBG_SHA512;
 //!
 //! let mut rng = HashDRBG_SHA512::new_from_os();
-//! let material = KeyMaterial128::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey).unwrap();
-//! let cfb8_key = AES128Key::<CFB8>::from_key_material(&material).unwrap();
-//! let cfb_key = AES128Key::<CFB>::from_key_material(&material).unwrap();
+//! let material = KeyMaterial128::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
+//!     .expect("a 16-byte symmetric cipher key");
+//! let cfb8_key = AES128Key::<CFB8>::from_key_material(&material).expect("a valid AES-128 key");
+//! let cfb_key = AES128Key::<CFB>::from_key_material(&material).expect("a valid AES-128 key");
 //! let plaintext = *b"hello";
 //!
 //! let mut data = plaintext;
-//! let (_, iv) = cfb8_key.encrypt_inplace(&mut rng, &mut data).unwrap();
+//! let (_, iv) = cfb8_key.encrypt_inplace(&mut rng, &mut data).expect("encryption");
 //!
 //! // Decrypting CFB8 output as CFB128 does not recover the plaintext.
-//! cfb_key.decrypt_inplace(&iv, &mut data).unwrap();
+//! cfb_key.decrypt_inplace(&iv, &mut data).expect("decryption");
 //! assert_ne!(data, plaintext);
 //! ```
 //!

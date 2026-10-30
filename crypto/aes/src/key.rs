@@ -5,14 +5,14 @@
 //! is bound to its AES variant and its mode by the Rust type rather than by the length of a byte
 //! buffer and the call site. Validation and key expansion happen once, in the constructor, and
 //! every message under the key starts from the stored schedule (and, for GCM, the stored hash
-//! subkey, or for CMAC the stored subkeys), which the workers borrow rather than copy. Using one key under two modes is two
-//! `from_key_material` calls on two key types; the accidental version does not compile. A MAC
-//! mode's key takes `KeyType::MACKey` material, a cipher mode's `KeyType::SymmetricCipherKey`.
-//! Which workers a key hands out is decided by its mode: the symmetric pair for the stream modes
-//! and the padded block modes (`CFB`, `CFB8`, `CTR`, `CBC<PKCS7>`, `ECB<PKCS7>`), the block pair
-//! for `CBC<Blocks>`, the `hazmat` ECB pair for `ECB<Blocks>`, the AEAD pairs for `GCM`, `CCM`
-//! and `CCM_Packet`, the MAC pair for `CMAC`, and for `GMAC`, whose tag is nonce-bound, an inherent
-//! pair (see [`crate::gmac`]).
+//! subkey, or for CMAC the stored subkeys), which the workers borrow rather than copy. Using one
+//! key under two modes is two `from_key_material` calls on two key types; the accidental version
+//! does not compile. A MAC mode's key takes `KeyType::MACKey` material, a cipher mode's
+//! `KeyType::SymmetricCipherKey`. Which workers a key hands out is decided by its mode: the
+//! symmetric pair for the stream modes and the padded block modes (`CFB`, `CFB8`, `CTR`,
+//! `CBC<PKCS7>`, `ECB<PKCS7>`), the block pair for `CBC<Blocks>`, the `hazmat` ECB pair for
+//! `ECB<Blocks>`, the AEAD pairs for `GCM`, `CCM` and `CCM_Packet`, the MAC pair for `CMAC`, and
+//! for `GMAC`, whose tag is nonce-bound, an inherent pair (see [`crate::gmac`]).
 //!
 //! # Usage Examples
 //!
