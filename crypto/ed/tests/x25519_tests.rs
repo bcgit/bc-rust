@@ -62,8 +62,8 @@ fn rfc7748_section_6_1() {
     );
 
     let k = "4a5d9d5ba4ce2de1728e3bf480350f25e07e21c947d19e3376f09b3c1e161742";
-    let alice_k = X25519::key_agreement(&bob_pk, alice_sk).unwrap();
-    let bob_k = X25519::key_agreement(&alice_pk, bob_sk).unwrap();
+    let alice_k = X25519::key_agreement(&bob_pk, &alice_sk).unwrap();
+    let bob_k = X25519::key_agreement(&alice_pk, &bob_sk).unwrap();
     check_value(alice_k.as_bytes(), "Section 6.1 K (Alice)", k);
     check_value(bob_k.as_bytes(), "Section 6.1 K (Bob)", k);
 }
@@ -82,7 +82,7 @@ fn key_agreement_rejects_all_zero_shared_secret() {
         let sk = sk_from_bytes(&decode_32(
             "77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a",
         ));
-        match X25519::key_agreement(&X25519PublicKey::from_bytes(u), sk) {
+        match X25519::key_agreement(&X25519PublicKey::from_bytes(u), &sk) {
             Err(KeyAgreementError::InvalidPublicKey(_)) => { /* good */ }
             other => panic!("expected InvalidPublicKey for u = {u:02x?}, got {other:?}"),
         }
@@ -114,7 +114,7 @@ fn rfc7748_check_iterated(count: usize) {
     u[0] = 9;
     let mut iterations = 0;
     while iterations < count {
-        let r = X25519::key_agreement(&X25519PublicKey::from_bytes(u), sk_from_bytes(&k)).unwrap();
+        let r = X25519::key_agreement(&X25519PublicKey::from_bytes(u), &sk_from_bytes(&k)).unwrap();
 
         u = k;
         k = *r.as_bytes();
@@ -151,6 +151,6 @@ fn check_vector(sk: &str, su: &str, se: &str, text: &str) {
     let k = sk_from_bytes(&decode_32(sk));
     let u = X25519PublicKey::from_bytes(decode_32(su));
 
-    let r = X25519::key_agreement(&u, k).unwrap();
+    let r = X25519::key_agreement(&u, &k).unwrap();
     check_value(r.as_bytes(), text, se);
 }

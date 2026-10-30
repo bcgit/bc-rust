@@ -1085,24 +1085,25 @@ pub trait KEMPublicKey<const PK_LEN: usize>:
 }
 
 /// A Key Agreement algorithm, often called a Diffie-Hellman algorithm.
-/// The core function is `key_agreement(&pk, &sk) -> OutputType` which acts on one public key and one private key.
-/// The return type of `key_agreement` will depend on the specific algorithm -- often it will be a `[u8]`, but it
-/// may be a struct, such as a public key.
+/// The core function is `key_agreement(&pk, &sk)`, which combines one party's public key with the
+/// other party's private key, and returns the shared secret as a value of the public key type `PK`.
 pub trait KeyAgreement<PK: KeyAgreementPublicKey, SK: KeyAgreementPrivateKey>: Sized {
-    /// The output type of [`KeyAgreement::key_agreement`].
-    /// It may be any type that makes sense, but it must impl `AsRef<[u8]>` so that it can be, for
-    /// example, trivially used as input to a KDF or hash function.
-    type SharedSecretType: AsRef<[u8]>;
-
-    /// Perform a key agreement
-    fn key_agreement(pk: &PK, sk: SK) -> Result<Self::SharedSecretType, KeyAgreementError>;
+    /// Perform a key agreement.
+    /// Note that this returns a public key. The caller is responsible for using a [`KDF`] to
+    /// derive a shared symmetric key from it.
+    /// Alternatively, most algorithms that impl [`KeyAgreement`] should also impl
+    /// [`KEMEncapsulator`] / [`KEMDecapsulator`]
+    fn key_agreement(pk: &PK, sk: &SK) -> Result<PK, KeyAgreementError>;
 }
 
 /// A public key for a KeyAgreement (Diffie-Hellman) algorithm, often denoted "pk".
-pub trait KeyAgreementPublicKey {}
+/// The bound on `AsRef<[u8]>` is because a Diffie-Hellman key agreement returns a public key as
+/// the shared secret value, so it must be easy to convert this to bytes in a cannonical representation
+/// so that it can be fed into a [`KDF`].
+pub trait KeyAgreementPublicKey: Sized + AsRef<[u8]> {}
 
 /// A private key for a KeyAgreement (Diffie-Hellman) algorithm, often denoted "sk" (for "secret key").
-pub trait KeyAgreementPrivateKey {}
+pub trait KeyAgreementPrivateKey: Sized {}
 
 /// A Message Authentication Code algorithm is a keyed hash function that behaves somewhat like a symmetric signature function.
 /// A MAC algorithm takes in a key and some data, and produces a MAC (message authentication code) that

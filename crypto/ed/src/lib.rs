@@ -9,7 +9,10 @@
 //! * FIPS 186-5 section 7 specifies the EdDSA digital signature algorithms, essentially re-published from RFC 8032.
 //! * NIST SP 800-186 gives an excellent treatment of the mathematics of all the families of elliptic curves used in cryptography, including Edwards curves.
 //!
-//! TODO -- is XDH specified in a NIST doc?
+//! XDH (X25519 and X448) is specified only in RFC 7748. NIST SP 800-186 §3.2.2 specifies the
+//! curves Curve25519 and Curve448, but its Table 2 does not list them for key establishment, and
+//! NIST SP 800-56A Rev. 3 does not include XDH, so X25519 and X448 are not NIST-approved key
+//! agreement schemes.
 //!
 //! # Usage Examples
 //!
@@ -21,9 +24,6 @@
 
 // TODO -- #![forbid(missing_docs)]
 //          Add back at the end
-
-// TODO -- why is this needed?
-extern crate alloc;
 
 mod curve25519;
 pub mod x25519;

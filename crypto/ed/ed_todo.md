@@ -47,16 +47,21 @@ Within each, the priority order is:
 ## Phase 2: Traits, Bells & Whistles
 
 - [ ] Finish the `KeyAgreement` / `KeyAgreementPublicKey` / `KeyAgreementPrivateKey` traits in
-  `traits.rs`. Today they are empty markers. They need:
+  `traits.rs`. They need:
     - [ ] key `from_bytes`/encoding, by analogy with `KEMPublicKey`/`KEMPrivateKey` (lengths as
-      const generics);
-    - [ ] the output type, wrapped in `KeyMaterial` (the shared secret is sensitive);
-    - [ ] an error type.
+      const generics). Partly there: `KeyAgreementPublicKey` requires `AsRef<[u8]>`, and the X25519
+      keys get `from_bytes`/`encode` from `KEMPublicKey`/`KEMPrivateKey`, but the `KeyAgreement*`
+      traits themselves have no decoding.
+    - [x] the output type. Decided: `key_agreement` returns a `PK`, and the caller applies a KDF;
+      the KEM traits are the API that hands back a `KeyMaterial` shared secret.
+    - [x] an error type: `KeyAgreementError`.
 - [x] Add X25519 key types: `X25519PrivateKey` (`Secret`-backed, zeroized, redacted `Debug`) and
   `X25519PublicKey`, used by `X25519::key_agreement` and `X25519PrivateKey::pk`.
-- [x] Add `struct X25519` (`Algorithm`), and re-export it and the key types at the crate root.
-- [ ] Implement the traits for X25519. Move the Wycheproof and RFC suites onto the trait API.
-- [x] Re-enable the `agreement` round-trip test, now in `x25519_key_tests.rs` on `X25519::keygen`.
+- [x] Add `struct X25519` (`Algorithm`). It and the key types are public through `pub mod x25519`
+  (no crate-root re-exports).
+- [x] Implement the traits for X25519. Move the Wycheproof and RFC suites onto the trait API.
+- [x] Re-enable the `agreement` round-trip test. Later removed as redundant: the RFC 7748 iterated
+  and Wycheproof known answers, and the KEM framework round trip, cover it.
 - [ ] Add a shared `KeyAgreement` conformance suite in `core-test-framework` and invoke it from
   X25519.
 - [x] Decide what happens on an all-zero shared secret (low-order public key): `key_agreement`
@@ -64,18 +69,19 @@ Within each, the priority order is:
   RFC 8446 §7.4.2 and RFC 9180 §7.1.4 make it a MUST.
     - [ ] Open: detect a small-order public key before the private-key operation, rather than
       from the output.
-- [ ] A `KEM` impl over X25519 (DHKEM-style). Mentioned in an `x25519.rs` TODO; decide if it
-  belongs here.
+- [x] A `KEM` impl over X25519: `KEMEncapsulator`/`KEMDecapsulator` on `X25519` as DHKEM (X25519,
+  HKDF-SHA256) (RFC 9180 §4.1), built on the generic `DHKEM` in the new `bouncycastle-hpke`
+  utility crate. Tested against RFC 9180 A.1.1/A.1.2 and the core-test-framework KEM suites.
 - [x] Keygen, mirroring ML-KEM, on `X25519` with `KeyAgreementError` (added to `core`):
     - [x] `keygen` (OS-seeded `HashDRBG_SHA512`) and `keygen_from_rng`;
     - [x] `keygen_from_seed`, from a 32-byte `KeyMaterial256`;
     - [x] `keypair_consistency_check`. No `keygen_from_seed_and_encoded`: the seed *is* the
       private key encoding, so there is nothing to compare.
-- [ ] Fast fixed-base `scalar_mult_base`. Today it runs the generic ladder with u = 9; there is a
-  commented-out Edwards-form path.
 - [ ] Wire into the factory (a `KeyAgreementFactory`, if that fits the factory pattern) and add a
   CLI subcommand (`cli/src/*_cmd.rs`).
-- [ ] `cargo mutants -p bouncycastle-ed` (without Wycheproof).
+- [ ] `cargo mutants -p bouncycastle-ed` (without Wycheproof). Scoped runs done on the KEM code (one survivor: an
+  error-mapping arm unreachable with a well-behaved RNG) and on `bouncycastle-hpke`;
+  a full-crate run is still to do.
 
 ## Phase 3: Docs and ergonomics
 
@@ -90,8 +96,13 @@ Within each, the priority order is:
     - [x] Remove the answered "why are we cloning?" TODO.
 - [ ] Docs:
     - [ ] Re-enable `#![forbid(missing_docs)]`.
-    - [ ] Write the crate doc sections required by QUALITY_AND_STYLE.md.
-    - [ ] Is XDH in a NIST document? (`lib.rs` `# Standards`.)
+    - [ ] Write the crate doc sections required by QUALITY_AND_STYLE.md:
+        - [x] Usage Examples (`lib.rs`, linking to the `x25519` module's examples);
+        - [ ] Memory Usage (needs the benches below);
+        - [ ] Security Considerations.
+    - [x] Is XDH in a NIST document? No: RFC 7748 only. SP 800-186 specifies the curves but does not
+      list them for key establishment, and SP 800-56A Rev. 3 does not include XDH (`lib.rs`
+      `# Standards`).
 - [ ] Benches: criterion, plus a `mem_usage_benches` harness and a `# Memory Usage` docs section.
 - [ ] Rethink the name of this crate: `bouncycastle-ed` is kindo the wrong name (but maybe nothing better exists?)
 

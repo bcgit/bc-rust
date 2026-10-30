@@ -1,7 +1,6 @@
 use bouncycastle_core::errors::{KeyAgreementError, RNGError};
 use bouncycastle_core::key_material::{KeyMaterial256, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::traits::KeyAgreement;
 use bouncycastle_core_test_framework::FixedSeedRNG;
 use bouncycastle_ed::x25519::X25519;
 use bouncycastle_hex as hex;
@@ -140,17 +139,4 @@ fn public_key_to_bytes() {
 
     let as_ref: &[u8] = pk.as_ref();
     assert_eq!(as_ref, expected);
-}
-
-/// Two freshly generated key pairs agree on the same, non-zero shared secret.
-#[test]
-fn agreement() {
-    for i in 0..100 {
-        let (pk_a, sk_a) = X25519::keygen().unwrap();
-        let (pk_b, sk_b) = X25519::keygen().unwrap();
-
-        let ss_a = X25519::key_agreement(&pk_b, sk_a).unwrap();
-        let ss_b = X25519::key_agreement(&pk_a, sk_b).unwrap();
-        assert_eq!(ss_a, ss_b, "ECDH #{i}");
-    }
 }

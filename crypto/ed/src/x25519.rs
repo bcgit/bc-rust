@@ -11,6 +11,26 @@
 //! [`X25519::keygen_from_rng`], or [`X25519::keygen_from_seed`] with a 32-byte seed, which is also
 //! how an existing private key is imported.
 //!
+//! Private keys can also be generated from a 32-byte seed. The only requirement is that they be
+//! 32 bytes long (ie a full [`KeyMaterial256`] or equivalent,
+//! [`KeyType::Seed`] or [`KeyType::CryptographicRandom`] and be at least [`SecurityStrength::_128bit`].
+//!
+//! ```rust
+//! use bouncycastle_ed::x25519::X25519;
+//! use bouncycastle_core::key_material::{KeyMaterial256, KeyMaterialTrait, KeyType};
+//! use bouncycastle_core::hazmat::do_hazardous_operations;
+//!
+//! // Create a seed.
+//! // We're using a do_hazardous_operations() closure to prevent the library from complaining
+//! // that the key material is week.
+//! let mut seed = KeyMaterial256::new();
+//! do_hazardous_operations(&mut seed, |seed| {
+//!     seed.set_bytes_as_type(&[0x02; 32], KeyType::Seed)
+//! }).unwrap();
+//!
+//! let (pk, sk) = X25519::keygen().unwrap();
+//! ```
+//!
 //! ## X25519 key agreement
 //!
 //! Alice and Bob each generate a key pair and send each other their public keys. Each then combines
@@ -35,17 +55,20 @@
 //! let (alice_pk, alice_sk) = X25519::keygen().unwrap();
 //! let (bob_pk, bob_sk) = X25519::keygen().unwrap();
 //!
-//! // Each computes the shared secret K from their own private key and the other's public key.
+//! // Each performs a key agreement from their own private key and the other's public key,
+//! // each arriving at the same k.
+//! // Note that k is an X25519PublicKey and could be used again for another key agreement.
+//! // But this example will proceed with deriving a shared symmetric key.
 //! // An error here means the other party's public key is unusable; abort the exchange.
-//! let alice_k = X25519::key_agreement(&bob_pk, alice_sk).expect("Bad public key");
-//! let bob_k = X25519::key_agreement(&alice_pk, bob_sk).expect("Bad public key");
+//! let alice_k = X25519::key_agreement(&bob_pk, &alice_sk).expect("Bad public key");
+//! let bob_k = X25519::key_agreement(&alice_pk, &bob_sk).expect("Bad public key");
 //!
-//! // Both derive the symmetric key from K, with both public keys as context,
-//! // as recommended in RFC 7748 §6.1.
+//! // RFC 7748 §6.1 recommends using a key derivation function (KDF) over K, K_A, and K_B
+//! // to derive a symmetric key. This example will use HKDF_SHA256.
 //! fn derive_key_rfc7748(
 //!     k: &X25519PublicKey,
-//!     alice_pk: &X25519PublicKey,
-//!     bob_pk: &X25519PublicKey) -> KeyMaterial256 {
+//!     pk_A: &X25519PublicKey,
+//!     pk_B: &X25519PublicKey) -> KeyMaterial256 {
 //!     let mut ikm =
 //!         KeyMaterial256::from_bytes_as_type(k.as_ref(), KeyType::CryptographicRandom).unwrap();
 //!     // X25519 provides 128-bit security, not the 256 bits a 32-byte key would imply.
@@ -54,40 +77,113 @@
 //!     ikm.set_security_strength(SecurityStrength::_128bit).unwrap();
 //!
 //!     let mut context = [0u8; 64];
-//!     context[..32].copy_from_slice(alice_pk.as_ref());
-//!     context[32..].copy_from_slice(bob_pk.as_ref());
+//!     context[..32].copy_from_slice(pk_A.as_ref());
+//!     context[32..].copy_from_slice(pk_B.as_ref());
 //!
 //!     let mut key = KeyMaterial256::new();
 //!     HKDF_SHA256::new().derive_key_out(&ikm, &context, &mut key).unwrap();
 //!     key
 //! }
 //!
-//! // Each derives `key` independently.
+//! // Each derives the symmetric key independently.
 //! // Note that they have to agree on whose key goes in first;
 //! // if Alice does `(alice_pk, bob_pk)` and bob does `(bob_pk, alice_pk)` then they will
 //! // arrive at different output keys.
-//! // Typically this will be specified unambiguously by the protocol, such as
-//! // (sender_pk, recipient_pk).
+//! // Typically, this will be specified unambiguously by the protocol, such as
+//! // (sender_pk, recipient_pk) since Alice and Bob are expected to know whether they
+//! // are the sender or receiver.
 //! let alice_key = derive_key_rfc7748(&alice_k, &alice_pk, &bob_pk);
 //! let bob_key   = derive_key_rfc7748(&bob_k, &alice_pk, &bob_pk);
 //!
-//! // Alice and Bob now hold the same 32-byte, 128-bit-strength symmetric KeyMaterial.
+//! // Alice and Bob now hold the same 32-byte KeyMaterial256.
 //! assert!(alice_key.equals(&bob_key));
 //! assert_eq!(alice_key.key_len(), 32);
+//!
+//! // Which has been set at 128-bit-strength.
 //! assert_eq!(alice_key.key_type(), KeyType::CryptographicRandom);
 //! assert_eq!(alice_key.security_strength(), SecurityStrength::_128bit);
 //! ```
 //!
+//! ## X25519 as a KEM
+//!
+//! [`X25519`] also implements [`KEMEncapsulator`] and [`KEMDecapsulator`] as DHKEM(X25519,
+//! HKDF-SHA256) of RFC 9180 §4.1, the KEM used by HPKE. The sender encapsulates against the
+//! recipient's public key, and gets a shared secret and a 32-byte ciphertext (an ephemeral public
+//! key) to send. The shared secret is already the output of a KDF, ready to use as a key.
+//!
+//! ```rust
+//! use bouncycastle_core::traits::{KEMDecapsulator, KEMEncapsulator};
+//! use bouncycastle_ed::x25519::X25519;
+//!
+//! let (pk, sk) = X25519::keygen().unwrap();
+//!
+//! // The sender encapsulates against the recipient's public key...
+//! let (ss, ct) = X25519::encaps(&pk).unwrap();
+//!
+//! // ...and the recipient recovers the same shared secret from the ciphertext.
+//! let ss1 = X25519::decaps(&sk, &ct).unwrap();
+//! assert_eq!(ss, ss1);
+//! ```
+//!
+//! ## Chaining together key agreement operations
+//!
+//! The output of a Diffie-Hellman key agreement is itself a valid public key, so key agreements can
+//! be chained.
+//! Below is an example of a simple three-party agreement, in which Alice, Bob and Charlie all arrive
+//! at the same shared secret `k`, by combining their private key with public data from the other two.
+//! The trick here is that each party does a pairwise key agreement with each other party,
+//! and then another agreement with the result of the other two parties' agreements with each other.
+//! This is a simple scheme to illustrate the point and obviously does not scale well to large groups.
+//!
+//! ```rust
+//! use bouncycastle_core::traits::KeyAgreement;
+//! use bouncycastle_ed::x25519::X25519;
+//!
+//! let (alice_pk, alice_sk) = X25519::keygen().unwrap();
+//! let (bob_pk, bob_sk) = X25519::keygen().unwrap();
+//! let (charlie_pk, charlie_sk) = X25519::keygen().unwrap();
+//!
+//! // Assume that Alice, Bob, and Charlie have all exchanged public keys.
+//! // Round 1: each pair computes a pairwise value. Key agreement is symmetric, so `ab_k` is
+//! // computed by both Alice and Bob; only one side of each pair is shown.
+//! let ab_k = X25519::key_agreement(&bob_pk, &alice_sk).expect("Bad public key");
+//! let bc_k = X25519::key_agreement(&charlie_pk, &bob_sk).expect("Bad public key");
+//! let ac_k = X25519::key_agreement(&charlie_pk, &alice_sk).expect("Bad public key");
+//!
+//! // Round 2: each pairwise value is sent, in the clear, to the third party, who combines it with
+//! // their own private key.
+//! // Since it is no longer secret, `ab_k` must not also be used as a secret key between
+//! // Alice and Bob.
+//! let alice_k = X25519::key_agreement(&bc_k, &alice_sk).expect("Bad public key");
+//! let bob_k = X25519::key_agreement(&ac_k, &bob_sk).expect("Bad public key");
+//! let charlie_k = X25519::key_agreement(&ab_k, &charlie_sk).expect("Bad public key");
+//!
+//! // The computations ran in different orders, but by the magic of
+//! // commutative algebra, they all end up with the same shared secret key `k`.
+//! assert!(alice_k.eq(&bob_k));
+//! assert!(bob_k.eq(&charlie_k));
+//!
+//! // As in the two-party case, `k` is not uniformly random: run it through a suitable KDF scheme
+//! // to derive a usable and secure symmetric key.
+//! ```
+//!
+//! Like any unauthenticated Diffie-Hellman, this resists only passive eavesdroppers. An active
+//! attacker who can substitute public keys or pairwise values in transit can sit in the middle, so a
+//! real protocol must authenticate them, for example by signing them.
 
-use bouncycastle_core::errors::{KeyAgreementError, RNGError};
-use bouncycastle_core::key_material::{KeyMaterial256, KeyMaterialTrait, KeyType};
+use bouncycastle_core::errors::{KEMError, KeyAgreementError, RNGError};
+use bouncycastle_core::key_material::{KeyMaterial, KeyMaterial256, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{
-    Algorithm, KeyAgreement, KeyAgreementPrivateKey, KeyAgreementPublicKey, RNG,
+    Algorithm, KEMDecapsulator, KEMEncapsulator, KEMPrivateKey, KEMPublicKey, KeyAgreement,
+    KeyAgreementPrivateKey, KeyAgreementPublicKey, RNG,
 };
+use bouncycastle_hpke::dhkem::{DHKEM, DHKEMParams};
 use bouncycastle_rng::HashDRBG_SHA512;
-use bouncycastle_utils::ct::{Condition, ct_eq_zero_bytes};
+use bouncycastle_sha2::SHA256;
+use bouncycastle_utils::ct::{Condition, ct_eq_bytes, ct_eq_zero_bytes};
 use bouncycastle_utils::secret::Secret;
+use core::fmt::{self, Display, Formatter};
 
 use crate::curve25519::FieldElement25519;
 
@@ -96,11 +192,31 @@ use crate::curve25519::FieldElement25519;
 // and an Ed25519 point is an encoded y-coordinate plus a sign bit (RFC 8032 §5.1.2), so neither
 // fits these.
 
+/*** Constants ***/
+
 pub const POINT_SIZE: usize = 32;
 pub const SCALAR_SIZE: usize = 32;
 
 /// String name of the X25519 algorithm.
 pub const X25519_NAME: &str = "X25519";
+
+/// The base point of curve25519, `U(P) = 9` (Section 4.1 of RFC7748).
+const BASE_POINT: X25519PublicKey = {
+    let mut u = [0_u8; POINT_SIZE];
+    u[0] = 9;
+    X25519PublicKey(u)
+};
+
+/// The coefficient A of curve25519, `v^2 = u^3 + A*u^2 + u` (RFC 7748 §4.1).
+const C_A: u32 = 486662;
+
+/// `(A + 2) / 4 = 121666`, the ladder's doubling constant.
+///
+/// Deviation from the RFC: RFC 7748 §5 uses `a24 = (486662 - 2) / 4 = 121665` in
+/// `z_2 = E * (AA + a24 * E)`. Since `E = AA - BB`, `AA + a24 * E = BB + (a24 + 1) * E`, so pairing
+/// the constant with BB instead needs `a24 + 1 = (A + 2) / 4`. [`scalar_mult`] and
+/// [`ladder_double`] both use that form.
+const C_A24: u32 = (C_A + 2) / 4;
 
 /// The X25519 key agreement algorithm of RFC 7748 §5.
 pub struct X25519;
@@ -177,8 +293,6 @@ impl X25519 {
 }
 
 impl KeyAgreement<X25519PublicKey, X25519PrivateKey> for X25519 {
-    type SharedSecretType = X25519PublicKey;
-
     /// The X25519 Diffie-Hellman of RFC 7748 §6.1: computes the shared secret
     /// `K = X25519(sk, pk)`, the u-coordinate of the scalar multiple of the peer's public key by
     /// our private key, as its canonical 32-byte little-endian encoding.
@@ -211,23 +325,30 @@ impl KeyAgreement<X25519PublicKey, X25519PrivateKey> for X25519 {
     /// information it reveals about `K` is whether it is zero.
     fn key_agreement(
         pk: &X25519PublicKey,
-        sk: X25519PrivateKey,
+        sk: &X25519PrivateKey,
     ) -> Result<X25519PublicKey, KeyAgreementError> {
-        let r = scalar_mult(&sk, pk);
-        if r.is_zero() {
-            return Err(KeyAgreementError::InvalidPublicKey(
-                "Public key has small order: the shared secret is all zeros",
-            ));
-        }
-        Ok(r)
+        dh(sk, pk)
     }
+}
+
+/// `X25519(sk, pk)`, rejecting an all-zero output; see [`X25519::key_agreement`].
+fn dh(sk: &X25519PrivateKey, pk: &X25519PublicKey) -> Result<X25519PublicKey, KeyAgreementError> {
+    let r = scalar_mult(sk, pk);
+    if r.is_zero() {
+        return Err(KeyAgreementError::InvalidPublicKey(
+            "Public key has small order: the shared secret is all zeros",
+        ));
+    }
+    Ok(r)
 }
 
 /// An X25519 private key: a 32-byte scalar, as defined in Section 5 of RFC7748.
 ///
-/// Any 32 bytes are a valid scalar. The fixed bits `decodeScalar25519` sets and clears are applied
-/// each time the scalar is used, not on construction, so the stored bytes are exactly the ones the
-/// caller supplied. Held in a [`Secret`], so it is zeroized on drop and redacted from `Debug`.
+/// Any 32 bytes are a valid scalar. The fixed bits `decodeScalar25519` sets and clears
+/// ("clamping") are applied each time the scalar is used, so keys that differ only in those bits
+/// are the same key, and compare equal. Held in a [`Secret`], so it is zeroized on drop and
+/// redacted from `Debug`.
+#[derive(Clone)]
 pub struct X25519PrivateKey(Secret<[u8; SCALAR_SIZE]>);
 
 impl X25519PrivateKey {
@@ -250,9 +371,33 @@ impl X25519PrivateKey {
             Err(KeyAgreementError::ConsistencyCheckFailed("Public key does not match private key"))
         }
     }
+
+    /// The key bytes with `decodeScalar25519`'s fixed bits applied (RFC 7748 §5):
+    ///
+    /// ```text
+    /// k_list[0] &= 248
+    /// k_list[31] &= 127
+    /// k_list[31] |= 64
+    /// ```
+    fn clamped(&self) -> Secret<[u8; SCALAR_SIZE]> {
+        let mut k = self.0.clone();
+        k[0] &= 248;
+        k[31] &= 127;
+        k[31] |= 64;
+        k
+    }
 }
 
 impl KeyAgreementPrivateKey for X25519PrivateKey {}
+
+/// Constant-time comparison of the clamped scalars.
+impl PartialEq for X25519PrivateKey {
+    fn eq(&self, other: &Self) -> bool {
+        ct_eq_bytes(&*self.clamped(), &*other.clamped())
+    }
+}
+
+impl Eq for X25519PrivateKey {}
 
 /// An X25519 public value: the u-coordinate of a point on curve25519, as 32 little-endian bytes
 /// (Section 5 of RFC7748).
@@ -291,23 +436,16 @@ impl AsRef<[u8]> for X25519PublicKey {
     }
 }
 
-/// The base point of curve25519, `U(P) = 9` (Section 4.1 of RFC7748).
-const BASE_POINT: X25519PublicKey = {
-    let mut u = [0_u8; POINT_SIZE];
-    u[0] = 9;
-    X25519PublicKey(u)
-};
-
-/// The coefficient A of curve25519, `v^2 = u^3 + A*u^2 + u` (RFC 7748 §4.1).
-const C_A: u32 = 486662;
-
-/// `(A + 2) / 4 = 121666`, the ladder's doubling constant.
-///
-/// Deviation from the RFC: RFC 7748 §5 uses `a24 = (486662 - 2) / 4 = 121665` in
-/// `z_2 = E * (AA + a24 * E)`. Since `E = AA - BB`, `AA + a24 * E = BB + (a24 + 1) * E`, so pairing
-/// the constant with BB instead needs `a24 + 1 = (A + 2) / 4`. [`scalar_mult`] and
-/// [`ladder_double`] both use that form.
-const C_A24: u32 = (C_A + 2) / 4;
+/// The 32 bytes in hex.
+impl Display for X25519PublicKey {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "X25519PublicKey {{ ")?;
+        for b in &self.0 {
+            write!(f, "{b:02x}")?;
+        }
+        write!(f, " }}")
+    }
+}
 
 /// `decodeScalar25519(k)` as defined in Section 5 of RFC7748:
 ///
@@ -546,4 +684,162 @@ fn scalar_mult_base(k: &X25519PrivateKey) -> X25519PublicKey {
     // Equivalent (but much slower) -- since the BASE_POINT never changes, you can
     //         precompute lookup tables for the multiples of BASE_POINT. TODO
     scalar_mult(k, &BASE_POINT)
+}
+
+/*** DHKEM ***/
+
+// This section provides the machinery to promote x25519 to a KEM via RFC9180's DHKEM construction.
+
+/// The length of the shared secret from [`X25519`]'s KEM: Nsecret for DHKEM(X25519, HKDF-SHA256)
+/// (RFC 9180 §7.1).
+pub const DHKEM_SS_LEN: usize = 32;
+
+/// DHKEM(X25519, HKDF-SHA256) of RFC 9180 §4.1. Nenc = Npk = Ndh = 32 and Nsk = 32 (§7.1).
+type X25519DHKEM = DHKEM<X25519, POINT_SIZE, SCALAR_SIZE, POINT_SIZE, DHKEM_SS_LEN>;
+
+/// DHKEM(X25519, HKDF-SHA256): kem_id 0x0020, with Nenc = Npk = Nsk = 32 (RFC 9180 §7.1).
+impl DHKEMParams<POINT_SIZE, SCALAR_SIZE, POINT_SIZE> for X25519 {
+    type PublicKey = X25519PublicKey;
+    type PrivateKey = X25519PrivateKey;
+    type KDFHash = SHA256;
+    const KEM_ID: u16 = 0x0020;
+
+    fn generate_key_pair_rng(
+        rng: &mut dyn RNG,
+    ) -> Result<(X25519PublicKey, X25519PrivateKey), KEMError> {
+        // RFC 9180 §4: "GenerateKeyPair can be implemented as DeriveKeyPair(random(Nsk))"; for
+        // X25519, 32 random bytes are already a private key (RFC 7748 §6.1), so they are used as is.
+        Self::keygen_from_rng(rng).map_err(|e| match e {
+            KeyAgreementError::RNGError(e) => KEMError::RNGError(e),
+            KeyAgreementError::KeyGenError(msg) => KEMError::KeyGenError(msg),
+            _ => KEMError::GenericError("X25519 key generation failed"),
+        })
+    }
+
+    fn private_key_from_bytes(sk: &[u8; SCALAR_SIZE]) -> X25519PrivateKey {
+        let mut k: Secret<[u8; SCALAR_SIZE]> = Secret::new();
+        *k = *sk;
+        X25519PrivateKey(k)
+    }
+
+    fn pk(sk: &X25519PrivateKey) -> X25519PublicKey {
+        sk.pk()
+    }
+
+    fn dh(
+        sk: &X25519PrivateKey,
+        pk: &X25519PublicKey,
+    ) -> Result<Secret<[u8; POINT_SIZE]>, KeyAgreementError> {
+        let mut k: Secret<[u8; POINT_SIZE]> = Secret::new();
+        *k = dh(sk, pk)?.0;
+        Ok(k)
+    }
+
+    // RFC 9180 §7.1.1: "For X25519 and X448, the SerializePublicKey() and DeserializePublicKey()
+    // functions are the identity function".
+    fn serialize_public_key(pk: &X25519PublicKey) -> [u8; POINT_SIZE] {
+        pk.0
+    }
+
+    fn deserialize_public_key(pkm: &[u8; POINT_SIZE]) -> Result<X25519PublicKey, KEMError> {
+        Ok(X25519PublicKey(*pkm))
+    }
+}
+
+/// X25519 as a KEM: DHKEM(X25519, HKDF-SHA256) of RFC 9180 §4.1, where the ciphertext is an
+/// ephemeral public key (`enc`) and the shared secret is derived with HKDF-SHA256 from the X25519
+/// output and both public keys.
+impl KEMEncapsulator<X25519PublicKey, POINT_SIZE, POINT_SIZE, DHKEM_SS_LEN> for X25519 {
+    /// `Encap(pkR)` (RFC 9180 §4.1), drawing the ephemeral key pair from the library's default RNG,
+    /// seeded from the OS.
+    ///
+    /// # Errors
+    ///
+    /// [`KEMError::InvalidPublicKey`] if `pk` gives an all-zero X25519 output, as for
+    /// [`X25519::key_agreement`].
+    fn encaps(
+        pk: &X25519PublicKey,
+    ) -> Result<(KeyMaterial<DHKEM_SS_LEN>, [u8; POINT_SIZE]), KEMError> {
+        let mut os_rng = HashDRBG_SHA512::new_from_os();
+        Self::encaps_rng(pk, &mut os_rng)
+    }
+
+    /// `Encap(pkR)` (RFC 9180 §4.1), drawing the ephemeral key pair from `rng`.
+    ///
+    /// # Errors
+    ///
+    /// * [`KEMError::RNGError`] if `rng`'s security strength is below 128 bits.
+    /// * [`KEMError::InvalidPublicKey`] if `pk` gives an all-zero X25519 output, as for
+    ///   [`X25519::key_agreement`].
+    fn encaps_rng(
+        pk: &X25519PublicKey,
+        rng: &mut dyn RNG,
+    ) -> Result<(KeyMaterial<DHKEM_SS_LEN>, [u8; POINT_SIZE]), KEMError> {
+        X25519DHKEM::encap_rng(pk, rng)
+    }
+}
+
+impl KEMDecapsulator<X25519PrivateKey, SCALAR_SIZE, POINT_SIZE, DHKEM_SS_LEN> for X25519 {
+    /// `Decap(enc, skR)` (RFC 9180 §4.1), with the ciphertext `ct` as `enc`.
+    ///
+    /// # Errors
+    ///
+    /// * [`KEMError::LengthError`] if `ct` is not 32 bytes.
+    /// * [`KEMError::DecapsulationFailed`] if `ct` gives an all-zero X25519 output.
+    fn decaps(sk: &X25519PrivateKey, ct: &[u8]) -> Result<KeyMaterial<DHKEM_SS_LEN>, KEMError> {
+        let enc: &[u8; POINT_SIZE] = ct
+            .try_into()
+            .map_err(|_| KEMError::LengthError("An X25519 KEM ciphertext must be 32 bytes"))?;
+        X25519DHKEM::decap(enc, sk)
+    }
+}
+
+/// The encoding is the 32 key bytes, clamped: RFC 9180 §7.1.2 says "The SerializePrivateKey()
+/// function MUST clamp its output and the DeserializePrivateKey() function MUST clamp its input".
+impl KEMPrivateKey<SCALAR_SIZE> for X25519PrivateKey {
+    fn encode(&self) -> [u8; SCALAR_SIZE] {
+        *self.clamped()
+    }
+
+    fn encode_out(&self, out: &mut [u8; SCALAR_SIZE]) -> usize {
+        out.fill(0);
+        *out = *self.clamped();
+        SCALAR_SIZE
+    }
+
+    /// # Errors
+    ///
+    /// [`KEMError::DecodingError`] if `bytes` is not 32 bytes.
+    fn from_bytes(bytes: &[u8]) -> Result<Self, KEMError> {
+        let bytes: &[u8; SCALAR_SIZE] = bytes
+            .try_into()
+            .map_err(|_| KEMError::DecodingError("An X25519 private key must be 32 bytes"))?;
+        let mut k: Secret<[u8; SCALAR_SIZE]> = Secret::new();
+        *k = *bytes;
+        Ok(Self(X25519PrivateKey(k).clamped()))
+    }
+}
+
+/// The encoding is the 32 bytes of the u-coordinate, as is: RFC 9180 §7.1.1 makes serialization
+/// the identity function for X25519.
+impl KEMPublicKey<POINT_SIZE> for X25519PublicKey {
+    fn encode(&self) -> [u8; POINT_SIZE] {
+        self.0
+    }
+
+    fn encode_out(&self, out: &mut [u8; POINT_SIZE]) -> usize {
+        out.fill(0);
+        *out = self.0;
+        POINT_SIZE
+    }
+
+    /// # Errors
+    ///
+    /// [`KEMError::DecodingError`] if `bytes` is not 32 bytes.
+    fn from_bytes(bytes: &[u8]) -> Result<Self, KEMError> {
+        let bytes: &[u8; POINT_SIZE] = bytes
+            .try_into()
+            .map_err(|_| KEMError::DecodingError("An X25519 public key must be 32 bytes"))?;
+        Ok(Self(*bytes))
+    }
 }
