@@ -185,15 +185,18 @@
 //! packing), so 128 bytes per DEA key. Per-call stack usage is a few words of block state, the
 //! six 4-byte input planes, and a 128-byte working array for the ANF evaluation, most of which the
 //! compiler keeps in registers. A worker adds the mode's own state (an IV or counter block) and a
-//! reference to the key. Measured as the frame of each entry point's `measure` closure in
-//! `mem_usage_benches/src/bench_tdes_mem_usage.rs`, from the compiler's frame-layout remarks in
-//! the release build (x86-64, rustc 1.97 nightly, return address included); the two-key engine
-//! is decryption-only, so only its decrypting entry points are measured:
+//! reference to the key. Measured as the deepest frame chain below each entry point's `measure`
+//! closure in `mem_usage_benches/src/bench_tdes_mem_usage.rs`, from the compiler's frame-layout
+//! remarks and the disassembly of the release build (x86-64, rustc 1.97 nightly, return addresses
+//! included): `new` and the one-block calls keep a frame under the closure, the engine's `new`
+//! with the schedule's `expand` below it and the out-of-line `encrypt_block` / `decrypt_block`,
+//! while the two- and four-block calls are inlined into the closure. The two-key engine is
+//! decryption-only, so only its decrypting entry points are measured:
 //!
 //! | Entry point | [`TDESInternal`] | [`TDES2Internal`] |
 //! |---|---|---|
-//! | `new` (key expansion) | 800 B | 544 B |
-//! | `encrypt_block` / `decrypt_block` | 48 B | 48 B (decrypt) |
+//! | `new` (key expansion) | 1304 B | 920 B |
+//! | `encrypt_block` / `decrypt_block` | 104 B | 104 B (decrypt) |
 //! | `encrypt_2blocks` / `decrypt_2blocks` | 80 B | 80 B (decrypt) |
 //! | `encrypt_4blocks` / `decrypt_4blocks` | 112 B | 112 B (decrypt) |
 //!
