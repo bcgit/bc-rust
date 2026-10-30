@@ -203,8 +203,9 @@ impl<PARAMS: SHAKEParams> FromAnyKeyMaterial for KMACKeyInternal<PARAMS> {
     }
 
     /// Draws a key of the security strength's length (Sec 8.4.1: 16 bytes for KMAC128, 32 for
-    /// KMAC256) from `rng`, tagged [`KeyType::MACKey`] at the RNG's strength, and builds the key
-    /// from it with no customization and the nominal output length.
+    /// KMAC256) from `rng`, tagged [`KeyType::MACKey`] at the RNG's strength capped at what that
+    /// length can carry, and builds the key from it with no customization and the nominal
+    /// output length.
     ///
     /// # Errors
     /// [`MACError::KeyMaterialError`] if the RNG fails, or with
