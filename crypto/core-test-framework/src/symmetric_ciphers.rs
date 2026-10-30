@@ -313,8 +313,9 @@ impl TestFrameworkSymmetricCipher {
             }
         }
 
-        // Output-buffer contract, for every method that writes into a caller's buffer: see
-        // `test_encryptor_decryptor`.
+        // Output-buffer contract, for every method that writes into a caller's buffer: a buffer
+        // larger than needed is accepted, the returned count is what that call wrote, and every
+        // byte past it is zeroed.
         const SENTINEL: u8 = 0xA5;
         const EXTRA: usize = 7;
         let assert_tail_zeroed = |buf: &[u8], n: usize, what: &str| {
