@@ -1,33 +1,5 @@
 use bouncycastle_utils::ct::Condition;
 
-/// The encoded u-coordinate of a point on curve25519: 32 little-endian bytes, as defined in
-/// Section 5 of RFC7748. See [`FieldElement25519`] for the field it encodes an element of.
-struct UCoordinate25519(Scalar25519);
-
-/// Scalar values are integers used as the k value in scalar multiplication of points.
-///
-/// # Mathematical operations implemented:
-///
-/// * EC scalar multiplication: k * A: via `impl core::ops::Mul<UCoordinate25519> for Scalar25519`, with `Output = UCoordinate25519`
-struct Scalar25519([u8; 32]);
-
-impl core::ops::Mul<UCoordinate25519> for Scalar25519 {
-    type Output = UCoordinate25519;
-
-    /// EC scalar multiplication `k * A`, computed by the Montgomery ladder of Section 5 of
-    /// RFC7748; ie this is the X25519 function itself.
-    ///
-    /// Input: self, the scalar `k`; rhs, the u-coordinate of a point `A`.
-    /// Output: the u-coordinate of `k * A`.
-    ///
-    /// Scope: X25519.
-    // TODO -- unimplemented. `todo!()` rather than a literally empty body because `mul` has to
-    //          produce a `[u8; 32]`.
-    fn mul(self, rhs: UCoordinate25519) -> Self::Output {
-        todo!()
-    }
-}
-
 /// Mask for one limb: `2^51 - 1`. A [`FieldElement25519`] holds the value
 /// `x0 + x1*2^51 + x2*2^102 + x3*2^153 + x4*2^204`, so `& M51` extracts a limb's own 51 bits and
 /// leaves the overflow to be carried into the next limb (or, out of `x4`, folded back into `x0`

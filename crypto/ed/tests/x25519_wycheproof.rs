@@ -12,7 +12,9 @@
 //! `calculate_agreement` returns `false`.
 
 use bouncycastle_core_test_framework::test_data_loaders::{Value, hex_field, wycheproof_json};
-use bouncycastle_ed::x25519::{POINT_SIZE, SCALAR_SIZE, calculate_agreement};
+use bouncycastle_ed::x25519::{
+    POINT_SIZE, SCALAR_SIZE, X25519Point, X25519Scalar, calculate_agreement,
+};
 
 #[test]
 fn wycheproof_x25519() {
@@ -41,6 +43,7 @@ fn wycheproof_x25519() {
             let shared = hex_field(test, "shared", tc_id);
 
             let mut out = [0u8; POINT_SIZE];
+            let (k, u) = (X25519Scalar::from_bytes(&k), X25519Point::from_bytes(u));
             let nonzero = calculate_agreement(&k, &u, &mut out);
             assert_eq!(out.as_slice(), shared.as_slice(), "{ctx}: shared secret");
             assert_eq!(nonzero, shared.iter().any(|&b| b != 0), "{ctx}: return value");

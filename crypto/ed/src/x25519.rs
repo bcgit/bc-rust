@@ -1,12 +1,59 @@
 use bouncycastle_utils::ct::Condition;
+use bouncycastle_utils::secret::Secret;
 
 use crate::curve25519::FieldElement25519;
 
-// TODO --  I would expect that a bunch of this is shared with Ed25519 and should be moved to curve25519.rs
-//          but I'll wait until I get to the Ed25519 implementation and see what's shared.
+// Only the field arithmetic (`FieldElement25519` in curve25519.rs) is shared with Ed25519. The
+// scalar and point types below are X25519's own: an Ed25519 scalar is reduced mod the group order
+// and an Ed25519 point is an encoded y-coordinate plus a sign bit (RFC 8032 §5.1.2), so neither
+// fits these.
 
 pub const POINT_SIZE: usize = 32;
 pub const SCALAR_SIZE: usize = 32;
+
+/// An X25519 private key: a 32-byte scalar, as defined in Section 5 of RFC7748.
+///
+/// Any 32 bytes are a valid scalar. The fixed bits `decodeScalar25519` sets and clears are applied
+/// each time the scalar is used, not on construction, so the stored bytes are exactly the ones the
+/// caller supplied. Held in a [`Secret`], so it is zeroized on drop and redacted from `Debug`.
+pub struct X25519Scalar(Secret<[u8; SCALAR_SIZE]>);
+
+impl X25519Scalar {
+    /// Copies 32 bytes into a new scalar. The copy lives in zeroizing storage; the caller's buffer
+    /// is not cleared.
+    pub fn from_bytes(bytes: &[u8; SCALAR_SIZE]) -> Self {
+        let mut k: Secret<[u8; SCALAR_SIZE]> = Secret::new();
+        *k = *bytes;
+        Self(k)
+    }
+}
+
+/// An X25519 public value: the u-coordinate of a point on curve25519, as 32 little-endian bytes
+/// (Section 5 of RFC7748).
+///
+/// Any 32 bytes are accepted: Section 5 requires bit 255 to be ignored and values `>= p` to be
+/// processed as if reduced mod p. Public data, so it is `Copy` and its `Debug` shows the bytes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct X25519Point([u8; POINT_SIZE]);
+
+impl X25519Point {
+    /// Wraps 32 bytes as a u-coordinate.
+    pub const fn from_bytes(bytes: [u8; POINT_SIZE]) -> Self {
+        Self(bytes)
+    }
+
+    /// The 32 encoded bytes.
+    pub const fn as_bytes(&self) -> &[u8; POINT_SIZE] {
+        &self.0
+    }
+}
+
+/// The base point of curve25519, `U(P) = 9` (Section 4.1 of RFC7748).
+const BASE_POINT: X25519Point = {
+    let mut u = [0_u8; POINT_SIZE];
+    u[0] = 9;
+    X25519Point(u)
+};
 
 /// The coefficient A of curve25519, `v^2 = u^3 + A*u^2 + u` (RFC 7748 §4.1).
 const C_A: u32 = 486662;
@@ -16,7 +63,7 @@ const C_A: u32 = 486662;
 /// Deviation from the RFC: RFC 7748 §5 uses `a24 = (486662 - 2) / 4 = 121665` in
 /// `z_2 = E * (AA + a24 * E)`. Since `E = AA - BB`, `AA + a24 * E = BB + (a24 + 1) * E`, so pairing
 /// the constant with BB instead needs `a24 + 1 = (A + 2) / 4`. [`scalar_mult`] and
-/// [`point_double`] both use that form.
+/// [`ladder_double`] both use that form.
 const C_A24: u32 = (C_A + 2) / 4;
 
 // TODO -- impl KeyAgreement trait (will need to add to traits.rs), and a KEM trait
@@ -29,17 +76,11 @@ fn are_all_zeros(r: &[u8]) -> bool {
     bits == 0
 }
 
-fn calculate_agreement(
-    k: &[u8; SCALAR_SIZE],
-    u: &[u8; POINT_SIZE],
-    r: &mut [u8; POINT_SIZE],
-) -> bool {
+// TODO -- remove pub visibility once I have the traits impl'd
+// TODO -- the shared secret is still written to bare bytes; Phase 2 decides its type (KeyMaterial).
+pub fn calculate_agreement(k: &X25519Scalar, u: &X25519Point, r: &mut [u8; POINT_SIZE]) -> bool {
     scalar_mult(k, u, r);
     !are_all_zeros(&r[..POINT_SIZE])
-}
-
-fn decode_u32(bs: &[u8]) -> u32 {
-    (bs[0] as u32) | (bs[1] as u32) << 8 | (bs[2] as u32) << 16 | (bs[3] as u32) << 24
 }
 
 /// `decodeScalar25519(k)` as defined in Section 5 of RFC7748:
@@ -58,30 +99,25 @@ fn decode_u32(bs: &[u8]) -> u32 {
 /// the last byte to 1 and, finally, decode as little-endian. This means that the resulting
 /// integer is of the form 2^254 plus eight times a value between 0 and 2^251 - 1 (inclusive)."
 ///
-/// That last sentence is the invariant [`scalar_mult`] is built on, and it needs both halves of
-/// it. The `2^254 +` is why the ladder can start at bit 253 against a pre-swapped initial state;
-/// the `8 *` is why its last three iterations collapse into three [`point_double`] calls with no
+/// That is why the ladder can start at bit 253 against a pre-swapped initial state;
+/// the `8 *` is why its last three iterations collapse into three [`ladder_double`] calls with no
 /// trailing conditional swap.
 ///
 /// Deviation from the RFC: the RFC masks bytes and then decodes, whereas this decodes into
 /// four-byte words first and masks the equivalent word positions. `k_list[0] &= 248` becomes
 /// `n[0] &= 0xFFFFFFF8` -- the same low three bits, since `n[0]` is the first four bytes -- and
 /// `k_list[31] &= 127` / `|= 64` become `n[7] &= 0x7FFFFFFF` / `|= 0x40000000`, the same top two
-/// bits, since `n[7]` is the last four bytes. Verified equal to `decodeScalar25519` over 20,004
-/// inputs, random plus edge cases.
+/// bits, since `n[7]` is the last four bytes.
 ///
-/// The `25519` in the name is load-bearing: `decodeScalar448` clears two low bits rather than
+/// This differs from `decodeScalar448`, which clears two low bits rather than
 /// three, and sets bit 447 (Section 5).
 ///
 /// Input: A 32-byte little-endian scalar.
 /// Output: The decoded scalar, written to `n` as eight little-endian 32-bit words.
-///
-/// Scope: X25519.
-// TODO: Claude-generated, double-check
-fn decode_scalar_25519(k: &[u8; SCALAR_SIZE], n: &mut [u32; 8]) {
-    for (i, n_i) in n.iter_mut().enumerate() {
-        let pos = i * 4;
-        *n_i = decode_u32(&k[pos..(pos + 4)]);
+fn decode_scalar_25519(k: &X25519Scalar, n: &mut [u32; 8]) {
+    let (words, _) = k.0.as_chunks::<4>(); // 32 bytes: exactly 8 chunks, no remainder
+    for (n_i, w) in n.iter_mut().zip(words) {
+        *n_i = u32::from_le_bytes(*w);
     }
 
     n[0] &= 0xFFFFFFF8_u32;
@@ -113,9 +149,8 @@ fn decode_scalar_25519(k: &[u8; SCALAR_SIZE], n: &mut [u32; 8]) {
 ///
 /// Input: A 32-byte little-endian u-coordinate.
 /// Output: The u-coordinate as a [`FieldElement25519`], not normalized.
-// TODO: Claude-generated, double-check
-fn decode_u_coordinate(u: &[u8; POINT_SIZE]) -> FieldElement25519 {
-    FieldElement25519::decode_255(u)
+fn decode_u_coordinate(u: &X25519Point) -> FieldElement25519 {
+    FieldElement25519::decode_255(&u.0)
 }
 
 /// `encodeUCoordinate(u, 255)` as defined in Section 5 of RFC 7748.
@@ -123,9 +158,9 @@ fn decode_u_coordinate(u: &[u8; POINT_SIZE]) -> FieldElement25519 {
 /// canonical encoding of its residue class, even though non-canonical values MUST be accepted on
 /// the way in (see [`decode_u_coordinate`]). Bit 255 of the final byte is written as zero, since
 /// it is unused by X25519.
+///
 /// Input: A u-coordinate, in any state of reduction; a 32-byte output buffer.
 /// Output: The canonical 32-byte little-endian encoding of that value, written to `r`.
-// TODO: Claude-generated, double-check
 fn encode_u_coordinate(u: &FieldElement25519, r: &mut [u8; POINT_SIZE]) {
     u.normalize().encode_255(r);
 }
@@ -140,12 +175,28 @@ fn encode_u_coordinate(u: &FieldElement25519, r: &mut [u8; POINT_SIZE]) {
 // }
 
 // TODO make this match the style of MLDSA keygen
-pub fn generate_public_key(k: &[u8; SCALAR_SIZE], r: &mut [u8; POINT_SIZE]) {
-    scalar_mult_base(k, r);
+pub fn generate_public_key(k: &X25519Scalar) -> X25519Point {
+    let mut u = [0_u8; POINT_SIZE];
+    scalar_mult_base(k, &mut u);
+    X25519Point(u)
 }
 
-// TODO: move to curve25519.rs ?
-fn point_double(x: &mut FieldElement25519, z: &mut FieldElement25519) {
+/// Doubles one point, held projectively as the pair `(x : z)` representing `u = x / z`
+/// Updated in place.
+///
+/// Keeping u as a fraction is what lets the ladder avoid a field inversion on every step: only
+/// multiplications and squarings are needed here, and [`scalar_mult`] divides `x` by `z` once, at
+/// the end.
+///
+/// This is the doubling half of the Montgomery ladder step in Section 5 of RFC7748, used by
+/// [`scalar_mult`] for the last three iterations. With `AA = (x + z)^2`, `BB = (x - z)^2` and
+/// `E = AA - BB`, it writes `x = AA * BB` and `z = E * (BB + C_A24 * E)`; see [`C_A24`] for the
+/// pairing with `BB`.
+///
+/// X25519 only: it works on curve25519's Montgomery form and depends on its coefficient A.
+/// Ed25519 doubles points on the twisted Edwards curve in extended coordinates (Section 5.1.4 of
+/// RFC8032), which is a separate function.
+fn ladder_double(x: &mut FieldElement25519, z: &mut FieldElement25519) {
     let (mut a, mut b) = x.sum_and_difference(z);
     a = a.sqr();
     b = b.sqr();
@@ -156,14 +207,6 @@ fn point_double(x: &mut FieldElement25519, z: &mut FieldElement25519) {
     *z = t.mul(&a);
 }
 
-// TODO -- precompute what?
-pub fn precompute() {
-    // TODO (or remove if precomputation inlined to static)
-    // curve25519::precompute();
-}
-
-// TODO -- "For X25519, the unused, most significant bit MUST be zero." -- add test case or debug_assert.
-
 /// `X25519(k, u)` as defined in Section 5 of RFC7748: the Montgomery ladder, computing scalar
 /// multiplication on curve25519 from a u-coordinate alone.
 ///
@@ -172,7 +215,7 @@ pub fn precompute() {
 ///
 /// # Modifications from the RFC
 /// Modified to fold the RFC's first ladder iteration into the initial state, to replace its last
-/// three iterations with [`point_double`] calls, and to cycle the RFC's named intermediates
+/// three iterations with [`ladder_double`] calls, and to cycle the RFC's named intermediates
 /// through a fixed set of registers rather than materialise them.
 ///
 /// # Inputs
@@ -180,12 +223,9 @@ pub fn precompute() {
 ///  * `u`, a 32-byte little-endian u-coordinate
 ///  * `out`, a 32-byte output buffer.
 /// Output: The canonical little-endian encoding of the u-coordinate of `k * u`, written to `out`.
-// TODO -- the Section 5.2 and Section 6.1 test vectors are not exercised anywhere in this crate
-//          yet. The structure here was checked against them out-of-tree, which is not the same
-//          thing as a test.
-// TODO: Claude-generated, double-check
-fn scalar_mult(k: &[u8; SCALAR_SIZE], u: &[u8; POINT_SIZE], out: &mut [u8; POINT_SIZE]) {
-    let mut n = [0u32; 8];
+fn scalar_mult(k: &X25519Scalar, u: &X25519Point, out: &mut [u8; POINT_SIZE]) {
+    // The decoded scalar is as secret as `k` itself.
+    let mut n: Secret<[u32; 8]> = Secret::new();
     decode_scalar_25519(k, &mut n);
 
     // Pre-condition:
@@ -216,7 +256,7 @@ fn scalar_mult(k: &[u8; SCALAR_SIZE], u: &[u8; POINT_SIZE], out: &mut [u8; POINT
     //     z_3 = 1 *after* it has been applied, and `swap` starts at k_254. So the loop starts at 253 and not 254.
     //  3. t = 2, 1, 0 are not in the loop because bits 0..2 are always clear, so those iterations reduce
     //     to doubling the (x_2, z_2) branch and their swaps are no-ops. They become the three
-    //     point_double calls after the loop, and the RFC's post-loop cswap is dropped for the same
+    //     ladder_double calls after the loop, and the RFC's post-loop cswap is dropped for the same
     //     reason -- the debug_assert below is what checks it would have been a no-op.
     for bit in (2..=253_usize).rev() {
         // This section is the same core algorithm as in RFC7748 §5, but uses a different variable
@@ -262,8 +302,6 @@ fn scalar_mult(k: &[u8; SCALAR_SIZE], u: &[u8; POINT_SIZE], out: &mut [u8; POINT
         // (completes z_3)
         z3 = z3.sqr().mul(&x1);
 
-        // The swap block is a statement-for-statement transcription, just its placement within the
-        // loop has been changed.
         // This differs from the ladder presentation in the RFC because it implements the
         // constant-time cswap recommendation at the bottom of §5 using an all-ones/all-zeros
         // mask and the Condition<i64> type.
@@ -286,22 +324,15 @@ fn scalar_mult(k: &[u8; SCALAR_SIZE], u: &[u8; POINT_SIZE], out: &mut [u8; POINT
     debug_assert!(!swap.to_bool());
 
     for _ in 0..3 {
-        point_double(&mut x2, &mut z2);
+        ladder_double(&mut x2, &mut z2);
     }
 
     x2 = x2.mul(&z2.inv());
     encode_u_coordinate(&x2, out);
 }
 
-fn scalar_mult_base(k: &[u8; SCALAR_SIZE], r: &mut [u8; POINT_SIZE]) {
-    // Equivalent (but much slower)
-    let mut u = [0_u8; POINT_SIZE];
-    u[0] = 9;
-    scalar_mult(k, &u, r);
-
-    // TODO
-    // let (y, z) = curve25519::scalar_mult_base_yz(k);
-    // let (t, u) = z.sum_and_difference(&y);
-    // let v = t.mul(&u.inv());
-    // v.normalize().encode(r);
+fn scalar_mult_base(k: &X25519Scalar, r: &mut [u8; POINT_SIZE]) {
+    // Equivalent (but much slower) -- since the BASE_POINT never changes, you can
+    //         precompute lookup tables for the multiples of BASE_POINT. TODO
+    scalar_mult(k, &BASE_POINT, r);
 }

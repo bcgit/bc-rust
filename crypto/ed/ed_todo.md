@@ -71,9 +71,9 @@ What the analysis found:
   non-canonical input; the Wycheproof suite now covers both.
 - [x] Add the RFC 7748 §6.1 Diffie-Hellman vectors: Alice's and Bob's public keys and the shared
   secret K.
-- [ ] Label `vector_1`/`vector_2` and the iterated test as RFC 7748 §5.2 (the comment says
-  "RFC7749"), and drop the "what is this?" TODO on `check_iterated`; it is the §5.2 iterated
-  test. Fix the stale comment on `scalar_mult` that says these vectors are not exercised.
+- [x] Document `check_iterated` as the RFC 7748 §5.2 iterated test.
+- [x] Label `vector_1`/`vector_2` as RFC 7748 §5.2, and drop the stale comment on `scalar_mult`
+  that said these vectors are not exercised.
 - [ ] Re-enable the `agreement` round-trip test. It currently calls a non-existent
   `generate_private_key_rng`.
 - [ ] Remove the unused imports (`bouncycastle_core`, `bouncycastle_rng`) and the commented-out
@@ -88,7 +88,7 @@ What the analysis found:
     - [ ] `normalize`'s own input bound (limbs within `reduce`'s magnitude limit) is still only
       documented; debug-only magnitude tracking would check it in tests.
     - [x] Identify `C_A` (486662) and `C_A24` and document them against RFC 7748.
-- [ ] Remove the dead code: `Scalar25519`/`UCoordinate25519` (`todo!()`),
+- [ ] Remove the dead code:
   `P32`, `P64`, and the empty `precompute()`. Or finish them, if Phase 3 wants them.
 - [ ] `cargo mutants -p bouncycastle-ed` (without Wycheproof).
 
@@ -121,7 +121,7 @@ What the analysis found:
 - [ ] Make `calculate_agreement` (and the other `x25519.rs` free functions) `pub(crate)` once the
   Phase 2 trait API replaces them; the tests in `tests/` call them today.
 - [ ] `FieldElement25519` cleanups:
-    - [ ] `[Secret<i64>; 5]`? Block `Debug`? Prune the derive list.
+    - [x] `[Secret<i64>; 5]`? Block `Debug`? Prune the derive list.
     - [x] In-place methods (`*_mut`, `cmov`, `cnegate`) return `()`, not `&mut Self`.
     - [ ] Do we need both value and `_mut` forms? Only `sqr_mut` has a caller today.
     - [ ] Construct from `[u64; 4]` / `Nat<4>` instead of `new(x0..x4)`.
@@ -174,7 +174,9 @@ types, and carry each X25519 item across. Only the differences are listed here.
 
 - [ ] Port from `bc-rust-nursery/crates/{curve25519,ed25519}` onto the shared `FieldElement25519`:
   Edwards point arithmetic, point encoding/decoding, and SHA-512 from `bouncycastle-sha2`.
-- [ ] Move what X25519 shares with Ed25519 (e.g. `point_double`) into `curve25519.rs`.
+- [ ] Move what X25519 shares with Ed25519 (e.g. curve constants) into `curve25519.rs`. Not
+  `ladder_double`: that is Montgomery u-only doubling, while Ed25519 doubles in extended
+  coordinates (RFC 8032 §5.1.4).
 - [ ] Pure Ed25519: RFC 8032 §7.1 vectors.
 - [ ] Ed25519ctx: RFC 8032 §7.2 vectors.
 - [ ] Ed25519ph: RFC 8032 §7.3 vectors.

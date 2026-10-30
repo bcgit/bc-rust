@@ -37,17 +37,16 @@ use bouncycastle_hex as hex;
 
 #[test]
 fn iterated() {
-    check_iterated(1000);
+    rfc7748_check_iterated(1000);
 }
 
 #[ignore]
 #[test]
 fn iterated_full() {
-    check_iterated(1000000);
+    rfc7748_check_iterated(1000000);
 }
 
-// TODO --  this appears to be the vector from RFC7749 s.5.2
-//          If so, document that.
+/// The first X25519 single-call test vector of RFC 7748 Section 5.2.
 #[test]
 fn vector_1() {
     check_vector(
@@ -58,6 +57,7 @@ fn vector_1() {
     );
 }
 
+/// The second X25519 single-call test vector of RFC 7748 Section 5.2.
 #[test]
 fn vector_2() {
     check_vector(
@@ -72,20 +72,22 @@ fn vector_2() {
 /// shared secret K that each derives from their own private key and the other's public key.
 #[test]
 fn rfc7748_section_6_1() {
-    let alice_sk = decode_32("77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a");
-    let bob_sk = decode_32("5dab087e624a8a4b79e17f8b83800ee66f3bb1292618b6fd1c2f8b27ff88e0eb");
+    let alice_sk = X25519Scalar::from_bytes(&decode_32(
+        "77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a",
+    ));
+    let bob_sk = X25519Scalar::from_bytes(&decode_32(
+        "5dab087e624a8a4b79e17f8b83800ee66f3bb1292618b6fd1c2f8b27ff88e0eb",
+    ));
 
-    let mut alice_pk = [0_u8; POINT_SIZE];
-    let mut bob_pk = [0_u8; POINT_SIZE];
-    generate_public_key(&alice_sk, &mut alice_pk);
-    generate_public_key(&bob_sk, &mut bob_pk);
+    let alice_pk = generate_public_key(&alice_sk);
+    let bob_pk = generate_public_key(&bob_sk);
     check_value(
-        &alice_pk,
+        alice_pk.as_bytes(),
         "Section 6.1 Alice's public key",
         "8520f0098930a754748b7ddcb43ef75a0dbf3a0d26381af4eba4a98eaa9b4e6a",
     );
     check_value(
-        &bob_pk,
+        bob_pk.as_bytes(),
         "Section 6.1 Bob's public key",
         "de9edb7d7b7dc1b4d35b61c2ece435373f8343c85b78674dadfc7e146f882b4f",
     );
@@ -103,12 +105,14 @@ fn decode_32(s: &str) -> [u8; 32] {
     hex::decode(s).unwrap().try_into().unwrap()
 }
 
-// TODO --  what on earth is this? We're going to key_agree this with itself 1 million times?
-//          Why? What is this testing that's not already covered by the regular KATs?
-fn check_iterated(count: usize) {
+/// The iterated test of RFC 7748 Section 5.2: starting from k = u = 9, each iteration sets k to
+/// `X25519(k, u)` and u to the old k, and k is checked after 1, 1,000 and 1,000,000 iterations.
+///
+/// Feeding each output back in as the next scalar and u-coordinate exercises the ladder, field
+/// arithmetic and encodings on `count` effectively random inputs against a single known answer,
+/// and one wrong step corrupts every value after it. The single-call vectors cover two inputs.
+fn rfc7748_check_iterated(count: usize) {
     assert_eq!(POINT_SIZE, SCALAR_SIZE);
-
-    precompute();
 
     let mut k = [0_u8; POINT_SIZE];
     k[0] = 9;
@@ -118,7 +122,7 @@ fn check_iterated(count: usize) {
 
     let mut iterations = 0;
     while iterations < count {
-        calculate_agreement(&k, &u, &mut r);
+        calculate_agreement(&X25519Scalar::from_bytes(&k), &X25519Point::from_bytes(u), &mut r);
 
         u = k;
         k = r;
@@ -152,8 +156,8 @@ fn check_value(n: &[u8], text: &str, se: &str) {
 }
 
 fn check_vector(sk: &str, su: &str, se: &str, text: &str) {
-    let k: [u8; SCALAR_SIZE] = hex::decode(sk).unwrap().try_into().unwrap();
-    let u: [u8; POINT_SIZE] = hex::decode(su).unwrap().try_into().unwrap();
+    let k = X25519Scalar::from_bytes(&decode_32(sk));
+    let u = X25519Point::from_bytes(decode_32(su));
 
     let mut r = [0_u8; POINT_SIZE];
     calculate_agreement(&k, &u, &mut r);
