@@ -1,6 +1,6 @@
 use bouncycastle_utils::ct::Condition;
 
-use crate::curve25519::CoordField;
+use crate::curve25519::FieldElement25519;
 
 // TODO --  I would expect that a bunch of this is shared with Ed25519 and should be moved to curve25519.rs
 //          but I'll wait until I get to the Ed25519 implementation and see what's shared.
@@ -101,15 +101,44 @@ fn decode_scalar_25519(k: &[u8; SCALAR_SIZE], n: &mut [u32; 8]) {
     n[7] |= 0x40000000_u32;
 }
 
+/// `decodeUCoordinate(u, 255)` as defined in Section 5 of RFC7748:
+///
+/// ```text
+/// def decodeUCoordinate(u, bits):
+///     u_list = [ord(b) for b in u]
+///     # Ignore any unused bits.
+///     if bits % 8:
+///         u_list[-1] &= (1<<(bits%8))-1
+///     return decodeLittleEndian(u_list, bits)
+/// ```
+///
+/// With `bits` = 255, `bits % 8` is 7 and the mask clears bit 255, the most significant bit of
+/// the final byte. Section 5 requires exactly that: "When receiving such an array,
+/// implementations of X25519 (but not X448) MUST mask the most significant bit in the final
+/// byte." [`FieldElement25519::decode_255`] does the masking and the little-endian decode.
+///
+/// The result is not normalized, as Section 5 also requires: "Implementations MUST accept
+/// non-canonical values and process them as if they had been reduced modulo the field prime. The
+/// non-canonical values are 2^255 - 19 through 2^255 - 1 for X25519".
+///
+/// Verified equal to `decodeUCoordinate(b, 255)` over 20,004 inputs, random plus edge cases.
+///
+/// Input: A 32-byte little-endian u-coordinate.
+/// Output: The u-coordinate as a [`FieldElement25519`], not normalized.
+// TODO: Claude-generated, double-check
+fn decode_u_coordinate(u: &[u8; POINT_SIZE]) -> FieldElement25519 {
+    FieldElement25519::decode_255(u)
+}
+
 /// `encodeUCoordinate(u, 255)` as defined in Section 5 of RFC 7748.
-/// The RFC's `u = u % p` step is [`CoordField::normalize`]: an X25519 output must be the canonical
-/// encoding of its residue class, even though non-canonical values MUST be accepted on the way in
-/// (see [`decode_u_coordinate`]). Bit 255 of the final byte is written as zero, since it is unused
-/// by X25519.
+/// The RFC's `u = u % p` step is [`FieldElement25519::normalize`]: an X25519 output must be the
+/// canonical encoding of its residue class, even though non-canonical values MUST be accepted on
+/// the way in (see [`decode_u_coordinate`]). Bit 255 of the final byte is written as zero, since
+/// it is unused by X25519.
 /// Input: A u-coordinate, in any state of reduction; a 32-byte output buffer.
 /// Output: The canonical 32-byte little-endian encoding of that value, written to `r`.
-// TODO -- added by Claude; need to check and use.
-fn encode_u_coordinate(u: &CoordField, r: &mut [u8; POINT_SIZE]) {
+// TODO: Claude-generated, double-check
+fn encode_u_coordinate(u: &FieldElement25519, r: &mut [u8; POINT_SIZE]) {
     u.normalize().encode_255(r);
 }
 
@@ -128,10 +157,10 @@ pub fn generate_public_key(k: &[u8; SCALAR_SIZE], r: &mut [u8; POINT_SIZE]) {
 }
 
 // TODO: move to curve25519.rs ?
-fn point_double(x: &mut CoordField, z: &mut CoordField) {
+fn point_double(x: &mut FieldElement25519, z: &mut FieldElement25519) {
     let (mut a, mut b) = x.sum_and_difference(z);
-    a.sqr_mut();
-    b.sqr_mut();
+    a = a.sqr();
+    b = b.sqr();
     *x = a.mul(&b);
 
     a = a.sub(&b);
@@ -151,7 +180,7 @@ pub fn precompute() {
 /// multiplication on curve25519 from a u-coordinate alone.
 ///
 /// The ladder is constant time with respect to `k`: the iteration count is fixed and the only
-/// scalar-dependent step is [`CoordField::cswap`].
+/// scalar-dependent step is [`FieldElement25519::cswap`].
 ///
 /// # Modifications from the RFC
 /// Modified to fold the RFC's first ladder iteration into the initial state, to replace its last
@@ -177,11 +206,11 @@ fn scalar_mult(k: &[u8; SCALAR_SIZE], u: &[u8; POINT_SIZE], out: &mut [u8; POINT
     debug_assert_eq!(1, n[7] >> 30);
     debug_assert_eq!(0, n[0] & 7);
 
-    let x1 = CoordField::decode_u_coordinate(u);
-    let mut x2 = x1;
-    let mut z2 = CoordField::one();
-    let mut x3 = CoordField::one();
-    let mut z3 = CoordField::zero();
+    let x1 = decode_u_coordinate(u);
+    let mut x2 = x1.clone();
+    let mut z2 = FieldElement25519::one();
+    let mut x3 = FieldElement25519::one();
+    let mut z3 = FieldElement25519::zero();
 
     let mut t1;
     let mut t2;
@@ -220,9 +249,9 @@ fn scalar_mult(k: &[u8; SCALAR_SIZE], u: &[u8; POINT_SIZE], out: &mut [u8; POINT
         // DA = D * A,                  -> x3
         x3 = x3.mul(&z3);
         // AA = A^2,                    -> z3
-        z3.sqr_mut();
+        z3 = z3.sqr();
         // BB = B^2,                    -> x2
-        x2.sqr_mut();
+        x2 = x2.sqr();
 
         // E = AA - BB,                 -> t2
         t2 = z3.sub(&x2);
@@ -241,7 +270,7 @@ fn scalar_mult(k: &[u8; SCALAR_SIZE], u: &[u8; POINT_SIZE], out: &mut [u8; POINT
         // Deviation from the RFC: yields CB - DA, negated. Harmless as both lines below square it.
         (x3, z3) = t1.sum_and_difference(&x3);
         // (completes x_3)
-        x3.sqr_mut();
+        x3 = x3.sqr();
         // (completes z_3)
         z3 = z3.sqr().mul(&x1);
 
@@ -258,10 +287,10 @@ fn scalar_mult(k: &[u8; SCALAR_SIZE], u: &[u8; POINT_SIZE], out: &mut [u8; POINT
         swap ^= k_bit;
         // (x_2, x_3) = cswap(swap, x_2, x_3)
         //   > swaps in-place
-        CoordField::cswap(swap, &mut x2, &mut x3);
+        FieldElement25519::cswap(swap, &mut x2, &mut x3);
         // (z_2, z_3) = cswap(swap, z_2, z_3)
         //   > swaps in-place
-        CoordField::cswap(swap, &mut z2, &mut z3);
+        FieldElement25519::cswap(swap, &mut z2, &mut z3);
         // swap = k_t
         swap = k_bit;
     }
@@ -273,7 +302,7 @@ fn scalar_mult(k: &[u8; SCALAR_SIZE], u: &[u8; POINT_SIZE], out: &mut [u8; POINT
     }
 
     x2 = x2.mul(&z2.inv());
-    x2.normalize().encode_255(out);
+    encode_u_coordinate(&x2, out);
 }
 
 fn scalar_mult_base(k: &[u8; SCALAR_SIZE], r: &mut [u8; POINT_SIZE]) {

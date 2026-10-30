@@ -1,7 +1,5 @@
-use bouncycastle_core;
 use bouncycastle_ed::x25519::*;
 use bouncycastle_hex as hex;
-use bouncycastle_rng;
 
 // todo -- debug and turn back on
 // #[test]

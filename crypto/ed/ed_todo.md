@@ -78,16 +78,17 @@ What the analysis found:
   `generate_private_key_rng`.
 - [ ] Remove the unused imports (`bouncycastle_core`, `bouncycastle_rng`) and the commented-out
   `decode_hex` from `x25519_tests.rs`.
-- [ ] Review `CoordField` in `curve25519.rs`. Ed25519 reuses it, so get it right here first:
+- [ ] Review `FieldElement25519` in `curve25519.rs`. Ed25519 reuses it, so get it right here first:
     - [ ] Review every method marked `// TODO: Claude-generated, double-check`, plus
       `decode_scalar_25519` and `scalar_mult` in `x25519.rs`.
     - [ ] Think about whether each field-arithmetic function needs a basic unit test.
-    - [ ] Decide how the normalization precondition is enforced. `encode_255`, `encode64_255`,
-      `are_equal(_var)` and `parity` need normalized input. The options, from the comment in
-      `curve25519.rs`, are: fold `normalize` into `encode_255`, add a `Normalized` typestate, or
-      add debug-only magnitude tracking.
+    - [x] Enforce the normalization precondition: typestate. `normalize` returns a
+      `NormalizedFieldElement25519`, which alone has `encode_255`, `is_zero`/`is_one`, `parity`
+      and (once restored) `are_equal`.
+    - [ ] `normalize`'s own input bound (limbs within `reduce`'s magnitude limit) is still only
+      documented; debug-only magnitude tracking would check it in tests.
     - [x] Identify `C_A` (486662) and `C_A24` and document them against RFC 7748.
-- [ ] Remove the dead code: `Scalar25519`/`UCoordinate25519` (`todo!()`), `encode_u_coordinate`,
+- [ ] Remove the dead code: `Scalar25519`/`UCoordinate25519` (`todo!()`),
   `P32`, `P64`, and the empty `precompute()`. Or finish them, if Phase 3 wants them.
 - [ ] `cargo mutants -p bouncycastle-ed` (without Wycheproof).
 
@@ -116,12 +117,13 @@ What the analysis found:
 
 ## Phase 3: Docs and ergonomics
 
-- [ ] Settle visibility: `CoordField` and most of its methods, and `calculate_agreement`, are
-  `pub`; should they be `pub(crate)`?
-- [ ] `CoordField` cleanups:
+- [x] `FieldElement25519` and its methods are `pub(crate)`.
+- [ ] Make `calculate_agreement` (and the other `x25519.rs` free functions) `pub(crate)` once the
+  Phase 2 trait API replaces them; the tests in `tests/` call them today.
+- [ ] `FieldElement25519` cleanups:
     - [ ] `[Secret<i64>; 5]`? Block `Debug`? Prune the derive list.
-    - [ ] Should the `*_mut` methods return `&mut Self`, and do we need both value and `_mut`
-      forms?
+    - [x] In-place methods (`*_mut`, `cmov`, `cnegate`) return `()`, not `&mut Self`.
+    - [ ] Do we need both value and `_mut` forms? Only `sqr_mut` has a caller today.
     - [ ] Construct from `[u64; 4]` / `Nat<4>` instead of `new(x0..x4)`.
     - [ ] Rename `parity` (to `is_odd`?).
     - [ ] Remove the answered "why are we cloning?" TODO.
@@ -170,7 +172,7 @@ types, and carry each X25519 item across. Only the differences are listed here.
 
 ### Ed25519
 
-- [ ] Port from `bc-rust-nursery/crates/{curve25519,ed25519}` onto the shared `CoordField`:
+- [ ] Port from `bc-rust-nursery/crates/{curve25519,ed25519}` onto the shared `FieldElement25519`:
   Edwards point arithmetic, point encoding/decoding, and SHA-512 from `bouncycastle-sha2`.
 - [ ] Move what X25519 shares with Ed25519 (e.g. `point_double`) into `curve25519.rs`.
 - [ ] Pure Ed25519: RFC 8032 §7.1 vectors.

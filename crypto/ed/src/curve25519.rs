@@ -1,28 +1,8 @@
 use bouncycastle_utils::ct::Condition;
 
-/// The basic data value for any elliptic curve implementation is a point on the curve.
-/// Holds the u-coordinate, which is an element of GF(p) with p = 2^255 - 19 for curve25519, held
-/// here in a `[u8; 32]` as the representation of a point on a Montgomery curve.
-///
-///
-/// # Mathematical operations implemented:
-/// None.
-/// All mathematical operations on a u-coordinate are implemented on [`Scalar25519`].
-///
-/// # Math Background
-/// The group law on elliptic curve points is point addition where A + B yields a new point C on the
-/// curve.
-/// The special case of adding a point to itself, A + A is called "point doubling" and is often
-/// implemented separately as this can be done more efficiently than the general case.
-/// Finally, repeated addition with itself, A + A + ... + A is represented as k * A for a scalar k and
-/// called "scalar multiplication", again, implemented separately.
-///
-/// Curve points are represented here in Montgomery form by their u-coordinate, which defines a point
-/// on the curve or on the quadratic twist up to sign; ie it names the pair {P, -P}.
-/// This means that point doubling and scalar multiplication are well-defined over u-coordinates since
-/// they commute with negation; ie k*(-A) = -(k*A), but general point addition is not.
-/// Fortunately, XDH defined in RFC7748 only requires scalar multiplication, not general point addition.
-type UCoordinate25519 = [u8; 32];
+/// The encoded u-coordinate of a point on curve25519: 32 little-endian bytes, as defined in
+/// Section 5 of RFC7748. See [`FieldElement25519`] for the field it encodes an element of.
+struct UCoordinate25519(Scalar25519);
 
 /// Scalar values are integers used as the k value in scalar multiplication of points.
 ///
@@ -43,66 +23,85 @@ impl core::ops::Mul<UCoordinate25519> for Scalar25519 {
     /// Scope: X25519.
     // TODO -- unimplemented. `todo!()` rather than a literally empty body because `mul` has to
     //          produce a `[u8; 32]`.
-    // TODO: Claude-generated, double-check
     fn mul(self, rhs: UCoordinate25519) -> Self::Output {
         todo!()
     }
 }
 
-/// Mask for one limb: `2^51 - 1`. A [`CoordField`] holds the value
+/// Mask for one limb: `2^51 - 1`. A [`FieldElement25519`] holds the value
 /// `x0 + x1*2^51 + x2*2^102 + x3*2^153 + x4*2^204`, so `& M51` extracts a limb's own 51 bits and
 /// leaves the overflow to be carried into the next limb (or, out of `x4`, folded back into `x0`
 /// scaled by 19, since `2^255 == 19 mod p`).
-///
-/// Scope: both.
-// TODO: Claude-generated, double-check
 const M51: i64 = (1 << 51) - 1;
 
-/// The field prime `p = 2^255 - 19` as eight little-endian 32-bit words, least significant first.
-///
-/// Currently referenced nowhere in the crate; [`CoordField::normalize`] reduces via the `* 19`
-/// fold rather than by comparing against `p`.
-///
-/// Scope: neither -- dead as of today.
-// TODO: Claude-generated, double-check
-const P32: [u32; 8] = [
-    0xFFFFFFED, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0x7FFFFFFF,
-];
-/// The field prime `p = 2^255 - 19` as four little-endian 64-bit words, least significant first.
-/// Note the low word is `...FFED` = `-19 mod 2^64`, and the top word has bit 63 clear, giving
-/// `2^255 - 19` rather than `2^256 - 19`.
-///
-/// Referenced only by the commented-out `modular::mod_odd_inverse` form of `inv`, so it is dead
-/// until inversion is restored.
-///
-/// Scope: both -- once inversion lands.
-// TODO: Claude-generated, double-check
-const P64: [u64; 4] =
-    [0xFFFFFFFFFFFFFFED, 0xFFFFFFFFFFFFFFFF, 0xFFFFFFFFFFFFFFFF, 0x7FFFFFFFFFFFFFFF];
+// /// The field prime `p = 2^255 - 19` as eight little-endian 32-bit words, least significant first.
+// ///
+// /// Currently referenced nowhere in the crate; [`FieldElement25519::normalize`] reduces via the
+// /// `* 19` fold rather than by comparing against `p`.
+// ///
+// /// Scope: neither -- dead as of today.
+// // TODO: remove?
+// const P32: [u32; 8] = [
+//     0xFFFFFFED, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0xFFFFFFFF, 0x7FFFFFFF,
+// ];
+// /// The field prime `p = 2^255 - 19` as four little-endian 64-bit words, least significant first.
+// /// Note the low word is `...FFED` = `-19 mod 2^64`, and the top word has bit 63 clear, giving
+// /// `2^255 - 19` rather than `2^256 - 19`.
+// ///
+// /// Referenced only by the commented-out `modular::mod_odd_inverse` form of `inv`, so it is dead
+// /// until inversion is restored.
+// ///
+// /// Scope: both -- once inversion lands.
+// // TODO: remove?
+// const P64: [u64; 4] =
+//     [0xFFFFFFFFFFFFFFED, 0xFFFFFFFFFFFFFFFF, 0xFFFFFFFFFFFFFFFF, 0x7FFFFFFFFFFFFFFF];
 
-// TODO Add magnitude, normalized fields to CoordField in debug mode and track validity through all operations
-#[derive(Clone, Copy, Debug, Default)]
-#[must_use]
-#[repr(transparent)]
-// TODO -- are all these annotations really necessary? Doesn't this contain secrets? Don't we want to block Debug?
-// TODO -- should this be `[Secret<i64>; 5]` ?
-// TODO -- why is this pub and not pub(crate)? -- same question for the fn's in the impl.
-pub struct CoordField([i64; 5]);
+/// An element of GF(p), p = 2^255 - 19: the field that curve25519's point coordinates live in.
+///
+/// This is the base field, as opposed to the scalar field of integers mod the group order that
+/// private keys live in. Every coordinate in this crate is one of these: the u-coordinate of
+/// X25519 (RFC7748), and the x and y coordinates of Ed25519 (RFC8032).
+///
+/// # Representation
+/// Five signed 64-bit limbs in radix 2^51, holding the value
+/// `x0 + x1*2^51 + x2*2^102 + x3*2^153 + x4*2^204` (see [`M51`]). Arithmetic is lazily reduced:
+/// limbs may exceed 51 bits or go negative between operations, so the same residue mod p has many
+/// representations. [`Self::normalize`] produces the canonical representation as a
+/// [`NormalizedFieldElement25519`], the only type that encodes, compares and tests parity.
+///
+/// # Mathematical operations implemented
+/// The field operations: addition, subtraction and negation, multiplication and squaring,
+/// inversion, and the square root of a ratio. Constant-time conditional move, negate, select and
+/// swap. Encoding to and decoding from 32 bytes. Everything is constant time except the methods
+/// suffixed `_var`, which are for public inputs only.
+///
+/// # Math Background
+/// The group law on elliptic curve points is point addition, where A + B yields a new point C on
+/// the curve. The special case of adding a point to itself, A + A, is called "point doubling" and
+/// is often implemented separately because it can be done more efficiently than the general case.
+/// Repeated addition, A + A + ... + A, is written k * A for a scalar k and called "scalar
+/// multiplication", again implemented separately. All three are built out of the field operations
+/// on this type.
+///
+/// X25519 represents a point in Montgomery form by its u-coordinate alone, which identifies a
+/// point on the curve or its quadratic twist up to sign; ie it names the pair {P, -P}. Point
+/// doubling and scalar multiplication are well-defined on u-coordinates, since they commute with
+/// negation (k*(-A) = -(k*A)), but general point addition is not. XDH (RFC7748) only needs scalar
+/// multiplication, which the Montgomery ladder in [`crate::x25519`] computes. Ed25519 uses the full
+/// (x, y) coordinates on the equivalent twisted Edwards curve, where general addition is defined.
+#[derive(Clone, Default)]
+#[must_use] // to help catch bugs that x.sqr() actually returns a result rather than mutates x, so not using the return is a bug.
+pub(crate) struct FieldElement25519([i64; 5]);
 
-// TODO -- all of these need at least simple unit tests
-impl CoordField {
-    /// Add another [`CoordField`] to this one, component-wise.
+impl FieldElement25519 {
+    /// Add another [`FieldElement25519`] to this one, component-wise.
     ///
     /// Lazily reduced: no carry propagation, so limb magnitudes grow by up to one bit and the result
     /// is congruent mod p but not normalized. That is deliberate -- every consumer here funnels into
     /// a [`Self::mul`], [`Self::sqr`] or [`Self::mul_u32`], each of which reduces through
     /// [`Self::reduce_products`], so magnitudes never run away and an explicit carry pass is not
     /// needed.
-    ///
-    /// Scope: both. In X25519 it is the `AA + a24 * E` of the Section 5 ladder (`x25519.rs:110`,
-    /// `148`).
-    // TODO: Claude-generated, double-check
-    pub const fn add(&self, rhs: &Self) -> Self {
+    pub(crate) const fn add(&self, rhs: &Self) -> Self {
         let [x0, x1, x2, x3, x4] = self.0;
         let [y0, y1, y2, y3, y4] = rhs.0;
         Self([x0 + y0, x1 + y1, x2 + y2, x3 + y3, x4 + y4])
@@ -119,15 +118,8 @@ impl CoordField {
     /// `C = x_3 + z_3` / `D = x_3 - z_3`. It is the workhorse of the ladder in [`crate::x25519`].
     ///
     /// Note on the name: RFC7748 does not name this operation -- it writes the two assignments out
-    /// separately, so there is no spec name to match. This was previously called `apm`, an
-    /// abbreviation that appears nowhere in RFC7748 or RFC8032. It most likely came from the
-    /// BouncyCastle Java implementation (`X25519Field.apm`, whose `zp` / `zm` out-parameters
-    /// suggest "add plus minus"), but that expansion is inferred from behaviour and has not been
-    /// confirmed against the Java source.
-    ///
-    /// Scope: both x25519 and ed25519
-    // TODO: Claude-generated, double-check
-    pub const fn sum_and_difference(&self, rhs: &Self) -> (Self, Self) {
+    /// separately, so there is no spec name to match.
+    pub(crate) const fn sum_and_difference(&self, rhs: &Self) -> (Self, Self) {
         let [x0, x1, x2, x3, x4] = self.0;
         let [y0, y1, y2, y3, y4] = rhs.0;
         (
@@ -136,157 +128,109 @@ impl CoordField {
         )
     }
 
-    /// Add one to self, i.e. add 1 to limb `x0`, returning a new [`CoordField`].
-    ///
-    /// One is representable exactly in the low limb, so no carry or fold is involved; as with
-    /// [`Self::add`] the result is congruent mod p but not normalized.
-    ///
-    /// Scope: Ed25519 -- unused today. The birational map of Section 4.1 of RFC7748,
-    /// `y = (u - 1)/(u + 1)`, is what wants `add_one` and [`Self::sub_one`]; the X25519 ladder never
-    /// adds a constant.
-    // TODO -- why are we cloning? [there is no clone: `self.0` is `[i64; 5]`, which is `Copy`, so the
-    //          destructuring bind is a register move, not an allocation.]
-    // TODO: Claude-generated, double-check
-    pub const fn add_one(&self) -> Self {
-        let [x0, x1, x2, x3, x4] = self.0;
-        Self([x0 + 1, x1, x2, x3, x4])
-    }
+    // /// Add one to self, i.e. add 1 to limb `x0`, returning a new [`FieldElement25519`].
+    // ///
+    // /// One is representable exactly in the low limb, so no carry or fold is involved; as with
+    // /// [`Self::add`] the result is congruent mod p but not normalized.
+    // ///
+    // /// Scope: Ed25519 -- unused today. The birational map of Section 4.1 of RFC7748,
+    // /// `y = (u - 1)/(u + 1)`, is what wants `add_one` and [`Self::sub_one`]; the X25519 ladder never
+    // /// adds a constant.
+    // // TODO -- add back once we get to implementing Ed25519
+    // pub(crate) const fn add_one(&self) -> Self {
+    //     let [x0, x1, x2, x3, x4] = self.0;
+    //     Self([x0 + 1, x1, x2, x3, x4])
+    // }
 
-    /// [`Self::add_one`] in place.
-    ///
-    /// Scope: Ed25519 -- unused today; see [`Self::add_one`].
-    // TODO -- why are we returning the same ref we were passed?
-    // TODO: Claude-generated, double-check
-    pub fn add_one_mut(&mut self) -> &mut Self {
-        self.0[0] += 1;
-        self
-    }
+    // /// [`Self::add_one`] in place.
+    // // TODO -- add back once we get to implementing Ed25519
+    // pub(crate) fn add_one_mut(&mut self) {
+    //     self.0[0] += 1;
+    // }
 
-    /// Constant-time equality: `is_zero` over the OR of the limb-wise XORs.
-    ///
-    /// Requires both inputs normalized -- this compares representations, not residue classes, and a
-    /// value and that value plus p have different limbs. See the precondition discussion above
-    /// [`Self::encode_255`].
-    ///
-    /// Scope: Ed25519 -- unused today. X25519 never compares field elements; the ladder's only
-    /// output check is the all-zeros test on the encoded bytes (`x25519.rs:29`).
-    // TODO: Claude-generated, double-check
-    pub const fn are_equal(lhs: &Self, rhs: &Self) -> Condition<i64> {
-        let [x0, x1, x2, x3, x4] = lhs.0;
-        let [y0, y1, y2, y3, y4] = rhs.0;
-        Condition::<i64>::is_zero((x0 ^ y0) | (x1 ^ y1) | (x2 ^ y2) | (x3 ^ y3) | (x4 ^ y4))
-    }
+    // /// Carry each limb's overflow above 51 bits into the next limb up.
+    // /// The overflow out of the top limb `x4` has weight `2^255`, so it wraps around
+    // /// into `x0` multiplied by 19, since `2^255 == 19 mod p`.
+    // ///
+    // /// This is a weak reduction: the value is unchanged mod p, but the result is not normalized -- it
+    // /// may be `>= p`. Use [`Self::normalize`] for the canonical representation.
+    // ///
+    // /// All five carries are taken from the input limbs at once, rather than rippling up from `x0` as
+    // /// in [`Self::reduce`]. That keeps the five steps independent, so the longest dependency chain is
+    // /// about three instructions (shift, `* 19`, add) rather than a ripple's ten or so, which an
+    // /// out-of-order CPU can overlap; it also lets LLVM auto-vectorize limbs 1..4. The cost is that
+    // /// each output limb is only bounded by `2^51` plus the carry it received: for input limbs below
+    // /// `2^63` in magnitude a carry lies in `[-2^12, 2^12)`, so `z1..z4` lie in
+    // /// `[-2^12, 2^51 + 2^12)` and `z0` in `[-19 * 2^12, 2^51 + 19 * 2^12)`.
+    // ///
+    // /// `>> 51` is an arithmetic shift, i.e. floor division by `2^51`, and `& M51` the matching
+    // /// non-negative remainder, so a negative limb borrows from its neighbour correctly. A borrow can
+    // /// leave the next limb negative, so the output limbs are not guaranteed non-negative.
+    // pub(crate) const fn carry(&self) -> Self {
+    //     let [x0, x1, x2, x3, x4] = self.0;
+    //     let c1 = x0 >> 51;
+    //     let c2 = x1 >> 51;
+    //     let c3 = x2 >> 51;
+    //     let c4 = x3 >> 51;
+    //     let c5 = x4 >> 51;
+    //     let z0 = (x0 & M51) + c5 * 19;
+    //     let z1 = (x1 & M51) + c1;
+    //     let z2 = (x2 & M51) + c2;
+    //     let z3 = (x3 & M51) + c3;
+    //     let z4 = (x4 & M51) + c4;
+    //     Self([z0, z1, z2, z3, z4])
+    // }
 
-    /// Variable-time [`Self::are_equal`], resolving to a `bool` and therefore branchable by the
-    /// caller. Only for values that are not secret.
-    ///
-    /// Requires both inputs normalized; see [`Self::are_equal`].
-    ///
-    /// Scope: Ed25519 -- unused today; signature verification compares public values.
-    // TODO: Claude-generated, double-check
-    pub const fn are_equal_var(lhs: &Self, rhs: &Self) -> bool {
-        Self::are_equal(lhs, rhs).to_bool()
-    }
+    // /// Conditionally move the coordinates of x into self if `cond` is true.
+    // ///
+    // /// Constant-time.
+    // // TODO -- add back once we get to implementing Ed25519
+    // pub(crate) fn cmov(&mut self, cond: Condition<i64>, x: &Self) {
+    //     // *self = Self::cselect(cond, x, self);
+    //     cond.mov(x.0[0], &mut self.0[0]);
+    //     cond.mov(x.0[1], &mut self.0[1]);
+    //     cond.mov(x.0[2], &mut self.0[2]);
+    //     cond.mov(x.0[3], &mut self.0[3]);
+    //     cond.mov(x.0[4], &mut self.0[4]);
+    // }
 
-    /// One weak-reduction pass: move each limb's overflow into the next, and fold the overflow out of
-    /// `x4` into `x0` scaled by 19 (`2^255 == 19 mod p`).
-    ///
-    /// Shifts are arithmetic, so a negative limb borrows from its neighbour correctly, and `& M51`
-    /// leaves every limb non-negative. The result is congruent mod p and has limbs near 51 bits, but
-    /// is not normalized -- `z0` in particular can exceed `2^51` after the `+ c5 * 19`.
-    ///
-    /// Verified congruent to its input mod p over 20,000 random values.
-    ///
-    /// Scope: both -- but currently unused by either, and structurally so: every ladder step passes
-    /// through a `mul`, `sqr` or `mul_u32`, all of which reduce via [`Self::reduce_products`], so
-    /// limb magnitudes never grow far enough to need a standalone carry.
-    // TODO: Claude-generated, double-check
-    pub const fn carry(&self) -> Self {
-        let [x0, x1, x2, x3, x4] = self.0;
-        let c1 = x0 >> 51;
-        let c2 = x1 >> 51;
-        let c3 = x2 >> 51;
-        let c4 = x3 >> 51;
-        let c5 = x4 >> 51;
-        let z0 = (x0 & M51) + c5 * 19;
-        let z1 = (x1 & M51) + c1;
-        let z2 = (x2 & M51) + c2;
-        let z3 = (x3 & M51) + c3;
-        let z4 = (x4 & M51) + c4;
-        Self([z0, z1, z2, z3, z4])
-    }
+    // /// Returns a copy of lhs if `cond` is true, else a copy of rhs.
+    // ///
+    // /// Constant time.
+    // ///
+    // /// Scope: Ed25519 -- unused today; see [`Self::cmov`].
+    // // TODO -- add back once we get to implementing Ed25519
+    // // TODO -- do we really need this? Seems like this is equivalent to lhs.cmov(cond, rhs); Do we really need both?
+    // pub(crate) fn cselect(cond: Condition<i64>, lhs: &Self, rhs: &Self) -> Self {
+    //     let [x0, x1, x2, x3, x4] = lhs.0;
+    //     let [y0, y1, y2, y3, y4] = rhs.0;
+    //     let z0 = cond.select(x0, y0);
+    //     let z1 = cond.select(x1, y1);
+    //     let z2 = cond.select(x2, y2);
+    //     let z3 = cond.select(x3, y3);
+    //     let z4 = cond.select(x4, y4);
+    //     Self([z0, z1, z2, z3, z4])
+    // }
 
-    /// [`Self::carry`] in place.
-    ///
-    /// Scope: both -- unused today; see [`Self::carry`].
-    // TODO -- why are we returning the same ref we were passed?
-    // TODO: Claude-generated, double-check
-    pub fn carry_mut(&mut self) -> &mut Self {
-        *self = self.carry();
-        self
-    }
-
-    /// Move the coordinates of x into self if `cond` is true.
-    ///
-    /// Constant time: every limb is rewritten unconditionally with a masked blend, so the branch is
-    /// not observable. See `bouncycastle_utils::ct::Condition`.
-    ///
-    /// Scope: Ed25519 -- unused today. Wanted for the table lookup in a fixed-base comb; X25519's
-    /// only conditional is the ladder swap, [`Self::cswap`].
-    // TODO: Claude-generated, double-check
-    pub fn cmov(&mut self, cond: Condition<i64>, x: &Self) -> &mut Self {
-        // *self = Self::cselect(cond, x, self);
-        cond.mov(x.0[0], &mut self.0[0]);
-        cond.mov(x.0[1], &mut self.0[1]);
-        cond.mov(x.0[2], &mut self.0[2]);
-        cond.mov(x.0[3], &mut self.0[3]);
-        cond.mov(x.0[4], &mut self.0[4]);
-        self
-    }
-
-    /// Negate the components of self if `cond` is true.
-    ///
-    /// Constant time, as [`Self::cmov`].
-    ///
-    /// Scope: Ed25519 -- unused today. Wanted for signed-digit fixed-base multiplication, where a
-    /// table entry is conditionally negated instead of storing both signs.
-    // TODO: Claude-generated, double-check
-    pub fn cnegate(&mut self, cond: Condition<i64>) -> &mut Self {
-        self.0[0] = cond.negate(self.0[0]);
-        self.0[1] = cond.negate(self.0[1]);
-        self.0[2] = cond.negate(self.0[2]);
-        self.0[3] = cond.negate(self.0[3]);
-        self.0[4] = cond.negate(self.0[4]);
-        self
-    }
-
-    /// Returns a copy of lhs if `cond` is true, else a copy of rhs.
-    ///
-    /// Constant time, as [`Self::cmov`]; the non-mutating form of it.
-    ///
-    /// Scope: Ed25519 -- unused today; see [`Self::cmov`].
-    // TODO: Claude-generated, double-check
-    pub fn cselect(cond: Condition<i64>, lhs: &Self, rhs: &Self) -> Self {
-        let [x0, x1, x2, x3, x4] = lhs.0;
-        let [y0, y1, y2, y3, y4] = rhs.0;
-        let z0 = cond.select(x0, y0);
-        let z1 = cond.select(x1, y1);
-        let z2 = cond.select(x2, y2);
-        let z3 = cond.select(x3, y3);
-        let z4 = cond.select(x4, y4);
-        Self([z0, z1, z2, z3, z4])
-    }
+    // /// Negate the components of self if `cond` is true.
+    // ///
+    // /// Constant time.
+    // // TODO -- add back once we get to implementing Ed25519
+    // // TODO -- seems weird to negate the limbs instead of negating only the leading digit
+    // pub(crate) fn cnegate(&mut self, cond: Condition<i64>) {
+    //     self.0[0] = cond.negate(self.0[0]);
+    //     self.0[1] = cond.negate(self.0[1]);
+    //     self.0[2] = cond.negate(self.0[2]);
+    //     self.0[3] = cond.negate(self.0[3]);
+    //     self.0[4] = cond.negate(self.0[4]);
+    // }
 
     /// Conditionally Swap the values of lhs and rhs if `cond` is true.
     ///
     /// Constant time: both limb arrays are rewritten unconditionally with a masked exchange, so
     /// nothing about `cond` -- and hence nothing about the scalar bit driving it -- leaks through
     /// memory access patterns or timing.
-    ///
-    /// Scope: X25519. This is `cswap(swap, x_2, x_3)` from the Section 5 ladder of RFC7748, the
-    /// mechanism that makes the ladder scalar-bit oblivious.
-    // TODO: Claude-generated, double-check
-    pub fn cswap(cond: Condition<i64>, lhs: &mut Self, rhs: &mut Self) {
+    pub(crate) fn cswap(cond: Condition<i64>, lhs: &mut Self, rhs: &mut Self) {
         (lhs.0[0], rhs.0[0]) = cond.swap(lhs.0[0], rhs.0[0]);
         (lhs.0[1], rhs.0[1]) = cond.swap(lhs.0[1], rhs.0[1]);
         (lhs.0[2], rhs.0[2]) = cond.swap(lhs.0[2], rhs.0[2]);
@@ -294,160 +238,47 @@ impl CoordField {
         (lhs.0[4], rhs.0[4]) = cond.swap(lhs.0[4], rhs.0[4]);
     }
 
-    // TODO -- decide how the normalization precondition is handled across this codec group.
-    //          This comment was generated by Claude and left here to be considered unce I have
-    //          a better understanding of the code.
-    //
-    // `decode_u_coordinate` deliberately returns an un-normalized value: RFC 7748 Section 5 requires that
-    // non-canonical u-coordinates (u >= p) be accepted rather than rejected. But `encode_255`,
-    // `encode64_255`, `are_equal`, `are_equal_var` and `parity` all *require* a normalized input,
-    // enforced today only by a documented precondition that every call site has to remember. All of
-    // them currently do (`scalar_mult` and `encode_u_coordinate` in x25519.rs, `inv` below), so this
-    // is a latent footgun rather than a live bug -- but the asymmetry is ugly: decoding asks nothing
-    // of the caller, encoding and comparison ask for a step they can silently omit. `parity` is the
-    // sharpest edge: p is odd, so a value in [p, 2^255) reports the parity of v rather than v - p.
-    //
-    // Options:
-    //  1. Fold `self.normalize()` into `encode_255` and drop it from its call sites. Free -- since
-    //     normalize is idempotent this moves work rather than adding it -- and encode is outside the
-    //     ladder loop, so nothing hot is touched. Does not help `are_equal`/`parity`, and folding it
-    //     into `are_equal` WOULD cost, because that one can land in hot code.
-    //  2. Typestate: `normalize(self) -> Normalized`, with `encode_255`, `are_equal` and `parity`
-    //     defined only on `Normalized`. Compile-time enforcement, which is what
-    //     QUALITY_AND_STYLE.md asks for over runtime discipline, and it covers the whole group at
-    //     once. Bigger change, and it wants the full list of consumers -- Ed25519 point compression
-    //     will add more -- so it probably waits for that (see the deferral note atop x25519.rs).
-    //  3. Debug-only tracking, i.e. the magnitude/normalized fields already proposed in the TODO at
-    //     the top of this file. Catches violations in tests without changing the API, but proves
-    //     nothing in release and puts a debug-only field on a `Copy` type.
-    //
-    // None of these remove the precondition outright: `normalize` itself needs limbs inside the
-    // magnitude bound that `reduce`'s carry chain assumes (`t5 * 19 + x0` must not overflow i64).
-    // That residual bound is exactly what option 3 would track.
+    /// Decodes 32 little-endian bytes as a field element, ignoring bit 255 (the most significant
+    /// bit of the final byte); the inverse of [`NormalizedFieldElement25519::encode_255`].
+    ///
+    /// This is the RFC-neutral byte layout shared by both protocols. Callers own the meaning of
+    /// bit 255 and the policy on non-canonical input: X25519 ignores the bit and accepts values
+    /// `>= p` (`decode_u_coordinate` in `x25519.rs`, RFC7748 Section 5), while Ed25519 reads the bit
+    /// as the sign of x and rejects a y-coordinate `>= p` (RFC8032 Section 5.1.3).
+    ///
+    /// Note: Result is NOT normalized -- the value is in `[0, 2^255)`, so the 19 encodings of
+    /// `2^255 - 19 .. 2^255 - 1` decode to values `>= p`. Call [`Self::normalize`] before comparing
+    /// or encoding.
+    ///
+    /// Input: 32 bytes, read as a little-endian integer.
+    /// Output: The low 255 bits of that integer as a [`FieldElement25519`].
+    pub(crate) const fn decode_255(bytes: &[u8; 32]) -> Self {
+        /// Unpacks a 256-bit little-endian integer held as four 64-bit words into the five 51-bit limbs
+        /// of a [`FieldElement25519`], where the represented value is
+        /// `z0 + z1*2^51 + z2*2^102 + z3*2^153 + z4*2^204`. Each limb is a 51-bit window of the input,
+        /// straddling word boundaries; the `& M51` masks make every limb non-negative and leave headroom
+        /// for lazily-carried arithmetic. Bit 255 of the input is dropped -- see [`Self::decode_255`].
+        /// Inverse of [`NormalizedFieldElement25519::encode64_255`].
+        /// Input: A 256-bit integer as four little-endian 64-bit words, least significant word first.
+        /// Output: Bits 0..254 of that integer as a [`FieldElement25519`].
+        ///
+        /// Note: Result is NOT normalized.
+        const fn decode64_255(x: &[u64; 4]) -> FieldElement25519 {
+            let [x0, x1, x2, x3] = *x;
+            let z0 = x0 as i64 & M51;
+            let z1 = (x0 >> 51 | x1 << 13) as i64 & M51;
+            let z2 = (x1 >> 38 | x2 << 26) as i64 & M51;
+            let z3 = (x2 >> 25 | x3 << 39) as i64 & M51;
+            let z4 = (x3 >> 12) as i64 & M51;
+            FieldElement25519([z0, z1, z2, z3, z4])
+        }
 
-    /// Encodes a field element as a 255-bit value in 32 little-endian bytes; the inverse of [`Self::decode_u_coordinate`].
-    /// Bit 255 (the most significant bit of the last byte) is always written as zero.
-    ///
-    /// Callers that need that bit to carry something else -- the
-    /// sign of x in an Ed25519 point encoding (Section 5.1.3 of RFC 8032) -- must OR it in after.
-    ///
-    /// Note: Requires normalized self -- see [`Self::encode64_255`]; only a normalized value encodes to the
-    /// canonical byte string for its residue class.
-    ///
-    /// Input: self, normalized; a 32-byte output buffer.
-    /// Output: The value written to `bytes` as a 255-bit little-endian integer.
-    ///
-    /// Scope: both. In X25519 it is `encodeUCoordinate` (`x25519.rs:85`, `174`).
-    // TODO: Claude-generated, double-check
-    pub fn encode_255(&self, bytes: &mut [u8; 32]) {
-        let [w0, w1, w2, w3] = self.encode64_255();
-        let (a, b, c, d) = (w0.to_le_bytes(), w1.to_le_bytes(), w2.to_le_bytes(), w3.to_le_bytes());
-        // Each word fills a fixed 8-byte window, least significant word first. Every index is a
-        // constant into a fixed-size array, so an out-of-bounds index would be a compile error (the
-        // deny-by-default `unconditional_panic` lint) and no runtime bounds check survives.
-        *bytes = [
-            a[0], a[1], a[2], a[3], a[4], a[5], a[6], a[7], //
-            b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7], //
-            c[0], c[1], c[2], c[3], c[4], c[5], c[6], c[7], //
-            d[0], d[1], d[2], d[3], d[4], d[5], d[6], d[7],
-        ];
-    }
-
-    /// Packs the five 51-bit limbs into a 255-bit little-endian integer held as four 64-bit words,
-    /// each word taking a whole limb plus the low bits of the next. Inverse of
-    /// [`Self::decode64_255`]. Bit 255 of the result is always zero, since limb `x4` lands in bits
-    /// 204..254.
-    ///
-    /// Note: Requires normalized self: every limb must be in [0, 2^51) and the value reduced mod p.
-    /// The splices below are `|`, not `+`, so a limb with bits at or above 51 collides with the next
-    /// limb's bits instead of carrying into them, and the result is garbage. (The `x1 << 51` etc.
-    /// deliberately shift bits off the top of the i64 -- those are the bits the previous word
-    /// already carried.)
-    ///
-    /// Input: self, normalized.
-    /// Output: The value as four little-endian 64-bit words, least significant word first.
-    ///
-    /// Scope: both -- the packing half of [`Self::encode_255`].
-    // TODO: Claude-generated, double-check
-    const fn encode64_255(&self) -> [u64; 4] {
-        let [x0, x1, x2, x3, x4] = self.0;
-        let z0 = (x0 | x1 << 51) as u64;
-        let z1 = (x1 >> 13 | x2 << 38) as u64;
-        let z2 = (x2 >> 26 | x3 << 25) as u64;
-        let z3 = (x3 >> 39 | x4 << 12) as u64;
-        [z0, z1, z2, z3]
-    }
-
-    /// `decodeUCoordinate(u, 255)` as defined in Section 5 of RFC7748:
-    ///
-    /// ```text
-    /// def decodeUCoordinate(u, bits):
-    ///     u_list = [ord(b) for b in u]
-    ///     # Ignore any unused bits.
-    ///     if bits % 8:
-    ///         u_list[-1] &= (1<<(bits%8))-1
-    ///     return decodeLittleEndian(u_list, bits)
-    /// ```
-    ///
-    /// The RFC's `bits` parameter is fixed at 255 by this type, so `bits % 8` is 7 and the mask
-    /// clears bit 255 -- the most significant bit of the final byte. Section 5 requires exactly
-    /// that: "When receiving such an array, implementations of X25519 (but not X448) MUST mask the
-    /// most significant bit in the final byte."
-    ///
-    /// Callers own the meaning of that bit: for X25519 it is unused, for Ed25519 it carries the
-    /// sign of x (Section 5.1.3 of RFC8032) and must be stripped off and handled separately.
-    ///
-    /// The RFC's `decodeLittleEndian` has no counterpart of its own -- it is folded into this
-    /// function and [`Self::decode64_255`].
-    ///
-    /// Verified equal to `decodeUCoordinate(b, 255)` over 20,004 inputs, random plus edge cases.
-    ///
-    /// Note: Result is NOT normalized -- the value is in [0, 2^255), so the 19 encodings of
-    /// 2^255-19 .. 2^255-1 decode to values >= p. That is also required by Section 5:
-    /// "Implementations MUST accept non-canonical values and process them as if they had been
-    /// reduced modulo the field prime. The non-canonical values are 2^255 - 19 through 2^255 - 1
-    /// for X25519". Call [`Self::normalize`] before comparing or encoding.
-    ///
-    /// Note on the name: Ed25519 needs this same byte-to-field decode for a *y*-coordinate, where
-    /// the masked bit is the sign of x rather than unused, so at that call site the RFC7748 name
-    /// will read wrong. It follows RFC7748 because that is the only caller today; revisit when
-    /// Ed25519 lands.
-    ///
-    /// Input: A 32-byte little-endian u-coordinate.
-    /// Output: The low 255 bits of that value as a [`CoordField`].
-    ///
-    /// Scope: both x25519 and ed25519
-    // TODO: Claude-generated, double-check
-    pub const fn decode_u_coordinate(bytes: &[u8; 32]) -> Self {
         let b = bytes;
         let x0 = u64::from_le_bytes([b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7]]);
         let x1 = u64::from_le_bytes([b[8], b[9], b[10], b[11], b[12], b[13], b[14], b[15]]);
         let x2 = u64::from_le_bytes([b[16], b[17], b[18], b[19], b[20], b[21], b[22], b[23]]);
         let x3 = u64::from_le_bytes([b[24], b[25], b[26], b[27], b[28], b[29], b[30], b[31]]);
-        Self::decode64_255(&[x0, x1, x2, x3])
-    }
-
-    /// Repacks a 256-bit little-endian integer held as four 64-bit words into the five 51-bit limbs
-    /// of a [`CoordField`], where the represented value is
-    /// `z0 + z1*2^51 + z2*2^102 + z3*2^153 + z4*2^204`. Each limb is a 51-bit window of the input,
-    /// straddling word boundaries; the `& M51` masks make every limb non-negative and leave headroom
-    /// for lazily-carried arithmetic. Bit 255 of the input is dropped -- see [`Self::decode_u_coordinate`].
-    /// Inverse of [`Self::encode64_255`].
-    /// Input: A 256-bit integer as four little-endian 64-bit words, least significant word first.
-    /// Output: Bits 0..254 of that integer as a [`CoordField`].
-    ///
-    /// Note: Result is NOT normalized -- see the note on [`Self::decode_u_coordinate`].
-    ///
-    /// Scope: both -- the unpacking half of [`Self::decode_u_coordinate`].
-    // TODO: Claude-generated, double-check
-    const fn decode64_255(x: &[u64; 4]) -> Self {
-        let [x0, x1, x2, x3] = *x;
-        let z0 = x0 as i64 & M51;
-        let z1 = (x0 >> 51 | x1 << 13) as i64 & M51;
-        let z2 = (x1 >> 38 | x2 << 26) as i64 & M51;
-        let z3 = (x2 >> 25 | x3 << 39) as i64 & M51;
-        let z4 = (x3 >> 12) as i64 & M51;
-        Self([z0, z1, z2, z3, z4])
+        decode64_255(&[x0, x1, x2, x3])
     }
 
     /// Multiplicative inverse in GF(p), by Fermat's little theorem: `x^(p-2) == x^-1`.
@@ -467,94 +298,12 @@ impl CoordField {
     /// Verified against a reference modular inverse over 305 values, edge cases included.
     ///
     /// Scope: both x25519 and ed25519.
-    // TODO -- a safegcd-style `mod_odd_inverse` (a commented-out draft was in the since-deleted
-    //          crypto/math crate) would be asymptotically cheaper, and P64 above is the constant it
-    //          wants. Only worth revisiting if this shows up in a profile -- it is one call per
-    //          scalar_mult.
-    // TODO: Claude-generated, double-check
-    pub const fn inv(&self) -> Self {
+    // TODO -- a safegcd-style `mod_odd_inverse` would be asymptotically cheaper, and P64 above is
+    //          the constant it wants. Only worth revisiting if this shows up in a profile -- it is
+    //          one call per scalar_mult.
+    pub(crate) const fn inv(&self) -> Self {
         let (x_cubed, t) = self.pow_p_sub5_div8();
         t.sqr_n(3).mul(&x_cubed)
-    }
-
-    /// [`Self::inv`] in place.
-    ///
-    /// Scope: both x25519 and ed25519.
-    // TODO -- why are we returning the same ref we were passed?
-    // TODO: Claude-generated, double-check
-    pub fn inv_mut(&mut self) -> &mut Self {
-        *self = self.inv();
-        self
-    }
-
-    /// Variable-time multiplicative inverse.
-    ///
-    /// Currently just [`Self::inv`], which is constant time -- so this is correct and safe, merely
-    /// not faster. The separate name reserves the slot: for a public operand, an extended-Euclidean
-    /// inverse beats a 265-operation addition chain, and callers that may only use a variable-time
-    /// inverse are already spelled that way at the call site.
-    ///
-    /// Scope: Ed25519 -- signature verification, where the operand is public.
-    // TODO -- no variable-time specialisation yet; this is the constant-time inverse.
-    // TODO: Claude-generated, double-check
-    pub const fn inv_var(&self) -> Self {
-        self.inv()
-    }
-
-    /// [`Self::inv_var`] in place.
-    ///
-    /// Scope: Ed25519 -- see [`Self::inv_var`].
-    // TODO -- why are we returning the same ref we were passed?
-    // TODO: Claude-generated, double-check
-    pub fn inv_mut_var(&mut self) -> &mut Self {
-        *self = self.inv_var();
-        self
-    }
-
-    /// Constant-time test for the value 1: `is_zero` over `(x0 ^ 1) | x1 | x2 | x3 | x4`.
-    ///
-    /// Requires normalized self -- only the canonical representative of 1 has limbs `[1, 0, 0, 0, 0]`.
-    ///
-    /// Scope: Ed25519 -- unused today.
-    // TODO: Claude-generated, double-check
-    pub const fn is_one(&self) -> Condition<i64> {
-        let [x0, x1, x2, x3, x4] = self.0;
-        let x0 = x0 ^ 1;
-        Condition::<i64>::is_zero(x0 | x1 | x2 | x3 | x4)
-    }
-
-    /// Variable-time [`Self::is_one`]. Only for values that are not secret.
-    ///
-    /// Requires normalized self.
-    ///
-    /// Scope: Ed25519 -- unused today.
-    // TODO: Claude-generated, double-check
-    pub const fn is_one_var(&self) -> bool {
-        self.is_one().to_bool()
-    }
-
-    /// Constant-time test for the value 0: `is_zero` over the OR of all five limbs.
-    ///
-    /// Requires normalized self -- an un-normalized zero can be represented as p, whose limbs are
-    /// not all zero.
-    ///
-    /// Scope: Ed25519. Reached today only through [`Self::is_zero_var`] from
-    /// [`Self::sqrt_ratio_var`].
-    // TODO: Claude-generated, double-check
-    pub const fn is_zero(&self) -> Condition<i64> {
-        let [x0, x1, x2, x3, x4] = self.0;
-        Condition::<i64>::is_zero(x0 | x1 | x2 | x3 | x4)
-    }
-
-    /// Variable-time [`Self::is_zero`]. Only for values that are not secret.
-    ///
-    /// Requires normalized self.
-    ///
-    /// Scope: Ed25519. Used by [`Self::sqrt_ratio_var`] to pick between the three square-root cases;
-    /// the branch is safe there because point decompression runs on public data.
-    // TODO: Claude-generated, double-check
-    pub const fn is_zero_var(&self) -> bool {
-        self.is_zero().to_bool()
     }
 
     /// Multiply self by rhs in GF(p), `p = 2^255 - 19`.
@@ -564,12 +313,7 @@ impl CoordField {
     /// `2^255 == 19 mod p`, so those terms are pre-scaled by 19 -- that is what `t1..t4` are. The 25
     /// products accumulate in `i128` (a 51-bit by 56-bit product would overflow `i64`) and
     /// [`Self::reduce_products`] carries them back down to five `i64` limbs.
-    ///
-    /// Verified against reference mod-p arithmetic over 20,000 random pairs.
-    ///
-    /// Scope: both.
-    // TODO: Claude-generated, double-check
-    pub const fn mul(&self, rhs: &Self) -> Self {
+    pub(crate) const fn mul(&self, rhs: &Self) -> Self {
         #[inline(always)]
         const fn m(x: i64, y: i64) -> i128 {
             x as i128 * y as i128
@@ -595,9 +339,8 @@ impl CoordField {
     /// whatever carries out of the top limb inside [`Self::reduce_products`].
     ///
     /// Scope: X25519. This is the `a24 * E` of the Section 5 ladder, with
-    /// `a24 = (486662 - 2) / 4 = 121665` (`x25519.rs:110`, `148`).
-    // TODO: Claude-generated, double-check
-    pub const fn mul_u32(&self, rhs: u32) -> Self {
+    /// `a24 = (486662 - 2) / 4 = 121665`.
+    pub(crate) const fn mul_u32(&self, rhs: u32) -> Self {
         #[inline(always)]
         const fn m(x: i64, y: i64) -> i128 {
             x as i128 * y as i128
@@ -609,45 +352,22 @@ impl CoordField {
         Self::reduce_products(m(x0, y0), m(x1, y0), m(x2, y0), m(x3, y0), m(x4, y0))
     }
 
-    /// Negates self, component-wise.
-    ///
-    /// Negating every limb negates the value, since the limb weights `2^(51*i)` are all positive.
-    /// Lazily reduced, and note the result has negative limbs, which is legal in this representation
-    /// but means it is *not* normalized -- [`Self::normalize`] must run before any encode or
-    /// comparison.
-    ///
-    /// Scope: Ed25519 -- unused today. Wanted for point negation and for the conditional negation of
-    /// signed-digit fixed-base tables; the X25519 ladder never negates.
-    // TODO: Claude-generated, double-check
-    pub const fn negate(&self) -> Self {
-        let [x0, x1, x2, x3, x4] = self.0;
-        Self([-x0, -x1, -x2, -x3, -x4])
-    }
-
-    /// [`Self::negate`] in place.
-    ///
-    /// Scope: Ed25519 -- unused today; see [`Self::negate`].
-    // TODO: Claude-generated, double-check
-    pub fn negate_mut(&mut self) -> &mut Self {
-        *self = self.negate();
-        self
-    }
-
-    /// Construct a [`CoordField`] from five raw limbs, value
-    /// `x0 + x1*2^51 + x2*2^102 + x3*2^153 + x4*2^204`.
-    ///
-    /// No normalization and no range check: the caller owns the invariant that the limbs are inside
-    /// the magnitude bound the reduction chains assume.
-    ///
-    /// Scope: both -- unused today.
-    // TODO Module consumers should instead have a method to construct from [u64; 4] (or indeed a Nat<4>)
-    // TODO: Claude-generated, double-check
-    pub const fn new(x0: i64, x1: i64, x2: i64, x3: i64, x4: i64) -> Self {
-        Self([x0, x1, x2, x3, x4])
-    }
+    // /// Negates self, component-wise.
+    // ///
+    // /// Negating every limb negates the value, since the limb weights `2^(51*i)` are all positive.
+    // /// Lazily reduced, and note the result has negative limbs, which is legal in this representation
+    // /// but means it is *not* normalized -- [`Self::normalize`] must run before any encode or
+    // /// comparison.
+    // // TODO -- add back once we get to implementing Ed25519
+    // pub(crate) const fn negate(&self) -> Self {
+    //     let [x0, x1, x2, x3, x4] = self.0;
+    //     Self([-x0, -x1, -x2, -x3, -x4])
+    // }
 
     /// Reduce self to the unique canonical representative of its residue class: limbs all in
     /// `[0, 2^51)` and the value in `[0, p)`.
+    ///
+    /// Idempotent.
     ///
     /// Two [`Self::reduce`] passes with `y` and then `-y`, where `y` is bit 254 of the value (bit 50
     /// of limb `x4`, since `x4` sits at weight `2^204`). Each pass adds `19 * y` at the bottom
@@ -655,54 +375,26 @@ impl CoordField {
     /// `+19y` and `-19y` cancel exactly, leaving `value - (c + c') * p` for the two top-carry folds
     /// `c`, `c'`.
     ///
-    /// The nudge is what implements Section 5 of RFC7748's "Implementations MUST accept non-canonical
+    /// Adding `19 * y` in the first pass and removing it in the second makes the top carry fire
+    /// exactly when the value is `>= p`, since `v >= p` if and only if `v + 19 >= 2^255`. Only values
+    /// `>= 2^254` can be `>= p`, which is why `y` is bit 254.
+    ///
+    /// This is what implements Section 5 of RFC7748's "Implementations MUST accept non-canonical
     /// values and process them as if they had been reduced modulo the field prime. The non-canonical
-    /// values are 2^255 - 19 through 2^255 - 1". Checked empirically: a plain `reduce(0).reduce(0)`
-    /// returns a non-canonical result for *every* value in `p ..= p + 18` -- exactly that range --
-    /// whereas this `reduce(y).reduce(-y)` is exact on all of `[0, 2^255)`, which is the entire range
-    /// [`Self::decode_u_coordinate`] can produce. It first fails at `2^255`, outside the input domain.
+    /// values are 2^255 - 19 through 2^255 - 1".
+    /// This `reduce(y).reduce(-y)` is exact on all of `[0, 2^255)`, which is the entire range
+    /// [`Self::decode_255`] can produce. It first fails at `2^255`, outside the input domain.
     ///
-    /// Requires limbs inside [`Self::reduce`]'s magnitude bound. Idempotent.
-    ///
-    /// Scope: both.
-    // TODO: Claude-generated, double-check
-    pub const fn normalize(&self) -> Self {
+    /// Requires limbs inside [`Self::reduce`]'s magnitude bound. That bound is the one precondition
+    /// the [`NormalizedFieldElement25519`] typestate does not enforce.
+    pub(crate) const fn normalize(&self) -> NormalizedFieldElement25519 {
         let y = (self.0[4] >> (51 - 1)) & 1;
-        self.reduce(y).reduce(-y)
-    }
-
-    /// [`Self::normalize`] in place.
-    ///
-    /// Scope: both -- unused today; call sites use [`Self::normalize`] directly
-    /// (`x25519.rs:174`).
-    // TODO: Claude-generated, double-check
-    pub fn normalize_mut(&mut self) -> &mut Self {
-        *self = self.normalize();
-        self
+        NormalizedFieldElement25519(self.reduce(y).reduce(-y))
     }
 
     /// The multiplicative identity, 1, in canonical form.
-    ///
-    /// Scope: both. In X25519 it seeds `z_2` and `x_3` of the Section 5 ladder (`x25519.rs:128`,
-    /// `129`).
-    // TODO: Claude-generated, double-check
-    pub const fn one() -> Self {
+    pub(crate) const fn one() -> Self {
         Self([1, 0, 0, 0, 0])
-    }
-
-    /// The least significant bit of the value.
-    ///
-    /// Requires normalized self, and this is the sharpest edge in the group: p is odd, so a value in
-    /// `[p, 2^255)` reports the parity of `v` rather than of `v - p` -- the answer is wrong, not
-    /// merely non-canonical.
-    ///
-    /// Scope: Ed25519. This is the sign bit of x in an Ed25519 point encoding, Section 5.1.3 of
-    /// RFC8032. X25519 has no use for it: Section 5 of RFC7748 requires bit 255 of a u-coordinate to
-    /// be masked off, not populated.
-    // TODO Better name -- is_odd() ?
-    // TODO: Claude-generated, double-check
-    pub const fn parity(&self) -> u8 {
-        (self.0[0] & 1) as u8
     }
 
     /// Returns `(x^3, x^((p-5)/8))` for `x = self`, by a fixed addition chain.
@@ -720,13 +412,7 @@ impl CoordField {
     ///   i.e. Fermat.
     /// * [`Self::sqrt_ratio_var`], which uses `x^((p-5)/8)` directly as the `p == 5 mod 8` square-root
     ///   candidate.
-    ///
-    /// Scope: both -- it is the engine under the field inversion X25519 needs, and under Ed25519's
-    /// point decompression.
-    // TODO Addition chain macro/function
-    // TODO: Claude-generated, double-check
     const fn pow_p_sub5_div8(&self) -> (Self, Self) {
-        // TODO -- where is this from?
         // z = x^((p-5)/8) = x^FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFD
         // (250 1s) (1 0s) (1 1s)
         // Addition chain: [1] 2 3 5 10 15 25 50 75 125 [250]
@@ -760,15 +446,12 @@ impl CoordField {
     /// ```
     ///
     /// Warning: a single `reduce` is therefore **not** congruent to its input mod p unless `y == 0`.
-    /// The `19 * y` is a deliberate nudge that only cancels across the pair of calls in
+    /// The `19 * y` is a deliberate offset that only cancels across the pair of calls in
     /// [`Self::normalize`], and this function exists to serve that pair -- it is not a general-purpose
     /// reduction.
     ///
     /// Requires limbs inside the magnitude bound the carry chain assumes: `t5 * 19 + x0` must not
     /// overflow `i64`.
-    ///
-    /// Scope: both.
-    // TODO: Claude-generated, double-check
     const fn reduce(&self, y: i64) -> Self {
         let [x0, x1, x2, x3, x4] = self.0;
 
@@ -805,10 +488,6 @@ impl CoordField {
     ///
     /// The result is congruent mod p with limbs near 51 bits, but is *not* normalized -- it may still
     /// exceed p. Call [`Self::normalize`] before encoding or comparing.
-    ///
-    /// Scope: both.
-    // TODO: Claude-generated, double-check
-    #[inline]
     const fn reduce_products(p0: i128, p1: i128, p2: i128, p3: i128, p4: i128) -> Self {
         #[inline(always)]
         const fn split(x: i128) -> (i64, i64) {
@@ -840,12 +519,7 @@ impl CoordField {
     /// Same shape as [`Self::mul`], but a squaring's cross terms come in equal pairs, so pre-doubling
     /// `x0..x3` into `y0..y3` lets one product stand for two and drops the count from 25 to 15. The
     /// `19` fold for the `i + j >= 5` terms is folded into `t3`, `t4` as before.
-    ///
-    /// Verified against reference mod-p arithmetic over 20,000 random values.
-    ///
-    /// Scope: both.
-    // TODO: Claude-generated, double-check
-    pub const fn sqr(&self) -> Self {
+    pub(crate) const fn sqr(&self) -> Self {
         #[inline(always)]
         const fn m(x: i64, y: i64) -> i128 {
             x as i128 * y as i128
@@ -864,27 +538,10 @@ impl CoordField {
         )
     }
 
-    /// [`Self::sqr`] in place.
-    ///
-    /// Scope: both. Used throughout the Section 5 ladder (`x25519.rs:144`, `145`, `152`).
-    // TODO -- why is it pub and now pub(crate)
-    // TODO: Claude-generated, double-check
-    pub fn sqr_mut(&mut self) -> &mut Self {
-        *self = self.sqr();
-        self
-    }
-
     /// Square self `n` times, i.e. raise to the `2^n`.
-    ///
-    /// The run-length primitive for the addition chain in [`Self::pow_p_sub5_div8`]: an exponent
-    /// written as runs of 1-bits is evaluated as alternating `sqr_n` (shift the accumulated bits up)
-    /// and `mul` (append another run).
-    ///
-    /// Scope: both -- it is how the field inversion is reached.
-    // TODO -- why is it pub and now pub(crate)
-    // TODO: Claude-generated, double-check
-    pub const fn sqr_n(&self, mut n: usize) -> Self {
-        let mut z = *self;
+    /// Declared const to enable pre-computed tables to be built at compile-time.
+    pub(crate) const fn sqr_n(&self, mut n: usize) -> Self {
+        let mut z = Self(self.0);
         while n > 0 {
             z = z.sqr();
             n -= 1;
@@ -892,55 +549,51 @@ impl CoordField {
         z
     }
 
-    /// Variable-time square root of the ratio `u / v`: returns `Some(x)` with `x^2 == u / v` if that
-    /// ratio is a quadratic residue, else `None`.
-    ///
-    /// The standard `p == 5 mod 8` method (p mod 8 is 5, checked), arranged to need no inversion: the
-    /// candidate is `x = u * v^3 * (u * v^7)^((p-5)/8)`, and `v * x^2` is then compared against `+u`
-    /// and `-u` to sort the three cases. If `v * x^2 == -u`, the true root is `x` times a square root
-    /// of -1, which is the `ROOT_NEG_ONE` constant -- verified to square to `-1 mod p`, and to equal
-    /// `2^((p-1)/4)`.
-    ///
-    /// Verified over 4,000 random `(u, v)`: every returned root satisfies `x^2 == u / v`, and every
-    /// `None` is a genuine non-residue.
-    ///
-    /// Variable time by construction, via [`Self::is_zero_var`]. That is acceptable for point
-    /// decompression, which runs on public data, and it is why the name carries the `_var` suffix.
-    ///
-    /// Scope: Ed25519. Point decompression, Section 5.1.3 of RFC8032 -- recovering x from y. The
-    /// X25519 ladder never takes a square root; Section 5 of RFC7748 works from the u-coordinate
-    /// alone and never recovers v.
-    // TODO -- why is it pub and now pub(crate)
-    // TODO: Claude-generated, double-check
-    pub const fn sqrt_ratio_var(u: &Self, v: &Self) -> Option<Self> {
-        let uv = u.mul(v);
-        let v2 = v.sqr();
-        let uv3 = v2.mul(&uv);
-        let uv7 = v2.sqr().mul(&uv3);
-
-        let (_, w) = uv7.pow_p_sub5_div8();
-        let x = w.mul(&uv3);
-        let vx2 = x.sqr().mul(v);
-
-        let t = vx2.sub(u).normalize();
-
-        // TODO -- is this doing a conditional on a secret value?
-        if t.is_zero_var() {
-            return Some(x);
-        }
-
-        let t = vx2.add(u).normalize();
-        if t.is_zero_var() {
-            const ROOT_NEG_ONE: CoordField = CoordField([
-                -0x0001E4D8B5F15F50, 0x0000D5A5FC8F189E, -0x000010A16342F3A0, -0x00007A6A597FB361,
-                0x0002B8324804FC1E,
-            ]);
-
-            return Some(x.mul(&ROOT_NEG_ONE));
-        }
-
-        None
-    }
+    // /// Variable-time square root of the ratio `u / v`: returns `Some(x)` with `x^2 == u / v` if that
+    // /// ratio is a quadratic residue, else `None`.
+    // ///
+    // /// The standard `p == 5 mod 8` method (p mod 8 is 5, checked), arranged to need no inversion: the
+    // /// candidate is `x = u * v^3 * (u * v^7)^((p-5)/8)`, and `v * x^2` is then compared against `+u`
+    // /// and `-u` to sort the three cases. If `v * x^2 == -u`, the true root is `x` times a square root
+    // /// of -1, which is the `ROOT_NEG_ONE` constant -- verified to square to `-1 mod p`, and to equal
+    // /// `2^((p-1)/4)`.
+    // ///
+    // /// Verified over 4,000 random `(u, v)`: every returned root satisfies `x^2 == u / v`, and every
+    // /// `None` is a genuine non-residue.
+    // ///
+    // /// Variable time by construction.
+    // /// That is acceptable for point decompression, which runs on public data, and it is why the
+    // /// name carries the `_var` suffix.
+    // // TODO -- double-check the variable-time assumption
+    // // TODO -- add back once we get to implementing Ed25519
+    // pub(crate) const fn sqrt_ratio_var(u: &Self, v: &Self) -> Option<Self> {
+    //     let uv = u.mul(v);
+    //     let v2 = v.sqr();
+    //     let uv3 = v2.mul(&uv);
+    //     let uv7 = v2.sqr().mul(&uv3);
+    //
+    //     let (_, w) = uv7.pow_p_sub5_div8();
+    //     let x = w.mul(&uv3);
+    //     let vx2 = x.sqr().mul(v);
+    //
+    //     let t = vx2.sub(u).normalize();
+    //
+    //     if t.is_zero().to_bool() {
+    //         return Some(x);
+    //     }
+    //
+    //     let t = vx2.add(u).normalize();
+    //     if t.is_zero().to_bool() {
+    //         const ROOT_NEG_ONE: FieldElement25519 = FieldElement25519([
+    //             -0x0001E4D8B5F15F50, 0x0000D5A5FC8F189E, -0x000010A16342F3A0, -0x00007A6A597FB361,
+    //             0x0002B8324804FC1E,
+    //         ]);
+    //
+    //         return Some(x.mul(&ROOT_NEG_ONE));
+    //     }
+    //
+    //     None
+    // }
 
     /// Subtract rhs from self, component-wise.
     ///
@@ -948,70 +601,132 @@ impl CoordField {
     /// the result is congruent mod p but not normalized. Negative limbs are fine here --
     /// [`Self::reduce_products`] and [`Self::reduce`] both use arithmetic (sign-propagating) shifts,
     /// so a negative limb borrows correctly on the next reduction.
-    ///
-    /// Scope: both. In X25519 it is the `E = AA - BB` of the Section 5 ladder (`x25519.rs:109`,
-    /// `147`).
-    // TODO -- why is this pub and not pub(crate) ?
-    // TODO: Claude-generated, double-check
-    pub const fn sub(&self, rhs: &Self) -> Self {
+    pub(crate) const fn sub(&self, rhs: &Self) -> Self {
         let [x0, x1, x2, x3, x4] = self.0;
         let [y0, y1, y2, y3, y4] = rhs.0;
         Self([x0 - y0, x1 - y1, x2 - y2, x3 - y3, x4 - y4])
     }
 
-    /// Subtract one from self, i.e. subtract 1 from limb `x0`, returning a new [`CoordField`].
-    ///
-    /// Mirror of [`Self::add_one`]; if `x0` was zero the limb simply goes negative, which the next
-    /// reduction resolves.
-    ///
-    /// Scope: Ed25519 -- unused today; the `(u - 1)/(u + 1)` birational map of Section 4.1 of
-    /// RFC7748 is what wants it.
-    // TODO -- why is this pub and not pub(crate) ?
-    // TODO: Claude-generated, double-check
-    pub const fn sub_one(&self) -> Self {
-        let [x0, x1, x2, x3, x4] = self.0;
-        Self([x0 - 1, x1, x2, x3, x4])
-    }
-
-    /// [`Self::sub_one`] in place.
-    ///
-    /// Scope: Ed25519 -- unused today; see [`Self::sub_one`].
-    // TODO -- do we really need both versions of this?
-    // TODO -- why is this pub and not pub(crate) ?
-    // TODO: Claude-generated, double-check
-    pub fn sub_one_mut(&mut self) -> &mut Self {
-        self.0[0] -= 1;
-        self
-    }
+    // /// Subtract one from self, i.e. subtract 1 from limb `x0`, returning a new
+    // /// [`FieldElement25519`].
+    // ///
+    // /// Mirror of [`Self::add_one`]; if `x0` was zero the limb simply goes negative, which the next
+    // /// reduction resolves.
+    // // TODO -- add back once we get to implementing Ed25519
+    // pub(crate) const fn sub_one(&self) -> Self {
+    //     let [x0, x1, x2, x3, x4] = self.0;
+    //     Self([x0 - 1, x1, x2, x3, x4])
+    // }
 
     /// The additive identity, 0, in canonical form.
-    ///
-    /// Scope: both. In X25519 it seeds `z_3` of the Section 5 ladder (`x25519.rs:130`).
-    // TODO: Claude-generated, double-check
-    pub const fn zero() -> Self {
+    pub(crate) const fn zero() -> Self {
         Self([0; 5])
     }
 }
 
-// TODO -- at least a basic unit test for each math function
+/// A [`FieldElement25519`] in canonical form: every limb in `[0, 2^51)` and the value in `[0, p)`.
+/// The only constructor is [`FieldElement25519::normalize`].
+///
+// TODO -- impl Deref<Target = FieldElement25519> once a caller needs to continue arithmetic on a
+//          normalized value (e.g. Ed25519 point decompression).
+#[derive(Clone)]
+#[must_use]
+pub(crate) struct NormalizedFieldElement25519(FieldElement25519);
 
-// TODO --  from RFC7748 s. 5:
-//      u-coordinate array:
-//          When receiving such an array, implementations of X25519
-//    (but not X448) MUST mask the most significant bit in the final byte.
-//    This is done to preserve compatibility with point formats that
-//    reserve the sign bit for use in other protocols and to increase
-//    resistance to implementation fingerprinting.
-//
+impl NormalizedFieldElement25519 {
+    // /// Constant-time equality of two field elements.
+    // ///
+    // /// Compares representations, not residue classes, so it is only correct on the normalized
+    // /// form: a value and that value plus p have different limbs.
+    // ///
+    // // TODO -- add back once we get to implementing Ed25519
+    // pub(crate) const fn are_equal(lhs: &Self, rhs: &Self) -> Condition<i64> {
+    //     let [x0, x1, x2, x3, x4] = lhs.0.0;
+    //     let [y0, y1, y2, y3, y4] = rhs.0.0;
+    //     Condition::<i64>::is_zero((x0 ^ y0) | (x1 ^ y1) | (x2 ^ y2) | (x3 ^ y3) | (x4 ^ y4))
+    // }
 
-// TODO --  from RFC7748 s. 5:
-//      Implementations MUST accept non-canonical values and process them as
-//    if they had been reduced modulo the field prime.  The non-canonical
-//    values are 2^255 - 19 through 2^255 - 1 for X25519 and 2^448 - 2^224
-//    - 1 through 2^448 - 1 for X448.
+    /// Encodes the field element as a 255-bit value in 32 little-endian bytes; the inverse of
+    /// [`FieldElement25519::decode_255`]. Bit 255 (the most significant bit of the last byte) is
+    /// always written as zero.
+    ///
+    /// Callers that need that bit to carry something else -- the
+    /// sign of x in an Ed25519 point encoding (Section 5.1.3 of RFC 8032) -- must OR it in after.
+    ///
+    /// Input: self; a 32-byte output buffer.
+    /// Output: The value written to `bytes` as a 255-bit little-endian integer.
+    pub(crate) fn encode_255(&self, bytes: &mut [u8; 32]) {
+        let [w0, w1, w2, w3] = self.encode64_255();
+        let (a, b, c, d) = (w0.to_le_bytes(), w1.to_le_bytes(), w2.to_le_bytes(), w3.to_le_bytes());
+        // Each word fills a fixed 8-byte window, least significant word first. Every index is a
+        // constant into a fixed-size array, so an out-of-bounds index would be a compile error (the
+        // deny-by-default `unconditional_panic` lint) and no runtime bounds check survives.
+        *bytes = [
+            a[0], a[1], a[2], a[3], a[4], a[5], a[6], a[7], //
+            b[0], b[1], b[2], b[3], b[4], b[5], b[6], b[7], //
+            c[0], c[1], c[2], c[3], c[4], c[5], c[6], c[7], //
+            d[0], d[1], d[2], d[3], d[4], d[5], d[6], d[7],
+        ];
+    }
+
+    /// Packs the five 51-bit limbs into a 255-bit little-endian integer held as four 64-bit words,
+    /// each word taking a whole limb plus the low bits of the next. Inverse of the `decode64_255`
+    /// step inside [`FieldElement25519::decode_255`]. Bit 255 of the result is always zero, since
+    /// limb `x4` lands in bits 204..254.
+    ///
+    /// Relies on the normalized form: every limb in [0, 2^51) and the value reduced mod p. The
+    /// splices below are `|`, not `+`, so a limb with bits at or above 51 collides with the next
+    /// limb's bits instead of carrying into them, and the result is garbage. (The `x1 << 51` etc.
+    /// deliberately shift bits off the top of the i64 -- those are the bits the previous word
+    /// already carried.)
+    ///
+    /// Input: self.
+    /// Output: The value as four little-endian 64-bit words, least significant word first.
+    const fn encode64_255(&self) -> [u64; 4] {
+        let [x0, x1, x2, x3, x4] = self.0.0;
+        let z0 = (x0 | x1 << 51) as u64;
+        let z1 = (x1 >> 13 | x2 << 38) as u64;
+        let z2 = (x2 >> 26 | x3 << 25) as u64;
+        let z3 = (x3 >> 39 | x4 << 12) as u64;
+        [z0, z1, z2, z3]
+    }
+
+    // /// Constant-time test for the value 1: `is_zero` over `(x0 ^ 1) | x1 | x2 | x3 | x4`.
+    // ///
+    // /// Correct only on the normalized form: only the canonical representative of 1 has limbs
+    // /// `[1, 0, 0, 0, 0]`.
+    // ///
+    // // TODO -- add back once we get to implementing Ed25519
+    // pub(crate) const fn is_one(&self) -> Condition<i64> {
+    //     let [x0, x1, x2, x3, x4] = self.0.0;
+    //     let x0 = x0 ^ 1;
+    //     Condition::<i64>::is_zero(x0 | x1 | x2 | x3 | x4)
+    // }
+
+    // /// Constant-time test for the value 0: `is_zero` over the OR of all five limbs.
+    // ///
+    // /// Correct only on the normalized form: an un-normalized zero can be represented as p, whose
+    // /// limbs are not all zero.
+    // ///
+    // // TODO -- add back once we get to implementing Ed25519
+    // pub(crate) const fn is_zero(&self) -> Condition<i64> {
+    //     let [x0, x1, x2, x3, x4] = self.0.0;
+    //     Condition::<i64>::is_zero(x0 | x1 | x2 | x3 | x4)
+    // }
+
+    // /// The least significant bit of the value.
+    // ///
+    // /// Correct only on the normalized form, and the reason this type exists: p is odd, so an
+    // /// un-normalized value in `[p, 2^255)` would report the parity of `v` rather than of `v - p` --
+    // /// a wrong answer, not merely a non-canonical one.
+    // // TODO -- add back once we get to implementing Ed25519
+    // pub(crate) const fn is_odd(&self) -> u8 {
+    //     (self.0.0[0] & 1) as u8
+    // }
+}
 
 #[cfg(test)]
-mod curve25519_tests {
+mod tests {
     use super::*;
 
     /// Alice's public key from the X25519 test vector in Section 6.1 of RFC 7748, used here purely
@@ -1030,20 +745,20 @@ mod curve25519_tests {
         [0x7308909F02085, 0x69B8FB16E8A94, 0x4EAFC356BDCFA, 0x275FA0D1C1306, 0x6A4E9BAA8EA9A];
 
     #[test]
-    fn decode_u_coordinate_known_value() {
-        assert_eq!(CoordField::decode_u_coordinate(&KNOWN_VALUE).0, KNOWN_LIMBS);
+    fn decode_255_known_value() {
+        assert_eq!(FieldElement25519::decode_255(&KNOWN_VALUE).0, KNOWN_LIMBS);
 
         // Bit 255 is not part of the field element, so setting it must not change the result.
         let mut bit_255_set = KNOWN_VALUE;
         bit_255_set[31] |= 0x80;
-        assert_eq!(CoordField::decode_u_coordinate(&bit_255_set).0, KNOWN_LIMBS);
+        assert_eq!(FieldElement25519::decode_255(&bit_255_set).0, KNOWN_LIMBS);
     }
 
     #[test]
     fn encode_255_known_value() {
         // Start from a non-zero buffer so a partial write cannot pass by accident.
         let mut bytes = [0xFF_u8; 32];
-        CoordField(KNOWN_LIMBS).encode_255(&mut bytes);
+        FieldElement25519(KNOWN_LIMBS).normalize().encode_255(&mut bytes);
         assert_eq!(bytes, KNOWN_VALUE);
     }
 }
