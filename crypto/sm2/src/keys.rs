@@ -1,20 +1,21 @@
-//! SM2 key types (`draft-shen-sm2-ecdsa-02` §4, "Key Generation") and key-pair generation. Shaped
-//! identically to `bouncycastle-ecdsa`'s per-curve `keys_*.rs` modules -- see that crate's
-//! `keys_bp256r1` module's docs for the full reasoning -- with SM2's own field/scalar
-//! types and the wide-DRBG-output reduction from [`crate::extra_bits`] substituted. The draft's §4
-//! only says the private key `dA` is "a random number ... selected via a random number generator",
-//! without specifying a DRBG-to-scalar conversion; this crate uses the same FIPS 186-5 Appendix
-//! A.4.1 "extra random bits" method as every curve in `bouncycastle-ecdsa`, for the same reason (see
-//! [`crate::extra_bits`]'s docs for the bias-bound derivation specific to SM2's `n`).
+//! SM2 key types and key-pair generation (GB/T 32918.1-2016 §6.1, which GB/T 32918.2-2016 §5.3
+//! defers to for the signer's key pair). Shaped identically to `bouncycastle-ecdsa`'s per-curve
+//! `keys_*.rs` modules -- see that crate's `keys_bp256r1` module's docs for the full reasoning --
+//! with SM2's own field/scalar types and the wide-DRBG-output reduction from
+//! [`crate::extra_bits`] substituted. §6.1 a) says only that `dA` is an integer in `[1, n-2]`
+//! produced "with a random number generator" (`draft-shen-sm2-ecdsa-02` says the same without a
+//! range), without specifying a DRBG-to-scalar conversion; this crate uses the same FIPS 186-5
+//! Appendix A.4.1 "extra random bits" method as every curve in `bouncycastle-ecdsa`, for the same
+//! reason (see [`crate::extra_bits`]'s docs for the bias-bound derivation specific to SM2's `n`).
 
-use crate::extra_bits::reduce_wide_bits_mod_n_minus_1;
+use crate::extra_bits::{N_MINUS_1_LIMBS, reduce_wide_bits_mod_n_minus_2};
 use bouncycastle_core::errors::{RNGError, SignatureError};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{RNG, SignaturePrivateKey, SignaturePublicKey};
 use bouncycastle_ec::nat;
 use bouncycastle_ec::sm2::Sm2FieldElement;
 use bouncycastle_ec::sm2_comb::comb_multiply_base_point;
-use bouncycastle_ec::sm2_scalar::{N_LIMBS, Sm2Scalar, Sm2ScalarField};
+use bouncycastle_ec::sm2_scalar::{Sm2Scalar, Sm2ScalarField};
 use bouncycastle_ec::sm2_sec1;
 use bouncycastle_rng::DefaultRNG;
 use bouncycastle_utils::secret::Secret;
@@ -29,18 +30,19 @@ pub const SK_LEN: usize = 32;
 pub const PK_LEN: usize = 65;
 
 /// Requested output length, in bytes, from the DRBG for key generation and for the per-signature
-/// secret `k` (`draft-shen-sm2-ecdsa-02` §5.1.3 step A3): `320` bits (40 bytes) -- derived directly
+/// secret `k` (GB/T 32918.2-2016 §6.1 step A3): `320` bits (40 bytes) -- derived directly
 /// from FIPS 186-5 Appendix A.4.1's own bias-bound check for SM2's `n` (see [`crate::extra_bits`]'s
 /// docs), not copied from any other curve's table entry.
 pub(crate) const EXTRA_BITS_DRBG_OUTPUT_LEN: usize = 40;
 
-/// An SM2 private key: `draft-shen-sm2-ecdsa-02` §4's `dA`, `dA` in `[1, n-1]`, held in
-/// [`bouncycastle_utils::secret::Secret`] via [`Sm2Scalar`].
+/// An SM2 private key: `dA` in `[1, n-2]` (GB/T 32918.1-2016 §6.1 a); the draft states no range),
+/// held in [`bouncycastle_utils::secret::Secret`] via [`Sm2Scalar`].
 ///
 /// # Why the public key is carried alongside `dA`
 ///
-/// Unlike ECDSA, *every* SM2 signing operation needs the signer's own public key: §5.1.2's `ZA =
-/// SM3(ENTLA || IDA || a || b || xG || yG || xA || yA)` mixes `PA`'s affine coordinates into the
+/// Unlike ECDSA, *every* SM2 signing operation needs the signer's own public key: GB/T
+/// 32918.2-2016 §5.5's `ZA = SM3(ENTLA || IDA || a || b || xG || yG || xA || yA)` mixes `PA`'s
+/// affine coordinates into the
 /// message hash, so `sign` cannot proceed without them. Deriving `PA` on each call means a second
 /// fixed-base scalar multiplication per signature -- as expensive as the `[k]G` the signature
 /// actually needs, i.e. double the cost of signing, and measurably so: signing used to cost about
@@ -56,7 +58,7 @@ pub(crate) const EXTRA_BITS_DRBG_OUTPUT_LEN: usize = 40;
 ///
 /// # Why `(1 + dA)^-1` is carried too
 ///
-/// `draft-shen-sm2-ecdsa-02` §5.1.3 step A6 divides by `1 + dA`, and that inverse depends on the
+/// GB/T 32918.2-2016 §6.1 step A6 divides by `1 + dA`, and that inverse depends on the
 /// key alone, not on the message or `k`. Recomputing it per signature was a constant-time
 /// Fermat inversion each time -- roughly the same cost as `to_affine`'s field inversion, about a
 /// tenth of a signature on P-256-class hardware -- for a value that never changes. It is computed
@@ -74,19 +76,18 @@ pub struct SM2PrivateKey {
 }
 
 impl SM2PrivateKey {
-    /// Builds the key pair from an already-validated `dA` in `[1, n-1]`, computing `PA = [dA]G`.
+    /// Builds the key pair from an already-validated `dA` in `[1, n-2]`, computing `PA = [dA]G`.
     /// The single place `SM2PrivateKey`'s invariant (`pk` really is `[d]G`) is established.
     fn from_validated_scalar(d: Sm2Scalar) -> Self {
         let q = comb_multiply_base_point(&d);
-        // dA is in [1, n-1] by construction (every caller validates first) and G has prime order n
+        // dA is in [1, n-2] by construction (every caller validates first) and G has prime order n
         // (h = 1), so [dA]G is never the identity.
         let (x, y) = q.to_affine().expect("[dA]G is never infinity for dA in [1, n-1]");
 
         // (1 + dA)^-1, once per key rather than once per signature (see the type's docs). The
         // three scalar-field intermediates reveal dA and are scrubbed, the same way sign_with_k
-        // scrubs its own; the cached value itself goes into a Secret. (For dA = n - 1 the inverse
-        // is of 0 and comes out 0, which makes every signature's s = 0 and fail step A6 exactly as
-        // it did when the inverse was computed per signature.)
+        // scrubs its own; the cached value itself goes into a Secret. 1 + dA is at most n - 1,
+        // since dA <= n - 2, so the inverse is never of 0.
         let mut d_field = Sm2ScalarField::from_secret(&d);
         let mut one_plus_d = Sm2ScalarField::ONE.add(&d_field);
         let mut inverse = one_plus_d.invert();
@@ -136,24 +137,25 @@ impl SignaturePrivateKey<SK_LEN> for SM2PrivateKey {
         let array: [u8; SK_LEN] = bytes
             .try_into()
             .map_err(|_| SignatureError::DecodingError("SM2 private key must be 32 bytes"))?;
-        // draft-shen-sm2-ecdsa-02 S4: dA is in [1, n-1], checked on the raw big-endian value
+        // GB/T 32918.1-2016 S6.1 a): dA is in [1, n-2], checked on the raw big-endian value
         // *before* any reduction. `Sm2Scalar::from_be_bytes` reduces mod n, so checking afterwards
         // would accept an out-of-range encoding as a different, perfectly valid key: `dA = n + 1`
         // would load as `dA = 1`, giving one key two encodings and silently treating malformed
-        // input as well-formed. Comparing against the fixed public values 0 and n is a one-time
-        // validation of caller-supplied bytes at load time, not a computation performed repeatedly
-        // on a secret intermediate value, so branching on it leaks nothing beyond what the caller
-        // already knows from having supplied these exact bytes.
+        // input as well-formed. Comparing against the fixed public values 0 and n - 1 is a
+        // one-time validation of caller-supplied bytes at load time, not a computation performed
+        // repeatedly on a secret intermediate value, so branching on it leaks nothing beyond what
+        // the caller already knows from having supplied these exact bytes.
         let limbs = sm2_sec1::limbs_from_be_bytes(&array);
-        let (_, borrow) = nat::sub(&limbs, &N_LIMBS);
+        // borrow == 1 iff limbs < n - 1, i.e. limbs <= n - 2.
+        let (_, borrow) = nat::sub(&limbs, &N_MINUS_1_LIMBS);
         if limbs == [0; 4] || borrow != 1 {
-            return Err(SignatureError::DecodingError("SM2 private key must be in [1, n-1]"));
+            return Err(SignatureError::DecodingError("SM2 private key must be in [1, n-2]"));
         }
         Ok(Self::from_validated_scalar(Sm2Scalar::from_limbs(limbs)))
     }
 }
 
-/// An SM2 public key: `draft-shen-sm2-ecdsa-02` §4's `PA = [dA]G`, stored as affine coordinates.
+/// An SM2 public key: `PA = [dA]G` (GB/T 32918.1-2016 §6.1 b)), stored as affine coordinates.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct SM2PublicKey {
     pub(crate) x: Sm2FieldElement,
@@ -202,8 +204,9 @@ pub fn keygen() -> Result<(SM2PublicKey, SM2PrivateKey), SignatureError> {
 }
 
 /// As [`keygen`], but sources the DRBG output from the caller-provided RNG, which must offer
-/// a security strength of at least 128 bits: the draft leaves this unstated (see the module
-/// docs on why key generation borrows FIPS 186-5's method wholesale), so this follows that
+/// a security strength of at least 128 bits: GB/T 32918.2-2016 §5.4.3 asks only for an approved
+/// random number generator and the draft says no more (see the module docs on why key generation
+/// borrows FIPS 186-5's method wholesale), so this follows that
 /// method's own Appendix A.2.1 step 3, requiring a DRBG strength "not less than" the one SP
 /// 800-57 Part 1 Rev. 5's Table 2 associates with SM2's 256-bit curve order (`f = 256-383` in
 /// that table's ECC column, giving 128-bit security).
@@ -218,9 +221,9 @@ pub fn keygen_from_rng(rng: &mut dyn RNG) -> Result<(SM2PublicKey, SM2PrivateKey
     // `Secret` so it is scrubbed when this function returns rather than left on the stack.
     let mut extra_bits = Secret::<[u8; EXTRA_BITS_DRBG_OUTPUT_LEN]>::new();
     rng.next_bytes_out(&mut *extra_bits).map_err(SignatureError::RNGError)?;
-    let d = reduce_wide_bits_mod_n_minus_1(&*extra_bits);
+    let d = reduce_wide_bits_mod_n_minus_2(&*extra_bits);
 
-    // d is in [1, n-1] by construction (see reduce_wide_bits_mod_n_minus_1), which is what
+    // d is in [1, n-2] by construction (see reduce_wide_bits_mod_n_minus_2), which is what
     // `from_validated_scalar` assumes; it computes PA = [d]G once, and the pair shares that value.
     let sk = SM2PrivateKey::from_validated_scalar(d);
 

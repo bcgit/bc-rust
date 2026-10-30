@@ -274,8 +274,9 @@ fn widen(v: &[u64; 4]) -> [u64; 5] {
     [v[0], v[1], v[2], v[3], 0]
 }
 
-/// `small * v`, one limb times a 4-limb value, as 5 limbs. Only ever called with a `small` that is
-/// a bounded, operand-independent count (see [`reduce`]), never a secret.
+/// `small * v`, one limb times a 4-limb value, as 5 limbs. `small` is [`reduce`]'s accumulator top
+/// limb: a function of the operands, bounded in `[4, 18]`, and only ever a multiplicand here --
+/// the loop's trip count and memory accesses do not depend on it.
 fn mul_small(small: u64, v: &[u64; 4]) -> [u64; 5] {
     let mut out = [0u64; 5];
     let mut carry: u128 = 0;
@@ -369,17 +370,19 @@ fn widening_square(a: &[u64; 4]) -> [u64; 8] {
 ///   D4 = ( 0   || 0   || 0   || 0   || 0   || A14 || 0   || 0   )
 /// ```
 ///
-/// **Precondition: `t < p^2`**, matching SP 800-186 §G.1's own precondition for the analogous NIST
-/// tables ("given an integer A less than m^2") and holding for every call site, since `mul` is the
-/// only one and it passes the product of two canonical (`< p`) field elements. The bounds below
-/// rest on it; a raw 512-bit value near `2^512` is *not* reduced correctly by this function.
+/// Both call sites, `mul` and `square`, pass the product of two canonical (`< p`) field elements,
+/// so `t < p^2` as in SP 800-186 §G.1's analogous NIST tables ("given an integer A less than
+/// m^2"); the bounds below do not need that, and hold for any 8-limb `t`.
 ///
-/// Bounds. Each term is a 256-bit value, so `T + S1 + ... + S13 < 14*2^256` and `D1 + ... + D4 <
-/// 4*2^256`. Starting the accumulator at `5p` keeps it non-negative throughout (`5p > 4*2^256`,
-/// since `5p - 4*2^256 = 2^256 - 5*2^224 - ... > 0`) and bounded by `5p + 14*2^256 < 19*2^256`, so
-/// five limbs always suffice and the top limb is at most 18. Folding that limb back in via
-/// `2^256 ≡ C` adds `u_hi*C < 19*2^225 < 2^230`, leaving `V < 2^256 + 2^230`; since `p > 2^256 -
-/// 2^225`, `V - p < 2^230 + 2^225 < p`, so exactly one conditional subtraction finishes the job.
+/// Bounds. Each term is a 256-bit value, so `T + S1 + ... + S13 < 14*2^256`; the four `D` words
+/// all sit at bits 64-95, so `D1 + ... + D4 < 4*2^96`. Any bias of `2^98` or more therefore keeps
+/// the accumulator non-negative; `5p` is used because it also keeps the top-limb bound a clean
+/// 18: `5p + 14*2^256 < 19*2^256`, so five limbs always suffice. (`sm2_field_tests.rs` drives the
+/// limb through 4 to 17 on products; only non-product input, such as all ones, reaches 18.)
+/// Folding that limb
+/// back in via `2^256 ≡ C` adds `u_hi*C < 19*2^225 < 2^230`, leaving `V < 2^256 + 2^230`; since
+/// `p > 2^256 - 2^225`, `V - p < 2^230 + 2^225 < p`, so exactly one conditional subtraction
+/// finishes the job.
 fn reduce(t: &[u64; 8]) -> [u64; 4] {
     let a = |i: usize| word(t, i) as i64;
 
@@ -410,8 +413,8 @@ fn reduce(t: &[u64; 8]) -> [u64; 4] {
     // `V = sum(columns[w] * 2^(32 w))`, assembled as a two's-complement 5-limb value with one
     // signed carry pass: `cur >> 32` is an arithmetic shift, so a negative running sum carries a
     // negative amount into the next word, and the final carry (which can be negative) becomes the
-    // sign-extended top limb. `V` itself may be negative here -- the `D` terms can exceed the
-    // `S` terms -- which is what the `5p` bias is for.
+    // sign-extended top limb. `V` itself may be negative here -- the `D` words can exceed the
+    // `S` words in column 2 -- which is what the `5p` bias is for.
     let mut v = [0u64; 5];
     let mut carry: i64 = 0;
     for w in 0..8 {
@@ -420,7 +423,7 @@ fn reduce(t: &[u64; 8]) -> [u64; 4] {
         carry = cur >> 32;
     }
     v[4] = carry as u64;
-    // `V + 5p`, wrapping: the docs prove `V > -4 * 2^256`, so the true sum is non-negative and
+    // `V + 5p`, wrapping: the docs prove `V > -4 * 2^96`, so the true sum is non-negative and
     // below `19 * 2^256`, and the wrapping add of two 5-limb values recovers it exactly.
     let (acc, _) = nat::add(&v, &FIVE_P_LIMBS);
 

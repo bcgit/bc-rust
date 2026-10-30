@@ -42,7 +42,7 @@ fn sign_then_verify_round_trips() {
 
 #[test]
 fn sign_is_non_deterministic() {
-    // draft-shen-sm2-ecdsa-02 S5.1.3 step A3: k is drawn fresh from randomness each call, unlike
+    // GB/T 32918.2-2016 S6.1 step A3: k is drawn fresh from randomness each call, unlike
     // bouncycastle-ecdsa's RFC-6979-deterministic default.
     let (_, sk) = keygen().unwrap();
     let msg = b"same message, different k";
@@ -298,26 +298,37 @@ fn private_key_rejects_zero() {
     }
 }
 
-/// `draft-shen-sm2-ecdsa-02` §4 puts `dA` in `[1, n-1]`, so an encoding of `n` or above is not a
-/// key. Reducing such an encoding mod `n` rather than rejecting it would give one key many
-/// valid-looking encodings: `dA = n + 1` would load as `dA = 1`.
+/// GB/T 32918.1-2016 §6.1 a) puts `dA` in `[1, n-2]`, so an encoding of `n - 1` or above is not
+/// a key. `n - 1` cannot sign (step A6 would invert `1 + dA = n`, i.e. `0`), and reducing an
+/// encoding of `n` or above mod `n` rather than rejecting it would give one key many
+/// valid-looking encodings: `dA = n + 1` would load as `dA = 1`. `n - 2` is the top of the range
+/// and the one value for which step A6 divides by `n - 1`, i.e. by `-1`.
 #[test]
-fn private_key_rejects_values_at_or_above_the_group_order() {
+fn private_key_rejects_values_outside_1_to_n_minus_2() {
     let n = be_bytes_from_limbs(&N_LIMBS);
 
+    // N_LIMBS[0] ends 0x23, so none of the +-1/-2 adjustments below carries or borrows.
+    let mut n_minus_1 = n;
+    n_minus_1[31] -= 1;
     let mut n_plus_1 = n;
-    n_plus_1[31] += 1; // N_LIMBS[0] ends 0x23, so this never carries
-    for (name, bytes) in [("n", n), ("n + 1", n_plus_1), ("2^256 - 1", [0xffu8; 32])] {
+    n_plus_1[31] += 1;
+    for (name, bytes) in
+        [("n - 1", n_minus_1), ("n", n), ("n + 1", n_plus_1), ("2^256 - 1", [0xffu8; 32])]
+    {
         match SM2PrivateKey::from_bytes(&bytes) {
             Err(SignatureError::DecodingError(_)) => {}
             other => panic!("dA = {name} should have been rejected, got {other:?}"),
         }
     }
 
-    let mut n_minus_1 = n;
-    n_minus_1[31] -= 1;
-    let sk = SM2PrivateKey::from_bytes(&n_minus_1).expect("dA = n - 1 is in range");
-    assert_eq!(sk.encode(), n_minus_1, "dA = n - 1 must round-trip unchanged");
+    let mut n_minus_2 = n;
+    n_minus_2[31] -= 2;
+    let sk = SM2PrivateKey::from_bytes(&n_minus_2).expect("dA = n - 2 is in range");
+    assert_eq!(sk.encode(), n_minus_2, "dA = n - 2 must round-trip unchanged");
+
+    let msg = b"dA = n - 2: step A6 divides by 1 + dA = n - 1";
+    let sig = SM2::sign(&sk, msg, Some(ID)).expect("dA = n - 2 must sign");
+    SM2::verify(&sk.derive_pk(), msg, Some(ID), &sig).expect("and its signature must verify");
 }
 
 #[test]
@@ -411,7 +422,7 @@ fn keygen_from_rng_rejects_an_rng_below_the_required_strength() {
     ));
 }
 
-/// `draft-shen-sm2-ecdsa-02` §5.2.2 step B1: `r'` and `s'` must each be in `[1, n-1]`, rejected
+/// GB/T 32918.2-2016 §7.1 steps B1-B2: `r'` and `s'` must each be in `[1, n-1]`, rejected
 /// rather than reduced. Each half of a valid signature is replaced in turn by `0`, by `n`, and by
 /// the all-ones pattern; the untouched half stays valid, so only the range check can be what
 /// rejects the result.
@@ -435,8 +446,8 @@ fn verify_rejects_r_or_s_outside_1_to_n_minus_1() {
     }
 }
 
-/// `draft-shen-sm2-ecdsa-02` §5.2.2 step B4: `t = (r' + s') mod n`, and `t = 0` fails verification
-/// outright. `s' = n - r'` is in `[1, n-1]` (so it passes step B1) and is the one value that makes
+/// GB/T 32918.2-2016 §7.1 step B5: `t = (r' + s') mod n`, and `t = 0` fails verification
+/// outright. `s' = n - r'` is in `[1, n-1]` (so it passes step B2) and is the one value that makes
 /// `t` zero -- a signature that would otherwise reach the point multiplication with `[0]PA`.
 #[test]
 fn verify_rejects_s_equal_to_n_minus_r() {
@@ -456,7 +467,8 @@ fn verify_rejects_s_equal_to_n_minus_r() {
     }
 }
 
-/// `ZA` encodes `IDA`'s bit length as the two-byte `ENTLA` (§5.1.2), so an identity of 8191 bytes
+/// `ZA` encodes `IDA`'s bit length as the two-byte `ENTLA` (GB/T 32918.2-2016 §5.5), so an
+/// identity of 8191 bytes
 /// (65528 bits) is the longest that fits and 8192 bytes (65536 bits) is the shortest that does
 /// not. The limit applies on both sides, since verification computes `ZA` too.
 #[test]

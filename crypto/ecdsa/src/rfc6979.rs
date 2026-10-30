@@ -69,13 +69,17 @@ fn bits2octets(h1: &[u8; HLEN]) -> [u8; HLEN] {
 /// `true` iff the raw (unreduced) candidate bytes, read as a big-endian integer, are in `[1,
 /// n-1]` -- RFC 6979 step h.3's comparison against `q`, "not reduced modulo q" (§3.2, footnote to
 /// step h).
+///
+/// The comparison is on the candidate's own bits, so it is done as masks and converted with
+/// `Condition::to_bool`, which tests the combined mask after the optimisation barrier: the one
+/// branch is `generate_k`'s loop decision, which the crate docs list as a timing exception. The
+/// other curves' copies of this function do the same.
 fn candidate_in_range(candidate: &[u8; HLEN]) -> bool {
     let limbs = p256_sec1::limbs_from_be_bytes(candidate);
-    if limbs == [0, 0, 0, 0] {
-        return false;
-    }
+    let is_nonzero = !nat::is_zero(&limbs);
     let (_, borrow) = nat::sub(&limbs, &N_LIMBS);
-    borrow == 1
+    let is_below_n = Condition::<u64>::from_lsb(borrow);
+    (is_nonzero & is_below_n).to_bool()
 }
 
 /// RFC 6979 §3.2 steps a-h: the deterministic per-message secret `k` for private key `d` and
@@ -94,15 +98,25 @@ fn candidate_in_range(candidate: &[u8; HLEN]) -> bool {
 /// whose own docs note it "momentarily holds the plain value ... the caller asked for the bytes"),
 /// so that transient is copied into the `Secret` above but the transient itself is not erased.
 ///
+/// # The rejection loop
+///
 /// The rejection loop (step h.3, "otherwise ... loop") is the one place this crate's own
-/// constant-time rules permit branching on a value derived from a secret. The position, which
-/// applies equally to FIPS 186-5 Appendix A.3.2's and A.4.2's identical loops: a rejection loop is
-/// acceptable when a rejected candidate is discarded entirely and nothing derived from it is ever
-/// used, because the only thing its iteration count can reveal is how many candidates were
-/// rejected -- and that is independent of the `k` finally returned. What must be constant time is
-/// everything subsequently done *with* the accepted `k`, which is the rest of this crate's
-/// concern. For P-256 the question is close to moot anyway: `n` is within `2^-32` of `2^256`, so a
-/// candidate is rejected with negligible probability.
+/// constant-time rules permit branching on a value derived from a secret; the crate docs list it as
+/// an exception. The argument, which applies equally to FIPS 186-5 Appendix A.3.2's and A.4.2's
+/// identical loops: the iteration count is a function of the HMAC-DRBG output stream, i.e. of PRF
+/// outputs under a key derived from `(d, h1)`, so under the PRF assumption it is independent of the
+/// accepted `k` -- which, conditioned on the count, is uniform on `[1, n-1]` -- and reveals nothing
+/// about `d`. It does not rely on a rejected candidate being discarded, which RFC 6979's chaining
+/// never satisfies: after `V` is rejected, `K' = HMAC_K(V || 0x00)` and `V' = HMAC_K'(V)`, and the
+/// accepted `k` is `bits2int(HMAC_K'(V'))`. What must be constant time is everything subsequently
+/// done *with* the accepted `k`, which is the rest of this crate's concern. The same argument
+/// covers every curve in this crate; what differs is the rate. For P-256 the loop is close to dead:
+/// `n` is within `2^-32` of `2^256`, so a candidate is rejected with probability about `2^-32`. The
+/// brainpool modules, where it is a normal path, state their rates and what the count then amounts
+/// to in practice.
+///
+/// The loop rejects only out-of-range candidates. A `k` whose `r` would be `0` is not retried
+/// here: signing returns an error instead (see the crate docs' Security Considerations).
 pub fn generate_k(d: &P256Scalar, h1: &[u8; HLEN]) -> P256Scalar {
     let mut int2octets_d = Secret::<[u8; HLEN]>::new();
     *int2octets_d = d.to_be_bytes(); // §2.3.3, d already in [1, n-1]

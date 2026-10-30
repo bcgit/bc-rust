@@ -144,11 +144,20 @@
 //!
 //! # Security Considerations
 //!
-//! - **The private key `d` and the per-message secret `k` are never handled in variable time.**
-//!   `d` lives in [`bouncycastle_ec::p256_scalar::P256Scalar`] (a [`bouncycastle_utils::secret::Secret`]);
-//!   every operation performed on it or on `k` -- inversion, multiplication, the fixed-base
-//!   scalar multiplication `[k]G` -- is branch-free and does not index memory by their value. See
-//!   [`bouncycastle_ec`]'s own module docs for the constant-time discipline this crate builds on.
+//! - **Everything done with the private key `d` and the accepted per-message secret `k` is
+//!   branch-free and does not index memory by their value**: inversion, multiplication, the
+//!   fixed-base scalar multiplication `[k]G`. `d` lives in
+//!   [`bouncycastle_ec::p256_scalar::P256Scalar`] (a [`bouncycastle_utils::secret::Secret`]); see
+//!   [`bouncycastle_ec`]'s own module docs for the constant-time discipline this crate builds on
+//!   and the exceptions it documents. This crate adds two exceptions of its own:
+//!   - RFC 6979's candidate loop runs a data-dependent number of iterations. On the NIST curves
+//!     and secp256k1 a candidate is rejected with negligible probability; on the brainpool curves
+//!     33 % to 45 % of signatures reject at least one. Under the PRF assumption the count is
+//!     independent of the accepted `k` and reveals nothing about `d`, but it is deterministic per
+//!     `(d, message)`, so a remote observer gets a per-message timing fingerprint. See
+//!     [`rfc6979::generate_k`]'s docs for the argument and the brainpool modules' for the rates.
+//!   - Signing returns an error on `r = 0` or `s = 0` instead of drawing another `k`; that branch
+//!     is on a public outcome.
 //! - **`k` must never repeat across two signatures under the same key with different messages.**
 //!   A repeated `k` leaks `d` directly from two signatures' `(r, s)` pairs (elementary algebra on
 //!   the ECDSA equation). `ECDSA*` therefore depends on its RNG being correctly seeded for every

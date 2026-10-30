@@ -330,3 +330,39 @@ fn known_answer_mul_at_the_reduction_bounds() {
         assert_eq!(fe(a).square(), fe(a).mul(&fe(a)), "square at the same extreme: a = {a:x?}");
     }
 }
+
+/// The one product shape the reduction-bound cases above cannot reach: a product whose two folds
+/// leave the accumulator at or above `2^256`, so that `reduce`'s masked third fold (see its
+/// comment in `p256k1.rs`) is the step that produces the right answer. None of the cases above
+/// reach it -- `(p-1)^2` gives the first fold a high half of `C - 1`, one short of its bound, and
+/// its two folds leave exactly `p + 1`, short of `2^256` by `C - 1` -- and neither does random
+/// sampling: it needs the low half after the first fold to lie within `hi_1 * C <= 2^66` of
+/// `2^256`, probability about `2^-190` per product. The operands are constructed instead, with
+/// `a = 2^255` so that `a * b = (b/2) * 2^256` has an all-zero low half and `b/2` chosen so that
+/// `(b/2) * C` has every low bit set; computed in Python, independently of this crate's arithmetic:
+///
+/// ```text
+/// p = 2**256 - 2**32 - 2**9 - 2**8 - 2**7 - 2**6 - 2**4 - 1
+/// C = 2**256 - p
+/// hi0 = (2**256 - 1) * pow(C, -1, 2**256) % 2**256   # hi0 * C == 2**256 - 1 (mod 2**256)
+/// a, b = 2**255, 2 * hi0                              # a * b == hi0 * 2**256, and b < p
+/// expected = a * b % p
+/// ```
+///
+/// After fold 1 the low half is `2^256 - 1` and the high half `0x3642e7c9`; after fold 2 the
+/// value is `2^256 + 0x3642e89815569618`; the third fold adds `C`. A reduction that assumed the
+/// bit above `2^256` to be zero after two folds returns `0x3642e89815569618`, short by exactly
+/// `C`, and passes every other test in this file.
+#[test]
+fn known_answer_mul_reaching_the_third_fold() {
+    let a = [0x0000000000000000, 0x0000000000000000, 0x0000000000000000, 0x8000000000000000];
+    let b = [0x4f8fedc45bb5959e, 0x869bb80247b6bf4c, 0xc7727a7ad41a913c, 0x6c85cdf5d558f8cc];
+    let expected = [0x3642e899155699e9, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000];
+    let short_by_c =
+        [0x3642e89815569618, 0x0000000000000000, 0x0000000000000000, 0x0000000000000000];
+
+    assert_eq!(fe(a).mul(&fe(b)), fe(expected), "2^255 * b, third fold required");
+    assert_eq!(fe(b).mul(&fe(a)), fe(expected), "commuted: b * 2^255, third fold required");
+    assert_ne!(fe(a).mul(&fe(b)), fe(short_by_c), "the result a two-fold-only reduction gives");
+    assert_eq!(fe(expected).sub(&fe(short_by_c)).to_limbs(), [0x00000001000003d1, 0, 0, 0], "C");
+}

@@ -38,8 +38,10 @@ where
 // could otherwise prove to be one of a small number of constants (a `Condition` mask is all-ones
 // or all-zeros; the accumulator of a comparison loop is zero until the first difference). Given
 // that knowledge the compiler is free to lower an expression like `(t & m) | (f & !m)` to a branch
-// or a conditional move on the secret, or to leave a comparison loop early. To stop that, the value
-// is routed through a volatile store and load.
+// or a conditional move on the secret, or to leave a comparison loop early. A branch on a mask is
+// the same risk in another form: the compiler may replace one test of a combined mask with a test
+// per condition that built it. To stop that, the value is routed through a volatile store and
+// load.
 //
 // This is still a best-effort, not a guarantee.
 // The language guarantees less than is relied on here. The documentation (as of rust 1.99.0) of
@@ -77,8 +79,8 @@ where
     MaskType<T>: SupportedMaskType,
 {
     /// The mask after the optimisation barrier (section comment above), applied at the point of
-    /// use by every consumer that does masked arithmetic. Not `const`: volatile accesses are not
-    /// allowed in const context.
+    /// use by every consumer that does masked arithmetic, and by `to_bool`. Not `const`: volatile
+    /// accesses are not allowed in const context.
     #[inline(always)]
     fn barrier(self) -> Self {
         Self(value_barrier(self.0))
@@ -221,10 +223,15 @@ impl Condition<i64> {
         let t = (lhs ^ rhs) & self.barrier().0;
         (lhs ^ t, rhs ^ t)
     }
-    /// Convert the mask to a runtime boolean. Only use this at genuine public
-    /// decision points: branching on the result leaks the condition's value.
-    pub const fn to_bool(self) -> bool {
-        self.0 != 0
+    /// Convert the mask to a runtime boolean, at a decision whose outcome may be public. The test
+    /// is made on the whole mask, so the compiler is not given the values that built the mask to
+    /// branch on separately (best-effort, like every constant-time construction in this crate). If
+    /// the condition's value itself must stay secret, do not convert it: keep the mask and use
+    /// [`Self::select`].
+    pub fn to_bool(self) -> bool {
+        // The barrier (section comment above) is what stops LLVM from folding the mask away and
+        // branching on its constituents; it is volatile, hence this is not `const`.
+        self.barrier().0 != 0
     }
 }
 
@@ -360,10 +367,15 @@ impl Condition<i32> {
         let t = (lhs ^ rhs) & self.barrier().0;
         (lhs ^ t, rhs ^ t)
     }
-    /// Convert the mask to a runtime boolean. Only use this at genuine public
-    /// decision points: branching on the result leaks the condition's value.
-    pub const fn to_bool(self) -> bool {
-        self.0 != 0
+    /// Convert the mask to a runtime boolean, at a decision whose outcome may be public. The test
+    /// is made on the whole mask, so the compiler is not given the values that built the mask to
+    /// branch on separately (best-effort, like every constant-time construction in this crate). If
+    /// the condition's value itself must stay secret, do not convert it: keep the mask and use
+    /// [`Self::select`].
+    pub fn to_bool(self) -> bool {
+        // The barrier (section comment above) is what stops LLVM from folding the mask away and
+        // branching on its constituents; it is volatile, hence this is not `const`.
+        self.barrier().0 != 0
     }
 }
 
@@ -451,10 +463,15 @@ impl Condition<u64> {
         let t = (lhs ^ rhs) & self.barrier().0;
         (lhs ^ t, rhs ^ t)
     }
-    /// Convert the mask to a runtime boolean. Only use this at genuine public
-    /// decision points: branching on the result leaks the condition's value.
-    pub const fn to_bool(self) -> bool {
-        self.0 != 0
+    /// Convert the mask to a runtime boolean, at a decision whose outcome may be public. The test
+    /// is made on the whole mask, so the compiler is not given the values that built the mask to
+    /// branch on separately (best-effort, like every constant-time construction in this crate). If
+    /// the condition's value itself must stay secret, do not convert it: keep the mask and use
+    /// [`Self::select`].
+    pub fn to_bool(self) -> bool {
+        // The barrier (section comment above) is what stops LLVM from folding the mask away and
+        // branching on its constituents; it is volatile, hence this is not `const`.
+        self.barrier().0 != 0
     }
 }
 
@@ -531,10 +548,15 @@ impl Condition<u32> {
         let t = (lhs ^ rhs) & self.barrier().0;
         (lhs ^ t, rhs ^ t)
     }
-    /// Convert the mask to a runtime boolean. Only use this at genuine public
-    /// decision points: branching on the result leaks the condition's value.
-    pub const fn to_bool(self) -> bool {
-        self.0 != 0
+    /// Convert the mask to a runtime boolean, at a decision whose outcome may be public. The test
+    /// is made on the whole mask, so the compiler is not given the values that built the mask to
+    /// branch on separately (best-effort, like every constant-time construction in this crate). If
+    /// the condition's value itself must stay secret, do not convert it: keep the mask and use
+    /// [`Self::select`].
+    pub fn to_bool(self) -> bool {
+        // The barrier (section comment above) is what stops LLVM from folding the mask away and
+        // branching on its constituents; it is volatile, hence this is not `const`.
+        self.barrier().0 != 0
     }
 }
 
