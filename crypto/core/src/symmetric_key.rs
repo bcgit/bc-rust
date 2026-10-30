@@ -1064,12 +1064,13 @@ pub trait BlockEncryptionKey<
         rng: &mut dyn RNG,
     ) -> Result<(Self::Encryptor<'k>, [u8; INIT_DATA_LEN]), SymmetricCipherError>;
 
-    /// One-shot: encrypts `LEN` bytes, a whole number of blocks, in place under init data drawn
-    /// from `rng`, and returns the number of bytes written with the init data. `LEN % BLOCK_LEN
-    /// == 0` is checked at compile time, as for [`BlockCipherEncryptor::do_encrypt_blocks_inplace`].
+    /// One-shot: encrypts `data`, which must be a whole number of blocks, in place under init
+    /// data drawn from `rng`, and returns the number of bytes written with the init data.
     ///
     /// # Errors
-    /// As [`create_encryptor`](Self::create_encryptor), or the encryptor's own refusals.
+    /// [`SymmetricCipherError::DataNotBlockAligned`] if `data.len()` is not a multiple of
+    /// `BLOCK_LEN`; otherwise as [`create_encryptor`](Self::create_encryptor), or the encryptor's
+    /// own refusals.
     fn encrypt_inplace(
         &self,
         rng: &mut dyn RNG,
@@ -1102,11 +1103,12 @@ pub trait BlockDecryptionKey<
     /// Begins the decryption of a message whose encryptor returned `init_data`.
     fn create_decryptor<'k>(&'k self, init_data: &[u8; INIT_DATA_LEN]) -> Self::Decryptor<'k>;
 
-    /// One-shot: decrypts `LEN` bytes, a whole number of blocks, in place under `init_data`, and
-    /// returns the number of bytes written. `LEN % BLOCK_LEN == 0` is checked at compile time.
+    /// One-shot: decrypts `data`, which must be a whole number of blocks, in place under
+    /// `init_data`, and returns the number of bytes written.
     ///
     /// # Errors
-    /// The decryptor's own refusals.
+    /// [`SymmetricCipherError::DataNotBlockAligned`] if `data.len()` is not a multiple of
+    /// `BLOCK_LEN`; otherwise the decryptor's own refusals.
     fn decrypt_inplace(
         &self,
         init_data: &[u8; INIT_DATA_LEN],
