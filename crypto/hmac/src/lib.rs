@@ -122,6 +122,8 @@
 #![forbid(unsafe_code)]
 #![forbid(missing_docs)]
 
+pub mod hazmat;
+
 use bouncycastle_core::errors::{KeyMaterialError, MACError, RNGError, SuspendableError};
 use bouncycastle_core::hazmat::do_hazardous_operations;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
@@ -291,7 +293,8 @@ impl<HASH: Hash + Default> FromAnyKeyMaterial for HmacKey<HASH> {
     }
 
     /// Draws a key of the hash's output length (RFC 2104 Section 3's recommended minimum) from
-    /// `rng`, tagged [`KeyType::MACKey`] at the RNG's strength, and builds the key from it.
+    /// `rng`, tagged [`KeyType::MACKey`] at the RNG's strength capped at what that length can
+    /// carry, and builds the key from it.
     ///
     /// # Errors
     /// [`MACError::KeyMaterialError`] if the RNG fails, or with
@@ -316,11 +319,9 @@ impl<HASH: Hash + Default> FromAnyKeyMaterial for HmacKey<HASH> {
 
 impl<HASH: Hash + Default> HmacKey<HASH> {
     /// `H` after absorbing `K XOR ipad`, ready for the text: the start of RFC 2104 Section 2
-    /// step (4). What a worker's updates feed; `finish_out` is its other half. Hidden: the two
-    /// exist for HKDF's extract phase, which cannot hold a worker that borrows a key it owns, and
-    /// are not part of the key's documented API.
-    #[doc(hidden)]
-    pub fn inner_state(&self) -> HASH {
+    /// step (4). What a worker's updates feed; `finish_out` is its other half. The pair is
+    /// reachable outside the crate only through [`hazmat`].
+    pub(crate) fn inner_state(&self) -> HASH {
         self.inner.clone()
     }
 
@@ -330,8 +331,7 @@ impl<HASH: Hash + Default> HmacKey<HASH> {
     ///
     /// # Errors
     /// [`MACError::InvalidLength`] if `out` is shorter than [`MIN_FIPS_DIGEST_LEN`].
-    #[doc(hidden)]
-    pub fn finish_out(&self, inner: HASH, out: &mut [u8]) -> Result<usize, MACError> {
+    pub(crate) fn finish_out(&self, inner: HASH, out: &mut [u8]) -> Result<usize, MACError> {
         out.fill(0);
         if out.len() < MIN_FIPS_DIGEST_LEN {
             return Err(MACError::InvalidLength(

@@ -115,6 +115,7 @@ use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::symmetric_key::{FromAnyKeyMaterial, MacGenerationKey};
 use bouncycastle_core::traits::{Hash, HashAlgParams, KDF, MAC, Suspendable, SuspendableKeyed};
 use bouncycastle_hmac::HmacKey;
+use bouncycastle_hmac::hazmat as hmac_hazmat;
 use bouncycastle_utils::suspendable_state::{add_lib_ver, check_lib_ver};
 use bouncycastle_utils::{max, min};
 use std::marker::PhantomData;
@@ -172,7 +173,7 @@ pub struct HKDF<
 
 /// The extract phase's HMAC, held as its two halves: the salt key and the inner hash absorbing
 /// the IKM. An `HMAC` worker borrows its key, and a struct cannot borrow from itself, so the
-/// phase is run through [`HmacKey::inner_state`] and [`HmacKey::finish_out`] instead.
+/// phase is run through `bouncycastle_hmac::hazmat`'s `inner_state` and `finish_out` instead.
 #[derive(Clone)]
 struct HkdfExtract<H: Hash + HashAlgParams + Default> {
     key: HmacKey<H>,
@@ -503,7 +504,7 @@ impl<H: Hash + HashAlgParams + Default, const HASH_STATE_LEN: usize, const HKDF_
         // Key strength errors are ignored here.
         // This will all be tabulated correctly via entropy.credit_entropy()
         let key = HmacKey::<H>::from_key_material_allow_weak(salt)?;
-        let inner = key.inner_state();
+        let inner = hmac_hazmat::inner_state(&key);
         self.hmac = Some(HkdfExtract { key, inner });
 
         let additional_entropy = self.entropy.credit_entropy(salt);
@@ -590,8 +591,7 @@ impl<H: Hash + HashAlgParams + Default, const HASH_STATE_LEN: usize, const HKDF_
         let mut bytes_written = 0;
         let HkdfExtract { key, inner } = self.hmac.unwrap();
         do_hazardous_operations(prk, |okm| {
-            bytes_written = key
-                .finish_out(inner, okm.ref_to_bytes_mut()?)
+            bytes_written = hmac_hazmat::finish_out(&key, inner, okm.ref_to_bytes_mut()?)
                 .map_err(|_| KeyMaterialError::GenericError("HMAC do_final_out failed"))?;
             okm.set_key_len(bytes_written)?;
             okm.set_key_type(output_key_type)?;
