@@ -625,7 +625,6 @@ impl Ascon_AEAD128<Decrypting> {
 /// let plaintext = key.decrypt_detached(&nonce, b"header", &ciphertext, &tag).unwrap();
 /// assert_eq!(plaintext, b"attack at dawn");
 /// ```
-#[allow(non_camel_case_types)]
 pub struct AsconAEAD128Key {
     key: Secret<[u64; 2]>,
 }
