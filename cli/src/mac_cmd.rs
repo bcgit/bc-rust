@@ -105,14 +105,14 @@ pub(crate) fn kmac_cmd(
     match bit_len {
         128 => do_mac(
             KMAC128Key::with_params_allow_weak(&key, s, length)
-                .expect("a valid MAC key")
+                .expect("a valid MAC key and tag length")
                 .create_generator(),
             verify_val,
             output_hex,
         ),
         256 => do_mac(
             KMAC256Key::with_params_allow_weak(&key, s, length)
-                .expect("a valid MAC key")
+                .expect("a valid MAC key and tag length")
                 .create_generator(),
             verify_val,
             output_hex,
