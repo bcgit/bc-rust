@@ -3,8 +3,9 @@
 //! a two-key key can do, decrypt.
 
 use bouncycastle_cipher::modes::hazmat::ecb::ECB;
-use bouncycastle_cipher::modes::{Blocks, CBC, CFB, CFB8, CTR, ModeNames};
+use bouncycastle_cipher::modes::{Blocks, CBC, CFB, CFB8, CMAC, CTR, ModeNames};
 use bouncycastle_cipher::padding::{NoPadding, PKCS7};
+use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
 use bouncycastle_core::hazmat::{BlockPermutation, EcbDecryptionKey, ElectronicCodeBook, Mode};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
@@ -196,4 +197,31 @@ fn keys_compare_equal_exactly_when_their_material_does_to_the_engine() {
         key != TDES2Key::<Ctr6>::from_key_material(&material_flipped::<KEY_LEN_2KEY>(0x02))
             .unwrap()
     );
+}
+
+/// A key under a MAC mode has no role here, and its `KEY_TYPE` is the `MACKey` the mode asks
+/// for: cipher material is refused for its type, and MAC material by the engine, so the
+/// constructor never contradicts the constant and `generate` fails the same way.
+#[test]
+fn a_mac_mode_key_refuses_every_material_consistently() {
+    fn refused<K>(r: Result<K, SymmetricCipherError>) {
+        assert!(matches!(
+            r,
+            Err(SymmetricCipherError::KeyMaterialError(KeyMaterialError::InvalidKeyType(_)))
+        ));
+    }
+    fn mac_material<const N: usize>() -> KeyMaterial<N> {
+        let bytes: [u8; N] = core::array::from_fn(|i| (i as u8).wrapping_mul(7).wrapping_add(1));
+        KeyMaterial::<N>::from_bytes_as_type(&bytes, KeyType::MACKey).unwrap()
+    }
+    type Mac3 = TDES3Key<CMAC<BLOCK_LEN>>;
+    type Mac2 = TDES2Key<CMAC<BLOCK_LEN>>;
+    assert_eq!(Mac3::KEY_TYPE, KeyType::MACKey);
+    assert_eq!(Mac2::KEY_TYPE, KeyType::MACKey);
+    refused(Mac3::from_key_material(&material::<KEY_LEN>()));
+    refused(Mac3::from_key_material(&mac_material::<KEY_LEN>()));
+    refused(Mac3::generate(&mut rng()));
+    refused(Mac2::from_key_material(&material::<KEY_LEN_2KEY>()));
+    refused(Mac2::from_key_material(&mac_material::<KEY_LEN_2KEY>()));
+    refused(Mac2::generate(&mut rng()));
 }
