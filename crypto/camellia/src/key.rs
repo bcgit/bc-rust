@@ -39,21 +39,16 @@ use crate::hazmat::{
     Camellia128Internal, Camellia192Internal, Camellia256Internal, CamelliaInternal,
 };
 use crate::schedule::{Camellia128Params, Camellia192Params, Camellia256Params, CamelliaParams};
-use bouncycastle_core::errors::SymmetricCipherError;
+use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
 use bouncycastle_core::hazmat::{
     BlockDecryptMode, BlockEncryptMode, Mode, ModeKey, SymmetricDecryptMode, SymmetricEncryptMode,
 };
-use bouncycastle_core::key_material::{KeyMaterial, KeyType};
+use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::symmetric_key::{
     BlockDecryptionKey, BlockEncryptionKey, FromKeyMaterial, SymmetricDecryptionKey,
     SymmetricEncryptionKey,
 };
 use bouncycastle_core::traits::RNG;
-
-// Imports needed for docs
-#[allow(unused_imports)]
-use bouncycastle_core::errors::KeyMaterialError;
-// end of imports needed for docs
 
 /// A Camellia key for the mode `M`, parameterised by key length. Use the aliases
 /// [`Camellia128Key`], [`Camellia192Key`] and [`Camellia256Key`] rather than naming this directly.
@@ -100,6 +95,21 @@ where
 {
 }
 
+/// The key-type check the mode asks for (`Mode::KEY_TYPE`), ahead of the permutation's own
+/// validation.
+fn check_key_type(
+    key: &dyn KeyMaterialTrait,
+    expected: KeyType,
+) -> Result<(), SymmetricCipherError> {
+    if key.key_type() != expected {
+        return Err(KeyMaterialError::InvalidKeyType(
+            "The key is not of the KeyType this mode requires.",
+        )
+        .into());
+    }
+    Ok(())
+}
+
 // The constructors are implemented per key length rather than once over `P`, because stable Rust
 // cannot name `KeyMaterial<{ P::KEY_LEN }>` in a generic signature; the fixed-capacity argument
 // is what makes a wrong-length key a compile error rather than a runtime one.
@@ -107,14 +117,17 @@ where
 impl<M: Mode<Camellia128Internal>> FromKeyMaterial<16> for Camellia128Key<M> {
     const KEY_TYPE: KeyType = M::KEY_TYPE;
 
-    /// Validates and expands a 16-byte key. The checks are the permutation's: every mode with a
-    /// role here asks for the `SymmetricCipherKey` it requires.
+    /// Validates and expands a 16-byte key: the key type the mode asks for, then the
+    /// permutation's own checks. Every mode with a role here asks for a `SymmetricCipherKey`, so
+    /// under a MAC mode, which asks for a `MACKey`, no material passes both.
     ///
     /// # Errors
-    /// * [`KeyMaterialError::InvalidKeyType`] if the key is not a `SymmetricCipherKey`.
+    /// * [`KeyMaterialError::InvalidKeyType`] if the key is not of [`Self::KEY_TYPE`], or not a
+    ///   `SymmetricCipherKey`.
     /// * [`KeyMaterialError::InvalidLength`] if the key is not 16 bytes long.
     /// * [`KeyMaterialError::SecurityStrength`] if the key carries a strength below 128 bits.
     fn from_key_material(key: &KeyMaterial<16>) -> Result<Self, SymmetricCipherError> {
+        check_key_type(key, M::KEY_TYPE)?;
         Ok(Self { state: M::key_state(Camellia128Internal::new(key)?) })
     }
 }
@@ -125,6 +138,7 @@ impl<M: Mode<Camellia192Internal>> FromKeyMaterial<24> for Camellia192Key<M> {
     /// Validates and expands a 24-byte key; the errors are those of the 16-byte form, at 24
     /// bytes and 192 bits.
     fn from_key_material(key: &KeyMaterial<24>) -> Result<Self, SymmetricCipherError> {
+        check_key_type(key, M::KEY_TYPE)?;
         Ok(Self { state: M::key_state(Camellia192Internal::new(key)?) })
     }
 }
@@ -135,6 +149,7 @@ impl<M: Mode<Camellia256Internal>> FromKeyMaterial<32> for Camellia256Key<M> {
     /// Validates and expands a 32-byte key; the errors are those of the 16-byte form, at 32
     /// bytes and 256 bits.
     fn from_key_material(key: &KeyMaterial<32>) -> Result<Self, SymmetricCipherError> {
+        check_key_type(key, M::KEY_TYPE)?;
         Ok(Self { state: M::key_state(Camellia256Internal::new(key)?) })
     }
 }

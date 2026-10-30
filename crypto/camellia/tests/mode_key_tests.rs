@@ -5,8 +5,9 @@
 use bouncycastle_camellia::hazmat::{Camellia128Internal, Camellia256Internal};
 use bouncycastle_camellia::{Camellia128Key, Camellia256Key};
 use bouncycastle_cipher::modes::hazmat::ecb::ECB;
-use bouncycastle_cipher::modes::{Blocks, CBC, CFB, CFB8, CTR, ModeNames};
+use bouncycastle_cipher::modes::{Blocks, CBC, CFB, CFB8, CMAC, CTR, ModeNames};
 use bouncycastle_cipher::padding::{NoPadding, PKCS7};
+use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
 use bouncycastle_core::hazmat::Mode;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
@@ -129,4 +130,30 @@ fn keys_compare_equal_exactly_when_their_material_does() {
     let key = key256::<CTR>();
     assert!(key == key256::<CTR>());
     assert!(key != Camellia256Key::<CTR>::from_key_material(&material_flipped::<32>()).unwrap());
+}
+
+/// A key under a MAC mode has no role here, and its `KEY_TYPE` is the `MACKey` the mode asks
+/// for: cipher material is refused for its type, and MAC material by the permutation, so the
+/// constructor never contradicts the constant and `generate` fails the same way.
+#[test]
+fn a_mac_mode_key_refuses_every_material_consistently() {
+    fn refused<K>(r: Result<K, SymmetricCipherError>) {
+        assert!(matches!(
+            r,
+            Err(SymmetricCipherError::KeyMaterialError(KeyMaterialError::InvalidKeyType(_)))
+        ));
+    }
+    fn mac_material<const N: usize>() -> KeyMaterial<N> {
+        KeyMaterial::<N>::from_bytes_as_type(&[0x42; N], KeyType::MACKey).unwrap()
+    }
+    type Mac128 = Camellia128Key<CMAC<16>>;
+    type Mac256 = Camellia256Key<CMAC<16>>;
+    assert_eq!(Mac128::KEY_TYPE, KeyType::MACKey);
+    assert_eq!(Mac256::KEY_TYPE, KeyType::MACKey);
+    refused(Mac128::from_key_material(&material::<16>()));
+    refused(Mac128::from_key_material(&mac_material::<16>()));
+    refused(Mac128::generate(&mut rng()));
+    refused(Mac256::from_key_material(&material::<32>()));
+    refused(Mac256::from_key_material(&mac_material::<32>()));
+    refused(Mac256::generate(&mut rng()));
 }
