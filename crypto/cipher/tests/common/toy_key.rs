@@ -11,7 +11,7 @@ use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
 use bouncycastle_core::hazmat::{
     AeadDeclaredDecryptMode, AeadDeclaredEncryptMode, AeadDecryptMode, AeadEncryptMode,
     BlockDecryptMode, BlockEncryptMode, BlockPermutation, EcbDecryptMode, EcbDecryptionKey,
-    EcbEncryptMode, EcbEncryptionKey, ElectronicCodeBook, MacMode, Mode, ModeKey,
+    EcbEncryptMode, EcbEncryptionKey, ElectronicCodeBook, MacMode, Mode, ModeKey, NonceMacMode,
     SymmetricDecryptMode, SymmetricEncryptMode, do_hazardous_operations,
 };
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
@@ -388,21 +388,21 @@ where
         &'k self,
         rng: &mut dyn RNG,
     ) -> Result<(Gmac<'k, P, Encrypting, TAG_LEN>, [u8; GCM_NONCE_LEN]), SymmetricCipherError> {
-        Gmac::<P, Encrypting, TAG_LEN>::from_key_state(&self.state, rng)
+        GMAC::<TAG_LEN>::generate_init(&self.state, rng)
     }
 
     pub fn create_generator_nonce<'k>(
         &'k self,
         nonce: &[u8; GCM_NONCE_LEN],
     ) -> Gmac<'k, P, Encrypting, TAG_LEN> {
-        Gmac::<P, Encrypting, TAG_LEN>::from_key_state_nonce(&self.state, nonce)
+        GMAC::<TAG_LEN>::generate_init_nonce(&self.state, nonce)
     }
 
     pub fn create_verifier<'k>(
         &'k self,
         nonce: &[u8; GCM_NONCE_LEN],
     ) -> Gmac<'k, P, Decrypting, TAG_LEN> {
-        Gmac::<P, Decrypting, TAG_LEN>::from_key_state(&self.state, nonce)
+        GMAC::<TAG_LEN>::verify_init(&self.state, nonce)
     }
 }
 
