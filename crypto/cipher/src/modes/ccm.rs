@@ -1974,9 +1974,10 @@ where
             _ => return Err(SuspendableError::InvalidData),
         };
         debug_assert!(r.is_done());
-        // `B0` commits to `DATA_LEN`, so no more than that can still be owed; and until the
-        // header is formatted the CBC-MAC has absorbed nothing and no AAD is owed to it.
-        if ccm.owed > DATA_LEN || (!formatted && (ccm.mac_pos != 0 || ccm.aad_owed != 0)) {
+        // `B0` commits to `DATA_LEN`, so no more than that can still be owed. No AAD is ever
+        // owed: until the header is formatted the CBC-MAC has absorbed nothing, and `begin_data`
+        // declares the AAD and absorbs all of it in one step.
+        if ccm.owed > DATA_LEN || ccm.aad_owed != 0 || (!formatted && ccm.mac_pos != 0) {
             return Err(SuspendableError::InvalidData);
         }
         Ok(Self { ccm, aad, aad_len, formatted })

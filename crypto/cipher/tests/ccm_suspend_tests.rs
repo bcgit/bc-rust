@@ -4,8 +4,8 @@
 //! The round trips in `suspend_tests.rs` show that a faithful state resumes. These show that an
 //! unfaithful one does not, which is the other half of the contract and the half that pins each
 //! check individually: with the flags octet, the counter field, the counter index, the CBC-MAC
-//! position, the owed payload, the AAD length and the phase flag all validated, a test that
-//! corrupts several at once would still pass if any one check were dropped.
+//! position, the owed payload, the owed AAD, the AAD length and the phase flag all validated, a
+//! test that corrupts several at once would still pass if any one check were dropped.
 //!
 //! The offsets are those of the layout the `SuspendableComponent` impls write, in order: the
 //! library version, the `Ccm` state (the keystream's counter template and counter index, the
@@ -185,6 +185,17 @@ fn an_unformatted_state_has_absorbed_nothing() {
     assert_eq!(mid_payload()[FORMATTED], 1);
 }
 
+/// `aad_owed` is the AAD still to come after the header declared it, and `begin_data` declares
+/// and absorbs the AAD in one step, so a packet worker never holds a non-zero count: not before
+/// the header (the test above) and not after it either.
+#[test]
+fn no_aad_is_owed_once_the_header_is_formatted() {
+    let state = mid_payload();
+    assert_eq!(state[FORMATTED], 1);
+    assert_eq!(resumes(with_u64(state, AAD_OWED, 1)), Err(SuspendableError::InvalidData));
+    assert_eq!(resumes(with_u64(state, AAD_OWED, u64::MAX)), Err(SuspendableError::InvalidData));
+}
+
 /// The held-back AAD can be no longer than the buffer that holds it.
 #[test]
 fn the_aad_length_is_held_to_its_capacity() {
@@ -211,6 +222,7 @@ fn the_decrypting_direction_checks_the_same_bounds() {
 
     assert!(resumes(state).is_ok());
     assert!(resumes(with_u64(state, OWED, DATA_LEN as u64 + 1)).is_err());
+    assert!(resumes(with_u64(state, AAD_OWED, 1)).is_err());
     assert!(resumes(with_u64(state, NEXT_CTR, 0)).is_err());
     assert!(resumes(with_u64(state, TAG_LEN_AT, 16)).is_ok());
     assert!(resumes(with_u64(state, TAG_LEN_AT, 17)).is_err());
