@@ -12,98 +12,88 @@
 //! A key of any length is accepted: per RFC 2104, a key longer than the hash's block -- for SHA-3
 //! the sponge *rate*, FIPS 202 Table 3's "Input block sizes for HMAC", which shrinks as the output
 //! size grows -- is pre-hashed to the output length. The key's two pad states are computed once,
-//! when an [`HmacKey`](bouncycastle_hmac::HmacKey) is built or a worker is constructed from key
-//! material.
+//! when the [`HmacKey`] is built.
 //!
 //! # Usage
 //!
-//! An HMAC object (and the [`MAC`] trait in general) is used in three phases:
+//! An [`HmacKey`] is built once from key material and hands out [`MAC`] workers, one per message:
 //!
-//! * The initialization phase where you specify the underlying hash function and the key material.
-//! * The update phase where you feed in the content being MAC'd, either in one-shot or in chunks.
-//! * The finalization phase where you either obtain the MAC value or verify an existing MAC value.
-//!
-//! The initialization phase is primarily performed via the [`MAC::new`] function which performs
-//! checks on the provided key to ensure that it is of the correct type [`KeyType::MACKey`] and tagged
-//! at the correct security level for the chosen hash function. In cases where you need to use HMAC
-//! with an intentially week key (such as an all-zero salt), the alternative constructor
-//! [`MAC::new_allow_weak_key`] can be used.
-//!
-//! The update phase supports streaming of the content via the repeated calls to the [`MAC::do_update`] function.
-//! One-shot APIs are provided that combine the update and finalization phases into a single function call.
+//! * [`FromAnyKeyMaterial::from_key_material`] checks that the material is a [`KeyType::MACKey`]
+//!   tagged at the security strength of the chosen hash. Where a protocol calls for a weak key
+//!   (an all-zero salt, say), [`FromAnyKeyMaterial::from_key_material_allow_weak`] skips the
+//!   strength check.
+//! * [`MacGenerationKey::create_generator`] / [`MacVerificationKey::create_verifier`] start a
+//!   worker, whose [`MAC::do_update`] takes the content in chunks and whose [`MAC::do_final`] /
+//!   [`MAC::do_verify_final`] finish it. The key's own [`MacGenerationKey::mac`] and
+//!   [`MacVerificationKey::verify`] are the one-shots.
 //!
 //! # Usage Examples
 //!
-//! ## Constructing an HMAC object
+//! ## Building the key
 //!
-//! Instantiation of an HMAC object is straightforward. A key of the right length for the chosen hash
-//! can be generated with [`HMAC::keygen_from_rng`]:
+//! A key of the right length for the chosen hash is drawn with [`FromAnyKeyMaterial::generate`]:
 //!
 //! ```
-//! use bouncycastle_core::key_material::KeyMaterial256;
-//! use bouncycastle_core::traits::MAC;
+//! use bouncycastle_core::symmetric_key::FromAnyKeyMaterial;
+//! use bouncycastle_hmac::HmacKey;
 //! use bouncycastle_rng::DefaultRNG;
-//! use bouncycastle_sha3::hmac::HMAC_SHA3_256;
+//! use bouncycastle_sha3::SHA3_256;
 //!
 //! let mut rng = DefaultRNG::new_from_os();
-//! let key: KeyMaterial256 = HMAC_SHA3_256::keygen_from_rng(&mut rng)
+//! let key = HmacKey::<SHA3_256>::generate(&mut rng)
 //!         .expect("Will only fail if the system RNG can't start up.");
-//!
-//! let hmac = HMAC_SHA3_256::new(&key).expect(
-//!         "Should succeed because key is long enough and tagged KeyType::MACKey");
 //! ```
 //!
-//! Alternatively, if you have key material from somewhere else, you can create the key manually,
-//! like so:
+//! Alternatively, if you have key material from somewhere else, you can build the key from it:
 //!
 //! ```
 //! use bouncycastle_core::key_material::{KeyMaterial256, KeyType};
-//! use bouncycastle_core::traits::MAC;
-//! use bouncycastle_sha3::hmac::HMAC_SHA3_256;
+//! use bouncycastle_core::symmetric_key::FromAnyKeyMaterial;
+//! use bouncycastle_hmac::HmacKey;
+//! use bouncycastle_sha3::SHA3_256;
 //!
-//! let key = KeyMaterial256::from_bytes_as_type(
+//! let key_material = KeyMaterial256::from_bytes_as_type(
 //!             b"\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f",
 //!             KeyType::MACKey).unwrap();
 //!
-//! let hmac = HMAC_SHA3_256::new(&key).expect(
+//! let key = HmacKey::<SHA3_256>::from_key_material(&key_material).expect(
 //!         "Should succeed because key is long enough and tagged KeyType::MACKey");
 //! ```
 //!
 //! ## Computing a MAC
 //!
-//! MAC functionality is accessed via the [`MAC`] trait.
-//!
-//! The simplest usage is via the one-shot functions.
+//! The simplest usage is the key's one-shot:
 //!
 //! ```
-//! use bouncycastle_core::key_material::KeyMaterial256;
-//! use bouncycastle_core::traits::MAC;
+//! use bouncycastle_core::symmetric_key::{FromAnyKeyMaterial, MacGenerationKey};
+//! use bouncycastle_hmac::HmacKey;
 //! use bouncycastle_rng::DefaultRNG;
-//! use bouncycastle_sha3::hmac::HMAC_SHA3_256;
+//! use bouncycastle_sha3::SHA3_256;
 //!
 //! let mut rng = DefaultRNG::new_from_os();
-//! let key: KeyMaterial256 = HMAC_SHA3_256::keygen_from_rng(&mut rng)
+//! let key = HmacKey::<SHA3_256>::generate(&mut rng)
 //!         .expect("Will only fail if the system RNG can't start up.");
 //!
 //! let data: &[u8] = b"Hello, world!";
-//! let hmac = HMAC_SHA3_256::new(&key).expect("Should succeed because key is long enough and tagged KeyType::MACKey");
-//! let output: Vec<u8> = hmac.mac(data);
+//! let output: Vec<u8> = key.mac(data);
 //! ```
 //!
-//! More advanced usage will require creating an HMAC object to hold state between successive calls,
-//! for example if input is received in chunks and not all available at the same time:
+//! A worker holds state between successive calls, for example if input is received in chunks and
+//! not all available at the same time:
 //!
 //! ```
-//! use bouncycastle_core::key_material::KeyMaterial256;
+//! use bouncycastle_core::symmetric_key::{FromAnyKeyMaterial, MacGenerationKey};
 //! use bouncycastle_core::traits::MAC;
+//! use bouncycastle_hmac::HmacKey;
 //! use bouncycastle_rng::DefaultRNG;
+//! use bouncycastle_sha3::SHA3_256;
 //! use bouncycastle_sha3::hmac::HMAC_SHA3_256;
 //!
 //! let mut rng = DefaultRNG::new_from_os();
-//! let key: KeyMaterial256 = HMAC_SHA3_256::keygen_from_rng(&mut rng)
+//! let key = HmacKey::<SHA3_256>::generate(&mut rng)
 //!         .expect("Will only fail if the system RNG can't start up.");
 //!
-//! let mut hmac = HMAC_SHA3_256::new(&key).expect("Should succeed because key is long enough and tagged KeyType::MACKey");
+//! let mut hmac: HMAC_SHA3_256 = key.create_generator();
 //! hmac.do_update(b"Hello,");
 //! hmac.do_update(b" world!");
 //! let output: Vec<u8> = hmac.do_final();
@@ -111,31 +101,30 @@
 //!
 //! ## Verifying a MAC
 //!
-//! The [`MAC`] trait also provides functions for MAC verification. The built-in verification
-//! functions use constant-time comparisons and so are *strongly recommended* rather than
-//! re-computing the MAC value and comparing it yourself.
+//! The built-in verification functions use constant-time comparisons and so are *strongly
+//! recommended* rather than re-computing the MAC value and comparing it yourself.
 //!
-//! The simplest usage is via the one-shot functions.
+//! The simplest usage is the key's one-shot:
 //!
 //! ```
 //! use bouncycastle_core::key_material::{KeyMaterial256, KeyType};
-//! use bouncycastle_core::traits::MAC;
-//! use bouncycastle_sha3::hmac::HMAC_SHA3_256;
+//! use bouncycastle_core::symmetric_key::{FromAnyKeyMaterial, MacVerificationKey};
+//! use bouncycastle_hmac::HmacKey;
+//! use bouncycastle_sha3::SHA3_256;
 //!
 //! // For this example to work, we are hard-coding both the key and the MAC value that it generates
 //! // for this data.
-//! let key = KeyMaterial256::from_bytes_as_type(
+//! let key_material = KeyMaterial256::from_bytes_as_type(
 //!             b"\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f",
 //!             KeyType::MACKey).unwrap();
+//! let key = HmacKey::<SHA3_256>::from_key_material(&key_material).unwrap();
 //!
 //! let data: &[u8] = b"Hello, world!";
 //!
 //! // .verify() returns a bool: true if the MAC is valid, false otherwise.
-//! if HMAC_SHA3_256::new(&key).unwrap()
-//!                 .verify(data,
-//!                         b"\x9c\x49\x05\x83\xff\xf3\x59\x6a\x59\x01\x4a\x0d\x95\xb4\x64\x00
-//!                            \x7d\x5b\xb7\x40\xb3\x84\x20\x7a\x3c\x76\x76\xd8\xc9\x93\xda\xd7"
-//!                         )
+//! if key.verify(data,
+//!               b"\x9c\x49\x05\x83\xff\xf3\x59\x6a\x59\x01\x4a\x0d\x95\xb4\x64\x00
+//!                  \x7d\x5b\xb7\x40\xb3\x84\x20\x7a\x3c\x76\x76\xd8\xc9\x93\xda\xd7")
 //! {
 //!     println!("MAC is valid!");
 //! } else {
@@ -148,15 +137,18 @@
 //!
 //! ```
 //! use bouncycastle_core::key_material::{KeyMaterial256, KeyType};
+//! use bouncycastle_core::symmetric_key::{FromAnyKeyMaterial, MacVerificationKey};
 //! use bouncycastle_core::traits::MAC;
-//! use bouncycastle_sha3::hmac::HMAC_SHA3_256;
+//! use bouncycastle_hmac::HmacKey;
+//! use bouncycastle_sha3::SHA3_256;
 //!
 //! // For this example to work, we are hard-coding both the key and the MAC value that it generates
 //! // for this data.
-//! let key = KeyMaterial256::from_bytes_as_type(
+//! let key_material = KeyMaterial256::from_bytes_as_type(
 //!             b"\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f",
 //!             KeyType::MACKey).unwrap();
-//! let mut hmac = HMAC_SHA3_256::new(&key).unwrap();
+//! let key = HmacKey::<SHA3_256>::from_key_material(&key_material).unwrap();
+//! let mut hmac = key.create_verifier();
 //! hmac.do_update(b"Hello,");
 //! hmac.do_update(b" world!");
 //! if hmac.do_verify_final(b"\x9c\x49\x05\x83\xff\xf3\x59\x6a\x59\x01\x4a\x0d\x95\xb4\x64\x00\x7d\x5b\xb7\x40\xb3\x84\x20\x7a\x3c\x76\x76\xd8\xc9\x93\xda\xd7"
@@ -186,7 +178,10 @@
 //!
 //! ```rust
 //! use bouncycastle_core::key_material::{KeyMaterial256, KeyType};
+//! use bouncycastle_core::symmetric_key::{FromAnyKeyMaterial, MacGenerationKey};
 //! use bouncycastle_core::traits::{MAC, SuspendableKeyed};
+//! use bouncycastle_hmac::HmacKey;
+//! use bouncycastle_sha3::SHA3_256;
 //! use bouncycastle_sha3::hmac::HMAC_SHA3_256;
 //!
 //! let msg_part1 = b"The quick brown fox";
@@ -196,7 +191,8 @@
 //!             b"\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f",
 //!             KeyType::MACKey).unwrap();
 //!
-//! let mut hmac = HMAC_SHA3_256::new(&key).unwrap();
+//! let key = HmacKey::<SHA3_256>::from_key_material(&key).unwrap();
+//! let mut hmac = key.create_generator();
 //! hmac.do_update(msg_part1);
 //!
 //! // suspend the in-progress mac (the key is NOT included in the serialized state)
@@ -207,7 +203,7 @@
 //! // ...
 //!
 //! // ... later, possibly on another host: resume from the serialized state by re-supplying
-//! // the same key (make sure you store it securely!).
+//! // the same key object (make sure you store the material securely!).
 //! let mut hmac_resumed = HMAC_SHA3_256::from_suspended(serialized_state, &key).unwrap();
 //! hmac_resumed.do_update(msg_part2);
 //! let h: Vec<u8> = hmac_resumed.do_final();
@@ -218,21 +214,23 @@
 //! No heap memory is used by the algorithm itself; the `Vec<u8>`-returning convenience methods
 //! allocate only the output buffer, and the `*_out` variants allocate nothing.
 //!
-//! | Object                                           | Size (bytes) |
-//! |--------------------------------------------------|--------------|
-//! | `HMAC_SHA3_224` .. `HMAC_SHA3_512`, and their `HmacKey` | 880   |
-//! | Suspended state, all four ([`SuspendableKeyed`]) | 415          |
+//! | Object                                                  | Size (bytes) |
+//! |---------------------------------------------------------|--------------|
+//! | `HmacKey` for `HMAC_SHA3_224` .. `HMAC_SHA3_512`         | 880          |
+//! | `HMAC_SHA3_224` .. `HMAC_SHA3_512` worker                | 448          |
+//! | Suspended state, all four ([`SuspendableKeyed`])        | 415          |
 //!
-//! The worker and the key are each two Keccak-f\[1600\] sponges (440 bytes each, see the
-//! crate-level Memory Usage section): the inner hash and the outer pad state. The suspended state
-//! is exactly the inner hash's suspended state -- the key is deliberately excluded -- so all four
-//! share the sponge's single value.
+//! The key is two Keccak-f\[1600\] sponges (440 bytes each, see the crate-level Memory Usage
+//! section): the inner and the outer pad state. The worker is the inner sponge plus a reference
+//! to the key it borrows. The suspended state is exactly the inner hash's suspended state -- the
+//! key is deliberately excluded -- so all four share the sponge's single value.
 //!
 //! # 🚨 Security Considerations 🚨
 //!
-//! * The key must carry at least the security strength claimed by the HMAC, and [`MAC::new`]
-//!   enforces that. [`MAC::new_allow_weak_key`] deliberately skips the check; use it only where a
-//!   weak or all-zero key is called for by the protocol, not to silence an error.
+//! * The key must carry at least the security strength claimed by the HMAC, and
+//!   [`FromAnyKeyMaterial::from_key_material`] enforces that.
+//!   [`FromAnyKeyMaterial::from_key_material_allow_weak`] deliberately skips the check; use it only
+//!   where a weak or all-zero key is called for by the protocol, not to silence an error.
 //! * Verify with [`MAC::verify`] or [`MAC::do_verify_final`] rather than computing the MAC yourself
 //!   and comparing: those use a constant-time comparison, while `==` on the byte slices leaks how
 //!   many leading bytes matched.
@@ -259,9 +257,11 @@ use bouncycastle_hmac::{HMAC, HMACParams};
 #[allow(unused_imports)]
 use bouncycastle_core::key_material::KeyType;
 #[allow(unused_imports)]
+use bouncycastle_core::symmetric_key::{FromAnyKeyMaterial, MacGenerationKey, MacVerificationKey};
+#[allow(unused_imports)]
 use bouncycastle_core::traits::{MAC, SuspendableKeyed};
 #[allow(unused_imports)]
-use bouncycastle_hmac::MIN_FIPS_DIGEST_LEN;
+use bouncycastle_hmac::{HmacKey, MIN_FIPS_DIGEST_LEN};
 
 /*** String constants ***/
 ///
@@ -276,7 +276,7 @@ pub const HMAC_SHA3_512_NAME: &str = "HMAC-SHA3-512";
 /*** Type aliases ***/
 /// Public type for HMAC using SHA3_224.
 #[allow(non_camel_case_types)]
-pub type HMAC_SHA3_224 = HMAC<SHA3_224>;
+pub type HMAC_SHA3_224<'k> = HMAC<'k, SHA3_224>;
 impl HMACParams for SHA3_224 {
     type MACKey = KeyMaterial<{ <SHA3_224 as HashAlgParams>::OUTPUT_LEN }>;
     const HMAC_ALG_NAME: &'static str = HMAC_SHA3_224_NAME;
@@ -289,7 +289,7 @@ impl HMACParams for SHA3_224 {
 
 /// Public type for HMAC using SHA3_256.
 #[allow(non_camel_case_types)]
-pub type HMAC_SHA3_256 = HMAC<SHA3_256>;
+pub type HMAC_SHA3_256<'k> = HMAC<'k, SHA3_256>;
 impl HMACParams for SHA3_256 {
     type MACKey = KeyMaterial<{ <SHA3_256 as HashAlgParams>::OUTPUT_LEN }>;
     const HMAC_ALG_NAME: &'static str = HMAC_SHA3_256_NAME;
@@ -302,7 +302,7 @@ impl HMACParams for SHA3_256 {
 
 /// Public type for HMAC using SHA3_384.
 #[allow(non_camel_case_types)]
-pub type HMAC_SHA3_384 = HMAC<SHA3_384>;
+pub type HMAC_SHA3_384<'k> = HMAC<'k, SHA3_384>;
 impl HMACParams for SHA3_384 {
     type MACKey = KeyMaterial<{ <SHA3_384 as HashAlgParams>::OUTPUT_LEN }>;
     const HMAC_ALG_NAME: &'static str = HMAC_SHA3_384_NAME;
@@ -315,7 +315,7 @@ impl HMACParams for SHA3_384 {
 
 /// Public type for HMAC using SHA3_512.
 #[allow(non_camel_case_types)]
-pub type HMAC_SHA3_512 = HMAC<SHA3_512>;
+pub type HMAC_SHA3_512<'k> = HMAC<'k, SHA3_512>;
 impl HMACParams for SHA3_512 {
     type MACKey = KeyMaterial<{ <SHA3_512 as HashAlgParams>::OUTPUT_LEN }>;
     const HMAC_ALG_NAME: &'static str = HMAC_SHA3_512_NAME;

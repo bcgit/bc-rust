@@ -4,23 +4,21 @@
 
 use crate::{DUMMY_SEED, FixedSeedRNG};
 use bouncycastle_core::errors::SymmetricCipherError;
-use bouncycastle_core::hazmat::do_hazardous_operations;
-use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
-use bouncycastle_core::security_strength::SecurityStrength;
+use bouncycastle_core::symmetric_key::{SymmetricDecryptionKey, SymmetricEncryptionKey};
 use bouncycastle_core::traits::{
-    StreamCipherDecryptor, StreamCipherEncryptor, SymmetricCipherDecryptor,
+    RNG, StreamCipherDecryptor, StreamCipherEncryptor, SymmetricCipherDecryptor,
     SymmetricCipherEncryptor,
 };
 
 /// Instance of the test framework.
 pub struct TestFrameworkSymmetricCipher {
-    /// For [`test_encryptor_decryptor`](Self::test_encryptor_decryptor): the plaintext length
+    /// For [`test_key`](Self::test_key): the plaintext length
     /// granularity the pair accepts. 1 (the default) means every length round-trips. A larger value
     /// -- the block length, for a `PaddedBlockCipherEncryptor` over `NoPadding` -- means only
     /// multiples of it round-trip, and every other length must be *rejected* by `do_encrypt_final`
     /// / `encrypt_out` with `DataNotBlockAligned`, which the test then asserts instead.
     pub required_alignment: usize,
-    /// For [`test_encryptor_decryptor`](Self::test_encryptor_decryptor): the one message length
+    /// For [`test_key`](Self::test_key): the one message length
     /// the pair's streaming methods accept, if they accept only one. `None` (the default) means
     /// any length. A cipher whose payload length is fixed by its type -- CCM, whose `B0` block
     /// encodes the payload length, through its `DATA_LEN` parameter -- sets it here: the
@@ -36,60 +34,44 @@ impl TestFrameworkSymmetricCipher {
         Self { required_alignment: 1, fixed_message_len: None }
     }
 
-    /// Exercises the [`SymmetricCipherEncryptor`] / [`SymmetricCipherDecryptor`] contract for a
-    /// paired implementor.
-    ///
-    /// Checks, in order:
-    /// * the one-shot `encrypt_out` / `decrypt_out` round-trip for every plaintext length from
-    ///   0 to a few times `FINAL_LEN`, writing exactly `encrypt_out_len` bytes and at most
-    ///   `decrypt_out_len`;
-    /// * the `std` one-shots agree with the `_out` ones;
-    /// * streaming in every chunking agrees with the one-shot, `update_out_len` is exact on every
-    ///   call, and `do_encrypt_final_out` / `do_decrypt_final_out` agree with `do_encrypt_final` /
-    ///   `do_decrypt_final`;
-    /// * a driven RNG reproduces its init data, and the same key and init data give the same
-    ///   ciphertext through `do_encrypt_init_rng` and `encrypt_rng_out`;
-    /// * a corrupted ciphertext either fails to decrypt or decrypts to something else;
-    /// * an output buffer that is too short is refused, naming the required length, before any
-    ///   work is done;
-    /// * every method that writes into a caller's buffer accepts one larger than needed, returns
-    ///   the number of bytes that call wrote (not a running total over the stream), and zeroes
-    ///   every byte of the buffer past that count;
-    /// * a key of the wrong [`KeyType`] is rejected, and the security-strength policy matches
-    ///   [`Algorithm::MAX_SECURITY_STRENGTH`].
-    ///
-    /// [`Algorithm::MAX_SECURITY_STRENGTH`]: bouncycastle_core::traits::Algorithm::MAX_SECURITY_STRENGTH
-    pub fn test_encryptor_decryptor<
+    /// The [`SymmetricEncryptionKey`] / [`SymmetricDecryptionKey`] form of
+    /// the symmetric-cipher contract reached
+    /// through a key object, with `rng` supplying every init data draw. The key-policy checks
+    /// are not here, since the key is already made; see `TestFrameworkFromKeyMaterial`.
+    pub fn test_key<
         const KEY_LEN: usize,
         const INIT_DATA_LEN: usize,
         const FINAL_LEN: usize,
-        E: SymmetricCipherEncryptor<KEY_LEN, INIT_DATA_LEN, FINAL_LEN>,
-        D: SymmetricCipherDecryptor<KEY_LEN, INIT_DATA_LEN, FINAL_LEN>,
+        K: SymmetricEncryptionKey<KEY_LEN, INIT_DATA_LEN, FINAL_LEN>
+            + SymmetricDecryptionKey<KEY_LEN, INIT_DATA_LEN, FINAL_LEN>,
     >(
         &self,
+        key: &K,
+        rng: &mut dyn RNG,
     ) {
-        let key = KeyMaterial::<KEY_LEN>::from_bytes_as_type(
-            &DUMMY_SEED[..KEY_LEN],
-            KeyType::SymmetricCipherKey,
-        )
-        .unwrap();
         // Enough plaintext lengths to cross several final-chunk boundaries (a block, for padding).
         let align = self.required_alignment.max(1);
         let max_len = (3 * FINAL_LEN.max(1) + 5).next_multiple_of(align);
         if let Some(fixed) = self.fixed_message_len {
             assert!(fixed <= DUMMY_SEED.len(), "fixed_message_len must fit the seed buffer");
         }
+        let encrypt_out_len = |len: usize| {
+            <K::Encryptor<'_> as SymmetricCipherEncryptor<INIT_DATA_LEN, FINAL_LEN>>::encrypt_out_len(len)
+        };
+        let decrypt_out_len = |len: usize| {
+            <K::Decryptor<'_> as SymmetricCipherDecryptor<INIT_DATA_LEN, FINAL_LEN>>::decrypt_out_len(len)
+        };
 
         // one-shot round trip, every (accepted) length; every other length must be refused
         for len in 0..=max_len {
             let msg = &DUMMY_SEED[..len];
             if !len.is_multiple_of(align) {
-                let mut ct = vec![0u8; E::encrypt_out_len(len) + FINAL_LEN];
-                match E::encrypt_out(&key, msg, &mut ct) {
+                let mut ct = vec![0u8; encrypt_out_len(len) + FINAL_LEN];
+                match key.encrypt_out(rng, msg, &mut ct) {
                     Err(SymmetricCipherError::DataNotBlockAligned) => {}
                     other => panic!("len {len} is not aligned and must be refused, got {other:?}"),
                 }
-                let (mut enc, _) = E::do_encrypt_init(&key).unwrap();
+                let (mut enc, _) = key.create_encryptor(rng).unwrap();
                 let mut buf = vec![0u8; enc.do_encrypt_out_len(len)];
                 enc.do_encrypt_out(msg, &mut buf).unwrap();
                 assert!(
@@ -101,19 +83,17 @@ impl TestFrameworkSymmetricCipher {
                 );
                 continue;
             }
-            // a fixed-length pair's streaming methods take only that length; its one-shots take
-            // any length and must round trip it
+            // a fixed-length pair takes only that length, through the key's one-shots as well as
+            // its streams, since the one-shots are written over the streams
             if let Some(fixed) = self.fixed_message_len
                 && fixed != len
             {
-                let mut ct = vec![0u8; E::encrypt_out_len(len)];
-                let (init, n) = E::encrypt_out(&key, msg, &mut ct).unwrap_or_else(|e| {
-                    panic!("fixed length: a {len}-byte one-shot must be accepted: {e:?}")
-                });
-                let mut pt = vec![0u8; D::decrypt_out_len(n)];
-                let m = D::decrypt_out(&key, &init, &ct[..n], &mut pt).unwrap();
-                assert_eq!(&pt[..m], msg, "fixed length: {len}-byte one-shot round trip");
-                let (mut enc, _) = E::do_encrypt_init(&key).unwrap();
+                let mut ct = vec![0u8; encrypt_out_len(len)];
+                assert!(
+                    key.encrypt_out(rng, msg, &mut ct).is_err(),
+                    "fixed length: a {len}-byte one-shot must be refused"
+                );
+                let (mut enc, _) = key.create_encryptor(rng).unwrap();
                 let mut buf = vec![0u8; enc.do_encrypt_out_len(len)];
                 assert!(
                     enc.do_encrypt_out(msg, &mut buf).is_err() || enc.do_encrypt_final().is_err(),
@@ -121,21 +101,21 @@ impl TestFrameworkSymmetricCipher {
                 );
                 continue;
             }
-            let mut ct = vec![0u8; E::encrypt_out_len(len)];
-            let (init_data, ct_len) = E::encrypt_out(&key, msg, &mut ct).unwrap();
+            let mut ct = vec![0u8; encrypt_out_len(len)];
+            let (ct_len, init_data) = key.encrypt_out(rng, msg, &mut ct).unwrap();
             assert_eq!(ct_len, ct.len(), "encrypt_out must write exactly encrypt_out_len bytes");
 
-            let mut pt = vec![0u8; D::decrypt_out_len(ct_len)];
-            let pt_len = D::decrypt_out(&key, &init_data, &ct[..ct_len], &mut pt).unwrap();
+            let mut pt = vec![0u8; decrypt_out_len(ct_len)];
+            let pt_len = key.decrypt_out(&init_data, &ct[..ct_len], &mut pt).unwrap();
             assert!(pt_len <= pt.len(), "decrypt_out_len must bound the plaintext");
             assert_eq!(&pt[..pt_len], msg, "one-shot round trip, len {len}");
 
             // the std one-shots agree with the _out ones for the same init data
-            let (init_data2, ct2) = E::encrypt(&key, msg).unwrap();
+            let (init_data2, ct2) = key.encrypt(rng, msg).unwrap();
             assert_eq!(ct2.len(), ct_len, "encrypt must return exactly the bytes written");
-            let pt2 = D::decrypt(&key, &init_data2, &ct2).unwrap();
+            let pt2 = key.decrypt(&init_data2, &ct2).unwrap();
             assert_eq!(pt2, msg, "std round trip, len {len}");
-            let pt3 = D::decrypt(&key, &init_data, &ct[..ct_len]).unwrap();
+            let pt3 = key.decrypt(&init_data, &ct[..ct_len]).unwrap();
             assert_eq!(pt3, msg, "decrypt must agree with decrypt_out");
         }
 
@@ -146,7 +126,7 @@ impl TestFrameworkSymmetricCipher {
             [1, 2, 3, 7, FINAL_LEN.max(1), FINAL_LEN + 1, 2 * FINAL_LEN + 3, len.max(1)];
         for chunk in chunkings {
             // encrypt in chunks, checking update_out_len is exact each time
-            let (mut enc, init_data) = E::do_encrypt_init(&key).unwrap();
+            let (mut enc, init_data) = key.create_encryptor(rng).unwrap();
             let mut ct = Vec::new();
             for piece in msg.chunks(chunk) {
                 let expect = enc.do_encrypt_out_len(piece.len());
@@ -164,13 +144,13 @@ impl TestFrameworkSymmetricCipher {
             ct.extend_from_slice(&last[..last_len]);
             assert_eq!(
                 ct.len(),
-                E::encrypt_out_len(len),
+                encrypt_out_len(len),
                 "streaming total must match encrypt_out_len"
             );
 
             // one-shot decrypt of the streamed ciphertext
-            let mut pt = vec![0u8; D::decrypt_out_len(ct.len())];
-            let m = D::decrypt_out(&key, &init_data, &ct, &mut pt).unwrap();
+            let mut pt = vec![0u8; decrypt_out_len(ct.len())];
+            let m = key.decrypt_out(&init_data, &ct, &mut pt).unwrap();
             assert_eq!(
                 &pt[..m],
                 msg,
@@ -179,7 +159,7 @@ impl TestFrameworkSymmetricCipher {
 
             // decrypt in the same chunks, via do_decrypt_final and via do_decrypt_final_out
             for use_out in [false, true] {
-                let mut dec = D::do_decrypt_init(&key, &init_data).unwrap();
+                let mut dec = key.create_decryptor(&init_data);
                 let mut rec = Vec::new();
                 for piece in ct.chunks(chunk) {
                     let expect = dec.do_decrypt_out_len(piece.len());
@@ -204,10 +184,9 @@ impl TestFrameworkSymmetricCipher {
         }
 
         // a fixed message length is enforced on both sides: one byte more is refused at the
-        // update, consuming nothing, and one byte fewer is refused at the final. Which variant
-        // each refusal carries is the implementor's to pin; here only that it refuses.
+        // update, consuming nothing, and one byte fewer is refused at the final.
         if let Some(fixed) = self.fixed_message_len {
-            let (mut enc, init_data) = E::do_encrypt_init(&key).unwrap();
+            let (mut enc, init_data) = key.create_encryptor(rng).unwrap();
             let mut ct = vec![0u8; enc.do_encrypt_out_len(fixed)];
             let n = enc.do_encrypt_out(msg, &mut ct).unwrap();
             ct.truncate(n);
@@ -216,22 +195,21 @@ impl TestFrameworkSymmetricCipher {
                 enc.do_encrypt_out(&DUMMY_SEED[..1], &mut more).is_err(),
                 "fixed length: one byte more must be refused at the update"
             );
-            // ...and the refusal consumed nothing: the final still completes the message.
             let (last, last_len) = enc.do_encrypt_final().unwrap();
             ct.extend_from_slice(&last[..last_len]);
-            let mut pt = vec![0u8; D::decrypt_out_len(ct.len())];
-            let m = D::decrypt_out(&key, &init_data, &ct, &mut pt).unwrap();
+            let mut pt = vec![0u8; decrypt_out_len(ct.len())];
+            let m = key.decrypt_out(&init_data, &ct, &mut pt).unwrap();
             assert_eq!(&pt[..m], msg, "fixed length: a refused update must not disturb the state");
 
             if fixed > 0 {
-                let (mut enc, _) = E::do_encrypt_init(&key).unwrap();
+                let (mut enc, _) = key.create_encryptor(rng).unwrap();
                 let mut buf = vec![0u8; enc.do_encrypt_out_len(fixed - 1)];
                 enc.do_encrypt_out(&msg[..fixed - 1], &mut buf).unwrap();
                 assert!(
                     enc.do_encrypt_final().is_err(),
                     "fixed length: one byte fewer must be refused at the final (encrypt)"
                 );
-                let mut dec = D::do_decrypt_init(&key, &init_data).unwrap();
+                let mut dec = key.create_decryptor(&init_data);
                 let mut buf = vec![0u8; dec.do_decrypt_out_len(fixed - 1)];
                 dec.do_decrypt_out(&ct[..fixed - 1], &mut buf).unwrap();
                 assert!(
@@ -239,7 +217,7 @@ impl TestFrameworkSymmetricCipher {
                     "fixed length: one byte fewer must be refused at the final (decrypt)"
                 );
             }
-            let mut dec = D::do_decrypt_init(&key, &init_data).unwrap();
+            let mut dec = key.create_decryptor(&init_data);
             let mut rec = vec![0u8; dec.do_decrypt_out_len(ct.len())];
             let n = dec.do_decrypt_out(&ct, &mut rec).unwrap();
             rec.truncate(n);
@@ -256,46 +234,43 @@ impl TestFrameworkSymmetricCipher {
             );
         }
 
-        // The RNG-taking constructor is only exercised for a cipher that has init data to
-        // generate. Its contract requires an implementation with `INIT_DATA_LEN == 0` (ECB) to
-        // panic instead, so driving it here would fail that implementor for conforming.
         if INIT_DATA_LEN > 0 {
             // a driven RNG reproduces its init data, and determines the ciphertext
             let seed: [u8; INIT_DATA_LEN] = core::array::from_fn(|i| DUMMY_SEED[100 + i]);
             let (mut enc, init_data) =
-                E::do_encrypt_init_rng(&key, &mut FixedSeedRNG::<INIT_DATA_LEN>::new(seed))
-                    .unwrap();
+                key.create_encryptor(&mut FixedSeedRNG::<INIT_DATA_LEN>::new(seed)).unwrap();
             assert_eq!(init_data, seed, "a fixed RNG must yield its stream as the init data");
             let mut streamed = vec![0u8; enc.do_encrypt_out_len(len)];
             let n = enc.do_encrypt_out(msg, &mut streamed).unwrap();
             streamed.truncate(n);
             let (last, last_len) = enc.do_encrypt_final().unwrap();
             streamed.extend_from_slice(&last[..last_len]);
-            let mut one_shot = vec![0u8; E::encrypt_out_len(len)];
-            let (init_data2, n2) = E::encrypt_rng_out(
-                &key,
-                &mut FixedSeedRNG::<INIT_DATA_LEN>::new(seed),
-                msg,
-                &mut one_shot,
-            )
-            .unwrap();
+            let mut one_shot = vec![0u8; encrypt_out_len(len)];
+            let (n2, init_data2) = key
+                .encrypt_out(&mut FixedSeedRNG::<INIT_DATA_LEN>::new(seed), msg, &mut one_shot)
+                .unwrap();
             assert_eq!(init_data2, seed);
             assert_eq!(
                 &one_shot[..n2],
                 &streamed[..],
                 "same key and init data must give the same ciphertext"
             );
+
+            // ...and two draws from a real RNG differ
+            let (_, a) = key.create_encryptor(rng).unwrap();
+            let (_, b) = key.create_encryptor(rng).unwrap();
+            assert_ne!(a, b, "two encryptions must not share init data");
         }
 
         // corrupting the ciphertext does not give back the plaintext (or fails to decrypt)
-        let mut ct = vec![0u8; E::encrypt_out_len(len)];
-        let (init_data, ct_len) = E::encrypt_out(&key, msg, &mut ct).unwrap();
+        let mut ct = vec![0u8; encrypt_out_len(len)];
+        let (ct_len, init_data) = key.encrypt_out(rng, msg, &mut ct).unwrap();
         assert!(ct_len > 0, "the test message is non-empty, so its ciphertext must be");
         for flip in [0usize, ct_len / 2, ct_len - 1] {
             let mut bad = ct[..ct_len].to_vec();
             bad[flip] ^= 0x80;
-            let mut pt = vec![0u8; D::decrypt_out_len(ct_len)];
-            match D::decrypt_out(&key, &init_data, &bad, &mut pt) {
+            let mut pt = vec![0u8; decrypt_out_len(ct_len)];
+            match key.decrypt_out(&init_data, &bad, &mut pt) {
                 Ok(m) => {
                     assert_ne!(&pt[..m], msg, "corrupted byte {flip} decrypted to the plaintext")
                 }
@@ -307,29 +282,28 @@ impl TestFrameworkSymmetricCipher {
         }
 
         // too-short output buffers are refused with the required length, before any work is done
-        let need = E::encrypt_out_len(len);
+        let need = encrypt_out_len(len);
         let mut short = vec![0u8; need - 1];
-        match E::encrypt_out(&key, msg, &mut short) {
+        match key.encrypt_out(rng, msg, &mut short) {
             Err(SymmetricCipherError::OutputBufferTooSmall(n)) => assert_eq!(n, need),
             other => panic!("encrypt_out into a short buffer: {other:?}"),
         }
-        let need = D::decrypt_out_len(ct_len);
+        let need = decrypt_out_len(ct_len);
         if need > 0 {
             let mut short = vec![0u8; need - 1];
-            match D::decrypt_out(&key, &init_data, &ct[..ct_len], &mut short) {
+            match key.decrypt_out(&init_data, &ct[..ct_len], &mut short) {
                 Err(SymmetricCipherError::OutputBufferTooSmall(n)) => assert_eq!(n, need),
                 other => panic!("decrypt_out into a short buffer: {other:?}"),
             }
         }
-        // ...and ones with room to spare are accepted: without this each `<` guard can be flipped
-        // to `>` and the short-buffer probes above still "pass".
-        let mut roomy = vec![0u8; E::encrypt_out_len(len) + 3];
-        let (_, n) = E::encrypt_out(&key, msg, &mut roomy).unwrap();
-        assert_eq!(n, E::encrypt_out_len(len), "encrypt_out into a roomy buffer");
+        // ...and ones with room to spare are accepted
+        let mut roomy = vec![0u8; encrypt_out_len(len) + 3];
+        let (n, _) = key.encrypt_out(rng, msg, &mut roomy).unwrap();
+        assert_eq!(n, encrypt_out_len(len), "encrypt_out into a roomy buffer");
         let mut roomy = vec![0u8; need + 3];
-        let n = D::decrypt_out(&key, &init_data, &ct[..ct_len], &mut roomy).unwrap();
+        let n = key.decrypt_out(&init_data, &ct[..ct_len], &mut roomy).unwrap();
         assert_eq!(&roomy[..n], msg, "decrypt_out into a roomy buffer");
-        let (mut enc, _) = E::do_encrypt_init(&key).unwrap();
+        let (mut enc, _) = key.create_encryptor(rng).unwrap();
         let need = enc.do_encrypt_out_len(len);
         if need > 0 {
             let mut short = vec![0u8; need - 1];
@@ -340,11 +314,8 @@ impl TestFrameworkSymmetricCipher {
         }
 
         // Output-buffer contract, for every method that writes into a caller's buffer: a buffer
-        // larger than needed is accepted; the returned count is the number of bytes *that call*
-        // wrote, not a running total over the stream; and every byte past it is zeroed, whatever
-        // the buffer held on the way in. Each buffer is pre-filled with a non-zero sentinel, so a
-        // byte left as the caller had it shows up. The `_final_out` buffers are `[u8; FINAL_LEN]`
-        // by type and so cannot be oversized; for them only the zeroed tail is checked.
+        // larger than needed is accepted, the returned count is what that call wrote, and every
+        // byte past it is zeroed.
         const SENTINEL: u8 = 0xA5;
         const EXTRA: usize = 7;
         let assert_tail_zeroed = |buf: &[u8], n: usize, what: &str| {
@@ -359,31 +330,14 @@ impl TestFrameworkSymmetricCipher {
             );
         };
 
-        // the one-shots
-        let need = E::encrypt_out_len(len);
+        let need = encrypt_out_len(len);
         let mut ct = vec![SENTINEL; need + EXTRA];
-        let (init_data, ct_len) = E::encrypt_out(&key, msg, &mut ct).unwrap();
+        let (ct_len, init_data) = key.encrypt_out(rng, msg, &mut ct).unwrap();
         assert_eq!(ct_len, need, "encrypt_out into an oversized buffer must write encrypt_out_len");
         assert_tail_zeroed(&ct, ct_len, "encrypt_out");
         ct.truncate(ct_len);
-        if INIT_DATA_LEN > 0 {
-            let seed: [u8; INIT_DATA_LEN] = core::array::from_fn(|i| DUMMY_SEED[100 + i]);
-            let mut buf = vec![SENTINEL; need + EXTRA];
-            let (_, n) = E::encrypt_rng_out(
-                &key,
-                &mut FixedSeedRNG::<INIT_DATA_LEN>::new(seed),
-                msg,
-                &mut buf,
-            )
-            .unwrap();
-            assert_eq!(
-                n, need,
-                "encrypt_rng_out into an oversized buffer must write encrypt_out_len"
-            );
-            assert_tail_zeroed(&buf, n, "encrypt_rng_out");
-        }
-        let mut pt = vec![SENTINEL; D::decrypt_out_len(ct_len) + EXTRA];
-        let n = D::decrypt_out(&key, &init_data, &ct, &mut pt).unwrap();
+        let mut pt = vec![SENTINEL; decrypt_out_len(ct_len) + EXTRA];
+        let n = key.decrypt_out(&init_data, &ct, &mut pt).unwrap();
         assert_eq!(&pt[..n], msg, "decrypt_out into an oversized buffer");
         assert_tail_zeroed(&pt, n, "decrypt_out");
 
@@ -394,7 +348,7 @@ impl TestFrameworkSymmetricCipher {
         // length, which a running total would overshoot.
         let cuts = |total: usize| [0, 1.min(total), (FINAL_LEN + 2).min(total), total];
         let c = cuts(len);
-        let (mut enc, init_data) = E::do_encrypt_init(&key).unwrap();
+        let (mut enc, init_data) = key.create_encryptor(rng).unwrap();
         let mut streamed = Vec::new();
         for w in c.windows(2) {
             let piece = &msg[w[0]..w[1]];
@@ -411,12 +365,12 @@ impl TestFrameworkSymmetricCipher {
         streamed.extend_from_slice(&last[..last_len]);
         assert_eq!(
             streamed.len(),
-            E::encrypt_out_len(len),
+            encrypt_out_len(len),
             "the per-call counts must sum to encrypt_out_len, not overshoot it as running totals"
         );
 
         let c = cuts(streamed.len());
-        let mut dec = D::do_decrypt_init(&key, &init_data).unwrap();
+        let mut dec = key.create_decryptor(&init_data);
         let mut rec = Vec::new();
         for w in c.windows(2) {
             let piece = &streamed[w[0]..w[1]];
@@ -435,59 +389,6 @@ impl TestFrameworkSymmetricCipher {
             rec, msg,
             "the per-call counts must sum to the plaintext, not overshoot it as running totals"
         );
-
-        // error case: KeyMaterial of the wrong type
-        let mac_key =
-            KeyMaterial::<KEY_LEN>::from_bytes_as_type(&DUMMY_SEED[..KEY_LEN], KeyType::MACKey)
-                .unwrap();
-        match E::do_encrypt_init(&mac_key) {
-            Err(SymmetricCipherError::KeyMaterialError(_)) => { /* good */ }
-            _ => panic!("A key that is not a SymmetricCipherKey should have been rejected"),
-        };
-        match D::do_decrypt_init(&mac_key, &init_data) {
-            Err(SymmetricCipherError::KeyMaterialError(_)) => { /* good */ }
-            _ => panic!("A key that is not a SymmetricCipherKey should have been rejected"),
-        };
-
-        // error case: security strengths too weak, and strong enough
-        let mut key = KeyMaterial::<KEY_LEN>::from_bytes_as_type(
-            &DUMMY_SEED[..KEY_LEN],
-            KeyType::SymmetricCipherKey,
-        )
-        .unwrap();
-        let security_strengths = [
-            SecurityStrength::None,
-            SecurityStrength::_112bit,
-            SecurityStrength::_128bit,
-            SecurityStrength::_192bit,
-            SecurityStrength::_256bit,
-        ];
-        for ss in security_strengths.iter() {
-            // Skip the strengths a KEY_LEN-byte key cannot carry; see `TestFrameworkElectronicCodeBook`.
-            if ss > &SecurityStrength::from_bytes(KEY_LEN) {
-                continue;
-            }
-            do_hazardous_operations(&mut key, |key| key.set_security_strength(*ss)).unwrap();
-
-            match E::do_encrypt_init(&key) {
-                Ok(_) => assert!(
-                    ss >= &E::MAX_SECURITY_STRENGTH,
-                    "should have required a key at least as strong as the algorithm"
-                ),
-                Err(SymmetricCipherError::KeyMaterialError(_)) => assert!(
-                    ss < &E::MAX_SECURITY_STRENGTH,
-                    "should not have rejected a key strong enough for the algorithm"
-                ),
-                _ => panic!("Unexpected error"),
-            };
-            match D::do_decrypt_init(&key, &init_data) {
-                Ok(_) => assert!(ss >= &D::MAX_SECURITY_STRENGTH),
-                Err(SymmetricCipherError::KeyMaterialError(_)) => {
-                    assert!(ss < &D::MAX_SECURITY_STRENGTH)
-                }
-                _ => panic!("Unexpected error"),
-            };
-        }
     }
 }
 
@@ -502,43 +403,39 @@ impl TestFrameworkStreamCipher {
         Self {}
     }
 
-    /// Test the contract of a [`StreamCipherEncryptor`] / [`StreamCipherDecryptor`] pair: every
-    /// chunking of the streaming API agrees with the one-shot and round-trips through the other
-    /// direction, the RNG-taking constructors reproduce their init data, and the key-type and
-    /// security-strength policy is enforced. This gives good baseline test coverage, but is not
-    /// exhaustive; algorithm-specific test vectors belong in the implementing crate.
-    pub fn test<
+    /// The stream-cipher contract over a [`SymmetricEncryptionKey`] /
+    /// [`SymmetricDecryptionKey`] pair whose workers are stream ciphers, with `rng` supplying
+    /// every init data draw. The key-policy checks are `TestFrameworkFromKeyMaterial`'s.
+    pub fn test_key<
+        'k,
         const KEY_LEN: usize,
         const INIT_DATA_LEN: usize,
-        E: StreamCipherEncryptor<KEY_LEN, INIT_DATA_LEN>,
-        D: StreamCipherDecryptor<KEY_LEN, INIT_DATA_LEN>,
+        K: SymmetricEncryptionKey<KEY_LEN, INIT_DATA_LEN, 0>
+            + SymmetricDecryptionKey<KEY_LEN, INIT_DATA_LEN, 0>,
     >(
         &self,
-    ) {
-        let key = KeyMaterial::<KEY_LEN>::from_bytes_as_type(
-            &DUMMY_SEED[..KEY_LEN],
-            KeyType::SymmetricCipherKey,
-        )
-        .unwrap();
-
+        key: &'k K,
+        rng: &mut dyn RNG,
+    ) where
+        K::Encryptor<'k>: StreamCipherEncryptor<INIT_DATA_LEN>,
+        K::Decryptor<'k>: StreamCipherDecryptor<INIT_DATA_LEN>,
+    {
         // one-shot, in place: must round-trip, and report every byte as written.
         let mut buf = *DUMMY_SEED;
-        let (n, iv) = E::encrypt_inplace(&key, &mut buf).unwrap();
+        let (n, iv) = key.encrypt_inplace(rng, &mut buf).unwrap();
         assert_eq!(n, buf.len(), "encrypt must report the number of bytes written");
         let reference_ct = buf;
         assert_ne!(&reference_ct[..], &DUMMY_SEED[..], "encryption must change the data");
-        let n = D::decrypt_inplace(&key, &iv, &mut buf).unwrap();
+        let n = key.decrypt_inplace(&iv, &mut buf).unwrap();
         assert_eq!(n, buf.len(), "decrypt must report the number of bytes written");
         assert_eq!(&buf[..], &DUMMY_SEED[..]);
 
         // the streaming API under the same init data must give the one-shot's answer whatever
-        // the chunking, including chunks that are not a multiple of any internal keystream block
-        // and empty chunks; and encrypting in one chunking must decrypt in any other.
+        // the chunking, and encrypting in one chunking must decrypt in any other.
         let chunkings: &[usize] = &[1, 3, 7, 16, 63, 64, 65, 250, DUMMY_SEED.len()];
         for &enc_chunk in chunkings {
             let mut buf = *DUMMY_SEED;
-            let (mut encryptor, iv2) = E::do_encrypt_init(&key).unwrap();
-            // stream through the encryptor, with an empty chunk thrown in at the start and end
+            let (mut encryptor, iv2) = key.create_encryptor(rng).unwrap();
             encryptor.do_encrypt_inplace(&mut []).unwrap();
             for chunk in buf.chunks_mut(enc_chunk) {
                 encryptor.do_encrypt_inplace(chunk).unwrap();
@@ -548,7 +445,7 @@ impl TestFrameworkStreamCipher {
 
             for &dec_chunk in chunkings {
                 let mut buf = ct;
-                let mut decryptor = D::do_decrypt_init(&key, &iv2).unwrap();
+                let mut decryptor = key.create_decryptor(&iv2);
                 decryptor.do_decrypt_inplace(&mut []).unwrap();
                 for chunk in buf.chunks_mut(dec_chunk) {
                     decryptor.do_decrypt_inplace(chunk).unwrap();
@@ -563,128 +460,65 @@ impl TestFrameworkStreamCipher {
 
             // and the one-shot decrypt agrees with every streaming encryption
             let mut buf = ct;
-            D::decrypt_inplace(&key, &iv2, &mut buf).unwrap();
+            key.decrypt_inplace(&iv2, &mut buf).unwrap();
             assert_eq!(&buf[..], &DUMMY_SEED[..]);
         }
 
         // the streaming decryptor must agree with the one-shot encryptor under its init data
         let mut buf = reference_ct;
-        let mut streamed = D::do_decrypt_init(&key, &iv).unwrap();
+        let mut streamed = key.create_decryptor(&iv);
         for chunk in buf.chunks_mut(5) {
             streamed.do_decrypt_inplace(chunk).unwrap();
         }
         assert_eq!(&buf[..], &DUMMY_SEED[..]);
 
-        // The RNG-taking constructor is only exercised for a cipher that has init data to
-        // generate. Its contract requires an implementation with `INIT_DATA_LEN == 0` (ECB) to
-        // panic instead, so driving it here would fail that implementor for conforming.
-        if INIT_DATA_LEN > 0 {
-            // the RNG-taking one-shot must give the streaming API's answer for the same RNG stream,
-            // and the same init data.
-            let pinned = [0xA5u8; INIT_DATA_LEN];
-            let mut expected = *DUMMY_SEED;
-            let (mut streamed, iv_streamed) =
-                E::do_encrypt_init_rng(&key, &mut FixedSeedRNG::<INIT_DATA_LEN>::new(pinned))
-                    .unwrap();
-            streamed.do_encrypt_inplace(&mut expected).unwrap();
-            let mut buf = *DUMMY_SEED;
-            let (n, iv) = E::encrypt_rng_inplace(
-                &key,
-                &mut FixedSeedRNG::<INIT_DATA_LEN>::new(pinned),
-                &mut buf,
-            )
-            .unwrap();
-            assert_eq!(n, buf.len(), "encrypt_rng must report the number of bytes written");
-            assert_eq!(iv, iv_streamed);
-            assert_eq!(&buf[..], &expected[..]);
-            // ...and a driven RNG determines the ciphertext: the same RNG stream again gives the same
-            // init data and ciphertext, so the ciphertext is a function of (key, init data) alone.
-            let mut buf2 = *DUMMY_SEED;
-            let (_, iv_again) = E::encrypt_rng_inplace(
-                &key,
-                &mut FixedSeedRNG::<INIT_DATA_LEN>::new(pinned),
-                &mut buf2,
-            )
-            .unwrap();
-            assert_eq!(iv, iv_again);
-            assert_eq!(&buf[..], &buf2[..]);
-        }
-
-        // test that the init data is random (ie not the same on two runs). A cipher with no init
-        // data at all (INIT_DATA_LEN == 0) has nothing to compare: two empty arrays are always equal.
-        if INIT_DATA_LEN > 0 {
-            let (_encryptor, iv1) = E::do_encrypt_init(&key).unwrap();
-            let (_encryptor, iv2) = E::do_encrypt_init(&key).unwrap();
-            assert_ne!(iv1, iv2);
-            // and different init data under the same key gives different ciphertext
-            let mut a = *DUMMY_SEED;
-            let mut b = *DUMMY_SEED;
-            let (_, iv_a) = E::encrypt_inplace(&key, &mut a).unwrap();
-            let (_, iv_b) = E::encrypt_inplace(&key, &mut b).unwrap();
-            assert_ne!(iv_a, iv_b);
-            assert_ne!(&a[..], &b[..]);
-        }
-
-        // error case: KeyMaterial of wrong type, for both directions
-        let mac_key =
-            KeyMaterial::<KEY_LEN>::from_bytes_as_type(&DUMMY_SEED[..KEY_LEN], KeyType::MACKey)
-                .unwrap();
-        match E::do_encrypt_init(&mac_key) {
-            Err(SymmetricCipherError::KeyMaterialError(_)) => { /* good */ }
-            _ => panic!("Unexpected error"),
-        };
-        match D::do_decrypt_init(&mac_key, &[0u8; INIT_DATA_LEN]) {
-            Err(SymmetricCipherError::KeyMaterialError(_)) => { /* good */ }
-            _ => panic!("Unexpected error"),
-        };
-
-        // error case: security strengths too weak and too strong
-        let mut key = KeyMaterial::<KEY_LEN>::from_bytes_as_type(
-            &DUMMY_SEED[..KEY_LEN],
-            KeyType::SymmetricCipherKey,
-        )
-        .unwrap();
-        let security_strengths = [
-            SecurityStrength::None,
-            SecurityStrength::_112bit,
-            SecurityStrength::_128bit,
-            SecurityStrength::_192bit,
-            SecurityStrength::_256bit,
-        ];
-        for ss in security_strengths.iter() {
-            // `set_security_strength` enforces its key-length guard even inside a
-            // do_hazardous_operations() closure -- a KEY_LEN-byte key cannot be tagged at a
-            // strength above `from_bytes(KEY_LEN)` -- so skip the strengths this key cannot carry
-            // rather than unwrapping an error. (A 16-byte key can reach 128-bit and no higher.)
-            // Do NOT "fix" this by relaxing that guard in `KeyMaterial`: core's
-            // `test_hazardous_ops_error_handling` requires it to stay enforced.
-            if ss > &SecurityStrength::from_bytes(KEY_LEN) {
-                continue;
-            }
-
-            // Tag the key at an arbitrary strength for the purpose of this test.
-            do_hazardous_operations(&mut key, |key| key.set_security_strength(ss.clone())).unwrap();
-
-            let check = |r: Result<(), SymmetricCipherError>, max: &SecurityStrength| match r {
-                Ok(_) => {
-                    if ss >= max { /* good */
-                    } else {
-                        panic!("Should have been a strong enough key");
-                    }
-                }
-                Err(SymmetricCipherError::KeyMaterialError(_)) => {
-                    if ss < max { /* good */
-                    } else {
-                        panic!("Should not have accepted a key weaker than algorithm");
-                    }
-                }
-                _ => panic!("Unexpected error"),
-            };
-            check(E::do_encrypt_init(&key).map(|_| ()), &E::MAX_SECURITY_STRENGTH);
-            check(
-                D::do_decrypt_init(&key, &[0u8; INIT_DATA_LEN]).map(|_| ()),
-                &D::MAX_SECURITY_STRENGTH,
+        // the separate-output methods of the symmetric traits agree with the in-place ones
+        let out_len =
+            <K::Encryptor<'k> as SymmetricCipherEncryptor<INIT_DATA_LEN, 0>>::encrypt_out_len(
+                DUMMY_SEED.len(),
             );
-        }
+        let mut out = vec![0u8; out_len];
+        let (n, iv3) = key.encrypt_out(rng, DUMMY_SEED, &mut out).unwrap();
+        assert_eq!(n, DUMMY_SEED.len(), "a stream cipher never changes the length");
+        let mut back = out.clone();
+        key.decrypt_inplace(&iv3, &mut back).unwrap();
+        assert_eq!(&back[..], &DUMMY_SEED[..]);
+        let pt_len =
+            <K::Decryptor<'k> as SymmetricCipherDecryptor<INIT_DATA_LEN, 0>>::decrypt_out_len(n);
+        let mut pt = vec![0u8; pt_len];
+        let m = key.decrypt_out(&iv3, &out[..n], &mut pt).unwrap();
+        assert_eq!(&pt[..m], &DUMMY_SEED[..]);
+
+        // the RNG-driven one-shot must give the streaming API's answer for the same RNG stream,
+        // and the same init data; a driven RNG determines the ciphertext.
+        let pinned = [0xA5u8; INIT_DATA_LEN];
+        let mut expected = *DUMMY_SEED;
+        let (mut streamed, iv_streamed) =
+            key.create_encryptor(&mut FixedSeedRNG::<INIT_DATA_LEN>::new(pinned)).unwrap();
+        streamed.do_encrypt_inplace(&mut expected).unwrap();
+        let mut buf = *DUMMY_SEED;
+        let (n, iv) =
+            key.encrypt_inplace(&mut FixedSeedRNG::<INIT_DATA_LEN>::new(pinned), &mut buf).unwrap();
+        assert_eq!(n, buf.len(), "encrypt_inplace must report the number of bytes written");
+        assert_eq!(iv, iv_streamed);
+        assert_eq!(&buf[..], &expected[..]);
+        let mut buf2 = *DUMMY_SEED;
+        let (_, iv_again) = key
+            .encrypt_inplace(&mut FixedSeedRNG::<INIT_DATA_LEN>::new(pinned), &mut buf2)
+            .unwrap();
+        assert_eq!(iv, iv_again);
+        assert_eq!(&buf[..], &buf2[..]);
+
+        // the init data is random: not the same on two runs, and different init data under the
+        // same key gives different ciphertext
+        let (_encryptor, iv1) = key.create_encryptor(rng).unwrap();
+        let (_encryptor, iv2) = key.create_encryptor(rng).unwrap();
+        assert_ne!(iv1, iv2);
+        let mut a = *DUMMY_SEED;
+        let mut b = *DUMMY_SEED;
+        let (_, iv_a) = key.encrypt_inplace(rng, &mut a).unwrap();
+        let (_, iv_b) = key.encrypt_inplace(rng, &mut b).unwrap();
+        assert_ne!(iv_a, iv_b);
+        assert_ne!(&a[..], &b[..]);
     }
 }

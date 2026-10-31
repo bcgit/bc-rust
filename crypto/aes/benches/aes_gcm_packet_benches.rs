@@ -1,15 +1,15 @@
-//! AES-256-GCM over 16 KiB packets: the per-packet cost of starting from raw key material,
-//! which validates and expands the key for every packet, against starting from an
-//! `AES256Key<GCM>`, which did that once (and derived GCM's hash subkey once) and hands the
-//! stored state to each packet's encryptor.
+//! AES-256-GCM over 16 KiB packets: the per-packet cost of building the `AES256Key<GCM>` from raw
+//! key material for every packet, which validates and expands the key and derives GCM's hash
+//! subkey each time, against building it once and handing the stored state to each packet's
+//! encryptor.
 //!
-//! Both arms stream one packet through the same `Gcm` type -- init, one `do_encrypt_out` /
-//! `do_decrypt_out` over the whole packet, final -- so the only difference between them is the
-//! key expansion, validation and `H`. The nonce comes from a fixed test RNG so that the RNG is not
-//! part of the comparison, except in the `OS DRBG per packet` arms, which instantiate a fresh
-//! `HashDRBG_SHA512` from the OS for every packet: the cost of the default-RNG constructors the
-//! key path does not offer. The `init` group isolates the construction cost with no data at all,
-//! and includes the one-off cost of building the key object.
+//! Both arms stream one packet through the same `Gcm` type -- `create_encryptor` /
+//! `create_decryptor`, one `do_encrypt_out` / `do_decrypt_out` over the whole packet, final -- so
+//! the only difference between them is where `from_key_material` is paid. The nonce comes from a
+//! fixed test RNG so that the RNG is not part of the comparison, except in the `OS DRBG per
+//! packet` arms, which instantiate a fresh `HashDRBG_SHA512` from the OS for every packet: what a
+//! per-packet default RNG would add. The `init` group isolates the construction cost with no data
+//! at all.
 //!
 //! The cipher works in place, so each measurement runs on a fresh output buffer made in
 //! criterion's untimed setup (`iter_batched_ref`); the copy is not part of the timing.
@@ -32,8 +32,8 @@ const PACKET_LEN: usize = 16 * 1024;
 const NONCE_LEN: usize = 12;
 const TAG_LEN: usize = 16;
 
-type Enc = AES_GCM_256<Encrypting>;
-type Dec = AES_GCM_256<Decrypting>;
+type Enc<'k> = AES_GCM_256<'k, Encrypting>;
+type Dec<'k> = AES_GCM_256<'k, Decrypting>;
 type Key = AES256Key<GCM>;
 
 fn material() -> KeyMaterial<32> {
@@ -77,11 +77,12 @@ fn bench_encrypt_packets(c: &mut Criterion) {
     let mut group = c.benchmark_group("gcm::AES_256 16KiB packet encrypt");
     group.throughput(Throughput::Bytes(PACKET_LEN as u64));
 
-    group.bench_function("KeyMaterial: do_encrypt_init_rng (expand per packet)", |b| {
+    group.bench_function("AES256Key<GCM>: from_key_material per packet (expand per packet)", |b| {
         b.iter_batched_ref(
             || [0u8; PACKET_LEN],
             |out| {
-                let (enc, nonce) = Enc::do_encrypt_init_rng(black_box(&km), &mut rng).unwrap();
+                let per_packet = Key::from_key_material(black_box(&km)).unwrap();
+                let (enc, nonce) = per_packet.create_encryptor(&mut rng).unwrap();
                 black_box((nonce, encrypt_packet(enc, black_box(&packet), out)))
             },
             BatchSize::LargeInput,
@@ -98,12 +99,14 @@ fn bench_encrypt_packets(c: &mut Criterion) {
         )
     });
     group.bench_function(
-        "KeyMaterial: do_encrypt_init (OS DRBG per packet, expand per packet)",
+        "AES256Key<GCM>: from_key_material per packet (OS DRBG per packet, expand per packet)",
         |b| {
             b.iter_batched_ref(
                 || [0u8; PACKET_LEN],
                 |out| {
-                    let (enc, nonce) = Enc::do_encrypt_init(black_box(&km)).unwrap();
+                    let mut os_rng = HashDRBG_SHA512::new_from_os();
+                    let per_packet = Key::from_key_material(black_box(&km)).unwrap();
+                    let (enc, nonce) = per_packet.create_encryptor(&mut os_rng).unwrap();
                     black_box((nonce, encrypt_packet(enc, black_box(&packet), out)))
                 },
                 BatchSize::LargeInput,
@@ -132,17 +135,18 @@ fn bench_decrypt_packets(c: &mut Criterion) {
 
     // One valid packet to decrypt, made outside the timing.
     let mut ct = [0u8; PACKET_LEN];
-    let (enc, nonce) = Enc::do_encrypt_init_rng(&km, &mut rng()).unwrap();
+    let (enc, nonce) = key.create_encryptor(&mut rng()).unwrap();
     let tag = encrypt_packet(enc, &packet, &mut ct);
 
     let mut group = c.benchmark_group("gcm::AES_256 16KiB packet decrypt");
     group.throughput(Throughput::Bytes(PACKET_LEN as u64));
 
-    group.bench_function("KeyMaterial: do_decrypt_init (expand per packet)", |b| {
+    group.bench_function("AES256Key<GCM>: from_key_material per packet (expand per packet)", |b| {
         b.iter_batched_ref(
             || [0u8; PACKET_LEN],
             |out| {
-                let dec = Dec::do_decrypt_init(black_box(&km), &nonce).unwrap();
+                let per_packet = Key::from_key_material(black_box(&km)).unwrap();
+                let dec = per_packet.create_decryptor(&nonce);
                 black_box(decrypt_packet(dec, black_box(&ct), &tag, out))
             },
             BatchSize::LargeInput,
@@ -174,21 +178,45 @@ fn bench_init(c: &mut Criterion) {
     group.bench_function("AES256Key<GCM>::from_key_material (once per key)", |b| {
         b.iter(|| black_box(Key::from_key_material(black_box(&km)).unwrap()))
     });
-    group.bench_function("KeyMaterial: do_encrypt_init_rng", |b| {
-        b.iter(|| black_box(Enc::do_encrypt_init_rng(black_box(&km), &mut rng).unwrap()))
-    });
+    group.bench_function(
+        "AES256Key<GCM>: from_key_material + create_encryptor (per packet)",
+        |b| {
+            b.iter(|| {
+                let per_packet = Key::from_key_material(black_box(&km)).unwrap();
+                let (enc, nonce) = per_packet.create_encryptor(&mut rng).unwrap();
+                // The worker borrows the key, so what a per-packet key costs is what it takes
+                // to make the worker and finish it.
+                black_box((nonce, enc.do_encrypt_final().unwrap()))
+            })
+        },
+    );
     group.bench_function("AES256Key<GCM>: create_encryptor", |b| {
         b.iter(|| black_box(black_box(&key).create_encryptor(&mut rng).unwrap()))
     });
-    group.bench_function("KeyMaterial: do_decrypt_init", |b| {
-        b.iter(|| black_box(Dec::do_decrypt_init(black_box(&km), &nonce).unwrap()))
-    });
+    group.bench_function(
+        "AES256Key<GCM>: from_key_material + create_decryptor (per packet)",
+        |b| {
+            b.iter(|| {
+                let per_packet = Key::from_key_material(black_box(&km)).unwrap();
+                let dec = per_packet.create_decryptor(&nonce);
+                black_box(dec.do_decrypt_final().is_ok())
+            })
+        },
+    );
     group.bench_function("AES256Key<GCM>: create_decryptor", |b| {
         b.iter(|| black_box(black_box(&key).create_decryptor(&nonce)))
     });
-    group.bench_function("KeyMaterial: do_encrypt_init (OS DRBG per call)", |b| {
-        b.iter(|| black_box(Enc::do_encrypt_init(black_box(&km)).unwrap()))
-    });
+    group.bench_function(
+        "AES256Key<GCM>: from_key_material + create_encryptor (OS DRBG per call)",
+        |b| {
+            b.iter(|| {
+                let mut os_rng = HashDRBG_SHA512::new_from_os();
+                let per_packet = Key::from_key_material(black_box(&km)).unwrap();
+                let (enc, nonce) = per_packet.create_encryptor(&mut os_rng).unwrap();
+                black_box((nonce, enc.do_encrypt_final().unwrap()))
+            })
+        },
+    );
     group.bench_function("AES256Key<GCM>: create_encryptor (OS DRBG per call)", |b| {
         b.iter(|| {
             let mut os_rng = HashDRBG_SHA512::new_from_os();

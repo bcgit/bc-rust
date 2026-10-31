@@ -1,11 +1,13 @@
 //! The mode-bound AES key objects: validation at construction, and `key.create_encryptor(rng)`
-//! producing exactly what the mode's own `do_encrypt_init_rng` produces from the same material
-//! and RNG.
+//! producing exactly what the mode's own route -- the hazmat mode traits the key forwards to --
+//! produces from the same material and RNG.
 
-use bouncycastle_aes::{AES_GCM_128, AES_GCM_192, AES_GCM_256, AES128Key, AES192Key, AES256Key};
-use bouncycastle_cipher::modes::GCM;
+use bouncycastle_aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
+use bouncycastle_aes::{AES_GCM_128, AES128Key, AES192Key, AES256Key};
+use bouncycastle_cipher::modes::{CTR, GCM, ModeNames};
 use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
+use bouncycastle_core::hazmat::{AeadDecryptMode, AeadEncryptMode, ElectronicCodeBook, Mode};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::symmetric_key::{AeadDecryptionKey, AeadEncryptionKey, FromKeyMaterial};
@@ -13,12 +15,6 @@ use bouncycastle_core::traits::{
     AEADCipherDecryptor, AEADCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
 };
 use bouncycastle_core_test_framework::FixedSeedRNG;
-
-/// The worker traits, kept out of scope: a GCM worker implements both them and the cipher
-/// traits under the same method names, so the generic helpers name them by path.
-mod w {
-    pub use bouncycastle_core::symmetric_key::{AeadDecryptWorker, AeadEncryptWorker};
-}
 
 fn material<const N: usize>() -> KeyMaterial<N> {
     let bytes: [u8; N] = core::array::from_fn(|i| (i as u8).wrapping_mul(7).wrapping_add(1));
@@ -38,11 +34,10 @@ where
     K: AeadEncryptionKey<N, 12, 16, 16>,
 {
     let (mut enc, nonce) = key.create_encryptor(&mut rng()).expect("nonce draw");
-    w::AeadEncryptWorker::do_update_aad(&mut enc, AAD).unwrap();
+    enc.do_update_aad(AAD).unwrap();
     let mut ct = vec![0u8; MSG.len()];
-    w::AeadEncryptWorker::do_encrypt_out(&mut enc, MSG, &mut ct).unwrap();
-    let (_, tag) =
-        w::AeadEncryptWorker::do_encrypt_final_detached_out(enc, &mut [0u8; 16]).unwrap();
+    enc.do_encrypt_out(MSG, &mut ct).unwrap();
+    let (_, tag) = enc.do_encrypt_final_detached_out(&mut [0u8; 16]).unwrap();
     (nonce, ct, tag)
 }
 
@@ -59,11 +54,11 @@ where
 {
     // Decryption setup is infallible: no Result to unwrap.
     let mut dec = key.create_decryptor(nonce);
-    w::AeadDecryptWorker::do_update_aad(&mut dec, AAD)?;
+    dec.do_update_aad(AAD)?;
     let mut pt = vec![0u8; ct.len() + 16];
-    let n = w::AeadDecryptWorker::do_decrypt_out(&mut dec, ct, &mut pt)?;
+    let n = dec.do_decrypt_out(ct, &mut pt)?;
     let mut last = [0u8; 16];
-    let m = w::AeadDecryptWorker::do_decrypt_final_detached_out(dec, tag, &mut last)?;
+    let m = dec.do_decrypt_final_detached_out(tag, &mut last)?;
     Ok([&pt[..n], &last[..m]].concat())
 }
 
@@ -93,28 +88,31 @@ fn the_key_type_a_mode_requires_is_the_constructor_constant() {
 }
 
 /// The key-side encryptor is the mode's own type built from the same material, so with the same
-/// RNG it must produce the same nonce, ciphertext and tag as the static constructor.
+/// RNG it must produce the same nonce, ciphertext and tag as the worker built from the bare key
+/// state through the mode trait the key forwards to.
 #[test]
-fn create_encryptor_matches_do_encrypt_init_rng() {
+fn create_encryptor_matches_the_key_state_route() {
     let km = material::<32>();
     let key = AES256Key::<GCM>::from_key_material(&km).expect("a valid key");
+    let state = <GCM as Mode<AES256Internal>>::key_state(AES256Internal::new(&km).unwrap());
 
-    let (mut enc_static, nonce_static) =
-        AES_GCM_256::<Encrypting>::do_encrypt_init_rng(&km, &mut rng()).expect("static init");
+    let (mut enc_state, nonce_state) =
+        <GCM as AeadEncryptMode<AES256Internal, 32, 12, 16, 16>>::encrypt_init(&state, &mut rng())
+            .expect("key-state init");
     let (mut enc_key, nonce_key) = key.create_encryptor(&mut rng()).expect("key-side init");
-    assert_eq!(nonce_static, nonce_key);
+    assert_eq!(nonce_state, nonce_key);
 
-    let mut ct_static = vec![0u8; MSG.len()];
+    let mut ct_state = vec![0u8; MSG.len()];
     let mut ct_key = vec![0u8; MSG.len()];
-    enc_static.do_update_aad(AAD).unwrap();
+    enc_state.do_update_aad(AAD).unwrap();
     enc_key.do_update_aad(AAD).unwrap();
-    enc_static.do_encrypt_out(MSG, &mut ct_static).unwrap();
+    enc_state.do_encrypt_out(MSG, &mut ct_state).unwrap();
     enc_key.do_encrypt_out(MSG, &mut ct_key).unwrap();
-    let (_, _, tag_static) = enc_static.do_encrypt_final_detached().unwrap();
+    let (_, _, tag_state) = enc_state.do_encrypt_final_detached().unwrap();
     let (_, _, tag_key) = enc_key.do_encrypt_final_detached().unwrap();
 
-    assert_eq!(ct_static, ct_key);
-    assert_eq!(tag_static, tag_key);
+    assert_eq!(ct_state, ct_key);
+    assert_eq!(tag_state, tag_key);
 }
 
 #[test]
@@ -134,35 +132,33 @@ fn create_decryptor_round_trips_and_detects_tampering() {
 }
 
 /// The one-shots on the role traits are written over `create_encryptor` and the streaming
-/// methods, so they must match the cipher traits' key-taking one-shots byte for byte.
+/// methods, so they must match the message streamed by hand byte for byte, in both layouts.
 #[test]
-fn key_one_shots_match_the_static_one_shots() {
+fn key_one_shots_match_the_streaming_methods() {
     let km = material::<16>();
     let key = AES128Key::<GCM>::from_key_material(&km).expect("a valid key");
-    type E = AES_GCM_128<Encrypting>;
-    type D = AES_GCM_128<Decrypting>;
+    type E<'k> = AES_GCM_128<'k, Encrypting>;
+    type D<'k> = AES_GCM_128<'k, Decrypting>;
+
+    // The reference: streamed by hand, detached, under the pinned nonce.
+    let (nonce_s, ct_s, tag_s) = encrypt_via_key::<16, _>(&key);
+    let mut inline_s = ct_s.clone();
+    inline_s.extend_from_slice(&tag_s);
 
     // Inline tag.
-    let mut ct_static = vec![0u8; E::encrypt_out_len(MSG.len())];
-    let (nonce_s, n_s) =
-        E::encrypt_with_aad_rng_out(&km, &mut rng(), AAD, MSG, &mut ct_static).unwrap();
     let mut ct_key = vec![0u8; E::encrypt_out_len(MSG.len())];
     let (n_k, nonce_k) = key.encrypt_with_aad_out(&mut rng(), AAD, MSG, &mut ct_key).unwrap();
-    assert_eq!((nonce_s, n_s), (nonce_k, n_k));
-    assert_eq!(ct_static, ct_key);
+    assert_eq!((nonce_s, inline_s.len()), (nonce_k, n_k));
+    assert_eq!(inline_s, ct_key);
 
     let mut pt = vec![0u8; D::decrypt_out_len(ct_key.len())];
     let m = key.decrypt_with_aad_out(&nonce_k, AAD, &ct_key, &mut pt).unwrap();
     assert_eq!(&pt[..m], MSG);
-    assert_eq!(D::decrypt_with_aad(&km, &nonce_k, AAD, &ct_key).unwrap(), MSG);
     assert_eq!(key.decrypt_with_aad(&nonce_k, AAD, &ct_key).unwrap(), MSG);
 
     // Detached tag.
-    let mut ct_s = vec![0u8; E::encrypt_detached_out_len(MSG.len())];
-    let (nonce_s, n_s, tag_s) =
-        E::encrypt_detached_rng_out(&km, &mut rng(), AAD, MSG, &mut ct_s).unwrap();
     let (nonce_k, ct_k, tag_k) = key.encrypt_detached(&mut rng(), AAD, MSG).unwrap();
-    assert_eq!((nonce_s, n_s), (nonce_k, ct_k.len()));
+    assert_eq!((nonce_s, ct_s.len()), (nonce_k, ct_k.len()));
     assert_eq!((ct_s, tag_s), (ct_k.clone(), tag_k));
 
     let mut pt = vec![0u8; D::decrypt_detached_out_len(ct_k.len())];
@@ -188,34 +184,46 @@ fn key_one_shots_match_the_static_one_shots() {
     ));
 }
 
-/// The decryptor built from the key accepts what the static encryptor produced, and vice versa,
-/// at every key length: one more check that the two paths are the same cipher.
+/// The decryptor built from the key accepts what a worker built from the bare key state
+/// produced, and vice versa, at every key length: one more check that the two routes are the
+/// same cipher.
 #[test]
-fn key_side_and_static_paths_interoperate_at_every_key_length() {
-    fn check<const N: usize, K, E, D>(key: &K)
+fn the_key_and_the_key_state_route_interoperate_at_every_key_length() {
+    fn check<const N: usize, P, K>(key: &K)
     where
+        P: ElectronicCodeBook<N, 16> + ModeNames + Clone,
         K: AeadEncryptionKey<N, 12, 16, 16> + AeadDecryptionKey<N, 12, 16, 16>,
-        E: AEADCipherEncryptor<N, 12, 16, 16>,
-        D: AEADCipherDecryptor<N, 12, 16, 16>,
     {
-        let km = material::<N>();
+        let state = <GCM as Mode<P>>::key_state(P::new(&material::<N>()).unwrap());
 
-        let (nonce, ct, tag) = E::encrypt_detached(&km, AAD, MSG).expect("static one-shot");
+        let (mut enc, nonce) =
+            <GCM as AeadEncryptMode<P, N, 12, 16, 16>>::encrypt_init(&state, &mut rng()).unwrap();
+        enc.do_update_aad(AAD).unwrap();
+        let mut ct = vec![0u8; MSG.len()];
+        enc.do_encrypt_out(MSG, &mut ct).unwrap();
+        let (_, _, tag) = enc.do_encrypt_final_detached().unwrap();
         let pt = decrypt_via_key::<N, K>(key, &nonce, &ct, &tag).expect("a valid tag");
         assert_eq!(pt, MSG);
 
         let (nonce, ct, tag) = encrypt_via_key::<N, K>(key);
-        let pt = D::decrypt_detached(&km, &nonce, AAD, &ct, &tag).expect("static one-shot");
+        let mut dec = <GCM as AeadDecryptMode<P, N, 12, 16, 16>>::decrypt_init(&state, &nonce);
+        dec.do_update_aad(AAD).unwrap();
+        let mut pt = vec![0u8; ct.len()];
+        let n = dec.do_decrypt_out(&ct, &mut pt).unwrap();
+        let mut last = [0u8; 16];
+        let m = dec.do_decrypt_final_detached_out(&tag, &mut last).unwrap();
+        pt.truncate(n);
+        pt.extend_from_slice(&last[..m]);
         assert_eq!(pt, MSG);
     }
 
-    check::<16, _, AES_GCM_128<Encrypting>, AES_GCM_128<Decrypting>>(
+    check::<16, AES128Internal, _>(
         &AES128Key::<GCM>::from_key_material(&material::<16>()).unwrap(),
     );
-    check::<24, _, AES_GCM_192<Encrypting>, AES_GCM_192<Decrypting>>(
+    check::<24, AES192Internal, _>(
         &AES192Key::<GCM>::from_key_material(&material::<24>()).unwrap(),
     );
-    check::<32, _, AES_GCM_256<Encrypting>, AES_GCM_256<Decrypting>>(
+    check::<32, AES256Internal, _>(
         &AES256Key::<GCM>::from_key_material(&material::<32>()).unwrap(),
     );
 }
@@ -297,6 +305,35 @@ fn a_cloned_key_is_the_same_key() {
     assert_eq!(encrypt_via_key::<16, _>(&copy), (nonce, ct, tag));
 }
 
+/// Equality is over the expanded state, so it follows the material: the same bytes under the same
+/// mode compare equal, as does a clone, and different bytes do not. Both shapes of state are
+/// covered: the bare schedule (`CTR`) and GCM's, which adds `H`. Keys have no `Debug`, hence
+/// `assert!` over `==` rather than `assert_eq!`.
+#[test]
+fn keys_compare_equal_exactly_when_their_material_does() {
+    let other = KeyMaterial::<16>::from_bytes_as_type(&[0x55; 16], KeyType::SymmetricCipherKey)
+        .expect("a valid key");
+
+    let key = AES128Key::<GCM>::from_key_material(&material::<16>()).unwrap();
+    assert!(key == key.clone());
+    assert!(key == AES128Key::<GCM>::from_key_material(&material::<16>()).unwrap());
+    assert!(key != AES128Key::<GCM>::from_key_material(&other).unwrap());
+
+    let key = AES128Key::<CTR>::from_key_material(&material::<16>()).unwrap();
+    assert!(key == key.clone());
+    assert!(key != AES128Key::<CTR>::from_key_material(&other).unwrap());
+
+    // The longer schedules are a different plane width; the comparison is over all of it.
+    let key = AES256Key::<GCM>::from_key_material(&material::<32>()).unwrap();
+    assert!(key == AES256Key::<GCM>::from_key_material(&material::<32>()).unwrap());
+    let mut bytes = [0u8; 32];
+    bytes.copy_from_slice(material::<32>().ref_to_bytes());
+    bytes[31] ^= 1;
+    let last_byte_differs =
+        KeyMaterial::<32>::from_bytes_as_type(&bytes, KeyType::SymmetricCipherKey).unwrap();
+    assert!(key != AES256Key::<GCM>::from_key_material(&last_byte_differs).unwrap());
+}
+
 /// Lengths either side of the 64-byte chunk the provided in-place bodies copy through, plus the
 /// empty message and a long one.
 const IN_PLACE_LENS: [usize; 9] = [0, 1, 15, 16, 63, 64, 65, 200, 1000];
@@ -365,11 +402,10 @@ fn supplied_nonce_forms_match_the_drawing_forms() {
         assert_eq!(buf, ct);
 
         let mut enc = key.create_encryptor_nonce(&nonce);
-        w::AeadEncryptWorker::do_update_aad(&mut enc, AAD).unwrap();
+        enc.do_update_aad(AAD).unwrap();
         let mut streamed = vec![0u8; msg.len()];
-        let n = w::AeadEncryptWorker::do_encrypt_out(&mut enc, msg, &mut streamed).unwrap();
-        let (_, tag_s) =
-            w::AeadEncryptWorker::do_encrypt_final_detached_out(enc, &mut [0u8; 16]).unwrap();
+        let n = enc.do_encrypt_out(msg, &mut streamed).unwrap();
+        let (_, tag_s) = enc.do_encrypt_final_detached_out(&mut [0u8; 16]).unwrap();
         assert_eq!((&streamed[..n], tag_s), (&ct[..], tag));
 
         assert_eq!(key.decrypt_detached(&nonce, AAD, &ct, &tag).unwrap(), msg);

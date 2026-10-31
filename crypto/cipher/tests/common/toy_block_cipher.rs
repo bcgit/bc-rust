@@ -16,7 +16,7 @@
 
 use bouncycastle_cipher::modes::ModeNames;
 use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
-use bouncycastle_core::hazmat::ElectronicCodeBook;
+use bouncycastle_core::hazmat::{BlockPermutation, ElectronicCodeBook};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::Algorithm;
@@ -70,7 +70,9 @@ impl ElectronicCodeBook<TOY_BLOCK_LEN, TOY_BLOCK_LEN> for ToyBlockCipher {
         bytes.copy_from_slice(key.ref_to_bytes());
         Ok(Self { key: bytes })
     }
+}
 
+impl BlockPermutation<TOY_BLOCK_LEN> for ToyBlockCipher {
     fn encrypt_block(&self, block: &mut [u8; TOY_BLOCK_LEN]) {
         for (b, k) in block.iter_mut().zip(self.key.iter()) {
             *b = b.rotate_left(1) ^ *k;

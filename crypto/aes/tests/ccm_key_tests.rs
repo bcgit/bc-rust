@@ -1,17 +1,20 @@
-//! The mode-bound CCM key: the packet role traits, whose constructors take the AAD and payload
+//! The mode-bound CCM key: the declared-length role traits, whose constructors take the AAD and payload
 //! lengths, their one-shots at any length, and agreement with the generic-trait pair.
 //!
 //! Only the worker traits are in scope here, since the pair's cipher-trait methods share their
 //! names.
 
-use bouncycastle_aes::{AES_CCM_128, AES128Key, AES192Key};
-use bouncycastle_cipher::Encrypting;
+use bouncycastle_aes::hazmat::AES128Internal;
+use bouncycastle_aes::{AES128Key, AES192Key};
 use bouncycastle_cipher::modes::CCM;
 use bouncycastle_core::errors::SymmetricCipherError;
+use bouncycastle_core::hazmat::{AeadDeclaredEncryptMode, ElectronicCodeBook};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::symmetric_key::{
-    AeadDecryptWorker, AeadEncryptWorker, AeadPacketDecryptionKey, AeadPacketEncryptionKey,
-    FromKeyMaterial,
+    AeadDeclaredDecryptionKey, AeadDeclaredEncryptionKey, FromKeyMaterial,
+};
+use bouncycastle_core::traits::{
+    AEADCipherDecryptor, AEADCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
 };
 use bouncycastle_core_test_framework::FixedSeedRNG;
 
@@ -31,15 +34,12 @@ fn message(len: usize) -> Vec<u8> {
     (0..len).map(|i| (i * 31 % 251) as u8).collect()
 }
 
-/// The pair's any-length `_nonce` one-shot, the reference for every form below.
+/// The mode's in-place `_nonce` one-shot over the bare permutation (the hazmat mode-trait
+/// route), the reference for every form below.
 fn reference(km: &KeyMaterial<16>, nonce: &[u8; 12], msg: &[u8]) -> (Vec<u8>, [u8; 16]) {
-    use bouncycastle_core::traits::AEADCipherEncryptor;
-    let mut ct = vec![0u8; msg.len()];
-    let (n, tag) = AES_CCM_128::<Encrypting, 12, 16, 0, 0>::encrypt_detached_nonce_out(
-        km, nonce, AAD, msg, &mut ct,
-    )
-    .unwrap();
-    assert_eq!(n, msg.len());
+    let perm = AES128Internal::new(km).unwrap();
+    let mut ct = msg.to_vec();
+    let tag = CCM::<12, 16>::encrypt_detached_in_place_nonce(&perm, nonce, AAD, &mut ct).unwrap();
     (ct, tag)
 }
 
@@ -180,12 +180,9 @@ fn a_short_nonce_is_reachable_through_the_supplied_nonce_forms() {
     let mut buf = msg.clone();
     let tag = key.encrypt_detached_in_place_nonce(&nonce, AAD, &mut buf).unwrap();
     let (ct, tag_p) = {
-        use bouncycastle_core::traits::AEADCipherEncryptor;
-        let mut ct = vec![0u8; msg.len()];
-        let (_, t) = AES_CCM_128::<Encrypting, 8, 8, 0, 0>::encrypt_detached_nonce_out(
-            &km, &nonce, AAD, &msg, &mut ct,
-        )
-        .unwrap();
+        let perm = AES128Internal::new(&km).unwrap();
+        let mut ct = msg.clone();
+        let t = CCM::<8, 8>::encrypt_detached_in_place_nonce(&perm, &nonce, AAD, &mut ct).unwrap();
         (ct, t)
     };
     assert_eq!((ct, tag_p), (buf.clone(), tag));
@@ -193,17 +190,58 @@ fn a_short_nonce_is_reachable_through_the_supplied_nonce_forms() {
     assert_eq!(buf, msg);
 }
 
-/// The workers are the mode's packet state, 264/296/328 B for AES-128/192/256, with the
-/// decryptor adding the tag it holds back and that tag's length; the aes docs quote these.
+/// The workers are the mode's `Ccm` state over a borrowed schedule, 96 B at every key length,
+/// with the decryptor adding the tag it holds back and that tag's length; the aes docs quote
+/// these.
 #[test]
 fn worker_sizes_match_the_documented_memory_table() {
     use bouncycastle_aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
-    use bouncycastle_cipher::modes::{CcmPacketDecryptor, CcmPacketEncryptor};
+    use bouncycastle_cipher::modes::{CcmDecryptor, CcmEncryptor};
     use core::mem::size_of;
-    assert_eq!(size_of::<CcmPacketEncryptor<AES128Internal, 16, 12, 16>>(), 264);
-    assert_eq!(size_of::<CcmPacketEncryptor<AES192Internal, 24, 12, 16>>(), 296);
-    assert_eq!(size_of::<CcmPacketEncryptor<AES256Internal, 32, 12, 16>>(), 328);
-    assert_eq!(size_of::<CcmPacketDecryptor<AES128Internal, 16, 12, 16>>(), 288);
-    assert_eq!(size_of::<CcmPacketDecryptor<AES192Internal, 24, 12, 16>>(), 320);
-    assert_eq!(size_of::<CcmPacketDecryptor<AES256Internal, 32, 12, 16>>(), 352);
+    assert_eq!(size_of::<CcmEncryptor<'_, AES128Internal, 12, 16>>(), 96);
+    assert_eq!(size_of::<CcmEncryptor<'_, AES192Internal, 12, 16>>(), 96);
+    assert_eq!(size_of::<CcmEncryptor<'_, AES256Internal, 12, 16>>(), 96);
+    assert_eq!(size_of::<CcmDecryptor<'_, AES128Internal, 12, 16>>(), 120);
+    assert_eq!(size_of::<CcmDecryptor<'_, AES192Internal, 12, 16>>(), 120);
+    assert_eq!(size_of::<CcmDecryptor<'_, AES256Internal, 12, 16>>(), 120);
+}
+
+/// A refused `do_encrypt_out` / `do_decrypt_out` leaves nothing of the input in the caller's
+/// buffer, and zeroes the buffer first as every `_out` method must: payload offered while declared
+/// AAD is still owed, and payload past the declared length, on both sides.
+#[test]
+fn a_refused_update_leaves_no_payload_in_the_output_buffer() {
+    use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
+
+    let key = AES128Key::<CCM<12, 16>>::from_key_material(&material::<16>()).unwrap();
+    let nonce = [0x11u8; 12];
+    let payload = [0x5Au8; 16];
+
+    // AAD still owed: the four bytes declared have not been supplied.
+    let mut enc = key.create_encryptor_nonce(&nonce, 4, 16).unwrap();
+    let mut out = [0xEEu8; 32];
+    assert!(matches!(
+        enc.do_encrypt_out(&payload, &mut out),
+        Err(SymmetricCipherError::StateError(_))
+    ));
+    assert_eq!(out, [0u8; 32], "a refused encrypt must leave only zeros behind");
+
+    // Past the declared payload length.
+    let mut enc = key.create_encryptor_nonce(&nonce, 0, 8).unwrap();
+    let mut out = [0xEEu8; 32];
+    assert!(matches!(
+        enc.do_encrypt_out(&payload, &mut out),
+        Err(SymmetricCipherError::StateError(_))
+    ));
+    assert_eq!(out, [0u8; 32], "an over-length encrypt must leave only zeros behind");
+
+    // The decryptor, with AAD still owed: the sixteen bytes are within the declared payload, so
+    // they are not held back as a tag, and must not be copied either.
+    let mut dec = key.create_decryptor(&nonce, 4, 16).unwrap();
+    let mut out = [0xEEu8; 32];
+    assert!(matches!(
+        dec.do_decrypt_out(&payload, &mut out),
+        Err(SymmetricCipherError::StateError(_))
+    ));
+    assert_eq!(out, [0u8; 32], "a refused decrypt must leave only zeros behind");
 }

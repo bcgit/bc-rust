@@ -186,9 +186,9 @@
 //!
 //! | Object                                            | Size (bytes) |
 //! |---------------------------------------------------|--------------|
-//! | `HKDF_SHA256`                                     | 256          |
-//! | `HKDF_SHA384`                                     | 448          |
-//! | `HKDF_SHA512`                                     | 448          |
+//! | `HKDF_SHA256`                                     | 368          |
+//! | `HKDF_SHA384`                                     | 656          |
+//! | `HKDF_SHA512`                                     | 656          |
 //! | Suspended `HKDF_SHA256` state                     | 122          |
 //! | Suspended `HKDF_SHA384` state                     | 218          |
 //! | Suspended `HKDF_SHA512` state                     | 218          |
@@ -213,8 +213,8 @@
 //!   does not create entropy: asking for 200 bytes of output from a 128-bit seed yields 200 bytes at
 //!   a 128-bit security level, not a 1600-bit key.
 //! * RFC 5869 Section 3.1 recommends a random salt where one is available; SP 800-56Cr2 permits an
-//!   all-zero salt. An all-zero salt is not a [`KeyType::MACKey`], so it needs
-//!   `MAC::new_allow_weak_key` semantics -- which is exactly what the extract phase does internally.
+//!   all-zero salt. An all-zero salt is below any HMAC's strength, so it needs the HMAC key's
+//!   `from_key_material_allow_weak` -- which is exactly what the extract phase does internally.
 use crate::hmac::{
     SUSPENDED_HMAC_SHA256_STATE_LEN, SUSPENDED_HMAC_SHA384_STATE_LEN,
     SUSPENDED_HMAC_SHA512_STATE_LEN,

@@ -1,15 +1,17 @@
-//! `AES_CMAC_*` against the NIST CSRC AES-CMAC examples through the MAC trait test framework,
-//! plus the streaming split points, key validation and suspend/resume over the real cipher. The
-//! structural tests are in `bouncycastle-cipher` over a toy; the large vector sets are in
-//! `cmac_bc-test-data.rs` and `cmac_wycheproof.rs`.
+//! `AES*Key<CMAC>` against the NIST CSRC AES-CMAC examples through the MAC trait test framework,
+//! plus the streaming split points, the key's construction policy and suspend/resume over the
+//! real cipher. The structural tests are in `bouncycastle-cipher` over a toy; the large vector
+//! sets are in `cmac_bc-test-data.rs` and `cmac_wycheproof.rs`.
 
-use bouncycastle_aes::{AES_CMAC_128, AES_CMAC_192, AES_CMAC_256};
-use bouncycastle_cipher::modes::CMAC_MIN_TAG_LEN;
-use bouncycastle_core::errors::{KeyMaterialError, MACError};
-use bouncycastle_core::hazmat::do_hazardous_operations;
-use bouncycastle_core::key_material::{KeyMaterial, KeyMaterial128, KeyMaterialTrait, KeyType};
+use bouncycastle_aes::hazmat::{AES128Internal, AES256Internal};
+use bouncycastle_aes::{AES_CMAC_128, AES_CMAC_256, AES128Key, AES192Key, AES256Key};
+use bouncycastle_cipher::modes::{CMAC, CMAC_MIN_TAG_LEN, ModeNames};
+use bouncycastle_core::hazmat::{ModeKey, do_hazardous_operations};
+use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
+use bouncycastle_core::symmetric_key::{FromKeyMaterial, MacGenerationKey, MacVerificationKey};
 use bouncycastle_core::traits::{Algorithm, MAC, SuspendableKeyed};
+use bouncycastle_core_test_framework::from_key_material::TestFrameworkFromKeyMaterial;
 use bouncycastle_core_test_framework::mac::TestFrameworkMAC;
 use bouncycastle_hex as hex;
 
@@ -62,26 +64,17 @@ const TAGS_256: [&str; 4] = [
 fn csrc_examples() {
     let msg = hex::decode(MSG).unwrap();
     let tf = TestFrameworkMAC::new();
+    let key_128 = AES128Key::<CMAC>::from_key_material(&mac_key::<16>(KEY_128)).unwrap();
     for (mlen, tag) in MLENS.iter().zip(TAGS_128) {
-        tf.test_mac::<AES_CMAC_128>(
-            &mac_key::<16>(KEY_128),
-            &msg[..*mlen],
-            &hex::decode(tag).unwrap(),
-        );
+        tf.test_mac_key(&key_128, &msg[..*mlen], &hex::decode(tag).unwrap());
     }
+    let key_192 = AES192Key::<CMAC>::from_key_material(&mac_key::<24>(KEY_192)).unwrap();
     for (mlen, tag) in MLENS.iter().zip(TAGS_192) {
-        tf.test_mac::<AES_CMAC_192>(
-            &mac_key::<24>(KEY_192),
-            &msg[..*mlen],
-            &hex::decode(tag).unwrap(),
-        );
+        tf.test_mac_key(&key_192, &msg[..*mlen], &hex::decode(tag).unwrap());
     }
+    let key_256 = AES256Key::<CMAC>::from_key_material(&mac_key::<32>(KEY_256)).unwrap();
     for (mlen, tag) in MLENS.iter().zip(TAGS_256) {
-        tf.test_mac::<AES_CMAC_256>(
-            &mac_key::<32>(KEY_256),
-            &msg[..*mlen],
-            &hex::decode(tag).unwrap(),
-        );
+        tf.test_mac_key(&key_256, &msg[..*mlen], &hex::decode(tag).unwrap());
     }
 }
 
@@ -89,90 +82,57 @@ fn csrc_examples() {
 /// held-back final block must come out the same wherever the call boundaries fall.
 #[test]
 fn streaming_split_points() {
-    let key = mac_key::<16>(KEY_128);
+    let key = AES128Key::<CMAC>::from_key_material(&mac_key::<16>(KEY_128)).unwrap();
     let msg = hex::decode(MSG).unwrap();
     for mlen in [20, 32, 33, 64] {
-        let expected = AES_CMAC_128::new(&key).unwrap().mac(&msg[..mlen]);
+        let expected = key.mac(&msg[..mlen]);
         for split in 0..=mlen {
-            let mut cmac = AES_CMAC_128::new(&key).unwrap();
+            let mut cmac = key.create_generator();
             cmac.do_update(&msg[..split]);
             cmac.do_update(&msg[split..mlen]);
             assert_eq!(cmac.do_final(), expected, "mlen {mlen}, split at {split}");
         }
-        let mut cmac = AES_CMAC_128::new(&key).unwrap();
+        let mut cmac = key.create_generator();
         for b in &msg[..mlen] {
             cmac.do_update(core::slice::from_ref(b));
         }
         assert_eq!(cmac.do_final(), expected, "mlen {mlen}, byte at a time");
     }
     assert_eq!(
-        AES_CMAC_128::new(&key).unwrap().mac(&msg),
+        key.mac(&msg),
         hex::decode(TAGS_128[3]).unwrap(),
         "the 64-byte one-shot is the CSRC example"
     );
 }
 
+/// The key's construction suite at both ends of the key-length range: a `MACKey` of the right
+/// length and strength, bound to the CMAC name or to nothing; a block cipher key is not a CMAC
+/// key (SP 800-38B Sec 5.2, key separation). Wrong lengths are a compile-time matter on this path.
 #[test]
-fn key_validation() {
-    // A block cipher key is not a CMAC key (SP 800-38B Sec 5.2, key separation).
-    let cipher_key = KeyMaterial128::from_bytes_as_type(
-        &hex::decode(KEY_128).unwrap(),
-        KeyType::SymmetricCipherKey,
-    )
-    .unwrap();
-    assert!(matches!(
-        AES_CMAC_128::new_allow_weak_key(&cipher_key),
-        Err(MACError::KeyMaterialError(KeyMaterialError::InvalidKeyType(_)))
-    ));
-
-    // A full-strength MAC key of the wrong length.
-    let key_32 = mac_key::<32>(KEY_256);
-    for result in
-        [AES_CMAC_128::new(&key_32).err(), AES_CMAC_128::new_allow_weak_key(&key_32).err()]
-    {
-        assert_eq!(result, Some(MACError::KeyMaterialError(KeyMaterialError::InvalidLength)));
-    }
-    let key_16 = mac_key::<16>(KEY_128);
-    assert_eq!(
-        AES_CMAC_256::new_allow_weak_key(&key_16).err(),
-        Some(MACError::KeyMaterialError(KeyMaterialError::InvalidLength))
-    );
-
-    // A 32-byte key tagged at 128 bits is too weak for AES-256, but accepted when asked.
-    let mut weak = mac_key::<32>(KEY_256);
-    weak.set_security_strength(SecurityStrength::_128bit).unwrap();
-    assert!(matches!(
-        AES_CMAC_256::new(&weak),
-        Err(MACError::KeyMaterialError(KeyMaterialError::SecurityStrength(_)))
-    ));
-    assert!(AES_CMAC_256::new_allow_weak_key(&weak).is_ok());
-
-    // The all-zero key is `KeyType::Zeroized`: weak, but a permitted type.
-    let zero = KeyMaterial128::from_bytes_as_type(&[0u8; 16], KeyType::MACKey).unwrap();
-    assert_eq!(zero.key_type(), KeyType::Zeroized);
-    assert!(matches!(
-        AES_CMAC_128::new(&zero),
-        Err(MACError::KeyMaterialError(KeyMaterialError::SecurityStrength(_)))
-    ));
-    assert!(AES_CMAC_128::new_allow_weak_key(&zero).is_ok());
+fn the_key_enforces_the_material_policy() {
+    TestFrameworkFromKeyMaterial::new()
+        .test::<16, AES128Key<CMAC>>(AES128Internal::CMAC_ALG_NAME, SecurityStrength::_128bit);
+    TestFrameworkFromKeyMaterial::new()
+        .test::<32, AES256Key<CMAC>>(AES256Internal::CMAC_ALG_NAME, SecurityStrength::_256bit);
 }
 
 #[test]
 fn truncation_to_the_minimum_tag() {
-    let key = mac_key::<16>(KEY_128);
+    let key = AES128Key::<CMAC>::from_key_material(&mac_key::<16>(KEY_128)).unwrap();
     let msg = hex::decode(MSG).unwrap();
     let full = hex::decode(TAGS_128[2]).unwrap();
     let mut out = [0xAAu8; CMAC_MIN_TAG_LEN];
-    assert_eq!(AES_CMAC_128::new(&key).unwrap().mac_out(&msg[..20], &mut out).unwrap(), 8);
+    assert_eq!(key.mac_out(&msg[..20], &mut out).unwrap(), 8);
     assert_eq!(out[..], full[..8]);
-    assert!(!AES_CMAC_128::new(&key).unwrap().verify(&msg[..20], &full[..8]));
+    assert!(!key.verify(&msg[..20], &full[..8]));
 }
 
 #[test]
 fn algorithm_params() {
     assert_eq!(AES_CMAC_128::ALG_NAME, "AES_CMAC_128");
     assert_eq!(AES_CMAC_256::MAX_SECURITY_STRENGTH, SecurityStrength::_256bit);
-    let cmac = AES_CMAC_192::new(&mac_key::<24>(KEY_192)).unwrap();
+    let key = AES192Key::<CMAC>::from_key_material(&mac_key::<24>(KEY_192)).unwrap();
+    let cmac = key.create_generator();
     assert_eq!(cmac.output_len(), 16);
     assert_eq!(cmac.max_security_strength(), SecurityStrength::_192bit);
     assert_eq!(STATE_LEN, 36);
@@ -182,15 +142,16 @@ fn algorithm_params() {
 /// one-shot tag.
 #[test]
 fn suspend_resume() {
-    let key = mac_key::<16>(KEY_128);
+    let material = mac_key::<16>(KEY_128);
+    let key = AES128Key::<CMAC>::from_key_material(&material).unwrap();
     let msg = hex::decode(MSG).unwrap();
     for (mlen, tag) in MLENS.iter().zip(TAGS_128) {
         let expected = hex::decode(tag).unwrap();
         for split in 0..=*mlen {
-            let mut cmac = AES_CMAC_128::new(&key).unwrap();
+            let mut cmac = key.create_generator();
             cmac.do_update(&msg[..split]);
             let state: [u8; STATE_LEN] = cmac.suspend();
-            let mut resumed = AES_CMAC_128::from_suspended(state, &key).unwrap();
+            let mut resumed = AES_CMAC_128::from_suspended(state, key.state()).unwrap();
             resumed.do_update(&msg[split..*mlen]);
             assert_eq!(resumed.do_final(), expected, "mlen {mlen}, suspended at {split}");
         }

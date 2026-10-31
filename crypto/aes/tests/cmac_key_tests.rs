@@ -1,9 +1,11 @@
 //! `AES*Key<CMAC>`: the key object holding the subkeys, and the workers it hands out producing
-//! exactly what `MAC::new` produces from the same material.
+//! exactly what the mode's own route produces over a `CmacKeyState` built from the same bytes.
 
+use bouncycastle_aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
 use bouncycastle_aes::{AES_CMAC_128, AES_CMAC_192, AES_CMAC_256, AES128Key, AES192Key, AES256Key};
 use bouncycastle_cipher::modes::{CMAC, CmacKeyState};
 use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
+use bouncycastle_core::hazmat::{ElectronicCodeBook, MacMode, Mode};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::symmetric_key::{FromKeyMaterial, MacGenerationKey, MacVerificationKey};
@@ -13,6 +15,13 @@ use bouncycastle_hex as hex;
 
 fn mac_key<const N: usize>(fill: u8) -> KeyMaterial<N> {
     KeyMaterial::<N>::from_bytes_as_type(&[fill; N], KeyType::MACKey).expect("a MAC key")
+}
+
+/// The same bytes as [`mac_key`] tagged as the permutation itself takes them, for the bare key
+/// state the key object is compared against.
+fn cipher_key<const N: usize>(fill: u8) -> KeyMaterial<N> {
+    KeyMaterial::<N>::from_bytes_as_type(&[fill; N], KeyType::SymmetricCipherKey)
+        .expect("a cipher key")
 }
 
 const MSG: &[u8] = b"The quick brown fox jumps over the lazy dog";
@@ -32,23 +41,29 @@ fn the_key_object_gives_the_csrc_answer() {
 }
 
 #[test]
-fn the_key_and_the_worker_constructor_agree_at_every_key_length() {
+fn the_key_and_the_bare_key_state_agree_at_every_key_length() {
+    let state_16 = <CMAC as Mode<AES128Internal>>::key_state(
+        AES128Internal::new(&cipher_key::<16>(0x0b)).unwrap(),
+    );
+    let state_24 = <CMAC as Mode<AES192Internal>>::key_state(
+        AES192Internal::new(&cipher_key::<24>(0x0c)).unwrap(),
+    );
+    let state_32 = <CMAC as Mode<AES256Internal>>::key_state(
+        AES256Internal::new(&cipher_key::<32>(0x0d)).unwrap(),
+    );
     for len in [0usize, 1, 15, 16, 17, 43] {
         let msg = &MSG[..len];
-        let k16 = mac_key::<16>(0x0b);
         assert_eq!(
-            AES128Key::<CMAC>::from_key_material(&k16).unwrap().mac(msg),
-            AES_CMAC_128::new(&k16).unwrap().mac(msg)
+            AES128Key::<CMAC>::from_key_material(&mac_key::<16>(0x0b)).unwrap().mac(msg),
+            <CMAC as MacMode<AES128Internal>>::mac_init(&state_16).mac(msg)
         );
-        let k24 = mac_key::<24>(0x0c);
         assert_eq!(
-            AES192Key::<CMAC>::from_key_material(&k24).unwrap().mac(msg),
-            AES_CMAC_192::new(&k24).unwrap().mac(msg)
+            AES192Key::<CMAC>::from_key_material(&mac_key::<24>(0x0c)).unwrap().mac(msg),
+            <CMAC as MacMode<AES192Internal>>::mac_init(&state_24).mac(msg)
         );
-        let k32 = mac_key::<32>(0x0d);
         assert_eq!(
-            AES256Key::<CMAC>::from_key_material(&k32).unwrap().mac(msg),
-            AES_CMAC_256::new(&k32).unwrap().mac(msg)
+            AES256Key::<CMAC>::from_key_material(&mac_key::<32>(0x0d)).unwrap().mac(msg),
+            <CMAC as MacMode<AES256Internal>>::mac_init(&state_32).mac(msg)
         );
     }
 }
@@ -127,6 +142,16 @@ fn sizes() {
     );
     assert_eq!(
         [size_of::<AES_CMAC_128>(), size_of::<AES_CMAC_192>(), size_of::<AES_CMAC_256>()],
-        [248, 280, 312]
+        [48, 48, 48]
     );
+}
+
+/// Equality follows the material through the CMAC state, subkeys included: the same bytes
+/// compare equal, as does a clone, and different bytes do not.
+#[test]
+fn cmac_keys_compare_equal_exactly_when_their_material_does() {
+    let key = AES128Key::<CMAC>::from_key_material(&mac_key::<16>(0x2b)).unwrap();
+    assert!(key == key.clone());
+    assert!(key == AES128Key::<CMAC>::from_key_material(&mac_key::<16>(0x2b)).unwrap());
+    assert!(key != AES128Key::<CMAC>::from_key_material(&mac_key::<16>(0x2c)).unwrap());
 }

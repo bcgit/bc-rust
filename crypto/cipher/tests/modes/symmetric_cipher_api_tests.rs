@@ -17,20 +17,30 @@
 //! * and that the length predictions are exact, not upper bounds.
 
 mod common;
+#[path = "../common/toy_key.rs"]
+#[allow(dead_code)]
+mod toy_key;
 
-use bouncycastle_cipher::modes::{Cfb, Cfb8, Ctr};
+use bouncycastle_cipher::modes::{CFB, CFB8, CTR, Ctr};
 use bouncycastle_cipher::{Decrypting, Encrypting};
-use bouncycastle_core::key_material::KeyMaterial;
+use bouncycastle_core::hazmat::Mode;
+use bouncycastle_core::symmetric_key::{
+    FromKeyMaterial, SymmetricDecryptionKey, SymmetricEncryptionKey,
+};
 use bouncycastle_core::traits::{
     StreamCipherDecryptor, StreamCipherEncryptor, SymmetricCipherDecryptor,
     SymmetricCipherEncryptor,
 };
 use bouncycastle_core_test_framework::symmetric_ciphers::TestFrameworkSymmetricCipher;
 use common::{TOY_LEN, Toy, toy_key};
+use toy_key::{ToyKey, os_rng};
 
-type ToyCfb<Dir> = Cfb<Toy, Dir, TOY_LEN, TOY_LEN>;
-type ToyCfb8<Dir> = Cfb8<Toy, Dir, TOY_LEN, TOY_LEN>;
-type ToyCtr<Dir> = Ctr<Toy, Dir, TOY_LEN, TOY_LEN, 12>;
+type ToyCtr<'k, Dir> = Ctr<'k, Toy, Dir, TOY_LEN, 12>;
+
+/// The toy key under the stream mode `M`.
+fn key_for<M: Mode<Toy>>() -> ToyKey<Toy, M> {
+    ToyKey::from_key_material(&toy_key()).expect("the toy key")
+}
 
 /// All three stream modes must satisfy the shared conformance suite for the symmetric-cipher
 /// traits -- the same suite the padded adapters run, with `required_alignment` left at 1 because a
@@ -44,12 +54,9 @@ type ToyCtr<Dir> = Ctr<Toy, Dir, TOY_LEN, TOY_LEN, 12>;
 #[test]
 fn the_stream_modes_conform_to_the_symmetric_cipher_suite() {
     let framework = TestFrameworkSymmetricCipher::new();
-    framework
-        .test_encryptor_decryptor::<TOY_LEN, TOY_LEN, 0, ToyCfb<Encrypting>, ToyCfb<Decrypting>>();
-    framework
-        .test_encryptor_decryptor::<TOY_LEN, TOY_LEN, 0, ToyCfb8<Encrypting>, ToyCfb8<Decrypting>>(
-        );
-    framework.test_encryptor_decryptor::<TOY_LEN, 12, 0, ToyCtr<Encrypting>, ToyCtr<Decrypting>>();
+    framework.test_key::<TOY_LEN, TOY_LEN, 0, _>(&key_for::<CFB>(), &mut os_rng());
+    framework.test_key::<TOY_LEN, TOY_LEN, 0, _>(&key_for::<CFB8>(), &mut os_rng());
+    framework.test_key::<TOY_LEN, 12, 0, _>(&key_for::<CTR<12>>(), &mut os_rng());
 }
 
 /// The separate-output API must produce exactly what the in-place API produces, for the same key
@@ -57,29 +64,23 @@ fn the_stream_modes_conform_to_the_symmetric_cipher_suite() {
 /// the check that the bridge adds nothing and loses nothing.
 #[test]
 fn the_two_apis_agree_byte_for_byte() {
-    fn check<E, D, const KEY_LEN: usize, const INIT_DATA_LEN: usize>(
-        name: &str,
-        key: &KeyMaterial<KEY_LEN>,
-    ) where
-        E: StreamCipherEncryptor<KEY_LEN, INIT_DATA_LEN>
-            + SymmetricCipherEncryptor<KEY_LEN, INIT_DATA_LEN, 0>,
-        D: StreamCipherDecryptor<KEY_LEN, INIT_DATA_LEN>
-            + SymmetricCipherDecryptor<KEY_LEN, INIT_DATA_LEN, 0>,
+    fn check<'k, K, const KEY_LEN: usize, const INIT_DATA_LEN: usize>(name: &str, key: &'k K)
+    where
+        K: SymmetricEncryptionKey<KEY_LEN, INIT_DATA_LEN, 0>
+            + SymmetricDecryptionKey<KEY_LEN, INIT_DATA_LEN, 0>,
+        K::Encryptor<'k>: StreamCipherEncryptor<INIT_DATA_LEN>,
+        K::Decryptor<'k>: StreamCipherDecryptor<INIT_DATA_LEN>,
     {
         for len in [0usize, 1, 15, 16, 17, 63, 64, 171] {
             let plaintext: Vec<u8> = (0..len).map(|i| (i * 7 + 1) as u8).collect();
 
             // The in-place API, which the mode implements directly.
-            let (mut enc, init) = E::do_encrypt_init(key).unwrap();
+            let (mut enc, init) = key.create_encryptor(&mut os_rng()).unwrap();
             let mut in_place = plaintext.clone();
             enc.do_encrypt_inplace(&mut in_place).unwrap();
 
             // The separate-output API, under the same init data.
-            let mut dec_as_sym =
-                <D as SymmetricCipherDecryptor<KEY_LEN, INIT_DATA_LEN, 0>>::do_decrypt_init(
-                    key, &init,
-                )
-                .unwrap();
+            let mut dec_as_sym = key.create_decryptor(&init);
             let mut out = vec![0u8; plaintext.len()];
             let n = dec_as_sym.do_decrypt_out(&in_place, &mut out).unwrap();
             let (last, last_len) = dec_as_sym.do_decrypt_final().unwrap();
@@ -90,9 +91,9 @@ fn the_two_apis_agree_byte_for_byte() {
         }
     }
 
-    check::<ToyCfb<Encrypting>, ToyCfb<Decrypting>, TOY_LEN, TOY_LEN>("Cfb", &toy_key());
-    check::<ToyCfb8<Encrypting>, ToyCfb8<Decrypting>, TOY_LEN, TOY_LEN>("Cfb8", &toy_key());
-    check::<ToyCtr<Encrypting>, ToyCtr<Decrypting>, TOY_LEN, 12>("Ctr", &toy_key());
+    check::<_, TOY_LEN, TOY_LEN>("Cfb", &key_for::<CFB>());
+    check::<_, TOY_LEN, TOY_LEN>("Cfb8", &key_for::<CFB8>());
+    check::<_, TOY_LEN, 12>("Ctr", &key_for::<CTR<12>>());
 }
 
 /// The separate-output API must leave the caller's input untouched. That is the whole reason a
@@ -100,15 +101,12 @@ fn the_two_apis_agree_byte_for_byte() {
 /// assuming.
 #[test]
 fn the_input_buffer_is_not_modified() {
-    let key = toy_key();
     let plaintext: Vec<u8> = (0..100u8).collect();
     let original = plaintext.clone();
 
-    let (mut enc, _init) =
-        <ToyCfb<Encrypting> as SymmetricCipherEncryptor<TOY_LEN, TOY_LEN, 0>>::do_encrypt_init(
-            &key,
-        )
-        .unwrap();
+    let key = key_for::<CFB>();
+
+    let (mut enc, _init) = key.create_encryptor(&mut os_rng()).unwrap();
     let mut ciphertext = vec![0u8; plaintext.len()];
     enc.do_encrypt_out(&plaintext, &mut ciphertext).unwrap();
 
@@ -119,22 +117,20 @@ fn the_input_buffer_is_not_modified() {
 /// The length predictions are exact for a stream cipher, not upper bounds: what goes in comes out.
 #[test]
 fn the_length_predictions_are_exact() {
-    let key = toy_key();
+    let key = key_for::<CTR<12>>();
     for len in [0usize, 1, 15, 16, 17, 1000] {
         assert_eq!(
-            <ToyCtr<Encrypting> as SymmetricCipherEncryptor<TOY_LEN, 12, 0>>::encrypt_out_len(len),
+            <ToyCtr<Encrypting> as SymmetricCipherEncryptor<12, 0>>::encrypt_out_len(len),
             len,
             "encrypt_out_len is the identity"
         );
         assert_eq!(
-            <ToyCtr<Decrypting> as SymmetricCipherDecryptor<TOY_LEN, 12, 0>>::decrypt_out_len(len),
+            <ToyCtr<Decrypting> as SymmetricCipherDecryptor<12, 0>>::decrypt_out_len(len),
             len,
             "decrypt_out_len is exact, not an upper bound"
         );
 
-        let (enc, _) =
-            <ToyCtr<Encrypting> as SymmetricCipherEncryptor<TOY_LEN, 12, 0>>::do_encrypt_init(&key)
-                .unwrap();
+        let (enc, _) = key.create_encryptor(&mut os_rng()).unwrap();
         assert_eq!(enc.do_encrypt_out_len(len), len, "update_out_len is the identity");
     }
 }
@@ -145,14 +141,10 @@ fn the_length_predictions_are_exact() {
 fn a_short_output_buffer_is_refused_without_consuming_anything() {
     use bouncycastle_core::errors::SymmetricCipherError;
 
-    let key = toy_key();
+    let key = key_for::<CFB>();
     let plaintext: Vec<u8> = (0..32u8).collect();
 
-    let (mut enc, init) =
-        <ToyCfb<Encrypting> as SymmetricCipherEncryptor<TOY_LEN, TOY_LEN, 0>>::do_encrypt_init(
-            &key,
-        )
-        .unwrap();
+    let (mut enc, init) = key.create_encryptor(&mut os_rng()).unwrap();
 
     let mut too_small = vec![0u8; plaintext.len() - 1];
     match enc.do_encrypt_out(&plaintext, &mut too_small) {
@@ -167,11 +159,9 @@ fn a_short_output_buffer_is_refused_without_consuming_anything() {
     let mut big_enough = vec![0u8; plaintext.len()];
     enc.do_encrypt_out(&plaintext, &mut big_enough).unwrap();
 
-    let (mut fresh, _) = ToyCfb::<Encrypting>::do_encrypt_init_rng(
-        &key,
-        &mut bouncycastle_core_test_framework::FixedSeedRNG::<TOY_LEN>::new(init),
-    )
-    .unwrap();
+    let (mut fresh, _) = key
+        .create_encryptor(&mut bouncycastle_core_test_framework::FixedSeedRNG::<TOY_LEN>::new(init))
+        .unwrap();
     let mut reference = plaintext.clone();
     fresh.do_encrypt_inplace(&mut reference).unwrap();
     assert_eq!(big_enough, reference, "the refused call must not have advanced the keystream");
@@ -186,19 +176,15 @@ fn a_short_output_buffer_is_refused_without_consuming_anything() {
 fn a_short_output_buffer_is_refused_when_decrypting_too() {
     use bouncycastle_core::errors::SymmetricCipherError;
 
-    let key = toy_key();
+    let key = key_for::<CFB>();
     let plaintext: Vec<u8> = (0..32u8).collect();
 
     // Encrypt normally, then try to decrypt into a buffer one byte too small.
-    let (mut enc, init) = ToyCfb::<Encrypting>::do_encrypt_init(&key).unwrap();
+    let (mut enc, init) = key.create_encryptor(&mut os_rng()).unwrap();
     let mut ciphertext = plaintext.clone();
     enc.do_encrypt_inplace(&mut ciphertext).unwrap();
 
-    let mut dec =
-        <ToyCfb<Decrypting> as SymmetricCipherDecryptor<TOY_LEN, TOY_LEN, 0>>::do_decrypt_init(
-            &key, &init,
-        )
-        .unwrap();
+    let mut dec = key.create_decryptor(&init);
 
     let mut too_small = vec![0u8; ciphertext.len() - 1];
     match dec.do_decrypt_out(&ciphertext, &mut too_small) {
@@ -217,11 +203,7 @@ fn a_short_output_buffer_is_refused_when_decrypting_too() {
     // An oversized buffer is fine, the data lands in the leading bytes and the rest is zeroed: the
     // check is "too short", not "not exactly equal".
     let mut oversized = vec![0xAAu8; ciphertext.len() + 8];
-    let mut dec =
-        <ToyCfb<Decrypting> as SymmetricCipherDecryptor<TOY_LEN, TOY_LEN, 0>>::do_decrypt_init(
-            &key, &init,
-        )
-        .unwrap();
+    let mut dec = key.create_decryptor(&init);
     let n = dec.do_decrypt_out(&ciphertext, &mut oversized).expect("an oversized buffer is fine");
     assert_eq!(n, ciphertext.len());
     assert_eq!(&oversized[..n], &plaintext[..], "the data lands in the leading bytes");
@@ -233,40 +215,22 @@ fn a_short_output_buffer_is_refused_when_decrypting_too() {
 /// modes: the shape a caller most often wants from this API.
 #[test]
 fn the_allocating_one_shots_round_trip() {
-    let key = toy_key();
     let message = b"a message of no particular length at all";
 
     // CFB128
-    let (iv, ct) = <ToyCfb<Encrypting> as SymmetricCipherEncryptor<TOY_LEN, TOY_LEN, 0>>::encrypt(
-        &key, message,
-    )
-    .unwrap();
+    let key = key_for::<CFB>();
+    let (iv, ct) = key.encrypt(&mut os_rng(), message).unwrap();
     assert_eq!(ct.len(), message.len(), "a stream cipher does not change the length");
-    let back = <ToyCfb<Decrypting> as SymmetricCipherDecryptor<TOY_LEN, TOY_LEN, 0>>::decrypt(
-        &key, &iv, &ct,
-    )
-    .unwrap();
-    assert_eq!(back, message);
+    assert_eq!(key.decrypt(&iv, &ct).unwrap(), message);
 
     // CFB8
-    let (iv, ct) = <ToyCfb8<Encrypting> as SymmetricCipherEncryptor<TOY_LEN, TOY_LEN, 0>>::encrypt(
-        &key, message,
-    )
-    .unwrap();
-    let back = <ToyCfb8<Decrypting> as SymmetricCipherDecryptor<TOY_LEN, TOY_LEN, 0>>::decrypt(
-        &key, &iv, &ct,
-    )
-    .unwrap();
-    assert_eq!(back, message);
+    let key = key_for::<CFB8>();
+    let (iv, ct) = key.encrypt(&mut os_rng(), message).unwrap();
+    assert_eq!(key.decrypt(&iv, &ct).unwrap(), message);
 
     // CTR
-    let (nonce, ct) =
-        <ToyCtr<Encrypting> as SymmetricCipherEncryptor<TOY_LEN, 12, 0>>::encrypt(&key, message)
-            .unwrap();
+    let key = key_for::<CTR<12>>();
+    let (nonce, ct) = key.encrypt(&mut os_rng(), message).unwrap();
     assert_eq!(nonce.len(), 12, "CTR's init data is its 12-byte nonce");
-    let back = <ToyCtr<Decrypting> as SymmetricCipherDecryptor<TOY_LEN, 12, 0>>::decrypt(
-        &key, &nonce, &ct,
-    )
-    .unwrap();
-    assert_eq!(back, message);
+    assert_eq!(key.decrypt(&nonce, &ct).unwrap(), message);
 }
