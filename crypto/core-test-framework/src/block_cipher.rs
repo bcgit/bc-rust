@@ -40,7 +40,7 @@ impl TestFrameworkBlockCipher {
         let mut decryptor = key.create_decryptor(&iv);
         Self::round_trip_pairs(&mut encryptor, &mut decryptor);
 
-        // one-shot API: a block-aligned byte array, in place; see `test`.
+        // one-shot API: a block-aligned byte array, in place
         let one_block: &[u8; BLOCK_LEN] = &DUMMY_SEED.as_chunks::<BLOCK_LEN>().0[0];
         let mut buf = *one_block;
         let (n, iv) = key.encrypt_inplace(rng, &mut buf).unwrap();

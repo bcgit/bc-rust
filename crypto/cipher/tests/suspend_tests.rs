@@ -31,6 +31,7 @@ use bouncycastle_core_test_framework::suspendable_state::TestFrameworkSuspendabl
 #[path = "common/toy_block_cipher.rs"]
 mod toy_block_cipher;
 #[path = "common/toy_key.rs"]
+#[allow(dead_code)]
 mod toy_key;
 use toy_block_cipher::ToyBlockCipher;
 use toy_key::{ToyKey, os_rng};

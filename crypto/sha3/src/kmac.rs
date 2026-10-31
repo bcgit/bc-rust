@@ -78,6 +78,13 @@ pub const KMACXOF128_NAME: &str = "KMACXOF128";
 /// The name of the KMACXOF256 algorithm (NIST SP 800-185 Sec 4.3.1).
 pub const KMACXOF256_NAME: &str = "KMACXOF256";
 
+/// The shortest KMAC output, in bytes. SP 800-185 Sec 8.4.2: applications "shall not select an
+/// output length L that is less than 32 bits".
+pub const KMAC_MIN_OUTPUT_LEN: usize = 4;
+/// The longest KMAC output, in bytes: `8 * n` is what `right_encode` absorbs (Sec 4.3 step 1),
+/// and it is a `u64` here.
+pub const KMAC_MAX_OUTPUT_LEN: usize = (u64::MAX / 8) as usize;
+
 /// KMAC128: the Keccak MAC of NIST SP 800-185 Sec 4, at a 128-bit security strength.
 ///
 /// The worker a [`KMAC128Key`] hands out: `from_key_material` gives the common case -- no
@@ -132,14 +139,16 @@ impl<PARAMS: SHAKEParams> KMACKeyInternal<PARAMS> {
     const NOMINAL_OUTPUT_LEN: usize = (PARAMS::SIZE as usize) / 4;
 
     /// A key for KMAC under a customization string and an output length of the caller's
-    /// choosing. `output_len` is `L` in bytes and is bound into the computation, so it must be
-    /// the length the verifier will use; `customization` may be empty.
+    /// choosing. `output_len` is `L` in bytes, from [`KMAC_MIN_OUTPUT_LEN`] to
+    /// [`KMAC_MAX_OUTPUT_LEN`], and is bound into the computation, so it must be the length the
+    /// verifier will use; `customization` may be empty.
     ///
     /// Sec 8.4.1 requires the key to be at least as long as the security strength for approved
     /// use; that is enforced through the key's [`SecurityStrength`] tag, exactly as HMAC does,
     /// and [`Self::with_params_allow_weak`] is the escape hatch.
     ///
     /// # Errors
+    /// [`MACError::InvalidLength`] if `output_len` is outside the bounds above;
     /// [`MACError::KeyMaterialError`] if the key is not tagged as a MAC key, or is tagged below
     /// this KMAC's security strength.
     pub fn with_params(
@@ -147,21 +156,38 @@ impl<PARAMS: SHAKEParams> KMACKeyInternal<PARAMS> {
         customization: &[u8],
         output_len: usize,
     ) -> Result<Self, MACError> {
+        Self::check_output_len(output_len)?;
         Self::with_params_checked(key, customization, output_len, false)
     }
 
     /// As [`with_params`](Self::with_params) without the strength check.
     ///
     /// # Errors
+    /// [`MACError::InvalidLength`] if `output_len` is outside the bounds;
     /// [`MACError::KeyMaterialError`] if the key is not tagged as a MAC key.
     pub fn with_params_allow_weak(
         key: &dyn KeyMaterialTrait,
         customization: &[u8],
         output_len: usize,
     ) -> Result<Self, MACError> {
+        Self::check_output_len(output_len)?;
         Self::with_params_checked(key, customization, output_len, true)
     }
 
+    /// The MAC's bounds on `L`. KMACXOF is the `L = 0` form (Sec 4.3.1) and does not pass here.
+    fn check_output_len(output_len: usize) -> Result<(), MACError> {
+        if output_len < KMAC_MIN_OUTPUT_LEN {
+            return Err(MACError::InvalidLength(
+                "KMAC output length is below the 32-bit floor of SP 800-185 Sec 8.4.2",
+            ));
+        }
+        if output_len > KMAC_MAX_OUTPUT_LEN {
+            return Err(MACError::InvalidLength("KMAC output length in bits does not fit a u64"));
+        }
+        Ok(())
+    }
+
+    /// The key binding shared with KMACXOF, which passes `output_len == 0`.
     fn with_params_checked(
         key: &dyn KeyMaterialTrait,
         customization: &[u8],
@@ -203,8 +229,9 @@ impl<PARAMS: SHAKEParams> FromAnyKeyMaterial for KMACKeyInternal<PARAMS> {
     }
 
     /// Draws a key of the security strength's length (Sec 8.4.1: 16 bytes for KMAC128, 32 for
-    /// KMAC256) from `rng`, tagged [`KeyType::MACKey`] at the RNG's strength, and builds the key
-    /// from it with no customization and the nominal output length.
+    /// KMAC256) from `rng`, tagged [`KeyType::MACKey`] at the RNG's strength capped at what that
+    /// length can carry, and builds the key from it with no customization and the nominal
+    /// output length.
     ///
     /// # Errors
     /// [`MACError::KeyMaterialError`] if the RNG fails, or with
@@ -309,7 +336,12 @@ impl<'k, PARAMS: SHAKEParams> SuspendableComponent<'k> for KMACInternal<PARAMS> 
         let (cshake, rest) = state.split_at(CSHAKE_COMPONENT_LEN);
         let cshake = CSHAKEInternal::read_tagged_customized(cshake, PARAMS::KMAC_STATE_TAG)?;
         let mut r = Cursor::new(rest);
-        let output_len = bounded_usize(r.u64(), usize::MAX)?;
+        // The bounds `with_params` applies: a state claiming a length outside them was never
+        // written by this type.
+        let output_len = bounded_usize(r.u64(), KMAC_MAX_OUTPUT_LEN)?;
+        if output_len < KMAC_MIN_OUTPUT_LEN {
+            return Err(SuspendableError::InvalidData);
+        }
         debug_assert!(r.is_done());
         // The strength is fixed by the parameter set (see `with_params`), not stored.
         Ok(Self {

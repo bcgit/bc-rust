@@ -105,6 +105,8 @@ fn no_padding_keys_pass_the_symmetric_cipher_framework() {
     framework.required_alignment = 16;
     framework.test_key::<16, 16, 16, _>(&key128::<CBC<NoPadding>>(), &mut rng());
     framework.test_key::<32, 16, 16, _>(&key256::<CBC<NoPadding>>(), &mut rng());
+    framework.test_key::<16, 0, 16, _>(&key128::<ECB<NoPadding>>(), &mut rng());
+    framework.test_key::<32, 0, 16, _>(&key256::<ECB<NoPadding>>(), &mut rng());
 }
 
 #[test]

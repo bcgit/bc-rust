@@ -16,24 +16,25 @@ use crate::traits::{BlockCipherEncryptor, StreamCipherDecryptor, StreamCipherEnc
 /// [`ElectronicCodeBook`] is the raw primitive under a block cipher mode.
 ///
 /// It is positioned by its init data over an already-keyed permutation it borrows, and XORs
-/// successive keystream blocks into whatever it is handed. It has no direction and no init-data policy: generating the nonce, buffering a
-/// partly-used block between calls, and refusing a call that would run past the end of the
-/// keystream all belong to `bouncycastle_cipher::stream::StreamCipher`, which turns any
-/// `KeyStream` into a [`StreamCipherEncryptor`] / [`StreamCipherDecryptor`] pair.
+/// successive keystream blocks into whatever it is handed. It has no direction and no init-data
+/// policy: generating the nonce, buffering a partly-used block between calls, and refusing a call
+/// that would run past the end of the keystream all belong to
+/// `bouncycastle_cipher::stream::StreamCipher`, which turns any `KeyStream` into a
+/// [`StreamCipherEncryptor`] / [`StreamCipherDecryptor`] pair.
 ///
 /// Only a keystream that is independent of the data fits: CTR does, CFB does not, since its next
 /// keystream block is the encryption of the last ciphertext block.
 ///
 /// # 🚨 Security Considerations 🚨
-/// A keystream's constructor takes the init data from the caller, so nothing stops a caller
-/// reusing a nonce under a key -- which repeats the keystream and reveals the XOR of the two plaintexts --
-/// and nothing stops it running past [`KeyStream::remaining_blocks`]. `StreamCipher` generates
-/// the init data and enforces the limit; use it. See the [module docs](crate::hazmat) for the
-/// supported uses of the raw trait.
+/// A keystream is started at init data the caller chose, so nothing here stops a caller reusing
+/// a nonce under a key -- which repeats the keystream and reveals the XOR of the two plaintexts
+/// -- and nothing stops it running past [`KeyStream::remaining_blocks`]. A key object's
+/// `create_encryptor` draws the init data and `StreamCipher` enforces the limit; use those. See
+/// the [module docs](crate::hazmat) for the supported uses of the raw trait.
 ///
-/// Implementors hold the key in a zeroize-on-drop wrapper, as for [`ElectronicCodeBook`]. Any
-/// keystream they produce into scratch space of their own is live key material until it has been
-/// XORed in, and gets the same treatment.
+/// Implementors borrow the key, which keeps its schedule in a zeroize-on-drop wrapper as for
+/// [`ElectronicCodeBook`]. Any keystream they produce into scratch space of their own is live
+/// key material until it has been XORed in, and gets the same treatment.
 pub trait KeyStream<const INIT_DATA_LEN: usize, const BLOCK_LEN: usize>: Algorithm + Sized {
     /// How many more keystream blocks this value can produce before its keystream would repeat.
     /// A keystream with no practical limit returns `u64::MAX`.
