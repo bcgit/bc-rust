@@ -15,7 +15,8 @@
 //! With the 12-byte nonce used here (a 4-byte counter), **1853 of the 2138** functional cases
 //! qualify. The other 285 begin at a non-zero counter and are skipped with the count reported, so
 //! the gap stays visible; they test the cipher and the XOR, both of which the qualifying cases
-//! already cover, and not the counter construction, which `ctr_tests.rs` pins against the spec.
+//! already cover, and not the counter construction, which
+//! `crypto/cipher/tests/modes/ctr_tests.rs` pins against the spec.
 //!
 //! # Joining the request and response files
 //!
@@ -30,21 +31,18 @@
 //! in 8-byte calls and in 3-byte calls -- so the batch paths and the byte path are both exercised
 //! against real vectors. The payloads are a single block each, so counter *increment* is not
 //! covered here; `ctr_tests.rs` covers it against the raw permutation across a 255-to-256 carry,
-//! and the OpenSSL cross-check in `cli/tests/aes_ctr_cli_tests.rs` covers it end to end.
+//! and the OpenSSL cross-check in `cli/tests/test_aes_ctr.sh` covers it end to end.
 //!
 //! The 6 MCT (Monte Carlo Test) groups are **not** implemented: their expected output is a
 //! `resultsArray` produced by a chained update rule defined in the ACVP AES specification rather
 //! than in SP 800-38A, and implementing it from anything else would be guesswork.
 
-use bouncycastle_aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
-use bouncycastle_cipher::modes::Ctr;
-use bouncycastle_cipher::modes::ModeNames;
-use bouncycastle_cipher::{Decrypting, Encrypting};
-use bouncycastle_core::hazmat::ElectronicCodeBook;
-use bouncycastle_core::traits::{
-    StreamCipherDecryptor, StreamCipherEncryptor, SymmetricCipherDecryptor,
-    SymmetricCipherEncryptor,
+use bouncycastle_aes::{AES128Key, AES192Key, AES256Key};
+use bouncycastle_cipher::modes::CTR;
+use bouncycastle_core::symmetric_key::{
+    FromKeyMaterial, SymmetricDecryptionKey, SymmetricEncryptionKey,
 };
+use bouncycastle_core::traits::{StreamCipherDecryptor, StreamCipherEncryptor};
 use bouncycastle_core_test_framework::FixedSeedRNG;
 use bouncycastle_core_test_framework::test_data_loaders::{Value, bc_test_data_json, hex_field};
 use std::collections::BTreeMap;
@@ -85,12 +83,12 @@ impl Grouping {
     }
 }
 
-/// Runs one CTR case in one direction, for a given permutation, under the given grouping.
+/// Runs one CTR case in one direction, for a given key type, under the given grouping.
 ///
-/// Encryption is driven through `do_encrypt_init_rng` with a `FixedSeedRNG` emitting the vector's
-/// IV, and the returned init data is checked against that IV before any ciphertext is compared --
-/// so a change that ignored the RNG could not pass silently.
-fn run_case<P, const KEY_LEN: usize>(
+/// Encryption is driven through the key's `create_encryptor` with a `FixedSeedRNG` emitting the
+/// vector's nonce, and the returned init data is checked against that nonce before any ciphertext
+/// is compared -- so a change that ignored the RNG could not pass silently.
+fn run_case<K, const KEY_LEN: usize>(
     key_bytes: &[u8],
     nonce: [u8; NONCE_LEN],
     input: &[u8],
@@ -98,27 +96,26 @@ fn run_case<P, const KEY_LEN: usize>(
     grouping: Grouping,
 ) -> Vec<u8>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
+    K: 'static,
+    K: FromKeyMaterial<KEY_LEN>
+        + SymmetricEncryptionKey<KEY_LEN, NONCE_LEN, 0>
+        + SymmetricDecryptionKey<KEY_LEN, NONCE_LEN, 0>,
+    for<'k> K::Encryptor<'k>: StreamCipherEncryptor<NONCE_LEN>,
+    for<'k> K::Decryptor<'k>: StreamCipherDecryptor<NONCE_LEN>,
 {
-    let key = cipher_key::<KEY_LEN>(key_bytes);
+    let key = K::from_key_material(&cipher_key::<KEY_LEN>(key_bytes)).expect("a valid key");
     let mut data = input.to_vec();
     let chunk = grouping.chunk_len(data.len());
 
     if encrypt {
         let (mut enc, got_iv) =
-            Ctr::<P, Encrypting, KEY_LEN, BLOCK_LEN, NONCE_LEN>::do_encrypt_init_rng(
-                &key,
-                &mut FixedSeedRNG::<NONCE_LEN>::new(nonce),
-            )
-            .expect("encrypt init");
+            key.create_encryptor(&mut FixedSeedRNG::<NONCE_LEN>::new(nonce)).expect("encrypt init");
         assert_eq!(got_iv, nonce, "the pinned RNG should reproduce the vector's nonce");
         for piece in data.chunks_mut(chunk) {
             enc.do_encrypt_inplace(piece).unwrap();
         }
     } else {
-        let mut dec =
-            Ctr::<P, Decrypting, KEY_LEN, BLOCK_LEN, NONCE_LEN>::do_decrypt_init(&key, &nonce)
-                .expect("dec init");
+        let mut dec = key.create_decryptor(&nonce);
         for piece in data.chunks_mut(chunk) {
             dec.do_decrypt_inplace(piece).unwrap();
         }
@@ -136,9 +133,9 @@ fn run_case_for_key_len(
     grouping: Grouping,
 ) -> Vec<u8> {
     match key_bytes.len() {
-        16 => run_case::<AES128Internal, 16>(key_bytes, nonce, input, encrypt, grouping),
-        24 => run_case::<AES192Internal, 24>(key_bytes, nonce, input, encrypt, grouping),
-        32 => run_case::<AES256Internal, 32>(key_bytes, nonce, input, encrypt, grouping),
+        16 => run_case::<AES128Key<CTR<NONCE_LEN>>, 16>(key_bytes, nonce, input, encrypt, grouping),
+        24 => run_case::<AES192Key<CTR<NONCE_LEN>>, 24>(key_bytes, nonce, input, encrypt, grouping),
+        32 => run_case::<AES256Key<CTR<NONCE_LEN>>, 32>(key_bytes, nonce, input, encrypt, grouping),
         other => panic!("ACVP AES vectors should only use 16, 24 or 32 byte keys, got {other}"),
     }
 }

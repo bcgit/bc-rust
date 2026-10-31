@@ -2,7 +2,7 @@
 //!
 //! Requires `bc-test-data` to be cloned alongside this repository, i.e. at `../bc-test-data`
 //! relative to the root of this git project. If it is absent the test prints a warning and passes,
-//! matching the convention used by the ML-KEM, ML-DSA and `aes` suites -- `cargo test`
+//! matching the other vector suites in this crate and the ML-KEM and ML-DSA ones -- `cargo test`
 //! must stay green for someone who has only cloned this repository.
 //!
 //! These are the counterpart to `ecb_bc-test-data.rs`, which consumes the
@@ -21,19 +21,18 @@
 //! 2150 AFT (Algorithm Functional Test) cases across all three key lengths and both directions,
 //! including 60 whose payload spans 2 to 10 blocks. Every case is run **twice**: once block by
 //! block, and once in pairs with a one-block remainder for odd lengths. The second pass is what
-//! puts the multi-block cases through `ElectronicCodeBook::decrypt_2blocks`, so the pair path is
-//! exercised against real vectors and not only against the toy in `cbc_tests.rs`.
+//! puts the multi-block cases through `BlockPermutation::decrypt_2blocks`, so the pair path is
+//! exercised against real vectors and not only against the toy in
+//! `crypto/cipher/tests/modes/cbc_tests.rs`.
 //!
 //! The 6 MCT (Monte Carlo Test) groups are **not** implemented: their expected output is a
 //! `resultsArray` produced by a chained update rule defined in the ACVP AES specification rather
 //! than in SP 800-38A, and implementing it from anything else would be guesswork. The test reports
 //! how many it skipped so the gap stays visible.
 
-use bouncycastle_aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
-use bouncycastle_cipher::modes::Cbc;
-use bouncycastle_cipher::modes::ModeNames;
-use bouncycastle_cipher::{Decrypting, Encrypting};
-use bouncycastle_core::hazmat::ElectronicCodeBook;
+use bouncycastle_aes::{AES128Key, AES192Key, AES256Key};
+use bouncycastle_cipher::modes::{Blocks, CBC};
+use bouncycastle_core::symmetric_key::{BlockDecryptionKey, BlockEncryptionKey, FromKeyMaterial};
 use bouncycastle_core::traits::{BlockCipherDecryptor, BlockCipherEncryptor};
 use bouncycastle_core_test_framework::FixedSeedRNG;
 use bouncycastle_core_test_framework::test_data_loaders::{Value, bc_test_data_json, hex_field};
@@ -58,12 +57,12 @@ enum Grouping {
     Pairs,
 }
 
-/// Runs one CBC case in one direction, for a given permutation, under the given grouping.
+/// Runs one CBC case in one direction, for a given key type, under the given grouping.
 ///
-/// Encryption is driven through `do_encrypt_init_rng` with a `FixedSeedRNG` emitting the vector's
-/// IV, and the returned init data is checked against that IV before any ciphertext is compared --
-/// so a change that ignored the RNG could not pass silently.
-fn run_case<P, const KEY_LEN: usize>(
+/// Encryption is driven through the key's `create_encryptor` with a `FixedSeedRNG` emitting the
+/// vector's IV, and the returned init data is checked against that IV before any ciphertext is
+/// compared -- so a change that ignored the RNG could not pass silently.
+fn run_case<K, const KEY_LEN: usize>(
     key_bytes: &[u8],
     iv: [u8; BLOCK_LEN],
     input: &[[u8; BLOCK_LEN]],
@@ -71,24 +70,23 @@ fn run_case<P, const KEY_LEN: usize>(
     grouping: Grouping,
 ) -> Vec<[u8; BLOCK_LEN]>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
+    K: FromKeyMaterial<KEY_LEN>
+        + BlockEncryptionKey<KEY_LEN, BLOCK_LEN, BLOCK_LEN>
+        + BlockDecryptionKey<KEY_LEN, BLOCK_LEN, BLOCK_LEN>,
 {
-    let key = cipher_key::<KEY_LEN>(key_bytes);
+    let key = K::from_key_material(&cipher_key::<KEY_LEN>(key_bytes)).expect("a valid key");
     let mut out: Vec<[u8; BLOCK_LEN]> = Vec::with_capacity(input.len());
 
     if encrypt {
-        let (mut enc, got_iv) = Cbc::<P, Encrypting, KEY_LEN, BLOCK_LEN>::do_encrypt_init_rng(
-            &key,
-            &mut FixedSeedRNG::<BLOCK_LEN>::new(iv),
-        )
-        .expect("encrypt init");
+        let (mut enc, got_iv) =
+            key.create_encryptor(&mut FixedSeedRNG::<BLOCK_LEN>::new(iv)).expect("encrypt init");
         assert_eq!(got_iv, iv, "the pinned RNG should reproduce the vector's IV");
 
         match grouping {
             Grouping::Single => {
                 for block in input {
                     let mut c = *block;
-                    enc.do_encrypt_inplace(&mut c).unwrap();
+                    enc.do_encrypt_blocks_inplace(c.as_chunks_mut().0).unwrap();
                     out.push(c);
                 }
             }
@@ -101,20 +99,19 @@ where
                 }
                 for block in tail {
                     let mut c = *block;
-                    enc.do_encrypt_inplace(&mut c).unwrap();
+                    enc.do_encrypt_blocks_inplace(c.as_chunks_mut().0).unwrap();
                     out.push(c);
                 }
             }
         }
     } else {
-        let mut dec =
-            Cbc::<P, Decrypting, KEY_LEN, BLOCK_LEN>::do_decrypt_init(&key, &iv).expect("dec init");
+        let mut dec = key.create_decryptor(&iv);
 
         match grouping {
             Grouping::Single => {
                 for block in input {
                     let mut p = *block;
-                    dec.do_decrypt_inplace(&mut p).unwrap();
+                    dec.do_decrypt_blocks_inplace(p.as_chunks_mut().0).unwrap();
                     out.push(p);
                 }
             }
@@ -127,7 +124,7 @@ where
                 }
                 for block in tail {
                     let mut p = *block;
-                    dec.do_decrypt_inplace(&mut p).unwrap();
+                    dec.do_decrypt_blocks_inplace(p.as_chunks_mut().0).unwrap();
                     out.push(p);
                 }
             }
@@ -146,9 +143,9 @@ fn run_case_for_key_len(
     grouping: Grouping,
 ) -> Vec<[u8; BLOCK_LEN]> {
     match key_bytes.len() {
-        16 => run_case::<AES128Internal, 16>(key_bytes, iv, input, encrypt, grouping),
-        24 => run_case::<AES192Internal, 24>(key_bytes, iv, input, encrypt, grouping),
-        32 => run_case::<AES256Internal, 32>(key_bytes, iv, input, encrypt, grouping),
+        16 => run_case::<AES128Key<CBC<Blocks>>, 16>(key_bytes, iv, input, encrypt, grouping),
+        24 => run_case::<AES192Key<CBC<Blocks>>, 24>(key_bytes, iv, input, encrypt, grouping),
+        32 => run_case::<AES256Key<CBC<Blocks>>, 32>(key_bytes, iv, input, encrypt, grouping),
         other => panic!("ACVP AES vectors should only use 16, 24 or 32 byte keys, got {other}"),
     }
 }

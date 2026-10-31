@@ -2,7 +2,7 @@
 //! 3-5): `x = bits2int(X)`, `x = x mod (n-1)`, `x = x + 1`. Expected values computed independently
 //! in Python via `(int.from_bytes(bytes, 'big') % (n - 1)) + 1` with `n` from SP 800-186 §3.2.1.3,
 //! not derived from this crate's own reduction code -- existing round-trip tests elsewhere
-//! (`keygen`/`sign_randomized`) only ever check that the reduced value is self-consistent with
+//! (`keygen`/`sign_rng`) only ever check that the reduced value is self-consistent with
 //! itself, which can't distinguish a correct reduction from a systematically wrong one (this is
 //! exactly what a `cargo mutants` run on `reduce_wide_bits_mod_n_minus_1`'s bit-extraction and
 //! carry-correction surfaced: several bit-level mutants survived because nothing here pinned the

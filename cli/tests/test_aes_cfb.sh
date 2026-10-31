@@ -218,11 +218,13 @@ test_a_ciphertext_bit_flip_flips_the_same_plaintext_bit() {
 
 # CFB and CBC take the same arguments and produce the same-shaped output, so nothing but this
 # stops a caller pairing them up by mistake. Both spec ciphertexts are for the same key, IV and
-# plaintext, so each mode must reproduce the plaintext only from its own ciphertext; neither is
-# authenticated, so the mismatch is silent garbage rather than an error.
+# plaintext, so each mode must reproduce the plaintext only from its own ciphertext. Neither is
+# authenticated, so CFB turns the mismatch into silent garbage; CBC usually fails its padding
+# check instead. The CBC input gets the PKCS7 block that follows the appendix's unpadded
+# ciphertext from `cbc_pkcs7_block`.
 test_cfb_and_cbc_are_not_interchangeable() {
     unhex "$F3_IV$F3_CT_128" >"$TMP/cfb_ct"
-    unhex "$F3_IV$F2_CBC_CT_128" >"$TMP/cbc_ct"
+    unhex "$F3_IV$F2_CBC_CT_128$(cbc_pkcs7_block "$F3_KEY_128" "${F2_CBC_CT_128: -32}")" >"$TMP/cbc_ct"
     unhex "$F3_PLAINTEXT" >"$TMP/pt"
 
     "$BC_RUST" aes128-cfb -d decrypt --key "$F3_KEY_128" <"$TMP/cfb_ct" >"$TMP/own_cfb"
@@ -232,7 +234,7 @@ test_cfb_and_cbc_are_not_interchangeable() {
 
     "$BC_RUST" aes128-cfb -d decrypt --key "$F3_KEY_128" <"$TMP/cbc_ct" >"$TMP/cross_cfb"
     assert_differs "$TMP/cross_cfb" "$TMP/pt" "CFB must not decrypt a CBC ciphertext"
-    "$BC_RUST" aes128-cbc -d decrypt --key "$F3_KEY_128" <"$TMP/cfb_ct" >"$TMP/cross_cbc"
+    "$BC_RUST" aes128-cbc -d decrypt --key "$F3_KEY_128" <"$TMP/cfb_ct" >"$TMP/cross_cbc" 2>/dev/null || true
     assert_differs "$TMP/cross_cbc" "$TMP/pt" "CBC must not decrypt a CFB ciphertext"
 }
 

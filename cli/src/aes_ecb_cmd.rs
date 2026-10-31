@@ -16,14 +16,12 @@
 //! `aes*-cbc` or `aes*-cfb` under separate authentication, or better an AEAD.
 
 use crate::helpers::block_mode_helpers::{
-    BLOCK_LEN, CipherDirection, decrypt_stream, encrypt_stream, load_key,
+    BLOCK_LEN, CipherDirection, decrypt_stream, encrypt_stream, load_key_object, start_encryptor,
 };
-use bouncycastle::aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
-use bouncycastle::cipher::modes::ModeNames;
-use bouncycastle::cipher::modes::hazmat::Ecb;
-use bouncycastle::cipher::{Decrypting, Encrypting};
-use bouncycastle::core::hazmat::ElectronicCodeBook;
-use bouncycastle::core::key_material::KeyMaterial;
+use bouncycastle::aes::{AES128Key, AES192Key, AES256Key};
+use bouncycastle::cipher::modes::hazmat::ecb::ECB;
+use bouncycastle::cipher::padding::NoPadding;
+use bouncycastle::core::symmetric_key::{SymmetricDecryptionKey, SymmetricEncryptionKey};
 
 /// Names the mode in error messages.
 const MODE: &str = "ECB";
@@ -34,7 +32,11 @@ pub(crate) fn aes128_ecb_cmd(
     key_file: &Option<String>,
     output_hex: bool,
 ) {
-    run::<AES128Internal, 16>(action, &load_key::<16>(key, key_file, "AES-128"), output_hex);
+    run::<_, 16>(
+        action,
+        &load_key_object::<AES128Key<ECB<NoPadding>>, 16>(key, key_file, "AES-128"),
+        output_hex,
+    );
 }
 
 pub(crate) fn aes192_ecb_cmd(
@@ -43,7 +45,11 @@ pub(crate) fn aes192_ecb_cmd(
     key_file: &Option<String>,
     output_hex: bool,
 ) {
-    run::<AES192Internal, 24>(action, &load_key::<24>(key, key_file, "AES-192"), output_hex);
+    run::<_, 24>(
+        action,
+        &load_key_object::<AES192Key<ECB<NoPadding>>, 24>(key, key_file, "AES-192"),
+        output_hex,
+    );
 }
 
 pub(crate) fn aes256_ecb_cmd(
@@ -52,28 +58,31 @@ pub(crate) fn aes256_ecb_cmd(
     key_file: &Option<String>,
     output_hex: bool,
 ) {
-    run::<AES256Internal, 32>(action, &load_key::<32>(key, key_file, "AES-256"), output_hex);
+    run::<_, 32>(
+        action,
+        &load_key_object::<AES256Key<ECB<NoPadding>>, 32>(key, key_file, "AES-256"),
+        output_hex,
+    );
 }
 
-/// Dispatches to the shared streaming loops with `Ecb` filled in as the mode. `INIT_DATA_LEN` is 0,
-/// so the loops write and read no IV.
-fn run<P, const KEY_LEN: usize>(
-    action: &CipherDirection,
-    key: &KeyMaterial<KEY_LEN>,
-    output_hex: bool,
-) where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
+/// Dispatches to the shared streaming loops under the key's ECB mode. `INIT_DATA_LEN` is 0, so
+/// the loops write and read no IV, and `NoPadding` makes them refuse a partial final block.
+fn run<K, const KEY_LEN: usize>(action: &CipherDirection, key: &K, output_hex: bool)
+where
+    K: SymmetricEncryptionKey<KEY_LEN, 0, BLOCK_LEN>
+        + SymmetricDecryptionKey<KEY_LEN, 0, BLOCK_LEN>,
 {
     match action {
         CipherDirection::Encrypt => {
-            encrypt_stream::<Ecb<P, Encrypting, KEY_LEN, BLOCK_LEN>, KEY_LEN, 0>(
-                key, output_hex, MODE,
-            )
+            // ECB has no IV: the constructor's RNG draws nothing, and nothing is written.
+            let (enc, _) = start_encryptor(None, |rng| key.create_encryptor(rng));
+            encrypt_stream::<_, 0>(enc, None, output_hex, Some(MODE))
         }
-        CipherDirection::Decrypt => {
-            decrypt_stream::<Ecb<P, Decrypting, KEY_LEN, BLOCK_LEN>, KEY_LEN, 0>(
-                key, output_hex, MODE,
-            )
-        }
+        CipherDirection::Decrypt => decrypt_stream::<_, 0>(
+            None,
+            |no_iv| key.create_decryptor(no_iv),
+            output_hex,
+            Some(MODE),
+        ),
     }
 }

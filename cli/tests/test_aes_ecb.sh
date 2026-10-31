@@ -229,14 +229,15 @@ test_a_wrong_key_does_not_recover_the_plaintext() {
     assert_size "$TMP/rec" 256 "but the length is unchanged"
 }
 
-# ECB and CBC ciphertexts are not interchangeable. The CBC command frames an IV and the ECB
-# command does not: the CBC body run through ECB is not the plaintext, and the ECB ciphertext run
-# through CBC (its first block consumed as an IV) is neither the plaintext nor the right length.
+# ECB and CBC ciphertexts are not interchangeable. The CBC command frames an IV and pads, and the
+# ECB command does neither: the CBC body run through ECB is not the plaintext, and the ECB
+# ciphertext run through CBC (its first block consumed as an IV) is not the plaintext. The CBC
+# input gets the PKCS7 block that follows the appendix's unpadded ciphertext from `cbc_pkcs7_block`.
 test_ecb_and_cbc_are_not_interchangeable() {
     unhex "$F1_PLAINTEXT" >"$TMP/pt"
     unhex "$F1_CT_128" >"$TMP/ecb_ct"
     unhex "$F2_CBC_CT_128" >"$TMP/cbc_body"
-    unhex "$F2_CBC_IV$F2_CBC_CT_128" >"$TMP/cbc_input"
+    unhex "$F2_CBC_IV$F2_CBC_CT_128$(cbc_pkcs7_block "$F1_KEY_128" "${F2_CBC_CT_128: -32}")" >"$TMP/cbc_input"
 
     "$BC_RUST" aes128-ecb -d decrypt --key "$F1_KEY_128" <"$TMP/ecb_ct" >"$TMP/rec"
     assert_same "$TMP/pt" "$TMP/rec" "ECB decrypts its own ciphertext"
@@ -246,8 +247,8 @@ test_ecb_and_cbc_are_not_interchangeable() {
     "$BC_RUST" aes128-ecb -d decrypt --key "$F1_KEY_128" <"$TMP/cbc_body" >"$TMP/rec"
     assert_differs "$TMP/pt" "$TMP/rec" "ECB must not decrypt a CBC ciphertext"
 
-    "$BC_RUST" aes128-cbc -d decrypt --key "$F1_KEY_128" <"$TMP/ecb_ct" >"$TMP/rec"
-    assert_size "$TMP/rec" 48 "CBC consumes the first block as an IV"
+    # Usually fails the padding check; either way it must not yield the plaintext.
+    "$BC_RUST" aes128-cbc -d decrypt --key "$F1_KEY_128" <"$TMP/ecb_ct" >"$TMP/rec" 2>/dev/null || true
     tail -c 48 "$TMP/pt" >"$TMP/pt_tail"
     assert_differs "$TMP/pt_tail" "$TMP/rec" "CBC must not decrypt an ECB ciphertext"
 }

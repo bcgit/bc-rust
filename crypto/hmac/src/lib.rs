@@ -1,10 +1,12 @@
 //! The generic Hash-Based Message Authentication Code (HMAC) construction, as specified in RFC 2104,
 //! taking into account NIST Implementation Guidance in FIPS 140-2 IG A.8 and NIST SP 800-107-r1.
 //!
-//! This is a utility crate and is not intended to be used directly. It provides [`HMAC`] -- the
-//! construction, generic over any struct that implements [`Hash`] and [`HMACParams`], the extension
-//! point through which a hash declares the metadata from which the HMAC instance is built.
-//! The library provides the following concrete instantiations of HMAC:
+//! This is a utility crate and is not intended to be used directly. It provides [`HmacKey`] -- the
+//! key object, which holds the two precomputed pad states RFC 2104 Section 4 describes and hands
+//! out workers -- and [`HMAC`] -- the worker, one per message, which borrows the key it came from.
+//! Both are generic over any struct that implements [`Hash`] and [`HMACParams`], the extension
+//! point through which a hash declares the metadata from which the HMAC instance is built. The
+//! library provides the following concrete instantiations of HMAC:
 //!
 //! | Hash family | Instantiations                                                               |
 //! |-------------|------------------------------------------------------------------------------|
@@ -13,6 +15,32 @@
 //!
 //! Although users are free to implement [`Hash`] and [`HMACParams`] for a a hash function not included with the library,
 //! and will then be able to instantiate [`HMAC`] for it as well.
+//!
+//! # Usage
+//!
+//! A key is built once, from key material of any length, and used for any number of messages:
+//!
+//! ```
+//! use bouncycastle_core::symmetric_key::{FromAnyKeyMaterial, MacGenerationKey, MacVerificationKey};
+//! use bouncycastle_core::traits::MAC;
+//! use bouncycastle_hmac::HmacKey;
+//! use bouncycastle_rng::HashDRBG_SHA512;
+//! use bouncycastle_sha2::SHA256;
+//!
+//! let mut rng = HashDRBG_SHA512::new_from_os();
+//! let key = HmacKey::<SHA256>::generate(&mut rng).expect("a 32-byte MAC key from the RNG");
+//!
+//! let mut generator = key.create_generator();          // infallible, any number of times
+//! generator.do_update(b"part one");
+//! generator.do_update(b"part two");
+//! let mut tag = [0u8; 32];
+//! let n = generator.do_final_out(&mut tag).expect("32 bytes is above the truncation floor");
+//!
+//! let mut verifier = key.create_verifier();
+//! verifier.do_update(b"part onepart two");
+//! assert!(verifier.do_verify_final(&tag[..n]));
+//! assert!(key.verify(b"part onepart two", &tag[..n]));   // one-shot, same path underneath
+//! ```
 //!
 //! # Instantiating HMAC over a Hash
 //!
@@ -30,21 +58,18 @@
 //!    strength and OID, plus the key type that [`HMAC::keygen_from_rng`] should return (typically a
 //!    `KeyMaterial<L>` for an L that matches the size of the underlying hash function. This allows
 //!    this crate to provide blanket [`Algorithm`], [`AlgorithmOID`] and [`HMAC::keygen_from_rng`] impls.
-//! 3. Publish a type alias for the instantiation, passing [`HashAlgParams::BLOCK_LEN`] as the key
-//!    buffer length. Per RFC 2104 a key no longer than the hash's block is used verbatim, and only
-//!    longer keys are pre-hashed down to the output length, so the buffer must hold a full block.
-//!    Reading the length off the hash rather than writing a literal means the two cannot drift apart.
+//! 3. Publish a type alias for the instantiation, `HMAC<SHA256>`.
 //! 4. Optionally publish the suspended-state length as a constant. [`SuspendableKeyed`] is
 //!    implemented automatically for any hash that implements [`Suspendable`], and HMAC's suspended
-//!    state is exactly the inner hash's -- the key is deliberately excluded -- so the constant is
-//!    just an alias for the hash's own.
+//!    state is exactly the inner hash's -- the key is deliberately excluded, and resume takes the
+//!    [`HmacKey`] again -- so the constant is just an alias for the hash's own.
 //!
 //! ## Worked example
 //!
 //! As an example, the `bouncycastle-sha2` crate follows exactly the recipe above; its entry for SHA-256 reduces to:
 //!
 //! ```rust,ignore
-//! pub type HMAC_SHA256 = HMAC<SHA256, { <SHA256 as HashAlgParams>::BLOCK_LEN }>;
+//! pub type HMAC_SHA256<'k> = HMAC<'k, SHA256>;
 //!
 //! impl HMACParams for SHA256 {
 //!     type MACKey = KeyMaterial<{ <SHA256 as HashAlgParams>::OUTPUT_LEN }>;
@@ -67,32 +92,43 @@
 //! These apply to every instantiation; the hash crates' `hmac` modules repeat the ones that matter
 //! most in day-to-day use.
 //!
-//! * [`HMACParams::HMAC_MAX_SECURITY_STRENGTH`] is a claim that [`MAC::new`] enforces against the
-//!   key's tagged strength, and that [`HMAC::keygen_from_rng`] enforces against the RNG's. Declaring
-//!   a strength the underlying hash cannot support does not make the construction stronger, it just
-//!   makes the check wrong. NIST SP 800-107-r1 Section 5.3.4 gives the ceiling: the effective
-//!   strength is `min(strength of K, 2C)` for an internal chaining value of `C` bits.
-//! * [`MAC::new_allow_weak_key`] deliberately skips the key-strength check. It exists for protocols
-//!   that call for a weak or all-zero key -- an all-zero HKDF salt, for example -- and should not be
-//!   used to silence an error from [`MAC::new`].
+//! * [`HMACParams::HMAC_MAX_SECURITY_STRENGTH`] is a claim that
+//!   [`FromAnyKeyMaterial::from_key_material`] enforces against the key's tagged strength, and
+//!   that [`HMAC::keygen_from_rng`] enforces against the RNG's. Declaring a strength the
+//!   underlying hash cannot support does not make the construction stronger, it just makes the
+//!   check wrong. NIST SP 800-107-r1 Section 5.3.4 gives the ceiling: the effective strength is
+//!   `min(strength of K, 2C)` for an internal chaining value of `C` bits.
+//! * [`FromAnyKeyMaterial::from_key_material_allow_weak`] deliberately skips the key-strength
+//!   check. It exists for protocols that call for a weak or all-zero key -- an all-zero HKDF salt,
+//!   for example -- and should not be used to silence an error from
+//!   [`FromAnyKeyMaterial::from_key_material`].
 //! * Verification via [`MAC::verify`] / [`MAC::do_verify_final`] uses a constant-time comparison.
 //!   Recomputing the MAC and comparing it with `==` leaks how many leading bytes matched.
 //! * [`MIN_FIPS_DIGEST_LEN`] (4 bytes) is the shortest truncation this crate will produce, per
 //!   FIPS 140-2 IG A.8 / NIST SP 800-107-r1 Section 5.3.3. It is a floor, not a recommendation:
 //!   RFC 2104 Section 5 recommends that the output length "be not less than half the length of the
 //!   hash output ... and not less than 80 bits".
-//! * The key is deliberately excluded from the suspended state and must be re-supplied on resume.
-//!   Resuming with the wrong key cannot be detected and silently produces a wrong MAC, computed with
-//!   different keys in the inner and outer pad.
-//! * The key buffer is held in [`bouncycastle_utils::secret::Secret`] and zeroized on drop. The
-//!   `K ⊕ ipad` / `K ⊕ opad` blocks are transient stack allocations and are not zeroized.
+//! * The key is deliberately excluded from the suspended state and the [`HmacKey`] must be
+//!   re-supplied on resume. Resuming with the wrong key cannot be detected and silently produces a
+//!   wrong MAC, computed with different keys in the inner and outer pad.
+//! * The two pad states are key-equivalent, as RFC 2104 Section 4 says ("the stored intermediate
+//!   values need to be treated and protected the same as secret keys"). [`HmacKey`] and the worker
+//!   hold them as hash states, which the hash crates zeroize on drop; neither has a `Debug` that
+//!   prints them. The padded key block they are built from is a [`Secret`] scratch, zeroized when
+//!   construction returns.
+//!
+//! [`Secret`]: bouncycastle_utils::secret::Secret
 
 #![forbid(unsafe_code)]
 #![forbid(missing_docs)]
 
+pub mod hazmat;
+
 use bouncycastle_core::errors::{KeyMaterialError, MACError, RNGError, SuspendableError};
-use bouncycastle_core::key_material::{KeyMaterialTrait, KeyType};
+use bouncycastle_core::hazmat::do_hazardous_operations;
+use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
+use bouncycastle_core::symmetric_key::{FromAnyKeyMaterial, MacGenerationKey, MacVerificationKey};
 use bouncycastle_core::traits::{
     Algorithm, AlgorithmOID, Hash, HashAlgParams, MAC, RNG, Suspendable, SuspendableKeyed,
 };
@@ -116,7 +152,8 @@ use core::fmt::{Debug, Display, Formatter};
 /// The block length and the generated-key length do not need to be restated here since they are already
 /// carried by the hash itself as [`HashAlgParams::BLOCK_LEN`] and [`HashAlgParams::OUTPUT_LEN`].
 pub trait HMACParams: Hash + HashAlgParams + Default {
-    /// The key type produced by [`HMAC::keygen_from_rng`], sized to this hash's output length.
+    /// The key type produced by [`HMAC::keygen_from_rng`] and drawn by
+    /// [`FromAnyKeyMaterial::generate`], sized to this hash's output length.
     ///
     /// Implementors should set this to `KeyMaterial<{Self::OUTPUT_LEN}>`.
     ///
@@ -135,44 +172,222 @@ pub trait HMACParams: Hash + HashAlgParams + Default {
     const HMAC_OID_DER: &'static [u8];
 }
 
-impl<HASH: HMACParams, const KEY_BUF_LEN: usize> Algorithm for HMAC<HASH, KEY_BUF_LEN> {
+impl<HASH: HMACParams> Algorithm for HMAC<'_, HASH> {
     const ALG_NAME: &'static str = HASH::HMAC_ALG_NAME;
     const MAX_SECURITY_STRENGTH: SecurityStrength = HASH::HMAC_MAX_SECURITY_STRENGTH;
 }
 
-impl<HASH: HMACParams, const KEY_BUF_LEN: usize> AlgorithmOID for HMAC<HASH, KEY_BUF_LEN> {
+impl<HASH: HMACParams> AlgorithmOID for HMAC<'_, HASH> {
     const OID: &'static [u32] = HASH::HMAC_OID;
     const OID_DER: &'static [u8] = HASH::HMAC_OID_DER;
 }
 
-// The internal key buffer must be able to hold a key up to the *block length* of the underlying hash:
-// per RFC 2104, a key no longer than the block is used verbatim (only longer keys are pre-hashed down
-// to the output length). So the buffer size is a const parameter of the struct, set per hash to its
-// block length by the type aliases.
-//
-// The default is used only when `HMAC<HASH>` is written without an explicit buffer size; it is the
-// largest block length across all supported hashes, so it is always large enough.
+// The scratch the pad blocks are built in must hold one block of the underlying hash: per RFC 2104
+// Section 2 step (1) the key is zero-padded to B bytes, and only a key longer than B is pre-hashed
+// first (Section 3). This is the largest block length across the supported hashes (SHA3-224's 144),
+// and the scratch is sliced to the hash's own block.
 const LARGEST_HASHER_BLOCK_LEN: usize = 144;
 
-/// Internal struct for HKDF.
-/// HMAC implements RFC 2104.
-/// Can, in theory, be instantiated with hash functions other than the ones provided by this crate (even custom ones).
-#[derive(Clone)]
-pub struct HMAC<HASH: Hash + Default, const KEY_BUF_LEN: usize = LARGEST_HASHER_BLOCK_LEN> {
-    hasher: HASH,
-    // todo: once rust stable merges generic_const_exprs, we can remove this hack and delete the KEY_BUF_LEN param.
-    // key: [u8; HASH::OUTPUT_LEN];
-    key: Secret<[u8; KEY_BUF_LEN]>,
-    key_len: Secret<usize>, // Doing it this way to avoid needing a vec, so that this can be made no_std friendly.
+/// The largest output length across the supported hashes (SHA-512, SHA3-512), which sizes the key
+/// [`FromAnyKeyMaterial::generate`] draws before trimming it to the hash's own output length.
+const LARGEST_HASHER_OUTPUT_LEN: usize = 64;
+
+/*** Key ***/
+
+/// An HMAC key: the two intermediate hash states of RFC 2104 Section 4, `H` after absorbing
+/// `K XOR ipad` and after absorbing `K XOR opad`, computed once from key material of any length.
+///
+/// Every worker the key hands out starts from a clone of the inner state and borrows the key for
+/// the outer one, so the per-message cost of the key is one clone and no hashing. The key holds
+/// no key bytes: a caller who needs the material again keeps the `KeyMaterial`. Construction is
+/// [`FromAnyKeyMaterial`]; the workers come from [`MacGenerationKey`] and [`MacVerificationKey`].
+pub struct HmacKey<HASH: Hash + Default> {
+    /// `H` after absorbing `K XOR ipad`: the start of RFC 2104 Section 2 step (4).
+    inner: HASH,
+    /// `H` after absorbing `K XOR opad`: the start of step (7).
+    outer: HASH,
 }
 
-impl<HASH: Hash + Default, const KEY_BUF_LEN: usize> Debug for HMAC<HASH, KEY_BUF_LEN> {
+// `Clone` is written out rather than derived so that it has no bound beyond the struct's own.
+impl<HASH: Hash + Default> Clone for HmacKey<HASH> {
+    fn clone(&self) -> Self {
+        Self { inner: self.inner.clone(), outer: self.outer.clone() }
+    }
+}
+
+impl<HASH: Hash + Default> HmacKey<HASH> {
+    /// RFC 2104 Section 2 steps (1), (2) and (5), plus Section 3's pre-hash of a key longer than
+    /// the block, with both pad blocks absorbed so that the states are ready for steps (4) and (7).
+    /// No key checks: the callers do those.
+    fn from_key_bytes(key_bytes: &[u8]) -> Self {
+        let block_len = HASH::default().block_bitlen() / 8;
+        assert!(
+            block_len <= LARGEST_HASHER_BLOCK_LEN,
+            "Fatal error: hash block length exceeds HMAC's pad scratch"
+        );
+
+        // Step (1): "append zeros to the end of K to create a B byte string". The scratch is
+        // already zero, so only K (or, per Section 3, H(K) when K is "longer than B bytes") is
+        // written.
+        let mut k: Secret<[u8; LARGEST_HASHER_BLOCK_LEN]> = Secret::new();
+        if key_bytes.len() > block_len {
+            let output_len = HASH::default().output_len();
+            HASH::default().hash_out(key_bytes, &mut k[..output_len]);
+        } else {
+            k[..key_bytes.len()].copy_from_slice(key_bytes);
+        }
+
+        // Step (2): "XOR ... the B byte string computed in step (1) with ipad", absorbed into the
+        // inner hash; step (5): the same with opad, absorbed into the outer hash. Section 4: these
+        // two block compressions are what the key saves on every message.
+        let mut inner = HASH::default();
+        let mut outer = HASH::default();
+        for byte in k[..block_len].iter_mut() {
+            *byte ^= IPAD_BYTE;
+        }
+        inner.do_update(&k[..block_len]);
+        for byte in k[..block_len].iter_mut() {
+            *byte ^= IPAD_BYTE ^ OPAD_BYTE; // undo ipad, apply opad
+        }
+        outer.do_update(&k[..block_len]);
+
+        Self { inner, outer }
+    }
+
+    /// The key-type check and, unless `allow_weak_keys`, the strength check, then the pads.
+    fn from_key_material_checked(
+        key: &dyn KeyMaterialTrait,
+        allow_weak_keys: bool,
+    ) -> Result<Self, MACError> {
+        if !(key.key_type() == KeyType::Zeroized || key.key_type() == KeyType::MACKey) {
+            return Err(MACError::KeyMaterialError(KeyMaterialError::InvalidKeyType(
+                "Key type must be a MAC key.",
+            )));
+        }
+        if !allow_weak_keys && key.security_strength() < HASH::default().max_security_strength() {
+            return Err(MACError::KeyMaterialError(KeyMaterialError::SecurityStrength(
+                "HmacKey: provided key has a lower security strength than the instantiated HMAC",
+            )));
+        }
+        Ok(Self::from_key_bytes(key.ref_to_bytes()))
+    }
+}
+
+impl<HASH: Hash + Default> FromAnyKeyMaterial for HmacKey<HASH> {
+    /// Builds the key from material tagged [`KeyType::MACKey`] (or [`KeyType::Zeroized`], for an
+    /// all-zero key) whose security strength is at least the HMAC's.
+    ///
+    /// # Errors
+    /// [`MACError::KeyMaterialError`] with [`KeyMaterialError::InvalidKeyType`] or
+    /// [`KeyMaterialError::SecurityStrength`].
+    fn from_key_material(key: &dyn KeyMaterialTrait) -> Result<Self, MACError> {
+        Self::from_key_material_checked(key, false)
+    }
+
+    /// As [`from_key_material`](Self::from_key_material) without the strength check.
+    ///
+    /// # Errors
+    /// [`MACError::KeyMaterialError`] with [`KeyMaterialError::InvalidKeyType`].
+    fn from_key_material_allow_weak(key: &dyn KeyMaterialTrait) -> Result<Self, MACError> {
+        Self::from_key_material_checked(key, true)
+    }
+
+    /// Draws a key of the hash's output length (RFC 2104 Section 3's recommended minimum) from
+    /// `rng`, tagged [`KeyType::MACKey`] at the RNG's strength capped at what that length can
+    /// carry, and builds the key from it.
+    ///
+    /// # Errors
+    /// [`MACError::KeyMaterialError`] if the RNG fails, or with
+    /// [`KeyMaterialError::SecurityStrength`] if its strength is below the HMAC's.
+    fn generate(rng: &mut dyn RNG) -> Result<Self, MACError> {
+        let output_len = HASH::default().output_len();
+        let mut key = KeyMaterial::<LARGEST_HASHER_OUTPUT_LEN>::new();
+        do_hazardous_operations(&mut key, |key| {
+            rng.next_bytes_out(&mut key.ref_to_bytes_mut()?[..output_len])
+                .map_err(|_| KeyMaterialError::GenericError("RNG failed."))?;
+            key.set_key_len(output_len)?;
+            key.set_key_type(KeyType::MACKey)?;
+            // The RNG's strength, capped at what the length carries, as KeyMaterial::from_rng
+            // does: a 28-byte HMAC-SHA224 key from a 256-bit DRBG is a 192-bit key.
+            let by_len = SecurityStrength::from_bits(output_len * 8);
+            let by_rng = rng.security_strength();
+            key.set_security_strength(if by_rng < by_len { by_rng } else { by_len })
+        })?;
+        Self::from_key_material(&key)
+    }
+}
+
+impl<HASH: Hash + Default> HmacKey<HASH> {
+    /// `H` after absorbing `K XOR ipad`, ready for the text: the start of RFC 2104 Section 2
+    /// step (4). What a worker's updates feed; `finish_out` is its other half. The pair is
+    /// reachable outside the crate only through [`hazmat`].
+    pub(crate) fn inner_state(&self) -> HASH {
+        self.inner.clone()
+    }
+
+    /// RFC 2104 Section 2 steps (4), (6) and (7) over an inner hash that has absorbed the text:
+    /// finishes it, feeds the result to the outer pad state, and finishes that into `out`, which
+    /// is zeroized first. Returns the number of bytes written.
+    ///
+    /// # Errors
+    /// [`MACError::InvalidLength`] if `out` is shorter than [`MIN_FIPS_DIGEST_LEN`].
+    pub(crate) fn finish_out(&self, inner: HASH, out: &mut [u8]) -> Result<usize, MACError> {
+        out.fill(0);
+        if out.len() < MIN_FIPS_DIGEST_LEN {
+            return Err(MACError::InvalidLength(
+                "HMAC truncation too short for FIPS 140-2 guidelines",
+            ));
+        }
+        let mut ihash = vec![0u8; inner.output_len()];
+        inner.do_final_out(&mut ihash); // step (4)
+        let mut outer = self.outer.clone();
+        outer.do_update(&ihash); // step (6)
+        Ok(outer.do_final_out(out)) // step (7)
+    }
+}
+
+impl<HASH: Hash + Default> MacGenerationKey for HmacKey<HASH> {
+    type Generator<'k>
+        = HMAC<'k, HASH>
+    where
+        Self: 'k;
+
+    fn create_generator<'k>(&'k self) -> Self::Generator<'k> {
+        HMAC { hasher: self.inner.clone(), key: self }
+    }
+}
+
+impl<HASH: Hash + Default> MacVerificationKey for HmacKey<HASH> {
+    type Verifier<'k>
+        = HMAC<'k, HASH>
+    where
+        Self: 'k;
+
+    fn create_verifier<'k>(&'k self) -> Self::Verifier<'k> {
+        self.create_generator()
+    }
+}
+
+/*** Worker ***/
+
+/// The HMAC worker for one message: the inner hash, absorbing the message, and the key it was made
+/// from, borrowed for `'k`, whose outer pad state it is finished through. Obtained from an
+/// [`HmacKey`].
+#[derive(Clone)]
+pub struct HMAC<'k, HASH: Hash + Default> {
+    /// RFC 2104 Section 2 steps (3)-(4): `H(K XOR ipad, text)` in progress.
+    hasher: HASH,
+    /// The key, for `H` after absorbing `K XOR opad` at step (7).
+    key: &'k HmacKey<HASH>,
+}
+
+impl<HASH: Hash + Default> Debug for HMAC<'_, HASH> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "HMAC-{} instance", HASH::ALG_NAME,)
     }
 }
 
-impl<HASH: Hash + Default, const KEY_BUF_LEN: usize> Display for HMAC<HASH, KEY_BUF_LEN> {
+impl<HASH: Hash + Default> Display for HMAC<'_, HASH> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "HMAC-{} instance", HASH::ALG_NAME,)
     }
@@ -194,124 +409,14 @@ const OPAD_BYTE: u8 = 0x5C;
 /// = 32 bits / 8 = 4 bytes;
 pub const MIN_FIPS_DIGEST_LEN: usize = 4;
 
-impl<HASH: Hash + Default, const KEY_BUF_LEN: usize> HMAC<HASH, KEY_BUF_LEN> {
-    fn pad_key_into_hasher(&mut self, padding: u8) {
-        // TODO: it would be nice to be able to statically extract the length of HASH and not need a Vec or over-sized array here.
-        // TODO: make this no_std-friendly
-        let mut padded = vec![0u8; self.hasher.block_bitlen() / 8];
-
-        padded[..*self.key_len].copy_from_slice(&self.key[..*self.key_len]);
-
-        // XXX: easier way to xor over Vec?
-        for entry in &mut padded {
-            *entry ^= padding;
-        }
-
-        // Per RFC 2104 Section 2, write the padded key into the stream prior
-        // to any other data.
-        self.hasher.do_update(&padded)
-    }
-
-    /// Per RFC 2104 Section 2, if the application key exceeds the block
-    /// length of the underlying hashes algorithm, we apply a hash invocation
-    /// over the key first.
-    /// This does NOT absorb the key into the hasher; that is done separately via [`HMAC::pad_key_into_hasher`].
-    fn load_key_material(&mut self, key_bytes: &[u8]) {
-        if key_bytes.len() > self.hasher.block_bitlen() / 8 {
-            // then we have to pre-hash it -- use a new instance of the hasher rather than the internal one
-            HASH::default().hash_out(key_bytes, &mut self.key[..self.hasher.output_len()]);
-            *self.key_len = self.hasher.output_len();
-        } else {
-            self.key[..key_bytes.len()].copy_from_slice(key_bytes);
-            *self.key_len = key_bytes.len();
-        }
-
-        // Just as a sanity-check.
-        assert!(
-            *self.key_len <= KEY_BUF_LEN,
-            "Fatal error: Key length exceeds HMAC internal buffer length"
-        );
-    }
-
-    /// Private init so that users are forced to go through one of the public new methods and thus we
-    /// don't need to track state errors.
-    fn init(&mut self, key: &impl KeyMaterialTrait, allow_weak_keys: bool) -> Result<(), MACError> {
-        // check that the key is of type KeyMaterial::MACKey
-        // Make an exception for all-zero keys, which is allowed (which can be zero-length or non-zero-length,
-        // because it's just a nuisance to force users to set KeyType::MACKey for an all-zero key.
-        if !(key.key_type() == KeyType::Zeroized || key.key_type() == KeyType::MACKey) {
-            return Err(MACError::KeyMaterialError(KeyMaterialError::InvalidKeyType(
-                "Key type must be a MAC key.",
-            )));
-        }
-
-        // import the key material as bytes.
-        // Per RFC 2104 Section 2, if the application key exceeds the block
-        // length of the underlying hashes algorithm, we apply a hash invocation
-        // over the key first.
-
-        self.load_key_material(key.ref_to_bytes());
-
-        self.pad_key_into_hasher(IPAD_BYTE);
-
-        // check that the key had enough security level
-        if !allow_weak_keys && key.security_strength() < HASH::default().max_security_strength() {
-            Err(KeyMaterialError::SecurityStrength(
-                "HMAC::init(): provided key has a lower security strength than the instantiated HMAC",
-            ))?
-        } else {
-            Ok(())
-        }
-    }
-
-    /// the out buffer can be oversized, but not less than the MIN_FIPS_DIGEST_LENGTH
-    /// Returns the number of bytes written.
-    fn do_final_internal_out(mut self, out: &mut [u8]) -> Result<usize, MACError> {
-        if out.len() < MIN_FIPS_DIGEST_LEN {
-            return Err(MACError::InvalidLength(
-                "HMAC truncation too short for FIPS 140-2 guidelines",
-            ));
-        }
-
-        out.fill(0);
-
-        // Per RFC 2104 Section 2, save our inner digest to calculate our
-        // outer digest. Note that we can't (necessarily) reuse out as a
-        // scratch pad here: if we're truncating the output but not
-        // truncating the underlying hashes, we'd lose bytes and compute an
-        // invalid outer hashes.
-        // TODO: rework this to be no_std friendly (ie no vec!)
-        let mut ihash = vec![0u8; self.hasher.output_len()];
-        // `HMAC` implements `Drop` (required by `Secret`), so we cannot move `self.hasher` out
-        // directly. Swap in a fresh default and consume the taken-out hasher instead.
-        core::mem::take(&mut self.hasher).do_final_out(&mut ihash);
-
-        // ohash
-        self.hasher = HASH::default();
-        self.pad_key_into_hasher(OPAD_BYTE);
-        self.hasher.do_update(&ihash);
-        Ok(core::mem::take(&mut self.hasher).do_final_out(out))
+impl<HASH: Hash + Default> HMAC<'_, HASH> {
+    /// RFC 2104 Section 2 steps (4), (6) and (7), through the key: [`HmacKey::finish_out`].
+    fn do_final_internal_out(self, out: &mut [u8]) -> Result<usize, MACError> {
+        self.key.finish_out(self.hasher, out)
     }
 }
 
-// TODO: potential feature: add an interface that pre-computes the intermediate values (K XOR ipad) and (K XOR opad)
-// TODO for a given key as described in RFC2104 section 4.
-// TODO: This is essentially a "batch mode" where you want to perform many MACs or Verifications with the same key
-// TODO: against different data.
-
-impl<HASH: Hash + Default, const KEY_BUF_LEN: usize> MAC for HMAC<HASH, KEY_BUF_LEN> {
-    fn new(key: &impl KeyMaterialTrait) -> Result<Self, MACError> {
-        let mut hmac = Self { hasher: HASH::default(), key: Secret::new(), key_len: Secret::new() };
-        hmac.init(key, false)?;
-        Ok(hmac)
-    }
-
-    fn new_allow_weak_key(key: &impl KeyMaterialTrait) -> Result<Self, MACError> {
-        let mut hmac = Self { hasher: HASH::default(), key: Secret::new(), key_len: Secret::new() };
-        hmac.init(key, true)?;
-        Ok(hmac)
-    }
-
+impl<HASH: Hash + Default> MAC for HMAC<'_, HASH> {
     fn output_len(&self) -> usize {
         self.hasher.output_len()
     }
@@ -324,7 +429,6 @@ impl<HASH: Hash + Default, const KEY_BUF_LEN: usize> MAC for HMAC<HASH, KEY_BUF_
 
     fn mac_out(mut self, data: &[u8], mut out: &mut [u8]) -> Result<usize, MACError> {
         out.fill(0);
-
         self.do_update(data);
         self.do_final_out(&mut out)
     }
@@ -346,7 +450,6 @@ impl<HASH: Hash + Default, const KEY_BUF_LEN: usize> MAC for HMAC<HASH, KEY_BUF_
 
     fn do_final_out(self, mut out: &mut [u8]) -> Result<usize, MACError> {
         out.fill(0);
-
         self.do_final_internal_out(&mut out)
     }
 
@@ -366,74 +469,43 @@ impl<HASH: Hash + Default, const KEY_BUF_LEN: usize> MAC for HMAC<HASH, KEY_BUF_
 
 /* SerializedState */
 
-/// HMAC is a keyed algorithm, so it implements [`SuspendableKeyed`] (rather than
-/// [`Suspendable`]) for suspending and resuming in-progress operations.
-/// The key is deliberately NOT written into the serialized
-/// bytes and must be re-supplied at deserialization.
+/// Suspend / resume for `HMAC`.
 ///
-/// The serialized state is exactly the inner hasher's state (which has already absorbed `K ⊕ ipad`
-/// and any message chunks provided so far) — so this is a straight passthrough to the underlying hash's
-/// [`Suspendable`] impl. The re-supplied key is needed to reconstruct the material for the outer
-/// (`K ⊕ opad`) step at finalization.
-///
-/// There is no way to detect a mismatched key on
-/// resume: the caller MUST supply the same key the HMAC was created with, otherwise the resumed
-/// operation will silently produce an incorrect MAC.
-impl<
-    const HASH_STATE_LEN: usize,
-    const KEY_BUF_LEN: usize,
-    HASH: Hash + Default + Suspendable<HASH_STATE_LEN>,
-> SuspendableKeyed<HASH_STATE_LEN> for HMAC<HASH, KEY_BUF_LEN>
+/// The suspended state is exactly the inner hash's: the outer pad state is the key's, which the
+/// worker borrows, so resume takes the [`HmacKey`] the worker was made from and the state carries
+/// one secret fewer. The key is *not* authenticated against the state: resuming with the wrong key
+/// cannot be detected and produces a wrong MAC.
+impl<'k, const HASH_STATE_LEN: usize, HASH: Hash + Default + Suspendable<HASH_STATE_LEN>>
+    SuspendableKeyed<'k, HASH_STATE_LEN> for HMAC<'k, HASH>
 {
-    // HMAC accepts any key material, so the key type is the trait object `dyn KeyMaterialTrait`
-    // rather than a single concrete key type. The key is only used (by reference) to reload the key
-    // bytes at from_serialized_state, so dynamic dispatch here is negligible.
-    type Key = dyn KeyMaterialTrait;
+    type Key = HmacKey<HASH>;
 
-    fn suspend(mut self) -> [u8; HASH_STATE_LEN] {
-        // The key is intentionally excluded; the resumable state is just the inner hasher, which
-        // already carries the library version header from the hash's own SerializableState impl.
-        // `HMAC` implements `Drop` (required by `Secret`), so move the hasher out via `mem::take`
-        // rather than a direct partial move.
-        core::mem::take(&mut self.hasher).suspend()
+    fn suspend(self) -> [u8; HASH_STATE_LEN] {
+        self.hasher.suspend()
     }
 
     fn from_suspended(
         state: [u8; HASH_STATE_LEN],
-        key: &Self::Key,
+        key: &'k Self::Key,
     ) -> Result<Self, SuspendableError> {
-        // Rebuild the inner hasher (version-compatibility is validated by the hash's impl).
-        let hasher = HASH::from_suspended(state)?;
-
-        // Re-load the key material exactly as `new()` did (pre-hashing an over-length key), but do
-        // NOT re-absorb `K ⊕ ipad` — the deserialized hasher already contains it. The key is only
-        // needed for the outer `K ⊕ opad` step at finalization.
-        let mut hmac = HMAC { hasher, key: Secret::new(), key_len: Secret::new() };
-        hmac.load_key_material(key.ref_to_bytes());
-
-        Ok(hmac)
+        Ok(HMAC { hasher: HASH::from_suspended(state)?, key })
     }
 }
 
 /* KeyGen functions */
 
-impl<HASH: HMACParams, const KEY_BUF_LEN: usize> HMAC<HASH, KEY_BUF_LEN> {
-    /// Generates a key of the appropriate length for this HMAC from the provided RNG, tagged
-    /// [`KeyType::MACKey`] and ready to hand to [`MAC::new`].
+impl<HASH: HMACParams> HMAC<'_, HASH> {
+    /// Generates a fresh key for this HMAC from `rng`: [`HMACParams::MACKey`] bytes (the hash's
+    /// output length), tagged [`KeyType::MACKey`]. [`FromAnyKeyMaterial::generate`] on
+    /// [`HmacKey`] draws the same key and builds the key object from it in one step.
     ///
-    /// The key length is the underlying hash's output length ([`HashAlgParams::OUTPUT_LEN`], carried
-    /// as [`HMACParams::MACKey`]); see that associated type for why.
-    ///
-    // Dev note: done this way to avoid this crate needing a dependency on the `bouncycastle-rng` crate,
-    //           which itself has a dependency on `bouncycastle-sha2` which depends on this hmac crate,
-    //           which creates a circular cargo dependency.
+    /// # Errors
+    /// [`RNGError::SecurityStrengthInsufficientForAlgorithm`] if `rng` is instantiated below
+    /// [`HMACParams::HMAC_MAX_SECURITY_STRENGTH`], or whatever the RNG returns.
     pub fn keygen_from_rng(rng: &mut dyn RNG) -> Result<HASH::MACKey, RNGError> {
-        // Refuse to generate a key from an RNG that cannot back the strength this HMAC claims;
-        // otherwise the key's tagged security strength would overstate its true entropy.
         if rng.security_strength() < HASH::HMAC_MAX_SECURITY_STRENGTH {
             return Err(RNGError::SecurityStrengthInsufficientForAlgorithm);
         }
-
         let mut key = HASH::MACKey::default();
         rng.fill_keymaterial_out(&mut key)?;
         key.set_key_type(KeyType::MACKey)?;

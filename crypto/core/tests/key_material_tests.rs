@@ -7,6 +7,7 @@ mod test_key_material {
         KeyMaterialTrait, KeyType,
     };
     use bouncycastle_core::security_strength::SecurityStrength;
+    use bouncycastle_core::traits::RNG;
 
     const DUMMY_KEY: &[u8; 64] = b"\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0A\x0B\x0C\x0D\x0E\x0F\
                                    \x10\x11\x12\x13\x14\x15\x16\x17\x18\x19\x1A\x1B\x1C\x1D\x1E\x1F\
@@ -212,6 +213,24 @@ mod test_key_material {
         let key = KeyMaterial512::from_rng(&mut rng::DefaultRNG::default()).unwrap();
         assert_eq!(key.key_len(), 64);
         assert_eq!(key.key_type(), KeyType::CryptographicRandom);
+    }
+
+    /// The material carries the RNG's strength, capped at what the key length can carry: the
+    /// default DRBG is 256-bit, so 32 bytes keep that and 16 bytes are a 128-bit key.
+    #[test]
+    fn from_rng_caps_the_strength_at_the_key_length() {
+        use bouncycastle_rng as rng;
+
+        let mut drbg = rng::DefaultRNG::default();
+        let rng_strength = drbg.security_strength();
+        assert!(rng_strength >= SecurityStrength::_256bit, "the default DRBG is 256-bit");
+
+        let key = KeyMaterial256::from_rng(&mut drbg).unwrap();
+        assert_eq!(key.security_strength(), rng_strength, "32 bytes carry the RNG's strength");
+        let key = KeyMaterial128::from_rng(&mut drbg).unwrap();
+        assert_eq!(key.security_strength(), SecurityStrength::_128bit, "16 bytes cap it");
+        let key = KeyMaterial512::from_rng(&mut drbg).unwrap();
+        assert_eq!(key.security_strength(), rng_strength, "64 bytes keep the RNG's strength");
     }
 
     #[test]
@@ -530,13 +549,13 @@ mod test_key_material {
         // test fmt
         assert_eq!(
             format!("{}", key256),
-            "KeyMaterial<32>{ len: 32, key_type: MACKey, security_strength: _256bit, algorithm: None }"
+            "KeyMaterial<32>{ len: 32, key_type: MACKey, security_strength: _256bit }"
         );
 
         // test debug
         assert_eq!(
             format!("{:?}", key256),
-            "KeyMaterial<32>{ len: 32, key_type: MACKey, security_strength: _256bit, algorithm: None }"
+            "KeyMaterial<32>{ len: 32, key_type: MACKey, security_strength: _256bit }"
         );
 
         // and an underfull one of a different size.
@@ -546,13 +565,13 @@ mod test_key_material {
         // test fmt
         assert_eq!(
             format!("{}", key512),
-            "KeyMaterial<64>{ len: 32, key_type: MACKey, security_strength: _256bit, algorithm: None }"
+            "KeyMaterial<64>{ len: 32, key_type: MACKey, security_strength: _256bit }"
         );
 
         // test debug
         assert_eq!(
             format!("{:?}", key512),
-            "KeyMaterial<64>{ len: 32, key_type: MACKey, security_strength: _256bit, algorithm: None }"
+            "KeyMaterial<64>{ len: 32, key_type: MACKey, security_strength: _256bit }"
         );
     }
 
@@ -931,71 +950,5 @@ mod test_key_material {
             Err(KeyMaterialError::HazardousOperationNotPermitted) => { /* good */ }
             _ => panic!("the guard should have been cleared after the erroring closures"),
         }
-    }
-
-    /// Binding to an algorithm only ever narrows where a key may be used without a hazardous
-    /// closure: an unbound key can be bound, but a bound one cannot be unbound or moved.
-    #[test]
-    fn algorithm_binding() {
-        let mut key =
-            KeyMaterial128::from_bytes_as_type(&DUMMY_KEY[..16], KeyType::SymmetricCipherKey)
-                .unwrap();
-        assert_eq!(key.algorithm(), None);
-        assert_eq!(key.check_algorithm("AES_CBC_128"), Ok(()), "an unbound key fits any algorithm");
-        assert_eq!(key.check_algorithm("AES_GCM_128"), Ok(()));
-
-        key.set_algorithm(Some("AES_CBC_128")).unwrap();
-        assert_eq!(key.algorithm(), Some("AES_CBC_128"));
-        assert_eq!(key.check_algorithm("AES_CBC_128"), Ok(()));
-        assert!(matches!(
-            key.check_algorithm("AES_GCM_128"),
-            Err(KeyMaterialError::InvalidKeyType(_))
-        ));
-
-        // Re-binding to the same algorithm is a no-op; anything else is hazardous.
-        key.set_algorithm(Some("AES_CBC_128")).unwrap();
-        assert_eq!(
-            key.set_algorithm(Some("AES_GCM_128")),
-            Err(KeyMaterialError::HazardousOperationNotPermitted)
-        );
-        assert_eq!(key.set_algorithm(None), Err(KeyMaterialError::HazardousOperationNotPermitted));
-        assert_eq!(key.algorithm(), Some("AES_CBC_128"), "a refused change must leave it bound");
-
-        do_hazardous_operations(&mut key, |key| key.set_algorithm(Some("AES_GCM_128"))).unwrap();
-        assert_eq!(key.algorithm(), Some("AES_GCM_128"));
-        do_hazardous_operations(&mut key, |key| key.set_algorithm(None)).unwrap();
-        assert_eq!(key.algorithm(), None);
-
-        let mut zeroized = KeyMaterial128::new();
-        assert_eq!(
-            zeroized.set_algorithm(Some("AES_CBC_128")),
-            Err(KeyMaterialError::ActingOnZeroizedKey)
-        );
-    }
-
-    /// Copies of a key carry its binding; new bytes, or zeroizing, leave the key unbound.
-    #[test]
-    fn algorithm_binding_follows_the_key_bytes() {
-        let mut key =
-            KeyMaterial256::from_bytes_as_type(&DUMMY_KEY[..32], KeyType::SymmetricCipherKey)
-                .unwrap();
-        key.set_algorithm(Some("AES_GCM_256")).unwrap();
-
-        assert_eq!(key.clone().algorithm(), Some("AES_GCM_256"));
-        assert_eq!(KeyMaterial512::from_key(&key).unwrap().algorithm(), Some("AES_GCM_256"));
-        let mut truncated = KeyMaterial128::new();
-        key.clone().truncate(&mut truncated);
-        assert_eq!(truncated.algorithm(), Some("AES_GCM_256"));
-        assert!(
-            format!("{key}")
-                .ends_with(r#"security_strength: _256bit, algorithm: Some("AES_GCM_256") }"#)
-        );
-
-        let mut reloaded = key.clone();
-        reloaded.set_bytes_as_type(&DUMMY_KEY[32..64], KeyType::SymmetricCipherKey).unwrap();
-        assert_eq!(reloaded.algorithm(), None);
-
-        key.zeroize();
-        assert_eq!(key.algorithm(), None);
     }
 }

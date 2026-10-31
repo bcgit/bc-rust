@@ -19,12 +19,12 @@
 //! # Ciphertext and tag are separate fields, unlike the ACVP set
 //!
 //! Wycheproof's AEAD schema carries `ct` and `tag` as distinct fields (the `aead_test_schema_v1`
-//! schema), so these cases go through [`CcmPacket::encrypt_detached_out`] / [`CcmPacket::decrypt_detached_out`], not
+//! schema), so these cases go through the mode's detached in-place one-shots, not
 //! the inline pair `ccm_bc-test-data.rs` uses.
 //!
 //! # Most of the parameter space cannot be dispatched to at all, by design
 //!
-//! `CcmPacket`'s `NONCE_LEN` and `TAG_LEN` are const generics restricted to A.1's sets --
+//! The mode's `NONCE_LEN` and `TAG_LEN` are const generics restricted to A.1's sets --
 //! `NONCE_LEN` in `7..=13` bytes, `TAG_LEN` in `{4, 6, 8, 10, 12, 14, 16}` bytes -- so there is no
 //! instantiation to dispatch a group whose `ivSize`/`tagSize` falls outside them to at all; unlike
 //! a runtime check, this is not something a case can "fail", because it is a compile-time property
@@ -34,12 +34,11 @@
 //! asserted at the end so a change in the vector file's shape is visible.
 
 use bouncycastle_aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
-use bouncycastle_cipher::modes::CcmPacket;
-use bouncycastle_cipher::modes::ModeNames;
-use bouncycastle_cipher::{Decrypting, Encrypting};
+use bouncycastle_cipher::modes::{CCM, ModeNames};
 use bouncycastle_core::errors::SymmetricCipherError;
-use bouncycastle_core::hazmat::ElectronicCodeBook;
-use bouncycastle_core::hazmat::do_hazardous_operations;
+use bouncycastle_core::hazmat::{
+    AeadDeclaredDecryptMode, AeadDeclaredEncryptMode, ElectronicCodeBook, do_hazardous_operations,
+};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core_test_framework::test_data_loaders::{Value, hex_field, wycheproof_json};
@@ -61,13 +60,14 @@ fn cipher_key<const N: usize>(bytes: &[u8]) -> KeyMaterial<N> {
     key
 }
 
-/// Runs one case at a fully-instantiated `(KEY_LEN, NONCE_LEN, TAG_LEN, P)`.
+/// Runs one case at a fully-instantiated `(KEY_LEN, NONCE_LEN, TAG_LEN, P)`, through the mode's
+/// in-place one-shots.
 ///
-/// For a `result: "valid"` case, `msg` must encrypt to exactly `expected_ct`/`expected_tag`
-/// ([`CcmPacket::encrypt_detached_out`]), and `expected_ct`/`expected_tag` must decrypt back to `msg`
-/// ([`CcmPacket::decrypt_detached_out`]). For `result: "invalid"`, only the decrypt direction is checked --
-/// re-encrypting `msg` has no reason to reproduce a deliberately corrupted `ct`/`tag` -- and it
-/// must fail the tag check rather than return a payload.
+/// For a `result: "valid"` case, `msg` must encrypt to exactly `expected_ct`/`expected_tag`, and
+/// `expected_ct`/`expected_tag` must decrypt back to `msg`. For `result: "invalid"`, only the
+/// decrypt direction is checked -- re-encrypting `msg` has no reason to reproduce a deliberately
+/// corrupted `ct`/`tag` -- and it must fail the tag check rather than return a payload, leaving
+/// the buffer zeroized as the mode's in-place decrypt documents.
 #[allow(clippy::too_many_arguments)]
 fn run_case<const KEY_LEN: usize, const NONCE_LEN: usize, const TAG_LEN: usize, P>(
     tc_id: u64,
@@ -79,37 +79,39 @@ fn run_case<const KEY_LEN: usize, const NONCE_LEN: usize, const TAG_LEN: usize, 
     expected_tag: &[u8],
     valid: bool,
 ) where
-    P: ElectronicCodeBook<KEY_LEN, 16> + ModeNames,
+    P: ElectronicCodeBook<KEY_LEN, 16> + ModeNames + Clone,
 {
-    let key = cipher_key::<KEY_LEN>(key_bytes);
+    type Mode<const N: usize, const T: usize> = CCM<N, T>;
+    let perm = P::new(&cipher_key::<KEY_LEN>(key_bytes)).expect("a wycheproof key");
     let nonce: [u8; NONCE_LEN] =
         nonce_bytes.try_into().unwrap_or_else(|_| panic!("tcId {tc_id}: bad nonce length"));
     let tag: [u8; TAG_LEN] =
         expected_tag.try_into().unwrap_or_else(|_| panic!("tcId {tc_id}: bad tag length"));
 
     if valid {
-        let mut ct = vec![0u8; msg.len()];
-        let (written, got_tag) =
-            CcmPacket::<P, Encrypting, KEY_LEN, 16, NONCE_LEN, TAG_LEN>::encrypt_detached_out(
-                &key, &nonce, aad, msg, &mut ct,
-            )
-            .unwrap_or_else(|e| panic!("tcId {tc_id}: valid case failed to encrypt: {e:?}"));
-        assert_eq!(written, msg.len(), "tcId {tc_id}: encrypt_detached writes exactly msg.len()");
+        let mut ct = msg.to_vec();
+        let got_tag = Mode::<NONCE_LEN, TAG_LEN>::encrypt_detached_in_place_nonce(
+            &perm, &nonce, aad, &mut ct,
+        )
+        .unwrap_or_else(|e| panic!("tcId {tc_id}: valid case failed to encrypt: {e:?}"));
         assert_eq!(ct, expected_ct, "tcId {tc_id}: ciphertext mismatch");
         assert_eq!(got_tag, tag, "tcId {tc_id}: tag mismatch");
     }
 
-    let mut plaintext = vec![0u8; expected_ct.len()];
-    match CcmPacket::<P, Decrypting, KEY_LEN, 16, NONCE_LEN, TAG_LEN>::decrypt_detached_out(
-        &key, &nonce, aad, expected_ct, &tag, &mut plaintext,
+    let mut plaintext = expected_ct.to_vec();
+    match Mode::<NONCE_LEN, TAG_LEN>::decrypt_detached_in_place(
+        &perm, &nonce, aad, &mut plaintext, &tag,
     ) {
-        Ok(n) => {
+        Ok(()) => {
             assert!(valid, "tcId {tc_id}: an invalid vector decrypted and verified anyway");
-            plaintext.truncate(n);
             assert_eq!(plaintext, msg, "tcId {tc_id}: decrypted plaintext mismatch");
         }
         Err(SymmetricCipherError::AEADTagCheckFailed) => {
             assert!(!valid, "tcId {tc_id}: a valid vector failed its tag check");
+            assert!(
+                plaintext.iter().all(|&b| b == 0),
+                "tcId {tc_id}: a failed tag check must leave the output buffer zeroized"
+            );
         }
         Err(e) => panic!("tcId {tc_id}: unexpected CCM error: {e:?}"),
     }

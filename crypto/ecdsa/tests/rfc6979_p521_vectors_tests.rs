@@ -11,7 +11,7 @@ use bouncycastle_core::traits::{
 };
 use bouncycastle_ec::p521_comb::comb_multiply_base_point;
 use bouncycastle_ec::p521_scalar::P521Scalar;
-use bouncycastle_ecdsa::ecdsa_p521::ECDSAP521;
+use bouncycastle_ecdsa::ecdsa_p521::ECDetDSAP521;
 use bouncycastle_ecdsa::keys_p521::{ECDSAP521PrivateKey, ECDSAP521PublicKey};
 use bouncycastle_ecdsa::rfc6979_p521::generate_k;
 use bouncycastle_hex::decode as hex_decode;
@@ -73,7 +73,7 @@ fn generate_k_matches_vectors() {
 fn deterministic_sign_matches_vectors() {
     let sk = private_key();
     for v in [&SAMPLE, &TEST] {
-        let sig = ECDSAP521::sign(&sk, v.msg, None).unwrap();
+        let sig = ECDetDSAP521::sign(&sk, v.msg, None).unwrap();
         let mut expected = [0u8; 132];
         expected[..66].copy_from_slice(&bytes66(v.r));
         expected[66..].copy_from_slice(&bytes66(v.s));
@@ -91,7 +91,7 @@ fn deterministic_signature_verifies() {
     let pk = ECDSAP521PublicKey::from_bytes(&uncompressed).unwrap();
 
     for v in [&SAMPLE, &TEST] {
-        let sig = ECDSAP521::sign(&sk, v.msg, None).unwrap();
-        ECDSAP521::verify(&pk, v.msg, None, &sig).unwrap();
+        let sig = ECDetDSAP521::sign(&sk, v.msg, None).unwrap();
+        ECDetDSAP521::verify(&pk, v.msg, None, &sig).unwrap();
     }
 }

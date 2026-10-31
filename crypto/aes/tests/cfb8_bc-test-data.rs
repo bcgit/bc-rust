@@ -2,8 +2,8 @@
 //!
 //! Requires `bc-test-data` to be cloned alongside this repository, i.e. at `../bc-test-data`
 //! relative to the root of this git project. If it is absent the test prints a warning and passes,
-//! matching the convention used by the ML-KEM, ML-DSA, `aes` and AES-CBC suites --
-//! `cargo test` must stay green for someone who has only cloned this repository.
+//! matching the other vector suites in this crate and the ML-KEM and ML-DSA ones -- `cargo test`
+//! must stay green for someone who has only cloned this repository.
 //!
 //! This is the CFB8 counterpart to `cfb_bc-test-data.rs` (AES-CFB128), `cbc_bc-test-data.rs`
 //! (AES-CBC) and `ecb_bc-test-data.rs` (AES-ECB, the raw permutation). `ACVP-AES-CFB1` is
@@ -23,25 +23,22 @@
 //! that reach the batch paths. Every case is run **four times**: as one call over the whole
 //! payload, byte by byte, in 8-byte calls, and in 3-byte calls that never line up with the
 //! 8-byte batch. Between them those put the multi-byte cases through
-//! [`ElectronicCodeBook::encrypt_4blocks`] and [`ElectronicCodeBook::encrypt_2blocks`] -- the
+//! [`BlockPermutation::encrypt_4blocks`] and [`BlockPermutation::encrypt_2blocks`] -- the
 //! *forward* function, even on the decrypt side -- and through the single-byte path, with the
 //! shift register carried across calls at every alignment. So all of that is exercised against real
-//! vectors and not only against the toys in `cfb8_tests.rs`.
+//! vectors and not only against the toys in `crypto/cipher/tests/modes/cfb8_tests.rs`.
 //!
 //! The 6 MCT (Monte Carlo Test) groups are **not** implemented: their expected output is a
 //! `resultsArray` produced by a chained update rule defined in the ACVP AES specification rather
 //! than in SP 800-38A, and implementing it from anything else would be guesswork. The test reports
 //! how many it skipped so the gap stays visible.
 
-use bouncycastle_aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
-use bouncycastle_cipher::modes::Cfb8;
-use bouncycastle_cipher::modes::ModeNames;
-use bouncycastle_cipher::{Decrypting, Encrypting};
-use bouncycastle_core::hazmat::ElectronicCodeBook;
-use bouncycastle_core::traits::{
-    StreamCipherDecryptor, StreamCipherEncryptor, SymmetricCipherDecryptor,
-    SymmetricCipherEncryptor,
+use bouncycastle_aes::{AES128Key, AES192Key, AES256Key};
+use bouncycastle_cipher::modes::CFB8;
+use bouncycastle_core::symmetric_key::{
+    FromKeyMaterial, SymmetricDecryptionKey, SymmetricEncryptionKey,
 };
+use bouncycastle_core::traits::{StreamCipherDecryptor, StreamCipherEncryptor};
 use bouncycastle_core_test_framework::FixedSeedRNG;
 use bouncycastle_core_test_framework::test_data_loaders::{Value, bc_test_data_json, hex_field};
 use std::collections::BTreeMap;
@@ -81,12 +78,12 @@ impl Grouping {
     }
 }
 
-/// Runs one CFB8 case in one direction, for a given permutation, under the given grouping.
+/// Runs one CFB8 case in one direction, for a given key type, under the given grouping.
 ///
-/// Encryption is driven through `do_encrypt_init_rng` with a `FixedSeedRNG` emitting the vector's
-/// IV, and the returned init data is checked against that IV before any ciphertext is compared --
-/// so a change that ignored the RNG could not pass silently.
-fn run_case<P, const KEY_LEN: usize>(
+/// Encryption is driven through the key's `create_encryptor` with a `FixedSeedRNG` emitting the
+/// vector's IV, and the returned init data is checked against that IV before any ciphertext is
+/// compared -- so a change that ignored the RNG could not pass silently.
+fn run_case<K, const KEY_LEN: usize>(
     key_bytes: &[u8],
     iv: [u8; BLOCK_LEN],
     input: &[u8],
@@ -94,25 +91,26 @@ fn run_case<P, const KEY_LEN: usize>(
     grouping: Grouping,
 ) -> Vec<u8>
 where
-    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames,
+    K: 'static,
+    K: FromKeyMaterial<KEY_LEN>
+        + SymmetricEncryptionKey<KEY_LEN, BLOCK_LEN, 0>
+        + SymmetricDecryptionKey<KEY_LEN, BLOCK_LEN, 0>,
+    for<'k> K::Encryptor<'k>: StreamCipherEncryptor<BLOCK_LEN>,
+    for<'k> K::Decryptor<'k>: StreamCipherDecryptor<BLOCK_LEN>,
 {
-    let key = cipher_key::<KEY_LEN>(key_bytes);
+    let key = K::from_key_material(&cipher_key::<KEY_LEN>(key_bytes)).expect("a valid key");
     let mut data = input.to_vec();
     let chunk = grouping.chunk_len(data.len());
 
     if encrypt {
-        let (mut enc, got_iv) = Cfb8::<P, Encrypting, KEY_LEN, BLOCK_LEN>::do_encrypt_init_rng(
-            &key,
-            &mut FixedSeedRNG::<BLOCK_LEN>::new(iv),
-        )
-        .expect("encrypt init");
+        let (mut enc, got_iv) =
+            key.create_encryptor(&mut FixedSeedRNG::<BLOCK_LEN>::new(iv)).expect("encrypt init");
         assert_eq!(got_iv, iv, "the pinned RNG should reproduce the vector's IV");
         for piece in data.chunks_mut(chunk) {
             enc.do_encrypt_inplace(piece).unwrap();
         }
     } else {
-        let mut dec = Cfb8::<P, Decrypting, KEY_LEN, BLOCK_LEN>::do_decrypt_init(&key, &iv)
-            .expect("dec init");
+        let mut dec = key.create_decryptor(&iv);
         for piece in data.chunks_mut(chunk) {
             dec.do_decrypt_inplace(piece).unwrap();
         }
@@ -130,9 +128,9 @@ fn run_case_for_key_len(
     grouping: Grouping,
 ) -> Vec<u8> {
     match key_bytes.len() {
-        16 => run_case::<AES128Internal, 16>(key_bytes, iv, input, encrypt, grouping),
-        24 => run_case::<AES192Internal, 24>(key_bytes, iv, input, encrypt, grouping),
-        32 => run_case::<AES256Internal, 32>(key_bytes, iv, input, encrypt, grouping),
+        16 => run_case::<AES128Key<CFB8>, 16>(key_bytes, iv, input, encrypt, grouping),
+        24 => run_case::<AES192Key<CFB8>, 24>(key_bytes, iv, input, encrypt, grouping),
+        32 => run_case::<AES256Key<CFB8>, 32>(key_bytes, iv, input, encrypt, grouping),
         other => panic!("ACVP AES vectors should only use 16, 24 or 32 byte keys, got {other}"),
     }
 }

@@ -1,5 +1,4 @@
-//! Stream ciphers built from a [`KeyStream`], and the helpers a stream cipher that cannot be built
-//! that way uses for the separate-output half of its API.
+//! Stream ciphers built from a [`KeyStream`].
 //!
 //! [`StreamCipher`] turns any [`KeyStream`] into a [`StreamCipherEncryptor`] /
 //! [`StreamCipherDecryptor`] pair, and with it the [`SymmetricCipherEncryptor`] /
@@ -8,13 +7,12 @@
 //! implementor writes the keystream; the nonce, the partly-used block held between calls and the
 //! refusal to run past the end of the keystream are written once, here.
 //!
-//! A mode whose keystream depends on the data, such as CFB, implements the traits itself; the free
-//! functions here are the parts of that implementation that are the same for every stream cipher.
+//! A mode whose keystream depends on the data, such as CFB, implements the traits itself.
 //!
 //! # Suspending and resuming execution
 //!
 //! [`StreamCipher`] implements [`SuspendableKeyed`], so a message in progress can be suspended to a
-//! byte array and resumed later with the re-supplied key. The state is the keystream's own state
+//! byte array and resumed later over the re-supplied key state. The state is the keystream's own state
 //! and the partly used keystream block, for any keystream that implements [`SuspendableComponent`].
 //! The array length is `StreamCipher::SUSPENDED_STATE_LEN`; see [the crate
 //! docs](crate#suspending-and-resuming-execution) for an example.
@@ -23,53 +21,17 @@
 use crate::{Decrypting, Encrypting};
 use bouncycastle_core::errors::{SuspendableError, SymmetricCipherError};
 use bouncycastle_core::hazmat::KeyStream;
-use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{
-    Algorithm, RNG, StreamCipherDecryptor, StreamCipherEncryptor, SuspendableKeyed,
+    Algorithm, StreamCipherDecryptor, StreamCipherEncryptor, SuspendableKeyed,
     SymmetricCipherDecryptor, SymmetricCipherEncryptor,
 };
-use bouncycastle_rng::HashDRBG_SHA512;
 use bouncycastle_utils::secret::Secret;
 use bouncycastle_utils::suspendable_state::{
     Cursor, CursorMut, LIB_VERSION_LEN, SuspendableComponent, bounded_usize, resume_component,
     suspend_component,
 };
 use core::marker::PhantomData;
-
-/// The separate-output `do_update_out` of a stream cipher, over its in-place data method: copies
-/// `input` into `output` and applies `in_place` there, so the caller's input is left untouched.
-/// Returns `input.len()`, since a stream cipher neither buffers nor changes the length of its data.
-/// The whole of `output` is zeroized first, so any bytes past `input.len()` will be 0.
-///
-/// # Errors
-/// [`SymmetricCipherError::OutputBufferTooSmall`] if `output` is shorter than `input`, checked
-/// before anything is consumed; otherwise whatever `in_place` returns.
-pub fn stream_update_out(
-    input: &[u8],
-    output: &mut [u8],
-    in_place: impl FnOnce(&mut [u8]) -> Result<usize, SymmetricCipherError>,
-) -> Result<usize, SymmetricCipherError> {
-    output.fill(0);
-    if output.len() < input.len() {
-        return Err(SymmetricCipherError::OutputBufferTooSmall(input.len()));
-    }
-    let out = &mut output[..input.len()];
-    out.copy_from_slice(input);
-    in_place(out)?;
-    Ok(input.len())
-}
-
-/// The `do_encrypt_final` / `do_decrypt_final` of a stream cipher: nothing is held back, so there
-/// is nothing to finish -- an empty buffer, none of it output, and no padding or tag to check.
-///
-/// `cargo mutants` reports the `[]` here as a surviving mutant against `[0; 0]` and `[1; 0]`.
-/// Those are the same value: a zero-length array has no element to differ in, so the three
-/// spellings are indistinguishable and no test can separate them. The mutants that *do* change
-/// behaviour -- returning 1 rather than 0 for the data length -- are caught.
-pub fn stream_do_final() -> Result<([u8; 0], usize), SymmetricCipherError> {
-    Ok(([], 0))
-}
 
 /// A stream cipher over any [`KeyStream`], with the direction encoded in the type.
 ///
@@ -92,14 +54,9 @@ pub fn stream_do_final() -> Result<([u8; 0], usize), SymmetricCipherError> {
 /// against the whole call, so a message is never half-processed before the cipher notices. Past
 /// that point the keystream would repeat, which is the two-time-pad failure within one message.
 #[derive(Clone)]
-pub struct StreamCipher<
-    KS,
-    Dir,
-    const KEY_LEN: usize,
-    const INIT_DATA_LEN: usize,
-    const BLOCK_LEN: usize,
-> where
-    KS: KeyStream<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
+pub struct StreamCipher<KS, Dir, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize>
+where
+    KS: KeyStream<INIT_DATA_LEN, BLOCK_LEN>,
 {
     keystream: KS,
     /// The keystream block currently being consumed. Meaningful only while `used < BLOCK_LEN`.
@@ -110,18 +67,18 @@ pub struct StreamCipher<
     _marker: PhantomData<Dir>,
 }
 
-impl<KS, Dir, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize>
-    StreamCipher<KS, Dir, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
+impl<KS, Dir, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize>
+    StreamCipher<KS, Dir, INIT_DATA_LEN, BLOCK_LEN>
 where
-    KS: KeyStream<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
+    KS: KeyStream<INIT_DATA_LEN, BLOCK_LEN>,
 {
     /// Wraps a keystream that has already been constructed and positioned, such as one that
     /// starts part-way into its counter space (GCM's GCTR starts at `inc32(J0)`).
     ///
     /// # 🚨 Security Considerations 🚨
     /// This bypasses init-data generation: the keystream's nonce is whatever it was constructed
-    /// with, and the caller is responsible for it never repeating under the key. The
-    /// [`SymmetricCipherEncryptor`] constructors are the safe path.
+    /// with, and the caller is responsible for it never repeating under the key. A key's
+    /// `create_encryptor` is the safe path.
     pub fn from_keystream(keystream: KS) -> Self {
         Self::check_shape();
         Self { keystream, pending: Secret::new(), used: BLOCK_LEN, _marker: PhantomData }
@@ -198,10 +155,10 @@ where
     }
 }
 
-impl<KS, Dir, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize> Algorithm
-    for StreamCipher<KS, Dir, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
+impl<KS, Dir, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize> Algorithm
+    for StreamCipher<KS, Dir, INIT_DATA_LEN, BLOCK_LEN>
 where
-    KS: KeyStream<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
+    KS: KeyStream<INIT_DATA_LEN, BLOCK_LEN>,
 {
     /// The keystream's name.
     const ALG_NAME: &'static str = KS::ALG_NAME;
@@ -209,52 +166,41 @@ where
     const MAX_SECURITY_STRENGTH: SecurityStrength = KS::MAX_SECURITY_STRENGTH;
 }
 
-impl<KS, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize>
-    SymmetricCipherEncryptor<KEY_LEN, INIT_DATA_LEN, 0>
-    for StreamCipher<KS, Encrypting, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
+impl<KS, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize>
+    SymmetricCipherEncryptor<INIT_DATA_LEN, 0>
+    for StreamCipher<KS, Encrypting, INIT_DATA_LEN, BLOCK_LEN>
 where
-    KS: KeyStream<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
+    KS: KeyStream<INIT_DATA_LEN, BLOCK_LEN>,
 {
-    /// Begins an encryption flow, drawing the init data from the library's default OS-backed DRBG.
-    fn do_encrypt_init(
-        key: &KeyMaterial<KEY_LEN>,
-    ) -> Result<(Self, [u8; INIT_DATA_LEN]), SymmetricCipherError> {
-        let mut rng = HashDRBG_SHA512::new_from_os();
-        Self::do_encrypt_init_rng(key, &mut rng)
-    }
-
-    /// As [`SymmetricCipherEncryptor::do_encrypt_init`], but draws the init data from `rng`.
-    /// Never panics: `INIT_DATA_LEN == 0` is ruled out at compile time; see [`StreamCipher`].
-    fn do_encrypt_init_rng(
-        key: &KeyMaterial<KEY_LEN>,
-        rng: &mut dyn RNG,
-    ) -> Result<(Self, [u8; INIT_DATA_LEN]), SymmetricCipherError> {
-        Self::check_shape();
-        let mut init_data = [0u8; INIT_DATA_LEN];
-        rng.next_bytes_out(&mut init_data)?;
-        key.check_algorithm(Self::ALG_NAME)?;
-        let keystream = KS::new(key, &init_data)?;
-        Ok((Self::from_keystream(keystream), init_data))
-    }
-
     /// Every input byte produces exactly one output byte.
     fn do_encrypt_out_len(&self, input_len: usize) -> usize {
         input_len
     }
 
-    /// See [`stream_update_out`].
+    /// Copies `plaintext` into `ciphertext` and works in place there, so the caller's input is left
+    /// untouched. The whole of `ciphertext` is zeroized first.
+    ///
+    /// # Errors
+    /// [`SymmetricCipherError::OutputBufferTooSmall`] if `ciphertext` is shorter than `plaintext`,
+    /// checked before anything is consumed.
     fn do_encrypt_out(
         &mut self,
         plaintext: &[u8],
         ciphertext: &mut [u8],
     ) -> Result<usize, SymmetricCipherError> {
         ciphertext.fill(0);
-        stream_update_out(plaintext, ciphertext, |data| self.apply(data))
+        if ciphertext.len() < plaintext.len() {
+            return Err(SymmetricCipherError::OutputBufferTooSmall(plaintext.len()));
+        }
+        let out = &mut ciphertext[..plaintext.len()];
+        out.copy_from_slice(plaintext);
+        self.apply(out)?;
+        Ok(plaintext.len())
     }
 
-    /// See [`stream_do_final`].
+    /// Nothing is held back, so there is nothing to finish.
     fn do_encrypt_final(self) -> Result<([u8; 0], usize), SymmetricCipherError> {
-        stream_do_final()
+        Ok(([], 0))
     }
 
     /// A stream cipher never changes the length of its data.
@@ -263,11 +209,10 @@ where
     }
 }
 
-impl<KS, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize>
-    StreamCipherEncryptor<KEY_LEN, INIT_DATA_LEN>
-    for StreamCipher<KS, Encrypting, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
+impl<KS, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize> StreamCipherEncryptor<INIT_DATA_LEN>
+    for StreamCipher<KS, Encrypting, INIT_DATA_LEN, BLOCK_LEN>
 where
-    KS: KeyStream<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
+    KS: KeyStream<INIT_DATA_LEN, BLOCK_LEN>,
 {
     /// XORs the next `data.len()` keystream bytes into `data`.
     ///
@@ -279,41 +224,41 @@ where
     }
 }
 
-impl<KS, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize>
-    SymmetricCipherDecryptor<KEY_LEN, INIT_DATA_LEN, 0>
-    for StreamCipher<KS, Decrypting, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
+impl<KS, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize>
+    SymmetricCipherDecryptor<INIT_DATA_LEN, 0>
+    for StreamCipher<KS, Decrypting, INIT_DATA_LEN, BLOCK_LEN>
 where
-    KS: KeyStream<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
+    KS: KeyStream<INIT_DATA_LEN, BLOCK_LEN>,
 {
-    /// Begins a decryption flow from the init data returned by
-    /// [`SymmetricCipherEncryptor::do_encrypt_init`].
-    fn do_decrypt_init(
-        key: &KeyMaterial<KEY_LEN>,
-        init_data: &[u8; INIT_DATA_LEN],
-    ) -> Result<Self, SymmetricCipherError> {
-        Self::check_shape();
-        key.check_algorithm(Self::ALG_NAME)?;
-        Ok(Self::from_keystream(KS::new(key, init_data)?))
-    }
-
     /// Nothing is held back, so every input byte can be released immediately.
     fn do_decrypt_out_len(&self, input_len: usize) -> usize {
         input_len
     }
 
-    /// See [`stream_update_out`].
+    /// Copies `ciphertext` into `plaintext` and works in place there, so the caller's input is left
+    /// untouched. The whole of `plaintext` is zeroized first.
+    ///
+    /// # Errors
+    /// [`SymmetricCipherError::OutputBufferTooSmall`] if `plaintext` is shorter than `ciphertext`,
+    /// checked before anything is consumed.
     fn do_decrypt_out(
         &mut self,
         ciphertext: &[u8],
         plaintext: &mut [u8],
     ) -> Result<usize, SymmetricCipherError> {
         plaintext.fill(0);
-        stream_update_out(ciphertext, plaintext, |data| self.apply(data))
+        if plaintext.len() < ciphertext.len() {
+            return Err(SymmetricCipherError::OutputBufferTooSmall(ciphertext.len()));
+        }
+        let out = &mut plaintext[..ciphertext.len()];
+        out.copy_from_slice(ciphertext);
+        self.apply(out)?;
+        Ok(ciphertext.len())
     }
 
-    /// See [`stream_do_final`].
+    /// Nothing is held back, so there is nothing to finish.
     fn do_decrypt_final(self) -> Result<([u8; 0], usize), SymmetricCipherError> {
-        stream_do_final()
+        Ok(([], 0))
     }
 
     /// Exact rather than an upper bound: a stream cipher never changes the length of its data.
@@ -322,11 +267,10 @@ where
     }
 }
 
-impl<KS, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize>
-    StreamCipherDecryptor<KEY_LEN, INIT_DATA_LEN>
-    for StreamCipher<KS, Decrypting, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
+impl<KS, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize> StreamCipherDecryptor<INIT_DATA_LEN>
+    for StreamCipher<KS, Decrypting, INIT_DATA_LEN, BLOCK_LEN>
 where
-    KS: KeyStream<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
+    KS: KeyStream<INIT_DATA_LEN, BLOCK_LEN>,
 {
     /// The same XOR as encryption.
     ///
@@ -337,25 +281,25 @@ where
     }
 }
 
-impl<KS, Dir, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize>
-    StreamCipher<KS, Dir, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
+impl<'k, KS, Dir, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize>
+    StreamCipher<KS, Dir, INIT_DATA_LEN, BLOCK_LEN>
 where
-    KS: KeyStream<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN> + SuspendableComponent,
+    KS: KeyStream<INIT_DATA_LEN, BLOCK_LEN> + SuspendableComponent<'k>,
 {
     /// The `N` of this type's [`SuspendableKeyed<N>`] impl: the version header, the keystream's
     /// state, the pending keystream block and the `used` count as a `u64`. See
     /// [`bouncycastle_utils::suspendable_state`].
     pub const SUSPENDED_STATE_LEN: usize =
-        LIB_VERSION_LEN + <Self as SuspendableComponent>::STATE_LEN;
+        LIB_VERSION_LEN + <Self as SuspendableComponent<'k>>::STATE_LEN;
 }
 
 /// The suspended state is the keystream's own state followed by the pending keystream block and
 /// how much of it is used. The pending block is live keystream, which is why the whole state
 /// must be protected and never resumed twice; see [`bouncycastle_utils::suspendable_state`].
-impl<KS, Dir, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize>
-    SuspendableComponent for StreamCipher<KS, Dir, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
+impl<'k, KS, Dir, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize> SuspendableComponent<'k>
+    for StreamCipher<KS, Dir, INIT_DATA_LEN, BLOCK_LEN>
 where
-    KS: KeyStream<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN> + SuspendableComponent,
+    KS: KeyStream<INIT_DATA_LEN, BLOCK_LEN> + SuspendableComponent<'k>,
 {
     const STATE_LEN: usize = KS::STATE_LEN + BLOCK_LEN + 8;
     type Key = KS::Key;
@@ -369,7 +313,7 @@ where
         debug_assert!(w.is_done());
     }
 
-    fn read_state(state: &[u8], key: &Self::Key) -> Result<Self, SuspendableError> {
+    fn read_state(state: &[u8], key: &'k Self::Key) -> Result<Self, SuspendableError> {
         Self::check_shape();
         let (ks, rest) = state.split_at(KS::STATE_LEN);
         let keystream = KS::read_state(ks, key)?;
@@ -385,16 +329,10 @@ where
 }
 
 /// `N` must be [`StreamCipher::SUSPENDED_STATE_LEN`]; anything else is a compile error.
-impl<
-    KS,
-    Dir,
-    const KEY_LEN: usize,
-    const INIT_DATA_LEN: usize,
-    const BLOCK_LEN: usize,
-    const N: usize,
-> SuspendableKeyed<N> for StreamCipher<KS, Dir, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
+impl<'k, KS, Dir, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize, const N: usize>
+    SuspendableKeyed<'k, N> for StreamCipher<KS, Dir, INIT_DATA_LEN, BLOCK_LEN>
 where
-    KS: KeyStream<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN> + SuspendableComponent,
+    KS: KeyStream<INIT_DATA_LEN, BLOCK_LEN> + SuspendableComponent<'k>,
 {
     type Key = KS::Key;
 
@@ -402,7 +340,10 @@ where
         suspend_component(&self)
     }
 
-    fn from_suspended(state: [u8; N], key: &Self::Key) -> Result<Self, SuspendableError> {
+    /// The state carries no direction: one suspended by the other direction's worker is accepted
+    /// and resumes over the same chaining value, which gives wrong output rather than an error.
+    /// Only GCM, whose state means different things per direction, refuses the other one.
+    fn from_suspended(state: [u8; N], key: &'k Self::Key) -> Result<Self, SuspendableError> {
         resume_component(&state, key)
     }
 }
