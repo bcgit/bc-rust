@@ -375,7 +375,10 @@ impl KeyAgreement<X25519PublicKey, X25519PrivateKey, POINT_LEN, SCALAR_LEN> for 
         pk: &X25519PublicKey,
         sk: &X25519PrivateKey,
     ) -> Result<X25519DerivedKey, KeyAgreementError> {
-        dh(sk, pk).map(X25519DerivedKey::from)
+        let k = dh(sk, pk)?;
+        let mut dk = Secret::<[u8; POINT_LEN]>::new();
+        dk.copy_from_slice(k.as_bytes());
+        Ok(X25519DerivedKey(dk))
     }
 }
 
@@ -570,16 +573,6 @@ impl X25519DerivedKey {
 impl AsRef<[u8]> for X25519DerivedKey {
     fn as_ref(&self) -> &[u8] {
         self.0.as_ref()
-    }
-}
-
-/// Allow an X25519PublicKey to auto-promote to an X25519DerivedKey.
-/// It's never a problem to treat a public value as secret.
-impl From<X25519PublicKey> for X25519DerivedKey {
-    fn from(value: X25519PublicKey) -> Self {
-        let mut dk = Secret::<[u8; POINT_LEN]>::new();
-        dk.copy_from_slice(value.as_bytes());
-        Self(dk)
     }
 }
 
