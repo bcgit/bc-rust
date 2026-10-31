@@ -55,8 +55,9 @@ impl ChaCha20KeyState {
             );
         }
         let mut words: Secret<[u32; 8]> = Secret::new();
-        for (word, bytes) in words.iter_mut().zip(key.ref_to_bytes().chunks_exact(4)) {
-            *word = u32::from_le_bytes(bytes.try_into().unwrap());
+        let (key_words, _) = key.ref_to_bytes().as_chunks::<4>();
+        for (word, bytes) in words.iter_mut().zip(key_words) {
+            *word = u32::from_le_bytes(*bytes);
         }
         Ok(Self { key: words })
     }
@@ -103,8 +104,8 @@ impl<'k> ChaCha20KeyStream<'k> {
         initial_counter: u32,
     ) -> Self {
         let mut words = [0u32; 3];
-        for (word, bytes) in words.iter_mut().zip(nonce.chunks_exact(4)) {
-            *word = u32::from_le_bytes(bytes.try_into().unwrap());
+        for (word, bytes) in words.iter_mut().zip(nonce.as_chunks::<4>().0) {
+            *word = u32::from_le_bytes(*bytes);
         }
         Self { key, nonce: words, next_counter: u64::from(initial_counter) }
     }
