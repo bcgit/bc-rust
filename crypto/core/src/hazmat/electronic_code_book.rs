@@ -11,9 +11,8 @@ use crate::key_material::KeyType;
 // end of imports needed for docs
 
 /// A keyed block permutation: the `CIPH_K` / `CIPH^-1_K` of NIST SP 800-38A Sec 5.1, already
-/// keyed. The modes in `bouncycastle_cipher::modes` bound on this and nothing more, which is what
-/// lets a mode's per-key state be generic over the permutation without naming its key length; a
-/// key object builds the permutation through [`ElectronicCodeBook::new`].
+/// keyed. A key object builds it through [`ElectronicCodeBook::new`]; the modes in
+/// `bouncycastle_cipher::modes` bound on this trait alone.
 ///
 /// # 🚨 Security Considerations 🚨
 /// A permutation applied to data block by block is ECB: equal plaintext blocks give equal
@@ -27,8 +26,8 @@ use crate::key_material::KeyType;
 /// # Why the block methods are infallible
 ///
 /// Every length here is fixed by a type, and a constructed value is always ready to use, so there
-/// is nothing a caller can get wrong once [`ElectronicCodeBook::new`] has returned. Only `new` can
-/// fail, and only because of the key.
+/// is nothing a caller can get wrong once [`ElectronicCodeBook::new`] has returned; that
+/// constructor is the one fallible step, and only because of the key.
 pub trait BlockPermutation<const BLOCK_LEN: usize>: Algorithm + Sized {
     /// The forward cipher function, in place.
     fn encrypt_block(&self, block: &mut [u8; BLOCK_LEN]);

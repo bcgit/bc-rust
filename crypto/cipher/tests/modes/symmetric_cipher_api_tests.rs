@@ -18,6 +18,7 @@
 
 mod common;
 #[path = "../common/toy_key.rs"]
+#[allow(dead_code)]
 mod toy_key;
 
 use bouncycastle_cipher::modes::{CFB, CFB8, CTR, Ctr};

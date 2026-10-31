@@ -6,6 +6,7 @@
 #[path = "../common/toy_block_cipher.rs"]
 mod toy_block_cipher;
 #[path = "../common/toy_key.rs"]
+#[allow(dead_code)]
 mod toy_key;
 
 use bouncycastle_cipher::modes::{Blocks, CBC, ModeNames};

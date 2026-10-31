@@ -27,7 +27,7 @@
 //!
 //! [`Cfb8`] implements [`SuspendableKeyed`], so a message in progress can be suspended to a byte
 //! array and resumed later with the re-supplied key. The state is the shift register; the
-//! permutation is rebuilt from the key. The array length is `Cfb8::SUSPENDED_STATE_LEN`; see [the
+//! permutation is reached through the re-supplied key. The array length is `Cfb8::SUSPENDED_STATE_LEN`; see [the
 //! crate docs](crate#suspending-and-resuming-execution) for an example.
 //!
 //! # 🚨 Security Considerations 🚨
@@ -405,6 +405,9 @@ where
         suspend_component(&self)
     }
 
+    /// The state carries no direction: one suspended by the other direction's worker is accepted
+    /// and resumes over the same chaining value, which gives wrong output rather than an error.
+    /// Only GCM, whose state means different things per direction, refuses the other one.
     fn from_suspended(state: [u8; N], key: &'k Self::Key) -> Result<Self, SuspendableError> {
         resume_component(&state, key)
     }

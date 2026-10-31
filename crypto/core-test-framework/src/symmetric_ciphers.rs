@@ -313,8 +313,9 @@ impl TestFrameworkSymmetricCipher {
             }
         }
 
-        // Output-buffer contract, for every method that writes into a caller's buffer: see
-        // `test_encryptor_decryptor`.
+        // Output-buffer contract, for every method that writes into a caller's buffer: a buffer
+        // larger than needed is accepted, the returned count is what that call wrote, and every
+        // byte past it is zeroed.
         const SENTINEL: u8 = 0xA5;
         const EXTRA: usize = 7;
         let assert_tail_zeroed = |buf: &[u8], n: usize, what: &str| {
@@ -340,6 +341,11 @@ impl TestFrameworkSymmetricCipher {
         assert_eq!(&pt[..n], msg, "decrypt_out into an oversized buffer");
         assert_tail_zeroed(&pt, n, "decrypt_out");
 
+        // Streaming, in pieces of 1 byte, FINAL_LEN + 1 bytes and the rest: a cipher that holds
+        // data back then releases nothing on some calls after earlier calls released data, which is
+        // where a running total and a per-call count differ. Each call must report its own
+        // `do_*_out_len`, and the per-call counts must add up to exactly the whole stream's
+        // length, which a running total would overshoot.
         let cuts = |total: usize| [0, 1.min(total), (FINAL_LEN + 2).min(total), total];
         let c = cuts(len);
         let (mut enc, init_data) = key.create_encryptor(rng).unwrap();
