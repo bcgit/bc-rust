@@ -10,7 +10,7 @@ mod common;
 #[path = "../common/toy_key.rs"]
 mod toy_key;
 
-use bouncycastle_cipher::modes::{GCM, Gcm, ModeNames};
+use bouncycastle_cipher::modes::{GCM, GCM_NONCE_LEN, Gcm, ModeNames};
 use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::errors::{SuspendableError, SymmetricCipherError};
 use bouncycastle_core::security_strength::SecurityStrength;
@@ -21,6 +21,7 @@ use bouncycastle_core::traits::{
 };
 use bouncycastle_core_test_framework::FixedSeedRNG;
 use bouncycastle_core_test_framework::from_key_material::TestFrameworkFromKeyMaterial;
+use bouncycastle_utils::suspendable_state::LIB_VERSION_LEN;
 use common::{ForwardOnlyToy, TOY_LEN, Toy, toy_key};
 use toy_key::{ToyKey, os_rng};
 
@@ -371,4 +372,125 @@ fn a_state_resumes_only_in_its_own_direction() {
     ));
     <Gcm<'_, Toy, Decrypting, 16> as SuspendableKeyed<'_, N>>::from_suspended(state, key.state())
         .expect("its own direction");
+}
+
+// The suspended layout, in order: the library version, the CTR half (the nonce, the next counter
+// value, the pending keystream block and its used count), the GHASH state, the AAD and data byte
+// counts, the call-state byte, the held-back tail and its length. Every integer is a little-endian
+// `u64`. The offsets below are the ones the tests patch.
+const GCM_N: usize = Gcm::<'static, Toy, Encrypting, 16>::SUSPENDED_STATE_LEN;
+const NEXT_COUNTER_AT: usize = LIB_VERSION_LEN + 12;
+const DATA_LEN_AT: usize = GCM_N - 8 - 16 - 1 - 8;
+const AAD_LEN_AT: usize = DATA_LEN_AT - 8;
+
+/// SP 800-38D Sec 5.2.1.1's `len(A) <= 2^64 - 1` and `len(P) <= 2^39 - 256` bits, in bytes.
+const MAX_AAD_LEN: u64 = (1 << 61) - 1;
+const MAX_DATA_LEN: u64 = (1 << 36) - 32;
+
+fn with_u64(mut state: [u8; GCM_N], at: usize, value: u64) -> [u8; GCM_N] {
+    state[at..at + 8].copy_from_slice(&value.to_le_bytes());
+    state
+}
+
+/// An encryptor that has absorbed AAD and nothing else, so its AAD phase is still open and its
+/// counter is at `inc32(J0)`, with the key it borrows.
+fn aad_only_encryptor(key: &ToyGcmKey) -> (Gcm<'_, Toy, Encrypting, 16>, [u8; GCM_NONCE_LEN]) {
+    let (mut enc, nonce) = key.create_encryptor(&mut os_rng()).unwrap();
+    enc.do_update_aad(b"header").unwrap();
+    (enc, nonce)
+}
+
+/// The two byte counts resume only within Sec 5.2.1.1's limits, where the length block's
+/// multiplication by 8 cannot overflow, and the live path holds the same bounds: at the limit the
+/// final completes and one more byte is refused.
+#[test]
+fn the_length_counts_are_held_to_the_spec_limits_on_resume_and_live() {
+    let key = gcm_key::<16>();
+    let (enc, _) = aad_only_encryptor(&key);
+    let state: [u8; GCM_N] = enc.suspend();
+    let resume = |state| {
+        <Gcm<'_, Toy, Encrypting, 16> as SuspendableKeyed<'_, GCM_N>>::from_suspended(
+            state,
+            key.state(),
+        )
+    };
+
+    assert!(matches!(
+        resume(with_u64(state, AAD_LEN_AT, MAX_AAD_LEN + 1)),
+        Err(SuspendableError::InvalidData)
+    ));
+    let mut at_limit = resume(with_u64(state, AAD_LEN_AT, MAX_AAD_LEN)).expect("the limit itself");
+    assert!(at_limit.do_update_aad(b"").is_ok());
+    assert!(matches!(at_limit.do_update_aad(b"x"), Err(SymmetricCipherError::StateError(_))));
+    let _ = at_limit.do_encrypt_final().expect("the length block is formed without overflow");
+
+    assert!(matches!(
+        resume(with_u64(state, DATA_LEN_AT, MAX_DATA_LEN + 1)),
+        Err(SuspendableError::InvalidData)
+    ));
+    let mut at_limit =
+        resume(with_u64(state, DATA_LEN_AT, MAX_DATA_LEN)).expect("the limit itself");
+    let mut out = [0xEEu8; 1];
+    assert!(matches!(
+        at_limit.do_encrypt_out(&[0x41], &mut out),
+        Err(SymmetricCipherError::DataLimitExceeded)
+    ));
+    assert_eq!(out, [0], "a refused call leaves the output zeroed");
+    let _ = at_limit.do_encrypt_final().expect("the length block is formed without overflow");
+}
+
+/// A call the keystream cannot cover is refused before the caller's input is copied into the
+/// output, so the buffer holds zeros rather than the plaintext, and the state is untouched: the
+/// bytes that do fit still go through afterwards.
+#[test]
+fn a_call_past_the_keystream_limit_leaves_no_plaintext_in_the_output() {
+    let key = gcm_key::<16>();
+    let (enc, nonce) = aad_only_encryptor(&key);
+    // One counter block left under this nonce: 16 bytes of keystream.
+    let state = with_u64(enc.suspend(), NEXT_COUNTER_AT, (1 << 32) - 1);
+    let mut enc = <Gcm<'_, Toy, Encrypting, 16> as SuspendableKeyed<'_, GCM_N>>::from_suspended(
+        state,
+        key.state(),
+    )
+    .expect("one block left is a state the counter can be in");
+
+    let plaintext = [0x41u8; 32];
+    let mut ciphertext = [0xEEu8; 32];
+    assert!(matches!(
+        enc.do_encrypt_out(&plaintext, &mut ciphertext),
+        Err(SymmetricCipherError::DataLimitExceeded)
+    ));
+    assert_eq!(ciphertext, [0u8; 32]);
+    let mut last_block = [0u8; 16];
+    assert_eq!(enc.do_encrypt_out(&plaintext[..16], &mut last_block).unwrap(), 16);
+    assert_ne!(last_block, plaintext[..16]);
+    assert!(matches!(
+        enc.do_encrypt_out(&plaintext[..1], &mut [0u8; 1]),
+        Err(SymmetricCipherError::DataLimitExceeded)
+    ));
+    let (tag, _) = enc.do_encrypt_final().unwrap();
+
+    // The decryptor at the same counter: a call that would release more than the keystream
+    // covers is refused with the output zeroed, and the block that fits then verifies.
+    let mut dec = key.create_decryptor(&nonce);
+    dec.do_update_aad(b"header").unwrap();
+    let state = with_u64(dec.suspend(), NEXT_COUNTER_AT, (1 << 32) - 1);
+    let mut dec = <Gcm<'_, Toy, Decrypting, 16> as SuspendableKeyed<'_, GCM_N>>::from_suspended(
+        state,
+        key.state(),
+    )
+    .unwrap();
+    let mut stream = last_block.to_vec();
+    stream.extend_from_slice(&last_block);
+    stream.extend_from_slice(&tag);
+    let mut out = [0xEEu8; 32];
+    assert!(matches!(
+        dec.do_decrypt_out(&stream, &mut out),
+        Err(SymmetricCipherError::DataLimitExceeded)
+    ));
+    assert_eq!(out, [0u8; 32]);
+    let mut out = [0u8; 16];
+    assert_eq!(dec.do_decrypt_out(&stream[16..], &mut out).unwrap(), 16);
+    assert_eq!(out, plaintext[..16]);
+    assert!(dec.do_decrypt_final().is_ok());
 }

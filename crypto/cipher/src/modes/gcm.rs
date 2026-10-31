@@ -222,6 +222,13 @@ use ghash::{GHASH_STATE_LEN, Ghash};
 /// The nonce (IV) length this type uses: 96 bits, SP 800-38D Sec 5.2.1.1's recommended length.
 pub const GCM_NONCE_LEN: usize = 12;
 
+/// Sec 5.2.1.1's `len(A) <= 2^64 - 1` bits, in bytes.
+const MAX_AAD_LEN: u64 = (1 << 61) - 1;
+
+/// Sec 5.2.1.1's `len(P) <= 2^39 - 256` bits, in bytes: the `2^32 - 2` counter blocks left once
+/// `J0` and `inc32(J0)` are taken, which is also where the keystream runs out.
+const MAX_DATA_LEN: u64 = (1 << 36) - 32;
+
 /// The GCM mode type: the `M` of a mode-bound key such as `AES128Key<GCM>`. `GCM` is GCM with
 /// the full 128-bit tag; `GCM<12>` and so on select a shorter tag, within the `12..=16` byte range
 /// [`Gcm`] accepts. The [`Mode`] and AEAD mode-trait impls below are generic over any
@@ -451,12 +458,34 @@ where
                  ciphertext (SP 800-38D Algorithm 4 absorbs A before C in one GHASH pass)",
             ));
         }
+        self.aad_len = match self.aad_len.checked_add(aad.len() as u64) {
+            Some(total) if total <= MAX_AAD_LEN => total,
+            _ => {
+                return Err(SymmetricCipherError::StateError(
+                    "GCM: additional authenticated data longer than SP 800-38D Sec 5.2.1.1's \
+                     2^64 - 1 bits",
+                ));
+            }
+        };
         self.ghash.update(aad);
-        self.aad_len =
-            self.aad_len.checked_add(aad.len() as u64).ok_or(SymmetricCipherError::StateError(
-                "GCM: additional authenticated data length exceeds the supported range",
-            ))?;
         Ok(())
+    }
+
+    /// `data_len` after `len` more bytes, if that is still within Sec 5.2.1.1's plaintext limit.
+    fn data_len_after(&self, len: usize) -> Result<u64, SymmetricCipherError> {
+        match self.data_len.checked_add(len as u64) {
+            Some(total) if total <= MAX_DATA_LEN => Ok(total),
+            _ => Err(SymmetricCipherError::DataLimitExceeded),
+        }
+    }
+
+    /// Whether `len` more data bytes can be taken: within Sec 5.2.1.1's plaintext limit and the
+    /// keystream left under this nonce. Both directions ask before they copy anything into an
+    /// output buffer, so a refused call leaves the buffer zeroed rather than holding the
+    /// caller's plaintext, and before they absorb anything, so it leaves the state untouched.
+    fn accepts_data(&self, len: usize) -> Result<(), SymmetricCipherError> {
+        self.data_len_after(len)?;
+        self.ctr.accepts(len)
     }
 
     /// The AAD-to-data transition: pads the AAD to a block boundary (the `0^v` of step 5) the
@@ -473,11 +502,9 @@ where
     /// plaintext into ciphertext in place) and the decryptor (which calls this *before* GCTR turns
     /// the ciphertext back into plaintext): either way GHASH must see ciphertext, never plaintext.
     fn absorb_data(&mut self, data: &[u8]) -> Result<(), SymmetricCipherError> {
+        self.data_len = self.data_len_after(data.len())?;
         self.begin_data_if_needed();
         self.ghash.update(data);
-        self.data_len = self.data_len.checked_add(data.len() as u64).ok_or(
-            SymmetricCipherError::StateError("GCM: data length exceeds the supported range"),
-        )?;
         Ok(())
     }
 
@@ -487,10 +514,8 @@ where
     /// because on the decrypting side it is the expected tag `T'`, which forges the rejected
     /// ciphertext if it survives a failed comparison.
     ///
-    /// The byte-to-bit multiplication (`* 8`) is not checked for overflow: `aad_len` and `data_len`
-    /// are accumulated with `checked_add` at every absorption (`absorb_aad`, `absorb_data`), so
-    /// reaching a count whose `* 8` could overflow `u64` would already require far more calls than
-    /// are physically possible to make.
+    /// The byte-to-bit multiplication (`* 8`) cannot overflow: `aad_len` and `data_len` are held
+    /// under [`MAX_AAD_LEN`] and [`MAX_DATA_LEN`] at every absorption and on resume.
     fn tag_block(&mut self, out: &mut Secret<[u8; 16]>) {
         self.ghash.pad_to_block();
         let aad_bits = self.aad_len * 8;
@@ -540,11 +565,11 @@ where
     /// into GHASH (step 5). Nothing is held back.
     ///
     /// # Errors
-    /// [`SymmetricCipherError::DataLimitExceeded`] if the underlying `Ctr` counter would be
-    /// exhausted -- the SP 800-38D Sec 5.2.1.1 bound `len(P) <= 2^39 - 256` bits -- or
-    /// [`SymmetricCipherError::StateError`] if the AAD/data length bookkeeping would overflow.
-    /// Nothing is consumed in either case.
+    /// [`SymmetricCipherError::DataLimitExceeded`] if `data` would take the message past the
+    /// SP 800-38D Sec 5.2.1.1 bound `len(P) <= 2^39 - 256` bits, which is where the `Ctr`
+    /// counter would be exhausted. Nothing is consumed in that case.
     fn encrypt_in_place(&mut self, data: &mut [u8]) -> Result<(), SymmetricCipherError> {
+        self.accepts_data(data.len())?;
         self.ctr.do_encrypt_inplace(data)?;
         self.absorb_data(data)
     }
@@ -581,6 +606,7 @@ where
         if ciphertext.len() < plaintext.len() {
             return Err(SymmetricCipherError::OutputBufferTooSmall(plaintext.len()));
         }
+        self.accepts_data(plaintext.len())?;
         ciphertext[..plaintext.len()].copy_from_slice(plaintext);
         self.encrypt_in_place(&mut ciphertext[..plaintext.len()])?;
         Ok(plaintext.len())
@@ -639,6 +665,7 @@ where
     /// # Errors
     /// As `encrypt_in_place`.
     fn decrypt_in_place(&mut self, data: &mut [u8]) -> Result<(), SymmetricCipherError> {
+        self.accepts_data(data.len())?;
         self.absorb_data(data)?;
         self.ctr.do_decrypt_inplace(data)?;
         Ok(())
@@ -685,6 +712,7 @@ where
         if plaintext.len() < release {
             return Err(SymmetricCipherError::OutputBufferTooSmall(release));
         }
+        self.accepts_data(release)?;
         // Data has started even if every byte is still held back as a possible tag, so the AAD
         // phase ends here rather than at the first byte released: otherwise a `do_update_aad`
         // after a first call shorter than `TAG_LEN` would be accepted, and absorbed as if it came
@@ -759,6 +787,7 @@ where
     ) -> Result<usize, SymmetricCipherError> {
         plaintext.fill(0);
         let n = self.tail_len;
+        self.accepts_data(n)?;
         plaintext[..n].copy_from_slice(&self.tail[..n]);
         self.decrypt_in_place(&mut plaintext[..n])?;
         if let Err(e) = self.finish(tag) {
@@ -815,6 +844,9 @@ where
         let mut r = Cursor::new(rest);
         gcm.aad_len = r.u64();
         gcm.data_len = r.u64();
+        if gcm.aad_len > MAX_AAD_LEN || gcm.data_len > MAX_DATA_LEN {
+            return Err(SuspendableError::InvalidData);
+        }
         let call_state = r.u8();
         if call_state & 0xF0 != Dir::STATE_BITS {
             return Err(SuspendableError::InvalidData);
