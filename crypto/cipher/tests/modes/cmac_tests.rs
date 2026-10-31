@@ -5,11 +5,12 @@
 
 mod common;
 #[path = "../common/toy_key.rs"]
+#[allow(dead_code)]
 mod toy_key;
 
-use bouncycastle_cipher::modes::{CMAC, CMAC_MIN_TAG_LEN, Cmac, CmacKeyState, ModeNames};
+use bouncycastle_cipher::modes::{CMAC, CMAC_MIN_TAG_LEN, Cmac, ModeNames};
 use bouncycastle_core::errors::{MACError, SuspendableError};
-use bouncycastle_core::hazmat::ElectronicCodeBook;
+use bouncycastle_core::hazmat::{ElectronicCodeBook, MacMode, Mode};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::symmetric_key::{FromKeyMaterial, MacGenerationKey, MacVerificationKey};
@@ -32,15 +33,20 @@ fn mac_key() -> KeyMaterial<TOY_LEN> {
     KeyMaterial::<TOY_LEN>::from_bytes_as_type(toy_key().ref_to_bytes(), KeyType::MACKey).unwrap()
 }
 
-fn key_state() -> CmacKeyState<Toy, TOY_LEN> {
-    CmacKeyState::new(Toy::new(&toy_key()).unwrap())
+/// The mode's own route onto the worker, through the hazmat mode traits the key forwards to.
+fn key_state() -> <CMAC as Mode<Toy>>::KeyState {
+    <CMAC as Mode<Toy>>::key_state(Toy::new(&toy_key()).unwrap())
+}
+
+fn mode_worker(state: &<CMAC as Mode<Toy>>::KeyState) -> ToyCmac<'_> {
+    <CMAC as MacMode<Toy>>::mac_init(state)
 }
 
 fn message(len: usize) -> Vec<u8> {
     (0..len).map(|i| (i as u8).wrapping_mul(29).wrapping_add(3)).collect()
 }
 
-/// The key object and the bare key state give the same tag, and the key passes the shared MAC
+/// The key object and the mode's own route give the same tag, and the key passes the shared MAC
 /// key suite against it.
 #[test]
 fn the_key_and_the_key_state_agree() {
@@ -49,9 +55,9 @@ fn the_key_and_the_key_state_agree() {
     for len in [0, 1, 15, 16, 17, 32, 33, 100] {
         let msg = message(len);
         let from_key = key.mac(&msg);
-        let from_state = ToyCmac::from_key_state(&state).mac(&msg);
+        let from_state = mode_worker(&state).mac(&msg);
         assert_eq!(from_state, from_key, "len {len}");
-        assert!(ToyCmac::from_key_state(&state).verify(&msg, &from_key));
+        assert!(mode_worker(&state).verify(&msg, &from_key));
         assert!(key.verify(&msg, &from_state));
         TestFrameworkMAC::new().test_mac_key(&key, &msg, &from_state);
     }
@@ -61,17 +67,17 @@ fn the_key_and_the_key_state_agree() {
 /// out the same wherever the call boundaries fall, including a boundary exactly on a block edge.
 #[test]
 fn streaming_split_points() {
-    let state = key_state();
+    let key = cmac_key();
     for mlen in [16, 20, 32, 33, 64] {
         let msg = message(mlen);
-        let expected = ToyCmac::from_key_state(&state).mac(&msg);
+        let expected = key.create_generator().mac(&msg);
         for split in 0..=mlen {
-            let mut cmac = ToyCmac::from_key_state(&state);
+            let mut cmac = key.create_generator();
             cmac.do_update(&msg[..split]);
             cmac.do_update(&msg[split..]);
             assert_eq!(cmac.do_final(), expected, "mlen {mlen}, split at {split}");
         }
-        let mut cmac = ToyCmac::from_key_state(&state);
+        let mut cmac = key.create_generator();
         for b in &msg {
             cmac.do_update(core::slice::from_ref(b));
         }
@@ -83,16 +89,13 @@ fn streaming_split_points() {
 /// same message with the `10^j` padding spelled out must differ.
 #[test]
 fn a_complete_final_block_and_its_padded_twin_differ() {
-    let state = key_state();
+    let key = cmac_key();
     let short = message(20);
     let mut padded = short.clone();
     padded.push(0x80);
     padded.resize(32, 0);
-    assert_ne!(
-        ToyCmac::from_key_state(&state).mac(&short),
-        ToyCmac::from_key_state(&state).mac(&padded)
-    );
-    assert_ne!(ToyCmac::from_key_state(&state).mac(&[]), ToyCmac::from_key_state(&state).mac(&[0]));
+    assert_ne!(key.create_generator().mac(&short), key.create_generator().mac(&padded));
+    assert_ne!(key.create_generator().mac(&[]), key.create_generator().mac(&[0]));
 }
 
 /// The key's construction suite: a `MACKey` of the permutation's length and strength, bound to
@@ -106,37 +109,37 @@ fn the_key_enforces_the_material_policy() {
 
 #[test]
 fn truncation() {
-    let state = key_state();
+    let key = cmac_key();
     let msg = message(20);
-    let full = ToyCmac::from_key_state(&state).mac(&msg);
+    let full = key.create_generator().mac(&msg);
     assert_eq!(full.len(), TOY_LEN);
-    assert_eq!(ToyCmac::from_key_state(&state).output_len(), TOY_LEN);
+    assert_eq!(key.create_generator().output_len(), TOY_LEN);
 
     let mut out = [0xAAu8; CMAC_MIN_TAG_LEN];
-    assert_eq!(ToyCmac::from_key_state(&state).mac_out(&msg, &mut out).unwrap(), 8);
+    assert_eq!(key.create_generator().mac_out(&msg, &mut out).unwrap(), 8);
     assert_eq!(out[..], full[..8]);
     let mut long = [0xAAu8; 24];
-    assert_eq!(ToyCmac::from_key_state(&state).mac_out(&msg, &mut long).unwrap(), 16);
+    assert_eq!(key.create_generator().mac_out(&msg, &mut long).unwrap(), 16);
     assert_eq!(long[..16], full[..]);
     assert_eq!(long[16..], [0u8; 8]);
 
     // Below 64 bits the call fails, and the buffer is left zeroized.
     let mut out = [0xAAu8; CMAC_MIN_TAG_LEN - 1];
     assert!(matches!(
-        ToyCmac::from_key_state(&state).mac_out(&msg, &mut out),
+        key.create_generator().mac_out(&msg, &mut out),
         Err(MACError::InvalidLength(_))
     ));
     assert_eq!(out, [0u8; CMAC_MIN_TAG_LEN - 1]);
 
     // `verify` wants the full tag.
-    assert!(ToyCmac::from_key_state(&state).verify(&msg, &full));
-    assert!(!ToyCmac::from_key_state(&state).verify(&msg, &full[..15]));
+    assert!(key.create_verifier().verify(&msg, &full));
+    assert!(!key.create_verifier().verify(&msg, &full[..15]));
     let mut long = full.clone();
     long.push(0);
-    assert!(!ToyCmac::from_key_state(&state).verify(&msg, &long));
+    assert!(!key.create_verifier().verify(&msg, &long));
     let mut wrong = full.clone();
     wrong[15] ^= 1;
-    assert!(!ToyCmac::from_key_state(&state).verify(&msg, &wrong));
+    assert!(!key.create_verifier().verify(&msg, &wrong));
 }
 
 #[test]

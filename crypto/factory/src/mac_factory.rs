@@ -112,8 +112,8 @@ pub const DEFAULT_256BIT_MAC_NAME: &str = HMAC_SHA256_NAME;
 pub enum MACFactory {
     /// KMAC128 with no customization string and a 32-byte tag (NIST SP 800-185 Sec 4).
     /// For a customization string or a different output length, construct
-    /// `bouncycastle_sha3::KMAC128Key` directly -- the factory selects by name alone and has no
-    /// channel for those parameters.
+    /// `bouncycastle_sha3::kmac::KMAC128Key` directly -- the factory selects by name alone and has
+    /// no channel for those parameters.
     KMAC128(KMAC128Key),
     /// KMAC256 with no customization string and a 64-byte tag. See [`MACFactory::KMAC128`].
     KMAC256(KMAC256Key),
@@ -255,63 +255,168 @@ impl MacVerificationKey for MACFactory {
     }
 }
 
-/// Every method is the named worker's own.
-macro_rules! forward {
-    ($self:expr, $w:ident => $e:expr) => {
-        match $self {
-            MACFactoryWorker::KMAC128($w) => $e,
-            MACFactoryWorker::KMAC256($w) => $e,
-            MACFactoryWorker::HMAC_SHA224($w) => $e,
-            MACFactoryWorker::HMAC_SHA256($w) => $e,
-            MACFactoryWorker::HMAC_SHA384($w) => $e,
-            MACFactoryWorker::HMAC_SHA512($w) => $e,
-            MACFactoryWorker::HMAC_SHA512_224($w) => $e,
-            MACFactoryWorker::HMAC_SHA512_256($w) => $e,
-            MACFactoryWorker::HMAC_SHA3_224($w) => $e,
-            MACFactoryWorker::HMAC_SHA3_256($w) => $e,
-            MACFactoryWorker::HMAC_SHA3_384($w) => $e,
-            MACFactoryWorker::HMAC_SHA3_512($w) => $e,
-            MACFactoryWorker::HMAC_SM3($w) => $e,
-        }
-    };
-}
-
 impl MAC for MACFactoryWorker<'_> {
     fn output_len(&self) -> usize {
-        forward!(self, h => h.output_len())
+        match self {
+            Self::KMAC128(h) => h.output_len(),
+            Self::KMAC256(h) => h.output_len(),
+            Self::HMAC_SHA224(h) => h.output_len(),
+            Self::HMAC_SHA256(h) => h.output_len(),
+            Self::HMAC_SHA384(h) => h.output_len(),
+            Self::HMAC_SHA512(h) => h.output_len(),
+            Self::HMAC_SHA512_224(h) => h.output_len(),
+            Self::HMAC_SHA512_256(h) => h.output_len(),
+            Self::HMAC_SHA3_224(h) => h.output_len(),
+            Self::HMAC_SHA3_256(h) => h.output_len(),
+            Self::HMAC_SHA3_384(h) => h.output_len(),
+            Self::HMAC_SHA3_512(h) => h.output_len(),
+            Self::HMAC_SM3(h) => h.output_len(),
+        }
     }
 
     fn mac(self, data: &[u8]) -> Vec<u8> {
-        forward!(self, h => h.mac(data))
+        match self {
+            Self::KMAC128(h) => h.mac(data),
+            Self::KMAC256(h) => h.mac(data),
+            Self::HMAC_SHA224(h) => h.mac(data),
+            Self::HMAC_SHA256(h) => h.mac(data),
+            Self::HMAC_SHA384(h) => h.mac(data),
+            Self::HMAC_SHA512(h) => h.mac(data),
+            Self::HMAC_SHA512_224(h) => h.mac(data),
+            Self::HMAC_SHA512_256(h) => h.mac(data),
+            Self::HMAC_SHA3_224(h) => h.mac(data),
+            Self::HMAC_SHA3_256(h) => h.mac(data),
+            Self::HMAC_SHA3_384(h) => h.mac(data),
+            Self::HMAC_SHA3_512(h) => h.mac(data),
+            Self::HMAC_SM3(h) => h.mac(data),
+        }
     }
 
     fn mac_out(self, data: &[u8], out: &mut [u8]) -> Result<usize, MACError> {
         out.fill(0);
-        forward!(self, h => h.mac_out(data, out))
+        match self {
+            Self::KMAC128(h) => h.mac_out(data, out),
+            Self::KMAC256(h) => h.mac_out(data, out),
+            Self::HMAC_SHA224(h) => h.mac_out(data, out),
+            Self::HMAC_SHA256(h) => h.mac_out(data, out),
+            Self::HMAC_SHA384(h) => h.mac_out(data, out),
+            Self::HMAC_SHA512(h) => h.mac_out(data, out),
+            Self::HMAC_SHA512_224(h) => h.mac_out(data, out),
+            Self::HMAC_SHA512_256(h) => h.mac_out(data, out),
+            Self::HMAC_SHA3_224(h) => h.mac_out(data, out),
+            Self::HMAC_SHA3_256(h) => h.mac_out(data, out),
+            Self::HMAC_SHA3_384(h) => h.mac_out(data, out),
+            Self::HMAC_SHA3_512(h) => h.mac_out(data, out),
+            Self::HMAC_SM3(h) => h.mac_out(data, out),
+        }
     }
 
     fn verify(self, data: &[u8], mac: &[u8]) -> bool {
-        forward!(self, h => h.verify(data, mac))
+        match self {
+            Self::KMAC128(h) => h.verify(data, mac),
+            Self::KMAC256(h) => h.verify(data, mac),
+            Self::HMAC_SHA224(h) => h.verify(data, mac),
+            Self::HMAC_SHA256(h) => h.verify(data, mac),
+            Self::HMAC_SHA384(h) => h.verify(data, mac),
+            Self::HMAC_SHA512(h) => h.verify(data, mac),
+            Self::HMAC_SHA512_224(h) => h.verify(data, mac),
+            Self::HMAC_SHA512_256(h) => h.verify(data, mac),
+            Self::HMAC_SHA3_224(h) => h.verify(data, mac),
+            Self::HMAC_SHA3_256(h) => h.verify(data, mac),
+            Self::HMAC_SHA3_384(h) => h.verify(data, mac),
+            Self::HMAC_SHA3_512(h) => h.verify(data, mac),
+            Self::HMAC_SM3(h) => h.verify(data, mac),
+        }
     }
 
     fn do_update(&mut self, data: &[u8]) {
-        forward!(self, h => h.do_update(data))
+        match self {
+            Self::KMAC128(h) => h.do_update(data),
+            Self::KMAC256(h) => h.do_update(data),
+            Self::HMAC_SHA224(h) => h.do_update(data),
+            Self::HMAC_SHA256(h) => h.do_update(data),
+            Self::HMAC_SHA384(h) => h.do_update(data),
+            Self::HMAC_SHA512(h) => h.do_update(data),
+            Self::HMAC_SHA512_224(h) => h.do_update(data),
+            Self::HMAC_SHA512_256(h) => h.do_update(data),
+            Self::HMAC_SHA3_224(h) => h.do_update(data),
+            Self::HMAC_SHA3_256(h) => h.do_update(data),
+            Self::HMAC_SHA3_384(h) => h.do_update(data),
+            Self::HMAC_SHA3_512(h) => h.do_update(data),
+            Self::HMAC_SM3(h) => h.do_update(data),
+        }
     }
 
     fn do_final(self) -> Vec<u8> {
-        forward!(self, h => h.do_final())
+        match self {
+            Self::KMAC128(h) => h.do_final(),
+            Self::KMAC256(h) => h.do_final(),
+            Self::HMAC_SHA224(h) => h.do_final(),
+            Self::HMAC_SHA256(h) => h.do_final(),
+            Self::HMAC_SHA384(h) => h.do_final(),
+            Self::HMAC_SHA512(h) => h.do_final(),
+            Self::HMAC_SHA512_224(h) => h.do_final(),
+            Self::HMAC_SHA512_256(h) => h.do_final(),
+            Self::HMAC_SHA3_224(h) => h.do_final(),
+            Self::HMAC_SHA3_256(h) => h.do_final(),
+            Self::HMAC_SHA3_384(h) => h.do_final(),
+            Self::HMAC_SHA3_512(h) => h.do_final(),
+            Self::HMAC_SM3(h) => h.do_final(),
+        }
     }
 
     fn do_final_out(self, out: &mut [u8]) -> Result<usize, MACError> {
         out.fill(0);
-        forward!(self, h => h.do_final_out(out))
+        match self {
+            Self::KMAC128(h) => h.do_final_out(out),
+            Self::KMAC256(h) => h.do_final_out(out),
+            Self::HMAC_SHA224(h) => h.do_final_out(out),
+            Self::HMAC_SHA256(h) => h.do_final_out(out),
+            Self::HMAC_SHA384(h) => h.do_final_out(out),
+            Self::HMAC_SHA512(h) => h.do_final_out(out),
+            Self::HMAC_SHA512_224(h) => h.do_final_out(out),
+            Self::HMAC_SHA512_256(h) => h.do_final_out(out),
+            Self::HMAC_SHA3_224(h) => h.do_final_out(out),
+            Self::HMAC_SHA3_256(h) => h.do_final_out(out),
+            Self::HMAC_SHA3_384(h) => h.do_final_out(out),
+            Self::HMAC_SHA3_512(h) => h.do_final_out(out),
+            Self::HMAC_SM3(h) => h.do_final_out(out),
+        }
     }
 
     fn do_verify_final(self, mac: &[u8]) -> bool {
-        forward!(self, h => h.do_verify_final(mac))
+        match self {
+            Self::KMAC128(h) => h.do_verify_final(mac),
+            Self::KMAC256(h) => h.do_verify_final(mac),
+            Self::HMAC_SHA224(h) => h.do_verify_final(mac),
+            Self::HMAC_SHA256(h) => h.do_verify_final(mac),
+            Self::HMAC_SHA384(h) => h.do_verify_final(mac),
+            Self::HMAC_SHA512(h) => h.do_verify_final(mac),
+            Self::HMAC_SHA512_224(h) => h.do_verify_final(mac),
+            Self::HMAC_SHA512_256(h) => h.do_verify_final(mac),
+            Self::HMAC_SHA3_224(h) => h.do_verify_final(mac),
+            Self::HMAC_SHA3_256(h) => h.do_verify_final(mac),
+            Self::HMAC_SHA3_384(h) => h.do_verify_final(mac),
+            Self::HMAC_SHA3_512(h) => h.do_verify_final(mac),
+            Self::HMAC_SM3(h) => h.do_verify_final(mac),
+        }
     }
 
     fn max_security_strength(&self) -> SecurityStrength {
-        forward!(self, h => h.max_security_strength())
+        match self {
+            Self::KMAC128(h) => h.max_security_strength(),
+            Self::KMAC256(h) => h.max_security_strength(),
+            Self::HMAC_SHA224(h) => h.max_security_strength(),
+            Self::HMAC_SHA256(h) => h.max_security_strength(),
+            Self::HMAC_SHA384(h) => h.max_security_strength(),
+            Self::HMAC_SHA512(h) => h.max_security_strength(),
+            Self::HMAC_SHA512_224(h) => h.max_security_strength(),
+            Self::HMAC_SHA512_256(h) => h.max_security_strength(),
+            Self::HMAC_SHA3_224(h) => h.max_security_strength(),
+            Self::HMAC_SHA3_256(h) => h.max_security_strength(),
+            Self::HMAC_SHA3_384(h) => h.max_security_strength(),
+            Self::HMAC_SHA3_512(h) => h.max_security_strength(),
+            Self::HMAC_SM3(h) => h.max_security_strength(),
+        }
     }
 }

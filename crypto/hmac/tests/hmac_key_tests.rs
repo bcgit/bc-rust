@@ -5,7 +5,7 @@ use bouncycastle_core::errors::{KeyMaterialError, MACError};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterial256, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::symmetric_key::{FromAnyKeyMaterial, MacGenerationKey, MacVerificationKey};
-use bouncycastle_core::traits::{Hash, MAC, SuspendableKeyed};
+use bouncycastle_core::traits::{Hash, MAC, RNG, SuspendableKeyed};
 use bouncycastle_core_test_framework::FixedSeedRNG;
 use bouncycastle_hmac::{HMAC, HmacKey};
 use bouncycastle_sha2::{SHA256, SHA512, SUSPENDED_SHA256_STATE_LEN};
@@ -151,6 +151,22 @@ fn generate_draws_a_key_of_the_hash_output_length_at_the_rng_strength() {
     let mut km = KeyMaterial::<32>::from_rng(&mut rng2).unwrap();
     km.set_key_type(KeyType::MACKey).unwrap();
     assert_eq!(HmacKey::<SHA256>::from_key_material(&km).unwrap().mac(MSG), tag);
+
+    // The drawn material's strength is the RNG's, capped at what the hash's output length can
+    // carry, by the rule `KeyMaterial::from_rng` applies: a key object has no strength accessor,
+    // so the rule is pinned on the material. 32 bytes from a 256-bit RNG keep 256 bits; 28
+    // bytes, HMAC-SHA224's draw, carry 224 bits, which the strength scale rounds down to 192.
+    let mut rng3 = FixedSeedRNG::<32>::new([0x5Au8; 32]);
+    assert_eq!(rng3.security_strength(), SecurityStrength::_256bit);
+    assert_eq!(
+        KeyMaterial::<32>::from_rng(&mut rng3).unwrap().security_strength(),
+        SecurityStrength::_256bit
+    );
+    let mut rng4 = FixedSeedRNG::<28>::new([0x5Au8; 28]);
+    assert_eq!(
+        KeyMaterial::<28>::from_rng(&mut rng4).unwrap().security_strength(),
+        SecurityStrength::_192bit
+    );
 
     // An RNG below the HMAC's strength is refused, through the material's strength tag.
     let mut weak_rng = FixedSeedRNG::<32>::new([0x5Au8; 32]);

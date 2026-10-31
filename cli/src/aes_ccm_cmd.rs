@@ -20,8 +20,8 @@
 //! `ascon-aead128`, are the streaming alternatives.
 //!
 //! The AAD is read whole too: the key's one-shot takes it as a slice. (A.2.2 needs its length
-//! before its first byte, so streaming it would need the declared-length constructor the declared-length
-//! type keeps for itself.)
+//! before its first byte, so streaming it would need the declared-length constructor the type
+//! keeps for itself.)
 //!
 //! # The nonce is supplied, not generated
 //!

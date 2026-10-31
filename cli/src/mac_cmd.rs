@@ -3,6 +3,7 @@ use std::io::Read;
 use std::process::exit;
 
 use crate::helpers::read_from_file_raw;
+use bouncycastle::core::errors::MACError;
 use bouncycastle::core::hazmat::do_hazardous_operations;
 use bouncycastle::core::key_material::{KeyMaterial512, KeyMaterialTrait, KeyType};
 use bouncycastle::core::symmetric_key::{FromAnyKeyMaterial, MacGenerationKey};
@@ -103,22 +104,25 @@ pub(crate) fn kmac_cmd(
     // The allow-weak form, as the HMAC commands use: a CLI is used for test vectors and
     // scripting, where a short or all-zero key is a legitimate thing to want.
     match bit_len {
-        128 => do_mac(
-            KMAC128Key::with_params_allow_weak(&key, s, length)
-                .expect("a valid MAC key")
-                .create_generator(),
-            verify_val,
-            output_hex,
-        ),
-        256 => do_mac(
-            KMAC256Key::with_params_allow_weak(&key, s, length)
-                .expect("a valid MAC key")
-                .create_generator(),
-            verify_val,
-            output_hex,
-        ),
+        128 => {
+            let kmac_key = KMAC128Key::with_params_allow_weak(&key, s, length)
+                .unwrap_or_else(|e| kmac_key_error(e));
+            do_mac(kmac_key.create_generator(), verify_val, output_hex)
+        }
+        256 => {
+            let kmac_key = KMAC256Key::with_params_allow_weak(&key, s, length)
+                .unwrap_or_else(|e| kmac_key_error(e));
+            do_mac(kmac_key.create_generator(), verify_val, output_hex)
+        }
         _ => panic!("Unsupported algorithm: KMAC-{bit_len}"),
     }
+}
+
+/// The key is already a MAC key, so what fails here is the tag length, which came from the
+/// command line: report it the way the key errors are reported rather than through a panic.
+fn kmac_key_error(e: MACError) -> ! {
+    eprintln!("Error: couldn't build the KMAC key: {e:?}");
+    exit(-1)
 }
 
 fn do_mac(mut mac: impl MAC, verify_val: &Option<String>, output_hex: bool) {
