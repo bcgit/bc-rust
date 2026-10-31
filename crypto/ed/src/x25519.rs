@@ -188,15 +188,15 @@
 //!
 //! | Entry point                     | Stack  |
 //! |---------------------------------|--------|
-//! | `X25519::keygen_from_seed`      | 1616 B |
-//! | `X25519PrivateKey::from_bytes`  | 1552 B |
-//! | `X25519::key_agreement`         | 1488 B |
+//! | `X25519::keygen_from_seed`      | 1200 B |
+//! | `X25519PrivateKey::from_bytes`  | 1136 B |
+//! | `X25519::key_agreement`         | 1072 B |
 //! | `X25519::encaps` / `encaps_rng` | 2368 B |
 //! | `X25519::decaps`                | 1872 B |
 //!
 //! Key generation, decoding a private key, and key agreement each run one Montgomery ladder plus
-//! the field inversion. The KEM figures are set by the HKDF-SHA256 key schedule; for `encaps`, the
-//! default DRBG's chain is shallower, and for `encaps_rng`, the caller's RNG is not counted.
+//! the field inversion.
+//! The KEM figures additionally run HPKE.DHKEM and stack usage is dominated by the HKDF-SHA256 key schedule. 
 
 use bouncycastle_core::errors::{KEMError, KeyAgreementError, RNGError};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterial256, KeyMaterialTrait, KeyType};
@@ -669,8 +669,29 @@ fn scalar_mult(k: &[u8; SCALAR_SIZE], u: &X25519PublicKey) -> X25519PublicKey {
     debug_assert_eq!(0, n[0] & 7);
 
     let x1 = decode_u_coordinate(u);
-    let mut x2 = x1.clone();
-    let mut z2 = FieldElement25519::one();
+    let mut x2 = FieldElement25519::zero();
+    let mut z2 = FieldElement25519::zero();
+    ladder(&n, &x1, &mut x2, &mut z2);
+
+    x2 = x2.mul(&z2.inv());
+    let mut out = [0_u8; POINT_SIZE];
+    encode_u_coordinate(&x2, &mut out);
+    X25519PublicKey(out)
+}
+
+/// The Montgomery ladder of [`scalar_mult`]: writes the projective u-coordinate of `n * x1` to
+/// `(x2, z2)`, for a scalar `n` decoded by [`decode_scalar_25519`].
+// #[inline(never)]: so that the ladder's variables live in a different stack frame and can be popped
+// before scalar_mult's `z2.inv()` runs (which is the other stack-expensive operation).
+#[inline(never)]
+fn ladder(
+    n: &[u32; 8],
+    x1: &FieldElement25519,
+    x2: &mut FieldElement25519,
+    z2: &mut FieldElement25519,
+) {
+    *x2 = x1.clone();
+    *z2 = FieldElement25519::one();
     let mut x3 = FieldElement25519::one();
     let mut z3 = FieldElement25519::zero();
 
@@ -705,25 +726,25 @@ fn scalar_mult(k: &[u8; SCALAR_SIZE], u: &X25519PublicKey) -> X25519PublicKey {
         // B = x_2 - z_2,               -> x2
         // Must follow the line above, not precede it: that one still reads the incoming z_3,
         // which this one overwrites.
-        (z3, x2) = x2.sum_and_difference(&z2);
+        (z3, *x2) = x2.sum_and_difference(z2);
         // CB = C * B,                  -> t1
-        t1 = t1.mul(&x2);
+        t1 = t1.mul(x2);
         // DA = D * A,                  -> x3
         x3 = x3.mul(&z3);
         // AA = A^2,                    -> z3
         z3 = z3.sqr();
         // BB = B^2,                    -> x2
-        x2 = x2.sqr();
+        *x2 = x2.sqr();
 
         // E = AA - BB,                 -> t2
-        t2 = z3.sub(&x2);
+        t2 = z3.sub(x2);
         // z_2 = E * (AA + a24 * E),    -> z2
         // Deviation from the RFC: written as E * (BB + C_A24 * E), an equivalent pairing of the
         // constant with the other operand. See C_A24's declaration.
         // The incoming z_2 died on the `sum_and_difference` above, which is what frees this slot.
-        z2 = t2.mul_u32(C_A24).add(&x2).mul(&t2);
+        *z2 = t2.mul_u32(C_A24).add(x2).mul(&t2);
         // x_2 = AA * BB,               -> x2
-        x2 = x2.mul(&z3);
+        *x2 = x2.mul(&z3);
 
         // x_3 = (DA + CB)^2,           -> x3
         // z_3 = x_1 * (DA - CB)^2,     -> z3
@@ -747,10 +768,10 @@ fn scalar_mult(k: &[u8; SCALAR_SIZE], u: &X25519PublicKey) -> X25519PublicKey {
         swap ^= k_bit;
         // (x_2, x_3) = cswap(swap, x_2, x_3)
         //   > swaps in-place
-        FieldElement25519::cswap(swap, &mut x2, &mut x3);
+        FieldElement25519::cswap(swap, x2, &mut x3);
         // (z_2, z_3) = cswap(swap, z_2, z_3)
         //   > swaps in-place
-        FieldElement25519::cswap(swap, &mut z2, &mut z3);
+        FieldElement25519::cswap(swap, z2, &mut z3);
         // swap = k_t
         swap = k_bit;
     }
@@ -758,13 +779,8 @@ fn scalar_mult(k: &[u8; SCALAR_SIZE], u: &X25519PublicKey) -> X25519PublicKey {
     debug_assert!(!swap.to_bool());
 
     for _ in 0..3 {
-        ladder_double(&mut x2, &mut z2);
+        ladder_double(x2, z2);
     }
-
-    x2 = x2.mul(&z2.inv());
-    let mut out = [0_u8; POINT_SIZE];
-    encode_u_coordinate(&x2, &mut out);
-    X25519PublicKey(out)
 }
 
 fn scalar_mult_base(k: &[u8; SCALAR_SIZE]) -> X25519PublicKey {

@@ -82,8 +82,8 @@ Within each, the priority order is:
   2 timeouts (`sqr_n`'s loop counter, which never terminates: kills), 8 missed. Seven are `|` -> `^`
   in `decode64_255`/`encode64_255`, where the OR'd operands have disjoint bits (equivalent). One is
   the `KeyGenError` arm in the DHKEM `generate_key_pair_rng`, reachable only with an RNG whose
-  `fill_keymaterial_out` returns a wrongly-typed seed. Run before `X25519PrivateKey` stored its
-  public key; re-run.
+  `fill_keymaterial_out` returns a wrongly-typed seed. Re-run on `x25519.rs` after the stored
+  public key and the ladder split: 158 mutants, 78 caught, 79 unviable, only that arm missed.
 
 ## Phase 3: Docs and ergonomics
 
@@ -115,10 +115,10 @@ Within each, the priority order is:
       harness floor.
 - [x] `X25519PrivateKey` stores its public key (64 B in memory), computed once on keygen or decode:
   `pk()` is free and Decaps no longer recomputes `pk(skR)` (about 48% faster).
-- [ ] Decide on splitting the ladder out of `scalar_mult` into an `#[inline(never)]` helper
-  (-416 B KeyGen, -424 B KeyAgreement, no measurable speed cost). Measured before the stored
-  public key; re-measure, and regenerate the `# Memory Usage` table if taken.
-- [ ] Rethink the name of this crate: `bouncycastle-ed` is kindo the wrong name (but maybe nothing better exists?)
+- [x] Split the ladder out of `scalar_mult` into an `#[inline(never)]` `ladder`, so the field
+  inversion no longer runs on top of the ladder's registers: -416 B on KeyGen, KeyAgreement and
+  private-key decoding, no speed cost. Encaps/Decaps unchanged (HKDF sets their peak).
+- [x] Rethink the name of this crate: `bouncycastle-ed` is kindo the wrong name (but maybe nothing better exists?)
 
 ---
 
