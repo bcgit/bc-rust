@@ -3,7 +3,7 @@ use bouncycastle_core::key_material::{KeyMaterial256, KeyMaterialTrait, KeyType}
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{KeyAgreementPrivateKey, KeyAgreementPublicKey};
 use bouncycastle_core_test_framework::FixedSeedRNG;
-use bouncycastle_ed::x25519::{POINT_SIZE, SCALAR_SIZE, X25519, X25519PrivateKey, X25519PublicKey};
+use bouncycastle_ed::x25519::{POINT_LEN, SCALAR_LEN, X25519, X25519PrivateKey, X25519PublicKey};
 use bouncycastle_hex as hex;
 
 /// RFC 7748 Section 6.1: Alice's private key a and public key X25519(a, 9).
@@ -20,7 +20,7 @@ fn core_framework_tests() {
 
     let tf = TestFrameworkKeyAgreementKeys::new();
 
-    tf.test_keys::<X25519PublicKey, X25519PrivateKey, POINT_SIZE, SCALAR_SIZE>(X25519::keygen);
+    tf.test_keys::<X25519PublicKey, X25519PrivateKey, POINT_LEN, SCALAR_LEN>(X25519::keygen);
 }
 
 #[test]

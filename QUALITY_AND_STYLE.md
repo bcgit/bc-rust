@@ -20,7 +20,7 @@ a cache and resume later.
 
 ## Tests
 
-All crates must have tests in `src/tests`. Part of writing code that treats future maintainers as malicious is that all
+All crates must have tests in `tests/`. Part of writing code that treats future maintainers as malicious is that all
 functions that form part of the public interface should have their expected behaviour fully constrained with tests. In
 other words, any behaviour change of the library that could cause a change in a calling application should also cause a
 test in bc-rust to fail. An excellent tool for achieving this is `cargo mutants` which must be run on every crate and
@@ -99,7 +99,8 @@ subsequent calls can be made to this object (as opposed to the usual pattern of 
 `do_update(&self, ...)`). These tricks go a long way to reducing fallibility since now in general there is no (or very
 very little) object state to track and return errors about.
 
-Any struct that holds sensitive data must impl the `core::Secret` trait and all associated super-traits.
+Any struct that holds sensitive data must keep it in a `bouncycastle_utils::secret::Secret<T>` field (or in a
+`KeyMaterial`, which is built on it), so that it is zeroized on drop and redacted from `Debug` and `Display`.
 
 A primitive whose safe use depends on the caller composing it correctly -- a raw block permutation, a raw keystream
 -- lives under a `hazmat` module in its crate or sub-module, never at the crate root or next to the safe API;

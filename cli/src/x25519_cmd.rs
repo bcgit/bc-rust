@@ -5,7 +5,7 @@ use bouncycastle::core::key_material::KeyMaterialTrait;
 use bouncycastle::core::traits::{
     KEMDecapsulator, KEMEncapsulator, KeyAgreement, KeyAgreementPrivateKey, KeyAgreementPublicKey,
 };
-use bouncycastle::ed::x25519::{POINT_SIZE, X25519, X25519PrivateKey, X25519PublicKey};
+use bouncycastle::ed::x25519::{POINT_LEN, X25519, X25519PrivateKey, X25519PublicKey};
 use clap::ValueEnum;
 use std::process::exit;
 
@@ -112,7 +112,7 @@ pub(crate) fn x25519_cmd(
             };
 
             let ct = read_from_file_or_stdin(ctfile);
-            if ct.len() != POINT_SIZE {
+            if ct.len() != POINT_LEN {
                 eprintln!("Error: ciphertext is not the correct length.");
                 exit(-1);
             }

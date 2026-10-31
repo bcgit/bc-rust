@@ -1,7 +1,7 @@
 use bouncycastle_core::errors::KeyAgreementError;
 use bouncycastle_core::key_material::{KeyMaterial256, KeyType};
 use bouncycastle_core::traits::{KeyAgreement, KeyAgreementPublicKey};
-use bouncycastle_ed::x25519::{POINT_SIZE, SCALAR_SIZE, X25519, X25519PrivateKey, X25519PublicKey};
+use bouncycastle_ed::x25519::{POINT_LEN, SCALAR_LEN, X25519, X25519PrivateKey, X25519PublicKey};
 use bouncycastle_hex as hex;
 
 #[test]
@@ -10,7 +10,7 @@ fn core_framework_tests() {
 
     let tf = TestFrameworkKeyAgreement::new();
 
-    tf.test_key_agreement::<X25519PublicKey, X25519PrivateKey, X25519, POINT_SIZE, SCALAR_SIZE>(
+    tf.test_key_agreement::<X25519PublicKey, X25519PrivateKey, X25519, POINT_LEN, SCALAR_LEN>(
         X25519::keygen,
     );
 }
@@ -88,7 +88,7 @@ fn rfc7748_section_6_1() {
 /// bit 255 set.
 #[test]
 fn key_agreement_rejects_all_zero_shared_secret() {
-    let zero = [0_u8; POINT_SIZE];
+    let zero = [0_u8; POINT_LEN];
     let p = decode_32("edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f");
     let mut zero_bit_255 = zero;
     zero_bit_255[31] = 0x80;
@@ -121,11 +121,11 @@ fn sk_from_bytes(bytes: &[u8]) -> X25519PrivateKey {
 /// arithmetic and encodings on `count` effectively random inputs against a single known answer,
 /// and one wrong step corrupts every value after it. The single-call vectors cover two inputs.
 fn rfc7748_check_iterated(count: usize) {
-    assert_eq!(POINT_SIZE, SCALAR_SIZE);
+    assert_eq!(POINT_LEN, SCALAR_LEN);
 
-    let mut k = [0_u8; POINT_SIZE];
+    let mut k = [0_u8; POINT_LEN];
     k[0] = 9;
-    let mut u = [0_u8; POINT_SIZE];
+    let mut u = [0_u8; POINT_LEN];
     u[0] = 9;
     let mut iterations = 0;
     while iterations < count {

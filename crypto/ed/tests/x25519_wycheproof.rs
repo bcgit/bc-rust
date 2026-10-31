@@ -15,7 +15,7 @@ use bouncycastle_core::errors::KeyAgreementError;
 use bouncycastle_core::key_material::{KeyMaterial256, KeyType};
 use bouncycastle_core::traits::{KeyAgreement, KeyAgreementPublicKey};
 use bouncycastle_core_test_framework::test_data_loaders::{Value, hex_field, wycheproof_json};
-use bouncycastle_ed::x25519::{POINT_SIZE, SCALAR_SIZE, X25519, X25519PrivateKey, X25519PublicKey};
+use bouncycastle_ed::x25519::{POINT_LEN, SCALAR_LEN, X25519, X25519PrivateKey, X25519PublicKey};
 
 #[test]
 fn wycheproof_x25519() {
@@ -37,9 +37,9 @@ fn wycheproof_x25519() {
                 other => panic!("{ctx}: unexpected result {other}"),
             }
 
-            let k: [u8; SCALAR_SIZE] =
+            let k: [u8; SCALAR_LEN] =
                 hex_field(test, "private", tc_id).try_into().expect("a 32-byte private key");
-            let u: [u8; POINT_SIZE] =
+            let u: [u8; POINT_LEN] =
                 hex_field(test, "public", tc_id).try_into().expect("a 32-byte public key");
             let shared = hex_field(test, "shared", tc_id);
 

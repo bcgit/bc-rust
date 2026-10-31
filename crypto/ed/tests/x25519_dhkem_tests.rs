@@ -10,12 +10,12 @@ use bouncycastle_core::traits::{
 use bouncycastle_core_test_framework::FixedSeedRNG;
 use bouncycastle_core_test_framework::kem::{TestFrameworkKEM, TestFrameworkKEMKeys};
 use bouncycastle_ed::x25519::{
-    DHKEM_SS_LEN, POINT_SIZE, SCALAR_SIZE, X25519, X25519PrivateKey, X25519PublicKey,
+    DHKEM_SS_LEN, POINT_LEN, SCALAR_LEN, X25519, X25519PrivateKey, X25519PublicKey,
 };
 use bouncycastle_hex as hex;
 use bouncycastle_hpke::dhkem::DHKEM;
 
-type X25519DHKEM = DHKEM<X25519, POINT_SIZE, SCALAR_SIZE, POINT_SIZE, DHKEM_SS_LEN>;
+type X25519DHKEM = DHKEM<X25519, POINT_LEN, SCALAR_LEN, POINT_LEN, DHKEM_SS_LEN>;
 
 /// The DHKEM values of one RFC 9180 Appendix A.1 vector set.
 struct Vector {
@@ -212,9 +212,9 @@ fn kem_framework() {
         X25519PublicKey,
         X25519PrivateKey,
         X25519,
-        POINT_SIZE,
-        SCALAR_SIZE,
-        POINT_SIZE,
+        POINT_LEN,
+        SCALAR_LEN,
+        POINT_LEN,
         DHKEM_SS_LEN,
     >(keygen, false);
 }
@@ -222,7 +222,7 @@ fn kem_framework() {
 #[test]
 fn kem_keys_framework() {
     TestFrameworkKEMKeys::new()
-        .test_keys::<X25519PublicKey, X25519PrivateKey, POINT_SIZE, SCALAR_SIZE>(keygen);
+        .test_keys::<X25519PublicKey, X25519PrivateKey, POINT_LEN, SCALAR_LEN>(keygen);
 }
 
 /// Low-order public keys give an all-zero X25519 output, which RFC 9180 Section 7.1.4 requires

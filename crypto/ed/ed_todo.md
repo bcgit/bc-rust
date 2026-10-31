@@ -96,12 +96,12 @@ Within each, the priority order is:
     - [x] Construct from `[u64; 4]` / `Nat<4>` instead of `new(x0..x4)`. Moot: `new` is removed.
     - [x] Rename `parity` (to `is_odd`?).
     - [x] Remove the answered "why are we cloning?" TODO.
-- [ ] Docs:
+- [x] Docs:
     - [x] Re-enable `#![forbid(missing_docs)]`.
-    - [ ] Write the crate doc sections required by QUALITY_AND_STYLE.md:
+    - [x] Write the crate doc sections required by QUALITY_AND_STYLE.md:
         - [x] Usage Examples (`lib.rs`, linking to the `x25519` module's examples);
         - [x] Memory Usage (`x25519.rs` module docs);
-        - [ ] Security Considerations.
+        - [x] Security Considerations (`x25519.rs` module docs).
     - [x] Is XDH in a NIST document? No: RFC 7748 only. SP 800-186 specifies the curves but does not
       list them for key establishment, and SP 800-56A Rev. 3 does not include XDH (`lib.rs`
       `# Standards`).
