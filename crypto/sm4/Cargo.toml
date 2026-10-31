@@ -6,7 +6,7 @@ edition.workspace = true
 [dependencies]
 bouncycastle-core.workspace = true
 bouncycastle-utils.workspace = true
-# The modes the key hands out, the `ModeNames` impl and the four `SM4_*` aliases; the engine
+# The modes the key hands out, the `ModeNames` impl and the five `SM4_*` aliases; the engine
 # itself does not use it.
 bouncycastle-cipher.workspace = true
 
