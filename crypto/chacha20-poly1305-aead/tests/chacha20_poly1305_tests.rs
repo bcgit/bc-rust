@@ -110,3 +110,17 @@ fn sizes_match_the_documented_memory_table() {
     assert_eq!(size_of::<Enc<'static>>(), 344);
     assert_eq!(size_of::<Dec<'static>>(), 344);
 }
+
+/// Equality is the ChaCha20 key's, so it follows the material: the same bytes compare equal, as
+/// does a clone, and a single flipped bit does not. Keys have no `Debug`, hence `assert!` over `==`.
+#[test]
+fn keys_compare_equal_exactly_when_their_material_does() {
+    let key = key();
+    assert!(key == key.clone());
+    assert!(key == ChaCha20Poly1305Key::from_key_material(&material()).unwrap());
+    let mut flipped = [7u8; 32];
+    flipped[0] ^= 1;
+    let other =
+        KeyMaterial::<32>::from_bytes_as_type(&flipped, KeyType::SymmetricCipherKey).unwrap();
+    assert!(key != ChaCha20Poly1305Key::from_key_material(&other).unwrap());
+}

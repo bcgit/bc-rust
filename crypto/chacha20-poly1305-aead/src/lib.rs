@@ -413,12 +413,22 @@ impl AEADCipherDecryptor<NONCE_LEN, TAG_LEN, TAG_LEN> for ChaCha20_Poly1305<'_, 
 /// A ChaCha20-Poly1305 key: the 256-bit key of RFC 8439 Sec 2.8, validated once, from which the
 /// encryptor and decryptor for each message are made. Built through [`FromKeyMaterial`] from
 /// material tagged [`KeyType::SymmetricCipherKey`] of 256-bit strength. The key words live in a
-/// `Secret`, zeroized on drop; there is no `Debug` and no way to read them back.
+/// `Secret`, zeroized on drop; there is no `Debug` and no way to read them back. Two keys compare
+/// equal exactly when their material does, in constant time.
 #[derive(Clone)]
 pub struct ChaCha20Poly1305Key {
     // The key as a ChaCha20 key, which is what it is (RFC 8439 Sec 2.8).
     key: ChaCha20Key,
 }
+
+// The ChaCha20 key's equality, which is constant time.
+impl PartialEq for ChaCha20Poly1305Key {
+    fn eq(&self, other: &Self) -> bool {
+        self.key == other.key
+    }
+}
+
+impl Eq for ChaCha20Poly1305Key {}
 
 impl FromKeyMaterial<KEY_LEN> for ChaCha20Poly1305Key {
     const KEY_TYPE: KeyType = KeyType::SymmetricCipherKey;
