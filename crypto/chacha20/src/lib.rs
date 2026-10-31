@@ -97,12 +97,23 @@ pub type ChaCha20<'k, Dir> = StreamCipher<ChaCha20KeyStream<'k>, Dir, NONCE_LEN,
 /// A ChaCha20 key: the 256-bit key of RFC 8439 Sec 2.3, validated once, from which the stream
 /// cipher for each message is made. Built through [`FromKeyMaterial`] from material tagged
 /// [`KeyType::SymmetricCipherKey`] of 256-bit strength. The key words live in a `Secret`,
-/// zeroized on drop; there is no `Debug` and no way to read them back.
+/// zeroized on drop; there is no `Debug` and no way to read them back. Two keys compare equal
+/// exactly when their material does, in constant time.
 #[derive(Clone)]
 pub struct ChaCha20Key {
     // Reached from outside only through `hazmat::keystream_at`.
     pub(crate) state: ChaCha20KeyState,
 }
+
+// Two keys are equal when their key words are, which the state decides in constant time, so the
+// comparison follows the material without exposing it.
+impl PartialEq for ChaCha20Key {
+    fn eq(&self, other: &Self) -> bool {
+        self.state == other.state
+    }
+}
+
+impl Eq for ChaCha20Key {}
 
 impl FromKeyMaterial<KEY_LEN> for ChaCha20Key {
     const KEY_TYPE: KeyType = KeyType::SymmetricCipherKey;

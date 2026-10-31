@@ -32,6 +32,16 @@ pub struct ChaCha20KeyState {
     key: Secret<[u32; 8]>,
 }
 
+// `Secret`'s equality: every byte is inspected, so the time taken does not say where two keys
+// differ.
+impl PartialEq for ChaCha20KeyState {
+    fn eq(&self, other: &Self) -> bool {
+        self.key == other.key
+    }
+}
+
+impl Eq for ChaCha20KeyState {}
+
 impl ChaCha20KeyState {
     /// The key words of RFC 8439 Sec 2.3, "eight 32-bit little-endian integers".
     ///
