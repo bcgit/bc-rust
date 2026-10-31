@@ -198,9 +198,27 @@ fn corrupt_fields_are_rejected() {
 
     let mut k = k_key.create_generator();
     k.do_update(PART1);
-    let mut bad = k.suspend();
+    let good = k.suspend();
+    let mut bad = good;
     bad[CUSTOMIZED] = 0;
     rejected::<_, KMAC128>(bad, "a KMAC claiming an empty function name");
+    // The output length is the trailing u64, bounded as `with_params` bounds it.
+    let output_len = good.len() - 8;
+    let mut bad = good;
+    bad[output_len..].copy_from_slice(&0u64.to_le_bytes());
+    rejected::<_, KMAC128>(bad, "a KMAC claiming a zero output length");
+    let mut bad = good;
+    bad[output_len..].copy_from_slice(&3u64.to_le_bytes());
+    rejected::<_, KMAC128>(bad, "a KMAC claiming an output length below the 32-bit floor");
+    let mut bad = good;
+    bad[output_len..].copy_from_slice(&(u64::MAX / 4).to_le_bytes());
+    rejected::<_, KMAC128>(bad, "a KMAC whose output length in bits overflows a u64");
+    let mut edge = good;
+    edge[output_len..].copy_from_slice(&(KMAC_MIN_OUTPUT_LEN as u64).to_le_bytes());
+    assert!(KMAC128::from_suspended(edge).is_ok(), "the floor itself is a valid output length");
+    let mut edge = good;
+    edge[output_len..].copy_from_slice(&(KMAC_MAX_OUTPUT_LEN as u64).to_le_bytes());
+    assert!(KMAC128::from_suspended(edge).is_ok(), "the cap itself is a valid output length");
 
     let mut k = KMACXOF128::new(&key(), b"", false).unwrap();
     k.do_update(PART1);

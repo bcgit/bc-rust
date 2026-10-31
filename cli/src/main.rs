@@ -1457,7 +1457,7 @@ enum Subcommands {
     /// The tag length and customization string are bound into the computation, so the verifier
     /// must use the same values.
     KMAC128 {
-        /// Length of the tag in bytes.
+        /// Length of the tag in bytes, at least 4 (SP 800-185 Sec 8.4.2).
         length: usize,
 
         #[arg(short = 's', long)]
@@ -1484,7 +1484,7 @@ enum Subcommands {
     /// Compute or verify a KMAC256 (NIST SP 800-185 Sec 4) over the content provided on stdin.
     /// See kmac128.
     KMAC256 {
-        /// Length of the tag in bytes.
+        /// Length of the tag in bytes, at least 4 (SP 800-185 Sec 8.4.2).
         length: usize,
 
         #[arg(short = 's', long)]

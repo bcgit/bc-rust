@@ -196,9 +196,9 @@ where
 /// runtime check.
 ///
 /// # State
-/// Only the permutation, which owns the key schedule and is responsible for keeping it in a
+/// Only a reference to the permutation, which owns the key schedule and keeps it in a
 /// zeroize-on-drop wrapper. Nothing chains from one block to the next, so unlike `Cbc` and `Cfb`
-/// there is no block of chaining value: `size_of::<Ecb<'k, P, ..>>() == size_of::<P>()`.
+/// there is no block of chaining value: an `Ecb` is the reference and nothing else.
 #[derive(Clone)]
 pub struct Ecb<'k, P, Dir, const BLOCK_LEN: usize>
 where
@@ -325,6 +325,9 @@ where
         suspend_component(&self)
     }
 
+    /// The state carries no direction: one suspended by the other direction's worker is accepted
+    /// and resumes over the same chaining value, which gives wrong output rather than an error.
+    /// Only GCM, whose state means different things per direction, refuses the other one.
     fn from_suspended(state: [u8; N], key: &'k Self::Key) -> Result<Self, SuspendableError> {
         resume_component(&state, key)
     }

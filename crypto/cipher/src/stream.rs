@@ -107,6 +107,24 @@ where
         };
     }
 
+    /// Whether `len` more bytes fit in the keystream this init data has left: the check every
+    /// call makes before it consumes anything, on its own for a construction that must know
+    /// before it copies the caller's input into an output buffer (GCM).
+    ///
+    /// # Errors
+    /// [`SymmetricCipherError::DataLimitExceeded`] if the call would need more keystream than
+    /// remains for this init data, and continuing would repeat keystream.
+    pub(crate) fn accepts(&self, len: usize) -> Result<(), SymmetricCipherError> {
+        let pending_len = BLOCK_LEN - self.used;
+        // Saturating: a keystream with no practical limit reports `u64::MAX` blocks.
+        let capacity = (pending_len as u64)
+            .saturating_add(self.keystream.remaining_blocks().saturating_mul(BLOCK_LEN as u64));
+        if len as u64 > capacity {
+            return Err(SymmetricCipherError::DataLimitExceeded);
+        }
+        Ok(())
+    }
+
     /// The whole data path, shared by both directions: a keystream cipher's encryption and
     /// decryption are the same XOR, so there is one implementation and the direction is only a
     /// type.
@@ -120,16 +138,8 @@ where
     /// [`SymmetricCipherError::DataLimitExceeded`] if the keystream cannot cover the call; nothing
     /// is consumed in that case.
     fn apply(&mut self, data: &mut [u8]) -> Result<usize, SymmetricCipherError> {
+        self.accepts(data.len())?;
         let pending_len = BLOCK_LEN - self.used;
-        // Saturating: a keystream with no practical limit reports `u64::MAX` blocks.
-        let capacity = (pending_len as u64)
-            .saturating_add(self.keystream.remaining_blocks().saturating_mul(BLOCK_LEN as u64));
-        if data.len() as u64 > capacity {
-            // Keystream exhausted: this call would need more keystream than remains for this init
-            // data, and continuing would repeat keystream.
-            return Err(SymmetricCipherError::DataLimitExceeded);
-        }
-
         let head_len = core::cmp::min(pending_len, data.len());
         let (head, rest) = data.split_at_mut(head_len);
         for (b, k) in head.iter_mut().zip(self.pending[self.used..].iter()) {
@@ -340,6 +350,9 @@ where
         suspend_component(&self)
     }
 
+    /// The state carries no direction: one suspended by the other direction's worker is accepted
+    /// and resumes over the same chaining value, which gives wrong output rather than an error.
+    /// Only GCM, whose state means different things per direction, refuses the other one.
     fn from_suspended(state: [u8; N], key: &'k Self::Key) -> Result<Self, SuspendableError> {
         resume_component(&state, key)
     }

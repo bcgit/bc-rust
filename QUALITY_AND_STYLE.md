@@ -12,9 +12,12 @@ lib.rs for all crates needs to contain: `#![forbid(missing_docs)]`, `#![no_std]`
 
 All primitives must be accompanied by a CLI in `/cli`.
 
-All algorithms with a state that is exercised across multiple API calls -- typically through a `do_update()`,
-`do_final()` pattern -- should implement SerializableState so that the user can pause the execution of this algorithm to
-a cache and resume later.
+Hashes, XOFs and the MACs and KDFs built on them (KMAC, HMAC, HKDF) implement `Suspendable` or `SuspendableKeyed`, so
+that a computation in progress can be written to a cache and resumed later. Cipher and MAC workers -- the encryptors,
+decryptors, generators and verifiers a key object hands out -- do not: a suspended or cloned worker is a second copy of
+a nonce, counter or keystream position, and two copies that both go on to encrypt reuse keystream (#173). Those workers
+implement neither suspend trait nor `Clone`; a message is paused by holding its worker, and the worker traits are kept
+`dyn`-compatible so it can be held as `&mut dyn` or, where allocation is acceptable, `Box<dyn>`.
 
 # Quality
 

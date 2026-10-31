@@ -1,13 +1,13 @@
 //! The mode-bound AES key objects: validation at construction, and `key.create_encryptor(rng)`
-//! producing exactly what the mode's worker built from the bare key state produces from the same material
-//! and RNG.
+//! producing exactly what the mode's own route -- the hazmat mode traits the key forwards to --
+//! produces from the same material and RNG.
 
 use bouncycastle_aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
 use bouncycastle_aes::{AES_GCM_128, AES128Key, AES192Key, AES256Key};
-use bouncycastle_cipher::modes::{CTR, GCM, Gcm, GcmKeyState, ModeNames};
+use bouncycastle_cipher::modes::{CTR, GCM, ModeNames};
 use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
-use bouncycastle_core::hazmat::ElectronicCodeBook;
+use bouncycastle_core::hazmat::{AeadDecryptMode, AeadEncryptMode, ElectronicCodeBook, Mode};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::symmetric_key::{AeadDecryptionKey, AeadEncryptionKey, FromKeyMaterial};
@@ -89,15 +89,15 @@ fn the_key_type_a_mode_requires_is_the_constructor_constant() {
 
 /// The key-side encryptor is the mode's own type built from the same material, so with the same
 /// RNG it must produce the same nonce, ciphertext and tag as the worker built from the bare key
-/// state (the `from_key_state` route a mode impl uses).
+/// state through the mode trait the key forwards to.
 #[test]
 fn create_encryptor_matches_the_key_state_route() {
     let km = material::<32>();
     let key = AES256Key::<GCM>::from_key_material(&km).expect("a valid key");
-    let state = GcmKeyState::new(AES256Internal::new(&km).unwrap());
+    let state = <GCM as Mode<AES256Internal>>::key_state(AES256Internal::new(&km).unwrap());
 
     let (mut enc_state, nonce_state) =
-        Gcm::<AES256Internal, Encrypting, 16>::from_key_state(&state, &mut rng())
+        <GCM as AeadEncryptMode<AES256Internal, 32, 12, 16, 16>>::encrypt_init(&state, &mut rng())
             .expect("key-state init");
     let (mut enc_key, nonce_key) = key.create_encryptor(&mut rng()).expect("key-side init");
     assert_eq!(nonce_state, nonce_key);
@@ -194,10 +194,10 @@ fn the_key_and_the_key_state_route_interoperate_at_every_key_length() {
         P: ElectronicCodeBook<N, 16> + ModeNames + Clone,
         K: AeadEncryptionKey<N, 12, 16, 16> + AeadDecryptionKey<N, 12, 16, 16>,
     {
-        let state = GcmKeyState::new(P::new(&material::<N>()).unwrap());
+        let state = <GCM as Mode<P>>::key_state(P::new(&material::<N>()).unwrap());
 
         let (mut enc, nonce) =
-            Gcm::<P, Encrypting, 16>::from_key_state(&state, &mut rng()).unwrap();
+            <GCM as AeadEncryptMode<P, N, 12, 16, 16>>::encrypt_init(&state, &mut rng()).unwrap();
         enc.do_update_aad(AAD).unwrap();
         let mut ct = vec![0u8; MSG.len()];
         enc.do_encrypt_out(MSG, &mut ct).unwrap();
@@ -206,7 +206,7 @@ fn the_key_and_the_key_state_route_interoperate_at_every_key_length() {
         assert_eq!(pt, MSG);
 
         let (nonce, ct, tag) = encrypt_via_key::<N, K>(key);
-        let mut dec = Gcm::<P, Decrypting, 16>::from_key_state(&state, &nonce);
+        let mut dec = <GCM as AeadDecryptMode<P, N, 12, 16, 16>>::decrypt_init(&state, &nonce);
         dec.do_update_aad(AAD).unwrap();
         let mut pt = vec![0u8; ct.len()];
         let n = dec.do_decrypt_out(&ct, &mut pt).unwrap();
