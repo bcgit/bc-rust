@@ -20,29 +20,29 @@
 //!
 //! # Usage Examples
 //!
-//! From a key state, which is what a mode-bound key holds and what the workers borrow:
+//! From a mode-bound key, which holds the key state the workers borrow; over the toy permutation
+//! the key is the test suite's `ToyKey`, the shape of the AES one:
 //!
 //! ```
 //! # mod toy { include!("../../tests/common/toy_block_cipher.rs"); }
+//! # #[allow(dead_code)] mod toy_key { include!("../../tests/common/toy_key.rs"); }
 //! # use toy::ToyBlockCipher;
-//! use bouncycastle_cipher::modes::{GcmKeyState, Gmac};
-//! use bouncycastle_cipher::{Decrypting, Encrypting};
-//! use bouncycastle_core::hazmat::ElectronicCodeBook;
+//! # use toy_key::ToyKey;
+//! use bouncycastle_cipher::modes::GMAC;
 //! use bouncycastle_core::key_material::{KeyMaterial128, KeyType};
+//! use bouncycastle_core::symmetric_key::FromKeyMaterial;
 //! use bouncycastle_rng::HashDRBG_SHA512;
 //!
-//! type ToyGmac<'k, Dir> = Gmac<'k, ToyBlockCipher, Dir, 16>;
-//!
 //! let mut rng = HashDRBG_SHA512::new_from_os();
-//! let key = KeyMaterial128::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey).unwrap();
-//! let state = GcmKeyState::new(ToyBlockCipher::new(&key).unwrap());
+//! let material = KeyMaterial128::from_bytes_as_type(&[0x42; 16], KeyType::MACKey).unwrap();
+//! let key = ToyKey::<ToyBlockCipher, GMAC>::from_key_material(&material).unwrap();
 //!
-//! let (mut generator, nonce) = ToyGmac::<Encrypting>::from_key_state(&state, &mut rng).unwrap();
+//! let (mut generator, nonce) = key.create_generator(&mut rng).unwrap();
 //! generator.do_update(b"a message ");
 //! generator.do_update(b"in two parts");
 //! let tag = generator.do_final();
 //!
-//! let mut verifier = ToyGmac::<Decrypting>::from_key_state(&state, &nonce);
+//! let mut verifier = key.create_verifier(&nonce);
 //! verifier.do_update(b"a message in two parts");
 //! assert!(verifier.do_verify_final(&tag));
 //! ```
@@ -151,7 +151,7 @@ where
     ///
     /// # Errors
     /// [`SymmetricCipherError::RNGError`] if the nonce draw fails; nothing else can.
-    pub fn from_key_state(
+    pub(crate) fn from_key_state(
         state: &'k GcmKeyState<P>,
         rng: &mut dyn RNG,
     ) -> Result<(Self, [u8; GCM_NONCE_LEN]), SymmetricCipherError> {
@@ -161,7 +161,10 @@ where
 
     /// As [`from_key_state`](Self::from_key_state) under a nonce the caller supplies, who takes
     /// on the obligation that it never repeat under this key.
-    pub fn from_key_state_nonce(state: &'k GcmKeyState<P>, nonce: &[u8; GCM_NONCE_LEN]) -> Self {
+    pub(crate) fn from_key_state_nonce(
+        state: &'k GcmKeyState<P>,
+        nonce: &[u8; GCM_NONCE_LEN],
+    ) -> Self {
         Self { gcm: Gcm::from_key_state_nonce(state, nonce) }
     }
 
@@ -189,7 +192,7 @@ where
     /// Begins verifying a tag made under `nonce` from a key's stored state: what a mode-bound
     /// key's `create_verifier` calls. Infallible: the state is keyed and the nonce length is in
     /// the type.
-    pub fn from_key_state(state: &'k GcmKeyState<P>, nonce: &[u8; GCM_NONCE_LEN]) -> Self {
+    pub(crate) fn from_key_state(state: &'k GcmKeyState<P>, nonce: &[u8; GCM_NONCE_LEN]) -> Self {
         Self { gcm: Gcm::<P, Decrypting, TAG_LEN>::from_key_state(state, nonce) }
     }
 

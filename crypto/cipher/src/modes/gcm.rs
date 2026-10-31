@@ -18,38 +18,38 @@
 //! `bouncycastle_aes::AES128Key<GCM>`, whose AEAD role traits carry the one-shots -- and it
 //! implements [`AEADCipherEncryptor`] / [`AEADCipherDecryptor`] with `FINAL_LEN = TAG_LEN`, and the
 //! [`SymmetricCipherEncryptor`] / [`SymmetricCipherDecryptor`] traits they extend. The key holds a
-//! [`GcmKeyState`] and starts each message from it, which is the route over the toy permutation.
+//! [`GcmKeyState`] and starts each message from it; over the toy permutation the key is the test
+//! suite's `ToyKey`, the shape of the AES one.
 //!
 //! Through the SymmetricCipher methods there is no additional associated data (aad), and the tag
 //! is inlined into the ciphertext as `ciphertext || tag`:
 //!
 //! ```
 //! # mod toy { include!("../../tests/common/toy_block_cipher.rs"); }
+//! # #[allow(dead_code)] mod toy_key { include!("../../tests/common/toy_key.rs"); }
 //! # use toy::ToyBlockCipher;
+//! # use toy_key::ToyKey;
 //! use bouncycastle_core::errors::SymmetricCipherError;
-//! use bouncycastle_core::hazmat::ElectronicCodeBook;
 //! use bouncycastle_core::key_material::{KeyMaterial128, KeyType};
 //! use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
-//! use bouncycastle_cipher::modes::{Gcm, GcmKeyState};
-//! use bouncycastle_cipher::{Decrypting, Encrypting};
+//! use bouncycastle_core::symmetric_key::{AeadDecryptionKey, AeadEncryptionKey, FromKeyMaterial};
+//! use bouncycastle_cipher::modes::GCM;
 //! use bouncycastle_rng::HashDRBG_SHA512;
 //!
-//! type ToyGcm<'k, Dir> = Gcm<'k, ToyBlockCipher, Dir, 16>;
-//!
-//! let key = KeyMaterial128::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
+//! let material = KeyMaterial128::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
 //!     .expect("a 16-byte symmetric cipher key");
-//! let state = GcmKeyState::new(ToyBlockCipher::new(&key).unwrap());
+//! let key = ToyKey::<ToyBlockCipher, GCM>::from_key_material(&material).expect("a valid key");
 //! let plaintext: [u8; 16] = *b"attack at dawn!!";
 //!
-//! let (mut enc, nonce) = ToyGcm::<Encrypting>::from_key_state(&state, &mut HashDRBG_SHA512::new_from_os())
-//!     .expect("nonce draw");
+//! let (mut enc, nonce) =
+//!     key.create_encryptor(&mut HashDRBG_SHA512::new_from_os()).expect("nonce draw");
 //! let mut ciphertext = vec![0u8; 16 + 16];
 //! let n = enc.do_encrypt_out(&plaintext, &mut ciphertext).expect("encrypt");
 //! let (tag, tag_len) = enc.do_encrypt_final().expect("the tag");
 //! ciphertext[n..].copy_from_slice(&tag[..tag_len]);
 //!
 //! let open = |ct: &[u8]| -> Result<Vec<u8>, SymmetricCipherError> {
-//!     let mut dec = ToyGcm::<Decrypting>::from_key_state(&state, &nonce);
+//!     let mut dec = key.create_decryptor(&nonce);
 //!     let mut pt = vec![0u8; ct.len()];
 //!     let n = dec.do_decrypt_out(ct, &mut pt)?;
 //!     let (last, last_len) = dec.do_decrypt_final()?;
@@ -72,32 +72,30 @@
 //!
 //! ```
 //! # mod toy { include!("../../tests/common/toy_block_cipher.rs"); }
+//! # #[allow(dead_code)] mod toy_key { include!("../../tests/common/toy_key.rs"); }
 //! # use toy::ToyBlockCipher;
-//! use bouncycastle_core::hazmat::ElectronicCodeBook;
+//! # use toy_key::ToyKey;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 //! use bouncycastle_core::traits::{
 //!     AEADCipherDecryptor, AEADCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
 //! };
-//! use bouncycastle_cipher::modes::{Gcm, GcmKeyState};
-//! use bouncycastle_cipher::{Decrypting, Encrypting};
+//! use bouncycastle_core::symmetric_key::{AeadDecryptionKey, AeadEncryptionKey, FromKeyMaterial};
+//! use bouncycastle_cipher::modes::GCM;
 //! use bouncycastle_rng::HashDRBG_SHA512;
 //!
-//! type ToyGcm<'k, Dir> = Gcm<'k, ToyBlockCipher, Dir, 16>;
-//!
-//! let key = KeyMaterial::<16>::from_bytes_as_type(&[0x07; 16], KeyType::SymmetricCipherKey)
+//! let material = KeyMaterial::<16>::from_bytes_as_type(&[0x07; 16], KeyType::SymmetricCipherKey)
 //!     .expect("a 16-byte symmetric cipher key");
-//! let state = GcmKeyState::new(ToyBlockCipher::new(&key).unwrap());
+//! let key = ToyKey::<ToyBlockCipher, GCM>::from_key_material(&material).expect("a valid key");
 //! let aad = b"some associated data";
 //! let message = b"a message that streams in over more than one call";
 //!
-//! let (mut enc, nonce) =
-//!     ToyGcm::<Encrypting>::from_key_state(&state, &mut HashDRBG_SHA512::new_from_os()).unwrap();
+//! let (mut enc, nonce) = key.create_encryptor(&mut HashDRBG_SHA512::new_from_os()).unwrap();
 //! enc.do_update_aad(aad).unwrap();
 //! let mut ct = vec![0u8; message.len()];
 //! enc.do_encrypt_out(message, &mut ct).unwrap();
 //! let (_, tag) = enc.do_encrypt_final_detached_out(&mut [0u8; 16]).unwrap();
 //!
-//! let mut dec = ToyGcm::<Decrypting>::from_key_state(&state, &nonce);
+//! let mut dec = key.create_decryptor(&nonce);
 //! dec.do_update_aad(aad).unwrap();
 //! let mut pt = vec![0u8; ct.len()];
 //! let written = dec.do_decrypt_out(&ct, &mut pt).unwrap();
@@ -112,33 +110,31 @@
 //!
 //! ```
 //! # mod toy { include!("../../tests/common/toy_block_cipher.rs"); }
+//! # #[allow(dead_code)] mod toy_key { include!("../../tests/common/toy_key.rs"); }
 //! # use toy::ToyBlockCipher;
-//! use bouncycastle_core::hazmat::ElectronicCodeBook;
+//! # use toy_key::ToyKey;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 //! use bouncycastle_core::traits::{
 //!     AEADCipherDecryptor, AEADCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
 //! };
-//! use bouncycastle_cipher::modes::{Gcm, GcmKeyState};
-//! use bouncycastle_cipher::{Decrypting, Encrypting};
+//! use bouncycastle_core::symmetric_key::{AeadDecryptionKey, AeadEncryptionKey, FromKeyMaterial};
+//! use bouncycastle_cipher::modes::GCM;
 //! use bouncycastle_rng::HashDRBG_SHA512;
 //!
-//! type ToyGcm<'k, Dir> = Gcm<'k, ToyBlockCipher, Dir, 16>;
-//!
-//! let key = KeyMaterial::<16>::from_bytes_as_type(&[0x07; 16], KeyType::SymmetricCipherKey)
+//! let material = KeyMaterial::<16>::from_bytes_as_type(&[0x07; 16], KeyType::SymmetricCipherKey)
 //!     .expect("a 16-byte symmetric cipher key");
-//! let state = GcmKeyState::new(ToyBlockCipher::new(&key).unwrap());
+//! let key = ToyKey::<ToyBlockCipher, GCM>::from_key_material(&material).expect("a valid key");
 //! let aad = b"some associated data";
 //! let message = b"a message that streams in over more than one call";
 //!
-//! let (mut enc, nonce) =
-//!     ToyGcm::<Encrypting>::from_key_state(&state, &mut HashDRBG_SHA512::new_from_os()).unwrap();
+//! let (mut enc, nonce) = key.create_encryptor(&mut HashDRBG_SHA512::new_from_os()).unwrap();
 //! enc.do_update_aad(aad).unwrap();
 //! let mut ct = vec![0u8; message.len()];
 //! enc.do_encrypt_out(message, &mut ct).unwrap();
 //! let (tag_block, tag_len) = enc.do_encrypt_final().unwrap();
 //! ct.extend_from_slice(&tag_block[..tag_len]);
 //!
-//! let mut dec = ToyGcm::<Decrypting>::from_key_state(&state, &nonce);
+//! let mut dec = key.create_decryptor(&nonce);
 //! dec.do_update_aad(aad).unwrap();
 //! let mut pt = vec![0u8; ct.len()];
 //! let written = dec.do_decrypt_out(&ct, &mut pt).unwrap();
@@ -163,7 +159,7 @@
 //! As with all symmetric cipher modes, repeated key and nonce for multiple messages is catastrophic
 //! for security, which is why the key's `create_encryptor` draws the nonce from the caller's RNG.
 //! The forms that take a supplied nonce, `create_encryptor_nonce` and the `_nonce` one-shots on
-//! the key and [`Gcm::from_key_state_nonce`] here, leave uniqueness to the caller.
+//! the key, leave uniqueness to the caller.
 //!
 //! ## Invocation limit
 //!
@@ -293,8 +289,8 @@ where
 
 /// What a GCM key keeps per key: the keyed permutation and the hash subkey `H = CIPH_K(0^128)`
 /// (SP 800-38D Algorithm 4 step 1), derived once here rather than once per message. It is the
-/// `KeyState` of [`GCM`] over any permutation: built by [`new`](Self::new) or through the mode
-/// impls, and consumed through them.
+/// `KeyState` of [`GCM`] over any permutation, built and consumed through the mode impls; a
+/// key object reaches it only to resume a suspended worker.
 #[derive(Clone)]
 pub struct GcmKeyState<P> {
     perm: P,
@@ -314,7 +310,7 @@ impl<P: Eq> Eq for GcmKeyState<P> {}
 
 impl<P> GcmKeyState<P> {
     /// Derives `H` from `perm`.
-    pub fn new(perm: P) -> Self
+    pub(crate) fn new(perm: P) -> Self
     where
         P: BlockPermutation<16>,
     {
@@ -540,13 +536,12 @@ where
     P: BlockPermutation<16> + ModeNames,
 {
     /// Begins an encryption over a key's stored state under a nonce drawn from `rng`: the
-    /// encryption constructor a permutation crate's `AeadEncryptMode` impl for [`GCM`] calls.
-    /// Nothing is copied out of `state`; the worker reads the schedule and `H` through the
-    /// borrow and cannot outlive it.
+    /// encryption constructor [`GCM`]'s `AeadEncryptMode` impl calls. Nothing is copied out of
+    /// `state`; the worker reads the schedule and `H` through the borrow and cannot outlive it.
     ///
     /// # Errors
     /// [`SymmetricCipherError::RNGError`] if the nonce draw fails; nothing else can.
-    pub fn from_key_state(
+    pub(crate) fn from_key_state(
         state: &'k GcmKeyState<P>,
         rng: &mut dyn RNG,
     ) -> Result<(Self, [u8; GCM_NONCE_LEN]), SymmetricCipherError> {
@@ -555,9 +550,12 @@ where
         Ok((Self::setup_from_state(state, nonce), nonce))
     }
 
-    /// As [`Self::from_key_state`] under a nonce the caller supplies: the constructor a
-    /// permutation crate's `AeadEncryptMode::encrypt_init_nonce` impl for [`GCM`] calls.
-    pub fn from_key_state_nonce(state: &'k GcmKeyState<P>, nonce: &[u8; GCM_NONCE_LEN]) -> Self {
+    /// As [`Self::from_key_state`] under a nonce the caller supplies: the constructor [`GCM`]'s
+    /// `AeadEncryptMode::encrypt_init_nonce` impl calls.
+    pub(crate) fn from_key_state_nonce(
+        state: &'k GcmKeyState<P>,
+        nonce: &[u8; GCM_NONCE_LEN],
+    ) -> Self {
         Self::setup_from_state(state, *nonce)
     }
 
@@ -649,9 +647,9 @@ where
     P: BlockPermutation<16> + ModeNames,
 {
     /// Begins the decryption of a message encrypted under `nonce` from a key's stored state: the
-    /// decryption constructor a permutation crate's `AeadDecryptMode` impl for [`GCM`] calls.
-    /// Infallible: the state is already keyed and the nonce length is in the type.
-    pub fn from_key_state(state: &'k GcmKeyState<P>, nonce: &[u8; GCM_NONCE_LEN]) -> Self {
+    /// decryption constructor [`GCM`]'s `AeadDecryptMode` impl calls. Infallible: the state is
+    /// already keyed and the nonce length is in the type.
+    pub(crate) fn from_key_state(state: &'k GcmKeyState<P>, nonce: &[u8; GCM_NONCE_LEN]) -> Self {
         Self::setup_from_state(state, *nonce)
     }
 

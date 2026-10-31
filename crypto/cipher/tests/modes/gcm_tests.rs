@@ -8,6 +8,7 @@
 
 mod common;
 #[path = "../common/toy_key.rs"]
+#[allow(dead_code)]
 mod toy_key;
 
 use bouncycastle_cipher::modes::{GCM, GCM_NONCE_LEN, Gcm, ModeNames};

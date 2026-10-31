@@ -2,8 +2,8 @@
 // written here so the modes can be driven through the key path without a real cipher. The role
 // impls forward to whichever mode traits `M` implements over `P`, exactly as the AES key's do.
 //
-// Pulled in with `#[path]` from the tests, so every item is `pub` and unused ones are allowed.
-#![allow(dead_code)]
+// Pulled in with `#[path]` from the tests and `include!`d by the doc examples, so every item is
+// `pub`, and the site that pulls it in allows the unused ones.
 
 use bouncycastle_cipher::modes::{GCM_NONCE_LEN, GMAC, Gmac, ModeNames};
 use bouncycastle_cipher::{Decrypting, Encrypting};

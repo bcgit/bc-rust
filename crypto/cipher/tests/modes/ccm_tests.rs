@@ -16,6 +16,7 @@
 
 mod common;
 #[path = "../common/toy_key.rs"]
+#[allow(dead_code)]
 mod toy_key;
 
 use bouncycastle_cipher::modes::{CCM, CCM_Packet, ModeNames};
