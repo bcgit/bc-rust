@@ -1,5 +1,5 @@
-//! Structural tests for KW and KWP, driven by a toy permutation: the key path and the bare
-//! worker agree, the length rules of SP 800-38F Table 1, and the properties that tell the two
+//! Structural tests for KW and KWP, driven by a toy permutation: the key path and the mode's
+//! own route agree, the length rules of SP 800-38F Table 1, and the properties that tell the two
 //! algorithms apart from each other and from a plain block encryption. The shared key-wrap
 //! framework and the known-answer tests (RFC 3394, RFC 5649, ACVP) are in the `aes` crate,
 //! `crypto/aes/tests/kw_*.rs`: the framework's tamper checks need a permutation with diffusion,
@@ -17,7 +17,9 @@ use bouncycastle_cipher::modes::kwp::{
 };
 use bouncycastle_cipher::modes::{KW, KWP, Kw, Kwp, ModeNames};
 use bouncycastle_core::errors::SymmetricCipherError;
-use bouncycastle_core::hazmat::{BlockPermutation, ElectronicCodeBook};
+use bouncycastle_core::hazmat::{
+    BlockPermutation, ElectronicCodeBook, KeyUnwrapMode, KeyWrapMode, Mode,
+};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::symmetric_key::{FromKeyMaterial, KeyUnwrappingKey, KeyWrappingKey};
 use bouncycastle_core::traits::{KeyUnwrapper, KeyWrapper};
@@ -44,24 +46,30 @@ fn the_keys_enforce_the_material_policy() {
     framework.test::<TOY_LEN, ToyKwpKey>(Toy::KWP_ALG_NAME, SecurityStrength::_128bit);
 }
 
-/// The key's one-shots and a worker built straight over the permutation agree.
+/// The key's one-shots and the workers of the mode's own route -- the hazmat mode traits the
+/// key forwards to -- agree.
 #[test]
-fn the_key_and_the_bare_worker_agree() {
-    let perm = Toy::new(&toy_key()).unwrap();
+fn the_key_and_the_mode_route_agree() {
     let data = [0x5Au8; 32];
 
     let key = kw_key();
+    let state = <KW as Mode<Toy>>::key_state(Toy::new(&toy_key()).unwrap());
     let from_key: [u8; 40] = key.wrap_key(&data).unwrap();
-    let from_worker: [u8; 40] = Kw::from_perm(&perm).wrap_key(&data).unwrap();
+    let from_worker: [u8; 40] =
+        <KW as KeyWrapMode<Toy, TOY_LEN>>::wrap_init(&state).wrap_key(&data).unwrap();
     assert_eq!(from_key, from_worker);
-    assert_eq!(*Kw::from_perm(&perm).unwrap_key::<32, 40>(&from_key).unwrap(), data);
+    let unwrapper = <KW as KeyUnwrapMode<Toy, TOY_LEN>>::unwrap_init(&state);
+    assert_eq!(*unwrapper.unwrap_key::<32, 40>(&from_key).unwrap(), data);
     assert_eq!(*key.unwrap_key::<32, 40>(&from_worker).unwrap(), data);
-    assert_eq!(*Kw::from_perm(key.state()).unwrap_key::<32, 40>(&from_key).unwrap(), data);
+    let over_the_key_state = <KW as KeyUnwrapMode<Toy, TOY_LEN>>::unwrap_init(key.state());
+    assert_eq!(*over_the_key_state.unwrap_key::<32, 40>(&from_key).unwrap(), data);
 
     let key = kwp_key();
+    let state = <KWP as Mode<Toy>>::key_state(Toy::new(&toy_key()).unwrap());
     let short: [u8; 20] = data[..20].try_into().unwrap();
     let from_key: [u8; 32] = key.wrap_key(&short).unwrap();
-    let from_worker: [u8; 32] = Kwp::from_perm(&perm).wrap_key(&short).unwrap();
+    let from_worker: [u8; 32] =
+        <KWP as KeyWrapMode<Toy, TOY_LEN>>::wrap_init(&state).wrap_key(&short).unwrap();
     assert_eq!(from_key, from_worker);
     assert_eq!(*key.unwrap_key::<20, 32>(&from_worker).unwrap(), data[..20]);
 }
