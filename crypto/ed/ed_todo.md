@@ -118,6 +118,10 @@ Within each, the priority order is:
 - [x] Split the ladder out of `scalar_mult` into an `#[inline(never)]` `ladder`, so the field
   inversion no longer runs on top of the ladder's registers: -416 B on KeyGen, KeyAgreement and
   private-key decoding, no speed cost. Encaps/Decaps unchanged (HKDF sets their peak).
+- [ ] Fast fixed-base `scalar_mult_base` (TODO in `x25519.rs`). Options: an Edwards comb table as
+  BC Java does (`Ed25519.scalarMultBaseYZ`, then u = (Z+Y)/(Z−Y); ~7.7 KB rodata, est. 2.5–3x
+  faster keygen, needs the Ed25519 point arithmetic), or a ladder specialised to u = 9 (no table,
+  est. ~10%). Probably best done with the Ed25519 phase's fixed-base comb tables.
 - [x] Rethink the name of this crate: `bouncycastle-ed` is kindo the wrong name (but maybe nothing better exists?)
 
 ---
