@@ -131,15 +131,20 @@ impl Poly1305Key {
     /// RFC 8439 Sec 2.5's `clamp(r)` and its split of the key into `r` and `s`.
     fn from_key_bytes(bytes: &[u8; KEY_LEN]) -> Self {
         let mut r: Secret<[u64; 5]> = Secret::new();
-        // RFC 8439 clamping, expressed directly in the radix-2^26 representation.
-        r[0] = load32(&bytes[0..4]) & 0x3ffffff;
-        r[1] = (load32(&bytes[3..7]) >> 2) & 0x3ffff03;
-        r[2] = (load32(&bytes[6..10]) >> 4) & 0x3ffc0ff;
-        r[3] = (load32(&bytes[9..13]) >> 6) & 0x3f03fff;
-        r[4] = (load32(&bytes[12..16]) >> 8) & 0x00fffff;
+        // Sec 2.5's `clamp(r): r &= 0x0ffffffc0ffffffc0ffffffc0fffffff`, little-endian: the top
+        // four bits of bytes 3, 7, 11 and 15 and the low two bits of bytes 4, 8 and 12 are
+        // cleared. Each limb is 26 bits of `r` read from a 32-bit window, so those bits land in
+        // the limb masks: none in limb 0, bits 2-7 of limb 1, 8-13 of limb 2, 14-19 of limb 3,
+        // and 20-23 of limb 4, which has only 24 bits to begin with.
+        r[0] = load32(bytes, 0) & 0x3ffffff;
+        r[1] = (load32(bytes, 3) >> 2) & 0x3ffff03;
+        r[2] = (load32(bytes, 6) >> 4) & 0x3ffc0ff;
+        r[3] = (load32(bytes, 9) >> 6) & 0x3f03fff;
+        r[4] = (load32(bytes, 12) >> 8) & 0x00fffff;
         let mut pad: Secret<[u32; 4]> = Secret::new();
-        for (word, chunk) in pad.iter_mut().zip(bytes[16..].chunks_exact(4)) {
-            *word = u32::from_le_bytes(chunk.try_into().unwrap());
+        let (s_words, _) = bytes[16..].as_chunks::<4>();
+        for (word, chunk) in pad.iter_mut().zip(s_words) {
+            *word = u32::from_le_bytes(*chunk);
         }
         let mut r5: Secret<[u64; 4]> = Secret::new();
         for (r5, r) in r5.iter_mut().zip(&r[1..]) {
@@ -194,11 +199,11 @@ impl Poly1305 {
     /// "one bit beyond the number of octets": `FULL_BLOCK_BIT` for a full block, or 0 for the
     /// final partial one, which carries that bit as a `0x01` byte the caller has written in.
     fn process_block(&mut self, block: &[u8; BLOCK_LEN], high_bit: u64) {
-        self.h[0] += load32(&block[0..4]) & MASK;
-        self.h[1] += (load32(&block[3..7]) >> 2) & MASK;
-        self.h[2] += (load32(&block[6..10]) >> 4) & MASK;
-        self.h[3] += (load32(&block[9..13]) >> 6) & MASK;
-        self.h[4] += (load32(&block[12..16]) >> 8) | high_bit;
+        self.h[0] += load32(block, 0) & MASK;
+        self.h[1] += (load32(block, 3) >> 2) & MASK;
+        self.h[2] += (load32(block, 6) >> 4) & MASK;
+        self.h[3] += (load32(block, 9) >> 6) & MASK;
+        self.h[4] += (load32(block, 12) >> 8) | high_bit;
 
         // 2^130 = 5 (mod 2^130 - 5). Each sum is below 2^58, so u64 suffices.
         let product = &mut *self.product;
@@ -229,9 +234,10 @@ impl Poly1305 {
     fn finalize(mut self) -> [u8; TAG_LEN] {
         if self.buffered != 0 {
             // The last, partial block: Sec 2.5.1's `| [0x01]` after its bytes, then zeros.
+            // The bytes past `buffered` are already zero: the buffer is a fresh `Secret`
+            // whenever a block completes, and `do_update` writes only the first `buffered`.
             let mut block = core::mem::replace(&mut self.buffer, Secret::new());
             block[self.buffered] = 1;
-            block[self.buffered + 1..].fill(0);
             self.process_block(&block, 0);
         }
         for i in 1..4 {
@@ -275,8 +281,10 @@ impl Poly1305 {
     }
 }
 
-fn load32(bytes: &[u8]) -> u64 {
-    u64::from(u32::from_le_bytes(bytes.try_into().unwrap()))
+/// The little-endian 32-bit word at `at`, as the `u64` the limb arithmetic works in. Every call
+/// site reads a fixed window of a fixed-length array, so the indices cannot miss.
+fn load32<const N: usize>(bytes: &[u8; N], at: usize) -> u64 {
+    u64::from(u32::from_le_bytes([bytes[at], bytes[at + 1], bytes[at + 2], bytes[at + 3]]))
 }
 
 impl MAC for Poly1305 {
