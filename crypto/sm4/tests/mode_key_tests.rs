@@ -1,0 +1,160 @@
+//! The SM4 key through the shared conformance suites: construction policy for every mode a key
+//! can carry, then the block, symmetric, stream and AEAD suites.
+
+use bouncycastle_cipher::modes::hazmat::ecb::ECB;
+use bouncycastle_cipher::modes::{Blocks, CBC, CFB, CFB8, CMAC, CTR, GCM, ModeNames};
+use bouncycastle_cipher::padding::{NoPadding, PKCS7};
+use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
+use bouncycastle_core::hazmat::Mode;
+use bouncycastle_core::key_material::{KeyMaterial, KeyType};
+use bouncycastle_core::security_strength::SecurityStrength;
+use bouncycastle_core::symmetric_key::{AeadDecryptionKey, AeadEncryptionKey, FromKeyMaterial};
+use bouncycastle_core_test_framework::aead::{
+    TestFrameworkAEADCipher, TestFrameworkAEADTaggedLayout,
+};
+use bouncycastle_core_test_framework::block_cipher::TestFrameworkBlockCipher;
+use bouncycastle_core_test_framework::from_key_material::TestFrameworkFromKeyMaterial;
+use bouncycastle_core_test_framework::symmetric_ciphers::{
+    TestFrameworkStreamCipher, TestFrameworkSymmetricCipher,
+};
+use bouncycastle_rng::HashDRBG_SHA512;
+use bouncycastle_sm4::hazmat::SM4Internal;
+use bouncycastle_sm4::{KEY_LEN, SM4Key};
+
+fn material() -> KeyMaterial<KEY_LEN> {
+    let bytes: [u8; KEY_LEN] = core::array::from_fn(|i| (i as u8).wrapping_mul(7).wrapping_add(1));
+    KeyMaterial::<KEY_LEN>::from_bytes_as_type(&bytes, KeyType::SymmetricCipherKey)
+        .expect("a valid key")
+}
+
+fn key<M: Mode<SM4Internal>>() -> SM4Key<M> {
+    SM4Key::from_key_material(&material()).expect("a valid key")
+}
+
+fn rng() -> HashDRBG_SHA512 {
+    HashDRBG_SHA512::new_from_os()
+}
+
+/// The construction suite -- key type, strength and `generate` -- for the mode `M`, against the
+/// name the permutation gives that mode.
+fn construction_suite<M: Mode<SM4Internal>>(name: &'static str) {
+    TestFrameworkFromKeyMaterial::new().test::<KEY_LEN, SM4Key<M>>(name, SecurityStrength::_128bit);
+}
+
+#[test]
+fn every_mode_key_enforces_the_material_policy() {
+    construction_suite::<CBC<Blocks>>(SM4Internal::CBC_ALG_NAME);
+    construction_suite::<CBC<PKCS7>>(SM4Internal::CBC_ALG_NAME);
+    construction_suite::<CBC<NoPadding>>(SM4Internal::CBC_ALG_NAME);
+    construction_suite::<ECB<PKCS7>>(SM4Internal::ECB_ALG_NAME);
+    construction_suite::<CFB>(SM4Internal::CFB_ALG_NAME);
+    construction_suite::<CFB8>(SM4Internal::CFB8_ALG_NAME);
+    construction_suite::<CTR>(SM4Internal::CTR_ALG_NAME);
+    construction_suite::<GCM>(SM4Internal::GCM_ALG_NAME);
+    construction_suite::<GCM<12>>(SM4Internal::GCM_ALG_NAME);
+}
+
+/// A key under a MAC mode has no role here, and its `KEY_TYPE` is the `MACKey` the mode asks
+/// for: cipher material is refused for its type, and MAC material by the permutation, so the
+/// constructor never contradicts the constant and `generate` fails the same way.
+#[test]
+fn a_mac_mode_key_refuses_every_material_consistently() {
+    type MacKey = SM4Key<CMAC<16>>;
+    assert_eq!(MacKey::KEY_TYPE, KeyType::MACKey);
+    let refused = |r: Result<MacKey, SymmetricCipherError>| {
+        assert!(matches!(
+            r,
+            Err(SymmetricCipherError::KeyMaterialError(KeyMaterialError::InvalidKeyType(_)))
+        ));
+    };
+    refused(MacKey::from_key_material(&material()));
+    let mac_material =
+        KeyMaterial::<KEY_LEN>::from_bytes_as_type(&[0x42; KEY_LEN], KeyType::MACKey).unwrap();
+    refused(MacKey::from_key_material(&mac_material));
+    refused(MacKey::generate(&mut rng()));
+}
+
+#[test]
+fn cbc_blocks_key_passes_the_block_cipher_framework() {
+    TestFrameworkBlockCipher::new().test_key::<16, 16, 16, _>(&key::<CBC<Blocks>>(), &mut rng());
+}
+
+#[test]
+fn padded_keys_pass_the_symmetric_cipher_framework() {
+    let framework = TestFrameworkSymmetricCipher::new();
+    framework.test_key::<16, 16, 16, _>(&key::<CBC<PKCS7>>(), &mut rng());
+    framework.test_key::<16, 0, 16, _>(&key::<ECB<PKCS7>>(), &mut rng());
+}
+
+/// `NoPadding` turns the adapters into an alignment check: the framework is told so, and asserts
+/// that every other length is refused.
+#[test]
+fn no_padding_key_passes_the_symmetric_cipher_framework() {
+    let mut framework = TestFrameworkSymmetricCipher::new();
+    framework.required_alignment = 16;
+    framework.test_key::<16, 16, 16, _>(&key::<CBC<NoPadding>>(), &mut rng());
+}
+
+#[test]
+fn stream_mode_keys_pass_the_stream_cipher_framework() {
+    let framework = TestFrameworkStreamCipher::new();
+    framework.test_key::<16, 16, _>(&key::<CFB>(), &mut rng());
+    framework.test_key::<16, 16, _>(&key::<CFB8>(), &mut rng());
+    framework.test_key::<16, 12, _>(&key::<CTR>(), &mut rng());
+}
+
+/// The AEAD suite, which reaches the no-AAD symmetric contract as the AEAD one with an empty
+/// AAD, and the inline `ciphertext || tag` layout at every byte-boundary edge. RFC 8998
+/// Appendix A.1 and the Wycheproof SM4-GCM set pin the algorithm itself beside this file.
+#[test]
+fn gcm_key_passes_the_aead_frameworks() {
+    TestFrameworkAEADCipher::new().test_key::<16, 12, 16, 16, _>(&key::<GCM>(), &mut rng());
+    TestFrameworkAEADTaggedLayout::new().test_key::<16, 12, 16, 16, _>(&key::<GCM>());
+}
+
+/// The nonce is generated per encryption, so the same plaintext gives different ciphertext, and
+/// each still round-trips.
+#[test]
+fn each_gcm_encryption_gets_a_fresh_nonce() {
+    let data = *b"the quick brown fox jumps over the lazy dog!!!";
+    let key = key::<GCM>();
+    let mut rng = rng();
+    let mut seen = std::collections::BTreeSet::new();
+    for _ in 0..16 {
+        let mut ct = [0u8; 46];
+        let (_, nonce, tag) = key.encrypt_detached_out(&mut rng, b"aad", &data, &mut ct).unwrap();
+        assert!(seen.insert(nonce), "nonce repeated across encryptions");
+        let mut pt = [0u8; 46];
+        key.decrypt_detached_out(&nonce, b"aad", &ct, &tag, &mut pt).unwrap();
+        assert_eq!(pt, data);
+    }
+}
+
+/// The sizes the docs quote: the schedule alone for the unauthenticated modes, plus the hash
+/// subkey under `GCM`.
+#[test]
+fn key_sizes_are_the_documented_ones() {
+    use core::mem::size_of;
+    assert_eq!(size_of::<SM4Key<CTR>>(), 128);
+    assert_eq!(size_of::<SM4Key<GCM>>(), 144);
+}
+
+/// `material()` with one bit of its last byte flipped.
+fn material_flipped() -> KeyMaterial<KEY_LEN> {
+    let mut bytes: [u8; KEY_LEN] =
+        core::array::from_fn(|i| (i as u8).wrapping_mul(7).wrapping_add(1));
+    bytes[KEY_LEN - 1] ^= 1;
+    KeyMaterial::<KEY_LEN>::from_bytes_as_type(&bytes, KeyType::SymmetricCipherKey)
+        .expect("a valid key")
+}
+
+/// Equality is over the expanded schedule, so it follows the material: the same bytes compare
+/// equal, as does a clone, and a single flipped bit does not. Keys have no `Debug`, hence
+/// `assert!` over `==`.
+#[test]
+fn keys_compare_equal_exactly_when_their_material_does() {
+    let ctr_key = key::<CTR>();
+    assert!(ctr_key == ctr_key.clone());
+    assert!(ctr_key == key::<CTR>());
+    assert!(ctr_key != SM4Key::<CTR>::from_key_material(&material_flipped()).unwrap());
+}
