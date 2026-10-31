@@ -13,7 +13,9 @@
 //! data of any length (padded CBC, CFB, CFB8, CTR), [`BlockEncryptMode`] / [`BlockDecryptMode`]
 //! for one that takes whole blocks (CBC with no padding layer), and [`EcbEncryptMode`] /
 //! [`EcbDecryptMode`] for ECB, which has no init data and so takes no RNG. A MAC mode -- CMAC --
-//! implements [`MacMode`], whose worker takes no nonce and serves both roles.
+//! implements [`MacMode`], whose worker takes no nonce and serves both roles; a nonce-based MAC
+//! -- GMAC -- implements [`NonceMacMode`], whose generator and verifier are made as an AEAD
+//! mode's workers are.
 //!
 //! Every worker borrows the key state it is made from, for the lifetime `'k` on the mode's
 //! associated worker type: the schedule stays in the key and is read through the reference, so
@@ -413,4 +415,42 @@ pub trait MacMode<P>: Mode<P> {
     /// Begins a MAC over a new message from `state`. Infallible: the state is keyed and there is
     /// nothing to draw.
     fn mac_init<'k>(state: &'k Self::KeyState) -> Self::Worker<'k>;
+}
+
+/// A nonce-based MAC mode over `P` -- GMAC -- whose tag is bound to a nonce, so its two sides are
+/// made as an AEAD mode's workers are: the generator under a nonce drawn from an RNG or supplied
+/// by the caller, the verifier under the nonce the tag was made under. There is no role trait
+/// for it in [`crate::symmetric_key`], GMAC being the only such MAC in the tree; a key type's
+/// inherent generator/verifier pair forwards here.
+pub trait NonceMacMode<P, const NONCE_LEN: usize, const TAG_LEN: usize>: Mode<P> {
+    /// The streaming generator this mode produces over `P`, borrowing the key state for `'k`.
+    type Generator<'k>
+    where
+        P: 'k;
+
+    /// The streaming verifier this mode produces over `P`, borrowing the key state for `'k`.
+    type Verifier<'k>
+    where
+        P: 'k;
+
+    /// Begins a tag from `state` under a nonce drawn from `rng`, which is returned with the
+    /// generator.
+    ///
+    /// # Errors
+    /// [`SymmetricCipherError::RNGError`] if the nonce draw fails; nothing else can.
+    fn generate_init<'k>(
+        state: &'k Self::KeyState,
+        rng: &mut dyn RNG,
+    ) -> Result<(Self::Generator<'k>, [u8; NONCE_LEN]), SymmetricCipherError>;
+
+    /// Begins a tag from `state` under a nonce the caller supplies, who takes on the obligation
+    /// that it never repeat under this key.
+    fn generate_init_nonce<'k>(
+        state: &'k Self::KeyState,
+        nonce: &[u8; NONCE_LEN],
+    ) -> Self::Generator<'k>;
+
+    /// Begins the verification of a tag made under `nonce` from `state`. Infallible: the state
+    /// is keyed and the nonce length is in the type.
+    fn verify_init<'k>(state: &'k Self::KeyState, nonce: &[u8; NONCE_LEN]) -> Self::Verifier<'k>;
 }
