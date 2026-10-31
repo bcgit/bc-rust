@@ -263,7 +263,7 @@ impl ChaCha20_Poly1305<'_, Encrypting> {
 
 impl ChaCha20_Poly1305<'_, Decrypting> {
     fn decrypt_bytes(&mut self, data: &mut [u8]) -> Result<(), SymmetricCipherError> {
-        self.check_data_len(data.len())?;
+        // Both callers have already checked the length, before copying anything.
         self.start_data();
         self.mac.do_update(data);
         self.cipher.do_decrypt_inplace(data)?;
@@ -398,6 +398,7 @@ impl AEADCipherDecryptor<NONCE_LEN, TAG_LEN, TAG_LEN> for ChaCha20_Poly1305<'_, 
     ) -> Result<usize, SymmetricCipherError> {
         plaintext.fill(0);
         let n = self.held_len;
+        self.check_data_len(n)?;
         // Decrypted aside and copied out only once the tag verifies, so a failed check never
         // writes unauthenticated bytes to `plaintext`.
         let mut last: Secret<[u8; TAG_LEN]> = Secret::new();
