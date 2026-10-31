@@ -1098,7 +1098,7 @@ pub trait KeyAgreement<
     /// Note that this returns a public key. The caller is responsible for using a [`KDF`] to
     /// derive a shared symmetric key from it.
     /// Alternatively, most algorithms that impl [`KeyAgreement`] should also impl
-    /// [`KEMEncapsulator`] / [`KEMDecapsulator`]
+    /// [`KEMEncapsulator`] / [`KEMDecapsulator`], which will include a KDF step and return a [`KeyMaterial`].
     fn key_agreement(pk: &PK, sk: &SK) -> Result<PK, KeyAgreementError>;
 }
 
