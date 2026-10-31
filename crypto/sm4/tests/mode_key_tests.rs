@@ -1,14 +1,17 @@
 //! The SM4 key through the shared conformance suites: construction policy for every mode a key
-//! can carry, then the block, symmetric and stream suites.
+//! can carry, then the block, symmetric, stream and AEAD suites.
 
 use bouncycastle_cipher::modes::hazmat::ecb::ECB;
-use bouncycastle_cipher::modes::{Blocks, CBC, CFB, CFB8, CMAC, CTR, ModeNames};
+use bouncycastle_cipher::modes::{Blocks, CBC, CFB, CFB8, CMAC, CTR, GCM, ModeNames};
 use bouncycastle_cipher::padding::{NoPadding, PKCS7};
 use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
 use bouncycastle_core::hazmat::Mode;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::symmetric_key::FromKeyMaterial;
+use bouncycastle_core::symmetric_key::{AeadDecryptionKey, AeadEncryptionKey, FromKeyMaterial};
+use bouncycastle_core_test_framework::aead::{
+    TestFrameworkAEADCipher, TestFrameworkAEADTaggedLayout,
+};
 use bouncycastle_core_test_framework::block_cipher::TestFrameworkBlockCipher;
 use bouncycastle_core_test_framework::from_key_material::TestFrameworkFromKeyMaterial;
 use bouncycastle_core_test_framework::symmetric_ciphers::{
@@ -47,6 +50,8 @@ fn every_mode_key_enforces_the_material_policy() {
     construction_suite::<CFB>(SM4Internal::CFB_ALG_NAME);
     construction_suite::<CFB8>(SM4Internal::CFB8_ALG_NAME);
     construction_suite::<CTR>(SM4Internal::CTR_ALG_NAME);
+    construction_suite::<GCM>(SM4Internal::GCM_ALG_NAME);
+    construction_suite::<GCM<12>>(SM4Internal::GCM_ALG_NAME);
 }
 
 /// A key under a MAC mode has no role here, and its `KEY_TYPE` is the `MACKey` the mode asks
@@ -96,6 +101,42 @@ fn stream_mode_keys_pass_the_stream_cipher_framework() {
     framework.test_key::<16, 16, _>(&key::<CFB>(), &mut rng());
     framework.test_key::<16, 16, _>(&key::<CFB8>(), &mut rng());
     framework.test_key::<16, 12, _>(&key::<CTR>(), &mut rng());
+}
+
+/// The AEAD suite, which reaches the no-AAD symmetric contract as the AEAD one with an empty
+/// AAD, and the inline `ciphertext || tag` layout at every byte-boundary edge. RFC 8998
+/// Appendix A.1 and the Wycheproof SM4-GCM set pin the algorithm itself beside this file.
+#[test]
+fn gcm_key_passes_the_aead_frameworks() {
+    TestFrameworkAEADCipher::new().test_key::<16, 12, 16, 16, _>(&key::<GCM>(), &mut rng());
+    TestFrameworkAEADTaggedLayout::new().test_key::<16, 12, 16, 16, _>(&key::<GCM>());
+}
+
+/// The nonce is generated per encryption, so the same plaintext gives different ciphertext, and
+/// each still round-trips.
+#[test]
+fn each_gcm_encryption_gets_a_fresh_nonce() {
+    let data = *b"the quick brown fox jumps over the lazy dog!!!";
+    let key = key::<GCM>();
+    let mut rng = rng();
+    let mut seen = std::collections::BTreeSet::new();
+    for _ in 0..16 {
+        let mut ct = [0u8; 46];
+        let (_, nonce, tag) = key.encrypt_detached_out(&mut rng, b"aad", &data, &mut ct).unwrap();
+        assert!(seen.insert(nonce), "nonce repeated across encryptions");
+        let mut pt = [0u8; 46];
+        key.decrypt_detached_out(&nonce, b"aad", &ct, &tag, &mut pt).unwrap();
+        assert_eq!(pt, data);
+    }
+}
+
+/// The sizes the docs quote: the schedule alone for the unauthenticated modes, plus the hash
+/// subkey under `GCM`.
+#[test]
+fn key_sizes_are_the_documented_ones() {
+    use core::mem::size_of;
+    assert_eq!(size_of::<SM4Key<CTR>>(), 128);
+    assert_eq!(size_of::<SM4Key<GCM>>(), 144);
 }
 
 /// `material()` with one bit of its last byte flipped.

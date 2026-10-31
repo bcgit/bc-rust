@@ -1,29 +1,28 @@
 //! Known-answer tests against Project Wycheproof's `testvectors_v1/sm4_gcm_test.json`, through
-//! the `GCM` hazmat mode traits over `SM4Internal`'s key state.
+//! `SM4Key<GCM>`'s detached one-shots.
 //!
 //! The same suite as `crypto/aes/tests/gcm_wycheproof.rs` at SM4's one key length; see that file
-//! for what the set probes and why only the 96-bit-IV groups have an instantiation to dispatch to
-//! (`Gcm` fixes the nonce at `GCM_NONCE_LEN`). The key carries no AEAD role, so the cases run
-//! over the mode's key state directly, as `rfc8998_tests.rs` does. Requires the Wycheproof
-//! repository at `../wycheproof`; absent, the test warns and passes.
+//! for what the set probes, why only the 96-bit-IV groups have an instantiation to dispatch to
+//! (`Gcm` fixes the nonce at `GCM_NONCE_LEN`), and the seeded-RNG technique that makes the key
+//! draw the vector's IV. Requires the Wycheproof repository at `../wycheproof`; absent, the test
+//! warns and passes.
 
 use bouncycastle_cipher::modes::{GCM, GCM_NONCE_LEN};
 use bouncycastle_core::errors::SymmetricCipherError;
-use bouncycastle_core::hazmat::{
-    AeadDecryptMode, AeadEncryptMode, ElectronicCodeBook, Mode, do_hazardous_operations,
-};
+use bouncycastle_core::hazmat::do_hazardous_operations;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
+use bouncycastle_core::symmetric_key::{AeadDecryptionKey, AeadEncryptionKey, FromKeyMaterial};
+use bouncycastle_core_test_framework::FixedSeedRNG;
 use bouncycastle_core_test_framework::test_data_loaders::{Value, hex_field, wycheproof_json};
-use bouncycastle_sm4::KEY_LEN;
-use bouncycastle_sm4::hazmat::SM4Internal;
+use bouncycastle_sm4::{KEY_LEN, SM4Key};
 
 /// The tag length every group in the file uses.
 const TAG_LEN: usize = 16;
 
-/// The `GCM` key state for the vector's raw key bytes, promoted if `KeyMaterial`'s entropy
-/// heuristic declined to call them a cipher key.
-fn key_state(bytes: &[u8]) -> <GCM as Mode<SM4Internal>>::KeyState {
+/// The key for the vector's raw key bytes, promoted if `KeyMaterial`'s entropy heuristic
+/// declined to call them a cipher key.
+fn gcm_key(bytes: &[u8]) -> SM4Key<GCM> {
     let mut key = KeyMaterial::<KEY_LEN>::from_bytes_as_type(bytes, KeyType::SymmetricCipherKey)
         .expect("wycheproof key bytes fit the buffer");
     if key.key_type() != KeyType::SymmetricCipherKey {
@@ -33,9 +32,7 @@ fn key_state(bytes: &[u8]) -> <GCM as Mode<SM4Internal>>::KeyState {
         })
         .expect("promoting a wycheproof test key");
     }
-    <GCM as Mode<SM4Internal>>::key_state(
-        <SM4Internal as ElectronicCodeBook<KEY_LEN, 16>>::new(&key).expect("a wycheproof key"),
-    )
+    SM4Key::from_key_material(&key).expect("a wycheproof key")
 }
 
 /// Runs one case. A valid case must encrypt to exactly `expected_ct`/`expected_tag` under the
@@ -52,31 +49,28 @@ fn run_case(
     expected_tag: &[u8],
     valid: bool,
 ) {
-    let state = key_state(key_bytes);
+    let key = gcm_key(key_bytes);
     let tag: [u8; TAG_LEN] =
         expected_tag.try_into().unwrap_or_else(|_| panic!("tcId {tc_id}: bad tag length"));
 
     if valid {
-        let mut ct = msg.to_vec();
-        let encrypt = <GCM as AeadEncryptMode<
-            SM4Internal,
-            KEY_LEN,
-            GCM_NONCE_LEN,
-            TAG_LEN,
-            TAG_LEN,
-        >>::encrypt_detached_in_place_nonce;
-        let got_tag = encrypt(&state, &iv, aad, &mut ct)
+        let mut ct = vec![0u8; msg.len()];
+        let (written, got_iv, got_tag) = key
+            .encrypt_detached_out(&mut FixedSeedRNG::<GCM_NONCE_LEN>::new(iv), aad, msg, &mut ct)
             .unwrap_or_else(|e| panic!("tcId {tc_id}: valid case failed to encrypt: {e:?}"));
+        assert_eq!(got_iv, iv, "tcId {tc_id}: the seeded RNG must reproduce the vector's IV");
+        assert_eq!(written, msg.len(), "tcId {tc_id}: encrypt_detached writes exactly msg.len()");
         assert_eq!(ct, expected_ct, "tcId {tc_id}: ciphertext mismatch");
         assert_eq!(got_tag, tag, "tcId {tc_id}: tag mismatch");
     }
 
-    let mut plaintext = expected_ct.to_vec();
-    let decrypt = <GCM as AeadDecryptMode<SM4Internal, KEY_LEN, GCM_NONCE_LEN, TAG_LEN, TAG_LEN>>::
-        decrypt_detached_in_place;
-    match decrypt(&state, &iv, aad, &mut plaintext, &tag) {
-        Ok(()) => {
+    // Pre-filled with a non-zero byte, so a buffer the decryptor never wrote is not mistaken for
+    // one it zeroized.
+    let mut plaintext = vec![0xEEu8; expected_ct.len()];
+    match key.decrypt_detached_out(&iv, aad, expected_ct, &tag, &mut plaintext) {
+        Ok(n) => {
             assert!(valid, "tcId {tc_id}: an invalid vector decrypted and verified anyway");
+            plaintext.truncate(n);
             assert_eq!(plaintext, msg, "tcId {tc_id}: decrypted plaintext mismatch");
         }
         Err(SymmetricCipherError::AEADTagCheckFailed) => {

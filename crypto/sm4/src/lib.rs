@@ -21,9 +21,11 @@
 //! A key is built once, under a mode from `bouncycastle_cipher::modes`, and used for as many
 //! messages as needed: `CBC<PKCS7>` for CBC (Sec 8.4; NIST SP 800-38A Sec 6.2) with PKCS#7
 //! padding, `CFB` for SM4-CFB-128 (Sec 8.5.1), `CFB8` for SM4-CFB-8, the `s = 8` segment size,
-//! which is a different and non-interoperable mode costing one SM4 call per byte, and `CTR` for
-//! CTR (Sec 8.7) with a 12-byte nonce and a 4-byte counter. The aliases [`SM4_CBC`], [`SM4_CFB`],
-//! [`SM4_CFB8`] and [`SM4_CTR`] name the workers the key hands out.
+//! which is a different and non-interoperable mode costing one SM4 call per byte, `CTR` for
+//! CTR (Sec 8.7) with a 12-byte nonce and a 4-byte counter, and `GCM` for the authenticated mode
+//! RFC 8998 Sec 3.5.1 defines as `AEAD_SM4_GCM`, with a 12-byte nonce and a 16-byte tag. The
+//! aliases [`SM4_CBC`], [`SM4_CFB`], [`SM4_CFB8`], [`SM4_CTR`] and [`SM4_GCM`] name the workers
+//! the key hands out.
 //!
 //! CBC is a block cipher, so it is defined only on whole blocks and the key's mode carries a
 //! padding scheme to bridge the difference; the CFB modes and CTR are stream ciphers and take any
@@ -277,9 +279,9 @@
 //!   A.2.4, the SM4-CTR vectors of Appendix A.2.5 (through a reference built from the Sec 8.7.1
 //!   equations, which the `CTR` key is then held to -- see `tests/stream_mode_tests.rs` for
 //!   why the published counter blocks are not ones it produces), plus GB/T 32907-2016's own
-//!   two examples as republished at <https://eprint.iacr.org/2008/329.pdf>. RFC 8998 Appendix A
-//!   and Project Wycheproof's `sm4_gcm_test.json` and `sm4_ccm_test.json` are run through the
-//!   `GCM` and `CCM` mode traits over the engine.
+//!   two examples as republished at <https://eprint.iacr.org/2008/329.pdf>. RFC 8998 Appendix
+//!   A.1 and Project Wycheproof's `sm4_gcm_test.json` run through the `GCM` key; Appendix A.2
+//!   and `sm4_ccm_test.json` through the `CCM` mode traits over the engine.
 
 #![no_std]
 #![forbid(unsafe_code)]
@@ -290,6 +292,7 @@ mod cbc;
 mod cfb;
 mod cfb8;
 mod ctr;
+mod gcm;
 pub mod hazmat;
 mod key;
 mod sbox;
@@ -309,6 +312,7 @@ pub use cbc::SM4_CBC;
 pub use cfb::SM4_CFB;
 pub use cfb8::SM4_CFB8;
 pub use ctr::{CTR_NONCE_LEN, SM4_CTR};
+pub use gcm::SM4_GCM;
 pub use key::SM4Key;
 
 // Imports needed for docs
