@@ -828,6 +828,30 @@ mod hkdf_tests {
         ));
     }
 
+    /// The entropy counter is bookkeeping a resumed state may set to anything: the next credit
+    /// saturates rather than overflowing.
+    #[test]
+    fn a_resumed_entropy_counter_saturates() {
+        use bouncycastle_core::traits::SuspendableKeyed;
+        use bouncycastle_sha2::hkdf::SUSPENDED_HKDF_SHA256_STATE_LEN;
+
+        let salt = KeyMaterial128::from_bytes_as_type(&DUMMY_SEED[..16], KeyType::MACKey).unwrap();
+        let full_entropy =
+            KeyMaterial128::from_bytes_as_type(&DUMMY_SEED[16..32], KeyType::CryptographicRandom)
+                .unwrap();
+        let mut hkdf = HKDF_SHA256::new();
+        hkdf.do_extract_init(&salt).unwrap();
+        let mut state = hkdf.suspend();
+        // Layout: [version(3) | present flag | hmac blob | state | entropy(8) | strength].
+        let entropy_idx = SUSPENDED_HKDF_SHA256_STATE_LEN - 9;
+        state[entropy_idx..entropy_idx + 8].copy_from_slice(&u64::MAX.to_le_bytes());
+
+        let mut resumed = HKDF_SHA256::from_suspended(state, &salt).unwrap();
+        assert_eq!(resumed.get_entropy(), usize::MAX);
+        assert_eq!(resumed.do_extract_update_key(&full_entropy).unwrap(), 16);
+        assert_eq!(resumed.get_entropy(), usize::MAX);
+    }
+
     /// RFC 5869 Sec 2.3: "OKM = first L octets of T", for any L up to 255 * HashLen, so a shorter
     /// output is a prefix of a longer one. Every L from 0 to 200 covers each value of L mod HashLen
     /// for both hashes: the last block used to be produced as an HMAC truncated to the remaining

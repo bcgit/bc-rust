@@ -186,9 +186,9 @@
 //!
 //! | Object                                            | Size (bytes) |
 //! |---------------------------------------------------|--------------|
-//! | `HKDF_SHA256`                                     | 256          |
-//! | `HKDF_SHA384`                                     | 448          |
-//! | `HKDF_SHA512`                                     | 448          |
+//! | `HKDF_SHA256`                                     | 368          |
+//! | `HKDF_SHA384`                                     | 656          |
+//! | `HKDF_SHA512`                                     | 656          |
 //! | Suspended `HKDF_SHA256` state                     | 122          |
 //! | Suspended `HKDF_SHA384` state                     | 218          |
 //! | Suspended `HKDF_SHA512` state                     | 218          |

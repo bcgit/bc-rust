@@ -46,7 +46,7 @@ use crate::{AESKey, AESParams};
 use bouncycastle_cipher::modes::{GCM_NONCE_LEN, GMAC, Gmac, ModeNames};
 use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::errors::SymmetricCipherError;
-use bouncycastle_core::hazmat::BlockPermutation;
+use bouncycastle_core::hazmat::{BlockPermutation, NonceMacMode};
 use bouncycastle_core::traits::RNG;
 
 // Imports needed for docs
@@ -68,7 +68,8 @@ pub type AES_GMAC_192<'k, Dir> = Gmac<'k, AES192Internal, Dir, 16>;
 pub type AES_GMAC_256<'k, Dir> = Gmac<'k, AES256Internal, Dir, 16>;
 
 // The pair is inherent on the key rather than a role trait, since a GMAC tag is bound to a nonce;
-// one impl over every AES key length.
+// one impl over every AES key length, forwarding to the mode's `NonceMacMode` impl as the role
+// impls forward to theirs.
 impl<P, const TAG_LEN: usize> AESKey<P, GMAC<TAG_LEN>>
 where
     P: AESParams,
@@ -85,7 +86,7 @@ where
         (Gmac<'k, AESInternal<P>, Encrypting, TAG_LEN>, [u8; GCM_NONCE_LEN]),
         SymmetricCipherError,
     > {
-        Gmac::<AESInternal<P>, Encrypting, TAG_LEN>::from_key_state(&self.state, rng)
+        GMAC::<TAG_LEN>::generate_init(&self.state, rng)
     }
 
     /// Begins a tag under a nonce the caller supplies, who takes on the obligation that it never
@@ -94,7 +95,7 @@ where
         &'k self,
         nonce: &[u8; GCM_NONCE_LEN],
     ) -> Gmac<'k, AESInternal<P>, Encrypting, TAG_LEN> {
-        Gmac::<AESInternal<P>, Encrypting, TAG_LEN>::from_key_state_nonce(&self.state, nonce)
+        GMAC::<TAG_LEN>::generate_init_nonce(&self.state, nonce)
     }
 
     /// Begins the verification of a tag made under `nonce`. Infallible.
@@ -102,6 +103,6 @@ where
         &'k self,
         nonce: &[u8; GCM_NONCE_LEN],
     ) -> Gmac<'k, AESInternal<P>, Decrypting, TAG_LEN> {
-        Gmac::<AESInternal<P>, Decrypting, TAG_LEN>::from_key_state(&self.state, nonce)
+        GMAC::<TAG_LEN>::verify_init(&self.state, nonce)
     }
 }

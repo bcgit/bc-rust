@@ -5,7 +5,10 @@ use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::symmetric_key::{FromAnyKeyMaterial, MacGenerationKey, MacVerificationKey};
 use bouncycastle_core::traits::{Algorithm, Hash, MAC, XOF, XOFSqueezer};
 use bouncycastle_core_test_framework::from_key_material::TestFrameworkFromAnyKeyMaterial;
-use bouncycastle_sha3::kmac::{KMAC128, KMAC128Key, KMAC256, KMAC256Key, KMACXOF128, KMACXOF256};
+use bouncycastle_sha3::kmac::{
+    KMAC_MAX_OUTPUT_LEN, KMAC_MIN_OUTPUT_LEN, KMAC128, KMAC128Key, KMAC256, KMAC256Key, KMACXOF128,
+    KMACXOF256,
+};
 
 /// A 32-byte MAC key carries a 256-bit strength, so it satisfies both KMAC128 and KMAC256 without
 /// the weak-key escape hatch.
@@ -253,4 +256,37 @@ fn kmacxof_hash_view_partial_bits() {
         fresh().do_final_partial_bits_out(0xF0, 4, &mut out),
         Err(bouncycastle_core::errors::HashError::InvalidLength(_))
     ));
+}
+
+/// SP 800-185 Sec 8.4.2's floor and the `right_encode` cap, on both constructors: below the floor
+/// a zero-length tag would verify every message, above the cap `8 * L` does not fit the `u64`.
+#[test]
+fn output_length_is_bounded() {
+    let key = key_material(&[0x42; 32]);
+    assert_eq!(KMAC_MIN_OUTPUT_LEN, 4);
+    for n in 0..KMAC_MIN_OUTPUT_LEN {
+        assert!(
+            matches!(KMAC128Key::with_params(&key, b"", n), Err(MACError::InvalidLength(_))),
+            "an output length of {n} must be refused"
+        );
+        assert!(
+            matches!(
+                KMAC256Key::with_params_allow_weak(&key, b"", n),
+                Err(MACError::InvalidLength(_))
+            ),
+            "an output length of {n} must be refused by the weak-key form too"
+        );
+    }
+    let shortest = KMAC128Key::with_params(&key, b"", KMAC_MIN_OUTPUT_LEN).unwrap();
+    assert_eq!(shortest.mac(b"abc").len(), KMAC_MIN_OUTPUT_LEN);
+    assert!(!shortest.create_verifier().verify(b"abc", &[]), "an empty tag never verifies");
+
+    // Construction only: the length is absorbed at the final, nothing is allocated for it here.
+    assert!(KMAC128Key::with_params(&key, b"", KMAC_MAX_OUTPUT_LEN).is_ok());
+    if let Some(over) = KMAC_MAX_OUTPUT_LEN.checked_add(1) {
+        assert!(matches!(
+            KMAC128Key::with_params(&key, b"", over),
+            Err(MACError::InvalidLength(_))
+        ));
+    }
 }

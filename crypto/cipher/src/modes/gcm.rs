@@ -18,38 +18,38 @@
 //! `bouncycastle_aes::AES128Key<GCM>`, whose AEAD role traits carry the one-shots -- and it
 //! implements [`AEADCipherEncryptor`] / [`AEADCipherDecryptor`] with `FINAL_LEN = TAG_LEN`, and the
 //! [`SymmetricCipherEncryptor`] / [`SymmetricCipherDecryptor`] traits they extend. The key holds a
-//! [`GcmKeyState`] and starts each message from it, which is the route over the toy permutation.
+//! [`GcmKeyState`] and starts each message from it; over the toy permutation the key is the test
+//! suite's `ToyKey`, the shape of the AES one.
 //!
 //! Through the SymmetricCipher methods there is no additional associated data (aad), and the tag
 //! is inlined into the ciphertext as `ciphertext || tag`:
 //!
 //! ```
 //! # mod toy { include!("../../tests/common/toy_block_cipher.rs"); }
+//! # #[allow(dead_code)] mod toy_key { include!("../../tests/common/toy_key.rs"); }
 //! # use toy::ToyBlockCipher;
+//! # use toy_key::ToyKey;
 //! use bouncycastle_core::errors::SymmetricCipherError;
-//! use bouncycastle_core::hazmat::ElectronicCodeBook;
 //! use bouncycastle_core::key_material::{KeyMaterial128, KeyType};
 //! use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
-//! use bouncycastle_cipher::modes::{Gcm, GcmKeyState};
-//! use bouncycastle_cipher::{Decrypting, Encrypting};
+//! use bouncycastle_core::symmetric_key::{AeadDecryptionKey, AeadEncryptionKey, FromKeyMaterial};
+//! use bouncycastle_cipher::modes::GCM;
 //! use bouncycastle_rng::HashDRBG_SHA512;
 //!
-//! type ToyGcm<'k, Dir> = Gcm<'k, ToyBlockCipher, Dir, 16>;
-//!
-//! let key = KeyMaterial128::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
+//! let material = KeyMaterial128::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
 //!     .expect("a 16-byte symmetric cipher key");
-//! let state = GcmKeyState::new(ToyBlockCipher::new(&key).unwrap());
+//! let key = ToyKey::<ToyBlockCipher, GCM>::from_key_material(&material).expect("a valid key");
 //! let plaintext: [u8; 16] = *b"attack at dawn!!";
 //!
-//! let (mut enc, nonce) = ToyGcm::<Encrypting>::from_key_state(&state, &mut HashDRBG_SHA512::new_from_os())
-//!     .expect("nonce draw");
+//! let (mut enc, nonce) =
+//!     key.create_encryptor(&mut HashDRBG_SHA512::new_from_os()).expect("nonce draw");
 //! let mut ciphertext = vec![0u8; 16 + 16];
 //! let n = enc.do_encrypt_out(&plaintext, &mut ciphertext).expect("encrypt");
 //! let (tag, tag_len) = enc.do_encrypt_final().expect("the tag");
 //! ciphertext[n..].copy_from_slice(&tag[..tag_len]);
 //!
 //! let open = |ct: &[u8]| -> Result<Vec<u8>, SymmetricCipherError> {
-//!     let mut dec = ToyGcm::<Decrypting>::from_key_state(&state, &nonce);
+//!     let mut dec = key.create_decryptor(&nonce);
 //!     let mut pt = vec![0u8; ct.len()];
 //!     let n = dec.do_decrypt_out(ct, &mut pt)?;
 //!     let (last, last_len) = dec.do_decrypt_final()?;
@@ -72,32 +72,30 @@
 //!
 //! ```
 //! # mod toy { include!("../../tests/common/toy_block_cipher.rs"); }
+//! # #[allow(dead_code)] mod toy_key { include!("../../tests/common/toy_key.rs"); }
 //! # use toy::ToyBlockCipher;
-//! use bouncycastle_core::hazmat::ElectronicCodeBook;
+//! # use toy_key::ToyKey;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 //! use bouncycastle_core::traits::{
 //!     AEADCipherDecryptor, AEADCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
 //! };
-//! use bouncycastle_cipher::modes::{Gcm, GcmKeyState};
-//! use bouncycastle_cipher::{Decrypting, Encrypting};
+//! use bouncycastle_core::symmetric_key::{AeadDecryptionKey, AeadEncryptionKey, FromKeyMaterial};
+//! use bouncycastle_cipher::modes::GCM;
 //! use bouncycastle_rng::HashDRBG_SHA512;
 //!
-//! type ToyGcm<'k, Dir> = Gcm<'k, ToyBlockCipher, Dir, 16>;
-//!
-//! let key = KeyMaterial::<16>::from_bytes_as_type(&[0x07; 16], KeyType::SymmetricCipherKey)
+//! let material = KeyMaterial::<16>::from_bytes_as_type(&[0x07; 16], KeyType::SymmetricCipherKey)
 //!     .expect("a 16-byte symmetric cipher key");
-//! let state = GcmKeyState::new(ToyBlockCipher::new(&key).unwrap());
+//! let key = ToyKey::<ToyBlockCipher, GCM>::from_key_material(&material).expect("a valid key");
 //! let aad = b"some associated data";
 //! let message = b"a message that streams in over more than one call";
 //!
-//! let (mut enc, nonce) =
-//!     ToyGcm::<Encrypting>::from_key_state(&state, &mut HashDRBG_SHA512::new_from_os()).unwrap();
+//! let (mut enc, nonce) = key.create_encryptor(&mut HashDRBG_SHA512::new_from_os()).unwrap();
 //! enc.do_update_aad(aad).unwrap();
 //! let mut ct = vec![0u8; message.len()];
 //! enc.do_encrypt_out(message, &mut ct).unwrap();
 //! let (_, tag) = enc.do_encrypt_final_detached_out(&mut [0u8; 16]).unwrap();
 //!
-//! let mut dec = ToyGcm::<Decrypting>::from_key_state(&state, &nonce);
+//! let mut dec = key.create_decryptor(&nonce);
 //! dec.do_update_aad(aad).unwrap();
 //! let mut pt = vec![0u8; ct.len()];
 //! let written = dec.do_decrypt_out(&ct, &mut pt).unwrap();
@@ -112,33 +110,31 @@
 //!
 //! ```
 //! # mod toy { include!("../../tests/common/toy_block_cipher.rs"); }
+//! # #[allow(dead_code)] mod toy_key { include!("../../tests/common/toy_key.rs"); }
 //! # use toy::ToyBlockCipher;
-//! use bouncycastle_core::hazmat::ElectronicCodeBook;
+//! # use toy_key::ToyKey;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 //! use bouncycastle_core::traits::{
 //!     AEADCipherDecryptor, AEADCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
 //! };
-//! use bouncycastle_cipher::modes::{Gcm, GcmKeyState};
-//! use bouncycastle_cipher::{Decrypting, Encrypting};
+//! use bouncycastle_core::symmetric_key::{AeadDecryptionKey, AeadEncryptionKey, FromKeyMaterial};
+//! use bouncycastle_cipher::modes::GCM;
 //! use bouncycastle_rng::HashDRBG_SHA512;
 //!
-//! type ToyGcm<'k, Dir> = Gcm<'k, ToyBlockCipher, Dir, 16>;
-//!
-//! let key = KeyMaterial::<16>::from_bytes_as_type(&[0x07; 16], KeyType::SymmetricCipherKey)
+//! let material = KeyMaterial::<16>::from_bytes_as_type(&[0x07; 16], KeyType::SymmetricCipherKey)
 //!     .expect("a 16-byte symmetric cipher key");
-//! let state = GcmKeyState::new(ToyBlockCipher::new(&key).unwrap());
+//! let key = ToyKey::<ToyBlockCipher, GCM>::from_key_material(&material).expect("a valid key");
 //! let aad = b"some associated data";
 //! let message = b"a message that streams in over more than one call";
 //!
-//! let (mut enc, nonce) =
-//!     ToyGcm::<Encrypting>::from_key_state(&state, &mut HashDRBG_SHA512::new_from_os()).unwrap();
+//! let (mut enc, nonce) = key.create_encryptor(&mut HashDRBG_SHA512::new_from_os()).unwrap();
 //! enc.do_update_aad(aad).unwrap();
 //! let mut ct = vec![0u8; message.len()];
 //! enc.do_encrypt_out(message, &mut ct).unwrap();
 //! let (tag_block, tag_len) = enc.do_encrypt_final().unwrap();
 //! ct.extend_from_slice(&tag_block[..tag_len]);
 //!
-//! let mut dec = ToyGcm::<Decrypting>::from_key_state(&state, &nonce);
+//! let mut dec = key.create_decryptor(&nonce);
 //! dec.do_update_aad(aad).unwrap();
 //! let mut pt = vec![0u8; ct.len()];
 //! let written = dec.do_decrypt_out(&ct, &mut pt).unwrap();
@@ -161,8 +157,9 @@
 //! ## Nonce uniqueness
 //!
 //! As with all symmetric cipher modes, repeated key and nonce for multiple messages is catastrophic
-//! for security, which is why the nonce is always drawn from the library's default RNG or a provided
-//! RNG and never accepted from the caller.
+//! for security, which is why the key's `create_encryptor` draws the nonce from the caller's RNG.
+//! The forms that take a supplied nonce, `create_encryptor_nonce` and the `_nonce` one-shots on
+//! the key, leave uniqueness to the caller.
 //!
 //! ## Invocation limit
 //!
@@ -189,8 +186,8 @@
 //! the end of the ciphertext has been reached, and the `do_decrypt_final` /
 //! `do_decrypt_final_detached` succeeds.
 //!
-//! The one-shots (`decrypt_out`, `decrypt_detached_out`, `decrypt_with_aad_out`) verify the
-//! tag first and release nothing on failure, making them more robust.
+//! The one-shots (`decrypt_out`, `decrypt_detached_out`, `decrypt_with_aad_out`) zeroize their
+//! output buffer when the tag check fails, so nothing is released on failure.
 //!
 //! * **GMAC is GCM with no plaintext** (Sec 5.2): [`Gmac`](crate::modes::gmac) is this type fed
 //!   only AAD, with the plaintext-free API.
@@ -220,6 +217,13 @@ use ghash::{GHASH_STATE_LEN, Ghash};
 
 /// The nonce (IV) length this type uses: 96 bits, SP 800-38D Sec 5.2.1.1's recommended length.
 pub const GCM_NONCE_LEN: usize = 12;
+
+/// Sec 5.2.1.1's `len(A) <= 2^64 - 1` bits, in bytes.
+const MAX_AAD_LEN: u64 = (1 << 61) - 1;
+
+/// Sec 5.2.1.1's `len(P) <= 2^39 - 256` bits, in bytes: the `2^32 - 2` counter blocks left once
+/// `J0` and `inc32(J0)` are taken, which is also where the keystream runs out.
+const MAX_DATA_LEN: u64 = (1 << 36) - 32;
 
 /// The GCM mode type: the `M` of a mode-bound key such as `AES128Key<GCM>`. `GCM` is GCM with
 /// the full 128-bit tag; `GCM<12>` and so on select a shorter tag, within the `12..=16` byte range
@@ -285,8 +289,8 @@ where
 
 /// What a GCM key keeps per key: the keyed permutation and the hash subkey `H = CIPH_K(0^128)`
 /// (SP 800-38D Algorithm 4 step 1), derived once here rather than once per message. It is the
-/// `KeyState` of [`GCM`] over any permutation, and is only built and consumed through the mode
-/// impls.
+/// `KeyState` of [`GCM`] over any permutation, built and consumed through the mode impls; a
+/// key object reaches it only to resume a suspended worker.
 #[derive(Clone)]
 pub struct GcmKeyState<P> {
     perm: P,
@@ -306,7 +310,7 @@ impl<P: Eq> Eq for GcmKeyState<P> {}
 
 impl<P> GcmKeyState<P> {
     /// Derives `H` from `perm`.
-    pub fn new(perm: P) -> Self
+    pub(crate) fn new(perm: P) -> Self
     where
         P: BlockPermutation<16>,
     {
@@ -450,12 +454,34 @@ where
                  ciphertext (SP 800-38D Algorithm 4 absorbs A before C in one GHASH pass)",
             ));
         }
+        self.aad_len = match self.aad_len.checked_add(aad.len() as u64) {
+            Some(total) if total <= MAX_AAD_LEN => total,
+            _ => {
+                return Err(SymmetricCipherError::StateError(
+                    "GCM: additional authenticated data longer than SP 800-38D Sec 5.2.1.1's \
+                     2^64 - 1 bits",
+                ));
+            }
+        };
         self.ghash.update(aad);
-        self.aad_len =
-            self.aad_len.checked_add(aad.len() as u64).ok_or(SymmetricCipherError::StateError(
-                "GCM: additional authenticated data length exceeds the supported range",
-            ))?;
         Ok(())
+    }
+
+    /// `data_len` after `len` more bytes, if that is still within Sec 5.2.1.1's plaintext limit.
+    fn data_len_after(&self, len: usize) -> Result<u64, SymmetricCipherError> {
+        match self.data_len.checked_add(len as u64) {
+            Some(total) if total <= MAX_DATA_LEN => Ok(total),
+            _ => Err(SymmetricCipherError::DataLimitExceeded),
+        }
+    }
+
+    /// Whether `len` more data bytes can be taken: within Sec 5.2.1.1's plaintext limit and the
+    /// keystream left under this nonce. Both directions ask before they copy anything into an
+    /// output buffer, so a refused call leaves the buffer zeroed rather than holding the
+    /// caller's plaintext, and before they absorb anything, so it leaves the state untouched.
+    fn accepts_data(&self, len: usize) -> Result<(), SymmetricCipherError> {
+        self.data_len_after(len)?;
+        self.ctr.accepts(len)
     }
 
     /// The AAD-to-data transition: pads the AAD to a block boundary (the `0^v` of step 5) the
@@ -472,11 +498,9 @@ where
     /// plaintext into ciphertext in place) and the decryptor (which calls this *before* GCTR turns
     /// the ciphertext back into plaintext): either way GHASH must see ciphertext, never plaintext.
     fn absorb_data(&mut self, data: &[u8]) -> Result<(), SymmetricCipherError> {
+        self.data_len = self.data_len_after(data.len())?;
         self.begin_data_if_needed();
         self.ghash.update(data);
-        self.data_len = self.data_len.checked_add(data.len() as u64).ok_or(
-            SymmetricCipherError::StateError("GCM: data length exceeds the supported range"),
-        )?;
         Ok(())
     }
 
@@ -486,10 +510,8 @@ where
     /// because on the decrypting side it is the expected tag `T'`, which forges the rejected
     /// ciphertext if it survives a failed comparison.
     ///
-    /// The byte-to-bit multiplication (`* 8`) is not checked for overflow: `aad_len` and `data_len`
-    /// are accumulated with `checked_add` at every absorption (`absorb_aad`, `absorb_data`), so
-    /// reaching a count whose `* 8` could overflow `u64` would already require far more calls than
-    /// are physically possible to make.
+    /// The byte-to-bit multiplication (`* 8`) cannot overflow: `aad_len` and `data_len` are held
+    /// under [`MAX_AAD_LEN`] and [`MAX_DATA_LEN`] at every absorption and on resume.
     fn tag_block(&mut self, out: &mut Secret<[u8; 16]>) {
         self.ghash.pad_to_block();
         let aad_bits = self.aad_len * 8;
@@ -514,13 +536,12 @@ where
     P: BlockPermutation<16> + ModeNames,
 {
     /// Begins an encryption over a key's stored state under a nonce drawn from `rng`: the
-    /// encryption constructor a permutation crate's `AeadEncryptMode` impl for [`GCM`] calls.
-    /// Nothing is copied out of `state`; the worker reads the schedule and `H` through the
-    /// borrow and cannot outlive it.
+    /// encryption constructor [`GCM`]'s `AeadEncryptMode` impl calls. Nothing is copied out of
+    /// `state`; the worker reads the schedule and `H` through the borrow and cannot outlive it.
     ///
     /// # Errors
     /// [`SymmetricCipherError::RNGError`] if the nonce draw fails; nothing else can.
-    pub fn from_key_state(
+    pub(crate) fn from_key_state(
         state: &'k GcmKeyState<P>,
         rng: &mut dyn RNG,
     ) -> Result<(Self, [u8; GCM_NONCE_LEN]), SymmetricCipherError> {
@@ -529,9 +550,12 @@ where
         Ok((Self::setup_from_state(state, nonce), nonce))
     }
 
-    /// As [`Self::from_key_state`] under a nonce the caller supplies: the constructor a
-    /// permutation crate's `AeadEncryptMode::encrypt_init_nonce` impl for [`GCM`] calls.
-    pub fn from_key_state_nonce(state: &'k GcmKeyState<P>, nonce: &[u8; GCM_NONCE_LEN]) -> Self {
+    /// As [`Self::from_key_state`] under a nonce the caller supplies: the constructor [`GCM`]'s
+    /// `AeadEncryptMode::encrypt_init_nonce` impl calls.
+    pub(crate) fn from_key_state_nonce(
+        state: &'k GcmKeyState<P>,
+        nonce: &[u8; GCM_NONCE_LEN],
+    ) -> Self {
         Self::setup_from_state(state, *nonce)
     }
 
@@ -539,11 +563,11 @@ where
     /// into GHASH (step 5). Nothing is held back.
     ///
     /// # Errors
-    /// [`SymmetricCipherError::DataLimitExceeded`] if the underlying `Ctr` counter would be
-    /// exhausted -- the SP 800-38D Sec 5.2.1.1 bound `len(P) <= 2^39 - 256` bits -- or
-    /// [`SymmetricCipherError::StateError`] if the AAD/data length bookkeeping would overflow.
-    /// Nothing is consumed in either case.
+    /// [`SymmetricCipherError::DataLimitExceeded`] if `data` would take the message past the
+    /// SP 800-38D Sec 5.2.1.1 bound `len(P) <= 2^39 - 256` bits, which is where the `Ctr`
+    /// counter would be exhausted. Nothing is consumed in that case.
     fn encrypt_in_place(&mut self, data: &mut [u8]) -> Result<(), SymmetricCipherError> {
+        self.accepts_data(data.len())?;
         self.ctr.do_encrypt_inplace(data)?;
         self.absorb_data(data)
     }
@@ -580,6 +604,7 @@ where
         if ciphertext.len() < plaintext.len() {
             return Err(SymmetricCipherError::OutputBufferTooSmall(plaintext.len()));
         }
+        self.accepts_data(plaintext.len())?;
         ciphertext[..plaintext.len()].copy_from_slice(plaintext);
         self.encrypt_in_place(&mut ciphertext[..plaintext.len()])?;
         Ok(plaintext.len())
@@ -622,9 +647,9 @@ where
     P: BlockPermutation<16> + ModeNames,
 {
     /// Begins the decryption of a message encrypted under `nonce` from a key's stored state: the
-    /// decryption constructor a permutation crate's `AeadDecryptMode` impl for [`GCM`] calls.
-    /// Infallible: the state is already keyed and the nonce length is in the type.
-    pub fn from_key_state(state: &'k GcmKeyState<P>, nonce: &[u8; GCM_NONCE_LEN]) -> Self {
+    /// decryption constructor [`GCM`]'s `AeadDecryptMode` impl calls. Infallible: the state is
+    /// already keyed and the nonce length is in the type.
+    pub(crate) fn from_key_state(state: &'k GcmKeyState<P>, nonce: &[u8; GCM_NONCE_LEN]) -> Self {
         Self::setup_from_state(state, *nonce)
     }
 
@@ -638,6 +663,7 @@ where
     /// # Errors
     /// As `encrypt_in_place`.
     fn decrypt_in_place(&mut self, data: &mut [u8]) -> Result<(), SymmetricCipherError> {
+        self.accepts_data(data.len())?;
         self.absorb_data(data)?;
         self.ctr.do_decrypt_inplace(data)?;
         Ok(())
@@ -684,6 +710,7 @@ where
         if plaintext.len() < release {
             return Err(SymmetricCipherError::OutputBufferTooSmall(release));
         }
+        self.accepts_data(release)?;
         // Data has started even if every byte is still held back as a possible tag, so the AAD
         // phase ends here rather than at the first byte released: otherwise a `do_update_aad`
         // after a first call shorter than `TAG_LEN` would be accepted, and absorbed as if it came
@@ -737,8 +764,8 @@ where
 }
 
 /// The AEAD view: [`AEADCipherDecryptor`] over the [`SymmetricCipherDecryptor`] impl above, with
-/// `FINAL_LEN = TAG_LEN`. The one-shots are overridden, as `decrypt_out` is, to check the tag
-/// before any plaintext is written.
+/// `FINAL_LEN = TAG_LEN`. The one-shots are the key's provided ones, which zeroize the output on
+/// a failed tag check.
 impl<'k, P, const TAG_LEN: usize> AEADCipherDecryptor<GCM_NONCE_LEN, TAG_LEN, TAG_LEN>
     for Gcm<'k, P, Decrypting, TAG_LEN>
 where
@@ -758,6 +785,7 @@ where
     ) -> Result<usize, SymmetricCipherError> {
         plaintext.fill(0);
         let n = self.tail_len;
+        self.accepts_data(n)?;
         plaintext[..n].copy_from_slice(&self.tail[..n]);
         self.decrypt_in_place(&mut plaintext[..n])?;
         if let Err(e) = self.finish(tag) {
@@ -814,6 +842,9 @@ where
         let mut r = Cursor::new(rest);
         gcm.aad_len = r.u64();
         gcm.data_len = r.u64();
+        if gcm.aad_len > MAX_AAD_LEN || gcm.data_len > MAX_DATA_LEN {
+            return Err(SuspendableError::InvalidData);
+        }
         let call_state = r.u8();
         if call_state & 0xF0 != Dir::STATE_BITS {
             return Err(SuspendableError::InvalidData);
@@ -844,9 +875,6 @@ where
     }
 }
 
-// The key-produced worker traits, forwarded to the cipher traits' own methods while those still
-// exist. Named by path rather than imported, since the method names coincide and an import would
-// make every call in this file ambiguous.
 mod ghash {
     //! GHASH: the universal hash function GCM builds its authentication on (NIST SP 800-38D Sec 6.3,
     //! 6.4), and the GF(2^128) multiplication it is defined over.
@@ -1108,9 +1136,8 @@ mod ghash {
         /// Appends `[aad_bits]_64 || [data_bits]_64` (Algorithm 4 step 5's final block) and writes
         /// `Y_m`, i.e. `S`, to `out` -- a `Secret`, since `S` is the tag with its mask removed.
         ///
-        /// Takes `&mut self` rather than `self` -- `Gcm`'s verify-before-decrypt one-shot needs the rest
-        /// of its own state (the `Ctr` field) after computing the tag, so consuming `Ghash` here would
-        /// force that caller to reconstruct it. Nothing asserts a "was padded" flag: the caller is
+        /// Takes `&mut self` rather than `self`, so that `Gcm` keeps the rest of its state around
+        /// the call. Nothing asserts a "was padded" flag: the caller is
         /// expected to have called [`pad_to_block`](Self::pad_to_block) for both the AAD and the data
         /// phase already (the `0^v` and `0^u` of step 5), so by the time `finish` runs there is nothing
         /// pending except this one final length block, and no caller should call `update` or
