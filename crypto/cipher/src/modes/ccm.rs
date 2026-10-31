@@ -1104,7 +1104,7 @@ where
     ///
     /// # Errors
     /// [`SymmetricCipherError::RNGError`] if the nonce draw fails; nothing else can.
-    pub fn from_perm(
+    pub(crate) fn from_perm(
         perm: &'k P,
         rng: &mut dyn RNG,
     ) -> Result<(Self, [u8; NONCE_LEN]), SymmetricCipherError> {
@@ -1115,7 +1115,7 @@ where
 
     /// As [`Self::from_perm`] under a nonce the caller supplies, at any A.1 length: the
     /// constructor a mode-bound key's `encrypt_init_nonce` uses.
-    pub fn from_perm_nonce(perm: &'k P, nonce: &[u8; NONCE_LEN]) -> Self {
+    pub(crate) fn from_perm_nonce(perm: &'k P, nonce: &[u8; NONCE_LEN]) -> Self {
         Self(CcmAdapter::new(perm, nonce))
     }
 
@@ -1316,7 +1316,7 @@ where
     /// mode-bound key's `decrypt_init` uses. Infallible, as [`AeadDecryptMode::decrypt_init`] is.
     ///
     /// [`AeadDecryptMode::decrypt_init`]: bouncycastle_core::hazmat::AeadDecryptMode::decrypt_init
-    pub fn from_perm(perm: &'k P, nonce: &[u8; NONCE_LEN]) -> Self {
+    pub(crate) fn from_perm(perm: &'k P, nonce: &[u8; NONCE_LEN]) -> Self {
         Self { inner: CcmAdapter::new(perm, nonce), tag: [0u8; TAG_LEN], tag_len: 0 }
     }
 

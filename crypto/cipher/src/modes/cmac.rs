@@ -12,40 +12,42 @@
 //!
 //! # Usage Examples
 //!
-//! One-shot, and verifying, from a key state -- what a mode-bound key holds -- over
-//! `ToyBlockCipher` (see the [module docs](super) for why):
+//! One-shot, and verifying, from a mode-bound key over `ToyBlockCipher` (see the
+//! [module docs](super) for why); over the toy permutation the key is the test suite's `ToyKey`,
+//! the shape of the AES one:
 //!
 //! ```
 //! # mod toy { include!("../../tests/common/toy_block_cipher.rs"); }
+//! # #[allow(dead_code)] mod toy_key { include!("../../tests/common/toy_key.rs"); }
 //! # use toy::ToyBlockCipher;
-//! use bouncycastle_cipher::modes::{Cmac, CmacKeyState};
-//! use bouncycastle_core::hazmat::ElectronicCodeBook;
+//! # use toy_key::ToyKey;
+//! use bouncycastle_cipher::modes::CMAC;
 //! use bouncycastle_core::key_material::{KeyMaterial128, KeyType};
-//! use bouncycastle_core::traits::MAC;
+//! use bouncycastle_core::symmetric_key::{FromKeyMaterial, MacGenerationKey, MacVerificationKey};
 //!
-//! type ToyCmac<'k> = Cmac<'k, ToyBlockCipher, 16>;
-//!
-//! let key = KeyMaterial128::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey).unwrap();
-//! let state = CmacKeyState::new(ToyBlockCipher::new(&key).unwrap());
-//! let tag = ToyCmac::from_key_state(&state).mac(b"a message");
+//! let material = KeyMaterial128::from_bytes_as_type(&[0x42; 16], KeyType::MACKey).unwrap();
+//! let key = ToyKey::<ToyBlockCipher, CMAC>::from_key_material(&material).unwrap();
+//! let tag = key.mac(b"a message");
 //! assert_eq!(tag.len(), 16);
-//! assert!(ToyCmac::from_key_state(&state).verify(b"a message", &tag));
+//! assert!(key.verify(b"a message", &tag));
 //! ```
 //!
 //! Streaming, with a tag truncated to 8 bytes:
 //!
 //! ```
 //! # mod toy { include!("../../tests/common/toy_block_cipher.rs"); }
+//! # #[allow(dead_code)] mod toy_key { include!("../../tests/common/toy_key.rs"); }
 //! # use toy::ToyBlockCipher;
-//! use bouncycastle_cipher::modes::{Cmac, CmacKeyState};
-//! use bouncycastle_core::hazmat::ElectronicCodeBook;
+//! # use toy_key::ToyKey;
+//! use bouncycastle_cipher::modes::CMAC;
 //! use bouncycastle_core::key_material::{KeyMaterial128, KeyType};
+//! use bouncycastle_core::symmetric_key::{FromKeyMaterial, MacGenerationKey};
 //! use bouncycastle_core::traits::MAC;
 //!
-//! let key = KeyMaterial128::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey).unwrap();
-//! let state = CmacKeyState::new(ToyBlockCipher::new(&key).unwrap());
+//! let material = KeyMaterial128::from_bytes_as_type(&[0x42; 16], KeyType::MACKey).unwrap();
+//! let key = ToyKey::<ToyBlockCipher, CMAC>::from_key_material(&material).unwrap();
 //!
-//! let mut cmac = Cmac::<ToyBlockCipher, 16>::from_key_state(&state);
+//! let mut cmac = key.create_generator();
 //! cmac.do_update(b"a message that arrives ");
 //! cmac.do_update(b"in pieces");
 //! let mut tag = [0u8; 8];
@@ -148,8 +150,8 @@ impl<P, const BLOCK_LEN: usize> CmacKeyState<P, BLOCK_LEN> {
         _ => panic!("CMAC is defined for 64- and 128-bit block ciphers only (SP 800-38B Sec 5.3)"),
     };
 
-    /// Derives the subkeys from an already-keyed permutation (Sec 6.1).
-    pub fn new(perm: P) -> Self
+    /// Derives the subkeys from an already-keyed permutation (Sec 6.1): [`CMAC`]'s `Mode` impl.
+    pub(crate) fn new(perm: P) -> Self
     where
         P: BlockPermutation<BLOCK_LEN>,
     {
@@ -202,8 +204,8 @@ where
     pub const SUSPENDED_STATE_LEN: usize = 3 + 2 * BLOCK_LEN + 1;
 
     /// Begins a MAC over a new message over a key state, which the worker borrows: the
-    /// permutation and the subkeys stay in the key.
-    pub fn from_key_state(key: &'k CmacKeyState<P, BLOCK_LEN>) -> Self {
+    /// permutation and the subkeys stay in the key. [`CMAC`]'s `MacMode` impl.
+    pub(crate) fn from_key_state(key: &'k CmacKeyState<P, BLOCK_LEN>) -> Self {
         Self { key, c: Secret::new(), pending: Secret::new(), pending_len: 0 }
     }
 
