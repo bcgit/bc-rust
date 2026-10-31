@@ -100,7 +100,8 @@ pub type ChaCha20<'k, Dir> = StreamCipher<ChaCha20KeyStream<'k>, Dir, NONCE_LEN,
 /// zeroized on drop; there is no `Debug` and no way to read them back.
 #[derive(Clone)]
 pub struct ChaCha20Key {
-    state: ChaCha20KeyState,
+    // Reached from outside only through `hazmat::keystream_at`.
+    pub(crate) state: ChaCha20KeyState,
 }
 
 impl FromKeyMaterial<KEY_LEN> for ChaCha20Key {

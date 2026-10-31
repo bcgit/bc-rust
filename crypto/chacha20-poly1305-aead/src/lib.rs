@@ -90,16 +90,14 @@
 #![forbid(unsafe_code)]
 #![forbid(missing_docs)]
 
-use bouncycastle_chacha20::hazmat::ChaCha20KeyStream;
+use bouncycastle_chacha20::hazmat::{ChaCha20KeyStream, keystream_at};
 use bouncycastle_chacha20::{ChaCha20, ChaCha20Key};
 use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::hazmat::KeyStream;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::symmetric_key::{
-    AeadDecryptionKey, AeadEncryptionKey, FromKeyMaterial, SymmetricDecryptionKey,
-};
+use bouncycastle_core::symmetric_key::{AeadDecryptionKey, AeadEncryptionKey, FromKeyMaterial};
 use bouncycastle_core::traits::{
     AEADCipherDecryptor, AEADCipherEncryptor, Algorithm, MAC, RNG, StreamCipherDecryptor,
     StreamCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
@@ -443,13 +441,13 @@ impl AeadEncryptionKey<KEY_LEN, NONCE_LEN, TAG_LEN, TAG_LEN> for ChaCha20Poly130
     ) -> Result<(Self::Encryptor<'k>, [u8; NONCE_LEN]), SymmetricCipherError> {
         let mut nonce = [0u8; NONCE_LEN];
         rng.next_bytes_out(&mut nonce)?;
-        Ok((ChaCha20_Poly1305::new(keystream_at(&self.key, &nonce)), nonce))
+        Ok((ChaCha20_Poly1305::new(keystream_at(&self.key, &nonce, 0)), nonce))
     }
 
     /// Under a nonce the caller supplies, who takes on the obligation that it never repeat under
     /// this key: RFC 8439 Sec 2.8's nonce is "different for each invocation with the same key".
     fn create_encryptor_nonce<'k>(&'k self, nonce: &[u8; NONCE_LEN]) -> Self::Encryptor<'k> {
-        ChaCha20_Poly1305::new(keystream_at(&self.key, nonce))
+        ChaCha20_Poly1305::new(keystream_at(&self.key, nonce, 0))
     }
 }
 
@@ -460,15 +458,8 @@ impl AeadDecryptionKey<KEY_LEN, NONCE_LEN, TAG_LEN, TAG_LEN> for ChaCha20Poly130
         Self: 'k;
 
     fn create_decryptor<'k>(&'k self, nonce: &[u8; NONCE_LEN]) -> Self::Decryptor<'k> {
-        ChaCha20_Poly1305::new(keystream_at(&self.key, nonce))
+        ChaCha20_Poly1305::new(keystream_at(&self.key, nonce, 0))
     }
-}
-
-/// The ChaCha20 keystream under `key` and `nonce` from block counter 0, taken from the key's own
-/// decryptor: its one public way to start a keystream at a given nonce. Only the keystream is
-/// kept, so the decryptor's direction is immaterial.
-fn keystream_at<'k>(key: &'k ChaCha20Key, nonce: &[u8; NONCE_LEN]) -> ChaCha20KeyStream<'k> {
-    key.create_decryptor(nonce).keystream().clone()
 }
 
 #[cfg(test)]

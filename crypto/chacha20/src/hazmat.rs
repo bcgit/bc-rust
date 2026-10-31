@@ -2,12 +2,13 @@
 //! for what the path means and the supported uses.
 //!
 //! [`ChaCha20KeyState`] is the key, validated once, and [`ChaCha20KeyStream`] the keystream
-//! positioned over it: the parts under [`ChaCha20Key`](crate::ChaCha20Key) and the
-//! ChaCha20-Poly1305 key. Constructed directly, the keystream takes the nonce and initial block
-//! counter from the caller; a key's `create_encryptor` draws the nonce, starts at counter 0 and
-//! refuses to run past the counter, and is the cipher to use.
+//! positioned over it: the parts under [`ChaCha20Key`] and the
+//! ChaCha20-Poly1305 key. Constructed directly, through [`ChaCha20KeyStream::start_at`] over a
+//! state or [`keystream_at`] over a key, the keystream takes the nonce and initial block counter
+//! from the caller; a key's `create_encryptor` draws the nonce, starts at counter 0 and refuses
+//! to run past the counter, and is the cipher to use.
 
-use crate::{BLOCK_LEN, KEY_LEN, NONCE_LEN};
+use crate::{BLOCK_LEN, ChaCha20Key, KEY_LEN, NONCE_LEN};
 use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
 use bouncycastle_core::hazmat::KeyStream;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
@@ -19,7 +20,7 @@ use bouncycastle_utils::secret::Secret;
 const BLOCK_LIMIT: u64 = 1 << 32;
 
 /// The 256-bit ChaCha20 key of RFC 8439 Sec 2.3 as the eight words of the cipher state it fills,
-/// validated once: the keyed primitive under [`ChaCha20Key`](crate::ChaCha20Key) and the
+/// validated once: the keyed primitive under [`ChaCha20Key`] and the
 /// ChaCha20-Poly1305 key, as an expanded schedule is under an AES key. The words live in a
 /// [`Secret`], zeroized on drop, and a [`ChaCha20KeyStream`] borrows them rather than copying them.
 ///
@@ -63,7 +64,14 @@ impl ChaCha20KeyState {
 
 /// The IETF ChaCha20 keystream of RFC 8439 Sec 2.4: the block function of Sec 2.3 run over
 /// successive values of the 32-bit block counter, with a fixed key and 96-bit nonce. Use it
-/// through [`ChaCha20`](crate::ChaCha20).
+/// through [`ChaCha20`](crate::ChaCha20). Not `Clone`: two copies of a positioned keystream
+/// would emit the same bytes twice.
+///
+/// ```compile_fail
+/// # use bouncycastle_chacha20::hazmat::ChaCha20KeyStream;
+/// fn cloneable<T: Clone>() {}
+/// cloneable::<ChaCha20KeyStream<'static>>();
+/// ```
 ///
 /// # 🚨 Security Considerations 🚨
 /// A raw [`KeyStream`]: constructed directly, it takes the nonce from the caller, and running it
@@ -76,7 +84,6 @@ impl ChaCha20KeyState {
 ///
 /// A reference to the [`ChaCha20KeyState`], the nonce and the next block counter. The nonce and
 /// the counter are both public, so they are plain fields; no keystream is kept between calls.
-#[derive(Clone)]
 pub struct ChaCha20KeyStream<'k> {
     key: &'k ChaCha20KeyState,
     /// RFC 8439 Sec 2.3's words 13-15: the nonce, as little-endian words.
@@ -101,6 +108,22 @@ impl<'k> ChaCha20KeyStream<'k> {
         }
         Self { key, nonce: words, next_counter: u64::from(initial_counter) }
     }
+}
+
+/// The keystream for `nonce` under `key`, positioned at `initial_counter`:
+/// [`ChaCha20KeyStream::start_at`] over the state a [`ChaCha20Key`] holds, for a construction
+/// that derives its own material from the keystream, as the ChaCha20-Poly1305 key does (RFC 8439
+/// Sec 2.6.1 takes its one-time key from block 0).
+///
+/// # 🚨 Security Considerations 🚨
+/// As [`ChaCha20KeyStream::start_at`]: the nonce and the counter range are the caller's to keep
+/// from repeating under the key, and the keystream panics rather than errs past the counter.
+pub fn keystream_at<'k>(
+    key: &'k ChaCha20Key,
+    nonce: &[u8; NONCE_LEN],
+    initial_counter: u32,
+) -> ChaCha20KeyStream<'k> {
+    ChaCha20KeyStream::start_at(&key.state, nonce, initial_counter)
 }
 
 impl Algorithm for ChaCha20KeyStream<'_> {
