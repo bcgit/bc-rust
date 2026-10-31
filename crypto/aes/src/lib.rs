@@ -22,6 +22,7 @@
 //! * [AES_CTR](crate::ctr)
 //! * [AES_GCM](crate::gcm)
 //! * [AES_GMAC](crate::gmac), a nonce-based MAC rather than a cipher
+//! * [AES_KW and AES_KWP](crate::kw), key wraps rather than ciphers
 //!
 //! Each mode is used through a mode-bound key object such as [`AES256Key<GCM>`](AES256Key),
 //! which validates and expands the material once and hands out the mode's encryptors and
@@ -184,6 +185,7 @@ pub mod gcm;
 pub mod gmac;
 pub mod hazmat;
 pub mod key;
+pub mod kw;
 mod round;
 mod sbox;
 mod schedule;
@@ -273,3 +275,4 @@ pub use ctr::{AES_CTR_128, AES_CTR_192, AES_CTR_256, CTR_NONCE_LEN};
 pub use gcm::{AES_GCM_128, AES_GCM_192, AES_GCM_256};
 pub use gmac::{AES_GMAC_128, AES_GMAC_192, AES_GMAC_256};
 pub use key::{AES128Key, AES192Key, AES256Key, AESKey};
+pub use kw::{AES_KW_128, AES_KW_192, AES_KW_256, AES_KWP_128, AES_KWP_192, AES_KWP_256};

@@ -70,6 +70,8 @@ impl ModeNames for Toy {
     const ECB_ALG_NAME: &'static str = "Toy_ECB";
     const GCM_ALG_NAME: &'static str = "Toy_GCM";
     const GMAC_ALG_NAME: &'static str = "Toy_GMAC";
+    const KW_ALG_NAME: &'static str = "Toy_KW";
+    const KWP_ALG_NAME: &'static str = "Toy_KWP";
 }
 
 impl ElectronicCodeBook<TOY_LEN, TOY_LEN> for Toy {
@@ -148,6 +150,8 @@ impl ModeNames for SwappedPairToy {
     const ECB_ALG_NAME: &'static str = "SwappedPairToy_ECB";
     const GCM_ALG_NAME: &'static str = "SwappedPairToy_GCM";
     const GMAC_ALG_NAME: &'static str = "SwappedPairToy_GMAC";
+    const KW_ALG_NAME: &'static str = "SwappedPairToy_KW";
+    const KWP_ALG_NAME: &'static str = "SwappedPairToy_KWP";
 }
 
 impl ElectronicCodeBook<TOY_LEN, TOY_LEN> for SwappedPairToy {
@@ -226,6 +230,8 @@ impl ModeNames for ForwardOnlyToy {
     const ECB_ALG_NAME: &'static str = "ForwardOnlyToy_ECB";
     const GCM_ALG_NAME: &'static str = "ForwardOnlyToy_GCM";
     const GMAC_ALG_NAME: &'static str = "ForwardOnlyToy_GMAC";
+    const KW_ALG_NAME: &'static str = "ForwardOnlyToy_KW";
+    const KWP_ALG_NAME: &'static str = "ForwardOnlyToy_KWP";
 }
 
 impl ElectronicCodeBook<TOY_LEN, TOY_LEN> for ForwardOnlyToy {
@@ -286,6 +292,8 @@ impl ModeNames for SwappedFourToy {
     const ECB_ALG_NAME: &'static str = "SwappedFourToy_ECB";
     const GCM_ALG_NAME: &'static str = "SwappedFourToy_GCM";
     const GMAC_ALG_NAME: &'static str = "SwappedFourToy_GMAC";
+    const KW_ALG_NAME: &'static str = "SwappedFourToy_KW";
+    const KWP_ALG_NAME: &'static str = "SwappedFourToy_KWP";
 }
 
 impl ElectronicCodeBook<TOY_LEN, TOY_LEN> for SwappedFourToy {

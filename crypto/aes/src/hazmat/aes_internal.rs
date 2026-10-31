@@ -335,6 +335,8 @@ impl ModeNames for AES128Internal {
     const ECB_ALG_NAME: &'static str = "AES_ECB_128";
     const GCM_ALG_NAME: &'static str = "AES_GCM_128";
     const GMAC_ALG_NAME: &'static str = "AES_GMAC_128";
+    const KW_ALG_NAME: &'static str = "AES_KW_128";
+    const KWP_ALG_NAME: &'static str = "AES_KWP_128";
 }
 
 impl ModeNames for AES192Internal {
@@ -347,6 +349,8 @@ impl ModeNames for AES192Internal {
     const ECB_ALG_NAME: &'static str = "AES_ECB_192";
     const GCM_ALG_NAME: &'static str = "AES_GCM_192";
     const GMAC_ALG_NAME: &'static str = "AES_GMAC_192";
+    const KW_ALG_NAME: &'static str = "AES_KW_192";
+    const KWP_ALG_NAME: &'static str = "AES_KWP_192";
 }
 
 impl ModeNames for AES256Internal {
@@ -359,4 +363,6 @@ impl ModeNames for AES256Internal {
     const ECB_ALG_NAME: &'static str = "AES_ECB_256";
     const GCM_ALG_NAME: &'static str = "AES_GCM_256";
     const GMAC_ALG_NAME: &'static str = "AES_GMAC_256";
+    const KW_ALG_NAME: &'static str = "AES_KW_256";
+    const KWP_ALG_NAME: &'static str = "AES_KWP_256";
 }

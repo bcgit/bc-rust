@@ -20,8 +20,10 @@
 //! | ECB | [`hazmat`] | SP 800-38A Sec 6.1 | Electronic Codebook. **Not confidential for data**; interoperability and test vectors only |
 //! | GCM | [`gcm`] | SP 800-38D | **Authenticated**: 96-bit nonce, 96-128-bit tag, no padding; AAD before data |
 //! | GMAC | [`gmac`] | SP 800-38D Sec 5.2 | A MAC, not a cipher: GCM with no plaintext, so the tag is bound to a 96-bit nonce |
+//! | KW | [`kw`] | SP 800-38F Sec 6.2 | Key Wrap (RFC 3394). **Authenticated**, deterministic, no IV; whole 8-byte semiblocks only |
+//! | KWP | [`kwp`] | SP 800-38F Sec 6.3 | Key Wrap with Padding (RFC 5649). As KW, for data of any length |
 //!
-//! They divide three ways.
+//! They divide three ways, plus the key-wrap pair.
 //!
 //! **ECB and CBC are block ciphers** ([`BlockCipherEncryptor`] / [`BlockCipherDecryptor`]): whole
 //! blocks in, whole blocks out, and arbitrary-length data needs the padding layer.
@@ -37,6 +39,10 @@
 //! [`SymmetricCipherEncryptor`] / [`SymmetricCipherDecryptor`] with no option to provide AAD, and
 //! the tag inline.
 //!
+//! **KW and KWP are key-wrap algorithms** ([`KeyWrapper`] / [`KeyUnwrapper`]): one-shot,
+//! deterministic and authenticated, with no IV and no streaming API, for wrapping a key (or a
+//! small, non-repeating secret) under a key encryption key. They are not a mode for data.
+//!
 //! CBC, CFB, CFB8 and CTR all generate their own init data: an IV for the first three, a nonce for
 //! CTR, which is shorter than a block because the rest of the counter block is the counter. ECB has
 //! none at all (`INIT_DATA_LEN = 0`) and is the raw permutation applied block by block, which is
@@ -44,7 +50,8 @@
 //! [Choosing between the modes](#choosing-between-the-modes).
 //!
 //! Each mode is also a **mode type** -- [`CBC`], [`CCM`], [`CCM_Packet`], [`CFB`], [`CFB8`],
-//! [`CTR`], [`GCM`], [`hazmat::ecb::ECB`], and the MACs [`CMAC`] and [`GMAC`] -- the `M` a mode-bound
+//! [`CTR`], [`GCM`], [`hazmat::ecb::ECB`], the MACs [`CMAC`] and [`GMAC`], and the key wraps
+//! [`KW`] and [`KWP`] -- the `M` a mode-bound
 //! key such as `bouncycastle_aes::AES128Key<M>` is parameterised by. The mode type implements the
 //! hazmat mode traits of [`bouncycastle_core::hazmat`], which is how a key hands out the mode's
 //! encryptors and decryptors through the role traits of `bouncycastle_core::symmetric_key`; a
@@ -167,6 +174,8 @@ pub mod gcm;
 pub mod gmac;
 pub mod hazmat;
 mod iv;
+pub mod kw;
+pub mod kwp;
 
 pub use cbc::{CBC, Cbc};
 pub use ccm::{
@@ -178,6 +187,8 @@ pub use cmac::{CMAC, CMAC_MIN_TAG_LEN, Cmac, CmacKeyState};
 pub use ctr::{CTR, Ctr};
 pub use gcm::{GCM, GCM_NONCE_LEN, Gcm, GcmKeyState};
 pub use gmac::{GMAC, Gmac};
+pub use kw::{KW, KW_BLOCK_LEN, Kw, SEMIBLOCK_LEN};
+pub use kwp::{KWP, Kwp};
 
 /// Selects the whole-block form of a mode that also has a padded form: `CBC<Blocks>` is a key
 /// for the block-aligned [`Cbc`] itself, on the block key path, where `CBC<PKCS7>` is one for
@@ -209,6 +220,10 @@ pub trait ModeNames {
     const GCM_ALG_NAME: &'static str;
     /// Reported by [`Gmac`].
     const GMAC_ALG_NAME: &'static str;
+    /// Reported by [`Kw`].
+    const KW_ALG_NAME: &'static str;
+    /// Reported by [`Kwp`].
+    const KWP_ALG_NAME: &'static str;
 }
 
 // Imports needed for docs
@@ -217,7 +232,7 @@ use bouncycastle_core::hazmat::ElectronicCodeBook;
 #[allow(unused_imports)]
 use bouncycastle_core::traits::{
     AEADCipherDecryptor, AEADCipherEncryptor, Algorithm, BlockCipherDecryptor,
-    BlockCipherEncryptor, MAC, StreamCipherDecryptor, StreamCipherEncryptor,
-    SymmetricCipherDecryptor, SymmetricCipherEncryptor,
+    BlockCipherEncryptor, KeyUnwrapper, KeyWrapper, MAC, StreamCipherDecryptor,
+    StreamCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
 };
 // end of imports needed for docs

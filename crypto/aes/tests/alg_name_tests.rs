@@ -8,7 +8,8 @@ use bouncycastle_aes::{
     AES_CBC_128, AES_CBC_192, AES_CBC_256, AES_CCM_128, AES_CCM_192, AES_CCM_256, AES_CFB_128,
     AES_CFB_192, AES_CFB_256, AES_CFB8_128, AES_CFB8_192, AES_CFB8_256, AES_CMAC_128, AES_CMAC_192,
     AES_CMAC_256, AES_CTR_128, AES_CTR_192, AES_CTR_256, AES_GCM_128, AES_GCM_192, AES_GCM_256,
-    AES_GMAC_128, AES_GMAC_192, AES_GMAC_256, AES128Key, CCM_NONCE_LEN, CCM_TAG_LEN,
+    AES_GMAC_128, AES_GMAC_192, AES_GMAC_256, AES_KW_128, AES_KW_192, AES_KW_256, AES_KWP_128,
+    AES_KWP_192, AES_KWP_256, AES128Key, CCM_NONCE_LEN, CCM_TAG_LEN,
 };
 use bouncycastle_cipher::modes::hazmat::ecb::{ECB, Ecb};
 use bouncycastle_cipher::modes::{CBC, Cbc, Gcm};
@@ -154,6 +155,27 @@ fn cmac() {
     assert_eq!(
         (AES_CMAC_256::ALG_NAME, AES_CMAC_256::MAX_SECURITY_STRENGTH),
         ("AES_CMAC_256", _256bit)
+    );
+}
+
+/// One worker serves both halves of a key wrap, so there is one name per alias to check.
+#[test]
+fn kw_kwp() {
+    use SecurityStrength::*;
+    assert_eq!((AES_KW_128::ALG_NAME, AES_KW_128::MAX_SECURITY_STRENGTH), ("AES_KW_128", _128bit));
+    assert_eq!((AES_KW_192::ALG_NAME, AES_KW_192::MAX_SECURITY_STRENGTH), ("AES_KW_192", _192bit));
+    assert_eq!((AES_KW_256::ALG_NAME, AES_KW_256::MAX_SECURITY_STRENGTH), ("AES_KW_256", _256bit));
+    assert_eq!(
+        (AES_KWP_128::ALG_NAME, AES_KWP_128::MAX_SECURITY_STRENGTH),
+        ("AES_KWP_128", _128bit)
+    );
+    assert_eq!(
+        (AES_KWP_192::ALG_NAME, AES_KWP_192::MAX_SECURITY_STRENGTH),
+        ("AES_KWP_192", _192bit)
+    );
+    assert_eq!(
+        (AES_KWP_256::ALG_NAME, AES_KWP_256::MAX_SECURITY_STRENGTH),
+        ("AES_KWP_256", _256bit)
     );
 }
 

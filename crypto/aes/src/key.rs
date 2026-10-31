@@ -11,8 +11,9 @@
 //! `KeyType::SymmetricCipherKey`. Which workers a key hands out is decided by its mode: the
 //! symmetric pair for the stream modes and the padded block modes (`CFB`, `CFB8`, `CTR`,
 //! `CBC<PKCS7>`, `ECB<PKCS7>`), the block pair for `CBC<Blocks>`, the `hazmat` ECB pair for
-//! `ECB<Blocks>`, the AEAD pairs for `GCM`, `CCM` and `CCM_Packet`, the MAC pair for `CMAC`, and
-//! for `GMAC`, whose tag is nonce-bound, an inherent pair (see [`crate::gmac`]).
+//! `ECB<Blocks>`, the AEAD pairs for `GCM`, `CCM` and `CCM_Packet`, the MAC pair for `CMAC`, the
+//! key-wrap pair for `KW` and `KWP`, and for `GMAC`, whose tag is nonce-bound, an inherent pair
+//! (see [`crate::gmac`]).
 //!
 //! # Usage Examples
 //!
@@ -75,14 +76,14 @@ use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
 use bouncycastle_core::hazmat::{
     AeadDeclaredDecryptMode, AeadDeclaredEncryptMode, AeadDecryptMode, AeadEncryptMode,
     BlockDecryptMode, BlockEncryptMode, EcbDecryptMode, EcbDecryptionKey, EcbEncryptMode,
-    EcbEncryptionKey, MacMode, Mode, ModeKey, SymmetricDecryptMode, SymmetricEncryptMode,
-    do_hazardous_operations,
+    EcbEncryptionKey, KeyUnwrapMode, KeyWrapMode, MacMode, Mode, ModeKey, SymmetricDecryptMode,
+    SymmetricEncryptMode, do_hazardous_operations,
 };
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::symmetric_key::{
     AeadDeclaredDecryptionKey, AeadDeclaredEncryptionKey, AeadDecryptionKey, AeadEncryptionKey,
-    BlockDecryptionKey, BlockEncryptionKey, FromKeyMaterial, MacGenerationKey, MacVerificationKey,
-    SymmetricDecryptionKey, SymmetricEncryptionKey,
+    BlockDecryptionKey, BlockEncryptionKey, FromKeyMaterial, KeyUnwrappingKey, KeyWrappingKey,
+    MacGenerationKey, MacVerificationKey, SymmetricDecryptionKey, SymmetricEncryptionKey,
 };
 use bouncycastle_core::traits::RNG;
 
@@ -515,5 +516,35 @@ impl<P: AESParams, M: MacMode<AESInternal<P>>> MacVerificationKey for AESKey<P, 
 
     fn create_verifier<'k>(&'k self) -> Self::Verifier<'k> {
         M::mac_init(&self.state)
+    }
+}
+
+impl<P, M, const KEK_LEN: usize> KeyWrappingKey<KEK_LEN> for AESKey<P, M>
+where
+    P: AESParams,
+    M: KeyWrapMode<AESInternal<P>, KEK_LEN>,
+{
+    type Wrapper<'k>
+        = M::Wrapper<'k>
+    where
+        Self: 'k;
+
+    fn create_wrapper<'k>(&'k self) -> Self::Wrapper<'k> {
+        M::wrap_init(&self.state)
+    }
+}
+
+impl<P, M, const KEK_LEN: usize> KeyUnwrappingKey<KEK_LEN> for AESKey<P, M>
+where
+    P: AESParams,
+    M: KeyUnwrapMode<AESInternal<P>, KEK_LEN>,
+{
+    type Unwrapper<'k>
+        = M::Unwrapper<'k>
+    where
+        Self: 'k;
+
+    fn create_unwrapper<'k>(&'k self) -> Self::Unwrapper<'k> {
+        M::unwrap_init(&self.state)
     }
 }
