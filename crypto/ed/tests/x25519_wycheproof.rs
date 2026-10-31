@@ -45,7 +45,7 @@ fn wycheproof_x25519() {
 
             let (k, u) = (sk_from_bytes(&k), X25519PublicKey::from_bytes(&u).unwrap());
             match X25519::key_agreement(&u, &k) {
-                Ok(r) => assert_eq!(r.as_bytes(), shared.as_slice(), "{ctx}: shared secret"),
+                Ok(r) => assert_eq!(r.as_ref(), shared.as_slice(), "{ctx}: shared secret"),
                 Err(KeyAgreementError::InvalidPublicKey(_)) => {
                     assert!(shared.iter().all(|&b| b == 0), "{ctx}: rejected a non-zero secret");
                     zero_shared += 1;

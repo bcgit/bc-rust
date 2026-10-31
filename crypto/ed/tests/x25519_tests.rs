@@ -79,8 +79,8 @@ fn rfc7748_section_6_1() {
     let k = "4a5d9d5ba4ce2de1728e3bf480350f25e07e21c947d19e3376f09b3c1e161742";
     let alice_k = X25519::key_agreement(&bob_pk, &alice_sk).unwrap();
     let bob_k = X25519::key_agreement(&alice_pk, &bob_sk).unwrap();
-    check_value(alice_k.as_bytes(), "Section 6.1 K (Alice)", k);
-    check_value(bob_k.as_bytes(), "Section 6.1 K (Bob)", k);
+    check_value(alice_k.as_ref(), "Section 6.1 K (Alice)", k);
+    check_value(bob_k.as_ref(), "Section 6.1 K (Bob)", k);
 }
 
 /// [`X25519::key_agreement`] rejects a public key that gives an all-zero shared secret, however
@@ -99,7 +99,8 @@ fn key_agreement_rejects_all_zero_shared_secret() {
         ));
         match X25519::key_agreement(&X25519PublicKey::from_bytes(&u).unwrap(), &sk) {
             Err(KeyAgreementError::InvalidPublicKey(_)) => { /* good */ }
-            other => panic!("expected InvalidPublicKey for u = {u:02x?}, got {other:?}"),
+            Err(e) => panic!("expected InvalidPublicKey for u = {u:02x?}, got {e:?}"),
+            Ok(_) => panic!("expected InvalidPublicKey for u = {u:02x?}, got Ok"),
         }
     }
 }
@@ -134,7 +135,7 @@ fn rfc7748_check_iterated(count: usize) {
                 .unwrap();
 
         u = k;
-        k = *r.as_bytes();
+        k.copy_from_slice(r.as_ref());
 
         iterations += 1;
 
@@ -169,5 +170,5 @@ fn check_vector(sk: &str, su: &str, se: &str, text: &str) {
     let u = X25519PublicKey::from_bytes(&decode_32(su)).unwrap();
 
     let r = X25519::key_agreement(&u, &k).unwrap();
-    check_value(r.as_bytes(), text, se);
+    check_value(r.as_ref(), text, se);
 }

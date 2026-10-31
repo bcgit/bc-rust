@@ -43,7 +43,7 @@
 //! use bouncycastle_core::key_material::{KeyMaterial256, KeyMaterialTrait, KeyType};
 //! use bouncycastle_core::security_strength::SecurityStrength;
 //! use bouncycastle_core::traits::{KDF, KeyAgreement};
-//! use bouncycastle_ed::x25519::{X25519, X25519PublicKey};
+//! use bouncycastle_ed::x25519::{X25519, X25519DerivedKey, X25519PublicKey};
 //! use bouncycastle_sha2::hkdf::HKDF_SHA256;
 //!
 //! // Alice and Bob each generate a key pair, and exchange public keys.
@@ -52,8 +52,7 @@
 //!
 //! // Each performs a key agreement from their own private key and the other's public key,
 //! // each arriving at the same k.
-//! // Note that k is an X25519PublicKey and could be used again for another key agreement.
-//! // But this example will proceed with deriving a shared symmetric key.
+//! // k is an X25519DerivedKey, a secret; this example derives a shared symmetric key from it.
 //! // An error here means the other party's public key is unusable; abort the exchange.
 //! let alice_k = X25519::key_agreement(&bob_pk, &alice_sk).expect("Bad public key");
 //! let bob_k = X25519::key_agreement(&alice_pk, &bob_sk).expect("Bad public key");
@@ -61,7 +60,7 @@
 //! // RFC 7748 §6.1 recommends using a key derivation function (KDF) over K, K_A, and K_B
 //! // to derive a symmetric key. This example will use HKDF_SHA256.
 //! fn derive_key_rfc7748(
-//!     k: &X25519PublicKey,
+//!     k: &X25519DerivedKey,
 //!     pk_A: &X25519PublicKey,
 //!     pk_B: &X25519PublicKey) -> KeyMaterial256 {
 //!     let mut ikm =
@@ -145,18 +144,18 @@
 //! let bc_k = X25519::key_agreement(&charlie_pk, &bob_sk).expect("Bad public key");
 //! let ac_k = X25519::key_agreement(&charlie_pk, &alice_sk).expect("Bad public key");
 //!
-//! // Round 2: each pairwise value is sent, in the clear, to the third party, who combines it with
-//! // their own private key.
+//! // Round 2: each pairwise value is converted to a public key type and sent, in the clear,
+//! // to the third party, who combines it with their own private key.
 //! // Since it is no longer secret, `ab_k` must not also be used as a secret key between
 //! // Alice and Bob.
-//! let alice_k = X25519::key_agreement(&bc_k, &alice_sk).expect("Bad public key");
-//! let bob_k = X25519::key_agreement(&ac_k, &bob_sk).expect("Bad public key");
-//! let charlie_k = X25519::key_agreement(&ab_k, &charlie_sk).expect("Bad public key");
+//! let alice_k = X25519::key_agreement(&bc_k.as_pk(), &alice_sk).expect("Bad public key");
+//! let bob_k = X25519::key_agreement(&ac_k.as_pk(), &bob_sk).expect("Bad public key");
+//! let charlie_k = X25519::key_agreement(&ab_k.as_pk(), &charlie_sk).expect("Bad public key");
 //!
 //! // The computations ran in different orders, but by the magic of
 //! // commutative algebra, they all end up with the same shared secret key `k`.
-//! assert!(alice_k.eq(&bob_k));
-//! assert!(bob_k.eq(&charlie_k));
+//! assert_eq!(alice_k.as_ref(), bob_k.as_ref());
+//! assert_eq!(bob_k.as_ref(), charlie_k.as_ref());
 //!
 //! // As in the two-party case, `k` is not uniformly random: run it through a suitable KDF scheme
 //! // to derive a usable and secure symmetric key.
@@ -342,6 +341,8 @@ impl X25519 {
 }
 
 impl KeyAgreement<X25519PublicKey, X25519PrivateKey, POINT_LEN, SCALAR_LEN> for X25519 {
+    type DerivedKey = X25519DerivedKey;
+
     /// The X25519 Diffie-Hellman of RFC 7748 §6.1: computes the shared secret
     /// `K = X25519(sk, pk)`, the u-coordinate of the scalar multiple of the peer's public key by
     /// our private key, as its canonical 32-byte little-endian encoding.
@@ -373,8 +374,8 @@ impl KeyAgreement<X25519PublicKey, X25519PrivateKey, POINT_LEN, SCALAR_LEN> for 
     fn key_agreement(
         pk: &X25519PublicKey,
         sk: &X25519PrivateKey,
-    ) -> Result<X25519PublicKey, KeyAgreementError> {
-        dh(sk, pk)
+    ) -> Result<X25519DerivedKey, KeyAgreementError> {
+        dh(sk, pk).map(X25519DerivedKey::from)
     }
 }
 
@@ -547,6 +548,38 @@ impl Display for X25519PublicKey {
             write!(f, "{b:02x}")?;
         }
         write!(f, " }}")
+    }
+}
+
+/// The shared secret `K` from [`X25519::key_agreement`](X25519#method.key_agreement).
+/// This impls `AsRef<[u8]>` so the 32 bytes can be freely extracted.
+/// Structurally, this is an X25519PublicKey, but it is wrapped in its own type to protect it with
+/// [`Secret`]. If it needs to be treated as a public key, use [`X25519DerivedKey::as_pk`].
+///
+/// Note that this impls `From<X25519PublicKey> for X25519DerivedKey` so that any public key can be
+/// freely converted into a DerivedKey type.
+pub struct X25519DerivedKey(Secret<[u8; POINT_LEN]>);
+
+impl X25519DerivedKey {
+    /// Opt-in to treating this as a public key.
+    pub fn as_pk(&self) -> X25519PublicKey {
+        X25519PublicKey(*self.0)
+    }
+}
+
+impl AsRef<[u8]> for X25519DerivedKey {
+    fn as_ref(&self) -> &[u8] {
+        self.0.as_ref()
+    }
+}
+
+/// Allow an X25519PublicKey to auto-promote to an X25519DerivedKey.
+/// It's never a problem to treat a public value as secret.
+impl From<X25519PublicKey> for X25519DerivedKey {
+    fn from(value: X25519PublicKey) -> Self {
+        let mut dk = Secret::<[u8; POINT_LEN]>::new();
+        dk.copy_from_slice(value.as_bytes());
+        Self(dk)
     }
 }
 

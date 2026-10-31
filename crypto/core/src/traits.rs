@@ -1094,12 +1094,14 @@ pub trait KeyAgreement<
     const SK_LEN: usize,
 >: Sized
 {
+    /// The type of the derived key that results from performing a key agreement.
+    type DerivedKey: Sized;
     /// Perform a key agreement.
     /// Note that this returns a public key. The caller is responsible for using a [`KDF`] to
     /// derive a shared symmetric key from it.
     /// Alternatively, most algorithms that impl [`KeyAgreement`] should also impl
     /// [`KEMEncapsulator`] / [`KEMDecapsulator`], which will include a KDF step and return a [`KeyMaterial`].
-    fn key_agreement(pk: &PK, sk: &SK) -> Result<PK, KeyAgreementError>;
+    fn key_agreement(pk: &PK, sk: &SK) -> Result<Self::DerivedKey, KeyAgreementError>;
 }
 
 /// A public key for a KeyAgreement (Diffie-Hellman) algorithm, often denoted "pk".

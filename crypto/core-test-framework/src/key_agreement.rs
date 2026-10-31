@@ -27,7 +27,9 @@ impl TestFrameworkKeyAgreement {
     >(
         &self,
         keygen: fn() -> Result<(PK, SK), KeyAgreementError>,
-    ) {
+    ) where
+        KAAlg::DerivedKey: AsRef<[u8]>,
+    {
         let (pk_a, sk_a) = keygen().unwrap();
         let (pk_b, sk_b) = keygen().unwrap();
 
@@ -35,25 +37,25 @@ impl TestFrameworkKeyAgreement {
         // KA(&pk_a, &sk_b) == KA(&pk_b, &sk_a)
         let k_ab = KAAlg::key_agreement(&pk_a, &sk_b).unwrap();
         let k_ba = KAAlg::key_agreement(&pk_b, &sk_a).unwrap();
-        assert!(k_ba.eq(&k_ab));
+        assert_eq!(k_ba.as_ref(), k_ab.as_ref());
 
         // Determinism
         // The same (pk, sk) twice gives the same output
         let k_1 = KAAlg::key_agreement(&pk_a, &sk_b).unwrap();
         let k_2 = KAAlg::key_agreement(&pk_a, &sk_b).unwrap();
-        assert!(k_1.eq(&k_2));
+        assert_eq!(k_1.as_ref(), k_2.as_ref());
 
-        // Output is a usable PK
+        // Output decodes as a usable PK
         let k = KAAlg::key_agreement(&pk_a, &sk_b).unwrap();
-        _ = KAAlg::key_agreement(&k, &sk_a).unwrap();
+        _ = KAAlg::key_agreement(&PK::from_bytes(k.as_ref()).unwrap(), &sk_a).unwrap();
 
         // Decoded keys behave the same
         // KA on PK::from_bytes(&pk.encode()) and SK::from_bytes(&sk.encode()) equals KA on the originals
         let k = KAAlg::key_agreement(&pk_a, &sk_b).unwrap();
         let k1 = KAAlg::key_agreement(&PK::from_bytes(&pk_a.encode()).unwrap(), &sk_b).unwrap();
-        assert!(k.eq(&k1));
+        assert_eq!(k.as_ref(), k1.as_ref());
         let k2 = KAAlg::key_agreement(&pk_a, &SK::from_bytes(&sk_b.encode()).unwrap()).unwrap();
-        assert!(k.eq(&k2));
+        assert_eq!(k.as_ref(), k2.as_ref());
     }
 }
 

@@ -125,7 +125,7 @@ fn bench_x25519_key_agreement() {
     let pk = load_bob_pk();
     measure(|| {
         let k = X25519::key_agreement(&pk, &sk).unwrap();
-        print!("{:x?}", k.encode());
+        print!("{:x?}", k.as_ref());
     });
 }
 
