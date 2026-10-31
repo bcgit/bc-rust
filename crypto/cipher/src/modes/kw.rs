@@ -18,30 +18,33 @@
 //!
 //! # Usage Examples
 //!
-//! From a key state -- what a mode-bound key holds -- over `ToyBlockCipher` (see the
-//! [module docs](super) for why):
+//! From a mode-bound key over `ToyBlockCipher` (see the [module docs](super) for why); over the
+//! toy permutation the key is the test suite's `ToyKey`, the shape of the AES one:
 //!
 //! ```
 //! # mod toy { include!("../../tests/common/toy_block_cipher.rs"); }
+//! # #[allow(dead_code)] mod toy_key { include!("../../tests/common/toy_key.rs"); }
 //! # use toy::ToyBlockCipher;
-//! use bouncycastle_cipher::modes::Kw;
-//! use bouncycastle_core::hazmat::ElectronicCodeBook;
+//! # use toy_key::ToyKey;
+//! use bouncycastle_cipher::modes::KW;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-//! use bouncycastle_core::traits::{KeyUnwrapper, KeyWrapper};
+//! use bouncycastle_core::symmetric_key::{FromKeyMaterial, KeyUnwrappingKey, KeyWrappingKey};
+//! use bouncycastle_core::traits::KeyWrapper;
 //!
 //! let kek = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
 //!     .expect("a 16-byte symmetric cipher key");
-//! let state = ToyBlockCipher::new(&kek).unwrap();
-//! let kw = Kw::from_perm(&state);
+//! let key = ToyKey::<ToyBlockCipher, KW>::from_key_material(&kek).expect("a valid KEK");
 //! let key_to_wrap = [0x5Au8; 32];
 //!
 //! // Lengths fixed at compile time: a 32-byte key wraps to 40 bytes, and any other pair of
 //! // lengths is a compile error, not a runtime one.
-//! let wrapped: [u8; 40] = kw.wrap_key(&key_to_wrap).expect("wrapping");
-//! let recovered = kw.unwrap_key::<32, 40>(&wrapped).expect("unwrapping");
+//! let wrapped: [u8; 40] = key.wrap_key(&key_to_wrap).expect("wrapping");
+//! let recovered = key.unwrap_key::<32, 40>(&wrapped).expect("unwrapping");
 //! assert_eq!(*recovered, key_to_wrap);
 //!
-//! // Lengths known only at run time: the caller sizes the buffers with the length helpers.
+//! // Lengths known only at run time, on the worker the key hands out: the caller sizes the
+//! // buffers with the length helpers.
+//! let kw = key.create_wrapper();
 //! let mut wrapped_out = [0u8; 64];
 //! let n = kw.wrap_out(&key_to_wrap, &mut wrapped_out).expect("wrapping");
 //! assert_eq!(n, kw.wrap_out_len(key_to_wrap.len()));
@@ -54,20 +57,20 @@
 //!
 //! ```
 //! # mod toy { include!("../../tests/common/toy_block_cipher.rs"); }
+//! # #[allow(dead_code)] mod toy_key { include!("../../tests/common/toy_key.rs"); }
 //! # use toy::ToyBlockCipher;
-//! # use bouncycastle_cipher::modes::Kw;
-//! # use bouncycastle_core::hazmat::ElectronicCodeBook;
+//! # use toy_key::ToyKey;
+//! # use bouncycastle_cipher::modes::KW;
 //! # use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-//! # use bouncycastle_core::traits::{KeyUnwrapper, KeyWrapper};
+//! # use bouncycastle_core::symmetric_key::{FromKeyMaterial, KeyUnwrappingKey, KeyWrappingKey};
 //! use bouncycastle_core::errors::SymmetricCipherError;
 //! # let kek = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
 //! #     .expect("a 16-byte symmetric cipher key");
-//! # let state = ToyBlockCipher::new(&kek).unwrap();
-//! # let kw = Kw::from_perm(&state);
-//! # let mut wrapped: [u8; 40] = kw.wrap_key(&[0x5Au8; 32]).expect("wrapping");
+//! # let key = ToyKey::<ToyBlockCipher, KW>::from_key_material(&kek).expect("a valid KEK");
+//! # let mut wrapped: [u8; 40] = key.wrap_key(&[0x5Au8; 32]).expect("wrapping");
 //! wrapped[3] ^= 0x01;
 //! assert!(matches!(
-//!     kw.unwrap_key::<32, 40>(&wrapped),
+//!     key.unwrap_key::<32, 40>(&wrapped),
 //!     Err(SymmetricCipherError::DecryptionFailed)
 //! ));
 //! ```
@@ -300,9 +303,9 @@ impl<'k, P> Kw<'k, P>
 where
     P: BlockPermutation<KW_BLOCK_LEN> + ModeNames,
 {
-    /// Over an already-keyed permutation, which the worker borrows: what a [`KW`]-bound key's
-    /// roles build.
-    pub fn from_perm(perm: &'k P) -> Self {
+    /// Over an already-keyed permutation, which the worker borrows: what [`KW`]'s mode impls
+    /// build for a key's roles.
+    pub(crate) fn from_perm(perm: &'k P) -> Self {
         Self { perm }
     }
 }

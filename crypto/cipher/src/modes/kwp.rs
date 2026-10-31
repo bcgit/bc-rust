@@ -13,30 +13,33 @@
 //!
 //! # Usage Examples
 //!
+//! From a mode-bound key over `ToyBlockCipher`; over the toy permutation the key is the test
+//! suite's `ToyKey`, the shape of the AES one:
+//!
 //! ```
 //! # mod toy { include!("../../tests/common/toy_block_cipher.rs"); }
+//! # #[allow(dead_code)] mod toy_key { include!("../../tests/common/toy_key.rs"); }
 //! # use toy::ToyBlockCipher;
-//! use bouncycastle_cipher::modes::Kwp;
-//! use bouncycastle_core::hazmat::ElectronicCodeBook;
+//! # use toy_key::ToyKey;
+//! use bouncycastle_cipher::modes::KWP;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-//! use bouncycastle_core::traits::{KeyUnwrapper, KeyWrapper};
+//! use bouncycastle_core::symmetric_key::{FromKeyMaterial, KeyUnwrappingKey, KeyWrappingKey};
 //!
 //! let kek = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
 //!     .expect("a 16-byte symmetric cipher key");
-//! let state = ToyBlockCipher::new(&kek).unwrap();
-//! let kwp = Kwp::from_perm(&state);
+//! let key = ToyKey::<ToyBlockCipher, KWP>::from_key_material(&kek).expect("a valid KEK");
 //!
 //! // 20 bytes pad to 24, plus the 8-byte header: 32 bytes of ciphertext.
 //! let data = [0x5Au8; 20];
-//! let wrapped: [u8; 32] = kwp.wrap_key(&data).expect("wrapping");
-//! let recovered = kwp.unwrap_key::<20, 32>(&wrapped).expect("unwrapping");
+//! let wrapped: [u8; 32] = key.wrap_key(&data).expect("wrapping");
+//! let recovered = key.unwrap_key::<20, 32>(&wrapped).expect("unwrapping");
 //! assert_eq!(*recovered, data);
 //!
 //! // Up to 8 bytes fit in a single block with the header, which is enciphered directly
 //! // (Algorithm 5, step 5) rather than through the wrapping function.
 //! let short = *b"short";
-//! let wrapped: [u8; 16] = kwp.wrap_key(&short).expect("wrapping");
-//! assert_eq!(*kwp.unwrap_key::<5, 16>(&wrapped).expect("unwrapping"), short);
+//! let wrapped: [u8; 16] = key.wrap_key(&short).expect("wrapping");
+//! assert_eq!(*key.unwrap_key::<5, 16>(&wrapped).expect("unwrapping"), short);
 //! ```
 //!
 //! # The recovered length is inside the ciphertext
@@ -159,9 +162,9 @@ impl<'k, P> Kwp<'k, P>
 where
     P: BlockPermutation<KW_BLOCK_LEN> + ModeNames,
 {
-    /// Over an already-keyed permutation, which the worker borrows: what a [`KWP`]-bound key's
-    /// roles build.
-    pub fn from_perm(perm: &'k P) -> Self {
+    /// Over an already-keyed permutation, which the worker borrows: what [`KWP`]'s mode impls
+    /// build for a key's roles.
+    pub(crate) fn from_perm(perm: &'k P) -> Self {
         Self { perm }
     }
 }
