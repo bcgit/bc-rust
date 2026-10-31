@@ -93,13 +93,14 @@
 //!
 //! [`Cfb`] implements [`SuspendableKeyed`], so a message in progress can be suspended to a byte
 //! array and resumed later with the re-supplied key. The state is the open segment and how much of
-//! it is used; the permutation is rebuilt from the key. The array length is
+//! it is used; the permutation is reached through the re-supplied key. The array length is
 //! `Cfb::SUSPENDED_STATE_LEN`; see [the crate docs](crate#suspending-and-resuming-execution) for an
 //! example.
 //!
 //! # Memory Usage
 //!
-//! The state consists of the underlying permutation struct, one block, `buf`, and a byte count, `used`.
+//! The state consists of a reference to the permutation, one block, `buf`, and a byte count,
+//! `used`.
 //!
 //! # 🚨 Security Considerations 🚨
 //!
@@ -155,6 +156,7 @@ use bouncycastle_core::traits::{
     Algorithm, RNG, StreamCipherDecryptor, StreamCipherEncryptor, SuspendableKeyed,
     SymmetricCipherDecryptor, SymmetricCipherEncryptor,
 };
+use bouncycastle_utils::secret::Secret;
 use bouncycastle_utils::suspendable_state::{
     Cursor, CursorMut, LIB_VERSION_LEN, SuspendableComponent, bounded_usize, resume_component,
     suspend_component,
@@ -250,9 +252,9 @@ where
     // into `O_{j+1}`. So the same 16 bytes are the input block, then the output block, then the
     // next input block, and no copy is ever made.
     //
-    // Since `buf` holds either plaintext or ciphertext, but never any keymaterial, it is not
-    // necessary to tag it as `Secret<>`.
-    buf: [u8; BLOCK_LEN],
+    // `buf[used..]` is keystream, which gives away the next `BLOCK_LEN - used` plaintext bytes
+    // against their ciphertext, so the buffer is a `Secret`.
+    buf: Secret<[u8; BLOCK_LEN]>,
     /// Bytes of the current segment already processed, `0..=BLOCK_LEN`.
     used: usize,
     _dir: PhantomData<Dir>,
@@ -269,7 +271,9 @@ where
     /// `I1 = IV`, with no segment open: the first byte in either direction will compute `O1`.
     #[inline]
     fn start(perm: &'k P, iv: [u8; BLOCK_LEN]) -> Self {
-        Self { perm, buf: iv, used: BLOCK_LEN, _dir: PhantomData }
+        let mut buf: Secret<[u8; BLOCK_LEN]> = Secret::new();
+        *buf = iv;
+        Self { perm, buf, used: BLOCK_LEN, _dir: PhantomData }
     }
 
     /// Makes the next keystream byte available: if the current segment is complete, `buf` is the
@@ -328,7 +332,7 @@ where
             *b ^= *o;
         }
         // I_{j+1} = Cj. Serial: this is the input to the next cipher call.
-        self.buf = *block;
+        *self.buf = *block;
     }
 
     /// Decrypts one whole block at a segment boundary. `Cj` is overwritten by `Pj`, so it is copied
@@ -341,7 +345,7 @@ where
         for (b, o) in block.iter_mut().zip(self.buf.iter()) {
             *b ^= *o;
         }
-        self.buf = cj;
+        *self.buf = cj;
     }
 
     /// Decrypts two consecutive blocks with one [`BlockPermutation::encrypt_2blocks`] call.
@@ -365,11 +369,11 @@ where
     fn decrypt_pair(&mut self, blocks: &mut [[u8; BLOCK_LEN]; 2]) {
         debug_assert_eq!(self.used, BLOCK_LEN, "the block path needs a segment boundary");
         // The two input blocks, constructed in series: Ij (already held) and Ij+1 (= Cj).
-        let mut o = [self.buf, blocks[0]];
+        let mut o = [*self.buf, blocks[0]];
         self.perm.encrypt_2blocks(&mut o);
 
         // I_{j+2} = Cj+1, read before the XOR below turns it into Pj+1.
-        self.buf = blocks[1];
+        *self.buf = blocks[1];
 
         for (block, o) in blocks.iter_mut().zip(o.iter()) {
             for (b, o) in block.iter_mut().zip(o.iter()) {
@@ -387,9 +391,9 @@ where
     #[inline]
     fn decrypt_four(&mut self, blocks: &mut [[u8; BLOCK_LEN]; 4]) {
         debug_assert_eq!(self.used, BLOCK_LEN, "the block path needs a segment boundary");
-        let mut o = [self.buf, blocks[0], blocks[1], blocks[2]];
+        let mut o = [*self.buf, blocks[0], blocks[1], blocks[2]];
         self.perm.encrypt_4blocks(&mut o);
-        self.buf = blocks[3];
+        *self.buf = blocks[3];
         for (block, o) in blocks.iter_mut().zip(o.iter()) {
             for (b, o) in block.iter_mut().zip(o.iter()) {
                 *b ^= *o;
@@ -576,7 +580,7 @@ where
 
     fn write_state(&self, out: &mut [u8]) {
         let mut w = CursorMut::new(out);
-        w.bytes(&self.buf);
+        w.bytes(&*self.buf);
         w.u64(self.used as u64);
         debug_assert!(w.is_done());
     }
@@ -584,7 +588,9 @@ where
     fn read_state(state: &[u8], key: &'k Self::Key) -> Result<Self, SuspendableError> {
         let perm = key;
         let mut r = Cursor::new(state);
-        let buf = r.array::<BLOCK_LEN>();
+        // Read straight into the `Secret`, so no copy of the keystream tail sits on the stack.
+        let mut buf: Secret<[u8; BLOCK_LEN]> = Secret::new();
+        (*buf).copy_from_slice(r.bytes(BLOCK_LEN));
         // `used` is `0..=BLOCK_LEN`; anything past the buffer would index out of it.
         let used = bounded_usize(r.u64(), BLOCK_LEN)?;
         debug_assert!(r.is_done());
@@ -604,6 +610,9 @@ where
         suspend_component(&self)
     }
 
+    /// The state carries no direction: one suspended by the other direction's worker is accepted
+    /// and resumes over the same chaining value, which gives wrong output rather than an error.
+    /// Only GCM, whose state means different things per direction, refuses the other one.
     fn from_suspended(state: [u8; N], key: &'k Self::Key) -> Result<Self, SuspendableError> {
         resume_component(&state, key)
     }

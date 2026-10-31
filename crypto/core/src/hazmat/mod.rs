@@ -24,5 +24,5 @@ pub use key_stream::KeyStream;
 pub use mode::{
     AeadDeclaredDecryptMode, AeadDeclaredEncryptMode, AeadDecryptMode, AeadEncryptMode,
     BlockDecryptMode, BlockEncryptMode, EcbDecryptMode, EcbEncryptMode, KeyUnwrapMode, KeyWrapMode,
-    MacMode, Mode, ModeKey, SymmetricDecryptMode, SymmetricEncryptMode,
+    MacMode, Mode, ModeKey, NonceMacMode, SymmetricDecryptMode, SymmetricEncryptMode,
 };

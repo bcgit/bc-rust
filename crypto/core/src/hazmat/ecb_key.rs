@@ -20,11 +20,12 @@ pub trait EcbEncryptionKey<const KEY_LEN: usize, const BLOCK_LEN: usize> {
     /// Begins an encryption.
     fn create_encryptor<'k>(&'k self) -> Self::Encryptor<'k>;
 
-    /// One-shot: encrypts `LEN` bytes, a whole number of blocks, in place, and returns the number
-    /// of bytes written. `LEN % BLOCK_LEN == 0` is checked at compile time.
+    /// One-shot: encrypts `data`, which must be a whole number of blocks, in place, and returns
+    /// the number of bytes written.
     ///
     /// # Errors
-    /// The encryptor's own refusals; ECB has none.
+    /// [`SymmetricCipherError::DataNotBlockAligned`] if `data.len()` is not a multiple of
+    /// `BLOCK_LEN`; ECB itself refuses nothing.
     fn encrypt_inplace(&self, data: &mut [u8]) -> Result<usize, SymmetricCipherError> {
         let (blocks, []) = data.as_chunks_mut::<BLOCK_LEN>() else {
             return Err(SymmetricCipherError::DataNotBlockAligned);
@@ -43,11 +44,12 @@ pub trait EcbDecryptionKey<const KEY_LEN: usize, const BLOCK_LEN: usize> {
     /// Begins a decryption.
     fn create_decryptor<'k>(&'k self) -> Self::Decryptor<'k>;
 
-    /// One-shot: decrypts `LEN` bytes, a whole number of blocks, in place, and returns the number
-    /// of bytes written. `LEN % BLOCK_LEN == 0` is checked at compile time.
+    /// One-shot: decrypts `data`, which must be a whole number of blocks, in place, and returns
+    /// the number of bytes written.
     ///
     /// # Errors
-    /// The decryptor's own refusals; ECB has none.
+    /// [`SymmetricCipherError::DataNotBlockAligned`] if `data.len()` is not a multiple of
+    /// `BLOCK_LEN`; ECB itself refuses nothing.
     fn decrypt_inplace(&self, data: &mut [u8]) -> Result<usize, SymmetricCipherError> {
         let (blocks, []) = data.as_chunks_mut::<BLOCK_LEN>() else {
             return Err(SymmetricCipherError::DataNotBlockAligned);

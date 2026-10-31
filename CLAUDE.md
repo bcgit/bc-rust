@@ -106,7 +106,7 @@ The workspace has four top-level kinds of member:
 
 - `crypto/core` defines the abstract traits (`Hash`, `KDF`, `MAC`, `KEM`, `Signature`, `RNG`, `Algorithm`, `HashAlgParams`, …), error enums (`HashError`, `KDFError`, `KEMError`, `MACError`, `RNGError`, `SignatureError`), and the `KeyMaterial` / `KeyType` wrapper that all sensitive byte buffers are required to use (see `Secret` super-trait requirement in QUALITY_AND_STYLE.md).
 - `crypto/core-test-framework` contains the shared per-trait test suite (`hash.rs`, `kdf.rs`, `kem.rs`, `mac.rs`, `signature.rs`). New implementations of a core trait must be exercised through this framework — it's how trait conformance and error-condition coverage stay consistent across implementations.
-- `crypto/factory` provides enum-based string-name factories (`HashFactory`, `KDFFactory`, `MACFactory`, `RNGFactory`, `XOFFactory`). Each factory enum impls the underlying trait so it can be used transparently as that primitive, and each impls `AlgorithmFactory` (`new(name)`, `default_128_bit()`, `default_256_bit()`). When adding a new primitive that fits an existing trait, register it in the corresponding factory.
+- `crypto/factory` provides enum-based string-name factories (`HashFactory`, `KDFFactory`, `MACFactory`, `RNGFactory`, `XOFFactory`). Each factory enum impls the underlying trait so it can be used transparently as that primitive, except `MACFactory`, which is a key enum implementing the MAC role traits and handing out a `MACFactoryWorker` that impls `MAC`; and each impls `AlgorithmFactory` (`new(name)`, `default_128_bit()`, `default_256_bit()`). When adding a new primitive that fits an existing trait, register it in the corresponding factory.
 
 Trait/factory/CLI is the standard layering: a new algorithm typically requires (a) the primitive crate, (b) implementing the relevant `core` trait, (c) wiring it into the matching factory, (d) a CLI subcommand in `cli/src/*_cmd.rs` registered in `cli/src/main.rs`.
 
@@ -293,4 +293,16 @@ external vector suites — is specified in QUALITY_AND_STYLE.md and CONTRIBUTING
 
 ## CI
 
-The only workflow is `.github/workflows/publish_doc_benches_to_ghpages.yaml`: on every PR it builds rustdoc and runs `quality_stats.sh`; on `main` it additionally runs `cargo bench --all` and publishes docs, code stats, and benchmark results to GitHub Pages (`https://bcgit.github.io/bc-rust/`). There is no separate CI test/lint job — local `cargo test --workspace` is the gate, and nothing but a developer running it stands between a broken test and `main`.
+Five workflows under `.github/workflows/`, all triggered by pull requests:
+
+- `rust-build.yml`: `cargo build --workspace --all-targets --all-features` on stable.
+- `rust-test.yml`: `cargo test --all` on stable.
+- `rust-style.yml`: `cargo fmt --all --check` on **nightly** rustfmt, so format before every commit.
+- `rust-docs.yml`: `cargo doc --all` on stable.
+- `publish_doc_benches_to_ghpages.yaml`: builds rustdoc and runs `quality_stats.sh`; on `main` it also
+  publishes docs and code stats to GitHub Pages (`https://bcgit.github.io/bc-rust/`). Its bench step is
+  commented out because the benches are too slow on the hosted runner, so benchmark figures come from a
+  developer's machine, not CI.
+
+`cargo test --all` is the workspace run, so a failing test does block a PR; what CI does not run is
+`cargo mutants`, the CLI shell tests under `cli/tests/`, or rustdoc with warnings denied.

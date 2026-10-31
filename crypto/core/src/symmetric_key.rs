@@ -141,9 +141,7 @@ pub trait AeadEncryptionKey<
     const FINAL_LEN: usize,
 >
 {
-    /// The streaming encryptor this key produces. It borrows the key for `'k`: the key's per-key
-    /// state is read through the reference rather than copied into the worker, and the worker
-    /// cannot outlive the key.
+    /// The streaming encryptor this key produces, borrowing the key for `'k`.
     type Encryptor<'k>: AEADCipherEncryptor<NONCE_LEN, TAG_LEN, FINAL_LEN>
     where
         Self: 'k;
@@ -383,9 +381,7 @@ pub trait AeadDecryptionKey<
     const FINAL_LEN: usize,
 >
 {
-    /// The streaming decryptor this key produces. It borrows the key for `'k`: the key's per-key
-    /// state is read through the reference rather than copied into the worker, and the worker
-    /// cannot outlive the key.
+    /// The streaming decryptor this key produces, borrowing the key for `'k`.
     type Decryptor<'k>: AEADCipherDecryptor<NONCE_LEN, TAG_LEN, FINAL_LEN>
     where
         Self: 'k;
@@ -396,8 +392,9 @@ pub trait AeadDecryptionKey<
     /// One-shot with the tag inline: decrypts `ciphertext` under `nonce` and `aad` into
     /// `plaintext`, which needs `decrypt_out_len(ciphertext.len())` bytes of the decryptor type,
     /// and returns the number of plaintext bytes written. The entire output buffer is zeroized
-    /// before the plaintext is written, and again before an error is returned, so a caller who
-    /// ignores the `Result` is left with zeros rather than unauthenticated plaintext.
+    /// before anything is written, and the plaintext released before a failed tag check is
+    /// zeroized again, so a caller who ignores the `Result` is left with zeros rather than
+    /// unauthenticated plaintext.
     ///
     /// # Errors
     /// [`SymmetricCipherError::OutputBufferTooSmall`] if `plaintext` is too short,
@@ -513,9 +510,7 @@ pub trait AeadDeclaredEncryptionKey<
     const FINAL_LEN: usize,
 >
 {
-    /// The streaming encryptor this key produces. It borrows the key for `'k`: the key's per-key
-    /// state is read through the reference rather than copied into the worker, and the worker
-    /// cannot outlive the key.
+    /// The streaming encryptor this key produces, borrowing the key for `'k`.
     type Encryptor<'k>: AEADCipherEncryptor<NONCE_LEN, TAG_LEN, FINAL_LEN>
     where
         Self: 'k;
@@ -747,9 +742,7 @@ pub trait AeadDeclaredDecryptionKey<
     const FINAL_LEN: usize,
 >
 {
-    /// The streaming decryptor this key produces. It borrows the key for `'k`: the key's per-key
-    /// state is read through the reference rather than copied into the worker, and the worker
-    /// cannot outlive the key.
+    /// The streaming decryptor this key produces, borrowing the key for `'k`.
     type Decryptor<'k>: AEADCipherDecryptor<NONCE_LEN, TAG_LEN, FINAL_LEN>
     where
         Self: 'k;
@@ -879,9 +872,7 @@ pub trait SymmetricEncryptionKey<
     const FINAL_LEN: usize,
 >
 {
-    /// The streaming encryptor this key produces. It borrows the key for `'k`: the key's per-key
-    /// state is read through the reference rather than copied into the worker, and the worker
-    /// cannot outlive the key.
+    /// The streaming encryptor this key produces, borrowing the key for `'k`.
     type Encryptor<'k>: SymmetricCipherEncryptor<INIT_DATA_LEN, FINAL_LEN>
     where
         Self: 'k;
@@ -967,9 +958,7 @@ pub trait SymmetricDecryptionKey<
     const FINAL_LEN: usize,
 >
 {
-    /// The streaming decryptor this key produces. It borrows the key for `'k`: the key's per-key
-    /// state is read through the reference rather than copied into the worker, and the worker
-    /// cannot outlive the key.
+    /// The streaming decryptor this key produces, borrowing the key for `'k`.
     type Decryptor<'k>: SymmetricCipherDecryptor<INIT_DATA_LEN, FINAL_LEN>
     where
         Self: 'k;
@@ -979,8 +968,8 @@ pub trait SymmetricDecryptionKey<
 
     /// One-shot: decrypts `ciphertext` under `init_data` into `plaintext`, which needs
     /// `decrypt_out_len(ciphertext.len())` bytes of the decryptor type, and returns the number
-    /// of plaintext bytes written. The entire output buffer is zeroized before the plaintext is
-    /// written, and again before an error is returned.
+    /// of plaintext bytes written. The entire output buffer is zeroized before anything is
+    /// written, and the plaintext released before a failed final is zeroized again.
     ///
     /// # Errors
     /// [`SymmetricCipherError::OutputBufferTooSmall`] if `plaintext` is too short, or any error
@@ -1048,9 +1037,7 @@ pub trait BlockEncryptionKey<
     const BLOCK_LEN: usize,
 >
 {
-    /// The streaming encryptor this key produces. It borrows the key for `'k`: the key's per-key
-    /// state is read through the reference rather than copied into the worker, and the worker
-    /// cannot outlive the key.
+    /// The streaming encryptor this key produces, borrowing the key for `'k`.
     type Encryptor<'k>: BlockCipherEncryptor<INIT_DATA_LEN, BLOCK_LEN>
     where
         Self: 'k;
@@ -1066,12 +1053,13 @@ pub trait BlockEncryptionKey<
         rng: &mut dyn RNG,
     ) -> Result<(Self::Encryptor<'k>, [u8; INIT_DATA_LEN]), SymmetricCipherError>;
 
-    /// One-shot: encrypts `LEN` bytes, a whole number of blocks, in place under init data drawn
-    /// from `rng`, and returns the number of bytes written with the init data. `LEN % BLOCK_LEN
-    /// == 0` is checked at compile time, as for [`BlockCipherEncryptor::do_encrypt_blocks_inplace`].
+    /// One-shot: encrypts `data`, which must be a whole number of blocks, in place under init
+    /// data drawn from `rng`, and returns the number of bytes written with the init data.
     ///
     /// # Errors
-    /// As [`create_encryptor`](Self::create_encryptor), or the encryptor's own refusals.
+    /// [`SymmetricCipherError::DataNotBlockAligned`] if `data.len()` is not a multiple of
+    /// `BLOCK_LEN`; otherwise as [`create_encryptor`](Self::create_encryptor), or the encryptor's
+    /// own refusals.
     fn encrypt_inplace(
         &self,
         rng: &mut dyn RNG,
@@ -1094,9 +1082,7 @@ pub trait BlockDecryptionKey<
     const BLOCK_LEN: usize,
 >
 {
-    /// The streaming decryptor this key produces. It borrows the key for `'k`: the key's per-key
-    /// state is read through the reference rather than copied into the worker, and the worker
-    /// cannot outlive the key.
+    /// The streaming decryptor this key produces, borrowing the key for `'k`.
     type Decryptor<'k>: BlockCipherDecryptor<INIT_DATA_LEN, BLOCK_LEN>
     where
         Self: 'k;
@@ -1104,11 +1090,12 @@ pub trait BlockDecryptionKey<
     /// Begins the decryption of a message whose encryptor returned `init_data`.
     fn create_decryptor<'k>(&'k self, init_data: &[u8; INIT_DATA_LEN]) -> Self::Decryptor<'k>;
 
-    /// One-shot: decrypts `LEN` bytes, a whole number of blocks, in place under `init_data`, and
-    /// returns the number of bytes written. `LEN % BLOCK_LEN == 0` is checked at compile time.
+    /// One-shot: decrypts `data`, which must be a whole number of blocks, in place under
+    /// `init_data`, and returns the number of bytes written.
     ///
     /// # Errors
-    /// The decryptor's own refusals.
+    /// [`SymmetricCipherError::DataNotBlockAligned`] if `data.len()` is not a multiple of
+    /// `BLOCK_LEN`; otherwise the decryptor's own refusals.
     fn decrypt_inplace(
         &self,
         init_data: &[u8; INIT_DATA_LEN],
@@ -1124,7 +1111,7 @@ pub trait BlockDecryptionKey<
 // The MAC worker is bounded on `MAC` as a whole for now: splitting its finals into `MACGenerator`
 // and `MACVerifier` while `MAC` still carries them would put the same method names on two traits,
 // which is ambiguous at every call site that has both in scope (`do_update` is on `MAC`, `do_final`
-// would be on both). The split happens when `MAC` loses its constructors and finals.
+// would be on both). The split waits on `MAC` losing its finals; its constructors are already gone.
 
 /// A key that can generate MACs. Each call to [`create_generator`](Self::create_generator) starts
 /// a fresh worker over the key's per-key state, so any number of generators can be in flight from

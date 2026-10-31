@@ -2,8 +2,8 @@
 // written here so the modes can be driven through the key path without a real cipher. The role
 // impls forward to whichever mode traits `M` implements over `P`, exactly as the AES key's do.
 //
-// Pulled in with `#[path]` from the tests, so every item is `pub` and unused ones are allowed.
-#![allow(dead_code)]
+// Pulled in with `#[path]` from the tests and `include!`d by the doc examples, so every item is
+// `pub`, and the site that pulls it in allows the unused ones.
 
 use bouncycastle_cipher::modes::{GCM_NONCE_LEN, GMAC, Gmac, ModeNames};
 use bouncycastle_cipher::{Decrypting, Encrypting};
@@ -12,7 +12,8 @@ use bouncycastle_core::hazmat::{
     AeadDeclaredDecryptMode, AeadDeclaredEncryptMode, AeadDecryptMode, AeadEncryptMode,
     BlockDecryptMode, BlockEncryptMode, BlockPermutation, EcbDecryptMode, EcbDecryptionKey,
     EcbEncryptMode, EcbEncryptionKey, ElectronicCodeBook, KeyUnwrapMode, KeyWrapMode, MacMode,
-    Mode, ModeKey, SymmetricDecryptMode, SymmetricEncryptMode, do_hazardous_operations,
+    Mode, ModeKey, NonceMacMode, SymmetricDecryptMode, SymmetricEncryptMode,
+    do_hazardous_operations,
 };
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::symmetric_key::{
@@ -416,21 +417,21 @@ where
         &'k self,
         rng: &mut dyn RNG,
     ) -> Result<(Gmac<'k, P, Encrypting, TAG_LEN>, [u8; GCM_NONCE_LEN]), SymmetricCipherError> {
-        Gmac::<P, Encrypting, TAG_LEN>::from_key_state(&self.state, rng)
+        GMAC::<TAG_LEN>::generate_init(&self.state, rng)
     }
 
     pub fn create_generator_nonce<'k>(
         &'k self,
         nonce: &[u8; GCM_NONCE_LEN],
     ) -> Gmac<'k, P, Encrypting, TAG_LEN> {
-        Gmac::<P, Encrypting, TAG_LEN>::from_key_state_nonce(&self.state, nonce)
+        GMAC::<TAG_LEN>::generate_init_nonce(&self.state, nonce)
     }
 
     pub fn create_verifier<'k>(
         &'k self,
         nonce: &[u8; GCM_NONCE_LEN],
     ) -> Gmac<'k, P, Decrypting, TAG_LEN> {
-        Gmac::<P, Decrypting, TAG_LEN>::from_key_state(&self.state, nonce)
+        GMAC::<TAG_LEN>::verify_init(&self.state, nonce)
     }
 }
 

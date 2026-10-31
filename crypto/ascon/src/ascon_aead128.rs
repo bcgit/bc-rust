@@ -625,7 +625,6 @@ impl Ascon_AEAD128<Decrypting> {
 /// let plaintext = key.decrypt_detached(&nonce, b"header", &ciphertext, &tag).unwrap();
 /// assert_eq!(plaintext, b"attack at dawn");
 /// ```
-#[allow(non_camel_case_types)]
 pub struct AsconAEAD128Key {
     key: Secret<[u64; 2]>,
 }
@@ -650,8 +649,7 @@ impl FromKeyMaterial<KEY_LEN> for AsconAEAD128Key {
     const KEY_TYPE: KeyType = KeyType::SymmetricCipherKey;
 
     /// # Errors
-    /// * [`KeyMaterialError::InvalidKeyType`] if the key is not a `SymmetricCipherKey`, or is
-    ///   bound to another algorithm (`KeyMaterialTrait::set_algorithm`).
+    /// * [`KeyMaterialError::InvalidKeyType`] if the key is not a `SymmetricCipherKey`.
     /// * [`KeyMaterialError::InvalidLength`] if the key is not 16 bytes long.
     /// * [`KeyMaterialError::SecurityStrength`] if the key carries a strength below 128 bits.
     fn from_key_material(key: &KeyMaterial<KEY_LEN>) -> Result<Self, SymmetricCipherError> {
