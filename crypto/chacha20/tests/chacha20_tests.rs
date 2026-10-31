@@ -5,15 +5,10 @@ use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
 use bouncycastle_core::hazmat::KeyStream;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::symmetric_key::{
-    FromKeyMaterial, SymmetricDecryptionKey, SymmetricEncryptionKey,
-};
-use bouncycastle_core::traits::{
-    Algorithm, StreamCipherDecryptor, StreamCipherEncryptor, SuspendableKeyed,
-};
+use bouncycastle_core::symmetric_key::{FromKeyMaterial, SymmetricDecryptionKey};
+use bouncycastle_core::traits::{Algorithm, StreamCipherDecryptor, StreamCipherEncryptor};
 use bouncycastle_core_test_framework::from_key_material::TestFrameworkFromKeyMaterial;
 use bouncycastle_core_test_framework::key_stream::TestFrameworkKeyStream;
-use bouncycastle_core_test_framework::suspendable_state::TestFrameworkSuspendableKeyedState;
 use bouncycastle_core_test_framework::symmetric_ciphers::{
     TestFrameworkStreamCipher, TestFrameworkSymmetricCipher,
 };
@@ -156,82 +151,6 @@ fn key_capacity_does_not_replace_key_length() {
     }
 }
 
-/// Part of a message, then suspend a clone and resume it over the key it was made from: both
-/// must finish identically, mid-block and at a block boundary, in both directions.
-#[test]
-fn suspend_and_resume_continues_the_keystream() {
-    const N: usize = ChaCha20::<'static, Encrypting>::SUSPENDED_STATE_LEN;
-    let key = key();
-    let mut rng = HashDRBG_SHA512::new_from_os();
-    for first in [0, 1, 63, 64, 65] {
-        let (mut enc, nonce) = key.create_encryptor(&mut rng).unwrap();
-        let mut ciphertext = vec![0x5au8; 200];
-        enc.do_encrypt_inplace(&mut ciphertext[..first]).unwrap();
-        TestFrameworkSuspendableKeyedState::new().test::<N, _>(&enc, &key);
-        let state: [u8; N] = enc.clone().suspend();
-        let mut resumed = ChaCha20::<Encrypting>::from_suspended(state, &key).unwrap();
-        let mut rest = ciphertext[first..].to_vec();
-        enc.do_encrypt_inplace(&mut ciphertext[first..]).unwrap();
-        resumed.do_encrypt_inplace(&mut rest).unwrap();
-        assert_eq!(rest, ciphertext[first..]);
-
-        let mut dec = key.create_decryptor(&nonce);
-        dec.do_decrypt_inplace(&mut ciphertext[..first]).unwrap();
-        const M: usize = ChaCha20::<'static, Decrypting>::SUSPENDED_STATE_LEN;
-        TestFrameworkSuspendableKeyedState::new().test::<M, _>(&dec, &key);
-        let state: [u8; M] = dec.suspend();
-        let mut resumed = ChaCha20::<Decrypting>::from_suspended(state, &key).unwrap();
-        resumed.do_decrypt_inplace(&mut ciphertext[first..]).unwrap();
-        assert_eq!(ciphertext, vec![0x5au8; 200]);
-    }
-}
-
-/// The suspended layout is frozen. After the version header: the nonce, the next block counter
-/// (`u64`, little-endian), the pending keystream block, and how much of it is used (`u64`,
-/// little-endian). Here 70 bytes in, block 0 is spent, block 1 is pending with 6 bytes used, and
-/// the next counter is 2.
-#[test]
-fn the_suspended_layout_is_frozen() {
-    const N: usize = ChaCha20::<'static, Decrypting>::SUSPENDED_STATE_LEN;
-    let key = key();
-    let nonce = [0x24; 12];
-    let mut keystream = [0u8; 192];
-    key.create_decryptor(&nonce).do_decrypt_inplace(&mut keystream).unwrap();
-
-    let mut dec = key.create_decryptor(&nonce);
-    dec.do_decrypt_inplace(&mut [0u8; 70]).unwrap();
-    let state: [u8; N] = dec.suspend();
-    let mut expected = nonce.to_vec();
-    expected.extend_from_slice(&2u64.to_le_bytes());
-    expected.extend_from_slice(&keystream[64..128]);
-    expected.extend_from_slice(&6u64.to_le_bytes());
-    assert_eq!(state[3..], expected[..]);
-
-    let mut resumed = ChaCha20::<Decrypting>::from_suspended(state, &key).unwrap();
-    let mut rest = [0u8; 122];
-    resumed.do_decrypt_inplace(&mut rest).unwrap();
-    assert_eq!(rest, keystream[70..]);
-}
-
-/// A resumed state carrying a counter past `2^32` is not one this type writes, and a resumed
-/// exhausted keystream stays exhausted.
-#[test]
-fn resumed_counter_is_bounded() {
-    const N: usize = ChaCha20::<'static, Encrypting>::SUSPENDED_STATE_LEN;
-    let key = key();
-    let key_state = state();
-    let mut cipher = at(&key_state, &[1; 12], u32::MAX);
-    cipher.do_encrypt_inplace(&mut [0u8; 64]).unwrap();
-    let state: [u8; N] = cipher.suspend();
-    let mut resumed = ChaCha20::<Encrypting>::from_suspended(state, &key).unwrap();
-    assert!(resumed.do_encrypt_inplace(&mut [0]).is_err());
-
-    // Layout: version header (3), nonce (12), next counter (8, little-endian), pending block, used.
-    let mut past = state;
-    past[3 + 12..3 + 20].copy_from_slice(&((1u64 << 32) + 1).to_le_bytes());
-    assert!(ChaCha20::<Encrypting>::from_suspended(past, &key).is_err());
-}
-
 /// The figures in the crate docs' Memory Usage table.
 #[cfg(target_pointer_width = "64")]
 #[test]
@@ -241,5 +160,4 @@ fn sizes_match_the_documented_memory_table() {
     assert_eq!(size_of::<ChaCha20KeyStream<'static>>(), 32);
     assert_eq!(size_of::<ChaCha20<'static, Encrypting>>(), 104);
     assert_eq!(size_of::<ChaCha20<'static, Decrypting>>(), 104);
-    assert_eq!(ChaCha20::<'static, Encrypting>::SUSPENDED_STATE_LEN, 95);
 }

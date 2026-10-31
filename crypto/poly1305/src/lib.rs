@@ -52,14 +52,11 @@ extern crate alloc;
 pub mod hazmat;
 
 use alloc::vec::Vec;
-use bouncycastle_core::errors::{MACError, SuspendableError};
+use bouncycastle_core::errors::MACError;
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{Algorithm, MAC};
 use bouncycastle_utils::ct::{self, Condition};
 use bouncycastle_utils::secret::Secret;
-use bouncycastle_utils::suspendable_state::{
-    Cursor, CursorMut, SuspendableComponent, bounded_usize,
-};
 
 /// One-time key length in bytes.
 pub const KEY_LEN: usize = 32;
@@ -346,49 +343,5 @@ impl MAC for Poly1305 {
 
     fn max_security_strength(&self) -> SecurityStrength {
         Self::MAX_SECURITY_STRENGTH
-    }
-}
-
-/// The suspended state is the accumulator `h` as five little-endian `u64` limbs, the buffered
-/// partial block and its length, for a construction that suspends a message in progress, as
-/// ChaCha20-Poly1305 does. The one-time key is not in it: `Key` is the 32-byte key, re-supplied on
-/// resume. There is no `SuspendableKeyed` impl, since a [`Poly1305Key`] is consumed by the one
-/// worker it makes and so cannot be re-supplied.
-///
-/// # 🚨 Security Considerations 🚨
-/// Resuming makes a worker from the raw key bytes, as [`hazmat::key_from_bytes`] does, with the
-/// same obligation: the key authenticates one message, so resume a state once, under the key it
-/// was suspended with.
-impl<'k> SuspendableComponent<'k> for Poly1305 {
-    const STATE_LEN: usize = 5 * 8 + BLOCK_LEN + 8;
-    type Key = [u8; KEY_LEN];
-
-    fn write_state(&self, out: &mut [u8]) {
-        let mut w = CursorMut::new(out);
-        for limb in self.h.iter() {
-            w.u64(*limb);
-        }
-        w.bytes(&*self.buffer);
-        w.u64(self.buffered as u64);
-        debug_assert!(w.is_done());
-    }
-
-    fn read_state(state: &[u8], key: &'k Self::Key) -> Result<Self, SuspendableError> {
-        let mut mac = Poly1305::from_key(Poly1305Key::from_key_bytes(key));
-        let mut r = Cursor::new(state);
-        for (i, limb) in mac.h.iter_mut().enumerate() {
-            *limb = r.u64();
-            // process_block leaves every limb within 26 bits but h[1], which can carry a little
-            // over; anything wider is not a state it writes, and could overflow its products.
-            let max = if i == 1 { (1 << 27) - 1 } else { MASK };
-            if *limb > max {
-                return Err(SuspendableError::InvalidData);
-            }
-        }
-        (*mac.buffer).copy_from_slice(r.bytes(BLOCK_LEN));
-        // A full block is processed as soon as it is complete, so at most 15 bytes are buffered.
-        mac.buffered = bounded_usize(r.u64(), BLOCK_LEN - 1)?;
-        debug_assert!(r.is_done());
-        Ok(mac)
     }
 }

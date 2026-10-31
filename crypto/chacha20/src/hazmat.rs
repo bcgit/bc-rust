@@ -2,25 +2,24 @@
 //! for what the path means and the supported uses.
 //!
 //! [`ChaCha20KeyState`] is the key, validated once, and [`ChaCha20KeyStream`] the keystream
-//! positioned over it: the parts under [`ChaCha20Key`] and the
+//! positioned over it: the parts under [`ChaCha20Key`](crate::ChaCha20Key) and the
 //! ChaCha20-Poly1305 key. Constructed directly, the keystream takes the nonce and initial block
 //! counter from the caller; a key's `create_encryptor` draws the nonce, starts at counter 0 and
 //! refuses to run past the counter, and is the cipher to use.
 
-use crate::{BLOCK_LEN, ChaCha20Key, KEY_LEN, NONCE_LEN};
-use bouncycastle_core::errors::{KeyMaterialError, SuspendableError, SymmetricCipherError};
+use crate::{BLOCK_LEN, KEY_LEN, NONCE_LEN};
+use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
 use bouncycastle_core::hazmat::KeyStream;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::Algorithm;
 use bouncycastle_utils::secret::Secret;
-use bouncycastle_utils::suspendable_state::{Cursor, CursorMut, SuspendableComponent};
 
 /// One counter value per keystream block: RFC 8439 Sec 2.3, "Word 12 is a block counter".
 const BLOCK_LIMIT: u64 = 1 << 32;
 
 /// The 256-bit ChaCha20 key of RFC 8439 Sec 2.3 as the eight words of the cipher state it fills,
-/// validated once: the keyed primitive under [`ChaCha20Key`] and the
+/// validated once: the keyed primitive under [`ChaCha20Key`](crate::ChaCha20Key) and the
 /// ChaCha20-Poly1305 key, as an expanded schedule is under an AES key. The words live in a
 /// [`Secret`], zeroized on drop, and a [`ChaCha20KeyStream`] borrows them rather than copying them.
 ///
@@ -96,15 +95,11 @@ impl<'k> ChaCha20KeyStream<'k> {
         nonce: &[u8; NONCE_LEN],
         initial_counter: u32,
     ) -> Self {
-        Self::at(key, nonce, u64::from(initial_counter))
-    }
-
-    fn at(key: &'k ChaCha20KeyState, nonce: &[u8; NONCE_LEN], next_counter: u64) -> Self {
         let mut words = [0u32; 3];
         for (word, bytes) in words.iter_mut().zip(nonce.chunks_exact(4)) {
             *word = u32::from_le_bytes(bytes.try_into().unwrap());
         }
-        Self { key, nonce: words, next_counter }
+        Self { key, nonce: words, next_counter: u64::from(initial_counter) }
     }
 }
 
@@ -184,33 +179,4 @@ fn quarter_round(state: &mut [u32; 16], a: usize, b: usize, c: usize, d: usize) 
     state[d] = (state[d] ^ state[a]).rotate_left(8);
     state[c] = state[c].wrapping_add(state[d]);
     state[b] = (state[b] ^ state[c]).rotate_left(7);
-}
-
-/// The suspended state is the nonce and the next block counter; the key words are the
-/// re-supplied key's. See [`bouncycastle_utils::suspendable_state`].
-impl<'k> SuspendableComponent<'k> for ChaCha20KeyStream<'k> {
-    const STATE_LEN: usize = NONCE_LEN + 8;
-    type Key = ChaCha20Key;
-
-    fn write_state(&self, out: &mut [u8]) {
-        let mut w = CursorMut::new(out);
-        for word in &self.nonce {
-            w.bytes(&word.to_le_bytes());
-        }
-        w.u64(self.next_counter);
-        debug_assert!(w.is_done());
-    }
-
-    fn read_state(state: &[u8], key: &'k Self::Key) -> Result<Self, SuspendableError> {
-        let mut r = Cursor::new(state);
-        let nonce = r.array::<NONCE_LEN>();
-        // The counter counts to `BLOCK_LIMIT` and stops there (the exhausted state, with
-        // `remaining_blocks() == 0`); anything past it is not a state this type produces.
-        let next_counter = r.u64();
-        debug_assert!(r.is_done());
-        if next_counter > BLOCK_LIMIT {
-            return Err(SuspendableError::InvalidData);
-        }
-        Ok(Self::at(&key.state, &nonce, next_counter))
-    }
 }

@@ -5,7 +5,8 @@
 //! [`SymmetricEncryptionKey`] / [`SymmetricDecryptionKey`], drawing the nonce from the RNG it is
 //! given and starting the block counter at zero. The raw keystream, with a caller-chosen nonce
 //! and counter for protocols and test vectors, is [`hazmat::ChaCha20KeyStream`]. Only the RFC's
-//! 32-byte key and 12-byte nonce variant is supported.
+//! 32-byte key and 12-byte nonce variant is supported. A message in progress is paused by holding
+//! its worker; the workers do not suspend (#173).
 //!
 //! # Usage Examples
 //!
@@ -46,11 +47,11 @@
 //!
 //! # Memory Usage
 //!
-//! | Type | In-memory size (bytes) | Suspended state size (bytes) |
-//! |------|------------------------|------------------------------|
-//! | [`ChaCha20Key`] | 32 | -- |
-//! | [`ChaCha20`] | 104 | `ChaCha20::SUSPENDED_STATE_LEN` (95) |
-//! | [`hazmat::ChaCha20KeyStream`] | 32 | -- |
+//! | Type | In-memory size (bytes) |
+//! |------|------------------------|
+//! | [`ChaCha20Key`] | 32 |
+//! | [`ChaCha20`] | 104 |
+//! | [`hazmat::ChaCha20KeyStream`] | 32 |
 //!
 //! "In-memory size" is `core::mem::size_of` on a 64-bit target. There are no heap allocations and
 //! no message-sized buffers, so this crate has no `mem_usage_benches` harness.

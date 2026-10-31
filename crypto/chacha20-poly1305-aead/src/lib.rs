@@ -10,10 +10,8 @@
 //! for nonce uniqueness. A key/nonce may encrypt at most `64 * (2^32 - 1)` bytes. AAD must precede
 //! all data updates, including empty updates. Empty AAD is always a no-op. Secret state is
 //! zeroized on drop; streaming and output-buffer methods do not allocate. This is the IETF
-//! construction, not the original 64-bit-nonce variant or XChaCha20.
-//!
-//! Both directions implement [`SuspendableKeyed`], so a message in progress can be suspended to a
-//! byte array and resumed under the re-supplied key.
+//! construction, not the original 64-bit-nonce variant or XChaCha20. A message in progress is
+//! paused by holding its worker; the workers neither suspend nor clone (#173).
 //!
 //! # Usage Examples
 //!
@@ -70,11 +68,11 @@
 //!
 //! # Memory Usage
 //!
-//! | Type | In-memory size (bytes) | Suspended state size (bytes) |
-//! |------|------------------------|------------------------------|
-//! | [`ChaCha20Poly1305Key`] | 32 | -- |
-//! | [`ChaCha20_Poly1305<Encrypting>`] | 344 | [`SUSPENDED_CHACHA20_POLY1305_ENCRYPTOR_STATE_LEN`] (176) |
-//! | [`ChaCha20_Poly1305<Decrypting>`] | 344 | [`SUSPENDED_CHACHA20_POLY1305_DECRYPTOR_STATE_LEN`] (193) |
+//! | Type | In-memory size (bytes) |
+//! |------|------------------------|
+//! | [`ChaCha20Poly1305Key`] | 32 |
+//! | [`ChaCha20_Poly1305<Encrypting>`] | 344 |
+//! | [`ChaCha20_Poly1305<Decrypting>`] | 344 |
 //!
 //! "In-memory size" is `core::mem::size_of` on a 64-bit target. There are no heap allocations and
 //! no message-sized buffers, so this crate has no `mem_usage_benches` harness.
@@ -87,8 +85,6 @@
 //!   tags.
 //! - Streaming decryption releases **unauthenticated** bytes: do not use them until finalization
 //!   succeeds, and erase them on failure. The key's one-shots erase their output on tag failure.
-//! - A suspended state holds live keystream and the Poly1305 accumulator: protect it as you would
-//!   the key, and resume it once. Two workers resumed from one state encrypt under one nonce.
 
 #![no_std]
 #![forbid(unsafe_code)]
@@ -97,7 +93,7 @@
 use bouncycastle_chacha20::hazmat::ChaCha20KeyStream;
 use bouncycastle_chacha20::{ChaCha20, ChaCha20Key};
 use bouncycastle_cipher::{Decrypting, Encrypting};
-use bouncycastle_core::errors::{SuspendableError, SymmetricCipherError};
+use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::hazmat::KeyStream;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
@@ -106,14 +102,11 @@ use bouncycastle_core::symmetric_key::{
 };
 use bouncycastle_core::traits::{
     AEADCipherDecryptor, AEADCipherEncryptor, Algorithm, MAC, RNG, StreamCipherDecryptor,
-    StreamCipherEncryptor, SuspendableKeyed, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
+    StreamCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
 };
 use bouncycastle_poly1305::Poly1305;
 use bouncycastle_poly1305::hazmat::key_from_bytes;
 use bouncycastle_utils::secret::Secret;
-use bouncycastle_utils::suspendable_state::{
-    Cursor, CursorMut, LIB_VERSION_LEN, SuspendableComponent, add_lib_ver, check_lib_ver,
-};
 
 /// Key length in bytes.
 pub const KEY_LEN: usize = 32;
@@ -418,148 +411,13 @@ impl AEADCipherDecryptor<NONCE_LEN, TAG_LEN, TAG_LEN> for ChaCha20_Poly1305<'_, 
     }
 }
 
-/// The inner ChaCha20's share of a suspended state: its nonce, block counter and partly used
-/// keystream block.
-const CHACHA20_STATE_LEN: usize =
-    <ChaCha20<'static, Encrypting> as SuspendableComponent<'static>>::STATE_LEN;
-/// The Poly1305's share: its accumulator and buffered partial block.
-const POLY1305_STATE_LEN: usize = <Poly1305 as SuspendableComponent<'static>>::STATE_LEN;
-
-/// Length in bytes of the serialized state of `ChaCha20_Poly1305<Encrypting>`: the 3-byte library
-/// version, the ChaCha20 and Poly1305 states, the AAD and data byte counts, and a call-state byte.
-/// No key is in it: the key object is re-supplied to [`SuspendableKeyed::from_suspended`], and the
-/// one-time Poly1305 key is re-derived from it and the nonce.
-pub const SUSPENDED_CHACHA20_POLY1305_ENCRYPTOR_STATE_LEN: usize =
-    LIB_VERSION_LEN + CHACHA20_STATE_LEN + POLY1305_STATE_LEN + 8 + 8 + 1;
-
-/// Length in bytes of the serialized state of `ChaCha20_Poly1305<Decrypting>`: the encrypting
-/// side's layout, then the up to `TAG_LEN` bytes it holds back and their count.
-pub const SUSPENDED_CHACHA20_POLY1305_DECRYPTOR_STATE_LEN: usize =
-    SUSPENDED_CHACHA20_POLY1305_ENCRYPTOR_STATE_LEN + TAG_LEN + 1;
-
-/// The suspended call-state byte: the direction's marker, with `DATA_STARTED` set once the AAD
-/// phase has ended. Both markers are non-zero, so a zeroed byte is refused. Never renumber them,
-/// or older states are misread.
-const ENC_DIR_BITS: u8 = 0x10;
-const DEC_DIR_BITS: u8 = 0x20;
-const DATA_STARTED: u8 = 0x01;
-
-impl<'k> SuspendableKeyed<'k, SUSPENDED_CHACHA20_POLY1305_ENCRYPTOR_STATE_LEN>
-    for ChaCha20_Poly1305<'k, Encrypting>
-{
-    type Key = ChaCha20Poly1305Key;
-
-    fn suspend(self) -> [u8; SUSPENDED_CHACHA20_POLY1305_ENCRYPTOR_STATE_LEN] {
-        self.suspend_as(ENC_DIR_BITS)
-    }
-
-    /// A state suspended by the decrypting side is [`SuspendableError::InvalidData`] here.
-    fn from_suspended(
-        serialized_state: [u8; SUSPENDED_CHACHA20_POLY1305_ENCRYPTOR_STATE_LEN],
-        key: &'k Self::Key,
-    ) -> Result<Self, SuspendableError> {
-        Self::resume_as(&serialized_state, key, ENC_DIR_BITS)
-    }
-}
-
-/// The encrypting side's layout, then the held-back bytes and their count; see
-/// [`SUSPENDED_CHACHA20_POLY1305_DECRYPTOR_STATE_LEN`].
-impl<'k> SuspendableKeyed<'k, SUSPENDED_CHACHA20_POLY1305_DECRYPTOR_STATE_LEN>
-    for ChaCha20_Poly1305<'k, Decrypting>
-{
-    type Key = ChaCha20Poly1305Key;
-
-    fn suspend(self) -> [u8; SUSPENDED_CHACHA20_POLY1305_DECRYPTOR_STATE_LEN] {
-        let mut out = [0u8; SUSPENDED_CHACHA20_POLY1305_DECRYPTOR_STATE_LEN];
-        let (head, tail) = out.split_at_mut(SUSPENDED_CHACHA20_POLY1305_ENCRYPTOR_STATE_LEN);
-        head.copy_from_slice(&self.suspend_as(DEC_DIR_BITS));
-        tail[..TAG_LEN].copy_from_slice(&self.held);
-        tail[TAG_LEN] = self.held_len as u8;
-        out
-    }
-
-    /// A state suspended by the encrypting side, or a held-back count above `TAG_LEN`, is
-    /// [`SuspendableError::InvalidData`].
-    fn from_suspended(
-        serialized_state: [u8; SUSPENDED_CHACHA20_POLY1305_DECRYPTOR_STATE_LEN],
-        key: &'k Self::Key,
-    ) -> Result<Self, SuspendableError> {
-        let (head, tail) =
-            serialized_state.split_at(SUSPENDED_CHACHA20_POLY1305_ENCRYPTOR_STATE_LEN);
-        // infallible: `head` is exactly the encrypting side's length.
-        let mut dec = Self::resume_as(head.try_into().unwrap(), key, DEC_DIR_BITS)?;
-        dec.held.copy_from_slice(&tail[..TAG_LEN]);
-        dec.held_len = tail[TAG_LEN] as usize;
-        if dec.held_len > TAG_LEN {
-            return Err(SuspendableError::InvalidData);
-        }
-        Ok(dec)
-    }
-}
-
-impl<'k, Dir> ChaCha20_Poly1305<'k, Dir> {
-    /// The body of both directions' `suspend`, up to the end of the encrypting side's layout;
-    /// `dir_bits` marks the direction.
-    fn suspend_as(&self, dir_bits: u8) -> [u8; SUSPENDED_CHACHA20_POLY1305_ENCRYPTOR_STATE_LEN] {
-        let mut out = [0u8; SUSPENDED_CHACHA20_POLY1305_ENCRYPTOR_STATE_LEN];
-        let (cipher, rest) = add_lib_ver(&mut out).split_at_mut(CHACHA20_STATE_LEN);
-        self.cipher.write_state(cipher);
-        let (mac, rest) = rest.split_at_mut(POLY1305_STATE_LEN);
-        self.mac.write_state(mac);
-        let mut w = CursorMut::new(rest);
-        w.u64(self.aad_len);
-        w.u64(self.data_len);
-        w.u8(dir_bits | if self.data_started { DATA_STARTED } else { 0 });
-        debug_assert!(w.is_done());
-        out
-    }
-
-    /// The body of both directions' `from_suspended`: a call-state byte not marked `dir_bits` is
-    /// refused, so a state never resumes in the other direction.
-    fn resume_as(
-        state: &[u8; SUSPENDED_CHACHA20_POLY1305_ENCRYPTOR_STATE_LEN],
-        key: &'k ChaCha20Poly1305Key,
-        dir_bits: u8,
-    ) -> Result<Self, SuspendableError> {
-        let (cipher_state, rest) = check_lib_ver(state, None)?.split_at(CHACHA20_STATE_LEN);
-        let (mac_state, rest) = rest.split_at(POLY1305_STATE_LEN);
-        let mut r = Cursor::new(rest);
-        let aad_len = r.u64();
-        let data_len = r.u64();
-        let call_state = r.u8();
-        debug_assert!(r.is_done());
-        if call_state & !DATA_STARTED != dir_bits {
-            return Err(SuspendableError::InvalidData);
-        }
-        let data_started = call_state & DATA_STARTED != 0;
-        if data_len > MAX_MESSAGE_LEN || (data_len != 0 && !data_started) {
-            return Err(SuspendableError::InvalidData);
-        }
-        let cipher =
-            <ChaCha20<'k, Dir> as SuspendableComponent<'k>>::read_state(cipher_state, &key.key)?;
-        // The data keystream starts at counter 1 and has run one block per 64 bytes of data
-        // begun, so any other counter would repeat keystream, block 0 (the one-time key) included.
-        if cipher.keystream().remaining_blocks() != (1 << 32) - 1 - data_len.div_ceil(64) {
-            return Err(SuspendableError::InvalidData);
-        }
-        // The nonce leads ChaCha20's state, and block 0 under it is the one-time key, as in `new`.
-        // infallible: the slice is exactly NONCE_LEN bytes.
-        let nonce: &[u8; NONCE_LEN] = cipher_state[..NONCE_LEN].try_into().unwrap();
-        let mut block = Secret::new();
-        let one_time_key = poly1305_key_gen(&mut keystream_at(&key.key, nonce), &mut block);
-        let mac = <Poly1305 as SuspendableComponent<'_>>::read_state(mac_state, one_time_key)?;
-        Ok(Self { cipher, mac, aad_len, data_len, data_started, held: [0u8; TAG_LEN], held_len: 0 })
-    }
-}
-
 /// A ChaCha20-Poly1305 key: the 256-bit key of RFC 8439 Sec 2.8, validated once, from which the
 /// encryptor and decryptor for each message are made. Built through [`FromKeyMaterial`] from
 /// material tagged [`KeyType::SymmetricCipherKey`] of 256-bit strength. The key words live in a
 /// `Secret`, zeroized on drop; there is no `Debug` and no way to read them back.
 #[derive(Clone)]
 pub struct ChaCha20Poly1305Key {
-    // The key as a ChaCha20 key, which is what it is (RFC 8439 Sec 2.8), so that a resumed worker's
-    // keystream comes back through ChaCha20's own resume.
+    // The key as a ChaCha20 key, which is what it is (RFC 8439 Sec 2.8).
     key: ChaCha20Key,
 }
 
@@ -711,25 +569,6 @@ mod tests {
             Err(SymmetricCipherError::DataLimitExceeded)
         ));
         assert_eq!(out, [0; 16]);
-    }
-
-    /// An encryptor that has used the whole message limit is a state the worker writes, so it
-    /// suspends and resumes, and the resumed worker still refuses more data.
-    #[test]
-    fn a_worker_at_the_message_limit_suspends_and_resumes() {
-        let state = key();
-        let mut enc = near_limit::<Encrypting>(&state);
-        enc.do_encrypt_out(&[0; 64], &mut [0; 64]).unwrap();
-        assert_eq!(enc.data_len, MAX_MESSAGE_LEN);
-        let material =
-            KeyMaterial::<KEY_LEN>::from_bytes_as_type(&[7; 32], KeyType::SymmetricCipherKey);
-        let key = ChaCha20Poly1305Key::from_key_material(&material.unwrap()).unwrap();
-        let mut resumed =
-            ChaCha20_Poly1305::<Encrypting>::from_suspended(enc.suspend(), &key).unwrap();
-        assert!(matches!(
-            resumed.do_encrypt_out(&[0], &mut [0]),
-            Err(SymmetricCipherError::DataLimitExceeded)
-        ));
     }
 
     #[test]
