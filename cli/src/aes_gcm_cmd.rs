@@ -13,7 +13,7 @@
 //! matters more here than in the other modes, since a repeated GCM IV also lets an attacker
 //! recover the hash subkey (Appendix A).
 
-use crate::helpers::aead_cipher_helpers::{decrypt_gcm, encrypt_gcm, load_aad};
+use crate::helpers::aead_cipher_helpers::{decrypt_aead, encrypt_aead, load_aad};
 use crate::helpers::block_mode_helpers::{CipherDirection, load_iv, load_key_object};
 use bouncycastle::aes::{AES128Key, AES192Key, AES256Key};
 use bouncycastle::cipher::modes::GCM;
@@ -87,7 +87,11 @@ fn run<K, const KEY_LEN: usize>(
     K: AeadEncryptionKey<KEY_LEN, 12, 16, 16> + AeadDecryptionKey<KEY_LEN, 12, 16, 16>,
 {
     match action {
-        CipherDirection::Encrypt => encrypt_gcm::<K, KEY_LEN, 16>(key, nonce, aad, output_hex),
-        CipherDirection::Decrypt => decrypt_gcm::<K, KEY_LEN, 16>(key, nonce, aad, output_hex),
+        CipherDirection::Encrypt => {
+            encrypt_aead::<K, KEY_LEN, 12, 16, 16>(key, nonce, aad, output_hex)
+        }
+        CipherDirection::Decrypt => {
+            decrypt_aead::<K, KEY_LEN, 12, 16, 16>(key, nonce, aad, output_hex)
+        }
     }
 }

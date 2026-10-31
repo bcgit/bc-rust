@@ -54,10 +54,6 @@ use std::process::exit;
 /// its own tuning.
 const CHUNK_LEN: usize = 1024;
 
-/// The GCM IV length `encrypt` generates and writes first, and `decrypt` reads back. SP 800-38D
-/// calls the value the IV; the trait and this file's identifiers call it the nonce.
-const GCM_NONCE_LEN: usize = 12;
-
 /// Loads the additional authenticated data from `--aad` (hex) or `--aad-file` (raw bytes; see the
 /// module docs for why not hex). Empty if neither is given: AAD is optional, unlike the key.
 pub fn load_aad(aad: &Option<String>, aad_file: &Option<String>) -> Vec<u8> {
@@ -71,34 +67,6 @@ pub fn load_aad(aad: &Option<String>, aad_file: &Option<String>) -> Vec<u8> {
     } else {
         Vec::new()
     }
-}
-
-/// Encrypts stdin to stdout under GCM: writes the generated IV (unless `nonce` supplies one),
-/// then the ciphertext as it streams, then the tag.
-pub fn encrypt_gcm<K, const KEY_LEN: usize, const TAG_LEN: usize>(
-    key: &K,
-    nonce: Option<[u8; GCM_NONCE_LEN]>,
-    aad: &[u8],
-    output_hex: bool,
-) where
-    K: AeadEncryptionKey<KEY_LEN, GCM_NONCE_LEN, TAG_LEN, TAG_LEN>,
-{
-    encrypt_aead::<K, KEY_LEN, GCM_NONCE_LEN, TAG_LEN, TAG_LEN>(key, nonce, aad, output_hex)
-}
-
-/// Decrypts stdin to stdout under GCM: takes the 12-byte IV from `nonce` or else reads it
-/// first, streams the rest through the inline decryptor, and checks the tag on
-/// `do_decrypt_final`. See the module docs for why plaintext may already be written to stdout by
-/// the time a tag failure is reported.
-pub fn decrypt_gcm<K, const KEY_LEN: usize, const TAG_LEN: usize>(
-    key: &K,
-    nonce: Option<[u8; GCM_NONCE_LEN]>,
-    aad: &[u8],
-    output_hex: bool,
-) where
-    K: AeadDecryptionKey<KEY_LEN, GCM_NONCE_LEN, TAG_LEN, TAG_LEN>,
-{
-    decrypt_aead::<K, KEY_LEN, GCM_NONCE_LEN, TAG_LEN, TAG_LEN>(key, nonce, aad, output_hex)
 }
 
 /// Encrypts stdin to stdout under any AEAD key: writes the generated nonce (unless `nonce`
