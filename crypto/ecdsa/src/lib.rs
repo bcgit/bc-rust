@@ -150,12 +150,14 @@
 //!   [`bouncycastle_ec::p256_scalar::P256Scalar`] (a [`bouncycastle_utils::secret::Secret`]); see
 //!   [`bouncycastle_ec`]'s own module docs for the constant-time discipline this crate builds on
 //!   and the exceptions it documents. This crate adds two exceptions of its own:
-//!   - RFC 6979's candidate loop runs a data-dependent number of iterations. On the NIST curves
+//!   - `ECDetDSA*`'s RFC 6979 candidate loop runs a data-dependent number of iterations (`ECDSA*`
+//!     draws `k` per FIPS 186-5 Appendix A.3.1, which has no rejection loop). On the NIST curves
 //!     and secp256k1 a candidate is rejected with negligible probability; on the brainpool curves
 //!     33 % to 45 % of signatures reject at least one. Under the PRF assumption the count is
 //!     independent of the accepted `k` and reveals nothing about `d`, but it is deterministic per
 //!     `(d, message)`, so a remote observer gets a per-message timing fingerprint. See
-//!     [`rfc6979::generate_k`]'s docs for the argument and the brainpool modules' for the rates.
+//!     [`rfc6979::generate_k`]'s docs for the argument, the brainpool modules' for the rates, and
+//!     [`rfc6979_bp256r1::generate_k`]'s for what the fingerprint is worth.
 //!   - Signing returns an error on `r = 0` or `s = 0` instead of drawing another `k`; that branch
 //!     is on a public outcome.
 //! - **`k` must never repeat across two signatures under the same key with different messages.**

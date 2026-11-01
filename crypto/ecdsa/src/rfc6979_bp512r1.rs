@@ -9,11 +9,9 @@
 //! `2n > 2^512` and any 512-bit input is already `< 2n`, despite `n` not being close to `2^512`.
 //!
 //! `n` not being close to `2^512` has a second consequence: the step h.3 rejection loop is a normal
-//! control path on this curve, not the near-dead branch it is on the NIST curves and secp256k1 -- a
-//! uniform 512-bit candidate is `>= n` with probability `1 - n/2^512 = 0.3326`, so about a third of
-//! all messages take at least one extra HMAC round. (RFC 6979 §3.4 calls rejection "utterly
-//! improbable"; that assumes `n` close to `2^qlen`, which `qlen == hlen` alone does not give.)
-//! [`generate_k`]'s docs give the constant-time argument that holds at this rejection rate.
+//! control path on this curve. A uniform 512-bit candidate is `>= n` with probability
+//! `1 - n/2^512 = 0.3326`, so about a third of all messages take at least one extra HMAC round;
+//! [`crate::rfc6979_bp256r1`]'s docs cover what that means on the brainpool curves.
 //!
 //! RFC 6979 has no official Appendix A.2.x-style test vectors for brainpool curves;
 //! `rfc6979_bp512r1_vectors_tests.rs` cross-checks this implementation against an independent
@@ -80,13 +78,9 @@ fn candidate_in_range(candidate: &[u8; HLEN]) -> bool {
 /// # The rejection loop is a normal path on this curve
 ///
 /// A candidate is rejected with probability `1 - n/2^512 = 0.3326`, so 33 % of signatures run step
-/// h.3's "otherwise" branch at least once (mean 0.50 extra iterations). Each extra iteration is
-/// three more HMAC-SHA-512 calls (two for the re-key, one for the next candidate) -- a timing
-/// difference a remote observer can see. [`crate::rfc6979::generate_k`]'s docs give the argument
-/// for why the count reveals nothing about `d` or the accepted `k`; it does not depend on the rate.
-/// What the rate changes is the practical consequence: the count is deterministic per `(d, msg)`,
-/// so the timing pattern over chosen messages is a fingerprint worth one to two bits per message --
-/// useless for recovering `d`, usable for confirming a candidate `d` an attacker already holds.
+/// h.3's "otherwise" branch at least once (mean 0.50 extra iterations), each three more
+/// HMAC-SHA-512 calls. What that count is worth to an observer, and why it reveals nothing about
+/// `d`: [`crate::rfc6979_bp256r1::generate_k`]'s docs, which hold for every brainpool curve.
 pub fn generate_k(d: &Bp512r1Scalar, h1: &[u8; HLEN]) -> Bp512r1Scalar {
     let mut int2octets_d = Secret::<[u8; HLEN]>::new();
     *int2octets_d = d.to_be_bytes(); // §2.3.3, d already in [1, n-1]
@@ -121,12 +115,9 @@ pub fn generate_k(d: &Bp512r1Scalar, h1: &[u8; HLEN]) -> Bp512r1Scalar {
     }
 }
 
-// `candidate_in_range`'s reject path is ordinary control flow on this curve -- a third of real
-// messages take it (see the module docs) -- and the integration tests exercise it deliberately:
-// in `rfc6979_bp512r1_vectors_tests.rs`, CASE_0 and CASE_1 each reject one candidate before their
-// `k` and CASE_5 five in a row. What integration tests cannot pin are the exact boundaries, which
-// no realistic input lands on: `0` and `n`, the immediate out-of-range neighbours of the valid
-// interval `[1, n-1]` -- the known answers below.
+// `candidate_in_range`'s reject path is covered from outside the crate, by the rejecting cases in
+// `rfc6979_bp512r1_vectors_tests.rs`; what those cannot pin are the exact boundaries, which no
+// realistic input lands on: `0` and `n`, the known answers below.
 #[cfg(test)]
 mod tests {
     use super::*;
