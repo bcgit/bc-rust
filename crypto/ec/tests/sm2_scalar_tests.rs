@@ -415,12 +415,14 @@ fn known_answer_at_n_minus_1() {
 
 /// Products whose REDC pre-reduction value lands in `[n, 2^256)` -- `acc[8] = 0` and `high >= n`
 /// -- so the final conditional subtraction is the step that produces the canonical result. That
-/// needs the canonical result below `2^224` and the wrong representative drawn, `2^-32` per
-/// reduction, so no pseudorandom or round-trip test reaches it; these were constructed, not
-/// searched (pick the Montgomery operand `a` and the target `u`, solve `m = uR * n^-1 mod a`,
-/// `b = (uR - mn) / a`). A plain `mul(..) == from_limbs(expected)` would NOT detect the
-/// subtraction's absence: `from_limbs` of the expected value takes the same step and would land
-/// on the same non-canonical representative. The two extra assertions are what pin it.
+/// needs the product's canonical Montgomery representative, `abR mod n` (what REDC returns; the
+/// `ab mod n` the test compares is 254 to 256 bits here), below `2^256 - n`, about `2^224`, and
+/// the wrong representative drawn, `2^-32` per reduction, so no pseudorandom or round-trip test
+/// reaches it; these were constructed, not searched (pick the Montgomery operand `a` and the
+/// target `u`, solve `m = uR * n^-1 mod a`, `b = (uR - mn) / a`). A plain
+/// `mul(..) == from_limbs(expected)` would NOT detect the subtraction's absence: `from_limbs` of
+/// the expected value takes the same step and would land on the same non-canonical
+/// representative. The two extra assertions are what pin it.
 #[test]
 fn known_answer_mul_reaching_the_final_subtraction() {
     let cases: [([u64; 4], [u64; 4], [u64; 4]); 3] = [
