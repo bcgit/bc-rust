@@ -82,7 +82,7 @@ impl SM2PrivateKey {
         let q = comb_multiply_base_point(&d);
         // dA is in [1, n-2] by construction (every caller validates first) and G has prime order n
         // (h = 1), so [dA]G is never the identity.
-        let (x, y) = q.to_affine().expect("[dA]G is never infinity for dA in [1, n-1]");
+        let (x, y) = q.to_affine().expect("[dA]G is never infinity for dA in [1, n-2]");
 
         // (1 + dA)^-1, once per key rather than once per signature (see the type's docs). The
         // three scalar-field intermediates reveal dA and are scrubbed, the same way sign_with_k
