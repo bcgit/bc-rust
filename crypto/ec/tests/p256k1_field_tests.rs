@@ -332,8 +332,9 @@ fn known_answer_mul_at_the_reduction_bounds() {
 }
 
 /// The one product shape the reduction-bound cases above cannot reach: a product whose two folds
-/// leave the accumulator at or above `2^256`, so that `reduce`'s masked third fold (see its
-/// comment in `p256k1.rs`) is the step that produces the right answer. None of the cases above
+/// leave the accumulator at or above `2^256`, so that `reduce`'s masked third fold is the step
+/// that produces the right answer (`reduce`'s comment in `p256k1.rs` derives the bounds: two folds
+/// leave at most one bit above `2^256`, and folding it in cannot carry). None of the cases above
 /// reach it -- `(p-1)^2` gives the first fold a high half of `C - 1`, one short of its bound, and
 /// its two folds leave exactly `p + 1`, short of `2^256` by `C - 1` -- and neither does random
 /// sampling: it needs the low half after the first fold to lie within `hi_1 * C <= 2^66` of
