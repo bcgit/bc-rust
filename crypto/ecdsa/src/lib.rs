@@ -142,7 +142,7 @@
 //! also the stack-usage measurement harness (see its own doc comment for the `valgrind`/`massif`
 //! invocation).
 //!
-//! # Security Considerations
+//! # 🚨 Security Considerations 🚨
 //!
 //! - **Everything done with the private key `d` and the accepted per-message secret `k` is
 //!   branch-free and does not index memory by their value**: inversion, multiplication, the

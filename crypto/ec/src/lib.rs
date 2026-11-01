@@ -142,7 +142,7 @@
 //! of `G` its width-7 window over `G` indexes (2 KiB for a 256-bit curve, 4.5 KiB for P-521),
 //! read by public digit and so with no scan.
 //!
-//! # Security Considerations
+//! # 🚨 Security Considerations 🚨
 //!
 //! Every arithmetic primitive here is written to be branch-free and to avoid indexing by a
 //! secret value, per this workspace's constant-time rules. See [`p256`]'s module docs for the
