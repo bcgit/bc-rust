@@ -2,8 +2,8 @@
 //! RFC 5869, as allowed by NIST SP 800-56Cr2.
 //!
 //! This is a utility crate and is not intended to be used directly. It provides [`HKDF`] -- the
-//! construction, generic over any struct that implements [`Hash`] and [`HashAlgParams`], the extension
-//! point through which a hash declares the metadata from which the HKDF instance is built.
+//! construction, generic over any hash that implements [`HMACParams`], the extension point through
+//! which a hash declares the metadata from which the HMAC and HKDF instances are built.
 //! The library provides the following concrete instantiations of HKDF:
 //!
 //! | Hash family | Instantiations                                                           |
@@ -12,11 +12,10 @@
 //!
 //! # Instantiating HKDF over a hash
 //!
-//! HKDF uses HMAC as its underlying primitive, so it works with any hash that HMAC works with:
-//! [`HKDF`] needs only [`Hash`] + [`HashAlgParams`] + [`Default`]. Unlike HMAC there is no additional
-//! HKDF params trait to implement -- HKDF has no per-hash OIDs and derives its name from nothing --
-//! so an instantiation is just a type alias plus, by convention, a name constant and a suspended-state
-//! length.
+//! HKDF uses HMAC as its underlying primitive, so it works with exactly the hashes HMAC works with:
+//! [`HKDF`] needs [`HMACParams`], which also carries the HKDF name ([`HMACParams::HKDF_ALG_NAME`]).
+//! There is no separate HKDF params trait -- HKDF has no per-hash OIDs -- so an instantiation is just
+//! a type alias plus, by convention, a suspended-state length.
 //!
 //! What the alias has to supply is [`HKDF`]'s two const parameters:
 //!
@@ -113,10 +112,8 @@ use bouncycastle_core::key_material::{
 };
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::symmetric_key::{FromAnyKeyMaterial, MacGenerationKey};
-use bouncycastle_core::traits::{
-    HashAlgParams, HashOneShot, KDF, MAC, Suspendable, SuspendableKeyed,
-};
-use bouncycastle_hmac::{HMAC, HmacKey, LARGEST_HASHER_BLOCK_LEN};
+use bouncycastle_core::traits::{Algorithm, KDF, MAC, Suspendable, SuspendableKeyed};
+use bouncycastle_hmac::{HMAC, HMACParams, HmacKey, LARGEST_HASHER_BLOCK_LEN};
 use bouncycastle_utils::secret::Secret;
 use bouncycastle_utils::suspendable_state::{add_lib_ver, check_lib_ver};
 use bouncycastle_utils::{max, min};
@@ -161,11 +158,7 @@ pub const MAX_HMAC_OUTPUT_LEN: usize = 64;
 /// todo: once rust stabilizes generic_const_exprs, delete both const parameters and write the impl as
 ///     `SuspendableKeyed<{HASH_STATE_LEN + 14}>` over `H: Suspendable<HASH_STATE_LEN>`.
 #[derive(Clone)]
-pub struct HKDF<
-    H: HashOneShot + HashAlgParams,
-    const HASH_STATE_LEN: usize,
-    const HKDF_STATE_LEN: usize,
-> {
+pub struct HKDF<H: HMACParams, const HASH_STATE_LEN: usize, const HKDF_STATE_LEN: usize> {
     // Optional because an HMAC cannot be constructed until a key is provided
     // to initialize it with.
     // None must correspond to a state of Uninitialized.
@@ -209,13 +202,13 @@ impl TryFrom<u8> for HkdfStates {
 }
 
 #[derive(Clone)]
-struct HkdfEntropyTracker<H: HashOneShot + HashAlgParams> {
+struct HkdfEntropyTracker<H: HMACParams> {
     _phantomhash: PhantomData<H>,
     entropy: usize,
     security_strength: SecurityStrength,
 }
 
-impl<H: HashOneShot + HashAlgParams> HkdfEntropyTracker<H> {
+impl<H: HMACParams> HkdfEntropyTracker<H> {
     fn new() -> Self {
         Self { _phantomhash: PhantomData, entropy: 0, security_strength: SecurityStrength::None }
     }
@@ -251,15 +244,24 @@ impl<H: HashOneShot + HashAlgParams> HkdfEntropyTracker<H> {
     }
 }
 
-impl<H: HashOneShot + HashAlgParams, const HASH_STATE_LEN: usize, const HKDF_STATE_LEN: usize>
-    Default for HKDF<H, HASH_STATE_LEN, HKDF_STATE_LEN>
+/// The name is [`HMACParams::HKDF_ALG_NAME`]; the strength is the hash's, which the extract
+/// and expand HMACs cannot exceed.
+impl<H: HMACParams, const HASH_STATE_LEN: usize, const HKDF_STATE_LEN: usize> Algorithm
+    for HKDF<H, HASH_STATE_LEN, HKDF_STATE_LEN>
+{
+    const ALG_NAME: &'static str = H::HKDF_ALG_NAME;
+    const MAX_SECURITY_STRENGTH: SecurityStrength = H::MAX_SECURITY_STRENGTH;
+}
+
+impl<H: HMACParams, const HASH_STATE_LEN: usize, const HKDF_STATE_LEN: usize> Default
+    for HKDF<H, HASH_STATE_LEN, HKDF_STATE_LEN>
 {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<H: HashOneShot + HashAlgParams, const HASH_STATE_LEN: usize, const HKDF_STATE_LEN: usize>
+impl<H: HMACParams, const HASH_STATE_LEN: usize, const HKDF_STATE_LEN: usize>
     HKDF<H, HASH_STATE_LEN, HKDF_STATE_LEN>
 {
     /// Get a new, uninstantiated HKDF object.
@@ -684,7 +686,7 @@ impl<H: HashOneShot + HashAlgParams, const HASH_STATE_LEN: usize, const HKDF_STA
 /// [`KDF::derive_key_from_multiple_out`], or by using the [`HKDF`] impl directly.
 ///
 /// Entropy tracking: this implementation will map entropy from the input keys to the output key.
-impl<H: HashOneShot + HashAlgParams, const HASH_STATE_LEN: usize, const HKDF_STATE_LEN: usize> KDF
+impl<H: HMACParams, const HASH_STATE_LEN: usize, const HKDF_STATE_LEN: usize> KDF
     for HKDF<H, HASH_STATE_LEN, HKDF_STATE_LEN>
 {
     /// This invokes [`HKDF::extract_and_expand_out`] with a zero salt and using the provided key as ikm.
@@ -765,10 +767,6 @@ impl<H: HashOneShot + HashAlgParams, const HASH_STATE_LEN: usize, const HKDF_STA
         _ = hkdf.do_extract_final_out(&mut prk)?;
         Self::expand_out(&prk, additional_input, output_key.capacity(), output_key)
     }
-
-    fn max_security_strength(&self) -> SecurityStrength {
-        H::default().max_security_strength()
-    }
 }
 
 /// HKDF is *keyed by its salt* -- the salt keys the extract-phase HMAC -- so it implements
@@ -799,7 +797,7 @@ impl<H: HashOneShot + HashAlgParams, const HASH_STATE_LEN: usize, const HKDF_STA
 impl<H, const HASH_STATE_LEN: usize, const HKDF_STATE_LEN: usize> SuspendableKeyed<HKDF_STATE_LEN>
     for HKDF<H, HASH_STATE_LEN, HKDF_STATE_LEN>
 where
-    H: HashOneShot + HashAlgParams + Suspendable<HASH_STATE_LEN>,
+    H: HMACParams + Suspendable<HASH_STATE_LEN>,
 {
     // HMAC accepts any key material, so the key type is the trait object `dyn KeyMaterialTrait`
     // rather than a single concrete key type. The key is only used (by reference) to reload the key

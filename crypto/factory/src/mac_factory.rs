@@ -75,7 +75,7 @@ use crate::{DEFAULT, DEFAULT_128_BIT, DEFAULT_256_BIT, FactoryError};
 use bouncycastle_core::errors::MACError;
 use bouncycastle_core::key_material::KeyMaterialTrait;
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::traits::MAC;
+use bouncycastle_core::traits::{AlgorithmInfo, MAC};
 use bouncycastle_sha2 as sha2;
 use bouncycastle_sha2::hmac::{
     HMAC_SHA224_NAME, HMAC_SHA256_NAME, HMAC_SHA384_NAME, HMAC_SHA512_224_NAME,
@@ -335,6 +335,26 @@ impl MAC for MACFactory {
             Self::HMAC_SHA3_384(h) => h.do_verify_final(mac),
             Self::HMAC_SHA3_512(h) => h.do_verify_final(mac),
             Self::HMAC_SM3(h) => h.do_verify_final(mac),
+        }
+    }
+}
+
+impl AlgorithmInfo for MACFactory {
+    fn alg_name(&self) -> &'static str {
+        match self {
+            Self::KMAC128(h) => h.alg_name(),
+            Self::KMAC256(h) => h.alg_name(),
+            Self::HMAC_SHA224(h) => h.alg_name(),
+            Self::HMAC_SHA256(h) => h.alg_name(),
+            Self::HMAC_SHA384(h) => h.alg_name(),
+            Self::HMAC_SHA512(h) => h.alg_name(),
+            Self::HMAC_SHA512_224(h) => h.alg_name(),
+            Self::HMAC_SHA512_256(h) => h.alg_name(),
+            Self::HMAC_SHA3_224(h) => h.alg_name(),
+            Self::HMAC_SHA3_256(h) => h.alg_name(),
+            Self::HMAC_SHA3_384(h) => h.alg_name(),
+            Self::HMAC_SHA3_512(h) => h.alg_name(),
+            Self::HMAC_SM3(h) => h.alg_name(),
         }
     }
 

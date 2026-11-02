@@ -7,7 +7,7 @@ mod shake_tests {
         KeyMaterial, KeyMaterial256, KeyMaterial512, KeyMaterialTrait, KeyType,
     };
     use bouncycastle_core::security_strength::SecurityStrength;
-    use bouncycastle_core::traits::{Hash, HashOneShot, KDF, XOF, XOFSqueezer};
+    use bouncycastle_core::traits::{AlgorithmInfo, Hash, HashOneShot, KDF, XOF, XOFSqueezer};
     use bouncycastle_core_test_framework::DUMMY_SEED;
     use bouncycastle_core_test_framework::kdf::TestFrameworkKDF;
     use bouncycastle_core_test_framework::xof::TestFrameworkXOF;
@@ -272,10 +272,8 @@ mod shake_tests {
 
     #[test]
     fn security_strength() {
-        assert_eq!(KDF::max_security_strength(&SHAKE128::default()), SecurityStrength::_128bit);
-        assert_eq!(Hash::max_security_strength(&SHAKE128::default()), SecurityStrength::_128bit);
-        assert_eq!(KDF::max_security_strength(&SHAKE256::default()), SecurityStrength::_256bit);
-        assert_eq!(Hash::max_security_strength(&SHAKE256::default()), SecurityStrength::_256bit);
+        assert_eq!(SHAKE128::default().max_security_strength(), SecurityStrength::_128bit);
+        assert_eq!(SHAKE256::default().max_security_strength(), SecurityStrength::_256bit);
     }
 
     #[test]

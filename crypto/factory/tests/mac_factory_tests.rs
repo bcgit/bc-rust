@@ -1,9 +1,41 @@
 #[cfg(test)]
 mod hash_factory_tests {
     use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-    use bouncycastle_core::traits::MAC;
+    use bouncycastle_core::security_strength::SecurityStrength;
+    use bouncycastle_core::traits::{AlgorithmInfo, MAC};
     use bouncycastle_factory::mac_factory::MACFactory;
     use bouncycastle_hex as hex;
+
+    /// `AlgorithmInfo` answers for the algorithm the factory selected, not for the factory.
+    #[test]
+    fn alg_name_and_strength_follow_the_variant() {
+        use SecurityStrength::*;
+        use bouncycastle_sha2::hmac::*;
+        use bouncycastle_sha3::hmac::*;
+        use bouncycastle_sha3::kmac::{KMAC128_NAME, KMAC256_NAME};
+        use bouncycastle_sm3::hmac::HMAC_SM3_NAME;
+        let key = KeyMaterial::<64>::from_bytes_as_type(&[0x42; 64], KeyType::MACKey).unwrap();
+        let table = [
+            (KMAC128_NAME, _128bit),
+            (KMAC256_NAME, _256bit),
+            (HMAC_SHA224_NAME, _112bit),
+            (HMAC_SHA256_NAME, _128bit),
+            (HMAC_SHA384_NAME, _192bit),
+            (HMAC_SHA512_NAME, _256bit),
+            (HMAC_SHA512_224_NAME, _112bit),
+            (HMAC_SHA512_256_NAME, _128bit),
+            (HMAC_SHA3_224_NAME, _112bit),
+            (HMAC_SHA3_256_NAME, _128bit),
+            (HMAC_SHA3_384_NAME, _192bit),
+            (HMAC_SHA3_512_NAME, _256bit),
+            (HMAC_SM3_NAME, _128bit),
+        ];
+        for (name, strength) in table {
+            let worker = MACFactory::new(name, &key).unwrap();
+            assert_eq!(worker.alg_name(), name);
+            assert_eq!(worker.max_security_strength(), strength, "{name}");
+        }
+    }
 
     mod sha3_tests {
         use super::*;

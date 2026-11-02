@@ -355,10 +355,6 @@ impl<PARAMS: SHA256InitValue> Hash for SHA256Internal<PARAMS> {
         }
         Ok(self.do_final_internal(partial_byte, num_partial_bits, output))
     }
-
-    fn max_security_strength(&self) -> SecurityStrength {
-        SecurityStrength::from_bytes(PARAMS::OUTPUT_LEN / 2)
-    }
 }
 
 /// Length in bytes of the serialized state of SHA224 and SHA256.

@@ -342,10 +342,6 @@ impl<PARAMS: SHAKEParams> Hash for ParallelHashInternal<PARAMS> {
         }
         Ok(self.do_final_out(output))
     }
-
-    fn max_security_strength(&self) -> SecurityStrength {
-        SecurityStrength::from_bits(PARAMS::SIZE as usize)
-    }
 }
 
 /// Internal struct for ParallelHashXOF (Sec 6.3.1). Use [`ParallelHashXOF128`] or
@@ -459,10 +455,6 @@ impl<PARAMS: SHAKEParams> Hash for ParallelHashXOFInternal<PARAMS> {
             ));
         }
         Ok(self.do_final_out(output))
-    }
-
-    fn max_security_strength(&self) -> SecurityStrength {
-        SecurityStrength::from_bits(PARAMS::SIZE as usize)
     }
 }
 

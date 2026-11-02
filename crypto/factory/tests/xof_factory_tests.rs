@@ -5,7 +5,7 @@
 use bouncycastle_ascon::ASCON_XOF128_NAME;
 use bouncycastle_ascon::AsconXof128;
 use bouncycastle_core::errors::HashError;
-use bouncycastle_core::traits::{Hash, HashOneShot, XOF, XOFSqueezer};
+use bouncycastle_core::traits::{Algorithm, AlgorithmInfo, Hash, HashOneShot, XOF, XOFSqueezer};
 use bouncycastle_core_test_framework::xof::TestFrameworkXOF;
 use bouncycastle_factory::xof_factory::XOFFactory;
 use bouncycastle_factory::{AlgorithmFactory, FactoryError};
@@ -14,15 +14,16 @@ use bouncycastle_sha3::{SHAKE128, SHAKE128_NAME, SHAKE256, SHAKE256_NAME};
 const MSG: &[u8] = b"The quick brown fox jumps over the lazy dog";
 
 /// Every `Hash`, `XOF` and `XOFSqueezer` method of the factory against the direct type `S`.
-fn check_against<S: XOF + HashOneShot>(make: impl Fn() -> XOFFactory, ctx: &str) {
+fn check_against<S: XOF + HashOneShot + Algorithm>(make: impl Fn() -> XOFFactory, ctx: &str) {
     let n = S::default().output_len();
 
     // metadata
+    assert_eq!(make().alg_name(), S::ALG_NAME, "{ctx}: alg_name");
     assert_eq!(make().block_bitlen(), S::default().block_bitlen(), "{ctx}: block_bitlen");
     assert_eq!(make().output_len(), n, "{ctx}: output_len");
     assert_eq!(
-        Hash::max_security_strength(&make()),
-        Hash::max_security_strength(&S::default()),
+        make().max_security_strength(),
+        S::default().max_security_strength(),
         "{ctx}: max_security_strength"
     );
 

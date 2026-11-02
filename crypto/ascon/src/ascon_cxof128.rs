@@ -212,10 +212,6 @@ impl Hash for AsconCXof128 {
         let _ = partial_byte;
         Ok(self.do_final_out(output))
     }
-
-    fn max_security_strength(&self) -> SecurityStrength {
-        SecurityStrength::_128bit
-    }
 }
 
 impl XOF for AsconCXof128 {

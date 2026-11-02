@@ -58,6 +58,8 @@ use bouncycastle_hmac::MIN_FIPS_DIGEST_LEN;
 /*** String constants ***/
 /// Algorithm name string for HMAC-SM3, as used by the factories and CLI.
 pub const HMAC_SM3_NAME: &str = "HMAC-SM3";
+/// The name of HKDF over SM3, for `HMACParams::HKDF_ALG_NAME`.
+pub const HKDF_SM3_NAME: &str = "HKDF-SM3";
 
 /*** Type aliases ***/
 /// Public type for HMAC using SM3.
@@ -66,6 +68,7 @@ pub type HMAC_SM3 = HMAC<SM3>;
 impl HMACParams for SM3 {
     type MACKey = KeyMaterial<{ <SM3 as HashAlgParams>::OUTPUT_LEN }>;
     const HMAC_ALG_NAME: &'static str = HMAC_SM3_NAME;
+    const HKDF_ALG_NAME: &'static str = HKDF_SM3_NAME;
     const HMAC_MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_128bit;
     /// Assigned by the Chinese OSCCA (GM/T 0006): hmac-sm3 { sm3 2 } = 1.2.156.10197.1.401.2
     const HMAC_OID: &'static [u32] = &[1, 2, 156, 10197, 1, 401, 2];

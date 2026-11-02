@@ -163,6 +163,9 @@ pub trait HMACParams: HashOneShot + HashAlgParams {
 
     /// The name of the HMAC over this hash, as reported by [`Algorithm::ALG_NAME`].
     const HMAC_ALG_NAME: &'static str;
+    /// The name of HKDF (RFC 5869) over this hash, as reported by `bouncycastle_hkdf::HKDF`'s
+    /// [`Algorithm::ALG_NAME`].
+    const HKDF_ALG_NAME: &'static str;
     /// The strength claimed by the HMAC over this hash, as reported by
     /// [`Algorithm::MAX_SECURITY_STRENGTH`].
     const HMAC_MAX_SECURITY_STRENGTH: SecurityStrength;
@@ -204,7 +207,7 @@ const LARGEST_HASHER_OUTPUT_LEN: usize = 64;
 /// of the key is a clone and no hashing. The key holds no key bytes: a caller who needs the
 /// material again keeps the `KeyMaterial`. Construction is [`FromAnyKeyMaterial`]; the workers
 /// come from [`MacGenerationKey`] and [`MacVerificationKey`].
-pub struct HmacKey<HASH: HashOneShot> {
+pub struct HmacKey<HASH: HMACParams> {
     /// `H` after absorbing `K XOR ipad`: the start of RFC 2104 Section 2 step (4).
     inner: HASH,
     /// `H` after absorbing `K XOR opad`: the start of step (7).
@@ -212,13 +215,13 @@ pub struct HmacKey<HASH: HashOneShot> {
 }
 
 // `Clone` is written out rather than derived so that it has no bound beyond the struct's own.
-impl<HASH: HashOneShot> Clone for HmacKey<HASH> {
+impl<HASH: HMACParams> Clone for HmacKey<HASH> {
     fn clone(&self) -> Self {
         Self { inner: self.inner.clone(), outer: self.outer.clone() }
     }
 }
 
-impl<HASH: HashOneShot> HmacKey<HASH> {
+impl<HASH: HMACParams> HmacKey<HASH> {
     /// RFC 2104 Section 2 steps (1), (2) and (5), plus Section 3's pre-hash of a key longer than
     /// the block, with both pad blocks absorbed so that the states are ready for steps (4) and (7).
     /// No key checks: the callers do those.
@@ -267,7 +270,7 @@ impl<HASH: HashOneShot> HmacKey<HASH> {
                 "Key type must be a MAC key.",
             )));
         }
-        if !allow_weak_keys && key.security_strength() < HASH::default().max_security_strength() {
+        if !allow_weak_keys && key.security_strength() < HASH::MAX_SECURITY_STRENGTH {
             return Err(MACError::KeyMaterialError(KeyMaterialError::SecurityStrength(
                 "HmacKey: provided key has a lower security strength than the instantiated HMAC",
             )));
@@ -276,7 +279,7 @@ impl<HASH: HashOneShot> HmacKey<HASH> {
     }
 }
 
-impl<HASH: HashOneShot> FromAnyKeyMaterial for HmacKey<HASH> {
+impl<HASH: HMACParams> FromAnyKeyMaterial for HmacKey<HASH> {
     /// Builds the key from material tagged [`KeyType::MACKey`] (or [`KeyType::Zeroized`], for an
     /// all-zero key) whose security strength is at least the HMAC's.
     ///
@@ -315,7 +318,7 @@ impl<HASH: HashOneShot> FromAnyKeyMaterial for HmacKey<HASH> {
     }
 }
 
-impl<HASH: HashOneShot> MacGenerationKey for HmacKey<HASH> {
+impl<HASH: HMACParams> MacGenerationKey for HmacKey<HASH> {
     type Generator = HMAC<HASH>;
 
     fn create_generator(&self) -> Self::Generator {
@@ -323,7 +326,7 @@ impl<HASH: HashOneShot> MacGenerationKey for HmacKey<HASH> {
     }
 }
 
-impl<HASH: HashOneShot> MacVerificationKey for HmacKey<HASH> {
+impl<HASH: HMACParams> MacVerificationKey for HmacKey<HASH> {
     type Verifier = HMAC<HASH>;
 
     fn create_verifier(&self) -> Self::Verifier {
@@ -337,20 +340,20 @@ impl<HASH: HashOneShot> MacVerificationKey for HmacKey<HASH> {
 /// it is finished through. Obtained from an [`HmacKey`], or built with its own key for one message
 /// by [`MAC::new`].
 #[derive(Clone)]
-pub struct HMAC<HASH: HashOneShot> {
+pub struct HMAC<HASH: HMACParams> {
     /// RFC 2104 Section 2 steps (3)-(4): `H(K XOR ipad, text)` in progress.
     hasher: HASH,
     /// `H` after absorbing `K XOR opad`, for step (7).
     outer: HASH,
 }
 
-impl<HASH: HashOneShot> Debug for HMAC<HASH> {
+impl<HASH: HMACParams> Debug for HMAC<HASH> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "HMAC-{} instance", HASH::ALG_NAME,)
     }
 }
 
-impl<HASH: HashOneShot> Display for HMAC<HASH> {
+impl<HASH: HMACParams> Display for HMAC<HASH> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
         write!(f, "HMAC-{} instance", HASH::ALG_NAME,)
     }
@@ -372,7 +375,7 @@ const OPAD_BYTE: u8 = 0x5C;
 /// = 32 bits / 8 = 4 bytes;
 pub const MIN_FIPS_DIGEST_LEN: usize = 4;
 
-impl<HASH: HashOneShot> HMAC<HASH> {
+impl<HASH: HMACParams> HMAC<HASH> {
     /// RFC 2104 Section 2 steps (4), (6) and (7): finish the inner hash, feed its result to the
     /// outer pad state, and finish that into `out`.
     fn do_final_internal_out(self, out: &mut [u8]) -> Result<usize, MACError> {
@@ -397,7 +400,7 @@ impl<HASH: HashOneShot> HMAC<HASH> {
     }
 }
 
-impl<HASH: HashOneShot> MAC for HMAC<HASH> {
+impl<HASH: HMACParams> MAC for HMAC<HASH> {
     fn new(key: &impl KeyMaterialTrait) -> Result<Self, MACError> {
         Ok(HmacKey::<HASH>::from_key_material_checked(key, false)?.create_generator())
     }
@@ -450,10 +453,6 @@ impl<HASH: HashOneShot> MAC for HMAC<HASH> {
         }
         ct::ct_eq_bytes(mac, &out[..output_len])
     }
-
-    fn max_security_strength(&self) -> SecurityStrength {
-        HASH::default().max_security_strength()
-    }
 }
 
 /* SerializedState */
@@ -464,7 +463,7 @@ impl<HASH: HashOneShot> MAC for HMAC<HASH> {
 /// alone and is rebuilt from the re-supplied key on resume, so the state carries one secret fewer.
 /// The key is *not* authenticated against the state: resuming with the wrong key cannot be
 /// detected and produces a wrong MAC.
-impl<const HASH_STATE_LEN: usize, HASH: HashOneShot + Suspendable<HASH_STATE_LEN>>
+impl<const HASH_STATE_LEN: usize, HASH: HMACParams + Suspendable<HASH_STATE_LEN>>
     SuspendableKeyed<HASH_STATE_LEN> for HMAC<HASH>
 {
     type Key = dyn KeyMaterialTrait;

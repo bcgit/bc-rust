@@ -605,6 +605,26 @@ pub trait Algorithm {
     const MAX_SECURITY_STRENGTH: SecurityStrength;
 }
 
+/// What a worker can say about itself at run time: the name and maximum strength
+/// [`Algorithm`] carries as constants, as methods, so that a trait object can be asked.
+/// Every `Algorithm` implements it; a type that is not one algorithm (a factory enum, which
+/// picks its algorithm at run time) implements it directly.
+pub trait AlgorithmInfo {
+    /// [`Algorithm::ALG_NAME`] of the algorithm this value runs.
+    fn alg_name(&self) -> &'static str;
+    /// [`Algorithm::MAX_SECURITY_STRENGTH`] of the algorithm this value runs.
+    fn max_security_strength(&self) -> SecurityStrength;
+}
+
+impl<T: Algorithm> AlgorithmInfo for T {
+    fn alg_name(&self) -> &'static str {
+        T::ALG_NAME
+    }
+    fn max_security_strength(&self) -> SecurityStrength {
+        T::MAX_SECURITY_STRENGTH
+    }
+}
+
 /// Some algorithms have an assigned OID.
 pub trait AlgorithmOID {
     /// The OID in component form -- each u32 is one OID component.
@@ -801,7 +821,7 @@ pub trait BlockCipherEncryptor<
 /// siblings -- without re-absorbing the prefix each time. Every implementor is a fixed-size state
 /// plus a small buffer, so the derive is the right implementation; the shared test framework checks
 /// that a clone and its original finish to the same digest, and diverge once fed different input.
-pub trait Hash: Algorithm + Clone {
+pub trait Hash: AlgorithmInfo + Clone {
     /// The size of the internal block in bits -- needed by functions such as HMAC to compute security parameters.
     fn block_bitlen(&self) -> usize;
 
@@ -872,9 +892,6 @@ pub trait Hash: Algorithm + Clone {
         num_bits: usize,
         output: &mut [u8],
     ) -> Result<usize, HashError>;
-
-    /// Returns the maximum security strength that this KDF is capable of supporting, based on the underlying primitives.
-    fn max_security_strength(&self) -> SecurityStrength;
 }
 
 /// The one-shot form of a hash that takes no parameters: `SHA256::hash(msg)`.
@@ -914,7 +931,7 @@ pub trait HashAlgParams: Algorithm {
 
 /// A Key Derivation Function (KDF) is a function that takes in one or more input key and some unstructured
 /// additional input, and uses them to produces a derived key.
-pub trait KDF: Default {
+pub trait KDF: AlgorithmInfo + Default {
     /// Implementations of this function are capable of deriving an output key from an input key,
     /// assuming that they have been properly initialized.
     ///
@@ -1003,9 +1020,6 @@ pub trait KDF: Default {
         additional_input: &[u8],
         output_key: &mut impl KeyMaterialTrait,
     ) -> Result<usize, KDFError>;
-
-    /// Returns the maximum security strength that this KDF is capable of supporting, based on the underlying primitives.
-    fn max_security_strength(&self) -> SecurityStrength;
 }
 
 /// A Key Encapsulation Mechanism (KEM) is defined as a set of three operations:
@@ -1121,7 +1135,7 @@ pub trait KEMPublicKey<const PK_LEN: usize>:
 /// as part of its new functions.
 ///
 /// MACs do not implement Default because they do not have a sensible no-args constructor.
-pub trait MAC: Sized {
+pub trait MAC: AlgorithmInfo + Sized {
     /// Create a new MAC instance with the given key.
     ///
     /// This is a common constructor whether creating or verifying a MAC value.
@@ -1209,9 +1223,6 @@ pub trait MAC: Sized {
     /// which has been truncated, or which contains extra bytes at the end is considered to not be a match
     /// and will return false.
     fn do_verify_final(self, mac: &[u8]) -> bool;
-
-    /// Returns the maximum security strength that this KDF is capable of supporting, based on the underlying primitives.
-    fn max_security_strength(&self) -> SecurityStrength;
 }
 
 /// A block padding scheme, used to extend arbitrary-length data to a whole number of blocks so that it

@@ -124,7 +124,6 @@ const KMAC_FUNCTION_NAME: &[u8] = b"KMAC";
 pub struct KMACInternal<PARAMS: SHAKEParams> {
     cshake: CSHAKEInternal<PARAMS>,
     output_len: usize,
-    strength: SecurityStrength,
 }
 
 impl<PARAMS: SHAKEParams> Algorithm for KMACInternal<PARAMS> {
@@ -170,7 +169,7 @@ impl<PARAMS: SHAKEParams> KMACInternal<PARAMS> {
         // Sec 4.3 step 1: bytepad(encode_string(K), rate), absorbed rather than materialised.
         crate::cshake::absorb_bytepad_strings(&mut cshake, &[key.ref_to_bytes()]);
 
-        Ok(Self { cshake, output_len, strength })
+        Ok(Self { cshake, output_len })
     }
 
     /// Absorbs `right_encode(value)`, the length binding of Sec 4.3 step 1.
@@ -198,12 +197,7 @@ impl<PARAMS: SHAKEParams> SuspendableComponent for KMACInternal<PARAMS> {
         let mut r = Cursor::new(rest);
         let output_len = bounded_usize(r.u64(), usize::MAX)?;
         debug_assert!(r.is_done());
-        // The strength is fixed by the parameter set (see `new_with_params`), not stored.
-        Ok(Self {
-            cshake,
-            output_len,
-            strength: SecurityStrength::from_bits(PARAMS::SIZE as usize),
-        })
+        Ok(Self { cshake, output_len })
     }
 }
 
@@ -290,10 +284,6 @@ impl<PARAMS: SHAKEParams> MAC for KMACInternal<PARAMS> {
         let computed = self.do_final();
         ct::ct_eq_bytes(&computed, mac)
     }
-
-    fn max_security_strength(&self) -> SecurityStrength {
-        self.strength
-    }
 }
 
 /// Internal struct for KMACXOF. Use [`KMACXOF128`] or [`KMACXOF256`].
@@ -327,7 +317,6 @@ impl<PARAMS: SHAKEParams> MAC for KMACInternal<PARAMS> {
 #[derive(Clone)]
 pub struct KMACXOFInternal<PARAMS: SHAKEParams> {
     cshake: CSHAKEInternal<PARAMS>,
-    strength: SecurityStrength,
 }
 
 impl<PARAMS: SHAKEParams> Algorithm for KMACXOFInternal<PARAMS> {
@@ -351,7 +340,7 @@ impl<PARAMS: SHAKEParams> KMACXOFInternal<PARAMS> {
         // The key binding is identical to KMAC's; only the length encoding differs, and that is
         // applied when output begins.
         let kmac = KMACInternal::<PARAMS>::new_with_params(key, customization, 0, allow_weak_key)?;
-        Ok(Self { cshake: kmac.cshake, strength: kmac.strength })
+        Ok(Self { cshake: kmac.cshake })
     }
 }
 
@@ -365,7 +354,7 @@ impl<PARAMS: SHAKEParams> SuspendableComponent for KMACXOFInternal<PARAMS> {
 
     fn read_state(state: &[u8], _key: &()) -> Result<Self, SuspendableError> {
         let cshake = CSHAKEInternal::read_tagged_customized(state, PARAMS::KMACXOF_STATE_TAG)?;
-        Ok(Self { cshake, strength: SecurityStrength::from_bits(PARAMS::SIZE as usize) })
+        Ok(Self { cshake })
     }
 }
 
@@ -443,10 +432,6 @@ impl<PARAMS: SHAKEParams> Hash for KMACXOFInternal<PARAMS> {
             ));
         }
         Ok(self.do_final_out(output))
-    }
-
-    fn max_security_strength(&self) -> SecurityStrength {
-        self.strength
     }
 }
 

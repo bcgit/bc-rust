@@ -290,10 +290,6 @@ impl<PARAMS: SHAKEParams> Hash for CSHAKEInternal<PARAMS> {
         output[written..].fill(0);
         Ok(squeezer.do_output_final_out(&mut output[..written]))
     }
-
-    fn max_security_strength(&self) -> SecurityStrength {
-        Hash::max_security_strength(&self.shake)
-    }
 }
 
 impl<PARAMS: SHAKEParams> XOF for CSHAKEInternal<PARAMS> {

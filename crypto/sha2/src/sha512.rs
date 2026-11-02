@@ -504,10 +504,6 @@ impl<PARAMS: SHA512InitValue> Hash for SHA512Internal<PARAMS> {
         }
         Ok(self.do_final_internal(partial_byte, num_partial_bits, output))
     }
-
-    fn max_security_strength(&self) -> SecurityStrength {
-        SecurityStrength::from_bytes(PARAMS::OUTPUT_LEN / 2)
-    }
 }
 
 /// Length in bytes of the serialized state of SHA384, SHA512, SHA512/224 and SHA512/256.

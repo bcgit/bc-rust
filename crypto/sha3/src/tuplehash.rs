@@ -235,10 +235,6 @@ impl<PARAMS: SHAKEParams> Hash for TupleHashInternal<PARAMS> {
         }
         Ok(self.do_final_out(output))
     }
-
-    fn max_security_strength(&self) -> SecurityStrength {
-        SecurityStrength::from_bits(PARAMS::SIZE as usize)
-    }
 }
 
 /// Internal struct for TupleHashXOF. Use [`TupleHashXOF128`] or [`TupleHashXOF256`].
@@ -369,10 +365,6 @@ impl<PARAMS: SHAKEParams> Hash for TupleHashXOFInternal<PARAMS> {
             ));
         }
         Ok(self.do_final_out(output))
-    }
-
-    fn max_security_strength(&self) -> SecurityStrength {
-        SecurityStrength::from_bits(PARAMS::SIZE as usize)
     }
 }
 

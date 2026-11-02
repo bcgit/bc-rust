@@ -322,10 +322,6 @@ impl<PARAMS: SHAKEParams> KDF for SHAKEInternal<PARAMS> {
         }
         self.derive_key_out_final_internal(additional_input, output_key)
     }
-
-    fn max_security_strength(&self) -> SecurityStrength {
-        SecurityStrength::from_bits(PARAMS::SIZE as usize)
-    }
 }
 
 impl<PARAMS: SHAKEParams> Default for SHAKEInternal<PARAMS> {
@@ -485,10 +481,6 @@ impl<PARAMS: SHAKEParams> Hash for SHAKEInternal<PARAMS> {
         let written = n.min(output.len());
         output[written..].fill(0);
         Ok(squeezer.do_output_final_out(&mut output[..written]))
-    }
-
-    fn max_security_strength(&self) -> SecurityStrength {
-        SecurityStrength::from_bits(PARAMS::SIZE as usize)
     }
 }
 

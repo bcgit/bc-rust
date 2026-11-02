@@ -330,10 +330,6 @@ where
         self.finish();
         mac.len() == BLOCK_LEN && ct_eq_bytes(mac, &self.c[..])
     }
-
-    fn max_security_strength(&self) -> SecurityStrength {
-        P::MAX_SECURITY_STRENGTH
-    }
 }
 
 /// The state is `C_i` and the pending block; the subkeys are recomputed from the re-supplied key,

@@ -1,5 +1,4 @@
 use bouncycastle_core::errors::{HashError, SuspendableError};
-use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{Hash, HashOneShot, Suspendable};
 use bouncycastle_utils::suspendable_state::{add_lib_ver, check_lib_ver};
 use bouncycastle_utils::{min, secret::Secret};
@@ -306,10 +305,6 @@ impl Hash for SM3 {
             return Err(HashError::InvalidLength("num_partial_bits must be in the range [0,7]"));
         }
         Ok(self.do_final_internal(partial_byte, num_partial_bits, output))
-    }
-
-    fn max_security_strength(&self) -> SecurityStrength {
-        SecurityStrength::_128bit
     }
 }
 

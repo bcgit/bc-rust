@@ -9,7 +9,7 @@ use bouncycastle_core::errors::{KeyMaterialError, MACError};
 use bouncycastle_core::hazmat::do_hazardous_operations;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterial128, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::traits::{Algorithm, MAC, SuspendableKeyed};
+use bouncycastle_core::traits::{Algorithm, AlgorithmInfo, MAC, SuspendableKeyed};
 use bouncycastle_core_test_framework::mac::TestFrameworkMAC;
 use bouncycastle_hex as hex;
 

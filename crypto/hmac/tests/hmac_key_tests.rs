@@ -7,7 +7,7 @@ use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::symmetric_key::{FromAnyKeyMaterial, MacGenerationKey, MacVerificationKey};
 use bouncycastle_core::traits::{MAC, SuspendableKeyed};
 use bouncycastle_core_test_framework::FixedSeedRNG;
-use bouncycastle_hmac::{HMAC, HmacKey};
+use bouncycastle_hmac::{HMAC, HMACParams, HmacKey};
 use bouncycastle_sha2::{SHA256, SHA512, SUSPENDED_SHA256_STATE_LEN};
 use bouncycastle_sha3::SHA3_256;
 
@@ -23,7 +23,7 @@ fn the_key_and_the_worker_constructor_agree_for_every_key_shape() {
     // Section 3), for a 64-byte-block hash and a 136-byte-block one.
     fn check<H>(key_bytes: &[u8])
     where
-        H: bouncycastle_core::traits::HashOneShot,
+        H: HMACParams,
     {
         let km = KeyMaterial::<200>::from_bytes_as_type(key_bytes, KeyType::MACKey).unwrap();
         let expected = HMAC::<H>::new_allow_weak_key(&km).unwrap().mac(MSG);

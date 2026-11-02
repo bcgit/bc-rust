@@ -33,7 +33,7 @@ use bouncycastle_ascon as ascon;
 use bouncycastle_ascon::ASCON_HASH256_NAME;
 use bouncycastle_core::errors::HashError;
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::traits::{Algorithm, Hash};
+use bouncycastle_core::traits::{AlgorithmInfo, Hash};
 use bouncycastle_sha2 as sha2;
 use bouncycastle_sha2::{
     SHA224_NAME, SHA256_NAME, SHA384_NAME, SHA512_224_NAME, SHA512_256_NAME, SHA512_NAME,
@@ -113,13 +113,40 @@ impl AlgorithmFactory for HashFactory {
     }
 }
 
-// TODO -- this is broken.
-//      The designed behaviour here is that the Factory object pass these through to the underlying algorithm
-//      that it's wrapping, but that can't be done with consts, so I think the Algorithm trait needs
-//      a rework to be functions instead of consts.
-impl Algorithm for HashFactory {
-    const ALG_NAME: &'static str = "TODO";
-    const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::None;
+impl AlgorithmInfo for HashFactory {
+    fn alg_name(&self) -> &'static str {
+        match self {
+            Self::SHA224(h) => h.alg_name(),
+            Self::SHA256(h) => h.alg_name(),
+            Self::SHA384(h) => h.alg_name(),
+            Self::SHA512(h) => h.alg_name(),
+            Self::SHA512_224(h) => h.alg_name(),
+            Self::SHA512_256(h) => h.alg_name(),
+            Self::SHA3_224(h) => h.alg_name(),
+            Self::SHA3_256(h) => h.alg_name(),
+            Self::SHA3_384(h) => h.alg_name(),
+            Self::SHA3_512(h) => h.alg_name(),
+            Self::SM3(h) => h.alg_name(),
+            Self::AsconHash256(h) => h.alg_name(),
+        }
+    }
+
+    fn max_security_strength(&self) -> SecurityStrength {
+        match self {
+            Self::SHA224(h) => h.max_security_strength(),
+            Self::SHA256(h) => h.max_security_strength(),
+            Self::SHA384(h) => h.max_security_strength(),
+            Self::SHA512(h) => h.max_security_strength(),
+            Self::SHA512_224(h) => h.max_security_strength(),
+            Self::SHA512_256(h) => h.max_security_strength(),
+            Self::SHA3_224(h) => h.max_security_strength(),
+            Self::SHA3_256(h) => h.max_security_strength(),
+            Self::SHA3_384(h) => h.max_security_strength(),
+            Self::SHA3_512(h) => h.max_security_strength(),
+            Self::SM3(h) => h.max_security_strength(),
+            Self::AsconHash256(h) => h.max_security_strength(),
+        }
+    }
 }
 
 impl Hash for HashFactory {
@@ -264,23 +291,6 @@ impl Hash for HashFactory {
             Self::AsconHash256(h) => {
                 h.do_final_partial_bits_out(partial_byte, num_partial_bits, output)
             }
-        }
-    }
-
-    fn max_security_strength(&self) -> SecurityStrength {
-        match self {
-            Self::SHA224(h) => h.max_security_strength(),
-            Self::SHA256(h) => h.max_security_strength(),
-            Self::SHA384(h) => h.max_security_strength(),
-            Self::SHA512(h) => h.max_security_strength(),
-            Self::SHA512_224(h) => h.max_security_strength(),
-            Self::SHA512_256(h) => h.max_security_strength(),
-            Self::SHA3_224(h) => h.max_security_strength(),
-            Self::SHA3_256(h) => h.max_security_strength(),
-            Self::SHA3_384(h) => h.max_security_strength(),
-            Self::SHA3_512(h) => h.max_security_strength(),
-            Self::SM3(h) => h.max_security_strength(),
-            Self::AsconHash256(h) => h.max_security_strength(),
         }
     }
 }

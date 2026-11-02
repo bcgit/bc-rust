@@ -8,17 +8,31 @@ mod hkdf_tests {
     };
     use bouncycastle_core::security_strength::SecurityStrength;
     use bouncycastle_core::symmetric_key::{FromAnyKeyMaterial, MacGenerationKey};
-    use bouncycastle_core::traits::{HashAlgParams, HashOneShot, KDF, MAC};
+    use bouncycastle_core::traits::{
+        Algorithm, AlgorithmInfo, HashAlgParams, HashOneShot, KDF, MAC,
+    };
     use bouncycastle_core_test_framework::DUMMY_SEED;
     use bouncycastle_core_test_framework::kdf::TestFrameworkKDF;
     use bouncycastle_hex as hex;
     use bouncycastle_hkdf::HKDF;
-    use bouncycastle_hmac::HmacKey;
-    use bouncycastle_sha2::hkdf::{HKDF_SHA256, HKDF_SHA512};
+    use bouncycastle_hmac::{HMACParams, HmacKey};
+    use bouncycastle_sha2::hkdf::{HKDF_SHA256, HKDF_SHA256_NAME, HKDF_SHA512, HKDF_SHA512_NAME};
     use bouncycastle_sha2::{
         SHA256, SHA512, SUSPENDED_SHA256_STATE_LEN, SUSPENDED_SHA512_STATE_LEN,
     };
     use bouncycastle_utils::ct;
+
+    #[test]
+    fn algorithm_tests() {
+        // The name is the hash's HKDF name; the strength is the hash's, both through the
+        // constants and through AlgorithmInfo on an instance.
+        assert_eq!(HKDF_SHA256::ALG_NAME, HKDF_SHA256_NAME);
+        assert_eq!(HKDF_SHA512::ALG_NAME, HKDF_SHA512_NAME);
+        assert_eq!(HKDF_SHA256::MAX_SECURITY_STRENGTH, SHA256::MAX_SECURITY_STRENGTH);
+        assert_eq!(HKDF_SHA512::MAX_SECURITY_STRENGTH, SHA512::MAX_SECURITY_STRENGTH);
+        assert_eq!(HKDF_SHA256::new().alg_name(), HKDF_SHA256_NAME);
+        assert_eq!(HKDF_SHA512::new().max_security_strength(), SecurityStrength::_256bit);
+    }
 
     #[test]
     fn test_streaming_apis() {
@@ -604,7 +618,7 @@ mod hkdf_tests {
     /// hashes such a key first): T(1) || T(2) computed with HMAC directly.
     fn check_expand_long_prk<H>(lens: &[usize])
     where
-        H: HashOneShot + HashAlgParams,
+        H: HMACParams,
     {
         let hash_len = H::OUTPUT_LEN;
         for &n in lens {
@@ -867,7 +881,7 @@ mod hkdf_tests {
             part1: &[u8],
             part2: &[u8],
         ) where
-            H: HashOneShot + HashAlgParams,
+            H: HMACParams,
             HKDF<H, HASH_LEN, LEN>: Clone + SuspendableKeyed<LEN, Key = dyn KeyMaterialTrait>,
         {
             let hkdf = HKDF::<H, HASH_LEN, LEN>::new();

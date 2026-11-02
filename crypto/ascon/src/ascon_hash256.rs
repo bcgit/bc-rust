@@ -100,10 +100,6 @@ impl Hash for AsconHash256 {
     ) -> Result<usize, HashError> {
         Err(HashError::InvalidInput("Ascon-Hash256 does not support partial byte input"))
     }
-
-    fn max_security_strength(&self) -> SecurityStrength {
-        SecurityStrength::_128bit
-    }
 }
 
 /// Length in bytes of the serialized state of [`AsconHash256`].

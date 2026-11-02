@@ -232,12 +232,18 @@ use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{KDF, SuspendableKeyed, XOF};
 
 /*** String constants ***/
+/// The name of HKDF over SHA-224, for `HMACParams::HKDF_ALG_NAME`.
+pub const HKDF_SHA224_NAME: &str = "HKDF-SHA224";
 ///
 pub const HKDF_SHA256_NAME: &str = "HKDF-SHA256";
 ///
 pub const HKDF_SHA384_NAME: &str = "HKDF-SHA384";
 ///
 pub const HKDF_SHA512_NAME: &str = "HKDF-SHA512";
+/// The name of HKDF over SHA-512/224, for `HMACParams::HKDF_ALG_NAME`.
+pub const HKDF_SHA512_224_NAME: &str = "HKDF-SHA512/224";
+/// The name of HKDF over SHA-512/256, for `HMACParams::HKDF_ALG_NAME`.
+pub const HKDF_SHA512_256_NAME: &str = "HKDF-SHA512/256";
 
 /*** Serialized-state length constants ***/
 // HKDF wraps the inner extract-phase HMAC's blob in 14 bytes of its own bookkeeping (a 3-byte library

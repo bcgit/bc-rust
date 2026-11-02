@@ -2,7 +2,9 @@
 mod sm3_tests {
     use bouncycastle_core::errors::{HashError, SuspendableError};
     use bouncycastle_core::security_strength::SecurityStrength;
-    use bouncycastle_core::traits::{Algorithm, AlgorithmOID, Hash, HashAlgParams, HashOneShot};
+    use bouncycastle_core::traits::{
+        Algorithm, AlgorithmInfo, AlgorithmOID, Hash, HashAlgParams, HashOneShot,
+    };
     use bouncycastle_core_test_framework::DUMMY_SEED;
     use bouncycastle_core_test_framework::hash::TestFrameworkHash;
     use bouncycastle_hex as hex;

@@ -6,7 +6,7 @@ mod sha3_tests {
         KeyMaterial, KeyMaterial256, KeyMaterial512, KeyMaterialTrait, KeyType,
     };
     use bouncycastle_core::security_strength::SecurityStrength;
-    use bouncycastle_core::traits::{Hash, HashAlgParams, HashOneShot, KDF};
+    use bouncycastle_core::traits::{AlgorithmInfo, Hash, HashAlgParams, HashOneShot, KDF};
     use bouncycastle_core_test_framework::DUMMY_SEED;
     use bouncycastle_core_test_framework::hash::TestFrameworkHash;
     use bouncycastle_core_test_framework::kdf::TestFrameworkKDF;
@@ -401,17 +401,13 @@ mod sha3_tests {
 
     #[test]
     fn test_security_strength() {
-        assert_eq!(Hash::max_security_strength(&SHA3_224::default()), SecurityStrength::_112bit);
-        assert_eq!(KDF::max_security_strength(&SHA3_224::default()), SecurityStrength::_112bit);
+        assert_eq!(SHA3_224::default().max_security_strength(), SecurityStrength::_112bit);
 
-        assert_eq!(Hash::max_security_strength(&SHA3_256::default()), SecurityStrength::_128bit);
-        assert_eq!(KDF::max_security_strength(&SHA3_256::default()), SecurityStrength::_128bit);
+        assert_eq!(SHA3_256::default().max_security_strength(), SecurityStrength::_128bit);
 
-        assert_eq!(Hash::max_security_strength(&SHA3_384::default()), SecurityStrength::_192bit);
-        assert_eq!(KDF::max_security_strength(&SHA3_384::default()), SecurityStrength::_192bit);
+        assert_eq!(SHA3_384::default().max_security_strength(), SecurityStrength::_192bit);
 
-        assert_eq!(Hash::max_security_strength(&SHA3_512::default()), SecurityStrength::_256bit);
-        assert_eq!(KDF::max_security_strength(&SHA3_512::default()), SecurityStrength::_256bit);
+        assert_eq!(SHA3_512::default().max_security_strength(), SecurityStrength::_256bit);
     }
 
     #[test]

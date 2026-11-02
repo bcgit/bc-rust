@@ -228,10 +228,6 @@ impl<PARAMS: SHA3Params> Hash for SHA3Internal<PARAMS> {
         // do_final_bits_out appends the SHA-3 `01` suffix, pads, and squeezes.
         Ok(self.do_final_bits_out(partial_byte, num_partial_bits, output))
     }
-
-    fn max_security_strength(&self) -> SecurityStrength {
-        SecurityStrength::from_bytes(PARAMS::OUTPUT_LEN / 2)
-    }
 }
 
 /// SHA3 is allowed to be used as a KDF in the form HASH(X) as per NIST SP 800-56C.
@@ -281,10 +277,6 @@ impl<PARAMS: SHA3Params> KDF for SHA3Internal<PARAMS> {
             self.mix_key_internal(*key);
         }
         self.derive_key_out_final_internal(additional_input, output_key)
-    }
-
-    fn max_security_strength(&self) -> SecurityStrength {
-        SecurityStrength::from_bytes(PARAMS::OUTPUT_LEN / 2)
     }
 }
 
