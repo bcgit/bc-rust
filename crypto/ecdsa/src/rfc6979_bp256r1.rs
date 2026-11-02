@@ -9,13 +9,10 @@
 //! close `n` is to `2^256` itself (unlike secp256k1, brainpoolP256r1's `n` is not close to a power
 //! of two at all; only the top-bit-set property matters here).
 //!
-//! `n` not being close to `2^256` has a second consequence: the step h.3 rejection loop is a normal
-//! control path on this curve, not the near-dead branch it is on the NIST curves and secp256k1 -- a
-//! uniform 256-bit candidate is `>= n` with probability `1 - n/2^256 = 0.336`, so about a third of
-//! all messages take at least one extra HMAC round. RFC 6979 puts no probability on this loop
-//! (§3.2 step h.3 says only that the process loops on an out-of-range candidate; its "utterly
-//! improbable", §2.4 and §3.4, is about `r = 0`, which FIPS 186-5 §6.4.1 step 11 makes a signing failure).
-//! [`generate_k`]'s docs say what the loop costs and amounts to on the brainpool curves.
+//! `n` not being close to `2^256` also makes the step h.3 rejection loop a normal control path on
+//! this curve, not the near-dead branch it is on the NIST curves and secp256k1; [`generate_k`]'s
+//! docs give the rate and what it amounts to. RFC 6979 puts no probability on this loop (its
+//! "utterly improbable", §2.4 and §3.4, is about `r = 0`).
 //!
 //! RFC 6979 has no official Appendix A.2.x-style test vectors for brainpool curves (its appendix
 //! only covers the NIST curves P-192 through P-521); `rfc6979_bp256r1_vectors_tests.rs`

@@ -8,10 +8,8 @@
 //! other brainpool curves' own case: brainpoolP512r1's `n` has its top bit set (`n > 2^511`), so
 //! `2n > 2^512` and any 512-bit input is already `< 2n`, despite `n` not being close to `2^512`.
 //!
-//! `n` not being close to `2^512` has a second consequence: the step h.3 rejection loop is a normal
-//! control path on this curve. A uniform 512-bit candidate is `>= n` with probability
-//! `1 - n/2^512 = 0.3326`, so about a third of all messages take at least one extra HMAC round;
-//! [`crate::rfc6979_bp256r1`]'s docs cover what that means on the brainpool curves.
+//! `n` not being close to `2^512` also makes the step h.3 rejection loop a normal control path on
+//! this curve; [`generate_k`]'s docs give the rate.
 //!
 //! RFC 6979 has no official Appendix A.2.x-style test vectors for brainpool curves;
 //! `rfc6979_bp512r1_vectors_tests.rs` cross-checks this implementation against an independent

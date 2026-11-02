@@ -7,11 +7,8 @@
 //! brainpoolP256r1's own case: brainpoolP384r1's `n` has its top bit set (`n > 2^383`), so `2n >
 //! 2^384` and any 384-bit input is already `< 2n`, despite `n` not being close to `2^384` itself.
 //!
-//! `n` not being close to `2^384` has a second consequence: the step h.3 rejection loop is a normal
-//! control path on this curve, the most-taken in the crate. A uniform 384-bit candidate is `>= n`
-//! with probability `1 - n/2^384 = 0.4503`, so nearly half of all messages take at least one extra
-//! HMAC round and a fifth take two or more; [`crate::rfc6979_bp256r1`]'s docs cover what that
-//! means on the brainpool curves.
+//! `n` not being close to `2^384` also makes the step h.3 rejection loop a normal control path on
+//! this curve, the most-taken in the crate; [`generate_k`]'s docs give the rate.
 //!
 //! RFC 6979 has no official Appendix A.2.x-style test vectors for brainpool curves;
 //! `rfc6979_bp384r1_vectors_tests.rs` cross-checks this implementation against an independent
