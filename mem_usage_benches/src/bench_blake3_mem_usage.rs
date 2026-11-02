@@ -26,9 +26,9 @@
 #![allow(unused_imports)]
 
 use bouncycastle::blake3::{
-    BLAKE3, BLAKE3KeyedHash, BLAKE3KeyedHashKey, BLAKE3KeyedSqueezer, BLAKE3Squeezer,
-    SUSPENDED_BLAKE3_KEYED_HASH_STATE_LEN, SUSPENDED_BLAKE3_SQUEEZER_STATE_LEN,
-    SUSPENDED_BLAKE3_STATE_LEN,
+    BLAKE3, BLAKE3DeriveKey, BLAKE3DeriveKeySqueezer, BLAKE3KeyedHash, BLAKE3KeyedHashKey,
+    BLAKE3KeyedSqueezer, BLAKE3Squeezer, SUSPENDED_BLAKE3_KEYED_HASH_STATE_LEN,
+    SUSPENDED_BLAKE3_SQUEEZER_STATE_LEN, SUSPENDED_BLAKE3_STATE_LEN,
 };
 use bouncycastle::core::key_material::{KeyMaterial256, KeyType};
 use bouncycastle::core::symmetric_key::{FromAnyKeyMaterial, MacGenerationKey};
@@ -47,6 +47,8 @@ fn print_struct_sizes() {
     println!("size_of<BLAKE3KeyedHashKey>: {}", size_of::<BLAKE3KeyedHashKey>());
     println!("size_of<BLAKE3Squeezer>: {}", size_of::<BLAKE3Squeezer>());
     println!("size_of<BLAKE3KeyedSqueezer>: {}", size_of::<BLAKE3KeyedSqueezer>());
+    println!("size_of<BLAKE3DeriveKey>: {}", size_of::<BLAKE3DeriveKey>());
+    println!("size_of<BLAKE3DeriveKeySqueezer>: {}", size_of::<BLAKE3DeriveKeySqueezer>());
     println!("SUSPENDED_BLAKE3_STATE_LEN: {}", SUSPENDED_BLAKE3_STATE_LEN);
     println!("SUSPENDED_BLAKE3_KEYED_HASH_STATE_LEN: {}", SUSPENDED_BLAKE3_KEYED_HASH_STATE_LEN);
     println!("SUSPENDED_BLAKE3_SQUEEZER_STATE_LEN: {}", SUSPENDED_BLAKE3_SQUEEZER_STATE_LEN);
@@ -116,10 +118,10 @@ fn bench_blake3_keyed_hash_xof() {
 }
 
 fn bench_blake3_derive_key() {
-    eprintln!("BLAKE3/new_derive_key+hash");
+    eprintln!("BLAKE3DeriveKey/new+hash");
 
     let mut out = [0u8; 32];
-    BLAKE3::new_derive_key(b"bc-rust 2026-10-22 mem_usage_benches example context")
+    BLAKE3DeriveKey::new(b"bc-rust 2026-10-22 mem_usage_benches example context")
         .hash_out(&MSG[..32], &mut out);
     println!("{:x?}", out);
 }

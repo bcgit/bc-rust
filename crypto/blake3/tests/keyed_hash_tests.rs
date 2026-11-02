@@ -19,7 +19,9 @@ mod keyed_hash_tests {
     use bouncycastle_core::symmetric_key::{
         FromAnyKeyMaterial, MacGenerationKey, MacVerificationKey,
     };
-    use bouncycastle_core::traits::{Algorithm, Hash, MAC, SuspendableKeyed, XOFSqueezer};
+    use bouncycastle_core::traits::{
+        Algorithm, Hash, MAC, MIN_MAC_OUTPUT_LEN, SuspendableKeyed, XOFSqueezer,
+    };
     use bouncycastle_core_test_framework::FixedSeedRNG;
     use bouncycastle_core_test_framework::from_key_material::TestFrameworkFromAnyKeyMaterial;
     use bouncycastle_core_test_framework::mac::TestFrameworkMAC;

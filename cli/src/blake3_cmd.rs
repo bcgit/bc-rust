@@ -4,7 +4,7 @@
 use std::io::{self, Read};
 use std::process::exit;
 
-use bouncycastle::blake3::{BLAKE3, BLAKE3KeyedHashKey};
+use bouncycastle::blake3::{BLAKE3, BLAKE3DeriveKey, BLAKE3KeyedHashKey};
 use bouncycastle::core::symmetric_key::{FromAnyKeyMaterial, MacGenerationKey};
 use bouncycastle::core::traits::{MAC, XOFSqueezer};
 
@@ -31,7 +31,7 @@ pub(crate) fn blake3_cmd(output_len: usize, output_hex: bool) {
 /// application-specific"; this command takes it as an argument only so that scripts can name the
 /// application's fixed string.
 pub(crate) fn blake3_derive_key_cmd(context: &str, output_len: usize, output_hex: bool) {
-    stream_xof(BLAKE3::new_derive_key(context.as_bytes()), output_len, output_hex);
+    stream_xof(BLAKE3DeriveKey::new(context.as_bytes()), output_len, output_hex);
 }
 
 /// BLAKE3 `keyed_hash` mode of stdin: write `output_len` bytes of keyed output, or with `--verify`
