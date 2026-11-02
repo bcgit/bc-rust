@@ -68,7 +68,7 @@ pub enum XOFFactory {
     /// BLAKE3 in `hash` mode. Its [`Hash`] view is the default 32-byte output, which is the
     /// first 32 bytes of the XOF stream (BLAKE3 spec s. 2.6). For the `derive_key` mode, which
     /// needs a context string the factory has no channel for, construct
-    /// `bouncycastle_blake3::BLAKE3::new_derive_key` directly.
+    /// `bouncycastle_blake3::BLAKE3DeriveKey` directly.
     BLAKE3(BLAKE3),
 }
 

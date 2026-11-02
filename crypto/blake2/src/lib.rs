@@ -53,9 +53,9 @@
 //! | Object                                                  | Size (bytes) |
 //! |---------------------------------------------------------|--------------|
 //! | [`BLAKE2b_512`], [`BLAKE2b_512_MAC`], [`BLAKE2b_512_MACKey`] | 224     |
-//! | [`BLAKE2s_256`], [`BLAKE2s_256_MAC`], [`BLAKE2s_256_MACKey`] | 112     |
-//! | BLAKE2b-512 suspended state (hash and MAC)              | 212          |
-//! | BLAKE2s-256 suspended state (hash and MAC)              | 108          |
+//! | [`BLAKE2s_256`], [`BLAKE2s_256_MAC`], [`BLAKE2s_256_MACKey`] | 120     |
+//! | BLAKE2b-512 suspended state (hash and MAC)              | 213          |
+//! | BLAKE2s-256 suspended state (hash and MAC)              | 109          |
 //!
 //! The compression function also uses 256 bytes (BLAKE2b) or 128 bytes (BLAKE2s) of stack.
 //!
@@ -117,7 +117,7 @@ use bouncycastle_core::traits::{Algorithm, AlgorithmOID, HashAlgParams};
 #[allow(unused_imports)]
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 #[allow(unused_imports)]
-use bouncycastle_core::traits::{Hash, MAC, Suspendable, SuspendableKeyed};
+use bouncycastle_core::traits::{Hash, MAC, MIN_MAC_OUTPUT_LEN, Suspendable, SuspendableKeyed};
 
 /// Algorithm name string for BLAKE2b-512, as used by the factories and CLI.
 pub const BLAKE2B_512_NAME: &str = "BLAKE2b-512";
@@ -127,11 +127,6 @@ pub const BLAKE2S_256_NAME: &str = "BLAKE2s-256";
 pub const BLAKE2B_512_MAC_NAME: &str = "BLAKE2b-512-MAC";
 /// Algorithm name string for keyed BLAKE2s-256, as used by the factories and CLI.
 pub const BLAKE2S_256_MAC_NAME: &str = "BLAKE2s-256-MAC";
-
-/// Smallest output buffer the MAC workers will truncate a tag into: 4 bytes.
-///
-/// RFC 7693 sets no floor; this follows HMAC's `MIN_FIPS_DIGEST_LEN` (32 bits).
-pub const MIN_MAC_OUTPUT_LEN: usize = 4;
 
 /// RFC 7693 s. 4: id-blake2b512 has "Collision Security 2**256".
 impl Algorithm for BLAKE2b_512 {

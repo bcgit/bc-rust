@@ -87,7 +87,7 @@ pub enum HashFactory {
     /// BLAKE3 in `hash` mode, with the default 32-byte output. For longer output use
     /// [`XOFFactory`](crate::xof_factory::XOFFactory); for the `derive_key` mode, which needs a
     /// context string the factory has no channel for, construct
-    /// `bouncycastle_blake3::BLAKE3::new_derive_key` directly.
+    /// `bouncycastle_blake3::BLAKE3DeriveKey` directly.
     BLAKE3(blake3::BLAKE3),
 }
 

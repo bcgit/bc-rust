@@ -1,4 +1,5 @@
-//! Tests for [`BLAKE3`] (`hash` and `derive_key` modes) and [`BLAKE3Squeezer`].
+//! Tests for [`BLAKE3`] (`hash` mode), [`BLAKE3DeriveKey`] (`derive_key` mode) and
+//! [`BLAKE3Squeezer`].
 //!
 //! Vector sources: the official BLAKE3 test vectors (see `vectors/mod.rs`). bc-test-data has no
 //! BLAKE3 data, and Wycheproof has no BLAKE vectors (C2SP/wycheproof testvectors_v1 has no blake*
@@ -55,7 +56,7 @@ mod blake3_tests {
         }
     }
 
-    /// Every `derive_key` case, via [`BLAKE3::new_derive_key`], at 32 and 131 bytes.
+    /// Every `derive_key` case, via [`BLAKE3DeriveKey`], at 32 and 131 bytes.
     #[test]
     fn official_vectors_derive_key() {
         for case in CASES {
@@ -63,12 +64,8 @@ mod blake3_tests {
             let expected = h(case.derive_key);
             let len = case.input_len;
 
-            assert_eq!(BLAKE3::new_derive_key(CONTEXT).hash(&msg), expected[..32], "len {len}");
-            assert_eq!(
-                BLAKE3::new_derive_key(CONTEXT).xof(&msg, OUTPUT_LEN),
-                expected,
-                "len {len}"
-            );
+            assert_eq!(BLAKE3DeriveKey::new(CONTEXT).hash(&msg), expected[..32], "len {len}");
+            assert_eq!(BLAKE3DeriveKey::new(CONTEXT).xof(&msg, OUTPUT_LEN), expected, "len {len}");
         }
     }
 
@@ -77,10 +74,10 @@ mod blake3_tests {
     #[test]
     fn derive_key_context_is_bound() {
         let long_context = input(2049);
-        let a = BLAKE3::new_derive_key(&long_context).hash(b"km");
-        let b = BLAKE3::new_derive_key(&long_context[..2048]).hash(b"km");
+        let a = BLAKE3DeriveKey::new(&long_context).hash(b"km");
+        let b = BLAKE3DeriveKey::new(&long_context[..2048]).hash(b"km");
         assert_ne!(a, b);
-        assert_ne!(BLAKE3::new_derive_key(b"").hash(b"km"), BLAKE3::new().hash(b"km"));
+        assert_ne!(BLAKE3DeriveKey::new(b"").hash(b"km"), BLAKE3::new().hash(b"km"));
     }
 
     /* --------------------------------- core-test-framework ---------------------------------- */
@@ -94,7 +91,7 @@ mod blake3_tests {
         }
         for len in [0usize, 1, 64, 1024, 1025, 4097] {
             tf.test_hash_output_buffers(BLAKE3::new, &input(len));
-            tf.test_hash_output_buffers(|| BLAKE3::new_derive_key(CONTEXT), &input(len));
+            tf.test_hash_output_buffers(|| BLAKE3DeriveKey::new(CONTEXT), &input(len));
         }
     }
 
@@ -107,7 +104,7 @@ mod blake3_tests {
         for case in CASES.iter().filter(|c| c.input_len <= 8193) {
             let msg = input(case.input_len);
             tf.test_xof(BLAKE3::new, &msg, &h(case.hash));
-            tf.test_xof(|| BLAKE3::new_derive_key(CONTEXT), &msg, &h(case.derive_key));
+            tf.test_xof(|| BLAKE3DeriveKey::new(CONTEXT), &msg, &h(case.derive_key));
         }
     }
 
@@ -175,9 +172,15 @@ mod blake3_tests {
     /// rejected.
     #[test]
     fn partial_bits_policy() {
-        let expected = BLAKE3::new().hash(b"abc");
+        check_partial_bits(BLAKE3::new);
+        check_partial_bits(|| BLAKE3DeriveKey::new(CONTEXT));
+    }
+
+    /// The partial-bit rules for one BLAKE3 mode, over "abc".
+    fn check_partial_bits<X: XOF>(new: impl Fn() -> X) {
+        let expected = new().hash(b"abc");
         let mk = || {
-            let mut b = BLAKE3::new();
+            let mut b = new();
             b.do_update(b"abc");
             b
         };
@@ -266,6 +269,8 @@ mod blake3_tests {
         assert_eq!(size_of::<BLAKE3KeyedHash>(), 1880);
         assert_eq!(size_of::<BLAKE3Squeezer>(), 192);
         assert_eq!(size_of::<BLAKE3KeyedSqueezer>(), 192);
+        assert_eq!(size_of::<BLAKE3DeriveKey>(), 1880);
+        assert_eq!(size_of::<BLAKE3DeriveKeySqueezer>(), 192);
         println!("size_of::<BLAKE3>() = {}", size_of::<BLAKE3>());
         println!("size_of::<BLAKE3KeyedHash>() = {}", size_of::<BLAKE3KeyedHash>());
         println!("size_of::<BLAKE3Squeezer>() = {}", size_of::<BLAKE3Squeezer>());
@@ -291,7 +296,6 @@ mod blake3_tests {
         let msg = input(case.input_len);
         for prefix in [0usize, 1, 63, 64, 65, 1023, 1024, 1025, 2048, 3000, 4096, 7000, 8193] {
             round_trip(BLAKE3::new, &msg, prefix, &h(case.hash));
-            round_trip(|| BLAKE3::new_derive_key(CONTEXT), &msg, prefix, &h(case.derive_key));
         }
     }
 
@@ -303,9 +307,6 @@ mod blake3_tests {
             let mut b = BLAKE3::new();
             b.do_update(&msg[..len]);
             tf.test(&b);
-            let mut d = BLAKE3::new_derive_key(CONTEXT);
-            d.do_update(&msg[..len]);
-            tf.test(&d);
         }
 
         let mut b = BLAKE3::new();
@@ -331,13 +332,6 @@ mod blake3_tests {
                 let second = resumed.do_output(OUTPUT_LEN - split);
                 assert_eq!([first, second].concat(), expected, "split {split}");
             }
-
-            let mut d = BLAKE3::new_derive_key(CONTEXT);
-            d.do_update(&msg);
-            let mut s = d.into_squeezer();
-            let first = s.do_output(70);
-            let mut resumed = BLAKE3Squeezer::from_suspended(s.suspend()).unwrap();
-            assert_eq!([first, resumed.do_output(61)].concat(), h(case.derive_key));
         }
     }
 
@@ -385,13 +379,6 @@ mod blake3_tests {
         assert!(s[BLOCK + 12..BLOCK + 64].iter().all(|&b| b == 0), "no stale block bytes");
         assert_ne!(s[CV_STACK..CV_STACK + 32], [0u8; 32]);
         assert!(s[CV_STACK + 32..].iter().all(|&b| b == 0), "no stale stack entries");
-
-        // derive_key mode records its flag and context key.
-        let mut d = BLAKE3::new_derive_key(CONTEXT);
-        d.do_update(b"x");
-        let s = d.suspend();
-        assert_eq!(s[FLAGS..FLAGS + 4], 64u32.to_le_bytes());
-        assert_ne!(s[KEY_WORDS..KEY_WORDS + 4], iv0);
     }
 
     /// Each InvalidData branch of `from_suspended`, with its boundary accepted.
@@ -400,15 +387,13 @@ mod blake3_tests {
         let good = state_after(3000); // chunk_counter 2 (0b10), one CV on the stack
         assert!(BLAKE3::from_suspended(good).is_ok());
 
-        // flags: only 0 (with IV) and DERIVE_KEY_MATERIAL.
-        for flags in [1u32, 16, 32, 64 | 1, 128] {
+        // flags: only 0 (hash mode). A derive_key (64) or keyed_hash (16) state is refused, so
+        // neither can be resumed as a plain hash.
+        for flags in [1u32, 16, 32, 64, 64 | 1, 128] {
             let mut s = good;
             s[FLAGS..FLAGS + 4].copy_from_slice(&flags.to_le_bytes());
             assert!(rejected(s), "flags {flags}");
         }
-        let mut s = good;
-        s[FLAGS..FLAGS + 4].copy_from_slice(&64u32.to_le_bytes());
-        assert!(BLAKE3::from_suspended(s).is_ok(), "DERIVE_KEY_MATERIAL with any key words");
         // hash mode with key words other than IV.
         let mut s = good;
         s[KEY_WORDS] ^= 1;
@@ -547,8 +532,8 @@ mod blake3_tests {
         assert_eq!(fresh[3 + 176], 64);
         assert!(BLAKE3Squeezer::from_suspended(fresh).is_ok());
 
-        // Root flags: a node-type part plus mode 0 or DERIVE_KEY_MATERIAL; never ROOT or
-        // KEYED_HASH.
+        // Root flags: a node-type part and no mode flag; never ROOT, KEYED_HASH or
+        // DERIVE_KEY_MATERIAL.
         // "abc" is a one-block chunk root: CHUNK_START | CHUNK_END.
         assert_eq!(state[3 + 100..3 + 104], 3u32.to_le_bytes());
         let with_flags = |flags: u32| {
@@ -556,11 +541,26 @@ mod blake3_tests {
             st[3 + 100..3 + 104].copy_from_slice(&flags.to_le_bytes());
             BLAKE3Squeezer::from_suspended(st)
         };
-        for ok in [0u32, 1, 2, 3, 4, 64, 64 | 3, 64 | 4] {
+        for ok in [0u32, 1, 2, 3, 4] {
             assert!(with_flags(ok).is_ok(), "flags {ok}");
         }
-        for bad in [8u32, 16, 16 | 3, 32, 64 | 16, 64 | 8, 128, 1 << 31] {
+        for bad in [8u32, 16, 16 | 3, 32, 64, 64 | 3, 64 | 4, 64 | 16, 64 | 8, 128, 1 << 31] {
             assert!(matches!(with_flags(bad), Err(SuspendableError::InvalidData)), "flags {bad}");
+        }
+
+        // output_block_counter <= 2^58: s. 2.6 caps output below 2^64 bytes, and a counter near
+        // u64::MAX would wrap and repeat blocks already handed out.
+        let with_counter = |counter: u64| {
+            let mut st = state;
+            st[3 + 104..3 + 112].copy_from_slice(&counter.to_le_bytes());
+            BLAKE3Squeezer::from_suspended(st)
+        };
+        assert!(with_counter(1 << 58).is_ok());
+        for bad in [(1u64 << 58) + 1, u64::MAX - 1, u64::MAX] {
+            assert!(
+                matches!(with_counter(bad), Err(SuspendableError::InvalidData)),
+                "counter {bad}"
+            );
         }
     }
 }

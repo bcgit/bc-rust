@@ -244,11 +244,10 @@ pub(crate) fn strip_trailing_newline(bytes: &[u8]) -> &[u8] {
 /// The MAC key from `--key-file` or `--key` (hex), tagged as a MAC key, for the BLAKE2 and
 /// BLAKE3 keyed commands.
 ///
-/// `max_len` is the longest key the algorithm takes; a longer key is refused here with a message
-/// naming the limit, rather than as an opaque error from the algorithm's constructor. An all-zero
-/// key comes back tagged [`KeyType::Zeroized`], which the BLAKE key objects accept, as HMAC's
-/// and KMAC's do.
-pub(crate) fn load_blake_mac_key(
+/// A key outside `min_len..=max_len` bytes is refused here with a message naming the limit, rather
+/// than as an opaque error from the algorithm's constructor. An all-zero key comes back tagged
+/// [`KeyType::Zeroized`], which the MAC key objects accept.
+pub(crate) fn load_mac_key(
     key: &Option<String>,
     key_file: &Option<String>,
     alg_name: &str,

@@ -14,7 +14,9 @@ use bouncycastle_core::hazmat::do_hazardous_operations;
 use bouncycastle_core::key_material::{KeyMaterial256, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::symmetric_key::{FromAnyKeyMaterial, MacGenerationKey, MacVerificationKey};
-use bouncycastle_core::traits::{Hash, MAC, RNG, Suspendable, SuspendableKeyed, XOF, XOFSqueezer};
+use bouncycastle_core::traits::{
+    Hash, MAC, MIN_MAC_OUTPUT_LEN, RNG, Suspendable, SuspendableKeyed, XOF, XOFSqueezer,
+};
 use bouncycastle_utils::suspendable_state::{add_lib_ver, check_lib_ver};
 use bouncycastle_utils::{ct, min, secret::Secret};
 
@@ -30,16 +32,6 @@ const KEY_LEN: usize = 32;
 /// bytes, giving a maximum tree depth of 64 - 10 = 54. The CV stack thus requires 54 * 32 = 1728
 /// bytes."
 const MAX_DEPTH: usize = 54;
-
-/// The shortest output [`MAC::do_final_out`] and [`MAC::mac_out`] will truncate a
-/// [`BLAKE3KeyedHash`] tag to; a shorter buffer is rejected with [`MACError::InvalidLength`].
-///
-/// BLAKE3 itself sets no minimum (s. 2.6: outputs of "any byte length"), and BLAKE3 is not a NIST
-/// algorithm, so no FIPS rule applies. The floor of 4 bytes follows this library's HMAC
-/// (`bouncycastle_hmac::MIN_FIPS_DIGEST_LEN`), so that a tag through the [`MAC`] trait cannot be
-/// truncated to a trivially forgeable length by accident. Extended keyed output through
-/// [`BLAKE3KeyedHash::into_squeezer`] is not subject to this floor.
-pub const MIN_MAC_OUTPUT_LEN: usize = 4;
 
 /// The first 8 words of a compression output: "The output of the compression function is most
 /// often truncated to produce 256-bit chaining values" (s. 2.2).
@@ -519,23 +511,15 @@ fn check_partial_bits(num_bits: usize) -> Result<(), HashError> {
 }
 
 /* ---------------------------------------------------------------------------------------------
- * BLAKE3: hash and derive_key modes
+ * BLAKE3: hash mode
  * ------------------------------------------------------------------------------------------- */
 
-/// BLAKE3 in its `hash` and `derive_key` modes (spec s. 2.3), usable as a [`Hash`] and as a
-/// [`XOF`].
-///
-/// * [`BLAKE3::new`] (and [`Default`]) is the `hash` mode: "k0 ... k7 are the constants
-///   IV0 ... IV7, and no additional flags are set."
-/// * [`BLAKE3::new_derive_key`] is the `derive_key` mode: the context string is hashed into a
-///   context key, and the key material is then fed through [`Hash::do_update`].
+/// BLAKE3 in its `hash` mode (spec s. 2.3: "k0 ... k7 are the constants IV0 ... IV7, and no
+/// additional flags are set"), usable as a [`Hash`] and as a [`XOF`].
 ///
 /// As a [`Hash`] it produces the default 32-byte output; as a [`XOF`] any length, and "Shorter
-/// outputs are prefixes of longer ones" (s. 2.6).
-///
-/// Neither mode holds a secret key -- the `derive_key` context key is derived from a public,
-/// hardcoded string -- so this type implements [`Suspendable`]. For the keyed mode see
-/// [`BLAKE3KeyedHash`].
+/// outputs are prefixes of longer ones" (s. 2.6). For the keyed mode see [`BLAKE3KeyedHash`]; for
+/// key derivation, [`BLAKE3DeriveKey`].
 ///
 /// See the [crate-level documentation](crate) for usage.
 #[derive(Clone)]
@@ -551,14 +535,9 @@ impl BLAKE3 {
         Self { core: Blake3Core::new(&IV, 0) }
     }
 
-    /// A new BLAKE3 in `derive_key` mode for the given context string. The key material is then
-    /// supplied through [`Hash::do_update`] (or the one-shot [`Hash::hash`] / [`XOF::xof`]), and
-    /// the output is the derived key.
-    ///
-    /// The context string "should be hardcoded, globally unique, and application-specific" and
-    /// "should not contain variable data, like salts, IDs, or the current time" (s. 6.2); see the
-    /// crate's Security Considerations.
-    pub fn new_derive_key(context: &[u8]) -> Self {
+    /// The engine in `derive_key` mode, for [`BLAKE3DeriveKey`] only: a `BLAKE3` value is
+    /// [`Suspendable`], and a derive_key state would hold the key material.
+    fn derive_key_mode(context: &[u8]) -> Self {
         // s. 2.3: "First the context string is hashed, with k0 ... k7 set to the constants
         // IV0 ... IV7, and the DERIVE_KEY_CONTEXT flag set for every compression."
         let mut context_hasher = Blake3Core::new(&IV, DERIVE_KEY_CONTEXT);
@@ -644,7 +623,6 @@ impl Hash for BLAKE3 {
         Ok(self.do_final_out(output))
     }
 
-    /// BLAKE3 spec s. 4.1: "BLAKE3 targets 128-bit security for all of its security goals."
     fn max_security_strength(&self) -> SecurityStrength {
         SecurityStrength::_128bit
     }
@@ -684,8 +662,8 @@ impl XOF for BLAKE3 {
 ///
 /// Layout (after the 3-byte library version header; all integers little-endian):
 /// ```text
-///   [0  .. 4)     flags       u32: 0 (hash mode) or DERIVE_KEY_MATERIAL (derive_key mode)
-///   [4  .. 36)    key_words   [u32; 8]: IV in hash mode, the context key in derive_key mode
+///   [0  .. 4)     flags       u32: always 0 (hash mode)
+///   [4  .. 36)    key_words   [u32; 8]: always IV0 ... IV7
 ///   [36 .. 1871)  the chunk state and CV stack:
 ///     [36   .. 68)    chunk chaining_value  [u32; 8], all zero when blocks_compressed == 0
 ///     [68   .. 76)    chunk_counter         u64 (< 2^54)
@@ -713,10 +691,9 @@ impl Suspendable<SUSPENDED_BLAKE3_STATE_LEN> for BLAKE3 {
         out_to_return
     }
 
-    /// Rejects with [`SuspendableError::InvalidData`]: a flags word other than 0 or
-    /// DERIVE_KEY_MATERIAL (a `keyed_hash` state is never in this format, see
-    /// [`BLAKE3KeyedHash`]); hash-mode key words other than IV0 ... IV7 (s. 2.3); and the
-    /// chunk-state and CV-stack inconsistencies listed in the layout above.
+    /// Rejects with [`SuspendableError::InvalidData`]: a flags word other than 0 or key words
+    /// other than IV0 ... IV7 (only the `hash` mode is suspendable, s. 2.3); and the chunk-state
+    /// and CV-stack inconsistencies listed in the layout above.
     fn from_suspended(
         serialized_state: [u8; SUSPENDED_BLAKE3_STATE_LEN],
     ) -> Result<Self, SuspendableError> {
@@ -726,17 +703,17 @@ impl Suspendable<SUSPENDED_BLAKE3_STATE_LEN> for BLAKE3 {
             check_lib_ver(&serialized_state, None)?.try_into().unwrap();
 
         let flags = u32_from_le(&input[0..4]);
-        let mut key_words = Secret::<[u32; 8]>::new();
-        words_from_le_bytes(&input[4..36], &mut key_words);
-
-        // s. 2.3: hash mode has "no additional flags" and k = IV; derive_key's second stage sets
-        // DERIVE_KEY_MATERIAL. Nothing else can be a BLAKE3 (absorbing) state.
-        let hash_mode = flags == 0 && *key_words == IV;
-        if !(hash_mode || flags == DERIVE_KEY_MATERIAL) {
+        // s. 2.3: hash mode has "no additional flags" and k = IV. A keyed_hash or derive_key
+        // state is never in this format (those modes are BLAKE3KeyedHash and BLAKE3DeriveKey).
+        let mut iv_bytes = [0u8; 32];
+        for (bytes, word) in iv_bytes.as_chunks_mut::<4>().0.iter_mut().zip(IV.iter()) {
+            bytes.copy_from_slice(&word.to_le_bytes());
+        }
+        if flags != 0 || !ct::ct_eq_bytes(&input[4..36], &iv_bytes) {
             return Err(SuspendableError::InvalidData);
         }
 
-        let core = Blake3Core::read_state(&input[36..], &key_words, flags)?;
+        let core = Blake3Core::read_state(&input[36..], &IV, 0)?;
         Ok(Self { core })
     }
 }
@@ -789,7 +766,8 @@ impl XOFSqueezer for BLAKE3Squeezer {
                     self.buf[i * 4..i * 4 + 4].copy_from_slice(&word.to_le_bytes());
                 }
                 // "as long as more output bytes are needed, t is incremented by 1". This cannot
-                // overflow: 2^64 output blocks would be 2^70 bytes, past s. 2.6's ell < 2^64.
+                // overflow: the counter starts at most at MAX_OUTPUT_BLOCKS (from_suspended
+                // enforces it), and 2^64 - 2^58 further blocks would be far past ell < 2^64.
                 self.output_block_counter += 1;
                 self.buf_pos = 0;
             }
@@ -822,6 +800,10 @@ impl XOFSqueezer for BLAKE3Squeezer {
 /// `64 * (output_block_counter - 1) + buffer position` once a block has been produced.
 pub const SUSPENDED_BLAKE3_SQUEEZER_STATE_LEN: usize = 3 + 177;
 
+/// The most output blocks a squeezer can have produced: s. 2.6 bounds the output at
+/// "0 <= ell < 2^64" bytes, which is 2^58 blocks of 64 bytes.
+const MAX_OUTPUT_BLOCKS: u64 = 1 << 58;
+
 /// A long output stream can be paused and resumed. Only the squeezer of [`BLAKE3`] implements
 /// this; the keyed squeezer does not, see [`BLAKE3KeyedSqueezer`].
 impl Suspendable<SUSPENDED_BLAKE3_SQUEEZER_STATE_LEN> for BLAKE3Squeezer {
@@ -847,15 +829,18 @@ impl Suspendable<SUSPENDED_BLAKE3_SQUEEZER_STATE_LEN> for BLAKE3Squeezer {
 
     /// Rejects with [`SuspendableError::InvalidData`] a buffer position past 64, and root flags
     /// that no [`BLAKE3`] root can have: the stored flags are a node-type part (CHUNK_START,
-    /// CHUNK_END, PARENT) plus a mode part that must be 0 or DERIVE_KEY_MATERIAL. In particular
-    /// KEYED_HASH is rejected (a keyed stream is never suspendable, see [`BLAKE3KeyedSqueezer`]),
-    /// as is ROOT (it is added per output block, never stored). Also rejected, as states no
-    /// squeezer reaches:
+    /// CHUNK_END, PARENT) and no mode flag. In particular KEYED_HASH and DERIVE_KEY_MATERIAL are
+    /// rejected (those streams are never suspendable, see [`BLAKE3KeyedSqueezer`] and
+    /// [`BLAKE3DeriveKeySqueezer`]), as is ROOT (it is added per output block, never stored).
+    /// Also rejected, as states no squeezer reaches:
     /// * a root `block_len` above 64: a root is a chunk's last block (b <= 64, s. 2.4) or a
     ///   parent node (b = 64, s. 2.5);
     /// * `output_block_counter == 0` with a position below 64: a fresh squeezer starts at position
     ///   64 (no block computed), and computing a block makes the counter at least 1, so such a
-    ///   state would hand out buffer bytes that were never computed.
+    ///   state would hand out buffer bytes that were never computed;
+    /// * `output_block_counter` above 2^58: s. 2.6 allows "outputs of any byte
+    ///   length 0 <= ell < 2^64", at most 2^58 blocks, and a counter near `u64::MAX` would wrap
+    ///   and repeat output already handed out.
     fn from_suspended(
         serialized_state: [u8; SUSPENDED_BLAKE3_SQUEEZER_STATE_LEN],
     ) -> Result<Self, SuspendableError> {
@@ -870,9 +855,10 @@ impl Suspendable<SUSPENDED_BLAKE3_SQUEEZER_STATE_LEN> for BLAKE3Squeezer {
         let block_len = u32_from_le(&input[96..100]);
         let output_block_counter = u64_from_le(&input[104..112]);
         if buf_pos as usize > BLOCK_LEN
-            || !(mode_flags == 0 || mode_flags == DERIVE_KEY_MATERIAL)
+            || mode_flags != 0
             || block_len as usize > BLOCK_LEN
             || (output_block_counter == 0 && (buf_pos as usize) < BLOCK_LEN)
+            || output_block_counter > MAX_OUTPUT_BLOCKS
         {
             return Err(SuspendableError::InvalidData);
         }
@@ -886,6 +872,124 @@ impl Suspendable<SUSPENDED_BLAKE3_SQUEEZER_STATE_LEN> for BLAKE3Squeezer {
         buf.copy_from_slice(&input[112..176]);
 
         Ok(Self { root, output_block_counter, buf, buf_pos })
+    }
+}
+
+/* ---------------------------------------------------------------------------------------------
+ * BLAKE3DeriveKey: derive_key mode
+ * ------------------------------------------------------------------------------------------- */
+
+/// BLAKE3 in its `derive_key` mode (spec s. 2.3), usable as a [`Hash`] and as a [`XOF`]: the
+/// context string is hashed into a context key, the key material is then fed through
+/// [`Hash::do_update`], and the output is the derived key.
+///
+/// The context string "should be hardcoded, globally unique, and application-specific" and "should
+/// not contain variable data, like salts, IDs, or the current time" (s. 6.2).
+///
+/// It deliberately does **not** implement [`Suspendable`]: its state holds up to 64 bytes of the
+/// key material verbatim, and values derived from all of it, while [`Suspendable`] forbids a
+/// serialized private key. Its squeezer, [`BLAKE3DeriveKeySqueezer`], is not suspendable either.
+///
+/// ```compile_fail
+/// use bouncycastle_blake3::BLAKE3DeriveKey;
+/// use bouncycastle_core::traits::{Hash, Suspendable};
+///
+/// let mut kdf = BLAKE3DeriveKey::new(b"example.com 2019-12-25 16:18:03 session tokens v1");
+/// kdf.do_update(&[0x0bu8; 32]);
+/// let _ = kdf.suspend(); // not Suspendable
+/// ```
+#[derive(Clone)]
+pub struct BLAKE3DeriveKey(BLAKE3);
+
+impl BLAKE3DeriveKey {
+    /// A new `derive_key` instance for the given context string.
+    pub fn new(context: &[u8]) -> Self {
+        Self(BLAKE3::derive_key_mode(context))
+    }
+}
+
+impl Hash for BLAKE3DeriveKey {
+    fn block_bitlen(&self) -> usize {
+        self.0.block_bitlen()
+    }
+
+    /// The default output length, 32 bytes; use the [`XOF`] methods for other lengths.
+    fn output_len(&self) -> usize {
+        self.0.output_len()
+    }
+
+    fn hash(self, data: &[u8]) -> Vec<u8> {
+        self.0.hash(data)
+    }
+
+    fn hash_out(self, data: &[u8], output: &mut [u8]) -> usize {
+        self.0.hash_out(data, output)
+    }
+
+    fn do_update(&mut self, data: &[u8]) {
+        self.0.do_update(data)
+    }
+
+    fn do_final(self) -> Vec<u8> {
+        self.0.do_final()
+    }
+
+    fn do_final_out(self, output: &mut [u8]) -> usize {
+        self.0.do_final_out(output)
+    }
+
+    /// As on [`BLAKE3`]: only `num_bits == 0` is accepted.
+    fn do_final_partial_bits(
+        self,
+        partial_byte: u8,
+        num_bits: usize,
+    ) -> Result<Vec<u8>, HashError> {
+        self.0.do_final_partial_bits(partial_byte, num_bits)
+    }
+
+    fn do_final_partial_bits_out(
+        self,
+        partial_byte: u8,
+        num_bits: usize,
+        output: &mut [u8],
+    ) -> Result<usize, HashError> {
+        self.0.do_final_partial_bits_out(partial_byte, num_bits, output)
+    }
+
+    fn max_security_strength(&self) -> SecurityStrength {
+        Hash::max_security_strength(&self.0)
+    }
+}
+
+impl XOF for BLAKE3DeriveKey {
+    type Squeezer = BLAKE3DeriveKeySqueezer;
+
+    fn into_squeezer(self) -> Self::Squeezer {
+        BLAKE3DeriveKeySqueezer(self.0.into_squeezer())
+    }
+
+    fn into_squeezer_partial_bits(
+        self,
+        partial_byte: u8,
+        num_bits: usize,
+    ) -> Result<Self::Squeezer, HashError> {
+        Ok(BLAKE3DeriveKeySqueezer(self.0.into_squeezer_partial_bits(partial_byte, num_bits)?))
+    }
+}
+
+/// The squeezing half of [`BLAKE3DeriveKey`]. Like [`BLAKE3KeyedSqueezer`] it is deliberately not
+/// [`Suspendable`]: the root compression it holds is the last block of key material, or a parent
+/// node over chaining values derived from it.
+#[derive(Clone)]
+pub struct BLAKE3DeriveKeySqueezer(BLAKE3Squeezer);
+
+impl XOFSqueezer for BLAKE3DeriveKeySqueezer {
+    fn do_output(&mut self, num_bytes: usize) -> Vec<u8> {
+        self.0.do_output(num_bytes)
+    }
+
+    fn do_output_out(&mut self, output: &mut [u8]) -> usize {
+        self.0.do_output_out(output)
     }
 }
 
@@ -1071,8 +1175,6 @@ impl MAC for BLAKE3KeyedHash {
         ct::ct_eq_bytes(&computed, mac)
     }
 
-    /// BLAKE3 spec s. 4.1: "BLAKE3 targets 128-bit security for all of its security goals." (The
-    /// 256-bit key is "an extra defense layer against weakly chosen keys", not a higher target.)
     fn max_security_strength(&self) -> SecurityStrength {
         SecurityStrength::_128bit
     }
@@ -1095,21 +1197,15 @@ impl MAC for BLAKE3KeyedHash {
 /// ```
 pub const SUSPENDED_BLAKE3_KEYED_HASH_STATE_LEN: usize = 3 + CORE_STATE_LEN;
 
-/// The key is never written into the serialized state; resume takes the key object.
+/// The key is never written into the serialized state; resume takes the key object. A wrong key
+/// is not detected; it gives a different tag, except in the case below.
 ///
-/// A wrong key cannot be detected: the resumed MAC silently produces a different tag, which will
-/// then fail verification -- *if* the key is still needed. It is not always: the key words enter
-/// only as the first chaining value of each chunk and of each parent node (s. 2.4, 2.5). While
-/// the absorbed prefix P is 65..=1024 bytes (first chunk, at least one block compressed, CV stack
-/// empty), finishing a message that stays a single chunk needs no key. **Treat a suspended keyed
-/// state as secret**: whoever holds such a state can compute the tag of P || X for every X that
-/// keeps the total at or under 1024 bytes. Crossing the chunk boundary starts a new chunk from the
-/// key words, and once the CV stack is non-empty the root is a parent node keyed by the key words,
-/// so those extensions still need the key.
-// The only place the key words would otherwise appear is the current chunk's chaining value
-// before its first block is compressed (s. 2.4), so `write_state` zeroes that field while
-// `blocks_compressed == 0` and `read_state` rebuilds it from the key; every other stored value is
-// a compression output. The worker owns its key words, so `'k` is unused.
+/// # 🚨 Security Considerations 🚨
+/// While the absorbed prefix P is 65..=1024 bytes (one block of the first chunk compressed, CV
+/// stack empty), the state finishes the tag of P || X without the key for every X that keeps the
+/// total at or under 1024 bytes. Protect a suspended keyed state like the key.
+// The key words are stored nowhere: the chunk chaining value is zeroed while it is still the key
+// (s. 2.4) and rebuilt on resume. The worker owns its key words, so `'k` is unused.
 impl<'k> SuspendableKeyed<'k, SUSPENDED_BLAKE3_KEYED_HASH_STATE_LEN> for BLAKE3KeyedHash {
     type Key = BLAKE3KeyedHashKey;
 
@@ -1134,18 +1230,9 @@ impl<'k> SuspendableKeyed<'k, SUSPENDED_BLAKE3_KEYED_HASH_STATE_LEN> for BLAKE3K
 
 /// The squeezing half of [`BLAKE3KeyedHash`]: what [`BLAKE3KeyedHash::into_squeezer`] hands back.
 ///
-/// It deliberately does **not** implement [`Suspendable`]. A squeezer holds the root compression's
-/// inputs, and in keyed_hash mode the root's input chaining value is the key words themselves for
-/// almost every message:
-/// * every multi-chunk message, whose root is a parent node (s. 2.5: "The input chaining value
-///   h0 ... h7 is the key words k0 ... k7");
-/// * every single-chunk message of at most 64 bytes, whose root is the chunk's first block (s. 2.4:
-///   "The input chaining value h0 ... h7 for the first block of each chunk is composed of the key
-///   words k0 ... k7").
-///
-/// Only a single-chunk message of more than 64 bytes has a root CV that is not the key. Serializing
-/// the squeezer would therefore write the key out, which [`Suspendable`] forbids ("it MUST NOT
-/// include a serialized private key").
+/// It deliberately does **not** implement [`Suspendable`]: for every multi-chunk message (s. 2.5)
+/// and every message of at most 64 bytes (s. 2.4) the root's input chaining value is the key words
+/// themselves, so its state would contain the key.
 ///
 /// There is no route to suspending it:
 ///

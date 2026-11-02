@@ -15,7 +15,8 @@ mod blake2s_tests {
         FromAnyKeyMaterial, MacGenerationKey, MacVerificationKey,
     };
     use bouncycastle_core::traits::{
-        Algorithm, AlgorithmOID, Hash, HashAlgParams, MAC, Suspendable, SuspendableKeyed,
+        Algorithm, AlgorithmOID, Hash, HashAlgParams, MAC, MIN_MAC_OUTPUT_LEN, Suspendable,
+        SuspendableKeyed,
     };
     use bouncycastle_core_test_framework::DUMMY_SEED;
     use bouncycastle_core_test_framework::FixedSeedRNG;
@@ -38,10 +39,11 @@ mod blake2s_tests {
     const KK_MAX: usize = 32;
     const STATE_LEN: usize = SUSPENDED_BLAKE2S_256_STATE_LEN;
     const MAC_STATE_LEN: usize = SUSPENDED_BLAKE2S_256_MAC_STATE_LEN;
-    /// Offsets in the suspended state (after the 3-byte version header) of t, buf and buf_len.
+    /// Offsets in the suspended state (after the 3-byte version header) of t, buf, buf_len and kk.
     const T_OFF: usize = 3 + 32;
     const BUF_OFF: usize = 3 + 40;
     const BUF_LEN_OFF: usize = 3 + 104;
+    const KK_OFF: usize = 3 + 105;
 
     /// RFC 7693 Appendix B: BLAKE2s-256("abc"), copied by script from the RFC text.
     const RFC_ABC: &str = "508c5e8c327c14e2e1a72ba34eeb452f37458b209ed63a294d999b4c86675982";
@@ -275,7 +277,7 @@ mod blake2s_tests {
         // `openssl asn1parse -genstr OID:1.3.6.1.4.1.1722.12.2.2.8`.
         assert_eq!(H::OID, &[1, 3, 6, 1, 4, 1, 1722, 12, 2, 2, 8]);
         assert_eq!(H::OID_DER, h("060b2b060104018d3a0c020208").as_slice());
-        assert_eq!(STATE_LEN, 3 + 32 + 8 + BB + 1);
+        assert_eq!(STATE_LEN, 3 + 32 + 8 + BB + 2);
         assert_eq!(MAC_STATE_LEN, STATE_LEN);
         assert_eq!(MIN_MAC_OUTPUT_LEN, 4);
         // RFC 7693 s. 4: the same OID covers keyed hashing.
@@ -526,6 +528,56 @@ mod blake2s_tests {
         assert_eq!(state[T_OFF], BB as u8, "t = bb after one block");
         assert_eq!(state[BUF_OFF], BB as u8, "buf holds message byte bb");
         assert_eq!(state[BUF_LEN_OFF], 1);
+        assert_eq!(state[KK_OFF], 0, "kk = 0 for the unkeyed hash");
+
+        let mut mac = kat_key().create_generator();
+        mac.do_update(b"x");
+        assert_eq!(mac.suspend()[KK_OFF], KK_MAX as u8, "kk is the key length");
+    }
+
+    /// After a compression the hash and MAC states have the same shape and only kk tells them
+    /// apart: a MAC state must not finish as a keyless hash, a hash state must not verify as a
+    /// MAC, and a key of another length is refused.
+    #[test]
+    fn suspend_rejects_cross_type_after_compression() {
+        let key = kat_key();
+        let mut mac = key.create_generator();
+        mac.do_update(msg(BB + 1));
+        let mac_state = mac.suspend();
+        assert!(matches!(H::from_suspended(mac_state), Err(SuspendableError::InvalidData)));
+
+        let mut hash = H::new();
+        hash.do_update(msg(BB + 1));
+        let hash_state = hash.suspend();
+        assert!(matches!(M::from_suspended(hash_state, &key), Err(SuspendableError::InvalidData)));
+
+        let short =
+            K::from_key_material_allow_weak(&key_with(KK_MAX - 1, SecurityStrength::None)).unwrap();
+        assert!(matches!(M::from_suspended(mac_state, &short), Err(SuspendableError::InvalidData)));
+
+        // kk above the RFC's maximum is never produced.
+        let mut st = hash_state;
+        st[KK_OFF] = KK_MAX as u8 + 1;
+        assert!(matches!(H::from_suspended(st), Err(SuspendableError::InvalidData)));
+    }
+
+    /// `update` keeps at least one byte back after a compression, so an empty buffer with t > 0
+    /// is a state no hasher produces.
+    #[test]
+    fn suspend_rejects_empty_buffer_after_compression() {
+        let mut hash = H::new();
+        hash.do_update(msg(BB + 1));
+        let mut state = hash.suspend();
+        assert_eq!(state[BUF_LEN_OFF], 1);
+        state[BUF_LEN_OFF] = 0;
+        assert!(matches!(H::from_suspended(state), Err(SuspendableError::InvalidData)));
+
+        let key = kat_key();
+        let mut mac = key.create_generator();
+        mac.do_update(b"x");
+        let mut state = mac.suspend();
+        state[BUF_LEN_OFF] = 0;
+        assert!(matches!(M::from_suspended(state, &key), Err(SuspendableError::InvalidData)));
     }
 
     #[test]
