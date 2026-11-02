@@ -273,7 +273,7 @@ impl<PARAMS: SHA256InitValue> Algorithm for SHA256Internal<PARAMS> {
 impl<PARAMS: SHA256InitValue> Hash for SHA256Internal<PARAMS> {
     /// As per FIPS 180-4 Figure 1
     fn block_bitlen(&self) -> usize {
-        512
+        PARAMS::BLOCK_LEN * 8
     }
 
     fn output_len(&self) -> usize {
@@ -294,7 +294,6 @@ impl<PARAMS: SHA256InitValue> Hash for SHA256Internal<PARAMS> {
 
         let available = 64 - self.x_buf_off;
 
-        // TODO: mutants thinks you can replace < with <= without changing behaviour
         if len < available {
             self.x_buf[self.x_buf_off..self.x_buf_off + len].copy_from_slice(block);
             self.x_buf_off += len;
@@ -418,6 +417,11 @@ impl<PARAMS: SHA256InitValue> Suspendable<SUSPENDED_SHA256_STATE_LEN> for SHA256
         // in general, a usize should be serialized into a u64, but in this case, it can't ever be larger than 64
         let x_buf_off: usize = input[104] as usize;
         if x_buf_off >= 64 {
+            return Err(SuspendableError::InvalidData);
+        }
+        // do_update keeps byte_count congruent to x_buf_off modulo the block length, so a state in
+        // which they disagree describes no message and must not resume.
+        if byte_count % 64 != x_buf_off as u64 {
             return Err(SuspendableError::InvalidData);
         }
 

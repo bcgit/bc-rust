@@ -359,12 +359,16 @@ mod sha2_tests {
         use bouncycastle_core::traits::Suspendable;
 
         // Suspended layout (see SHA512Internal::suspend): 3 bytes of library version, h[0..8] as
-        // eight little-endian u64s, then byte_count as a little-endian u64.
+        // eight little-endian u64s, then byte_count as a little-endian u64, the 128-byte buffer,
+        // and x_buf_off as the last byte. from_suspended refuses a byte_count that disagrees with
+        // x_buf_off modulo the block length, so the offset is written to match.
         const BYTE_COUNT_OFFSET: usize = 3 + 64;
+        const X_BUF_OFF_OFFSET: usize = SUSPENDED_SHA512_STATE_LEN - 1;
         fn with_byte_count(byte_count: u64) -> SHA512 {
             let mut state: [u8; SUSPENDED_SHA512_STATE_LEN] = SHA512::new().suspend();
             state[BYTE_COUNT_OFFSET..BYTE_COUNT_OFFSET + 8]
                 .copy_from_slice(&byte_count.to_le_bytes());
+            state[X_BUF_OFF_OFFSET] = (byte_count % 128) as u8;
             SHA512::from_suspended(state).unwrap()
         }
 
@@ -375,5 +379,27 @@ mod sha2_tests {
 
         // and byte_count 0 is still the empty-message digest, i.e. the high word is zero there
         assert_eq!(with_byte_count(0).do_final(), SHA512::new().do_final());
+    }
+
+    /// A suspended state whose byte count and buffer offset disagree modulo the block length
+    /// describes no message; it must be refused rather than resumed into a digest.
+    #[test]
+    fn suspended_state_with_inconsistent_length_is_refused() {
+        use bouncycastle_core::errors::SuspendableError;
+        use bouncycastle_core::traits::Suspendable;
+
+        let mut h = SHA256::new();
+        h.do_update(b"abc");
+        let mut state: [u8; SUSPENDED_SHA256_STATE_LEN] = h.suspend();
+        // byte_count sits after the version bytes and h[0..8] as u32s; make it 1000 with the
+        // offset still 3
+        state[3 + 32..3 + 40].copy_from_slice(&1000u64.to_le_bytes());
+        assert!(matches!(SHA256::from_suspended(state), Err(SuspendableError::InvalidData)));
+
+        let mut h = SHA512::new();
+        h.do_update(b"abc");
+        let mut state: [u8; SUSPENDED_SHA512_STATE_LEN] = h.suspend();
+        state[3 + 64..3 + 72].copy_from_slice(&1000u64.to_le_bytes());
+        assert!(matches!(SHA512::from_suspended(state), Err(SuspendableError::InvalidData)));
     }
 }

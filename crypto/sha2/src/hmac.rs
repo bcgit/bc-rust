@@ -1,5 +1,5 @@
-//! HMAC over the SHA-2 hashes, as specified in RFC 2104, taking into account NIST Implementation
-//! Guidance in FIPS 140-2 IG A.8 and NIST SP 800-107-r1.
+//! HMAC over the SHA-2 hashes, as specified in RFC 2104, with the truncation rules of NIST SP
+//! 800-107 Rev 1.
 //!
 //! Uses [`bouncycastle_hmac`] to provide the HMAC-SHA2 instantiations: [`HMAC_SHA224`],
 //! [`HMAC_SHA256`], [`HMAC_SHA384`] and [`HMAC_SHA512`].
@@ -7,7 +7,7 @@
 //! HMAC itself is implemented generically in [`bouncycastle_hmac`]; this module supplies the
 //! SHA-2-specific parameters via [`HMACParams`] and publishes the resulting type aliases, so that
 //! HMAC over a SHA2 hash is found in this crate, and [`bouncycastle_hmac`] serves as a utility crate
-//! rather than as part of library's public API.
+//! rather than as part of the library's public API.
 //!
 //! A key of any length is accepted: per RFC 2104, a key longer than the hash's block is pre-hashed
 //! to the output length. The key's two pad states are computed once, when an
@@ -24,7 +24,7 @@
 //! The initialization phase is primarily performed via the [`MAC::new`] function which performs
 //! checks on the provided key to ensure that it is of the correct type [`KeyType::MACKey`] and tagged
 //! at the correct security level for the chosen hash function. In cases where you need to use HMAC
-//! with an intentially week key (such as an all-zero salt), the alternative constructor
+//! with an intentionally weak key (such as an all-zero salt), the alternative constructor
 //! [`MAC::new_allow_weak_key`] can be used.
 //!
 //! The update phase supports streaming of the content via the repeated calls to the [`MAC::do_update`] function.
@@ -259,17 +259,17 @@ use bouncycastle_core::traits::{MAC, SuspendableKeyed};
 use bouncycastle_hmac::MIN_FIPS_DIGEST_LEN;
 
 /*** String constants ***/
-///
+/// Algorithm name string for HMAC over SHA-224.
 pub const HMAC_SHA224_NAME: &str = "HMAC-SHA224";
-///
+/// Algorithm name string for HMAC over SHA-256.
 pub const HMAC_SHA256_NAME: &str = "HMAC-SHA256";
-///
+/// Algorithm name string for HMAC over SHA-384.
 pub const HMAC_SHA384_NAME: &str = "HMAC-SHA384";
-///
+/// Algorithm name string for HMAC over SHA-512.
 pub const HMAC_SHA512_NAME: &str = "HMAC-SHA512";
-///
+/// Algorithm name string for HMAC over SHA-512/224.
 pub const HMAC_SHA512_224_NAME: &str = "HMAC-SHA512/224";
-///
+/// Algorithm name string for HMAC over SHA-512/256.
 pub const HMAC_SHA512_256_NAME: &str = "HMAC-SHA512/256";
 
 /*** Type aliases ***/

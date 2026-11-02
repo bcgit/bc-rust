@@ -21,7 +21,7 @@ fn bench_hkdf_sha256(c: &mut Criterion) {
 
     let mut group = c.benchmark_group("HKDF_SHA256::do_extract_update_key");
     group.throughput(Throughput::Bytes(key.key_len() as u64));
-    group.bench_function(format!("{} bytes of IKM data", big_data.len() as u64), |b| {
+    group.bench_function(format!("{} bytes of IKM per call", key.key_len() as u64), |b| {
         let mut hkdf = HKDF_SHA256::default();
         hkdf.do_extract_init(&key).unwrap();
         b.iter(|| {
@@ -85,7 +85,7 @@ fn bench_hkdf_sha512(c: &mut Criterion) {
 
     let mut group = c.benchmark_group("HKDF_SHA512::do_extract_update_key");
     group.throughput(Throughput::Bytes(key.key_len() as u64));
-    group.bench_function(format!("{} bytes of IKM data", big_data.len() as u64), |b| {
+    group.bench_function(format!("{} bytes of IKM per call", key.key_len() as u64), |b| {
         let mut hkdf = HKDF_SHA512::default();
         hkdf.do_extract_init(&key).unwrap();
         b.iter(|| {

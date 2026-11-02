@@ -427,7 +427,7 @@ impl<PARAMS: SHA512InitValue> Algorithm for SHA512Internal<PARAMS> {
 impl<PARAMS: SHA512InitValue> Hash for SHA512Internal<PARAMS> {
     /// As per FIPS 180-4 Figure 1
     fn block_bitlen(&self) -> usize {
-        1024
+        PARAMS::BLOCK_LEN * 8
     }
 
     fn output_len(&self) -> usize {
@@ -455,7 +455,6 @@ impl<PARAMS: SHA512InitValue> Hash for SHA512Internal<PARAMS> {
             block = &block[available..];
 
             self.state.compress(slice::from_ref(&self.x_buf));
-            //self.x_buf_off = 0;
         }
 
         // FIPS 180-4 s. 5.2.2: the message is parsed into 1024-bit blocks; a partial trailing block waits in x_buf.
@@ -565,6 +564,11 @@ impl<PARAMS: SHA512InitValue> Suspendable<SUSPENDED_SHA512_STATE_LEN> for SHA512
         // in general, a usize should be serialized into a u64, but in this case, it can't ever be larger than 128
         let x_buf_off: usize = input[200] as usize;
         if x_buf_off >= 128 {
+            return Err(SuspendableError::InvalidData);
+        }
+        // do_update keeps byte_count congruent to x_buf_off modulo the block length, so a state in
+        // which they disagree describes no message and must not resume.
+        if byte_count % 128 != x_buf_off as u64 {
             return Err(SuspendableError::InvalidData);
         }
 
