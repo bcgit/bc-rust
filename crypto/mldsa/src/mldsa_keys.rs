@@ -1,14 +1,15 @@
-use crate::aux_functions::{
-    bit_pack_eta, bit_pack_t0, bit_unpack_eta, bit_unpack_t0, expandA, power_2_round_vec,
-    simple_bit_pack_t1, simple_bit_unpack_t1,
-};
+use crate::aux_functions::{expandA, power_2_round_vec};
 use crate::matrix::{MatrixTrait, VectorTrait};
 use crate::mldsa::H;
 use crate::mldsa::{POLY_T0PACKED_LEN, POLY_T1PACKED_LEN};
-use crate::params::{MLDSA44Params, MLDSA65Params, MLDSA87Params, MLDSAParams};
+use crate::params::{MLDSA44Params, MLDSA65Params, MLDSA87Params, MLDSAParams, MLDSAParamsBase};
 use bouncycastle_core::errors::SignatureError;
 use bouncycastle_core::key_material::KeyMaterial;
 use bouncycastle_core::traits::{SignaturePrivateKey, SignaturePublicKey, XOF};
+use bouncycastle_mldsa_common::aux_functions::{
+    bit_pack_eta, bit_pack_t0, bit_unpack_eta, bit_unpack_t0, simple_bit_pack_t1,
+    simple_bit_unpack_t1,
+};
 use bouncycastle_utils::secret::Secret;
 use core::fmt;
 use core::fmt::{Debug, Display, Formatter};
@@ -17,7 +18,7 @@ use core::fmt::{Debug, Display, Formatter};
 #[allow(unused_imports)]
 use crate::mldsa::MLDSATrait;
 #[allow(unused_imports)]
-use crate::polynomial::Polynomial;
+use bouncycastle_mldsa_common::polynomial::Polynomial;
 
 /* Pub Types */
 
@@ -39,10 +40,10 @@ pub type MLDSA87PrivateKey =
 
 /* Pre-expanded keys for repeated operations */
 
-/// ML-DSA-44 Public Key with a pre-expanded public matrix A for repeated encaps operations.
+/// ML-DSA-44 Public Key with a pre-expanded public matrix A for repeated verify operations.
 pub type MLDSA44PublicKeyExpanded =
     MLDSAPublicKeyExpanded<MLDSA44Params, MLDSA44PublicKey, { MLDSA44Params::PK_LEN }>;
-/// ML-DSA-44 Private Key with a pre-expanded public matrix A for repeated decaps operations.
+/// ML-DSA-44 Private Key with a pre-expanded public matrix A for repeated sign operations.
 pub type MLDSA44PrivateKeyExpanded = MLDSAPrivateKeyExpanded<
     MLDSA44Params,
     MLDSA44PublicKey,
@@ -50,10 +51,10 @@ pub type MLDSA44PrivateKeyExpanded = MLDSAPrivateKeyExpanded<
     { MLDSA44Params::SK_LEN },
     { MLDSA44Params::PK_LEN },
 >;
-/// ML-DSA-65 Public Key with a pre-expanded public matrix A for repeated encaps operations.
+/// ML-DSA-65 Public Key with a pre-expanded public matrix A for repeated verify operations.
 pub type MLDSA65PublicKeyExpanded =
     MLDSAPublicKeyExpanded<MLDSA65Params, MLDSA65PublicKey, { MLDSA65Params::PK_LEN }>;
-/// ML-DSA-65 Private Key with a pre-expanded public matrix A for repeated decaps operations.
+/// ML-DSA-65 Private Key with a pre-expanded public matrix A for repeated sign operations.
 pub type MLDSA65PrivateKeyExpanded = MLDSAPrivateKeyExpanded<
     MLDSA65Params,
     MLDSA65PublicKey,
@@ -61,10 +62,10 @@ pub type MLDSA65PrivateKeyExpanded = MLDSAPrivateKeyExpanded<
     { MLDSA65Params::SK_LEN },
     { MLDSA65Params::PK_LEN },
 >;
-/// ML-DSA-87 Public Key with a pre-expanded public matrix A for repeated encaps operations.
+/// ML-DSA-87 Public Key with a pre-expanded public matrix A for repeated verify operations.
 pub type MLDSA87PublicKeyExpanded =
     MLDSAPublicKeyExpanded<MLDSA87Params, MLDSA87PublicKey, { MLDSA87Params::PK_LEN }>;
-/// ML-DSA-87 Private Key with a pre-expanded public matrix A for repeated decaps operations.
+/// ML-DSA-87 Private Key with a pre-expanded public matrix A for repeated sign operations.
 pub type MLDSA87PrivateKeyExpanded = MLDSAPrivateKeyExpanded<
     MLDSA87Params,
     MLDSA87PublicKey,
@@ -108,7 +109,7 @@ impl<P: MLDSAParams, const PK_LEN: usize> MLDSAPublicKey<P, PK_LEN> {
         debug_assert_eq!(pk_chunks.len(), P::k);
         debug_assert_eq!(last_chunk.len(), 0);
 
-        for (pk_chunk, t1_i) in pk_chunks.into_iter().zip(self.t1.elems()) {
+        for (pk_chunk, t1_i) in pk_chunks.iter_mut().zip(self.t1.elems()) {
             pk_chunk.copy_from_slice(&simple_bit_pack_t1(t1_i));
         }
 
@@ -134,7 +135,7 @@ pub trait MLDSAPublicKeyTrait<P: MLDSAParams, const PK_LEN: usize>:
     /// This is exposed as a public API for a few reasons:
     /// 1. `tr` is required for some external-prehashing schemes such as the so-called "external mu" signing mode.
     /// 2. `tr` is the canonical fingerprint of an ML-DSA public key, so would be an appropriate value
-    ///     to use, for example, to build a public key lookup or deny-listing table.
+    ///    to use, for example, to build a public key lookup or deny-listing table.
     fn compute_tr(&self) -> [u8; 64];
 }
 
@@ -152,7 +153,6 @@ pub(crate) trait MLDSAPublicKeyInternalTrait<P: MLDSAParams, const PK_LEN: usize
 impl<P: MLDSAParams, const PK_LEN: usize> MLDSAPublicKeyTrait<P, PK_LEN>
     for MLDSAPublicKey<P, PK_LEN>
 {
-    // todo: block a t1 of all zeros? Maybe add to consistency_check() ?
     fn pk_decode(pk: &[u8; PK_LEN]) -> Self {
         let rho = pk[0..32].try_into().unwrap();
         let mut t1 = P::VecK::new();
@@ -360,8 +360,8 @@ impl<
     const PK_LEN: usize,
 > From<&PK> for MLDSAPublicKeyExpanded<P, PK, PK_LEN>
 {
-    /// Fully expands the intermediate values needed for performing multiple encaps operations
-    /// against the same public key, which causes the MLKEMPublicKey struct to take up
+    /// Expands the public matrix A once, for repeated verifications under the same public key; the
+    /// expanded object is correspondingly larger (see the crate's Memory Usage table).
     fn from(pk: &PK) -> Self {
         let A_hat = pk.A_hat();
 
@@ -550,10 +550,7 @@ impl<P: MLDSAParams, const SK_LEN: usize, const PK_LEN: usize>
     MLDSAPrivateKeyTrait<P, SK_LEN, PK_LEN> for MLDSAPrivateKey<P, SK_LEN, PK_LEN>
 {
     fn seed(&self) -> Option<&KeyMaterial<32>> {
-        match self.seed {
-            Some(_) => self.seed.as_ref(),
-            None => None,
-        }
+        self.seed.as_ref()
     }
 
     fn tr(&self) -> &[u8; 64] {
@@ -879,8 +876,8 @@ impl<
     const PK_LEN: usize,
 > From<&SK> for MLDSAPrivateKeyExpanded<P, PK, SK, SK_LEN, PK_LEN>
 {
-    /// Fully expands the intermediate values needed for performing multiple encaps operations
-    /// against the same public key, which causes the MLKEMPublicKey struct to take up
+    /// Expands the public matrix A once, for repeated signatures under the same private key; the
+    /// expanded object is correspondingly larger (see the crate's Memory Usage table).
     fn from(sk: &SK) -> Self {
         let A_hat =
             <MLDSAPublicKey<P, PK_LEN> as MLDSAPublicKeyTrait<P, PK_LEN>>::A_hat(&sk.derive_pk());

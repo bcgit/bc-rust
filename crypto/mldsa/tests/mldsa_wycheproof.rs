@@ -210,10 +210,7 @@ impl MLDSASignNoSeedTestCase {
                     rnd: test["rnd"].as_str().map(|s| s.to_string()),
                     tc_id: test["tcId"].as_u64().expect("tcId missing") as u32,
                     comment: test["comment"].as_str().unwrap_or("").to_string(),
-                    msg: match test["msg"].as_str() {
-                        Some(msg) => Some(msg.to_string()),
-                        None => None,
-                    },
+                    msg: test["msg"].as_str().map(|msg| msg.to_string()),
                     mu: test["mu"].as_str().unwrap_or("").to_string(),
                     ctx: test["ctx"].as_str().map(|s| s.to_string()),
                     sig: test["sig"].as_str().unwrap_or("").to_string(),
@@ -259,7 +256,7 @@ impl MLDSASignNoSeedTestCase {
             match MuBuilder::compute_mu(
                 &pk.compute_tr(),
                 &hex::decode(self.msg.clone().unwrap()).unwrap(),
-                ctx_vec.as_ref().and_then(|ctx| Some(ctx.as_slice())),
+                ctx_vec.as_deref(),
             ) {
                 Ok(mu) => mu,
                 Err(SignatureError::LengthError(_)) => {
@@ -334,7 +331,7 @@ impl MLDSASignNoSeedTestCase {
             match MuBuilder::compute_mu(
                 &pk.compute_tr(),
                 &hex::decode(self.msg.clone().unwrap()).unwrap(),
-                ctx_vec.as_ref().and_then(|ctx| Some(ctx.as_slice())),
+                ctx_vec.as_deref(),
             ) {
                 Ok(mu) => mu,
                 Err(SignatureError::LengthError(_)) => {
@@ -409,7 +406,7 @@ impl MLDSASignNoSeedTestCase {
             match MuBuilder::compute_mu(
                 &pk.compute_tr(),
                 &hex::decode(self.msg.clone().unwrap()).unwrap(),
-                ctx_vec.as_ref().and_then(|ctx| Some(ctx.as_slice())),
+                ctx_vec.as_deref(),
             ) {
                 Ok(mu) => mu,
                 Err(SignatureError::LengthError(_)) => {
@@ -505,10 +502,7 @@ impl MLDSASignSeedTestCase {
                     rnd: test["rnd"].as_str().map(|s| s.to_string()),
                     tc_id: test["tcId"].as_u64().expect("tcId missing") as u32,
                     comment: test["comment"].as_str().unwrap_or("").to_string(),
-                    msg: match test["msg"].as_str() {
-                        Some(msg) => Some(msg.to_string()),
-                        None => None,
-                    },
+                    msg: test["msg"].as_str().map(|msg| msg.to_string()),
                     mu: test["mu"].as_str().unwrap_or("").to_string(),
                     ctx: test["ctx"].as_str().map(|s| s.to_string()),
                     sig: test["sig"].as_str().unwrap_or("").to_string(),
@@ -578,7 +572,7 @@ impl MLDSASignSeedTestCase {
             match MuBuilder::compute_mu(
                 &pk.compute_tr(),
                 &hex::decode(self.msg.clone().unwrap()).unwrap(),
-                ctx_vec.as_ref().and_then(|ctx| Some(ctx.as_slice())),
+                ctx_vec.as_deref(),
             ) {
                 Ok(mu) => mu,
                 Err(SignatureError::LengthError(_)) => {
@@ -677,7 +671,7 @@ impl MLDSASignSeedTestCase {
             match MuBuilder::compute_mu(
                 &pk.compute_tr(),
                 &hex::decode(self.msg.clone().unwrap()).unwrap(),
-                ctx_vec.as_ref().and_then(|ctx| Some(ctx.as_slice())),
+                ctx_vec.as_deref(),
             ) {
                 Ok(mu) => mu,
                 Err(SignatureError::LengthError(_)) => {
@@ -776,7 +770,7 @@ impl MLDSASignSeedTestCase {
             match MuBuilder::compute_mu(
                 &pk.compute_tr(),
                 &hex::decode(self.msg.clone().unwrap()).unwrap(),
-                ctx_vec.as_ref().and_then(|ctx| Some(ctx.as_slice())),
+                ctx_vec.as_deref(),
             ) {
                 Ok(mu) => mu,
                 Err(SignatureError::LengthError(_)) => {
@@ -897,7 +891,7 @@ impl MLDSAVerifyTestCase {
         match MLDSA44::verify(
             &pk,
             &hex::decode(&self.msg).unwrap(),
-            ctx_vec.as_ref().and_then(|ctx| Some(ctx.as_slice())),
+            ctx_vec.as_deref(),
             &hex::decode(&self.sig).unwrap(),
         ) {
             Ok(()) => {
@@ -937,7 +931,7 @@ impl MLDSAVerifyTestCase {
         match MLDSA65::verify(
             &pk,
             &hex::decode(&self.msg).unwrap(),
-            ctx_vec.as_ref().and_then(|ctx| Some(ctx.as_slice())),
+            ctx_vec.as_deref(),
             &hex::decode(&self.sig).unwrap(),
         ) {
             Ok(()) => {
@@ -977,7 +971,7 @@ impl MLDSAVerifyTestCase {
         match MLDSA87::verify(
             &pk,
             &hex::decode(&self.msg).unwrap(),
-            ctx_vec.as_ref().and_then(|ctx| Some(ctx.as_slice())),
+            ctx_vec.as_deref(),
             &hex::decode(&self.sig).unwrap(),
         ) {
             Ok(()) => {

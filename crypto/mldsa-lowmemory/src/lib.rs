@@ -55,13 +55,9 @@
 //! These hygiene points can always be further improved with increasingly aggressive design choices.
 //! The authors feel that the trade-offs have hit the point of diminishing returns, maintaining an acceptable balance
 //! of memory footprint, performance, and code readability. That being said, we welcome pull requests if, for example,
-//! we've missed a polynomial that doesn't need to be created has been missed and could be eliminated.
+//! a polynomial that does not need to exist has been missed and could be eliminated.
 //!
-//! All this combined, the implementations achieves an approximate *1/10 the memory footprint* at a cost of approximately *3x
-//! the runtime for signing and no appreciable difference for keygen and verification*,
-//! compared with our un-optimized implementation in the \[bouncycastle_mldsa] crate, which we are extremely happy with!
-//!
-//! # Memory Footprint
+//! # Memory Usage
 //!
 //! Below, find performance charts relative to the standard ML-DSA implementation in the \[bouncycastle_mldsa] crate.
 //!
@@ -73,16 +69,16 @@
 //!
 //! | Key Object | PK size on disk | PK size in memory | SK Size on disk | SK size in memory |
 //! |------------|-----------------|-------------------|-----------------|-------------------|
-//! | ML-DSA-44  | 1312 (1312)     | 1312 (4128)       | 32 (2560)       | 176 (12464)       |
-//! | ML-DSA-65  | 1952 (1952)     | 1952 (6176)       | 32 (4032)       | 176 (17584)       |
-//! | ML-DSA-87  | 2592 (2592)     | 2592 (8224)       | 32 (4896)       | 176 (23728)       |
+//! | ML-DSA-44  | 1312 (1312)     | 1312 (4128)       | 32 (2560)       | 240 (12464)       |
+//! | ML-DSA-65  | 1952 (1952)     | 1952 (6176)       | 32 (4032)       | 240 (17584)       |
+//! | ML-DSA-87  | 2592 (2592)     | 2592 (8224)       | 32 (4896)       | 240 (23728)       |
 //!
 //! All values are in bytes. The "in memory" sizes are measured by rust's `std::mem::size_of`.
 //! Values in parentheses are the usual sizes in our un-optimized implementation in the \[bouncycastle_mldsa] crate.
 //!
 //!
 //! ## Algorithm Peak Memory Usage
-//! The table below shows peak memory usage of the ML-DSA algorithms and the rough performanc (throughput) impact.
+//! The table below shows peak memory usage of the ML-DSA algorithms and the rough performance (throughput) impact.
 //!
 //! Measuring peak application memory usage can be a bit tricky, and the numbers obtained depend heavily on how the
 //! measurement harness is designed. Here, we aim to provide a conservative measurement, meaning that we are aiming for an
@@ -99,7 +95,7 @@
 //! | Algorithm                 | Peak swap memory usage (kB) | Throughput (ops/s)  |
 //! |---------------------------|-----------------------------|---------------------|
 //! | MLDSA44_lowmemory/KeyGen  | 12.6 (113.8)                | 11,800     (11,300) |
-//! | MLDSA65_lowmemory/KeyGen  | 15.0 (124.1)                | 5,500      (7.000)  |
+//! | MLDSA65_lowmemory/KeyGen  | 15.0 (124.1)                | 5,500      (7,000)  |
 //! | MLDSA87_lowmemory/KeyGen  | 15.2 (197.8)                | 3,300      (4,200)  |
 //! | MLDSA44_lowmemory/Sign    | 24.8 (117.7)                | 850        (4,000)  |
 //! | MLDSA65_lowmemory/Sign    | 28.2 (159.6)                | 580        (2,900)  |
@@ -109,20 +105,25 @@
 //! | MLDSA87_lowmemory/Verify  | 20.6 (211.6)                | 3,500      (5,000)  |
 //!
 //! Values in parentheses are the comparison values from the un-optimized implementation in the \[bouncycastle_mldsa] crate.
-//! Size numbers were collected with valgrind using a simple main program that calls only the measured function.
-//! Performance throughput numbers were collected on my laptop using the library's provided benchmarks, so
-//! performance they should be taken with an extreme grain of salt.
+//! The memory figures come from `mem_usage_benches/src/bench_mldsa_mem_usage.rs` under valgrind as
+//! described above, and the throughput figures from this crate's criterion benches, both run on a
+//! developer workstation when the crate was written and not re-measured since; the throughput
+//! column is indicative only. Regenerate both with those harnesses after a change to the signing or
+//! verifying path. (The private key grew by 64 bytes on the branch that cached `tr`; the peak
+//! figures above predate that.)
 //!
-//! Actual values may vary based on build configuration and target architecture.
-//!
-//! # Usage
+//! # Usage Examples
 //!
 //! This crate has been designed to serve a wide range of use cases, from people dabbling in
 //! cryptography for the first time, to cryptographic protocol designers who need access to the advanced
 //! functionality of the ML-DSA algorithm, to embedded systems developers who want access to memory
 //! and performance optimized functions.
 //!
-//! This page gives examples of simple usage for generating keys and signatures, and verifying signatures.//!
+//! This page gives examples of simple usage for generating keys and signatures, and verifying signatures.
+//!
+//! The `bc-rust` CLI's ML-DSA subcommands are built on `bouncycastle-mldsa`. This crate produces
+//! the same keys and signatures, byte for byte (see `tests/cross_check_tests.rs`), so it has no
+//! subcommand of its own.
 //!
 //! More examples on advanced usage can be found on the [`mldsa`] and [`hash_mldsa`] pages.
 //!
@@ -190,13 +191,16 @@
 //! ML-DSA and HashML-DSA take several parameters: `seed`, `mu`, `ph`, `ctx`, and `rnd`.
 //! They fall into two groups with very different failure modes.
 //!
-//!
-//! `seed` and `rnd`, however, are secret/entropy inputs and must be handled with care:
+//! `seed` and `rnd` are secret or entropy inputs and must be handled with care:
 //!
 //! - `seed` *is* the private key, i.e. the entire key is derived from it. It must be generated
-//!   with a strong cryptographically secure PRNG, it must be kept secret, and it must never reused.
+//!   with a strong cryptographically secure PRNG, it must be kept secret, and it must never be reused.
 //!   A low-entropy, predictable, or disclosed seed yields a full key compromise,
-//!   not merely an unverifiable signature.
+//!   not merely an unverifiable signature. The private key *is* the seed in this crate, so
+//!   `MLDSA44PrivateKey::from_bytes` and its siblings take any 32 bytes as a seed of full
+//!   strength: nothing can be checked at that point, and a key loaded from storage is trusted
+//!   to have been generated as above. [`MLDSA::keygen_from_seed`] on typed `KeyMaterial` is the
+//!   path that enforces the key type and strength.
 //!
 //! - `rnd` is the signing randomizer. ML-DSA is designed to be nonce-misuse-resistant, i.e. the
 //!   signing mask is derived from a secret key value together with `rnd` and `mu`, so
@@ -210,6 +214,14 @@
 //! verifier won't accept (a correctness/interoperability failure).
 //! One caveat: `ctx` can still be security-relevant at the protocol level (domain separation, replay and
 //! cross-protocol binding), so choosing it incorrectly can weaken those properties.
+//!
+//! ## What is zeroized
+//!
+//! FIPS 204 Section 3.6.3 asks that "any potentially sensitive intermediate data is destroyed as
+//! soon as it is no longer needed". Here the private key's `K` and `rho'`, the packed `s1` and
+//! `s2` it expands on demand, and the seed are `Secret` or `KeyMaterial`, wiped on drop. The
+//! per-row vectors signing works through are plain stack values that are not wiped when their
+//! scope ends.
 
 #![no_std]
 #![forbid(unsafe_code)]
@@ -235,10 +247,9 @@ mod low_memory_helpers;
 pub mod mldsa;
 mod mldsa_keys;
 mod params;
-mod polynomial;
 
 /*** Exported types ***/
-pub use hash_mldsa::{HashMLDSA44_with_SHA256, HashMLDSA65_with_SHA256, HashMLDSA87_with_SHA256};
+pub use hash_mldsa::HashMLDSA44_with_SHA256;
 pub use hash_mldsa::{HashMLDSA44_with_SHA512, HashMLDSA65_with_SHA512, HashMLDSA87_with_SHA512};
 pub use mldsa::MuBuilder;
 pub use mldsa::{MLDSA, MLDSA44, MLDSA65, MLDSA87, MLDSATrait};
@@ -254,12 +265,10 @@ pub use mldsa::ML_DSA_65_NAME;
 pub use mldsa::ML_DSA_87_NAME;
 
 pub use hash_mldsa::HASH_ML_DSA_44_with_SHA256_NAME;
-pub use hash_mldsa::HASH_ML_DSA_65_WITH_SHA256_NAME;
-pub use hash_mldsa::HASH_ML_DSA_87_with_SHA256_NAME;
 
 pub use hash_mldsa::HASH_ML_DSA_44_with_SHA512_NAME;
-pub use hash_mldsa::HASH_ML_DSA_65_WITH_SHA512_NAME;
-pub use hash_mldsa::HASH_ML_DSA_87_WITH_SHA512_NAME;
+pub use hash_mldsa::HASH_ML_DSA_65_with_SHA512_NAME;
+pub use hash_mldsa::HASH_ML_DSA_87_with_SHA512_NAME;
 
 pub use mldsa::{MLDSA_MU_LEN, MLDSA_RND_LEN, MLDSA_TR_LEN};
 pub use mldsa::{MLDSA44_PK_LEN, MLDSA44_SIG_LEN, MLDSA44_SK_LEN};

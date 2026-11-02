@@ -1,7 +1,3 @@
-use crate::aux_functions::{
-    bit_pack_eta, bit_pack_t0, power_2_round, rej_bounded_poly, simple_bit_pack_t1,
-    simple_bit_unpack_t1,
-};
 use crate::low_memory_helpers::{expandA_elem, s_unpack};
 use crate::mldsa::{H, N, POLY_T0PACKED_LEN, POLY_T1PACKED_LEN};
 use crate::mldsa::{MLDSA44_FULL_SK_LEN, MLDSA44_PK_LEN, MLDSA44_SK_LEN};
@@ -13,6 +9,11 @@ use bouncycastle_core::hazmat::do_hazardous_operations;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{Hash, SignaturePrivateKey, SignaturePublicKey, XOF, XOFSqueezer};
+use bouncycastle_mldsa_common::aux_functions::{
+    bit_pack_eta, bit_pack_t0, power_2_round, rej_bounded_poly, simple_bit_pack_t1,
+    simple_bit_unpack_t1,
+};
+use bouncycastle_mldsa_common::polynomial::Polynomial;
 use bouncycastle_utils::secret::{Secret, ZeroizablePrimitive};
 use core::fmt;
 use core::fmt::{Debug, Display, Formatter};
@@ -20,7 +21,6 @@ use core::ops::DerefMut;
 // imports just for docs
 #[allow(unused_imports)]
 use crate::mldsa::MLDSATrait;
-use crate::polynomial::Polynomial;
 
 /* Pub Types */
 
@@ -69,7 +69,7 @@ pub trait MLDSAPublicKeyTrait<P: MLDSAParams, const PK_LEN: usize>:
     /// This is exposed as a public API for a few reasons:
     /// 1. `tr` is required for some external-prehashing schemes such as the so-called "external mu" signing mode.
     /// 2. `tr` is the canonical fingerprint of an ML-DSA public key, so would be an appropriate value
-    ///     to use, for example, to build a public key lookup or deny-listing table.
+    ///    to use, for example, to build a public key lookup or deny-listing table.
     fn compute_tr(&self) -> [u8; 64];
 }
 
@@ -205,12 +205,9 @@ pub trait MLDSAPrivateKeyTrait<
     /// Get a ref to the seed, if there is one stored with this private key
     fn seed(&self) -> Option<&KeyMaterial<32>>;
 
-    /// Get a copy of the key hash `tr`.
-    /// This is computationally intensive as it requires fully re-computing the public key (and then discarding it).
-    /// It is highly recommended that, if the user already has a copy of the public key, they should get `tr` from that,
-    /// or else compute `tr` once and store it.
+    /// Get a copy of the key hash `tr`, computed once when the key was built.
     fn tr(&self) -> [u8; 64];
-    /// Returns the full public key, and has the side-effect of setting the public key hash tr in this MLDSASeedSK object.
+    /// Derives the full public key from the seed: a key generation's worth of work.
     fn derive_pk(&self) -> MLDSAPublicKey<P, PK_LEN>;
     /// This produces the full private key in the encoding specified in FIPS 204 Algorithm 24 skEncode()
     /// so that it is compatible with other implementations.
@@ -249,6 +246,9 @@ pub struct MLDSASeedPrivateKey<
     rho: [u8; 32],
     rho_prime: Secret<[u8; 64]>,
     K: Secret<[u8; 32]>,
+    // Algorithm 6 line 9, tr = H(pk, 64): public data. Computed once when the key is built, since
+    // every signature needs it for mu and deriving it means a full public-key derivation.
+    tr: [u8; 64],
 }
 // Written out rather than derived: the derives would demand `P: Clone` / `P: Eq`, and `P` is a
 // marker for the parameter set that is never stored, only used to name the field types.
@@ -262,6 +262,7 @@ impl<P: MLDSAParams, const PK_LEN: usize, const SK_LEN: usize, const FULL_SK_LEN
             rho: self.rho,
             rho_prime: self.rho_prime.clone(),
             K: self.K.clone(),
+            tr: self.tr,
         }
     }
 }
@@ -306,10 +307,18 @@ impl<P: MLDSAParams, const PK_LEN: usize, const SK_LEN: usize, const FULL_SK_LEN
 impl<P: MLDSAParams, const PK_LEN: usize, const SK_LEN: usize, const FULL_SK_LEN: usize>
     MLDSASeedPrivateKey<P, PK_LEN, SK_LEN, FULL_SK_LEN>
 {
-    /// Create a new MLDSASeedPrivateKey from a 32-byte KeyMaterial.
-    /// Seed SecurityStrength must match algorithm security strength: 128-bit (ML-DSA-44), 192-bit (ML-DSA-65), or 256-bit (ML-DSA-87),
-    /// otherwise it throws a SignatureError::KeyGenError("SecurityStrength".
+    /// Create a new MLDSASeedPrivateKey from a 32-byte KeyMaterial, deriving `tr` on the way.
+    /// The seed's `SecurityStrength` must be at least the parameter set's: 128-bit (ML-DSA-44),
+    /// 192-bit (ML-DSA-65) or 256-bit (ML-DSA-87); otherwise [`SignatureError::KeyGenError`].
     pub fn new(seed: &KeyMaterial<32>) -> Result<Self, SignatureError> {
+        Self::new_with_pk(seed).map(|(sk, _pk)| sk)
+    }
+
+    /// [`Self::new`], also returning the public key the construction derives on the way to
+    /// `tr`, so that key generation does not derive it twice.
+    pub(crate) fn new_with_pk(
+        seed: &KeyMaterial<32>,
+    ) -> Result<(Self, MLDSAPublicKey<P, PK_LEN>), SignatureError> {
         if !(seed.key_type() == KeyType::Seed || seed.key_type() == KeyType::CryptographicRandom)
             || seed.key_len() != 32
         {
@@ -319,12 +328,24 @@ impl<P: MLDSAParams, const PK_LEN: usize, const SK_LEN: usize, const FULL_SK_LEN
         }
 
         if seed.security_strength() < P::MAX_SECURITY_STRENGTH {
-            return Err(SignatureError::KeyGenError("SecurityStrength"));
+            return Err(SignatureError::KeyGenError(
+                "Seed SecurityStrength must match algorithm security strength: 128-bit (ML-DSA-44), 192-bit (ML-DSA-65), or 256-bit (ML-DSA-87).",
+            ));
         }
 
-        let (rho, rho_prime, K) = Self::compute_rhos_and_K(&seed);
+        let (rho, rho_prime, K) = Self::compute_rhos_and_K(seed);
 
-        Ok(Self { _phantom: core::marker::PhantomData, seed: seed.clone(), rho, rho_prime, K })
+        let mut sk = Self {
+            _phantom: core::marker::PhantomData,
+            seed: seed.clone(),
+            rho,
+            rho_prime,
+            K,
+            tr: [0u8; 64],
+        };
+        let pk = sk.derive_pk();
+        sk.tr = pk.compute_tr();
+        Ok((sk, pk))
     }
 
     fn compute_rhos_and_K(
@@ -415,6 +436,10 @@ impl<P: MLDSAParams, const PK_LEN: usize, const SK_LEN: usize, const FULL_SK_LEN
         SK_LEN
     }
 
+    /// Takes the 32 bytes as the seed and tags them [`KeyType::Seed`] at 256-bit strength. The
+    /// bytes are the key, so there is nothing here to check them against: a caller importing a
+    /// seed from storage vouches for how it was generated. [`crate::MLDSATrait::keygen_from_seed`]
+    /// on typed [`KeyMaterial`] keeps the key-type and strength checks.
     fn from_bytes(bytes: &[u8]) -> Result<Self, SignatureError> {
         if bytes.len() != 32 {
             return Err(SignatureError::DecodingError("Invalid seed length"));
@@ -442,8 +467,7 @@ impl<P: MLDSAParams, const PK_LEN: usize, const SK_LEN: usize, const FULL_SK_LEN
     }
 
     fn tr(&self) -> [u8; 64] {
-        let pk: MLDSAPublicKey<P, PK_LEN> = self.derive_pk();
-        pk.compute_tr()
+        self.tr
     }
 
     fn derive_pk(&self) -> MLDSAPublicKey<P, PK_LEN> {
@@ -461,7 +485,7 @@ impl<P: MLDSAParams, const PK_LEN: usize, const SK_LEN: usize, const FULL_SK_LEN
             );
         }
 
-        MLDSAPublicKey::<P, PK_LEN>::new(self.rho.clone(), t1_packed)
+        MLDSAPublicKey::<P, PK_LEN>::new(self.rho, t1_packed)
     }
     fn encode_full_sk(&self) -> [u8; FULL_SK_LEN] {
         let mut out = [0; FULL_SK_LEN];
@@ -512,6 +536,8 @@ impl<P: MLDSAParams, const PK_LEN: usize, const SK_LEN: usize, const FULL_SK_LEN
     }
 
     fn sk_decode(sk: &[u8; SK_LEN]) -> Self {
+        // Infallible: from_bytes fails only on a length other than 32, and SK_LEN is 32 here.
+        debug_assert_eq!(SK_LEN, 32);
         Self::from_bytes(sk).unwrap()
     }
 }
@@ -524,6 +550,12 @@ pub(crate) trait MLDSAPrivateKeyInternalTrait<
 {
     fn rho(&self) -> &[u8; 32];
     fn K(&self) -> &[u8; 32];
+
+    /// [`MLDSAPrivateKeyTrait::from_keymaterial`], also returning the public key derived on the
+    /// way, for key generation.
+    fn from_keymaterial_with_pk(
+        seed: &KeyMaterial<32>,
+    ) -> Result<(Self, MLDSAPublicKey<P, PK_LEN>), SignatureError>;
 
     /// A single entry of a privacy key vector.
     /// These tend to be used very transiently, so we won't bother wrapping it as a Secret.
@@ -566,6 +598,12 @@ impl<P: MLDSAParams, const PK_LEN: usize, const SK_LEN: usize, const FULL_SK_LEN
 {
     fn rho(&self) -> &[u8; 32] {
         &self.rho
+    }
+
+    fn from_keymaterial_with_pk(
+        seed: &KeyMaterial<32>,
+    ) -> Result<(Self, MLDSAPublicKey<P, PK_LEN>), SignatureError> {
+        Self::new_with_pk(seed)
     }
 
     fn K(&self) -> &[u8; 32] {

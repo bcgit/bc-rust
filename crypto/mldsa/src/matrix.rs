@@ -1,11 +1,10 @@
-//! These are somewhat unnecessary wrappers around simple arrays, but they are helpful to me in clearly
-//! keeping the types and sizes obvious.
+//! Thin wrappers around fixed-size arrays of polynomials, so that the vector and matrix types and
+//! their dimensions are explicit at every use.
 
-use crate::aux_functions::multiply_ntt;
 use crate::mldsa::H;
 use crate::params::MLDSAParams;
-use crate::polynomial::Polynomial;
 use bouncycastle_core::traits::Hash;
+use bouncycastle_mldsa_common::polynomial::{Polynomial, multiply_ntt};
 use bouncycastle_utils::secret::ZeroizablePrimitive;
 use core::ops::{Index, IndexMut};
 
@@ -223,7 +222,7 @@ impl<const LEN: usize> VectorTrait for Vector<LEN> {
     fn scalar_vector_ntt(&self, w: &Polynomial) -> Self {
         let mut s_hat = Vector::<LEN>::new();
         for i in 0..LEN {
-            s_hat[i] = multiply_ntt(&self[i], &w);
+            s_hat[i] = multiply_ntt(&self[i], w);
         }
 
         s_hat

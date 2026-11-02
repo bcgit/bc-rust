@@ -272,7 +272,7 @@
 //! let sig = MLDSA65::sign_with_expanded_key(&sk_expanded, msg, None).unwrap();
 //!
 //! // The pre-expand the public key uses more memory, but has performance
-//! // improvements if doing multiple encapsulations for the same key.
+//! // improvements if doing multiple verifications for the same key.
 //! let pk_expanded = MLDSA65PublicKeyExpanded::from(&pk);
 //! match MLDSA65::verify_with_expanded_key(&pk_expanded, msg, None, &sig) {
 //!     Ok(()) => println!("Signature is valid!"),
@@ -281,24 +281,14 @@
 //! }
 //! ```
 //!
-//! # sign_from_seed
+//! # Signing from a seed
 //!
-//! This mode is intended for users with extreme performance or resource-limitation requirements.
-//!
-//! A very careful analysis of the ML-DSA signing algorithm will show that
-//! the entire ML-DSA private key does not need to be in memory at the same time.
-//! In fact, it is possible to merge the keygen() and sign() functions
-//!
-//! The codebase contains [`MLDSA::sign_mu_deterministic_from_seed`] which implements such an algorithm.
-//! It has a significantly lower peak-memory-footprint than the regular signing API (although there's
-//! always room for more optimization), and according to our benchmarks it is only around 25% slower
-//! than signing with a fully-expanded private key -- which is still faster than performing a full
-//! keygen followed by a regular sign since there are intermediate values common to keygen and sign
-//! that the merged function is able to only compute once.
-//!
-//! Since this is intended for embedded systems specialists, the functions are not wrapped in
-//! the beginner-friendly APIs. It is implied that a user that needs this functionality also knows how
-//! to use it and what they are doing
+//! [`MLDSATrait::sign_mu_deterministic_from_seed`] and [`MLDSATrait::sign_init_from_seed`] take
+//! the 32-byte seed in place of a private key. Each expands the key with
+//! [`MLDSATrait::keygen_from_seed`] and then signs with it; nothing is cached between calls, so
+//! a caller that signs more than once should expand the key once and keep it. Signing from the
+//! seed costs a key generation on top of the signature, about 40% more than signing with an
+//! expanded key on the benches.
 //!
 //! Example usage:
 //!
@@ -327,9 +317,7 @@
 //! // Assume this was computed somewhere else, then
 //! // the party that computed it would have had to know pk
 //! let mu: [u8; 64] = MuBuilder::compute_mu(&tr, msg, None).unwrap();
-//! let rnd: [u8; 32] = [0u8; 32]; // with this API, the user is responsible for their own nonce
-//!                                // because in the cases where this level of memory optimization
-//!                                // is needed, our RNG probably won't work anyway.
+//! let rnd: [u8; 32] = [0u8; 32]; // with this API, the caller supplies the nonce
 //!
 //! let mut sig = [0u8; MLDSA44_SIG_LEN];
 //! let bytes_written = MLDSA44::sign_mu_deterministic_from_seed_out(&seed, &mu, rnd, &mut sig)
@@ -342,12 +330,6 @@
 //!     Err(e) => panic!("Something else went wrong: {:?}", e),
 //! }
 //! ```
-//!
-//! While this is currently only supported when operating from a seed-based private key, something analogous
-//! could be done that merges the sk_decode() and sign() routines when working with the standardized
-//! private key encoding (which is often called the "semi-expanded format" since the in-memory representation
-//! is still larger).
-//! Contact us if you need such a thing implemented.
 //!
 //!
 //! # Pre-expanding the public key for repeated use
@@ -476,25 +458,25 @@
 //! ```
 
 use crate::aux_functions::{
-    expand_mask, expandA, expandS, make_hint_vecs, power_2_round_vec, sample_in_ball, sig_decode,
-    sig_encode, use_hint_vecs,
+    expand_mask, expandA, expandS, make_hint_vecs, power_2_round_vec, sig_decode, sig_encode,
+    use_hint_vecs,
 };
 use crate::matrix::{MatrixTrait, VectorTrait};
 use crate::mldsa_keys::{MLDSAPrivateKeyInternalTrait, MLDSAPrivateKeyTrait};
 use crate::mldsa_keys::{MLDSAPublicKeyInternalTrait, MLDSAPublicKeyTrait};
-use crate::params::{MLDSA44Params, MLDSA65Params, MLDSA87Params, MLDSAParams};
+use crate::params::{MLDSA44Params, MLDSA65Params, MLDSA87Params, MLDSAParams, MLDSAParamsBase};
 use crate::{
     MLDSA44PrivateKey, MLDSA44PublicKey, MLDSA65PrivateKey, MLDSA65PublicKey, MLDSA87PrivateKey,
     MLDSA87PublicKey, MLDSAPrivateKeyExpanded, MLDSAPublicKeyExpanded,
 };
-use bouncycastle_core::errors::{RNGError, SignatureError, SuspendableError};
+use bouncycastle_core::errors::{RNGError, SignatureError};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterial256, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{
-    Algorithm, AlgorithmOID, Hash, RNG, SignatureVerifier, Signer, Suspendable, XOF, XOFSqueezer,
+    Algorithm, AlgorithmOID, Hash, RNG, SignatureVerifier, Signer, XOF, XOFSqueezer,
 };
+use bouncycastle_mldsa_common::aux_functions::sample_in_ball;
 use bouncycastle_rng::HashDRBG_SHA512;
-use bouncycastle_sha3::{SHAKE128, SHAKE256, SUSPENDED_SHA3_STATE_LEN};
 use bouncycastle_utils::secret::{Secret, ZeroizablePrimitive};
 use core::marker::PhantomData;
 
@@ -506,30 +488,13 @@ use bouncycastle_core::traits::{PHSignatureVerifier, PHSigner};
 
 /*** Constants ***/
 
-///
-pub const ML_DSA_44_NAME: &str = "ML-DSA-44";
-///
-pub const ML_DSA_65_NAME: &str = "ML-DSA-65";
-///
-pub const ML_DSA_87_NAME: &str = "ML-DSA-87";
-
-/*** From FIPS 204 Table 1 and Table 2 ***/
-
-// Constants that are the same for all parameter sets
-pub(crate) const N: usize = 256;
-pub(crate) const q: i32 = 8380417;
-pub(crate) const q_inv: i32 = 58728449; // q ^ (-1) mod 2 ^32
-pub(crate) const d: i32 = 13;
-/// Length of the \[u8] holding an ML-DSA seed value.
-pub const MLDSA_SEED_LEN: usize = 32;
-/// Length of the \[u8] holding an ML-DSA signing random value.
-pub const MLDSA_RND_LEN: usize = 32;
-/// Length of the \[u8] holding an ML-DSA tr value (which is the SHAKE256 hash of the public key).
-pub const MLDSA_TR_LEN: usize = 64;
-/// Length of the \[u8] holding an ML-DSA mu value.
-pub const MLDSA_MU_LEN: usize = 64;
-pub(crate) const POLY_T0PACKED_LEN: usize = 416;
-pub(crate) const POLY_T1PACKED_LEN: usize = 320;
+// The constants, names and XOF aliases FIPS 204 fixes for every parameter set are shared with
+// `bouncycastle-mldsa-lowmemory` and live in `bouncycastle-mldsa-common`.
+pub(crate) use bouncycastle_mldsa_common::{H, N, POLY_T0PACKED_LEN, POLY_T1PACKED_LEN};
+#[doc(inline)]
+pub use bouncycastle_mldsa_common::{ML_DSA_44_NAME, ML_DSA_65_NAME, ML_DSA_87_NAME};
+#[doc(inline)]
+pub use bouncycastle_mldsa_common::{MLDSA_MU_LEN, MLDSA_RND_LEN, MLDSA_SEED_LEN, MLDSA_TR_LEN};
 
 /*** Re-exporting length constants that a caller will need instead of the entire Params objects which contains a bunch of internal algorithm detail ***/
 
@@ -553,10 +518,6 @@ pub const MLDSA87_PK_LEN: usize = MLDSA87Params::PK_LEN;
 pub const MLDSA87_SK_LEN: usize = MLDSA87Params::SK_LEN;
 /// Length of the \[u8] holding an ML-DSA-87 signature value.
 pub const MLDSA87_SIG_LEN: usize = MLDSA87Params::SIG_LEN;
-
-// Typedefs just to make the algorithms look more like the FIPS 204 sample code.
-pub(crate) type H = SHAKE256;
-pub(crate) type G = SHAKE128;
 
 /*** Pub Types ***/
 
@@ -642,9 +603,6 @@ pub struct MLDSA<
 
     /// only used in streaming sign operations
     sk: Option<SK>,
-
-    /// only used in streaming sign operations instead of sk
-    seed: Option<KeyMaterial<32>>,
 
     /// only used in streaming verify operations
     pk: Option<PK>,
@@ -779,7 +737,7 @@ impl<
 
         // 5: 𝐀_hat ← ExpandA(𝜌)
         // It does an optimization where the user can pre-expand A_hat within the
-        // public key object for faster repeated encapsulations against this public key.
+        // public key object for faster repeated verifications against this public key.
 
         // 6: 𝜇 ← H(BytesToBits(𝑡𝑟)||𝑀 ′, 64)
         // skip: mu has already been provided
@@ -829,7 +787,7 @@ impl<
             let w = {
                 // scope for y_hat
                 // 12: 𝐰 ← NTT−1(𝐀_hat * NTT(𝐲))
-                let mut y_hat = y.clone();
+                let mut y_hat = y;
                 y_hat.ntt();
                 let mut w = A_hat.matrix_vector_ntt(&y_hat);
                 // Bound-keeping step before NTT⁻¹, not in FIPS 204: see [`Polynomial::reduce32`].
@@ -967,7 +925,7 @@ impl<
         // 2: (𝑐_tilde, 𝐳, 𝐡) ← sigDecode(𝜎)
         //  ▷ signer’s commitment hash c_tilde, response 𝐳, and hint 𝐡
         // 3: if 𝐡 = ⊥ then return false
-        let (c_tilde, z, h) = sig_decode::<P, SIG_LEN>(&sig)
+        let (c_tilde, z, h) = sig_decode::<P, SIG_LEN>(sig)
             .map_err(|_| SignatureError::SignatureVerificationFailed)?;
 
         // 13 (first half) return [[ ||𝐳||∞ < 𝛾1 − 𝛽]]
@@ -978,7 +936,7 @@ impl<
         // 5: 𝐀 ← ExpandA(𝜌)
         //   ▷ 𝐀 is generated and stored in NTT representation as 𝐀
         // The code offers an optimization where the user can pre-expand A_hat within the
-        // public key object for faster repeated encapsulations against this public key.
+        // public key object for faster repeated verifications against this public key.
 
         // 6: 𝑡𝑟 ← H(𝑝𝑘, 64)
         // 7: 𝜇 ← (H(BytesToBits(𝑡𝑟)||𝑀 ′, 64))
@@ -1004,7 +962,7 @@ impl<
         // weird nested scoping is to reduce peak stack memory usage
         let w1p = {
             let Az = {
-                let mut z_hat = z.clone();
+                let mut z_hat = z;
                 z_hat.ntt();
                 A_hat.matrix_vector_ntt(&z_hat)
             };
@@ -1104,14 +1062,14 @@ impl<
         msg: &[u8],
         ctx: Option<&[u8]>,
     ) -> Result<[u8; 64], SignatureError> {
-        MuBuilder::compute_mu(&sk.tr(), msg, ctx)
+        MuBuilder::compute_mu(sk.tr(), msg, ctx)
     }
     fn sign_with_expanded_key(
         sk: &MLDSAPrivateKeyExpanded<P, PK, SK, SK_LEN, PK_LEN>,
         msg: &[u8],
         ctx: Option<&[u8]>,
     ) -> Result<[u8; SIG_LEN], SignatureError> {
-        let mu = MuBuilder::compute_mu(&sk.tr(), msg, ctx)?;
+        let mu = MuBuilder::compute_mu(sk.tr(), msg, ctx)?;
         Self::sign_mu(&sk.sk, Some(&sk.A_hat), &mu)
     }
 
@@ -1123,7 +1081,7 @@ impl<
     ) -> Result<usize, SignatureError> {
         out.fill(0);
 
-        let mu = MuBuilder::compute_mu(&sk.tr(), msg, ctx)?;
+        let mu = MuBuilder::compute_mu(sk.tr(), msg, ctx)?;
         Self::sign_mu_out(&sk.sk, Some(&sk.A_hat), &mu, out)
     }
 
@@ -1205,16 +1163,10 @@ impl<
         Self::sign_mu_deterministic_from_seed_out(seed, mu, rnd, &mut out)?;
         Ok(out)
     }
-    /// External-μ deterministic signing directly from a 32-byte seed (a mash-up of
-    /// KeyGen Alg 6 and Sign Alg 7). Because μ is supplied by the caller, this never
-    /// derives the public key: it skips pkEncode and tr = H(pk), never materializes
-    /// the PK/SK structs, and keeps peak live memory low via scoped temporaries (see below).
-    /// This is a middle ground between keygen_from_seed()+sign_mu() and
-    /// the fully streamed low-memory implementation.
-    // TODO: benchmark peak memory + runtime against
-    //       keygen_from_seed() + sign_mu_deterministic() to confirm the separate path earns being kept.
-    // Note: this path intentionally avoids the public key entirely
-    // (no pkEncode / tr = H(pk)) since μ is supplied externally.
+    /// External-mu deterministic signing from a 32-byte seed: the key is expanded with
+    /// [`Self::keygen_from_seed`] and the signature made from it with the same code path as
+    /// [`Self::sign_mu_deterministic_out`]. Nothing is cached, so a caller that signs more than
+    /// once should expand the key once and keep it.
     fn sign_mu_deterministic_from_seed_out(
         seed: &KeyMaterial<32>,
         mu: &[u8; 64],
@@ -1222,283 +1174,8 @@ impl<
         output: &mut [u8; SIG_LEN],
     ) -> Result<usize, SignatureError> {
         output.fill(0);
-
-        // This has been kept as clean as possible for correspondence with the FIPS,
-        // but things have been moved around so that unnamed scopes can be used to limit how many
-        // stack variables are alive at the same time.
-
-        // 1: (𝜌, 𝐾, 𝑡𝑟, 𝐬1, 𝐬2, 𝐭0) ← skDecode(𝑠𝑘)
-        // to avoid having all of it in memory at the same time,
-        // we're gonna derive what we need as we need it.
-
-        if !(seed.key_type() == KeyType::Seed || seed.key_type() == KeyType::CryptographicRandom)
-            || seed.key_len() != 32
-        {
-            return Err(SignatureError::KeyGenError(
-                "Seed must be 32 bytes and KeyType::Seed or KeyType::BytesFullEntropy.",
-            ));
-        }
-
-        if seed.security_strength() < P::MAX_SECURITY_STRENGTH {
-            return Err(SignatureError::KeyGenError(
-                "Seed SecurityStrength must match algorithm security strength: 128-bit (ML-DSA-44), 192-bit (ML-DSA-65), or 256-bit (ML-DSA-87).",
-            ));
-        }
-
-        // Alg 7; 6: 𝜇 ← H(BytesToBits(𝑡𝑟)||𝑀 ′, 64)
-        // skip: mu has already been provided
-
-        let (rho, mut rho_p_p, s1, s2) = {
-            // scope for h
-            // derive sk.K
-            // Alg 6; 1: (rho, rho_prime, K) <- H(𝜉||IntegerToBytes(𝑘, 1)||IntegerToBytes(ℓ, 1), 128)
-            //   ▷ expand seed
-            let (rho, rho_prime, K) = {
-                let mut h = H::default();
-                h.do_update(seed.ref_to_bytes());
-                h.do_update(&(P::k as u8).to_le_bytes());
-                h.do_update(&(P::l as u8).to_le_bytes());
-                let mut rho = [0u8; 32];
-                let mut h = h.into_squeezer();
-                let bytes_written = h.do_output_out(&mut rho);
-                debug_assert_eq!(bytes_written, 32);
-                let mut rho_prime = [0u8; 64];
-                let bytes_written = h.do_output_out(&mut rho_prime);
-                debug_assert_eq!(bytes_written, 64);
-                let mut K: [u8; 32] = [0u8; 32];
-                let bytes_written = h.do_output_out(&mut K);
-                debug_assert_eq!(bytes_written, 32);
-
-                (rho, rho_prime, K)
-            };
-
-            // Alg 7; 7: 𝜌″ ← H(𝐾||𝑟𝑛𝑑||𝜇, 64)
-            let rho_p_p = {
-                let mut h = H::new();
-                h.do_update(&K);
-                h.do_update(&rnd);
-                h.do_update(mu);
-                let mut rho_p_p = [0u8; 64];
-                let mut h = h.into_squeezer();
-                h.do_output_out(&mut rho_p_p);
-
-                rho_p_p
-            };
-
-            // 4: (𝐬1, 𝐬2) ← ExpandS(𝜌′)
-            let (s1, s2) = expandS::<P>(&rho_prime);
-
-            (rho, rho_p_p, s1, s2)
-        };
-
-        // Alg 7; 5: 𝐀_hat ← ExpandA(𝜌)
-        // Note on memory optimization:
-        // A_hat consumes a large bit of memory and technically could move inside the loop --
-        // -- or even more aggressively, could be derived and multiplied by y_hat row-by-row --
-        // But in my unit tests, it can be observed that the loop typically execute 1 - 3 times, sometimes as many
-        // as 20 or even 80 times. So moving expandA() inside the loop would be a pretty drastic speed-for-memory tradeoff
-        // whose generality falls out of the scope of this implementation.
-        // It is left as an optimization that can be made by users that require further reduction of memory usage
-        let A_hat = expandA::<P>(&rho);
-
-        // Alg 7; 8: 𝜅 ← 0
-        //  ▷ initialize counter 𝜅
-        let mut kappa: u16 = 0;
-
-        // Alg 7; 9: (𝐳, 𝐡) ← ⊥
-        // handled in the loop
-
-        // Alg 7; 10: while (𝐳, 𝐡) = ⊥ do
-        //  ▷ rejection sampling loop
-
-        // these need to be outside the loop because they form the encoded signature value
-        let mut sig_val_c_tilde = <P::SigCTilde as ZeroizablePrimitive>::ZEROED;
-        let mut sig_val_z: P::VecL;
-        let mut sig_val_h: P::VecK;
-        loop {
-            // FIPS 204 s. 6.2 allows:
-            //   "Implementations may limit the number of iterations in this loop to not exceed a finite maximum value."
-            // mutants note: there is no test for this because we don't know of a KAT that will exceed this limit.
-            if kappa > 1000 * P::k as u16 {
-                return Err(SignatureError::GenericError(
-                    "Rejection sampling loop exceeded max iterations, try again with a different signing nonce.",
-                ));
-            }
-
-            // Alg 7; 11: 𝐲 ∈ 𝑅^ℓ ← ExpandMask(𝜌″, 𝜅)
-            let mut y = expand_mask::<P>(&rho_p_p, kappa);
-
-            let w = {
-                // scope for y_hat
-                // Alg 7; 12: 𝐰 ← NTT−1(𝐀_hat * NTT(𝐲))
-                let mut y_hat = y.clone();
-                y_hat.ntt();
-                let mut w = A_hat.matrix_vector_ntt(&y_hat);
-                // Bound-keeping step before NTT⁻¹, not in FIPS 204: see [`Polynomial::reduce32`].
-                w.reduce32();
-                w.inv_ntt();
-                w.conditional_add_q();
-                w
-            };
-
-            // Alg 7; 13: 𝐰1 ← HighBits(𝐰)
-            //  ▷ signer’s commitment
-            let w1 = w.high_bits::<P>();
-
-            {
-                // scope for h
-                // 15: 𝑐_tilde ← H(𝜇||w1Encode(𝐰1), 𝜆/4)
-                //  ▷ commitment hash
-                let mut hash = H::new();
-                hash.do_update(mu);
-                w1.w1_encode_and_hash::<P>(&mut hash);
-                let mut hash = hash.into_squeezer();
-                hash.do_output_out(sig_val_c_tilde.as_mut());
-            }
-
-            // Alg 7; 16: 𝑐 ∈ 𝑅𝑞 ← SampleInBall(c_tilde)
-            //  ▷ verifier’s challenge
-            let c_hat = {
-                // scope for c
-                let mut c = sample_in_ball::<P>(&sig_val_c_tilde);
-
-                // 17: 𝑐_hat ← NTT(𝑐)
-                c.ntt();
-                c
-            };
-
-            let t_hat: P::VecK;
-            sig_val_z = {
-                // scope for s1_hat, cs1
-                // Alg 7; 2: 𝐬1̂_hat ← NTT(𝐬1)
-                let mut s1_hat = s1.clone();
-                s1_hat.ntt();
-
-                y = {
-                    // scope for cs1
-                    // Alg 7; 18: ⟨⟨𝑐𝐬1⟩⟩ ← NTT−1(𝑐_hat * 𝐬1_hat)
-                    // Note: <<.>> in FIPS 204 means that this value will be used again later,
-                    // so it is better to keep it.
-                    let mut cs1 = s1_hat.scalar_vector_ntt(&c_hat);
-                    cs1.inv_ntt();
-
-                    // Alg 7; 20: 𝐳 ← 𝐲 + ⟨⟨𝑐𝐬1⟩⟩
-                    y.add_vector_ntt(&cs1);
-                    y
-                };
-
-                // also, while we have s1_hat in memory, compute t_hat
-                // Alg 6; 5: 𝐭 ← NTT−1(𝐀 ∘ NTT(𝐬1)) + 𝐬2
-                //   ▷ compute 𝐭 = 𝐀𝐬1 + 𝐬2
-                t_hat = A_hat.matrix_vector_ntt(&s1_hat);
-
-                y
-            };
-
-            // Alg 7; 23 (first half): if ||𝐳||∞ ≥ 𝛾1 − 𝛽 or ||𝐫0||∞ ≥ 𝛾2 − 𝛽 then (z, h) ← ⊥
-            //  ▷ validity checks
-            // This is done out-of-order on purpose for performance reasons:
-            // rejection sampling check is done before any extra heavy computation
-            if sig_val_z.check_norm(P::gamma1_minus_beta) {
-                kappa += P::l as u16;
-                continue;
-            };
-
-            let t0: P::VecK;
-            let mut r0: P::VecK = {
-                // scope for s2_hat and cs2
-                // 3: 𝐬2̂_hat ← NTT(𝐬2)
-                let mut s2_hat = s2.clone();
-                s2_hat.ntt();
-
-                // 19: ⟨⟨𝑐𝐬2⟩⟩ ← NTT−1(𝑐_hat * 𝐬2̂_hat)
-                let mut cs2 = s2_hat.scalar_vector_ntt(&c_hat);
-                cs2.inv_ntt();
-
-                // 21: 𝐫0 ← LowBits(𝐰 − ⟨⟨𝑐𝐬2⟩⟩)
-                let r0 = w.sub_vector(&cs2).low_bits::<P>();
-
-                // while s2_hat is in scope, derive t0
-                let mut t = t_hat;
-                // Bound-keeping step before NTT⁻¹, not in FIPS 204: see [`Polynomial::reduce32`].
-                t.reduce32();
-                t.inv_ntt();
-                t.add_vector_ntt(&s2);
-                t.conditional_add_q();
-
-                // 6: (𝐭1, 𝐭0) ← Power2Round(𝐭)
-                //   ▷ compress 𝐭
-                //   ▷ PowerTwoRound is applied componentwise (see explanatory text in Section 7.4)
-                let (_t1tmp, t0tmp) = power_2_round_vec(&t);
-                t0 = t0tmp;
-
-                r0
-            };
-
-            // Alg 7; 23 (second half): if ||𝐳||∞ ≥ 𝛾1 − 𝛽 or ||𝐫0||∞ ≥ 𝛾2 − 𝛽 then (z, h) ← ⊥
-            //  ▷ validity checks
-            if r0.check_norm(P::gamma2_minus_beta) {
-                // mutants note: mutants thinks this can be replaced with -=, but in practice that makes
-                //               the rejection sampling loop go forever, so is a false positive.
-                kappa += P::l as u16;
-                continue;
-            };
-
-            let ct0: P::VecK = {
-                // scope for t0_hat
-                // 4: 𝐭0̂_hat ← NTT(𝐭0)̂
-                let mut t0_hat = t0.clone();
-                t0_hat.ntt();
-
-                // 25: ⟨⟨𝑐𝐭0⟩⟩ ← NTT−1(𝑐_hat * 𝐭0̂_hat )
-                let mut ct0 = t0_hat.scalar_vector_ntt(&c_hat);
-                ct0.inv_ntt();
-                ct0
-            };
-
-            // Alg 7; 28 (first half): if ||⟨⟨𝑐𝐭0⟩⟩||∞ ≥ 𝛾2 or the number of 1’s in 𝐡 is greater than 𝜔, then (z, h) ← ⊥
-            // out-of-order on purpose for performance reasons:
-            //   might as well do the rejection sampling check before any extra heavy computation
-            // mutants note: there is currently no unit test that triggers this branch
-            if ct0.check_norm(P::gamma2) {
-                kappa += P::l as u16;
-                continue;
-            };
-
-            // Alg 7; 26: 𝐡 ← MakeHint(−⟨⟨𝑐𝐭0⟩⟩, 𝐰 − ⟨⟨𝑐𝐬2⟩⟩ + ⟨⟨𝑐𝐭0⟩⟩)
-            //  ▷ Signer’s hint
-            r0.add_vector_ntt(&ct0);
-            r0.conditional_add_q();
-            let hint_hamming_weight: i32;
-            sig_val_h = {
-                // scope for hint
-                let (hint, inner_hint_hamming_weight) = make_hint_vecs::<P>(&r0, &w1);
-                hint_hamming_weight = inner_hint_hamming_weight;
-                hint
-            };
-
-            // Alg 7; 28 (second half): if ||⟨⟨𝑐𝐭0⟩⟩||∞ ≥ 𝛾2 or the number of 1’s in 𝐡 is greater than 𝜔, then (z, h) ← ⊥
-            // mutants note: there is currently no unit test that triggers this branch
-            if hint_hamming_weight > P::omega {
-                kappa += P::l as u16;
-                continue;
-            };
-
-            break;
-        }
-
-        // zeroize rho_p_p before returning it to the OS
-        rho_p_p.fill(0u8);
-
-        // sig_encode does not necessarily write to all bytes of the output,
-        // The following is done for safety
-        output.fill(0u8);
-
-        // Alg 7; 33: 𝜎 ← sigEncode(𝑐, 𝐳̃ mod±𝑞, 𝐡)
-        let bytes_written =
-            sig_encode::<P, SIG_LEN>(&sig_val_c_tilde, &sig_val_z, &sig_val_h, output);
-
-        Ok(bytes_written)
+        let (_pk, sk) = Self::keygen_internal(seed)?;
+        Self::sign_internal(&sk, &sk.A_hat(), mu, rnd, output)
     }
     fn set_signer_rnd(&mut self, rnd: [u8; 32]) {
         self.signer_rnd = Some(rnd);
@@ -1510,10 +1187,9 @@ impl<
         let (_pk, sk) = Self::keygen_from_seed(seed)?;
         Ok(Self {
             _phantom: PhantomData,
-            mu_builder: MuBuilder::do_init(&sk.tr(), ctx)?,
+            mu_builder: MuBuilder::do_init(sk.tr(), ctx)?,
             signer_rnd: None,
-            sk: None,
-            seed: Some(seed.clone()),
+            sk: Some(sk),
             pk: None,
         })
     }
@@ -1567,7 +1243,7 @@ pub trait MLDSATrait<
     fn keygen_from_rng(rng: &mut dyn RNG) -> Result<(PK, SK), SignatureError> {
         // Source the seed from the provided RNG
         if rng.security_strength() < P::MAX_SECURITY_STRENGTH {
-            return Err(RNGError::SecurityStrengthInsufficientForAlgorithm)?;
+            return Err(RNGError::SecurityStrengthInsufficientForAlgorithm.into());
         }
         let mut seed = KeyMaterial256::new();
         rng.fill_keymaterial_out(&mut seed)?;
@@ -1708,13 +1384,11 @@ pub trait MLDSATrait<
     /// key object -- although the more ergonomic way to use this functionality is via the
     /// [`MLDSAPublicKeyExpanded`] object.
     ///
-    /// Security note about deterministic mode:
-    /// This mode exposes deterministic signing (called "hedged mode" and allowed by FIPS 204).
-    /// The ML-DSA algorithm is considered safe to use in deterministic mode, but be aware that
-    /// the responsibility is on the user to ensure that the nonce `rnd` is unique for each signature.
-    /// If not, some privacy properties may be lost; for example it becomes easy to tell if a signer
-    /// has signed the same message twice or two different messagase, or to tell if the same message
-    /// has been signed by the same signer twice or two different signers.
+    /// Security note:
+    /// `rnd` comes from the caller. FIPS 204 Section 3.4 permits the deterministic variant, `rnd`
+    /// all zeros, and the hedged variant draws it fresh. Deterministic signing does not leak the
+    /// key, but a repeated `rnd` loses some privacy: it becomes easy to tell whether a signer has
+    /// signed the same message twice, or whether two signatures on one message share a signer.
     ///
     /// Since `rnd` should be either a per-signature nonce, or a fixed value, therefore, to help
     /// prevent accidental nonce reuse, this function moves `rnd`.
@@ -1724,27 +1398,7 @@ pub trait MLDSATrait<
         mu: &[u8; 64],
         rnd: [u8; 32],
     ) -> Result<[u8; SIG_LEN], SignatureError>;
-    /// Algorithm 7 ML-DSA.Sign_internal(𝑠𝑘, 𝑀′, 𝑟𝑛𝑑)
-    /// (modified to take an externally-computed mu instead of M')
-    ///
-    /// Performs an ML-DSA signature using the provided external message representative `mu`.
-    /// This implements FIPS 204 Algorithm 7 with line 6 removed; a modification that is allowed by both
-    /// FIPS 204 itself, as well as subsequent FAQ documents.
-    /// This mode exposes deterministic signing (called "hedged mode" in FIPS 204) using an internal RNG.
-    ///
-    /// This mode exposes the signing nonce `rnd` either for users who wish to source the signing
-    /// nonce from a source other than the library's default internal RNG, or who wish to use the
-    /// "deterministic mode" defined in FIPS 204 by providing `rnd = [0u8; 32]`.
-    /// In order to help prevent against accidental nonce reuse, this function moves `rnd` instead
-    /// of taking it by reference.
-    ///
-    /// Security note about deterministic mode:
-    /// This mode exposes deterministic signing (called "hedged mode" and allowed by FIPS 204).
-    /// The ML-DSA algorithm is considered safe to use in deterministic mode, but be aware that
-    /// the responsibility is on the user to ensure that the nonce `rnd` is unique for each signature.
-    /// If not, some privacy properties may be lost; for example, it becomes easy to tell if a signer
-    /// has signed the same message twice or two different messages, or to tell if the same message
-    /// has been signed by the same signer twice or two different signers.
+    /// As [`MLDSATrait::sign_mu_deterministic`], writing into `output`; see its security note.
     ///
     /// Returns the number of bytes written to the output buffer. Can be called with an oversized buffer.
     fn sign_mu_deterministic_out(
@@ -1754,17 +1408,15 @@ pub trait MLDSATrait<
         rnd: [u8; 32],
         output: &mut [u8; SIG_LEN],
     ) -> Result<usize, SignatureError>;
-    /// This contains a heavily-optimized combined keygen() and sign() which greatly reduces peak
-    /// memory usage by never having the full secret key in memory at the same time,
-    /// and by deriving intermediate values piece-wise as needed.
+    /// External-mu deterministic signing from a 32-byte seed: [`Self::keygen_from_seed`]
+    /// followed by [`Self::sign_mu_deterministic`]. A caller that signs more than once should
+    /// expand the key once and keep it.
     fn sign_mu_deterministic_from_seed(
         seed: &KeyMaterial<32>,
         mu: &[u8; 64],
         rnd: [u8; 32],
     ) -> Result<[u8; SIG_LEN], SignatureError>;
-    /// This contains a heavily-optimized combined keygen() and sign() which greatly reduces peak
-    /// memory usage by never having the full secret key in memory at the same time,
-    /// and by deriving intermediate values piece-wise as needed.
+    /// As [`Self::sign_mu_deterministic_from_seed`], writing into `output`.
     fn sign_mu_deterministic_from_seed_out(
         seed: &KeyMaterial<32>,
         mu: &[u8; 64],
@@ -1774,8 +1426,8 @@ pub trait MLDSATrait<
     /// To be used for deterministic signing in conjunction with the [`MLDSA44::do_sign_init`], [`MLDSA44::do_sign_update`], and [`MLDSA44::do_sign_final`] flow.
     /// Can be set anywhere after [`MLDSA44::do_sign_init`] and before [`MLDSA44::do_sign_final`].
     fn set_signer_rnd(&mut self, rnd: [u8; 32]);
-    /// Alternative initialization of the streaming signer where the user has their private key
-    /// as a seed and they want to delay its expansion as late as possible for memory-usage reasons.
+    /// Initialises the streaming signer from a 32-byte seed: the key is expanded here with
+    /// [`Self::keygen_from_seed`] and held by the signer.
     fn sign_init_from_seed(
         seed: &KeyMaterial<32>,
         ctx: Option<&[u8]>,
@@ -1823,7 +1475,7 @@ impl<
     ) -> Result<usize, SignatureError> {
         output.fill(0);
 
-        let mu = MuBuilder::compute_mu(&sk.tr(), msg, ctx)?;
+        let mu = MuBuilder::compute_mu(sk.tr(), msg, ctx)?;
         let bytes_written = Self::sign_mu_out(sk, None, &mu, output)?;
 
         Ok(bytes_written)
@@ -1832,10 +1484,9 @@ impl<
     fn do_sign_init(sk: &SK, ctx: Option<&[u8]>) -> Result<Self, SignatureError> {
         Ok(Self {
             _phantom: PhantomData,
-            mu_builder: MuBuilder::do_init(&sk.tr(), ctx)?,
+            mu_builder: MuBuilder::do_init(sk.tr(), ctx)?,
             signer_rnd: None,
             sk: Some(sk.clone()),
-            seed: None,
             pk: None,
         })
     }
@@ -1851,40 +1502,19 @@ impl<
     }
 
     fn do_sign_final_out(self, output: &mut [u8; SIG_LEN]) -> Result<usize, SignatureError> {
+        output.fill(0);
         let mu = self.mu_builder.do_final();
 
-        if self.sk.is_none() && self.seed.is_none() {
+        let Some(sk) = self.sk else {
             return Err(SignatureError::GenericError(
-                "do_sign_final_out called on a streaming context with no private key or seed; \
+                "do_sign_final_out called on a streaming context with no private key; \
      			this is a verify-initialized context. Call do_verify_final instead",
             ));
-        }
+        };
 
-        output.fill(0);
-
-        if self.sk.is_some() {
-            if self.signer_rnd.is_none() {
-                Self::sign_mu_out(&self.sk.unwrap(), None, &mu, output)
-            } else {
-                Self::sign_mu_deterministic_out(
-                    &self.sk.unwrap(),
-                    None,
-                    &mu,
-                    self.signer_rnd.unwrap(),
-                    output,
-                )
-            }
-        } else if self.seed.is_some() {
-            let rnd = if self.signer_rnd.is_some() {
-                self.signer_rnd.unwrap()
-            } else {
-                let mut rnd: [u8; MLDSA_RND_LEN] = [0u8; MLDSA_RND_LEN];
-                HashDRBG_SHA512::new_from_os().next_bytes_out(&mut rnd)?;
-                rnd
-            };
-            Self::sign_mu_deterministic_from_seed_out(&self.seed.unwrap(), &mu, rnd, output)
-        } else {
-            unreachable!()
+        match self.signer_rnd {
+            None => Self::sign_mu_out(&sk, None, &mu, output),
+            Some(rnd) => Self::sign_mu_deterministic_out(&sk, None, &mu, rnd, output),
         }
     }
 }
@@ -1912,7 +1542,6 @@ impl<
             mu_builder: MuBuilder::do_init(&pk.compute_tr(), ctx)?,
             signer_rnd: None,
             sk: None,
-            seed: None,
             pk: Some(pk.clone()),
         })
     }
@@ -1935,100 +1564,7 @@ impl<
     }
 }
 
-/// Implements parts of Algorithm 2 and Line 6 of Algorithm 7 of FIPS 204.
-/// Provides a stateful version of [`MLDSATrait::compute_mu_from_pk`] and [`MLDSATrait::compute_mu_from_tr`]
-/// that supports streaming
-/// large to-be-signed messages.
-///
-/// Note: this struct is only exposed for "pure" ML-DSA and not for HashML-DSA because HashML-DSA
-/// does not benefit from allowing external construction of the message representative mu.
-/// The same behaviour can be obtained by computing the pre-hash `ph` with the appropriate hash function
-/// and providing that to HashMLDSA via [`PHSigner::sign_ph`].
-#[derive(Clone)]
-pub struct MuBuilder {
-    h: H,
-}
-
-impl MuBuilder {
-    /// Algorithm 7
-    /// 6: 𝜇 ← H(BytesToBits(𝑡𝑟)||𝑀′, 64)
-    pub fn compute_mu(
-        tr: &[u8; 64],
-        msg: &[u8],
-        ctx: Option<&[u8]>,
-    ) -> Result<[u8; 64], SignatureError> {
-        let mut mu_builder = MuBuilder::do_init(&tr, ctx)?;
-        mu_builder.do_update(msg);
-        let mu = mu_builder.do_final();
-
-        Ok(mu)
-    }
-
-    /// This function requires the public key hash `tr`, which can be computed from the public key
-    /// using [`MLDSAPublicKeyTrait::compute_tr`].
-    pub fn do_init(tr: &[u8; 64], ctx: Option<&[u8]>) -> Result<Self, SignatureError> {
-        let ctx = match ctx {
-            Some(ctx) => ctx,
-            None => &[],
-        };
-
-        // Algorithm 2
-        // 1: if |𝑐𝑡𝑥| > 255 then
-        if ctx.len() > 255 {
-            return Err(SignatureError::LengthError("ctx value is longer than 255 bytes"));
-        }
-
-        // Algorithm 7
-        // 6: 𝜇 ← H(BytesToBits(𝑡𝑟)||𝑀', 64)
-        let mut mb = Self { h: H::new() };
-        mb.h.do_update(tr);
-
-        // Algorithm 2
-        // 10: 𝑀′ ← BytesToBits(IntegerToBytes(0, 1) ∥ IntegerToBytes(|𝑐𝑡𝑥|, 1) ∥ 𝑐𝑡𝑥) ∥ 𝑀
-        // all done together
-        mb.h.do_update(&[0u8]);
-        mb.h.do_update(&[ctx.len() as u8]);
-        mb.h.do_update(ctx);
-
-        // now ready to absorb M
-        Ok(mb)
-    }
-
-    /// Stream a chunk of the message.
-    pub fn do_update(&mut self, msg_chunk: &[u8]) {
-        self.h.do_update(msg_chunk);
-    }
-
-    /// Finalize and return the mu value.
-    pub fn do_final(self) -> [u8; 64] {
-        // Completion of
-        // Algorithm 7
-        // 6: 𝜇 ← H(BytesToBits(𝑡𝑟)||𝑀 ′, 64)
-        let mut mu = [0u8; 64];
-        self.h.into_squeezer().do_output_out(&mut mu);
-
-        mu
-    }
-}
-
-/// The length, in bytes, of a serialized state of a [`MuBuilder`] object.
-pub const SUSPENDED_MU_BUILDER_STATE_LEN: usize = SUSPENDED_SHA3_STATE_LEN;
-
-/// If you are processing a large input message into ML-DSA and want to pause the operation
-/// -- maybe while waiting for slow network IO), you'll need to use [`Suspendable`].
-/// Serialization of the state of an in-progress ML-DSA instance is really just serialization
-/// of the construction of the message representative mu, since no other part of the ML-DSA algorithm
-/// has a pausable state.
-// A [MuBuilder]'s (and by virtue, an ML-DSA instance's) entire mutable state is its inner SHAKE256 sponge,
-// so serialization delegates directly to [SHAKE256]'s [SerializableState] impl.
-impl Suspendable<SUSPENDED_SHA3_STATE_LEN> for MuBuilder {
-    fn suspend(self) -> [u8; SUSPENDED_SHA3_STATE_LEN] {
-        self.h.suspend()
-    }
-
-    fn from_suspended(
-        serialized_state: [u8; SUSPENDED_SHA3_STATE_LEN],
-    ) -> Result<Self, SuspendableError> {
-        Ok(MuBuilder { h: H::from_suspended(serialized_state)? })
-    }
-}
+// The message representative builder is shared with the other ML-DSA crate and lives in
+// `bouncycastle-mldsa-common`.
+#[doc(inline)]
+pub use bouncycastle_mldsa_common::mu_builder::{MuBuilder, SUSPENDED_MU_BUILDER_STATE_LEN};

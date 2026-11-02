@@ -1,6 +1,6 @@
 //! This crate implements the Module Lattice Digital Signature Algorithm (ML-DSA) as per FIPS 204.
 //!
-//! # Usage
+//! # Usage Examples
 //!
 //! This crate has been designed to serve a wide range of use cases, from people dabbling in
 //! cryptography for the first time, to cryptographic protocol designers who need access to the internal and advanced
@@ -36,9 +36,9 @@
 //! let (pk, sk) = MLDSA65::keygen_from_seed(&seed).unwrap();
 //! ```
 //!
-//! See [`MLDSATrait`] and [`MLDSATrait::sign_mu_deterministic_from_seed`] for an API flow that uses a merged
-//! keygen-and-sign function to provide improved speed and memory performance compared with making
-//! separate calls to [`MLDSATrait::keygen_from_seed`] followed by [`Signer::sign`].
+//! [`MLDSATrait::sign_mu_deterministic_from_seed`] and [`MLDSATrait::sign_init_from_seed`] sign
+//! straight from a seed; each expands the key with [`MLDSATrait::keygen_from_seed`] first, so a
+//! caller that signs more than once should keep the expanded private key.
 //!
 //! ## Generating and Verifying Signatures
 //!
@@ -64,16 +64,16 @@
 //! And that's the basic usage! There are lots more bells-and-whistles in the form of exposed algorithm
 //! parameters, streaming APIs and other goodies that you can find by poking around this documentation.
 //!
-//! # Memory Footprint
+//! # Memory Usage
 //!
 //! The following table lists the size of the on-disk bytes encoding and the in-memory struct size of the
 //! standard key objects:
 //!
 //! | Key Object | PK size on disk | PK size in memory | SK Size on disk | SK size in memory |
 //! |------------|-----------------|-------------------|-----------------|-------------------|
-//! | ML-DSA-44  | 1312            | 1312 (4128)       | 2560            | 12464             |
-//! | ML-DSA-65  | 1952            | 1952 (6176)       | 4032            | 17584             |
-//! | ML-DSA-87  | 2592            | 2592 (8224)       | 4896            | 23728             |
+//! | ML-DSA-44  | 1312            | 4128              | 2560            | 12464             |
+//! | ML-DSA-65  | 1952            | 6176              | 4032            | 17584             |
+//! | ML-DSA-87  | 2592            | 8224              | 4896            | 23728             |
 //!
 //! The following table lists the size of the on-disk bytes encoding and the in-memory struct size of the
 //! expanded key objects that pre-expand the public matrix A for faster repeated verify() operations:
@@ -85,8 +85,6 @@
 //! | ML-DSA-87_expanded  | 2592            | 65568             | 4896            | 81072             |
 //!
 //! All values are in bytes. The "in memory" sizes are measured by rust's `std::mem::size_of`.
-//! Values in parentheses are the usual sizes in our un-optimized implementation in the \[bouncycastle_mldsa] crate.
-//!
 //!
 //! # 🚨 Security Considerations 🚨
 //!
@@ -99,11 +97,10 @@
 //! ML-DSA and HashML-DSA take several parameters: `seed`, `mu`, `ph`, `ctx`, and `rnd`.
 //! They fall into two groups with very different failure modes.
 //!
-//!
-//! `seed` and `rnd`, however, are secret/entropy inputs and must be handled with care:
+//! `seed` and `rnd` are secret or entropy inputs and must be handled with care:
 //!
 //! - `seed` *is* the private key, i.e. the entire key is derived from it. It must be generated
-//!   with a strong cryptographically secure PRNG, it must be kept secret, and it must never reused.
+//!   with a strong cryptographically secure PRNG, it must be kept secret, and it must never be reused.
 //!   A low-entropy, predictable, or disclosed seed yields a full key compromise,
 //!   not merely an unverifiable signature.
 //!
@@ -119,6 +116,14 @@
 //! verifier won't accept (a correctness/interoperability failure).
 //! One caveat: `ctx` can still be security-relevant at the protocol level (domain separation, replay and
 //! cross-protocol binding), so choosing it incorrectly can weaken those properties.
+//!
+//! ## What is zeroized
+//!
+//! FIPS 204 Section 3.6.3 asks that "any potentially sensitive intermediate data is destroyed as
+//! soon as it is no longer needed". Here the private key's `K`, `s1_hat` and `s2_hat` are `Secret`
+//! and the seed is `KeyMaterial`, both wiped on drop, and the signing randomizer `rho''` is zeroized
+//! by hand when signing finishes. The per-signature vectors `y`, `w`, `cs1`, `cs2`, `ct0` and `r0`
+//! are plain stack values that are not wiped when their scope ends.
 
 #![no_std]
 #![forbid(unsafe_code)]
@@ -149,10 +154,9 @@ mod matrix;
 pub mod mldsa;
 mod mldsa_keys;
 mod params;
-mod polynomial;
 
 /*** Exported types ***/
-pub use hash_mldsa::{HashMLDSA44_with_SHA256, HashMLDSA65_with_SHA256, HashMLDSA87_with_SHA256};
+pub use hash_mldsa::HashMLDSA44_with_SHA256;
 pub use hash_mldsa::{HashMLDSA44_with_SHA512, HashMLDSA65_with_SHA512, HashMLDSA87_with_SHA512};
 pub use mldsa::MuBuilder;
 pub use mldsa::{MLDSA, MLDSA44, MLDSA65, MLDSA87, MLDSATrait};
@@ -181,9 +185,7 @@ pub use mldsa::{MLDSA87_PK_LEN, MLDSA87_SIG_LEN, MLDSA87_SK_LEN};
 pub use mldsa::SUSPENDED_MU_BUILDER_STATE_LEN;
 
 pub use hash_mldsa::HASH_ML_DSA_44_with_SHA256_NAME;
-pub use hash_mldsa::HASH_ML_DSA_65_WITH_SHA256_NAME;
-pub use hash_mldsa::HASH_ML_DSA_87_with_SHA256_NAME;
 
 pub use hash_mldsa::HASH_ML_DSA_44_with_SHA512_NAME;
-pub use hash_mldsa::HASH_ML_DSA_65_WITH_SHA512_NAME;
-pub use hash_mldsa::HASH_ML_DSA_87_WITH_SHA512_NAME;
+pub use hash_mldsa::HASH_ML_DSA_65_with_SHA512_NAME;
+pub use hash_mldsa::HASH_ML_DSA_87_with_SHA512_NAME;

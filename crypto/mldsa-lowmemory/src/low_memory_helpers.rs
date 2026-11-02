@@ -2,15 +2,18 @@
 //! and other intermediate values by never holding the whole thing in memory at once, but re-constructing
 //! what it needs in pieces, which generally means handling the matrices and vectors row-wise or entry-wise.
 
-use crate::aux_functions::{bit_unpack_eta_out, expand_mask_poly, rej_ntt_poly, unpack_z_row};
+use crate::aux_functions::unpack_z_row;
 use crate::params::MLDSAParams;
-use crate::polynomial::Polynomial;
 use bouncycastle_core::errors::SignatureError;
+use bouncycastle_mldsa_common::aux_functions::{
+    bit_unpack_eta_out, expand_mask_poly, rej_ntt_poly,
+};
+use bouncycastle_mldsa_common::polynomial::Polynomial;
 use bouncycastle_utils::secret::{Secret, ZeroizablePrimitive};
 
 #[inline(always)]
 pub(crate) fn expandA_elem(rho: &[u8; 32], i: usize, j: usize) -> Polynomial {
-    rej_ntt_poly(&rho, &[j as u8, i as u8])
+    rej_ntt_poly(rho, &[j as u8, i as u8])
 }
 
 /// Compute a row of the core signing operation
@@ -46,7 +49,7 @@ pub(crate) fn compute_wp_approx_row<P: MLDSAParams, const SIG_LEN: usize>(
     rho: &[u8; 32],
     sig: &[u8; SIG_LEN],
     t1: &Polynomial,
-    c: &Polynomial,
+    c_hat: &Polynomial,
     idx: usize,
 ) -> Result<Polynomial, ()> {
     // Algorithm 8: line 9: 𝐰′_approx ← NTT−1(𝐀_hat ∘ NTT(𝐳) − NTT(𝑐) ∘ NTT(𝐭1 ⋅ 2^𝑑))
@@ -56,6 +59,11 @@ pub(crate) fn compute_wp_approx_row<P: MLDSAParams, const SIG_LEN: usize>(
     //                  NTT(𝑐) ∘ NTT(𝐭1 ⋅ 2^𝑑)
     //   )
     // ▷ 𝐰'_approx = 𝐀𝐳 − 𝑐𝐭1 ⋅ 2^𝑑
+    //
+    // NTT(𝑐) is the same for every row, so the caller computes it once and passes `c_hat`. NTT(𝐳)
+    // is also the same for every row, but holding all l of its coordinates would cost l KiB
+    // (7 KiB for ML-DSA-87), so each row unpacks and transforms 𝐳 again: the trade this crate
+    // makes is memory over time.
 
     let mut z_i = unpack_z_row::<P, SIG_LEN>(0, sig)?;
     z_i.ntt();
@@ -74,12 +82,11 @@ pub(crate) fn compute_wp_approx_row<P: MLDSAParams, const SIG_LEN: usize>(
         Az_acc.add_ntt(&tmp);
     }
 
-    let ct1 = compute_ct1(t1.clone(), c.clone());
-    fn compute_ct1(mut t1_i: Polynomial, mut c: Polynomial) -> Polynomial {
+    let ct1 = compute_ct1(*t1, c_hat);
+    fn compute_ct1(mut t1_i: Polynomial, c_hat: &Polynomial) -> Polynomial {
         t1_i.shift_left_d();
         t1_i.ntt();
-        c.ntt();
-        t1_i.multiply_ntt(&c);
+        t1_i.multiply_ntt(c_hat);
 
         t1_i
     }
@@ -103,7 +110,7 @@ pub(crate) fn compute_z_component<P: MLDSAParams>(
     col: usize,
 ) -> Result<Option<Polynomial>, SignatureError> {
     let y = expand_mask_poly::<P>(rho_p_p, kappa + col as u16);
-    let mut s1_hat = s1.clone();
+    let mut s1_hat = *s1;
     s1_hat.ntt();
     s1_hat.multiply_ntt(c_hat);
     let mut cs1 = s1_hat; // rename
@@ -119,20 +126,20 @@ pub(crate) fn compute_w0cs2_component<P: MLDSAParams>(
     w: &Polynomial,
     c_hat: &Polynomial,
 ) -> Option<Polynomial> {
-    let mut s2_hat = s2.clone();
+    let mut s2_hat = *s2;
     s2_hat.ntt();
     s2_hat.multiply_ntt(c_hat);
     let mut cs2 = s2_hat; // rename
     cs2.inv_ntt();
 
-    //  Note: this could be further optimized by using the optimization described in
-    //  https://pq-crystals.org/dilithium/data/dilithium-specification-round3-20210208.pdf section 5.1:
-    //    "instead of computing (r1, r0) = Decomposeq (w − cs2, α)
-    //      and checking whether ‖r0‖∞ < γ2 − β and r1 = w1, it is equivalent to just check that
-    //      ‖w0 − cs2‖∞ < γ2 − β, where w0 is the low part of w. If this check passes, w0 − cs2
-    //      is the low part of w − cs2."
-    let mut w0cs2 = w.clone();
-    w0cs2.low_bits::<P>();
+    // The shortcut of the Dilithium round-3 specification, Section 5.1
+    // (https://pq-crystals.org/dilithium/data/dilithium-specification-round3-20210208.pdf): "instead
+    // of computing (r1, r0) = Decompose_q(w − cs2, α) and checking whether ‖r0‖∞ < γ2 − β and
+    // r1 = w1, it is equivalent to just check that ‖w0 − cs2‖∞ < γ2 − β, where w0 is the low part
+    // of w. If this check passes, w0 − cs2 is the low part of w − cs2." That is what the three
+    // lines below do: FIPS 204 Algorithm 7 lines 21 and 23 without a second Decompose.
+    let mut w0cs2 = *w;
+    w0cs2.low_bits_inplace::<P>();
     w0cs2.sub(&cs2);
     if w0cs2.check_norm(P::gamma2_minus_beta) { None } else { Some(w0cs2) }
 }
@@ -141,7 +148,7 @@ pub(crate) fn compute_ct0_component<P: MLDSAParams>(
     t0_row: &Polynomial,
     c_hat: &Polynomial,
 ) -> Option<Polynomial> {
-    let mut t0_hat = t0_row.clone();
+    let mut t0_hat = *t0_row;
     t0_hat.ntt();
     t0_hat.multiply_ntt(c_hat);
     let mut ct0 = t0_hat; // rename

@@ -9,10 +9,10 @@ mod hash_mldsa_tests {
     use bouncycastle_core_test_framework::signature::TestFrameworkSignature;
     use bouncycastle_hex as hex;
     use bouncycastle_mldsa::{
-        HashMLDSA44_with_SHA256, HashMLDSA44_with_SHA512, HashMLDSA65_with_SHA256,
-        HashMLDSA65_with_SHA512, HashMLDSA87_with_SHA256, HashMLDSA87_with_SHA512, MLDSA44,
-        MLDSA44PrivateKey, MLDSA44PublicKey, MLDSA65, MLDSA65PrivateKey, MLDSA65PublicKey, MLDSA87,
-        MLDSA87PrivateKey, MLDSA87PublicKey, MLDSATrait,
+        HashMLDSA44_with_SHA256, HashMLDSA44_with_SHA512, HashMLDSA65_with_SHA512,
+        HashMLDSA87_with_SHA512, MLDSA44, MLDSA44PrivateKey, MLDSA44PublicKey, MLDSA65,
+        MLDSA65PrivateKey, MLDSA65PublicKey, MLDSA87, MLDSA87PrivateKey, MLDSA87PublicKey,
+        MLDSATrait,
     };
     use bouncycastle_mldsa::{MLDSA44_PK_LEN, MLDSA44_SIG_LEN, MLDSA44_SK_LEN};
     use bouncycastle_mldsa::{MLDSA65_PK_LEN, MLDSA65_SIG_LEN, MLDSA65_SK_LEN};
@@ -28,10 +28,8 @@ mod hash_mldsa_tests {
         tf.test_signature::<MLDSA65PublicKey, MLDSA65PrivateKey, HashMLDSA65_with_SHA512, HashMLDSA65_with_SHA512, MLDSA65_PK_LEN, MLDSA65_SK_LEN, MLDSA65_SIG_LEN>(HashMLDSA65_with_SHA512::keygen, false);
         tf.test_signature::<MLDSA87PublicKey, MLDSA87PrivateKey, HashMLDSA87_with_SHA512, HashMLDSA87_with_SHA512, MLDSA87_PK_LEN, MLDSA87_SK_LEN, MLDSA87_SIG_LEN>(HashMLDSA87_with_SHA512::keygen, false);
 
-        // Test HashML-DSA-SHA256 as a ph signature alg
+        // Test HashML-DSA-44 with SHA256, the one SHA-256 pairing, as a ph signature alg
         tf.test_ph_signature::<MLDSA44PublicKey, MLDSA44PrivateKey, HashMLDSA44_with_SHA256, HashMLDSA44_with_SHA256, SHA256, MLDSA44_PK_LEN, MLDSA44_SK_LEN, MLDSA44_SIG_LEN, 32>(HashMLDSA44_with_SHA256::keygen, false);
-        tf.test_ph_signature::<MLDSA65PublicKey, MLDSA65PrivateKey, HashMLDSA65_with_SHA256, HashMLDSA65_with_SHA256, SHA256, MLDSA65_PK_LEN, MLDSA65_SK_LEN, MLDSA65_SIG_LEN, 32>(HashMLDSA65_with_SHA256::keygen, false);
-        tf.test_ph_signature::<MLDSA87PublicKey, MLDSA87PrivateKey, HashMLDSA87_with_SHA256, HashMLDSA87_with_SHA256, SHA256, MLDSA87_PK_LEN, MLDSA87_SK_LEN, MLDSA87_SIG_LEN, 32>(HashMLDSA87_with_SHA256::keygen, false);
 
         // Test HashML-DSA-SHA512 as a ph signature alg
         tf.test_ph_signature::<MLDSA44PublicKey, MLDSA44PrivateKey, HashMLDSA44_with_SHA512, HashMLDSA44_with_SHA512, SHA512, MLDSA44_PK_LEN, MLDSA44_SK_LEN, MLDSA44_SIG_LEN, 64>(HashMLDSA44_with_SHA512::keygen, false);
@@ -324,10 +322,10 @@ mod hash_mldsa_tests {
         let (pk, sk) = MLDSA65::keygen().unwrap();
 
         let sk_expanded = MLDSA65PrivateKeyExpanded::from(&sk);
-        let sig = HashMLDSA65_with_SHA256::sign_with_expanded_key(&sk_expanded, msg, None).unwrap();
+        let sig = HashMLDSA65_with_SHA512::sign_with_expanded_key(&sk_expanded, msg, None).unwrap();
 
         let pk_expanded = MLDSA65PublicKeyExpanded::from(&pk);
-        HashMLDSA65_with_SHA256::verify_with_expanded_key(&pk_expanded, msg, None, &sig).unwrap();
+        HashMLDSA65_with_SHA512::verify_with_expanded_key(&pk_expanded, msg, None, &sig).unwrap();
 
         // since I'm not exposing a sign_deterministic() that does the ph computation internally and takes an rnd,
         // we have to compute the ph manually here
@@ -341,10 +339,10 @@ mod hash_mldsa_tests {
         let (pk, sk) = MLDSA87::keygen().unwrap();
 
         let sk_expanded = MLDSA87PrivateKeyExpanded::from(&sk);
-        let sig = HashMLDSA87_with_SHA256::sign_with_expanded_key(&sk_expanded, msg, None).unwrap();
+        let sig = HashMLDSA87_with_SHA512::sign_with_expanded_key(&sk_expanded, msg, None).unwrap();
 
         let pk_expanded = MLDSA87PublicKeyExpanded::from(&pk);
-        HashMLDSA87_with_SHA256::verify_with_expanded_key(&pk_expanded, msg, None, &sig).unwrap();
+        HashMLDSA87_with_SHA512::verify_with_expanded_key(&pk_expanded, msg, None, &sig).unwrap();
 
         // since I'm not exposing a sign_deterministic() that does the ph computation internally and takes an rnd,
         // we have to compute the ph manually here
@@ -375,24 +373,19 @@ mod hash_mldsa_tests {
         // these per algorithm. Pinned here so a wrong wiring of the blanket impl, or a typo in a
         // pairing, is a test failure rather than a mislabelled algorithm.
         assert_eq!(HashMLDSA44_with_SHA256::ALG_NAME, "HashML-DSA-44_with_SHA256");
-        assert_eq!(HashMLDSA65_with_SHA256::ALG_NAME, "HashML-DSA-65_with_SHA256");
-        assert_eq!(HashMLDSA87_with_SHA256::ALG_NAME, "HashML-DSA-87_with_SHA256");
         assert_eq!(HashMLDSA44_with_SHA512::ALG_NAME, "HashML-DSA-44_with_SHA512");
         assert_eq!(HashMLDSA65_with_SHA512::ALG_NAME, "HashML-DSA-65_with_SHA512");
         assert_eq!(HashMLDSA87_with_SHA512::ALG_NAME, "HashML-DSA-87_with_SHA512");
 
         // The claimed strength is derived as the weaker of the two components, so these pin the
-        // derivation rather than six hand-written values. SHA-256 caps every pairing it appears in
-        // at 128 bits; with SHA-512 the ML-DSA parameter set is what binds.
+        // derivation rather than six hand-written values. SHA-256 and ML-DSA-44 both give 128 bits; with SHA-512 the ML-DSA parameter set is what binds.
         assert_eq!(HashMLDSA44_with_SHA256::MAX_SECURITY_STRENGTH, SecurityStrength::_128bit);
-        assert_eq!(HashMLDSA65_with_SHA256::MAX_SECURITY_STRENGTH, SecurityStrength::_128bit);
-        assert_eq!(HashMLDSA87_with_SHA256::MAX_SECURITY_STRENGTH, SecurityStrength::_128bit);
         assert_eq!(HashMLDSA44_with_SHA512::MAX_SECURITY_STRENGTH, SecurityStrength::_128bit);
         assert_eq!(HashMLDSA65_with_SHA512::MAX_SECURITY_STRENGTH, SecurityStrength::_192bit);
         assert_eq!(HashMLDSA87_with_SHA512::MAX_SECURITY_STRENGTH, SecurityStrength::_256bit);
 
         // NIST's Computer Security Objects Register: id-hash-ml-dsa-44-with-sha512 { sigAlgs 32 },
-        // -65- { sigAlgs 33 }, -87- { sigAlgs 34 }. The three SHA-256 pairings carry no OID in
+        // -65- { sigAlgs 33 }, -87- { sigAlgs 34 }. The SHA-256 pairing carries no OID in
         // this implementation, which is why `AlgorithmOID` is still written out per alias rather
         // than derived from the pairing like the name and strength above.
         assert_eq!(HashMLDSA44_with_SHA512::OID, &[2, 16, 840, 1, 101, 3, 4, 3, 32]);
@@ -413,6 +406,34 @@ mod hash_mldsa_tests {
         }
     }
 
+    /// The expanded-key pre-hash path reports what its `_out` form reports: a 256-byte ctx is
+    /// refused on both, rather than the one returning an all-zero signature as Ok.
+    #[test]
+    fn expanded_key_sign_ph_reports_errors() {
+        use bouncycastle_mldsa::MLDSA44PrivateKeyExpanded;
+        let (_pk, sk) = MLDSA44::keygen().unwrap();
+        let sk_expanded = MLDSA44PrivateKeyExpanded::from(&sk);
+        let ph = [0x11u8; 32];
+        let ctx = [0u8; 256];
+        assert!(HashMLDSA44_with_SHA256::sign_ph(&sk, &ph, Some(&ctx)).is_err());
+        assert!(
+            HashMLDSA44_with_SHA256::sign_ph_with_expanded_key(&sk_expanded, &ph, Some(&ctx))
+                .is_err()
+        );
+    }
+
+    /// Finishing a sign-initialised context as a verifier is an error, as it is on MLDSA, not a
+    /// panic.
+    #[test]
+    fn verify_final_on_a_sign_initialised_context_is_an_error() {
+        let (_pk, sk) = MLDSA44::keygen().unwrap();
+        let ctx = HashMLDSA44_with_SHA256::do_sign_init(&sk, None).unwrap();
+        assert!(matches!(
+            ctx.do_verify_final(&[0u8; MLDSA44_SIG_LEN]),
+            Err(SignatureError::GenericError(_))
+        ));
+    }
+
     #[test]
     fn prehash_lengths_match_the_hash_functions() {
         // `PH_LEN` is still a const generic on `HashMLDSA` -- `PHSigner` takes it as one -- but
@@ -429,9 +450,9 @@ mod hash_mldsa_tests {
         let ph256: [u8; 32] = SHA256::hash(msg).try_into().unwrap();
         let ph512: [u8; 64] = SHA512::hash(msg).try_into().unwrap();
 
-        let (pk, sk) = HashMLDSA65_with_SHA256::keygen().unwrap();
-        let sig = HashMLDSA65_with_SHA256::sign_ph(&sk, &ph256, None).unwrap();
-        HashMLDSA65_with_SHA256::verify_ph(&pk, &ph256, None, &sig).unwrap();
+        let (pk, sk) = HashMLDSA44_with_SHA256::keygen().unwrap();
+        let sig = HashMLDSA44_with_SHA256::sign_ph(&sk, &ph256, None).unwrap();
+        HashMLDSA44_with_SHA256::verify_ph(&pk, &ph256, None, &sig).unwrap();
 
         let (pk, sk) = HashMLDSA65_with_SHA512::keygen().unwrap();
         let sig = HashMLDSA65_with_SHA512::sign_ph(&sk, &ph512, None).unwrap();

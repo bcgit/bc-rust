@@ -165,7 +165,7 @@ fn bench_mldsa_sign_from_seed(c: &mut Criterion) {
     /*** ML-DSA-44 ***/
     let tr = {
         let (_pk, sk) = MLDSA44::keygen_from_seed(&seed).unwrap();
-        sk.tr().clone()
+        *sk.tr()
     };
 
     // Signing nonce; it increments each time
@@ -185,7 +185,7 @@ fn bench_mldsa_sign_from_seed(c: &mut Criterion) {
     /*** ML-DSA-65 ***/
     let tr = {
         let (_pk, sk) = MLDSA65::keygen_from_seed(&seed).unwrap();
-        sk.tr().clone()
+        *sk.tr()
     };
 
     // Signing nonce; it increments each time
@@ -206,7 +206,7 @@ fn bench_mldsa_sign_from_seed(c: &mut Criterion) {
 
     let tr = {
         let (_pk, sk) = MLDSA87::keygen_from_seed(&seed).unwrap();
-        sk.tr().clone()
+        *sk.tr()
     };
 
     // Signing nonce; it increments each time
@@ -307,19 +307,17 @@ fn bench_mldsa_verify(c: &mut Criterion) {
     // use ctx to make them different (in addition to the signing nonce being different)
     let mut sigs = Vec::<([u8; MLDSA44_SIG_LEN], u128)>::with_capacity(1000);
 
-    let mut ctx = 0u128;
-    for _ in 0..1000 {
+    for ctx in 0..1000u128 {
         sigs.push((MLDSA44::sign(&mldsa44_sk, msg, Some(&ctx.to_le_bytes())).unwrap(), ctx));
-        ctx += 1
     }
 
     group.throughput(criterion::Throughput::Elements(sigs.len() as u64));
 
     group.bench_function("ML-DSA-44", |b| {
         b.iter(|| {
-            for i in 0..sigs.len() {
-                let (sig, ctx) = &sigs[i];
-                black_box(MLDSA44::verify(&mldsa44_pk, msg, Some(&ctx.to_le_bytes()), sig).unwrap())
+            for (sig, ctx) in &sigs {
+                black_box(MLDSA44::verify(&mldsa44_pk, msg, Some(&ctx.to_le_bytes()), sig))
+                    .unwrap();
             }
         })
     });
@@ -331,19 +329,17 @@ fn bench_mldsa_verify(c: &mut Criterion) {
     // use ctx to make them different (in addition to the signing nonce being different)
     let mut sigs = Vec::<([u8; MLDSA65_SIG_LEN], u128)>::with_capacity(1000);
 
-    let mut ctx = 0u128;
-    for _ in 0..1000 {
+    for ctx in 0..1000u128 {
         sigs.push((MLDSA65::sign(&mldsa65_sk, msg, Some(&ctx.to_le_bytes())).unwrap(), ctx));
-        ctx += 1
     }
 
     group.throughput(criterion::Throughput::Elements(sigs.len() as u64));
 
     group.bench_function("ML-DSA-65", |b| {
         b.iter(|| {
-            for i in 0..sigs.len() {
-                let (sig, ctx) = &sigs[i];
-                black_box(MLDSA65::verify(&mldsa65_pk, msg, Some(&ctx.to_le_bytes()), sig).unwrap())
+            for (sig, ctx) in &sigs {
+                black_box(MLDSA65::verify(&mldsa65_pk, msg, Some(&ctx.to_le_bytes()), sig))
+                    .unwrap();
             }
         })
     });
@@ -355,19 +351,17 @@ fn bench_mldsa_verify(c: &mut Criterion) {
     // use ctx to make them different (in addition to the signing nonce being different)
     let mut sigs = Vec::<([u8; MLDSA87_SIG_LEN], u128)>::with_capacity(1000);
 
-    let mut ctx = 0u128;
-    for _ in 0..1000 {
+    for ctx in 0..1000u128 {
         sigs.push((MLDSA87::sign(&mldsa87_sk, msg, Some(&ctx.to_le_bytes())).unwrap(), ctx));
-        ctx += 1
     }
 
     group.throughput(criterion::Throughput::Elements(sigs.len() as u64));
 
     group.bench_function("ML-DSA-87", |b| {
         b.iter(|| {
-            for i in 0..sigs.len() {
-                let (sig, ctx) = &sigs[i];
-                black_box(MLDSA87::verify(&mldsa87_pk, msg, Some(&ctx.to_le_bytes()), sig).unwrap())
+            for (sig, ctx) in &sigs {
+                black_box(MLDSA87::verify(&mldsa87_pk, msg, Some(&ctx.to_le_bytes()), sig))
+                    .unwrap();
             }
         })
     });
@@ -396,27 +390,22 @@ fn bench_mldsa_verify_with_expanded_key(c: &mut Criterion) {
     // use ctx to make them different (in addition to the signing nonce being different)
     let mut sigs = Vec::<([u8; MLDSA44_SIG_LEN], u128)>::with_capacity(1000);
 
-    let mut ctx = 0u128;
-    for _ in 0..1000 {
+    for ctx in 0..1000u128 {
         sigs.push((MLDSA44::sign(&mldsa44_sk, msg, Some(&ctx.to_le_bytes())).unwrap(), ctx));
-        ctx += 1
     }
 
     group.throughput(criterion::Throughput::Elements(sigs.len() as u64));
 
     group.bench_function("ML-DSA-44", |b| {
         b.iter(|| {
-            for i in 0..sigs.len() {
-                let (sig, ctx) = &sigs[i];
-                black_box(
-                    MLDSA44::verify_with_expanded_key(
-                        &pk_expanded,
-                        msg,
-                        Some(&ctx.to_le_bytes()),
-                        sig,
-                    )
-                    .unwrap(),
-                )
+            for (sig, ctx) in &sigs {
+                black_box(MLDSA44::verify_with_expanded_key(
+                    &pk_expanded,
+                    msg,
+                    Some(&ctx.to_le_bytes()),
+                    sig,
+                ))
+                .unwrap();
             }
         })
     });
@@ -429,27 +418,22 @@ fn bench_mldsa_verify_with_expanded_key(c: &mut Criterion) {
     // use ctx to make them different (in addition to the signing nonce being different)
     let mut sigs = Vec::<([u8; MLDSA65_SIG_LEN], u128)>::with_capacity(1000);
 
-    let mut ctx = 0u128;
-    for _ in 0..1000 {
+    for ctx in 0..1000u128 {
         sigs.push((MLDSA65::sign(&mldsa65_sk, msg, Some(&ctx.to_le_bytes())).unwrap(), ctx));
-        ctx += 1
     }
 
     group.throughput(criterion::Throughput::Elements(sigs.len() as u64));
 
     group.bench_function("ML-DSA-65", |b| {
         b.iter(|| {
-            for i in 0..sigs.len() {
-                let (sig, ctx) = &sigs[i];
-                black_box(
-                    MLDSA65::verify_with_expanded_key(
-                        &pk_expanded,
-                        msg,
-                        Some(&ctx.to_le_bytes()),
-                        sig,
-                    )
-                    .unwrap(),
-                )
+            for (sig, ctx) in &sigs {
+                black_box(MLDSA65::verify_with_expanded_key(
+                    &pk_expanded,
+                    msg,
+                    Some(&ctx.to_le_bytes()),
+                    sig,
+                ))
+                .unwrap();
             }
         })
     });
@@ -462,27 +446,22 @@ fn bench_mldsa_verify_with_expanded_key(c: &mut Criterion) {
     // use ctx to make them different (in addition to the signing nonce being different)
     let mut sigs = Vec::<([u8; MLDSA87_SIG_LEN], u128)>::with_capacity(1000);
 
-    let mut ctx = 0u128;
-    for _ in 0..1000 {
+    for ctx in 0..1000u128 {
         sigs.push((MLDSA87::sign(&mldsa87_sk, msg, Some(&ctx.to_le_bytes())).unwrap(), ctx));
-        ctx += 1
     }
 
     group.throughput(criterion::Throughput::Elements(sigs.len() as u64));
 
     group.bench_function("ML-DSA-87", |b| {
         b.iter(|| {
-            for i in 0..sigs.len() {
-                let (sig, ctx) = &sigs[i];
-                black_box(
-                    MLDSA87::verify_with_expanded_key(
-                        &pk_expanded,
-                        msg,
-                        Some(&ctx.to_le_bytes()),
-                        sig,
-                    )
-                    .unwrap(),
-                )
+            for (sig, ctx) in &sigs {
+                black_box(MLDSA87::verify_with_expanded_key(
+                    &pk_expanded,
+                    msg,
+                    Some(&ctx.to_le_bytes()),
+                    sig,
+                ))
+                .unwrap();
             }
         })
     });

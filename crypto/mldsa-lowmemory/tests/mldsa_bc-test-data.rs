@@ -690,14 +690,16 @@ impl<const IS_HASH_MLDSA: bool> MldsaRspTestCase<IS_HASH_MLDSA> {
 
                     HashMLDSA44_with_SHA512::verify(
                         &pk,
-                        &*hex::decode(&self.msg).unwrap(),
+                        &hex::decode(&self.msg).unwrap(),
                         Some(&*hex::decode(&self.context).unwrap()),
                         &sig,
                     )
-                    .expect(&format!(
-                        "paramSet: {}, is_hash: {}, count: {}",
-                        parameter_set, IS_HASH_MLDSA, self.count
-                    ));
+                    .unwrap_or_else(|_| {
+                        panic!(
+                            "paramSet: {}, is_hash: {}, count: {}",
+                            parameter_set, IS_HASH_MLDSA, self.count
+                        )
+                    });
                 } else {
                     // note: we're exposing a sign_mu_deterministic(), but not sign_deterministic()
                     // so need to manually compute mu
@@ -765,14 +767,16 @@ impl<const IS_HASH_MLDSA: bool> MldsaRspTestCase<IS_HASH_MLDSA> {
 
                     HashMLDSA65_with_SHA512::verify(
                         &pk,
-                        &*hex::decode(&self.msg).unwrap(),
+                        &hex::decode(&self.msg).unwrap(),
                         Some(&*hex::decode(&self.context).unwrap()),
                         &sig,
                     )
-                    .expect(&format!(
-                        "paramSet: {}, isHash: {}, count: {}",
-                        parameter_set, IS_HASH_MLDSA, self.count
-                    ));
+                    .unwrap_or_else(|_| {
+                        panic!(
+                            "paramSet: {}, isHash: {}, count: {}",
+                            parameter_set, IS_HASH_MLDSA, self.count
+                        )
+                    });
                 } else {
                     // note: we're exposing a sign_mu_deterministic(), but not sign_deterministic()
                     // so need to manually compute mu
@@ -834,7 +838,7 @@ impl<const IS_HASH_MLDSA: bool> MldsaRspTestCase<IS_HASH_MLDSA> {
 
                     HashMLDSA87_with_SHA512::verify(
                         &pk,
-                        &*hex::decode(&self.msg).unwrap(),
+                        &hex::decode(&self.msg).unwrap(),
                         Some(&*hex::decode(&self.context).unwrap()),
                         &sig,
                     )
@@ -875,7 +879,7 @@ impl BustedMuBuilder {
     /// Algorithm 7
     /// 6: 𝜇 ← H(BytesToBits(𝑡𝑟)||𝑀′, 64)
     pub fn compute_mu(msg: &[u8], tr: &[u8; 64]) -> Result<[u8; 64], SignatureError> {
-        let mut mu_builder = Self::do_init(&tr)?;
+        let mut mu_builder = Self::do_init(tr)?;
         mu_builder.do_update(msg);
         let mu = mu_builder.do_final();
 

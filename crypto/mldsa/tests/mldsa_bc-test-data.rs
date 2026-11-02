@@ -270,7 +270,7 @@ impl SigGenTestCase {
                 //     None,
                 //     sk.tr(),
                 // ).unwrap();
-                let mut mb = BustedMuBuilder::do_init(&sk.tr()).unwrap();
+                let mut mb = BustedMuBuilder::do_init(sk.tr()).unwrap();
                 mb.do_update(&hex::decode(&self.message).unwrap());
                 let mu = mb.do_final();
 
@@ -295,7 +295,7 @@ impl SigGenTestCase {
                 //     None,
                 //     sk.tr(),
                 // ).unwrap();
-                let mut mb = BustedMuBuilder::do_init(&sk.tr()).unwrap();
+                let mut mb = BustedMuBuilder::do_init(sk.tr()).unwrap();
                 mb.do_update(&hex::decode(&self.message).unwrap());
                 let mu = mb.do_final();
 
@@ -312,7 +312,7 @@ impl SigGenTestCase {
                 //     None,
                 //     sk.tr(),
                 // ).unwrap();
-                let mut mb = BustedMuBuilder::do_init(&sk.tr()).unwrap();
+                let mut mb = BustedMuBuilder::do_init(sk.tr()).unwrap();
                 mb.do_update(&hex::decode(&self.message).unwrap());
                 let mu = mb.do_final();
 
@@ -691,14 +691,16 @@ impl<const IS_HASH_MLDSA: bool> MldsaRspTestCase<IS_HASH_MLDSA> {
 
                     HashMLDSA44_with_SHA512::verify(
                         &pk,
-                        &*hex::decode(&self.msg).unwrap(),
+                        &hex::decode(&self.msg).unwrap(),
                         Some(&*hex::decode(&self.context).unwrap()),
                         &sig,
                     )
-                    .expect(&format!(
-                        "paramSet: {}, is_hash: {}, count: {}",
-                        parameter_set, IS_HASH_MLDSA, self.count
-                    ));
+                    .unwrap_or_else(|_| {
+                        panic!(
+                            "paramSet: {}, is_hash: {}, count: {}",
+                            parameter_set, IS_HASH_MLDSA, self.count
+                        )
+                    });
                 } else {
                     // note: The code only exposes a sign_mu_deterministic(), but not sign_deterministic()
                     // so mu needs to be computed manually
@@ -767,14 +769,16 @@ impl<const IS_HASH_MLDSA: bool> MldsaRspTestCase<IS_HASH_MLDSA> {
 
                     HashMLDSA65_with_SHA512::verify(
                         &pk,
-                        &*hex::decode(&self.msg).unwrap(),
+                        &hex::decode(&self.msg).unwrap(),
                         Some(&*hex::decode(&self.context).unwrap()),
                         &sig,
                     )
-                    .expect(&format!(
-                        "paramSet: {}, isHash: {}, count: {}",
-                        parameter_set, IS_HASH_MLDSA, self.count
-                    ));
+                    .unwrap_or_else(|_| {
+                        panic!(
+                            "paramSet: {}, isHash: {}, count: {}",
+                            parameter_set, IS_HASH_MLDSA, self.count
+                        )
+                    });
                 } else {
                     // note: The code only exposes a sign_mu_deterministic(), but not sign_deterministic()
                     // so mu needs to be computed manually
@@ -837,7 +841,7 @@ impl<const IS_HASH_MLDSA: bool> MldsaRspTestCase<IS_HASH_MLDSA> {
 
                     HashMLDSA87_with_SHA512::verify(
                         &pk,
-                        &*hex::decode(&self.msg).unwrap(),
+                        &hex::decode(&self.msg).unwrap(),
                         Some(&*hex::decode(&self.context).unwrap()),
                         &sig,
                     )
@@ -878,7 +882,7 @@ impl BustedMuBuilder {
     /// Algorithm 7
     /// 6: 𝜇 ← H(BytesToBits(𝑡𝑟)||𝑀′, 64)
     pub fn compute_mu(msg: &[u8], tr: &[u8; 64]) -> Result<[u8; 64], SignatureError> {
-        let mut mu_builder = Self::do_init(&tr)?;
+        let mut mu_builder = Self::do_init(tr)?;
         mu_builder.do_update(msg);
         let mu = mu_builder.do_final();
 
