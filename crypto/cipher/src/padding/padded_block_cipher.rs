@@ -54,7 +54,7 @@ pub struct PaddedBlockCipherEncryptor<
 impl<E, P, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize> Algorithm
     for PaddedBlockCipherEncryptor<E, P, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
 where
-    E: BlockCipherEncryptor<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
+    E: BlockCipherEncryptor<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN> + Algorithm,
     P: BlockCipherPadding<BLOCK_LEN>,
 {
     /// The inner cipher's name; padding does not change what the algorithm is.
@@ -67,7 +67,7 @@ impl<E, P, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOCK_LEN: us
     SymmetricCipherEncryptor<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
     for PaddedBlockCipherEncryptor<E, P, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
 where
-    E: BlockCipherEncryptor<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
+    E: BlockCipherEncryptor<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN> + Algorithm,
     P: BlockCipherPadding<BLOCK_LEN>,
 {
     fn do_encrypt_init(
@@ -208,7 +208,7 @@ pub struct PaddedBlockCipherDecryptor<
 impl<D, P, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize> Algorithm
     for PaddedBlockCipherDecryptor<D, P, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
 where
-    D: BlockCipherDecryptor<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
+    D: BlockCipherDecryptor<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN> + Algorithm,
     P: BlockCipherPadding<BLOCK_LEN>,
 {
     /// The inner cipher's name; padding does not change what the algorithm is.
@@ -221,7 +221,7 @@ impl<D, P, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOCK_LEN: us
     SymmetricCipherDecryptor<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
     for PaddedBlockCipherDecryptor<D, P, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
 where
-    D: BlockCipherDecryptor<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
+    D: BlockCipherDecryptor<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN> + Algorithm,
     P: BlockCipherPadding<BLOCK_LEN>,
 {
     fn do_decrypt_init(

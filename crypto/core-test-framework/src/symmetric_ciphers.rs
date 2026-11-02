@@ -8,7 +8,7 @@ use bouncycastle_core::hazmat::do_hazardous_operations;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{
-    StreamCipherDecryptor, StreamCipherEncryptor, SymmetricCipherDecryptor,
+    Algorithm, StreamCipherDecryptor, StreamCipherEncryptor, SymmetricCipherDecryptor,
     SymmetricCipherEncryptor,
 };
 
@@ -63,8 +63,8 @@ impl TestFrameworkSymmetricCipher {
         const KEY_LEN: usize,
         const INIT_DATA_LEN: usize,
         const FINAL_LEN: usize,
-        E: SymmetricCipherEncryptor<KEY_LEN, INIT_DATA_LEN, FINAL_LEN>,
-        D: SymmetricCipherDecryptor<KEY_LEN, INIT_DATA_LEN, FINAL_LEN>,
+        E: SymmetricCipherEncryptor<KEY_LEN, INIT_DATA_LEN, FINAL_LEN> + Algorithm,
+        D: SymmetricCipherDecryptor<KEY_LEN, INIT_DATA_LEN, FINAL_LEN> + Algorithm,
     >(
         &self,
     ) {
@@ -510,8 +510,8 @@ impl TestFrameworkStreamCipher {
     pub fn test<
         const KEY_LEN: usize,
         const INIT_DATA_LEN: usize,
-        E: StreamCipherEncryptor<KEY_LEN, INIT_DATA_LEN>,
-        D: StreamCipherDecryptor<KEY_LEN, INIT_DATA_LEN>,
+        E: StreamCipherEncryptor<KEY_LEN, INIT_DATA_LEN> + Algorithm,
+        D: StreamCipherDecryptor<KEY_LEN, INIT_DATA_LEN> + Algorithm,
     >(
         &self,
     ) {

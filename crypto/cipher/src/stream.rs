@@ -165,7 +165,7 @@ where
 impl<KS, Dir, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize> Algorithm
     for StreamCipher<KS, Dir, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
 where
-    KS: KeyStream<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
+    KS: KeyStream<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN> + Algorithm,
 {
     /// The keystream's name.
     const ALG_NAME: &'static str = KS::ALG_NAME;
@@ -177,7 +177,7 @@ impl<KS, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOCK_LEN: usiz
     SymmetricCipherEncryptor<KEY_LEN, INIT_DATA_LEN, 0>
     for StreamCipher<KS, Encrypting, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
 where
-    KS: KeyStream<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
+    KS: KeyStream<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN> + Algorithm,
 {
     /// Begins an encryption flow, drawing the init data from the library's default OS-backed DRBG.
     fn do_encrypt_init(
@@ -241,7 +241,7 @@ impl<KS, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOCK_LEN: usiz
     StreamCipherEncryptor<KEY_LEN, INIT_DATA_LEN>
     for StreamCipher<KS, Encrypting, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
 where
-    KS: KeyStream<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
+    KS: KeyStream<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN> + Algorithm,
 {
     /// XORs the next `data.len()` keystream bytes into `data`.
     ///
@@ -257,7 +257,7 @@ impl<KS, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOCK_LEN: usiz
     SymmetricCipherDecryptor<KEY_LEN, INIT_DATA_LEN, 0>
     for StreamCipher<KS, Decrypting, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
 where
-    KS: KeyStream<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
+    KS: KeyStream<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN> + Algorithm,
 {
     /// Begins a decryption flow from the init data returned by
     /// [`SymmetricCipherEncryptor::do_encrypt_init`].
@@ -310,7 +310,7 @@ impl<KS, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const BLOCK_LEN: usiz
     StreamCipherDecryptor<KEY_LEN, INIT_DATA_LEN>
     for StreamCipher<KS, Decrypting, KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>
 where
-    KS: KeyStream<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
+    KS: KeyStream<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN> + Algorithm,
 {
     /// The same XOR as encryption.
     ///

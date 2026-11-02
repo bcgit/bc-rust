@@ -6,7 +6,7 @@ use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::hazmat::do_hazardous_operations;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::traits::{BlockCipherDecryptor, BlockCipherEncryptor};
+use bouncycastle_core::traits::{Algorithm, BlockCipherDecryptor, BlockCipherEncryptor};
 
 /// Instance of the test framework.
 pub struct TestFrameworkBlockCipher {
@@ -24,8 +24,8 @@ impl TestFrameworkBlockCipher {
         const KEY_LEN: usize,
         const INIT_DATA_LEN: usize,
         const BLOCK_LEN: usize,
-        E: BlockCipherEncryptor<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
-        D: BlockCipherDecryptor<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
+        E: BlockCipherEncryptor<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN> + Algorithm,
+        D: BlockCipherDecryptor<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN> + Algorithm,
     >(
         &self,
     ) {

@@ -19,7 +19,7 @@ use crate::symmetric_ciphers::TestFrameworkSymmetricCipher;
 use crate::{DUMMY_SEED, FixedSeedRNG};
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-use bouncycastle_core::traits::{AEADCipherDecryptor, AEADCipherEncryptor};
+use bouncycastle_core::traits::{AEADCipherDecryptor, AEADCipherEncryptor, Algorithm};
 
 /// Instance of the test framework.
 pub struct TestFrameworkAEADCipher {
@@ -81,8 +81,8 @@ impl TestFrameworkAEADCipher {
         const NONCE_LEN: usize,
         const TAG_LEN: usize,
         const FINAL_LEN: usize,
-        E: AEADCipherEncryptor<KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN>,
-        D: AEADCipherDecryptor<KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN>,
+        E: AEADCipherEncryptor<KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN> + Algorithm,
+        D: AEADCipherDecryptor<KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN> + Algorithm,
     >(
         &self,
     ) {
@@ -803,8 +803,8 @@ impl TestFrameworkAEADTaggedLayout {
         const NONCE_LEN: usize,
         const TAG_LEN: usize,
         const FINAL_LEN: usize,
-        E: AEADCipherEncryptor<KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN>,
-        D: AEADCipherDecryptor<KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN>,
+        E: AEADCipherEncryptor<KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN> + Algorithm,
+        D: AEADCipherDecryptor<KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN> + Algorithm,
     >(
         &self,
     ) {
@@ -834,7 +834,7 @@ impl TestFrameworkAEADTaggedLayout {
         const NONCE_LEN: usize,
         const TAG_LEN: usize,
         const FINAL_LEN: usize,
-        E: AEADCipherEncryptor<KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN>,
+        E: AEADCipherEncryptor<KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN> + Algorithm,
     >(
         key: &KeyMaterial<KEY_LEN>,
         msg: &[u8],
@@ -853,8 +853,8 @@ impl TestFrameworkAEADTaggedLayout {
         const NONCE_LEN: usize,
         const TAG_LEN: usize,
         const FINAL_LEN: usize,
-        E: AEADCipherEncryptor<KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN>,
-        D: AEADCipherDecryptor<KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN>,
+        E: AEADCipherEncryptor<KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN> + Algorithm,
+        D: AEADCipherDecryptor<KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN> + Algorithm,
     >(
         key: &KeyMaterial<KEY_LEN>,
     ) {
@@ -950,8 +950,8 @@ impl TestFrameworkAEADTaggedLayout {
         const NONCE_LEN: usize,
         const TAG_LEN: usize,
         const FINAL_LEN: usize,
-        E: AEADCipherEncryptor<KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN>,
-        D: AEADCipherDecryptor<KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN>,
+        E: AEADCipherEncryptor<KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN> + Algorithm,
+        D: AEADCipherDecryptor<KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN> + Algorithm,
     >(
         key: &KeyMaterial<KEY_LEN>,
     ) {
@@ -1006,8 +1006,8 @@ impl TestFrameworkAEADTaggedLayout {
         const NONCE_LEN: usize,
         const TAG_LEN: usize,
         const FINAL_LEN: usize,
-        E: AEADCipherEncryptor<KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN>,
-        D: AEADCipherDecryptor<KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN>,
+        E: AEADCipherEncryptor<KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN> + Algorithm,
+        D: AEADCipherDecryptor<KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN> + Algorithm,
     >(
         key: &KeyMaterial<KEY_LEN>,
     ) {

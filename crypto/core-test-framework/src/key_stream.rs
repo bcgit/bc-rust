@@ -6,6 +6,7 @@ use bouncycastle_core::hazmat::KeyStream;
 use bouncycastle_core::hazmat::do_hazardous_operations;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
+use bouncycastle_core::traits::Algorithm;
 
 /// Instance of the test framework.
 pub struct TestFrameworkKeyStream {
@@ -43,7 +44,7 @@ impl TestFrameworkKeyStream {
         const KEY_LEN: usize,
         const INIT_DATA_LEN: usize,
         const BLOCK_LEN: usize,
-        KS: KeyStream<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
+        KS: KeyStream<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN> + Algorithm,
     >(
         &self,
     ) {
