@@ -39,7 +39,7 @@ use bouncycastle_core::traits::{
     AEADCipherEncryptor, BlockCipherDecryptor, BlockCipherEncryptor, MAC, StreamCipherDecryptor,
     StreamCipherEncryptor, SymmetricCipherEncryptor,
 };
-use bouncycastle_core_test_framework::FixedSeedRNG;
+use bouncycastle_rng::FixedSeedRNG;
 use criterion::{BatchSize, Criterion, Throughput, criterion_group, criterion_main};
 use std::hint::black_box;
 
@@ -413,7 +413,7 @@ fn bench_ccm_one_shot_pair(c: &mut Criterion) {
     let data = [0xA5u8; CCM_BUFFER_LEN];
     let no_aad: [u8; 0] = [];
     let nonce = [0x24u8; CCM_NONCE_LEN];
-    let mut rng = FixedSeedRNG::<CCM_NONCE_LEN>::new(nonce);
+    let mut rng = FixedSeedRNG::new(nonce);
 
     let mut group = c.benchmark_group("modes::ccm::one_shot");
     group.throughput(Throughput::Bytes(CCM_BUFFER_LEN as u64));
@@ -469,7 +469,7 @@ fn bench_gcm_aes128(c: &mut Criterion) {
     let key = key::<16>();
     let data = [0xA5u8; DATA_LEN];
     let no_aad: [u8; 0] = [];
-    let mut rng = FixedSeedRNG::<GCM_NONCE_LEN>::new([0x24u8; GCM_NONCE_LEN]);
+    let mut rng = FixedSeedRNG::new([0x24u8; GCM_NONCE_LEN]);
 
     let mut group = c.benchmark_group("modes::gcm::AES_128");
     group.throughput(Throughput::Bytes(DATA_LEN as u64));
@@ -520,7 +520,7 @@ fn bench_gcm_aes256(c: &mut Criterion) {
     let key = key::<32>();
     let data = [0xA5u8; DATA_LEN];
     let no_aad: [u8; 0] = [];
-    let mut rng = FixedSeedRNG::<GCM_NONCE_LEN>::new([0x24u8; GCM_NONCE_LEN]);
+    let mut rng = FixedSeedRNG::new([0x24u8; GCM_NONCE_LEN]);
 
     let mut group = c.benchmark_group("modes::gcm::AES_256");
     group.throughput(Throughput::Bytes(DATA_LEN as u64));
@@ -581,7 +581,7 @@ fn bench_gmac(c: &mut Criterion) {
     let data: Vec<u8> = data().concat();
     let mut group = c.benchmark_group("modes::gmac");
     group.throughput(Throughput::Bytes(DATA_LEN as u64));
-    let mut rng = FixedSeedRNG::<GCM_NONCE_LEN>::new([0x24u8; GCM_NONCE_LEN]);
+    let mut rng = FixedSeedRNG::new([0x24u8; GCM_NONCE_LEN]);
 
     let key128 = mac_key::<16>();
     group.bench_function("AES_128 Gmac::new 16KiB", |b| {

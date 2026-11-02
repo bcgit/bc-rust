@@ -12,7 +12,7 @@ use bouncycastle_core::symmetric_key::{AeadDecryptionKey, AeadEncryptionKey, Fro
 use bouncycastle_core::traits::{
     AEADCipherDecryptor, AEADCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
 };
-use bouncycastle_core_test_framework::FixedSeedRNG;
+use bouncycastle_rng::FixedSeedRNG;
 
 /// The worker traits, kept out of scope: a GCM worker implements both them and the cipher
 /// traits under the same method names, so the generic helpers name them by path.
@@ -25,8 +25,8 @@ fn material<const N: usize>() -> KeyMaterial<N> {
     KeyMaterial::<N>::from_bytes_as_type(&bytes, KeyType::SymmetricCipherKey).expect("a valid key")
 }
 
-fn rng() -> FixedSeedRNG<12> {
-    FixedSeedRNG::<12>::new([0x24u8; 12])
+fn rng() -> FixedSeedRNG<[u8; 12]> {
+    FixedSeedRNG::new([0x24u8; 12])
 }
 
 const AAD: &[u8] = b"header, sent in the clear";
@@ -250,7 +250,7 @@ fn a_shorter_tag_is_a_different_key_type_over_the_same_material() {
 
 #[test]
 fn generate_draws_a_usable_key_at_every_length() {
-    let mut r = FixedSeedRNG::<32>::new([0x5Au8; 32]);
+    let mut r = FixedSeedRNG::new([0x5Au8; 32]);
     let k128 = AES128Key::<GCM>::generate(&mut r).expect("128");
     let k192 = AES192Key::<GCM>::generate(&mut r).expect("192");
     let k256 = AES256Key::<GCM>::generate(&mut r).expect("256");
@@ -278,7 +278,7 @@ fn generate_draws_a_usable_key_at_every_length() {
 /// refused by the same check `from_key_material` applies to supplied material.
 #[test]
 fn generate_refuses_an_rng_below_the_key_strength() {
-    let mut weak = FixedSeedRNG::<32>::new([0x5Au8; 32]);
+    let mut weak = FixedSeedRNG::new([0x5Au8; 32]);
     weak.set_security_strength(SecurityStrength::_128bit);
     assert!(AES128Key::<GCM>::generate(&mut weak).is_ok());
     assert!(matches!(

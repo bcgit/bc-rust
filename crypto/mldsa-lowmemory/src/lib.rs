@@ -152,25 +152,26 @@
 //! let (pk, sk) = MLDSA65::keygen_from_seed(&seed).unwrap();
 //! ```
 //!
-//! See [`MLDSATrait`] and [`MLDSATrait::sign_mu_deterministic_from_seed`] for an API flow that uses a merged
-//! keygen-and-sign function to provide improved speed and memory performance compared with making
-//! separate calls to [`MLDSATrait::keygen_from_seed`] followed by [`Signer::sign`].
+//! The private key is the seed: signing expands what it needs from the seed as it goes, so
+//! there is no separate expansion step to pay for before [`SigningKey::sign`].
 //!
 //! ## Generating and Verifying Signatures
 //!
 //! ```rust
 //! use bouncycastle_core::errors::SignatureError;
-//! use bouncycastle_core::traits::{Signer, SignatureVerifier};
+//! use bouncycastle_core::signature_key::{SigningKey, VerifyingKey};
+//! use bouncycastle_rng::HashDRBG_SHA512;
 //! use bouncycastle_mldsa_lowmemory::{MLDSA65, MLDSATrait};
 //!
 //! let msg = b"The quick brown fox";
 //!
 //! let (pk, sk) = MLDSA65::keygen().unwrap();
 //!
-//! let sig = MLDSA65::sign(&sk, msg, None).unwrap();
+//! let mut rng = HashDRBG_SHA512::new_from_os();
+//! let sig = sk.sign(&mut rng, msg, None).unwrap();
 //! // This is the signature value that can be saved to a file or whatever it is need.
 //!
-//! match MLDSA65::verify(&pk, msg, None, &sig) {
+//! match pk.verify(msg, None, &sig) {
 //!     Ok(()) => println!("Signature is valid!"),
 //!     Err(SignatureError::SignatureVerificationFailed) => println!("Signature is invalid!"),
 //!     Err(e) => panic!("Something else went wrong: {:?}", e),
@@ -239,7 +240,7 @@
 #[allow(unused_imports)]
 use bouncycastle_core::key_material::KeyMaterialTrait;
 #[allow(unused_imports)]
-use bouncycastle_core::traits::{SignatureVerifier, Signer};
+use bouncycastle_core::signature_key::{SigningKey, VerifyingKey};
 
 mod aux_functions;
 pub mod hash_mldsa;
@@ -258,6 +259,7 @@ pub use mldsa_keys::{
 };
 pub use mldsa_keys::{MLDSA44PublicKey, MLDSA65PublicKey, MLDSA87PublicKey, MLDSAPublicKey};
 pub use mldsa_keys::{MLDSAPrivateKeyTrait, MLDSAPublicKeyTrait};
+pub use params::{FullPrivateKeyLen, PrivateKeyLen, PublicKeyLen, SignatureLen};
 
 /*** Exported constants ***/
 pub use mldsa::ML_DSA_44_NAME;

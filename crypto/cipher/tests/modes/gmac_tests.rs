@@ -11,7 +11,7 @@ use bouncycastle_core::hazmat::ElectronicCodeBook;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::AEADCipherEncryptor;
-use bouncycastle_core_test_framework::FixedSeedRNG;
+use bouncycastle_rng::FixedSeedRNG;
 use common::{TOY_LEN, Toy, toy_key};
 
 type ToyGmac<Dir, const TAG_LEN: usize = 16> = Gmac<Toy, Dir, TOY_LEN, TAG_LEN>;
@@ -31,7 +31,7 @@ fn message(len: usize) -> Vec<u8> {
     (0..len).map(|i| (i as u8).wrapping_mul(29).wrapping_add(3)).collect()
 }
 
-fn rng() -> FixedSeedRNG<GCM_NONCE_LEN> {
+fn rng() -> FixedSeedRNG<[u8; GCM_NONCE_LEN]> {
     FixedSeedRNG::new(NONCE)
 }
 
@@ -128,7 +128,7 @@ fn rejects_changed_tag_nonce_or_message() {
 #[test]
 fn a_fresh_nonce_per_generator() {
     let state = key_state();
-    let mut rng = FixedSeedRNG::<64>::new(core::array::from_fn(|i| i as u8));
+    let mut rng = FixedSeedRNG::new(core::array::from_fn::<u8, 64, _>(|i| i as u8));
     let (g1, n1) = ToyGmac::<Encrypting>::from_key_state(&state, &mut rng).unwrap();
     let (g2, n2) = ToyGmac::<Encrypting>::from_key_state(&state, &mut rng).unwrap();
     assert_ne!(n1, n2);

@@ -42,8 +42,8 @@ use bouncycastle_cipher::modes::Ctr;
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::traits::{StreamCipherEncryptor, SymmetricCipherEncryptor};
-use bouncycastle_core_test_framework::FixedSeedRNG;
 use bouncycastle_hex as hex;
+use bouncycastle_rng::FixedSeedRNG;
 
 /// The AES-128 key used for every vector in this file: SP 800-38A Appendix F's first key.
 const KEY: &str = "2b7e151628aed2a6abf7158809cf4f3c";
@@ -59,7 +59,7 @@ fn keystream<const NONCE_LEN: usize>(nonce_hex: &str, blocks: usize) -> Vec<u8> 
         hex::decode(nonce_hex).expect("valid hex").try_into().expect("nonce length");
     let (mut enc, got) = Ctr::<AES128Internal, Encrypting, 16, 16, NONCE_LEN>::do_encrypt_init_rng(
         &key(),
-        &mut FixedSeedRNG::<NONCE_LEN>::new(nonce),
+        &mut FixedSeedRNG::new(nonce),
     )
     .expect("encrypt init");
     assert_eq!(got, nonce, "the pinned RNG should reproduce the nonce");
@@ -153,7 +153,7 @@ fn the_counter_limit_falls_where_bc_java_throws() {
         hex::decode("5a5b5c5d5e5f606162636465666768").unwrap().try_into().unwrap();
     let (mut enc, _) = Ctr::<AES128Internal, Encrypting, 16, 16, 15>::do_encrypt_init_rng(
         &key(),
-        &mut FixedSeedRNG::<15>::new(nonce),
+        &mut FixedSeedRNG::new(nonce),
     )
     .unwrap();
 

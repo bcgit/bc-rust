@@ -1,16 +1,18 @@
 use crate::aux_functions::{expandA, power_2_round_vec};
 use crate::matrix::{MatrixTrait, VectorTrait};
-use crate::mldsa::H;
+use crate::mldsa::{H, MuBuilder, draw_rnd, sign_internal, verify_internal};
+use crate::mldsa::{MLDSA_MU_LEN, MLDSA_RND_LEN};
 use crate::mldsa::{POLY_T0PACKED_LEN, POLY_T1PACKED_LEN};
-use crate::params::{MLDSA44Params, MLDSA65Params, MLDSA87Params, MLDSAParams, MLDSAParamsBase};
+use crate::params::{MLDSA44Params, MLDSA65Params, MLDSA87Params, MLDSAParams};
+use crate::params::{PrivateKeyLen, PublicKeyLen, SignatureLen};
 use bouncycastle_core::errors::SignatureError;
 use bouncycastle_core::key_material::KeyMaterial;
-use bouncycastle_core::traits::{SignaturePrivateKey, SignaturePublicKey, XOF};
+use bouncycastle_core::traits::{RNG, SignaturePrivateKey, SignaturePublicKey, XOF};
 use bouncycastle_mldsa_common::aux_functions::{
     bit_pack_eta, bit_pack_t0, bit_unpack_eta, bit_unpack_t0, simple_bit_pack_t1,
     simple_bit_unpack_t1,
 };
-use bouncycastle_utils::secret::Secret;
+use bouncycastle_utils::secret::{Secret, ZeroizablePrimitive};
 use core::fmt;
 use core::fmt::{Debug, Display, Formatter};
 
@@ -23,82 +25,60 @@ use bouncycastle_mldsa_common::polynomial::Polynomial;
 /* Pub Types */
 
 /// ML-DSA-44 Public Key
-pub type MLDSA44PublicKey = MLDSAPublicKey<MLDSA44Params, { MLDSA44Params::PK_LEN }>;
+pub type MLDSA44PublicKey = MLDSAPublicKey<MLDSA44Params>;
 /// ML-DSA-44 Private Key
-pub type MLDSA44PrivateKey =
-    MLDSAPrivateKey<MLDSA44Params, { MLDSA44Params::SK_LEN }, { MLDSA44Params::PK_LEN }>;
+pub type MLDSA44PrivateKey = MLDSAPrivateKey<MLDSA44Params>;
 /// ML-DSA-65 Public Key
-pub type MLDSA65PublicKey = MLDSAPublicKey<MLDSA65Params, { MLDSA65Params::PK_LEN }>;
+pub type MLDSA65PublicKey = MLDSAPublicKey<MLDSA65Params>;
 /// ML-DSA-65 Private Key
-pub type MLDSA65PrivateKey =
-    MLDSAPrivateKey<MLDSA65Params, { MLDSA65Params::SK_LEN }, { MLDSA65Params::PK_LEN }>;
+pub type MLDSA65PrivateKey = MLDSAPrivateKey<MLDSA65Params>;
 /// ML-DSA-87 Public Key
-pub type MLDSA87PublicKey = MLDSAPublicKey<MLDSA87Params, { MLDSA87Params::PK_LEN }>;
+pub type MLDSA87PublicKey = MLDSAPublicKey<MLDSA87Params>;
 /// ML-DSA-87 Private Key
-pub type MLDSA87PrivateKey =
-    MLDSAPrivateKey<MLDSA87Params, { MLDSA87Params::SK_LEN }, { MLDSA87Params::PK_LEN }>;
+pub type MLDSA87PrivateKey = MLDSAPrivateKey<MLDSA87Params>;
 
 /* Pre-expanded keys for repeated operations */
 
 /// ML-DSA-44 Public Key with a pre-expanded public matrix A for repeated verify operations.
-pub type MLDSA44PublicKeyExpanded =
-    MLDSAPublicKeyExpanded<MLDSA44Params, MLDSA44PublicKey, { MLDSA44Params::PK_LEN }>;
+pub type MLDSA44PublicKeyExpanded<'k> = MLDSAPublicKeyExpanded<'k, MLDSA44Params>;
 /// ML-DSA-44 Private Key with a pre-expanded public matrix A for repeated sign operations.
-pub type MLDSA44PrivateKeyExpanded = MLDSAPrivateKeyExpanded<
-    MLDSA44Params,
-    MLDSA44PublicKey,
-    MLDSA44PrivateKey,
-    { MLDSA44Params::SK_LEN },
-    { MLDSA44Params::PK_LEN },
->;
+pub type MLDSA44PrivateKeyExpanded<'k> = MLDSAPrivateKeyExpanded<'k, MLDSA44Params>;
 /// ML-DSA-65 Public Key with a pre-expanded public matrix A for repeated verify operations.
-pub type MLDSA65PublicKeyExpanded =
-    MLDSAPublicKeyExpanded<MLDSA65Params, MLDSA65PublicKey, { MLDSA65Params::PK_LEN }>;
+pub type MLDSA65PublicKeyExpanded<'k> = MLDSAPublicKeyExpanded<'k, MLDSA65Params>;
 /// ML-DSA-65 Private Key with a pre-expanded public matrix A for repeated sign operations.
-pub type MLDSA65PrivateKeyExpanded = MLDSAPrivateKeyExpanded<
-    MLDSA65Params,
-    MLDSA65PublicKey,
-    MLDSA65PrivateKey,
-    { MLDSA65Params::SK_LEN },
-    { MLDSA65Params::PK_LEN },
->;
+pub type MLDSA65PrivateKeyExpanded<'k> = MLDSAPrivateKeyExpanded<'k, MLDSA65Params>;
 /// ML-DSA-87 Public Key with a pre-expanded public matrix A for repeated verify operations.
-pub type MLDSA87PublicKeyExpanded =
-    MLDSAPublicKeyExpanded<MLDSA87Params, MLDSA87PublicKey, { MLDSA87Params::PK_LEN }>;
+pub type MLDSA87PublicKeyExpanded<'k> = MLDSAPublicKeyExpanded<'k, MLDSA87Params>;
 /// ML-DSA-87 Private Key with a pre-expanded public matrix A for repeated sign operations.
-pub type MLDSA87PrivateKeyExpanded = MLDSAPrivateKeyExpanded<
-    MLDSA87Params,
-    MLDSA87PublicKey,
-    MLDSA87PrivateKey,
-    { MLDSA87Params::SK_LEN },
-    { MLDSA87Params::PK_LEN },
->;
+pub type MLDSA87PrivateKeyExpanded<'k> = MLDSAPrivateKeyExpanded<'k, MLDSA87Params>;
 
 /// An ML-DSA public key.
 ///
-/// `PK_LEN` duplicates `MLDSAParams::PK_LEN`; it has to be carried separately because
-/// [`SignaturePublicKey`] takes the encoded length as a const generic parameter, and an associated
-/// const of a type parameter may not be used as a const generic argument. The type aliases below
-/// wire the two together.
-pub struct MLDSAPublicKey<P: MLDSAParams, const PK_LEN: usize> {
+/// The parameter set fixes every length, so `P` is the only type parameter. [`SignaturePublicKey`]
+/// and the role traits take the encoded lengths as const generics, and an associated const of a
+/// type parameter may not be used as one, so their impls are generic over the length and bound
+/// through the per-length traits (`P: PublicKeyLen<PK_LEN>`), which have one impl per parameter
+/// set and so let the length be inferred from `P`.
+pub struct MLDSAPublicKey<P: MLDSAParams> {
     rho: [u8; 32],
     t1: P::VecK,
 }
 
 // Written out rather than derived: `#[derive(Clone)]` would demand `P: Clone`, and `P` is a
 // marker for the parameter set that is never stored, only used to name the field types.
-impl<P: MLDSAParams, const PK_LEN: usize> Clone for MLDSAPublicKey<P, PK_LEN> {
+impl<P: MLDSAParams> Clone for MLDSAPublicKey<P> {
     fn clone(&self) -> Self {
         Self { rho: self.rho, t1: self.t1 }
     }
 }
 
-impl<P: MLDSAParams, const PK_LEN: usize> MLDSAPublicKey<P, PK_LEN> {
+impl<P: MLDSAParams> MLDSAPublicKey<P> {
     /// Algorithm 22 pkEncode(𝜌, 𝐭1)
     /// Encodes a public key for ML-DSA into a byte string.
     /// Input:𝜌 ∈ 𝔹32, 𝐭1 ∈ 𝑅𝑘 with coefficients in [0, 2bitlen (𝑞−1)−𝑑 − 1].
     /// Output: Public key 𝑝𝑘 ∈ 𝔹32+32𝑘(bitlen (𝑞−1)−𝑑).
-    fn pk_encode_out(&self, out: &mut [u8; PK_LEN]) -> usize {
+    pub(crate) fn pk_encode_out(&self, out: &mut [u8]) -> usize {
+        debug_assert_eq!(out.len(), P::PK_LEN);
         out.fill(0);
 
         out[0..32].copy_from_slice(&self.rho);
@@ -113,47 +93,25 @@ impl<P: MLDSAParams, const PK_LEN: usize> MLDSAPublicKey<P, PK_LEN> {
             pk_chunk.copy_from_slice(&simple_bit_pack_t1(t1_i));
         }
 
-        PK_LEN
+        P::PK_LEN
     }
-}
 
-/// General trait for all ML-DSA public keys types.
-pub trait MLDSAPublicKeyTrait<P: MLDSAParams, const PK_LEN: usize>:
-    SignaturePublicKey<PK_LEN>
-{
+    /// The encoding in a parameter-set-sized buffer, for the places with no const generic in
+    /// scope to size an array.
+    fn encode_buf(&self) -> P::PkEncoded {
+        let mut out = P::PkEncoded::ZEROED;
+        self.pk_encode_out(out.as_mut());
+        out
+    }
+
     /// Algorithm 23 pkDecode(𝑝𝑘)
     /// Reverses the procedure pkEncode.
     /// Input: Public key 𝑝𝑘 ∈ 𝔹32+32𝑘(bitlen (𝑞−1)−𝑑).
     /// Output: 𝜌 ∈ 𝔹32, 𝐭1 ∈ 𝑅𝑘 with coefficients in [0, 2bitlen (𝑞−1)−𝑑 − 1].
-    fn pk_decode(pk: &[u8; PK_LEN]) -> Self;
-
-    /// Get a copy of the expanded public matrix A_hat
-    fn A_hat(&self) -> P::MatrixA;
-
-    /// Compute the public key hash (tr) from the public key.
-    ///
-    /// This is exposed as a public API for a few reasons:
-    /// 1. `tr` is required for some external-prehashing schemes such as the so-called "external mu" signing mode.
-    /// 2. `tr` is the canonical fingerprint of an ML-DSA public key, so would be an appropriate value
-    ///    to use, for example, to build a public key lookup or deny-listing table.
-    fn compute_tr(&self) -> [u8; 64];
-}
-
-pub(crate) trait MLDSAPublicKeyInternalTrait<P: MLDSAParams, const PK_LEN: usize>:
-    SignaturePublicKey<PK_LEN>
-{
-    /// Not exposing a constructor publicly because you should have to get an instance either by
-    /// running a keygen, or by decoding an existing key.
-    fn new(rho: [u8; 32], t1: P::VecK) -> Self;
-
-    /// Get a ref to t1
-    fn t1(&self) -> &P::VecK;
-}
-
-impl<P: MLDSAParams, const PK_LEN: usize> MLDSAPublicKeyTrait<P, PK_LEN>
-    for MLDSAPublicKey<P, PK_LEN>
-{
-    fn pk_decode(pk: &[u8; PK_LEN]) -> Self {
+    pub(crate) fn pk_decode<const PK_LEN: usize>(pk: &[u8; PK_LEN]) -> Self
+    where
+        P: PublicKeyLen<PK_LEN>,
+    {
         let rho = pk[0..32].try_into().unwrap();
         let mut t1 = P::VecK::new();
 
@@ -170,24 +128,90 @@ impl<P: MLDSAParams, const PK_LEN: usize> MLDSAPublicKeyTrait<P, PK_LEN>
             t1_i.coeffs.copy_from_slice(&simple_bit_unpack_t1(pk_chunk).coeffs);
         }
 
-        <Self as MLDSAPublicKeyInternalTrait<P, PK_LEN>>::new(rho, t1)
+        <Self as MLDSAPublicKeyInternalTrait<P>>::new(rho, t1)
     }
 
-    fn A_hat(&self) -> P::MatrixA {
+    /// The public matrix 𝐀̂ = ExpandA(𝜌), FIPS 204 Algorithm 32; the expanded keys cache it.
+    pub(crate) fn A_hat(&self) -> P::MatrixA {
         expandA::<P>(&self.rho)
-    }
-
-    fn compute_tr(&self) -> [u8; 64] {
-        let mut tr = [0u8; 64];
-        H::new().xof_out(&self.encode(), &mut tr);
-
-        tr
     }
 }
 
-impl<P: MLDSAParams, const PK_LEN: usize> MLDSAPublicKeyInternalTrait<P, PK_LEN>
-    for MLDSAPublicKey<P, PK_LEN>
-{
+/// General trait for all ML-DSA public keys types.
+pub trait MLDSAPublicKeyTrait<P: MLDSAParams>: Sized {
+    /// Compute the public key hash (tr) from the public key.
+    ///
+    /// This is exposed as a public API for a few reasons:
+    /// 1. `tr` is required for some external-prehashing schemes such as the so-called "external mu" signing mode.
+    /// 2. `tr` is the canonical fingerprint of an ML-DSA public key, so would be an appropriate value
+    ///    to use, for example, to build a public key lookup or deny-listing table.
+    fn compute_tr(&self) -> [u8; 64];
+
+    /// The message representative mu = H(tr || M') of `msg` under `ctx` (FIPS 204, Algorithm 7
+    /// line 6): the public half of the external-mu interface, see
+    /// [`MLDSAPrivateKeyTrait::sign_mu`]. [`MuBuilder`] builds it from a streamed message.
+    fn compute_mu(
+        &self,
+        msg: &[u8],
+        ctx: Option<&[u8]>,
+    ) -> Result<[u8; MLDSA_MU_LEN], SignatureError> {
+        let mut mb = self.create_mu_builder(ctx)?;
+        mb.do_update(msg);
+        Ok(mb.do_final())
+    }
+
+    /// The streaming form of [`compute_mu`](Self::compute_mu): a [`MuBuilder`] bound to this
+    /// key's `tr` and to `ctx`, which then takes the message in chunks. `ctx` longer than 255
+    /// bytes is the error of FIPS 204 Algorithm 2, line 1.
+    fn create_mu_builder(&self, ctx: Option<&[u8]>) -> Result<MuBuilder, SignatureError> {
+        MuBuilder::from_tr(&self.compute_tr(), ctx)
+    }
+
+    /// FIPS 204 Algorithm 8 with line 7 removed: verifies `sig` over an externally computed
+    /// `mu`. Any ML-DSA signature verifies here with the `mu` of its message, and a signature
+    /// made with [`MLDSAPrivateKeyTrait::sign_mu`] verifies with [`VerifyingKey::verify`]
+    /// over the message.
+    ///
+    /// [`VerifyingKey::verify`]: bouncycastle_core::signature_key::VerifyingKey::verify
+    fn verify_mu<const SIG_LEN: usize>(
+        &self,
+        mu: &[u8; MLDSA_MU_LEN],
+        sig: &[u8; SIG_LEN],
+    ) -> Result<(), SignatureError>
+    where
+        P: SignatureLen<SIG_LEN>;
+}
+
+pub(crate) trait MLDSAPublicKeyInternalTrait<P: MLDSAParams> {
+    /// Not exposing a constructor publicly because you should have to get an instance either by
+    /// running a keygen, or by decoding an existing key.
+    fn new(rho: [u8; 32], t1: P::VecK) -> Self;
+
+    /// Get a ref to t1
+    fn t1(&self) -> &P::VecK;
+}
+
+impl<P: MLDSAParams> MLDSAPublicKeyTrait<P> for MLDSAPublicKey<P> {
+    fn compute_tr(&self) -> [u8; 64] {
+        let mut tr = [0u8; 64];
+        H::new().xof_out(self.encode_buf().as_ref(), &mut tr);
+
+        tr
+    }
+
+    fn verify_mu<const SIG_LEN: usize>(
+        &self,
+        mu: &[u8; MLDSA_MU_LEN],
+        sig: &[u8; SIG_LEN],
+    ) -> Result<(), SignatureError>
+    where
+        P: SignatureLen<SIG_LEN>,
+    {
+        verify_internal::<P, Self, SIG_LEN>(self, &self.A_hat(), mu, sig)
+    }
+}
+
+impl<P: MLDSAParams> MLDSAPublicKeyInternalTrait<P> for MLDSAPublicKey<P> {
     fn new(rho: [u8; 32], t1: P::VecK) -> Self {
         Self { rho, t1 }
     }
@@ -197,7 +221,9 @@ impl<P: MLDSAParams, const PK_LEN: usize> MLDSAPublicKeyInternalTrait<P, PK_LEN>
     }
 }
 
-impl<P: MLDSAParams, const PK_LEN: usize> SignaturePublicKey<PK_LEN> for MLDSAPublicKey<P, PK_LEN> {
+impl<P: PublicKeyLen<PK_LEN>, const PK_LEN: usize> SignaturePublicKey<PK_LEN>
+    for MLDSAPublicKey<P>
+{
     fn encode(&self) -> [u8; PK_LEN] {
         let mut pk = [0u8; PK_LEN];
         let bytes_written = self.encode_out(&mut pk);
@@ -219,115 +245,74 @@ impl<P: MLDSAParams, const PK_LEN: usize> SignaturePublicKey<PK_LEN> for MLDSAPu
             ));
         }
         let bytes_sized: [u8; PK_LEN] = bytes[..PK_LEN].try_into().unwrap();
-        Ok(<Self as MLDSAPublicKeyTrait<P, PK_LEN>>::pk_decode(&bytes_sized))
+        Ok(Self::pk_decode(&bytes_sized))
     }
 }
 
-impl<P: MLDSAParams, const PK_LEN: usize> Eq for MLDSAPublicKey<P, PK_LEN> {}
+impl<P: MLDSAParams> Eq for MLDSAPublicKey<P> {}
 
-impl<P: MLDSAParams, const PK_LEN: usize> PartialEq for MLDSAPublicKey<P, PK_LEN> {
+impl<P: MLDSAParams> PartialEq for MLDSAPublicKey<P> {
     fn eq(&self, other: &Self) -> bool {
-        let self_encoded = self.encode();
-        let other_encoded = other.encode();
+        let self_encoded = self.encode_buf();
+        let other_encoded = other.encode_buf();
         bouncycastle_utils::ct::ct_eq_bytes(self_encoded.as_ref(), other_encoded.as_ref())
     }
 }
 
-impl<P: MLDSAParams, const PK_LEN: usize> Debug for MLDSAPublicKey<P, PK_LEN> {
+impl<P: MLDSAParams> Debug for MLDSAPublicKey<P> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
             "MLDSAPublicKey {{ alg: {}, pub_key_hash (tr): {:x?} }}",
             P::ALG_NAME,
-            <Self as MLDSAPublicKeyTrait<P, PK_LEN>>::compute_tr(self),
+            <Self as MLDSAPublicKeyTrait<P>>::compute_tr(self),
         )
     }
 }
 
-impl<P: MLDSAParams, const PK_LEN: usize> Display for MLDSAPublicKey<P, PK_LEN> {
+impl<P: MLDSAParams> Display for MLDSAPublicKey<P> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(
             f,
             "MLDSAPublicKey {{ alg: {}, pub_key_hash (tr): {:x?} }}",
             P::ALG_NAME,
-            <Self as MLDSAPublicKeyTrait<P, PK_LEN>>::compute_tr(self),
+            <Self as MLDSAPublicKeyTrait<P>>::compute_tr(self),
         )
     }
 }
 
-/// A fully expanded ML-DSA public key that includes the intermediate values needed for performing
-/// multiple verification operations against the same public key, which causes the public key struct
-/// to take up more memory, but results in more efficient repeated verify() operations.
-pub struct MLDSAPublicKeyExpanded<
-    P: MLDSAParams,
-    PK: MLDSAPublicKeyInternalTrait<P, PK_LEN>,
-    const PK_LEN: usize,
-> {
-    pub(crate) pk: PK,
+/// An ML-DSA public key with its public matrix 𝐀̂ expanded once, for repeated verifications under
+/// the same key: it borrows the [`MLDSAPublicKey`] and carries the matrix beside it (see the
+/// crate's Memory Usage table), and implements the same verifying roles as the key it borrows.
+/// The encoding is the borrowed key's, [`key()`](Self::key).
+pub struct MLDSAPublicKeyExpanded<'k, P: MLDSAParams> {
+    pub(crate) pk: &'k MLDSAPublicKey<P>,
     pub(crate) A_hat: P::MatrixA,
 }
 
+impl<'k, P: MLDSAParams> MLDSAPublicKeyExpanded<'k, P> {
+    /// The key this expansion was made from.
+    pub fn key(&self) -> &'k MLDSAPublicKey<P> {
+        self.pk
+    }
+}
+
 /// See the note on [`MLDSAPublicKey`]'s `Clone` for why this is not derived.
-impl<P: MLDSAParams, PK: MLDSAPublicKeyInternalTrait<P, PK_LEN>, const PK_LEN: usize> Clone
-    for MLDSAPublicKeyExpanded<P, PK, PK_LEN>
-{
+impl<P: MLDSAParams> Clone for MLDSAPublicKeyExpanded<'_, P> {
     fn clone(&self) -> Self {
-        Self { pk: self.pk.clone(), A_hat: self.A_hat.clone() }
+        Self { pk: self.pk, A_hat: self.A_hat.clone() }
     }
 }
 
-impl<
-    P: MLDSAParams,
-    PK: MLDSAPublicKeyTrait<P, PK_LEN> + MLDSAPublicKeyInternalTrait<P, PK_LEN>,
-    const PK_LEN: usize,
-> SignaturePublicKey<PK_LEN> for MLDSAPublicKeyExpanded<P, PK, PK_LEN>
-{
-    fn encode(&self) -> [u8; PK_LEN] {
-        self.pk.encode()
-    }
-
-    fn encode_out(&self, out: &mut [u8; PK_LEN]) -> usize {
-        out.fill(0);
-
-        self.pk.encode_out(out)
-    }
-
-    fn from_bytes(bytes: &[u8]) -> Result<Self, SignatureError> {
-        if bytes.len() != PK_LEN {
-            return Err(SignatureError::DecodingError(
-                "Provided key bytes are the incorrect length",
-            ));
-        }
-        let bytes_sized: [u8; PK_LEN] = bytes[..PK_LEN].try_into().unwrap();
-        Ok(<Self as MLDSAPublicKeyTrait<P, PK_LEN>>::pk_decode(&bytes_sized))
-    }
-}
-
-impl<
-    P: MLDSAParams,
-    PK: MLDSAPublicKeyTrait<P, PK_LEN> + MLDSAPublicKeyInternalTrait<P, PK_LEN>,
-    const PK_LEN: usize,
-> PartialEq for MLDSAPublicKeyExpanded<P, PK, PK_LEN>
-{
+impl<P: MLDSAParams> PartialEq for MLDSAPublicKeyExpanded<'_, P> {
     fn eq(&self, other: &Self) -> bool {
-        self.pk.eq(&other.pk)
+        self.pk.eq(other.pk)
     }
 }
 
-impl<
-    P: MLDSAParams,
-    PK: MLDSAPublicKeyTrait<P, PK_LEN> + MLDSAPublicKeyInternalTrait<P, PK_LEN>,
-    const PK_LEN: usize,
-> Eq for MLDSAPublicKeyExpanded<P, PK, PK_LEN>
-{
-}
+impl<P: MLDSAParams> Eq for MLDSAPublicKeyExpanded<'_, P> {}
 
-impl<
-    P: MLDSAParams,
-    PK: MLDSAPublicKeyTrait<P, PK_LEN> + MLDSAPublicKeyInternalTrait<P, PK_LEN>,
-    const PK_LEN: usize,
-> Debug for MLDSAPublicKeyExpanded<P, PK, PK_LEN>
-{
+impl<P: MLDSAParams> Debug for MLDSAPublicKeyExpanded<'_, P> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(
             f,
@@ -338,12 +323,7 @@ impl<
     }
 }
 
-impl<
-    P: MLDSAParams,
-    PK: MLDSAPublicKeyTrait<P, PK_LEN> + MLDSAPublicKeyInternalTrait<P, PK_LEN>,
-    const PK_LEN: usize,
-> Display for MLDSAPublicKeyExpanded<P, PK, PK_LEN>
-{
+impl<P: MLDSAParams> Display for MLDSAPublicKeyExpanded<'_, P> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(
             f,
@@ -354,48 +334,35 @@ impl<
     }
 }
 
-impl<
-    P: MLDSAParams,
-    PK: MLDSAPublicKeyTrait<P, PK_LEN> + MLDSAPublicKeyInternalTrait<P, PK_LEN>,
-    const PK_LEN: usize,
-> From<&PK> for MLDSAPublicKeyExpanded<P, PK, PK_LEN>
-{
-    /// Expands the public matrix A once, for repeated verifications under the same public key; the
-    /// expanded object is correspondingly larger (see the crate's Memory Usage table).
-    fn from(pk: &PK) -> Self {
-        let A_hat = pk.A_hat();
-
-        Self { pk: pk.clone(), A_hat }
+impl<'k, P: MLDSAParams> From<&'k MLDSAPublicKey<P>> for MLDSAPublicKeyExpanded<'k, P> {
+    /// Expands the public matrix A once, for repeated verifications under the same public key.
+    fn from(pk: &'k MLDSAPublicKey<P>) -> Self {
+        Self { pk, A_hat: pk.A_hat() }
     }
 }
 
-impl<
-    P: MLDSAParams,
-    PK: MLDSAPublicKeyTrait<P, PK_LEN> + MLDSAPublicKeyInternalTrait<P, PK_LEN>,
-    const PK_LEN: usize,
-> MLDSAPublicKeyTrait<P, PK_LEN> for MLDSAPublicKeyExpanded<P, PK, PK_LEN>
-{
-    fn pk_decode(pk: &[u8; PK_LEN]) -> Self {
-        let pk1 = PK::pk_decode(pk);
-        let A_hat = pk1.A_hat();
-        Self { pk: pk1, A_hat }
-    }
-
-    fn A_hat(&self) -> P::MatrixA {
-        self.A_hat.clone()
-    }
-
+impl<P: MLDSAParams> MLDSAPublicKeyTrait<P> for MLDSAPublicKeyExpanded<'_, P> {
     fn compute_tr(&self) -> [u8; 64] {
         self.pk.compute_tr()
+    }
+
+    /// Verifies with the expanded matrix the key carries.
+    fn verify_mu<const SIG_LEN: usize>(
+        &self,
+        mu: &[u8; MLDSA_MU_LEN],
+        sig: &[u8; SIG_LEN],
+    ) -> Result<(), SignatureError>
+    where
+        P: SignatureLen<SIG_LEN>,
+    {
+        verify_internal::<P, MLDSAPublicKey<P>, SIG_LEN>(self.pk, &self.A_hat, mu, sig)
     }
 }
 
 /// An ML-DSA private key.
-///
-/// See [`MLDSAPublicKey`] for why `SK_LEN` and `PK_LEN` are carried alongside `P`.
 //
 // Dev note: This will automatically inherit the [`Secret`] protections because [`Polynomial`] wraps the underlying data with [`Secret`].
-pub struct MLDSAPrivateKey<P: MLDSAParams, const SK_LEN: usize, const PK_LEN: usize> {
+pub struct MLDSAPrivateKey<P: MLDSAParams> {
     rho: [u8; 32],
     K: Secret<[u8; 32]>,
     tr: [u8; 64],
@@ -413,9 +380,7 @@ pub struct MLDSAPrivateKey<P: MLDSAParams, const SK_LEN: usize, const PK_LEN: us
 }
 
 /// See the note on [`MLDSAPublicKey`]'s `Clone` for why this is not derived.
-impl<P: MLDSAParams, const SK_LEN: usize, const PK_LEN: usize> Clone
-    for MLDSAPrivateKey<P, SK_LEN, PK_LEN>
-{
+impl<P: MLDSAParams> Clone for MLDSAPrivateKey<P> {
     fn clone(&self) -> Self {
         Self {
             rho: self.rho,
@@ -429,13 +394,14 @@ impl<P: MLDSAParams, const SK_LEN: usize, const PK_LEN: usize> Clone
     }
 }
 
-impl<P: MLDSAParams, const SK_LEN: usize, const PK_LEN: usize> MLDSAPrivateKey<P, SK_LEN, PK_LEN> {
+impl<P: MLDSAParams> MLDSAPrivateKey<P> {
     /// Algorithm 24 skEncode(𝜌, 𝐾, 𝑡𝑟, 𝐬1, 𝐬2, 𝐭0)
     /// Encodes a secret key for ML-DSA into a byte string.
     /// Input: 𝜌 ∈ 𝔹32, 𝐾 ∈ 𝔹32, 𝑡𝑟 ∈ 𝔹64 , 𝐬1 ∈ 𝑅ℓ with coefficients in [−𝜂, 𝜂], 𝐬2 ∈ 𝑅𝑘 with
     /// coefficients in [−𝜂, 𝜂], 𝐭0 ∈ 𝑅𝑘 with coefficients in [−2𝑑−1 + 1, 2𝑑−1].
     /// Output: Private key 𝑠𝑘 ∈ 𝔹32+32+64+32⋅((𝑘+ℓ)⋅bitlen (2𝜂)+𝑑𝑘).
-    fn sk_encode_out(&self, out: &mut [u8; SK_LEN]) -> usize {
+    pub(crate) fn sk_encode_out(&self, out: &mut [u8]) -> usize {
+        debug_assert_eq!(out.len(), P::SK_LEN);
         out.fill(0);
 
         // counter of progress along the output buffer
@@ -489,112 +455,30 @@ impl<P: MLDSAParams, const SK_LEN: usize, const PK_LEN: usize> MLDSAPrivateKey<P
             sk_chunk.copy_from_slice(&bit_pack_t0(&t0_i));
         }
 
-        SK_LEN
+        P::SK_LEN
     }
-}
 
-/// General trait for all ML-DSA private keys types.
-pub trait MLDSAPrivateKeyTrait<P: MLDSAParams, const SK_LEN: usize, const PK_LEN: usize>:
-    SignaturePrivateKey<SK_LEN>
-{
-    /// Get a ref to the seed, if there is one stored with this private key
-    fn seed(&self) -> Option<&KeyMaterial<32>>;
+    /// The encoding in a parameter-set-sized `Secret` buffer; see [`MLDSAPublicKey::encode_buf`].
+    fn encode_buf(&self) -> Secret<P::SkEncoded> {
+        let mut out = Secret::<P::SkEncoded>::new();
+        self.sk_encode_out((*out).as_mut());
+        out
+    }
 
-    /// Get a ref to the key hash `tr`.
-    fn tr(&self) -> &[u8; 64];
+    /// The public matrix 𝐀̂ = ExpandA(𝜌), FIPS 204 Algorithm 32; the expanded key caches it.
+    pub(crate) fn A_hat(&self) -> P::MatrixA {
+        expandA::<P>(&self.rho)
+    }
 
-    /// Get the public matrix A_hat.
-    fn A_hat(&self) -> P::MatrixA;
-
-    /// This is a partial implementation of keygen_internal(), and probably not allowed in FIPS mode.
-    fn derive_pk(&self) -> MLDSAPublicKey<P, PK_LEN>;
     /// Algorithm 25 skDecode(𝑠𝑘)
     /// Reverses the procedure skEncode.
     /// Input: Private key 𝑠𝑘 ∈ 𝔹32+32+64+32⋅((ℓ+𝑘)⋅bitlen (2𝜂)+𝑑𝑘).
     /// Output: 𝜌 ∈ 𝔹32, 𝐾 ∈ 𝔹32, 𝑡𝑟 ∈ 𝔹64 ,
     /// 𝐬1 ∈ 𝑅ℓ, 𝐬2 ∈ 𝑅𝑘, 𝐭0 ∈ 𝑅𝑘 with coefficients in [−2𝑑−1 + 1, 2𝑑−1].
-    ///
-    /// Note: this object contains only the simple decoding routine to unpack a semi-expanded key.
-    /// See [`MLDSATrait`] for key generation functions, including derive-from-seed and consistency-check functions.
-    fn sk_decode(sk: &[u8; SK_LEN]) -> Result<Self, SignatureError>;
-}
-
-pub(crate) trait MLDSAPrivateKeyInternalTrait<
-    P: MLDSAParams,
-    const SK_LEN: usize,
-    const PK_LEN: usize,
->
-{
-    /// Not exposing a constructor publicly because you should have to get an instance either by
-    /// running a keygen, or by decoding an existing key.
-    fn new(
-        rho: [u8; 32],
-        K: Secret<[u8; 32]>,
-        tr: [u8; 64],
-        s1_hat: Secret<P::VecL>,
-        s2_hat: Secret<P::VecK>,
-        t0_hat: P::VecK,
-        seed: Option<KeyMaterial<32>>,
-    ) -> Self;
-    /// Get a ref to K
-    fn K(&self) -> &Secret<[u8; 32]>;
-    /// Get a ref to s1
-    fn s1_hat(&self) -> &P::VecL;
-    /// Get a ref to s2
-    fn s2_hat(&self) -> &P::VecK;
-    /// Get a ref to t0
-    fn t0_hat(&self) -> &P::VecK;
-}
-
-impl<P: MLDSAParams, const SK_LEN: usize, const PK_LEN: usize>
-    MLDSAPrivateKeyTrait<P, SK_LEN, PK_LEN> for MLDSAPrivateKey<P, SK_LEN, PK_LEN>
-{
-    fn seed(&self) -> Option<&KeyMaterial<32>> {
-        self.seed.as_ref()
-    }
-
-    fn tr(&self) -> &[u8; 64] {
-        &self.tr
-    }
-
-    fn A_hat(&self) -> P::MatrixA {
-        expandA::<P>(&self.rho)
-    }
-
-    fn derive_pk(&self) -> MLDSAPublicKey<P, PK_LEN> {
-        // 5: 𝐭 ← NTT−1(𝐀 ∘ NTT(𝐬1)) + 𝐬2
-        //   ▷ compute 𝐭 = 𝐀𝐬1 + 𝐬2
-        let mut t = {
-            // scope for A_hat
-            // 3: 𝐀 ← ExpandA(𝜌)
-            //   ▷ 𝐀 is generated and stored in NTT representation as 𝐀
-            let A_hat = expandA::<P>(&self.rho);
-
-            let mut t_ntt = A_hat.matrix_vector_ntt(&self.s1_hat);
-            // Bound-keeping step before NTT⁻¹, not in FIPS 204: see [`Polynomial::reduce32`].
-            t_ntt.reduce32();
-            t_ntt.inv_ntt();
-            t_ntt
-        };
-
-        {
-            // Deviation from the FIPS:
-            // Because s2 is in ntt form, it is necessary to reverse that here before adding it to t
-            let mut s2: Secret<P::VecK> = self.s2_hat.clone();
-            s2.reduce();
-            s2.inv_ntt();
-
-            t.add_vector_ntt(&s2);
-            t.conditional_add_q();
-        }
-        // 6: (𝐭1, 𝐭0) ← Power2Round(𝐭)
-        //   ▷ compress 𝐭
-        //   ▷ PowerTwoRound is applied componentwise (see explanatory text in Section 7.4)
-        let (t1, _) = power_2_round_vec(&t);
-
-        <MLDSAPublicKey<P, PK_LEN> as MLDSAPublicKeyInternalTrait<P, PK_LEN>>::new(self.rho, t1)
-    }
-    fn sk_decode(sk: &[u8; SK_LEN]) -> Result<Self, SignatureError> {
+    pub(crate) fn sk_decode<const SK_LEN: usize>(sk: &[u8; SK_LEN]) -> Result<Self, SignatureError>
+    where
+        P: PrivateKeyLen<SK_LEN>,
+    {
         // Construct the (Secret-protected) key up front and unpack each field directly into it,
         // rather than decoding into unprotected temporaries and copying them in at the end. This
         // way the secret material is written straight into its protected home; and if a range
@@ -672,9 +556,183 @@ impl<P: MLDSAParams, const SK_LEN: usize, const PK_LEN: usize>
     }
 }
 
-impl<P: MLDSAParams, const SK_LEN: usize, const PK_LEN: usize>
-    MLDSAPrivateKeyInternalTrait<P, SK_LEN, PK_LEN> for MLDSAPrivateKey<P, SK_LEN, PK_LEN>
-{
+/// The step every signing path shares: FIPS 204 Algorithm 7 over an externally computed mu with
+/// the randomizer `rnd` already chosen. Crate-private so that `rnd` is never a caller's choice: the
+/// public methods draw it from the caller's RNG (the hedged variant of Section 3.4), and a
+/// known-answer test that must reproduce a vector's `rnd` passes an RNG that returns it.
+pub(crate) trait SignMuWithRnd<P: MLDSAParams> {
+    fn sign_mu_with_rnd_out<const SIG_LEN: usize>(
+        &self,
+        mu: &[u8; MLDSA_MU_LEN],
+        rnd: [u8; MLDSA_RND_LEN],
+        output: &mut [u8; SIG_LEN],
+    ) -> Result<usize, SignatureError>
+    where
+        P: SignatureLen<SIG_LEN>;
+}
+
+/// General trait for all ML-DSA private keys types.
+pub trait MLDSAPrivateKeyTrait<P: MLDSAParams>: Sized + SignMuWithRnd<P> {
+    /// Get a ref to the seed, if there is one stored with this private key
+    fn seed(&self) -> Option<&KeyMaterial<32>>;
+
+    /// Get a ref to the key hash `tr`.
+    fn tr(&self) -> &[u8; 64];
+
+    /// This is a partial implementation of keygen_internal(), and probably not allowed in FIPS mode.
+    fn derive_pk(&self) -> MLDSAPublicKey<P>;
+    /// The message representative mu of `msg` under `ctx`, from the key's `tr`; see
+    /// [`MLDSAPublicKeyTrait::compute_mu`].
+    fn compute_mu(
+        &self,
+        msg: &[u8],
+        ctx: Option<&[u8]>,
+    ) -> Result<[u8; MLDSA_MU_LEN], SignatureError> {
+        let mut mb = self.create_mu_builder(ctx)?;
+        mb.do_update(msg);
+        Ok(mb.do_final())
+    }
+
+    /// The streaming form of [`compute_mu`](Self::compute_mu): a [`MuBuilder`] bound to this
+    /// key's `tr` and to `ctx`, which then takes the message in chunks. `ctx` longer than 255
+    /// bytes is the error of FIPS 204 Algorithm 2, line 1.
+    fn create_mu_builder(&self, ctx: Option<&[u8]>) -> Result<MuBuilder, SignatureError> {
+        MuBuilder::from_tr(self.tr(), ctx)
+    }
+
+    /// Signs an externally computed message representative `mu`: FIPS 204 Algorithm 7 with
+    /// line 6 removed, which FIPS 204 and NIST's FAQ on it allow, the representative being one
+    /// that "may optionally be computed in a different cryptographic module". This is the
+    /// "external mu" interface: the application computes `mu` with
+    /// [`MLDSAPublicKeyTrait::compute_mu`] or [`MuBuilder`] and sends only that to the module
+    /// holding the key, which serves a message too large to move (a network HSM, a smartcard
+    /// over near-field radio) or too sensitive to transmit. The signature is indistinguishable
+    /// from one made over the message by [`SigningKey::create_signer`], and unlike a HashML-DSA
+    /// signature it verifies with a standard ML-DSA verifier, which need not know how `mu` was
+    /// made. The hedged variant: `rnd` is drawn from `rng`.
+    ///
+    /// [`SigningKey::create_signer`]: bouncycastle_core::signature_key::SigningKey::create_signer
+    fn sign_mu<const SIG_LEN: usize>(
+        &self,
+        mu: &[u8; MLDSA_MU_LEN],
+        rng: &mut dyn RNG,
+    ) -> Result<[u8; SIG_LEN], SignatureError>
+    where
+        P: SignatureLen<SIG_LEN>,
+    {
+        let mut out = [0u8; SIG_LEN];
+        self.sign_mu_out(mu, rng, &mut out)?;
+        Ok(out)
+    }
+
+    /// As [`sign_mu`](Self::sign_mu), writing into `output`; returns the number of bytes written.
+    fn sign_mu_out<const SIG_LEN: usize>(
+        &self,
+        mu: &[u8; MLDSA_MU_LEN],
+        rng: &mut dyn RNG,
+        output: &mut [u8; SIG_LEN],
+    ) -> Result<usize, SignatureError>
+    where
+        P: SignatureLen<SIG_LEN>,
+    {
+        self.sign_mu_with_rnd_out(mu, draw_rnd(rng)?, output)
+    }
+
+    /// FIPS 204 Section 3.4, the deterministic variant of [`sign_mu`](Self::sign_mu): `rnd` is
+    /// 32 zero bytes, so the signature is a function of the key and `mu` alone. See the crate
+    /// docs on `rnd` for what that gives up.
+    fn sign_mu_deterministic<const SIG_LEN: usize>(
+        &self,
+        mu: &[u8; MLDSA_MU_LEN],
+    ) -> Result<[u8; SIG_LEN], SignatureError>
+    where
+        P: SignatureLen<SIG_LEN>,
+    {
+        let mut out = [0u8; SIG_LEN];
+        self.sign_mu_deterministic_out(mu, &mut out)?;
+        Ok(out)
+    }
+
+    /// As [`sign_mu_deterministic`](Self::sign_mu_deterministic), writing into `output`.
+    fn sign_mu_deterministic_out<const SIG_LEN: usize>(
+        &self,
+        mu: &[u8; MLDSA_MU_LEN],
+        output: &mut [u8; SIG_LEN],
+    ) -> Result<usize, SignatureError>
+    where
+        P: SignatureLen<SIG_LEN>,
+    {
+        self.sign_mu_with_rnd_out(mu, [0u8; MLDSA_RND_LEN], output)
+    }
+}
+
+pub(crate) trait MLDSAPrivateKeyInternalTrait<P: MLDSAParams>: Sized {
+    /// Not exposing a constructor publicly because you should have to get an instance either by
+    /// running a keygen, or by decoding an existing key.
+    fn new(
+        rho: [u8; 32],
+        K: Secret<[u8; 32]>,
+        tr: [u8; 64],
+        s1_hat: Secret<P::VecL>,
+        s2_hat: Secret<P::VecK>,
+        t0_hat: P::VecK,
+        seed: Option<KeyMaterial<32>>,
+    ) -> Self;
+    /// Get a ref to K
+    fn K(&self) -> &Secret<[u8; 32]>;
+    /// Get a ref to s1
+    fn s1_hat(&self) -> &P::VecL;
+    /// Get a ref to s2
+    fn s2_hat(&self) -> &P::VecK;
+    /// Get a ref to t0
+    fn t0_hat(&self) -> &P::VecK;
+}
+
+impl<P: MLDSAParams> MLDSAPrivateKeyTrait<P> for MLDSAPrivateKey<P> {
+    fn seed(&self) -> Option<&KeyMaterial<32>> {
+        self.seed.as_ref()
+    }
+
+    fn tr(&self) -> &[u8; 64] {
+        &self.tr
+    }
+
+    fn derive_pk(&self) -> MLDSAPublicKey<P> {
+        // 5: 𝐭 ← NTT−1(𝐀 ∘ NTT(𝐬1)) + 𝐬2
+        //   ▷ compute 𝐭 = 𝐀𝐬1 + 𝐬2
+        let mut t = {
+            // scope for A_hat
+            // 3: 𝐀 ← ExpandA(𝜌)
+            //   ▷ 𝐀 is generated and stored in NTT representation as 𝐀
+            let A_hat = expandA::<P>(&self.rho);
+
+            let mut t_ntt = A_hat.matrix_vector_ntt(&self.s1_hat);
+            // Bound-keeping step before NTT⁻¹, not in FIPS 204: see [`Polynomial::reduce32`].
+            t_ntt.reduce32();
+            t_ntt.inv_ntt();
+            t_ntt
+        };
+
+        {
+            // Deviation from the FIPS:
+            // Because s2 is in ntt form, it is necessary to reverse that here before adding it to t
+            let mut s2: Secret<P::VecK> = self.s2_hat.clone();
+            s2.reduce();
+            s2.inv_ntt();
+
+            t.add_vector_ntt(&s2);
+            t.conditional_add_q();
+        }
+        // 6: (𝐭1, 𝐭0) ← Power2Round(𝐭)
+        //   ▷ compress 𝐭
+        //   ▷ PowerTwoRound is applied componentwise (see explanatory text in Section 7.4)
+        let (t1, _) = power_2_round_vec(&t);
+
+        <MLDSAPublicKey<P> as MLDSAPublicKeyInternalTrait<P>>::new(self.rho, t1)
+    }
+}
+
+impl<P: MLDSAParams> MLDSAPrivateKeyInternalTrait<P> for MLDSAPrivateKey<P> {
     fn new(
         rho: [u8; 32],
         K: Secret<[u8; 32]>,
@@ -704,8 +762,8 @@ impl<P: MLDSAParams, const SK_LEN: usize, const PK_LEN: usize>
     }
 }
 
-impl<P: MLDSAParams, const SK_LEN: usize, const PK_LEN: usize> SignaturePrivateKey<SK_LEN>
-    for MLDSAPrivateKey<P, SK_LEN, PK_LEN>
+impl<P: PrivateKeyLen<SK_LEN>, const SK_LEN: usize> SignaturePrivateKey<SK_LEN>
+    for MLDSAPrivateKey<P>
 {
     fn encode(&self) -> [u8; SK_LEN] {
         let mut out = [0u8; SK_LEN];
@@ -729,29 +787,22 @@ impl<P: MLDSAParams, const SK_LEN: usize, const PK_LEN: usize> SignaturePrivateK
         }
         let bytes_sized: [u8; SK_LEN] = bytes[..SK_LEN].try_into().unwrap();
 
-        <Self as MLDSAPrivateKeyTrait<P, SK_LEN, PK_LEN>>::sk_decode(&bytes_sized)
+        Self::sk_decode(&bytes_sized)
     }
 }
 
-impl<P: MLDSAParams, const SK_LEN: usize, const PK_LEN: usize> Eq
-    for MLDSAPrivateKey<P, SK_LEN, PK_LEN>
-{
-}
+impl<P: MLDSAParams> Eq for MLDSAPrivateKey<P> {}
 
-impl<P: MLDSAParams, const SK_LEN: usize, const PK_LEN: usize> PartialEq
-    for MLDSAPrivateKey<P, SK_LEN, PK_LEN>
-{
+impl<P: MLDSAParams> PartialEq for MLDSAPrivateKey<P> {
     fn eq(&self, other: &Self) -> bool {
-        let self_encoded = self.encode();
-        let other_encoded = other.encode();
-        bouncycastle_utils::ct::ct_eq_bytes(self_encoded.as_ref(), other_encoded.as_ref())
+        let self_encoded = self.encode_buf();
+        let other_encoded = other.encode_buf();
+        bouncycastle_utils::ct::ct_eq_bytes((*self_encoded).as_ref(), (*other_encoded).as_ref())
     }
 }
 
 /// Debug impl mainly to prevent the secret key from being printed in logs.
-impl<P: MLDSAParams, const SK_LEN: usize, const PK_LEN: usize> fmt::Debug
-    for MLDSAPrivateKey<P, SK_LEN, PK_LEN>
-{
+impl<P: MLDSAParams> fmt::Debug for MLDSAPrivateKey<P> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
@@ -764,9 +815,7 @@ impl<P: MLDSAParams, const SK_LEN: usize, const PK_LEN: usize> fmt::Debug
 }
 
 /// Display impl mainly to prevent the secret key from being printed in logs.
-impl<P: MLDSAParams, const SK_LEN: usize, const PK_LEN: usize> Display
-    for MLDSAPrivateKey<P, SK_LEN, PK_LEN>
-{
+impl<P: MLDSAParams> Display for MLDSAPrivateKey<P> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(
             f,
@@ -778,66 +827,38 @@ impl<P: MLDSAParams, const SK_LEN: usize, const PK_LEN: usize> Display
     }
 }
 
-/// A fully expanded ML-DSA private key that includes the intermediate values needed for performing
-/// multiple sign operations with the same private key, which causes the private ey struct to take up
-/// more memory, but results in more efficient repeated sign() operations.
-pub struct MLDSAPrivateKeyExpanded<
-    P: MLDSAParams,
-    PK: MLDSAPublicKeyInternalTrait<P, PK_LEN>,
-    SK: MLDSAPrivateKeyTrait<P, SK_LEN, PK_LEN> + MLDSAPrivateKeyInternalTrait<P, SK_LEN, PK_LEN>,
-    const SK_LEN: usize,
-    const PK_LEN: usize,
-> {
-    _phantom: core::marker::PhantomData<PK>,
-    pub(crate) sk: SK,
+/// An ML-DSA private key with its public matrix 𝐀̂ expanded once, for repeated signatures under the
+/// same key: it borrows the [`MLDSAPrivateKey`], so the secret exists in one place, and carries the
+/// matrix beside it (see the crate's Memory Usage table). It implements the same signing roles as
+/// the key it borrows; the encoding is the borrowed key's, [`key()`](Self::key).
+pub struct MLDSAPrivateKeyExpanded<'k, P: MLDSAParams> {
+    pub(crate) sk: &'k MLDSAPrivateKey<P>,
     pub(crate) A_hat: P::MatrixA,
 }
 
+impl<'k, P: MLDSAParams> MLDSAPrivateKeyExpanded<'k, P> {
+    /// The key this expansion was made from.
+    pub fn key(&self) -> &'k MLDSAPrivateKey<P> {
+        self.sk
+    }
+}
+
 /// See the note on [`MLDSAPublicKey`]'s `Clone` for why this is not derived.
-impl<
-    P: MLDSAParams,
-    PK: MLDSAPublicKeyInternalTrait<P, PK_LEN>,
-    SK: MLDSAPrivateKeyTrait<P, SK_LEN, PK_LEN> + MLDSAPrivateKeyInternalTrait<P, SK_LEN, PK_LEN>,
-    const SK_LEN: usize,
-    const PK_LEN: usize,
-> Clone for MLDSAPrivateKeyExpanded<P, PK, SK, SK_LEN, PK_LEN>
-{
+impl<P: MLDSAParams> Clone for MLDSAPrivateKeyExpanded<'_, P> {
     fn clone(&self) -> Self {
-        Self { _phantom: core::marker::PhantomData, sk: self.sk.clone(), A_hat: self.A_hat.clone() }
+        Self { sk: self.sk, A_hat: self.A_hat.clone() }
     }
 }
 
-impl<
-    P: MLDSAParams,
-    PK: MLDSAPublicKeyInternalTrait<P, PK_LEN>,
-    SK: MLDSAPrivateKeyTrait<P, SK_LEN, PK_LEN> + MLDSAPrivateKeyInternalTrait<P, SK_LEN, PK_LEN>,
-    const SK_LEN: usize,
-    const PK_LEN: usize,
-> PartialEq for MLDSAPrivateKeyExpanded<P, PK, SK, SK_LEN, PK_LEN>
-{
+impl<P: MLDSAParams> PartialEq for MLDSAPrivateKeyExpanded<'_, P> {
     fn eq(&self, other: &Self) -> bool {
-        self.sk.eq(&other.sk)
+        self.sk.eq(other.sk)
     }
 }
 
-impl<
-    P: MLDSAParams,
-    PK: MLDSAPublicKeyInternalTrait<P, PK_LEN>,
-    SK: MLDSAPrivateKeyTrait<P, SK_LEN, PK_LEN> + MLDSAPrivateKeyInternalTrait<P, SK_LEN, PK_LEN>,
-    const SK_LEN: usize,
-    const PK_LEN: usize,
-> Eq for MLDSAPrivateKeyExpanded<P, PK, SK, SK_LEN, PK_LEN>
-{
-}
+impl<P: MLDSAParams> Eq for MLDSAPrivateKeyExpanded<'_, P> {}
 
-impl<
-    P: MLDSAParams,
-    PK: MLDSAPublicKeyInternalTrait<P, PK_LEN>,
-    SK: MLDSAPrivateKeyTrait<P, SK_LEN, PK_LEN> + MLDSAPrivateKeyInternalTrait<P, SK_LEN, PK_LEN>,
-    const SK_LEN: usize,
-    const PK_LEN: usize,
-> Debug for MLDSAPrivateKeyExpanded<P, PK, SK, SK_LEN, PK_LEN>
-{
+impl<P: MLDSAParams> Debug for MLDSAPrivateKeyExpanded<'_, P> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(
             f,
@@ -849,14 +870,7 @@ impl<
     }
 }
 
-impl<
-    P: MLDSAParams,
-    PK: MLDSAPublicKeyInternalTrait<P, PK_LEN>,
-    SK: MLDSAPrivateKeyTrait<P, SK_LEN, PK_LEN> + MLDSAPrivateKeyInternalTrait<P, SK_LEN, PK_LEN>,
-    const SK_LEN: usize,
-    const PK_LEN: usize,
-> Display for MLDSAPrivateKeyExpanded<P, PK, SK, SK_LEN, PK_LEN>
-{
+impl<P: MLDSAParams> Display for MLDSAPrivateKeyExpanded<'_, P> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(
             f,
@@ -868,56 +882,14 @@ impl<
     }
 }
 
-impl<
-    P: MLDSAParams,
-    PK: MLDSAPublicKeyInternalTrait<P, PK_LEN>,
-    SK: MLDSAPrivateKeyTrait<P, SK_LEN, PK_LEN> + MLDSAPrivateKeyInternalTrait<P, SK_LEN, PK_LEN>,
-    const SK_LEN: usize,
-    const PK_LEN: usize,
-> From<&SK> for MLDSAPrivateKeyExpanded<P, PK, SK, SK_LEN, PK_LEN>
-{
-    /// Expands the public matrix A once, for repeated signatures under the same private key; the
-    /// expanded object is correspondingly larger (see the crate's Memory Usage table).
-    fn from(sk: &SK) -> Self {
-        let A_hat =
-            <MLDSAPublicKey<P, PK_LEN> as MLDSAPublicKeyTrait<P, PK_LEN>>::A_hat(&sk.derive_pk());
-
-        Self { _phantom: core::marker::PhantomData, sk: sk.clone(), A_hat }
+impl<'k, P: MLDSAParams> From<&'k MLDSAPrivateKey<P>> for MLDSAPrivateKeyExpanded<'k, P> {
+    /// Expands the public matrix A once, for repeated signatures under the same private key.
+    fn from(sk: &'k MLDSAPrivateKey<P>) -> Self {
+        Self { sk, A_hat: sk.A_hat() }
     }
 }
 
-impl<
-    P: MLDSAParams,
-    PK: MLDSAPublicKeyInternalTrait<P, PK_LEN>,
-    SK: MLDSAPrivateKeyTrait<P, SK_LEN, PK_LEN> + MLDSAPrivateKeyInternalTrait<P, SK_LEN, PK_LEN>,
-    const SK_LEN: usize,
-    const PK_LEN: usize,
-> SignaturePrivateKey<SK_LEN> for MLDSAPrivateKeyExpanded<P, PK, SK, SK_LEN, PK_LEN>
-{
-    fn encode(&self) -> [u8; SK_LEN] {
-        self.sk.encode()
-    }
-
-    fn encode_out(&self, out: &mut [u8; SK_LEN]) -> usize {
-        out.fill(0);
-
-        self.sk.encode_out(out)
-    }
-
-    fn from_bytes(bytes: &[u8]) -> Result<Self, SignatureError> {
-        let sk = SK::from_bytes(bytes)?;
-        Ok(Self::from(&sk))
-    }
-}
-
-impl<
-    P: MLDSAParams,
-    PK: MLDSAPublicKeyInternalTrait<P, PK_LEN>,
-    SK: MLDSAPrivateKeyTrait<P, SK_LEN, PK_LEN> + MLDSAPrivateKeyInternalTrait<P, SK_LEN, PK_LEN>,
-    const SK_LEN: usize,
-    const PK_LEN: usize,
-> MLDSAPrivateKeyTrait<P, SK_LEN, PK_LEN> for MLDSAPrivateKeyExpanded<P, PK, SK, SK_LEN, PK_LEN>
-{
+impl<P: MLDSAParams> MLDSAPrivateKeyTrait<P> for MLDSAPrivateKeyExpanded<'_, P> {
     fn seed(&self) -> Option<&KeyMaterial<32>> {
         self.sk.seed()
     }
@@ -926,19 +898,36 @@ impl<
         self.sk.tr()
     }
 
-    fn A_hat(&self) -> P::MatrixA {
-        self.sk.A_hat()
-    }
-
-    fn derive_pk(&self) -> MLDSAPublicKey<P, PK_LEN> {
+    fn derive_pk(&self) -> MLDSAPublicKey<P> {
         self.sk.derive_pk()
     }
+}
 
-    fn sk_decode(sk: &[u8; SK_LEN]) -> Result<Self, SignatureError> {
-        let sk1 = SK::sk_decode(sk)?;
-        let A_hat =
-            <MLDSAPublicKey<P, PK_LEN> as MLDSAPublicKeyTrait<P, PK_LEN>>::A_hat(&sk1.derive_pk());
+impl<P: MLDSAParams> SignMuWithRnd<P> for MLDSAPrivateKey<P> {
+    fn sign_mu_with_rnd_out<const SIG_LEN: usize>(
+        &self,
+        mu: &[u8; MLDSA_MU_LEN],
+        rnd: [u8; MLDSA_RND_LEN],
+        output: &mut [u8; SIG_LEN],
+    ) -> Result<usize, SignatureError>
+    where
+        P: SignatureLen<SIG_LEN>,
+    {
+        sign_internal::<P, Self, SIG_LEN>(self, &self.A_hat(), mu, rnd, output)
+    }
+}
 
-        Ok(Self { _phantom: core::marker::PhantomData, sk: sk1, A_hat })
+impl<P: MLDSAParams> SignMuWithRnd<P> for MLDSAPrivateKeyExpanded<'_, P> {
+    /// Signs with the expanded matrix the key carries.
+    fn sign_mu_with_rnd_out<const SIG_LEN: usize>(
+        &self,
+        mu: &[u8; MLDSA_MU_LEN],
+        rnd: [u8; MLDSA_RND_LEN],
+        output: &mut [u8; SIG_LEN],
+    ) -> Result<usize, SignatureError>
+    where
+        P: SignatureLen<SIG_LEN>,
+    {
+        sign_internal::<P, MLDSAPrivateKey<P>, SIG_LEN>(self.sk, &self.A_hat, mu, rnd, output)
     }
 }

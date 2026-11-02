@@ -8,8 +8,8 @@ use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::symmetric_key::{FromKeyMaterial, MacGenerationKey, MacVerificationKey};
 use bouncycastle_core::traits::MAC;
-use bouncycastle_core_test_framework::FixedSeedRNG;
 use bouncycastle_hex as hex;
+use bouncycastle_rng::FixedSeedRNG;
 
 fn mac_key<const N: usize>(fill: u8) -> KeyMaterial<N> {
     KeyMaterial::<N>::from_bytes_as_type(&[fill; N], KeyType::MACKey).expect("a MAC key")
@@ -106,7 +106,7 @@ fn a_key_below_its_own_strength_is_refused_at_construction() {
 
 #[test]
 fn generate_draws_a_mac_key() {
-    let mut rng = FixedSeedRNG::<32>::new([0x24u8; 32]);
+    let mut rng = FixedSeedRNG::new([0x24u8; 32]);
     let key = AES256Key::<CMAC>::generate(&mut rng).unwrap();
     let tag = key.mac(MSG);
     assert!(key.verify(MSG, &tag));

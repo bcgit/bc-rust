@@ -6,8 +6,8 @@ use bouncycastle_core::key_material::{KeyMaterial, KeyMaterial256, KeyMaterialTr
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::symmetric_key::{FromAnyKeyMaterial, MacGenerationKey, MacVerificationKey};
 use bouncycastle_core::traits::{MAC, SuspendableKeyed};
-use bouncycastle_core_test_framework::FixedSeedRNG;
 use bouncycastle_hmac::{HMAC, HMACParams, HmacKey};
+use bouncycastle_rng::FixedSeedRNG;
 use bouncycastle_sha2::{SHA256, SHA512, SUSPENDED_SHA256_STATE_LEN};
 use bouncycastle_sha3::SHA3_256;
 
@@ -120,24 +120,24 @@ fn construction_applies_the_key_type_and_strength_policy() {
 
 #[test]
 fn generate_draws_a_key_of_the_hash_output_length_at_the_rng_strength() {
-    let mut rng = FixedSeedRNG::<32>::new([0x5Au8; 32]);
+    let mut rng = FixedSeedRNG::new([0x5Au8; 32]);
     let key =
         HmacKey::<SHA256>::generate(&mut rng).expect("a 256-bit RNG suffices for HMAC-SHA256");
     let tag = key.mac(MSG);
     assert!(key.verify(MSG, &tag));
     // A draw from another RNG stream is a different key.
-    let other = HmacKey::<SHA256>::generate(&mut FixedSeedRNG::<32>::new([0xA5u8; 32])).unwrap();
+    let other = HmacKey::<SHA256>::generate(&mut FixedSeedRNG::new([0xA5u8; 32])).unwrap();
     assert!(!other.verify(MSG, &tag));
 
     // The drawn material is the hash's output length, tagged MACKey: the same bytes through
     // `from_key_material` give the same key.
-    let mut rng2 = FixedSeedRNG::<32>::new([0x5Au8; 32]);
+    let mut rng2 = FixedSeedRNG::new([0x5Au8; 32]);
     let mut km = KeyMaterial::<32>::from_rng(&mut rng2).unwrap();
     km.set_key_type(KeyType::MACKey).unwrap();
     assert_eq!(HmacKey::<SHA256>::from_key_material(&km).unwrap().mac(MSG), tag);
 
     // An RNG below the HMAC's strength is refused, through the material's strength tag.
-    let mut weak_rng = FixedSeedRNG::<32>::new([0x5Au8; 32]);
+    let mut weak_rng = FixedSeedRNG::new([0x5Au8; 32]);
     weak_rng.set_security_strength(SecurityStrength::_128bit);
     assert!(HmacKey::<SHA256>::generate(&mut weak_rng).is_ok());
     assert!(matches!(

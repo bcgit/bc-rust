@@ -15,9 +15,9 @@ use bouncycastle_core::traits::{
     Algorithm, BlockCipherDecryptor, BlockCipherEncryptor, RNG, SymmetricCipherDecryptor,
     SymmetricCipherEncryptor,
 };
-use bouncycastle_core_test_framework::FixedSeedRNG;
 use bouncycastle_core_test_framework::block_cipher::TestFrameworkBlockCipher;
 use bouncycastle_core_test_framework::symmetric_ciphers::TestFrameworkSymmetricCipher;
+use bouncycastle_rng::FixedSeedRNG;
 use bouncycastle_rng::hash_drbg80090a::{HashDRBG80090A, HashDRBG80090AParams_SHA256};
 
 const B: usize = 8;
@@ -343,8 +343,7 @@ fn no_padding_adds_nothing_to_aligned_data() {
 
         // Byte for byte the bare cipher's output under the same IV.
         let mut bare = pt.clone();
-        let (mut enc, _) =
-            ToyCbc::do_encrypt_init_rng(&key, &mut FixedSeedRNG::<B>::new(iv)).unwrap();
+        let (mut enc, _) = ToyCbc::do_encrypt_init_rng(&key, &mut FixedSeedRNG::new(iv)).unwrap();
         let (blocks_mut, _) = bare.as_chunks_mut::<B>();
         enc.do_encrypt_blocks_inplace(blocks_mut).unwrap();
         assert_eq!(ct, bare, "{blocks} blocks: the adapter must not alter the ciphertext");

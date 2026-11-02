@@ -22,8 +22,8 @@ use bouncycastle_core::traits::{
     BlockCipherEncryptor, StreamCipherDecryptor, StreamCipherEncryptor, SymmetricCipherDecryptor,
     SymmetricCipherEncryptor,
 };
-use bouncycastle_core_test_framework::FixedSeedRNG;
 use bouncycastle_core_test_framework::symmetric_ciphers::TestFrameworkStreamCipher;
+use bouncycastle_rng::FixedSeedRNG;
 use common::{ForwardOnlyToy, SwappedFourToy, SwappedPairToy, TOY_LEN, Toy, toy_key};
 
 type ToyCfb<Dir> = Cfb<Toy, Dir, TOY_LEN, TOY_LEN>;
@@ -77,8 +77,8 @@ fn pinned_iv() -> [u8; TOY_LEN] {
     core::array::from_fn(|i| 0xF0 ^ (i as u8))
 }
 
-fn pinned_rng(iv: [u8; TOY_LEN]) -> FixedSeedRNG<TOY_LEN> {
-    FixedSeedRNG::<TOY_LEN>::new(iv)
+fn pinned_rng(iv: [u8; TOY_LEN]) -> FixedSeedRNG<[u8; TOY_LEN]> {
+    FixedSeedRNG::new(iv)
 }
 
 fn pinned_encryptor(iv: [u8; TOY_LEN]) -> ToyCfb<Encrypting> {
@@ -400,7 +400,7 @@ fn chunking_matches_a_single_call_over_several_batches() {
         let encryptor = || {
             let (enc, got) = Cfb::<P, Encrypting, KEY_LEN, 16>::do_encrypt_init_rng(
                 &key,
-                &mut FixedSeedRNG::<16>::new(iv),
+                &mut FixedSeedRNG::new(iv),
             )
             .expect("encrypt init");
             assert_eq!(got, iv, "{name}: the pinned RNG should reproduce the IV");

@@ -1,9 +1,12 @@
 use bouncycastle_core::key_material::{KeyMaterial256, KeyType};
-use bouncycastle_core::traits::{SignatureVerifier, Signer};
+use bouncycastle_core::signature_key::{SigningKey, VerifyingKey};
 use bouncycastle_hex as hex;
 use bouncycastle_mldsa_lowmemory::{
-    MLDSA44, MLDSA44_SIG_LEN, MLDSA65, MLDSA65_SIG_LEN, MLDSA87, MLDSA87_SIG_LEN, MLDSATrait,
+    MLDSA44, MLDSA44_SIG_LEN, MLDSA65, MLDSA65_SIG_LEN, MLDSA87, MLDSA87_SIG_LEN,
+    MLDSAPrivateKeyTrait, MLDSATrait,
 };
+use bouncycastle_rng::FixedSeedRNG;
+use bouncycastle_rng::HashDRBG_SHA512;
 use criterion::{Criterion, criterion_group, criterion_main};
 use std::hint::black_box;
 
@@ -69,8 +72,8 @@ fn bench_mldsa_sign(c: &mut Criterion) {
 
     group.bench_function("ML-DSA-44_lowmemory", |b| {
         b.iter(|| {
-            let mu = MLDSA44::compute_mu_from_sk(&mldsa44_sk, msg, None).unwrap();
-            let sig = MLDSA44::sign_mu_deterministic(&mldsa44_sk, &mu, rnd).unwrap();
+            let mu = mldsa44_sk.compute_mu(msg, None).unwrap();
+            let sig = mldsa44_sk.sign_mu(&mu, &mut FixedSeedRNG::new(rnd)).unwrap();
             black_box(sig);
             rnd[31] = rnd[31].wrapping_add(1);
         })
@@ -81,8 +84,8 @@ fn bench_mldsa_sign(c: &mut Criterion) {
 
     group.bench_function("ML-DSA-65_lowmemory", |b| {
         b.iter(|| {
-            let mu = MLDSA65::compute_mu_from_sk(&mldsa65_sk, msg, None).unwrap();
-            let sig = MLDSA65::sign_mu_deterministic(&mldsa65_sk, &mu, rnd).unwrap();
+            let mu = mldsa65_sk.compute_mu(msg, None).unwrap();
+            let sig = mldsa65_sk.sign_mu(&mu, &mut FixedSeedRNG::new(rnd)).unwrap();
             black_box(sig);
             rnd[31] = rnd[31].wrapping_add(1);
         })
@@ -94,8 +97,8 @@ fn bench_mldsa_sign(c: &mut Criterion) {
 
     group.bench_function("ML-DSA-87_lowmemory", |b| {
         b.iter(|| {
-            let mu = MLDSA87::compute_mu_from_sk(&mldsa87_sk, msg, None).unwrap();
-            let sig = MLDSA87::sign_mu_deterministic(&mldsa87_sk, &mu, rnd).unwrap();
+            let mu = mldsa87_sk.compute_mu(msg, None).unwrap();
+            let sig = mldsa87_sk.sign_mu(&mu, &mut FixedSeedRNG::new(rnd)).unwrap();
             black_box(sig);
             rnd[31] = rnd[31].wrapping_add(1);
         })
@@ -125,7 +128,12 @@ fn bench_mldsa_verify(c: &mut Criterion) {
     let mut sigs = Vec::<([u8; MLDSA44_SIG_LEN], u128)>::with_capacity(1000);
 
     for ctx in 0..1000u128 {
-        sigs.push((MLDSA44::sign(&mldsa44_sk, msg, Some(&ctx.to_le_bytes())).unwrap(), ctx));
+        sigs.push((
+            mldsa44_sk
+                .sign(&mut HashDRBG_SHA512::new_from_os(), msg, Some(&ctx.to_le_bytes()))
+                .unwrap(),
+            ctx,
+        ));
     }
 
     group.throughput(criterion::Throughput::Elements(sigs.len() as u64));
@@ -133,8 +141,7 @@ fn bench_mldsa_verify(c: &mut Criterion) {
     group.bench_function("ML-DSA-44_lowmemory", |b| {
         b.iter(|| {
             for (sig, ctx) in &sigs {
-                black_box(MLDSA44::verify(&mldsa44_pk, msg, Some(&ctx.to_le_bytes()), sig))
-                    .unwrap();
+                black_box(mldsa44_pk.verify(msg, Some(&ctx.to_le_bytes()), sig)).unwrap();
             }
         })
     });
@@ -147,7 +154,12 @@ fn bench_mldsa_verify(c: &mut Criterion) {
     let mut sigs = Vec::<([u8; MLDSA65_SIG_LEN], u128)>::with_capacity(1000);
 
     for ctx in 0..1000u128 {
-        sigs.push((MLDSA65::sign(&mldsa65_sk, msg, Some(&ctx.to_le_bytes())).unwrap(), ctx));
+        sigs.push((
+            mldsa65_sk
+                .sign(&mut HashDRBG_SHA512::new_from_os(), msg, Some(&ctx.to_le_bytes()))
+                .unwrap(),
+            ctx,
+        ));
     }
 
     group.throughput(criterion::Throughput::Elements(sigs.len() as u64));
@@ -155,8 +167,7 @@ fn bench_mldsa_verify(c: &mut Criterion) {
     group.bench_function("ML-DSA-65_lowmemory", |b| {
         b.iter(|| {
             for (sig, ctx) in &sigs {
-                black_box(MLDSA65::verify(&mldsa65_pk, msg, Some(&ctx.to_le_bytes()), sig))
-                    .unwrap();
+                black_box(mldsa65_pk.verify(msg, Some(&ctx.to_le_bytes()), sig)).unwrap();
             }
         })
     });
@@ -169,7 +180,12 @@ fn bench_mldsa_verify(c: &mut Criterion) {
     let mut sigs = Vec::<([u8; MLDSA87_SIG_LEN], u128)>::with_capacity(1000);
 
     for ctx in 0..1000u128 {
-        sigs.push((MLDSA87::sign(&mldsa87_sk, msg, Some(&ctx.to_le_bytes())).unwrap(), ctx));
+        sigs.push((
+            mldsa87_sk
+                .sign(&mut HashDRBG_SHA512::new_from_os(), msg, Some(&ctx.to_le_bytes()))
+                .unwrap(),
+            ctx,
+        ));
     }
 
     group.throughput(criterion::Throughput::Elements(sigs.len() as u64));
@@ -177,8 +193,7 @@ fn bench_mldsa_verify(c: &mut Criterion) {
     group.bench_function("ML-DSA-87_lowmemory", |b| {
         b.iter(|| {
             for (sig, ctx) in &sigs {
-                black_box(MLDSA87::verify(&mldsa87_pk, msg, Some(&ctx.to_le_bytes()), sig))
-                    .unwrap();
+                black_box(mldsa87_pk.verify(msg, Some(&ctx.to_le_bytes()), sig)).unwrap();
             }
         })
     });

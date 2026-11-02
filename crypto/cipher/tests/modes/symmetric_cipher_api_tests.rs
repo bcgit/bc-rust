@@ -169,7 +169,7 @@ fn a_short_output_buffer_is_refused_without_consuming_anything() {
 
     let (mut fresh, _) = ToyCfb::<Encrypting>::do_encrypt_init_rng(
         &key,
-        &mut bouncycastle_core_test_framework::FixedSeedRNG::<TOY_LEN>::new(init),
+        &mut bouncycastle_rng::FixedSeedRNG::new(init),
     )
     .unwrap();
     let mut reference = plaintext.clone();

@@ -27,9 +27,9 @@ use bouncycastle_core::symmetric_key::FromKeyMaterial;
 use bouncycastle_core::traits::{
     AEADCipherDecryptor, AEADCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
 };
-use bouncycastle_core_test_framework::FixedSeedRNG;
 use bouncycastle_core_test_framework::aead::TestFrameworkAEADCipher;
 use bouncycastle_hex as hex;
+use bouncycastle_rng::FixedSeedRNG;
 
 /// Appendix C's key, the same in all four examples: `40414243 44454647 48494a4b 4c4d4e4f`.
 const APPENDIX_C_KEY: &str = "404142434445464748494a4b4c4d4e4f";
@@ -332,7 +332,7 @@ fn the_fixed_frame_pair_agrees_with_the_direct_api_on_appendix_c3() {
     // The trait generates the nonce; feed it Appendix C.3's so the answer is comparable, and check
     // it came back, so an implementation that ignored the RNG could not pass silently.
     let nonce_seed: [u8; 12] = nonce_bytes.clone().try_into().expect("12-byte nonce");
-    let mut rng = FixedSeedRNG::<12>::new(nonce_seed);
+    let mut rng = FixedSeedRNG::new(nonce_seed);
     let (mut enc, nonce) = Enc::do_encrypt_init_rng(&k, &mut rng).expect("init");
     assert_eq!(&nonce[..], &nonce_bytes[..], "the generated nonce must come from the RNG");
 
@@ -372,7 +372,7 @@ fn the_fixed_frame_pair_agrees_with_the_direct_api_on_appendix_c3() {
     // The inline layout through the inherited `SymmetricCipher*` methods: C.3's `C` is exactly
     // `ciphertext || tag`, with the tag as the final's output, and the decryptor takes the tag
     // back off its end.
-    let mut rng = FixedSeedRNG::<12>::new(nonce_seed);
+    let mut rng = FixedSeedRNG::new(nonce_seed);
     let (mut enc, nonce) = Enc::do_encrypt_init_rng(&k, &mut rng).expect("init");
     enc.do_update_aad(&aad).expect("aad");
     let mut inline = vec![0u8; 24];
@@ -513,7 +513,7 @@ fn exact_lengths_are_accepted_whole_and_split() {
     let nonce_seed = [0x24u8; 12];
 
     let (mut enc, nonce) =
-        Enc::do_encrypt_init_rng(&k, &mut FixedSeedRNG::<12>::new(nonce_seed)).expect("init");
+        Enc::do_encrypt_init_rng(&k, &mut FixedSeedRNG::new(nonce_seed)).expect("init");
     enc.do_update_aad(&aad).expect("AAD exactly filling the capacity is accepted");
     let mut sealed = [0u8; 48];
     assert_eq!(enc.do_encrypt_out(&message, &mut sealed).expect("exactly DATA_LEN"), 32);
@@ -521,7 +521,7 @@ fn exact_lengths_are_accepted_whole_and_split() {
     sealed[32..].copy_from_slice(&tag);
 
     let (mut enc, _) =
-        Enc::do_encrypt_init_rng(&k, &mut FixedSeedRNG::<12>::new(nonce_seed)).expect("init");
+        Enc::do_encrypt_init_rng(&k, &mut FixedSeedRNG::new(nonce_seed)).expect("init");
     enc.do_update_aad(&aad[..20]).expect("part");
     enc.do_update_aad(&aad[20..]).expect("exactly fills the remaining capacity");
     let mut split = [0u8; 48];
@@ -662,7 +662,7 @@ fn trait_one_shots_take_any_length_and_agree_with_the_in_place_one_shot() {
     type Dec = CcmDecryptor<AES128Internal, 16, 16, 12, 16, 48, 48>;
     let k = key::<16>(APPENDIX_C_KEY);
     let perm = AES128Internal::new(&k).unwrap();
-    let rng = || FixedSeedRNG::<12>::new([0x24u8; 12]);
+    let rng = || FixedSeedRNG::new([0x24u8; 12]);
 
     // The frame, one byte either side of it, nothing, and well past it; AAD at, under and past
     // the capacity.
@@ -772,7 +772,7 @@ fn every_final_refuses_a_payload_of_the_wrong_length() {
     // An encryptor fed `supplied` of the 8 declared bytes.
     let enc = |supplied: usize| {
         let (mut enc, _) =
-            Enc::do_encrypt_init_rng(&k, &mut FixedSeedRNG::<12>::new(nonce_seed)).expect("init");
+            Enc::do_encrypt_init_rng(&k, &mut FixedSeedRNG::new(nonce_seed)).expect("init");
         enc.do_update_aad(aad).expect("aad");
         let mut out = [0u8; 8];
         enc.do_encrypt_out(&frame[..supplied], &mut out).expect("update");
@@ -825,7 +825,7 @@ fn every_final_refuses_a_payload_of_the_wrong_length() {
     let mut ct = [0u8; 8];
     {
         let (mut e, _) =
-            Enc::do_encrypt_init_rng(&k, &mut FixedSeedRNG::<12>::new(nonce_seed)).expect("init");
+            Enc::do_encrypt_init_rng(&k, &mut FixedSeedRNG::new(nonce_seed)).expect("init");
         e.do_update_aad(aad).expect("aad");
         e.do_encrypt_out(&frame, &mut ct).expect("update");
         e.do_encrypt_final().expect("final");

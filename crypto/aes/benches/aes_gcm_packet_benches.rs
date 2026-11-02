@@ -22,7 +22,7 @@ use bouncycastle_core::symmetric_key::{AeadDecryptionKey, AeadEncryptionKey, Fro
 use bouncycastle_core::traits::{
     AEADCipherDecryptor, AEADCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
 };
-use bouncycastle_core_test_framework::FixedSeedRNG;
+use bouncycastle_rng::FixedSeedRNG;
 use bouncycastle_rng::HashDRBG_SHA512;
 use criterion::{BatchSize, Criterion, Throughput, criterion_group, criterion_main};
 use std::hint::black_box;
@@ -41,8 +41,8 @@ fn material() -> KeyMaterial<32> {
     KeyMaterial::<32>::from_bytes_as_type(&bytes, KeyType::SymmetricCipherKey).expect("a valid key")
 }
 
-fn rng() -> FixedSeedRNG<NONCE_LEN> {
-    FixedSeedRNG::<NONCE_LEN>::new([0x24u8; NONCE_LEN])
+fn rng() -> FixedSeedRNG<[u8; NONCE_LEN]> {
+    FixedSeedRNG::new([0x24u8; NONCE_LEN])
 }
 
 /// Encrypt one packet and finish: the shape of both encrypt arms once the encryptor exists.

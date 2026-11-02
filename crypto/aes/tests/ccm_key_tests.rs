@@ -13,15 +13,15 @@ use bouncycastle_core::symmetric_key::{
     AeadDecryptWorker, AeadEncryptWorker, AeadPacketDecryptionKey, AeadPacketEncryptionKey,
     FromKeyMaterial,
 };
-use bouncycastle_core_test_framework::FixedSeedRNG;
+use bouncycastle_rng::FixedSeedRNG;
 
 fn material<const N: usize>() -> KeyMaterial<N> {
     let bytes: [u8; N] = core::array::from_fn(|i| (i as u8).wrapping_mul(7).wrapping_add(1));
     KeyMaterial::<N>::from_bytes_as_type(&bytes, KeyType::SymmetricCipherKey).expect("a valid key")
 }
 
-fn rng() -> FixedSeedRNG<12> {
-    FixedSeedRNG::<12>::new([0x24u8; 12])
+fn rng() -> FixedSeedRNG<[u8; 12]> {
+    FixedSeedRNG::new([0x24u8; 12])
 }
 
 const AAD: &[u8] = b"header, sent in the clear";

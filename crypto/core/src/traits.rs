@@ -1341,75 +1341,6 @@ pub trait BlockCipherPadding<const BLOCK_LEN: usize> {
     fn unpad(block: &[u8; BLOCK_LEN]) -> Result<usize, PaddingError>;
 }
 
-/// Pre-Hashed Signature Verifier is an extension to [`SignatureVerifier`] that adds functionality specific to signature
-/// primatives that can operate on a pre-hashed message instead of the full message.
-pub trait PHSignatureVerifier<
-    PK: SignaturePublicKey<PK_LEN>,
-    const PK_LEN: usize,
-    const SIG_LEN: usize,
-    const PH_LEN: usize,
->: SignatureVerifier<PK, PK_LEN, SIG_LEN>
-{
-    /// On success, returns Ok(())
-    /// On failure, returns Err([`SignatureError::SignatureVerificationFailed`]); may also return other types of [`SignatureError`] as appropriate (such as for invalid-length inputs).
-    fn verify_ph(
-        pk: &PK,
-        ph: &[u8; PH_LEN],
-        ctx: Option<&[u8]>,
-        sig: &[u8],
-    ) -> Result<(), SignatureError>;
-}
-
-/// Pre-Hashed Signer is an extension to [`Signer`] that adds functionality specific to signature
-/// primatives that can operate on a pre-hashed message instead of the full message.
-pub trait PHSigner<
-    PK: SignaturePublicKey<PK_LEN>,
-    SK: SignaturePrivateKey<SK_LEN>,
-    const PK_LEN: usize,
-    const SK_LEN: usize,
-    const SIG_LEN: usize,
-    const PH_LEN: usize,
->: Signer<SK, SK_LEN, SIG_LEN>
-{
-    /// Produce a signature for the provided pre-hashed message and context.
-    ///
-    /// `ctx` accepts a zero-length byte array.
-    ///
-    /// A note about the `ctx` context parameter:
-    /// This is a newer addition to cryptographic signature primitives. It allows for binding the
-    /// signature to some external property of the application so that a signature will fail to validate
-    /// if removed from its intended context.
-    /// This is particularly useful at preventing content confusion attacks between data formats that
-    /// have very similar data structures, for example S/MIME emails, signed PDFs, and signed executables
-    /// that all use the Cryptographic Message Syntax (CMS) data format, or multiple data objects that
-    /// all use the JWS data format.
-    /// To be properly effective, the ctx value must not be under the control of the attacker, which generally
-    /// means that it needs to be a value that is never transmitted over the wire, but rather is something
-    /// known to the application by context.
-    /// For example, "email" vs "pdf" would be a good choice since the application should know what it is
-    /// attempting to sign or verify.
-    /// The `ctx` param can also be used to bind the signed content to a transaction ID or a username,
-    /// but care should be taken to ensure that an attacker attempting a
-    /// content confusion attack not also cause the signed / verifier to use an incorrect transaction ID or username.
-    ///
-    /// Not all signature primitives will support a context value, so you may need to consult the
-    /// documentation for the underlying primitive for how it handles a ctx in that case, for example, it
-    /// might throw an error, ignore the provided ctx value, or append the ctx to the msg in a non-standard way.
-    fn sign_ph(
-        sk: &SK,
-        ph: &[u8; PH_LEN],
-        ctx: Option<&[u8]>,
-    ) -> Result<[u8; SIG_LEN], SignatureError>;
-    /// Returns the number of bytes written to the output buffer. Can be called with an oversized buffer.
-    /// The entire output buffer is zeroized before the signature is written.
-    fn sign_ph_out(
-        sk: &SK,
-        ph: &[u8; PH_LEN],
-        ctx: Option<&[u8]>,
-        output: &mut [u8; SIG_LEN],
-    ) -> Result<usize, SignatureError>;
-}
-
 /// An interface for random number generation.
 /// This interface is meant to be simpler and more ergonomic than the interfaces provided by the
 /// `rng` crate, but that one should
@@ -1478,117 +1409,42 @@ pub trait SignaturePublicKey<const PK_LEN: usize>:
     fn from_bytes(bytes: &[u8]) -> Result<Self, SignatureError>;
 }
 
-/// A digital signature algorithm is defined as a set of three operations:
-/// key generation, signing, and verification.
-///
-/// This trait represents the verification operations performed by the holder of the verification public key.
-/// Keygen and signing operations are performed by the corresponding [`Signer`] trait.
-/// There are several reasons for this split: first is architectural; some complex algorithms may
-/// benefit from having the signature generation and verification implementations split into separate modules.
-/// Second is for compliance: sometimes a policy soft-deprecates an algorithm so that new signatures
-/// can no longer be created, but existing signatures can still be verified. Splitting the traits
-/// makes this policy easier to enforce.
-///
-/// Here we statically-size the arrays used to encode public keys, private keys, and signature values
-/// because this allows us to safely remove runtime checks for array lengths, which overall reduces
-/// the fallibility of the library. This design choice could make this trait complicated to apply
-/// to a signature algorithm that do not have fixed sizes for the encodings of these objects.
-pub trait SignatureVerifier<
-    PK: SignaturePublicKey<PK_LEN>,
-    const PK_LEN: usize,
-    const SIG_LEN: usize,
->: Sized
-{
-    /// On success, returns Ok(())
-    /// On failure, returns Err([`SignatureError::SignatureVerificationFailed`]); may also return other types of [`SignatureError`] as appropriate (such as for invalid-length inputs).
-    fn verify(pk: &PK, msg: &[u8], ctx: Option<&[u8]>, sig: &[u8]) -> Result<(), SignatureError>;
+/// The signing half of a signature in progress: the streaming worker a signing key hands out
+/// through [`SigningKey`](crate::signature_key::SigningKey) or
+/// [`DeterministicSigningKey`](crate::signature_key::DeterministicSigningKey). The key and any
+/// randomness the algorithm needs were fixed when the worker was made, so the message is the only
+/// input left.
+pub trait SignatureSigner<const SIG_LEN: usize>: AlgorithmInfo + Sized {
+    /// Absorbs the next chunk of the message. May be called any number of times with chunks of
+    /// any size; a sequence of calls is equivalent to one call over the concatenation.
+    fn do_update(&mut self, msg_chunk: &[u8]);
 
-    /// streaming verification API
-    fn do_verify_init(pk: &PK, ctx: Option<&[u8]>) -> Result<Self, SignatureError>;
+    /// Produces the signature. Consumes the worker.
+    ///
+    /// # Errors
+    /// Whatever the algorithm's own signing step can fail with; the key, the context and any
+    /// randomness were checked when the worker was made.
+    fn do_final(self) -> Result<[u8; SIG_LEN], SignatureError>;
 
-    // todo: make this a AsRef<[u8]> ?
-    /// Update the verifier with the next chunk of data.
-    /// This can be called multiple times.
-    fn do_verify_update(&mut self, msg_chunk: &[u8]);
-
-    /// On success, returns Ok(())
-    /// On failure, returns Err([`SignatureError::SignatureVerificationFailed`]); may also return other types of [`SignatureError`] as appropriate (such as for invalid-length inputs).
-    fn do_verify_final(self, sig: &[u8]) -> Result<(), SignatureError>;
+    /// As [`do_final`](Self::do_final), into `output`, which is zeroized first; returns
+    /// the number of bytes written, always `SIG_LEN`.
+    fn do_final_out(self, output: &mut [u8; SIG_LEN]) -> Result<usize, SignatureError>;
 }
 
-/// A digital signature algorithm is defined as a set of three operations:
-/// key generation, signing, and verification.
-///
-/// This trait represents the operations performed by the holder of the signing private key:
-/// which include signing and key generation. Verification operations are performed by the corresponding
-/// [`SignatureVerifier`] trait.
-/// There are several reasons for this split: first is architectural; some complex algorithms may
-/// benefit from having the signature generation and verification implementations split into separate modules.
-/// Second is for compliance: sometimes a policy soft-deprecates an algorithm so that new signatures
-/// can no longer be created, but existing signatures can still be verified. Splitting the traits
-/// makes this policy easier to enforce.
-///
-/// This high-level trait defines the operations over a generic signature algorithm that is assumed
-/// to source all its randomness from bouncycastle's default os-backed RNG.
-/// The underlying signature primitives will expose APIs that allow for specifying a specific RNG
-/// or deterministic seed values.
-///
-/// The arrays used to encode public keys, private keys, and signature values are statically-sized
-/// because this allows us to safely remove runtime checks for array lengths, which overall reduces
-/// the fallibility of the library. This design choice could make this trait complicated to apply
-/// to a signature algorithm that do not have fixed sizes for the encodings of these objects.
-pub trait Signer<SK: SignaturePrivateKey<SK_LEN>, const SK_LEN: usize, const SIG_LEN: usize>:
-    Sized
-{
-    /// Produce a signature for the provided message and context.
-    /// Both the `msg` and `ctx` accept zero-length byte arrays.
+/// The verifying half of a signature in progress: the streaming worker a verifying key hands out
+/// through [`VerifyingKey`](crate::signature_key::VerifyingKey). It is a separate trait from
+/// [`SignatureSigner`] so that a key, or a policy, can allow verification without signing.
+pub trait SignatureVerifier: AlgorithmInfo + Sized {
+    /// Absorbs the next chunk of the message. May be called any number of times with chunks of
+    /// any size; a sequence of calls is equivalent to one call over the concatenation.
+    fn do_update(&mut self, msg_chunk: &[u8]);
+
+    /// Checks `sig` against the message absorbed so far. Consumes the worker.
     ///
-    /// A note about the `ctx` context parameter:
-    /// This is a newer addition to cryptographic signature primitives. It allows for binding the
-    /// signature to some external property of the application so that a signature will fail to validate
-    /// if removed from its intended context.
-    /// This is particularly useful at preventing content confusion attacks between data formats that
-    /// have very similar data structures, for example S/MIME emails, signed PDFs, and signed executables
-    /// that all use the Cryptographic Message Syntax (CMS) data format, or multiple data objects that
-    /// all use the JWS data format.
-    /// To be properly effective, the ctx value must not be under the control of the attacker, which generally
-    /// means that it needs to be a value that is never transmitted over the wire, but rather is something
-    /// known to the application by context.
-    /// For example, "email" vs "pdf" would be a good choice since the application should know what it is
-    /// attempting to sign or verify.
-    /// The `ctx` param can also be used to bind the signed content to a transaction ID or a username,
-    /// but care should be taken to ensure that an attacker attempting a
-    /// content confusion attack not also cause the signed / verifier to use an incorrect transaction ID or username.
-    ///
-    /// Not all signature primitives will support a context value, so you may need to consult the
-    /// documentation for the underlying primitive for how it handles a ctx in that case, for example, it
-    /// might throw an error, ignore the provided ctx value, or append the ctx to the msg in a non-standard way.
-    fn sign(sk: &SK, msg: &[u8], ctx: Option<&[u8]>) -> Result<[u8; SIG_LEN], SignatureError>;
-
-    /// Returns the number of bytes written to the output buffer. Can be called with an oversized buffer.
-    /// The entire output buffer is zeroized before the signature is written.
-    fn sign_out(
-        sk: &SK,
-        msg: &[u8],
-        ctx: Option<&[u8]>,
-        output: &mut [u8; SIG_LEN],
-    ) -> Result<usize, SignatureError>;
-
-    /* streaming signing API */
-    /// Initialize a signer for streaming mode with the provided private key.
-    fn do_sign_init(sk: &SK, ctx: Option<&[u8]>) -> Result<Self, SignatureError>;
-
-    // todo: make this a AsRef<[u8]> ?
-    /// Update the signer with the next chunk of data.
-    /// This can be called multiple times.
-    fn do_sign_update(&mut self, msg_chunk: &[u8]);
-
-    /// Complete the signing operation. Consumes self.
-    fn do_sign_final(self) -> Result<[u8; SIG_LEN], SignatureError>;
-
-    /// Returns the number of bytes written to the output buffer. Can be called with an oversized buffer.
-    /// The entire output buffer is zeroized before the signature is written.
-    fn do_sign_final_out(self, output: &mut [u8; SIG_LEN]) -> Result<usize, SignatureError>;
+    /// # Errors
+    /// [`SignatureError::SignatureVerificationFailed`] if the signature does not verify;
+    /// [`SignatureError::LengthError`] if `sig` is not the algorithm's signature length.
+    fn do_verify_final(self, sig: &[u8]) -> Result<(), SignatureError>;
 }
 
 /// The decryption half of a stream cipher's streaming API; see [`StreamCipherEncryptor`], whose

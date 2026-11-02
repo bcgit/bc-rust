@@ -10,7 +10,7 @@ use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{
     AEADCipherDecryptor, AEADCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
 };
-use bouncycastle_core_test_framework::FixedSeedRNG;
+use bouncycastle_rng::FixedSeedRNG;
 
 const MSG: &[u8] = b"the quick brown fox jumps over the lazy dog, twice over, for two blocks";
 
@@ -35,7 +35,7 @@ fn stream_through(enc: &mut dyn SymmetricCipherEncryptor<16, 16, 16>, plaintext:
 #[test]
 fn cbc_streams_through_a_trait_object() {
     let key = key_material();
-    let mut rng = FixedSeedRNG::<16>::new([7u8; 16]);
+    let mut rng = FixedSeedRNG::new([7u8; 16]);
     let (mut enc, iv) =
         AES_CBC_128::<Encrypting, PKCS7>::do_encrypt_init_rng(&key, &mut rng).unwrap();
 
@@ -68,7 +68,7 @@ fn aad_and_stream_through(
 #[test]
 fn gcm_streams_through_a_trait_object() {
     let key = key_material();
-    let mut rng = FixedSeedRNG::<12>::new([9u8; 12]);
+    let mut rng = FixedSeedRNG::new([9u8; 12]);
     let (mut enc, nonce) = AES_GCM_128::<Encrypting>::do_encrypt_init_rng(&key, &mut rng).unwrap();
 
     let mut ct = aad_and_stream_through(&mut enc, b"header", MSG);

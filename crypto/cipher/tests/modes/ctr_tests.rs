@@ -32,8 +32,8 @@ use bouncycastle_core::traits::{
     StreamCipherDecryptor, StreamCipherEncryptor, SymmetricCipherDecryptor,
     SymmetricCipherEncryptor,
 };
-use bouncycastle_core_test_framework::FixedSeedRNG;
 use bouncycastle_core_test_framework::symmetric_ciphers::TestFrameworkStreamCipher;
+use bouncycastle_rng::FixedSeedRNG;
 use common::{ForwardOnlyToy, SwappedFourToy, SwappedPairToy, TOY_LEN, Toy, toy_key};
 
 /// The default shape under test: a 12-byte nonce, so a 4-byte counter.
@@ -78,8 +78,8 @@ fn pinned_nonce() -> [u8; NONCE_LEN] {
     core::array::from_fn(|i| 0xA0 ^ (i as u8))
 }
 
-fn pinned_rng(nonce: [u8; NONCE_LEN]) -> FixedSeedRNG<NONCE_LEN> {
-    FixedSeedRNG::<NONCE_LEN>::new(nonce)
+fn pinned_rng(nonce: [u8; NONCE_LEN]) -> FixedSeedRNG<[u8; NONCE_LEN]> {
+    FixedSeedRNG::new(nonce)
 }
 
 fn pinned_encryptor(nonce: [u8; NONCE_LEN]) -> ToyCtr<Encrypting> {
@@ -221,7 +221,7 @@ fn check_counter_blocks<const N: usize>(blocks: usize) {
 
     let (mut e, got) = Ctr::<Toy, Encrypting, TOY_LEN, TOY_LEN, N>::do_encrypt_init_rng(
         &key,
-        &mut FixedSeedRNG::<N>::new(nonce),
+        &mut FixedSeedRNG::new(nonce),
     )
     .unwrap();
     assert_eq!(got, nonce);
@@ -320,11 +320,9 @@ fn the_counter_limit_is_enforced() {
     let nonce: [u8; SHORT_CTR_NONCE_LEN] = core::array::from_fn(|i| 0x5A ^ (i as u8));
 
     let encryptor = || {
-        let (e, got) = TinyCtr::<Encrypting>::do_encrypt_init_rng(
-            &key,
-            &mut FixedSeedRNG::<SHORT_CTR_NONCE_LEN>::new(nonce),
-        )
-        .unwrap();
+        let (e, got) =
+            TinyCtr::<Encrypting>::do_encrypt_init_rng(&key, &mut FixedSeedRNG::new(nonce))
+                .unwrap();
         assert_eq!(got, nonce);
         e
     };
@@ -393,7 +391,7 @@ fn the_counter_limit_is_enforced_at_two_bytes_too() {
     let encryptor = || {
         let (e, got) = Ctr::<Toy, Encrypting, TOY_LEN, TOY_LEN, NONCE>::do_encrypt_init_rng(
             &key,
-            &mut FixedSeedRNG::<NONCE>::new(nonce),
+            &mut FixedSeedRNG::new(nonce),
         )
         .unwrap();
         assert_eq!(got, nonce);
@@ -438,11 +436,9 @@ fn neither_direction_uses_the_inverse_cipher() {
     let nonce = pinned_nonce();
     let plaintext = message(11 * TOY_LEN + 5);
 
-    let (mut e, _) = ForwardOnlyCtr::<Encrypting>::do_encrypt_init_rng(
-        &key,
-        &mut FixedSeedRNG::<NONCE_LEN>::new(nonce),
-    )
-    .unwrap();
+    let (mut e, _) =
+        ForwardOnlyCtr::<Encrypting>::do_encrypt_init_rng(&key, &mut FixedSeedRNG::new(nonce))
+            .unwrap();
     let mut ct = plaintext.clone();
     e.do_encrypt_inplace(&mut ct).unwrap();
 
@@ -523,7 +519,7 @@ fn chunking_matches_a_single_call_over_several_batches() {
         let encryptor = || {
             let (e, got) = Ctr::<P, Encrypting, KEY_LEN, 16, 12>::do_encrypt_init_rng(
                 &key,
-                &mut FixedSeedRNG::<12>::new(nonce),
+                &mut FixedSeedRNG::new(nonce),
             )
             .expect("encrypt init");
             assert_eq!(got, nonce, "{name}: the pinned RNG should reproduce the nonce");
@@ -707,7 +703,7 @@ fn every_permitted_nonce_length_works() {
 
         let (mut e, got) = Ctr::<Toy, Encrypting, TOY_LEN, TOY_LEN, N>::do_encrypt_init_rng(
             &key,
-            &mut FixedSeedRNG::<N>::new(nonce),
+            &mut FixedSeedRNG::new(nonce),
         )
         .unwrap();
         assert_eq!(got, nonce);

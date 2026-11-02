@@ -40,8 +40,8 @@ use bouncycastle_core::traits::{
     StreamCipherDecryptor, StreamCipherEncryptor, SymmetricCipherDecryptor,
     SymmetricCipherEncryptor,
 };
-use bouncycastle_core_test_framework::FixedSeedRNG;
 use bouncycastle_hex as hex;
+use bouncycastle_rng::FixedSeedRNG;
 
 const BLOCK_LEN: usize = 16;
 
@@ -148,7 +148,7 @@ where
     for chunk in [plaintext.len()].into_iter().chain(CHUNKINGS) {
         let (mut enc, got_iv) = Cfb8::<P, Encrypting, KEY_LEN, BLOCK_LEN>::do_encrypt_init_rng(
             &key,
-            &mut FixedSeedRNG::<BLOCK_LEN>::new(iv),
+            &mut FixedSeedRNG::new(iv),
         )
         .unwrap();
         assert_eq!(got_iv, iv, "{section}: the pinned RNG should produce the vector's IV");

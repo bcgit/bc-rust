@@ -36,25 +36,26 @@
 //! let (pk, sk) = MLDSA65::keygen_from_seed(&seed).unwrap();
 //! ```
 //!
-//! [`MLDSATrait::sign_mu_deterministic_from_seed`] and [`MLDSATrait::sign_init_from_seed`] sign
-//! straight from a seed; each expands the key with [`MLDSATrait::keygen_from_seed`] first, so a
-//! caller that signs more than once should keep the expanded private key.
+//! A key stored as its seed is expanded with [`MLDSATrait::keygen_from_seed`] each time it is
+//! needed, so a caller that signs more than once should keep the expanded private key.
 //!
 //! ## Generating and Verifying Signatures
 //!
 //! ```rust
 //! use bouncycastle_mldsa::{MLDSA65, MLDSATrait};
-//! use bouncycastle_core::traits::{Signer, SignatureVerifier};
+//! use bouncycastle_core::signature_key::{SigningKey, VerifyingKey};
+//! use bouncycastle_rng::HashDRBG_SHA512;
 //! use bouncycastle_core::errors::SignatureError;
 //!
 //! let msg = b"The quick brown fox";
 //!
 //! let (pk, sk) = MLDSA65::keygen().unwrap();
 //!
-//! let sig = MLDSA65::sign(&sk, msg, None).unwrap();
+//! let mut rng = HashDRBG_SHA512::new_from_os();
+//! let sig = sk.sign(&mut rng, msg, None).unwrap();
 //! // This is the signature value that you can save to a file or whatever you need.
 //!
-//! match MLDSA65::verify(&pk, msg, None, &sig) {
+//! match pk.verify(msg, None, &sig) {
 //!     Ok(()) => println!("Signature is valid!"),
 //!     Err(SignatureError::SignatureVerificationFailed) => println!("Signature is invalid!"),
 //!     Err(e) => panic!("Something else went wrong: {:?}", e),
@@ -75,14 +76,15 @@
 //! | ML-DSA-65  | 1952            | 6176              | 4032            | 17584             |
 //! | ML-DSA-87  | 2592            | 8224              | 4896            | 23728             |
 //!
-//! The following table lists the size of the on-disk bytes encoding and the in-memory struct size of the
-//! expanded key objects that pre-expand the public matrix A for faster repeated verify() operations:
+//! The expanded key objects, which pre-expand the public matrix A for faster repeated sign() and
+//! verify() operations, borrow the key above and add the matrix; their in-memory size is that
+//! matrix plus a reference, on top of the key they borrow:
 //!
-//! | Key Object          | PK size on disk | PK size in memory | SK Size on disk | SK size in memory |
-//! |---------------------|-----------------|-------------------|-----------------|-------------------|
-//! | ML-DSA-44_expanded  | 1312            | 20512             | 2560            | 28848             |
-//! | ML-DSA-65_expanded  | 1952            | 36896             | 4032            | 48304             |
-//! | ML-DSA-87_expanded  | 2592            | 65568             | 4896            | 81072             |
+//! | Key Object          | PK size in memory | SK size in memory |
+//! |---------------------|-------------------|-------------------|
+//! | ML-DSA-44_expanded  | 16392             | 16392             |
+//! | ML-DSA-65_expanded  | 30728             | 30728             |
+//! | ML-DSA-87_expanded  | 57352             | 57352             |
 //!
 //! All values are in bytes. The "in memory" sizes are measured by rust's `std::mem::size_of`.
 //!
@@ -146,7 +148,7 @@
 #[allow(unused_imports)]
 use bouncycastle_core::key_material::KeyMaterialTrait;
 #[allow(unused_imports)]
-use bouncycastle_core::traits::{SignatureVerifier, Signer};
+use bouncycastle_core::signature_key::{SigningKey, VerifyingKey};
 
 mod aux_functions;
 pub mod hash_mldsa;
@@ -171,6 +173,7 @@ pub use mldsa_keys::{
     MLDSAPublicKeyExpanded,
 };
 pub use mldsa_keys::{MLDSAPrivateKeyTrait, MLDSAPublicKeyTrait};
+pub use params::{PrivateKeyLen, PublicKeyLen, SignatureLen};
 
 /*** Exported constants ***/
 pub use mldsa::ML_DSA_44_NAME;

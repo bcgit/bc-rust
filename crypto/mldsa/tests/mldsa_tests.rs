@@ -55,11 +55,12 @@ mod mldsa_tests {
     use bouncycastle_core::hazmat::do_hazardous_operations;
     use bouncycastle_core::key_material::{KeyMaterial256, KeyMaterialTrait, KeyType};
     use bouncycastle_core::security_strength::SecurityStrength;
+    use bouncycastle_core::signature_key::{DeterministicSigningKey, SigningKey, VerifyingKey};
     use bouncycastle_core::traits::{
-        Hash, RNG, SignaturePrivateKey, SignaturePublicKey, SignatureVerifier, Signer, Suspendable,
+        Hash, RNG, SignaturePrivateKey, SignaturePublicKey, SignatureSigner, SignatureVerifier,
+        Suspendable,
     };
     use bouncycastle_core_test_framework::DUMMY_SEED;
-    use bouncycastle_core_test_framework::FixedSeedRNG;
     use bouncycastle_core_test_framework::signature::*;
     use bouncycastle_hex as hex;
     use bouncycastle_mldsa::{
@@ -72,14 +73,54 @@ mod mldsa_tests {
         MLDSA65_SK_LEN, MLDSA87_PK_LEN, MLDSA87_SIG_LEN, MLDSA87_SK_LEN,
     };
     use bouncycastle_mldsa::{MLDSAPrivateKeyTrait, MLDSAPublicKeyTrait, MLDSATrait};
+    use bouncycastle_rng::FixedSeedRNG;
+    use bouncycastle_rng::HashDRBG_SHA512;
 
     #[test]
     fn test_framework_signature() {
-        let tf = TestFrameworkSignature::new(false, true);
+        let tf = TestFrameworkSignature::new(true);
 
-        tf.test_signature::<MLDSA44PublicKey, MLDSA44PrivateKey, MLDSA44, MLDSA44, MLDSA44_PK_LEN, MLDSA44_SK_LEN, MLDSA44_SIG_LEN>(MLDSA44::keygen, false);
-        tf.test_signature::<MLDSA65PublicKey, MLDSA65PrivateKey, MLDSA65, MLDSA65, MLDSA65_PK_LEN, MLDSA65_SK_LEN, MLDSA65_SIG_LEN>(MLDSA65::keygen, false);
-        tf.test_signature::<MLDSA87PublicKey, MLDSA87PrivateKey, MLDSA87, MLDSA87, MLDSA87_PK_LEN, MLDSA87_SK_LEN, MLDSA87_SIG_LEN>(MLDSA87::keygen, false);
+        tf.test_signature::<MLDSA44, MLDSA44PublicKey, MLDSA44PrivateKey, MLDSA44_SIG_LEN>(
+            MLDSA44::keygen,
+            false,
+        );
+        tf.test_signature::<MLDSA65, MLDSA65PublicKey, MLDSA65PrivateKey, MLDSA65_SIG_LEN>(
+            MLDSA65::keygen,
+            false,
+        );
+        tf.test_signature::<MLDSA87, MLDSA87PublicKey, MLDSA87PrivateKey, MLDSA87_SIG_LEN>(
+            MLDSA87::keygen,
+            false,
+        );
+    }
+
+    /// The deterministic variant, through the framework's suite; the expanded key signs the same.
+    #[test]
+    fn test_framework_deterministic_signature() {
+        use bouncycastle_mldsa::{MLDSA65PrivateKeyExpanded, MLDSA65PublicKeyExpanded};
+        let tf = TestFrameworkSignature::new(true);
+        tf.test_deterministic_signature::<MLDSA44, MLDSA44PublicKey, MLDSA44PrivateKey, MLDSA44_SIG_LEN>(MLDSA44::keygen, false);
+        tf.test_deterministic_signature::<MLDSA65, MLDSA65PublicKey, MLDSA65PrivateKey, MLDSA65_SIG_LEN>(MLDSA65::keygen, false);
+        tf.test_deterministic_signature::<MLDSA87, MLDSA87PublicKey, MLDSA87PrivateKey, MLDSA87_SIG_LEN>(MLDSA87::keygen, false);
+
+        // FIPS 204 Section 3.4: the deterministic variant is the hedged one with rnd all zeros,
+        // on every path.
+        let (pk, sk) = MLDSA65::keygen().unwrap();
+        let msg = b"deterministic is hedged with rnd = 0";
+        let hedged_zero = sk.sign(&mut FixedSeedRNG::new([0u8; 32]), msg, Some(b"ctx")).unwrap();
+        assert_eq!(sk.sign_deterministic(msg, Some(b"ctx")).unwrap(), hedged_zero);
+        let mu = sk.compute_mu(msg, Some(b"ctx")).unwrap();
+        assert_eq!(sk.sign_mu_deterministic(&mu).unwrap(), hedged_zero);
+        let mut out = [0u8; MLDSA65_SIG_LEN];
+        assert_eq!(sk.sign_mu_deterministic_out(&mu, &mut out).unwrap(), MLDSA65_SIG_LEN);
+        assert_eq!(out, hedged_zero);
+        pk.verify(msg, Some(b"ctx"), &hedged_zero).unwrap();
+
+        // the expanded keys sign and verify the deterministic variant like the keys they borrow
+        let sk_expanded = MLDSA65PrivateKeyExpanded::from(&sk);
+        assert_eq!(sk_expanded.sign_deterministic(msg, Some(b"ctx")).unwrap(), hedged_zero);
+        assert_eq!(sk_expanded.sign_mu_deterministic(&mu).unwrap(), hedged_zero);
+        MLDSA65PublicKeyExpanded::from(&pk).verify(msg, Some(b"ctx"), &hedged_zero).unwrap();
     }
 
     /// The full bit-flipping suite of the framework, several minutes per parameter set:
@@ -87,11 +128,20 @@ mod mldsa_tests {
     #[test]
     #[ignore]
     fn test_framework_signature_extensive() {
-        let tf = TestFrameworkSignature::new(false, true);
+        let tf = TestFrameworkSignature::new(true);
 
-        tf.test_signature::<MLDSA44PublicKey, MLDSA44PrivateKey, MLDSA44, MLDSA44, MLDSA44_PK_LEN, MLDSA44_SK_LEN, MLDSA44_SIG_LEN>(MLDSA44::keygen, true);
-        tf.test_signature::<MLDSA65PublicKey, MLDSA65PrivateKey, MLDSA65, MLDSA65, MLDSA65_PK_LEN, MLDSA65_SK_LEN, MLDSA65_SIG_LEN>(MLDSA65::keygen, true);
-        tf.test_signature::<MLDSA87PublicKey, MLDSA87PrivateKey, MLDSA87, MLDSA87, MLDSA87_PK_LEN, MLDSA87_SK_LEN, MLDSA87_SIG_LEN>(MLDSA87::keygen, true);
+        tf.test_signature::<MLDSA44, MLDSA44PublicKey, MLDSA44PrivateKey, MLDSA44_SIG_LEN>(
+            MLDSA44::keygen,
+            true,
+        );
+        tf.test_signature::<MLDSA65, MLDSA65PublicKey, MLDSA65PrivateKey, MLDSA65_SIG_LEN>(
+            MLDSA65::keygen,
+            true,
+        );
+        tf.test_signature::<MLDSA87, MLDSA87PublicKey, MLDSA87PrivateKey, MLDSA87_SIG_LEN>(
+            MLDSA87::keygen,
+            true,
+        );
     }
 
     #[test]
@@ -386,41 +436,43 @@ mod mldsa_tests {
             [0u8; 32]
         };
 
-        let mu = MLDSA44::compute_mu_from_sk(
-            &sk,
-            &hex::decode(MLDSA44_KAT1.message).unwrap(),
-            Some(&hex::decode(MLDSA44_KAT1.ctx).unwrap()),
-        )
-        .unwrap();
-        let sig = MLDSA44::sign_mu_deterministic(&sk, None, &mu, rnd).unwrap();
+        let mu = sk
+            .compute_mu(
+                &hex::decode(MLDSA44_KAT1.message).unwrap(),
+                Some(&hex::decode(MLDSA44_KAT1.ctx).unwrap()),
+            )
+            .unwrap();
+        let sig = sk.sign_mu(&mu, &mut FixedSeedRNG::new(rnd)).unwrap();
         assert_eq!(&sig, &*hex::decode(MLDSA44_KAT1.signature).unwrap());
-        MLDSA44::verify(
-            &sk.derive_pk(),
-            &hex::decode(MLDSA44_KAT1.message).unwrap(),
-            Some(&hex::decode(MLDSA44_KAT1.ctx).unwrap()),
-            &sig,
-        )
-        .unwrap();
+        sk.derive_pk()
+            .verify(
+                &hex::decode(MLDSA44_KAT1.message).unwrap(),
+                Some(&hex::decode(MLDSA44_KAT1.ctx).unwrap()),
+                &sig,
+            )
+            .unwrap();
 
         // test the streaming API on the same value
-        let mut s =
-            MLDSA44::do_sign_init(&sk, Some(&hex::decode(MLDSA44_KAT1.ctx).unwrap())).unwrap();
-        s.set_signer_rnd(rnd);
-        s.do_sign_update(&hex::decode(MLDSA44_KAT1.message).unwrap());
-        let sig = s.do_sign_final().unwrap();
+        let mut s = sk
+            .create_signer(
+                &mut FixedSeedRNG::new(rnd),
+                Some(&hex::decode(MLDSA44_KAT1.ctx).unwrap()),
+            )
+            .unwrap();
+        s.do_update(&hex::decode(MLDSA44_KAT1.message).unwrap());
+        let sig = s.do_final().unwrap();
         let decoded_sig: [u8; MLDSA44_SIG_LEN] =
             hex::decode(MLDSA44_KAT1.signature).unwrap().try_into().unwrap();
         assert_eq!(&sig, &decoded_sig);
 
         // Then with the message broken into chunks
-        let mut s = MLDSA44::do_sign_init(&sk, Some(b"streaming API chunked")).unwrap();
-        s.set_signer_rnd(rnd);
+        let mut s =
+            sk.create_signer(&mut FixedSeedRNG::new(rnd), Some(b"streaming API chunked")).unwrap();
         for msg_chunk in DUMMY_SEED.chunks(100) {
-            s.do_sign_update(msg_chunk);
+            s.do_update(msg_chunk);
         }
-        let sig_val = s.do_sign_final().unwrap();
-        MLDSA44::verify(&sk.derive_pk(), DUMMY_SEED, Some(b"streaming API chunked"), &sig_val)
-            .unwrap();
+        let sig_val = s.do_final().unwrap();
+        sk.derive_pk().verify(DUMMY_SEED, Some(b"streaming API chunked"), &sig_val).unwrap();
 
         // ML-DSA-65
 
@@ -433,29 +485,32 @@ mod mldsa_tests {
             [0u8; 32]
         };
 
-        let mu = MLDSA65::compute_mu_from_sk(
-            &sk,
-            &hex::decode(MLDSA65_KAT1.message).unwrap(),
-            Some(&hex::decode(MLDSA65_KAT1.ctx).unwrap()),
-        )
-        .unwrap();
-        let sig = MLDSA65::sign_mu_deterministic(&sk, None, &mu, rnd).unwrap();
+        let mu = sk
+            .compute_mu(
+                &hex::decode(MLDSA65_KAT1.message).unwrap(),
+                Some(&hex::decode(MLDSA65_KAT1.ctx).unwrap()),
+            )
+            .unwrap();
+        let sig = sk.sign_mu(&mu, &mut FixedSeedRNG::new(rnd)).unwrap();
         assert_eq!(&sig, &*hex::decode(MLDSA65_KAT1.signature).unwrap());
 
-        MLDSA65::verify(
-            &sk.derive_pk(),
-            &hex::decode(MLDSA65_KAT1.message).unwrap(),
-            Some(&hex::decode(MLDSA65_KAT1.ctx).unwrap()),
-            &sig,
-        )
-        .unwrap();
+        sk.derive_pk()
+            .verify(
+                &hex::decode(MLDSA65_KAT1.message).unwrap(),
+                Some(&hex::decode(MLDSA65_KAT1.ctx).unwrap()),
+                &sig,
+            )
+            .unwrap();
 
         // test the streaming API on the same value
-        let mut s =
-            MLDSA65::do_sign_init(&sk, Some(&hex::decode(MLDSA65_KAT1.ctx).unwrap())).unwrap();
-        s.set_signer_rnd(rnd);
-        s.do_sign_update(&hex::decode(MLDSA65_KAT1.message).unwrap());
-        let sig = s.do_sign_final().unwrap();
+        let mut s = sk
+            .create_signer(
+                &mut FixedSeedRNG::new(rnd),
+                Some(&hex::decode(MLDSA65_KAT1.ctx).unwrap()),
+            )
+            .unwrap();
+        s.do_update(&hex::decode(MLDSA65_KAT1.message).unwrap());
+        let sig = s.do_final().unwrap();
         let decoded_sig: [u8; MLDSA65_SIG_LEN] =
             hex::decode(MLDSA65_KAT1.signature).unwrap().try_into().unwrap();
         assert_eq!(&sig, &decoded_sig);
@@ -471,29 +526,32 @@ mod mldsa_tests {
             [0u8; 32]
         };
 
-        let mu = MLDSA87::compute_mu_from_sk(
-            &sk,
-            &hex::decode(MLDSA87_KAT1.message).unwrap(),
-            Some(&hex::decode(MLDSA87_KAT1.ctx).unwrap()),
-        )
-        .unwrap();
-        let sig = MLDSA87::sign_mu_deterministic(&sk, None, &mu, rnd).unwrap();
+        let mu = sk
+            .compute_mu(
+                &hex::decode(MLDSA87_KAT1.message).unwrap(),
+                Some(&hex::decode(MLDSA87_KAT1.ctx).unwrap()),
+            )
+            .unwrap();
+        let sig = sk.sign_mu(&mu, &mut FixedSeedRNG::new(rnd)).unwrap();
         assert_eq!(&sig, &*hex::decode(MLDSA87_KAT1.signature).unwrap());
 
-        MLDSA87::verify(
-            &sk.derive_pk(),
-            &hex::decode(MLDSA87_KAT1.message).unwrap(),
-            Some(&hex::decode(MLDSA87_KAT1.ctx).unwrap()),
-            &sig,
-        )
-        .unwrap();
+        sk.derive_pk()
+            .verify(
+                &hex::decode(MLDSA87_KAT1.message).unwrap(),
+                Some(&hex::decode(MLDSA87_KAT1.ctx).unwrap()),
+                &sig,
+            )
+            .unwrap();
 
         // Test the streaming API on the same value
-        let mut s =
-            MLDSA87::do_sign_init(&sk, Some(&hex::decode(MLDSA87_KAT1.ctx).unwrap())).unwrap();
-        s.set_signer_rnd(rnd);
-        s.do_sign_update(&hex::decode(MLDSA87_KAT1.message).unwrap());
-        let sig = s.do_sign_final().unwrap();
+        let mut s = sk
+            .create_signer(
+                &mut FixedSeedRNG::new(rnd),
+                Some(&hex::decode(MLDSA87_KAT1.ctx).unwrap()),
+            )
+            .unwrap();
+        s.do_update(&hex::decode(MLDSA87_KAT1.message).unwrap());
+        let sig = s.do_final().unwrap();
         let decoded_sig: [u8; MLDSA87_SIG_LEN] =
             hex::decode(MLDSA87_KAT1.signature).unwrap().try_into().unwrap();
         assert_eq!(&sig, &decoded_sig);
@@ -512,10 +570,10 @@ mod mldsa_tests {
         let (pk, sk) = MLDSA44::keygen().unwrap();
 
         let sk_expanded = MLDSA44PrivateKeyExpanded::from(&sk);
-        let sig = MLDSA44::sign_with_expanded_key(&sk_expanded, msg, None).unwrap();
+        let sig = sk_expanded.sign(&mut HashDRBG_SHA512::new_from_os(), msg, None).unwrap();
 
         let pk_expanded = MLDSA44PublicKeyExpanded::from(&pk);
-        match MLDSA44::verify_with_expanded_key(&pk_expanded, msg, None, &sig) {
+        match pk_expanded.verify(msg, None, &sig) {
             Ok(()) => { /* Signature is valid! */ }
             Err(SignatureError::SignatureVerificationFailed) => println!("Signature is invalid!"),
             Err(e) => panic!("Something else went wrong: {:?}", e),
@@ -526,10 +584,10 @@ mod mldsa_tests {
         let (pk, sk) = MLDSA65::keygen().unwrap();
 
         let sk_expanded = MLDSA65PrivateKeyExpanded::from(&sk);
-        let sig = MLDSA65::sign_with_expanded_key(&sk_expanded, msg, None).unwrap();
+        let sig = sk_expanded.sign(&mut HashDRBG_SHA512::new_from_os(), msg, None).unwrap();
 
         let pk_expanded = MLDSA65PublicKeyExpanded::from(&pk);
-        match MLDSA65::verify_with_expanded_key(&pk_expanded, msg, None, &sig) {
+        match pk_expanded.verify(msg, None, &sig) {
             Ok(()) => { /* Signature is valid! */ }
             Err(SignatureError::SignatureVerificationFailed) => println!("Signature is invalid!"),
             Err(e) => panic!("Something else went wrong: {:?}", e),
@@ -540,10 +598,10 @@ mod mldsa_tests {
         let (pk, sk) = MLDSA87::keygen().unwrap();
 
         let sk_expanded = MLDSA87PrivateKeyExpanded::from(&sk);
-        let sig = MLDSA87::sign_with_expanded_key(&sk_expanded, msg, None).unwrap();
+        let sig = sk_expanded.sign(&mut HashDRBG_SHA512::new_from_os(), msg, None).unwrap();
 
         let pk_expanded = MLDSA87PublicKeyExpanded::from(&pk);
-        match MLDSA87::verify_with_expanded_key(&pk_expanded, msg, None, &sig) {
+        match pk_expanded.verify(msg, None, &sig) {
             Ok(()) => { /* Signature is valid! */ }
             Err(SignatureError::SignatureVerificationFailed) => { /* Signature is invalid! */ }
             Err(e) => panic!("Something else went wrong: {:?}", e),
@@ -555,55 +613,40 @@ mod mldsa_tests {
         let sk_expanded = MLDSA44PrivateKeyExpanded::from(&sk);
         let mut sig = [0u8; MLDSA44_SIG_LEN];
         let bytes_written =
-            MLDSA44::sign_with_expanded_key_out(&sk_expanded, msg, None, &mut sig).unwrap();
+            sk_expanded.sign_out(&mut HashDRBG_SHA512::new_from_os(), msg, None, &mut sig).unwrap();
         assert_eq!(bytes_written, MLDSA44_SIG_LEN);
 
         let pk_expanded = MLDSA44PublicKeyExpanded::from(&pk);
-        match MLDSA44::verify_with_expanded_key(&pk_expanded, msg, None, &sig) {
+        match pk_expanded.verify(msg, None, &sig) {
             Ok(()) => { /* Signature is valid! */ }
             Err(SignatureError::SignatureVerificationFailed) => println!("Signature is invalid!"),
             Err(e) => panic!("Something else went wrong: {:?}", e),
         }
 
-        /* sign_mu_with_expanded_key_out() */
+        /* external mu with an expanded key's matrix */
         let (pk, sk) = MLDSA44::keygen().unwrap();
 
         let sk_expanded = MLDSA44PrivateKeyExpanded::from(&sk);
         let mut sig = [0u8; MLDSA44_SIG_LEN];
-        let bytes_written = MLDSA44::sign_mu_with_expanded_key_out(
-            &sk_expanded,
-            None,
-            &MLDSA44::compute_mu_from_pk(&pk, msg, None).unwrap(),
-            &mut sig,
-        )
-        .unwrap();
+        let bytes_written = sk_expanded
+            .sign_mu_out(
+                &pk.compute_mu(msg, None).unwrap(),
+                &mut HashDRBG_SHA512::new_from_os(),
+                &mut sig,
+            )
+            .unwrap();
         assert_eq!(bytes_written, MLDSA44_SIG_LEN);
 
         let pk_expanded = MLDSA44PublicKeyExpanded::from(&pk);
-        match MLDSA44::verify_with_expanded_key(&pk_expanded, msg, None, &sig) {
+        match pk_expanded.verify(msg, None, &sig) {
             Ok(()) => { /* Signature is valid! */ }
             Err(SignatureError::SignatureVerificationFailed) => println!("Signature is invalid!"),
-            Err(e) => panic!("Something else went wrong: {:?}", e),
-        }
-
-        // Negative test -- signing with the wrong A_hat gives a signature that doesn't verify
-        let (pk, sk) = MLDSA44::keygen().unwrap();
-        let (pk1, _sk) = MLDSA44::keygen().unwrap();
-        let a_hat1 = pk1.A_hat();
-
-        let mu = MuBuilder::compute_mu(&pk.compute_tr(), msg, None).unwrap();
-        let sig = MLDSA44::sign_mu(&sk, Some(&a_hat1), &mu).unwrap();
-
-        let pk_expanded = MLDSA44PublicKeyExpanded::from(&pk);
-        match MLDSA44::verify_with_expanded_key(&pk_expanded, msg, None, &sig) {
-            Ok(()) => panic!("Signature is valid!"),
-            Err(SignatureError::SignatureVerificationFailed) => { /* Signature is invalid! */ }
             Err(e) => panic!("Something else went wrong: {:?}", e),
         }
     }
 
     #[test]
-    fn test_sign_mu_deterministic_from_seed() {
+    fn test_sign_mu_rnd_from_seed() {
         // No KAT available at the moment, so it is tested dynamically against the regular implementation
 
         // ML-DSA-44
@@ -631,40 +674,36 @@ mod mldsa_tests {
 
         // BEGIN expected values
         let (_, expected_sk) = MLDSA44::keygen_from_seed(&seed).unwrap();
-        let expected_mu = MLDSA44::compute_mu_from_sk(
-            &expected_sk,
-            &hex::decode(MLDSA44_KAT1.message).unwrap(),
-            Some(&hex::decode(MLDSA44_KAT1.ctx).unwrap()),
-        )
-        .unwrap();
+        let expected_mu = expected_sk
+            .compute_mu(
+                &hex::decode(MLDSA44_KAT1.message).unwrap(),
+                Some(&hex::decode(MLDSA44_KAT1.ctx).unwrap()),
+            )
+            .unwrap();
         let mut expected_sig = [0u8; MLDSA44_SIG_LEN];
-        let bytes_written = MLDSA44::sign_mu_deterministic_out(
-            &expected_sk, None, &expected_mu, rnd, &mut expected_sig,
-        )
-        .unwrap();
+        let bytes_written = expected_sk
+            .sign_mu_out(&expected_mu, &mut FixedSeedRNG::new(rnd), &mut expected_sig)
+            .unwrap();
         assert_eq!(bytes_written, MLDSA44_SIG_LEN);
         // END expected values
 
-        let mu = MLDSA44::compute_mu_from_tr(
-            &tr,
-            &hex::decode(MLDSA44_KAT1.message).unwrap(),
-            Some(&hex::decode(MLDSA44_KAT1.ctx).unwrap()),
-        )
-        .unwrap();
+        let mut mb =
+            MuBuilder::from_tr(&tr, Some(&hex::decode(MLDSA44_KAT1.ctx).unwrap())).unwrap();
+        mb.do_update(&hex::decode(MLDSA44_KAT1.message).unwrap());
+        let mu = mb.do_final();
         assert_eq!(&expected_mu, &mu);
 
-        let sig = MLDSA44::sign_mu_deterministic_from_seed(&seed, &mu, rnd).unwrap();
+        let (_, sk) = MLDSA44::keygen_from_seed(&seed).unwrap();
+        let sig = sk.sign_mu(&mu, &mut FixedSeedRNG::new(rnd)).unwrap();
         assert_eq!(&sig, &expected_sig);
 
         let mut sig = [0u8; MLDSA44_SIG_LEN];
-        let bytes_written =
-            MLDSA44::sign_mu_deterministic_from_seed_out(&seed, &mu, rnd, &mut sig).unwrap();
+        let bytes_written = sk.sign_mu_out(&mu, &mut FixedSeedRNG::new(rnd), &mut sig).unwrap();
         assert_eq!(bytes_written, MLDSA44_SIG_LEN);
         assert_eq!(&sig, &expected_sig);
 
         let (pk, _) = MLDSA44::keygen_from_seed(&seed).unwrap();
-        MLDSA44::verify(
-            &pk,
+        pk.verify(
             &hex::decode(MLDSA44_KAT1.message).unwrap(),
             Some(&hex::decode(MLDSA44_KAT1.ctx).unwrap()),
             &sig,
@@ -679,7 +718,7 @@ mod mldsa_tests {
         .unwrap();
         assert_eq!(wrong_len_seed.key_len(), 30);
 
-        match MLDSA44::sign_mu_deterministic_from_seed_out(&wrong_len_seed, &mu, rnd, &mut sig) {
+        match MLDSA44::keygen_from_seed(&wrong_len_seed) {
             Err(SignatureError::KeyGenError(_)) => { /* good */ }
             _ => panic!("Expected KeyGenError"),
         };
@@ -692,7 +731,7 @@ mod mldsa_tests {
         .unwrap();
         assert_eq!(wrong_type_seed.key_type(), KeyType::SymmetricCipherKey);
 
-        match MLDSA44::sign_mu_deterministic_from_seed_out(&wrong_type_seed, &mu, rnd, &mut sig) {
+        match MLDSA44::keygen_from_seed(&wrong_type_seed) {
             Err(SignatureError::KeyGenError(_)) => { /* good */ }
             _ => panic!("Expected KeyGenError"),
         };
@@ -709,7 +748,7 @@ mod mldsa_tests {
         })
         .unwrap();
         // a 128bit secure seed should be rejected by MLDSA87
-        MLDSA65::sign_mu_deterministic_from_seed(&low_security_seed, &mu, rnd).unwrap();
+        MLDSA65::keygen_from_seed(&low_security_seed).unwrap();
 
         // seed SecurityStrength is too low
         let mut low_security_seed = KeyMaterial256::from_bytes_as_type(
@@ -723,26 +762,28 @@ mod mldsa_tests {
         })
         .unwrap();
         // a 128bit secure seed should be rejected by MLDSA87
-        match MLDSA87::sign_mu_deterministic_from_seed(&low_security_seed, &mu, rnd) {
+        match MLDSA87::keygen_from_seed(&low_security_seed) {
             Err(SignatureError::KeyGenError(_)) => { /* good */ }
             _ => panic!("Expected KeyGenError"),
         };
 
         // test the streaming API on the same value
 
-        let mut s =
-            MLDSA44::sign_init_from_seed(&seed, Some(&hex::decode(MLDSA44_KAT1.ctx).unwrap()))
-                .unwrap();
-        s.set_signer_rnd(rnd);
-        s.do_sign_update(&hex::decode(MLDSA44_KAT1.message).unwrap());
-        let sig = s.do_sign_final().unwrap();
+        let (_pk, sk_from_seed) = MLDSA44::keygen_from_seed(&seed).unwrap();
+        let mut s = sk_from_seed
+            .create_signer(
+                &mut FixedSeedRNG::new(rnd),
+                Some(&hex::decode(MLDSA44_KAT1.ctx).unwrap()),
+            )
+            .unwrap();
+        s.do_update(&hex::decode(MLDSA44_KAT1.message).unwrap());
+        let sig = s.do_final().unwrap();
         assert_eq!(&sig, &expected_sig);
 
         // Test also the streaming verifier
 
-        let mut v =
-            MLDSA44::do_verify_init(&pk, Some(&hex::decode(MLDSA44_KAT1.ctx).unwrap())).unwrap();
-        v.do_verify_update(&hex::decode(MLDSA44_KAT1.message).unwrap());
+        let mut v = pk.create_verifier(Some(&hex::decode(MLDSA44_KAT1.ctx).unwrap())).unwrap();
+        v.do_update(&hex::decode(MLDSA44_KAT1.message).unwrap());
         v.do_verify_final(&expected_sig).unwrap();
     }
 
@@ -755,11 +796,11 @@ mod mldsa_tests {
         let (_pk, sk) = MLDSA44::keygen().unwrap();
 
         // ctx with len 255 works
-        MLDSA44::do_sign_init(&sk, Some(&[1u8; 255])).unwrap();
+        sk.create_signer(&mut HashDRBG_SHA512::new_from_os(), Some(&[1u8; 255])).unwrap();
 
         // ctx with len 256 is too long
         let too_long_ctx = [1u8; 256];
-        match MLDSA44::do_sign_init(&sk, Some(&too_long_ctx)) {
+        match sk.create_signer(&mut HashDRBG_SHA512::new_from_os(), Some(&too_long_ctx)) {
             Err(SignatureError::LengthError(_)) => { /* good */ }
             _ => panic!("Expected error for ctx too long"),
         }
@@ -770,9 +811,9 @@ mod mldsa_tests {
 
         // MLDSA44
         let (pk, sk) = MLDSA44::keygen().unwrap();
-        let sig = MLDSA44::sign(&sk, msg, None).unwrap();
+        let sig = sk.sign(&mut HashDRBG_SHA512::new_from_os(), msg, None).unwrap();
         // too short
-        match MLDSA44::verify(&pk, msg, None, &sig[..MLDSA44_SIG_LEN - 1]) {
+        match pk.verify(msg, None, &sig[..MLDSA44_SIG_LEN - 1]) {
             Err(SignatureError::LengthError(_)) => { /* good */ }
             _ => panic!("Expected error for sig too short"),
         }
@@ -780,16 +821,16 @@ mod mldsa_tests {
         let mut sig_too_long = [0u8; MLDSA44_SIG_LEN + 2];
         sig_too_long[..MLDSA44_SIG_LEN].copy_from_slice(&sig);
         sig_too_long[MLDSA44_SIG_LEN..].copy_from_slice(&[1u8, 0u8]);
-        match MLDSA44::verify(&pk, msg, None, &sig_too_long) {
+        match pk.verify(msg, None, &sig_too_long) {
             Err(SignatureError::LengthError(_)) => { /* good */ }
             _ => panic!("Expected error for sig too short"),
         }
 
         // MLDSA65
         let (pk, sk) = MLDSA65::keygen().unwrap();
-        let sig = MLDSA65::sign(&sk, msg, None).unwrap();
+        let sig = sk.sign(&mut HashDRBG_SHA512::new_from_os(), msg, None).unwrap();
         // too short
-        match MLDSA65::verify(&pk, msg, None, &sig[..MLDSA65_SIG_LEN - 1]) {
+        match pk.verify(msg, None, &sig[..MLDSA65_SIG_LEN - 1]) {
             Err(SignatureError::LengthError(_)) => { /* good */ }
             _ => panic!("Expected error for sig too short"),
         }
@@ -797,16 +838,16 @@ mod mldsa_tests {
         let mut sig_too_long = [0u8; MLDSA65_SIG_LEN + 2];
         sig_too_long[..MLDSA65_SIG_LEN].copy_from_slice(&sig);
         sig_too_long[MLDSA65_SIG_LEN..].copy_from_slice(&[1u8, 0u8]);
-        match MLDSA65::verify(&pk, msg, None, &sig_too_long) {
+        match pk.verify(msg, None, &sig_too_long) {
             Err(SignatureError::LengthError(_)) => { /* good */ }
             _ => panic!("Expected error for sig too short"),
         }
 
         // MLDSA87
         let (pk, sk) = MLDSA87::keygen().unwrap();
-        let sig = MLDSA87::sign(&sk, msg, None).unwrap();
+        let sig = sk.sign(&mut HashDRBG_SHA512::new_from_os(), msg, None).unwrap();
         // too short
-        match MLDSA87::verify(&pk, msg, None, &sig[..MLDSA44_SIG_LEN - 1]) {
+        match pk.verify(msg, None, &sig[..MLDSA44_SIG_LEN - 1]) {
             Err(SignatureError::LengthError(_)) => { /* good */ }
             _ => panic!("Expected error for sig too short"),
         }
@@ -814,7 +855,7 @@ mod mldsa_tests {
         let mut sig_too_long = [0u8; MLDSA87_SIG_LEN + 2];
         sig_too_long[..MLDSA87_SIG_LEN].copy_from_slice(&sig);
         sig_too_long[MLDSA87_SIG_LEN..].copy_from_slice(&[1u8, 0u8]);
-        match MLDSA87::verify(&pk, msg, None, &sig_too_long) {
+        match pk.verify(msg, None, &sig_too_long) {
             Err(SignatureError::LengthError(_)) => { /* good */ }
             _ => panic!("Expected error for sig too long"),
         }
@@ -829,9 +870,9 @@ mod mldsa_tests {
             "C3263802CBF2818D55BAAE9C2BE8C1EE0123802BDAB7C87CF9E6CF06E2A8823E750FFC8FB917F9052275A2CC68C2ADF4CFC78D0144FD3E96694C116CE1672BBCA6A3E1F6BBE8A0C34E5C1874DE1798CFC7766FE1BA906A1C6EF40EAB1A914705C3B0F14ED8D212B81D400281F68644B2EF72330DA2BD16C792D8160896177E920EB8E198AB5A38F5FFC5088663D0D0E0EB30C342F41B886FF209C8939CA424C2C24380E4F5AD805242CD25F4AC445AB883CD5826FA4135F4D549B12662C687B0FAFF068F8C18077B463E910E7A17B3BA9A76418C79FC53CADC75E48E977EAEA1FE748EDF0A1C0CDF9D037812B1BE505BD39E4EDA489CD56369A1B3F793554D7DD815AB1A7DE536018F0E0D73B95C8EBA07626D92B0365F6F71FAEA07E1E80FEEA666EB57865D6D13E46B801FECE841A2179BA8DA1FC1C1AA53743F187F426DFA34510E11AF1D9570FAC5DF77C9BF7ACE64BB130DB2192959091DDFEED580C722ACE89F84729540EEE8CFF6D8E4AF91C1B0EBB42A65F47B80F4A300431D7DEC90BE739E31C9906D7403B82C196266D4FCC6659C5AA549D0ADC3AAAD1F9DB7C80E17839957DF682C10B1938DD9A292C65E0146566B1EE24529C925691BAC109CB308C4303C3513FF5B62275E84C8C94DD6CFBF2E0F9F0B735FEFC44095FA2E01009C37C33BBDF082B305AD479C743076EC2EFAC0176F15A0EFBFA504894A3F8C6B7ACB096182B71131F46B1EC7343C9DE78F85CC0352F97C188667898ACB4EB4173D715FEA3B69DCB1B47904C8AB51EB4915357995B5F69F979776C6CBF114BCB0A154D82D17A9251ED545FDBE7E04AB06B99662D18673F08D933CA0B84FBEBE17F783D4039078465C378E9AEF18423C7B86C411DF9B4A77A2BC8804C4E5A5F9BC5777166C221F60107D2107AB55BB53E354267F8329B71A77BFF920EA94D9240B436E8CBA65940C0734D6928F57257A16154BFA5D8C9459979DEF567EE0965239C0DBDF122723636F2C5C5CAC6C607BDB9FDE8B8557A687E3A68970BFFAD695BADA74CE3C681B81AC8CE3747B844B7530A606F6320ABE91F16E79EFFBCB8446319D888D957252836BE6D88C018EED2F5C46369FE88CAEE624905E71C41252B70F115F781E0D4D851D2820718DA03FA1E9F9490AA06D74E3D15A44CFC98E57AB49A63285451C2A43D5ACA6733952814C05391431052DD9FE5D4AFAFE7027E5E5C8E9247FD5B574B438C4E541D6F408964BFEACC54FF873C6976F4383AE2517D4860E3D775280DE63D2EB01709282170E33A2F5FBD80937B0D23188C978BA370B5BB154FE0F2FA0361A2F1E46FBAFE6494FEAFF26097EBD2E307301C8649FAF82B57788B62E6C69DE6F6B3ECCDF17C10CBA41C3D1A8025F5BE98D65F2B37AC2527BA60E99B89FDA9028845F6EE6E20C2C8E2E8D8627C4D5859CD141920133D4D4B3AC8B91C1B14B6F6B8DE35E9674F312B938DADB90C335931081DB90640883512125BD793467C78AB84208146EAE0D62004E51031377BBDE89AA0AF0609E9AE315EA8A043C368167073422018900F9C653535A96FF73DA466377CF462314F361E08ABA6CACAB9AA666633FC6602D645CEEF305829B90AFC8BBDA9F8E40EFFD62FC31A1492914E22DE711DC3102D64AF46D13ED766CF36E51629409F69EC4DF98CA97EC93DA4BA215C567C73104FDF6863229E2A2C9A3CA11DD3C8D505CF88944428F9D500029B770FDEB16388F63C50FCAD1953E2AC759730E7CAA930362274B6A3E0ABE1211613F3C36FEFD09454401B6110D95201BD022A3B6C68DD054AE0B0C547AFF5C7421EBF0879098112286C962A6164C799A7A20CCF3D4189B2AA240F895C54CB2F9E6C2C1E2BA9BEB185CCBD82CEC60A49D8CBBD3C26AC0BC5C43E2D5672E21F19ACFF857217A243D4C90600D3737EE78638AD6239C3AF4E79FCE030DDB0527EE428ADA0C1C9EB867593092CD1A5B77347FEF4541B71AB33932F8F1BE31AA475B9F4BBC07F218377E436E348F47607D9140E6114A05D2A072409C390EBC79231CB6DC2E3A698776F9C32B44C10F156AF450A8DAD6DEC0D294392DF6E17DDD312BB22997CF1D8A6EC55DFE401EBA486CF9C8C0E6E713D48C0CA8CD26EAF88DC0B34F86F35B6617C45173131779ED98E880BBA3520835F29604B6F32AB1DA8034F6F559E81050BBCD7833B0D71E90101339386AE3BC653CA50F37BBBEB64377987BD892CA51280499B6EB051345EF9BF1F6EE766142491F96E27787ED8991338F60D2A4BAABF43ACE7A6072C6BEB6D0FFF79A3B956DD5CF6348F6E02104E1F9F33B2AEDFFA6B833A00CB21BAD6AD04047DD845180131506080272925960DA888E393B43EA5770530347EAF9E9812E87A317D1BA66C61CACD55A8FFD6355BB39E596D33F4E8355A6B51C4E70697D4C5BE9FFE64FB11EA714D81B20677DBA268E8A9A5F61E8E268DDE6F6FC93F3FAD688312885681E0F67474689680532DB88E178AAF2FDD19E37B091020FF01008BF0FA8017075C2F02B5E7DCACFD1F337A24815C6D9A9E1678EE2EE1721A61ED774A7DE98051F799D4F3A5407C1F725B618AD3B0C17FD13D762005C143A9AD78B13DF4B376D924BD9AE37502446D2263046BC7CE97CB6371CBA72FE0224FE71D501884E9AA820F92E1CCC3F7F4D57214F0842C96B85BFEFC3767B81AD76F778B00EB2BAE3C99D75EAF295901B9DB273F4288FA4EA74650B90D114B081B1D061D97EF211A84726756396F36BCACC45A8EF3F57E2331EE4FBCEED55C48605B4A3D842067933F8AD6D72C1793B17515977EEB8404CB55388EA3CB43F504A5325870473C14287DE22D55015391D973A9556B93B0943C64F5CE8DCD365C1F1DB7B56B2FC91BF5552E5233C28755E366BCF303B33CE2FE608A5BF6348EAB272E4FC6B77F13367E12085E008C8CE17095727D83266CC321ACCC9C8B58F2D149C205A4DC6D3A599CBA0E3FC4EE042C3461445A536FB9AC09D2FEA87C7E0E8BE39B2D0894EA1E203CAECC5F79F13ACAA917401E75E8F36CBA4D34EB639725FE41E64912F48A70D1BA47309D23E40DBCFF986568B8536B5F464C5B169D5E0F90ADE7F46004098E5880340DB738A7B9C849A71D01B8F8F9FEA8B3B331210553C469A5EE257B4EB02EC8932787C54086C5DE6A82096F0AB32B716BBCBCAF26BAAA792931D946FA1D59EE8A9924484E38B02F89D12971903C675B9FE420DACB1C0172351A3A44376E6AF6F25B261173E98B04DD2E49BD795A17E9C3E1D7DD1EECAEC4B8A5AE4B266E4DC0618E41AB8F82A4F652D2A07814DDEBA856B6000EDAA8A8A0542466A83243AD8128B1C468215EB58CC436BBE6B7A8D8CB12FA78131E1887B3253BD623055D72B13E175AB7DB00E8D7680360990C1D9EAD06F04F51F739734DEDCB8AA5ED3BCFEFB49D5C89ED291C4AF1EC09BDFD24029B7A219067DAF493C53809BAAAF830C8D4A3D643AA1B0CFABE58D0B1A5E9C0357AC421459FF0B0766CF82E08F95BF8B6C65D81BFC342A07BA51C914D7F1FFFAE1E069BEA449EC9BCF898BC29CAF4FDDDE6846361A4393F6C6987C766037526A9FE42008FB59DEE597547B8F61C62085BCA0686B6237C384107ADF094C91A230D783F55D39F1E57128A92F0FF0CD92D6B454DF4A3AFA2E1E4DF2C6C9E3CA3B304E27A8D7F44C75EEF09F475ECE74B07A80DBE1B4F2F309756BCFEC0C2D78DEA4CDF3BC864FADBEAA1B9475BC7EA4ED80D26B14B61EDE93AA2A777C8403DAA7BEC36C5503A2114A97CCA8B04565F17A4F0DFAA4985A5FCBB4398323233ABCC728CB2E0D1E2CCD36645E5915985D39ADAE871AA5B1CF3B001FDC7D9F0BD82FCE569A5C6BBD216E09C11CC6AAE067686E95BB28C441F189AFA83A9E117D944927C4A76FED756A35E5EE0B0DF4159187CFFE5F6EC19F8DAB04791E04FA0A3DF55EC95B96D7AEE099867987986D3FF1422DFDA40100C226F8A24468393F21E11D3B583DD8A5FEED01832ACD1E24E2D5A8CE16C24629B9964F8B4E0B2B0F30601FA688711065190665ACEA6A971DF8FB708C056D68540A78FA750B43E0D54086502D4B19171F61B51AC075F7F09260B95F59BF343E1210BCD39C04B13267122B6CD78D2578EA3534EDF243D0FD520A212EBA25407E2B8119068B2CD1D1BA672E5CC73BE9676C9E2D906D44DEBA9573E7FC909E69BD9CCAEBE6600E30D3588CB8EE2E5CE95C65F3FD24E4D527CE764FEF539639155086FE564B607A1082A74CDE886527F8D821E42AE88281A1CFF38EB5159955C1326C2D425D1C09205128E0386CA5C71B911896543799C3B1ADE8391E4370519DB17122A1A5EB6338208984E7347FC174D6DC4D59AF64767115A344A11E2049CDA0AE0BE6D7AE0592FC3468DB58E29CD3010E3EB17F736EE0E6062BF1F345A804F1733C73FE30C70B6FB625D00E529A400C069074235969485142D37F3D963D8492EA4026867ADE6108D982E20B188504A6724E6448992A3F7962AC2F01222BBE0715069FDE7D9DD93A6AC8AD321163FDBF9429EB2DD38F44BCA086AEA91642D4C85DFCF322F0B822B6EF73C570B564DD721FC3E73ED50A7FC88644C4340951C20B1E2C4A65B0BEC3C5E10E4C5F769CABD7E571748485A3BFD0D2204748DAE3E5187A7D97A7000000000000000000000000000000030D151D2328",
         ).unwrap();
 
-        let sig =
-            MLDSA65::sign_mu_deterministic(&sk, None, mu.as_slice().try_into().unwrap(), [0u8; 32])
-                .unwrap();
+        let sig = sk
+            .sign_mu(mu.as_slice().try_into().unwrap(), &mut FixedSeedRNG::new([0u8; 32]))
+            .unwrap();
         assert_eq!(&sig, expected_sig.as_slice());
 
         // test to pin MLDSA44_GAMMA2_MINUS_BETA (produces the wrong sig val if MLDSA44_GAMMA2_MINUS_BETA is wrong)
@@ -842,9 +883,9 @@ mod mldsa_tests {
             "20E8368CE256DCE0BD48E92EB0C35821EBE95B1388A861DAF45ACD482BBD95AA3FFBCB71B01E95FEA987EF538F300EDB7B8211698B5190AC5214C681EA39C78CA5EAA17AE994CDAEA07C186342E50A85A5FF292E19922286A96C42B4A998420C9CF0743F36ABF758E695166F04E0FADF9922C48188BB0F5AF0FCF2072C409AB2128ACA60E2780EB6DC1F12A979D85AE7484DA9F13534FD77C57554DC1BE883F1D1551E1FD750B03708D3FBAC87677100EABFDEAFD6DCAD15D1B7B7DC57928916F2EB68C8DC169274401E67A1CDD8E6A0F7122D6733A4FA86AC099446522C9E0ED60E244530A5DEE67E2A07E802145B783C59B9D873BB21A40477A307A84E2BF35EB1A66C42E18B8227B95623B1BB21590AEFF8D36C4B0EF6168D667037DC52B88C6F2FC5C1B1C232E2516B213B5F54A757880AF90ED73FE076A1C0613FF93415EC517632B7D10E2C1B7AB67B4DD50EF4E04C8910E088B8800DD50D04E276171C45C2B755BDE1BED2E740FA6D28D52130C6A6EB8BCFC3B3FFB815B8F82C1DCBF1320AE1B8627B2A893407159B8A1C684051E37A47E61776B9A80A53D3F41473A719B0D60CF8C25546C1EA4878362DA2C29F94617FEDDEC531A1D8E59BE133C033C0C85E3A476F7D0A27216E269A410A9EB7ED154A974C434C06024472D896D6EE24472D915C0C6544DFF73A0AE32C1365042906C54545EFC28EE2B272AE7A3D9F04EE7F975B1B1C04587CB42130421E026E58E45F27FA3ED02D8121F48C82587A968D0DC14C3C84E10F853D486DF6B3D997D5958BBB2A97F57CCC7702BB29EA359BD62E2ACF5A77D16E3A9B0B82BB94B3F6E75871D44D873E0A5BCF7BBF4131A0A9551FC1F504D25CAD2998FC213CD999A8F031667856E67E3FBC74D400C14F7C826FB676FB9735DDFCEDEC534E920386FD7CA810028DEDFE6902C65AC329753AE2AB7D8F63C154FDFF0FEEEB4E6C9026C4508C5A7973B1DC6746FB75E819E976DED75E6473D4DB7E6F018F587EAEA112080CEB7CD91CFC001763CACFCAD115D80246935D97DCD5820D3BD28FCB3582AB2AC40500C7636CC6A69A5542ED845103B21E0FBD05914C734F7048974298776CD8C5E8F2B018469668660ADD8211E3878F5A4F3E40A9BB27B846276F505718973E6AC5B15C0E1AC01D316F93CEF58D5E360909BC374276B4345011BED44C5F2159D5CDE2E0CFB4CDFECB51D676A46055D6C6A7F733E05D5D1B13B5F6F49FD435BADFA5965AB32275F8434C05E0DFF1DF18E5BD575F42F35B24A6E7C5A8A3BD4132AE96D67F2938738904D6C7C6DF612DFA2EB64FE9505EE47CD708D69222D24B5E109C36D4B7044C2BBC9E3554693915119737BAE15D7BA6B65C43E73D4552442D893ED78E1C08BF91231E5F1780079CE01A9C86FA8EC38A12EDEA62243F188AD182A988E7364BF1DEBD958121179346E0C4D164739C35D4D51D5E84587A5636E8FBBE116AC3F39AD92A5A9458C98CC56396D37519C7D229CCF732C254C8AB46101FB79038F06DD00EF23DE921FEF86CC17A7F6A17EDACA42B4910FC8119D1B5FC2DEE2D365BCDB7DCBB1281EAD990230915F8CAFB11E3C9D00E723DB001723B1DD7CF94568417EDEC07398A67FF7B27FF28F778DFF71C349871097BAD91D16688300834E5113573B982AC37FA2C75EF807FC7E616A92C386E6E49759B428556CACFD9E73A91F8EBB1DEE8863DA836EFB161714C68B3CE44034E0823A86C7B5AEF4B7DB7708E04DE158A94D1835573F7E973FF19DCFA95764B0263DFAC46DF55F39C3C98602BFCA12953A300F4702587EC845C65F40C46298008B1AFFC5CC4436516B74B9C740E05601CCF67F3E913F4E53DFFF4776E33EAD531B0DEE7C43692B99D6B4EFE9354675712BAA24235B62B64AC5D3EA1D1E7CBD1B14F67B45BC07F78E4F12E322C4060CA3A6D8F5323FE4B6239F5B01D4381D31F0610209EE83E3E726121E543525F10468006C0FBFF6F6E93E62ECE69E2A98F4E4CEABAC0DE867CE60EDA11C25DF160F367BAF6E54987F678F43847465D5AD1D9947CFA888CBA92B45D1A367890ABAC3FBD50F3E7ED4AF97C1F29C927C339C973A1009ECBB9F6954D4EB8FB30601C5052E7608F6EE48CE00B246E9F47A3E5991F250BF7506BD577C41F14E41570DF2C50E8087BB912E84C5F4E8C51A9870D027029809133FDB22F311E9A71F61CB71F6981D71F45AA80BC922777E655B63E6C14C8706BAA424B9C8C7CFFCC38DEAD82FD95D916E71AA3825B95088698A5C03B18B766299E4CCF71C4A959724308BC2AEDC7AF7C630B92A8B5CACD810A504A261DA7A527EBE24D23985809A5BE891C48926458E0B2890E5FA9695D5F48AF59CF21C37D150433BA777724AA7BDEDB170156BB3A6D9E56FBADA473B279996DEC61E80408636BF546F967FB0AF8ED9E5081F0A4A8B532E40D0C4BC55AC7A4F37F603CB6426B5D36B0B34D231C9AA83666B9C63DF5F497A67B0FB040D106C01BE00D0B1A3E4291F2156D1E637A3A9A766794D683AE106B639B5213337F8A1FBD924F7B4D9566A7C0A009B8E1925DC2FBC1FB3385A42FBB868388BBE6EF55942F9D5ED2C30992FFE514EEFA7F145E150F94C001E8D08904FC19401E871379B79AC79F39A7EF9E738BECA86C9078A6FCB62CD1D84E23708AD98FD2E759E7C841C40A2241DDF864D75B400CB5C6B03502D016C491615A05316F9586414694A67DE2C4D509025B1671FAEFF5B5CD262FBAB6234673E7D7D062016CE7D4B54C813A1AA10E6C1859C8EEEFDB81A138B2378EFB821DA5BAD135FE4E65363AF136F8E6C6D1640D4F8FF491B0FABF3E4D5668E931E39B5928E6ED7792719222E479FBCC018D755068E3C5C66E305E9C52BAAD0019B35B21F1A3B2F1DCEE98B9D0FB8E28E95CCD36838D65282B87F03D0CD5C096164B2C24E149D9128976688518790B30C087F9786C7F8F2E797082D839467C3AE8F076EC973D333515D12CA3CF9C50772AA3434829AB45B1F63EEE12769812B95F7C8ED33E5CBB49851142737562E9EED8ABD525D4C9423CD48BAF00B58343AD12F3EDD0D55A8895974FD99201CB1A0AE42EFC728A3D0D691B78FB85D3FB9210AC0D75B0BEC391AF0731921DF2E1DA5CA56FC6A68A0FE99525B85635665E0F290B98018201558C29F197100ECD37B9112924F60707E4B30BCBC5B7187A09DA0628FAFCCD930F545570FA835D911C9E35B1B73ADF15F7432ABAB1682201A93EDC842400381C645BFC729C8DE1C06AA2171EAACD88E919F9CA772EBEAFEF4D616FA5C973963181807844A3C84A57767F9AACB6BBCAD3FA24333D585C70737C7F8486888D919FA1A9B2C1D2DEDFF7FD1422536D8B8D9CABB0DCEC000B141C31393D4249566587B1D3DAE7FEFF000000000000000000000000000000000B232E40",
         ).unwrap();
 
-        let sig =
-            MLDSA44::sign_mu_deterministic(&sk, None, mu.as_slice().try_into().unwrap(), [0u8; 32])
-                .unwrap();
+        let sig = sk
+            .sign_mu(mu.as_slice().try_into().unwrap(), &mut FixedSeedRNG::new([0u8; 32]))
+            .unwrap();
         assert_eq!(&sig, expected_sig.as_slice());
 
         // test to pin MLDSA87_GAMMA2_MINUS_BETA (produces the wrong sig val if MLDSA87_GAMMA2_MINUS_BETA is wrong)
@@ -855,9 +896,9 @@ mod mldsa_tests {
             "1A9FF550C3F682A043D145B8A8ED2A2C2F92914E1D3E4F9C52EFD2A478EB028ED77C2E9C9450909F7A4032EA4059B51EAD6D9F61A8EA867AFCB794CA32AAD3180675DA90252E11952E936F2ECC62E1386BDCCD12DC22D23A2E21FCB009486376C85E2CA99C51D8F68AE93506120BEF1CCBC38E1A5DDF940E37DD0EB650503B969F9760D0F19448164FDBF0983077DA415648D70289BF6163C32DCC6AA8CC3B7ACF261237EC70D216FD157C1ACA6BA135470CCB4FFDC1710644AC9DD5A67E037FDBFDCE2A4627555D48AD1C8E537928B6A954FC006C5A34ED3483E2D241B618F59FD8481F69B6199E91A6545CFD485ED8665A82F75E36B27662562BC0D729D19426CD4AC19DAD71AE298FCFC278BB3B89B28E7713BAB58C4DC7BEEFA8444B6AC5CBF252F71CC7146D6EB43E0E9981C971BA9EA12BDD4BED8C20CB4BF91E805F93307AA6DEDFD083307CCF9FD540E674A40D68DB0538C8598CEE8A7186B65C4A71A4B053CACCA88887F96101547029FC74765DDE92ED69956B30C09BECEDE6DD947A7C25FF087C30AE4DACDB9496C51EEAC61C5C6B9D3AA48E255999A1F76811455B567188F26778D8C62758E1A9FA884CBCF72E04C7A6B4BDB13B208158C67D5B6A2CF60F8D27FDFE5D2E37947203D0C204D7937A10420DED707F73DE8771F7866B9537E1265101EDDC3D7C192A3B209B0E5A0D72495F1AB0C776FBBE892DA53A0638F98392E816B7C0DF714DDE62B473DEDE5876555112A554BA9EB37A363D78290C0B8CA56DDB600F0773CDF68898876BD34714F5F6C1FD38D50FDDFE778621133F14A1270E6C20E089753269D5B590318AD9AAEBD4BADA6EE5C48044CB11CFD14D153A8EE69335EA6D0C7435C33B94CE2C6E97F1D3CB80A70F66FD06F0A480FEE71B7B6A6E2DC7741269D85F05EAFDBD22D5DF71AFD9AB2D24F24729DF492926525F03336B515CCA54BB08989C16D42C1DEF1996E99659BB2F9F96004C258EF140E5306FD8CA549C99267B237584C733921192E89C8EBFB9934C3335B722F7E3EB519924A3F02A2B7E08D8C23F49C1F1262968D77887C1DB0D9941B203882C1703A8B345503E0E3CA472D7D7E11330D8B53704B8C59D12CF280857065031BA223B0D59C87C85AD214339DB60D6A2ECB4B908C07F0E2B285D0DEAA8CBF7B2BBCED1A3AA443C9580D1C7A6C5D618F6E1C5CB60E81F8E4397373850F5C18FECB489261932CCABA6CF42840DEB52A62CF0D829E33C2D4685ACB4F5CDD3A1B98D2777C09AF4DD926297E6B22037A37026062A6A42187976758B7406032B50A42D9028BFF12737F2E2CD1BAE8F78D10D87AAD2FCB4524B083D5542151A520A5B3C850F2879760875B0C034D714B7890B9BB7E86FFD946C9C4E583D0B7B1AE0A29553C50C3C4C30AEA7DE67BB9DC08E7845BA2ED6B6D6BBB1F65DAB6D269CE4B625B05A4BA5BB7272E4E7976AE6ACBE1AD43CD73DBBD215E9F603363919802497A7DC9B52C084BCD5E441C0B11FBB53142E56D1F182686614C97233A176741FE46E2F5BB749BE5A34790FF242331BA007EA53291487C96F998A2927C25863030DB6AD1860252DC2834DC3612E84F2499F39856DA4EADD223C5D2CC610026E54657ED6B9DD718DE6299979F76C0BED0933CE1F820D65F32614CE3DDFEF863A1A894534A9B93B5A0D54EBE30094BA323C5874BADBAAC2485D83363793D2CB96E129CB6C46C8A504797276C313034068539FCA7FD5929151B1D38F93243B93A772FCE64381534F9ECAF57899397E9DF6DF6CB9619B7CEC5EC498B020E708889C762776EA9436BD86B23550FD3F5D61CBDA5D1B40C629662D8D987B208B6A2015ACED52288A555E149688737323B5B5B0E6EDBE1D70A1D127113A39DAAABD281FC18109FDCD90C49FB5647E69A8EA116AAAAB1E0E5D73286DE32437B41ABAB779B20BDEDCD92F6D6D683587D33228D4A83DCCAFAFD6334680F4F9F370A5EDF4A70683BBEDBC064021DFEC2E47034275B8416D085B4086BB374FFF58E2F33E0D0920F638C9752098207C5E28341D8AD70DCA78CA47A2268F28B3350DD69B2EE15A7AF278C01EBE1DFAA8AD4739F7E5E408E2A39FCE7B8FCA51EDD592B8D2766FED9919425EC7CD80C4836795C924222D73AC0B380E00BFD20ABB704959CCA10B5EFFD9A0F72ADC823C74E90E6E95B2A3DE9D8B9F1C1A161D64E7393B259990D2BB4636B02A216ED12D2AA0B5E26C0BFB7D34B3230C6090DF5422F2A6E80DC8DE9DA3B5A1CDA4971E96C7DBB7F6992A60AD02B14C5E7CD6C9977DA0D3DA84CB07810325581F9D7BED0BEEC12E6C30338D903BF0F655EE8AF3779C87265911032433690CA981D0CCBC4F98869F316B6918B3135D405B34A3C7069112FF17E44554ECBEA8DC61269EFB5E58EF2AB1FEAA15B426879A344CE7DCE621082370F0F4F9B0E2602E942A1BB156B6DCEA3D9DD2B4FDE908E91B1913CC8BB6FB46961B9669EDEB713843C2ADB164EABB9D9615C4AB97AD17143891EEB6529C1C0E1542C0A36F70E93DA415D9ECACD6DAA5465840084C99F8F68CD236A8EE23B8A14EEB186909F6A9A4B1D1D2360DD548E57CBBF41C8A86FBCA6679E55341BAEA6F2F01898A7DE07E4BD91F6674DB7B7FD0667154DF75E543DABDDDBB4283BA0F4D8E38108BBD4BD65B82D9C84F0D8CD2E559D01E399C621056323B8CC79C53B8B8C9DEABAD2C0BE1DFC067EFCE38C591287D61545C36F36B81E7ACA5F00A68926C61090ABAA6B48F19DF830F4D94E65673CA03F50ECE3FA3BF6C235498D402E4B0521135255D85000260421C2D28D0D560C535CE6CBAA62E0491C5B305352CF1BA8E8A33F76F22D6CD72A15D07D6930DCB507EB88AFEDA15E810FC728602312B3053CFD2D8314DDE6A63083248480680A2882E173B8D89C14646FBD844A5C790DBA9B842A41F48B6BED1FB4AFE6826F95082A33C9568A40AA4B5B40CF1E723F90AF1A1DC5FE08C91B5D24B8BC1FFABA36B308A6C2184DBFC3B3D36916B2B744239D548F4F5A05254EC548F3437520609C5E562C82BEB9D3ECF1C1F9AF5E84DF9AEA3998B23D51741CDD936C24E23F1DEC3DC58BAE1FEF9A2F1B71A2604B699E212AFD349944DB53A39554CFA94E0EB747722674707A6F99F0204EE68AA20094DE58AC97F733FA76C928DBD668F80584F6FEDB7218BA74E126A0316B5FCF38F970484117B88BC8545ED9FD67466E7777E66B0F41F593E46135665096DA1CC75C90437A01379925F3327983207CE482F6AE3780B1265D6054CD2AE6B0418D2857D59FA7E94FC32AB5E94CD2C83452F420C8861F55B0A5A6BDC8C5C4157B33D6AE11C3C9C2E8919A3D09B9ED8FC09594D365A7E85F3D9647E324116518F6CDA1ADA250F194A87AFCE0D9D60B768AFFF8FCC7057AC73FB520DC707F9BC7408EFBCC3F85D5F618941441CED77C09B3E697141DE2AD6C3A4551884EE1E88D196E1AEA08285D47D81C219BE827D07891F8273BA4B3A26C3813EEA482674EA8EB4FCFBF04EC0C9428A7686816B53EE0749FDE60F50460B672D58C06F103304C28908FCD079A12574B170ABFC7E1F39FED5131D0672ECB3983810C316DD38E2FEF6DC99FB7FB5315F2D6496CB45E1385EABB69537628D9DFB0FAC95B5E5D4B05488B18E0068B0407CC737B0E711A0179EEDA1C7FAED33AFC5AF4B8C318B98244C97255563BAD20784AADE6A618388FFAE1C286A4C5EB891E236FE57FF414D619E8BAFFC84C225C59D02534721490A50BD39C163A1EEB6D811646E54D426AE9B3449C3E428ECEAC6E23F6CBD8EA06D9682385554DEC853C5C0ECAF26F5CF5BC6EABC4A957215FC497084E9A8CAFC00ACD228B4F8245F9230FAF8306635DB89663C5D9A31C648948500FBE0771E2BF15C52395468CF50C6C8953DBB6DE252E6649C6D2D060EE34F53960B5B7EA0981B7BEF3D0A1D64853D9EE06EC4D73F4A75DAC5E5A2B59682E6B8293E74ADA3322C1204FA66C6E8B5EAFD796305AA884249D00E3DAB6267A87844D595B3BEC430BB416BD4A4F38505F046425ECA84495DC0928DC4D9FA18BFB800C1B0578B2EECE2B97153A1C296E36036F9366E3443B236E4E124F82EC405CE2ACA48DF43E543C514727CE182B34D1131E366E394D07F9C72022FAD6E4AEB12CD675E7EB837A7EB13BF4D9DE553DD19DFBD29A6E2157B58D893F3E4B574AF01F103989D8FE2FAEE269BAED7094BE606678719E6E82DA97D3DB43B3FD72863180E1B4D7BE55A721301B1D81963BD37C3259D55FA6D43FBC217A77B38B83CEAA4853A921EC7F138F666BFBBFA49B4672DDBBF1CEC212B530771A39EA244B547F28375936A3E8F692216358A944542AF2D559D6FA216A5CC60DBC892D2BF38CAF1745F5CF6336754A21378F25DE5F472FDD8A1B33189B5134647F7965FE0E573C508B61980DF059B5D9B3AFFCE632230FE873F6462E533D4528DB8B03DD464D3020B5DC22525AE33AE1FC345DC2486D5647863ECE3DD49EAE7A5AE128AD8E39065F77EEE3456653E3FDA5135A45A365B8043F2F019825BA9CEBDBA96C8EEE7A8544DBBC60218776455843E5EC61D9DFD7DF3ACD6DF5E130A5D2F958F5E26F3B1A80029EBFD13F7EB24301750EB8608E7FC73882797E2342A37DF45486ACA0603D411592A13934799D203ECCC197C0F103180D5A0C1CCC3BFA3CF1DB199ED934B4A5B52CA9BA66FB9C97D85B06977C83533F16F6B7F3D6E5945B802362E7ED9C42E873017EA4E0C9E7AC96087AA7FD269D363A8BE8FD39A0234CA842ED209865164D39C4EF592E7223F3C3684EAE0A2AC757D3CBAFB2E873C52B09BAA4788190EDA773D946A5CC67D59C6EDF9EF20394D2F40DF35D20E5F67E1891C6E61798B1A8343E22B7FDF274A996F679A4EAA1505DA4EFE1C4D94A69EAECE3DA05D6CFB63294D7433D9885EE18EC94FF1F23DD6FD9F99BBA2D5BEF46E0A477CC434F86B2FD67FD55B06AA2B698A70FAA1894E925BCBB2E9F229A1858E789920A1AFB5FCDFBD4D3F904F87FD863372CB7C103BE365AD8848141AEE2534D42BCBF5A954F8BF62DF7C29F9ECAEAE7543B56E7188D440A0BB4760FD0ADC019796611E4A31152849818CCF0B146C9CCBCF4FBED7969BE81C49D92FB26A63249DB99EE6CBE935677AB40F50A267815FFBA5BFD7A72C5EBEE8DF1DDF713516F2E4550C9E74FB1C7E2CBA3ABCB91E315A1ABC8E9D48CED3971A0B73DFAE6955CF3CFDD925D86B4F3FD182327599379F9E13D7EA5E405C335B1D95B6DDE4DE69C492F98F51974BCB66C317439653A9014166C922E61150FF9902F9C22C29B7F15A27121BEB39835D835CB7135C3992E82C765A9131485893DC7C853937E1F0C9E0EB30E0502224195E318AB98C56E4211C926240BDB95A1C9345BF9AC10E2482950974895268C12DD92D0EC7E941A162A57106C0E2A3D36376488EB22694D4F68C0FD03FC8ABE4F5EDDF3E47A9E9F7612C2ADD9F847309DDBAD4DC71C3EB2838F29CAC79E8AAF3E88865C8C4FC5FDDDD5EE0CEAC09985CCCD5A5AA6D009BCE39AF3F8C8AF865F584AAF03FB8431F6BEBDA7EE1F1F0B3D672BC6840F3417F497CDE3CD3DC2A214C2C895F61A20A7CB184DC6DEC73002923A6B50B671329F2A16E611E0099B5F0438AFBDD2285D1AA097DD74C4E5D7CC6F75E4313C67E91C71AA49B5048780C0331BDB8917247BF059D9CCDF6FDC885C2950C6FB84BA8ABC463C2DD67629F8C28600081C10C75EE88DB112C432A516983A933A584A957646E2B5B4F9255055A0558574D46EE3E074CFF5FAEBFEAB61FFC994E5B9F46E16552590257B6C4FBF80597B11A705BA730FA495D31FCB0B3E568FA264A6C4512E9B598162AC242437DD47A319FE31A5D9622343B71286BE7E2CCC6709978044170B6B7C8F0F1D109B9D79F86C9A2B4E2758AA97569F47F242BC0233CC44E0E51A02EA805D15A30E193776174FA43787B621293CAA785B609AC5FB851A90647C6A35547AB985E5CCFF969EA452A047C5D7E6CC86404DE41FF4FDDD2B20474BEA70C843CE3A3B383E62F2BC234B4D4962275A3C73E530ED2CC8BF45CB2086FFAA5A299B5236A46066294D80B938A18D71B718B083E685173D10725DAEACCEAA6821A7C9362E5DA01DE8DA4DC54C4C7882E61056FCE7EDEE3A84E3414AA7055DAB55349D3DA50EE216C797C4E5B7D7A225D35E29B150F7499086442509ECC8240CE53A08032C97F6A07ACA7C599DDAE5E3B38E9D78FAF9FE804EA5AD23DE442794991D6633F3CE3D83B08F8FE5D862ECE02B8E710EDD552CE1CE465353A6A3FC014E60F0A8ACE5FD7E0A6E524FA7453E795B96C2DE5E2081460C3754DF5A782984D8CD5C7ED1200B45C45E58387EBA329B93F63143BE6D4CC911D305EAEB6685A07B1E4F982E17904B775F6255E8279FE7B5B445AA0523023313343478D9CA9B40E2048B2D1D637468C91D2EFFF0611164254646782C6D77197A1A7B2C9D5E0F0FD4E576E7782ED0C50ACBCD2192A5275808BEE000000000000000000000000000000090F16202A30353C",
         ).unwrap();
 
-        let sig =
-            MLDSA87::sign_mu_deterministic(&sk, None, mu.as_slice().try_into().unwrap(), [0u8; 32])
-                .unwrap();
+        let sig = sk
+            .sign_mu(mu.as_slice().try_into().unwrap(), &mut FixedSeedRNG::new([0u8; 32]))
+            .unwrap();
         assert_eq!(&sig, expected_sig.as_slice());
     }
 
@@ -882,13 +923,13 @@ mod mldsa_tests {
 
         // BEGIN GENERATE BUSTED SIG
         // let (_pk, sk) = MLDSA44::keygen_from_seed(&seed).unwrap();
-        // let busted_sig = MLDSA44::sign(&sk, msg, None).unwrap();
+        // let busted_sig = sk.sign(&mut HashDRBG_SHA512::new_from_os(), msg, None).unwrap();
         // // ^^ debug this with a breakpoint in aux_functions::sig_encode
         // // ^^ and go muck with the z coeffs
         // println!("{:?}", hex::encode(busted_sig.as_slice()));
         // END GENERATE BUSTED SIG
 
-        match MLDSA44::verify(&pk, msg, None, busted_sig.as_slice()) {
+        match pk.verify(msg, None, busted_sig.as_slice()) {
             Err(SignatureError::SignatureVerificationFailed) => (),
             _ => panic!("Expected verification to fail due to busted signature"),
         }
@@ -937,21 +978,21 @@ mod mldsa_tests {
 
         let (pk, sk) = MLDSA44::keygen().unwrap();
 
-        let mu1 = MLDSA44::compute_mu_from_sk(&sk, msg, None).unwrap();
-        let mu2 = MLDSA44::compute_mu_from_pk(&pk, msg, None).unwrap();
-        let mu3 = MLDSA44::compute_mu_from_tr(&pk.compute_tr(), msg, None).unwrap();
+        let mu1 = sk.compute_mu(msg, None).unwrap();
+        let mu2 = pk.compute_mu(msg, None).unwrap();
+        let mu3 = pk.compute_mu(msg, None).unwrap();
         assert_eq!(mu1, mu2);
         assert_eq!(mu2, mu3);
 
-        let mu4 = MuBuilder::compute_mu(&pk.compute_tr(), msg, None).unwrap();
+        let mu4 = pk.compute_mu(msg, None).unwrap();
         assert_eq!(mu1, mu4);
 
-        let mut mb = MuBuilder::do_init(&pk.compute_tr(), None).unwrap();
+        let mut mb = pk.create_mu_builder(None).unwrap();
         mb.do_update(msg);
         let mu5 = mb.do_final();
         assert_eq!(mu1, mu5);
 
-        let mut mb = MuBuilder::do_init(&pk.compute_tr(), None).unwrap();
+        let mut mb = pk.create_mu_builder(None).unwrap();
         mb.do_update(b"The quick brown fox ");
         mb.do_update(b"jumped over the lazy dog");
         let mu6 = mb.do_final();
@@ -959,9 +1000,9 @@ mod mldsa_tests {
 
         // failure case: ctx too long
         // ctx len 255 should succeed
-        _ = MuBuilder::do_init(&pk.compute_tr(), Some(&[1u8; 255])).unwrap();
+        _ = pk.create_mu_builder(Some(&[1u8; 255])).unwrap();
         // ctx len 256 should fail
-        match MuBuilder::do_init(&pk.compute_tr(), Some(&[1u8; 256])) {
+        match pk.create_mu_builder(Some(&[1u8; 256])) {
             Err(SignatureError::LengthError(_)) => { /* good */ }
             _ => panic!("Expected LengthError for ctx len 256"),
         }
@@ -970,21 +1011,21 @@ mod mldsa_tests {
         let pk_expanded = MLDSA44PublicKeyExpanded::from(&pk);
         let sk_expanded = MLDSA44PrivateKeyExpanded::from(&sk);
 
-        let mu1 = MLDSA44::compute_mu_from_sk(&sk_expanded, msg, None).unwrap();
-        let mu2 = MLDSA44::compute_mu_from_pk(&pk_expanded, msg, None).unwrap();
-        let mu3 = MLDSA44::compute_mu_from_tr(&pk_expanded.compute_tr(), msg, None).unwrap();
+        let mu1 = sk_expanded.compute_mu(msg, None).unwrap();
+        let mu2 = pk_expanded.compute_mu(msg, None).unwrap();
+        let mu3 = pk_expanded.compute_mu(msg, None).unwrap();
         assert_eq!(mu1, mu2);
         assert_eq!(mu2, mu3);
 
-        let mu4 = MuBuilder::compute_mu(&pk_expanded.compute_tr(), msg, None).unwrap();
+        let mu4 = pk_expanded.compute_mu(msg, None).unwrap();
         assert_eq!(mu1, mu4);
 
-        let mut mb = MuBuilder::do_init(&pk_expanded.compute_tr(), None).unwrap();
+        let mut mb = pk_expanded.create_mu_builder(None).unwrap();
         mb.do_update(msg);
         let mu5 = mb.do_final();
         assert_eq!(mu1, mu5);
 
-        let mut mb = MuBuilder::do_init(&pk_expanded.compute_tr(), None).unwrap();
+        let mut mb = pk_expanded.create_mu_builder(None).unwrap();
         mb.do_update(b"The quick brown fox ");
         mb.do_update(b"jumped over the lazy dog");
         let mu6 = mb.do_final();
@@ -993,7 +1034,7 @@ mod mldsa_tests {
         // test SerializedState for MuBuilder
 
         // serializing and resuming after init
-        let mb = MuBuilder::do_init(&pk_expanded.compute_tr(), None).unwrap();
+        let mb = pk_expanded.create_mu_builder(None).unwrap();
         let serialized_state = mb.suspend();
 
         let mut mb_resumed = MuBuilder::from_suspended(serialized_state).unwrap();
@@ -1005,7 +1046,7 @@ mod mldsa_tests {
         let msg1 = b"The quick brown fox";
         let msg2 = b" jumped over the lazy dog";
 
-        let mut mb = MuBuilder::do_init(&pk_expanded.compute_tr(), None).unwrap();
+        let mut mb = pk_expanded.create_mu_builder(None).unwrap();
         mb.do_update(msg1);
 
         let serialized_state = mb.suspend();
@@ -1021,20 +1062,20 @@ mod mldsa_tests {
 
         let (pk, sk) = MLDSA44::keygen().unwrap();
 
-        let mu = MuBuilder::compute_mu(&pk.compute_tr(), msg, None).unwrap();
+        let mu = pk.compute_mu(msg, None).unwrap();
 
-        let sig = MLDSA44::sign_mu(&sk, None, &mu).unwrap();
-        MLDSA44::verify(&pk, msg, None, &sig).unwrap();
+        let sig = sk.sign_mu(&mu, &mut HashDRBG_SHA512::new_from_os()).unwrap();
+        pk.verify(msg, None, &sig).unwrap();
 
         let mut sig_buf = [1u8; MLDSA44_SIG_LEN];
-        MLDSA44::sign_mu_out(&sk, None, &mu, &mut sig_buf).unwrap();
-        MLDSA44::verify(&pk, msg, None, &sig_buf).unwrap();
+        sk.sign_mu_out(&mu, &mut HashDRBG_SHA512::new_from_os(), &mut sig_buf).unwrap();
+        pk.verify(msg, None, &sig_buf).unwrap();
 
-        let sig = MLDSA44::sign_mu_deterministic(&sk, None, &mu, [0u8; 32]).unwrap();
-        MLDSA44::verify(&pk, msg, None, &sig).unwrap();
+        let sig = sk.sign_mu(&mu, &mut FixedSeedRNG::new([0u8; 32])).unwrap();
+        pk.verify(msg, None, &sig).unwrap();
 
-        MLDSA44::sign_mu_deterministic_out(&sk, None, &mu, [1u8; 32], &mut sig_buf).unwrap();
-        MLDSA44::verify(&pk, msg, None, &sig_buf).unwrap();
+        sk.sign_mu_out(&mu, &mut FixedSeedRNG::new([1u8; 32]), &mut sig_buf).unwrap();
+        pk.verify(msg, None, &sig_buf).unwrap();
     }
 
     #[test]
@@ -1047,7 +1088,7 @@ mod mldsa_tests {
         let msg = b"Colorless green ideas sleep furiously";
 
         // Put the builder into a mid-stream state (some, but not all, of the message absorbed).
-        let mut mb = MuBuilder::do_init(&tr, None).unwrap();
+        let mut mb = MuBuilder::from_tr(&tr, None).unwrap();
         mb.do_update(&msg[..10]);
 
         // Generic trait-conformance tests (version header present, [0,0,0] and future versions
@@ -1066,7 +1107,11 @@ mod mldsa_tests {
         assert_eq!(expected_mu, from_state.do_final());
 
         // Anchor correctness to the existing one-shot path: streaming must match compute_mu.
-        let one_shot = MuBuilder::compute_mu(&tr, msg, None).unwrap();
+        let one_shot = {
+            let mut mb = MuBuilder::from_tr(&tr, None).unwrap();
+            mb.do_update(msg);
+            mb.do_final()
+        };
         assert_eq!(expected_mu, one_shot);
 
         // A corrupt SHAKE256 `squeezing` byte must be rejected. Layout of the delegated SHAKE256

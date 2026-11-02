@@ -12,7 +12,7 @@ use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::symmetric_key::FromKeyMaterial;
 use bouncycastle_core::traits::AEADCipherEncryptor;
-use bouncycastle_core_test_framework::FixedSeedRNG;
+use bouncycastle_rng::FixedSeedRNG;
 
 const NONCE: [u8; GCM_NONCE_LEN] = [0x5A; GCM_NONCE_LEN];
 const MSG: &[u8] = b"The quick brown fox jumps over the lazy dog";
@@ -21,7 +21,7 @@ fn material<const N: usize>(fill: u8, key_type: KeyType) -> KeyMaterial<N> {
     KeyMaterial::<N>::from_bytes_as_type(&[fill; N], key_type).expect("key material")
 }
 
-fn rng() -> FixedSeedRNG<GCM_NONCE_LEN> {
+fn rng() -> FixedSeedRNG<[u8; GCM_NONCE_LEN]> {
     FixedSeedRNG::new(NONCE)
 }
 
@@ -108,7 +108,7 @@ fn several_workers_from_one_key_are_independent_and_the_key_is_unchanged() {
 #[test]
 fn a_fresh_nonce_per_generator() {
     let key = AES128Key::<GMAC>::from_key_material(&material::<16>(0x66, KeyType::MACKey)).unwrap();
-    let mut rng = FixedSeedRNG::<64>::new(core::array::from_fn(|i| i as u8));
+    let mut rng = FixedSeedRNG::new(core::array::from_fn::<u8, 64, _>(|i| i as u8));
     let (g1, n1) = key.create_generator(&mut rng).unwrap();
     let (g2, n2) = key.create_generator(&mut rng).unwrap();
     assert_ne!(n1, n2);
@@ -148,7 +148,7 @@ fn a_key_below_its_own_strength_is_refused_at_construction() {
 
 #[test]
 fn generate_draws_a_mac_key() {
-    let mut rng = FixedSeedRNG::<32>::new([0x24u8; 32]);
+    let mut rng = FixedSeedRNG::new([0x24u8; 32]);
     let key = AES256Key::<GMAC>::generate(&mut rng).unwrap();
     let tag = key.create_generator_nonce(&NONCE).mac(MSG);
     assert!(key.create_verifier(&NONCE).verify(MSG, &tag));

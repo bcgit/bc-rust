@@ -16,7 +16,7 @@ use bouncycastle_mldsa_common::params::weaker_of;
 use bouncycastle_sha2::{SHA256, SHA512};
 
 pub use bouncycastle_mldsa_common::params::{
-    MLDSA44Params, MLDSA65Params, MLDSA87Params, MLDSAParamsBase,
+    ByteBuffer, MLDSA44Params, MLDSA65Params, MLDSA87Params, MLDSAParamsBase,
 };
 
 /// One ML-DSA parameter set as this crate uses it: everything on [`MLDSAParamsBase`], plus the
@@ -34,25 +34,55 @@ pub trait MLDSAParams: MLDSAParamsBase {
     type VecL: VectorTrait;
     /// The 𝑘 × ℓ public matrix 𝐀̂.
     type MatrixA: MatrixTrait<VecL = Self::VecL, VecK = Self::VecK>;
+    /// `[u8; PK_LEN]`, for an encoding made where no const generic names the length.
+    type PkEncoded: ByteBuffer;
+    /// `[u8; SK_LEN]`, likewise.
+    type SkEncoded: ByteBuffer;
 }
 
 impl MLDSAParams for MLDSA44Params {
+    type PkEncoded = [u8; 1312];
+    type SkEncoded = [u8; 2560];
     type VecK = Vector<4>;
     type VecL = Vector<4>;
     type MatrixA = Matrix<4, 4>;
 }
 
 impl MLDSAParams for MLDSA65Params {
+    type PkEncoded = [u8; 1952];
+    type SkEncoded = [u8; 4032];
     type VecK = Vector<6>;
     type VecL = Vector<5>;
     type MatrixA = Matrix<6, 5>;
 }
 
 impl MLDSAParams for MLDSA87Params {
+    type PkEncoded = [u8; 2592];
+    type SkEncoded = [u8; 4896];
     type VecK = Vector<8>;
     type VecL = Vector<7>;
     type MatrixA = Matrix<8, 7>;
 }
+
+/// A parameter set's public key length as a const generic: `P: PublicKeyLen<N>` has exactly one
+/// solution per parameter set, so an impl or method generic over `N` and bound on it infers `N`
+/// from `P`. That is what lets the key types carry only `P` while the `core` traits keep their
+/// `[u8; N]` arrays. [`PrivateKeyLen`] and [`SignatureLen`] are the same for the other two.
+pub trait PublicKeyLen<const N: usize>: MLDSAParams {}
+/// See [`PublicKeyLen`].
+pub trait PrivateKeyLen<const N: usize>: MLDSAParams {}
+/// See [`PublicKeyLen`].
+pub trait SignatureLen<const N: usize>: MLDSAParams {}
+
+impl PublicKeyLen<{ MLDSA44Params::PK_LEN }> for MLDSA44Params {}
+impl PrivateKeyLen<{ MLDSA44Params::SK_LEN }> for MLDSA44Params {}
+impl SignatureLen<{ MLDSA44Params::SIG_LEN }> for MLDSA44Params {}
+impl PublicKeyLen<{ MLDSA65Params::PK_LEN }> for MLDSA65Params {}
+impl PrivateKeyLen<{ MLDSA65Params::SK_LEN }> for MLDSA65Params {}
+impl SignatureLen<{ MLDSA65Params::SIG_LEN }> for MLDSA65Params {}
+impl PublicKeyLen<{ MLDSA87Params::PK_LEN }> for MLDSA87Params {}
+impl PrivateKeyLen<{ MLDSA87Params::SK_LEN }> for MLDSA87Params {}
+impl SignatureLen<{ MLDSA87Params::SIG_LEN }> for MLDSA87Params {}
 
 /// A crate-private (aka "sealed") trait that prevents a new HashML-DSA pairing from being defined
 /// outside this crate.

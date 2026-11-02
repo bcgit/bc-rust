@@ -136,9 +136,11 @@ The following prefixes can be applied:
 The following suffixes can be applied
 
 * `_init / _update / _final`: indicates phase of a stateful streaming API. Other verbs can be used here as appropriate
-  to the primitive, such as `absorb / squeeze`, `encrypt / decrypt`, etc. `_init` is typically a static constructor
-  (though exceptions may exist), and `_final` indicates that this function call renders the object unusable afterwards
-  by consuming `self` via a move: `_final(self, ..)`.
+  to the primitive, such as `absorb / squeeze`, `encrypt / decrypt`, etc. For a keyed primitive (a cipher, a MAC, a
+  signature) the worker is constructed by its key object (`create_encryptor`, `create_generator`, `create_signer`) and
+  carries no `_init`; `_init` is for a primitive that builds its own state from its arguments, such as `MuBuilder`.
+  `_final` indicates that this function call renders the object unusable afterwards by consuming `self` via a move:
+  `_final(self, ..)`.
 * `_rng`: indicates that this version of the function sources its random numbers from a provided `&mut dyn RNG` instead
   of
   from the default library RNG. `_rng(.., &mut dyn RNG)`.

@@ -67,6 +67,31 @@ impl MLDSAParams for MLDSA87Params {
     type T1Packed = [u8; 2560]; // 320 * 8
 }
 
+/// A parameter set's public key length as a const generic: `P: PublicKeyLen<N>` has exactly one
+/// solution per parameter set, so an impl or method generic over `N` and bound on it infers `N`
+/// from `P`. That is what lets the key types carry only `P` while the `core` traits keep their
+/// `[u8; N]` arrays. The other three traits are the same for the other lengths.
+pub trait PublicKeyLen<const N: usize>: MLDSAParams {}
+/// See [`PublicKeyLen`]; the stored (seed) form of the private key.
+pub trait PrivateKeyLen<const N: usize>: MLDSAParams {}
+/// See [`PublicKeyLen`]; the FIPS 204 Algorithm 24 form of the private key.
+pub trait FullPrivateKeyLen<const N: usize>: MLDSAParams {}
+/// See [`PublicKeyLen`].
+pub trait SignatureLen<const N: usize>: MLDSAParams {}
+
+impl PublicKeyLen<{ MLDSA44Params::PK_LEN }> for MLDSA44Params {}
+impl PrivateKeyLen<{ MLDSA44Params::SK_LEN }> for MLDSA44Params {}
+impl FullPrivateKeyLen<{ MLDSA44Params::FULL_SK_LEN }> for MLDSA44Params {}
+impl SignatureLen<{ MLDSA44Params::SIG_LEN }> for MLDSA44Params {}
+impl PublicKeyLen<{ MLDSA65Params::PK_LEN }> for MLDSA65Params {}
+impl PrivateKeyLen<{ MLDSA65Params::SK_LEN }> for MLDSA65Params {}
+impl FullPrivateKeyLen<{ MLDSA65Params::FULL_SK_LEN }> for MLDSA65Params {}
+impl SignatureLen<{ MLDSA65Params::SIG_LEN }> for MLDSA65Params {}
+impl PublicKeyLen<{ MLDSA87Params::PK_LEN }> for MLDSA87Params {}
+impl PrivateKeyLen<{ MLDSA87Params::SK_LEN }> for MLDSA87Params {}
+impl FullPrivateKeyLen<{ MLDSA87Params::FULL_SK_LEN }> for MLDSA87Params {}
+impl SignatureLen<{ MLDSA87Params::SIG_LEN }> for MLDSA87Params {}
+
 /// A crate-private (aka "sealed") trait that prevents a new HashML-DSA pairing from being defined
 /// outside this crate.
 trait HashMLDSAParamsInternalTrait {}

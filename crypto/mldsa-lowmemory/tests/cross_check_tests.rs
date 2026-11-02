@@ -4,12 +4,14 @@
 //! signature bytes, and that each crate verifies the other's signatures.
 
 use bouncycastle_core::key_material::{KeyMaterial256, KeyType};
-use bouncycastle_core::traits::{SignaturePrivateKey, SignaturePublicKey, SignatureVerifier};
+use bouncycastle_core::signature_key::VerifyingKey;
+use bouncycastle_core::traits::{SignaturePrivateKey, SignaturePublicKey};
 use bouncycastle_core_test_framework::DUMMY_SEED;
 use bouncycastle_mldsa as full;
 use bouncycastle_mldsa_lowmemory as low;
+use bouncycastle_rng::FixedSeedRNG;
 #[allow(unused_imports)]
-use full::{MLDSAPublicKeyTrait as _, MLDSATrait as _};
+use full::{MLDSAPrivateKeyTrait as _, MLDSAPublicKeyTrait as _, MLDSATrait as _};
 #[allow(unused_imports)]
 use low::{MLDSAPrivateKeyTrait as _, MLDSAPublicKeyTrait as _, MLDSATrait as _};
 
@@ -30,18 +32,17 @@ macro_rules! cross_check {
             );
 
             let msg = b"the two ML-DSA crates must agree byte for byte";
-            let mu_full = full::MuBuilder::compute_mu(&pk_full.compute_tr(), msg, None).unwrap();
-            let mu_low = low::MuBuilder::compute_mu(&pk_low.compute_tr(), msg, None).unwrap();
+            let mu_full = pk_full.compute_mu(msg, None).unwrap();
+            let mu_low = pk_low.compute_mu(msg, None).unwrap();
             assert_eq!(mu_full, mu_low, "mu");
 
             let rnd = [0x5au8; 32];
-            let sig_full =
-                full::$set::sign_mu_deterministic(&sk_full, None, &mu_full, rnd).unwrap();
-            let sig_low = low::$set::sign_mu_deterministic(&sk_low, &mu_low, rnd).unwrap();
+            let sig_full = sk_full.sign_mu(&mu_full, &mut FixedSeedRNG::new(rnd)).unwrap();
+            let sig_low = sk_low.sign_mu(&mu_low, &mut FixedSeedRNG::new(rnd)).unwrap();
             assert_eq!(sig_full.as_slice(), sig_low.as_slice(), "signature bytes");
 
-            full::$set::verify(&pk_full, msg, None, &sig_low).unwrap();
-            low::$set::verify(&pk_low, msg, None, &sig_full).unwrap();
+            pk_full.verify(msg, None, &sig_low).unwrap();
+            pk_low.verify(msg, None, &sig_full).unwrap();
         }
     };
 }

@@ -25,13 +25,15 @@ use bouncycastle_core::errors::SignatureError;
 use bouncycastle_core::hazmat::do_hazardous_operations;
 use bouncycastle_core::key_material::{KeyMaterial256, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::traits::{SignaturePublicKey, SignatureVerifier};
+use bouncycastle_core::signature_key::VerifyingKey;
+use bouncycastle_core::traits::SignaturePublicKey;
 use bouncycastle_core_test_framework::test_data_loaders::{Value, wycheproof_json};
 use bouncycastle_hex as hex;
 use bouncycastle_mldsa_lowmemory::{
     MLDSA44, MLDSA44PublicKey, MLDSA65, MLDSA65PublicKey, MLDSA87, MLDSA87PublicKey,
-    MLDSAPublicKeyTrait, MLDSATrait, MuBuilder,
+    MLDSAPrivateKeyTrait, MLDSAPublicKeyTrait, MLDSATrait,
 };
+use bouncycastle_rng::FixedSeedRNG;
 
 #[test]
 fn mldsa_44_sign_seed_test() {
@@ -247,11 +249,9 @@ impl MLDSASignSeedTestCase {
             // it can't be computed, so just take the one provided
             hex::decode(&self.mu).unwrap().as_slice().try_into().unwrap()
         } else {
-            match MuBuilder::compute_mu(
-                &pk.compute_tr(),
-                &hex::decode(self.msg.clone().unwrap()).unwrap(),
-                ctx_vec.as_deref(),
-            ) {
+            match pk
+                .compute_mu(&hex::decode(self.msg.clone().unwrap()).unwrap(), ctx_vec.as_deref())
+            {
                 Ok(mu) => mu,
                 Err(SignatureError::LengthError(_)) => {
                     if self.result == "invalid" {
@@ -269,16 +269,15 @@ impl MLDSASignSeedTestCase {
         // generate the signature using an all-zero signing nonce
         // Use the vector's `rnd` when present (hedged/randomized cases); deterministic vectors omit
         // it and are signed with the all-zero nonce.
-        let rnd: [u8; 32] = self
-            .rnd
-            .as_ref()
-            .map(|r| hex::decode(r).unwrap().try_into().unwrap())
-            .unwrap_or([0u8; 32]);
-        let sig = MLDSA44::sign_mu_deterministic(&sk, &mu, rnd).unwrap();
+        let sig = match &self.rnd {
+            Some(rnd) => {
+                sk.sign_mu(&mu, &mut FixedSeedRNG::new(&hex::decode(rnd).unwrap())).unwrap()
+            }
+            None => sk.sign_mu_deterministic(&mu).unwrap(),
+        };
         assert_eq!(sig, hex::decode(&self.sig).unwrap().as_slice());
 
-        let res =
-            MLDSA44::verify_mu(&pk, &mu, &hex::decode(&self.sig).unwrap().try_into().unwrap());
+        let res = pk.verify_mu(&mu, &hex::decode(&self.sig).unwrap().try_into().unwrap());
 
         if self.result == "valid" {
             res.unwrap();
@@ -348,11 +347,9 @@ impl MLDSASignSeedTestCase {
             // it can't be computed, so just take the one provided
             hex::decode(&self.mu).unwrap().as_slice().try_into().unwrap()
         } else {
-            match MuBuilder::compute_mu(
-                &pk.compute_tr(),
-                &hex::decode(self.msg.clone().unwrap()).unwrap(),
-                ctx_vec.as_deref(),
-            ) {
+            match pk
+                .compute_mu(&hex::decode(self.msg.clone().unwrap()).unwrap(), ctx_vec.as_deref())
+            {
                 Ok(mu) => mu,
                 Err(SignatureError::LengthError(_)) => {
                     if self.result == "invalid" {
@@ -370,16 +367,15 @@ impl MLDSASignSeedTestCase {
         // generate the signature using an all-zero signing nonce
         // Use the vector's `rnd` when present (hedged/randomized cases); deterministic vectors omit
         // it and are signed with the all-zero nonce.
-        let rnd: [u8; 32] = self
-            .rnd
-            .as_ref()
-            .map(|r| hex::decode(r).unwrap().try_into().unwrap())
-            .unwrap_or([0u8; 32]);
-        let sig = MLDSA65::sign_mu_deterministic(&sk, &mu, rnd).unwrap();
+        let sig = match &self.rnd {
+            Some(rnd) => {
+                sk.sign_mu(&mu, &mut FixedSeedRNG::new(&hex::decode(rnd).unwrap())).unwrap()
+            }
+            None => sk.sign_mu_deterministic(&mu).unwrap(),
+        };
         assert_eq!(sig, hex::decode(&self.sig).unwrap().as_slice());
 
-        let res =
-            MLDSA65::verify_mu(&pk, &mu, &hex::decode(&self.sig).unwrap().try_into().unwrap());
+        let res = pk.verify_mu(&mu, &hex::decode(&self.sig).unwrap().try_into().unwrap());
 
         if self.result == "valid" {
             res.unwrap();
@@ -449,11 +445,9 @@ impl MLDSASignSeedTestCase {
             // it can't be computed, so just take the one provided
             hex::decode(&self.mu).unwrap().as_slice().try_into().unwrap()
         } else {
-            match MuBuilder::compute_mu(
-                &pk.compute_tr(),
-                &hex::decode(self.msg.clone().unwrap()).unwrap(),
-                ctx_vec.as_deref(),
-            ) {
+            match pk
+                .compute_mu(&hex::decode(self.msg.clone().unwrap()).unwrap(), ctx_vec.as_deref())
+            {
                 Ok(mu) => mu,
                 Err(SignatureError::LengthError(_)) => {
                     if self.result == "invalid" {
@@ -471,16 +465,15 @@ impl MLDSASignSeedTestCase {
         // generate the signature using an all-zero signing nonce
         // Use the vector's `rnd` when present (hedged/randomized cases); deterministic vectors omit
         // it and are signed with the all-zero nonce.
-        let rnd: [u8; 32] = self
-            .rnd
-            .as_ref()
-            .map(|r| hex::decode(r).unwrap().try_into().unwrap())
-            .unwrap_or([0u8; 32]);
-        let sig = MLDSA87::sign_mu_deterministic(&sk, &mu, rnd).unwrap();
+        let sig = match &self.rnd {
+            Some(rnd) => {
+                sk.sign_mu(&mu, &mut FixedSeedRNG::new(&hex::decode(rnd).unwrap())).unwrap()
+            }
+            None => sk.sign_mu_deterministic(&mu).unwrap(),
+        };
         assert_eq!(sig, hex::decode(&self.sig).unwrap().as_slice());
 
-        let res =
-            MLDSA87::verify_mu(&pk, &mu, &hex::decode(&self.sig).unwrap().try_into().unwrap());
+        let res = pk.verify_mu(&mu, &hex::decode(&self.sig).unwrap().try_into().unwrap());
 
         if self.result == "valid" {
             res.unwrap();
@@ -566,8 +559,7 @@ impl MLDSAVerifyTestCase {
 
         let ctx_vec = self.ctx.as_ref().map(|ctx| hex::decode(ctx).unwrap());
 
-        match MLDSA44::verify(
-            &pk,
+        match pk.verify(
             &hex::decode(&self.msg).unwrap(),
             ctx_vec.as_deref(),
             &hex::decode(&self.sig).unwrap(),
@@ -606,8 +598,7 @@ impl MLDSAVerifyTestCase {
 
         let ctx_vec = self.ctx.as_ref().map(|ctx| hex::decode(ctx).unwrap());
 
-        match MLDSA65::verify(
-            &pk,
+        match pk.verify(
             &hex::decode(&self.msg).unwrap(),
             ctx_vec.as_deref(),
             &hex::decode(&self.sig).unwrap(),
@@ -646,8 +637,7 @@ impl MLDSAVerifyTestCase {
 
         let ctx_vec = self.ctx.as_ref().map(|ctx| hex::decode(ctx).unwrap());
 
-        match MLDSA87::verify(
-            &pk,
+        match pk.verify(
             &hex::decode(&self.msg).unwrap(),
             ctx_vec.as_deref(),
             &hex::decode(&self.sig).unwrap(),

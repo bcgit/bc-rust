@@ -46,8 +46,8 @@ use bouncycastle_core::traits::{
     StreamCipherDecryptor, StreamCipherEncryptor, SymmetricCipherDecryptor,
     SymmetricCipherEncryptor,
 };
-use bouncycastle_core_test_framework::FixedSeedRNG;
 use bouncycastle_core_test_framework::test_data_loaders::{Value, bc_test_data_json, hex_field};
+use bouncycastle_rng::FixedSeedRNG;
 use std::collections::BTreeMap;
 
 #[path = "common/acvp_helpers.rs"]
@@ -109,7 +109,7 @@ where
         let (mut enc, got_iv) =
             Ctr::<P, Encrypting, KEY_LEN, BLOCK_LEN, NONCE_LEN>::do_encrypt_init_rng(
                 &key,
-                &mut FixedSeedRNG::<NONCE_LEN>::new(nonce),
+                &mut FixedSeedRNG::new(nonce),
             )
             .expect("encrypt init");
         assert_eq!(got_iv, nonce, "the pinned RNG should reproduce the vector's nonce");

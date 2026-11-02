@@ -8,7 +8,6 @@ mod mlkem_tests {
     use bouncycastle_core::traits::{
         Hash, KEMDecapsulator, KEMEncapsulator, KEMPrivateKey, KEMPublicKey, XOF, XOFSqueezer,
     };
-    use bouncycastle_core_test_framework::FixedSeedRNG;
     use bouncycastle_hex as hex;
     use bouncycastle_mlkem_lowmemory::hazmat::EncapsWithRandomness;
     use bouncycastle_mlkem_lowmemory::mlkem::{
@@ -26,6 +25,7 @@ mod mlkem_tests {
         MLKEM1024PrivateKey, MLKEM1024PublicKey,
     };
     use bouncycastle_mlkem_lowmemory::{MLKEMPrivateKeyTrait, MLKEMTrait};
+    use bouncycastle_rng::FixedSeedRNG;
     use bouncycastle_sha3::SHAKE256;
 
     #[test]

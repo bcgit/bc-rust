@@ -21,8 +21,8 @@ use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::traits::{
     BlockCipherDecryptor, BlockCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
 };
-use bouncycastle_core_test_framework::FixedSeedRNG;
 use bouncycastle_core_test_framework::block_cipher::TestFrameworkBlockCipher;
+use bouncycastle_rng::FixedSeedRNG;
 use common::{SwappedFourToy, SwappedPairToy, TOY_LEN, Toy, toy_key};
 
 type ToyEcb<Dir> = Ecb<Toy, Dir, TOY_LEN, TOY_LEN>;
@@ -130,7 +130,7 @@ fn the_mode_matches_the_spec_equations() {
     let iv: [u8; TOY_LEN] = core::array::from_fn(|i| 0xF0 ^ (i as u8));
     let (mut cbc, _) = Cbc::<Toy, Encrypting, TOY_LEN, TOY_LEN>::do_encrypt_init_rng(
         &key,
-        &mut FixedSeedRNG::<TOY_LEN>::new(iv),
+        &mut FixedSeedRNG::new(iv),
     )
     .unwrap();
     let mut first = plaintext[0];
@@ -183,7 +183,7 @@ fn ecb_is_deterministic_and_leaks_equal_blocks() {
 #[should_panic(expected = "ECB has no initialization data")]
 fn the_rng_constructor_panics() {
     let key = toy_key();
-    let mut rng = FixedSeedRNG::<0>::new([]);
+    let mut rng = FixedSeedRNG::new([0u8; 0]);
     let _ = ToyEcb::<Encrypting>::do_encrypt_init_rng(&key, &mut rng);
 }
 
@@ -197,7 +197,7 @@ fn the_rng_one_shot_panics() {
     let mut block = [0x42u8; TOY_LEN];
     let _ = ToyEcb::<Encrypting>::encrypt_rng_inplace(
         &key,
-        &mut FixedSeedRNG::<0>::new([]),
+        &mut FixedSeedRNG::new([0u8; 0]),
         &mut block,
     );
 }

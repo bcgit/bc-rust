@@ -14,7 +14,7 @@ use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::traits::{
     AEADCipherDecryptor, AEADCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
 };
-use bouncycastle_core_test_framework::FixedSeedRNG;
+use bouncycastle_rng::FixedSeedRNG;
 use common::{ForwardOnlyToy, TOY_LEN, Toy, toy_key};
 
 type ToyGcm<Dir, const TAG_LEN: usize> = Gcm<Toy, Dir, TOY_LEN, TAG_LEN>;
@@ -29,7 +29,7 @@ fn toy_encrypt<const TAG_LEN: usize>(
     let mut ct = vec![0u8; message.len()];
     let (nonce, _, tag) = ToyGcm::<Encrypting, TAG_LEN>::encrypt_detached_rng_out(
         &toy_key(),
-        &mut FixedSeedRNG::<12>::new(seed),
+        &mut FixedSeedRNG::new(seed),
         aad,
         message,
         &mut ct,
@@ -84,11 +84,9 @@ fn chunking_is_independent_for_aad_and_data() {
 
     for aad_split in [0usize, 1, 17, 40] {
         for data_split in [0usize, 1, 23, 50] {
-            let (mut enc, got_nonce) = ToyGcm::<Encrypting, 16>::do_encrypt_init_rng(
-                &key,
-                &mut FixedSeedRNG::<12>::new(seed),
-            )
-            .unwrap();
+            let (mut enc, got_nonce) =
+                ToyGcm::<Encrypting, 16>::do_encrypt_init_rng(&key, &mut FixedSeedRNG::new(seed))
+                    .unwrap();
             assert_eq!(got_nonce, nonce);
             enc.do_update_aad(&aad[..aad_split]).unwrap();
             enc.do_update_aad(&aad[aad_split..]).unwrap();
@@ -279,7 +277,7 @@ fn neither_direction_uses_the_inverse_cipher() {
         let mut ct = [0u8; 48];
         let (nonce, _, tag) = Gcm::<P, Encrypting, TOY_LEN, 16>::encrypt_detached_rng_out(
             &key,
-            &mut FixedSeedRNG::<12>::new([0x4Du8; 12]),
+            &mut FixedSeedRNG::new([0x4Du8; 12]),
             aad,
             message,
             &mut ct,

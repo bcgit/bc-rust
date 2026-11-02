@@ -1,92 +1,63 @@
-//! This implements the HashML-DSA algorithm specified in FIPS 204 which is useful for cases
-//! where the user needs to process the to-be-signed message in chunks, and they use the external mu
-//! mode of [`MLDSA`]; possibly because the message needs to be digested before knowing which public key
-//! will sign it.
+//! HashML-DSA (FIPS 204 Section 5.4): ML-DSA over a digest of the message rather than the
+//! message, for the case where the message is hashed before the signing key is known or on a
+//! different machine.
 //!
-//! HashML-DSA is a full signature algorithm implementing the [`Signer`] and [`SignatureVerifier`] traits:
-//!
-//! ```rust
-//! use bouncycastle_core::errors::SignatureError;
-//! use bouncycastle_mldsa::{HashMLDSA65_with_SHA512, MLDSATrait, HashMLDSA44_with_SHA512};
-//! use bouncycastle_core::traits::{Signer, SignatureVerifier};
-//!
-//! let msg = b"The quick brown fox jumped over the lazy dog";
-//!
-//! let (pk, sk) = HashMLDSA65_with_SHA512::keygen().unwrap();
-//!
-//! let sig = HashMLDSA65_with_SHA512::sign(&sk, msg, None).unwrap();
-//! // This is the signature value that can be saved to a file or whatever it is need.
-//!
-//! match HashMLDSA65_with_SHA512::verify(&pk, msg, None, &sig) {
-//!     Ok(()) => println!("Signature is valid!"),
-//!     Err(SignatureError::SignatureVerificationFailed) => println!("Signature is invalid!"),
-//!     Err(e) => panic!("Something else went wrong: {:?}", e),
-//! }
-//! ```
-//!
-//! But the user also has access to the pre-hashed functions available from [`PHSigner`] and [`PHSignatureVerifier`]:
+//! The hash is a type parameter of the key's pre-hash methods, so any approved hash goes with any
+//! ML-DSA key:
 //!
 //! ```rust
 //! use bouncycastle_core::errors::SignatureError;
-//! use bouncycastle_mldsa::{HashMLDSA65_with_SHA512, MLDSATrait, HashMLDSA44_with_SHA512};
-//! use bouncycastle_core::traits::{
-//!     HashOneShot, PHSignatureVerifier, PHSigner, SignatureVerifier, Signer,
-//! };
+//! use bouncycastle_core::signature_key::{PreHashSigningKey, PreHashVerifyingKey, SigningKey};
+//! use bouncycastle_core::traits::{HashOneShot, SignatureSigner};
+//! use bouncycastle_mldsa::{MLDSA65, MLDSATrait};
+//! use bouncycastle_rng::HashDRBG_SHA512;
 //! use bouncycastle_sha2::SHA512;
 //!
+//! let mut rng = HashDRBG_SHA512::new_from_os();
 //! let msg = b"The quick brown fox jumped over the lazy dog";
+//! let (pk, sk) = MLDSA65::keygen().unwrap();
 //!
-//! // Here, and in contrast to External Mu mode of ML-DSA, the message can be pre-hashed before
-//! // even generating the signing key.
-//! let ph: [u8; 64] = SHA512::hash(msg).as_slice().try_into().unwrap();
+//! // The worker hashes the message as it streams in ...
+//! let mut signer = sk.create_ph_signer::<SHA512>(&mut rng, None).unwrap();
+//! signer.do_update(msg);
+//! let sig = signer.do_final().unwrap();
 //!
+//! // ... or the digest is made elsewhere, even before the key exists.
+//! let ph = SHA512::hash(msg);
+//! let sig2 = sk.sign_ph::<SHA512>(&mut rng, &ph, None).unwrap();
 //!
-//! let (pk, sk) = HashMLDSA65_with_SHA512::keygen().unwrap();
-//!
-//! let sig = HashMLDSA65_with_SHA512::sign_ph(&sk, &ph, None).unwrap();
-//! // This is the signature value that can be saved to a file or whatever it is need.
-//!
-//! // This verifies either through the usual one-shot API of the [SignatureVerifier] trait
-//! match HashMLDSA65_with_SHA512::verify(&pk, msg, None, &sig) {
-//!     Ok(()) => println!("Signature is valid!"),
-//!     Err(SignatureError::SignatureVerificationFailed) => println!("Signature is invalid!"),
-//!     Err(e) => panic!("Something else went wrong: {:?}", e),
-//! }
-//!
-//! // Or though the verify_ph of the [PHSignatureVerifier] trait
-//! match HashMLDSA65_with_SHA512::verify_ph(&pk, &ph, None, &sig) {
+//! // Either verifies over the message or over the digest.
+//! pk.verify_ph::<SHA512>(&ph, None, &sig).unwrap();
+//! match pk.verify_ph::<SHA512>(&ph, None, &sig2) {
 //!     Ok(()) => println!("Signature is valid!"),
 //!     Err(SignatureError::SignatureVerificationFailed) => println!("Signature is invalid!"),
 //!     Err(e) => panic!("Something else went wrong: {:?}", e),
 //! }
 //! ```
 //!
-//! Note that the [`HashMLDSA`] object is just a light wrapper around [`MLDSA`], and, for example, they share key types,
-//! so if more sophisticated keygen functions are needed, just use them from [`MLDSA`].
-//! But a simple [`HashMLDSA::keygen`] is provided.
+//! A HashML-DSA signature is not an ML-DSA signature of the message: the domain separator and
+//! the hash's OID go into the message representative (Algorithm 4, line 23), so a pure-message
+//! verifier rejects it. FIPS 204 requires the hash to carry at least the parameter set's strength
+//! (Section 5.4 and footnote 6), which is why SHA-256 pairs with ML-DSA-44 only; a weaker hash is
+//! refused when the signer is made. The named pairings of FIPS 204 are the [`HashMLDSA`] marker
+//! types below, which carry the pairing's name and OID.
 
-use crate::mldsa::{MLDSA_RND_LEN, MLDSATrait, MuBuilder};
-use crate::mldsa::{MLDSA44_PK_LEN, MLDSA44_SIG_LEN, MLDSA44_SK_LEN};
-use crate::mldsa::{MLDSA65_PK_LEN, MLDSA65_SIG_LEN, MLDSA65_SK_LEN};
-use crate::mldsa::{MLDSA87_PK_LEN, MLDSA87_SIG_LEN, MLDSA87_SK_LEN};
-use crate::mldsa_keys::{MLDSAPrivateKeyInternalTrait, MLDSAPublicKeyInternalTrait};
+use crate::mldsa::{MLDSA, MLDSA_RND_LEN, draw_rnd};
 use crate::params::{
     HashMLDSA44_with_SHA256Params, HashMLDSA44_with_SHA512Params, HashMLDSA65_with_SHA512Params,
-    HashMLDSA87_with_SHA512Params, HashMLDSAParams, MLDSAParams,
+    HashMLDSA87_with_SHA512Params, HashMLDSAParams, MLDSAParams, SignatureLen,
 };
 use crate::{
-    MLDSA, MLDSA44PrivateKey, MLDSA44PublicKey, MLDSA65PrivateKey, MLDSA65PublicKey,
-    MLDSA87PrivateKey, MLDSA87PublicKey, MLDSAPrivateKeyExpanded, MLDSAPrivateKeyTrait,
+    MLDSAPrivateKey, MLDSAPrivateKeyExpanded, MLDSAPrivateKeyTrait, MLDSAPublicKey,
     MLDSAPublicKeyExpanded, MLDSAPublicKeyTrait,
 };
 use bouncycastle_core::errors::SignatureError;
-use bouncycastle_core::key_material::KeyMaterial;
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::traits::{
-    Algorithm, AlgorithmOID, Hash, HashOneShot, PHSignatureVerifier, PHSigner, RNG,
-    SignatureVerifier, Signer,
+use bouncycastle_core::signature_key::{
+    DeterministicPreHashSigningKey, PreHash, PreHashSigningKey, PreHashVerifyingKey,
 };
-use bouncycastle_rng::HashDRBG_SHA512;
+use bouncycastle_core::traits::{Algorithm, AlgorithmOID, RNG, SignatureSigner, SignatureVerifier};
+use bouncycastle_mldsa_common::mu_builder::compute_mu_ph;
 use core::marker::PhantomData;
 
 /*** Constants ***/
@@ -97,534 +68,405 @@ pub use bouncycastle_mldsa_common::{
     HASH_ML_DSA_65_with_SHA512_NAME, HASH_ML_DSA_87_with_SHA512_NAME,
 };
 
-/*** Pub Types ***/
+/*** The named pairings ***/
 
-/// The HashML-DSA-44_with_SHA256 signature algorithm.
-///
-/// The only SHA-256 pairing. FIPS 204 Section 5.4 requires the pre-hash to provide "at least
-/// lambda bits of classical security strength against both collision and second preimage
-/// attacks", which footnote 6 puts at a digest of "at least 2 lambda bits"; SHA-256 meets that for
-/// ML-DSA-44 (lambda = 128) and not for ML-DSA-65 or -87, which pair only with SHA-512 here.
-#[allow(non_camel_case_types)]
-pub type HashMLDSA44_with_SHA256 = HashMLDSA<
-    HashMLDSA44_with_SHA256Params,
-    MLDSA44PublicKey,
-    MLDSA44PrivateKey,
-    { HashMLDSA44_with_SHA256Params::PH_LEN },
-    MLDSA44_PK_LEN,
-    MLDSA44_SK_LEN,
-    MLDSA44_SIG_LEN,
->;
+/// A named HashML-DSA pairing of FIPS 204: the parameter set and the hash, with the pairing's
+/// name and, where NIST assigned one, its OID. It is a marker only: signing and verifying go
+/// through the ML-DSA keys' pre-hash methods with the hash as the type parameter, and the marker
+/// says which hash that is for a given name.
+pub struct HashMLDSA<P: HashMLDSAParams> {
+    _phantom: PhantomData<P>,
+}
 
-/// The HashML-DSA-44_with_SHA512 signature algorithm.
+/// HashML-DSA-44-with-SHA256, the only SHA-256 pairing: FIPS 204 Section 5.4 requires the
+/// pre-hash to provide "at least lambda bits of classical security strength against both
+/// collision and second preimage attacks", which SHA-256 meets for ML-DSA-44 (lambda = 128) and
+/// not for ML-DSA-65 or -87.
 #[allow(non_camel_case_types)]
-pub type HashMLDSA44_with_SHA512 = HashMLDSA<
-    HashMLDSA44_with_SHA512Params,
-    MLDSA44PublicKey,
-    MLDSA44PrivateKey,
-    { HashMLDSA44_with_SHA512Params::PH_LEN },
-    MLDSA44_PK_LEN,
-    MLDSA44_SK_LEN,
-    MLDSA44_SIG_LEN,
->;
-/// Assigned by NIST in the Computer Security Objects Register: id-hash-ml-dsa-44-with-sha512 { sigAlgs 32 }
+pub type HashMLDSA44_with_SHA256 = HashMLDSA<HashMLDSA44_with_SHA256Params>;
+
+/// HashML-DSA-44-with-SHA512.
+#[allow(non_camel_case_types)]
+pub type HashMLDSA44_with_SHA512 = HashMLDSA<HashMLDSA44_with_SHA512Params>;
+
+/// HashML-DSA-65-with-SHA512.
+#[allow(non_camel_case_types)]
+pub type HashMLDSA65_with_SHA512 = HashMLDSA<HashMLDSA65_with_SHA512Params>;
+
+/// HashML-DSA-87-with-SHA512.
+#[allow(non_camel_case_types)]
+pub type HashMLDSA87_with_SHA512 = HashMLDSA<HashMLDSA87_with_SHA512Params>;
+
+impl<P: HashMLDSAParams> Algorithm for HashMLDSA<P> {
+    const ALG_NAME: &'static str = P::ALG_NAME;
+    const MAX_SECURITY_STRENGTH: SecurityStrength = P::MAX_SECURITY_STRENGTH;
+}
+
+/// The OIDs NIST assigned in the Computer Security Objects Register to the SHA-512 pairings:
+/// id-hash-ml-dsa-44-with-sha512 { sigAlgs 32 }, -65 { sigAlgs 33 }, -87 { sigAlgs 34 }. The
+/// SHA-256 pairing has none.
 impl AlgorithmOID for HashMLDSA44_with_SHA512 {
     const OID: &'static [u32] = &[2, 16, 840, 1, 101, 3, 4, 3, 32];
     const OID_DER: &'static [u8] =
         &[0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x03, 0x20];
 }
 
-/// The HashML-DSA-65_with_SHA512 signature algorithm.
-#[allow(non_camel_case_types)]
-pub type HashMLDSA65_with_SHA512 = HashMLDSA<
-    HashMLDSA65_with_SHA512Params,
-    MLDSA65PublicKey,
-    MLDSA65PrivateKey,
-    { HashMLDSA65_with_SHA512Params::PH_LEN },
-    MLDSA65_PK_LEN,
-    MLDSA65_SK_LEN,
-    MLDSA65_SIG_LEN,
->;
-/// Assigned by NIST in the Computer Security Objects Register: id-hash-ml-dsa-65-with-sha512 { sigAlgs 33 }
 impl AlgorithmOID for HashMLDSA65_with_SHA512 {
     const OID: &'static [u32] = &[2, 16, 840, 1, 101, 3, 4, 3, 33];
     const OID_DER: &'static [u8] =
         &[0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x03, 0x21];
 }
 
-/// The HashML-DSA-87_with_SHA512 signature algorithm.
-#[allow(non_camel_case_types)]
-pub type HashMLDSA87_with_SHA512 = HashMLDSA<
-    HashMLDSA87_with_SHA512Params,
-    MLDSA87PublicKey,
-    MLDSA87PrivateKey,
-    { HashMLDSA87_with_SHA512Params::PH_LEN },
-    MLDSA87_PK_LEN,
-    MLDSA87_SK_LEN,
-    MLDSA87_SIG_LEN,
->;
-/// Assigned by NIST in the Computer Security Objects Register: id-hash-ml-dsa-87-with-sha512 { sigAlgs 34 }
 impl AlgorithmOID for HashMLDSA87_with_SHA512 {
     const OID: &'static [u32] = &[2, 16, 840, 1, 101, 3, 4, 3, 34];
     const OID_DER: &'static [u8] =
         &[0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x03, 0x22];
 }
 
-impl<
-    P: HashMLDSAParams,
-    PK: MLDSAPublicKeyTrait<P::MLDSA, PK_LEN> + MLDSAPublicKeyInternalTrait<P::MLDSA, PK_LEN>,
-    SK: MLDSAPrivateKeyTrait<P::MLDSA, SK_LEN, PK_LEN>
-        + MLDSAPrivateKeyInternalTrait<P::MLDSA, SK_LEN, PK_LEN>,
-    const PH_LEN: usize,
-    const PK_LEN: usize,
-    const SK_LEN: usize,
-    const SIG_LEN: usize,
-> Algorithm for HashMLDSA<P, PK, SK, PH_LEN, PK_LEN, SK_LEN, SIG_LEN>
+/*** The workers ***/
+
+/// FIPS 204 Section 5.4: the hash must give at least the parameter set's strength.
+fn check_hash_strength<P: MLDSAParams, H: PreHash>() -> Result<(), SignatureError> {
+    if H::MAX_SECURITY_STRENGTH < P::MAX_SECURITY_STRENGTH {
+        return Err(SignatureError::GenericError(
+            "HashML-DSA: the pre-hash is weaker than the ML-DSA parameter set (FIPS 204 Section 5.4)",
+        ));
+    }
+    Ok(())
+}
+
+/// Algorithm 4, line 1 and Algorithm 5, line 1: the context is at most 255 bytes.
+fn parse_ctx(ctx: Option<&[u8]>) -> Result<([u8; 255], usize), SignatureError> {
+    let ctx = ctx.unwrap_or(&[]);
+    if ctx.len() > 255 {
+        return Err(SignatureError::LengthError("ctx value is longer than 255 bytes"));
+    }
+    let mut ctx_buf = [0u8; 255];
+    ctx_buf[..ctx.len()].copy_from_slice(ctx);
+    Ok((ctx_buf, ctx.len()))
+}
+
+fn check_ph_len<H: PreHash>(ph: &[u8]) -> Result<(), SignatureError> {
+    if ph.len() != H::OUTPUT_LEN {
+        return Err(SignatureError::LengthError("pre-hash is not the hash's output length"));
+    }
+    Ok(())
+}
+
+/// A HashML-DSA signature in progress: hashes the message with `H` as it streams in, then signs
+/// the digest (FIPS 204 Algorithm 4 over Algorithm 7). Made by
+/// [`PreHashSigningKey::create_ph_signer`] on an ML-DSA private key, which it borrows.
+pub struct HashMLDSASigner<'k, P: MLDSAParams, SK: MLDSAPrivateKeyTrait<P>, H: PreHash> {
+    _phantom: PhantomData<P>,
+    sk: &'k SK,
+    hash: H,
+    // HashML-DSA buffers the message in the pre-hash, not in mu, so the context waits here.
+    ctx: [u8; 255],
+    ctx_len: usize,
+    rnd: [u8; MLDSA_RND_LEN],
+}
+
+fn new_ph_signer<'k, P: MLDSAParams, SK: MLDSAPrivateKeyTrait<P>, H: PreHash>(
+    sk: &'k SK,
+    rnd: [u8; MLDSA_RND_LEN],
+    ctx: Option<&[u8]>,
+) -> Result<HashMLDSASigner<'k, P, SK, H>, SignatureError> {
+    check_hash_strength::<P, H>()?;
+    let (ctx, ctx_len) = parse_ctx(ctx)?;
+    Ok(HashMLDSASigner { _phantom: PhantomData, sk, hash: H::default(), ctx, ctx_len, rnd })
+}
+
+/// The worker reports the ML-DSA parameter set it signs with; the hash is in its type.
+impl<P: MLDSAParams, SK: MLDSAPrivateKeyTrait<P>, H: PreHash> Algorithm
+    for HashMLDSASigner<'_, P, SK, H>
 {
     const ALG_NAME: &'static str = P::ALG_NAME;
     const MAX_SECURITY_STRENGTH: SecurityStrength = P::MAX_SECURITY_STRENGTH;
 }
 
-/// An instance of the HashML-DSA algorithm.
-///
-/// The code is exposing the HashMLDSA struct this way so that alternative hash functions can be used
-/// without requiring modification of this source code; the user can add their own hash function
-/// by specifying the hash function to use (in the verifier), and specifying the bytes of the OID to
-/// to use as its domain separator in constructing the message representative M'.
-pub struct HashMLDSA<
-    P: HashMLDSAParams,
-    PK: MLDSAPublicKeyTrait<P::MLDSA, PK_LEN> + MLDSAPublicKeyInternalTrait<P::MLDSA, PK_LEN>,
-    SK: MLDSAPrivateKeyTrait<P::MLDSA, SK_LEN, PK_LEN>
-        + MLDSAPrivateKeyInternalTrait<P::MLDSA, SK_LEN, PK_LEN>,
-    const PH_LEN: usize,
-    const PK_LEN: usize,
-    const SK_LEN: usize,
+impl<P: SignatureLen<SIG_LEN>, SK: MLDSAPrivateKeyTrait<P>, H: PreHash, const SIG_LEN: usize>
+    SignatureSigner<SIG_LEN> for HashMLDSASigner<'_, P, SK, H>
+{
+    fn do_update(&mut self, msg_chunk: &[u8]) {
+        self.hash.do_update(msg_chunk);
+    }
+
+    fn do_final(self) -> Result<[u8; SIG_LEN], SignatureError> {
+        let mut out = [0u8; SIG_LEN];
+        self.do_final_out(&mut out)?;
+        Ok(out)
+    }
+
+    fn do_final_out(self, output: &mut [u8; SIG_LEN]) -> Result<usize, SignatureError> {
+        output.fill(0);
+        let ph = self.hash.do_final();
+        sign_ph_with_rnd::<P, SK, H, SIG_LEN>(
+            self.sk,
+            &ph,
+            Some(&self.ctx[..self.ctx_len]),
+            self.rnd,
+            output,
+        )
+    }
+}
+
+/// Algorithm 4 from line 23 on, over a digest: the message representative with the hash's OID,
+/// then Algorithm 7 with the given `rnd`.
+fn sign_ph_with_rnd<
+    P: SignatureLen<SIG_LEN>,
+    SK: MLDSAPrivateKeyTrait<P>,
+    H: PreHash,
+    const SIG_LEN: usize,
+>(
+    sk: &SK,
+    ph: &[u8],
+    ctx: Option<&[u8]>,
+    rnd: [u8; MLDSA_RND_LEN],
+    output: &mut [u8; SIG_LEN],
+) -> Result<usize, SignatureError> {
+    output.fill(0);
+    check_hash_strength::<P, H>()?;
+    check_ph_len::<H>(ph)?;
+    // Algorithm 4, lines 1 and 23, and Algorithm 7, line 6
+    let mu = compute_mu_ph(sk.tr(), ctx, H::OID_DER, ph)?;
+    // 24: 𝜎 ← ML-DSA.Sign_internal(𝑠𝑘, 𝑀′, 𝑟𝑛𝑑)
+    sk.sign_mu_with_rnd_out(&mu, rnd, output)
+}
+
+/// Algorithm 5 from line 1 on, over a digest.
+fn verify_ph<
+    P: SignatureLen<SIG_LEN>,
+    PK: MLDSAPublicKeyTrait<P>,
+    H: PreHash,
+    const SIG_LEN: usize,
+>(
+    pk: &PK,
+    ph: &[u8],
+    ctx: Option<&[u8]>,
+    sig: &[u8],
+) -> Result<(), SignatureError> {
+    check_hash_strength::<P, H>()?;
+    check_ph_len::<H>(ph)?;
+    let sig: &[u8; SIG_LEN] = sig
+        .try_into()
+        .map_err(|_| SignatureError::LengthError("Signature value is not the correct length."))?;
+    // Algorithm 5, line 1, Algorithm 4, line 23, and Algorithm 7, line 6
+    let mu = compute_mu_ph(&pk.compute_tr(), ctx, H::OID_DER, ph)?;
+    pk.verify_mu(&mu, sig)
+}
+
+/// A HashML-DSA verification in progress: hashes the message with `H` as it streams in, then
+/// verifies over the digest (FIPS 204 Algorithm 5 over Algorithm 8). Made by
+/// [`PreHashVerifyingKey::create_ph_verifier`] on an ML-DSA public key, which it borrows.
+pub struct HashMLDSAVerifier<
+    'k,
+    P: MLDSAParams,
+    PK: MLDSAPublicKeyTrait<P>,
+    H: PreHash,
     const SIG_LEN: usize,
 > {
-    _phantom: PhantomData<(P, PK, SK)>,
-
-    signer_rnd: Option<[u8; MLDSA_RND_LEN]>,
-
-    /// only used in streaming sign operations
-    sk: Option<SK>,
-
-    /// only used in streaming sign operations instead of sk
-    seed: Option<KeyMaterial<32>>,
-
-    /// only used in streaming verify operations
-    pk: Option<PK>,
-
-    /// Hash function instance for streaming message hashing
-    hash: P::PreHash,
-
-    /// Since HashML-DSA does message buffering in the external pre-hash, not in mu,
-    /// this needs to be saved for later
+    _phantom: PhantomData<P>,
+    pk: &'k PK,
+    hash: H,
     ctx: [u8; 255],
     ctx_len: usize,
 }
 
-impl<
-    P: HashMLDSAParams,
-    PK: MLDSAPublicKeyTrait<P::MLDSA, PK_LEN> + MLDSAPublicKeyInternalTrait<P::MLDSA, PK_LEN>,
-    SK: MLDSAPrivateKeyTrait<P::MLDSA, SK_LEN, PK_LEN>
-        + MLDSAPrivateKeyInternalTrait<P::MLDSA, SK_LEN, PK_LEN>,
-    const PH_LEN: usize,
-    const PK_LEN: usize,
-    const SK_LEN: usize,
+fn new_ph_verifier<
+    'k,
+    P: MLDSAParams,
+    PK: MLDSAPublicKeyTrait<P>,
+    H: PreHash,
     const SIG_LEN: usize,
-> HashMLDSA<P, PK, SK, PH_LEN, PK_LEN, SK_LEN, SIG_LEN>
-{
-    /// Generate a keypair, sourcing randomness from bouncycastle's default os-backed RNG.
-    ///
-    /// Key generation is intentionally not part of the [`Signer`] / [`SignatureVerifier`] traits;
-    /// it is provided as an inherent associated function directly on the algorithm struct.
-    /// Keygen, and keys in general, are interchangeable between MLDSA and HashMLDSA.
-    /// Error condition: basically only on RNG failures.
-    pub fn keygen() -> Result<(PK, SK), SignatureError> {
-        MLDSA::<P::MLDSA, PK, SK, PK_LEN, SK_LEN, SIG_LEN>::keygen()
-    }
-
-    /// Imports a secret key from a seed.
-    pub fn keygen_from_seed(seed: &KeyMaterial<32>) -> Result<(PK, SK), SignatureError> {
-        MLDSA::<P::MLDSA, PK, SK, PK_LEN, SK_LEN, SIG_LEN>::keygen_internal(seed)
-    }
-    /// Same as [`Signer::sign`], but signs from an [`MLDSAPrivateKeyExpanded`].
-    pub fn sign_with_expanded_key(
-        sk: &MLDSAPrivateKeyExpanded<P::MLDSA, PK, SK, SK_LEN, PK_LEN>,
-        msg: &[u8],
-        ctx: Option<&[u8]>,
-    ) -> Result<[u8; SIG_LEN], SignatureError> {
-        let mut out = [0u8; SIG_LEN];
-        Self::sign_with_expanded_key_out(sk, msg, ctx, &mut out)?;
-
-        Ok(out)
-    }
-    /// Same as [`Signer::sign_out`], but signs from an [`MLDSAPrivateKeyExpanded`].
-    pub fn sign_with_expanded_key_out(
-        sk: &MLDSAPrivateKeyExpanded<P::MLDSA, PK, SK, SK_LEN, PK_LEN>,
-        msg: &[u8],
-        ctx: Option<&[u8]>,
-        output: &mut [u8; SIG_LEN],
-    ) -> Result<usize, SignatureError> {
-        output.fill(0);
-
-        let mut ph_m = [0u8; PH_LEN];
-        _ = P::PreHash::hash_out(msg, &mut ph_m);
-        Self::sign_ph_with_expanded_key_out(sk, &ph_m, ctx, output)
-    }
-    /// Same as [`PHSigner::sign_ph`], but signs from an [`MLDSAPrivateKeyExpanded`].
-    pub fn sign_ph_with_expanded_key(
-        sk: &MLDSAPrivateKeyExpanded<P::MLDSA, PK, SK, SK_LEN, PK_LEN>,
-        ph: &[u8; PH_LEN],
-        ctx: Option<&[u8]>,
-    ) -> Result<[u8; SIG_LEN], SignatureError> {
-        let mut out = [0u8; SIG_LEN];
-        Self::sign_ph_with_expanded_key_out(sk, ph, ctx, &mut out)?;
-        Ok(out)
-    }
-    /// Same as [`PHSigner::sign_ph_out`], but signs from an [`MLDSAPrivateKeyExpanded`].
-    pub fn sign_ph_with_expanded_key_out(
-        sk: &MLDSAPrivateKeyExpanded<P::MLDSA, PK, SK, SK_LEN, PK_LEN>,
-        ph: &[u8; PH_LEN],
-        ctx: Option<&[u8]>,
-        output: &mut [u8; SIG_LEN],
-    ) -> Result<usize, SignatureError> {
-        output.fill(0);
-
-        let mut rnd: [u8; MLDSA_RND_LEN] = [0u8; MLDSA_RND_LEN];
-        HashDRBG_SHA512::new_from_os().next_bytes_out(&mut rnd)?;
-        Self::sign_ph_deterministic_out(&sk.sk, Some(&sk.A_hat), ctx, ph, rnd, output)
-    }
-    /// Algorithm 7 ML-DSA.Sign_internal(𝑠𝑘, 𝑀′, 𝑟𝑛𝑑)
-    /// (modified to take an externally-computed ph instead of M', thus combining Algorithm 4 with Algorithm 7).
-    ///
-    /// Security note:
-    /// `rnd` comes from the caller. FIPS 204 Section 3.4 permits the deterministic variant, `rnd`
-    /// all zeros, and the hedged variant draws it fresh. Deterministic signing does not leak the
-    /// key, but a repeated `rnd` loses some privacy: it becomes easy to tell whether a signer has
-    /// signed the same message twice, or whether two signatures on one message share a signer.
-    ///
-    /// Since `rnd` should be either a per-signature nonce, or a fixed value, therefore, to help
-    /// prevent accidental nonce reuse, this function moves `rnd`.
-    pub fn sign_ph_deterministic(
-        sk: &SK,
-        A_hat: Option<&<P::MLDSA as MLDSAParams>::MatrixA>,
-        ctx: Option<&[u8]>,
-        ph: &[u8; PH_LEN],
-        rnd: [u8; 32],
-    ) -> Result<[u8; SIG_LEN], SignatureError> {
-        let mut out: [u8; SIG_LEN] = [0u8; SIG_LEN];
-        Self::sign_ph_deterministic_out(sk, A_hat, ctx, ph, rnd, &mut out)?;
-        Ok(out)
-    }
-    /// Algorithm 7 ML-DSA.Sign_internal(𝑠𝑘, 𝑀′, 𝑟𝑛𝑑)
-    /// (modified to take an externally-computed ph instead of M', thus combining Algorithm 4 with Algorithm 7).
-    ///
-    /// As [`Self::sign_ph_deterministic`], writing into `output`; see its security note.
-    ///
-    /// Returns the number of bytes written to the output buffer. Can be called with an oversized buffer.
-    pub fn sign_ph_deterministic_out(
-        sk: &SK,
-        A_hat: Option<&<P::MLDSA as MLDSAParams>::MatrixA>,
-        ctx: Option<&[u8]>,
-        ph: &[u8; PH_LEN],
-        rnd: [u8; 32],
-        output: &mut [u8; SIG_LEN],
-    ) -> Result<usize, SignatureError> {
-        output.fill(0);
-
-        // Algorithm 4, lines 1 and 23, and Algorithm 7, line 6
-        let mu = MuBuilder::compute_mu_ph(sk.tr(), ctx, <P::PreHash as AlgorithmOID>::OID_DER, ph)?;
-
-        // 24: 𝜎 ← ML-DSA.Sign_internal(𝑠𝑘, 𝑀', 𝑟𝑛𝑑)
-        let bytes_written =
-            MLDSA::<P::MLDSA, PK, SK, PK_LEN, SK_LEN, SIG_LEN>::sign_mu_deterministic_out(
-                sk, A_hat, &mu, rnd, output,
-            )?;
-
-        Ok(bytes_written)
-    }
-
-    /// To be used for deterministic signing in conjunction with the [`Signer::do_sign_init`],
-    /// [`Signer::do_sign_update`], and [`Signer::do_sign_final`] flow.
-    /// Can be set anywhere after [`Signer::do_sign_init`] and before [`Signer::do_sign_final`]
-    pub fn set_signer_rnd(&mut self, rnd: [u8; 32]) {
-        self.signer_rnd = Some(rnd);
-    }
-
-    fn parse_ctx(ctx: Option<&[u8]>) -> Result<([u8; 255], usize), SignatureError> {
-        let ctx = ctx.unwrap_or(&[]);
-        // Algorithm 2
-        // 1: if |𝑐𝑡𝑥| > 255 then
-        if ctx.len() > 255 {
-            return Err(SignatureError::LengthError("ctx value is longer than 255 bytes"));
-        }
-        let mut ctx_buf = [0u8; 255];
-        ctx_buf[..ctx.len()].copy_from_slice(ctx);
-        Ok((ctx_buf, ctx.len()))
-    }
-
-    /// Alternative initialization of the streaming signer where the user provides their private key
-    /// as a seed and they want to delay its expansion as late as possible to optimize memory-usage.
-    pub fn sign_init_from_seed(
-        seed: &KeyMaterial<32>,
-        ctx: Option<&[u8]>,
-    ) -> Result<Self, SignatureError> {
-        let (ctx, ctx_len) = Self::parse_ctx(ctx)?;
-        Ok(Self {
-            _phantom: PhantomData,
-            signer_rnd: None,
-            sk: None,
-            seed: Some(seed.clone()),
-            pk: None,
-            hash: <P::PreHash as Default>::default(),
-            ctx,
-            ctx_len,
-        })
-    }
-    /// Same as [`SignatureVerifier::verify`], but verifies from an [`MLDSAPublicKeyExpanded`].
-    pub fn verify_with_expanded_key(
-        pk: &MLDSAPublicKeyExpanded<P::MLDSA, PK, PK_LEN>,
-        msg: &[u8],
-        ctx: Option<&[u8]>,
-        sig: &[u8],
-    ) -> Result<(), SignatureError> {
-        let mut ph_m = [0u8; PH_LEN];
-        _ = P::PreHash::hash_out(msg, &mut ph_m);
-
-        Self::verify_ph_internal(&pk.pk, Some(&pk.A_hat()), &ph_m, ctx, sig)
-    }
-
-    fn verify_ph_internal(
-        pk: &PK,
-        A_hat: Option<&<P::MLDSA as MLDSAParams>::MatrixA>,
-        ph: &[u8; PH_LEN],
-        ctx: Option<&[u8]>,
-        sig: &[u8],
-    ) -> Result<(), SignatureError> {
-        if sig.len() != SIG_LEN {
-            return Err(SignatureError::LengthError("Signature value is not the correct length."));
-        }
-        let sig_sized: &[u8; SIG_LEN] = sig[..SIG_LEN].try_into().unwrap();
-
-        // Algorithm 5, line 1, Algorithm 4, line 23, and Algorithm 7, line 6
-        let mu = MuBuilder::compute_mu_ph(
-            &pk.compute_tr(),
-            ctx,
-            <P::PreHash as AlgorithmOID>::OID_DER,
-            ph,
-        )?;
-
-        match A_hat {
-            Some(A_hat) => MLDSA::<P::MLDSA, PK, SK, PK_LEN, SK_LEN, SIG_LEN>::verify_mu(
-                pk,
-                Some(A_hat),
-                &mu,
-                sig_sized,
-            ),
-            None => MLDSA::<P::MLDSA, PK, SK, PK_LEN, SK_LEN, SIG_LEN>::verify_mu(
-                pk,
-                Some(&pk.A_hat()),
-                &mu,
-                sig_sized,
-            ),
-        }
-    }
+>(
+    pk: &'k PK,
+    ctx: Option<&[u8]>,
+) -> Result<HashMLDSAVerifier<'k, P, PK, H, SIG_LEN>, SignatureError> {
+    check_hash_strength::<P, H>()?;
+    let (ctx, ctx_len) = parse_ctx(ctx)?;
+    Ok(HashMLDSAVerifier { _phantom: PhantomData, pk, hash: H::default(), ctx, ctx_len })
 }
 
-impl<
-    P: HashMLDSAParams,
-    PK: MLDSAPublicKeyTrait<P::MLDSA, PK_LEN> + MLDSAPublicKeyInternalTrait<P::MLDSA, PK_LEN>,
-    SK: MLDSAPrivateKeyTrait<P::MLDSA, SK_LEN, PK_LEN>
-        + MLDSAPrivateKeyInternalTrait<P::MLDSA, SK_LEN, PK_LEN>,
-    const PH_LEN: usize,
-    const PK_LEN: usize,
-    const SK_LEN: usize,
-    const SIG_LEN: usize,
-> Signer<SK, SK_LEN, SIG_LEN> for HashMLDSA<P, PK, SK, PH_LEN, PK_LEN, SK_LEN, SIG_LEN>
+impl<P: SignatureLen<SIG_LEN>, PK: MLDSAPublicKeyTrait<P>, H: PreHash, const SIG_LEN: usize>
+    Algorithm for HashMLDSAVerifier<'_, P, PK, H, SIG_LEN>
 {
-    /// Algorithm 4 HashML-DSA.Sign(𝑠𝑘, 𝑀 , 𝑐𝑡𝑥, PH)
-    /// Generate a “pre-hash” ML-DSA signature.
-    fn sign(sk: &SK, msg: &[u8], ctx: Option<&[u8]>) -> Result<[u8; SIG_LEN], SignatureError> {
-        let mut out = [0u8; SIG_LEN];
-        Self::sign_out(sk, msg, ctx, &mut out)?;
-
-        Ok(out)
-    }
-
-    fn sign_out(
-        sk: &SK,
-        msg: &[u8],
-        ctx: Option<&[u8]>,
-        output: &mut [u8; SIG_LEN],
-    ) -> Result<usize, SignatureError> {
-        output.fill(0);
-
-        let mut ph_m = [0u8; PH_LEN];
-        _ = P::PreHash::hash_out(msg, &mut ph_m);
-        Self::sign_ph_out(sk, &ph_m, ctx, output)
-    }
-
-    fn do_sign_init(sk: &SK, ctx: Option<&[u8]>) -> Result<Self, SignatureError> {
-        let (ctx, ctx_len) = Self::parse_ctx(ctx)?;
-        Ok(Self {
-            _phantom: PhantomData,
-            signer_rnd: None,
-            sk: Some(sk.clone()),
-            seed: None,
-            pk: None,
-            hash: <P::PreHash as Default>::default(),
-            ctx,
-            ctx_len,
-        })
-    }
-
-    fn do_sign_update(&mut self, msg_chunk: &[u8]) {
-        self.hash.do_update(msg_chunk);
-    }
-
-    fn do_sign_final(self) -> Result<[u8; SIG_LEN], SignatureError> {
-        let mut out = [0u8; SIG_LEN];
-        self.do_sign_final_out(&mut out)?;
-        Ok(out)
-    }
-
-    fn do_sign_final_out(self, output: &mut [u8; SIG_LEN]) -> Result<usize, SignatureError> {
-        output.fill(0);
-        let ph: [u8; PH_LEN] = self.hash.do_final().try_into().unwrap();
-        let ctx = Some(&self.ctx[..self.ctx_len]);
-
-        if let Some(sk) = self.sk {
-            return match self.signer_rnd {
-                None => Self::sign_ph_out(&sk, &ph, ctx, output),
-                Some(rnd) => Self::sign_ph_deterministic_out(&sk, None, ctx, &ph, rnd, output),
-            };
-        }
-        let Some(seed) = self.seed else {
-            return Err(SignatureError::GenericError(
-                "do_sign_final_out called on a streaming context with no private key or seed; \
-                this is a verify-initialized context. Call do_verify_final instead",
-            ));
-        };
-        let rnd = match self.signer_rnd {
-            Some(rnd) => rnd,
-            None => {
-                let mut rnd: [u8; MLDSA_RND_LEN] = [0u8; MLDSA_RND_LEN];
-                HashDRBG_SHA512::new_from_os().next_bytes_out(&mut rnd)?;
-                rnd
-            }
-        };
-        // The seed is expanded here, not at init: the pre-hash does not need tr until now.
-        let (_pk, sk) = Self::keygen_from_seed(&seed)?;
-        Self::sign_ph_deterministic_out(&sk, None, ctx, &ph, rnd, output)
-    }
+    const ALG_NAME: &'static str = P::ALG_NAME;
+    const MAX_SECURITY_STRENGTH: SecurityStrength = P::MAX_SECURITY_STRENGTH;
 }
 
-impl<
-    P: HashMLDSAParams,
-    PK: MLDSAPublicKeyTrait<P::MLDSA, PK_LEN> + MLDSAPublicKeyInternalTrait<P::MLDSA, PK_LEN>,
-    SK: MLDSAPrivateKeyTrait<P::MLDSA, SK_LEN, PK_LEN>
-        + MLDSAPrivateKeyInternalTrait<P::MLDSA, SK_LEN, PK_LEN>,
-    const PH_LEN: usize,
-    const PK_LEN: usize,
-    const SK_LEN: usize,
-    const SIG_LEN: usize,
-> SignatureVerifier<PK, PK_LEN, SIG_LEN> for HashMLDSA<P, PK, SK, PH_LEN, PK_LEN, SK_LEN, SIG_LEN>
+impl<P: SignatureLen<SIG_LEN>, PK: MLDSAPublicKeyTrait<P>, H: PreHash, const SIG_LEN: usize>
+    SignatureVerifier for HashMLDSAVerifier<'_, P, PK, H, SIG_LEN>
 {
-    fn verify(pk: &PK, msg: &[u8], ctx: Option<&[u8]>, sig: &[u8]) -> Result<(), SignatureError> {
-        let mut ph_m = [0u8; PH_LEN];
-        _ = P::PreHash::hash_out(msg, &mut ph_m);
-
-        Self::verify_ph(pk, &ph_m, ctx, sig)
-    }
-
-    fn do_verify_init(pk: &PK, ctx: Option<&[u8]>) -> Result<Self, SignatureError> {
-        let (ctx, ctx_len) = Self::parse_ctx(ctx)?;
-        Ok(Self {
-            _phantom: Default::default(),
-            signer_rnd: None,
-            sk: None,
-            seed: None,
-            pk: Some(pk.clone()),
-            hash: <P::PreHash as Default>::default(),
-            ctx,
-            ctx_len,
-        })
-    }
-
-    fn do_verify_update(&mut self, msg_chunk: &[u8]) {
+    fn do_update(&mut self, msg_chunk: &[u8]) {
         self.hash.do_update(msg_chunk);
     }
 
     fn do_verify_final(self, sig: &[u8]) -> Result<(), SignatureError> {
-        // A context from do_sign_init has no public key; the same error MLDSA gives.
-        let pk = self
-            .pk
-            .ok_or(SignatureError::GenericError("No public key set on streaming verifier."))?;
-        let ph: [u8; PH_LEN] = self.hash.do_final().try_into().unwrap();
-        Self::verify_ph(&pk, &ph, Some(&self.ctx[..self.ctx_len]), sig)
+        let ph = self.hash.do_final();
+        verify_ph::<P, PK, H, SIG_LEN>(self.pk, &ph, Some(&self.ctx[..self.ctx_len]), sig)
     }
 }
 
-impl<
-    P: HashMLDSAParams,
-    PK: MLDSAPublicKeyTrait<P::MLDSA, PK_LEN> + MLDSAPublicKeyInternalTrait<P::MLDSA, PK_LEN>,
-    SK: MLDSAPrivateKeyTrait<P::MLDSA, SK_LEN, PK_LEN>
-        + MLDSAPrivateKeyInternalTrait<P::MLDSA, SK_LEN, PK_LEN>,
-    const PH_LEN: usize,
-    const PK_LEN: usize,
-    const SK_LEN: usize,
-    const SIG_LEN: usize,
-> PHSigner<PK, SK, PK_LEN, SK_LEN, SIG_LEN, PH_LEN>
-    for HashMLDSA<P, PK, SK, PH_LEN, PK_LEN, SK_LEN, SIG_LEN>
-{
-    fn sign_ph(
-        sk: &SK,
-        ph: &[u8; PH_LEN],
-        ctx: Option<&[u8]>,
-    ) -> Result<[u8; SIG_LEN], SignatureError> {
-        let mut out = [0u8; SIG_LEN];
-        Self::sign_ph_out(sk, ph, ctx, &mut out)?;
+/*** The role impls, for the plain and the expanded keys ***/
 
-        Ok(out)
+impl<P: SignatureLen<SIG_LEN>, const SIG_LEN: usize> PreHashSigningKey<MLDSA<P>, SIG_LEN>
+    for MLDSAPrivateKey<P>
+{
+    type PreHashSigner<'k, H: PreHash>
+        = HashMLDSASigner<'k, P, Self, H>
+    where
+        Self: 'k;
+
+    fn create_ph_signer<'k, H: PreHash>(
+        &'k self,
+        rng: &mut dyn RNG,
+        ctx: Option<&[u8]>,
+    ) -> Result<Self::PreHashSigner<'k, H>, SignatureError> {
+        new_ph_signer(self, draw_rnd(rng)?, ctx)
     }
 
-    /// Note that the PH expected here *is not the same* as the `mu` computed by [`MuBuilder`].
-    /// To make use of this function, the user needs to compute a straight hash of the message using
-    /// the same hash function as the indicated in the HashML-DSA variant;
-    /// for example: SHA256 for HashMDSA44_with_SHA256; SHA512 for HashMLDSA65_with_SHA512; etc.
-    fn sign_ph_out(
-        sk: &SK,
-        ph: &[u8; PH_LEN],
+    fn sign_ph_out<H: PreHash>(
+        &self,
+        rng: &mut dyn RNG,
+        ph: &[u8],
         ctx: Option<&[u8]>,
         output: &mut [u8; SIG_LEN],
     ) -> Result<usize, SignatureError> {
         output.fill(0);
-
-        let mut rnd: [u8; MLDSA_RND_LEN] = [0u8; MLDSA_RND_LEN];
-        HashDRBG_SHA512::new_from_os().next_bytes_out(&mut rnd)?;
-        Self::sign_ph_deterministic_out(sk, None, ctx, ph, rnd, output)
+        let rnd = draw_rnd(rng)?;
+        sign_ph_with_rnd::<P, Self, H, SIG_LEN>(self, ph, ctx, rnd, output)
     }
 }
 
-impl<
-    P: HashMLDSAParams,
-    PK: MLDSAPublicKeyTrait<P::MLDSA, PK_LEN> + MLDSAPublicKeyInternalTrait<P::MLDSA, PK_LEN>,
-    SK: MLDSAPrivateKeyTrait<P::MLDSA, SK_LEN, PK_LEN>
-        + MLDSAPrivateKeyInternalTrait<P::MLDSA, SK_LEN, PK_LEN>,
-    const PH_LEN: usize,
-    const PK_LEN: usize,
-    const SK_LEN: usize,
-    const SIG_LEN: usize,
-> PHSignatureVerifier<PK, PK_LEN, SIG_LEN, PH_LEN>
-    for HashMLDSA<P, PK, SK, PH_LEN, PK_LEN, SK_LEN, SIG_LEN>
+/// The deterministic variant over a pre-hash; see
+/// [`DeterministicSigningKey`](bouncycastle_core::signature_key::DeterministicSigningKey) on the key.
+impl<P: SignatureLen<SIG_LEN>, const SIG_LEN: usize>
+    DeterministicPreHashSigningKey<MLDSA<P>, SIG_LEN> for MLDSAPrivateKey<P>
 {
-    fn verify_ph(
-        pk: &PK,
-        ph: &[u8; PH_LEN],
+    type PreHashSigner<'k, H: PreHash>
+        = HashMLDSASigner<'k, P, Self, H>
+    where
+        Self: 'k;
+
+    fn create_ph_signer_deterministic<'k, H: PreHash>(
+        &'k self,
+        ctx: Option<&[u8]>,
+    ) -> Result<Self::PreHashSigner<'k, H>, SignatureError> {
+        new_ph_signer(self, [0u8; MLDSA_RND_LEN], ctx)
+    }
+
+    fn sign_ph_deterministic_out<H: PreHash>(
+        &self,
+        ph: &[u8],
+        ctx: Option<&[u8]>,
+        output: &mut [u8; SIG_LEN],
+    ) -> Result<usize, SignatureError> {
+        sign_ph_with_rnd::<P, Self, H, SIG_LEN>(self, ph, ctx, [0u8; MLDSA_RND_LEN], output)
+    }
+}
+
+impl<P: SignatureLen<SIG_LEN>, const SIG_LEN: usize> PreHashSigningKey<MLDSA<P>, SIG_LEN>
+    for MLDSAPrivateKeyExpanded<'_, P>
+{
+    type PreHashSigner<'k, H: PreHash>
+        = HashMLDSASigner<'k, P, Self, H>
+    where
+        Self: 'k;
+
+    fn create_ph_signer<'k, H: PreHash>(
+        &'k self,
+        rng: &mut dyn RNG,
+        ctx: Option<&[u8]>,
+    ) -> Result<Self::PreHashSigner<'k, H>, SignatureError> {
+        new_ph_signer(self, draw_rnd(rng)?, ctx)
+    }
+
+    fn sign_ph_out<H: PreHash>(
+        &self,
+        rng: &mut dyn RNG,
+        ph: &[u8],
+        ctx: Option<&[u8]>,
+        output: &mut [u8; SIG_LEN],
+    ) -> Result<usize, SignatureError> {
+        output.fill(0);
+        let rnd = draw_rnd(rng)?;
+        sign_ph_with_rnd::<P, Self, H, SIG_LEN>(self, ph, ctx, rnd, output)
+    }
+}
+
+/// The deterministic variant over a pre-hash; see
+/// [`DeterministicSigningKey`](bouncycastle_core::signature_key::DeterministicSigningKey) on the key.
+impl<P: SignatureLen<SIG_LEN>, const SIG_LEN: usize>
+    DeterministicPreHashSigningKey<MLDSA<P>, SIG_LEN> for MLDSAPrivateKeyExpanded<'_, P>
+{
+    type PreHashSigner<'k, H: PreHash>
+        = HashMLDSASigner<'k, P, Self, H>
+    where
+        Self: 'k;
+
+    fn create_ph_signer_deterministic<'k, H: PreHash>(
+        &'k self,
+        ctx: Option<&[u8]>,
+    ) -> Result<Self::PreHashSigner<'k, H>, SignatureError> {
+        new_ph_signer(self, [0u8; MLDSA_RND_LEN], ctx)
+    }
+
+    fn sign_ph_deterministic_out<H: PreHash>(
+        &self,
+        ph: &[u8],
+        ctx: Option<&[u8]>,
+        output: &mut [u8; SIG_LEN],
+    ) -> Result<usize, SignatureError> {
+        sign_ph_with_rnd::<P, Self, H, SIG_LEN>(self, ph, ctx, [0u8; MLDSA_RND_LEN], output)
+    }
+}
+
+impl<P: SignatureLen<SIG_LEN>, const SIG_LEN: usize> PreHashVerifyingKey<MLDSA<P>, SIG_LEN>
+    for MLDSAPublicKey<P>
+{
+    type PreHashVerifier<'k, H: PreHash>
+        = HashMLDSAVerifier<'k, P, Self, H, SIG_LEN>
+    where
+        Self: 'k;
+
+    fn create_ph_verifier<'k, H: PreHash>(
+        &'k self,
+        ctx: Option<&[u8]>,
+    ) -> Result<Self::PreHashVerifier<'k, H>, SignatureError> {
+        new_ph_verifier(self, ctx)
+    }
+
+    fn verify_ph<H: PreHash>(
+        &self,
+        ph: &[u8],
         ctx: Option<&[u8]>,
         sig: &[u8],
     ) -> Result<(), SignatureError> {
-        Self::verify_ph_internal(pk, None, ph, ctx, sig)
+        verify_ph::<P, Self, H, SIG_LEN>(self, ph, ctx, sig)
+    }
+}
+
+impl<P: SignatureLen<SIG_LEN>, const SIG_LEN: usize> PreHashVerifyingKey<MLDSA<P>, SIG_LEN>
+    for MLDSAPublicKeyExpanded<'_, P>
+{
+    type PreHashVerifier<'k, H: PreHash>
+        = HashMLDSAVerifier<'k, P, Self, H, SIG_LEN>
+    where
+        Self: 'k;
+
+    fn create_ph_verifier<'k, H: PreHash>(
+        &'k self,
+        ctx: Option<&[u8]>,
+    ) -> Result<Self::PreHashVerifier<'k, H>, SignatureError> {
+        new_ph_verifier(self, ctx)
+    }
+
+    fn verify_ph<H: PreHash>(
+        &self,
+        ph: &[u8],
+        ctx: Option<&[u8]>,
+        sig: &[u8],
+    ) -> Result<(), SignatureError> {
+        verify_ph::<P, Self, H, SIG_LEN>(self, ph, ctx, sig)
     }
 }

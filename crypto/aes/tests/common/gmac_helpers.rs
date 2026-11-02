@@ -11,7 +11,7 @@ mod cmac_helpers;
 use bouncycastle_aes::{AES128Key, AES192Key, AES256Key};
 use bouncycastle_cipher::modes::{GCM_NONCE_LEN, GMAC};
 use bouncycastle_core::symmetric_key::FromKeyMaterial;
-use bouncycastle_core_test_framework::FixedSeedRNG;
+use bouncycastle_rng::FixedSeedRNG;
 use cmac_helpers::mac_key;
 
 pub fn run_key_object_case(
@@ -28,8 +28,7 @@ pub fn run_key_object_case(
             let tag: [u8; $tlen] = tag.try_into().expect("tag length matches TAG_LEN");
             assert_eq!(key.create_verifier(&nonce).verify(msg, &tag), valid, "key object verify");
             if valid {
-                let (gen_, got) =
-                    key.create_generator(&mut FixedSeedRNG::<GCM_NONCE_LEN>::new(nonce)).unwrap();
+                let (gen_, got) = key.create_generator(&mut FixedSeedRNG::new(nonce)).unwrap();
                 assert_eq!(got, nonce, "the pinned RNG should give the vector's IV");
                 assert_eq!(gen_.mac(msg), tag, "key object generate");
                 assert_eq!(key.create_generator_nonce(&nonce).mac(msg), tag, "supplied nonce");

@@ -42,8 +42,8 @@ use bouncycastle_core::traits::{
     StreamCipherDecryptor, StreamCipherEncryptor, SymmetricCipherDecryptor,
     SymmetricCipherEncryptor,
 };
-use bouncycastle_core_test_framework::FixedSeedRNG;
 use bouncycastle_hex as hex;
+use bouncycastle_rng::FixedSeedRNG;
 
 const BLOCK_LEN: usize = 16;
 
@@ -148,7 +148,7 @@ where
     let init = || {
         let (enc, got_iv) = Cfb::<P, Encrypting, KEY_LEN, BLOCK_LEN>::do_encrypt_init_rng(
             &key,
-            &mut FixedSeedRNG::<BLOCK_LEN>::new(iv),
+            &mut FixedSeedRNG::new(iv),
         )
         .unwrap();
         assert_eq!(got_iv, iv, "{section}: the pinned RNG should produce the vector's IV");
@@ -352,7 +352,7 @@ fn cfb128_agrees_with_ofb_on_the_first_block_only() {
     let iv = block(IV);
     let (mut enc, got_iv) = Cfb::<AES128Internal, Encrypting, 16, 16>::do_encrypt_init_rng(
         &key,
-        &mut FixedSeedRNG::<16>::new(iv),
+        &mut FixedSeedRNG::new(iv),
     )
     .unwrap();
     assert_eq!(got_iv, iv);

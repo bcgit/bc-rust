@@ -15,8 +15,8 @@ use bouncycastle_cipher::modes::ModeNames;
 use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::traits::{AEADCipherDecryptor, AEADCipherEncryptor};
-use bouncycastle_core_test_framework::FixedSeedRNG;
 use bouncycastle_hex as hex;
+use bouncycastle_rng::FixedSeedRNG;
 
 fn zeros(byte_len: usize) -> String {
     "00".repeat(byte_len)
@@ -211,7 +211,7 @@ where
     let mut data = vec![0u8; pt.len()];
     let (got_iv, _, tag) = Gcm::<P, Encrypting, KEY_LEN, 16>::encrypt_detached_rng_out(
         &key,
-        &mut FixedSeedRNG::<12>::new(iv),
+        &mut FixedSeedRNG::new(iv),
         &aad,
         &pt,
         &mut data,
