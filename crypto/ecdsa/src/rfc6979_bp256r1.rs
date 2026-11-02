@@ -14,7 +14,7 @@
 //! uniform 256-bit candidate is `>= n` with probability `1 - n/2^256 = 0.336`, so about a third of
 //! all messages take at least one extra HMAC round. RFC 6979 puts no probability on this loop
 //! (§3.2 step h.3 says only that the process loops on an out-of-range candidate; its "utterly
-//! improbable", §2.4 and §3.4, is about `r = 0`, which this crate reports as an error instead).
+//! improbable", §2.4 and §3.4, is about `r = 0`, which FIPS 186-5 §6.4.1 step 11 makes a signing failure).
 //! [`generate_k`]'s docs say what the loop costs and amounts to on the brainpool curves.
 //!
 //! RFC 6979 has no official Appendix A.2.x-style test vectors for brainpool curves (its appendix

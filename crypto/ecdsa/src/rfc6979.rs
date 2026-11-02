@@ -115,8 +115,9 @@ fn candidate_in_range(candidate: &[u8; HLEN]) -> bool {
 /// brainpool modules, where it is a normal path, state their rates;
 /// [`crate::rfc6979_bp256r1::generate_k`]'s docs say what the count then amounts to in practice.
 ///
-/// The loop rejects only out-of-range candidates. A `k` whose `r` would be `0` is not retried
-/// here: signing returns an error instead (see the crate docs' Security Considerations).
+/// The loop rejects only out-of-range candidates. RFC 6979 §3.4 would also loop on a `k` giving
+/// `r = 0`; this crate follows FIPS 186-5 §6.4.1 step 11 instead, under which deterministic signing
+/// outputs failure there (see the crate docs' Security Considerations).
 pub fn generate_k(d: &P256Scalar, h1: &[u8; HLEN]) -> P256Scalar {
     let mut int2octets_d = Secret::<[u8; HLEN]>::new();
     *int2octets_d = d.to_be_bytes(); // §2.3.3, d already in [1, n-1]
