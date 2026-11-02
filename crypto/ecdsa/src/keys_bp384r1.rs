@@ -1,7 +1,7 @@
 //! ECDSA brainpoolP384r1 key types (FIPS 186-5 §6.2) and key-pair generation (Appendix A.2.1).
-//! Identical in shape to [`crate::keys`] -- see that module's docs for the full reasoning -- with
+//! Identical in shape to [`crate::keys_p256`] -- see that module's docs for the full reasoning -- with
 //! brainpoolP384r1's types and SEC 1 encoding widths substituted, and [`crate::extra_bits_bp384r1`]
-//! in place of [`crate::extra_bits`] for the wide-DRBG-output reduction this curve's `n` needs (see
+//! in place of [`crate::extra_bits_p256`] for the wide-DRBG-output reduction this curve's `n` needs (see
 //! that module's docs for why).
 
 use crate::extra_bits_bp384r1::reduce_wide_bits_mod_n_minus_1;

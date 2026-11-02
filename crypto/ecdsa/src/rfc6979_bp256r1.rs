@@ -1,6 +1,6 @@
 //! RFC 6979 §3.2 / FIPS 186-5 Appendix A.3.3: the deterministic per-message secret `k` for
 //! brainpoolP256r1, fixed to SHA-256 (the pairing wycheproof's `ecdsa_brainpoolP256r1_sha256_*`
-//! vector files use). Identical in shape to [`crate::rfc6979`] (P-256) -- see that module's docs
+//! vector files use). Identical in shape to [`crate::rfc6979_p256`] (P-256) -- see that module's docs
 //! for the full reasoning -- since brainpoolP256r1's `n` is, like P-256's, 256 bits: `HLEN`
 //! (SHA-256's output) and `qlen` are equal, so the same `int2octets`/`bits2octets`/single-HMAC-
 //! round shortcuts apply. `bits2octets`'s single-conditional-subtraction reduction is valid for
@@ -36,8 +36,8 @@ const HLEN: usize = 32;
 const _: () =
     assert!(HLEN * 8 == 256, "int2octets/bits2octets shortcuts assume hlen == qlen == 256");
 
-/// `HMAC_K(data)` (§3.1.1). See [`crate::rfc6979::hmac_k`]'s docs.
-/// As [`crate::rfc6979::hmac_k`], including why this returns a [`Secret`] rather than a bare
+/// `HMAC_K(data)` (§3.1.1). See [`crate::rfc6979_p256::hmac_k`]'s docs.
+/// As [`crate::rfc6979_p256::hmac_k`], including why this returns a [`Secret`] rather than a bare
 /// array: see that function's docs and [`generate_k`]'s "What is scrubbed" section.
 fn hmac_k(key: &[u8; HLEN], data: &[&[u8]]) -> Secret<[u8; HLEN]> {
     let key_material = KeyMaterial::<HLEN>::from_bytes_as_type(key, KeyType::MACKey)
@@ -53,7 +53,7 @@ fn hmac_k(key: &[u8; HLEN], data: &[&[u8]]) -> Secret<[u8; HLEN]> {
     out
 }
 
-/// RFC 6979 §2.3.4 `bits2octets(h1)`. See [`crate::rfc6979::bits2octets`]'s docs -- the same
+/// RFC 6979 §2.3.4 `bits2octets(h1)`. See [`crate::rfc6979_p256::bits2octets`]'s docs -- the same
 /// single-subtraction argument applies here (see this module's own docs for why it holds despite
 /// brainpoolP256r1's `n` not being close to `2^256`).
 fn bits2octets(h1: &[u8; HLEN]) -> [u8; HLEN] {
@@ -65,9 +65,9 @@ fn bits2octets(h1: &[u8; HLEN]) -> [u8; HLEN] {
 }
 
 /// `true` iff the raw (unreduced) candidate bytes, read as a big-endian integer, are in `[1,
-/// n-1]` -- RFC 6979 step h.3's comparison against `q`, by [`crate::rfc6979::limbs_in_range`].
+/// n-1]` -- RFC 6979 step h.3's comparison against `q`, by [`crate::rfc6979_p256::limbs_in_range`].
 fn candidate_in_range(candidate: &[u8; HLEN]) -> bool {
-    crate::rfc6979::limbs_in_range(&bp256r1_sec1::limbs_from_be_bytes(candidate), &N_LIMBS)
+    crate::rfc6979_p256::limbs_in_range(&bp256r1_sec1::limbs_from_be_bytes(candidate), &N_LIMBS)
 }
 
 /// RFC 6979 §3.2 steps a-h: the deterministic per-message secret `k` for private key `d` and
@@ -79,7 +79,7 @@ fn candidate_in_range(candidate: &[u8; HLEN]) -> bool {
 /// h.3's "otherwise" branch at least once (mean 0.51 extra iterations); [`crate::rfc6979_bp384r1`]
 /// and [`crate::rfc6979_bp512r1`] state their own rates. Each extra iteration is three more HMAC
 /// calls (two for the re-key, one for the next candidate) -- a timing difference a remote observer
-/// can see. [`crate::rfc6979::generate_k`]'s docs give the argument for why the count reveals
+/// can see. [`crate::rfc6979_p256::generate_k`]'s docs give the argument for why the count reveals
 /// nothing about `d` or the accepted `k`; it does not depend on the rate. What the rate changes is
 /// the practical consequence: the count is deterministic per `(d, msg)`, so the timing pattern over
 /// chosen messages is a fingerprint worth one to two bits per message -- useless for recovering

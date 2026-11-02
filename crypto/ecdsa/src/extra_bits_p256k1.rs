@@ -2,7 +2,7 @@
 //! Reduction" -- the "extra random bits" method both [`crate::keys_p256k1`]'s key generation
 //! (Appendix A.2.1) and [`crate::ecdsa_p256k1`]'s randomised per-message secret (Appendix A.3.1)
 //! use to turn a DRBG output wider than `n` into a value in `[1, n-1]`. Identical algorithm to
-//! [`crate::extra_bits`] -- see that module's docs for the full reasoning -- with secp256k1's
+//! [`crate::extra_bits_p256`] -- see that module's docs for the full reasoning -- with secp256k1's
 //! own `n` substituted.
 //!
 //! # Why secp256k1 draws extra bits at all
@@ -26,7 +26,7 @@
 //! `l = 320` too (computed, not assumed).
 //!
 //! The reduction itself is [`bouncycastle_ec::barrett`]'s constant-time Barrett reduction with
-//! `m = n - 1` (see [`crate::extra_bits`]'s docs for the constant-time argument); `extra_bits_p256k1_tests.rs`
+//! `m = n - 1` (see [`crate::extra_bits_p256`]'s docs for the constant-time argument); `extra_bits_p256k1_tests.rs`
 //! pins known answers computed in Python and cross-checks it against the bit-serial algorithm this
 //! module used to implement, kept there as an independent reference.
 

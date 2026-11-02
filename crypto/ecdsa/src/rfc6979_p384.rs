@@ -1,5 +1,5 @@
 //! RFC 6979 §3.2 / FIPS 186-5 Appendix A.3.3: the deterministic per-message secret `k` for P-384,
-//! fixed to SHA-384. Identical in shape to [`crate::rfc6979`] -- see that module's docs for the
+//! fixed to SHA-384. Identical in shape to [`crate::rfc6979_p256`] -- see that module's docs for the
 //! full derivation -- with `HLEN = 48` (SHA-384's output) and P-384's types substituted. `qlen ==
 //! hlen == 384` here too, so the same shortcuts collapse the same way, guarded by the same kind of
 //! compile-time assertion.
@@ -21,7 +21,7 @@ const HLEN: usize = 48;
 const _: () =
     assert!(HLEN * 8 == 384, "int2octets/bits2octets shortcuts assume hlen == qlen == 384");
 
-/// As [`crate::rfc6979::hmac_k`], including why this returns a [`Secret`] rather than a bare
+/// As [`crate::rfc6979_p256::hmac_k`], including why this returns a [`Secret`] rather than a bare
 /// array: see that function's docs and [`generate_k`]'s "What is scrubbed" section.
 fn hmac_k(key: &[u8; HLEN], data: &[&[u8]]) -> Secret<[u8; HLEN]> {
     let key_material = KeyMaterial::<HLEN>::from_bytes_as_type(key, KeyType::MACKey)
@@ -37,7 +37,7 @@ fn hmac_k(key: &[u8; HLEN], data: &[&[u8]]) -> Secret<[u8; HLEN]> {
     out
 }
 
-/// RFC 6979 §2.3.4 `bits2octets(h1)`. See [`crate::rfc6979::bits2octets`]'s docs.
+/// RFC 6979 §2.3.4 `bits2octets(h1)`. See [`crate::rfc6979_p256::bits2octets`]'s docs.
 fn bits2octets(h1: &[u8; HLEN]) -> [u8; HLEN] {
     let limbs = p384_sec1::limbs_from_be_bytes(h1);
     let (diff, borrow) = nat::sub(&limbs, &N_LIMBS);
@@ -47,13 +47,13 @@ fn bits2octets(h1: &[u8; HLEN]) -> [u8; HLEN] {
 }
 
 /// `true` iff the raw (unreduced) candidate bytes, read as a big-endian integer, are in `[1,
-/// n-1]` -- RFC 6979 step h.3's comparison against `q`, by [`crate::rfc6979::limbs_in_range`].
+/// n-1]` -- RFC 6979 step h.3's comparison against `q`, by [`crate::rfc6979_p256::limbs_in_range`].
 fn candidate_in_range(candidate: &[u8; HLEN]) -> bool {
-    crate::rfc6979::limbs_in_range(&p384_sec1::limbs_from_be_bytes(candidate), &N_LIMBS)
+    crate::rfc6979_p256::limbs_in_range(&p384_sec1::limbs_from_be_bytes(candidate), &N_LIMBS)
 }
 
 /// RFC 6979 §3.2 steps a-h: the deterministic per-message secret `k` for private key `d` and
-/// message hash `h1 = H(m)`. See [`crate::rfc6979::generate_k`]'s docs, including the
+/// message hash `h1 = H(m)`. See [`crate::rfc6979_p256::generate_k`]'s docs, including the
 /// rejection-loop constant-time argument, which applies unchanged here; `n` is within `2^-194` of
 /// `2^384`, so a candidate is rejected with probability about `2^-194`.
 pub fn generate_k(d: &P384Scalar, h1: &[u8; HLEN]) -> P384Scalar {

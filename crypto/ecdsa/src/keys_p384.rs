@@ -1,5 +1,5 @@
 //! ECDSA P-384 key types (FIPS 186-5 §6.2) and key-pair generation (Appendix A.2.1). Identical in
-//! shape to [`crate::keys`] -- see that module's docs for the full reasoning -- with P-384's
+//! shape to [`crate::keys_p256`] -- see that module's docs for the full reasoning -- with P-384's
 //! types and SEC 1 encoding widths substituted.
 //!
 //! # DRBG output length
@@ -153,7 +153,7 @@ pub fn keygen_from_rng(
 
     let q = comb_multiply_base_point(&d);
     // d is in [1, n-1] by construction and G has prime order n (cofactor h = 1), so [d]G is never
-    // the identity for any valid d -- see crate::keys::keygen_from_rng's identical argument.
+    // the identity for any valid d -- see crate::keys_p256::keygen_from_rng's identical argument.
     let (x, y) = q.to_affine().expect("[d]G is never infinity for d in [1, n-1]");
 
     Ok((ECDSAP384PublicKey { x, y }, ECDSAP384PrivateKey(d)))

@@ -1,7 +1,7 @@
 //! RFC 6979 §3.2 / FIPS 186-5 Appendix A.3.3: the deterministic per-message secret `k` for
 //! secp256k1, fixed to SHA-256 (the conventional pairing for this curve -- e.g. Bitcoin's own
 //! usage, and wycheproof's `ecdsa_secp256k1_sha256_*` vector files). Identical in shape to
-//! [`crate::rfc6979`] (P-256) -- see that module's docs for the full reasoning -- since
+//! [`crate::rfc6979_p256`] (P-256) -- see that module's docs for the full reasoning -- since
 //! secp256k1's `n` is, like P-256's, 256 bits: `HLEN` (SHA-256's output) and `qlen` are equal, so
 //! the same `int2octets`/`bits2octets`/single-HMAC-round shortcuts apply.
 //!
@@ -26,8 +26,8 @@ const HLEN: usize = 32;
 const _: () =
     assert!(HLEN * 8 == 256, "int2octets/bits2octets shortcuts assume hlen == qlen == 256");
 
-/// `HMAC_K(data)` (§3.1.1). See [`crate::rfc6979::hmac_k`]'s docs.
-/// As [`crate::rfc6979::hmac_k`], including why this returns a [`Secret`] rather than a bare
+/// `HMAC_K(data)` (§3.1.1). See [`crate::rfc6979_p256::hmac_k`]'s docs.
+/// As [`crate::rfc6979_p256::hmac_k`], including why this returns a [`Secret`] rather than a bare
 /// array: see that function's docs and [`generate_k`]'s "What is scrubbed" section.
 fn hmac_k(key: &[u8; HLEN], data: &[&[u8]]) -> Secret<[u8; HLEN]> {
     let key_material = KeyMaterial::<HLEN>::from_bytes_as_type(key, KeyType::MACKey)
@@ -43,7 +43,7 @@ fn hmac_k(key: &[u8; HLEN], data: &[&[u8]]) -> Secret<[u8; HLEN]> {
     out
 }
 
-/// RFC 6979 §2.3.4 `bits2octets(h1)`. See [`crate::rfc6979::bits2octets`]'s docs -- the same
+/// RFC 6979 §2.3.4 `bits2octets(h1)`. See [`crate::rfc6979_p256::bits2octets`]'s docs -- the same
 /// single-subtraction argument applies here since secp256k1's `n` is likewise close enough to
 /// `2^256` for a 256-bit input to always be `< 2n`.
 fn bits2octets(h1: &[u8; HLEN]) -> [u8; HLEN] {
@@ -55,13 +55,13 @@ fn bits2octets(h1: &[u8; HLEN]) -> [u8; HLEN] {
 }
 
 /// `true` iff the raw (unreduced) candidate bytes, read as a big-endian integer, are in `[1,
-/// n-1]` -- RFC 6979 step h.3's comparison against `q`, by [`crate::rfc6979::limbs_in_range`].
+/// n-1]` -- RFC 6979 step h.3's comparison against `q`, by [`crate::rfc6979_p256::limbs_in_range`].
 fn candidate_in_range(candidate: &[u8; HLEN]) -> bool {
-    crate::rfc6979::limbs_in_range(&p256k1_sec1::limbs_from_be_bytes(candidate), &N_LIMBS)
+    crate::rfc6979_p256::limbs_in_range(&p256k1_sec1::limbs_from_be_bytes(candidate), &N_LIMBS)
 }
 
 /// RFC 6979 §3.2 steps a-h: the deterministic per-message secret `k` for private key `d` and
-/// message hash `h1 = H(m)`. See [`crate::rfc6979::generate_k`]'s docs for the rejection-loop
+/// message hash `h1 = H(m)`. See [`crate::rfc6979_p256::generate_k`]'s docs for the rejection-loop
 /// constant-time argument, which applies unchanged here; `2^256 - n` is about `2^128`, so a
 /// candidate is rejected with probability about `2^-128`.
 pub fn generate_k(d: &P256K1Scalar, h1: &[u8; HLEN]) -> P256K1Scalar {

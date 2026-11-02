@@ -8,7 +8,7 @@
 //! carry-correction surfaced: several bit-level mutants survived because nothing here pinned the
 //! function against an independent reference).
 
-use bouncycastle_ecdsa::extra_bits::reduce_wide_bits_mod_n_minus_1;
+use bouncycastle_ecdsa::extra_bits_p256::reduce_wide_bits_mod_n_minus_1;
 use bouncycastle_hex::decode as hex_decode;
 
 fn bytes32(hex: &str) -> [u8; 32] {

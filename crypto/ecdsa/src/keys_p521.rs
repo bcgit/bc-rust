@@ -233,7 +233,7 @@ pub fn keygen_from_rng(
 
     let q = comb_multiply_base_point(&d);
     // d is in [1, n-1] by construction and G has prime order n (cofactor h = 1), so [d]G is never
-    // the identity for any valid d -- see crate::keys::keygen_from_rng's identical argument.
+    // the identity for any valid d -- see crate::keys_p256::keygen_from_rng's identical argument.
     let (x, y) = q.to_affine().expect("[d]G is never infinity for d in [1, n-1]");
 
     Ok((ECDSAP521PublicKey { x, y }, ECDSAP521PrivateKey(d)))

@@ -42,7 +42,7 @@ use bouncycastle::ecdsa::{
     ecdsa_p521::{ECDSAP521, ECDetDSAP521},
 };
 use bouncycastle::ecdsa::{
-    keys as keys_p256, keys_bp256r1, keys_bp384r1, keys_bp512r1, keys_p256k1, keys_p384, keys_p521,
+    keys_bp256r1, keys_bp384r1, keys_bp512r1, keys_p256, keys_p256k1, keys_p384, keys_p521,
 };
 use bouncycastle::hex;
 use clap::ValueEnum;

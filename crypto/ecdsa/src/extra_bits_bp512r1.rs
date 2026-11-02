@@ -2,7 +2,7 @@
 //! Reduction" -- the "extra random bits" method both [`crate::keys_bp512r1`]'s key generation
 //! (Appendix A.2.1) and [`crate::ecdsa_bp512r1`]'s randomised per-message secret (Appendix A.3.1)
 //! use to turn a DRBG output wider than `n` into a value in `[1, n-1]` with negligible bias.
-//! Identical algorithm to [`crate::extra_bits`] -- see that module's docs for the full reasoning
+//! Identical algorithm to [`crate::extra_bits_p256`] -- see that module's docs for the full reasoning
 //! -- with brainpoolP512r1's own `n` substituted.
 //!
 //! # Why brainpoolP512r1 needs this at all
@@ -17,7 +17,7 @@
 //! byte-aligned) as [`crate::keys_bp512r1::EXTRA_BITS_DRBG_OUTPUT_LEN`].
 //!
 //! The reduction itself is [`bouncycastle_ec::barrett`]'s constant-time Barrett reduction with
-//! `m = n - 1` (see [`crate::extra_bits`]'s docs for the constant-time argument); `extra_bits_bp512r1_tests.rs`
+//! `m = n - 1` (see [`crate::extra_bits_p256`]'s docs for the constant-time argument); `extra_bits_bp512r1_tests.rs`
 //! pins known answers computed in Python and cross-checks it against the bit-serial algorithm this
 //! module used to implement, kept there as an independent reference.
 

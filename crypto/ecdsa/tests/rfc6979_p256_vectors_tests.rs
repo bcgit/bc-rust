@@ -2,15 +2,13 @@
 //! deterministic per-message secret `k`, and the resulting signature `(r, s)`, for `curve: NIST
 //! P-256` with SHA-256, messages `"sample"` and `"test"`.
 
-use bouncycastle_core::traits::Hash;
-use bouncycastle_core::traits::{
-    SignaturePrivateKey, SignaturePublicKey, SignatureVerifier, Signer,
-};
+use bouncycastle_core::signature_key::{DeterministicSigningKey, VerifyingKey};
+use bouncycastle_core::traits::HashOneShot;
+use bouncycastle_core::traits::{SignaturePrivateKey, SignaturePublicKey};
 use bouncycastle_ec::p256_comb::comb_multiply_base_point;
 use bouncycastle_ec::p256_scalar::P256Scalar;
-use bouncycastle_ecdsa::ecdsa_p256::ECDetDSAP256;
-use bouncycastle_ecdsa::keys::{ECDSAP256PrivateKey, ECDSAP256PublicKey};
-use bouncycastle_ecdsa::rfc6979::generate_k;
+use bouncycastle_ecdsa::keys_p256::{ECDSAP256PrivateKey, ECDSAP256PublicKey};
+use bouncycastle_ecdsa::rfc6979_p256::generate_k;
 use bouncycastle_hex::decode as hex_decode;
 use bouncycastle_sha2::SHA256;
 
@@ -60,7 +58,7 @@ fn public_key_matches_vector() {
 fn generate_k_matches_vectors() {
     let d = P256Scalar::from_be_bytes(&bytes32(X));
     for v in [&SAMPLE, &TEST] {
-        let h: [u8; 32] = SHA256::default().hash(v.msg)[..32].try_into().unwrap();
+        let h: [u8; 32] = SHA256::hash(v.msg)[..32].try_into().unwrap();
         let k = generate_k(&d, &h);
         assert_eq!(k, P256Scalar::from_be_bytes(&bytes32(v.k)), "k for message {:?}", v.msg);
     }
@@ -70,7 +68,7 @@ fn generate_k_matches_vectors() {
 fn deterministic_sign_matches_vectors() {
     let sk = private_key();
     for v in [&SAMPLE, &TEST] {
-        let sig = ECDetDSAP256::sign(&sk, v.msg, None).unwrap();
+        let sig = sk.sign_deterministic(v.msg, None).unwrap();
         let mut expected = [0u8; 64];
         expected[..32].copy_from_slice(&bytes32(v.r));
         expected[32..].copy_from_slice(&bytes32(v.s));
@@ -88,7 +86,7 @@ fn deterministic_signature_verifies() {
     let pk = ECDSAP256PublicKey::from_bytes(&uncompressed).unwrap();
 
     for v in [&SAMPLE, &TEST] {
-        let sig = ECDetDSAP256::sign(&sk, v.msg, None).unwrap();
-        ECDetDSAP256::verify(&pk, v.msg, None, &sig).unwrap();
+        let sig = sk.sign_deterministic(v.msg, None).unwrap();
+        pk.verify(v.msg, None, &sig).unwrap();
     }
 }

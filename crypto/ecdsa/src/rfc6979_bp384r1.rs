@@ -31,8 +31,8 @@ const HLEN: usize = 48;
 const _: () =
     assert!(HLEN * 8 == 384, "int2octets/bits2octets shortcuts assume hlen == qlen == 384");
 
-/// `HMAC_K(data)` (§3.1.1). See [`crate::rfc6979::hmac_k`]'s docs.
-/// As [`crate::rfc6979::hmac_k`], including why this returns a [`Secret`] rather than a bare
+/// `HMAC_K(data)` (§3.1.1). See [`crate::rfc6979_p256::hmac_k`]'s docs.
+/// As [`crate::rfc6979_p256::hmac_k`], including why this returns a [`Secret`] rather than a bare
 /// array: see that function's docs and [`generate_k`]'s "What is scrubbed" section.
 fn hmac_k(key: &[u8; HLEN], data: &[&[u8]]) -> Secret<[u8; HLEN]> {
     let key_material = KeyMaterial::<HLEN>::from_bytes_as_type(key, KeyType::MACKey)
@@ -48,7 +48,7 @@ fn hmac_k(key: &[u8; HLEN], data: &[&[u8]]) -> Secret<[u8; HLEN]> {
     out
 }
 
-/// RFC 6979 §2.3.4 `bits2octets(h1)`. See [`crate::rfc6979::bits2octets`]'s docs -- the same
+/// RFC 6979 §2.3.4 `bits2octets(h1)`. See [`crate::rfc6979_p256::bits2octets`]'s docs -- the same
 /// single-subtraction argument applies here (see this module's own docs for why it holds despite
 /// brainpoolP384r1's `n` not being close to `2^384`).
 fn bits2octets(h1: &[u8; HLEN]) -> [u8; HLEN] {
@@ -60,9 +60,9 @@ fn bits2octets(h1: &[u8; HLEN]) -> [u8; HLEN] {
 }
 
 /// `true` iff the raw (unreduced) candidate bytes, read as a big-endian integer, are in `[1,
-/// n-1]` -- RFC 6979 step h.3's comparison against `q`, by [`crate::rfc6979::limbs_in_range`].
+/// n-1]` -- RFC 6979 step h.3's comparison against `q`, by [`crate::rfc6979_p256::limbs_in_range`].
 fn candidate_in_range(candidate: &[u8; HLEN]) -> bool {
-    crate::rfc6979::limbs_in_range(&bp384r1_sec1::limbs_from_be_bytes(candidate), &N_LIMBS)
+    crate::rfc6979_p256::limbs_in_range(&bp384r1_sec1::limbs_from_be_bytes(candidate), &N_LIMBS)
 }
 
 /// RFC 6979 §3.2 steps a-h: the deterministic per-message secret `k` for private key `d` and

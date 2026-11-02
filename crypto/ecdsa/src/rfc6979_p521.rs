@@ -1,5 +1,5 @@
 //! RFC 6979 §3.2 / FIPS 186-5 Appendix A.3.3: the deterministic per-message secret `k` for P-521,
-//! fixed to SHA-512. Unlike [`crate::rfc6979`] (P-256/SHA-256) and [`crate::rfc6979_p384`]
+//! fixed to SHA-512. Unlike [`crate::rfc6979_p256`] (P-256/SHA-256) and [`crate::rfc6979_p384`]
 //! (P-384/SHA-384), `qlen` (521, P-521's order's bit length) and `hlen` (512, SHA-512's output)
 //! are **not equal** here, so the shortcuts those modules document (`bits2octets`/`int2octets`
 //! needing no truncation, step h.2's loop always running exactly once) do not apply, and this
@@ -77,7 +77,7 @@ fn bits2octets(h1: &[u8; HLEN]) -> [u8; RLEN] {
 /// values) and `qlen = 521`: keeps the leftmost 521 bits and discards the rest, per the module
 /// docs. Returns the result directly as [`RLEN`] big-endian bytes (an integer `< 2^521`, so
 /// [`p521_sec1::limbs_from_be_bytes`] on it is exactly `bits2int`'s value, matching
-/// [`crate::rfc6979::candidate_in_range`]'s "compared to `n`, not reduced" step h.3 semantics).
+/// [`crate::rfc6979_p256::candidate_in_range`]'s "compared to `n`, not reduced" step h.3 semantics).
 ///
 /// Keeping "the leftmost 521 bits" as a *value* is not simply truncating the input to its first
 /// 66 bytes and masking the last one -- that keeps each surviving bit in its *original* position,
@@ -102,13 +102,13 @@ fn bits2int_521(v1: &[u8; HLEN], v2: &[u8; HLEN]) -> Secret<[u8; RLEN]> {
 }
 
 /// `true` iff the raw (unreduced) candidate bytes, read as a big-endian integer, are in `[1,
-/// n-1]` -- RFC 6979 step h.3's comparison against `q`, by [`crate::rfc6979::limbs_in_range`].
+/// n-1]` -- RFC 6979 step h.3's comparison against `q`, by [`crate::rfc6979_p256::limbs_in_range`].
 fn candidate_in_range(candidate: &[u8; RLEN]) -> bool {
-    crate::rfc6979::limbs_in_range(&p521_sec1::limbs_from_be_bytes(candidate), &N_LIMBS)
+    crate::rfc6979_p256::limbs_in_range(&p521_sec1::limbs_from_be_bytes(candidate), &N_LIMBS)
 }
 
 /// RFC 6979 §3.2 steps a-h: the deterministic per-message secret `k` for private key `d` and
-/// message hash `h1 = H(m)`. See [`crate::rfc6979::generate_k`]'s docs; step h differs as
+/// message hash `h1 = H(m)`. See [`crate::rfc6979_p256::generate_k`]'s docs; step h differs as
 /// described in the module docs (two `HMAC_K(V)` rounds per candidate, then a 521-bit truncation).
 /// The rejection-loop constant-time argument there applies unchanged here; `n` is within `2^-262`
 /// of `2^521`, so a 521-bit candidate is rejected with probability about `2^-262`.

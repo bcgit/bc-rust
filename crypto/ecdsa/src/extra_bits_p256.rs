@@ -1,5 +1,5 @@
 //! FIPS 186-5 Appendix A.4.1, "Conversion of a Bit String to an Integer mod n via Modular
-//! Reduction" -- the "extra random bits" method both [`crate::keys`]'s key generation (Appendix
+//! Reduction" -- the "extra random bits" method both [`crate::keys_p256`]'s key generation (Appendix
 //! A.2.1) and [`crate::ecdsa_p256`]'s randomised per-message secret (Appendix A.3.1) use to turn a
 //! DRBG output wider than `n` into a value in `[1, n-1]` with negligible bias.
 //!

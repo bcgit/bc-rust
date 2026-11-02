@@ -19,11 +19,11 @@
 
 mod cavp_common;
 
-use bouncycastle_core::traits::{
-    SignaturePrivateKey, SignaturePublicKey, SignatureVerifier, Signer,
-};
-use bouncycastle_ecdsa::ecdsa_p256::{ECDSAP256, SIG_LEN};
-use bouncycastle_ecdsa::keys::{ECDSAP256PrivateKey, ECDSAP256PublicKey};
+use bouncycastle_core::signature_key::{SigningKey, VerifyingKey};
+use bouncycastle_core::traits::{SignaturePrivateKey, SignaturePublicKey};
+use bouncycastle_ecdsa::ecdsa_p256::SIG_LEN;
+use bouncycastle_ecdsa::keys_p256::{ECDSAP256PrivateKey, ECDSAP256PublicKey};
+use bouncycastle_rng::DefaultRNG;
 use cavp_common::{
     FixedBytesRng, Record, decrement_be, get_test_data, hex_bytes, hex_field, parse_records,
     result_is_pass,
@@ -78,7 +78,7 @@ fn cavp_sigver() {
             }
         };
         let sig = signature_bytes(&r, &s);
-        let result = ECDSAP256::verify(&pk, &msg, None, &sig);
+        let result = pk.verify(&msg, None, &sig);
         assert_eq!(result.is_ok(), expect_pass, "mismatch for record {:?}", record.fields);
     }
 }
@@ -121,9 +121,10 @@ fn cavp_keypair_consistency() {
         let pk = ECDSAP256PublicKey::from_bytes(&uncompressed_pk(&qx, &qy))
             .expect("CAVP Q must be a valid public key");
 
-        let sig = ECDSAP256::sign(&sk, msg, None).expect("signing with a valid key must succeed");
-        ECDSAP256::verify(&pk, msg, None, &sig)
-            .expect("Q must be [d]G for this (d, Q) pair to verify");
+        let sig = sk
+            .sign(&mut DefaultRNG::default(), msg, None)
+            .expect("signing with a valid key must succeed");
+        pk.verify(msg, None, &sig).expect("Q must be [d]G for this (d, Q) pair to verify");
     }
 }
 
@@ -157,9 +158,9 @@ fn cavp_siggen() {
             .expect("CAVP Q must be a valid public key");
 
         let mut rng = FixedBytesRng::new(k_minus_1);
-        let sig = ECDSAP256::sign_rng(&sk, &msg, None, &mut rng)
-            .expect("signing with a valid key and k must succeed");
+        let sig =
+            sk.sign(&mut rng, &msg, None).expect("signing with a valid key and k must succeed");
         assert_eq!(sig, signature_bytes(&r, &s), "mismatch for record {:?}", record.fields);
-        ECDSAP256::verify(&pk, &msg, None, &sig).expect("NIST's own signature must verify");
+        pk.verify(&msg, None, &sig).expect("NIST's own signature must verify");
     }
 }

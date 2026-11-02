@@ -1,6 +1,6 @@
 //! ECDSA P-256 key types (FIPS 186-5 §6.2) and key-pair generation (Appendix A.2.1).
 
-use crate::extra_bits::reduce_wide_bits_mod_n_minus_1;
+use crate::extra_bits_p256::reduce_wide_bits_mod_n_minus_1;
 use crate::keys_common::DerivePublicKey;
 use bouncycastle_core::errors::{RNGError, SignatureError};
 use bouncycastle_core::security_strength::SecurityStrength;

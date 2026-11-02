@@ -21,9 +21,9 @@
 //! deliberately not read by the secp256k1 suite: its `SignatureMalleabilityBitcoin` vectors
 //! require rejecting `s > n/2`, a Bitcoin consensus rule rather than part of ECDSA.
 
-use bouncycastle_core::traits::{SignaturePublicKey, SignatureVerifier};
-use bouncycastle_ecdsa::ecdsa_p256::ECDSAP256;
-use bouncycastle_ecdsa::keys::ECDSAP256PublicKey;
+use bouncycastle_core::signature_key::VerifyingKey;
+use bouncycastle_core::traits::SignaturePublicKey;
+use bouncycastle_ecdsa::keys_p256::ECDSAP256PublicKey;
 use bouncycastle_hex::decode as hex_decode;
 use serde_json::Value;
 use std::fs;
@@ -97,7 +97,7 @@ fn ecdsa_secp256r1_sha256_p1363_test() {
                 num_invalid += 1;
             }
 
-            let result = pk.as_ref().and_then(|pk| ECDSAP256::verify(pk, &msg, None, &sig).ok());
+            let result = pk.as_ref().and_then(|pk| pk.verify(&msg, None, &sig).ok());
             assert_eq!(
                 result.is_some(),
                 expect_valid,
@@ -158,8 +158,7 @@ fn ecdsa_secp256r1_sha256_der_test() {
                 num_invalid += 1;
             }
 
-            let result =
-                pk.as_ref().and_then(|pk| ECDSAP256::verify_der(pk, &msg, None, &sig).ok());
+            let result = pk.as_ref().and_then(|pk| pk.verify_der(&msg, None, &sig).ok());
             assert_eq!(
                 result.is_some(),
                 expect_valid,
