@@ -68,7 +68,7 @@ fn print_struct_sizes() {
     println!("size_of<PARALLELHASH256>: {}", size_of::<ParallelHash256>());
     println!("size_of<PARALLELHASHXOF128>: {}", size_of::<ParallelHashXOF128>());
     println!("size_of<PARALLELHASHXOF256>: {}", size_of::<ParallelHashXOF256>());
-    println!("size_of<LengthBoundSqueezer>: {}", size_of::<CSHAKESqueezer<SHAKE128Params>>());
+    println!("size_of<CSHAKESqueezer>: {}", size_of::<CSHAKESqueezer<SHAKE128Params>>());
 }
 
 fn bench_do_nothing() {

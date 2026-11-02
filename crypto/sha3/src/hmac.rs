@@ -264,13 +264,13 @@ use bouncycastle_core::traits::{MAC, SuspendableKeyed};
 use bouncycastle_hmac::MIN_FIPS_DIGEST_LEN;
 
 /*** String constants ***/
-///
+/// The name of HMAC over SHA3-224.
 pub const HMAC_SHA3_224_NAME: &str = "HMAC-SHA3-224";
-///
+/// The name of HMAC over SHA3-256.
 pub const HMAC_SHA3_256_NAME: &str = "HMAC-SHA3-256";
-///
+/// The name of HMAC over SHA3-384.
 pub const HMAC_SHA3_384_NAME: &str = "HMAC-SHA3-384";
-///
+/// The name of HMAC over SHA3-512.
 pub const HMAC_SHA3_512_NAME: &str = "HMAC-SHA3-512";
 
 /// The name of HKDF over SHA3-224, for `HMACParams::HKDF_ALG_NAME`.

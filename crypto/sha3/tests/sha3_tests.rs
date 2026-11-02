@@ -73,7 +73,7 @@ mod sha3_tests {
         assert_eq!(bytes_written, 64);
 
         // check that the bytes of an oversized output buffer past the digest length get zeroized.
-        let mut out = DUMMY_SEED.clone();
+        let mut out = *DUMMY_SEED;
         SHA3_256::hash_out(DUMMY_SEED, &mut out);
         assert!(out[32..].iter().all(|&b| b == 0));
     }
@@ -129,17 +129,17 @@ mod sha3_tests {
         // success case -- output slice version
         let mut output = vec![0u8; SHA3_224::OUTPUT_LEN];
         SHA3_224::new()
-            .do_final_partial_bits_out(input_byte, 7, &mut *output)
+            .do_final_partial_bits_out(input_byte, 7, &mut output)
             .expect("Failed to finalize partial input");
         assert_eq!(output, b"\x81\x67\x07\x1f\xfc\x12\xaf\x71\x65\x06\x01\x4e\x99\x49\xe9\xa8\x9d\x11\x26\x04\x93\xf9\x88\x09\x8c\xbb\x7f\x35");
 
         //output slice too small -- should just truncate
         let mut expected_output = vec![0u8; SHA3_224::new().output_len()];
         SHA3_224::new()
-            .do_final_partial_bits_out(input_byte, 7, &mut *expected_output)
+            .do_final_partial_bits_out(input_byte, 7, &mut expected_output)
             .expect("Failed to finalize partial input");
         let mut output = vec![0u8; SHA3_224::OUTPUT_LEN - 1];
-        SHA3_224::new().do_final_partial_bits_out(input_byte, 7, &mut *output).unwrap();
+        SHA3_224::new().do_final_partial_bits_out(input_byte, 7, &mut output).unwrap();
         assert_eq!(output, expected_output[..SHA3_224::OUTPUT_LEN - 1]);
     }
 

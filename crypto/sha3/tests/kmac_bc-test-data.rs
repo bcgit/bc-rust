@@ -313,16 +313,19 @@ fn check_out_variants<M: MAC>(make: impl Fn() -> M, msg: &[u8], expected: &[u8],
     assert_eq!(&out[..n], expected, "{ctx}: do_final_out, oversized buffer");
     assert_eq!(&out[n..], &[0u8; 5], "{ctx}: do_final_out zeroizes past the tag");
 
-    // a buffer one byte short is refused, by both
-    let mut out = vec![0u8; n - 1];
+    // a buffer one byte short is refused, by both, and zeroized on the way out
+    let mut out = vec![0xFFu8; n - 1];
     assert!(
         matches!(make().do_final_out(&mut out), Err(MACError::InvalidLength(_))),
         "{ctx}: do_final_out must refuse a short buffer"
     );
+    assert!(out.iter().all(|&b| b == 0), "{ctx}: do_final_out zeroizes a refused buffer");
+    let mut out = vec![0xFFu8; n - 1];
     assert!(
         matches!(make().mac_out(msg, &mut out), Err(MACError::InvalidLength(_))),
         "{ctx}: mac_out must refuse a short buffer"
     );
+    assert!(out.iter().all(|&b| b == 0), "{ctx}: mac_out zeroizes a refused buffer");
 }
 
 #[test]

@@ -118,9 +118,8 @@ impl<PARAMS: SHA3Params> SHA3Internal<PARAMS> {
         additional_input: &[u8],
         output_key: &mut impl KeyMaterialTrait,
     ) -> Result<usize, KDFError> {
-        // For the KDF to be considered "fully-seeded" and be capable of outputting full-entropy KeyMaterials,
-        // it requires full-entropy input that is at least block length.
-        // TODO: citation needed (NIST)
+        // This library's rule, not a NIST one: the derived key is tagged full-entropy only if at
+        // least a digest's worth of full-entropy key material went in.
         if self.kdf_entropy < PARAMS::OUTPUT_LEN {
             self.kdf_key_type = *min(&self.kdf_key_type, &KeyType::Unknown);
             self.kdf_security_strength = SecurityStrength::None; // BytesLowEntropy can't have a securtiy level.
@@ -156,9 +155,6 @@ impl<PARAMS: SHA3Params> SHA3Internal<PARAMS> {
             "both set_key_type() and set_security_strength() should be infallible within a hazop block",
         );
 
-        output_key
-            .set_key_len(*min(&output_key.key_len(), &PARAMS::OUTPUT_LEN))
-            .expect("should be infallible to truncate key length");
         Ok(bytes_written)
     }
 }
@@ -198,8 +194,6 @@ impl<PARAMS: SHA3Params> Hash for SHA3Internal<PARAMS> {
         output
     }
 
-    // TODO: investigate why this doesn't take a &mut [u8; HASH_LEN]
-    // Being able to do so would improve ergonomics
     fn do_final_out(self, output: &mut [u8]) -> usize {
         // A whole-byte message is the zero-partial-bits case of the general finalization.
         self.do_final_bits_out(0, 0, output)
@@ -309,7 +303,7 @@ impl<PARAMS: SHA3Params> Suspendable<SUSPENDED_SHA3_STATE_LEN> for SHA3Internal<
 
         // The variant tag rejects states from any other SHA3/SHAKE variant; the rate is then the
         // correct one to rebuild with (both are fully determined by the algorithm parameters).
-        let rate = 1600 - ((PARAMS::SIZE as usize) << 1);
+        let rate = PARAMS::SIZE.rate_bits();
         let (keccak, kdf_key_type, kdf_security_strength, kdf_entropy) =
             deserialize_sha3_family_state(input, PARAMS::STATE_TAG, rate)?;
 

@@ -32,7 +32,7 @@
 //!
 //! See [`TupleHashXOF128`] for detail.
 //!
-//! Example of `KMACXOF128`:
+//! Example of `TupleHashXOF128`:
 //!```
 //! use bouncycastle_core::traits::{Hash, XOF, XOFSqueezer};
 //! use bouncycastle_sha3::tuplehash::{TupleHash128, TupleHashXOF128};
@@ -291,7 +291,7 @@ impl<PARAMS: SHAKEParams> SuspendableComponent for TupleHashXOFInternal<PARAMS> 
     }
 }
 
-// The absorbing phase, always between elements; the squeezing half is a LengthBoundSqueezer.
+// The absorbing phase, always between elements; the squeezing half is a CSHAKESqueezer.
 impl<PARAMS: SHAKEParams> Suspendable<SUSPENDED_TUPLEHASHXOF_STATE_LEN>
     for TupleHashXOFInternal<PARAMS>
 {
@@ -372,7 +372,7 @@ impl<PARAMS: SHAKEParams> XOF for TupleHashXOFInternal<PARAMS> {
     type Squeezer = CSHAKESqueezer<PARAMS>;
 
     // The `right_encode` of Sec 5.3.1 step 4 is not absorbed here: whether it carries 0 or the
-    // length of a final read is LengthBoundSqueezer's decision.
+    // length of a final read is CSHAKESqueezer's decision.
     fn into_squeezer(self) -> Self::Squeezer {
         CSHAKESqueezer::new(self.cshake)
     }

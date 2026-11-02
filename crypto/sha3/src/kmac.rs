@@ -96,9 +96,40 @@ pub const SUSPENDED_KMAC_STATE_LEN: usize = LIB_VERSION_LEN + CSHAKE_COMPONENT_L
 /// Length in bytes of the suspended state of KMACXOF.
 pub const SUSPENDED_KMACXOF_STATE_LEN: usize = LIB_VERSION_LEN + CSHAKE_COMPONENT_LEN;
 
+/// The shortest KMAC output, in bytes: SP 800-185 Sec 8.4.2, "applications of this Recommendation
+/// **shall not** select an output length L that is less than 32 bits". [`KMACInternal::new_with_params`]
+/// refuses anything shorter.
+pub const KMAC_MIN_OUTPUT_LEN: usize = 4;
+
 /// The function-name string every KMAC binds, per SP 800-185 Sec 4.3. Fixed by the specification:
 /// it is what separates KMAC from any other cSHAKE-derived function.
 const KMAC_FUNCTION_NAME: &[u8] = b"KMAC";
+
+/// The sponge both KMAC and KMACXOF start from: cSHAKE under the "KMAC" function name with the
+/// key bound in front (Sec 4.3 step 1, `bytepad(encode_string(K), rate)`, absorbed rather than
+/// materialised). The key checks are here so the two constructors cannot drift.
+fn keyed_cshake<PARAMS: SHAKEParams>(
+    key: &impl KeyMaterialTrait,
+    customization: &[u8],
+    allow_weak_key: bool,
+) -> Result<CSHAKEInternal<PARAMS>, MACError> {
+    // Same stance as HMAC: an all-zero key is Zeroized rather than MACKey, and is allowed
+    // through so callers are not forced to re-tag it.
+    if !(key.key_type() == KeyType::Zeroized || key.key_type() == KeyType::MACKey) {
+        return Err(MACError::KeyMaterialError(KeyMaterialError::InvalidKeyType(
+            "Key type must be a MAC key.",
+        )));
+    }
+    let strength = SecurityStrength::from_bits(PARAMS::SIZE as usize);
+    if !allow_weak_key && key.security_strength() < strength {
+        Err(KeyMaterialError::SecurityStrength(
+            "KMAC::new(): provided key has a lower security strength than the instantiated KMAC",
+        ))?
+    }
+    let mut cshake = CSHAKEInternal::<PARAMS>::new(KMAC_FUNCTION_NAME, customization);
+    crate::cshake::absorb_bytepad_strings(&mut cshake, &[key.ref_to_bytes()]);
+    Ok(cshake)
+}
 
 /// Internal struct for KMAC. Use [`KMAC128`] or [`KMAC256`].
 ///
@@ -140,35 +171,25 @@ impl<PARAMS: SHAKEParams> KMACInternal<PARAMS> {
     ///
     /// Sec 8.4.1 requires the key to be at least as long as the security strength for approved use;
     /// that is enforced through the key's [`SecurityStrength`] tag, exactly as `HMAC` does, and
-    /// [`MAC::new_allow_weak_key`] is the escape hatch.
+    /// [`MAC::new_allow_weak_key`] is the escape hatch. Sec 8.4.2's floor on the output length,
+    /// [`KMAC_MIN_OUTPUT_LEN`], has no escape hatch.
     ///
     /// # Errors
     /// [`MACError::KeyMaterialError`] if the key is not tagged as a MAC key, or -- unless
     /// `allow_weak_key` -- if it is tagged below this KMAC's security strength.
+    /// [`MACError::InvalidLength`] if `output_len` is below [`KMAC_MIN_OUTPUT_LEN`].
     pub fn new_with_params(
         key: &impl KeyMaterialTrait,
         customization: &[u8],
         output_len: usize,
         allow_weak_key: bool,
     ) -> Result<Self, MACError> {
-        // Same stance as HMAC: an all-zero key is Zeroized rather than MACKey, and is allowed
-        // through so callers are not forced to re-tag it.
-        if !(key.key_type() == KeyType::Zeroized || key.key_type() == KeyType::MACKey) {
-            return Err(MACError::KeyMaterialError(KeyMaterialError::InvalidKeyType(
-                "Key type must be a MAC key.",
-            )));
+        if output_len < KMAC_MIN_OUTPUT_LEN {
+            return Err(MACError::InvalidLength(
+                "KMAC output length is below the 32-bit floor of SP 800-185 Sec 8.4.2",
+            ));
         }
-        let strength = SecurityStrength::from_bits(PARAMS::SIZE as usize);
-        if !allow_weak_key && key.security_strength() < strength {
-            Err(KeyMaterialError::SecurityStrength(
-                "KMAC::new(): provided key has a lower security strength than the instantiated KMAC",
-            ))?
-        }
-
-        let mut cshake = CSHAKEInternal::<PARAMS>::new(KMAC_FUNCTION_NAME, customization);
-        // Sec 4.3 step 1: bytepad(encode_string(K), rate), absorbed rather than materialised.
-        crate::cshake::absorb_bytepad_strings(&mut cshake, &[key.ref_to_bytes()]);
-
+        let cshake = keyed_cshake::<PARAMS>(key, customization, allow_weak_key)?;
         Ok(Self { cshake, output_len })
     }
 
@@ -197,6 +218,9 @@ impl<PARAMS: SHAKEParams> SuspendableComponent for KMACInternal<PARAMS> {
         let mut r = Cursor::new(rest);
         let output_len = bounded_usize(r.u64(), usize::MAX)?;
         debug_assert!(r.is_done());
+        if output_len < KMAC_MIN_OUTPUT_LEN {
+            return Err(SuspendableError::InvalidData);
+        }
         Ok(Self { cshake, output_len })
     }
 }
@@ -240,7 +264,6 @@ impl<PARAMS: SHAKEParams> MAC for KMACInternal<PARAMS> {
     }
 
     fn mac_out(mut self, data: &[u8], out: &mut [u8]) -> Result<usize, MACError> {
-        out.fill(0);
         self.do_update(data);
         self.do_final_out(out)
     }
@@ -262,6 +285,10 @@ impl<PARAMS: SHAKEParams> MAC for KMACInternal<PARAMS> {
     }
 
     fn do_final_out(mut self, out: &mut [u8]) -> Result<usize, MACError> {
+        // MAC::do_final_out zeroizes the entire buffer, as HMAC does: on the error path too, and
+        // on success a longer buffer comes back with zeros after the MAC rather than whatever the
+        // caller left there.
+        out.fill(0);
         if out.len() < self.output_len {
             return Err(MACError::InvalidLength(
                 "output buffer is smaller than the KMAC output length",
@@ -269,9 +296,6 @@ impl<PARAMS: SHAKEParams> MAC for KMACInternal<PARAMS> {
         }
         let n = self.output_len;
         self.absorb_right_encode((n as u64) * 8);
-        // MAC::do_final_out zeroizes the entire buffer, as HMAC does, so a longer one comes back
-        // with zeros after the MAC rather than whatever the caller left there.
-        out[n..].fill(0);
         Ok(self.cshake.into_squeezer().do_output_out(&mut out[..n]))
     }
 
@@ -302,7 +326,8 @@ impl<PARAMS: SHAKEParams> MAC for KMACInternal<PARAMS> {
 /// KMACXOF produce unrelated output, which the published sample values demonstrate directly. They
 /// also want different traits -- KMAC's length is fixed at construction and bound into the
 /// computation, which is `MAC`; KMACXOF's is not bound at all, which is `XOF`. Since `MAC` and
-/// `Hash` share five method names (`do_update`, `do_final`, `output_len` and two more), one type
+/// `Hash` share four method names (`output_len`, `do_update`, `do_final` and `do_final_out`), one
+/// type
 /// implementing both would make every one of those calls ambiguous, so they are separate types.
 ///
 /// Read as a stream -- [`XOFSqueezer::do_output`] -- the length really is not bound, so output at
@@ -339,8 +364,7 @@ impl<PARAMS: SHAKEParams> KMACXOFInternal<PARAMS> {
     ) -> Result<Self, MACError> {
         // The key binding is identical to KMAC's; only the length encoding differs, and that is
         // applied when output begins.
-        let kmac = KMACInternal::<PARAMS>::new_with_params(key, customization, 0, allow_weak_key)?;
-        Ok(Self { cshake: kmac.cshake })
+        Ok(Self { cshake: keyed_cshake::<PARAMS>(key, customization, allow_weak_key)? })
     }
 }
 

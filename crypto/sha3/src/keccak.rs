@@ -3,6 +3,8 @@ use bouncycastle_core::key_material::KeyType;
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_utils::secret::Secret;
 
+/// `RC[ir]` for the 24 rounds of KECCAK-f[1600]: FIPS 202 Algorithm 6 (iota) steps 2-3,
+/// evaluated with the `rc(t)` LFSR of Algorithm 5 for `ir = 0..24` and stored as lanes.
 const KECCAK_ROUND_CONSTANTS: [u64; 24] = [
     0x0000000000000001, 0x0000000000008082, 0x800000000000808A, 0x8000000080008000,
     0x000000000000808B, 0x0000000080000001, 0x8000000080008081, 0x8000000000008009,
@@ -12,6 +14,8 @@ const KECCAK_ROUND_CONSTANTS: [u64; 24] = [
     0x8000000080008081, 0x8000000000008080, 0x0000000080000001, 0x8000000080008008,
 ];
 
+/// The 1600-bit state of FIPS 202 Sec 3.1 as 25 lanes: Sec 3.1.2 puts bit `A[x, y, z]` at
+/// `S[64(5y + x) + z]`, so lane `(x, y)` is `buf[x + 5y]`, little-endian within the word.
 #[derive(Clone)]
 pub(crate) struct KeccakState {
     buf: Secret<[u64; 25]>,
@@ -34,6 +38,9 @@ impl KeccakState {
         Self::permute(self);
     }
 
+    /// KECCAK-p[1600, 24], FIPS 202 Algorithm 7, which Sec 3.4 names KECCAK-f[1600]: the round
+    /// function `Rnd = iota(chi(pi(rho(theta(A)))))` of Sec 3.3 for `ir = 0..24`, on the lanes
+    /// unrolled into locals. `aNN` is lane `(x, y) = (NN mod 5, NN / 5)`.
     pub fn permute(a: &mut Self) {
         let [
             mut a00,
@@ -64,7 +71,8 @@ impl KeccakState {
         ] = *a.buf;
 
         for round_constant in KECCAK_ROUND_CONSTANTS {
-            // theta
+            // theta, Algorithm 1: C[x] = A[x,0] ^ .. ^ A[x,4], D[x] = C[x-1] ^ ROT(C[x+1], 1),
+            // A[x,y] ^= D[x]. The locals are offset: d0 is D[4], d1 is D[0], .., d4 is D[3].
             let mut c0 = a00 ^ a05 ^ a10 ^ a15 ^ a20;
             let mut c1 = a01 ^ a06 ^ a11 ^ a16 ^ a21;
             let c2 = a02 ^ a07 ^ a12 ^ a17 ^ a22;
@@ -103,7 +111,8 @@ impl KeccakState {
             a19 ^= d0;
             a24 ^= d0;
 
-            // rho/pi
+            // rho and pi fused, Algorithms 2 and 3: A'[x,y] = ROT(A[(x+3y) mod 5, x], r), with
+            // r the Table 2 offset of the source lane. c1 holds A[1,0], which lands in A[0,2].
             c1 = a01.rotate_left(1);
             a01 = a06.rotate_left(44);
             a06 = a09.rotate_left(20);
@@ -130,7 +139,8 @@ impl KeccakState {
             a07 = a10.rotate_left(3);
             a10 = c1;
 
-            // chi
+            // chi, Algorithm 4: A'[x,y] = A[x,y] ^ (!A[x+1,y] & A[x+2,y]), one row of five at a
+            // time, with the two lanes a row overwrites before reading them held in c0 and c1.
             c0 = a00 ^ (!a01 & a02);
             c1 = a01 ^ (!a02 & a03);
             a02 ^= !a03 & a04;
@@ -171,7 +181,7 @@ impl KeccakState {
             a20 = c0;
             a21 = c1;
 
-            // iota
+            // iota, Algorithm 6: the round constant into lane (0, 0).
             a00 ^= round_constant;
         }
 
@@ -192,19 +202,33 @@ pub(crate) struct KeccakInternal {
     pub squeezing: bool,
 }
 
-#[derive(Clone)]
-pub(crate) enum KeccakSize {
+/// The security strength of a FIPS 202 function in bits, which is half its sponge capacity:
+/// `c = 2 * size` and the rate is `1600 - c` (FIPS 202 Table 3 and Sec 6.2).
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum KeccakSize {
+    /// SHAKE128.
     _128 = 128,
+    /// SHA3-224.
     _224 = 224,
+    /// SHA3-256 and SHAKE256.
     _256 = 256,
-    _288 = 288,
+    /// SHA3-384.
     _384 = 384,
+    /// SHA3-512.
     _512 = 512,
+}
+
+impl KeccakSize {
+    /// The sponge rate in bits, `1600 - 2 * size`: 1344, 1152, 1088, 832 and 576 (FIPS 202
+    /// Table 3).
+    pub const fn rate_bits(self) -> usize {
+        1600 - 2 * (self as usize)
+    }
 }
 
 impl KeccakInternal {
     pub(super) fn new(size: KeccakSize) -> Self {
-        let rate = 1600 - ((size as usize) << 1);
+        let rate = size.rate_bits();
 
         Self {
             state: KeccakState::new(rate),
@@ -589,7 +613,7 @@ mod keccak_tests {
     /// in either direction is caught.
     #[test]
     fn sha3_family_state_round_trips_kdf_metadata() {
-        let rate = 1600 - ((KeccakSize::_256 as usize) << 1);
+        let rate = KeccakSize::_256.rate_bits();
         let mut d = KeccakInternal::new(KeccakSize::_256);
         d.absorb(b"message");
 
@@ -637,7 +661,7 @@ mod keccak_tests {
     /// or the pad_and_switch_to_squeezing_phase() invariant.
     #[test]
     fn from_serialized_state_rejects_corrupt_bits_in_queue() {
-        let rate = 1600 - ((KeccakSize::_256 as usize) << 1);
+        let rate = KeccakSize::_256.rate_bits();
 
         // A valid, mid-absorb (not squeezing) serialized state.
         let mut d = KeccakInternal::new(KeccakSize::_256);

@@ -13,8 +13,13 @@ use bouncycastle_sha3::kmac::*;
 use bouncycastle_sha3::parallelhash::*;
 use bouncycastle_sha3::tuplehash::*;
 use bouncycastle_sha3::*;
+use core::num::NonZeroUsize;
 
 const PART1: &[u8] = b"Colorless green ideas";
+
+fn nz(n: usize) -> NonZeroUsize {
+    NonZeroUsize::new(n).unwrap()
+}
 const PART2: &[u8] = b" sleep furiously";
 
 const SQUEEZING_FLAG: usize = 3 + 1 + 400;
@@ -121,7 +126,7 @@ fn tuplehash_round_trips() {
 fn parallelhash_round_trips() {
     // PART1 is 21 bytes: a block size of 8 suspends five bytes into a block, 7 suspends exactly
     // on a block boundary, and 64 suspends before the first block completes.
-    for block_size in [8usize, 7, 64] {
+    for block_size in [nz(8), nz(7), nz(64)] {
         hash_round_trip(|| ParallelHash128::new(block_size, b"", 32));
         hash_round_trip(|| ParallelHash256::new(block_size, b"Parallel Data", 64));
         hash_round_trip(|| ParallelHashXOF128::new(block_size, b""));
@@ -164,10 +169,10 @@ fn each_type_rejects_the_others() {
     t.do_update(PART1);
     rejected::<_, KMAC128>(t.suspend(), "a TupleHash128 state in KMAC128");
 
-    let mut p = ParallelHash128::new(8, b"", 32);
+    let mut p = ParallelHash128::new(nz(8), b"", 32);
     p.do_update(PART1);
     rejected::<_, ParallelHash256>(p.suspend(), "a ParallelHash128 state in ParallelHash256");
-    let mut p = ParallelHashXOF128::new(8, b"");
+    let mut p = ParallelHashXOF128::new(nz(8), b"");
     p.do_update(PART1);
     rejected::<_, ParallelHashXOF256>(p.suspend(), "a ParallelHashXOF128 state in 256");
 }
@@ -207,7 +212,7 @@ fn corrupt_fields_are_rejected() {
     const INNER_SQUEEZING_FLAG: usize = 416 + 1 + 400;
     const BLOCK_SIZE: usize = 416 + 412;
     const BLOCK_FILL: usize = BLOCK_SIZE + 8;
-    let mut p = ParallelHash128::new(8, b"", 32);
+    let mut p = ParallelHash128::new(nz(8), b"", 32);
     p.do_update(PART1);
     let good = p.suspend();
     assert_eq!(&good[BLOCK_SIZE..BLOCK_SIZE + 8], &8u64.to_le_bytes(), "layout check");
@@ -245,16 +250,16 @@ fn state_tags_are_distinct() {
         tag(KMACXOF128::new(&key(), b"", false).unwrap()),
         tag(TupleHash128::new(b"", 32)),
         tag(TupleHashXOF128::new(b"")),
-        tag(ParallelHash128::new(8, b"", 32)),
-        tag(ParallelHashXOF128::new(8, b"")),
+        tag(ParallelHash128::new(nz(8), b"", 32)),
+        tag(ParallelHashXOF128::new(nz(8), b"")),
         tag(TupleHashXOF128::new(b"").into_squeezer()),
         tag(CSHAKE256::new(b"", b"S")),
         tag(KMAC256::new(&key()).unwrap()),
         tag(KMACXOF256::new(&key(), b"", false).unwrap()),
         tag(TupleHash256::new(b"", 32)),
         tag(TupleHashXOF256::new(b"")),
-        tag(ParallelHash256::new(8, b"", 32)),
-        tag(ParallelHashXOF256::new(8, b"")),
+        tag(ParallelHash256::new(nz(8), b"", 32)),
+        tag(ParallelHashXOF256::new(nz(8), b"")),
         tag(TupleHashXOF256::new(b"").into_squeezer()),
     ];
     let n = tags.len();
@@ -266,7 +271,7 @@ fn state_tags_are_distinct() {
 #[test]
 fn pin_state_lengths() {
     assert_eq!(SUSPENDED_CSHAKE_STATE_LEN, 416, "3 (version) + 412 (family) + 1 (customized)");
-    assert_eq!(SUSPENDED_LENGTH_BOUND_SQUEEZER_STATE_LEN, 416);
+    assert_eq!(SUSPENDED_CSHAKE_SQUEEZER_STATE_LEN, 416);
     assert_eq!(SUSPENDED_KMACXOF_STATE_LEN, 416);
     assert_eq!(SUSPENDED_TUPLEHASHXOF_STATE_LEN, 416);
     assert_eq!(SUSPENDED_KMAC_STATE_LEN, 424, "416 + 8 (output length)");

@@ -11,13 +11,14 @@ use bouncycastle_hex as hex;
 use bouncycastle_sha3::parallelhash::{
     ParallelHash128, ParallelHash256, ParallelHashXOF128, ParallelHashXOF256,
 };
+use core::num::NonZeroUsize;
 
 const TEST_DATA_DIR: &str = "crypto/sp800-185";
 
 /// One `COUNT` block of a `.rsp` file.
 struct Vector {
     strength: usize,
-    block_size: usize,
+    block_size: NonZeroUsize,
     s: String,
     output_len: usize,
     msg: Vec<u8>,
@@ -35,7 +36,7 @@ fn parse_rsp_file(content: &str) -> Vec<Vector> {
         let get = |k: &str| cur.iter().find(|(a, _)| a == k).map(|(_, b)| b.clone());
         out.push(Vector {
             strength: get("Strength").expect("Strength").parse().expect("a number"),
-            block_size: get("B").expect("B").parse().expect("a number"),
+            block_size: get("B").expect("B").parse().expect("a positive number"),
             s: get("S").unwrap_or_default(),
             output_len: get("Outputlen").expect("Outputlen").parse().expect("a number"),
             msg: hex::decode(get("Msg").expect("Msg")).expect("hex"),

@@ -1,25 +1,17 @@
-//! ParallelHash, the parallelisable hash of NIST SP 800-185 Sec 6.
-//!
-//! The purpose of ParallelHash10 is to support the efficient hashing of very long strings, by taking
-//! advantage of the parallelism available in modern processors. ParallelHash supports the 128- and
-//! 256-bit security strengths, and also provides variable-length output. Changing any input
-//! parameter to ParallelHash, even the requested output length, will result in unrelated output. Like
-//! the other functions defined in this document, ParallelHash also supports user-selected
-//! customization strings.
-//!
-//! ParallelHash divides the input bit string X into a sequence of contiguous, non-overlapping
-//! blocks, each of length B bytes, and then computes the hash value for each block separately.
-//! Finally, these hash values are combined and passed to cSHAKE along with the function name
-//! (N) of "ParallelHash", the optional customization string S, and some encoded integer values,
-//! to generate the final hash value of the function.
+//! ParallelHash, the parallelisable hash of NIST SP 800-185 Sec 6: the input is cut into
+//! `B`-byte blocks, each block is hashed on its own, and the block hashes go through one cSHAKE
+//! under the function name "ParallelHash" (Sec 6.1). The block size is part of the function, as
+//! the customization string and the output length are.
 //!
 //! # ParallelHash
 //!
 //!```
+//! use core::num::NonZeroUsize;
 //! use bouncycastle_core::traits::Hash;
 //! use bouncycastle_sha3::parallelhash::ParallelHash128;
 //!
-//! let output: Vec<u8> = ParallelHash128::new(8192, b"", 32).hash(b"Hello, world!");
+//! let block_size = NonZeroUsize::new(8192).unwrap();
+//! let output: Vec<u8> = ParallelHash128::new(block_size, b"", 32).hash(b"Hello, world!");
 //! ```
 //!
 //! # ParallelHashXOF
@@ -31,19 +23,21 @@
 //!
 //! See [`ParallelHash128`] for detail.
 //!
-//! Example of `ParallelHash128`:
+//! Example of `ParallelHashXOF128`:
 //! ```
+//! use core::num::NonZeroUsize;
 //! use bouncycastle_core::traits::{Hash, XOF, XOFSqueezer};
 //! use bouncycastle_sha3::parallelhash::{ParallelHash128, ParallelHashXOF128};
 //!
-//! let mut parallelhash = ParallelHashXOF128::new(8192, b"");
+//! let block_size = NonZeroUsize::new(8192).unwrap();
+//! let mut parallelhash = ParallelHashXOF128::new(block_size, b"");
 //! parallelhash.do_update(b"Hello, world!");
 //! let mut squeezer = parallelhash.into_squeezer();
 //! let first: Vec<u8> = squeezer.do_output(16);
 //! let more: Vec<u8> = squeezer.do_output(1024);
 //!
-//! let bound: Vec<u8> = ParallelHashXOF128::new(8192, b"").xof(b"Hello, world!", 32);
-//! assert_eq!(bound, ParallelHash128::new(8192, b"", 32).hash(b"Hello, world!"));
+//! let bound: Vec<u8> = ParallelHashXOF128::new(block_size, b"").xof(b"Hello, world!", 32);
+//! assert_eq!(bound, ParallelHash128::new(block_size, b"", 32).hash(b"Hello, world!"));
 //! assert_ne!(bound[..16], first[..]);
 //! ```
 
@@ -60,6 +54,7 @@ use bouncycastle_utils::suspendable_state::{
     Cursor, CursorMut, LIB_VERSION_LEN, SuspendableComponent, bounded_usize, resume_component,
     suspend_component,
 };
+use core::num::NonZeroUsize;
 
 /// The name of the ParallelHash128 algorithm (NIST SP 800-185 Sec 6).
 pub const PARALLELHASH128_NAME: &str = "ParallelHash128";
@@ -98,7 +93,8 @@ pub type ParallelHashXOF256 = ParallelHashXOFInternal<SHAKE256Params>;
 #[derive(Clone)]
 struct ParallelState<PARAMS: SHAKEParams> {
     cshake: CSHAKEInternal<PARAMS>,
-    block_size: usize,
+    /// `B` of Sec 6.2, which requires `0 < B`; the type carries that.
+    block_size: NonZeroUsize,
     /// The block being filled, as the SHAKE over its bytes so far: each block's contribution is
     /// `SHAKE(block, 2c)`, so the sponge can take the bytes as they arrive. Holding the sponge
     /// rather than the bytes keeps this a fixed size whatever `B` is, which a suspended state
@@ -114,11 +110,10 @@ impl<PARAMS: SHAKEParams> ParallelState<PARAMS> {
     /// (Sec 6.3 step 3, the `256` and `512` in the inner cSHAKE calls).
     const INNER_LEN: usize = (PARAMS::SIZE as usize) / 4;
 
-    fn new(block_size: usize, customization: &[u8]) -> Self {
-        assert!(block_size > 0, "SP 800-185 Sec 6.2: the block size B must be positive");
+    fn new(block_size: NonZeroUsize, customization: &[u8]) -> Self {
         let mut cshake = CSHAKEInternal::new(PARALLELHASH_FUNCTION_NAME, customization);
         // Step 2: z = left_encode(B).
-        absorb_left_encode_into(&mut cshake, block_size as u64);
+        absorb_left_encode_into(&mut cshake, block_size.get() as u64);
         Self { cshake, block_size, inner: SHAKEInternal::new(), block_fill: 0, blocks: 0 }
     }
 
@@ -129,7 +124,7 @@ impl<PARAMS: SHAKEParams> ParallelState<PARAMS> {
     fn absorb_block_digest(&mut self) {
         let mut digest = [0u8; 64];
         let digest = &mut digest[..Self::INNER_LEN];
-        core::mem::replace(&mut self.inner, SHAKEInternal::new()).xof_out(&[], digest);
+        core::mem::take(&mut self.inner).xof_out(&[], digest);
         self.cshake.do_update(digest);
         self.blocks += 1;
         self.block_fill = 0;
@@ -143,7 +138,7 @@ impl<PARAMS: SHAKEParams> ParallelState<PARAMS> {
         // from inside this state, under the outer tag.
         self.inner.write_family_state(PARAMS::STATE_TAG, inner);
         let mut w = CursorMut::new(rest);
-        w.u64(self.block_size as u64);
+        w.u64(self.block_size.get() as u64);
         w.u64(self.block_fill as u64);
         w.u64(self.blocks);
         debug_assert!(w.is_done());
@@ -158,13 +153,11 @@ impl<PARAMS: SHAKEParams> ParallelState<PARAMS> {
             return Err(SuspendableError::InvalidData);
         }
         let mut r = Cursor::new(rest);
-        let block_size = bounded_usize(r.u64(), usize::MAX)?;
         // Sec 6.2: 0 < B. The fill is strictly inside the block, since a full block is absorbed
         // the moment it completes.
-        if block_size == 0 {
-            return Err(SuspendableError::InvalidData);
-        }
-        let block_fill = bounded_usize(r.u64(), block_size - 1)?;
+        let block_size = NonZeroUsize::new(bounded_usize(r.u64(), usize::MAX)?)
+            .ok_or(SuspendableError::InvalidData)?;
+        let block_fill = bounded_usize(r.u64(), block_size.get() - 1)?;
         let blocks = r.u64();
         debug_assert!(r.is_done());
         Ok(Self { cshake, block_size, inner, block_fill, blocks })
@@ -172,12 +165,12 @@ impl<PARAMS: SHAKEParams> ParallelState<PARAMS> {
 
     fn do_update(&mut self, mut data: &[u8]) {
         while !data.is_empty() {
-            let take = (self.block_size - self.block_fill).min(data.len());
+            let take = (self.block_size.get() - self.block_fill).min(data.len());
             let (now, rest) = data.split_at(take);
             self.inner.do_update(now);
             self.block_fill += take;
             data = rest;
-            if self.block_fill == self.block_size {
+            if self.block_fill == self.block_size.get() {
                 self.absorb_block_digest();
             }
         }
@@ -242,10 +235,7 @@ impl<PARAMS: SHAKEParams> Algorithm for ParallelHashInternal<PARAMS> {
 
 impl<PARAMS: SHAKEParams> ParallelHashInternal<PARAMS> {
     /// A new ParallelHash over `block_size`-byte blocks, producing `output_len` bytes.
-    ///
-    /// # Panics
-    /// If `block_size` is zero, which Sec 6.2 forbids (`0 < B`).
-    pub fn new(block_size: usize, customization: &[u8], output_len: usize) -> Self {
+    pub fn new(block_size: NonZeroUsize, customization: &[u8], output_len: usize) -> Self {
         Self { state: ParallelState::new(block_size, customization), output_len }
     }
 }
@@ -362,10 +352,7 @@ impl<PARAMS: SHAKEParams> Algorithm for ParallelHashXOFInternal<PARAMS> {
 
 impl<PARAMS: SHAKEParams> ParallelHashXOFInternal<PARAMS> {
     /// A new ParallelHashXOF over `block_size`-byte blocks.
-    ///
-    /// # Panics
-    /// If `block_size` is zero (Sec 6.2).
-    pub fn new(block_size: usize, customization: &[u8]) -> Self {
+    pub fn new(block_size: NonZeroUsize, customization: &[u8]) -> Self {
         Self { state: ParallelState::new(block_size, customization) }
     }
 }
@@ -463,7 +450,7 @@ impl<PARAMS: SHAKEParams> XOF for ParallelHashXOFInternal<PARAMS> {
 
     // The block count of Sec 6.3.1 step 4 is bound here; the `right_encode` that follows it is
     // not, because whether it carries 0 or the length of a final read is
-    // LengthBoundSqueezer's decision.
+    // CSHAKESqueezer's decision.
     fn into_squeezer(self) -> Self::Squeezer {
         CSHAKESqueezer::new(self.state.finish_blocks())
     }

@@ -1,7 +1,7 @@
 use crate::SHAKEParams;
 use crate::keccak::{
-    KeccakInternal, KeccakSize, SHA3_FAMILY_STATE_LEN, SUSPENDED_SHA3_STATE_LEN,
-    deserialize_sha3_family_state, serialize_sha3_family_state,
+    KeccakInternal, SHA3_FAMILY_STATE_LEN, SUSPENDED_SHA3_STATE_LEN, deserialize_sha3_family_state,
+    serialize_sha3_family_state,
 };
 use bouncycastle_core::errors::{HashError, KDFError, SuspendableError};
 use bouncycastle_core::hazmat::do_hazardous_operations;
@@ -11,23 +11,15 @@ use bouncycastle_core::traits::{Algorithm, Hash, HashOneShot, KDF, Suspendable, 
 use bouncycastle_utils::suspendable_state::{add_lib_ver, check_lib_ver};
 use bouncycastle_utils::{max, min};
 
-/// Internal struct for SHAKE.
-/// This uses a private bound so that you cannot instantiate it directly and have to use the
-/// provided and NIST-approved parameters.
+/// Internal struct for SHAKE. Use [`SHAKE128`](crate::SHAKE128) or [`SHAKE256`](crate::SHAKE256);
+/// the parameter trait is sealed.
 ///
-/// Note that even though SHAKE is physically capable of acting as a hash function, and in fact is secure
-/// as such if the provided message includes the requested length, SHAKE does not implement the [`Hash`] trait.
-/// FIPS 202 section 7 states:
-///
-///   "SHAKE128 and SHAKE256 are approved XOFs, whose approved uses will be specified in
-/// NIST Special Publications. Although some of those uses may overlap with the uses of approved
-/// hash functions, the XOFs are not approved as hash functions, due to the property that is
-/// discussed in Sec. A.2."
-///
-/// Section A.2 describes how SHAKE does not internally diversify its output based on the requested length.
-/// For example, the first 32 bytes of SHAKE128("message", 64) and SHAKE128("message", 128), will be identical
-/// and equal to SHAKE128("message", 32). Proper hash functions don't do this, and NIST is concerned that
-/// this could lead to application vulnerabilities.
+/// A [`XOF`], with a [`Hash`] view at the nominal [`Hash::output_len`] (32 or 64 bytes) for
+/// callers that want a fixed-length digest. The two views are the same function: the digest is
+/// the first bytes of the stream. FIPS 202 Sec 7 approves SHAKE as a XOF and not as a hash
+/// function "due to the property that is discussed in Sec. A.2", which is exactly that prefix
+/// relation -- SHAKE128(M, 256) is the first 32 bytes of SHAKE128(M, 512). Where two output
+/// lengths of one message must be unrelated, use an SP 800-185 function, which binds the length.
 #[derive(Clone)]
 pub struct SHAKEInternal<PARAMS: SHAKEParams> {
     _phantomdata: core::marker::PhantomData<PARAMS>,
@@ -76,7 +68,7 @@ impl<PARAMS: SHAKEParams> SHAKEInternal<PARAMS> {
     pub(crate) fn read_family_state(state: &[u8], tag: u8) -> Result<Self, SuspendableError> {
         let input: &[u8; SHA3_FAMILY_STATE_LEN] =
             state.try_into().map_err(|_| SuspendableError::InvalidData)?;
-        let rate = 1600 - ((PARAMS::SIZE as usize) << 1);
+        let rate = PARAMS::SIZE.rate_bits();
         let (keccak, kdf_key_type, kdf_security_strength, kdf_entropy) =
             deserialize_sha3_family_state(input, tag, rate)?;
         Ok(Self {
@@ -128,12 +120,12 @@ impl<PARAMS: SHAKEParams> SHAKEInternal<PARAMS> {
     fn squeeze_internal_out(&mut self, output: &mut [u8]) -> usize {
         output.fill(0);
         if !self.keccak.squeezing {
-            self.keccak.absorb_bits(0x0F, 4).expect("Absorb_bits failed");
+            self.keccak.absorb_bits(0x0F, 4).expect("four bits is a whole partial byte");
         }
         self.keccak.squeeze(output)
     }
 
-    fn mix_key_internal(&mut self, key: &impl KeyMaterialTrait) -> Result<(), KDFError> {
+    fn mix_key_internal(&mut self, key: &impl KeyMaterialTrait) {
         // track the strongest input key type
         self.kdf_key_type = *max(&self.kdf_key_type, &key.key_type());
 
@@ -149,24 +141,17 @@ impl<PARAMS: SHAKEParams> SHAKEInternal<PARAMS> {
         }
 
         self.keccak.absorb(key.ref_to_bytes());
-        Ok(())
     }
 
     fn derive_key_final_internal(
         mut self,
         additional_input: &[u8],
     ) -> Result<Box<dyn KeyMaterialTrait>, KDFError> {
-        // At the moment, oversized KeyMaterial is returned for most cases.
+        // The buffer is the larger nominal length; the key is cut to this instance's.
+        let nominal = self.output_len();
         let mut output_key = KeyMaterial::<64>::new();
         self.derive_key_out_final_internal(additional_input, &mut output_key)?;
-
-        // truncate
-        // 128 => 32, 256 => 64
-        match PARAMS::SIZE {
-            KeccakSize::_128 => output_key.set_key_len(32).expect("truncate should be infallible"),
-            KeccakSize::_256 => output_key.set_key_len(64).expect("truncate should be infallible"),
-            _ => unreachable!(),
-        }
+        output_key.set_key_len(nominal).expect("the nominal length is at most the buffer's 64");
         Ok(Box::new(output_key))
     }
 
@@ -175,11 +160,9 @@ impl<PARAMS: SHAKEParams> SHAKEInternal<PARAMS> {
         additional_input: &[u8],
         output_key: &mut impl KeyMaterialTrait,
     ) -> Result<usize, KDFError> {
-        // For the KDF to be considered "fully-seeded" and be capable of outputting full-entropy KeyMaterials,
-        // it requires full-entropy input that is at least 2x the bit size (ie 256 bits for SHAKE128, and 512 bits for SHAKE256).
-        // TODO: citation needed (NIST)
-        // TODO: The intuition behind this is that SHAKE256 and SHA3-256 are both KECCAK[512], and SHAKE128 is KECCAK[256],
-        // TODO: However, it is necessary to find an actual reference for this "fully-seeded" threshold.
+        // This library's rule, not a NIST one: the derived key is tagged full-entropy only if at
+        // least a capacity's worth of full-entropy key material went in -- 32 bytes for SHAKE128,
+        // 64 for SHAKE256.
         if self.kdf_entropy < 2 * (PARAMS::SIZE as usize) / 8 {
             self.kdf_key_type = *min(&self.kdf_key_type, &KeyType::Unknown);
             self.kdf_security_strength = SecurityStrength::None; // BytesLowEntropy can't have a securtiy level.
@@ -239,7 +222,7 @@ impl<PARAMS: SHAKEParams> Suspendable<SUSPENDED_SHA3_STATE_LEN> for SHAKEInterna
 
         // The variant tag rejects states from any other SHA3/SHAKE variant; the rate is then the
         // correct one to rebuild with (both are fully determined by the algorithm parameters).
-        let rate = 1600 - ((PARAMS::SIZE as usize) << 1);
+        let rate = PARAMS::SIZE.rate_bits();
         let (keccak, kdf_key_type, kdf_security_strength, kdf_entropy) =
             deserialize_sha3_family_state(input, PARAMS::STATE_TAG, rate)?;
 
@@ -276,7 +259,7 @@ impl<PARAMS: SHAKEParams> KDF for SHAKEInternal<PARAMS> {
         additional_input: &[u8],
     ) -> Result<Box<dyn KeyMaterialTrait>, KDFError> {
         // self.derive_key_from_multiple(&[key], additional_input)
-        self.mix_key_internal(key)?;
+        self.mix_key_internal(key);
         self.derive_key_final_internal(additional_input)
     }
 
@@ -287,7 +270,7 @@ impl<PARAMS: SHAKEParams> KDF for SHAKEInternal<PARAMS> {
         output_key: &mut impl KeyMaterialTrait,
     ) -> Result<usize, KDFError> {
         // self.derive_key_from_multiple_out(&[key], additional_input, output)
-        self.mix_key_internal(key)?;
+        self.mix_key_internal(key);
         self.derive_key_out_final_internal(additional_input, output_key)
     }
 
@@ -306,7 +289,7 @@ impl<PARAMS: SHAKEParams> KDF for SHAKEInternal<PARAMS> {
         additional_input: &[u8],
     ) -> Result<Box<dyn KeyMaterialTrait>, KDFError> {
         for key in keys {
-            self.mix_key_internal(*key)?;
+            self.mix_key_internal(*key);
         }
         self.derive_key_final_internal(additional_input)
     }
@@ -318,7 +301,7 @@ impl<PARAMS: SHAKEParams> KDF for SHAKEInternal<PARAMS> {
         output_key: &mut impl KeyMaterialTrait,
     ) -> Result<usize, KDFError> {
         for key in keys {
-            self.mix_key_internal(*key)?;
+            self.mix_key_internal(*key);
         }
         self.derive_key_out_final_internal(additional_input, output_key)
     }
@@ -364,7 +347,7 @@ impl<PARAMS: SHAKEParams> XOFSqueezer for SHAKESqueezer<PARAMS> {
     }
 }
 
-impl<PARAMS: SHAKEParams + Clone> Clone for SHAKESqueezer<PARAMS> {
+impl<PARAMS: SHAKEParams> Clone for SHAKESqueezer<PARAMS> {
     fn clone(&self) -> Self {
         Self { shake: self.shake.clone() }
     }
@@ -384,7 +367,7 @@ impl<PARAMS: SHAKEParams> Suspendable<SUSPENDED_SHA3_STATE_LEN> for SHAKESqueeze
     ) -> Result<Self, SuspendableError> {
         let input: &[u8; SHA3_FAMILY_STATE_LEN] =
             check_lib_ver(&serialized_state, None)?.try_into().unwrap();
-        let rate = 1600 - ((PARAMS::SIZE as usize) << 1);
+        let rate = PARAMS::SIZE.rate_bits();
         let (keccak, kdf_key_type, kdf_security_strength, kdf_entropy) =
             deserialize_sha3_family_state(input, PARAMS::STATE_TAG, rate)?;
 
@@ -410,7 +393,7 @@ impl<PARAMS: SHAKEParams> Hash for SHAKEInternal<PARAMS> {
     /// The sponge rate in bits: `1600 - 2c`, where the capacity `c` is twice the security level
     /// (FIPS 202 Table 3 -- 1344 bits for SHAKE128, 1088 for SHAKE256).
     fn block_bitlen(&self) -> usize {
-        1600 - ((PARAMS::SIZE as usize) << 1)
+        PARAMS::SIZE.rate_bits()
     }
 
     /// The nominal digest size: 32 bytes for SHAKE128, 64 for SHAKE256.

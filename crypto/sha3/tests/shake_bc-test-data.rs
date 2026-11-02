@@ -315,7 +315,7 @@ fn parse_test_vectors(content: &str) -> Vec<TestCase> {
 
             i += 1;
             let mut block: Vec<u8> = vec![];
-            while string_content[i].len() != 0 {
+            while !string_content[i].is_empty() {
                 if string_content[i].trim().eq("#(empty message)") {
                     i += 1;
                     break;
@@ -336,7 +336,7 @@ fn parse_test_vectors(content: &str) -> Vec<TestCase> {
 
             i += 1;
             let mut block: Vec<u8> = vec![];
-            while string_content[i].len() != 0 {
+            while !string_content[i].is_empty() {
                 let line = string_content[i].replace(" ", "");
                 block.append(&mut Vec::from(line));
                 i += 1;
@@ -352,19 +352,19 @@ fn parse_test_vectors(content: &str) -> Vec<TestCase> {
     test_vectors
 }
 
-fn decode_binary(block: &mut Vec<u8>) -> Vec<u8> {
+fn decode_binary(block: &mut [u8]) -> Vec<u8> {
     let bits = block.len();
     let full_bytes = bits / 8;
-    let total_bytes = (bits + 7) / 8;
+    let total_bytes = bits.div_ceil(8);
     let mut result = vec![0u8; total_bytes];
 
     // Whole bytes are packed per FIPS 202 Appendix B.1 (Algorithm 11, b2h: message bit 8i + j has
     // weight 2^j in byte i, i.e. the first bit is the LSB), which is how SHA-3 reads a byte-oriented
     // message.
-    for i in 0..full_bytes {
+    for (i, byte) in result[..full_bytes].iter_mut().enumerate() {
         let index = i * 8;
         block[index..(index + 8)].reverse();
-        result[i] = parse_binary(&block[index..(index + 8)]);
+        *byte = parse_binary(&block[index..(index + 8)]);
     }
 
     // The trailing partial byte is packed the way the API takes it: the remaining message bits
@@ -405,19 +405,16 @@ fn run_test_vectors(test_vectors: Vec<TestCase>) {
 
 fn run_test_case(tc: TestCase, mut shake: impl XOF) {
     let partial_bits = tc.bits % 8;
-    let output: Vec<u8>;
-
-    if partial_bits == 0 {
+    let output = if partial_bits == 0 {
         shake.do_update(tc.msg.as_slice());
-        let mut shake = shake.into_squeezer();
-        output = shake.do_output(tc.output.len());
+        shake.into_squeezer().do_output(tc.output.len())
     } else {
         shake.do_update(&tc.msg[..(tc.msg.len() - 1)]);
-        let mut shake = shake
+        shake
             .into_squeezer_partial_bits(tc.msg[tc.msg.len() - 1], partial_bits)
-            .expect("partial_bits is in 1..=7");
-        output = shake.do_output(tc.output.len());
-    }
+            .expect("partial_bits is in 1..=7")
+            .do_output(tc.output.len())
+    };
 
     assert_eq!(tc.output, output);
 }
