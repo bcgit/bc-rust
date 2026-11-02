@@ -13,11 +13,11 @@
 //!
 //! # Usage Examples
 //! ```
-//! use bouncycastle_core::traits::Hash;
+//! use bouncycastle_core::traits::{Hash, HashOneShot};
 //! use bouncycastle_blake2::{BLAKE2b_512, BLAKE2s_256};
 //!
 //! // RFC 7693 Appendix A and B.
-//! assert_eq!(BLAKE2b_512::new().hash(b"abc")[..4], [0xBA, 0x80, 0xA5, 0x3F]);
+//! assert_eq!(BLAKE2b_512::hash(b"abc")[..4], [0xBA, 0x80, 0xA5, 0x3F]);
 //!
 //! let mut blake2s = BLAKE2s_256::new();
 //! blake2s.do_update(b"a");

@@ -20,7 +20,8 @@ mod keyed_hash_tests {
         FromAnyKeyMaterial, MacGenerationKey, MacVerificationKey,
     };
     use bouncycastle_core::traits::{
-        Algorithm, Hash, MAC, MIN_MAC_OUTPUT_LEN, SuspendableKeyed, XOFSqueezer,
+        Algorithm, AlgorithmInfo, HashOneShot, MAC, MIN_MAC_OUTPUT_LEN, SuspendableKeyed,
+        XOFSqueezer,
     };
     use bouncycastle_core_test_framework::FixedSeedRNG;
     use bouncycastle_core_test_framework::from_key_material::TestFrameworkFromAnyKeyMaterial;
@@ -198,7 +199,7 @@ mod keyed_hash_tests {
     fn keyed_differs() {
         let a = key().mac(b"abc");
         assert_ne!(a, other_key().mac(b"abc"));
-        assert_ne!(a, BLAKE3::new().hash(b"abc"));
+        assert_ne!(a, BLAKE3::hash(b"abc"));
     }
 
     /// The BLAKE3-specific construction rule the shared suite cannot know: exactly 32 bytes

@@ -15,8 +15,8 @@ mod blake2s_tests {
         FromAnyKeyMaterial, MacGenerationKey, MacVerificationKey,
     };
     use bouncycastle_core::traits::{
-        Algorithm, AlgorithmOID, Hash, HashAlgParams, MAC, MIN_MAC_OUTPUT_LEN, Suspendable,
-        SuspendableKeyed,
+        Algorithm, AlgorithmInfo, AlgorithmOID, Hash, HashAlgParams, HashOneShot, MAC,
+        MIN_MAC_OUTPUT_LEN, Suspendable, SuspendableKeyed,
     };
     use bouncycastle_core_test_framework::DUMMY_SEED;
     use bouncycastle_core_test_framework::FixedSeedRNG;
@@ -183,7 +183,7 @@ mod blake2s_tests {
 
     #[test]
     fn rfc7693_appendix_b() {
-        assert_eq!(H::new().hash(b"abc"), h(RFC_ABC));
+        assert_eq!(H::hash(b"abc"), h(RFC_ABC));
     }
 
     /// Every embedded KAT entry, one-shot and streamed byte-at-a-time, hash and MAC.
@@ -193,7 +193,7 @@ mod blake2s_tests {
             let (unkeyed, keyed) = (h(unkeyed), h(keyed));
             let m = msg(len);
 
-            assert_eq!(H::new().hash(m), unkeyed, "hash, len {len}");
+            assert_eq!(H::hash(m), unkeyed, "hash, len {len}");
             let mut hash = H::new();
             for byte in m {
                 hash.do_update(core::slice::from_ref(byte));
@@ -373,7 +373,7 @@ mod blake2s_tests {
             Err(MACError::KeyMaterialError(KeyMaterialError::SecurityStrength(_)))
         ));
         let tag = K::from_key_material_allow_weak(&zero).unwrap().mac(b"abc");
-        assert_ne!(tag, H::new().hash(b"abc"));
+        assert_ne!(tag, H::hash(b"abc"));
     }
 
     /// generate draws KK_MAX bytes from the RNG and refuses an RNG below the MAC's strength.

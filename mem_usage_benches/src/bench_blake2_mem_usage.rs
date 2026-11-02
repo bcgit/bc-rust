@@ -32,7 +32,7 @@ use bouncycastle::blake2::{
 };
 use bouncycastle::core::key_material::{KeyMaterial256, KeyMaterial512, KeyType};
 use bouncycastle::core::symmetric_key::{FromAnyKeyMaterial, MacGenerationKey};
-use bouncycastle::core::traits::{Hash, MAC, Suspendable, SuspendableKeyed};
+use bouncycastle::core::traits::{Hash, HashOneShot, MAC, Suspendable, SuspendableKeyed};
 
 /// A 1 KiB message: 8 BLAKE2b blocks, 16 BLAKE2s blocks.
 const MSG: [u8; 1024] = [0xA5; 1024];
@@ -64,7 +64,7 @@ fn bench_blake2b_512_hash() {
     eprintln!("BLAKE2b-512/hash");
 
     let mut out = [0u8; 64];
-    BLAKE2b_512::new().hash_out(&MSG, &mut out);
+    BLAKE2b_512::hash_out(&MSG, &mut out);
     println!("{:x?}", out);
 }
 
@@ -72,7 +72,7 @@ fn bench_blake2s_256_hash() {
     eprintln!("BLAKE2s-256/hash");
 
     let mut out = [0u8; 32];
-    BLAKE2s_256::new().hash_out(&MSG, &mut out);
+    BLAKE2s_256::hash_out(&MSG, &mut out);
     println!("{:x?}", out);
 }
 

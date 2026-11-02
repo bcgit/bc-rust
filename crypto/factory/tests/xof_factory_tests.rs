@@ -166,8 +166,8 @@ fn blake3_by_name_matches_the_official_vector() {
         assert_eq!(make().block_bitlen(), 512, "{ctx}: block_bitlen");
         assert_eq!(make().output_len(), n, "{ctx}: output_len");
         assert_eq!(
-            Hash::max_security_strength(&make()),
-            Hash::max_security_strength(&BLAKE3::new()),
+            AlgorithmInfo::max_security_strength(&make()),
+            AlgorithmInfo::max_security_strength(&BLAKE3::new()),
             "{ctx}: max_security_strength"
         );
 

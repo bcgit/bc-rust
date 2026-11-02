@@ -9,11 +9,11 @@
 //!
 //! # Usage Examples
 //! ```
-//! use bouncycastle_core::traits::{Hash, XOF, XOFSqueezer};
+//! use bouncycastle_core::traits::{Hash, HashOneShot, XOF, XOFSqueezer};
 //! use bouncycastle_blake3::{BLAKE3, BLAKE3DeriveKey};
 //!
 //! // One-shot: the official test vector for the empty input begins af1349b9.
-//! assert_eq!(BLAKE3::new().hash(b"")[..4], [0xaf, 0x13, 0x49, 0xb9]);
+//! assert_eq!(BLAKE3::hash(b"")[..4], [0xaf, 0x13, 0x49, 0xb9]);
 //!
 //! // Streaming, then reading any amount of output; the first 32 bytes are the hash.
 //! let mut blake3 = BLAKE3::new();
@@ -22,7 +22,7 @@
 //! let mut squeezer = blake3.into_squeezer();
 //! let long = [squeezer.do_output(40), squeezer.do_output(60)].concat();
 //! assert_eq!(long, BLAKE3::new().xof(b"abc", 100));
-//! assert_eq!(long[..32], BLAKE3::new().hash(b"abc"));
+//! assert_eq!(long[..32], BLAKE3::hash(b"abc"));
 //!
 //! // derive_key: a hardcoded context string, then the key material as input.
 //! const CONTEXT: &[u8] = b"example.com 2019-12-25 16:18:03 session tokens v1";
@@ -96,14 +96,14 @@
 //! ```
 //! use bouncycastle_core::key_material::{KeyMaterial256, KeyType};
 //! use bouncycastle_core::symmetric_key::{FromAnyKeyMaterial, MacGenerationKey};
-//! use bouncycastle_core::traits::{Hash, MAC, Suspendable, SuspendableKeyed};
+//! use bouncycastle_core::traits::{Hash, HashOneShot, MAC, Suspendable, SuspendableKeyed};
 //! use bouncycastle_blake3::{BLAKE3, BLAKE3KeyedHash, BLAKE3KeyedHashKey};
 //!
 //! let mut blake3 = BLAKE3::new();
 //! blake3.do_update(b"part one, ");
 //! let mut resumed = BLAKE3::from_suspended(blake3.suspend()).unwrap();
 //! resumed.do_update(b"part two");
-//! assert_eq!(resumed.do_final(), BLAKE3::new().hash(b"part one, part two"));
+//! assert_eq!(resumed.do_final(), BLAKE3::hash(b"part one, part two"));
 //!
 //! let material = KeyMaterial256::from_bytes_as_type(&[0x42u8; 32], KeyType::MACKey).unwrap();
 //! let key = BLAKE3KeyedHashKey::from_key_material(&material).unwrap();

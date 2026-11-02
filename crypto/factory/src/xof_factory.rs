@@ -107,6 +107,7 @@ impl AlgorithmInfo for XOFFactory {
             Self::SHAKE128(h) => h.alg_name(),
             Self::SHAKE256(h) => h.alg_name(),
             Self::AsconXof128(h) => h.alg_name(),
+            Self::BLAKE3(h) => h.alg_name(),
         }
     }
 
@@ -115,6 +116,7 @@ impl AlgorithmInfo for XOFFactory {
             Self::SHAKE128(h) => h.max_security_strength(),
             Self::SHAKE256(h) => h.max_security_strength(),
             Self::AsconXof128(h) => h.max_security_strength(),
+            Self::BLAKE3(h) => h.max_security_strength(),
         }
     }
 }

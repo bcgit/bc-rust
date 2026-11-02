@@ -9,8 +9,9 @@ use bouncycastle_core::hazmat::do_hazardous_operations;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::symmetric_key::{FromAnyKeyMaterial, MacGenerationKey, MacVerificationKey};
-use bouncycastle_core::traits::MIN_MAC_OUTPUT_LEN;
-use bouncycastle_core::traits::{Hash, MAC, RNG, Suspendable, SuspendableKeyed};
+use bouncycastle_core::traits::{
+    Hash, HashOneShot, MAC, MIN_MAC_OUTPUT_LEN, RNG, Suspendable, SuspendableKeyed,
+};
 use bouncycastle_utils::suspendable_state::{add_lib_ver, check_lib_ver};
 use bouncycastle_utils::{ct, min, secret::Secret};
 
@@ -385,6 +386,8 @@ impl Default for BLAKE2s_256 {
     }
 }
 
+impl HashOneShot for BLAKE2s_256 {}
+
 impl Hash for BLAKE2s_256 {
     /// RFC 7693 s. 2.1: "Block bytes | bb = 64", so 512 bits.
     fn block_bitlen(&self) -> usize {
@@ -393,17 +396,6 @@ impl Hash for BLAKE2s_256 {
 
     fn output_len(&self) -> usize {
         NN
-    }
-
-    fn hash(self, data: &[u8]) -> Vec<u8> {
-        let mut output = vec![0u8; NN];
-        self.hash_out(data, &mut output);
-        output
-    }
-
-    fn hash_out(mut self, data: &[u8], output: &mut [u8]) -> usize {
-        self.do_update(data);
-        self.do_final_out(output)
     }
 
     fn do_update(&mut self, data: &[u8]) {
@@ -458,10 +450,6 @@ impl Hash for BLAKE2s_256 {
             ));
         }
         Ok(self.do_final_out(output))
-    }
-
-    fn max_security_strength(&self) -> SecurityStrength {
-        SecurityStrength::_128bit
     }
 }
 
@@ -671,10 +659,6 @@ impl MAC for BLAKE2s_256_MAC {
     fn do_verify_final(self, mac: &[u8]) -> bool {
         let computed = self.do_final();
         ct::ct_eq_bytes(&computed, mac)
-    }
-
-    fn max_security_strength(&self) -> SecurityStrength {
-        SecurityStrength::_128bit
     }
 }
 

@@ -148,6 +148,9 @@ impl AlgorithmInfo for HashFactory {
             Self::SHA3_512(h) => h.alg_name(),
             Self::SM3(h) => h.alg_name(),
             Self::AsconHash256(h) => h.alg_name(),
+            Self::BLAKE2b_512(h) => h.alg_name(),
+            Self::BLAKE2s_256(h) => h.alg_name(),
+            Self::BLAKE3(h) => h.alg_name(),
         }
     }
 
@@ -165,6 +168,9 @@ impl AlgorithmInfo for HashFactory {
             Self::SHA3_512(h) => h.max_security_strength(),
             Self::SM3(h) => h.max_security_strength(),
             Self::AsconHash256(h) => h.max_security_strength(),
+            Self::BLAKE2b_512(h) => h.max_security_strength(),
+            Self::BLAKE2s_256(h) => h.max_security_strength(),
+            Self::BLAKE3(h) => h.max_security_strength(),
         }
     }
 }

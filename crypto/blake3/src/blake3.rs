@@ -15,7 +15,8 @@ use bouncycastle_core::key_material::{KeyMaterial256, KeyMaterialTrait, KeyType}
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::symmetric_key::{FromAnyKeyMaterial, MacGenerationKey, MacVerificationKey};
 use bouncycastle_core::traits::{
-    Hash, MAC, MIN_MAC_OUTPUT_LEN, RNG, Suspendable, SuspendableKeyed, XOF, XOFSqueezer,
+    Hash, HashOneShot, MAC, MIN_MAC_OUTPUT_LEN, RNG, Suspendable, SuspendableKeyed, XOF,
+    XOFSqueezer,
 };
 use bouncycastle_utils::suspendable_state::{add_lib_ver, check_lib_ver};
 use bouncycastle_utils::{ct, min, secret::Secret};
@@ -557,6 +558,8 @@ impl Default for BLAKE3 {
     }
 }
 
+impl HashOneShot for BLAKE3 {}
+
 impl Hash for BLAKE3 {
     /// BLAKE3 spec s. 2.2: the message block is 512 bits.
     fn block_bitlen(&self) -> usize {
@@ -567,16 +570,6 @@ impl Hash for BLAKE3 {
     /// output length into the computation (s. 2.6), so use the [`XOF`] methods for other lengths.
     fn output_len(&self) -> usize {
         OUT_LEN
-    }
-
-    fn hash(mut self, data: &[u8]) -> Vec<u8> {
-        self.do_update(data);
-        self.do_final()
-    }
-
-    fn hash_out(mut self, data: &[u8], output: &mut [u8]) -> usize {
-        self.do_update(data);
-        self.do_final_out(output)
     }
 
     fn do_update(&mut self, data: &[u8]) {
@@ -621,10 +614,6 @@ impl Hash for BLAKE3 {
         output.fill(0);
         check_partial_bits(num_bits)?;
         Ok(self.do_final_out(output))
-    }
-
-    fn max_security_strength(&self) -> SecurityStrength {
-        SecurityStrength::_128bit
     }
 }
 
@@ -906,6 +895,19 @@ impl BLAKE3DeriveKey {
     pub fn new(context: &[u8]) -> Self {
         Self(BLAKE3::derive_key_mode(context))
     }
+
+    /// One-shot: the 32-byte derived key for the key material `data`. [`HashOneShot`] is for
+    /// hashes that take no parameters; this one takes its context string at construction.
+    pub fn hash(mut self, data: &[u8]) -> Vec<u8> {
+        self.do_update(data);
+        self.do_final()
+    }
+
+    /// As [`Self::hash`], into `output`, which is zeroized first; returns the bytes written.
+    pub fn hash_out(mut self, data: &[u8], output: &mut [u8]) -> usize {
+        self.do_update(data);
+        self.do_final_out(output)
+    }
 }
 
 impl Hash for BLAKE3DeriveKey {
@@ -916,14 +918,6 @@ impl Hash for BLAKE3DeriveKey {
     /// The default output length, 32 bytes; use the [`XOF`] methods for other lengths.
     fn output_len(&self) -> usize {
         self.0.output_len()
-    }
-
-    fn hash(self, data: &[u8]) -> Vec<u8> {
-        self.0.hash(data)
-    }
-
-    fn hash_out(self, data: &[u8], output: &mut [u8]) -> usize {
-        self.0.hash_out(data, output)
     }
 
     fn do_update(&mut self, data: &[u8]) {
@@ -954,10 +948,6 @@ impl Hash for BLAKE3DeriveKey {
         output: &mut [u8],
     ) -> Result<usize, HashError> {
         self.0.do_final_partial_bits_out(partial_byte, num_bits, output)
-    }
-
-    fn max_security_strength(&self) -> SecurityStrength {
-        Hash::max_security_strength(&self.0)
     }
 }
 
@@ -1173,10 +1163,6 @@ impl MAC for BLAKE3KeyedHash {
         }
         let computed = self.do_final();
         ct::ct_eq_bytes(&computed, mac)
-    }
-
-    fn max_security_strength(&self) -> SecurityStrength {
-        SecurityStrength::_128bit
     }
 }
 
