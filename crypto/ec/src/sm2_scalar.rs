@@ -417,17 +417,6 @@ impl Sm2PublicScalar {
     pub fn to_limbs(&self) -> [u64; 4] {
         self.0
     }
-
-    /// `self^-1 mod n` in **variable time**, as a [`Sm2ScalarField`] ready for the arithmetic
-    /// that follows, or `0` for `0`. SM2 verification (GB/T 32918.2-2016 §7.1) inverts nothing,
-    /// so `bouncycastle-sm2` never calls this; it is kept for parity with the ECDSA curves'
-    /// public scalar types, for a value that is public by construction. Nothing derived from a
-    /// private key or a per-message secret may reach this, which is why it lives on the public
-    /// scalar type and not on [`Sm2ScalarField`], whose `invert` is the constant-time one. See
-    /// [`crate::inverse_vartime`].
-    pub fn invert_vartime(&self) -> Sm2ScalarField {
-        Sm2ScalarField::from_limbs(crate::inverse_vartime::mod_inverse(&self.0, &N_LIMBS))
-    }
 }
 
 #[cfg(test)]
