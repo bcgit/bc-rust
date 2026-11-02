@@ -77,8 +77,10 @@ test_tool = "cargo"
 # Output directory for results
 output = "custom_mutants_output"
 
-# Cargo profile to use for builds
-profile = "dev"
+# Cargo profile to use for builds: `[profile.mutants]` in the root Cargo.toml, optimised but
+# without LTO and with incremental codegen, so a mutant rebuilds in about a second and the
+# ML-DSA / ML-KEM suites run in seconds rather than the minutes they take unoptimised.
+profile = "mutants"
 
 # Pass `--cap-lints` to rustc to avoid warnings causing build failures
 cap_lints = true
