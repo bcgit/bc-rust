@@ -5,7 +5,7 @@
 //! First, a little primer on the objects that make up an ML-KEM key pair.
 //! The "elements" of the lattice are polynomials of degree 256, represented in memory as
 //! arrays of 256 i16's. That's 512 bytes per polynomial.
-//! Then we build vectors and matrices composed of these polynomials.
+//! Vectors and matrices are built from these polynomials.
 //! ML-KEM is parametrized as ML-KEM-k where k in {2, 3, 4} is the size of the vectors, and the matrices
 //! have size k x k.
 //! So ML-KEM-512 carries vectors of 2 polynomials and matrices of 2 x 2 = 4 polynomials.
@@ -21,7 +21,7 @@
 //! A well-written but not memory-optimized ML-KEM-768 can be expected to consume approximately 40 kb of RAM
 //! at the widest point of the `.decaps()` operation.
 //!
-//! This crate strives to do better!
+//! This crate does better.
 //!
 //! The core observation that makes this implementation possible is that by a careful examination of
 //! how the matrix multiplication works, the vectors and matrices don't ever need to be fully
@@ -34,83 +34,82 @@
 //! The various vectors cannot, but the polynomial compression algorithm given in FIPS 203 as part of
 //! the key encoding procedure can be used to hold the vectors in memory compressed and only un-compress
 //! a single polynomial entry at a time.
-//! The downside of this approach is that it costs performance: throughout this implementation we are re-deriving
-//! bits and pieces of matrices that we had in memory previously, but released.
+//! The downside of this approach is that it costs performance: throughout this implementation, pieces of
+//! matrices that were in memory earlier and released are re-derived.
 //!
-//! We also get a surprising amount of memory-savings by good coding hygiene:
-//! Using un-named scopes to tell the compiler when an intermediate variable is no longer needed and
-//! con be popped off the stack. This sometimes requires re-ordering the steps of the algorithms given in
+//! A surprising amount of the saving comes from coding hygiene:
+//! un-named scopes tell the compiler when an intermediate variable is no longer needed and
+//! can be popped off the stack. This sometimes requires re-ordering the steps of the algorithms given in
 //! FIPS 203 so that variables can be created, used, and released in a self-contained block.
-//! Sometimes this is not possible and we have to make a choice between keeping the variable around
-//! or releasing it and re-deriving it later.
-//! We also attempt to be clean about noting the last time a long-lived variable is used and
-//! re-using / re-naming / moving it to a new purpose rather than allocating an additional variable.
-//! These hygiene points can always be further improved with increasingly aggressive design choices.
-//! We feel that we have hit the point of diminishing returns that maintains an acceptable balance
-//! of memory footprint, performance, and code readability, but we welcome pull requests if, for example,
-//! we've missed a polynomial that doesn't need to be created.
+//! Where that is not possible, the choice is between keeping the variable and releasing it to
+//! re-derive it later. The last use of a long-lived variable is noted and the variable is
+//! re-used, renamed or moved to a new purpose rather than a new one being allocated.
+//! These points can always be pushed further; this crate stops at what keeps an acceptable balance
+//! of memory footprint, performance and readability. Pull requests are welcome if, for example,
+//! a polynomial that does not need to exist has been missed.
 //!
-//! All this combined, we achieve an approximate *1/3 the memory footprint* at a cost of approximately *3x
+//! All this combined gives approximately *half the peak memory* at a cost of approximately *2x
 //! the runtime for decapsulating and no appreciable difference for encapsulation*,
-//! compared with our un-optimized implementation in the \[bouncycastle_mlkem] crate, which we are extremely happy with!
+//! compared with the un-optimized implementation in the `bouncycastle_mlkem` crate.
 //!
-//! # Memory Footprint
+//! # Memory Usage
 //!
-//! Below, find performance charts relative to the standard ML-KEM implementation in the \[bouncycastle_mlkem] crate.
+//! Below are the figures relative to the standard ML-KEM implementation in the `bouncycastle_mlkem` crate.
 //!
 //! ## Keys sizes in memory and on disk
 //!
 //! This implementation greatly reduces the size of keys both on disk and in memory
 //! by only handling the matrices and vectors either as seeds or in their compressed representation
-//! expanding on-demand as part of a sign or verify operation rather than storing them in memory as part of a keygen or key load.
+//! expanding on demand as part of an encapsulation or decapsulation rather than storing them in memory as part of a keygen or key load.
 //!
 //! | Key Object | PK size on disk | PK size in memory | SK Size on disk | SK size in memory |
 //! |------------|-----------------|-------------------|-----------------|-------------------|
-//! | ML-KEM-512  | 800 (800)      | 800 (1056)        | 32 (1632)       | 161 (2178) |
-//! | ML-KEM-768  | 1184 (1184)    | 1184 (1568)       | 32 (2400)       | 161 (3202) |
-//! | ML-KEM-1024 | 1568 (1568)    | 1568 (2080)       | 32 (3168)       | 161 (4226) |
+//! | ML-KEM-512  | 800 (800)      | 800 (1056)        | 64 (1632)       | 160 (2178) |
+//! | ML-KEM-768  | 1184 (1184)    | 1184 (1568)       | 64 (2400)       | 160 (3202) |
+//! | ML-KEM-1024 | 1568 (1568)    | 1568 (2080)       | 64 (3168)       | 160 (4226) |
 //!
 //! All values are in bytes. The "in memory" sizes are measured by rust's `std::mem::size_of`.
-//! Values in parentheses are the usual sizes in our un-optimized implementation in the \[bouncycastle_mldsa] crate.
-//!
+//! Values in parentheses are the sizes in the un-optimized implementation in the `bouncycastle_mlkem` crate.
+//! The private key is the 64-byte seed on disk and, in memory, the seed with 𝜌, 𝜎 and H(ek) alongside.
+//! [`MLKEMSeedPrivateKeyExpanded`] adds the packed 𝐭̂ (384𝑘 bytes: 928 / 1312 / 1696 in
+//! memory) and in exchange decapsulates without the key generation a seed key runs each time; its
+//! encoding on disk is the same 64-byte seed.
 //!
 //! ## Algorithm Peak Memory Usage
 //!
-//! The table below shows peak memory usage of the ML-KEM algorithms and the rough performanc (throughput) impact.
+//! The table below shows peak memory usage of the ML-KEM algorithms and the rough performance (throughput) impact.
 //!
 //! Measuring peak application memory usage can be a bit tricky, and the numbers that are obtained depend heavily on how the
-//! measurement harness is designed. Here, we aim to provide a conservative measurement, meaning that we are aiming for an
-//! over-estimate so that any deployment within an existing application will use incrementally less additional memory
-//! than the amount stated here.
+//! measurement harness is designed. The figures here are conservative, meaning an over-estimate, so that
+//! a deployment within an existing application uses incrementally less additional memory than stated.
 //!
-//! Our measurement methodology is to compile a simple standalone HelloWorld application that only calls the function under test
+//! The measurement compiles a simple standalone HelloWorld application that only calls the function under test
 //! with as minimal as possible hard-coded data (such as keys or ciphertexts) and measure the peak memory usage of running
 //! the compiled binary using `valgrind --tool=massif --heap=no --stack=yes`. The flags for heap and stack
 //! reflect the fact that this is a `no_std` rust application and therefore the cryptographic functions use no heap memory.
 //! The measurements may over-estimate by as much as 3 kb since that that's the measured peak memory usage of a do-nothing
 //! HelloWorld rust application.
 //!
-//! | Algorithm                  | Peak stack memory usage (kB) | Throughput (Kops/s) |
+//! | Algorithm                  | Peak stack memory (kB) | Throughput (Kops/s) |
 //! |----------------------------|------------------------|-------------------|
-//! | MLKEM512_lowmemory/KeyGen  | 5.8 (21.7)             | 50.1 (48.7) |
-//! | MLKEM512_lowmemory/KeyGen  | 7.3 (28.9)             | 28.3 (28.8) |
-//! | MLKEM1024_lowmemory/KeyGen | 9.3 (41.4)             | 16.9 (18.1) |
-//! | MLKEM512_lowmemory/Encaps  | 8.9 (18.8)             | 37.8 (43.7) |
-//! | MLKEM768_lowmemory/Encaps  | 9.9 (27.9)             | 22.3 (26.0) |
-//! | MLKEM1024_lowmemory/Encaps | 11.2 (44.2)            | 14.2 (15.6) |
-//! | MLKEM512_lowmemory/Decaps  | 13.6 (25.7)            | 13.4 (31.6) |
-//! | MLKEM768_lowmemory/Decaps  | 16.6 (40.6)            | 7.8 (21.0) |
-//! | MLKEM1024_lowmemory/Decaps | 20.5 (58.4)            | 4.9 (13.6) |
+//! | MLKEM512_lowmemory/KeyGen  | 7.7 (14.0)             | 50.1 (48.7)       |
+//! | MLKEM768_lowmemory/KeyGen  | 7.7 (20.5)             | 28.3 (28.8)       |
+//! | MLKEM1024_lowmemory/KeyGen | 8.8 (30.2)             | 16.9 (18.1)       |
+//! | MLKEM512_lowmemory/Encaps  | 10.8 (16.4)            | 37.8 (43.7)       |
+//! | MLKEM768_lowmemory/Encaps  | 12.6 (27.3)            | 22.3 (26.0)       |
+//! | MLKEM1024_lowmemory/Encaps | 14.8 (38.8)            | 14.2 (15.6)       |
+//! | MLKEM512_lowmemory/Decaps  | 11.8 (20.9)            | 13.4 (31.6)       |
+//! | MLKEM768_lowmemory/Decaps  | 13.7 (33.6)            | 7.8 (21.0)        |
+//! | MLKEM1024_lowmemory/Decaps | 15.7 (47.2)            | 4.9 (13.6)        |
 //!
-//! Values in parentheses are the comparison values from the un-optimized implementation in the \[bouncycastle_mldsa] crate.
-//! Size numbers were collected with valgrind using a simple main program that calls only the measured function.
-//! Performance throughput numbers were collected on my laptop using the library's provided benchmarks, so
-//! performance they should be taken with an extreme grain of salt.
+//! Values in parentheses are the comparison values from the un-optimized implementation in the `bouncycastle_mlkem` crate.
+//! Memory figures were measured with `mem_usage_benches/bench_mlkem_mem_usage` under massif on 2026-11-02;
+//! throughput figures come from the crates' criterion benches on a developer machine when the crate was
+//! written and have not been re-measured since (decapsulation here has since lost one of its two key
+//! generations, roughly a 30% speed-up).
+//! Actual values vary with build configuration and target architecture.
 //!
-//! Actual values may vary based on build configuration and target architecture.
-//!
-//!
-//! # Usage
+//! # Usage Examples
 //!
 //! This crate has been designed to serve a wide range of use cases, from people dabbling in
 //! cryptography for the first time, to cryptographic protocol designers who need access to the internal
@@ -119,12 +118,13 @@
 //!
 //! This page gives examples of simple usage for generating keys and performing encapsulation and decapsulation operations.
 //!
-//! More examples on advanced usage can be found on the [`mlkem`] page.
+//! What this crate adds beyond the core traits, including the expanded private key for repeated
+//! decapsulations, is on the [`mlkem`] page.
 //!
 //! # Primer on KEM algorithms
 //!
 //! Since Key-Encapsulation Mechanisms behave differently from the Diffie-Hellman key exchanges that many people are familiar with,
-//! we start with a brief primer on KEMs.
+//! here is a brief primer on KEMs.
 //!
 //! The core operation of a KEM is "encapsulation" which performs a mathematical operation against a KEM public key and yields
 //! a shared secret key, and a ciphertext. Internally, the encapsulation routine will use a cryptographic random number generator
@@ -207,8 +207,14 @@
 //! This crate intends to expose only APIs that are secure to use.
 //! There are, however, a few exceptions worth mentioning.
 //!
-//! If using a [`MLKEM::keygen_from_seed`], then it is your responsibility to ensure that the seed is
-//! cryptographically random and unpredictable at a security strength that matches the MLKEM parameter set.
+//! If using [`MLKEMTrait::keygen_from_seed`], it is the caller's responsibility to ensure that the seed is
+//! cryptographically random and unpredictable at a security strength that matches the ML-KEM parameter set.
+//!
+//! A private key here *is* its 64-byte seed. `KEMPrivateKey::from_bytes` therefore takes any 64 bytes
+//! as a seed at the parameter set's strength, with no check possible on where they came from, so an
+//! all-zero or otherwise weak file loads as a key; [`MLKEMTrait::keygen_from_seed`] on typed
+//! [`KeyMaterial`](bouncycastle_core::key_material::KeyMaterial) is the path that enforces key type
+//! and strength.
 //!
 //! Also, [`hazmat::EncapsWithRandomness`] requires the encapsulation randomness to be provided, so the ciphertext
 //! will only be as strong as the randomness that you provide.
@@ -219,15 +225,15 @@
 //! constructions. That should give this implementation reasonably good resistance to timing and
 //! power analysis key extraction attacks, however:
 //!     A) this is a "best-effort" and not formally verified, and
-//!     B) the Rust compiler does not guarantee constant-time behaviour no matter how good the design is code,
+//!     B) the Rust compiler does not guarantee constant-time behaviour no matter how good the design is,
 //! so like all Safe Rust code (ie Rust code that does not include inline assembly),
-//! it is up to the Rust compiler's optimizer to decide whether our bitshift-and-xor code actually remains
+//! it is up to the Rust compiler's optimizer whether the bitshift-and-xor code actually remains
 //! constant-time after compilation.
 
 #![no_std]
 #![forbid(missing_docs)]
 #![forbid(unsafe_code)]
-// These are because variable names need to be matched exactly against FIPS 204,
+// These are because variable names need to be matched exactly against FIPS 203,
 // for example both 'K' and 'k', or 'A' and 'a' are used and have specific meanings.
 // linter needs to be instructed to ignore these cases
 #![allow(non_snake_case)]
@@ -240,18 +246,20 @@
 #[allow(unused_imports)]
 use bouncycastle_core::key_material::KeyMaterialTrait;
 
-mod aux_functions;
 pub mod hazmat;
 mod low_memory_helpers;
 pub mod mlkem;
 mod mlkem_keys;
 mod params;
-mod polynomial;
 
 /*** Exported types ***/
 pub use mlkem::{MLKEM, MLKEM512, MLKEM768, MLKEM1024, MLKEMTrait};
 pub use mlkem_keys::{
     MLKEM512PrivateKey, MLKEM768PrivateKey, MLKEM1024PrivateKey, MLKEMSeedPrivateKey,
+};
+pub use mlkem_keys::{
+    MLKEM512PrivateKeyExpanded, MLKEM768PrivateKeyExpanded, MLKEM1024PrivateKeyExpanded,
+    MLKEMSeedPrivateKeyExpanded,
 };
 pub use mlkem_keys::{MLKEM512PublicKey, MLKEM768PublicKey, MLKEM1024PublicKey, MLKEMPublicKey};
 pub use mlkem_keys::{MLKEMPrivateKeyTrait, MLKEMPublicKeyTrait};

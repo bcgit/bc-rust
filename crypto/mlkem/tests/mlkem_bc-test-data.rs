@@ -111,8 +111,8 @@ impl KeyGenTestCase {
         assert_eq!(self.mode, "keyGen");
 
         let mut seed_bytes = [0u8; 64];
-        seed_bytes[..32].copy_from_slice(&*hex::decode(&self.d).unwrap());
-        seed_bytes[32..].copy_from_slice(&*hex::decode(&self.z).unwrap());
+        seed_bytes[..32].copy_from_slice(&hex::decode(&self.d).unwrap());
+        seed_bytes[32..].copy_from_slice(&hex::decode(&self.z).unwrap());
 
         let mut seed = KeyMaterial512::from_bytes_as_type(&seed_bytes, KeyType::Seed).unwrap();
 

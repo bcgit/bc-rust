@@ -177,7 +177,7 @@ mod mlkem_key_tests {
         assert!(sk.seed().is_some());
         assert_eq!(sk.seed().as_ref().unwrap(), &seed);
 
-        // When you pop the seed out, its SecurityStrength will match the ML-DSA algorithm
+        // When you pop the seed out, its SecurityStrength will match the ML-KEM parameter set
         let (_pk, sk) = MLKEM512::keygen_from_seed(&seed).unwrap();
         assert_eq!(sk.seed().unwrap().security_strength(), SecurityStrength::_128bit);
 
@@ -221,6 +221,28 @@ mod mlkem_key_tests {
             Err(KEMError::DecodingError(_)) => { /* good */ }
             _ => panic!("Expected malformed key to be rejected"),
         };
+    }
+
+    /// FIPS 203 Section 7.3 (ByteDecode12 is not one-to-one above q - 1): a decapsulation key whose
+    /// first 12-bit coefficient is q must be refused by the coefficient check itself. An all-0xFF
+    /// key is caught earlier by the H(ek) mismatch, so this is the case that reaches the check.
+    #[test]
+    fn private_key_coefficient_equal_to_q_is_refused() {
+        let (_pk, sk) = MLKEM512::keygen().unwrap();
+        let mut bytes = sk.encode();
+        // ByteEncode12 is little-endian: coefficient 0 is byte 0 and the low nibble of byte 1.
+        let coeff: u16 = 3329;
+        bytes[0] = (coeff & 0xFF) as u8;
+        bytes[1] = (bytes[1] & 0xF0) | ((coeff >> 8) as u8);
+        match MLKEM512PrivateKey::from_bytes(&bytes) {
+            Err(KEMError::DecodingError(_)) => { /* good */ }
+            other => panic!("expected a DecodingError, got {other:?}"),
+        }
+        // and q - 1 is in range
+        let coeff: u16 = 3328;
+        bytes[0] = (coeff & 0xFF) as u8;
+        bytes[1] = (bytes[1] & 0xF0) | ((coeff >> 8) as u8);
+        MLKEM512PrivateKey::from_bytes(&bytes).unwrap();
     }
 
     #[test]

@@ -1,27 +1,31 @@
-//! Implements auxiliary functions for ML-DSA as defined in Section 7 of FIPS 204.
+//! The auxiliary algorithms of FIPS 203 Section 4 on single polynomials: ByteEncode and
+//! ByteDecode (Algorithms 5-6) and SampleNTT and SamplePolyCBD (Algorithms 7-8). Anything over a
+//! whole vector or matrix is the business of the crate that holds vectors.
 
-use crate::mlkem::{N, q, q_inv};
-use crate::polynomial::Polynomial;
+use crate::polynomial::{Polynomial, barrett_reduce, cond_sub_q};
+use crate::{N, q};
 use bouncycastle_core::traits::{Hash, XOF, XOFSqueezer};
 use bouncycastle_sha3::{SHAKE128, SHAKE256};
 
 /// Algorithm 5 ByteEncode_d(𝐹)
 /// Encodes an array of 𝑑-bit integers into a byte array for 1 ≤ 𝑑 ≤ 12.
-/// Input: integer array 𝐹 ∈ ℤ_M^256 , where 𝑚 = 2^𝑑 if 𝑑 < 12, and 𝑚 = 𝑞 if 𝑑 = 12.
-/// Output: byte array 𝐵 ∈ 𝔹32𝑑 .
-pub(crate) fn byte_encode<const d: usize, const PACK_LEN: usize>(
+/// Input: integer array 𝐹 ∈ ℤ_M^256, where 𝑚 = 2^𝑑 if 𝑑 < 12, and 𝑚 = 𝑞 if 𝑑 = 12.
+/// Output: byte array 𝐵 ∈ 𝔹32𝑑.
+///
+/// Writes into `B`, which is zeroed first; see [`byte_encode`] for the form that returns it.
+pub fn byte_encode_out<const d: usize, const PACK_LEN: usize>(
     F: &Polynomial,
     B: &mut [u8; PACK_LEN],
 ) {
-    B.fill(0);
-
     debug_assert_eq!(PACK_LEN, 32 * d);
+    B.fill(0);
 
     for i in 0..N {
         let mut alpha = F[i];
 
-        // For efficiency, the library is happy to work with values outside the range [0..q],
-        // but we need to reduce it for the canonical encoding.
+        // The arithmetic leaves coefficients unreduced; the encoding needs the canonical
+        // representative. barrett_reduce gives [0, q], with q for a negative multiple of q (an
+        // unreduced NTT output can be one), and cond_sub_q folds that to 0.
         alpha = barrett_reduce(alpha);
         alpha = cond_sub_q(alpha);
 
@@ -48,11 +52,19 @@ pub(crate) fn byte_encode<const d: usize, const PACK_LEN: usize>(
     }
 }
 
+/// [`byte_encode_out`] into a fresh array.
+#[must_use]
+pub fn byte_encode<const d: usize, const PACK_LEN: usize>(F: &Polynomial) -> [u8; PACK_LEN] {
+    let mut B = [0u8; PACK_LEN];
+    byte_encode_out::<d, PACK_LEN>(F, &mut B);
+    B
+}
+
 /// Algorithm 6 ByteDecode_d(𝐵)
 /// Decodes a byte array into an array of 𝑑-bit integers for 1 ≤ 𝑑 ≤ 12.
 /// Input: byte array 𝐵 ∈ 𝔹32𝑑 .
 /// Output: integer array 𝐹 ∈ ℤ256 , where 𝑚 = 2𝑑 if 𝑑 < 12 and 𝑚 = 𝑞 if 𝑑 = 12.
-pub(crate) fn byte_decode<const d: usize, const PACK_LEN: usize>(B: &[u8; PACK_LEN]) -> Polynomial {
+pub fn byte_decode<const d: usize, const PACK_LEN: usize>(B: &[u8; PACK_LEN]) -> Polynomial {
     debug_assert_eq!(PACK_LEN, 32 * d);
 
     let mut F = Polynomial::new();
@@ -61,13 +73,11 @@ pub(crate) fn byte_decode<const d: usize, const PACK_LEN: usize>(B: &[u8; PACK_L
         // 3: F[i] = SUM_j=0..d-1{ 𝑏[𝑖 ⋅ 𝑑 + 𝑗] ⋅ 2𝑗 } mod m
         for j in 0..d {
             // select the next bit, according to bitcount, then shift it up by j
-            // there is supposed to be a `mod m` here, but that shouldn't matter as they are being checked below
-            F[i] |= (((B[(i * d + j) / 8] >> (i * d + j) % 8) & 1) as i16) << j;
+            // The `mod m` of line 3 is not applied: for 𝑑 < 12 the sum cannot reach 2^𝑑, and for
+            // 𝑑 = 12 the callers check the coefficient against 𝑞 themselves (Section 7.2).
+            F[i] |= (((B[(i * d + j) / 8] >> ((i * d + j) % 8)) & 1) as i16) << j;
         }
-        // assert the mod m
-        // These are relaxed because they are being checked above in MLKEMPublicKey::pk_decode()
         debug_assert!(F[i] >= 0);
-        // debug_assert!(F[i] <= if d<12 {2<<d} else { q });
     }
 
     F
@@ -77,7 +87,7 @@ pub(crate) fn byte_decode<const d: usize, const PACK_LEN: usize>(B: &[u8; PACK_L
 /// Takes a 32-byte seed and two indices as input and outputs a pseudorandom element of 𝑇𝑞.
 /// Input: byte array 𝐵 ∈ 𝔹34 . ▷ a 32-byte seed along with two indices
 /// Output: array 𝑎_hat ∈ ℤ256 ▷ the coefficients of the NTT of a polynomial
-pub(crate) fn sample_ntt(rho: &[u8; 32], nonce: &[u8; 2]) -> Polynomial {
+pub fn sample_ntt(rho: &[u8; 32], nonce: &[u8; 2]) -> Polynomial {
     let mut a_hat = Polynomial::new();
 
     // 1: ctx ← XOF.Init()
@@ -89,10 +99,10 @@ pub(crate) fn sample_ntt(rho: &[u8; 32], nonce: &[u8; 2]) -> Polynomial {
     // 3: 𝑗 ← 0
     let mut j = 0usize;
 
-    // SHAKE is fairly inefficient if only 3 bytes are squeezed at a time, so a block is done instead.
-    // size doesn't really matter, so long as it's a multiple of 3.
-    // 288 seemed to be the sweet spot from playing with benchmarks
-    // It's likely around the average rejection rate, and 216 is a multiple of both 3 (required for this alg)
+    // SHAKE is fairly inefficient if you just squeeze 3 bytes at a time, therefore a block is squeezed here.
+    // Size is not an important factor, so long as it's a multiple of 3.
+    // 216 was the sweet spot in benchmarking.
+    // It is probably around the average rejection rate, and 216 is a multiple of both 3 (required for this alg)
     // and 8 (efficient for SHAKE).
     let mut C = [0u8; 216];
     let mut xof = xof.into_squeezer();
@@ -111,12 +121,12 @@ pub(crate) fn sample_ntt(rho: &[u8; 32], nonce: &[u8; 2]) -> Polynomial {
         // 6: 𝑑1 ← 𝐶[0] + 256 ⋅ (𝐶[1] mod 16)
         //  ▷ 0 ≤ 𝑑1 < 2^12
         let d1: i16 = (C[idx] as i16) | ((C[idx + 1] as i32) << 8) as i16 & 0xFFF;
-        debug_assert!(d1 < 2 << 12);
+        debug_assert!(d1 < 1 << 12);
 
         // 7: 𝑑2 ← ⌊𝐶[1]/16⌋ + 16 ⋅ 𝐶[2]
         //  ▷ 0 ≤ 𝑑2 < 2^12
         let d2: i16 = ((C[idx + 1] as i16) >> 4) | ((C[idx + 2] as i32) << 4) as i16 & 0xFFF;
-        debug_assert!(d2 < 2 << 12);
+        debug_assert!(d2 < 1 << 12);
 
         // 8: if 𝑑1 < 𝑞 then
         // 9:   𝑎_hat[𝑗] ← 𝑑1 ̂
@@ -147,7 +157,7 @@ pub(crate) fn sample_ntt(rho: &[u8; 32], nonce: &[u8; 2]) -> Polynomial {
 /// Takes a seed as input and outputs a pseudorandom sample from the distribution D𝜂(𝑅𝑞).
 /// Input: byte array 𝐵 ∈ 𝔹64𝜂 .
 /// Output: array 𝑓 ∈ ℤ256  ▷ the coefficients of the sampled polynomial
-pub(crate) fn sample_poly_cbd(bytes: &[u8], eta: i16) -> Polynomial {
+pub fn sample_poly_cbd(bytes: &[u8], eta: i16) -> Polynomial {
     debug_assert_eq!(bytes.len(), 64 * eta as usize);
 
     let mut f = Polynomial::new();
@@ -194,7 +204,7 @@ pub(crate) fn sample_poly_cbd(bytes: &[u8], eta: i16) -> Polynomial {
 
 /// SamplePolyCBD𝜂1(PRF𝜂1 (𝜎, 𝑁 ))
 /// Performs both the PRF and SamplePolyCBD steps
-pub(crate) fn sample_poly_CBD(b: &[u8; 32], n: u8, eta: i16) -> Polynomial {
+pub fn sample_poly_CBD(b: &[u8; 32], n: u8, eta: i16) -> Polynomial {
     // Alg 13: 9: 𝐬[𝑖] ← SamplePolyCBD𝜂1(PRF𝜂1 (𝜎, 𝑁 ))
     //  ▷ 𝐬[𝑖] ∈ ℤ256 sampled from CBD
     match eta {
@@ -233,73 +243,4 @@ fn little_endian_to_u24(bs: &[u8], off: usize) -> u32 {
     let mut n = bs[off] as u32;
     n |= (bs[off + 1] as u32) << 8;
     n | (bs[off + 2] as u32) << 16
-}
-
-pub(crate) const ZETAS: [i16; 128] = [
-    2285, 2571, 2970, 1812, 1493, 1422, 287, 202, 3158, 622, 1577, 182, 962, 2127, 1855, 1468, 573,
-    2004, 264, 383, 2500, 1458, 1727, 3199, 2648, 1017, 732, 608, 1787, 411, 3124, 1758, 1223, 652,
-    2777, 1015, 2036, 1491, 3047, 1785, 516, 3321, 3009, 2663, 1711, 2167, 126, 1469, 2476, 3239,
-    3058, 830, 107, 1908, 3082, 2378, 2931, 961, 1821, 2604, 448, 2264, 677, 2054, 2226, 430, 555,
-    843, 2078, 871, 1550, 105, 422, 587, 177, 3094, 3038, 2869, 1574, 1653, 3083, 778, 1159, 3182,
-    2552, 1483, 2727, 1119, 1739, 644, 2457, 349, 418, 329, 3173, 3254, 817, 1097, 603, 610, 1322,
-    2044, 1864, 384, 2114, 3193, 1218, 1994, 2455, 220, 2142, 1670, 2144, 1799, 2051, 794, 1819,
-    2475, 2459, 478, 3221, 3021, 996, 991, 958, 1869, 1522, 1628,
-];
-
-pub(crate) const ZETAS_INV: [i16; 128] = [
-    1701, 1807, 1460, 2371, 2338, 2333, 308, 108, 2851, 870, 854, 1510, 2535, 1278, 1530, 1185,
-    1659, 1187, 3109, 874, 1335, 2111, 136, 1215, 2945, 1465, 1285, 2007, 2719, 2726, 2232, 2512,
-    75, 156, 3000, 2911, 2980, 872, 2685, 1590, 2210, 602, 1846, 777, 147, 2170, 2551, 246, 1676,
-    1755, 460, 291, 235, 3152, 2742, 2907, 3224, 1779, 2458, 1251, 2486, 2774, 2899, 1103, 1275,
-    2652, 1065, 2881, 725, 1508, 2368, 398, 951, 247, 1421, 3222, 2499, 271, 90, 853, 1860, 3203,
-    1162, 1618, 666, 320, 8, 2813, 1544, 282, 1838, 1293, 2314, 552, 2677, 2106, 1571, 205, 2918,
-    1542, 2721, 2597, 2312, 681, 130, 1602, 1871, 829, 2946, 3065, 1325, 2756, 1861, 1474, 1202,
-    2367, 3147, 1752, 2707, 171, 3127, 3042, 1907, 1836, 1517, 359, 758, 1441,
-];
-
-pub(crate) fn mul_mont(a: i16, b: i16) -> i16 {
-    montgomery_reduce((a as i32) * (b as i32))
-}
-
-pub(crate) fn montgomery_reduce(a: i32) -> i16 {
-    let u = a.wrapping_mul(q_inv) as i16;
-    let mut t = (u as i32) * q as i32;
-    t = a - t;
-    t >>= 16;
-    t as i16
-}
-
-pub(crate) fn barrett_reduce(a: i16) -> i16 {
-    let v = (((1u32 << 26) + ((q / 2) as u32)) / (q as u32)) as i16;
-    let t = (((v as i32) * (a as i32)) >> 26) as i16;
-    a - (((t as i32) * q as i32) as i16)
-}
-
-pub(super) fn cond_sub_q(a: i16) -> i16 {
-    let tmp = a - q;
-    tmp + ((tmp >> 15) & q)
-}
-
-/// Multiplication of polynomials in Zq\[X]/(X^2-zeta)
-/// used for multiplication of elements in Rq in NTT domain
-///
-/// Borrowed from:
-/// https://github.com/pq-crystals/kyber/blob/main/ref/ntt.c#L139
-pub(crate) fn ntt_base_mult(
-    r: &mut [i16],
-    off: usize,
-    a0: i16,
-    a1: i16,
-    b0: i16,
-    b1: i16,
-    zeta: i16,
-) {
-    let mut out_val0 = mul_mont(a1, b1);
-    out_val0 = mul_mont(out_val0, zeta);
-    out_val0 += mul_mont(a0, b0);
-    r[off] = out_val0;
-
-    let mut out_val1 = mul_mont(a0, b1);
-    out_val1 += mul_mont(a1, b0);
-    r[off + 1] = out_val1;
 }

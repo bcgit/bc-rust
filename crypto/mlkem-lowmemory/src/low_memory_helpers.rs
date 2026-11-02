@@ -2,10 +2,12 @@
 //! and other intermediate values by never holding the whole thing in memory at once, but re-constructing
 //! what it needs in pieces, which generally means handling the matrices and vectors row-wise or entry-wise.
 
-use crate::aux_functions::{byte_decode, byte_encode, sample_ntt, sample_poly_CBD};
 use crate::mlkem::{N, POLY_BYTES, q};
 use crate::params::MLKEMParams;
-use crate::polynomial::Polynomial;
+use bouncycastle_mlkem_common::aux_functions::{
+    byte_decode, byte_encode_out, sample_ntt, sample_poly_CBD,
+};
+use bouncycastle_mlkem_common::polynomial::Polynomial;
 
 /// Computes the element [i,j] of the A_hat public matrix
 pub(crate) fn expandA_elem(rho: &[u8; 32], i: usize, j: usize) -> Polynomial {
@@ -21,7 +23,7 @@ pub(crate) fn compute_A_hat_dot_s_hat<P: MLKEMParams>(
 ) -> Polynomial {
     let mut t_hat_i: Polynomial = {
         let mut A_i0 = expandA_elem(rho, row, 0);
-        let mut s_0 = sample_poly_CBD(sigma, 0 as u8, P::eta1);
+        let mut s_0 = sample_poly_CBD(sigma, 0_u8, P::eta1);
         s_0.ntt(); // now s_hat_0
         A_i0.base_mult_montgomery(&s_0);
 
@@ -70,7 +72,7 @@ pub(crate) fn compute_A_hat_dot_y_hat<P: MLKEMParams>(
     };
 
     for j in 1..P::k {
-        let mut A_ji = expandA_elem(&rho, j, row);
+        let mut A_ji = expandA_elem(rho, j, row);
         let mut y_j = sample_poly_CBD(r, /*N*/ j as u8, P::eta1);
         y_j.ntt();
         A_ji.base_mult_montgomery(&y_j);
@@ -90,7 +92,7 @@ pub(crate) fn compute_t_hat_dot_y_hat_row<P: MLKEMParams>(
 ) -> Polynomial {
     let mut y_i = sample_poly_CBD(r, /*N*/ row as u8, P::eta1);
     y_i.ntt();
-    y_i.base_mult_montgomery(&t_hat_i);
+    y_i.base_mult_montgomery(t_hat_i);
     y_i.inv_ntt();
 
     y_i
@@ -101,8 +103,8 @@ pub(crate) fn pack_t_hat_row<P: MLKEMParams>(
     row: usize,
     t_hat_packed: &mut P::TPacked,
 ) {
-    byte_encode::<12, POLY_BYTES>(
-        &t_hat_i,
+    byte_encode_out::<12, POLY_BYTES>(
+        t_hat_i,
         (&mut t_hat_packed.as_mut()[row * POLY_BYTES..(row + 1) * POLY_BYTES]).try_into().unwrap(),
     );
 }
@@ -120,7 +122,7 @@ pub(crate) fn pack_s_hat_row<P: MLKEMParams>(
 ) {
     debug_assert!(s_hat_packed.len() >= P::k * POLY_BYTES);
 
-    byte_encode::<12, POLY_BYTES>(
+    byte_encode_out::<12, POLY_BYTES>(
         s_hat_i,
         s_hat_packed[row * POLY_BYTES..(row + 1) * POLY_BYTES].as_mut().try_into().unwrap(),
     );
@@ -273,7 +275,88 @@ pub(crate) fn unpack_ciphertext_v<P: MLKEMParams, const CT_LEN: usize>(
     // each of the N i16's will take 𝑑𝑢 bits, so a polynomial takes N * 𝑑𝑢 bits, then we have 𝑘 of them
     let lim: usize = P::k * (N * (P::du as usize) / 8);
 
-    let v = Polynomial::decompress_poly::<P>(&c[lim..]);
+    Polynomial::decompress_poly::<P>(&c[lim..])
+}
 
-    v
+#[cfg(test)]
+mod tests {
+    //! `compress_u_row` is pinned by the ACVP ciphertexts; `unpack_ciphertext_u_row` is not: ML-KEM's
+    //! decryption tolerates a decompressed coefficient being off by a little, so a rounding error
+    //! in it still yields the right shared secret on every vector. These check the two against
+    //! FIPS 203 Section 4.2.1, eq. (4.7) and (4.8), coefficient by coefficient.
+    use super::*;
+    extern crate std;
+    use crate::params::{MLKEM512Params, MLKEM1024Params};
+    use bouncycastle_mlkem_common::params::MLKEMParamsBase;
+    use std::vec::Vec;
+
+    fn compress_ref(d: u32, x: i16) -> u16 {
+        ((((x as u32) << d) + (q as u32) / 2) / (q as u32) % (1 << d)) as u16
+    }
+
+    fn decompress_ref(d: u32, y: u16) -> i16 {
+        (((y as u32) * (q as u32) + (1 << (d - 1))) >> d) as i16
+    }
+
+    fn fields(d: u32, bytes: &[u8]) -> Vec<u16> {
+        let mut out = Vec::new();
+        let mut acc: u32 = 0;
+        let mut bits = 0;
+        for &b in bytes {
+            acc |= (b as u32) << bits;
+            bits += 8;
+            while bits >= d {
+                out.push((acc & ((1 << d) - 1)) as u16);
+                acc >>= d;
+                bits -= d;
+            }
+        }
+        out
+    }
+
+    fn check<P: MLKEMParams, const CT_LEN: usize>() {
+        let d = P::du as u32;
+        let row_len = N * (d as usize) / 8;
+
+        // a pseudo-random ciphertext; every row unpacks as eq. (4.8)
+        let mut ct = [0u8; CT_LEN];
+        let mut state: u32 = 11 + d;
+        for b in ct.iter_mut() {
+            state = state.wrapping_mul(1664525).wrapping_add(1013904223);
+            *b = (state >> 24) as u8;
+        }
+        for row in 0..P::k {
+            let u_i = unpack_ciphertext_u_row::<P, CT_LEN>(row, &ct);
+            let f = fields(d, &ct[row * row_len..(row + 1) * row_len]);
+            for (n, &y) in f.iter().enumerate() {
+                assert_eq!(u_i[n], decompress_ref(d, y), "d={d} row {row} field {n}");
+            }
+        }
+
+        // every coefficient value 0..q compresses as eq. (4.7)
+        let mut x: i16 = 0;
+        for row in 0..P::k {
+            let mut u_i = Polynomial::new();
+            for j in 0..N {
+                u_i[j] = x;
+                x = (x + 1) % q;
+            }
+            let mut ct = [0u8; CT_LEN];
+            compress_u_row::<P, CT_LEN>(u_i, row, &mut ct);
+            let f = fields(d, &ct[row * row_len..(row + 1) * row_len]);
+            for (n, &c) in f.iter().enumerate() {
+                assert_eq!(c, compress_ref(d, u_i[n]), "d={d} row {row} coefficient {n}");
+            }
+        }
+    }
+
+    #[test]
+    fn compress_and_unpack_match_fips_203_for_du_10() {
+        check::<MLKEM512Params, { MLKEM512Params::CT_LEN }>();
+    }
+
+    #[test]
+    fn compress_and_unpack_match_fips_203_for_du_11() {
+        check::<MLKEM1024Params, { MLKEM1024Params::CT_LEN }>();
+    }
 }

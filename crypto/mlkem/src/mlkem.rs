@@ -4,7 +4,7 @@
 //! # Pre-expanding the public key for repeated use
 //!
 //! Within the usual ML-KEM public key representation, the public matrix A is stored as a seed rho, which
-//! means that both the ML-KEM.encops() and ML-KEM.decaps() operations need to expand it into a full matrix
+//! means that both the ML-KEM.encaps() and ML-KEM.decaps() operations need to expand it into a full matrix
 //! before performing the matrix multiplication.
 //! We offer a version of the public and private key structs that pre-expand the public matrix for repeated use.
 //!
@@ -53,7 +53,7 @@
 //! # decaps_from_seed
 //!
 //! This mode is intended for users who want the simplicity of storing only the seed form of the private key.
-//! This is merely a convnience function that calls [MLKEM::keygen_from_seed) before performing a decapsulation.
+//! This is merely a convenience function that calls [`MLKEMTrait::keygen_from_seed`] before performing a decapsulation.
 //!
 //! Example usage:
 //!
@@ -85,11 +85,9 @@
 //! assert_eq!(ss, ss1);
 //! ```
 //!
-//! While this is currently only supported when operating from a seed-based private key, something analogous
-//! could be done that merges the sk_decode() and sign() routines when working with the standardized
-//! private key encoding (which is often called the "semi-expanded format" since the in-memory representation
-//! is still larger).
-//! Contact us if you need such a thing implemented.
+//! This is only offered for the seed form of the private key; a decapsulation straight from the
+//! FIPS 203 encoding of `dk` would be `sk_decode()` followed by `decaps()`, which is what loading the
+//! key and decapsulating already does.
 //!
 //! ## Deterministic encapsulation
 //!
@@ -122,8 +120,7 @@
 
 use crate::MLKEMPublicKeyExpanded;
 use crate::aux_functions::{
-    expandA, pack_ciphertext, sample_poly_CBD, sample_vector_CBD, unpack_ciphertext_u,
-    unpack_ciphertext_v,
+    expandA, pack_ciphertext, sample_vector_CBD, unpack_ciphertext_u, unpack_ciphertext_v,
 };
 use crate::matrix::{MatrixTrait, VectorTrait};
 use crate::mlkem_keys::{
@@ -134,8 +131,9 @@ use crate::mlkem_keys::{
     MLKEMPrivateKeyExpanded, MLKEMPublicKeyInternalTrait, MLKEMPublicKeyTrait,
 };
 use crate::mlkem_keys::{MLKEMPrivateKeyInternalTrait, MLKEMPrivateKeyTrait};
-use crate::params::{MLKEM512Params, MLKEM768Params, MLKEM1024Params, MLKEMParams};
-use crate::polynomial::Polynomial;
+use crate::params::{
+    MLKEM512Params, MLKEM768Params, MLKEM1024Params, MLKEMParams, MLKEMParamsBase,
+};
 use bouncycastle_core::errors::KEMError;
 use bouncycastle_core::errors::RNGError;
 use bouncycastle_core::hazmat::do_hazardous_operations;
@@ -144,32 +142,21 @@ use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{
     Algorithm, AlgorithmOID, Hash, KEMDecapsulator, KEMEncapsulator, RNG, XOF, XOFSqueezer,
 };
+use bouncycastle_mlkem_common::aux_functions::sample_poly_CBD;
+use bouncycastle_mlkem_common::polynomial::Polynomial;
 use bouncycastle_rng::HashDRBG_SHA512;
-use bouncycastle_sha3::{SHA3_256, SHA3_512, SHAKE256};
 use bouncycastle_utils::ct::{conditional_copy_bytes, ct_eq_bytes_mask};
 use bouncycastle_utils::secret::Secret;
 use core::marker::PhantomData;
 /*** Constants ***/
-///
-pub const ML_KEM_512_NAME: &str = "ML-KEM-512";
-///
-pub const ML_KEM_768_NAME: &str = "ML-KEM-768";
-///
-pub const ML_KEM_1024_NAME: &str = "ML-KEM-1024";
 
-// From FIPS 203 Table 2 and Table 3
-
-// Constants that are the same for all parameter sets
-/// Length of the \[u8] holding an ML-KEM seed value.
-pub const MLKEM_SEED_LEN: usize = 64;
-/// Length of the \[u8] holding an ML-KEM encaps random value, also sometimes called the message `m`
-pub const MLKEM_RND_LEN: usize = 32;
-/// Size of in bytes of an ML-KEM shared secret key.
-pub const MLKEM_SS_LEN: usize = 32;
-pub(crate) const N: usize = 256;
-pub(crate) const q: i16 = 3329;
-pub(crate) const q_inv: i32 = 62209;
-pub(crate) const POLY_BYTES: usize = 384;
+// The constants, names and hash aliases FIPS 203 fixes for every parameter set are shared with
+// the other ML-KEM crate and live in `bouncycastle-mlkem-common`.
+pub(crate) use bouncycastle_mlkem_common::{G, H, J, N, POLY_BYTES, q};
+#[doc(inline)]
+pub use bouncycastle_mlkem_common::{ML_KEM_512_NAME, ML_KEM_768_NAME, ML_KEM_1024_NAME};
+#[doc(inline)]
+pub use bouncycastle_mlkem_common::{MLKEM_RND_LEN, MLKEM_SEED_LEN, MLKEM_SS_LEN};
 
 /* ML-KEM-512 sizes (FIPS 203, Table 3) */
 
@@ -197,11 +184,6 @@ pub const MLKEM1024_PK_LEN: usize = MLKEM1024Params::PK_LEN;
 pub const MLKEM1024_SK_LEN: usize = MLKEM1024Params::SK_LEN;
 /// Length of the \[u8] holding an ML-KEM-1024 ciphertext.
 pub const MLKEM1024_CT_LEN: usize = MLKEM1024Params::CT_LEN;
-
-// Typedefs just to make the algorithms look more like the FIPS 204 sample code.
-pub(crate) type G = SHA3_512;
-pub(crate) type H = SHA3_256;
-pub(crate) type J = SHAKE256;
 
 /*** Pub Types ***/
 
@@ -439,7 +421,7 @@ impl<
         // 11: 𝑁 ← 𝑁 + 1
         // Note: here n = 0
         let y_hat = {
-            let mut y = sample_vector_CBD::<P>(&r, 0, P::eta1);
+            let mut y = sample_vector_CBD::<P>(r, 0, P::eta1);
 
             // 18: 𝐲_hat ← NTT(𝐲)
             y.ntt();
@@ -457,7 +439,7 @@ impl<
             //  ▷ 𝐞[𝑖] ∈ ℤ256 sampled from CBD𝑞
             // 14: 𝑁 ← 𝑁 + 1
             // note: here n = k
-            let e1 = sample_vector_CBD::<P>(&r, P::k as u8, P::eta2);
+            let e1 = sample_vector_CBD::<P>(r, P::k as u8, P::eta2);
 
             u.add_vector_ntt(&e1);
         }
@@ -472,7 +454,7 @@ impl<
         // 17: 𝑒2 ← SamplePolyCBD𝜂2(PRF𝜂2 (𝑟, 𝑁))
         //  ▷ sample 𝑒2 ∈ ℤ256 from CBD
         // note: here n = 2k
-        let e2 = sample_poly_CBD(&r, 2 * P::k as u8, P::eta2);
+        let e2 = sample_poly_CBD(r, 2 * P::k as u8, P::eta2);
         v.add(&e2);
 
         let mu = Polynomial::from_msg(m);
@@ -540,13 +522,13 @@ impl<
     /// Input: decryption key dkPKE  ∈ 𝔹384𝑘.
     /// Input: ciphertext 𝑐 ∈ 𝔹32(𝑑𝑢𝑘+𝑑𝑣).
     /// Output: message 𝑚 ∈ 𝔹32 .
-    fn pke_decrypt(dk: &SK, ct: [u8; CT_LEN]) -> [u8; 32] {
+    fn pke_decrypt(dk: &SK, ct: &[u8; CT_LEN]) -> [u8; 32] {
         // 1: 𝑐1 ← 𝑐[0 ∶ 32𝑑𝑢𝑘]
         // 2: 𝑐2 ← 𝑐[32𝑑𝑢𝑘 ∶ 32(𝑑𝑢𝑘 + 𝑑𝑣)]
         // 3: 𝐮′ ← Decompress_𝑑𝑢(ByteDecode_𝑑𝑢(𝑐1))
         // 4: 𝑣′ ← Decompress_𝑑𝑣(ByteDecode_𝑑𝑣(𝑐2))
         let v1 = {
-            let mut u_prime = unpack_ciphertext_u::<P, CT_LEN>(&ct);
+            let mut u_prime = unpack_ciphertext_u::<P, CT_LEN>(ct);
 
             // 5: 𝐬_hat ← ByteDecode12(dkPKE)
             //   Unnecessary here because dk is already decoded
@@ -560,7 +542,7 @@ impl<
         };
 
         let w = {
-            let mut v_prime = unpack_ciphertext_v::<P, CT_LEN>(&ct);
+            let mut v_prime = unpack_ciphertext_v::<P, CT_LEN>(ct);
 
             v_prime.sub(&v1);
             v_prime.poly_reduce();
@@ -577,7 +559,11 @@ impl<
     /// Input: decapsulation key dk ∈ 𝔹768𝑘+96 .
     /// Input: ciphertext 𝑐 ∈ 𝔹32(𝑑𝑢𝑘+𝑑𝑣).
     /// Output: shared secret key 𝐾 ∈ 𝔹32 .
-    fn decaps_internal(dk: &SK, A_hat: Option<&P::MatrixA>, c: [u8; CT_LEN]) -> [u8; MLKEM_SS_LEN] {
+    fn decaps_internal(
+        dk: &SK,
+        A_hat: Option<&P::MatrixA>,
+        c: &[u8; CT_LEN],
+    ) -> [u8; MLKEM_SS_LEN] {
         // Structured to mirror the FIPS as closely as possible, with unnamed scopes
         // used to limit the number of live stack variables at any given time.
 
@@ -588,7 +574,7 @@ impl<
         // Nothing to do since dk is already decoded.
 
         // 5: 𝑚′ ← K-PKE.Decrypt(dkPKE, 𝑐)
-        let m_prime = Self::pke_decrypt(&dk, c);
+        let m_prime = Self::pke_decrypt(dk, c);
 
         // Compute the trial shared secret key
         // 6: (𝐾′, 𝑟′) ← G(𝑚′‖ℎ)̄
@@ -611,11 +597,10 @@ impl<
         //   This is because if the computation is conditional on the Fujisaki-Okamoto check failing, then
         //   it will result in a timing difference between success and failure.
 
-        let K_bar: [u8; MLKEM_SS_LEN];
-        K_bar = {
+        let K_bar: [u8; MLKEM_SS_LEN] = {
             let mut j = J::new();
             j.do_update(dk.z().as_ref());
-            j.do_update(&c);
+            j.do_update(c);
             let mut buf = [0u8; MLKEM_SS_LEN];
             let mut j = j.into_squeezer();
             let bytes_written = j.do_output_out(&mut buf);
@@ -638,14 +623,14 @@ impl<
         // 10: 𝐾′ ← 𝐾_bar
         //  ▷ if ciphertexts do not match, “implicitly reject"
         let mut K_out = [0u8; MLKEM_SS_LEN];
-        conditional_copy_bytes(&K_prime, &K_bar, &mut K_out, ct_eq_bytes_mask(&c, &c_prime));
+        conditional_copy_bytes(&K_prime, &K_bar, &mut K_out, ct_eq_bytes_mask(c, &c_prime));
 
         K_out
     }
 
-    /// Alternative initialization of the streaming signer where you have your private key
-    /// as a seed and you want to delay its expansion as late as possible for memory-usage reasons.
-    // TODO: Check whether a fully-stitched-together decaps-from-seed implementation is beneficial
+    /// Decapsulation from the seed form of the private key: expands the key with
+    /// [`MLKEMTrait::keygen_from_seed`] and decapsulates with it. Costs a key generation on top
+    /// of the decapsulation; see the module docs.
     pub fn decaps_from_seed(
         seed: &KeyMaterial<64>,
         ct: &[u8],
@@ -721,45 +706,70 @@ impl<
         pk: &MLKEMPublicKeyExpanded<P, PK, PK_LEN>,
         rng: &mut dyn RNG,
     ) -> Result<(KeyMaterial<SS_LEN>, [u8; CT_LEN]), KEMError> {
-        // Source the random message m from the provided RNG
-        if rng.security_strength() < P::MAX_SECURITY_STRENGTH {
-            return Err(RNGError::SecurityStrengthInsufficientForAlgorithm)?;
-        }
-        let mut m = [0u8; 32];
-        rng.next_bytes_out(&mut m)?;
-
-        let (ss, ct) = Self::encaps_internal(&pk.ek, Some(&pk.A_hat), m);
-
-        let mut key = KeyMaterial::<SS_LEN>::from_bytes_as_type(&ss, KeyType::CryptographicRandom)?;
-        do_hazardous_operations(&mut key, |key| {
-            key.set_security_strength(P::MAX_SECURITY_STRENGTH)
-        })?;
-
-        Ok((key, ct))
+        Self::encaps_with_rng(&pk.ek, Some(&pk.A_hat), rng)
     }
 
     fn decaps_with_expanded_key(
         sk: &MLKEMPrivateKeyExpanded<P, PK, SK, SK_LEN, PK_LEN>,
         ct: &[u8],
     ) -> Result<KeyMaterial<SS_LEN>, KEMError> {
-        /* decapsulation inputs checks described on FIPS 203 section 7.3 */
-        // 1. (Ciphertext type check) If 𝑐 is not a byte array of length 32(𝑑𝑢 𝑘 + 𝑑𝑣) for the values of 𝑑𝑢,
-        //     𝑑𝑣, and 𝑘 specified by the relevant parameter set, then input checking has failed.
+        Self::decaps_checked(&sk.dk, Some(&sk.A_hat), ct)
+    }
+}
 
-        if ct.len() != CT_LEN {
-            return Err(KEMError::LengthError("Ciphertext has the incorrect length"));
+impl<
+    P: MLKEMParams,
+    PK: MLKEMPublicKeyTrait<P, PK_LEN> + MLKEMPublicKeyInternalTrait<P, PK_LEN>,
+    SK: MLKEMPrivateKeyTrait<P, PK, SK_LEN, PK_LEN>
+        + MLKEMPrivateKeyInternalTrait<P, PK, SK_LEN, PK_LEN>,
+    const PK_LEN: usize,
+    const SK_LEN: usize,
+    const CT_LEN: usize,
+    const SS_LEN: usize,
+> MLKEM<P, PK, SK, PK_LEN, SK_LEN, CT_LEN, SS_LEN>
+{
+    /// Algorithm 20 ML-KEM.Encaps(ek), lines 1-5, over a public key whose 𝐀̂ may already be expanded.
+    fn encaps_with_rng(
+        ek: &PK,
+        A_hat: Option<&P::MatrixA>,
+        rng: &mut dyn RNG,
+    ) -> Result<(KeyMaterial<SS_LEN>, [u8; CT_LEN]), KEMError> {
+        // 1: 𝑚 ← 𝔹32, from the caller's RNG, which must be at least as strong as the parameter set
+        if rng.security_strength() < P::MAX_SECURITY_STRENGTH {
+            Err(RNGError::SecurityStrengthInsufficientForAlgorithm)?;
         }
+        let mut m = [0u8; 32];
+        rng.next_bytes_out(&mut m)?;
 
-        // 2. (Decapsulation key type check) If dk is not a byte array of length 768𝑘 + 96 for the value of
-        //     𝑘 specified by the relevant parameter set, then input checking has failed.
-        // This is handled at the time of loading dk into MLKEMPrivateKey
+        // 5: (𝐾, 𝑐) ← ML-KEM.Encaps_internal(ek, 𝑚)
+        let (K, ct) = Self::encaps_internal(ek, A_hat, m);
 
-        // 3. Check that the H(ek) stored in the private key matches the ek also stored in the private key.
-        // Again, this is handled by the MLKEMPrivateKey trait.
+        Ok((Self::shared_secret_key(K)?, ct))
+    }
 
-        /* the actual decaps operation */
-        let K = Self::decaps_internal(&sk.dk, Some(&sk.A_hat), ct.try_into().unwrap());
+    /// Algorithm 21 ML-KEM.Decaps(dk, 𝑐) with the Section 7.3 input checks, over a private key
+    /// whose 𝐀̂ may already be expanded.
+    fn decaps_checked(
+        dk: &SK,
+        A_hat: Option<&P::MatrixA>,
+        ct: &[u8],
+    ) -> Result<KeyMaterial<SS_LEN>, KEMError> {
+        // Section 7.3, decapsulation input check:
+        // 1. (Ciphertext type check) 𝑐 is a byte array of length 32(𝑑𝑢𝑘 + 𝑑𝑣).
+        let Ok(ct) = <&[u8; CT_LEN]>::try_from(ct) else {
+            return Err(KEMError::LengthError("Ciphertext has the incorrect length"));
+        };
+        // 2. (Decapsulation key type check) and 3. (Hash check) are done once, when the key is
+        // loaded, by `MLKEMPrivateKeyTrait::sk_decode`.
 
+        // 1: 𝐾′ ← ML-KEM.Decaps_internal(dk, 𝑐)
+        let K = Self::decaps_internal(dk, A_hat, ct);
+
+        Self::shared_secret_key(K)
+    }
+
+    /// The shared secret as [`KeyMaterial`]: full-entropy bytes at the parameter set's strength.
+    fn shared_secret_key(K: [u8; MLKEM_SS_LEN]) -> Result<KeyMaterial<SS_LEN>, KEMError> {
         let mut key = KeyMaterial::<SS_LEN>::from_bytes_as_type(&K, KeyType::CryptographicRandom)?;
         do_hazardous_operations(&mut key, |key| {
             key.set_security_strength(P::MAX_SECURITY_STRENGTH)
@@ -769,7 +779,7 @@ impl<
     }
 }
 
-/// Trait for all three of the ML-DSA algorithm variants.
+/// Trait for all three of the ML-KEM parameter sets.
 pub trait MLKEMTrait<
     P: MLKEMParams,
     PK: MLKEMPublicKeyTrait<P, PK_LEN> + MLKEMPublicKeyInternalTrait<P, PK_LEN>,
@@ -791,7 +801,7 @@ pub trait MLKEMTrait<
     fn keygen_from_rng(rng: &mut dyn RNG) -> Result<(PK, SK), KEMError> {
         // Source the seed from the provided RNG
         if rng.security_strength() < P::MAX_SECURITY_STRENGTH {
-            return Err(RNGError::SecurityStrengthInsufficientForAlgorithm)?;
+            Err(RNGError::SecurityStrengthInsufficientForAlgorithm)?;
         }
         let mut seed = KeyMaterial::<64>::new();
         rng.fill_keymaterial_out(&mut seed)?;
@@ -867,7 +877,7 @@ impl<
         pk: &PK,
         rng: &mut dyn RNG,
     ) -> Result<(KeyMaterial<SS_LEN>, [u8; CT_LEN]), KEMError> {
-        Self::encaps_for_expanded_key_rng(&MLKEMPublicKeyExpanded::<P, PK, PK_LEN>::from(pk), rng)
+        Self::encaps_with_rng(pk, None, rng)
     }
 }
 
@@ -888,9 +898,6 @@ impl<
     /// the security level of the ML-KEM parameter set.
     /// As ML-KEM is an implicitly-rejecting KEM, this returns an error only if the ciphertext is invalid (ie the wrong length)..
     fn decaps(sk: &SK, ct: &[u8]) -> Result<KeyMaterial<SS_LEN>, KEMError> {
-        Self::decaps_with_expanded_key(
-            &MLKEMPrivateKeyExpanded::<P, PK, SK, SK_LEN, PK_LEN>::from(sk),
-            ct,
-        )
+        Self::decaps_checked(sk, None, ct)
     }
 }

@@ -22,6 +22,7 @@ bouncycastle-hex = { path = "./crypto/hex" }
 bouncycastle-hkdf = { path = "./crypto/hkdf" }
 bouncycastle-hmac = { path = "./crypto/hmac" }
 bouncycastle-mlkem = { path = "./crypto/mlkem" }
+bouncycastle-mlkem-common = { path = "./crypto/mlkem-common" }
 bouncycastle-mlkem-lowmemory = { path = "./crypto/mlkem-lowmemory" }
 bouncycastle-mldsa = { path = "./crypto/mldsa" }
 bouncycastle-mldsa-common = { path = "./crypto/mldsa-common" }
