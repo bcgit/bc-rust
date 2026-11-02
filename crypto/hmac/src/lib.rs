@@ -182,14 +182,17 @@ impl<HASH: HMACParams> AlgorithmOID for HMAC<HASH> {
     const OID_DER: &'static [u8] = HASH::HMAC_OID_DER;
 }
 
-// The scratch the pad blocks are built in must hold one block of the underlying hash: per RFC 2104
-// Section 2 step (1) the key is zero-padded to B bytes, and only a key longer than B is pre-hashed
-// first (Section 3). This is the largest block length across the supported hashes (SHA3-224's 144),
-// and the scratch is sliced to the hash's own block.
-const LARGEST_HASHER_BLOCK_LEN: usize = 144;
+/// The largest block length, in bytes, of any hash HMAC is instantiated with (SHA3-224's 144).
+///
+/// The scratch the pad blocks are built in must hold one block of the underlying hash: per RFC 2104
+/// Section 2 step (1) the key is zero-padded to B bytes, and only a key longer than B is pre-hashed
+/// first (Section 3). The scratch is sliced to the hash's own block. HKDF sizes the MAC-key copies
+/// it hands this crate from the same constant.
+pub const LARGEST_HASHER_BLOCK_LEN: usize = 144;
 
 /// The largest output length across the supported hashes (SHA-512, SHA3-512), which sizes the key
-/// [`FromAnyKeyMaterial::generate`] draws before trimming it to the hash's own output length.
+/// [`FromAnyKeyMaterial::generate`] draws before trimming it to the hash's own output length, and
+/// the scratch the inner digest is finished into.
 const LARGEST_HASHER_OUTPUT_LEN: usize = 64;
 
 /*** Key ***/
@@ -381,9 +384,15 @@ impl<HASH: Hash + Default> HMAC<HASH> {
         out.fill(0);
 
         let Self { hasher, mut outer } = self;
-        let mut ihash = vec![0u8; hasher.output_len()];
-        hasher.do_final_out(&mut ihash); // step (4)
-        outer.do_update(&ihash); // step (6)
+        // The inner digest is key-derived state, so it is held in a Secret and wiped on drop.
+        let output_len = hasher.output_len();
+        assert!(
+            output_len <= LARGEST_HASHER_OUTPUT_LEN,
+            "Fatal error: hash output length exceeds HMAC's inner-digest scratch"
+        );
+        let mut ihash: Secret<[u8; LARGEST_HASHER_OUTPUT_LEN]> = Secret::new();
+        hasher.do_final_out(&mut ihash[..output_len]); // step (4)
+        outer.do_update(&ihash[..output_len]); // step (6)
         Ok(outer.do_final_out(out)) // step (7)
     }
 }

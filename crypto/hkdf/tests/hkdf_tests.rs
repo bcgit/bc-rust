@@ -7,11 +7,13 @@ mod hkdf_tests {
         KeyMaterialTrait, KeyType,
     };
     use bouncycastle_core::security_strength::SecurityStrength;
-    use bouncycastle_core::traits::{HashAlgParams, KDF};
+    use bouncycastle_core::symmetric_key::{FromAnyKeyMaterial, MacGenerationKey};
+    use bouncycastle_core::traits::{Hash, HashAlgParams, KDF, MAC};
     use bouncycastle_core_test_framework::DUMMY_SEED;
     use bouncycastle_core_test_framework::kdf::TestFrameworkKDF;
     use bouncycastle_hex as hex;
     use bouncycastle_hkdf::HKDF;
+    use bouncycastle_hmac::HmacKey;
     use bouncycastle_sha2::hkdf::{HKDF_SHA256, HKDF_SHA512};
     use bouncycastle_sha2::{
         SHA256, SHA512, SUSPENDED_SHA256_STATE_LEN, SUSPENDED_SHA512_STATE_LEN,
@@ -295,8 +297,8 @@ mod hkdf_tests {
         // okm should be tracked as LowEntropy
         assert_eq!(okm.key_type(), KeyType::Unknown);
 
-        // salt and ikm are full-entropy, but not enough to seed the HKDF, according to FIPS
-        // first, error case; not a MACKey
+        // salt and ikm are full-entropy but together below the seeding threshold. A salt of any
+        // key type but Unknown keys the extract, so this is accepted and the output is Unknown.
         let salt =
             KeyMaterial128::from_bytes_as_type(&DUMMY_SEED[..8], KeyType::CryptographicRandom)
                 .unwrap();
@@ -304,35 +306,16 @@ mod hkdf_tests {
             KeyMaterial128::from_bytes_as_type(&DUMMY_SEED[8..16], KeyType::CryptographicRandom)
                 .unwrap();
 
-        match HKDF_SHA256::extract_and_expand_out(&salt, &ikm, &[], 32, &mut okm) {
-            Ok(_) => {
-                panic!("Should have thrown a KeyMaterialError that you didn't give it a MACKey");
-            }
-            Err(KDFError::MACError(MACError::KeyMaterialError(
-                KeyMaterialError::InvalidKeyType(_),
-            ))) => { /* good */ }
-            Err(_) => {
-                panic!("Should have thrown a KeyMaterialError that you didn't give it a MACKey");
-            }
-        };
+        _ = HKDF_SHA256::extract_and_expand_out(&salt, &ikm, &[], 32, &mut okm).unwrap();
+        assert_eq!(okm.key_type(), KeyType::Unknown);
 
-        // derive_key has a different behaviour here, since it hard-codes a zero salt as the HMAC key, which is valid,
-        // it will produce output of Keytype::BytesLowEntropy
+        // derive_key uses the zero salt and ikm alone: the same output type.
         _ = HKDF_SHA256::new().derive_key_out(&ikm, &[], &mut okm);
         assert_eq!(okm.key_type(), KeyType::Unknown);
 
         let keys = [&salt, &ikm];
-        match HKDF_SHA256::new().derive_key_from_multiple_out(&keys, &[], &mut okm) {
-            Ok(_) => {
-                panic!("Should have thrown a KeyMaterialError that you didn't give it a MACKey");
-            }
-            Err(KDFError::MACError(MACError::KeyMaterialError(
-                KeyMaterialError::InvalidKeyType(_),
-            ))) => { /* good */ }
-            Err(_) => {
-                panic!("Should have thrown a KeyMaterialError that you didn't give it a MACKey");
-            }
-        };
+        HKDF_SHA256::new().derive_key_from_multiple_out(&keys, &[], &mut okm).unwrap();
+        assert_eq!(okm.key_type(), KeyType::Unknown);
 
         // success case -- insufficient entropy returns KeyType::BytesLowEntropy
         let salt = KeyMaterial128::from_bytes_as_type(&DUMMY_SEED[..8], KeyType::MACKey).unwrap();
@@ -488,7 +471,7 @@ mod hkdf_tests {
     #[test]
     fn rfc5869_test_cases() {
         // Test Case 1
-        rfc5896_sha256(
+        rfc5869_sha256(
             "0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b",
             "000102030405060708090a0b0c",
             "f0f1f2f3f4f5f6f7f8f9",
@@ -498,7 +481,7 @@ mod hkdf_tests {
         );
 
         // Test Case 2
-        rfc5896_sha256(
+        rfc5869_sha256(
             "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f404142434445464748494a4b4c4d4e4f",
             "606162636465666768696a6b6c6d6e6f707172737475767778797a7b7c7d7e7f808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9fa0a1a2a3a4a5a6a7a8a9aaabacadaeaf",
             "b0b1b2b3b4b5b6b7b8b9babbbcbdbebfc0c1c2c3c4c5c6c7c8c9cacbcccdcecfd0d1d2d3d4d5d6d7d8d9dadbdcdddedfe0e1e2e3e4e5e6e7e8e9eaebecedeeeff0f1f2f3f4f5f6f7f8f9fafbfcfdfeff",
@@ -508,7 +491,7 @@ mod hkdf_tests {
         );
 
         // Test Case 3
-        rfc5896_sha256(
+        rfc5869_sha256(
             "0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b",
             "",
             "",
@@ -518,9 +501,145 @@ mod hkdf_tests {
         );
     }
 
+    /// A 16-byte key is below the SHA-256 seeding threshold, so the output is `Unknown` with no
+    /// strength. The multi-key path must agree with the single-key one rather than erroring.
+    #[test]
+    fn test_derive_key_from_multiple_partial_entropy_matches_derive_key() {
+        let key =
+            KeyMaterial128::from_bytes_as_type(&DUMMY_SEED[..16], KeyType::CryptographicRandom)
+                .unwrap();
+        let single = HKDF_SHA256::new().derive_key(&key, b"info").unwrap();
+        assert_eq!(single.key_type(), KeyType::Unknown);
+        assert_eq!(single.security_strength(), SecurityStrength::None);
+
+        // An empty first key is the absent salt, so this is derive_key(&key) through the other path.
+        let multi = HKDF_SHA256::new()
+            .derive_key_from_multiple(&[&KeyMaterial128::new(), &key], b"info")
+            .unwrap();
+        assert_eq!(multi.key_type(), KeyType::Unknown);
+        assert_eq!(multi.security_strength(), SecurityStrength::None);
+        assert_eq!(multi.ref_to_bytes(), single.ref_to_bytes());
+
+        // The key alone, as the salt.
+        let salt_only = HKDF_SHA256::new().derive_key_from_multiple(&[&key], b"info").unwrap();
+        assert_eq!(salt_only.key_type(), KeyType::Unknown);
+        assert_eq!(salt_only.security_strength(), SecurityStrength::None);
+    }
+
+    /// RFC 5869 Section 2.2 types the salt only as "a non-secret random value"; material of any
+    /// `KeyType` must key the extract as the `MACKey`-typed copy of it does.
+    #[test]
+    fn test_extract_accepts_a_salt_of_any_key_type() {
+        let ikm = KeyMaterial256::from_bytes_as_type(&DUMMY_SEED[..32], KeyType::Seed).unwrap();
+        let as_mac =
+            KeyMaterial256::from_bytes_as_type(&DUMMY_SEED[32..64], KeyType::MACKey).unwrap();
+        let expected = HKDF_SHA256::extract(&as_mac, &ikm).unwrap();
+        for key_type in [KeyType::CryptographicRandom, KeyType::Seed, KeyType::SymmetricCipherKey] {
+            let salt = KeyMaterial256::from_bytes_as_type(&DUMMY_SEED[32..64], key_type).unwrap();
+            let prk = HKDF_SHA256::extract(&salt, &ikm).unwrap();
+            assert_eq!(prk.ref_to_bytes(), expected.ref_to_bytes(), "{key_type:?}");
+        }
+
+        // Two random keys through the KDF trait, the first of which is the salt.
+        let a = KeyMaterial256::from_bytes_as_type(&DUMMY_SEED[..32], KeyType::CryptographicRandom)
+            .unwrap();
+        let b =
+            KeyMaterial256::from_bytes_as_type(&DUMMY_SEED[32..64], KeyType::CryptographicRandom)
+                .unwrap();
+        let okm = HKDF_SHA256::new().derive_key_from_multiple(&[&a, &b], b"").unwrap();
+        assert_eq!(okm.key_type(), KeyType::CryptographicRandom);
+    }
+
+    /// HMAC hashes a key longer than its block (RFC 2104 Section 3), so a salt longer than the
+    /// block must give the PRK that its hash, as the salt, gives.
+    #[test]
+    fn test_extract_with_a_salt_longer_than_the_block() {
+        let ikm = KeyMaterial256::from_bytes_as_type(&DUMMY_SEED[..32], KeyType::Seed).unwrap();
+        let mut digest = [0u8; 32];
+        SHA256::default().hash_out(&DUMMY_SEED[..100], &mut digest);
+        let hashed = KeyMaterial256::from_bytes_as_type(&digest, KeyType::MACKey).unwrap();
+        let expected = HKDF_SHA256::extract(&hashed, &ikm).unwrap();
+
+        for key_type in [KeyType::MACKey, KeyType::CryptographicRandom] {
+            let long =
+                KeyMaterial::<100>::from_bytes_as_type(&DUMMY_SEED[..100], key_type).unwrap();
+            let prk = HKDF_SHA256::extract(&long, &ikm).unwrap();
+            assert_eq!(prk.ref_to_bytes(), expected.ref_to_bytes(), "{key_type:?}");
+        }
+    }
+
+    /// `(0..n)` as a MACKey-typed PRK of `n` bytes.
+    fn prk_of(n: usize) -> KeyMaterial<1024> {
+        let bytes: Vec<u8> = (0..n).map(|i| i as u8).collect();
+        KeyMaterial::<1024>::from_bytes_as_type(&bytes, KeyType::MACKey).unwrap()
+    }
+
+    /// RFC 5869 Section 2.3: the PRK is "of at least HashLen octets".
+    #[test]
+    fn test_expand_prk_length() {
+        let mut okm = KeyMaterial512::new();
+        for (short, ok) in [(31usize, 32usize), (16, 64)] {
+            assert!(matches!(
+                HKDF_SHA256::expand_out(&prk_of(short), b"", 32, &mut okm),
+                Err(KDFError::InvalidLength(_))
+            ));
+            assert_eq!(HKDF_SHA256::expand_out(&prk_of(ok), b"", 32, &mut okm).unwrap(), 32);
+        }
+        assert!(matches!(
+            HKDF_SHA512::expand_out(&prk_of(63), b"", 64, &mut okm),
+            Err(KDFError::InvalidLength(_))
+        ));
+        assert_eq!(HKDF_SHA512::expand_out(&prk_of(64), b"", 64, &mut okm).unwrap(), 64);
+    }
+
+    /// A refused expand leaves nothing of the output behind: the buffer reads as it did before.
+    #[test]
+    fn test_expand_failure_leaves_okm_untouched() {
+        let mut okm = KeyMaterial512::from_bytes_as_type(&[0xAA; 64], KeyType::MACKey).unwrap();
+        assert!(HKDF_SHA256::expand_out(&prk_of(31), b"info", 32, &mut okm).is_err());
+        assert_eq!(okm.ref_to_bytes(), &[0xAA; 64]);
+    }
+
+    /// A PRK longer than the hash block gives what HMAC keyed with it gives (RFC 2104 Section 3
+    /// hashes such a key first): T(1) || T(2) computed with HMAC directly.
+    fn check_expand_long_prk<H>(lens: &[usize])
+    where
+        H: Hash + HashAlgParams + Default,
+    {
+        let hash_len = H::OUTPUT_LEN;
+        for &n in lens {
+            let prk = prk_of(n);
+            let key = HmacKey::<H>::from_key_material(&prk).unwrap();
+            let mut expected = [0u8; 128];
+            let mut t1 = key.create_generator();
+            t1.do_update(b"info");
+            t1.do_update(&[1]);
+            t1.do_final_out(&mut expected[..hash_len]).unwrap();
+            let mut t2 = key.create_generator();
+            t2.do_update(&expected[..hash_len]);
+            t2.do_update(b"info");
+            t2.do_update(&[2]);
+            t2.do_final_out(&mut expected[hash_len..2 * hash_len]).unwrap();
+
+            let mut okm = KeyMaterial::<128>::new();
+            let written =
+                HKDF::<H, 0, 0>::expand_out(&prk, b"info", 2 * hash_len, &mut okm).unwrap();
+            assert_eq!(written, 2 * hash_len, "PRK of {n} bytes");
+            assert_eq!(okm.ref_to_bytes(), &expected[..2 * hash_len], "PRK of {n} bytes");
+        }
+    }
+
+    #[test]
+    fn test_expand_long_prk() {
+        // 64 is SHA-256's block, taken verbatim; 65 and up are hashed. 128 is SHA-512's block, the
+        // boundary that pins `<=`: verbatim and hashed differ there.
+        check_expand_long_prk::<SHA256>(&[64, 65, 128, 129, 144, 145, 1000]);
+        check_expand_long_prk::<SHA512>(&[65, 128, 129, 144, 145, 1000]);
+    }
+
     /*** Helper Functions ***/
     #[allow(non_snake_case)]
-    fn rfc5896_sha256(ikm: &str, salt: &str, info: &str, prk: &str, L: usize, okm: &str) {
+    fn rfc5869_sha256(ikm: &str, salt: &str, info: &str, prk: &str, L: usize, okm: &str) {
         /*** First with the one-shot APIs ::extract() and ::expand_out(). ***/
 
         let mut ikm_key = KeyMaterial::<100>::new();
@@ -541,7 +660,7 @@ mod hkdf_tests {
         let mut prk_key = HKDF_SHA256::extract(&salt_key, &ikm_key).unwrap();
         assert_eq!(prk_key.ref_to_bytes(), hex::decode(prk).unwrap());
 
-        // Some of the RFC5896 test vectors have input keys that are too short to meet the entropy seeding rules.
+        // Some of the RFC 5869 test vectors have input keys that are too short to meet the entropy seeding rules.
         // So, just for testing, we'll bump this up to full entropy, regardless of what entropy HKDF::extract()
         // thinks it should be based on the inputs.
         do_hazardous_operations(&mut prk_key, |prk_key| prk_key.set_key_type(KeyType::MACKey))
@@ -560,7 +679,7 @@ mod hkdf_tests {
                 assert_eq!(okm_key.ref_to_bytes(), hex::decode(okm).unwrap());
             }
             Err(KDFError::KeyMaterialError(_)) => {
-                /* some of the rfc5896 test vectors are in fact low entropy, so just skip */
+                /* some of the RFC 5869 test vectors are in fact low entropy, so just skip */
             }
             Err(_) => panic!("Should have returned a MACError::KeyMaterialError."),
         }

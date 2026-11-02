@@ -19,12 +19,13 @@ pub(crate) enum HMACVariant {
     SM3,
 }
 
-/// Loads a MAC key from `--key` (hex) or `--key-file` (raw), tagged as a MAC key.
+/// Loads a MAC key from `--key-file` (raw) or `--key` (hex), tagged as a MAC key. The file wins
+/// when both are given, as the help text says and the other commands' loaders do.
 fn load_mac_key(key: &Option<String>, key_file: &Option<String>) -> KeyMaterial512 {
-    let key_bytes: Vec<u8> = if key.is_some() {
-        hex::decode(key.as_ref().unwrap()).unwrap()
-    } else if key_file.is_some() {
-        fs::read(key_file.as_ref().unwrap()).unwrap()
+    let key_bytes: Vec<u8> = if let Some(file) = key_file {
+        fs::read(file).unwrap()
+    } else if let Some(hex_str) = key {
+        hex::decode(hex_str).unwrap()
     } else {
         eprintln!("Error: either `key` or `key-file` must be supplied.");
         exit(-1)
