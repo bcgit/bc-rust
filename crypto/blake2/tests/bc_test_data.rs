@@ -15,7 +15,7 @@ mod bc_test_data {
     use bouncycastle_core::symmetric_key::{
         FromAnyKeyMaterial, MacGenerationKey, MacVerificationKey,
     };
-    use bouncycastle_core::traits::{Hash, MAC};
+    use bouncycastle_core::traits::{HashOneShot, MAC};
     use bouncycastle_hex as hex;
     use std::fs;
     use std::path::Path;
@@ -86,14 +86,11 @@ mod bc_test_data {
 
     /// Runs one record through the hash (empty key) or the MAC (non-empty key), one-shot and
     /// streamed byte-at-a-time.
-    fn check<
-        HASH: Hash + Default,
-        KEY: FromAnyKeyMaterial + MacGenerationKey + MacVerificationKey,
-    >(
+    fn check<HASH: HashOneShot, KEY: FromAnyKeyMaterial + MacGenerationKey + MacVerificationKey>(
         r: &Record,
     ) {
         if r.key.is_empty() {
-            assert_eq!(HASH::default().hash(&r.input), r.digest, "{} len {}", r.alg, r.input.len());
+            assert_eq!(HASH::hash(&r.input), r.digest, "{} len {}", r.alg, r.input.len());
             let mut hash = HASH::default();
             for byte in &r.input {
                 hash.do_update(core::slice::from_ref(byte));

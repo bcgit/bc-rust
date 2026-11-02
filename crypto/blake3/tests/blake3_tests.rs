@@ -14,7 +14,7 @@ mod blake3_tests {
     use bouncycastle_core::errors::{HashError, SuspendableError};
     use bouncycastle_core::security_strength::SecurityStrength;
     use bouncycastle_core::traits::{
-        Algorithm, Hash, HashAlgParams, Suspendable, XOF, XOFSqueezer,
+        Algorithm, AlgorithmInfo, Hash, HashAlgParams, HashOneShot, Suspendable, XOF, XOFSqueezer,
     };
     use bouncycastle_core_test_framework::hash::TestFrameworkHash;
     use bouncycastle_core_test_framework::suspendable_state::TestFrameworkSuspendableState;
@@ -37,7 +37,7 @@ mod blake3_tests {
             assert_eq!(expected.len(), OUTPUT_LEN);
             let len = case.input_len;
 
-            assert_eq!(BLAKE3::new().hash(&msg), expected[..32], "hash / len {len}");
+            assert_eq!(BLAKE3::hash(&msg), expected[..32], "hash / len {len}");
             assert_eq!(BLAKE3::new().xof(&msg, OUTPUT_LEN), expected, "xof / len {len}");
 
             let mut b = BLAKE3::new();
@@ -77,7 +77,7 @@ mod blake3_tests {
         let a = BLAKE3DeriveKey::new(&long_context).hash(b"km");
         let b = BLAKE3DeriveKey::new(&long_context[..2048]).hash(b"km");
         assert_ne!(a, b);
-        assert_ne!(BLAKE3DeriveKey::new(b"").hash(b"km"), BLAKE3::new().hash(b"km"));
+        assert_ne!(BLAKE3DeriveKey::new(b"").hash(b"km"), BLAKE3::hash(b"km"));
     }
 
     /* --------------------------------- core-test-framework ---------------------------------- */
@@ -142,7 +142,7 @@ mod blake3_tests {
         b.do_update(&[]);
         b.do_update(&msg[1024..]);
         b.do_update(&[]);
-        assert_eq!(b.do_final(), BLAKE3::new().hash(&msg));
+        assert_eq!(b.do_final(), BLAKE3::hash(&msg));
     }
 
     /// A clone continues independently, including from a state with a non-empty CV stack.
@@ -154,7 +154,7 @@ mod blake3_tests {
         let mut b = a.clone();
         a.do_update(&msg[2500..]);
         b.do_update(&msg[2500..]);
-        let expected = BLAKE3::new().hash(&msg);
+        let expected = BLAKE3::hash(&msg);
         assert_eq!(a.clone().do_final(), expected);
         assert_eq!(b.do_final(), expected);
         a.do_update(b"x");
@@ -178,7 +178,11 @@ mod blake3_tests {
 
     /// The partial-bit rules for one BLAKE3 mode, over "abc".
     fn check_partial_bits<X: XOF>(new: impl Fn() -> X) {
-        let expected = new().hash(b"abc");
+        let expected = {
+            let mut x = new();
+            x.do_update(b"abc");
+            x.do_final()
+        };
         let mk = || {
             let mut b = new();
             b.do_update(b"abc");
@@ -236,14 +240,14 @@ mod blake3_tests {
     /// gets nothing.
     #[test]
     fn hash_do_final_out_lengths() {
-        let expected = BLAKE3::new().hash(b"abc");
+        let expected = BLAKE3::hash(b"abc");
         let mut out = [0xAAu8; 100];
-        assert_eq!(BLAKE3::new().hash_out(b"abc", &mut out), 32);
+        assert_eq!(BLAKE3::hash_out(b"abc", &mut out), 32);
         assert_eq!(out[..32], expected);
         assert!(out[32..].iter().all(|&b| b == 0));
-        assert_eq!(BLAKE3::new().hash_out(b"abc", &mut []), 0);
+        assert_eq!(BLAKE3::hash_out(b"abc", &mut []), 0);
         let mut out = [0u8; 5];
-        assert_eq!(BLAKE3::new().hash_out(b"abc", &mut out), 5);
+        assert_eq!(BLAKE3::hash_out(b"abc", &mut out), 5);
         assert_eq!(out, expected[..5]);
     }
 
@@ -257,7 +261,7 @@ mod blake3_tests {
         assert_eq!(BLAKE3::BLOCK_LEN, 64);
         assert_eq!(BLAKE3::new().output_len(), 32);
         assert_eq!(BLAKE3::new().block_bitlen(), 512);
-        assert_eq!(BLAKE3::default().hash(b"abc"), BLAKE3::new().hash(b"abc"));
+        assert_eq!(BLAKE3::hash(b"abc"), BLAKE3::hash(b"abc"));
         assert_eq!(SUSPENDED_BLAKE3_STATE_LEN, 1874);
         assert_eq!(SUSPENDED_BLAKE3_SQUEEZER_STATE_LEN, 180);
     }
@@ -459,7 +463,7 @@ mod blake3_tests {
         s[CHUNK_CV..CHUNK_CV + 32].fill(0x5A);
         let mut resumed = BLAKE3::from_suspended(s).unwrap();
         resumed.do_update(&msg[1025..]);
-        assert_eq!(resumed.do_final(), BLAKE3::new().hash(&msg));
+        assert_eq!(resumed.do_final(), BLAKE3::hash(&msg));
     }
 
     /// The largest valid stack resumes and keeps absorbing: completing the current chunk merges
