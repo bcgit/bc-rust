@@ -151,7 +151,7 @@ use core::fmt::{Debug, Display, Formatter};
 ///
 /// The block length and the generated-key length do not need to be restated here since they are already
 /// carried by the hash itself as [`HashAlgParams::BLOCK_LEN`] and [`HashAlgParams::OUTPUT_LEN`].
-pub trait HMACParams: HashOneShot + HashAlgParams {
+pub trait HMACParams: HashOneShot + HashAlgParams + Clone {
     /// The key type produced by [`HMAC::keygen_from_rng`] and drawn by
     /// [`FromAnyKeyMaterial::generate`], sized to this hash's output length.
     ///

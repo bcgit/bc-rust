@@ -891,16 +891,21 @@ pub trait BlockCipherEncryptor<
 /// That is what `HMAC` and the shared test framework already do, so the bound sits where the
 /// requirement actually is rather than on every implementor.
 ///
-/// # Forking is part of this trait
+/// # Forking is on the types, not the trait
 ///
-/// `Clone` *is* a supertrait: a hash mid-stream can be copied, and the copy continues independently
-/// from the same absorbed prefix. That is how a running hash of a common prefix is finished several
-/// ways -- a transcript hash checkpointed at each handshake message, HMAC's inner and outer states
-/// held ready across many MACs under one key, or a Merkle node whose prefix is shared by its
-/// siblings -- without re-absorbing the prefix each time. Every implementor is a fixed-size state
-/// plus a small buffer, so the derive is the right implementation; the shared test framework checks
-/// that a clone and its original finish to the same digest, and diverge once fed different input.
-pub trait Hash: AlgorithmInfo + Clone {
+/// Every hash in this library is `Clone`: a hash mid-stream can be copied, and the copy continues
+/// independently from the same absorbed prefix. That is how a running hash of a common prefix is
+/// finished several ways -- a transcript hash checkpointed at each handshake message, HMAC's inner
+/// and outer states held ready across many MACs under one key, or a Merkle node whose prefix is
+/// shared by its siblings -- without re-absorbing the prefix each time. Every implementor is a
+/// fixed-size state plus a small buffer, so the derive is the right implementation, and the shared
+/// test framework checks that a clone and its original finish to the same digest, and diverge once
+/// fed different input.
+///
+/// `Clone` is not a supertrait, though, because `Clone` implies `Sized` and would stop this trait
+/// from ever being a trait object. Code that forks a hash says so: `HMACParams` and the test
+/// framework bound on `Hash + Clone`.
+pub trait Hash: AlgorithmInfo {
     /// The size of the internal block in bits -- needed by functions such as HMAC to compute security parameters.
     fn block_bitlen(&self) -> usize;
 

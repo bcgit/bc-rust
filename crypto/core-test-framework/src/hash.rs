@@ -72,7 +72,11 @@ impl TestFrameworkHash {
     /// This gives good baseline test coverage, but is not exhaustive; for example it does not test
     /// do_final_partial_bits() or do_final_partial_bits_out()
     /// because those require different input-output pairs.
-    pub fn test_hash<H: HashOneShot + HashAlgParams>(&self, input: &[u8], expected_output: &[u8]) {
+    pub fn test_hash<H: HashOneShot + HashAlgParams + Clone>(
+        &self,
+        input: &[u8],
+        expected_output: &[u8],
+    ) {
         /*** fn result_len() -> usize ***/
         assert_eq!(H::default().output_len(), H::OUTPUT_LEN);
 

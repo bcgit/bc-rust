@@ -16,6 +16,14 @@ All algorithms with a state that is exercised across multiple API calls -- typic
 `do_final()` pattern -- should implement SerializableState so that the user can pause the execution of this algorithm to
 a cache and resume later.
 
+`Clone` belongs on the types, not on the `core` traits. Every hash and XOF type is `Clone`, so a computation can be
+forked mid-stream and each copy finished on its own; `Hash` itself carries no `Clone` (and no `Default`), because both
+imply `Sized` and would stop the trait from ever being a trait object. Generic code that forks or constructs a hash
+says so where the need is: `H: Hash + Clone`, `H: HashOneShot`. The same rule applies to every `core` trait that is
+meant to be held as `dyn` -- the hash, XOF, cipher and MAC worker traits: no `Clone`, `Default` or `Sized` supertrait,
+no associated constant (`AlgorithmInfo` is the run-time form of `Algorithm`'s), and `where Self: Sized` on any
+receiver-less or provided by-value method, so the streaming core stays dispatchable through `&mut dyn`.
+
 # Quality
 
 ## Tests
