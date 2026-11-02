@@ -1,7 +1,7 @@
 use crate::SHA512InitValue;
 use bouncycastle_core::errors::{HashError, SuspendableError};
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::traits::{Algorithm, Hash, Suspendable};
+use bouncycastle_core::traits::{Algorithm, Hash, HashOneShot, Suspendable};
 use bouncycastle_utils::suspendable_state::{add_lib_ver, check_lib_ver};
 use bouncycastle_utils::{min, secret::Secret};
 use core::slice;
@@ -434,19 +434,6 @@ impl<PARAMS: SHA512InitValue> Hash for SHA512Internal<PARAMS> {
         PARAMS::OUTPUT_LEN
     }
 
-    fn hash(self, data: &[u8]) -> Vec<u8> {
-        let mut output = vec![0u8; self.output_len()];
-        self.hash_out(data, &mut output);
-        output
-    }
-
-    fn hash_out(mut self, data: &[u8], output: &mut [u8]) -> usize {
-        output.fill(0);
-
-        self.do_update(data);
-        self.do_final_out(output)
-    }
-
     fn do_update(&mut self, block: &[u8]) {
         let len = block.len();
 
@@ -596,3 +583,6 @@ impl<PARAMS: SHA512InitValue> Suspendable<SUSPENDED_SHA512_STATE_LEN> for SHA512
         })
     }
 }
+
+// The one-shot form: `Default` is the function itself.
+impl<PARAMS: SHA512InitValue> HashOneShot for SHA512Internal<PARAMS> {}

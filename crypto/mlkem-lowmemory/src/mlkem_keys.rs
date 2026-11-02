@@ -12,7 +12,7 @@ use bouncycastle_core::errors::KEMError;
 use bouncycastle_core::hazmat::do_hazardous_operations;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::traits::{Hash, KEMPrivateKey, KEMPublicKey};
+use bouncycastle_core::traits::{Hash, HashOneShot, KEMPrivateKey, KEMPublicKey};
 use bouncycastle_sha3::SHA3_256;
 use bouncycastle_utils::secret::{Secret, ZeroizablePrimitive};
 use core::fmt;
@@ -177,14 +177,14 @@ impl<P: MLKEMParams, const PK_LEN: usize> PartialEq for MLKEMPublicKey<P, PK_LEN
 
 impl<P: MLKEMParams, const PK_LEN: usize> Debug for MLKEMPublicKey<P, PK_LEN> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        let hash = SHA3_256::new().hash(&self.encode());
+        let hash = SHA3_256::hash(&self.encode());
         write!(f, "MLKEMPublicKey {{ alg: {}, pub_key_hash: {:x?} }}", P::ALG_NAME, hash)
     }
 }
 
 impl<P: MLKEMParams, const PK_LEN: usize> Display for MLKEMPublicKey<P, PK_LEN> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        let hash = SHA3_256::new().hash(&self.encode());
+        let hash = SHA3_256::hash(&self.encode());
         write!(f, "MLKEMPublicKey {{ alg: {}, pub_key_hash: {:x?} }}", P::ALG_NAME, hash)
     }
 }

@@ -27,11 +27,11 @@
 //! Hashing (one-shot and streaming):
 //! ```
 //! use bouncycastle_ascon::AsconHash256;
-//! use bouncycastle_core::traits::Hash;
+//! use bouncycastle_core::traits::{Hash, HashOneShot};
 //! use bouncycastle_core::traits::XOF;
 //!
 //! // One-shot:
-//! let digest = AsconHash256::new().hash(b"hello world");
+//! let digest = AsconHash256::hash(b"hello world");
 //! assert_eq!(digest.len(), 32);
 //!
 //! // Streaming:

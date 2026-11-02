@@ -2,7 +2,7 @@
 mod sha2_tests {
     use bouncycastle_core::errors::{HashError, SuspendableError};
     use bouncycastle_core::security_strength::SecurityStrength;
-    use bouncycastle_core::traits::{Algorithm, Hash, HashAlgParams};
+    use bouncycastle_core::traits::{Algorithm, Hash, HashAlgParams, HashOneShot};
     use bouncycastle_core_test_framework::hash::TestFrameworkHash;
     use bouncycastle_sha2::*;
 
@@ -81,11 +81,11 @@ mod sha2_tests {
     /// `partial_bits_known_answers`.
     #[test]
     fn partial_bits() {
-        fn check<H: Hash + Default>() {
+        fn check<H: HashOneShot>() {
             // 0 partial bits == do_final
             let mut a = H::default();
             a.do_update(b"abc");
-            assert_eq!(a.do_final_partial_bits(0xFF, 0).unwrap(), H::default().hash(b"abc"));
+            assert_eq!(a.do_final_partial_bits(0xFF, 0).unwrap(), H::hash(b"abc"));
 
             // out of range -> InvalidLength, never a panic
             for bad in [8usize, 9, 16, 64, usize::MAX] {
@@ -106,8 +106,8 @@ mod sha2_tests {
                 assert_eq!(x, y, "n={n}");
                 assert_ne!(x, z, "n={n}: the leading bit must change the digest");
                 // and a bit-message is distinct from byte-messages of nearby length
-                assert_ne!(x, H::default().hash(&[]), "n={n}");
-                assert_ne!(x, H::default().hash(&[0xA5 & mask]), "n={n}");
+                assert_ne!(x, H::hash(&[]), "n={n}");
+                assert_ne!(x, H::hash(&[0xA5 & mask]), "n={n}");
             }
 
             // the partial-bit path must also work when the pad byte spills into a second block
@@ -137,7 +137,7 @@ mod sha2_tests {
         fn hex(s: &str) -> Vec<u8> {
             (0..s.len()).step_by(2).map(|i| u8::from_str_radix(&s[i..i + 2], 16).unwrap()).collect()
         }
-        fn check<H: Hash + Default>(cases: &[(usize, u8, u8, usize, &str)]) {
+        fn check<H: HashOneShot>(cases: &[(usize, u8, u8, usize, &str)]) {
             for &(prefix_len, fill, partial_byte, bits, expected) in cases {
                 let mut h = H::default();
                 h.do_update(&vec![fill; prefix_len]);

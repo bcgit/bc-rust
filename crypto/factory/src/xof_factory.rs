@@ -153,22 +153,6 @@ impl Hash for XOFFactory {
         }
     }
 
-    fn hash(self, data: &[u8]) -> Vec<u8> {
-        match self {
-            Self::SHAKE128(h) => h.hash(data),
-            Self::SHAKE256(h) => h.hash(data),
-            Self::AsconXof128(h) => h.hash(data),
-        }
-    }
-
-    fn hash_out(self, data: &[u8], output: &mut [u8]) -> usize {
-        match self {
-            Self::SHAKE128(h) => h.hash_out(data, output),
-            Self::SHAKE256(h) => h.hash_out(data, output),
-            Self::AsconXof128(h) => h.hash_out(data, output),
-        }
-    }
-
     fn do_update(&mut self, data: &[u8]) {
         match self {
             Self::SHAKE128(h) => h.do_update(data),
@@ -272,5 +256,21 @@ impl XOF for XOFFactory {
             Self::SHAKE256(h) => h.xof_out(data, output),
             Self::AsconXof128(h) => h.xof_out(data, output),
         }
+    }
+}
+
+impl XOFFactory {
+    /// One-shot: hashes `data` with this instance's parameters.
+    /// [`HashOneShot`](bouncycastle_core::traits::HashOneShot) is for the hashes
+    /// that take none; here the parameters come with the instance, so the one-shot is a method.
+    pub fn hash(mut self, data: &[u8]) -> Vec<u8> {
+        self.do_update(data);
+        self.do_final()
+    }
+
+    /// As [`Self::hash`], into `output`, which is zeroized first; returns the bytes written.
+    pub fn hash_out(mut self, data: &[u8], output: &mut [u8]) -> usize {
+        self.do_update(data);
+        self.do_final_out(output)
     }
 }

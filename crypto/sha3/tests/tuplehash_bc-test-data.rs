@@ -275,12 +275,16 @@ fn check_fixed_view<H: Hash>(make: impl Fn() -> H, tuple: &[&[u8]], expected: &[
     let Some((last, rest)) = tuple.split_last() else { return };
     let mut h = make();
     rest.iter().for_each(|e| h.do_update(e));
-    assert_eq!(h.hash(last), expected, "{ctx}: hash as the final element");
+    let mut h = h;
+    h.do_update(last);
+    assert_eq!(h.do_final(), expected, "{ctx}: the last element through do_update");
 
     let mut h = make();
     rest.iter().for_each(|e| h.do_update(e));
     let mut out = vec![0u8; n];
-    assert_eq!(h.hash_out(last, &mut out), n, "{ctx}: hash_out returns the length");
+    let mut h = h;
+    h.do_update(last);
+    assert_eq!(h.do_final_out(&mut out), n, "{ctx}: do_final_out returns the length");
     assert_eq!(out, expected, "{ctx}: hash_out");
 }
 
@@ -336,12 +340,16 @@ fn check_xof_view<X: XOF>(
     let Some((last, rest)) = tuple.split_last() else { return };
     let mut x = make();
     rest.iter().for_each(|e| x.do_update(e));
-    assert_eq!(x.hash(last), fixed_expected, "{ctx}: hash");
+    let mut x = x;
+    x.do_update(last);
+    assert_eq!(x.do_final(), fixed_expected, "{ctx}: the last element through do_update");
 
     let mut x = make();
     rest.iter().for_each(|e| x.do_update(e));
     let mut out = vec![0u8; n];
-    assert_eq!(x.hash_out(last, &mut out), n, "{ctx}: hash_out returns the length");
+    let mut x = x;
+    x.do_update(last);
+    assert_eq!(x.do_final_out(&mut out), n, "{ctx}: do_final_out returns the length");
     assert_eq!(out, fixed_expected, "{ctx}: hash_out");
 
     // The XOF reading of the stream is do_output; the one-shots bind the length they are given,

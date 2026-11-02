@@ -4,7 +4,7 @@
 
 use bouncycastle_core::errors::{HashError, SuspendableError};
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::traits::{Algorithm, Hash, HashAlgParams, Suspendable};
+use bouncycastle_core::traits::{Algorithm, Hash, HashAlgParams, HashOneShot, Suspendable};
 use bouncycastle_utils::secret::Secret;
 use bouncycastle_utils::suspendable_state::{add_lib_ver, check_lib_ver};
 
@@ -63,23 +63,6 @@ impl Hash for AsconHash256 {
 
     fn output_len(&self) -> usize {
         DIGEST_BYTES
-    }
-
-    fn hash(mut self, data: &[u8]) -> Vec<u8> {
-        self.sponge.absorb(data);
-        let mut out = [0u8; DIGEST_BYTES];
-        self.squeeze_into(&mut out);
-        out.to_vec()
-    }
-
-    fn hash_out(mut self, data: &[u8], output: &mut [u8]) -> usize {
-        self.sponge.absorb(data);
-        output.fill(0);
-        let mut out = [0u8; DIGEST_BYTES];
-        self.squeeze_into(&mut out);
-        let n = core::cmp::min(output.len(), DIGEST_BYTES);
-        output[..n].copy_from_slice(&out[..n]);
-        n
     }
 
     fn do_update(&mut self, data: &[u8]) {
@@ -176,3 +159,6 @@ impl Suspendable<SUSPENDED_ASCON_HASH256_STATE_LEN> for AsconHash256 {
         Ok(AsconHash256 { sponge: Sponge::from_parts(s, buf, buf_pos, false) })
     }
 }
+
+// The one-shot form: `Default` is the function itself.
+impl HashOneShot for AsconHash256 {}

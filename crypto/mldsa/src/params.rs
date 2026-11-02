@@ -16,7 +16,7 @@ use crate::hash_mldsa::{
 use crate::matrix::{Matrix, MatrixTrait, Vector, VectorTrait};
 use crate::mldsa::{ML_DSA_44_NAME, ML_DSA_65_NAME, ML_DSA_87_NAME, q};
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::traits::{Algorithm, AlgorithmOID, Hash, HashAlgParams};
+use bouncycastle_core::traits::{Algorithm, AlgorithmOID, HashAlgParams, HashOneShot};
 use bouncycastle_sha2::{SHA256, SHA512};
 use bouncycastle_utils::secret::ZeroizablePrimitive;
 
@@ -282,7 +282,7 @@ pub trait HashMLDSAParams: HashMLDSAParamsInternalTrait {
     /// The ML-DSA parameter set underneath.
     type MLDSA: MLDSAParams;
     /// PH, the pre-hash function.
-    type PreHash: Hash + HashAlgParams + AlgorithmOID + Default;
+    type PreHash: HashOneShot + HashAlgParams + AlgorithmOID;
 
     /// The algorithm name, as reported by `Algorithm::ALG_NAME`.
     ///

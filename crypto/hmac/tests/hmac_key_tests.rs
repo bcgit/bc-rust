@@ -23,7 +23,7 @@ fn the_key_and_the_worker_constructor_agree_for_every_key_shape() {
     // Section 3), for a 64-byte-block hash and a 136-byte-block one.
     fn check<H>(key_bytes: &[u8])
     where
-        H: bouncycastle_core::traits::Hash + Default,
+        H: bouncycastle_core::traits::HashOneShot,
     {
         let km = KeyMaterial::<200>::from_bytes_as_type(key_bytes, KeyType::MACKey).unwrap();
         let expected = HMAC::<H>::new_allow_weak_key(&km).unwrap().mac(MSG);

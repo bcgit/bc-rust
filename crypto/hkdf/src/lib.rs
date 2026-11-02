@@ -113,7 +113,9 @@ use bouncycastle_core::key_material::{
 };
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::symmetric_key::{FromAnyKeyMaterial, MacGenerationKey};
-use bouncycastle_core::traits::{Hash, HashAlgParams, KDF, MAC, Suspendable, SuspendableKeyed};
+use bouncycastle_core::traits::{
+    HashAlgParams, HashOneShot, KDF, MAC, Suspendable, SuspendableKeyed,
+};
 use bouncycastle_hmac::{HMAC, HmacKey, LARGEST_HASHER_BLOCK_LEN};
 use bouncycastle_utils::secret::Secret;
 use bouncycastle_utils::suspendable_state::{add_lib_ver, check_lib_ver};
@@ -160,7 +162,7 @@ pub const MAX_HMAC_OUTPUT_LEN: usize = 64;
 ///     `SuspendableKeyed<{HASH_STATE_LEN + 14}>` over `H: Suspendable<HASH_STATE_LEN>`.
 #[derive(Clone)]
 pub struct HKDF<
-    H: Hash + HashAlgParams + Default,
+    H: HashOneShot + HashAlgParams,
     const HASH_STATE_LEN: usize,
     const HKDF_STATE_LEN: usize,
 > {
@@ -207,13 +209,13 @@ impl TryFrom<u8> for HkdfStates {
 }
 
 #[derive(Clone)]
-struct HkdfEntropyTracker<H: Hash + HashAlgParams + Default> {
+struct HkdfEntropyTracker<H: HashOneShot + HashAlgParams> {
     _phantomhash: PhantomData<H>,
     entropy: usize,
     security_strength: SecurityStrength,
 }
 
-impl<H: Hash + HashAlgParams + Default> HkdfEntropyTracker<H> {
+impl<H: HashOneShot + HashAlgParams> HkdfEntropyTracker<H> {
     fn new() -> Self {
         Self { _phantomhash: PhantomData, entropy: 0, security_strength: SecurityStrength::None }
     }
@@ -249,7 +251,7 @@ impl<H: Hash + HashAlgParams + Default> HkdfEntropyTracker<H> {
     }
 }
 
-impl<H: Hash + HashAlgParams + Default, const HASH_STATE_LEN: usize, const HKDF_STATE_LEN: usize>
+impl<H: HashOneShot + HashAlgParams, const HASH_STATE_LEN: usize, const HKDF_STATE_LEN: usize>
     Default for HKDF<H, HASH_STATE_LEN, HKDF_STATE_LEN>
 {
     fn default() -> Self {
@@ -257,7 +259,7 @@ impl<H: Hash + HashAlgParams + Default, const HASH_STATE_LEN: usize, const HKDF_
     }
 }
 
-impl<H: Hash + HashAlgParams + Default, const HASH_STATE_LEN: usize, const HKDF_STATE_LEN: usize>
+impl<H: HashOneShot + HashAlgParams, const HASH_STATE_LEN: usize, const HKDF_STATE_LEN: usize>
     HKDF<H, HASH_STATE_LEN, HKDF_STATE_LEN>
 {
     /// Get a new, uninstantiated HKDF object.
@@ -534,7 +536,7 @@ impl<H: Hash + HashAlgParams + Default, const HASH_STATE_LEN: usize, const HKDF_
             return KeyMaterial::from_bytes_as_type(bytes, KeyType::MACKey);
         }
         let mut digest: Secret<[u8; MAX_HMAC_OUTPUT_LEN]> = Secret::new();
-        let written = H::default().hash_out(bytes, &mut digest[..H::OUTPUT_LEN]);
+        let written = H::hash_out(bytes, &mut digest[..H::OUTPUT_LEN]);
         KeyMaterial::from_bytes_as_type(&digest[..written], KeyType::MACKey)
     }
 
@@ -682,8 +684,8 @@ impl<H: Hash + HashAlgParams + Default, const HASH_STATE_LEN: usize, const HKDF_
 /// [`KDF::derive_key_from_multiple_out`], or by using the [`HKDF`] impl directly.
 ///
 /// Entropy tracking: this implementation will map entropy from the input keys to the output key.
-impl<H: Hash + HashAlgParams + Default, const HASH_STATE_LEN: usize, const HKDF_STATE_LEN: usize>
-    KDF for HKDF<H, HASH_STATE_LEN, HKDF_STATE_LEN>
+impl<H: HashOneShot + HashAlgParams, const HASH_STATE_LEN: usize, const HKDF_STATE_LEN: usize> KDF
+    for HKDF<H, HASH_STATE_LEN, HKDF_STATE_LEN>
 {
     /// This invokes [`HKDF::extract_and_expand_out`] with a zero salt and using the provided key as ikm.
     /// This provides a fixed-length output, which may be truncated as needed.
@@ -797,7 +799,7 @@ impl<H: Hash + HashAlgParams + Default, const HASH_STATE_LEN: usize, const HKDF_
 impl<H, const HASH_STATE_LEN: usize, const HKDF_STATE_LEN: usize> SuspendableKeyed<HKDF_STATE_LEN>
     for HKDF<H, HASH_STATE_LEN, HKDF_STATE_LEN>
 where
-    H: Hash + HashAlgParams + Default + Suspendable<HASH_STATE_LEN>,
+    H: HashOneShot + HashAlgParams + Suspendable<HASH_STATE_LEN>,
 {
     // HMAC accepts any key material, so the key type is the trait object `dyn KeyMaterialTrait`
     // rather than a single concrete key type. The key is only used (by reference) to reload the key

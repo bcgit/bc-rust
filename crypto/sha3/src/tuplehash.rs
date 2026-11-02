@@ -184,18 +184,6 @@ impl<PARAMS: SHAKEParams> Hash for TupleHashInternal<PARAMS> {
         self.output_len
     }
 
-    /// Hashes `data` as a one-element tuple. For more than one element use
-    /// [`Self::hash_tuple`] or successive [`Hash::do_update`] calls.
-    fn hash(mut self, data: &[u8]) -> Vec<u8> {
-        self.do_update(data);
-        self.do_final()
-    }
-
-    fn hash_out(mut self, data: &[u8], output: &mut [u8]) -> usize {
-        self.do_update(data);
-        self.do_final_out(output)
-    }
-
     /// Appends **one tuple element**. See the note on the type: this is not byte-wise streaming.
     fn do_update(&mut self, data: &[u8]) {
         absorb_encoded_string_into(&mut self.cshake, data);
@@ -263,9 +251,9 @@ impl<PARAMS: SHAKEParams> Hash for TupleHashInternal<PARAMS> {
 ///
 /// A *final* read binds it, because a caller that names a length and will not be back has said
 /// what `L` is: [`XOFSqueezer::do_output_final`] and [`XOF::xof`] produce the fixed-length
-/// TupleHash of Sec 5.3 (see [`CSHAKESqueezer`]), and the [`Hash`] view -- [`Hash::do_final`],
-/// [`Hash::hash`] and [`Hash::hash_out`] -- does the same at the nominal [`Hash::output_len`],
-/// since a hash's output length is fixed by its type.
+/// TupleHash of Sec 5.3 (see [`CSHAKESqueezer`]), and the [`Hash`] view -- [`Hash::do_final`]
+/// and the inherent [`hash`](Self::hash) and [`hash_out`](Self::hash_out) -- does the same at the
+/// nominal [`Hash::output_len`], since a hash's output length is fixed by its type.
 ///
 /// [`Hash::do_update`] appends one tuple element, exactly as for [`TupleHashInternal`].
 #[derive(Clone)]
@@ -332,16 +320,6 @@ impl<PARAMS: SHAKEParams> Hash for TupleHashXOFInternal<PARAMS> {
     /// see [`TupleHashXOFInternal`].
     fn output_len(&self) -> usize {
         self.cshake.output_len()
-    }
-
-    fn hash(mut self, data: &[u8]) -> Vec<u8> {
-        self.do_update(data);
-        self.do_final()
-    }
-
-    fn hash_out(mut self, data: &[u8], output: &mut [u8]) -> usize {
-        self.do_update(data);
-        self.do_final_out(output)
     }
 
     /// Appends **one tuple element**.
@@ -418,5 +396,37 @@ impl<PARAMS: SHAKEParams> XOF for TupleHashXOFInternal<PARAMS> {
             ));
         }
         Ok(self.into_squeezer())
+    }
+}
+
+impl<PARAMS: SHAKEParams> TupleHashInternal<PARAMS> {
+    /// One-shot: hashes `data` with this instance's parameters.
+    /// [`HashOneShot`](bouncycastle_core::traits::HashOneShot) is for the hashes
+    /// that take none; here the parameters come with the instance, so the one-shot is a method.
+    pub fn hash(mut self, data: &[u8]) -> Vec<u8> {
+        self.do_update(data);
+        self.do_final()
+    }
+
+    /// As [`Self::hash`], into `output`, which is zeroized first; returns the bytes written.
+    pub fn hash_out(mut self, data: &[u8], output: &mut [u8]) -> usize {
+        self.do_update(data);
+        self.do_final_out(output)
+    }
+}
+
+impl<PARAMS: SHAKEParams> TupleHashXOFInternal<PARAMS> {
+    /// One-shot: hashes `data` with this instance's parameters.
+    /// [`HashOneShot`](bouncycastle_core::traits::HashOneShot) is for the hashes
+    /// that take none; here the parameters come with the instance, so the one-shot is a method.
+    pub fn hash(mut self, data: &[u8]) -> Vec<u8> {
+        self.do_update(data);
+        self.do_final()
+    }
+
+    /// As [`Self::hash`], into `output`, which is zeroized first; returns the bytes written.
+    pub fn hash_out(mut self, data: &[u8], output: &mut [u8]) -> usize {
+        self.do_update(data);
+        self.do_final_out(output)
     }
 }

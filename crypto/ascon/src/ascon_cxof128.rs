@@ -146,16 +146,6 @@ impl Hash for AsconCXof128 {
         NOMINAL_OUTPUT_LEN
     }
 
-    fn hash(mut self, data: &[u8]) -> Vec<u8> {
-        self.do_update(data);
-        self.do_final()
-    }
-
-    fn hash_out(mut self, data: &[u8], output: &mut [u8]) -> usize {
-        self.do_update(data);
-        self.do_final_out(output)
-    }
-
     fn do_update(&mut self, data: &[u8]) {
         // A caller-visible AsconCXof128 is always in the absorbing phase:
         // into_squeezer() consumes it before output can begin.
@@ -379,5 +369,21 @@ impl Suspendable<SUSPENDED_ASCON_CXOF128_STATE_LEN> for AsconCXof128Squeezer {
         }
 
         Ok(Self { xof: AsconCXof128 { sponge } })
+    }
+}
+
+impl AsconCXof128 {
+    /// One-shot: hashes `data` with this instance's parameters.
+    /// [`HashOneShot`](bouncycastle_core::traits::HashOneShot) is for the hashes
+    /// that take none; here the parameters come with the instance, so the one-shot is a method.
+    pub fn hash(mut self, data: &[u8]) -> Vec<u8> {
+        self.do_update(data);
+        self.do_final()
+    }
+
+    /// As [`Self::hash`], into `output`, which is zeroized first; returns the bytes written.
+    pub fn hash_out(mut self, data: &[u8], output: &mut [u8]) -> usize {
+        self.do_update(data);
+        self.do_final_out(output)
     }
 }

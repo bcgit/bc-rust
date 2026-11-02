@@ -13,11 +13,11 @@
 //!
 //! The simplest usage is via the static functions.
 //! ```
-//! use bouncycastle_core::traits::Hash;
+//! use bouncycastle_core::traits::HashOneShot;
 //! use bouncycastle_sha2 as sha2;
 //!
 //! let data: &[u8] = b"Hello, world!";
-//! let output: Vec<u8> = sha2::SHA256::new().hash(data);
+//! let output: Vec<u8> = sha2::SHA256::hash(data);
 //! ```
 //!
 //! More advanced usage will require creating a SHA2 object to hold state between successive calls,
@@ -232,15 +232,15 @@ pub type SHA512 = SHA512Internal<SHA512Params>;
 /// # Example
 ///
 /// ```
-/// use bouncycastle_core::traits::{Algorithm, Hash};
+/// use bouncycastle_core::traits::{Algorithm, HashOneShot};
 /// use bouncycastle_sha2::{SHA512_256, SHA512t};
 ///
 /// // SHA512t<256> *is* SHA512_256.
-/// let digest = SHA512_256::new().hash(b"abc");
-/// assert_eq!(SHA512t::<256>::new().hash(b"abc"), digest);
+/// let digest = SHA512_256::hash(b"abc");
+/// assert_eq!(SHA512t::<256>::hash(b"abc"), digest);
 ///
 /// // A custom truncation: 96 bits, so a 12-byte digest.
-/// let digest = SHA512t::<96>::new().hash(b"abc");
+/// let digest = SHA512t::<96>::hash(b"abc");
 /// assert_eq!(digest.len(), 12);
 /// assert_eq!(<SHA512t<96> as Algorithm>::ALG_NAME, "SHA512/96");
 /// ```

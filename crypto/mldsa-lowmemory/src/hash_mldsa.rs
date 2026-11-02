@@ -29,7 +29,7 @@
 //! ```rust
 //! use bouncycastle_core::errors::SignatureError;
 //! use bouncycastle_core::traits::{
-//!     Hash, PHSignatureVerifier, PHSigner, SignatureVerifier, Signer,
+//!     HashOneShot, PHSignatureVerifier, PHSigner, SignatureVerifier, Signer,
 //! };
 //! use bouncycastle_sha2::SHA512;
 //! use bouncycastle_mldsa_lowmemory::{MLDSATrait, HashMLDSA65_with_SHA512, HashMLDSA44_with_SHA512};
@@ -38,7 +38,7 @@
 //!
 //! // Here, and in contrast to External Mu mode of ML-DSA, the message can be pre-hashed before
 //! // generating the signing key.
-//! let ph: [u8; 64] = SHA512::default().hash(msg).as_slice().try_into().unwrap();
+//! let ph: [u8; 64] = SHA512::hash(msg).as_slice().try_into().unwrap();
 //!
 //!
 //! let (pk, sk) = HashMLDSA65_with_SHA512::keygen().unwrap();
@@ -83,8 +83,8 @@ use bouncycastle_core::errors::SignatureError;
 use bouncycastle_core::key_material::KeyMaterial;
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{
-    Algorithm, AlgorithmOID, Hash, PHSignatureVerifier, PHSigner, RNG, SignatureVerifier, Signer,
-    XOF, XOFSqueezer,
+    Algorithm, AlgorithmOID, Hash, HashOneShot, PHSignatureVerifier, PHSigner, RNG,
+    SignatureVerifier, Signer, XOF, XOFSqueezer,
 };
 use bouncycastle_rng::HashDRBG_SHA512;
 use core::marker::PhantomData;
@@ -438,7 +438,7 @@ impl<
         output.fill(0);
 
         let mut ph_m = [0u8; PH_LEN];
-        _ = <P::PreHash as Default>::default().hash_out(msg, &mut ph_m);
+        _ = P::PreHash::hash_out(msg, &mut ph_m);
         Self::sign_ph_out(sk, &ph_m, ctx, output)
     }
 
@@ -522,7 +522,7 @@ impl<
 {
     fn verify(pk: &PK, msg: &[u8], ctx: Option<&[u8]>, sig: &[u8]) -> Result<(), SignatureError> {
         let mut ph_m = [0u8; PH_LEN];
-        _ = <P::PreHash as Default>::default().hash_out(msg, &mut ph_m);
+        _ = P::PreHash::hash_out(msg, &mut ph_m);
 
         Self::verify_ph(pk, &ph_m, ctx, sig)
     }

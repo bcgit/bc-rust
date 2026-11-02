@@ -69,7 +69,7 @@ use bouncycastle::core::errors::{HashError, RNGError, SymmetricCipherError};
 use bouncycastle::core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle::core::security_strength::SecurityStrength;
 use bouncycastle::core::traits::{
-    AEADCipherDecryptor, AEADCipherEncryptor, Hash, RNG, SymmetricCipherDecryptor,
+    AEADCipherDecryptor, AEADCipherEncryptor, Hash, HashOneShot, RNG, SymmetricCipherDecryptor,
     SymmetricCipherEncryptor, XOF, XOFSqueezer,
 };
 
@@ -523,14 +523,12 @@ fn bench_hash256_final() {
 #[inline(never)]
 fn bench_hash256_oneshot() {
     eprintln!("AsconHash256::hash_out, {MSG_LEN} B");
-    let h = black_box(AsconHash256::new());
     let msg = black_box(message::<MSG_LEN>(0xa5));
     measure(move || {
         let mut out = [0u8; 32];
-        let op = black_box(
-            <AsconHash256 as Hash>::hash_out as fn(AsconHash256, &[u8], &mut [u8]) -> usize,
-        );
-        let n = op(h, &msg, &mut out);
+        let op =
+            black_box(<AsconHash256 as HashOneShot>::hash_out as fn(&[u8], &mut [u8]) -> usize);
+        let n = op(&msg, &mut out);
         print!("{:x?}", &out[..n]);
     });
 }

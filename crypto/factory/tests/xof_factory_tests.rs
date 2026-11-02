@@ -5,7 +5,7 @@
 use bouncycastle_ascon::ASCON_XOF128_NAME;
 use bouncycastle_ascon::AsconXof128;
 use bouncycastle_core::errors::HashError;
-use bouncycastle_core::traits::{Hash, XOF, XOFSqueezer};
+use bouncycastle_core::traits::{Hash, HashOneShot, XOF, XOFSqueezer};
 use bouncycastle_core_test_framework::xof::TestFrameworkXOF;
 use bouncycastle_factory::xof_factory::XOFFactory;
 use bouncycastle_factory::{AlgorithmFactory, FactoryError};
@@ -14,7 +14,7 @@ use bouncycastle_sha3::{SHAKE128, SHAKE128_NAME, SHAKE256, SHAKE256_NAME};
 const MSG: &[u8] = b"The quick brown fox jumps over the lazy dog";
 
 /// Every `Hash`, `XOF` and `XOFSqueezer` method of the factory against the direct type `S`.
-fn check_against<S: XOF + Default>(make: impl Fn() -> XOFFactory, ctx: &str) {
+fn check_against<S: XOF + HashOneShot>(make: impl Fn() -> XOFFactory, ctx: &str) {
     let n = S::default().output_len();
 
     // metadata
@@ -27,7 +27,7 @@ fn check_against<S: XOF + Default>(make: impl Fn() -> XOFFactory, ctx: &str) {
     );
 
     // the Hash view
-    let expected = S::default().hash(MSG);
+    let expected = S::hash(MSG);
     assert_eq!(expected.len(), n);
     assert_eq!(make().hash(MSG), expected, "{ctx}: hash");
 

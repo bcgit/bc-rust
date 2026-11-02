@@ -7,7 +7,7 @@ use bouncycastle_core::errors::{HashError, KDFError, SuspendableError};
 use bouncycastle_core::hazmat::do_hazardous_operations;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::traits::{Algorithm, Hash, KDF, Suspendable};
+use bouncycastle_core::traits::{Algorithm, Hash, HashOneShot, KDF, Suspendable};
 use bouncycastle_utils::suspendable_state::{add_lib_ver, check_lib_ver};
 use bouncycastle_utils::{max, min};
 
@@ -35,14 +35,6 @@ impl<PARAMS: SHA3Params> SHA3Internal<PARAMS> {
             kdf_security_strength: SecurityStrength::None,
             kdf_entropy: 0,
         }
-    }
-
-    /// Swallows errors and simply returns an empty Vec<u8> if the hashes fails for whatever reason.
-    fn hash_internal(mut self, data: &[u8], output: &mut [u8]) -> usize {
-        output.fill(0);
-
-        self.do_update(data);
-        self.do_final_out(output)
     }
 
     /// Appends the SHA3 domain-separation suffix and pads as per FIPS 202 s. 6.1, then squeezes the digest.
@@ -193,16 +185,6 @@ impl<PARAMS: SHA3Params> Hash for SHA3Internal<PARAMS> {
         PARAMS::OUTPUT_LEN
     }
 
-    fn hash(self, data: &[u8]) -> Vec<u8> {
-        let mut output: Vec<u8> = vec![0u8; PARAMS::OUTPUT_LEN];
-        _ = self.hash_internal(data, &mut output[..]);
-        output
-    }
-
-    fn hash_out(self, data: &[u8], output: &mut [u8]) -> usize {
-        self.hash_internal(data, output)
-    }
-
     fn do_update(&mut self, data: &[u8]) {
         self.keccak.absorb(data)
     }
@@ -348,3 +330,6 @@ impl<PARAMS: SHA3Params> Suspendable<SUSPENDED_SHA3_STATE_LEN> for SHA3Internal<
         })
     }
 }
+
+// The one-shot form: `Default` is the function itself.
+impl<PARAMS: SHA3Params> HashOneShot for SHA3Internal<PARAMS> {}

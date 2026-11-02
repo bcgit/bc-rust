@@ -237,12 +237,18 @@ fn parallelhashxof_is_not_parallelhash_truncated() {
 /// The sample-value test above goes through `hash` only, which left `hash_out` and
 /// `do_final_out` unexercised: `cargo mutants` could replace each with a constant, and change the
 /// `* 8` in the `right_encode(L)` that `do_final_out` binds, without a test noticing.
-fn check_fixed_view<H: Hash>(make: impl Fn() -> H, msg: &[u8], expected: &[u8], ctx: &str) {
+fn check_fixed_view<H: Hash>(
+    make: impl Fn() -> H,
+    hash_out: impl Fn(&[u8], &mut [u8]) -> usize,
+    msg: &[u8],
+    expected: &[u8],
+    ctx: &str,
+) {
     let n = expected.len();
     assert_eq!(make().output_len(), n, "{ctx}: output_len");
 
     let mut out = vec![0u8; n];
-    assert_eq!(make().hash_out(msg, &mut out), n, "{ctx}: hash_out returns the length");
+    assert_eq!(hash_out(msg, &mut out), n, "{ctx}: hash_out returns the length");
     assert_eq!(out, expected, "{ctx}: hash_out");
 
     let mut h = make();
@@ -262,13 +268,17 @@ fn check_fixed_view<H: Hash>(make: impl Fn() -> H, msg: &[u8], expected: &[u8], 
     assert_eq!(&out[n..], &[0u8; 7], "{ctx}: bytes past the output length are zeroized");
 }
 
-/// Every `Hash` and `XOF` entry point of the XOF form, against one paired sample value.
+/// Every `Hash` and `XOF` entry point of the XOF form, plus the inherent one-shots, against one
+/// paired sample value. The one-shots are inherent (the type takes parameters, so it is not
+/// `HashOneShot`), hence they come in as closures.
 ///
 /// The samples ask for the nominal length, and the `Hash` view is a final read at that length, so
 /// it binds `L` and must reproduce the *fixed-length* sample; reading the stream with `do_output`
 /// must reproduce the XOF one.
 fn check_xof_view<X: XOF>(
     make: impl Fn() -> X,
+    hash: impl Fn(&[u8]) -> Vec<u8>,
+    hash_out: impl Fn(&[u8], &mut [u8]) -> usize,
     msg: &[u8],
     expected: &[u8],
     fixed_expected: &[u8],
@@ -278,10 +288,10 @@ fn check_xof_view<X: XOF>(
     assert_eq!(make().output_len(), n, "{ctx}: the samples ask for the nominal length");
     assert_eq!(fixed_expected.len(), n, "{ctx}: ... and the paired samples share it");
 
-    assert_eq!(make().hash(msg), fixed_expected, "{ctx}: hash");
+    assert_eq!(hash(msg), fixed_expected, "{ctx}: hash");
 
     let mut out = vec![0u8; n];
-    assert_eq!(make().hash_out(msg, &mut out), n, "{ctx}: hash_out returns the length");
+    assert_eq!(hash_out(msg, &mut out), n, "{ctx}: hash_out returns the length");
     assert_eq!(out, fixed_expected, "{ctx}: hash_out");
 
     let mut x = make();
@@ -337,8 +347,20 @@ fn hash_trait_view_agrees_with_the_sample_values() {
         let (b, s) = (v.block_size, v.s.as_bytes());
         let ctx = format!("COUNT {i}: ParallelHash{} B={b}", v.strength);
         match v.strength {
-            128 => check_fixed_view(|| ParallelHash128::new(b, s, n), &v.msg, &v.output, &ctx),
-            256 => check_fixed_view(|| ParallelHash256::new(b, s, n), &v.msg, &v.output, &ctx),
+            128 => check_fixed_view(
+                || ParallelHash128::new(b, s, n),
+                |m, o| ParallelHash128::new(b, s, n).hash_out(m, o),
+                &v.msg,
+                &v.output,
+                &ctx,
+            ),
+            256 => check_fixed_view(
+                || ParallelHash256::new(b, s, n),
+                |m, o| ParallelHash256::new(b, s, n).hash_out(m, o),
+                &v.msg,
+                &v.output,
+                &ctx,
+            ),
             other => panic!("COUNT {i}: unexpected strength {other}"),
         }
     }
@@ -357,12 +379,24 @@ fn xof_trait_view_agrees_with_the_sample_values() {
         let (b, s) = (v.block_size, v.s.as_bytes());
         let ctx = format!("COUNT {i}: ParallelHashXOF{} B={b}", v.strength);
         match v.strength {
-            128 => {
-                check_xof_view(|| ParallelHashXOF128::new(b, s), &v.msg, &v.output, &f.output, &ctx)
-            }
-            256 => {
-                check_xof_view(|| ParallelHashXOF256::new(b, s), &v.msg, &v.output, &f.output, &ctx)
-            }
+            128 => check_xof_view(
+                || ParallelHashXOF128::new(b, s),
+                |m| ParallelHashXOF128::new(b, s).hash(m),
+                |m, o| ParallelHashXOF128::new(b, s).hash_out(m, o),
+                &v.msg,
+                &v.output,
+                &f.output,
+                &ctx,
+            ),
+            256 => check_xof_view(
+                || ParallelHashXOF256::new(b, s),
+                |m| ParallelHashXOF256::new(b, s).hash(m),
+                |m, o| ParallelHashXOF256::new(b, s).hash_out(m, o),
+                &v.msg,
+                &v.output,
+                &f.output,
+                &ctx,
+            ),
             other => panic!("COUNT {i}: unexpected strength {other}"),
         }
     }

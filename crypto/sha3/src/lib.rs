@@ -17,11 +17,11 @@
 //!
 //! The simplest usage is via the one-shot functions.
 //! ```
-//! use bouncycastle_core::traits::Hash;
+//! use bouncycastle_core::traits::HashOneShot;
 //! use bouncycastle_sha3 as sha3;
 //!
 //! let data: &[u8] = b"Hello, world!";
-//! let output: Vec<u8> = sha3::SHA3_256::new().hash(data);
+//! let output: Vec<u8> = sha3::SHA3_256::hash(data);
 //! ```
 //!
 //! More advanced usage will require creating a SHA3 or SHAKE object to hold state between successive calls,
@@ -102,7 +102,7 @@
 //! Because [`XOF`] extends [`Hash`], SHAKE can also be used wherever a hash is wanted:
 //! [`Hash::do_final`] produces the nominal digest size, 32 bytes for SHAKE128 and 64 for SHAKE256
 //! (the length at which the output carries the full security level), and the one-shot
-//! [`Hash::hash`] does the same.
+//! [`HashOneShot::hash`] does the same.
 //!
 //! ## KDF
 //! SHA3 offers Key Derivation Functions in the form of KDF, which is accessed through the [`KDF`] trait,
@@ -249,7 +249,7 @@ use bouncycastle_core::errors::HashError;
 #[allow(unused_imports)]
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 #[allow(unused_imports)]
-use bouncycastle_core::traits::{Hash, KDF, MAC, Suspendable, XOF, XOFSqueezer};
+use bouncycastle_core::traits::{Hash, HashOneShot, KDF, MAC, Suspendable, XOF, XOFSqueezer};
 // end of doc-only imports
 
 pub mod hmac;

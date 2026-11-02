@@ -3,7 +3,7 @@
 use crate::DUMMY_SEED;
 use bouncycastle_core::errors::SignatureError;
 use bouncycastle_core::traits::{
-    Hash, PHSignatureVerifier, PHSigner, SignaturePrivateKey, SignaturePublicKey,
+    HashOneShot, PHSignatureVerifier, PHSigner, SignaturePrivateKey, SignaturePublicKey,
     SignatureVerifier, Signer,
 };
 
@@ -180,7 +180,7 @@ impl TestFrameworkSignature {
         // todo split this into two params: SIGNER: Signer and VERIFIER: SignatureVerifier
         PHSIGNER: PHSigner<PK, SK, PK_LEN, SK_LEN, SIG_LEN, PH_LEN>,
         PHVERIFIER: PHSignatureVerifier<PK, PK_LEN, SIG_LEN, PH_LEN>,
-        HASH: Hash + Default,
+        HASH: HashOneShot,
         const PK_LEN: usize,
         const SK_LEN: usize,
         const SIG_LEN: usize,
@@ -270,14 +270,14 @@ impl TestFrameworkSignature {
 
         // sign_ph
         let (pk, sk) = keygen().unwrap();
-        let ph: [u8; PH_LEN] = HASH::default().hash(msg)[..PH_LEN].try_into().unwrap();
+        let ph: [u8; PH_LEN] = HASH::hash(msg)[..PH_LEN].try_into().unwrap();
         let sig_val = PHSIGNER::sign_ph(&sk, &ph, None).unwrap();
         PHVERIFIER::verify(&pk, msg, None, &sig_val).unwrap();
         PHVERIFIER::verify_ph(&pk, &ph, None, &sig_val).unwrap();
 
         // sign_ph_out
         let (pk, sk) = keygen().unwrap();
-        let ph: [u8; PH_LEN] = HASH::default().hash(msg)[..PH_LEN].try_into().unwrap();
+        let ph: [u8; PH_LEN] = HASH::hash(msg)[..PH_LEN].try_into().unwrap();
         let mut sig_val = [0u8; SIG_LEN];
         let bytes_written = PHSIGNER::sign_ph_out(&sk, &ph, None, &mut sig_val).unwrap();
         assert_eq!(bytes_written, SIG_LEN);

@@ -21,7 +21,7 @@
 //!  * Monte (s. 6.2.2) — `MD0 = Seed`; for i in 1..=1000: `MDi = SHA3(MDi-1)`; report `MD1000`
 //!    per COUNT and reseed with it.
 
-use bouncycastle_core::traits::Hash;
+use bouncycastle_core::traits::{Hash, HashOneShot};
 use bouncycastle_core_test_framework::test_data_loaders::bc_test_data;
 use bouncycastle_hex as hex;
 use bouncycastle_sha3::{SHA3_224, SHA3_256, SHA3_384, SHA3_512};
@@ -73,12 +73,12 @@ fn parse_msg_file(content: &str) -> Vec<MsgCase> {
 
 /// Hashes the first `len_bits` bits of `msg` (FIPS 202 B.1 packing: excess bits in the LSBs, so the
 /// final byte is bit-reversed into the API's MSB-first order).
-fn sha3_bits<H: Hash + Default>(msg: &[u8], len_bits: usize) -> Vec<u8> {
+fn sha3_bits<H: HashOneShot>(msg: &[u8], len_bits: usize) -> Vec<u8> {
     let whole_bytes = len_bits / 8;
     let partial_bits = len_bits % 8;
     if partial_bits == 0 {
         // CAVP writes `Msg = 00` for Len = 0, so always slice rather than using msg directly.
-        H::default().hash(&msg[..whole_bytes])
+        H::hash(&msg[..whole_bytes])
     } else {
         let mut h = H::default();
         h.do_update(&msg[..whole_bytes]);
@@ -87,7 +87,7 @@ fn sha3_bits<H: Hash + Default>(msg: &[u8], len_bits: usize) -> Vec<u8> {
     }
 }
 
-fn run_sha3_msg_file<H: Hash + Default>(orientation: &str, filename: &str) {
+fn run_sha3_msg_file<H: HashOneShot>(orientation: &str, filename: &str) {
     let Some(content) = bc_test_data(&format!("crypto/sha3/{orientation}"), filename) else {
         return;
     };
@@ -110,7 +110,7 @@ fn run_sha3_msg_file<H: Hash + Default>(orientation: &str, filename: &str) {
 }
 
 /// SHA3VS s. 6.2.2 Monte Carlo test for the fixed-length SHA3 functions.
-fn run_sha3_monte_file<H: Hash + Default>(orientation: &str, filename: &str) {
+fn run_sha3_monte_file<H: HashOneShot>(orientation: &str, filename: &str) {
     let Some(content) = bc_test_data(&format!("crypto/sha3/{orientation}"), filename) else {
         return;
     };
@@ -129,7 +129,7 @@ fn run_sha3_monte_file<H: Hash + Default>(orientation: &str, filename: &str) {
     for (count, expected) in mds.iter().enumerate() {
         // MD0 = Seed; for i = 1 to 1000: MDi = SHA3(MDi-1); MDj = MD1000; Seed = MDj
         for _ in 1..=1000 {
-            md = H::default().hash(&md);
+            md = H::hash(&md);
         }
         assert_eq!(&md, expected, "{orientation}/{filename}: COUNT = {count}");
     }

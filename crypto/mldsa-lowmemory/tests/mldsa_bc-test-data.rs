@@ -13,7 +13,7 @@ use bouncycastle_core::hazmat::do_hazardous_operations;
 use bouncycastle_core::key_material::{KeyMaterial256, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{
-    Hash, SignaturePrivateKey, SignaturePublicKey, SignatureVerifier, XOF, XOFSqueezer,
+    Hash, HashOneShot, SignaturePrivateKey, SignaturePublicKey, SignatureVerifier, XOF, XOFSqueezer,
 };
 use bouncycastle_core_test_framework::test_data_loaders::bc_test_data;
 use bouncycastle_hex as hex;
@@ -673,8 +673,7 @@ impl<const IS_HASH_MLDSA: bool> MldsaRspTestCase<IS_HASH_MLDSA> {
 
                 if IS_HASH_MLDSA {
                     // we're only testing SHA512
-                    let ph: [u8; 64] = SHA512::new()
-                        .hash(&hex::decode(&self.msg).unwrap())
+                    let ph: [u8; 64] = SHA512::hash(&hex::decode(&self.msg).unwrap())
                         .as_slice()
                         .try_into()
                         .unwrap();
@@ -749,8 +748,7 @@ impl<const IS_HASH_MLDSA: bool> MldsaRspTestCase<IS_HASH_MLDSA> {
 
                 if IS_HASH_MLDSA {
                     // we're only testing SHA512
-                    let ph: [u8; 64] = SHA512::new()
-                        .hash(&hex::decode(&self.msg).unwrap())
+                    let ph: [u8; 64] = SHA512::hash(&hex::decode(&self.msg).unwrap())
                         .as_slice()
                         .try_into()
                         .unwrap();
@@ -819,8 +817,7 @@ impl<const IS_HASH_MLDSA: bool> MldsaRspTestCase<IS_HASH_MLDSA> {
 
                 if IS_HASH_MLDSA {
                     // we're only testing SHA512
-                    let ph: [u8; 64] = SHA512::new()
-                        .hash(&hex::decode(&self.msg).unwrap())
+                    let ph: [u8; 64] = SHA512::hash(&hex::decode(&self.msg).unwrap())
                         .as_slice()
                         .try_into()
                         .unwrap();

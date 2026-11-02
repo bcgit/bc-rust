@@ -821,16 +821,6 @@ pub trait Hash: Algorithm + Clone {
     /// discussion on [`XOF`].
     fn output_len(&self) -> usize;
 
-    /// A static one-shot API that hashes the provided data.
-    /// `data` can be of any length, including zero bytes.
-    fn hash(self, data: &[u8]) -> Vec<u8>;
-
-    /// A static one-shot API that hashes the provided data into the provided output slice.
-    /// `data` can be of any length, including zero bytes.
-    /// The entire output buffer is zeroized before the hash output is written.
-    /// The return value is the number of bytes written.
-    fn hash_out(self, data: &[u8], output: &mut [u8]) -> usize;
-
     /// Provide a chunk of data to be absorbed into the hashes.
     /// `data` can be of any length, including zero bytes.
     /// do_update() is intended to be used as part of a streaming interface, and so may by called multiple times.
@@ -885,6 +875,31 @@ pub trait Hash: Algorithm + Clone {
 
     /// Returns the maximum security strength that this KDF is capable of supporting, based on the underlying primitives.
     fn max_security_strength(&self) -> SecurityStrength;
+}
+
+/// The one-shot form of a hash that takes no parameters: `SHA256::hash(msg)`.
+///
+/// Both functions run [`Hash::do_update`] then [`Hash::do_final`] on a [`Default`] instance.
+/// Implemented by the hashes whose `Default` is the function itself (SHA-2, SHA-3, SHAKE, SM3,
+/// Ascon); the parameterised ones (cSHAKE, KMAC, TupleHash, ParallelHash, Ascon-CXOF) and the
+/// factories offer an instance method `hash(self, data)` instead. Kept off [`Hash`] because
+/// receiver-less functions would stop it ever being a trait object.
+pub trait HashOneShot: Hash + Default {
+    /// Hashes `data` into `output`, which is zeroized first, and returns the number of bytes
+    /// written. A buffer shorter than the digest takes a truncated digest; a longer one takes
+    /// the digest at its start and zeros after, as [`Hash::do_final_out`] does.
+    fn hash_out(data: &[u8], output: &mut [u8]) -> usize {
+        let mut h = Self::default();
+        h.do_update(data);
+        h.do_final_out(output)
+    }
+
+    /// Hashes `data` and returns the digest.
+    fn hash(data: &[u8]) -> Vec<u8> {
+        let mut h = Self::default();
+        h.do_update(data);
+        h.do_final()
+    }
 }
 
 /// Standard parameters for a hash function.

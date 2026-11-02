@@ -2,7 +2,7 @@ use bouncycastle_rng as rng;
 use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 use std::hint::black_box;
 
-use bouncycastle_core::traits::{Hash, RNG, XOF};
+use bouncycastle_core::traits::{Hash, HashOneShot, RNG, XOF};
 use bouncycastle_sha3::{SHA3_224, SHA3_256, SHA3_384, SHA3_512, SHAKE128, SHAKE256};
 
 fn bench_sha3_224_static(c: &mut Criterion) {
@@ -19,7 +19,7 @@ fn bench_sha3_224_static(c: &mut Criterion) {
     group.throughput(Throughput::Bytes(big_data.len() as u64));
     group.bench_function(format!("{} bytes -- ::hashes()", big_data.len() as u64), |b| {
         b.iter(|| {
-            SHA3_224::new().hash_out(black_box(&big_data), &mut digest);
+            SHA3_224::hash_out(black_box(&big_data), &mut digest);
             black_box(&digest);
         })
     });
@@ -60,7 +60,7 @@ fn bench_sha3_256(c: &mut Criterion) {
     group.throughput(Throughput::Bytes(big_data.len() as u64));
     group.bench_function(format!("{} bytes -- ::hashes()", big_data.len()), |b| {
         b.iter(|| {
-            SHA3_256::new().hash_out(black_box(&big_data), &mut digest);
+            SHA3_256::hash_out(black_box(&big_data), &mut digest);
             black_box(&digest);
         })
     });
@@ -81,7 +81,7 @@ fn bench_sha3_384(c: &mut Criterion) {
     group.throughput(Throughput::Bytes(big_data.len() as u64));
     group.bench_function(format!("{} bytes -- ::hashes()", big_data.len()), |b| {
         b.iter(|| {
-            SHA3_384::new().hash_out(black_box(&big_data), &mut digest);
+            SHA3_384::hash_out(black_box(&big_data), &mut digest);
             black_box(&digest);
         })
     });
@@ -102,7 +102,7 @@ fn bench_sha3_512(c: &mut Criterion) {
     group.throughput(Throughput::Bytes(big_data.len() as u64));
     group.bench_function(format!("{} bytes -- ::hashes()", big_data.len()), |b| {
         b.iter(|| {
-            SHA3_512::new().hash_out(black_box(&big_data), &mut digest);
+            SHA3_512::hash_out(black_box(&big_data), &mut digest);
             black_box(&digest);
         })
     });

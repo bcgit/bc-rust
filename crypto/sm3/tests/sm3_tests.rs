@@ -2,7 +2,7 @@
 mod sm3_tests {
     use bouncycastle_core::errors::{HashError, SuspendableError};
     use bouncycastle_core::security_strength::SecurityStrength;
-    use bouncycastle_core::traits::{Algorithm, AlgorithmOID, Hash, HashAlgParams};
+    use bouncycastle_core::traits::{Algorithm, AlgorithmOID, Hash, HashAlgParams, HashOneShot};
     use bouncycastle_core_test_framework::DUMMY_SEED;
     use bouncycastle_core_test_framework::hash::TestFrameworkHash;
     use bouncycastle_hex as hex;
@@ -65,7 +65,7 @@ mod sm3_tests {
             "7C0240F88F1CD4E16352A73C17B7F16F07353E53A176D684A9FE0C6BB798E857",
         ));
         assert_eq!(
-            SM3::new().hash(&msg),
+            SM3::hash(&msg),
             h("f4a38489e32b45b6f876e3ac2168ca392362dc8f23459c1d1146fc3dbfb7bc9a")
         );
     }
@@ -85,7 +85,7 @@ mod sm3_tests {
             (119, "8f3ea392a89a7119982d6634660db1a95f35d68267a2235e3255998a857f4fbf"),
             (128, "a9e7985473ca09df1510d83b572f72375430756c4a661b00724afeb8b75dd0a5"),
         ] {
-            assert_eq!(SM3::new().hash(&DUMMY_SEED[..len]), h(expected), "len={len}");
+            assert_eq!(SM3::hash(&DUMMY_SEED[..len]), h(expected), "len={len}");
 
             // and the same via byte-at-a-time streaming, which exercises every x_buf_off value
             let mut sm3 = SM3::new();
@@ -125,7 +125,7 @@ mod sm3_tests {
     fn partial_bits() {
         let mut a = SM3::new();
         a.do_update(b"abc");
-        assert_eq!(a.do_final_partial_bits(0xFF, 0).unwrap(), SM3::new().hash(b"abc"));
+        assert_eq!(a.do_final_partial_bits(0xFF, 0).unwrap(), SM3::hash(b"abc"));
 
         for bad in [8usize, 9, 16, 64, usize::MAX] {
             let mut sm3 = SM3::new();
@@ -148,8 +148,8 @@ mod sm3_tests {
             let z = SM3::new().do_final_partial_bits(0xA5 ^ 0x80, n).unwrap();
             assert_eq!(x, y, "n={n}");
             assert_ne!(x, z, "n={n}: the leading bit must change the digest");
-            assert_ne!(x, SM3::new().hash(&[]), "n={n}");
-            assert_ne!(x, SM3::new().hash(&[0xA5 & mask]), "n={n}");
+            assert_ne!(x, SM3::hash(&[]), "n={n}");
+            assert_ne!(x, SM3::hash(&[0xA5 & mask]), "n={n}");
         }
 
         for len in [55usize, 56, 63, 64, 119, 128] {

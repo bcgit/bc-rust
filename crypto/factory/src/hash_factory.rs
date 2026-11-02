@@ -157,42 +157,6 @@ impl Hash for HashFactory {
         }
     }
 
-    fn hash(self, data: &[u8]) -> Vec<u8> {
-        match self {
-            Self::SHA224(h) => h.hash(data),
-            Self::SHA256(h) => h.hash(data),
-            Self::SHA384(h) => h.hash(data),
-            Self::SHA512(h) => h.hash(data),
-            Self::SHA512_224(h) => h.hash(data),
-            Self::SHA512_256(h) => h.hash(data),
-            Self::SHA3_224(h) => h.hash(data),
-            Self::SHA3_256(h) => h.hash(data),
-            Self::SHA3_384(h) => h.hash(data),
-            Self::SHA3_512(h) => h.hash(data),
-            Self::SM3(h) => h.hash(data),
-            Self::AsconHash256(h) => h.hash(data),
-        }
-    }
-
-    fn hash_out(self, data: &[u8], output: &mut [u8]) -> usize {
-        output.fill(0);
-
-        match self {
-            Self::SHA224(h) => h.hash_out(data, output),
-            Self::SHA256(h) => h.hash_out(data, output),
-            Self::SHA384(h) => h.hash_out(data, output),
-            Self::SHA512(h) => h.hash_out(data, output),
-            Self::SHA512_224(h) => h.hash_out(data, output),
-            Self::SHA512_256(h) => h.hash_out(data, output),
-            Self::SHA3_224(h) => h.hash_out(data, output),
-            Self::SHA3_256(h) => h.hash_out(data, output),
-            Self::SHA3_384(h) => h.hash_out(data, output),
-            Self::SHA3_512(h) => h.hash_out(data, output),
-            Self::SM3(h) => h.hash_out(data, output),
-            Self::AsconHash256(h) => h.hash_out(data, output),
-        }
-    }
-
     fn do_update(&mut self, data: &[u8]) {
         match self {
             Self::SHA224(h) => h.do_update(data),
@@ -318,5 +282,21 @@ impl Hash for HashFactory {
             Self::SM3(h) => h.max_security_strength(),
             Self::AsconHash256(h) => h.max_security_strength(),
         }
+    }
+}
+
+impl HashFactory {
+    /// One-shot: hashes `data` with this instance's parameters.
+    /// [`HashOneShot`](bouncycastle_core::traits::HashOneShot) is for the hashes
+    /// that take none; here the parameters come with the instance, so the one-shot is a method.
+    pub fn hash(mut self, data: &[u8]) -> Vec<u8> {
+        self.do_update(data);
+        self.do_final()
+    }
+
+    /// As [`Self::hash`], into `output`, which is zeroized first; returns the bytes written.
+    pub fn hash_out(mut self, data: &[u8], output: &mut [u8]) -> usize {
+        self.do_update(data);
+        self.do_final_out(output)
     }
 }

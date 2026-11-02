@@ -8,7 +8,7 @@ mod hkdf_tests {
     };
     use bouncycastle_core::security_strength::SecurityStrength;
     use bouncycastle_core::symmetric_key::{FromAnyKeyMaterial, MacGenerationKey};
-    use bouncycastle_core::traits::{Hash, HashAlgParams, KDF, MAC};
+    use bouncycastle_core::traits::{HashAlgParams, HashOneShot, KDF, MAC};
     use bouncycastle_core_test_framework::DUMMY_SEED;
     use bouncycastle_core_test_framework::kdf::TestFrameworkKDF;
     use bouncycastle_hex as hex;
@@ -556,7 +556,7 @@ mod hkdf_tests {
     fn test_extract_with_a_salt_longer_than_the_block() {
         let ikm = KeyMaterial256::from_bytes_as_type(&DUMMY_SEED[..32], KeyType::Seed).unwrap();
         let mut digest = [0u8; 32];
-        SHA256::default().hash_out(&DUMMY_SEED[..100], &mut digest);
+        SHA256::hash_out(&DUMMY_SEED[..100], &mut digest);
         let hashed = KeyMaterial256::from_bytes_as_type(&digest, KeyType::MACKey).unwrap();
         let expected = HKDF_SHA256::extract(&hashed, &ikm).unwrap();
 
@@ -604,7 +604,7 @@ mod hkdf_tests {
     /// hashes such a key first): T(1) || T(2) computed with HMAC directly.
     fn check_expand_long_prk<H>(lens: &[usize])
     where
-        H: Hash + HashAlgParams + Default,
+        H: HashOneShot + HashAlgParams,
     {
         let hash_len = H::OUTPUT_LEN;
         for &n in lens {
@@ -848,7 +848,7 @@ mod hkdf_tests {
     }
     #[test]
     fn serializable_keyed_state() {
-        use bouncycastle_core::traits::{Hash, SuspendableKeyed};
+        use bouncycastle_core::traits::SuspendableKeyed;
         use bouncycastle_core_test_framework::suspendable_state::TestFrameworkSuspendableKeyedState;
         use bouncycastle_sha2::hkdf::{
             SUSPENDED_HKDF_SHA256_STATE_LEN, SUSPENDED_HKDF_SHA512_STATE_LEN,
@@ -867,7 +867,7 @@ mod hkdf_tests {
             part1: &[u8],
             part2: &[u8],
         ) where
-            H: Hash + HashAlgParams + Default,
+            H: HashOneShot + HashAlgParams,
             HKDF<H, HASH_LEN, LEN>: Clone + SuspendableKeyed<LEN, Key = dyn KeyMaterialTrait>,
         {
             let hkdf = HKDF::<H, HASH_LEN, LEN>::new();

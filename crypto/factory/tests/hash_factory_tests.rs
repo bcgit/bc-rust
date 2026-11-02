@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod hash_factory_tests {
-    use bouncycastle_core::traits::{Hash, XOF};
+    use bouncycastle_core::traits::{Hash, HashOneShot, XOF};
     use bouncycastle_core_test_framework::DUMMY_SEED;
     use bouncycastle_factory::AlgorithmFactory;
     use bouncycastle_factory::hash_factory::HashFactory;
@@ -17,8 +17,7 @@ mod hash_factory_tests {
         fn sha2_hash_tests() {
             // SHA224
 
-            let h = SHA224::new();
-            h.hash(&DUMMY_SEED[..24]);
+            SHA224::hash(&DUMMY_SEED[..24]);
 
             let sha2 = HashFactory::new("SHA224").unwrap();
             assert_eq!(sha2.output_len(), 28);
@@ -170,7 +169,7 @@ mod hash_factory_tests {
             use bouncycastle_ascon::AsconHash256;
             use bouncycastle_factory::FactoryError;
 
-            let direct = AsconHash256::new().hash(&DUMMY_SEED[..512]);
+            let direct = AsconHash256::hash(&DUMMY_SEED[..512]);
 
             // Construct by literal name and by the crate's name constant; both must match the
             // direct implementation.

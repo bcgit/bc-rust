@@ -17,7 +17,7 @@ use bouncycastle_core::hazmat::do_hazardous_operations;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{
-    AEADCipherDecryptor, AEADCipherEncryptor, Hash, SymmetricCipherDecryptor,
+    AEADCipherDecryptor, AEADCipherEncryptor, HashOneShot, SymmetricCipherDecryptor,
     SymmetricCipherEncryptor, XOF,
 };
 use bouncycastle_core_test_framework::test_data_loaders::bc_test_data;
@@ -192,7 +192,7 @@ fn ascon_hash256_kat() {
         let expected = decode_hex(field(case, &["MD"]));
 
         assert_eq!(
-            AsconHash256::new().hash(&msg),
+            AsconHash256::hash(&msg),
             expected,
             "Hash256 mismatch (Count {})",
             field(case, &["Count"])

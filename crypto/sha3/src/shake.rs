@@ -7,7 +7,7 @@ use bouncycastle_core::errors::{HashError, KDFError, SuspendableError};
 use bouncycastle_core::hazmat::do_hazardous_operations;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::traits::{Algorithm, Hash, KDF, Suspendable, XOF, XOFSqueezer};
+use bouncycastle_core::traits::{Algorithm, Hash, HashOneShot, KDF, Suspendable, XOF, XOFSqueezer};
 use bouncycastle_utils::suspendable_state::{add_lib_ver, check_lib_ver};
 use bouncycastle_utils::{max, min};
 
@@ -426,16 +426,6 @@ impl<PARAMS: SHAKEParams> Hash for SHAKEInternal<PARAMS> {
         (PARAMS::SIZE as usize) / 4
     }
 
-    fn hash(mut self, data: &[u8]) -> Vec<u8> {
-        self.do_update(data);
-        self.do_final()
-    }
-
-    fn hash_out(mut self, data: &[u8], output: &mut [u8]) -> usize {
-        self.do_update(data);
-        self.do_final_out(output)
-    }
-
     /// Infallible, and this is a fact about the type rather than a promise.
     ///
     /// Absorbing after squeezing has begun would be wrong -- FIPS 202 defines SHAKE as a single
@@ -595,3 +585,6 @@ impl<PARAMS: SHAKEParams> SHAKEInternal<PARAMS> {
         Ok(SHAKESqueezer { shake: self })
     }
 }
+
+// The one-shot form: `Default` is the function itself.
+impl<PARAMS: SHAKEParams> HashOneShot for SHAKEInternal<PARAMS> {}

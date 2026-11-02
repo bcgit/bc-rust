@@ -8,7 +8,7 @@ use bouncycastle_ascon::AsconHash256;
 use bouncycastle_ascon::AsconXof128;
 use bouncycastle_cipher::Encrypting;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-use bouncycastle_core::traits::{AEADCipherEncryptor, Hash, RNG, XOF};
+use bouncycastle_core::traits::{AEADCipherEncryptor, HashOneShot, RNG, XOF};
 
 const DATA_LEN: usize = 16 * 1024;
 
@@ -54,7 +54,7 @@ fn bench_hash256(c: &mut Criterion) {
 
     group.bench_function(format!("{DATA_LEN} bytes -- ::hash_out()"), |b| {
         b.iter(|| {
-            AsconHash256::new().hash_out(black_box(&data), &mut digest);
+            AsconHash256::hash_out(black_box(&data), &mut digest);
             black_box(&digest);
         })
     });

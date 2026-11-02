@@ -296,16 +296,6 @@ impl<PARAMS: SHAKEParams> Hash for ParallelHashInternal<PARAMS> {
         self.output_len
     }
 
-    fn hash(mut self, data: &[u8]) -> Vec<u8> {
-        self.do_update(data);
-        self.do_final()
-    }
-
-    fn hash_out(mut self, data: &[u8], output: &mut [u8]) -> usize {
-        self.do_update(data);
-        self.do_final_out(output)
-    }
-
     fn do_update(&mut self, data: &[u8]) {
         self.state.do_update(data);
     }
@@ -423,16 +413,6 @@ impl<PARAMS: SHAKEParams> Hash for ParallelHashXOFInternal<PARAMS> {
         self.state.cshake.output_len()
     }
 
-    fn hash(mut self, data: &[u8]) -> Vec<u8> {
-        self.do_update(data);
-        self.do_final()
-    }
-
-    fn hash_out(mut self, data: &[u8], output: &mut [u8]) -> usize {
-        self.do_update(data);
-        self.do_final_out(output)
-    }
-
     fn do_update(&mut self, data: &[u8]) {
         self.state.do_update(data);
     }
@@ -507,5 +487,37 @@ impl<PARAMS: SHAKEParams> XOF for ParallelHashXOFInternal<PARAMS> {
             ));
         }
         Ok(self.into_squeezer())
+    }
+}
+
+impl<PARAMS: SHAKEParams> ParallelHashInternal<PARAMS> {
+    /// One-shot: hashes `data` with this instance's parameters.
+    /// [`HashOneShot`](bouncycastle_core::traits::HashOneShot) is for the hashes
+    /// that take none; here the parameters come with the instance, so the one-shot is a method.
+    pub fn hash(mut self, data: &[u8]) -> Vec<u8> {
+        self.do_update(data);
+        self.do_final()
+    }
+
+    /// As [`Self::hash`], into `output`, which is zeroized first; returns the bytes written.
+    pub fn hash_out(mut self, data: &[u8], output: &mut [u8]) -> usize {
+        self.do_update(data);
+        self.do_final_out(output)
+    }
+}
+
+impl<PARAMS: SHAKEParams> ParallelHashXOFInternal<PARAMS> {
+    /// One-shot: hashes `data` with this instance's parameters.
+    /// [`HashOneShot`](bouncycastle_core::traits::HashOneShot) is for the hashes
+    /// that take none; here the parameters come with the instance, so the one-shot is a method.
+    pub fn hash(mut self, data: &[u8]) -> Vec<u8> {
+        self.do_update(data);
+        self.do_final()
+    }
+
+    /// As [`Self::hash`], into `output`, which is zeroized first; returns the bytes written.
+    pub fn hash_out(mut self, data: &[u8], output: &mut [u8]) -> usize {
+        self.do_update(data);
+        self.do_final_out(output)
     }
 }

@@ -10,11 +10,11 @@
 //!
 //! The simplest usage is via the one-shot functions.
 //! ```
-//! use bouncycastle_core::traits::Hash;
+//! use bouncycastle_core::traits::HashOneShot;
 //! use bouncycastle_sm3::SM3;
 //!
 //! let data: &[u8] = b"abc";
-//! let output: Vec<u8> = SM3::new().hash(data);
+//! let output: Vec<u8> = SM3::hash(data);
 //! ```
 //!
 //! It also has a streaming API that can accept input in chunks of any size.
