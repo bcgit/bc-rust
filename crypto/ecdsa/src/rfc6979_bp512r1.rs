@@ -61,13 +61,9 @@ fn bits2octets(h1: &[u8; HLEN]) -> [u8; HLEN] {
 }
 
 /// `true` iff the raw (unreduced) candidate bytes, read as a big-endian integer, are in `[1,
-/// n-1]` -- RFC 6979 step h.3's comparison against `q`.
+/// n-1]` -- RFC 6979 step h.3's comparison against `q`, by [`crate::rfc6979::limbs_in_range`].
 fn candidate_in_range(candidate: &[u8; HLEN]) -> bool {
-    let limbs = bp512r1_sec1::limbs_from_be_bytes(candidate);
-    let is_nonzero = !nat::is_zero(&limbs);
-    let (_, borrow) = nat::sub(&limbs, &N_LIMBS);
-    let is_below_n = Condition::<u64>::from_lsb(borrow);
-    (is_nonzero & is_below_n).to_bool()
+    crate::rfc6979::limbs_in_range(&bp512r1_sec1::limbs_from_be_bytes(candidate), &N_LIMBS)
 }
 
 /// RFC 6979 §3.2 steps a-h: the deterministic per-message secret `k` for private key `d` and

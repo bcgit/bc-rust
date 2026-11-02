@@ -66,20 +66,22 @@ fn bits2octets(h1: &[u8; HLEN]) -> [u8; HLEN] {
     p256_sec1::be_bytes_from_limbs(&reduced)
 }
 
-/// `true` iff the raw (unreduced) candidate bytes, read as a big-endian integer, are in `[1,
-/// n-1]` -- RFC 6979 step h.3's comparison against `q`, "not reduced modulo q" (§3.2, footnote to
-/// step h).
+/// `true` iff `limbs` is in `[1, n-1]`: every curve's step h.3 range check.
 ///
 /// The comparison is on the candidate's own bits, so it is done as masks and converted with
 /// `Condition::to_bool`, which tests the combined mask after the optimisation barrier: the one
-/// branch is `generate_k`'s loop decision, which the crate docs list as a timing exception. The
-/// other curves' copies of this function do the same.
+/// branch is `generate_k`'s loop decision, which the crate docs list as a timing exception.
+pub(crate) fn limbs_in_range<const L: usize>(limbs: &[u64; L], n: &[u64; L]) -> bool {
+    let is_nonzero = !nat::is_zero(limbs);
+    let (_, borrow) = nat::sub(limbs, n);
+    (is_nonzero & Condition::<u64>::from_lsb(borrow)).to_bool()
+}
+
+/// `true` iff the raw (unreduced) candidate bytes, read as a big-endian integer, are in `[1,
+/// n-1]` -- RFC 6979 step h.3's comparison against `q`, "not reduced modulo q" (§3.2, footnote to
+/// step h).
 fn candidate_in_range(candidate: &[u8; HLEN]) -> bool {
-    let limbs = p256_sec1::limbs_from_be_bytes(candidate);
-    let is_nonzero = !nat::is_zero(&limbs);
-    let (_, borrow) = nat::sub(&limbs, &N_LIMBS);
-    let is_below_n = Condition::<u64>::from_lsb(borrow);
-    (is_nonzero & is_below_n).to_bool()
+    limbs_in_range(&p256_sec1::limbs_from_be_bytes(candidate), &N_LIMBS)
 }
 
 /// RFC 6979 §3.2 steps a-h: the deterministic per-message secret `k` for private key `d` and
