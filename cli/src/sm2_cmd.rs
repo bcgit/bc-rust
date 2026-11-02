@@ -1,6 +1,6 @@
 //! CLI wiring for `bouncycastle-sm2`. Bespoke rather than routed through `ecdsa_cmd`'s generic
 //! function: every SM2 `Signer`/`SignatureVerifier` call requires `ctx` to carry the signer's
-//! identity `IDA` (`draft-shen-sm2-ecdsa-02` S5; see `bouncycastle_sm2::sm2`'s docs), whereas every
+//! identity `IDA` (GB/T 32918.2-2016 §5.5; see `bouncycastle_sm2::sm2`'s docs), whereas every
 //! curve `ecdsa_cmd` covers ignores `ctx` entirely -- and `SM2PrivateKey::derive_pk` is a plain
 //! inherent method rather than an implementation of `bouncycastle_ecdsa::keys_common::
 //! DerivePublicKey` (see that method's own doc comment: SM2 was never going to share a single
@@ -118,7 +118,7 @@ fn require_id(idfile: &Option<String>) -> Vec<u8> {
         None => {
             eprintln!(
                 "Error: no idfile provided. SM2 signing and verification require the signer's \
-                 identity IDA (draft-shen-sm2-ecdsa-02 S5); this crate has no default identity to \
+                 identity IDA (GB/T 32918.2-2016 S5.5); this crate has no default identity to \
                  fall back to."
             );
             exit(-1);
