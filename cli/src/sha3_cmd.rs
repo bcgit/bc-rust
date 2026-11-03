@@ -60,8 +60,18 @@ pub(crate) fn tuplehash_cmd(
     let refs: Vec<&[u8]> = tuple.iter().map(|v| v.as_slice()).collect();
 
     let out = match bit_len {
-        128 => TupleHash128::new(s, output_len).hash_tuple(&refs),
-        256 => TupleHash256::new(s, output_len).hash_tuple(&refs),
+        128 => TupleHash128::new(s, output_len)
+            .unwrap_or_else(|_| {
+                eprintln!("Error: --output-len is larger than SP 800-185 allows here (Sec 7.2).");
+                exit(-1);
+            })
+            .hash_tuple(&refs),
+        256 => TupleHash256::new(s, output_len)
+            .unwrap_or_else(|_| {
+                eprintln!("Error: --output-len is larger than SP 800-185 allows here (Sec 7.2).");
+                exit(-1);
+            })
+            .hash_tuple(&refs),
         _ => panic!("Unsupported algorithm: TupleHash-{bit_len}"),
     };
     write_out(&out, output_hex);
@@ -85,12 +95,18 @@ pub(crate) fn parallelhash_cmd(
     let s = customization.as_deref().unwrap_or("").as_bytes();
     match bit_len {
         128 => {
-            let mut p = ParallelHash128::new(block_size, s, output_len);
+            let mut p = ParallelHash128::new(block_size, s, output_len).unwrap_or_else(|_| {
+                eprintln!("Error: --output-len is larger than SP 800-185 allows here (Sec 7.2).");
+                exit(-1);
+            });
             stream_stdin(|chunk| p.do_update(chunk));
             write_out(&p.do_final(), output_hex);
         }
         256 => {
-            let mut p = ParallelHash256::new(block_size, s, output_len);
+            let mut p = ParallelHash256::new(block_size, s, output_len).unwrap_or_else(|_| {
+                eprintln!("Error: --output-len is larger than SP 800-185 allows here (Sec 7.2).");
+                exit(-1);
+            });
             stream_stdin(|chunk| p.do_update(chunk));
             write_out(&p.do_final(), output_hex);
         }

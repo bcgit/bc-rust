@@ -2,6 +2,7 @@ use bouncycastle_core::errors::{HashError, SuspendableError};
 use bouncycastle_core::key_material::KeyType;
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_utils::secret::Secret;
+use bouncycastle_utils::suspendable_state::bounded_usize;
 
 /// `RC[ir]` for the 24 rounds of KECCAK-f[1600]: FIPS 202 Algorithm 6 (iota) steps 2-3,
 /// evaluated with the `rc(t)` LFSR of Algorithm 5 for `ir = 0..24` and stored as lanes.
@@ -322,6 +323,18 @@ impl KeccakInternal {
         if !self.squeezing {
             self.pad_and_switch_to_squeezing_phase();
         }
+        // The loop below counts in bits, so a slice whose bit length does not fit a `usize` (512
+        // MiB on a 32-bit target) would wrap the bound and stop early; squeeze it in pieces that
+        // fit. On a 64-bit target the piece is larger than any buffer, so this is one iteration.
+        for piece in out.chunks_mut(usize::MAX >> 3) {
+            self.squeeze_into(piece);
+        }
+        out.len()
+    }
+
+    /// [`Self::squeeze`]'s loop for a slice of fewer than `usize::MAX / 8` bytes, with the sponge
+    /// already in the squeezing phase.
+    fn squeeze_into(&mut self, out: &mut [u8]) {
         let output_length = out.len() << 3;
 
         let mut i = 0;
@@ -340,7 +353,6 @@ impl KeccakInternal {
             self.bits_in_queue -= partial_block;
             i += partial_block;
         }
-        output_length >> 3
     }
 
     #[inline(always)]
@@ -529,9 +541,16 @@ pub(crate) fn deserialize_sha3_family_state(
     // KeyType and SecurityStrength each own their canonical 1-byte encoding (`as u8` / `TryFrom<u8>`).
     let kdf_key_type = KeyType::try_from(input[1 + KECCAK_SERIALIZED_LEN])?;
     let kdf_security_strength = SecurityStrength::try_from(input[1 + KECCAK_SERIALIZED_LEN + 1])?;
-    let kdf_entropy = u64::from_le_bytes(
-        input[1 + KECCAK_SERIALIZED_LEN + 2..1 + KECCAK_SERIALIZED_LEN + 10].try_into().unwrap(),
-    ) as usize;
+    // `usize::MAX` only narrows the width: any count is valid, but a 32-bit target must not
+    // truncate one that was written on a 64-bit one.
+    let kdf_entropy = bounded_usize(
+        u64::from_le_bytes(
+            input[1 + KECCAK_SERIALIZED_LEN + 2..1 + KECCAK_SERIALIZED_LEN + 10]
+                .try_into()
+                .unwrap(),
+        ),
+        usize::MAX,
+    )?;
 
     Ok((keccak, kdf_key_type, kdf_security_strength, kdf_entropy))
 }

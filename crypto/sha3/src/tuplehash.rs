@@ -14,10 +14,10 @@
 //!
 //! // .hash_tuple() takes tuples as an array of arrays
 //! let tuple: [&[u8]; 2] = [b"user id", b"session"];
-//! let output: Vec<u8> = TupleHash128::new(b"", 32).hash_tuple(&tuple);
+//! let output: Vec<u8> = TupleHash128::new(b"", 32).unwrap().hash_tuple(&tuple);
 //!
 //! // The same computation, one element per .do_update()
-//! let mut th = TupleHash128::new(b"", 32);
+//! let mut th = TupleHash128::new(b"", 32).unwrap();
 //! th.do_update(b"user id");
 //! th.do_update(b"session");
 //! assert_eq!(th.do_final(), output);
@@ -44,7 +44,7 @@
 //! let more: Vec<u8> = squeezer.do_output(1024);
 //!
 //! let bound: Vec<u8> = TupleHashXOF128::new(b"").xof(b"Hello, world!", 32);
-//! assert_eq!(bound, TupleHash128::new(b"", 32).hash(b"Hello, world!"));
+//! assert_eq!(bound, TupleHash128::new(b"", 32).unwrap().hash(b"Hello, world!"));
 //! assert_ne!(bound[..16], first[..]);
 //! ```
 
@@ -76,6 +76,13 @@ pub const SUSPENDED_TUPLEHASHXOF_STATE_LEN: usize = LIB_VERSION_LEN + CSHAKE_COM
 
 /// The function-name string every TupleHash binds, per SP 800-185 Sec 5.3.
 const TUPLEHASH_FUNCTION_NAME: &[u8] = b"TupleHash";
+
+/// The largest `output_len` [`TupleHashInternal::new`] accepts, and the bound a resumed state is
+/// held to: the largest `L` in bits that fits the `u64` the final `right_encode(L)` (Sec 5.3.1
+/// step 3) and the suspended state carry. SP 800-185 Sec 5.3.1 allows any `L < 2^2040`, and Sec
+/// 7.2 lets an implementation limit the lengths it produces; past this one the bit count would
+/// wrap and the fixed-length function would silently become the XOF.
+pub const TUPLEHASH_MAX_OUTPUT_LEN: usize = (u64::MAX / 8) as usize;
 
 /// TupleHash128: the unambiguous tuple hash of NIST SP 800-185 Sec 5, 128-bit strength.
 ///
@@ -127,8 +134,16 @@ impl<PARAMS: SHAKEParams> TupleHashInternal<PARAMS> {
     ///
     /// `output_len` is `L` and is bound into the computation (Sec 5.3 step 4), so a different
     /// length is a different function rather than a longer or shorter view of the same one.
-    pub fn new(customization: &[u8], output_len: usize) -> Self {
-        Self { cshake: CSHAKEInternal::new(TUPLEHASH_FUNCTION_NAME, customization), output_len }
+    ///
+    /// # Errors
+    /// [`HashError::InvalidLength`] if `output_len` is above [`TUPLEHASH_MAX_OUTPUT_LEN`].
+    pub fn new(customization: &[u8], output_len: usize) -> Result<Self, HashError> {
+        if output_len > TUPLEHASH_MAX_OUTPUT_LEN {
+            return Err(HashError::InvalidLength(
+                "TupleHash output length in bits does not fit a u64",
+            ));
+        }
+        Ok(Self { cshake: CSHAKEInternal::new(TUPLEHASH_FUNCTION_NAME, customization), output_len })
     }
 
     /// Hashes a whole tuple in one call, the shape the specification is written in.
@@ -156,7 +171,7 @@ impl<'k, PARAMS: SHAKEParams> SuspendableComponent<'k> for TupleHashInternal<PAR
         let (cshake, rest) = state.split_at(CSHAKE_COMPONENT_LEN);
         let cshake = CSHAKEInternal::read_tagged_customized(cshake, PARAMS::TUPLEHASH_STATE_TAG)?;
         let mut r = Cursor::new(rest);
-        let output_len = bounded_usize(r.u64(), usize::MAX)?;
+        let output_len = bounded_usize(r.u64(), TUPLEHASH_MAX_OUTPUT_LEN)?;
         debug_assert!(r.is_done());
         Ok(Self { cshake, output_len })
     }
