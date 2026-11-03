@@ -245,3 +245,22 @@ fn a_refused_update_leaves_no_payload_in_the_output_buffer() {
     ));
     assert_eq!(out, [0u8; 32], "a refused decrypt must leave only zeros behind");
 }
+
+/// The drawing in-place one-shot, `encrypt_detached_in_place(rng, ..)`, is the `_nonce` form
+/// under the nonce it drew: the one form the suite above does not reach.
+#[test]
+fn the_drawing_in_place_form_is_the_nonce_form_under_the_drawn_nonce() {
+    let km = material::<16>();
+    let key = AES128Key::<CCM<12, 16>>::from_key_material(&km).unwrap();
+    for len in LENS {
+        let msg = message(len);
+        let mut buf = msg.clone();
+        let (nonce, tag) = key.encrypt_detached_in_place(&mut rng(), AAD, &mut buf).unwrap();
+        assert_eq!(reference(&km, &nonce, &msg), (buf.clone(), tag), "len {len}");
+        let mut again = msg.clone();
+        assert_eq!(key.encrypt_detached_in_place_nonce(&nonce, AAD, &mut again).unwrap(), tag);
+        assert_eq!(again, buf, "len {len}: the nonce form agrees");
+        key.decrypt_detached_in_place(&nonce, AAD, &mut buf, &tag).unwrap();
+        assert_eq!(buf, msg, "len {len}: round trip");
+    }
+}

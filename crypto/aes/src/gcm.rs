@@ -6,7 +6,7 @@ use bouncycastle_cipher::modes::Gcm;
 
 // Imports needed for docs
 #[allow(unused_imports)]
-use bouncycastle_cipher::modes::GCM_NONCE_LEN;
+pub use bouncycastle_cipher::modes::GCM_NONCE_LEN;
 #[allow(unused_imports)]
 use bouncycastle_cipher::{Decrypting, Encrypting};
 
