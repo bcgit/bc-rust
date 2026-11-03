@@ -4,7 +4,6 @@
 
 use crate::aux_functions::unpack_z_row;
 use crate::params::MLDSAParams;
-use bouncycastle_core::errors::SignatureError;
 use bouncycastle_mldsa_common::aux_functions::{
     bit_unpack_eta_out, expand_mask_poly, rej_ntt_poly,
 };
@@ -51,7 +50,7 @@ pub(crate) fn compute_wp_approx_row<P: MLDSAParams, const SIG_LEN: usize>(
     t1: &Polynomial,
     c_hat: &Polynomial,
     idx: usize,
-) -> Result<Polynomial, ()> {
+) -> Option<Polynomial> {
     // Algorithm 8: line 9: 𝐰′_approx ← NTT−1(𝐀_hat ∘ NTT(𝐳) − NTT(𝑐) ∘ NTT(𝐭1 ⋅ 2^𝑑))
     //   broken out for clarity:
     //   NTT−1(
@@ -99,7 +98,7 @@ pub(crate) fn compute_wp_approx_row<P: MLDSAParams, const SIG_LEN: usize>(
     Az_acc.inv_ntt();
     Az_acc.conditional_add_q();
 
-    Ok(Az_acc)
+    Some(Az_acc)
 }
 
 pub(crate) fn compute_z_component<P: MLDSAParams>(
@@ -108,7 +107,7 @@ pub(crate) fn compute_z_component<P: MLDSAParams>(
     c_hat: &Polynomial,
     kappa: u16,
     col: usize,
-) -> Result<Option<Polynomial>, SignatureError> {
+) -> Option<Polynomial> {
     let y = expand_mask_poly::<P>(rho_p_p, kappa + col as u16);
     let mut s1_hat = *s1;
     s1_hat.ntt();
@@ -118,7 +117,7 @@ pub(crate) fn compute_z_component<P: MLDSAParams>(
     let mut z = cs1;
     z.add_ntt(&y);
 
-    if z.check_norm(P::gamma1_minus_beta) { Ok(None) } else { Ok(Some(z)) }
+    if z.check_norm(P::gamma1_minus_beta) { None } else { Some(z) }
 }
 
 pub(crate) fn compute_w0cs2_component<P: MLDSAParams>(

@@ -533,7 +533,7 @@ impl<P: MLDSAParams> MLDSATrait<P> for MLDSA<P> {
         sk: &MLDSASeedPrivateKey<P>,
     ) -> Result<(), SignatureError> {
         // tr = H(pk) was computed when the key was built, so no derivation is needed here.
-        if bouncycastle_utils::ct::ct_eq_bytes(&sk.tr(), &pk.compute_tr()) {
+        if bouncycastle_utils::ct::ct_eq_bytes(sk.tr(), &pk.compute_tr()) {
             Ok(())
         } else {
             Err(SignatureError::ConsistencyCheckFailed)
@@ -586,14 +586,14 @@ pub(crate) fn sign_internal<
     // skip: mu has already been provided
 
     // Alg 7; 7: 𝜌″ ← H(𝐾||𝑟𝑛𝑑||𝜇, 64)
-    let rho_p_p: [u8; 64] = {
+    let rho_p_p: Secret<[u8; 64]> = {
         let mut h = H::new();
         h.do_update(sk.K());
         h.do_update(&rnd);
         h.do_update(mu);
-        let mut rho_p_p = [0u8; 64];
+        let mut rho_p_p: Secret<[u8; 64]> = Secret::new();
         let mut h = h.into_squeezer();
-        h.do_output_out(&mut rho_p_p);
+        h.do_output_out(&mut *rho_p_p);
 
         rho_p_p
     };
@@ -610,6 +610,10 @@ pub(crate) fn sign_internal<
         //   "Implementations may limit the number of iterations in this loop to not exceed a finite maximum value."
         // mutants note: there is no test for this because we don't have access to a KAT that will exceed this limit.
         if kappa > 1000 * P::k as u16 {
+            // "the signing algorithm shall return a constant that represents an error and no
+            // other output, destroying the results of the unsuccessful signing attempts"
+            // (FIPS 204 s. 6.2): the rejected candidate's c~ and z are in `output`.
+            output.fill(0);
             return Err(SignatureError::RejectionLimitExceeded);
         }
 
@@ -655,7 +659,7 @@ pub(crate) fn sign_internal<
                 &c_hat,
                 kappa,
                 col,
-            )? {
+            ) {
                 Some(z) => z,
                 None => {
                     rejected = true;
@@ -787,9 +791,9 @@ pub(crate) fn verify_internal<
             &c_hat,
             row,
         ) {
-            Ok(wp_approx) => wp_approx,
+            Some(wp_approx) => wp_approx,
             // means the norm check on z failed
-            Err(_) => return Err(SignatureError::SignatureVerificationFailed),
+            None => return Err(SignatureError::SignatureVerificationFailed),
         };
 
         let h_i = match unpack_h_row::<P, SIG_LEN>(row, sig) {
@@ -875,9 +879,6 @@ pub(crate) fn draw_rnd(rng: &mut dyn RNG) -> Result<[u8; MLDSA_RND_LEN], Signatu
     Ok(rnd)
 }
 
-/// An ML-DSA signature in progress: FIPS 204 Algorithm 7, with the message representative
-/// (line 6) built as the message streams in. Made by [`SigningKey::create_signer`] on an ML-DSA
-/// private key, which it borrows; the key is expanded from its seed only when the signature is
 /// An ML-DSA signature in progress: FIPS 204 Algorithm 7, with the message representative
 /// (line 6) built as the message streams in. Made by [`SigningKey::create_signer`] on an ML-DSA
 /// private key, which it borrows; the signing randomizer is fixed when the signer is made, and

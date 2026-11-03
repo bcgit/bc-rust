@@ -217,13 +217,23 @@
 //! One caveat: `ctx` can still be security-relevant at the protocol level (domain separation, replay and
 //! cross-protocol binding), so choosing it incorrectly can weaken those properties.
 //!
+//! ## When signing fails
+//!
+//! FIPS 204 Section 6.2 lets an implementation bound the rejection-sampling loop, and this one
+//! does, at 1000·k iterations. Reaching it has negligible probability; when it happens, signing
+//! returns [`SignatureError::RejectionLimitExceeded`] and writes nothing. The hedged variant
+//! succeeds on a retry with fresh randomness; the deterministic one fails the same way again.
+//!
+//! [`SignatureError::RejectionLimitExceeded`]: bouncycastle_core::errors::SignatureError::RejectionLimitExceeded
+//!
 //! ## What is zeroized
 //!
 //! FIPS 204 Section 3.6.3 asks that "any potentially sensitive intermediate data is destroyed as
 //! soon as it is no longer needed". Here the private key's `K` and `rho'`, the packed `s1` and
-//! `s2` it expands on demand, and the seed are `Secret` or `KeyMaterial`, wiped on drop. The
-//! per-row vectors signing works through are plain stack values that are not wiped when their
-//! scope ends.
+//! `s2` it expands on demand, the seed, and the signing randomizer `rho''` are `Secret` or
+//! `KeyMaterial`, wiped on drop, on the error paths included. The per-row vectors signing works
+//! through, and the `s1` and `s2` rows unpacked for them, are plain stack values that are not
+//! wiped when their scope ends.
 
 #![no_std]
 #![forbid(unsafe_code)]
@@ -273,7 +283,7 @@ pub use hash_mldsa::HASH_ML_DSA_44_with_SHA512_NAME;
 pub use hash_mldsa::HASH_ML_DSA_65_with_SHA512_NAME;
 pub use hash_mldsa::HASH_ML_DSA_87_with_SHA512_NAME;
 
-pub use mldsa::{MLDSA_MU_LEN, MLDSA_RND_LEN, MLDSA_TR_LEN};
+pub use mldsa::{MLDSA_MU_LEN, MLDSA_RND_LEN, MLDSA_SEED_LEN, MLDSA_TR_LEN};
 pub use mldsa::{MLDSA44_PK_LEN, MLDSA44_SIG_LEN, MLDSA44_SK_LEN};
 pub use mldsa::{MLDSA65_PK_LEN, MLDSA65_SIG_LEN, MLDSA65_SK_LEN};
 pub use mldsa::{MLDSA87_PK_LEN, MLDSA87_SIG_LEN, MLDSA87_SK_LEN};

@@ -209,7 +209,8 @@ impl<P: MLDSAParams> Eq for MLDSAPublicKey<P> {}
 
 impl<P: MLDSAParams> PartialEq for MLDSAPublicKey<P> {
     fn eq(&self, other: &Self) -> bool {
-        self.rho == other.rho && self.t1_packed.as_ref() == other.t1_packed.as_ref()
+        bouncycastle_utils::ct::ct_eq_bytes(&self.rho, &other.rho)
+            & bouncycastle_utils::ct::ct_eq_bytes(self.t1_packed.as_ref(), other.t1_packed.as_ref())
     }
 }
 
@@ -259,7 +260,7 @@ pub trait MLDSAPrivateKeyTrait<P: MLDSAParams>: Sized + SignMuWithRnd<P> {
     fn seed(&self) -> Option<&KeyMaterial<32>>;
 
     /// Get a copy of the key hash `tr`, computed once when the key was built.
-    fn tr(&self) -> [u8; 64];
+    fn tr(&self) -> &[u8; 64];
     /// Derives the full public key from the seed: a key generation's worth of work.
     fn derive_pk(&self) -> MLDSAPublicKey<P>;
     /// This produces the full private key in the encoding specified in FIPS 204 Algorithm 24 skEncode()
@@ -294,7 +295,7 @@ pub trait MLDSAPrivateKeyTrait<P: MLDSAParams>: Sized + SignMuWithRnd<P> {
     /// key's `tr` and to `ctx`, which then takes the message in chunks. `ctx` longer than 255
     /// bytes is the error of FIPS 204 Algorithm 2, line 1.
     fn create_mu_builder(&self, ctx: Option<&[u8]>) -> Result<MuBuilder, SignatureError> {
-        MuBuilder::from_tr(&self.tr(), ctx)
+        MuBuilder::from_tr(self.tr(), ctx)
     }
 
     /// Signs an externally computed message representative `mu`: FIPS 204 Algorithm 7 with
@@ -307,6 +308,10 @@ pub trait MLDSAPrivateKeyTrait<P: MLDSAParams>: Sized + SignMuWithRnd<P> {
     /// from one made over the message by [`SigningKey::create_signer`], and unlike a HashML-DSA
     /// signature it verifies with a standard ML-DSA verifier, which need not know how `mu` was
     /// made. The hedged variant: `rnd` is drawn from `rng`.
+    ///
+    /// # Errors
+    /// [`SignatureError::RejectionLimitExceeded`] if the bounded rejection loop (FIPS 204
+    /// Section 6.2) runs out, which has negligible probability; nothing is written.
     ///
     /// [`SigningKey::create_signer`]: bouncycastle_core::signature_key::SigningKey::create_signer
     fn sign_mu<const SIG_LEN: usize>(
@@ -436,7 +441,7 @@ impl<P: MLDSAParams> MLDSASeedPrivateKey<P> {
             || seed.key_len() != 32
         {
             return Err(SignatureError::KeyGenError(
-                "Seed must be 32 bytes and KeyType::Seed or KeyType::BytesFullEntropy.",
+                "Seed must be 32 bytes and KeyType::Seed or KeyType::CryptographicRandom.",
             ));
         }
 
@@ -576,8 +581,8 @@ impl<P: MLDSAParams> MLDSAPrivateKeyTrait<P> for MLDSASeedPrivateKey<P> {
         Some(&self.seed)
     }
 
-    fn tr(&self) -> [u8; 64] {
-        self.tr
+    fn tr(&self) -> &[u8; 64] {
+        &self.tr
     }
 
     fn derive_pk(&self) -> MLDSAPublicKey<P> {
@@ -620,7 +625,7 @@ impl<P: MLDSAParams> MLDSAPrivateKeyTrait<P> for MLDSASeedPrivateKey<P> {
         out[0..32].copy_from_slice(&self.rho);
         // K is protected inside a Secret<[u8]>, but here we really do need to deref and copy it out.
         out[32..64].copy_from_slice(&*self.K);
-        out[64..128].copy_from_slice(&self.tr());
+        out[64..128].copy_from_slice(self.tr());
         off += 128;
 
         // 2: for 𝑖 from 0 to ℓ − 1 do

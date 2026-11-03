@@ -561,7 +561,7 @@ mod mldsa_tests {
         let tr: [u8; MLDSA_TR_LEN];
         {
             let (_, sk) = MLDSA44::keygen_from_seed(&seed).unwrap();
-            tr = sk.tr();
+            tr = *sk.tr();
         }
 
         // BEGIN expected values
