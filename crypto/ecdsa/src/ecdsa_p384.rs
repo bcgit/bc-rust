@@ -7,7 +7,6 @@
 //! (why `e` needs no truncation, why `x_affine_of_signing_point` exists, the `ctx`/ignore-it
 //! stance) -- with P-384's types and SHA-384 substituted.
 
-use crate::extra_bits_p384::reduce_wide_bits_mod_n_minus_1;
 use crate::keys_p384::{ECDSAP384PrivateKey, ECDSAP384PublicKey, EXTRA_BITS_DRBG_OUTPUT_LEN};
 use crate::rfc6979_p384;
 use bouncycastle_core::errors::SignatureError;
@@ -21,6 +20,7 @@ use bouncycastle_core::traits::{
 use bouncycastle_ec::nat;
 use bouncycastle_ec::p384::P384FieldElement;
 use bouncycastle_ec::p384_comb::comb_multiply_base_point;
+use bouncycastle_ec::p384_extra_bits::reduce_wide_bits_mod_n_minus_1;
 use bouncycastle_ec::p384_point::P384JacobianPoint;
 use bouncycastle_ec::p384_scalar::{N_LIMBS, P384PublicScalar, P384Scalar, P384ScalarField};
 use bouncycastle_ec::p384_sec1;
@@ -127,7 +127,7 @@ fn sign_with_k(
 
 /// FIPS 186-5 §6.4.1 step 3 by Appendix A.3.1, reduced into `[1, n-1]` by
 /// `reduce_wide_bits_mod_n_minus_1`; the one place [`ECDSAP384`]'s signing paths draw `k`. Draws
-/// A.3.1 step 3's `N + t` bits with `t = 64` (see [`crate::extra_bits_p384`]'s docs for why that is
+/// A.3.1 step 3's `N + t` bits with `t = 64` (see [`bouncycastle_ec::p384_extra_bits`]'s docs for why that is
 /// required here even though P-384's `n` would need none for bias alone).
 fn random_k(rng: &mut dyn RNG) -> Result<P384Scalar, SignatureError> {
     // Raw DRBG output, reduced below into the per-message secret: held in `Secret` so it is

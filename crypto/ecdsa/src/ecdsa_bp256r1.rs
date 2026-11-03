@@ -7,10 +7,9 @@
 //! [`crate::ecdsa_p256`] -- see that module's docs for the full reasoning (`e = bits2int(H)` needs
 //! no truncation since `len(n) == hashlen == 256`; `x_affine_of_signing_point`'s
 //! branch-free-on-a-secret-value argument; both hold unchanged here) -- with brainpoolP256r1's
-//! types, [`crate::keys_bp256r1`], [`crate::extra_bits_bp256r1`], and [`crate::rfc6979_bp256r1`]
+//! types, [`crate::keys_bp256r1`], [`bouncycastle_ec::bp256r1_extra_bits`], and [`crate::rfc6979_bp256r1`]
 //! substituted.
 
-use crate::extra_bits_bp256r1::reduce_wide_bits_mod_n_minus_1;
 use crate::keys_bp256r1::{ECDSABp256r1PrivateKey, ECDSABp256r1PublicKey};
 use crate::rfc6979_bp256r1;
 use bouncycastle_core::errors::SignatureError;
@@ -23,6 +22,7 @@ use bouncycastle_core::traits::{
 };
 use bouncycastle_ec::bp256r1::Bp256r1FieldElement;
 use bouncycastle_ec::bp256r1_comb::comb_multiply_base_point;
+use bouncycastle_ec::bp256r1_extra_bits::reduce_wide_bits_mod_n_minus_1;
 use bouncycastle_ec::bp256r1_point::Bp256r1JacobianPoint;
 use bouncycastle_ec::bp256r1_scalar::{
     Bp256r1PublicScalar, Bp256r1Scalar, Bp256r1ScalarField, N_LIMBS,

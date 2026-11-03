@@ -1,33 +1,31 @@
 //! Known-answer tests for [`reduce_wide_bits_mod_n_minus_1`] (FIPS 186-5 Appendix A.4.1 steps
 //! 3-5): `x = bits2int(X)`, `x = x mod (n-1)`, `x = x + 1`. Expected values computed independently
-//! in Python via `(int.from_bytes(bytes, 'big') % (n - 1)) + 1` with `n` from SP 800-186
-//! §3.2.1.4, not derived from this crate's own reduction code -- see `extra_bits_tests.rs`'s docs
-//! for why this independent-reference pinning matters. Inputs are the 56 bytes (448 bits)
-//! `keys_p384` and `ecdsa_p384` actually draw, except where a shorter input is the point.
+//! in Python via `(int.from_bytes(bytes, 'big') % (n - 1)) + 1` with `n` from RFC 5639 §3.4, not
+//! derived from this crate's own reduction code -- see `extra_bits_bp256r1_tests.rs`'s docs for why
+//! this independent-reference pinning matters (a real test gap `cargo mutants` found on that
+//! curve's analogous constant and reduction).
 
-use bouncycastle_ec::p384_scalar::N_LIMBS;
-use bouncycastle_ec::p384_sec1::be_bytes_from_limbs;
-use bouncycastle_ecdsa::extra_bits_p384::reduce_wide_bits_mod_n_minus_1;
+use bouncycastle_ec::bp512r1_extra_bits::reduce_wide_bits_mod_n_minus_1;
 use bouncycastle_hex::decode as hex_decode;
 
-fn bytes48(hex: &str) -> [u8; 48] {
+fn bytes64(hex: &str) -> [u8; 64] {
     hex_decode(hex).unwrap().try_into().unwrap()
 }
 
 #[test]
 fn known_answer_repeating_pattern() {
-    let input: Vec<u8> = [0x01u8, 0x02, 0x03, 0x04].iter().cloned().cycle().take(56).collect();
-    let expected = bytes48(
-        "01020304010203040102030401020304013b119a9ccd3619eb1707bbd346539086279eb3ecc7299aa3ee0276b98d073d",
+    let input: Vec<u8> = [0x01u8, 0x02, 0x03, 0x04].iter().cloned().cycle().take(72).collect();
+    let expected = bytes64(
+        "2cba3745dd71ed5c4cc168f9f67d3c7e18f888d946d40f4564a04fd7bfc177c94c477653df36f73070d93ffa1bab888928286601549d218f6b6de368e4089705",
     );
     assert_eq!(reduce_wide_bits_mod_n_minus_1(&input).to_be_bytes(), expected);
 }
 
 #[test]
 fn known_answer_all_ff() {
-    let input = [0xffu8; 56];
-    let expected = bytes48(
-        "00000000000000000000000000000000389cb27e0bc8d220a7e5f24db74f58851313e695333ad68e0000000000000000",
+    let input = [0xffu8; 72];
+    let expected = bytes64(
+        "0e92f4a257e37a20a2fb93f3a339141b36cf5e509308f63b090de57b2a66d2e19da0600d96652b67b2e40e271d3a86916d3d726abda6c95cef9691d720f64ff0",
     );
     assert_eq!(reduce_wide_bits_mod_n_minus_1(&input).to_be_bytes(), expected);
 }
@@ -35,62 +33,48 @@ fn known_answer_all_ff() {
 #[test]
 fn known_answer_all_zero_yields_one() {
     // bits2int(0) = 0; 0 mod (n-1) = 0; +1 = 1 -- the smallest value Appendix A.4.1 can produce.
-    let input = [0u8; 56];
-    let mut expected = [0u8; 48];
-    expected[47] = 1;
+    let input = [0u8; 72];
+    let mut expected = [0u8; 64];
+    expected[63] = 1;
     assert_eq!(reduce_wide_bits_mod_n_minus_1(&input).to_be_bytes(), expected);
 }
 
-/// An `n`-width input below `n - 1` is its own residue, so the result is `x + 1`: the case the
-/// single-subtraction reduction this module replaced was built for, kept as a check that the
-/// wide reduction agrees with it on its home ground. `x` is pseudorandom, from Python.
-#[test]
-fn known_answer_n_width_input_below_n_minus_1() {
-    let x = bytes48(
-        "0c479ba61fe9eb497e4ef8d29646bba8128fd0fd853321fe2e841ff3542270c0a4afd95a574e5cebe7531273ac31909b",
-    );
-    let mut x_plus_1 = x;
-    x_plus_1[47] += 1;
-    assert_eq!(reduce_wide_bits_mod_n_minus_1(&x).to_be_bytes(), x_plus_1);
-}
-
-/// The boundaries of Appendix A.4.1's own arithmetic: `n - 1` is the modulus of step 4, so it
+/// The two boundaries of Appendix A.4.1's own arithmetic: `n - 1` is the modulus of step 4, so it
 /// reduces to `0` and step 5 makes it `1`; `n - 2` is the largest residue, so it comes out as
-/// `n - 1`, the top of the output interval; and `n` itself is `1 mod (n-1)`, so `2`.
+/// `n - 1`, the top of the `[1, n-1]` output interval. Both inputs are left-padded to the DRBG
+/// output width this module is fed with.
 #[test]
 fn known_answer_at_the_n_minus_1_boundary() {
-    let n = be_bytes_from_limbs(&N_LIMBS);
+    let n = bouncycastle_ec::bp512r1_sec1::be_bytes_from_limbs(
+        &bouncycastle_ec::bp512r1_scalar::N_LIMBS,
+    );
     let mut n_minus_1 = n;
-    n_minus_1[47] -= 1; // n is odd, so neither subtraction borrows
+    n_minus_1[63] -= 1; // n is odd, so neither of these subtractions borrows
     let mut n_minus_2 = n;
-    n_minus_2[47] -= 2;
+    n_minus_2[63] -= 2;
 
-    let mut one = [0u8; 48];
-    one[47] = 1;
-    let mut two = [0u8; 48];
-    two[47] = 2;
-
-    let mut input = [0u8; 56];
+    let mut input = [0u8; 72];
     input[8..].copy_from_slice(&n_minus_1);
+    let mut one = [0u8; 64];
+    one[63] = 1;
     assert_eq!(reduce_wide_bits_mod_n_minus_1(&input).to_be_bytes(), one, "n - 1 -> 1");
+
     input[8..].copy_from_slice(&n_minus_2);
     assert_eq!(reduce_wide_bits_mod_n_minus_1(&input).to_be_bytes(), n_minus_1, "n - 2 -> n - 1");
-    input[8..].copy_from_slice(&n);
-    assert_eq!(reduce_wide_bits_mod_n_minus_1(&input).to_be_bytes(), two, "n -> 2");
 }
 
 /// The bit-serial algorithm this module implemented before switching to Barrett reduction, kept
 /// here as an independent reference: Horner's rule over the input bits, doubling the running
 /// remainder and subtracting `n - 1` when it is exceeded, with the carry out of the top limb folded
-/// back in as `2^384 mod (n-1) = 2^384 - (n-1)`. Slow, obviously correct, and sharing no
+/// back in as `2^512 mod (n-1) = 2^512 - (n-1)`. Slow, obviously correct, and sharing no
 /// code with the Barrett path beyond `nat`'s add and sub.
-fn reference_bit_serial(bytes: &[u8]) -> [u8; 48] {
+fn reference_bit_serial(bytes: &[u8]) -> [u8; 64] {
     use bouncycastle_ec::nat;
-    let n = bouncycastle_ec::p384_scalar::N_LIMBS;
+    let n = bouncycastle_ec::bp512r1_scalar::N_LIMBS;
     let mut m = n;
     m[0] -= 1; // n is odd
-    let two_pow_mod_m = nat::sub(&[0u64; 6], &m).0; // 2^384 - m, wrapping
-    let mut acc = [0u64; 6];
+    let two_pow_mod_m = nat::sub(&[0u64; 8], &m).0; // 2^512 - m, wrapping
+    let mut acc = [0u64; 8];
     for &byte in bytes {
         for bit_idx in (0..8).rev() {
             let (mut doubled, carry) = nat::add(&acc, &acc);
@@ -102,8 +86,8 @@ fn reference_bit_serial(bytes: &[u8]) -> [u8; 48] {
             acc = if borrow == 1 { doubled } else { reduced };
         }
     }
-    let plus_one = nat::add(&acc, &[1u64, 0, 0, 0, 0, 0]).0;
-    bouncycastle_ec::p384_sec1::be_bytes_from_limbs(&plus_one)
+    let plus_one = nat::add(&acc, &[1u64, 0, 0, 0, 0, 0, 0, 0]).0;
+    bouncycastle_ec::bp512r1_sec1::be_bytes_from_limbs(&plus_one)
 }
 
 /// xorshift64*, fixed seed, as in the `ec` crate's property tests.
@@ -121,17 +105,17 @@ impl Xorshift64 {
 }
 
 /// Barrett against the bit-serial reference over pseudorandom inputs at every width from one byte
-/// up to the 95-byte maximum the function accepts, biased towards the widths actually drawn
-/// (56 bytes) and towards values with long runs of set bits, where Barrett's quotient estimate is
+/// up to the 127-byte maximum the function accepts, biased towards the widths actually drawn
+/// (72 bytes) and towards values with long runs of set bits, where Barrett's quotient estimate is
 /// furthest off and the most conditional subtractions are needed.
 #[test]
 fn agrees_with_the_bit_serial_reference_over_many_pseudorandom_inputs() {
-    let mut rng = Xorshift64(0xBA77E770_0000_0006);
+    let mut rng = Xorshift64(0xBA77E770_0000_0008);
     for i in 0..3000 {
         let len = match i % 4 {
-            0 => 56,
-            1 => 95,
-            _ => 1 + (rng.next_u64() as usize % 95),
+            0 => 72,
+            1 => 127,
+            _ => 1 + (rng.next_u64() as usize % 127),
         };
         let mut bytes = vec![0u8; len];
         for chunk in bytes.chunks_mut(8) {
@@ -153,7 +137,7 @@ fn agrees_with_the_bit_serial_reference_over_many_pseudorandom_inputs() {
 
 #[test]
 fn maximum_width_all_ones_input() {
-    // 2^760 - 1, the largest input accepted: Barrett's precondition holds with room to spare.
-    let bytes = [0xffu8; 95];
+    // 2^1016 - 1, the largest input accepted: Barrett's precondition holds with room to spare.
+    let bytes = [0xffu8; 127];
     assert_eq!(reduce_wide_bits_mod_n_minus_1(&bytes).to_be_bytes(), reference_bit_serial(&bytes));
 }

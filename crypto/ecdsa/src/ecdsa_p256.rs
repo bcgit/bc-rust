@@ -27,7 +27,6 @@
 //! 800-186 §3.2.1.3's cofactor `h = 1`), so `[k]G` is never the identity for any valid `k` -- this
 //! holds unconditionally, so skipping the infinity branch leaks nothing about which `k` was drawn.
 
-use crate::extra_bits_p256::reduce_wide_bits_mod_n_minus_1;
 use crate::keys_p256::{ECDSAP256PrivateKey, ECDSAP256PublicKey, EXTRA_BITS_DRBG_OUTPUT_LEN};
 use crate::rfc6979_p256;
 use bouncycastle_core::errors::SignatureError;
@@ -41,6 +40,7 @@ use bouncycastle_core::traits::{
 use bouncycastle_ec::nat;
 use bouncycastle_ec::p256::P256FieldElement;
 use bouncycastle_ec::p256_comb::comb_multiply_base_point;
+use bouncycastle_ec::p256_extra_bits::reduce_wide_bits_mod_n_minus_1;
 use bouncycastle_ec::p256_point::P256JacobianPoint;
 use bouncycastle_ec::p256_scalar::{N_LIMBS, P256PublicScalar, P256Scalar, P256ScalarField};
 use bouncycastle_ec::p256_sec1;

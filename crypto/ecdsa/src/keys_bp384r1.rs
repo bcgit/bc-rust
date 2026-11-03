@@ -1,16 +1,16 @@
 //! ECDSA brainpoolP384r1 key types (FIPS 186-5 §6.2) and key-pair generation (Appendix A.2.1).
 //! Identical in shape to [`crate::keys_p256`] -- see that module's docs for the full reasoning -- with
-//! brainpoolP384r1's types and SEC 1 encoding widths substituted, and [`crate::extra_bits_bp384r1`]
-//! in place of [`crate::extra_bits_p256`] for the wide-DRBG-output reduction this curve's `n` needs (see
+//! brainpoolP384r1's types and SEC 1 encoding widths substituted, and [`bouncycastle_ec::bp384r1_extra_bits`]
+//! in place of [`bouncycastle_ec::p256_extra_bits`] for the wide-DRBG-output reduction this curve's `n` needs (see
 //! that module's docs for why).
 
-use crate::extra_bits_bp384r1::reduce_wide_bits_mod_n_minus_1;
 use crate::keys_common::DerivePublicKey;
 use bouncycastle_core::errors::{RNGError, SignatureError};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{RNG, SignaturePrivateKey, SignaturePublicKey};
 use bouncycastle_ec::bp384r1::Bp384r1FieldElement;
 use bouncycastle_ec::bp384r1_comb::comb_multiply_base_point;
+use bouncycastle_ec::bp384r1_extra_bits::reduce_wide_bits_mod_n_minus_1;
 use bouncycastle_ec::bp384r1_scalar::{Bp384r1Scalar, N_LIMBS};
 use bouncycastle_ec::bp384r1_sec1;
 use bouncycastle_ec::nat;
@@ -30,7 +30,7 @@ pub const PK_LEN: usize = 97;
 /// Requested output length, in bytes, from the DRBG for FIPS 186-5 Appendix A.2.1 key generation
 /// and Appendix A.3.1 randomised per-message secret generation: `448` bits (56 bytes) -- derived
 /// directly from Appendix A.4.1's own bias-bound check for brainpoolP384r1's `n` (see
-/// [`crate::extra_bits_bp384r1`]'s docs), not copied from any other curve's table entry.
+/// [`bouncycastle_ec::bp384r1_extra_bits`]'s docs), not copied from any other curve's table entry.
 pub(crate) const EXTRA_BITS_DRBG_OUTPUT_LEN: usize = 56;
 
 /// An ECDSA brainpoolP384r1 private key: FIPS 186-5 §6.2's `d`, `d` in `[1, n-1]`, held in
