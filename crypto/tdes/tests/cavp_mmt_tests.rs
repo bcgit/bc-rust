@@ -43,8 +43,8 @@ use bouncycastle_core::symmetric_key::{
 use bouncycastle_core::traits::{
     BlockCipherDecryptor, BlockCipherEncryptor, StreamCipherDecryptor, StreamCipherEncryptor,
 };
-use bouncycastle_core_test_framework::FixedSeedRNG;
 use bouncycastle_hex as hex;
+use bouncycastle_rng::FixedSeedRNG;
 use bouncycastle_tdes::hazmat::{TDES2Internal, TDESInternal};
 use bouncycastle_tdes::{BLOCK_LEN, KEY_LEN, KEY_LEN_2KEY, TDES2Key, TDES3Key};
 use std::fs;
