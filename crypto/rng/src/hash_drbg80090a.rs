@@ -33,10 +33,12 @@ trait HashDRBG80090AParams {
     /// are this long (Section 10.1.1.1), and every `mod 2^seedlen` in the generate algorithm is
     /// an addition over this many bytes.
     const SEED_LEN: usize;
-    const MAX_LENGTH: u64;
-    const MAX_PERSONALIZATION_STRING_LENGTH: u64;
-    const MAX_ADDITIONAL_INPUT_LENGTH: u64;
-    const MAX_NUMBER_OF_BITS_PER_REQUEST: u64;
+    /// Table 2's limits, in bytes: `max_length` of the entropy input, the personalization string
+    /// and the additional input are 2^35 bits, `max_number_of_bits_per_request` is 2^19 bits.
+    const MAX_SEED_LEN: u64;
+    const MAX_PERSONALIZATION_STRING_LEN: u64;
+    const MAX_ADDITIONAL_INPUT_LEN: u64;
+    const MAX_BYTES_PER_REQUEST: u64;
     const RESEED_INTERVAL: u64;
 }
 
@@ -49,10 +51,10 @@ impl HashDRBG80090AParams for HashDRBG80090AParams_SHA256 {
     const OUTPUT_LEN: usize = SHA256::OUTPUT_LEN;
     const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_128bit;
     const SEED_LEN: usize = 440 / 8;
-    const MAX_LENGTH: u64 = (1u64 << 35) / 8; // 2^35 bits
-    const MAX_PERSONALIZATION_STRING_LENGTH: u64 = (1u64 << 35) / 8; // 2^35 bits
-    const MAX_ADDITIONAL_INPUT_LENGTH: u64 = (1u64 << 35) / 8; // 2^35 bits
-    const MAX_NUMBER_OF_BITS_PER_REQUEST: u64 = (1u64 << 19) / 8; // 2^19 bits
+    const MAX_SEED_LEN: u64 = (1u64 << 35) / 8; // 2^35 bits
+    const MAX_PERSONALIZATION_STRING_LEN: u64 = (1u64 << 35) / 8; // 2^35 bits
+    const MAX_ADDITIONAL_INPUT_LEN: u64 = (1u64 << 35) / 8; // 2^35 bits
+    const MAX_BYTES_PER_REQUEST: u64 = (1u64 << 19) / 8; // 2^19 bits
     const RESEED_INTERVAL: u64 = 1u64 << 48; // 2^48 requests
 }
 
@@ -64,10 +66,10 @@ impl HashDRBG80090AParams for HashDRBG80090AParams_SHA512 {
     const OUTPUT_LEN: usize = SHA512::OUTPUT_LEN;
     const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_256bit;
     const SEED_LEN: usize = 888 / 8;
-    const MAX_LENGTH: u64 = (1u64 << 35) / 8; // 2^35 bits
-    const MAX_PERSONALIZATION_STRING_LENGTH: u64 = (1u64 << 35) / 8; // 2^35 bits
-    const MAX_ADDITIONAL_INPUT_LENGTH: u64 = (1u64 << 35) / 8; // 2^35 bits
-    const MAX_NUMBER_OF_BITS_PER_REQUEST: u64 = (1u64 << 19) / 8; // 2^19 bits
+    const MAX_SEED_LEN: u64 = (1u64 << 35) / 8; // 2^35 bits
+    const MAX_PERSONALIZATION_STRING_LEN: u64 = (1u64 << 35) / 8; // 2^35 bits
+    const MAX_ADDITIONAL_INPUT_LEN: u64 = (1u64 << 35) / 8; // 2^35 bits
+    const MAX_BYTES_PER_REQUEST: u64 = (1u64 << 19) / 8; // 2^19 bits
     const RESEED_INTERVAL: u64 = 1u64 << 48; // 2^48 requests
 }
 
@@ -207,7 +209,7 @@ impl<H: HashDRBG80090AParams> Sp80090ADrbg for HashDRBG80090A<H> {
             todo!("Prediction resistance is not yet supported by Hash_DRBG80090A.")
         }
 
-        if personalization_string.len() as u64 > H::MAX_PERSONALIZATION_STRING_LENGTH {
+        if personalization_string.len() as u64 > H::MAX_PERSONALIZATION_STRING_LEN {
             return Err(RNGError::GenericError(
                 "Personalization string exceeds the maximum length allowed by the DRBG instance",
             ));
@@ -222,13 +224,13 @@ impl<H: HashDRBG80090AParams> Sp80090ADrbg for HashDRBG80090A<H> {
                 "Provided seed must have a length that matches or exceeds the DRBG security strength.",
             ))?;
         }
-        if (seed.key_len() as u64) > H::MAX_LENGTH {
+        if (seed.key_len() as u64) > H::MAX_SEED_LEN {
             return Err(KeyMaterialError::SecurityStrength(
                 "Provided seed exceeds the maximum seed length.",
             ))?;
         }
         // On purpose not checking the SecurityStrength field of the seed,
-        // because we assume it's pure entropy and hasn't been touched by any actual algoritms yet.
+        // because we assume it's pure entropy and hasn't been touched by any actual algorithms yet.
         if security_strength > H::MAX_SECURITY_STRENGTH {
             return Err(KeyMaterialError::SecurityStrength(
                 "Requested security strength exceeds the maximum strength that this DRBG instance can provide.",
@@ -291,7 +293,7 @@ impl<H: HashDRBG80090AParams> Sp80090ADrbg for HashDRBG80090A<H> {
             return Err(RNGError::Uninitialized);
         }
 
-        if additional_input.len() as u64 > H::MAX_ADDITIONAL_INPUT_LENGTH {
+        if additional_input.len() as u64 > H::MAX_ADDITIONAL_INPUT_LEN {
             return Err(RNGError::GenericError(
                 "Additional input exceeds the maximum length allowed by the DRBG instance",
             ));
@@ -301,14 +303,14 @@ impl<H: HashDRBG80090AParams> Sp80090ADrbg for HashDRBG80090A<H> {
             return Err(KeyMaterialError::InvalidKeyType("RNG seed must be KeyType::Seed"))?;
         }
 
-        // On purpose not checking the SecurityStrength field of the seed, because we assume it's pure entropy and hasn't been touched by any actual algoritms yet.
+        // On purpose not checking the SecurityStrength field of the seed, because we assume it's pure entropy and hasn't been touched by any actual algorithms yet.
 
         if (seed.key_len() as u32) < self.admin_info.strength.as_int() / 8 {
             return Err(KeyMaterialError::SecurityStrength(
                 "Provided seed must have a length that matches or exceeds the DRBG security strength.",
             ))?;
         }
-        if (seed.key_len() as u64) > H::MAX_LENGTH {
+        if (seed.key_len() as u64) > H::MAX_SEED_LEN {
             return Err(KeyMaterialError::SecurityStrength(
                 "Provided seed exceeds the maximum seed length.",
             ))?;
@@ -365,12 +367,12 @@ impl<H: HashDRBG80090AParams> Sp80090ADrbg for HashDRBG80090A<H> {
         if !self.admin_info.instantiated {
             return Err(RNGError::Uninitialized);
         }
-        if out.len() as u64 > H::MAX_NUMBER_OF_BITS_PER_REQUEST {
+        if out.len() as u64 > H::MAX_BYTES_PER_REQUEST {
             return Err(RNGError::GenericError(
-                "Requested number of bits exceeds the maximum number of bits per request allowed by the DRBG instance",
+                "Requested number of bytes exceeds the maximum per request allowed by the DRBG instance",
             ));
         }
-        if additional_input.len() as u64 > H::MAX_ADDITIONAL_INPUT_LENGTH {
+        if additional_input.len() as u64 > H::MAX_ADDITIONAL_INPUT_LEN {
             return Err(RNGError::GenericError(
                 "Additional input exceeds the maximum length allowed by the DRBG instance",
             ));

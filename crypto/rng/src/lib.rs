@@ -71,14 +71,18 @@ pub type Default128BitRNG = HashDRBG_SHA256;
 /// The library's default RNG at the 256-bit security level.
 pub type Default256BitRNG = HashDRBG_SHA512;
 
-/// Implements the five functions specified in SP 800-90A section 7.4 are
-/// - instantate,
-/// - generate,
-/// - reseed,
-/// - uninstantiate, and
-/// - health_test.
-/// Note: this function implements Rust's Drop on the sensitive working state in place of the explicit
-/// Uninstantiate function listed in SP 800-90Ar1.
+/// The DRBG mechanism functions of SP 800-90A Rev. 1 Section 7.4: instantiate, generate and
+/// reseed are the methods below; uninstantiate is Rust's `Drop` on the sensitive working state;
+/// the health test is not implemented yet. `prediction_resistance` is not supported: only
+/// `false` is accepted. A constructor that seeds from the OS (`new`, `new_from_os`, `Default`)
+/// panics if the OS entropy source fails, since it cannot return an error.
+///
+/// Reseeding is the caller's: after `reseed_interval` (2^48) requests every generating method,
+/// the [`bouncycastle_core::traits::RNG`] ones included, returns [`RNGError::ReseedRequired`] until [`Self::reseed`] or
+/// [`bouncycastle_core::traits::RNG::add_seed_keymaterial`] has run (Section 9.3.1 steps 7-8, with the "go back" loop left
+/// to the application). Both are the full reseed of Section 10.1.1.3, so the seed they take must
+/// carry at least the instance's security strength, as at instantiation; there is no automatic
+/// reseed from the OS.
 pub trait Sp80090ADrbg {
     /// The input KeyMaterial must be of type [`KeyType::Seed`].
     ///
@@ -99,8 +103,13 @@ pub trait Sp80090ADrbg {
     /// This function takes ownership of the seed KeyMaterial object,
     /// to reduce the likelihood of its reuse in a second function call.
     ///
-    /// There is no entropy requirement on the nonce, but it is expected as a KeyMaterial so that it
-    /// benefits from the secure erasure and logging protections in the KeyMaterial object.
+    /// The nonce is Section 8.6.7's: "either: a. A value with at least (security_strength/2) bits
+    /// of entropy, or b. A value that is expected to repeat no more often than a
+    /// (security_strength/2)-bit random string would be expected to repeat", unique to the module
+    /// and "considered to be a critical security parameter" though it "need not be secret". It is
+    /// not checked here, which is why it is a KeyMaterial: so that it gets the erasure and logging
+    /// protections of one. An empty nonce is accepted and the seed then has to carry the whole
+    /// requirement on its own (`new_from_os` passes one, with a seed of the full strength).
     fn instantiate(
         &mut self,
         prediction_resistance: bool,
@@ -126,26 +135,26 @@ pub trait Sp80090ADrbg {
     /// security strength provided in these returned bits is the minimum of the security strength
     /// supported by the DRBG and the length of the bit string returned"
     ///
-    /// As required by SP 800-90A section 8.4, `len` cannot exceed the initialized [`SecurityStrength`]
-    /// of this instance, although multiple calls to this function can be made, in which case it is the
-    /// application's responsibility to track that it is not expecting more entropy than the [`SecurityStrength`]
-    /// to which this instance was instantiated. For example, extracting two 128-bit values from an instance
-    /// instantiated to [`SecurityStrength::_128bit`] and then combining tem to form an AES-256 key would likely
-    /// not pass FIPS certification.
+    /// Section 8.4 does not limit `len`: "Security_strength_of_output = min(output_length,
+    /// DRBG_security_strength)", so a longer output is allowed and carries no more strength than
+    /// the instance has, and neither does a concatenation of outputs. Extracting two 128-bit
+    /// values from an instance instantiated at [`SecurityStrength::_128bit`] and combining them
+    /// into an AES-256 key gives a 128-bit key. What is limited is one request: `len` is bytes,
+    /// and more than `max_number_of_bits_per_request` (2^19 bits, Table 2) is refused as
+    /// [`RNGError::GenericError`]; so is an `additional_input` over 2^35 bits.
     ///
-    /// Throws a [`RNGError::InsufficientSeedEntropy`] if `len` exceeds [`SecurityStrength`].
+    /// # Errors
+    /// [`RNGError::Uninitialized`] before [`Self::instantiate`]; [`RNGError::ReseedRequired`] after
+    /// `reseed_interval` requests; [`RNGError::GenericError`] for the length limits.
     fn generate(&mut self, additional_input: &[u8], len: usize) -> Result<Vec<u8>, RNGError>;
 
-    /// As per [`Sp80090ADrbg::generate`], but writes to the provided output slice.
-    /// The output slice is filled.
-    /// Throws a [`RNGError::InsufficientSeedEntropy`] if the length of the output slice exceeds [`SecurityStrength`].
-    /// Retruns the number of bits output.
+    /// As per [`Sp80090ADrbg::generate`], but writes to the provided output slice, which is
+    /// filled (and zeroized first). Returns the number of bytes written, the slice's length.
     fn generate_out(&mut self, additional_input: &[u8], out: &mut [u8]) -> Result<usize, RNGError>;
 
-    /// As per [`Sp80090ADrbg::generate`], but writes to the provided KeyMaterial.
-    /// The output [`KeyMaterialTrait`] is filled to capacity.
-    /// Throws a [`RNGError::InsufficientSeedEntropy`] if the capacity of the output KeyMaterial exceeds [`SecurityStrength`].
-    /// Retruns the number of bits output.
+    /// As per [`Sp80090ADrbg::generate`], but writes to the provided KeyMaterial, which is filled
+    /// to capacity and tagged [`KeyType::CryptographicRandom`] at Section 8.4's
+    /// `min(output_length, DRBG_security_strength)`. Returns the number of bytes written.
     fn generate_keymaterial_out<K: KeyMaterialTrait + ?Sized>(
         &mut self,
         additional_input: &[u8],
