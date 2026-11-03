@@ -10,13 +10,14 @@
 //!
 //! | Hash family | Instantiations                                                               |
 //! |-------------|------------------------------------------------------------------------------|
-//! | SHA-2       | `bouncycastle_sha2::hmac` -- `HMAC_SHA224` .. `HMAC_SHA512_256`              |
-//! | SHA-3       | `bouncycastle_sha3::hmac` -- `HMAC_SHA3_224` .. `HMAC_SHA3_512`              |
+//! | SHA-2       | `bouncycastle_sha2::hmac` -- `HMAC_SHA224`, `HMAC_SHA256`, `HMAC_SHA384`, `HMAC_SHA512`, `HMAC_SHA512_224`, `HMAC_SHA512_256` |
+//! | SHA-3       | `bouncycastle_sha3::hmac` -- `HMAC_SHA3_224`, `HMAC_SHA3_256`, `HMAC_SHA3_384`, `HMAC_SHA3_512` |
+//! | SM3         | `bouncycastle_sm3::hmac` -- `HMAC_SM3`                                       |
 //!
 //! Although users are free to implement [`Hash`] and [`HMACParams`] for a a hash function not included with the library,
 //! and will then be able to instantiate [`HMAC`] for it as well.
 //!
-//! # Usage
+//! # Usage Examples
 //!
 //! A key is built once, from key material of any length, and used for any number of messages:
 //!
@@ -389,13 +390,13 @@ pub struct HMAC<'k, HASH: HMACParams> {
 
 impl<HASH: HMACParams> Debug for HMAC<'_, HASH> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "HMAC-{} instance", HASH::ALG_NAME,)
+        write!(f, "{} instance", HASH::HMAC_ALG_NAME)
     }
 }
 
 impl<HASH: HMACParams> Display for HMAC<'_, HASH> {
     fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
-        write!(f, "HMAC-{} instance", HASH::ALG_NAME,)
+        write!(f, "{} instance", HASH::HMAC_ALG_NAME)
     }
 }
 
