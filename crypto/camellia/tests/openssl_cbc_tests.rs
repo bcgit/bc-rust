@@ -23,7 +23,7 @@ use bouncycastle_cipher::modes::{Blocks, CBC};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::symmetric_key::{BlockDecryptionKey, BlockEncryptionKey, FromKeyMaterial};
 use bouncycastle_core::traits::{BlockCipherDecryptor, BlockCipherEncryptor};
-use bouncycastle_core_test_framework::FixedSeedRNG;
+use bouncycastle_rng::FixedSeedRNG;
 use common::bytes;
 
 /// The IV of the first entry of every chain.
@@ -87,14 +87,14 @@ fn check_chain<const KEY_LEN: usize, K, const N: usize>(
     let iv: [u8; 16] = bytes(IV);
 
     // Encrypt, all blocks in one call, under the vector's IV.
-    let (mut enc, got_iv) = key.create_encryptor(&mut FixedSeedRNG::<16>::new(iv)).unwrap();
+    let (mut enc, got_iv) = key.create_encryptor(&mut FixedSeedRNG::new(iv)).unwrap();
     assert_eq!(got_iv, iv, "{name}: the pinned RNG should produce the vector's IV");
     let mut data = *pt;
     enc.do_encrypt_blocks_inplace(data.as_chunks_mut::<BLOCK_LEN>().0).unwrap();
     assert_eq!(data, *ct, "{name}: encrypt, all blocks in one call");
 
     // Encrypt one block at a time.
-    let (mut enc, _) = key.create_encryptor(&mut FixedSeedRNG::<16>::new(iv)).unwrap();
+    let (mut enc, _) = key.create_encryptor(&mut FixedSeedRNG::new(iv)).unwrap();
     let mut data = *pt;
     for block in data.as_chunks_mut::<BLOCK_LEN>().0.iter_mut() {
         enc.do_encrypt_blocks_inplace(core::slice::from_mut(block)).unwrap();
@@ -126,7 +126,7 @@ fn camellia_128_cbc_chain() {
     // The fourth entry stands alone: one block under its own IV.
     let iv: [u8; 16] = bytes(IV_128_4);
     let mut data: [u8; 16] = bytes(PT[3]);
-    let (mut enc, got_iv) = key.create_encryptor(&mut FixedSeedRNG::<16>::new(iv)).unwrap();
+    let (mut enc, got_iv) = key.create_encryptor(&mut FixedSeedRNG::new(iv)).unwrap();
     assert_eq!(got_iv, iv);
     enc.do_encrypt_blocks_inplace(core::slice::from_mut(&mut data)).unwrap();
     assert_eq!(data, bytes::<16>(CT_128_4), "CAMELLIA-128-CBC entry 4");

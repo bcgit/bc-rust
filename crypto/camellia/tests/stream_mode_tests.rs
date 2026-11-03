@@ -43,7 +43,7 @@ use bouncycastle_core::symmetric_key::{
     FromKeyMaterial, SymmetricDecryptionKey, SymmetricEncryptionKey,
 };
 use bouncycastle_core::traits::{StreamCipherDecryptor, StreamCipherEncryptor};
-use bouncycastle_core_test_framework::FixedSeedRNG;
+use bouncycastle_rng::FixedSeedRNG;
 use common::bytes;
 
 const KEY_128: &str = "2B7E151628AED2A6ABF7158809CF4F3C";
@@ -104,15 +104,13 @@ where
     let ct = bytes::<64>(expected);
 
     // There is no API for supplying an IV, so pin the RNG to the vector's and check what came back.
-    let (mut enc, got_iv) =
-        key.create_encryptor(&mut FixedSeedRNG::<BLOCK_LEN>::new(iv)).expect("enc init");
+    let (mut enc, got_iv) = key.create_encryptor(&mut FixedSeedRNG::new(iv)).expect("enc init");
     assert_eq!(got_iv, iv, "{name}: the pinned RNG should produce the vector's IV");
     let mut data = pt;
     enc.do_encrypt_inplace(&mut data).expect("encryption");
     assert_eq!(data, ct, "{name} encrypt, one call");
 
-    let (mut enc, _) =
-        key.create_encryptor(&mut FixedSeedRNG::<BLOCK_LEN>::new(iv)).expect("enc init");
+    let (mut enc, _) = key.create_encryptor(&mut FixedSeedRNG::new(iv)).expect("enc init");
     let mut data = pt;
     for block in data.chunks_mut(BLOCK_LEN) {
         enc.do_encrypt_inplace(block).expect("encryption");
@@ -323,8 +321,7 @@ where
         reference_ctr::<P, KEY_LEN>(&material, t1, &mut expected);
 
         let mut data = plaintext.clone();
-        let (mut enc, got) =
-            key.create_encryptor(&mut FixedSeedRNG::<CTR_NONCE_LEN>::new(nonce)).expect("enc init");
+        let (mut enc, got) = key.create_encryptor(&mut FixedSeedRNG::new(nonce)).expect("enc init");
         assert_eq!(got, nonce, "{name}: the pinned RNG should produce the chosen nonce");
         enc.do_encrypt_inplace(&mut data).expect("encryption");
         assert_eq!(data, expected, "{name}, len {len}: should match the reference");
@@ -410,8 +407,7 @@ where
         reference_cfb8::<P, KEY_LEN>(&material, iv, &mut expected, true);
 
         let mut data = plaintext.clone();
-        let (mut enc, got_iv) =
-            key.create_encryptor(&mut FixedSeedRNG::<BLOCK_LEN>::new(iv)).expect("enc init");
+        let (mut enc, got_iv) = key.create_encryptor(&mut FixedSeedRNG::new(iv)).expect("enc init");
         assert_eq!(got_iv, iv);
         enc.do_encrypt_inplace(&mut data).expect("encryption");
         assert_eq!(data, expected, "{name}, len {len}: encrypt should match the equations");
