@@ -3,64 +3,81 @@
 ## Major features
 
 * New algorithms added to crypto/ :
-    * SM3 -- the SM3 hash (GB/T 32905-2016 / ISO/IEC 10118-3:2018), ported from bc-java.
-    * AES -- AES-128/192/256, along with its modes AES_ECB, AES_CBC, AES_CCM, AES_CFB, AES_CFB8, AES_CTR, and AES_GCM.
+    * SM3 -- the SM3 hash (GB/T 32905-2016 / ISO/IEC 10118-3:2018), ported from bc-java, with HMAC-SM3.
+    * AES -- AES-128/192/256 in ECB, CBC (PKCS#7 or whole blocks), CFB, CFB8, CTR, CCM and GCM, plus CMAC and GMAC;
+      the modes and padding are a new `cipher` crate, generic over the block cipher.
     * ASCON -- Ascon-AEAD128, Ascon-Hash256, Ascon-XOF128 and Ascon-CXOF128 (NIST SP 800-232).
-* Further memory usage improvements on ML-DSA / ML-KEM. New figures for the largest size are:
+    * SP 800-185 -- cSHAKE, KMAC, TupleHash and ParallelHash, in the sha3 crate.
+    * HMAC and HKDF are generic over the hash, with aliases in each hash crate: HMAC over SHA-3, HMAC-SM3,
+      HMAC-SHA512/224, HMAC-SHA512/256 and HKDF-SHA384 are new (#122).
+* Key objects (PRs #170, #172): anything keyed is a key built once from `KeyMaterial` -- `AES128Key<GCM>`,
+  `AES128Key<CBC<PKCS7>>`, `HmacKey<H>`, `KMAC128Key`, `AsconAEAD128Key` -- which validates and expands the key once,
+  hands out workers that borrow it (`create_encryptor(rng)`, `create_decryptor(init_data)`, `create_generator()`),
+  and provides the one-shots (`encrypt`, `mac`, `verify`). The worker traits keep only the streaming methods:
+  `do_*_init` and the key-taking one-shots are gone, and resume takes the key object.
+* Signature keys likewise: `SigningKey` (`create_signer(rng, ctx)`, `sign`), `DeterministicSigningKey`,
+  `VerifyingKey` (`create_verifier`, `verify`) and the pre-hash forms with the hash as a type parameter
+  (`create_ph_signer::<SHA512>`); `Signer` is now `SignatureSigner`, and `do_sign_init` / `do_verify_init` are gone.
+  ML-DSA and HashML-DSA are on these traits.
+* Further memory usage improvements on ML-DSA / ML-KEM, with a slight throughput gain (the work was mostly removing
+  unnecessary memcpy's). New figures for the largest size:
     * ML-DSA-87/Sign 118 kb, ML-DSA-87/Verify 212 kb
     * ML-DSA-87_lowmemory/Sign 25 kb, ML-DSA-87_lowmemory/Verify 21 kb
     * ML-KEM-1024/Encaps 44 kb, ML-KEM-1024/Decaps 58 kb
-    * ML-KEM-1024_lowmemory/Encaps 11 kb, ML-KEM-1024/Decaps 21 kb
-    * Performance (throughput) actually saw a slight performance increase as this cleanup was largely about finding and
-      removing unnecessary memcpy's.
+    * ML-KEM-1024_lowmemory/Encaps 11 kb, ML-KEM-1024_lowmemory/Decaps 21 kb
 
 ## Minor features / bug fixes
 
-* Signature keys build their own workers, as cipher and MAC keys do. `core::signature_key` adds `SigningKey`
-  (`create_signer(&self, rng, ctx)`, `sign`), `DeterministicSigningKey` (`create_signer_deterministic`), `VerifyingKey`
-  (`create_verifier`, `verify`) and the pre-hash forms with the hash as a type parameter (`create_ph_signer::<SHA512>`,
-  `sign_ph`, `verify_ph`). `Signer` is `SignatureSigner` and, with `SignatureVerifier`, keeps only the streaming methods
-  (`do_update`, `do_final`, `do_verify_final`); `do_sign_init` / `do_verify_init`, `PHSigner` / `PHSignatureVerifier`
-  and the ML-DSA side doors (`sign_with_expanded_key`, `set_signer_rnd`, `sign_init_from_seed`, the fixed-hash
-  `HashMLDSA*_with_*` signers) are gone. Randomness comes from the caller's `&mut dyn RNG`: ML-DSA's `rnd` is drawn
-  from it (the hedged variant) and no method takes it directly; FIPS 204's deterministic variant (`rnd` all zeros) is
-  `DeterministicSigningKey` / `DeterministicPreHashSigningKey` on the ML-DSA keys (`sign_deterministic`,
-  `create_signer_deterministic`, `sign_ph_deterministic`) and `sign_mu_deterministic` at the mu level. A known-answer
-  test with any other `rnd` reproduces it with `bouncycastle_rng::FixedSeedRNG`, which moved there from the test
-  framework and is now generic over what holds its bytes. The `HashMLDSA*_with_*` types remain as the FIPS 204 pairing names and OIDs. ML-DSA's
-  external-mu interface is on the keys too: `pk.compute_mu`, `pk.verify_mu`, `sk.compute_mu`, `sk.sign_mu` (an
-  expanded key uses its cached matrix), with `create_mu_builder(ctx)` on both keys as the streaming form of
-  `compute_mu` (`MuBuilder::from_tr` remains for a party holding only the key hash; the static `MuBuilder::do_init`
-  and `MuBuilder::compute_mu` are gone); they replace
-  `MLDSATrait`'s static `compute_mu_from_*`, `sign_mu*`, `verify_mu` and the `sign_mu_deterministic_from_seed` forms,
-  and the key types carry only their parameter set: `MLDSAPublicKey<P>`, `MLDSAPrivateKey<P>`, the expanded keys
-  (which now borrow the key they expand, `MLDSAPrivateKeyExpanded<'k, P>`, so a private key's secret exists once;
-  `key()` reaches the borrowed key, which holds the encoding; `A_hat`, `pk_decode` and `sk_decode` leave the key
-  traits, `from_bytes` decodes),
-  `MLDSASeedPrivateKey<P>` and the marker `MLDSA<P>`, with the encoded lengths inferred through the sealed
-  `PublicKeyLen` / `PrivateKeyLen` / `SignatureLen` (/ `FullPrivateKeyLen`) traits.
-* `AlgorithmInfo` (`alg_name()`, `max_security_strength()`) is the run-time form of `Algorithm`'s constants, with a
-  blanket impl; `Hash`, `KDF`, `MAC` and the new signature workers take it as a supertrait and lose their own
-  `max_security_strength`, and the factories report the algorithm they selected instead of `"TODO"`.
-* `HashOneShot: Hash + Default` holds the one-shot `hash(data)` / `hash_out(data, out)`, called as `SHA256::hash(msg)`;
-  parameterised hashes keep an instance method.
-* Design discussions about whether core::traits::XOF (in the abstract) should allow interleaving absorb -> squeeze ->
-  absorb (ie "absorb-after-squeeze). Outcome: absorb-after-squeeze forbidden. Could be changed in the future. Refactored
-  to an `XOF::xof()`, `XOF.into_squeezer()`, 'XOFSqueezer.output ()' shape.
-* SHA2:
-    * Implemented SHA512/224 and SHA512/256.
-    * `Hash::do_final_partial_bits()` / `do_final_partial_bits_out()` are now implemented for SHA-2 (FIPS 180-4 s. 5.1).
-* SHA3:
-    * Fixed a bug in `XOF::squeeze_partial_byte_final()`: when it was the first squeeze it bypassed the SHAKE `1111`
-      domain suffix and returned raw Keccak output, and it returned the wrong `num_bits` bits of the output byte.
-    * Changed the order of bits when absorbing a final partial byte to match ASN.1 DER BIT_STRING bit ordering.
-* The constant-time helpers in bouncycastle-utils now use a more robust optimization barrier based on unsafe
-  `read_volatile` / `write_volatile` instead of `core::hint::black_box`, which is documented as best-effort only.
-* Added the `hazmat` module convention for primitives whose safe use is the caller's job; `bouncycastle_core::hazmat`
-  defines it.
-    * The `do_hazardous_operations` handler for `KeyMaterial` is now `hazmat`.
-    * ML-KEM `encaps_internal` is now `hazmat::EncapsWithRandomness::encaps_with_randomness`, and
-      `HashDRBG80090A::new_unititialized` is `hazmat::NewUninitialized::new_uninitialized` (typo fixed); both are
-      extension traits, so the call needs the `hazmat` import.
-    * New cipher-related features `ElectronicCodeBook`, `KeyStream`, the `AES*Internal` types, `Ecb` and `AES_ECB_*`,
-      and `CtrKeyStream` under their crates' `hazmat` modules.
+Trait system:
+
+* Anything that draws randomness takes the caller's `&mut dyn RNG` (`keygen`, `create_signer`, `create_encryptor`,
+  `encaps_rng`); the `keygen()` that built its own DRBG is gone. `FixedSeedRNG` moved to `bouncycastle-rng`.
+* `AlgorithmInfo` (`alg_name()`, `max_security_strength()`) is the run-time form of `Algorithm`; `Hash`, `KDF`,
+  `MAC` and the signature workers take it as a supertrait, and the factories report the algorithm selected.
+* `HashOneShot` holds the one-shot `hash(data)` / `hash_out(data, out)`, called as `SHA256::hash(msg)`.
+* `Hash` no longer requires `Clone`, and the hash, XOF, cipher and MAC worker traits are usable as `dyn`.
+* XOF: absorb-after-squeeze is forbidden; the API is the one-shot `XOF::xof()`, or `into_squeezer()` then
+  `XOFSqueezer::do_output()` / `do_output_final()`.
+* Error enums are `#[non_exhaustive]` (#81); `Condition` covers the unsigned types (PR #63); the constant-time
+  barrier in bouncycastle-utils is `read_volatile` / `write_volatile` rather than the best-effort `black_box`.
+* `hazmat` modules hold what is only safe when composed correctly (`bouncycastle_core::hazmat` defines the term):
+  `do_hazardous_operations`, ML-KEM `encaps_with_randomness` and `HashDRBG80090A::new_uninitialized` (both now
+  extension traits), the raw block permutation, ECB and the CTR keystream.
+
+ML-DSA / ML-KEM:
+
+* Fixed an `i32` overflow in ML-DSA-87 verification from a missing reduction, found with Wycheproof (PR #137).
+* Parameter sets are sealed traits (`MLDSAParams`, `HashMLDSAParams`, `MLKEMParams`) instead of const-generic
+  turbofish; key types carry only `P` (`MLDSAPublicKey<P>`), with the encoded lengths inferred (#117).
+* The ML-DSA external-mu interface is on the keys (`compute_mu`, `sign_mu`, `verify_mu`, `create_mu_builder`); the
+  FIPS 204 deterministic variant is `DeterministicSigningKey` and the hedged one draws `rnd` from the caller's RNG;
+  `sign_with_expanded_key`, `set_signer_rnd` and `sign_init_from_seed` are gone. Expanded keys borrow the key they
+  expand.
+* HashML-DSA drops `HashMLDSA65_with_SHA256` and `HashMLDSA87_with_SHA256` (SHA-256 is below those sets' strength),
+  leaving ML-DSA-44 with SHA-256 or SHA-512 and ML-DSA-65/87 with SHA-512; the SHA-512 pairings carry OIDs.
+* ML-KEM gains expanded public and private keys; `mldsa-common` and `mlkem-common` hold the arithmetic shared with
+  the low-memory crates.
+
+SHA-2 / SHA-3:
+
+* SHA-2: SHA512/224, SHA512/256, and `do_final_partial_bits()` / `do_final_partial_bits_out()` (FIPS 180-4 s. 5.1).
+* SHA-3: `squeeze_partial_byte_final()` on a first squeeze skipped the SHAKE domain suffix and returned the wrong
+  bits, fixed; the final partial byte's bit order now matches DER BIT STRING (#91). Keccak absorbs whole blocks
+  straight from the caller's slice.
+
+Command line:
+
+* A `bc-rust` subcommand for every new primitive: the AES modes and MACs, Ascon, SM3, SP 800-185, HMAC over every
+  hash.
+
+Docs, build and CI:
+
+* QUALITY_AND_STYLE.md covers key objects, `hazmat`, `dyn`-compatibility and the `_out` / `_inplace` / `_nonce`
+  suffixes; CONTRIBUTING.md and the new ISSUES_STYLE_GUIDE.md (PR #72, thanks to @jjkurczak) state the submission
+  bar and the AI policy.
+* Github Actions build, test, doc and format-check every pull request (#45, thanks to @officialfrancismendoza; #59).
+* Crate versions inherit from the workspace (thanks to Tamish Dahiya); factory docs link the core traits (thanks to
+  Polly Labs); build instructions clarified (thanks to Michael Richardson).
+* A `mutants` cargo profile makes `cargo mutants` on ML-DSA / ML-KEM take seconds per mutant rather than minutes.
+
+* Github issues and PRs resolved: #45, #59, #62, #63, #72, #81, #91, #117, #122, #133, #137, #170, #172.
