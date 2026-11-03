@@ -225,7 +225,9 @@ impl<PARAMS: SHA3Params> Hash for SHA3Internal<PARAMS> {
     }
 }
 
-/// SHA3 is allowed to be used as a KDF in the form HASH(X) as per NIST SP 800-56C.
+/// A plain hash of the concatenated inputs, `H(key_1 || .. || key_n || additional_input)`, with
+/// the entropy bookkeeping of [`KeyMaterial`]. This is not the SP 800-56Cr2 Section 4 one-step
+/// KDF, which hashes a 4-byte big-endian counter before `Z || FixedInfo` on every block.
 impl<PARAMS: SHA3Params> KDF for SHA3Internal<PARAMS> {
     /// Returns a [`KeyMaterial`].
     /// For the KDF to be considered "fully-seeded" and be capable of outputting full-entropy KeyMaterials,

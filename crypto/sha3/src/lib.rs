@@ -108,8 +108,9 @@
 //! SHA3 offers Key Derivation Functions in the form of KDF, which is accessed through the [`KDF`] trait,
 //! which is implemented by all SHA3 and SHAKE variants.
 //! [`KDF`] acts on [`KeyMaterial`] objects as both the input and output values.
-//! In the case of SHA3, the [`KDF`] interfaces are simple wrapper functions around the underlying SHA3 or SHAKE
-//! primitive that correctly maintains the length and entropy metadata of the key material that it is acting on.
+//! In the case of SHA3, the [`KDF`] interfaces hash the concatenated input keys and additional input
+//! with the underlying SHA3 or SHAKE primitive, maintaining the length and entropy metadata of the key
+//! material; they are not the SP 800-56Cr2 one-step KDF, which puts a counter before the input.
 //! This is intended to act as a developer aid to prevent some classes of developer mistakes, such as
 //! deriving a cryptographic key from uninitialized (aka zeroized) input key material, or using low-entropy
 //! input key material to derive a MAC, symmetric, or asymmetric key.
@@ -192,9 +193,8 @@
 //! | Object                                                          | Size (bytes) |
 //! |-----------------------------------------------------------------|--------------|
 //! | `SHA3_224` .. `SHA3_512`, `SHAKE128/256`, `SHAKESqueezer`       | 440          |
-//! | `CSHAKE128/256`, `TUPLEHASHXOF128/256`, `CSHAKESqueezer`        | 448          |
-//! | `KMACXOF128/256`, `TUPLEHASH128/256`                            | 456          |
-//! | `KMAC128/256`                                                   | 464          |
+//! | `CSHAKE128/256`, `KMACXOF128/256`, `TUPLEHASHXOF128/256`, `CSHAKESqueezer` | 448 |
+//! | `KMAC128/256`, `KMAC128Key`/`KMAC256Key`, `TUPLEHASH128/256`    | 456          |
 //! | `PARALLELHASHXOF128/256`                                        | 912          |
 //! | `PARALLELHASH128/256`                                           | 920          |
 //!

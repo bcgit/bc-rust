@@ -35,7 +35,7 @@ impl<PARAMS: SHAKEParams> Algorithm for SHAKEInternal<PARAMS> {
 }
 
 impl<PARAMS: SHAKEParams> SHAKEInternal<PARAMS> {
-    /// Get a new SHA3 instance, ready for use.
+    /// Get a new SHAKE instance, ready for use.
     pub fn new() -> Self {
         Self {
             _phantomdata: core::marker::PhantomData,
