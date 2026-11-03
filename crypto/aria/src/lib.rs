@@ -271,6 +271,12 @@
 //! * The four-block working state is not scrubbed after a call. The round keys, and during
 //!   expansion `KL`, `KR`, `W0 .. W3` and the candidate round keys, are wrapped in `Secret` and
 //!   so zeroized on drop; the by-value temporaries of the rounds and of key expansion are not.
+//! * The diffusion layer's byte parity is a secret, so step 1 of `diffuse` is written as
+//!   rotations and XORs: a multiply by `0x0101_0101`, and the shift-and-OR broadcast that LLVM
+//!   folds back into one, would put it through the multiplier. No source-level test can see that,
+//!   so the check is on the release assembly: `cargo rustc -p bouncycastle-aria --release --lib
+//!   -- --emit asm`, then `grep -c imul target/release/deps/bouncycastle_aria-*.s`, which must be
+//!   zero. It was 44 with the shift-and-OR form.
 //! * Constant-time execution says nothing about power or electromagnetic side channels.
 //!
 //! ## Security strength

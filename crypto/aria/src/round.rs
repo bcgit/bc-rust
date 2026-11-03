@@ -113,19 +113,18 @@ pub(crate) fn sl2(s: &mut [State; LANES]) {
 /// and `test_diffusion_matches_the_rfc_equations` repeats the check in Rust. `A` is an involution
 /// (Sec 2.4.3, "x = A(A(x))"), which `test_diffusion_is_an_involution` checks.
 ///
-/// Step 1 broadcasts the parity byte to all four byte positions with shifts and ORs rather than
-/// the multiplication by `0x0101_0101` the 32-bit implementations use: the two are equal, since
-/// the operand is below 256 and cannot carry, but the parity is secret and a multiply puts it
-/// through the multiplier, whose latency is not data-independent on every target. (The bytes
-/// are disjoint, so `|` and `^` agree here -- a surviving `cargo mutants` equivalence, like
-/// those in `transpose`.)
+/// Step 1 is written as three rotations of the word, each byte XORed with the other three
+/// directly, rather than as the parity byte multiplied by `0x0101_0101` the 32-bit
+/// implementations use: the parity is secret, and a multiply puts it through the multiplier,
+/// whose latency is not data-independent on every target. A shift-and-OR broadcast of the
+/// parity is no better: its four terms are disjoint, and LLVM folds it back into the multiply.
+/// No source-level test can see the difference, so the release assembly is checked instead (see
+/// the crate's "Constant-time properties").
 pub(crate) fn diffuse(t: &mut State) {
-    // 1. b_i ^= b0 ^ b1 ^ b2 ^ b3, per word.
+    // 1. b_i ^= b0 ^ b1 ^ b2 ^ b3, per word: rotating by 8, 16 and 24 bits lines each byte up
+    //    with the other three.
     for w in t.iter_mut() {
-        let mut parity = *w ^ (*w >> 16);
-        parity ^= parity >> 8;
-        parity &= 0xFF;
-        *w ^= parity | (parity << 8) | (parity << 16) | (parity << 24);
+        *w = w.rotate_left(8) ^ w.rotate_left(16) ^ w.rotate_left(24);
     }
     // 2.
     word_mix(t);
@@ -197,7 +196,7 @@ pub(crate) fn fe1(d: State, rk: &RoundKey) -> State {
 /// The data randomizing part (Sec 2.3.1 for encryption, Sec 2.3.2 for decryption) on four blocks
 /// at once, with `num_rounds` rounds (12, 14 or 16) and `key(i)` supplying round key `i` in
 /// `1 ..= num_rounds + 1`: `ek_i` for encryption, `dk_i` for decryption (see
-/// [`crate::ARIA::decrypt_4blocks`]).
+/// [`crate::hazmat::ARIAInternal::decrypt_4blocks`]).
 ///
 /// Line by line against Sec 2.3.1.1 (the 192- and 256-bit versions only add rounds):
 ///
