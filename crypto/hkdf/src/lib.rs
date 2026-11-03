@@ -1,5 +1,7 @@
 //! The generic HMAC-based Extract-and-Expand Key Derivation Function (HKDF) construction, as per
-//! RFC 5869, as allowed by NIST SP 800-56Cr2.
+//! RFC 5869, which NIST SP 800-56Cr2 Section 5.1 describes as "a version of the above
+//! extraction-then-expansion key-derivation procedure using HMAC for both the extraction and
+//! expansion steps".
 //!
 //! This is a utility crate and is not intended to be used directly. It provides [`HKDF`] -- the
 //! construction, generic over any hash that implements [`HMACParams`], the extension point through
@@ -179,7 +181,9 @@ struct HkdfExtract<H: HMACParams> {
     inner: H,
 }
 
-// Note: does not need to impl Drop because HKDF itself does not hold any sensitive state data.
+// No Drop impl of its own: the sensitive state is the salt-keyed pad states inside `hmac` (RFC
+// 2104 Section 4 says they "need to be treated and protected the same as secret keys"), and the
+// hash types zeroize those in their own Drop.
 
 #[derive(Clone, Debug, PartialOrd, PartialEq)]
 #[repr(u8)]
@@ -319,7 +323,7 @@ impl<H: HMACParams, const HASH_STATE_LEN: usize, const HKDF_STATE_LEN: usize>
     /// underlying hash function, but the actual key length will be appropriate to the underlying hash function.
     ///
     /// Salt is optional, which is indicated by providing an uninitialized KeyMaterial object of length zero,
-    /// the capacity is irrelevant, so KeyMateriol256::new() or KeyMaterial_internal::<0>::new() would both count as an absent salt.
+    /// the capacity is irrelevant, so KeyMaterial256::new() or KeyMaterial0::new() would both count as an absent salt.
     pub fn extract(
         salt: &impl KeyMaterialTrait,
         ikm: &impl KeyMaterialTrait,
@@ -402,7 +406,7 @@ impl<H: HMACParams, const HASH_STATE_LEN: usize, const HKDF_STATE_LEN: usize>
         let hash_len = H::OUTPUT_LEN;
         if L > 255 * hash_len {
             return Err(KDFError::InvalidLength(
-                "HMAC can not produce more than 255*HashLen bytes out output",
+                "HKDF-Expand cannot produce more than 255*HashLen bytes of output",
             ));
         }
 
@@ -509,7 +513,7 @@ impl<H: HMACParams, const HASH_STATE_LEN: usize, const HKDF_STATE_LEN: usize>
     }
 
     /// Salt is optional, which is indicated by providing an uninitialized KeyMaterial object of length zero,
-    /// the capacity is irrelevant, so KeyMateriol256::new() or KeyMaterial_internal::<0>::new() would both count as an absent salt.
+    /// the capacity is irrelevant, so KeyMaterial256::new() or KeyMaterial0::new() would both count as an absent salt.
     #[allow(non_snake_case)]
     pub fn extract_and_expand_out(
         salt: &impl KeyMaterialTrait,
@@ -574,7 +578,7 @@ impl<H: HMACParams, const HASH_STATE_LEN: usize, const HKDF_STATE_LEN: usize>
     ///
     /// Salt is optional; to omit it, provide a KeyMaterial0, which will cause HKDF to use the default all-zero salt.
     ///
-    /// Returns the number of bits of entropy credited to this input key material.
+    /// Returns the number of bytes of entropy credited to this input key material.
     pub fn do_extract_init(&mut self, salt: &impl KeyMaterialTrait) -> Result<usize, MACError> {
         if self.state >= HkdfStates::Initialized {
             return Err(MACError::InvalidState("Initialized twice"));
@@ -603,7 +607,7 @@ impl<H: HMACParams, const HASH_STATE_LEN: usize, const HKDF_STATE_LEN: usize>
     /// This function may be called zero or more times in a workflow.
     /// In particular, this function may be called multiple times to add more than one IKM.
     ///
-    /// Returns the number of bits of entropy credited to this input key material.
+    /// Returns the number of bytes of entropy credited to this input key material.
     pub fn do_extract_update_key(
         &mut self,
         ikm: &impl KeyMaterialTrait,
@@ -636,7 +640,7 @@ impl<H: HMACParams, const HASH_STATE_LEN: usize, const HKDF_STATE_LEN: usize>
     /// State machine: this function must be called after [`HKDF::do_extract_init`], followed by
     /// zero or more calls of [`HKDF::do_extract_update_key`], and before [`HKDF::do_extract_final`].
     ///
-    /// Returns the number of bits of entropy credited to this input key material, which is always 0 for this function.
+    /// Returns the number of bytes of entropy credited to this input key material, which is always 0 for this function.
     pub fn do_extract_update_bytes(&mut self, ikm_chunk: &[u8]) -> Result<usize, MACError> {
         if self.state == HkdfStates::Uninitialized {
             return Err(MACError::InvalidState(
@@ -658,7 +662,7 @@ impl<H: HMACParams, const HASH_STATE_LEN: usize, const HKDF_STATE_LEN: usize>
     }
 
     /// Finish the HKDF-Extract phase and fill the provided `prk`.
-    /// Note that the provided KeyMaterial must be correctly sized to the HMAC block length.
+    /// The PRK is `HashLen` bytes (RFC 5869 Section 2.2), which the provided KeyMaterial always holds.
     #[allow(non_snake_case)]
     pub fn do_extract_final_out(
         self,
@@ -699,8 +703,10 @@ impl<H: HMACParams, const HASH_STATE_LEN: usize, const HKDF_STATE_LEN: usize>
     }
 }
 
-/// HKDF's extract-then-expand is the two-step key derivation of NIST SP 800-56Cr2 Section 5.1, with
-/// HMAC as the auxiliary MAC. The default salt is empty: RFC 5869 Section 2.2 sets an absent salt
+/// HKDF's extract-then-expand is RFC 5869's, which NIST SP 800-56Cr2 Section 5.1 names as "a
+/// version of" its two-step key derivation "using HMAC for both the extraction and expansion
+/// steps"; the expansion step's input layout (`T(i-1) || info || i`) is RFC 5869's own rather than
+/// SP 800-108r1 Section 4.2's feedback mode. The default salt is empty: RFC 5869 Section 2.2 sets an absent salt
 /// to "a string of HashLen zeros", SP 800-56Cr2 Section 5.1 to an all-zero string of one hash input
 /// block, and HMAC zero-pads its key to a block, so the three key HMAC identically (see
 /// `salt_as_mac_key`). All key material and additional_input is mapped to HKDF's ikm input.
