@@ -55,7 +55,7 @@ impl Polynomial {
     /// decryption noise margin. The mapping is computed branchlessly (constant-time)
     /// via a bit-derived all-ones / all-zeros mask, and bits are read LSB-first. This
     /// is the exact inverse of [`to_msg`].
-    pub fn from_msg(m: [u8; 32]) -> Self {
+    pub fn from_msg(m: &[u8; 32]) -> Self {
         let mut w = Polynomial::new();
 
         for (i, b) in m.iter().enumerate() {
@@ -381,11 +381,13 @@ pub fn montgomery_reduce(a: i32) -> i16 {
 
 /// Barrett reduction into \[0, 𝑞]: the floor variant, not pq-crystals' centered one, which the
 /// compression code relies on for its unsigned casts. The result is 𝑞 rather than 0 for a
-/// negative multiple of 𝑞; [`cond_sub_q`] folds that when a canonical value is needed.
+/// negative multiple of 𝑞; [`cond_sub_q`] folds that when a canonical value is needed. Valid for
+/// every `i16`: the subtraction is done in `i32`, since for `a <= -9q` the product `t * q` does
+/// not fit an `i16` and a narrowed subtraction overflowed in debug builds.
 pub fn barrett_reduce(a: i16) -> i16 {
-    let v = (((1u32 << 26) + ((q / 2) as u32)) / (q as u32)) as i16;
-    let t = (((v as i32) * (a as i32)) >> 26) as i16;
-    a - (((t as i32) * q as i32) as i16)
+    let v = (((1u32 << 26) + ((q / 2) as u32)) / (q as u32)) as i32;
+    let t = (v * (a as i32)) >> 26;
+    (a as i32 - t * q as i32) as i16
 }
 
 /// Folds 𝑞 to 0: for `a` in \[0, 𝑞], the canonical representative in \[0, 𝑞).
@@ -416,11 +418,12 @@ mod tests {
 
     #[test]
     fn barrett_reduce_lands_in_zero_to_q_inclusive() {
-        // The floor variant: for the sums the NTT arithmetic produces, |a| < 8q, the result is
-        // congruent to a and in [0, q], reaching q only at negative multiples of q, which the
-        // compression masks fold and the encoders never see (their inputs are reduced sums of
-        // Montgomery products, each in (-q, q)).
-        for a in -(8 * q)..=(8 * q) {
+        // The floor variant, over every i16 (the NTT arithmetic produces |a| < 8q; the whole
+        // range is checked so that no input can overflow): the result is congruent to a and in
+        // [0, q], reaching q only at negative multiples of q, which the compression masks fold
+        // and the encoders never see (their inputs are reduced sums of Montgomery products,
+        // each in (-q, q)).
+        for a in i16::MIN..=i16::MAX {
             let r = barrett_reduce(a);
             assert!((0..=q).contains(&r), "barrett_reduce({a}) = {r} not in [0, q]");
             assert_eq!((r as i32 - a as i32).rem_euclid(q as i32), 0, "barrett_reduce({a}) = {r}");
