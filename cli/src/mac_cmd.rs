@@ -3,6 +3,7 @@ use std::io::Read;
 use std::process::exit;
 
 use crate::helpers::read_from_file_raw;
+use crate::sha3_cmd::Strength;
 use bouncycastle::core::errors::MACError;
 use bouncycastle::core::hazmat::do_hazardous_operations;
 use bouncycastle::core::key_material::{KeyMaterial512, KeyMaterialTrait, KeyType};
@@ -92,7 +93,7 @@ pub(crate) fn mac_cmd(
 /// KMAC (NIST SP 800-185 Sec 4), which unlike HMAC takes a customization string and a caller-
 /// chosen tag length -- both are bound into the computation, so the verifier must use the same.
 pub(crate) fn kmac_cmd(
-    bit_len: usize,
+    strength: Strength,
     length: usize,
     customization: &Option<String>,
     key: &Option<String>,
@@ -104,18 +105,17 @@ pub(crate) fn kmac_cmd(
     let s = customization.as_deref().unwrap_or("").as_bytes();
     // The allow-weak form, as the HMAC commands use: a CLI is used for test vectors and
     // scripting, where a short or all-zero key is a legitimate thing to want.
-    match bit_len {
-        128 => {
+    match strength {
+        Strength::Bits128 => {
             let kmac_key = KMAC128Key::with_params_allow_weak(&key, s, length)
                 .unwrap_or_else(|e| kmac_key_error(e));
             do_mac(kmac_key.create_generator(), verify_val, output_hex)
         }
-        256 => {
+        Strength::Bits256 => {
             let kmac_key = KMAC256Key::with_params_allow_weak(&key, s, length)
                 .unwrap_or_else(|e| kmac_key_error(e));
             do_mac(kmac_key.create_generator(), verify_val, output_hex)
         }
-        _ => panic!("Unsupported algorithm: KMAC-{bit_len}"),
     }
 }
 

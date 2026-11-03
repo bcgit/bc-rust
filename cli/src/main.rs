@@ -17,9 +17,11 @@ mod sha2_cmd;
 mod sha3_cmd;
 mod sm3_cmd;
 
+use crate::hkdf_cmd::HKDFVariant;
 use crate::mac_cmd::HMACVariant;
 use crate::mldsa_cmd::MLDSAAction;
 use crate::sha2_cmd::SHA2Variant;
+use crate::sha3_cmd::{SHA3Variant, Strength};
 use clap::{Parser, Subcommand};
 use helpers::block_mode_helpers::CipherDirection;
 
@@ -1939,13 +1941,40 @@ fn run() {
             encoders_cmd::base64_encode_cmd();
         }
         Some(Subcommands::HashMLDSA44 { action, ctxfile, skfile, pkfile, sigfile, x }) => {
-            mldsa_cmd::hash_mldsa44_sha512_cmd(action, ctxfile, skfile, pkfile, sigfile, *x);
+            mldsa_cmd::mldsa_cmd(
+                &mldsa_cmd::MLDSA44_SET,
+                action,
+                ctxfile,
+                skfile,
+                pkfile,
+                sigfile,
+                true,
+                *x,
+            );
         }
         Some(Subcommands::HashMLDSA65 { action, ctxfile, skfile, pkfile, sigfile, x }) => {
-            mldsa_cmd::hash_mldsa65_sha512_cmd(action, ctxfile, skfile, pkfile, sigfile, *x);
+            mldsa_cmd::mldsa_cmd(
+                &mldsa_cmd::MLDSA65_SET,
+                action,
+                ctxfile,
+                skfile,
+                pkfile,
+                sigfile,
+                true,
+                *x,
+            );
         }
         Some(Subcommands::HashMLDSA87 { action, ctxfile, skfile, pkfile, sigfile, x }) => {
-            mldsa_cmd::hash_mldsa87_sha512_cmd(action, ctxfile, skfile, pkfile, sigfile, *x);
+            mldsa_cmd::mldsa_cmd(
+                &mldsa_cmd::MLDSA87_SET,
+                action,
+                ctxfile,
+                skfile,
+                pkfile,
+                sigfile,
+                true,
+                *x,
+            );
         }
         Some(Subcommands::HexDecode) => {
             encoders_cmd::hex_decode_cmd();
@@ -1963,8 +1992,15 @@ fn run() {
             len,
             x,
         }) => hkdf_cmd::hkdf_cmd(
-            "HKDF-SHA256", salt, salt_file, ikm, ikm_file, additional_input, additional_input_file,
-            *len, *x,
+            HKDFVariant::SHA256,
+            salt,
+            salt_file,
+            ikm,
+            ikm_file,
+            additional_input,
+            additional_input_file,
+            *len,
+            *x,
         ),
         Some(Subcommands::HKDF_SHA384 {
             salt,
@@ -1976,8 +2012,15 @@ fn run() {
             len,
             x,
         }) => hkdf_cmd::hkdf_cmd(
-            "HKDF-SHA384", salt, salt_file, ikm, ikm_file, additional_input, additional_input_file,
-            *len, *x,
+            HKDFVariant::SHA384,
+            salt,
+            salt_file,
+            ikm,
+            ikm_file,
+            additional_input,
+            additional_input_file,
+            *len,
+            *x,
         ),
         Some(Subcommands::HKDF_SHA512 {
             salt,
@@ -1989,8 +2032,15 @@ fn run() {
             len,
             x,
         }) => hkdf_cmd::hkdf_cmd(
-            "HKDF-SHA512", salt, salt_file, ikm, ikm_file, additional_input, additional_input_file,
-            *len, *x,
+            HKDFVariant::SHA512,
+            salt,
+            salt_file,
+            ikm,
+            ikm_file,
+            additional_input,
+            additional_input_file,
+            *len,
+            *x,
         ),
         Some(Subcommands::HKDF_SM3 {
             salt,
@@ -2002,8 +2052,15 @@ fn run() {
             len,
             x,
         }) => hkdf_cmd::hkdf_cmd(
-            "HKDF-SM3", salt, salt_file, ikm, ikm_file, additional_input, additional_input_file,
-            *len, *x,
+            HKDFVariant::SM3,
+            salt,
+            salt_file,
+            ikm,
+            ikm_file,
+            additional_input,
+            additional_input_file,
+            *len,
+            *x,
         ),
         Some(Subcommands::HMAC_SHA256 { key, key_file, verify, x }) => {
             mac_cmd::mac_cmd(HMACVariant::SHA256, key, key_file, verify, *x)
@@ -2021,47 +2078,74 @@ fn run() {
             mac_cmd::mac_cmd(HMACVariant::SM3, key, key_file, verify, *x)
         }
         Some(Subcommands::KMAC128 { length, customization, key, key_file, verify, x }) => {
-            mac_cmd::kmac_cmd(128, *length, customization, key, key_file, verify, *x)
+            mac_cmd::kmac_cmd(Strength::Bits128, *length, customization, key, key_file, verify, *x)
         }
         Some(Subcommands::KMAC256 { length, customization, key, key_file, verify, x }) => {
-            mac_cmd::kmac_cmd(256, *length, customization, key, key_file, verify, *x)
+            mac_cmd::kmac_cmd(Strength::Bits256, *length, customization, key, key_file, verify, *x)
         }
         Some(Subcommands::MLDSA44 { action, ctxfile, skfile, pkfile, sigfile, x }) => {
-            mldsa_cmd::mldsa44_cmd(action, ctxfile, skfile, pkfile, sigfile, *x);
+            mldsa_cmd::mldsa_cmd(
+                &mldsa_cmd::MLDSA44_SET,
+                action,
+                ctxfile,
+                skfile,
+                pkfile,
+                sigfile,
+                false,
+                *x,
+            );
         }
         Some(Subcommands::MLDSA65 { action, ctxfile, skfile, pkfile, sigfile, x }) => {
-            mldsa_cmd::mldsa65_cmd(action, ctxfile, skfile, pkfile, sigfile, *x);
+            mldsa_cmd::mldsa_cmd(
+                &mldsa_cmd::MLDSA65_SET,
+                action,
+                ctxfile,
+                skfile,
+                pkfile,
+                sigfile,
+                false,
+                *x,
+            );
         }
         Some(Subcommands::MLDSA87 { action, ctxfile, skfile, pkfile, sigfile, x }) => {
-            mldsa_cmd::mldsa87_cmd(action, ctxfile, skfile, pkfile, sigfile, *x);
+            mldsa_cmd::mldsa_cmd(
+                &mldsa_cmd::MLDSA87_SET,
+                action,
+                ctxfile,
+                skfile,
+                pkfile,
+                sigfile,
+                false,
+                *x,
+            );
         }
         Some(Subcommands::MLKEM512 { action, skfile, pkfile, ctfile, x }) => {
-            mlkem_cmd::mlkem512_cmd(action, skfile, pkfile, ctfile, *x);
+            mlkem_cmd::mlkem_cmd(&mlkem_cmd::MLKEM512_SET, action, skfile, pkfile, ctfile, *x);
         }
         Some(Subcommands::MLKEM768 { action, skfile, pkfile, ctfile, x }) => {
-            mlkem_cmd::mlkem768_cmd(action, skfile, pkfile, ctfile, *x);
+            mlkem_cmd::mlkem_cmd(&mlkem_cmd::MLKEM768_SET, action, skfile, pkfile, ctfile, *x);
         }
         Some(Subcommands::MLKEM1024 { action, skfile, pkfile, ctfile, x }) => {
-            mlkem_cmd::mlkem1024_cmd(action, skfile, pkfile, ctfile, *x);
+            mlkem_cmd::mlkem_cmd(&mlkem_cmd::MLKEM1024_SET, action, skfile, pkfile, ctfile, *x);
         }
         Some(Subcommands::PARALLELHASH128 { length, block_size, customization, x }) => {
-            sha3_cmd::parallelhash_cmd(128, *length, *block_size, customization, *x);
+            sha3_cmd::parallelhash_cmd(Strength::Bits128, *length, *block_size, customization, *x);
         }
         Some(Subcommands::PARALLELHASH256 { length, block_size, customization, x }) => {
-            sha3_cmd::parallelhash_cmd(256, *length, *block_size, customization, *x);
+            sha3_cmd::parallelhash_cmd(Strength::Bits256, *length, *block_size, customization, *x);
         }
         Some(Subcommands::RNG { len, x }) => rng_cmd::rng_cmd(*len, *x),
         Some(Subcommands::SHA3_224 { x }) => {
-            sha3_cmd::sha3_cmd(224, *x);
+            sha3_cmd::sha3_cmd(SHA3Variant::SHA3_224, *x);
         }
         Some(Subcommands::SHA3_256 { x }) => {
-            sha3_cmd::sha3_cmd(256, *x);
+            sha3_cmd::sha3_cmd(SHA3Variant::SHA3_256, *x);
         }
         Some(Subcommands::SHA3_384 { x }) => {
-            sha3_cmd::sha3_cmd(384, *x);
+            sha3_cmd::sha3_cmd(SHA3Variant::SHA3_384, *x);
         }
         Some(Subcommands::SHA3_512 { x }) => {
-            sha3_cmd::sha3_cmd(512, *x);
+            sha3_cmd::sha3_cmd(SHA3Variant::SHA3_512, *x);
         }
         Some(Subcommands::SHA224 { x }) => {
             sha2_cmd::sha2_cmd(SHA2Variant::SHA224, *x);
@@ -2082,19 +2166,19 @@ fn run() {
             sha2_cmd::sha2_cmd(SHA2Variant::SHA512_256, *x);
         }
         Some(Subcommands::SHAKE128 { length, x }) => {
-            sha3_cmd::shake_cmd(128, *length, *x);
+            sha3_cmd::shake_cmd(Strength::Bits128, *length, *x);
         }
         Some(Subcommands::SHAKE256 { length, x }) => {
-            sha3_cmd::shake_cmd(256, *length, *x);
+            sha3_cmd::shake_cmd(Strength::Bits256, *length, *x);
         }
         Some(Subcommands::SM3 { x }) => {
             sm3_cmd::sm3_cmd(*x);
         }
         Some(Subcommands::TUPLEHASH128 { length, elements, customization, x }) => {
-            sha3_cmd::tuplehash_cmd(128, *length, elements, customization, *x);
+            sha3_cmd::tuplehash_cmd(Strength::Bits128, *length, elements, customization, *x);
         }
         Some(Subcommands::TUPLEHASH256 { length, elements, customization, x }) => {
-            sha3_cmd::tuplehash_cmd(256, *length, elements, customization, *x);
+            sha3_cmd::tuplehash_cmd(Strength::Bits256, *length, elements, customization, *x);
         }
         None => {
             eprintln!("No command provided. See -h")

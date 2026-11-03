@@ -11,21 +11,35 @@ use std::process::exit;
 
 use crate::helpers::{stream_hash, stream_xof};
 
-pub(crate) fn sha3_cmd(bit_len: usize, output_hex: bool) {
-    match bit_len {
-        224 => stream_hash(SHA3_224::new(), output_hex),
-        256 => stream_hash(SHA3_256::new(), output_hex),
-        384 => stream_hash(SHA3_384::new(), output_hex),
-        512 => stream_hash(SHA3_512::new(), output_hex),
-        _ => panic!("Unsupported algorithm: SHA3-{}", bit_len),
+#[allow(non_camel_case_types)]
+pub(crate) enum SHA3Variant {
+    SHA3_224,
+    SHA3_256,
+    SHA3_384,
+    SHA3_512,
+}
+
+/// The security strength that selects a SHAKE-based function's instance: SHAKE128 or SHAKE256,
+/// and with them the 128- and 256-bit KMAC, TupleHash and ParallelHash.
+#[derive(Clone, Copy)]
+pub(crate) enum Strength {
+    Bits128,
+    Bits256,
+}
+
+pub(crate) fn sha3_cmd(variant: SHA3Variant, output_hex: bool) {
+    match variant {
+        SHA3Variant::SHA3_224 => stream_hash(SHA3_224::new(), output_hex),
+        SHA3Variant::SHA3_256 => stream_hash(SHA3_256::new(), output_hex),
+        SHA3Variant::SHA3_384 => stream_hash(SHA3_384::new(), output_hex),
+        SHA3Variant::SHA3_512 => stream_hash(SHA3_512::new(), output_hex),
     }
 }
 
-pub(crate) fn shake_cmd(bit_len: usize, output_len: usize, output_hex: bool) {
-    match bit_len {
-        128 => stream_xof(SHAKE128::new(), output_len, output_hex),
-        256 => stream_xof(SHAKE256::new(), output_len, output_hex),
-        _ => panic!("Unsupported algorithm: SHAKE-{}", bit_len),
+pub(crate) fn shake_cmd(strength: Strength, output_len: usize, output_hex: bool) {
+    match strength {
+        Strength::Bits128 => stream_xof(SHAKE128::new(), output_len, output_hex),
+        Strength::Bits256 => stream_xof(SHAKE256::new(), output_len, output_hex),
     }
 }
 
@@ -35,7 +49,7 @@ pub(crate) fn shake_cmd(bit_len: usize, output_len: usize, output_hex: bool) {
 /// hashed as a single-element tuple -- which is not the same as hashing those bytes with SHAKE,
 /// because the element is length-prefixed.
 pub(crate) fn tuplehash_cmd(
-    bit_len: usize,
+    strength: Strength,
     output_len: usize,
     elements: &[String],
     customization: &Option<String>,
@@ -59,20 +73,19 @@ pub(crate) fn tuplehash_cmd(
     };
     let refs: Vec<&[u8]> = tuple.iter().map(|v| v.as_slice()).collect();
 
-    let out = match bit_len {
-        128 => TupleHash128::new(s, output_len)
+    let out = match strength {
+        Strength::Bits128 => TupleHash128::new(s, output_len)
             .unwrap_or_else(|_| {
                 eprintln!("Error: --output-len is larger than SP 800-185 allows here (Sec 7.2).");
                 exit(-1);
             })
             .hash_tuple(&refs),
-        256 => TupleHash256::new(s, output_len)
+        Strength::Bits256 => TupleHash256::new(s, output_len)
             .unwrap_or_else(|_| {
                 eprintln!("Error: --output-len is larger than SP 800-185 allows here (Sec 7.2).");
                 exit(-1);
             })
             .hash_tuple(&refs),
-        _ => panic!("Unsupported algorithm: TupleHash-{bit_len}"),
     };
     write_out(&out, output_hex);
 }
@@ -82,7 +95,7 @@ pub(crate) fn tuplehash_cmd(
 /// The block size is part of the function, not a tuning knob -- the same input under a different
 /// block size gives an unrelated hash, so it must match on both sides.
 pub(crate) fn parallelhash_cmd(
-    bit_len: usize,
+    strength: Strength,
     output_len: usize,
     block_size: usize,
     customization: &Option<String>,
@@ -93,8 +106,8 @@ pub(crate) fn parallelhash_cmd(
         exit(-1);
     };
     let s = customization.as_deref().unwrap_or("").as_bytes();
-    match bit_len {
-        128 => {
+    match strength {
+        Strength::Bits128 => {
             let mut p = ParallelHash128::new(block_size, s, output_len).unwrap_or_else(|_| {
                 eprintln!("Error: --output-len is larger than SP 800-185 allows here (Sec 7.2).");
                 exit(-1);
@@ -102,7 +115,7 @@ pub(crate) fn parallelhash_cmd(
             stream_stdin(|chunk| p.do_update(chunk));
             write_out(&p.do_final(), output_hex);
         }
-        256 => {
+        Strength::Bits256 => {
             let mut p = ParallelHash256::new(block_size, s, output_len).unwrap_or_else(|_| {
                 eprintln!("Error: --output-len is larger than SP 800-185 allows here (Sec 7.2).");
                 exit(-1);
@@ -110,7 +123,6 @@ pub(crate) fn parallelhash_cmd(
             stream_stdin(|chunk| p.do_update(chunk));
             write_out(&p.do_final(), output_hex);
         }
-        _ => panic!("Unsupported algorithm: ParallelHash-{bit_len}"),
     }
 }
 

@@ -11,8 +11,16 @@ use bouncycastle::sm3::hkdf::HKDF_SM3;
 /// The salt is held in a fixed-size key buffer; the library itself puts no bound on it.
 const MAX_SALT_LEN: usize = 1024;
 
+#[allow(non_camel_case_types)]
+pub(crate) enum HKDFVariant {
+    SHA256,
+    SHA384,
+    SHA512,
+    SM3,
+}
+
 pub(crate) fn hkdf_cmd(
-    hkdfname: &str,
+    variant: HKDFVariant,
     salt: &Option<String>,
     salt_file: &Option<String>,
     ikm: &Option<String>,
@@ -64,37 +72,34 @@ pub(crate) fn hkdf_cmd(
     // streamed into the extract phase, so its length is not bounded by a KeyMaterial buffer, and the
     // additional input is the expand phase's `info`. The library refuses an L above 255 * HashLen.
     let mut out_key = KeyMaterial::<{ 255 * hkdf::MAX_HMAC_OUTPUT_LEN }>::new();
-    let result = match hkdfname {
-        "HKDF-SHA256" => {
+    let result = match variant {
+        HKDFVariant::SHA256 => {
             let mut h = HKDF_SHA256::new();
             h.do_extract_init(&salt_key).unwrap();
             h.do_extract_update_bytes(&ikm_bytes).unwrap();
             let prk = h.do_extract_final().unwrap();
             HKDF_SHA256::expand_out(&prk, &info, len, &mut out_key)
         }
-        "HKDF-SHA384" => {
+        HKDFVariant::SHA384 => {
             let mut h = HKDF_SHA384::new();
             h.do_extract_init(&salt_key).unwrap();
             h.do_extract_update_bytes(&ikm_bytes).unwrap();
             let prk = h.do_extract_final().unwrap();
             HKDF_SHA384::expand_out(&prk, &info, len, &mut out_key)
         }
-        "HKDF-SHA512" => {
+        HKDFVariant::SHA512 => {
             let mut h = HKDF_SHA512::new();
             h.do_extract_init(&salt_key).unwrap();
             h.do_extract_update_bytes(&ikm_bytes).unwrap();
             let prk = h.do_extract_final().unwrap();
             HKDF_SHA512::expand_out(&prk, &info, len, &mut out_key)
         }
-        "HKDF-SM3" => {
+        HKDFVariant::SM3 => {
             let mut h = HKDF_SM3::new();
             h.do_extract_init(&salt_key).unwrap();
             h.do_extract_update_bytes(&ikm_bytes).unwrap();
             let prk = h.do_extract_final().unwrap();
             HKDF_SM3::expand_out(&prk, &info, len, &mut out_key)
-        }
-        _ => {
-            panic!("{} is not a supported HKDF variant.", hkdfname);
         }
     };
     if let Err(e) = result {

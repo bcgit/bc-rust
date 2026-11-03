@@ -1,23 +1,28 @@
-//! Work in progress.
-//! TODO: Use generic macros to eliminate duplicated code.
+//! The `mldsa44`, `mldsa65`, `mldsa87` and `hash-mldsa*` subcommands: one body, [`mldsa_cmd`],
+//! over the three parameter sets, which differ only in their key types, their lengths and the
+//! functions that make and check a key pair. Those come in through a [`ParameterSet`], so a
+//! length or a function can no longer be right for two sets and wrong for the third.
 
 use crate::helpers::{parse_seed, read_from_file, read_from_file_or_stdin, write_bytes_or_hex};
+use bouncycastle::core::errors::SignatureError;
+use bouncycastle::core::key_material::KeyMaterial;
 use bouncycastle::core::signature_key::{
-    PreHashSigningKey, PreHashVerifyingKey, SigningKey, VerifyingKey,
+    PreHashSigningKey, PreHashVerifyingKey, SignatureAlgorithm, SigningKey, VerifyingKey,
 };
 use bouncycastle::core::traits::{
-    SignaturePrivateKey, SignaturePublicKey, SignatureSigner, SignatureVerifier,
+    RNG, SignaturePrivateKey, SignaturePublicKey, SignatureSigner, SignatureVerifier,
 };
 use bouncycastle::hex;
 use bouncycastle::mldsa::{
-    MLDSA_SEED_LEN, MLDSA44, MLDSA44_PK_LEN, MLDSA44_SK_LEN, MLDSA44PrivateKey, MLDSA44PublicKey,
-    MLDSA65, MLDSA65_PK_LEN, MLDSA65_SK_LEN, MLDSA65PrivateKey, MLDSA65PublicKey, MLDSA87,
-    MLDSA87_PK_LEN, MLDSA87_SK_LEN, MLDSA87PrivateKey, MLDSA87PublicKey, MLDSAPrivateKeyTrait,
-    MLDSATrait,
+    MLDSA_SEED_LEN, MLDSA44, MLDSA44_PK_LEN, MLDSA44_SIG_LEN, MLDSA44_SK_LEN, MLDSA44PrivateKey,
+    MLDSA44PublicKey, MLDSA65, MLDSA65_PK_LEN, MLDSA65_SIG_LEN, MLDSA65_SK_LEN, MLDSA65PrivateKey,
+    MLDSA65PublicKey, MLDSA87, MLDSA87_PK_LEN, MLDSA87_SIG_LEN, MLDSA87_SK_LEN, MLDSA87PrivateKey,
+    MLDSA87PublicKey, MLDSAPrivateKeyTrait, MLDSATrait,
 };
 use bouncycastle::rng::HashDRBG_SHA512;
 use bouncycastle::sha2::SHA512;
 use clap::ValueEnum;
+use core::marker::PhantomData;
 use std::io;
 use std::io::Read;
 use std::process::exit;
@@ -42,17 +47,94 @@ pub(crate) enum MLDSAAction {
     Verify,
 }
 
-pub(crate) fn mldsa44_cmd(
+/// A parameter set as the command sees it: its name for messages, the algorithm marker the
+/// signing traits are keyed by, and the key-pair operations the core traits do not carry. The
+/// three sets below are the only instances.
+pub(crate) struct ParameterSet<
+    A,
+    PK,
+    SK,
+    const PK_LEN: usize,
+    const SK_LEN: usize,
+    const SIG_LEN: usize,
+> {
+    name: &'static str,
+    alg: PhantomData<A>,
+    keygen: fn(&mut dyn RNG) -> Result<(PK, SK), SignatureError>,
+    keygen_from_seed: fn(&KeyMaterial<MLDSA_SEED_LEN>) -> Result<(PK, SK), SignatureError>,
+    keypair_consistency_check: fn(&PK, &SK) -> Result<(), SignatureError>,
+    pk_of: fn(&SK) -> PK,
+}
+
+pub(crate) const MLDSA44_SET: ParameterSet<
+    MLDSA44,
+    MLDSA44PublicKey,
+    MLDSA44PrivateKey,
+    MLDSA44_PK_LEN,
+    MLDSA44_SK_LEN,
+    MLDSA44_SIG_LEN,
+> = ParameterSet {
+    name: "ML-DSA-44",
+    alg: PhantomData,
+    keygen: MLDSA44::keygen,
+    keygen_from_seed: MLDSA44::keygen_from_seed,
+    keypair_consistency_check: MLDSA44::keypair_consistency_check,
+    pk_of: |sk| sk.derive_pk(),
+};
+
+pub(crate) const MLDSA65_SET: ParameterSet<
+    MLDSA65,
+    MLDSA65PublicKey,
+    MLDSA65PrivateKey,
+    MLDSA65_PK_LEN,
+    MLDSA65_SK_LEN,
+    MLDSA65_SIG_LEN,
+> = ParameterSet {
+    name: "ML-DSA-65",
+    alg: PhantomData,
+    keygen: MLDSA65::keygen,
+    keygen_from_seed: MLDSA65::keygen_from_seed,
+    keypair_consistency_check: MLDSA65::keypair_consistency_check,
+    pk_of: |sk| sk.derive_pk(),
+};
+
+pub(crate) const MLDSA87_SET: ParameterSet<
+    MLDSA87,
+    MLDSA87PublicKey,
+    MLDSA87PrivateKey,
+    MLDSA87_PK_LEN,
+    MLDSA87_SK_LEN,
+    MLDSA87_SIG_LEN,
+> = ParameterSet {
+    name: "ML-DSA-87",
+    alg: PhantomData,
+    keygen: MLDSA87::keygen,
+    keygen_from_seed: MLDSA87::keygen_from_seed,
+    keypair_consistency_check: MLDSA87::keypair_consistency_check,
+    pk_of: |sk| sk.derive_pk(),
+};
+
+/// `prehash` selects HashML-DSA with SHA-512 (FIPS 204 Section 5.4) over pure ML-DSA.
+pub(crate) fn mldsa_cmd<
+    A: SignatureAlgorithm,
+    PK: SignaturePublicKey<PK_LEN> + VerifyingKey<A, SIG_LEN> + PreHashVerifyingKey<A, SIG_LEN>,
+    SK: SignaturePrivateKey<SK_LEN> + SigningKey<A, SIG_LEN> + PreHashSigningKey<A, SIG_LEN>,
+    const PK_LEN: usize,
+    const SK_LEN: usize,
+    const SIG_LEN: usize,
+>(
+    set: &ParameterSet<A, PK, SK, PK_LEN, SK_LEN, SIG_LEN>,
     action: &MLDSAAction,
     ctxfile: &Option<String>,
     skfile: &Option<String>,
     pkfile: &Option<String>,
     sigfile: &Option<String>,
+    prehash: bool,
     output_hex: bool,
 ) {
     match action {
         MLDSAAction::Keygen => {
-            let (_pk, sk) = MLDSA44::keygen(&mut HashDRBG_SHA512::new_from_os()).unwrap();
+            let (_pk, sk) = (set.keygen)(&mut HashDRBG_SHA512::new_from_os()).unwrap();
             write_bytes_or_hex(&sk.encode(), output_hex);
         }
         MLDSAAction::KeygenFromSeed => {
@@ -61,57 +143,23 @@ pub(crate) fn mldsa44_cmd(
                 Ok(seed) => seed,
                 Err(()) => {
                     eprintln!(
-                        "Error: input could not be parsed as a {} byte seed in either hex or bin",
-                        MLDSA_SEED_LEN
+                        "Error: input could not be parsed as a {MLDSA_SEED_LEN} byte seed in either hex or bin"
                     );
                     exit(-1);
                 }
             };
-
-            let (_pk, sk) = MLDSA44::keygen_from_seed(&seed).unwrap();
+            let (_pk, sk) = (set.keygen_from_seed)(&seed).unwrap();
             write_bytes_or_hex(&sk.encode(), output_hex);
         }
         MLDSAAction::PkFromSk => {
-            let buf = read_from_file_or_stdin(skfile);
-            let sk = match parse_mldsa44_sk(&buf) {
-                Ok(sk) => sk,
-                Err(estr) => {
-                    eprintln!("{}", estr);
-                    exit(-1);
-                }
-            };
-
-            write_bytes_or_hex(&sk.derive_pk().encode(), output_hex);
+            let sk = parse_sk(set, &read_from_file_or_stdin(skfile));
+            write_bytes_or_hex(&(set.pk_of)(&sk).encode(), output_hex);
         }
         MLDSAAction::CheckConsistency => {
-            let buf = read_from_file_or_stdin(skfile);
-            let sk = match parse_mldsa44_sk(&buf) {
-                Ok(sk) => sk,
-                Err(estr) => {
-                    eprintln!("{}", estr);
-                    exit(-1);
-                }
-            };
-
-            // first, read the pk
-            let pk_bytes = if pkfile.is_some() {
-                read_from_file(pkfile.as_ref().unwrap())
-            } else {
-                eprintln!("Error: no pkfile provided.");
-                exit(-1);
-            };
-            let pk = match parse_mldsa44_pk(&pk_bytes) {
-                Ok(sk) => sk,
-                Err(estr) => {
-                    eprintln!("{}", estr);
-                    exit(-1);
-                }
-            };
-
-            match MLDSA44::keypair_consistency_check(&pk, &sk) {
-                Ok(_) => {
-                    crate::helpers::println_stdout("SUCCESS: pk and sk match.");
-                }
+            let sk = parse_sk(set, &read_from_file_or_stdin(skfile));
+            let pk = parse_pk(set, &read_required_file(pkfile, "pkfile"));
+            match (set.keypair_consistency_check)(&pk, &sk) {
+                Ok(_) => crate::helpers::println_stdout("SUCCESS: pk and sk match."),
                 Err(_) => {
                     eprintln!("FAILURE: pk and sk do not match.");
                     exit(-1);
@@ -119,1081 +167,135 @@ pub(crate) fn mldsa44_cmd(
             }
         }
         MLDSAAction::Sign => {
-            // first, read the sk
-            let sk_bytes = if skfile.is_some() {
-                read_from_file(skfile.as_ref().unwrap())
+            let sk = parse_sk(set, &read_required_file(skfile, "skfile"));
+            let ctx = read_ctx(ctxfile);
+            let mut rng = HashDRBG_SHA512::new_from_os();
+            if prehash {
+                sign_stream(
+                    sk.create_ph_signer::<SHA512>(&mut rng, Some(&ctx)).unwrap(),
+                    output_hex,
+                );
             } else {
-                eprintln!("Error: no skfile provided.");
-                exit(-1);
-            };
-
-            // then read ctx
-            let ctx = if ctxfile.is_some() {
-                read_from_file(ctxfile.as_ref().unwrap())
-            } else {
-                vec![0u8; 0]
-            };
-
-            // and now sign, streaming the message from stdin
-            let sk = match parse_mldsa44_sk(&sk_bytes) {
-                Ok(sk) => sk,
-                Err(estr) => {
-                    eprintln!("{}", estr);
-                    exit(-1);
-                }
-            };
-            let mut signer =
-                sk.create_signer(&mut HashDRBG_SHA512::new_from_os(), Some(&ctx)).unwrap();
-
-            let mut buf = [0u8; 1024];
-            let mut bytes_read = io::stdin().read(&mut buf).expect("Failed to read from stdin");
-            signer.do_update(&buf[..bytes_read]);
-            while bytes_read != 0 {
-                bytes_read = io::stdin().read(&mut buf).expect("Failed to read from stdin");
-                signer.do_update(&buf[..bytes_read]);
+                sign_stream(sk.create_signer(&mut rng, Some(&ctx)).unwrap(), output_hex);
             }
-
-            let sig = signer.do_final().unwrap();
-
-            write_bytes_or_hex(&sig, output_hex);
         }
         MLDSAAction::Verify => {
-            // first, read the pk
-            let pk_bytes = if pkfile.is_some() {
-                read_from_file(pkfile.as_ref().unwrap())
+            let pk = parse_pk(set, &read_required_file(pkfile, "pkfile"));
+            let ctx = read_ctx(ctxfile);
+            let sig = read_required_file(sigfile, "sigfile");
+            if prehash {
+                verify_stream(pk.create_ph_verifier::<SHA512>(Some(&ctx)).unwrap(), &sig);
             } else {
-                eprintln!("Error: no pkfile provided.");
-                exit(-1);
-            };
-            let pk = match parse_mldsa44_pk(&pk_bytes) {
-                Ok(sk) => sk,
-                Err(estr) => {
-                    eprintln!("{}", estr);
-                    exit(-1);
-                }
-            };
-
-            // then read ctx
-            let ctx = if ctxfile.is_some() {
-                read_from_file(ctxfile.as_ref().unwrap())
-            } else {
-                vec![0u8; 0]
-            };
-
-            // then read the sig
-            let sig = if sigfile.is_some() {
-                read_from_file(sigfile.as_ref().unwrap())
-            } else {
-                eprintln!("Error: no sigfile provided.");
-                exit(-1);
-            };
-
-            // and now verify, streaming the message from stdin
-            let mut verifier = pk.create_verifier(Some(&ctx)).unwrap();
-
-            let mut buf = [0u8; 1024];
-            let mut bytes_read = io::stdin().read(&mut buf).expect("Failed to read from stdin");
-            verifier.do_update(&buf[..bytes_read]);
-            while bytes_read != 0 {
-                bytes_read = io::stdin().read(&mut buf).expect("Failed to read from stdin");
-                verifier.do_update(&buf[..bytes_read]);
-            }
-
-            let sig = verifier.do_verify_final(&sig);
-
-            if sig.is_ok() {
-                crate::helpers::println_stdout("Signature is valid.");
-            } else {
-                eprintln!("Signature is invalid.");
-                exit(-1);
+                verify_stream(pk.create_verifier(Some(&ctx)).unwrap(), &sig);
             }
         }
     }
 }
 
-pub(crate) fn mldsa65_cmd(
-    action: &MLDSAAction,
-    ctxfile: &Option<String>,
-    skfile: &Option<String>,
-    pkfile: &Option<String>,
-    sigfile: &Option<String>,
-    output_hex: bool,
-) {
-    match action {
-        MLDSAAction::Keygen => {
-            let (_pk, sk) = MLDSA65::keygen(&mut HashDRBG_SHA512::new_from_os()).unwrap();
-            write_bytes_or_hex(&sk.encode(), output_hex);
+/// Streams stdin into `signer` and writes the signature.
+fn sign_stream<const SIG_LEN: usize>(mut signer: impl SignatureSigner<SIG_LEN>, output_hex: bool) {
+    let mut buf = [0u8; 1024];
+    loop {
+        let n = io::stdin().read(&mut buf).expect("Failed to read from stdin");
+        if n == 0 {
+            break;
         }
-        MLDSAAction::KeygenFromSeed => {
-            let buf = read_from_file_or_stdin(skfile);
-            let seed = parse_seed(&buf).unwrap();
+        signer.do_update(&buf[..n]);
+    }
+    let sig = signer.do_final().unwrap();
+    write_bytes_or_hex(&sig, output_hex);
+}
 
-            let (_pk, sk) = MLDSA65::keygen_from_seed(&seed).unwrap();
-            write_bytes_or_hex(&sk.encode(), output_hex);
+/// Streams stdin into `verifier` and reports whether `sig` verifies, through the exit status.
+fn verify_stream(mut verifier: impl SignatureVerifier, sig: &[u8]) {
+    let mut buf = [0u8; 1024];
+    loop {
+        let n = io::stdin().read(&mut buf).expect("Failed to read from stdin");
+        if n == 0 {
+            break;
         }
-        MLDSAAction::PkFromSk => {
-            let buf = read_from_file_or_stdin(skfile);
-            let sk = match parse_mldsa65_sk(&buf) {
-                Ok(sk) => sk,
-                Err(estr) => {
-                    eprintln!("{}", estr);
-                    exit(-1);
-                }
-            };
-
-            write_bytes_or_hex(&sk.derive_pk().encode(), output_hex);
-        }
-        MLDSAAction::CheckConsistency => {
-            let buf = read_from_file_or_stdin(skfile);
-            let sk = match parse_mldsa65_sk(&buf) {
-                Ok(sk) => sk,
-                Err(estr) => {
-                    eprintln!("{}", estr);
-                    exit(-1);
-                }
-            };
-
-            // first, read the pk
-            let pk_bytes = if pkfile.is_some() {
-                read_from_file(pkfile.as_ref().unwrap())
-            } else {
-                eprintln!("Error: no pkfile provided.");
-                exit(-1);
-            };
-            let pk = match parse_mldsa65_pk(&pk_bytes) {
-                Ok(sk) => sk,
-                Err(estr) => {
-                    eprintln!("{}", estr);
-                    exit(-1);
-                }
-            };
-
-            match MLDSA65::keypair_consistency_check(&pk, &sk) {
-                Ok(_) => {
-                    crate::helpers::println_stdout("SUCCESS: pk and sk match.");
-                }
-                Err(_) => {
-                    eprintln!("FAILURE: pk and sk do not match.");
-                    exit(-1);
-                }
-            }
-        }
-        MLDSAAction::Sign => {
-            // first, read the sk
-            let sk_bytes = if skfile.is_some() {
-                read_from_file(skfile.as_ref().unwrap())
-            } else {
-                eprintln!("Error: no skfile provided.");
-                exit(-1);
-            };
-
-            // then read ctx
-            let ctx = if ctxfile.is_some() {
-                read_from_file(ctxfile.as_ref().unwrap())
-            } else {
-                vec![0u8; 0]
-            };
-
-            // and now sign, streaming the message from stdin
-            let sk = match parse_mldsa65_sk(&sk_bytes) {
-                Ok(sk) => sk,
-                Err(estr) => {
-                    eprintln!("{}", estr);
-                    exit(-1);
-                }
-            };
-            let mut signer =
-                sk.create_signer(&mut HashDRBG_SHA512::new_from_os(), Some(&ctx)).unwrap();
-
-            let mut buf = [0u8; 1024];
-            let mut bytes_read = io::stdin().read(&mut buf).expect("Failed to read from stdin");
-            signer.do_update(&buf[..bytes_read]);
-            while bytes_read != 0 {
-                bytes_read = io::stdin().read(&mut buf).expect("Failed to read from stdin");
-                signer.do_update(&buf[..bytes_read]);
-            }
-
-            let sig = signer.do_final().unwrap();
-
-            write_bytes_or_hex(&sig, output_hex);
-        }
-        MLDSAAction::Verify => {
-            // first, read the pk
-            let pk_bytes = if pkfile.is_some() {
-                read_from_file(pkfile.as_ref().unwrap())
-            } else {
-                eprintln!("Error: no pkfile provided.");
-                exit(-1);
-            };
-            let pk = match parse_mldsa65_pk(&pk_bytes) {
-                Ok(sk) => sk,
-                Err(estr) => {
-                    eprintln!("{}", estr);
-                    exit(-1);
-                }
-            };
-
-            // then read ctx
-            let ctx = if ctxfile.is_some() {
-                read_from_file(ctxfile.as_ref().unwrap())
-            } else {
-                vec![0u8; 0]
-            };
-
-            // then read the sig
-            let sig = if sigfile.is_some() {
-                read_from_file(sigfile.as_ref().unwrap())
-            } else {
-                eprintln!("Error: no sigfile provided.");
-                exit(-1);
-            };
-
-            // and now verify, streaming the message from stdin
-            let mut verifier = pk.create_verifier(Some(&ctx)).unwrap();
-
-            let mut buf = [0u8; 1024];
-            let mut bytes_read = io::stdin().read(&mut buf).expect("Failed to read from stdin");
-            verifier.do_update(&buf[..bytes_read]);
-            while bytes_read != 0 {
-                bytes_read = io::stdin().read(&mut buf).expect("Failed to read from stdin");
-                verifier.do_update(&buf[..bytes_read]);
-            }
-
-            let sig = verifier.do_verify_final(&sig);
-
-            if sig.is_ok() {
-                crate::helpers::println_stdout("Signature is valid.");
-            } else {
-                eprintln!("Signature is invalid.");
-                exit(-1);
-            }
-        }
+        verifier.do_update(&buf[..n]);
+    }
+    if verifier.do_verify_final(sig).is_ok() {
+        crate::helpers::println_stdout("Signature is valid.");
+    } else {
+        eprintln!("Signature is invalid.");
+        exit(-1);
     }
 }
-pub(crate) fn mldsa87_cmd(
-    action: &MLDSAAction,
-    ctxfile: &Option<String>,
-    skfile: &Option<String>,
-    pkfile: &Option<String>,
-    sigfile: &Option<String>,
-    output_hex: bool,
-) {
-    match action {
-        MLDSAAction::Keygen => {
-            let (_pk, sk) = MLDSA87::keygen(&mut HashDRBG_SHA512::new_from_os()).unwrap();
-            write_bytes_or_hex(&sk.encode(), output_hex);
-        }
-        MLDSAAction::KeygenFromSeed => {
-            let buf = read_from_file_or_stdin(skfile);
-            let seed = parse_seed(&buf).unwrap();
 
-            let (_pk, sk) = MLDSA87::keygen_from_seed(&seed).unwrap();
-            write_bytes_or_hex(&sk.encode(), output_hex);
-        }
-        MLDSAAction::PkFromSk => {
-            let buf = read_from_file_or_stdin(skfile);
-            let sk = match parse_mldsa87_sk(&buf) {
-                Ok(sk) => sk,
-                Err(estr) => {
-                    eprintln!("{}", estr);
-                    exit(-1);
-                }
-            };
+/// `--ctxfile`'s bytes, or the empty context (FIPS 204's default) without one.
+fn read_ctx(ctxfile: &Option<String>) -> Vec<u8> {
+    ctxfile.as_ref().map(|f| read_from_file(f)).unwrap_or_default()
+}
 
-            write_bytes_or_hex(&sk.derive_pk().encode(), output_hex);
-        }
-        MLDSAAction::CheckConsistency => {
-            let buf = read_from_file_or_stdin(skfile);
-            let sk = match parse_mldsa87_sk(&buf) {
-                Ok(sk) => sk,
-                Err(estr) => {
-                    eprintln!("{}", estr);
-                    exit(-1);
-                }
-            };
-
-            // first, read the pk
-            let pk_bytes = if pkfile.is_some() {
-                read_from_file(pkfile.as_ref().unwrap())
-            } else {
-                eprintln!("Error: no pkfile provided.");
-                exit(-1);
-            };
-            let pk = match parse_mldsa87_pk(&pk_bytes) {
-                Ok(sk) => sk,
-                Err(estr) => {
-                    eprintln!("{}", estr);
-                    exit(-1);
-                }
-            };
-
-            match MLDSA87::keypair_consistency_check(&pk, &sk) {
-                Ok(_) => {
-                    crate::helpers::println_stdout("SUCCESS: pk and sk match.");
-                }
-                Err(_) => {
-                    eprintln!("FAILURE: pk and sk do not match.");
-                    exit(-1);
-                }
-            }
-        }
-        MLDSAAction::Sign => {
-            // first, read the sk
-            let sk_bytes = if skfile.is_some() {
-                read_from_file(skfile.as_ref().unwrap())
-            } else {
-                eprintln!("Error: no skfile provided.");
-                exit(-1);
-            };
-
-            // then read ctx
-            let ctx = if ctxfile.is_some() {
-                read_from_file(ctxfile.as_ref().unwrap())
-            } else {
-                vec![0u8; 0]
-            };
-
-            // and now sign, streaming the message from stdin
-            let sk = match parse_mldsa87_sk(&sk_bytes) {
-                Ok(sk) => sk,
-                Err(estr) => {
-                    eprintln!("{}", estr);
-                    exit(-1);
-                }
-            };
-            let mut signer =
-                sk.create_signer(&mut HashDRBG_SHA512::new_from_os(), Some(&ctx)).unwrap();
-
-            let mut buf = [0u8; 1024];
-            let mut bytes_read = io::stdin().read(&mut buf).expect("Failed to read from stdin");
-            signer.do_update(&buf[..bytes_read]);
-            while bytes_read != 0 {
-                bytes_read = io::stdin().read(&mut buf).expect("Failed to read from stdin");
-                signer.do_update(&buf[..bytes_read]);
-            }
-
-            let sig = signer.do_final().unwrap();
-
-            write_bytes_or_hex(&sig, output_hex);
-        }
-        MLDSAAction::Verify => {
-            // first, read the pk
-            let pk_bytes = if pkfile.is_some() {
-                read_from_file(pkfile.as_ref().unwrap())
-            } else {
-                eprintln!("Error: no pkfile provided.");
-                exit(-1);
-            };
-            let pk = match parse_mldsa87_pk(&pk_bytes) {
-                Ok(sk) => sk,
-                Err(estr) => {
-                    eprintln!("{}", estr);
-                    exit(-1);
-                }
-            };
-
-            // then read ctx
-            let ctx = if ctxfile.is_some() {
-                read_from_file(ctxfile.as_ref().unwrap())
-            } else {
-                vec![0u8; 0]
-            };
-
-            // then read the sig
-            let sig = if sigfile.is_some() {
-                read_from_file(sigfile.as_ref().unwrap())
-            } else {
-                eprintln!("Error: no sigfile provided.");
-                exit(-1);
-            };
-
-            // and now verify, streaming the message from stdin
-            let mut verifier = pk.create_verifier(Some(&ctx)).unwrap();
-
-            let mut buf = [0u8; 1024];
-            let mut bytes_read = io::stdin().read(&mut buf).expect("Failed to read from stdin");
-            verifier.do_update(&buf[..bytes_read]);
-            while bytes_read != 0 {
-                bytes_read = io::stdin().read(&mut buf).expect("Failed to read from stdin");
-                verifier.do_update(&buf[..bytes_read]);
-            }
-
-            let sig = verifier.do_verify_final(&sig);
-
-            if sig.is_ok() {
-                crate::helpers::println_stdout("Signature is valid.");
-            } else {
-                eprintln!("Signature is invalid.");
-                exit(-1);
-            }
+/// `--skfile` and the like where the command cannot fall back to stdin.
+fn read_required_file(file: &Option<String>, flag: &str) -> Vec<u8> {
+    match file {
+        Some(file) => read_from_file(file),
+        None => {
+            eprintln!("Error: no {flag} provided.");
+            exit(-1);
         }
     }
 }
 
-pub(crate) fn hash_mldsa44_sha512_cmd(
-    action: &MLDSAAction,
-    ctxfile: &Option<String>,
-    skfile: &Option<String>,
-    pkfile: &Option<String>,
-    sigfile: &Option<String>,
-    output_hex: bool,
-) {
-    match action {
-        MLDSAAction::Keygen => {
-            let (_pk, sk) = MLDSA44::keygen(&mut HashDRBG_SHA512::new_from_os()).unwrap();
-            write_bytes_or_hex(&sk.encode(), output_hex);
-        }
-        MLDSAAction::KeygenFromSeed => {
-            let buf = read_from_file_or_stdin(skfile);
-            let seed = parse_seed(&buf).unwrap();
-
-            let (_pk, sk) = MLDSA44::keygen_from_seed(&seed).unwrap();
-            write_bytes_or_hex(&sk.encode(), output_hex);
-        }
-        MLDSAAction::PkFromSk => {
-            let buf = read_from_file_or_stdin(skfile);
-            let sk = match parse_mldsa44_sk(&buf) {
-                Ok(sk) => sk,
-                Err(estr) => {
-                    eprintln!("{}", estr);
-                    exit(-1);
-                }
-            };
-
-            write_bytes_or_hex(&sk.derive_pk().encode(), output_hex);
-        }
-        MLDSAAction::CheckConsistency => {
-            let buf = read_from_file_or_stdin(skfile);
-            let sk = match parse_mldsa44_sk(&buf) {
-                Ok(sk) => sk,
-                Err(estr) => {
-                    eprintln!("{}", estr);
-                    exit(-1);
-                }
-            };
-
-            // first, read the pk
-            let pk_bytes = if pkfile.is_some() {
-                read_from_file(pkfile.as_ref().unwrap())
-            } else {
-                eprintln!("Error: no pkfile provided.");
-                exit(-1);
-            };
-            let pk = match parse_mldsa44_pk(&pk_bytes) {
-                Ok(sk) => sk,
-                Err(estr) => {
-                    eprintln!("{}", estr);
-                    exit(-1);
-                }
-            };
-
-            match MLDSA44::keypair_consistency_check(&pk, &sk) {
-                Ok(_) => {
-                    crate::helpers::println_stdout("SUCCESS: pk and sk match.");
-                }
-                Err(_) => {
-                    eprintln!("FAILURE: pk and sk do not match.");
-                    exit(-1);
-                }
-            }
-        }
-        MLDSAAction::Sign => {
-            // first, read the sk
-            let sk_bytes = if skfile.is_some() {
-                read_from_file(skfile.as_ref().unwrap())
-            } else {
-                eprintln!("Error: no skfile provided.");
-                exit(-1);
-            };
-
-            // then read ctx
-            let ctx = if ctxfile.is_some() {
-                read_from_file(ctxfile.as_ref().unwrap())
-            } else {
-                vec![0u8; 0]
-            };
-
-            // and now sign, streaming the message from stdin
-            let sk = match parse_mldsa44_sk(&sk_bytes) {
-                Ok(sk) => sk,
-                Err(estr) => {
-                    eprintln!("{}", estr);
-                    exit(-1);
-                }
-            };
-            let mut signer = sk
-                .create_ph_signer::<SHA512>(&mut HashDRBG_SHA512::new_from_os(), Some(&ctx))
-                .unwrap();
-
-            let mut buf = [0u8; 1024];
-            let mut bytes_read = io::stdin().read(&mut buf).expect("Failed to read from stdin");
-            signer.do_update(&buf[..bytes_read]);
-            while bytes_read != 0 {
-                bytes_read = io::stdin().read(&mut buf).expect("Failed to read from stdin");
-                signer.do_update(&buf[..bytes_read]);
-            }
-
-            let sig = signer.do_final().unwrap();
-
-            write_bytes_or_hex(&sig, output_hex);
-        }
-        MLDSAAction::Verify => {
-            // first, read the pk
-            let pk_bytes = if pkfile.is_some() {
-                read_from_file(pkfile.as_ref().unwrap())
-            } else {
-                eprintln!("Error: no pkfile provided.");
-                exit(-1);
-            };
-            let pk = match parse_mldsa44_pk(&pk_bytes) {
-                Ok(sk) => sk,
-                Err(estr) => {
-                    eprintln!("{}", estr);
-                    exit(-1);
-                }
-            };
-
-            // then read ctx
-            let ctx = if ctxfile.is_some() {
-                read_from_file(ctxfile.as_ref().unwrap())
-            } else {
-                vec![0u8; 0]
-            };
-
-            // then read the sig
-            let sig = if sigfile.is_some() {
-                read_from_file(sigfile.as_ref().unwrap())
-            } else {
-                eprintln!("Error: no sigfile provided.");
-                exit(-1);
-            };
-
-            // and now verify, streaming the message from stdin
-            let mut verifier = pk.create_ph_verifier::<SHA512>(Some(&ctx)).unwrap();
-
-            let mut buf = [0u8; 1024];
-            let mut bytes_read = io::stdin().read(&mut buf).expect("Failed to read from stdin");
-            verifier.do_update(&buf[..bytes_read]);
-            while bytes_read != 0 {
-                bytes_read = io::stdin().read(&mut buf).expect("Failed to read from stdin");
-                verifier.do_update(&buf[..bytes_read]);
-            }
-
-            let sig = verifier.do_verify_final(&sig);
-
-            if sig.is_ok() {
-                crate::helpers::println_stdout("Signature is valid.");
-            } else {
-                eprintln!("Signature is invalid.");
-                exit(-1);
-            }
-        }
+/// A private key from its bytes: the hex of a full key, a full key, or a seed, tried in that
+/// order (the hex case only arises when the file's hex-or-raw guess declined to decode it).
+fn parse_sk<
+    A,
+    PK,
+    SK: SignaturePrivateKey<SK_LEN>,
+    const PK_LEN: usize,
+    const SK_LEN: usize,
+    const SIG_LEN: usize,
+>(
+    set: &ParameterSet<A, PK, SK, PK_LEN, SK_LEN, SIG_LEN>,
+    bytes: &[u8],
+) -> SK {
+    if bytes.len() >= 2 * SK_LEN
+        && let Ok(decoded) = hex::decode(&bytes[..2 * SK_LEN])
+        && let Ok(sk) = SK::from_bytes(&decoded)
+    {
+        return sk;
     }
+    if bytes.len() == SK_LEN
+        && let Ok(sk) = SK::from_bytes(bytes)
+    {
+        return sk;
+    }
+    if let Ok(seed) = parse_seed::<MLDSA_SEED_LEN>(bytes)
+        && let Ok((_pk, sk)) = (set.keygen_from_seed)(&seed)
+    {
+        return sk;
+    }
+    eprintln!("Error: couldn't parse the input as a valid {} private key or seed.", set.name);
+    exit(-1);
 }
 
-pub(crate) fn hash_mldsa65_sha512_cmd(
-    action: &MLDSAAction,
-    ctxfile: &Option<String>,
-    skfile: &Option<String>,
-    pkfile: &Option<String>,
-    sigfile: &Option<String>,
-    output_hex: bool,
-) {
-    match action {
-        MLDSAAction::Keygen => {
-            let (_pk, sk) = MLDSA65::keygen(&mut HashDRBG_SHA512::new_from_os()).unwrap();
-            write_bytes_or_hex(&sk.encode(), output_hex);
-        }
-        MLDSAAction::KeygenFromSeed => {
-            let buf = read_from_file_or_stdin(skfile);
-            let seed = parse_seed(&buf).unwrap();
-
-            let (_pk, sk) = MLDSA65::keygen_from_seed(&seed).unwrap();
-            write_bytes_or_hex(&sk.encode(), output_hex);
-        }
-        MLDSAAction::PkFromSk => {
-            let buf = read_from_file_or_stdin(skfile);
-            let sk = match parse_mldsa65_sk(&buf) {
-                Ok(sk) => sk,
-                Err(estr) => {
-                    eprintln!("{}", estr);
-                    exit(-1);
-                }
-            };
-
-            write_bytes_or_hex(&sk.derive_pk().encode(), output_hex);
-        }
-        MLDSAAction::CheckConsistency => {
-            let buf = read_from_file_or_stdin(skfile);
-            let sk = match parse_mldsa65_sk(&buf) {
-                Ok(sk) => sk,
-                Err(estr) => {
-                    eprintln!("{}", estr);
-                    exit(-1);
-                }
-            };
-
-            // first, read the pk
-            let pk_bytes = if pkfile.is_some() {
-                read_from_file(pkfile.as_ref().unwrap())
-            } else {
-                eprintln!("Error: no pkfile provided.");
-                exit(-1);
-            };
-            let pk = match parse_mldsa65_pk(&pk_bytes) {
-                Ok(sk) => sk,
-                Err(estr) => {
-                    eprintln!("{}", estr);
-                    exit(-1);
-                }
-            };
-
-            match MLDSA65::keypair_consistency_check(&pk, &sk) {
-                Ok(_) => {
-                    crate::helpers::println_stdout("SUCCESS: pk and sk match.");
-                }
-                Err(_) => {
-                    eprintln!("FAILURE: pk and sk do not match.");
-                    exit(-1);
-                }
-            }
-        }
-        MLDSAAction::Sign => {
-            // first, read the sk
-            let sk_bytes = if skfile.is_some() {
-                read_from_file(skfile.as_ref().unwrap())
-            } else {
-                eprintln!("Error: no skfile provided.");
-                exit(-1);
-            };
-
-            // then read ctx
-            let ctx = if ctxfile.is_some() {
-                read_from_file(ctxfile.as_ref().unwrap())
-            } else {
-                vec![0u8; 0]
-            };
-
-            // and now sign, streaming the message from stdin
-            let sk = match parse_mldsa65_sk(&sk_bytes) {
-                Ok(sk) => sk,
-                Err(estr) => {
-                    eprintln!("{}", estr);
-                    exit(-1);
-                }
-            };
-            let mut signer = sk
-                .create_ph_signer::<SHA512>(&mut HashDRBG_SHA512::new_from_os(), Some(&ctx))
-                .unwrap();
-
-            let mut buf = [0u8; 1024];
-            let mut bytes_read = io::stdin().read(&mut buf).expect("Failed to read from stdin");
-            signer.do_update(&buf[..bytes_read]);
-            while bytes_read != 0 {
-                bytes_read = io::stdin().read(&mut buf).expect("Failed to read from stdin");
-                signer.do_update(&buf[..bytes_read]);
-            }
-
-            let sig = signer.do_final().unwrap();
-
-            write_bytes_or_hex(&sig, output_hex);
-        }
-        MLDSAAction::Verify => {
-            // first, read the pk
-            let pk_bytes = if pkfile.is_some() {
-                read_from_file(pkfile.as_ref().unwrap())
-            } else {
-                eprintln!("Error: no pkfile provided.");
-                exit(-1);
-            };
-            let pk = match parse_mldsa65_pk(&pk_bytes) {
-                Ok(sk) => sk,
-                Err(estr) => {
-                    eprintln!("{}", estr);
-                    exit(-1);
-                }
-            };
-
-            // then read ctx
-            let ctx = if ctxfile.is_some() {
-                read_from_file(ctxfile.as_ref().unwrap())
-            } else {
-                vec![0u8; 0]
-            };
-
-            // then read the sig
-            let sig = if sigfile.is_some() {
-                read_from_file(sigfile.as_ref().unwrap())
-            } else {
-                eprintln!("Error: no sigfile provided.");
-                exit(-1);
-            };
-
-            // and now verify, streaming the message from stdin
-            let mut verifier = pk.create_ph_verifier::<SHA512>(Some(&ctx)).unwrap();
-
-            let mut buf = [0u8; 1024];
-            let mut bytes_read = io::stdin().read(&mut buf).expect("Failed to read from stdin");
-            verifier.do_update(&buf[..bytes_read]);
-            while bytes_read != 0 {
-                bytes_read = io::stdin().read(&mut buf).expect("Failed to read from stdin");
-                verifier.do_update(&buf[..bytes_read]);
-            }
-
-            let sig = verifier.do_verify_final(&sig);
-
-            if sig.is_ok() {
-                crate::helpers::println_stdout("Signature is valid.");
-            } else {
-                eprintln!("Signature is invalid.");
-                exit(-1);
-            }
-        }
+/// A public key from its bytes: the hex of a key or the key itself.
+fn parse_pk<
+    A,
+    PK: SignaturePublicKey<PK_LEN>,
+    SK,
+    const PK_LEN: usize,
+    const SK_LEN: usize,
+    const SIG_LEN: usize,
+>(
+    set: &ParameterSet<A, PK, SK, PK_LEN, SK_LEN, SIG_LEN>,
+    bytes: &[u8],
+) -> PK {
+    if bytes.len() >= 2 * PK_LEN
+        && let Ok(decoded) = hex::decode(&bytes[..2 * PK_LEN])
+        && let Ok(pk) = PK::from_bytes(&decoded)
+    {
+        return pk;
     }
-}
-pub(crate) fn hash_mldsa87_sha512_cmd(
-    action: &MLDSAAction,
-    ctxfile: &Option<String>,
-    skfile: &Option<String>,
-    pkfile: &Option<String>,
-    sigfile: &Option<String>,
-    output_hex: bool,
-) {
-    match action {
-        MLDSAAction::Keygen => {
-            let (_pk, sk) = MLDSA87::keygen(&mut HashDRBG_SHA512::new_from_os()).unwrap();
-            write_bytes_or_hex(&sk.encode(), output_hex);
-        }
-        MLDSAAction::KeygenFromSeed => {
-            let buf = read_from_file_or_stdin(skfile);
-            let seed = parse_seed(&buf).unwrap();
-
-            let (_pk, sk) = MLDSA87::keygen_from_seed(&seed).unwrap();
-            write_bytes_or_hex(&sk.encode(), output_hex);
-        }
-        MLDSAAction::PkFromSk => {
-            let buf = read_from_file_or_stdin(skfile);
-            let sk = match parse_mldsa87_sk(&buf) {
-                Ok(sk) => sk,
-                Err(estr) => {
-                    eprintln!("{}", estr);
-                    exit(-1);
-                }
-            };
-
-            write_bytes_or_hex(&sk.derive_pk().encode(), output_hex);
-        }
-        MLDSAAction::CheckConsistency => {
-            let buf = read_from_file_or_stdin(skfile);
-            let sk = match parse_mldsa87_sk(&buf) {
-                Ok(sk) => sk,
-                Err(estr) => {
-                    eprintln!("{}", estr);
-                    exit(-1);
-                }
-            };
-
-            // first, read the pk
-            let pk_bytes = if pkfile.is_some() {
-                read_from_file(pkfile.as_ref().unwrap())
-            } else {
-                eprintln!("Error: no pkfile provided.");
-                exit(-1);
-            };
-            let pk = match parse_mldsa87_pk(&pk_bytes) {
-                Ok(sk) => sk,
-                Err(estr) => {
-                    eprintln!("{}", estr);
-                    exit(-1);
-                }
-            };
-
-            match MLDSA87::keypair_consistency_check(&pk, &sk) {
-                Ok(_) => {
-                    crate::helpers::println_stdout("SUCCESS: pk and sk match.");
-                }
-                Err(_) => {
-                    eprintln!("FAILURE: pk and sk do not match.");
-                    exit(-1);
-                }
-            }
-        }
-        MLDSAAction::Sign => {
-            // first, read the sk
-            let sk_bytes = if skfile.is_some() {
-                read_from_file(skfile.as_ref().unwrap())
-            } else {
-                eprintln!("Error: no skfile provided.");
-                exit(-1);
-            };
-
-            // then read ctx
-            let ctx = if ctxfile.is_some() {
-                read_from_file(ctxfile.as_ref().unwrap())
-            } else {
-                vec![0u8; 0]
-            };
-
-            // and now sign, streaming the message from stdin
-            let sk = match parse_mldsa87_sk(&sk_bytes) {
-                Ok(sk) => sk,
-                Err(estr) => {
-                    eprintln!("{}", estr);
-                    exit(-1);
-                }
-            };
-            let mut signer = sk
-                .create_ph_signer::<SHA512>(&mut HashDRBG_SHA512::new_from_os(), Some(&ctx))
-                .unwrap();
-
-            let mut buf = [0u8; 1024];
-            let mut bytes_read = io::stdin().read(&mut buf).expect("Failed to read from stdin");
-            signer.do_update(&buf[..bytes_read]);
-            while bytes_read != 0 {
-                bytes_read = io::stdin().read(&mut buf).expect("Failed to read from stdin");
-                signer.do_update(&buf[..bytes_read]);
-            }
-
-            let sig = signer.do_final().unwrap();
-
-            write_bytes_or_hex(&sig, output_hex);
-        }
-        MLDSAAction::Verify => {
-            // first, read the pk
-            let pk_bytes = if pkfile.is_some() {
-                read_from_file(pkfile.as_ref().unwrap())
-            } else {
-                eprintln!("Error: no pkfile provided.");
-                exit(-1);
-            };
-            let pk = match parse_mldsa87_pk(&pk_bytes) {
-                Ok(sk) => sk,
-                Err(estr) => {
-                    eprintln!("{}", estr);
-                    exit(-1);
-                }
-            };
-
-            // then read ctx
-            let ctx = if ctxfile.is_some() {
-                read_from_file(ctxfile.as_ref().unwrap())
-            } else {
-                vec![0u8; 0]
-            };
-
-            // then read the sig
-            let sig = if sigfile.is_some() {
-                read_from_file(sigfile.as_ref().unwrap())
-            } else {
-                eprintln!("Error: no sigfile provided.");
-                exit(-1);
-            };
-
-            // and now verify, streaming the message from stdin
-            let mut verifier = pk.create_ph_verifier::<SHA512>(Some(&ctx)).unwrap();
-
-            let mut buf = [0u8; 1024];
-            let mut bytes_read = io::stdin().read(&mut buf).expect("Failed to read from stdin");
-            verifier.do_update(&buf[..bytes_read]);
-            while bytes_read != 0 {
-                bytes_read = io::stdin().read(&mut buf).expect("Failed to read from stdin");
-                verifier.do_update(&buf[..bytes_read]);
-            }
-
-            let sig = verifier.do_verify_final(&sig);
-
-            if sig.is_ok() {
-                crate::helpers::println_stdout("Signature is valid.");
-            } else {
-                eprintln!("Signature is invalid.");
-                exit(-1);
-            }
-        }
+    if bytes.len() == PK_LEN
+        && let Ok(pk) = PK::from_bytes(bytes)
+    {
+        return pk;
     }
-}
-
-fn parse_mldsa44_sk(bytes: &[u8]) -> Result<MLDSA44PrivateKey, &'static str> {
-    // try it in Biggest -> Smallest order
-
-    // try it as a hex'd full key
-    if bytes.len() >= 2 * MLDSA44_SK_LEN {
-        let maybe_sk = hex::decode(&bytes[..2 * MLDSA44_SK_LEN]);
-        if maybe_sk.is_ok() {
-            // it was hex
-            let sk = MLDSA44PrivateKey::from_bytes(&maybe_sk.unwrap());
-            if sk.is_ok() {
-                return Ok(sk.unwrap());
-            } // else: keep trying things
-        }
-    }
-
-    // try it as a binary full key
-    if bytes.len() == MLDSA44_SK_LEN {
-        let sk = MLDSA44PrivateKey::from_bytes(&bytes);
-        if sk.is_ok() {
-            return Ok(sk.unwrap());
-        }
-    } // else: keep trying things
-
-    // try it as a seed
-    let seed = parse_seed(bytes);
-    if seed.is_ok() {
-        let maybe_sk = MLDSA44::keygen_from_seed(&seed.unwrap());
-        if maybe_sk.is_ok() {
-            let (_pk, sk) = maybe_sk.unwrap();
-            return Ok(sk);
-        } // else: we're out of things to try
-    }
-
-    Err("Error: couldn't parse the input as a valid ML-DSA-44 private key or seed.")
-}
-
-fn parse_mldsa44_pk(bytes: &[u8]) -> Result<MLDSA44PublicKey, &'static str> {
-    // try it in Biggest -> Smallest order
-
-    // try it as a hex'd full key
-    if bytes.len() >= 2 * MLDSA44_PK_LEN {
-        let maybe_pk = hex::decode(&bytes[..2 * MLDSA44_PK_LEN]);
-        if maybe_pk.is_ok() {
-            // it was hex
-            let pk = MLDSA44PublicKey::from_bytes(&maybe_pk.unwrap());
-            if pk.is_ok() {
-                return Ok(pk.unwrap());
-            } // else: keep trying things
-        }
-    }
-
-    // try it as a binary full key
-    if bytes.len() == MLDSA44_PK_LEN {
-        let pk = MLDSA44PublicKey::from_bytes(&bytes);
-        if pk.is_ok() {
-            return Ok(pk.unwrap());
-        }
-    } // else: we're out of things to try
-
-    Err("Error: couldn't parse the input as a valid ML-DSA-44 public key.")
-}
-
-fn parse_mldsa65_sk(bytes: &[u8]) -> Result<MLDSA65PrivateKey, &'static str> {
-    // try it in Biggest -> Smallest order
-
-    // try it as a hex'd full key
-    if bytes.len() >= 2 * MLDSA65_SK_LEN {
-        let maybe_sk = hex::decode(&bytes[..2 * MLDSA65_SK_LEN]);
-        if maybe_sk.is_ok() {
-            // it was hex
-            let sk = MLDSA65PrivateKey::from_bytes(&maybe_sk.unwrap());
-            if sk.is_ok() {
-                return Ok(sk.unwrap());
-            } // else: keep trying things
-        }
-    }
-
-    // try it as a binary full key
-    if bytes.len() == MLDSA65_SK_LEN {
-        let sk = MLDSA65PrivateKey::from_bytes(&bytes);
-        if sk.is_ok() {
-            return Ok(sk.unwrap());
-        }
-    } // else: keep trying things
-
-    // try it as a seed
-    let seed = parse_seed(bytes);
-    if seed.is_ok() {
-        let maybe_sk = MLDSA65::keygen_from_seed(&seed.unwrap());
-        if maybe_sk.is_ok() {
-            let (_pk, sk) = maybe_sk.unwrap();
-            return Ok(sk);
-        } // else: we're out of things to try
-    }
-
-    Err("Error: couldn't parse the input as a valid ML-DSA-65 private key or seed.")
-}
-
-fn parse_mldsa65_pk(bytes: &[u8]) -> Result<MLDSA65PublicKey, &'static str> {
-    // try it in Biggest -> Smallest order
-
-    // try it as a hex'd full key
-    if bytes.len() >= 2 * MLDSA65_PK_LEN {
-        let maybe_pk = hex::decode(&bytes[..2 * MLDSA65_PK_LEN]);
-        if maybe_pk.is_ok() {
-            // it was hex
-            let pk = MLDSA65PublicKey::from_bytes(&maybe_pk.unwrap());
-            if pk.is_ok() {
-                return Ok(pk.unwrap());
-            } // else: keep trying things
-        }
-    }
-
-    // try it as a binary full key
-    if bytes.len() == MLDSA65_PK_LEN {
-        let pk = MLDSA65PublicKey::from_bytes(&bytes);
-        if pk.is_ok() {
-            return Ok(pk.unwrap());
-        }
-    } // else: we're out of things to try
-
-    Err("Error: couldn't parse the input as a valid ML-DSA-65 public key or seed.")
-}
-
-fn parse_mldsa87_sk(bytes: &[u8]) -> Result<MLDSA87PrivateKey, &'static str> {
-    // try it in Biggest -> Smallest order
-
-    // try it as a hex'd full key
-    if bytes.len() >= 2 * MLDSA87_SK_LEN {
-        let maybe_sk = hex::decode(&bytes[..2 * MLDSA87_SK_LEN]);
-        if maybe_sk.is_ok() {
-            // it was hex
-            let sk = MLDSA87PrivateKey::from_bytes(&maybe_sk.unwrap());
-            if sk.is_ok() {
-                return Ok(sk.unwrap());
-            } // else: keep trying things
-        }
-    }
-
-    // try it as a binary full key
-    if bytes.len() == MLDSA87_SK_LEN {
-        let sk = MLDSA87PrivateKey::from_bytes(&bytes);
-        if sk.is_ok() {
-            return Ok(sk.unwrap());
-        }
-    } // else: keep trying things
-
-    // try it as a seed
-    let seed = parse_seed(bytes);
-    if seed.is_ok() {
-        let maybe_sk = MLDSA87::keygen_from_seed(&seed.unwrap());
-        if maybe_sk.is_ok() {
-            let (_pk, sk) = maybe_sk.unwrap();
-            return Ok(sk);
-        } // else: we're out of things to try
-    }
-
-    Err("Error: couldn't parse the input as a valid ML-DSA-87 private key.")
-}
-
-fn parse_mldsa87_pk(bytes: &[u8]) -> Result<MLDSA87PublicKey, &'static str> {
-    // try it in Biggest -> Smallest order
-
-    // try it as a hex'd full key
-    if bytes.len() >= 2 * MLDSA87_PK_LEN {
-        let maybe_pk = hex::decode(&bytes[..2 * MLDSA87_PK_LEN]);
-        if maybe_pk.is_ok() {
-            // it was hex
-            let pk = MLDSA87PublicKey::from_bytes(&maybe_pk.unwrap());
-            if pk.is_ok() {
-                return Ok(pk.unwrap());
-            } // else: keep trying things
-        }
-    }
-
-    // try it as a binary full key
-    if bytes.len() == MLDSA87_PK_LEN {
-        let pk = MLDSA87PublicKey::from_bytes(&bytes);
-        if pk.is_ok() {
-            return Ok(pk.unwrap());
-        }
-    } // else: we're out of things to try
-
-    Err("Error: couldn't parse the input as a valid ML-DSA-87 public key.")
+    eprintln!("Error: couldn't parse the input as a valid {} public key.", set.name);
+    exit(-1);
 }
