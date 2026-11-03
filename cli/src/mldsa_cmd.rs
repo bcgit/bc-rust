@@ -52,7 +52,7 @@ pub(crate) fn mldsa44_cmd(
 ) {
     match action {
         MLDSAAction::Keygen => {
-            let (_pk, sk) = MLDSA44::keygen().unwrap();
+            let (_pk, sk) = MLDSA44::keygen(&mut HashDRBG_SHA512::new_from_os()).unwrap();
             write_bytes_or_hex(&sk.encode(), output_hex);
         }
         MLDSAAction::KeygenFromSeed => {
@@ -221,7 +221,7 @@ pub(crate) fn mldsa65_cmd(
 ) {
     match action {
         MLDSAAction::Keygen => {
-            let (_pk, sk) = MLDSA65::keygen().unwrap();
+            let (_pk, sk) = MLDSA65::keygen(&mut HashDRBG_SHA512::new_from_os()).unwrap();
             write_bytes_or_hex(&sk.encode(), output_hex);
         }
         MLDSAAction::KeygenFromSeed => {
@@ -380,7 +380,7 @@ pub(crate) fn mldsa87_cmd(
 ) {
     match action {
         MLDSAAction::Keygen => {
-            let (_pk, sk) = MLDSA87::keygen().unwrap();
+            let (_pk, sk) = MLDSA87::keygen(&mut HashDRBG_SHA512::new_from_os()).unwrap();
             write_bytes_or_hex(&sk.encode(), output_hex);
         }
         MLDSAAction::KeygenFromSeed => {
@@ -540,7 +540,7 @@ pub(crate) fn hash_mldsa44_sha512_cmd(
 ) {
     match action {
         MLDSAAction::Keygen => {
-            let (_pk, sk) = MLDSA44::keygen().unwrap();
+            let (_pk, sk) = MLDSA44::keygen(&mut HashDRBG_SHA512::new_from_os()).unwrap();
             write_bytes_or_hex(&sk.encode(), output_hex);
         }
         MLDSAAction::KeygenFromSeed => {
@@ -701,7 +701,7 @@ pub(crate) fn hash_mldsa65_sha512_cmd(
 ) {
     match action {
         MLDSAAction::Keygen => {
-            let (_pk, sk) = MLDSA65::keygen().unwrap();
+            let (_pk, sk) = MLDSA65::keygen(&mut HashDRBG_SHA512::new_from_os()).unwrap();
             write_bytes_or_hex(&sk.encode(), output_hex);
         }
         MLDSAAction::KeygenFromSeed => {
@@ -861,7 +861,7 @@ pub(crate) fn hash_mldsa87_sha512_cmd(
 ) {
     match action {
         MLDSAAction::Keygen => {
-            let (_pk, sk) = MLDSA87::keygen().unwrap();
+            let (_pk, sk) = MLDSA87::keygen(&mut HashDRBG_SHA512::new_from_os()).unwrap();
             write_bytes_or_hex(&sk.encode(), output_hex);
         }
         MLDSAAction::KeygenFromSeed => {

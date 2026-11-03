@@ -14,7 +14,7 @@
 //! use bouncycastle_rng::HashDRBG_SHA512;
 //! use bouncycastle_mldsa::{MLDSA65, MLDSATrait, MLDSAPublicKeyTrait, MuBuilder};
 //!
-//! let (pk, sk) = MLDSA65::keygen().unwrap();
+//! let (pk, sk) = MLDSA65::keygen(&mut HashDRBG_SHA512::new_from_os()).unwrap();
 //!
 //! // For this example, assume that this message was so long that it is impractical to
 //! // stream the whole text over a network, and therefore it needs to be pre-hashed.
@@ -59,7 +59,7 @@
 //! use bouncycastle_rng::HashDRBG_SHA512;
 //! use bouncycastle_mldsa::{MLDSA65, MLDSATrait, MLDSAPublicKeyTrait, MuBuilder};
 //!
-//! let (pk, sk) = MLDSA65::keygen().unwrap();
+//! let (pk, sk) = MLDSA65::keygen(&mut HashDRBG_SHA512::new_from_os()).unwrap();
 //!
 //! // For this example, assume that this message was so long that it is impractical to
 //! // stream the whole text over a network, and therefore it needs to be pre-hashed.
@@ -106,7 +106,7 @@
 //! use bouncycastle_core::signature_key::{SigningKey, VerifyingKey};
 //! use bouncycastle_rng::HashDRBG_SHA512;
 //!
-//! let (pk, _) = MLDSA65::keygen().unwrap();
+//! let (pk, _) = MLDSA65::keygen(&mut HashDRBG_SHA512::new_from_os()).unwrap();
 //!
 //! // For this example, assume that this message was so long that it is impractical to
 //! // stream the whole text over a network, and therefore it needs to be pre-hashed.
@@ -130,7 +130,7 @@
 //! use bouncycastle_rng::HashDRBG_SHA512;
 //! use bouncycastle_mldsa::{MLDSA65, MLDSATrait, MLDSAPublicKeyTrait, MuBuilder};
 //!
-//! let (pk, _) = MLDSA65::keygen().unwrap();
+//! let (pk, _) = MLDSA65::keygen(&mut HashDRBG_SHA512::new_from_os()).unwrap();
 //!
 //! // For this example, assume that this message was so long that it is impractical to
 //! // stream the whole text over a network, and therefore it needs to be pre-hashed.
@@ -153,7 +153,7 @@
 //!
 //! let msg = b"The quick brown fox jumped over the lazy dog";
 //!
-//! let (pk, sk) = MLDSA65::keygen().unwrap();
+//! let (pk, sk) = MLDSA65::keygen(&mut HashDRBG_SHA512::new_from_os()).unwrap();
 //!
 //! // Assume this was computed somewhere else, then
 //! // the party that computed it would have had to know pk
@@ -200,7 +200,7 @@
 //! let msg = b"The quick brown fox";
 //! let ctx = b"FooTextDocumentFormat";
 //!
-//! let (pk, sk) = MLDSA65::keygen().unwrap();
+//! let (pk, sk) = MLDSA65::keygen(&mut HashDRBG_SHA512::new_from_os()).unwrap();
 //!
 //! let mut rng = HashDRBG_SHA512::new_from_os();
 //! let sig = sk.sign(&mut rng, msg, Some(ctx)).unwrap();
@@ -249,7 +249,7 @@
 //!
 //! let msg = b"The quick brown fox";
 //!
-//! let (pk, sk) = MLDSA65::keygen().unwrap();
+//! let (pk, sk) = MLDSA65::keygen(&mut HashDRBG_SHA512::new_from_os()).unwrap();
 //!
 //! // The pre-expanded private key uses more memory, but has performance
 //! // improvements if doing multiple decapsulations with the same key
@@ -351,7 +351,7 @@
 //!
 //! let msg = b"The quick brown fox jumped over the lazy dog";
 //!
-//! let (pk, sk) = MLDSA65::keygen().unwrap();
+//! let (pk, sk) = MLDSA65::keygen(&mut HashDRBG_SHA512::new_from_os()).unwrap();
 //!
 //! // pre-expand the private key, which uses more memory, but has performance
 //! // improvements if doing multiple decapsulations with the same key
@@ -389,7 +389,7 @@
 //! let msg_part1 = b"The quick brown fox";
 //! let msg_part2 = b" jumped over the lazy dog";
 //!
-//! let (pk, sk) = MLDSA65::keygen().unwrap();
+//! let (pk, sk) = MLDSA65::keygen(&mut HashDRBG_SHA512::new_from_os()).unwrap();
 //!
 //! let mut mb = pk.create_mu_builder(None).unwrap();
 //! mb.do_update(msg_part1);
@@ -418,7 +418,7 @@
 //! use bouncycastle_rng::HashDRBG_SHA512;
 //! use bouncycastle_core::errors::SignatureError;
 //!
-//! let (pk, sk) = MLDSA65::keygen().unwrap();
+//! let (pk, sk) = MLDSA65::keygen(&mut HashDRBG_SHA512::new_from_os()).unwrap();
 //!
 //! use bouncycastle_core::signature_key::SigningKey;
 //! // first, let's generate a signature to verify
@@ -473,7 +473,6 @@ use bouncycastle_core::traits::{
     Algorithm, AlgorithmOID, Hash, RNG, SignatureSigner, SignatureVerifier, XOF, XOFSqueezer,
 };
 use bouncycastle_mldsa_common::aux_functions::sample_in_ball;
-use bouncycastle_rng::HashDRBG_SHA512;
 use bouncycastle_utils::secret::{Secret, ZeroizablePrimitive};
 use core::marker::PhantomData;
 
@@ -989,17 +988,10 @@ impl<P: MLDSAParams> MLDSATrait<P> for MLDSA<P> {
 
 /// Trait for all three of the ML-DSA algorithm variants.
 pub trait MLDSATrait<P: MLDSAParams>: Sized {
-    /// Runs a key generation using the library's default RNG, seeded from the OS.
-    /// In environments where the default OS based RNG is not available, use instead [`MLDSA::keygen_from_rng`]
-    /// and explicitly provide a [`RNG`] implementation, or use [`MLDSATrait::keygen_from_seed`] and provide the
-    /// private key seed directly.
-    fn keygen() -> Result<(MLDSAPublicKey<P>, MLDSAPrivateKey<P>), SignatureError> {
-        let mut os_rng = HashDRBG_SHA512::new_from_os();
-        Self::keygen_from_rng(&mut os_rng)
-    }
-    /// Run a keygen using the provided RNG implementation.
+    /// Key generation from the caller's RNG, which must offer at least the parameter set's
+    /// security strength.
     // Should still be ok in FIPS mode, provided that you're using the FIPS-approved RNG.
-    fn keygen_from_rng(
+    fn keygen(
         rng: &mut dyn RNG,
     ) -> Result<(MLDSAPublicKey<P>, MLDSAPrivateKey<P>), SignatureError> {
         // Source the seed from the provided RNG

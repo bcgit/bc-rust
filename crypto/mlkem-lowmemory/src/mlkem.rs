@@ -8,10 +8,11 @@
 //! has no counterpart here: holding 𝐀̂ is what this crate exists to avoid.
 //!
 //! ```rust
+//! use bouncycastle_rng::HashDRBG_SHA512;
 //! use bouncycastle_core::traits::{KEMDecapsulator, KEMEncapsulator};
 //! use bouncycastle_mlkem_lowmemory::{MLKEM768, MLKEM768PrivateKeyExpanded, MLKEMTrait};
 //!
-//! let (pk, sk) = MLKEM768::keygen().unwrap();
+//! let (pk, sk) = MLKEM768::keygen(&mut HashDRBG_SHA512::new_from_os()).unwrap();
 //! let sk_expanded = MLKEM768PrivateKeyExpanded::from(&sk);
 //!
 //! let (ss, ct) = MLKEM768::encaps(&pk).unwrap();
@@ -536,14 +537,10 @@ pub trait MLKEMTrait<
     const SS_LEN: usize,
 >: Sized
 {
-    /// Generates a fresh key pair.
-    fn keygen() -> Result<(PK, SK), KEMError> {
-        let mut os_rng = HashDRBG_SHA512::new_from_os();
-        Self::keygen_from_rng(&mut os_rng)
-    }
-    /// Run a keygen using the provided RNG implementation.
+    /// Key generation from the caller's RNG, which must offer at least the parameter set's
+    /// security strength.
     // Should still be ok in FIPS mode, provided that you're using the FIPS-approved RNG.
-    fn keygen_from_rng(rng: &mut dyn RNG) -> Result<(PK, SK), KEMError> {
+    fn keygen(rng: &mut dyn RNG) -> Result<(PK, SK), KEMError> {
         // Source the seed from the provided RNG
         if rng.security_strength() < P::MAX_SECURITY_STRENGTH {
             Err(RNGError::SecurityStrengthInsufficientForAlgorithm)?;

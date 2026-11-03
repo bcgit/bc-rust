@@ -27,7 +27,7 @@
 //!
 //! The three operations of a KEM algorithm are:
 //!
-//! * `keygen() -> (pk, sk)`
+//! * `keygen(rng) -> (pk, sk)`
 //! * `encaps(pk) -> (ss, ct)`
 //! * `decaps(sk, ct) -> (ss)`
 //!
@@ -45,9 +45,10 @@
 //! ## Generating Keys
 //!
 //! ```rust
+//! use bouncycastle_rng::HashDRBG_SHA512;
 //! use bouncycastle_mlkem::{MLKEM768, MLKEMTrait};
 //!
-//! let (pk, sk) = MLKEM768::keygen().unwrap();
+//! let (pk, sk) = MLKEM768::keygen(&mut HashDRBG_SHA512::new_from_os()).unwrap();
 //! ```
 //! That's it. That will use the library's default OS-backend RNG.
 //!
@@ -74,11 +75,12 @@
 //! ## Encapsulating and Decapsulating
 //!
 //! ```rust
+//! use bouncycastle_rng::HashDRBG_SHA512;
 //! use bouncycastle_mlkem::{MLKEM768, MLKEMTrait};
 //! use bouncycastle_core::traits::{KEMEncapsulator, KEMDecapsulator};
 //! use bouncycastle_core::errors::KEMError;
 //!
-//! let (pk, sk) = MLKEM768::keygen().unwrap();
+//! let (pk, sk) = MLKEM768::keygen(&mut HashDRBG_SHA512::new_from_os()).unwrap();
 //!
 //! // Create the shared secret and ciphertext using the public key
 //! let (ss, ct) = MLKEM768::encaps(&pk).unwrap();

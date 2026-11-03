@@ -15,6 +15,7 @@ mod mlkem_key_tests {
         MLKEM1024PrivateKey, MLKEM1024PublicKey,
     };
     use bouncycastle_mlkem_lowmemory::{MLKEMPrivateKeyTrait, MLKEMPublicKeyTrait, MLKEMTrait};
+    use bouncycastle_rng::DefaultRNG;
 
     #[test]
     fn core_framework_tests() {
@@ -22,12 +23,12 @@ mod mlkem_key_tests {
         let tf = TestFrameworkKEMKeys::new();
 
         tf.test_keys::<MLKEM512PublicKey, MLKEM512PrivateKey, MLKEM512_PK_LEN, MLKEM512_SK_LEN>(
-            MLKEM512::keygen,
+            || MLKEM512::keygen(&mut DefaultRNG::default()),
         );
         tf.test_keys::<MLKEM768PublicKey, MLKEM768PrivateKey, MLKEM768_PK_LEN, MLKEM768_SK_LEN>(
-            MLKEM768::keygen,
+            || MLKEM768::keygen(&mut DefaultRNG::default()),
         );
-        tf.test_keys::<MLKEM1024PublicKey, MLKEM1024PrivateKey, MLKEM1024_PK_LEN, MLKEM1024_SK_LEN>(MLKEM1024::keygen);
+        tf.test_keys::<MLKEM1024PublicKey, MLKEM1024PrivateKey, MLKEM1024_PK_LEN, MLKEM1024_SK_LEN>(|| MLKEM1024::keygen(&mut DefaultRNG::default()));
     }
 
     #[test]
@@ -171,7 +172,7 @@ mod mlkem_key_tests {
     fn test_eq() {
         // MLKEM512
 
-        let (pk, sk) = MLKEM512::keygen().unwrap();
+        let (pk, sk) = MLKEM512::keygen(&mut DefaultRNG::default()).unwrap();
 
         // basic equality checks
         assert_eq!(pk, pk);
@@ -193,7 +194,7 @@ mod mlkem_key_tests {
 
         // MLKEM768
 
-        let (pk, sk) = MLKEM768::keygen().unwrap();
+        let (pk, sk) = MLKEM768::keygen(&mut DefaultRNG::default()).unwrap();
 
         // basic equality checks
         assert_eq!(pk, pk);
@@ -215,7 +216,7 @@ mod mlkem_key_tests {
 
         // MLKEM1024
 
-        let (pk, sk) = MLKEM1024::keygen().unwrap();
+        let (pk, sk) = MLKEM1024::keygen(&mut DefaultRNG::default()).unwrap();
 
         // basic equality checks
         assert_eq!(pk, pk);
@@ -240,8 +241,8 @@ mod mlkem_key_tests {
     #[test]
     fn expanded_seed_key_behaves_as_its_seed_key() {
         use bouncycastle_mlkem_lowmemory::MLKEM512PrivateKeyExpanded;
-        let (_pk, sk) = MLKEM512::keygen().unwrap();
-        let (_pk2, sk2) = MLKEM512::keygen().unwrap();
+        let (_pk, sk) = MLKEM512::keygen(&mut DefaultRNG::default()).unwrap();
+        let (_pk2, sk2) = MLKEM512::keygen(&mut DefaultRNG::default()).unwrap();
         let expanded = MLKEM512PrivateKeyExpanded::from(&sk);
 
         // encoding is the seed, both ways of asking for it
@@ -270,9 +271,9 @@ mod mlkem_key_tests {
     /// Tests that no private data is displayed
     #[test]
     fn test_display() {
-        let (pk512, sk512) = MLKEM512::keygen().unwrap();
-        let (pk768, sk768) = MLKEM768::keygen().unwrap();
-        let (pk1024, sk1024) = MLKEM1024::keygen().unwrap();
+        let (pk512, sk512) = MLKEM512::keygen(&mut DefaultRNG::default()).unwrap();
+        let (pk768, sk768) = MLKEM768::keygen(&mut DefaultRNG::default()).unwrap();
+        let (pk1024, sk1024) = MLKEM1024::keygen(&mut DefaultRNG::default()).unwrap();
 
         /*** MLDSAPublicKey ***/
         // fmt

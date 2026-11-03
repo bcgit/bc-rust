@@ -18,20 +18,21 @@ mod mldsa_key_tests {
         MLDSA44_PK_LEN, MLDSA44_SK_LEN, MLDSA65_PK_LEN, MLDSA65_SK_LEN, MLDSA87_PK_LEN,
         MLDSA87_SK_LEN,
     };
+    use bouncycastle_rng::DefaultRNG;
 
     #[test]
     fn core_framework_tests() {
         let tf = TestFrameworkSignatureKeys::new();
 
-        tf.test_keys::<MLDSA44PublicKey, MLDSA44PrivateKey, MLDSA44_PK_LEN, MLDSA44_SK_LEN>(
-            MLDSA44::keygen,
-        );
-        tf.test_keys::<MLDSA65PublicKey, MLDSA65PrivateKey, MLDSA65_PK_LEN, MLDSA65_SK_LEN>(
-            MLDSA65::keygen,
-        );
-        tf.test_keys::<MLDSA87PublicKey, MLDSA87PrivateKey, MLDSA87_PK_LEN, MLDSA87_SK_LEN>(
-            MLDSA87::keygen,
-        );
+        tf.test_keys::<MLDSA44PublicKey, MLDSA44PrivateKey, MLDSA44_PK_LEN, MLDSA44_SK_LEN>(|| {
+            MLDSA44::keygen(&mut DefaultRNG::default())
+        });
+        tf.test_keys::<MLDSA65PublicKey, MLDSA65PrivateKey, MLDSA65_PK_LEN, MLDSA65_SK_LEN>(|| {
+            MLDSA65::keygen(&mut DefaultRNG::default())
+        });
+        tf.test_keys::<MLDSA87PublicKey, MLDSA87PrivateKey, MLDSA87_PK_LEN, MLDSA87_SK_LEN>(|| {
+            MLDSA87::keygen(&mut DefaultRNG::default())
+        });
     }
 
     #[test]
@@ -224,7 +225,7 @@ mod mldsa_key_tests {
 
         // key is wrong length
 
-        let (pk, sk) = MLDSA65::keygen().unwrap();
+        let (pk, sk) = MLDSA65::keygen(&mut DefaultRNG::default()).unwrap();
         // too small
         let pk_bytes = pk.encode();
         let sk_bytes = sk.encode();
@@ -258,7 +259,7 @@ mod mldsa_key_tests {
     fn test_eq() {
         // MLDSA-44
         {
-            let (pk, sk) = MLDSA44::keygen().unwrap();
+            let (pk, sk) = MLDSA44::keygen(&mut DefaultRNG::default()).unwrap();
 
             // basic equality checks
             assert_eq!(pk, pk);
@@ -286,7 +287,7 @@ mod mldsa_key_tests {
         // MLDSA-65
         mldsa65();
         fn mldsa65() {
-            let (pk, sk) = MLDSA65::keygen().unwrap();
+            let (pk, sk) = MLDSA65::keygen(&mut DefaultRNG::default()).unwrap();
 
             // basic equality checks
             assert_eq!(pk, pk);
@@ -310,7 +311,7 @@ mod mldsa_key_tests {
         // MLDSA-87
         mldsa87();
         fn mldsa87() {
-            let (pk, sk) = MLDSA87::keygen().unwrap();
+            let (pk, sk) = MLDSA87::keygen(&mut DefaultRNG::default()).unwrap();
 
             // basic equality checks
             assert_eq!(pk, pk);
@@ -334,7 +335,7 @@ mod mldsa_key_tests {
         /* Expanded keys */
         expanded_keys();
         fn expanded_keys() {
-            let (pk, sk) = MLDSA65::keygen().unwrap();
+            let (pk, sk) = MLDSA65::keygen(&mut DefaultRNG::default()).unwrap();
             let pk_expanded = MLDSA65PublicKeyExpanded::from(&pk);
             let sk_expanded = MLDSA65PrivateKeyExpanded::from(&sk);
 
@@ -366,9 +367,9 @@ mod mldsa_key_tests {
     /// Tests that no private data is displayed
     #[test]
     fn test_display() {
-        let (pk44, sk44) = MLDSA44::keygen().unwrap();
-        let (pk65, sk65) = MLDSA65::keygen().unwrap();
-        let (pk87, sk87) = MLDSA87::keygen().unwrap();
+        let (pk44, sk44) = MLDSA44::keygen(&mut DefaultRNG::default()).unwrap();
+        let (pk65, sk65) = MLDSA65::keygen(&mut DefaultRNG::default()).unwrap();
+        let (pk87, sk87) = MLDSA87::keygen(&mut DefaultRNG::default()).unwrap();
 
         /*** MLDSAPublicKey ***/
         // fmt

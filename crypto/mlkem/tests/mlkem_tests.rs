@@ -20,6 +20,7 @@ mod mlkem_tests {
         MLKEM1024PrivateKey, MLKEM1024PublicKey,
     };
     use bouncycastle_mlkem::{MLKEMPrivateKeyTrait, MLKEMTrait};
+    use bouncycastle_rng::DefaultRNG;
     use bouncycastle_rng::FixedSeedRNG;
     use bouncycastle_sha3::SHAKE256;
 
@@ -29,9 +30,9 @@ mod mlkem_tests {
 
         let tf = TestFrameworkKEM::new(false, true);
 
-        tf.test_kem::<MLKEM512PublicKey, MLKEM512PrivateKey, MLKEM512, MLKEM512_PK_LEN, MLKEM512_SK_LEN, MLKEM512_CT_LEN, MLKEM_SS_LEN>(MLKEM512::keygen, false);
-        tf.test_kem::<MLKEM768PublicKey, MLKEM768PrivateKey, MLKEM768, MLKEM768_PK_LEN, MLKEM768_SK_LEN, MLKEM768_CT_LEN, MLKEM_SS_LEN>(MLKEM768::keygen, false);
-        tf.test_kem::<MLKEM1024PublicKey, MLKEM1024PrivateKey, MLKEM1024, MLKEM1024_PK_LEN, MLKEM1024_SK_LEN, MLKEM1024_CT_LEN, MLKEM_SS_LEN>(MLKEM1024::keygen, false);
+        tf.test_kem::<MLKEM512PublicKey, MLKEM512PrivateKey, MLKEM512, MLKEM512_PK_LEN, MLKEM512_SK_LEN, MLKEM512_CT_LEN, MLKEM_SS_LEN>(|| MLKEM512::keygen(&mut DefaultRNG::default()), false);
+        tf.test_kem::<MLKEM768PublicKey, MLKEM768PrivateKey, MLKEM768, MLKEM768_PK_LEN, MLKEM768_SK_LEN, MLKEM768_CT_LEN, MLKEM_SS_LEN>(|| MLKEM768::keygen(&mut DefaultRNG::default()), false);
+        tf.test_kem::<MLKEM1024PublicKey, MLKEM1024PrivateKey, MLKEM1024, MLKEM1024_PK_LEN, MLKEM1024_SK_LEN, MLKEM1024_CT_LEN, MLKEM_SS_LEN>(|| MLKEM1024::keygen(&mut DefaultRNG::default()), false);
     }
 
     /// The full bit-flipping run of the framework suite. It takes minutes, so it is ignored by
@@ -43,9 +44,9 @@ mod mlkem_tests {
 
         let tf = TestFrameworkKEM::new(false, true);
 
-        tf.test_kem::<MLKEM512PublicKey, MLKEM512PrivateKey, MLKEM512, MLKEM512_PK_LEN, MLKEM512_SK_LEN, MLKEM512_CT_LEN, MLKEM_SS_LEN>(MLKEM512::keygen, true);
-        tf.test_kem::<MLKEM768PublicKey, MLKEM768PrivateKey, MLKEM768, MLKEM768_PK_LEN, MLKEM768_SK_LEN, MLKEM768_CT_LEN, MLKEM_SS_LEN>(MLKEM768::keygen, true);
-        tf.test_kem::<MLKEM1024PublicKey, MLKEM1024PrivateKey, MLKEM1024, MLKEM1024_PK_LEN, MLKEM1024_SK_LEN, MLKEM1024_CT_LEN, MLKEM_SS_LEN>(MLKEM1024::keygen, true);
+        tf.test_kem::<MLKEM512PublicKey, MLKEM512PrivateKey, MLKEM512, MLKEM512_PK_LEN, MLKEM512_SK_LEN, MLKEM512_CT_LEN, MLKEM_SS_LEN>(|| MLKEM512::keygen(&mut DefaultRNG::default()), true);
+        tf.test_kem::<MLKEM768PublicKey, MLKEM768PrivateKey, MLKEM768, MLKEM768_PK_LEN, MLKEM768_SK_LEN, MLKEM768_CT_LEN, MLKEM_SS_LEN>(|| MLKEM768::keygen(&mut DefaultRNG::default()), true);
+        tf.test_kem::<MLKEM1024PublicKey, MLKEM1024PrivateKey, MLKEM1024, MLKEM1024_PK_LEN, MLKEM1024_SK_LEN, MLKEM1024_CT_LEN, MLKEM_SS_LEN>(|| MLKEM1024::keygen(&mut DefaultRNG::default()), true);
     }
 
     #[test]
@@ -371,7 +372,7 @@ mod mlkem_tests {
         // This is actually caught on loading the dk, not on decaps, which is better for performance
         // since you might do many decaps's on one key, and that should be fine for FIPS?
 
-        let (pk1, sk) = MLKEM512::keygen().unwrap();
+        let (pk1, sk) = MLKEM512::keygen(&mut DefaultRNG::default()).unwrap();
 
         let mut sk_encoded = sk.encode();
 
@@ -403,19 +404,19 @@ mod mlkem_tests {
     #[test]
     fn test_ss_keymaterial() {
         // MLKEM512
-        let (pk, _sk) = MLKEM512::keygen().unwrap();
+        let (pk, _sk) = MLKEM512::keygen(&mut DefaultRNG::default()).unwrap();
         let (ss, _ct) = MLKEM512::encaps(&pk).unwrap();
         assert_eq!(ss.key_len(), 32);
         assert_eq!(ss.security_strength(), SecurityStrength::_128bit);
 
         // MLKEM768
-        let (pk, _sk) = MLKEM768::keygen().unwrap();
+        let (pk, _sk) = MLKEM768::keygen(&mut DefaultRNG::default()).unwrap();
         let (ss, _ct) = MLKEM768::encaps(&pk).unwrap();
         assert_eq!(ss.key_len(), 32);
         assert_eq!(ss.security_strength(), SecurityStrength::_192bit);
 
         // MLKEM1024
-        let (pk, _sk) = MLKEM1024::keygen().unwrap();
+        let (pk, _sk) = MLKEM1024::keygen(&mut DefaultRNG::default()).unwrap();
         let (ss, _ct) = MLKEM1024::encaps(&pk).unwrap();
         assert_eq!(ss.key_len(), 32);
         assert_eq!(ss.security_strength(), SecurityStrength::_256bit);
@@ -477,7 +478,7 @@ mod mlkem_tests {
         //     /// If test ≠ dk[768𝑘 + 32 ∶ 768𝑘 + 64], then input checking has failed.
 
         // MLKEM512
-        let (pk, sk) = MLKEM512::keygen().unwrap();
+        let (pk, sk) = MLKEM512::keygen(&mut DefaultRNG::default()).unwrap();
         let (_ss, ct) = MLKEM512::encaps(&pk).unwrap();
 
         // too short
@@ -495,7 +496,7 @@ mod mlkem_tests {
         }
 
         // MLKEM768
-        let (pk, sk) = MLKEM768::keygen().unwrap();
+        let (pk, sk) = MLKEM768::keygen(&mut DefaultRNG::default()).unwrap();
         let (_ss, ct) = MLKEM768::encaps(&pk).unwrap();
 
         // too short
@@ -513,7 +514,7 @@ mod mlkem_tests {
         }
 
         // MLKEM1024
-        let (pk, sk) = MLKEM1024::keygen().unwrap();
+        let (pk, sk) = MLKEM1024::keygen(&mut DefaultRNG::default()).unwrap();
         let (_ss, ct) = MLKEM1024::encaps(&pk).unwrap();
 
         // too short
@@ -534,13 +535,13 @@ mod mlkem_tests {
     #[test]
     fn keypair_consistency_check() {
         // this is common to all parameter sets, so I'll just test MLKEM512
-        let (pk, sk) = MLKEM512::keygen().unwrap();
+        let (pk, sk) = MLKEM512::keygen(&mut DefaultRNG::default()).unwrap();
 
         // success case
         MLKEM512::keypair_consistency_check(&pk, &sk).unwrap();
 
         // failure case: different but valid key
-        let (pk2, sk2) = MLKEM512::keygen().unwrap();
+        let (pk2, sk2) = MLKEM512::keygen(&mut DefaultRNG::default()).unwrap();
         match MLKEM512::keypair_consistency_check(&pk, &sk2) {
             Err(KEMError::ConsistencyCheckFailed(_)) => { /* good */ }
             _ => panic!("Expected error for different key"),
@@ -570,7 +571,7 @@ mod mlkem_tests {
 
         /*** ML-KEM-512 ***/
 
-        let (pk, sk) = MLKEM512::keygen().unwrap();
+        let (pk, sk) = MLKEM512::keygen(&mut DefaultRNG::default()).unwrap();
 
         let pk_expanded = MLKEM512PublicKeyExpanded::from(&pk);
         let (ss, ct) = MLKEM512::encaps_for_expanded_key(&pk_expanded).unwrap();
@@ -584,7 +585,7 @@ mod mlkem_tests {
 
         /*** ML-KEM-768 ***/
 
-        let (pk, sk) = MLKEM768::keygen().unwrap();
+        let (pk, sk) = MLKEM768::keygen(&mut DefaultRNG::default()).unwrap();
 
         let pk_expanded = MLKEM768PublicKeyExpanded::from(&pk);
         let (ss, ct) = MLKEM768::encaps_for_expanded_key(&pk_expanded).unwrap();
@@ -598,7 +599,7 @@ mod mlkem_tests {
 
         /*** ML-KEM-1024 ***/
 
-        let (pk, sk) = MLKEM1024::keygen().unwrap();
+        let (pk, sk) = MLKEM1024::keygen(&mut DefaultRNG::default()).unwrap();
 
         let pk_expanded = MLKEM1024PublicKeyExpanded::from(&pk);
         let (ss, ct) = MLKEM1024::encaps_for_expanded_key(&pk_expanded).unwrap();
@@ -629,21 +630,21 @@ mod mlkem_tests {
         // ML-KEM-512
         let (pk_seed, sk_seed) = MLKEM512::keygen_from_seed(&seed).unwrap();
         let mut rng = FixedSeedRNG::new(seed_bytes);
-        let (pk_rng, sk_rng) = MLKEM512::keygen_from_rng(&mut rng).unwrap();
+        let (pk_rng, sk_rng) = MLKEM512::keygen(&mut rng).unwrap();
         assert_eq!(pk_rng, pk_seed, "ML-KEM-512 pk from RNG must match pk from seed");
         assert_eq!(sk_rng, sk_seed, "ML-KEM-512 sk from RNG must match sk from seed");
 
         // ML-KEM-768
         let (pk_seed, sk_seed) = MLKEM768::keygen_from_seed(&seed).unwrap();
         let mut rng = FixedSeedRNG::new(seed_bytes);
-        let (pk_rng, sk_rng) = MLKEM768::keygen_from_rng(&mut rng).unwrap();
+        let (pk_rng, sk_rng) = MLKEM768::keygen(&mut rng).unwrap();
         assert_eq!(pk_rng, pk_seed, "ML-KEM-768 pk from RNG must match pk from seed");
         assert_eq!(sk_rng, sk_seed, "ML-KEM-768 sk from RNG must match sk from seed");
 
         // ML-KEM-1024
         let (pk_seed, sk_seed) = MLKEM1024::keygen_from_seed(&seed).unwrap();
         let mut rng = FixedSeedRNG::new(seed_bytes);
-        let (pk_rng, sk_rng) = MLKEM1024::keygen_from_rng(&mut rng).unwrap();
+        let (pk_rng, sk_rng) = MLKEM1024::keygen(&mut rng).unwrap();
         assert_eq!(pk_rng, pk_seed, "ML-KEM-1024 pk from RNG must match pk from seed");
         assert_eq!(sk_rng, sk_seed, "ML-KEM-1024 sk from RNG must match sk from seed");
 
@@ -652,7 +653,7 @@ mod mlkem_tests {
         // ML-KEM-512 -- RNG too weak
         let mut rng = FixedSeedRNG::new([0u8; 64]);
         rng.set_security_strength(SecurityStrength::_112bit);
-        match MLKEM512::keygen_from_rng(&mut rng) {
+        match MLKEM512::keygen(&mut rng) {
             Err(KEMError::RNGError(RNGError::SecurityStrengthInsufficientForAlgorithm)) => { /* good */
             }
             _ => {
@@ -663,12 +664,12 @@ mod mlkem_tests {
         // ML-KEM-512 -- RNG just right
         let mut rng = FixedSeedRNG::new([0u8; 64]);
         rng.set_security_strength(SecurityStrength::_128bit);
-        _ = MLKEM512::keygen_from_rng(&mut rng).unwrap();
+        _ = MLKEM512::keygen(&mut rng).unwrap();
 
         // ML-KEM-768 -- RNG too weak
         let mut rng = FixedSeedRNG::new([0u8; 64]);
         rng.set_security_strength(SecurityStrength::_128bit);
-        match MLKEM768::keygen_from_rng(&mut rng) {
+        match MLKEM768::keygen(&mut rng) {
             Err(KEMError::RNGError(RNGError::SecurityStrengthInsufficientForAlgorithm)) => { /* good */
             }
             _ => {
@@ -679,12 +680,12 @@ mod mlkem_tests {
         // ML-KEM-768 -- RNG just right
         let mut rng = FixedSeedRNG::new([0u8; 64]);
         rng.set_security_strength(SecurityStrength::_192bit);
-        _ = MLKEM768::keygen_from_rng(&mut rng).unwrap();
+        _ = MLKEM768::keygen(&mut rng).unwrap();
 
         // ML-KEM-1024 -- RNG too weak
         let mut rng = FixedSeedRNG::new([0u8; 64]);
         rng.set_security_strength(SecurityStrength::_192bit);
-        match MLKEM1024::keygen_from_rng(&mut rng) {
+        match MLKEM1024::keygen(&mut rng) {
             Err(KEMError::RNGError(RNGError::SecurityStrengthInsufficientForAlgorithm)) => { /* good */
             }
             _ => {
@@ -695,7 +696,7 @@ mod mlkem_tests {
         // ML-KEM-1024 -- RNG just right
         let mut rng = FixedSeedRNG::new([0u8; 64]);
         rng.set_security_strength(SecurityStrength::_256bit);
-        _ = MLKEM1024::keygen_from_rng(&mut rng).unwrap();
+        _ = MLKEM1024::keygen(&mut rng).unwrap();
     }
 
     #[test]
@@ -721,7 +722,7 @@ mod mlkem_tests {
         let m: [u8; MLKEM_RND_LEN] = seed_bytes[..MLKEM_RND_LEN].try_into().unwrap();
 
         // ML-KEM-512
-        let (pk512, _sk) = MLKEM512::keygen().unwrap();
+        let (pk512, _sk) = MLKEM512::keygen(&mut DefaultRNG::default()).unwrap();
         let (ss_ref, ct_ref) = MLKEM512::encaps_with_randomness(&pk512, None, m);
         let pk_expanded = MLKEM512PublicKeyExpanded::from(&pk512);
         let mut rng = FixedSeedRNG::new(seed_bytes);
@@ -734,7 +735,7 @@ mod mlkem_tests {
         );
 
         // ML-KEM-768
-        let (pk768, _sk) = MLKEM768::keygen().unwrap();
+        let (pk768, _sk) = MLKEM768::keygen(&mut DefaultRNG::default()).unwrap();
         let (ss_ref, ct_ref) = MLKEM768::encaps_with_randomness(&pk768, None, m);
         let pk_expanded = MLKEM768PublicKeyExpanded::from(&pk768);
         let mut rng = FixedSeedRNG::new(seed_bytes);
@@ -747,7 +748,7 @@ mod mlkem_tests {
         );
 
         // ML-KEM-1024
-        let (pk1024, _sk) = MLKEM1024::keygen().unwrap();
+        let (pk1024, _sk) = MLKEM1024::keygen(&mut DefaultRNG::default()).unwrap();
         let (ss_ref, ct_ref) = MLKEM1024::encaps_with_randomness(&pk1024, None, m);
         let pk_expanded = MLKEM1024PublicKeyExpanded::from(&pk1024);
         let mut rng = FixedSeedRNG::new(seed_bytes);

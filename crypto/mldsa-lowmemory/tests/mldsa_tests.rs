@@ -66,6 +66,7 @@ mod mldsa_tests {
     use bouncycastle_mldsa_lowmemory::{MLDSA65_PK_LEN, MLDSA65_SIG_LEN, MLDSA65_SK_LEN};
     use bouncycastle_mldsa_lowmemory::{MLDSA87_PK_LEN, MLDSA87_SIG_LEN, MLDSA87_SK_LEN};
     use bouncycastle_mldsa_lowmemory::{MLDSAPrivateKeyTrait, MLDSAPublicKeyTrait, MLDSATrait};
+    use bouncycastle_rng::DefaultRNG;
     use bouncycastle_rng::FixedSeedRNG;
     use bouncycastle_rng::HashDRBG_SHA512;
 
@@ -85,21 +86,21 @@ mod mldsa_tests {
         // ML-DSA-44
         let (pk_seed, sk_seed) = MLDSA44::keygen_from_seed(&seed).unwrap();
         let mut rng = FixedSeedRNG::new(seed_bytes);
-        let (pk_rng, sk_rng) = MLDSA44::keygen_from_rng(&mut rng).unwrap();
+        let (pk_rng, sk_rng) = MLDSA44::keygen(&mut rng).unwrap();
         assert_eq!(pk_rng, pk_seed, "ML-DSA-44 pk from RNG must match pk from seed");
         assert_eq!(sk_rng, sk_seed, "ML-DSA-44 sk from RNG must match sk from seed");
 
         // ML-DSA-65
         let (pk_seed, sk_seed) = MLDSA65::keygen_from_seed(&seed).unwrap();
         let mut rng = FixedSeedRNG::new(seed_bytes);
-        let (pk_rng, sk_rng) = MLDSA65::keygen_from_rng(&mut rng).unwrap();
+        let (pk_rng, sk_rng) = MLDSA65::keygen(&mut rng).unwrap();
         assert_eq!(pk_rng, pk_seed, "ML-DSA-65 pk from RNG must match pk from seed");
         assert_eq!(sk_rng, sk_seed, "ML-DSA-65 sk from RNG must match sk from seed");
 
         // ML-DSA-87
         let (pk_seed, sk_seed) = MLDSA87::keygen_from_seed(&seed).unwrap();
         let mut rng = FixedSeedRNG::new(seed_bytes);
-        let (pk_rng, sk_rng) = MLDSA87::keygen_from_rng(&mut rng).unwrap();
+        let (pk_rng, sk_rng) = MLDSA87::keygen(&mut rng).unwrap();
         assert_eq!(pk_rng, pk_seed, "ML-DSA-87 pk from RNG must match pk from seed");
         assert_eq!(sk_rng, sk_seed, "ML-DSA-87 sk from RNG must match sk from seed");
 
@@ -108,7 +109,7 @@ mod mldsa_tests {
         // MLDSA44 -- RNG too weak
         let mut rng = FixedSeedRNG::new([0u8; 32]);
         rng.set_security_strength(SecurityStrength::_112bit);
-        match MLDSA44::keygen_from_rng(&mut rng) {
+        match MLDSA44::keygen(&mut rng) {
             Err(SignatureError::RNGError(RNGError::SecurityStrengthInsufficientForAlgorithm)) => { /* good */
             }
             _ => {
@@ -119,12 +120,12 @@ mod mldsa_tests {
         // MLDSA44 -- RNG just right
         let mut rng = FixedSeedRNG::new([0u8; 32]);
         rng.set_security_strength(SecurityStrength::_128bit);
-        _ = MLDSA44::keygen_from_rng(&mut rng).unwrap();
+        _ = MLDSA44::keygen(&mut rng).unwrap();
 
         // MLDSA65 -- RNG too weak
         let mut rng = FixedSeedRNG::new([0u8; 32]);
         rng.set_security_strength(SecurityStrength::_128bit);
-        match MLDSA65::keygen_from_rng(&mut rng) {
+        match MLDSA65::keygen(&mut rng) {
             Err(SignatureError::RNGError(RNGError::SecurityStrengthInsufficientForAlgorithm)) => { /* good */
             }
             _ => {
@@ -135,12 +136,12 @@ mod mldsa_tests {
         // MLDSA65 -- RNG just right
         let mut rng = FixedSeedRNG::new([0u8; 32]);
         rng.set_security_strength(SecurityStrength::_192bit);
-        _ = MLDSA65::keygen_from_rng(&mut rng).unwrap();
+        _ = MLDSA65::keygen(&mut rng).unwrap();
 
         // MLDSA87 -- RNG too weak
         let mut rng = FixedSeedRNG::new([0u8; 32]);
         rng.set_security_strength(SecurityStrength::_192bit);
-        match MLDSA87::keygen_from_rng(&mut rng) {
+        match MLDSA87::keygen(&mut rng) {
             Err(SignatureError::RNGError(RNGError::SecurityStrengthInsufficientForAlgorithm)) => { /* good */
             }
             _ => {
@@ -151,7 +152,7 @@ mod mldsa_tests {
         // MLDSA87 -- RNG just right
         let mut rng = FixedSeedRNG::new([0u8; 32]);
         rng.set_security_strength(SecurityStrength::_256bit);
-        _ = MLDSA87::keygen_from_rng(&mut rng).unwrap();
+        _ = MLDSA87::keygen(&mut rng).unwrap();
     }
 
     #[test]
@@ -159,15 +160,15 @@ mod mldsa_tests {
         let tf = TestFrameworkSignature::new(true);
 
         tf.test_signature::<MLDSA44, MLDSA44PublicKey, MLDSA44PrivateKey, MLDSA44_SIG_LEN>(
-            MLDSA44::keygen,
+            || MLDSA44::keygen(&mut DefaultRNG::default()),
             false,
         );
         tf.test_signature::<MLDSA65, MLDSA65PublicKey, MLDSA65PrivateKey, MLDSA65_SIG_LEN>(
-            MLDSA65::keygen,
+            || MLDSA65::keygen(&mut DefaultRNG::default()),
             false,
         );
         tf.test_signature::<MLDSA87, MLDSA87PublicKey, MLDSA87PrivateKey, MLDSA87_SIG_LEN>(
-            MLDSA87::keygen,
+            || MLDSA87::keygen(&mut DefaultRNG::default()),
             false,
         );
     }
@@ -176,13 +177,13 @@ mod mldsa_tests {
     #[test]
     fn test_framework_deterministic_signature() {
         let tf = TestFrameworkSignature::new(true);
-        tf.test_deterministic_signature::<MLDSA44, MLDSA44PublicKey, MLDSA44PrivateKey, MLDSA44_SIG_LEN>(MLDSA44::keygen, false);
-        tf.test_deterministic_signature::<MLDSA65, MLDSA65PublicKey, MLDSA65PrivateKey, MLDSA65_SIG_LEN>(MLDSA65::keygen, false);
-        tf.test_deterministic_signature::<MLDSA87, MLDSA87PublicKey, MLDSA87PrivateKey, MLDSA87_SIG_LEN>(MLDSA87::keygen, false);
+        tf.test_deterministic_signature::<MLDSA44, MLDSA44PublicKey, MLDSA44PrivateKey, MLDSA44_SIG_LEN>(|| MLDSA44::keygen(&mut DefaultRNG::default()), false);
+        tf.test_deterministic_signature::<MLDSA65, MLDSA65PublicKey, MLDSA65PrivateKey, MLDSA65_SIG_LEN>(|| MLDSA65::keygen(&mut DefaultRNG::default()), false);
+        tf.test_deterministic_signature::<MLDSA87, MLDSA87PublicKey, MLDSA87PrivateKey, MLDSA87_SIG_LEN>(|| MLDSA87::keygen(&mut DefaultRNG::default()), false);
 
         // FIPS 204 Section 3.4: the deterministic variant is the hedged one with rnd all zeros,
         // on every path.
-        let (pk, sk) = MLDSA65::keygen().unwrap();
+        let (pk, sk) = MLDSA65::keygen(&mut DefaultRNG::default()).unwrap();
         let msg = b"deterministic is hedged with rnd = 0";
         let hedged_zero = sk.sign(&mut FixedSeedRNG::new([0u8; 32]), msg, Some(b"ctx")).unwrap();
         assert_eq!(sk.sign_deterministic(msg, Some(b"ctx")).unwrap(), hedged_zero);
@@ -202,15 +203,15 @@ mod mldsa_tests {
         let tf = TestFrameworkSignature::new(true);
 
         tf.test_signature::<MLDSA44, MLDSA44PublicKey, MLDSA44PrivateKey, MLDSA44_SIG_LEN>(
-            MLDSA44::keygen,
+            || MLDSA44::keygen(&mut DefaultRNG::default()),
             true,
         );
         tf.test_signature::<MLDSA65, MLDSA65PublicKey, MLDSA65PrivateKey, MLDSA65_SIG_LEN>(
-            MLDSA65::keygen,
+            || MLDSA65::keygen(&mut DefaultRNG::default()),
             true,
         );
         tf.test_signature::<MLDSA87, MLDSA87PublicKey, MLDSA87PrivateKey, MLDSA87_SIG_LEN>(
-            MLDSA87::keygen,
+            || MLDSA87::keygen(&mut DefaultRNG::default()),
             true,
         );
     }
@@ -684,7 +685,7 @@ mod mldsa_tests {
 
         // ctx too long
         // This is common to all parameter sets, so only MLDSA44 is tested
-        let (_pk, sk) = MLDSA44::keygen().unwrap();
+        let (_pk, sk) = MLDSA44::keygen(&mut DefaultRNG::default()).unwrap();
 
         // ctx with len 255 works
         sk.create_signer(&mut HashDRBG_SHA512::new_from_os(), Some(&[1u8; 255])).unwrap();
@@ -701,7 +702,7 @@ mod mldsa_tests {
         // sig too long / too short
 
         // MLDSA44
-        let (pk, sk) = MLDSA44::keygen().unwrap();
+        let (pk, sk) = MLDSA44::keygen(&mut DefaultRNG::default()).unwrap();
         let sig = sk.sign(&mut HashDRBG_SHA512::new_from_os(), msg, None).unwrap();
         // too short
         match pk.verify(msg, None, &sig[..MLDSA44_SIG_LEN - 1]) {
@@ -718,7 +719,7 @@ mod mldsa_tests {
         }
 
         // MLDSA65
-        let (pk, sk) = MLDSA65::keygen().unwrap();
+        let (pk, sk) = MLDSA65::keygen(&mut DefaultRNG::default()).unwrap();
         let sig = sk.sign(&mut HashDRBG_SHA512::new_from_os(), msg, None).unwrap();
         // too short
         match pk.verify(msg, None, &sig[..MLDSA65_SIG_LEN - 1]) {
@@ -735,7 +736,7 @@ mod mldsa_tests {
         }
 
         // MLDSA87
-        let (pk, sk) = MLDSA87::keygen().unwrap();
+        let (pk, sk) = MLDSA87::keygen(&mut DefaultRNG::default()).unwrap();
         let sig = sk.sign(&mut HashDRBG_SHA512::new_from_os(), msg, None).unwrap();
         // too short
         match pk.verify(msg, None, &sig[..MLDSA44_SIG_LEN - 1]) {
@@ -835,13 +836,13 @@ mod mldsa_tests {
     #[test]
     fn keypair_consistency_check() {
         // this is common to all parameter sets, so I'll just test MLDSA44
-        let (pk, sk) = MLDSA44::keygen().unwrap();
+        let (pk, sk) = MLDSA44::keygen(&mut DefaultRNG::default()).unwrap();
 
         // success case
         MLDSA44::keypair_consistency_check(&pk, &sk).unwrap();
 
         // failure case: different but valid key
-        let (pk2, sk2) = MLDSA44::keygen().unwrap();
+        let (pk2, sk2) = MLDSA44::keygen(&mut DefaultRNG::default()).unwrap();
         match MLDSA44::keypair_consistency_check(&pk, &sk2) {
             Err(SignatureError::ConsistencyCheckFailed()) => { /* good */ }
             _ => panic!("Expected error for different key"),
@@ -873,7 +874,7 @@ mod mldsa_tests {
     fn compute_mu() {
         let msg = b"The quick brown fox jumped over the lazy dog";
 
-        let (pk, sk) = MLDSA44::keygen().unwrap();
+        let (pk, sk) = MLDSA44::keygen(&mut DefaultRNG::default()).unwrap();
 
         let mu1 = sk.compute_mu(msg, None).unwrap();
         let mu2 = pk.compute_mu(msg, None).unwrap();
@@ -989,7 +990,7 @@ mod mldsa_tests {
     fn external_mu() {
         let msg = b"The quick brown fox jumped over the lazy dog";
 
-        let (pk, sk) = MLDSA44::keygen().unwrap();
+        let (pk, sk) = MLDSA44::keygen(&mut DefaultRNG::default()).unwrap();
 
         let mu = pk.compute_mu(msg, None).unwrap();
 

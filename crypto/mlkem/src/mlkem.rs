@@ -28,11 +28,12 @@
 //! and therefore behave the same as their non-expanded counterparts in most regards.
 //!
 //! ```rust
+//! use bouncycastle_rng::HashDRBG_SHA512;
 //! use bouncycastle_mlkem::{MLKEM768, MLKEMTrait};
 //! use bouncycastle_mlkem::{MLKEM768PublicKeyExpanded, MLKEM768PrivateKeyExpanded};
 //! use bouncycastle_core::errors::KEMError;
 //!
-//! let (pk, sk) = MLKEM768::keygen().unwrap();
+//! let (pk, sk) = MLKEM768::keygen(&mut HashDRBG_SHA512::new_from_os()).unwrap();
 //!
 //! // Pre-expand the public key uses more memory, but has performance
 //! // improvements if doing multiple encapsulations for the same key
@@ -95,13 +96,14 @@
 //! randomness from the caller; its docs say when that is acceptable and why it is under `hazmat`.
 //!
 //! ```rust
+//! use bouncycastle_rng::HashDRBG_SHA512;
 //! use bouncycastle_mlkem::hazmat::EncapsWithRandomness;
 //! use bouncycastle_mlkem::{MLKEM768, MLKEMTrait};
 //! use bouncycastle_core::traits::KEMDecapsulator;
 //! use bouncycastle_core::errors::KEMError;
 //! use bouncycastle_core::key_material::KeyMaterialTrait;
 //!
-//! let (pk, sk) = MLKEM768::keygen().unwrap();
+//! let (pk, sk) = MLKEM768::keygen(&mut HashDRBG_SHA512::new_from_os()).unwrap();
 //! // note: totally insecure and for demonstration purposes only.
 //! //       The message `m` needs to be sourced from a cryptographically-secure RNG.
 //! let m: [u8; 32] = [0; 32];
@@ -791,14 +793,10 @@ pub trait MLKEMTrait<
     const SS_LEN: usize,
 >: Sized
 {
-    /// Generates a fresh key pair.
-    fn keygen() -> Result<(PK, SK), KEMError> {
-        let mut os_rng = HashDRBG_SHA512::new_from_os();
-        Self::keygen_from_rng(&mut os_rng)
-    }
-    /// Run a keygen using the provided RNG implementation.
+    /// Key generation from the caller's RNG, which must offer at least the parameter set's
+    /// security strength.
     // Should still be ok in FIPS mode, provided that you're using the FIPS-approved RNG.
-    fn keygen_from_rng(rng: &mut dyn RNG) -> Result<(PK, SK), KEMError> {
+    fn keygen(rng: &mut dyn RNG) -> Result<(PK, SK), KEMError> {
         // Source the seed from the provided RNG
         if rng.security_strength() < P::MAX_SECURITY_STRENGTH {
             Err(RNGError::SecurityStrengthInsufficientForAlgorithm)?;

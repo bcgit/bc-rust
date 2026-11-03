@@ -15,7 +15,7 @@
 //!
 //! let mut rng = HashDRBG_SHA512::new_from_os();
 //! let msg = b"The quick brown fox jumped over the lazy dog";
-//! let (pk, sk) = MLDSA65::keygen().unwrap();
+//! let (pk, sk) = MLDSA65::keygen(&mut HashDRBG_SHA512::new_from_os()).unwrap();
 //!
 //! // The worker hashes the message as it streams in ...
 //! let mut signer = sk.create_ph_signer::<SHA512>(&mut rng, None).unwrap();

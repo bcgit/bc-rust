@@ -19,6 +19,7 @@ mod hash_mldsa_tests {
         MLDSATrait,
     };
     use bouncycastle_mldsa_lowmemory::{MLDSA44_SIG_LEN, MLDSA65_SIG_LEN, MLDSA87_SIG_LEN};
+    use bouncycastle_rng::DefaultRNG;
     use bouncycastle_rng::FixedSeedRNG;
     use bouncycastle_sha2::{SHA256, SHA512};
 
@@ -27,24 +28,24 @@ mod hash_mldsa_tests {
         let tf = TestFrameworkSignature::new(true);
 
         // HashML-DSA-44 with SHA-256, the one SHA-256 pairing
-        tf.test_ph_signature::<MLDSA44, MLDSA44PublicKey, MLDSA44PrivateKey, SHA256, MLDSA44_SIG_LEN>(MLDSA44::keygen, false);
+        tf.test_ph_signature::<MLDSA44, MLDSA44PublicKey, MLDSA44PrivateKey, SHA256, MLDSA44_SIG_LEN>(|| MLDSA44::keygen(&mut DefaultRNG::default()), false);
 
         // the SHA-512 pairings
-        tf.test_ph_signature::<MLDSA44, MLDSA44PublicKey, MLDSA44PrivateKey, SHA512, MLDSA44_SIG_LEN>(MLDSA44::keygen, false);
-        tf.test_ph_signature::<MLDSA65, MLDSA65PublicKey, MLDSA65PrivateKey, SHA512, MLDSA65_SIG_LEN>(MLDSA65::keygen, false);
-        tf.test_ph_signature::<MLDSA87, MLDSA87PublicKey, MLDSA87PrivateKey, SHA512, MLDSA87_SIG_LEN>(MLDSA87::keygen, false);
+        tf.test_ph_signature::<MLDSA44, MLDSA44PublicKey, MLDSA44PrivateKey, SHA512, MLDSA44_SIG_LEN>(|| MLDSA44::keygen(&mut DefaultRNG::default()), false);
+        tf.test_ph_signature::<MLDSA65, MLDSA65PublicKey, MLDSA65PrivateKey, SHA512, MLDSA65_SIG_LEN>(|| MLDSA65::keygen(&mut DefaultRNG::default()), false);
+        tf.test_ph_signature::<MLDSA87, MLDSA87PublicKey, MLDSA87PrivateKey, SHA512, MLDSA87_SIG_LEN>(|| MLDSA87::keygen(&mut DefaultRNG::default()), false);
     }
 
     /// The deterministic variant over a pre-hash, through the framework's suite.
     #[test]
     fn core_framework_deterministic_ph_signature() {
         let tf = TestFrameworkSignature::new(true);
-        tf.test_deterministic_ph_signature::<MLDSA44, MLDSA44PublicKey, MLDSA44PrivateKey, SHA256, MLDSA44_SIG_LEN>(MLDSA44::keygen, false);
-        tf.test_deterministic_ph_signature::<MLDSA65, MLDSA65PublicKey, MLDSA65PrivateKey, SHA512, MLDSA65_SIG_LEN>(MLDSA65::keygen, false);
-        tf.test_deterministic_ph_signature::<MLDSA87, MLDSA87PublicKey, MLDSA87PrivateKey, SHA512, MLDSA87_SIG_LEN>(MLDSA87::keygen, false);
+        tf.test_deterministic_ph_signature::<MLDSA44, MLDSA44PublicKey, MLDSA44PrivateKey, SHA256, MLDSA44_SIG_LEN>(|| MLDSA44::keygen(&mut DefaultRNG::default()), false);
+        tf.test_deterministic_ph_signature::<MLDSA65, MLDSA65PublicKey, MLDSA65PrivateKey, SHA512, MLDSA65_SIG_LEN>(|| MLDSA65::keygen(&mut DefaultRNG::default()), false);
+        tf.test_deterministic_ph_signature::<MLDSA87, MLDSA87PublicKey, MLDSA87PrivateKey, SHA512, MLDSA87_SIG_LEN>(|| MLDSA87::keygen(&mut DefaultRNG::default()), false);
 
         // the deterministic pre-hash signature is the hedged one with rnd all zeros
-        let (pk, sk) = MLDSA65::keygen().unwrap();
+        let (pk, sk) = MLDSA65::keygen(&mut DefaultRNG::default()).unwrap();
         let ph = SHA512::hash(b"deterministic is hedged with rnd = 0");
         let hedged_zero =
             sk.sign_ph::<SHA512>(&mut FixedSeedRNG::new([0u8; 32]), &ph, None).unwrap();
@@ -56,7 +57,7 @@ mod hash_mldsa_tests {
     /// verifier is made, and by the one-shots.
     #[test]
     fn weak_hash_is_refused() {
-        let (pk, sk) = MLDSA65::keygen().unwrap();
+        let (pk, sk) = MLDSA65::keygen(&mut DefaultRNG::default()).unwrap();
         let ph = SHA256::hash(b"msg");
         assert!(matches!(
             sk.create_ph_signer::<SHA256>(&mut HashDRBG_SHA512::new_from_os(), None),
@@ -213,7 +214,7 @@ mod hash_mldsa_tests {
 
         // ctx too long
         // This is common to all parameter sets, so only MLDSA44 is tested
-        let (_pk, sk) = MLDSA44::keygen().unwrap();
+        let (_pk, sk) = MLDSA44::keygen(&mut DefaultRNG::default()).unwrap();
 
         // ctx with len 255 works
         sk.create_ph_signer::<SHA256>(&mut HashDRBG_SHA512::new_from_os(), Some(&[1u8; 255]))
@@ -233,7 +234,7 @@ mod hash_mldsa_tests {
         // sig too long / too short
 
         // MLDSA44
-        let (pk, sk) = MLDSA44::keygen().unwrap();
+        let (pk, sk) = MLDSA44::keygen(&mut DefaultRNG::default()).unwrap();
         let sig = sk
             .sign_ph::<SHA256>(&mut HashDRBG_SHA512::new_from_os(), &SHA256::hash(msg), None)
             .unwrap();
@@ -333,11 +334,11 @@ mod hash_mldsa_tests {
         let ph256: [u8; 32] = SHA256::hash(msg).try_into().unwrap();
         let ph512: [u8; 64] = SHA512::hash(msg).try_into().unwrap();
 
-        let (pk, sk) = MLDSA44::keygen().unwrap();
+        let (pk, sk) = MLDSA44::keygen(&mut DefaultRNG::default()).unwrap();
         let sig = sk.sign_ph::<SHA256>(&mut HashDRBG_SHA512::new_from_os(), &ph256, None).unwrap();
         pk.verify_ph::<SHA256>(&ph256, None, &sig).unwrap();
 
-        let (pk, sk) = MLDSA65::keygen().unwrap();
+        let (pk, sk) = MLDSA65::keygen(&mut DefaultRNG::default()).unwrap();
         let sig = sk.sign_ph::<SHA512>(&mut HashDRBG_SHA512::new_from_os(), &ph512, None).unwrap();
         pk.verify_ph::<SHA512>(&ph512, None, &sig).unwrap();
     }

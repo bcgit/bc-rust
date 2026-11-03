@@ -14,9 +14,10 @@
 //! ## Generating Keys
 //!
 //! ```rust
+//! use bouncycastle_rng::HashDRBG_SHA512;
 //! use bouncycastle_mldsa::{MLDSA65, MLDSATrait};
 //!
-//! let (pk, sk) = MLDSA65::keygen().unwrap();
+//! let (pk, sk) = MLDSA65::keygen(&mut HashDRBG_SHA512::new_from_os()).unwrap();
 //! ```
 //! That's it. That will use the library's default OS-backend RNG.
 //!
@@ -49,7 +50,7 @@
 //!
 //! let msg = b"The quick brown fox";
 //!
-//! let (pk, sk) = MLDSA65::keygen().unwrap();
+//! let (pk, sk) = MLDSA65::keygen(&mut HashDRBG_SHA512::new_from_os()).unwrap();
 //!
 //! let mut rng = HashDRBG_SHA512::new_from_os();
 //! let sig = sk.sign(&mut rng, msg, None).unwrap();
