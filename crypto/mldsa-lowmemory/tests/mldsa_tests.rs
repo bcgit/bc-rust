@@ -844,11 +844,11 @@ mod mldsa_tests {
         // failure case: different but valid key
         let (pk2, sk2) = MLDSA44::keygen(&mut DefaultRNG::default()).unwrap();
         match MLDSA44::keypair_consistency_check(&pk, &sk2) {
-            Err(SignatureError::ConsistencyCheckFailed()) => { /* good */ }
+            Err(SignatureError::ConsistencyCheckFailed) => { /* good */ }
             _ => panic!("Expected error for different key"),
         };
         match MLDSA44::keypair_consistency_check(&pk2, &sk) {
-            Err(SignatureError::ConsistencyCheckFailed()) => { /* good */ }
+            Err(SignatureError::ConsistencyCheckFailed) => { /* good */ }
             _ => panic!("Expected error for different key"),
         };
 
@@ -857,7 +857,7 @@ mod mldsa_tests {
         pk_bytes[17] ^= 0x01;
         let pk2 = MLDSA44PublicKey::from_bytes(&pk_bytes).unwrap();
         match MLDSA44::keypair_consistency_check(&pk2, &sk) {
-            Err(SignatureError::ConsistencyCheckFailed()) => { /* good */ }
+            Err(SignatureError::ConsistencyCheckFailed) => { /* good */ }
             _ => panic!("Expected error for different key"),
         };
 
@@ -865,7 +865,7 @@ mod mldsa_tests {
         sk_bytes[17] ^= 0x01;
         let sk2 = MLDSA44PrivateKey::from_bytes(&sk_bytes).unwrap();
         match MLDSA44::keypair_consistency_check(&pk, &sk2) {
-            Err(SignatureError::ConsistencyCheckFailed()) => { /* good */ }
+            Err(SignatureError::ConsistencyCheckFailed) => { /* good */ }
             _ => panic!("Expected error for different key"),
         };
     }

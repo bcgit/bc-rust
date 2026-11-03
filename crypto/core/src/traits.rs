@@ -865,8 +865,9 @@ pub trait SignatureSigner<const SIG_LEN: usize>: AlgorithmInfo + Sized {
     /// Produces the signature. Consumes the worker.
     ///
     /// # Errors
-    /// Whatever the algorithm's own signing step can fail with; the key, the context and any
-    /// randomness were checked when the worker was made.
+    /// [`SignatureError::RejectionLimitExceeded`] for an algorithm that bounds its rejection loop,
+    /// and whatever else its signing step can fail with; the key, the context and any randomness
+    /// were checked when the worker was made.
     fn do_final(self) -> Result<[u8; SIG_LEN], SignatureError>;
 
     /// As [`do_final`](Self::do_final), into `output`, which is zeroized first; returns

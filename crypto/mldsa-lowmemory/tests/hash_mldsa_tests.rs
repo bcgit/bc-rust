@@ -61,19 +61,19 @@ mod hash_mldsa_tests {
         let ph = SHA256::hash(b"msg");
         assert!(matches!(
             sk.create_ph_signer::<SHA256>(&mut HashDRBG_SHA512::new_from_os(), None),
-            Err(SignatureError::GenericError(_))
+            Err(SignatureError::PreHashTooWeak)
         ));
         assert!(matches!(
             sk.sign_ph::<SHA256>(&mut HashDRBG_SHA512::new_from_os(), &ph, None),
-            Err(SignatureError::GenericError(_))
+            Err(SignatureError::PreHashTooWeak)
         ));
         assert!(matches!(
             pk.create_ph_verifier::<SHA256>(None),
-            Err(SignatureError::GenericError(_))
+            Err(SignatureError::PreHashTooWeak)
         ));
         assert!(matches!(
             pk.verify_ph::<SHA256>(&ph, None, &[0u8; MLDSA65_SIG_LEN]),
-            Err(SignatureError::GenericError(_))
+            Err(SignatureError::PreHashTooWeak)
         ));
     }
 

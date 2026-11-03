@@ -715,9 +715,7 @@ pub(crate) fn sign_internal<
         // mutants note: there is no test for this because, at this point,
         // we don't know of a KAT that will exceed this limit.
         if kappa > 1000 * P::k as u16 {
-            return Err(SignatureError::GenericError(
-                "Rejection sampling loop exceeded max iterations, try again with a different signing nonce.",
-            ));
+            return Err(SignatureError::RejectionLimitExceeded);
         }
 
         // 11: 𝐲 ∈ 𝑅^ℓ ← ExpandMask(𝜌″, 𝜅)
@@ -981,7 +979,7 @@ impl<P: MLDSAParams> MLDSATrait<P> for MLDSA<P> {
         if derived_pk.compute_tr() == pk.compute_tr() {
             Ok(())
         } else {
-            Err(SignatureError::ConsistencyCheckFailed())
+            Err(SignatureError::ConsistencyCheckFailed)
         }
     }
 }

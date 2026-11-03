@@ -125,9 +125,7 @@ impl AlgorithmOID for HashMLDSA87_with_SHA512 {
 /// FIPS 204 Section 5.4: the hash must give at least the parameter set's strength.
 fn check_hash_strength<P: MLDSAParams, H: PreHash>() -> Result<(), SignatureError> {
     if H::MAX_SECURITY_STRENGTH < P::MAX_SECURITY_STRENGTH {
-        return Err(SignatureError::GenericError(
-            "HashML-DSA: the pre-hash is weaker than the ML-DSA parameter set (FIPS 204 Section 5.4)",
-        ));
+        return Err(SignatureError::PreHashTooWeak);
     }
     Ok(())
 }

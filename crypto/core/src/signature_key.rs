@@ -91,7 +91,8 @@ pub trait SigningKey<A: SignatureAlgorithm, const SIG_LEN: usize> {
     /// written, always `SIG_LEN`.
     ///
     /// # Errors
-    /// Those of [`create_signer`](Self::create_signer) and of the signer's final step.
+    /// Those of [`create_signer`](Self::create_signer) and of the signer's final step ([`SignatureError::RejectionLimitExceeded`]
+    /// for an algorithm that bounds its rejection loop).
     fn sign_out(
         &self,
         rng: &mut dyn RNG,
@@ -219,7 +220,7 @@ pub trait PreHashSigningKey<A: SignatureAlgorithm, const SIG_LEN: usize>:
     /// signs the digest.
     ///
     /// # Errors
-    /// As [`SigningKey::create_signer`]; also [`SignatureError::GenericError`] if the algorithm
+    /// As [`SigningKey::create_signer`]; also [`SignatureError::PreHashTooWeak`] if the algorithm
     /// does not accept `H` (FIPS 204 Section 5.4 requires a hash of at least the parameter set's
     /// strength for HashML-DSA).
     fn create_ph_signer<'k, H: PreHash>(
@@ -274,7 +275,7 @@ pub trait DeterministicPreHashSigningKey<A: SignatureAlgorithm, const SIG_LEN: u
     ///
     /// # Errors
     /// As [`DeterministicSigningKey::create_signer_deterministic`]; also
-    /// [`SignatureError::GenericError`] if the algorithm does not accept `H`.
+    /// [`SignatureError::PreHashTooWeak`] if the algorithm does not accept `H`.
     fn create_ph_signer_deterministic<'k, H: PreHash>(
         &'k self,
         ctx: Option<&[u8]>,
@@ -324,7 +325,7 @@ pub trait PreHashVerifyingKey<A: SignatureAlgorithm, const SIG_LEN: usize>:
     /// and verifies over the digest.
     ///
     /// # Errors
-    /// As [`VerifyingKey::create_verifier`]; also [`SignatureError::GenericError`] if the
+    /// As [`VerifyingKey::create_verifier`]; also [`SignatureError::PreHashTooWeak`] if the
     /// algorithm does not accept `H`.
     fn create_ph_verifier<'k, H: PreHash>(
         &'k self,

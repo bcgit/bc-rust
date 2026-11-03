@@ -536,7 +536,7 @@ impl<P: MLDSAParams> MLDSATrait<P> for MLDSA<P> {
         if bouncycastle_utils::ct::ct_eq_bytes(&sk.tr(), &pk.compute_tr()) {
             Ok(())
         } else {
-            Err(SignatureError::ConsistencyCheckFailed())
+            Err(SignatureError::ConsistencyCheckFailed)
         }
     }
 }
@@ -610,9 +610,7 @@ pub(crate) fn sign_internal<
         //   "Implementations may limit the number of iterations in this loop to not exceed a finite maximum value."
         // mutants note: there is no test for this because we don't have access to a KAT that will exceed this limit.
         if kappa > 1000 * P::k as u16 {
-            return Err(SignatureError::GenericError(
-                "Rejection sampling loop exceeded max iterations, try again with a different signing nonce.",
-            ));
+            return Err(SignatureError::RejectionLimitExceeded);
         }
 
         // 11-15: derive c_tilde without materializing y_hat or w as full vectors.
