@@ -112,10 +112,15 @@ impl Condition<i64> {
     pub const fn from_lsb(value: i64) -> Self {
         Self(-(value & 1))
     }
-    /// TRUE iff bit `bit` of `value` is set. The bit index must be public data
-    /// (the shift amount is timing-visible on some targets).
+    /// TRUE iff bit `bit` of `value` is set; FALSE for `bit >= i64::BITS`. The bit index must be
+    /// public data (the shift amount is timing-visible on some targets).
     pub const fn is_bit_set(value: i64, bit: u32) -> Self {
-        Self::from_lsb(value >> bit)
+        // Branches on the public index only: a plain `>>` panics in debug and masks the shift
+        // amount in release for an out-of-range index.
+        match value.checked_shr(bit) {
+            Some(shifted) => Self::from_lsb(shifted),
+            None => Self::FALSE,
+        }
     }
     /// TRUE iff `value < 0`, i.e. the sign (top) bit is set. The unsigned
     /// counterpart of this mask is `from_msb`, where the top bit carries a
@@ -185,26 +190,8 @@ impl Condition<i64> {
         *dst = self.select(src, *dst);
     }
 
-    /// Conditionally negate the value.
-    ///
-    /// negate(-1) gives -3
-    ///
-    /// `value` is `-1` (i.e., all bits are `1`, `...1111`)
-    ///
-    /// Condition `self.0` is 1 (`...0001`) (assuming `TRUE`)
-    ///
-    /// XOR operation was executed as `value ^ self.0`
-    ///
-    /// Then `...1111 XOR ...0001 = ...1110` (i.e., `-2`)
-    ///
-    /// Subtraction operation is `wrapping_sub(self.0)`
-    ///
-    /// Then `-2 - 1 = -3`
-    ///
-    /// As a result, `1`, which is the negation of `-1`, should be returned, but `-3` is output.
-    ///
-    /// Therefore, if the [`Self::TRUE`] constant value of the [`Condition`] implementation is changed to `-1`,
-    /// the test also runs normally.
+    /// Conditionally negate the value: returns `-value` (wrapping, so `MIN` stays `MIN`) if the
+    /// condition is true, otherwise `value`.
     pub fn negate(self, value: i64) -> i64 {
         let mask = self.barrier().0;
         (value ^ mask).wrapping_sub(mask)
@@ -251,10 +238,15 @@ impl Condition<i32> {
     pub const fn from_lsb(value: i32) -> Self {
         Self(-(value & 1))
     }
-    /// TRUE iff bit `bit` of `value` is set. The bit index must be public data
-    /// (the shift amount is timing-visible on some targets).
+    /// TRUE iff bit `bit` of `value` is set; FALSE for `bit >= i32::BITS`. The bit index must be
+    /// public data (the shift amount is timing-visible on some targets).
     pub const fn is_bit_set(value: i32, bit: u32) -> Self {
-        Self::from_lsb(value >> bit)
+        // Branches on the public index only: a plain `>>` panics in debug and masks the shift
+        // amount in release for an out-of-range index.
+        match value.checked_shr(bit) {
+            Some(shifted) => Self::from_lsb(shifted),
+            None => Self::FALSE,
+        }
     }
     /// TRUE iff `value < 0`, i.e. the sign (top) bit is set. The unsigned
     /// counterpart of this mask is `from_msb`, where the top bit carries a
@@ -324,26 +316,8 @@ impl Condition<i32> {
         *dst = self.select(src, *dst);
     }
 
-    /// Conditionally negate the value.
-    ///
-    /// negate(-1) gives -3
-    ///
-    /// `value` is `-1` (i.e., all bits are `1`, `...1111`)
-    ///
-    /// Condition `self.0` is 1 (`...0001`) (assuming `TRUE`)
-    ///
-    /// XOR operation was executed as `value ^ self.0`
-    ///
-    /// Then `...1111 XOR ...0001 = ...1110` (i.e., `-2`)
-    ///
-    /// Subtraction operation is `wrapping_sub(self.0)`
-    ///
-    /// Then `-2 - 1 = -3`
-    ///
-    /// As a result, `1`, which is the negation of `-1`, should be returned, but `-3` is output.
-    ///
-    /// Therefore, if the [`Self::TRUE`] constant value of the [`Condition`] implementation is changed to `-1`,
-    /// the test also runs normally.
+    /// Conditionally negate the value: returns `-value` (wrapping, so `MIN` stays `MIN`) if the
+    /// condition is true, otherwise `value`.
     pub fn negate(self, value: i32) -> i32 {
         let mask = self.barrier().0;
         (value ^ mask).wrapping_sub(mask)
@@ -413,10 +387,15 @@ impl Condition<u64> {
     pub const fn from_msb(value: u64) -> Self {
         Self(0u64.wrapping_sub(value >> (u64::BITS - 1)))
     }
-    /// TRUE iff bit `bit` of `value` is set. The bit index must be public data
-    /// (the shift amount is timing-visible on some targets).
+    /// TRUE iff bit `bit` of `value` is set; FALSE for `bit >= u64::BITS`. The bit index must be
+    /// public data (the shift amount is timing-visible on some targets).
     pub const fn is_bit_set(value: u64, bit: u32) -> Self {
-        Self::from_lsb(value >> bit)
+        // Branches on the public index only: a plain `>>` panics in debug and masks the shift
+        // amount in release for an out-of-range index.
+        match value.checked_shr(bit) {
+            Some(shifted) => Self::from_lsb(shifted),
+            None => Self::FALSE,
+        }
     }
     /// TRUE iff `value != 0`.
     ///
@@ -493,10 +472,15 @@ impl Condition<u32> {
     pub const fn from_msb(value: u32) -> Self {
         Self(0u32.wrapping_sub(value >> (u32::BITS - 1)))
     }
-    /// TRUE iff bit `bit` of `value` is set. The bit index must be public data
-    /// (the shift amount is timing-visible on some targets).
+    /// TRUE iff bit `bit` of `value` is set; FALSE for `bit >= u32::BITS`. The bit index must be
+    /// public data (the shift amount is timing-visible on some targets).
     pub const fn is_bit_set(value: u32, bit: u32) -> Self {
-        Self::from_lsb(value >> bit)
+        // Branches on the public index only: a plain `>>` panics in debug and masks the shift
+        // amount in release for an out-of-range index.
+        match value.checked_shr(bit) {
+            Some(shifted) => Self::from_lsb(shifted),
+            None => Self::FALSE,
+        }
     }
     /// TRUE iff `value != 0`.
     ///
@@ -678,7 +662,8 @@ pub fn ct_eq_bytes(a: &[u8], b: &[u8]) -> bool {
     ct_eq_bytes_mask(a, b).to_bool()
 }
 
-/// Constant-time check that every byte of `a` is zero.
+/// Constant-time check that every byte of `a` is zero, as a `bool`, for callers that go on to
+/// branch on the result at a public decision point.
 ///
 /// The runtime depends on the length of `a`, which is treated as public, but not on its contents
 /// or on the position of the first non-zero byte. Same construction as [`ct_eq_bytes_mask`] with

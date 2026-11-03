@@ -189,7 +189,7 @@ mod round;
 mod sbox;
 mod schedule;
 
-use bouncycastle_utils::secret::ZeroizablePrimitive;
+use bouncycastle_utils::secret::{NoPadding, ZeroizablePrimitive};
 
 /// The AES block length in bytes: 16 (FIPS 197 Sec 3.4, `Nb` = 4 words).
 pub const AES_BLOCK_LEN: usize = 16;
@@ -223,8 +223,8 @@ pub trait AESParams: AESParamsInternalTrait {
     /// The algorithm name, as reported by `Algorithm::ALG_NAME`.
     const ALG_NAME: &'static str;
     /// `[u32; 4 * (NR + 1)]` -- the bit-sliced schedule; its layout is
-    /// described in `schedule.rs`.
-    type Schedule: ZeroizablePrimitive + AsRef<[u32]> + AsMut<[u32]>;
+    /// described in `schedule.rs`. `NoPadding` lets keys compare their schedules in constant time.
+    type Schedule: ZeroizablePrimitive + NoPadding + AsRef<[u32]> + AsMut<[u32]>;
 }
 
 /// AES-128 parameters: 16-byte key, `Nk` = 4, `Nr` = 10 (FIPS 197 Table 3).
