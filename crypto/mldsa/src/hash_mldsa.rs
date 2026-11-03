@@ -3,8 +3,9 @@
 //! different machine.
 //!
 //! The hash is a type parameter of the key's pre-hash methods, so any hash of at least the
-//! parameter set's strength goes with any ML-DSA key; that it is an approved one (FIPS 204
-//! Section 5.4) is the caller's to ensure:
+//! parameter set's strength goes with any ML-DSA key, SHAKE128 and SHAKE256 among them as the
+//! fixed-length digests of RFC 8702 Section 3.1 (Algorithm 4's third case is SHAKE128); that it
+//! is an approved one (FIPS 204 Section 5.4) is the caller's to ensure:
 //!
 //! ```rust
 //! use bouncycastle_core::errors::SignatureError;
