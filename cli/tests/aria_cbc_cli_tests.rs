@@ -1,13 +1,15 @@
 //! Tests for the `aria128-cbc`, `aria192-cbc` and `aria256-cbc` subcommands.
 //!
-//! They share their key loader, streaming loops and error paths with the `aes*-cbc` commands
-//! (`cli/src/cbc_cmd.rs`), and `aes_cbc_cli_tests.rs` covers those exhaustively. This file pins
-//! what is specific to ARIA: the known-answer vectors, the three key lengths, and that the
-//! commands exist and round-trip.
+//! They share their key and IV loaders, streaming loops and error paths with the `aes*-cbc`
+//! commands (`cli/src/helpers/block_mode_helpers.rs`), and `test_aes_cbc.sh` covers those
+//! exhaustively. This file pins what is specific to ARIA: the known-answer vectors in both
+//! directions, the three key lengths, and that the commands exist and round-trip.
 //!
 //! Vectors are the `ARIA-*-CBC` entries of OpenSSL's `evpciph_aria.txt` (OpenSSL 3.6.2), which
 //! are KISA's published ARIA test vectors: a 10-block message under each key length; see
-//! `crypto/aria/tests/kisa_vectors_tests.rs`.
+//! `crypto/aria/tests/kisa_vectors_tests.rs`. They are unpadded, so under the commands' PKCS7
+//! framing the ten blocks are followed by one block of padding, computed here from the
+//! permutation.
 
 use std::io::{ErrorKind, Write};
 use std::process::{Command, Output, Stdio};
@@ -95,17 +97,58 @@ const VARIANTS: [(&str, &str, &str); 3] = [
     ("aria256-cbc", KEY_256, CT_256),
 ];
 
-/// `decrypt` reproduces the plaintext when handed the IV followed by the ciphertext, for all
-/// three key lengths.
-///
-/// This is the direction that can be pinned exactly: `encrypt` picks its own IV, so it cannot be
-/// asked to reproduce a published ciphertext. `encrypt` is covered by the round trip below and, at
-/// the library level, by `crypto/aria/tests/kisa_vectors_tests.rs`.
+/// The CBC ciphertext block that a full block of PKCS7 padding (sixteen `0x10` bytes) encrypts
+/// to under `key_hex` after the ciphertext block `prev_hex`: `E_K(prev xor 10..10)`, from the
+/// permutation of the key's length. Appended to an unpadded known-answer ciphertext whose
+/// plaintext is block-aligned, it gives the PKCS7 ciphertext of the same plaintext, which is how
+/// the commands frame it.
+fn pkcs7_block(key_hex: &str, prev_hex: &str) -> String {
+    use bouncycastle::aria::hazmat::{ARIA128Internal, ARIA192Internal, ARIA256Internal};
+    use bouncycastle::core::hazmat::{BlockPermutation, ElectronicCodeBook};
+    use bouncycastle::core::key_material::{KeyMaterial, KeyType};
+
+    fn material<const N: usize>(key_hex: &str) -> KeyMaterial<N> {
+        let key_bytes: [u8; N] = unhex(key_hex).try_into().expect("the right key length");
+        KeyMaterial::<N>::from_bytes_as_type(&key_bytes, KeyType::SymmetricCipherKey)
+            .expect("a valid symmetric cipher key")
+    }
+    let mut block: [u8; 16] = unhex(prev_hex).try_into().expect("a 16-byte block");
+    block.iter_mut().for_each(|b| *b ^= 0x10);
+    match key_hex.len() / 2 {
+        16 => ARIA128Internal::new(&material::<16>(key_hex)).unwrap().encrypt_block(&mut block),
+        24 => ARIA192Internal::new(&material::<24>(key_hex)).unwrap().encrypt_block(&mut block),
+        32 => ARIA256Internal::new(&material::<32>(key_hex)).unwrap().encrypt_block(&mut block),
+        _ => panic!("not an ARIA key length"),
+    }
+    tohex(&block)
+}
+
+/// The last ciphertext block of a ten-block vector, which the padding block chains from.
+fn last_block(ct: &str) -> &str {
+    &ct[ct.len() - 32..]
+}
+
+/// `encrypt --iv` reproduces the KISA ciphertext followed by the PKCS7 block, for all three key
+/// lengths, and `decrypt --iv` takes that back to the plaintext.
+#[test]
+fn encrypt_matches_the_kisa_vectors() {
+    for (cmd, key, ct) in VARIANTS {
+        let out = run_ok(&[cmd, "-d", "encrypt", "--key", key, "--iv", IV], &unhex(PLAINTEXT));
+        let want = format!("{ct}{}", pkcs7_block(key, last_block(ct)));
+        assert_eq!(tohex(&out), want, "{cmd} encrypt --iv should give the ciphertext");
+
+        let back = run_ok(&[cmd, "-d", "decrypt", "--key", key, "--iv", IV], &out);
+        assert_eq!(tohex(&back), PLAINTEXT, "{cmd}: and decrypt --iv takes it back");
+    }
+}
+
+/// `decrypt` reproduces the plaintext when handed the IV followed by the ciphertext and the
+/// PKCS7 block, for all three key lengths.
 #[test]
 fn decrypt_matches_the_kisa_vectors() {
     for (cmd, key, ct) in VARIANTS {
-        let input = unhex(&format!("{IV}{ct}"));
-        let out = run_ok(&[cmd, "decrypt", "--key", key], &input);
+        let input = unhex(&format!("{IV}{ct}{}", pkcs7_block(key, last_block(ct))));
+        let out = run_ok(&[cmd, "-d", "decrypt", "--key", key], &input);
         assert_eq!(tohex(&out), PLAINTEXT, "{cmd} decrypt should give the plaintext");
     }
 }
@@ -113,8 +156,8 @@ fn decrypt_matches_the_kisa_vectors() {
 /// The same with `-x`: identical answer in hex plus a trailing newline.
 #[test]
 fn hex_output_matches_binary_output() {
-    let input = unhex(&format!("{IV}{CT_256}"));
-    let out = run_ok(&["aria256-cbc", "decrypt", "--key", KEY_256, "-x"], &input);
+    let input = unhex(&format!("{IV}{CT_256}{}", pkcs7_block(KEY_256, last_block(CT_256))));
+    let out = run_ok(&["aria256-cbc", "-d", "decrypt", "--key", KEY_256, "-x"], &input);
     assert_eq!(String::from_utf8_lossy(&out), format!("{PLAINTEXT}\n"));
 }
 
@@ -124,15 +167,15 @@ fn encrypt_then_decrypt_round_trips() {
     let plaintext: Vec<u8> = (0..4096u32).map(|i| (i.wrapping_mul(31) >> 3) as u8).collect();
 
     for (cmd, key, _) in VARIANTS {
-        let ciphertext = run_ok(&[cmd, "encrypt", "--key", key], &plaintext);
+        let ciphertext = run_ok(&[cmd, "-d", "encrypt", "--key", key], &plaintext);
         assert_eq!(
             ciphertext.len(),
-            16 + plaintext.len(),
-            "{cmd}: IV block plus one block per input block"
+            16 + plaintext.len() + 16,
+            "{cmd}: IV, the blocks, a padding block"
         );
         assert_ne!(&ciphertext[16..], &plaintext[..]);
 
-        let recovered = run_ok(&[cmd, "decrypt", "--key", key], &ciphertext);
+        let recovered = run_ok(&[cmd, "-d", "decrypt", "--key", key], &ciphertext);
         assert_eq!(recovered, plaintext, "{cmd}");
     }
 }
@@ -141,27 +184,52 @@ fn encrypt_then_decrypt_round_trips() {
 /// 128-bit key to the 192-bit command, are errors naming the algorithm.
 #[test]
 fn a_key_of_the_wrong_length_is_rejected() {
-    let err = run_err(&["aria128-cbc", "encrypt", "--key", KEY_256], &[0u8; 16]);
+    let err = run_err(&["aria128-cbc", "-d", "encrypt", "--key", KEY_256], &[0u8; 16]);
     assert!(err.contains("ARIA-128 needs a 16-byte key, got 32 bytes"), "stderr was: {err}");
-    let err = run_err(&["aria192-cbc", "encrypt", "--key", KEY_128], &[0u8; 16]);
+    let err = run_err(&["aria192-cbc", "-d", "encrypt", "--key", KEY_128], &[0u8; 16]);
     assert!(err.contains("ARIA-192 needs a 24-byte key, got 16 bytes"), "stderr was: {err}");
-    let err = run_err(&["aria256-cbc", "encrypt", "--key", KEY_192], &[0u8; 16]);
+    let err = run_err(&["aria256-cbc", "-d", "encrypt", "--key", KEY_192], &[0u8; 16]);
     assert!(err.contains("ARIA-256 needs a 32-byte key, got 24 bytes"), "stderr was: {err}");
 }
 
 /// The harness above must survive a write that loses the race with the child's exit. This pins it
-/// deterministically: the key is rejected so `aria128-cbc` exits before reading a byte, and
-/// the payload is far larger than any pipe buffer, so the write is certain to get EPIPE rather
-/// than merely likely to.
+/// deterministically: the key is rejected so `aria128-cbc` exits before reading a byte, and the
+/// payload is far larger than any pipe buffer, so the write is certain to get EPIPE rather than
+/// merely likely to.
 #[test]
 fn a_large_payload_on_an_error_path_does_not_break_the_harness() {
-    let err = run_err(&["aria128-cbc", "encrypt", "--key", KEY_256], &vec![0u8; 4 * 1024 * 1024]);
+    let err =
+        run_err(&["aria128-cbc", "-d", "encrypt", "--key", KEY_256], &vec![0u8; 4 * 1024 * 1024]);
     assert!(err.contains("ARIA-128 needs a 16-byte key"), "stderr was: {err}");
 }
 
-/// Unaligned input is rejected, as for the AES commands.
+/// Any length is accepted and padded to the next whole block, as for the AES commands.
 #[test]
-fn unaligned_input_is_rejected() {
-    let err = run_err(&["aria128-cbc", "encrypt", "--key", KEY_128], &[0u8; 17]);
-    assert!(err.contains("whole number of 16-byte blocks"), "stderr was: {err}");
+fn any_input_length_is_accepted_and_padded() {
+    for len in [0usize, 1, 15, 16, 17, 33] {
+        let plaintext = vec![0x5Au8; len];
+        let ciphertext = run_ok(&["aria128-cbc", "-d", "encrypt", "--key", KEY_128], &plaintext);
+        assert_eq!(ciphertext.len(), 16 + (len / 16 + 1) * 16, "len {len}: IV plus padded body");
+        let recovered = run_ok(&["aria128-cbc", "-d", "decrypt", "--key", KEY_128], &ciphertext);
+        assert_eq!(recovered, plaintext, "len {len}: round trip");
+    }
+}
+
+/// A ciphertext without PKCS7 padding is rejected: the bare KISA ciphertext ends in a block that
+/// does not unpad.
+#[test]
+fn a_ciphertext_without_pkcs7_padding_is_rejected() {
+    let input = unhex(&format!("{IV}{CT_128}"));
+    let err = run_err(&["aria128-cbc", "-d", "decrypt", "--key", KEY_128], &input);
+    assert!(err.contains("decryption failed"), "stderr was: {err}");
+}
+
+/// The subcommands are discoverable.
+#[test]
+fn the_subcommands_are_listed_in_help() {
+    let out = run_ok(&["--help"], &[]);
+    let help = String::from_utf8_lossy(&out);
+    for cmd in ["aria128-cbc", "aria192-cbc", "aria256-cbc"] {
+        assert!(help.contains(cmd), "`--help` should list {cmd}");
+    }
 }

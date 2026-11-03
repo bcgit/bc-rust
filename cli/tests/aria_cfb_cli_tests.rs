@@ -1,9 +1,9 @@
 //! Tests for the `aria128-cfb`, `aria192-cfb` and `aria256-cfb` subcommands.
 //!
-//! They share their key loader, streaming loops and error paths with the `aes*-cfb` commands
-//! (`cli/src/stream_mode_cmd.rs`), and `aes_cfb_cli_tests.rs` covers those exhaustively. This
-//! file pins what is specific to ARIA: the known-answer vectors, the three key lengths, and
-//! that the commands exist and round-trip at any length.
+//! They share their key and IV loaders, streaming loops and error paths with the `aes*-cfb`
+//! commands (`cli/src/helpers/stream_mode_helpers.rs`), and `test_aes_cfb.sh` covers those
+//! exhaustively. This file pins what is specific to ARIA: the known-answer vectors in both
+//! directions, the three key lengths, and that the commands exist and round-trip at any length.
 //!
 //! Vectors are the `ARIA-*-CFB` entries of OpenSSL's `evpciph_aria.txt` (OpenSSL 3.6.2),
 //! which are KISA's published ARIA test vectors; see `crypto/aria/tests/stream_mode_tests.rs`.
@@ -144,17 +144,26 @@ const VARIANTS: [(&str, &str, &str); 3] = [
     ("aria256-cfb", KEY_256, CT_256),
 ];
 
+/// `encrypt --iv` reproduces the KISA ciphertext, and nothing but the ciphertext, for all three
+/// key lengths; `decrypt --iv` takes it back.
+#[test]
+fn encrypt_matches_the_kisa_vectors() {
+    for (cmd, key, ct) in VARIANTS {
+        let out = run_ok(&[cmd, "-d", "encrypt", "--key", key, "--iv", IV], &unhex(PLAINTEXT));
+        assert_eq!(tohex(&out), ct, "{cmd} encrypt --iv should give the ciphertext");
+
+        let back = run_ok(&[cmd, "-d", "decrypt", "--key", key, "--iv", IV], &out);
+        assert_eq!(tohex(&back), PLAINTEXT, "{cmd}: and decrypt --iv takes it back");
+    }
+}
+
 /// `decrypt` reproduces the plaintext when handed the IV followed by the ciphertext, for
 /// all three key lengths.
-///
-/// This is the direction that can be pinned exactly: `encrypt` picks its own IV, so it
-/// cannot be asked to reproduce a published ciphertext. `encrypt` is covered by the round trip
-/// below and, at the library level, by `crypto/aria/tests/stream_mode_tests.rs`.
 #[test]
 fn decrypt_matches_the_kisa_vectors() {
     for (cmd, key, ct) in VARIANTS {
-        let input = unhex(&format!("{}{ct}", IV));
-        let out = run_ok(&[cmd, "decrypt", "--key", key], &input);
+        let input = unhex(&format!("{IV}{ct}"));
+        let out = run_ok(&[cmd, "-d", "decrypt", "--key", key], &input);
         assert_eq!(tohex(&out), PLAINTEXT, "{cmd} decrypt should give the plaintext");
     }
 }
@@ -162,26 +171,22 @@ fn decrypt_matches_the_kisa_vectors() {
 /// The same with `-x`: identical answer in hex plus a trailing newline.
 #[test]
 fn hex_output_matches_binary_output() {
-    let input = unhex(&format!("{}{}", IV, CT_256));
-    let out = run_ok(&["aria256-cfb", "decrypt", "--key", KEY_256, "-x"], &input);
+    let input = unhex(&format!("{IV}{CT_256}"));
+    let out = run_ok(&["aria256-cfb", "-d", "decrypt", "--key", KEY_256, "-x"], &input);
     assert_eq!(String::from_utf8_lossy(&out), format!("{PLAINTEXT}\n"));
 }
 
-/// `encrypt | decrypt` composes: the init data rides at the front, and the plaintext comes back.
+/// `encrypt | decrypt` composes: the IV rides at the front, and the plaintext comes back.
 #[test]
 fn encrypt_then_decrypt_round_trips() {
     let plaintext = pseudo_random(4096, 0xC0FFEE);
 
     for (cmd, key, _) in VARIANTS {
-        let ciphertext = run_ok(&[cmd, "encrypt", "--key", key], &plaintext);
-        assert_eq!(
-            ciphertext.len(),
-            16 + plaintext.len(),
-            "{cmd}: init data plus an equal-length body"
-        );
+        let ciphertext = run_ok(&[cmd, "-d", "encrypt", "--key", key], &plaintext);
+        assert_eq!(ciphertext.len(), 16 + plaintext.len(), "{cmd}: IV plus an equal-length body");
         assert_ne!(&ciphertext[16..], &plaintext[..]);
 
-        let recovered = run_ok(&[cmd, "decrypt", "--key", key], &ciphertext);
+        let recovered = run_ok(&[cmd, "-d", "decrypt", "--key", key], &ciphertext);
         assert_eq!(recovered, plaintext, "{cmd}");
     }
 }
@@ -191,9 +196,9 @@ fn encrypt_then_decrypt_round_trips() {
 fn any_input_length_is_accepted() {
     for len in [0usize, 1, 15, 17, 33] {
         let plaintext = pseudo_random(len, len as u32);
-        let ciphertext = run_ok(&["aria128-cfb", "encrypt", "--key", KEY_128], &plaintext);
-        assert_eq!(ciphertext.len(), 16 + len, "len {len}: init data plus an equal-length body");
-        let recovered = run_ok(&["aria128-cfb", "decrypt", "--key", KEY_128], &ciphertext);
+        let ciphertext = run_ok(&["aria128-cfb", "-d", "encrypt", "--key", KEY_128], &plaintext);
+        assert_eq!(ciphertext.len(), 16 + len, "len {len}: IV plus an equal-length body");
+        let recovered = run_ok(&["aria128-cfb", "-d", "decrypt", "--key", KEY_128], &ciphertext);
         assert_eq!(recovered, plaintext, "len {len}: round trip");
     }
 }
@@ -202,11 +207,11 @@ fn any_input_length_is_accepted() {
 /// are errors naming the algorithm.
 #[test]
 fn a_key_of_the_wrong_length_is_rejected() {
-    let err = run_err(&["aria128-cfb", "encrypt", "--key", KEY_256], &[0u8; 16]);
+    let err = run_err(&["aria128-cfb", "-d", "encrypt", "--key", KEY_256], &[0u8; 16]);
     assert!(err.contains("ARIA-128 needs a 16-byte key, got 32 bytes"), "stderr was: {err}");
-    let err = run_err(&["aria192-cfb", "encrypt", "--key", KEY_128], &[0u8; 16]);
+    let err = run_err(&["aria192-cfb", "-d", "encrypt", "--key", KEY_128], &[0u8; 16]);
     assert!(err.contains("ARIA-192 needs a 24-byte key, got 16 bytes"), "stderr was: {err}");
-    let err = run_err(&["aria256-cfb", "encrypt", "--key", KEY_192], &[0u8; 16]);
+    let err = run_err(&["aria256-cfb", "-d", "encrypt", "--key", KEY_192], &[0u8; 16]);
     assert!(err.contains("ARIA-256 needs a 32-byte key, got 24 bytes"), "stderr was: {err}");
 }
 
