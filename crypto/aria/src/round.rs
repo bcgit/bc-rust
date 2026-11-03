@@ -113,14 +113,19 @@ pub(crate) fn sl2(s: &mut [State; LANES]) {
 /// and `test_diffusion_matches_the_rfc_equations` repeats the check in Rust. `A` is an involution
 /// (Sec 2.4.3, "x = A(A(x))"), which `test_diffusion_is_an_involution` checks.
 ///
-/// The multiplication by `0x0101_0101` in step 1 broadcasts the parity byte to all four byte
-/// positions; it cannot carry, since the operand is below 256.
+/// Step 1 broadcasts the parity byte to all four byte positions with shifts and ORs rather than
+/// the multiplication by `0x0101_0101` the 32-bit implementations use: the two are equal, since
+/// the operand is below 256 and cannot carry, but the parity is secret and a multiply puts it
+/// through the multiplier, whose latency is not data-independent on every target. (The bytes
+/// are disjoint, so `|` and `^` agree here -- a surviving `cargo mutants` equivalence, like
+/// those in `transpose`.)
 pub(crate) fn diffuse(t: &mut State) {
     // 1. b_i ^= b0 ^ b1 ^ b2 ^ b3, per word.
     for w in t.iter_mut() {
         let mut parity = *w ^ (*w >> 16);
         parity ^= parity >> 8;
-        *w ^= (parity & 0xFF).wrapping_mul(0x0101_0101);
+        parity &= 0xFF;
+        *w ^= parity | (parity << 8) | (parity << 16) | (parity << 24);
     }
     // 2.
     word_mix(t);
