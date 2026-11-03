@@ -687,12 +687,14 @@ pub fn make_hint<P: MLDSAParamsBase>(low: i32, high: i32) -> i32 {
     // // 3: return [[𝑟1 ≠ 𝑣1]]
     // if r1 != v1 { 1 } else { 0 }
 
-    // mutants note: we do not have KATs that exercise all branches of this if
-    if low <= P::gamma2 || low > q - P::gamma2 || (low == q - P::gamma2 && high == 0) {
-        0
-    } else {
-        1
-    }
+    // Branch-free form of `low <= γ2 || low > q - γ2 || (low == q - γ2 && high == 0)`: each
+    // comparison is the sign bit of a difference of values in [0, q), so nothing overflows, and
+    // the combined mask is all ones exactly when the hint is 0.
+    let le = (low - P::gamma2 - 1) >> 31; // low <= γ2
+    let gt = (q - P::gamma2 - low) >> 31; // low > q - γ2
+    let eq = ((low ^ (q - P::gamma2)) - 1) >> 31; // low == q - γ2
+    let high_zero = (high - 1) >> 31; // high == 0
+    (le | gt | (eq & high_zero)) + 1
 }
 
 /// Algorithm 40 UseHint(ℎ, 𝑟)
