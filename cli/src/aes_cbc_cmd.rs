@@ -10,13 +10,13 @@
 //! separately.
 
 use crate::helpers::block_mode_helpers::{
-    BLOCK_LEN, CipherDirection, decrypt_stream, encrypt_stream, load_iv, load_key,
+    BLOCK_LEN, CipherDirection, decrypt_stream, encrypt_stream, load_iv, load_key_object,
+    start_encryptor,
 };
-use bouncycastle::aes::{AES_CBC_128, AES_CBC_192, AES_CBC_256};
+use bouncycastle::aes::{AES128Key, AES192Key, AES256Key};
+use bouncycastle::cipher::modes::CBC;
 use bouncycastle::cipher::padding::PKCS7;
-use bouncycastle::cipher::{Decrypting, Encrypting};
-use bouncycastle::core::key_material::KeyMaterial;
-use bouncycastle::core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
+use bouncycastle::core::symmetric_key::{SymmetricDecryptionKey, SymmetricEncryptionKey};
 
 pub(crate) fn aes128_cbc_cmd(
     action: &CipherDirection,
@@ -26,9 +26,9 @@ pub(crate) fn aes128_cbc_cmd(
     iv_file: &Option<String>,
     output_hex: bool,
 ) {
-    run::<AES_CBC_128<Encrypting, PKCS7>, AES_CBC_128<Decrypting, PKCS7>, 16>(
+    run::<_, 16>(
         action,
-        &load_key::<16>(key, key_file, "AES-128"),
+        &load_key_object::<AES128Key<CBC<PKCS7>>, 16>(key, key_file, "AES-128"),
         load_iv::<BLOCK_LEN>(iv, iv_file),
         output_hex,
     );
@@ -42,9 +42,9 @@ pub(crate) fn aes192_cbc_cmd(
     iv_file: &Option<String>,
     output_hex: bool,
 ) {
-    run::<AES_CBC_192<Encrypting, PKCS7>, AES_CBC_192<Decrypting, PKCS7>, 24>(
+    run::<_, 24>(
         action,
-        &load_key::<24>(key, key_file, "AES-192"),
+        &load_key_object::<AES192Key<CBC<PKCS7>>, 24>(key, key_file, "AES-192"),
         load_iv::<BLOCK_LEN>(iv, iv_file),
         output_hex,
     );
@@ -58,30 +58,31 @@ pub(crate) fn aes256_cbc_cmd(
     iv_file: &Option<String>,
     output_hex: bool,
 ) {
-    run::<AES_CBC_256<Encrypting, PKCS7>, AES_CBC_256<Decrypting, PKCS7>, 32>(
+    run::<_, 32>(
         action,
-        &load_key::<32>(key, key_file, "AES-256"),
+        &load_key_object::<AES256Key<CBC<PKCS7>>, 32>(key, key_file, "AES-256"),
         load_iv::<BLOCK_LEN>(iv, iv_file),
         output_hex,
     );
 }
 
-/// Dispatches to the shared streaming loops.
-fn run<E, D, const KEY_LEN: usize>(
+/// Dispatches to the shared streaming loops under the key's padded CBC mode.
+fn run<K, const KEY_LEN: usize>(
     action: &CipherDirection,
-    key: &KeyMaterial<KEY_LEN>,
+    key: &K,
     iv: Option<[u8; BLOCK_LEN]>,
     output_hex: bool,
 ) where
-    E: SymmetricCipherEncryptor<KEY_LEN, BLOCK_LEN, BLOCK_LEN>,
-    D: SymmetricCipherDecryptor<KEY_LEN, BLOCK_LEN, BLOCK_LEN>,
+    K: SymmetricEncryptionKey<KEY_LEN, BLOCK_LEN, BLOCK_LEN>
+        + SymmetricDecryptionKey<KEY_LEN, BLOCK_LEN, BLOCK_LEN>,
 {
     match action {
         CipherDirection::Encrypt => {
-            encrypt_stream::<E, KEY_LEN, BLOCK_LEN>(key, iv, output_hex, None)
+            let (enc, generated_iv) = start_encryptor(iv, |rng| key.create_encryptor(rng));
+            encrypt_stream::<_, BLOCK_LEN>(enc, generated_iv.as_ref(), output_hex, None)
         }
         CipherDirection::Decrypt => {
-            decrypt_stream::<D, KEY_LEN, BLOCK_LEN>(key, iv, output_hex, None)
+            decrypt_stream::<_, BLOCK_LEN>(iv, |iv| key.create_decryptor(iv), output_hex, None)
         }
     }
 }

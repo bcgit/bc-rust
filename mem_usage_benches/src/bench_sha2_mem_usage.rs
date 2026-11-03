@@ -26,6 +26,7 @@
 #![allow(unused_imports)]
 
 use bouncycastle::core::key_material::{KeyMaterial256, KeyType};
+use bouncycastle::core::symmetric_key::{FromAnyKeyMaterial, MacGenerationKey};
 use bouncycastle::core::traits::{Hash, HashOneShot, MAC, Suspendable};
 use bouncycastle::hmac::HmacKey;
 use bouncycastle::sha2::hmac::{HMAC_SHA256, HMAC_SHA512};
@@ -109,8 +110,9 @@ fn bench_hmac_sha256() {
     eprintln!("HMAC-SHA-256/mac_out");
 
     let key = KeyMaterial256::from_bytes_as_type(&MSG[..32], KeyType::MACKey).unwrap();
+    let key = HmacKey::<SHA256>::from_key_material(&key).unwrap();
     let mut out = [0u8; 32];
-    HMAC_SHA256::new(&key).unwrap().mac_out(&MSG, &mut out).unwrap();
+    key.mac_out(&MSG, &mut out).unwrap();
     println!("{:x?}", out);
 }
 

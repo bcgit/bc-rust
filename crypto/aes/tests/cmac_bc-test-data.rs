@@ -7,8 +7,9 @@
 //! The set includes 8- and 56-bit tags, below the `CMAC_MIN_TAG_LEN` that `mac_out` will truncate
 //! to, so every case is computed as a full tag and compared on its first `macLen` bits.
 
-use bouncycastle_aes::{AES_CMAC_128, AES_CMAC_192, AES_CMAC_256};
-use bouncycastle_core::traits::MAC;
+use bouncycastle_aes::{AES128Key, AES192Key, AES256Key};
+use bouncycastle_cipher::modes::CMAC;
+use bouncycastle_core::symmetric_key::{FromKeyMaterial, MacGenerationKey, MacVerificationKey};
 use bouncycastle_core_test_framework::test_data_loaders::{Value, bc_test_data_json, hex_field};
 use std::collections::BTreeMap;
 
@@ -23,19 +24,19 @@ const RESPONSE_FILE: &str = "CMAC-AES.4014544.rsp.json";
 /// The full 16-byte AES-CMAC tag of `msg` under `key`, dispatched on the key length.
 fn aes_cmac(key: &[u8], msg: &[u8]) -> Vec<u8> {
     match key.len() {
-        16 => AES_CMAC_128::new(&mac_key::<16>(key)).unwrap().mac(msg),
-        24 => AES_CMAC_192::new(&mac_key::<24>(key)).unwrap().mac(msg),
-        32 => AES_CMAC_256::new(&mac_key::<32>(key)).unwrap().mac(msg),
+        16 => AES128Key::<CMAC>::from_key_material(&mac_key::<16>(key)).unwrap().mac(msg),
+        24 => AES192Key::<CMAC>::from_key_material(&mac_key::<24>(key)).unwrap().mac(msg),
+        32 => AES256Key::<CMAC>::from_key_material(&mac_key::<32>(key)).unwrap().mac(msg),
         other => panic!("unexpected AES key length {other}"),
     }
 }
 
-/// `MAC::verify` of a full-length tag, dispatched on the key length.
+/// The key's `verify` of a full-length tag, dispatched on the key length.
 fn aes_cmac_verify(key: &[u8], msg: &[u8], tag: &[u8]) -> bool {
     match key.len() {
-        16 => AES_CMAC_128::new(&mac_key::<16>(key)).unwrap().verify(msg, tag),
-        24 => AES_CMAC_192::new(&mac_key::<24>(key)).unwrap().verify(msg, tag),
-        32 => AES_CMAC_256::new(&mac_key::<32>(key)).unwrap().verify(msg, tag),
+        16 => AES128Key::<CMAC>::from_key_material(&mac_key::<16>(key)).unwrap().verify(msg, tag),
+        24 => AES192Key::<CMAC>::from_key_material(&mac_key::<24>(key)).unwrap().verify(msg, tag),
+        32 => AES256Key::<CMAC>::from_key_material(&mac_key::<32>(key)).unwrap().verify(msg, tag),
         other => panic!("unexpected AES key length {other}"),
     }
 }

@@ -9,15 +9,14 @@
 //! A `valid` case must encrypt to exactly `ct || tag` and decrypt back to `msg`. An `invalid` case
 //! must be rejected with `AEADTagCheckFailed`, leaving the output buffer zeroized.
 
-use bouncycastle_ascon::{Ascon_AEAD128, KEY_LEN, NONCE_LEN, TAG_LEN};
+use bouncycastle_ascon::{Ascon_AEAD128, AsconAEAD128Key, KEY_LEN, NONCE_LEN, TAG_LEN};
 use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::hazmat::do_hazardous_operations;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::traits::{
-    AEADCipherDecryptor, AEADCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
-};
+use bouncycastle_core::symmetric_key::{AeadDecryptionKey, AeadEncryptionKey, FromKeyMaterial};
+use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
 use bouncycastle_core_test_framework::test_data_loaders::{Value, hex_field, wycheproof_json};
 
 /// Wraps the vector's key bytes as a cipher key, promoting them if `KeyMaterial`'s entropy
@@ -31,6 +30,10 @@ fn cipher_key(bytes: &[u8]) -> KeyMaterial<KEY_LEN> {
     })
     .expect("promoting a wycheproof test key");
     key
+}
+
+fn aead_key(bytes: &[u8]) -> AsconAEAD128Key {
+    AsconAEAD128Key::from_key_material(&cipher_key(bytes)).expect("a wycheproof key")
 }
 
 #[test]
@@ -48,7 +51,7 @@ fn wycheproof_ascon_aead128() {
 
         for test in group.get("tests").and_then(Value::as_array).expect("tests") {
             let tc_id = test.get("tcId").and_then(Value::as_u64).expect("tcId");
-            let key = cipher_key(&hex_field(test, "key", tc_id));
+            let key = aead_key(&hex_field(test, "key", tc_id));
             let nonce: [u8; NONCE_LEN] =
                 hex_field(test, "iv", tc_id).try_into().expect("a 16-byte nonce");
             let aad = hex_field(test, "aad", tc_id);
@@ -57,18 +60,15 @@ fn wycheproof_ascon_aead128() {
 
             let mut pt =
                 vec![0xEEu8; Ascon_AEAD128::<Decrypting>::decrypt_out_len(ct_and_tag.len())];
-            let decrypted = Ascon_AEAD128::<Decrypting>::decrypt_with_aad_out(
-                &key, &nonce, &aad, &ct_and_tag, &mut pt,
-            );
+            let decrypted = key.decrypt_with_aad_out(&nonce, &aad, &ct_and_tag, &mut pt);
 
             match test.get("result").and_then(Value::as_str).expect("result") {
                 "valid" => {
                     let mut out =
                         vec![0u8; Ascon_AEAD128::<Encrypting>::encrypt_out_len(msg.len())];
-                    let n = Ascon_AEAD128::<Encrypting>::encrypt_with_aad_nonce_out(
-                        &key, &nonce, &aad, &msg, &mut out,
-                    )
-                    .unwrap_or_else(|e| panic!("tcId {tc_id}: encrypt failed: {e:?}"));
+                    let n = key
+                        .encrypt_with_aad_nonce_out(&nonce, &aad, &msg, &mut out)
+                        .unwrap_or_else(|e| panic!("tcId {tc_id}: encrypt failed: {e:?}"));
                     assert_eq!(&out[..n], &ct_and_tag[..], "tcId {tc_id}: ct || tag");
 
                     let n = decrypted.unwrap_or_else(|e| panic!("tcId {tc_id}: decrypt: {e:?}"));

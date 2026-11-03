@@ -10,7 +10,7 @@
 //! ```
 //! use bouncycastle_aes::hazmat::AES128Internal;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-//! use bouncycastle_core::hazmat::ElectronicCodeBook;
+//! use bouncycastle_core::hazmat::{BlockPermutation, ElectronicCodeBook};
 //!
 //! let key = KeyMaterial::<16>::from_bytes_as_type(
 //!     &[0x2b, 0x7e, 0x15, 0x16, 0x28, 0xae, 0xd2, 0xa6,
@@ -44,15 +44,15 @@
 //! block: `u16` planes hold one block, `u32` planes two and `u64` planes four (see the
 //! `bitslice` module in the source). The round functions cost about the same whatever the
 //! width, so on a 64-bit machine four independent blocks cost little more than one. Where a
-//! caller has them, [`ElectronicCodeBook::encrypt_4blocks`] is 3.0x the throughput of four
-//! [`ElectronicCodeBook::encrypt_block`] calls on x86-64 (3.7x for decryption), and
-//! [`ElectronicCodeBook::encrypt_2blocks`] 1.75x that of two (1.95x for decryption); the crate
+//! caller has them, [`BlockPermutation::encrypt_4blocks`] is 3.0x the throughput of four
+//! [`BlockPermutation::encrypt_block`] calls on x86-64 (3.7x for decryption), and
+//! [`BlockPermutation::encrypt_2blocks`] 1.75x that of two (1.95x for decryption); the crate
 //! docs have the table and the benches record the numbers:
 //!
 //! ```
 //! use bouncycastle_aes::hazmat::AES256Internal;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-//! use bouncycastle_core::hazmat::ElectronicCodeBook;
+//! use bouncycastle_core::hazmat::{BlockPermutation, ElectronicCodeBook};
 //!
 //! let key = KeyMaterial::<32>::from_bytes_as_type(&[0x01; 32], KeyType::SymmetricCipherKey)
 //!     .expect("a 32-byte symmetric cipher key");
@@ -100,6 +100,17 @@ use bouncycastle_core::hazmat::ElectronicCodeBook;
 pub struct AESInternal<P: AESParams> {
     schedule: Secret<P::Schedule>,
 }
+
+// Written out rather than derived so that `P`, a marker type, need not be `PartialEq`. Round key
+// 0 is the key itself (FIPS 197 Sec 5.2), so two schedules are equal exactly when the keys are;
+// `Secret`'s equality inspects every byte, so the time taken does not say where they differ.
+impl<P: AESParams> PartialEq for AESInternal<P> {
+    fn eq(&self, other: &Self) -> bool {
+        self.schedule == other.schedule
+    }
+}
+
+impl<P: AESParams> Eq for AESInternal<P> {}
 
 /// AES-128: 16-byte key, 10 rounds (FIPS 197 Table 3).
 #[allow(non_camel_case_types)]

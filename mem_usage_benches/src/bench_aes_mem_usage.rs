@@ -47,7 +47,7 @@
 #![allow(unused_imports)]
 
 use bouncycastle::aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
-use bouncycastle::core::hazmat::ElectronicCodeBook;
+use bouncycastle::core::hazmat::{BlockPermutation, ElectronicCodeBook};
 use bouncycastle::core::key_material::{KeyMaterial, KeyType};
 
 /// This exists so /usr/bin/time can measure the base memory footprint of the harness itself.

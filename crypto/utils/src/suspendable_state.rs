@@ -35,7 +35,7 @@
 //! /// A toy: a counter that must never exceed 100, and a key it is checked against on resume.
 //! struct Counter { count: usize }
 //!
-//! impl SuspendableComponent for Counter {
+//! impl<'k> SuspendableComponent<'k> for Counter {
 //!     const STATE_LEN: usize = 8;
 //!     type Key = u8;
 //!     fn write_state(&self, out: &mut [u8]) {
@@ -185,10 +185,12 @@ pub fn check_lib_ver<const SERIALIZED_LEN: usize>(
 /// `write_state` and `read_state` are given exactly [`STATE_LEN`](Self::STATE_LEN) bytes. The
 /// version header is not part of it: a composite writes one header for the whole state, through
 /// [`suspend_component`] and [`resume_component`].
-pub trait SuspendableComponent: Sized {
+pub trait SuspendableComponent<'k>: Sized {
     /// The number of bytes `write_state` fills and `read_state` reads.
     const STATE_LEN: usize;
-    /// The key that must be re-supplied to resume. It is never written into the state.
+    /// The key that must be re-supplied to resume. It is never written into the state. A
+    /// component that borrows its key for `'k` names the key's type here and is rebuilt over the
+    /// reference it is given; one that owns a copy ignores the lifetime.
     type Key: ?Sized;
     /// Writes the state into `out`, which is exactly `STATE_LEN` bytes.
     fn write_state(&self, out: &mut [u8]);
@@ -197,13 +199,15 @@ pub trait SuspendableComponent: Sized {
     /// # Errors
     /// [`SuspendableError::InvalidData`] if `state` is not one this component could have
     /// written, or `key` is not a key the component accepts.
-    fn read_state(state: &[u8], key: &Self::Key) -> Result<Self, SuspendableError>;
+    fn read_state(state: &[u8], key: &'k Self::Key) -> Result<Self, SuspendableError>;
 }
 
 /// The `suspend` of a component: the version header, then its state.
 ///
 /// `N` must be `LIB_VERSION_LEN + C::STATE_LEN`, checked at compile time.
-pub fn suspend_component<C: SuspendableComponent, const N: usize>(component: &C) -> [u8; N] {
+pub fn suspend_component<'k, C: SuspendableComponent<'k>, const N: usize>(
+    component: &C,
+) -> [u8; N] {
     const {
         assert!(
             N == LIB_VERSION_LEN + C::STATE_LEN,
@@ -222,9 +226,9 @@ pub fn suspend_component<C: SuspendableComponent, const N: usize>(component: &C)
 /// # Errors
 /// [`SuspendableError::IncompatibleVersion`] from the header check, otherwise whatever
 /// [`SuspendableComponent::read_state`] returns.
-pub fn resume_component<C: SuspendableComponent, const N: usize>(
+pub fn resume_component<'k, C: SuspendableComponent<'k>, const N: usize>(
     state: &[u8; N],
-    key: &C::Key,
+    key: &'k C::Key,
 ) -> Result<C, SuspendableError> {
     const {
         assert!(
