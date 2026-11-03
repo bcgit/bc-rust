@@ -125,3 +125,19 @@ fn algorithm_names() {
     assert_eq!(CSHAKE128::ALG_NAME, "CSHAKE128");
     assert_eq!(CSHAKE256::ALG_NAME, "CSHAKE256");
 }
+
+/// As for SHAKE: the low `8 - num_bits` bits of the partial byte are the BIT STRING's unused bits
+/// and must not reach the sponge, on the customized path too (it has its own suffix handling).
+#[test]
+fn the_unused_bits_of_a_partial_byte_are_ignored() {
+    for num_bits in 1..=7usize {
+        let mut all_ones = CSHAKE128::new(b"N", b"S");
+        all_ones.do_update(b"abc");
+        let mut all_zeros = CSHAKE128::new(b"N", b"S");
+        all_zeros.do_update(b"abc");
+        let used_mask = 0xffu8 << (8 - num_bits);
+        let a = all_ones.into_squeezer_partial_bits(0xff, num_bits).unwrap().do_output(32);
+        let b = all_zeros.into_squeezer_partial_bits(used_mask, num_bits).unwrap().do_output(32);
+        assert_eq!(a, b, "num_bits = {num_bits}");
+    }
+}
