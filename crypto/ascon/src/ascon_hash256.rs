@@ -86,19 +86,44 @@ impl Hash for AsconHash256 {
 
     fn do_final_partial_bits(
         self,
-        _partial_byte: u8,
-        _num_partial_bits: usize,
+        partial_byte: u8,
+        num_bits: usize,
     ) -> Result<Vec<u8>, HashError> {
-        Err(HashError::InvalidInput("Ascon-Hash256 does not support partial byte input"))
+        if num_bits > 7 {
+            return Err(HashError::InvalidLength("num_bits must be in the range [0,7]"));
+        }
+
+        if num_bits != 0 {
+            return Err(HashError::InvalidInput(
+                "Ascon-Hash256 does not support partial byte input",
+            ));
+        }
+
+        // A zero-bit partial byte means the message is byte-aligned.
+        let _ = partial_byte;
+        Ok(self.do_final())
     }
 
     fn do_final_partial_bits_out(
         self,
-        _partial_byte: u8,
-        _num_partial_bits: usize,
-        _output: &mut [u8],
+        partial_byte: u8,
+        num_bits: usize,
+        output: &mut [u8],
     ) -> Result<usize, HashError> {
-        Err(HashError::InvalidInput("Ascon-Hash256 does not support partial byte input"))
+        output.fill(0);
+        if num_bits > 7 {
+            return Err(HashError::InvalidLength("num_bits must be in the range [0,7]"));
+        }
+
+        if num_bits != 0 {
+            return Err(HashError::InvalidInput(
+                "Ascon-Hash256 does not support partial byte input",
+            ));
+        }
+
+        // A zero-bit partial byte means the message is byte-aligned.
+        let _ = partial_byte;
+        Ok(self.do_final_out(output))
     }
 }
 

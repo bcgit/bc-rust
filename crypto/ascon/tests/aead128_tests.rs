@@ -698,6 +698,19 @@ fn aead128_suspendable_keyed_state() {
         Err(SuspendableError::InvalidData)
     ));
 
+    // Bytes are held back only once ciphertext has been seen: a decryptor still taking AAD
+    // resumes with nothing held, and not with a held-back count.
+    let mut d_aad = key.create_decryptor(&NONCE);
+    d_aad.do_update_aad(ad).unwrap();
+    let aad_state = d_aad.suspend();
+    assert!(Ascon_AEAD128::<Decrypting>::from_suspended(aad_state, &key).is_ok());
+    let mut held_in_aad = aad_state;
+    held_in_aad[SUSPENDED_ASCON_AEAD128_DECRYPTOR_STATE_LEN - 1] = 5;
+    assert!(matches!(
+        Ascon_AEAD128::<Decrypting>::from_suspended(held_in_aad, &key),
+        Err(SuspendableError::InvalidData)
+    ));
+
     // A state suspended while encrypting must not resume as a decryptor, nor the reverse: the
     // call-state byte carries the direction and the resuming type checks it.
     let mut enc_as_dec = [0u8; SUSPENDED_ASCON_AEAD128_DECRYPTOR_STATE_LEN];

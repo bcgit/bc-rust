@@ -88,6 +88,20 @@ fn xof128_prefix_property_and_streaming() {
 
     assert_eq!(piecewise, full, "incremental squeeze must equal a single squeeze");
 
+    // Reads smaller than what is left of the last squeezed block are served from it.
+    for n in [1usize, 2, 3, 5, 7] {
+        let mut x = AsconXof128::new();
+        x.do_update(&msg);
+        let mut squeezer = x.into_squeezer();
+        let mut piecewise = Vec::new();
+        while piecewise.len() < full.len() {
+            let mut part = vec![0u8; n.min(full.len() - piecewise.len())];
+            assert_eq!(squeezer.do_output_out(&mut part), part.len());
+            piecewise.extend_from_slice(&part);
+        }
+        assert_eq!(piecewise, full, "squeeze in {n}-byte pieces mismatch");
+    }
+
     // Absorbing in chunks equals one-shot input.
     for chunk in [1usize, 8, 9, 64] {
         let mut xc = AsconXof128::new();

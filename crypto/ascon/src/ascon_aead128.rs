@@ -769,8 +769,8 @@ impl<'k> SuspendableKeyed<'k, SUSPENDED_ASCON_AEAD128_DECRYPTOR_STATE_LEN>
         out
     }
 
-    /// A state suspended by the encrypting side, or a held-back count above `TAG_LEN`, is
-    /// [`SuspendableError::InvalidData`].
+    /// A state suspended by the encrypting side, a held-back count above `TAG_LEN`, or held-back
+    /// bytes before any ciphertext was seen, is [`SuspendableError::InvalidData`].
     fn from_suspended(
         serialized_state: [u8; SUSPENDED_ASCON_AEAD128_DECRYPTOR_STATE_LEN],
         key: &'k Self::Key,
@@ -782,6 +782,10 @@ impl<'k> SuspendableKeyed<'k, SUSPENDED_ASCON_AEAD128_DECRYPTOR_STATE_LEN>
         dec.held.copy_from_slice(&serialized_state[CIPHER_STATE_LEN..CIPHER_STATE_LEN + TAG_LEN]);
         dec.held_len = serialized_state[CIPHER_STATE_LEN + TAG_LEN] as usize;
         if dec.held_len > TAG_LEN {
+            return Err(SuspendableError::InvalidData);
+        }
+        // Bytes are held back only by `decrypt_bytes`' callers, which move the phase to `Data`.
+        if dec.held_len != 0 && dec.phase != Phase::Data {
             return Err(SuspendableError::InvalidData);
         }
         Ok(dec)
