@@ -1,5 +1,5 @@
-//! HMAC over the SHA-2 hashes, as specified in RFC 2104, with the truncation rules of NIST SP
-//! 800-107 Rev 1.
+//! HMAC over the SHA-2 hashes, as specified in RFC 2104, with the truncation rules of FIPS 140-3
+//! IG C.L.
 //!
 //! Uses [`bouncycastle_hmac`] to provide the HMAC-SHA2 instantiations: [`HMAC_SHA224`],
 //! [`HMAC_SHA256`], [`HMAC_SHA384`] and [`HMAC_SHA512`].
@@ -234,10 +234,10 @@
 //! * Verify with [`MAC::verify`] or [`MAC::do_verify_final`] rather than computing the MAC yourself
 //!   and comparing: those use a constant-time comparison, while `==` on the byte slices leaks how
 //!   many leading bytes matched.
-//! * Truncating the MAC output below [`MIN_FIPS_DIGEST_LEN`] (4 bytes) is rejected, per FIPS 140-2
-//!   IG A.8 / NIST SP 800-107-r1 Section 5.3.3. That is a floor, not a recommendation -- RFC 2104
-//!   Section 5 recommends that the output length "be not less than half the length of the hash
-//!   output ... and not less than 80 bits".
+//! * Truncating the MAC output below [`MIN_FIPS_DIGEST_LEN`] (4 bytes) is rejected, per FIPS 140-3
+//!   IG C.L Resolution C.4 (formerly NIST SP 800-107r1 Section 5.3.3). That is a floor, not a
+//!   recommendation -- RFC 2104 Section 5 recommends that the output length "be not less than half
+//!   the length of the hash output ... and not less than 80 bits".
 //! * Resuming a suspended HMAC with the wrong key cannot be detected and silently produces a wrong
 //!   MAC; see the suspend/resume section above.
 //! * A key longer than the hash's block length is pre-hashed down to the output length (RFC 2104

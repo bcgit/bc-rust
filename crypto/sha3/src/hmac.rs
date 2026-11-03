@@ -1,5 +1,5 @@
 //! HMAC over the SHA-3 hashes, as specified in RFC 2104, taking into account NIST Implementation
-//! Guidance in FIPS 140-2 IG A.8 and NIST SP 800-107-r1.
+//! Guidance in FIPS 140-3 IG C.L.
 //!
 //! Uses [`bouncycastle_hmac`] to provide the HMAC-SHA3 instantiations: [`HMAC_SHA3_224`],
 //! [`HMAC_SHA3_256`], [`HMAC_SHA3_384`] and [`HMAC_SHA3_512`].
@@ -234,10 +234,10 @@
 //! * Verify with [`MAC::verify`] or [`MAC::do_verify_final`] rather than computing the MAC yourself
 //!   and comparing: those use a constant-time comparison, while `==` on the byte slices leaks how
 //!   many leading bytes matched.
-//! * Truncating the MAC output below [`MIN_FIPS_DIGEST_LEN`] (4 bytes) is rejected, per FIPS 140-2
-//!   IG A.8 / NIST SP 800-107-r1 Section 5.3.3. That is a floor, not a recommendation -- RFC 2104
-//!   Section 5 recommends that the output length "be not less than half the length of the hash
-//!   output ... and not less than 80 bits".
+//! * Truncating the MAC output below [`MIN_FIPS_DIGEST_LEN`] (4 bytes) is rejected, per FIPS 140-3
+//!   IG C.L Resolution C.4 (formerly NIST SP 800-107r1 Section 5.3.3). That is a floor, not a
+//!   recommendation -- RFC 2104 Section 5 recommends that the output length "be not less than half
+//!   the length of the hash output ... and not less than 80 bits".
 //! * A suspended HMAC state can be inverted to the key and must be stored as securely as the key;
 //!   and resuming with the wrong key cannot be detected and silently produces a wrong MAC. See the
 //!   suspend/resume section above.

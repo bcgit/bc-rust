@@ -1,5 +1,5 @@
 //! The generic Hash-Based Message Authentication Code (HMAC) construction, as specified in RFC 2104,
-//! taking into account NIST Implementation Guidance in FIPS 140-2 IG A.8 and NIST SP 800-107-r1.
+//! taking into account NIST Implementation Guidance in FIPS 140-3 IG C.L.
 //!
 //! This is a utility crate and is not intended to be used directly. It provides [`HmacKey`] -- the
 //! key object, which holds the two precomputed pad states RFC 2104 Section 4 describes and hands
@@ -105,9 +105,9 @@
 //! * Verification via [`MAC::verify`] / [`MAC::do_verify_final`] uses a constant-time comparison.
 //!   Recomputing the MAC and comparing it with `==` leaks how many leading bytes matched.
 //! * [`MIN_FIPS_DIGEST_LEN`] (4 bytes) is the shortest truncation this crate will produce, per
-//!   FIPS 140-2 IG A.8 / NIST SP 800-107-r1 Section 5.3.3. It is a floor, not a recommendation:
-//!   RFC 2104 Section 5 recommends that the output length "be not less than half the length of the
-//!   hash output ... and not less than 80 bits".
+//!   FIPS 140-3 IG C.L Resolution C.4 (formerly NIST SP 800-107r1 Section 5.3.3). It is a floor,
+//!   not a recommendation: RFC 2104 Section 5 recommends that the output length "be not less than
+//!   half the length of the hash output ... and not less than 80 bits".
 //! * The key is deliberately excluded from the suspended state and the [`HmacKey`] must be
 //!   re-supplied on resume. Resuming with the wrong key cannot be detected and silently produces a
 //!   wrong MAC, computed with different keys in the inner and outer pad.
@@ -341,7 +341,7 @@ impl<HASH: HMACParams> HmacKey<HASH> {
         out.fill(0);
         if out.len() < MIN_FIPS_DIGEST_LEN {
             return Err(MACError::InvalidLength(
-                "HMAC truncation too short for FIPS 140-2 guidelines",
+                "HMAC truncation too short for FIPS 140-3 guidelines",
             ));
         }
         let mut ihash = vec![0u8; inner.output_len()];
@@ -403,11 +403,10 @@ impl<HASH: HMACParams> Display for HMAC<'_, HASH> {
 const IPAD_BYTE: u8 = 0x36;
 const OPAD_BYTE: u8 = 0x5C;
 
-/// Per FIPS 140-2 IG A.8 Use of a truncated HMAC (matching NIST SP 800-107-r1
-/// Section 5.3.3. Truncation of HMAC), says that the minimum truncation of a
-/// HMAC for tagging should be 32 bits; this exceeds the lower bound set by
-/// IETF RFC 2104 Section 5 Truncated output, which sets the lower bound to be
-/// half of the hash's length and no fewer than 80 bits.
+/// FIPS 140-3 IG C.L Resolution C.4, which carries over NIST SP 800-107r1 Section 5.3.3 while
+/// that document is being withdrawn, says a truncated HMAC output "shall be no less than 32 bits";
+/// this is below the lower bound set by IETF RFC 2104 Section 5 Truncated output, which sets the
+/// lower bound to be half of the hash's length and no fewer than 80 bits.
 ///
 /// However, as we feel there should be a minimum limit (and have an author
 /// work around this via explicit truncation manually afterwards), but not
