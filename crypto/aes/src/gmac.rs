@@ -1,45 +1,6 @@
 //! Type aliases for AES in GMAC (NIST SP 800-38D Sec 5.2), and the generator/verifier pair that
-//! makes [`AES128Key<GMAC>`] and friends GMAC keys.
-//!
-//! See [`bouncycastle_cipher::modes::gmac`] for the construction, the nonce and the security
-//! considerations. [`AES_GMAC_128`] and friends pin the permutation and its key length and fix
-//! the tag at 128 bits, as the `AES_GCM_*` aliases do; for a shorter tag name
-//! [`Gmac`] directly, or the key's mode as `GMAC<12>`.
-//!
-//! A GMAC tag is bound to a nonce, so the pair is the MAC role pair's names with the nonce added,
-//! which is the AEAD role pair's shape with no ciphertext. It is inherent on the key rather than a
-//! role trait in `core` because GMAC is the only nonce-based MAC in the tree.
-//!
-//! # Usage Examples
-//!
-//! ```
-//! use bouncycastle_aes::AES256Key;
-//! use bouncycastle_cipher::modes::GMAC;
-//! use bouncycastle_core::key_material::{KeyMaterial256, KeyType};
-//! use bouncycastle_core::symmetric_key::FromKeyMaterial;
-//! use bouncycastle_rng::HashDRBG_SHA512;
-//!
-//! let mut rng = HashDRBG_SHA512::new_from_os();   // one RNG, held across messages
-//! let material = KeyMaterial256::from_bytes_as_type(&[0x42; 32], KeyType::MACKey).unwrap();
-//! let key = AES256Key::<GMAC>::from_key_material(&material).expect("a valid AES-256 MAC key");
-//!
-//! // The nonce is drawn from `rng` and returned; the Result is for that draw only.
-//! let (mut generator, nonce) = key.create_generator(&mut rng).expect("nonce draw");
-//! generator.do_update(b"a message that arrives ");
-//! generator.do_update(b"in pieces");
-//! let tag = generator.do_final();
-//!
-//! // Verification needs the nonce the tag was made under, and is infallible to set up.
-//! assert!(key.create_verifier(&nonce).verify(b"a message that arrives in pieces", &tag));
-//! assert!(!key.create_verifier(&nonce).verify(b"another message", &tag));
-//! ```
-//!
-//! # Memory Usage
-//!
-//! A key is the expanded schedule plus the 16-byte hash subkey, the same as a GCM key: 192, 224
-//! and 256 bytes for AES-128, -192 and -256. A worker is a `Gcm` of the same shape.
-//!
-//! [`AES128Key<GMAC>`]: crate::AES128Key
+//! makes [`AES128Key<GMAC>`] and friends GMAC keys. The docs are on [`AES_GMAC_128`], which the
+//! crate root re-exports.
 
 use crate::hazmat::{AES128Internal, AES192Internal, AES256Internal, AESInternal};
 use crate::{AESKey, AESParams};
@@ -56,6 +17,46 @@ use crate::AES128Key;
 
 /// AES-128 in GMAC with a 128-bit tag. `Dir` is [`Encrypting`] to generate a tag or
 /// [`Decrypting`] to verify one.
+///
+/// See [`bouncycastle_cipher::modes::gmac`] for the construction, the nonce and the security
+/// considerations. [`AES_GMAC_128`] and friends pin the permutation and its key length and fix
+/// the tag at 128 bits, as the `AES_GCM_*` aliases do; for a shorter tag name
+/// [`Gmac`] directly, or the key's mode as `GMAC<12>`.
+///
+/// A GMAC tag is bound to a nonce, so the pair is the MAC role pair's names with the nonce added,
+/// which is the AEAD role pair's shape with no ciphertext. It is inherent on the key rather than a
+/// role trait in `core` because GMAC is the only nonce-based MAC in the tree.
+///
+/// # Usage Examples
+///
+/// ```
+/// use bouncycastle_aes::AES256Key;
+/// use bouncycastle_cipher::modes::GMAC;
+/// use bouncycastle_core::key_material::{KeyMaterial256, KeyType};
+/// use bouncycastle_core::symmetric_key::FromKeyMaterial;
+/// use bouncycastle_rng::HashDRBG_SHA512;
+///
+/// let mut rng = HashDRBG_SHA512::new_from_os();   // one RNG, held across messages
+/// let material = KeyMaterial256::from_bytes_as_type(&[0x42; 32], KeyType::MACKey).unwrap();
+/// let key = AES256Key::<GMAC>::from_key_material(&material).expect("a valid AES-256 MAC key");
+///
+/// // The nonce is drawn from `rng` and returned; the Result is for that draw only.
+/// let (mut generator, nonce) = key.create_generator(&mut rng).expect("nonce draw");
+/// generator.do_update(b"a message that arrives ");
+/// generator.do_update(b"in pieces");
+/// let tag = generator.do_final();
+///
+/// // Verification needs the nonce the tag was made under, and is infallible to set up.
+/// assert!(key.create_verifier(&nonce).verify(b"a message that arrives in pieces", &tag));
+/// assert!(!key.create_verifier(&nonce).verify(b"another message", &tag));
+/// ```
+///
+/// # Memory Usage
+///
+/// A key is the expanded schedule plus the 16-byte hash subkey, the same as a GCM key: 192, 224
+/// and 256 bytes for AES-128, -192 and -256. A worker is a `Gcm` of the same shape.
+///
+/// [`AES128Key<GMAC>`]: crate::AES128Key
 #[allow(non_camel_case_types)]
 pub type AES_GMAC_128<'k, Dir> = Gmac<'k, AES128Internal, Dir, 16>;
 

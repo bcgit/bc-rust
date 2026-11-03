@@ -12,20 +12,21 @@
 //! is not secure to use by itself; see
 //! [A block permutation is not a cipher](#a-block-permutation-is-not-a-cipher) below.
 //!
-//! For ready-to-use primitives, see the documentation for one of the provided modes of operation:
+//! For ready-to-use primitives, see the documentation of one of the provided modes of
+//! operation, on the 128-bit alias of each:
 //!
-//! * [AES_CBC](crate::cbc)
-//! * [AES_CCM](crate::ccm)
-//! * [AES_CFB](crate::cfb)
-//! * [AES_CFB8](crate::cfb8)
-//! * [AES_CMAC](crate::cmac), a MAC rather than a cipher
-//! * [AES_CTR](crate::ctr)
-//! * [AES_GCM](crate::gcm)
-//! * [AES_GMAC](crate::gmac), a nonce-based MAC rather than a cipher
+//! * [`AES_CBC_128`]
+//! * [`AES_CCM_128`]
+//! * [`AES_CFB_128`]
+//! * [`AES_CFB8_128`]
+//! * [`AES_CMAC_128`], a MAC rather than a cipher
+//! * [`AES_CTR_128`]
+//! * [`AES_GCM_128`]
+//! * [`AES_GMAC_128`], a nonce-based MAC rather than a cipher
 //!
 //! Each mode is used through a mode-bound key object such as [`AES256Key<GCM>`](AES256Key),
 //! which validates and expands the material once and hands out the mode's encryptors and
-//! decryptors; see [`key`].
+//! decryptors; see [`AESKey`].
 //!
 //! AES in ECB mode, [`AES_ECB_128`](hazmat::AES_ECB_128) and friends, is under [`hazmat`] because
 //! it is a building block for other modes, not itself a confidentiality mode for data.
@@ -174,16 +175,16 @@
 #![allow(private_bounds)]
 
 mod bitslice;
-pub mod cbc;
-pub mod ccm;
-pub mod cfb;
-pub mod cfb8;
-pub mod cmac;
-pub mod ctr;
-pub mod gcm;
-pub mod gmac;
+mod cbc;
+mod ccm;
+mod cfb;
+mod cfb8;
+mod cmac;
+mod ctr;
+mod gcm;
+mod gmac;
 pub mod hazmat;
-pub mod key;
+mod key;
 mod round;
 mod sbox;
 mod schedule;

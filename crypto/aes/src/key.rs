@@ -1,73 +1,6 @@
-//! AES key objects: a key bound to one AES variant and one mode, validated and expanded once,
-//! from which the mode's encryptors and decryptors are made.
-//!
-//! [`AES128Key<M>`], [`AES192Key<M>`] and [`AES256Key<M>`] are one type each per mode `M`, so a key
-//! is bound to its AES variant and its mode by the Rust type rather than by the length of a byte
-//! buffer and the call site. Validation and key expansion happen once, in the constructor, and
-//! every message under the key starts from the stored schedule (and, for GCM, the stored hash
-//! subkey, or for CMAC the stored subkeys), which the workers borrow rather than copy. Using one
-//! key under two modes is two `from_key_material` calls on two key types; the accidental version
-//! does not compile. A MAC mode's key takes `KeyType::MACKey` material, a cipher mode's
-//! `KeyType::SymmetricCipherKey`. Which workers a key hands out is decided by its mode: the
-//! symmetric pair for the stream modes and the padded block modes (`CFB`, `CFB8`, `CTR`,
-//! `CBC<PKCS7>`, `ECB<PKCS7>`), the block pair for `CBC<Blocks>`, the `hazmat` ECB pair for
-//! `ECB<Blocks>`, the AEAD pairs for `GCM`, `CCM` and `CCM_Packet`, the MAC pair for `CMAC`, and
-//! for `GMAC`, whose tag is nonce-bound, an inherent pair (see [`crate::gmac`]).
-//!
-//! # Usage Examples
-//!
-//! ```
-//! use bouncycastle_aes::AES256Key;
-//! use bouncycastle_cipher::modes::GCM;
-//! use bouncycastle_core::key_material::{KeyMaterial256, KeyType};
-//! use bouncycastle_core::symmetric_key::{AeadDecryptionKey, AeadEncryptionKey, FromKeyMaterial};
-//! use bouncycastle_core::traits::{AEADCipherDecryptor, AEADCipherEncryptor, SymmetricCipherEncryptor};
-//! use bouncycastle_rng::HashDRBG_SHA512;
-//!
-//! let mut rng = HashDRBG_SHA512::new_from_os();   // one RNG, held across messages
-//! let material = KeyMaterial256::from_bytes_as_type(&[0x42; 32], KeyType::SymmetricCipherKey)
-//!     .expect("a 32-byte symmetric cipher key");
-//! let key = AES256Key::<GCM>::from_key_material(&material).expect("a valid AES-256 key");
-//!
-//! // Streaming: the nonce is drawn from `rng` and returned; the Result is for that draw only.
-//! let (mut enc, nonce) = key.create_encryptor(&mut rng).expect("nonce draw");
-//! enc.do_update_aad(b"header").expect("aad");
-//! let mut ciphertext = [0u8; 14];
-//! enc.do_encrypt_out(b"attack at dawn", &mut ciphertext).expect("encryption");
-//! let (_, tag) = enc.do_encrypt_final_detached_out(&mut [0u8; 16]).expect("the tag");
-//!
-//! // Decryption from the same key is infallible to set up; the nonce type follows from the key.
-//! let mut dec = key.create_decryptor(&nonce);
-//! dec.do_update_aad(b"header").expect("aad");
-//! // ... feed `ciphertext`, then check `tag` with `do_decrypt_final_detached_out`.
-//!
-//! // One-shots take the same path.
-//! let (n, nonce) = key
-//!     .encrypt_with_aad_out(&mut rng, b"header", b"attack at dawn", &mut [0u8; 30])
-//!     .expect("one-shot");
-//! assert_eq!(n, 14 + 16);
-//! ```
-//!
-//! The nonce a decryptor takes is the array the key's mode fixes, so a nonce of another length is
-//! a compile error rather than a runtime one:
-//!
-//! ```compile_fail
-//! # use bouncycastle_aes::AES128Key;
-//! # use bouncycastle_cipher::modes::GCM;
-//! # use bouncycastle_core::symmetric_key::{AeadDecryptionKey, FromKeyMaterial};
-//! # use bouncycastle_core::key_material::{KeyMaterial128, KeyType};
-//! # let km = KeyMaterial128::from_bytes_as_type(&[1; 16], KeyType::SymmetricCipherKey).unwrap();
-//! let key = AES128Key::<GCM>::from_key_material(&km).unwrap();
-//! let dec = key.create_decryptor(&[0u8; 16]);   // GCM's nonce is 12 bytes
-//! ```
-//!
-//! # Memory Usage
-//!
-//! A key is its mode's per-key state: the expanded schedule, 176, 208 or 240 bytes for AES-128,
-//! -192 and -256, plus 16 bytes of hash subkey under `GCM` or `GMAC`, or 32 bytes of subkeys
-//! under `CMAC`.
-//! The cost is paid per key, not per message, and replaces the per-message validation and
-//! expansion of the `KeyMaterial` path.
+//! AES key objects: a key bound to one AES variant and one mode, validated and expanded once, from
+//! which the mode's encryptors and decryptors are made. The docs are on [`AESKey`], which the crate
+//! root re-exports.
 
 use crate::hazmat::{AES128Internal, AES192Internal, AES256Internal, AESInternal};
 use crate::{AES128Params, AES192Params, AES256Params, AESParams};
@@ -92,6 +25,74 @@ use bouncycastle_core::traits::RNG;
 /// The only state is the mode's per-key state, which holds the expanded schedule in a `Secret`
 /// and so is zeroized on drop; the key has no `Debug` and no way to read the material back. A
 /// caller who needs the bytes again keeps the `KeyMaterial`.
+///
+/// [`AES128Key<M>`], [`AES192Key<M>`] and [`AES256Key<M>`] are one type each per mode `M`, so a key
+/// is bound to its AES variant and its mode by the Rust type rather than by the length of a byte
+/// buffer and the call site. Validation and key expansion happen once, in the constructor, and
+/// every message under the key starts from the stored schedule (and, for GCM, the stored hash
+/// subkey, or for CMAC the stored subkeys), which the workers borrow rather than copy. Using one
+/// key under two modes is two `from_key_material` calls on two key types; the accidental version
+/// does not compile. A MAC mode's key takes `KeyType::MACKey` material, a cipher mode's
+/// `KeyType::SymmetricCipherKey`. Which workers a key hands out is decided by its mode: the
+/// symmetric pair for the stream modes and the padded block modes (`CFB`, `CFB8`, `CTR`,
+/// `CBC<PKCS7>`, `ECB<PKCS7>`), the block pair for `CBC<Blocks>`, the `hazmat` ECB pair for
+/// `ECB<Blocks>`, the AEAD pairs for `GCM`, `CCM` and `CCM_Packet`, the MAC pair for `CMAC`, and
+/// for `GMAC`, whose tag is nonce-bound, an inherent pair (see [`AES_GMAC_128`](crate::AES_GMAC_128)).
+///
+/// # Usage Examples
+///
+/// ```
+/// use bouncycastle_aes::AES256Key;
+/// use bouncycastle_cipher::modes::GCM;
+/// use bouncycastle_core::key_material::{KeyMaterial256, KeyType};
+/// use bouncycastle_core::symmetric_key::{AeadDecryptionKey, AeadEncryptionKey, FromKeyMaterial};
+/// use bouncycastle_core::traits::{AEADCipherDecryptor, AEADCipherEncryptor, SymmetricCipherEncryptor};
+/// use bouncycastle_rng::HashDRBG_SHA512;
+///
+/// let mut rng = HashDRBG_SHA512::new_from_os();   // one RNG, held across messages
+/// let material = KeyMaterial256::from_bytes_as_type(&[0x42; 32], KeyType::SymmetricCipherKey)
+///     .expect("a 32-byte symmetric cipher key");
+/// let key = AES256Key::<GCM>::from_key_material(&material).expect("a valid AES-256 key");
+///
+/// // Streaming: the nonce is drawn from `rng` and returned; the Result is for that draw only.
+/// let (mut enc, nonce) = key.create_encryptor(&mut rng).expect("nonce draw");
+/// enc.do_update_aad(b"header").expect("aad");
+/// let mut ciphertext = [0u8; 14];
+/// enc.do_encrypt_out(b"attack at dawn", &mut ciphertext).expect("encryption");
+/// let (_, tag) = enc.do_encrypt_final_detached_out(&mut [0u8; 16]).expect("the tag");
+///
+/// // Decryption from the same key is infallible to set up; the nonce type follows from the key.
+/// let mut dec = key.create_decryptor(&nonce);
+/// dec.do_update_aad(b"header").expect("aad");
+/// // ... feed `ciphertext`, then check `tag` with `do_decrypt_final_detached_out`.
+///
+/// // One-shots take the same path.
+/// let (n, nonce) = key
+///     .encrypt_with_aad_out(&mut rng, b"header", b"attack at dawn", &mut [0u8; 30])
+///     .expect("one-shot");
+/// assert_eq!(n, 14 + 16);
+/// ```
+///
+/// The nonce a decryptor takes is the array the key's mode fixes, so a nonce of another length is
+/// a compile error rather than a runtime one:
+///
+/// ```compile_fail
+/// # use bouncycastle_aes::AES128Key;
+/// # use bouncycastle_cipher::modes::GCM;
+/// # use bouncycastle_core::symmetric_key::{AeadDecryptionKey, FromKeyMaterial};
+/// # use bouncycastle_core::key_material::{KeyMaterial128, KeyType};
+/// # let km = KeyMaterial128::from_bytes_as_type(&[1; 16], KeyType::SymmetricCipherKey).unwrap();
+/// let key = AES128Key::<GCM>::from_key_material(&km).unwrap();
+/// let dec = key.create_decryptor(&[0u8; 16]);   // GCM's nonce is 12 bytes
+/// ```
+///
+/// # Memory Usage
+///
+/// A key is its mode's per-key state: the expanded schedule, 176, 208 or 240 bytes for AES-128,
+/// -192 and -256, plus 16 bytes of hash subkey under `GCM` or `GMAC`, or 32 bytes of subkeys
+/// under `CMAC`.
+/// The cost is paid per key, not per message, and replaces the per-message validation and
+/// expansion of the `KeyMaterial` path.
 pub struct AESKey<P: AESParams, M: Mode<AESInternal<P>>> {
     pub(crate) state: M::KeyState,
 }
