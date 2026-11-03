@@ -122,3 +122,74 @@ fn do_update_refuses_padding_and_leaves_the_state_restorable() {
     assert!(matches!(decoder.do_update("=="), Err(Base64Error::PaddingEncounteredDuringDoUpdate)));
     assert_eq!(decoder.do_final("==").unwrap(), b"D");
 }
+
+/// RFC 4648 Section 10's test vectors, each also with its padding dropped (which `do_final`
+/// tolerates) and with whitespace around and inside it. The two- and three-symbol tails carry
+/// low bits in their last sextet.
+#[test]
+fn rfc4648_section_10_vectors() {
+    let vectors: [(&[u8], &str); 7] = [
+        (b"", ""),
+        (b"f", "Zg=="),
+        (b"fo", "Zm8="),
+        (b"foo", "Zm9v"),
+        (b"foob", "Zm9vYg=="),
+        (b"fooba", "Zm9vYmE="),
+        (b"foobar", "Zm9vYmFy"),
+    ];
+    for (raw, enc) in vectors {
+        assert_eq!(base64::encode(raw), enc);
+        assert_eq!(base64::decode(enc).unwrap(), raw, "{enc}");
+        assert_eq!(base64::decode(enc.trim_end_matches('=')).unwrap(), raw, "{enc} unpadded");
+        let spaced = format!(" {} \n", enc.replace('=', " = "));
+        assert_eq!(base64::decode(&spaced).unwrap(), raw, "{spaced:?}");
+    }
+}
+
+/// A block of 4k + 1 symbols ends six bits into a byte, which is no whole byte: it is refused
+/// rather than finished from whatever an earlier block left in the decoder.
+#[test]
+fn a_single_trailing_symbol_is_truncated_input() {
+    for input in ["R", "QUJDR", "QUJDR ", "QUJD R", "R="] {
+        assert!(
+            matches!(
+                base64::decode(input),
+                Err(base64::Base64Error::TruncatedInput | base64::Base64Error::InvalidPadding(_))
+            ),
+            "{input:?}"
+        );
+    }
+    assert!(matches!(base64::decode("QUJDR"), Err(base64::Base64Error::TruncatedInput)));
+}
+
+/// Padding ends the data: RFC 4648 Section 3.3 requires rejecting anything after it other than
+/// the rest of the padding, and padding is only valid after two or three symbols of a block.
+#[test]
+fn nothing_but_padding_and_whitespace_may_follow_the_padding() {
+    use base64::Base64Error::InvalidPadding;
+
+    // (input, index of the offending character)
+    let cases = [
+        ("QQ==garbage!!", 4),
+        ("QQ==QQ==", 4),
+        ("QUJD=RA==", 4),
+        ("QQ===", 4),
+        ("QUI==", 4),
+        ("=", 0),
+        ("QUJD=", 4),
+        ("Q=", 1),
+    ];
+    for (input, at) in cases {
+        match base64::decode(input) {
+            Err(InvalidPadding(i)) => assert_eq!(i, at, "{input:?}"),
+            other => panic!("{input:?}: expected InvalidPadding({at}), got {other:?}"),
+        }
+    }
+
+    // Whitespace after the padding is fine only when whitespace is skipped.
+    assert_eq!(base64::decode("QQ== \n").unwrap(), b"A");
+    assert!(matches!(
+        Base64Decoder::new(false).do_final("QQ==\n"),
+        Err(base64::Base64Error::InvalidPadding(4))
+    ));
+}
