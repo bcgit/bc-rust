@@ -8,7 +8,7 @@ use bouncycastle_core::signature_key::{
     PreHashVerifyingKey, SignatureAlgorithm, SigningKey, VerifyingKey,
 };
 use bouncycastle_core::traits::{
-    AlgorithmInfo, SignaturePrivateKey, SignaturePublicKey, SignatureSigner, SignatureVerifier,
+    AlgorithmInfo, RNG, SignaturePrivateKey, SignaturePublicKey, SignatureSigner, SignatureVerifier,
 };
 use bouncycastle_rng::FixedSeedRNG;
 
@@ -44,7 +44,9 @@ impl TestFrameworkSignature {
         keygen: fn() -> Result<(PK, SK), SignatureError>,
         run_full_bitflipping_tests: bool,
     ) {
-        let mut rng = FixedSeedRNG::new(core::array::from_fn::<u8, 64, _>(|i| i as u8));
+        // The seed cycles, so it is longer than any one draw: a 64-byte seed hands two 64-byte
+        // RSASSA-PSS/SHA-512 salts the same bytes, and the "two signatures differ" check below fails.
+        let mut rng = FixedSeedRNG::new(core::array::from_fn::<u8, 256, _>(|i| i as u8));
         let (pk, sk) = keygen().unwrap();
 
         // one-shots
@@ -195,7 +197,7 @@ impl TestFrameworkSignature {
         keygen: fn() -> Result<(PK, SK), SignatureError>,
         run_full_bitflipping_tests: bool,
     ) {
-        let mut rng = FixedSeedRNG::new(core::array::from_fn::<u8, 64, _>(|i| i as u8));
+        let mut rng = FixedSeedRNG::new(core::array::from_fn::<u8, 256, _>(|i| i as u8));
         let (pk, sk) = keygen().unwrap();
         let ph = H::hash(DUMMY_SEED);
 
@@ -324,7 +326,7 @@ impl TestFrameworkSignature {
         &self,
         pk: &PK,
         sk: &SK,
-        rng: &mut FixedSeedRNG<[u8; 64]>,
+        rng: &mut dyn RNG,
     ) {
         let sig = sk.sign(rng, MSG, Some(b"ctx A")).unwrap();
         pk.verify(MSG, Some(b"ctx A"), &sig).unwrap();

@@ -225,8 +225,9 @@ cipher and MAC traits had (`local/signer_verifier_init_removal_plan.md`). Mechan
   goes on the role trait, not the key type; a pre-hash's hash goes on the method
   (`create_ph_signer::<SHA512>`), with the strength rule checked at construction.
 - **A test RNG that repeats its seed defeats a "two signatures differ" check.** `FixedSeedRNG`
-  emits its seed cyclically; two 32-byte draws from a 64-byte constant seed are identical. Seed
-  it with a counting pattern when the test relies on consecutive draws differing.
+  emits its seed cyclically; two 32-byte draws from a 64-byte constant seed are identical, and
+  so are two 64-byte draws (a PSS/SHA-512 salt) from a 64-byte counting seed. Seed it with a
+  counting pattern longer than one draw when the test relies on consecutive draws differing.
 
 ## Working from specifications
 
