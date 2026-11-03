@@ -91,7 +91,7 @@ impl<P: ARIAParams> ARIAInternal<P> {
     /// substitution layer sends four bytes of each block through each of the four S-boxes, so four
     /// blocks fill the four passes exactly; fewer blocks cost the same. Modes whose blocks are
     /// independent -- CTR, and the decryption direction of CBC and CFB -- reach it through
-    /// the `ElectronicCodeBook` four-block batch; CBC encryption cannot, since its blocks
+    /// the `BlockPermutation` four-block batch; CBC encryption cannot, since its blocks
     /// are serially dependent.
     ///
     /// Infallible: a constructed [`ARIAInternal`] is always usable and every input length is fixed.
@@ -351,24 +351,54 @@ impl<P: ARIAParams> core::fmt::Debug for ARIAInternal<P> {
 mod tests {
     use super::*;
 
+    /// Sec 2.2's decryption keys -- `dk1 = ek{n+1}`, `dk{i} = A(ek{n+2-i})` for `i = 2 .. n`,
+    /// `dk{n+1} = ek1` -- and Sec 2.3.2, "the same as the encryption process except that
+    /// encryption round keys are replaced by decryption round keys", transcribed one round at a
+    /// time on Appendix A.1's ciphertext: the transcription must give the plaintext back, and
+    /// `decrypt_4blocks`, whose own key map is the thing under test, must agree with it.
     #[test]
     fn test_decryption_key_order_is_section_2_2() {
-        // dk1 = ek{n+1}, dk{i} = A(ek{n+2-i}) for i in 2..=n, dk{n+1} = ek1: check the index map
-        // the closure in decrypt_4blocks implements, for n = 12.
+        use crate::round::{diffuse, fe1, fo1, sl2};
+        let key_bytes: [u8; 16] = core::array::from_fn(|i| i as u8);
+        let key =
+            KeyMaterial::<16>::from_bytes_as_type(&key_bytes, KeyType::SymmetricCipherKey).unwrap();
+        let aria = ARIA128Internal::new(&key).unwrap();
+        let s = aria.schedule.as_ref();
         let n = 12;
-        let src = |i: usize| {
+        let dk = |i: usize| -> RoundKey {
             if i == 1 {
-                n + 1
+                ek(s, n + 1)
             } else if i == n + 1 {
-                1
+                ek(s, 1)
             } else {
-                n + 2 - i
+                let mut k = ek(s, n + 2 - i);
+                diffuse(&mut k);
+                k
             }
         };
-        assert_eq!(src(1), 13);
-        assert_eq!(src(2), 12);
-        assert_eq!(src(12), 2);
-        assert_eq!(src(13), 1);
+        let to_state = |v: u128| -> RoundKey {
+            let b = v.to_be_bytes();
+            let (w, _) = b.as_chunks::<4>();
+            core::array::from_fn(|i| u32::from_be_bytes(w[i]))
+        };
+        let xor = |a: RoundKey, b: RoundKey| -> RoundKey { core::array::from_fn(|i| a[i] ^ b[i]) };
+        let ciphertext = 0xd718fbd6ab644c739da95f3be6451778u128;
+        // Rounds 1 .. n-1 as FO / FE with dk_i (Sec 2.3.1.1 with the keys of Sec 2.3.2).
+        let mut p = to_state(ciphertext);
+        for round in 1..n {
+            p = if round % 2 == 1 { fo1(p, &dk(round)) } else { fe1(p, &dk(round)) };
+        }
+        // Round n: P = SL2(P_{n-1} ^ dk_n) ^ dk_{n+1}.
+        let mut lanes = [xor(p, dk(n)); LANES];
+        sl2(&mut lanes);
+        let transcribed = xor(lanes[0], dk(n + 1));
+        assert_eq!(transcribed, to_state(0x00112233445566778899aabbccddeeff), "the transcription");
+        // The engine, through the key map under test, on all four lanes.
+        let mut blocks = [ciphertext.to_be_bytes(); LANES];
+        aria.decrypt_4blocks(&mut blocks);
+        for block in blocks {
+            assert_eq!(block, 0x00112233445566778899aabbccddeeffu128.to_be_bytes());
+        }
     }
 
     /// Appendix A.1, 128-bit key: the intermediate round values `P1 .. P11` and the ciphertext,
