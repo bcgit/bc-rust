@@ -6,13 +6,11 @@
 //! resulting `(r, s)`, and `Q = [d]G` computed via the standard affine group law, `random.seed
 //! 1234567`.
 
-use bouncycastle_core::traits::Hash;
-use bouncycastle_core::traits::{
-    SignaturePrivateKey, SignaturePublicKey, SignatureVerifier, Signer,
-};
+use bouncycastle_core::signature_key::{DeterministicSigningKey, VerifyingKey};
+use bouncycastle_core::traits::HashOneShot;
+use bouncycastle_core::traits::{SignaturePrivateKey, SignaturePublicKey};
 use bouncycastle_ec::p256k1_comb::comb_multiply_base_point;
 use bouncycastle_ec::p256k1_scalar::P256K1Scalar;
-use bouncycastle_ecdsa::ecdsa_p256k1::ECDetDSASecp256K1;
 use bouncycastle_ecdsa::keys_p256k1::{ECDSASecp256K1PrivateKey, ECDSASecp256K1PublicKey};
 use bouncycastle_ecdsa::rfc6979_p256k1::generate_k;
 use bouncycastle_hex::decode as hex_decode;
@@ -117,7 +115,7 @@ fn public_key_matches_vectors() {
 fn generate_k_matches_vectors() {
     for v in CASES {
         let d = P256K1Scalar::from_be_bytes(&bytes32(v.d));
-        let h: [u8; 32] = SHA256::default().hash(v.msg)[..32].try_into().unwrap();
+        let h: [u8; 32] = SHA256::hash(v.msg)[..32].try_into().unwrap();
         let k = generate_k(&d, &h);
         assert_eq!(k, P256K1Scalar::from_be_bytes(&bytes32(v.k)), "k for message {:?}", v.msg);
     }
@@ -127,7 +125,7 @@ fn generate_k_matches_vectors() {
 fn deterministic_sign_matches_vectors() {
     for v in CASES {
         let sk = ECDSASecp256K1PrivateKey::from_bytes(&bytes32(v.d)).unwrap();
-        let sig = ECDetDSASecp256K1::sign(&sk, v.msg, None).unwrap();
+        let sig = sk.sign_deterministic(v.msg, None).unwrap();
         let mut expected = [0u8; 64];
         expected[..32].copy_from_slice(&bytes32(v.r));
         expected[32..].copy_from_slice(&bytes32(v.s));
@@ -140,7 +138,7 @@ fn deterministic_signature_verifies() {
     for v in CASES {
         let sk = ECDSASecp256K1PrivateKey::from_bytes(&bytes32(v.d)).unwrap();
         let pk = public_key_for(v);
-        let sig = ECDetDSASecp256K1::sign(&sk, v.msg, None).unwrap();
-        ECDetDSASecp256K1::verify(&pk, v.msg, None, &sig).unwrap();
+        let sig = sk.sign_deterministic(v.msg, None).unwrap();
+        pk.verify(v.msg, None, &sig).unwrap();
     }
 }

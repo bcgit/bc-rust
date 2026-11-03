@@ -28,10 +28,10 @@
 //! and the draft's published domain parameters) before being written here, so it rests on two
 //! independent derivations rather than on trusting either one.
 
-use bouncycastle_core::traits::{SignaturePrivateKey, SignaturePublicKey, SignatureVerifier};
+use bouncycastle_core::signature_key::VerifyingKey;
+use bouncycastle_core::traits::{SignaturePrivateKey, SignaturePublicKey};
 use bouncycastle_ec::sm2_sec1;
 use bouncycastle_sm2::keys::{SM2PrivateKey, SM2PublicKey};
-use bouncycastle_sm2::sm2::SM2;
 
 fn pubkey_from_hex(x_hex: &str, y_hex: &str) -> SM2PublicKey {
     let mut bytes = [0u8; 65];
@@ -92,7 +92,7 @@ fn known_answer_vectors_verify() {
         let pk = pubkey_from_hex(v.qx, v.qy);
         let msg = bouncycastle_hex::decode(v.msg_hex).unwrap();
         let sig = sig_from_hex(v.r, v.s);
-        SM2::verify(&pk, &msg, Some(v.id), &sig)
+        pk.verify(&msg, Some(v.id), &sig)
             .unwrap_or_else(|e| panic!("KAT vector failed to verify: {e:?}"));
     }
 }
@@ -104,7 +104,7 @@ fn known_answer_vectors_reject_tampered_r() {
         let msg = bouncycastle_hex::decode(v.msg_hex).unwrap();
         let mut sig = sig_from_hex(v.r, v.s);
         sig[0] ^= 0xFF;
-        assert!(SM2::verify(&pk, &msg, Some(v.id), &sig).is_err());
+        assert!(pk.verify(&msg, Some(v.id), &sig).is_err());
     }
 }
 
@@ -114,7 +114,7 @@ fn known_answer_vectors_reject_wrong_id() {
         let pk = pubkey_from_hex(v.qx, v.qy);
         let msg = bouncycastle_hex::decode(v.msg_hex).unwrap();
         let sig = sig_from_hex(v.r, v.s);
-        assert!(SM2::verify(&pk, &msg, Some(b"wrong identity"), &sig).is_err());
+        assert!(pk.verify(&msg, Some(b"wrong identity"), &sig).is_err());
     }
 }
 
@@ -187,9 +187,9 @@ fn bc_java_sm2p256v1_vector_verifies() {
     );
 
     let sig = sig_from_hex(R, S);
-    SM2::verify(&pk, MSG, Some(ID), &sig).expect("bc-java's signature must verify");
+    pk.verify(MSG, Some(ID), &sig).expect("bc-java's signature must verify");
 
     // and it must be specific to that identity and message
-    assert!(SM2::verify(&pk, MSG, Some(b"someone-else"), &sig).is_err());
-    assert!(SM2::verify(&pk, b"hi chappy!", Some(ID), &sig).is_err());
+    assert!(pk.verify(MSG, Some(b"someone-else"), &sig).is_err());
+    assert!(pk.verify(b"hi chappy!", Some(ID), &sig).is_err());
 }

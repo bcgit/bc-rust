@@ -24,9 +24,10 @@
 #![allow(dead_code)]
 #![allow(unused_imports)]
 
-use bouncycastle::core::traits::{
-    SignaturePrivateKey, SignaturePublicKey, SignatureVerifier, Signer,
-};
+use bouncycastle::core::signature_key::{DeterministicSigningKey, SigningKey, VerifyingKey};
+use bouncycastle::core::traits::{SignaturePrivateKey, SignaturePublicKey};
+use bouncycastle::core::traits::{SignatureSigner, SignatureVerifier};
+use bouncycastle::rng::DefaultRNG;
 use bouncycastle::sm2::keys::{PK_LEN, SK_LEN, SM2PrivateKey, SM2PublicKey, keygen};
 use bouncycastle::sm2::sm2::SM2;
 
@@ -72,7 +73,7 @@ fn bench_sm2_sign() {
     bytes[SK_LEN - 1] = 0x2A;
     let sk = SM2PrivateKey::from_bytes(&bytes).unwrap();
 
-    let sig = SM2::sign(&sk, MSG, Some(ID)).unwrap();
+    let sig = sk.sign(&mut DefaultRNG::default(), MSG, Some(ID)).unwrap();
     println!("{:x?}", sig);
 }
 
@@ -83,9 +84,9 @@ fn bench_sm2_verify() {
     bytes[SK_LEN - 1] = 0x2A;
     let sk = SM2PrivateKey::from_bytes(&bytes).unwrap();
     let pk = sk.derive_pk();
-    let sig = SM2::sign(&sk, MSG, Some(ID)).unwrap();
+    let sig = sk.sign(&mut DefaultRNG::default(), MSG, Some(ID)).unwrap();
 
-    if SM2::verify(&pk, MSG, Some(ID), &sig).is_ok() {
+    if pk.verify(MSG, Some(ID), &sig).is_ok() {
         eprintln!("Verification succeeded!");
     } else {
         panic!("Verification failed! -- figure that out");

@@ -8,12 +8,13 @@
 //! `Sign`/`Verify`: the crate has no default identity to fall back to when `ctx` is omitted.
 
 use crate::helpers::{read_from_file, read_from_file_or_stdin, write_bytes_or_hex};
+use bouncycastle::core::signature_key::{SigningKey, VerifyingKey};
 use bouncycastle::core::traits::{
-    SignaturePrivateKey, SignaturePublicKey, SignatureVerifier, Signer,
+    SignaturePrivateKey, SignaturePublicKey, SignatureSigner, SignatureVerifier,
 };
 use bouncycastle::hex;
+use bouncycastle::rng::HashDRBG_SHA512;
 use bouncycastle::sm2::keys::{PK_LEN, SK_LEN, SM2PrivateKey, SM2PublicKey, keygen};
-use bouncycastle::sm2::sm2::SM2;
 use clap::ValueEnum;
 use std::io;
 use std::io::Read;
@@ -76,9 +77,10 @@ pub(crate) fn sm2_cmd(
             let id = require_id(idfile);
 
             // stream the message from stdin
-            let mut signer = SM2::sign_init(&sk, Some(&id)).unwrap();
-            stream_stdin_into(|chunk| signer.sign_update(chunk));
-            let sig = signer.sign_final().unwrap();
+            let mut signer =
+                sk.create_signer(&mut HashDRBG_SHA512::new_from_os(), Some(&id)).unwrap();
+            stream_stdin_into(|chunk| signer.do_update(chunk));
+            let sig = signer.do_final().unwrap();
 
             write_bytes_or_hex(&sig, output_hex);
         }
@@ -89,10 +91,10 @@ pub(crate) fn sm2_cmd(
             let id = require_id(idfile);
 
             // stream the message from stdin
-            let mut verifier = SM2::verify_init(&pk, Some(&id)).unwrap();
-            stream_stdin_into(|chunk| verifier.verify_update(chunk));
+            let mut verifier = pk.create_verifier(Some(&id)).unwrap();
+            stream_stdin_into(|chunk| verifier.do_update(chunk));
 
-            if verifier.verify_final(&sig).is_ok() {
+            if verifier.do_verify_final(&sig).is_ok() {
                 println!("Signature is valid.");
             } else {
                 eprintln!("Signature is invalid.");

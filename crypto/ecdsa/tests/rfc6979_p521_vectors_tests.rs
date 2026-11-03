@@ -5,13 +5,11 @@
 //! this crate's P-384 vectors hit; each is 131 hex digits in the RFC (`ceil(521/4)`), zero-padded
 //! here with a leading `0` to the fixed 132-digit (66-byte) SEC 1 width.
 
-use bouncycastle_core::traits::Hash;
-use bouncycastle_core::traits::{
-    SignaturePrivateKey, SignaturePublicKey, SignatureVerifier, Signer,
-};
+use bouncycastle_core::signature_key::{DeterministicSigningKey, VerifyingKey};
+use bouncycastle_core::traits::HashOneShot;
+use bouncycastle_core::traits::{SignaturePrivateKey, SignaturePublicKey};
 use bouncycastle_ec::p521_comb::comb_multiply_base_point;
 use bouncycastle_ec::p521_scalar::P521Scalar;
-use bouncycastle_ecdsa::ecdsa_p521::ECDetDSAP521;
 use bouncycastle_ecdsa::keys_p521::{ECDSAP521PrivateKey, ECDSAP521PublicKey};
 use bouncycastle_ecdsa::rfc6979_p521::generate_k;
 use bouncycastle_hex::decode as hex_decode;
@@ -63,7 +61,7 @@ fn public_key_matches_vector() {
 fn generate_k_matches_vectors() {
     let d = P521Scalar::from_be_bytes(&bytes66(X));
     for v in [&SAMPLE, &TEST] {
-        let h: [u8; 64] = SHA512::default().hash(v.msg)[..64].try_into().unwrap();
+        let h: [u8; 64] = SHA512::hash(v.msg)[..64].try_into().unwrap();
         let k = generate_k(&d, &h);
         assert_eq!(k, P521Scalar::from_be_bytes(&bytes66(v.k)), "k for message {:?}", v.msg);
     }
@@ -73,7 +71,7 @@ fn generate_k_matches_vectors() {
 fn deterministic_sign_matches_vectors() {
     let sk = private_key();
     for v in [&SAMPLE, &TEST] {
-        let sig = ECDetDSAP521::sign(&sk, v.msg, None).unwrap();
+        let sig = sk.sign_deterministic(v.msg, None).unwrap();
         let mut expected = [0u8; 132];
         expected[..66].copy_from_slice(&bytes66(v.r));
         expected[66..].copy_from_slice(&bytes66(v.s));
@@ -91,7 +89,7 @@ fn deterministic_signature_verifies() {
     let pk = ECDSAP521PublicKey::from_bytes(&uncompressed).unwrap();
 
     for v in [&SAMPLE, &TEST] {
-        let sig = ECDetDSAP521::sign(&sk, v.msg, None).unwrap();
-        ECDetDSAP521::verify(&pk, v.msg, None, &sig).unwrap();
+        let sig = sk.sign_deterministic(v.msg, None).unwrap();
+        pk.verify(v.msg, None, &sig).unwrap();
     }
 }

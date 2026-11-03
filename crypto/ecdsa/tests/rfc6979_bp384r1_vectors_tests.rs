@@ -13,13 +13,11 @@
 //! pure-Python RFC 6979) and by OpenSSL 4.0.2's deterministic ECDSA (through the cryptography
 //! 50.0.1 bindings), which also anchors the curve constants a second way.
 
-use bouncycastle_core::traits::Hash;
-use bouncycastle_core::traits::{
-    SignaturePrivateKey, SignaturePublicKey, SignatureVerifier, Signer,
-};
+use bouncycastle_core::signature_key::{DeterministicSigningKey, VerifyingKey};
+use bouncycastle_core::traits::HashOneShot;
+use bouncycastle_core::traits::{SignaturePrivateKey, SignaturePublicKey};
 use bouncycastle_ec::bp384r1_comb::comb_multiply_base_point;
 use bouncycastle_ec::bp384r1_scalar::Bp384r1Scalar;
-use bouncycastle_ecdsa::ecdsa_bp384r1::ECDetDSABp384r1;
 use bouncycastle_ecdsa::keys_bp384r1::{ECDSABp384r1PrivateKey, ECDSABp384r1PublicKey};
 use bouncycastle_ecdsa::rfc6979_bp384r1::generate_k;
 use bouncycastle_hex::decode as hex_decode;
@@ -139,7 +137,7 @@ fn public_key_matches_vectors() {
 fn generate_k_matches_vectors() {
     for v in CASES {
         let d = Bp384r1Scalar::from_be_bytes(&bytes48(v.d));
-        let h: [u8; 48] = SHA384::default().hash(v.msg)[..48].try_into().unwrap();
+        let h: [u8; 48] = SHA384::hash(v.msg)[..48].try_into().unwrap();
         let k = generate_k(&d, &h);
         assert_eq!(k, Bp384r1Scalar::from_be_bytes(&bytes48(v.k)), "k for message {:?}", v.msg);
     }
@@ -149,7 +147,7 @@ fn generate_k_matches_vectors() {
 fn deterministic_sign_matches_vectors() {
     for v in CASES {
         let sk = ECDSABp384r1PrivateKey::from_bytes(&bytes48(v.d)).unwrap();
-        let sig = ECDetDSABp384r1::sign(&sk, v.msg, None).unwrap();
+        let sig = sk.sign_deterministic(v.msg, None).unwrap();
         let mut expected = [0u8; 96];
         expected[..48].copy_from_slice(&bytes48(v.r));
         expected[48..].copy_from_slice(&bytes48(v.s));
@@ -162,7 +160,7 @@ fn deterministic_signature_verifies() {
     for v in CASES {
         let sk = ECDSABp384r1PrivateKey::from_bytes(&bytes48(v.d)).unwrap();
         let pk = public_key_for(v);
-        let sig = ECDetDSABp384r1::sign(&sk, v.msg, None).unwrap();
-        ECDetDSABp384r1::verify(&pk, v.msg, None, &sig).unwrap();
+        let sig = sk.sign_deterministic(v.msg, None).unwrap();
+        pk.verify(v.msg, None, &sig).unwrap();
     }
 }

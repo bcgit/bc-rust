@@ -4,8 +4,8 @@
 //! `wycheproof.rs`'s docs for the sibling-clone convention and what wycheproof's value is here
 //! (malleability/invalid-encoding coverage, not signature-generation KATs).
 
-use bouncycastle_core::traits::{SignaturePublicKey, SignatureVerifier};
-use bouncycastle_ecdsa::ecdsa_bp256r1::ECDSABp256r1;
+use bouncycastle_core::signature_key::VerifyingKey;
+use bouncycastle_core::traits::SignaturePublicKey;
 use bouncycastle_ecdsa::keys_bp256r1::ECDSABp256r1PublicKey;
 use bouncycastle_hex::decode as hex_decode;
 use serde_json::Value;
@@ -73,7 +73,7 @@ fn ecdsa_brainpool_p256r1_sha256_p1363_test() {
                 num_invalid += 1;
             }
 
-            let result = pk.as_ref().and_then(|pk| ECDSABp256r1::verify(pk, &msg, None, &sig).ok());
+            let result = pk.as_ref().and_then(|pk| pk.verify(&msg, None, &sig).ok());
             assert_eq!(
                 result.is_some(),
                 expect_valid,
@@ -131,8 +131,7 @@ fn ecdsa_brainpool_p256r1_sha256_der_test() {
                 num_invalid += 1;
             }
 
-            let result =
-                pk.as_ref().and_then(|pk| ECDSABp256r1::verify_der(pk, &msg, None, &sig).ok());
+            let result = pk.as_ref().and_then(|pk| pk.verify_der(&msg, None, &sig).ok());
             assert_eq!(
                 result.is_some(),
                 expect_valid,

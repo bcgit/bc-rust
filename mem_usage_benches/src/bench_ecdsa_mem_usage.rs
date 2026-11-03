@@ -24,22 +24,19 @@
 #![allow(dead_code)]
 #![allow(unused_imports)]
 
-use bouncycastle::core::traits::{
-    SignaturePrivateKey, SignaturePublicKey, SignatureVerifier, Signer,
-};
+use bouncycastle::core::signature_key::{DeterministicSigningKey, SigningKey, VerifyingKey};
+use bouncycastle::core::traits::{SignaturePrivateKey, SignaturePublicKey};
+use bouncycastle::core::traits::{SignatureSigner, SignatureVerifier};
 use bouncycastle::ecdsa::keys_common::DerivePublicKey;
 use bouncycastle::ecdsa::{
-    ecdsa_bp256r1::{ECDSABp256r1, ECDetDSABp256r1},
-    ecdsa_bp384r1::{ECDSABp384r1, ECDetDSABp384r1},
-    ecdsa_bp512r1::{ECDSABp512r1, ECDetDSABp512r1},
-    ecdsa_p256::{ECDSAP256, ECDetDSAP256},
-    ecdsa_p256k1::{ECDSASecp256K1, ECDetDSASecp256K1},
-    ecdsa_p384::{ECDSAP384, ECDetDSAP384},
-    ecdsa_p521::{ECDSAP521, ECDetDSAP521},
+    ecdsa_bp256r1::ECDSABp256r1, ecdsa_bp384r1::ECDSABp384r1, ecdsa_bp512r1::ECDSABp512r1,
+    ecdsa_p256::ECDSAP256, ecdsa_p256k1::ECDSASecp256K1, ecdsa_p384::ECDSAP384,
+    ecdsa_p521::ECDSAP521,
 };
 use bouncycastle::ecdsa::{
     keys_bp256r1, keys_bp384r1, keys_bp512r1, keys_p256, keys_p256k1, keys_p384, keys_p521,
 };
+use bouncycastle::rng::DefaultRNG;
 
 /// A fixed message, reused across every curve's sign/verify bench so peak stack usage reflects
 /// only the signature algorithm, not message size.
@@ -140,7 +137,7 @@ fn bench_p256_sign() {
     bytes[keys_p256::SK_LEN - 1] = 0x2A;
     let sk = keys_p256::ECDSAP256PrivateKey::from_bytes(&bytes).unwrap();
 
-    let sig = ECDSAP256::sign(&sk, MSG, None).unwrap();
+    let sig = sk.sign(&mut DefaultRNG::default(), MSG, None).unwrap();
     println!("{:x?}", sig);
 }
 
@@ -153,7 +150,7 @@ fn bench_p256_sign_deterministic() {
     bytes[keys_p256::SK_LEN - 1] = 0x2A;
     let sk = keys_p256::ECDSAP256PrivateKey::from_bytes(&bytes).unwrap();
 
-    let sig = ECDetDSAP256::sign(&sk, MSG, None).unwrap();
+    let sig = sk.sign_deterministic(MSG, None).unwrap();
     println!("{:x?}", sig);
 }
 
@@ -164,9 +161,9 @@ fn bench_p256_verify() {
     bytes[keys_p256::SK_LEN - 1] = 0x2A;
     let sk = keys_p256::ECDSAP256PrivateKey::from_bytes(&bytes).unwrap();
     let pk = sk.derive_pk();
-    let sig = ECDSAP256::sign(&sk, MSG, None).unwrap();
+    let sig = sk.sign(&mut DefaultRNG::default(), MSG, None).unwrap();
 
-    if ECDSAP256::verify(&pk, MSG, None, &sig).is_ok() {
+    if pk.verify(MSG, None, &sig).is_ok() {
         eprintln!("Verification succeeded!");
     } else {
         panic!("Verification failed! -- figure that out");
@@ -187,7 +184,7 @@ fn bench_p384_sign() {
     bytes[keys_p384::SK_LEN - 1] = 0x2A;
     let sk = keys_p384::ECDSAP384PrivateKey::from_bytes(&bytes).unwrap();
 
-    let sig = ECDSAP384::sign(&sk, MSG, None).unwrap();
+    let sig = sk.sign(&mut DefaultRNG::default(), MSG, None).unwrap();
     println!("{:x?}", sig);
 }
 
@@ -198,7 +195,7 @@ fn bench_p384_sign_deterministic() {
     bytes[keys_p384::SK_LEN - 1] = 0x2A;
     let sk = keys_p384::ECDSAP384PrivateKey::from_bytes(&bytes).unwrap();
 
-    let sig = ECDetDSAP384::sign(&sk, MSG, None).unwrap();
+    let sig = sk.sign_deterministic(MSG, None).unwrap();
     println!("{:x?}", sig);
 }
 
@@ -209,9 +206,9 @@ fn bench_p384_verify() {
     bytes[keys_p384::SK_LEN - 1] = 0x2A;
     let sk = keys_p384::ECDSAP384PrivateKey::from_bytes(&bytes).unwrap();
     let pk = sk.derive_pk();
-    let sig = ECDSAP384::sign(&sk, MSG, None).unwrap();
+    let sig = sk.sign(&mut DefaultRNG::default(), MSG, None).unwrap();
 
-    if ECDSAP384::verify(&pk, MSG, None, &sig).is_ok() {
+    if pk.verify(MSG, None, &sig).is_ok() {
         eprintln!("Verification succeeded!");
     } else {
         panic!("Verification failed! -- figure that out");
@@ -232,7 +229,7 @@ fn bench_p521_sign() {
     bytes[keys_p521::SK_LEN - 1] = 0x2A;
     let sk = keys_p521::ECDSAP521PrivateKey::from_bytes(&bytes).unwrap();
 
-    let sig = ECDSAP521::sign(&sk, MSG, None).unwrap();
+    let sig = sk.sign(&mut DefaultRNG::default(), MSG, None).unwrap();
     println!("{:x?}", sig);
 }
 
@@ -243,7 +240,7 @@ fn bench_p521_sign_deterministic() {
     bytes[keys_p521::SK_LEN - 1] = 0x2A;
     let sk = keys_p521::ECDSAP521PrivateKey::from_bytes(&bytes).unwrap();
 
-    let sig = ECDetDSAP521::sign(&sk, MSG, None).unwrap();
+    let sig = sk.sign_deterministic(MSG, None).unwrap();
     println!("{:x?}", sig);
 }
 
@@ -254,9 +251,9 @@ fn bench_p521_verify() {
     bytes[keys_p521::SK_LEN - 1] = 0x2A;
     let sk = keys_p521::ECDSAP521PrivateKey::from_bytes(&bytes).unwrap();
     let pk = sk.derive_pk();
-    let sig = ECDSAP521::sign(&sk, MSG, None).unwrap();
+    let sig = sk.sign(&mut DefaultRNG::default(), MSG, None).unwrap();
 
-    if ECDSAP521::verify(&pk, MSG, None, &sig).is_ok() {
+    if pk.verify(MSG, None, &sig).is_ok() {
         eprintln!("Verification succeeded!");
     } else {
         panic!("Verification failed! -- figure that out");
@@ -277,7 +274,7 @@ fn bench_secp256k1_sign() {
     bytes[keys_p256k1::SK_LEN - 1] = 0x2A;
     let sk = keys_p256k1::ECDSASecp256K1PrivateKey::from_bytes(&bytes).unwrap();
 
-    let sig = ECDSASecp256K1::sign(&sk, MSG, None).unwrap();
+    let sig = sk.sign(&mut DefaultRNG::default(), MSG, None).unwrap();
     println!("{:x?}", sig);
 }
 
@@ -288,7 +285,7 @@ fn bench_secp256k1_sign_deterministic() {
     bytes[keys_p256k1::SK_LEN - 1] = 0x2A;
     let sk = keys_p256k1::ECDSASecp256K1PrivateKey::from_bytes(&bytes).unwrap();
 
-    let sig = ECDetDSASecp256K1::sign(&sk, MSG, None).unwrap();
+    let sig = sk.sign_deterministic(MSG, None).unwrap();
     println!("{:x?}", sig);
 }
 
@@ -299,9 +296,9 @@ fn bench_secp256k1_verify() {
     bytes[keys_p256k1::SK_LEN - 1] = 0x2A;
     let sk = keys_p256k1::ECDSASecp256K1PrivateKey::from_bytes(&bytes).unwrap();
     let pk = sk.derive_pk();
-    let sig = ECDSASecp256K1::sign(&sk, MSG, None).unwrap();
+    let sig = sk.sign(&mut DefaultRNG::default(), MSG, None).unwrap();
 
-    if ECDSASecp256K1::verify(&pk, MSG, None, &sig).is_ok() {
+    if pk.verify(MSG, None, &sig).is_ok() {
         eprintln!("Verification succeeded!");
     } else {
         panic!("Verification failed! -- figure that out");
@@ -322,7 +319,7 @@ fn bench_bp256r1_sign() {
     bytes[keys_bp256r1::SK_LEN - 1] = 0x2A;
     let sk = keys_bp256r1::ECDSABp256r1PrivateKey::from_bytes(&bytes).unwrap();
 
-    let sig = ECDSABp256r1::sign(&sk, MSG, None).unwrap();
+    let sig = sk.sign(&mut DefaultRNG::default(), MSG, None).unwrap();
     println!("{:x?}", sig);
 }
 
@@ -333,7 +330,7 @@ fn bench_bp256r1_sign_deterministic() {
     bytes[keys_bp256r1::SK_LEN - 1] = 0x2A;
     let sk = keys_bp256r1::ECDSABp256r1PrivateKey::from_bytes(&bytes).unwrap();
 
-    let sig = ECDetDSABp256r1::sign(&sk, MSG, None).unwrap();
+    let sig = sk.sign_deterministic(MSG, None).unwrap();
     println!("{:x?}", sig);
 }
 
@@ -344,9 +341,9 @@ fn bench_bp256r1_verify() {
     bytes[keys_bp256r1::SK_LEN - 1] = 0x2A;
     let sk = keys_bp256r1::ECDSABp256r1PrivateKey::from_bytes(&bytes).unwrap();
     let pk = sk.derive_pk();
-    let sig = ECDSABp256r1::sign(&sk, MSG, None).unwrap();
+    let sig = sk.sign(&mut DefaultRNG::default(), MSG, None).unwrap();
 
-    if ECDSABp256r1::verify(&pk, MSG, None, &sig).is_ok() {
+    if pk.verify(MSG, None, &sig).is_ok() {
         eprintln!("Verification succeeded!");
     } else {
         panic!("Verification failed! -- figure that out");
@@ -367,7 +364,7 @@ fn bench_bp384r1_sign() {
     bytes[keys_bp384r1::SK_LEN - 1] = 0x2A;
     let sk = keys_bp384r1::ECDSABp384r1PrivateKey::from_bytes(&bytes).unwrap();
 
-    let sig = ECDSABp384r1::sign(&sk, MSG, None).unwrap();
+    let sig = sk.sign(&mut DefaultRNG::default(), MSG, None).unwrap();
     println!("{:x?}", sig);
 }
 
@@ -378,7 +375,7 @@ fn bench_bp384r1_sign_deterministic() {
     bytes[keys_bp384r1::SK_LEN - 1] = 0x2A;
     let sk = keys_bp384r1::ECDSABp384r1PrivateKey::from_bytes(&bytes).unwrap();
 
-    let sig = ECDetDSABp384r1::sign(&sk, MSG, None).unwrap();
+    let sig = sk.sign_deterministic(MSG, None).unwrap();
     println!("{:x?}", sig);
 }
 
@@ -389,9 +386,9 @@ fn bench_bp384r1_verify() {
     bytes[keys_bp384r1::SK_LEN - 1] = 0x2A;
     let sk = keys_bp384r1::ECDSABp384r1PrivateKey::from_bytes(&bytes).unwrap();
     let pk = sk.derive_pk();
-    let sig = ECDSABp384r1::sign(&sk, MSG, None).unwrap();
+    let sig = sk.sign(&mut DefaultRNG::default(), MSG, None).unwrap();
 
-    if ECDSABp384r1::verify(&pk, MSG, None, &sig).is_ok() {
+    if pk.verify(MSG, None, &sig).is_ok() {
         eprintln!("Verification succeeded!");
     } else {
         panic!("Verification failed! -- figure that out");
@@ -412,7 +409,7 @@ fn bench_bp512r1_sign() {
     bytes[keys_bp512r1::SK_LEN - 1] = 0x2A;
     let sk = keys_bp512r1::ECDSABp512r1PrivateKey::from_bytes(&bytes).unwrap();
 
-    let sig = ECDSABp512r1::sign(&sk, MSG, None).unwrap();
+    let sig = sk.sign(&mut DefaultRNG::default(), MSG, None).unwrap();
     println!("{:x?}", sig);
 }
 
@@ -423,7 +420,7 @@ fn bench_bp512r1_sign_deterministic() {
     bytes[keys_bp512r1::SK_LEN - 1] = 0x2A;
     let sk = keys_bp512r1::ECDSABp512r1PrivateKey::from_bytes(&bytes).unwrap();
 
-    let sig = ECDetDSABp512r1::sign(&sk, MSG, None).unwrap();
+    let sig = sk.sign_deterministic(MSG, None).unwrap();
     println!("{:x?}", sig);
 }
 
@@ -434,9 +431,9 @@ fn bench_bp512r1_verify() {
     bytes[keys_bp512r1::SK_LEN - 1] = 0x2A;
     let sk = keys_bp512r1::ECDSABp512r1PrivateKey::from_bytes(&bytes).unwrap();
     let pk = sk.derive_pk();
-    let sig = ECDSABp512r1::sign(&sk, MSG, None).unwrap();
+    let sig = sk.sign(&mut DefaultRNG::default(), MSG, None).unwrap();
 
-    if ECDSABp512r1::verify(&pk, MSG, None, &sig).is_ok() {
+    if pk.verify(MSG, None, &sig).is_ok() {
         eprintln!("Verification succeeded!");
     } else {
         panic!("Verification failed! -- figure that out");
