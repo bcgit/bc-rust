@@ -23,6 +23,13 @@ if [ ! -x "$BC_RUST" ]; then
     exit 2
 fi
 
+# `timeout` is GNU coreutils; macOS has none, but has perl, whose alarm does the same job.
+if ! command -v timeout >/dev/null 2>&1; then
+    timeout() {
+        perl -e 'alarm shift; exec @ARGV' "$@"
+    }
+fi
+
 SCRATCH_ROOT=/tmp/bc-rust-cli-tests
 mkdir -p "$SCRATCH_ROOT"
 SCRATCH="$(mktemp -d "$SCRATCH_ROOT/$(basename "$0" .sh).XXXXXXXX")"

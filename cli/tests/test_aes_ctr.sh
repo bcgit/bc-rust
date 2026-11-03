@@ -148,7 +148,7 @@ test_each_invocation_uses_a_fresh_nonce() {
         "$BC_RUST" aes128-ctr -d decrypt --key-file "$TMP/key" <"$TMP/ct" >"$TMP/rec"
         assert_same "$TMP/pt" "$TMP/rec" "run $i still decrypts"
     done
-    assert_eq "$(sort -u "$TMP/nonces" | wc -l)" 8 "eight encryptions must draw eight distinct nonces"
+    assert_eq "$(sort -u "$TMP/nonces" | wc -l | tr -d ' ')" 8 "eight encryptions must draw eight distinct nonces"
 }
 
 # ---- keys ------------------------------------------------------------------------------------
