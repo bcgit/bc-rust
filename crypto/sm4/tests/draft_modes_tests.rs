@@ -20,8 +20,8 @@ use bouncycastle_core::hazmat::{BlockPermutation, ElectronicCodeBook};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::symmetric_key::{BlockDecryptionKey, BlockEncryptionKey, FromKeyMaterial};
 use bouncycastle_core::traits::{BlockCipherDecryptor, BlockCipherEncryptor};
-use bouncycastle_core_test_framework::FixedSeedRNG;
 use bouncycastle_hex as hex;
+use bouncycastle_rng::FixedSeedRNG;
 use bouncycastle_sm4::hazmat::SM4Internal;
 use bouncycastle_sm4::{BLOCK_LEN, SM4Key};
 
@@ -107,14 +107,14 @@ fn check_cbc(section: &str, key: &str, expected: &str) {
     let ct: [u8; 32] = bytes(expected);
 
     // Encrypt, both blocks in one call, under the vector's IV.
-    let (mut enc, got_iv) = key.create_encryptor(&mut FixedSeedRNG::<16>::new(iv)).unwrap();
+    let (mut enc, got_iv) = key.create_encryptor(&mut FixedSeedRNG::new(iv)).unwrap();
     assert_eq!(got_iv, iv, "{section}: the pinned RNG should produce the vector's IV");
     let mut data = pt;
     enc.do_encrypt_blocks_inplace(data.as_chunks_mut::<BLOCK_LEN>().0).unwrap();
     assert_eq!(data, ct, "{section} encrypt, two blocks in one call");
 
     // Encrypt one block at a time.
-    let (mut enc, _) = key.create_encryptor(&mut FixedSeedRNG::<16>::new(iv)).unwrap();
+    let (mut enc, _) = key.create_encryptor(&mut FixedSeedRNG::new(iv)).unwrap();
     let mut data = pt;
     for block in data.as_chunks_mut::<BLOCK_LEN>().0.iter_mut() {
         enc.do_encrypt_blocks_inplace(core::slice::from_mut(block)).unwrap();

@@ -13,8 +13,8 @@ use bouncycastle_core::hazmat::do_hazardous_operations;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::symmetric_key::{AeadDecryptionKey, AeadEncryptionKey, FromKeyMaterial};
-use bouncycastle_core_test_framework::FixedSeedRNG;
 use bouncycastle_core_test_framework::test_data_loaders::{Value, hex_field, wycheproof_json};
+use bouncycastle_rng::FixedSeedRNG;
 use bouncycastle_sm4::{KEY_LEN, SM4Key};
 
 /// The tag length every group in the file uses.
@@ -56,7 +56,7 @@ fn run_case(
     if valid {
         let mut ct = vec![0u8; msg.len()];
         let (written, got_iv, got_tag) = key
-            .encrypt_detached_out(&mut FixedSeedRNG::<GCM_NONCE_LEN>::new(iv), aad, msg, &mut ct)
+            .encrypt_detached_out(&mut FixedSeedRNG::new(iv), aad, msg, &mut ct)
             .unwrap_or_else(|e| panic!("tcId {tc_id}: valid case failed to encrypt: {e:?}"));
         assert_eq!(got_iv, iv, "tcId {tc_id}: the seeded RNG must reproduce the vector's IV");
         assert_eq!(written, msg.len(), "tcId {tc_id}: encrypt_detached writes exactly msg.len()");
