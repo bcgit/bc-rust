@@ -541,6 +541,10 @@ impl<PARAMS: SHA512InitValue> Suspendable<SUSPENDED_SHA512_STATE_LEN> for SHA512
     fn from_suspended(
         serialized_state: [u8; SUSPENDED_SHA512_STATE_LEN],
     ) -> Result<Self, SuspendableError> {
+        // Resuming builds the state without the initial hash value, so evaluate it here: for
+        // SHA-512/t that is what runs `check_t`, which makes an invalid `t` a compile error on
+        // this path too.
+        const { _ = PARAMS::H0 };
         // check the version tag
         // At the moment, we have no not_before version to specify.
         // infallible: check_lib_ver returns a slice of exactly SUSPENDED_SHA512_STATE_LEN - 3 = 201 bytes.
