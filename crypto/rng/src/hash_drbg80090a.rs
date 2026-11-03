@@ -1,4 +1,5 @@
-//! Implements Hash_DRBG (Deterministic Random Bit Generator) from NIST SP 800-90Ar1.
+//! Implements Hash_DRBG (Deterministic Random Bit Generator) from NIST SP 800-90A Rev. 1,
+//! Sections 10.1.1 and 10.3.1, checked against the CAVP `Hash_DRBG.rsp` vectors in `tests/`.
 
 // This is here cause HashDRBG80090AParams is private on purpose so that people can't instantiate new parameter sets other than the ones prescribed by NIST.
 #![allow(private_bounds)]
@@ -25,9 +26,13 @@ enum SupportedHash {
 // ie the structs defined below will be the only allowed ones.
 trait HashDRBG80090AParams {
     const HASH: SupportedHash;
-    // const OUT_LEN: usize;
+    /// `outlen` in bytes (SP 800-90A Rev. 1 Table 2).
+    const OUTPUT_LEN: usize;
     const MAX_SECURITY_STRENGTH: SecurityStrength;
-    // const SEED_LEN: usize;
+    /// `seedlen` in bytes: Table 2 gives 440 bits for SHA-256 and 888 for SHA-512. `V` and `C`
+    /// are this long (Section 10.1.1.1), and every `mod 2^seedlen` in the generate algorithm is
+    /// an addition over this many bytes.
+    const SEED_LEN: usize;
     const MAX_LENGTH: u64;
     const MAX_PERSONALIZATION_STRING_LENGTH: u64;
     const MAX_ADDITIONAL_INPUT_LENGTH: u64;
@@ -41,7 +46,9 @@ pub struct HashDRBG80090AParams_SHA256 {}
 
 impl HashDRBG80090AParams for HashDRBG80090AParams_SHA256 {
     const HASH: SupportedHash = SupportedHash::SHA256;
+    const OUTPUT_LEN: usize = SHA256::OUTPUT_LEN;
     const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_128bit;
+    const SEED_LEN: usize = 440 / 8;
     const MAX_LENGTH: u64 = (1u64 << 35) / 8; // 2^35 bits
     const MAX_PERSONALIZATION_STRING_LENGTH: u64 = (1u64 << 35) / 8; // 2^35 bits
     const MAX_ADDITIONAL_INPUT_LENGTH: u64 = (1u64 << 35) / 8; // 2^35 bits
@@ -54,7 +61,9 @@ impl HashDRBG80090AParams for HashDRBG80090AParams_SHA256 {
 pub struct HashDRBG80090AParams_SHA512 {}
 impl HashDRBG80090AParams for HashDRBG80090AParams_SHA512 {
     const HASH: SupportedHash = SupportedHash::SHA512;
+    const OUTPUT_LEN: usize = SHA512::OUTPUT_LEN;
     const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_256bit;
+    const SEED_LEN: usize = 888 / 8;
     const MAX_LENGTH: u64 = (1u64 << 35) / 8; // 2^35 bits
     const MAX_PERSONALIZATION_STRING_LENGTH: u64 = (1u64 << 35) / 8; // 2^35 bits
     const MAX_ADDITIONAL_INPUT_LENGTH: u64 = (1u64 << 35) / 8; // 2^35 bits
@@ -62,16 +71,17 @@ impl HashDRBG80090AParams for HashDRBG80090AParams_SHA512 {
     const RESEED_INTERVAL: u64 = 1u64 << 48; // 2^48 requests
 }
 
-// TODO: replace / simplify this once the generic_const_exprs feature lands in the stable rust compiler.
-const LARGEST_HASHER_OUTPUT_LEN: usize = 64;
+/// The backing arrays for `V` and `C` are sized for the largest `seedlen` (SHA-512's 111 bytes)
+/// and used as `[..H::SEED_LEN]`, since stable Rust cannot size them by an associated constant.
+const LARGEST_SEED_LEN: usize = 888 / 8;
+/// The largest `outlen`, for the hash output buffers that are likewise sliced per hash.
+const LARGEST_HASHER_OUTPUT_LEN: usize = SHA512::OUTPUT_LEN;
 
 #[allow(private_bounds)]
 /// Implementation of the Hash_DRBG algorithm as specified in NIST SP 800-90Ar1.
 pub struct HashDRBG80090A<H: HashDRBG80090AParams> {
     _phantom: core::marker::PhantomData<H>,
-    // TODO: replace / simplify this once the generic_const_exprs feature lands in the stable rust compiler.
-    //  state: WorkingState<H::SEED_LEN>,
-    state: WorkingState<LARGEST_HASHER_OUTPUT_LEN>,
+    state: WorkingState<LARGEST_SEED_LEN>,
     admin_info: AdministrativeInfo,
 }
 
@@ -145,9 +155,9 @@ impl<H: HashDRBG80090AParams> NewUninitialized for HashDRBG80090A<H> {
     fn new_uninitialized() -> Self {
         Self {
             _phantom: core::marker::PhantomData,
-            state: WorkingState::<LARGEST_HASHER_OUTPUT_LEN> {
-                v: Secret::<[u8; LARGEST_HASHER_OUTPUT_LEN]>::new(),
-                c: Secret::<[u8; LARGEST_HASHER_OUTPUT_LEN]>::new(),
+            state: WorkingState::<LARGEST_SEED_LEN> {
+                v: Secret::<[u8; LARGEST_SEED_LEN]>::new(),
+                c: Secret::<[u8; LARGEST_SEED_LEN]>::new(),
                 reseed_counter: Secret::new(),
             },
             admin_info: AdministrativeInfo {
@@ -228,31 +238,30 @@ impl<H: HashDRBG80090AParams> Sp80090ADrbg for HashDRBG80090A<H> {
         // 1. seed_material = entropy_input || nonce || personalization_string.
         // 2. seed = Hash_df (seed_material, seedlen).
         // 3. V = seed.
+        let v = &mut (*self.state.v)[..H::SEED_LEN];
         match H::HASH {
             SupportedHash::SHA256 => hash_df::<SHA256>(
                 seed.ref_to_bytes(),
                 nonce.ref_to_bytes(),
                 personalization_string,
                 &[0u8; 0],
-                &mut *self.state.v,
+                v,
             ),
             SupportedHash::SHA512 => hash_df::<SHA512>(
                 seed.ref_to_bytes(),
                 nonce.ref_to_bytes(),
                 personalization_string,
                 &[0u8; 0],
-                &mut *self.state.v,
+                v,
             ),
         }
 
         // 4. C = Hash_df ((0x00 || V), seedlen). Comment: Precede V with a byte of zeros.
+        let v = &(*self.state.v)[..H::SEED_LEN];
+        let c = &mut (*self.state.c)[..H::SEED_LEN];
         match H::HASH {
-            SupportedHash::SHA256 => {
-                hash_df::<SHA256>(&[0u8], &*self.state.v, &[0u8; 0], &[0u8; 0], &mut *self.state.c)
-            }
-            SupportedHash::SHA512 => {
-                hash_df::<SHA512>(&[0u8], &*self.state.v, &[0u8; 0], &[0u8; 0], &mut *self.state.c)
-            }
+            SupportedHash::SHA256 => hash_df::<SHA256>(&[0u8], v, &[0u8; 0], &[0u8; 0], c),
+            SupportedHash::SHA512 => hash_df::<SHA512>(&[0u8], v, &[0u8; 0], &[0u8; 0], c),
         }
 
         // 5. reseed_counter = 1.
@@ -308,31 +317,24 @@ impl<H: HashDRBG80090AParams> Sp80090ADrbg for HashDRBG80090A<H> {
         // 1. seed_material = 0x01 || V || entropy_input || additional_input.
         // 2. seed = Hash_df (seed_material, seedlen).
         // 3. V = seed.
+        let old_v = self.state.v.clone();
+        let old_v = &(*old_v)[..H::SEED_LEN];
+        let v = &mut (*self.state.v)[..H::SEED_LEN];
         match H::HASH {
-            SupportedHash::SHA256 => hash_df::<SHA256>(
-                &[0x01],
-                &*self.state.v.clone(),
-                seed.ref_to_bytes(),
-                additional_input,
-                &mut *self.state.v,
-            ),
-            SupportedHash::SHA512 => hash_df::<SHA512>(
-                &[0x01],
-                &*self.state.v.clone(),
-                seed.ref_to_bytes(),
-                additional_input,
-                &mut *self.state.v,
-            ),
+            SupportedHash::SHA256 => {
+                hash_df::<SHA256>(&[0x01], old_v, seed.ref_to_bytes(), additional_input, v)
+            }
+            SupportedHash::SHA512 => {
+                hash_df::<SHA512>(&[0x01], old_v, seed.ref_to_bytes(), additional_input, v)
+            }
         }
 
         // 4. C = Hash_df ((0x00 || V), seedlen). Comment: Preceed with a byte of all zeros.
+        let v = &(*self.state.v)[..H::SEED_LEN];
+        let c = &mut (*self.state.c)[..H::SEED_LEN];
         match H::HASH {
-            SupportedHash::SHA256 => {
-                hash_df::<SHA256>(&[0u8], &*self.state.v, &[0u8; 0], &[0u8; 0], &mut *self.state.c)
-            }
-            SupportedHash::SHA512 => {
-                hash_df::<SHA512>(&[0u8], &*self.state.v, &[0u8; 0], &[0u8; 0], &mut *self.state.c)
-            }
+            SupportedHash::SHA256 => hash_df::<SHA256>(&[0u8], v, &[0u8; 0], &[0u8; 0], c),
+            SupportedHash::SHA512 => hash_df::<SHA512>(&[0u8], v, &[0u8; 0], &[0u8; 0], c),
         }
 
         // 5. reseed_counter = 1.
@@ -384,27 +386,28 @@ impl<H: HashDRBG80090AParams> Sp80090ADrbg for HashDRBG80090A<H> {
         // 2. If (additional_input ≠ Null), then do
         //   2.1 w = Hash (0x02 || V || additional_input).
         //   2.2 V = (V + w) mod 2^seedlen.
+        let v = &mut (*self.state.v)[..H::SEED_LEN];
         if additional_input.len() > 0 {
             match H::HASH {
                 SupportedHash::SHA256 => {
                     let mut h = SHA256::new();
                     h.do_update(&[0x02]);
-                    h.do_update(&*self.state.v);
+                    h.do_update(v);
                     h.do_update(additional_input);
 
                     let mut w = [0u8; SHA256::OUTPUT_LEN];
                     h.do_final_out(&mut w);
-                    add_to_array(&mut *self.state.v, &w);
+                    add_to_array(v, &w);
                 }
                 SupportedHash::SHA512 => {
                     let mut h = SHA512::new();
                     h.do_update(&[0x02]);
-                    h.do_update(&*self.state.v);
+                    h.do_update(v);
                     h.do_update(additional_input);
 
                     let mut w = [0u8; SHA512::OUTPUT_LEN];
                     h.do_final_out(&mut w);
-                    add_to_array(&mut *self.state.v, &w);
+                    add_to_array(v, &w);
                 }
             }
         }
@@ -416,36 +419,38 @@ impl<H: HashDRBG80090AParams> Sp80090ADrbg for HashDRBG80090A<H> {
             // But we do want to continue below to roll the state and increment the request counter.
             match H::HASH {
                 SupportedHash::SHA256 => {
-                    hashgen::<SHA256>(&*self.state.v, out);
+                    hashgen::<SHA256>(v, out);
                 }
                 SupportedHash::SHA512 => {
-                    hashgen::<SHA512>(&*self.state.v, out);
+                    hashgen::<SHA512>(v, out);
                 }
             }
         }
 
-        // 4. H = Hash (0x03 || V).
-        // let mut h = [0u8; H::OUT_LEN];
-        let mut h = [0u8; 64];
+        // 4. H = Hash (0x03 || V). `h` is sliced to the hash's outlen: H is an outlen-bit
+        // integer, added at the low end of V in step 5.
+        let mut h = [0u8; LARGEST_HASHER_OUTPUT_LEN];
+        let h = &mut h[..H::OUTPUT_LEN];
         match H::HASH {
             SupportedHash::SHA256 => {
                 let mut sha = SHA256::default();
                 sha.do_update(&[0x03]);
-                sha.do_update(&*self.state.v);
-                sha.do_final_out(&mut h);
+                sha.do_update(v);
+                sha.do_final_out(h);
             }
             SupportedHash::SHA512 => {
                 let mut sha = SHA512::default();
                 sha.do_update(&[0x03]);
-                sha.do_update(&*self.state.v);
-                sha.do_final_out(&mut h);
+                sha.do_update(v);
+                sha.do_final_out(h);
             }
         };
 
-        // 5. V = (V + H + C + reseed_counter) mod 2^seedlen.
-        add_to_array(&mut *self.state.v, &h);
-        add_to_array(&mut *self.state.v, &*self.state.c);
-        add_to_array(&mut *self.state.v, &self.state.reseed_counter.to_le_bytes());
+        // 5. V = (V + H + C + reseed_counter) mod 2^seedlen. Every operand is a big-endian
+        // integer aligned at the low end of V; the counter's bytes are its big-endian ones.
+        add_to_array(v, h);
+        add_to_array(v, &(*self.state.c)[..H::SEED_LEN]);
+        add_to_array(v, &self.state.reseed_counter.to_be_bytes());
 
         // 6. reseed_counter = reseed_counter + 1.
         *self.state.reseed_counter += 1;
@@ -526,8 +531,11 @@ impl<H: HashDRBG80090AParams> RNG for HashDRBG80090A<H> {
 
 /*** Internal Helper Functions ***/
 
-/// the hash_df function as defined in SP 800-90Ar1 section 10.3.1.
-/// no_of_bits_to_return is the length of the provided output buffer.
+/// `Hash_df` as defined in SP 800-90A Rev. 1 Section 10.3.1: `temp = temp || Hash(counter ||
+/// no_of_bits_to_return || input_string)` for `len = ceil(no_of_bits_to_return / outlen)` blocks,
+/// with `counter` an 8-bit value starting at 1 and `no_of_bits_to_return` "represented as a
+/// 32-bit integer", i.e. as its four big-endian bytes, which is what the CAVP vectors use.
+/// `no_of_bits_to_return` is eight times the length of the provided output buffer.
 /// Because array concatenation is not available in a no_std / no_alloc build, this takes many input parameters.
 // To leave a parameter unused, simply provide an empty array &[0u8;0]
 fn hash_df<H: HashOneShot + HashAlgParams>(
@@ -555,8 +563,8 @@ fn hash_df<H: HashOneShot + HashAlgParams>(
     // out of the loop and by merging i and counter into the same variable.
     for i in 1..len {
         let mut h = H::default();
-        h.do_update(&counter.to_le_bytes());
-        h.do_update(&no_of_bits_to_return.to_le_bytes());
+        h.do_update(&[counter]);
+        h.do_update(&no_of_bits_to_return.to_be_bytes());
         h.do_update(in1);
         h.do_update(in2);
         h.do_update(in3);
@@ -573,15 +581,14 @@ fn hash_df<H: HashOneShot + HashAlgParams>(
     let remainder = out.len() - bytes_written;
     if remainder != 0 {
         let mut h = H::default();
-        h.do_update(&counter.to_le_bytes());
-        h.do_update(&no_of_bits_to_return.to_le_bytes());
+        h.do_update(&[counter]);
+        h.do_update(&no_of_bits_to_return.to_be_bytes());
         h.do_update(in1);
         h.do_update(in2);
         h.do_update(in3);
         h.do_update(in4);
 
-        // let mut temp = [0u8; H::OUTPUT_LEN];
-        let mut temp = [0u8; 64];
+        let mut temp = [0u8; LARGEST_HASHER_OUTPUT_LEN];
         h.do_final_out(&mut temp);
 
         // Copy only what we need from the last block.
@@ -589,26 +596,35 @@ fn hash_df<H: HashOneShot + HashAlgParams>(
     }
 }
 
+/// Known answers computed independently in Python from Section 10.3.1 (`hashlib`, `counter` as
+/// one byte from 1, `no_of_bits_to_return` as `to_bytes(4, "big")`), not from this function; the
+/// previous expected value here was this function's own output and anchored a little-endian
+/// length. The CAVP `Hash_DRBG.rsp` suites in `tests/` are the end-to-end check.
 #[test]
 fn test_hash_df() {
-    // success case
+    fn hex(s: &str) -> Vec<u8> {
+        (0..s.len()).step_by(2).map(|i| u8::from_str_radix(&s[i..i + 2], 16).unwrap()).collect()
+    }
+    // The four inputs concatenate to 01 02 03 04 05 06 07 08 09; 100 bytes of output.
     let mut out = [0u8; 100];
     hash_df::<SHA256>(&[0x01, 0x02, 0x03], &[0x04, 0x05], &[0x06, 0x07], &[0x08, 0x09], &mut out);
-    assert_ne!(out, [0u8; 100]);
-    // repeatability test
-    // println!("out: {:?}", out);
     assert_eq!(
-        out,
-        [
-            150u8, 177u8, 87u8, 145u8, 138u8, 4u8, 164u8, 14u8, 162u8, 43u8, 159u8, 152u8, 121u8,
-            117u8, 6u8, 18u8, 253u8, 84u8, 41u8, 64u8, 40u8, 209u8, 16u8, 176u8, 106u8, 115u8,
-            172u8, 193u8, 246u8, 228u8, 208u8, 79u8, 37u8, 31u8, 134u8, 141u8, 200u8, 7u8, 42u8,
-            199u8, 229u8, 236u8, 236u8, 186u8, 28u8, 87u8, 200u8, 14u8, 127u8, 36u8, 132u8, 23u8,
-            36u8, 150u8, 23u8, 215u8, 247u8, 121u8, 175u8, 82u8, 99u8, 187u8, 235u8, 25u8, 213u8,
-            18u8, 106u8, 22u8, 4u8, 99u8, 1u8, 184u8, 211u8, 160u8, 177u8, 67u8, 78u8, 181u8, 69u8,
-            51u8, 117u8, 2u8, 72u8, 36u8, 134u8, 72u8, 2u8, 9u8, 105u8, 149u8, 136u8, 35u8, 81u8,
-            114u8, 142u8, 80u8, 94u8, 42u8, 85u8, 155
-        ]
+        out.to_vec(),
+        hex(
+            "abeaf302decd192379a95a7a11d248a6e42a631b776d290d4e3003ad6d773f2c3d3943c83dbf789f45629ea0\
+             3c48353bf16fc6d193d61422de4683a2b369a106aa4269a1a40acd90f572ef5206cd4370ac43366f0b8e9d85\
+             314eaac6352274add09c4097"
+        )
+    );
+    let mut out = [0u8; 100];
+    hash_df::<SHA512>(&[0x01, 0x02, 0x03], &[0x04, 0x05], &[0x06, 0x07], &[0x08, 0x09], &mut out);
+    assert_eq!(
+        out.to_vec(),
+        hex(
+            "c056d412f5f174c371b71c63ca77eeaaacddca954ce583d09100504eed4f15e15439df83becf02b36967f51c\
+             70dd8fa6bf4263c23635cd3cc512d8442e63ed700ddec045ea860082843abc26291c1fc763117eb274d81581\
+             1a456eac69b0363ac6ecbc81"
+        )
     );
 
     // Test success with out.len() at the maximum allowed for SHA256 (255 * 32 = 8160)
@@ -655,9 +671,9 @@ fn hashgen<H: HashOneShot + HashAlgParams>(v: &[u8], out: &mut [u8]) {
 
     let m = u32::div_ceil(out.len() as u32, H::OUTPUT_LEN as u32);
 
-    // requested_no_of_bits = out.len()
-    // let mut data= [0u8; H::OUTPUT_LEN];
-    let mut data = [0u8; 64];
+    // requested_no_of_bits = out.len(); `data` is seedlen bytes, as `v` is.
+    let mut data = [0u8; LARGEST_SEED_LEN];
+    let data = &mut data[..v.len()];
     data.copy_from_slice(v);
     // W = out
 
@@ -667,10 +683,10 @@ fn hashgen<H: HashOneShot + HashAlgParams>(v: &[u8], out: &mut [u8]) {
     //   4.3 data = (data + 1) mod 2^seedlen.
     for i in 1..m {
         H::hash_out(
-            &data,
+            data,
             &mut out[((i - 1) as usize) * H::OUTPUT_LEN..(i as usize) * H::OUTPUT_LEN],
         );
-        add_to_array(&mut data, &[0x01]);
+        add_to_array(data, &[0x01]);
     }
 
     // Handle the last block separately since not all of it will fit in the output buffer.
@@ -679,9 +695,8 @@ fn hashgen<H: HashOneShot + HashAlgParams>(v: &[u8], out: &mut [u8]) {
     let bytes_written = (m - 1) as usize * H::OUTPUT_LEN;
     let remainder = out.len() - bytes_written;
     if remainder != 0 {
-        // let mut temp = [0u8; H::OUTPUT_LEN];
-        let mut temp = [0u8; 64];
-        H::hash_out(&data, &mut temp);
+        let mut temp = [0u8; LARGEST_HASHER_OUTPUT_LEN];
+        H::hash_out(data, &mut temp);
 
         // Copy only what we need from the last block.
         out[bytes_written..].copy_from_slice(&temp[..remainder as usize]);
