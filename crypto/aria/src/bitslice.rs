@@ -29,12 +29,11 @@
 //!
 //! # Provenance
 //!
-//! The three-stage masked-swap transpose is the one `bouncycastle-aes` and
-//! `bouncycastle-camellia` use on `u32` words and `bouncycastle-sm4` on
-//! `u16`: it transposes within each byte-lane, so the number of byte-lanes per word does not enter
-//! into it. All of them are translated from BearSSL `src/symcipher/aes_ct.c` (`br_aes_ct_ortho`)
+//! The three-stage masked-swap transpose is the one `bouncycastle-aes` uses on `u32` words, here
+//! on `u16`: it transposes within each byte-lane, so the number of byte-lanes per word does not
+//! enter into it. Both are translated from BearSSL `src/symcipher/aes_ct.c` (`br_aes_ct_ortho`)
 //! by Thomas Pornin, MIT licensed. It is duplicated rather than shared because it is each crate's
-//! private detail and none should depend on another.
+//! private detail and neither should depend on the other.
 
 /// The eight bit-planes holding the two 16-bit halves of one word from each of four blocks. See
 /// the module docs.

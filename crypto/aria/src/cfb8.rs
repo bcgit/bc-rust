@@ -11,11 +11,10 @@
 //! docs for when that is the right trade.
 //!
 //! ```
-//! use bouncycastle_aria::ARIA128Key;
-//! use bouncycastle_cipher::modes::{CFB, CFB8};
-//! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-//! use bouncycastle_core::symmetric_key::{FromKeyMaterial, SymmetricDecryptionKey, SymmetricEncryptionKey};
-//! use bouncycastle_rng::HashDRBG_SHA512;
+//! use bouncycastle_aria::ARIA128Key; use bouncycastle_cipher::modes::{CFB, CFB8}; use
+//! bouncycastle_core::key_material::{KeyMaterial, KeyType}; use
+//! bouncycastle_core::symmetric_key::{FromKeyMaterial, SymmetricDecryptionKey,
+//! SymmetricEncryptionKey}; use bouncycastle_rng::HashDRBG_SHA512;
 //!
 //! let mut rng = HashDRBG_SHA512::new_from_os();
 //! let material = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
@@ -49,7 +48,8 @@ use bouncycastle_core::symmetric_key::{SymmetricDecryptionKey, SymmetricEncrypti
 // end of imports needed for docs
 
 /// ARIA-128 in CFB8 mode. `Dir` is [`bouncycastle_cipher::Encrypting`] or
-/// [`bouncycastle_cipher::Decrypting`]; the wrong direction is a compile error, not a runtime check.
+/// [`bouncycastle_cipher::Decrypting`]; the wrong direction is a compile error, not a runtime
+/// check.
 #[allow(non_camel_case_types)]
 pub type ARIA_CFB8_128<'k, Dir> = Cfb8<'k, ARIA128Internal, Dir, BLOCK_LEN>;
 

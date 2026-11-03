@@ -1,4 +1,5 @@
-//! Type aliases for ARIA (RFC 5794, KS X 1213-1) in CBC mode (NIST SP 800-38A Sec 6.2), with padding.
+//! Type aliases for ARIA (RFC 5794, KS X 1213-1) in CBC mode (NIST SP 800-38A Sec 6.2), with
+//! padding.
 //!
 //! See `bouncycastle_cipher::modes::cbc` for the construction. The aliases name the padded
 //! workers, which accept input of any size; `NoPadding` accepts only whole blocks but goes through
@@ -13,12 +14,10 @@
 //! compile error.
 //!
 //! ```
-//! use bouncycastle_aria::ARIA128Key;
-//! use bouncycastle_cipher::modes::CBC;
-//! use bouncycastle_cipher::padding::PKCS7;
-//! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-//! use bouncycastle_core::symmetric_key::{FromKeyMaterial, SymmetricDecryptionKey, SymmetricEncryptionKey};
-//! use bouncycastle_rng::HashDRBG_SHA512;
+//! use bouncycastle_aria::ARIA128Key; use bouncycastle_cipher::modes::CBC; use
+//! bouncycastle_cipher::padding::PKCS7; use bouncycastle_core::key_material::{KeyMaterial,
+//! KeyType}; use bouncycastle_core::symmetric_key::{FromKeyMaterial, SymmetricDecryptionKey,
+//! SymmetricEncryptionKey}; use bouncycastle_rng::HashDRBG_SHA512;
 //!
 //! let mut rng = HashDRBG_SHA512::new_from_os();
 //! let material = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
@@ -43,9 +42,9 @@
 //! use bouncycastle_core::symmetric_key::{FromKeyMaterial, SymmetricEncryptionKey};
 //! use bouncycastle_rng::HashDRBG_SHA512;
 //!
-//! let mut rng = HashDRBG_SHA512::new_from_os();
-//! let material = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey).unwrap();
-//! let key = ARIA128Key::<CBC<NoPadding>>::from_key_material(&material).unwrap();
+//! let mut rng = HashDRBG_SHA512::new_from_os(); let material =
+//! KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey).unwrap(); let
+//! key = ARIA128Key::<CBC<NoPadding>>::from_key_material(&material).unwrap();
 //!
 //! let mut out = [0u8; 16];
 //! let (written, _iv) = key.encrypt_out(&mut rng, &[0u8; 16], &mut out).expect("aligned");

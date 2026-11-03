@@ -94,7 +94,7 @@ where
 
 /// CBC: the 10-block message in one call, block by block, both directions, through a
 /// `CBC<Blocks>` key.
-fn check_cbc<'k, const KEY_LEN: usize, K>(name: &str, key: &'k K, ct_hex: &str)
+fn check_cbc<const KEY_LEN: usize, K>(name: &str, key: &K, ct_hex: &str)
 where
     K: BlockEncryptionKey<KEY_LEN, BLOCK_LEN, BLOCK_LEN>
         + BlockDecryptionKey<KEY_LEN, BLOCK_LEN, BLOCK_LEN>,

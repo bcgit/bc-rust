@@ -137,7 +137,8 @@ impl<P: ARIAParams> ARIAInternal<P> {
         *block = lanes[0];
     }
 
-    /// Decrypts one block in place. See [`ElectronicCodeBook::encrypt_block`] for the four-lane caveat.
+    /// Decrypts one block in place. See [`BlockPermutation::encrypt_block`] for the four-lane
+    /// caveat.
     pub(crate) fn decrypt_block(&self, block: &mut Block) {
         let mut lanes = [*block; LANES];
         self.decrypt_4blocks(&mut lanes);
@@ -147,7 +148,7 @@ impl<P: ARIAParams> ARIAInternal<P> {
 
     /// Encrypts two blocks in place, in lanes 0 and 1; the other two lanes carry copies of the
     /// first and are discarded. Two blocks for the price of four, but twice as good as two
-    /// [`ElectronicCodeBook::encrypt_block`] calls, which is why the trait method uses it.
+    /// [`BlockPermutation::encrypt_block`] calls, which is why the trait method uses it.
     pub(crate) fn encrypt_2blocks(&self, blocks: &mut [Block; 2]) {
         let mut lanes = [blocks[0]; LANES];
         lanes[1] = blocks[1];
@@ -155,7 +156,7 @@ impl<P: ARIAParams> ARIAInternal<P> {
         *blocks = [lanes[0], lanes[1]];
     }
 
-    /// Decrypts two blocks in place. See [`ElectronicCodeBook::encrypt_2blocks`].
+    /// Decrypts two blocks in place. See [`BlockPermutation::encrypt_2blocks`].
     pub(crate) fn decrypt_2blocks(&self, blocks: &mut [Block; 2]) {
         let mut lanes = [blocks[0]; LANES];
         lanes[1] = blocks[1];
@@ -299,8 +300,10 @@ impl BlockPermutation<BLOCK_LEN> for ARIA256Internal {
     }
 }
 
-// RFC 5794 Appendix B assigns object identifiers to ARIA in every one of these modes, so each is
-// named, although the keys hand out workers for the four aliased modes (CBC, CFB, CFB8, CTR) only.
+// RFC 5794 Appendix B assigns object identifiers to ARIA in ECB, CBC, CFB (whose parameters
+// carry the segment size, so CFB8 is `id-aria*-cfb` with `k = 8`), CTR, CMAC, GCM and CCM, among
+// others; GMAC has none, and is named here only because the trait asks for every mode. The keys
+// hand out workers for the four aliased modes (CBC, CFB, CFB8, CTR) only.
 impl ModeNames for ARIA128Internal {
     const CBC_ALG_NAME: &'static str = "ARIA_CBC_128";
     const CCM_ALG_NAME: &'static str = "ARIA_CCM_128";
@@ -347,42 +350,6 @@ impl<P: ARIAParams> core::fmt::Debug for ARIAInternal<P> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_engine_sizes_are_exactly_the_round_keys() {
-        // The "Memory Usage" table in the crate docs quotes these: 13, 15 or 17 round keys of 16
-        // bytes and nothing else -- no direction flag, no round counter, no initialised marker.
-        assert_eq!(size_of::<ARIA128Internal>(), 208);
-        assert_eq!(size_of::<ARIA192Internal>(), 240);
-        assert_eq!(size_of::<ARIA256Internal>(), 272);
-    }
-
-    #[test]
-    fn test_alg_names_and_strengths() {
-        assert_eq!(<ARIA128Internal as Algorithm>::ALG_NAME, "ARIA-128");
-        assert_eq!(<ARIA192Internal as Algorithm>::ALG_NAME, "ARIA-192");
-        assert_eq!(<ARIA256Internal as Algorithm>::ALG_NAME, "ARIA-256");
-        assert_eq!(
-            <ARIA128Internal as Algorithm>::MAX_SECURITY_STRENGTH,
-            SecurityStrength::from_bytes(ARIA128Params::KEY_LEN)
-        );
-        assert_eq!(
-            <ARIA192Internal as Algorithm>::MAX_SECURITY_STRENGTH,
-            SecurityStrength::from_bytes(ARIA192Params::KEY_LEN)
-        );
-        assert_eq!(
-            <ARIA256Internal as Algorithm>::MAX_SECURITY_STRENGTH,
-            SecurityStrength::from_bytes(ARIA256Params::KEY_LEN)
-        );
-    }
-
-    #[test]
-    fn test_lanes_constant() {
-        // The docs and the two-block override both assume four lanes: four 4-byte class words
-        // fill the 16 byte positions of the u16 planes.
-        assert_eq!(LANES, 4);
-        assert_eq!(LANES * 4, 16);
-    }
 
     #[test]
     fn test_decryption_key_order_is_section_2_2() {

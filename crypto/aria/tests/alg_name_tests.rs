@@ -9,7 +9,7 @@ use bouncycastle_aria::hazmat::{ARIA128Internal, ARIA192Internal, ARIA256Interna
 use bouncycastle_aria::{
     ARIA_CBC_128, ARIA_CBC_192, ARIA_CBC_256, ARIA_CFB_128, ARIA_CFB_192, ARIA_CFB_256,
     ARIA_CFB8_128, ARIA_CFB8_192, ARIA_CFB8_256, ARIA_CTR_128, ARIA_CTR_192, ARIA_CTR_256,
-    ARIA128Key, BLOCK_LEN, CTR_NONCE_LEN,
+    ARIA128Key, BLOCK_LEN, CTR_NONCE_LEN, LANES,
 };
 use bouncycastle_cipher::modes::{CBC, CFB, CFB8, CTR, Cbc, Cfb, Cfb8, Ctr};
 use bouncycastle_cipher::padding::{
@@ -177,9 +177,32 @@ fn the_aliases_name_the_expected_types() {
     let _: ARIA_CTR_128<'_, Decrypting> = key.create_decryptor(&nonce);
 }
 
-/// The const parameters are ARIA's, and CTR's nonce leaves the four-byte counter the mode caps at.
+/// The const parameters are ARIA's, CTR's nonce leaves the four-byte counter the mode caps at,
+/// and four lanes of four-byte class words fill the 16 byte positions of the `u16` planes.
 #[test]
 fn the_const_parameters_are_arias() {
     assert_eq!(BLOCK_LEN, 16);
     assert_eq!(CTR_NONCE_LEN, 12, "a 12-byte nonce leaves the 4-byte counter CTR caps at");
+    assert_eq!(LANES * 4, 16, "four lanes of one class word each fill the circuit");
+}
+
+/// The engines report their own names and key-length strengths.
+#[test]
+fn the_engines_report_their_key_length() {
+    use SecurityStrength::*;
+    assert_eq!(<ARIA128Internal as Algorithm>::ALG_NAME, "ARIA-128");
+    assert_eq!(<ARIA192Internal as Algorithm>::ALG_NAME, "ARIA-192");
+    assert_eq!(<ARIA256Internal as Algorithm>::ALG_NAME, "ARIA-256");
+    assert_eq!(<ARIA128Internal as Algorithm>::MAX_SECURITY_STRENGTH, _128bit);
+    assert_eq!(<ARIA192Internal as Algorithm>::MAX_SECURITY_STRENGTH, _192bit);
+    assert_eq!(<ARIA256Internal as Algorithm>::MAX_SECURITY_STRENGTH, _256bit);
+}
+
+/// The engines are exactly their round keys, the sizes the crate docs quote: 13, 15 or 17 round
+/// keys of 16 bytes and nothing else, no direction flag, no round counter, no initialised marker.
+#[test]
+fn the_engines_are_exactly_their_round_keys() {
+    assert_eq!(size_of::<ARIA128Internal>(), 208);
+    assert_eq!(size_of::<ARIA192Internal>(), 240);
+    assert_eq!(size_of::<ARIA256Internal>(), 272);
 }

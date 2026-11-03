@@ -24,6 +24,7 @@ mod common;
 
 use bouncycastle_aria::{ARIA128Key, ARIA192Key, ARIA256Key, BLOCK_LEN, CTR_NONCE_LEN};
 use bouncycastle_cipher::modes::{CFB, CFB8, CTR};
+use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::symmetric_key::{
     FromKeyMaterial, SymmetricDecryptionKey, SymmetricEncryptionKey,
@@ -336,4 +337,25 @@ fn the_published_cfb128_and_cfb8_vectors_differ_after_the_first_byte() {
         assert_eq!(cfb[0], cfb8[0], "{name}: the first byte comes from the same output block");
         assert_ne!(cfb[1..], cfb8[1..], "{name}: and the rest must not agree");
     }
+}
+
+/// The counter limit, through a key: under `CTR<15>` the counter is one byte, so the 256th block
+/// is the last the mode will produce, and the byte after it is refused rather than repeating the
+/// keystream (`bouncycastle_cipher::modes::Ctr`'s rule, pinned here on an ARIA key so that the
+/// key-object path reaches it).
+#[test]
+fn a_ctr_key_refuses_the_byte_after_the_counter_wraps() {
+    let key = ARIA128Key::<CTR<15>>::from_key_material(&material::<16>(KEY_128)).unwrap();
+    let nonce = [0x5au8; 15];
+    let (mut enc, got) = key.create_encryptor(&mut FixedSeedRNG::new(nonce)).unwrap();
+    assert_eq!(got, nonce);
+
+    let mut data = vec![0u8; 256 * BLOCK_LEN];
+    enc.do_encrypt_inplace(&mut data).expect("256 blocks fill a one-byte counter exactly");
+
+    let mut one = [0u8; 1];
+    assert!(
+        matches!(enc.do_encrypt_inplace(&mut one), Err(SymmetricCipherError::DataLimitExceeded)),
+        "the 4097th byte must be refused, not encrypted under a repeated counter block"
+    );
 }

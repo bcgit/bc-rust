@@ -12,7 +12,7 @@
 //! means here. See [Design](#design).
 //!
 //! An engine is a *permutation*, not a cipher you can encrypt data with, which is why it lives
-//! under [`hazmat`]. See [Security Considerations](#security-considerations).
+//! under [`hazmat`]. See [Security Considerations](#-security-considerations-).
 //!
 //! # Usage Examples
 //!
@@ -31,12 +31,10 @@
 //! comparison.
 //!
 //! ```
-//! use bouncycastle_aria::ARIA256Key;
-//! use bouncycastle_cipher::modes::CBC;
-//! use bouncycastle_cipher::padding::PKCS7;
-//! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-//! use bouncycastle_core::symmetric_key::{FromKeyMaterial, SymmetricDecryptionKey, SymmetricEncryptionKey};
-//! use bouncycastle_rng::HashDRBG_SHA512;
+//! use bouncycastle_aria::ARIA256Key; use bouncycastle_cipher::modes::CBC; use
+//! bouncycastle_cipher::padding::PKCS7; use bouncycastle_core::key_material::{KeyMaterial,
+//! KeyType}; use bouncycastle_core::symmetric_key::{FromKeyMaterial, SymmetricDecryptionKey,
+//! SymmetricEncryptionKey}; use bouncycastle_rng::HashDRBG_SHA512;
 //!
 //! let mut rng = HashDRBG_SHA512::new_from_os();   // one RNG, held across messages
 //! let material = KeyMaterial::<32>::from_bytes_as_type(&[0x42; 32], KeyType::SymmetricCipherKey)
@@ -57,11 +55,10 @@
 //! The stream modes take any length and return the initialisation data the same way:
 //!
 //! ```
-//! use bouncycastle_aria::ARIA256Key;
-//! use bouncycastle_cipher::modes::CTR;
-//! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-//! use bouncycastle_core::symmetric_key::{FromKeyMaterial, SymmetricDecryptionKey, SymmetricEncryptionKey};
-//! use bouncycastle_rng::HashDRBG_SHA512;
+//! use bouncycastle_aria::ARIA256Key; use bouncycastle_cipher::modes::CTR; use
+//! bouncycastle_core::key_material::{KeyMaterial, KeyType}; use
+//! bouncycastle_core::symmetric_key::{FromKeyMaterial, SymmetricDecryptionKey,
+//! SymmetricEncryptionKey}; use bouncycastle_rng::HashDRBG_SHA512;
 //!
 //! let mut rng = HashDRBG_SHA512::new_from_os();
 //! let material = KeyMaterial::<32>::from_bytes_as_type(&[0x42; 32], KeyType::SymmetricCipherKey)
@@ -119,8 +116,8 @@
 //! Each S-box circuit substitutes 16 bytes per pass and a substitution layer sends four bytes of
 //! every block through each of the four S-boxes, so four independent blocks cost the same as one.
 //! Where a caller has four, [`ARIAInternal::encrypt_4blocks`] is four times the throughput of four
-//! [`BlockPermutation::encrypt_block`](bouncycastle_core::hazmat::BlockPermutation::encrypt_block) calls, and it is also the
-//! four-block batch [`BlockPermutation::encrypt_4blocks`](bouncycastle_core::hazmat::BlockPermutation::encrypt_4blocks) offers to modes:
+//! `encrypt_block` calls, and it is also the four-block batch `BlockPermutation::encrypt_4blocks`
+//! offers to modes:
 //!
 //! ```
 //! use bouncycastle_aria::hazmat::ARIA256Internal;
@@ -196,7 +193,9 @@
 //! code.
 //! Second, the working set. Eight `u32` planes would take eight blocks per pass and double the
 //! throughput, but every per-call buffer -- the block state, the planes -- would double with them.
-//! Four lanes over `u16` planes keep the whole per-call working state near 100 bytes.
+//! Four lanes over `u16` planes keep the per-call working state -- the block state, the class
+//! words and the planes -- near 100 bytes; what a call costs on the stack with the circuits'
+//! spills and the frames under it is in [Memory Usage](#memory-usage).
 //!
 //! # Memory Usage
 //!
@@ -212,24 +211,43 @@
 //!
 //! Per-call stack usage is the four-block working state -- four words per block, 64 bytes -- plus
 //! the four class words being substituted (16 bytes), the eight `u16` planes (16 bytes), one round
-//! key (16 bytes) and the circuits' temporaries, most of which the compiler keeps in registers.
-//! Measure with `cargo run --release -p mem_usage_benches --bin bench_aria_mem_usage`.
+//! key (16 bytes) and the circuits' temporaries. Every entry point runs the same four-lane circuit,
+//! so the cost is the same at every key length, and only key expansion depends on it. Measured as
+//! the deepest frame chain below each entry point's `measure` closure in
+//! `mem_usage_benches/src/bench_aria_mem_usage.rs`: the closure, then the out-of-line
+//! `encrypt_4blocks` / `decrypt_4blocks` (or the schedule's `expand`), `fo` / `fe`,
+//! `substitution_layer` and `ortho` frames under it, from the compiler's frame-layout remarks and
+//! the disassembly of the release build (x86-64, rustc 1.97 nightly, return addresses included):
+//!
+//! | Entry point | ARIA-128 | ARIA-192 | ARIA-256 |
+//! |---|---|---|---|
+//! | `new` (key expansion) | 1040 B | 1136 B | 1232 B |
+//! | `encrypt_block` | 416 B | 416 B | 416 B |
+//! | `decrypt_block` | 496 B | 496 B | 496 B |
+//! | `encrypt_2blocks` | 432 B | 432 B | 432 B |
+//! | `decrypt_2blocks` | 496 B | 496 B | 496 B |
+//! | `encrypt_4blocks` | 320 B | 320 B | 320 B |
+//! | `decrypt_4blocks` | 400 B | 400 B | 400 B |
+//!
+//! Decryption costs more than encryption because it derives each round's decryption key from
+//! the stored encryption keys (one diffusion-layer application per round, see `schedule`) rather
+//! than reading a second schedule; the one- and two-block calls go through the four-block
+//! circuit with the spare lanes filled, and carry its frame on top of their own.
 //!
 //! For comparison, a straightforward implementation carries 1 KiB of S-box tables on top of a
 //! round-key array of the same size as here (plus 256 bytes of diffusion masks).
 //!
-//! # Security Considerations
+//! # 🚨 Security Considerations 🚨
 //!
 //! ## A block permutation is not a cipher
 //!
-//! [`ARIA128Internal`] and its siblings transform exactly 16 bytes. Using one directly on data means ECB,
-//! which is not confidential: identical plaintext blocks produce identical ciphertext blocks, so
-//! structure in the plaintext survives encryption. **Do not do it.** Use a mode of operation, and
-//! prefer an authenticated one so that ciphertext tampering is detected. RFC 5794 Appendix B
-//! assigns object identifiers to ARIA in ECB, CBC, CFB, OFB, CTR, CMAC, OCB2, GCM, CCM and key-wrap
-//! modes; the ECB one exists for completeness, not as a recommendation.
-//! That is why the permutation lives under [`hazmat`]; [`bouncycastle_core::hazmat`] lists the
-//! supported uses.
+//! [`ARIA128Internal`] and its siblings transform exactly 16 bytes. Using one directly on data
+//! means ECB, which is not confidential: identical plaintext blocks produce identical ciphertext
+//! blocks, so structure in the plaintext survives encryption. **Do not do it.** Use a mode of
+//! operation, and prefer an authenticated one so that ciphertext tampering is detected. RFC 5794
+//! Appendix B assigns object identifiers to ARIA in ECB, CBC, CFB, OFB, CTR, CMAC, OCB2, GCM, CCM
+//! and key-wrap modes; the ECB one exists for completeness, not as a recommendation. That is why
+//! the permutation lives under [`hazmat`]; [`bouncycastle_core::hazmat`] lists the supported uses.
 //!
 //! ## Constant-time properties
 //!
@@ -273,21 +291,23 @@
 //! * Verified against RFC 5794 Appendix A -- the three ciphertexts, and for the 128-bit key every
 //!   round key `ek1 .. ek13` and every intermediate value `P1 .. P11`; the ECB, CBC, CFB128, CFB8
 //!   and CTR vectors of OpenSSL's `evpciph_aria.txt`, which are KISA's published ARIA test vectors
-//!   (10 blocks under each key length); the vectors and invariants of `tests/bc_java_tests.rs`; and the
+//!   (10 blocks under each key length); the vectors and invariants of `tests/bc_java_tests.rs`; the
 //!   transcription of the source engine on thousands of keys and blocks in every lane, both
-//!   directions.
+//!   directions; and Project Wycheproof's `aria_cbc_pkcs5_test.json` through the padded CBC
+//!   keys, with `aria_ccm_test.json` and `aria_gcm_test.json` through the `CCM` and `GCM` mode
+//!   traits over the engines.
 
 #![no_std]
 #![forbid(unsafe_code)]
 #![forbid(missing_docs)]
 
 mod bitslice;
-mod cbc;
-mod cfb;
-mod cfb8;
-mod ctr;
+pub mod cbc;
+pub mod cfb;
+pub mod cfb8;
+pub mod ctr;
 pub mod hazmat;
-mod key;
+pub mod key;
 mod round;
 mod sbox;
 mod schedule;
@@ -304,7 +324,7 @@ pub use cfb::{ARIA_CFB_128, ARIA_CFB_192, ARIA_CFB_256};
 pub use cfb8::{ARIA_CFB8_128, ARIA_CFB8_192, ARIA_CFB8_256};
 pub use ctr::{ARIA_CTR_128, ARIA_CTR_192, ARIA_CTR_256, CTR_NONCE_LEN};
 pub use key::{ARIA128Key, ARIA192Key, ARIA256Key, ARIAKey};
-pub use schedule::ARIAParams;
+pub use schedule::{ARIA128Params, ARIA192Params, ARIA256Params, ARIAParams};
 
 // Imports needed for docs
 #[allow(unused_imports)]

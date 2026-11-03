@@ -4,19 +4,19 @@
 //! [`ARIA128Key<M>`], [`ARIA192Key<M>`] and [`ARIA256Key<M>`] are one type each per mode `M`, as
 //! `AES128Key<M>` and friends are in `bouncycastle-aes`: the key holds the mode's per-key state,
 //! the workers it hands out borrow it, and which role pair a key carries is decided by its mode:
-//! the symmetric pair for the stream modes and the padded block modes (`CFB`, `CFB8`, `CTR`,
-//! `CBC<PKCS7>`), the block pair for `CBC<Blocks>`. Those are the four modes this crate aliases
-//! as `ARIA_*`; a key under any other mode has no role here.
+//! the symmetric pair for every mode that implements the symmetric mode traits over the
+//! permutation -- the stream modes `CFB`, `CFB8` and `CTR<N>` at any nonce length `N`, and the
+//! padded block modes `CBC<PKCS7>`, `CBC<NoPadding>`, `ECB<PKCS7>` and `ECB<NoPadding>` -- and the
+//! block pair for `CBC<Blocks>`. The four modes this crate aliases as `ARIA_*` are among them; a
+//! key under any other mode (`ECB<Blocks>`, the AEAD and MAC modes) has no role here.
 //!
 //! # Usage Examples
 //!
 //! ```
-//! use bouncycastle_aria::ARIA256Key;
-//! use bouncycastle_cipher::modes::CBC;
-//! use bouncycastle_cipher::padding::PKCS7;
-//! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-//! use bouncycastle_core::symmetric_key::{FromKeyMaterial, SymmetricDecryptionKey, SymmetricEncryptionKey};
-//! use bouncycastle_rng::HashDRBG_SHA512;
+//! use bouncycastle_aria::ARIA256Key; use bouncycastle_cipher::modes::CBC; use
+//! bouncycastle_cipher::padding::PKCS7; use bouncycastle_core::key_material::{KeyMaterial,
+//! KeyType}; use bouncycastle_core::symmetric_key::{FromKeyMaterial, SymmetricDecryptionKey,
+//! SymmetricEncryptionKey}; use bouncycastle_rng::HashDRBG_SHA512;
 //!
 //! let mut rng = HashDRBG_SHA512::new_from_os();   // one RNG, held across messages
 //! let material = KeyMaterial::<32>::from_bytes_as_type(&[0x42; 32], KeyType::SymmetricCipherKey)
@@ -38,7 +38,6 @@ use crate::schedule::{ARIA128Params, ARIA192Params, ARIA256Params, ARIAParams};
 use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
 use bouncycastle_core::hazmat::{
     BlockDecryptMode, BlockEncryptMode, Mode, ModeKey, SymmetricDecryptMode, SymmetricEncryptMode,
-    do_hazardous_operations,
 };
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::symmetric_key::{
@@ -101,21 +100,6 @@ fn check_key_type(
     Ok(())
 }
 
-/// The permutation accepts only a `SymmetricCipherKey`, so a MAC mode's key -- already checked to
-/// be the `MACKey` the mode asks for -- is handed to it as a copy retagged at the same strength,
-/// used for nothing else. The strength check in the permutation's constructor still applies.
-fn as_cipher_key<const N: usize>(
-    key: &KeyMaterial<N>,
-) -> Result<KeyMaterial<N>, SymmetricCipherError> {
-    let mut cipher_key =
-        KeyMaterial::<N>::from_bytes_as_type(key.ref_to_bytes(), KeyType::SymmetricCipherKey)?;
-    do_hazardous_operations(&mut cipher_key, |k| {
-        k.set_key_type(KeyType::SymmetricCipherKey)?;
-        k.set_security_strength(key.security_strength())
-    })?;
-    Ok(cipher_key)
-}
-
 // The constructors are implemented per key length rather than once over `P`, because stable Rust
 // cannot name `KeyMaterial<{ P::KEY_LEN }>` in a generic signature; the fixed-capacity argument
 // is what makes a wrong-length key a compile error rather than a runtime one.
@@ -123,20 +107,18 @@ fn as_cipher_key<const N: usize>(
 impl<M: Mode<ARIA128Internal>> FromKeyMaterial<16> for ARIA128Key<M> {
     const KEY_TYPE: KeyType = M::KEY_TYPE;
 
-    /// Validates and expands a 16-byte key.
+    /// Validates and expands a 16-byte key: the key type the mode asks for, then the
+    /// permutation's own checks. Every mode with a role here asks for a `SymmetricCipherKey`, so
+    /// under a MAC mode, which asks for a `MACKey`, no material passes both.
     ///
     /// # Errors
-    /// * [`KeyMaterialError::InvalidKeyType`] if the key is not of [`Self::KEY_TYPE`]: the
-    ///   `SymmetricCipherKey` a cipher mode asks for, or the `MACKey` a MAC mode does.
+    /// * [`KeyMaterialError::InvalidKeyType`] if the key is not of [`Self::KEY_TYPE`], or not a
+    ///   `SymmetricCipherKey`.
     /// * [`KeyMaterialError::InvalidLength`] if the key is not 16 bytes long.
     /// * [`KeyMaterialError::SecurityStrength`] if the key carries a strength below 128 bits.
     fn from_key_material(key: &KeyMaterial<16>) -> Result<Self, SymmetricCipherError> {
         check_key_type(key, M::KEY_TYPE)?;
-        let perm = match M::KEY_TYPE {
-            KeyType::SymmetricCipherKey => ARIA128Internal::new(key)?,
-            _ => ARIA128Internal::new(&as_cipher_key(key)?)?,
-        };
-        Ok(Self { state: M::key_state(perm) })
+        Ok(Self { state: M::key_state(ARIA128Internal::new(key)?) })
     }
 }
 
@@ -147,11 +129,7 @@ impl<M: Mode<ARIA192Internal>> FromKeyMaterial<24> for ARIA192Key<M> {
     /// bytes and 192 bits.
     fn from_key_material(key: &KeyMaterial<24>) -> Result<Self, SymmetricCipherError> {
         check_key_type(key, M::KEY_TYPE)?;
-        let perm = match M::KEY_TYPE {
-            KeyType::SymmetricCipherKey => ARIA192Internal::new(key)?,
-            _ => ARIA192Internal::new(&as_cipher_key(key)?)?,
-        };
-        Ok(Self { state: M::key_state(perm) })
+        Ok(Self { state: M::key_state(ARIA192Internal::new(key)?) })
     }
 }
 
@@ -162,11 +140,7 @@ impl<M: Mode<ARIA256Internal>> FromKeyMaterial<32> for ARIA256Key<M> {
     /// bytes and 256 bits.
     fn from_key_material(key: &KeyMaterial<32>) -> Result<Self, SymmetricCipherError> {
         check_key_type(key, M::KEY_TYPE)?;
-        let perm = match M::KEY_TYPE {
-            KeyType::SymmetricCipherKey => ARIA256Internal::new(key)?,
-            _ => ARIA256Internal::new(&as_cipher_key(key)?)?,
-        };
-        Ok(Self { state: M::key_state(perm) })
+        Ok(Self { state: M::key_state(ARIA256Internal::new(key)?) })
     }
 }
 

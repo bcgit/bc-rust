@@ -15,12 +15,11 @@
 //! nonce bits is available by naming `CTR<13>`, `CTR<14>` or `CTR<15>` as the key's mode.
 //!
 //! ```
-//! use bouncycastle_aria::ARIA128Key;
-//! use bouncycastle_cipher::modes::CTR;
-//! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-//! use bouncycastle_core::symmetric_key::{FromKeyMaterial, SymmetricDecryptionKey, SymmetricEncryptionKey};
-//! use bouncycastle_core::traits::{StreamCipherDecryptor, StreamCipherEncryptor};
-//! use bouncycastle_rng::HashDRBG_SHA512;
+//! use bouncycastle_aria::ARIA128Key; use bouncycastle_cipher::modes::CTR; use
+//! bouncycastle_core::key_material::{KeyMaterial, KeyType}; use
+//! bouncycastle_core::symmetric_key::{FromKeyMaterial, SymmetricDecryptionKey,
+//! SymmetricEncryptionKey}; use bouncycastle_core::traits::{StreamCipherDecryptor,
+//! StreamCipherEncryptor}; use bouncycastle_rng::HashDRBG_SHA512;
 //!
 //! let mut rng = HashDRBG_SHA512::new_from_os();
 //! let material = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
@@ -62,7 +61,8 @@ use bouncycastle_core::symmetric_key::{SymmetricDecryptionKey, SymmetricEncrypti
 pub const CTR_NONCE_LEN: usize = 12;
 
 /// ARIA-128 in CTR mode with a 12-byte nonce. `Dir` is [`bouncycastle_cipher::Encrypting`] or
-/// [`bouncycastle_cipher::Decrypting`]; the wrong direction is a compile error, not a runtime check.
+/// [`bouncycastle_cipher::Decrypting`]; the wrong direction is a compile error, not a runtime
+/// check.
 #[allow(non_camel_case_types)]
 pub type ARIA_CTR_128<'k, Dir> = Ctr<'k, ARIA128Internal, Dir, BLOCK_LEN, CTR_NONCE_LEN>;
 

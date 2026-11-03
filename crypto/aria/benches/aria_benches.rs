@@ -3,9 +3,10 @@
 //! The comparison that matters is `encrypt_block` against `encrypt_2blocks` and `encrypt_4blocks`
 //! over the same number of bytes. The S-box circuits always process four lanes, so a single-block
 //! call does four blocks' worth of work and the four-block path (what the CBC mode's decryption
-//! uses) should be close to four times the throughput; the two-block path sits at half. Decryption costs the same as encryption (the same rounds with
-//! the round keys in the decryption order). ARIA-192 sits between the other two in rounds, so only
-//! the 12-round ARIA-128 and the 16-round ARIA-256 are benchmarked.
+//! uses) should be close to four times the throughput; the two-block path sits at half. Decryption
+//! costs the same as encryption (the same rounds with the round keys in the decryption order).
+//! ARIA-192 sits between the other two in rounds, so only the 12-round ARIA-128 and the 16-round
+//! ARIA-256 are benchmarked.
 
 use bouncycastle_aria::hazmat::{ARIA128Internal, ARIA256Internal};
 use bouncycastle_aria::{BLOCK_LEN, LANES};

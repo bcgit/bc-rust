@@ -168,7 +168,10 @@ fn key_schedule_round(rk: &mut [u8; 16], w: &[u8; 16], wr: &[u8; 16], n: u32) {
 /// `keySchedule(forEncryption, K)`.
 fn key_schedule(for_encryption: bool, k: &[u8]) -> Vec<[u8; 16]> {
     let key_len = k.len();
-    assert!((16..=32).contains(&key_len) && key_len % 8 == 0, "Key length not 128/192/256 bits.");
+    assert!(
+        (16..=32).contains(&key_len) && key_len.is_multiple_of(8),
+        "Key length not 128/192/256 bits."
+    );
     let key_len_idx = (key_len >> 3) - 2;
     let ck1 = &C[key_len_idx];
     let ck2 = &C[(key_len_idx + 1) % 3];
