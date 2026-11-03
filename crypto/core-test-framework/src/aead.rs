@@ -376,6 +376,37 @@ impl TestFrameworkAEADCipher {
             assert_eq!(pt, msg, "chunk {chunk}: streaming round trip");
         }
 
+        // an empty data call is a no-op that leaves the AAD phase open, in both directions: AAD
+        // given after it is absorbed as if the call had not happened. The family's rule, so that
+        // a generic caller may forward an empty buffer without closing the phase.
+        {
+            let (first, second) = aad.split_at(aad.len() / 2);
+            let (mut enc, nonce) = key.create_encryptor(&mut fixed_rng()).unwrap();
+            enc.do_update_aad(first).unwrap();
+            assert_eq!(enc.do_encrypt_out(&[], &mut []).unwrap(), 0);
+            enc.do_update_aad(second).unwrap();
+            let mut ct = vec![0u8; enc.do_encrypt_out_len(msg.len())];
+            let n = enc.do_encrypt_out(msg, &mut ct).unwrap();
+            ct.truncate(n);
+            let mut final_buf = [0u8; FINAL_LEN];
+            let (final_len, tag) = enc.do_encrypt_final_detached_out(&mut final_buf).unwrap();
+            ct.extend_from_slice(&final_buf[..final_len]);
+            assert_eq!(ct, ct_ref, "an empty data call must leave the AAD phase open (encrypt)");
+            assert_eq!(tag, tag_ref, "an empty data call must leave the AAD phase open (encrypt)");
+
+            let mut dec = key.create_decryptor(&nonce);
+            dec.do_update_aad(first).unwrap();
+            assert_eq!(dec.do_decrypt_out(&[], &mut []).unwrap(), 0);
+            dec.do_update_aad(second).unwrap();
+            let mut pt = vec![0u8; dec.do_decrypt_out_len(ct.len())];
+            let n = dec.do_decrypt_out(&ct, &mut pt).unwrap();
+            pt.truncate(n);
+            let mut final_buf = [0u8; FINAL_LEN];
+            let final_len = dec.do_decrypt_final_detached_out(&tag, &mut final_buf).unwrap();
+            pt.extend_from_slice(&final_buf[..final_len]);
+            assert_eq!(pt, msg, "an empty data call must leave the AAD phase open (decrypt)");
+        }
+
         // a wrong detached tag is refused at the final
         let mut wrong_tag = tag_ref;
         wrong_tag[0] ^= 0xFF;
