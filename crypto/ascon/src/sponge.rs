@@ -122,15 +122,23 @@ impl Sponge {
         self.s[0] ^= 0x01u64 << final_bits;
     }
 
-    /// Squeeze `output.len()` bytes. May be called multiple times; the first call must follow
-    /// [`Sponge::pad_and_absorb`] and ends the absorb phase.
+    /// Ends the absorb phase: pads the final block and marks the sponge as squeezing with no
+    /// squeezed bytes buffered, so the first [`Sponge::squeeze`] begins with the permutation. The
+    /// buffered message bytes are cleared, since nothing reads them again.
+    pub(crate) fn finish_absorb(&mut self) {
+        self.pad_and_absorb();
+        self.buf.fill(0);
+        self.buf_pos = RATE;
+        self.squeezing = true;
+    }
+
+    /// Squeeze `output.len()` bytes. May be called multiple times, after
+    /// [`Sponge::finish_absorb`].
     pub(crate) fn squeeze(&mut self, output: &mut [u8]) {
+        debug_assert!(self.squeezing, "squeeze before finish_absorb");
         let mut output = output;
 
-        if !self.squeezing {
-            self.squeezing = true;
-            self.buf_pos = RATE;
-        } else if self.buf_pos < RATE {
+        if self.buf_pos < RATE {
             let available = RATE - self.buf_pos;
             if output.len() <= available {
                 let end_pos = self.buf_pos + output.len();

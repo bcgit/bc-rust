@@ -35,7 +35,7 @@ impl AsconHash256 {
     // Algorithm 5). The 32-byte digest is exactly RATE * 4 bytes, so a single generic
     // `Sponge::squeeze()` call over the whole output produces all four blocks with no leftover.
     fn squeeze_into(&mut self, output: &mut [u8; DIGEST_BYTES]) {
-        self.sponge.pad_and_absorb();
+        self.sponge.finish_absorb();
         self.sponge.squeeze(output);
     }
 }

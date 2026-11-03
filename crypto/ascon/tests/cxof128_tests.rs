@@ -345,6 +345,18 @@ fn cxof128_suspendable_state() {
     combined.extend_from_slice(&tail);
 
     assert_eq!(combined, expected, "resuming mid-squeeze must continue the same output stream");
+    // A squeezer suspended before its first output is a squeezing state too: it resumes as the
+    // squeezer, not as the absorbing type, and continues the same stream.
+    let mut fresh = AsconCXof128::with_customization(z).unwrap();
+    fresh.do_update(&data);
+    let fresh_state = fresh.into_squeezer().suspend();
+    assert!(matches!(
+        AsconCXof128::from_suspended(fresh_state),
+        Err(SuspendableError::InvalidData)
+    ));
+    let mut out = [0u8; 40];
+    AsconCXof128Squeezer::from_suspended(fresh_state).unwrap().do_output_out(&mut out);
+    assert_eq!(out, expected, "a squeezer resumed before its first output must give the stream");
 }
 
 #[test]
