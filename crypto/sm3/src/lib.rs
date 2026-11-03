@@ -64,9 +64,21 @@
 //! | `SM3`                      | 112          |
 //! | Suspended state            | 108          |
 //!
-//! The object holds the 8-word chaining value plus one 64-byte block of buffered input. The
-//! compression function additionally uses a 68-word message schedule (272 bytes) on the stack for
-//! the duration of a call.
+//! The object holds the 8-word chaining value plus one 64-byte block of buffered input.
+//!
+//! Per-call stack usage does not depend on the data length. Measured as the deepest frame chain
+//! below each entry point in the release build (x86-64 Linux, rustc 1.97.0-nightly, return
+//! addresses included; see `mem_usage_benches/src/bench_sm3_mem_usage.rs`):
+//!
+//! | Entry point                                     | Stack       |
+//! |-------------------------------------------------|-------------|
+//! | `SM3::do_update`                                | 320 B       |
+//! | `SM3::do_final_out`                             | 336 B       |
+//! | `SM3::do_final_partial_bits_out`                | 464 B       |
+//! | `SM3::hash_out` (one-shot)                      | 592 B       |
+//! | `SM3::suspend` / `SM3::from_suspended`          | 8 / 80 B    |
+//! | `HmacKey::<SM3>::from_key_material` / `mac_out` | 992 / 928 B |
+//! | `HKDF_SM3::extract_and_expand_out`              | 2560 B      |
 //!
 //! # 🚨 Security Considerations 🚨
 //!
