@@ -233,6 +233,90 @@ mod test_key_material {
         assert_eq!(key.security_strength(), rng_strength, "64 bytes keep the RNG's strength");
     }
 
+    /// SP 800-90A r1 Section 8.4: the strength of a draw is the lesser of the RNG's and the
+    /// draw's length, so a short key from a 256-bit RNG is tagged at what its length carries.
+    #[test]
+    fn from_rng_strength_is_capped_by_the_key_length() {
+        use bouncycastle_rng as rng;
+
+        let mut rng = rng::DefaultRNG::default();
+        use bouncycastle_core::traits::RNG;
+        assert_eq!(rng.security_strength(), SecurityStrength::_256bit);
+        let k32 = KeyMaterial256::from_rng(&mut rng).unwrap();
+        assert_eq!(k32.security_strength(), SecurityStrength::_256bit);
+        let k24 = KeyMaterial::<24>::from_rng(&mut rng).unwrap();
+        assert_eq!(k24.security_strength(), SecurityStrength::_192bit);
+        let k16 = KeyMaterial128::from_rng(&mut rng).unwrap();
+        assert_eq!(k16.security_strength(), SecurityStrength::_128bit);
+        let k14 = KeyMaterial::<14>::from_rng(&mut rng).unwrap();
+        assert_eq!(k14.security_strength(), SecurityStrength::_112bit);
+        let k13 = KeyMaterial::<13>::from_rng(&mut rng).unwrap();
+        assert_eq!(k13.key_type(), KeyType::CryptographicRandom);
+        assert_eq!(k13.security_strength(), SecurityStrength::None);
+        let k0 = KeyMaterial0::from_rng(&mut rng).unwrap();
+        assert_eq!(k0.key_len(), 0);
+        assert_eq!(k0.key_type(), KeyType::Zeroized);
+        assert_eq!(k0.security_strength(), SecurityStrength::None);
+    }
+
+    /// A key re-typed or zeroized to Zeroized/Unknown carries no strength, so truncating it is
+    /// fine rather than a panic.
+    #[test]
+    fn retyping_to_unknown_drops_the_strength() {
+        use bouncycastle_rng as rng;
+
+        let mut key = KeyMaterial256::from_rng(&mut rng::DefaultRNG::default()).unwrap();
+        key.set_key_type(KeyType::Unknown).unwrap();
+        assert_eq!(key.security_strength(), SecurityStrength::None);
+        let mut short = KeyMaterial128::new();
+        key.clone().truncate(&mut short);
+        assert_eq!(short.key_type(), KeyType::Unknown);
+        assert_eq!(short.security_strength(), SecurityStrength::None);
+        assert_eq!(short.ref_to_bytes(), &key.ref_to_bytes()[..16]);
+
+        // The same inside a hazardous window.
+        let mut key = KeyMaterial256::from_rng(&mut rng::DefaultRNG::default()).unwrap();
+        do_hazardous_operations(&mut key, |k| k.set_key_type(KeyType::Unknown)).unwrap();
+        assert_eq!(key.security_strength(), SecurityStrength::None);
+
+        // And zeroize.
+        let mut key = KeyMaterial256::from_rng(&mut rng::DefaultRNG::default()).unwrap();
+        key.zeroize();
+        assert_eq!(key.security_strength(), SecurityStrength::None);
+
+        // A typed key still refuses to be re-typed outside a window.
+        let mut key =
+            KeyMaterial256::from_bytes_as_type(&DUMMY_KEY[..32], KeyType::MACKey).unwrap();
+        assert!(matches!(
+            key.set_key_type(KeyType::Unknown),
+            Err(KeyMaterialError::HazardousOperationNotPermitted)
+        ));
+        assert_eq!(key.security_strength(), SecurityStrength::_256bit);
+    }
+
+    /// The window is closed on a clone taken inside it.
+    #[test]
+    fn a_clone_taken_inside_a_window_has_it_closed() {
+        let mut key =
+            KeyMaterial256::from_bytes_as_type(&DUMMY_KEY[..32], KeyType::MACKey).unwrap();
+        let mut copy = None;
+        do_hazardous_operations(&mut key, |k| {
+            copy = Some(k.clone());
+            Ok(())
+        })
+        .unwrap();
+        let mut copy = copy.unwrap();
+        assert!(matches!(
+            copy.set_key_type(KeyType::Seed),
+            Err(KeyMaterialError::HazardousOperationNotPermitted)
+        ));
+        assert!(matches!(
+            copy.ref_to_bytes_mut(),
+            Err(KeyMaterialError::HazardousOperationNotPermitted)
+        ));
+        assert_eq!(copy.ref_to_bytes(), key.ref_to_bytes());
+    }
+
     #[test]
     fn zeroize() {
         let mut key = KeyMaterial256::from_bytes(&DUMMY_KEY[..32]).unwrap();
