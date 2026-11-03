@@ -20,7 +20,7 @@ use bouncycastle_core::hazmat::{BlockPermutation, ElectronicCodeBook};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::symmetric_key::{BlockDecryptionKey, BlockEncryptionKey, FromKeyMaterial};
 use bouncycastle_core::traits::{BlockCipherDecryptor, BlockCipherEncryptor};
-use bouncycastle_core_test_framework::FixedSeedRNG;
+use bouncycastle_rng::FixedSeedRNG;
 use common::bytes;
 
 /// The 160-byte plaintext shared by all six vectors.
@@ -103,13 +103,13 @@ where
     let pt: [u8; 160] = bytes(PLAINTEXT);
     let ct: [u8; 160] = bytes(ct_hex);
 
-    let (mut enc, got_iv) = key.create_encryptor(&mut FixedSeedRNG::<16>::new(iv)).unwrap();
+    let (mut enc, got_iv) = key.create_encryptor(&mut FixedSeedRNG::new(iv)).unwrap();
     assert_eq!(got_iv, iv, "{name}: the pinned RNG should produce the vector's IV");
     let mut data = pt;
     enc.do_encrypt_blocks_inplace(data.as_chunks_mut::<BLOCK_LEN>().0).unwrap();
     assert_eq!(data, ct, "{name}: encrypt, all blocks in one call");
 
-    let (mut enc, _) = key.create_encryptor(&mut FixedSeedRNG::<16>::new(iv)).unwrap();
+    let (mut enc, _) = key.create_encryptor(&mut FixedSeedRNG::new(iv)).unwrap();
     let mut data = pt;
     for block in data.as_chunks_mut::<BLOCK_LEN>().0.iter_mut() {
         enc.do_encrypt_blocks_inplace(core::slice::from_mut(block)).unwrap();

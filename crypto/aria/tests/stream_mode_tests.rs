@@ -30,7 +30,7 @@ use bouncycastle_core::symmetric_key::{
     FromKeyMaterial, SymmetricDecryptionKey, SymmetricEncryptionKey,
 };
 use bouncycastle_core::traits::{StreamCipherDecryptor, StreamCipherEncryptor};
-use bouncycastle_core_test_framework::FixedSeedRNG;
+use bouncycastle_rng::FixedSeedRNG;
 use common::bytes;
 
 /// The 160-byte plaintext shared by all nine vectors.
@@ -190,18 +190,15 @@ fn check<'k, const KEY_LEN: usize, const INIT_DATA_LEN: usize, K>(
 
     // There is no API for supplying init data, so pin the RNG to the vector's and check it came
     // back before trusting any ciphertext.
-    let (mut enc, got) = key
-        .create_encryptor(&mut FixedSeedRNG::<INIT_DATA_LEN>::new(init))
-        .expect("encryption init");
+    let (mut enc, got) =
+        key.create_encryptor(&mut FixedSeedRNG::new(init)).expect("encryption init");
     assert_eq!(got, init, "{name}: the pinned RNG should produce the vector's init data");
     let mut data = pt;
     enc.do_encrypt_inplace(&mut data).expect("encryption");
     assert_eq!(data, ct, "{name} encrypt, one call");
 
     // Block by block: the answer must not depend on where the call boundaries fall.
-    let (mut enc, _) = key
-        .create_encryptor(&mut FixedSeedRNG::<INIT_DATA_LEN>::new(init))
-        .expect("encryption init");
+    let (mut enc, _) = key.create_encryptor(&mut FixedSeedRNG::new(init)).expect("encryption init");
     let mut data = pt;
     for block in data.chunks_mut(BLOCK_LEN) {
         enc.do_encrypt_inplace(block).expect("encryption");

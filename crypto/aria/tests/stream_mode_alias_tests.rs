@@ -15,7 +15,7 @@ use bouncycastle_core::symmetric_key::{
     FromKeyMaterial, SymmetricDecryptionKey, SymmetricEncryptionKey,
 };
 use bouncycastle_core::traits::{StreamCipherDecryptor, StreamCipherEncryptor};
-use bouncycastle_core_test_framework::FixedSeedRNG;
+use bouncycastle_rng::FixedSeedRNG;
 use bouncycastle_rng::HashDRBG_SHA512;
 
 fn material<const N: usize>() -> KeyMaterial<N> {
@@ -153,15 +153,14 @@ fn cfb128_and_cfb8_are_not_interchangeable() {
 
     let cfb_key = key128::<CFB>();
     let mut as_cfb = plaintext.clone();
-    let (mut enc, got) =
-        cfb_key.create_encryptor(&mut FixedSeedRNG::<BLOCK_LEN>::new(iv)).expect("CFB128 init");
+    let (mut enc, got) = cfb_key.create_encryptor(&mut FixedSeedRNG::new(iv)).expect("CFB128 init");
     assert_eq!(got, iv, "the pinned RNG should produce the chosen IV");
     enc.do_encrypt_inplace(&mut as_cfb).expect("CFB128");
 
     let cfb8_key = key128::<CFB8>();
     let mut as_cfb8 = plaintext.clone();
     let (mut enc8, got8) =
-        cfb8_key.create_encryptor(&mut FixedSeedRNG::<BLOCK_LEN>::new(iv)).expect("CFB8 init");
+        cfb8_key.create_encryptor(&mut FixedSeedRNG::new(iv)).expect("CFB8 init");
     assert_eq!(got8, iv);
     enc8.do_encrypt_inplace(&mut as_cfb8).expect("CFB8");
 
