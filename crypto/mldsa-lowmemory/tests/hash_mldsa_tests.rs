@@ -19,9 +19,11 @@ mod hash_mldsa_tests {
         MLDSATrait,
     };
     use bouncycastle_mldsa_lowmemory::{MLDSA44_SIG_LEN, MLDSA65_SIG_LEN, MLDSA87_SIG_LEN};
+    use bouncycastle_mldsa_lowmemory::{MLDSAPrivateKeyTrait, MLDSAPublicKeyTrait};
     use bouncycastle_rng::DefaultRNG;
     use bouncycastle_rng::FixedSeedRNG;
     use bouncycastle_sha2::{SHA256, SHA512};
+    use bouncycastle_sha3::{SHAKE128, SHAKE256};
 
     #[test]
     fn core_framework_signature() {
@@ -341,5 +343,53 @@ mod hash_mldsa_tests {
         let (pk, sk) = MLDSA65::keygen(&mut DefaultRNG::default()).unwrap();
         let sig = sk.sign_ph::<SHA512>(&mut HashDRBG_SHA512::new_from_os(), &ph512, None).unwrap();
         pk.verify_ph::<SHA512>(&ph512, None, &sig).unwrap();
+    }
+
+    /// FIPS 204 Algorithm 4, case SHAKE128 (lines 17 to 19): the pre-hash is SHAKE128(M, 256)
+    /// under OID 2.16.840.1.101.3.4.2.11, the 32-byte digest of RFC 8702 Section 3.1. Its
+    /// 128-bit strength fits ML-DSA-44 only; SHAKE256's 64-byte digest fits all three.
+    #[test]
+    fn shake_pre_hashes() {
+        let tf = TestFrameworkSignature::new(true);
+        tf.test_ph_signature::<MLDSA44, MLDSA44PublicKey, MLDSA44PrivateKey, SHAKE128, MLDSA44_SIG_LEN>(|| MLDSA44::keygen(&mut DefaultRNG::default()), false);
+        tf.test_ph_signature::<MLDSA44, MLDSA44PublicKey, MLDSA44PrivateKey, SHAKE256, MLDSA44_SIG_LEN>(|| MLDSA44::keygen(&mut DefaultRNG::default()), false);
+        tf.test_ph_signature::<MLDSA65, MLDSA65PublicKey, MLDSA65PrivateKey, SHAKE256, MLDSA65_SIG_LEN>(|| MLDSA65::keygen(&mut DefaultRNG::default()), false);
+        tf.test_ph_signature::<MLDSA87, MLDSA87PublicKey, MLDSA87PrivateKey, SHAKE256, MLDSA87_SIG_LEN>(|| MLDSA87::keygen(&mut DefaultRNG::default()), false);
+
+        let (pk, sk) = MLDSA65::keygen(&mut DefaultRNG::default()).unwrap();
+        assert!(matches!(
+            sk.create_ph_signer::<SHAKE128>(&mut DefaultRNG::default(), None),
+            Err(SignatureError::PreHashTooWeak)
+        ));
+        assert!(matches!(
+            pk.create_ph_verifier::<SHAKE128>(None),
+            Err(SignatureError::PreHashTooWeak)
+        ));
+        let (pk, sk) = MLDSA87::keygen(&mut DefaultRNG::default()).unwrap();
+        assert!(matches!(
+            sk.create_ph_signer::<SHAKE128>(&mut DefaultRNG::default(), None),
+            Err(SignatureError::PreHashTooWeak)
+        ));
+        assert!(matches!(
+            pk.create_ph_verifier::<SHAKE128>(None),
+            Err(SignatureError::PreHashTooWeak)
+        ));
+
+        // The signature is Algorithm 4's: M' = 0x01 || |ctx| || ctx || OID || SHAKE128(M, 256)
+        // (line 23, with the OID's DER bytes as line 18 prints them) and mu = H(tr || M', 64)
+        // (Algorithm 7 line 6), checked through the external-mu path.
+        let (pk, sk) = MLDSA44::keygen(&mut DefaultRNG::default()).unwrap();
+        let (msg, ctx) = (b"pre-hashed with SHAKE128".as_slice(), b"ctx".as_slice());
+        let ph: [u8; 32] = SHAKE128::hash(msg).try_into().unwrap();
+        let mut tr_m_prime = pk.compute_tr().to_vec();
+        tr_m_prime.extend_from_slice(&[0x01, ctx.len() as u8]);
+        tr_m_prime.extend_from_slice(ctx);
+        tr_m_prime
+            .extend_from_slice(&[0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x0B]);
+        tr_m_prime.extend_from_slice(&ph);
+        let mu: [u8; 64] = SHAKE256::hash(&tr_m_prime).try_into().unwrap();
+        let by_mu: [u8; MLDSA44_SIG_LEN] = sk.sign_mu_deterministic(&mu).unwrap();
+        assert_eq!(sk.sign_ph_deterministic::<SHAKE128>(&ph, Some(ctx)).unwrap(), by_mu);
+        pk.verify_ph::<SHAKE128>(&ph, Some(ctx), &by_mu).unwrap();
     }
 }
