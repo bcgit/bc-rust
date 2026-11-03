@@ -565,7 +565,7 @@ impl<P: MLDSAParams> MLDSA<P> {
             || seed.key_len() != 32
         {
             return Err(SignatureError::KeyGenError(
-                "Seed must be 32 bytes and KeyType::Seed or KeyType::BytesFullEntropy.",
+                "Seed must be 32 bytes and KeyType::Seed or KeyType::CryptographicRandom.",
             ));
         }
 
@@ -589,8 +589,8 @@ impl<P: MLDSAParams> MLDSA<P> {
             let mut h = h.into_squeezer();
             let bytes_written = h.do_output_out(&mut rho);
             debug_assert_eq!(bytes_written, 32);
-            let mut rho_prime: [u8; 64] = [0u8; 64];
-            let bytes_written = h.do_output_out(&mut rho_prime);
+            let mut rho_prime: Secret<[u8; 64]> = Secret::new();
+            let bytes_written = h.do_output_out(&mut *rho_prime);
             debug_assert_eq!(bytes_written, 64);
             let bytes_written = h.do_output_out(&mut *K);
             debug_assert_eq!(bytes_written, 32);
@@ -681,16 +681,16 @@ pub(crate) fn sign_internal<
     // 6: 𝜇 ← H(BytesToBits(𝑡𝑟)||𝑀 ′, 64)
     // skip: mu has already been provided
 
-    let mut rho_p_p: [u8; 64] = {
+    let rho_p_p: Secret<[u8; 64]> = {
         // scope for h
         // 7: 𝜌″ ← H(𝐾||𝑟𝑛𝑑||𝜇, 64)
         let mut h = H::new();
         h.do_update(&**sk.K());
         h.do_update(&rnd);
         h.do_update(mu);
-        let mut rho_p_p = [0u8; 64];
+        let mut rho_p_p: Secret<[u8; 64]> = Secret::new();
         let mut h = h.into_squeezer();
-        h.do_output_out(&mut rho_p_p);
+        h.do_output_out(&mut *rho_p_p);
 
         rho_p_p
     };
@@ -833,9 +833,6 @@ pub(crate) fn sign_internal<
         break;
     }
 
-    // zeroize rho_p_p before returning it to the OS
-    rho_p_p.fill(0u8);
-
     // sig_encode does not necessarily write to all bytes of the output, so just to be safe:
     output.fill(0u8);
 
@@ -866,7 +863,7 @@ pub(crate) fn verify_internal<
     //  ▷ signer’s commitment hash c_tilde, response 𝐳, and hint 𝐡
     // 3: if 𝐡 = ⊥ then return false
     let (c_tilde, z, h) =
-        sig_decode::<P, SIG_LEN>(sig).map_err(|_| SignatureError::SignatureVerificationFailed)?;
+        sig_decode::<P, SIG_LEN>(sig).ok_or(SignatureError::SignatureVerificationFailed)?;
 
     // 13 (first half) return [[ ||𝐳||∞ < 𝛾1 − 𝛽]]
     if z.check_norm(P::gamma1_minus_beta) {
@@ -976,7 +973,7 @@ impl<P: MLDSAParams> MLDSATrait<P> for MLDSA<P> {
     ) -> Result<(), SignatureError> {
         // This is maybe a computationally heavy way to compare them, but it works
         let derived_pk = sk.derive_pk();
-        if derived_pk.compute_tr() == pk.compute_tr() {
+        if bouncycastle_utils::ct::ct_eq_bytes(&derived_pk.compute_tr(), &pk.compute_tr()) {
             Ok(())
         } else {
             Err(SignatureError::ConsistencyCheckFailed)

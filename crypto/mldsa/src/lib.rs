@@ -120,13 +120,23 @@
 //! One caveat: `ctx` can still be security-relevant at the protocol level (domain separation, replay and
 //! cross-protocol binding), so choosing it incorrectly can weaken those properties.
 //!
+//! ## When signing fails
+//!
+//! FIPS 204 Section 6.2 lets an implementation bound the rejection-sampling loop, and this one
+//! does, at 1000·k iterations. Reaching it has negligible probability; when it happens, signing
+//! returns [`SignatureError::RejectionLimitExceeded`] and writes nothing. The hedged variant
+//! succeeds on a retry with fresh randomness; the deterministic one fails the same way again.
+//!
+//! [`SignatureError::RejectionLimitExceeded`]: bouncycastle_core::errors::SignatureError::RejectionLimitExceeded
+//!
 //! ## What is zeroized
 //!
 //! FIPS 204 Section 3.6.3 asks that "any potentially sensitive intermediate data is destroyed as
 //! soon as it is no longer needed". Here the private key's `K`, `s1_hat` and `s2_hat` are `Secret`
-//! and the seed is `KeyMaterial`, both wiped on drop, and the signing randomizer `rho''` is zeroized
-//! by hand when signing finishes. The per-signature vectors `y`, `w`, `cs1`, `cs2`, `ct0` and `r0`
-//! are plain stack values that are not wiped when their scope ends.
+//! and the seed is `KeyMaterial`, and the key-generation seed `rho'` and the signing randomizer
+//! `rho''` are `Secret`, all wiped on drop, on the error paths included. The per-signature vectors
+//! `y`, `w`, `cs1`, `cs2`, `ct0` and `r0`, and the polynomials and buffer `sk_encode_out` packs
+//! through, are plain stack values that are not wiped when their scope ends.
 
 #![no_std]
 #![forbid(unsafe_code)]

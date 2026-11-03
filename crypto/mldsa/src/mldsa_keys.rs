@@ -611,6 +611,10 @@ pub trait MLDSAPrivateKeyTrait<P: MLDSAParams>: Sized + SignMuWithRnd<P> {
     /// signature it verifies with a standard ML-DSA verifier, which need not know how `mu` was
     /// made. The hedged variant: `rnd` is drawn from `rng`.
     ///
+    /// # Errors
+    /// [`SignatureError::RejectionLimitExceeded`] if the bounded rejection loop (FIPS 204
+    /// Section 6.2) runs out, which has negligible probability; nothing is written.
+    ///
     /// [`SigningKey::create_signer`]: bouncycastle_core::signature_key::SigningKey::create_signer
     fn sign_mu<const SIG_LEN: usize>(
         &self,

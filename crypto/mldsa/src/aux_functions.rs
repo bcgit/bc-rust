@@ -70,7 +70,7 @@ pub(crate) type DecodedSig<P> =
 ///   Output: (c_tilde, z, h)
 pub(crate) fn sig_decode<P: MLDSAParams, const SIG_LEN: usize>(
     sig: &[u8; SIG_LEN],
-) -> Result<DecodedSig<P>, ()> {
+) -> Option<DecodedSig<P>> {
     debug_assert_eq!(SIG_LEN, P::SIG_LEN);
     let mut c_tilde = <P::SigCTilde as ZeroizablePrimitive>::ZEROED;
     let mut z = P::VecL::new();
@@ -101,7 +101,7 @@ pub(crate) fn sig_decode<P: MLDSAParams, const SIG_LEN: usize>(
         if sig[pos + (P::omega as usize) + i] < (idx as u8)
             || sig[pos + (P::omega as usize) + i] > P::omega as u8
         {
-            return Err(());
+            return None;
         }
 
         // 6: First ← Index
@@ -112,7 +112,7 @@ pub(crate) fn sig_decode<P: MLDSAParams, const SIG_LEN: usize>(
             // 9:   if 𝑦[Index − 1] ≥ 𝑦[Index] then return ⊥
             //       ▷ malformed input
             if j > idx && sig[pos + j - 1] >= sig[pos + j] {
-                return Err(());
+                return None;
             }
             // 12: 𝐡[𝑖]_𝑦[Index] ← 1
             h.elems_mut()[i][sig[pos + j] as usize] = 1;
@@ -127,11 +127,11 @@ pub(crate) fn sig_decode<P: MLDSAParams, const SIG_LEN: usize>(
     // ▷ read any leftover bytes in the first 𝜔 bytes of 𝑦 for malformed (nonzero) bytes
     for j in idx..P::omega as usize {
         if sig[pos + j] != 0 {
-            return Err(());
+            return None;
         }
     }
 
-    Ok((c_tilde, z, h))
+    Some((c_tilde, z, h))
 }
 
 /// Algorithm 32 ExpandA(𝜌)
