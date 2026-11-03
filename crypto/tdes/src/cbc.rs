@@ -1,27 +1,5 @@
 //! Type aliases for TDES in CBC mode (NIST SP 800-38A Sec 6.2; "TCBC" in SP 800-38A Appendix E),
-//! with padding.
-//!
-//! See `bouncycastle_cipher::modes::cbc` for the construction. The aliases name the padded
-//! workers, which accept input of any size; `NoPadding` accepts only whole blocks but goes through
-//! the same adapter. The workers come from a key: [`TDES3Key<CBC<PKCS7>>`](crate::TDES3Key) (or
-//! `CBC<NoPadding>`) hands them out through the [`SymmetricEncryptionKey`] /
-//! [`SymmetricDecryptionKey`] pair, `TDES3Key<CBC<Blocks>>` hands out the unpadded `Cbc` itself
-//! through the block pair, and [`TDES2Key`](crate::TDES2Key) hands out the decryptor alone.
-//!
-//! # Why the padding is part of the key
-//!
-//! CBC is defined only on whole blocks (SP 800-38A Sec 5.2), and the recommendation puts the
-//! formatting of anything else outside its scope (Appendix A). So CBC on real data is always CBC
-//! *plus a padding scheme*, and the scheme is not an implementation detail: it changes the
-//! ciphertext, and both ends must agree on it. Naming it in the key's mode makes that choice
-//! explicit at every use, and makes a mismatched pair a compile error rather than a decryption
-//! that returns plausible-looking rubbish.
-//!
-//! The two schemes `bouncycastle_cipher::padding` provides are [`PKCS7`], which is what almost
-//! everyone means by "padded CBC" (RFC 5652 s. 6.3; Java's `DESede/CBC/PKCS5Padding`), and
-//! [`NoPadding`], which adds nothing and instead *rejects* a message that is not a whole number
-//! of blocks -- useful for formats already defined on block boundaries, where silently padding
-//! would be wrong.
+//! with padding. The docs are on [`TDES_CBC`], which the crate root re-exports.
 
 use crate::BLOCK_LEN;
 use crate::hazmat::{TDES2Internal, TDESInternal};
@@ -116,6 +94,28 @@ use bouncycastle_core::symmetric_key::{SymmetricDecryptionKey, SymmetricEncrypti
 /// let (enc, _iv) = key.create_encryptor(&mut HashDRBG_SHA512::new_from_os()).unwrap();
 /// let _mismatched: TDES_CBC<Encrypting, PKCS7> = enc;
 /// ```
+///
+/// See `bouncycastle_cipher::modes::cbc` for the construction. The aliases name the padded
+/// workers, which accept input of any size; `NoPadding` accepts only whole blocks but goes through
+/// the same adapter. The workers come from a key: [`TDES3Key<CBC<PKCS7>>`](crate::TDES3Key) (or
+/// `CBC<NoPadding>`) hands them out through the [`SymmetricEncryptionKey`] /
+/// [`SymmetricDecryptionKey`] pair, `TDES3Key<CBC<Blocks>>` hands out the unpadded `Cbc` itself
+/// through the block pair, and [`TDES2Key`](crate::TDES2Key) hands out the decryptor alone.
+///
+/// # Why the padding is part of the key
+///
+/// CBC is defined only on whole blocks (SP 800-38A Sec 5.2), and the recommendation puts the
+/// formatting of anything else outside its scope (Appendix A). So CBC on real data is always CBC
+/// *plus a padding scheme*, and the scheme is not an implementation detail: it changes the
+/// ciphertext, and both ends must agree on it. Naming it in the key's mode makes that choice
+/// explicit at every use, and makes a mismatched pair a compile error rather than a decryption
+/// that returns plausible-looking rubbish.
+///
+/// The two schemes `bouncycastle_cipher::padding` provides are [`PKCS7`], which is what almost
+/// everyone means by "padded CBC" (RFC 5652 s. 6.3; Java's `DESede/CBC/PKCS5Padding`), and
+/// [`NoPadding`], which adds nothing and instead *rejects* a message that is not a whole number
+/// of blocks -- useful for formats already defined on block boundaries, where silently padding
+/// would be wrong.
 #[allow(non_camel_case_types)]
 pub type TDES_CBC<'k, Dir, Pad> = <Dir as Direction>::Select<
     PaddedBlockCipherEncryptor<

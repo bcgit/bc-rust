@@ -10,15 +10,17 @@ use bouncycastle_core::hazmat::{BlockPermutation, EcbDecryptionKey, ElectronicCo
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::symmetric_key::{
-    BlockDecryptionKey, FromKeyMaterial, SymmetricDecryptionKey,
+    BlockDecryptionKey, FromKeyMaterial, SymmetricDecryptionKey, SymmetricEncryptionKey,
 };
-use bouncycastle_core::traits::{BlockCipherDecryptor, StreamCipherDecryptor};
+use bouncycastle_core::traits::{
+    BlockCipherDecryptor, StreamCipherDecryptor, StreamCipherEncryptor,
+};
 use bouncycastle_core_test_framework::block_cipher::TestFrameworkBlockCipher;
 use bouncycastle_core_test_framework::from_key_material::TestFrameworkFromKeyMaterial;
 use bouncycastle_core_test_framework::symmetric_ciphers::{
     TestFrameworkStreamCipher, TestFrameworkSymmetricCipher,
 };
-use bouncycastle_rng::HashDRBG_SHA512;
+use bouncycastle_rng::{FixedSeedRNG, HashDRBG_SHA512};
 use bouncycastle_tdes::hazmat::{TDES2Internal, TDESInternal};
 use bouncycastle_tdes::{BLOCK_LEN, CTR_NONCE_LEN, KEY_LEN, KEY_LEN_2KEY, TDES2Key, TDES3Key};
 
@@ -224,4 +226,25 @@ fn a_mac_mode_key_refuses_every_material_consistently() {
     refused(Mac2::from_key_material(&material::<KEY_LEN_2KEY>()));
     refused(Mac2::from_key_material(&mac_material::<KEY_LEN_2KEY>()));
     refused(Mac2::generate(&mut rng()));
+}
+
+/// The counter limit, through a key: under `CTR<7, 8>` the counter is one byte, so the 256th
+/// block is the last the mode will produce, and the byte after it is refused rather than
+/// repeating the keystream (`bouncycastle_cipher::modes::Ctr`'s rule, pinned here on a TDES key
+/// so that the key-object path reaches it).
+#[test]
+fn a_ctr_key_refuses_the_byte_after_the_counter_wraps() {
+    let key = key3::<CTR<7, BLOCK_LEN>>();
+    let nonce = [0x5au8; 7];
+    let (mut enc, got) = key.create_encryptor(&mut FixedSeedRNG::new(nonce)).unwrap();
+    assert_eq!(got, nonce);
+
+    let mut data = vec![0u8; 256 * BLOCK_LEN];
+    enc.do_encrypt_inplace(&mut data).expect("256 blocks fill a one-byte counter exactly");
+
+    let mut one = [0u8; 1];
+    assert!(
+        matches!(enc.do_encrypt_inplace(&mut one), Err(SymmetricCipherError::DataLimitExceeded)),
+        "the 2049th byte must be refused, not encrypted under a repeated counter block"
+    );
 }

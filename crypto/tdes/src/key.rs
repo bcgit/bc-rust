@@ -1,18 +1,6 @@
 //! The TDEA key objects: a key bundle checked and expanded once, under a mode, handing out that
-//! mode's workers through the role traits.
-//!
-//! [`TDESKey<P, M>`] is generic over the engine `P` -- the three-key [`TDESInternal`] or the
-//! decryption-only two-key [`TDES2Internal`] -- and the mode `M`, exactly as `AESKey<P, M>` is in
-//! `bouncycastle-aes`. [`TDES3Key<M>`] and [`TDES2Key<M>`] name the two engines. The key holds
-//! the mode's key state (for every TDEA mode, the keyed permutation itself) and its workers borrow
-//! it, so `create_encryptor` and `create_decryptor` copy no schedule.
-//!
-//! Which roles a key carries is decided by its mode: `CBC<Blocks>` puts it on the block role pair,
-//! `CBC<PKCS7>` on the symmetric pair, `ECB<Blocks>` on the ECB pair under `hazmat`, and `CFB`,
-//! `CFB8` and `CTR<6, 8>` on the symmetric pair with stream-cipher workers. A `TDES2Key` carries
-//! the same roles, but every encrypting worker over it is a compile error at the call site: the
-//! modes check [`ElectronicCodeBook::ENCRYPTION_APPROVED`] when they make one, and two-key TDEA
-//! is disallowed for encryption. See [`TDES2Internal`].
+//! mode's workers through the role traits. The docs are on [`TDESKey`], which the crate root
+//! re-exports.
 
 use crate::hazmat::{TDES2Internal, TDESInternal};
 use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
@@ -47,6 +35,19 @@ impl TDESEngine for TDES2Internal {}
 /// pass (the key type, length and strength of the material, then the distinct-component and
 /// weak-key rules of SP 800-67r2 Sec 3.1 and 3.3.2, as [`TDESInternal::new`] documents) and
 /// expands the schedules. Every worker the key hands out afterwards borrows the result.
+///
+/// [`TDESKey<P, M>`] is generic over the engine `P` -- the three-key [`TDESInternal`] or the
+/// decryption-only two-key [`TDES2Internal`] -- and the mode `M`, exactly as `AESKey<P, M>` is in
+/// `bouncycastle-aes`. [`TDES3Key<M>`] and [`TDES2Key<M>`] name the two engines. The key holds
+/// the mode's key state (for every TDEA mode, the keyed permutation itself) and its workers borrow
+/// it, so `create_encryptor` and `create_decryptor` copy no schedule.
+///
+/// Which roles a key carries is decided by its mode: `CBC<Blocks>` puts it on the block role pair,
+/// `CBC<PKCS7>` on the symmetric pair, `ECB<Blocks>` on the ECB pair under `hazmat`, and `CFB`,
+/// `CFB8` and `CTR<6, 8>` on the symmetric pair with stream-cipher workers. A `TDES2Key` carries
+/// the same roles, but every encrypting worker over it is a compile error at the call site: the
+/// modes check [`ElectronicCodeBook::ENCRYPTION_APPROVED`] when they make one, and two-key TDEA
+/// is disallowed for encryption. See [`TDES2Internal`].
 pub struct TDESKey<P: TDESEngine, M: Mode<P>> {
     state: M::KeyState,
 }

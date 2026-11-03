@@ -1,16 +1,5 @@
-//! Type aliases for TDES in CFB mode (NIST SP 800-38A Sec 6.3), full-block segment.
-//!
-//! See `bouncycastle_cipher::modes::cfb` for the construction. The aliases are stream ciphers:
-//! the data is a `&mut [u8]` of any length, encrypted or decrypted in place. They come from a key,
-//! [`TDES3Key<CFB>`](crate::TDES3Key), through the [`SymmetricEncryptionKey`] /
-//! [`SymmetricDecryptionKey`] pair; the IV is one block (8 bytes), drawn from the caller's RNG by
-//! encryption and returned, and there is no API for supplying one.
-//!
-//! The segment size is the full block, so this is **CFB64** -- the `s = 64` case of the TCFB mode
-//! that SP 800-38A Appendix E says is "equivalent to the CFB mode in this recommendation, with the
-//! TDEA as the underlying block cipher". SP 800-38A's `s = 8` variant is a different,
-//! non-interoperable mode with its own alias, [`TDES_CFB8`](crate::TDES_CFB8); `s = 1` is not
-//! implemented. See the `bouncycastle_cipher::modes::Cfb` docs.
+//! Type aliases for TDES in CFB mode (NIST SP 800-38A Sec 6.3), full-block segment. The docs are on
+//! [`TDES_CFB`], which the crate root re-exports.
 
 use crate::BLOCK_LEN;
 use crate::hazmat::{TDES2Internal, TDESInternal};
@@ -62,6 +51,18 @@ use bouncycastle_core::symmetric_key::{SymmetricDecryptionKey, SymmetricEncrypti
 /// assert_eq!(first, [0u8; 5]);
 /// assert_eq!(rest, [1u8; 30]);
 /// ```
+///
+/// See `bouncycastle_cipher::modes::cfb` for the construction. The aliases are stream ciphers:
+/// the data is a `&mut [u8]` of any length, encrypted or decrypted in place. They come from a key,
+/// [`TDES3Key<CFB>`](crate::TDES3Key), through the [`SymmetricEncryptionKey`] /
+/// [`SymmetricDecryptionKey`] pair; the IV is one block (8 bytes), drawn from the caller's RNG by
+/// encryption and returned, and there is no API for supplying one.
+///
+/// The segment size is the full block, so this is **CFB64** -- the `s = 64` case of the TCFB mode
+/// that SP 800-38A Appendix E says is "equivalent to the CFB mode in this recommendation, with the
+/// TDEA as the underlying block cipher". SP 800-38A's `s = 8` variant is a different,
+/// non-interoperable mode with its own alias, [`TDES_CFB8`](crate::TDES_CFB8); `s = 1` is not
+/// implemented. See the `bouncycastle_cipher::modes::Cfb` docs.
 #[allow(non_camel_case_types)]
 pub type TDES_CFB<'k, Dir> = Cfb<'k, TDESInternal, Dir, BLOCK_LEN>;
 

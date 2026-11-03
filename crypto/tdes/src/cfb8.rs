@@ -1,14 +1,5 @@
-//! Type aliases for TDES in CFB8 mode (NIST SP 800-38A Sec 6.3, `s = 8`).
-//!
-//! See `bouncycastle_cipher::modes::cfb8` for the construction. The aliases are stream ciphers
-//! with a one-byte segment, and come from a key, [`TDES3Key<CFB8>`](crate::TDES3Key), through the
-//! [`SymmetricEncryptionKey`] / [`SymmetricDecryptionKey`] pair; the IV is one block (8 bytes),
-//! drawn from the caller's RNG by encryption and returned.
-//!
-//! CFB8 is a **different, non-interoperable mode** from CFB64, not a variant of it: their
-//! ciphertexts differ from the second byte, and it costs a full TDES call per byte, eight times
-//! the work of [`TDES_CFB`](crate::TDES_CFB). It is the `s = 8` case of the TCFB mode of SP 800-38A
-//! Appendix E. See the `bouncycastle_cipher::modes::Cfb8` docs for when that is the right trade.
+//! Type aliases for TDES in CFB8 mode (NIST SP 800-38A Sec 6.3, `s = 8`). The docs are on
+//! [`TDES_CFB8`], which the crate root re-exports.
 
 use crate::BLOCK_LEN;
 use crate::hazmat::{TDES2Internal, TDESInternal};
@@ -55,6 +46,16 @@ use bouncycastle_core::symmetric_key::{SymmetricDecryptionKey, SymmetricEncrypti
 /// cfb64_key.decrypt_inplace(&iv, &mut as_cfb64).unwrap();
 /// assert_ne!(as_cfb64, message);
 /// ```
+///
+/// See `bouncycastle_cipher::modes::cfb8` for the construction. The aliases are stream ciphers
+/// with a one-byte segment, and come from a key, [`TDES3Key<CFB8>`](crate::TDES3Key), through the
+/// [`SymmetricEncryptionKey`] / [`SymmetricDecryptionKey`] pair; the IV is one block (8 bytes),
+/// drawn from the caller's RNG by encryption and returned.
+///
+/// CFB8 is a **different, non-interoperable mode** from CFB64, not a variant of it: their
+/// ciphertexts differ from the second byte, and it costs a full TDES call per byte, eight times
+/// the work of [`TDES_CFB`](crate::TDES_CFB). It is the `s = 8` case of the TCFB mode of SP 800-38A
+/// Appendix E. See the `bouncycastle_cipher::modes::Cfb8` docs for when that is the right trade.
 #[allow(non_camel_case_types)]
 pub type TDES_CFB8<'k, Dir> = Cfb8<'k, TDESInternal, Dir, BLOCK_LEN>;
 

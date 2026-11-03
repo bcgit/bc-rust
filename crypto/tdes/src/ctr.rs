@@ -1,36 +1,5 @@
-//! Type aliases for TDES in CTR mode (NIST SP 800-38A Sec 6.5).
-//!
-//! See `bouncycastle_cipher::modes::ctr` for the construction. The aliases are stream ciphers:
-//! the data is a `&mut [u8]` of any length, encrypted or decrypted in place since the ciphertext
-//! is exactly as long as the plaintext. They come from a key,
-//! [`TDES3Key<CTR<CTR_NONCE_LEN, BLOCK_LEN>>`](crate::TDES3Key), through the
-//! [`SymmetricEncryptionKey`] / [`SymmetricDecryptionKey`] pair; the nonce is drawn from the
-//! caller's RNG by encryption and returned, and there is no API for supplying one. `CTR`'s
-//! defaults are AES's 12-byte nonce on a 16-byte block, so both parameters must be spelled out
-//! for TDEA.
-//!
-//! SP 800-38A Appendix E: "the Triple DES algorithm, i.e., TDEA, as described above, may be used
-//! as the underlying block cipher algorithm for the six modes in this recommendation. One of the
-//! resulting modes of Triple DES is new, i.e., not specified in ANSI X9.52: the CTR mode of the
-//! TDEA."
-//!
-//! # The nonce is 6 bytes, so the counter is 2
-//!
-//! `Ctr` splits the 8-byte counter block into a nonce and a counter by the length of its init
-//! data. A 64-bit block leaves very little room, and the split is a trade between two limits:
-//!
-//! * The counter bounds one message. Two bytes is 65 536 blocks, 512 KiB, after which the mode
-//!   errors rather than repeat a counter block.
-//! * The nonce is random (Appendix B.2), so two messages under one key bundle collide with
-//!   probability about `n^2 / 2^(8 * nonce_len + 1)` after `n` messages. A collision repeats the
-//!   keystream, which is fatal for CTR.
-//!
-//! SP 800-67r2 Sec 3.4 caps a key bundle at `2^20` blocks in total, so at most `2^20` messages can
-//! ever be encrypted under one bundle, and 512 KiB per message is one sixteenth of the bundle's
-//! whole budget. Against that, the collision probability over a bundle's lifetime is at most about
-//! `2^-9` with a 6-byte nonce, `2^-1` with 5 bytes, and a certainty with 4. Six is the widest nonce
-//! whose counter can still reach a useful message size, and it is what [`CTR_NONCE_LEN`] chooses.
-//! Name `CTR<N, 8>` with another `N` as the key's mode for a different split.
+//! Type aliases for TDES in CTR mode (NIST SP 800-38A Sec 6.5). The docs are on [`TDES_CTR`], which
+//! the crate root re-exports.
 
 use crate::BLOCK_LEN;
 use crate::hazmat::{TDES2Internal, TDESInternal};
@@ -90,6 +59,38 @@ pub const CTR_NONCE_LEN: usize = 6;
 /// assert_eq!(first, [0u8; 5]);
 /// assert_eq!(rest, [1u8; 30]);
 /// ```
+///
+/// See `bouncycastle_cipher::modes::ctr` for the construction. The aliases are stream ciphers:
+/// the data is a `&mut [u8]` of any length, encrypted or decrypted in place since the ciphertext
+/// is exactly as long as the plaintext. They come from a key,
+/// [`TDES3Key<CTR<CTR_NONCE_LEN, BLOCK_LEN>>`](crate::TDES3Key), through the
+/// [`SymmetricEncryptionKey`] / [`SymmetricDecryptionKey`] pair; the nonce is drawn from the
+/// caller's RNG by encryption and returned, and there is no API for supplying one. `CTR`'s
+/// defaults are AES's 12-byte nonce on a 16-byte block, so both parameters must be spelled out
+/// for TDEA.
+///
+/// SP 800-38A Appendix E: "the Triple DES algorithm, i.e., TDEA, as described above, may be used
+/// as the underlying block cipher algorithm for the six modes in this recommendation. One of the
+/// resulting modes of Triple DES is new, i.e., not specified in ANSI X9.52: the CTR mode of the
+/// TDEA."
+///
+/// # The nonce is 6 bytes, so the counter is 2
+///
+/// `Ctr` splits the 8-byte counter block into a nonce and a counter by the length of its init
+/// data. A 64-bit block leaves very little room, and the split is a trade between two limits:
+///
+/// * The counter bounds one message. Two bytes is 65 536 blocks, 512 KiB, after which the mode
+///   errors rather than repeat a counter block.
+/// * The nonce is random (Appendix B.2), so two messages under one key bundle collide with
+///   probability about `n^2 / 2^(8 * nonce_len + 1)` after `n` messages. A collision repeats the
+///   keystream, which is fatal for CTR.
+///
+/// SP 800-67r2 Sec 3.4 caps a key bundle at `2^20` blocks in total, so at most `2^20` messages can
+/// ever be encrypted under one bundle, and 512 KiB per message is one sixteenth of the bundle's
+/// whole budget. Against that, the collision probability over a bundle's lifetime is at most about
+/// `2^-9` with a 6-byte nonce, `2^-1` with 5 bytes, and a certainty with 4. Six is the widest nonce
+/// whose counter can still reach a useful message size, and it is what [`CTR_NONCE_LEN`] chooses.
+/// Name `CTR<N, 8>` with another `N` as the key's mode for a different split.
 #[allow(non_camel_case_types)]
 pub type TDES_CTR<'k, Dir> = Ctr<'k, TDESInternal, Dir, BLOCK_LEN, CTR_NONCE_LEN>;
 
