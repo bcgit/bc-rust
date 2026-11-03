@@ -48,7 +48,7 @@ pub(crate) fn sm2_cmd(
 ) {
     match action {
         SM2Action::Keygen => {
-            let (_pk, sk) = keygen().unwrap();
+            let (_pk, sk) = keygen(&mut HashDRBG_SHA512::new_from_os()).unwrap();
             write_bytes_or_hex(&sk.encode(), output_hex);
         }
         SM2Action::PkFromSk => {

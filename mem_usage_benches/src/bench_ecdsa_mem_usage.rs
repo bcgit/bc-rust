@@ -127,7 +127,7 @@ fn bench_do_nothing() {
 fn bench_p256_keygen() {
     eprintln!("ECDSA P-256/KeyGen");
 
-    let (pk, _sk) = keys_p256::keygen().unwrap();
+    let (pk, _sk) = keys_p256::keygen(&mut DefaultRNG::default()).unwrap();
     println!("{:x?}", pk.encode());
 }
 
@@ -176,7 +176,7 @@ fn bench_p256_verify() {
 fn bench_p384_keygen() {
     eprintln!("ECDSA P-384/KeyGen");
 
-    let (pk, _sk) = keys_p384::keygen().unwrap();
+    let (pk, _sk) = keys_p384::keygen(&mut DefaultRNG::default()).unwrap();
     println!("{:x?}", pk.encode());
 }
 
@@ -221,7 +221,7 @@ fn bench_p384_verify() {
 fn bench_p521_keygen() {
     eprintln!("ECDSA P-521/KeyGen");
 
-    let (pk, _sk) = keys_p521::keygen().unwrap();
+    let (pk, _sk) = keys_p521::keygen(&mut DefaultRNG::default()).unwrap();
     println!("{:x?}", pk.encode());
 }
 
@@ -266,7 +266,7 @@ fn bench_p521_verify() {
 fn bench_secp256k1_keygen() {
     eprintln!("ECDSA secp256k1/KeyGen");
 
-    let (pk, _sk) = keys_p256k1::keygen().unwrap();
+    let (pk, _sk) = keys_p256k1::keygen(&mut DefaultRNG::default()).unwrap();
     println!("{:x?}", pk.encode());
 }
 
@@ -311,7 +311,7 @@ fn bench_secp256k1_verify() {
 fn bench_bp256r1_keygen() {
     eprintln!("ECDSA brainpoolP256r1/KeyGen");
 
-    let (pk, _sk) = keys_bp256r1::keygen().unwrap();
+    let (pk, _sk) = keys_bp256r1::keygen(&mut DefaultRNG::default()).unwrap();
     println!("{:x?}", pk.encode());
 }
 
@@ -356,7 +356,7 @@ fn bench_bp256r1_verify() {
 fn bench_bp384r1_keygen() {
     eprintln!("ECDSA brainpoolP384r1/KeyGen");
 
-    let (pk, _sk) = keys_bp384r1::keygen().unwrap();
+    let (pk, _sk) = keys_bp384r1::keygen(&mut DefaultRNG::default()).unwrap();
     println!("{:x?}", pk.encode());
 }
 
@@ -401,7 +401,7 @@ fn bench_bp384r1_verify() {
 fn bench_bp512r1_keygen() {
     eprintln!("ECDSA brainpoolP512r1/KeyGen");
 
-    let (pk, _sk) = keys_bp512r1::keygen().unwrap();
+    let (pk, _sk) = keys_bp512r1::keygen(&mut DefaultRNG::default()).unwrap();
     println!("{:x?}", pk.encode());
 }
 

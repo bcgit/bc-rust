@@ -21,7 +21,6 @@ use bouncycastle_ec::p384::P384FieldElement;
 use bouncycastle_ec::p384_comb::comb_multiply_base_point;
 use bouncycastle_ec::p384_scalar::{N_LIMBS, P384Scalar};
 use bouncycastle_ec::p384_sec1;
-use bouncycastle_rng::DefaultRNG;
 use bouncycastle_utils::secret::Secret;
 use core::fmt;
 use core::fmt::{Debug, Display, Formatter};
@@ -53,7 +52,7 @@ impl DerivePublicKey<ECDSAP384PublicKey, PK_LEN> for ECDSAP384PrivateKey {
     fn derive_pk(&self) -> ECDSAP384PublicKey {
         let q = comb_multiply_base_point(&self.0);
         // d is in [1, n-1] by construction (every ECDSAP384PrivateKey is built that way; see
-        // from_bytes and keygen_from_rng) and G has prime order n, so [d]G is never the identity.
+        // from_bytes and keygen) and G has prime order n, so [d]G is never the identity.
         let (x, y) = q.to_affine().expect("[d]G is never infinity for d in [1, n-1]");
         ECDSAP384PublicKey { x, y }
     }
@@ -125,18 +124,12 @@ impl Display for ECDSAP384PublicKey {
     }
 }
 
-/// FIPS 186-5 Appendix A.2.1: generates an ECDSA P-384 key pair, sourcing the DRBG output from the
-/// library's default OS-backed RNG.
-pub fn keygen() -> Result<(ECDSAP384PublicKey, ECDSAP384PrivateKey), SignatureError> {
-    keygen_from_rng(&mut DefaultRNG::default())
-}
-
 /// As [`keygen`], but sources the DRBG output from the caller-provided RNG, which must
 /// offer a security strength of at least 192 bits: FIPS 186-5 Appendix A.2.1 step 3 requires
 /// a DRBG whose security strength is "not less than" the one SP 800-57 Part 1 Rev. 5's
 /// Table 2 associates with P-384's 384-bit order (`f = 384-511` in that table's ECC column, giving
 /// 192-bit security).
-pub fn keygen_from_rng(
+pub fn keygen(
     rng: &mut dyn RNG,
 ) -> Result<(ECDSAP384PublicKey, ECDSAP384PrivateKey), SignatureError> {
     // FIPS 186-5 Appendix A.2.1 step 3: the DRBG must offer at least the security
@@ -153,7 +146,7 @@ pub fn keygen_from_rng(
 
     let q = comb_multiply_base_point(&d);
     // d is in [1, n-1] by construction and G has prime order n (cofactor h = 1), so [d]G is never
-    // the identity for any valid d -- see crate::keys_p256::keygen_from_rng's identical argument.
+    // the identity for any valid d -- see crate::keys_p256::keygen's identical argument.
     let (x, y) = q.to_affine().expect("[d]G is never infinity for d in [1, n-1]");
 
     Ok((ECDSAP384PublicKey { x, y }, ECDSAP384PrivateKey(d)))

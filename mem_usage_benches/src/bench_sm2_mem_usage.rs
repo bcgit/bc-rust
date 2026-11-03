@@ -59,7 +59,7 @@ fn bench_do_nothing() {
 fn bench_sm2_keygen() {
     eprintln!("SM2/KeyGen");
 
-    let (pk, _sk) = keygen().unwrap();
+    let (pk, _sk) = keygen(&mut DefaultRNG::default()).unwrap();
     println!("{:x?}", pk.encode());
 }
 

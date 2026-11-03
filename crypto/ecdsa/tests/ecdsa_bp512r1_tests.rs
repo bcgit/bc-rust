@@ -1,20 +1,19 @@
 //! Behavioural tests for [`ECDSABp512r1`], mirroring `ecdsa_p256_tests.rs`.
 
 use bouncycastle_core::errors::SignatureError;
-use bouncycastle_core::traits::{
-    RNG, SignaturePrivateKey, SignaturePublicKey, SignatureVerifier, Signer,
-};
+use bouncycastle_core::signature_key::{DeterministicSigningKey, SigningKey, VerifyingKey};
+use bouncycastle_core::traits::{RNG, SignaturePrivateKey, SignaturePublicKey};
 use bouncycastle_core_test_framework::signature::{
     TestFrameworkSignature, TestFrameworkSignatureKeys,
 };
-use bouncycastle_ecdsa::ecdsa_bp512r1::{ECDSABp512r1, ECDetDSABp512r1};
+use bouncycastle_ecdsa::ecdsa_bp512r1::ECDSABp512r1;
 use bouncycastle_ecdsa::keys_bp512r1::{ECDSABp512r1PrivateKey, ECDSABp512r1PublicKey, keygen};
 use bouncycastle_ecdsa::keys_common::DerivePublicKey;
 use bouncycastle_rng::DefaultRNG;
 
 #[test]
 fn derive_pk_matches_keygen() {
-    let (pk, sk) = keygen().unwrap();
+    let (pk, sk) = keygen(&mut DefaultRNG::default()).unwrap();
     assert_eq!(sk.derive_pk(), pk);
 }
 
@@ -23,20 +22,20 @@ fn derive_pk_matches_keygen() {
 /// the [`Signer`]/[`SignatureVerifier`] traits offer.
 #[test]
 fn conformance_suite() {
-    let framework = TestFrameworkSignature::new(false, false);
-    framework.test_signature::<ECDSABp512r1PublicKey, ECDSABp512r1PrivateKey, ECDSABp512r1, ECDSABp512r1, 129, 64, 128>(
-        keygen,
+    let framework = TestFrameworkSignature::new(false);
+    framework.test_signature::<ECDSABp512r1, ECDSABp512r1PublicKey, ECDSABp512r1PrivateKey, 128>(
+        || keygen(&mut DefaultRNG::default()),
         true,
     );
 }
 
-/// RFC 6979 §3.4/§3.6: `k` is a deterministic function of `d` and the message, so [`ECDetDSABp512r1`]
+/// RFC 6979 §3.4/§3.6: `k` is a deterministic function of `d` and the message, so [`ECDSABp512r1`]
 /// always reproduces the same `(r, s)`.
 #[test]
 fn deterministic_conformance_suite() {
-    let framework = TestFrameworkSignature::new(true, false);
-    framework.test_signature::<ECDSABp512r1PublicKey, ECDSABp512r1PrivateKey, ECDetDSABp512r1, ECDetDSABp512r1, 129, 64, 128>(
-        keygen,
+    let framework = TestFrameworkSignature::new(false);
+    framework.test_deterministic_signature::<ECDSABp512r1, ECDSABp512r1PublicKey, ECDSABp512r1PrivateKey, 128>(
+        || keygen(&mut DefaultRNG::default()),
         true,
     );
 }
@@ -45,40 +44,42 @@ fn deterministic_conformance_suite() {
 /// either type's signature verifies under the other.
 #[test]
 fn signatures_verify_across_the_two_types() {
-    let (pk, sk) = keygen().unwrap();
+    let (pk, sk) = keygen(&mut DefaultRNG::default()).unwrap();
     let msg = b"one verifier for both kinds of k";
-    let random = ECDSABp512r1::sign(&sk, msg, None).unwrap();
-    let deterministic = ECDetDSABp512r1::sign(&sk, msg, None).unwrap();
-    ECDetDSABp512r1::verify(&pk, msg, None, &random).unwrap();
-    ECDSABp512r1::verify(&pk, msg, None, &deterministic).unwrap();
+    let random = sk.sign(&mut DefaultRNG::default(), msg, None).unwrap();
+    let deterministic = sk.sign_deterministic(msg, None).unwrap();
+    pk.verify(msg, None, &random).unwrap();
+    pk.verify(msg, None, &deterministic).unwrap();
 }
 
 #[test]
 fn key_boundary_conditions() {
     TestFrameworkSignatureKeys::new()
-        .test_keys::<ECDSABp512r1PublicKey, ECDSABp512r1PrivateKey, 129, 64>(keygen);
+        .test_keys::<ECDSABp512r1PublicKey, ECDSABp512r1PrivateKey, 129, 64>(|| {
+            keygen(&mut DefaultRNG::default())
+        });
 }
 
 #[test]
 fn sign_rng_produces_distinct_valid_signatures() {
-    let (pk, sk) = keygen().unwrap();
+    let (pk, sk) = keygen(&mut DefaultRNG::default()).unwrap();
     let msg = b"randomised ECDSA signing";
 
-    let sig1 = ECDSABp512r1::sign_rng(&sk, msg, None, &mut DefaultRNG::default()).unwrap();
-    let sig2 = ECDSABp512r1::sign_rng(&sk, msg, None, &mut DefaultRNG::default()).unwrap();
+    let sig1 = sk.sign(&mut DefaultRNG::default(), msg, None).unwrap();
+    let sig2 = sk.sign(&mut DefaultRNG::default(), msg, None).unwrap();
     assert_ne!(sig1, sig2, "Appendix A.3.1's k comes from fresh randomness each call");
 
-    ECDSABp512r1::verify(&pk, msg, None, &sig1).unwrap();
-    ECDSABp512r1::verify(&pk, msg, None, &sig2).unwrap();
+    pk.verify(msg, None, &sig1).unwrap();
+    pk.verify(msg, None, &sig2).unwrap();
 }
 
 #[test]
 fn sign_rng_signature_rejected_under_wrong_key() {
-    let (_, sk) = keygen().unwrap();
-    let (other_pk, _) = keygen().unwrap();
+    let (_, sk) = keygen(&mut DefaultRNG::default()).unwrap();
+    let (other_pk, _) = keygen(&mut DefaultRNG::default()).unwrap();
     let msg = b"message";
-    let sig = ECDSABp512r1::sign_rng(&sk, msg, None, &mut DefaultRNG::default()).unwrap();
-    match ECDSABp512r1::verify(&other_pk, msg, None, &sig) {
+    let sig = sk.sign(&mut DefaultRNG::default(), msg, None).unwrap();
+    match other_pk.verify(msg, None, &sig) {
         Err(SignatureError::SignatureVerificationFailed) => {}
         other => panic!("expected SignatureVerificationFailed, got {other:?}"),
     }
@@ -86,11 +87,11 @@ fn sign_rng_signature_rejected_under_wrong_key() {
 
 #[test]
 fn sign_der_matches_raw_sign_and_round_trips_through_verify_der() {
-    let (pk, sk) = keygen().unwrap();
+    let (pk, sk) = keygen(&mut DefaultRNG::default()).unwrap();
     let msg = b"DER-encoded ECDSA signing";
 
-    let raw = ECDetDSABp512r1::sign(&sk, msg, None).unwrap();
-    let (der, der_len) = ECDetDSABp512r1::sign_der(&sk, msg, None).unwrap();
+    let raw = sk.sign_deterministic(msg, None).unwrap();
+    let (der, der_len) = sk.sign_der_deterministic(msg, None).unwrap();
 
     let mut r_out = [0u8; 64];
     let mut s_out = [0u8; 64];
@@ -99,28 +100,28 @@ fn sign_der_matches_raw_sign_and_round_trips_through_verify_der() {
     assert_eq!(r_out, raw[..64], "DER-decoded r must match sign's raw r");
     assert_eq!(s_out, raw[64..], "DER-decoded s must match sign's raw s");
 
-    ECDetDSABp512r1::verify_der(&pk, msg, None, &der[..der_len]).unwrap();
+    pk.verify_der(msg, None, &der[..der_len]).unwrap();
 
     let mut tampered = der;
     tampered[der_len - 1] ^= 0xFF;
     assert!(
-        ECDetDSABp512r1::verify_der(&pk, msg, None, &tampered[..der_len]).is_err(),
+        pk.verify_der(msg, None, &tampered[..der_len]).is_err(),
         "a corrupted DER signature must not verify"
     );
 }
 
 #[test]
 fn sign_der_round_trips_through_either_verify_der() {
-    let (pk, sk) = keygen().unwrap();
+    let (pk, sk) = keygen(&mut DefaultRNG::default()).unwrap();
     let msg = b"DER-encoded ECDSA signing, random k";
-    let (der, der_len) = ECDSABp512r1::sign_der(&sk, msg, None).unwrap();
-    ECDSABp512r1::verify_der(&pk, msg, None, &der[..der_len]).unwrap();
-    ECDetDSABp512r1::verify_der(&pk, msg, None, &der[..der_len]).unwrap();
+    let (der, der_len) = sk.sign_der(&mut DefaultRNG::default(), msg, None).unwrap();
+    pk.verify_der(msg, None, &der[..der_len]).unwrap();
+    pk.verify_der(msg, None, &der[..der_len]).unwrap();
 }
 
 #[test]
 fn public_key_uncompressed_and_compressed_round_trip() {
-    let (pk, _) = keygen().unwrap();
+    let (pk, _) = keygen(&mut DefaultRNG::default()).unwrap();
     let uncompressed = pk.encode();
     assert_eq!(uncompressed[0], 0x04);
     assert_eq!(ECDSABp512r1PublicKey::from_bytes(&uncompressed).unwrap(), pk);
@@ -147,7 +148,7 @@ fn private_key_encode_round_trips_exact_bytes() {
 
 #[test]
 fn public_key_encode_out_matches_encode() {
-    let (pk, _) = keygen().unwrap();
+    let (pk, _) = keygen(&mut DefaultRNG::default()).unwrap();
     let encoded = pk.encode();
 
     let mut out = [0xFFu8; 129];
@@ -158,8 +159,8 @@ fn public_key_encode_out_matches_encode() {
 
 #[test]
 fn public_key_display_differs_for_different_keys() {
-    let (pk1, _) = keygen().unwrap();
-    let (pk2, _) = keygen().unwrap();
+    let (pk1, _) = keygen(&mut DefaultRNG::default()).unwrap();
+    let (pk2, _) = keygen(&mut DefaultRNG::default()).unwrap();
     assert_ne!(format!("{pk1}"), format!("{pk2}"), "Display should reflect the actual key bytes");
 }
 
@@ -172,9 +173,9 @@ fn private_key_rejects_zero() {
 }
 
 #[test]
-fn keygen_from_rng_is_deterministic_given_a_deterministic_rng() {
+fn keygen_is_deterministic_given_a_deterministic_rng() {
     // A fixed-output RNG (all-0x42 bytes) must yield the same key pair both times: pins that
-    // `keygen_from_rng` has no hidden extra randomness source of its own.
+    // `keygen` has no hidden extra randomness source of its own.
     struct FixedRng;
     impl RNG for FixedRng {
         fn add_seed_keymaterial(
@@ -210,8 +211,8 @@ fn keygen_from_rng_is_deterministic_given_a_deterministic_rng() {
         }
     }
 
-    let (pk1, sk1) = bouncycastle_ecdsa::keys_bp512r1::keygen_from_rng(&mut FixedRng).unwrap();
-    let (pk2, sk2) = bouncycastle_ecdsa::keys_bp512r1::keygen_from_rng(&mut FixedRng).unwrap();
+    let (pk1, sk1) = bouncycastle_ecdsa::keys_bp512r1::keygen(&mut FixedRng).unwrap();
+    let (pk2, sk2) = bouncycastle_ecdsa::keys_bp512r1::keygen(&mut FixedRng).unwrap();
     assert_eq!(sk1, sk2);
     assert_eq!(pk1, pk2);
 }
@@ -220,7 +221,7 @@ fn keygen_from_rng_is_deterministic_given_a_deterministic_rng() {
 /// brainpoolP512r1's order calls for (SP 800-57 Part 1 Rev. 5, Table 2) is refused rather than silently
 /// used.
 #[test]
-fn keygen_from_rng_rejects_an_rng_below_the_required_strength() {
+fn keygen_rejects_an_rng_below_the_required_strength() {
     struct WeakRng;
     impl RNG for WeakRng {
         fn add_seed_keymaterial(
@@ -257,7 +258,7 @@ fn keygen_from_rng_rejects_an_rng_below_the_required_strength() {
     }
 
     assert!(matches!(
-        bouncycastle_ecdsa::keys_bp512r1::keygen_from_rng(&mut WeakRng),
+        bouncycastle_ecdsa::keys_bp512r1::keygen(&mut WeakRng),
         Err(SignatureError::RNGError(
             bouncycastle_core::errors::RNGError::SecurityStrengthInsufficientForAlgorithm
         ))
@@ -294,23 +295,23 @@ fn private_key_rejects_values_at_or_above_the_group_order() {
 /// signature into unlimited distinct byte strings that all verify.
 #[test]
 fn verify_rejects_signature_of_the_wrong_length() {
-    let (pk, sk) = keygen().unwrap();
+    let (pk, sk) = keygen(&mut DefaultRNG::default()).unwrap();
     let msg = b"length-checked signature";
-    let sig = ECDSABp512r1::sign(&sk, msg, None).unwrap();
-    ECDSABp512r1::verify(&pk, msg, None, &sig).expect("the untampered signature must verify");
+    let sig = sk.sign(&mut DefaultRNG::default(), msg, None).unwrap();
+    pk.verify(msg, None, &sig).expect("the untampered signature must verify");
 
     for extra in 1..=3 {
         let mut too_long = sig.to_vec();
         too_long.extend(core::iter::repeat_n(0xAAu8, extra));
-        match ECDSABp512r1::verify(&pk, msg, None, &too_long) {
-            Err(SignatureError::SignatureVerificationFailed) => {}
+        match pk.verify(msg, None, &too_long) {
+            Err(SignatureError::LengthError(_)) => {}
             other => panic!("{extra} trailing byte(s) should have failed, got {other:?}"),
         }
     }
 
     for short in 1..=3 {
-        match ECDSABp512r1::verify(&pk, msg, None, &sig[..128 - short]) {
-            Err(SignatureError::SignatureVerificationFailed) => {}
+        match pk.verify(msg, None, &sig[..128 - short]) {
+            Err(SignatureError::LengthError(_)) => {}
             other => panic!("{short} byte(s) short should have failed, got {other:?}"),
         }
     }
@@ -323,10 +324,10 @@ fn verify_rejects_signature_of_the_wrong_length() {
 /// and encodings they happen to include, and not by name.
 #[test]
 fn verify_rejects_r_or_s_outside_1_to_n_minus_1() {
-    let (pk, sk) = keygen().unwrap();
+    let (pk, sk) = keygen(&mut DefaultRNG::default()).unwrap();
     let msg = b"range-checked r and s";
-    let sig = ECDSABp512r1::sign(&sk, msg, None).unwrap();
-    ECDSABp512r1::verify(&pk, msg, None, &sig).expect("the untampered signature must verify");
+    let sig = sk.sign(&mut DefaultRNG::default(), msg, None).unwrap();
+    pk.verify(msg, None, &sig).expect("the untampered signature must verify");
 
     let n = bouncycastle_ec::bp512r1_sec1::be_bytes_from_limbs(
         &bouncycastle_ec::bp512r1_scalar::N_LIMBS,
@@ -335,42 +336,10 @@ fn verify_rejects_r_or_s_outside_1_to_n_minus_1() {
         for (half, offset) in [("r", 0usize), ("s", 64usize)] {
             let mut tampered = sig;
             tampered[offset..offset + 64].copy_from_slice(&bad);
-            match ECDSABp512r1::verify(&pk, msg, None, &tampered) {
+            match pk.verify(msg, None, &tampered) {
                 Err(SignatureError::SignatureVerificationFailed) => {}
                 other => panic!("{half} = {name} should have been rejected, got {other:?}"),
             }
         }
     }
-}
-
-/// One `ECDSABp512r1` (or `ECDetDSABp512r1`) value serves both the [`Signer`] and [`SignatureVerifier`]
-/// streaming APIs, holding whichever key its `_init` was given. Finishing with the other trait's
-/// `_final` is a caller error and must be reported as one, not panic and not produce output.
-#[test]
-fn sign_final_on_verify_initialized_state_errors() {
-    let (pk, _) = keygen().unwrap();
-    let v = ECDSABp512r1::verify_init(&pk, None).unwrap();
-    match v.sign_final() {
-        Err(SignatureError::GenericError(_)) => {}
-        other => panic!("expected GenericError, got {other:?}"),
-    }
-}
-
-#[test]
-fn verify_final_on_sign_initialized_state_errors() {
-    let (_, sk) = keygen().unwrap();
-    let s = ECDSABp512r1::sign_init(&sk, None).unwrap();
-    match s.verify_final(&[0u8; 128]) {
-        Err(SignatureError::GenericError(_)) => {}
-        other => panic!("expected GenericError, got {other:?}"),
-    }
-}
-
-#[test]
-fn deterministic_state_misuse_errors() {
-    let (pk, sk) = keygen().unwrap();
-    let v = ECDetDSABp512r1::do_verify_init(&pk, None).unwrap();
-    assert!(matches!(v.do_sign_final(), Err(SignatureError::GenericError(_))));
-    let s = ECDetDSABp512r1::do_sign_init(&sk, None).unwrap();
-    assert!(matches!(s.do_verify_final(&[0u8; 128]), Err(SignatureError::GenericError(_))));
 }

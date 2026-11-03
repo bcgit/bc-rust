@@ -7,62 +7,62 @@
 //! always passing `ctx = Some(id)`, plus a dedicated test that `ctx = None` is rejected.
 
 use bouncycastle_core::errors::SignatureError;
-use bouncycastle_core::traits::{
-    RNG, SignaturePrivateKey, SignaturePublicKey, SignatureVerifier, Signer,
-};
+use bouncycastle_core::signature_key::{SigningKey, VerifyingKey};
+use bouncycastle_core::traits::{RNG, SignaturePrivateKey, SignaturePublicKey};
+use bouncycastle_core::traits::{SignatureSigner, SignatureVerifier};
 use bouncycastle_core_test_framework::DUMMY_SEED;
 use bouncycastle_core_test_framework::signature::TestFrameworkSignatureKeys;
 use bouncycastle_ec::sm2_scalar::N_LIMBS;
 use bouncycastle_ec::sm2_sec1::be_bytes_from_limbs;
 use bouncycastle_rng::DefaultRNG;
 use bouncycastle_sm2::keys::{SM2PrivateKey, SM2PublicKey, keygen};
-use bouncycastle_sm2::sm2::SM2;
 
 const ID: &[u8] = b"test-identity@example.com";
 
 #[test]
 fn key_boundary_conditions() {
-    TestFrameworkSignatureKeys::new().test_keys::<SM2PublicKey, SM2PrivateKey, 65, 32>(keygen);
+    TestFrameworkSignatureKeys::new()
+        .test_keys::<SM2PublicKey, SM2PrivateKey, 65, 32>(|| keygen(&mut DefaultRNG::default()));
 }
 
 #[test]
 fn derive_pk_matches_keygen() {
-    let (pk, sk) = keygen().unwrap();
+    let (pk, sk) = keygen(&mut DefaultRNG::default()).unwrap();
     assert_eq!(sk.derive_pk(), pk);
 }
 
 #[test]
 fn sign_then_verify_round_trips() {
-    let (pk, sk) = keygen().unwrap();
+    let (pk, sk) = keygen(&mut DefaultRNG::default()).unwrap();
     let msg = b"The quick brown fox jumped over the lazy dog";
 
-    let sig = SM2::sign(&sk, msg, Some(ID)).unwrap();
-    SM2::verify(&pk, msg, Some(ID), &sig).unwrap();
+    let sig = sk.sign(&mut DefaultRNG::default(), msg, Some(ID)).unwrap();
+    pk.verify(msg, Some(ID), &sig).unwrap();
 }
 
 #[test]
 fn sign_is_non_deterministic() {
     // GB/T 32918.2-2016 S6.1 step A3: k is drawn fresh from randomness each call, unlike
     // bouncycastle-ecdsa's RFC-6979-deterministic default.
-    let (_, sk) = keygen().unwrap();
+    let (_, sk) = keygen(&mut DefaultRNG::default()).unwrap();
     let msg = b"same message, different k";
 
-    let sig1 = SM2::sign(&sk, msg, Some(ID)).unwrap();
-    let sig2 = SM2::sign(&sk, msg, Some(ID)).unwrap();
+    let sig1 = sk.sign(&mut DefaultRNG::default(), msg, Some(ID)).unwrap();
+    let sig2 = sk.sign(&mut DefaultRNG::default(), msg, Some(ID)).unwrap();
     assert_ne!(sig1, sig2);
 }
 
 #[test]
 fn sign_and_verify_require_ctx() {
-    let (pk, sk) = keygen().unwrap();
+    let (pk, sk) = keygen(&mut DefaultRNG::default()).unwrap();
     let msg = b"message";
-    let sig = SM2::sign(&sk, msg, Some(ID)).unwrap();
+    let sig = sk.sign(&mut DefaultRNG::default(), msg, Some(ID)).unwrap();
 
-    match SM2::sign(&sk, msg, None) {
+    match sk.sign(&mut DefaultRNG::default(), msg, None) {
         Err(SignatureError::GenericError(_)) => {}
         other => panic!("expected GenericError, got {other:?}"),
     }
-    match SM2::verify(&pk, msg, None, &sig) {
+    match pk.verify(msg, None, &sig) {
         Err(SignatureError::GenericError(_)) => {}
         other => panic!("expected GenericError, got {other:?}"),
     }
@@ -70,12 +70,12 @@ fn sign_and_verify_require_ctx() {
 
 #[test]
 fn different_ctx_values_produce_signatures_valid_only_under_their_own_ctx() {
-    let (pk, sk) = keygen().unwrap();
+    let (pk, sk) = keygen(&mut DefaultRNG::default()).unwrap();
     let msg = b"message";
 
-    let sig_a = SM2::sign(&sk, msg, Some(b"identity-a")).unwrap();
-    SM2::verify(&pk, msg, Some(b"identity-a"), &sig_a).unwrap();
-    match SM2::verify(&pk, msg, Some(b"identity-b"), &sig_a) {
+    let sig_a = sk.sign(&mut DefaultRNG::default(), msg, Some(b"identity-a")).unwrap();
+    pk.verify(msg, Some(b"identity-a"), &sig_a).unwrap();
+    match pk.verify(msg, Some(b"identity-b"), &sig_a) {
         Err(SignatureError::SignatureVerificationFailed) => {}
         other => panic!("expected SignatureVerificationFailed, got {other:?}"),
     }
@@ -83,11 +83,11 @@ fn different_ctx_values_produce_signatures_valid_only_under_their_own_ctx() {
 
 #[test]
 fn verify_rejects_signature_under_wrong_key() {
-    let (_, sk) = keygen().unwrap();
-    let (other_pk, _) = keygen().unwrap();
+    let (_, sk) = keygen(&mut DefaultRNG::default()).unwrap();
+    let (other_pk, _) = keygen(&mut DefaultRNG::default()).unwrap();
     let msg = b"message";
-    let sig = SM2::sign(&sk, msg, Some(ID)).unwrap();
-    match SM2::verify(&other_pk, msg, Some(ID), &sig) {
+    let sig = sk.sign(&mut DefaultRNG::default(), msg, Some(ID)).unwrap();
+    match other_pk.verify(msg, Some(ID), &sig) {
         Err(SignatureError::SignatureVerificationFailed) => {}
         other => panic!("expected SignatureVerificationFailed, got {other:?}"),
     }
@@ -95,15 +95,15 @@ fn verify_rejects_signature_under_wrong_key() {
 
 #[test]
 fn verify_rejects_bitflipped_signature() {
-    let (pk, sk) = keygen().unwrap();
+    let (pk, sk) = keygen(&mut DefaultRNG::default()).unwrap();
     let msg = b"message";
-    let sig = SM2::sign(&sk, msg, Some(ID)).unwrap();
+    let sig = sk.sign(&mut DefaultRNG::default(), msg, Some(ID)).unwrap();
 
     for i in 0..sig.len() {
         for j in 0..8u8 {
             let mut tampered = sig;
             tampered[i] ^= 1 << j;
-            match SM2::verify(&pk, msg, Some(ID), &tampered) {
+            match pk.verify(msg, Some(ID), &tampered) {
                 Err(SignatureError::SignatureVerificationFailed) => {}
                 _ => panic!("bit flip at byte {i} bit {j} should have failed verification"),
             }
@@ -113,73 +113,73 @@ fn verify_rejects_bitflipped_signature() {
 
 #[test]
 fn sign_randomized_produces_distinct_valid_signatures() {
-    let (pk, sk) = keygen().unwrap();
+    let (pk, sk) = keygen(&mut DefaultRNG::default()).unwrap();
     let msg = b"randomised SM2 signing";
 
-    let sig1 = SM2::sign_randomized(&sk, msg, ID, &mut DefaultRNG::default()).unwrap();
-    let sig2 = SM2::sign_randomized(&sk, msg, ID, &mut DefaultRNG::default()).unwrap();
+    let sig1 = sk.sign(&mut DefaultRNG::default(), msg, Some(ID)).unwrap();
+    let sig2 = sk.sign(&mut DefaultRNG::default(), msg, Some(ID)).unwrap();
     assert_ne!(sig1, sig2);
 
-    SM2::verify(&pk, msg, Some(ID), &sig1).unwrap();
-    SM2::verify(&pk, msg, Some(ID), &sig2).unwrap();
+    pk.verify(msg, Some(ID), &sig1).unwrap();
+    pk.verify(msg, Some(ID), &sig2).unwrap();
 }
 
 #[test]
 fn sign_out_produces_a_verifiable_signature() {
-    let (pk, sk) = keygen().unwrap();
+    let (pk, sk) = keygen(&mut DefaultRNG::default()).unwrap();
     let msg = b"message";
 
     let mut out = [0xFFu8; 64];
-    let written = SM2::sign_out(&sk, msg, Some(ID), &mut out).unwrap();
+    let written = sk.sign_out(&mut DefaultRNG::default(), msg, Some(ID), &mut out).unwrap();
     assert_eq!(written, 64);
-    SM2::verify(&pk, msg, Some(ID), &out).unwrap();
+    pk.verify(msg, Some(ID), &out).unwrap();
 }
 
 #[test]
 fn large_message_round_trips() {
-    let (pk, sk) = keygen().unwrap();
-    let sig = SM2::sign(&sk, DUMMY_SEED, Some(ID)).unwrap();
-    SM2::verify(&pk, DUMMY_SEED, Some(ID), &sig).unwrap();
+    let (pk, sk) = keygen(&mut DefaultRNG::default()).unwrap();
+    let sig = sk.sign(&mut DefaultRNG::default(), DUMMY_SEED, Some(ID)).unwrap();
+    pk.verify(DUMMY_SEED, Some(ID), &sig).unwrap();
 }
 
 #[test]
 fn streaming_sign_and_verify_single_update() {
-    let (pk, sk) = keygen().unwrap();
+    let (pk, sk) = keygen(&mut DefaultRNG::default()).unwrap();
 
-    let mut s = SM2::sign_init(&sk, Some(ID)).unwrap();
-    s.sign_update(DUMMY_SEED);
-    let sig = s.sign_final().unwrap();
+    let mut s = sk.create_signer(&mut DefaultRNG::default(), Some(ID)).unwrap();
+    s.do_update(DUMMY_SEED);
+    let sig = s.do_final().unwrap();
 
-    let mut v = SM2::verify_init(&pk, Some(ID)).unwrap();
-    v.verify_update(DUMMY_SEED);
-    v.verify_final(&sig).unwrap();
+    let mut v = pk.create_verifier(Some(ID)).unwrap();
+    v.do_update(DUMMY_SEED);
+    v.do_verify_final(&sig).unwrap();
 }
 
 #[test]
 fn streaming_sign_and_verify_chunked() {
-    let (pk, sk) = keygen().unwrap();
+    let (pk, sk) = keygen(&mut DefaultRNG::default()).unwrap();
 
-    let mut s = SM2::sign_init(&sk, Some(ID)).unwrap();
+    let mut s = sk.create_signer(&mut DefaultRNG::default(), Some(ID)).unwrap();
     for chunk in DUMMY_SEED.chunks(100) {
-        s.sign_update(chunk);
+        s.do_update(chunk);
     }
-    let sig = s.sign_final().unwrap();
+    let sig = s.do_final().unwrap();
 
-    let mut v = SM2::verify_init(&pk, Some(ID)).unwrap();
+    let mut v = pk.create_verifier(Some(ID)).unwrap();
     for chunk in DUMMY_SEED.chunks(100) {
-        v.verify_update(chunk);
+        v.do_update(chunk);
     }
-    v.verify_final(&sig).unwrap();
+    v.do_verify_final(&sig).unwrap();
 }
 
 #[test]
 fn streaming_verify_rejects_wrong_message() {
-    let (pk, sk) = keygen().unwrap();
-    let sig = SM2::sign(&sk, DUMMY_SEED, Some(ID)).unwrap();
+    let (pk, sk) = keygen(&mut DefaultRNG::default()).unwrap();
+    let sig = sk.sign(&mut DefaultRNG::default(), DUMMY_SEED, Some(ID)).unwrap();
 
-    let mut v = SM2::verify_init(&pk, Some(ID)).unwrap();
-    v.verify_update(b"this is the wrong message");
-    match v.verify_final(&sig) {
+    let mut v = pk.create_verifier(Some(ID)).unwrap();
+    v.do_update(b"this is the wrong message");
+    match v.do_verify_final(&sig) {
         Err(SignatureError::SignatureVerificationFailed) => {}
         other => panic!("expected SignatureVerificationFailed, got {other:?}"),
     }
@@ -187,23 +187,23 @@ fn streaming_verify_rejects_wrong_message() {
 
 #[test]
 fn sign_final_out_matches_sign_final() {
-    let (pk, sk) = keygen().unwrap();
+    let (pk, sk) = keygen(&mut DefaultRNG::default()).unwrap();
 
-    let mut s = SM2::sign_init(&sk, Some(ID)).unwrap();
-    s.sign_update(DUMMY_SEED);
+    let mut s = sk.create_signer(&mut DefaultRNG::default(), Some(ID)).unwrap();
+    s.do_update(DUMMY_SEED);
     let mut sig = [0u8; 64];
-    let written = s.sign_final_out(&mut sig).unwrap();
+    let written = s.do_final_out(&mut sig).unwrap();
     assert_eq!(written, 64);
 
-    SM2::verify(&pk, DUMMY_SEED, Some(ID), &sig).unwrap();
+    pk.verify(DUMMY_SEED, Some(ID), &sig).unwrap();
 }
 
 #[test]
 fn verify_rejects_signature_of_the_wrong_length() {
-    let (pk, sk) = keygen().unwrap();
+    let (pk, sk) = keygen(&mut DefaultRNG::default()).unwrap();
     let msg = b"message";
-    let sig = SM2::sign(&sk, msg, Some(ID)).unwrap();
-    SM2::verify(&pk, msg, Some(ID), &sig).expect("the untampered signature must verify");
+    let sig = sk.sign(&mut DefaultRNG::default(), msg, Some(ID)).unwrap();
+    pk.verify(msg, Some(ID), &sig).expect("the untampered signature must verify");
 
     // Trailing bytes must not be ignored: otherwise one valid signature yields unlimited distinct
     // byte strings that all verify, which breaks any caller that compares or deduplicates
@@ -211,43 +211,23 @@ fn verify_rejects_signature_of_the_wrong_length() {
     for extra in 1..=3 {
         let mut too_long = sig.to_vec();
         too_long.extend(core::iter::repeat_n(0xAAu8, extra));
-        match SM2::verify(&pk, msg, Some(ID), &too_long) {
-            Err(SignatureError::SignatureVerificationFailed) => {}
+        match pk.verify(msg, Some(ID), &too_long) {
+            Err(SignatureError::LengthError(_)) => {}
             other => panic!("{extra} trailing byte(s) should have failed, got {other:?}"),
         }
     }
 
     for short in 1..=3 {
-        match SM2::verify(&pk, msg, Some(ID), &sig[..64 - short]) {
-            Err(SignatureError::SignatureVerificationFailed) => {}
+        match pk.verify(msg, Some(ID), &sig[..64 - short]) {
+            Err(SignatureError::LengthError(_)) => {}
             other => panic!("{short} byte(s) short should have failed, got {other:?}"),
         }
     }
 }
 
 #[test]
-fn sign_final_on_verify_initialized_state_errors() {
-    let (pk, _) = keygen().unwrap();
-    let v = SM2::verify_init(&pk, Some(ID)).unwrap();
-    match v.sign_final() {
-        Err(SignatureError::GenericError(_)) => {}
-        other => panic!("expected GenericError, got {other:?}"),
-    }
-}
-
-#[test]
-fn verify_final_on_sign_initialized_state_errors() {
-    let (_, sk) = keygen().unwrap();
-    let s = SM2::sign_init(&sk, Some(ID)).unwrap();
-    match s.verify_final(&[0u8; 64]) {
-        Err(SignatureError::GenericError(_)) => {}
-        other => panic!("expected GenericError, got {other:?}"),
-    }
-}
-
-#[test]
 fn public_key_uncompressed_and_compressed_round_trip() {
-    let (pk, _) = keygen().unwrap();
+    let (pk, _) = keygen(&mut DefaultRNG::default()).unwrap();
     let uncompressed = pk.encode();
     assert_eq!(uncompressed[0], 0x04);
     assert_eq!(SM2PublicKey::from_bytes(&uncompressed).unwrap(), pk);
@@ -274,7 +254,7 @@ fn private_key_encode_round_trips_exact_bytes() {
 
 #[test]
 fn public_key_encode_out_matches_encode() {
-    let (pk, _) = keygen().unwrap();
+    let (pk, _) = keygen(&mut DefaultRNG::default()).unwrap();
     let encoded = pk.encode();
 
     let mut out = [0xFFu8; 65];
@@ -285,8 +265,8 @@ fn public_key_encode_out_matches_encode() {
 
 #[test]
 fn public_key_display_differs_for_different_keys() {
-    let (pk1, _) = keygen().unwrap();
-    let (pk2, _) = keygen().unwrap();
+    let (pk1, _) = keygen(&mut DefaultRNG::default()).unwrap();
+    let (pk2, _) = keygen(&mut DefaultRNG::default()).unwrap();
     assert_ne!(format!("{pk1}"), format!("{pk2}"));
 }
 
@@ -327,12 +307,12 @@ fn private_key_rejects_values_outside_1_to_n_minus_2() {
     assert_eq!(sk.encode(), n_minus_2, "dA = n - 2 must round-trip unchanged");
 
     let msg = b"dA = n - 2: step A6 divides by 1 + dA = n - 1";
-    let sig = SM2::sign(&sk, msg, Some(ID)).expect("dA = n - 2 must sign");
-    SM2::verify(&sk.derive_pk(), msg, Some(ID), &sig).expect("and its signature must verify");
+    let sig = sk.sign(&mut DefaultRNG::default(), msg, Some(ID)).expect("dA = n - 2 must sign");
+    sk.derive_pk().verify(msg, Some(ID), &sig).expect("and its signature must verify");
 }
 
 #[test]
-fn keygen_from_rng_is_deterministic_given_a_deterministic_rng() {
+fn keygen_is_deterministic_given_a_deterministic_rng() {
     struct FixedRng;
     impl RNG for FixedRng {
         fn add_seed_keymaterial(
@@ -368,8 +348,8 @@ fn keygen_from_rng_is_deterministic_given_a_deterministic_rng() {
         }
     }
 
-    let (pk1, sk1) = bouncycastle_sm2::keys::keygen_from_rng(&mut FixedRng).unwrap();
-    let (pk2, sk2) = bouncycastle_sm2::keys::keygen_from_rng(&mut FixedRng).unwrap();
+    let (pk1, sk1) = bouncycastle_sm2::keys::keygen(&mut FixedRng).unwrap();
+    let (pk2, sk2) = bouncycastle_sm2::keys::keygen(&mut FixedRng).unwrap();
     assert_eq!(sk1, sk2);
     assert_eq!(pk1, pk2);
 }
@@ -378,7 +358,7 @@ fn keygen_from_rng_is_deterministic_given_a_deterministic_rng() {
 /// SM2's order calls for (SP 800-57 Part 1 Rev. 5, Table 2) is refused rather than silently
 /// used.
 #[test]
-fn keygen_from_rng_rejects_an_rng_below_the_required_strength() {
+fn keygen_rejects_an_rng_below_the_required_strength() {
     struct WeakRng;
     impl RNG for WeakRng {
         fn add_seed_keymaterial(
@@ -415,7 +395,7 @@ fn keygen_from_rng_rejects_an_rng_below_the_required_strength() {
     }
 
     assert!(matches!(
-        bouncycastle_sm2::keys::keygen_from_rng(&mut WeakRng),
+        bouncycastle_sm2::keys::keygen(&mut WeakRng),
         Err(SignatureError::RNGError(
             bouncycastle_core::errors::RNGError::SecurityStrengthInsufficientForAlgorithm
         ))
@@ -428,17 +408,17 @@ fn keygen_from_rng_rejects_an_rng_below_the_required_strength() {
 /// rejects the result.
 #[test]
 fn verify_rejects_r_or_s_outside_1_to_n_minus_1() {
-    let (pk, sk) = keygen().unwrap();
+    let (pk, sk) = keygen(&mut DefaultRNG::default()).unwrap();
     let msg = b"range-checked r and s";
-    let sig = SM2::sign(&sk, msg, Some(ID)).unwrap();
-    SM2::verify(&pk, msg, Some(ID), &sig).expect("the untampered signature must verify");
+    let sig = sk.sign(&mut DefaultRNG::default(), msg, Some(ID)).unwrap();
+    pk.verify(msg, Some(ID), &sig).expect("the untampered signature must verify");
 
     let n = be_bytes_from_limbs(&N_LIMBS);
     for (name, bad) in [("0", [0u8; 32]), ("n", n), ("2^256 - 1", [0xffu8; 32])] {
         for (half, offset) in [("r", 0usize), ("s", 32usize)] {
             let mut tampered = sig;
             tampered[offset..offset + 32].copy_from_slice(&bad);
-            match SM2::verify(&pk, msg, Some(ID), &tampered) {
+            match pk.verify(msg, Some(ID), &tampered) {
                 Err(SignatureError::SignatureVerificationFailed) => {}
                 other => panic!("{half} = {name} should have been rejected, got {other:?}"),
             }
@@ -451,9 +431,9 @@ fn verify_rejects_r_or_s_outside_1_to_n_minus_1() {
 /// `t` zero -- a signature that would otherwise reach the point multiplication with `[0]PA`.
 #[test]
 fn verify_rejects_s_equal_to_n_minus_r() {
-    let (pk, sk) = keygen().unwrap();
+    let (pk, sk) = keygen(&mut DefaultRNG::default()).unwrap();
     let msg = b"t = r + s must not be zero";
-    let sig = SM2::sign(&sk, msg, Some(ID)).unwrap();
+    let sig = sk.sign(&mut DefaultRNG::default(), msg, Some(ID)).unwrap();
 
     let r_limbs = bouncycastle_ec::sm2_sec1::limbs_from_be_bytes(&sig[..32].try_into().unwrap());
     let (n_minus_r, borrow) = bouncycastle_ec::nat::sub(&N_LIMBS, &r_limbs);
@@ -461,7 +441,7 @@ fn verify_rejects_s_equal_to_n_minus_r() {
 
     let mut tampered = sig;
     tampered[32..].copy_from_slice(&be_bytes_from_limbs(&n_minus_r));
-    match SM2::verify(&pk, msg, Some(ID), &tampered) {
+    match pk.verify(msg, Some(ID), &tampered) {
         Err(SignatureError::SignatureVerificationFailed) => {}
         other => panic!("expected SignatureVerificationFailed, got {other:?}"),
     }
@@ -473,19 +453,20 @@ fn verify_rejects_s_equal_to_n_minus_r() {
 /// not. The limit applies on both sides, since verification computes `ZA` too.
 #[test]
 fn identity_longer_than_entla_can_encode_is_rejected() {
-    let (pk, sk) = keygen().unwrap();
+    let (pk, sk) = keygen(&mut DefaultRNG::default()).unwrap();
     let msg = b"message";
 
     let longest = vec![0x41u8; 8191];
-    let sig = SM2::sign(&sk, msg, Some(&longest)).expect("8191 bytes fits in ENTLA");
-    SM2::verify(&pk, msg, Some(&longest), &sig).unwrap();
+    let sig =
+        sk.sign(&mut DefaultRNG::default(), msg, Some(&longest)).expect("8191 bytes fits in ENTLA");
+    pk.verify(msg, Some(&longest), &sig).unwrap();
 
     let too_long = vec![0x41u8; 8192];
-    match SM2::sign(&sk, msg, Some(&too_long)) {
+    match sk.sign(&mut DefaultRNG::default(), msg, Some(&too_long)) {
         Err(SignatureError::GenericError(_)) => {}
         other => panic!("expected GenericError on sign, got {other:?}"),
     }
-    match SM2::verify(&pk, msg, Some(&too_long), &sig) {
+    match pk.verify(msg, Some(&too_long), &sig) {
         Err(SignatureError::GenericError(_)) => {}
         other => panic!("expected GenericError on verify, got {other:?}"),
     }

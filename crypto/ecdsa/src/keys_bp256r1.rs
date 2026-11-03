@@ -14,7 +14,6 @@ use bouncycastle_ec::bp256r1_comb::comb_multiply_base_point;
 use bouncycastle_ec::bp256r1_scalar::{Bp256r1Scalar, N_LIMBS};
 use bouncycastle_ec::bp256r1_sec1;
 use bouncycastle_ec::nat;
-use bouncycastle_rng::DefaultRNG;
 use bouncycastle_utils::secret::Secret;
 use core::fmt;
 use core::fmt::{Debug, Display, Formatter};
@@ -50,7 +49,7 @@ impl DerivePublicKey<ECDSABp256r1PublicKey, PK_LEN> for ECDSABp256r1PrivateKey {
     fn derive_pk(&self) -> ECDSABp256r1PublicKey {
         let q = comb_multiply_base_point(&self.0);
         // d is in [1, n-1] by construction (every ECDSABp256r1PrivateKey is built that way; see
-        // from_bytes and keygen_from_rng) and G has prime order n, so [d]G is never the identity.
+        // from_bytes and keygen) and G has prime order n, so [d]G is never the identity.
         let (x, y) = q.to_affine().expect("[d]G is never infinity for d in [1, n-1]");
         ECDSABp256r1PublicKey { x, y }
     }
@@ -126,18 +125,12 @@ impl Display for ECDSABp256r1PublicKey {
     }
 }
 
-/// FIPS 186-5 Appendix A.2.1: generates an ECDSA brainpoolP256r1 key pair, sourcing the DRBG
-/// output from the library's default OS-backed RNG.
-pub fn keygen() -> Result<(ECDSABp256r1PublicKey, ECDSABp256r1PrivateKey), SignatureError> {
-    keygen_from_rng(&mut DefaultRNG::default())
-}
-
 /// As [`keygen`], but sources the DRBG output from the caller-provided RNG, which must
 /// offer a security strength of at least 128 bits: FIPS 186-5 Appendix A.2.1 step 3 requires
 /// a DRBG whose security strength is "not less than" the one SP 800-57 Part 1 Rev. 5's
 /// Table 2 associates with brainpoolP256r1's 256-bit order (`f = 256-383` in that table's ECC column, giving
 /// 128-bit security).
-pub fn keygen_from_rng(
+pub fn keygen(
     rng: &mut dyn RNG,
 ) -> Result<(ECDSABp256r1PublicKey, ECDSABp256r1PrivateKey), SignatureError> {
     // FIPS 186-5 Appendix A.2.1 step 3: the DRBG must offer at least the security

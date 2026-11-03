@@ -21,30 +21,24 @@
 
 use crate::helpers::{read_from_file, read_from_file_or_stdin, write_bytes_or_hex};
 use bouncycastle::core::errors::SignatureError;
+use bouncycastle::core::signature_key::{
+    DeterministicSigningKey, SignatureAlgorithm, SigningKey, VerifyingKey,
+};
 use bouncycastle::core::traits::{
-    SignaturePrivateKey, SignaturePublicKey, SignatureVerifier, Signer,
+    RNG, SignaturePrivateKey, SignaturePublicKey, SignatureSigner, SignatureVerifier,
 };
 use bouncycastle::ecdsa::keys_common::DerivePublicKey;
 use bouncycastle::ecdsa::{
-    ecdsa_bp256r1,
-    ecdsa_bp256r1::{ECDSABp256r1, ECDetDSABp256r1},
-    ecdsa_bp384r1,
-    ecdsa_bp384r1::{ECDSABp384r1, ECDetDSABp384r1},
-    ecdsa_bp512r1,
-    ecdsa_bp512r1::{ECDSABp512r1, ECDetDSABp512r1},
-    ecdsa_p256,
-    ecdsa_p256::{ECDSAP256, ECDetDSAP256},
-    ecdsa_p256k1,
-    ecdsa_p256k1::{ECDSASecp256K1, ECDetDSASecp256K1},
-    ecdsa_p384,
-    ecdsa_p384::{ECDSAP384, ECDetDSAP384},
-    ecdsa_p521,
-    ecdsa_p521::{ECDSAP521, ECDetDSAP521},
+    ecdsa_bp256r1, ecdsa_bp256r1::ECDSABp256r1, ecdsa_bp384r1, ecdsa_bp384r1::ECDSABp384r1,
+    ecdsa_bp512r1, ecdsa_bp512r1::ECDSABp512r1, ecdsa_p256, ecdsa_p256::ECDSAP256, ecdsa_p256k1,
+    ecdsa_p256k1::ECDSASecp256K1, ecdsa_p384, ecdsa_p384::ECDSAP384, ecdsa_p521,
+    ecdsa_p521::ECDSAP521,
 };
 use bouncycastle::ecdsa::{
     keys_bp256r1, keys_bp384r1, keys_bp512r1, keys_p256, keys_p256k1, keys_p384, keys_p521,
 };
 use bouncycastle::hex;
+use bouncycastle::rng::HashDRBG_SHA512;
 use clap::ValueEnum;
 use std::io;
 use std::io::Read;
@@ -69,24 +63,28 @@ pub(crate) enum ECDSAAction {
 
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn ecdsa_cmd<
-    PK: SignaturePublicKey<PK_LEN>,
-    SK: SignaturePrivateKey<SK_LEN> + DerivePublicKey<PK, PK_LEN>,
-    S: Signer<SK, SK_LEN, SIG_LEN> + SignatureVerifier<PK, PK_LEN, SIG_LEN>,
+    A: SignatureAlgorithm,
+    PK: SignaturePublicKey<PK_LEN> + VerifyingKey<A, SIG_LEN>,
+    SK: SignaturePrivateKey<SK_LEN>
+        + DerivePublicKey<PK, PK_LEN>
+        + SigningKey<A, SIG_LEN>
+        + DeterministicSigningKey<A, SIG_LEN>,
     const SK_LEN: usize,
     const PK_LEN: usize,
     const SIG_LEN: usize,
 >(
     action: &ECDSAAction,
-    keygen: fn() -> Result<(PK, SK), SignatureError>,
+    keygen: fn(&mut dyn RNG) -> Result<(PK, SK), SignatureError>,
     skfile: &Option<String>,
     pkfile: &Option<String>,
     sigfile: &Option<String>,
     output_hex: bool,
+    deterministic: bool,
     alg_name: &str,
 ) {
     match action {
         ECDSAAction::Keygen => {
-            let (_pk, sk) = keygen().unwrap();
+            let (_pk, sk) = keygen(&mut HashDRBG_SHA512::new_from_os()).unwrap();
             write_bytes_or_hex(&sk.encode(), output_hex);
         }
         ECDSAAction::PkFromSk => {
@@ -112,10 +110,17 @@ pub(crate) fn ecdsa_cmd<
             let sk_bytes = require_file(skfile, "skfile");
             let sk = parse_sk::<SK, SK_LEN>(&sk_bytes, alg_name);
 
-            // stream the message from stdin
-            let mut signer = S::sign_init(&sk, None).unwrap();
-            stream_stdin_into(|chunk| signer.sign_update(chunk));
-            let sig = signer.sign_final().unwrap();
+            // stream the message from stdin; ECDSA has no context string
+            let sig = if deterministic {
+                let mut signer = sk.create_signer_deterministic(None).unwrap();
+                stream_stdin_into(|chunk| signer.do_update(chunk));
+                signer.do_final().unwrap()
+            } else {
+                let mut signer =
+                    sk.create_signer(&mut HashDRBG_SHA512::new_from_os(), None).unwrap();
+                stream_stdin_into(|chunk| signer.do_update(chunk));
+                signer.do_final().unwrap()
+            };
 
             write_bytes_or_hex(&sig, output_hex);
         }
@@ -125,10 +130,10 @@ pub(crate) fn ecdsa_cmd<
             let sig = require_file(sigfile, "sigfile");
 
             // stream the message from stdin
-            let mut verifier = S::verify_init(&pk, None).unwrap();
-            stream_stdin_into(|chunk| verifier.verify_update(chunk));
+            let mut verifier = pk.create_verifier(None).unwrap();
+            stream_stdin_into(|chunk| verifier.do_update(chunk));
 
-            if verifier.verify_final(&sig).is_ok() {
+            if verifier.do_verify_final(&sig).is_ok() {
                 println!("Signature is valid.");
             } else {
                 eprintln!("Signature is invalid.");
@@ -211,25 +216,16 @@ pub(crate) fn ecdsa_p256_cmd(
     output_hex: bool,
     deterministic: bool,
 ) {
-    if deterministic {
-        ecdsa_cmd::<
-            _,
-            _,
-            ECDetDSAP256,
-            { keys_p256::SK_LEN },
-            { keys_p256::PK_LEN },
-            { ecdsa_p256::SIG_LEN },
-        >(action, keys_p256::keygen, skfile, pkfile, sigfile, output_hex, "ECDSA P-256")
-    } else {
-        ecdsa_cmd::<
-            _,
-            _,
-            ECDSAP256,
-            { keys_p256::SK_LEN },
-            { keys_p256::PK_LEN },
-            { ecdsa_p256::SIG_LEN },
-        >(action, keys_p256::keygen, skfile, pkfile, sigfile, output_hex, "ECDSA P-256")
-    }
+    ecdsa_cmd::<
+        ECDSAP256,
+        _,
+        _,
+        { keys_p256::SK_LEN },
+        { keys_p256::PK_LEN },
+        { ecdsa_p256::SIG_LEN },
+    >(
+        action, keys_p256::keygen, skfile, pkfile, sigfile, output_hex, deterministic, "ECDSA P-256"
+    )
 }
 
 pub(crate) fn ecdsa_p384_cmd(
@@ -240,25 +236,16 @@ pub(crate) fn ecdsa_p384_cmd(
     output_hex: bool,
     deterministic: bool,
 ) {
-    if deterministic {
-        ecdsa_cmd::<
-            _,
-            _,
-            ECDetDSAP384,
-            { keys_p384::SK_LEN },
-            { keys_p384::PK_LEN },
-            { ecdsa_p384::SIG_LEN },
-        >(action, keys_p384::keygen, skfile, pkfile, sigfile, output_hex, "ECDSA P-384")
-    } else {
-        ecdsa_cmd::<
-            _,
-            _,
-            ECDSAP384,
-            { keys_p384::SK_LEN },
-            { keys_p384::PK_LEN },
-            { ecdsa_p384::SIG_LEN },
-        >(action, keys_p384::keygen, skfile, pkfile, sigfile, output_hex, "ECDSA P-384")
-    }
+    ecdsa_cmd::<
+        ECDSAP384,
+        _,
+        _,
+        { keys_p384::SK_LEN },
+        { keys_p384::PK_LEN },
+        { ecdsa_p384::SIG_LEN },
+    >(
+        action, keys_p384::keygen, skfile, pkfile, sigfile, output_hex, deterministic, "ECDSA P-384"
+    )
 }
 
 pub(crate) fn ecdsa_p521_cmd(
@@ -269,25 +256,16 @@ pub(crate) fn ecdsa_p521_cmd(
     output_hex: bool,
     deterministic: bool,
 ) {
-    if deterministic {
-        ecdsa_cmd::<
-            _,
-            _,
-            ECDetDSAP521,
-            { keys_p521::SK_LEN },
-            { keys_p521::PK_LEN },
-            { ecdsa_p521::SIG_LEN },
-        >(action, keys_p521::keygen, skfile, pkfile, sigfile, output_hex, "ECDSA P-521")
-    } else {
-        ecdsa_cmd::<
-            _,
-            _,
-            ECDSAP521,
-            { keys_p521::SK_LEN },
-            { keys_p521::PK_LEN },
-            { ecdsa_p521::SIG_LEN },
-        >(action, keys_p521::keygen, skfile, pkfile, sigfile, output_hex, "ECDSA P-521")
-    }
+    ecdsa_cmd::<
+        ECDSAP521,
+        _,
+        _,
+        { keys_p521::SK_LEN },
+        { keys_p521::PK_LEN },
+        { ecdsa_p521::SIG_LEN },
+    >(
+        action, keys_p521::keygen, skfile, pkfile, sigfile, output_hex, deterministic, "ECDSA P-521"
+    )
 }
 
 pub(crate) fn ecdsa_secp256k1_cmd(
@@ -298,29 +276,23 @@ pub(crate) fn ecdsa_secp256k1_cmd(
     output_hex: bool,
     deterministic: bool,
 ) {
-    if deterministic {
-        ecdsa_cmd::<
-            _,
-            _,
-            ECDetDSASecp256K1,
-            { keys_p256k1::SK_LEN },
-            { keys_p256k1::PK_LEN },
-            { ecdsa_p256k1::SIG_LEN },
-        >(
-            action, keys_p256k1::keygen, skfile, pkfile, sigfile, output_hex, "ECDSA secp256k1"
-        )
-    } else {
-        ecdsa_cmd::<
-            _,
-            _,
-            ECDSASecp256K1,
-            { keys_p256k1::SK_LEN },
-            { keys_p256k1::PK_LEN },
-            { ecdsa_p256k1::SIG_LEN },
-        >(
-            action, keys_p256k1::keygen, skfile, pkfile, sigfile, output_hex, "ECDSA secp256k1"
-        )
-    }
+    ecdsa_cmd::<
+        ECDSASecp256K1,
+        _,
+        _,
+        { keys_p256k1::SK_LEN },
+        { keys_p256k1::PK_LEN },
+        { ecdsa_p256k1::SIG_LEN },
+    >(
+        action,
+        keys_p256k1::keygen,
+        skfile,
+        pkfile,
+        sigfile,
+        output_hex,
+        deterministic,
+        "ECDSA secp256k1",
+    )
 }
 
 pub(crate) fn ecdsa_bp256r1_cmd(
@@ -331,41 +303,23 @@ pub(crate) fn ecdsa_bp256r1_cmd(
     output_hex: bool,
     deterministic: bool,
 ) {
-    if deterministic {
-        ecdsa_cmd::<
-            _,
-            _,
-            ECDetDSABp256r1,
-            { keys_bp256r1::SK_LEN },
-            { keys_bp256r1::PK_LEN },
-            { ecdsa_bp256r1::SIG_LEN },
-        >(
-            action,
-            keys_bp256r1::keygen,
-            skfile,
-            pkfile,
-            sigfile,
-            output_hex,
-            "ECDSA brainpoolP256r1",
-        )
-    } else {
-        ecdsa_cmd::<
-            _,
-            _,
-            ECDSABp256r1,
-            { keys_bp256r1::SK_LEN },
-            { keys_bp256r1::PK_LEN },
-            { ecdsa_bp256r1::SIG_LEN },
-        >(
-            action,
-            keys_bp256r1::keygen,
-            skfile,
-            pkfile,
-            sigfile,
-            output_hex,
-            "ECDSA brainpoolP256r1",
-        )
-    }
+    ecdsa_cmd::<
+        ECDSABp256r1,
+        _,
+        _,
+        { keys_bp256r1::SK_LEN },
+        { keys_bp256r1::PK_LEN },
+        { ecdsa_bp256r1::SIG_LEN },
+    >(
+        action,
+        keys_bp256r1::keygen,
+        skfile,
+        pkfile,
+        sigfile,
+        output_hex,
+        deterministic,
+        "ECDSA brainpoolP256r1",
+    )
 }
 
 pub(crate) fn ecdsa_bp384r1_cmd(
@@ -376,41 +330,23 @@ pub(crate) fn ecdsa_bp384r1_cmd(
     output_hex: bool,
     deterministic: bool,
 ) {
-    if deterministic {
-        ecdsa_cmd::<
-            _,
-            _,
-            ECDetDSABp384r1,
-            { keys_bp384r1::SK_LEN },
-            { keys_bp384r1::PK_LEN },
-            { ecdsa_bp384r1::SIG_LEN },
-        >(
-            action,
-            keys_bp384r1::keygen,
-            skfile,
-            pkfile,
-            sigfile,
-            output_hex,
-            "ECDSA brainpoolP384r1",
-        )
-    } else {
-        ecdsa_cmd::<
-            _,
-            _,
-            ECDSABp384r1,
-            { keys_bp384r1::SK_LEN },
-            { keys_bp384r1::PK_LEN },
-            { ecdsa_bp384r1::SIG_LEN },
-        >(
-            action,
-            keys_bp384r1::keygen,
-            skfile,
-            pkfile,
-            sigfile,
-            output_hex,
-            "ECDSA brainpoolP384r1",
-        )
-    }
+    ecdsa_cmd::<
+        ECDSABp384r1,
+        _,
+        _,
+        { keys_bp384r1::SK_LEN },
+        { keys_bp384r1::PK_LEN },
+        { ecdsa_bp384r1::SIG_LEN },
+    >(
+        action,
+        keys_bp384r1::keygen,
+        skfile,
+        pkfile,
+        sigfile,
+        output_hex,
+        deterministic,
+        "ECDSA brainpoolP384r1",
+    )
 }
 
 pub(crate) fn ecdsa_bp512r1_cmd(
@@ -421,39 +357,21 @@ pub(crate) fn ecdsa_bp512r1_cmd(
     output_hex: bool,
     deterministic: bool,
 ) {
-    if deterministic {
-        ecdsa_cmd::<
-            _,
-            _,
-            ECDetDSABp512r1,
-            { keys_bp512r1::SK_LEN },
-            { keys_bp512r1::PK_LEN },
-            { ecdsa_bp512r1::SIG_LEN },
-        >(
-            action,
-            keys_bp512r1::keygen,
-            skfile,
-            pkfile,
-            sigfile,
-            output_hex,
-            "ECDSA brainpoolP512r1",
-        )
-    } else {
-        ecdsa_cmd::<
-            _,
-            _,
-            ECDSABp512r1,
-            { keys_bp512r1::SK_LEN },
-            { keys_bp512r1::PK_LEN },
-            { ecdsa_bp512r1::SIG_LEN },
-        >(
-            action,
-            keys_bp512r1::keygen,
-            skfile,
-            pkfile,
-            sigfile,
-            output_hex,
-            "ECDSA brainpoolP512r1",
-        )
-    }
+    ecdsa_cmd::<
+        ECDSABp512r1,
+        _,
+        _,
+        { keys_bp512r1::SK_LEN },
+        { keys_bp512r1::PK_LEN },
+        { ecdsa_bp512r1::SIG_LEN },
+    >(
+        action,
+        keys_bp512r1::keygen,
+        skfile,
+        pkfile,
+        sigfile,
+        output_hex,
+        deterministic,
+        "ECDSA brainpoolP512r1",
+    )
 }

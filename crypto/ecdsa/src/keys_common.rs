@@ -12,7 +12,7 @@ use bouncycastle_core::traits::SignaturePublicKey;
 
 /// Implemented by a curve's private key type: recomputes the matching public key `Q = [d]G`
 /// directly from the wrapped private scalar `d`, using the same fixed-base multiplier
-/// `keys::keygen_from_rng` (or its per-curve equivalent) uses internally.
+/// `keys_p256::keygen` (or its per-curve equivalent) uses internally.
 pub trait DerivePublicKey<PK: SignaturePublicKey<PK_LEN>, const PK_LEN: usize> {
     /// Recomputes `Q = [d]G`.
     fn derive_pk(&self) -> PK;

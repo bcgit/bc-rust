@@ -16,55 +16,56 @@
 //! # `ctx` carries the signer's identity
 //!
 //! Every SM2 signing/verification operation needs the signer's identity octet string `IDA`, which
-//! `ZA` binds into the hash (GB/T 32918.2-2016 §5.5; the draft's §5.1.4.4). This crate
-//! repurposes [`bouncycastle_core::traits::Signer`]'s
-//! `ctx` parameter to carry it -- see [`sm2`]'s module docs for the full reasoning and the
+//! `ZA` binds into the hash (GB/T 32918.2-2016 §5.5; the draft's §5.1.4.4). This crate carries it
+//! in the key traits' `ctx` parameter -- see [`sm2`]'s module docs for the full reasoning and the
 //! resulting requirement that `ctx` must be `Some`.
 //!
 //! # Usage Examples
 //!
 //! Every SM2 operation needs the signer's identity `IDA`, which `ZA` binds into the message hash;
-//! this crate carries it in the `Signer`/`SignatureVerifier` traits' `ctx` parameter, and rejects
-//! `None`. Signing draws a fresh `k` each call, so signatures are not reproducible:
+//! this crate carries it in `ctx`, and rejects `None`. Signing draws a fresh `k` from the RNG it
+//! is given, so signatures are not reproducible:
 //!
 //! ```
-//! use bouncycastle_core::traits::{SignatureVerifier, Signer};
+//! use bouncycastle_core::signature_key::{SigningKey, VerifyingKey};
+//! use bouncycastle_rng::HashDRBG_SHA512;
 //! use bouncycastle_sm2::keys::keygen;
-//! use bouncycastle_sm2::sm2::SM2;
 //!
-//! let (pk, sk) = keygen()?;
+//! let (pk, sk) = keygen(&mut HashDRBG_SHA512::new_from_os())?;
+//! let mut rng = HashDRBG_SHA512::new_from_os();
 //! let id = b"alice@example.com";
 //! let message = b"the message to sign";
 //!
-//! let signature = SM2::sign(&sk, message, Some(id))?;
-//! SM2::verify(&pk, message, Some(id), &signature)?;
+//! let signature = sk.sign(&mut rng, message, Some(id))?;
+//! pk.verify(message, Some(id), &signature)?;
 //!
 //! // The identity is part of what is signed: verifying under a different one fails.
-//! assert!(SM2::verify(&pk, message, Some(b"bob@example.com"), &signature).is_err());
+//! assert!(pk.verify(message, Some(b"bob@example.com"), &signature).is_err());
 //! // And `ctx` is not optional here, unlike every other primitive in this workspace.
-//! assert!(SM2::sign(&sk, message, None).is_err());
+//! assert!(sk.sign(&mut rng, message, None).is_err());
 //! # Ok::<(), bouncycastle_core::errors::SignatureError>(())
 //! ```
 //!
-//! Streaming, for a message too large to hold at once. `ZA` is absorbed by `sign_init`, so only
-//! the message itself passes through `sign_update`:
+//! Streaming, for a message too large to hold at once. `ZA` is absorbed, and `k` drawn, when the
+//! signer is created, so only the message itself passes through `do_update`:
 //!
 //! ```
-//! use bouncycastle_core::traits::{SignatureVerifier, Signer};
+//! use bouncycastle_core::signature_key::{SigningKey, VerifyingKey};
+//! use bouncycastle_core::traits::{SignatureSigner, SignatureVerifier};
+//! use bouncycastle_rng::HashDRBG_SHA512;
 //! use bouncycastle_sm2::keys::keygen;
-//! use bouncycastle_sm2::sm2::SM2;
 //!
-//! let (pk, sk) = keygen()?;
+//! let (pk, sk) = keygen(&mut HashDRBG_SHA512::new_from_os())?;
 //! let id = b"alice@example.com";
 //!
-//! let mut signer = SM2::sign_init(&sk, Some(id))?;
-//! signer.sign_update(b"the first chunk, ");
-//! signer.sign_update(b"then the second");
-//! let signature = signer.sign_final()?;
+//! let mut signer = sk.create_signer(&mut HashDRBG_SHA512::new_from_os(), Some(id))?;
+//! signer.do_update(b"the first chunk, ");
+//! signer.do_update(b"then the second");
+//! let signature = signer.do_final()?;
 //!
-//! let mut verifier = SM2::verify_init(&pk, Some(id))?;
-//! verifier.verify_update(b"the first chunk, then the second");
-//! verifier.verify_final(&signature)?;
+//! let mut verifier = pk.create_verifier(Some(id))?;
+//! verifier.do_update(b"the first chunk, then the second");
+//! verifier.do_verify_final(&signature)?;
 //! # Ok::<(), bouncycastle_core::errors::SignatureError>(())
 //! ```
 //!
@@ -73,10 +74,11 @@
 //! private key, with `dA` required to be in `[1, n-2]`:
 //!
 //! ```
+//! use bouncycastle_rng::HashDRBG_SHA512;
 //! use bouncycastle_core::traits::{SignaturePrivateKey, SignaturePublicKey};
 //! use bouncycastle_sm2::keys::{SM2PrivateKey, SM2PublicKey, keygen};
 //!
-//! let (pk, sk) = keygen()?;
+//! let (pk, sk) = keygen(&mut HashDRBG_SHA512::new_from_os())?;
 //!
 //! assert_eq!(SM2PublicKey::from_bytes(&pk.encode())?, pk);
 //! assert_eq!(SM2PrivateKey::from_bytes(&sk.encode())?, sk);
@@ -119,14 +121,14 @@
 //!   [`bouncycastle_ec::sm2_scalar::Sm2Scalar`] (a [`bouncycastle_utils::secret::Secret`]). The
 //!   exceptions are GB/T 32918.2-2016 §6.1's two retry checks, step A5's `r = 0` or `r + k = n`
 //!   and step A6's `s = 0`: each is a branch, taken with probability about `2^-256`, and a taken
-//!   branch discards that `k` (the signer draws a fresh one), so neither reveals anything about a
-//!   `k` that is used.
+//!   branch discards that `k` (the signer reports failure and the caller makes a fresh one), so
+//!   neither reveals anything about a `k` that is used.
 //! - **`k` must never repeat across two signatures under the same key with different messages.** As
 //!   with ECDSA, a repeated `k` leaks `dA` directly from two signatures' `(r, s)` pairs. Unlike
 //!   `bouncycastle-ecdsa`'s curves, there is no deterministic (RFC 6979-style) default here: the
 //!   standard only specifies randomised `k` generation (GB/T 32918.2-2016 §6.1 step A3), so
-//!   [`bouncycastle_core::traits::Signer::sign`] sources `k` from the library's default OS-backed
-//!   RNG on every call -- see [`sm2`]'s module docs.
+//!   [`SigningKey::create_signer`](bouncycastle_core::signature_key::SigningKey::create_signer)
+//!   draws `k` from the RNG it is handed, once per signer -- see [`sm2`]'s module docs.
 
 #![no_std]
 #![forbid(unsafe_code)]

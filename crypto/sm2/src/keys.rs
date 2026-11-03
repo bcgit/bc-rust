@@ -17,7 +17,6 @@ use bouncycastle_ec::sm2::Sm2FieldElement;
 use bouncycastle_ec::sm2_comb::comb_multiply_base_point;
 use bouncycastle_ec::sm2_scalar::{Sm2Scalar, Sm2ScalarField};
 use bouncycastle_ec::sm2_sec1;
-use bouncycastle_rng::DefaultRNG;
 use bouncycastle_utils::secret::Secret;
 use core::fmt;
 use core::fmt::{Debug, Display, Formatter};
@@ -49,7 +48,7 @@ pub(crate) const EXTRA_BITS_DRBG_OUTPUT_LEN: usize = 40;
 /// twice what key generation did, and slightly more than *verification*, which is backwards for
 /// any signature scheme.
 ///
-/// So `PA` is computed once, when the key is created ([`keygen_from_rng`], which has it for free)
+/// So `PA` is computed once, when the key is created ([`keygen`], which has it for free)
 /// or loaded ([`SignaturePrivateKey::from_bytes`], which pays one multiplication once instead of
 /// one per signature), and kept here. The cost is [`core::mem::size_of`] for this struct rising
 /// from 32 bytes to 96 -- `PA` is two field elements -- which the crate docs' Memory Footprint
@@ -198,11 +197,6 @@ impl SM2PublicKey {
     }
 }
 
-/// Generates an SM2 key pair, sourcing the DRBG output from the library's default OS-backed RNG.
-pub fn keygen() -> Result<(SM2PublicKey, SM2PrivateKey), SignatureError> {
-    keygen_from_rng(&mut DefaultRNG::default())
-}
-
 /// As [`keygen`], but sources the DRBG output from the caller-provided RNG, which must offer
 /// a security strength of at least 128 bits: GB/T 32918.2-2016 §5.4.3 asks only for an approved
 /// random number generator and the draft says no more (see the module docs on why key generation
@@ -210,7 +204,7 @@ pub fn keygen() -> Result<(SM2PublicKey, SM2PrivateKey), SignatureError> {
 /// method's own Appendix A.2.1 step 3, requiring a DRBG strength "not less than" the one SP
 /// 800-57 Part 1 Rev. 5's Table 2 associates with SM2's 256-bit curve order (`f = 256-383` in
 /// that table's ECC column, giving 128-bit security).
-pub fn keygen_from_rng(rng: &mut dyn RNG) -> Result<(SM2PublicKey, SM2PrivateKey), SignatureError> {
+pub fn keygen(rng: &mut dyn RNG) -> Result<(SM2PublicKey, SM2PrivateKey), SignatureError> {
     // FIPS 186-5 Appendix A.2.1 step 3: the DRBG must offer at least the security strength
     // SM2's 256-bit curve order calls for (SP 800-57 Part 1 Rev. 5, Table 2: 128 bits).
     if rng.security_strength() < SecurityStrength::_128bit {
