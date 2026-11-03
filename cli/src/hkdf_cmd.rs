@@ -1,15 +1,17 @@
-use std::fs;
+//! The `hkdf-*` subcommands: RFC 5869 extract-then-expand.
+
 use std::process::exit;
 
+use crate::helpers::{
+    decode_hex_arg, load_secret, read_input_file, write_bytes_or_hex, write_stdout,
+};
 use bouncycastle::core::hazmat::do_hazardous_operations;
 use bouncycastle::core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
-use bouncycastle::hex;
 use bouncycastle::hkdf;
+use bouncycastle::hkdf::HKDF;
+use bouncycastle::hmac::HMACParams;
 use bouncycastle::sha2::hkdf::{HKDF_SHA256, HKDF_SHA384, HKDF_SHA512};
 use bouncycastle::sm3::hkdf::HKDF_SM3;
-
-/// The salt is held in a fixed-size key buffer; the library itself puts no bound on it.
-const MAX_SALT_LEN: usize = 1024;
 
 #[allow(non_camel_case_types)]
 pub(crate) enum HKDFVariant {
@@ -19,6 +21,7 @@ pub(crate) enum HKDFVariant {
     SM3,
 }
 
+#[allow(clippy::too_many_arguments)] // one flag per RFC 5869 input, each inline or from a file
 pub(crate) fn hkdf_cmd(
     variant: HKDFVariant,
     salt: &Option<String>,
@@ -30,82 +33,60 @@ pub(crate) fn hkdf_cmd(
     len: usize,
     output_hex: bool,
 ) {
-    // Each value may come from hex on the command line or from a binary file; the file wins if
-    // both are given, as the subcommands' help says.
-    let salt_bytes = if let Some(file) = salt_file {
-        fs::read(file).unwrap()
-    } else if let Some(hex_str) = salt {
-        hex::decode(hex_str).unwrap()
-    } else {
-        eprintln!("Error: either `salt` or `salt-file` must be supplied.");
-        exit(-1)
-    };
-    if salt_bytes.len() > MAX_SALT_LEN {
-        eprintln!("Error: The CLI only supports HKDF salts up to {MAX_SALT_LEN} bytes.");
-        exit(-1);
-    }
-    let mut salt_key = KeyMaterial::<MAX_SALT_LEN>::from_bytes(&salt_bytes).unwrap();
-    // force it just so the CLI behaves properly even with all-zero or zero-length keys
-    do_hazardous_operations(&mut salt_key, |salt_key| salt_key.set_key_type(KeyType::MACKey))
-        .unwrap();
-
-    let ikm_bytes = if let Some(file) = ikm_file {
-        fs::read(file).unwrap()
-    } else if let Some(hex_str) = ikm {
-        hex::decode(hex_str).unwrap()
-    } else {
-        eprintln!("Error: either `ikm` or `ikm_file` must be supplied.");
-        exit(-1)
-    };
+    // Each value may come from hex on the command line or from a file; the file wins if both
+    // are given, as the subcommands' help says.
+    let mut salt = load_secret(salt, salt_file, "salt");
+    // Tagged as the secret salt of SP 800-56C: that is what credits its entropy, and an all-zero
+    // or empty salt is a legitimate thing to give on the command line.
+    do_hazardous_operations(&mut salt, |salt| salt.set_key_type(KeyType::MACKey)).unwrap_or_else(
+        |e| {
+            eprintln!("Error: couldn't load the salt: {e:?}");
+            exit(-1);
+        },
+    );
+    let ikm = load_secret(ikm, ikm_file, "ikm");
 
     // RFC 5869 Section 2.3: info is "optional context and application specific information (can
     // be a zero-length string)", so neither flag is required.
-    let info = if let Some(file) = additional_input_file {
-        fs::read(file).unwrap()
-    } else if let Some(hex_str) = additional_input {
-        hex::decode(hex_str).unwrap()
-    } else {
-        Vec::new()
+    let info = match (additional_input_file, additional_input) {
+        (Some(file), _) => read_input_file(file),
+        (None, Some(hex_str)) => decode_hex_arg(hex_str, "additional-input"),
+        (None, None) => Vec::new(),
     };
 
     // RFC 5869: PRK = HKDF-Extract(salt, IKM), then OKM = HKDF-Expand(PRK, info, L). The IKM is
-    // streamed into the extract phase, so its length is not bounded by a KeyMaterial buffer, and the
-    // additional input is the expand phase's `info`. The library refuses an L above 255 * HashLen.
+    // streamed into the extract phase and the additional input is the expand phase's `info`. The
+    // library refuses an L above 255 * HashLen.
     let mut out_key = KeyMaterial::<{ 255 * hkdf::MAX_HMAC_OUTPUT_LEN }>::new();
     let result = match variant {
-        HKDFVariant::SHA256 => {
-            let mut h = HKDF_SHA256::new();
-            h.do_extract_init(&salt_key).unwrap();
-            h.do_extract_update_bytes(&ikm_bytes).unwrap();
-            let prk = h.do_extract_final().unwrap();
-            HKDF_SHA256::expand_out(&prk, &info, len, &mut out_key)
-        }
-        HKDFVariant::SHA384 => {
-            let mut h = HKDF_SHA384::new();
-            h.do_extract_init(&salt_key).unwrap();
-            h.do_extract_update_bytes(&ikm_bytes).unwrap();
-            let prk = h.do_extract_final().unwrap();
-            HKDF_SHA384::expand_out(&prk, &info, len, &mut out_key)
-        }
-        HKDFVariant::SHA512 => {
-            let mut h = HKDF_SHA512::new();
-            h.do_extract_init(&salt_key).unwrap();
-            h.do_extract_update_bytes(&ikm_bytes).unwrap();
-            let prk = h.do_extract_final().unwrap();
-            HKDF_SHA512::expand_out(&prk, &info, len, &mut out_key)
-        }
-        HKDFVariant::SM3 => {
-            let mut h = HKDF_SM3::new();
-            h.do_extract_init(&salt_key).unwrap();
-            h.do_extract_update_bytes(&ikm_bytes).unwrap();
-            let prk = h.do_extract_final().unwrap();
-            HKDF_SM3::expand_out(&prk, &info, len, &mut out_key)
-        }
+        HKDFVariant::SHA256 => run(HKDF_SHA256::new(), &salt, &ikm, &info, len, &mut out_key),
+        HKDFVariant::SHA384 => run(HKDF_SHA384::new(), &salt, &ikm, &info, len, &mut out_key),
+        HKDFVariant::SHA512 => run(HKDF_SHA512::new(), &salt, &ikm, &info, len, &mut out_key),
+        HKDFVariant::SM3 => run(HKDF_SM3::new(), &salt, &ikm, &info, len, &mut out_key),
     };
     if let Err(e) = result {
-        eprintln!("Error: {e:?}");
+        eprintln!("Error: HKDF failed: {e}");
         exit(-1);
     }
 
-    crate::helpers::write_bytes_or_hex(out_key.ref_to_bytes(), output_hex);
+    write_bytes_or_hex(out_key.ref_to_bytes(), output_hex);
+    if output_hex {
+        write_stdout(b"\n");
+    }
+}
+
+/// Extract then expand through `h`, into `out_key`.
+fn run<H: HMACParams, const HASH_STATE_LEN: usize, const HKDF_STATE_LEN: usize>(
+    mut h: HKDF<H, HASH_STATE_LEN, HKDF_STATE_LEN>,
+    salt: &impl KeyMaterialTrait,
+    ikm: &impl KeyMaterialTrait,
+    info: &[u8],
+    len: usize,
+    out_key: &mut impl KeyMaterialTrait,
+) -> Result<usize, String> {
+    h.do_extract_init(salt).map_err(|e| format!("{e:?}"))?;
+    h.do_extract_update_bytes(ikm.ref_to_bytes()).map_err(|e| format!("{e:?}"))?;
+    let prk = h.do_extract_final().map_err(|e| format!("{e:?}"))?;
+    HKDF::<H, HASH_STATE_LEN, HKDF_STATE_LEN>::expand_out(&prk, info, len, out_key)
+        .map_err(|e| format!("{e:?}"))
 }

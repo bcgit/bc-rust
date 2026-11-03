@@ -1,19 +1,19 @@
-use std::io;
-use std::io::Read;
-use std::process::exit;
+//! The `hmac-*` and `kmac*` subcommands: a MAC over stdin, computed or verified.
 
-use crate::helpers::read_from_file_raw;
-use crate::sha3_cmd::Strength;
+use crate::helpers::{
+    SecretBytes, decode_hex_arg, load_secret, stream_stdin, write_bytes_or_hex, write_stdout,
+};
+use crate::sha3_cmd::{MAX_FIXED_OUTPUT_LEN, Strength};
 use bouncycastle::core::errors::MACError;
 use bouncycastle::core::hazmat::do_hazardous_operations;
-use bouncycastle::core::key_material::{KeyMaterial512, KeyMaterialTrait, KeyType};
+use bouncycastle::core::key_material::{KeyMaterialTrait, KeyType};
 use bouncycastle::core::symmetric_key::{FromAnyKeyMaterial, MacGenerationKey};
 use bouncycastle::core::traits::MAC;
-use bouncycastle::hex;
 use bouncycastle::hmac::HmacKey;
 use bouncycastle::sha2::{SHA256, SHA512, SHA512_224, SHA512_256};
 use bouncycastle::sha3::kmac::{KMAC128Key, KMAC256Key};
 use bouncycastle::sm3::SM3;
+use std::process::exit;
 
 #[allow(non_camel_case_types)]
 pub(crate) enum HMACVariant {
@@ -24,29 +24,18 @@ pub(crate) enum HMACVariant {
     SM3,
 }
 
-/// Loads a MAC key from `--key-file` (raw) or `--key` (hex), tagged as a MAC key. The file wins
-/// when both are given, as the help text says and the other commands' loaders do.
-fn load_mac_key(key: &Option<String>, key_file: &Option<String>) -> KeyMaterial512 {
-    let key_bytes: Vec<u8> = if let Some(key_file) = key_file {
-        read_from_file_raw(key_file)
-    } else if let Some(key) = key {
-        hex::decode(key).unwrap_or_else(|_| {
-            eprintln!("Error: `--key` must be hex. Use `--key-file` for raw bytes.");
-            exit(-1);
-        })
-    } else {
-        eprintln!("Error: either `key` or `key-file` must be supplied.");
-        exit(-1)
-    };
-
-    if key_bytes.len() > 64 {
-        eprintln!("Error: CLI only supports MAC keys 64 bytes.");
-        exit(-1);
+/// The MAC key from `--key-file` or `--key`, tagged as a MAC key. Any length the secret buffer
+/// holds is accepted: HMAC hashes a key longer than its block (RFC 2104 Section 2), and KMAC
+/// encodes the key's length (SP 800-185 Section 4.2).
+fn load_mac_key(key: &Option<String>, key_file: &Option<String>) -> SecretBytes {
+    let mut key = load_secret(key, key_file, "key");
+    if key.key_type() == KeyType::Zeroized {
+        // Same stance as the cipher loaders: warn, then do what was asked. A CLI is used for
+        // test vectors and scripting, where an all-zero key is a legitimate thing to want.
+        eprintln!(
+            "Warning: all-zero (or otherwise zeroized) key provided. Proceeding, but this is not secure."
+        );
     }
-    let mut key = KeyMaterial512::from_bytes(&key_bytes).unwrap_or_else(|e| {
-        eprintln!("Error: couldn't load the key: {e:?}");
-        exit(-1);
-    });
     do_hazardous_operations(&mut key, |key| key.set_key_type(KeyType::MACKey)).unwrap_or_else(
         |e| {
             eprintln!("Error: couldn't load the key: {e:?}");
@@ -54,6 +43,11 @@ fn load_mac_key(key: &Option<String>, key_file: &Option<String>) -> KeyMaterial5
         },
     );
     key
+}
+
+fn mac_key_error(e: MACError) -> ! {
+    eprintln!("Error: couldn't build the MAC key: {e:?}");
+    exit(-1)
 }
 
 pub(crate) fn mac_cmd(
@@ -65,26 +59,32 @@ pub(crate) fn mac_cmd(
 ) {
     let key = load_mac_key(key, key_file);
 
-    // instantiate the MAC object and call do_mac()
+    // The allow-weak form: a CLI is used for test vectors and scripting, where a short or
+    // all-zero key is a legitimate thing to want.
     match hmac_variant {
         HMACVariant::SHA256 => {
-            let hmac_key = HmacKey::<SHA256>::from_key_material_allow_weak(&key).unwrap();
+            let hmac_key = HmacKey::<SHA256>::from_key_material_allow_weak(&key)
+                .unwrap_or_else(|e| mac_key_error(e));
             do_mac(hmac_key.create_generator(), verify_val, output_hex);
         }
         HMACVariant::SHA512 => {
-            let hmac_key = HmacKey::<SHA512>::from_key_material_allow_weak(&key).unwrap();
+            let hmac_key = HmacKey::<SHA512>::from_key_material_allow_weak(&key)
+                .unwrap_or_else(|e| mac_key_error(e));
             do_mac(hmac_key.create_generator(), verify_val, output_hex);
         }
         HMACVariant::SHA512_224 => {
-            let hmac_key = HmacKey::<SHA512_224>::from_key_material_allow_weak(&key).unwrap();
+            let hmac_key = HmacKey::<SHA512_224>::from_key_material_allow_weak(&key)
+                .unwrap_or_else(|e| mac_key_error(e));
             do_mac(hmac_key.create_generator(), verify_val, output_hex);
         }
         HMACVariant::SHA512_256 => {
-            let hmac_key = HmacKey::<SHA512_256>::from_key_material_allow_weak(&key).unwrap();
+            let hmac_key = HmacKey::<SHA512_256>::from_key_material_allow_weak(&key)
+                .unwrap_or_else(|e| mac_key_error(e));
             do_mac(hmac_key.create_generator(), verify_val, output_hex);
         }
         HMACVariant::SM3 => {
-            let hmac_key = HmacKey::<SM3>::from_key_material_allow_weak(&key).unwrap();
+            let hmac_key = HmacKey::<SM3>::from_key_material_allow_weak(&key)
+                .unwrap_or_else(|e| mac_key_error(e));
             do_mac(hmac_key.create_generator(), verify_val, output_hex);
         }
     }
@@ -95,58 +95,51 @@ pub(crate) fn mac_cmd(
 pub(crate) fn kmac_cmd(
     strength: Strength,
     length: usize,
-    customization: &Option<String>,
+    customization: &[u8],
     key: &Option<String>,
     key_file: &Option<String>,
     verify_val: &Option<String>,
     output_hex: bool,
 ) {
+    if length > MAX_FIXED_OUTPUT_LEN {
+        eprintln!(
+            "Error: a KMAC tag is computed whole; this command takes at most {MAX_FIXED_OUTPUT_LEN} bytes. Use kmacxof* for a long, streamed output."
+        );
+        exit(-1);
+    }
     let key = load_mac_key(key, key_file);
-    let s = customization.as_deref().unwrap_or("").as_bytes();
-    // The allow-weak form, as the HMAC commands use: a CLI is used for test vectors and
-    // scripting, where a short or all-zero key is a legitimate thing to want.
     match strength {
         Strength::Bits128 => {
-            let kmac_key = KMAC128Key::with_params_allow_weak(&key, s, length)
-                .unwrap_or_else(|e| kmac_key_error(e));
+            let kmac_key = KMAC128Key::with_params_allow_weak(&key, customization, length)
+                .unwrap_or_else(|e| mac_key_error(e));
             do_mac(kmac_key.create_generator(), verify_val, output_hex)
         }
         Strength::Bits256 => {
-            let kmac_key = KMAC256Key::with_params_allow_weak(&key, s, length)
-                .unwrap_or_else(|e| kmac_key_error(e));
+            let kmac_key = KMAC256Key::with_params_allow_weak(&key, customization, length)
+                .unwrap_or_else(|e| mac_key_error(e));
             do_mac(kmac_key.create_generator(), verify_val, output_hex)
         }
     }
 }
 
-/// The key is already a MAC key, so what fails here is the tag length, which came from the
-/// command line: report it the way the key errors are reported rather than through a panic.
-fn kmac_key_error(e: MACError) -> ! {
-    eprintln!("Error: couldn't build the KMAC key: {e:?}");
-    exit(-1)
-}
+/// Streams stdin into `mac`, then writes the tag, or verifies `--verify` against it and reports
+/// the outcome through the exit status (0 verified, 255 not) and an `Error:` line.
+pub(crate) fn do_mac(mut mac: impl MAC, verify_val: &Option<String>, output_hex: bool) {
+    stream_stdin(|chunk| mac.do_update(chunk));
 
-fn do_mac(mut mac: impl MAC, verify_val: &Option<String>, output_hex: bool) {
-    // read the content to be MAC'd from stdin
-    let mut buf: [u8; 1024] = [0u8; 1024];
-    let mut bytes_read = io::stdin().read(&mut buf).expect("Failed to read from stdin");
-    while bytes_read != 0 {
-        mac.do_update(&buf[..bytes_read]);
-        bytes_read = io::stdin().read(&mut buf).expect("Failed to read from stdin");
-    }
-
-    if verify_val.is_none() {
-        // compute a MAC value
-        let out = mac.do_final();
-
-        crate::helpers::write_bytes_or_hex(&out, output_hex);
-        crate::helpers::write_stdout(b"\n");
-    } else {
-        // verify a MAC
-        let expected = hex::decode(verify_val.as_ref().unwrap()).unwrap_or_else(|_| {
-            eprintln!("Error: the MAC to verify must be hex.");
-            exit(-1);
-        });
-        if mac.do_verify_final(&expected) { exit(0) } else { exit(-1) }
+    match verify_val {
+        None => {
+            let out = mac.do_final();
+            write_bytes_or_hex(&out, output_hex);
+            write_stdout(b"\n");
+        }
+        Some(verify_val) => {
+            let expected = decode_hex_arg(verify_val, "verify");
+            if mac.do_verify_final(&expected) {
+                exit(0)
+            }
+            eprintln!("Error: MAC verification failed.");
+            exit(-1)
+        }
     }
 }

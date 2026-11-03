@@ -1,3 +1,22 @@
+//! Shared plumbing: how files and stdin are read, how secrets are held, how output is written,
+//! and the streaming loops the hash-like commands share.
+//!
+//! # Input conventions, the same for every subcommand
+//!
+//! - A value given inline (`--key`, `--iv`, `--nonce`, `--aad`, `--salt`, `--ikm`, `--verify`,
+//!   `--element`, `--customization-hex`, ...) is hex.
+//! - A value given as a file (`--key-file`, `--iv-file`, `--skfile`, `--sigfile`, ...), or on
+//!   stdin where a command reads a key, seed, signature or ciphertext there, is the file's raw
+//!   bytes. With the global `--hex-input` flag it is hex text instead, with whitespace, `\x`
+//!   prefixes and a trailing newline ignored. There is no guessing: a raw file whose bytes happen
+//!   to be hex digits is still raw.
+//! - A trailing newline is part of a raw value except where a command says it strips one.
+//! - Keys, seeds, private keys, salts and IKM are read into [`SecretBytes`], a `KeyMaterial`
+//!   buffer that is zeroized when dropped, and never through a `Vec`; a secret longer than
+//!   [`MAX_SECRET_LEN`] is refused.
+//! - A read or write failure, a malformed value and a wrong length are reported on stderr with
+//!   an `Error:` line and exit status 255; a panic is never the answer to input.
+
 use bouncycastle::core::hazmat::do_hazardous_operations;
 use bouncycastle::core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle::core::security_strength::SecurityStrength;
@@ -7,86 +26,248 @@ use std::fs::File;
 use std::io;
 use std::io::{Read, Write};
 use std::process::exit;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 pub mod aead_cipher_helpers;
 pub mod block_mode_helpers;
 pub mod stream_mode_helpers;
 
-/// Reads a file's bytes exactly as they are, with no hex-or-raw guessing.
-///
-/// Use this where a misread would silently change the *value* the caller asked for rather than
-/// merely fail to match it -- a nonce is the reason this exists: two distinct binary nonce files
-/// that happen to decode as hex to the same bytes must not collapse to one nonce (see
-/// `aes_ccm_cmd::load_nonce`). [`read_from_file`]'s "try hex, fall back to raw" heuristic is fine
-/// for a key, where a wrong guess only ever produces a mismatch, never a same-looking-different
-/// value.
-pub(crate) fn read_from_file_raw(filename: &str) -> Vec<u8> {
+/// Bytes read from stdin per call, and squeezed per call for an XOF.
+pub(crate) const CHUNK_LEN: usize = 1024;
+
+/// The most a secret read from a file, stdin or the command line may be: enough for an ML-DSA-87
+/// private key (4896 bytes) in hex with room to spare.
+pub(crate) const MAX_SECRET_LEN: usize = 16 * 1024;
+
+/// A secret as read: a zeroized buffer holding up to [`MAX_SECRET_LEN`] bytes, tagged
+/// [`KeyType::Unknown`] (or `Zeroized` when all zero); the command re-tags what it makes of it.
+pub(crate) type SecretBytes = KeyMaterial<MAX_SECRET_LEN>;
+
+static HEX_INPUT: AtomicBool = AtomicBool::new(false);
+
+/// Records the global `--hex-input` flag for the readers below.
+pub(crate) fn set_hex_input(on: bool) {
+    HEX_INPUT.store(on, Ordering::Relaxed);
+}
+
+/// Whether files and stdin values are hex text rather than raw bytes.
+pub(crate) fn hex_input() -> bool {
+    HEX_INPUT.load(Ordering::Relaxed)
+}
+
+// ---- public (non-secret) input ---------------------------------------------------------------
+
+/// A file's bytes exactly as they are, regardless of `--hex-input`: for the data a command
+/// authenticates or hashes rather than a value it decodes.
+pub(crate) fn read_file(filename: &str) -> Vec<u8> {
     std::fs::read(filename).unwrap_or_else(|e| {
         eprintln!("Error: couldn't read file '{filename}': {e}");
         exit(-1);
     })
 }
 
-/// `bytes` without one trailing line ending (`\n` or `\r\n`), if it has one.
-///
-/// Files written by shell tools usually end in a newline that is not part of the value. Whether
-/// stripping it is right depends on what the caller expects -- a binary key whose last byte
-/// happens to be `0x0a` must not lose it -- so this only removes the bytes; the caller decides,
-/// by the length it knows, whether to use the result.
+/// A file's value: its raw bytes, or its hex decoding under `--hex-input`.
+pub(crate) fn read_input_file(filename: &str) -> Vec<u8> {
+    let bytes = read_file(filename);
+    if !hex_input() {
+        return bytes;
+    }
+    hex::decode(&bytes).unwrap_or_else(|e| {
+        eprintln!("Error: file '{filename}' is not valid hex (given --hex-input): {e:?}");
+        exit(-1);
+    })
+}
+
+/// Stdin's value, as [`read_input_file`] for a file.
+pub(crate) fn read_input_stdin() -> Vec<u8> {
+    let bytes = read_stdin_all();
+    if !hex_input() {
+        return bytes;
+    }
+    hex::decode(&bytes).unwrap_or_else(|e| {
+        eprintln!("Error: stdin is not valid hex (given --hex-input): {e:?}");
+        exit(-1);
+    })
+}
+
+/// The value from the file when one is named, else from stdin.
+pub(crate) fn read_input_file_or_stdin(filename: &Option<String>) -> Vec<u8> {
+    match filename {
+        Some(filename) => read_input_file(filename),
+        None => read_input_stdin(),
+    }
+}
+
+/// Decodes an inline hex argument, naming the flag in the error.
+pub(crate) fn decode_hex_arg(value: &str, flag: &str) -> Vec<u8> {
+    hex::decode(value).unwrap_or_else(|_| {
+        eprintln!("Error: `--{flag}` must be hex.");
+        exit(-1);
+    })
+}
+
+// ---- secret input ----------------------------------------------------------------------------
+
+/// Reads `source` to its end into a fresh [`SecretBytes`], refusing more than
+/// [`MAX_SECRET_LEN`] bytes. `what` names the source for the messages.
+fn read_secret_from(source: &mut impl Read, what: &str) -> SecretBytes {
+    let mut secret = SecretBytes::new();
+    let mut len = 0usize;
+    let result = do_hazardous_operations(&mut secret, |secret| {
+        let buf = secret.ref_to_bytes_mut()?;
+        loop {
+            let n = source.read(&mut buf[len..]).unwrap_or_else(|e| {
+                eprintln!("Error: couldn't read {what}: {e}");
+                exit(-1);
+            });
+            if n == 0 {
+                break;
+            }
+            len += n;
+            if len == buf.len() {
+                // Full: anything more is over the limit. (A read of 0 into an empty slice is
+                // indistinguishable from end of input, so probe explicitly.)
+                let mut probe = [0u8; 1];
+                if source.read(&mut probe).unwrap_or(0) != 0 {
+                    eprintln!(
+                        "Error: {what} is longer than the {MAX_SECRET_LEN} bytes a secret may be."
+                    );
+                    exit(-1);
+                }
+                break;
+            }
+        }
+        secret.set_key_len(len)?;
+        secret.set_key_type(KeyType::Unknown)
+    });
+    secret_tagging_error(result, what);
+    secret
+}
+
+/// The hex decoding of `text`, into a fresh [`SecretBytes`]: the decoder writes straight into
+/// the zeroized buffer, so the plaintext of the secret is never in a `Vec`.
+fn decode_secret_hex(text: &[u8], what: &str) -> SecretBytes {
+    let mut secret = SecretBytes::new();
+    let result = do_hazardous_operations(&mut secret, |secret| {
+        let out = secret.ref_to_bytes_mut()?;
+        let len = hex::decode_out(text, out).unwrap_or_else(|e| {
+            eprintln!("Error: {what} is not valid hex: {e:?}");
+            exit(-1);
+        });
+        secret.set_key_len(len)?;
+        secret.set_key_type(KeyType::Unknown)
+    });
+    secret_tagging_error(result, what);
+    secret
+}
+
+/// `set_key_len` and `set_key_type` refuse nothing a reader can cause except an all-zero value,
+/// which they tag `Zeroized` and report; that is a value, not an error, so it passes.
+fn secret_tagging_error(
+    result: Result<(), bouncycastle::core::errors::KeyMaterialError>,
+    what: &str,
+) {
+    use bouncycastle::core::errors::KeyMaterialError;
+    match result {
+        Ok(()) | Err(KeyMaterialError::ActingOnZeroizedKey) => {}
+        Err(e) => {
+            eprintln!("Error: couldn't hold {what} as key material: {e:?}");
+            exit(-1);
+        }
+    }
+}
+
+/// A secret from a file: its raw bytes, or its hex decoding under `--hex-input`.
+pub(crate) fn read_secret_file(filename: &str) -> SecretBytes {
+    let mut file = File::open(filename).unwrap_or_else(|e| {
+        eprintln!("Error: couldn't open file '{filename}': {e}");
+        exit(-1);
+    });
+    let what = format!("file '{filename}'");
+    let raw = read_secret_from(&mut file, &what);
+    if !hex_input() {
+        return raw;
+    }
+    decode_secret_hex(raw.ref_to_bytes(), &what)
+}
+
+/// A secret from stdin, as [`read_secret_file`] for a file.
+pub(crate) fn read_secret_stdin() -> SecretBytes {
+    let raw = read_secret_from(&mut io::stdin(), "stdin");
+    if !hex_input() {
+        return raw;
+    }
+    decode_secret_hex(raw.ref_to_bytes(), "stdin")
+}
+
+/// The secret from the file when one is named, else from stdin.
+pub(crate) fn read_secret_file_or_stdin(filename: &Option<String>) -> SecretBytes {
+    match filename {
+        Some(filename) => read_secret_file(filename),
+        None => read_secret_stdin(),
+    }
+}
+
+/// A secret given inline, in hex. The command line is visible to other users and kept in shell
+/// history, which the help texts say; this only decodes what was given.
+pub(crate) fn decode_hex_secret(value: &str, flag: &str) -> SecretBytes {
+    decode_secret_hex(value.as_bytes(), &format!("`--{flag}`"))
+}
+
+/// A secret from `--<flag>-file` or `--<flag>` (hex); the file wins when both are given, as the
+/// help texts say. Neither is an error.
+pub(crate) fn load_secret(
+    inline: &Option<String>,
+    file: &Option<String>,
+    flag: &str,
+) -> SecretBytes {
+    match (file, inline) {
+        (Some(file), _) => read_secret_file(file),
+        (None, Some(value)) => decode_hex_secret(value, flag),
+        (None, None) => {
+            eprintln!("Error: either `--{flag}` or `--{flag}-file` must be supplied.");
+            exit(-1);
+        }
+    }
+}
+
+/// `bytes` without one trailing line ending (`\n` or `\r\n`), if it has one. Only the caller
+/// knows, by the length it expects, whether that byte is part of the value.
 pub(crate) fn strip_trailing_newline(bytes: &[u8]) -> &[u8] {
     bytes.strip_suffix(b"\r\n").or_else(|| bytes.strip_suffix(b"\n")).unwrap_or(bytes)
 }
 
-/// The bytes a hex-or-raw input stands for: its hex decoding if it is hex -- with one trailing
-/// line ending ignored, since files and pasted input usually end in one -- and the bytes
-/// themselves, untouched, otherwise. A raw input keeps its trailing newline; only the caller
-/// knows whether that byte is part of the value (see `block_mode_helpers::load_key`).
-pub(crate) fn hex_or_raw(buf: Vec<u8>) -> Vec<u8> {
-    // Decide by the bytes themselves rather than by whether the decoder accepts them: it skips
-    // NUL bytes as well as whitespace, so an all-zero binary key would otherwise "decode" to an
-    // empty hex string. Hex text is hex digits, whitespace and `\x` escapes, and nothing else.
-    let looks_like_hex = buf.iter().any(u8::is_ascii_hexdigit)
-        && buf
-            .iter()
-            .all(|b| b.is_ascii_hexdigit() || b.is_ascii_whitespace() || *b == b'\\' || *b == b'x');
-    if !looks_like_hex {
-        return buf;
-    }
-    match hex::decode(strip_trailing_newline(&buf)) {
-        Ok(decoded) => decoded,
-        Err(_) => buf,
-    }
-}
+// ---- stdin as data ---------------------------------------------------------------------------
 
-/// Reads either bin or hex
-pub(crate) fn read_from_file(filename: &str) -> Vec<u8> {
-    let file = File::open(&filename);
-    if file.is_ok() {
-        let mut buf = Vec::<u8>::new();
-        match file.unwrap().read_to_end(&mut buf) {
-            Ok(_bytes_read) => hex_or_raw(buf),
-            Err(_) => {
-                eprintln!("Error: couldn't open file '{}'", &filename);
-                exit(-1);
-            }
-        }
-    } else {
-        eprintln!("Error: couldn't open file '{}'", &filename);
+/// One read from stdin into `buf`; a read error is reported, not a panic. Returns 0 at the end.
+pub(crate) fn read_stdin_chunk(buf: &mut [u8]) -> usize {
+    io::stdin().read(buf).unwrap_or_else(|e| {
+        eprintln!("Error: failed to read from stdin: {e}");
         exit(-1);
+    })
+}
+
+/// Feeds stdin to `sink` in pieces of at most [`CHUNK_LEN`] bytes, so a long input is never
+/// held in memory.
+pub(crate) fn stream_stdin(mut sink: impl FnMut(&[u8])) {
+    let mut buf = [0u8; CHUNK_LEN];
+    loop {
+        let n = read_stdin_chunk(&mut buf);
+        if n == 0 {
+            return;
+        }
+        sink(&buf[..n]);
     }
 }
 
-/// Reads either bin or hex
-pub(crate) fn read_from_file_or_stdin(filename: &Option<String>) -> Vec<u8> {
-    if filename.is_some() {
-        // This already reads either bin or hex
-        return read_from_file(filename.as_ref().unwrap());
-    }
-
-    let mut buf = Vec::<u8>::new();
-    io::stdin().read_to_end(&mut buf).expect("Failed to read from stdin");
-    hex_or_raw(buf)
+/// All of stdin, where the whole input must be held anyway.
+pub(crate) fn read_stdin_all() -> Vec<u8> {
+    let mut out = Vec::new();
+    stream_stdin(|chunk| out.extend_from_slice(chunk));
+    out
 }
+
+// ---- output ----------------------------------------------------------------------------------
 
 /// Writes `bytes` to stdout, exiting quietly if the reader has gone away.
 ///
@@ -131,93 +312,107 @@ pub(crate) fn write_bytes_or_hex(bytes: &[u8], output_hex: bool) {
     }
 }
 
+/// Writes `bytes`, raw or as hex, to a new file `filename`; a failure names the path.
 pub(crate) fn write_bytes_or_hex_to_file(bytes: &[u8], filename: &str, output_hex: bool) {
-    let mut file = File::create(filename).expect("Failed to create file");
-
-    if output_hex {
-        for b in bytes.iter() {
-            file.write_all(format!("{b:02x}").as_bytes()).unwrap();
+    let result = File::create(filename).and_then(|mut file| {
+        if output_hex {
+            file.write_all(hex::encode(bytes).as_bytes())
+        } else {
+            file.write_all(bytes)
         }
-    } else {
-        file.write_all(bytes).unwrap();
+    });
+    if let Err(e) = result {
+        eprintln!("Error: couldn't write file '{filename}': {e}");
+        exit(-1);
     }
 }
 
-/// Loads it as either hex or bytes
-pub(crate) fn parse_seed<const SEED_LEN: usize>(bytes: &[u8]) -> Result<KeyMaterial<SEED_LEN>, ()> {
-    let bytes = if bytes.len() == 65 { &bytes[..64] } else { bytes };
+// ---- seeds -----------------------------------------------------------------------------------
 
-    // try decoding it as hex first
-    let seed_bytes: [u8; SEED_LEN] = match &hex::decode(&bytes) {
-        Ok(decoded_bytes) => {
-            if decoded_bytes.len() < SEED_LEN || decoded_bytes.len() > SEED_LEN + 1 {
-                // it was valid hex, but the wrong length
-                return Err(());
-            }
+/// Why a seed was refused: its length, which is the only thing checked.
+pub(crate) struct SeedError {
+    pub(crate) got: usize,
+}
 
-            decoded_bytes[..SEED_LEN].try_into().unwrap()
-        }
-        Err(_) => {
-            // it's not hex, so take the first SEED_LEN bytes of the raw binary
-            if bytes.len() < SEED_LEN || bytes.len() > SEED_LEN + 1 {
-                return Err(());
-            }
-
-            bytes[..SEED_LEN].try_into().unwrap()
-        }
-    };
-
-    // TODO: Verify that all error conditions have been checked
-    let mut seed = KeyMaterial::<SEED_LEN>::from_bytes_as_type(&seed_bytes, KeyType::Seed).unwrap();
-
+/// A `SEED_LEN`-byte seed from its bytes, which the caller has already read (raw, or decoded
+/// from hex under `--hex-input`). One trailing newline is tolerated, since a seed file written
+/// with `echo` has one.
+///
+/// A seed is required to be unpredictable at the parameter set's strength; the CLI cannot know
+/// whether it is, so an all-zero seed is accepted with a warning, which is what test vectors
+/// need.
+pub(crate) fn parse_seed<const SEED_LEN: usize>(
+    bytes: &[u8],
+) -> Result<KeyMaterial<SEED_LEN>, SeedError> {
+    let bytes = if bytes.len() == SEED_LEN + 1 { strip_trailing_newline(bytes) } else { bytes };
+    if bytes.len() != SEED_LEN {
+        return Err(SeedError { got: bytes.len() });
+    }
+    let mut seed = KeyMaterial::<SEED_LEN>::from_bytes_as_type(bytes, KeyType::Seed)
+        .unwrap_or_else(|e| {
+            eprintln!("Error: couldn't hold the seed as key material: {e:?}");
+            exit(-1);
+        });
     if seed.key_type() == KeyType::Zeroized || seed.security_strength() < SecurityStrength::_256bit
     {
         eprintln!(
             "Warning: low entropy seed provided. We'll still process it, but it may be insecure."
         );
-
         do_hazardous_operations(&mut seed, |seed| {
             seed.set_key_type(KeyType::Seed)?;
             seed.set_security_strength(SecurityStrength::_256bit)
         })
-        .unwrap();
+        .unwrap_or_else(|e| {
+            eprintln!("Error: couldn't tag the seed: {e:?}");
+            exit(-1);
+        });
     }
-
     Ok(seed)
 }
 
-/// Stream stdin through a [`Hash`] and write the digest to stdout (hex or binary), followed by a
-/// newline. Used by both the SHA-3 and Ascon-Hash256 subcommands.
+/// Reports a refused seed and exits.
+pub(crate) fn seed_error<const SEED_LEN: usize>(e: SeedError) -> ! {
+    eprintln!(
+        "Error: the seed must be {SEED_LEN} bytes (raw, or hex with --hex-input), got {} bytes.",
+        e.got
+    );
+    exit(-1);
+}
+
+// ---- streaming loops -------------------------------------------------------------------------
+
+/// Streams stdin through a [`Hash`] and writes the digest to stdout (hex or binary), followed by
+/// a newline. Used by the SHA-2, SHA-3, SM3 and Ascon-Hash256 subcommands.
 pub(crate) fn stream_hash(mut hasher: impl Hash, output_hex: bool) {
-    let mut buf: [u8; 1024] = [0u8; 1024];
-
-    let mut bytes_read = io::stdin().read(&mut buf).expect("Failed to read from stdin");
-
-    while bytes_read != 0 {
-        hasher.do_update(&buf[..bytes_read]);
-
-        bytes_read = io::stdin().read(&mut buf).expect("Failed to read from stdin");
-    }
-
+    stream_stdin(|chunk| hasher.do_update(chunk));
     let out = hasher.do_final();
     write_bytes_or_hex(&out, output_hex);
     write_stdout(b"\n");
 }
 
-/// Stream stdin through an [`XOF`] and squeeze `output_len` bytes to stdout (hex or binary),
-/// followed by a newline. Used by both the SHAKE and Ascon-XOF128/CXOF128 subcommands.
+/// Streams stdin through an [`XOF`] and squeezes `output_len` bytes to stdout (hex or binary),
+/// followed by a newline. Used by the SHAKE, cSHAKE, the SP 800-185 XOFs and Ascon-XOF128/CXOF128
+/// subcommands.
 pub(crate) fn stream_xof(mut xof: impl XOF, output_len: usize, output_hex: bool) {
-    let mut buf: [u8; 1024] = [0u8; 1024];
+    stream_stdin(|chunk| xof.do_update(chunk));
+    squeeze_to_stdout(xof.into_squeezer(), output_len, output_hex);
+}
 
-    let mut bytes_read = io::stdin().read(&mut buf).expect("Failed to read from stdin");
-
-    while bytes_read != 0 {
-        xof.do_update(&buf[..bytes_read]);
-
-        bytes_read = io::stdin().read(&mut buf).expect("Failed to read from stdin");
+/// Writes `output_len` bytes of `squeezer` to stdout in [`CHUNK_LEN`] pieces, followed by a
+/// newline, so the output is never held whole and a very long one is a long run rather than an
+/// allocation.
+pub(crate) fn squeeze_to_stdout(
+    mut squeezer: impl XOFSqueezer,
+    output_len: usize,
+    output_hex: bool,
+) {
+    let mut buf = [0u8; CHUNK_LEN];
+    let mut left = output_len;
+    while left > 0 {
+        let n = left.min(CHUNK_LEN);
+        squeezer.do_output_out(&mut buf[..n]);
+        write_bytes_or_hex(&buf[..n], output_hex);
+        left -= n;
     }
-
-    let out = xof.into_squeezer().do_output_final(output_len);
-    write_bytes_or_hex(&out, output_hex);
     write_stdout(b"\n");
 }

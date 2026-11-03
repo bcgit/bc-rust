@@ -162,7 +162,12 @@ test_key_file_accepts_binary_hex_and_a_trailing_newline() {
     "$BC_RUST" aes128-ctr -d encrypt --key-file "$TMP/key.bin" <"$TMP/pt" >"$TMP/ct"
 
     local form
-    for form in key.hex key.hex.nl key.bin.nl; do
+    # The hex forms need --hex-input: a key file is raw bytes unless the flag says otherwise.
+    for form in key.hex key.hex.nl; do
+        "$BC_RUST" --hex-input aes128-ctr -d decrypt --key-file "$TMP/$form" <"$TMP/ct" >"$TMP/rec"
+        assert_same "$TMP/pt" "$TMP/rec" "$form must load as the same key as key.bin"
+    done
+    for form in key.bin.nl; do
         "$BC_RUST" aes128-ctr -d decrypt --key-file "$TMP/$form" <"$TMP/ct" >"$TMP/rec"
         assert_same "$TMP/pt" "$TMP/rec" "$form must load as the same key as key.bin"
     done

@@ -31,7 +31,8 @@ kmac_round_trip() {
         "$BC_RUST" "$sub" 16 --key-file "$TMP/key" -v "${tag:0:32}" <"$TMP/msg"
 }
 
-# `kmac_refused_length SUBCOMMAND LENGTH` checks that LENGTH is refused with an error message,
+# `kmac_refused_length SUBCOMMAND LENGTH` checks that LENGTH is refused with an error message
+# (the library's floor for a short one, the CLI's whole-output cap for a huge one),
 # not a panic trace, whether computing or verifying.
 kmac_refused_length() {
     local sub=$1 length=$2
@@ -40,12 +41,12 @@ kmac_refused_length() {
 
     expect_fail "tag length $length must be refused" \
         "$BC_RUST" "$sub" "$length" --key-file "$TMP/key" -x <"$TMP/msg"
-    assert_stderr_has "Error: couldn't build the KMAC key"
+    assert_stderr_has "Error:"
     ! grep -q panicked "$LAST_STDERR" || fail "a refused tag length must not panic"
 
     expect_fail "tag length $length must be refused on verify" \
         "$BC_RUST" "$sub" "$length" --key-file "$TMP/key" -v "" <"$TMP/msg"
-    assert_stderr_has "Error: couldn't build the KMAC key"
+    assert_stderr_has "Error:"
     ! grep -q panicked "$LAST_STDERR" || fail "a refused tag length must not panic"
 }
 

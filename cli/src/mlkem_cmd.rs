@@ -2,17 +2,19 @@
 //! three parameter sets, which differ only in their key types, their lengths and the functions
 //! that make and check a key pair. Those come in through a [`ParameterSet`], so a length or a
 //! function can no longer be right for two sets and wrong for the third.
+//!
+//! Private keys and seeds are read through the zeroized secret path; public keys and
+//! ciphertexts through the plain one. All of them are raw bytes, or hex with `--hex-input`.
 
 use crate::helpers::{
-    parse_seed, read_from_file, read_from_file_or_stdin, write_bytes_or_hex,
-    write_bytes_or_hex_to_file,
+    parse_seed, read_input_file, read_input_file_or_stdin, read_secret_file_or_stdin, seed_error,
+    write_bytes_or_hex, write_bytes_or_hex_to_file,
 };
 use bouncycastle::core::errors::KEMError;
 use bouncycastle::core::key_material::{KeyMaterial, KeyMaterialTrait};
 use bouncycastle::core::traits::{
     KEMDecapsulator, KEMEncapsulator, KEMPrivateKey, KEMPublicKey, RNG,
 };
-use bouncycastle::hex;
 use bouncycastle::mlkem::{
     MLKEM512, MLKEM512_CT_LEN, MLKEM512_PK_LEN, MLKEM512_SK_LEN, MLKEM512PrivateKey,
     MLKEM512PublicKey, MLKEM768, MLKEM768_CT_LEN, MLKEM768_PK_LEN, MLKEM768_SK_LEN,
@@ -57,6 +59,7 @@ pub(crate) enum MLKEMAction {
 /// A parameter set as the command sees it: its name for messages, and the operations the key
 /// types and the `KEM*` traits do not carry on their own. The three sets below are the only
 /// instances.
+#[allow(clippy::type_complexity)] // the function-pointer fields are the table's point
 pub(crate) struct ParameterSet<
     PK,
     SK,
@@ -142,41 +145,38 @@ pub(crate) fn mlkem_cmd<
 ) {
     match action {
         MLKEMAction::Keygen => {
-            let (_pk, sk) = (set.keygen)(&mut HashDRBG_SHA512::new_from_os()).unwrap();
+            let (_pk, sk) = (set.keygen)(&mut HashDRBG_SHA512::new_from_os())
+                .unwrap_or_else(|e| keygen_error(e));
             write_bytes_or_hex(&sk.encode(), output_hex);
         }
         MLKEMAction::KeygenFromSeed => {
-            let buf = read_from_file_or_stdin(skfile);
-            let seed = match parse_seed::<SEED_LEN>(&buf) {
-                Ok(seed) => seed,
-                Err(()) => {
-                    eprintln!(
-                        "Error: input could not be parsed as a {SEED_LEN} byte seed in either hex or bin"
-                    );
-                    exit(-1);
-                }
-            };
-            let (_pk, sk) = (set.keygen_from_seed)(&seed).unwrap();
+            let input = read_secret_file_or_stdin(skfile);
+            let seed = parse_seed::<SEED_LEN>(input.ref_to_bytes())
+                .unwrap_or_else(|e| seed_error::<SEED_LEN>(e));
+            let (_pk, sk) = (set.keygen_from_seed)(&seed).unwrap_or_else(|e| keygen_error(e));
             write_bytes_or_hex(&sk.encode(), output_hex);
         }
         MLKEMAction::PkFromSk => {
-            let sk = parse_sk(set, &read_from_file_or_stdin(skfile));
+            let sk = parse_sk(set, read_secret_file_or_stdin(skfile).ref_to_bytes());
             write_bytes_or_hex(&(set.pk_of)(&sk).encode(), output_hex);
         }
         MLKEMAction::CheckConsistency => {
-            let sk = parse_sk(set, &read_from_file_or_stdin(skfile));
+            let sk = parse_sk(set, read_secret_file_or_stdin(skfile).ref_to_bytes());
             let pk = parse_pk(set, &read_required_file(pkfile, "pkfile"));
             match (set.keypair_consistency_check)(&pk, &sk) {
                 Ok(_) => crate::helpers::println_stdout("SUCCESS: pk and sk match."),
                 Err(_) => {
-                    eprintln!("FAILURE: pk and sk do not match.");
+                    eprintln!("Error: the public and private keys do not match.");
                     exit(-1);
                 }
             }
         }
         MLKEMAction::Encaps => {
-            let pk = parse_pk(set, &read_from_file_or_stdin(pkfile));
-            let (ss, ct) = (set.encaps)(&pk).unwrap();
+            let pk = parse_pk(set, &read_input_file_or_stdin(pkfile));
+            let (ss, ct) = (set.encaps)(&pk).unwrap_or_else(|e| {
+                eprintln!("Error: encapsulation failed: {e:?}");
+                exit(-1);
+            });
             if let Some(ctfile) = ctfile {
                 // write ct to file and ss to stdout
                 write_bytes_or_hex_to_file(&ct, ctfile, output_hex);
@@ -189,14 +189,18 @@ pub(crate) fn mlkem_cmd<
             }
         }
         MLKEMAction::Decaps => {
-            let sk = parse_sk(set, &read_from_file_or_stdin(skfile));
-            let ct = read_from_file_or_stdin(ctfile);
+            let sk = parse_sk(set, read_secret_file_or_stdin(skfile).ref_to_bytes());
+            let ct = read_input_file_or_stdin(ctfile);
             if ct.len() != CT_LEN {
-                eprintln!("Error: ciphertexts is not the correct length.");
+                eprintln!(
+                    "Error: the ciphertext is {} bytes; an {} ciphertext is {CT_LEN}.",
+                    ct.len(),
+                    set.name
+                );
                 exit(-1);
             }
             let ss = (set.decaps)(&sk, &ct).unwrap_or_else(|e| {
-                eprintln!("{:?}", e);
+                eprintln!("Error: decapsulation failed: {e:?}");
                 exit(-1);
             });
             write_bytes_or_hex(ss.ref_to_bytes(), output_hex);
@@ -204,10 +208,15 @@ pub(crate) fn mlkem_cmd<
     }
 }
 
+fn keygen_error(e: KEMError) -> ! {
+    eprintln!("Error: key generation failed: {e:?}");
+    exit(-1);
+}
+
 /// `--pkfile` and the like where the command cannot fall back to stdin.
 fn read_required_file(file: &Option<String>, flag: &str) -> Vec<u8> {
     match file {
-        Some(file) => read_from_file(file),
+        Some(file) => read_input_file(file),
         None => {
             eprintln!("Error: no {flag} provided.");
             exit(-1);
@@ -215,8 +224,7 @@ fn read_required_file(file: &Option<String>, flag: &str) -> Vec<u8> {
     }
 }
 
-/// A private key from its bytes: the hex of a full key, a full key, or a seed, tried in that
-/// order (the hex case only arises when the file's hex-or-raw guess declined to decode it).
+/// A private key from its bytes: a full key, or a seed.
 fn parse_sk<
     PK: KEMPublicKey<PK_LEN>,
     SK: KEMPrivateKey<SK_LEN>,
@@ -228,12 +236,6 @@ fn parse_sk<
     set: &ParameterSet<PK, SK, PK_LEN, SK_LEN, CT_LEN, SS_LEN>,
     bytes: &[u8],
 ) -> SK {
-    if bytes.len() >= 2 * SK_LEN
-        && let Ok(decoded) = hex::decode(&bytes[..2 * SK_LEN])
-        && let Ok(sk) = SK::from_bytes(&decoded)
-    {
-        return sk;
-    }
     if bytes.len() == SK_LEN
         && let Ok(sk) = SK::from_bytes(bytes)
     {
@@ -244,11 +246,14 @@ fn parse_sk<
     {
         return sk;
     }
-    eprintln!("Error: couldn't parse the input as a valid {} private key or seed.", set.name);
+    eprintln!(
+        "Error: couldn't parse the input as a valid {} private key or seed (raw bytes; hex needs --hex-input).",
+        set.name
+    );
     exit(-1);
 }
 
-/// A public key from its bytes: the hex of a key or the key itself.
+/// A public key from its bytes.
 fn parse_pk<
     PK: KEMPublicKey<PK_LEN>,
     SK: KEMPrivateKey<SK_LEN>,
@@ -260,17 +265,14 @@ fn parse_pk<
     set: &ParameterSet<PK, SK, PK_LEN, SK_LEN, CT_LEN, SS_LEN>,
     bytes: &[u8],
 ) -> PK {
-    if bytes.len() >= 2 * PK_LEN
-        && let Ok(decoded) = hex::decode(&bytes[..2 * PK_LEN])
-        && let Ok(pk) = PK::from_bytes(&decoded)
-    {
-        return pk;
-    }
     if bytes.len() == PK_LEN
         && let Ok(pk) = PK::from_bytes(bytes)
     {
         return pk;
     }
-    eprintln!("Error: couldn't parse the input as a valid {} public key.", set.name);
+    eprintln!(
+        "Error: couldn't parse the input as a valid {} public key (raw bytes; hex needs --hex-input).",
+        set.name
+    );
     exit(-1);
 }

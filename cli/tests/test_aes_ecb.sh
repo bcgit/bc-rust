@@ -135,10 +135,14 @@ test_key_file_accepts_hex_and_binary() {
     unhex "$F1_KEY_128" >"$TMP/key.bin"
     unhex "$F1_CT_128" >"$TMP/ct"
     unhex "$F1_PLAINTEXT" >"$TMP/pt"
-    for form in key.hex key.bin; do
-        "$BC_RUST" aes128-ecb -d decrypt --key-file "$TMP/$form" <"$TMP/ct" >"$TMP/rec"
-        assert_same "$TMP/pt" "$TMP/rec" "--key-file $form must decrypt the F.1.1 ciphertext"
-    done
+    "$BC_RUST" aes128-ecb -d decrypt --key-file "$TMP/key.bin" <"$TMP/ct" >"$TMP/rec"
+    assert_same "$TMP/pt" "$TMP/rec" "--key-file key.bin must decrypt the F.1.1 ciphertext"
+    # A hex key file needs --hex-input; without it the 32 ASCII bytes are a wrong-length key.
+    "$BC_RUST" --hex-input aes128-ecb -d decrypt --key-file "$TMP/key.hex" <"$TMP/ct" >"$TMP/rec"
+    assert_same "$TMP/pt" "$TMP/rec" "--hex-input --key-file key.hex must decrypt the F.1.1 ciphertext"
+    expect_fail "a hex key file without --hex-input is 32 raw bytes" \
+        "$BC_RUST" aes128-ecb -d decrypt --key-file "$TMP/key.hex" <"$TMP/ct"
+    assert_stderr_has "got 32 bytes"
 }
 
 test_a_key_of_the_wrong_length_is_rejected() {
