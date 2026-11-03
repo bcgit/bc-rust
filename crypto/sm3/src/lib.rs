@@ -1,10 +1,10 @@
 //! Implements the SM3 cryptographic hash function as per GB/T 32905-2016 (also ISO/IEC 10118-3:2018
-//! and IETF draft-shen-sm3-hash-01).
+//! and IETF draft-sca-cfrg-sm3-02).
 //!
 //! SM3 is a 256-bit Merkle–Damgård hash with a 512-bit block, structurally similar to SHA-256 but
 //! with different message expansion, round compression functions and constants.
 //!
-//! # Examples
+//! # Usage Examples
 //! ## Hash
 //! Hash functionality is accessed via the [`Hash`] trait, which is implemented by [`SM3`].
 //!
@@ -69,12 +69,13 @@
 //!
 //! * SM3 offers 128 bits of collision resistance and 256 bits of preimage resistance.
 //! * SM3 is a Merkle–Damgård construction and is therefore subject to length-extension:
-//!   `H(k || m)` is not a secure MAC. Use HMAC ([`sm3::hmac`](crate::hmac) for keyed hashing.
+//!   `H(k || m)` is not a secure MAC. Use HMAC ([`sm3::hmac`](crate::hmac)) for keyed hashing.
 //! * The chaining value and input buffer are held in [`bouncycastle_utils::secret::Secret`] and
 //!   zeroized on drop. Transient copies (working variables and message schedule) in registers/stack
 //!   locals during compression are not zeroized.
 //! * The implementation contains no data-dependent branches or table lookups.
-//! * Messages up to 2^64 bytes are supported (the specification allows 2^64 bits).
+//! * Message length: the specification permits messages shorter than 2^64 bits, so this
+//!   implementation supports 2^61 - 1 bytes.
 //!
 //! # Suspending and resuming execution
 //!
