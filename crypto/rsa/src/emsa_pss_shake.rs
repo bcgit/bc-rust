@@ -13,14 +13,14 @@
 //! SHAKE256) -- already this crate's own "typical" salt-length convention for MGF1-based PSS, so
 //! no new relationship needs stating.
 
-use bouncycastle_core::traits::XOF;
+use bouncycastle_core::traits::{HashOneShot, XOF};
 
 /// EMSA-PSS-ENCODE (RFC 8017 §9.1.1) from step 3 onward with the mask generation function
 /// replaced by native SHAKE output (RFC 8702 §3.2.1), given steps 1-2's `mHash = Hash(M)` by the
 /// caller exactly as [`crate::emsa_pss::emsa_pss_encode_from_hash`] is. See the module docs for
 /// `emBits` and the salt argument.
 pub fn emsa_pss_encode_shake_from_hash<
-    X: XOF + Default,
+    X: XOF + HashOneShot,
     const H_LEN: usize,
     const S_LEN: usize,
     const M_PRIME_LEN: usize,
@@ -42,7 +42,7 @@ pub fn emsa_pss_encode_shake_from_hash<
     m_prime[8..8 + H_LEN].copy_from_slice(m_hash);
     m_prime[8 + H_LEN..].copy_from_slice(salt);
     let mut h = [0u8; H_LEN];
-    X::default().hash_out(&m_prime, &mut h);
+    X::hash_out(&m_prime, &mut h);
 
     // Steps 7-8: DB = PS || 0x01 || salt (PS is all-zero, already the array's initial value).
     let mut db = [0u8; DB_LEN];
@@ -71,7 +71,7 @@ pub fn emsa_pss_encode_shake_from_hash<
 /// replaced by native SHAKE output, as [`emsa_pss_encode_shake_from_hash`], and step 2's
 /// `mHash = Hash(M)` supplied by the caller the same way.
 pub fn emsa_pss_verify_shake_from_hash<
-    X: XOF + Default,
+    X: XOF + HashOneShot,
     const H_LEN: usize,
     const S_LEN: usize,
     const M_PRIME_LEN: usize,
@@ -120,7 +120,7 @@ pub fn emsa_pss_verify_shake_from_hash<
     m_prime[8..8 + H_LEN].copy_from_slice(m_hash);
     m_prime[8 + H_LEN..].copy_from_slice(&salt);
     let mut h_prime = [0u8; H_LEN];
-    X::default().hash_out(&m_prime, &mut h_prime);
+    X::hash_out(&m_prime, &mut h_prime);
 
     h == h_prime
 }
@@ -136,7 +136,7 @@ mod tests {
     //! `mHash = Hash(M)` back on top, so the tests can speak in terms of messages.
 
     use super::*;
-    use bouncycastle_core::traits::Hash;
+
     use bouncycastle_sha3::SHAKE128;
 
     const SALT: [u8; 32] = [
@@ -147,7 +147,7 @@ mod tests {
 
     fn m_hash(message: &[u8]) -> [u8; 32] {
         let mut m_hash = [0u8; 32];
-        SHAKE128::default().hash_out(message, &mut m_hash);
+        SHAKE128::hash_out(message, &mut m_hash);
         m_hash
     }
 

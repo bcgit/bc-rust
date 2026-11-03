@@ -7,7 +7,8 @@
 //! differently-shaped file because Wycheproof has no dedicated `rsa_signature_1024_*.json`.
 
 use bouncycastle_core::errors::SignatureError;
-use bouncycastle_core::traits::{SignaturePublicKey, SignatureVerifier};
+use bouncycastle_core::signature_key::VerifyingKey;
+use bouncycastle_core::traits::SignaturePublicKey;
 use bouncycastle_hex::decode as hex_decode;
 use bouncycastle_rsa::rsa_1024::{
     PK_LEN, RSA1024PublicKey, RSASSA_PKCS1_v1_5_SHA256, RSASSA_PKCS1_v1_5_SHA384,
@@ -80,14 +81,14 @@ fn run_sig_gen_group_as_verify_vectors(
 #[test]
 fn pkcs1_v1_5_sha256_accepts_genuine_sig_gen_signatures() {
     run_sig_gen_group_as_verify_vectors("SHA-256", |pk, msg, sig| {
-        RSASSA_PKCS1_v1_5_SHA256::verify(pk, msg, None, sig).is_ok()
+        VerifyingKey::<RSASSA_PKCS1_v1_5_SHA256, 128>::verify(pk, msg, None, sig).is_ok()
     });
 }
 
 #[test]
 fn pkcs1_v1_5_sha384_accepts_genuine_sig_gen_signatures() {
     run_sig_gen_group_as_verify_vectors("SHA-384", |pk, msg, sig| {
-        RSASSA_PKCS1_v1_5_SHA384::verify(pk, msg, None, sig).is_ok()
+        VerifyingKey::<RSASSA_PKCS1_v1_5_SHA384, 128>::verify(pk, msg, None, sig).is_ok()
     });
 }
 
@@ -116,7 +117,7 @@ fn run_sig_gen_group_rejects_wrong_message(
 #[test]
 fn pkcs1_v1_5_sha256_rejects_wrong_message() {
     run_sig_gen_group_rejects_wrong_message("SHA-256", |pk, msg, sig| {
-        RSASSA_PKCS1_v1_5_SHA256::verify(pk, msg, None, sig).is_ok()
+        VerifyingKey::<RSASSA_PKCS1_v1_5_SHA256, 128>::verify(pk, msg, None, sig).is_ok()
     });
 }
 
@@ -126,25 +127,25 @@ fn pkcs1_v1_5_sha256_rejects_wrong_message() {
 #[test]
 fn pkcs1_v1_5_sha384_rejects_wrong_message() {
     run_sig_gen_group_rejects_wrong_message("SHA-384", |pk, msg, sig| {
-        RSASSA_PKCS1_v1_5_SHA384::verify(pk, msg, None, sig).is_ok()
+        VerifyingKey::<RSASSA_PKCS1_v1_5_SHA384, 128>::verify(pk, msg, None, sig).is_ok()
     });
 }
 
 // ---- bouncycastle_core trait conformance ------------------------------------------------------
 //
-// No `Signer` exists at this size (see `rsa_1024.rs`'s docs and its `compile_fail` doctest), so
+// No signing role exists at this size (see `rsa_1024.rs`'s docs and its `compile_fail` doctest), so
 // `core-test-framework`'s signature suite -- which needs one -- cannot run here; the
-// `SignatureVerifier` and `SignaturePublicKey` impls are checked directly against the same
+// `VerifyingKey` and `SignaturePublicKey` impls are checked directly against the same
 // genuine Wycheproof material as the tests above.
 
 /// RFC 8017 §8.2.2 step 1 through the trait's `&[u8]` signature: a truncated genuine signature
-/// is "invalid signature", never accepted.
+/// is rejected for its length, never accepted.
 #[test]
 fn trait_verify_rejects_truncated_signature() {
     run_sig_gen_group_as_verify_vectors("SHA-256", |pk, msg, sig| {
         matches!(
-            RSASSA_PKCS1_v1_5_SHA256::verify(pk, msg, None, &sig[..127]),
-            Err(SignatureError::SignatureVerificationFailed)
+            VerifyingKey::<RSASSA_PKCS1_v1_5_SHA256, 128>::verify(pk, msg, None, &sig[..127]),
+            Err(SignatureError::LengthError(_))
         )
     });
 }

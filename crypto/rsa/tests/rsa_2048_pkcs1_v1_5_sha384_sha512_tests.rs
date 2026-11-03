@@ -14,12 +14,12 @@
 //! the hash in question -- is checked against all of Wycheproof's real vectors for both hashes.
 
 use bouncycastle_core::errors::SignatureError;
-use bouncycastle_core::traits::{SignatureVerifier, Signer};
+use bouncycastle_core::signature_key::{DeterministicSigningKey, VerifyingKey};
 use bouncycastle_core_test_framework::signature::TestFrameworkSignature;
 use bouncycastle_hex::decode as hex_decode;
 use bouncycastle_rsa::rsa_2048::{
-    PK_LEN, RSA2048PrivateKey, RSA2048PublicKey, RSASSA_PKCS1_v1_5_SHA384,
-    RSASSA_PKCS1_v1_5_SHA512, SIG_LEN, SK_LEN,
+    RSA2048PrivateKey, RSA2048PublicKey, RSASSA_PKCS1_v1_5_SHA384, RSASSA_PKCS1_v1_5_SHA512,
+    SIG_LEN,
 };
 use serde_json::Value;
 use std::fs;
@@ -98,18 +98,30 @@ fn genuine_key() -> RSA2048PrivateKey {
 fn pkcs1_v1_5_sha384_round_trips() {
     let sk = genuine_key();
     let pk = RSA2048PublicKey::new(sk.n(), 0x10001).unwrap();
-    let sig = RSASSA_PKCS1_v1_5_SHA384::sign(&sk, b"hello", None).expect("signing must succeed");
-    RSASSA_PKCS1_v1_5_SHA384::verify(&pk, b"hello", None, &sig).expect("must verify");
-    assert!(RSASSA_PKCS1_v1_5_SHA384::verify(&pk, b"goodbye", None, &sig).is_err());
+    let sig = DeterministicSigningKey::<RSASSA_PKCS1_v1_5_SHA384, 256>::sign_deterministic(
+        &sk, b"hello", None,
+    )
+    .expect("signing must succeed");
+    VerifyingKey::<RSASSA_PKCS1_v1_5_SHA384, 256>::verify(&pk, b"hello", None, &sig)
+        .expect("must verify");
+    assert!(
+        VerifyingKey::<RSASSA_PKCS1_v1_5_SHA384, 256>::verify(&pk, b"goodbye", None, &sig).is_err()
+    );
 }
 
 #[test]
 fn pkcs1_v1_5_sha512_round_trips() {
     let sk = genuine_key();
     let pk = RSA2048PublicKey::new(sk.n(), 0x10001).unwrap();
-    let sig = RSASSA_PKCS1_v1_5_SHA512::sign(&sk, b"hello", None).expect("signing must succeed");
-    RSASSA_PKCS1_v1_5_SHA512::verify(&pk, b"hello", None, &sig).expect("must verify");
-    assert!(RSASSA_PKCS1_v1_5_SHA512::verify(&pk, b"goodbye", None, &sig).is_err());
+    let sig = DeterministicSigningKey::<RSASSA_PKCS1_v1_5_SHA512, 256>::sign_deterministic(
+        &sk, b"hello", None,
+    )
+    .expect("signing must succeed");
+    VerifyingKey::<RSASSA_PKCS1_v1_5_SHA512, 256>::verify(&pk, b"hello", None, &sig)
+        .expect("must verify");
+    assert!(
+        VerifyingKey::<RSASSA_PKCS1_v1_5_SHA512, 256>::verify(&pk, b"goodbye", None, &sig).is_err()
+    );
 }
 
 fn run_verify_vectors(
@@ -182,7 +194,9 @@ fn run_verify_vectors(
 fn rsa_signature_sha384_wycheproof_vectors() {
     run_verify_vectors(
         "rsa_signature_2048_sha384_test.json",
-        |pk, msg, sig| RSASSA_PKCS1_v1_5_SHA384::verify(pk, msg, None, sig).is_ok(),
+        |pk, msg, sig| {
+            VerifyingKey::<RSASSA_PKCS1_v1_5_SHA384, 256>::verify(pk, msg, None, sig).is_ok()
+        },
         "SHA-384",
         258,
         7,
@@ -194,7 +208,9 @@ fn rsa_signature_sha384_wycheproof_vectors() {
 fn rsa_signature_sha512_wycheproof_vectors() {
     run_verify_vectors(
         "rsa_signature_2048_sha512_test.json",
-        |pk, msg, sig| RSASSA_PKCS1_v1_5_SHA512::verify(pk, msg, None, sig).is_ok(),
+        |pk, msg, sig| {
+            VerifyingKey::<RSASSA_PKCS1_v1_5_SHA512, 256>::verify(pk, msg, None, sig).is_ok()
+        },
         "SHA-512",
         259,
         8,
@@ -215,23 +231,7 @@ fn fixed_keypair() -> Result<(RSA2048PublicKey, RSA2048PrivateKey), SignatureErr
 /// suite, over the same generic code.
 #[test]
 fn pkcs1_v1_5_sha384_sha512_trait_conformance_suite() {
-    let framework = TestFrameworkSignature::new(true, false);
-    framework.test_signature::<
-        RSA2048PublicKey,
-        RSA2048PrivateKey,
-        RSASSA_PKCS1_v1_5_SHA384,
-        RSASSA_PKCS1_v1_5_SHA384,
-        PK_LEN,
-        SK_LEN,
-        SIG_LEN,
-    >(fixed_keypair, false);
-    framework.test_signature::<
-        RSA2048PublicKey,
-        RSA2048PrivateKey,
-        RSASSA_PKCS1_v1_5_SHA512,
-        RSASSA_PKCS1_v1_5_SHA512,
-        PK_LEN,
-        SK_LEN,
-        SIG_LEN,
-    >(fixed_keypair, false);
+    let framework = TestFrameworkSignature::new(false);
+    framework.test_deterministic_signature::<RSASSA_PKCS1_v1_5_SHA384, RSA2048PublicKey, RSA2048PrivateKey, SIG_LEN>(fixed_keypair, false);
+    framework.test_deterministic_signature::<RSASSA_PKCS1_v1_5_SHA512, RSA2048PublicKey, RSA2048PrivateKey, SIG_LEN>(fixed_keypair, false);
 }

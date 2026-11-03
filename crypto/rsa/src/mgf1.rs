@@ -3,7 +3,7 @@
 //! always the hash's own `hLen`-byte output) rather than MGF1's fully general arbitrary-length
 //! seed: `mgfSeed` here is always exactly `H_LEN` bytes.
 
-use bouncycastle_core::traits::Hash;
+use bouncycastle_core::traits::HashOneShot;
 
 /// MGF1 (RFC 8017 Appendix B.2.1), with `mgfSeed` fixed at `H_LEN` bytes and `maskLen` fixed at
 /// `MASK_LEN` (a compile-time constant here, since every call site in this crate knows its output
@@ -13,7 +13,7 @@ use bouncycastle_core::traits::Hash;
 /// (the seed plus the 4-octet counter `C`), a separate const parameter for the same reason
 /// [`bouncycastle_ec::montgomery`]'s `L2 = 2 * L` is: stable Rust cannot compute one const
 /// generic from another.
-pub fn mgf1<H: Hash + Default, const H_LEN: usize, const SEED_LEN: usize, const MASK_LEN: usize>(
+pub fn mgf1<H: HashOneShot, const H_LEN: usize, const SEED_LEN: usize, const MASK_LEN: usize>(
     seed: &[u8; H_LEN],
 ) -> [u8; MASK_LEN] {
     debug_assert_eq!(SEED_LEN, H_LEN + 4, "mgf1 needs SEED_LEN == H_LEN + 4");
@@ -27,7 +27,7 @@ pub fn mgf1<H: Hash + Default, const H_LEN: usize, const SEED_LEN: usize, const 
         input[H_LEN..].copy_from_slice(&counter.to_be_bytes());
 
         let mut block = [0u8; H_LEN];
-        H::default().hash_out(&input, &mut block);
+        H::hash_out(&input, &mut block);
 
         let take = core::cmp::min(H_LEN, MASK_LEN - offset);
         mask[offset..offset + take].copy_from_slice(&block[..take]);

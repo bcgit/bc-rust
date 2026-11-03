@@ -11,19 +11,20 @@
 //! not exposed here without real vectors behind them.
 //!
 //! The same verification-only scope holds for the `bouncycastle_core` trait types
-//! ([`RSASSA_PKCS1_v1_5_SHA256`], [`RSASSA_PKCS1_v1_5_SHA384`]): they implement
-//! `SignatureVerifier` but not `Signer`, because `Signer` is only implemented where the private
-//! key type implements `SignaturePrivateKey`, and `RsaPrivateKey<16, 8>` does not (no size module
-//! declares it). Enforced by the compiler, as this doctest pins:
+//! ([`RSASSA_PKCS1_v1_5_SHA256`], [`RSASSA_PKCS1_v1_5_SHA384`]): [`RSA1024PublicKey`] implements
+//! `VerifyingKey` for them, but no key implements `DeterministicSigningKey`, because the signing
+//! role is only implemented where the private key type implements `SignaturePrivateKey`, and
+//! `RsaPrivateKey<16, 8>` does not (no size module declares it). Enforced by the compiler, as
+//! this doctest pins:
 //!
-//! ```compile_fail
-//! use bouncycastle_core::traits::Signer;
+//! ```compile_fail,E0277
+//! use bouncycastle_core::signature_key::DeterministicSigningKey;
 //! use bouncycastle_rsa::keys::RsaPrivateKey;
-//! use bouncycastle_rsa::rsa_1024::RSASSA_PKCS1_v1_5_SHA256;
+//! use bouncycastle_rsa::rsa_1024::{RSASSA_PKCS1_v1_5_SHA256, SIG_LEN};
 //!
 //! fn sign_1024(sk: &RsaPrivateKey<16, 8>) {
-//!     // error: no function or associated item named `sign` -- there is no `Signer` impl.
-//!     let _ = RSASSA_PKCS1_v1_5_SHA256::sign(sk, b"", None);
+//!     // error: the trait bound `RsaPrivateKey<16, 8>: DeterministicSigningKey<..>` is not satisfied.
+//!     let _ = DeterministicSigningKey::<RSASSA_PKCS1_v1_5_SHA256, SIG_LEN>::sign_deterministic(sk, b"", None);
 //! }
 //! ```
 
@@ -64,7 +65,7 @@ impl SignaturePublicKey<PK_LEN> for RSA1024PublicKey {
 /// [`RSASSA_PKCS1_v1_5`] at this size's widths. The signing-side
 /// widths the generic type also needs (`HALF = 8`, `HALF2 = 16`, `HALF21 = 17`, `SK_LEN = 320`)
 /// are what an RSA-1024 CRT key would have if one existed; they name the type but nothing uses
-/// them, since the `Signer` impl they would feed does not exist for `RsaPrivateKey<16, 8>`.
+/// them, since the signing-role impl they would feed does not exist for `RsaPrivateKey<16, 8>`.
 #[allow(non_camel_case_types)]
 pub type RSASSA_PKCS1_v1_5_SHA256 =
     RSASSA_PKCS1_v1_5<SHA256, 32, 51, 16, 32, 33, 8, 16, 17, 128, 320, PK_LEN>;

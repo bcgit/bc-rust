@@ -3,16 +3,17 @@
 //! testing is the command-line contract -- key/signature file loading, the streamed stdin message,
 //! exit codes -- none of which is reachable from the library API. What the library computes is
 //! cross-checked by verifying the CLI's signatures with `bouncycastle_rsa`'s own
-//! `SignatureVerifier` impls (and, for the deterministic PKCS#1 v1.5 case, comparing bytes).
+//! `VerifyingKey` impls (and, for the deterministic PKCS#1 v1.5 case, comparing bytes).
 //!
 //! `CARGO_BIN_EXE_bc-rust` is set by cargo for integration tests and points at the binary for the
 //! current profile, so there is nothing to build or locate by hand.
 
-use bouncycastle::core::traits::{
-    SignaturePrivateKey, SignaturePublicKey, SignatureVerifier, Signer,
+use bouncycastle::core::signature_key::{
+    DeterministicSigningKey, SignatureAlgorithm, VerifyingKey,
 };
+use bouncycastle::core::traits::{SignaturePrivateKey, SignaturePublicKey};
 use bouncycastle::rsa::rsa_2048::{
-    PK_LEN, RSA2048PrivateKey, RSA2048PublicKey, RSASSA_PKCS1_v1_5_SHA256, RSASSA_PSS_SHA256,
+    RSA2048PrivateKey, RSA2048PublicKey, RSASSA_PKCS1_v1_5_SHA256, RSASSA_PSS_SHA256,
     RSASSA_PSS_SHAKE128, SIG_LEN,
 };
 use std::io::{ErrorKind, Write};
@@ -208,7 +209,12 @@ fn rsa_1024_verifies_a_wycheproof_signature_and_rejects_another_message() {
 fn rsa_2048_pkcs1v15_signature_matches_the_library_and_verifies() {
     let msg = pseudo_random(5000, 7);
     let sig = rsa_2048_sign("pkcs1v15", "sha256", &msg);
-    let expected = RSASSA_PKCS1_v1_5_SHA256::sign(&sk_2048(), &msg, None).unwrap();
+    let expected = DeterministicSigningKey::<RSASSA_PKCS1_v1_5_SHA256, 256>::sign_deterministic(
+        &sk_2048(),
+        &msg,
+        None,
+    )
+    .unwrap();
     assert_eq!(sig, expected.to_vec());
 
     let out = rsa_2048_verify("pkcs1v15", "sha256", &msg, &sig);
@@ -228,14 +234,17 @@ fn rsa_2048_pkcs1v15_signature_matches_the_library_and_verifies() {
 }
 
 /// One PSS pairing: two CLI signatures of one message differ (a fresh salt each), and both
-/// verify -- through the library's `SignatureVerifier` `V` and through the CLI.
-fn pss_case<V: SignatureVerifier<RSA2048PublicKey, PK_LEN, SIG_LEN>>(hash: &str, msg: &[u8]) {
+/// verify -- through the library's `VerifyingKey` impl for `PK` and through the CLI.
+fn pss_case<A: SignatureAlgorithm>(hash: &str, msg: &[u8])
+where
+    RSA2048PublicKey: VerifyingKey<A, SIG_LEN>,
+{
     let pk = pk_2048();
     let sig_a = rsa_2048_sign("pss", hash, msg);
     let sig_b = rsa_2048_sign("pss", hash, msg);
     assert_ne!(sig_a, sig_b, "PSS/{hash}: a fresh salt each time");
     for sig in [&sig_a, &sig_b] {
-        V::verify(&pk, msg, None, sig)
+        VerifyingKey::<A, SIG_LEN>::verify(&pk, msg, None, sig)
             .unwrap_or_else(|e| panic!("PSS/{hash}: library rejected {e:?}"));
         let out = rsa_2048_verify("pss", hash, msg, sig);
         assert!(out.status.success(), "PSS/{hash}: {}", String::from_utf8_lossy(&out.stderr));
@@ -345,7 +354,7 @@ fn rsa_2048_keygen_then_sign_and_verify() {
         &msg,
     );
     assert!(String::from_utf8_lossy(&out).contains("Signature is valid."));
-    RSASSA_PSS_SHA256::verify(&pk, &msg, None, &sig).unwrap();
+    VerifyingKey::<RSASSA_PSS_SHA256, 256>::verify(&pk, &msg, None, &sig).unwrap();
 
     let err = run_err(&["rsa-2048", "keygen", "--scheme", "pkcs1v15", "--hash", "sha256"], &[]);
     assert!(err.contains("--pkfile"), "stderr: {err}");

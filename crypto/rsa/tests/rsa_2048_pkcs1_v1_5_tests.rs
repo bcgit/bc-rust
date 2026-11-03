@@ -32,7 +32,8 @@
 //! constructed edge case.
 
 use bouncycastle_core::errors::SignatureError;
-use bouncycastle_core::traits::{Hash, SignatureVerifier, Signer};
+use bouncycastle_core::signature_key::{DeterministicSigningKey, VerifyingKey};
+use bouncycastle_core::traits::{HashOneShot, SignatureSigner};
 use bouncycastle_core_test_framework::signature::{
     TestFrameworkSignature, TestFrameworkSignatureKeys,
 };
@@ -146,7 +147,10 @@ fn pkcs1_v1_5_sig_gen_2048_sha256() {
         let expected_sig = hex_decode(test["sig"].as_str().unwrap()).unwrap();
         assert_eq!(test["result"], "valid", "tcId {tc_id}: sig-gen vectors are all 'valid'");
 
-        let sig = RSASSA_PKCS1_v1_5_SHA256::sign(&sk, &msg, None).unwrap_or_else(|e| {
+        let sig = DeterministicSigningKey::<RSASSA_PKCS1_v1_5_SHA256, 256>::sign_deterministic(
+            &sk, &msg, None,
+        )
+        .unwrap_or_else(|e| {
             panic!("tcId {tc_id}: signing failed: {e:?}");
         });
         assert_eq!(sig.to_vec(), expected_sig, "tcId {tc_id}: signature mismatch");
@@ -164,22 +168,14 @@ fn fixed_keypair() -> Result<(RSA2048PublicKey, RSA2048PrivateKey), SignatureErr
     Ok((pk, sk))
 }
 
-/// The shared `Signer`/`SignatureVerifier` conformance suite (per QUALITY_AND_STYLE's rule that
+/// The shared signature-key conformance suite (per QUALITY_AND_STYLE's rule that
 /// trait conformance lives in `core-test-framework`, not per implementation): deterministic
 /// (PKCS#1 v1.5 has no randomness), `ctx` ignored (RSA has no context input), and with every bit
 /// of a signature flipped in turn -- 2048 verifications, run at this size and scheme since the
 /// generic `RSASSA_PKCS1_v1_5` code under test is the same at every width.
 #[test]
 fn pkcs1_v1_5_sha256_trait_conformance_suite() {
-    TestFrameworkSignature::new(true, false).test_signature::<
-        RSA2048PublicKey,
-        RSA2048PrivateKey,
-        RSASSA_PKCS1_v1_5_SHA256,
-        RSASSA_PKCS1_v1_5_SHA256,
-        PK_LEN,
-        SK_LEN,
-        SIG_LEN,
-    >(fixed_keypair, true);
+    TestFrameworkSignature::new(false).test_deterministic_signature::<RSASSA_PKCS1_v1_5_SHA256, RSA2048PublicKey, RSA2048PrivateKey, SIG_LEN>(fixed_keypair, true);
 }
 
 #[test]
@@ -189,60 +185,55 @@ fn key_trait_boundary_conditions() {
 }
 
 /// Streamed and one-shot signing are one computation: PKCS#1 v1.5 is deterministic, so the
-/// chunked `do_sign_init`/`do_sign_update`/`do_sign_final` path reproduces `Signer::sign` byte for byte.
+/// chunked `create_signer_deterministic`/`do_update`/`do_final` path reproduces `sign_deterministic` byte for byte.
 #[test]
 fn streamed_signature_equals_one_shot() {
     let (pk, sk) = fixed_keypair().unwrap();
     let msg = b"the same message, two ways";
-    let one_shot = RSASSA_PKCS1_v1_5_SHA256::sign(&sk, msg, None).unwrap();
-    let mut signer = RSASSA_PKCS1_v1_5_SHA256::do_sign_init(&sk, None).unwrap();
-    signer.do_sign_update(&msg[..10]);
-    signer.do_sign_update(&msg[10..]);
-    let streamed = signer.do_sign_final().unwrap();
+    let one_shot = DeterministicSigningKey::<RSASSA_PKCS1_v1_5_SHA256, 256>::sign_deterministic(
+        &sk, msg, None,
+    )
+    .unwrap();
+    let mut signer =
+        DeterministicSigningKey::<RSASSA_PKCS1_v1_5_SHA256, 256>::create_signer_deterministic(
+            &sk, None,
+        )
+        .unwrap();
+    signer.do_update(&msg[..10]);
+    signer.do_update(&msg[10..]);
+    let streamed = signer.do_final().unwrap();
     assert_eq!(streamed, one_shot);
-    RSASSA_PKCS1_v1_5_SHA256::verify(&pk, msg, None, &streamed).unwrap();
+    VerifyingKey::<RSASSA_PKCS1_v1_5_SHA256, 256>::verify(&pk, msg, None, &streamed).unwrap();
 }
 
 /// RFC 8017 §8.2.2 step 1 ("If the length of the signature S is not k octets, output 'invalid
-/// signature'"): the trait's `&[u8]` signature makes this a runtime check. `core-test-framework`
-/// covers the too-long case; this is the too-short one.
+/// signature'"): the trait's `&[u8]` signature makes this a runtime check, reported as a
+/// `LengthError` as the other signature crates do. `core-test-framework` covers the too-long
+/// case; this is the too-short one.
 #[test]
 fn trait_verify_rejects_short_signature() {
     let (pk, sk) = fixed_keypair().unwrap();
-    let sig = RSASSA_PKCS1_v1_5_SHA256::sign(&sk, b"msg", None).unwrap();
+    let sig = DeterministicSigningKey::<RSASSA_PKCS1_v1_5_SHA256, 256>::sign_deterministic(
+        &sk, b"msg", None,
+    )
+    .unwrap();
     assert!(matches!(
-        RSASSA_PKCS1_v1_5_SHA256::verify(&pk, b"msg", None, &sig[..SIG_LEN - 1]),
-        Err(SignatureError::SignatureVerificationFailed)
+        VerifyingKey::<RSASSA_PKCS1_v1_5_SHA256, 256>::verify(
+            &pk,
+            b"msg",
+            None,
+            &sig[..SIG_LEN - 1]
+        ),
+        Err(SignatureError::LengthError(_))
     ));
     assert!(matches!(
-        RSASSA_PKCS1_v1_5_SHA256::verify(&pk, b"msg", None, &[]),
-        Err(SignatureError::SignatureVerificationFailed)
+        VerifyingKey::<RSASSA_PKCS1_v1_5_SHA256, 256>::verify(&pk, b"msg", None, &[]),
+        Err(SignatureError::LengthError(_))
     ));
 }
 
 /// One type serves both trait roles; finishing a state with the other role's `_final` is a
 /// `GenericError`, not a silent wrong answer.
-#[test]
-fn trait_final_in_the_wrong_role_is_an_error() {
-    let (pk, sk) = fixed_keypair().unwrap();
-    let mut out = [0u8; SIG_LEN];
-
-    let verifier = RSASSA_PKCS1_v1_5_SHA256::do_verify_init(&pk, None).unwrap();
-    assert!(matches!(verifier.do_sign_final(), Err(SignatureError::GenericError(_))));
-    let verifier = RSASSA_PKCS1_v1_5_SHA256::do_verify_init(&pk, None).unwrap();
-    assert!(matches!(verifier.do_sign_final_out(&mut out), Err(SignatureError::GenericError(_))));
-
-    let signer = RSASSA_PKCS1_v1_5_SHA256::do_sign_init(&sk, None).unwrap();
-    assert!(matches!(signer.do_verify_final(&out), Err(SignatureError::GenericError(_))));
-}
-
-/// All three groups of `rsa_signature_2048_sha256_test.json` (259 vectors; the first group's key
-/// is [`wycheproof_key`]'s, the other two are unrelated keys parsed from the JSON) through
-/// `SignatureVerifier::verify`'s `&[u8]` signature, so the wrong-length vectors reach the
-/// verifier and must come back as `SignatureVerificationFailed` (RFC 8017 §8.2.2 step 1). The one
-/// "acceptable" vector is `MissingNull` (a `DigestInfo` whose `AlgorithmIdentifier` omits the
-/// `NULL` parameters), accepted by this crate's explicit policy -- see
-/// `emsa_pkcs1_v1_5::emsa_pkcs1_v1_5_verify_from_hash`'s docs.
 #[test]
 fn rsa_signature_sha256_all_groups() {
     let doc: Value = serde_json::from_str(&get_test_data("rsa_signature_2048_sha256_test.json"))
@@ -264,7 +255,8 @@ fn rsa_signature_sha256_all_groups() {
             let tc_id = test["tcId"].as_u64().unwrap();
             let msg = hex_decode(test["msg"].as_str().unwrap()).unwrap();
             let sig = hex_decode(test["sig"].as_str().unwrap()).unwrap();
-            let result = RSASSA_PKCS1_v1_5_SHA256::verify(&pk, &msg, None, &sig);
+            let result =
+                VerifyingKey::<RSASSA_PKCS1_v1_5_SHA256, 256>::verify(&pk, &msg, None, &sig);
             match test["result"].as_str().unwrap() {
                 // "acceptable" is only ever MissingNull in this file, accepted by policy (see above).
                 "valid" | "acceptable" => {
@@ -275,9 +267,9 @@ fn rsa_signature_sha256_all_groups() {
                     assert!(result.is_err(), "tcId {tc_id}: expected invalid, got valid");
                     if sig.len() != SIG_LEN {
                         assert!(
-                            matches!(result, Err(SignatureError::SignatureVerificationFailed)),
+                            matches!(result, Err(SignatureError::LengthError(_))),
                             "tcId {tc_id}: a {}-byte signature must fail step 1's length check \
-                             as 'invalid signature', got {result:?}",
+                             as a LengthError, got {result:?}",
                             sig.len()
                         );
                         num_wrong_length += 1;
@@ -305,7 +297,7 @@ fn trait_verify_reports_out_of_range_representative_as_invalid_signature() {
     let (pk, _) = fixed_keypair().unwrap();
     let too_big = [0xffu8; SIG_LEN];
     let mut digest = [0u8; 32];
-    SHA256::default().hash_out(b"msg", &mut digest);
+    SHA256::hash_out(b"msg", &mut digest);
     assert!(matches!(
         rsassa_pkcs1_v1_5::verify_from_hash::<SHA256, 32, 32, 64, 65, SIG_LEN>(
             &pk, &digest, &too_big
@@ -313,7 +305,7 @@ fn trait_verify_reports_out_of_range_representative_as_invalid_signature() {
         Err(SignatureError::DecodingError(_))
     ));
     assert!(matches!(
-        RSASSA_PKCS1_v1_5_SHA256::verify(&pk, b"msg", None, &too_big),
+        VerifyingKey::<RSASSA_PKCS1_v1_5_SHA256, 256>::verify(&pk, b"msg", None, &too_big),
         Err(SignatureError::SignatureVerificationFailed)
     ));
 }

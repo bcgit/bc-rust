@@ -206,7 +206,7 @@ mod tests {
     //! SHA-256/384/512.
 
     use super::*;
-    use bouncycastle_core::traits::Hash;
+    use bouncycastle_core::traits::HashOneShot;
     use bouncycastle_sha2::{SHA256, SHA384, SHA512};
 
     /// The whole EMSA-PKCS1-V1_5-ENCODE over a message, SHA-256: step 1 here, the rest in
@@ -214,14 +214,14 @@ mod tests {
     /// locally so these tests can speak in terms of messages.
     fn encode<const K_LEN: usize>(message: &[u8]) -> [u8; K_LEN] {
         let mut digest = [0u8; 32];
-        SHA256::default().hash_out(message, &mut digest);
+        SHA256::hash_out(message, &mut digest);
         emsa_pkcs1_v1_5_encode_from_hash::<SHA256, 32, 51, K_LEN>(&digest)
     }
 
     /// [`encode`]'s verification counterpart, SHA-256.
     fn verify<const K_LEN: usize>(message: &[u8], em: &[u8; K_LEN]) -> bool {
         let mut digest = [0u8; 32];
-        SHA256::default().hash_out(message, &mut digest);
+        SHA256::hash_out(message, &mut digest);
         emsa_pkcs1_v1_5_verify_from_hash::<SHA256, 32, K_LEN>(&digest, em)
     }
 
@@ -306,7 +306,7 @@ mod tests {
     #[test]
     fn verify_accepts_digest_info_with_null_parameters_absent() {
         let mut digest = [0u8; 32];
-        SHA256::default().hash_out(b"hello", &mut digest);
+        SHA256::hash_out(b"hello", &mut digest);
         let oid = <SHA256 as AlgorithmOID>::OID_DER; // 11 bytes: 06 09 <9-byte OID>
         // T without "05 00": 30 <inner_len+2> 30 <oid_len> <oid> 04 20 <digest>, i.e. 2 bytes
         // shorter than digest_info's own (NULL-including) T for the same hash.

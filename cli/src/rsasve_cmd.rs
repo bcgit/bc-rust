@@ -23,7 +23,10 @@ use crate::helpers::{
 };
 use bouncycastle::core::errors::KEMError;
 use bouncycastle::core::key_material::KeyMaterialTrait;
-use bouncycastle::core::traits::{KEMDecapsulator, KEMEncapsulator, KEMPrivateKey, KEMPublicKey};
+use bouncycastle::core::traits::{
+    KEMDecapsulator, KEMEncapsulator, KEMPrivateKey, KEMPublicKey, RNG,
+};
+use bouncycastle::rng::HashDRBG_SHA512;
 use bouncycastle::rsa::{rsa_2048, rsa_3072, rsa_4096, rsa_8192};
 use clap::ValueEnum;
 use std::process::exit;
@@ -63,7 +66,7 @@ fn rsasve_cmd<
     const SS_LEN: usize,
 >(
     action: &RSASVEAction,
-    keygen: fn() -> Result<(PK, SK), KEMError>,
+    keygen: fn(&mut dyn RNG) -> Result<(PK, SK), KEMError>,
     skfile: &Option<String>,
     pkfile: &Option<String>,
     ctfile: &Option<String>,
@@ -79,7 +82,7 @@ fn rsasve_cmd<
                 );
                 exit(-1);
             };
-            let (pk, sk) = keygen().unwrap_or_else(|e| {
+            let (pk, sk) = keygen(&mut HashDRBG_SHA512::new_from_os()).unwrap_or_else(|e| {
                 eprintln!("Error: {alg_name} key generation failed: {e:?}");
                 exit(-1);
             });

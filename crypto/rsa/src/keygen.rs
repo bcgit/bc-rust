@@ -6,7 +6,7 @@
 //! (its candidate loop, small-factor sieve and `d` lower-bound check are what this follows), with
 //! FIPS 186-5 as the reference for every step and cited inline.
 //!
-//! The concrete sizes wire this up as `keygen`/`keygen_from_rng` in their own modules
+//! The concrete sizes wire this up as `keygen(rng)` in their own modules
 //! (`crate::rsa_2048::keygen` and siblings): `nlen` is fixed by the width, `e` by
 //! [`PUBLIC_EXPONENT`], and the Miller-Rabin round count and required RNG strength by each size's
 //! row of FIPS 186-5 Table B.1 and SP 800-57 Part 1 Table 2.
@@ -142,7 +142,7 @@ fn inv_mod_u64_prime(r: u64, e: u64) -> u64 {
 fn inverse_of_e_mod<const N: usize>(m: &[u64; N]) -> [u64; N] {
     let e = u64::from(PUBLIC_EXPONENT);
     let r = mod_u64(m, e);
-    // `GCD(m, e) = 1` is the caller's invariant: `keygen_from_rng` discards any `p` (or `q`) with
+    // `GCD(m, e) = 1` is the caller's invariant: `keygen` discards any `p` (or `q`) with
     // `e | p - 1` at step 4.5, and `LCM(p - 1, q - 1)` then cannot be divisible by `e` either.
     debug_assert_ne!(r, 0, "e must not divide m");
     let k = e - inv_mod_u64_prime(r, e);
@@ -490,7 +490,7 @@ fn primes_too_close<const N: usize>(p: &[u64; N], q: &[u64; N]) -> bool {
 /// HALF2` bits) built from two `HALF`-limb primes. `rounds` is the Miller-Rabin iteration count
 /// (Table B.1) and `required_strength` the security strength SP 800-57 Part 1 associates with
 /// `nlen`, which the RNG must meet (step 3 and the paragraph above the process). The size modules
-/// fix all three; see `crate::rsa_2048::keygen_from_rng` for the RSA-2048 values.
+/// fix all three; see `crate::rsa_2048::keygen` for the RSA-2048 values.
 ///
 /// Returns the pair as this crate's key types: `(n, e)` and the CRT quintuple, with `dP = e^-1 mod
 /// (p - 1)`, `dQ = e^-1 mod (q - 1)` (which equal `d mod (p - 1)` and `d mod (q - 1)` for the

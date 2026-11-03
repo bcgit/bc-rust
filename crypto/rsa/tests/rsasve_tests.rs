@@ -25,9 +25,10 @@ use bouncycastle_core::errors::{KEMError, RNGError};
 use bouncycastle_core::key_material::{KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{KEMDecapsulator, KEMEncapsulator, KEMPrivateKey, KEMPublicKey};
-use bouncycastle_core_test_framework::FixedSeedRNG;
 use bouncycastle_core_test_framework::kem::{TestFrameworkKEM, TestFrameworkKEMKeys};
 use bouncycastle_hex::decode as hex_decode;
+use bouncycastle_rng::DefaultRNG;
+use bouncycastle_rng::FixedSeedRNG;
 use serde_json::Value;
 use std::fs;
 use std::path::Path;
@@ -75,7 +76,10 @@ fn limbs<const L: usize>(hex: &str) -> [u64; L] {
 }
 
 /// An `RNG` whose stream is `bytes` repeated, reporting `strength`.
-fn rng_emitting<const N: usize>(bytes: [u8; N], strength: SecurityStrength) -> FixedSeedRNG<N> {
+fn rng_emitting<const N: usize>(
+    bytes: [u8; N],
+    strength: SecurityStrength,
+) -> FixedSeedRNG<[u8; N]> {
     let mut rng = FixedSeedRNG::new(bytes);
     rng.set_security_strength(strength);
     rng
@@ -257,8 +261,8 @@ macro_rules! rsasve_suite {
                 const ATTEMPTS: usize = bouncycastle_rsa::rsasve::MAX_GENERATE_ATTEMPTS;
                 let mut stream = vec![0xFFu8; ATTEMPTS * CT_LEN];
                 stream[(ATTEMPTS - 1) * CT_LEN..].fill(0x5A);
-                let mut rng =
-                    FixedSeedRNG::<{ ATTEMPTS * CT_LEN }>::new(stream.try_into().unwrap());
+                let seed: [u8; ATTEMPTS * CT_LEN] = stream.try_into().unwrap();
+                let mut rng = FixedSeedRNG::new(seed);
                 let (ss, _) = RSASVE::encaps_rng(&pk, &mut rng).unwrap();
                 assert_eq!(ss.ref_to_bytes(), &[0x5Au8; CT_LEN][..]);
             }
@@ -562,21 +566,21 @@ acvp_rsadp!(acvp_rsadp_crt_3072, rsa_3072, 3072, 48, 24);
 acvp_rsadp!(acvp_rsadp_crt_4096, rsa_4096, 4096, 64, 32);
 
 /// `RSASVE::keygen`'s pairs are usable KEM keys (a genuine generation, at the smallest size
-/// only: key generation is the slow part), and `keygen_from_rng` enforces the RNG strength.
+/// only: key generation is the slow part), and `keygen` enforces the RNG strength.
 #[test]
 fn keygen_produces_working_kem_keys() {
     use bouncycastle_rsa::rsa_2048::RSASVE;
-    let (pk, sk) = RSASVE::keygen().unwrap();
+    let (pk, sk) = RSASVE::keygen(&mut DefaultRNG::default()).unwrap();
     assert_eq!(pk.e(), 65537);
     assert_eq!(pk.n(), sk.n());
     let (ss, ct) = RSASVE::encaps(&pk).unwrap();
     assert_eq!(RSASVE::decaps(&sk, &ct).unwrap(), ss);
 
     // A stuck RNG exhausts FIPS 186-5 A.1.3's candidate limit (see `keygen_tests.rs`'s
-    // `keygen_from_rng_gives_up_on_a_stuck_rng`), and the KEM keygen passes that error through
+    // `keygen_gives_up_on_a_stuck_rng`), and the KEM keygen passes that error through
     // as `GenericError` with key generation's own message, not a generic one.
     let mut stuck = FixedSeedRNG::new([0x42u8; 64]);
-    match RSASVE::keygen_from_rng(&mut stuck) {
+    match RSASVE::keygen(&mut stuck) {
         Err(KEMError::GenericError(msg)) => assert!(msg.contains("candidate limit"), "{msg}"),
         other => panic!("expected GenericError, got {other:?}"),
     }
@@ -584,7 +588,7 @@ fn keygen_produces_working_kem_keys() {
     let mut weak = FixedSeedRNG::new([0x5Au8; 64]);
     weak.set_security_strength(SecurityStrength::None);
     assert!(matches!(
-        RSASVE::keygen_from_rng(&mut weak),
+        RSASVE::keygen(&mut weak),
         Err(KEMError::RNGError(RNGError::SecurityStrengthInsufficientForAlgorithm))
     ));
 }
@@ -597,7 +601,7 @@ macro_rules! kem_keygen_round_trip {
         $(#[$ignore])?
         fn $name() {
             use bouncycastle_rsa::$size::RSASVE;
-            let (pk, sk) = RSASVE::keygen().unwrap();
+            let (pk, sk) = RSASVE::keygen(&mut DefaultRNG::default()).unwrap();
             assert_eq!(pk.e(), 65537);
             assert_eq!(pk.n(), sk.n());
             let (ss, ct) = RSASVE::encaps(&pk).unwrap();

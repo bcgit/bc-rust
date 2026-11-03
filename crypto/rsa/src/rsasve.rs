@@ -16,7 +16,7 @@
 //!
 //! The key types here wrap the signature schemes' [`RsaPublicKey`]/[`RsaPrivateKey`] rather than
 //! reusing them, so the type system keeps key-establishment and signing keys apart. There is no
-//! `Signer` impl for an [`RsaKEMPrivateKey`] and no `KEMDecapsulator` impl for an
+//! signing-role impl for an [`RsaKEMPrivateKey`] and no `KEMDecapsulator` impl for an
 //! [`RsaPrivateKey`]. SP 800-56B Rev. 2 §6.1 item 5 is the requirement: "One key pair shall not
 //! be used for different cryptographic purposes (for example, a digital-signature key pair shall
 //! not be used for key establishment or vice versa)". BC FIPS Java checks the same thing at runtime with
@@ -204,13 +204,13 @@ impl<const L: usize, const HALF: usize> RsaKEMPrivateKey<L, HALF> {
 
 /// RSASVE (SP 800-56B Rev. 2 §7.2.1) at one modulus size, as a
 /// [`KEMEncapsulator`]/[`KEMDecapsulator`]. Each size module names its own instantiation (e.g.
-/// `crate::rsa_2048::RSASVE`), along with that size's `keygen`/`keygen_from_rng` as inherent
-/// associated functions, which is where the KEM traits' docs put key generation.
+/// `crate::rsa_2048::RSASVE`), along with that size's `keygen(rng)` as an inherent associated
+/// function, which is where the KEM traits' docs put key generation.
 ///
 /// `L`/`L2`/`L21`/`HALF`/`HALF2`/`HALF21` are the widths the rest of this crate threads through
 /// `rsa_core` (see [`crate::modexp`]). `N_BYTES = 8 * L` is `nLen`, which is both the ciphertext
 /// length and the shared-secret length. `SECURITY_BITS` is the modulus's SP 800-57 Part 1
-/// security strength, the same value that size's `keygen_from_rng` demands of its RNG. `encaps_rng`
+/// security strength, the same value that size's `keygen` demands of its RNG. `encaps_rng`
 /// demands it too, and the shared secret is labelled with it.
 ///
 /// Uninhabited: every operation is an associated function, as with the other KEMs in this
@@ -380,7 +380,7 @@ where
     }
 }
 
-/// Wraps a size module's signature-typed `keygen_from_rng` result as a KEM key pair, applying
+/// Wraps a size module's signature-typed `keygen` result as a KEM key pair, applying
 /// the KEM key types' checks. These always pass for this crate's own keys, which have `e = 65537`
 /// and an `n` of exactly `nlen` bits by construction (see [`crate::keygen`]).
 pub(crate) fn keygen_from<const L: usize, const HALF: usize>(

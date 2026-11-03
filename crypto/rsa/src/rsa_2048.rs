@@ -7,10 +7,10 @@
 //! matching RFC 8017 §9.1 note 4's "typical" choice and Wycheproof's own
 //! `rsa_pss_2048_sha256_mgf1_32_test.json`/`..._sha384_mgf1_48_test.json`.
 //!
-//! Each (scheme, hash) pairing is a type implementing `bouncycastle_core`'s
-//! `Signer`/`SignatureVerifier` traits ([`RSASSA_PKCS1_v1_5_SHA256`], [`RSASSA_PSS_SHA256`],
-//! [`RSASSA_PSS_SHAKE128`], ...): one-shot or streaming, with PSS's salt from the default RNG or
-//! under the caller's control via `sign_randomized`/`set_signer_salt`. The key types implement
+//! Each (scheme, hash) pairing is an algorithm marker the key role traits are implemented over
+//! ([`RSASSA_PKCS1_v1_5_SHA256`], [`RSASSA_PSS_SHA256`], [`RSASSA_PSS_SHAKE128`], ...): one-shot
+//! or streaming, with PSS's salt from the RNG handed to `create_signer` or fixed through `set_salt`
+//! on the signer. The key types implement
 //! `SignaturePrivateKey`/`SignaturePublicKey` here, at this size's [`SK_LEN`]/[`PK_LEN`].
 
 use crate::keys::{RsaPrivateKey, RsaPublicKey};
@@ -23,7 +23,6 @@ use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{
     KEMPrivateKey, KEMPublicKey, RNG, SignaturePrivateKey, SignaturePublicKey,
 };
-use bouncycastle_rng::DefaultRNG;
 use bouncycastle_sha2::{SHA256, SHA384, SHA512};
 use bouncycastle_sha3::SHAKE128;
 use core::num::NonZeroUsize;
@@ -42,18 +41,10 @@ pub const PK_LEN: usize = 260;
 /// Signature length: `k`, the modulus length in octets (RFC 8017 §8.1.1/§8.2.1 step 2.c).
 pub const SIG_LEN: usize = 256;
 
-/// FIPS 186-5 Appendix A.1.3 key pair generation for RSA-2048 (see [`crate::keygen`]), sourcing
-/// the candidates from the library's default OS-backed RNG. `e` is [`crate::keygen::PUBLIC_EXPONENT`].
-pub fn keygen() -> Result<(RSA2048PublicKey, RSA2048PrivateKey), SignatureError> {
-    keygen_from_rng(&mut DefaultRNG::default())
-}
-
 /// As [`keygen`], but sourcing the candidates from the caller-provided RNG, which must offer a
 /// security strength of at least 112 bits (SP 800-57 Part 1 Rev. 5, Table 2, `k = 2048`). Each
 /// candidate prime gets 5 Miller-Rabin rounds: FIPS 186-5 Table B.1's row for 1024-bit `p` and `q` at an error probability of `2^-112`, RSA-2048's security strength (SP 800-57 Part 1 Rev. 5, Table 2).
-pub fn keygen_from_rng(
-    rng: &mut dyn RNG,
-) -> Result<(RSA2048PublicKey, RSA2048PrivateKey), SignatureError> {
+pub fn keygen(rng: &mut dyn RNG) -> Result<(RSA2048PublicKey, RSA2048PrivateKey), SignatureError> {
     crate::keygen::keygen_from_rng::<16, 32, 33>(
         rng,
         NonZeroUsize::new(5).expect("nonzero literal"),
@@ -97,9 +88,9 @@ impl SignaturePublicKey<PK_LEN> for RSA2048PublicKey {
     }
 }
 
-/// RSASSA-PKCS1-v1_5/SHA-256 over RSA-2048 as a `Signer`/`SignatureVerifier`: [`RSASSA_PKCS1_v1_5`]
-/// at this size's widths. Deterministic: PKCS#1 v1.5 has no randomness, so `Signer::sign`
-/// always reproduces the same signature.
+/// RSASSA-PKCS1-v1_5/SHA-256 over RSA-2048 through the key role traits: [`RSASSA_PKCS1_v1_5`]
+/// at this size's widths. Deterministic: PKCS#1 v1.5 has no randomness, so it is the
+/// `DeterministicSigningKey` role and always reproduces the same signature.
 #[allow(non_camel_case_types)]
 pub type RSASSA_PKCS1_v1_5_SHA256 =
     RSASSA_PKCS1_v1_5<SHA256, 32, 51, 32, 64, 65, 16, 32, 33, 256, SK_LEN, PK_LEN>;
@@ -112,9 +103,9 @@ pub type RSASSA_PKCS1_v1_5_SHA384 =
 pub type RSASSA_PKCS1_v1_5_SHA512 =
     RSASSA_PKCS1_v1_5<SHA512, 64, 83, 32, 64, 65, 16, 32, 33, 256, SK_LEN, PK_LEN>;
 
-/// RSASSA-PSS/SHA-256 (MGF1-SHA-256, 32-byte salt) over RSA-2048 as a `Signer`/`SignatureVerifier`:
-/// [`RSASSA_PSS`] at this size's widths, drawing its salt from the library's default RNG unless
-/// `sign_randomized`/`set_signer_salt` supply it (see that type's docs).
+/// RSASSA-PSS/SHA-256 (MGF1-SHA-256, 32-byte salt) over RSA-2048 through the key role traits:
+/// [`RSASSA_PSS`] at this size's widths, drawing its salt from the RNG handed to `SigningKey::create_signer`
+/// unless `set_salt` on the signer replaces it (see that type's docs).
 #[allow(non_camel_case_types)]
 pub type RSASSA_PSS_SHA256 =
     RSASSA_PSS<SHA256, 32, 36, 32, 72, 223, 32, 64, 65, 16, 32, 33, 256, SK_LEN, PK_LEN>;
@@ -126,7 +117,7 @@ pub type RSASSA_PSS_SHA384 =
 #[allow(non_camel_case_types)]
 pub type RSASSA_PSS_SHA512 =
     RSASSA_PSS<SHA512, 64, 68, 64, 136, 191, 32, 64, 65, 16, 32, 33, 256, SK_LEN, PK_LEN>;
-/// RSASSA-PSS-SHAKE128 (RFC 8702 §3.2.1) over RSA-2048 as a `Signer`/`SignatureVerifier`:
+/// RSASSA-PSS-SHAKE128 (RFC 8702 §3.2.1) over RSA-2048 through the key role traits:
 /// [`RSASSA_PSS_SHAKE`] at this size's widths.
 #[allow(non_camel_case_types)]
 pub type RSASSA_PSS_SHAKE128 =
@@ -152,18 +143,12 @@ pub const SS_LEN: usize = 256;
 pub type RSASVE = crate::rsasve::RSASVE<32, 64, 65, 16, 32, 33, 256, 112>;
 
 impl RSASVE {
-    /// Generates a key-establishment key pair with [`keygen`] (FIPS 186-5 Appendix A.1.3,
-    /// `e = 65537`), sourcing the candidates from the library's default OS-backed RNG.
-    pub fn keygen() -> Result<(RSA2048KEMPublicKey, RSA2048KEMPrivateKey), KEMError> {
-        Self::keygen_from_rng(&mut DefaultRNG::default())
-    }
-
     /// As [`Self::keygen`], but sourcing the candidates from the caller-provided RNG, with the
-    /// same RNG requirements as [`keygen_from_rng`].
-    pub fn keygen_from_rng(
+    /// same RNG requirements as [`keygen`].
+    pub fn keygen(
         rng: &mut dyn RNG,
     ) -> Result<(RSA2048KEMPublicKey, RSA2048KEMPrivateKey), KEMError> {
-        crate::rsasve::keygen_from(keygen_from_rng(rng))
+        crate::rsasve::keygen_from(keygen(rng))
     }
 }
 

@@ -5,7 +5,8 @@
 //! material and this crate never constructs an RSA-1536 private key at all.
 
 use bouncycastle_core::errors::SignatureError;
-use bouncycastle_core::traits::{SignaturePublicKey, SignatureVerifier};
+use bouncycastle_core::signature_key::VerifyingKey;
+use bouncycastle_core::traits::SignaturePublicKey;
 use bouncycastle_hex::decode as hex_decode;
 use bouncycastle_rsa::rsa_1536::{
     PK_LEN, RSA1536PublicKey, RSASSA_PKCS1_v1_5_SHA256, RSASSA_PKCS1_v1_5_SHA384,
@@ -79,21 +80,21 @@ fn run_sig_gen_group_as_verify_vectors(
 #[test]
 fn pkcs1_v1_5_sha256_accepts_genuine_sig_gen_signatures() {
     run_sig_gen_group_as_verify_vectors("SHA-256", |pk, msg, sig| {
-        RSASSA_PKCS1_v1_5_SHA256::verify(pk, msg, None, sig).is_ok()
+        VerifyingKey::<RSASSA_PKCS1_v1_5_SHA256, 192>::verify(pk, msg, None, sig).is_ok()
     });
 }
 
 #[test]
 fn pkcs1_v1_5_sha384_accepts_genuine_sig_gen_signatures() {
     run_sig_gen_group_as_verify_vectors("SHA-384", |pk, msg, sig| {
-        RSASSA_PKCS1_v1_5_SHA384::verify(pk, msg, None, sig).is_ok()
+        VerifyingKey::<RSASSA_PKCS1_v1_5_SHA384, 192>::verify(pk, msg, None, sig).is_ok()
     });
 }
 
 #[test]
 fn pkcs1_v1_5_sha512_accepts_genuine_sig_gen_signatures() {
     run_sig_gen_group_as_verify_vectors("SHA-512", |pk, msg, sig| {
-        RSASSA_PKCS1_v1_5_SHA512::verify(pk, msg, None, sig).is_ok()
+        VerifyingKey::<RSASSA_PKCS1_v1_5_SHA512, 192>::verify(pk, msg, None, sig).is_ok()
     });
 }
 
@@ -117,7 +118,7 @@ fn run_sig_gen_group_rejects_wrong_message(
 #[test]
 fn pkcs1_v1_5_sha256_rejects_wrong_message() {
     run_sig_gen_group_rejects_wrong_message("SHA-256", |pk, msg, sig| {
-        RSASSA_PKCS1_v1_5_SHA256::verify(pk, msg, None, sig).is_ok()
+        VerifyingKey::<RSASSA_PKCS1_v1_5_SHA256, 192>::verify(pk, msg, None, sig).is_ok()
     });
 }
 
@@ -127,14 +128,14 @@ fn pkcs1_v1_5_sha256_rejects_wrong_message() {
 #[test]
 fn pkcs1_v1_5_sha384_rejects_wrong_message() {
     run_sig_gen_group_rejects_wrong_message("SHA-384", |pk, msg, sig| {
-        RSASSA_PKCS1_v1_5_SHA384::verify(pk, msg, None, sig).is_ok()
+        VerifyingKey::<RSASSA_PKCS1_v1_5_SHA384, 192>::verify(pk, msg, None, sig).is_ok()
     });
 }
 
 #[test]
 fn pkcs1_v1_5_sha512_rejects_wrong_message() {
     run_sig_gen_group_rejects_wrong_message("SHA-512", |pk, msg, sig| {
-        RSASSA_PKCS1_v1_5_SHA512::verify(pk, msg, None, sig).is_ok()
+        VerifyingKey::<RSASSA_PKCS1_v1_5_SHA512, 192>::verify(pk, msg, None, sig).is_ok()
     });
 }
 
@@ -147,8 +148,8 @@ fn pkcs1_v1_5_sha512_rejects_wrong_message() {
 fn trait_verify_rejects_truncated_signature() {
     run_sig_gen_group_as_verify_vectors("SHA-256", |pk, msg, sig| {
         matches!(
-            RSASSA_PKCS1_v1_5_SHA256::verify(pk, msg, None, &sig[..191]),
-            Err(SignatureError::SignatureVerificationFailed)
+            VerifyingKey::<RSASSA_PKCS1_v1_5_SHA256, 192>::verify(pk, msg, None, &sig[..191]),
+            Err(SignatureError::LengthError(_))
         )
     });
 }

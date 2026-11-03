@@ -10,7 +10,6 @@ use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{
     KEMPrivateKey, KEMPublicKey, RNG, SignaturePrivateKey, SignaturePublicKey,
 };
-use bouncycastle_rng::DefaultRNG;
 use bouncycastle_sha2::{SHA256, SHA384, SHA512};
 use core::num::NonZeroUsize;
 
@@ -28,18 +27,10 @@ pub const PK_LEN: usize = 1028;
 /// Signature length: `k`, the modulus length in octets (RFC 8017 §8.1.1/§8.2.1 step 2.c).
 pub const SIG_LEN: usize = 1024;
 
-/// FIPS 186-5 Appendix A.1.3 key pair generation for RSA-8192 (see [`crate::keygen`]), sourcing
-/// the candidates from the library's default OS-backed RNG. `e` is [`crate::keygen::PUBLIC_EXPONENT`].
-pub fn keygen() -> Result<(RSA8192PublicKey, RSA8192PrivateKey), SignatureError> {
-    keygen_from_rng(&mut DefaultRNG::default())
-}
-
 /// As [`keygen`], but sourcing the candidates from the caller-provided RNG, which must offer a
 /// security strength of at least 192 bits (SP 800-57 Part 1 Rev. 5, Table 2: `k = 7680` gives 192, and 8192 exceeds it). Each
 /// candidate prime gets 4 Miller-Rabin rounds: FIPS 186-5 Table B.1 stops at 2048-bit primes; Appendix C.1's formula (2), which reproduces every entry of that table, gives 3 rounds for 4096-bit primes at `2^-192` (RSA-8192 exceeds SP 800-57's 7680-bit/192-bit row) and 5 at `2^-256`, so 4 is taken, matching the table's last row with margin.
-pub fn keygen_from_rng(
-    rng: &mut dyn RNG,
-) -> Result<(RSA8192PublicKey, RSA8192PrivateKey), SignatureError> {
+pub fn keygen(rng: &mut dyn RNG) -> Result<(RSA8192PublicKey, RSA8192PrivateKey), SignatureError> {
     crate::keygen::keygen_from_rng::<64, 128, 129>(
         rng,
         NonZeroUsize::new(4).expect("nonzero literal"),
@@ -83,7 +74,7 @@ impl SignaturePublicKey<PK_LEN> for RSA8192PublicKey {
     }
 }
 
-/// RSASSA-PKCS1-v1_5/SHA-256 over RSA-8192 as a `Signer`/`SignatureVerifier`; see
+/// RSASSA-PKCS1-v1_5/SHA-256 over RSA-8192 through the key role traits; see
 /// [`crate::rsa_2048::RSASSA_PKCS1_v1_5_SHA256`] for the pattern.
 #[allow(non_camel_case_types)]
 pub type RSASSA_PKCS1_v1_5_SHA256 =
@@ -97,7 +88,7 @@ pub type RSASSA_PKCS1_v1_5_SHA384 =
 pub type RSASSA_PKCS1_v1_5_SHA512 =
     RSASSA_PKCS1_v1_5<SHA512, 64, 83, 128, 256, 257, 64, 128, 129, 1024, SK_LEN, PK_LEN>;
 
-/// RSASSA-PSS/SHA-256 over RSA-8192 as a `Signer`/`SignatureVerifier`; see
+/// RSASSA-PSS/SHA-256 over RSA-8192 through the key role traits; see
 /// [`crate::rsa_2048::RSASSA_PSS_SHA256`] for the pattern (including where the salt comes from).
 #[allow(non_camel_case_types)]
 pub type RSASSA_PSS_SHA256 =
@@ -131,18 +122,12 @@ pub const SS_LEN: usize = 1024;
 pub type RSASVE = crate::rsasve::RSASVE<128, 256, 257, 64, 128, 129, 1024, 192>;
 
 impl RSASVE {
-    /// Generates a key-establishment key pair with [`keygen`] (FIPS 186-5 Appendix A.1.3,
-    /// `e = 65537`), sourcing the candidates from the library's default OS-backed RNG.
-    pub fn keygen() -> Result<(RSA8192KEMPublicKey, RSA8192KEMPrivateKey), KEMError> {
-        Self::keygen_from_rng(&mut DefaultRNG::default())
-    }
-
     /// As [`Self::keygen`], but sourcing the candidates from the caller-provided RNG, with the
-    /// same RNG requirements as [`keygen_from_rng`].
-    pub fn keygen_from_rng(
+    /// same RNG requirements as [`keygen`].
+    pub fn keygen(
         rng: &mut dyn RNG,
     ) -> Result<(RSA8192KEMPublicKey, RSA8192KEMPrivateKey), KEMError> {
-        crate::rsasve::keygen_from(keygen_from_rng(rng))
+        crate::rsasve::keygen_from(keygen(rng))
     }
 }
 

@@ -11,27 +11,28 @@
 //! by comparing moduli in Python before writing this file).
 
 use bouncycastle_core::errors::SignatureError;
-use bouncycastle_core::traits::{Hash, RNG, SignatureVerifier, Signer};
+use bouncycastle_core::signature_key::{SigningKey, VerifyingKey};
+use bouncycastle_core::traits::RNG;
+use bouncycastle_core::traits::{HashOneShot, SignatureSigner, SignatureVerifier};
 use bouncycastle_core_test_framework::signature::TestFrameworkSignature;
 use bouncycastle_hex::decode as hex_decode;
 use bouncycastle_rng::DefaultRNG;
-use bouncycastle_rsa::rsa_2048::{
-    PK_LEN, RSA2048PrivateKey, RSA2048PublicKey, RSASSA_PSS_SHA256, SIG_LEN, SK_LEN,
-};
+use bouncycastle_rsa::rsa_2048::{RSA2048PrivateKey, RSA2048PublicKey, RSASSA_PSS_SHA256, SIG_LEN};
 use bouncycastle_rsa::rsassa_pss;
 use bouncycastle_sha2::SHA256;
 use serde_json::Value;
 use std::fs;
 use std::path::Path;
 
-/// Signs through the streaming trait path with a fixed salt (`set_signer_salt`) -- the
+/// Signs through the streaming trait path with a fixed salt (`set_salt`) -- the
 /// deterministic PSS mode, for tests against a known salt. Returns `do_sign_final`'s `Result`.
 macro_rules! sign_with_salt {
     ($ty:ty, $sk:expr, $msg:expr, $salt:expr) => {{
-        let mut signer = <$ty>::do_sign_init($sk, None).unwrap();
-        signer.set_signer_salt($salt);
-        signer.do_sign_update($msg);
-        signer.do_sign_final()
+        let mut signer =
+            SigningKey::<$ty, 256>::create_signer($sk, &mut DefaultRNG::default(), None).unwrap();
+        signer.set_salt($salt);
+        signer.do_update($msg);
+        signer.do_final()
     }};
 }
 
@@ -112,13 +113,17 @@ fn pss_sign_with_fixed_salt_round_trips() {
     let salt = [0x42u8; 32];
     let sig = sign_with_salt!(RSASSA_PSS_SHA256, &sk, b"the message to sign", salt)
         .expect("signing must succeed");
-    RSASSA_PSS_SHA256::verify(&pk, b"the message to sign", None, &sig).expect("must verify");
+    VerifyingKey::<RSASSA_PSS_SHA256, 256>::verify(&pk, b"the message to sign", None, &sig)
+        .expect("must verify");
 
     // Deterministic given the same salt.
     let sig2 = sign_with_salt!(RSASSA_PSS_SHA256, &sk, b"the message to sign", salt).unwrap();
     assert_eq!(sig, sig2);
 
-    assert!(RSASSA_PSS_SHA256::verify(&pk, b"a different message", None, &sig).is_err());
+    assert!(
+        VerifyingKey::<RSASSA_PSS_SHA256, 256>::verify(&pk, b"a different message", None, &sig)
+            .is_err()
+    );
 }
 
 #[test]
@@ -127,13 +132,15 @@ fn pss_sign_with_rng_produces_fresh_salts_that_both_verify() {
     let pk = RSA2048PublicKey::new(sk.n(), 0x10001).unwrap();
     let mut rng = DefaultRNG::default();
 
-    let sig_a =
-        RSASSA_PSS_SHA256::sign_randomized(&sk, b"hello", &mut rng).expect("signing must succeed");
-    let sig_b =
-        RSASSA_PSS_SHA256::sign_randomized(&sk, b"hello", &mut rng).expect("signing must succeed");
+    let sig_a = SigningKey::<RSASSA_PSS_SHA256, 256>::sign(&sk, &mut rng, b"hello", None)
+        .expect("signing must succeed");
+    let sig_b = SigningKey::<RSASSA_PSS_SHA256, 256>::sign(&sk, &mut rng, b"hello", None)
+        .expect("signing must succeed");
     assert_ne!(sig_a, sig_b, "PSS is randomized: two signatures of the same message must differ");
-    RSASSA_PSS_SHA256::verify(&pk, b"hello", None, &sig_a).expect("sig_a must verify");
-    RSASSA_PSS_SHA256::verify(&pk, b"hello", None, &sig_b).expect("sig_b must verify");
+    VerifyingKey::<RSASSA_PSS_SHA256, 256>::verify(&pk, b"hello", None, &sig_a)
+        .expect("sig_a must verify");
+    VerifyingKey::<RSASSA_PSS_SHA256, 256>::verify(&pk, b"hello", None, &sig_b)
+        .expect("sig_b must verify");
 }
 
 #[test]
@@ -166,7 +173,8 @@ fn rsa_pss_sha256_mgf1_32_wycheproof_vectors() {
                 continue;
             };
 
-            let verified = RSASSA_PSS_SHA256::verify(&pk, &msg, None, &sig).is_ok();
+            let verified =
+                VerifyingKey::<RSASSA_PSS_SHA256, 256>::verify(&pk, &msg, None, &sig).is_ok();
             match test["result"].as_str().unwrap() {
                 "valid" => {
                     assert!(verified, "tcId {tc_id}: expected valid, got invalid");
@@ -194,24 +202,19 @@ fn fixed_keypair() -> Result<(RSA2048PublicKey, RSA2048PrivateKey), SignatureErr
     Ok((pk, sk))
 }
 
-/// `core-test-framework`'s conformance suite: randomized (`Signer::sign` draws a fresh salt from
+/// `core-test-framework`'s conformance suite: randomized (`SigningKey::sign` draws a fresh salt from
 /// the default RNG, so two signatures of one message differ), `ctx` ignored, every signature bit
 /// flipped in turn -- run here since the generic `RSASSA_PSS` code is the same at every width.
 #[test]
 fn pss_sha256_trait_conformance_suite() {
-    TestFrameworkSignature::new(false, false).test_signature::<
-        RSA2048PublicKey,
-        RSA2048PrivateKey,
-        RSASSA_PSS_SHA256,
-        RSASSA_PSS_SHA256,
-        PK_LEN,
-        SK_LEN,
-        SIG_LEN,
-    >(fixed_keypair, true);
+    TestFrameworkSignature::new(false)
+        .test_signature::<RSASSA_PSS_SHA256, RSA2048PublicKey, RSA2048PrivateKey, SIG_LEN>(
+            fixed_keypair, true,
+        );
 }
 
 /// A fixed-output RNG (all-`0x42` bytes), as `bouncycastle-ecdsa`'s tests use: pins that
-/// `sign_randomized` takes its salt from the caller's RNG and nowhere else.
+/// `SigningKey::sign` takes its salt from the caller's RNG and nowhere else.
 struct FixedRng;
 impl RNG for FixedRng {
     fn add_seed_keymaterial(
@@ -244,23 +247,25 @@ impl RNG for FixedRng {
     }
 }
 
-/// `set_signer_salt` fixes the salt on the streaming path (the counterpart of ML-DSA's
+/// `set_salt` fixes the salt on the streaming path (the counterpart of ML-DSA's
 /// `set_signer_rnd`): the result is deterministic and byte-identical to the generic
 /// `rsassa_pss::sign_from_hash_with_salt` over the same digest and salt, while an unfixed
 /// streamed signature is fresh.
 #[test]
-fn set_signer_salt_fixes_the_salt_on_the_streaming_path() {
+fn set_salt_fixes_the_salt_on_the_streaming_path() {
     let (pk, sk) = fixed_keypair().unwrap();
     let msg = b"fixed salt, streamed in two chunks";
     let salt = [0x42u8; 32];
 
-    let mut signer = RSASSA_PSS_SHA256::do_sign_init(&sk, None).unwrap();
-    signer.set_signer_salt(salt);
-    signer.do_sign_update(&msg[..11]);
-    signer.do_sign_update(&msg[11..]);
-    let sig = signer.do_sign_final().unwrap();
+    let mut signer =
+        SigningKey::<RSASSA_PSS_SHA256, 256>::create_signer(&sk, &mut DefaultRNG::default(), None)
+            .unwrap();
+    signer.set_salt(salt);
+    signer.do_update(&msg[..11]);
+    signer.do_update(&msg[11..]);
+    let sig = signer.do_final().unwrap();
     let mut digest = [0u8; 32];
-    SHA256::default().hash_out(msg, &mut digest);
+    SHA256::hash_out(msg, &mut digest);
     let expected = rsassa_pss::sign_from_hash_with_salt::<
         SHA256,
         32,
@@ -278,34 +283,36 @@ fn set_signer_salt_fixes_the_salt_on_the_streaming_path() {
     >(&sk, &digest, &salt)
     .unwrap();
     assert_eq!(sig, expected);
-    RSASSA_PSS_SHA256::verify(&pk, msg, None, &sig).unwrap();
+    VerifyingKey::<RSASSA_PSS_SHA256, 256>::verify(&pk, msg, None, &sig).unwrap();
 
-    let mut fresh = RSASSA_PSS_SHA256::do_sign_init(&sk, None).unwrap();
-    fresh.do_sign_update(msg);
-    assert_ne!(fresh.do_sign_final().unwrap(), sig, "without set_signer_salt the salt is fresh");
+    let mut fresh =
+        SigningKey::<RSASSA_PSS_SHA256, 256>::create_signer(&sk, &mut DefaultRNG::default(), None)
+            .unwrap();
+    fresh.do_update(msg);
+    assert_ne!(fresh.do_final().unwrap(), sig, "without set_salt the salt is fresh");
 
     // On a verify-initialised state it has no effect.
-    let mut verifier = RSASSA_PSS_SHA256::do_verify_init(&pk, None).unwrap();
-    verifier.set_signer_salt([0xffu8; 32]);
-    verifier.do_verify_update(msg);
+    let mut verifier = VerifyingKey::<RSASSA_PSS_SHA256, 256>::create_verifier(&pk, None).unwrap();
+    verifier.do_update(msg);
     verifier.do_verify_final(&sig).unwrap();
 }
 
-/// `sign_randomized` draws the salt from the caller's RNG (the ECDSA/SM2 shape): with a
+/// `SigningKey::sign` draws the salt from the caller's RNG (the ECDSA/SM2 shape): with a
 /// fixed-output RNG it equals the fixed-salt path over that same output, and with a real RNG it
 /// is fresh per call and verifies.
 #[test]
-fn sign_randomized_takes_the_salt_from_the_callers_rng() {
+fn sign_takes_the_salt_from_the_callers_rng() {
     let (pk, sk) = fixed_keypair().unwrap();
     let msg = b"caller-supplied RNG";
-    let from_fixed_rng = RSASSA_PSS_SHA256::sign_randomized(&sk, msg, &mut FixedRng).unwrap();
+    let from_fixed_rng =
+        SigningKey::<RSASSA_PSS_SHA256, 256>::sign(&sk, &mut FixedRng, msg, None).unwrap();
     assert_eq!(from_fixed_rng, sign_with_salt!(RSASSA_PSS_SHA256, &sk, msg, [0x42u8; 32]).unwrap());
 
     let mut rng = DefaultRNG::default();
-    let a = RSASSA_PSS_SHA256::sign_randomized(&sk, msg, &mut rng).unwrap();
-    let b = RSASSA_PSS_SHA256::sign_randomized(&sk, msg, &mut rng).unwrap();
+    let a = SigningKey::<RSASSA_PSS_SHA256, 256>::sign(&sk, &mut rng, msg, None).unwrap();
+    let b = SigningKey::<RSASSA_PSS_SHA256, 256>::sign(&sk, &mut rng, msg, None).unwrap();
     assert_ne!(a, b);
-    RSASSA_PSS_SHA256::verify(&pk, msg, None, &a).unwrap();
-    RSASSA_PSS_SHA256::verify(&pk, msg, None, &b).unwrap();
-    assert!(RSASSA_PSS_SHA256::verify(&pk, b"other", None, &a).is_err());
+    VerifyingKey::<RSASSA_PSS_SHA256, 256>::verify(&pk, msg, None, &a).unwrap();
+    VerifyingKey::<RSASSA_PSS_SHA256, 256>::verify(&pk, msg, None, &b).unwrap();
+    assert!(VerifyingKey::<RSASSA_PSS_SHA256, 256>::verify(&pk, b"other", None, &a).is_err());
 }

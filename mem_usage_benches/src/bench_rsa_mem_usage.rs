@@ -31,10 +31,12 @@
 #![allow(unused_imports)]
 
 use bouncycastle::core::key_material::KeyMaterialTrait;
+use bouncycastle::core::signature_key::{DeterministicSigningKey, SigningKey, VerifyingKey};
 use bouncycastle::core::traits::{
     KEMDecapsulator, KEMEncapsulator, KEMPrivateKey, KEMPublicKey, SignaturePrivateKey,
-    SignaturePublicKey, SignatureVerifier, Signer,
+    SignaturePublicKey,
 };
+use bouncycastle::rng::DefaultRNG;
 use bouncycastle::rsa::{rsa_1024, rsa_1536, rsa_2048, rsa_3072, rsa_4096, rsa_8192};
 
 const MSG: &[u8] = b"peak stack usage of RSA sign/verify, held constant across every modulus size";
@@ -150,7 +152,9 @@ fn bench_1024_verify() {
     );
     let msg = bouncycastle::hex::decode("0000000000000000000000000000000000000000").unwrap();
 
-    if rsa_1024::RSASSA_PKCS1_v1_5_SHA256::verify(&pk, &msg, None, &sig).is_ok() {
+    if VerifyingKey::<rsa_1024::RSASSA_PKCS1_v1_5_SHA256, 128>::verify(&pk, &msg, None, &sig)
+        .is_ok()
+    {
         eprintln!("Verification succeeded!");
     } else {
         panic!("Verification failed! -- figure that out");
@@ -196,7 +200,7 @@ fn genuine_2048_key() -> rsa_2048::RSA2048PrivateKey {
 /// the modulus width.
 fn bench_2048_keygen() {
     eprintln!("RSA-2048/Keygen");
-    let (pk, sk) = rsa_2048::keygen().unwrap();
+    let (pk, sk) = rsa_2048::keygen(&mut DefaultRNG::default()).unwrap();
     println!("{:x?}", pk.encode());
     println!("{}", sk.encode().len());
 }
@@ -204,7 +208,11 @@ fn bench_2048_keygen() {
 fn bench_2048_sign() {
     eprintln!("RSA-2048/Sign");
     let sk = genuine_2048_key();
-    let sig = rsa_2048::RSASSA_PKCS1_v1_5_SHA256::sign(&sk, MSG, None).unwrap();
+    let sig =
+        DeterministicSigningKey::<rsa_2048::RSASSA_PKCS1_v1_5_SHA256, 256>::sign_deterministic(
+            &sk, MSG, None,
+        )
+        .unwrap();
     println!("{:x?}", sig);
 }
 
@@ -212,9 +220,14 @@ fn bench_2048_verify() {
     eprintln!("RSA-2048/Verify");
     let sk = genuine_2048_key();
     let pk = rsa_2048::RSA2048PublicKey::new(sk.n(), 0x10001).unwrap();
-    let sig = rsa_2048::RSASSA_PKCS1_v1_5_SHA256::sign(&sk, MSG, None).unwrap();
+    let sig =
+        DeterministicSigningKey::<rsa_2048::RSASSA_PKCS1_v1_5_SHA256, 256>::sign_deterministic(
+            &sk, MSG, None,
+        )
+        .unwrap();
 
-    if rsa_2048::RSASSA_PKCS1_v1_5_SHA256::verify(&pk, MSG, None, &sig).is_ok() {
+    if VerifyingKey::<rsa_2048::RSASSA_PKCS1_v1_5_SHA256, 256>::verify(&pk, MSG, None, &sig).is_ok()
+    {
         eprintln!("Verification succeeded!");
     } else {
         panic!("Verification failed! -- figure that out");
@@ -318,7 +331,11 @@ fn genuine_8192_key() -> rsa_8192::RSA8192PrivateKey {
 fn bench_8192_sign() {
     eprintln!("RSA-8192/Sign");
     let sk = genuine_8192_key();
-    let sig = rsa_8192::RSASSA_PKCS1_v1_5_SHA256::sign(&sk, MSG, None).unwrap();
+    let sig =
+        DeterministicSigningKey::<rsa_8192::RSASSA_PKCS1_v1_5_SHA256, 1024>::sign_deterministic(
+            &sk, MSG, None,
+        )
+        .unwrap();
     println!("{:x?}", sig);
 }
 
@@ -326,9 +343,15 @@ fn bench_8192_verify() {
     eprintln!("RSA-8192/Verify");
     let sk = genuine_8192_key();
     let pk = rsa_8192::RSA8192PublicKey::new(sk.n(), 0x10001).unwrap();
-    let sig = rsa_8192::RSASSA_PKCS1_v1_5_SHA256::sign(&sk, MSG, None).unwrap();
+    let sig =
+        DeterministicSigningKey::<rsa_8192::RSASSA_PKCS1_v1_5_SHA256, 1024>::sign_deterministic(
+            &sk, MSG, None,
+        )
+        .unwrap();
 
-    if rsa_8192::RSASSA_PKCS1_v1_5_SHA256::verify(&pk, MSG, None, &sig).is_ok() {
+    if VerifyingKey::<rsa_8192::RSASSA_PKCS1_v1_5_SHA256, 1024>::verify(&pk, MSG, None, &sig)
+        .is_ok()
+    {
         eprintln!("Verification succeeded!");
     } else {
         panic!("Verification failed! -- figure that out");

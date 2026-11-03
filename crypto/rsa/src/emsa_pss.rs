@@ -11,7 +11,7 @@
 //! generic bit-count parameter through for a case that cannot arise.
 
 use crate::mgf1::mgf1;
-use bouncycastle_core::traits::Hash;
+use bouncycastle_core::traits::HashOneShot;
 
 /// EMSA-PSS-ENCODE (RFC 8017 §9.1.1) from step 3 onward, with `emBits` fixed to `8 * K_LEN - 1`
 /// (see the module docs), steps 1-2's `mHash = Hash(M)` supplied by the caller (either
@@ -23,7 +23,7 @@ use bouncycastle_core::traits::Hash;
 /// pairing this crate wires up has a modulus far wider than any hash-plus-salt combination it
 /// offers.
 pub fn emsa_pss_encode_from_hash<
-    H: Hash + Default,
+    H: HashOneShot,
     const H_LEN: usize,
     const SEED_LEN: usize,
     const S_LEN: usize,
@@ -46,7 +46,7 @@ pub fn emsa_pss_encode_from_hash<
     m_prime[8..8 + H_LEN].copy_from_slice(m_hash);
     m_prime[8 + H_LEN..].copy_from_slice(salt);
     let mut h = [0u8; H_LEN];
-    H::default().hash_out(&m_prime, &mut h);
+    H::hash_out(&m_prime, &mut h);
 
     // Steps 7-8: DB = PS || 0x01 || salt (PS is all-zero, already the array's initial value).
     let mut db = [0u8; DB_LEN];
@@ -74,7 +74,7 @@ pub fn emsa_pss_encode_from_hash<
 /// same way. Step 1's message-length limit and step 3's minimum-`emLen` check are not reachable
 /// for this crate's fixed sizes, for the same reasons given there.
 pub fn emsa_pss_verify_from_hash<
-    H: Hash + Default,
+    H: HashOneShot,
     const H_LEN: usize,
     const SEED_LEN: usize,
     const S_LEN: usize,
@@ -123,7 +123,7 @@ pub fn emsa_pss_verify_from_hash<
     m_prime[8..8 + H_LEN].copy_from_slice(m_hash);
     m_prime[8 + H_LEN..].copy_from_slice(&salt);
     let mut h_prime = [0u8; H_LEN];
-    H::default().hash_out(&m_prime, &mut h_prime);
+    H::hash_out(&m_prime, &mut h_prime);
 
     h == h_prime
 }
@@ -169,7 +169,7 @@ mod tests {
 
     fn m_hash(message: &[u8]) -> [u8; 32] {
         let mut m_hash = [0u8; 32];
-        SHA256::default().hash_out(message, &mut m_hash);
+        SHA256::hash_out(message, &mut m_hash);
         m_hash
     }
 

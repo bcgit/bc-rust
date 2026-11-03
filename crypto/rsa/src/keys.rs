@@ -18,6 +18,7 @@
 
 use crate::codec::{be_bytes_from_limbs, limbs_from_be_bytes};
 use bouncycastle_core::errors::SignatureError;
+use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_ec::montgomery;
 use bouncycastle_ec::nat;
 use bouncycastle_utils::secret::Secret;
@@ -297,5 +298,21 @@ impl<const L: usize, const HALF: usize> RsaPrivateKey<L, HALF> {
         let d_q = limbs_from_be_bytes::<HALF, HALF_BYTES>(&d_q_bytes);
         let q_inv = limbs_from_be_bytes::<HALF, HALF_BYTES>(&q_inv_bytes);
         Self::from_crt_components(&p, &q, &d_p, &d_q, &q_inv)
+    }
+}
+
+/// The security strength SP 800-57 Part 1 Rev. 5 Table 2 assigns a modulus of `limbs` 64-bit
+/// limbs: 2048 bits give 112, 3072 give 128 (4096 rounds down to the same), 7680 and above give
+/// 192; anything narrower is below the table and reports [`SecurityStrength::None`].
+pub const fn modulus_strength(limbs: usize) -> SecurityStrength {
+    let bits = limbs * 64;
+    if bits >= 7680 {
+        SecurityStrength::_192bit
+    } else if bits >= 3072 {
+        SecurityStrength::_128bit
+    } else if bits >= 2048 {
+        SecurityStrength::_112bit
+    } else {
+        SecurityStrength::None
     }
 }
