@@ -301,7 +301,7 @@ pub(crate) fn mlkem1024_cmd(
 ) {
     match action {
         MLKEMAction::Keygen => {
-            let (_pk, sk) = MLKEM512::keygen(&mut HashDRBG_SHA512::new_from_os()).unwrap();
+            let (_pk, sk) = MLKEM1024::keygen(&mut HashDRBG_SHA512::new_from_os()).unwrap();
             write_bytes_or_hex(&sk.encode(), output_hex);
         }
         MLKEMAction::KeygenFromSeed => {
@@ -518,7 +518,7 @@ fn parse_mlkem768_pk(bytes: &[u8]) -> Result<MLKEM768PublicKey, &'static str> {
 
     // try it as a hex'd full key
     if bytes.len() >= 2 * MLKEM768_PK_LEN {
-        let maybe_pk = hex::decode(&bytes[..2 * MLKEM512_PK_LEN]);
+        let maybe_pk = hex::decode(&bytes[..2 * MLKEM768_PK_LEN]);
         if maybe_pk.is_ok() {
             // it was hex
             let pk = MLKEM768PublicKey::from_bytes(&maybe_pk.unwrap());
