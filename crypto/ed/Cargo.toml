@@ -1,0 +1,21 @@
+[package]
+name = "bouncycastle-ed"
+edition.workspace = true
+version.workspace = true
+
+[dependencies]
+bouncycastle-core.workspace = true
+bouncycastle-hpke.workspace = true
+bouncycastle-rng.workspace = true
+bouncycastle-sha2.workspace = true
+bouncycastle-utils.workspace = true
+
+[dev-dependencies]
+bouncycastle-core-test-framework.workspace = true
+bouncycastle-hex.workspace = true
+bouncycastle-rng.workspace = true
+criterion.workspace = true
+
+[[bench]]
+name = "x25519_benches"
+harness = false

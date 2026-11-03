@@ -73,12 +73,32 @@ pub enum KEMError {
     DecapsulationFailed,
     ///
     DecodingError(&'static str),
+    /// The public key given to encapsulation is unusable, for example a point of small order.
+    InvalidPublicKey(&'static str),
     ///
     KeyGenError(&'static str),
     ///
     KeyMaterialError(KeyMaterialError),
     ///
     LengthError(&'static str),
+    ///
+    RNGError(RNGError),
+}
+
+///
+#[derive(Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum KeyAgreementError {
+    ///
+    GenericError(&'static str),
+    ///
+    ConsistencyCheckFailed(&'static str),
+    /// A key encoding could not be decoded, for example because it is the wrong length.
+    DecodingError(&'static str),
+    /// The peer's public key is unusable for key agreement, for example a point of small order.
+    InvalidPublicKey(&'static str),
+    ///
+    KeyGenError(&'static str),
     ///
     RNGError(RNGError),
 }
@@ -254,6 +274,12 @@ impl From<KeyMaterialError> for KEMError {
 
 impl From<RNGError> for KEMError {
     fn from(e: RNGError) -> KEMError {
+        Self::RNGError(e)
+    }
+}
+
+impl From<RNGError> for KeyAgreementError {
+    fn from(e: RNGError) -> KeyAgreementError {
         Self::RNGError(e)
     }
 }
