@@ -359,6 +359,11 @@ impl Ascon_AEAD128<Encrypting> {
     /// Encrypt `data` in place (SP 800-232 §4.1.1 step 3). Every byte is transformed and emitted
     /// immediately; nothing is buffered across calls.
     fn encrypt_bytes(&mut self, data: &mut [u8]) {
+        // An empty call is a no-op that leaves the AAD phase open: the family's rule, held by
+        // the AEAD suite in the test framework; data begins with its first byte.
+        if data.is_empty() {
+            return;
+        }
         self.check_data();
 
         let mut data = data;
@@ -394,6 +399,11 @@ impl Ascon_AEAD128<Decrypting> {
     /// Decrypt `data` in place (SP 800-232 §4.1.2 step 3). Every byte is transformed and emitted
     /// immediately; the plaintext is **not** authenticated until `verify_tag` returns `Ok`.
     fn decrypt_bytes(&mut self, data: &mut [u8]) {
+        // An empty call is a no-op that leaves the AAD phase open: the family's rule, held by
+        // the AEAD suite in the test framework; data begins with its first byte.
+        if data.is_empty() {
+            return;
+        }
         self.check_data();
 
         let mut data = data;
@@ -510,8 +520,12 @@ impl SymmetricCipherDecryptor<ASCON_AEAD128_NONCE_LEN, ASCON_AEAD128_TAG_LEN>
         let out = &mut plaintext[..release];
         out[..from_held].copy_from_slice(&self.held[..from_held]);
         out[from_held..].copy_from_slice(&ciphertext[..from_input]);
-        // Called even when `release` is 0: that is what ends the AAD phase, so a later non-empty
-        // `do_update_aad` is refused however little ciphertext has been seen.
+        // Data has started once any ciphertext has been seen, even while every byte of it is
+        // still held back as a possible tag, so the AAD phase ends here and a later non-empty
+        // `do_update_aad` is refused. An empty call, though, is a no-op that leaves it open.
+        if !ciphertext.is_empty() {
+            self.check_data();
+        }
         self.decrypt_bytes(out);
         // Keep the newest `ASCON_AEAD128_TAG_LEN` (or fewer) bytes: what is left of `held`, then
         // the tail of `ciphertext`.
