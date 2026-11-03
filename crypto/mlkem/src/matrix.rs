@@ -189,9 +189,13 @@ impl<const k: usize> VectorTrait for Vector<k> {
             let w1 = polynomial::base_mult_montgomery(&self[i], &v[i]);
             w.add(&w1);
         }
-        // Note: This function DOES NOT perform modular reduction, as the current
-        // construction of ML-KEM only reduces modulo q when it's necessary.
-        // w.poly_reduce();
+        // Reduced before it is returned: each product coefficient is a sum of two Montgomery
+        // reductions in (-q, q), so the k-term sum is in (-2kq, 2kq), up to 16q for ML-KEM-1024,
+        // and the callers feed it to `inv_ntt`, whose first butterfly adds two coefficients in
+        // i16 (limit 9.84q). FIPS 203 Sec 3.3 allows deferring a reduction only while the result
+        // is right for every input; without this one the margin was empirical (a search reached
+        // 8.9q on a real key), and bc-java and the pq-crystals reference reduce at this point.
+        w.poly_reduce();
 
         w
     }
