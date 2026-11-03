@@ -7,7 +7,7 @@ mod shake_tests {
         KeyMaterial, KeyMaterial256, KeyMaterial512, KeyMaterialTrait, KeyType,
     };
     use bouncycastle_core::security_strength::SecurityStrength;
-    use bouncycastle_core::traits::{Hash, KDF, XOF, XOFSqueezer};
+    use bouncycastle_core::traits::{AlgorithmInfo, Hash, HashOneShot, KDF, XOF, XOFSqueezer};
     use bouncycastle_core_test_framework::DUMMY_SEED;
     use bouncycastle_core_test_framework::kdf::TestFrameworkKDF;
     use bouncycastle_core_test_framework::xof::TestFrameworkXOF;
@@ -74,8 +74,8 @@ mod shake_tests {
         assert_eq!(SHAKE256::new().output_len(), 64, "nominal digest size for SHAKE256");
 
         // and do_final actually produces that many bytes
-        assert_eq!(SHAKE128::new().hash(b"abc").len(), 32);
-        assert_eq!(SHAKE256::new().hash(b"abc").len(), 64);
+        assert_eq!(SHAKE128::hash(b"abc").len(), 32);
+        assert_eq!(SHAKE256::hash(b"abc").len(), 64);
     }
 
     /// The `Hash` view writes [`Hash::output_len`] bytes and zeroizes the rest of the buffer; the
@@ -88,8 +88,8 @@ mod shake_tests {
     #[test]
     fn the_hash_view_writes_output_len_bytes_and_zeroes_the_rest() {
         let mut hash_view = [0xFFu8; 100];
-        assert_eq!(SHAKE128::new().hash_out(b"abc", &mut hash_view), 32, "the nominal length");
-        assert_eq!(&hash_view[..32], &SHAKE128::new().hash(b"abc")[..], "... written in full");
+        assert_eq!(SHAKE128::hash_out(b"abc", &mut hash_view), 32, "the nominal length");
+        assert_eq!(&hash_view[..32], &SHAKE128::hash(b"abc")[..], "... written in full");
         assert_eq!(&hash_view[32..], &[0u8; 68][..], "everything past output_len is zeroized");
 
         // do_final_out and the byte-aligned partial-bit spelling follow the same rule.
@@ -107,7 +107,7 @@ mod shake_tests {
 
         // A short buffer truncates, as it always did.
         let mut short = [0xFFu8; 16];
-        assert_eq!(SHAKE128::new().hash_out(b"abc", &mut short), 16);
+        assert_eq!(SHAKE128::hash_out(b"abc", &mut short), 16);
         assert_eq!(&short[..], &hash_view[..16], "a short buffer truncates the same output");
 
         // The XOF spelling takes its length from the buffer and keeps reading past output_len.
@@ -118,7 +118,7 @@ mod shake_tests {
 
         // SHAKE256's nominal length is 64, so its split lands elsewhere.
         let mut hash_view = [0xFFu8; 100];
-        assert_eq!(SHAKE256::new().hash_out(b"abc", &mut hash_view), 64, "the nominal length");
+        assert_eq!(SHAKE256::hash_out(b"abc", &mut hash_view), 64, "the nominal length");
         assert_eq!(&hash_view[64..], &[0u8; 36][..], "everything past output_len is zeroized");
     }
 
@@ -272,10 +272,8 @@ mod shake_tests {
 
     #[test]
     fn security_strength() {
-        assert_eq!(KDF::max_security_strength(&SHAKE128::default()), SecurityStrength::_128bit);
-        assert_eq!(Hash::max_security_strength(&SHAKE128::default()), SecurityStrength::_128bit);
-        assert_eq!(KDF::max_security_strength(&SHAKE256::default()), SecurityStrength::_256bit);
-        assert_eq!(Hash::max_security_strength(&SHAKE256::default()), SecurityStrength::_256bit);
+        assert_eq!(SHAKE128::default().max_security_strength(), SecurityStrength::_128bit);
+        assert_eq!(SHAKE256::default().max_security_strength(), SecurityStrength::_256bit);
     }
 
     #[test]

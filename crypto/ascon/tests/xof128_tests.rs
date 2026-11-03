@@ -6,7 +6,7 @@
 
 use bouncycastle_ascon::{AsconXof128, AsconXof128Squeezer};
 use bouncycastle_core::errors::HashError;
-use bouncycastle_core::traits::{Hash, Suspendable, XOF, XOFSqueezer};
+use bouncycastle_core::traits::{Hash, HashOneShot, Suspendable, XOF, XOFSqueezer};
 use bouncycastle_core_test_framework::xof::TestFrameworkXOF;
 use bouncycastle_hex as hex;
 
@@ -111,7 +111,7 @@ fn xof128_hash_view_metadata() {
 
     assert_eq!(x.block_bitlen(), 64);
     assert_eq!(x.output_len(), 32);
-    assert_eq!(x.hash(b"").len(), 32);
+    assert_eq!(AsconXof128::hash(b"").len(), 32);
 }
 
 #[test]

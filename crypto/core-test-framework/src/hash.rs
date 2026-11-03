@@ -1,7 +1,7 @@
 //! Generic behaviour tests for anything that implements [`Hash`].
 
 use bouncycastle_core::errors::HashError;
-use bouncycastle_core::traits::{Hash, HashAlgParams};
+use bouncycastle_core::traits::{Hash, HashAlgParams, HashOneShot};
 
 /// Instance of the test framework.
 pub struct TestFrameworkHash {
@@ -16,10 +16,10 @@ impl TestFrameworkHash {
         Self { enable_partial_byte_tests: true }
     }
 
-    /// Checks [`Hash::do_final_out`] and [`Hash::hash_out`] against every buffer length, for a
-    /// hash whose output length is bound into the computation.
+    /// Checks [`Hash::do_final_out`] against every buffer length, for a hash whose output length
+    /// is bound into the computation.
     ///
-    /// [`test_hash`](Self::test_hash) covers this too, but only for a `Default + HashAlgParams`
+    /// [`test_hash`](Self::test_hash) covers this too, but only for a `HashOneShot + HashAlgParams`
     /// implementor. The SP 800-185 functions take constructor arguments and so cannot reach it;
     /// `TupleHash` and `ParallelHash` both panicked on a short buffer until this existed.
     ///
@@ -43,12 +43,6 @@ impl TestFrameworkHash {
             let written = h.do_final_out(&mut buf);
             assert_eq!(written, length, "a {length}-byte buffer must take {length} bytes");
             assert_eq!(buf, expected[..length], "short buffer must truncate the digest");
-
-            // hash_out is the one-shot spelling of the same thing.
-            let mut buf = vec![0xAA_u8; length];
-            let written = make().hash_out(input, &mut buf);
-            assert_eq!(written, length, "hash_out must agree with do_final_out");
-            assert_eq!(buf, expected[..length], "hash_out must truncate the digest");
         }
 
         // Exact.
@@ -78,7 +72,7 @@ impl TestFrameworkHash {
     /// This gives good baseline test coverage, but is not exhaustive; for example it does not test
     /// do_final_partial_bits() or do_final_partial_bits_out()
     /// because those require different input-output pairs.
-    pub fn test_hash<H: Hash + HashAlgParams + Default>(
+    pub fn test_hash<H: HashOneShot + HashAlgParams + Clone>(
         &self,
         input: &[u8],
         expected_output: &[u8],
@@ -86,13 +80,13 @@ impl TestFrameworkHash {
         /*** fn result_len() -> usize ***/
         assert_eq!(H::default().output_len(), H::OUTPUT_LEN);
 
-        /*** fn hash(self, data: &[u8]) -> Vec<u8> **/
-        let output_vec = H::default().hash(input);
+        /*** fn hash(data: &[u8]) -> Vec<u8> **/
+        let output_vec = H::hash(input);
         assert_eq!(output_vec, expected_output);
 
-        /*** fn hash_out(self, data: &[u8], output: &mut [u8]) -> Result<usize, HashError> ***/
+        /*** fn hash_out(data: &[u8], output: &mut [u8]) -> usize ***/
         let mut output_buf = vec![0_u8; H::OUTPUT_LEN];
-        H::default().hash_out(input, &mut output_buf);
+        H::hash_out(input, &mut output_buf);
         assert_eq!(output_buf, expected_output);
 
         /*** fn do_update(&mut self, data: &[u8]) -> Result<(), HashError> ***/
@@ -309,7 +303,7 @@ impl TestFrameworkHash {
 
         // test an output slice that's smaller than the result, that it gets truncated
         let mut out = vec![0; H::OUTPUT_LEN - 2];
-        H::default().hash_out(input, out.as_mut_slice());
+        H::hash_out(input, out.as_mut_slice());
         assert_eq!(&out, &expected_output[..H::OUTPUT_LEN - 2]);
     }
 }

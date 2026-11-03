@@ -3,13 +3,41 @@ mod kdf_factory_tests {
     use bouncycastle_core::key_material::{
         KeyMaterial256, KeyMaterial512, KeyMaterialTrait, KeyType,
     };
-    use bouncycastle_core::traits::KDF;
+    use bouncycastle_core::security_strength::SecurityStrength;
+    use bouncycastle_core::traits::{AlgorithmInfo, KDF};
     use bouncycastle_core_test_framework::DUMMY_SEED;
     use bouncycastle_factory as factory;
     use bouncycastle_factory::AlgorithmFactory;
     use bouncycastle_factory::kdf_factory::KDFFactory;
     use bouncycastle_sha2::hkdf::HKDF_SHA384;
     use bouncycastle_utils::ct;
+
+    /// `AlgorithmInfo` answers for the algorithm the factory selected, not for the factory.
+    #[test]
+    fn alg_name_and_strength_follow_the_variant() {
+        use SecurityStrength::*;
+        use bouncycastle_sha2::hkdf::{HKDF_SHA256_NAME, HKDF_SHA384_NAME, HKDF_SHA512_NAME};
+        use bouncycastle_sha3::{
+            SHA3_224_NAME, SHA3_256_NAME, SHA3_384_NAME, SHA3_512_NAME, SHAKE128_NAME,
+            SHAKE256_NAME,
+        };
+        let table = [
+            (HKDF_SHA256_NAME, _128bit),
+            (HKDF_SHA384_NAME, _192bit),
+            (HKDF_SHA512_NAME, _256bit),
+            (SHA3_224_NAME, _112bit),
+            (SHA3_256_NAME, _128bit),
+            (SHA3_384_NAME, _192bit),
+            (SHA3_512_NAME, _256bit),
+            (SHAKE128_NAME, _128bit),
+            (SHAKE256_NAME, _256bit),
+        ];
+        for (name, strength) in table {
+            let k = KDFFactory::new(name).unwrap();
+            assert_eq!(k.alg_name(), name);
+            assert_eq!(k.max_security_strength(), strength, "{name}");
+        }
+    }
 
     #[test]
     fn sha3_kdf_tests() {

@@ -117,8 +117,7 @@ enum Subcommands {
     /// processing or stream processing", because Appendix A.2.1 puts the payload length inside the
     /// first block the MAC covers. It does buy one thing: on `decrypt` NO plaintext is written
     /// until the tag has verified, so unlike `ascon-aead128` a non-zero exit leaves nothing to
-    /// discard. For large inputs use `ascon-aead128`, which streams. The AAD is the exception:
-    /// `--aad-file` is streamed, because a file's size can be declared before it is read.
+    /// discard. For large inputs use `ascon-aead128`, which streams. The AAD is read whole as well.
     ///
     /// Input may be any length: CCM pads internally and the payload is not block-aligned.
     ///
@@ -150,9 +149,8 @@ enum Subcommands {
         #[arg(long)]
         aad: Option<String>,
 
-        /// A file containing the associated data, as raw bytes (never hex-decoded). A regular file
-        /// is streamed rather than loaded. If both aad and aad_file options are provided, the file
-        /// will be used.
+        /// A file containing the associated data, as raw bytes (never hex-decoded). If both aad and
+        /// aad_file options are provided, the file will be used.
         #[arg(long)]
         aad_file: Option<String>,
 
@@ -495,9 +493,8 @@ enum Subcommands {
         #[arg(long)]
         aad: Option<String>,
 
-        /// A file containing the associated data, as raw bytes (never hex-decoded). A regular file
-        /// is streamed rather than loaded. If both aad and aad_file options are provided, the file
-        /// will be used.
+        /// A file containing the associated data, as raw bytes (never hex-decoded). If both aad and
+        /// aad_file options are provided, the file will be used.
         #[arg(long)]
         aad_file: Option<String>,
 
@@ -737,9 +734,8 @@ enum Subcommands {
         #[arg(long)]
         aad: Option<String>,
 
-        /// A file containing the associated data, as raw bytes (never hex-decoded). A regular file
-        /// is streamed rather than loaded. If both aad and aad_file options are provided, the file
-        /// will be used.
+        /// A file containing the associated data, as raw bytes (never hex-decoded). If both aad and
+        /// aad_file options are provided, the file will be used.
         #[arg(long)]
         aad_file: Option<String>,
 
@@ -1093,8 +1089,8 @@ enum Subcommands {
     /// Supports streaming for low memory footprint and continuous processing from stdin to stdout.
     HexEncode,
 
-    /// Perform HKDF-SHA256 of the provided input keying material.
-    ///     HKDF.extract_and_expand(salt, ikm, additional_info, L)
+    /// Perform HKDF-SHA256 (RFC 5869 extract-then-expand) of the provided input keying material:
+    ///     OKM = HKDF-Expand(HKDF-Extract(salt, ikm), info, len)
     /// Note: in production uses, secrets should not be passed on the command-line because they get
     /// logged in shell history. Use the file-based input instead.
     HKDF_SHA256 {
@@ -1118,11 +1114,11 @@ enum Subcommands {
         #[arg(short, long)]
         ikm_file: Option<String>,
 
-        /// Additional input data in hex.
+        /// The HKDF `info` input (RFC 5869 Section 2.3) in hex. Optional; defaults to empty.
         #[arg(long)]
         additional_input: Option<String>,
 
-        /// A file containing the additional input data in binary.
+        /// A file containing the HKDF `info` input in binary. Optional; defaults to empty.
         /// If both additional_input and additional_input_file options are provided, the file will be used.
         #[arg(short, long)]
         additional_input_file: Option<String>,
@@ -1136,8 +1132,8 @@ enum Subcommands {
         x: bool,
     },
 
-    /// Perform HKDF-SHA384 of the provided input keying material.
-    ///     HKDF.extract_and_expand(salt, ikm, additional_info, L)
+    /// Perform HKDF-SHA384 (RFC 5869 extract-then-expand) of the provided input keying material:
+    ///     OKM = HKDF-Expand(HKDF-Extract(salt, ikm), info, len)
     /// Note: in production uses, secrets should not be passed on the command-line because they get
     /// logged in shell history. Use the file-based input instead.
     HKDF_SHA384 {
@@ -1161,11 +1157,11 @@ enum Subcommands {
         #[arg(short, long)]
         ikm_file: Option<String>,
 
-        /// Additional input data in hex.
+        /// The HKDF `info` input (RFC 5869 Section 2.3) in hex. Optional; defaults to empty.
         #[arg(long)]
         additional_input: Option<String>,
 
-        /// A file containing the additional input data in binary.
+        /// A file containing the HKDF `info` input in binary. Optional; defaults to empty.
         /// If both additional_input and additional_input_file options are provided, the file will be used.
         #[arg(short, long)]
         additional_input_file: Option<String>,
@@ -1179,8 +1175,8 @@ enum Subcommands {
         x: bool,
     },
 
-    /// Perform HKDF-SHA512 of the provided input keying material.
-    ///     HKDF.extract_and_expand(salt, ikm, additional_info, L)
+    /// Perform HKDF-SHA512 (RFC 5869 extract-then-expand) of the provided input keying material:
+    ///     OKM = HKDF-Expand(HKDF-Extract(salt, ikm), info, len)
     /// Note: in production uses, secrets should not be passed on the command-line because they get
     /// logged in shell history. Use the file-based input instead.
     HKDF_SHA512 {
@@ -1204,11 +1200,11 @@ enum Subcommands {
         #[arg(short, long)]
         ikm_file: Option<String>,
 
-        /// Additional input data in hex.
+        /// The HKDF `info` input (RFC 5869 Section 2.3) in hex. Optional; defaults to empty.
         #[arg(long)]
         additional_input: Option<String>,
 
-        /// A file containing the additional input data in binary.
+        /// A file containing the HKDF `info` input in binary. Optional; defaults to empty.
         /// If both additional_input and additional_input_file options are provided, the file will be used.
         #[arg(short, long)]
         additional_input_file: Option<String>,
@@ -1233,6 +1229,7 @@ enum Subcommands {
         key: Option<String>,
 
         /// A file containing the MAC key in binary.
+        /// If both key and key_file options are provided, the file will be used.
         #[arg(short, long)]
         key_file: Option<String>,
 

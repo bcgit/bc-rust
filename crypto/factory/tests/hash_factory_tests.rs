@@ -1,10 +1,36 @@
 #[cfg(test)]
 mod hash_factory_tests {
-    use bouncycastle_core::traits::{Hash, XOF};
+    use bouncycastle_core::security_strength::SecurityStrength;
+    use bouncycastle_core::traits::{AlgorithmInfo, Hash, HashOneShot, XOF};
     use bouncycastle_core_test_framework::DUMMY_SEED;
     use bouncycastle_factory::AlgorithmFactory;
     use bouncycastle_factory::hash_factory::HashFactory;
     use bouncycastle_factory::xof_factory::XOFFactory;
+
+    /// `AlgorithmInfo` answers for the algorithm the factory selected, not for the factory.
+    #[test]
+    fn alg_name_and_strength_follow_the_variant() {
+        use SecurityStrength::*;
+        let table = [
+            (bouncycastle_sha2::SHA224_NAME, _112bit),
+            (bouncycastle_sha2::SHA256_NAME, _128bit),
+            (bouncycastle_sha2::SHA384_NAME, _192bit),
+            (bouncycastle_sha2::SHA512_NAME, _256bit),
+            (bouncycastle_sha2::SHA512_224_NAME, _112bit),
+            (bouncycastle_sha2::SHA512_256_NAME, _128bit),
+            (bouncycastle_sha3::SHA3_224_NAME, _112bit),
+            (bouncycastle_sha3::SHA3_256_NAME, _128bit),
+            (bouncycastle_sha3::SHA3_384_NAME, _192bit),
+            (bouncycastle_sha3::SHA3_512_NAME, _256bit),
+            (bouncycastle_sm3::SM3_NAME, _128bit),
+            (bouncycastle_ascon::ASCON_HASH256_NAME, _128bit),
+        ];
+        for (name, strength) in table {
+            let h = HashFactory::new(name).unwrap();
+            assert_eq!(h.alg_name(), name);
+            assert_eq!(h.max_security_strength(), strength, "{name}");
+        }
+    }
 
     mod sha3_tests {
         use super::*;
@@ -17,8 +43,7 @@ mod hash_factory_tests {
         fn sha2_hash_tests() {
             // SHA224
 
-            let h = SHA224::new();
-            h.hash(&DUMMY_SEED[..24]);
+            SHA224::hash(&DUMMY_SEED[..24]);
 
             let sha2 = HashFactory::new("SHA224").unwrap();
             assert_eq!(sha2.output_len(), 28);
@@ -170,7 +195,7 @@ mod hash_factory_tests {
             use bouncycastle_ascon::AsconHash256;
             use bouncycastle_factory::FactoryError;
 
-            let direct = AsconHash256::new().hash(&DUMMY_SEED[..512]);
+            let direct = AsconHash256::hash(&DUMMY_SEED[..512]);
 
             // Construct by literal name and by the crate's name constant; both must match the
             // direct implementation.

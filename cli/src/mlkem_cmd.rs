@@ -14,6 +14,7 @@ use bouncycastle::mlkem::{
     MLKEM768PrivateKey, MLKEM768PublicKey, MLKEM1024, MLKEM1024_CT_LEN, MLKEM1024_PK_LEN,
     MLKEM1024_SK_LEN, MLKEM1024PrivateKey, MLKEM1024PublicKey, MLKEMPrivateKeyTrait, MLKEMTrait,
 };
+use bouncycastle::rng::HashDRBG_SHA512;
 use clap::ValueEnum;
 use std::process::exit;
 
@@ -54,7 +55,7 @@ pub(crate) fn mlkem512_cmd(
 ) {
     match action {
         MLKEMAction::Keygen => {
-            let (_pk, sk) = MLKEM512::keygen().unwrap();
+            let (_pk, sk) = MLKEM512::keygen(&mut HashDRBG_SHA512::new_from_os()).unwrap();
             write_bytes_or_hex(&sk.encode(), output_hex);
         }
         MLKEMAction::KeygenFromSeed => {
@@ -177,7 +178,7 @@ pub(crate) fn mlkem768_cmd(
 ) {
     match action {
         MLKEMAction::Keygen => {
-            let (_pk, sk) = MLKEM768::keygen().unwrap();
+            let (_pk, sk) = MLKEM768::keygen(&mut HashDRBG_SHA512::new_from_os()).unwrap();
             write_bytes_or_hex(&sk.encode(), output_hex);
         }
         MLKEMAction::KeygenFromSeed => {
@@ -300,7 +301,7 @@ pub(crate) fn mlkem1024_cmd(
 ) {
     match action {
         MLKEMAction::Keygen => {
-            let (_pk, sk) = MLKEM512::keygen().unwrap();
+            let (_pk, sk) = MLKEM512::keygen(&mut HashDRBG_SHA512::new_from_os()).unwrap();
             write_bytes_or_hex(&sk.encode(), output_hex);
         }
         MLKEMAction::KeygenFromSeed => {

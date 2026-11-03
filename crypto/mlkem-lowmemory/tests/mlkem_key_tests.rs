@@ -15,6 +15,7 @@ mod mlkem_key_tests {
         MLKEM1024PrivateKey, MLKEM1024PublicKey,
     };
     use bouncycastle_mlkem_lowmemory::{MLKEMPrivateKeyTrait, MLKEMPublicKeyTrait, MLKEMTrait};
+    use bouncycastle_rng::DefaultRNG;
 
     #[test]
     fn core_framework_tests() {
@@ -22,12 +23,12 @@ mod mlkem_key_tests {
         let tf = TestFrameworkKEMKeys::new();
 
         tf.test_keys::<MLKEM512PublicKey, MLKEM512PrivateKey, MLKEM512_PK_LEN, MLKEM512_SK_LEN>(
-            MLKEM512::keygen,
+            || MLKEM512::keygen(&mut DefaultRNG::default()),
         );
         tf.test_keys::<MLKEM768PublicKey, MLKEM768PrivateKey, MLKEM768_PK_LEN, MLKEM768_SK_LEN>(
-            MLKEM768::keygen,
+            || MLKEM768::keygen(&mut DefaultRNG::default()),
         );
-        tf.test_keys::<MLKEM1024PublicKey, MLKEM1024PrivateKey, MLKEM1024_PK_LEN, MLKEM1024_SK_LEN>(MLKEM1024::keygen);
+        tf.test_keys::<MLKEM1024PublicKey, MLKEM1024PrivateKey, MLKEM1024_PK_LEN, MLKEM1024_SK_LEN>(|| MLKEM1024::keygen(&mut DefaultRNG::default()));
     }
 
     #[test]
@@ -77,7 +78,7 @@ mod mlkem_key_tests {
             KeyType::Seed,
         )
         .unwrap();
-        let (_pk, mut sk) = MLKEM512::keygen_from_seed(&seed).unwrap();
+        let (_pk, sk) = MLKEM512::keygen_from_seed(&seed).unwrap();
 
         let expected_pk_bytes: [u8; MLKEM512_PK_LEN] = hex::decode("3995815e597d104355cf29aa5333c93251869d5bcdbe487124f602b8b6a66c16c4761648ad765cf5d8006b515e905a7f0ac076b0c62efa328153e7ca5701699f1305f1e6bc6f90b0e49b693512b6ce992a8b8016ddfc1a662c7e3f9619cbd869dd771af30896ccd5918ac6cb77466c5e779996d67ff9aabc97503f2c7b7e2d000d86450fb1807ca4cabda465825a31c789a1b7a491ab3872765d320d0b71920fa213c94093416b83b8124e69f65e62cb5000dcc37aa9a0fff73970c4772f357d24189ca6f5305568c0e2376a3762a68c605e563c5d209572e0fc7532ca294729535567b5fc413c5e8792d2464536cc808f98add74664f141566f9016a90a541829a98a0464ce41a8bb44c2d4fa3c2c209460728ef14a1a7c4c9b98d12203b4cc3529160a9ab2d7838f7ff6b53ae05aa31a7d646b7afa6c45932526a3c3755619be994c211c2a31c05b3447836cb2150be1829dae6b04c5535cff546e392ba797411720f924f490a5ac5495f21356d550b782a64c1688b6b655bcc7842197a434c2f6563b5b7f09a78bcc488232783561d16f4cbab6755400050781570c66604b817ad1252294736e8b01861a4b5a74519b8b6fe51489a5072392e587626c713776575d33806a1c8e2732af97c2680f51666331c4eb8bbc0431c4f96832daf1b3c45528fba153f6c78b1c198702947ccd337727a46fb53ba11de5cb4191346859516cb6ad72400f3cf209b236aef35a580ac87eb3e30fafd66973ca8a7dd2675af41f7a17b61433cd1af80f7708869f665488497980b1ac10a0cdcb636a00ed8681b35e429124ca80350725b85f83a5eac3a4a3cc1600903e65293560b9b336e5af0d529dac1a048119302cb7a9bcc110b94851bf02117f199dc485a852b7473f09b831a6831d5b54c0b790d225cf6bb92d9462a26cdb33dda5123c7aaf0e26a0b83655eea28bf3a8074725018fd6bae4b601cf61baab71a7a3d35197a343e74b4a272c125d540896426d85b7958d3b38a6ba987ec37225c7b44cdb12dde4539b4ab082363683f04bf7a09cc5c41dfe830a1b162e0b324334362f084a14467723344badd000f8d8c537c48f998f05307cebd1ede0b81c3bc59a065a1b6d63b26c").unwrap()
             .try_into().unwrap();
@@ -140,25 +141,38 @@ mod mlkem_key_tests {
 
         let (_pk, sk) = MLKEM512::keygen_from_seed(&seed).unwrap();
 
-        assert!(sk.seed().is_some());
-        assert_eq!(sk.seed().as_ref().unwrap(), &seed);
+        assert_eq!(sk.seed(), seed);
 
-        // When you pop the seed out, its SecurityStrength will match the ML-DSA algorithm
+        // When you pop the seed out, its SecurityStrength will match the ML-KEM parameter set
         let (_pk, sk) = MLKEM512::keygen_from_seed(&seed).unwrap();
-        assert_eq!(sk.seed().unwrap().security_strength(), SecurityStrength::_128bit);
+        assert_eq!(sk.seed().security_strength(), SecurityStrength::_128bit);
 
         let (_pk, sk) = MLKEM768::keygen_from_seed(&seed).unwrap();
-        assert_eq!(sk.seed().unwrap().security_strength(), SecurityStrength::_192bit);
+        assert_eq!(sk.seed().security_strength(), SecurityStrength::_192bit);
 
         let (_pk, sk) = MLKEM1024::keygen_from_seed(&seed).unwrap();
-        assert_eq!(sk.seed().unwrap().security_strength(), SecurityStrength::_256bit);
+        assert_eq!(sk.seed().security_strength(), SecurityStrength::_256bit);
+    }
+
+    /// `from_bytes` takes any 64 bytes as a seed, including all zeros, so `seed()` must give
+    /// them back rather than fail on KeyMaterial's treatment of all-zero input as Zeroized.
+    #[test]
+    fn all_zero_seed_loads_and_reads_back() {
+        let sk = MLKEM512PrivateKey::from_bytes(&[0u8; 64]).unwrap();
+        let seed = sk.seed();
+        assert_eq!(seed.ref_to_bytes(), &[0u8; 64]);
+        assert_eq!(seed.key_type(), KeyType::Seed);
+        assert_eq!(seed.security_strength(), SecurityStrength::_128bit);
+        assert_eq!(sk.encode(), [0u8; 64]);
+        // and the stored H(ek) is the hash of the public key it derives
+        assert_eq!(sk.pk_hash(), &sk.pk().compute_hash());
     }
 
     #[test]
     fn test_eq() {
         // MLKEM512
 
-        let (pk, sk) = MLKEM512::keygen().unwrap();
+        let (pk, sk) = MLKEM512::keygen(&mut DefaultRNG::default()).unwrap();
 
         // basic equality checks
         assert_eq!(pk, pk);
@@ -180,7 +194,7 @@ mod mlkem_key_tests {
 
         // MLKEM768
 
-        let (pk, sk) = MLKEM768::keygen().unwrap();
+        let (pk, sk) = MLKEM768::keygen(&mut DefaultRNG::default()).unwrap();
 
         // basic equality checks
         assert_eq!(pk, pk);
@@ -202,7 +216,7 @@ mod mlkem_key_tests {
 
         // MLKEM1024
 
-        let (pk, sk) = MLKEM1024::keygen().unwrap();
+        let (pk, sk) = MLKEM1024::keygen(&mut DefaultRNG::default()).unwrap();
 
         // basic equality checks
         assert_eq!(pk, pk);
@@ -223,12 +237,43 @@ mod mlkem_key_tests {
         assert_ne!(sk, MLKEM1024PrivateKey::from_bytes(&bytes).unwrap());
     }
 
+    /// The expanded seed key encodes, loads, compares and prints as the seed key it wraps.
+    #[test]
+    fn expanded_seed_key_behaves_as_its_seed_key() {
+        use bouncycastle_mlkem_lowmemory::MLKEM512PrivateKeyExpanded;
+        let (_pk, sk) = MLKEM512::keygen(&mut DefaultRNG::default()).unwrap();
+        let (_pk2, sk2) = MLKEM512::keygen(&mut DefaultRNG::default()).unwrap();
+        let expanded = MLKEM512PrivateKeyExpanded::from(&sk);
+
+        // encoding is the seed, both ways of asking for it
+        assert_eq!(expanded.encode(), sk.encode());
+        let mut out = [0u8; MLKEM512_SK_LEN];
+        assert_eq!(expanded.encode_out(&mut out), MLKEM512_SK_LEN);
+        assert_eq!(out, sk.encode());
+
+        // loading the encoding gives an equal key; a different seed does not
+        let reloaded = MLKEM512PrivateKeyExpanded::from_bytes(&sk.encode()).unwrap();
+        assert_eq!(reloaded, expanded);
+        assert_ne!(MLKEM512PrivateKeyExpanded::from(&sk2), expanded);
+        assert!(MLKEM512PrivateKeyExpanded::from_bytes(&[0u8; MLKEM512_SK_LEN - 1]).is_err());
+
+        // Display and Debug name the algorithm and never print the seed
+        let seed_hex = hex::encode(sk.encode());
+        for text in [format!("{}", expanded), format!("{:?}", expanded)] {
+            assert!(
+                text.contains("MLKEMSeedPrivateKeyExpanded { alg: ML-KEM-512, pub_key_hash:"),
+                "{text}"
+            );
+            assert!(!text.contains(&seed_hex));
+        }
+    }
+
     /// Tests that no private data is displayed
     #[test]
     fn test_display() {
-        let (pk512, sk512) = MLKEM512::keygen().unwrap();
-        let (pk768, sk768) = MLKEM768::keygen().unwrap();
-        let (pk1024, sk1024) = MLKEM1024::keygen().unwrap();
+        let (pk512, sk512) = MLKEM512::keygen(&mut DefaultRNG::default()).unwrap();
+        let (pk768, sk768) = MLKEM768::keygen(&mut DefaultRNG::default()).unwrap();
+        let (pk1024, sk1024) = MLKEM1024::keygen(&mut DefaultRNG::default()).unwrap();
 
         /*** MLDSAPublicKey ***/
         // fmt

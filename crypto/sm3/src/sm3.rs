@@ -1,6 +1,5 @@
 use bouncycastle_core::errors::{HashError, SuspendableError};
-use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::traits::{Hash, Suspendable};
+use bouncycastle_core::traits::{Hash, HashOneShot, Suspendable};
 use bouncycastle_utils::suspendable_state::{add_lib_ver, check_lib_ver};
 use bouncycastle_utils::{min, secret::Secret};
 use core::slice;
@@ -237,17 +236,6 @@ impl Hash for SM3 {
         32
     }
 
-    fn hash(self, data: &[u8]) -> Vec<u8> {
-        let mut output = vec![0u8; 32];
-        self.hash_out(data, &mut output);
-        output
-    }
-
-    fn hash_out(mut self, data: &[u8], output: &mut [u8]) -> usize {
-        self.do_update(data);
-        self.do_final_out(output)
-    }
-
     fn do_update(&mut self, block: &[u8]) {
         let len = block.len();
 
@@ -318,10 +306,6 @@ impl Hash for SM3 {
         }
         Ok(self.do_final_internal(partial_byte, num_partial_bits, output))
     }
-
-    fn max_security_strength(&self) -> SecurityStrength {
-        SecurityStrength::_128bit
-    }
 }
 
 /// Length in bytes of the serialized state of SM3.
@@ -377,3 +361,6 @@ impl Suspendable<SUSPENDED_SM3_STATE_LEN> for SM3 {
         Ok(SM3 { v, byte_count, x_buf, x_buf_off })
     }
 }
+
+// The one-shot form: `Default` is the function itself.
+impl HashOneShot for SM3 {}

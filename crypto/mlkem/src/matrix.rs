@@ -5,8 +5,8 @@ use core::ops::{Index, IndexMut};
 
 use crate::mlkem::{N, q};
 use crate::params::MLKEMParams;
-use crate::polynomial;
-use crate::polynomial::Polynomial;
+use bouncycastle_mlkem_common::polynomial;
+use bouncycastle_mlkem_common::polynomial::Polynomial;
 use bouncycastle_utils::secret::ZeroizablePrimitive;
 
 /// The operations this crate performs on a vector of polynomials, i.e. on an element of 𝑅^LEN.
@@ -69,14 +69,11 @@ impl<const k: usize, const l: usize> Matrix<k, l> {
         Self { elems: [[(); l]; k].map(|_| [(); l].map(|_| Polynomial::new())) }
     }
 
-    /// FIPS 204 Algorithm 48 MatrixVectorNTT(𝐌, 𝐯)
-    /// Computes the product 𝐌 ∘̂ 𝐯_hat of a matrix 𝐌_hat and a vector 𝐯_hat over 𝑇𝑞.
-    /// Input: 𝑘, ℓ ∈ ℕ, 𝐌 ∈ 𝑇𝑞 𝑘×ℓ
-    /// Performs dot product multiplication of this matrix by a vector
+    /// The matrix-vector product over 𝑇𝑞 of FIPS 203 Section 2.4.7: 𝐰̂ ← 𝐀̂ ∘ 𝐮̂ (2.12), or
+    /// 𝐲̂ ← 𝐀̂ᵀ ∘ 𝐮̂ (2.13) when `transpose` is true, each entry product being MultiplyNTTs
+    /// (Algorithm 11).
     /// Input: vector of length l
     /// Output: vector of length k
-    ///
-    /// `transpose`: False will multiply A, where as True will multiply A^T
     pub(crate) fn matrix_vector_ntt<const transpose: bool>(&self, v: &Vector<l>) -> Vector<k> {
         let mut w = Vector::<k>::new();
         for i in 0..k {
@@ -377,5 +374,92 @@ impl<const k: usize> VectorTrait for Vector<k> {
         }
 
         u
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    //! `compress_pol_vec` is pinned by the ACVP ciphertexts; `decompress_pol_vec` is not: ML-KEM's
+    //! decryption tolerates a decompressed coefficient being off by a little, so a rounding error
+    //! in it still yields the right shared secret on every vector. These check the two against
+    //! FIPS 203 Section 4.2.1, eq. (4.7) and (4.8), coefficient by coefficient.
+    use super::*;
+    extern crate std;
+    use crate::params::{MLKEM512Params, MLKEM1024Params};
+    use std::vec;
+    use std::vec::Vec;
+
+    /// Compress_d(x) = round((2^d / q) * x) mod 2^d, with round-half-up; q is odd so the
+    /// half-way case never occurs and floor((2^d * x + q/2) / q) is exact.
+    fn compress_ref(d: u32, x: i16) -> u16 {
+        ((((x as u32) << d) + (q as u32) / 2) / (q as u32) % (1 << d)) as u16
+    }
+
+    /// Decompress_d(y) = round((q / 2^d) * y).
+    fn decompress_ref(d: u32, y: u16) -> i16 {
+        (((y as u32) * (q as u32) + (1 << (d - 1))) >> d) as i16
+    }
+
+    /// Unpacks `d`-bit little-endian fields, as ByteDecode_d does.
+    fn fields(d: u32, bytes: &[u8]) -> Vec<u16> {
+        let mut out = Vec::new();
+        let mut acc: u32 = 0;
+        let mut bits = 0;
+        for &b in bytes {
+            acc |= (b as u32) << bits;
+            bits += 8;
+            while bits >= d {
+                out.push((acc & ((1 << d) - 1)) as u16);
+                acc >>= d;
+                bits -= d;
+            }
+        }
+        out
+    }
+
+    fn lcg_bytes(len: usize, mut state: u32) -> Vec<u8> {
+        (0..len)
+            .map(|_| {
+                state = state.wrapping_mul(1664525).wrapping_add(1013904223);
+                (state >> 24) as u8
+            })
+            .collect()
+    }
+
+    fn check<P: MLKEMParams, const k: usize>() {
+        let d = P::du as u32;
+        let packed_len = k * N * (d as usize) / 8;
+
+        // decompress: every field of a pseudo-random ciphertext block comes out as eq. (4.8)
+        let bytes = lcg_bytes(packed_len, 7 + d);
+        let u = Vector::<k>::decompress_pol_vec::<P>(&bytes);
+        for (n, &y) in fields(d, &bytes).iter().enumerate() {
+            assert_eq!(u[n / N][n % N], decompress_ref(d, y), "d={d} field {n}");
+        }
+
+        // compress: every coefficient value 0..q, laid out across the vector
+        let mut v = Vector::<k>::new();
+        let mut x: i16 = 0;
+        for i in 0..k {
+            for j in 0..N {
+                v[i][j] = x;
+                x = (x + 1) % q;
+            }
+        }
+        let mut out = vec![0u8; packed_len];
+        v.compress_pol_vec::<P>(&mut out);
+        for (n, &f) in fields(d, &out).iter().enumerate() {
+            assert_eq!(f, compress_ref(d, v[n / N][n % N]), "d={d} coefficient {n}");
+        }
+    }
+
+    #[test]
+    fn compress_and_decompress_match_fips_203_for_du_10() {
+        check::<MLKEM512Params, 2>();
+    }
+
+    #[test]
+    fn compress_and_decompress_match_fips_203_for_du_11() {
+        check::<MLKEM1024Params, 4>();
     }
 }

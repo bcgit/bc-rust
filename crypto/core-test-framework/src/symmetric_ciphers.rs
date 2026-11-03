@@ -2,15 +2,16 @@
 //! [`SymmetricCipherDecryptor`] and their stream-cipher refinement. The block-cipher and AEAD
 //! refinements have their own runners in [`crate::block_cipher`] and [`crate::aead`].
 
-use crate::{DUMMY_SEED, FixedSeedRNG};
+use crate::DUMMY_SEED;
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::hazmat::do_hazardous_operations;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{
-    StreamCipherDecryptor, StreamCipherEncryptor, SymmetricCipherDecryptor,
+    Algorithm, StreamCipherDecryptor, StreamCipherEncryptor, SymmetricCipherDecryptor,
     SymmetricCipherEncryptor,
 };
+use bouncycastle_rng::FixedSeedRNG;
 
 /// Instance of the test framework.
 pub struct TestFrameworkSymmetricCipher {
@@ -63,8 +64,8 @@ impl TestFrameworkSymmetricCipher {
         const KEY_LEN: usize,
         const INIT_DATA_LEN: usize,
         const FINAL_LEN: usize,
-        E: SymmetricCipherEncryptor<KEY_LEN, INIT_DATA_LEN, FINAL_LEN>,
-        D: SymmetricCipherDecryptor<KEY_LEN, INIT_DATA_LEN, FINAL_LEN>,
+        E: SymmetricCipherEncryptor<KEY_LEN, INIT_DATA_LEN, FINAL_LEN> + Algorithm,
+        D: SymmetricCipherDecryptor<KEY_LEN, INIT_DATA_LEN, FINAL_LEN> + Algorithm,
     >(
         &self,
     ) {
@@ -263,8 +264,7 @@ impl TestFrameworkSymmetricCipher {
             // a driven RNG reproduces its init data, and determines the ciphertext
             let seed: [u8; INIT_DATA_LEN] = core::array::from_fn(|i| DUMMY_SEED[100 + i]);
             let (mut enc, init_data) =
-                E::do_encrypt_init_rng(&key, &mut FixedSeedRNG::<INIT_DATA_LEN>::new(seed))
-                    .unwrap();
+                E::do_encrypt_init_rng(&key, &mut FixedSeedRNG::new(seed)).unwrap();
             assert_eq!(init_data, seed, "a fixed RNG must yield its stream as the init data");
             let mut streamed = vec![0u8; enc.do_encrypt_out_len(len)];
             let n = enc.do_encrypt_out(msg, &mut streamed).unwrap();
@@ -272,13 +272,8 @@ impl TestFrameworkSymmetricCipher {
             let (last, last_len) = enc.do_encrypt_final().unwrap();
             streamed.extend_from_slice(&last[..last_len]);
             let mut one_shot = vec![0u8; E::encrypt_out_len(len)];
-            let (init_data2, n2) = E::encrypt_rng_out(
-                &key,
-                &mut FixedSeedRNG::<INIT_DATA_LEN>::new(seed),
-                msg,
-                &mut one_shot,
-            )
-            .unwrap();
+            let (init_data2, n2) =
+                E::encrypt_rng_out(&key, &mut FixedSeedRNG::new(seed), msg, &mut one_shot).unwrap();
             assert_eq!(init_data2, seed);
             assert_eq!(
                 &one_shot[..n2],
@@ -369,13 +364,8 @@ impl TestFrameworkSymmetricCipher {
         if INIT_DATA_LEN > 0 {
             let seed: [u8; INIT_DATA_LEN] = core::array::from_fn(|i| DUMMY_SEED[100 + i]);
             let mut buf = vec![SENTINEL; need + EXTRA];
-            let (_, n) = E::encrypt_rng_out(
-                &key,
-                &mut FixedSeedRNG::<INIT_DATA_LEN>::new(seed),
-                msg,
-                &mut buf,
-            )
-            .unwrap();
+            let (_, n) =
+                E::encrypt_rng_out(&key, &mut FixedSeedRNG::new(seed), msg, &mut buf).unwrap();
             assert_eq!(
                 n, need,
                 "encrypt_rng_out into an oversized buffer must write encrypt_out_len"
@@ -510,8 +500,8 @@ impl TestFrameworkStreamCipher {
     pub fn test<
         const KEY_LEN: usize,
         const INIT_DATA_LEN: usize,
-        E: StreamCipherEncryptor<KEY_LEN, INIT_DATA_LEN>,
-        D: StreamCipherDecryptor<KEY_LEN, INIT_DATA_LEN>,
+        E: StreamCipherEncryptor<KEY_LEN, INIT_DATA_LEN> + Algorithm,
+        D: StreamCipherDecryptor<KEY_LEN, INIT_DATA_LEN> + Algorithm,
     >(
         &self,
     ) {
@@ -584,28 +574,19 @@ impl TestFrameworkStreamCipher {
             let pinned = [0xA5u8; INIT_DATA_LEN];
             let mut expected = *DUMMY_SEED;
             let (mut streamed, iv_streamed) =
-                E::do_encrypt_init_rng(&key, &mut FixedSeedRNG::<INIT_DATA_LEN>::new(pinned))
-                    .unwrap();
+                E::do_encrypt_init_rng(&key, &mut FixedSeedRNG::new(pinned)).unwrap();
             streamed.do_encrypt_inplace(&mut expected).unwrap();
             let mut buf = *DUMMY_SEED;
-            let (n, iv) = E::encrypt_rng_inplace(
-                &key,
-                &mut FixedSeedRNG::<INIT_DATA_LEN>::new(pinned),
-                &mut buf,
-            )
-            .unwrap();
+            let (n, iv) =
+                E::encrypt_rng_inplace(&key, &mut FixedSeedRNG::new(pinned), &mut buf).unwrap();
             assert_eq!(n, buf.len(), "encrypt_rng must report the number of bytes written");
             assert_eq!(iv, iv_streamed);
             assert_eq!(&buf[..], &expected[..]);
             // ...and a driven RNG determines the ciphertext: the same RNG stream again gives the same
             // init data and ciphertext, so the ciphertext is a function of (key, init data) alone.
             let mut buf2 = *DUMMY_SEED;
-            let (_, iv_again) = E::encrypt_rng_inplace(
-                &key,
-                &mut FixedSeedRNG::<INIT_DATA_LEN>::new(pinned),
-                &mut buf2,
-            )
-            .unwrap();
+            let (_, iv_again) =
+                E::encrypt_rng_inplace(&key, &mut FixedSeedRNG::new(pinned), &mut buf2).unwrap();
             assert_eq!(iv, iv_again);
             assert_eq!(&buf[..], &buf2[..]);
         }

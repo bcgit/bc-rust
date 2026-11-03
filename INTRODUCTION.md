@@ -114,7 +114,7 @@ pub type SHAKE128 = SHAKE<SHAKE128Params>;
 pub type SHAKE256 = SHAKE<SHAKE256Params>;
 ```
 
-so that in the end `SHA3_256::new().hash(&data)` just does what you expect. The "If it compiles, then it's safe"
+so that in the end `SHA3_256::hash(&data)` just does what you expect. The "If it compiles, then it's safe"
 paradigm is, however, still somewhat aspirational and not a total _fait accompli_, and as the library matures, we will
 continue to find ways to refine our type system to turn ever more runtime error conditions into compile-time conditions.
 

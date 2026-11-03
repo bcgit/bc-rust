@@ -26,8 +26,16 @@ fn bench_hash<H: Hash + Default>(c: &mut Criterion, group_name: &str) {
     group.finish();
 }
 
+fn bench_sha224(c: &mut Criterion) {
+    bench_hash::<SHA224>(c, "sha2::sha224");
+}
+
 fn bench_sha256(c: &mut Criterion) {
     bench_hash::<SHA256>(c, "sha2::sha256");
+}
+
+fn bench_sha384(c: &mut Criterion) {
+    bench_hash::<SHA384>(c, "sha2::sha384");
 }
 
 fn bench_sha512(c: &mut Criterion) {
@@ -42,5 +50,8 @@ fn bench_sha512_256(c: &mut Criterion) {
     bench_hash::<SHA512_256>(c, "sha2::sha512_256");
 }
 
-criterion_group!(benches, bench_sha256, bench_sha512, bench_sha512_224, bench_sha512_256);
+criterion_group!(
+    benches, bench_sha224, bench_sha256, bench_sha384, bench_sha512, bench_sha512_224,
+    bench_sha512_256
+);
 criterion_main!(benches);

@@ -97,6 +97,10 @@ fn print_struct_sizes() {
         "size_of<mlkem_lowmemory::MLKEM512PrivateKey>: {}",
         size_of::<mlkem_lowmemory::MLKEM512PrivateKey>()
     );
+    println!(
+        "size_of<mlkem_lowmemory::MLKEM512PrivateKeyExpanded>: {}",
+        size_of::<mlkem_lowmemory::MLKEM512PrivateKeyExpanded>()
+    );
 
     println!("\nML-KEM-768_lowmemory");
     println!(
@@ -107,6 +111,10 @@ fn print_struct_sizes() {
         "size_of<mlkem_lowmemory::MLKEM768PrivateKey>: {}",
         size_of::<mlkem_lowmemory::MLKEM768PrivateKey>()
     );
+    println!(
+        "size_of<mlkem_lowmemory::MLKEM768PrivateKeyExpanded>: {}",
+        size_of::<mlkem_lowmemory::MLKEM768PrivateKeyExpanded>()
+    );
 
     println!("\nML-KEM-1024_lowmemory");
     println!(
@@ -116,6 +124,10 @@ fn print_struct_sizes() {
     println!(
         "size_of<mlkem_lowmemory::MLKEM1024PrivateKey>: {}",
         size_of::<mlkem_lowmemory::MLKEM1024PrivateKey>()
+    );
+    println!(
+        "size_of<mlkem_lowmemory::MLKEM1024PrivateKeyExpanded>: {}",
+        size_of::<mlkem_lowmemory::MLKEM1024PrivateKeyExpanded>()
     );
 }
 

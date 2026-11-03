@@ -52,7 +52,7 @@ use crate::{AlgorithmFactory, DEFAULT, DEFAULT_128_BIT, DEFAULT_256_BIT, Factory
 use bouncycastle_core::errors::KDFError;
 use bouncycastle_core::key_material::KeyMaterialTrait;
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::traits::KDF;
+use bouncycastle_core::traits::{AlgorithmInfo, KDF};
 use bouncycastle_sha2::hkdf::{
     HKDF_SHA256, HKDF_SHA256_NAME, HKDF_SHA384, HKDF_SHA384_NAME, HKDF_SHA512, HKDF_SHA512_NAME,
 };
@@ -202,6 +202,22 @@ impl KDF for KDFFactory {
             Self::SHA3_512(h) => h.derive_key_from_multiple_out(keys, additional_input, output_key),
             Self::SHAKE128(h) => h.derive_key_from_multiple_out(keys, additional_input, output_key),
             Self::SHAKE256(h) => h.derive_key_from_multiple_out(keys, additional_input, output_key),
+        }
+    }
+}
+
+impl AlgorithmInfo for KDFFactory {
+    fn alg_name(&self) -> &'static str {
+        match self {
+            Self::HKDF_SHA256(h) => h.alg_name(),
+            Self::HKDF_SHA384(h) => h.alg_name(),
+            Self::HKDF_SHA512(h) => h.alg_name(),
+            Self::SHA3_224(h) => h.alg_name(),
+            Self::SHA3_256(h) => h.alg_name(),
+            Self::SHA3_384(h) => h.alg_name(),
+            Self::SHA3_512(h) => h.alg_name(),
+            Self::SHAKE128(h) => h.alg_name(),
+            Self::SHAKE256(h) => h.alg_name(),
         }
     }
 

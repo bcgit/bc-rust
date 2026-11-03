@@ -1,23 +1,26 @@
-//! What a resumed CCM state refuses: the bounds `CcmPacket` and its keystream check when they are
-//! rebuilt from a suspended array, each tampered with on its own.
+//! What a resumed CCM state refuses: the bounds the pair and its packet state check when they
+//! are rebuilt from a suspended array, each tampered with on its own.
 //!
 //! The round trips in `suspend_tests.rs` show that a faithful state resumes. These show that an
 //! unfaithful one does not, which is the other half of the contract and the half that pins each
 //! check individually: with the flags octet, the counter field, the counter index, the CBC-MAC
-//! position and the owed payload all validated in one `if`, a test that corrupts several at
-//! once would still pass if any one check were dropped.
+//! position, the owed payload, the AAD length and the phase flag all validated, a test that
+//! corrupts several at once would still pass if any one check were dropped.
 //!
 //! The offsets are those of the layout the `SuspendableComponent` impls write, in order: the
-//! library version, the keystream (counter template, counter index), the stream cipher's pending
-//! block and its `used` count, then the chaining block, `mac_pos`, `aad_owed` and `owed`, every
-//! integer a little-endian `u64`. Spec references are to NIST SP 800-38C (May 2004, errata
-//! update 07-20-2007).
+//! library version, the packet state (the keystream's counter template and counter index, the
+//! stream cipher's pending block and its `used` count, then the chaining block, `mac_pos`,
+//! `aad_owed` and `owed`), the held-back AAD, its length and the phase flag; the decryptor adds
+//! the held-back tag and its length. Every integer is a little-endian `u64`. Spec references are
+//! to NIST SP 800-38C (May 2004, errata update 07-20-2007).
 
-use bouncycastle_cipher::modes::CcmPacket;
-use bouncycastle_cipher::{Decrypting, Encrypting};
+use bouncycastle_cipher::modes::{CCM, CcmDecryptor, CcmEncryptor};
 use bouncycastle_core::errors::SuspendableError;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-use bouncycastle_core::traits::SuspendableKeyed;
+use bouncycastle_core::traits::{
+    AEADCipherDecryptor, AEADCipherEncryptor, SuspendableKeyed, SymmetricCipherDecryptor,
+    SymmetricCipherEncryptor,
+};
 use bouncycastle_utils::suspendable_state::LIB_VERSION_LEN;
 
 #[path = "common/toy_block_cipher.rs"]
@@ -28,43 +31,64 @@ use toy_block_cipher::ToyBlockCipher;
 /// payload limit is `2^24 - 1`.
 const NONCE_LEN: usize = 12;
 const BLOCK_LEN: usize = 16;
-type ToyCcm<Dir> = CcmPacket<ToyBlockCipher, Dir, 16, BLOCK_LEN, NONCE_LEN, 16>;
-const N: usize = ToyCcm::<Encrypting>::SUSPENDED_STATE_LEN;
+const AAD_LEN: usize = 16;
+const DATA_LEN: usize = 32;
+type ToyEnc = CcmEncryptor<ToyBlockCipher, 16, BLOCK_LEN, NONCE_LEN, 16, AAD_LEN, DATA_LEN>;
+type ToyDec = CcmDecryptor<ToyBlockCipher, 16, BLOCK_LEN, NONCE_LEN, 16, AAD_LEN, DATA_LEN>;
+const N: usize = ToyEnc::SUSPENDED_STATE_LEN;
+const ND: usize = ToyDec::SUSPENDED_STATE_LEN;
 
-/// A.1's `2^8q - 1`, which bounds both the owed payload and, since there is one counter block per
-/// payload block, the counter field; `MAX_COUNTER` is the same number for every `q < 8`.
-const LIMIT: u64 = ToyCcm::<Encrypting>::MAX_PAYLOAD_LEN;
+/// A.1's `2^8q - 1`, which bounds the counter field: there is one counter block per payload
+/// block, so `MAX_COUNTER` is the same number for every `q < 8`.
+const LIMIT: u64 = CCM::<NONCE_LEN, 16>::MAX_PAYLOAD_LEN;
 
 // Field offsets within the suspended array.
 const TEMPLATE: usize = LIB_VERSION_LEN;
 const NEXT_CTR: usize = TEMPLATE + BLOCK_LEN;
-const MAC_POS: usize = N - 24;
-const OWED: usize = N - 8;
+const PACKET_END: usize = N - AAD_LEN - 8 - 1;
+const MAC_POS: usize = PACKET_END - 24;
+const AAD_OWED: usize = PACKET_END - 16;
+const OWED: usize = PACKET_END - 8;
+const AAD_LEN_AT: usize = PACKET_END + AAD_LEN;
+const FORMATTED: usize = AAD_LEN_AT + 8;
+const TAG_LEN_AT: usize = ND - 8;
 
 fn key() -> KeyMaterial<16> {
     KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey).unwrap()
 }
 
-/// A freshly constructed encryptor's state: `next_ctr = 1`, `mac_pos = 0` after `B0`, `owed` as
-/// declared.
-fn fresh(payload_len: usize) -> [u8; N] {
-    ToyCcm::<Encrypting>::new(&key(), &[0x24u8; NONCE_LEN], b"aad", payload_len).unwrap().suspend()
+/// An encryptor holding its AAD back, before any payload: the header is not yet formatted, so
+/// the CBC-MAC has absorbed nothing.
+fn unformatted() -> [u8; N] {
+    let mut enc = ToyEnc::do_encrypt_init_nonce(&key(), &[0x24u8; NONCE_LEN]).unwrap();
+    enc.do_update_aad(b"aad").unwrap();
+    enc.suspend()
 }
 
-fn with_u64(mut state: [u8; N], at: usize, value: u64) -> [u8; N] {
+/// An encryptor one block into its payload: the header is formatted, `next_ctr = 2`, the CBC-MAC
+/// block boundary has just been crossed, and 16 of the 32 bytes are still owed.
+fn mid_payload() -> [u8; N] {
+    let mut enc = ToyEnc::do_encrypt_init_nonce(&key(), &[0x24u8; NONCE_LEN]).unwrap();
+    enc.do_update_aad(b"aad").unwrap();
+    let mut out = [0u8; 16];
+    enc.do_encrypt_out(&[0x5Au8; 16], &mut out).unwrap();
+    enc.suspend()
+}
+
+fn with_u64<const L: usize>(mut state: [u8; L], at: usize, value: u64) -> [u8; L] {
     state[at..at + 8].copy_from_slice(&value.to_le_bytes());
     state
 }
 
 fn resumes(state: [u8; N]) -> Result<(), SuspendableError> {
-    ToyCcm::<Encrypting>::from_suspended(state, &key()).map(|_| ())
+    ToyEnc::from_suspended(state, &key()).map(|_| ())
 }
 
 /// `mac_pos` is how much of the current CBC-MAC block has been XORed in, and a full block is
 /// enciphered at once, so `BLOCK_LEN - 1` is the largest value a real state can hold.
 #[test]
 fn mac_pos_is_held_below_the_block_length() {
-    let state = fresh(32);
+    let state = mid_payload();
     assert!(resumes(with_u64(state, MAC_POS, (BLOCK_LEN - 1) as u64)).is_ok());
     assert_eq!(
         resumes(with_u64(state, MAC_POS, BLOCK_LEN as u64)),
@@ -72,21 +96,26 @@ fn mac_pos_is_held_below_the_block_length() {
     );
 }
 
-/// `owed` is what `B0` committed to minus what has been supplied, so it can never exceed A.1's
-/// `2^8q - 1`; the limit itself is a legal value, since nothing has to have been supplied yet.
+/// `owed` is what `B0` committed to minus what has been supplied, so it can never exceed the
+/// frame; the frame itself is a legal value, since nothing has to have been supplied yet. The
+/// packet's own bound, A.1's `2^8q - 1`, sits behind that.
 #[test]
-fn owed_is_held_to_the_payload_limit() {
-    let state = fresh(32);
-    assert!(resumes(with_u64(state, OWED, LIMIT)).is_ok());
+fn owed_is_held_to_the_frame() {
+    let state = mid_payload();
+    assert!(resumes(with_u64(state, OWED, DATA_LEN as u64)).is_ok());
+    assert_eq!(
+        resumes(with_u64(state, OWED, DATA_LEN as u64 + 1)),
+        Err(SuspendableError::InvalidData)
+    );
     assert_eq!(resumes(with_u64(state, OWED, LIMIT + 1)), Err(SuspendableError::InvalidData));
 }
 
 /// The counter index runs from 1 (`S0` is the tag mask, step 7 starts the payload keystream at
 /// `S1`) to one past the last counter value, which is where it stands once every block has been
-/// used; 0 and anything beyond are not states a `CcmPacket` can have been in.
+/// used; 0 and anything beyond are not states the mode can have been in.
 #[test]
 fn the_counter_index_is_held_to_its_range() {
-    let state = fresh(32);
+    let state = mid_payload();
     assert!(resumes(with_u64(state, NEXT_CTR, 1)).is_ok());
     assert!(resumes(with_u64(state, NEXT_CTR, LIMIT + 1)).is_ok(), "every counter used");
     assert_eq!(resumes(with_u64(state, NEXT_CTR, 0)), Err(SuspendableError::InvalidData));
@@ -99,7 +128,7 @@ fn the_counter_index_is_held_to_its_range() {
 /// non-zero byte in each position of the counter field.
 #[test]
 fn the_counter_template_is_checked_byte_by_byte() {
-    let state = fresh(32);
+    let state = mid_payload();
     assert!(resumes(state).is_ok());
     assert_eq!(state[TEMPLATE], 2, "q - 1 for a 12-byte nonce");
 
@@ -125,14 +154,48 @@ fn the_counter_template_is_checked_byte_by_byte() {
     assert!(resumes(nonce_byte).is_ok());
 }
 
-/// The same checks run for the decrypting direction, which shares the impl.
+/// Until the header is formatted nothing has gone into the CBC-MAC and no AAD is owed to it, so
+/// a state that says "not formatted" with either count non-zero is one the pair never produces.
+/// The flag itself is a bool, and only 0 and 1 encode one.
+#[test]
+fn an_unformatted_state_has_absorbed_nothing() {
+    let state = unformatted();
+    assert!(resumes(state).is_ok());
+    assert_eq!(state[FORMATTED], 0);
+    assert_eq!(resumes(with_u64(state, MAC_POS, 1)), Err(SuspendableError::InvalidData));
+    assert_eq!(resumes(with_u64(state, AAD_OWED, 1)), Err(SuspendableError::InvalidData));
+    let mut not_a_bool = state;
+    not_a_bool[FORMATTED] = 2;
+    assert_eq!(resumes(not_a_bool), Err(SuspendableError::InvalidData));
+    // The formatted state carries those counts legitimately.
+    assert_eq!(mid_payload()[FORMATTED], 1);
+}
+
+/// The held-back AAD can be no longer than the buffer that holds it.
+#[test]
+fn the_aad_length_is_held_to_its_capacity() {
+    let state = unformatted();
+    assert!(resumes(with_u64(state, AAD_LEN_AT, AAD_LEN as u64)).is_ok());
+    assert_eq!(
+        resumes(with_u64(state, AAD_LEN_AT, AAD_LEN as u64 + 1)),
+        Err(SuspendableError::InvalidData)
+    );
+}
+
+/// The same checks run for the decrypting direction, which shares the adapter, plus the bound
+/// on the tag bytes it holds back.
 #[test]
 fn the_decrypting_direction_checks_the_same_bounds() {
-    let state =
-        ToyCcm::<Decrypting>::new(&key(), &[0x24u8; NONCE_LEN], b"aad", 32).unwrap().suspend();
-    assert!(ToyCcm::<Decrypting>::from_suspended(state, &key()).is_ok());
-    assert!(
-        ToyCcm::<Decrypting>::from_suspended(with_u64(state, OWED, LIMIT + 1), &key()).is_err()
-    );
-    assert!(ToyCcm::<Decrypting>::from_suspended(with_u64(state, NEXT_CTR, 0), &key()).is_err());
+    let mut dec = ToyDec::do_decrypt_init(&key(), &[0x24u8; NONCE_LEN]).unwrap();
+    dec.do_update_aad(b"aad").unwrap();
+    let mut out = [0u8; 16];
+    dec.do_decrypt_out(&[0x5Au8; 16], &mut out).unwrap();
+    let state = dec.suspend();
+    let resumes = |state: [u8; ND]| ToyDec::from_suspended(state, &key()).map(|_| ());
+
+    assert!(resumes(state).is_ok());
+    assert!(resumes(with_u64(state, OWED, DATA_LEN as u64 + 1)).is_err());
+    assert!(resumes(with_u64(state, NEXT_CTR, 0)).is_err());
+    assert!(resumes(with_u64(state, TAG_LEN_AT, 16)).is_ok());
+    assert!(resumes(with_u64(state, TAG_LEN_AT, 17)).is_err());
 }

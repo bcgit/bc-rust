@@ -27,7 +27,12 @@ impl TestFrameworkXOF {
     /// `input`. There is deliberately no absorb-after-squeeze test: [`XOF::into_squeezer`] consumes
     /// the XOF, so absorbing afterwards is not expressible and there is no runtime rule left to
     /// check. That guarantee is asserted instead by `compile_fail` doctests on the implementors.
-    pub fn test_xof<X: XOF>(&self, make: impl Fn() -> X, input: &[u8], expected_output: &[u8]) {
+    pub fn test_xof<X: XOF + Clone>(
+        &self,
+        make: impl Fn() -> X,
+        input: &[u8],
+        expected_output: &[u8],
+    ) {
         /*** fn do_update(&mut self, data: &[u8]) ***/
         // Feeding the input in pieces must equal feeding it in one go.
         let mut xof = make();
@@ -234,12 +239,6 @@ impl TestFrameworkXOF {
         let n = c.do_final_out(&mut buf);
         assert_eq!(n, output_len);
         assert_eq!(buf, via_hash, "do_final_out must agree with do_final");
-
-        // The one-shot Hash entry points.
-        assert_eq!(make().hash(input), via_hash, "hash must equal update-then-do_final");
-        let mut buf = vec![0xFFu8; output_len];
-        assert_eq!(make().hash_out(input, &mut buf), output_len);
-        assert_eq!(buf, via_hash, "hash_out must agree with hash");
     }
 
     /// A partial final byte of input, in both the XOF and the Hash spelling.

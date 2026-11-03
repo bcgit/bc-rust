@@ -2,16 +2,21 @@
 //! TODO: Use generic macros to eliminate duplicated code.
 
 use crate::helpers::{parse_seed, read_from_file, read_from_file_or_stdin, write_bytes_or_hex};
+use bouncycastle::core::signature_key::{
+    PreHashSigningKey, PreHashVerifyingKey, SigningKey, VerifyingKey,
+};
 use bouncycastle::core::traits::{
-    SignaturePrivateKey, SignaturePublicKey, SignatureVerifier, Signer,
+    SignaturePrivateKey, SignaturePublicKey, SignatureSigner, SignatureVerifier,
 };
 use bouncycastle::hex;
 use bouncycastle::mldsa::{
-    HashMLDSA44_with_SHA512, HashMLDSA65_with_SHA512, HashMLDSA87_with_SHA512, MLDSA_SEED_LEN,
-    MLDSA44, MLDSA44_PK_LEN, MLDSA44_SK_LEN, MLDSA44PrivateKey, MLDSA44PublicKey, MLDSA65,
-    MLDSA65_PK_LEN, MLDSA65_SK_LEN, MLDSA65PrivateKey, MLDSA65PublicKey, MLDSA87, MLDSA87_PK_LEN,
-    MLDSA87_SK_LEN, MLDSA87PrivateKey, MLDSA87PublicKey, MLDSAPrivateKeyTrait, MLDSATrait,
+    MLDSA_SEED_LEN, MLDSA44, MLDSA44_PK_LEN, MLDSA44_SK_LEN, MLDSA44PrivateKey, MLDSA44PublicKey,
+    MLDSA65, MLDSA65_PK_LEN, MLDSA65_SK_LEN, MLDSA65PrivateKey, MLDSA65PublicKey, MLDSA87,
+    MLDSA87_PK_LEN, MLDSA87_SK_LEN, MLDSA87PrivateKey, MLDSA87PublicKey, MLDSAPrivateKeyTrait,
+    MLDSATrait,
 };
+use bouncycastle::rng::HashDRBG_SHA512;
+use bouncycastle::sha2::SHA512;
 use clap::ValueEnum;
 use std::io;
 use std::io::Read;
@@ -47,7 +52,7 @@ pub(crate) fn mldsa44_cmd(
 ) {
     match action {
         MLDSAAction::Keygen => {
-            let (_pk, sk) = MLDSA44::keygen().unwrap();
+            let (_pk, sk) = MLDSA44::keygen(&mut HashDRBG_SHA512::new_from_os()).unwrap();
             write_bytes_or_hex(&sk.encode(), output_hex);
         }
         MLDSAAction::KeygenFromSeed => {
@@ -137,17 +142,18 @@ pub(crate) fn mldsa44_cmd(
                     exit(-1);
                 }
             };
-            let mut signer = MLDSA44::do_sign_init(&sk, Some(&ctx)).unwrap();
+            let mut signer =
+                sk.create_signer(&mut HashDRBG_SHA512::new_from_os(), Some(&ctx)).unwrap();
 
             let mut buf = [0u8; 1024];
             let mut bytes_read = io::stdin().read(&mut buf).expect("Failed to read from stdin");
-            signer.do_sign_update(&buf[..bytes_read]);
+            signer.do_update(&buf[..bytes_read]);
             while bytes_read != 0 {
                 bytes_read = io::stdin().read(&mut buf).expect("Failed to read from stdin");
-                signer.do_sign_update(&buf[..bytes_read]);
+                signer.do_update(&buf[..bytes_read]);
             }
 
-            let sig = signer.do_sign_final().unwrap();
+            let sig = signer.do_final().unwrap();
 
             write_bytes_or_hex(&sig, output_hex);
         }
@@ -183,14 +189,14 @@ pub(crate) fn mldsa44_cmd(
             };
 
             // and now verify, streaming the message from stdin
-            let mut verifier = MLDSA44::do_verify_init(&pk, Some(&ctx)).unwrap();
+            let mut verifier = pk.create_verifier(Some(&ctx)).unwrap();
 
             let mut buf = [0u8; 1024];
             let mut bytes_read = io::stdin().read(&mut buf).expect("Failed to read from stdin");
-            verifier.do_verify_update(&buf[..bytes_read]);
+            verifier.do_update(&buf[..bytes_read]);
             while bytes_read != 0 {
                 bytes_read = io::stdin().read(&mut buf).expect("Failed to read from stdin");
-                verifier.do_verify_update(&buf[..bytes_read]);
+                verifier.do_update(&buf[..bytes_read]);
             }
 
             let sig = verifier.do_verify_final(&sig);
@@ -215,7 +221,7 @@ pub(crate) fn mldsa65_cmd(
 ) {
     match action {
         MLDSAAction::Keygen => {
-            let (_pk, sk) = MLDSA65::keygen().unwrap();
+            let (_pk, sk) = MLDSA65::keygen(&mut HashDRBG_SHA512::new_from_os()).unwrap();
             write_bytes_or_hex(&sk.encode(), output_hex);
         }
         MLDSAAction::KeygenFromSeed => {
@@ -296,17 +302,18 @@ pub(crate) fn mldsa65_cmd(
                     exit(-1);
                 }
             };
-            let mut signer = MLDSA65::do_sign_init(&sk, Some(&ctx)).unwrap();
+            let mut signer =
+                sk.create_signer(&mut HashDRBG_SHA512::new_from_os(), Some(&ctx)).unwrap();
 
             let mut buf = [0u8; 1024];
             let mut bytes_read = io::stdin().read(&mut buf).expect("Failed to read from stdin");
-            signer.do_sign_update(&buf[..bytes_read]);
+            signer.do_update(&buf[..bytes_read]);
             while bytes_read != 0 {
                 bytes_read = io::stdin().read(&mut buf).expect("Failed to read from stdin");
-                signer.do_sign_update(&buf[..bytes_read]);
+                signer.do_update(&buf[..bytes_read]);
             }
 
-            let sig = signer.do_sign_final().unwrap();
+            let sig = signer.do_final().unwrap();
 
             write_bytes_or_hex(&sig, output_hex);
         }
@@ -342,14 +349,14 @@ pub(crate) fn mldsa65_cmd(
             };
 
             // and now verify, streaming the message from stdin
-            let mut verifier = MLDSA65::do_verify_init(&pk, Some(&ctx)).unwrap();
+            let mut verifier = pk.create_verifier(Some(&ctx)).unwrap();
 
             let mut buf = [0u8; 1024];
             let mut bytes_read = io::stdin().read(&mut buf).expect("Failed to read from stdin");
-            verifier.do_verify_update(&buf[..bytes_read]);
+            verifier.do_update(&buf[..bytes_read]);
             while bytes_read != 0 {
                 bytes_read = io::stdin().read(&mut buf).expect("Failed to read from stdin");
-                verifier.do_verify_update(&buf[..bytes_read]);
+                verifier.do_update(&buf[..bytes_read]);
             }
 
             let sig = verifier.do_verify_final(&sig);
@@ -373,7 +380,7 @@ pub(crate) fn mldsa87_cmd(
 ) {
     match action {
         MLDSAAction::Keygen => {
-            let (_pk, sk) = MLDSA87::keygen().unwrap();
+            let (_pk, sk) = MLDSA87::keygen(&mut HashDRBG_SHA512::new_from_os()).unwrap();
             write_bytes_or_hex(&sk.encode(), output_hex);
         }
         MLDSAAction::KeygenFromSeed => {
@@ -454,17 +461,18 @@ pub(crate) fn mldsa87_cmd(
                     exit(-1);
                 }
             };
-            let mut signer = MLDSA87::do_sign_init(&sk, Some(&ctx)).unwrap();
+            let mut signer =
+                sk.create_signer(&mut HashDRBG_SHA512::new_from_os(), Some(&ctx)).unwrap();
 
             let mut buf = [0u8; 1024];
             let mut bytes_read = io::stdin().read(&mut buf).expect("Failed to read from stdin");
-            signer.do_sign_update(&buf[..bytes_read]);
+            signer.do_update(&buf[..bytes_read]);
             while bytes_read != 0 {
                 bytes_read = io::stdin().read(&mut buf).expect("Failed to read from stdin");
-                signer.do_sign_update(&buf[..bytes_read]);
+                signer.do_update(&buf[..bytes_read]);
             }
 
-            let sig = signer.do_sign_final().unwrap();
+            let sig = signer.do_final().unwrap();
 
             write_bytes_or_hex(&sig, output_hex);
         }
@@ -500,14 +508,14 @@ pub(crate) fn mldsa87_cmd(
             };
 
             // and now verify, streaming the message from stdin
-            let mut verifier = MLDSA87::do_verify_init(&pk, Some(&ctx)).unwrap();
+            let mut verifier = pk.create_verifier(Some(&ctx)).unwrap();
 
             let mut buf = [0u8; 1024];
             let mut bytes_read = io::stdin().read(&mut buf).expect("Failed to read from stdin");
-            verifier.do_verify_update(&buf[..bytes_read]);
+            verifier.do_update(&buf[..bytes_read]);
             while bytes_read != 0 {
                 bytes_read = io::stdin().read(&mut buf).expect("Failed to read from stdin");
-                verifier.do_verify_update(&buf[..bytes_read]);
+                verifier.do_update(&buf[..bytes_read]);
             }
 
             let sig = verifier.do_verify_final(&sig);
@@ -532,14 +540,14 @@ pub(crate) fn hash_mldsa44_sha512_cmd(
 ) {
     match action {
         MLDSAAction::Keygen => {
-            let (_pk, sk) = HashMLDSA44_with_SHA512::keygen().unwrap();
+            let (_pk, sk) = MLDSA44::keygen(&mut HashDRBG_SHA512::new_from_os()).unwrap();
             write_bytes_or_hex(&sk.encode(), output_hex);
         }
         MLDSAAction::KeygenFromSeed => {
             let buf = read_from_file_or_stdin(skfile);
             let seed = parse_seed(&buf).unwrap();
 
-            let (_pk, sk) = HashMLDSA44_with_SHA512::keygen_from_seed(&seed).unwrap();
+            let (_pk, sk) = MLDSA44::keygen_from_seed(&seed).unwrap();
             write_bytes_or_hex(&sk.encode(), output_hex);
         }
         MLDSAAction::PkFromSk => {
@@ -613,17 +621,19 @@ pub(crate) fn hash_mldsa44_sha512_cmd(
                     exit(-1);
                 }
             };
-            let mut signer = HashMLDSA44_with_SHA512::do_sign_init(&sk, Some(&ctx)).unwrap();
+            let mut signer = sk
+                .create_ph_signer::<SHA512>(&mut HashDRBG_SHA512::new_from_os(), Some(&ctx))
+                .unwrap();
 
             let mut buf = [0u8; 1024];
             let mut bytes_read = io::stdin().read(&mut buf).expect("Failed to read from stdin");
-            signer.do_sign_update(&buf[..bytes_read]);
+            signer.do_update(&buf[..bytes_read]);
             while bytes_read != 0 {
                 bytes_read = io::stdin().read(&mut buf).expect("Failed to read from stdin");
-                signer.do_sign_update(&buf[..bytes_read]);
+                signer.do_update(&buf[..bytes_read]);
             }
 
-            let sig = signer.do_sign_final().unwrap();
+            let sig = signer.do_final().unwrap();
 
             write_bytes_or_hex(&sig, output_hex);
         }
@@ -659,14 +669,14 @@ pub(crate) fn hash_mldsa44_sha512_cmd(
             };
 
             // and now verify, streaming the message from stdin
-            let mut verifier = HashMLDSA44_with_SHA512::do_verify_init(&pk, Some(&ctx)).unwrap();
+            let mut verifier = pk.create_ph_verifier::<SHA512>(Some(&ctx)).unwrap();
 
             let mut buf = [0u8; 1024];
             let mut bytes_read = io::stdin().read(&mut buf).expect("Failed to read from stdin");
-            verifier.do_verify_update(&buf[..bytes_read]);
+            verifier.do_update(&buf[..bytes_read]);
             while bytes_read != 0 {
                 bytes_read = io::stdin().read(&mut buf).expect("Failed to read from stdin");
-                verifier.do_verify_update(&buf[..bytes_read]);
+                verifier.do_update(&buf[..bytes_read]);
             }
 
             let sig = verifier.do_verify_final(&sig);
@@ -691,7 +701,7 @@ pub(crate) fn hash_mldsa65_sha512_cmd(
 ) {
     match action {
         MLDSAAction::Keygen => {
-            let (_pk, sk) = MLDSA65::keygen().unwrap();
+            let (_pk, sk) = MLDSA65::keygen(&mut HashDRBG_SHA512::new_from_os()).unwrap();
             write_bytes_or_hex(&sk.encode(), output_hex);
         }
         MLDSAAction::KeygenFromSeed => {
@@ -772,17 +782,19 @@ pub(crate) fn hash_mldsa65_sha512_cmd(
                     exit(-1);
                 }
             };
-            let mut signer = HashMLDSA65_with_SHA512::do_sign_init(&sk, Some(&ctx)).unwrap();
+            let mut signer = sk
+                .create_ph_signer::<SHA512>(&mut HashDRBG_SHA512::new_from_os(), Some(&ctx))
+                .unwrap();
 
             let mut buf = [0u8; 1024];
             let mut bytes_read = io::stdin().read(&mut buf).expect("Failed to read from stdin");
-            signer.do_sign_update(&buf[..bytes_read]);
+            signer.do_update(&buf[..bytes_read]);
             while bytes_read != 0 {
                 bytes_read = io::stdin().read(&mut buf).expect("Failed to read from stdin");
-                signer.do_sign_update(&buf[..bytes_read]);
+                signer.do_update(&buf[..bytes_read]);
             }
 
-            let sig = signer.do_sign_final().unwrap();
+            let sig = signer.do_final().unwrap();
 
             write_bytes_or_hex(&sig, output_hex);
         }
@@ -818,14 +830,14 @@ pub(crate) fn hash_mldsa65_sha512_cmd(
             };
 
             // and now verify, streaming the message from stdin
-            let mut verifier = HashMLDSA65_with_SHA512::do_verify_init(&pk, Some(&ctx)).unwrap();
+            let mut verifier = pk.create_ph_verifier::<SHA512>(Some(&ctx)).unwrap();
 
             let mut buf = [0u8; 1024];
             let mut bytes_read = io::stdin().read(&mut buf).expect("Failed to read from stdin");
-            verifier.do_verify_update(&buf[..bytes_read]);
+            verifier.do_update(&buf[..bytes_read]);
             while bytes_read != 0 {
                 bytes_read = io::stdin().read(&mut buf).expect("Failed to read from stdin");
-                verifier.do_verify_update(&buf[..bytes_read]);
+                verifier.do_update(&buf[..bytes_read]);
             }
 
             let sig = verifier.do_verify_final(&sig);
@@ -849,7 +861,7 @@ pub(crate) fn hash_mldsa87_sha512_cmd(
 ) {
     match action {
         MLDSAAction::Keygen => {
-            let (_pk, sk) = MLDSA87::keygen().unwrap();
+            let (_pk, sk) = MLDSA87::keygen(&mut HashDRBG_SHA512::new_from_os()).unwrap();
             write_bytes_or_hex(&sk.encode(), output_hex);
         }
         MLDSAAction::KeygenFromSeed => {
@@ -930,17 +942,19 @@ pub(crate) fn hash_mldsa87_sha512_cmd(
                     exit(-1);
                 }
             };
-            let mut signer = HashMLDSA87_with_SHA512::do_sign_init(&sk, Some(&ctx)).unwrap();
+            let mut signer = sk
+                .create_ph_signer::<SHA512>(&mut HashDRBG_SHA512::new_from_os(), Some(&ctx))
+                .unwrap();
 
             let mut buf = [0u8; 1024];
             let mut bytes_read = io::stdin().read(&mut buf).expect("Failed to read from stdin");
-            signer.do_sign_update(&buf[..bytes_read]);
+            signer.do_update(&buf[..bytes_read]);
             while bytes_read != 0 {
                 bytes_read = io::stdin().read(&mut buf).expect("Failed to read from stdin");
-                signer.do_sign_update(&buf[..bytes_read]);
+                signer.do_update(&buf[..bytes_read]);
             }
 
-            let sig = signer.do_sign_final().unwrap();
+            let sig = signer.do_final().unwrap();
 
             write_bytes_or_hex(&sig, output_hex);
         }
@@ -976,14 +990,14 @@ pub(crate) fn hash_mldsa87_sha512_cmd(
             };
 
             // and now verify, streaming the message from stdin
-            let mut verifier = HashMLDSA87_with_SHA512::do_verify_init(&pk, Some(&ctx)).unwrap();
+            let mut verifier = pk.create_ph_verifier::<SHA512>(Some(&ctx)).unwrap();
 
             let mut buf = [0u8; 1024];
             let mut bytes_read = io::stdin().read(&mut buf).expect("Failed to read from stdin");
-            verifier.do_verify_update(&buf[..bytes_read]);
+            verifier.do_update(&buf[..bytes_read]);
             while bytes_read != 0 {
                 bytes_read = io::stdin().read(&mut buf).expect("Failed to read from stdin");
-                verifier.do_verify_update(&buf[..bytes_read]);
+                verifier.do_update(&buf[..bytes_read]);
             }
 
             let sig = verifier.do_verify_final(&sig);

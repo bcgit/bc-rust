@@ -34,8 +34,8 @@ use bouncycastle_core::hazmat::do_hazardous_operations;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
-use bouncycastle_core_test_framework::FixedSeedRNG;
 use bouncycastle_core_test_framework::test_data_loaders::{Value, hex_field, wycheproof_json};
+use bouncycastle_rng::FixedSeedRNG;
 
 const BLOCK_LEN: usize = 16;
 
@@ -92,9 +92,8 @@ fn run_case<E, D, const KEY_LEN: usize>(
 
     if expected == Expected::Valid {
         let mut ct = vec![0u8; E::encrypt_out_len(msg.len())];
-        let (got_iv, written) =
-            E::encrypt_rng_out(&key, &mut FixedSeedRNG::<BLOCK_LEN>::new(iv), msg, &mut ct)
-                .unwrap_or_else(|e| panic!("tcId {tc_id}: valid case failed to encrypt: {e:?}"));
+        let (got_iv, written) = E::encrypt_rng_out(&key, &mut FixedSeedRNG::new(iv), msg, &mut ct)
+            .unwrap_or_else(|e| panic!("tcId {tc_id}: valid case failed to encrypt: {e:?}"));
         assert_eq!(got_iv, iv, "tcId {tc_id}: the seeded RNG must reproduce the vector's IV");
         ct.truncate(written);
         assert_eq!(ct, expected_ct, "tcId {tc_id}: ciphertext mismatch");

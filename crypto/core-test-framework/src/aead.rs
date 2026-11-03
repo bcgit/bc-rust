@@ -15,11 +15,12 @@
 //! [`SymmetricCipherEncryptor`]: bouncycastle_core::traits::SymmetricCipherEncryptor
 //! [`SymmetricCipherDecryptor`]: bouncycastle_core::traits::SymmetricCipherDecryptor
 
+use crate::DUMMY_SEED;
 use crate::symmetric_ciphers::TestFrameworkSymmetricCipher;
-use crate::{DUMMY_SEED, FixedSeedRNG};
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-use bouncycastle_core::traits::{AEADCipherDecryptor, AEADCipherEncryptor};
+use bouncycastle_core::traits::{AEADCipherDecryptor, AEADCipherEncryptor, Algorithm};
+use bouncycastle_rng::FixedSeedRNG;
 
 /// Instance of the test framework.
 pub struct TestFrameworkAEADCipher {
@@ -81,8 +82,8 @@ impl TestFrameworkAEADCipher {
         const NONCE_LEN: usize,
         const TAG_LEN: usize,
         const FINAL_LEN: usize,
-        E: AEADCipherEncryptor<KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN>,
-        D: AEADCipherDecryptor<KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN>,
+        E: AEADCipherEncryptor<KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN> + Algorithm,
+        D: AEADCipherDecryptor<KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN> + Algorithm,
     >(
         &self,
     ) {
@@ -171,7 +172,7 @@ impl TestFrameworkAEADCipher {
             let mut detached = vec![0u8; E::encrypt_detached_out_len(len)];
             let (pinned_nonce, detached_len, detached_tag) = E::encrypt_detached_rng_out(
                 &key,
-                &mut FixedSeedRNG::<NONCE_LEN>::new(pinned),
+                &mut FixedSeedRNG::new(pinned),
                 aad,
                 msg,
                 &mut detached,
@@ -199,7 +200,7 @@ impl TestFrameworkAEADCipher {
             let mut inline_rng = vec![0u8; E::encrypt_out_len(len) + 3];
             let (rng_nonce, rng_len) = E::encrypt_with_aad_rng_out(
                 &key,
-                &mut FixedSeedRNG::<NONCE_LEN>::new(pinned),
+                &mut FixedSeedRNG::new(pinned),
                 aad,
                 msg,
                 &mut inline_rng,
@@ -215,7 +216,7 @@ impl TestFrameworkAEADCipher {
             let mut exact = vec![0u8; E::encrypt_out_len(len)];
             let (_, exact_len) = E::encrypt_with_aad_rng_out(
                 &key,
-                &mut FixedSeedRNG::<NONCE_LEN>::new(pinned),
+                &mut FixedSeedRNG::new(pinned),
                 aad,
                 msg,
                 &mut exact,
@@ -264,7 +265,7 @@ impl TestFrameworkAEADCipher {
             let mut short = vec![0u8; E::encrypt_out_len(len) - 1];
             match E::encrypt_with_aad_rng_out(
                 &key,
-                &mut FixedSeedRNG::<NONCE_LEN>::new(pinned),
+                &mut FixedSeedRNG::new(pinned),
                 aad,
                 msg,
                 &mut short,
@@ -284,7 +285,7 @@ impl TestFrameworkAEADCipher {
             assert_eq!(alloc_pt, msg, "allocating inline-with-AAD round trip, len {len}");
 
             let (mut enc5, nonce5) =
-                E::do_encrypt_init_rng(&key, &mut FixedSeedRNG::<NONCE_LEN>::new(pinned)).unwrap();
+                E::do_encrypt_init_rng(&key, &mut FixedSeedRNG::new(pinned)).unwrap();
             assert_eq!(nonce5, pinned_nonce, "the same RNG stream must give the same nonce");
             enc5.do_update_aad(aad).unwrap();
             let mut inline5 = vec![0u8; enc5.do_encrypt_out_len(len)];
@@ -338,7 +339,7 @@ impl TestFrameworkAEADCipher {
                 let mut short = vec![0u8; need - 1];
                 match E::encrypt_detached_rng_out(
                     &key,
-                    &mut FixedSeedRNG::<NONCE_LEN>::new([0xA5u8; NONCE_LEN]),
+                    &mut FixedSeedRNG::new([0xA5u8; NONCE_LEN]),
                     aad,
                     msg,
                     &mut short,
@@ -357,7 +358,7 @@ impl TestFrameworkAEADCipher {
                 let mut roomy = vec![0u8; need + 3];
                 let (_, n, _) = E::encrypt_detached_rng_out(
                     &key,
-                    &mut FixedSeedRNG::<NONCE_LEN>::new([0xA5u8; NONCE_LEN]),
+                    &mut FixedSeedRNG::new([0xA5u8; NONCE_LEN]),
                     aad,
                     msg,
                     &mut roomy,
@@ -402,7 +403,7 @@ impl TestFrameworkAEADCipher {
         let mut ct_ref = vec![0u8; E::encrypt_detached_out_len(msg.len())];
         let (nonce_ref, ct_ref_len, tag_ref) = E::encrypt_detached_rng_out(
             &key,
-            &mut FixedSeedRNG::<NONCE_LEN>::new(pinned),
+            &mut FixedSeedRNG::new(pinned),
             aad,
             msg,
             &mut ct_ref,
@@ -412,7 +413,7 @@ impl TestFrameworkAEADCipher {
 
         for chunk in [1usize, 2, 3, 7, TAG_LEN.max(1), TAG_LEN + 1, msg.len().max(1)] {
             let (mut enc, nonce) =
-                E::do_encrypt_init_rng(&key, &mut FixedSeedRNG::<NONCE_LEN>::new(pinned)).unwrap();
+                E::do_encrypt_init_rng(&key, &mut FixedSeedRNG::new(pinned)).unwrap();
             assert_eq!(nonce, nonce_ref, "the same RNG stream must give the same nonce");
             for piece in aad.chunks(chunk) {
                 enc.do_update_aad(piece).unwrap();
@@ -456,7 +457,7 @@ impl TestFrameworkAEADCipher {
 
         // the array-returning finals agree with the `_out` ones the chunked loop above used
         let (mut enc, nonce) =
-            E::do_encrypt_init_rng(&key, &mut FixedSeedRNG::<NONCE_LEN>::new(pinned)).unwrap();
+            E::do_encrypt_init_rng(&key, &mut FixedSeedRNG::new(pinned)).unwrap();
         enc.do_update_aad(aad).unwrap();
         let mut ct = vec![0u8; enc.do_encrypt_out_len(msg.len())];
         let n = enc.do_encrypt_out(msg, &mut ct).unwrap();
@@ -491,7 +492,7 @@ impl TestFrameworkAEADCipher {
         let mut with_empty = vec![0u8; E::encrypt_detached_out_len(msg.len())];
         let (nonce_empty, len_empty, tag_empty) = E::encrypt_detached_rng_out(
             &key,
-            &mut FixedSeedRNG::<NONCE_LEN>::new(pinned),
+            &mut FixedSeedRNG::new(pinned),
             b"",
             msg,
             &mut with_empty,
@@ -501,7 +502,7 @@ impl TestFrameworkAEADCipher {
         let mut without = vec![0u8; E::encrypt_detached_out_len(msg.len())];
         let (nonce_none, len_none, tag_none) = E::encrypt_detached_rng_out(
             &key,
-            &mut FixedSeedRNG::<NONCE_LEN>::new(pinned),
+            &mut FixedSeedRNG::new(pinned),
             &[],
             msg,
             &mut without,
@@ -515,8 +516,7 @@ impl TestFrameworkAEADCipher {
         // ...and no AAD at all is what the inherited `SymmetricCipherEncryptor` one-shot gives
         let mut plain = vec![0u8; E::encrypt_out_len(msg.len())];
         let (nonce_plain, len_plain) =
-            E::encrypt_rng_out(&key, &mut FixedSeedRNG::<NONCE_LEN>::new(pinned), msg, &mut plain)
-                .unwrap();
+            E::encrypt_rng_out(&key, &mut FixedSeedRNG::new(pinned), msg, &mut plain).unwrap();
         assert_eq!(nonce_plain, nonce_none);
         assert_eq!(&plain[..len_plain - TAG_LEN], &without[..], "no-AAD inline ciphertext");
         assert_eq!(&plain[len_plain - TAG_LEN..len_plain], &tag_none, "no-AAD inline tag");
@@ -693,14 +693,9 @@ impl TestFrameworkAEADCipher {
         assert_tail_zeroed(&ct, n, "encrypt_detached_out");
         ct.truncate(n);
         let mut buf = vec![SENTINEL; need + EXTRA];
-        let (_, n, _) = E::encrypt_detached_rng_out(
-            &key,
-            &mut FixedSeedRNG::<NONCE_LEN>::new(pinned),
-            aad,
-            msg,
-            &mut buf,
-        )
-        .unwrap();
+        let (_, n, _) =
+            E::encrypt_detached_rng_out(&key, &mut FixedSeedRNG::new(pinned), aad, msg, &mut buf)
+                .unwrap();
         assert_eq!(n, need, "encrypt_detached_rng_out into an oversized buffer");
         assert_tail_zeroed(&buf, n, "encrypt_detached_rng_out");
         let mut pt = vec![SENTINEL; D::decrypt_detached_out_len(ct.len()) + EXTRA];
@@ -716,14 +711,9 @@ impl TestFrameworkAEADCipher {
         assert_tail_zeroed(&sealed, n, "encrypt_with_aad_out");
         sealed.truncate(n);
         let mut buf = vec![SENTINEL; need + EXTRA];
-        let (_, n) = E::encrypt_with_aad_rng_out(
-            &key,
-            &mut FixedSeedRNG::<NONCE_LEN>::new(pinned),
-            aad,
-            msg,
-            &mut buf,
-        )
-        .unwrap();
+        let (_, n) =
+            E::encrypt_with_aad_rng_out(&key, &mut FixedSeedRNG::new(pinned), aad, msg, &mut buf)
+                .unwrap();
         assert_eq!(n, need, "encrypt_with_aad_rng_out into an oversized buffer");
         assert_tail_zeroed(&buf, n, "encrypt_with_aad_rng_out");
         let mut pt = vec![SENTINEL; D::decrypt_out_len(sealed.len()) + EXTRA];
@@ -803,8 +793,8 @@ impl TestFrameworkAEADTaggedLayout {
         const NONCE_LEN: usize,
         const TAG_LEN: usize,
         const FINAL_LEN: usize,
-        E: AEADCipherEncryptor<KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN>,
-        D: AEADCipherDecryptor<KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN>,
+        E: AEADCipherEncryptor<KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN> + Algorithm,
+        D: AEADCipherDecryptor<KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN> + Algorithm,
     >(
         &self,
     ) {
@@ -823,8 +813,8 @@ impl TestFrameworkAEADTaggedLayout {
     }
 
     /// The pinned RNG every encryption draws its nonce from, so that all paths use one nonce.
-    fn rng<const NONCE_LEN: usize>() -> FixedSeedRNG<NONCE_LEN> {
-        FixedSeedRNG::<NONCE_LEN>::new(core::array::from_fn(|i| 0xA5 ^ (i as u8)))
+    fn rng<const NONCE_LEN: usize>() -> FixedSeedRNG<[u8; NONCE_LEN]> {
+        FixedSeedRNG::new(core::array::from_fn(|i| 0xA5 ^ (i as u8)))
     }
 
     /// Encrypts `msg` into the inline layout with the one-shot, under the pinned nonce, and
@@ -834,7 +824,7 @@ impl TestFrameworkAEADTaggedLayout {
         const NONCE_LEN: usize,
         const TAG_LEN: usize,
         const FINAL_LEN: usize,
-        E: AEADCipherEncryptor<KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN>,
+        E: AEADCipherEncryptor<KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN> + Algorithm,
     >(
         key: &KeyMaterial<KEY_LEN>,
         msg: &[u8],
@@ -853,8 +843,8 @@ impl TestFrameworkAEADTaggedLayout {
         const NONCE_LEN: usize,
         const TAG_LEN: usize,
         const FINAL_LEN: usize,
-        E: AEADCipherEncryptor<KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN>,
-        D: AEADCipherDecryptor<KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN>,
+        E: AEADCipherEncryptor<KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN> + Algorithm,
+        D: AEADCipherDecryptor<KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN> + Algorithm,
     >(
         key: &KeyMaterial<KEY_LEN>,
     ) {
@@ -950,8 +940,8 @@ impl TestFrameworkAEADTaggedLayout {
         const NONCE_LEN: usize,
         const TAG_LEN: usize,
         const FINAL_LEN: usize,
-        E: AEADCipherEncryptor<KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN>,
-        D: AEADCipherDecryptor<KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN>,
+        E: AEADCipherEncryptor<KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN> + Algorithm,
+        D: AEADCipherDecryptor<KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN> + Algorithm,
     >(
         key: &KeyMaterial<KEY_LEN>,
     ) {
@@ -1006,8 +996,8 @@ impl TestFrameworkAEADTaggedLayout {
         const NONCE_LEN: usize,
         const TAG_LEN: usize,
         const FINAL_LEN: usize,
-        E: AEADCipherEncryptor<KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN>,
-        D: AEADCipherDecryptor<KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN>,
+        E: AEADCipherEncryptor<KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN> + Algorithm,
+        D: AEADCipherDecryptor<KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN> + Algorithm,
     >(
         key: &KeyMaterial<KEY_LEN>,
     ) {

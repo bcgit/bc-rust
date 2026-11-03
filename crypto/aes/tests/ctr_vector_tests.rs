@@ -36,8 +36,8 @@ use bouncycastle_core::traits::{
     StreamCipherDecryptor, StreamCipherEncryptor, SymmetricCipherDecryptor,
     SymmetricCipherEncryptor,
 };
-use bouncycastle_core_test_framework::FixedSeedRNG;
 use bouncycastle_hex as hex;
+use bouncycastle_rng::FixedSeedRNG;
 
 const BLOCK_LEN: usize = 16;
 const NONCE_LEN: usize = 12;
@@ -116,7 +116,7 @@ where
         let (mut enc, got) =
             Ctr::<P, Encrypting, KEY_LEN, BLOCK_LEN, NONCE_LEN>::do_encrypt_init_rng(
                 &key,
-                &mut FixedSeedRNG::<NONCE_LEN>::new(nonce),
+                &mut FixedSeedRNG::new(nonce),
             )
             .expect("encrypt init");
         assert_eq!(got, nonce, "{name}: the pinned RNG should reproduce the nonce");

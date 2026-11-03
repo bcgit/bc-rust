@@ -7,7 +7,7 @@
 
 use bouncycastle_core::errors::{HashError, SuspendableError};
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::traits::{Algorithm, Hash, Suspendable, XOF, XOFSqueezer};
+use bouncycastle_core::traits::{Algorithm, Hash, HashOneShot, Suspendable, XOF, XOFSqueezer};
 use bouncycastle_utils::secret::Secret;
 use bouncycastle_utils::suspendable_state::{add_lib_ver, check_lib_ver};
 
@@ -99,16 +99,6 @@ impl Hash for AsconXof128 {
         NOMINAL_OUTPUT_LEN
     }
 
-    fn hash(mut self, data: &[u8]) -> Vec<u8> {
-        self.do_update(data);
-        self.do_final()
-    }
-
-    fn hash_out(mut self, data: &[u8], output: &mut [u8]) -> usize {
-        self.do_update(data);
-        self.do_final_out(output)
-    }
-
     fn do_update(&mut self, data: &[u8]) {
         // A caller-visible AsconXof128 is always in the absorbing phase:
         // into_squeezer() consumes it before output can begin.
@@ -174,10 +164,6 @@ impl Hash for AsconXof128 {
         // A zero-bit partial byte means the message is byte-aligned.
         let _ = partial_byte;
         Ok(self.do_final_out(output))
-    }
-
-    fn max_security_strength(&self) -> SecurityStrength {
-        SecurityStrength::_128bit
     }
 }
 
@@ -331,3 +317,6 @@ impl Suspendable<SUSPENDED_ASCON_XOF128_STATE_LEN> for AsconXof128Squeezer {
         Ok(Self { xof: AsconXof128 { sponge } })
     }
 }
+
+// The one-shot form: `Default` is the function itself.
+impl HashOneShot for AsconXof128 {}

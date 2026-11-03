@@ -7,7 +7,7 @@ use bouncycastle_core::errors::{HashError, KDFError, SuspendableError};
 use bouncycastle_core::hazmat::do_hazardous_operations;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::traits::{Algorithm, Hash, KDF, Suspendable};
+use bouncycastle_core::traits::{Algorithm, Hash, HashOneShot, KDF, Suspendable};
 use bouncycastle_utils::suspendable_state::{add_lib_ver, check_lib_ver};
 use bouncycastle_utils::{max, min};
 
@@ -35,14 +35,6 @@ impl<PARAMS: SHA3Params> SHA3Internal<PARAMS> {
             kdf_security_strength: SecurityStrength::None,
             kdf_entropy: 0,
         }
-    }
-
-    /// Swallows errors and simply returns an empty Vec<u8> if the hashes fails for whatever reason.
-    fn hash_internal(mut self, data: &[u8], output: &mut [u8]) -> usize {
-        output.fill(0);
-
-        self.do_update(data);
-        self.do_final_out(output)
     }
 
     /// Appends the SHA3 domain-separation suffix and pads as per FIPS 202 s. 6.1, then squeezes the digest.
@@ -126,9 +118,8 @@ impl<PARAMS: SHA3Params> SHA3Internal<PARAMS> {
         additional_input: &[u8],
         output_key: &mut impl KeyMaterialTrait,
     ) -> Result<usize, KDFError> {
-        // For the KDF to be considered "fully-seeded" and be capable of outputting full-entropy KeyMaterials,
-        // it requires full-entropy input that is at least block length.
-        // TODO: citation needed (NIST)
+        // This library's rule, not a NIST one: the derived key is tagged full-entropy only if at
+        // least a digest's worth of full-entropy key material went in.
         if self.kdf_entropy < PARAMS::OUTPUT_LEN {
             self.kdf_key_type = *min(&self.kdf_key_type, &KeyType::Unknown);
             self.kdf_security_strength = SecurityStrength::None; // BytesLowEntropy can't have a securtiy level.
@@ -164,9 +155,6 @@ impl<PARAMS: SHA3Params> SHA3Internal<PARAMS> {
             "both set_key_type() and set_security_strength() should be infallible within a hazop block",
         );
 
-        output_key
-            .set_key_len(*min(&output_key.key_len(), &PARAMS::OUTPUT_LEN))
-            .expect("should be infallible to truncate key length");
         Ok(bytes_written)
     }
 }
@@ -193,16 +181,6 @@ impl<PARAMS: SHA3Params> Hash for SHA3Internal<PARAMS> {
         PARAMS::OUTPUT_LEN
     }
 
-    fn hash(self, data: &[u8]) -> Vec<u8> {
-        let mut output: Vec<u8> = vec![0u8; PARAMS::OUTPUT_LEN];
-        _ = self.hash_internal(data, &mut output[..]);
-        output
-    }
-
-    fn hash_out(self, data: &[u8], output: &mut [u8]) -> usize {
-        self.hash_internal(data, output)
-    }
-
     fn do_update(&mut self, data: &[u8]) {
         self.keccak.absorb(data)
     }
@@ -216,8 +194,6 @@ impl<PARAMS: SHA3Params> Hash for SHA3Internal<PARAMS> {
         output
     }
 
-    // TODO: investigate why this doesn't take a &mut [u8; HASH_LEN]
-    // Being able to do so would improve ergonomics
     fn do_final_out(self, output: &mut [u8]) -> usize {
         // A whole-byte message is the zero-partial-bits case of the general finalization.
         self.do_final_bits_out(0, 0, output)
@@ -245,10 +221,6 @@ impl<PARAMS: SHA3Params> Hash for SHA3Internal<PARAMS> {
         }
         // do_final_bits_out appends the SHA-3 `01` suffix, pads, and squeezes.
         Ok(self.do_final_bits_out(partial_byte, num_partial_bits, output))
-    }
-
-    fn max_security_strength(&self) -> SecurityStrength {
-        SecurityStrength::from_bytes(PARAMS::OUTPUT_LEN / 2)
     }
 }
 
@@ -300,10 +272,6 @@ impl<PARAMS: SHA3Params> KDF for SHA3Internal<PARAMS> {
         }
         self.derive_key_out_final_internal(additional_input, output_key)
     }
-
-    fn max_security_strength(&self) -> SecurityStrength {
-        SecurityStrength::from_bytes(PARAMS::OUTPUT_LEN / 2)
-    }
 }
 
 impl<PARAMS: SHA3Params> Suspendable<SUSPENDED_SHA3_STATE_LEN> for SHA3Internal<PARAMS> {
@@ -335,7 +303,7 @@ impl<PARAMS: SHA3Params> Suspendable<SUSPENDED_SHA3_STATE_LEN> for SHA3Internal<
 
         // The variant tag rejects states from any other SHA3/SHAKE variant; the rate is then the
         // correct one to rebuild with (both are fully determined by the algorithm parameters).
-        let rate = 1600 - ((PARAMS::SIZE as usize) << 1);
+        let rate = PARAMS::SIZE.rate_bits();
         let (keccak, kdf_key_type, kdf_security_strength, kdf_entropy) =
             deserialize_sha3_family_state(input, PARAMS::STATE_TAG, rate)?;
 
@@ -348,3 +316,6 @@ impl<PARAMS: SHA3Params> Suspendable<SUSPENDED_SHA3_STATE_LEN> for SHA3Internal<
         })
     }
 }
+
+// The one-shot form: `Default` is the function itself.
+impl<PARAMS: SHA3Params> HashOneShot for SHA3Internal<PARAMS> {}

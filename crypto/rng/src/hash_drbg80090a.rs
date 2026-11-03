@@ -10,7 +10,7 @@ use bouncycastle_core::errors::{KeyMaterialError, RNGError};
 use bouncycastle_core::hazmat::do_hazardous_operations;
 use bouncycastle_core::key_material::{KeyMaterial512, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::traits::{Hash, HashAlgParams, RNG};
+use bouncycastle_core::traits::{Hash, HashAlgParams, HashOneShot, RNG};
 use bouncycastle_sha2::{SHA256, SHA512};
 use bouncycastle_utils::{min, secret::Secret};
 
@@ -530,7 +530,7 @@ impl<H: HashDRBG80090AParams> RNG for HashDRBG80090A<H> {
 /// no_of_bits_to_return is the length of the provided output buffer.
 /// Because array concatenation is not available in a no_std / no_alloc build, this takes many input parameters.
 // To leave a parameter unused, simply provide an empty array &[0u8;0]
-fn hash_df<H: Hash + HashAlgParams + Default>(
+fn hash_df<H: HashOneShot + HashAlgParams>(
     in1: &[u8],
     in2: &[u8],
     in3: &[u8],
@@ -638,7 +638,7 @@ fn test_hash_df() {
     assert!(result_sha512.is_err());
 }
 
-fn hashgen<H: Hash + HashAlgParams + Default>(v: &[u8], out: &mut [u8]) {
+fn hashgen<H: HashOneShot + HashAlgParams>(v: &[u8], out: &mut [u8]) {
     // Hashgen Process:
     // 1. m = ceil(requested_no_of_bits / outlen)
     // 2. data = V.
@@ -666,7 +666,7 @@ fn hashgen<H: Hash + HashAlgParams + Default>(v: &[u8], out: &mut [u8]) {
     //   4.2 W = W || w.
     //   4.3 data = (data + 1) mod 2^seedlen.
     for i in 1..m {
-        H::default().hash_out(
+        H::hash_out(
             &data,
             &mut out[((i - 1) as usize) * H::OUTPUT_LEN..(i as usize) * H::OUTPUT_LEN],
         );
@@ -681,7 +681,7 @@ fn hashgen<H: Hash + HashAlgParams + Default>(v: &[u8], out: &mut [u8]) {
     if remainder != 0 {
         // let mut temp = [0u8; H::OUTPUT_LEN];
         let mut temp = [0u8; 64];
-        H::default().hash_out(&data, &mut temp);
+        H::hash_out(&data, &mut temp);
 
         // Copy only what we need from the last block.
         out[bytes_written..].copy_from_slice(&temp[..remainder as usize]);

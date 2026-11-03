@@ -197,6 +197,38 @@ taught, as mechanics to apply next time a cipher type is shaped or reshaped:
   Ascon; the CCM packet type still has its namesake. Note the follow-up rather than widening the
   change.
 
+## Lessons from the signature key rework (November 2026)
+
+The signature traits moved construction from the algorithm type onto the key objects, as the
+cipher and MAC traits had (`local/signer_verifier_init_removal_plan.md`). Mechanics to reuse:
+
+- **Lengths the parameter set fixes do not go on the key type.** `MLDSAPublicKey<P>` stores
+  `P::VecK`, not a byte array, so the encoded lengths are needed only where a `core` trait or a
+  method names a `[u8; N]`. Stable Rust cannot write `[u8; P::PK_LEN]` there, so each such impl
+  or method is generic over `N` and bound through a sealed per-length trait with one impl per
+  parameter set (`P: SignatureLen<SIG_LEN>`); the solver then infers `N` from `P`, and
+  `sk.sign(..)` needs no annotation. One trait per length, not one trait for all of them: an
+  impl's const parameter must appear in the trait reference or the self type, and
+  `SignaturePublicKey<PK_LEN>` names only one. Where a whole encoding is needed with no const in
+  scope (`compute_tr`, `PartialEq`), the parameter set supplies the buffer type
+  (`P::PkEncoded`). The alternative, one concrete impl per parameter set, is a macro's worth of
+  copies.
+- **Algorithm-level operations on a key go on the key trait, not as statics on the marker.**
+  `MLDSA65::verify_mu(&pk, Some(&pk.A_hat()), &mu, &sig)` became `pk.verify_mu(&mu, &sig)`: the
+  key trait carries the method, each key type supplies its own cached state (the expanded key's
+  matrix), and the workers hold only the key they were made from.
+- **Two traits with the same method name on one type are ambiguous at every call.** A key that
+  signs both randomized and deterministic variants gets `create_signer` and
+  `create_signer_deterministic`, not two `create_signer`s; the arity does not help.
+- **The algorithm is a trait parameter, the hash a method parameter.** One key encoding serves
+  several algorithms (ML-DSA and HashML-DSA, ECDSA and RFC 6979, PKCS#1 and PSS), so the marker
+  goes on the role trait, not the key type; a pre-hash's hash goes on the method
+  (`create_ph_signer::<SHA512>`), with the strength rule checked at construction.
+- **A test RNG that repeats its seed defeats a "two signatures differ" check.** `FixedSeedRNG`
+  emits its seed cyclically; two 32-byte draws from a 64-byte constant seed are identical, and
+  so are two 64-byte draws (a PSS/SHA-512 salt) from a 64-byte counting seed. Seed it with a
+  counting pattern longer than one draw when the test relies on consecutive draws differing.
+
 ## Working from specifications
 
 QUALITY_AND_STYLE.md is where the requirement for spec-corresponding comments and justified deviations lives. This
@@ -236,6 +268,7 @@ external vector suites — is specified in QUALITY_AND_STYLE.md and CONTRIBUTING
   - **`-f`/`--file` does nothing while the checked-in config is in play**, because its `examine_globs` wins over the CLI filter: `cargo mutants -p bouncycastle-sha3 -f '**/kmac.rs'` still examines all ~874 mutants in the crate. To scope a run to the files you changed, copy `.cargo/mutants.toml` somewhere outside the repo, delete its `examine_globs` block, and pass `--config <copy>`; `-f` then filters as documented. (`--config /dev/null` also works but throws away `skip_calls`, `error_values`, `cap_lints` and the timeout multipliers with it.)
   - **Add `--test-workspace true` when a crate's mutants are killed by another crate's tests.** The `core` traits are the case that matters: their default method bodies are exercised from `sha3` and `factory`, so a `-p bouncycastle-core` run alone reports them all as missed.
   - **Symlink the test data into `/tmp`.** `cargo mutants` copies the tree to `/tmp/cargo-mutants-<dir>-XXXX.tmp/`, so the `../../../bc-test-data/...` paths the vector suites use resolve to `/tmp/bc-test-data`. Without `ln -s <path-to>/bc-test-data /tmp/bc-test-data` those tests print their "not found" warning, pass vacuously, and every mutant they would have killed is reported as missed. Use `--jobs 3` and an explicit `--timeout`; note that a mutant which makes a squeeze return no bytes hangs a fill loop for real, so some timeouts are kills rather than false alarms.
+  - **Builds use the `mutants` cargo profile** (`profile = "mutants"` in the config, defined in the root `Cargo.toml`): release optimisation without LTO, with incremental codegen. Measured on `bouncycastle-mldsa-lowmemory`, a mutant rebuilds in under a second and the suite runs in about 4 s, against 160 s per run unoptimised and an 80 s thin-LTO rebuild per mutant under `release`. Do not pass `--profile dev` or `--profile release` to "speed things up"; both are slower here.
 - Integration tests in `tests/` are preferred over in-file `#[cfg(test)] mod tests` blocks — see "Unit tests vs integration tests" in QUALITY_AND_STYLE.md for the reasoning and the exceptions. A unit test is justified for high-risk code that has known-answer values and cannot be reached through the public API; when you write one, all of its helpers go inside that `mod tests`.
 - A property that can be asserted at compile time (`const _: () = assert!(...)`) stays a compile-time assertion even when a test also covers it: `cargo mutants` cannot see a const assertion fail, so pair the two rather than trading the guarantee for the coverage.
 - For traits in `core`, the canonical tests live in `core-test-framework` and are invoked from each implementor's integration tests — don't duplicate them per-implementation.

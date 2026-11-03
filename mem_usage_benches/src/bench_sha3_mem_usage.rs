@@ -25,7 +25,7 @@
 #![allow(dead_code)]
 #![allow(unused_imports)]
 
-use bouncycastle::core::traits::{Hash, Suspendable, XOF, XOFSqueezer};
+use bouncycastle::core::traits::{Hash, HashOneShot, Suspendable, XOF, XOFSqueezer};
 use bouncycastle::sha3::kmac::{KMAC128, KMAC256, KMACXOF128, KMACXOF256};
 use bouncycastle::sha3::parallelhash::{
     ParallelHash128, ParallelHash256, ParallelHashXOF128, ParallelHashXOF256,
@@ -68,7 +68,7 @@ fn print_struct_sizes() {
     println!("size_of<PARALLELHASH256>: {}", size_of::<ParallelHash256>());
     println!("size_of<PARALLELHASHXOF128>: {}", size_of::<ParallelHashXOF128>());
     println!("size_of<PARALLELHASHXOF256>: {}", size_of::<ParallelHashXOF256>());
-    println!("size_of<LengthBoundSqueezer>: {}", size_of::<CSHAKESqueezer<SHAKE128Params>>());
+    println!("size_of<CSHAKESqueezer>: {}", size_of::<CSHAKESqueezer<SHAKE128Params>>());
 }
 
 fn bench_do_nothing() {
@@ -81,7 +81,7 @@ fn bench_sha3_256_hash() {
     eprintln!("SHA3-256/hash");
 
     let mut out = [0u8; 32];
-    SHA3_256::new().hash_out(&MSG, &mut out);
+    SHA3_256::hash_out(&MSG, &mut out);
     println!("{:x?}", out);
 }
 
@@ -89,7 +89,7 @@ fn bench_sha3_512_hash() {
     eprintln!("SHA3-512/hash");
 
     let mut out = [0u8; 64];
-    SHA3_512::new().hash_out(&MSG, &mut out);
+    SHA3_512::hash_out(&MSG, &mut out);
     println!("{:x?}", out);
 }
 

@@ -9,11 +9,10 @@
 //! as part of the library's public API. See [`bouncycastle_hmac`] for the full description of the
 //! three-phase [`MAC`] lifecycle, key typing and suspend/resume.
 //!
-//! The key buffer length is the underlying hash's block length: per RFC 2104, a key no longer than
-//! the block is used verbatim, and only longer keys are pre-hashed down to the output length, so the
-//! buffer must be able to hold a full block. It is taken from [`HashAlgParams::BLOCK_LEN`] -- the
-//! 512-bit block GB/T 32905-2016 s. 5.2 pads to -- rather than restated as a literal so the two
-//! cannot drift apart.
+//! A key of any length is accepted: per RFC 2104, a key longer than the hash's block -- the 512-bit
+//! block GB/T 32905-2016 s. 5.2 pads to -- is pre-hashed to the output length. The key's two pad
+//! states are computed once, when an [`HmacKey`](bouncycastle_hmac::HmacKey) is built or a worker
+//! is constructed from key material.
 //!
 //! # Usage Examples
 //!
@@ -59,14 +58,17 @@ use bouncycastle_hmac::MIN_FIPS_DIGEST_LEN;
 /*** String constants ***/
 /// Algorithm name string for HMAC-SM3, as used by the factories and CLI.
 pub const HMAC_SM3_NAME: &str = "HMAC-SM3";
+/// The name of HKDF over SM3, for `HMACParams::HKDF_ALG_NAME`.
+pub const HKDF_SM3_NAME: &str = "HKDF-SM3";
 
 /*** Type aliases ***/
 /// Public type for HMAC using SM3.
 #[allow(non_camel_case_types)]
-pub type HMAC_SM3 = HMAC<SM3, { <SM3 as HashAlgParams>::BLOCK_LEN }>;
+pub type HMAC_SM3 = HMAC<SM3>;
 impl HMACParams for SM3 {
     type MACKey = KeyMaterial<{ <SM3 as HashAlgParams>::OUTPUT_LEN }>;
     const HMAC_ALG_NAME: &'static str = HMAC_SM3_NAME;
+    const HKDF_ALG_NAME: &'static str = HKDF_SM3_NAME;
     const HMAC_MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_128bit;
     /// Assigned by the Chinese OSCCA (GM/T 0006): hmac-sm3 { sm3 2 } = 1.2.156.10197.1.401.2
     const HMAC_OID: &'static [u32] = &[1, 2, 156, 10197, 1, 401, 2];

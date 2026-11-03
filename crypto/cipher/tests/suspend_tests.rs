@@ -9,7 +9,7 @@
 //! pinned; `bouncycastle-aes` only checks that each alias reaches them.
 
 use bouncycastle_cipher::modes::hazmat::ecb::Ecb;
-use bouncycastle_cipher::modes::{Cbc, CcmPacket, Cfb, Cfb8, Ctr, Gcm};
+use bouncycastle_cipher::modes::{Cbc, CcmDecryptor, CcmEncryptor, Cfb, Cfb8, Ctr, Gcm};
 use bouncycastle_cipher::padding::{PKCS7, PaddedBlockCipherDecryptor, PaddedBlockCipherEncryptor};
 use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
@@ -30,7 +30,9 @@ type ToyCfb<Dir> = Cfb<ToyBlockCipher, Dir, 16, 16>;
 type ToyCfb8<Dir> = Cfb8<ToyBlockCipher, Dir, 16, 16>;
 type ToyCtr<Dir> = Ctr<ToyBlockCipher, Dir, 16, 16, 12>;
 type ToyGcm<Dir> = Gcm<ToyBlockCipher, Dir, 16, 16>;
-type ToyCcm<Dir> = CcmPacket<ToyBlockCipher, Dir, 16, 16, 12, 16>;
+// A 64-byte AAD capacity and 37-byte frames, the message `ccm_both_directions` uses.
+type ToyCcmEnc = CcmEncryptor<ToyBlockCipher, 16, 16, 12, 16, 64, 37>;
+type ToyCcmDec = CcmDecryptor<ToyBlockCipher, 16, 16, 12, 16, 64, 37>;
 type ToyPaddedEnc = PaddedBlockCipherEncryptor<ToyCbc<Encrypting>, PKCS7, 16, 16, 16>;
 type ToyPaddedDec = PaddedBlockCipherDecryptor<ToyCbc<Decrypting>, PKCS7, 16, 16, 16>;
 
@@ -202,27 +204,56 @@ fn ccm_both_directions() {
     let nonce = [0x24u8; 12];
     let aad = b"header";
 
-    let mut enc = ToyCcm::<Encrypting>::new(&key(), &nonce, aad, msg.len()).unwrap();
-    let mut head = msg[..9].to_vec();
-    enc.do_encrypt_inplace(&mut head).unwrap();
-    let tail = round_trip::<{ ToyCcm::<Encrypting>::SUSPENDED_STATE_LEN }, _>(enc, |mut e| {
-        let mut data = msg[9..].to_vec();
-        e.do_encrypt_inplace(&mut data).unwrap();
-        data.extend_from_slice(&e.do_encrypt_final().unwrap());
-        data
+    // Suspended with half the AAD held back and no payload yet, and again mid-payload; both
+    // must continue to the one answer.
+    let mut enc = ToyCcmEnc::do_encrypt_init_nonce(&key(), &nonce).unwrap();
+    enc.do_update_aad(&aad[..3]).unwrap();
+    let sealed = round_trip::<{ ToyCcmEnc::SUSPENDED_STATE_LEN }, _>(enc, |mut e| {
+        e.do_update_aad(&aad[3..]).unwrap();
+        let mut out = vec![0u8; 37];
+        e.do_encrypt_out(&msg, &mut out).unwrap();
+        let (_, _, tag) = e.do_encrypt_final_detached().unwrap();
+        out.extend_from_slice(&tag);
+        out
     });
-    let (ct_tail, tag) = tail.split_at(msg.len() - 9);
+    let mut enc = ToyCcmEnc::do_encrypt_init_nonce(&key(), &nonce).unwrap();
+    enc.do_update_aad(aad).unwrap();
+    let mut head = vec![0u8; 9];
+    enc.do_encrypt_out(&msg[..9], &mut head).unwrap();
+    let tail = round_trip::<{ ToyCcmEnc::SUSPENDED_STATE_LEN }, _>(enc, |mut e| {
+        let mut out = vec![0u8; 28];
+        e.do_encrypt_out(&msg[9..], &mut out).unwrap();
+        let (_, _, tag) = e.do_encrypt_final_detached().unwrap();
+        out.extend_from_slice(&tag);
+        out
+    });
+    assert_eq!([&head[..], &tail[..]].concat(), sealed, "both suspend points give the one answer");
+    let (ct, tag) = sealed.split_at(37);
     let tag: [u8; 16] = tag.try_into().unwrap();
 
-    let mut dec = ToyCcm::<Decrypting>::new(&key(), &nonce, aad, msg.len()).unwrap();
-    dec.do_decrypt_inplace(&mut head).unwrap();
-    let plain = round_trip::<{ ToyCcm::<Decrypting>::SUSPENDED_STATE_LEN }, _>(dec, |mut d| {
-        let mut data = ct_tail.to_vec();
-        d.do_decrypt_inplace(&mut data).unwrap();
-        d.do_decrypt_final(&tag).expect("the tag must verify after a resume");
-        data
+    let mut dec = ToyCcmDec::do_decrypt_init(&key(), &nonce).unwrap();
+    dec.do_update_aad(aad).unwrap();
+    let mut opened_head = vec![0u8; 9];
+    dec.do_decrypt_out(&ct[..9], &mut opened_head).unwrap();
+    let plain = round_trip::<{ ToyCcmDec::SUSPENDED_STATE_LEN }, _>(dec, |mut d| {
+        let mut out = vec![0u8; 28];
+        d.do_decrypt_out(&ct[9..], &mut out).unwrap();
+        d.do_decrypt_final_detached(&tag).expect("the tag must verify after a resume");
+        out
     });
-    assert_eq!(plain, msg[9..]);
+    assert_eq!([&opened_head[..], &plain[..]].concat(), msg);
+
+    // ...and with part of an inline tag already held back at the suspend point.
+    let mut dec = ToyCcmDec::do_decrypt_init(&key(), &nonce).unwrap();
+    dec.do_update_aad(aad).unwrap();
+    let mut opened = vec![0u8; 37];
+    dec.do_decrypt_out(&sealed[..40], &mut opened).unwrap();
+    round_trip::<{ ToyCcmDec::SUSPENDED_STATE_LEN }, _>(dec, |mut d| {
+        d.do_decrypt_out(&sealed[40..], &mut []).unwrap();
+        d.do_decrypt_final().expect("the held-back tag must survive a resume");
+        Vec::new()
+    });
+    assert_eq!(opened, msg);
 }
 
 #[test]

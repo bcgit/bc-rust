@@ -16,6 +16,14 @@ All algorithms with a state that is exercised across multiple API calls -- typic
 `do_final()` pattern -- should implement SerializableState so that the user can pause the execution of this algorithm to
 a cache and resume later.
 
+`Clone` belongs on the types, not on the `core` traits. Every hash and XOF type is `Clone`, so a computation can be
+forked mid-stream and each copy finished on its own; `Hash` itself carries no `Clone` (and no `Default`), because both
+imply `Sized` and would stop the trait from ever being a trait object. Generic code that forks or constructs a hash
+says so where the need is: `H: Hash + Clone`, `H: HashOneShot`. The same rule applies to every `core` trait that is
+meant to be held as `dyn` -- the hash, XOF, cipher and MAC worker traits: no `Clone`, `Default` or `Sized` supertrait,
+no associated constant (`AlgorithmInfo` is the run-time form of `Algorithm`'s), and `where Self: Sized` on any
+receiver-less or provided by-value method, so the streaming core stays dispatchable through `&mut dyn`.
+
 # Quality
 
 ## Tests
@@ -128,9 +136,11 @@ The following prefixes can be applied:
 The following suffixes can be applied
 
 * `_init / _update / _final`: indicates phase of a stateful streaming API. Other verbs can be used here as appropriate
-  to the primitive, such as `absorb / squeeze`, `encrypt / decrypt`, etc. `_init` is typically a static constructor
-  (though exceptions may exist), and `_final` indicates that this function call renders the object unusable afterwards
-  by consuming `self` via a move: `_final(self, ..)`.
+  to the primitive, such as `absorb / squeeze`, `encrypt / decrypt`, etc. For a keyed primitive (a cipher, a MAC, a
+  signature) the worker is constructed by its key object (`create_encryptor`, `create_generator`, `create_signer`) and
+  carries no `_init`; `_init` is for a primitive that builds its own state from its arguments, such as `MuBuilder`.
+  `_final` indicates that this function call renders the object unusable afterwards by consuming `self` via a move:
+  `_final(self, ..)`.
 * `_rng`: indicates that this version of the function sources its random numbers from a provided `&mut dyn RNG` instead
   of
   from the default library RNG. `_rng(.., &mut dyn RNG)`.

@@ -18,7 +18,7 @@ use bouncycastle_core::key_material::KeyMaterial;
 use bouncycastle_core::traits::{
     AEADCipherDecryptor, AEADCipherEncryptor, SymmetricCipherDecryptor,
 };
-use bouncycastle_core_test_framework::FixedSeedRNG;
+use bouncycastle_rng::FixedSeedRNG;
 
 /// The nonce length these vectors use; every group in the ACVP AES-GCM/GMAC sets has `ivLen = 96`.
 #[path = "acvp_helpers.rs"]
@@ -75,7 +75,7 @@ fn run_encrypt<P, const KEY_LEN: usize, const TAG_LEN: usize>(
     let mut ct = vec![0u8; data.len()];
     let (got_iv, written, tag) = Gcm::<P, Encrypting, KEY_LEN, TAG_LEN>::encrypt_detached_rng_out(
         key,
-        &mut FixedSeedRNG::<GCM_NONCE_LEN>::new(iv),
+        &mut FixedSeedRNG::new(iv),
         aad,
         data,
         &mut ct,

@@ -481,7 +481,7 @@ fn aead128_encryptor_decryptor_trait_framework() {
 /// `do_encrypt_final` -- and either must decrypt back to the original plaintext.
 #[test]
 fn aead128_tagged_and_direct_layouts_agree() {
-    use bouncycastle_core_test_framework::FixedSeedRNG;
+    use bouncycastle_rng::FixedSeedRNG;
 
     let km = key_material(&KEY);
     let aad = b"tagged-layout-aad";
@@ -490,11 +490,9 @@ fn aead128_tagged_and_direct_layouts_agree() {
         let pinned = [0x11u8; 16];
 
         // detached tag, streamed
-        let (mut direct_enc, direct_nonce) = Ascon_AEAD128::<Encrypting>::do_encrypt_init_rng(
-            &km,
-            &mut FixedSeedRNG::<16>::new(pinned),
-        )
-        .unwrap();
+        let (mut direct_enc, direct_nonce) =
+            Ascon_AEAD128::<Encrypting>::do_encrypt_init_rng(&km, &mut FixedSeedRNG::new(pinned))
+                .unwrap();
         direct_enc.do_update_aad(aad).unwrap();
         let mut direct_ct = vec![0u8; pt.len()];
         direct_enc.do_encrypt_out(&pt, &mut direct_ct).unwrap();
@@ -505,11 +503,9 @@ fn aead128_tagged_and_direct_layouts_agree() {
         direct_inline.extend_from_slice(&direct_tag);
 
         // inline tag, streamed
-        let (mut tagged_enc, tagged_nonce) = Ascon_AEAD128::<Encrypting>::do_encrypt_init_rng(
-            &km,
-            &mut FixedSeedRNG::<16>::new(pinned),
-        )
-        .unwrap();
+        let (mut tagged_enc, tagged_nonce) =
+            Ascon_AEAD128::<Encrypting>::do_encrypt_init_rng(&km, &mut FixedSeedRNG::new(pinned))
+                .unwrap();
         tagged_enc.do_update_aad(aad).unwrap();
         let mut tagged_out = vec![0u8; Ascon_AEAD128::<Encrypting>::encrypt_out_len(pt.len())];
         let written = tagged_enc.do_encrypt_out(&pt, &mut tagged_out).unwrap();
@@ -581,7 +577,7 @@ fn aead128_tagged_and_direct_layouts_agree() {
 /// [`SymmetricCipherDecryptor`]: bouncycastle_core::traits::SymmetricCipherDecryptor
 #[test]
 fn aead128_symmetric_cipher_view_matches_kat() {
-    use bouncycastle_core_test_framework::FixedSeedRNG;
+    use bouncycastle_rng::FixedSeedRNG;
 
     let km = key_material(&KEY);
     // The NIST LWC AEAD KAT convention uses Key == Nonce == 000102…0F (i.e. KEY for both).
@@ -595,7 +591,7 @@ fn aead128_symmetric_cipher_view_matches_kat() {
         let mut ct = vec![0u8; Ascon_AEAD128::<Encrypting>::encrypt_out_len(pt.len())];
         let (nonce, n) = Ascon_AEAD128::<Encrypting>::encrypt_rng_out(
             &km,
-            &mut FixedSeedRNG::<16>::new(kat_nonce),
+            &mut FixedSeedRNG::new(kat_nonce),
             &pt,
             &mut ct,
         )

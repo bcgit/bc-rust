@@ -6,6 +6,7 @@ use bouncycastle::hex;
 use bouncycastle::sha3::parallelhash::{ParallelHash128, ParallelHash256};
 use bouncycastle::sha3::tuplehash::{TupleHash128, TupleHash256};
 use bouncycastle::sha3::{SHA3_224, SHA3_256, SHA3_384, SHA3_512, SHAKE128, SHAKE256};
+use core::num::NonZeroUsize;
 use std::process::exit;
 
 use crate::helpers::{stream_hash, stream_xof};
@@ -77,10 +78,10 @@ pub(crate) fn parallelhash_cmd(
     customization: &Option<String>,
     output_hex: bool,
 ) {
-    if block_size == 0 {
+    let Some(block_size) = NonZeroUsize::new(block_size) else {
         eprintln!("Error: --block-size must be greater than zero (SP 800-185 Sec 6.2).");
         exit(-1);
-    }
+    };
     let s = customization.as_deref().unwrap_or("").as_bytes();
     match bit_len {
         128 => {

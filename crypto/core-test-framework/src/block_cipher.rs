@@ -1,12 +1,13 @@
 //! Shared conformance tests for [`BlockCipherEncryptor`] / [`BlockCipherDecryptor`] implementors:
 //! the whole-block refinement of the symmetric cipher traits.
 
-use crate::{DUMMY_SEED, FixedSeedRNG};
+use crate::DUMMY_SEED;
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::hazmat::do_hazardous_operations;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::traits::{BlockCipherDecryptor, BlockCipherEncryptor};
+use bouncycastle_core::traits::{Algorithm, BlockCipherDecryptor, BlockCipherEncryptor};
+use bouncycastle_rng::FixedSeedRNG;
 
 /// Instance of the test framework.
 pub struct TestFrameworkBlockCipher {
@@ -24,8 +25,8 @@ impl TestFrameworkBlockCipher {
         const KEY_LEN: usize,
         const INIT_DATA_LEN: usize,
         const BLOCK_LEN: usize,
-        E: BlockCipherEncryptor<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
-        D: BlockCipherDecryptor<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN>,
+        E: BlockCipherEncryptor<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN> + Algorithm,
+        D: BlockCipherDecryptor<KEY_LEN, INIT_DATA_LEN, BLOCK_LEN> + Algorithm,
     >(
         &self,
     ) {
@@ -100,7 +101,7 @@ impl TestFrameworkBlockCipher {
                     matches!(
                         E::encrypt_rng_inplace(
                             &key,
-                            &mut FixedSeedRNG::<INIT_DATA_LEN>::new([0xA5u8; INIT_DATA_LEN]),
+                            &mut FixedSeedRNG::new([0xA5u8; INIT_DATA_LEN]),
                             &mut bad
                         ),
                         Err(SymmetricCipherError::DataNotBlockAligned)
@@ -126,16 +127,11 @@ impl TestFrameworkBlockCipher {
             let pinned = [0xA5u8; INIT_DATA_LEN];
             let mut expected = *one_block;
             let (mut streamed, iv_streamed) =
-                E::do_encrypt_init_rng(&key, &mut FixedSeedRNG::<INIT_DATA_LEN>::new(pinned))
-                    .unwrap();
+                E::do_encrypt_init_rng(&key, &mut FixedSeedRNG::new(pinned)).unwrap();
             streamed.do_encrypt_blocks_inplace(expected.as_chunks_mut().0).unwrap();
             let mut buf = *one_block;
-            let (n, iv) = E::encrypt_rng_inplace(
-                &key,
-                &mut FixedSeedRNG::<INIT_DATA_LEN>::new(pinned),
-                &mut buf,
-            )
-            .unwrap();
+            let (n, iv) =
+                E::encrypt_rng_inplace(&key, &mut FixedSeedRNG::new(pinned), &mut buf).unwrap();
             assert_eq!(n, BLOCK_LEN, "encrypt_rng must report the number of bytes written");
             assert_eq!(iv, iv_streamed);
             assert_eq!(buf, expected);

@@ -20,7 +20,7 @@
 //! Generation Function -- including which decimal branch it took -- as well as the truncation.
 
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::traits::{Algorithm, Hash, HashAlgParams};
+use bouncycastle_core::traits::{Algorithm, AlgorithmInfo, Hash, HashAlgParams, HashOneShot};
 use bouncycastle_sha2::{SHA512_224, SHA512_224_NAME, SHA512_256, SHA512_256_NAME, SHA512t};
 
 // The generic name and output length must keep reproducing exactly what the two approved
@@ -46,7 +46,7 @@ fn from_hex(s: &str) -> Vec<u8> {
 
 /// Drives one `SHA512t<T>` through the whole [`Hash`] surface and checks every route agrees with
 /// `expected_hex`. `construct` builds a fresh instance for each route.
-fn check<H: Hash + HashAlgParams + Algorithm>(
+fn check<H: HashOneShot + HashAlgParams + Algorithm>(
     construct: impl Fn() -> H,
     input: &[u8],
     expected_hex: &str,
@@ -61,12 +61,12 @@ fn check<H: Hash + HashAlgParams + Algorithm>(
         H::OUTPUT_LEN
     );
 
-    /*** fn hash(self, data: &[u8]) -> Vec<u8> ***/
-    assert_eq!(construct().hash(input), expected, "{}: hash()", H::ALG_NAME);
+    /*** fn hash(data: &[u8]) -> Vec<u8> ***/
+    assert_eq!(H::hash(input), expected, "{}: hash()", H::ALG_NAME);
 
-    /*** fn hash_out(self, data: &[u8], output: &mut [u8]) -> usize ***/
+    /*** fn hash_out(data: &[u8], output: &mut [u8]) -> usize ***/
     let mut out = vec![0u8; H::OUTPUT_LEN];
-    assert_eq!(construct().hash_out(input, &mut out), H::OUTPUT_LEN, "{}: hash_out()", H::ALG_NAME);
+    assert_eq!(H::hash_out(input, &mut out), H::OUTPUT_LEN, "{}: hash_out()", H::ALG_NAME);
     assert_eq!(out, expected, "{}: hash_out()", H::ALG_NAME);
 
     /*** streaming in one do_update, then do_final() ***/
@@ -266,11 +266,11 @@ fn output_buffer_shorter_and_longer_than_the_digest() {
     let full = from_hex("44ab9c7c3eb2da370d2c0ed7"); // SHA512/96("")
 
     let mut short = [0u8; 5];
-    assert_eq!(SHA512t::<96>::new().hash_out(b"", &mut short), 5);
+    assert_eq!(SHA512t::<96>::hash_out(b"", &mut short), 5);
     assert_eq!(short, full[..5]);
 
     let mut long = [0xAAu8; 20];
-    assert_eq!(SHA512t::<96>::new().hash_out(b"", &mut long), 12);
+    assert_eq!(SHA512t::<96>::hash_out(b"", &mut long), 12);
     assert_eq!(&long[..12], &full[..]);
     assert_eq!(&long[12..], &[0u8; 8], "past the digest the buffer is zero-filled");
 }

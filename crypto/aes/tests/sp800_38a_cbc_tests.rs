@@ -22,8 +22,8 @@ use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::hazmat::ElectronicCodeBook;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::traits::{BlockCipherDecryptor, BlockCipherEncryptor};
-use bouncycastle_core_test_framework::FixedSeedRNG;
 use bouncycastle_hex as hex;
+use bouncycastle_rng::FixedSeedRNG;
 
 const BLOCK_LEN: usize = 16;
 
@@ -104,7 +104,7 @@ where
     // All four blocks in one call.
     let (mut enc, got_iv) = Cbc::<P, Encrypting, KEY_LEN, BLOCK_LEN>::do_encrypt_init_rng(
         &key,
-        &mut FixedSeedRNG::<BLOCK_LEN>::new(iv),
+        &mut FixedSeedRNG::new(iv),
     )
     .unwrap();
     assert_eq!(got_iv, iv, "{section}: the pinned RNG should produce the vector's IV");
@@ -115,7 +115,7 @@ where
     // One block at a time.
     let (mut enc, _) = Cbc::<P, Encrypting, KEY_LEN, BLOCK_LEN>::do_encrypt_init_rng(
         &key,
-        &mut FixedSeedRNG::<BLOCK_LEN>::new(iv),
+        &mut FixedSeedRNG::new(iv),
     )
     .unwrap();
     for (i, (p, c)) in pt.iter().zip(ct.iter()).enumerate() {
@@ -218,7 +218,7 @@ fn cbc_differs_from_ecb_by_the_iv() {
     // CBC's C1 = CIPH_K(P1 XOR IV) is the F.2.1 answer, and differs.
     let (mut enc, _) = Cbc::<AES128Internal, Encrypting, 16, 16>::do_encrypt_init_rng(
         &key,
-        &mut FixedSeedRNG::<16>::new(iv),
+        &mut FixedSeedRNG::new(iv),
     )
     .unwrap();
     let mut cbc = block(PLAINTEXTS[0]);

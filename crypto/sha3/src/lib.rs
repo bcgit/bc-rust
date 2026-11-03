@@ -17,11 +17,11 @@
 //!
 //! The simplest usage is via the one-shot functions.
 //! ```
-//! use bouncycastle_core::traits::Hash;
+//! use bouncycastle_core::traits::HashOneShot;
 //! use bouncycastle_sha3 as sha3;
 //!
 //! let data: &[u8] = b"Hello, world!";
-//! let output: Vec<u8> = sha3::SHA3_256::new().hash(data);
+//! let output: Vec<u8> = sha3::SHA3_256::hash(data);
 //! ```
 //!
 //! More advanced usage will require creating a SHA3 or SHAKE object to hold state between successive calls,
@@ -102,7 +102,7 @@
 //! Because [`XOF`] extends [`Hash`], SHAKE can also be used wherever a hash is wanted:
 //! [`Hash::do_final`] produces the nominal digest size, 32 bytes for SHAKE128 and 64 for SHAKE256
 //! (the length at which the output carries the full security level), and the one-shot
-//! [`Hash::hash`] does the same.
+//! [`HashOneShot::hash`] does the same.
 //!
 //! ## KDF
 //! SHA3 offers Key Derivation Functions in the form of KDF, which is accessed through the [`KDF`] trait,
@@ -138,12 +138,10 @@
 //! Each takes a customization string `S`, which may be empty; instances with
 //! different `S` are unrelated functions (SP 800-185 Sec 8.2.2).
 //!
-//! The core building block is "customizable SHAKE" or "cSHAKE", which is implemented in this crate
-//! but not intended for direct use since NIST SP 800-185 §3.4 says:
-//!
-//! > The cSHAKE function includes an input string that may be used to provide a function name (N).
-//!   This is intended for use by NIST in defining SHA-3-derived functions, and should only be set to
-//!   values defined by NIST
+//! The building block is cSHAKE ([`CSHAKE128`], [`CSHAKE256`]), a XOF the caller customizes with
+//! `S`. Its other string, the function name `N`, is not for callers: SP 800-185 Sec 3.2 has it
+//! "used by NIST to define functions based on cSHAKE. When no function other than cSHAKE is
+//! desired, N is set to the empty string." Pass `N` empty and put everything of your own in `S`.
 //!
 //! See:
 //!
@@ -194,7 +192,7 @@
 //! | Object                                                          | Size (bytes) |
 //! |-----------------------------------------------------------------|--------------|
 //! | `SHA3_224` .. `SHA3_512`, `SHAKE128/256`, `SHAKESqueezer`       | 440          |
-//! | `CSHAKE128/256`, `TUPLEHASHXOF128/256`, `LengthBoundSqueezer`   | 448          |
+//! | `CSHAKE128/256`, `TUPLEHASHXOF128/256`, `CSHAKESqueezer`        | 448          |
 //! | `KMACXOF128/256`, `TUPLEHASH128/256`                            | 456          |
 //! | `KMAC128/256`                                                   | 464          |
 //! | `PARALLELHASHXOF128/256`                                        | 912          |
@@ -205,7 +203,7 @@
 //! | State                                                           | Size (bytes) |
 //! |-----------------------------------------------------------------|--------------|
 //! | SHA3, SHAKE and `SHAKESqueezer`                                 | 415          |
-//! | cSHAKE, KMACXOF, TupleHashXOF, `LengthBoundSqueezer`            | 416          |
+//! | cSHAKE, KMACXOF, TupleHashXOF, `CSHAKESqueezer`                 | 416          |
 //! | KMAC, TupleHash                                                 | 424          |
 //! | ParallelHashXOF                                                 | 852          |
 //! | ParallelHash                                                    | 860          |
@@ -237,9 +235,7 @@
 
 #![forbid(unsafe_code)]
 #![forbid(missing_docs)]
-#![allow(private_bounds)]
 
-use crate::keccak::KeccakSize;
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{Algorithm, AlgorithmOID, HashAlgParams};
 
@@ -249,7 +245,7 @@ use bouncycastle_core::errors::HashError;
 #[allow(unused_imports)]
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 #[allow(unused_imports)]
-use bouncycastle_core::traits::{Hash, KDF, MAC, Suspendable, XOF, XOFSqueezer};
+use bouncycastle_core::traits::{Hash, HashOneShot, KDF, MAC, Suspendable, XOF, XOFSqueezer};
 // end of doc-only imports
 
 pub mod hmac;
@@ -277,15 +273,15 @@ pub const SHAKE128_NAME: &str = "SHAKE128";
 pub const SHAKE256_NAME: &str = "SHAKE256";
 
 /*** pub types ***/
-pub use keccak::SUSPENDED_SHA3_STATE_LEN;
+pub use keccak::{KeccakSize, SUSPENDED_SHA3_STATE_LEN};
 
 pub use sha3::SHA3Internal;
 
 pub use shake::{SHAKEInternal, SHAKESqueezer};
 
 pub use cshake::{
-    CSHAKE128, CSHAKE256, CSHAKEInternal, CSHAKESqueezer, SUSPENDED_CSHAKE_STATE_LEN,
-    SUSPENDED_LENGTH_BOUND_SQUEEZER_STATE_LEN,
+    CSHAKE128, CSHAKE256, CSHAKEInternal, CSHAKESqueezer, SUSPENDED_CSHAKE_SQUEEZER_STATE_LEN,
+    SUSPENDED_CSHAKE_STATE_LEN,
 };
 
 /// Public type for SHA3_224.
@@ -303,8 +299,14 @@ pub type SHAKE256 = SHAKEInternal<SHAKE256Params>;
 
 /*** Param traits ***/
 
-/// Private (sealed) trait on purpose so that only the NIST-approved params can be used.
-trait SHA3Params: HashAlgParams + Clone {
+mod sealed {
+    pub trait Sealed {}
+}
+
+/// The parameter set of a SHA-3 hash. Sealed: the only implementations are the four FIPS 202
+/// parameter sets in this crate, so `SHA3Internal` cannot be instantiated over anything else.
+pub trait SHA3Params: HashAlgParams + Clone + sealed::Sealed {
+    /// The security strength, which fixes the capacity and the rate.
     const SIZE: KeccakSize;
     /// A tag, unique across all SHA3 *and* SHAKE variants, identifying which variant produced a
     /// serialized state. Distinguishing same-rate variants (e.g. SHA3-256 vs SHAKE256) requires
@@ -330,6 +332,7 @@ impl HashAlgParams for SHA3_224Params {
     const OUTPUT_LEN: usize = 28;
     const BLOCK_LEN: usize = 144; // FIPS 202 Table 3
 }
+impl sealed::Sealed for SHA3_224Params {}
 impl SHA3Params for SHA3_224Params {
     const SIZE: KeccakSize = KeccakSize::_224;
     const STATE_TAG: u8 = 1;
@@ -352,6 +355,7 @@ impl HashAlgParams for SHA3_256Params {
     const OUTPUT_LEN: usize = 32;
     const BLOCK_LEN: usize = 136; // FIPS 202 Table 3
 }
+impl sealed::Sealed for SHA3_256Params {}
 impl SHA3Params for SHA3_256Params {
     const SIZE: KeccakSize = KeccakSize::_256;
     const STATE_TAG: u8 = 2;
@@ -373,6 +377,7 @@ impl HashAlgParams for SHA3_384Params {
     const OUTPUT_LEN: usize = 48;
     const BLOCK_LEN: usize = 104; // FIPS 202 Table 3
 }
+impl sealed::Sealed for SHA3_384Params {}
 impl SHA3Params for SHA3_384Params {
     const SIZE: KeccakSize = KeccakSize::_384;
     const STATE_TAG: u8 = 3;
@@ -394,6 +399,7 @@ impl HashAlgParams for SHA3_512Params {
     const OUTPUT_LEN: usize = 64;
     const BLOCK_LEN: usize = 72; // FIPS 202 Table 3
 }
+impl sealed::Sealed for SHA3_512Params {}
 impl SHA3Params for SHA3_512Params {
     const SIZE: KeccakSize = KeccakSize::_512;
     const STATE_TAG: u8 = 4;
@@ -405,14 +411,16 @@ impl AlgorithmOID for SHA3_512 {
         &[0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x0a];
 }
 
-/// Private (sealed) trait on purpose so that only the NIST-approved params can be used.
-trait SHAKEParams: Algorithm + Clone {
+/// The parameter set of a SHAKE, and so of every SP 800-185 function built on it. Sealed, as
+/// [`SHA3Params`] is: the two FIPS 202 parameter sets are the only implementations.
+pub trait SHAKEParams: Algorithm + Clone + sealed::Sealed {
+    /// The security strength, which fixes the capacity and the rate.
     const SIZE: KeccakSize;
     /// See [`SHA3Params::STATE_TAG`]. Must be distinct from every SHA3 *and* SHAKE variant's tag.
     const STATE_TAG: u8;
     /// The sponge rate in bytes: `(1600 - 2c) / 8`, 168 for SHAKE128 and 136 for SHAKE256.
     /// SP 800-185 Sec 3.3 pads cSHAKE's encoded strings to a multiple of it.
-    const RATE_BYTES: usize = (1600 - ((Self::SIZE as usize) << 1)) / 8;
+    const RATE_BYTES: usize = Self::SIZE.rate_bits() / 8;
     /// The name of the cSHAKE built on this parameter set.
     const CSHAKE_ALG_NAME: &'static str;
     /// The name of the KMAC built on this parameter set.
@@ -431,14 +439,22 @@ trait SHAKEParams: Algorithm + Clone {
     /// which follow it in the order below. The same rule as [`SHA3Params::STATE_TAG`]: distinct
     /// from every other tag in the crate, and never reused.
     const SP800_185_STATE_TAG_BASE: u8;
+    /// The state tag of cSHAKE.
     const CSHAKE_STATE_TAG: u8 = Self::SP800_185_STATE_TAG_BASE;
+    /// The state tag of KMAC.
     const KMAC_STATE_TAG: u8 = Self::SP800_185_STATE_TAG_BASE + 1;
+    /// The state tag of KMACXOF.
     const KMACXOF_STATE_TAG: u8 = Self::SP800_185_STATE_TAG_BASE + 2;
+    /// The state tag of TupleHash.
     const TUPLEHASH_STATE_TAG: u8 = Self::SP800_185_STATE_TAG_BASE + 3;
+    /// The state tag of TupleHashXOF.
     const TUPLEHASHXOF_STATE_TAG: u8 = Self::SP800_185_STATE_TAG_BASE + 4;
+    /// The state tag of ParallelHash.
     const PARALLELHASH_STATE_TAG: u8 = Self::SP800_185_STATE_TAG_BASE + 5;
+    /// The state tag of ParallelHashXOF.
     const PARALLELHASHXOF_STATE_TAG: u8 = Self::SP800_185_STATE_TAG_BASE + 6;
-    const LENGTH_BOUND_SQUEEZER_STATE_TAG: u8 = Self::SP800_185_STATE_TAG_BASE + 7;
+    /// The state tag of [`CSHAKESqueezer`].
+    const CSHAKE_SQUEEZER_STATE_TAG: u8 = Self::SP800_185_STATE_TAG_BASE + 7;
 }
 /// The parameters for SHAKE128.
 #[derive(Clone)]
@@ -447,6 +463,7 @@ impl Algorithm for SHAKE128Params {
     const ALG_NAME: &'static str = SHAKE128_NAME;
     const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_128bit;
 }
+impl sealed::Sealed for SHAKE128Params {}
 impl SHAKEParams for SHAKE128Params {
     const SIZE: KeccakSize = KeccakSize::_128;
     const STATE_TAG: u8 = 5;
@@ -472,6 +489,7 @@ impl Algorithm for SHAKE256Params {
     const ALG_NAME: &'static str = SHAKE256_NAME;
     const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_256bit;
 }
+impl sealed::Sealed for SHAKE256Params {}
 impl SHAKEParams for SHAKE256Params {
     const SIZE: KeccakSize = KeccakSize::_256;
     const STATE_TAG: u8 = 6;

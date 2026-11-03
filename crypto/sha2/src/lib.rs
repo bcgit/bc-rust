@@ -6,18 +6,18 @@
 //! * HMAC_SHA2* [`MAC`] functions.
 //! * HKDF-SHA2* [`KDF`] functions.
 //!
-//! # Examples
+//! # Usage Examples
 //! ## Hash
 //! Hash functionality is accessed via the [`bouncycastle_core::traits::Hash`] trait,
 //! which is implemented by all the SHA2 primitives.
 //!
 //! The simplest usage is via the static functions.
 //! ```
-//! use bouncycastle_core::traits::Hash;
+//! use bouncycastle_core::traits::HashOneShot;
 //! use bouncycastle_sha2 as sha2;
 //!
 //! let data: &[u8] = b"Hello, world!";
-//! let output: Vec<u8> = sha2::SHA256::new().hash(data);
+//! let output: Vec<u8> = sha2::SHA256::hash(data);
 //! ```
 //!
 //! More advanced usage will require creating a SHA2 object to hold state between successive calls,
@@ -102,7 +102,7 @@
 //! | Object                                          | Size (bytes) |
 //! |-------------------------------------------------|--------------|
 //! | `SHA224`, `SHA256`                              | 112          |
-//! | `SHA384`, `SHA512` (incl. `SHA512_t` instances  | 208          |
+//! | `SHA384`, `SHA512`, `SHA512t<T>`                 | 208          |
 //! | Suspended `SHA224`/`SHA256` state               | 108          |
 //! | Suspended `SHA384`/`SHA512`/`SHA512t<T>` state  | 204          |
 //!
@@ -129,12 +129,12 @@
 //!   zeroized on drop. Transient copies (working variables and message schedule) in registers/stack
 //!   locals during compression are not zeroized.
 //! * The implementation contains no data-dependent branches or table lookups.
-//! * Messages up to 2^64 bytes are supported (FIPS 180-4 permits 2^64 bits for SHA-224/256 and
-//!   2^128 bits for SHA-384/512 and SHA-512/t; the SHA-512 family limit here is 2^67 bits).
+//! * Message length: FIPS 180-4 permits 2^64 bits for SHA-224/256 and 2^128 bits for SHA-384/512
+//!   and SHA-512/t. This implementation supports 2^61 - 1 bytes for SHA-224/256 (the standard's
+//!   limit) and 2^64 - 1 bytes (2^67 bits) for the SHA-512 family, its byte counter's range.
 
 #![forbid(unsafe_code)]
 #![forbid(missing_docs)]
-#![allow(private_bounds)]
 
 mod sha256;
 mod sha512;
@@ -232,15 +232,15 @@ pub type SHA512 = SHA512Internal<SHA512Params>;
 /// # Example
 ///
 /// ```
-/// use bouncycastle_core::traits::{Algorithm, Hash};
+/// use bouncycastle_core::traits::{Algorithm, HashOneShot};
 /// use bouncycastle_sha2::{SHA512_256, SHA512t};
 ///
 /// // SHA512t<256> *is* SHA512_256.
-/// let digest = SHA512_256::new().hash(b"abc");
-/// assert_eq!(SHA512t::<256>::new().hash(b"abc"), digest);
+/// let digest = SHA512_256::hash(b"abc");
+/// assert_eq!(SHA512t::<256>::hash(b"abc"), digest);
 ///
 /// // A custom truncation: 96 bits, so a 12-byte digest.
-/// let digest = SHA512t::<96>::new().hash(b"abc");
+/// let digest = SHA512t::<96>::hash(b"abc");
 /// assert_eq!(digest.len(), 12);
 /// assert_eq!(<SHA512t<96> as Algorithm>::ALG_NAME, "SHA512/96");
 /// ```
@@ -254,15 +254,26 @@ pub type SHA512_224 = SHA512t<224>;
 pub type SHA512_256 = SHA512t<256>;
 
 /*** Param traits ***/
+mod sealed {
+    /// Prevents a parameter set from being defined outside this crate: the five marker types in
+    /// `lib.rs` are the only implementations.
+    pub trait Sealed {}
+}
+impl sealed::Sealed for SHA224Params {}
+impl sealed::Sealed for SHA256Params {}
+impl sealed::Sealed for SHA384Params {}
+impl sealed::Sealed for SHA512Params {}
+impl<const T: usize> sealed::Sealed for SHA512tParams<T> {}
+
 /// The SHA-256 family (SHA-224, SHA-256) shares one compression function and differs only in the
 /// initial hash value and the output truncation, so each member supplies its H(0) here.
 ///
-/// Crate-private (aka "sealed") on purpose: it cannot be implemented outside this crate, so the
-/// only parameter sets that exist are the NIST-approved ones below.
+/// Sealed: it cannot be implemented outside this crate, so the only parameter sets that exist are
+/// the NIST-approved ones below.
 ///
 /// `Clone` because [`Hash`] requires it: a hash mid-stream can be forked and finished several
 /// ways from one absorbed prefix.
-trait SHA256InitValue: HashAlgParams + Clone {
+pub trait SHA256InitValue: HashAlgParams + Clone + sealed::Sealed {
     /// The initial hash value H(0), FIPS 180-4 s. 5.3.2 / 5.3.3.
     const H0: [u32; 8];
 }
@@ -270,8 +281,8 @@ trait SHA256InitValue: HashAlgParams + Clone {
 /// The SHA-512 family (SHA-384, SHA-512, SHA-512/t) shares one compression function and differs
 /// only in the initial hash value and the output truncation, so each member supplies its H(0) here.
 ///
-/// Crate-private for the same reason as [`SHA256InitValue`], and `Clone` for the same reason.
-trait SHA512InitValue: HashAlgParams + Clone {
+/// Sealed for the same reason as [`SHA256InitValue`], and `Clone` for the same reason.
+pub trait SHA512InitValue: HashAlgParams + Clone + sealed::Sealed {
     /// The initial hash value H(0), FIPS 180-4 s. 5.3.4 / 5.3.5 / 5.3.6.
     const H0: [u64; 8];
 }
@@ -391,6 +402,17 @@ impl SHA512InitValue for SHA512Params {
 ///   whole number of bytes.
 ///
 /// See [`SHA512t`] for the accepted range and for what the t-specific initial hash value is.
+///
+/// HMAC and HKDF exist only over the two approved truncations, [`SHA512_224`] and [`SHA512_256`],
+/// which are the `SHA512t` instances implementing `HMACParams`; any other `T`, including the ones
+/// whose digest is shorter than HMAC's 32-bit floor, has no HMAC key type:
+///
+/// ```compile_fail,E0277
+/// use bouncycastle_core::symmetric_key::FromAnyKeyMaterial;
+/// use bouncycastle_hmac::HmacKey;
+/// use bouncycastle_sha2::SHA512t;
+/// let _ = <HmacKey<SHA512t<16>> as FromAnyKeyMaterial>::from_key_material;
+/// ```
 #[derive(Clone)]
 pub struct SHA512tParams<const T: usize>;
 

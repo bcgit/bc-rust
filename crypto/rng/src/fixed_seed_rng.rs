@@ -1,4 +1,5 @@
-//! A deterministic fake [`RNG`] for reproducible tests.
+//! A deterministic [`RNG`] that hands back the bytes it was given, for known-answer and other
+//! reproducible tests.
 
 use bouncycastle_core::errors::{KeyMaterialError, RNGError};
 use bouncycastle_core::hazmat::do_hazardous_operations;
@@ -6,32 +7,40 @@ use bouncycastle_core::key_material::{KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::RNG;
 
-/// A test-only fake [`RNG`] that produces a fixed, fully deterministic byte stream.
+/// A fake [`RNG`] that produces a fixed, fully deterministic byte stream: the bytes a test
+/// supplies come back out, so a known-answer vector's nonce, `rnd` or seed can be fed through an
+/// algorithm's ordinary `rng`-taking entry point.
 ///
-/// The stream is the `SEED_LEN`-byte seed repeated indefinitely. A single internal counter is
-/// shared across every [`RNG`] method, so each byte handed out — whether through
-/// [`RNG::next_bytes_out`], [`RNG::next_bytes`], [`RNG::next_int`], or [`RNG::fill_keymaterial_out`] —
-/// advances the same stream. Two instances built from the same seed therefore emit identical
-/// streams, which is what makes RNG-driven operations reproducible (and comparable against their
-/// seed/`m`-driven internal counterparts) in tests.
+/// The stream is the given bytes repeated indefinitely. A single internal cursor is shared across
+/// every [`RNG`] method, so each byte handed out — whether through [`RNG::next_bytes_out`],
+/// [`RNG::next_bytes`], [`RNG::next_int`], or [`RNG::fill_keymaterial_out`] — advances the same
+/// stream. Two instances built from the same bytes therefore emit identical streams, which is
+/// what makes RNG-driven operations reproducible (and comparable against their seed/`m`-driven
+/// internal counterparts) in tests.
 ///
-/// This is a deterministic stub for tests only; it is in no way a secure RNG.
-pub struct FixedSeedRNG<const SEED_LEN: usize> {
-    seed: [u8; SEED_LEN],
-    counter: usize,
+/// `B` is whatever holds the bytes: borrow them (`FixedSeedRNG::new(&vector.rnd)`), and the RNG
+/// is a slice and a cursor whatever their length; or hand it an array when the value has to be
+/// owned. Drawing from an empty `B` panics.
+///
+/// This is a deterministic stub for tests only; it is in no way a secure RNG, and nothing outside
+/// a test should construct one.
+pub struct FixedSeedRNG<B: AsRef<[u8]>> {
+    bytes: B,
+    pos: usize,
     security_strength: SecurityStrength,
 }
 
-impl<const SEED_LEN: usize> FixedSeedRNG<SEED_LEN> {
-    /// Create an instance that emits `seed` repeated indefinitely, starting from its first byte.
-    pub fn new(seed: [u8; SEED_LEN]) -> Self {
-        Self { seed, counter: 0, security_strength: SecurityStrength::_256bit }
+impl<B: AsRef<[u8]>> FixedSeedRNG<B> {
+    /// Create an instance that emits `bytes` repeated indefinitely, starting from the first.
+    pub fn new(bytes: B) -> Self {
+        Self { bytes, pos: 0, security_strength: SecurityStrength::_256bit }
     }
 
-    /// Pull the next byte from the deterministic stream and advance the counter.
+    /// Pull the next byte from the deterministic stream and advance the cursor.
     fn next_byte(&mut self) -> u8 {
-        let b = self.seed[self.counter % SEED_LEN];
-        self.counter += 1;
+        let bytes = self.bytes.as_ref();
+        let b = bytes[self.pos % bytes.len()];
+        self.pos += 1;
         b
     }
 
@@ -41,7 +50,7 @@ impl<const SEED_LEN: usize> FixedSeedRNG<SEED_LEN> {
     }
 }
 
-impl<const SEED_LEN: usize> RNG for FixedSeedRNG<SEED_LEN> {
+impl<B: AsRef<[u8]>> RNG for FixedSeedRNG<B> {
     /// No-op: this fake RNG ignores reseeding, since its stream is fixed by construction.
     fn add_seed_keymaterial(
         &mut self,
@@ -91,6 +100,6 @@ impl<const SEED_LEN: usize> RNG for FixedSeedRNG<SEED_LEN> {
     }
 
     fn security_strength(&self) -> SecurityStrength {
-        self.security_strength.clone()
+        self.security_strength
     }
 }

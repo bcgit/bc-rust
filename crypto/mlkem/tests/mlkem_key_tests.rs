@@ -15,6 +15,7 @@ mod mlkem_key_tests {
         MLKEM512PrivateKey, MLKEM512PublicKey, MLKEM768PrivateKey, MLKEM768PublicKey,
         MLKEM1024PrivateKey, MLKEM1024PublicKey,
     };
+    use bouncycastle_rng::DefaultRNG;
 
     #[test]
     fn core_framework_tests() {
@@ -23,12 +24,12 @@ mod mlkem_key_tests {
         let tf = TestFrameworkKEMKeys::new();
 
         tf.test_keys::<MLKEM512PublicKey, MLKEM512PrivateKey, MLKEM512_PK_LEN, MLKEM512_SK_LEN>(
-            MLKEM512::keygen,
+            || MLKEM512::keygen(&mut DefaultRNG::default()),
         );
         tf.test_keys::<MLKEM768PublicKey, MLKEM768PrivateKey, MLKEM768_PK_LEN, MLKEM768_SK_LEN>(
-            MLKEM768::keygen,
+            || MLKEM768::keygen(&mut DefaultRNG::default()),
         );
-        tf.test_keys::<MLKEM1024PublicKey, MLKEM1024PrivateKey, MLKEM1024_PK_LEN, MLKEM1024_SK_LEN>(MLKEM1024::keygen);
+        tf.test_keys::<MLKEM1024PublicKey, MLKEM1024PrivateKey, MLKEM1024_PK_LEN, MLKEM1024_SK_LEN>(|| MLKEM1024::keygen(&mut DefaultRNG::default()));
     }
 
     #[test]
@@ -177,7 +178,7 @@ mod mlkem_key_tests {
         assert!(sk.seed().is_some());
         assert_eq!(sk.seed().as_ref().unwrap(), &seed);
 
-        // When you pop the seed out, its SecurityStrength will match the ML-DSA algorithm
+        // When you pop the seed out, its SecurityStrength will match the ML-KEM parameter set
         let (_pk, sk) = MLKEM512::keygen_from_seed(&seed).unwrap();
         assert_eq!(sk.seed().unwrap().security_strength(), SecurityStrength::_128bit);
 
@@ -223,11 +224,33 @@ mod mlkem_key_tests {
         };
     }
 
+    /// FIPS 203 Section 7.3 (ByteDecode12 is not one-to-one above q - 1): a decapsulation key whose
+    /// first 12-bit coefficient is q must be refused by the coefficient check itself. An all-0xFF
+    /// key is caught earlier by the H(ek) mismatch, so this is the case that reaches the check.
+    #[test]
+    fn private_key_coefficient_equal_to_q_is_refused() {
+        let (_pk, sk) = MLKEM512::keygen(&mut DefaultRNG::default()).unwrap();
+        let mut bytes = sk.encode();
+        // ByteEncode12 is little-endian: coefficient 0 is byte 0 and the low nibble of byte 1.
+        let coeff: u16 = 3329;
+        bytes[0] = (coeff & 0xFF) as u8;
+        bytes[1] = (bytes[1] & 0xF0) | ((coeff >> 8) as u8);
+        match MLKEM512PrivateKey::from_bytes(&bytes) {
+            Err(KEMError::DecodingError(_)) => { /* good */ }
+            other => panic!("expected a DecodingError, got {other:?}"),
+        }
+        // and q - 1 is in range
+        let coeff: u16 = 3328;
+        bytes[0] = (coeff & 0xFF) as u8;
+        bytes[1] = (bytes[1] & 0xF0) | ((coeff >> 8) as u8);
+        MLKEM512PrivateKey::from_bytes(&bytes).unwrap();
+    }
+
     #[test]
     fn test_eq() {
         // MLKEM512
 
-        let (pk, sk) = MLKEM512::keygen().unwrap();
+        let (pk, sk) = MLKEM512::keygen(&mut DefaultRNG::default()).unwrap();
 
         // basic equality checks
         assert_eq!(pk, pk);
@@ -249,7 +272,7 @@ mod mlkem_key_tests {
 
         // MLKEM768
 
-        let (pk, sk) = MLKEM768::keygen().unwrap();
+        let (pk, sk) = MLKEM768::keygen(&mut DefaultRNG::default()).unwrap();
 
         // basic equality checks
         assert_eq!(pk, pk);
@@ -271,7 +294,7 @@ mod mlkem_key_tests {
 
         // MLKEM1024
 
-        let (pk, sk) = MLKEM1024::keygen().unwrap();
+        let (pk, sk) = MLKEM1024::keygen(&mut DefaultRNG::default()).unwrap();
 
         // basic equality checks
         assert_eq!(pk, pk);
@@ -293,7 +316,7 @@ mod mlkem_key_tests {
 
         /* Expanded keys */
 
-        let (pk, sk) = MLKEM512::keygen().unwrap();
+        let (pk, sk) = MLKEM512::keygen(&mut DefaultRNG::default()).unwrap();
         let pk_expanded = MLKEM512PublicKeyExpanded::from_bytes(&pk.encode()).unwrap();
         let sk_expanded = MLKEM512PrivateKeyExpanded::from_bytes(&sk.encode()).unwrap();
 
@@ -321,9 +344,9 @@ mod mlkem_key_tests {
     /// Tests that no private data is displayed
     #[test]
     fn test_display() {
-        let (pk512, sk512) = MLKEM512::keygen().unwrap();
-        let (pk768, sk768) = MLKEM768::keygen().unwrap();
-        let (pk1024, sk1024) = MLKEM1024::keygen().unwrap();
+        let (pk512, sk512) = MLKEM512::keygen(&mut DefaultRNG::default()).unwrap();
+        let (pk768, sk768) = MLKEM768::keygen(&mut DefaultRNG::default()).unwrap();
+        let (pk1024, sk1024) = MLKEM1024::keygen(&mut DefaultRNG::default()).unwrap();
 
         /*** MLDSAPublicKey ***/
         // fmt
@@ -376,15 +399,15 @@ mod mlkem_key_tests {
         use bouncycastle_mlkem::{MLKEM768PrivateKeyExpanded, MLKEM768PublicKeyExpanded};
         use bouncycastle_mlkem::{MLKEM1024PrivateKeyExpanded, MLKEM1024PublicKeyExpanded};
 
-        let (pk512, sk512) = MLKEM512::keygen().unwrap();
+        let (pk512, sk512) = MLKEM512::keygen(&mut DefaultRNG::default()).unwrap();
         let pk512 = MLKEM512PublicKeyExpanded::from(&pk512);
         let sk512 = MLKEM512PrivateKeyExpanded::from(&sk512);
 
-        let (pk768, sk768) = MLKEM768::keygen().unwrap();
+        let (pk768, sk768) = MLKEM768::keygen(&mut DefaultRNG::default()).unwrap();
         let pk768 = MLKEM768PublicKeyExpanded::from(&pk768);
         let sk768 = MLKEM768PrivateKeyExpanded::from(&sk768);
 
-        let (pk1024, sk1024) = MLKEM1024::keygen().unwrap();
+        let (pk1024, sk1024) = MLKEM1024::keygen(&mut DefaultRNG::default()).unwrap();
         let pk1024 = MLKEM1024PublicKeyExpanded::from(&pk1024);
         let sk1024 = MLKEM1024PrivateKeyExpanded::from(&sk1024);
 

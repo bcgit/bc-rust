@@ -6,7 +6,8 @@
 //! suites in this crate.
 //!
 //! GMAC is GCM with an empty plaintext (SP 800-38D Sec 5.2): the vector's `msg` is the AAD, and the
-//! tag is the whole output. Cases run through the same helpers as `gmac_bc-test-data.rs`. A `valid`
+//! tag is the whole output. Cases run through the same helpers as `gmac_bc-test-data.rs`, and
+//! through `AES*Key<GMAC>` (`common/gmac_helpers.rs`). A `valid`
 //! case must produce exactly `tag`, which must then verify; an `invalid` case must fail the tag
 //! check.
 //!
@@ -15,9 +16,12 @@
 
 #[path = "common/acvp_gcm_helpers.rs"]
 mod acvp_gcm_helpers;
+#[path = "common/gmac_helpers.rs"]
+mod gmac_helpers;
 
 use acvp_gcm_helpers::{GCM_NONCE_LEN, run_decrypt_case, run_encrypt_case};
 use bouncycastle_core_test_framework::test_data_loaders::{Value, hex_field, wycheproof_json};
+use gmac_helpers::run_key_object_case;
 
 #[test]
 fn wycheproof_aes_gmac() {
@@ -48,10 +52,12 @@ fn wycheproof_aes_gmac() {
                 "valid" => {
                     run_encrypt_case(&key, iv, &aad, &[], tag.len(), &[], &tag);
                     run_decrypt_case(&key, iv, &aad, &[], &tag, Some(&[]));
+                    run_key_object_case(&key, iv, &aad, &tag, true);
                     valid_count += 1;
                 }
                 "invalid" => {
                     run_decrypt_case(&key, iv, &aad, &[], &tag, None);
+                    run_key_object_case(&key, iv, &aad, &tag, false);
                     invalid_count += 1;
                 }
                 other => panic!("tcId {tc_id}: unexpected result {other}"),

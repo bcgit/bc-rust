@@ -6,7 +6,7 @@ mod sha3_tests {
         KeyMaterial, KeyMaterial256, KeyMaterial512, KeyMaterialTrait, KeyType,
     };
     use bouncycastle_core::security_strength::SecurityStrength;
-    use bouncycastle_core::traits::{Hash, HashAlgParams, KDF};
+    use bouncycastle_core::traits::{AlgorithmInfo, Hash, HashAlgParams, HashOneShot, KDF};
     use bouncycastle_core_test_framework::DUMMY_SEED;
     use bouncycastle_core_test_framework::hash::TestFrameworkHash;
     use bouncycastle_core_test_framework::kdf::TestFrameworkKDF;
@@ -44,44 +44,44 @@ mod sha3_tests {
     #[test]
     fn test_static_hash() {
         // success case -- return vec version
-        assert_eq!(SHA3_224::new().hash(&DUMMY_SEED[..512]), b"\xFE\x51\xC5\xD7\x62\x48\xE1\xE9\xD3\x01\x29\x6A\xE8\xAB\x94\x69\xD2\x86\x34\xB4\xAD\x3E\x9E\x78\xC8\xB0\x9D\x47");
-        assert_eq!(SHA3_256::new().hash(&DUMMY_SEED[..512]), b"\xD4\x72\x8E\xA5\xE9\xF3\x81\x9F\x2B\x47\x60\x15\x1A\x8F\x80\x2D\xBE\x9F\x94\x1F\xD6\xFB\x59\xB3\x71\x58\x92\x43\x65\x55\x77\x2A");
-        assert_eq!(SHA3_384::new().hash(&DUMMY_SEED[..512]), b"\xd5\x3b\x51\x68\x53\xf5\xac\xb4\xaa\xfd\xa5\x9d\x6f\x74\x0f\x69\x99\xc9\xe5\x21\x1c\x51\x03\x9c\x6d\x64\x5b\xf9\x83\xd7\xba\x0b\xdf\x12\x31\xb5\x50\x90\xb5\x5e\x35\x99\xee\x7a\xaa\x62\xd3\xbf");
-        assert_eq!(SHA3_512::new().hash(&DUMMY_SEED[..512]), b"\x58\x4c\xc7\x02\xc2\x22\x9a\x0a\xbc\x78\x9b\xfa\x64\xb4\x27\x1f\xb8\xf0\xbb\x78\x67\x15\x88\xb9\xef\x1d\x09\x3e\xa3\xd4\x72\x58\x4c\x6d\x43\xb5\x68\x33\x59\x47\x2f\x44\x1b\x33\x85\x6f\x68\x28\x59\xf0\xc3\x95\x4b\x56\x80\x8f\xd1\xfb\xa0\xb5\x9c\x9d\x19\x54");
+        assert_eq!(SHA3_224::hash(&DUMMY_SEED[..512]), b"\xFE\x51\xC5\xD7\x62\x48\xE1\xE9\xD3\x01\x29\x6A\xE8\xAB\x94\x69\xD2\x86\x34\xB4\xAD\x3E\x9E\x78\xC8\xB0\x9D\x47");
+        assert_eq!(SHA3_256::hash(&DUMMY_SEED[..512]), b"\xD4\x72\x8E\xA5\xE9\xF3\x81\x9F\x2B\x47\x60\x15\x1A\x8F\x80\x2D\xBE\x9F\x94\x1F\xD6\xFB\x59\xB3\x71\x58\x92\x43\x65\x55\x77\x2A");
+        assert_eq!(SHA3_384::hash(&DUMMY_SEED[..512]), b"\xd5\x3b\x51\x68\x53\xf5\xac\xb4\xaa\xfd\xa5\x9d\x6f\x74\x0f\x69\x99\xc9\xe5\x21\x1c\x51\x03\x9c\x6d\x64\x5b\xf9\x83\xd7\xba\x0b\xdf\x12\x31\xb5\x50\x90\xb5\x5e\x35\x99\xee\x7a\xaa\x62\xd3\xbf");
+        assert_eq!(SHA3_512::hash(&DUMMY_SEED[..512]), b"\x58\x4c\xc7\x02\xc2\x22\x9a\x0a\xbc\x78\x9b\xfa\x64\xb4\x27\x1f\xb8\xf0\xbb\x78\x67\x15\x88\xb9\xef\x1d\x09\x3e\xa3\xd4\x72\x58\x4c\x6d\x43\xb5\x68\x33\x59\x47\x2f\x44\x1b\x33\x85\x6f\x68\x28\x59\xf0\xc3\x95\x4b\x56\x80\x8f\xd1\xfb\xa0\xb5\x9c\x9d\x19\x54");
 
         // success case -- output slice version
         // We're just gonna hand an output slice that's too big and the result had better get written to the beginning of it.
         let mut out: [u8; 64] = [0; 64];
         assert_eq!(SHA3_224::new().output_len(), 28);
-        let bytes_written = SHA3_224::new().hash_out(&DUMMY_SEED[..512], &mut out);
+        let bytes_written = SHA3_224::hash_out(&DUMMY_SEED[..512], &mut out);
         assert_eq!(bytes_written, 28);
         assert_eq!(&out[..28], b"\xFE\x51\xC5\xD7\x62\x48\xE1\xE9\xD3\x01\x29\x6A\xE8\xAB\x94\x69\xD2\x86\x34\xB4\xAD\x3E\x9E\x78\xC8\xB0\x9D\x47");
 
         assert_eq!(SHA3_256::new().output_len(), 32);
-        let bytes_written = SHA3_256::new().hash_out(&DUMMY_SEED[..512], &mut out);
+        let bytes_written = SHA3_256::hash_out(&DUMMY_SEED[..512], &mut out);
         assert_eq!(&out[..32], b"\xD4\x72\x8E\xA5\xE9\xF3\x81\x9F\x2B\x47\x60\x15\x1A\x8F\x80\x2D\xBE\x9F\x94\x1F\xD6\xFB\x59\xB3\x71\x58\x92\x43\x65\x55\x77\x2A");
         assert_eq!(bytes_written, 32);
 
         assert_eq!(SHA3_384::new().output_len(), 48);
-        let bytes_written = SHA3_384::new().hash_out(&DUMMY_SEED[..512], &mut out);
+        let bytes_written = SHA3_384::hash_out(&DUMMY_SEED[..512], &mut out);
         assert_eq!(&out[..48], b"\xd5\x3b\x51\x68\x53\xf5\xac\xb4\xaa\xfd\xa5\x9d\x6f\x74\x0f\x69\x99\xc9\xe5\x21\x1c\x51\x03\x9c\x6d\x64\x5b\xf9\x83\xd7\xba\x0b\xdf\x12\x31\xb5\x50\x90\xb5\x5e\x35\x99\xee\x7a\xaa\x62\xd3\xbf");
         assert_eq!(bytes_written, 48);
 
         assert_eq!(SHA3_512::new().output_len(), 64);
-        let bytes_written = SHA3_512::new().hash_out(&DUMMY_SEED[..512], &mut out);
+        let bytes_written = SHA3_512::hash_out(&DUMMY_SEED[..512], &mut out);
         assert_eq!(&out, b"\x58\x4c\xc7\x02\xc2\x22\x9a\x0a\xbc\x78\x9b\xfa\x64\xb4\x27\x1f\xb8\xf0\xbb\x78\x67\x15\x88\xb9\xef\x1d\x09\x3e\xa3\xd4\x72\x58\x4c\x6d\x43\xb5\x68\x33\x59\x47\x2f\x44\x1b\x33\x85\x6f\x68\x28\x59\xf0\xc3\x95\x4b\x56\x80\x8f\xd1\xfb\xa0\xb5\x9c\x9d\x19\x54");
         assert_eq!(bytes_written, 64);
 
         // check that the bytes of an oversized output buffer past the digest length get zeroized.
-        let mut out = DUMMY_SEED.clone();
-        SHA3_256::new().hash_out(DUMMY_SEED, &mut out);
+        let mut out = *DUMMY_SEED;
+        SHA3_256::hash_out(DUMMY_SEED, &mut out);
         assert!(out[32..].iter().all(|&b| b == 0));
     }
 
     #[test]
     fn test_do_update() {
         // success case -- return vec version
-        let output1 = SHA3_224::new().hash(DUMMY_SEED);
+        let output1 = SHA3_224::hash(DUMMY_SEED);
 
         let mut sha3 = SHA3_224::new();
         for i in (0..DUMMY_SEED.len()).step_by(8) {
@@ -129,17 +129,17 @@ mod sha3_tests {
         // success case -- output slice version
         let mut output = vec![0u8; SHA3_224::OUTPUT_LEN];
         SHA3_224::new()
-            .do_final_partial_bits_out(input_byte, 7, &mut *output)
+            .do_final_partial_bits_out(input_byte, 7, &mut output)
             .expect("Failed to finalize partial input");
         assert_eq!(output, b"\x81\x67\x07\x1f\xfc\x12\xaf\x71\x65\x06\x01\x4e\x99\x49\xe9\xa8\x9d\x11\x26\x04\x93\xf9\x88\x09\x8c\xbb\x7f\x35");
 
         //output slice too small -- should just truncate
         let mut expected_output = vec![0u8; SHA3_224::new().output_len()];
         SHA3_224::new()
-            .do_final_partial_bits_out(input_byte, 7, &mut *expected_output)
+            .do_final_partial_bits_out(input_byte, 7, &mut expected_output)
             .expect("Failed to finalize partial input");
         let mut output = vec![0u8; SHA3_224::OUTPUT_LEN - 1];
-        SHA3_224::new().do_final_partial_bits_out(input_byte, 7, &mut *output).unwrap();
+        SHA3_224::new().do_final_partial_bits_out(input_byte, 7, &mut output).unwrap();
         assert_eq!(output, expected_output[..SHA3_224::OUTPUT_LEN - 1]);
     }
 
@@ -162,7 +162,7 @@ mod sha3_tests {
         }
         let mut h = SHA3_256::new();
         h.do_update(b"abc");
-        assert_eq!(h.do_final_partial_bits(0xFF, 0).unwrap(), SHA3_256::new().hash(b"abc"));
+        assert_eq!(h.do_final_partial_bits(0xFF, 0).unwrap(), SHA3_256::hash(b"abc"));
     }
 
     #[test]
@@ -401,17 +401,13 @@ mod sha3_tests {
 
     #[test]
     fn test_security_strength() {
-        assert_eq!(Hash::max_security_strength(&SHA3_224::default()), SecurityStrength::_112bit);
-        assert_eq!(KDF::max_security_strength(&SHA3_224::default()), SecurityStrength::_112bit);
+        assert_eq!(SHA3_224::default().max_security_strength(), SecurityStrength::_112bit);
 
-        assert_eq!(Hash::max_security_strength(&SHA3_256::default()), SecurityStrength::_128bit);
-        assert_eq!(KDF::max_security_strength(&SHA3_256::default()), SecurityStrength::_128bit);
+        assert_eq!(SHA3_256::default().max_security_strength(), SecurityStrength::_128bit);
 
-        assert_eq!(Hash::max_security_strength(&SHA3_384::default()), SecurityStrength::_192bit);
-        assert_eq!(KDF::max_security_strength(&SHA3_384::default()), SecurityStrength::_192bit);
+        assert_eq!(SHA3_384::default().max_security_strength(), SecurityStrength::_192bit);
 
-        assert_eq!(Hash::max_security_strength(&SHA3_512::default()), SecurityStrength::_256bit);
-        assert_eq!(KDF::max_security_strength(&SHA3_512::default()), SecurityStrength::_256bit);
+        assert_eq!(SHA3_512::default().max_security_strength(), SecurityStrength::_256bit);
     }
 
     #[test]

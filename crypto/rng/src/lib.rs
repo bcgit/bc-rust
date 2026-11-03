@@ -43,8 +43,11 @@ use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::key_material::KeyType;
 // end doc-only imports
 
+pub mod fixed_seed_rng;
 pub mod hash_drbg80090a;
 pub mod hazmat;
+
+pub use fixed_seed_rng::FixedSeedRNG;
 
 /*** String constants ***/
 ///

@@ -22,6 +22,18 @@ test_hkdf_sha256_matches_rfc5869_a1() {
         "RFC 5869 A.1 OKM"
 }
 
+# RFC 5869 A.3: zero-length salt and no info at all; `--additional-input` is optional.
+test_hkdf_sha256_matches_rfc5869_a3() {
+    local got
+    got=$(hex_out "$BC_RUST" hkdf-sha256 \
+        --salt "" \
+        --ikm 0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b \
+        --len 42 -x)
+    assert_eq "$got" \
+        "8da4e775a563c18f715f802a063c5a31b8a11f5c5ee1879ec3454e5f3c738d2d9d201395faa4b61a96c8" \
+        "RFC 5869 A.3 OKM"
+}
+
 test_hkdf_sha384_matches_wycheproof_tc11() {
     local got
     got=$(hex_out "$BC_RUST" hkdf-sha384 \
@@ -72,6 +84,18 @@ test_hkdf_sha384_files_match_hex() {
 
 test_hkdf_sha512_files_match_hex() {
     hkdf_files_match_hex hkdf-sha512
+}
+
+# When a value is given both as hex and as a file, the file is used, as the help text says.
+test_hkdf_sha256_file_wins_over_hex() {
+    local from_files with_both
+    rng 32 >"$TMP/salt"
+    rng 32 >"$TMP/ikm"
+    rng 16 >"$TMP/info"
+    from_files=$(hex_out "$BC_RUST" hkdf-sha256 -s "$TMP/salt" -i "$TMP/ikm" -a "$TMP/info" --len 42 -x)
+    with_both=$(hex_out "$BC_RUST" hkdf-sha256 --salt 01 -s "$TMP/salt" --ikm 02 -i "$TMP/ikm" \
+        --additional-input 03 -a "$TMP/info" --len 42 -x)
+    assert_eq "$with_both" "$from_files" "the file inputs must win over the hex ones"
 }
 
 # ---- output length ------------------------------------------------------------------------

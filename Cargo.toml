@@ -22,8 +22,10 @@ bouncycastle-hex = { path = "./crypto/hex" }
 bouncycastle-hkdf = { path = "./crypto/hkdf" }
 bouncycastle-hmac = { path = "./crypto/hmac" }
 bouncycastle-mlkem = { path = "./crypto/mlkem" }
+bouncycastle-mlkem-common = { path = "./crypto/mlkem-common" }
 bouncycastle-mlkem-lowmemory = { path = "./crypto/mlkem-lowmemory" }
 bouncycastle-mldsa = { path = "./crypto/mldsa" }
+bouncycastle-mldsa-common = { path = "./crypto/mldsa-common" }
 bouncycastle-mldsa-lowmemory = { path = "./crypto/mldsa-lowmemory" }
 bouncycastle-rng = { path = "./crypto/rng" }
 bouncycastle-sha2 = { path = "./crypto/sha2" }
@@ -38,6 +40,15 @@ criterion = "0.8.2" # only for benchmarking, not used in lib or cli build
 [profile.release]
 lto = "thin"
 strip = "debuginfo"
+
+# For `cargo mutants --profile mutants`: optimised like release, so the ML-DSA/ML-KEM suites run
+# in seconds rather than minutes, but without LTO and with incremental codegen, so each mutant's
+# rebuild of one crate and its test binaries takes seconds rather than the full release link.
+[profile.mutants]
+inherits = "release"
+lto = false
+incremental = true
+codegen-units = 16
 
 
 # libbouncycastle

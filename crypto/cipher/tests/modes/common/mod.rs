@@ -50,6 +50,7 @@ fn validate(key: &dyn KeyMaterialTrait) -> Result<(), SymmetricCipherError> {
 ///
 /// A true permutation on each byte, so it is a true permutation on the block, and its inverse is
 /// distinctly different code (XOR then `rotate_right(1)`).
+#[derive(Clone)]
 pub struct Toy {
     key: [u8; TOY_LEN],
 }
@@ -64,9 +65,11 @@ impl ModeNames for Toy {
     const CCM_ALG_NAME: &'static str = "Toy_CCM";
     const CFB_ALG_NAME: &'static str = "Toy_CFB";
     const CFB8_ALG_NAME: &'static str = "Toy_CFB8";
+    const CMAC_ALG_NAME: &'static str = "Toy_CMAC";
     const CTR_ALG_NAME: &'static str = "Toy_CTR";
     const ECB_ALG_NAME: &'static str = "Toy_ECB";
     const GCM_ALG_NAME: &'static str = "Toy_GCM";
+    const GMAC_ALG_NAME: &'static str = "Toy_GMAC";
 }
 
 impl ElectronicCodeBook<TOY_LEN, TOY_LEN> for Toy {
@@ -123,6 +126,7 @@ impl ElectronicCodeBook<TOY_LEN, TOY_LEN> for Toy {
 /// it is false.
 ///
 /// Its single-block methods are identical to [`Toy`]'s, so the two agree on odd-length input.
+#[derive(Clone)]
 pub struct SwappedPairToy {
     inner: Toy,
 }
@@ -137,9 +141,11 @@ impl ModeNames for SwappedPairToy {
     const CCM_ALG_NAME: &'static str = "SwappedPairToy_CCM";
     const CFB_ALG_NAME: &'static str = "SwappedPairToy_CFB";
     const CFB8_ALG_NAME: &'static str = "SwappedPairToy_CFB8";
+    const CMAC_ALG_NAME: &'static str = "SwappedPairToy_CMAC";
     const CTR_ALG_NAME: &'static str = "SwappedPairToy_CTR";
     const ECB_ALG_NAME: &'static str = "SwappedPairToy_ECB";
     const GCM_ALG_NAME: &'static str = "SwappedPairToy_GCM";
+    const GMAC_ALG_NAME: &'static str = "SwappedPairToy_GMAC";
 }
 
 impl ElectronicCodeBook<TOY_LEN, TOY_LEN> for SwappedPairToy {
@@ -196,6 +202,7 @@ impl ElectronicCodeBook<TOY_LEN, TOY_LEN> for SwappedPairToy {
 /// `TestFrameworkElectronicCodeBook`, which exercises both directions -- so it is only ever used with
 /// `Cfb`. Its forward methods delegate to [`Toy`], including the pair and four-block methods, so a CFB round trip
 /// over it must agree with one over `Toy`.
+#[derive(Clone)]
 pub struct ForwardOnlyToy {
     inner: Toy,
 }
@@ -210,9 +217,11 @@ impl ModeNames for ForwardOnlyToy {
     const CCM_ALG_NAME: &'static str = "ForwardOnlyToy_CCM";
     const CFB_ALG_NAME: &'static str = "ForwardOnlyToy_CFB";
     const CFB8_ALG_NAME: &'static str = "ForwardOnlyToy_CFB8";
+    const CMAC_ALG_NAME: &'static str = "ForwardOnlyToy_CMAC";
     const CTR_ALG_NAME: &'static str = "ForwardOnlyToy_CTR";
     const ECB_ALG_NAME: &'static str = "ForwardOnlyToy_ECB";
     const GCM_ALG_NAME: &'static str = "ForwardOnlyToy_GCM";
+    const GMAC_ALG_NAME: &'static str = "ForwardOnlyToy_GMAC";
 }
 
 impl ElectronicCodeBook<TOY_LEN, TOY_LEN> for ForwardOnlyToy {
@@ -251,6 +260,7 @@ impl ElectronicCodeBook<TOY_LEN, TOY_LEN> for ForwardOnlyToy {
 /// The four-block analogue of [`SwappedPairToy`]: a CBC decryptor that uses `decrypt_4blocks`
 /// must produce something other than the correct plaintext for four or more blocks, while fewer
 /// than four, which go through the pair and single paths, still round-trip.
+#[derive(Clone)]
 pub struct SwappedFourToy {
     inner: Toy,
 }
@@ -265,9 +275,11 @@ impl ModeNames for SwappedFourToy {
     const CCM_ALG_NAME: &'static str = "SwappedFourToy_CCM";
     const CFB_ALG_NAME: &'static str = "SwappedFourToy_CFB";
     const CFB8_ALG_NAME: &'static str = "SwappedFourToy_CFB8";
+    const CMAC_ALG_NAME: &'static str = "SwappedFourToy_CMAC";
     const CTR_ALG_NAME: &'static str = "SwappedFourToy_CTR";
     const ECB_ALG_NAME: &'static str = "SwappedFourToy_ECB";
     const GCM_ALG_NAME: &'static str = "SwappedFourToy_GCM";
+    const GMAC_ALG_NAME: &'static str = "SwappedFourToy_GMAC";
 }
 
 impl ElectronicCodeBook<TOY_LEN, TOY_LEN> for SwappedFourToy {

@@ -7,6 +7,9 @@ use bouncycastle::hex;
 use bouncycastle::hkdf;
 use bouncycastle::sha2::hkdf::{HKDF_SHA256, HKDF_SHA384, HKDF_SHA512};
 
+/// The salt is held in a fixed-size key buffer; the library itself puts no bound on it.
+const MAX_SALT_LEN: usize = 1024;
+
 pub(crate) fn hkdf_cmd(
     hkdfname: &str,
     salt: &Option<String>,
@@ -28,11 +31,11 @@ pub(crate) fn hkdf_cmd(
         eprintln!("Error: either `salt` or `salt-file` must be supplied.");
         exit(-1)
     };
-    if salt_bytes.len() > 128 {
-        eprintln!("Error: The CLI only supports HKDF salts up to 128 bytes (1024 bits).");
+    if salt_bytes.len() > MAX_SALT_LEN {
+        eprintln!("Error: The CLI only supports HKDF salts up to {MAX_SALT_LEN} bytes.");
         exit(-1);
     }
-    let mut salt_key = KeyMaterial::<1024>::from_bytes(&salt_bytes).unwrap();
+    let mut salt_key = KeyMaterial::<MAX_SALT_LEN>::from_bytes(&salt_bytes).unwrap();
     // force it just so the CLI behaves properly even with all-zero or zero-length keys
     do_hazardous_operations(&mut salt_key, |salt_key| salt_key.set_key_type(KeyType::MACKey))
         .unwrap();
@@ -46,13 +49,14 @@ pub(crate) fn hkdf_cmd(
         exit(-1)
     };
 
+    // RFC 5869 Section 2.3: info is "optional context and application specific information (can
+    // be a zero-length string)", so neither flag is required.
     let info = if let Some(file) = additional_input_file {
         fs::read(file).unwrap()
     } else if let Some(hex_str) = additional_input {
         hex::decode(hex_str).unwrap()
     } else {
-        eprintln!("Error: either `additional_input` or `additional_input_file` must be supplied.");
-        exit(-1)
+        Vec::new()
     };
 
     // RFC 5869: PRK = HKDF-Extract(salt, IKM), then OKM = HKDF-Expand(PRK, info, L). The IKM is

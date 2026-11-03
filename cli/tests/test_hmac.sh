@@ -46,4 +46,18 @@ test_hmac_sm3_round_trip() {
     hmac_round_trip hmac-sm3 32
 }
 
+# When both `--key` and `--key-file` are given, the file is used, as the help text says.
+test_hmac_sha256_key_file_wins_over_key() {
+    local from_file with_both from_hex other
+    rng 32 >"$TMP/key"
+    rng 32 >"$TMP/other_key"
+    rng 100 >"$TMP/msg"
+    other=$(hex "$TMP/other_key")
+    from_file=$(hex_out "$BC_RUST" hmac-sha256 -k "$TMP/key" -x <"$TMP/msg")
+    with_both=$(hex_out "$BC_RUST" hmac-sha256 --key "$other" -k "$TMP/key" -x <"$TMP/msg")
+    from_hex=$(hex_out "$BC_RUST" hmac-sha256 --key "$other" -x <"$TMP/msg")
+    assert_eq "$with_both" "$from_file" "the key file must win over the hex key"
+    [ "$from_hex" != "$from_file" ] || fail "the two keys must give different tags"
+}
+
 run_all

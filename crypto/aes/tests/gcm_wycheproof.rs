@@ -46,8 +46,8 @@ use bouncycastle_core::hazmat::do_hazardous_operations;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{AEADCipherDecryptor, AEADCipherEncryptor};
-use bouncycastle_core_test_framework::FixedSeedRNG;
 use bouncycastle_core_test_framework::test_data_loaders::{Value, hex_field, wycheproof_json};
+use bouncycastle_rng::FixedSeedRNG;
 
 /// Wraps the vector's raw key bytes, promoting them if `KeyMaterial`'s entropy heuristic declined
 /// to call them a cipher key. Same helper as the ACVP and CCM suites in this crate.
@@ -95,7 +95,7 @@ fn run_case<const KEY_LEN: usize, const TAG_LEN: usize, P>(
         let (got_iv, written, got_tag) =
             Gcm::<P, Encrypting, KEY_LEN, TAG_LEN>::encrypt_detached_rng_out(
                 &key,
-                &mut FixedSeedRNG::<GCM_NONCE_LEN>::new(iv),
+                &mut FixedSeedRNG::new(iv),
                 aad,
                 msg,
                 &mut ct,

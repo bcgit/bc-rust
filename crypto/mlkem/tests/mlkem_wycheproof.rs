@@ -666,7 +666,7 @@ impl MLKEMTestCase {
         // these tests don't provide m, so can't test deterministic encaps
 
         // test decaps
-        let k = match MLKEM512::decaps(&dk, &hex::decode(&self.c).unwrap().as_slice()) {
+        let k = match MLKEM512::decaps(&dk, hex::decode(&self.c).unwrap().as_slice()) {
             Ok(k) => k,
             Err(e) => {
                 if self.result == "invalid" {
@@ -732,7 +732,7 @@ impl MLKEMTestCase {
         // these tests don't provide m, so can't test deterministic encaps
 
         // test decaps
-        let k = match MLKEM768::decaps(&dk, &hex::decode(&self.c).unwrap().as_slice()) {
+        let k = match MLKEM768::decaps(&dk, hex::decode(&self.c).unwrap().as_slice()) {
             Ok(k) => k,
             Err(e) => {
                 if self.result == "invalid" {
@@ -798,7 +798,7 @@ impl MLKEMTestCase {
         // these tests don't provide m, so can't test deterministic encaps
 
         // test decaps
-        let k = match MLKEM1024::decaps(&dk, &hex::decode(&self.c).unwrap().as_slice()) {
+        let k = match MLKEM1024::decaps(&dk, hex::decode(&self.c).unwrap().as_slice()) {
             Ok(k) => k,
             Err(e) => {
                 if self.result == "invalid" {

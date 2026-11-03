@@ -1,9 +1,11 @@
 //! KMAC and KMACXOF behaviour tests. The SP 800-185 sample values are in `kmac_bc-test-data.rs`.
 
-use bouncycastle_core::errors::{KeyMaterialError, MACError};
+use bouncycastle_core::errors::{KeyMaterialError, MACError, SuspendableError};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
-use bouncycastle_core::traits::{Algorithm, Hash, MAC, XOF, XOFSqueezer};
-use bouncycastle_sha3::kmac::{KMAC128, KMAC256, KMACXOF128, KMACXOF256};
+use bouncycastle_core::traits::{Algorithm, Hash, MAC, Suspendable, XOF, XOFSqueezer};
+use bouncycastle_sha3::kmac::{
+    KMAC_MIN_OUTPUT_LEN, KMAC128, KMAC256, KMACXOF128, KMACXOF256, SUSPENDED_KMAC_STATE_LEN,
+};
 
 /// A 32-byte MAC key carries a 256-bit strength, so it satisfies both KMAC128 and KMAC256 without
 /// the weak-key escape hatch.
@@ -23,6 +25,44 @@ fn output_length_changes_the_function() {
     assert_eq!(short.len(), 16);
     assert_eq!(long.len(), 32);
     assert_ne!(&long[..16], &short[..], "a longer KMAC must not extend a shorter one");
+}
+
+/// SP 800-185 Sec 8.4.2: an output length under 32 bits is not allowed as a MAC. The floor holds
+/// at construction and when a suspended state names the length.
+#[test]
+fn output_length_floor() {
+    let key = key_material(&[0x42u8; 32]);
+    assert_eq!(KMAC_MIN_OUTPUT_LEN, 4);
+    for n in [0, 1, 3] {
+        assert!(
+            matches!(
+                KMAC128::new_with_params(&key, b"", n, false),
+                Err(MACError::InvalidLength(_))
+            ),
+            "{n} bytes"
+        );
+        assert!(
+            matches!(KMAC256::new_with_params(&key, b"", n, true), Err(MACError::InvalidLength(_))),
+            "{n} bytes, weak keys allowed"
+        );
+    }
+    assert_eq!(KMAC128::new_with_params(&key, b"", 4, false).unwrap().mac(b"abc").len(), 4);
+
+    // The output length is the last eight bytes of the suspended state, little-endian.
+    let mut k = KMAC128::new_with_params(&key, b"", 4, false).unwrap();
+    k.do_update(b"abc");
+    let good = k.suspend();
+    let len_at = SUSPENDED_KMAC_STATE_LEN - 8;
+    assert_eq!(&good[len_at..], &4u64.to_le_bytes(), "layout check");
+    assert_eq!(KMAC128::from_suspended(good).unwrap().do_final().len(), 4);
+    for n in [0u64, 3] {
+        let mut bad = good;
+        bad[len_at..].copy_from_slice(&n.to_le_bytes());
+        assert!(
+            matches!(KMAC128::from_suspended(bad), Err(SuspendableError::InvalidData)),
+            "a suspended state naming {n} bytes"
+        );
+    }
 }
 
 /// The customization string separates one use of KMAC from another (Sec 4.2).
