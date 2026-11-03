@@ -49,8 +49,9 @@
 //! Frobenius self-equivalences of `inv`, which is what makes it finite), against the tables
 //! extracted from the text of RFC 5794. For each S-box exactly one constant admits a
 //! decomposition -- `0x00` for `SB2` (whose input affine map is therefore linear, as `SB1`'s is),
-//! `0x63` for `SB3` and `0xe2` for `SB4`, the output constants of `SB1` and `SB2` -- and it is
-//! unique up to those self-equivalences. The 2040 equivalent forms of each give circuits of
+//! `0x63` for `SB3` and `0xe2` for `SB4`, the output constants of `SB1` and `SB2`, applied to the
+//! input before `M`, so that they appear in the formulas above as `M * 0x63 = 0xff` and
+//! `M * 0xe2 = 0xa0` -- and it is unique up to those self-equivalences. The 2040 equivalent forms of each give circuits of
 //! different sizes; the ones above were chosen for the fewest gates.
 //!
 //! Each generated circuit is therefore a **top affine layer** (generated: `M * x xor c` composed
@@ -78,7 +79,7 @@
 //!
 //! Plane `k` holds bit `k` of every byte (bit 0 least significant), for inputs and outputs alike.
 //! The Boyar-Peralta sections keep their signal names (`y*`, `t*`, `z*`) so they can be diffed
-//! against the AES, SM4 and Camellia crates. In [`sb1`] the SLP's own input and output names
+//! against the AES crate. In [`sb1`] the SLP's own input and output names
 //! `U0 .. U7` / `S0 .. S7` appear with `U0` the most significant bit, i.e. plane `q[7]`; in the
 //! generated circuits the inputs are bound from the top layer, so that convention never appears.
 
@@ -161,8 +162,8 @@ pub(crate) fn sb1(q: &mut Planes) {
     let t36 = t24 & t35;
     // `cargo mutants` reports the `^ -> |` mutant on the next line as surviving. That is a true
     // equivalence, not a gap: `t36` and `t34` are never both 1 for any of the 256 possible input
-    // bytes, so XOR and OR agree here. It is the same gate the AES, SM4 and Camellia crates
-    // document, since this section is copied from there.
+    // bytes, so XOR and OR agree here. It is the same gate the AES crate
+    // documents, since this section is copied from there.
     let t37 = t36 ^ t34;
     let t38 = t27 ^ t36;
     let t39 = t29 & t38;
@@ -338,8 +339,8 @@ pub(crate) fn sb2(q: &mut Planes) {
     let t36 = t24 & t35;
     // `cargo mutants` reports the `^ -> |` mutant on the next line as surviving. That is a true
     // equivalence, not a gap: `t36` and `t34` are never both 1 for any of the 256 possible input
-    // bytes, so XOR and OR agree here. It is the same gate the AES, SM4 and Camellia crates
-    // document, since this section is copied from there.
+    // bytes, so XOR and OR agree here. It is the same gate the AES crate
+    // documents, since this section is copied from there.
     let t37 = t36 ^ t34;
     let t38 = t27 ^ t36;
     let t39 = t29 & t38;
@@ -514,8 +515,8 @@ pub(crate) fn sb3(q: &mut Planes) {
     let t36 = t24 & t35;
     // `cargo mutants` reports the `^ -> |` mutant on the next line as surviving. That is a true
     // equivalence, not a gap: `t36` and `t34` are never both 1 for any of the 256 possible input
-    // bytes, so XOR and OR agree here. It is the same gate the AES, SM4 and Camellia crates
-    // document, since this section is copied from there.
+    // bytes, so XOR and OR agree here. It is the same gate the AES crate
+    // documents, since this section is copied from there.
     let t37 = t36 ^ t34;
     let t38 = t27 ^ t36;
     let t39 = t29 & t38;
@@ -695,8 +696,8 @@ pub(crate) fn sb4(q: &mut Planes) {
     let t36 = t24 & t35;
     // `cargo mutants` reports the `^ -> |` mutant on the next line as surviving. That is a true
     // equivalence, not a gap: `t36` and `t34` are never both 1 for any of the 256 possible input
-    // bytes, so XOR and OR agree here. It is the same gate the AES, SM4 and Camellia crates
-    // document, since this section is copied from there.
+    // bytes, so XOR and OR agree here. It is the same gate the AES crate
+    // documents, since this section is copied from there.
     let t37 = t36 ^ t34;
     let t38 = t27 ^ t36;
     let t39 = t29 & t38;

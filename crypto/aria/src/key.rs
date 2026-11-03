@@ -155,8 +155,9 @@ impl<P: ARIAParams, M: Mode<ARIAInternal<P>>> ModeKey<ARIAInternal<P>, M> for AR
 }
 
 // The role impls forward to the mode traits `M` implements over this permutation: the symmetric
-// pair and the block pair, which between them cover the four modes this crate aliases. A key
-// under any other mode has no role here.
+// pair and the block pair, which between them cover every mode the key docs list -- the four
+// this crate aliases, `ECB<PKCS7>`, `ECB<NoPadding>` and `CTR<N>` at any nonce length. A key
+// under a mode that implements neither pair (the MAC and AEAD modes) has no role here.
 
 impl<P, M, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const FINAL_LEN: usize>
     SymmetricEncryptionKey<KEY_LEN, INIT_DATA_LEN, FINAL_LEN> for ARIAKey<P, M>

@@ -181,7 +181,7 @@
 //! byte positions, so the engine works on **four blocks at once**: each round transposes every
 //! block's rows into class words, runs each of the four circuits once on that class word from all
 //! four blocks, transposes back, and diffuses per block. The blocks never mix. The diffusion layer
-//! is computed in the word-level form the 32-bit implementations use (a per-word byte parity, six;
+//! is computed in the word-level form the 32-bit implementations use (a per-word byte parity, six
 //! word XORs, three fixed byte permutations, six word XORs again), a decomposition verified against
 //! the sixteen equations of Sec 2.4.3 rather than recalled; see the `round` module.
 //!
@@ -236,7 +236,7 @@
 //! | `encrypt_4blocks` | 320 B | 320 B | 320 B |
 //! | `decrypt_4blocks` | 400 B | 400 B | 400 B |
 //!
-//! Decryption costs more than encryption because it derives each round's decryption key from;
+//! Decryption costs more than encryption because it derives each round's decryption key from
 //! the stored encryption keys (one diffusion-layer application per round, see `schedule`) rather
 //! than reading a second schedule; the one- and two-block calls go through the four-block
 //! circuit with the spare lanes filled, and carry its frame on top of their own.
@@ -255,6 +255,13 @@
 //! Appendix B assigns object identifiers to ARIA in ECB, CBC, CFB, OFB, CTR, CMAC, OCB2, GCM, CCM
 //! and key-wrap modes; the ECB one exists for completeness, not as a recommendation. That is why
 //! the permutation lives under [`hazmat`]; [`bouncycastle_core::hazmat`] lists the supported uses.
+//! An `ARIA128Key<ECB<PKCS7>>` or `<ECB<NoPadding>>` hands out ECB through the safe key API as
+//! well, and the same warning applies to it.
+//!
+//! This crate's keys offer no authenticated mode yet: the GCM and CCM engines are wired and pass
+//! the Wycheproof suites over the permutation, and the AEAD key roles are left for a follow-up.
+//! Until then, authenticate CBC or CTR output with Encrypt-then-MAC over the ciphertext and IV,
+//! using HMAC from `bouncycastle-hmac` under a second key.
 //!
 //! ## Constant-time properties
 //!
@@ -300,7 +307,7 @@
 //!   new combinational logic minimization technique with applications to cryptology",
 //!   <https://eprint.iacr.org/2009/191.pdf>, as transcribed in `bouncycastle-aes`.
 //! * **The bit-plane transpose** is translated from BearSSL's `aes_ct` by Thomas Pornin (MIT
-//!   licence), as in the AES, SM4 and Camellia crates.
+//!   licence), as in the AES crate.
 //! * Verified against RFC 5794 Appendix A -- the three ciphertexts, and for the 128-bit key every
 //!   round key `ek1 .. ek13` and every intermediate value `P1 .. P11`; the ECB, CBC, CFB128, CFB8
 //!   and CTR vectors of OpenSSL's `evpciph_aria.txt`, which are KISA's published ARIA test vectors

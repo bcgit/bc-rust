@@ -6,8 +6,10 @@
 //! may be any length.
 //!
 //! `aria128-cbc` / `aria192-cbc` / `aria256-cbc` are the same command as `aes*-cbc` over the ARIA
-//! permutation (RFC 5794; 16-, 24- or 32-byte key, 16-byte block -- the `id-aria*-cbc` algorithms
-//! of RFC 5794 Appendix B), so every remark there applies unchanged. CBC (NIST SP 800-38A Sec 6.2)
+//! permutation (RFC 5794; 16-, 24- or 32-byte key, 16-byte block), so every remark there applies
+//! unchanged. They are not the `id-aria*-cbc` objects of RFC 5794 Appendix B: those default to
+//! padding method 2 of ISO/IEC 9797-1 (`AriaCbcParameters`' `padAlgo DEFAULT id-pad-1`), and
+//! PKCS#7 is not among the padding algorithms the RFC specifies. CBC (NIST SP 800-38A Sec 6.2)
 //! provides confidentiality only: neither the ciphertext nor the IV is authenticated. Do not
 //! decrypt data you have not authenticated separately.
 
