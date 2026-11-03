@@ -87,7 +87,10 @@
 //! * HKDF is keyed by its `salt`, which keys the extract-phase HMAC. The salt is deliberately
 //!   excluded from the suspended state and must be re-supplied on resume; resuming with a different
 //!   salt cannot be detected and silently produces a different PRK.
-//! * Entropy is credited only for input supplied via [`HKDF::do_extract_update_key`]. Bytes supplied
+//! * Entropy is credited only for input supplied via [`HKDF::do_extract_update_key`], and for a
+//!   salt typed [`KeyType::MACKey`], which is how a caller marks it as the secret salt of SP
+//!   800-56Cr2 Section 5.1. A salt of any other type is RFC 5869 Section 2.2's "non-secret random
+//!   value" and credits nothing: anyone who knows it can compute the PRK from the IKM. Bytes supplied
 //!   via [`HKDF::do_extract_update_bytes`] are treated as uncredited context, so a PRK derived only
 //!   from raw bytes will not be tagged as full-entropy key material even if those bytes were random.
 //!   [`HKDF::do_extract_update_key`] is rejected after the first call to
@@ -218,6 +221,10 @@ struct HkdfEntropyTracker<H: HMACParams> {
 }
 
 impl<H: HMACParams> HkdfEntropyTracker<H> {
+    /// The most the label can say: HMAC's strength is bounded by half the hash output (the
+    /// `min(K, 2C)` rule), so no input, and no resumed state, raises it past this.
+    const MAX_STRENGTH: SecurityStrength = SecurityStrength::from_bytes(H::OUTPUT_LEN / 2);
+
     fn new() -> Self {
         Self { _phantomhash: PhantomData, entropy: 0, security_strength: SecurityStrength::None }
     }
@@ -229,8 +236,7 @@ impl<H: HMACParams> HkdfEntropyTracker<H> {
         // Saturating: the counter is bookkeeping, and a resumed state may carry any value.
         self.entropy = self.entropy.saturating_add(additional_entropy);
         self.security_strength = max(&self.security_strength, &key.security_strength()).clone();
-        self.security_strength =
-            min(&self.security_strength, &SecurityStrength::from_bytes(H::OUTPUT_LEN / 2)).clone();
+        self.security_strength = min(&self.security_strength, &Self::MAX_STRENGTH).clone();
         additional_entropy
     }
 
@@ -304,8 +310,11 @@ impl<H: HMACParams, const HASH_STATE_LEN: usize, const HKDF_STATE_LEN: usize>
     ///    Output:
     ///       PRK      a pseudorandom key (of HashLen octets)
     ///
-    /// The KeyMaterial input parameters can be of any [`KeyType`] but [`KeyType::Unknown`], which is
-    /// refused as [`KeyMaterialError::InvalidKeyType`]; the type of the output is set from the inputs.
+    /// The salt can be of any [`KeyType`] but [`KeyType::Unknown`], which is refused as
+    /// [`KeyMaterialError::InvalidKeyType`]; the IKM can be of any type, and credits entropy only
+    /// when it is a full-entropy one. The salt credits entropy only when it is typed
+    /// [`KeyType::MACKey`], a secret salt; see the crate's Security Considerations. The type of the
+    /// output is set from what was credited.
     /// The output KeyMaterial will be of fixed size, with a capacity large enough to cover any
     /// underlying hash function, but the actual key length will be appropriate to the underlying hash function.
     ///
@@ -358,8 +367,9 @@ impl<H: HMACParams, const HASH_STATE_LEN: usize, const HKDF_STATE_LEN: usize>
     /// therefore this function is provided only as expand_out(), filling the provided KeyMaterial object,
     /// and no analogous expand() is provided.
     ///
-    /// The KeyMaterial input parameters can be of any [`KeyType`] but [`KeyType::Unknown`], which is
-    /// refused as [`KeyMaterialError::InvalidKeyType`]; the type of the output is set from the inputs.
+    /// The salt can be of any [`KeyType`] but [`KeyType::Unknown`], which is refused as
+    /// [`KeyMaterialError::InvalidKeyType`]; the IKM can be of any type. The type of the output is
+    /// set from what was credited, as [`Self::extract_out`] says.
     ///
     /// L is the output length. [`KDFError::InvalidLength`] is returned if L exceeds 255 * HashLen,
     /// if `okm` cannot hold L bytes, or if `prk` is shorter than HashLen (RFC 5869 Section 2.3).
@@ -554,10 +564,11 @@ impl<H: HMACParams, const HASH_STATE_LEN: usize, const HKDF_STATE_LEN: usize>
 
     /// This, together with [`HKDF::do_extract_update_key`], [`HKDF::do_extract_update_bytes`] and [`HKDF::do_extract_final`]
     /// provide a streaming interface for very long values of `ikm`.
-    /// In this mode, the entropy of `ikm` is untracked, and so only the entropy ef `salt` is taken into account
-    /// when computing the entropy of the output `prk`.
-    /// The KeyMaterial input parameters can be of any [`KeyType`] but [`KeyType::Unknown`], which is
-    /// refused as [`KeyMaterialError::InvalidKeyType`]; the type of the output is set from the inputs.
+    /// In this mode, entropy is credited for the keys given to [`HKDF::do_extract_update_key`] and
+    /// for a salt typed [`KeyType::MACKey`] (a secret salt); a salt of any other type credits
+    /// nothing, since RFC 5869 Section 2.2's salt is "a non-secret random value".
+    /// The salt can be of any [`KeyType`] but [`KeyType::Unknown`], which is refused as
+    /// [`KeyMaterialError::InvalidKeyType`]; the type of the output is set from what was credited.
     /// The output KeyMaterial will be of fixed size, with a capacity large enough to cover any
     /// underlying hash function, but the actual key length will be appropriate to the underlying hash function.
     ///
@@ -576,7 +587,12 @@ impl<H: HMACParams, const HASH_STATE_LEN: usize, const HKDF_STATE_LEN: usize>
         let inner = hmac_hazmat::inner_state(&key);
         self.hmac = Some(HkdfExtract { key, inner });
 
-        let additional_entropy = self.entropy.credit_entropy(salt);
+        // RFC 5869 Section 2.2 defines the salt as "a non-secret random value", and SP 800-133r2
+        // Section 6.3 note (g) counts the component keys' entropy, not the salt's: a salt the
+        // caller has not marked as a key credits nothing, or a public salt alone would label the
+        // PRK full-entropy key material. A MACKey salt is SP 800-56Cr2 Section 5.1's secret salt.
+        let additional_entropy =
+            if salt.key_type() == KeyType::MACKey { self.entropy.credit_entropy(salt) } else { 0 };
         self.state = HkdfStates::Initialized;
 
         Ok(additional_entropy)
@@ -876,6 +892,17 @@ where
             usize::MAX,
         )?;
         let security_strength = SecurityStrength::try_from(state[13 + HASH_STATE_LEN])?;
+        // The bookkeeping is checked against what this type writes: the label never exceeds the
+        // hash's cap (credit_entropy applies it), and a state that has not been initialized
+        // carries no entropy and no strength (new() has none). Otherwise a state whose two
+        // bookkeeping bytes were edited would label a PRK derived from nothing as full-entropy
+        // material at a strength the hash cannot give.
+        if security_strength > HkdfEntropyTracker::<H>::MAX_STRENGTH
+            || (hkdf_state == HkdfStates::Uninitialized
+                && (entropy != 0 || security_strength != SecurityStrength::None))
+        {
+            return Err(SuspendableError::InvalidData);
+        }
 
         Ok(HKDF {
             hmac,

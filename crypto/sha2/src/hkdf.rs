@@ -205,7 +205,9 @@
 //!
 //! * Resuming a suspended HKDF with a different salt cannot be detected and silently produces a
 //!   different PRK; see the suspend/resume section above.
-//! * Entropy is only credited for input supplied via [`HKDF::do_extract_update_key`]. Bytes supplied
+//! * Entropy is only credited for input supplied via [`HKDF::do_extract_update_key`], and for a salt
+//!   typed [`bouncycastle_core::key_material::KeyType::MACKey`] (a secret salt); any other salt is RFC
+//!   5869's non-secret value and credits nothing. Bytes supplied
 //!   via [`HKDF::do_extract_update_bytes`] are treated as uncredited context, so a PRK derived only
 //!   from raw bytes will not be tagged as full-entropy key material even if those bytes were in fact
 //!   random.

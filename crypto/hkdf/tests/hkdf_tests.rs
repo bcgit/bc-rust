@@ -963,6 +963,80 @@ mod hkdf_tests {
 
     /// The entropy counter is bookkeeping a resumed state may set to anything: the next credit
     /// saturates rather than overflowing.
+    /// A salt is RFC 5869 Section 2.2's "non-secret random value" unless the caller types it as a
+    /// key: a `CryptographicRandom` salt credits nothing, so a PRK made from it and an empty IKM,
+    /// which anyone who knows the salt can compute, is `Unknown`; the same bytes typed `MACKey`
+    /// are the secret salt of SP 800-56Cr2 Section 5.1 and are credited.
+    #[test]
+    fn a_public_salt_credits_no_entropy() {
+        let empty = KeyMaterial0::new();
+        let public =
+            KeyMaterial256::from_bytes_as_type(&DUMMY_SEED[..32], KeyType::CryptographicRandom)
+                .unwrap();
+        let prk = HKDF_SHA256::extract(&public, &empty).unwrap();
+        assert_eq!(prk.key_type(), KeyType::Unknown);
+        assert_eq!(prk.security_strength(), SecurityStrength::None);
+
+        let secret =
+            KeyMaterial256::from_bytes_as_type(&DUMMY_SEED[..32], KeyType::MACKey).unwrap();
+        let prk_secret = HKDF_SHA256::extract(&secret, &empty).unwrap();
+        assert_eq!(prk_secret.key_type(), KeyType::CryptographicRandom);
+        assert_eq!(prk_secret.security_strength(), SecurityStrength::_128bit);
+        assert_eq!(prk_secret.ref_to_bytes(), prk.ref_to_bytes(), "the same PRK bytes either way");
+
+        let mut hkdf = HKDF_SHA256::new();
+        assert_eq!(hkdf.do_extract_init(&public).unwrap(), 0, "nothing credited for a public salt");
+        assert_eq!(hkdf.get_entropy(), 0);
+        let seed = KeyMaterial256::from_bytes_as_type(&DUMMY_SEED[32..64], KeyType::Seed).unwrap();
+        assert_eq!(hkdf.do_extract_update_key(&seed).unwrap(), 32, "the IKM is credited");
+        assert!(hkdf.is_fully_seeded());
+    }
+
+    /// The two bookkeeping fields of a suspended state are checked on resume: a strength label
+    /// above what the hash can give (half its output), or any entropy or strength on a state that
+    /// was never initialized, is refused, where it used to label a PRK derived from nothing as
+    /// `CryptographicRandom` at `_256bit`.
+    #[test]
+    fn a_forged_state_is_refused() {
+        use bouncycastle_core::errors::SuspendableError;
+        use bouncycastle_core::traits::SuspendableKeyed;
+        use bouncycastle_sha2::hkdf::SUSPENDED_HKDF_SHA256_STATE_LEN;
+
+        let salt = KeyMaterial128::from_bytes_as_type(&DUMMY_SEED[..16], KeyType::MACKey).unwrap();
+        // Layout: [version(3) | present flag | hmac blob | state | entropy(8) | strength].
+        let entropy_idx = SUSPENDED_HKDF_SHA256_STATE_LEN - 9;
+        let strength_idx = SUSPENDED_HKDF_SHA256_STATE_LEN - 1;
+        let refused = |state, what: &str| {
+            assert!(
+                matches!(
+                    HKDF_SHA256::from_suspended(state, &salt),
+                    Err(SuspendableError::InvalidData)
+                ),
+                "{what} must be refused"
+            );
+        };
+
+        let mut hkdf = HKDF_SHA256::new();
+        hkdf.do_extract_init(&salt).unwrap();
+        let good = hkdf.suspend();
+        assert_eq!(good[strength_idx], SecurityStrength::_128bit as u8, "layout check");
+        let mut forged = good;
+        forged[strength_idx] = SecurityStrength::_256bit as u8;
+        refused(forged, "a strength above HMAC-SHA256's 128-bit cap");
+        let mut edge = good;
+        edge[strength_idx] = SecurityStrength::_128bit as u8;
+        assert!(HKDF_SHA256::from_suspended(edge, &salt).is_ok(), "the cap itself resumes");
+
+        let pre_init = HKDF_SHA256::new().suspend();
+        assert!(HKDF_SHA256::from_suspended(pre_init, &salt).is_ok(), "an honest pre-init state");
+        let mut forged = pre_init;
+        forged[entropy_idx..entropy_idx + 8].copy_from_slice(&64u64.to_le_bytes());
+        refused(forged, "entropy on a state that was never initialized");
+        let mut forged = pre_init;
+        forged[strength_idx] = SecurityStrength::_128bit as u8;
+        refused(forged, "a strength on a state that was never initialized");
+    }
+
     #[test]
     fn a_resumed_entropy_counter_saturates() {
         use bouncycastle_core::traits::SuspendableKeyed;
