@@ -2,13 +2,14 @@
 //! [`FromAnyKeyMaterial`]: the key-type and security-strength policy that the cipher and MAC
 //! suites used to check at every `do_*_init`, now checked once where the key is made.
 
-use crate::{DUMMY_SEED, FixedSeedRNG};
+use crate::DUMMY_SEED;
 use bouncycastle_core::errors::{KeyMaterialError, MACError, SymmetricCipherError};
 use bouncycastle_core::hazmat::do_hazardous_operations;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterial512, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::symmetric_key::{FromAnyKeyMaterial, FromKeyMaterial, MacGenerationKey};
-use bouncycastle_core::traits::MAC;
+use bouncycastle_core::traits::{AlgorithmInfo, MAC};
+use bouncycastle_rng::FixedSeedRNG;
 
 /// Instance of the test framework.
 pub struct TestFrameworkFromKeyMaterial {
@@ -89,9 +90,11 @@ impl TestFrameworkFromKeyMaterial {
         }
 
         // generate: from a strong enough RNG, and not from a weaker one
-        let mut rng = FixedSeedRNG::<KEY_LEN>::new(core::array::from_fn(|i| DUMMY_SEED[200 + i]));
+        let mut rng =
+            FixedSeedRNG::new(core::array::from_fn::<u8, KEY_LEN, _>(|i| DUMMY_SEED[200 + i]));
         K::generate(&mut rng).expect("generate from a 256-bit RNG");
-        let mut weak = FixedSeedRNG::<KEY_LEN>::new(core::array::from_fn(|i| DUMMY_SEED[200 + i]));
+        let mut weak =
+            FixedSeedRNG::new(core::array::from_fn::<u8, KEY_LEN, _>(|i| DUMMY_SEED[200 + i]));
         weak.set_security_strength(SecurityStrength::None);
         match K::generate(&mut weak) {
             Ok(_) => assert!(
@@ -208,7 +211,7 @@ impl TestFrameworkFromAnyKeyMaterial {
         }
 
         // generate
-        let mut rng = FixedSeedRNG::<64>::new(core::array::from_fn(|i| DUMMY_SEED[300 + i]));
+        let mut rng = FixedSeedRNG::new(core::array::from_fn::<u8, 64, _>(|i| DUMMY_SEED[300 + i]));
         let generated = K::generate(&mut rng).expect("generate from a 256-bit RNG");
         let mut generator = generated.create_generator();
         generator.do_update(b"Hi There");

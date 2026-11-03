@@ -14,9 +14,9 @@
 
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::symmetric_key::{FromAnyKeyMaterial, MacGenerationKey, MacVerificationKey};
-use bouncycastle_core::traits::{Hash, MAC};
+use bouncycastle_core::traits::MAC;
 use bouncycastle_core_test_framework::test_data_loaders::{Value, hex_field, wycheproof_json};
-use bouncycastle_hmac::HmacKey;
+use bouncycastle_hmac::{HMACParams, HmacKey};
 use bouncycastle_sha2::{SHA224, SHA256, SHA384, SHA512, SHA512_224, SHA512_256};
 use bouncycastle_sha3::{SHA3_224, SHA3_256, SHA3_384, SHA3_512};
 use bouncycastle_sm3::SM3;
@@ -25,7 +25,7 @@ use bouncycastle_sm3::SM3;
 const MAX_KEY_LEN: usize = 128;
 
 /// Runs every case in one `hmac_*_test.json` file through `HmacKey<H>`.
-fn run<H: Hash + Default>(filename: &str, algorithm: &str) {
+fn run<H: HMACParams>(filename: &str, algorithm: &str) {
     let Some(doc) = wycheproof_json(filename) else { return };
 
     assert_eq!(doc.get("algorithm").and_then(Value::as_str), Some(algorithm), "{filename}");

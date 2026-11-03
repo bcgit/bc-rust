@@ -3,8 +3,9 @@ use criterion::{Criterion, Throughput, criterion_group, criterion_main};
 use std::hint::black_box;
 
 use bouncycastle_core::key_material::{KeyMaterial256, KeyType};
-use bouncycastle_core::traits::{Hash, HashOneShot, MAC, RNG, XOF};
-use bouncycastle_sha3::kmac::KMAC128;
+use bouncycastle_core::symmetric_key::{FromAnyKeyMaterial, MacGenerationKey};
+use bouncycastle_core::traits::{Hash, HashOneShot, RNG, XOF};
+use bouncycastle_sha3::kmac::KMAC128Key;
 use bouncycastle_sha3::parallelhash::ParallelHash128;
 use bouncycastle_sha3::tuplehash::TupleHash128;
 use bouncycastle_sha3::{CSHAKE128, SHA3_224, SHA3_256, SHA3_384, SHA3_512, SHAKE128, SHAKE256};
@@ -234,12 +235,13 @@ fn bench_cshake128(c: &mut Criterion) {
 fn bench_kmac128(c: &mut Criterion) {
     let big_data = big_data();
     let key = KeyMaterial256::from_bytes_as_type(&[0x42u8; 32], KeyType::MACKey).unwrap();
+    let key = KMAC128Key::from_key_material(&key).unwrap();
     let mut tag = [0u8; 32];
-    let mut group = c.benchmark_group("sha3::KMAC128");
+    let mut group = c.benchmark_group("sha3::KMAC128Key");
     group.throughput(Throughput::Bytes(big_data.len() as u64));
-    group.bench_function(format!("{} bytes -- .mac_out()", big_data.len()), |b| {
+    group.bench_function(format!("{} bytes -- key.mac_out()", big_data.len()), |b| {
         b.iter(|| {
-            KMAC128::new(&key).unwrap().mac_out(black_box(&big_data), &mut tag).unwrap();
+            key.mac_out(black_box(&big_data), &mut tag).unwrap();
             black_box(&tag);
         })
     });

@@ -435,7 +435,7 @@ mod hmac_tests {
 
     /// What `TestFrameworkMAC::test_mac` ran per vector: the key built with the weak form (RFC 4231
     /// keys are below the HMAC's strength), its workers against the vector, and the key policy.
-    fn test_hmac<H: Hash + Default>(key: &impl KeyMaterialTrait, input: &[u8], expected: &[u8]) {
+    fn test_hmac<H: HMACParams>(key: &impl KeyMaterialTrait, input: &[u8], expected: &[u8]) {
         let hmac_key = HmacKey::<H>::from_key_material_allow_weak(key).unwrap();
         TestFrameworkMAC::new().test_mac_key(&hmac_key, input, expected);
         TestFrameworkFromAnyKeyMaterial::new().test::<HmacKey<H>>(key);

@@ -14,13 +14,12 @@
 //! [`HMAC`]: crate::HMAC
 //! [`HmacKey::create_generator`]: bouncycastle_core::symmetric_key::MacGenerationKey::create_generator
 
-use crate::HmacKey;
+use crate::{HMACParams, HmacKey};
 use bouncycastle_core::errors::MACError;
-use bouncycastle_core::traits::Hash;
 
 /// `H` after absorbing `K XOR ipad`, ready for the text: the start of RFC 2104 Section 2 step
 /// (4). What a worker's updates feed; [`finish_out`] is its other half.
-pub fn inner_state<HASH: Hash + Default>(key: &HmacKey<HASH>) -> HASH {
+pub fn inner_state<HASH: HMACParams>(key: &HmacKey<HASH>) -> HASH {
     key.inner_state()
 }
 
@@ -30,7 +29,7 @@ pub fn inner_state<HASH: Hash + Default>(key: &HmacKey<HASH>) -> HASH {
 ///
 /// # Errors
 /// [`MACError::InvalidLength`] if `out` is shorter than [`MIN_FIPS_DIGEST_LEN`](crate::MIN_FIPS_DIGEST_LEN).
-pub fn finish_out<HASH: Hash + Default>(
+pub fn finish_out<HASH: HMACParams>(
     key: &HmacKey<HASH>,
     inner: HASH,
     out: &mut [u8],

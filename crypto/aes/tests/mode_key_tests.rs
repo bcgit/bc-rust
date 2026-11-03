@@ -18,13 +18,13 @@ use bouncycastle_core::symmetric_key::{
     SymmetricEncryptionKey,
 };
 use bouncycastle_core::traits::BlockCipherEncryptor;
-use bouncycastle_core_test_framework::FixedSeedRNG;
 use bouncycastle_core_test_framework::aead::TestFrameworkAEADCipher;
 use bouncycastle_core_test_framework::block_cipher::TestFrameworkBlockCipher;
 use bouncycastle_core_test_framework::from_key_material::TestFrameworkFromKeyMaterial;
 use bouncycastle_core_test_framework::symmetric_ciphers::{
     TestFrameworkStreamCipher, TestFrameworkSymmetricCipher,
 };
+use bouncycastle_rng::FixedSeedRNG;
 use bouncycastle_rng::HashDRBG_SHA512;
 
 /// A 32-byte frame for the fixed-frame CCM key, within the framework's seed buffer.
@@ -147,7 +147,7 @@ fn ecb_keys_take_no_init_data() {
     let mut out = [0u8; 16];
     // A seedless RNG panics on any draw, so finishing is the proof that none is made.
     let (written, init): (usize, [u8; 0]) =
-        padded_key.encrypt_out(&mut FixedSeedRNG::<0>::new([]), b"hello", &mut out).unwrap();
+        padded_key.encrypt_out(&mut FixedSeedRNG::new([]), b"hello", &mut out).unwrap();
     assert_eq!((written, init), (16, []));
     assert_eq!(out, padded_hello, "PKCS7 over ECB is ECB of the padded block");
     assert_eq!(padded_key.decrypt(&init, &out).unwrap(), b"hello");
@@ -161,15 +161,13 @@ fn cbc_blocks_in_place_agrees_with_cbc_no_padding_out() {
     let msg: [u8; 48] = core::array::from_fn(|i| (i * 7 + 3) as u8);
 
     let mut in_place = msg;
-    let (n, iv_blocks) = key128::<CBC<Blocks>>()
-        .encrypt_inplace(&mut FixedSeedRNG::<16>::new(iv), &mut in_place)
-        .unwrap();
+    let (n, iv_blocks) =
+        key128::<CBC<Blocks>>().encrypt_inplace(&mut FixedSeedRNG::new(iv), &mut in_place).unwrap();
     assert_eq!((n, iv_blocks), (48, iv));
 
     let mut out = [0u8; 48];
-    let (m, iv_np) = key128::<CBC<NoPadding>>()
-        .encrypt_out(&mut FixedSeedRNG::<16>::new(iv), &msg, &mut out)
-        .unwrap();
+    let (m, iv_np) =
+        key128::<CBC<NoPadding>>().encrypt_out(&mut FixedSeedRNG::new(iv), &msg, &mut out).unwrap();
     assert_eq!((m, iv_np), (48, iv));
     assert_eq!(out, in_place);
 

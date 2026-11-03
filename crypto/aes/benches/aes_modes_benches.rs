@@ -79,8 +79,8 @@ fn key<const N: usize>() -> KeyMaterial<N> {
 
 /// IVs and nonces for the throughput measurements come from a cheap deterministic RNG created
 /// outside the timed loop, so they measure the mode and not OS entropy or DRBG construction.
-fn iv_rng() -> FixedSeedRNG<BLOCK_LEN> {
-    FixedSeedRNG::<BLOCK_LEN>::new([0x24u8; BLOCK_LEN])
+fn iv_rng() -> FixedSeedRNG<[u8; BLOCK_LEN]> {
+    FixedSeedRNG::new([0x24u8; BLOCK_LEN])
 }
 
 /// [`key`]'s bytes as a `KeyType::MACKey`, which is what CMAC takes.
@@ -260,7 +260,7 @@ fn bench_cfb8_aes128(c: &mut Criterion) {
 /// encryption.
 fn bench_ctr_aes128(c: &mut Criterion) {
     let key = AES128Key::<CTR>::from_key_material(&key::<16>()).unwrap();
-    let mut rng = FixedSeedRNG::<12>::new([0x24u8; 12]);
+    let mut rng = FixedSeedRNG::new([0x24u8; 12]);
     let flat: Vec<u8> = data().as_flattened().to_vec();
 
     let mut group = c.benchmark_group("modes::ctr::AES_128");
