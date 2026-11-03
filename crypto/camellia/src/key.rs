@@ -1,39 +1,6 @@
 //! Camellia key objects: a key bound to one Camellia variant and one mode, validated and expanded
-//! once, from which the mode's encryptors and decryptors are made.
-//!
-//! [`Camellia128Key<M>`], [`Camellia192Key<M>`] and [`Camellia256Key<M>`] are one type each per
-//! mode `M`, as `AES128Key<M>` and friends are in `bouncycastle-aes`: the key holds the mode's
-//! per-key state, the workers it hands out borrow it, and which role pair a key carries is decided
-//! by its mode: the symmetric pair for the stream modes and the padded block modes (`CFB`, `CFB8`,
-//! `CTR`, `CBC<PKCS7>`, `ECB<PKCS7>`), the block pair for `CBC<Blocks>`. The four modes this crate
-//! aliases as `Camellia_*` are among them; a key under any other mode has no role here.
-//!
-//! # Usage Examples
-//!
-//! ```
-//! use bouncycastle_camellia::Camellia256Key;
-//! use bouncycastle_cipher::modes::CBC;
-//! use bouncycastle_cipher::padding::PKCS7;
-//! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-//! use bouncycastle_core::symmetric_key::{FromKeyMaterial, SymmetricDecryptionKey};
-//! use bouncycastle_core::symmetric_key::SymmetricEncryptionKey;
-//! use bouncycastle_rng::HashDRBG_SHA512;
-//!
-//! let mut rng = HashDRBG_SHA512::new_from_os();   // one RNG, held across messages
-//! let material = KeyMaterial::<32>::from_bytes_as_type(&[0x42; 32], KeyType::SymmetricCipherKey)
-//!     .expect("a 32-byte symmetric cipher key");
-//! let key = Camellia256Key::<CBC<PKCS7>>::from_key_material(&material)
-//!     .expect("a valid Camellia-256 key");
-//!
-//! let (iv, ciphertext) = key.encrypt(&mut rng, b"a message of no particular length").unwrap();
-//! assert_eq!(key.decrypt(&iv, &ciphertext).unwrap(), b"a message of no particular length");
-//! ```
-//!
-//! # Memory Usage
-//!
-//! A key is its mode's per-key state: the expanded schedule, 208, 272 or 272 bytes for
-//! Camellia-128, -192 and -256; the four aliased modes keep nothing else per key. The cost is paid
-//! per key, not per message.
+//! once, from which the mode's encryptors and decryptors are made. The docs are on [`CamelliaKey`],
+//! which the crate root re-exports.
 
 use crate::hazmat::{
     Camellia128Internal, Camellia192Internal, Camellia256Internal, CamelliaInternal,
@@ -55,6 +22,40 @@ use bouncycastle_core::traits::RNG;
 ///
 /// The only state is the mode's per-key state, which holds the expanded schedule in a `Secret`
 /// and so is zeroized on drop; the key has no `Debug` and no way to read the material back.
+///
+/// [`Camellia128Key<M>`], [`Camellia192Key<M>`] and [`Camellia256Key<M>`] are one type each per
+/// mode `M`, as `AES128Key<M>` and friends are in `bouncycastle-aes`: the key holds the mode's
+/// per-key state, the workers it hands out borrow it, and which role pair a key carries is decided
+/// by its mode: the symmetric pair for the stream modes and the padded block modes (`CFB`, `CFB8`,
+/// `CTR`, `CBC<PKCS7>`, `ECB<PKCS7>`), the block pair for `CBC<Blocks>`. The four modes this crate
+/// aliases as `Camellia_*` are among them; a key under any other mode has no role here.
+///
+/// # Usage Examples
+///
+/// ```
+/// use bouncycastle_camellia::Camellia256Key;
+/// use bouncycastle_cipher::modes::CBC;
+/// use bouncycastle_cipher::padding::PKCS7;
+/// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
+/// use bouncycastle_core::symmetric_key::{FromKeyMaterial, SymmetricDecryptionKey};
+/// use bouncycastle_core::symmetric_key::SymmetricEncryptionKey;
+/// use bouncycastle_rng::HashDRBG_SHA512;
+///
+/// let mut rng = HashDRBG_SHA512::new_from_os();   // one RNG, held across messages
+/// let material = KeyMaterial::<32>::from_bytes_as_type(&[0x42; 32], KeyType::SymmetricCipherKey)
+///     .expect("a 32-byte symmetric cipher key");
+/// let key = Camellia256Key::<CBC<PKCS7>>::from_key_material(&material)
+///     .expect("a valid Camellia-256 key");
+///
+/// let (iv, ciphertext) = key.encrypt(&mut rng, b"a message of no particular length").unwrap();
+/// assert_eq!(key.decrypt(&iv, &ciphertext).unwrap(), b"a message of no particular length");
+/// ```
+///
+/// # Memory Usage
+///
+/// A key is its mode's per-key state: the expanded schedule, 208, 272 or 272 bytes for
+/// Camellia-128, -192 and -256; the four aliased modes keep nothing else per key. The cost is paid
+/// per key, not per message.
 pub struct CamelliaKey<P: CamelliaParams, M: Mode<CamelliaInternal<P>>> {
     state: M::KeyState,
 }

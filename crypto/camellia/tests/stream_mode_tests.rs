@@ -36,6 +36,7 @@ use bouncycastle_camellia::{
     BLOCK_LEN, CTR_NONCE_LEN, Camellia128Key, Camellia192Key, Camellia256Key,
 };
 use bouncycastle_cipher::modes::{CFB, CFB8, CTR};
+use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::hazmat::ElectronicCodeBook;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::symmetric_key::{
@@ -440,5 +441,26 @@ fn the_cfb8_keys_agree_with_the_equations() {
         "Camellia_CFB8_256",
         KEY_256,
         &Camellia256Key::<CFB8>::from_key_material(&key_material::<32>(KEY_256)).unwrap(),
+    );
+}
+
+/// The counter limit, through a key: under `CTR<15>` the counter is one byte, so the 256th block
+/// is the last the mode will produce, and the byte after it is refused rather than repeating the
+/// keystream (`bouncycastle_cipher::modes::Ctr`'s rule, pinned here on a Camellia key so that the
+/// key-object path reaches it).
+#[test]
+fn a_ctr_key_refuses_the_byte_after_the_counter_wraps() {
+    let key = Camellia128Key::<CTR<15>>::from_key_material(&key_material::<16>(KEY_128)).unwrap();
+    let nonce = [0x5au8; 15];
+    let (mut enc, got) = key.create_encryptor(&mut FixedSeedRNG::new(nonce)).unwrap();
+    assert_eq!(got, nonce);
+
+    let mut data = vec![0u8; 256 * BLOCK_LEN];
+    enc.do_encrypt_inplace(&mut data).expect("256 blocks fill a one-byte counter exactly");
+
+    let mut one = [0u8; 1];
+    assert!(
+        matches!(enc.do_encrypt_inplace(&mut one), Err(SymmetricCipherError::DataLimitExceeded)),
+        "the 4097th byte must be refused, not encrypted under a repeated counter block"
     );
 }
