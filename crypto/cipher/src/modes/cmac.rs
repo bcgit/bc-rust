@@ -64,7 +64,8 @@
 //!   2^21 with a 64-bit one.
 //! * **Key separation** (Sec 5.2): the key "shall be used exclusively for the CMAC mode of the
 //!   chosen block cipher", so the key's `from_key_material` accepts only a [`KeyType::MACKey`]
-//!   key (or an all-zero key, as HMAC does), never a [`KeyType::SymmetricCipherKey`].
+//!   key, never a [`KeyType::SymmetricCipherKey`] and not an all-zero (`Zeroized`) one; resume
+//!   goes through the same key object.
 //! * **Replay** (Appendix C): a valid tag says nothing about freshness; that is the protocol's job.
 //!
 //! [`KeyType::MACKey`]: bouncycastle_core::key_material::KeyType::MACKey

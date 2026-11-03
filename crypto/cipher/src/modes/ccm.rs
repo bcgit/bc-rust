@@ -683,6 +683,13 @@ where
     const MAX_COUNTER: u64 =
         if Self::Q_LEN >= 8 { u64::MAX } else { (1u64 << (8 * Self::Q_LEN)) - 1 };
 
+    /// The largest `next_ctr` a state of this type can hold: the payload is at most `2^8q - 1`
+    /// bytes (`MAX_COUNTER` is that same value), so at most `ceil(that / BLOCK_LEN)` counter
+    /// values from `S1` are ever used and the index stops one past the last. Tighter than
+    /// `MAX_COUNTER` for `q = 8`, where that is `u64::MAX` and a resumed index at it would
+    /// overflow the next increment and `remaining_blocks`.
+    const MAX_NEXT_CTR: u64 = Self::MAX_COUNTER / (BLOCK_LEN as u64) + 2;
+
     /// Formats the counter template and positions the keystream at `S1`.
     fn from_perm(perm: &'k P, nonce: &[u8; NONCE_LEN]) -> Self {
         // A.3, Tables 3 and 4: `Ctr_i` is `Flags || N || [i]_8q`, and its flags octet has both
@@ -1529,11 +1536,12 @@ where
         let mut r = Cursor::new(state);
         let ctr_template = r.array::<BLOCK_LEN>();
         // A.3: the flags octet is `[q-1]_3` and nothing else, and the counter field is zero in
-        // the template; `next_ctr` starts at 1 (`S0` is the tag mask) and stops at `MAX_COUNTER`.
+        // the template; `next_ctr` starts at 1 (`S0` is the tag mask) and stops at
+        // `MAX_NEXT_CTR`, one past the last counter value the largest payload uses.
         let next_ctr = r.u64();
         let flags_ok = ctr_template[0] == (Self::Q_LEN - 1) as u8;
         let counter_field_zero = ctr_template[BLOCK_LEN - Self::Q_LEN..].iter().all(|&b| b == 0);
-        let ctr_ok = next_ctr >= 1 && next_ctr - 1 <= Self::MAX_COUNTER;
+        let ctr_ok = next_ctr >= 1 && next_ctr <= Self::MAX_NEXT_CTR;
         if !(flags_ok && counter_field_zero && ctr_ok) {
             return Err(SuspendableError::InvalidData);
         }

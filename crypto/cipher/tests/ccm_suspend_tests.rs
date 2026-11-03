@@ -126,15 +126,20 @@ fn owed_is_held_to_the_frame() {
 }
 
 /// The counter index runs from 1 (`S0` is the tag mask, step 7 starts the payload keystream at
-/// `S1`) to one past the last counter value, which is where it stands once every block has been
-/// used; 0 and anything beyond are not states the mode can have been in.
+/// `S1`) to one past the last counter value the largest payload (`2^8q - 1` bytes, so
+/// `ceil(LIMIT / 16)` blocks) can use, which is where it stands once every block has been used;
+/// 0 and anything beyond are not states the mode can have been in. The bound is the payload's,
+/// not the counter field's: for `q = 8` the field runs to `u64::MAX`, where one more increment
+/// would overflow.
 #[test]
 fn the_counter_index_is_held_to_its_range() {
     let state = mid_payload();
+    let last = LIMIT / BLOCK_LEN as u64 + 2;
     assert!(resumes(with_u64(state, NEXT_CTR, 1)).is_ok());
-    assert!(resumes(with_u64(state, NEXT_CTR, LIMIT + 1)).is_ok(), "every counter used");
+    assert!(resumes(with_u64(state, NEXT_CTR, last)).is_ok(), "every counter used");
     assert_eq!(resumes(with_u64(state, NEXT_CTR, 0)), Err(SuspendableError::InvalidData));
-    assert_eq!(resumes(with_u64(state, NEXT_CTR, LIMIT + 2)), Err(SuspendableError::InvalidData));
+    assert_eq!(resumes(with_u64(state, NEXT_CTR, last + 1)), Err(SuspendableError::InvalidData));
+    assert_eq!(resumes(with_u64(state, NEXT_CTR, u64::MAX)), Err(SuspendableError::InvalidData));
 }
 
 /// A.3 Table 4 fixes the template's flags octet at `[q-1]_3` with every other bit zero, and the

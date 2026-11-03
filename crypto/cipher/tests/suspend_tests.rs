@@ -15,6 +15,7 @@ use bouncycastle_cipher::modes::{
 };
 use bouncycastle_cipher::padding::{PKCS7, PaddedBlockCipherDecryptor, PaddedBlockCipherEncryptor};
 use bouncycastle_cipher::{Decrypting, Encrypting};
+use bouncycastle_core::errors::SuspendableError;
 use bouncycastle_core::hazmat::{EcbDecryptionKey, EcbEncryptionKey, Mode};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::symmetric_key::{
@@ -27,6 +28,7 @@ use bouncycastle_core::traits::{
     SymmetricCipherEncryptor,
 };
 use bouncycastle_core_test_framework::suspendable_state::TestFrameworkSuspendableKeyedState;
+use bouncycastle_utils::suspendable_state::LIB_VERSION_LEN;
 
 #[path = "common/toy_block_cipher.rs"]
 mod toy_block_cipher;
@@ -224,6 +226,35 @@ fn ctr_mid_block_both_directions() {
         },
     );
     assert_eq!(plain, msg[7..]);
+}
+
+/// GCTR starts at counter 2 (SP 800-38D Algorithm 4 step 3, `inc32(J0)`); J0 itself, counter 1,
+/// is the tag mask and 0 is never used, so a state claiming either would emit `CIPH_K(J0)` as
+/// keystream. The counter is the little-endian u64 after the nonce in the CTR component.
+#[test]
+fn gcm_refuses_a_resumed_counter_below_two() {
+    let key = key_for::<GCM<16>>();
+    let (mut enc, _) = key.create_encryptor(&mut os_rng()).unwrap();
+    enc.do_update_aad(b"aad").unwrap();
+    let mut out = [0u8; 20];
+    enc.do_encrypt_out(&message(20), &mut out).unwrap();
+    let good: [u8; ToyGcm::<Encrypting>::SUSPENDED_STATE_LEN] = enc.suspend();
+    let counter_at = LIB_VERSION_LEN + 12;
+    assert_eq!(&good[counter_at..counter_at + 8], &4u64.to_le_bytes(), "20 bytes: 2 blocks used");
+    for bad_counter in [0u64, 1] {
+        let mut bad = good;
+        bad[counter_at..counter_at + 8].copy_from_slice(&bad_counter.to_le_bytes());
+        assert!(
+            matches!(
+                ToyGcm::<Encrypting>::from_suspended(bad, key.state()),
+                Err(SuspendableError::InvalidData)
+            ),
+            "counter {bad_counter} must be refused"
+        );
+    }
+    let mut edge = good;
+    edge[counter_at..counter_at + 8].copy_from_slice(&2u64.to_le_bytes());
+    assert!(ToyGcm::<Encrypting>::from_suspended(edge, key.state()).is_ok(), "2 is the start");
 }
 
 #[test]
