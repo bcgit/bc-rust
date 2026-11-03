@@ -95,12 +95,12 @@ use bouncycastle_sm3 as sm3;
 use bouncycastle_sm3::hmac::HMAC_SM3_NAME;
 
 /*** Defaults ***/
-///
+/// The default MAC: HMAC-SHA256, a 128-bit MAC.
 pub const DEFAULT_MAC_NAME: &str = HMAC_SHA256_NAME;
-///
+/// The default 128-bit MAC: HMAC-SHA256.
 pub const DEFAULT_128BIT_MAC_NAME: &str = HMAC_SHA256_NAME;
-///
-pub const DEFAULT_256BIT_MAC_NAME: &str = HMAC_SHA256_NAME;
+/// The default 256-bit MAC: HMAC-SHA512, as the 256-bit KDF default is HKDF-SHA512.
+pub const DEFAULT_256BIT_MAC_NAME: &str = HMAC_SHA512_NAME;
 
 /// A MAC key selected by name: the key object of whichever algorithm was named, which hands out
 /// [`MACFactoryWorker`]s through [`MacGenerationKey`] and [`MacVerificationKey`].
