@@ -25,6 +25,7 @@
 //! All vector values are transcribed from the downloaded text of the draft.
 
 use bouncycastle_cipher::modes::{CFB, CFB8, CTR};
+use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::hazmat::{BlockPermutation, ElectronicCodeBook};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::symmetric_key::{
@@ -300,4 +301,30 @@ fn the_cfb8_key_agrees_with_the_equations() {
         key.decrypt_inplace(&iv, &mut data).expect("decryption");
         assert_eq!(data, plaintext, "len {len}: SM4Key<CFB8> decrypt should match");
     }
+}
+
+/// The counter limit, through a key: under `CTR<15>` the counter is one byte, so the 256th block
+/// is the last the mode will produce, and the byte after it is refused rather than repeating the
+/// keystream (`bouncycastle_cipher::modes::Ctr`'s rule, pinned here on an SM4 key so that the
+/// key-object path reaches it).
+#[test]
+fn a_ctr_key_refuses_the_byte_after_the_counter_wraps() {
+    let material = KeyMaterial::<KEY_LEN>::from_bytes_as_type(
+        &hex::decode(KEY_1).unwrap(),
+        KeyType::SymmetricCipherKey,
+    )
+    .unwrap();
+    let key = SM4Key::<CTR<15>>::from_key_material(&material).unwrap();
+    let nonce = [0x5au8; 15];
+    let (mut enc, got) = key.create_encryptor(&mut FixedSeedRNG::new(nonce)).unwrap();
+    assert_eq!(got, nonce);
+
+    let mut data = vec![0u8; 256 * BLOCK_LEN];
+    enc.do_encrypt_inplace(&mut data).expect("256 blocks fill a one-byte counter exactly");
+
+    let mut one = [0u8; 1];
+    assert!(
+        matches!(enc.do_encrypt_inplace(&mut one), Err(SymmetricCipherError::DataLimitExceeded)),
+        "the 4097th byte must be refused, not encrypted under a repeated counter block"
+    );
 }

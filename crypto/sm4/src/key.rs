@@ -1,38 +1,5 @@
 //! SM4 key objects: a key bound to one mode, validated and expanded once, from which the mode's
-//! encryptors and decryptors are made.
-//!
-//! [`SM4Key<M>`] is one type per mode `M`, as `AES128Key<M>` is in `bouncycastle-aes`: the key
-//! holds the mode's per-key state, the workers it hands out borrow it, and which role pair a key
-//! carries is decided by its mode: the symmetric pair for the stream modes and the padded block
-//! modes (`CFB`, `CFB8`, `CTR`, `CBC<PKCS7>`, `ECB<PKCS7>`), the block pair for `CBC<Blocks>`,
-//! and the AEAD pair for `GCM`. The five modes this crate aliases as `SM4_*` are among them; a
-//! key under any other mode has no role here.
-//!
-//! # Usage Examples
-//!
-//! ```
-//! use bouncycastle_sm4::SM4Key;
-//! use bouncycastle_cipher::modes::CBC;
-//! use bouncycastle_cipher::padding::PKCS7;
-//! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-//! use bouncycastle_core::symmetric_key::{FromKeyMaterial, SymmetricDecryptionKey};
-//! use bouncycastle_core::symmetric_key::SymmetricEncryptionKey;
-//! use bouncycastle_rng::HashDRBG_SHA512;
-//!
-//! let mut rng = HashDRBG_SHA512::new_from_os();   // one RNG, held across messages
-//! let material = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
-//!     .expect("a 16-byte symmetric cipher key");
-//! let key = SM4Key::<CBC<PKCS7>>::from_key_material(&material).expect("a valid SM4 key");
-//!
-//! let (iv, ciphertext) = key.encrypt(&mut rng, b"a message of no particular length").unwrap();
-//! assert_eq!(key.decrypt(&iv, &ciphertext).unwrap(), b"a message of no particular length");
-//! ```
-//!
-//! # Memory Usage
-//!
-//! A key is its mode's per-key state: the 128-byte round-key schedule, which the four
-//! unauthenticated aliased modes keep alone, plus the 16-byte hash subkey under `GCM`, 144 bytes.
-//! The cost is paid per key, not per message.
+//! encryptors and decryptors are made. The docs are on [`SM4Key`], which the crate root re-exports.
 
 use crate::hazmat::SM4Internal;
 use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
@@ -51,6 +18,39 @@ use bouncycastle_core::traits::RNG;
 ///
 /// The only state is the mode's per-key state, which holds the expanded schedule in a `Secret`
 /// and so is zeroized on drop; the key has no `Debug` and no way to read the material back.
+///
+/// [`SM4Key<M>`] is one type per mode `M`, as `AES128Key<M>` is in `bouncycastle-aes`: the key
+/// holds the mode's per-key state, the workers it hands out borrow it, and which role pair a key
+/// carries is decided by its mode: the symmetric pair for the stream modes and the padded block
+/// modes (`CFB`, `CFB8`, `CTR`, `CBC<PKCS7>`, `ECB<PKCS7>`), the block pair for `CBC<Blocks>`,
+/// and the AEAD pair for `GCM`. The five modes this crate aliases as `SM4_*` are among them; a
+/// key under any other mode has no role here.
+///
+/// # Usage Examples
+///
+/// ```
+/// use bouncycastle_sm4::SM4Key;
+/// use bouncycastle_cipher::modes::CBC;
+/// use bouncycastle_cipher::padding::PKCS7;
+/// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
+/// use bouncycastle_core::symmetric_key::{FromKeyMaterial, SymmetricDecryptionKey};
+/// use bouncycastle_core::symmetric_key::SymmetricEncryptionKey;
+/// use bouncycastle_rng::HashDRBG_SHA512;
+///
+/// let mut rng = HashDRBG_SHA512::new_from_os();   // one RNG, held across messages
+/// let material = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
+///     .expect("a 16-byte symmetric cipher key");
+/// let key = SM4Key::<CBC<PKCS7>>::from_key_material(&material).expect("a valid SM4 key");
+///
+/// let (iv, ciphertext) = key.encrypt(&mut rng, b"a message of no particular length").unwrap();
+/// assert_eq!(key.decrypt(&iv, &ciphertext).unwrap(), b"a message of no particular length");
+/// ```
+///
+/// # Memory Usage
+///
+/// A key is its mode's per-key state: the 128-byte round-key schedule, which the four
+/// unauthenticated aliased modes keep alone, plus the 16-byte hash subkey under `GCM`, 144 bytes.
+/// The cost is paid per key, not per message.
 pub struct SM4Key<M: Mode<SM4Internal>> {
     state: M::KeyState,
 }
