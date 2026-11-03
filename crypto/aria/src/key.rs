@@ -1,37 +1,5 @@
-//! ARIA key objects: a key bound to one ARIA variant and one mode, validated and expanded once,
-//! from which the mode's encryptors and decryptors are made.
-//!
-//! [`ARIA128Key<M>`], [`ARIA192Key<M>`] and [`ARIA256Key<M>`] are one type each per mode `M`, as
-//! `AES128Key<M>` and friends are in `bouncycastle-aes`: the key holds the mode's per-key state,
-//! the workers it hands out borrow it, and which role pair a key carries is decided by its mode:
-//! the symmetric pair for every mode that implements the symmetric mode traits over the
-//! permutation -- the stream modes `CFB`, `CFB8` and `CTR<N>` at any nonce length `N`, and the
-//! padded block modes `CBC<PKCS7>`, `CBC<NoPadding>`, `ECB<PKCS7>` and `ECB<NoPadding>` -- and the
-//! block pair for `CBC<Blocks>`. The four modes this crate aliases as `ARIA_*` are among them; a
-//! key under any other mode (`ECB<Blocks>`, the AEAD and MAC modes) has no role here.
-//!
-//! # Usage Examples
-//!
-//! ```
-//! use bouncycastle_aria::ARIA256Key; use bouncycastle_cipher::modes::CBC; use
-//! bouncycastle_cipher::padding::PKCS7; use bouncycastle_core::key_material::{KeyMaterial,
-//! KeyType}; use bouncycastle_core::symmetric_key::{FromKeyMaterial, SymmetricDecryptionKey,
-//! SymmetricEncryptionKey}; use bouncycastle_rng::HashDRBG_SHA512;
-//!
-//! let mut rng = HashDRBG_SHA512::new_from_os();   // one RNG, held across messages
-//! let material = KeyMaterial::<32>::from_bytes_as_type(&[0x42; 32], KeyType::SymmetricCipherKey)
-//!     .expect("a 32-byte symmetric cipher key");
-//! let key = ARIA256Key::<CBC<PKCS7>>::from_key_material(&material).expect("a valid ARIA-256 key");
-//!
-//! let (iv, ciphertext) = key.encrypt(&mut rng, b"a message of no particular length").unwrap();
-//! assert_eq!(key.decrypt(&iv, &ciphertext).unwrap(), b"a message of no particular length");
-//! ```
-//!
-//! # Memory Usage
-//!
-//! A key is its mode's per-key state: the expanded schedule, 208, 240 or 272 bytes for ARIA-128,
-//! -192 and -256; the four aliased modes keep nothing else per key. The cost is paid per key, not
-//! per message.
+//! ARIA key objects. The docs are on [`ARIAKey`], which the crate root re-exports with its
+//! per-length aliases.
 
 use crate::hazmat::{ARIA128Internal, ARIA192Internal, ARIA256Internal, ARIAInternal};
 use crate::schedule::{ARIA128Params, ARIA192Params, ARIA256Params, ARIAParams};
@@ -46,11 +14,47 @@ use bouncycastle_core::symmetric_key::{
 };
 use bouncycastle_core::traits::RNG;
 
-/// An ARIA key for the mode `M`, parameterised by key length. Use the aliases [`ARIA128Key`],
-/// [`ARIA192Key`] and [`ARIA256Key`] rather than naming this directly.
+/// An ARIA key for the mode `M`, parameterised by key length: a key bound to one ARIA variant and
+/// one mode, validated and expanded once, from which the mode's encryptors and decryptors are made.
+/// Use the aliases [`ARIA128Key`], [`ARIA192Key`] and [`ARIA256Key`] rather than naming this
+/// directly.
+///
+/// The key holds the mode's per-key state, the workers it hands out borrow it, and which role pair
+/// a key carries is decided by its mode, as for `AES128Key<M>` and friends in `bouncycastle-aes`:
+/// the symmetric pair for every mode that implements the symmetric mode traits over the
+/// permutation -- the stream modes `CFB`, `CFB8` and `CTR<N>` at any nonce length `N`, and the
+/// padded block modes `CBC<PKCS7>`, `CBC<NoPadding>`, `ECB<PKCS7>` and `ECB<NoPadding>` -- and the
+/// block pair for `CBC<Blocks>`. The four modes this crate aliases as `ARIA_*` are among them; a
+/// key under any other mode (`ECB<Blocks>`, the AEAD and MAC modes) has no role here.
 ///
 /// The only state is the mode's per-key state, which holds the expanded schedule in a `Secret`
 /// and so is zeroized on drop; the key has no `Debug` and no way to read the material back.
+///
+/// # Usage Examples
+///
+/// ```
+/// use bouncycastle_aria::ARIA256Key;
+/// use bouncycastle_cipher::modes::CBC;
+/// use bouncycastle_cipher::padding::PKCS7;
+/// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
+/// use bouncycastle_core::symmetric_key::{FromKeyMaterial, SymmetricDecryptionKey};
+/// use bouncycastle_core::symmetric_key::SymmetricEncryptionKey;
+/// use bouncycastle_rng::HashDRBG_SHA512;
+///
+/// let mut rng = HashDRBG_SHA512::new_from_os();   // one RNG, held across messages
+/// let material = KeyMaterial::<32>::from_bytes_as_type(&[0x42; 32], KeyType::SymmetricCipherKey)
+///     .expect("a 32-byte symmetric cipher key");
+/// let key = ARIA256Key::<CBC<PKCS7>>::from_key_material(&material).expect("a valid ARIA-256 key");
+///
+/// let (iv, ciphertext) = key.encrypt(&mut rng, b"a message of no particular length").unwrap();
+/// assert_eq!(key.decrypt(&iv, &ciphertext).unwrap(), b"a message of no particular length");
+/// ```
+///
+/// # Memory Usage
+///
+/// A key is its mode's per-key state: the expanded schedule, 208, 240 or 272 bytes for ARIA-128,
+/// -192 and -256; the four aliased modes keep nothing else per key. The cost is paid per key, not
+/// per message.
 pub struct ARIAKey<P: ARIAParams, M: Mode<ARIAInternal<P>>> {
     state: M::KeyState,
 }

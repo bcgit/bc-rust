@@ -151,18 +151,18 @@ pub(crate) fn expand<P: ARIAParams>(key: &[u8]) -> Secret<P::Schedule> {
     w[4] = to_u128(&fe1(to_state(w[3]), &ck[1])) ^ w[2]; // W2 = FE(W1, CK2) ^ W0
     w[5] = to_u128(&fo1(to_state(w[4]), &ck[2])) ^ w[3]; // W3 = FO(W2, CK3) ^ W1
 
-    // The 17 candidate round keys in order, `ek_i = W_a ^ rot(W_b)` with `a`, `b` indexing
-    // `W0 .. W3` and `rot` a rotation right (negative) or left (positive) by the given count;
-    // the schedule keeps the first ROUNDS + 1, written straight into its `Secret`.
-    const CANDIDATES: [(usize, usize, i32); 17] = [
-        (0, 1, -19), // ek1  = W0 ^ (W1 >>> 19)
-        (1, 2, -19), // ek2  = W1 ^ (W2 >>> 19)
-        (2, 3, -19), // ek3  = W2 ^ (W3 >>> 19)
-        (3, 0, -19), // ek4  = (W0 >>> 19) ^ W3
-        (0, 1, -31), // ek5  = W0 ^ (W1 >>> 31)
-        (1, 2, -31), // ek6  = W1 ^ (W2 >>> 31)
-        (2, 3, -31), // ek7  = W2 ^ (W3 >>> 31)
-        (3, 0, -31), // ek8  = (W0 >>> 31) ^ W3
+    // The 17 candidate round keys in order, `ek_i = W_a ^ (W_b <<< r)` with `a`, `b` indexing
+    // `W0 .. W3`; a right rotation by `n` is written as the left rotation by `128 - n` it equals.
+    // The schedule keeps the first ROUNDS + 1, written straight into its `Secret`.
+    const CANDIDATES: [(usize, usize, u32); 17] = [
+        (0, 1, 109), // ek1  = W0 ^ (W1 >>> 19)
+        (1, 2, 109), // ek2  = W1 ^ (W2 >>> 19)
+        (2, 3, 109), // ek3  = W2 ^ (W3 >>> 19)
+        (3, 0, 109), // ek4  = (W0 >>> 19) ^ W3
+        (0, 1, 97),  // ek5  = W0 ^ (W1 >>> 31)
+        (1, 2, 97),  // ek6  = W1 ^ (W2 >>> 31)
+        (2, 3, 97),  // ek7  = W2 ^ (W3 >>> 31)
+        (3, 0, 97),  // ek8  = (W0 >>> 31) ^ W3
         (0, 1, 61),  // ek9  = W0 ^ (W1 <<< 61)
         (1, 2, 61),  // ek10 = W1 ^ (W2 <<< 61)
         (2, 3, 61),  // ek11 = W2 ^ (W3 <<< 61)
@@ -177,12 +177,7 @@ pub(crate) fn expand<P: ARIAParams>(key: &[u8]) -> Secret<P::Schedule> {
     for (chunk, &(a, b, rot)) in
         schedule.as_mut().as_chunks_mut::<4>().0.iter_mut().zip(&CANDIDATES)
     {
-        let rotated = if rot < 0 {
-            w[2 + b].rotate_right(rot.unsigned_abs())
-        } else {
-            w[2 + b].rotate_left(rot as u32)
-        };
-        *chunk = to_state(w[2 + a] ^ rotated);
+        *chunk = to_state(w[2 + a] ^ w[2 + b].rotate_left(rot));
     }
     schedule
 }

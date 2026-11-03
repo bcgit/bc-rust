@@ -31,15 +31,19 @@
 //! comparison.
 //!
 //! ```
-//! use bouncycastle_aria::ARIA256Key; use bouncycastle_cipher::modes::CBC; use
-//! bouncycastle_cipher::padding::PKCS7; use bouncycastle_core::key_material::{KeyMaterial,
-//! KeyType}; use bouncycastle_core::symmetric_key::{FromKeyMaterial, SymmetricDecryptionKey,
-//! SymmetricEncryptionKey}; use bouncycastle_rng::HashDRBG_SHA512;
+//! use bouncycastle_aria::ARIA256Key;
+//! use bouncycastle_cipher::modes::CBC;
+//! use bouncycastle_cipher::padding::PKCS7;
+//! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
+//! use bouncycastle_core::symmetric_key::{FromKeyMaterial, SymmetricDecryptionKey};
+//! use bouncycastle_core::symmetric_key::SymmetricEncryptionKey;
+//! use bouncycastle_rng::HashDRBG_SHA512;
 //!
 //! let mut rng = HashDRBG_SHA512::new_from_os();   // one RNG, held across messages
 //! let material = KeyMaterial::<32>::from_bytes_as_type(&[0x42; 32], KeyType::SymmetricCipherKey)
 //!     .expect("a 32-byte symmetric cipher key");
-//! let key = ARIA256Key::<CBC<PKCS7>>::from_key_material(&material).expect("a valid ARIA-256 key");
+//! let key = ARIA256Key::<CBC<PKCS7>>::from_key_material(&material)
+//!     .expect("a valid ARIA-256 key");
 //!
 //! // Any length: PKCS#7 pads it out to whole blocks, so 50 bytes is as good as 48.
 //! let plaintext = [0x5Au8; 50];
@@ -55,15 +59,18 @@
 //! The stream modes take any length and return the initialisation data the same way:
 //!
 //! ```
-//! use bouncycastle_aria::ARIA256Key; use bouncycastle_cipher::modes::CTR; use
-//! bouncycastle_core::key_material::{KeyMaterial, KeyType}; use
-//! bouncycastle_core::symmetric_key::{FromKeyMaterial, SymmetricDecryptionKey,
-//! SymmetricEncryptionKey}; use bouncycastle_rng::HashDRBG_SHA512;
+//! use bouncycastle_aria::ARIA256Key;
+//! use bouncycastle_cipher::modes::CTR;
+//! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
+//! use bouncycastle_core::symmetric_key::{FromKeyMaterial, SymmetricDecryptionKey};
+//! use bouncycastle_core::symmetric_key::SymmetricEncryptionKey;
+//! use bouncycastle_rng::HashDRBG_SHA512;
 //!
 //! let mut rng = HashDRBG_SHA512::new_from_os();
 //! let material = KeyMaterial::<32>::from_bytes_as_type(&[0x42; 32], KeyType::SymmetricCipherKey)
 //!     .expect("a 32-byte symmetric cipher key");
-//! let key = ARIA256Key::<CTR>::from_key_material(&material).expect("a valid ARIA-256 key");
+//! let key = ARIA256Key::<CTR>::from_key_material(&material)
+//!     .expect("a valid ARIA-256 key");
 //!
 //! // 50 bytes, and the ciphertext is 50 bytes: no padding anywhere.
 //! let plaintext = [0x5Au8; 50];
@@ -174,7 +181,7 @@
 //! byte positions, so the engine works on **four blocks at once**: each round transposes every
 //! block's rows into class words, runs each of the four circuits once on that class word from all
 //! four blocks, transposes back, and diffuses per block. The blocks never mix. The diffusion layer
-//! is computed in the word-level form the 32-bit implementations use (a per-word byte parity, six
+//! is computed in the word-level form the 32-bit implementations use (a per-word byte parity, six;
 //! word XORs, three fixed byte permutations, six word XORs again), a decomposition verified against
 //! the sixteen equations of Sec 2.4.3 rather than recalled; see the `round` module.
 //!
@@ -229,7 +236,7 @@
 //! | `encrypt_4blocks` | 320 B | 320 B | 320 B |
 //! | `decrypt_4blocks` | 400 B | 400 B | 400 B |
 //!
-//! Decryption costs more than encryption because it derives each round's decryption key from
+//! Decryption costs more than encryption because it derives each round's decryption key from;
 //! the stored encryption keys (one diffusion-layer application per round, see `schedule`) rather
 //! than reading a second schedule; the one- and two-block calls go through the four-block
 //! circuit with the spare lanes filled, and carry its frame on top of their own.
@@ -302,12 +309,12 @@
 #![forbid(missing_docs)]
 
 mod bitslice;
-pub mod cbc;
-pub mod cfb;
-pub mod cfb8;
-pub mod ctr;
+mod cbc;
+mod cfb;
+mod cfb8;
+mod ctr;
 pub mod hazmat;
-pub mod key;
+mod key;
 mod round;
 mod sbox;
 mod schedule;
