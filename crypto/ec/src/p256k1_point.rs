@@ -61,6 +61,15 @@ impl P256K1JacobianPoint {
         Self { x: self.x, y: self.y.negate(), z: self.z }
     }
 
+    /// Overwrites all three coordinates with zero (which is not the identity's encoding), for
+    /// scrubbing a secret-derived point before it goes out of scope; see
+    /// [`P256K1FieldElement::zeroize`].
+    pub fn zeroize(&mut self) {
+        self.x.zeroize();
+        self.y.zeroize();
+        self.z.zeroize();
+    }
+
     /// `2 * self`, via the `a = 0` doubling formula ("dbl-2009-l") described in the module docs.
     pub fn double(&self) -> Self {
         let a = self.x.mul(&self.x); // A = X1^2
@@ -248,7 +257,7 @@ impl P256K1JacobianPoint {
     }
 }
 
-fn select_point(
+pub(crate) fn select_point(
     cond: Condition<u64>,
     a: &P256K1JacobianPoint,
     b: &P256K1JacobianPoint,

@@ -73,6 +73,15 @@ impl P256JacobianPoint {
         Self { x: self.x, y: self.y.negate(), z: self.z }
     }
 
+    /// Overwrites all three coordinates with zero (which is not the identity's encoding), for
+    /// scrubbing a secret-derived point before it goes out of scope; see
+    /// [`P256FieldElement::zeroize`].
+    pub fn zeroize(&mut self) {
+        self.x.zeroize();
+        self.y.zeroize();
+        self.z.zeroize();
+    }
+
     /// `2 * self`, via the curve's `a = -3` Jacobian doubling shortcut. Total: correct (and, since
     /// squaring/multiplying `0` is well-defined, does not panic) even when `self` is the point at
     /// infinity, though the result is only meaningful when it is not (callers needing the
@@ -262,7 +271,7 @@ impl P256JacobianPoint {
 }
 
 /// Selects `a` if `cond` is TRUE, else `b`, over every coordinate of a point.
-fn select_point(
+pub(crate) fn select_point(
     cond: Condition<u64>,
     a: &P256JacobianPoint,
     b: &P256JacobianPoint,

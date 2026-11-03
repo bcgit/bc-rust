@@ -99,6 +99,13 @@ impl Bp384r1FieldElement {
         crate::nat::is_zero(&self.0)
     }
 
+    /// Overwrites the element with zero, for scrubbing a secret-derived value before it goes out
+    /// of scope. Defence in depth rather than a guarantee: copies the compiler kept in registers
+    /// or spilled itself are not reached.
+    pub fn zeroize(&mut self) {
+        bouncycastle_utils::secret::zeroize_in_place(&mut self.0);
+    }
+
     /// `self + other mod p`. Operates directly on the Montgomery-form limbs: Montgomery form is
     /// linear, so this needs no REDC, just the same carry-aware correction every Montgomery
     /// scalar field in this crate uses -- `R_MOD_P_LIMBS` (`R mod p`), not `P_LIMBS`, since a

@@ -73,6 +73,15 @@ impl Bp512r1JacobianPoint {
         Self { x: self.x, y: self.y.negate(), z: self.z }
     }
 
+    /// Overwrites all three coordinates with zero (which is not the identity's encoding), for
+    /// scrubbing a secret-derived point before it goes out of scope; see
+    /// [`Bp512r1FieldElement::zeroize`].
+    pub fn zeroize(&mut self) {
+        self.x.zeroize();
+        self.y.zeroize();
+        self.z.zeroize();
+    }
+
     /// `2 * self`, via the general-`a` doubling formula ("dbl-2007-bl") described in the module
     /// docs.
     pub fn double(&self) -> Self {
@@ -265,7 +274,7 @@ impl Bp512r1JacobianPoint {
     }
 }
 
-fn select_point(
+pub(crate) fn select_point(
     cond: Condition<u64>,
     a: &Bp512r1JacobianPoint,
     b: &Bp512r1JacobianPoint,

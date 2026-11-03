@@ -52,6 +52,15 @@ impl P521JacobianPoint {
         Self { x: self.x, y: self.y.negate(), z: self.z }
     }
 
+    /// Overwrites all three coordinates with zero (which is not the identity's encoding), for
+    /// scrubbing a secret-derived point before it goes out of scope; see
+    /// [`P521FieldElement::zeroize`].
+    pub fn zeroize(&mut self) {
+        self.x.zeroize();
+        self.y.zeroize();
+        self.z.zeroize();
+    }
+
     /// `2 * self`, via the curve's `a = -3` Jacobian doubling shortcut. See
     /// [`crate::p256_point::P256JacobianPoint::double`]'s docs.
     pub fn double(&self) -> Self {
@@ -236,7 +245,7 @@ impl P521JacobianPoint {
     }
 }
 
-fn select_point(
+pub(crate) fn select_point(
     cond: Condition<u64>,
     a: &P521JacobianPoint,
     b: &P521JacobianPoint,
