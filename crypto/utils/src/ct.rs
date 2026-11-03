@@ -54,10 +54,16 @@ where
 // offer any guarantees for cryptographic or security purposes".
 // ---------------------------------------------------------------------------------------------
 
-/// Returns `value` unchanged, via a volatile store to a stack slot and a volatile load back. The
-/// section comment above says what that does and does not guarantee.
+/// Returns `value` unchanged, via a volatile store to a stack slot and a volatile load back, so
+/// the optimiser carries no facts about `value` across it: not its range, not which bits are
+/// zero. Every constant-time construction in this module is built on it. Public for a caller
+/// whose own arithmetic the optimiser would otherwise rewrite into something that is not
+/// constant-time on every target; the AES crate widens a round-key word by shifts and ORs, which
+/// LLVM turns into a multiply (a software routine on AVR and RISC-V without M) unless the word's
+/// known-zero high bits are hidden first. Best effort, not a guarantee: see the section comment
+/// above.
 #[inline(always)]
-fn value_barrier<T: Copy>(value: T) -> T {
+pub fn value_barrier<T: Copy>(value: T) -> T {
     let mut slot = value;
     // SAFETY:
     //  * `&mut slot` must be a reference to an initialised, aligned `T` local on this stack frame, so
