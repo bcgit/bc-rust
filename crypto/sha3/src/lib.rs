@@ -508,3 +508,14 @@ impl AlgorithmOID for SHAKE256 {
     const OID_DER: &'static [u8] =
         &[0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x0c];
 }
+
+/// SHAKE as a fixed-length digest, for the algorithms that bind a hash's identity and length
+/// into what they sign (HashML-DSA, PKCS#1): id-shake128 is 32 bytes and id-shake256 is 64
+/// (RFC 8702 Section 3.1: "the output length of SHAKE128 or SHAKE256 as the message digest
+/// MUST be 32 or 64 bytes, respectively"), which is also FIPS 204 Algorithm 4's
+/// SHAKE128(M, 256). The same lengths as [`Hash::output_len`] on these types; the block
+/// length is the sponge rate.
+impl<PARAMS: SHAKEParams> HashAlgParams for SHAKEInternal<PARAMS> {
+    const OUTPUT_LEN: usize = (PARAMS::SIZE as usize) / 4;
+    const BLOCK_LEN: usize = PARAMS::SIZE.rate_bits() / 8;
+}
