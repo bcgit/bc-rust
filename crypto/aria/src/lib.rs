@@ -243,9 +243,9 @@
 //! * The Rust compiler makes no guarantee it will preserve this. The code is written so that the
 //!   natural code generation is straight-line, and `#![forbid(unsafe_code)]` rules out the usual
 //!   ways of forcing the issue, but the property is not contractual.
-//! * The four-block working state is not scrubbed after a call. Only the round keys (and, during
-//!   expansion, `KL`, `KR` and `W0 .. W3`) are wrapped in `Secret`, and so only they are guaranteed
-//!   to be zeroized on drop.
+//! * The four-block working state is not scrubbed after a call. The round keys, and during
+//!   expansion `KL`, `KR`, `W0 .. W3` and the candidate round keys, are wrapped in `Secret` and
+//!   so zeroized on drop; the by-value temporaries of the rounds and of key expansion are not.
 //! * Constant-time execution says nothing about power or electromagnetic side channels.
 //!
 //! ## Security strength

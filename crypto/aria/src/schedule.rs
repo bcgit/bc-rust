@@ -132,7 +132,11 @@ pub(crate) fn ek(schedule: &[u32], i: usize) -> RoundKey {
 ///   `ek4 = (W0 >>> 19) ^ W3`, then the same four pairings with `>>> 31`, `<<< 61`, `<<< 31`,
 ///   and `ek17 = W0 ^ (W1 <<< 19)` -- of which only the first `ROUNDS + 1` are kept.
 ///
-/// `KL`, `KR` and `W0 .. W3` are held in a `Secret` so they are scrubbed on return.
+/// `KL`, `KR`, `W0 .. W3` and the round keys live in `Secret`s from the moment they are
+/// computed, so they are scrubbed on return; no copy of a `W` or of a candidate round key is
+/// made outside one. What is not scrubbed is the by-value temporaries -- the `FO`/`FE` inputs
+/// and outputs and the word conversions -- which the compiler keeps in registers or spills as it
+/// sees fit, the same caveat as the cipher's working state.
 pub(crate) fn expand<P: ARIAParams>(key: &[u8]) -> Secret<P::Schedule> {
     // KL || KR = K || 0...0: copy the key into a zeroed 32-byte buffer.
     let mut kbuf = Secret::<[u8; 32]>::new();
@@ -146,31 +150,39 @@ pub(crate) fn expand<P: ARIAParams>(key: &[u8]) -> Secret<P::Schedule> {
     w[3] = to_u128(&fo1(to_state(w[2]), &ck[0])) ^ w[1]; // W1 = FO(W0, CK1) ^ KR
     w[4] = to_u128(&fe1(to_state(w[3]), &ck[1])) ^ w[2]; // W2 = FE(W1, CK2) ^ W0
     w[5] = to_u128(&fo1(to_state(w[4]), &ck[2])) ^ w[3]; // W3 = FO(W2, CK3) ^ W1
-    let (w0, w1, w2, w3) = (w[2], w[3], w[4], w[5]);
 
-    // The 17 candidate round keys, in order; the schedule keeps the first ROUNDS + 1.
-    let all: [u128; 17] = [
-        w0 ^ w1.rotate_right(19), // ek1  = W0 ^ (W1 >>> 19)
-        w1 ^ w2.rotate_right(19), // ek2  = W1 ^ (W2 >>> 19)
-        w2 ^ w3.rotate_right(19), // ek3  = W2 ^ (W3 >>> 19)
-        w0.rotate_right(19) ^ w3, // ek4  = (W0 >>> 19) ^ W3
-        w0 ^ w1.rotate_right(31), // ek5  = W0 ^ (W1 >>> 31)
-        w1 ^ w2.rotate_right(31), // ek6  = W1 ^ (W2 >>> 31)
-        w2 ^ w3.rotate_right(31), // ek7  = W2 ^ (W3 >>> 31)
-        w0.rotate_right(31) ^ w3, // ek8  = (W0 >>> 31) ^ W3
-        w0 ^ w1.rotate_left(61),  // ek9  = W0 ^ (W1 <<< 61)
-        w1 ^ w2.rotate_left(61),  // ek10 = W1 ^ (W2 <<< 61)
-        w2 ^ w3.rotate_left(61),  // ek11 = W2 ^ (W3 <<< 61)
-        w0.rotate_left(61) ^ w3,  // ek12 = (W0 <<< 61) ^ W3
-        w0 ^ w1.rotate_left(31),  // ek13 = W0 ^ (W1 <<< 31)
-        w1 ^ w2.rotate_left(31),  // ek14 = W1 ^ (W2 <<< 31)
-        w2 ^ w3.rotate_left(31),  // ek15 = W2 ^ (W3 <<< 31)
-        w0.rotate_left(31) ^ w3,  // ek16 = (W0 <<< 31) ^ W3
-        w0 ^ w1.rotate_left(19),  // ek17 = W0 ^ (W1 <<< 19)
+    // The 17 candidate round keys in order, `ek_i = W_a ^ rot(W_b)` with `a`, `b` indexing
+    // `W0 .. W3` and `rot` a rotation right (negative) or left (positive) by the given count;
+    // the schedule keeps the first ROUNDS + 1, written straight into its `Secret`.
+    const CANDIDATES: [(usize, usize, i32); 17] = [
+        (0, 1, -19), // ek1  = W0 ^ (W1 >>> 19)
+        (1, 2, -19), // ek2  = W1 ^ (W2 >>> 19)
+        (2, 3, -19), // ek3  = W2 ^ (W3 >>> 19)
+        (3, 0, -19), // ek4  = (W0 >>> 19) ^ W3
+        (0, 1, -31), // ek5  = W0 ^ (W1 >>> 31)
+        (1, 2, -31), // ek6  = W1 ^ (W2 >>> 31)
+        (2, 3, -31), // ek7  = W2 ^ (W3 >>> 31)
+        (3, 0, -31), // ek8  = (W0 >>> 31) ^ W3
+        (0, 1, 61),  // ek9  = W0 ^ (W1 <<< 61)
+        (1, 2, 61),  // ek10 = W1 ^ (W2 <<< 61)
+        (2, 3, 61),  // ek11 = W2 ^ (W3 <<< 61)
+        (3, 0, 61),  // ek12 = (W0 <<< 61) ^ W3
+        (0, 1, 31),  // ek13 = W0 ^ (W1 <<< 31)
+        (1, 2, 31),  // ek14 = W1 ^ (W2 <<< 31)
+        (2, 3, 31),  // ek15 = W2 ^ (W3 <<< 31)
+        (3, 0, 31),  // ek16 = (W0 <<< 31) ^ W3
+        (0, 1, 19),  // ek17 = W0 ^ (W1 <<< 19)
     ];
     let mut schedule = Secret::<P::Schedule>::new();
-    for (i, chunk) in schedule.as_mut().as_chunks_mut::<4>().0.iter_mut().enumerate() {
-        *chunk = to_state(all[i]);
+    for (chunk, &(a, b, rot)) in
+        schedule.as_mut().as_chunks_mut::<4>().0.iter_mut().zip(&CANDIDATES)
+    {
+        let rotated = if rot < 0 {
+            w[2 + b].rotate_right(rot.unsigned_abs())
+        } else {
+            w[2 + b].rotate_left(rot as u32)
+        };
+        *chunk = to_state(w[2 + a] ^ rotated);
     }
     schedule
 }
