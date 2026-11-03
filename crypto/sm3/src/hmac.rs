@@ -41,6 +41,7 @@
 //! * SM3 is a Merkle-Damgard construction and so is subject to length extension; `SM3(k || m)` is
 //!   not a secure MAC and HMAC-SM3 is the right construction for keyed hashing over SM3.
 
+use crate::hkdf::HKDF_SM3_NAME;
 use crate::{SM3, SUSPENDED_SM3_STATE_LEN};
 use bouncycastle_core::key_material::KeyMaterial;
 use bouncycastle_core::security_strength::SecurityStrength;
@@ -59,8 +60,6 @@ use bouncycastle_hmac::{HmacKey, MIN_FIPS_DIGEST_LEN};
 /*** String constants ***/
 /// Algorithm name string for HMAC-SM3, as used by the factories and CLI.
 pub const HMAC_SM3_NAME: &str = "HMAC-SM3";
-/// The name of HKDF over SM3, for `HMACParams::HKDF_ALG_NAME`.
-pub const HKDF_SM3_NAME: &str = "HKDF-SM3";
 
 /*** Type aliases ***/
 /// Public type for HMAC using SM3.

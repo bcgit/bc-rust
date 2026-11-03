@@ -1218,6 +1218,49 @@ enum Subcommands {
         x: bool,
     },
 
+    /// Perform HKDF-SM3 (RFC 5869 extract-then-expand) of the provided input keying material:
+    ///     OKM = HKDF-Expand(HKDF-Extract(salt, ikm), info, len)
+    /// Note: in production uses, secrets should not be passed on the command-line because they get
+    /// logged in shell history. Use the file-based input instead.
+    HKDF_SM3 {
+        /// The salt value in hex.
+        /// The `salt_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        salt: Option<String>,
+
+        /// A file containing the salt value in binary.
+        /// If both salt and salt_file options are provided, the file will be used.
+        #[arg(short, long)]
+        salt_file: Option<String>,
+
+        /// An Input Keying Material in hex.
+        /// The `ikm_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        ikm: Option<String>,
+
+        /// A file containing the input keying material in binary.
+        /// If both ikm and ikm_file options are provided, the file will be used.
+        #[arg(short, long)]
+        ikm_file: Option<String>,
+
+        /// The HKDF `info` input (RFC 5869 Section 2.3) in hex. Optional; defaults to empty.
+        #[arg(long)]
+        additional_input: Option<String>,
+
+        /// A file containing the HKDF `info` input in binary. Optional; defaults to empty.
+        /// If both additional_input and additional_input_file options are provided, the file will be used.
+        #[arg(short, long)]
+        additional_input_file: Option<String>,
+
+        /// Length of output to produce, in bytes: at most 255 times the hash's output length.
+        #[arg(short, long)]
+        len: usize,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
     /// Perform HMAC-SHA256 of the content provided on stdin.
     /// Supports streaming update for low memory footprint.
     /// Note: in production uses, secrets should not be passed on the command-line because they get
@@ -1947,6 +1990,19 @@ fn run() {
             x,
         }) => hkdf_cmd::hkdf_cmd(
             "HKDF-SHA512", salt, salt_file, ikm, ikm_file, additional_input, additional_input_file,
+            *len, *x,
+        ),
+        Some(Subcommands::HKDF_SM3 {
+            salt,
+            salt_file,
+            ikm,
+            ikm_file,
+            additional_input,
+            additional_input_file,
+            len,
+            x,
+        }) => hkdf_cmd::hkdf_cmd(
+            "HKDF-SM3", salt, salt_file, ikm, ikm_file, additional_input, additional_input_file,
             *len, *x,
         ),
         Some(Subcommands::HMAC_SHA256 { key, key_file, verify, x }) => {

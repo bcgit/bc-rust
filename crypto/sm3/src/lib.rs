@@ -51,6 +51,9 @@
 //! ## HMAC
 //! See [hmac].
 //!
+//! ## HKDF
+//! See [hkdf].
+//!
 //! # Memory Usage
 //!
 //! No heap memory is used by the algorithm itself; the `Vec<u8>`-returning convenience methods
@@ -110,6 +113,7 @@
 
 mod sm3;
 
+pub mod hkdf;
 pub mod hmac;
 
 pub use self::sm3::{SM3, SUSPENDED_SM3_STATE_LEN};

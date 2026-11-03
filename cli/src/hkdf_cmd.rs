@@ -6,6 +6,7 @@ use bouncycastle::core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle::hex;
 use bouncycastle::hkdf;
 use bouncycastle::sha2::hkdf::{HKDF_SHA256, HKDF_SHA384, HKDF_SHA512};
+use bouncycastle::sm3::hkdf::HKDF_SM3;
 
 /// The salt is held in a fixed-size key buffer; the library itself puts no bound on it.
 const MAX_SALT_LEN: usize = 1024;
@@ -84,6 +85,13 @@ pub(crate) fn hkdf_cmd(
             h.do_extract_update_bytes(&ikm_bytes).unwrap();
             let prk = h.do_extract_final().unwrap();
             HKDF_SHA512::expand_out(&prk, &info, len, &mut out_key)
+        }
+        "HKDF-SM3" => {
+            let mut h = HKDF_SM3::new();
+            h.do_extract_init(&salt_key).unwrap();
+            h.do_extract_update_bytes(&ikm_bytes).unwrap();
+            let prk = h.do_extract_final().unwrap();
+            HKDF_SM3::expand_out(&prk, &info, len, &mut out_key)
         }
         _ => {
             panic!("{} is not a supported HKDF variant.", hkdfname);
