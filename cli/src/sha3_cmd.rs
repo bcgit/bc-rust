@@ -1,14 +1,22 @@
-//! The SHA-3 family subcommands: `sha3-*`, `shake*`, `tuplehash*` and `parallelhash*`.
+//! The SHA-3 family subcommands: `sha3-*`, `shake*`, `cshake*`, `tuplehash*`, `tuplehashxof*`,
+//! `parallelhash*` and `parallelhashxof*`.
 
 use bouncycastle::core::traits::Hash;
 
-use bouncycastle::sha3::parallelhash::{ParallelHash128, ParallelHash256};
-use bouncycastle::sha3::tuplehash::{TupleHash128, TupleHash256};
-use bouncycastle::sha3::{SHA3_224, SHA3_256, SHA3_384, SHA3_512, SHAKE128, SHAKE256};
+use bouncycastle::core::traits::XOF;
+use bouncycastle::sha3::parallelhash::{
+    ParallelHash128, ParallelHash256, ParallelHashXOF128, ParallelHashXOF256,
+};
+use bouncycastle::sha3::tuplehash::{TupleHash128, TupleHash256, TupleHashXOF128, TupleHashXOF256};
+use bouncycastle::sha3::{
+    CSHAKE128, CSHAKE256, SHA3_224, SHA3_256, SHA3_384, SHA3_512, SHAKE128, SHAKE256,
+};
 use core::num::NonZeroUsize;
 use std::process::exit;
 
-use crate::helpers::{decode_hex_arg, read_stdin_all, stream_hash, stream_stdin, stream_xof};
+use crate::helpers::{
+    decode_hex_arg, read_stdin_all, squeeze_to_stdout, stream_hash, stream_stdin, stream_xof,
+};
 
 /// The most a fixed-length SP 800-185 function (KMAC, TupleHash, ParallelHash) will produce
 /// here: their output length is bound into the computation before any output, so the library
@@ -69,6 +77,68 @@ pub(crate) fn shake_cmd(strength: Strength, output_len: usize, output_hex: bool)
     match strength {
         Strength::Bits128 => stream_xof(SHAKE128::new(), output_len, output_hex),
         Strength::Bits256 => stream_xof(SHAKE256::new(), output_len, output_hex),
+    }
+}
+
+/// cSHAKE (NIST SP 800-185 Sec 3): SHAKE with a function name N and a customization string S
+/// bound in; with both empty it is SHAKE itself.
+pub(crate) fn cshake_cmd(
+    strength: Strength,
+    output_len: usize,
+    function_name: &[u8],
+    customization: &[u8],
+    output_hex: bool,
+) {
+    match strength {
+        Strength::Bits128 => {
+            stream_xof(CSHAKE128::new(function_name, customization), output_len, output_hex)
+        }
+        Strength::Bits256 => {
+            stream_xof(CSHAKE256::new(function_name, customization), output_len, output_hex)
+        }
+    }
+}
+
+/// TupleHashXOF (SP 800-185 Sec 5.3.1): TupleHash with the length not bound in, so the output
+/// streams at any length.
+pub(crate) fn tuplehashxof_cmd(
+    strength: Strength,
+    output_len: usize,
+    elements: &[String],
+    customization: &[u8],
+    output_hex: bool,
+) {
+    let tuple = load_tuple(elements);
+    match strength {
+        Strength::Bits128 => {
+            let mut x = TupleHashXOF128::new(customization);
+            tuple.iter().for_each(|e| x.do_update(e));
+            squeeze_to_stdout(x.into_squeezer(), output_len, output_hex);
+        }
+        Strength::Bits256 => {
+            let mut x = TupleHashXOF256::new(customization);
+            tuple.iter().for_each(|e| x.do_update(e));
+            squeeze_to_stdout(x.into_squeezer(), output_len, output_hex);
+        }
+    }
+}
+
+/// ParallelHashXOF (SP 800-185 Sec 6.3.1): ParallelHash with the length not bound in.
+pub(crate) fn parallelhashxof_cmd(
+    strength: Strength,
+    output_len: usize,
+    block_size: usize,
+    customization: &[u8],
+    output_hex: bool,
+) {
+    let block_size = require_block_size(block_size);
+    match strength {
+        Strength::Bits128 => {
+            stream_xof(ParallelHashXOF128::new(block_size, customization), output_len, output_hex)
+        }
+        Strength::Bits256 => {
+            stream_xof(ParallelHashXOF256::new(block_size, customization), output_len, output_hex)
+        }
     }
 }
 

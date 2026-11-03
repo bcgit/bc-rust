@@ -97,6 +97,16 @@ pub(crate) fn load_key<const KEY_LEN: usize>(
     key_file: &Option<String>,
     alg: &str,
 ) -> KeyMaterial<KEY_LEN> {
+    load_key_typed(key, key_file, alg, KeyType::SymmetricCipherKey)
+}
+
+/// As [`load_key`], tagged `key_type`: `MACKey` for the CMAC and GMAC keys.
+pub(crate) fn load_key_typed<const KEY_LEN: usize>(
+    key: &Option<String>,
+    key_file: &Option<String>,
+    alg: &str,
+    key_type: KeyType,
+) -> KeyMaterial<KEY_LEN> {
     let secret = load_secret(key, key_file, "key");
     // A raw key file may end in a newline, which lengthens the key by a byte; strip it only
     // when that leaves exactly the key, so a binary key whose last byte really is `0x0a` is not
@@ -112,20 +122,19 @@ pub(crate) fn load_key<const KEY_LEN: usize>(
     // `from_bytes_as_type` tags the key at the strength its length implies, which is exactly what
     // the engine requires -- except for an all-zero key, which it marks Zeroized instead.
     let mut key =
-        KeyMaterial::<KEY_LEN>::from_bytes_as_type(key_bytes, KeyType::SymmetricCipherKey)
-            .unwrap_or_else(|e| {
-                eprintln!("Error: couldn't load the key: {e:?}");
-                exit(-1);
-            });
+        KeyMaterial::<KEY_LEN>::from_bytes_as_type(key_bytes, key_type).unwrap_or_else(|e| {
+            eprintln!("Error: couldn't load the key: {e:?}");
+            exit(-1);
+        });
 
-    if key.key_type() != KeyType::SymmetricCipherKey {
+    if key.key_type() != key_type {
         // Same stance as `helpers::parse_seed`: warn, then do what was asked. A CLI is used for
         // test vectors and scripting, where an all-zero key is a legitimate thing to want.
         eprintln!(
             "Warning: all-zero (or otherwise zeroized) key provided. Proceeding, but this is not secure."
         );
         do_hazardous_operations(&mut key, |key| {
-            key.set_key_type(KeyType::SymmetricCipherKey)?;
+            key.set_key_type(key_type)?;
             key.set_security_strength(SecurityStrength::from_bytes(KEY_LEN))
         })
         .unwrap_or_else(|e| {
@@ -144,10 +153,22 @@ pub(crate) fn load_key_object<K: FromKeyMaterial<KEY_LEN>, const KEY_LEN: usize>
     key_file: &Option<String>,
     alg: &str,
 ) -> K {
-    K::from_key_material(&load_key::<KEY_LEN>(key, key_file, alg)).unwrap_or_else(|e| {
-        eprintln!("Error: couldn't load the key: {e:?}");
-        exit(-1);
-    })
+    load_key_object_typed(key, key_file, alg, KeyType::SymmetricCipherKey)
+}
+
+/// As [`load_key_object`], with the material tagged `key_type`.
+pub(crate) fn load_key_object_typed<K: FromKeyMaterial<KEY_LEN>, const KEY_LEN: usize>(
+    key: &Option<String>,
+    key_file: &Option<String>,
+    alg: &str,
+    key_type: KeyType,
+) -> K {
+    K::from_key_material(&load_key_typed::<KEY_LEN>(key, key_file, alg, key_type)).unwrap_or_else(
+        |e| {
+            eprintln!("Error: couldn't load the key: {e:?}");
+            exit(-1);
+        },
+    )
 }
 
 /// An [`RNG`] that yields the caller's IV once, so `--iv` can reach a key whose only
