@@ -167,14 +167,14 @@ fn pk_2048() -> RSA2048PublicKey {
     RSA2048PublicKey::from_bytes(&unhex(PK_2048_HEX)).expect("the documented key decodes")
 }
 
-/// The CLI accepts key and signature files as hex (as written here) or binary.
+/// Key and signature files are raw bytes (hex would need the global `--hex-input`).
 fn rsa_2048_sign(scheme: &str, hash: &str, msg: &[u8]) -> Vec<u8> {
-    let skfile = temp_file("sk", SK_2048_HEX.as_bytes());
+    let skfile = temp_file("sk", &unhex(SK_2048_HEX));
     run_ok(&["rsa-2048", "sign", "--scheme", scheme, "--hash", hash, "--skfile", &skfile], msg)
 }
 
 fn rsa_2048_verify(scheme: &str, hash: &str, msg: &[u8], sig: &[u8]) -> Output {
-    let pkfile = temp_file("pk", PK_2048_HEX.as_bytes());
+    let pkfile = temp_file("pk", &unhex(PK_2048_HEX));
     let sigfile = temp_file("sig", sig);
     run(
         &[
@@ -189,8 +189,8 @@ fn rsa_2048_verify(scheme: &str, hash: &str, msg: &[u8], sig: &[u8]) -> Output {
 /// check the CLI can make without a key generator.
 #[test]
 fn rsa_1024_verifies_a_wycheproof_signature_and_rejects_another_message() {
-    let pkfile = temp_file("pk1024", PK_1024_HEX.as_bytes());
-    let sigfile = temp_file("sig1024", SIG_1024_HEX.as_bytes());
+    let pkfile = temp_file("pk1024", &unhex(PK_1024_HEX));
+    let sigfile = temp_file("sig1024", &unhex(SIG_1024_HEX));
     let args = [
         "rsa-1024", "--scheme", "pkcs1v15", "--hash", "sha256", "--pkfile", &pkfile, "--sigfile",
         &sigfile,
@@ -222,7 +222,7 @@ fn rsa_2048_pkcs1v15_signature_matches_the_library_and_verifies() {
     assert!(String::from_utf8_lossy(&out.stdout).contains("Signature is valid."));
 
     // `-x` writes the same signature as hex.
-    let skfile = temp_file("sk", SK_2048_HEX.as_bytes());
+    let skfile = temp_file("sk", &unhex(SK_2048_HEX));
     let hex = run_ok(
         &[
             "rsa-2048", "sign", "--scheme", "pkcs1v15", "--hash", "sha256", "--skfile", &skfile,
@@ -300,8 +300,8 @@ fn rsa_2048_rejects_a_wrong_length_key_file() {
 /// Pairings a size does not offer (PSS at 1024 bits, SHAKE256 at 2048) are refused up front.
 #[test]
 fn unsupported_pairings_are_refused() {
-    let pkfile = temp_file("pk1024", PK_1024_HEX.as_bytes());
-    let sigfile = temp_file("sig1024", SIG_1024_HEX.as_bytes());
+    let pkfile = temp_file("pk1024", &unhex(PK_1024_HEX));
+    let sigfile = temp_file("sig1024", &unhex(SIG_1024_HEX));
     let err = run_err(
         &[
             "rsa-1024", "--scheme", "pss", "--hash", "sha256", "--pkfile", &pkfile, "--sigfile",
@@ -311,7 +311,7 @@ fn unsupported_pairings_are_refused() {
     );
     assert!(err.contains("not supported"), "stderr: {err}");
 
-    let skfile = temp_file("sk", SK_2048_HEX.as_bytes());
+    let skfile = temp_file("sk", &unhex(SK_2048_HEX));
     let err = run_err(
         &["rsa-2048", "sign", "--scheme", "pss", "--hash", "shake256", "--skfile", &skfile],
         b"msg",
@@ -339,7 +339,9 @@ fn rsa_2048_keygen_then_sign_and_verify() {
     let pk = RSA2048PublicKey::from_bytes(&unhex(pk_hex.trim())).unwrap();
     assert_eq!(pk.e(), 65537);
 
-    let skfile = temp_file("gensk", sk_hex.trim().as_bytes());
+    // The keys came out in hex (`-x`); the files a command reads are raw bytes.
+    let skfile = temp_file("gensk", &unhex(sk_hex.trim()));
+    let pkfile = temp_file("genpkraw", &unhex(pk_hex.trim()));
     let msg = pseudo_random(2000, 5);
     let sig = run_ok(
         &["rsa-2048", "sign", "--scheme", "pss", "--hash", "sha256", "--skfile", &skfile],

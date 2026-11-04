@@ -19,7 +19,8 @@
 //! a KDF (e.g. `hkdf`) before it can be used as a key.
 
 use crate::helpers::{
-    read_from_file, read_from_file_or_stdin, write_bytes_or_hex, write_bytes_or_hex_to_file,
+    println_stdout, read_input_file_or_stdin, read_secret_file, write_bytes_or_hex,
+    write_bytes_or_hex_to_file,
 };
 use bouncycastle::core::errors::KEMError;
 use bouncycastle::core::key_material::KeyMaterialTrait;
@@ -45,9 +46,10 @@ pub(crate) enum RSASVEAction {
     Decaps,
 }
 
-fn require_file(file: &Option<String>, flag_name: &str) -> Vec<u8> {
+/// `--skfile`, into a zeroized buffer: raw bytes, or hex under `--hex-input`.
+fn require_secret(file: &Option<String>, flag_name: &str) -> crate::helpers::SecretBytes {
     match file {
-        Some(f) => read_from_file(f),
+        Some(f) => read_secret_file(f),
         None => {
             eprintln!("Error: no {flag_name} provided.");
             exit(-1);
@@ -90,7 +92,7 @@ fn rsasve_cmd<
             write_bytes_or_hex(&sk.encode(), output_hex);
         }
         RSASVEAction::Encaps => {
-            let pk = PK::from_bytes(&read_from_file_or_stdin(pkfile)).unwrap_or_else(|e| {
+            let pk = PK::from_bytes(&read_input_file_or_stdin(pkfile)).unwrap_or_else(|e| {
                 eprintln!(
                     "Error: couldn't parse the input as a valid {alg_name} public key (must be \
                      exactly {PK_LEN} bytes): {e:?}"
@@ -108,13 +110,13 @@ fn rsasve_cmd<
                 }
                 None => {
                     write_bytes_or_hex(&ct, true);
-                    println!();
+                    println_stdout("");
                     write_bytes_or_hex(ss.ref_to_bytes(), true);
                 }
             }
         }
         RSASVEAction::Decaps => {
-            let sk = SK::from_bytes(&require_file(skfile, "skfile")).unwrap_or_else(|e| {
+            let sk = SK::from_bytes(require_secret(skfile, "skfile").ref_to_bytes()).unwrap_or_else(|e| {
                 eprintln!(
                     "Error: couldn't parse the input as a valid {alg_name} private key (must be \
                      exactly {SK_LEN} bytes): {e:?}"
@@ -122,7 +124,7 @@ fn rsasve_cmd<
                 exit(-1);
             });
             // `decaps` reports a wrong-length ciphertext itself (as `LengthError`).
-            let ss = K::decaps(&sk, &read_from_file_or_stdin(ctfile)).unwrap_or_else(|e| {
+            let ss = K::decaps(&sk, &read_input_file_or_stdin(ctfile)).unwrap_or_else(|e| {
                 eprintln!("Error: {alg_name} decapsulation failed: {e:?}");
                 exit(-1);
             });

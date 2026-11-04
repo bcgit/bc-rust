@@ -32,8 +32,12 @@
 //! through [`do_verify`], which needs only a `VerifyingKey` -- exactly the trait those sizes'
 //! types implement.
 
-use crate::helpers::{read_from_file, write_bytes_or_hex, write_bytes_or_hex_to_file};
+use crate::helpers::{
+    println_stdout, read_input_file, read_secret_file, stream_stdin, write_bytes_or_hex,
+    write_bytes_or_hex_to_file,
+};
 use bouncycastle::core::errors::SignatureError;
+use bouncycastle::core::key_material::KeyMaterialTrait;
 use bouncycastle::core::signature_key::{
     DeterministicSigningKey, SignatureAlgorithm, SigningKey, VerifyingKey,
 };
@@ -43,8 +47,6 @@ use bouncycastle::core::traits::{
 use bouncycastle::rng::HashDRBG_SHA512;
 use bouncycastle::rsa::{rsa_1024, rsa_1536, rsa_2048, rsa_3072, rsa_4096, rsa_8192};
 use clap::ValueEnum;
-use std::io;
-use std::io::Read;
 use std::process::exit;
 
 #[derive(ValueEnum, Clone, Debug, PartialEq, Eq)]
@@ -80,9 +82,11 @@ pub(crate) enum RSAHash {
     Shake256,
 }
 
+/// `--pkfile` and `--sigfile`, which cannot fall back to stdin (that carries the message): raw
+/// bytes, or hex under `--hex-input`.
 fn require_file(file: &Option<String>, flag_name: &str) -> Vec<u8> {
     match file {
-        Some(f) => read_from_file(f),
+        Some(f) => read_input_file(f),
         None => {
             eprintln!("Error: no {flag_name} provided.");
             exit(-1);
@@ -90,15 +94,14 @@ fn require_file(file: &Option<String>, flag_name: &str) -> Vec<u8> {
     }
 }
 
-/// The message is read raw, never hex-decoded: unlike a key or signature file, arbitrary message
-/// bytes that happen to look like hex must still be signed/verified byte-for-byte. Streams stdin
-/// through `update` in ~1 KB chunks (the same loop as `ecdsa_cmd.rs`).
-fn stream_stdin_into(mut update: impl FnMut(&[u8])) {
-    let mut buf = [0u8; 1024];
-    let mut bytes_read = io::stdin().read(&mut buf).expect("Failed to read from stdin");
-    while bytes_read > 0 {
-        update(&buf[..bytes_read]);
-        bytes_read = io::stdin().read(&mut buf).expect("Failed to read from stdin");
+/// `--skfile`, into a zeroized buffer.
+fn require_secret(file: &Option<String>, flag_name: &str) -> crate::helpers::SecretBytes {
+    match file {
+        Some(f) => read_secret_file(f),
+        None => {
+            eprintln!("Error: no {flag_name} provided.");
+            exit(-1);
+        }
     }
 }
 
@@ -163,10 +166,10 @@ fn do_verify<
     // `do_verify_init` is infallible for every `bouncycastle_rsa` verifier (it only stores the key
     // and a fresh hash state), so this unwrap cannot fire.
     let mut verifier = VerifyingKey::<A, SIG_LEN>::create_verifier(&pk, None).unwrap();
-    stream_stdin_into(|chunk| verifier.do_update(chunk));
+    stream_stdin(|chunk| verifier.do_update(chunk));
 
     if verifier.do_verify_final(&sig).is_ok() {
-        println!("Signature is valid.");
+        println_stdout("Signature is valid.");
     } else {
         eprintln!("Signature is invalid.");
         exit(-1);
@@ -226,14 +229,15 @@ fn rsa_pss_cmd<
             rsa_keygen_cmd::<PK, SK, PK_LEN, SK_LEN>(keygen, pkfile, output_hex, alg_name)
         }
         RSAAction::Sign => {
-            let sk = parse_sk::<SK, SK_LEN>(&require_file(skfile, "skfile"), alg_name);
+            let sk =
+                parse_sk::<SK, SK_LEN>(require_secret(skfile, "skfile").ref_to_bytes(), alg_name);
             let mut signer = SigningKey::<A, SIG_LEN>::create_signer(
                 &sk,
                 &mut HashDRBG_SHA512::new_from_os(),
                 None,
             )
             .unwrap();
-            stream_stdin_into(|chunk| signer.do_update(chunk));
+            stream_stdin(|chunk| signer.do_update(chunk));
             let sig = signer.do_final().unwrap_or_else(|_| {
                 eprintln!("Error: signing failed.");
                 exit(-1);
@@ -268,11 +272,12 @@ fn rsa_pkcs1_cmd<
             rsa_keygen_cmd::<PK, SK, PK_LEN, SK_LEN>(keygen, pkfile, output_hex, alg_name)
         }
         RSAAction::Sign => {
-            let sk = parse_sk::<SK, SK_LEN>(&require_file(skfile, "skfile"), alg_name);
+            let sk =
+                parse_sk::<SK, SK_LEN>(require_secret(skfile, "skfile").ref_to_bytes(), alg_name);
             let mut signer =
                 DeterministicSigningKey::<A, SIG_LEN>::create_signer_deterministic(&sk, None)
                     .unwrap();
-            stream_stdin_into(|chunk| signer.do_update(chunk));
+            stream_stdin(|chunk| signer.do_update(chunk));
             let sig = signer.do_final().unwrap_or_else(|_| {
                 eprintln!("Error: signing failed.");
                 exit(-1);
