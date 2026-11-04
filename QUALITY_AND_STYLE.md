@@ -17,8 +17,8 @@ that a computation in progress can be written to a cache and resumed later. Ciph
 decryptors, generators and verifiers a key object hands out -- do not: a suspended or cloned worker is a second copy of
 a nonce, counter or keystream position, and two copies that both go on to encrypt reuse keystream (#173). Those workers
 implement neither suspend trait nor `Clone`; a message is paused by holding its worker, and the worker traits are kept
-`dyn`-compatible so it can be held as `&mut dyn` or, where allocation is acceptable, `Box<dyn>`. The suspend and `Clone`
-impls the cipher workers still carry come out in the #173 sweep.
+`dyn`-compatible so it can be held as `&mut dyn` or, where allocation is acceptable, `Box<dyn>`. The `Clone` impls the
+cipher workers still carry come out in the #173 sweep's next step.
 
 `Clone` belongs on the types, not on the `core` traits. Every hash and XOF type is `Clone`, so a computation can be
 forked mid-stream and each copy finished on its own; `Hash` itself carries no `Clone` (and no `Default`), because both
