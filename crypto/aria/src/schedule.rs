@@ -22,7 +22,7 @@
 //! by public amounts.
 
 use crate::round::{RoundKey, State, fe1, fo1};
-use bouncycastle_utils::secret::{Secret, ZeroizablePrimitive};
+use bouncycastle_utils::secret::{NoPadding, Secret, ZeroizablePrimitive};
 
 /// Sealed: the three parameter sets are the only implementors.
 mod sealed {
@@ -45,7 +45,7 @@ pub trait ARIAParams: ARIAParamsInternalTrait {
     /// The algorithm name, as reported by `Algorithm::ALG_NAME`.
     const ALG_NAME: &'static str;
     /// `[u32; 4 * (ROUNDS + 1)]` -- the encryption round keys. See the module docs for the layout.
-    type Schedule: ZeroizablePrimitive + AsRef<[u32]> + AsMut<[u32]>;
+    type Schedule: ZeroizablePrimitive + NoPadding + AsRef<[u32]> + AsMut<[u32]>;
 }
 
 /// ARIA-128 parameters: 16-byte key, 12 rounds, `CK = (C1, C2, C3)`.
