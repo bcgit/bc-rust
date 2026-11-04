@@ -466,4 +466,32 @@ mod tests {
     fn compress_and_decompress_match_fips_203_for_du_11() {
         check::<MLKEM1024Params, 4>();
     }
+
+    /// `dot_product` returns reduced coefficients, in [0, q]: the k-term sum of Montgomery
+    /// products is in (-2kq, 2kq) and the callers' `inv_ntt` adds two coefficients in i16, so
+    /// the reduction at the end of `dot_product` is what keeps the sum in range (the review's
+    /// M1, which arose from that reduction being commented out). An LCG spreads the inputs over
+    /// (-q, q), the range NTT-domain coefficients take.
+    #[test]
+    fn dot_product_is_reduced() {
+        let mut x: u32 = 0x2545_F491;
+        let mut next = || {
+            x = x.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+            ((x % (2 * q as u32 - 1)) as i32 - (q as i32 - 1)) as i16
+        };
+        for _ in 0..64 {
+            let mut a = Vector::<4>::new();
+            let mut b = Vector::<4>::new();
+            for i in 0..4 {
+                for j in 0..N {
+                    a[i][j] = next();
+                    b[i][j] = next();
+                }
+            }
+            let w = a.dot_product(&b);
+            for j in 0..N {
+                assert!((0..=q).contains(&w[j]), "coefficient {j} is {}", w[j]);
+            }
+        }
+    }
 }
