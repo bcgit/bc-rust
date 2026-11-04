@@ -112,7 +112,8 @@ impl<T: ZeroizablePrimitive, const N: usize> ZeroizablePrimitive for [T; N] {
 ///
 /// # Safety
 ///
-/// An implementor must guarantee that `Self` has no padding bytes.
+/// An implementor must guarantee that every byte of every value of `Self` is initialized: no
+/// padding bytes, and no `MaybeUninit` or union field that may hold uninitialized bytes.
 pub unsafe trait NoPadding {}
 
 macro_rules! impl_no_padding {
