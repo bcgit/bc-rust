@@ -848,9 +848,8 @@ where
         // The CTR state's own check is only the top of the counter's range. GCTR starts at
         // inc32(J0), counter 2 (Algorithm 4 step 3); J0 itself, counter 1, is the tag mask
         // (step 6) and 0 is never used, so a resumed counter below 2 would emit CIPH_K(J0) as
-        // keystream. The counter follows the nonce in the CTR state.
-        let mut counter = Cursor::new(&ctr[GCM_NONCE_LEN..]);
-        if counter.u64() < 2 {
+        // keystream. Read through the keystream's own layout, after its own range check.
+        if CtrKeyStream::<'k, P, 16, GCM_NONCE_LEN>::counter_from_state(ctr) < 2 {
             return Err(SuspendableError::InvalidData);
         }
         gcm.ghash.restore_state(ghash)?;
