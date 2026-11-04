@@ -2,7 +2,8 @@
 //! key can carry, then the block, symmetric, stream and AEAD suites at the 128- and 256-bit key
 //! lengths (Camellia-192 sits between them in rounds and differs in nothing else the suites see),
 //! and the MAC keys' round trips. The Wycheproof suites cover CCM and CMAC's answers; GCM has
-//! no published Camellia vector, so its answers are bc-java's, in `gcm_bc_java_tests.rs`.
+//! no standard vector: `gcm_authors_tests.rs` has the Camellia authors' cases and
+//! `gcm_bc_java_tests.rs` bc-java's.
 
 use bouncycastle_camellia::hazmat::{Camellia128Internal, Camellia256Internal};
 use bouncycastle_camellia::{Camellia128Key, Camellia256Key};

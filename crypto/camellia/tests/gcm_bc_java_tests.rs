@@ -1,7 +1,8 @@
 //! Camellia-GCM known answers produced with Bouncy Castle Java, run against the keys.
 //!
 //! No standard publishes a Camellia-GCM vector: RFC 6367 defines the TLS cipher suites without
-//! one, and neither Wycheproof nor bc-test-data has a file. These answers come from bc-java
+//! one, and neither Wycheproof nor bc-test-data has a file; the Camellia authors' own cases are
+//! in `gcm_authors_tests.rs`, and cover 128 and 256 bits only. These answers come from bc-java
 //! 1.87's `GCMBlockCipher.newInstance(new CamelliaEngine())` under `AEADParameters` with a
 //! 128-bit tag, over inputs anyone can regenerate: the three RFC 3713 Appendix A keys, the
 //! 12-byte nonce `10 11 .. 1b`, the 20 AAD bytes `20 21 .. 33` and the 45-byte message
