@@ -73,14 +73,13 @@
 
 use super::ModeNames;
 use alloc::vec::Vec;
-use bouncycastle_core::errors::{MACError, SuspendableError};
+use bouncycastle_core::errors::MACError;
 use bouncycastle_core::hazmat::{BlockPermutation, MacMode, Mode};
 use bouncycastle_core::key_material::KeyType;
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::traits::{Algorithm, MAC, SuspendableKeyed};
+use bouncycastle_core::traits::{Algorithm, MAC};
 use bouncycastle_utils::ct::ct_eq_bytes;
 use bouncycastle_utils::secret::Secret;
-use bouncycastle_utils::suspendable_state::{add_lib_ver, check_lib_ver};
 
 /// The shortest tag [`MAC::mac_out`] / [`MAC::do_final_out`] will truncate to: 64 bits, the length
 /// SP 800-38B Appendix A.2 says "should provide sufficient protection against guessing attacks" for
@@ -200,10 +199,6 @@ impl<'k, P, const BLOCK_LEN: usize> Cmac<'k, P, BLOCK_LEN>
 where
     P: BlockPermutation<BLOCK_LEN> + ModeNames,
 {
-    /// Length of the [`SuspendableKeyed`] state: the three-byte library version, `C_i`, the
-    /// pending block, and its length.
-    pub const SUSPENDED_STATE_LEN: usize = 3 + 2 * BLOCK_LEN + 1;
-
     /// Begins a MAC over a new message over a key state, which the worker borrows: the
     /// permutation and the subkeys stay in the key. [`CMAC`]'s `MacMode` impl.
     pub(crate) fn from_key_state(key: &'k CmacKeyState<P, BLOCK_LEN>) -> Self {
@@ -321,59 +316,5 @@ where
     fn do_verify_final(mut self, mac: &[u8]) -> bool {
         self.finish();
         mac.len() == BLOCK_LEN && ct_eq_bytes(mac, &self.c[..])
-    }
-}
-
-/// The state is `C_i` and the pending block; the subkeys are the re-supplied key state's, which
-/// must be the one the suspended `Cmac` was created with -- a different key cannot be detected
-/// and silently produces a wrong tag.
-///
-/// `STATE_LEN` must be [`Cmac::SUSPENDED_STATE_LEN`]; any other value fails to compile.
-impl<'k, P, const BLOCK_LEN: usize, const STATE_LEN: usize> SuspendableKeyed<'k, STATE_LEN>
-    for Cmac<'k, P, BLOCK_LEN>
-where
-    P: BlockPermutation<BLOCK_LEN> + ModeNames,
-{
-    type Key = CmacKeyState<P, BLOCK_LEN>;
-
-    fn suspend(self) -> [u8; STATE_LEN] {
-        const {
-            assert!(
-                STATE_LEN == 3 + 2 * BLOCK_LEN + 1,
-                "STATE_LEN must be Cmac::SUSPENDED_STATE_LEN"
-            )
-        };
-        let mut state = [0u8; STATE_LEN];
-        let body = add_lib_ver(&mut state);
-        body[..BLOCK_LEN].copy_from_slice(&self.c[..]);
-        body[BLOCK_LEN..2 * BLOCK_LEN].copy_from_slice(&self.pending[..]);
-        // `pending_len <= BLOCK_LEN <= 16`, so it fits in a byte.
-        body[2 * BLOCK_LEN] = self.pending_len as u8;
-        state
-    }
-
-    /// # Errors
-    /// [`SuspendableError::IncompatibleVersion`] for a state from an incompatible library version,
-    /// and [`SuspendableError::InvalidData`] for a malformed state.
-    fn from_suspended(
-        state: [u8; STATE_LEN],
-        key: &'k Self::Key,
-    ) -> Result<Self, SuspendableError> {
-        const {
-            assert!(
-                STATE_LEN == 3 + 2 * BLOCK_LEN + 1,
-                "STATE_LEN must be Cmac::SUSPENDED_STATE_LEN"
-            )
-        };
-        let body = check_lib_ver(&state, None)?;
-        let pending_len = body[2 * BLOCK_LEN] as usize;
-        if pending_len > BLOCK_LEN {
-            return Err(SuspendableError::InvalidData);
-        }
-        let mut cmac = Self::from_key_state(key);
-        cmac.c.copy_from_slice(&body[..BLOCK_LEN]);
-        cmac.pending.copy_from_slice(&body[BLOCK_LEN..2 * BLOCK_LEN]);
-        cmac.pending_len = pending_len;
-        Ok(cmac)
     }
 }

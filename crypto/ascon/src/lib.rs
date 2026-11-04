@@ -141,8 +141,8 @@
 //! | Type | In-memory size (bytes) | Suspended state size (bytes) |
 //! |------|-------------------------|-------------------------------|
 //! | [`AsconAEAD128Key`] | 16 | |
-//! | [`Ascon_AEAD128<Encrypting>`] | 96 | [`SUSPENDED_ASCON_AEAD128_ENCRYPTOR_STATE_LEN`] (46) |
-//! | [`Ascon_AEAD128<Decrypting>`] | 96 | [`SUSPENDED_ASCON_AEAD128_DECRYPTOR_STATE_LEN`] (63) |
+//! | [`Ascon_AEAD128<Encrypting>`] | 96 | |
+//! | [`Ascon_AEAD128<Decrypting>`] | 96 | |
 //! | [`AsconHash256`] | 64 | [`SUSPENDED_ASCON_HASH256_STATE_LEN`] (53) |
 //! | [`AsconXof128`] | 64 | [`SUSPENDED_ASCON_XOF128_STATE_LEN`] (54) |
 //! | [`AsconCXof128`] | 64 | [`SUSPENDED_ASCON_CXOF128_STATE_LEN`] (54) |
@@ -227,8 +227,7 @@ mod ascon_xof128;
 
 pub use ascon_aead128::{
     ASCON_AEAD128_KEY_LEN, ASCON_AEAD128_NONCE_LEN, ASCON_AEAD128_TAG_LEN, Ascon_AEAD128,
-    AsconAEAD128Key, SUSPENDED_ASCON_AEAD128_DECRYPTOR_STATE_LEN,
-    SUSPENDED_ASCON_AEAD128_ENCRYPTOR_STATE_LEN,
+    AsconAEAD128Key,
 };
 pub use ascon_cxof128::{AsconCXof128, AsconCXof128Squeezer, SUSPENDED_ASCON_CXOF128_STATE_LEN};
 pub use ascon_hash256::{AsconHash256, SUSPENDED_ASCON_HASH256_STATE_LEN};

@@ -10,7 +10,7 @@ use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
 use bouncycastle_core::hazmat::{
     AeadDeclaredDecryptMode, AeadDeclaredEncryptMode, AeadDecryptMode, AeadEncryptMode,
     BlockDecryptMode, BlockEncryptMode, EcbDecryptMode, EcbDecryptionKey, EcbEncryptMode,
-    EcbEncryptionKey, MacMode, Mode, ModeKey, SymmetricDecryptMode, SymmetricEncryptMode,
+    EcbEncryptionKey, MacMode, Mode, SymmetricDecryptMode, SymmetricEncryptMode,
     do_hazardous_operations,
 };
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
@@ -186,14 +186,6 @@ impl<M: Mode<Camellia256Internal>> FromKeyMaterial<32> for Camellia256Key<M> {
             _ => Camellia256Internal::new(&as_cipher_key(key)?)?,
         };
         Ok(Self { state: M::key_state(perm) })
-    }
-}
-
-impl<P: CamelliaParams, M: Mode<CamelliaInternal<P>>> ModeKey<CamelliaInternal<P>, M>
-    for CamelliaKey<P, M>
-{
-    fn state(&self) -> &M::KeyState {
-        &self.state
     }
 }
 
