@@ -378,6 +378,7 @@ where
 impl<'k, P, Dir, const TAG_LEN: usize> Gcm<'k, P, Dir, TAG_LEN>
 where
     P: BlockPermutation<16> + ModeNames,
+    Dir: Direction,
 {
     /// The `N` of this type's [`SuspendableKeyed<'k, N>`] impl: the version header, the CTR state,
     /// the GHASH state, the two byte counts, the phase, the held-back tail and its length. See
@@ -531,6 +532,7 @@ where
 impl<'k, P, Dir, const TAG_LEN: usize> Algorithm for Gcm<'k, P, Dir, TAG_LEN>
 where
     P: BlockPermutation<16> + ModeNames,
+    Dir: Direction,
 {
     const ALG_NAME: &'static str = P::GCM_ALG_NAME;
     const MAX_SECURITY_STRENGTH: SecurityStrength = P::MAX_SECURITY_STRENGTH;

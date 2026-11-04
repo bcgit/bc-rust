@@ -173,8 +173,8 @@ where
     ) -> Result<(Self::Encryptor<'k>, [u8; NONCE_LEN]), SymmetricCipherError> {
         const {
             assert!(
-                P::ENCRYPTION_APPROVED,
-                "this permutation is approved for decryption only (ElectronicCodeBook::ENCRYPTION_APPROVED is false)"
+                !P::DECRYPT_ONLY,
+                "this permutation decrypts only (BlockPermutation::DECRYPT_ONLY): no encrypting worker may be made over it"
             )
         };
         let nonce = random_iv::<NONCE_LEN>(rng)?;

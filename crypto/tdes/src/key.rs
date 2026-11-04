@@ -45,9 +45,11 @@ impl TDESEngine for TDES2Internal {}
 /// Which roles a key carries is decided by its mode: `CBC<Blocks>` puts it on the block role pair,
 /// `CBC<PKCS7>` on the symmetric pair, `ECB<Blocks>` on the ECB pair under `hazmat`, and `CFB`,
 /// `CFB8` and `CTR<6, 8>` on the symmetric pair with stream-cipher workers. A `TDES2Key` carries
-/// the same roles, but every encrypting worker over it is a compile error at the call site: the
-/// modes check [`ElectronicCodeBook::ENCRYPTION_APPROVED`] when they make one, and two-key TDEA
-/// is disallowed for encryption. See [`TDES2Internal`].
+/// the same roles, but every encrypting worker over it is a compile error: the modes check
+/// [`BlockPermutation::DECRYPT_ONLY`](bouncycastle_core::hazmat::BlockPermutation::DECRYPT_ONLY)
+/// wherever they make one, a key's `create_encryptor` and a
+/// resume in the encrypting direction alike, and two-key TDEA is disallowed for encryption. See
+/// [`TDES2Internal`].
 pub struct TDESKey<P: TDESEngine, M: Mode<P>> {
     state: M::KeyState,
 }

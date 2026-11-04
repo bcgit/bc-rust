@@ -106,7 +106,7 @@
 use crate::modes::ModeNames;
 use crate::modes::ctr::apply_counter_blocks;
 use crate::modes::iv::random_iv;
-use crate::stream::StreamCipher;
+use crate::stream::{KeyStreamPolicy, StreamCipher};
 use bouncycastle_core::errors::{SuspendableError, SymmetricCipherError};
 use bouncycastle_core::hazmat::{
     AeadDeclaredDecryptMode, AeadDeclaredEncryptMode, AeadDecryptMode, AeadEncryptMode,
@@ -126,7 +126,7 @@ use bouncycastle_utils::suspendable_state::{
 };
 use core::marker::PhantomData;
 
-use crate::{Decrypting, Encrypting};
+use crate::{Decrypting, Direction, Encrypting};
 
 /// CCM (SP 800-38C) over any [`ElectronicCodeBook`] with a 128-bit block, for Sec 3's "packet
 /// environment, i.e., when all of the data is available in storage before CCM is applied": the
@@ -179,6 +179,7 @@ impl<'k, P, Dir, const BLOCK_LEN: usize, const NONCE_LEN: usize, const TAG_LEN: 
     Ccm<'k, P, Dir, BLOCK_LEN, NONCE_LEN, TAG_LEN>
 where
     P: BlockPermutation<BLOCK_LEN> + ModeNames,
+    Dir: Direction,
 {
     /// The spec's `q`: the octet length of the payload-length field `Q`. A.1 requires `n + q = 15`.
     const Q_LEN: usize = CcmKeyStream::<P, BLOCK_LEN, NONCE_LEN>::Q_LEN;
@@ -641,6 +642,7 @@ impl<'k, P, Dir, const BLOCK_LEN: usize, const NONCE_LEN: usize, const TAG_LEN: 
     for Ccm<'k, P, Dir, BLOCK_LEN, NONCE_LEN, TAG_LEN>
 where
     P: BlockPermutation<BLOCK_LEN> + ModeNames,
+    Dir: Direction,
 {
     /// The permutation's name for this mode, [`ModeNames::CCM_ALG_NAME`].
     const ALG_NAME: &'static str = P::CCM_ALG_NAME;
@@ -744,6 +746,21 @@ where
     const MAX_SECURITY_STRENGTH: SecurityStrength = P::MAX_SECURITY_STRENGTH;
 }
 
+impl<'k, P, const BLOCK_LEN: usize, const NONCE_LEN: usize> crate::sealed::Sealed
+    for CcmKeyStream<'k, P, BLOCK_LEN, NONCE_LEN>
+where
+    P: BlockPermutation<BLOCK_LEN> + ModeNames,
+{
+}
+
+impl<'k, P, const BLOCK_LEN: usize, const NONCE_LEN: usize> KeyStreamPolicy
+    for CcmKeyStream<'k, P, BLOCK_LEN, NONCE_LEN>
+where
+    P: BlockPermutation<BLOCK_LEN> + ModeNames,
+{
+    const DECRYPT_ONLY: bool = P::DECRYPT_ONLY;
+}
+
 impl<'k, P, const BLOCK_LEN: usize, const NONCE_LEN: usize> KeyStream<NONCE_LEN, BLOCK_LEN>
     for CcmKeyStream<'k, P, BLOCK_LEN, NONCE_LEN>
 where
@@ -815,6 +832,7 @@ impl<
 > CcmAdapter<'k, P, Dir, BLOCK_LEN, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>
 where
     P: BlockPermutation<BLOCK_LEN> + ModeNames,
+    Dir: Direction,
 {
     /// The compile-time check for the trait adapters, run from both [`CcmPacketEncryptor`]'s and
     /// [`CcmPacketDecryptor`]'s constructors and from their one-shots, which never build an adapter, so
@@ -1478,6 +1496,7 @@ impl<'k, P, Dir, const BLOCK_LEN: usize, const NONCE_LEN: usize, const TAG_LEN: 
     SuspendableComponent<'k> for Ccm<'k, P, Dir, BLOCK_LEN, NONCE_LEN, TAG_LEN>
 where
     P: BlockPermutation<BLOCK_LEN> + ModeNames,
+    Dir: Direction,
 {
     const STATE_LEN: usize = Self::CTR_STATE_LEN + BLOCK_LEN + 8 + 8 + 8;
     type Key = P;
@@ -1947,6 +1966,7 @@ impl<
     for CcmAdapter<'k, P, Dir, BLOCK_LEN, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>
 where
     P: BlockPermutation<BLOCK_LEN> + ModeNames,
+    Dir: Direction,
 {
     const STATE_LEN: usize =
         <Ccm<'k, P, Dir, BLOCK_LEN, NONCE_LEN, TAG_LEN> as SuspendableComponent<'k>>::STATE_LEN

@@ -18,7 +18,7 @@
 //! docs](crate#suspending-and-resuming-execution) for an example.
 //!
 
-use crate::{Decrypting, Encrypting};
+use crate::{Decrypting, Direction, Encrypting, sealed};
 use bouncycastle_core::errors::{SuspendableError, SymmetricCipherError};
 use bouncycastle_core::hazmat::KeyStream;
 use bouncycastle_core::security_strength::SecurityStrength;
@@ -67,6 +67,16 @@ where
     _marker: PhantomData<Dir>,
 }
 
+/// Whether a keystream's permutation decrypts only (`BlockPermutation::DECRYPT_ONLY`), so that
+/// [`StreamCipher`] can refuse, at compile time, to be made in the encrypting direction over it,
+/// resumed or otherwise. `KeyStream` itself is `dyn`-compatible and so carries no constant; this
+/// sealed trait is implemented for the crate's keystream types alone, which is where every
+/// `StreamCipher` comes from.
+pub trait KeyStreamPolicy: sealed::Sealed {
+    /// The permutation's `DECRYPT_ONLY`.
+    const DECRYPT_ONLY: bool;
+}
+
 impl<KS, Dir, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize>
     StreamCipher<KS, Dir, INIT_DATA_LEN, BLOCK_LEN>
 where
@@ -75,11 +85,21 @@ where
     /// Wraps a keystream that has already been constructed and positioned, such as one that
     /// starts part-way into its counter space (GCM's GCTR starts at `inc32(J0)`).
     ///
-    /// # 🚨 Security Considerations 🚨
-    /// This bypasses init-data generation: the keystream's nonce is whatever it was constructed
-    /// with, and the caller is responsible for it never repeating under the key. A key's
-    /// `create_encryptor` is the safe path.
-    pub fn from_keystream(keystream: KS) -> Self {
+    /// Crate-private: it bypasses init-data generation (the keystream's nonce is whatever it was
+    /// constructed with, and a repeat under the key is the two-time pad), and a decryptor's
+    /// keystream wrapped in the encrypting direction would be an encryptor over a permutation
+    /// that decrypts only. A key's `create_encryptor` is the public path.
+    pub(crate) fn from_keystream(keystream: KS) -> Self
+    where
+        KS: KeyStreamPolicy,
+        Dir: Direction,
+    {
+        const {
+            assert!(
+                !(Dir::IS_ENCRYPTING && KS::DECRYPT_ONLY),
+                "this keystream's permutation decrypts only (BlockPermutation::DECRYPT_ONLY): no encrypting stream cipher may be made over it"
+            )
+        };
         Self::check_shape();
         Self { keystream, pending: Secret::new(), used: BLOCK_LEN, _marker: PhantomData }
     }
@@ -342,7 +362,8 @@ where
 impl<'k, KS, Dir, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize, const N: usize>
     SuspendableKeyed<'k, N> for StreamCipher<KS, Dir, INIT_DATA_LEN, BLOCK_LEN>
 where
-    KS: KeyStream<INIT_DATA_LEN, BLOCK_LEN> + SuspendableComponent<'k>,
+    KS: KeyStream<INIT_DATA_LEN, BLOCK_LEN> + SuspendableComponent<'k> + KeyStreamPolicy,
+    Dir: Direction,
 {
     type Key = KS::Key;
 
@@ -354,6 +375,12 @@ where
     /// and resumes over the same chaining value, which gives wrong output rather than an error.
     /// Only GCM, whose state means different things per direction, refuses the other one.
     fn from_suspended(state: [u8; N], key: &'k Self::Key) -> Result<Self, SuspendableError> {
+        const {
+            assert!(
+                !(Dir::IS_ENCRYPTING && KS::DECRYPT_ONLY),
+                "this keystream's permutation decrypts only (BlockPermutation::DECRYPT_ONLY): no encrypting stream cipher may be made over it, resumed or otherwise"
+            )
+        };
         resume_component(&state, key)
     }
 }

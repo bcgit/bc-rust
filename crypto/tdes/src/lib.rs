@@ -103,8 +103,14 @@
 //!
 //! [`TDES2Key`] takes the 16-byte `Key1 || Key2` of two-key TDEA (`Key3 = Key1`), which
 //! SP 800-131A Rev 2 Table 1 lists as "Disallowed" for encryption and "Legacy use" for decryption.
-//! Its engine sets `ElectronicCodeBook::ENCRYPTION_APPROVED` to `false`, so the key's
-//! `create_encryptor` refuses to compile under every mode, while its decryptors work. The aliases
+//! Its engine sets `BlockPermutation::DECRYPT_ONLY`, so no encrypting worker can be made over
+//! it: the key's `create_encryptor` refuses to compile under every mode, and so does resuming a
+//! suspended state in the encrypting direction, while its decryptors work. That gate
+//! stops accidental encryption through the encrypting APIs, not deliberate use of the forward
+//! cipher function: CTR decryption *is* CTR encryption, and a CFB decryptor under a chosen IV
+//! maps a zero block to `CIPH(IV)`, so two-key encryption can be assembled from those decryptors
+//! with the safe API alone (SP 800-38A defines the modes that way). A deployment that must rule
+//! two-key encryption out altogether should expose only the CBC and ECB decryptors. The aliases
 //! [`TDES2_CBC`], [`TDES2_CFB`], [`TDES2_CFB8`], [`TDES2_CTR`] and [`TDES2_ECB`] are those
 //! decryptors, with the IV or nonce supplied by the caller as it was received:
 //!
@@ -206,9 +212,11 @@
 //!
 //! ## TDEA is a legacy algorithm
 //!
-//! NIST withdrew SP 800-67 Rev 2 on 1 January 2024: "This signifies that TDEA is no longer an
-//! approved block cipher. ... TDEA will continue to be allowed for the decryption, key
-//! unwrapping, and verification of Message Authentication Codes (MACs) of already-protected data."
+//! NIST withdrew SP 800-67 Rev 2 on 1 January 2024. Its announcement
+//! (<https://csrc.nist.gov/news/2023/nist-to-withdraw-sp-800-67-rev-2>): "The scheduled
+//! withdrawal of SP 800-67 Rev. 2 will signify that TDEA is no longer an approved block cipher.
+//! TDEA will continue to be allowed for the decryption, key unwrapping, and verification of MACs
+//! of already-protected data".
 //! SP 800-131A Rev 2, Table 1, gives the transition: three-key TDEA encryption "Deprecated through
 //! 2023, Disallowed after 2023", three-key decryption "Legacy use", two-key encryption
 //! "Disallowed". SP 800-57 Part 1 Rev 5, Table 2, rates 3TDEA at 112 bits of security, which is
@@ -216,6 +224,11 @@
 //!
 //! This crate exists so that data and protocols that still depend on TDEA can be handled. Do not
 //! choose it for a new design; use AES from `bouncycastle-aes`.
+//!
+//! `BlockPermutation::DECRYPT_ONLY` records this library's policy, not NIST's status: it is set
+//! for two-key TDEA alone. Three-key TDEA encryption, which SP 800-131A Rev 2 also disallows
+//! after 2023, stays available here because the OpenSSL provider this library serves exposes it;
+//! a deployment that must not encrypt under TDEA should not use [`TDES3Key`]'s encrypting roles.
 //!
 //! ## The 64-bit block, and the data limit
 //!

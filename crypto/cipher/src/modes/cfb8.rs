@@ -54,7 +54,7 @@
 
 use crate::modes::ModeNames;
 use crate::modes::iv::random_iv;
-use crate::{Decrypting, Encrypting};
+use crate::{Decrypting, Direction, Encrypting};
 use bouncycastle_core::errors::{SuspendableError, SymmetricCipherError};
 use bouncycastle_core::hazmat::{
     BlockPermutation, ElectronicCodeBook, Mode, SymmetricDecryptMode, SymmetricEncryptMode,
@@ -105,8 +105,8 @@ where
     ) -> Result<(Self::Encryptor<'k>, [u8; BLOCK_LEN]), SymmetricCipherError> {
         const {
             assert!(
-                P::ENCRYPTION_APPROVED,
-                "this permutation is approved for decryption only (ElectronicCodeBook::ENCRYPTION_APPROVED is false)"
+                !P::DECRYPT_ONLY,
+                "this permutation decrypts only (BlockPermutation::DECRYPT_ONLY): no encrypting worker may be made over it"
             )
         };
         // `I1 = IV`.
@@ -398,6 +398,7 @@ impl<'k, P, Dir, const BLOCK_LEN: usize, const N: usize> SuspendableKeyed<'k, N>
     for Cfb8<'k, P, Dir, BLOCK_LEN>
 where
     P: BlockPermutation<BLOCK_LEN> + ModeNames,
+    Dir: Direction,
 {
     type Key = P;
 
@@ -407,8 +408,16 @@ where
 
     /// The state carries no direction: one suspended by the other direction's worker is accepted
     /// and resumes over the same chaining value, which gives wrong output rather than an error.
-    /// Only GCM, whose state means different things per direction, refuses the other one.
+    /// Only GCM, whose state means different things per direction, refuses the other one. A
+    /// permutation that decrypts only cannot be resumed in the encrypting direction at all: that
+    /// is a compile error, as making the encryptor any other way is.
     fn from_suspended(state: [u8; N], key: &'k Self::Key) -> Result<Self, SuspendableError> {
+        const {
+            assert!(
+                !(Dir::IS_ENCRYPTING && P::DECRYPT_ONLY),
+                "this permutation decrypts only (BlockPermutation::DECRYPT_ONLY): no encrypting worker may be made over it, resumed or otherwise"
+            )
+        };
         resume_component(&state, key)
     }
 }

@@ -83,12 +83,13 @@ pub struct Encrypting;
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct Decrypting;
 
-mod sealed {
+pub(crate) mod sealed {
     /// Private supertrait of [`Direction`](super::Direction): only this module can name it, so
     /// only the two markers below can implement `Direction`.
     pub trait Sealed {}
     impl Sealed for super::Encrypting {}
     impl Sealed for super::Decrypting {}
+    // The keystream types implement it beside their definitions, for `KeyStreamPolicy`.
 }
 
 /// Selects a type by direction: `Enc` for [`Encrypting`], `Dec` for [`Decrypting`].
@@ -124,14 +125,20 @@ pub trait Direction: sealed::Sealed {
     /// mode keeps for its phase: `0x10` encrypting, `0x20` decrypting. A state resumed under the
     /// other marker is refused, so an encryptor's state never continues as a decryptor.
     const STATE_BITS: u8;
+
+    /// `true` for [`Encrypting`]: the direction a permutation that decrypts only
+    /// (`BlockPermutation::DECRYPT_ONLY`) refuses, at compile time, however the worker is made.
+    const IS_ENCRYPTING: bool;
 }
 
 impl Direction for Encrypting {
     type Select<Enc, Dec> = Enc;
     const STATE_BITS: u8 = 0x10;
+    const IS_ENCRYPTING: bool = true;
 }
 
 impl Direction for Decrypting {
     type Select<Enc, Dec> = Dec;
     const STATE_BITS: u8 = 0x20;
+    const IS_ENCRYPTING: bool = false;
 }

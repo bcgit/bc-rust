@@ -21,9 +21,11 @@ use bouncycastle_utils::secret::Secret;
 /// **Decryption only.** SP 800-67r2 Sec 3.1 allows two-key TDEA "for legacy use only, as defined
 /// in SP 800-131A", and SP 800-131A Rev 2 Table 1 has it as "Disallowed" for encryption and
 /// "Legacy use" for decryption. This type therefore sets
-/// [`ElectronicCodeBook::ENCRYPTION_APPROVED`] to `false`, and every mode in
-/// `bouncycastle_cipher::modes` refuses to make an encrypting worker over it **at compile time**,
-/// so a two-key key's `create_encryptor` does not compile:
+/// [`BlockPermutation::DECRYPT_ONLY`], and every mode in `bouncycastle_cipher::modes` refuses to
+/// make an encrypting worker over it **at compile time**, however the worker would be made: a
+/// two-key key's `create_encryptor` does not compile, and neither does resuming a suspended state
+/// in the encrypting direction. (The error is reported after monomorphization, by `cargo build`
+/// or `cargo test`, with its span in the mode's code; `cargo check` does not reach it.)
 ///
 /// ```compile_fail
 /// use bouncycastle_tdes::TDES2Key;
@@ -42,8 +44,8 @@ use bouncycastle_utils::secret::Secret;
 /// let _ = key.create_encryptor(&mut HashDRBG_SHA512::new_from_os());
 /// ```
 ///
-/// The stream modes check the same constant when they make their keystream, so the refusal holds
-/// for CTR, CFB and CFB8 too:
+/// The stream modes check the same constant through their keystream, so the refusal holds for
+/// CTR, CFB and CFB8 too:
 ///
 /// ```compile_fail
 /// use bouncycastle_tdes::{BLOCK_LEN, CTR_NONCE_LEN, TDES2Key};
@@ -61,13 +63,40 @@ use bouncycastle_utils::secret::Secret;
 /// let _ = key.create_encryptor(&mut HashDRBG_SHA512::new_from_os());
 /// ```
 ///
+/// Nor can a decryptor's suspended state be resumed as an encryptor:
+///
+/// ```compile_fail
+/// use bouncycastle_cipher::Encrypting;
+/// use bouncycastle_cipher::modes::{Blocks, CBC, Cbc};
+/// use bouncycastle_core::hazmat::ModeKey;
+/// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
+/// use bouncycastle_core::symmetric_key::{BlockDecryptionKey, FromKeyMaterial};
+/// use bouncycastle_core::traits::SuspendableKeyed;
+/// use bouncycastle_tdes::hazmat::TDES2Internal;
+/// use bouncycastle_tdes::{BLOCK_LEN, TDES2Key};
+///
+/// let bytes: [u8; 16] = core::array::from_fn(|i| (i as u8).wrapping_mul(7).wrapping_add(1));
+/// let material = KeyMaterial::<16>::from_bytes_as_type(&bytes, KeyType::SymmetricCipherKey)
+///     .unwrap();
+/// let key = TDES2Key::<CBC<Blocks>>::from_key_material(&material).unwrap();
+/// const N: usize = Cbc::<'static, TDES2Internal, Encrypting, BLOCK_LEN>::SUSPENDED_STATE_LEN;
+/// let state: [u8; N] = key.create_decryptor(&[0u8; BLOCK_LEN]).suspend();
+///
+/// // The decryptor's state resumed in the encrypting direction: this does not compile.
+/// let _ = Cbc::<'_, TDES2Internal, Encrypting, BLOCK_LEN>::from_suspended(state, key.state());
+/// ```
+///
 /// `create_decryptor` on every mode works, and this crate names those decryptors
 /// [`TDES2_CBC`](crate::TDES2_CBC), [`TDES2_CFB`](crate::TDES2_CFB),
 /// [`TDES2_CFB8`](crate::TDES2_CFB8), [`TDES2_CTR`](crate::TDES2_CTR) and
 /// [`TDES2_ECB`](crate::TDES2_ECB). The raw
 /// [`BlockPermutation::encrypt_block`] is still present, because CFB and CTR decryption are
 /// built on the forward cipher function; a raw permutation is not something to encrypt data with
-/// anyway (see the crate docs).
+/// anyway (see the crate docs). For the same reason the gate stops accidental encryption through
+/// the encrypting APIs, not deliberate use of the forward cipher: CTR decryption is CTR
+/// encryption, and a CFB decryptor under a chosen IV gives `CIPH(IV)` for a zero block, so a
+/// caller who wants two-key TDEA encryption can assemble it from those decryptors. A deployment
+/// that must rule it out should expose only the CBC and ECB decryptors.
 ///
 /// # Security strength
 ///
@@ -130,12 +159,12 @@ impl ElectronicCodeBook<KEY_LEN_2KEY, BLOCK_LEN> for TDES2Internal {
         }
         Ok(Self { schedule })
     }
-
-    /// SP 800-131A Rev 2 Table 1: two-key TDEA encryption is disallowed.
-    const ENCRYPTION_APPROVED: bool = false;
 }
 
 impl BlockPermutation<BLOCK_LEN> for TDES2Internal {
+    /// Two-key TDEA decrypts only (SP 800-131A Rev 2 Table 1); see the type docs.
+    const DECRYPT_ONLY: bool = true;
+
     /// The forward cipher operation with `Key3 = Key1`: `O = F_Key1(I_Key2(F_Key1(d)))`.
     ///
     /// Present because CFB and CTR decryption need it, and because the trait requires it; the

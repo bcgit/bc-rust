@@ -35,6 +35,24 @@ pub trait BlockPermutation<const BLOCK_LEN: usize>: Algorithm + Sized {
     /// The inverse cipher function, in place.
     fn decrypt_block(&self, block: &mut [u8; BLOCK_LEN]);
 
+    /// Whether this library allows the permutation to decrypt only: no encrypting worker may be
+    /// made over it, by a key's `create_encryptor`, by resuming a suspended state in the
+    /// encrypting direction, or otherwise. A mode checks this in an inline `const` wherever it
+    /// makes an encrypting worker, so the refusal is a compile error (reported after
+    /// monomorphization, so by `cargo build` or `cargo test` rather than `cargo check`).
+    ///
+    /// This records the library's policy, not a standard's status. It is `true` for two-key TDEA
+    /// alone, which NIST SP 800-131A Rev 2 Table 1 lists as "Disallowed" for encryption and
+    /// "Legacy use" for decryption. Three-key TDEA encryption, which the same table disallows
+    /// after 2023, keeps `false` because the OpenSSL provider this library serves still exposes
+    /// it; the tdes crate's Security Considerations say so.
+    ///
+    /// The block methods themselves are not gated: a decrypting CFB or CTR needs the forward
+    /// cipher function, and a raw permutation is not something to encrypt data with in any case
+    /// (see the trait docs). Those decryptors are therefore an encryption capability in a
+    /// determined caller's hands, which the tdes crate's docs spell out.
+    const DECRYPT_ONLY: bool = false;
+
     /// The forward cipher function on two *independent* blocks, in place.
     ///
     /// Required, with no default, so that every implementor decides for itself how to run a pair.
@@ -88,17 +106,4 @@ pub trait ElectronicCodeBook<const KEY_LEN: usize, const BLOCK_LEN: usize>:
     /// security strength is below [`Algorithm::MAX_SECURITY_STRENGTH`], both as a
     /// [`SymmetricCipherError::KeyMaterialError`].
     fn new(key: &KeyMaterial<KEY_LEN>) -> Result<Self, SymmetricCipherError>;
-
-    /// Whether this permutation may be used to *apply* cryptographic protection, i.e. as the
-    /// cipher of an encrypting mode.
-    ///
-    /// `true` for every current cipher. `false` marks a permutation kept only to process data that
-    /// was protected in the past -- two-key TDEA, which NIST SP 800-131A Rev 2 Table 1 lists as
-    /// "Disallowed" for encryption and "Legacy use" for decryption. A mode checks this in an
-    /// inline `const` when it makes an encrypting worker, so a key's `create_encryptor` over such
-    /// a permutation is a compile error at the call site, while its decryptors are unaffected.
-    /// The block methods themselves are not gated: a decrypting CFB or CTR needs the forward
-    /// cipher function, and a raw permutation is not something to encrypt data with in any case
-    /// (see the trait docs).
-    const ENCRYPTION_APPROVED: bool = true;
 }

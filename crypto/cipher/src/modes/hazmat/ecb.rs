@@ -83,7 +83,7 @@
 
 use crate::modes::{Blocks, ModeNames};
 use crate::padding::{PaddedBlockCipherDecryptor, PaddedBlockCipherEncryptor};
-use crate::{Decrypting, Encrypting};
+use crate::{Decrypting, Direction, Encrypting};
 use bouncycastle_core::errors::{SuspendableError, SymmetricCipherError};
 use bouncycastle_core::hazmat::{
     BlockPermutation, EcbDecryptMode, EcbEncryptMode, ElectronicCodeBook, Mode,
@@ -131,8 +131,8 @@ where
     fn encrypt_init<'k>(state: &'k Self::KeyState) -> Self::Encryptor<'k> {
         const {
             assert!(
-                P::ENCRYPTION_APPROVED,
-                "this permutation is approved for decryption only (ElectronicCodeBook::ENCRYPTION_APPROVED is false)"
+                !P::DECRYPT_ONLY,
+                "this permutation decrypts only (BlockPermutation::DECRYPT_ONLY): no encrypting worker may be made over it"
             )
         };
         Ecb::from_perm(state)
@@ -173,8 +173,8 @@ where
     ) -> Result<(Self::Encryptor<'k>, [u8; 0]), SymmetricCipherError> {
         const {
             assert!(
-                P::ENCRYPTION_APPROVED,
-                "this permutation is approved for decryption only (ElectronicCodeBook::ENCRYPTION_APPROVED is false)"
+                !P::DECRYPT_ONLY,
+                "this permutation decrypts only (BlockPermutation::DECRYPT_ONLY): no encrypting worker may be made over it"
             )
         };
         Ok((PaddedBlockCipherEncryptor::from_inner(Ecb::from_perm(state)), []))
@@ -330,6 +330,7 @@ impl<'k, P, Dir, const BLOCK_LEN: usize, const N: usize> SuspendableKeyed<'k, N>
     for Ecb<'k, P, Dir, BLOCK_LEN>
 where
     P: BlockPermutation<BLOCK_LEN> + ModeNames,
+    Dir: Direction,
 {
     type Key = P;
 
@@ -339,8 +340,16 @@ where
 
     /// The state carries no direction: one suspended by the other direction's worker is accepted
     /// and resumes over the same chaining value, which gives wrong output rather than an error.
-    /// Only GCM, whose state means different things per direction, refuses the other one.
+    /// Only GCM, whose state means different things per direction, refuses the other one. A
+    /// permutation that decrypts only cannot be resumed in the encrypting direction at all: that
+    /// is a compile error, as making the encryptor any other way is.
     fn from_suspended(state: [u8; N], key: &'k Self::Key) -> Result<Self, SuspendableError> {
+        const {
+            assert!(
+                !(Dir::IS_ENCRYPTING && P::DECRYPT_ONLY),
+                "this permutation decrypts only (BlockPermutation::DECRYPT_ONLY): no encrypting worker may be made over it, resumed or otherwise"
+            )
+        };
         resume_component(&state, key)
     }
 }
