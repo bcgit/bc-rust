@@ -22,13 +22,16 @@
 //! messages as needed: `CBC<PKCS7>` for CBC (NIST SP 800-38A Sec 6.2) with PKCS#7 padding, `CFB`
 //! for CFB128 (Sec 6.3), `CFB8` for the `s = 8` segment size, a different and non-interoperable
 //! mode costing one Camellia call per byte, and `CTR` for CTR (Sec 6.5) with a 12-byte nonce and
-//! a 4-byte counter. The aliases [`Camellia_CBC_128`], [`Camellia_CFB_128`], [`Camellia_CFB8_128`],
-//! [`Camellia_CTR_128`] and their `_192` / `_256` siblings name the workers the keys hand out.
+//! a 4-byte counter; `GCM` and `CCM<N, T>` for the authenticated modes (NIST SP 800-38D and
+//! 800-38C; RFC 6367 and RFC 5528 define them over Camellia), and `CMAC` and `GMAC` for the MACs.
+//! The aliases [`Camellia_CBC_128`], [`Camellia_CFB_128`], [`Camellia_CFB8_128`],
+//! [`Camellia_CTR_128`], [`Camellia_GCM_128`], [`Camellia_CCM_128`], [`Camellia_CMAC_128`],
+//! [`Camellia_GMAC_128`] and their `_192` / `_256` siblings name the workers the keys hand out.
 //!
 //! CBC is a block cipher, so it is defined only on whole blocks and the key's mode carries a
 //! padding scheme to bridge the difference; the CFB modes and CTR are stream ciphers and take any
-//! length with no padding at all. See the `bouncycastle_cipher::modes` crate docs for the
-//! comparison.
+//! length with no padding at all; GCM and CCM authenticate as well as encrypt, and are the modes
+//! to prefer. See the `bouncycastle_cipher::modes` crate docs for the comparison.
 //!
 //! ```
 //! use bouncycastle_camellia::Camellia256Key;
@@ -250,6 +253,9 @@
 //! mode of operation, and prefer an authenticated one so that ciphertext tampering is detected.
 //! RFC 3713 Sec 3 itself assigns object identifiers only to Camellia in CBC mode. That is why the
 //! permutation lives under [`hazmat`]; [`bouncycastle_core::hazmat`] lists the supported uses.
+//! A `Camellia128Key<ECB<PKCS7>>`, `<ECB<NoPadding>>` or `<ECB<Blocks>>` hands out ECB through
+//! the key API as well, and the same warning applies to it. The authenticated modes are
+//! `Camellia128Key<GCM>` and `<CCM<N, T>>`.
 //!
 //! ## Constant-time properties
 //!
@@ -307,9 +313,13 @@
 
 mod bitslice;
 mod cbc;
+mod ccm;
 mod cfb;
 mod cfb8;
+mod cmac;
 mod ctr;
+mod gcm;
+mod gmac;
 pub mod hazmat;
 mod key;
 mod round;
@@ -324,9 +334,13 @@ pub const BLOCK_LEN: usize = 16;
 pub const LANES: usize = 4;
 
 pub use cbc::{Camellia_CBC_128, Camellia_CBC_192, Camellia_CBC_256};
+pub use ccm::{CCM_NONCE_LEN, CCM_TAG_LEN, Camellia_CCM_128, Camellia_CCM_192, Camellia_CCM_256};
 pub use cfb::{Camellia_CFB_128, Camellia_CFB_192, Camellia_CFB_256};
 pub use cfb8::{Camellia_CFB8_128, Camellia_CFB8_192, Camellia_CFB8_256};
+pub use cmac::{Camellia_CMAC_128, Camellia_CMAC_192, Camellia_CMAC_256};
 pub use ctr::{CTR_NONCE_LEN, Camellia_CTR_128, Camellia_CTR_192, Camellia_CTR_256};
+pub use gcm::{Camellia_GCM_128, Camellia_GCM_192, Camellia_GCM_256};
+pub use gmac::{Camellia_GMAC_128, Camellia_GMAC_192, Camellia_GMAC_256};
 pub use key::{Camellia128Key, Camellia192Key, Camellia256Key, CamelliaKey};
 pub use schedule::{Camellia128Params, Camellia192Params, Camellia256Params, CamelliaParams};
 

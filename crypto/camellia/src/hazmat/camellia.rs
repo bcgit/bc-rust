@@ -305,9 +305,8 @@ impl BlockPermutation<BLOCK_LEN> for Camellia256Internal {
     }
 }
 
-// Camellia has published modes beyond the four this crate aliases -- RFC 5528 defines CTR and
-// CCM, RFC 6367 GCM -- so every mode is named, although the keys hand out workers for the four
-// aliased modes only.
+// Every mode is named: RFC 5528 defines Camellia in CTR and CCM and RFC 6367 in GCM, and the
+// keys carry the matching role pairs, with GMAC's pair inherent on the key.
 impl ModeNames for Camellia128Internal {
     const CBC_ALG_NAME: &'static str = "Camellia_CBC_128";
     const CCM_ALG_NAME: &'static str = "Camellia_CCM_128";
