@@ -325,7 +325,8 @@ impl KeccakInternal {
         }
         // The loop below counts in bits, so a slice whose bit length does not fit a `usize` (512
         // MiB on a 32-bit target) would wrap the bound and stop early; squeeze it in pieces that
-        // fit. On a 64-bit target the piece is larger than any buffer, so this is one iteration.
+        // fit. On a 64-bit target the piece is larger than any buffer, so this is at most one
+        // iteration (none for an empty `out`, which has nothing to write).
         for piece in out.chunks_mut(usize::MAX >> 3) {
             self.squeeze_into(piece);
         }
