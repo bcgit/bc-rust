@@ -2384,11 +2384,13 @@ enum Subcommands {
     /// ciphertext whose padding is malformed.
     ///
     /// The key is 24 bytes, KEY1 || KEY2 || KEY3, with three distinct component keys none of which
-    /// is a weak DES key (SP 800-67 Rev 2 Sec 3.1 and 3.3.2). Two-key TDEA is not supported.
+    /// is a weak DES key (SP 800-67 Rev 2 Sec 3.1 and 3.3.2). Two-key TDEA decrypts through the
+    /// `tdes2-*` commands.
     ///
     /// WARNING: CBC provides confidentiality only. It does not detect tampering, and neither the
     /// ciphertext nor the IV is authenticated. Do not decrypt data you have not authenticated
-    /// separately. One key bundle must not encrypt more than 2^20 blocks (8 MiB) in total.
+    /// separately. One key bundle must not encrypt more than 2^20 blocks (8 MiB) in total:
+    /// `encrypt` refuses longer input, and counting across invocations is the caller's.
     ///
     /// Note: in production uses, secrets should not be passed on the command-line because they get
     /// logged in shell history. Use the file-based input instead.
@@ -2586,7 +2588,10 @@ enum Subcommands {
 
     /// Two-key Triple DES (2TDEA, Key3 = Key1) in CBC mode, DECRYPTION ONLY, streaming stdin to
     /// stdout. NIST SP 800-131A Rev 2 Table 1 disallows two-key TDEA for encryption and allows
-    /// decryption for legacy use, so `encrypt` does not exist for this command.
+    /// decryption for legacy use, so `encrypt` does not exist for this command. That is a guard
+    /// against accidental encryption: `tdes2-cfb` and `tdes2-ctr` decryption are the forward
+    /// cipher, which a determined caller can turn into encryption, so a deployment that must rule
+    /// that out should expose only `tdes2-cbc` and `tdes2-ecb`.
     ///
     /// The first 8 bytes of input are the IV, as the `tdes-cbc decrypt` convention, unless `--iv`
     /// or `--iv-file` supplies it; the rest is PKCS7-padded ciphertext, as `tdes-cbc` writes it.

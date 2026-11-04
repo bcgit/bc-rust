@@ -13,7 +13,7 @@
 //! the engine.
 
 use std::io::{ErrorKind, Write};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::process::{Command, Output, Stdio};
 
 /// The path to the binary under test, resolved by cargo.
@@ -104,24 +104,26 @@ struct Vector {
     ciphertext: String,
 }
 
-/// Locates the TDES CAVP directory, or `None` if `bc-test-data` is not checked out.
-fn cavp_dir() -> Option<PathBuf> {
-    let dir = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../../bc-test-data/crypto/aes_tdes_vectors/TDES");
-    if dir.join("TECBMMT3.rsp").exists() {
-        return Some(dir);
+/// The text of a TDES CAVP response file, or `None` (with a warning) when `bc-test-data` is not
+/// cloned beside this repository. When it is and the file is missing, this panics rather than
+/// letting the test pass vacuously, as the framework's `bc_test_data` loader does.
+fn cavp_file(file: &str) -> Option<String> {
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../bc-test-data");
+    if !root.is_dir() {
+        println!(
+            "WARNING: bc-test-data not found at {}; the CAVP vector tests are skipped",
+            root.display()
+        );
+        return None;
     }
-    println!(
-        "WARNING: bc-test-data not found at {}; the CAVP vector tests are skipped",
-        dir.display()
-    );
-    None
+    let path = root.join("crypto/aes_tdes_vectors/TDES").join(file);
+    Some(std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display())))
 }
 
 /// `COUNT = 0` of `[section]` in `file`, or `None` without the data. The key is `KEY1 || KEY2`
 /// for a two-key file (whose `KEY3 = KEY1`) and `KEY1 || KEY2 || KEY3` otherwise.
 fn vector(file: &str, section: &str) -> Option<Vector> {
-    let text = std::fs::read_to_string(cavp_dir()?.join(file)).expect("readable response file");
+    let text = cavp_file(file)?;
     let body = text.split(&format!("[{section}]")).nth(1).expect("the section");
     let case = body.split("COUNT = 0").nth(1).expect("COUNT = 0");
     let case = case.split("COUNT = 1").next().expect("one case");

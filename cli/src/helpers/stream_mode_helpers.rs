@@ -28,7 +28,7 @@
 //! stdin is read as binary so the commands compose in a pipeline. `-x` renders the *output* as hex.
 //! For hex input, pipe through `hex-decode` first.
 
-use crate::helpers::block_mode_helpers::{CHUNK_LEN, CipherDirection, start_encryptor};
+use crate::helpers::block_mode_helpers::{CHUNK_LEN, CipherDirection, InputLimit, start_encryptor};
 use crate::helpers::{flush_stdout, write_bytes_or_hex, write_stdout};
 use bouncycastle::core::symmetric_key::{SymmetricDecryptionKey, SymmetricEncryptionKey};
 use bouncycastle::core::traits::{StreamCipherDecryptor, StreamCipherEncryptor};
@@ -37,13 +37,16 @@ use std::io::Read;
 use std::process::exit;
 
 /// Encrypts stdin to stdout under the key's stream mode. With no `iv`, the IV is generated and
-/// written first; with one, it is used and the output is ciphertext only.
+/// written first; with one, it is used and the output is ciphertext only. Under an
+/// [`InputLimit`], the running input total is checked against the bound before each chunk is
+/// encrypted, so nothing past it is ever written.
 ///
 /// `INIT_DATA_LEN` is the mode's: one block for CFB and CFB8, 12 bytes for CTR.
 pub(crate) fn encrypt_stream<'k, K, const KEY_LEN: usize, const INIT_DATA_LEN: usize>(
     key: &'k K,
     iv: Option<[u8; INIT_DATA_LEN]>,
     output_hex: bool,
+    limit: Option<&InputLimit>,
 ) where
     K: SymmetricEncryptionKey<KEY_LEN, INIT_DATA_LEN, 0>,
     K::Encryptor<'k>: StreamCipherEncryptor<INIT_DATA_LEN>,
@@ -57,7 +60,15 @@ pub(crate) fn encrypt_stream<'k, K, const KEY_LEN: usize, const INIT_DATA_LEN: u
     }
 
     // The cipher works in place: `data` holds plaintext on the way in and ciphertext on the way out.
+    let mut seen: u64 = 0;
     stream(|data| {
+        seen += data.len() as u64;
+        if let Some(limit) = limit {
+            if seen > limit.max_bytes {
+                eprintln!("Error: {}", limit.message);
+                exit(-1);
+            }
+        }
         // Cannot fail: neither CFB nor CFB8 has a per-IV data limit.
         // CFB and CFB8 cannot fail here; CTR can, once its counter is exhausted, which is a real
         // limit a long enough stream reaches rather than a bug.
@@ -152,9 +163,25 @@ pub(crate) fn run_stream_mode<'k, K, const KEY_LEN: usize, const INIT_DATA_LEN: 
     K::Encryptor<'k>: StreamCipherEncryptor<INIT_DATA_LEN>,
     K::Decryptor<'k>: StreamCipherDecryptor<INIT_DATA_LEN>,
 {
+    run_stream_mode_bounded::<K, KEY_LEN, INIT_DATA_LEN>(action, key, iv, output_hex, None)
+}
+
+/// [`run_stream_mode`] with an [`InputLimit`] on the encrypting direction.
+pub(crate) fn run_stream_mode_bounded<'k, K, const KEY_LEN: usize, const INIT_DATA_LEN: usize>(
+    action: &CipherDirection,
+    key: &'k K,
+    iv: Option<[u8; INIT_DATA_LEN]>,
+    output_hex: bool,
+    limit: Option<&InputLimit>,
+) where
+    K: SymmetricEncryptionKey<KEY_LEN, INIT_DATA_LEN, 0>
+        + SymmetricDecryptionKey<KEY_LEN, INIT_DATA_LEN, 0>,
+    K::Encryptor<'k>: StreamCipherEncryptor<INIT_DATA_LEN>,
+    K::Decryptor<'k>: StreamCipherDecryptor<INIT_DATA_LEN>,
+{
     match action {
         CipherDirection::Encrypt => {
-            encrypt_stream::<K, KEY_LEN, INIT_DATA_LEN>(key, iv, output_hex)
+            encrypt_stream::<K, KEY_LEN, INIT_DATA_LEN>(key, iv, output_hex, limit)
         }
         CipherDirection::Decrypt => {
             decrypt_stream::<K, KEY_LEN, INIT_DATA_LEN>(key, iv, output_hex)

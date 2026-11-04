@@ -283,10 +283,49 @@ pub(crate) fn start_encryptor<E, const INIT_DATA_LEN: usize>(
 /// whole number of blocks, for the error that reports a partial one (ECB under `NoPadding`); it is
 /// `None` for a padded mode, which takes any length.
 pub(crate) fn encrypt_stream<E, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize>(
+    enc: E,
+    generated_iv: Option<&[u8; INIT_DATA_LEN]>,
+    output_hex: bool,
+    aligned_mode: Option<&str>,
+) where
+    E: SymmetricCipherEncryptor<INIT_DATA_LEN, BLOCK_LEN>,
+{
+    encrypt_stream_bounded::<E, INIT_DATA_LEN, BLOCK_LEN>(
+        enc, generated_iv, output_hex, aligned_mode, None,
+    )
+}
+
+/// A bound on how much one invocation may encrypt under its key, for an algorithm whose
+/// standard limits the data a key may protect: the command refuses input past `max_bytes` with
+/// `message` on stderr and an error exit, before any byte past the bound is processed.
+pub(crate) struct InputLimit {
+    pub(crate) max_bytes: u64,
+    pub(crate) message: &'static str,
+}
+
+/// SP 800-67 Rev 2 Sec 3.4: "One key bundle shall not be used to apply cryptographic protection
+/// (e.g., encrypt) more than 2^20 64-bit data blocks", 8 MiB. The command is the one place that
+/// sees a bundle's whole use within an invocation, so it holds the input to that; it cannot count
+/// across invocations.
+pub(crate) const TDEA_LIMIT: InputLimit = InputLimit {
+    max_bytes: 1 << 23,
+    message: "TDEA: one key bundle may protect at most 2^20 blocks (8 MiB; SP 800-67 Rev 2 Sec \
+              3.4), and the input exceeds that",
+};
+
+/// The same bound for a padded mode, whose padding adds up to one block: one byte less, so the
+/// padded message still fits.
+pub(crate) const TDEA_LIMIT_PADDED: InputLimit =
+    InputLimit { max_bytes: (1 << 23) - 1, message: TDEA_LIMIT.message };
+
+/// [`encrypt_stream`] under an [`InputLimit`]: the running input total is checked against the
+/// bound before each chunk is encrypted, so nothing past it is ever written.
+pub(crate) fn encrypt_stream_bounded<E, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize>(
     mut enc: E,
     generated_iv: Option<&[u8; INIT_DATA_LEN]>,
     output_hex: bool,
     aligned_mode: Option<&str>,
+    limit: Option<&InputLimit>,
 ) where
     E: SymmetricCipherEncryptor<INIT_DATA_LEN, BLOCK_LEN>,
 {
@@ -298,7 +337,15 @@ pub(crate) fn encrypt_stream<E, const INIT_DATA_LEN: usize, const BLOCK_LEN: usi
 
     const { assert!(CHUNK_LEN.is_multiple_of(BLOCK_LEN), "the chunk must be whole blocks") };
     let mut out = [0u8; CHUNK_LEN];
+    let mut seen: u64 = 0;
     let total = stream_chunks(|data| {
+        seen += data.len() as u64;
+        if let Some(limit) = limit {
+            if seen > limit.max_bytes {
+                eprintln!("Error: {}", limit.message);
+                exit(-1);
+            }
+        }
         // Cannot fail: `out` has room for every whole block of `data` plus the fewer than
         // `BLOCK_LEN` bytes held over from the last call, and none of these modes has a per-IV
         // data limit.

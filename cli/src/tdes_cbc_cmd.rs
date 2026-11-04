@@ -12,10 +12,12 @@
 //!
 //! TDEA is a legacy algorithm, disallowed for encryption by NIST SP 800-131A Rev 2 after 2023; see
 //! the `bouncycastle-tdes` crate docs. One key bundle must not protect more than 2^20 blocks
-//! (8 MiB) in total (SP 800-67 Rev 2 Sec 3.4); the command does not count across invocations.
+//! (8 MiB) in total (SP 800-67 Rev 2 Sec 3.4): `encrypt` refuses input past that in one
+//! invocation, and nothing is counted across invocations, which is the caller's to track.
 
 use crate::helpers::block_mode_helpers::{
-    CipherDirection, decrypt_stream, encrypt_stream, load_iv, load_key_object, start_encryptor,
+    CipherDirection, TDEA_LIMIT_PADDED, decrypt_stream, encrypt_stream_bounded, load_iv,
+    load_key_object, start_encryptor,
 };
 use bouncycastle::cipher::modes::CBC;
 use bouncycastle::cipher::padding::PKCS7;
@@ -35,7 +37,13 @@ pub(crate) fn tdes_cbc_cmd(
     match action {
         CipherDirection::Encrypt => {
             let (enc, generated_iv) = start_encryptor(iv, |rng| key.create_encryptor(rng));
-            encrypt_stream::<_, BLOCK_LEN, BLOCK_LEN>(enc, generated_iv.as_ref(), output_hex, None)
+            encrypt_stream_bounded::<_, BLOCK_LEN, BLOCK_LEN>(
+                enc,
+                generated_iv.as_ref(),
+                output_hex,
+                None,
+                Some(&TDEA_LIMIT_PADDED),
+            )
         }
         CipherDirection::Decrypt => decrypt_stream::<_, BLOCK_LEN, BLOCK_LEN>(
             iv,

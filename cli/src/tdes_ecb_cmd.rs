@@ -20,7 +20,8 @@
 //! the `bouncycastle-tdes` crate docs.
 
 use crate::helpers::block_mode_helpers::{
-    CipherDirection, decrypt_stream, encrypt_stream, load_key_object, start_encryptor,
+    CipherDirection, TDEA_LIMIT, decrypt_stream, encrypt_stream_bounded, load_key_object,
+    start_encryptor,
 };
 use bouncycastle::cipher::modes::hazmat::ecb::ECB;
 use bouncycastle::cipher::padding::NoPadding;
@@ -41,7 +42,13 @@ pub(crate) fn tdes_ecb_cmd(
         CipherDirection::Encrypt => {
             // ECB has no IV: the constructor's RNG draws nothing, and nothing is written.
             let (enc, _) = start_encryptor(None, |rng| key.create_encryptor(rng));
-            encrypt_stream::<_, 0, BLOCK_LEN>(enc, None, output_hex, Some(MODE))
+            encrypt_stream_bounded::<_, 0, BLOCK_LEN>(
+                enc,
+                None,
+                output_hex,
+                Some(MODE),
+                Some(&TDEA_LIMIT),
+            )
         }
         CipherDirection::Decrypt => decrypt_stream::<_, 0, BLOCK_LEN>(
             None,
