@@ -1,5 +1,7 @@
 //! The branch-free forms of `make_hint` and `Polynomial::check_norm` against the comparisons they
-//! replace, over every input the signer can feed them.
+//! replace, over every input the signer can feed them. These pin the value, which the comparison
+//! forms also gave, so they pass on the old code too: that the new forms compile without a
+//! branch on the secret is shown by reading the release assembly, which no in-tree test can do.
 
 use bouncycastle_mldsa_common::aux_functions::make_hint;
 use bouncycastle_mldsa_common::params::{MLDSA44Params, MLDSA65Params, MLDSAParamsBase};
