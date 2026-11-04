@@ -35,9 +35,18 @@ for t in $TARGETS; do
         *) echo "no mnemonic table for $t"; exit 2 ;;
     esac
 
-    rm -rf "target/$t"
-    cargo +nightly rustc --quiet --release --target "$t" -Zbuild-std=core -- --emit asm
-    asm=$(ls "target/$t/release/deps/"aes_ct_harness-*.s)
+    rm -rf target
+    # `--emit asm` writes beside the intermediate artifacts, which newer cargo keeps in a build
+    # directory separate from the target directory; pinning both to `target` keeps the file
+    # findable on every cargo, and `find` does not depend on the exact layout within it.
+    cargo +nightly rustc --release --target "$t" -Zbuild-std=core \
+        --config 'build.build-dir="target"' -- --emit asm
+    asm=$(find target -name 'aes_ct_harness-*.s' -path "*$t*" | head -n 1)
+    if [ -z "$asm" ]; then
+        echo "FAIL $t: no aes_ct_harness-*.s under $(pwd)/target"
+        find target -name '*.s' | head
+        exit 2
+    fi
 
     for f in splat32_barrier splat64_barrier; do
         hits=$(body "$asm" "$f" | grep -cE "$bad" || true)
