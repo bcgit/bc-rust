@@ -9,6 +9,7 @@ use bouncycastle::camellia::{Camellia128Key, Camellia192Key, Camellia256Key};
 use bouncycastle::cipher::modes::GCM;
 use bouncycastle::core::symmetric_key::{AeadDecryptionKey, AeadEncryptionKey};
 
+#[allow(clippy::too_many_arguments)] // one flag per input, each inline or from a file
 pub(crate) fn camellia128_gcm_cmd(
     action: &CipherDirection,
     key: &Option<String>,
@@ -28,6 +29,7 @@ pub(crate) fn camellia128_gcm_cmd(
     );
 }
 
+#[allow(clippy::too_many_arguments)] // one flag per input, each inline or from a file
 pub(crate) fn camellia192_gcm_cmd(
     action: &CipherDirection,
     key: &Option<String>,
@@ -47,6 +49,7 @@ pub(crate) fn camellia192_gcm_cmd(
     );
 }
 
+#[allow(clippy::too_many_arguments)] // one flag per input, each inline or from a file
 pub(crate) fn camellia256_gcm_cmd(
     action: &CipherDirection,
     key: &Option<String>,
