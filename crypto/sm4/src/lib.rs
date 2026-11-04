@@ -22,10 +22,10 @@
 //! messages as needed: `CBC<PKCS7>` for CBC (Sec 8.4; NIST SP 800-38A Sec 6.2) with PKCS#7
 //! padding, `CFB` for SM4-CFB-128 (Sec 8.5.1), `CFB8` for SM4-CFB-8, the `s = 8` segment size,
 //! which is a different and non-interoperable mode costing one SM4 call per byte, `CTR` for
-//! CTR (Sec 8.7) with a 12-byte nonce and a 4-byte counter, and `GCM` for the authenticated mode
-//! RFC 8998 Sec 3.5.1 defines as `AEAD_SM4_GCM`, with a 12-byte nonce and a 16-byte tag. The
-//! aliases [`SM4_CBC`], [`SM4_CFB`], [`SM4_CFB8`], [`SM4_CTR`] and [`SM4_GCM`] name the workers
-//! the key hands out.
+//! CTR (Sec 8.7) with a 12-byte nonce and a 4-byte counter, and `GCM` and `CCM<N, T>` for the
+//! authenticated modes RFC 8998 Sec 3.5 defines as `AEAD_SM4_GCM` and `AEAD_SM4_CCM`, each with
+//! a 12-byte nonce and a 16-byte tag. The aliases [`SM4_CBC`], [`SM4_CFB`], [`SM4_CFB8`],
+//! [`SM4_CTR`], [`SM4_GCM`] and [`SM4_CCM`] name the workers the key hands out.
 //!
 //! CBC is a block cipher, so it is defined only on whole blocks and the key's mode carries a
 //! padding scheme to bridge the difference; the CFB modes and CTR are stream ciphers and take any
@@ -289,6 +289,7 @@
 
 mod bitslice;
 mod cbc;
+mod ccm;
 mod cfb;
 mod cfb8;
 mod ctr;
@@ -309,6 +310,7 @@ pub const KEY_LEN: usize = 16;
 pub const LANES: usize = 4;
 
 pub use cbc::SM4_CBC;
+pub use ccm::{CCM_NONCE_LEN, CCM_TAG_LEN, SM4_CCM};
 pub use cfb::SM4_CFB;
 pub use cfb8::SM4_CFB8;
 pub use ctr::{CTR_NONCE_LEN, SM4_CTR};

@@ -2,7 +2,7 @@
 //! can carry, then the block, symmetric, stream and AEAD suites.
 
 use bouncycastle_cipher::modes::hazmat::ecb::ECB;
-use bouncycastle_cipher::modes::{Blocks, CBC, CFB, CFB8, CMAC, CTR, GCM, ModeNames};
+use bouncycastle_cipher::modes::{Blocks, CBC, CCM_Packet, CFB, CFB8, CMAC, CTR, GCM, ModeNames};
 use bouncycastle_cipher::padding::{NoPadding, PKCS7};
 use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
 use bouncycastle_core::hazmat::Mode;
@@ -52,6 +52,20 @@ fn every_mode_key_enforces_the_material_policy() {
     construction_suite::<CTR>(SM4Internal::CTR_ALG_NAME);
     construction_suite::<GCM>(SM4Internal::GCM_ALG_NAME);
     construction_suite::<GCM<12>>(SM4Internal::GCM_ALG_NAME);
+    construction_suite::<Packet>(SM4Internal::CCM_ALG_NAME);
+}
+
+/// A 32-byte frame for the fixed-frame CCM key, within the framework's seed buffer.
+type Packet = CCM_Packet<12, 16, 64, 32>;
+
+/// The fixed-frame CCM key's workers and one-shots take exactly the frame, so the framework is
+/// told the one length they accept. RFC 8998 Appendix A.2 and the Wycheproof SM4-CCM set pin the
+/// algorithm itself beside this file.
+#[test]
+fn ccm_frame_key_passes_the_aead_framework() {
+    let mut framework = TestFrameworkAEADCipher::new();
+    framework.fixed_message_len = Some(32);
+    framework.test_key::<16, 12, 16, 16, _>(&key::<Packet>(), &mut rng());
 }
 
 /// A key under a MAC mode has no role here, and its `KEY_TYPE` is the `MACKey` the mode asks

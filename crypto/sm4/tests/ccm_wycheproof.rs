@@ -1,26 +1,25 @@
 //! Known-answer tests against Project Wycheproof's `testvectors_v1/sm4_ccm_test.json`, through
-//! the `CCM<N, T>` hazmat mode traits over `SM4Internal`.
+//! `SM4Key<CCM<N, T>>`.
 //!
 //! The same suite as `crypto/aes/tests/ccm_wycheproof.rs` at SM4's one key length; see that file
 //! for what the set probes and why most of its groups have no instantiation to dispatch to (the
-//! mode's `NONCE_LEN` is `7..=13` bytes and its `TAG_LEN` one of `4, 6, .., 16`). The key carries
-//! no AEAD role, so the cases run over the permutation directly, as `rfc8998_tests.rs` does.
-//! Requires the Wycheproof repository at `../wycheproof`; absent, the test warns and passes.
+//! mode's `NONCE_LEN` is `7..=13` bytes and its `TAG_LEN` one of `4, 6, .., 16`). Requires the
+//! Wycheproof repository at `../wycheproof`; absent, the test warns and passes.
 
 use bouncycastle_cipher::modes::CCM;
 use bouncycastle_core::errors::SymmetricCipherError;
-use bouncycastle_core::hazmat::{
-    AeadDeclaredDecryptMode, AeadDeclaredEncryptMode, ElectronicCodeBook, do_hazardous_operations,
-};
+use bouncycastle_core::hazmat::do_hazardous_operations;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
+use bouncycastle_core::symmetric_key::{
+    AeadDeclaredDecryptionKey, AeadDeclaredEncryptionKey, FromKeyMaterial,
+};
 use bouncycastle_core_test_framework::test_data_loaders::{Value, hex_field, wycheproof_json};
-use bouncycastle_sm4::KEY_LEN;
-use bouncycastle_sm4::hazmat::SM4Internal;
+use bouncycastle_sm4::{KEY_LEN, SM4Key};
 
 /// Wraps the vector's raw key bytes, promoting them if `KeyMaterial`'s entropy heuristic declined
 /// to call them a cipher key.
-fn permutation(bytes: &[u8]) -> SM4Internal {
+fn cipher_key(bytes: &[u8]) -> KeyMaterial<KEY_LEN> {
     let mut key = KeyMaterial::<KEY_LEN>::from_bytes_as_type(bytes, KeyType::SymmetricCipherKey)
         .expect("wycheproof key bytes fit the buffer");
     if key.key_type() != KeyType::SymmetricCipherKey {
@@ -30,7 +29,7 @@ fn permutation(bytes: &[u8]) -> SM4Internal {
         })
         .expect("promoting a wycheproof test key");
     }
-    <SM4Internal as ElectronicCodeBook<KEY_LEN, 16>>::new(&key).expect("a wycheproof key")
+    key
 }
 
 /// Runs one case at a fully-instantiated `(NONCE_LEN, TAG_LEN)`. A valid case must encrypt to
@@ -47,8 +46,8 @@ fn run_case<const NONCE_LEN: usize, const TAG_LEN: usize>(
     expected_tag: &[u8],
     valid: bool,
 ) {
-    type Mode<const N: usize, const T: usize> = CCM<N, T>;
-    let perm = permutation(key_bytes);
+    let key = SM4Key::<CCM<NONCE_LEN, TAG_LEN>>::from_key_material(&cipher_key(key_bytes))
+        .expect("a wycheproof key");
     let nonce: [u8; NONCE_LEN] =
         nonce_bytes.try_into().unwrap_or_else(|_| panic!("tcId {tc_id}: bad nonce length"));
     let tag: [u8; TAG_LEN] =
@@ -56,27 +55,15 @@ fn run_case<const NONCE_LEN: usize, const TAG_LEN: usize>(
 
     if valid {
         let mut ct = msg.to_vec();
-        let got_tag = <Mode<NONCE_LEN, TAG_LEN> as AeadDeclaredEncryptMode<
-            SM4Internal,
-            KEY_LEN,
-            NONCE_LEN,
-            TAG_LEN,
-            TAG_LEN,
-        >>::encrypt_detached_in_place_nonce(&perm, &nonce, aad, &mut ct)
-        .unwrap_or_else(|e| panic!("tcId {tc_id}: valid case failed to encrypt: {e:?}"));
+        let got_tag = key
+            .encrypt_detached_in_place_nonce(&nonce, aad, &mut ct)
+            .unwrap_or_else(|e| panic!("tcId {tc_id}: valid case failed to encrypt: {e:?}"));
         assert_eq!(ct, expected_ct, "tcId {tc_id}: ciphertext mismatch");
         assert_eq!(got_tag, tag, "tcId {tc_id}: tag mismatch");
     }
 
     let mut plaintext = expected_ct.to_vec();
-    match <Mode<NONCE_LEN, TAG_LEN> as AeadDeclaredDecryptMode<
-        SM4Internal,
-        KEY_LEN,
-        NONCE_LEN,
-        TAG_LEN,
-        TAG_LEN,
-    >>::decrypt_detached_in_place(&perm, &nonce, aad, &mut plaintext, &tag)
-    {
+    match key.decrypt_detached_in_place(&nonce, aad, &mut plaintext, &tag) {
         Ok(()) => {
             assert!(valid, "tcId {tc_id}: an invalid vector decrypted and verified anyway");
             assert_eq!(plaintext, msg, "tcId {tc_id}: decrypted plaintext mismatch");
