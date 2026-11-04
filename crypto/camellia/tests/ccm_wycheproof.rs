@@ -5,22 +5,21 @@
 //! absent the test prints a warning and passes, matching the convention used by the other vector
 //! suites in this crate.
 //!
-//! # Why this set is worth having alongside the ACVP one
+//! # What this set covers
 //!
-//! `ccm_bc-test-data.rs` covers 480 cases, but every one of them uses a 96-bit nonce, and the only
-//! failures it carries are tag-check failures on an otherwise well-formed message. Wycheproof's
-//! set is deliberately adversarial in the ways ACVP is not: malformed and truncated tags, every
+//! There is no NIST vector file for Camellia-CCM, so this is the crate's only CCM known answer,
+//! and it is deliberately adversarial in the ways a conformance set is not: malformed and truncated tags, every
 //! nonce length from 8 to 2144 *bits* (most of which A.1 does not permit at all), a tag size of
 //! 16 bits that SP 800-38C Appendix B.2 calls insecure, and pseudorandom sizes meant to catch an
 //! implementation that only handles the common cases. See
 //! `camellia_ccm_test.json`'s own `"notes"` object for exactly what each
 //! `flags` entry is checking.
 //!
-//! # Ciphertext and tag are separate fields, unlike the ACVP set
+//! # Ciphertext and tag are separate fields
 //!
 //! Wycheproof's AEAD schema carries `ct` and `tag` as distinct fields (the `aead_test_schema_v1`
-//! schema), so these cases go through the mode's detached in-place one-shots, not
-//! the inline pair `ccm_bc-test-data.rs` uses.
+//! schema), so these cases go through the key's detached in-place one-shots
+//! (`Camellia*Key<CCM<N, T>>`), not the inline pair.
 //!
 //! # Most of the parameter space cannot be dispatched to at all, by design
 //!
@@ -33,20 +32,19 @@
 //! this boundary) are counted as not supported rather than silently dropped, and the counts are
 //! asserted at the end so a change in the vector file's shape is visible.
 
-use bouncycastle_camellia::hazmat::{
-    Camellia128Internal, Camellia192Internal, Camellia256Internal,
-};
-use bouncycastle_cipher::modes::{CCM, ModeNames};
+use bouncycastle_camellia::{Camellia128Key, Camellia192Key, Camellia256Key};
+use bouncycastle_cipher::modes::CCM;
 use bouncycastle_core::errors::SymmetricCipherError;
-use bouncycastle_core::hazmat::{
-    AeadDeclaredDecryptMode, AeadDeclaredEncryptMode, ElectronicCodeBook, do_hazardous_operations,
-};
+use bouncycastle_core::hazmat::do_hazardous_operations;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
+use bouncycastle_core::symmetric_key::{
+    AeadDeclaredDecryptionKey, AeadDeclaredEncryptionKey, FromKeyMaterial,
+};
 use bouncycastle_core_test_framework::test_data_loaders::{Value, hex_field, wycheproof_json};
 
 /// Wraps the vector's raw key bytes, promoting them if `KeyMaterial`'s entropy heuristic declined
-/// to call them a cipher key. Same helper as the ACVP suite in this crate.
+/// to call them a cipher key. Same helper as the CMAC suite in this crate.
 fn cipher_key<const N: usize>(bytes: &[u8]) -> KeyMaterial<N> {
     assert_eq!(bytes.len(), N, "key length should match the parameter set");
     let mut key = KeyMaterial::<N>::from_bytes_as_type(bytes, KeyType::SymmetricCipherKey)
@@ -62,8 +60,8 @@ fn cipher_key<const N: usize>(bytes: &[u8]) -> KeyMaterial<N> {
     key
 }
 
-/// Runs one case at a fully-instantiated `(KEY_LEN, NONCE_LEN, TAG_LEN, P)`, through the mode's
-/// in-place one-shots.
+/// Runs one case at a fully-instantiated `(KEY_LEN, NONCE_LEN, TAG_LEN)` key type `K`, through
+/// the key's detached in-place one-shots.
 ///
 /// For a `result: "valid"` case, `msg` must encrypt to exactly `expected_ct`/`expected_tag`, and
 /// `expected_ct`/`expected_tag` must decrypt back to `msg`. For `result: "invalid"`, only the
@@ -71,7 +69,7 @@ fn cipher_key<const N: usize>(bytes: &[u8]) -> KeyMaterial<N> {
 /// corrupted `ct`/`tag` -- and it must fail the tag check rather than return a payload, leaving
 /// the buffer zeroized as the mode's in-place decrypt documents.
 #[allow(clippy::too_many_arguments)]
-fn run_case<const KEY_LEN: usize, const NONCE_LEN: usize, const TAG_LEN: usize, P>(
+fn run_case<const KEY_LEN: usize, const NONCE_LEN: usize, const TAG_LEN: usize, K>(
     tc_id: u64,
     key_bytes: &[u8],
     nonce_bytes: &[u8],
@@ -81,10 +79,11 @@ fn run_case<const KEY_LEN: usize, const NONCE_LEN: usize, const TAG_LEN: usize, 
     expected_tag: &[u8],
     valid: bool,
 ) where
-    P: ElectronicCodeBook<KEY_LEN, 16> + ModeNames + Clone,
+    K: FromKeyMaterial<KEY_LEN>
+        + AeadDeclaredEncryptionKey<KEY_LEN, NONCE_LEN, TAG_LEN, TAG_LEN>
+        + AeadDeclaredDecryptionKey<KEY_LEN, NONCE_LEN, TAG_LEN, TAG_LEN>,
 {
-    type Mode<const N: usize, const T: usize> = CCM<N, T>;
-    let perm = P::new(&cipher_key::<KEY_LEN>(key_bytes)).expect("a wycheproof key");
+    let key = K::from_key_material(&cipher_key::<KEY_LEN>(key_bytes)).expect("a wycheproof key");
     let nonce: [u8; NONCE_LEN] =
         nonce_bytes.try_into().unwrap_or_else(|_| panic!("tcId {tc_id}: bad nonce length"));
     let tag: [u8; TAG_LEN] =
@@ -92,18 +91,15 @@ fn run_case<const KEY_LEN: usize, const NONCE_LEN: usize, const TAG_LEN: usize, 
 
     if valid {
         let mut ct = msg.to_vec();
-        let got_tag = Mode::<NONCE_LEN, TAG_LEN>::encrypt_detached_in_place_nonce(
-            &perm, &nonce, aad, &mut ct,
-        )
-        .unwrap_or_else(|e| panic!("tcId {tc_id}: valid case failed to encrypt: {e:?}"));
+        let got_tag = key
+            .encrypt_detached_in_place_nonce(&nonce, aad, &mut ct)
+            .unwrap_or_else(|e| panic!("tcId {tc_id}: valid case failed to encrypt: {e:?}"));
         assert_eq!(ct, expected_ct, "tcId {tc_id}: ciphertext mismatch");
         assert_eq!(got_tag, tag, "tcId {tc_id}: tag mismatch");
     }
 
     let mut plaintext = expected_ct.to_vec();
-    match Mode::<NONCE_LEN, TAG_LEN>::decrypt_detached_in_place(
-        &perm, &nonce, aad, &mut plaintext, &tag,
-    ) {
+    match key.decrypt_detached_in_place(&nonce, aad, &mut plaintext, &tag) {
         Ok(()) => {
             assert!(valid, "tcId {tc_id}: an invalid vector decrypted and verified anyway");
             assert_eq!(plaintext, msg, "tcId {tc_id}: decrypted plaintext mismatch");
@@ -139,19 +135,19 @@ fn dispatch(
         ($n:literal, $t:literal) => {
             match key_len_bytes {
                 16 => {
-                    run_case::<16, $n, $t, Camellia128Internal>(
+                    run_case::<16, $n, $t, Camellia128Key<CCM<$n, $t>>>(
                         tc_id, key_bytes, nonce_bytes, aad, msg, expected_ct, expected_tag, valid,
                     );
                     true
                 }
                 24 => {
-                    run_case::<24, $n, $t, Camellia192Internal>(
+                    run_case::<24, $n, $t, Camellia192Key<CCM<$n, $t>>>(
                         tc_id, key_bytes, nonce_bytes, aad, msg, expected_ct, expected_tag, valid,
                     );
                     true
                 }
                 32 => {
-                    run_case::<32, $n, $t, Camellia256Internal>(
+                    run_case::<32, $n, $t, Camellia256Key<CCM<$n, $t>>>(
                         tc_id, key_bytes, nonce_bytes, aad, msg, expected_ct, expected_tag, valid,
                     );
                     true

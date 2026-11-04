@@ -12,7 +12,7 @@
 mod common;
 
 use bouncycastle_camellia::{Camellia128Key, Camellia256Key};
-use bouncycastle_cipher::modes::GCM;
+use bouncycastle_cipher::modes::{GCM, GMAC};
 use bouncycastle_core::hazmat::do_hazardous_operations;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
@@ -161,5 +161,41 @@ fn camellia_128_gcm_matches_the_authors_vectors() {
 fn camellia_256_gcm_matches_the_authors_vectors() {
     for case in CAMELLIA_256 {
         check::<32, Camellia256Key<GCM>>(case);
+    }
+}
+
+/// Cases 1 and 13 have no message and no AAD, so their tags are GMAC of nothing under the zero
+/// key: the one published Camellia-GMAC answer, run through `Camellia*Key<GMAC>`.
+#[test]
+fn the_empty_cases_are_gmac_known_answers() {
+    fn mac_key<const KEY_LEN: usize>(hex: &str) -> KeyMaterial<KEY_LEN> {
+        let mut material =
+            KeyMaterial::<KEY_LEN>::from_bytes_as_type(&bytes::<KEY_LEN>(hex), KeyType::MACKey)
+                .expect("a valid key");
+        do_hazardous_operations(&mut material, |k| {
+            k.set_key_type(KeyType::MACKey)?;
+            k.set_security_strength(SecurityStrength::from_bytes(KEY_LEN))
+        })
+        .expect("promoting a zero test key");
+        material
+    }
+    for (case, iv, tag) in [
+        (&CAMELLIA_128[0], ZERO_IV, CAMELLIA_128[0].6),
+        (&CAMELLIA_256[0], ZERO_IV, CAMELLIA_256[0].6),
+    ] {
+        assert!(case.3.is_empty() && case.4.is_empty(), "case {} is not the empty case", case.0);
+        let iv: [u8; 12] = bytes(iv);
+        let expected: [u8; 16] = bytes(tag);
+        let got = match case.1.len() {
+            32 => Camellia128Key::<GMAC>::from_key_material(&mac_key::<16>(case.1))
+                .unwrap()
+                .create_generator_nonce(&iv)
+                .mac(&[]),
+            _ => Camellia256Key::<GMAC>::from_key_material(&mac_key::<32>(case.1))
+                .unwrap()
+                .create_generator_nonce(&iv)
+                .mac(&[]),
+        };
+        assert_eq!(got, expected, "case {}", case.0);
     }
 }
