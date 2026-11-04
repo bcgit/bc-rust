@@ -6,8 +6,9 @@
 //! at each key length, the three key lengths, the tag check, and that the commands exist and
 //! round-trip.
 //!
-//! No standard or vector suite publishes a Camellia-GCM answer, so the known answers are
-//! Bouncy Castle Java's, produced as the crate's `gcm_bc_java_tests.rs` describes (bc-java 1.87's
+//! No standard or vector suite publishes a Camellia-GCM answer (the crate's `gcm_authors_tests.rs`
+//! has the Camellia authors' cases, at 128 and 256 bits), so the known answers here, at all three
+//! key lengths, are Bouncy Castle Java's, produced as `gcm_bc_java_tests.rs` describes (bc-java 1.87's
 //! `GCMBlockCipher` over `CamelliaEngine`, the RFC 3713 keys, a counting nonce, AAD and message);
 //! the generated-nonce output is held to the library's own `Camellia128Key<GCM>` as well.
 
