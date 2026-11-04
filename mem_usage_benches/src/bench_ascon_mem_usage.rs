@@ -56,10 +56,7 @@
 
 use core::hint::black_box;
 
-use bouncycastle::ascon::{
-    ASCON_AEAD128_KEY_LEN, ASCON_AEAD128_NONCE_LEN, ASCON_AEAD128_TAG_LEN,
-    SUSPENDED_ASCON_AEAD128_DECRYPTOR_STATE_LEN, SUSPENDED_ASCON_AEAD128_ENCRYPTOR_STATE_LEN,
-};
+use bouncycastle::ascon::{ASCON_AEAD128_KEY_LEN, ASCON_AEAD128_NONCE_LEN, ASCON_AEAD128_TAG_LEN};
 use bouncycastle::ascon::{Ascon_AEAD128, AsconAEAD128Key};
 use bouncycastle::ascon::{AsconCXof128, AsconCXof128Squeezer, SUSPENDED_ASCON_CXOF128_STATE_LEN};
 use bouncycastle::ascon::{AsconHash256, SUSPENDED_ASCON_HASH256_STATE_LEN};
@@ -137,8 +134,8 @@ fn bench_do_nothing() {
     print!("{}", 1 + 1);
 }
 
-/// Prints the in-memory size of each value a caller holds between calls, and the size of its
-/// suspended state. Neither depends on how much data has been processed.
+/// Prints the in-memory size of each value a caller holds between calls, and the size of a
+/// sponge's suspended state. Neither depends on how much data has been processed.
 #[inline(never)]
 fn print_struct_sizes() {
     use core::mem::size_of;
@@ -148,14 +145,6 @@ fn print_struct_sizes() {
     // holds back in case they are the inline tag.
     println!("size_of<Ascon_AEAD128<Encrypting>>: {}", size_of::<Enc>());
     println!("size_of<Ascon_AEAD128<Decrypting>>: {}", size_of::<Dec>());
-    println!(
-        "SUSPENDED_ASCON_AEAD128_ENCRYPTOR_STATE_LEN: {}",
-        SUSPENDED_ASCON_AEAD128_ENCRYPTOR_STATE_LEN
-    );
-    println!(
-        "SUSPENDED_ASCON_AEAD128_DECRYPTOR_STATE_LEN: {}",
-        SUSPENDED_ASCON_AEAD128_DECRYPTOR_STATE_LEN
-    );
 
     // The three sponges are the permutation state (40 B), an 8-byte rate buffer, its position
     // and the squeezing flag; a squeezer is the same sponge, moved.

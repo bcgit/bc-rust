@@ -7,17 +7,13 @@
 //! [`BlockCipherPadding::ALWAYS_PADS`] `false` (`NoPadding`) and an aligned message, nothing at
 //! all, in which case `do_encrypt_final` reports 0 of the `FINAL_LEN` bytes as output.
 
-use bouncycastle_core::errors::{PaddingError, SuspendableError, SymmetricCipherError};
+use bouncycastle_core::errors::{PaddingError, SymmetricCipherError};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{
-    Algorithm, BlockCipherDecryptor, BlockCipherEncryptor, BlockCipherPadding, SuspendableKeyed,
+    Algorithm, BlockCipherDecryptor, BlockCipherEncryptor, BlockCipherPadding,
     SymmetricCipherDecryptor, SymmetricCipherEncryptor,
 };
 use bouncycastle_utils::secret::Secret;
-use bouncycastle_utils::suspendable_state::{
-    Cursor, CursorMut, LIB_VERSION_LEN, SuspendableComponent, bounded_usize, resume_component,
-    suspend_component,
-};
 use core::array::from_mut;
 use core::marker::PhantomData;
 
@@ -323,152 +319,5 @@ where
     /// padding); `ciphertext_len` for one that adds nothing.
     fn decrypt_out_len(ciphertext_len: usize) -> usize {
         if P::ALWAYS_PADS { ciphertext_len.saturating_sub(1) } else { ciphertext_len }
-    }
-}
-
-impl<'k, E, P, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize>
-    PaddedBlockCipherEncryptor<E, P, INIT_DATA_LEN, BLOCK_LEN>
-where
-    E: BlockCipherEncryptor<INIT_DATA_LEN, BLOCK_LEN> + SuspendableComponent<'k>,
-    P: BlockCipherPadding<BLOCK_LEN>,
-{
-    /// The `N` of this type's [`SuspendableKeyed<N>`] impl: the version header, the inner
-    /// cipher's state, the partial plaintext block and its length as a `u64`. See
-    /// [`bouncycastle_utils::suspendable_state`].
-    pub const SUSPENDED_STATE_LEN: usize =
-        LIB_VERSION_LEN + <Self as SuspendableComponent<'k>>::STATE_LEN;
-}
-
-/// The suspended state is the inner cipher's followed by the buffered partial block. That block
-/// is plaintext, so the state must be protected; see [`bouncycastle_utils::suspendable_state`].
-impl<'k, E, P, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize> SuspendableComponent<'k>
-    for PaddedBlockCipherEncryptor<E, P, INIT_DATA_LEN, BLOCK_LEN>
-where
-    E: BlockCipherEncryptor<INIT_DATA_LEN, BLOCK_LEN> + SuspendableComponent<'k>,
-    P: BlockCipherPadding<BLOCK_LEN>,
-{
-    const STATE_LEN: usize = E::STATE_LEN + BLOCK_LEN + 8;
-    type Key = E::Key;
-
-    fn write_state(&self, out: &mut [u8]) {
-        let (inner, rest) = out.split_at_mut(E::STATE_LEN);
-        self.encryptor.write_state(inner);
-        let mut w = CursorMut::new(rest);
-        w.bytes(&*self.buf);
-        w.u64(self.buf_len as u64);
-        debug_assert!(w.is_done());
-    }
-
-    fn read_state(state: &[u8], key: &'k Self::Key) -> Result<Self, SuspendableError> {
-        let (inner, rest) = state.split_at(E::STATE_LEN);
-        let encryptor = E::read_state(inner, key)?;
-        let mut r = Cursor::new(rest);
-        let mut buf: Secret<[u8; BLOCK_LEN]> = Secret::new();
-        (*buf).copy_from_slice(r.bytes(BLOCK_LEN));
-        // A full block is encrypted as soon as it is full, so `buf_len < BLOCK_LEN` between calls.
-        let buf_len = bounded_usize(r.u64(), BLOCK_LEN - 1)?;
-        debug_assert!(r.is_done());
-        Ok(Self { encryptor, _padding: PhantomData, buf, buf_len })
-    }
-}
-
-/// `N` must be [`PaddedBlockCipherEncryptor::SUSPENDED_STATE_LEN`]; anything else is a compile
-/// error.
-impl<'k, E, P, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize, const N: usize>
-    SuspendableKeyed<'k, N> for PaddedBlockCipherEncryptor<E, P, INIT_DATA_LEN, BLOCK_LEN>
-where
-    E: BlockCipherEncryptor<INIT_DATA_LEN, BLOCK_LEN> + SuspendableComponent<'k>,
-    P: BlockCipherPadding<BLOCK_LEN>,
-{
-    type Key = E::Key;
-
-    fn suspend(self) -> [u8; N] {
-        suspend_component(&self)
-    }
-
-    fn from_suspended(state: [u8; N], key: &'k Self::Key) -> Result<Self, SuspendableError> {
-        resume_component(&state, key)
-    }
-}
-
-impl<'k, D, P, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize>
-    PaddedBlockCipherDecryptor<D, P, INIT_DATA_LEN, BLOCK_LEN>
-where
-    D: BlockCipherDecryptor<INIT_DATA_LEN, BLOCK_LEN> + SuspendableComponent<'k>,
-    P: BlockCipherPadding<BLOCK_LEN>,
-{
-    /// The `N` of this type's [`SuspendableKeyed<N>`] impl: the version header, the inner
-    /// cipher's state, the partial ciphertext block and its length as a `u64`, a flag for
-    /// whether a block is held back, and that block. See [`bouncycastle_utils::suspendable_state`].
-    pub const SUSPENDED_STATE_LEN: usize =
-        LIB_VERSION_LEN + <Self as SuspendableComponent<'k>>::STATE_LEN;
-}
-
-/// The suspended state is the inner cipher's, the buffered partial block, and the withheld
-/// block if there is one (all ciphertext). See [`bouncycastle_utils::suspendable_state`].
-impl<'k, D, P, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize> SuspendableComponent<'k>
-    for PaddedBlockCipherDecryptor<D, P, INIT_DATA_LEN, BLOCK_LEN>
-where
-    D: BlockCipherDecryptor<INIT_DATA_LEN, BLOCK_LEN> + SuspendableComponent<'k>,
-    P: BlockCipherPadding<BLOCK_LEN>,
-{
-    const STATE_LEN: usize = D::STATE_LEN + BLOCK_LEN + 8 + 1 + BLOCK_LEN;
-    type Key = D::Key;
-
-    fn write_state(&self, out: &mut [u8]) {
-        let (inner, rest) = out.split_at_mut(D::STATE_LEN);
-        self.decryptor.write_state(inner);
-        let mut w = CursorMut::new(rest);
-        w.bytes(&self.buf);
-        w.u64(self.buf_len as u64);
-        match &self.held {
-            Some(block) => {
-                w.u8(1);
-                w.bytes(block);
-            }
-            None => {
-                w.u8(0);
-                w.bytes(&[0u8; BLOCK_LEN]);
-            }
-        }
-        debug_assert!(w.is_done());
-    }
-
-    fn read_state(state: &[u8], key: &'k Self::Key) -> Result<Self, SuspendableError> {
-        let (inner, rest) = state.split_at(D::STATE_LEN);
-        let decryptor = D::read_state(inner, key)?;
-        let mut r = Cursor::new(rest);
-        let buf = r.array::<BLOCK_LEN>();
-        // A full block becomes the held block as soon as it is full, so `buf_len < BLOCK_LEN`.
-        let buf_len = bounded_usize(r.u64(), BLOCK_LEN - 1)?;
-        let held = match r.u8() {
-            0 => {
-                r.bytes(BLOCK_LEN);
-                None
-            }
-            1 => Some(r.array::<BLOCK_LEN>()),
-            _ => return Err(SuspendableError::InvalidData),
-        };
-        debug_assert!(r.is_done());
-        Ok(Self { decryptor, _padding: PhantomData, buf, buf_len, held })
-    }
-}
-
-/// `N` must be [`PaddedBlockCipherDecryptor::SUSPENDED_STATE_LEN`]; anything else is a compile
-/// error.
-impl<'k, D, P, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize, const N: usize>
-    SuspendableKeyed<'k, N> for PaddedBlockCipherDecryptor<D, P, INIT_DATA_LEN, BLOCK_LEN>
-where
-    D: BlockCipherDecryptor<INIT_DATA_LEN, BLOCK_LEN> + SuspendableComponent<'k>,
-    P: BlockCipherPadding<BLOCK_LEN>,
-{
-    type Key = D::Key;
-
-    fn suspend(self) -> [u8; N] {
-        suspend_component(&self)
-    }
-
-    fn from_suspended(state: [u8; N], key: &'k Self::Key) -> Result<Self, SuspendableError> {
-        resume_component(&state, key)
     }
 }

@@ -1,6 +1,6 @@
 //! Structural tests for CMAC, driven by a toy permutation: the two routes onto it agree, the
-//! held-back final block comes out the same wherever the call boundaries fall, the tag rules, key
-//! validation and suspend/resume. The known-answer tests (NIST CSRC, ACVP, Wycheproof) are in the
+//! held-back final block comes out the same wherever the call boundaries fall, the tag rules and
+//! key validation. The known-answer tests (NIST CSRC, ACVP, Wycheproof) are in the
 //! `aes` crate, `crypto/aes/tests/cmac_*.rs`.
 
 mod common;
@@ -9,12 +9,12 @@ mod common;
 mod toy_key;
 
 use bouncycastle_cipher::modes::{CMAC, CMAC_MIN_TAG_LEN, Cmac, ModeNames};
-use bouncycastle_core::errors::{MACError, SuspendableError};
+use bouncycastle_core::errors::MACError;
 use bouncycastle_core::hazmat::{ElectronicCodeBook, MacMode, Mode};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::symmetric_key::{FromKeyMaterial, MacGenerationKey, MacVerificationKey};
-use bouncycastle_core::traits::{MAC, SuspendableKeyed};
+use bouncycastle_core::traits::MAC;
 use bouncycastle_core_test_framework::from_key_material::TestFrameworkFromKeyMaterial;
 use bouncycastle_core_test_framework::mac::TestFrameworkMAC;
 use common::{TOY_LEN, Toy, toy_key};
@@ -26,8 +26,6 @@ type ToyCmacKey = ToyKey<Toy, CMAC>;
 fn cmac_key() -> ToyCmacKey {
     ToyCmacKey::from_key_material(&mac_key()).expect("the toy MAC key")
 }
-
-const STATE_LEN: usize = ToyCmac::SUSPENDED_STATE_LEN;
 
 fn mac_key() -> KeyMaterial<TOY_LEN> {
     KeyMaterial::<TOY_LEN>::from_bytes_as_type(toy_key().ref_to_bytes(), KeyType::MACKey).unwrap()
@@ -140,47 +138,4 @@ fn truncation() {
     let mut wrong = full.clone();
     wrong[15] ^= 1;
     assert!(!key.create_verifier().verify(&msg, &wrong));
-}
-
-#[test]
-fn suspend_resume() {
-    let key = cmac_key();
-    for mlen in [0, 16, 20, 64] {
-        let msg = message(mlen);
-        let expected = key.mac(&msg);
-        for split in 0..=mlen {
-            let mut cmac = key.create_generator();
-            cmac.do_update(&msg[..split]);
-            let state: [u8; STATE_LEN] = cmac.suspend();
-            let mut resumed = ToyCmac::from_suspended(state, key.state()).unwrap();
-            resumed.do_update(&msg[split..]);
-            assert_eq!(resumed.do_final(), expected, "mlen {mlen}, suspended at {split}");
-        }
-    }
-}
-
-#[test]
-fn suspend_resume_rejects() {
-    let key = cmac_key();
-    let mut cmac = key.create_generator();
-    cmac.do_update(b"some data");
-    let state: [u8; STATE_LEN] = cmac.suspend();
-    assert_eq!(STATE_LEN, 3 + 2 * TOY_LEN + 1);
-
-    let mut bad_len = state;
-    bad_len[STATE_LEN - 1] = TOY_LEN as u8 + 1;
-    assert_eq!(
-        ToyCmac::from_suspended(bad_len, key.state()).err(),
-        Some(SuspendableError::InvalidData)
-    );
-    let mut full_len = state;
-    full_len[STATE_LEN - 1] = TOY_LEN as u8;
-    assert!(ToyCmac::from_suspended(full_len, key.state()).is_ok());
-
-    let mut no_ver = state;
-    no_ver[..3].fill(0);
-    assert_eq!(
-        ToyCmac::from_suspended(no_ver, key.state()).err(),
-        Some(SuspendableError::IncompatibleVersion)
-    );
 }
