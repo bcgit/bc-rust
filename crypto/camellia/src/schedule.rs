@@ -24,7 +24,7 @@
 //! 128-bit values by public amounts.
 
 use crate::round::f1;
-use bouncycastle_utils::secret::{Secret, ZeroizablePrimitive};
+use bouncycastle_utils::secret::{NoPadding, Secret, ZeroizablePrimitive};
 
 /// Sealed: the three parameter sets are the only implementors. The key-schedule steps that
 /// differ by key length live here, off the public trait.
@@ -58,7 +58,7 @@ pub trait CamelliaParams: CamelliaParamsInternalTrait {
     /// The algorithm name, as reported by `Algorithm::ALG_NAME`.
     const ALG_NAME: &'static str;
     /// `[u64; 4 + ROUNDS + FL_KEYS]` -- the subkeys. See the module docs for the layout.
-    type Schedule: ZeroizablePrimitive + AsRef<[u64]> + AsMut<[u64]>;
+    type Schedule: ZeroizablePrimitive + NoPadding + AsRef<[u64]> + AsMut<[u64]>;
 }
 
 /// Camellia-128 parameters: 16-byte key, 18 rounds, `ke1 .. ke4`.
