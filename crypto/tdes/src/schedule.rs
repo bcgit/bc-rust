@@ -131,13 +131,18 @@ pub(crate) fn expand(key: u64, out: &mut Subkeys) {
 /// (instead of 16)".
 ///
 /// All three lists share one structure, which is what this checks instead of comparing against a
-/// table: after PC-1, `C0` and `D0` are each a 28-bit pattern of period 4 (all zeros, all ones,
-/// `0101...`, `1010...`, `0011...`, `0110...`, `1100...` or `1001...`). The schedule only ever
-/// rotates `C` and `D`, and a period-4 pattern has at most four distinct rotations, hence at most
-/// four distinct subkeys -- one for the weak keys (period 1), two for the semi-weak (period 2),
-/// four for the possibly weak. Eight patterns for `C0` times eight for `D0` is exactly 64 keys,
-/// and PC-1 is a bijection on the 56 non-parity bits, so no other key has the property. The tests
-/// enumerate the spec's three lists against this predicate and against that count.
+/// table: after PC-1, `C0` and `D0` are each a 28-bit pattern of period 4 whose repeated nibble
+/// has even weight (all zeros, all ones, `0101...`, `1010...`, `0011...`, `0110...`, `1100...`
+/// or `1001...`). The schedule only ever rotates `C` and `D`, and a period-4 pattern has at most
+/// four distinct rotations, hence at most four distinct subkeys -- one for the weak keys (period
+/// 1), two for the semi-weak (period 2), four for the possibly weak. Eight patterns for `C0`
+/// times eight for `D0` is exactly 64 keys, and PC-1 is a bijection on the 56 non-parity bits.
+///
+/// The other eight period-4 nibbles, the odd-weight ones (`0001`, `0010`, ... `1110`), also give
+/// only four distinct subkeys, but the spec's lists do not include them, and this predicate
+/// follows the lists: the parity term below keeps those 192 further key classes accepted, as
+/// BC Java's `DESParameters` and the spec's own count do. The tests enumerate all 256
+/// rotation-invariant `(C0, D0)` pairs against this predicate, and the spec's three lists.
 ///
 /// Parity bits are not consulted (PC-1 does not select them), which is also how the spec's lists
 /// are meant: "the weak keys listed above and the semi-weak keys and the possibly weak keys listed
@@ -146,8 +151,11 @@ pub(crate) fn expand(key: u64, out: &mut Subkeys) {
 /// Constant time: the two rotations and the comparison to zero do not branch on the key.
 pub(crate) fn is_weak(key: u64) -> bool {
     let (c, d) = pc1(key);
-    let period4 = (rotl28(c, 4) ^ c) | (rotl28(d, 4) ^ d);
-    ct_eq_zero_bytes(&period4.to_be_bytes())
+    // Bit 0 of `x ^ (x >> 1) ^ (x >> 2) ^ (x >> 3)` is the parity of the low nibble, which for a
+    // period-4 pattern is the parity of every nibble.
+    let odd = |x: u32| (x ^ (x >> 1) ^ (x >> 2) ^ (x >> 3)) & 1;
+    let period4_even = (rotl28(c, 4) ^ c) | (rotl28(d, 4) ^ d) | odd(c) | odd(d);
+    ct_eq_zero_bytes(&period4_even.to_be_bytes())
 }
 
 #[cfg(test)]

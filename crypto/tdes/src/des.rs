@@ -33,6 +33,7 @@
 //! to the spec's tables by the unit-vector tests below.
 
 use crate::sbox::sbox_layer;
+use bouncycastle_utils::ct;
 
 /// One expanded DEA key: sixteen round keys `K1..K16`, two words each -- `[lo, hi]` for round `n`
 /// at `[2n, 2n + 1]`. See [`crate::schedule`] for the packing.
@@ -41,12 +42,23 @@ pub(crate) type Subkeys = [u32; 32];
 /// Every nibble's least significant bit.
 const NIBBLE_LSB: u32 = 0x1111_1111;
 
+/// Targets whose integer multiply is fixed-latency, so [`spread`] may be left for LLVM to fold
+/// into one. A `const` rather than a `cfg` on the body, so both arms compile on every target.
+const MULTIPLY_IS_FIXED_LATENCY: bool = cfg!(any(target_arch = "x86_64", target_arch = "aarch64"));
+
 /// Spreads the least significant bit of each nibble to all four bits of that nibble.
 ///
-/// The input must have no other bits set. Written as shifts rather than a multiply by 15 so that
-/// nothing depends on the multiplier's timing.
+/// The input must have no other bits set. Written as shifts rather than a multiply by 15, but
+/// LLVM sees that the four shifted copies OR disjoint bits and folds them back into `v * 15`
+/// wherever it may: two `lea`s on x86-64, where that is harmless, and a `muls` on Cortex-M0,
+/// whose timing depends on the operand. So off the two fixed-latency targets `v` first goes
+/// through [`ct::value_barrier`], which hides its known-zero bits, and the ORs stay ORs; this is
+/// the same guard as `bouncycastle-aes`'s round-key widening, and
+/// `dev_scripts/check_aes_ct_asm.sh` greps the round function's assembly for it on Cortex-M0
+/// and RISC-V 32I.
 #[inline(always)]
 fn spread(v: u32) -> u32 {
+    let v = if MULTIPLY_IS_FIXED_LATENCY { v } else { ct::value_barrier(v) };
     v | (v << 1) | (v << 2) | (v << 3)
 }
 
@@ -175,7 +187,8 @@ fn f(r: u32, lo: u32, hi: u32) -> u32 {
 ///
 /// `IP` and `IP^-1` are the caller's business: TDEA (Sec 3.1) chains three of these, and the
 /// `IP^-1` that ends one DEA transformation cancels the `IP` that begins the next, so
-/// [`crate::hazmat::tdes::TDES`] applies each permutation once around all forty-eight rounds. Every
+/// [`crate::hazmat::tdes::forward`] (and `inverse`) applies each permutation once around all
+/// forty-eight rounds. Every
 /// intermediate value is identical to the spec's; only two redundant permutations are skipped.
 #[inline(always)]
 pub(crate) fn rounds(l: u32, r: u32, sk: &Subkeys, inverse: bool) -> (u32, u32) {

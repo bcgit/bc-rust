@@ -2,11 +2,11 @@
 //! `bc-test-data` repository: `TECBMMT3`, `TCBCMMT3`, `TCFB64MMT3`, `TCFB8MMT3` (three-key, for
 //! [`TDES3Key`]) and `TECBMMT2`, `TCBCMMT2`, `TCFB64MMT2`, `TCFB8MMT2` (two-key, for [`TDES2Key`]).
 //!
-//! Requires `bc-test-data` to be cloned alongside this repository, i.e. at `../bc-test-data`
-//! relative to the root of this git project, with the response files from NIST's `tdesmmt.zip`
-//! (CAVS 18.0) under `crypto/aes_tdes_vectors/TDES/`. If it is absent the tests print a warning and
-//! pass, matching the convention used by the AES ACVP and ML-KEM / ML-DSA suites -- `cargo test`
-//! must stay green for someone who has only cloned this repository.
+//! The files are read through the test framework's `bc_test_data` loader: `bc-test-data` cloned
+//! beside this repository, with the response files from NIST's `tdesmmt.zip` (CAVS 18.0) under
+//! `crypto/aes_tdes_vectors/TDES/`. If the repository is absent the tests print a warning and
+//! pass, as the AES ACVP and ML-KEM / ML-DSA suites do; if it is present and a file is missing,
+//! the loader panics rather than letting that file's test pass vacuously.
 //!
 //! Every case is checked in **both** directions regardless of the section it came from:
 //! encrypting `PLAINTEXT` must give `CIPHERTEXT` and decrypting `CIPHERTEXT` must give
@@ -43,33 +43,14 @@ use bouncycastle_core::symmetric_key::{
 use bouncycastle_core::traits::{
     BlockCipherDecryptor, BlockCipherEncryptor, StreamCipherDecryptor, StreamCipherEncryptor,
 };
+use bouncycastle_core_test_framework::test_data_loaders::bc_test_data;
 use bouncycastle_hex as hex;
 use bouncycastle_rng::FixedSeedRNG;
 use bouncycastle_tdes::hazmat::{TDES2Internal, TDESInternal};
 use bouncycastle_tdes::{BLOCK_LEN, KEY_LEN, KEY_LEN_2KEY, TDES2Key, TDES3Key};
-use std::fs;
-use std::path::{Path, PathBuf};
 
-/// Candidate locations, covering `cargo test` run from the crate root or from the repo root.
-const TEST_DATA_PATHS: [&str; 2] = [
-    "../../../bc-test-data/crypto/aes_tdes_vectors/TDES",
-    "../bc-test-data/crypto/aes_tdes_vectors/TDES",
-];
-
-/// Locates the TDES CAVP directory, or `None` if `bc-test-data` is not checked out.
-fn test_data_dir() -> Option<PathBuf> {
-    for candidate in TEST_DATA_PATHS {
-        let path = Path::new(candidate);
-        if path.join("TECBMMT3.rsp").exists() {
-            return Some(path.to_path_buf());
-        }
-    }
-    println!(
-        "WARNING: bc-test-data not found (looked in {TEST_DATA_PATHS:?}); CAVP TDES MMT tests will \
-         be skipped"
-    );
-    None
-}
+/// Where the response files sit under `bc-test-data`.
+const CAVP_DIR: &str = "crypto/aes_tdes_vectors/TDES";
 
 /// One MMT case. `iv` is empty for ECB.
 #[derive(Default, Debug, Clone)]
@@ -127,15 +108,14 @@ fn parse_rsp(text: &str) -> Vec<MmtCase> {
 /// ten `[DECRYPT]` cases and **no `[ENCRYPT]` section at all**: CAVP tests two-key TDEA in the
 /// decrypt direction only, which is the same policy as [`TDES2Key`].
 fn load(file: &str) -> Option<Vec<MmtCase>> {
-    let dir = test_data_dir()?;
-    let text = fs::read_to_string(dir.join(file)).expect("readable response file");
+    let text = bc_test_data(CAVP_DIR, file)?;
     let cases = parse_rsp(&text);
     let encrypt = cases.iter().filter(|c| c.section == "ENCRYPT").count();
     let decrypt = cases.iter().filter(|c| c.section == "DECRYPT").count();
     assert_eq!(encrypt + decrypt, cases.len(), "{file}: unexpected section");
     assert_eq!(decrypt, 10, "{file}: ten decrypt cases");
     assert_eq!(encrypt, if file.ends_with("MMT2.rsp") { 0 } else { 10 }, "{file}: encrypt cases");
-    println!("{file}: {} cases found at {}", cases.len(), dir.display());
+    println!("{file}: {} cases found under bc-test-data/{CAVP_DIR}", cases.len());
     Some(cases)
 }
 

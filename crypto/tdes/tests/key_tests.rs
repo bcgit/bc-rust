@@ -72,6 +72,77 @@ fn is_weak_key_error(result: Result<TDESInternal, SymmetricCipherError>) -> bool
     matches!(result, Err(SymmetricCipherError::KeyMaterialError(KeyMaterialError::WeakKey(_))))
 }
 
+/// The DEA key (odd parity bits cleared) whose PC-1 output is `(c, d)`: inverse PC-1, which is a
+/// bijection on the 56 non-parity bits.
+fn key_from_cd(c: u32, d: u32) -> u64 {
+    let cd = ((c as u64) << 28) | d as u64;
+    let mut key = 0u64;
+    for (j, &dst) in PC1.iter().enumerate() {
+        let bit = (cd >> (55 - j)) & 1;
+        key |= bit << (64 - dst as u32);
+    }
+    key & PARITY_MASK
+}
+
+/// The engine's verdict on `key` in the first component position of an otherwise good bundle.
+fn refused_as_weak(key: u64) -> bool {
+    is_weak_key_error(TDESInternal::new(&bundle([key, GOOD[1], GOOD[2]])))
+}
+
+/// The 28-bit pattern that repeats the nibble `n` seven times.
+fn repeated(n: u32) -> u32 {
+    (0..7).fold(0, |acc, _| (acc << 4) | n)
+}
+
+/// Every key that is invariant under the schedule's rotations -- `C0` and `D0` each one of the
+/// 16 period-4 patterns, 256 pairs -- gets the documented verdict: refused exactly when both
+/// nibbles have even weight, which is the spec's 64 keys, and accepted for the other 192 (such
+/// as `1F0101010E010101`, `C0 = 0`, `D0 = 0x1111111`), which Sec 3.3.2 does not list though they
+/// too give four distinct subkeys. This asks the predicate about every rotation-invariant key,
+/// not only the listed ones.
+#[test]
+fn every_rotation_invariant_key_gets_the_documented_verdict() {
+    let mut refused = 0;
+    for cn in 0..16u32 {
+        for dn in 0..16u32 {
+            let key = key_from_cd(repeated(cn), repeated(dn));
+            let listed = cn.count_ones().is_multiple_of(2) && dn.count_ones().is_multiple_of(2);
+            assert_eq!(refused_as_weak(key), listed, "C0 nibble {cn:04b}, D0 nibble {dn:04b}");
+            refused += usize::from(listed);
+        }
+    }
+    assert_eq!(refused, 64);
+    assert!(!refused_as_weak(0x1F0101010E010101), "C0 = 0, D0 = 0x1111111 is not in Sec 3.3.2");
+    assert!(refused_as_weak(0x1F1F1F1F0E0E0E0E), "the weak key with C0 = 0, D0 = 0xFFFFFFF is");
+}
+
+/// Keys whose `C0` and `D0` are equal but have no period are accepted: the predicate ORs the two
+/// halves' period tests, and an XOR in its place would call every such key weak (2^28 classes).
+#[test]
+fn equal_halves_without_a_period_are_accepted() {
+    let mut x: u32 = 0x9E37_79B9;
+    let mut accepted = 0;
+    for _ in 0..2000 {
+        x ^= x << 13;
+        x ^= x >> 17;
+        x ^= x << 5;
+        let half = x & 0x0FFF_FFFF;
+        if half.rotate_left(4) & 0x0FFF_FFFF == half
+            || (half << 4 | half >> 24) & 0x0FFF_FFFF == half
+        {
+            continue;
+        }
+        let key = key_from_cd(half, half);
+        if [GOOD[1], GOOD[2]].contains(&key) {
+            continue;
+        }
+        assert!(!refused_as_weak(key), "C0 = D0 = {half:07x} has no period 4");
+        accepted += 1;
+    }
+    assert!(accepted > 1900, "{accepted} keys checked");
+    assert!(!refused_as_weak(0x10BA7C00FE543800), "C0 = D0 = 0x1234567");
+}
+
 #[test]
 fn a_good_bundle_is_accepted() {
     assert!(TDESInternal::new(&bundle(GOOD)).is_ok());
@@ -115,13 +186,7 @@ fn the_three_lists_are_exactly_the_period_four_keys() {
     let mut structural = std::collections::BTreeSet::new();
     for &c in &patterns {
         for &d in &patterns {
-            let cd = ((c as u64) << 28) | d as u64;
-            let mut key = 0u64;
-            for (j, &dst) in PC1.iter().enumerate() {
-                let bit = (cd >> (55 - j)) & 1;
-                key |= bit << (64 - dst as u32);
-            }
-            structural.insert(key & PARITY_MASK);
+            structural.insert(key_from_cd(c, d));
         }
     }
     assert_eq!(structural.len(), 64);

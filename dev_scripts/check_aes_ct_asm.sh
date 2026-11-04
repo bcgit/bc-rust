@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Checks that the AES round-key widening (`PlaneWord::splat` in crypto/aes/src/bitslice.rs)
-# compiles to no multiply, call or branch on the targets whose multiply is not fixed-latency.
+# Checks that the AES round-key widening (`PlaneWord::splat` in crypto/aes/src/bitslice.rs) and
+# the TDES round function (`spread` in crypto/tdes/src/des.rs) compile to no multiply, call or
+# branch on the targets whose multiply is not fixed-latency.
 # Builds dev_scripts/aes_ct_harness with the nightly toolchain and `-Zbuild-std=core` (the
 # targets have no shipped `core`), emits the assembly and greps the four `splat*` bodies: the
 # barriered pair must be clean, and the plain pair must show the multiply the barrier prevents,
@@ -48,18 +49,23 @@ for t in $TARGETS; do
         exit 2
     fi
 
-    for f in splat32_barrier splat64_barrier; do
-        hits=$(body "$asm" "$f" | grep -cE "$bad" || true)
+    # splat is straight-line code, so any call or branch in it is a fault; the TDES round function
+    # has a loop counter and a buffer clear, which are not secret-dependent, so for it only a
+    # multiply counts.
+    for spec in splat32_barrier:all splat64_barrier:all tdes_rounds:mul; do
+        f=${spec%%:*}; kind=${spec##*:}
+        if [ "$kind" = all ]; then pat=$bad; what="multiply, call or branch"; else pat=$mul; what="multiply"; fi
+        hits=$(body "$asm" "$f" | grep -cE "$pat" || true)
         n=$(body "$asm" "$f" | wc -l)
         if [ "$hits" -ne 0 ]; then
-            echo "FAIL $t $f: $hits multiply/call/branch line(s) in $n instructions"
-            body "$asm" "$f" | grep -E "$bad"
+            echo "FAIL $t $f: $hits $what line(s) in $n instructions"
+            body "$asm" "$f" | grep -E "$pat"
             status=1
         else
-            echo "ok   $t $f: no multiply, call or branch in $n instructions"
+            echo "ok   $t $f: no $what in $n instructions"
         fi
     done
-    control=$(for f in splat32_plain splat64_plain; do body "$asm" "$f"; done | grep -cE "$mul" || true)
+    control=$(for f in splat32_plain splat64_plain spread_plain; do body "$asm" "$f"; done | grep -cE "$mul" || true)
     if [ "$control" -eq 0 ]; then
         echo "FAIL $t: the unbarriered bodies show no multiply, so the grep proves nothing"
         status=1
