@@ -1,0 +1,13 @@
+# The AES round-key widening, out of line, for `../check_aes_ct_asm.sh` to build on the targets
+# whose multiply is not fixed-latency and grep. Its own workspace, so the root `cargo build
+# --workspace` never builds it for the host.
+[package]
+name = "aes_ct_harness"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[dependencies]
+bouncycastle-utils = { path = "../../crypto/utils" }
+
+[workspace]

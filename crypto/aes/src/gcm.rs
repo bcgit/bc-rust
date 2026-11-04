@@ -4,9 +4,8 @@
 use crate::hazmat::{AES128Internal, AES192Internal, AES256Internal};
 use bouncycastle_cipher::modes::Gcm;
 
-// Imports needed for docs
-#[allow(unused_imports)]
 pub use bouncycastle_cipher::modes::GCM_NONCE_LEN;
+// Imported for the docs
 #[allow(unused_imports)]
 use bouncycastle_cipher::{Decrypting, Encrypting};
 

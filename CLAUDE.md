@@ -43,7 +43,8 @@ Revisit this section at the first non-alpha release.
 
 - Builds on Rust **stable**: there is no toolchain pin, and no crate enables a `#![feature(...)]` gate, so
   nightly-only tooling (`-Z` flags and the like) is not available. CI builds, tests and docs on stable; only the
-  `rustfmt` job installs nightly.
+  `rustfmt` job and the AES assembly check (`-Zbuild-std=core` for targets without a shipped `core`) install
+  nightly.
 - 2024 edition (set workspace-wide in the root `Cargo.toml`).
 - Minimum Rust is 1.88: `rust-version` in the root `Cargo.toml`, inherited by `bouncycastle-utils` (the crate that
   needs it, for `slice::as_chunks`) and so enforced for every crate that depends on it.
@@ -326,12 +327,15 @@ external vector suites — is specified in QUALITY_AND_STYLE.md and CONTRIBUTING
 
 ## CI
 
-Five workflows under `.github/workflows/`, all triggered by pull requests:
+Six workflows under `.github/workflows/`, all triggered by pull requests:
 
 - `rust-build.yml`: `cargo build --workspace --all-targets --all-features` on stable.
 - `rust-test.yml`: `cargo test --all` on stable.
 - `rust-style.yml`: `cargo fmt --all --check` on **nightly** rustfmt, so format before every commit.
 - `rust-docs.yml`: `cargo doc --all` on stable.
+- `aes-ct-asm.yml`: `dev_scripts/check_aes_ct_asm.sh` on **nightly** with `rust-src`: builds
+  `dev_scripts/aes_ct_harness` for thumbv6m and riscv32i and greps the assembly of the AES round-key
+  widening for a multiply, call or branch (see the comment on `PlaneWord::splat` in the aes crate).
 - `publish_doc_benches_to_ghpages.yaml`: builds rustdoc and runs `quality_stats.sh`; on `main` it also
   publishes docs and code stats to GitHub Pages (`https://bcgit.github.io/bc-rust/`). Its bench step is
   commented out because the benches are too slow on the hosted runner, so benchmark figures come from a

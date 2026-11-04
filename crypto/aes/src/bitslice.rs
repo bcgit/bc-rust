@@ -206,6 +206,10 @@ impl PlaneWord for u32 {
     /// the five harness targets emits a multiply or a branch). On x86-64 and aarch64 the
     /// barrier would cost about 60 % of the 2-block and 190 % of the 4-block throughput
     /// (measured), for a multiply that is already constant-time, so there the fold is allowed.
+    /// The gate is by architecture alone, so 32-bit Arm, x86 and wasm32 pay the barrier too,
+    /// whether or not their multiply is fixed-latency: conservative, and cheap off the hot
+    /// 64-bit targets. `dev_scripts/check_aes_ct_asm.sh` rebuilds the harness and greps its
+    /// assembly; CI runs it on the Cortex-M0 and RISC-V 32I targets.
     #[inline(always)]
     fn splat(pattern: u16) -> Self {
         let x = u32::from(pattern);
