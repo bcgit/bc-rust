@@ -135,7 +135,10 @@ pub(crate) fn base64_decode_cmd() {
                 crate::helpers::write_stdout(
                     &decoder.do_final(&buf[..n]).unwrap_or_else(|e| fail(e)),
                 );
-                // Padding ends the message. Anything but whitespace after it is not base64.
+                // Padding ends the message. Anything but whitespace after it is not base64. The
+                // library refuses data after the padding within the chunk it is given; what later
+                // chunks hold it never sees, since `do_final` consumed the decoder, so the check
+                // is repeated here for them.
                 loop {
                     let n = read_chunk(&mut buf);
                     if n == 0 {

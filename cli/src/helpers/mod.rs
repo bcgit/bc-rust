@@ -43,6 +43,8 @@ pub(crate) const MAX_SECRET_LEN: usize = 16 * 1024;
 /// [`KeyType::Unknown`] (or `Zeroized` when all zero); the command re-tags what it makes of it.
 pub(crate) type SecretBytes = KeyMaterial<MAX_SECRET_LEN>;
 
+/// The parsed `--hex-input` flag, process-wide: a CLI has one invocation, and `main` stores it
+/// before any reader below runs, so no reader can see the default by mistake.
 static HEX_INPUT: AtomicBool = AtomicBool::new(false);
 
 /// Records the global `--hex-input` flag for the readers below.
