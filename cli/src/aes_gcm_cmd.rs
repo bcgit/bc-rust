@@ -19,6 +19,7 @@ use bouncycastle::aes::{AES128Key, AES192Key, AES256Key};
 use bouncycastle::cipher::modes::GCM;
 use bouncycastle::core::symmetric_key::{AeadDecryptionKey, AeadEncryptionKey};
 
+#[allow(clippy::too_many_arguments)] // one flag per input, each inline or from a file
 pub(crate) fn aes128_gcm_cmd(
     action: &CipherDirection,
     key: &Option<String>,
@@ -38,6 +39,7 @@ pub(crate) fn aes128_gcm_cmd(
     );
 }
 
+#[allow(clippy::too_many_arguments)] // one flag per input, each inline or from a file
 pub(crate) fn aes192_gcm_cmd(
     action: &CipherDirection,
     key: &Option<String>,
@@ -57,6 +59,7 @@ pub(crate) fn aes192_gcm_cmd(
     );
 }
 
+#[allow(clippy::too_many_arguments)] // one flag per input, each inline or from a file
 pub(crate) fn aes256_gcm_cmd(
     action: &CipherDirection,
     key: &Option<String>,

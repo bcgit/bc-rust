@@ -108,8 +108,9 @@
 //! SHA3 offers Key Derivation Functions in the form of KDF, which is accessed through the [`KDF`] trait,
 //! which is implemented by all SHA3 and SHAKE variants.
 //! [`KDF`] acts on [`KeyMaterial`] objects as both the input and output values.
-//! In the case of SHA3, the [`KDF`] interfaces are simple wrapper functions around the underlying SHA3 or SHAKE
-//! primitive that correctly maintains the length and entropy metadata of the key material that it is acting on.
+//! In the case of SHA3, the [`KDF`] interfaces hash the concatenated input keys and additional input
+//! with the underlying SHA3 or SHAKE primitive, maintaining the length and entropy metadata of the key
+//! material; they are not the SP 800-56Cr2 one-step KDF, which puts a counter before the input.
 //! This is intended to act as a developer aid to prevent some classes of developer mistakes, such as
 //! deriving a cryptographic key from uninitialized (aka zeroized) input key material, or using low-entropy
 //! input key material to derive a MAC, symmetric, or asymmetric key.
@@ -192,9 +193,8 @@
 //! | Object                                                          | Size (bytes) |
 //! |-----------------------------------------------------------------|--------------|
 //! | `SHA3_224` .. `SHA3_512`, `SHAKE128/256`, `SHAKESqueezer`       | 440          |
-//! | `CSHAKE128/256`, `TUPLEHASHXOF128/256`, `CSHAKESqueezer`        | 448          |
-//! | `KMACXOF128/256`, `TUPLEHASH128/256`                            | 456          |
-//! | `KMAC128/256`                                                   | 464          |
+//! | `CSHAKE128/256`, `KMACXOF128/256`, `TUPLEHASHXOF128/256`, `CSHAKESqueezer` | 448 |
+//! | `KMAC128/256`, `KMAC128Key`/`KMAC256Key`, `TUPLEHASH128/256`    | 456          |
 //! | `PARALLELHASHXOF128/256`                                        | 912          |
 //! | `PARALLELHASH128/256`                                           | 920          |
 //!
@@ -507,4 +507,15 @@ impl AlgorithmOID for SHAKE256 {
     const OID: &'static [u32] = &[2, 16, 840, 1, 101, 3, 4, 2, 12];
     const OID_DER: &'static [u8] =
         &[0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x0c];
+}
+
+/// SHAKE as a fixed-length digest, for the algorithms that bind a hash's identity and length
+/// into what they sign (HashML-DSA, PKCS#1): id-shake128 is 32 bytes and id-shake256 is 64
+/// (RFC 8702 Section 3.1: "the output length of SHAKE128 or SHAKE256 as the message digest
+/// MUST be 32 or 64 bytes, respectively"), which is also FIPS 204 Algorithm 4's
+/// SHAKE128(M, 256). The same lengths as [`Hash::output_len`] on these types; the block
+/// length is the sponge rate.
+impl<PARAMS: SHAKEParams> HashAlgParams for SHAKEInternal<PARAMS> {
+    const OUTPUT_LEN: usize = (PARAMS::SIZE as usize) / 4;
+    const BLOCK_LEN: usize = PARAMS::SIZE.rate_bits() / 8;
 }

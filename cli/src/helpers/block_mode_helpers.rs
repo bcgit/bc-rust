@@ -55,8 +55,8 @@
 //! ```
 
 use crate::helpers::{
-    flush_stdout, read_from_file, read_from_file_raw, strip_trailing_newline, write_bytes_or_hex,
-    write_stdout,
+    decode_hex_arg, flush_stdout, hex_input, load_secret, read_input_file, strip_trailing_newline,
+    write_bytes_or_hex, write_stdout,
 };
 use bouncycastle::core::errors::{RNGError, SymmetricCipherError};
 use bouncycastle::core::hazmat::do_hazardous_operations;
@@ -64,7 +64,6 @@ use bouncycastle::core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle::core::security_strength::SecurityStrength;
 use bouncycastle::core::symmetric_key::FromKeyMaterial;
 use bouncycastle::core::traits::{RNG, SymmetricCipherDecryptor, SymmetricCipherEncryptor};
-use bouncycastle::hex;
 use bouncycastle::rng::HashDRBG_SHA512;
 use clap::ValueEnum;
 use std::io;
@@ -88,7 +87,8 @@ pub(crate) enum CipherDirection {
     Decrypt,
 }
 
-/// Loads the key from `--key` (hex) or `--key-file` (binary or hex), and checks its length.
+/// Loads the key from `--key-file` (raw bytes; hex with `--hex-input`) or `--key` (hex), and
+/// checks its length.
 ///
 /// `KEY_LEN` is exact: AES has three key lengths and the command selects one, so a key of the
 /// wrong length is a mistake rather than something to truncate or pad.
@@ -97,24 +97,22 @@ pub(crate) fn load_key<const KEY_LEN: usize>(
     key_file: &Option<String>,
     alg: &str,
 ) -> KeyMaterial<KEY_LEN> {
-    let key_bytes: Vec<u8> = if let Some(key_file) = key_file {
-        // A file may hold raw bytes or hex; `read_from_file` tries hex first, as the other
-        // commands do.
-        let bytes = read_from_file(key_file);
-        // `read_from_file` already ignores a trailing newline on a hex file. A *raw* key file may
-        // end in one too, which lengthens the key by a byte; strip it only when that leaves
-        // exactly the key, so a binary key whose last byte really is `0x0a` is not shortened.
-        let trimmed = strip_trailing_newline(&bytes);
-        if trimmed.len() == KEY_LEN { trimmed.to_vec() } else { bytes }
-    } else if let Some(key) = key {
-        hex::decode(key).unwrap_or_else(|_| {
-            eprintln!("Error: `--key` must be hex. Use `--key-file` for raw bytes.");
-            exit(-1);
-        })
-    } else {
-        eprintln!("Error: either `--key` or `--key-file` must be supplied.");
-        exit(-1);
-    };
+    load_key_typed(key, key_file, alg, KeyType::SymmetricCipherKey)
+}
+
+/// As [`load_key`], tagged `key_type`: `MACKey` for the CMAC and GMAC keys.
+pub(crate) fn load_key_typed<const KEY_LEN: usize>(
+    key: &Option<String>,
+    key_file: &Option<String>,
+    alg: &str,
+    key_type: KeyType,
+) -> KeyMaterial<KEY_LEN> {
+    let secret = load_secret(key, key_file, "key");
+    // A raw key file may end in a newline, which lengthens the key by a byte; strip it only
+    // when that leaves exactly the key, so a binary key whose last byte really is `0x0a` is not
+    // shortened.
+    let trimmed = strip_trailing_newline(secret.ref_to_bytes());
+    let key_bytes = if trimmed.len() == KEY_LEN { trimmed } else { secret.ref_to_bytes() };
 
     if key_bytes.len() != KEY_LEN {
         eprintln!("Error: {alg} needs a {KEY_LEN}-byte key, got {} bytes.", key_bytes.len());
@@ -124,20 +122,19 @@ pub(crate) fn load_key<const KEY_LEN: usize>(
     // `from_bytes_as_type` tags the key at the strength its length implies, which is exactly what
     // the engine requires -- except for an all-zero key, which it marks Zeroized instead.
     let mut key =
-        KeyMaterial::<KEY_LEN>::from_bytes_as_type(&key_bytes, KeyType::SymmetricCipherKey)
-            .unwrap_or_else(|e| {
-                eprintln!("Error: couldn't load the key: {e:?}");
-                exit(-1);
-            });
+        KeyMaterial::<KEY_LEN>::from_bytes_as_type(key_bytes, key_type).unwrap_or_else(|e| {
+            eprintln!("Error: couldn't load the key: {e:?}");
+            exit(-1);
+        });
 
-    if key.key_type() != KeyType::SymmetricCipherKey {
+    if key.key_type() != key_type {
         // Same stance as `helpers::parse_seed`: warn, then do what was asked. A CLI is used for
         // test vectors and scripting, where an all-zero key is a legitimate thing to want.
         eprintln!(
             "Warning: all-zero (or otherwise zeroized) key provided. Proceeding, but this is not secure."
         );
         do_hazardous_operations(&mut key, |key| {
-            key.set_key_type(KeyType::SymmetricCipherKey)?;
+            key.set_key_type(key_type)?;
             key.set_security_strength(SecurityStrength::from_bytes(KEY_LEN))
         })
         .unwrap_or_else(|e| {
@@ -156,10 +153,22 @@ pub(crate) fn load_key_object<K: FromKeyMaterial<KEY_LEN>, const KEY_LEN: usize>
     key_file: &Option<String>,
     alg: &str,
 ) -> K {
-    K::from_key_material(&load_key::<KEY_LEN>(key, key_file, alg)).unwrap_or_else(|e| {
-        eprintln!("Error: couldn't load the key: {e:?}");
-        exit(-1);
-    })
+    load_key_object_typed(key, key_file, alg, KeyType::SymmetricCipherKey)
+}
+
+/// As [`load_key_object`], with the material tagged `key_type`.
+pub(crate) fn load_key_object_typed<K: FromKeyMaterial<KEY_LEN>, const KEY_LEN: usize>(
+    key: &Option<String>,
+    key_file: &Option<String>,
+    alg: &str,
+    key_type: KeyType,
+) -> K {
+    K::from_key_material(&load_key_typed::<KEY_LEN>(key, key_file, alg, key_type)).unwrap_or_else(
+        |e| {
+            eprintln!("Error: couldn't load the key: {e:?}");
+            exit(-1);
+        },
+    )
 }
 
 /// An [`RNG`] that yields the caller's IV once, so `--iv` can reach a key whose only
@@ -209,19 +218,20 @@ impl<const N: usize> RNG for FixedIv<N> {
     }
 }
 
-/// Loads `--iv-file` (raw bytes, never hex-decoded) or `--iv` (hex); the file wins if both are
-/// given, as for `--key-file`. `None` when neither is given, which selects the generated,
-/// in-band IV. The IV must be exactly `INIT_DATA_LEN` bytes.
+/// Loads `--iv-file` (raw bytes; hex with `--hex-input`) or `--iv` (hex); the file wins if
+/// both are given, as for `--key-file`. `None` when neither is given, which selects the
+/// generated, in-band IV. The IV must be exactly `INIT_DATA_LEN` bytes.
 ///
-/// As for CCM's `--nonce-file`, a trailing newline in the file is part of the IV, and is warned
-/// about, because a file written with `echo` rather than `echo -n` is the usual way to get one.
+/// As for CCM's `--nonce-file`, a trailing newline in a raw file is part of the IV, and is
+/// warned about, because a file written with `echo` rather than `echo -n` is the usual way to
+/// get one.
 pub(crate) fn load_iv<const INIT_DATA_LEN: usize>(
     iv: &Option<String>,
     iv_file: &Option<String>,
 ) -> Option<[u8; INIT_DATA_LEN]> {
     let bytes = if let Some(file) = iv_file {
-        let bytes = read_from_file_raw(file);
-        if bytes.last() == Some(&b'\n') {
+        let bytes = read_input_file(file);
+        if !hex_input() && bytes.last() == Some(&b'\n') {
             eprintln!(
                 "Warning: IV file '{file}' ends with a newline byte (0x0a), which is used as part \
                  of the IV. If that is not intended, write it with `printf` or `echo -n`."
@@ -229,10 +239,7 @@ pub(crate) fn load_iv<const INIT_DATA_LEN: usize>(
         }
         bytes
     } else if let Some(v) = iv {
-        hex::decode(v).unwrap_or_else(|_| {
-            eprintln!("Error: IV is not valid hex.");
-            exit(-1)
-        })
+        decode_hex_arg(v, "iv")
     } else {
         return None;
     };

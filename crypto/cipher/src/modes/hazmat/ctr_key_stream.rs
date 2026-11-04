@@ -109,6 +109,15 @@ where
         Cursor::new(state).array::<INIT_DATA_LEN>()
     }
 
+    /// The next counter value of a suspended keystream, read out of the same state: the `u64`
+    /// after the nonce. For a composite whose rule on the counter is tighter than this type's
+    /// (GCM starts at 2), so that the rule is tied to this layout and not to a copy of it.
+    pub(crate) fn counter_from_state(state: &[u8]) -> u64 {
+        let mut r = Cursor::new(state);
+        r.array::<INIT_DATA_LEN>();
+        r.u64()
+    }
+
     /// `Tj = N | [j]m`: the nonce followed by the counter `j`, big-endian, in the trailing
     /// `CTR_LEN` bytes.
     ///

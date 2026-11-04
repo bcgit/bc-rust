@@ -73,8 +73,8 @@ fn nist_sp800_185_parallelhash_sample_values() {
     for (i, v) in vectors.iter().enumerate() {
         let want = v.output_len / 8;
         let got = match v.strength {
-            128 => ParallelHash128::new(v.block_size, v.s.as_bytes(), want).hash(&v.msg),
-            256 => ParallelHash256::new(v.block_size, v.s.as_bytes(), want).hash(&v.msg),
+            128 => ParallelHash128::new(v.block_size, v.s.as_bytes(), want).unwrap().hash(&v.msg),
+            256 => ParallelHash256::new(v.block_size, v.s.as_bytes(), want).unwrap().hash(&v.msg),
             other => panic!("COUNT {i}: unexpected strength {other}"),
         };
         assert_eq!(
@@ -144,7 +144,7 @@ fn do_final_binds_the_length_when_nothing_has_been_read() {
         match f.strength {
             128 => check_do_final_binds_length(
                 || ParallelHashXOF128::new(b, s),
-                |n| ParallelHash128::new(b, s, n).hash(&f.msg),
+                |n| ParallelHash128::new(b, s, n).unwrap().hash(&f.msg),
                 &f.msg,
                 &f.output,
                 &x.output,
@@ -152,7 +152,7 @@ fn do_final_binds_the_length_when_nothing_has_been_read() {
             ),
             256 => check_do_final_binds_length(
                 || ParallelHashXOF256::new(b, s),
-                |n| ParallelHash256::new(b, s, n).hash(&f.msg),
+                |n| ParallelHash256::new(b, s, n).unwrap().hash(&f.msg),
                 &f.msg,
                 &f.output,
                 &x.output,
@@ -349,15 +349,15 @@ fn hash_trait_view_agrees_with_the_sample_values() {
         let ctx = format!("COUNT {i}: ParallelHash{} B={b}", v.strength);
         match v.strength {
             128 => check_fixed_view(
-                || ParallelHash128::new(b, s, n),
-                |m, o| ParallelHash128::new(b, s, n).hash_out(m, o),
+                || ParallelHash128::new(b, s, n).unwrap(),
+                |m, o| ParallelHash128::new(b, s, n).unwrap().hash_out(m, o),
                 &v.msg,
                 &v.output,
                 &ctx,
             ),
             256 => check_fixed_view(
-                || ParallelHash256::new(b, s, n),
-                |m, o| ParallelHash256::new(b, s, n).hash_out(m, o),
+                || ParallelHash256::new(b, s, n).unwrap(),
+                |m, o| ParallelHash256::new(b, s, n).unwrap().hash_out(m, o),
                 &v.msg,
                 &v.output,
                 &ctx,

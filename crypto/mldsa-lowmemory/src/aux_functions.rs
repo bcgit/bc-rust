@@ -18,7 +18,7 @@ pub(crate) fn unpack_c_tilde<P: MLDSAParams>(sig: &[u8]) -> P::SigCTilde {
 pub(crate) fn unpack_z_row<P: MLDSAParams, const SIG_LEN: usize>(
     idx: usize,
     sig: &[u8; SIG_LEN],
-) -> Result<Polynomial, ()> {
+) -> Option<Polynomial> {
     debug_assert!(idx < P::l);
 
     // skip to the start of the z's
@@ -29,7 +29,7 @@ pub(crate) fn unpack_z_row<P: MLDSAParams, const SIG_LEN: usize>(
 
     // Perform the norm check from
     // Alg 8; Line 13 (first half) return [[ ||𝐳||∞ < 𝛾1 − 𝛽]]
-    if z.check_norm(P::gamma1_minus_beta) { Err(()) } else { Ok(z) }
+    if z.check_norm(P::gamma1_minus_beta) { None } else { Some(z) }
 }
 /// Part of unpacking the sig value
 pub(crate) fn unpack_h_row<P: MLDSAParams, const SIG_LEN: usize>(

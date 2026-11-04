@@ -1,5 +1,5 @@
 //! HMAC over SM3, as specified in RFC 2104, taking into account NIST Implementation Guidance in
-//! FIPS 140-2 IG A.8 and NIST SP 800-107-r1.
+//! FIPS 140-3 IG C.L.
 //!
 //! Uses [`bouncycastle_hmac`] to provide the HMAC-SM3 instantiation: [`HMAC_SM3`].
 //!
@@ -32,15 +32,16 @@
 //! * Verify with [`MAC::verify`] or [`MAC::do_verify_final`] rather than computing the MAC yourself
 //!   and comparing: those use a constant-time comparison, while `==` on the byte slices leaks how
 //!   many leading bytes matched.
-//! * Truncating the MAC output below [`MIN_FIPS_DIGEST_LEN`] (4 bytes) is rejected, per FIPS 140-2
-//!   IG A.8 / NIST SP 800-107-r1 Section 5.3.3. That is a floor, not a recommendation -- RFC 2104
-//!   Section 5 recommends that the output length "be not less than half the length of the hash
-//!   output ... and not less than 80 bits".
+//! * Truncating the MAC output below [`MIN_FIPS_DIGEST_LEN`] (4 bytes) is rejected, per FIPS 140-3
+//!   IG C.L Resolution C.4 (formerly NIST SP 800-107r1 Section 5.3.3). That is a floor, not a
+//!   recommendation -- RFC 2104 Section 5 recommends that the output length "be not less than half
+//!   the length of the hash output ... and not less than 80 bits".
 //! * Resuming a suspended HMAC with the wrong key cannot be detected and silently produces a wrong
 //!   MAC.
 //! * SM3 is a Merkle-Damgard construction and so is subject to length extension; `SM3(k || m)` is
 //!   not a secure MAC and HMAC-SM3 is the right construction for keyed hashing over SM3.
 
+use crate::hkdf::HKDF_SM3_NAME;
 use crate::{SM3, SUSPENDED_SM3_STATE_LEN};
 use bouncycastle_core::key_material::KeyMaterial;
 use bouncycastle_core::security_strength::SecurityStrength;
@@ -59,8 +60,6 @@ use bouncycastle_hmac::{HmacKey, MIN_FIPS_DIGEST_LEN};
 /*** String constants ***/
 /// Algorithm name string for HMAC-SM3, as used by the factories and CLI.
 pub const HMAC_SM3_NAME: &str = "HMAC-SM3";
-/// The name of HKDF over SM3, for `HMACParams::HKDF_ALG_NAME`.
-pub const HKDF_SM3_NAME: &str = "HKDF-SM3";
 
 /*** Type aliases ***/
 /// Public type for HMAC using SM3.

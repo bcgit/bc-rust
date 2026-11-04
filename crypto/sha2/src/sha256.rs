@@ -424,6 +424,11 @@ impl<PARAMS: SHA256InitValue> Suspendable<SUSPENDED_SHA256_STATE_LEN> for SHA256
         if byte_count % 64 != x_buf_off as u64 {
             return Err(SuspendableError::InvalidData);
         }
+        // FIPS 180-4 s. 5.1.1 encodes the length in a 64-bit block, so a longer message cannot be
+        // finished correctly.
+        if byte_count > MAX_MESSAGE_BYTES {
+            return Err(SuspendableError::InvalidData);
+        }
 
         // Construct the object
         let state = Sha256State { _params: core::marker::PhantomData, h };

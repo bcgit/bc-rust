@@ -287,7 +287,12 @@ impl AES128Internal {
     /// * [`KeyMaterialError::SecurityStrength`] if the key carries a strength below 128 bits.
     pub(crate) fn new(key: &KeyMaterial<16>) -> Result<Self, SymmetricCipherError> {
         Self::validate(key)?;
-        Ok(Self { schedule: expand::<AES128Params>(key.ref_to_bytes()) })
+        // `validate` checked key_len() == 16, which is exactly what ref_to_bytes() spans.
+        let bytes: &[u8; 16] = key
+            .ref_to_bytes()
+            .try_into()
+            .map_err(|_| SymmetricCipherError::KeyMaterialError(KeyMaterialError::InvalidLength))?;
+        Ok(Self { schedule: expand::<AES128Params, 16>(bytes) })
     }
 }
 
@@ -295,7 +300,12 @@ impl AES192Internal {
     /// Expands a 24-byte key into an AES-192 schedule. See [`AES128Internal::new`] for the error cases.
     pub(crate) fn new(key: &KeyMaterial<24>) -> Result<Self, SymmetricCipherError> {
         Self::validate(key)?;
-        Ok(Self { schedule: expand::<AES192Params>(key.ref_to_bytes()) })
+        // `validate` checked key_len() == 24, which is exactly what ref_to_bytes() spans.
+        let bytes: &[u8; 24] = key
+            .ref_to_bytes()
+            .try_into()
+            .map_err(|_| SymmetricCipherError::KeyMaterialError(KeyMaterialError::InvalidLength))?;
+        Ok(Self { schedule: expand::<AES192Params, 24>(bytes) })
     }
 }
 
@@ -303,7 +313,12 @@ impl AES256Internal {
     /// Expands a 32-byte key into an AES-256 schedule. See [`AES128Internal::new`] for the error cases.
     pub(crate) fn new(key: &KeyMaterial<32>) -> Result<Self, SymmetricCipherError> {
         Self::validate(key)?;
-        Ok(Self { schedule: expand::<AES256Params>(key.ref_to_bytes()) })
+        // `validate` checked key_len() == 32, which is exactly what ref_to_bytes() spans.
+        let bytes: &[u8; 32] = key
+            .ref_to_bytes()
+            .try_into()
+            .map_err(|_| SymmetricCipherError::KeyMaterialError(KeyMaterialError::InvalidLength))?;
+        Ok(Self { schedule: expand::<AES256Params, 32>(bytes) })
     }
 }
 

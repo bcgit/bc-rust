@@ -8,7 +8,7 @@ use bouncycastle_core::symmetric_key::{FromAnyKeyMaterial, MacGenerationKey, Mac
 use bouncycastle_core::traits::{MAC, RNG, SuspendableKeyed};
 use bouncycastle_hmac::{HMAC, HMACParams, HmacKey};
 use bouncycastle_rng::FixedSeedRNG;
-use bouncycastle_sha2::{SHA256, SHA512, SUSPENDED_SHA256_STATE_LEN};
+use bouncycastle_sha2::{SHA224, SHA256, SHA512, SUSPENDED_SHA256_STATE_LEN};
 use bouncycastle_sha3::SHA3_256;
 
 fn mac_key<const N: usize>(fill: u8) -> KeyMaterial<N> {
@@ -176,6 +176,14 @@ fn generate_draws_a_key_of_the_hash_output_length_at_the_rng_strength() {
         HmacKey::<SHA512>::generate(&mut weak_rng),
         Err(MACError::KeyMaterialError(KeyMaterialError::SecurityStrength(_)))
     ));
+
+    // A hash output shorter than the RNG's strength: the 28-byte SHA-224 key is tagged at what
+    // 28 bytes carry rather than refused for claiming the RNG's 256 bits.
+    let key = HmacKey::<SHA224>::generate(&mut FixedSeedRNG::new([0x5Au8; 32]))
+        .expect("a 256-bit RNG suffices for HMAC-SHA224");
+    let tag = key.mac(MSG);
+    assert_eq!(tag.len(), 28);
+    assert!(key.verify(MSG, &tag));
 }
 
 #[test]

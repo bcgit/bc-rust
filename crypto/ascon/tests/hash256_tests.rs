@@ -4,6 +4,7 @@
 //! streaming-equivalence, one-shot/trait-API, metadata, and unsupported-partial-op tests.
 
 use bouncycastle_ascon::AsconHash256;
+use bouncycastle_core::errors::HashError;
 use bouncycastle_core::traits::{Hash, HashAlgParams, HashOneShot};
 use bouncycastle_core_test_framework::hash::TestFrameworkHash;
 use bouncycastle_hex as hex;
@@ -116,9 +117,44 @@ fn hash256_hash_out_zeroizes_past_output_len() {
 
 #[test]
 fn hash256_unsupported_partial_ops_return_err() {
-    assert!(AsconHash256::new().do_final_partial_bits(0, 3).is_err());
-    let mut o = [0u8; 32];
-    assert!(AsconHash256::new().do_final_partial_bits_out(0, 3, &mut o).is_err());
+    // num_bits == 0 is byte-aligned input and must behave like ordinary finalization.
+    let data = b"abc";
+    let expected = AsconHash256::hash(data);
+    let mut h = AsconHash256::new();
+    h.do_update(data);
+    assert_eq!(h.do_final_partial_bits(0xFF, 0).unwrap(), expected);
+    let mut h = AsconHash256::new();
+    h.do_update(data);
+    let mut o = [0xEEu8; 40];
+    assert_eq!(h.do_final_partial_bits_out(0xFF, 0, &mut o).unwrap(), 32);
+    assert_eq!(&o[..32], &expected[..]);
+    assert_eq!(&o[32..], &[0u8; 8]);
+
+    for num_bits in [1usize, 3, 7] {
+        assert!(matches!(
+            AsconHash256::new().do_final_partial_bits(0xA0, num_bits),
+            Err(HashError::InvalidInput(_))
+        ));
+        let mut o = [0xEEu8; 32];
+        assert!(matches!(
+            AsconHash256::new().do_final_partial_bits_out(0xA0, num_bits, &mut o),
+            Err(HashError::InvalidInput(_))
+        ));
+        assert_eq!(o, [0u8; 32]);
+    }
+
+    for num_bits in [8usize, 9] {
+        assert!(matches!(
+            AsconHash256::new().do_final_partial_bits(0xFF, num_bits),
+            Err(HashError::InvalidLength(_))
+        ));
+        let mut o = [0xEEu8; 32];
+        assert!(matches!(
+            AsconHash256::new().do_final_partial_bits_out(0xFF, num_bits, &mut o),
+            Err(HashError::InvalidLength(_))
+        ));
+        assert_eq!(o, [0u8; 32]);
+    }
 }
 
 #[test]

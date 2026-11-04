@@ -115,8 +115,8 @@ fn kmacxof_round_trips() {
 
 #[test]
 fn tuplehash_round_trips() {
-    hash_round_trip(|| TupleHash128::new(b"", 32));
-    hash_round_trip(|| TupleHash256::new(b"My Tuple App", 48));
+    hash_round_trip(|| TupleHash128::new(b"", 32).unwrap());
+    hash_round_trip(|| TupleHash256::new(b"My Tuple App", 48).unwrap());
     hash_round_trip(|| TupleHashXOF128::new(b""));
     hash_round_trip(|| TupleHashXOF256::new(b"My Tuple App"));
     squeezer_round_trip(|| TupleHashXOF128::new(b""));
@@ -128,8 +128,8 @@ fn parallelhash_round_trips() {
     // PART1 is 21 bytes: a block size of 8 suspends five bytes into a block, 7 suspends exactly
     // on a block boundary, and 64 suspends before the first block completes.
     for block_size in [nz(8), nz(7), nz(64)] {
-        hash_round_trip(|| ParallelHash128::new(block_size, b"", 32));
-        hash_round_trip(|| ParallelHash256::new(block_size, b"Parallel Data", 64));
+        hash_round_trip(|| ParallelHash128::new(block_size, b"", 32).unwrap());
+        hash_round_trip(|| ParallelHash256::new(block_size, b"Parallel Data", 64).unwrap());
         hash_round_trip(|| ParallelHashXOF128::new(block_size, b""));
         hash_round_trip(|| ParallelHashXOF256::new(block_size, b"Parallel Data"));
         squeezer_round_trip(|| ParallelHashXOF128::new(block_size, b""));
@@ -168,11 +168,11 @@ fn each_type_rejects_the_others() {
     k.do_update(PART1);
     rejected::<_, TupleHash128>(k.clone().suspend(), "a KMAC128 state in TupleHash128");
     rejected::<_, KMAC256>(k.suspend(), "a KMAC128 state in KMAC256");
-    let mut t = TupleHash128::new(b"", 32);
+    let mut t = TupleHash128::new(b"", 32).unwrap();
     t.do_update(PART1);
     rejected::<_, KMAC128>(t.suspend(), "a TupleHash128 state in KMAC128");
 
-    let mut p = ParallelHash128::new(nz(8), b"", 32);
+    let mut p = ParallelHash128::new(nz(8), b"", 32).unwrap();
     p.do_update(PART1);
     rejected::<_, ParallelHash256>(p.suspend(), "a ParallelHash128 state in ParallelHash256");
     let mut p = ParallelHashXOF128::new(nz(8), b"");
@@ -235,7 +235,7 @@ fn corrupt_fields_are_rejected() {
     const INNER_SQUEEZING_FLAG: usize = 416 + 1 + 400;
     const BLOCK_SIZE: usize = 416 + 412;
     const BLOCK_FILL: usize = BLOCK_SIZE + 8;
-    let mut p = ParallelHash128::new(nz(8), b"", 32);
+    let mut p = ParallelHash128::new(nz(8), b"", 32).unwrap();
     p.do_update(PART1);
     let good = p.suspend();
     assert_eq!(&good[BLOCK_SIZE..BLOCK_SIZE + 8], &8u64.to_le_bytes(), "layout check");
@@ -252,6 +252,43 @@ fn corrupt_fields_are_rejected() {
     let mut bad = good;
     bad[CUSTOMIZED] = 0;
     rejected::<_, ParallelHash128>(bad, "a ParallelHash claiming an empty function name");
+    // The output length is the trailing u64, bounded as `new` bounds it.
+    let output_len = good.len() - 8;
+    let mut bad = good;
+    bad[output_len..].copy_from_slice(&u64::MAX.to_le_bytes());
+    rejected::<_, ParallelHash128>(
+        bad,
+        "a ParallelHash whose output length in bits overflows a u64",
+    );
+    let mut bad = good;
+    bad[output_len..].copy_from_slice(&(PARALLELHASH_MAX_OUTPUT_LEN as u64 + 1).to_le_bytes());
+    rejected::<_, ParallelHash128>(bad, "a ParallelHash output length one above the cap");
+    let mut edge = good;
+    edge[output_len..].copy_from_slice(&(PARALLELHASH_MAX_OUTPUT_LEN as u64).to_le_bytes());
+    assert!(ParallelHash128::from_suspended(edge).is_ok(), "the cap itself resumes");
+    // The block count may carry any value: the largest resumes, and a further block saturates
+    // the count rather than overflowing it.
+    const BLOCKS: usize = BLOCK_FILL + 8;
+    let mut maxed = good;
+    maxed[BLOCKS..BLOCKS + 8].copy_from_slice(&u64::MAX.to_le_bytes());
+    let mut p = ParallelHash128::from_suspended(maxed).expect("any block count resumes");
+    p.do_update(&[0u8; 16]);
+    assert_eq!(p.do_final().len(), 32);
+
+    // TupleHash: cSHAKE 3..416, then output_len, bounded as `new` bounds it.
+    let mut t = TupleHash128::new(b"", 32).unwrap();
+    t.do_update(PART1);
+    let good = t.suspend();
+    let output_len = good.len() - 8;
+    let mut bad = good;
+    bad[output_len..].copy_from_slice(&u64::MAX.to_le_bytes());
+    rejected::<_, TupleHash128>(bad, "a TupleHash whose output length in bits overflows a u64");
+    let mut bad = good;
+    bad[output_len..].copy_from_slice(&(TUPLEHASH_MAX_OUTPUT_LEN as u64 + 1).to_le_bytes());
+    rejected::<_, TupleHash128>(bad, "a TupleHash output length one above the cap");
+    let mut edge = good;
+    edge[output_len..].copy_from_slice(&(TUPLEHASH_MAX_OUTPUT_LEN as u64).to_le_bytes());
+    assert!(TupleHash128::from_suspended(edge).is_ok(), "the cap itself resumes");
 }
 
 /// Every type in the crate writes a different variant tag, so no state can be misread as
@@ -271,17 +308,17 @@ fn state_tags_are_distinct() {
         tag(CSHAKE128::new(b"", b"S")),
         tag(KMAC128Key::from_key_material(&key()).unwrap().create_generator()),
         tag(KMACXOF128::new(&key(), b"", false).unwrap()),
-        tag(TupleHash128::new(b"", 32)),
+        tag(TupleHash128::new(b"", 32).unwrap()),
         tag(TupleHashXOF128::new(b"")),
-        tag(ParallelHash128::new(nz(8), b"", 32)),
+        tag(ParallelHash128::new(nz(8), b"", 32).unwrap()),
         tag(ParallelHashXOF128::new(nz(8), b"")),
         tag(TupleHashXOF128::new(b"").into_squeezer()),
         tag(CSHAKE256::new(b"", b"S")),
         tag(KMAC256Key::from_key_material(&key()).unwrap().create_generator()),
         tag(KMACXOF256::new(&key(), b"", false).unwrap()),
-        tag(TupleHash256::new(b"", 32)),
+        tag(TupleHash256::new(b"", 32).unwrap()),
         tag(TupleHashXOF256::new(b"")),
-        tag(ParallelHash256::new(nz(8), b"", 32)),
+        tag(ParallelHash256::new(nz(8), b"", 32).unwrap()),
         tag(ParallelHashXOF256::new(nz(8), b"")),
         tag(TupleHashXOF256::new(b"").into_squeezer()),
     ];

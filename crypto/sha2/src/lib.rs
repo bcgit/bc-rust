@@ -195,12 +195,21 @@ pub type SHA512 = SHA512Internal<SHA512Params>;
 /// initial hash value rather than one produced by the IV Generation Function below. Letting
 /// `T = 384` through here would derive a second, different 384-bit hash under a name already
 /// taken, so the standard reserves 384 for SHA-384 instead. Anything else is a compile error
-/// naming the rule it broke:
+/// naming the rule it broke, raised when the code using it is generated (`cargo build`, not
+/// `cargo check`), whether the value is constructed or resumed:
 ///
 /// ```compile_fail
 /// use bouncycastle_sha2::SHA512t;
 /// // FIPS 180-4 s. 5.3.6: "t is not 384" -- use SHA384, which has its own IV.
 /// let _ = SHA512t::<384>::new();
+/// ```
+///
+/// ```compile_fail
+/// use bouncycastle_core::traits::Suspendable;
+/// use bouncycastle_sha2::{SHA512, SHA512t};
+/// // The same rule on the resume path, which never computes an initial hash value.
+/// let state = SHA512::new().suspend();
+/// let _ = SHA512t::<384>::from_suspended(state);
 /// ```
 ///
 /// ```compile_fail
@@ -418,7 +427,10 @@ pub struct SHA512tParams<const T: usize>;
 
 impl<const T: usize> SHA512tParams<T> {
     /// `"SHA512/t"` with `T` in decimal, NUL-padded; see [`Self::ALG_NAME_STR`].
-    const ALG_NAME_BYTES: [u8; sha512::ALG_NAME_BUF_LEN] = sha512::alg_name_bytes(T);
+    const ALG_NAME_BYTES: [u8; sha512::ALG_NAME_BUF_LEN] = {
+        sha512::check_t(T);
+        sha512::alg_name_bytes(T)
+    };
 
     /// The algorithm name, e.g. `"SHA512/224"`. Built at compile time from `T` because a const
     /// generic cannot be formatted into a `&'static str` directly.
@@ -442,8 +454,12 @@ impl<const T: usize> Algorithm for SHA512tParams<T> {
 }
 impl<const T: usize> HashAlgParams for SHA512tParams<T> {
     /// FIPS 180-4 s. 6.6 / s. 6.7 exception 2: truncated to the left-most `T` bits. `T` is a
-    /// multiple of 8 (checked by `check_t` in `sha512.rs`), so this is exact.
-    const OUTPUT_LEN: usize = T / 8;
+    /// multiple of 8, so this is exact. `check_t` runs here as well as in `H0`, so that a value
+    /// resumed from a suspended state, which never reads `H0`, is held to the same rules.
+    const OUTPUT_LEN: usize = {
+        sha512::check_t(T);
+        T / 8
+    };
     const BLOCK_LEN: usize = 128; // FIPS 180-4 Figure 1: block size 1024 bits
 }
 impl<const T: usize> SHA512InitValue for SHA512tParams<T> {

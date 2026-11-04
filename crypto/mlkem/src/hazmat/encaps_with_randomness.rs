@@ -65,6 +65,8 @@ impl<
         A_hat: Option<&P::MatrixA>,
         m: [u8; MLKEM_RND_LEN],
     ) -> ([u8; MLKEM_SS_LEN], [u8; CT_LEN]) {
-        Self::encaps_internal(ek, A_hat, m)
+        // The public contract returns `K` by value; the internal path keeps it in a `Secret`.
+        let (K, ct) = Self::encaps_internal(ek, A_hat, &m);
+        (*K, ct)
     }
 }

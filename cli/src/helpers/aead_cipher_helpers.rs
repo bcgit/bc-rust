@@ -32,18 +32,19 @@
 //! one call before any ciphertext, matching SP 800-38D Algorithm 4's requirement that AAD precede
 //! data.
 //!
-//! `--aad-file` is read as raw bytes ([`read_from_file_raw`]), never hex-decoded. The
-//! hex-or-raw guess `--key-file` uses would change what is authenticated without any error: a
+//! `--aad-file` is read as raw bytes, or as hex text under the global `--hex-input`; nothing
+//! is guessed from its contents. A guess would change what is authenticated without any error: a
 //! binary header that happens to parse as hex text (`cafe`, or sixteen zero bytes, which the hex
-//! decoder skips) would be authenticated as its decoding, and the tag would not verify against any
-//! other GCM implementation given the same file.
+//! decoder skips) would be authenticated as its decoding, and the tag would not verify against
+//! any other GCM implementation given the same file.
 
-use crate::helpers::{flush_stdout, read_from_file_raw, write_bytes_or_hex, write_stdout};
+use crate::helpers::{
+    decode_hex_arg, flush_stdout, read_input_file, write_bytes_or_hex, write_stdout,
+};
 use bouncycastle::core::symmetric_key::{AeadDecryptionKey, AeadEncryptionKey};
 use bouncycastle::core::traits::{
     AEADCipherDecryptor, AEADCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
 };
-use bouncycastle::hex;
 use std::io;
 use std::io::{Read, Write};
 use std::process::exit;
@@ -57,18 +58,13 @@ const CHUNK_LEN: usize = 1024;
 /// calls the value the IV; the trait and this file's identifiers call it the nonce.
 const GCM_NONCE_LEN: usize = 12;
 
-/// Loads the additional authenticated data from `--aad` (hex) or `--aad-file` (raw bytes; see the
-/// module docs for why not hex). Empty if neither is given: AAD is optional, unlike the key.
+/// Loads the additional authenticated data from `--aad` (hex) or `--aad-file` (raw bytes; hex
+/// with `--hex-input`). Empty if neither is given: AAD is optional, unlike the key.
 pub fn load_aad(aad: &Option<String>, aad_file: &Option<String>) -> Vec<u8> {
-    if let Some(path) = aad_file {
-        read_from_file_raw(path)
-    } else if let Some(hex_str) = aad {
-        hex::decode(hex_str).unwrap_or_else(|_| {
-            eprintln!("Error: `--aad` must be hex. Use `--aad-file` for raw bytes.");
-            exit(-1);
-        })
-    } else {
-        Vec::new()
+    match (aad_file, aad) {
+        (Some(path), _) => read_input_file(path),
+        (None, Some(hex_str)) => decode_hex_arg(hex_str, "aad"),
+        (None, None) => Vec::new(),
     }
 }
 

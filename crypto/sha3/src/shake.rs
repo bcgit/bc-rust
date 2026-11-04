@@ -35,7 +35,7 @@ impl<PARAMS: SHAKEParams> Algorithm for SHAKEInternal<PARAMS> {
 }
 
 impl<PARAMS: SHAKEParams> SHAKEInternal<PARAMS> {
-    /// Get a new SHA3 instance, ready for use.
+    /// Get a new SHAKE instance, ready for use.
     pub fn new() -> Self {
         Self {
             _phantomdata: core::marker::PhantomData,
@@ -131,7 +131,8 @@ impl<PARAMS: SHAKEParams> SHAKEInternal<PARAMS> {
 
         // track input entropy
         if key.is_full_entropy() {
-            self.kdf_entropy += key.key_len();
+            // Saturating: the counter is bookkeeping, and a resumed state may carry any value.
+            self.kdf_entropy = self.kdf_entropy.saturating_add(key.key_len());
             self.kdf_security_strength =
                 *max(&self.kdf_security_strength, &key.security_strength());
             self.kdf_security_strength = *min(

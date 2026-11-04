@@ -1,3 +1,5 @@
+#![forbid(unsafe_code)]
+
 mod aes_cbc_cmd;
 mod aes_ccm_cmd;
 mod aes_cfb8_cmd;
@@ -17,20 +19,30 @@ mod sha2_cmd;
 mod sha3_cmd;
 mod sm3_cmd;
 
+use crate::hkdf_cmd::HKDFVariant;
 use crate::mac_cmd::HMACVariant;
-use crate::mldsa_cmd::MLDSAAction;
+use crate::mldsa_cmd::{MLDSAAction, PreHashAlg};
+use crate::rng_cmd::DrbgHash;
 use crate::sha2_cmd::SHA2Variant;
+use crate::sha3_cmd::{SHA3Variant, Strength};
 use clap::{Parser, Subcommand};
 use helpers::block_mode_helpers::CipherDirection;
 
 #[derive(Parser)]
 #[command(version, about, long_about=None, arg_required_else_help=true)]
 struct Cli {
+    /// Read the files a command decodes (keys, IVs and nonces, seeds, private and public keys,
+    /// signatures, ciphertexts, contexts, salts, IKM, AAD files), and stdin where it carries
+    /// one of those, as hex text rather than raw bytes. Values given inline (--key, --iv, ...)
+    /// are always hex. Without this flag a file is its raw bytes, however hex-like they look.
+    #[arg(long, global = true)]
+    hex_input: bool,
+
     #[command(subcommand)]
     subcommands: Option<Subcommands>,
 }
 
-#[allow(non_camel_case_types)]
+#[allow(non_camel_case_types, clippy::upper_case_acronyms)]
 #[derive(Subcommand)]
 enum Subcommands {
     /// AES-128 in CBC mode (NIST SP 800-38A Sec 6.2) with PKCS7 padding, streaming stdin to stdout.
@@ -39,7 +51,7 @@ enum Subcommands {
     /// the output; on `decrypt` it is read back from the first 16 bytes of the input, so the two
     /// compose directly in a pipeline.
     ///
-    /// With `--iv` (hex) or `--iv-file` (raw bytes), the IV is supplied instead: `encrypt` uses it
+    /// With `--iv` (hex) or `--iv-file` (raw bytes; hex with --hex-input), the IV is supplied instead: `encrypt` uses it
     /// and writes ONLY the ciphertext, and `decrypt` reads ONLY ciphertext from stdin. This is for
     /// a format that carries the IV itself, and for reproducing published vectors. The IV must
     /// then be unpredictable to an attacker (SP 800-38A Appendix C) and never reused under one
@@ -64,7 +76,7 @@ enum Subcommands {
         #[arg(long)]
         key: Option<String>,
 
-        /// A file containing the 16-byte AES key, in binary or hex.
+        /// A file containing the 16-byte AES key (raw bytes; hex with --hex-input).
         /// If both key and key_file options are provided, the file will be used.
         #[arg(short, long)]
         key_file: Option<String>,
@@ -74,8 +86,7 @@ enum Subcommands {
         #[arg(long)]
         iv: Option<String>,
 
-        /// A file containing the 16-byte IV, as raw bytes exactly as they are (no hex
-        /// decoding). If both iv and iv_file options are provided, the file will be used.
+        /// A file containing the 16-byte IV, (raw bytes; hex with --hex-input). If both iv and iv_file options are provided, the file will be used.
         #[arg(long)]
         iv_file: Option<String>,
 
@@ -132,7 +143,7 @@ enum Subcommands {
         #[arg(long)]
         key: Option<String>,
 
-        /// A file containing the 16-byte AES key, in binary or hex.
+        /// A file containing the 16-byte AES key (raw bytes; hex with --hex-input).
         /// If both key and key_file options are provided, the file will be used.
         #[arg(short, long)]
         key_file: Option<String>,
@@ -141,7 +152,7 @@ enum Subcommands {
         #[arg(long)]
         nonce: Option<String>,
 
-        /// A file containing the nonce, as raw bytes exactly as they are (no hex decoding).
+        /// A file containing the nonce, (raw bytes; hex with --hex-input).
         #[arg(long)]
         nonce_file: Option<String>,
 
@@ -172,7 +183,7 @@ enum Subcommands {
     /// the output; on `decrypt` it is read back from the first 16 bytes of the input, so the two
     /// compose directly in a pipeline.
     ///
-    /// With `--iv` (hex) or `--iv-file` (raw bytes), the IV is supplied instead: `encrypt` uses it
+    /// With `--iv` (hex) or `--iv-file` (raw bytes; hex with --hex-input), the IV is supplied instead: `encrypt` uses it
     /// and writes ONLY the ciphertext, and `decrypt` reads ONLY ciphertext from stdin. This is for
     /// a format that carries the IV itself, and for reproducing published vectors. The IV must
     /// then be unpredictable to an attacker (SP 800-38A Appendix C) and never reused under one
@@ -197,7 +208,7 @@ enum Subcommands {
         #[arg(long)]
         key: Option<String>,
 
-        /// A file containing the 16-byte AES key, in binary or hex.
+        /// A file containing the 16-byte AES key (raw bytes; hex with --hex-input).
         /// If both key and key_file options are provided, the file will be used.
         #[arg(short, long)]
         key_file: Option<String>,
@@ -207,7 +218,7 @@ enum Subcommands {
         #[arg(long)]
         iv: Option<String>,
 
-        /// A file containing the 16-byte IV, as raw bytes exactly as they are (no hex decoding).
+        /// A file containing the 16-byte IV, (raw bytes; hex with --hex-input).
         /// If both iv and iv_file options are provided, the file will be used.
         #[arg(long)]
         iv_file: Option<String>,
@@ -228,7 +239,7 @@ enum Subcommands {
     /// the output; on `decrypt` it is read back from the first 16 bytes of the input, so the two
     /// compose directly in a pipeline.
     ///
-    /// With `--iv` (hex) or `--iv-file` (raw bytes), the IV is supplied instead: `encrypt` uses it
+    /// With `--iv` (hex) or `--iv-file` (raw bytes; hex with --hex-input), the IV is supplied instead: `encrypt` uses it
     /// and writes ONLY the ciphertext, and `decrypt` reads ONLY ciphertext from stdin. This is for
     /// a format that carries the IV itself, and for reproducing published vectors. The IV must
     /// then be unpredictable to an attacker (SP 800-38A Appendix C) and never reused under one
@@ -253,7 +264,7 @@ enum Subcommands {
         #[arg(long)]
         key: Option<String>,
 
-        /// A file containing the 16-byte AES key, in binary or hex.
+        /// A file containing the 16-byte AES key (raw bytes; hex with --hex-input).
         /// If both key and key_file options are provided, the file will be used.
         #[arg(short, long)]
         key_file: Option<String>,
@@ -263,13 +274,38 @@ enum Subcommands {
         #[arg(long)]
         iv: Option<String>,
 
-        /// A file containing the 16-byte IV, as raw bytes exactly as they are (no hex decoding).
+        /// A file containing the 16-byte IV, (raw bytes; hex with --hex-input).
         /// If both iv and iv_file options are provided, the file will be used.
         #[arg(long)]
         iv_file: Option<String>,
 
         #[arg(short)]
         /// Output in hex format.
+        x: bool,
+    },
+
+    /// Compute or verify an AES-128 CMAC (NIST SP 800-38B) over the content provided on stdin:
+    /// a 16-byte tag. Supports streaming update for low memory footprint.
+    /// Note: in production uses, secrets should not be passed on the command-line because they get
+    /// logged in shell history. Use the file-based input instead.
+    AES128_CMAC {
+        /// The MAC key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the MAC key (raw bytes; hex with --hex-input).
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        /// A MAC value to be verified.
+        /// Exits 0 if the value matches and 255 with an error message if not; nothing is written.
+        #[arg(short, long)]
+        verify: Option<String>,
+
+        #[arg(short)]
+        /// Output the tag in hex format.
         x: bool,
     },
 
@@ -283,7 +319,7 @@ enum Subcommands {
     /// on `decrypt` it is read back from the first 12 bytes of the input, so the two compose
     /// directly in a pipeline. Note that this is 12 bytes, not the 16 the other modes write.
     ///
-    /// With `--iv` (hex) or `--iv-file` (raw bytes), the 12-byte nonce is supplied instead:
+    /// With `--iv` (hex) or `--iv-file` (raw bytes; hex with --hex-input), the 12-byte nonce is supplied instead:
     /// `encrypt` uses it and writes ONLY the ciphertext, and `decrypt` reads ONLY ciphertext from
     /// stdin. The counter block is then `nonce || 00000000`, which is how an OpenSSL `-iv` whose
     /// low four bytes are zero lines up with it. The nonce MUST be unique per message under one
@@ -309,7 +345,7 @@ enum Subcommands {
         #[arg(long)]
         key: Option<String>,
 
-        /// A file containing the 16-byte AES key, in binary or hex.
+        /// A file containing the 16-byte AES key (raw bytes; hex with --hex-input).
         /// If both key and key_file options are provided, the file will be used.
         #[arg(short, long)]
         key_file: Option<String>,
@@ -319,8 +355,7 @@ enum Subcommands {
         #[arg(long)]
         iv: Option<String>,
 
-        /// A file containing the 12-byte nonce, as raw bytes exactly as they are (no hex
-        /// decoding). If both iv and iv_file options are provided, the file will be used.
+        /// A file containing the 12-byte nonce, (raw bytes; hex with --hex-input). If both iv and iv_file options are provided, the file will be used.
         #[arg(long)]
         iv_file: Option<String>,
 
@@ -354,7 +389,7 @@ enum Subcommands {
         #[arg(long)]
         key: Option<String>,
 
-        /// A file containing the 16-byte AES key, in binary or hex.
+        /// A file containing the 16-byte AES key (raw bytes; hex with --hex-input).
         /// If both key and key_file options are provided, the file will be used.
         #[arg(short, long)]
         key_file: Option<String>,
@@ -374,13 +409,13 @@ enum Subcommands {
     /// back from the first 12 bytes of input and streams the rest, checking the tag once input is
     /// exhausted. (SP 800-38D calls this value the IV, and defines it as a nonce.)
     ///
-    /// With `--iv` (hex) or `--iv-file` (raw bytes), the IV is supplied instead: `encrypt` uses it
+    /// With `--iv` (hex) or `--iv-file` (raw bytes; hex with --hex-input), the IV is supplied instead: `encrypt` uses it
     /// and writes ONLY `ciphertext || tag`, and `decrypt` reads ONLY that from stdin. The IV MUST
     /// be unique per message under one key (Sec 8), and a repeat is worse here than merely
     /// unwise: it lets an attacker recover the hash subkey (Appendix A). The default takes care of
     /// that; with `--iv` it is on the caller.
     ///
-    /// `--aad` (hex) or `--aad-file` (raw bytes) supply the additional authenticated data,
+    /// `--aad` (hex) or `--aad-file` (raw bytes; hex with --hex-input) supply the additional authenticated data,
     /// which is covered by the tag but not encrypted; if neither is given, AAD is empty.
     ///
     /// Input may be ANY length: GCM needs no padding.
@@ -401,7 +436,7 @@ enum Subcommands {
         #[arg(long)]
         key: Option<String>,
 
-        /// A file containing the 16-byte AES key, in binary or hex.
+        /// A file containing the 16-byte AES key (raw bytes; hex with --hex-input).
         /// If both key and key_file options are provided, the file will be used.
         #[arg(short, long)]
         key_file: Option<String>,
@@ -411,7 +446,7 @@ enum Subcommands {
         #[arg(long)]
         iv: Option<String>,
 
-        /// A file containing the 12-byte IV, as raw bytes exactly as they are (no hex decoding).
+        /// A file containing the 12-byte IV, (raw bytes; hex with --hex-input).
         /// If both iv and iv_file options are provided, the file will be used.
         #[arg(long)]
         iv_file: Option<String>,
@@ -424,6 +459,44 @@ enum Subcommands {
         /// If both aad and aad_file options are provided, the file will be used.
         #[arg(long)]
         aad_file: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// Compute or verify an AES-128 GMAC (NIST SP 800-38D Sec 5.2) over the content provided on
+    /// stdin: a 16-byte tag bound to a 12-byte nonce. Without `--iv` a fresh nonce is drawn and
+    /// written FIRST, so the output is `nonce || tag`; with `--iv` only the tag is written. To
+    /// verify, give `--verify` the tag along with `--iv`, or the 28-byte `nonce || tag` alone.
+    /// A nonce MUST NOT repeat under one key (SP 800-38D Sec 8).
+    /// Note: in production uses, secrets should not be passed on the command-line because they get
+    /// logged in shell history. Use the file-based input instead.
+    AES128_GMAC {
+        /// The MAC key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the MAC key (raw bytes; hex with --hex-input).
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        /// The 12-byte nonce in hex. Hazardous: supplying it makes uniqueness the caller's
+        /// responsibility.
+        #[arg(long)]
+        iv: Option<String>,
+
+        /// A file containing the 12-byte nonce (raw bytes; hex with --hex-input); the same
+        /// hazardous override.
+        #[arg(long)]
+        iv_file: Option<String>,
+
+        /// A MAC value to be verified: the tag (with --iv) or nonce || tag.
+        /// Exits 0 if the value matches and 255 with an error message if not; nothing is written.
+        #[arg(short, long)]
+        verify: Option<String>,
 
         #[arg(short)]
         /// Output in hex format.
@@ -443,7 +516,7 @@ enum Subcommands {
         #[arg(long)]
         key: Option<String>,
 
-        /// A file containing the 24-byte AES key, in binary or hex.
+        /// A file containing the 24-byte AES key (raw bytes; hex with --hex-input).
         /// If both key and key_file options are provided, the file will be used.
         #[arg(short, long)]
         key_file: Option<String>,
@@ -453,8 +526,7 @@ enum Subcommands {
         #[arg(long)]
         iv: Option<String>,
 
-        /// A file containing the 16-byte IV, as raw bytes exactly as they are (no hex
-        /// decoding). If both iv and iv_file options are provided, the file will be used.
+        /// A file containing the 16-byte IV, (raw bytes; hex with --hex-input). If both iv and iv_file options are provided, the file will be used.
         #[arg(long)]
         iv_file: Option<String>,
 
@@ -476,7 +548,7 @@ enum Subcommands {
         #[arg(long)]
         key: Option<String>,
 
-        /// A file containing the 24-byte AES key, in binary or hex.
+        /// A file containing the 24-byte AES key (raw bytes; hex with --hex-input).
         /// If both key and key_file options are provided, the file will be used.
         #[arg(short, long)]
         key_file: Option<String>,
@@ -485,7 +557,7 @@ enum Subcommands {
         #[arg(long)]
         nonce: Option<String>,
 
-        /// A file containing the nonce, as raw bytes exactly as they are (no hex decoding).
+        /// A file containing the nonce, (raw bytes; hex with --hex-input).
         #[arg(long)]
         nonce_file: Option<String>,
 
@@ -520,7 +592,7 @@ enum Subcommands {
         #[arg(long)]
         key: Option<String>,
 
-        /// A file containing the 24-byte AES key, in binary or hex.
+        /// A file containing the 24-byte AES key (raw bytes; hex with --hex-input).
         /// If both key and key_file options are provided, the file will be used.
         #[arg(short, long)]
         key_file: Option<String>,
@@ -530,7 +602,7 @@ enum Subcommands {
         #[arg(long)]
         iv: Option<String>,
 
-        /// A file containing the 16-byte IV, as raw bytes exactly as they are (no hex decoding).
+        /// A file containing the 16-byte IV, (raw bytes; hex with --hex-input).
         /// If both iv and iv_file options are provided, the file will be used.
         #[arg(long)]
         iv_file: Option<String>,
@@ -553,7 +625,7 @@ enum Subcommands {
         #[arg(long)]
         key: Option<String>,
 
-        /// A file containing the 24-byte AES key, in binary or hex.
+        /// A file containing the 24-byte AES key (raw bytes; hex with --hex-input).
         /// If both key and key_file options are provided, the file will be used.
         #[arg(short, long)]
         key_file: Option<String>,
@@ -563,13 +635,38 @@ enum Subcommands {
         #[arg(long)]
         iv: Option<String>,
 
-        /// A file containing the 16-byte IV, as raw bytes exactly as they are (no hex decoding).
+        /// A file containing the 16-byte IV, (raw bytes; hex with --hex-input).
         /// If both iv and iv_file options are provided, the file will be used.
         #[arg(long)]
         iv_file: Option<String>,
 
         #[arg(short)]
         /// Output in hex format.
+        x: bool,
+    },
+
+    /// Compute or verify an AES-192 CMAC (NIST SP 800-38B) over the content provided on stdin:
+    /// a 16-byte tag. Supports streaming update for low memory footprint.
+    /// Note: in production uses, secrets should not be passed on the command-line because they get
+    /// logged in shell history. Use the file-based input instead.
+    AES192_CMAC {
+        /// The MAC key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the MAC key (raw bytes; hex with --hex-input).
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        /// A MAC value to be verified.
+        /// Exits 0 if the value matches and 255 with an error message if not; nothing is written.
+        #[arg(short, long)]
+        verify: Option<String>,
+
+        #[arg(short)]
+        /// Output the tag in hex format.
         x: bool,
     },
 
@@ -586,7 +683,7 @@ enum Subcommands {
         #[arg(long)]
         key: Option<String>,
 
-        /// A file containing the 24-byte AES key, in binary or hex.
+        /// A file containing the 24-byte AES key (raw bytes; hex with --hex-input).
         /// If both key and key_file options are provided, the file will be used.
         #[arg(short, long)]
         key_file: Option<String>,
@@ -596,8 +693,7 @@ enum Subcommands {
         #[arg(long)]
         iv: Option<String>,
 
-        /// A file containing the 12-byte nonce, as raw bytes exactly as they are (no hex
-        /// decoding). If both iv and iv_file options are provided, the file will be used.
+        /// A file containing the 12-byte nonce, (raw bytes; hex with --hex-input). If both iv and iv_file options are provided, the file will be used.
         #[arg(long)]
         iv_file: Option<String>,
 
@@ -619,7 +715,7 @@ enum Subcommands {
         #[arg(long)]
         key: Option<String>,
 
-        /// A file containing the 24-byte AES key, in binary or hex.
+        /// A file containing the 24-byte AES key (raw bytes; hex with --hex-input).
         /// If both key and key_file options are provided, the file will be used.
         #[arg(short, long)]
         key_file: Option<String>,
@@ -642,7 +738,7 @@ enum Subcommands {
         #[arg(long)]
         key: Option<String>,
 
-        /// A file containing the 24-byte AES key, in binary or hex.
+        /// A file containing the 24-byte AES key (raw bytes; hex with --hex-input).
         /// If both key and key_file options are provided, the file will be used.
         #[arg(short, long)]
         key_file: Option<String>,
@@ -652,7 +748,7 @@ enum Subcommands {
         #[arg(long)]
         iv: Option<String>,
 
-        /// A file containing the 12-byte IV, as raw bytes exactly as they are (no hex decoding).
+        /// A file containing the 12-byte IV, (raw bytes; hex with --hex-input).
         /// If both iv and iv_file options are provided, the file will be used.
         #[arg(long)]
         iv_file: Option<String>,
@@ -665,6 +761,44 @@ enum Subcommands {
         /// If both aad and aad_file options are provided, the file will be used.
         #[arg(long)]
         aad_file: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// Compute or verify an AES-192 GMAC (NIST SP 800-38D Sec 5.2) over the content provided on
+    /// stdin: a 16-byte tag bound to a 12-byte nonce. Without `--iv` a fresh nonce is drawn and
+    /// written FIRST, so the output is `nonce || tag`; with `--iv` only the tag is written. To
+    /// verify, give `--verify` the tag along with `--iv`, or the 28-byte `nonce || tag` alone.
+    /// A nonce MUST NOT repeat under one key (SP 800-38D Sec 8).
+    /// Note: in production uses, secrets should not be passed on the command-line because they get
+    /// logged in shell history. Use the file-based input instead.
+    AES192_GMAC {
+        /// The MAC key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the MAC key (raw bytes; hex with --hex-input).
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        /// The 12-byte nonce in hex. Hazardous: supplying it makes uniqueness the caller's
+        /// responsibility.
+        #[arg(long)]
+        iv: Option<String>,
+
+        /// A file containing the 12-byte nonce (raw bytes; hex with --hex-input); the same
+        /// hazardous override.
+        #[arg(long)]
+        iv_file: Option<String>,
+
+        /// A MAC value to be verified: the tag (with --iv) or nonce || tag.
+        /// Exits 0 if the value matches and 255 with an error message if not; nothing is written.
+        #[arg(short, long)]
+        verify: Option<String>,
 
         #[arg(short)]
         /// Output in hex format.
@@ -684,7 +818,7 @@ enum Subcommands {
         #[arg(long)]
         key: Option<String>,
 
-        /// A file containing the 32-byte AES key, in binary or hex.
+        /// A file containing the 32-byte AES key (raw bytes; hex with --hex-input).
         /// If both key and key_file options are provided, the file will be used.
         #[arg(short, long)]
         key_file: Option<String>,
@@ -694,8 +828,7 @@ enum Subcommands {
         #[arg(long)]
         iv: Option<String>,
 
-        /// A file containing the 16-byte IV, as raw bytes exactly as they are (no hex
-        /// decoding). If both iv and iv_file options are provided, the file will be used.
+        /// A file containing the 16-byte IV, (raw bytes; hex with --hex-input). If both iv and iv_file options are provided, the file will be used.
         #[arg(long)]
         iv_file: Option<String>,
 
@@ -717,7 +850,7 @@ enum Subcommands {
         #[arg(long)]
         key: Option<String>,
 
-        /// A file containing the 32-byte AES key, in binary or hex.
+        /// A file containing the 32-byte AES key (raw bytes; hex with --hex-input).
         /// If both key and key_file options are provided, the file will be used.
         #[arg(short, long)]
         key_file: Option<String>,
@@ -726,7 +859,7 @@ enum Subcommands {
         #[arg(long)]
         nonce: Option<String>,
 
-        /// A file containing the nonce, as raw bytes exactly as they are (no hex decoding).
+        /// A file containing the nonce, (raw bytes; hex with --hex-input).
         #[arg(long)]
         nonce_file: Option<String>,
 
@@ -761,7 +894,7 @@ enum Subcommands {
         #[arg(long)]
         key: Option<String>,
 
-        /// A file containing the 32-byte AES key, in binary or hex.
+        /// A file containing the 32-byte AES key (raw bytes; hex with --hex-input).
         /// If both key and key_file options are provided, the file will be used.
         #[arg(short, long)]
         key_file: Option<String>,
@@ -771,7 +904,7 @@ enum Subcommands {
         #[arg(long)]
         iv: Option<String>,
 
-        /// A file containing the 16-byte IV, as raw bytes exactly as they are (no hex decoding).
+        /// A file containing the 16-byte IV, (raw bytes; hex with --hex-input).
         /// If both iv and iv_file options are provided, the file will be used.
         #[arg(long)]
         iv_file: Option<String>,
@@ -794,7 +927,7 @@ enum Subcommands {
         #[arg(long)]
         key: Option<String>,
 
-        /// A file containing the 32-byte AES key, in binary or hex.
+        /// A file containing the 32-byte AES key (raw bytes; hex with --hex-input).
         /// If both key and key_file options are provided, the file will be used.
         #[arg(short, long)]
         key_file: Option<String>,
@@ -804,13 +937,38 @@ enum Subcommands {
         #[arg(long)]
         iv: Option<String>,
 
-        /// A file containing the 16-byte IV, as raw bytes exactly as they are (no hex decoding).
+        /// A file containing the 16-byte IV, (raw bytes; hex with --hex-input).
         /// If both iv and iv_file options are provided, the file will be used.
         #[arg(long)]
         iv_file: Option<String>,
 
         #[arg(short)]
         /// Output in hex format.
+        x: bool,
+    },
+
+    /// Compute or verify an AES-256 CMAC (NIST SP 800-38B) over the content provided on stdin:
+    /// a 16-byte tag. Supports streaming update for low memory footprint.
+    /// Note: in production uses, secrets should not be passed on the command-line because they get
+    /// logged in shell history. Use the file-based input instead.
+    AES256_CMAC {
+        /// The MAC key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the MAC key (raw bytes; hex with --hex-input).
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        /// A MAC value to be verified.
+        /// Exits 0 if the value matches and 255 with an error message if not; nothing is written.
+        #[arg(short, long)]
+        verify: Option<String>,
+
+        #[arg(short)]
+        /// Output the tag in hex format.
         x: bool,
     },
 
@@ -827,7 +985,7 @@ enum Subcommands {
         #[arg(long)]
         key: Option<String>,
 
-        /// A file containing the 32-byte AES key, in binary or hex.
+        /// A file containing the 32-byte AES key (raw bytes; hex with --hex-input).
         /// If both key and key_file options are provided, the file will be used.
         #[arg(short, long)]
         key_file: Option<String>,
@@ -837,8 +995,7 @@ enum Subcommands {
         #[arg(long)]
         iv: Option<String>,
 
-        /// A file containing the 12-byte nonce, as raw bytes exactly as they are (no hex
-        /// decoding). If both iv and iv_file options are provided, the file will be used.
+        /// A file containing the 12-byte nonce, (raw bytes; hex with --hex-input). If both iv and iv_file options are provided, the file will be used.
         #[arg(long)]
         iv_file: Option<String>,
 
@@ -860,7 +1017,7 @@ enum Subcommands {
         #[arg(long)]
         key: Option<String>,
 
-        /// A file containing the 32-byte AES key, in binary or hex.
+        /// A file containing the 32-byte AES key (raw bytes; hex with --hex-input).
         /// If both key and key_file options are provided, the file will be used.
         #[arg(short, long)]
         key_file: Option<String>,
@@ -883,7 +1040,7 @@ enum Subcommands {
         #[arg(long)]
         key: Option<String>,
 
-        /// A file containing the 32-byte AES key, in binary or hex.
+        /// A file containing the 32-byte AES key (raw bytes; hex with --hex-input).
         /// If both key and key_file options are provided, the file will be used.
         #[arg(short, long)]
         key_file: Option<String>,
@@ -893,7 +1050,7 @@ enum Subcommands {
         #[arg(long)]
         iv: Option<String>,
 
-        /// A file containing the 12-byte IV, as raw bytes exactly as they are (no hex decoding).
+        /// A file containing the 12-byte IV, (raw bytes; hex with --hex-input).
         /// If both iv and iv_file options are provided, the file will be used.
         #[arg(long)]
         iv_file: Option<String>,
@@ -906,6 +1063,44 @@ enum Subcommands {
         /// If both aad and aad_file options are provided, the file will be used.
         #[arg(long)]
         aad_file: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// Compute or verify an AES-256 GMAC (NIST SP 800-38D Sec 5.2) over the content provided on
+    /// stdin: a 16-byte tag bound to a 12-byte nonce. Without `--iv` a fresh nonce is drawn and
+    /// written FIRST, so the output is `nonce || tag`; with `--iv` only the tag is written. To
+    /// verify, give `--verify` the tag along with `--iv`, or the 28-byte `nonce || tag` alone.
+    /// A nonce MUST NOT repeat under one key (SP 800-38D Sec 8).
+    /// Note: in production uses, secrets should not be passed on the command-line because they get
+    /// logged in shell history. Use the file-based input instead.
+    AES256_GMAC {
+        /// The MAC key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the MAC key (raw bytes; hex with --hex-input).
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        /// The 12-byte nonce in hex. Hazardous: supplying it makes uniqueness the caller's
+        /// responsibility.
+        #[arg(long)]
+        iv: Option<String>,
+
+        /// A file containing the 12-byte nonce (raw bytes; hex with --hex-input); the same
+        /// hazardous override.
+        #[arg(long)]
+        iv_file: Option<String>,
+
+        /// A MAC value to be verified: the tag (with --iv) or nonce || tag.
+        /// Exits 0 if the value matches and 255 with an error message if not; nothing is written.
+        #[arg(short, long)]
+        verify: Option<String>,
 
         #[arg(short)]
         /// Output in hex format.
@@ -939,7 +1134,7 @@ enum Subcommands {
         #[arg(long)]
         key: Option<String>,
 
-        /// A file containing the 128-bit key in hex or binary.
+        /// A file containing the 128-bit key (raw bytes; hex with --hex-input).
         #[arg(long)]
         key_file: Option<String>,
 
@@ -948,13 +1143,17 @@ enum Subcommands {
         #[arg(long)]
         nonce: Option<String>,
 
-        /// A file containing a 128-bit nonce in hex or binary; the same hazardous override.
+        /// A file containing a 128-bit nonce (raw bytes; hex with --hex-input); the same hazardous override.
         #[arg(long)]
         nonce_file: Option<String>,
 
         /// Associated data in hex (authenticated but not encrypted).
         #[arg(long)]
-        ad: Option<String>,
+        aad: Option<String>,
+
+        /// A file holding the associated data (raw bytes; hex with --hex-input).
+        #[arg(long)]
+        aad_file: Option<String>,
 
         #[arg(short, long)]
         direction: CipherDirection,
@@ -970,9 +1169,13 @@ enum Subcommands {
         /// Length of the output in bytes.
         length: usize,
 
-        /// Customization string in hex (optional).
+        /// Customization string Z, as the characters given (optional).
         #[arg(long)]
         customization: Option<String>,
+
+        /// Customization string Z in hex, for bytes that are not text.
+        #[arg(long)]
+        customization_hex: Option<String>,
 
         #[arg(short)]
         /// Output in hex format.
@@ -1006,75 +1209,167 @@ enum Subcommands {
     /// Supports streaming for low memory footprint and continuous processing from stdin to stdout.
     Base64Encode,
 
-    /// The HashML-DSA-44 signature algorithm.
+    /// Perform cSHAKE128 (NIST SP 800-185 Sec 3) of the content provided on stdin, under a
+    /// function name N and a customization string S; with both empty it is SHAKE128. Requires
+    /// the output length in bytes. Supports streaming update for low memory footprint.
+    CSHAKE128 {
+        /// Length of the output in bytes.
+        length: usize,
+
+        #[arg(short = 'n', long)]
+        /// Function name N, as the characters given (SP 800-185 reserves it for NIST-defined
+        /// functions; leave it empty otherwise).
+        function_name: Option<String>,
+
+        #[arg(short = 's', long)]
+        /// Customization string S, as the characters given.
+        customization: Option<String>,
+
+        #[arg(long)]
+        /// Customization string S in hex, for bytes that are not text.
+        customization_hex: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// Perform cSHAKE256 (NIST SP 800-185 Sec 3). See cshake128.
+    CSHAKE256 {
+        /// Length of the output in bytes.
+        length: usize,
+
+        #[arg(short = 'n', long)]
+        /// Function name N, as the characters given.
+        function_name: Option<String>,
+
+        #[arg(short = 's', long)]
+        /// Customization string S, as the characters given.
+        customization: Option<String>,
+
+        #[arg(long)]
+        /// Customization string S in hex, for bytes that are not text.
+        customization_hex: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// The HashML-DSA-44 signature algorithm, with the hash given by --hash (SHA-512 by default).
     HashMLDSA44 {
         action: MLDSAAction,
 
+        #[arg(long, value_enum, default_value_t = PreHashAlg::Sha512)]
+        /// The pre-hash (FIPS 204 Section 5.4); it must be at least as strong as the parameter
+        /// set, so sha256 and shake128 fit hash-mldsa44 only.
+        hash: PreHashAlg,
+
         #[arg(long)]
-        /// The file containing context string (in hex) for signing or verifying
+        /// The file containing the context string (raw bytes; hex with --hex-input) for signing or verifying
         ctxfile: Option<String>,
 
         #[arg(long)]
-        /// The private key file (in hex or binary) for signing
+        /// The private key file (raw bytes; hex with --hex-input) for signing
         skfile: Option<String>,
 
         #[arg(long)]
-        /// The public key file (in hex or binary) for verifying
+        /// The public key file (raw bytes; hex with --hex-input) for verifying
         pkfile: Option<String>,
 
         #[arg(long)]
-        /// The signature value file (in hex or binary) for verifying
+        /// The signature value file (raw bytes; hex with --hex-input) for verifying
         sigfile: Option<String>,
+
+        #[arg(long)]
+        /// The message representative file (64 bytes; raw bytes; hex with --hex-input) for
+        /// sign-mu and verify-mu; stdin without it.
+        mufile: Option<String>,
+
+        #[arg(long)]
+        /// Sign with the deterministic variant (FIPS 204 Section 3.4: rnd all zero) rather than
+        /// the hedged default.
+        deterministic: bool,
 
         #[arg(short)]
         /// Output in hex format.
         x: bool,
     },
 
-    /// The HashML-DSA-65 signature algorithm.
+    /// The HashML-DSA-65 signature algorithm, with the hash given by --hash (SHA-512 by default).
     HashMLDSA65 {
         action: MLDSAAction,
 
+        #[arg(long, value_enum, default_value_t = PreHashAlg::Sha512)]
+        /// The pre-hash (FIPS 204 Section 5.4); it must be at least as strong as the parameter
+        /// set, so sha256 and shake128 fit hash-mldsa44 only.
+        hash: PreHashAlg,
+
         #[arg(long)]
-        /// The file containing context string (in hex) for signing or verifying
+        /// The file containing the context string (raw bytes; hex with --hex-input) for signing or verifying
         ctxfile: Option<String>,
 
         #[arg(long)]
-        /// The private key file (in hex or binary) for signing
+        /// The private key file (raw bytes; hex with --hex-input) for signing
         skfile: Option<String>,
 
         #[arg(long)]
-        /// The public key file (in hex or binary) for verifying
+        /// The public key file (raw bytes; hex with --hex-input) for verifying
         pkfile: Option<String>,
 
         #[arg(long)]
-        /// The signature value file (in hex or binary) for verifying
+        /// The signature value file (raw bytes; hex with --hex-input) for verifying
         sigfile: Option<String>,
+
+        #[arg(long)]
+        /// The message representative file (64 bytes; raw bytes; hex with --hex-input) for
+        /// sign-mu and verify-mu; stdin without it.
+        mufile: Option<String>,
+
+        #[arg(long)]
+        /// Sign with the deterministic variant (FIPS 204 Section 3.4: rnd all zero) rather than
+        /// the hedged default.
+        deterministic: bool,
 
         #[arg(short)]
         /// Output in hex format.
         x: bool,
     },
 
-    /// The HashML-DSA87 signature algorithm.
+    /// The HashML-DSA-87 signature algorithm, with the hash given by --hash (SHA-512 by default).
     HashMLDSA87 {
         action: MLDSAAction,
 
+        #[arg(long, value_enum, default_value_t = PreHashAlg::Sha512)]
+        /// The pre-hash (FIPS 204 Section 5.4); it must be at least as strong as the parameter
+        /// set, so sha256 and shake128 fit hash-mldsa44 only.
+        hash: PreHashAlg,
+
         #[arg(long)]
-        /// The file containing context string (in hex) for signing or verifying
+        /// The file containing the context string (raw bytes; hex with --hex-input) for signing or verifying
         ctxfile: Option<String>,
 
         #[arg(long)]
-        /// The private key file (in hex or binary) for signing
+        /// The private key file (raw bytes; hex with --hex-input) for signing
         skfile: Option<String>,
 
         #[arg(long)]
-        /// The public key file (in hex or binary) for verifying
+        /// The public key file (raw bytes; hex with --hex-input) for verifying
         pkfile: Option<String>,
 
         #[arg(long)]
-        /// The signature value file (in hex or binary) for verifying
+        /// The signature value file (raw bytes; hex with --hex-input) for verifying
         sigfile: Option<String>,
+
+        #[arg(long)]
+        /// The message representative file (64 bytes; raw bytes; hex with --hex-input) for
+        /// sign-mu and verify-mu; stdin without it.
+        mufile: Option<String>,
+
+        #[arg(long)]
+        /// Sign with the deterministic variant (FIPS 204 Section 3.4: rnd all zero) rather than
+        /// the hedged default.
+        deterministic: bool,
 
         #[arg(short)]
         /// Output in hex format.
@@ -1218,6 +1513,74 @@ enum Subcommands {
         x: bool,
     },
 
+    /// Perform HKDF-SM3 (RFC 5869 extract-then-expand) of the provided input keying material:
+    ///     OKM = HKDF-Expand(HKDF-Extract(salt, ikm), info, len)
+    /// Note: in production uses, secrets should not be passed on the command-line because they get
+    /// logged in shell history. Use the file-based input instead.
+    HKDF_SM3 {
+        /// The salt value in hex.
+        /// The `salt_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        salt: Option<String>,
+
+        /// A file containing the salt value in binary.
+        /// If both salt and salt_file options are provided, the file will be used.
+        #[arg(short, long)]
+        salt_file: Option<String>,
+
+        /// An Input Keying Material in hex.
+        /// The `ikm_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        ikm: Option<String>,
+
+        /// A file containing the input keying material in binary.
+        /// If both ikm and ikm_file options are provided, the file will be used.
+        #[arg(short, long)]
+        ikm_file: Option<String>,
+
+        /// The HKDF `info` input (RFC 5869 Section 2.3) in hex. Optional; defaults to empty.
+        #[arg(long)]
+        additional_input: Option<String>,
+
+        /// A file containing the HKDF `info` input in binary. Optional; defaults to empty.
+        /// If both additional_input and additional_input_file options are provided, the file will be used.
+        #[arg(short, long)]
+        additional_input_file: Option<String>,
+
+        /// Length of output to produce, in bytes: at most 255 times the hash's output length.
+        #[arg(short, long)]
+        len: usize,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// Perform HMAC-SHA224 of the content provided on stdin.
+    /// Supports streaming update for low memory footprint.
+    /// Note: in production uses, secrets should not be passed on the command-line because they get
+    /// logged in shell history. Use the file-based input instead.
+    HMAC_SHA224 {
+        /// The MAC key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the MAC key (raw bytes; hex with --hex-input).
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        /// A MAC value to be verified.
+        /// Exits 0 if the value matches and 255 with an error message if not; nothing is written.
+        #[arg(short, long)]
+        verify: Option<String>,
+
+        #[arg(short)]
+        /// Output the tag in hex format.
+        x: bool,
+    },
+
     /// Perform HMAC-SHA256 of the content provided on stdin.
     /// Supports streaming update for low memory footprint.
     /// Note: in production uses, secrets should not be passed on the command-line because they get
@@ -1228,18 +1591,43 @@ enum Subcommands {
         #[arg(long)]
         key: Option<String>,
 
-        /// A file containing the MAC key in binary.
+        /// A file containing the MAC key (raw bytes; hex with --hex-input).
         /// If both key and key_file options are provided, the file will be used.
         #[arg(short, long)]
         key_file: Option<String>,
 
         /// A MAC value to be verified.
-        /// The command will output either 0 for success or -1 for verification failure.
+        /// Exits 0 if the value matches and 255 with an error message if not; nothing is written.
         #[arg(short, long)]
         verify: Option<String>,
 
         #[arg(short)]
         /// Output the hashes in hex format.
+        x: bool,
+    },
+
+    /// Perform HMAC-SHA384 of the content provided on stdin.
+    /// Supports streaming update for low memory footprint.
+    /// Note: in production uses, secrets should not be passed on the command-line because they get
+    /// logged in shell history. Use the file-based input instead.
+    HMAC_SHA384 {
+        /// The MAC key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the MAC key (raw bytes; hex with --hex-input).
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        /// A MAC value to be verified.
+        /// Exits 0 if the value matches and 255 with an error message if not; nothing is written.
+        #[arg(short, long)]
+        verify: Option<String>,
+
+        #[arg(short)]
+        /// Output the tag in hex format.
         x: bool,
     },
 
@@ -1253,13 +1641,13 @@ enum Subcommands {
         #[arg(long)]
         key: Option<String>,
 
-        /// A file containing the MAC key in binary.
+        /// A file containing the MAC key (raw bytes; hex with --hex-input).
         /// If both key and key_file options are provided, the file will be used.
         #[arg(short, long)]
         key_file: Option<String>,
 
         /// A MAC value to be verified.
-        /// The command will output either 0 for success or -1 for verification failure.
+        /// Exits 0 if the value matches and 255 with an error message if not; nothing is written.
         #[arg(short, long)]
         verify: Option<String>,
 
@@ -1278,13 +1666,13 @@ enum Subcommands {
         #[arg(long)]
         key: Option<String>,
 
-        /// A file containing the MAC key in binary.
+        /// A file containing the MAC key (raw bytes; hex with --hex-input).
         /// If both key and key_file options are provided, the file will be used.
         #[arg(short, long)]
         key_file: Option<String>,
 
         /// A MAC value to be verified.
-        /// The command will output either 0 for success or -1 for verification failure.
+        /// Exits 0 if the value matches and 255 with an error message if not; nothing is written.
         #[arg(short, long)]
         verify: Option<String>,
 
@@ -1303,18 +1691,118 @@ enum Subcommands {
         #[arg(long)]
         key: Option<String>,
 
-        /// A file containing the MAC key in binary.
+        /// A file containing the MAC key (raw bytes; hex with --hex-input).
         /// If both key and key_file options are provided, the file will be used.
         #[arg(short, long)]
         key_file: Option<String>,
 
         /// A MAC value to be verified.
-        /// The command will output either 0 for success or -1 for verification failure.
+        /// Exits 0 if the value matches and 255 with an error message if not; nothing is written.
         #[arg(short, long)]
         verify: Option<String>,
 
         #[arg(short)]
         /// Output the hashes in hex format.
+        x: bool,
+    },
+
+    /// Perform HMAC-SHA3-224 of the content provided on stdin.
+    /// Supports streaming update for low memory footprint.
+    /// Note: in production uses, secrets should not be passed on the command-line because they get
+    /// logged in shell history. Use the file-based input instead.
+    HMAC_SHA3_224 {
+        /// The MAC key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the MAC key (raw bytes; hex with --hex-input).
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        /// A MAC value to be verified.
+        /// Exits 0 if the value matches and 255 with an error message if not; nothing is written.
+        #[arg(short, long)]
+        verify: Option<String>,
+
+        #[arg(short)]
+        /// Output the tag in hex format.
+        x: bool,
+    },
+
+    /// Perform HMAC-SHA3-256 of the content provided on stdin.
+    /// Supports streaming update for low memory footprint.
+    /// Note: in production uses, secrets should not be passed on the command-line because they get
+    /// logged in shell history. Use the file-based input instead.
+    HMAC_SHA3_256 {
+        /// The MAC key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the MAC key (raw bytes; hex with --hex-input).
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        /// A MAC value to be verified.
+        /// Exits 0 if the value matches and 255 with an error message if not; nothing is written.
+        #[arg(short, long)]
+        verify: Option<String>,
+
+        #[arg(short)]
+        /// Output the tag in hex format.
+        x: bool,
+    },
+
+    /// Perform HMAC-SHA3-384 of the content provided on stdin.
+    /// Supports streaming update for low memory footprint.
+    /// Note: in production uses, secrets should not be passed on the command-line because they get
+    /// logged in shell history. Use the file-based input instead.
+    HMAC_SHA3_384 {
+        /// The MAC key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the MAC key (raw bytes; hex with --hex-input).
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        /// A MAC value to be verified.
+        /// Exits 0 if the value matches and 255 with an error message if not; nothing is written.
+        #[arg(short, long)]
+        verify: Option<String>,
+
+        #[arg(short)]
+        /// Output the tag in hex format.
+        x: bool,
+    },
+
+    /// Perform HMAC-SHA3-512 of the content provided on stdin.
+    /// Supports streaming update for low memory footprint.
+    /// Note: in production uses, secrets should not be passed on the command-line because they get
+    /// logged in shell history. Use the file-based input instead.
+    HMAC_SHA3_512 {
+        /// The MAC key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the MAC key (raw bytes; hex with --hex-input).
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        /// A MAC value to be verified.
+        /// Exits 0 if the value matches and 255 with an error message if not; nothing is written.
+        #[arg(short, long)]
+        verify: Option<String>,
+
+        #[arg(short)]
+        /// Output the tag in hex format.
         x: bool,
     },
 
@@ -1328,13 +1816,13 @@ enum Subcommands {
         #[arg(long)]
         key: Option<String>,
 
-        /// A file containing the MAC key in binary.
+        /// A file containing the MAC key (raw bytes; hex with --hex-input).
         /// If both key and key_file options are provided, the file will be used.
         #[arg(short, long)]
         key_file: Option<String>,
 
         /// A MAC value to be verified.
-        /// The command will output either 0 for success or -1 for verification failure.
+        /// Exits 0 if the value matches and 255 with an error message if not; nothing is written.
         #[arg(short, long)]
         verify: Option<String>,
 
@@ -1346,20 +1834,29 @@ enum Subcommands {
     /// Compute or verify a KMAC128 (NIST SP 800-185 Sec 4) over the content provided on stdin.
     /// The tag length and customization string are bound into the computation, so the verifier
     /// must use the same values.
+    /// Note: in production uses, secrets should not be passed on the command-line because they get
+    /// logged in shell history. Use the file-based input instead.
     KMAC128 {
         /// Length of the tag in bytes, at least 4 (SP 800-185 Sec 8.4.2).
         length: usize,
 
         #[arg(short = 's', long)]
-        /// Customization string, domain-separating this use of KMAC from another.
+        /// Customization string S, as the characters given, domain-separating this use of KMAC
+        /// from another.
         customization: Option<String>,
 
-        #[arg(short, long)]
-        /// The key, in hex.
+        #[arg(long)]
+        /// Customization string S in hex, for bytes that are not text.
+        customization_hex: Option<String>,
+
+        /// The MAC key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
         key: Option<String>,
 
-        #[arg(long)]
-        /// File containing the key, as raw bytes.
+        /// A file containing the MAC key (raw bytes; hex with --hex-input).
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
         key_file: Option<String>,
 
         #[arg(short, long)]
@@ -1373,20 +1870,29 @@ enum Subcommands {
 
     /// Compute or verify a KMAC256 (NIST SP 800-185 Sec 4) over the content provided on stdin.
     /// See kmac128.
+    /// Note: in production uses, secrets should not be passed on the command-line because they get
+    /// logged in shell history. Use the file-based input instead.
     KMAC256 {
         /// Length of the tag in bytes, at least 4 (SP 800-185 Sec 8.4.2).
         length: usize,
 
         #[arg(short = 's', long)]
-        /// Customization string, domain-separating this use of KMAC from another.
+        /// Customization string S, as the characters given, domain-separating this use of KMAC
+        /// from another.
         customization: Option<String>,
 
-        #[arg(short, long)]
-        /// The key, in hex.
+        #[arg(long)]
+        /// Customization string S in hex, for bytes that are not text.
+        customization_hex: Option<String>,
+
+        /// The MAC key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
         key: Option<String>,
 
-        #[arg(long)]
-        /// File containing the key, as raw bytes.
+        /// A file containing the MAC key (raw bytes; hex with --hex-input).
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
         key_file: Option<String>,
 
         #[arg(short, long)]
@@ -1398,25 +1904,97 @@ enum Subcommands {
         x: bool,
     },
 
+    /// Compute a KMACXOF128 (NIST SP 800-185 Sec 4.3.1) over the content provided on stdin: KMAC
+    /// as a XOF, with the output length not bound in, so any length streams. Requires the
+    /// output length in bytes. Nothing is verified; a reader squeezes the same stream.
+    /// Note: in production uses, secrets should not be passed on the command-line because they get
+    /// logged in shell history. Use the file-based input instead.
+    KMACXOF128 {
+        /// Length of the output in bytes.
+        length: usize,
+
+        #[arg(short = 's', long)]
+        /// Customization string S, as the characters given.
+        customization: Option<String>,
+
+        #[arg(long)]
+        /// Customization string S in hex, for bytes that are not text.
+        customization_hex: Option<String>,
+
+        /// The key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the key (raw bytes; hex with --hex-input).
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// Compute a KMACXOF256 (NIST SP 800-185 Sec 4.3.1) over the content provided on stdin: KMAC
+    /// as a XOF, with the output length not bound in, so any length streams. Requires the
+    /// output length in bytes. Nothing is verified; a reader squeezes the same stream.
+    /// Note: in production uses, secrets should not be passed on the command-line because they get
+    /// logged in shell history. Use the file-based input instead.
+    KMACXOF256 {
+        /// Length of the output in bytes.
+        length: usize,
+
+        #[arg(short = 's', long)]
+        /// Customization string S, as the characters given.
+        customization: Option<String>,
+
+        #[arg(long)]
+        /// Customization string S in hex, for bytes that are not text.
+        customization_hex: Option<String>,
+
+        /// The key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the key (raw bytes; hex with --hex-input).
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
     /// The ML-DSA-44 signature algorithm.
     MLDSA44 {
         action: MLDSAAction,
 
         #[arg(long)]
-        /// The file containing context string (in hex) for signing or verifying
+        /// The file containing the context string (raw bytes; hex with --hex-input) for signing or verifying
         ctxfile: Option<String>,
 
         #[arg(long)]
-        /// The private key file (in hex or binary) for signing
+        /// The private key file (raw bytes; hex with --hex-input) for signing
         skfile: Option<String>,
 
         #[arg(long)]
-        /// The public key file (in hex or binary) for verifying
+        /// The public key file (raw bytes; hex with --hex-input) for verifying
         pkfile: Option<String>,
 
         #[arg(long)]
-        /// The signature value file (in hex or binary) for verifying
+        /// The signature value file (raw bytes; hex with --hex-input) for verifying
         sigfile: Option<String>,
+
+        #[arg(long)]
+        /// The message representative file (64 bytes; raw bytes; hex with --hex-input) for
+        /// sign-mu and verify-mu; stdin without it.
+        mufile: Option<String>,
+
+        #[arg(long)]
+        /// Sign with the deterministic variant (FIPS 204 Section 3.4: rnd all zero) rather than
+        /// the hedged default.
+        deterministic: bool,
 
         #[arg(short)]
         /// Output in hex format.
@@ -1428,20 +2006,30 @@ enum Subcommands {
         action: MLDSAAction,
 
         #[arg(long)]
-        /// The file containing context string (in hex) for signing or verifying
+        /// The file containing the context string (raw bytes; hex with --hex-input) for signing or verifying
         ctxfile: Option<String>,
 
         #[arg(long)]
-        /// The private key file (in hex or binary) for signing
+        /// The private key file (raw bytes; hex with --hex-input) for signing
         skfile: Option<String>,
 
         #[arg(long)]
-        /// The public key file (in hex or binary) for verifying
+        /// The public key file (raw bytes; hex with --hex-input) for verifying
         pkfile: Option<String>,
 
         #[arg(long)]
-        /// The signature value file (in hex or binary) for verifying
+        /// The signature value file (raw bytes; hex with --hex-input) for verifying
         sigfile: Option<String>,
+
+        #[arg(long)]
+        /// The message representative file (64 bytes; raw bytes; hex with --hex-input) for
+        /// sign-mu and verify-mu; stdin without it.
+        mufile: Option<String>,
+
+        #[arg(long)]
+        /// Sign with the deterministic variant (FIPS 204 Section 3.4: rnd all zero) rather than
+        /// the hedged default.
+        deterministic: bool,
 
         #[arg(short)]
         /// Output in hex format.
@@ -1453,20 +2041,30 @@ enum Subcommands {
         action: MLDSAAction,
 
         #[arg(long)]
-        /// The file containing context string (in hex) for signing or verifying
+        /// The file containing the context string (raw bytes; hex with --hex-input) for signing or verifying
         ctxfile: Option<String>,
 
         #[arg(long)]
-        /// The private key file (in hex or binary) for signing
+        /// The private key file (raw bytes; hex with --hex-input) for signing
         skfile: Option<String>,
 
         #[arg(long)]
-        /// The public key file (in hex or binary) for verifying
+        /// The public key file (raw bytes; hex with --hex-input) for verifying
         pkfile: Option<String>,
 
         #[arg(long)]
-        /// The signature value file (in hex or binary) for verifying
+        /// The signature value file (raw bytes; hex with --hex-input) for verifying
         sigfile: Option<String>,
+
+        #[arg(long)]
+        /// The message representative file (64 bytes; raw bytes; hex with --hex-input) for
+        /// sign-mu and verify-mu; stdin without it.
+        mufile: Option<String>,
+
+        #[arg(long)]
+        /// Sign with the deterministic variant (FIPS 204 Section 3.4: rnd all zero) rather than
+        /// the hedged default.
+        deterministic: bool,
 
         #[arg(short)]
         /// Output in hex format.
@@ -1478,15 +2076,15 @@ enum Subcommands {
         action: mlkem_cmd::MLKEMAction,
 
         #[arg(long)]
-        /// The private key file (in hex or binary) for decaps
+        /// The private key file (raw bytes; hex with --hex-input) for decaps
         skfile: Option<String>,
 
         #[arg(long)]
-        /// The public key file (in hex or binary) for encaps
+        /// The public key file (raw bytes; hex with --hex-input) for encaps
         pkfile: Option<String>,
 
         #[arg(long)]
-        /// The ciphertext value file (in hex or binary) either for encaps to output to, or for decaps to read from.
+        /// The ciphertext value file (raw bytes; hex with --hex-input) either for encaps to output to, or for decaps to read from.
         ctfile: Option<String>,
 
         #[arg(short)]
@@ -1499,15 +2097,15 @@ enum Subcommands {
         action: mlkem_cmd::MLKEMAction,
 
         #[arg(long)]
-        /// The private key file (in hex or binary) for decaps
+        /// The private key file (raw bytes; hex with --hex-input) for decaps
         skfile: Option<String>,
 
         #[arg(long)]
-        /// The public key file (in hex or binary) for encaps
+        /// The public key file (raw bytes; hex with --hex-input) for encaps
         pkfile: Option<String>,
 
         #[arg(long)]
-        /// The ciphertext value file (in hex or binary) either for encaps to output to, or for decaps to read from.
+        /// The ciphertext value file (raw bytes; hex with --hex-input) either for encaps to output to, or for decaps to read from.
         ctfile: Option<String>,
 
         #[arg(short)]
@@ -1520,15 +2118,15 @@ enum Subcommands {
         action: mlkem_cmd::MLKEMAction,
 
         #[arg(long)]
-        /// The private key file (in hex or binary) for decaps
+        /// The private key file (raw bytes; hex with --hex-input) for decaps
         skfile: Option<String>,
 
         #[arg(long)]
-        /// The public key file (in hex or binary) for encaps
+        /// The public key file (raw bytes; hex with --hex-input) for encaps
         pkfile: Option<String>,
 
         #[arg(long)]
-        /// The ciphertext value file (in hex or binary) either for encaps to output to, or for decaps to read from.
+        /// The ciphertext value file (raw bytes; hex with --hex-input) either for encaps to output to, or for decaps to read from.
         ctfile: Option<String>,
 
         #[arg(short)]
@@ -1549,8 +2147,12 @@ enum Subcommands {
         block_size: usize,
 
         #[arg(short = 's', long)]
-        /// Customization string.
+        /// Customization string S, as the characters given.
         customization: Option<String>,
+
+        #[arg(long)]
+        /// Customization string S in hex, for bytes that are not text.
+        customization_hex: Option<String>,
 
         #[arg(short)]
         /// Output the hashes in hex format.
@@ -1567,20 +2169,80 @@ enum Subcommands {
         block_size: usize,
 
         #[arg(short = 's', long)]
-        /// Customization string.
+        /// Customization string S, as the characters given.
         customization: Option<String>,
+
+        #[arg(long)]
+        /// Customization string S in hex, for bytes that are not text.
+        customization_hex: Option<String>,
 
         #[arg(short)]
         /// Output the hashes in hex format.
         x: bool,
     },
 
-    /// Generate cryptographically-secure random bytes, seeded from the operating system's entropy source (/dev/random or equivalent).
-    /// Uses the library's default 256-bit secure RNG algorithm.
+    /// Perform ParallelHashXOF128 (NIST SP 800-185 Sec 6.3.1): ParallelHash as a XOF, with
+    /// the output length not bound in. See parallelhash128 for the block size.
+    PARALLELHASHXOF128 {
+        /// Length of the output in bytes.
+        length: usize,
+
+        #[arg(short = 'b', long)]
+        /// Block size B in bytes, for the parallel split.
+        block_size: usize,
+
+        #[arg(short = 's', long)]
+        /// Customization string S, as the characters given.
+        customization: Option<String>,
+
+        #[arg(long)]
+        /// Customization string S in hex, for bytes that are not text.
+        customization_hex: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// Perform ParallelHashXOF256 (NIST SP 800-185 Sec 6.3.1): ParallelHash as a XOF, with
+    /// the output length not bound in. See parallelhash128 for the block size.
+    PARALLELHASHXOF256 {
+        /// Length of the output in bytes.
+        length: usize,
+
+        #[arg(short = 'b', long)]
+        /// Block size B in bytes, for the parallel split.
+        block_size: usize,
+
+        #[arg(short = 's', long)]
+        /// Customization string S, as the characters given.
+        customization: Option<String>,
+
+        #[arg(long)]
+        /// Customization string S in hex, for bytes that are not text.
+        customization_hex: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// Generate cryptographically-secure random bytes from a Hash_DRBG (SP 800-90A Rev. 1), seeded
+    /// from the operating system's entropy source (/dev/random or equivalent) unless --seed-file.
     RNG {
         /// Number of bytes to generate. If omitted, it will stream continuously until the process is terminated.
         #[arg(short, long)]
         len: Option<u32>,
+
+        /// The hash under the DRBG: sha512 is a 256-bit instance, sha256 a 128-bit one.
+        #[arg(long, value_enum, default_value_t = DrbgHash::Sha512)]
+        hash: DrbgHash,
+
+        /// HAZARDOUS: instantiate the DRBG from this file's bytes (raw; hex with --hex-input)
+        /// as its entropy input instead of the operating system, so the same file gives the
+        /// same stream. For reproducible test data only; the output is as secret as the file.
+        #[arg(long)]
+        seed_file: Option<String>,
 
         #[arg(short)]
         /// Output in hex format.
@@ -1603,7 +2265,7 @@ enum Subcommands {
         x: bool,
     },
 
-    /// Perform SHA3-256 of the content provided on stdin.
+    /// Perform SHA3-384 of the content provided on stdin.
     /// Supports streaming update for low memory footprint.
     SHA3_384 {
         #[arg(short)]
@@ -1611,7 +2273,7 @@ enum Subcommands {
         x: bool,
     },
 
-    /// Perform SHA3-256 of the content provided on stdin.
+    /// Perform SHA3-512 of the content provided on stdin.
     /// Supports streaming update for low memory footprint.
     SHA3_512 {
         #[arg(short)]
@@ -1709,8 +2371,12 @@ enum Subcommands {
         elements: Vec<String>,
 
         #[arg(short = 's', long)]
-        /// Customization string.
+        /// Customization string S, as the characters given.
         customization: Option<String>,
+
+        #[arg(long)]
+        /// Customization string S in hex, for bytes that are not text.
+        customization_hex: Option<String>,
 
         #[arg(short)]
         /// Output the hashes in hex format.
@@ -1727,11 +2393,61 @@ enum Subcommands {
         elements: Vec<String>,
 
         #[arg(short = 's', long)]
-        /// Customization string.
+        /// Customization string S, as the characters given.
         customization: Option<String>,
+
+        #[arg(long)]
+        /// Customization string S in hex, for bytes that are not text.
+        customization_hex: Option<String>,
 
         #[arg(short)]
         /// Output the hashes in hex format.
+        x: bool,
+    },
+
+    /// Perform TupleHashXOF128 (NIST SP 800-185 Sec 5.3.1): TupleHash as a XOF, with the
+    /// output length not bound in. See tuplehash128 for the tuple.
+    TUPLEHASHXOF128 {
+        /// Length of the output in bytes.
+        length: usize,
+
+        #[arg(short = 'e', long = "element")]
+        /// A tuple element, in hex. Repeat for each element, in order.
+        elements: Vec<String>,
+
+        #[arg(short = 's', long)]
+        /// Customization string S, as the characters given.
+        customization: Option<String>,
+
+        #[arg(long)]
+        /// Customization string S in hex, for bytes that are not text.
+        customization_hex: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// Perform TupleHashXOF256 (NIST SP 800-185 Sec 5.3.1): TupleHash as a XOF, with the
+    /// output length not bound in. See tuplehash128 for the tuple.
+    TUPLEHASHXOF256 {
+        /// Length of the output in bytes.
+        length: usize,
+
+        #[arg(short = 'e', long = "element")]
+        /// A tuple element, in hex. Repeat for each element, in order.
+        elements: Vec<String>,
+
+        #[arg(short = 's', long)]
+        /// Customization string S, as the characters given.
+        customization: Option<String>,
+
+        #[arg(long)]
+        /// Customization string S in hex, for bytes that are not text.
+        customization_hex: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
         x: bool,
     },
 }
@@ -1748,6 +2464,7 @@ fn main() {
 
 fn run() {
     let cli = Cli::parse();
+    helpers::set_hex_input(cli.hex_input);
 
     match &cli.subcommands {
         Some(Subcommands::AES128_CBC { direction, key, key_file, iv, iv_file, x }) => {
@@ -1876,12 +2593,22 @@ fn run() {
         }) => {
             aes_gcm_cmd::aes256_gcm_cmd(direction, key, key_file, iv, iv_file, aad, aad_file, *x);
         }
-        Some(Subcommands::AsconAEAD128 { key, key_file, nonce, nonce_file, ad, direction, x }) => {
+        Some(Subcommands::AsconAEAD128 {
+            key,
+            key_file,
+            nonce,
+            nonce_file,
+            aad,
+            aad_file,
+            direction,
+            x,
+        }) => {
             let decrypt = matches!(direction, CipherDirection::Decrypt);
-            ascon_cmd::aead128_cmd(key, key_file, nonce, nonce_file, ad, decrypt, *x);
+            ascon_cmd::aead128_cmd(key, key_file, nonce, nonce_file, aad, aad_file, decrypt, *x);
         }
-        Some(Subcommands::AsconCXOF128 { length, customization, x }) => {
-            ascon_cmd::cxof128_cmd(customization, *length, *x);
+        Some(Subcommands::AsconCXOF128 { length, customization, customization_hex, x }) => {
+            let s = sha3_cmd::load_customization(customization, customization_hex);
+            ascon_cmd::cxof128_cmd(&s, *length, *x);
         }
         Some(Subcommands::AsconHash256 { x }) => {
             ascon_cmd::hash256_cmd(*x);
@@ -1895,14 +2622,71 @@ fn run() {
         Some(Subcommands::Base64Encode) => {
             encoders_cmd::base64_encode_cmd();
         }
-        Some(Subcommands::HashMLDSA44 { action, ctxfile, skfile, pkfile, sigfile, x }) => {
-            mldsa_cmd::hash_mldsa44_sha512_cmd(action, ctxfile, skfile, pkfile, sigfile, *x);
+        Some(Subcommands::HashMLDSA44 {
+            action,
+            hash,
+            ctxfile,
+            skfile,
+            pkfile,
+            sigfile,
+            mufile,
+            deterministic,
+            x,
+        }) => {
+            let files =
+                mldsa_cmd::Files { ctx: ctxfile, sk: skfile, pk: pkfile, sig: sigfile, mu: mufile };
+            mldsa_cmd::mldsa_cmd(
+                &mldsa_cmd::MLDSA44_SET,
+                action,
+                &files,
+                Some(*hash),
+                *deterministic,
+                *x,
+            );
         }
-        Some(Subcommands::HashMLDSA65 { action, ctxfile, skfile, pkfile, sigfile, x }) => {
-            mldsa_cmd::hash_mldsa65_sha512_cmd(action, ctxfile, skfile, pkfile, sigfile, *x);
+        Some(Subcommands::HashMLDSA65 {
+            action,
+            hash,
+            ctxfile,
+            skfile,
+            pkfile,
+            sigfile,
+            mufile,
+            deterministic,
+            x,
+        }) => {
+            let files =
+                mldsa_cmd::Files { ctx: ctxfile, sk: skfile, pk: pkfile, sig: sigfile, mu: mufile };
+            mldsa_cmd::mldsa_cmd(
+                &mldsa_cmd::MLDSA65_SET,
+                action,
+                &files,
+                Some(*hash),
+                *deterministic,
+                *x,
+            );
         }
-        Some(Subcommands::HashMLDSA87 { action, ctxfile, skfile, pkfile, sigfile, x }) => {
-            mldsa_cmd::hash_mldsa87_sha512_cmd(action, ctxfile, skfile, pkfile, sigfile, *x);
+        Some(Subcommands::HashMLDSA87 {
+            action,
+            hash,
+            ctxfile,
+            skfile,
+            pkfile,
+            sigfile,
+            mufile,
+            deterministic,
+            x,
+        }) => {
+            let files =
+                mldsa_cmd::Files { ctx: ctxfile, sk: skfile, pk: pkfile, sig: sigfile, mu: mufile };
+            mldsa_cmd::mldsa_cmd(
+                &mldsa_cmd::MLDSA87_SET,
+                action,
+                &files,
+                Some(*hash),
+                *deterministic,
+                *x,
+            );
         }
         Some(Subcommands::HexDecode) => {
             encoders_cmd::hex_decode_cmd();
@@ -1920,8 +2704,15 @@ fn run() {
             len,
             x,
         }) => hkdf_cmd::hkdf_cmd(
-            "HKDF-SHA256", salt, salt_file, ikm, ikm_file, additional_input, additional_input_file,
-            *len, *x,
+            HKDFVariant::SHA256,
+            salt,
+            salt_file,
+            ikm,
+            ikm_file,
+            additional_input,
+            additional_input_file,
+            *len,
+            *x,
         ),
         Some(Subcommands::HKDF_SHA384 {
             salt,
@@ -1933,8 +2724,15 @@ fn run() {
             len,
             x,
         }) => hkdf_cmd::hkdf_cmd(
-            "HKDF-SHA384", salt, salt_file, ikm, ikm_file, additional_input, additional_input_file,
-            *len, *x,
+            HKDFVariant::SHA384,
+            salt,
+            salt_file,
+            ikm,
+            ikm_file,
+            additional_input,
+            additional_input_file,
+            *len,
+            *x,
         ),
         Some(Subcommands::HKDF_SHA512 {
             salt,
@@ -1946,8 +2744,35 @@ fn run() {
             len,
             x,
         }) => hkdf_cmd::hkdf_cmd(
-            "HKDF-SHA512", salt, salt_file, ikm, ikm_file, additional_input, additional_input_file,
-            *len, *x,
+            HKDFVariant::SHA512,
+            salt,
+            salt_file,
+            ikm,
+            ikm_file,
+            additional_input,
+            additional_input_file,
+            *len,
+            *x,
+        ),
+        Some(Subcommands::HKDF_SM3 {
+            salt,
+            salt_file,
+            ikm,
+            ikm_file,
+            additional_input,
+            additional_input_file,
+            len,
+            x,
+        }) => hkdf_cmd::hkdf_cmd(
+            HKDFVariant::SM3,
+            salt,
+            salt_file,
+            ikm,
+            ikm_file,
+            additional_input,
+            additional_input_file,
+            *len,
+            *x,
         ),
         Some(Subcommands::HMAC_SHA256 { key, key_file, verify, x }) => {
             mac_cmd::mac_cmd(HMACVariant::SHA256, key, key_file, verify, *x)
@@ -1964,48 +2789,115 @@ fn run() {
         Some(Subcommands::HMAC_SM3 { key, key_file, verify, x }) => {
             mac_cmd::mac_cmd(HMACVariant::SM3, key, key_file, verify, *x)
         }
-        Some(Subcommands::KMAC128 { length, customization, key, key_file, verify, x }) => {
-            mac_cmd::kmac_cmd(128, *length, customization, key, key_file, verify, *x)
+        Some(Subcommands::KMAC128 {
+            length,
+            customization,
+            customization_hex,
+            key,
+            key_file,
+            verify,
+            x,
+        }) => {
+            let s = sha3_cmd::load_customization(customization, customization_hex);
+            mac_cmd::kmac_cmd(Strength::Bits128, *length, &s, key, key_file, verify, *x)
         }
-        Some(Subcommands::KMAC256 { length, customization, key, key_file, verify, x }) => {
-            mac_cmd::kmac_cmd(256, *length, customization, key, key_file, verify, *x)
+        Some(Subcommands::KMAC256 {
+            length,
+            customization,
+            customization_hex,
+            key,
+            key_file,
+            verify,
+            x,
+        }) => {
+            let s = sha3_cmd::load_customization(customization, customization_hex);
+            mac_cmd::kmac_cmd(Strength::Bits256, *length, &s, key, key_file, verify, *x)
         }
-        Some(Subcommands::MLDSA44 { action, ctxfile, skfile, pkfile, sigfile, x }) => {
-            mldsa_cmd::mldsa44_cmd(action, ctxfile, skfile, pkfile, sigfile, *x);
+        Some(Subcommands::MLDSA44 {
+            action,
+            ctxfile,
+            skfile,
+            pkfile,
+            sigfile,
+            mufile,
+            deterministic,
+            x,
+        }) => {
+            let files =
+                mldsa_cmd::Files { ctx: ctxfile, sk: skfile, pk: pkfile, sig: sigfile, mu: mufile };
+            mldsa_cmd::mldsa_cmd(&mldsa_cmd::MLDSA44_SET, action, &files, None, *deterministic, *x);
         }
-        Some(Subcommands::MLDSA65 { action, ctxfile, skfile, pkfile, sigfile, x }) => {
-            mldsa_cmd::mldsa65_cmd(action, ctxfile, skfile, pkfile, sigfile, *x);
+        Some(Subcommands::MLDSA65 {
+            action,
+            ctxfile,
+            skfile,
+            pkfile,
+            sigfile,
+            mufile,
+            deterministic,
+            x,
+        }) => {
+            let files =
+                mldsa_cmd::Files { ctx: ctxfile, sk: skfile, pk: pkfile, sig: sigfile, mu: mufile };
+            mldsa_cmd::mldsa_cmd(&mldsa_cmd::MLDSA65_SET, action, &files, None, *deterministic, *x);
         }
-        Some(Subcommands::MLDSA87 { action, ctxfile, skfile, pkfile, sigfile, x }) => {
-            mldsa_cmd::mldsa87_cmd(action, ctxfile, skfile, pkfile, sigfile, *x);
+        Some(Subcommands::MLDSA87 {
+            action,
+            ctxfile,
+            skfile,
+            pkfile,
+            sigfile,
+            mufile,
+            deterministic,
+            x,
+        }) => {
+            let files =
+                mldsa_cmd::Files { ctx: ctxfile, sk: skfile, pk: pkfile, sig: sigfile, mu: mufile };
+            mldsa_cmd::mldsa_cmd(&mldsa_cmd::MLDSA87_SET, action, &files, None, *deterministic, *x);
         }
         Some(Subcommands::MLKEM512 { action, skfile, pkfile, ctfile, x }) => {
-            mlkem_cmd::mlkem512_cmd(action, skfile, pkfile, ctfile, *x);
+            mlkem_cmd::mlkem_cmd(&mlkem_cmd::MLKEM512_SET, action, skfile, pkfile, ctfile, *x);
         }
         Some(Subcommands::MLKEM768 { action, skfile, pkfile, ctfile, x }) => {
-            mlkem_cmd::mlkem768_cmd(action, skfile, pkfile, ctfile, *x);
+            mlkem_cmd::mlkem_cmd(&mlkem_cmd::MLKEM768_SET, action, skfile, pkfile, ctfile, *x);
         }
         Some(Subcommands::MLKEM1024 { action, skfile, pkfile, ctfile, x }) => {
-            mlkem_cmd::mlkem1024_cmd(action, skfile, pkfile, ctfile, *x);
+            mlkem_cmd::mlkem_cmd(&mlkem_cmd::MLKEM1024_SET, action, skfile, pkfile, ctfile, *x);
         }
-        Some(Subcommands::PARALLELHASH128 { length, block_size, customization, x }) => {
-            sha3_cmd::parallelhash_cmd(128, *length, *block_size, customization, *x);
+        Some(Subcommands::PARALLELHASH128 {
+            length,
+            block_size,
+            customization,
+            customization_hex,
+            x,
+        }) => {
+            let s = sha3_cmd::load_customization(customization, customization_hex);
+            sha3_cmd::parallelhash_cmd(Strength::Bits128, *length, *block_size, &s, *x);
         }
-        Some(Subcommands::PARALLELHASH256 { length, block_size, customization, x }) => {
-            sha3_cmd::parallelhash_cmd(256, *length, *block_size, customization, *x);
+        Some(Subcommands::PARALLELHASH256 {
+            length,
+            block_size,
+            customization,
+            customization_hex,
+            x,
+        }) => {
+            let s = sha3_cmd::load_customization(customization, customization_hex);
+            sha3_cmd::parallelhash_cmd(Strength::Bits256, *length, *block_size, &s, *x);
         }
-        Some(Subcommands::RNG { len, x }) => rng_cmd::rng_cmd(*len, *x),
+        Some(Subcommands::RNG { len, hash, seed_file, x }) => {
+            rng_cmd::rng_cmd(*len, *hash, seed_file, *x)
+        }
         Some(Subcommands::SHA3_224 { x }) => {
-            sha3_cmd::sha3_cmd(224, *x);
+            sha3_cmd::sha3_cmd(SHA3Variant::SHA3_224, *x);
         }
         Some(Subcommands::SHA3_256 { x }) => {
-            sha3_cmd::sha3_cmd(256, *x);
+            sha3_cmd::sha3_cmd(SHA3Variant::SHA3_256, *x);
         }
         Some(Subcommands::SHA3_384 { x }) => {
-            sha3_cmd::sha3_cmd(384, *x);
+            sha3_cmd::sha3_cmd(SHA3Variant::SHA3_384, *x);
         }
         Some(Subcommands::SHA3_512 { x }) => {
-            sha3_cmd::sha3_cmd(512, *x);
+            sha3_cmd::sha3_cmd(SHA3Variant::SHA3_512, *x);
         }
         Some(Subcommands::SHA224 { x }) => {
             sha2_cmd::sha2_cmd(SHA2Variant::SHA224, *x);
@@ -2026,19 +2918,153 @@ fn run() {
             sha2_cmd::sha2_cmd(SHA2Variant::SHA512_256, *x);
         }
         Some(Subcommands::SHAKE128 { length, x }) => {
-            sha3_cmd::shake_cmd(128, *length, *x);
+            sha3_cmd::shake_cmd(Strength::Bits128, *length, *x);
         }
         Some(Subcommands::SHAKE256 { length, x }) => {
-            sha3_cmd::shake_cmd(256, *length, *x);
+            sha3_cmd::shake_cmd(Strength::Bits256, *length, *x);
         }
         Some(Subcommands::SM3 { x }) => {
             sm3_cmd::sm3_cmd(*x);
         }
-        Some(Subcommands::TUPLEHASH128 { length, elements, customization, x }) => {
-            sha3_cmd::tuplehash_cmd(128, *length, elements, customization, *x);
+        Some(Subcommands::TUPLEHASH128 {
+            length,
+            elements,
+            customization,
+            customization_hex,
+            x,
+        }) => {
+            let s = sha3_cmd::load_customization(customization, customization_hex);
+            sha3_cmd::tuplehash_cmd(Strength::Bits128, *length, elements, &s, *x);
         }
-        Some(Subcommands::TUPLEHASH256 { length, elements, customization, x }) => {
-            sha3_cmd::tuplehash_cmd(256, *length, elements, customization, *x);
+        Some(Subcommands::TUPLEHASH256 {
+            length,
+            elements,
+            customization,
+            customization_hex,
+            x,
+        }) => {
+            let s = sha3_cmd::load_customization(customization, customization_hex);
+            sha3_cmd::tuplehash_cmd(Strength::Bits256, *length, elements, &s, *x);
+        }
+        Some(Subcommands::AES128_CMAC { key, key_file, verify, x }) => {
+            mac_cmd::aes128_cmac_cmd(key, key_file, verify, *x)
+        }
+        Some(Subcommands::AES128_GMAC { key, key_file, iv, iv_file, verify, x }) => {
+            mac_cmd::aes128_gmac_cmd(key, key_file, iv, iv_file, verify, *x)
+        }
+        Some(Subcommands::AES192_CMAC { key, key_file, verify, x }) => {
+            mac_cmd::aes192_cmac_cmd(key, key_file, verify, *x)
+        }
+        Some(Subcommands::AES192_GMAC { key, key_file, iv, iv_file, verify, x }) => {
+            mac_cmd::aes192_gmac_cmd(key, key_file, iv, iv_file, verify, *x)
+        }
+        Some(Subcommands::AES256_CMAC { key, key_file, verify, x }) => {
+            mac_cmd::aes256_cmac_cmd(key, key_file, verify, *x)
+        }
+        Some(Subcommands::AES256_GMAC { key, key_file, iv, iv_file, verify, x }) => {
+            mac_cmd::aes256_gmac_cmd(key, key_file, iv, iv_file, verify, *x)
+        }
+        Some(Subcommands::CSHAKE128 {
+            length,
+            function_name,
+            customization,
+            customization_hex,
+            x,
+        }) => {
+            let n = function_name.as_deref().unwrap_or("").as_bytes();
+            let s = sha3_cmd::load_customization(customization, customization_hex);
+            sha3_cmd::cshake_cmd(Strength::Bits128, *length, n, &s, *x);
+        }
+        Some(Subcommands::KMACXOF128 {
+            length,
+            customization,
+            customization_hex,
+            key,
+            key_file,
+            x,
+        }) => {
+            let s = sha3_cmd::load_customization(customization, customization_hex);
+            mac_cmd::kmacxof_cmd(Strength::Bits128, *length, &s, key, key_file, *x)
+        }
+        Some(Subcommands::TUPLEHASHXOF128 {
+            length,
+            elements,
+            customization,
+            customization_hex,
+            x,
+        }) => {
+            let s = sha3_cmd::load_customization(customization, customization_hex);
+            sha3_cmd::tuplehashxof_cmd(Strength::Bits128, *length, elements, &s, *x);
+        }
+        Some(Subcommands::PARALLELHASHXOF128 {
+            length,
+            block_size,
+            customization,
+            customization_hex,
+            x,
+        }) => {
+            let s = sha3_cmd::load_customization(customization, customization_hex);
+            sha3_cmd::parallelhashxof_cmd(Strength::Bits128, *length, *block_size, &s, *x);
+        }
+        Some(Subcommands::CSHAKE256 {
+            length,
+            function_name,
+            customization,
+            customization_hex,
+            x,
+        }) => {
+            let n = function_name.as_deref().unwrap_or("").as_bytes();
+            let s = sha3_cmd::load_customization(customization, customization_hex);
+            sha3_cmd::cshake_cmd(Strength::Bits256, *length, n, &s, *x);
+        }
+        Some(Subcommands::KMACXOF256 {
+            length,
+            customization,
+            customization_hex,
+            key,
+            key_file,
+            x,
+        }) => {
+            let s = sha3_cmd::load_customization(customization, customization_hex);
+            mac_cmd::kmacxof_cmd(Strength::Bits256, *length, &s, key, key_file, *x)
+        }
+        Some(Subcommands::TUPLEHASHXOF256 {
+            length,
+            elements,
+            customization,
+            customization_hex,
+            x,
+        }) => {
+            let s = sha3_cmd::load_customization(customization, customization_hex);
+            sha3_cmd::tuplehashxof_cmd(Strength::Bits256, *length, elements, &s, *x);
+        }
+        Some(Subcommands::PARALLELHASHXOF256 {
+            length,
+            block_size,
+            customization,
+            customization_hex,
+            x,
+        }) => {
+            let s = sha3_cmd::load_customization(customization, customization_hex);
+            sha3_cmd::parallelhashxof_cmd(Strength::Bits256, *length, *block_size, &s, *x);
+        }
+        Some(Subcommands::HMAC_SHA224 { key, key_file, verify, x }) => {
+            mac_cmd::mac_cmd(HMACVariant::SHA224, key, key_file, verify, *x)
+        }
+        Some(Subcommands::HMAC_SHA384 { key, key_file, verify, x }) => {
+            mac_cmd::mac_cmd(HMACVariant::SHA384, key, key_file, verify, *x)
+        }
+        Some(Subcommands::HMAC_SHA3_224 { key, key_file, verify, x }) => {
+            mac_cmd::mac_cmd(HMACVariant::SHA3_224, key, key_file, verify, *x)
+        }
+        Some(Subcommands::HMAC_SHA3_256 { key, key_file, verify, x }) => {
+            mac_cmd::mac_cmd(HMACVariant::SHA3_256, key, key_file, verify, *x)
+        }
+        Some(Subcommands::HMAC_SHA3_384 { key, key_file, verify, x }) => {
+            mac_cmd::mac_cmd(HMACVariant::SHA3_384, key, key_file, verify, *x)
+        }
+        Some(Subcommands::HMAC_SHA3_512 { key, key_file, verify, x }) => {
+            mac_cmd::mac_cmd(HMACVariant::SHA3_512, key, key_file, verify, *x)
         }
         None => {
             eprintln!("No command provided. See -h")

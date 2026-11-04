@@ -77,8 +77,8 @@ fn nist_sp800_185_tuplehash_sample_values() {
         let want = v.output_len / 8;
         let t = as_slices(&v.tuple);
         let got = match v.strength {
-            128 => TupleHash128::new(v.s.as_bytes(), want).hash_tuple(&t),
-            256 => TupleHash256::new(v.s.as_bytes(), want).hash_tuple(&t),
+            128 => TupleHash128::new(v.s.as_bytes(), want).unwrap().hash_tuple(&t),
+            256 => TupleHash256::new(v.s.as_bytes(), want).unwrap().hash_tuple(&t),
             other => panic!("COUNT {i}: unexpected strength {other}"),
         };
         assert_eq!(
@@ -139,7 +139,7 @@ fn do_final_binds_the_length_when_nothing_has_been_read() {
         match f.strength {
             128 => check_do_final_binds_length(
                 || TupleHashXOF128::new(s),
-                |n| TupleHash128::new(s, n).hash_tuple(&t),
+                |n| TupleHash128::new(s, n).unwrap().hash_tuple(&t),
                 &t,
                 &f.output,
                 &x.output,
@@ -147,7 +147,7 @@ fn do_final_binds_the_length_when_nothing_has_been_read() {
             ),
             256 => check_do_final_binds_length(
                 || TupleHashXOF256::new(s),
-                |n| TupleHash256::new(s, n).hash_tuple(&t),
+                |n| TupleHash256::new(s, n).unwrap().hash_tuple(&t),
                 &t,
                 &f.output,
                 &x.output,
@@ -380,8 +380,18 @@ fn hash_trait_view_agrees_with_the_sample_values() {
         let t = as_slices(&v.tuple);
         let ctx = format!("COUNT {i}: TupleHash{}", v.strength);
         match v.strength {
-            128 => check_fixed_view(|| TupleHash128::new(v.s.as_bytes(), n), &t, &v.output, &ctx),
-            256 => check_fixed_view(|| TupleHash256::new(v.s.as_bytes(), n), &t, &v.output, &ctx),
+            128 => check_fixed_view(
+                || TupleHash128::new(v.s.as_bytes(), n).unwrap(),
+                &t,
+                &v.output,
+                &ctx,
+            ),
+            256 => check_fixed_view(
+                || TupleHash256::new(v.s.as_bytes(), n).unwrap(),
+                &t,
+                &v.output,
+                &ctx,
+            ),
             other => panic!("COUNT {i}: unexpected strength {other}"),
         }
     }

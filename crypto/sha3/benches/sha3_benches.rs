@@ -256,7 +256,7 @@ fn bench_tuplehash128(c: &mut Criterion) {
     group.throughput(Throughput::Bytes(big_data.len() as u64));
     group.bench_function(format!("{} bytes in 4 elements -- .hash_tuple()", big_data.len()), |b| {
         b.iter(|| {
-            black_box(TupleHash128::new(b"", 32).hash_tuple(black_box(&tuple)));
+            black_box(TupleHash128::new(b"", 32).unwrap().hash_tuple(black_box(&tuple)));
         })
     });
     group.finish();
@@ -270,7 +270,9 @@ fn bench_parallelhash128(c: &mut Criterion) {
     group.throughput(Throughput::Bytes(big_data.len() as u64));
     group.bench_function(format!("{} bytes, B = 8192 -- .hash_out()", big_data.len()), |b| {
         b.iter(|| {
-            ParallelHash128::new(block_size, b"", 32).hash_out(black_box(&big_data), &mut digest);
+            ParallelHash128::new(block_size, b"", 32)
+                .unwrap()
+                .hash_out(black_box(&big_data), &mut digest);
             black_box(&digest);
         })
     });

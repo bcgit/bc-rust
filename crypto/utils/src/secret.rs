@@ -1,5 +1,5 @@
 //! A transparent wrapper type, [`Secret`], which is a wrapper that holds a secret value and
-//! guarantees it is securely zeroized on drop, and protected from accidintal logging by implementing
+//! guarantees it is securely zeroized on drop, and protected from accidental logging by implementing
 //! redacting `fmt::Debug` and `fmt::Display`.
 //!
 //! # Why write_volatile
@@ -89,6 +89,45 @@ impl<T: ZeroizablePrimitive, const N: usize> ZeroizablePrimitive for [T; N] {
     const ZEROED: Self = [T::ZEROED; N];
 }
 
+/// A type with no padding bytes, so that every byte of every value is initialized.
+///
+/// [`Secret`]'s equality compares the two values' `size_of::<T>()` bytes, so it is defined only
+/// for a `T` that implements this trait. It is implemented for the primitive integers, `bool`,
+/// `char` and arrays of them. A type with padding can be held in a `Secret` but not compared:
+///
+/// ```compile_fail
+/// use bouncycastle_utils::secret::{Secret, ZeroizablePrimitive};
+///
+/// #[derive(Clone, Copy)]
+/// struct Padded { a: u8, b: u32 }
+///
+/// impl ZeroizablePrimitive for Padded {
+///     const ZEROED: Self = Padded { a: 0, b: 0 };
+/// }
+///
+/// let x = Secret::<Padded>::new();
+/// let y = Secret::<Padded>::new();
+/// let _ = x == y;
+/// ```
+///
+/// # Safety
+///
+/// An implementor must guarantee that every byte of every value of `Self` is initialized: no
+/// padding bytes, and no `MaybeUninit` or union field that may hold uninitialized bytes.
+pub unsafe trait NoPadding {}
+
+macro_rules! impl_no_padding {
+    ($($t:ty),+ $(,)?) => {$(
+        // SAFETY: a primitive scalar has no padding.
+        unsafe impl NoPadding for $t {}
+    )+};
+}
+
+impl_no_padding!(u8, u16, u32, u64, u128, usize, i8, i16, i32, i64, i128, isize, bool, char);
+
+// SAFETY: an array has no padding between or around its elements, and `T` has none of its own.
+unsafe impl<T: NoPadding, const N: usize> NoPadding for [T; N] {}
+
 /// A wrapper that holds a secret value of any primitive or fixed-size array type
 /// and guarantees it is securely zeroized on drop, and is
 /// protected from accidental logging by implementing redacting `fmt::Debug` and `fmt::Display`.
@@ -159,7 +198,8 @@ impl<T: ZeroizablePrimitive, const N: usize> ZeroizablePrimitive for [T; N] {
 ///
 /// Since [`ZeroizablePrimitive`] is a public trait, you can implement it on your own types and then
 /// trivially be able to wrap them in a `Secret<T>`. The only requirement is that there is a
-/// well-defined "ZEROED" value for the type.
+/// well-defined "ZEROED" value for the type. Comparing two such secrets with `==` additionally
+/// needs the `unsafe` trait [`NoPadding`].
 ///
 /// Toy Example:
 ///
@@ -204,7 +244,7 @@ impl<T: ZeroizablePrimitive, const N: usize> ZeroizablePrimitive for [T; N] {
 /// ```
 ///
 /// This will also work for custom types; let's say the `User` struct from the previous example had
-/// impl'd Display and Debug; mhen you wrap them in `Secret<User>` then `Secret`'s Display and Debug
+/// impl'd Display and Debug; when you wrap them in `Secret<User>` then `Secret`'s Display and Debug
 /// are invoked instead of `User`'s and you get the `"<redacted>"` output.
 ///
 /// # Memory Usage
@@ -265,16 +305,10 @@ impl<T: ZeroizablePrimitive> Secret<T> {
     pub fn zeroize(&mut self) {
         // SAFETY: `&mut self.0` is a valid, properly aligned, mutable reference to an initialized
         // `T`, which is exactly the contract `write_volatile` requires.
-        // `T::ZEROED` is defined above for each supported primitive and primitive-array as the
-        // is the all-zero value of `T`, which is a valid and correctly-sized bit pattern
-        // for the primitive scalar/array being zeroized.
+        // `T::ZEROED` is a valid value of `T`, so it is a valid value to write.
         //`write_volatile` (rather than a plain store) is what forbids the compiler from eliding
         // this scrub as a dead write as per its contract:
         // https://doc.rust-lang.org/std/ptr/fn.write_volatile.html
-
-        // Just to make sure -- this should trigger on any unit tests for any instantiation of
-        // Secret<T> that causes this assumption to be violated.
-        debug_assert_eq!(size_of::<T>(), size_of_val(&T::ZEROED));
 
         unsafe {
             ptr::write_volatile(&mut self.0, T::ZEROED);
@@ -337,17 +371,18 @@ impl<T: ZeroizablePrimitive> fmt::Display for Secret<T> {
 /// Both operands are the same type `T`, so both views are exactly `size_of::<T>()` bytes and the
 /// comparison never short-circuits: it always inspects every byte, avoiding a timing side channel
 /// that would otherwise leak how many leading bytes of two secrets match.
-impl<T: ZeroizablePrimitive> PartialEq for Secret<T> {
+impl<T: ZeroizablePrimitive + NoPadding> PartialEq for Secret<T> {
     fn eq(&self, other: &Self) -> bool {
         let len = size_of::<T>();
         // SAFETY: `self.0` / `other.0` are live, initialized `T` values, so the `len` bytes starting
         // at each address lie within that single object. `u8` has alignment 1, so every byte address
         // is well aligned, and the slices are read-only and used only within this call. `T: Copy`
         // (via `ZeroizablePrimitive`) means there is no interior mutability or drop glue to worry
-        // about.
+        // about. `T: NoPadding` means `T` has no padding, so all `len` bytes are initialized, as
+        // `from_raw_parts` requires.
         let a = unsafe { core::slice::from_raw_parts((&self.0 as *const T).cast::<u8>(), len) };
         let b = unsafe { core::slice::from_raw_parts((&other.0 as *const T).cast::<u8>(), len) };
         ct::ct_eq_bytes(a, b)
     }
 }
-impl<T: ZeroizablePrimitive> Eq for Secret<T> {}
+impl<T: ZeroizablePrimitive + NoPadding> Eq for Secret<T> {}

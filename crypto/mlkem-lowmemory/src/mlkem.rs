@@ -221,7 +221,7 @@ impl<
     fn pke_encrypt(
         t_hat_packed: &P::TPacked,
         rho: &[u8; 32],
-        m: [u8; 32],
+        m: &[u8; 32],
         r: &[u8; 32],
     ) -> [u8; CT_LEN] {
         let mut ct = [0u8; CT_LEN];
@@ -297,20 +297,26 @@ impl<
     /// Reachable from outside the crate only through
     /// [`EncapsWithRandomness`](crate::hazmat::EncapsWithRandomness), which carries the security
     /// notes on supplying `m`.
-    pub(crate) fn encaps_internal(ek: &PK, m: [u8; 32]) -> ([u8; 32], [u8; CT_LEN]) {
+    pub(crate) fn encaps_internal(
+        ek: &PK,
+        m: &[u8; 32],
+    ) -> (Secret<[u8; MLKEM_SS_LEN]>, [u8; CT_LEN]) {
         // 1: (𝐾, 𝑟) ← G(𝑚‖H(ek))
-        //  ▷ derive shared secret key 𝐾 and randomness 𝑟
-        let K: [u8; MLKEM_SS_LEN];
-        let r: [u8; 32];
-        (K, r) = {
+        //  ▷ derive shared secret key 𝐾 and randomness 𝑟. Both are secret and held in `Secret`,
+        //  as is the G output they are split from.
+        let (K, r) = {
             let mut g = G::new();
-            g.do_update(&m);
+            g.do_update(m);
             g.do_update(&ek.compute_hash());
-            let mut buf = [0u8; 64];
-            let bytes_written = g.do_final_out(&mut buf);
+            let mut buf = Secret::<[u8; 64]>::new();
+            let bytes_written = g.do_final_out(&mut *buf);
             debug_assert_eq!(bytes_written, 64);
 
-            (buf[..32].try_into().unwrap(), buf[32..64].try_into().unwrap())
+            let mut K = Secret::<[u8; MLKEM_SS_LEN]>::new();
+            K.copy_from_slice(&buf[..32]);
+            let mut r = Secret::<[u8; 32]>::new();
+            r.copy_from_slice(&buf[32..64]);
+            (K, r)
         };
 
         // 2: 𝑐 ← K-PKE.Encrypt(ek, 𝑚, 𝑟)
@@ -329,7 +335,7 @@ impl<
     fn pke_decrypt<DK: MLKEMPrivateKeyInternalTrait<P, SK_LEN, PK_LEN>>(
         dk: &DK,
         ct: &[u8; CT_LEN],
-    ) -> [u8; 32] {
+    ) -> Secret<[u8; 32]> {
         // 1: 𝑐1 ← 𝑐[0 ∶ 32𝑑𝑢𝑘]
         // 3: 𝐮′ ← Decompress_𝑑𝑢(ByteDecode_𝑑𝑢(𝑐1))
 
@@ -380,8 +386,11 @@ impl<
         };
 
         // 7: 𝑚 ← ByteEncode1(Compress1(𝑤))
-        //   ▷ decode plaintext 𝑚 from polynomial 𝑤
-        w.to_msg()
+        //   ▷ decode plaintext 𝑚 from polynomial 𝑤, into a `Secret`: it is an internal value
+        //   (FIPS 203 Sec 3.3) that must not outlive the decapsulation.
+        let mut m = Secret::<[u8; 32]>::new();
+        *m = w.to_msg();
+        m
     }
 
     /// Algorithm 18 ML-KEM.Decaps_internal(dk, 𝑐)
@@ -395,7 +404,7 @@ impl<
     >(
         dk: &DK,
         c: &[u8; CT_LEN],
-    ) -> [u8; MLKEM_SS_LEN] {
+    ) -> Secret<[u8; MLKEM_SS_LEN]> {
         // I have tried to keep this as clean as possible for correspondence with the FIPS,
         // but I have moved things around so that I can use unnamed scopes to limit how many
         // stack variables are alive at the same time.
@@ -411,19 +420,19 @@ impl<
 
         // Compute the trial shared secret key
         // 6: (𝐾′, 𝑟′) ← G(𝑚′‖ℎ)̄
-        let K_prime: Secret<[u8; MLKEM_SS_LEN]>;
-        let r_prime: [u8; 32];
-        (K_prime, r_prime) = {
+        let (K_prime, r_prime) = {
             let mut buf: Secret<[u8; 64]> = Secret::new();
             let mut g = G::new();
-            g.do_update(&m_prime);
+            g.do_update(&*m_prime);
             g.do_update(dk.pk_hash());
             let bytes_written = g.do_final_out(&mut *buf);
             debug_assert_eq!(bytes_written, 64);
 
             let mut K_prime: Secret<[u8; MLKEM_SS_LEN]> = Secret::new();
             K_prime.copy_from_slice(&buf[..32]);
-            (K_prime, buf[32..64].try_into().unwrap())
+            let mut r_prime: Secret<[u8; 32]> = Secret::new();
+            r_prime.copy_from_slice(&buf[32..64]);
+            (K_prime, r_prime)
         };
 
         // 7: 𝐾_bar ← J(𝑧‖𝑐)
@@ -449,12 +458,12 @@ impl<
         // A seed key holds no 𝐭̂, so it derives one here (Algorithm 13 again, most of what makes
         // this crate's decapsulation slower than its encapsulation); an expanded key hands over
         // the copy it holds.
-        let c_prime = Self::pke_encrypt(&dk.t_hat_packed(), dk.rho(), m_prime, &r_prime);
+        let c_prime = Self::pke_encrypt(&dk.t_hat_packed(), dk.rho(), &m_prime, &r_prime);
 
         // 9: if 𝑐 ≠ 𝑐′ then
         // 10: 𝐾′ ← 𝐾_bar
         //  ▷ if ciphertexts do not match, “implicitly reject"
-        let mut K_out = [0u8; MLKEM_SS_LEN];
+        let mut K_out = Secret::<[u8; MLKEM_SS_LEN]>::new();
         conditional_copy_bytes(&K_prime, &K_bar, &mut K_out, ct_eq_bytes_mask(c, &c_prime));
 
         K_out
@@ -502,7 +511,10 @@ impl<
     ) -> Result<(PK, SK), KEMError> {
         let (pk, sk) = Self::keygen_internal(seed)?;
 
-        if !ct_eq_bytes(&sk.encode_full_sk(), encoded_sk) {
+        // The full encoding is private-key material: made in a `Secret` buffer for the comparison.
+        let mut full = Secret::<[u8; FULL_SK_LEN]>::new();
+        sk.encode_full_sk_out(&mut full);
+        if !ct_eq_bytes(&*full, encoded_sk) {
             return Err(KEMError::KeyGenError("Encoded key does not match generated key"));
         }
 
@@ -600,13 +612,13 @@ impl<
         if rng.security_strength() < P::MAX_SECURITY_STRENGTH {
             Err(RNGError::SecurityStrengthInsufficientForAlgorithm)?;
         }
-        let mut m = [0u8; 32];
-        rng.next_bytes_out(&mut m)?;
+        let mut m = Secret::<[u8; 32]>::new();
+        rng.next_bytes_out(&mut *m)?;
 
-        let (ss_bytes, ct) = Self::encaps_internal(pk, m);
+        let (ss_bytes, ct) = Self::encaps_internal(pk, &m);
 
         let mut ss_keymaterial =
-            KeyMaterial::<SS_LEN>::from_bytes_as_type(&ss_bytes, KeyType::CryptographicRandom)?;
+            KeyMaterial::<SS_LEN>::from_bytes_as_type(&*ss_bytes, KeyType::CryptographicRandom)?;
         do_hazardous_operations(&mut ss_keymaterial, |ss_keymaterial| {
             ss_keymaterial.set_security_strength(P::MAX_SECURITY_STRENGTH)
         })?;
@@ -670,7 +682,7 @@ impl<
         let ss_bytes = Self::decaps_internal(dk, ct);
 
         let mut ss_keymaterial =
-            KeyMaterial::<SS_LEN>::from_bytes_as_type(&ss_bytes, KeyType::CryptographicRandom)?;
+            KeyMaterial::<SS_LEN>::from_bytes_as_type(&*ss_bytes, KeyType::CryptographicRandom)?;
         do_hazardous_operations(&mut ss_keymaterial, |ss_keymaterial| {
             ss_keymaterial.set_security_strength(P::MAX_SECURITY_STRENGTH)
         })?;

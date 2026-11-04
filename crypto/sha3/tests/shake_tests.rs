@@ -7,8 +7,11 @@ mod shake_tests {
         KeyMaterial, KeyMaterial256, KeyMaterial512, KeyMaterialTrait, KeyType,
     };
     use bouncycastle_core::security_strength::SecurityStrength;
-    use bouncycastle_core::traits::{AlgorithmInfo, Hash, HashOneShot, KDF, XOF, XOFSqueezer};
+    use bouncycastle_core::traits::{
+        AlgorithmInfo, Hash, HashAlgParams, HashOneShot, KDF, XOF, XOFSqueezer,
+    };
     use bouncycastle_core_test_framework::DUMMY_SEED;
+    use bouncycastle_core_test_framework::hash::TestFrameworkHash;
     use bouncycastle_core_test_framework::kdf::TestFrameworkKDF;
     use bouncycastle_core_test_framework::xof::TestFrameworkXOF;
     use bouncycastle_sha3::{SHA3_256, SHAKE128, SHAKE256};
@@ -18,6 +21,24 @@ mod shake_tests {
     /// Vector: NIST CAVP SHA3VS SHAKE128ShortMsg (bit-oriented), Len = 4, Msg = 08 (FIPS 202 B.1
     /// packing: message bits 0001 in the low nibble, first bit in the LSB), i.e. 0x10 in the API's
     /// MSB-first order.
+    /// The low `8 - num_bits` bits of the partial byte are the BIT STRING's unused bits (X.690
+    /// s. 8.6.2.1) and must not reach the sponge: all ones there and all zeros there give the
+    /// same output.
+    #[test]
+    fn the_unused_bits_of_a_partial_byte_are_ignored() {
+        for num_bits in 1..=7usize {
+            let mut all_ones = SHAKE128::new();
+            all_ones.do_update(b"abc");
+            let mut all_zeros = SHAKE128::new();
+            all_zeros.do_update(b"abc");
+            let used_mask = 0xffu8 << (8 - num_bits);
+            let a = all_ones.into_squeezer_partial_bits(0xff, num_bits).unwrap().do_output(32);
+            let b =
+                all_zeros.into_squeezer_partial_bits(used_mask, num_bits).unwrap().do_output(32);
+            assert_eq!(a, b, "num_bits = {num_bits}");
+        }
+    }
+
     #[test]
     fn into_squeezer_partial_bits_four_bits() {
         let shake = SHAKE128::new();
@@ -370,5 +391,19 @@ mod shake_tests {
             Err(SuspendableError::InvalidData) => { /* good */ }
             _ => panic!("Expected an error when loading a SHAKE256 state into SHA3-256"),
         }
+    }
+
+    /// RFC 8702 Section 3.1's fixed digests, which `HashAlgParams` carries: 32 bytes for SHAKE128
+    /// and 64 for SHAKE256, the sponge rate as the block length (FIPS 202 Table 3), and the same
+    /// bytes as the XOF at that length, through the framework's hash suite.
+    #[test]
+    fn shake_as_a_fixed_length_digest() {
+        assert_eq!(SHAKE128::OUTPUT_LEN, 32);
+        assert_eq!(SHAKE256::OUTPUT_LEN, 64);
+        assert_eq!(SHAKE128::BLOCK_LEN, 168);
+        assert_eq!(SHAKE256::BLOCK_LEN, 136);
+        let tf = TestFrameworkHash::new();
+        tf.test_hash::<SHAKE128>(&DUMMY_SEED[..512], &SHAKE128::new().xof(&DUMMY_SEED[..512], 32));
+        tf.test_hash::<SHAKE256>(&DUMMY_SEED[..512], &SHAKE256::new().xof(&DUMMY_SEED[..512], 64));
     }
 }

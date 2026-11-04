@@ -419,7 +419,10 @@ mod sha3_tests {
         let str = "Colorless green ideas sleep furiously";
 
         // A helper that exercises the full round-trip for one SHA3 variant.
-        fn round_trip<const N: usize, H: Hash + Suspendable<N> + Clone>(mut hash: H, input: &[u8]) {
+        fn round_trip<const N: usize, H: Hash + KDF + Suspendable<N> + Clone>(
+            mut hash: H,
+            input: &[u8],
+        ) {
             hash.do_update(input);
 
             // do the default trait-conformance tests
@@ -444,6 +447,27 @@ mod sha3_tests {
                 Err(SuspendableError::InvalidData) => { /* good */ }
                 _ => panic!("Expected an error for a corrupt squeezing byte"),
             }
+
+            // A well-formed phase byte that says "squeezing" is not a state a SHA3 produces
+            // either: it is only ever suspended while absorbing, and every finalisation of a
+            // squeezing one would fail. Refused on resume, as SHAKE refuses it.
+            let mut squeezing = serialized_state;
+            squeezing[3 + 1 + 400] = 1;
+            assert!(
+                matches!(H::from_suspended(squeezing), Err(SuspendableError::InvalidData)),
+                "a squeezing phase byte must be rejected"
+            );
+
+            // The KDF entropy counter (8 bytes after the key-type and strength bytes) may carry
+            // any value: the largest resumes, and mixing a further key saturates rather than
+            // overflowing.
+            let mut maxed = serialized_state;
+            let entropy = 3 + 1 + 401 + 2;
+            maxed[entropy..entropy + 8].copy_from_slice(&u64::MAX.to_le_bytes());
+            let resumed = H::from_suspended(maxed).expect("any entropy count resumes");
+            let key = KeyMaterial256::from_bytes_as_type(&[7u8; 32], KeyType::CryptographicRandom)
+                .unwrap();
+            resumed.derive_key(&key, &[]).expect("a saturated counter still derives");
         }
 
         round_trip(SHA3_224::new(), str.as_bytes());

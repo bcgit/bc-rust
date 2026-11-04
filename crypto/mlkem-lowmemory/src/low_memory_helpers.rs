@@ -78,6 +78,9 @@ pub(crate) fn compute_A_hat_dot_y_hat<P: MLKEMParams>(
         A_ji.base_mult_montgomery(&y_j);
         u_i.add(&A_ji);
     }
+    // The k-term sum is in (-2kq, 2kq); `inv_ntt`'s first butterfly adds two coefficients in
+    // i16, so it is reduced first (see `dot_product` in bouncycastle-mlkem for the bound).
+    u_i.poly_reduce();
     u_i.inv_ntt();
 
     u_i

@@ -189,9 +189,13 @@ impl<const k: usize> VectorTrait for Vector<k> {
             let w1 = polynomial::base_mult_montgomery(&self[i], &v[i]);
             w.add(&w1);
         }
-        // Note: This function DOES NOT perform modular reduction, as the current
-        // construction of ML-KEM only reduces modulo q when it's necessary.
-        // w.poly_reduce();
+        // Reduced before it is returned: each product coefficient is a sum of two Montgomery
+        // reductions in (-q, q), so the k-term sum is in (-2kq, 2kq), up to 16q for ML-KEM-1024,
+        // and the callers feed it to `inv_ntt`, whose first butterfly adds two coefficients in
+        // i16 (limit 9.84q). FIPS 203 Sec 3.3 allows deferring a reduction only while the result
+        // is right for every input; without this one the margin was empirical (a search reached
+        // 8.9q on a real key), and bc-java and the pq-crystals reference reduce at this point.
+        w.poly_reduce();
 
         w
     }
@@ -461,5 +465,33 @@ mod tests {
     #[test]
     fn compress_and_decompress_match_fips_203_for_du_11() {
         check::<MLKEM1024Params, 4>();
+    }
+
+    /// `dot_product` returns reduced coefficients, in [0, q]: the k-term sum of Montgomery
+    /// products is in (-2kq, 2kq) and the callers' `inv_ntt` adds two coefficients in i16, so
+    /// the reduction at the end of `dot_product` is what keeps the sum in range (the review's
+    /// M1, which arose from that reduction being commented out). An LCG spreads the inputs over
+    /// (-q, q), the range NTT-domain coefficients take.
+    #[test]
+    fn dot_product_is_reduced() {
+        let mut x: u32 = 0x2545_F491;
+        let mut next = || {
+            x = x.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+            ((x % (2 * q as u32 - 1)) as i32 - (q as i32 - 1)) as i16
+        };
+        for _ in 0..64 {
+            let mut a = Vector::<4>::new();
+            let mut b = Vector::<4>::new();
+            for i in 0..4 {
+                for j in 0..N {
+                    a[i][j] = next();
+                    b[i][j] = next();
+                }
+            }
+            let w = a.dot_product(&b);
+            for j in 0..N {
+                assert!((0..=q).contains(&w[j]), "coefficient {j} is {}", w[j]);
+            }
+        }
     }
 }

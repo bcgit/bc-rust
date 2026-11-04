@@ -266,7 +266,7 @@ impl<P: MLKEMParams, const SK_LEN: usize, const FULL_SK_LEN: usize, const PK_LEN
             || seed.key_len() != 64
         {
             return Err(KEMError::KeyGenError(
-                "Seed must be 64 bytes and KeyType::Seed or KeyType::BytesFullEntropy.",
+                "Seed must be 64 bytes and KeyType::Seed or KeyType::CryptographicRandom.",
             ));
         }
 
@@ -582,9 +582,12 @@ impl<P: MLKEMParams, const SK_LEN: usize, const FULL_SK_LEN: usize, const PK_LEN
     for MLKEMSeedPrivateKey<P, SK_LEN, FULL_SK_LEN, PK_LEN>
 {
     fn eq(&self, other: &Self) -> bool {
-        let self_encoded = self.encode();
-        let other_encoded = other.encode();
-        bouncycastle_utils::ct::ct_eq_bytes(self_encoded.as_ref(), other_encoded.as_ref())
+        // The encodings are the seed: held in `Secret` buffers for the comparison.
+        let mut self_encoded = Secret::<[u8; SK_LEN]>::new();
+        let mut other_encoded = Secret::<[u8; SK_LEN]>::new();
+        self.encode_out(&mut self_encoded);
+        other.encode_out(&mut other_encoded);
+        bouncycastle_utils::ct::ct_eq_bytes(&*self_encoded, &*other_encoded)
     }
 }
 

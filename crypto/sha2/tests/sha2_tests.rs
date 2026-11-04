@@ -306,6 +306,19 @@ mod sha2_tests {
             _ => panic!("Expected an error"),
         }
 
+        // byte_count may not exceed 2^61 - 1 bytes, the longest message the 64-bit length block
+        // encodes (x_buf_off kept congruent so only the bound is tested).
+        let with_byte_count = |byte_count: u64| {
+            let mut state = serialized_state;
+            state[3 + 32..3 + 40].copy_from_slice(&byte_count.to_le_bytes());
+            state[3 + 104] = (byte_count % 64) as u8;
+            SHA256::from_suspended(state)
+        };
+        let max: u64 = (1 << 61) - 1;
+        assert!(with_byte_count(max).is_ok());
+        assert!(matches!(with_byte_count(max + 1), Err(SuspendableError::InvalidData)));
+        assert!(matches!(with_byte_count(u64::MAX - 63), Err(SuspendableError::InvalidData)));
+
         // SHA512
         let mut sha512 = SHA512::new();
         sha512.do_update(str.as_bytes());

@@ -183,12 +183,22 @@
 //!
 //! - **Nonce uniqueness (SP 800-232 R3):** a (key, nonce) pair must never be reused for two
 //!   different Ascon-AEAD128 encryptions. Nonce reuse breaks confidentiality.
+//! - **Data limit (SP 800-232 R6, R7):** the total data processed under one key, encryption and
+//!   decryption together and including the nonces, must not exceed 2^54 bytes; the key must be
+//!   replaced before then. The limit spans every message under the key, so the caller must track
+//!   it; this crate does not count.
+//! - **Decryption failures (SP 800-232 R5):** with the full 128-bit tag, no more than 2^96
+//!   decryption failures may be accepted under one key.
 //! - **Tag length:** this crate always produces and verifies the full 128-bit tag. Truncated tags
 //!   (SP 800-232 §4.2.1) are not exposed.
+//! - **Cloning a cipher:** a clone of an [`Ascon_AEAD128<Encrypting>`] continues with the same
+//!   key, nonce and state, so encrypting different data on the two copies reuses the keystream,
+//!   exactly as nonce reuse does.
 //! - **No partial-byte input:** Ascon-Hash256, Ascon-XOF128 and Ascon-CXOF128 are byte-oriented;
 //!   their `do_final_partial_bits`/`do_final_partial_bits_out` (and the equivalent XOF methods)
-//!   always return `HashError::InvalidInput`, including when reached through `HashFactory`. A
-//!   caller that needs a partial-byte final block should reach for SHA-3, which supports one.
+//!   return `HashError::InvalidInput` for 1 to 7 bits, including when reached through
+//!   `HashFactory`; 0 bits is an ordinary final. A caller that needs a partial-byte final block
+//!   should reach for SHA-3, which supports one.
 //! - **Decryption tag check failure:** a ciphertext decryption whose finalization returns
 //!   `Err(SymmetricCipherError::AEADTagCheckFailed)` must be treated as tampered, and the entire
 //!   plaintext rejected. The key's one-shots
@@ -216,9 +226,9 @@ mod ascon_hash256;
 mod ascon_xof128;
 
 pub use ascon_aead128::{
-    Ascon_AEAD128, AsconAEAD128Key, KEY_LEN, NONCE_LEN,
-    SUSPENDED_ASCON_AEAD128_DECRYPTOR_STATE_LEN, SUSPENDED_ASCON_AEAD128_ENCRYPTOR_STATE_LEN,
-    TAG_LEN,
+    ASCON_AEAD128_KEY_LEN, ASCON_AEAD128_NONCE_LEN, ASCON_AEAD128_TAG_LEN, Ascon_AEAD128,
+    AsconAEAD128Key, SUSPENDED_ASCON_AEAD128_DECRYPTOR_STATE_LEN,
+    SUSPENDED_ASCON_AEAD128_ENCRYPTOR_STATE_LEN,
 };
 pub use ascon_cxof128::{AsconCXof128, AsconCXof128Squeezer, SUSPENDED_ASCON_CXOF128_STATE_LEN};
 pub use ascon_hash256::{AsconHash256, SUSPENDED_ASCON_HASH256_STATE_LEN};

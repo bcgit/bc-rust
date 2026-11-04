@@ -126,15 +126,45 @@ fn owed_is_held_to_the_frame() {
 }
 
 /// The counter index runs from 1 (`S0` is the tag mask, step 7 starts the payload keystream at
-/// `S1`) to one past the last counter value, which is where it stands once every block has been
-/// used; 0 and anything beyond are not states the mode can have been in.
+/// `S1`) to one past the last counter value the largest payload (`2^8q - 1` bytes, so
+/// `ceil(LIMIT / 16)` blocks) can use, which is where it stands once every block has been used;
+/// 0 and anything beyond are not states the mode can have been in. The bound is the payload's,
+/// not the counter field's: for `q = 8` the field runs to `u64::MAX`, where one more increment
+/// would overflow.
 #[test]
 fn the_counter_index_is_held_to_its_range() {
     let state = mid_payload();
+    let last = LIMIT / BLOCK_LEN as u64 + 2;
     assert!(resumes(with_u64(state, NEXT_CTR, 1)).is_ok());
-    assert!(resumes(with_u64(state, NEXT_CTR, LIMIT + 1)).is_ok(), "every counter used");
+    assert!(resumes(with_u64(state, NEXT_CTR, last)).is_ok(), "every counter used");
     assert_eq!(resumes(with_u64(state, NEXT_CTR, 0)), Err(SuspendableError::InvalidData));
-    assert_eq!(resumes(with_u64(state, NEXT_CTR, LIMIT + 2)), Err(SuspendableError::InvalidData));
+    assert_eq!(resumes(with_u64(state, NEXT_CTR, last + 1)), Err(SuspendableError::InvalidData));
+    assert_eq!(resumes(with_u64(state, NEXT_CTR, u64::MAX)), Err(SuspendableError::InvalidData));
+}
+
+/// The same bound at `q = 8` (a 7-byte nonce), where `MAX_COUNTER` is `u64::MAX` and a check of
+/// the form `next_ctr - 1 <= MAX_COUNTER` holds for every value: the index stops one past the
+/// last of the `ceil(u64::MAX / 16)` counter values a payload can use, and `u64::MAX` itself,
+/// which the next increment would overflow, is refused.
+#[test]
+fn the_counter_index_is_held_to_its_range_at_q_8() {
+    const NONCE_LEN_7: usize = 7;
+    type Enc7<'k> =
+        CcmPacketEncryptor<'k, ToyBlockCipher, BLOCK_LEN, NONCE_LEN_7, 16, AAD_LEN, DATA_LEN>;
+    const N7: usize = Enc7::SUSPENDED_STATE_LEN;
+    let key: ToyKey<ToyBlockCipher, CCM_Packet<NONCE_LEN_7, 16, AAD_LEN, DATA_LEN>> =
+        ToyKey::from_key_material(&key()).unwrap();
+    let mut enc = key.create_encryptor_nonce(&[0x24u8; NONCE_LEN_7]);
+    enc.do_update_aad(b"aad").unwrap();
+    let mut out = [0u8; 16];
+    enc.do_encrypt_out(&[0x5Au8; 16], &mut out).unwrap();
+    let state: [u8; N7] = enc.suspend();
+    let resumes = |state: [u8; N7]| Enc7::from_suspended(state, key.state()).map(|_| ());
+    let last = u64::MAX / BLOCK_LEN as u64 + 2;
+    assert!(resumes(with_u64(state, NEXT_CTR, 1)).is_ok());
+    assert!(resumes(with_u64(state, NEXT_CTR, last)).is_ok(), "every counter used");
+    assert_eq!(resumes(with_u64(state, NEXT_CTR, last + 1)), Err(SuspendableError::InvalidData));
+    assert_eq!(resumes(with_u64(state, NEXT_CTR, u64::MAX)), Err(SuspendableError::InvalidData));
 }
 
 /// A.3 Table 4 fixes the template's flags octet at `[q-1]_3` with every other bit zero, and the

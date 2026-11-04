@@ -91,7 +91,8 @@ impl<PARAMS: SHA3Params> SHA3Internal<PARAMS> {
 
         // track input entropy
         if key.is_full_entropy() {
-            self.kdf_entropy += key.key_len();
+            // Saturating: the counter is bookkeeping, and a resumed state may carry any value.
+            self.kdf_entropy = self.kdf_entropy.saturating_add(key.key_len());
             self.kdf_security_strength =
                 *max(&self.kdf_security_strength, &key.security_strength());
             self.kdf_security_strength = *min(
@@ -224,7 +225,9 @@ impl<PARAMS: SHA3Params> Hash for SHA3Internal<PARAMS> {
     }
 }
 
-/// SHA3 is allowed to be used as a KDF in the form HASH(X) as per NIST SP 800-56C.
+/// A plain hash of the concatenated inputs, `H(key_1 || .. || key_n || additional_input)`, with
+/// the entropy bookkeeping of [`KeyMaterial`]. This is not the SP 800-56Cr2 Section 4 one-step
+/// KDF, which hashes a 4-byte big-endian counter before `Z || FixedInfo` on every block.
 impl<PARAMS: SHA3Params> KDF for SHA3Internal<PARAMS> {
     /// Returns a [`KeyMaterial`].
     /// For the KDF to be considered "fully-seeded" and be capable of outputting full-entropy KeyMaterials,
@@ -306,6 +309,13 @@ impl<PARAMS: SHA3Params> Suspendable<SUSPENDED_SHA3_STATE_LEN> for SHA3Internal<
         let rate = PARAMS::SIZE.rate_bits();
         let (keccak, kdf_key_type, kdf_security_strength, kdf_entropy) =
             deserialize_sha3_family_state(input, PARAMS::STATE_TAG, rate)?;
+
+        // A SHA3 is only ever suspended while absorbing: finalisation consumes it. A state in
+        // the squeezing phase is not one this type produced, and every finalisation of it would
+        // fail on absorb_bits' phase check, so refuse it here as SHAKE does.
+        if keccak.squeezing {
+            return Err(SuspendableError::InvalidData);
+        }
 
         Ok(SHA3Internal {
             _params: core::marker::PhantomData,

@@ -1,31 +1,144 @@
-use bouncycastle::core::traits::Hash;
-use std::io;
-use std::io::Read;
+//! The SHA-3 family subcommands: `sha3-*`, `shake*`, `cshake*`, `tuplehash*`, `tuplehashxof*`,
+//! `parallelhash*` and `parallelhashxof*`.
 
-use bouncycastle::hex;
-use bouncycastle::sha3::parallelhash::{ParallelHash128, ParallelHash256};
-use bouncycastle::sha3::tuplehash::{TupleHash128, TupleHash256};
-use bouncycastle::sha3::{SHA3_224, SHA3_256, SHA3_384, SHA3_512, SHAKE128, SHAKE256};
+use bouncycastle::core::traits::Hash;
+
+use bouncycastle::core::traits::XOF;
+use bouncycastle::sha3::parallelhash::{
+    ParallelHash128, ParallelHash256, ParallelHashXOF128, ParallelHashXOF256,
+};
+use bouncycastle::sha3::tuplehash::{TupleHash128, TupleHash256, TupleHashXOF128, TupleHashXOF256};
+use bouncycastle::sha3::{
+    CSHAKE128, CSHAKE256, SHA3_224, SHA3_256, SHA3_384, SHA3_512, SHAKE128, SHAKE256,
+};
 use core::num::NonZeroUsize;
 use std::process::exit;
 
-use crate::helpers::{stream_hash, stream_xof};
+use crate::helpers::{
+    decode_hex_arg, read_stdin_all, squeeze_to_stdout, stream_hash, stream_stdin, stream_xof,
+};
 
-pub(crate) fn sha3_cmd(bit_len: usize, output_hex: bool) {
-    match bit_len {
-        224 => stream_hash(SHA3_224::new(), output_hex),
-        256 => stream_hash(SHA3_256::new(), output_hex),
-        384 => stream_hash(SHA3_384::new(), output_hex),
-        512 => stream_hash(SHA3_512::new(), output_hex),
-        _ => panic!("Unsupported algorithm: SHA3-{}", bit_len),
+/// The most a fixed-length SP 800-185 function (KMAC, TupleHash, ParallelHash) will produce
+/// here: their output length is bound into the computation before any output, so the library
+/// computes it whole, and a request of gigabytes would be an allocation rather than a run. The
+/// `*xof` subcommands stream any length.
+pub(crate) const MAX_FIXED_OUTPUT_LEN: usize = 1 << 28;
+
+#[allow(non_camel_case_types)]
+pub(crate) enum SHA3Variant {
+    SHA3_224,
+    SHA3_256,
+    SHA3_384,
+    SHA3_512,
+}
+
+/// The security strength that selects a SHAKE-based function's instance: SHAKE128 or SHAKE256,
+/// and with them the 128- and 256-bit KMAC, TupleHash and ParallelHash.
+#[derive(Clone, Copy)]
+pub(crate) enum Strength {
+    Bits128,
+    Bits256,
+}
+
+/// The customization string S of SP 800-185, from `--customization` (the characters) or
+/// `--customization-hex` (bytes); empty when neither is given. Both given is an error, since
+/// the one would silently win over the other.
+pub(crate) fn load_customization(text: &Option<String>, hex: &Option<String>) -> Vec<u8> {
+    match (text, hex) {
+        (Some(_), Some(_)) => {
+            eprintln!("Error: give `--customization` or `--customization-hex`, not both.");
+            exit(-1);
+        }
+        (Some(text), None) => text.as_bytes().to_vec(),
+        (None, Some(hex)) => decode_hex_arg(hex, "customization-hex"),
+        (None, None) => Vec::new(),
     }
 }
 
-pub(crate) fn shake_cmd(bit_len: usize, output_len: usize, output_hex: bool) {
-    match bit_len {
-        128 => stream_xof(SHAKE128::new(), output_len, output_hex),
-        256 => stream_xof(SHAKE256::new(), output_len, output_hex),
-        _ => panic!("Unsupported algorithm: SHAKE-{}", bit_len),
+fn refuse_long_fixed_output(output_len: usize, xof_command: &str) {
+    if output_len > MAX_FIXED_OUTPUT_LEN {
+        eprintln!(
+            "Error: this output is computed whole; the command takes at most {MAX_FIXED_OUTPUT_LEN} bytes. Use {xof_command} for a long, streamed output."
+        );
+        exit(-1);
+    }
+}
+
+pub(crate) fn sha3_cmd(variant: SHA3Variant, output_hex: bool) {
+    match variant {
+        SHA3Variant::SHA3_224 => stream_hash(SHA3_224::new(), output_hex),
+        SHA3Variant::SHA3_256 => stream_hash(SHA3_256::new(), output_hex),
+        SHA3Variant::SHA3_384 => stream_hash(SHA3_384::new(), output_hex),
+        SHA3Variant::SHA3_512 => stream_hash(SHA3_512::new(), output_hex),
+    }
+}
+
+pub(crate) fn shake_cmd(strength: Strength, output_len: usize, output_hex: bool) {
+    match strength {
+        Strength::Bits128 => stream_xof(SHAKE128::new(), output_len, output_hex),
+        Strength::Bits256 => stream_xof(SHAKE256::new(), output_len, output_hex),
+    }
+}
+
+/// cSHAKE (NIST SP 800-185 Sec 3): SHAKE with a function name N and a customization string S
+/// bound in; with both empty it is SHAKE itself.
+pub(crate) fn cshake_cmd(
+    strength: Strength,
+    output_len: usize,
+    function_name: &[u8],
+    customization: &[u8],
+    output_hex: bool,
+) {
+    match strength {
+        Strength::Bits128 => {
+            stream_xof(CSHAKE128::new(function_name, customization), output_len, output_hex)
+        }
+        Strength::Bits256 => {
+            stream_xof(CSHAKE256::new(function_name, customization), output_len, output_hex)
+        }
+    }
+}
+
+/// TupleHashXOF (SP 800-185 Sec 5.3.1): TupleHash with the length not bound in, so the output
+/// streams at any length.
+pub(crate) fn tuplehashxof_cmd(
+    strength: Strength,
+    output_len: usize,
+    elements: &[String],
+    customization: &[u8],
+    output_hex: bool,
+) {
+    let tuple = load_tuple(elements);
+    match strength {
+        Strength::Bits128 => {
+            let mut x = TupleHashXOF128::new(customization);
+            tuple.iter().for_each(|e| x.do_update(e));
+            squeeze_to_stdout(x.into_squeezer(), output_len, output_hex);
+        }
+        Strength::Bits256 => {
+            let mut x = TupleHashXOF256::new(customization);
+            tuple.iter().for_each(|e| x.do_update(e));
+            squeeze_to_stdout(x.into_squeezer(), output_len, output_hex);
+        }
+    }
+}
+
+/// ParallelHashXOF (SP 800-185 Sec 6.3.1): ParallelHash with the length not bound in.
+pub(crate) fn parallelhashxof_cmd(
+    strength: Strength,
+    output_len: usize,
+    block_size: usize,
+    customization: &[u8],
+    output_hex: bool,
+) {
+    let block_size = require_block_size(block_size);
+    match strength {
+        Strength::Bits128 => {
+            stream_xof(ParallelHashXOF128::new(block_size, customization), output_len, output_hex)
+        }
+        Strength::Bits256 => {
+            stream_xof(ParallelHashXOF256::new(block_size, customization), output_len, output_hex)
+        }
     }
 }
 
@@ -35,36 +148,39 @@ pub(crate) fn shake_cmd(bit_len: usize, output_len: usize, output_hex: bool) {
 /// hashed as a single-element tuple -- which is not the same as hashing those bytes with SHAKE,
 /// because the element is length-prefixed.
 pub(crate) fn tuplehash_cmd(
-    bit_len: usize,
+    strength: Strength,
     output_len: usize,
     elements: &[String],
-    customization: &Option<String>,
+    customization: &[u8],
     output_hex: bool,
 ) {
-    let s = customization.as_deref().unwrap_or("").as_bytes();
-
-    // Either the tuple came from flags, or stdin is the single element.
-    let tuple: Vec<Vec<u8>> = if elements.is_empty() {
-        vec![read_stdin()]
-    } else {
-        elements
-            .iter()
-            .map(|e| {
-                hex::decode(e).unwrap_or_else(|_| {
-                    eprintln!("Error: --element must be hex.");
-                    exit(-1);
-                })
-            })
-            .collect()
-    };
+    refuse_long_fixed_output(output_len, "tuplehashxof*");
+    let tuple = load_tuple(elements);
     let refs: Vec<&[u8]> = tuple.iter().map(|v| v.as_slice()).collect();
 
-    let out = match bit_len {
-        128 => TupleHash128::new(s, output_len).hash_tuple(&refs),
-        256 => TupleHash256::new(s, output_len).hash_tuple(&refs),
-        _ => panic!("Unsupported algorithm: TupleHash-{bit_len}"),
+    let out = match strength {
+        Strength::Bits128 => TupleHash128::new(customization, output_len)
+            .unwrap_or_else(|_| output_len_error())
+            .hash_tuple(&refs),
+        Strength::Bits256 => TupleHash256::new(customization, output_len)
+            .unwrap_or_else(|_| output_len_error())
+            .hash_tuple(&refs),
     };
     write_out(&out, output_hex);
+}
+
+/// The tuple: the `--element` flags decoded, or stdin as the single element.
+pub(crate) fn load_tuple(elements: &[String]) -> Vec<Vec<u8>> {
+    if elements.is_empty() {
+        vec![read_stdin_all()]
+    } else {
+        elements.iter().map(|e| decode_hex_arg(e, "element")).collect()
+    }
+}
+
+fn output_len_error() -> ! {
+    eprintln!("Error: the output length is larger than SP 800-185 allows here (Sec 7.2).");
+    exit(-1);
 }
 
 /// ParallelHash (NIST SP 800-185 Sec 6): hashes stdin in `block_size`-byte blocks.
@@ -72,55 +188,36 @@ pub(crate) fn tuplehash_cmd(
 /// The block size is part of the function, not a tuning knob -- the same input under a different
 /// block size gives an unrelated hash, so it must match on both sides.
 pub(crate) fn parallelhash_cmd(
-    bit_len: usize,
+    strength: Strength,
     output_len: usize,
     block_size: usize,
-    customization: &Option<String>,
+    customization: &[u8],
     output_hex: bool,
 ) {
-    let Some(block_size) = NonZeroUsize::new(block_size) else {
+    refuse_long_fixed_output(output_len, "parallelhashxof*");
+    let block_size = require_block_size(block_size);
+    match strength {
+        Strength::Bits128 => {
+            let mut p = ParallelHash128::new(block_size, customization, output_len)
+                .unwrap_or_else(|_| output_len_error());
+            stream_stdin(|chunk| p.do_update(chunk));
+            write_out(&p.do_final(), output_hex);
+        }
+        Strength::Bits256 => {
+            let mut p = ParallelHash256::new(block_size, customization, output_len)
+                .unwrap_or_else(|_| output_len_error());
+            stream_stdin(|chunk| p.do_update(chunk));
+            write_out(&p.do_final(), output_hex);
+        }
+    }
+}
+
+/// SP 800-185 Sec 6.2: B must be greater than zero.
+pub(crate) fn require_block_size(block_size: usize) -> NonZeroUsize {
+    NonZeroUsize::new(block_size).unwrap_or_else(|| {
         eprintln!("Error: --block-size must be greater than zero (SP 800-185 Sec 6.2).");
         exit(-1);
-    };
-    let s = customization.as_deref().unwrap_or("").as_bytes();
-    match bit_len {
-        128 => {
-            let mut p = ParallelHash128::new(block_size, s, output_len);
-            stream_stdin(|chunk| p.do_update(chunk));
-            write_out(&p.do_final(), output_hex);
-        }
-        256 => {
-            let mut p = ParallelHash256::new(block_size, s, output_len);
-            stream_stdin(|chunk| p.do_update(chunk));
-            write_out(&p.do_final(), output_hex);
-        }
-        _ => panic!("Unsupported algorithm: ParallelHash-{bit_len}"),
-    }
-}
-
-/// Reads all of stdin. Used where the whole input must be held anyway (a tuple element).
-fn read_stdin() -> Vec<u8> {
-    let mut out = Vec::new();
-    let mut buf = [0u8; 1024];
-    loop {
-        let n = io::stdin().read(&mut buf).expect("Failed to read from stdin");
-        if n == 0 {
-            return out;
-        }
-        out.extend_from_slice(&buf[..n]);
-    }
-}
-
-/// Feeds stdin to `sink` in 1 KiB pieces, so a long input is never held in memory.
-fn stream_stdin(mut sink: impl FnMut(&[u8])) {
-    let mut buf = [0u8; 1024];
-    loop {
-        let n = io::stdin().read(&mut buf).expect("Failed to read from stdin");
-        if n == 0 {
-            return;
-        }
-        sink(&buf[..n]);
-    }
+    })
 }
 
 /// Writes the digest as raw bytes or hex, with the trailing newline the other commands emit.

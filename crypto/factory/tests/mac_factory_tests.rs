@@ -8,6 +8,33 @@ mod hash_factory_tests {
     use bouncycastle_hex as hex;
 
     /// `AlgorithmInfo` answers for the algorithm the factory selected, not for the factory.
+    /// Each default is at least as strong as its name says, and so refuses a key below that.
+    #[test]
+    fn defaults_meet_their_strength() {
+        use bouncycastle_factory::mac_factory::{
+            DEFAULT_128BIT_MAC_NAME, DEFAULT_256BIT_MAC_NAME, DEFAULT_MAC_NAME,
+        };
+        let key32 = KeyMaterial::<32>::from_bytes_as_type(&[0x42; 32], KeyType::MACKey).unwrap();
+        let key16 = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::MACKey).unwrap();
+
+        let k = MACFactory::default_256_bit(&key32).unwrap();
+        let m = k.create_generator();
+        assert_eq!(m.max_security_strength(), SecurityStrength::_256bit);
+        assert_eq!(m.alg_name(), DEFAULT_256BIT_MAC_NAME);
+        assert!(MACFactory::default_256_bit(&key16).is_err());
+        assert!(MACFactory::new("Default256Bit", &key16).is_err());
+
+        let k = MACFactory::default_128_bit(&key16).unwrap();
+        let m = k.create_generator();
+        assert!(m.max_security_strength() >= SecurityStrength::_128bit);
+        assert_eq!(m.alg_name(), DEFAULT_128BIT_MAC_NAME);
+
+        let k = MACFactory::default(&key16).unwrap();
+        let m = k.create_generator();
+        assert!(m.max_security_strength() >= SecurityStrength::_128bit);
+        assert_eq!(m.alg_name(), DEFAULT_MAC_NAME);
+    }
+
     #[test]
     fn alg_name_and_strength_follow_the_variant() {
         use SecurityStrength::*;

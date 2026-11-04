@@ -2,8 +2,10 @@
 //! message, for the case where the message is hashed before the signing key is known or on a
 //! different machine.
 //!
-//! The hash is a type parameter of the key's pre-hash methods, so any approved hash goes with any
-//! ML-DSA key:
+//! The hash is a type parameter of the key's pre-hash methods, so any hash of at least the
+//! parameter set's strength goes with any ML-DSA key, SHAKE128 and SHAKE256 among them as the
+//! fixed-length digests of RFC 8702 Section 3.1 (Algorithm 4's third case is SHAKE128); that it
+//! is an approved one (FIPS 204 Section 5.4) is the caller's to ensure:
 //!
 //! ```rust
 //! use bouncycastle_core::errors::SignatureError;
@@ -125,9 +127,7 @@ impl AlgorithmOID for HashMLDSA87_with_SHA512 {
 /// FIPS 204 Section 5.4: the hash must give at least the parameter set's strength.
 fn check_hash_strength<P: MLDSAParams, H: PreHash>() -> Result<(), SignatureError> {
     if H::MAX_SECURITY_STRENGTH < P::MAX_SECURITY_STRENGTH {
-        return Err(SignatureError::GenericError(
-            "HashML-DSA: the pre-hash is weaker than the ML-DSA parameter set (FIPS 204 Section 5.4)",
-        ));
+        return Err(SignatureError::PreHashTooWeak);
     }
     Ok(())
 }
@@ -226,7 +226,7 @@ fn sign_ph_with_rnd<
     check_hash_strength::<P, H>()?;
     check_ph_len::<H>(ph)?;
     // Algorithm 4, lines 1 and 23, and Algorithm 7, line 6
-    let mu = compute_mu_ph(&sk.tr(), ctx, H::OID_DER, ph)?;
+    let mu = compute_mu_ph(sk.tr(), ctx, H::OID_DER, ph)?;
     // 24: 𝜎 ← ML-DSA.Sign_internal(𝑠𝑘, 𝑀′, 𝑟𝑛𝑑)
     sk.sign_mu_with_rnd_out(&mu, rnd, output)
 }

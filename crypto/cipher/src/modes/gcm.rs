@@ -498,6 +498,11 @@ where
     /// plaintext into ciphertext in place) and the decryptor (which calls this *before* GCTR turns
     /// the ciphertext back into plaintext): either way GHASH must see ciphertext, never plaintext.
     fn absorb_data(&mut self, data: &[u8]) -> Result<(), SymmetricCipherError> {
+        // An empty call is a no-op that leaves the AAD phase open, the rule CCM and the AEAD
+        // suite in the test framework hold the family to; data begins with its first byte.
+        if data.is_empty() {
+            return Ok(());
+        }
         self.data_len = self.data_len_after(data.len())?;
         self.begin_data_if_needed();
         self.ghash.update(data);
@@ -714,8 +719,11 @@ where
         // Data has started even if every byte is still held back as a possible tag, so the AAD
         // phase ends here rather than at the first byte released: otherwise a `do_update_aad`
         // after a first call shorter than `TAG_LEN` would be accepted, and absorbed as if it came
-        // before the ciphertext (Algorithm 5 absorbs `A` before `C`).
-        self.begin_data_if_needed();
+        // before the ciphertext (Algorithm 5 absorbs `A` before `C`). An empty call, though, is
+        // a no-op that leaves the phase open (see `absorb_data`).
+        if !ciphertext.is_empty() {
+            self.begin_data_if_needed();
+        }
 
         // Bytes of the old tail that are now known to be ciphertext, then bytes of the new input
         // that are also released this call.
@@ -837,6 +845,13 @@ where
         gcm.ctr = <Ctr<'k, P, Dir, 16, GCM_NONCE_LEN> as SuspendableComponent<'k>>::read_state(
             ctr, &key.perm,
         )?;
+        // The CTR state's own check is only the top of the counter's range. GCTR starts at
+        // inc32(J0), counter 2 (Algorithm 4 step 3); J0 itself, counter 1, is the tag mask
+        // (step 6) and 0 is never used, so a resumed counter below 2 would emit CIPH_K(J0) as
+        // keystream. Read through the keystream's own layout, after its own range check.
+        if CtrKeyStream::<'k, P, 16, GCM_NONCE_LEN>::counter_from_state(ctr) < 2 {
+            return Err(SuspendableError::InvalidData);
+        }
         gcm.ghash.restore_state(ghash)?;
 
         let mut r = Cursor::new(rest);

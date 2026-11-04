@@ -222,7 +222,7 @@ pub(crate) fn sbox<T: PlaneWord>(q: &mut Planes<T>) {
 /// `iS(S(y)) = B(A(I(B(A(I(y)) ^ {63} ^ {63})))  ^ {63} ^ {63}) = y`.
 ///
 /// So applying [`inv_affine`], then the forward circuit, then [`inv_affine`] again yields the
-/// inverse S-box, at the cost of 16 extra XORs and 8 complements instead of a whole second
+/// inverse S-box, at the cost of 32 extra XORs and 8 complements instead of a whole second
 /// circuit. Verified against Table 6 by the decryption known-answer tests in `tests/`
 /// (SP 800-38A F.1.2/4/6 and the ACVP decrypt vectors), and against [`sbox`] by the ECB
 /// conformance suite's inverse checks.

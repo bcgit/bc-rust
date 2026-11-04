@@ -45,7 +45,6 @@
 //!
 //! The output layout is Sec 6.1 step 8's own: `ciphertext || tag`.
 
-use std::io::{self, Read};
 use std::process::exit;
 
 use bouncycastle::aes::{AES128Key, AES192Key, AES256Key};
@@ -55,7 +54,6 @@ use bouncycastle::core::key_material::KeyMaterial;
 use bouncycastle::core::symmetric_key::{
     AeadDeclaredDecryptionKey, AeadDeclaredEncryptionKey, FromKeyMaterial,
 };
-use bouncycastle::hex;
 
 use crate::helpers;
 use crate::helpers::block_mode_helpers::{CipherDirection, load_key};
@@ -89,6 +87,7 @@ impl CcmKeys<32> for Aes256 {
 }
 
 /// AES-128 CCM. See the module docs and the subcommand help.
+#[allow(clippy::too_many_arguments)] // one flag per input, each inline or from a file
 pub(crate) fn aes128_ccm_cmd(
     action: &CipherDirection,
     key: &Option<String>,
@@ -113,6 +112,7 @@ pub(crate) fn aes128_ccm_cmd(
 }
 
 /// AES-192 CCM. See [`aes128_ccm_cmd`].
+#[allow(clippy::too_many_arguments)] // one flag per input, each inline or from a file
 pub(crate) fn aes192_ccm_cmd(
     action: &CipherDirection,
     key: &Option<String>,
@@ -137,6 +137,7 @@ pub(crate) fn aes192_ccm_cmd(
 }
 
 /// AES-256 CCM. See [`aes128_ccm_cmd`].
+#[allow(clippy::too_many_arguments)] // one flag per input, each inline or from a file
 pub(crate) fn aes256_ccm_cmd(
     action: &CipherDirection,
     key: &Option<String>,
@@ -165,10 +166,10 @@ pub(crate) fn aes256_ccm_cmd(
 /// Unlike the key there is no entropy question here: Sec 5.3 asks for uniqueness, not randomness,
 /// so an all-zero nonce is a perfectly valid *first* nonce and only a repeat is a problem.
 ///
-/// `--nonce-file` reads raw bytes ([`helpers::read_from_file_raw`]), not the hex-or-raw guess
-/// [`helpers::read_from_file`] uses for keys: a repeated nonce under one key is fatal for CCM (see
-/// the module docs), so two distinct binary nonce files that happen to look like hex text of the
-/// same value must not silently collapse to the same nonce.
+/// `--nonce-file` reads raw bytes (hex only under the global `--hex-input`), never a guess from
+/// the contents: a repeated nonce under one key is fatal for CCM (see the module docs), so two
+/// distinct binary nonce files that happen to look like hex text of the same value must not
+/// silently collapse to the same nonce.
 ///
 /// For the same reason a trailing newline is **not** stripped: a 13-byte file ending in `0x0a` and
 /// the 12-byte file without it are two different nonces, and silently treating them as one would
@@ -178,8 +179,8 @@ pub(crate) fn aes256_ccm_cmd(
 /// is not a silent one; the bytes are still used exactly as they are.
 fn load_nonce(nonce: &Option<String>, nonce_file: &Option<String>) -> Vec<u8> {
     let bytes = if let Some(file) = nonce_file {
-        let bytes = helpers::read_from_file_raw(file);
-        if bytes.last() == Some(&b'\n') {
+        let bytes = helpers::read_input_file(file);
+        if !helpers::hex_input() && bytes.last() == Some(&b'\n') {
             eprintln!(
                 "Warning: nonce file '{file}' ends with a newline byte (0x0a), which is used as \
                  part of the nonce."
@@ -191,10 +192,7 @@ fn load_nonce(nonce: &Option<String>, nonce_file: &Option<String>) -> Vec<u8> {
         }
         bytes
     } else if let Some(v) = nonce {
-        hex::decode(v).unwrap_or_else(|_| {
-            eprintln!("Error: nonce is not valid hex.");
-            exit(-1)
-        })
+        helpers::decode_hex_arg(v, "nonce")
     } else {
         eprintln!("Error: --nonce or --nonce-file must be supplied. CCM has no generated nonce;");
         eprintln!("       see the subcommand help for why, and for the uniqueness requirement.");
@@ -215,23 +213,11 @@ fn load_nonce(nonce: &Option<String>, nonce_file: &Option<String>) -> Vec<u8> {
 /// Loads the AAD from `--aad-file` (raw bytes, never hex-decoded) or `--aad` (hex); the file wins
 /// if both are given, as for `aes*-gcm`. Empty if neither is given.
 fn load_aad(aad: &Option<String>, aad_file: &Option<String>) -> Vec<u8> {
-    if let Some(path) = aad_file {
-        helpers::read_from_file_raw(path)
-    } else if let Some(v) = aad {
-        hex::decode(v).unwrap_or_else(|_| {
-            eprintln!("Error: associated data is not valid hex. Use --aad-file for raw bytes.");
-            exit(-1)
-        })
-    } else {
-        Vec::new()
+    match (aad_file, aad) {
+        (Some(path), _) => helpers::read_input_file(path),
+        (None, Some(v)) => helpers::decode_hex_arg(v, "aad"),
+        (None, None) => Vec::new(),
     }
-}
-
-/// Reads all of stdin. See the module docs on why this is not a streaming command.
-fn read_all_stdin() -> Vec<u8> {
-    let mut input = Vec::new();
-    io::stdin().read_to_end(&mut input).expect("Failed to read from stdin");
-    input
 }
 
 /// Turns the runtime nonce and tag lengths into the mode's const generic parameters.
@@ -240,6 +226,7 @@ fn read_all_stdin() -> Vec<u8> {
 /// length conditions compile-time checks rather than runtime ones -- so a command-line value has to
 /// be matched into one of the permitted instantiations. The two nested matches are the price of
 /// that, and they are exhaustive over A.1's sets: 7 nonce lengths x 7 tag lengths.
+#[allow(clippy::too_many_arguments)] // the three key lengths' inputs, already parsed
 fn run<F: CcmKeys<KEY_LEN>, const KEY_LEN: usize>(
     action: &CipherDirection,
     key: &KeyMaterial<KEY_LEN>,
@@ -262,7 +249,8 @@ fn run<F: CcmKeys<KEY_LEN>, const KEY_LEN: usize>(
 
     let nonce_bytes = load_nonce(nonce, nonce_file);
     let aad = load_aad(aad, aad_file);
-    let input = read_all_stdin();
+    // See the module docs on why this is not a streaming command.
+    let input = helpers::read_stdin_all();
     let encrypt = matches!(action, CipherDirection::Encrypt);
 
     macro_rules! with_tag_len {

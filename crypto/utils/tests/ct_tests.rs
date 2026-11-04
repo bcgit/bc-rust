@@ -183,6 +183,12 @@ mod unsigned_u64_tests {
                 Condition::<u64>::from_msb(v).to_bool()
             );
         }
+        // an index past the width gives FALSE, never a masked shift or a panic
+        for v in BOUNDARY {
+            for bit in [u64::BITS, u64::BITS + 1, u32::MAX] {
+                assert_canonical(Condition::<u64>::is_bit_set(v, bit), false);
+            }
+        }
     }
 
     #[test]
@@ -332,6 +338,12 @@ mod unsigned_u32_tests {
                 Condition::<u32>::from_msb(v).to_bool()
             );
         }
+        // an index past the width gives FALSE, never a masked shift or a panic
+        for v in BOUNDARY {
+            for bit in [u32::BITS, u32::BITS + 1, u32::MAX] {
+                assert_canonical(Condition::<u32>::is_bit_set(v, bit), false);
+            }
+        }
     }
 
     #[test]
@@ -463,6 +475,12 @@ mod signed_i64_tests {
                 Condition::<i64>::is_bit_set(v, i64::BITS - 1).to_bool(),
                 Condition::<i64>::is_negative(v).to_bool()
             );
+        }
+        // an index past the width gives FALSE, never a masked shift or a panic
+        for v in BOUNDARY {
+            for bit in [i64::BITS, i64::BITS + 1, u32::MAX] {
+                assert_canonical(Condition::<i64>::is_bit_set(v, bit), false);
+            }
         }
     }
 
@@ -664,6 +682,12 @@ mod signed_i32_tests {
                 Condition::<i32>::is_bit_set(v, i32::BITS - 1).to_bool(),
                 Condition::<i32>::is_negative(v).to_bool()
             );
+        }
+        // an index past the width gives FALSE, never a masked shift or a panic
+        for v in BOUNDARY {
+            for bit in [i32::BITS, i32::BITS + 1, u32::MAX] {
+                assert_canonical(Condition::<i32>::is_bit_set(v, bit), false);
+            }
         }
     }
 

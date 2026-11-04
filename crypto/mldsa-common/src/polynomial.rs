@@ -132,13 +132,6 @@ impl Polynomial {
     /// type parameter cannot be used as a const generic argument. It is still a constant after
     /// monomorphization, so this costs nothing.
     pub fn check_norm(&self, bound: i32) -> bool {
-        // It is acceptable that this function is not constant-time (returns true early)
-        // The reason being because it is used in a rejection loop.
-        // That is, the early quit here leads to rejection, dropping the secret values and
-        // continuing to the top of the rejection loop with generating new secret values,
-        // or failing the signature validation.
-        // So the i32 that we just checked in a non-constant-time manner is about to get thrown away.
-
         // Note: this formulation of the check_norm function usually requires this bounds check
         //  if bound > (q - 1) / 8 {
         //     return true;
@@ -147,16 +140,16 @@ impl Polynomial {
         // instead to make sure the value is what we expect.
         debug_assert!(bound <= (q - 1) / 8);
 
-        let mut t: i32;
+        // Branch-free: the early return of the reference implementation reveals only that a
+        // candidate was rejected, but also the index of the first coefficient over the bound,
+        // a position-dependent fact about the rejected y + c*s1. |x| < 2^31 - 1 and bound > 0, so
+        // `bound - 1 - t` cannot overflow and is negative exactly when t >= bound.
+        let mut acc: i32 = 0;
         for x in self.coeffs.iter() {
-            t = *x >> 31;
-            t = *x - (t & (2 * *x));
-
-            if t >= bound {
-                return true;
-            }
+            let t = *x - ((*x >> 31) & (2 * *x));
+            acc |= (bound - 1 - t) >> 31;
         }
-        false
+        acc != 0
     }
 
     /// Multiplies every coefficient by 2^𝑑.

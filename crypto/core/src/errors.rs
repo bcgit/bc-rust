@@ -137,8 +137,14 @@ pub use bouncycastle_utils::suspendable_state::SuspendableError;
 pub enum SignatureError {
     ///
     GenericError(&'static str),
-    ///
-    ConsistencyCheckFailed(),
+    /// The public and private key of a pair do not belong together.
+    ConsistencyCheckFailed,
+    /// The algorithm bounds its rejection-sampling loop (FIPS 204 Section 6.2 allows ML-DSA to)
+    /// and the bound was reached without a signature; nothing was written. The hedged variant
+    /// draws fresh randomness on a retry; the deterministic variant fails the same way again.
+    RejectionLimitExceeded,
+    /// The pre-hash is weaker than the parameter set (FIPS 204 Section 5.4 for HashML-DSA).
+    PreHashTooWeak,
     ///
     EncodingError(&'static str),
     ///

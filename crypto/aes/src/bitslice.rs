@@ -72,7 +72,13 @@
 //! byte-lane, block B in the odd), which ties every mask to one width. Keeping each block in its
 //! own lane instead is what lets one set of `u16` patterns serve `u16`, `u32` and `u64` planes.
 
+use bouncycastle_utils::ct;
 use core::ops::{BitAnd, BitOr, BitXor, BitXorAssign, Not, Shl, Shr};
+
+/// Targets whose integer multiply is fixed-latency, so the round-key widening in
+/// [`PlaneWord::splat`] may be left for LLVM to fold into one. A `const` rather than a `cfg` on
+/// the two bodies, so both compile on every target.
+const MULTIPLY_IS_FIXED_LATENCY: bool = cfg!(any(target_arch = "x86_64", target_arch = "aarch64"));
 
 /// One 16-byte AES block, in the order of FIPS 197 Eq (3.6): `block[r + 4c] == s[r,c]`.
 pub type Block = [u8; crate::AES_BLOCK_LEN];
@@ -190,12 +196,24 @@ impl PlaneWord for u32 {
     type Blocks = [Block; 2];
 
     /// Shift-and-or rather than the equivalent `u32::from(pattern) * 0x0001_0001`, because
-    /// because integer multiplication is not constant-time on all architectures.
-    /// A compiler may still emit a multiply where its cost model
-    /// prefers one, as LLVM does for the `u64` version on x86-64, where `imul` is fixed-latency.
+    /// integer multiplication is not constant-time on every target. LLVM knows the
+    /// zero-extended `x` has no bits above 16, so the ORs are disjoint, so it may rewrite them
+    /// into that multiply anyway: it does on aarch64 and x86-64, where `mul` / `imul` are
+    /// fixed-latency and nothing is leaked, and (checked in a `no_std` harness, 2026-11-04) on
+    /// AVR, Cortex-M0 and RISC-V 32I, where the multiply is a `muls` or a `__mulsi3` call. So
+    /// everywhere but the two fixed-latency targets `x` first goes through
+    /// [`ct::value_barrier`], which hides its known-zero bits; the ORs then stay ORs (none of
+    /// the five harness targets emits a multiply or a branch). On x86-64 and aarch64 the
+    /// barrier would cost about 60 % of the 2-block and 190 % of the 4-block throughput
+    /// (measured), for a multiply that is already constant-time, so there the fold is allowed.
+    /// The gate is by architecture alone, so 32-bit Arm, x86 and wasm32 pay the barrier too,
+    /// whether or not their multiply is fixed-latency: conservative, and cheap off the hot
+    /// 64-bit targets. `dev_scripts/check_aes_ct_asm.sh` rebuilds the harness and greps its
+    /// assembly; CI runs it on the Cortex-M0 and RISC-V 32I targets.
     #[inline(always)]
     fn splat(pattern: u16) -> Self {
         let x = u32::from(pattern);
+        let x = if MULTIPLY_IS_FIXED_LATENCY { x } else { ct::value_barrier(x) };
         x | (x << 16)
     }
 
@@ -224,13 +242,13 @@ impl PlaneWord for u32 {
 impl PlaneWord for u64 {
     type Blocks = [Block; 4];
 
-    /// Shift-and-or equivalent of `u64::from(pattern) * 0x0001_0001_0001_0001`,
-    /// because integer multiplication is not constant-time on all architectures.
-    /// A compiler may still emit a multiply where its cost model
-    /// prefers one, as LLVM does for the `u64` version on x86-64, where `imul` is fixed-latency.
+    /// Shift-and-or equivalent of `u64::from(pattern) * 0x0001_0001_0001_0001`, with the same
+    /// barrier as the `u32` version, for the same reason (on AVR and RISC-V 32I the fold is a
+    /// `__muldi3` call).
     #[inline(always)]
     fn splat(pattern: u16) -> Self {
         let x = u64::from(pattern);
+        let x = if MULTIPLY_IS_FIXED_LATENCY { x } else { ct::value_barrier(x) };
         x | (x << 16) | (x << 32) | (x << 48)
     }
 

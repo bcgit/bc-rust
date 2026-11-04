@@ -11,7 +11,7 @@
 //! use bouncycastle_sha3::parallelhash::ParallelHash128;
 //!
 //! let block_size = NonZeroUsize::new(8192).unwrap();
-//! let output: Vec<u8> = ParallelHash128::new(block_size, b"", 32).hash(b"Hello, world!");
+//! let output: Vec<u8> = ParallelHash128::new(block_size, b"", 32).unwrap().hash(b"Hello, world!");
 //! ```
 //!
 //! # ParallelHashXOF
@@ -37,7 +37,7 @@
 //! let more: Vec<u8> = squeezer.do_output(1024);
 //!
 //! let bound: Vec<u8> = ParallelHashXOF128::new(block_size, b"").xof(b"Hello, world!", 32);
-//! assert_eq!(bound, ParallelHash128::new(block_size, b"", 32).hash(b"Hello, world!"));
+//! assert_eq!(bound, ParallelHash128::new(block_size, b"", 32).unwrap().hash(b"Hello, world!"));
 //! assert_ne!(bound[..16], first[..]);
 //! ```
 
@@ -75,6 +75,11 @@ const PARALLEL_STATE_LEN: usize = CSHAKE_COMPONENT_LEN + SHA3_FAMILY_STATE_LEN +
 
 /// The function-name string every ParallelHash binds, per SP 800-185 Sec 6.3.
 const PARALLELHASH_FUNCTION_NAME: &[u8] = b"ParallelHash";
+
+/// The largest `output_len` [`ParallelHashInternal::new`] accepts, and the bound a resumed state
+/// is held to; see [`crate::tuplehash::TUPLEHASH_MAX_OUTPUT_LEN`] for the reasoning, which is the
+/// same here (Sec 6.3.1 step 5 encodes `L` in bits).
+pub const PARALLELHASH_MAX_OUTPUT_LEN: usize = (u64::MAX / 8) as usize;
 
 /// ParallelHash128: the parallelisable hash of NIST SP 800-185 Sec 6, 128-bit strength.
 ///
@@ -126,7 +131,9 @@ impl<PARAMS: SHAKEParams> ParallelState<PARAMS> {
         let digest = &mut digest[..Self::INNER_LEN];
         core::mem::take(&mut self.inner).xof_out(&[], digest);
         self.cshake.do_update(digest);
-        self.blocks += 1;
+        // Saturating: the count is bookkeeping for the final `right_encode(n)`, and a resumed
+        // state may carry any value, so `+=` could overflow on one a caller corrupted.
+        self.blocks = self.blocks.saturating_add(1);
         self.block_fill = 0;
     }
 
@@ -235,8 +242,20 @@ impl<PARAMS: SHAKEParams> Algorithm for ParallelHashInternal<PARAMS> {
 
 impl<PARAMS: SHAKEParams> ParallelHashInternal<PARAMS> {
     /// A new ParallelHash over `block_size`-byte blocks, producing `output_len` bytes.
-    pub fn new(block_size: NonZeroUsize, customization: &[u8], output_len: usize) -> Self {
-        Self { state: ParallelState::new(block_size, customization), output_len }
+    ///
+    /// # Errors
+    /// [`HashError::InvalidLength`] if `output_len` is above [`PARALLELHASH_MAX_OUTPUT_LEN`].
+    pub fn new(
+        block_size: NonZeroUsize,
+        customization: &[u8],
+        output_len: usize,
+    ) -> Result<Self, HashError> {
+        if output_len > PARALLELHASH_MAX_OUTPUT_LEN {
+            return Err(HashError::InvalidLength(
+                "ParallelHash output length in bits does not fit a u64",
+            ));
+        }
+        Ok(Self { state: ParallelState::new(block_size, customization), output_len })
     }
 }
 
@@ -256,7 +275,7 @@ impl<'k, PARAMS: SHAKEParams> SuspendableComponent<'k> for ParallelHashInternal<
         let (parallel, rest) = state.split_at(PARALLEL_STATE_LEN);
         let state = ParallelState::read_state(parallel, PARAMS::PARALLELHASH_STATE_TAG)?;
         let mut r = Cursor::new(rest);
-        let output_len = bounded_usize(r.u64(), usize::MAX)?;
+        let output_len = bounded_usize(r.u64(), PARALLELHASH_MAX_OUTPUT_LEN)?;
         debug_assert!(r.is_done());
         Ok(Self { state, output_len })
     }

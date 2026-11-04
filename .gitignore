@@ -21,3 +21,4 @@ custom_mutants_output/
 !.claude/agents/
 .claude/settings.local.json
 .claude 2/
+dev_scripts/aes_ct_harness/Cargo.lock
