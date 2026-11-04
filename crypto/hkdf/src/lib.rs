@@ -902,7 +902,10 @@ where
         // hash's cap (credit_entropy applies it), and a state that has not been initialized
         // carries no entropy and no strength (new() has none). Otherwise a state whose two
         // bookkeeping bytes were edited would label a PRK derived from nothing as full-entropy
-        // material at a strength the hash cannot give.
+        // material at a strength the hash cannot give. A state past Uninitialized whose entropy
+        // and strength were edited within the cap still resumes with that label: whether a key
+        // was credited is not recorded in the state, so the rule cannot be tighter than the cap
+        // without a new state field (2026-11-04 verification, P190-hkdf-1).
         if security_strength > HkdfEntropyTracker::<H>::MAX_STRENGTH
             || (hkdf_state == HkdfStates::Uninitialized
                 && (entropy != 0 || security_strength != SecurityStrength::None))
