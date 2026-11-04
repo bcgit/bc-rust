@@ -89,14 +89,6 @@
 //!
 //! Other usage modes, such as streaming, behave the same as [`ctr`](crate::modes::ctr).
 //!
-//! # Suspending and resuming execution
-//!
-//! [`Cfb`] implements [`SuspendableKeyed`], so a message in progress can be suspended to a byte
-//! array and resumed later with the re-supplied key. The state is the open segment and how much of
-//! it is used; the permutation is reached through the re-supplied key. The array length is
-//! `Cfb::SUSPENDED_STATE_LEN`; see [the crate docs](crate#suspending-and-resuming-execution) for an
-//! example.
-//!
 //! # Memory Usage
 //!
 //! The state consists of a reference to the permutation, one block, `buf`, and a byte count,
@@ -145,22 +137,18 @@
 
 use crate::modes::ModeNames;
 use crate::modes::iv::random_iv;
-use crate::{Decrypting, Direction, Encrypting};
-use bouncycastle_core::errors::{SuspendableError, SymmetricCipherError};
+use crate::{Decrypting, Encrypting};
+use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::hazmat::{
     BlockPermutation, ElectronicCodeBook, Mode, SymmetricDecryptMode, SymmetricEncryptMode,
 };
 use bouncycastle_core::key_material::KeyType;
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{
-    Algorithm, RNG, StreamCipherDecryptor, StreamCipherEncryptor, SuspendableKeyed,
-    SymmetricCipherDecryptor, SymmetricCipherEncryptor,
+    Algorithm, RNG, StreamCipherDecryptor, StreamCipherEncryptor, SymmetricCipherDecryptor,
+    SymmetricCipherEncryptor,
 };
 use bouncycastle_utils::secret::Secret;
-use bouncycastle_utils::suspendable_state::{
-    Cursor, CursorMut, LIB_VERSION_LEN, SuspendableComponent, bounded_usize, resume_component,
-    suspend_component,
-};
 use core::marker::PhantomData;
 
 // Imports needed for docs
@@ -270,10 +258,6 @@ impl<'k, P, Dir, const BLOCK_LEN: usize> Cfb<'k, P, Dir, BLOCK_LEN>
 where
     P: BlockPermutation<BLOCK_LEN> + ModeNames,
 {
-    /// The `N` of this type's [`SuspendableKeyed<'k, N>`] impl: the version header, the segment
-    /// buffer and the `used` count as a `u64`. See [`bouncycastle_utils::suspendable_state`].
-    pub const SUSPENDED_STATE_LEN: usize = LIB_VERSION_LEN + BLOCK_LEN + 8;
-
     /// `I1 = IV`, with no segment open: the first byte in either direction will compute `O1`.
     #[inline]
     fn start(perm: &'k P, iv: [u8; BLOCK_LEN]) -> Self {
@@ -571,64 +555,5 @@ where
         }
         self.decrypt_bytes(tail);
         Ok(len)
-    }
-}
-
-/// The suspended state is `buf` and `used` -- the open segment, which is public ciphertext and
-/// the keystream not yet used against it -- in both directions; the permutation is the key's,
-/// re-supplied by reference. See [`bouncycastle_utils::suspendable_state`].
-impl<'k, P, Dir, const BLOCK_LEN: usize> SuspendableComponent<'k> for Cfb<'k, P, Dir, BLOCK_LEN>
-where
-    P: BlockPermutation<BLOCK_LEN> + ModeNames,
-{
-    const STATE_LEN: usize = BLOCK_LEN + 8;
-    type Key = P;
-
-    fn write_state(&self, out: &mut [u8]) {
-        let mut w = CursorMut::new(out);
-        w.bytes(&*self.buf);
-        w.u64(self.used as u64);
-        debug_assert!(w.is_done());
-    }
-
-    fn read_state(state: &[u8], key: &'k Self::Key) -> Result<Self, SuspendableError> {
-        let perm = key;
-        let mut r = Cursor::new(state);
-        // Read straight into the `Secret`, so no copy of the keystream tail sits on the stack.
-        let mut buf: Secret<[u8; BLOCK_LEN]> = Secret::new();
-        (*buf).copy_from_slice(r.bytes(BLOCK_LEN));
-        // `used` is `0..=BLOCK_LEN`; anything past the buffer would index out of it.
-        let used = bounded_usize(r.u64(), BLOCK_LEN)?;
-        debug_assert!(r.is_done());
-        Ok(Self { perm, buf, used, _dir: PhantomData })
-    }
-}
-
-/// `N` must be [`Cfb::SUSPENDED_STATE_LEN`]; anything else is a compile error.
-impl<'k, P, Dir, const BLOCK_LEN: usize, const N: usize> SuspendableKeyed<'k, N>
-    for Cfb<'k, P, Dir, BLOCK_LEN>
-where
-    P: BlockPermutation<BLOCK_LEN> + ModeNames,
-    Dir: Direction,
-{
-    type Key = P;
-
-    fn suspend(self) -> [u8; N] {
-        suspend_component(&self)
-    }
-
-    /// The state carries no direction: one suspended by the other direction's worker is accepted
-    /// and resumes over the same chaining value, which gives wrong output rather than an error.
-    /// Only GCM, whose state means different things per direction, refuses the other one. A
-    /// permutation that decrypts only cannot be resumed in the encrypting direction at all: that
-    /// is a compile error, as making the encryptor any other way is.
-    fn from_suspended(state: [u8; N], key: &'k Self::Key) -> Result<Self, SuspendableError> {
-        const {
-            assert!(
-                !(Dir::IS_ENCRYPTING && P::DECRYPT_ONLY),
-                "this permutation decrypts only (BlockPermutation::DECRYPT_ONLY): no encrypting worker may be made over it, resumed or otherwise"
-            )
-        };
-        resume_component(&state, key)
     }
 }

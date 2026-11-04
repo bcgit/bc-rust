@@ -22,9 +22,8 @@ use bouncycastle_utils::secret::Secret;
 /// in SP 800-131A", and SP 800-131A Rev 2 Table 1 has it as "Disallowed" for encryption and
 /// "Legacy use" for decryption. This type therefore sets
 /// [`BlockPermutation::DECRYPT_ONLY`], and every mode in `bouncycastle_cipher::modes` refuses to
-/// make an encrypting worker over it **at compile time**, however the worker would be made: a
-/// two-key key's `create_encryptor` does not compile, and neither does resuming a suspended state
-/// in the encrypting direction. (The error is reported after monomorphization, by `cargo build`
+/// make an encrypting worker over it **at compile time**: a two-key key's `create_encryptor`
+/// does not compile. (The error is reported after monomorphization, by `cargo build`
 /// or `cargo test`, with its span in the mode's code; `cargo check` does not reach it.)
 ///
 /// ```compile_fail
@@ -61,29 +60,6 @@ use bouncycastle_utils::secret::Secret;
 ///
 /// // Two-key TDEA may not apply protection through CTR either: this does not compile.
 /// let _ = key.create_encryptor(&mut HashDRBG_SHA512::new_from_os());
-/// ```
-///
-/// Nor can a decryptor's suspended state be resumed as an encryptor:
-///
-/// ```compile_fail
-/// use bouncycastle_cipher::Encrypting;
-/// use bouncycastle_cipher::modes::{Blocks, CBC, Cbc};
-/// use bouncycastle_core::hazmat::ModeKey;
-/// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-/// use bouncycastle_core::symmetric_key::{BlockDecryptionKey, FromKeyMaterial};
-/// use bouncycastle_core::traits::SuspendableKeyed;
-/// use bouncycastle_tdes::hazmat::TDES2Internal;
-/// use bouncycastle_tdes::{BLOCK_LEN, TDES2Key};
-///
-/// let bytes: [u8; 16] = core::array::from_fn(|i| (i as u8).wrapping_mul(7).wrapping_add(1));
-/// let material = KeyMaterial::<16>::from_bytes_as_type(&bytes, KeyType::SymmetricCipherKey)
-///     .unwrap();
-/// let key = TDES2Key::<CBC<Blocks>>::from_key_material(&material).unwrap();
-/// const N: usize = Cbc::<'static, TDES2Internal, Encrypting, BLOCK_LEN>::SUSPENDED_STATE_LEN;
-/// let state: [u8; N] = key.create_decryptor(&[0u8; BLOCK_LEN]).suspend();
-///
-/// // The decryptor's state resumed in the encrypting direction: this does not compile.
-/// let _ = Cbc::<'_, TDES2Internal, Encrypting, BLOCK_LEN>::from_suspended(state, key.state());
 /// ```
 ///
 /// `create_decryptor` on every mode works, and this crate names those decryptors

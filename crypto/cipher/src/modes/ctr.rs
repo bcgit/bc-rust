@@ -98,14 +98,6 @@
 //! assert_eq!(data, [0x5Au8; 40]);
 //! ```
 //!
-//! # Suspending and resuming execution
-//!
-//! [`Ctr`] implements [`SuspendableKeyed`](bouncycastle_core::traits::SuspendableKeyed), so a
-//! message in progress can be suspended to a byte array and resumed later with the re-supplied key.
-//! The state is the nonce, the next counter value and the partly used keystream block; the
-//! permutation is the key's, re-supplied by reference. The array length is `Ctr::SUSPENDED_STATE_LEN`; see [the
-//! crate docs](crate#suspending-and-resuming-execution) for an example.
-//!
 //! # 🚨 Security Considerations 🚨
 //!
 //! The one security requirement of CTR mode is that every counter block be distinct across all

@@ -104,8 +104,8 @@
 //! [`TDES2Key`] takes the 16-byte `Key1 || Key2` of two-key TDEA (`Key3 = Key1`), which
 //! SP 800-131A Rev 2 Table 1 lists as "Disallowed" for encryption and "Legacy use" for decryption.
 //! Its engine sets `BlockPermutation::DECRYPT_ONLY`, so no encrypting worker can be made over
-//! it: the key's `create_encryptor` refuses to compile under every mode, and so does resuming a
-//! suspended state in the encrypting direction, while its decryptors work. That gate
+//! it: the key's `create_encryptor` refuses to compile under every mode, while its decryptors
+//! work. That gate
 //! stops accidental encryption through the encrypting APIs, not deliberate use of the forward
 //! cipher function: CTR decryption *is* CTR encryption, and a CFB decryptor under a chosen IV
 //! maps a zero block to `CIPH(IV)`, so two-key encryption can be assembled from those decryptors

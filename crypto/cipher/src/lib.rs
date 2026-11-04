@@ -10,44 +10,6 @@
 //!
 //! See the [`modes`], [`padding`] and [`stream`] module docs.
 //!
-//! # Suspending and resuming execution
-//!
-//! Every mode and adapter implements `SuspendableKeyed`, so a message in progress can be suspended
-//! to a byte array and resumed later over the re-supplied key state, which a key object exposes
-//! through `bouncycastle_core::hazmat::ModeKey::state`. The length of that array is the
-//! type's `SUSPENDED_STATE_LEN`, and a wrong length is a compile error; the mechanism is
-//! [`bouncycastle_utils::suspendable_state`]. A suspended state holds everything the message in
-//! progress depends on except the key -- a chaining block, live keystream, a running MAC -- so
-//! protect it as the plaintext it governs, and never resume one state twice.
-//!
-//! ```
-//! use bouncycastle_cipher::modes::{Blocks, CBC, Cbc};
-//! use bouncycastle_cipher::Encrypting;
-//! use bouncycastle_core::hazmat::{BlockEncryptMode, ElectronicCodeBook, Mode};
-//! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-//! use bouncycastle_core::traits::{BlockCipherEncryptor, SuspendableKeyed};
-//! use bouncycastle_rng::HashDRBG_SHA512;
-//! # mod toy { include!("../tests/common/toy_block_cipher.rs"); }
-//! # use toy::ToyBlockCipher;
-//!
-//! type ToyCbc<'k> = Cbc<'k, ToyBlockCipher, Encrypting, 16>;
-//! const STATE_LEN: usize = ToyCbc::SUSPENDED_STATE_LEN;
-//!
-//! // The mode's key state, as a mode-bound key such as `AES128Key<CBC<Blocks>>` holds it.
-//! let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey).unwrap();
-//! let state = <CBC<Blocks> as Mode<ToyBlockCipher>>::key_state(ToyBlockCipher::new(&key).unwrap());
-//! let (mut enc, _iv) = CBC::<Blocks>::encrypt_init(&state, &mut HashDRBG_SHA512::new_from_os()).unwrap();
-//! let mut first = [[0x11u8; 16]];
-//! enc.do_encrypt_blocks_inplace(&mut first).unwrap();
-//!
-//! // Suspending consumes the cipher. The key is not in the suspended state; resume borrows the
-//! // key state again, as `create_encryptor` did.
-//! let suspended: [u8; STATE_LEN] = enc.suspend();
-//! let mut enc = ToyCbc::from_suspended(suspended, &state).unwrap();
-//! let mut second = [[0x22u8; 16]];
-//! enc.do_encrypt_blocks_inplace(&mut second).unwrap();
-//! ```
-//!
 //! # Memory Usage
 //!
 //! See the "Memory Usage" section of each module.
@@ -121,11 +83,6 @@ pub trait Direction: sealed::Sealed {
     /// `Enc` for [`Encrypting`], `Dec` for [`Decrypting`].
     type Select<Enc, Dec>;
 
-    /// The bits that mark this direction in a suspended call-state byte, above the low nibble a
-    /// mode keeps for its phase: `0x10` encrypting, `0x20` decrypting. A state resumed under the
-    /// other marker is refused, so an encryptor's state never continues as a decryptor.
-    const STATE_BITS: u8;
-
     /// `true` for [`Encrypting`]: the direction a permutation that decrypts only
     /// (`BlockPermutation::DECRYPT_ONLY`) refuses, at compile time, however the worker is made.
     const IS_ENCRYPTING: bool;
@@ -133,12 +90,10 @@ pub trait Direction: sealed::Sealed {
 
 impl Direction for Encrypting {
     type Select<Enc, Dec> = Enc;
-    const STATE_BITS: u8 = 0x10;
     const IS_ENCRYPTING: bool = true;
 }
 
 impl Direction for Decrypting {
     type Select<Enc, Dec> = Dec;
-    const STATE_BITS: u8 = 0x20;
     const IS_ENCRYPTING: bool = false;
 }

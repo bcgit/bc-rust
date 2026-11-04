@@ -143,15 +143,6 @@
 //! assert_eq!(pt, message);
 //! ```
 //!
-//! # Suspending and resuming execution
-//!
-//! [`Gcm`] implements [`SuspendableKeyed`], so a message in progress can be suspended to a byte
-//! array and resumed later over the re-supplied key state. The state is the CTR half, the running
-//! GHASH, the byte counts, the phase with the direction it was suspended in, and whatever a
-//! decryptor is holding back as a possible tag; `H` is the key state's and the tag mask is
-//! re-derived from it. A state resumes only in its own direction: the other type refuses it. The array length is `Gcm::SUSPENDED_STATE_LEN`; see [the crate
-//! docs](crate#suspending-and-resuming-execution) for an example.
-//!
 //! # 🚨 Security Considerations 🚨
 //!
 //! ## Nonce uniqueness
@@ -196,7 +187,7 @@ use crate::modes::Ctr;
 use crate::modes::ModeNames;
 use crate::modes::hazmat::ctr_key_stream::CtrKeyStream;
 use crate::{Decrypting, Direction, Encrypting};
-use bouncycastle_core::errors::{SuspendableError, SymmetricCipherError};
+use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::hazmat::{
     AeadDecryptMode, AeadEncryptMode, BlockPermutation, ElectronicCodeBook, Mode,
 };
@@ -204,16 +195,12 @@ use bouncycastle_core::key_material::KeyType;
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{
     AEADCipherDecryptor, AEADCipherEncryptor, Algorithm, RNG, StreamCipherDecryptor,
-    StreamCipherEncryptor, SuspendableKeyed, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
+    StreamCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
 };
 use bouncycastle_utils::ct::ct_eq_bytes;
 use bouncycastle_utils::secret::Secret;
-use bouncycastle_utils::suspendable_state::{
-    Cursor, CursorMut, LIB_VERSION_LEN, SuspendableComponent, bounded_usize, resume_component,
-    suspend_component,
-};
 use core::marker::PhantomData;
-use ghash::{GHASH_STATE_LEN, Ghash};
+use ghash::Ghash;
 
 /// The nonce (IV) length this type uses: 96 bits, SP 800-38D Sec 5.2.1.1's recommended length.
 pub const GCM_NONCE_LEN: usize = 12;
@@ -327,19 +314,8 @@ impl<P> GcmKeyState<P> {
 /// `A` before `C`); the transition also pads the AAD to a block boundary (the `0^v` of step 5).
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Phase {
-    Aad = 0,
-    Data = 1,
-}
-
-impl Phase {
-    /// The inverse of `as u8`, for a suspended state; anything but the two values is refused.
-    fn from_u8(v: u8) -> Result<Self, SuspendableError> {
-        match v {
-            0 => Ok(Phase::Aad),
-            1 => Ok(Phase::Data),
-            _ => Err(SuspendableError::InvalidData),
-        }
-    }
+    Aad,
+    Data,
 }
 
 /// Galois/Counter Mode over any [`ElectronicCodeBook`] permutation, direction typed as
@@ -380,20 +356,6 @@ where
     P: BlockPermutation<16> + ModeNames,
     Dir: Direction,
 {
-    /// The `N` of this type's [`SuspendableKeyed<'k, N>`] impl: the version header, the CTR state,
-    /// the GHASH state, the two byte counts, the phase, the held-back tail and its length. See
-    /// [`bouncycastle_utils::suspendable_state`].
-    pub const SUSPENDED_STATE_LEN: usize = LIB_VERSION_LEN + Self::COMPONENT_STATE_LEN;
-
-    /// The component's share, spelled out here rather than read through the trait so that it is
-    /// nameable for any `Dir`; the trait impl's `STATE_LEN` is this constant.
-    const COMPONENT_STATE_LEN: usize =
-        Self::CTR_STATE_LEN + GHASH_STATE_LEN + 8 + 8 + 1 + TAG_LEN + 8;
-
-    /// The CTR half's share of the suspended state.
-    const CTR_STATE_LEN: usize =
-        <Ctr<'k, P, Dir, 16, GCM_NONCE_LEN> as SuspendableComponent<'k>>::STATE_LEN;
-
     /// The compile-time shape check: `TAG_LEN` must be one of Sec 5.2.1.2's five recommended tag
     /// lengths in bytes (96, 104, 112, 120, 128 bits -- Appendix C's 32- and 64-bit tags are a
     /// documented non-goal; see the module docs). Called from every constructor.
@@ -517,7 +479,7 @@ where
     /// ciphertext if it survives a failed comparison.
     ///
     /// The byte-to-bit multiplication (`* 8`) cannot overflow: `aad_len` and `data_len` are held
-    /// under [`MAX_AAD_LEN`] and [`MAX_DATA_LEN`] at every absorption and on resume.
+    /// under [`MAX_AAD_LEN`] and [`MAX_DATA_LEN`] at every absorption.
     fn tag_block(&mut self, out: &mut Secret<[u8; 16]>) {
         self.ghash.pad_to_block();
         let aad_bits = self.aad_len * 8;
@@ -806,92 +768,6 @@ where
     }
 }
 
-/// The suspended state is the CTR half, the running GHASH, the two byte counts, the phase, and
-/// the up-to-`TAG_LEN` bytes a decryptor holds back. `H` and `CIPH_K(J0)` are not in it: `H` is
-/// the key state's, and `CIPH_K(J0)` is re-derived from it and the nonce on resume. See
-/// [`bouncycastle_utils::suspendable_state`].
-impl<'k, P, Dir, const TAG_LEN: usize> SuspendableComponent<'k> for Gcm<'k, P, Dir, TAG_LEN>
-where
-    P: BlockPermutation<16> + ModeNames,
-    Dir: Direction,
-{
-    const STATE_LEN: usize = Self::COMPONENT_STATE_LEN;
-    type Key = GcmKeyState<P>;
-
-    fn write_state(&self, out: &mut [u8]) {
-        let (ctr, rest) = out.split_at_mut(Self::CTR_STATE_LEN);
-        self.ctr.write_state(ctr);
-        let (ghash, rest) = rest.split_at_mut(GHASH_STATE_LEN);
-        self.ghash.write_state(ghash);
-        let mut w = CursorMut::new(rest);
-        w.u64(self.aad_len);
-        w.u64(self.data_len);
-        // The phase in the low nibble, the direction above it, so that a state suspended while
-        // encrypting cannot be resumed as a decryptor or the reverse.
-        w.u8(Dir::STATE_BITS | self.phase as u8);
-        w.bytes(&*self.tail);
-        w.u64(self.tail_len as u64);
-        debug_assert!(w.is_done());
-    }
-
-    fn read_state(state: &[u8], key: &'k Self::Key) -> Result<Self, SuspendableError> {
-        Self::check_shape();
-        let (ctr, rest) = state.split_at(Self::CTR_STATE_LEN);
-        let (ghash, rest) = rest.split_at(GHASH_STATE_LEN);
-
-        // `setup_from_state` takes `H` from the key state and re-derives `CIPH_K(J0)` from the
-        // nonce, which is the leading part of the CTR state. Its fresh CTR and GHASH are then
-        // replaced by the suspended ones.
-        let nonce = CtrKeyStream::<'k, P, 16, GCM_NONCE_LEN>::nonce_from_state(ctr);
-        let mut gcm = Self::setup_from_state(key, nonce);
-        gcm.ctr = <Ctr<'k, P, Dir, 16, GCM_NONCE_LEN> as SuspendableComponent<'k>>::read_state(
-            ctr, &key.perm,
-        )?;
-        // The CTR state's own check is only the top of the counter's range. GCTR starts at
-        // inc32(J0), counter 2 (Algorithm 4 step 3); J0 itself, counter 1, is the tag mask
-        // (step 6) and 0 is never used, so a resumed counter below 2 would emit CIPH_K(J0) as
-        // keystream. Read through the keystream's own layout, after its own range check.
-        if CtrKeyStream::<'k, P, 16, GCM_NONCE_LEN>::counter_from_state(ctr) < 2 {
-            return Err(SuspendableError::InvalidData);
-        }
-        gcm.ghash.restore_state(ghash)?;
-
-        let mut r = Cursor::new(rest);
-        gcm.aad_len = r.u64();
-        gcm.data_len = r.u64();
-        if gcm.aad_len > MAX_AAD_LEN || gcm.data_len > MAX_DATA_LEN {
-            return Err(SuspendableError::InvalidData);
-        }
-        let call_state = r.u8();
-        if call_state & 0xF0 != Dir::STATE_BITS {
-            return Err(SuspendableError::InvalidData);
-        }
-        gcm.phase = Phase::from_u8(call_state & 0x0F)?;
-        (*gcm.tail).copy_from_slice(r.bytes(TAG_LEN));
-        gcm.tail_len = bounded_usize(r.u64(), TAG_LEN)?;
-        debug_assert!(r.is_done());
-        Ok(gcm)
-    }
-}
-
-/// `N` must be [`Gcm::SUSPENDED_STATE_LEN`]; anything else is a compile error.
-impl<'k, P, Dir, const TAG_LEN: usize, const N: usize> SuspendableKeyed<'k, N>
-    for Gcm<'k, P, Dir, TAG_LEN>
-where
-    P: BlockPermutation<16> + ModeNames,
-    Dir: Direction,
-{
-    type Key = GcmKeyState<P>;
-
-    fn suspend(self) -> [u8; N] {
-        suspend_component(&self)
-    }
-
-    fn from_suspended(state: [u8; N], key: &'k Self::Key) -> Result<Self, SuspendableError> {
-        resume_component(&state, key)
-    }
-}
-
 mod ghash {
     //! GHASH: the universal hash function GCM builds its authentication on (NIST SP 800-38D Sec 6.3,
     //! 6.4), and the GF(2^128) multiplication it is defined over.
@@ -915,9 +791,7 @@ mod ghash {
     //! (`11100001 || 0^120`, Sec 6.3) is the block whose first byte is `0xE1` and the rest zero, i.e.
     //! `[0xE1 << 56, 0]` in this representation.
 
-    use bouncycastle_core::errors::SuspendableError;
     use bouncycastle_utils::secret::Secret;
-    use bouncycastle_utils::suspendable_state::{Cursor, CursorMut, bounded_usize};
 
     /// A block of `GF(2^128)`, in the two-`u64` form described in the module docs.
     type Block = [u64; 2];
@@ -1077,9 +951,6 @@ mod ghash {
     /// intermediate values in the execution of the GCM functions shall be secret"), so both live in a
     /// [`Secret`] and are zeroized on drop; the pending partial block is live plaintext-or-ciphertext
     /// bytes still waiting to be absorbed and is wrapped for the same reason.
-    /// Bytes [`Ghash::write_state`] writes: `Y` as two `u64`s, the pending block and its length.
-    pub(crate) const GHASH_STATE_LEN: usize = 16 + 16 + 8;
-
     #[derive(Clone)]
     pub(crate) struct Ghash {
         /// The hash subkey `H = CIPH_K(0^128)`.
@@ -1170,36 +1041,6 @@ mod ghash {
             Self::absorb(&mut self.y, &self.h, &len_block);
             out[..8].copy_from_slice(&self.y[0].to_be_bytes());
             out[8..].copy_from_slice(&self.y[1].to_be_bytes());
-        }
-    }
-
-    impl Ghash {
-        /// Writes the running state -- `Y`, the pending partial block and its length -- into `out`,
-        /// exactly [`GHASH_STATE_LEN`] bytes. `H` is not written: it is `CIPH_K(0^128)`, which the
-        /// resuming side re-derives from the re-supplied key, so the state carries one secret fewer.
-        pub(crate) fn write_state(&self, out: &mut [u8]) {
-            let mut w = CursorMut::new(out);
-            w.u64(self.y[0]);
-            w.u64(self.y[1]);
-            w.bytes(&*self.pending);
-            w.u64(self.pending_len as u64);
-            debug_assert!(w.is_done());
-        }
-
-        /// The inverse of [`Self::write_state`], over a `Ghash` freshly built from `H` by
-        /// [`Self::new`]: replaces `Y` and the pending block.
-        ///
-        /// # Errors
-        /// [`SuspendableError::InvalidData`] if the pending length is a whole block or more: `update`
-        /// absorbs whole blocks immediately, so a legitimate state never holds one.
-        pub(crate) fn restore_state(&mut self, state: &[u8]) -> Result<(), SuspendableError> {
-            let mut r = Cursor::new(state);
-            self.y[0] = r.u64();
-            self.y[1] = r.u64();
-            (*self.pending).copy_from_slice(r.bytes(16));
-            self.pending_len = bounded_usize(r.u64(), 15)?;
-            debug_assert!(r.is_done());
-            Ok(())
         }
     }
 
@@ -1359,5 +1200,115 @@ mod ghash {
                 assert_eq!(*s, *expected, "split at {split}");
             }
         }
+    }
+}
+
+/// The toys the `tests/modes` integration tests use, shared with the unit tests below rather than
+/// copied. Declared here, not inside `mod tests`, so that `#[path]` is relative to this file.
+#[cfg(test)]
+#[path = "../../tests/modes/common/mod.rs"]
+mod modes_common;
+
+#[cfg(test)]
+mod tests {
+    //! The SP 800-38D limits at the limit itself. A worker at `MAX_AAD_LEN`, `MAX_DATA_LEN` or
+    //! the last counter block cannot be reached through the public API (it would take 2^61 bytes
+    //! of AAD, 2^36 of data or 2^32 blocks), so these set the private counts directly -- the
+    //! "high-risk code that cannot be reached through the public API" case QUALITY_AND_STYLE.md
+    //! reserves a unit test for.
+
+    use super::modes_common::{Toy, toy_key};
+    use super::*;
+
+    fn key_state() -> GcmKeyState<Toy> {
+        <GCM<16> as Mode<Toy>>::key_state(Toy::new(&toy_key()).unwrap())
+    }
+
+    /// An encryptor that has absorbed AAD and nothing else, so its AAD phase is still open and
+    /// its counter is at `inc32(J0)`, with the nonce it runs under.
+    fn aad_only_encryptor(
+        state: &GcmKeyState<Toy>,
+    ) -> (Gcm<'_, Toy, Encrypting, 16>, [u8; GCM_NONCE_LEN]) {
+        let nonce = [0x24u8; GCM_NONCE_LEN];
+        let mut enc: Gcm<'_, Toy, Encrypting, 16> = Gcm::setup_from_state(state, nonce);
+        enc.do_update_aad(b"header").unwrap();
+        (enc, nonce)
+    }
+
+    /// The CTR half positioned at the last counter block under `nonce`: 16 bytes of keystream
+    /// left, as a worker that had encrypted `2^32 - 3` blocks would have.
+    fn ctr_at_the_last_block<Dir: Direction>(
+        state: &GcmKeyState<Toy>,
+        nonce: [u8; GCM_NONCE_LEN],
+    ) -> Ctr<'_, Toy, Dir, 16, GCM_NONCE_LEN> {
+        Ctr::from_keystream(CtrKeyStream::start_at(&state.perm, nonce, (1 << 32) - 1))
+    }
+
+    /// At Sec 5.2.1.1's `len(A)` and `len(P)` limits the final completes, where the length
+    /// block's multiplication by 8 cannot overflow, and one more byte is refused.
+    #[test]
+    fn the_length_counts_are_held_to_the_spec_limits() {
+        let state = key_state();
+
+        let (mut at_limit, _) = aad_only_encryptor(&state);
+        at_limit.aad_len = MAX_AAD_LEN;
+        assert!(at_limit.do_update_aad(b"").is_ok());
+        assert!(matches!(at_limit.do_update_aad(b"x"), Err(SymmetricCipherError::StateError(_))));
+        let _ = at_limit.do_encrypt_final().expect("the length block is formed without overflow");
+
+        let (mut at_limit, _) = aad_only_encryptor(&state);
+        at_limit.data_len = MAX_DATA_LEN;
+        let mut out = [0xEEu8; 1];
+        assert!(matches!(
+            at_limit.do_encrypt_out(&[0x41], &mut out),
+            Err(SymmetricCipherError::DataLimitExceeded)
+        ));
+        assert_eq!(out, [0], "a refused call leaves the output zeroed");
+        let _ = at_limit.do_encrypt_final().expect("the length block is formed without overflow");
+    }
+
+    /// A call the keystream cannot cover is refused before the caller's input is copied into the
+    /// output, so the buffer holds zeros rather than the plaintext, and the state is untouched:
+    /// the bytes that do fit still go through afterwards.
+    #[test]
+    fn a_call_past_the_keystream_limit_leaves_no_plaintext_in_the_output() {
+        let state = key_state();
+        let (mut enc, nonce) = aad_only_encryptor(&state);
+        enc.ctr = ctr_at_the_last_block(&state, nonce);
+
+        let plaintext = [0x41u8; 32];
+        let mut ciphertext = [0xEEu8; 32];
+        assert!(matches!(
+            enc.do_encrypt_out(&plaintext, &mut ciphertext),
+            Err(SymmetricCipherError::DataLimitExceeded)
+        ));
+        assert_eq!(ciphertext, [0u8; 32]);
+        let mut last_block = [0u8; 16];
+        assert_eq!(enc.do_encrypt_out(&plaintext[..16], &mut last_block).unwrap(), 16);
+        assert_ne!(last_block, plaintext[..16]);
+        assert!(matches!(
+            enc.do_encrypt_out(&plaintext[..1], &mut [0u8; 1]),
+            Err(SymmetricCipherError::DataLimitExceeded)
+        ));
+        let (tag, _) = enc.do_encrypt_final().unwrap();
+
+        // The decryptor at the same counter: a call that would release more than the keystream
+        // covers is refused with the output zeroed, and the block that fits then verifies.
+        let mut dec = Gcm::<'_, Toy, Decrypting, 16>::setup_from_state(&state, nonce);
+        dec.do_update_aad(b"header").unwrap();
+        dec.ctr = ctr_at_the_last_block(&state, nonce);
+        let mut stream = last_block.to_vec();
+        stream.extend_from_slice(&last_block);
+        stream.extend_from_slice(&tag);
+        let mut out = [0xEEu8; 32];
+        assert!(matches!(
+            dec.do_decrypt_out(&stream, &mut out),
+            Err(SymmetricCipherError::DataLimitExceeded)
+        ));
+        assert_eq!(out, [0u8; 32]);
+        let mut out = [0u8; 16];
+        assert_eq!(dec.do_decrypt_out(&stream[16..], &mut out).unwrap(), 16);
+        assert_eq!(out, plaintext[..16]);
+        assert!(dec.do_decrypt_final().is_ok());
     }
 }
