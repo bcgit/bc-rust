@@ -54,8 +54,9 @@ pub trait AEADCipherDecryptor<const NONCE_LEN: usize, const TAG_LEN: usize, cons
     /// be byte-for-byte the concatenation the encryptor absorbed, or the tag check fails.
     ///
     /// # Errors
-    /// [`SymmetricCipherError::StateError`] if called with a non-empty `aad` after
-    /// [`SymmetricCipherDecryptor::do_decrypt_out`].
+    /// [`SymmetricCipherError::StateError`] if called with a non-empty `aad` after the first
+    /// non-empty [`SymmetricCipherDecryptor::do_decrypt_out`]; an empty data call is a no-op that
+    /// leaves the AAD phase open, as on the encrypting side.
     fn do_update_aad(&mut self, aad: &[u8]) -> Result<(), SymmetricCipherError>;
 
     /// Finishes the decryption with the tag detached, consuming the decryptor: decrypts whatever
@@ -178,9 +179,10 @@ pub trait AEADCipherEncryptor<const NONCE_LEN: usize, const TAG_LEN: usize, cons
     /// is equivalent to one call over the concatenation. An empty `aad` is a no-op.
     ///
     /// # Errors
-    /// [`SymmetricCipherError::StateError`] if called with a non-empty `aad` after
-    /// [`SymmetricCipherEncryptor::do_encrypt_out`] -- see the trait docs for why the AAD comes
-    /// first. An implementor whose AAD buffer has a fixed capacity may also return
+    /// [`SymmetricCipherError::StateError`] if called with a non-empty `aad` after the first
+    /// non-empty [`SymmetricCipherEncryptor::do_encrypt_out`] -- see the trait docs for why the AAD
+    /// comes first. An empty data call is a no-op that leaves the AAD phase open; the test
+    /// framework's AEAD suite holds every implementor to both halves of this rule. An implementor whose AAD buffer has a fixed capacity may also return
     /// [`SymmetricCipherError::GenericError`] if `aad` would exceed it; that is a property of the
     /// implementor, not of this trait, so it is not listed as a general contract here.
     fn do_update_aad(&mut self, aad: &[u8]) -> Result<(), SymmetricCipherError>;

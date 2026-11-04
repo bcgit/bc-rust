@@ -320,7 +320,8 @@ impl<const KEY_LEN: usize> KeyMaterial<KEY_LEN> {
     /// Creates a new instance of KeyMaterial containing random bytes from the provided random number generator.
     ///
     /// The key is tagged at the lesser of the RNG's strength and what `KEY_LEN` bytes can carry;
-    /// a `KeyMaterial<0>` comes back [`KeyType::Zeroized`].
+    /// a `KeyMaterial<0>` comes back [`KeyType::Zeroized`] without consulting the RNG, so an RNG
+    /// that would refuse (reseed required) is not reported for it.
     pub fn from_rng(rng: &mut (impl RNG + ?Sized)) -> Result<Self, KeyMaterialError> {
         let mut key = Self::new();
         if KEY_LEN == 0 {
