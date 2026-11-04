@@ -146,7 +146,7 @@ impl Polynomial {
         }
     }
 
-    /// Barrett-reduces every coefficient into \[0, 𝑞).
+    /// Barrett-reduces every coefficient into \[0, 𝑞] (see [`barrett_reduce`] for the closed end).
     pub fn poly_reduce(&mut self) {
         for i in 0..N {
             self[i] = barrett_reduce(self[i]);
