@@ -5,10 +5,10 @@
 //! absent the test prints a warning and passes, matching the convention used by the other vector
 //! suites in this crate.
 //!
-//! # Why this set is worth having alongside the ACVP one
+//! # What this set covers
 //!
-//! `gcm_bc-test-data.rs` covers the NIST set, whose only failures are tag-check failures on an
-//! otherwise well-formed message. Wycheproof's set is adversarial in the ways ACVP is not: a tag
+//! There is no NIST vector file for ARIA-GCM, so this is the crate's only GCM known answer, and it
+//! is adversarial in the ways a conformance set is not: a tag
 //! with every one of a chosen set of bits flipped (`ModifiedTag`, 81 cases), so that a comparison
 //! which checks only part of the tag is caught; IV lengths from 0 to 2056 bits (`ZeroLengthIv`,
 //! `SmallIv`, `LongIv`); IVs chosen so that the 32-bit counter wraps (`CounterWrap`); and
@@ -22,7 +22,7 @@
 //! these cases go through the key's detached pair, `encrypt_detached_out` /
 //! `decrypt_detached_out`. The key draws its own nonce, so the vector's `iv` is supplied through
 //! a `FixedSeedRNG` and the returned nonce is asserted to be exactly that IV, the same technique
-//! as `gcm_bc-test-data.rs`.
+//! as the AES crate's ACVP suite.
 //!
 //! # Only the 96-bit-IV groups can be dispatched to, by design
 //!
@@ -37,7 +37,7 @@
 //! case out.
 
 use bouncycastle_aria::{ARIA128Key, ARIA192Key, ARIA256Key};
-use bouncycastle_cipher::modes::{GCM, GCM_NONCE_LEN};
+use bouncycastle_cipher::modes::{GCM, GCM_NONCE_LEN, GMAC};
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::hazmat::do_hazardous_operations;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
@@ -47,7 +47,7 @@ use bouncycastle_core_test_framework::test_data_loaders::{Value, hex_field, wych
 use bouncycastle_rng::FixedSeedRNG;
 
 /// Wraps the vector's raw key bytes, promoting them if `KeyMaterial`'s entropy heuristic declined
-/// to call them a cipher key. Same helper as the ACVP and CCM suites in this crate.
+/// to call them a cipher key. Same helper as the CCM and CMAC suites in this crate.
 fn cipher_key<const N: usize>(bytes: &[u8]) -> KeyMaterial<N> {
     assert_eq!(bytes.len(), N, "key length should match the parameter set");
     let mut key = KeyMaterial::<N>::from_bytes_as_type(bytes, KeyType::SymmetricCipherKey)
@@ -236,4 +236,57 @@ fn wycheproof_aria_gcm_known_answer_tests() {
         unsupported_groups > 0,
         "expected the other-IV-length groups to be outside Gcm's shape"
     );
+}
+
+/// Wraps the vector's key bytes as `MACKey` material, promoted as `cipher_key` promotes.
+fn mac_key<const N: usize>(bytes: &[u8]) -> KeyMaterial<N> {
+    let mut key = cipher_key::<N>(bytes);
+    do_hazardous_operations(&mut key, |k| k.set_key_type(KeyType::MACKey))
+        .expect("retagging a wycheproof test key");
+    key
+}
+
+/// GCM over AAD alone is GMAC, so the file's valid empty-message cases with a 96-bit IV and a
+/// 128-bit tag are GMAC known answers; they are run through `ARIA*Key<GMAC>`'s generator under
+/// the vector's IV (tcIds 2, 67 and 171, one per key length, and any others of that shape).
+#[test]
+fn wycheproof_empty_message_cases_are_gmac_known_answers() {
+    let Some(doc) = wycheproof_json("aria_gcm_test.json") else { return };
+    let groups = doc.get("testGroups").and_then(Value::as_array).expect("testGroups");
+    let mut run = 0usize;
+    for group in groups {
+        for test in group.get("tests").and_then(Value::as_array).expect("tests") {
+            let tc_id = test.get("tcId").and_then(Value::as_u64).expect("tcId");
+            let result = test.get("result").and_then(Value::as_str).expect("result");
+            let msg = hex_field(test, "msg", tc_id);
+            let iv = hex_field(test, "iv", tc_id);
+            let tag = hex_field(test, "tag", tc_id);
+            if result != "valid" || !msg.is_empty() || iv.len() != GCM_NONCE_LEN || tag.len() != 16
+            {
+                continue;
+            }
+            let key_bytes = hex_field(test, "key", tc_id);
+            let aad = hex_field(test, "aad", tc_id);
+            let iv: [u8; GCM_NONCE_LEN] = iv.try_into().unwrap();
+            let got: [u8; 16] = match key_bytes.len() {
+                16 => ARIA128Key::<GMAC>::from_key_material(&mac_key::<16>(&key_bytes))
+                    .unwrap()
+                    .create_generator_nonce(&iv)
+                    .mac(&aad),
+                24 => ARIA192Key::<GMAC>::from_key_material(&mac_key::<24>(&key_bytes))
+                    .unwrap()
+                    .create_generator_nonce(&iv)
+                    .mac(&aad),
+                32 => ARIA256Key::<GMAC>::from_key_material(&mac_key::<32>(&key_bytes))
+                    .unwrap()
+                    .create_generator_nonce(&iv)
+                    .mac(&aad),
+                _ => continue,
+            };
+            assert_eq!(got.as_slice(), tag.as_slice(), "tcId {tc_id}: GMAC tag mismatch");
+            run += 1;
+        }
+    }
+    println!("Wycheproof ARIA-GMAC: {run} empty-message cases run");
+    assert!(run >= 3, "expected at least the three empty-message cases, ran {run}");
 }

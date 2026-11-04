@@ -12,7 +12,7 @@ use bouncycastle_cipher::modes::{
 use bouncycastle_cipher::padding::{NoPadding, PKCS7};
 use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
 use bouncycastle_core::hazmat::{EcbEncryptionKey, Mode};
-use bouncycastle_core::key_material::{KeyMaterial, KeyType};
+use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::symmetric_key::{FromKeyMaterial, MacGenerationKey, MacVerificationKey};
 use bouncycastle_core::traits::{BlockCipherEncryptor, MAC};
@@ -196,6 +196,23 @@ fn a_mac_mode_key_takes_mac_material_and_refuses_cipher_material() {
     refused(ARIA128Key::<GMAC>::from_key_material(&material::<16>()));
     refused(ARIA256Key::<GMAC>::from_key_material(&material::<32>()));
     assert!(ARIA128Key::<CMAC>::generate(&mut rng()).is_ok());
+}
+
+/// `as_cipher_key` carries the MAC key's strength onto the retagged copy the permutation is
+/// built from, so a 256-bit MAC key labelled at 128 bits is refused at construction, for both
+/// MAC modes, as a cipher key of that strength is.
+#[test]
+fn a_mac_key_below_its_own_strength_is_refused_at_construction() {
+    let mut weak = mac_material::<32>();
+    weak.set_security_strength(SecurityStrength::_128bit).unwrap();
+    assert!(matches!(
+        ARIA256Key::<CMAC>::from_key_material(&weak),
+        Err(SymmetricCipherError::KeyMaterialError(KeyMaterialError::SecurityStrength(_)))
+    ));
+    assert!(matches!(
+        ARIA256Key::<GMAC>::from_key_material(&weak),
+        Err(SymmetricCipherError::KeyMaterialError(KeyMaterialError::SecurityStrength(_)))
+    ));
 }
 
 /// A CMAC key tags and verifies through the role pair, several workers from one key agree, and

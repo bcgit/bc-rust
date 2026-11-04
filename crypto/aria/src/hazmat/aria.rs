@@ -302,8 +302,7 @@ impl BlockPermutation<BLOCK_LEN> for ARIA256Internal {
 
 // RFC 5794 Appendix B assigns object identifiers to ARIA in ECB, CBC, CFB (whose parameters
 // carry the segment size, so CFB8 is `id-aria*-cfb` with `k = 8`), CTR, CMAC, GCM and CCM, among
-// others; GMAC has none, and is named here only because the trait asks for every mode. The keys
-// hand out workers for the four aliased modes (CBC, CFB, CFB8, CTR) only.
+// others; GMAC has none, and is named here only because the trait asks for every mode.
 impl ModeNames for ARIA128Internal {
     const CBC_ALG_NAME: &'static str = "ARIA_CBC_128";
     const CCM_ALG_NAME: &'static str = "ARIA_CCM_128";
