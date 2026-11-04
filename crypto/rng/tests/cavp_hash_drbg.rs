@@ -1,5 +1,6 @@
 //! NIST CAVP Hash_DRBG vectors (`drbgtestvectors.zip`, CAVS 14.3, 2013-04-02), from
-//! `bc-test-data/crypto/cavp/drbg/`: `drbgvectors_no_reseed/Hash_DRBG.rsp` (instantiate, two
+//! `bc-test-data/crypto/cavp/drbg/` (the copies there have LF line endings where the zip has
+//! CRLF; the content is otherwise identical and the parser trims): `drbgvectors_no_reseed/Hash_DRBG.rsp` (instantiate, two
 //! generates) and `drbgvectors_pr_false/Hash_DRBG.rsp` (instantiate, reseed, two generates), the
 //! SHA-256 and SHA-512 sections, with and without a personalization string and additional input.
 //! The second generate's output is `ReturnedBits`. `drbgvectors_pr_true` is not read: the DRBG

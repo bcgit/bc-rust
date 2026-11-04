@@ -109,7 +109,9 @@ pub trait Sp80090ADrbg {
     /// and "considered to be a critical security parameter" though it "need not be secret". It is
     /// not checked here, which is why it is a KeyMaterial: so that it gets the erasure and logging
     /// protections of one. An empty nonce is accepted and the seed then has to carry the whole
-    /// requirement on its own (`new_from_os` passes one, with a seed of the full strength).
+    /// requirement on its own: `new_from_os` passes one, with a seed of twice the strength, which
+    /// covers Section 8.6.7's alternative of an entropy input of `(3/2 security_strength)` bits
+    /// in place of a nonce. Neither is checked here (the deferred R6).
     fn instantiate(
         &mut self,
         prediction_resistance: bool,
