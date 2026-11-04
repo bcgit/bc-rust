@@ -16,6 +16,7 @@ use bouncycastle::cipher::modes::{GCM, GCM_NONCE_LEN};
 use bouncycastle::sm4::{KEY_LEN, SM4Key};
 
 /// Dispatches to the shared AEAD streaming loops with `Gcm`'s 128-bit tag.
+#[allow(clippy::too_many_arguments)] // one flag per input, each inline or from a file
 pub(crate) fn sm4_gcm_cmd(
     action: &CipherDirection,
     key: &Option<String>,
