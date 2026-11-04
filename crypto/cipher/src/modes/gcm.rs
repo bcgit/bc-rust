@@ -799,16 +799,13 @@ mod ghash {
     //! four-product kernel, which sums four products under one reduction. That is
     //! Sec 6.4's "In effect, the GHASH function calculates `X1•H^m ⊕ X2•H^(m-1) ⊕ ... ⊕ Xm•H`"
     //! taken four terms at a time: `Y = (Y ⊕ X1)•H^4 ⊕ X2•H^3 ⊕ X3•H^2 ⊕ X4•H`. The path keeps
-    //! `H^2`, `H^3` and `H^4` beside `H`, 48 bytes more state; the suspended form is unchanged,
-    //! because the powers are re-derived from `H` on resume exactly as `H` itself is. Elsewhere, and
-    //! on a CPU without `PMULL`, the portable multiplier runs; the tests pin the two against each
-    //! other and both against Algorithm 1.
+    //! `H^2`, `H^3` and `H^4` beside `H`, 48 bytes more state. Elsewhere, and on a CPU without
+    //! `PMULL`, the portable multiplier runs; the tests pin the two against each other and both
+    //! against Algorithm 1.
     //!
     //! The CPU check is `bouncycastle_asm::Aes::detect()`, made once in [`Ghash::new`] and stored:
     //! every multiply and every [`Ghash::update`] reads the stored proof. It is free when the build
-    //! declares the instructions, and one cached atomic load per construction otherwise. The
-    //! suspended state carries no choice, so a resumed worker, built by `new` before its state is
-    //! restored, follows the CPU it resumes on.
+    //! declares the instructions, and one cached atomic load per construction otherwise.
 
     use bouncycastle_utils::secret::Secret;
 
@@ -1015,7 +1012,7 @@ mod ghash {
         h: Secret<Block>,
         /// `[H^4, H^3, H^2, H]`, in the order `mul4` pairs them with four consecutive blocks (see the
         /// module docs). Derived from `h` when `aes` is `Some`, all zero and never read when it is
-        /// `None`, and never suspended.
+        /// `None`.
         #[cfg(all(
             feature = "asm",
             target_arch = "aarch64",
@@ -1032,8 +1029,7 @@ mod ghash {
         ))]
         h_powers: Secret<[Block; 4]>,
         /// The CPU proof, taken once in [`new`](Self::new): `Some` where the CPU has `FEAT_AES`,
-        /// `FEAT_PMULL` and NEON. Every multiply and [`update`](Self::update) reads it. Not
-        /// suspended: a resumed worker takes its own from the CPU it resumes on.
+        /// `FEAT_PMULL` and NEON. Every multiply and [`update`](Self::update) reads it.
         #[cfg(all(
             feature = "asm",
             target_arch = "aarch64",
