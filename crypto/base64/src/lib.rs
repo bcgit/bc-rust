@@ -338,7 +338,7 @@ impl Base64Decoder {
         let (mut out, pad_at) = match self.decode_internal(input, false) {
             Ok(decoded) => decoded,
             Err(Base64Error::PaddingEncounteredDuringDoUpdate) => {
-                panic!(
+                unreachable!(
                     "rollback_if_padding = false should not produce a Base64Error::PaddingEncounteredDuringDoUpdate"
                 );
             }
