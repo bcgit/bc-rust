@@ -144,7 +144,5 @@ fn a_key_of_the_wrong_length_is_rejected() {
 #[test]
 fn the_subcommands_are_listed_in_help() {
     let help = String::from_utf8(run_ok(&["--help"], b"")).unwrap();
-    for name in ["sm4-ccm"] {
-        assert!(help.contains(name), "--help should list {name}");
-    }
+    assert!(help.contains("sm4-ccm"), "--help should list sm4-ccm");
 }
