@@ -2,7 +2,8 @@
 //! Wycheproof has no SM3 HKDF file), so the known answers are RFC 5869 Appendix A's three
 //! SHA-256 test-case inputs run through OpenSSL 3.0.13
 //! (`openssl kdf -kdfopt digest:SM3 ... HKDF`, `mode:EXTRACT_ONLY` for the PRK), whose SHA-256
-//! output for the same inputs reproduces the RFC's values.
+//! output for the same inputs reproduces the RFC's values. The 2026-11-04 verification review
+//! reproduced all six PRK and OKM values independently with OpenSSL 3.6.3 and bc-java 1.86.
 
 #[cfg(test)]
 mod hkdf_sm3_tests {
