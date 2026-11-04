@@ -1,21 +1,19 @@
 //! `AES*Key<CMAC>` against the NIST CSRC AES-CMAC examples through the MAC trait test framework,
-//! plus the streaming split points, the key's construction policy and suspend/resume over the
-//! real cipher. The structural tests are in `bouncycastle-cipher` over a toy; the large vector
+//! plus the streaming split points and the key's construction policy over the real cipher. The
+//! structural tests are in `bouncycastle-cipher` over a toy; the large vector
 //! sets are in `cmac_bc-test-data.rs` and `cmac_wycheproof.rs`.
 
 use bouncycastle_aes::hazmat::{AES128Internal, AES256Internal};
 use bouncycastle_aes::{AES_CMAC_128, AES_CMAC_256, AES128Key, AES192Key, AES256Key};
 use bouncycastle_cipher::modes::{CMAC, CMAC_MIN_TAG_LEN, ModeNames};
-use bouncycastle_core::hazmat::{ModeKey, do_hazardous_operations};
+use bouncycastle_core::hazmat::do_hazardous_operations;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::symmetric_key::{FromKeyMaterial, MacGenerationKey, MacVerificationKey};
-use bouncycastle_core::traits::{Algorithm, AlgorithmInfo, MAC, SuspendableKeyed};
+use bouncycastle_core::traits::{Algorithm, AlgorithmInfo, MAC};
 use bouncycastle_core_test_framework::from_key_material::TestFrameworkFromKeyMaterial;
 use bouncycastle_core_test_framework::mac::TestFrameworkMAC;
 use bouncycastle_hex as hex;
-
-const STATE_LEN: usize = AES_CMAC_128::SUSPENDED_STATE_LEN;
 
 /// `KeyType::MACKey` material from hex, including the all-zero key some vector sets use.
 fn mac_key<const N: usize>(key_hex: &str) -> KeyMaterial<N> {
@@ -135,25 +133,4 @@ fn algorithm_params() {
     let cmac = key.create_generator();
     assert_eq!(cmac.output_len(), 16);
     assert_eq!(cmac.max_security_strength(), SecurityStrength::_192bit);
-    assert_eq!(STATE_LEN, 36);
-}
-
-/// Suspending after every prefix of the message and resuming under the same key gives the
-/// one-shot tag.
-#[test]
-fn suspend_resume() {
-    let material = mac_key::<16>(KEY_128);
-    let key = AES128Key::<CMAC>::from_key_material(&material).unwrap();
-    let msg = hex::decode(MSG).unwrap();
-    for (mlen, tag) in MLENS.iter().zip(TAGS_128) {
-        let expected = hex::decode(tag).unwrap();
-        for split in 0..=*mlen {
-            let mut cmac = key.create_generator();
-            cmac.do_update(&msg[..split]);
-            let state: [u8; STATE_LEN] = cmac.suspend();
-            let mut resumed = AES_CMAC_128::from_suspended(state, key.state()).unwrap();
-            resumed.do_update(&msg[split..*mlen]);
-            assert_eq!(resumed.do_final(), expected, "mlen {mlen}, suspended at {split}");
-        }
-    }
 }

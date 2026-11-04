@@ -74,14 +74,6 @@
 //! The streaming methods still take the payload in pieces, and the AAD too, within the frame the
 //! type declares.
 //!
-//! # Suspending and resuming execution
-//!
-//! [`CcmPacketEncryptor`] and [`CcmPacketDecryptor`] implement [`SuspendableKeyed`], so a message in progress
-//! can be suspended to a byte array and resumed later with the re-supplied key. The state is the
-//! CTR half, the CBC-MAC chaining value, the payload still owed and the AAD held back so far; the
-//! permutation is reached through the re-supplied key. The array length is each type's `SUSPENDED_STATE_LEN`;
-//! see [the crate docs](crate#suspending-and-resuming-execution) for an example.
-//!
 //! # 🚨 Security Considerations 🚨
 //!
 //! **The nonce must never repeat under one key.**
@@ -107,7 +99,7 @@ use crate::modes::ModeNames;
 use crate::modes::ctr::apply_counter_blocks;
 use crate::modes::iv::random_iv;
 use crate::stream::StreamCipher;
-use bouncycastle_core::errors::{SuspendableError, SymmetricCipherError};
+use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::hazmat::{
     AeadDeclaredDecryptMode, AeadDeclaredEncryptMode, AeadDecryptMode, AeadEncryptMode,
     BlockPermutation, ElectronicCodeBook, KeyStream, Mode,
@@ -116,14 +108,10 @@ use bouncycastle_core::key_material::KeyType;
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{
     AEADCipherDecryptor, AEADCipherEncryptor, Algorithm, RNG, StreamCipherDecryptor,
-    StreamCipherEncryptor, SuspendableKeyed, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
+    StreamCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
 };
 use bouncycastle_utils::ct::ct_eq_bytes;
 use bouncycastle_utils::secret::Secret;
-use bouncycastle_utils::suspendable_state::{
-    Cursor, CursorMut, LIB_VERSION_LEN, SuspendableComponent, bounded_usize, resume_component,
-    suspend_component,
-};
 use core::marker::PhantomData;
 
 use crate::{Decrypting, Encrypting};
@@ -182,14 +170,6 @@ where
 {
     /// The spec's `q`: the octet length of the payload-length field `Q`. A.1 requires `n + q = 15`.
     const Q_LEN: usize = CcmKeyStream::<P, BLOCK_LEN, NONCE_LEN>::Q_LEN;
-
-    /// The CTR half's share of the suspended state.
-    const CTR_STATE_LEN: usize = <StreamCipher<
-        CcmKeyStream<'k, P, BLOCK_LEN, NONCE_LEN>,
-        Dir,
-        NONCE_LEN,
-        BLOCK_LEN,
-    > as SuspendableComponent<'k>>::STATE_LEN;
 
     /// The largest payload this parameterization can carry, from A.1's "by definition, p<2^8q".
     ///
@@ -682,13 +662,6 @@ where
     /// that `u64::MAX`.
     const MAX_COUNTER: u64 =
         if Self::Q_LEN >= 8 { u64::MAX } else { (1u64 << (8 * Self::Q_LEN)) - 1 };
-
-    /// The largest `next_ctr` a state of this type can hold: the payload is at most `2^8q - 1`
-    /// bytes (`MAX_COUNTER` is that same value), so at most `ceil(that / BLOCK_LEN)` counter
-    /// values from `S1` are ever used and the index stops one past the last. Tighter than
-    /// `MAX_COUNTER` for `q = 8`, where that is `u64::MAX` and a resumed index at it would
-    /// overflow the next increment and `remaining_blocks`.
-    const MAX_NEXT_CTR: u64 = Self::MAX_COUNTER / (BLOCK_LEN as u64) + 2;
 
     /// Formats the counter template and positions the keystream at `S1`.
     fn from_perm(perm: &'k P, nonce: &[u8; NONCE_LEN]) -> Self {
@@ -1471,85 +1444,6 @@ where
     }
 }
 
-/// The suspended state is the CTR half, the CBC-MAC chaining value, how much of its current
-/// block has gone in, and how much AAD and payload are still owed. The chaining value is
-/// key-dependent MAC state, which is why the state must be protected; see [`bouncycastle_utils::suspendable_state`].
-impl<'k, P, Dir, const BLOCK_LEN: usize, const NONCE_LEN: usize, const TAG_LEN: usize>
-    SuspendableComponent<'k> for Ccm<'k, P, Dir, BLOCK_LEN, NONCE_LEN, TAG_LEN>
-where
-    P: BlockPermutation<BLOCK_LEN> + ModeNames,
-{
-    const STATE_LEN: usize = Self::CTR_STATE_LEN + BLOCK_LEN + 8 + 8 + 8;
-    type Key = P;
-
-    fn write_state(&self, out: &mut [u8]) {
-        let (ctr, rest) = out.split_at_mut(Self::CTR_STATE_LEN);
-        self.ctr.write_state(ctr);
-        let mut w = CursorMut::new(rest);
-        w.bytes(&*self.y);
-        w.u64(self.mac_pos as u64);
-        w.u64(self.aad_owed as u64);
-        w.u64(self.owed as u64);
-        debug_assert!(w.is_done());
-    }
-
-    fn read_state(state: &[u8], key: &'k Self::Key) -> Result<Self, SuspendableError> {
-        Self::check_shape();
-        let (ctr, rest) = state.split_at(Self::CTR_STATE_LEN);
-        let ctr = StreamCipher::read_state(ctr, key)?;
-        let mut r = Cursor::new(rest);
-        let mut y: Secret<[u8; BLOCK_LEN]> = Secret::new();
-        (*y).copy_from_slice(r.bytes(BLOCK_LEN));
-        // A whole block is enciphered as soon as it is full, so `mac_pos` is always below
-        // `BLOCK_LEN`; the owed payload cannot exceed what `B0` could have committed to.
-        let mac_pos = bounded_usize(r.u64(), BLOCK_LEN - 1)?;
-        let aad_owed = bounded_usize(r.u64(), usize::MAX)?;
-        let owed = bounded_usize(r.u64(), usize::MAX)?;
-        if owed as u64 > Self::MAX_PAYLOAD_LEN {
-            return Err(SuspendableError::InvalidData);
-        }
-        debug_assert!(r.is_done());
-        Ok(Self { ctr, y, mac_pos, aad_owed, owed, _dir: PhantomData })
-    }
-}
-
-/// The suspended state is the counter template and the next counter index; the permutation is
-/// the key's, re-supplied by reference. Crate-private like the type, reachable only through
-/// `Ccm`'s state.
-impl<'k, P, const BLOCK_LEN: usize, const NONCE_LEN: usize> SuspendableComponent<'k>
-    for CcmKeyStream<'k, P, BLOCK_LEN, NONCE_LEN>
-where
-    P: BlockPermutation<BLOCK_LEN> + ModeNames,
-{
-    const STATE_LEN: usize = BLOCK_LEN + 8;
-    type Key = P;
-
-    fn write_state(&self, out: &mut [u8]) {
-        let mut w = CursorMut::new(out);
-        w.bytes(&self.ctr_template);
-        w.u64(self.next_ctr);
-        debug_assert!(w.is_done());
-    }
-
-    fn read_state(state: &[u8], key: &'k Self::Key) -> Result<Self, SuspendableError> {
-        let perm = key;
-        let mut r = Cursor::new(state);
-        let ctr_template = r.array::<BLOCK_LEN>();
-        // A.3: the flags octet is `[q-1]_3` and nothing else, and the counter field is zero in
-        // the template; `next_ctr` starts at 1 (`S0` is the tag mask) and stops at
-        // `MAX_NEXT_CTR`, one past the last counter value the largest payload uses.
-        let next_ctr = r.u64();
-        let flags_ok = ctr_template[0] == (Self::Q_LEN - 1) as u8;
-        let counter_field_zero = ctr_template[BLOCK_LEN - Self::Q_LEN..].iter().all(|&b| b == 0);
-        let ctr_ok = next_ctr >= 1 && next_ctr <= Self::MAX_NEXT_CTR;
-        if !(flags_ok && counter_field_zero && ctr_ok) {
-            return Err(SuspendableError::InvalidData);
-        }
-        debug_assert!(r.is_done());
-        Ok(Self { perm, ctr_template, next_ctr })
-    }
-}
-
 /// The CCM mode type: the `M` of a mode-bound key such as `AES128Key<CCM<12, 16>>`.
 ///
 /// CCM must commit to the AAD and payload lengths before its first byte (`B0` carries the
@@ -1926,262 +1820,6 @@ where
 
     fn decrypt_init<'k>(state: &'k Self::KeyState, nonce: &[u8; NONCE_LEN]) -> Self::Decryptor<'k> {
         CcmPacketDecryptor::from_perm(state, nonce)
-    }
-}
-
-// ---- suspending the pair -----------------------------------------------------------------
-
-/// The adapter's suspended state is the `Ccm` state's, then the held-back AAD, its length and the
-/// phase flag. A state that says the header is not yet formatted must have absorbed nothing,
-/// and the payload still owed can be no more than the frame.
-impl<
-    'k,
-    P,
-    Dir,
-    const BLOCK_LEN: usize,
-    const NONCE_LEN: usize,
-    const TAG_LEN: usize,
-    const AAD_LEN: usize,
-    const DATA_LEN: usize,
-> SuspendableComponent<'k>
-    for CcmAdapter<'k, P, Dir, BLOCK_LEN, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>
-where
-    P: BlockPermutation<BLOCK_LEN> + ModeNames,
-{
-    const STATE_LEN: usize =
-        <Ccm<'k, P, Dir, BLOCK_LEN, NONCE_LEN, TAG_LEN> as SuspendableComponent<'k>>::STATE_LEN
-            + AAD_LEN
-            + 8
-            + 1;
-    type Key = P;
-
-    fn write_state(&self, out: &mut [u8]) {
-        let (ccm, rest) = out.split_at_mut(
-            <Ccm<'k, P, Dir, BLOCK_LEN, NONCE_LEN, TAG_LEN> as SuspendableComponent<'k>>::STATE_LEN,
-        );
-        self.ccm.write_state(ccm);
-        let mut w = CursorMut::new(rest);
-        w.bytes(&self.aad);
-        w.u64(self.aad_len as u64);
-        w.u8(u8::from(self.formatted));
-        debug_assert!(w.is_done());
-    }
-
-    fn read_state(state: &[u8], key: &'k Self::Key) -> Result<Self, SuspendableError> {
-        Self::check_shape();
-        let (ccm, rest) = state.split_at(
-            <Ccm<'k, P, Dir, BLOCK_LEN, NONCE_LEN, TAG_LEN> as SuspendableComponent<'k>>::STATE_LEN,
-        );
-        let ccm = Ccm::read_state(ccm, key)?;
-        let mut r = Cursor::new(rest);
-        let aad: [u8; AAD_LEN] = r.array();
-        let aad_len = bounded_usize(r.u64(), AAD_LEN)?;
-        let formatted = match r.u8() {
-            0 => false,
-            1 => true,
-            _ => return Err(SuspendableError::InvalidData),
-        };
-        debug_assert!(r.is_done());
-        // `B0` commits to `DATA_LEN`, so no more than that can still be owed. No AAD is ever
-        // owed: until the header is formatted the CBC-MAC has absorbed nothing, and `begin_data`
-        // declares the AAD and absorbs all of it in one step.
-        if ccm.owed > DATA_LEN || ccm.aad_owed != 0 || (!formatted && ccm.mac_pos != 0) {
-            return Err(SuspendableError::InvalidData);
-        }
-        Ok(Self { ccm, aad, aad_len, formatted })
-    }
-}
-
-impl<
-    'k,
-    P,
-    const BLOCK_LEN: usize,
-    const NONCE_LEN: usize,
-    const TAG_LEN: usize,
-    const AAD_LEN: usize,
-    const DATA_LEN: usize,
-> SuspendableComponent<'k>
-    for CcmPacketEncryptor<'k, P, BLOCK_LEN, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>
-where
-    P: BlockPermutation<BLOCK_LEN> + ModeNames,
-{
-    const STATE_LEN: usize = <CcmAdapter<
-        'k,
-        P,
-        Encrypting,
-        BLOCK_LEN,
-        NONCE_LEN,
-        TAG_LEN,
-        AAD_LEN,
-        DATA_LEN,
-    > as SuspendableComponent<'k>>::STATE_LEN;
-    type Key = P;
-
-    fn write_state(&self, out: &mut [u8]) {
-        self.0.write_state(out);
-    }
-
-    fn read_state(state: &[u8], key: &'k Self::Key) -> Result<Self, SuspendableError> {
-        Ok(Self(CcmAdapter::read_state(state, key)?))
-    }
-}
-
-/// The decryptor adds the bytes it is holding back past the frame and how many there are.
-impl<
-    'k,
-    P,
-    const BLOCK_LEN: usize,
-    const NONCE_LEN: usize,
-    const TAG_LEN: usize,
-    const AAD_LEN: usize,
-    const DATA_LEN: usize,
-> SuspendableComponent<'k>
-    for CcmPacketDecryptor<'k, P, BLOCK_LEN, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>
-where
-    P: BlockPermutation<BLOCK_LEN> + ModeNames,
-{
-    const STATE_LEN: usize = <CcmAdapter<
-        'k,
-        P,
-        Decrypting,
-        BLOCK_LEN,
-        NONCE_LEN,
-        TAG_LEN,
-        AAD_LEN,
-        DATA_LEN,
-    > as SuspendableComponent<'k>>::STATE_LEN
-        + TAG_LEN
-        + 8;
-    type Key = P;
-
-    fn write_state(&self, out: &mut [u8]) {
-        let (inner, rest) = out.split_at_mut(
-            <CcmAdapter<
-                'k,
-                P,
-                Decrypting,
-                BLOCK_LEN,
-                NONCE_LEN,
-                TAG_LEN,
-                AAD_LEN,
-                DATA_LEN,
-            > as SuspendableComponent<'k>>::STATE_LEN,
-        );
-        self.inner.write_state(inner);
-        let mut w = CursorMut::new(rest);
-        w.bytes(&self.tag);
-        w.u64(self.tag_len as u64);
-        debug_assert!(w.is_done());
-    }
-
-    fn read_state(state: &[u8], key: &'k Self::Key) -> Result<Self, SuspendableError> {
-        let (inner, rest) = state.split_at(
-            <CcmAdapter<
-                'k,
-                P,
-                Decrypting,
-                BLOCK_LEN,
-                NONCE_LEN,
-                TAG_LEN,
-                AAD_LEN,
-                DATA_LEN,
-            > as SuspendableComponent<'k>>::STATE_LEN,
-        );
-        let inner = CcmAdapter::read_state(inner, key)?;
-        let mut r = Cursor::new(rest);
-        let tag: [u8; TAG_LEN] = r.array();
-        let tag_len = bounded_usize(r.u64(), TAG_LEN)?;
-        debug_assert!(r.is_done());
-        Ok(Self { inner, tag, tag_len })
-    }
-}
-
-impl<
-    'k,
-    P,
-    const BLOCK_LEN: usize,
-    const NONCE_LEN: usize,
-    const TAG_LEN: usize,
-    const AAD_LEN: usize,
-    const DATA_LEN: usize,
-> CcmPacketEncryptor<'k, P, BLOCK_LEN, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>
-where
-    P: BlockPermutation<BLOCK_LEN> + ModeNames,
-{
-    /// The `N` of this type's [`SuspendableKeyed<'k, N>`] impl: the version header, the mode's
-    /// state, the `AAD_LEN`-byte AAD buffer, its length and the phase flag. See
-    /// [`bouncycastle_utils::suspendable_state`].
-    pub const SUSPENDED_STATE_LEN: usize =
-        LIB_VERSION_LEN + <Self as SuspendableComponent<'k>>::STATE_LEN;
-}
-
-impl<
-    'k,
-    P,
-    const BLOCK_LEN: usize,
-    const NONCE_LEN: usize,
-    const TAG_LEN: usize,
-    const AAD_LEN: usize,
-    const DATA_LEN: usize,
-> CcmPacketDecryptor<'k, P, BLOCK_LEN, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>
-where
-    P: BlockPermutation<BLOCK_LEN> + ModeNames,
-{
-    /// The `N` of this type's [`SuspendableKeyed<'k, N>`] impl: the encryptor's, plus the held-back
-    /// tag and its length. See [`bouncycastle_utils::suspendable_state`].
-    pub const SUSPENDED_STATE_LEN: usize =
-        LIB_VERSION_LEN + <Self as SuspendableComponent<'k>>::STATE_LEN;
-}
-
-/// `N` must be [`CcmPacketEncryptor::SUSPENDED_STATE_LEN`]; anything else is a compile error.
-impl<
-    'k,
-    P,
-    const BLOCK_LEN: usize,
-    const NONCE_LEN: usize,
-    const TAG_LEN: usize,
-    const AAD_LEN: usize,
-    const DATA_LEN: usize,
-    const N: usize,
-> SuspendableKeyed<'k, N>
-    for CcmPacketEncryptor<'k, P, BLOCK_LEN, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>
-where
-    P: BlockPermutation<BLOCK_LEN> + ModeNames,
-{
-    type Key = P;
-
-    fn suspend(self) -> [u8; N] {
-        suspend_component(&self)
-    }
-
-    fn from_suspended(state: [u8; N], key: &'k Self::Key) -> Result<Self, SuspendableError> {
-        resume_component(&state, key)
-    }
-}
-
-/// `N` must be [`CcmPacketDecryptor::SUSPENDED_STATE_LEN`]; anything else is a compile error.
-impl<
-    'k,
-    P,
-    const BLOCK_LEN: usize,
-    const NONCE_LEN: usize,
-    const TAG_LEN: usize,
-    const AAD_LEN: usize,
-    const DATA_LEN: usize,
-    const N: usize,
-> SuspendableKeyed<'k, N>
-    for CcmPacketDecryptor<'k, P, BLOCK_LEN, NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>
-where
-    P: BlockPermutation<BLOCK_LEN> + ModeNames,
-{
-    type Key = P;
-
-    fn suspend(self) -> [u8; N] {
-        suspend_component(&self)
-    }
-
-    fn from_suspended(state: [u8; N], key: &'k Self::Key) -> Result<Self, SuspendableError> {
-        resume_component(&state, key)
     }
 }
 

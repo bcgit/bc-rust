@@ -5,7 +5,7 @@ use crate::hazmat::SM4Internal;
 use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
 use bouncycastle_core::hazmat::{
     AeadDeclaredDecryptMode, AeadDeclaredEncryptMode, AeadDecryptMode, AeadEncryptMode,
-    BlockDecryptMode, BlockEncryptMode, Mode, ModeKey, SymmetricDecryptMode, SymmetricEncryptMode,
+    BlockDecryptMode, BlockEncryptMode, Mode, SymmetricDecryptMode, SymmetricEncryptMode,
 };
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::symmetric_key::{
@@ -99,12 +99,6 @@ impl<M: Mode<SM4Internal>> FromKeyMaterial<{ crate::KEY_LEN }> for SM4Key<M> {
             .into());
         }
         Ok(Self { state: M::key_state(SM4Internal::new(key)?) })
-    }
-}
-
-impl<M: Mode<SM4Internal>> ModeKey<SM4Internal, M> for SM4Key<M> {
-    fn state(&self) -> &M::KeyState {
-        &self.state
     }
 }
 

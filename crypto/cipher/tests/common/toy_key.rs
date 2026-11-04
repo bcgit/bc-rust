@@ -11,7 +11,7 @@ use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
 use bouncycastle_core::hazmat::{
     AeadDeclaredDecryptMode, AeadDeclaredEncryptMode, AeadDecryptMode, AeadEncryptMode,
     BlockDecryptMode, BlockEncryptMode, BlockPermutation, EcbDecryptMode, EcbDecryptionKey,
-    EcbEncryptMode, EcbEncryptionKey, ElectronicCodeBook, MacMode, Mode, ModeKey, NonceMacMode,
+    EcbEncryptMode, EcbEncryptionKey, ElectronicCodeBook, MacMode, Mode, NonceMacMode,
     SymmetricDecryptMode, SymmetricEncryptMode, do_hazardous_operations,
 };
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
@@ -44,12 +44,6 @@ impl<P, M: Mode<P>> ToyKey<P, M> {
 
     /// The mode's per-key state, for tests of the workers' `from_key_state` routes.
     pub fn state(&self) -> &M::KeyState {
-        &self.state
-    }
-}
-
-impl<P, M: Mode<P>> ModeKey<P, M> for ToyKey<P, M> {
-    fn state(&self) -> &M::KeyState {
         &self.state
     }
 }
