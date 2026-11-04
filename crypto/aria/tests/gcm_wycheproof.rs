@@ -1,30 +1,58 @@
-//! Known-answer tests against Project Wycheproof's `testvectors_v1/aria_gcm_test.json`, through
-//! the `GCM` hazmat mode traits over the three ARIA engines.
+//! Known-answer tests against Project Wycheproof's `testvectors_v1/aria_gcm_test.json`.
 //!
-//! The same suite as `crypto/aes/tests/gcm_wycheproof.rs`; see that file for what the set probes
-//! and why only the 96-bit-IV groups have an instantiation to dispatch to (`Gcm` fixes the nonce
-//! at `GCM_NONCE_LEN`). The keys carry no AEAD role, so the cases run over the permutation
-//! directly, through the mode's key state. Requires the Wycheproof repository at `../wycheproof`;
-//! absent, the test warns and passes.
+//! Requires the Wycheproof repository (https://github.com/C2SP/wycheproof) to be cloned alongside
+//! this repository, i.e. at `../wycheproof` relative to the root of this git project. If it is
+//! absent the test prints a warning and passes, matching the convention used by the other vector
+//! suites in this crate.
+//!
+//! # Why this set is worth having alongside the ACVP one
+//!
+//! `gcm_bc-test-data.rs` covers the NIST set, whose only failures are tag-check failures on an
+//! otherwise well-formed message. Wycheproof's set is adversarial in the ways ACVP is not: a tag
+//! with every one of a chosen set of bits flipped (`ModifiedTag`, 81 cases), so that a comparison
+//! which checks only part of the tag is caught; IV lengths from 0 to 2056 bits (`ZeroLengthIv`,
+//! `SmallIv`, `LongIv`); IVs chosen so that the 32-bit counter wraps (`CounterWrap`); and
+//! pseudorandom sizes meant to catch an implementation that only handles the common cases. See
+//! `aria_gcm_test.json`'s own `"notes"` object for exactly what each
+//! `flags` entry is checking.
+//!
+//! # Ciphertext and tag are separate fields
+//!
+//! Wycheproof's AEAD schema (`aead_test_schema_v1`) carries `ct` and `tag` as distinct fields, so
+//! these cases go through the key's detached pair, `encrypt_detached_out` /
+//! `decrypt_detached_out`. The key draws its own nonce, so the vector's `iv` is supplied through
+//! a `FixedSeedRNG` and the returned nonce is asserted to be exactly that IV, the same technique
+//! as `gcm_bc-test-data.rs`.
+//!
+//! # Only the 96-bit-IV groups can be dispatched to, by design
+//!
+//! [`Gcm`] fixes the nonce at [`GCM_NONCE_LEN`] (SP 800-38D Sec 5.2.1.1 recommends restricting
+//! support to 96 bits) and does not implement the `len(IV) != 96` branch of Algorithm 4 step 2. A
+//! group with any other `ivSize` therefore has no instantiation to dispatch to: not a case that
+//! can fail, but a shape the library never sees. That is most of the file's groups -- the point
+//! of `ZeroLengthIv`, `SmallIv`, `LongIv` and `CounterWrap` is to probe exactly that boundary --
+//! and they are counted as not supported rather than silently dropped, with the counts asserted
+//! at the end so a change in the vector file's shape is visible. Every group in the file uses a
+//! 128-bit tag, which is within the `12..=16` bytes `Gcm` accepts, so the tag size never rules a
+//! case out.
 
-use bouncycastle_aria::hazmat::{ARIA128Internal, ARIA192Internal, ARIA256Internal};
-use bouncycastle_cipher::modes::{GCM, GCM_NONCE_LEN, ModeNames};
+use bouncycastle_aria::{ARIA128Key, ARIA192Key, ARIA256Key};
+use bouncycastle_cipher::modes::{GCM, GCM_NONCE_LEN};
 use bouncycastle_core::errors::SymmetricCipherError;
-use bouncycastle_core::hazmat::{
-    AeadDecryptMode, AeadEncryptMode, ElectronicCodeBook, Mode, do_hazardous_operations,
-};
+use bouncycastle_core::hazmat::do_hazardous_operations;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
+use bouncycastle_core::symmetric_key::{AeadDecryptionKey, AeadEncryptionKey, FromKeyMaterial};
 use bouncycastle_core_test_framework::test_data_loaders::{Value, hex_field, wycheproof_json};
-
-/// The tag length every group in the file uses.
-const TAG_LEN: usize = 16;
+use bouncycastle_rng::FixedSeedRNG;
 
 /// Wraps the vector's raw key bytes, promoting them if `KeyMaterial`'s entropy heuristic declined
-/// to call them a cipher key.
+/// to call them a cipher key. Same helper as the ACVP and CCM suites in this crate.
 fn cipher_key<const N: usize>(bytes: &[u8]) -> KeyMaterial<N> {
+    assert_eq!(bytes.len(), N, "key length should match the parameter set");
     let mut key = KeyMaterial::<N>::from_bytes_as_type(bytes, KeyType::SymmetricCipherKey)
         .expect("wycheproof key bytes fit the buffer");
+
     if key.key_type() != KeyType::SymmetricCipherKey {
         do_hazardous_operations(&mut key, |k| {
             k.set_key_type(KeyType::SymmetricCipherKey)?;
@@ -35,11 +63,15 @@ fn cipher_key<const N: usize>(bytes: &[u8]) -> KeyMaterial<N> {
     key
 }
 
-/// Runs one case over the engine `P`. A valid case must encrypt to exactly
-/// `expected_ct`/`expected_tag` under the vector's IV and decrypt back; an invalid one is
-/// checked on the decrypt direction only and must fail the tag check with the buffer zeroized.
+/// Runs one case at a fully-instantiated `(KEY_LEN, TAG_LEN, P)`.
+///
+/// For a `result: "valid"` case, `msg` must encrypt to exactly `expected_ct`/`expected_tag` under
+/// the vector's IV, and `expected_ct`/`expected_tag` must decrypt back to `msg`. For
+/// `result: "invalid"`, only the decrypt direction is checked -- re-encrypting `msg` has no
+/// reason to reproduce a deliberately corrupted tag -- and it must fail the tag check rather than
+/// return a payload, leaving the caller's buffer zeroized as the trait contract requires.
 #[allow(clippy::too_many_arguments)]
-fn run_case<const KEY_LEN: usize, P>(
+fn run_case<const KEY_LEN: usize, const TAG_LEN: usize, K>(
     tc_id: u64,
     key_bytes: &[u8],
     iv: [u8; GCM_NONCE_LEN],
@@ -49,35 +81,32 @@ fn run_case<const KEY_LEN: usize, P>(
     expected_tag: &[u8],
     valid: bool,
 ) where
-    P: ElectronicCodeBook<KEY_LEN, 16> + ModeNames + Clone,
+    K: FromKeyMaterial<KEY_LEN>
+        + AeadEncryptionKey<KEY_LEN, GCM_NONCE_LEN, TAG_LEN, TAG_LEN>
+        + AeadDecryptionKey<KEY_LEN, GCM_NONCE_LEN, TAG_LEN, TAG_LEN>,
 {
-    let state = <GCM<TAG_LEN> as Mode<P>>::key_state(
-        P::new(&cipher_key::<KEY_LEN>(key_bytes)).expect("a wycheproof key"),
-    );
+    let key = K::from_key_material(&cipher_key::<KEY_LEN>(key_bytes)).expect("a wycheproof key");
     let tag: [u8; TAG_LEN] =
         expected_tag.try_into().unwrap_or_else(|_| panic!("tcId {tc_id}: bad tag length"));
 
     if valid {
-        let mut ct = msg.to_vec();
-        let got_tag = <GCM<TAG_LEN> as AeadEncryptMode<
-            P,
-            KEY_LEN,
-            GCM_NONCE_LEN,
-            TAG_LEN,
-            TAG_LEN,
-        >>::encrypt_detached_in_place_nonce(&state, &iv, aad, &mut ct)
-        .unwrap_or_else(|e| panic!("tcId {tc_id}: valid case failed to encrypt: {e:?}"));
+        let mut ct = vec![0u8; msg.len()];
+        let (written, got_iv, got_tag) = key
+            .encrypt_detached_out(&mut FixedSeedRNG::new(iv), aad, msg, &mut ct)
+            .unwrap_or_else(|e| panic!("tcId {tc_id}: valid case failed to encrypt: {e:?}"));
+        assert_eq!(got_iv, iv, "tcId {tc_id}: the seeded RNG must reproduce the vector's IV");
+        assert_eq!(written, msg.len(), "tcId {tc_id}: encrypt_detached writes exactly msg.len()");
         assert_eq!(ct, expected_ct, "tcId {tc_id}: ciphertext mismatch");
         assert_eq!(got_tag, tag, "tcId {tc_id}: tag mismatch");
     }
 
-    // Starts as the ciphertext, which decryption overwrites in place; a failed tag check must
-    // leave it zeroized, so a case whose ciphertext is already all zeros cannot tell -- the file
-    // has none with a non-empty one.
-    let mut plaintext = expected_ct.to_vec();
-    match <GCM<TAG_LEN> as AeadDecryptMode<P, KEY_LEN, GCM_NONCE_LEN, TAG_LEN, TAG_LEN>>::decrypt_detached_in_place(&state, &iv, aad, &mut plaintext, &tag) {
-        Ok(()) => {
+    // Pre-filled with a non-zero byte, so a buffer the decryptor never wrote is not mistaken for
+    // one it zeroized.
+    let mut plaintext = vec![0xEEu8; expected_ct.len()];
+    match key.decrypt_detached_out(&iv, aad, expected_ct, &tag, &mut plaintext) {
+        Ok(n) => {
             assert!(valid, "tcId {tc_id}: an invalid vector decrypted and verified anyway");
+            plaintext.truncate(n);
             assert_eq!(plaintext, msg, "tcId {tc_id}: decrypted plaintext mismatch");
         }
         Err(SymmetricCipherError::AEADTagCheckFailed) => {
@@ -91,21 +120,78 @@ fn run_case<const KEY_LEN: usize, P>(
     }
 }
 
+/// Dispatches to one of the three key lengths at the 96-bit nonce and 128-bit tag `Gcm` and the
+/// vector file share, or reports that the case's IV or tag size has no instantiation to dispatch
+/// to at all.
+#[allow(clippy::too_many_arguments)]
+fn dispatch(
+    tc_id: u64,
+    key_bytes: &[u8],
+    iv_bytes: &[u8],
+    aad: &[u8],
+    msg: &[u8],
+    expected_ct: &[u8],
+    expected_tag: &[u8],
+    valid: bool,
+) -> bool {
+    // The nonce length is fixed by the type, so a case is dispatched on its actual `iv` length,
+    // not the group's declared `ivSize`.
+    let Ok(iv) = <[u8; GCM_NONCE_LEN]>::try_from(iv_bytes) else { return false };
+    // Every group in the file is a 128-bit tag; anything else would need its own `TAG_LEN`
+    // instantiation, and `Gcm` accepts only 12..=16 bytes, so report rather than guess.
+    if expected_tag.len() != 16 {
+        return false;
+    }
+    match key_bytes.len() {
+        16 => run_case::<16, 16, ARIA128Key<GCM>>(
+            tc_id, key_bytes, iv, aad, msg, expected_ct, expected_tag, valid,
+        ),
+        24 => run_case::<24, 16, ARIA192Key<GCM>>(
+            tc_id, key_bytes, iv, aad, msg, expected_ct, expected_tag, valid,
+        ),
+        32 => run_case::<32, 16, ARIA256Key<GCM>>(
+            tc_id, key_bytes, iv, aad, msg, expected_ct, expected_tag, valid,
+        ),
+        _ => return false,
+    }
+    true
+}
+
 #[test]
 fn wycheproof_aria_gcm_known_answer_tests() {
     let Some(doc) = wycheproof_json("aria_gcm_test.json") else { return };
-    assert_eq!(doc.get("algorithm").and_then(Value::as_str), Some("ARIA-GCM"));
+
+    assert_eq!(
+        doc.get("algorithm").and_then(Value::as_str),
+        Some("ARIA-GCM"),
+        "this is the ARIA-GCM vector file"
+    );
 
     let groups = doc.get("testGroups").and_then(Value::as_array).expect("testGroups");
 
     let mut run = 0usize;
     let mut valid_count = 0usize;
     let mut invalid_count = 0usize;
+    let mut unsupported_groups = 0usize;
     let mut unsupported_cases = 0usize;
 
-    // A case is dispatched on its actual `iv` length, since the nonce length is fixed by the type.
     for group in groups {
-        for test in group.get("tests").and_then(Value::as_array).expect("tests") {
+        let iv_size_bits = group.get("ivSize").and_then(Value::as_u64).expect("ivSize");
+        let key_size_bits = group.get("keySize").and_then(Value::as_u64).expect("keySize");
+        let tag_size_bits = group.get("tagSize").and_then(Value::as_u64).expect("tagSize");
+        assert_eq!(iv_size_bits % 8, 0, "ivSize must be a whole number of octets");
+        assert_eq!(key_size_bits % 8, 0, "keySize must be a whole number of octets");
+        assert_eq!(tag_size_bits % 8, 0, "tagSize must be a whole number of octets");
+
+        // A per-group tally for the printout; the per-case counts below come from `dispatch`,
+        // which is the authority on what it can run.
+        if iv_size_bits as usize != 8 * GCM_NONCE_LEN || tag_size_bits != 128 {
+            unsupported_groups += 1;
+        }
+
+        let tests = group.get("tests").and_then(Value::as_array).expect("tests");
+
+        for test in tests {
             let tc_id = test.get("tcId").and_then(Value::as_u64).expect("tcId");
             let key_bytes = hex_field(test, "key", tc_id);
             let iv_bytes = hex_field(test, "iv", tc_id);
@@ -113,45 +199,41 @@ fn wycheproof_aria_gcm_known_answer_tests() {
             let msg = hex_field(test, "msg", tc_id);
             let ct = hex_field(test, "ct", tc_id);
             let tag = hex_field(test, "tag", tc_id);
-            let valid = match test.get("result").and_then(Value::as_str).expect("result") {
+            let result = test.get("result").and_then(Value::as_str).expect("result");
+            let valid = match result {
                 "valid" => true,
                 "invalid" => false,
                 other => panic!("tcId {tc_id}: unexpected result {other}"),
             };
 
-            let Ok(iv) = <[u8; GCM_NONCE_LEN]>::try_from(iv_bytes.as_slice()) else {
+            let ran = dispatch(tc_id, &key_bytes, &iv_bytes, &aad, &msg, &ct, &tag, valid);
+
+            if ran {
+                run += 1;
+                if valid {
+                    valid_count += 1;
+                } else {
+                    invalid_count += 1;
+                }
+            } else {
                 unsupported_cases += 1;
-                continue;
-            };
-            if tag.len() != TAG_LEN {
-                unsupported_cases += 1;
-                continue;
             }
-            match key_bytes.len() {
-                16 => run_case::<16, ARIA128Internal>(
-                    tc_id, &key_bytes, iv, &aad, &msg, &ct, &tag, valid,
-                ),
-                24 => run_case::<24, ARIA192Internal>(
-                    tc_id, &key_bytes, iv, &aad, &msg, &ct, &tag, valid,
-                ),
-                32 => run_case::<32, ARIA256Internal>(
-                    tc_id, &key_bytes, iv, &aad, &msg, &ct, &tag, valid,
-                ),
-                other => panic!("tcId {tc_id}: ARIA keys are 16, 24 or 32 bytes, got {other}"),
-            }
-            run += 1;
-            if valid { valid_count += 1 } else { invalid_count += 1 }
         }
     }
 
     println!(
         "Wycheproof ARIA-GCM: {run} cases run ({valid_count} valid, {invalid_count} invalid), \
-         {unsupported_cases} cases not supported (no 96-bit-IV instantiation)"
+         {unsupported_cases} cases in {unsupported_groups} groups not supported \
+         (no 96-bit-IV instantiation)"
     );
 
-    // Guards against a silently-vacuous run, as the AES suite does.
+    // Guards against a silently-vacuous run: the three 96-bit-IV groups must have been dispatched
+    // to and must have included both valid and tag-modified cases.
     assert!(run > 0, "expected the 96-bit-IV groups to be dispatchable");
     assert!(valid_count > 0, "expected at least some valid cases to be run");
     assert!(invalid_count > 0, "expected at least some invalid (tag-failure) cases to be run");
-    assert!(unsupported_cases > 0, "expected the other-IV-length cases to be outside Gcm's shape");
+    assert!(
+        unsupported_groups > 0,
+        "expected the other-IV-length groups to be outside Gcm's shape"
+    );
 }

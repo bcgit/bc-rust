@@ -22,13 +22,15 @@
 //! messages as needed: `CBC<PKCS7>` for CBC (NIST SP 800-38A Sec 6.2) with PKCS#7 padding, `CFB`
 //! for CFB128 (Sec 6.3), `CFB8` for the `s = 8` segment size, a different and non-interoperable
 //! mode costing one ARIA call per byte, and `CTR` for CTR (Sec 6.5) with a 12-byte nonce and a
-//! 4-byte counter. The aliases [`ARIA_CBC_128`], [`ARIA_CFB_128`], [`ARIA_CFB8_128`],
-//! [`ARIA_CTR_128`] and their `_192` / `_256` siblings name the workers the keys hand out.
+//! 4-byte counter; `GCM` and `CCM<N, T>` for the authenticated modes (NIST SP 800-38D and
+//! 800-38C), and `CMAC` and `GMAC` for the MACs. The aliases [`ARIA_CBC_128`], [`ARIA_CFB_128`],
+//! [`ARIA_CFB8_128`], [`ARIA_CTR_128`], [`ARIA_GCM_128`], [`ARIA_CCM_128`], [`ARIA_CMAC_128`],
+//! [`ARIA_GMAC_128`] and their `_192` / `_256` siblings name the workers the keys hand out.
 //!
 //! CBC is a block cipher, so it is defined only on whole blocks and the key's mode carries a
 //! padding scheme to bridge the difference; the CFB modes and CTR are stream ciphers and take any
-//! length with no padding at all. See the `bouncycastle_cipher::modes` crate docs for the
-//! comparison.
+//! length with no padding at all; GCM and CCM authenticate as well as encrypt, and are the modes
+//! to prefer. See the `bouncycastle_cipher::modes` crate docs for the comparison.
 //!
 //! ```
 //! use bouncycastle_aria::ARIA256Key;
@@ -255,13 +257,9 @@
 //! Appendix B assigns object identifiers to ARIA in ECB, CBC, CFB, OFB, CTR, CMAC, OCB2, GCM, CCM
 //! and key-wrap modes; the ECB one exists for completeness, not as a recommendation. That is why
 //! the permutation lives under [`hazmat`]; [`bouncycastle_core::hazmat`] lists the supported uses.
-//! An `ARIA128Key<ECB<PKCS7>>` or `<ECB<NoPadding>>` hands out ECB through the safe key API as
-//! well, and the same warning applies to it.
-//!
-//! This crate's keys offer no authenticated mode yet: the GCM and CCM engines are wired and pass
-//! the Wycheproof suites over the permutation, and the AEAD key roles are left for a follow-up.
-//! Until then, authenticate CBC or CTR output with Encrypt-then-MAC over the ciphertext and IV,
-//! using HMAC from `bouncycastle-hmac` under a second key.
+//! An `ARIA128Key<ECB<PKCS7>>`, `<ECB<NoPadding>>` or `<ECB<Blocks>>` hands out ECB through the
+//! key API as well, and the same warning applies to it. The authenticated modes are
+//! `ARIA128Key<GCM>` and `<CCM<N, T>>`.
 //!
 //! ## Constant-time properties
 //!
@@ -323,9 +321,13 @@
 
 mod bitslice;
 mod cbc;
+mod ccm;
 mod cfb;
 mod cfb8;
+mod cmac;
 mod ctr;
+mod gcm;
+mod gmac;
 pub mod hazmat;
 mod key;
 mod round;
@@ -340,9 +342,13 @@ pub const BLOCK_LEN: usize = 16;
 pub const LANES: usize = 4;
 
 pub use cbc::{ARIA_CBC_128, ARIA_CBC_192, ARIA_CBC_256};
+pub use ccm::{ARIA_CCM_128, ARIA_CCM_192, ARIA_CCM_256, CCM_NONCE_LEN, CCM_TAG_LEN};
 pub use cfb::{ARIA_CFB_128, ARIA_CFB_192, ARIA_CFB_256};
 pub use cfb8::{ARIA_CFB8_128, ARIA_CFB8_192, ARIA_CFB8_256};
+pub use cmac::{ARIA_CMAC_128, ARIA_CMAC_192, ARIA_CMAC_256};
 pub use ctr::{ARIA_CTR_128, ARIA_CTR_192, ARIA_CTR_256, CTR_NONCE_LEN};
+pub use gcm::{ARIA_GCM_128, ARIA_GCM_192, ARIA_GCM_256};
+pub use gmac::{ARIA_GMAC_128, ARIA_GMAC_192, ARIA_GMAC_256};
 pub use key::{ARIA128Key, ARIA192Key, ARIA256Key, ARIAKey};
 pub use schedule::{ARIA128Params, ARIA192Params, ARIA256Params, ARIAParams};
 

@@ -5,12 +5,16 @@ use crate::hazmat::{ARIA128Internal, ARIA192Internal, ARIA256Internal, ARIAInter
 use crate::schedule::{ARIA128Params, ARIA192Params, ARIA256Params, ARIAParams};
 use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
 use bouncycastle_core::hazmat::{
-    BlockDecryptMode, BlockEncryptMode, Mode, ModeKey, SymmetricDecryptMode, SymmetricEncryptMode,
+    AeadDeclaredDecryptMode, AeadDeclaredEncryptMode, AeadDecryptMode, AeadEncryptMode,
+    BlockDecryptMode, BlockEncryptMode, EcbDecryptMode, EcbDecryptionKey, EcbEncryptMode,
+    EcbEncryptionKey, MacMode, Mode, ModeKey, SymmetricDecryptMode, SymmetricEncryptMode,
+    do_hazardous_operations,
 };
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::symmetric_key::{
-    BlockDecryptionKey, BlockEncryptionKey, FromKeyMaterial, SymmetricDecryptionKey,
-    SymmetricEncryptionKey,
+    AeadDeclaredDecryptionKey, AeadDeclaredEncryptionKey, AeadDecryptionKey, AeadEncryptionKey,
+    BlockDecryptionKey, BlockEncryptionKey, FromKeyMaterial, MacGenerationKey, MacVerificationKey,
+    SymmetricDecryptionKey, SymmetricEncryptionKey,
 };
 use bouncycastle_core::traits::RNG;
 
@@ -20,12 +24,15 @@ use bouncycastle_core::traits::RNG;
 /// directly.
 ///
 /// The key holds the mode's per-key state, the workers it hands out borrow it, and which role pair
-/// a key carries is decided by its mode, as for `AES128Key<M>` and friends in `bouncycastle-aes`:
-/// the symmetric pair for every mode that implements the symmetric mode traits over the
-/// permutation -- the stream modes `CFB`, `CFB8` and `CTR<N>` at any nonce length `N`, and the
-/// padded block modes `CBC<PKCS7>`, `CBC<NoPadding>`, `ECB<PKCS7>` and `ECB<NoPadding>` -- and the
-/// block pair for `CBC<Blocks>`. The four modes this crate aliases as `ARIA_*` are among them; a
-/// key under any other mode (`ECB<Blocks>`, the AEAD and MAC modes) has no role here.
+/// a key carries is decided by its mode, exactly as for `AES128Key<M>` and friends in
+/// `bouncycastle-aes`: the symmetric pair for every mode that implements the symmetric mode
+/// traits over the permutation -- the stream modes `CFB`, `CFB8` and `CTR<N>` at any nonce
+/// length `N`, and the padded block modes `CBC<PKCS7>`, `CBC<NoPadding>`, `ECB<PKCS7>` and
+/// `ECB<NoPadding>` -- the block pair for `CBC<Blocks>`, the `hazmat` ECB pair for `ECB<Blocks>`,
+/// the AEAD pairs for `GCM`, `CCM` and `CCM_Packet`, the MAC pair for `CMAC`, and GMAC's
+/// nonce-bound generator and verifier as inherent methods. The crate names the workers of
+/// CBC, CFB, CFB8, CTR, GCM, CCM, CMAC and GMAC as the `ARIA_*` aliases; the rest are reached by
+/// naming the mode.
 ///
 /// The only state is the mode's per-key state, which holds the expanded schedule in a `Secret`
 /// and so is zeroized on drop; the key has no `Debug` and no way to read the material back.
@@ -53,10 +60,10 @@ use bouncycastle_core::traits::RNG;
 /// # Memory Usage
 ///
 /// A key is its mode's per-key state: the expanded schedule, 208, 240 or 272 bytes for ARIA-128,
-/// -192 and -256; the four aliased modes keep nothing else per key. The cost is paid per key, not
-/// per message.
+/// -192 and -256, plus whatever the mode keeps per key (16 bytes of hash subkey under `GCM` and
+/// `GMAC`, 32 bytes of subkeys under `CMAC`). The cost is paid per key, not per message.
 pub struct ARIAKey<P: ARIAParams, M: Mode<ARIAInternal<P>>> {
-    state: M::KeyState,
+    pub(crate) state: M::KeyState,
 }
 
 /// An ARIA-128 key for the mode `M`: 16 bytes of material, expanded to a 12-round schedule.
@@ -104,6 +111,21 @@ fn check_key_type(
     Ok(())
 }
 
+/// The permutation accepts only a `SymmetricCipherKey`, so a MAC mode's key -- already checked to
+/// be the `MACKey` the mode asks for -- is handed to it as a copy retagged at the same strength,
+/// used for nothing else. The strength check in the permutation's constructor still applies.
+fn as_cipher_key<const N: usize>(
+    key: &KeyMaterial<N>,
+) -> Result<KeyMaterial<N>, SymmetricCipherError> {
+    let mut cipher_key =
+        KeyMaterial::<N>::from_bytes_as_type(key.ref_to_bytes(), KeyType::SymmetricCipherKey)?;
+    do_hazardous_operations(&mut cipher_key, |k| {
+        k.set_key_type(KeyType::SymmetricCipherKey)?;
+        k.set_security_strength(key.security_strength())
+    })?;
+    Ok(cipher_key)
+}
+
 // The constructors are implemented per key length rather than once over `P`, because stable Rust
 // cannot name `KeyMaterial<{ P::KEY_LEN }>` in a generic signature; the fixed-capacity argument
 // is what makes a wrong-length key a compile error rather than a runtime one.
@@ -112,17 +134,20 @@ impl<M: Mode<ARIA128Internal>> FromKeyMaterial<16> for ARIA128Key<M> {
     const KEY_TYPE: KeyType = M::KEY_TYPE;
 
     /// Validates and expands a 16-byte key: the key type the mode asks for, then the
-    /// permutation's own checks. Every mode with a role here asks for a `SymmetricCipherKey`, so
-    /// under a MAC mode, which asks for a `MACKey`, no material passes both.
+    /// permutation's own checks.
     ///
     /// # Errors
-    /// * [`KeyMaterialError::InvalidKeyType`] if the key is not of [`Self::KEY_TYPE`], or not a
-    ///   `SymmetricCipherKey`.
+    /// * [`KeyMaterialError::InvalidKeyType`] if the key is not of [`Self::KEY_TYPE`]: the
+    ///   `SymmetricCipherKey` a cipher mode asks for, or the `MACKey` a MAC mode does.
     /// * [`KeyMaterialError::InvalidLength`] if the key is not 16 bytes long.
     /// * [`KeyMaterialError::SecurityStrength`] if the key carries a strength below 128 bits.
     fn from_key_material(key: &KeyMaterial<16>) -> Result<Self, SymmetricCipherError> {
         check_key_type(key, M::KEY_TYPE)?;
-        Ok(Self { state: M::key_state(ARIA128Internal::new(key)?) })
+        let perm = match M::KEY_TYPE {
+            KeyType::SymmetricCipherKey => ARIA128Internal::new(key)?,
+            _ => ARIA128Internal::new(&as_cipher_key(key)?)?,
+        };
+        Ok(Self { state: M::key_state(perm) })
     }
 }
 
@@ -133,7 +158,11 @@ impl<M: Mode<ARIA192Internal>> FromKeyMaterial<24> for ARIA192Key<M> {
     /// bytes and 192 bits.
     fn from_key_material(key: &KeyMaterial<24>) -> Result<Self, SymmetricCipherError> {
         check_key_type(key, M::KEY_TYPE)?;
-        Ok(Self { state: M::key_state(ARIA192Internal::new(key)?) })
+        let perm = match M::KEY_TYPE {
+            KeyType::SymmetricCipherKey => ARIA192Internal::new(key)?,
+            _ => ARIA192Internal::new(&as_cipher_key(key)?)?,
+        };
+        Ok(Self { state: M::key_state(perm) })
     }
 }
 
@@ -144,7 +173,11 @@ impl<M: Mode<ARIA256Internal>> FromKeyMaterial<32> for ARIA256Key<M> {
     /// bytes and 256 bits.
     fn from_key_material(key: &KeyMaterial<32>) -> Result<Self, SymmetricCipherError> {
         check_key_type(key, M::KEY_TYPE)?;
-        Ok(Self { state: M::key_state(ARIA256Internal::new(key)?) })
+        let perm = match M::KEY_TYPE {
+            KeyType::SymmetricCipherKey => ARIA256Internal::new(key)?,
+            _ => ARIA256Internal::new(&as_cipher_key(key)?)?,
+        };
+        Ok(Self { state: M::key_state(perm) })
     }
 }
 
@@ -154,10 +187,9 @@ impl<P: ARIAParams, M: Mode<ARIAInternal<P>>> ModeKey<ARIAInternal<P>, M> for AR
     }
 }
 
-// The role impls forward to the mode traits `M` implements over this permutation: the symmetric
-// pair and the block pair, which between them cover every mode the key docs list -- the four
-// this crate aliases, `ECB<PKCS7>`, `ECB<NoPadding>` and `CTR<N>` at any nonce length. A key
-// under a mode that implements neither pair (the MAC and AEAD modes) has no role here.
+// The role impls forward to whichever mode traits `M` implements over this permutation, so which
+// roles a key type carries is decided by its mode, exactly as for `AESKey`. They are per crate
+// rather than a blanket in `core` because the key state leaves the key only through here.
 
 impl<P, M, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const FINAL_LEN: usize>
     SymmetricEncryptionKey<KEY_LEN, INIT_DATA_LEN, FINAL_LEN> for ARIAKey<P, M>
@@ -226,5 +258,232 @@ where
 
     fn create_decryptor<'k>(&'k self, init_data: &[u8; INIT_DATA_LEN]) -> Self::Decryptor<'k> {
         M::decrypt_init(&self.state, init_data)
+    }
+}
+
+impl<
+    P,
+    M,
+    const KEY_LEN: usize,
+    const NONCE_LEN: usize,
+    const TAG_LEN: usize,
+    const FINAL_LEN: usize,
+> AeadEncryptionKey<KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN> for ARIAKey<P, M>
+where
+    P: ARIAParams,
+    M: AeadEncryptMode<ARIAInternal<P>, KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN>,
+{
+    type Encryptor<'k>
+        = M::Encryptor<'k>
+    where
+        Self: 'k;
+
+    fn create_encryptor<'k>(
+        &'k self,
+        rng: &mut dyn RNG,
+    ) -> Result<(Self::Encryptor<'k>, [u8; NONCE_LEN]), SymmetricCipherError> {
+        M::encrypt_init(&self.state, rng)
+    }
+
+    fn create_encryptor_nonce<'k>(&'k self, nonce: &[u8; NONCE_LEN]) -> Self::Encryptor<'k> {
+        M::encrypt_init_nonce(&self.state, nonce)
+    }
+
+    // Forwarded rather than left to the trait's provided body so that a mode can override it:
+    // CCM's streaming worker is fixed-frame, and its in-place one-shot goes another way.
+    fn encrypt_detached_in_place(
+        &self,
+        rng: &mut dyn RNG,
+        aad: &[u8],
+        buf: &mut [u8],
+    ) -> Result<([u8; NONCE_LEN], [u8; TAG_LEN]), SymmetricCipherError> {
+        M::encrypt_detached_in_place(&self.state, rng, aad, buf)
+    }
+
+    fn encrypt_detached_in_place_nonce(
+        &self,
+        nonce: &[u8; NONCE_LEN],
+        aad: &[u8],
+        buf: &mut [u8],
+    ) -> Result<[u8; TAG_LEN], SymmetricCipherError> {
+        M::encrypt_detached_in_place_nonce(&self.state, nonce, aad, buf)
+    }
+}
+
+impl<
+    P,
+    M,
+    const KEY_LEN: usize,
+    const NONCE_LEN: usize,
+    const TAG_LEN: usize,
+    const FINAL_LEN: usize,
+> AeadDecryptionKey<KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN> for ARIAKey<P, M>
+where
+    P: ARIAParams,
+    M: AeadDecryptMode<ARIAInternal<P>, KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN>,
+{
+    type Decryptor<'k>
+        = M::Decryptor<'k>
+    where
+        Self: 'k;
+
+    fn create_decryptor<'k>(&'k self, nonce: &[u8; NONCE_LEN]) -> Self::Decryptor<'k> {
+        M::decrypt_init(&self.state, nonce)
+    }
+
+    fn decrypt_detached_in_place(
+        &self,
+        nonce: &[u8; NONCE_LEN],
+        aad: &[u8],
+        buf: &mut [u8],
+        tag: &[u8; TAG_LEN],
+    ) -> Result<(), SymmetricCipherError> {
+        M::decrypt_detached_in_place(&self.state, nonce, aad, buf, tag)
+    }
+}
+
+impl<
+    P,
+    M,
+    const KEY_LEN: usize,
+    const NONCE_LEN: usize,
+    const TAG_LEN: usize,
+    const FINAL_LEN: usize,
+> AeadDeclaredEncryptionKey<KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN> for ARIAKey<P, M>
+where
+    P: ARIAParams,
+    M: AeadDeclaredEncryptMode<ARIAInternal<P>, KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN>,
+{
+    type Encryptor<'k>
+        = M::Encryptor<'k>
+    where
+        Self: 'k;
+
+    fn create_encryptor<'k>(
+        &'k self,
+        rng: &mut dyn RNG,
+        aad_len: usize,
+        payload_len: usize,
+    ) -> Result<(Self::Encryptor<'k>, [u8; NONCE_LEN]), SymmetricCipherError> {
+        M::encrypt_init(&self.state, rng, aad_len, payload_len)
+    }
+
+    fn create_encryptor_nonce<'k>(
+        &'k self,
+        nonce: &[u8; NONCE_LEN],
+        aad_len: usize,
+        payload_len: usize,
+    ) -> Result<Self::Encryptor<'k>, SymmetricCipherError> {
+        M::encrypt_init_nonce(&self.state, nonce, aad_len, payload_len)
+    }
+
+    // Forwarded so that the mode's own in-place path is the one that runs.
+    fn encrypt_detached_in_place(
+        &self,
+        rng: &mut dyn RNG,
+        aad: &[u8],
+        buf: &mut [u8],
+    ) -> Result<([u8; NONCE_LEN], [u8; TAG_LEN]), SymmetricCipherError> {
+        M::encrypt_detached_in_place(&self.state, rng, aad, buf)
+    }
+
+    fn encrypt_detached_in_place_nonce(
+        &self,
+        nonce: &[u8; NONCE_LEN],
+        aad: &[u8],
+        buf: &mut [u8],
+    ) -> Result<[u8; TAG_LEN], SymmetricCipherError> {
+        M::encrypt_detached_in_place_nonce(&self.state, nonce, aad, buf)
+    }
+}
+
+impl<
+    P,
+    M,
+    const KEY_LEN: usize,
+    const NONCE_LEN: usize,
+    const TAG_LEN: usize,
+    const FINAL_LEN: usize,
+> AeadDeclaredDecryptionKey<KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN> for ARIAKey<P, M>
+where
+    P: ARIAParams,
+    M: AeadDeclaredDecryptMode<ARIAInternal<P>, KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN>,
+{
+    type Decryptor<'k>
+        = M::Decryptor<'k>
+    where
+        Self: 'k;
+
+    fn create_decryptor<'k>(
+        &'k self,
+        nonce: &[u8; NONCE_LEN],
+        aad_len: usize,
+        payload_len: usize,
+    ) -> Result<Self::Decryptor<'k>, SymmetricCipherError> {
+        M::decrypt_init(&self.state, nonce, aad_len, payload_len)
+    }
+
+    fn decrypt_detached_in_place(
+        &self,
+        nonce: &[u8; NONCE_LEN],
+        aad: &[u8],
+        buf: &mut [u8],
+        tag: &[u8; TAG_LEN],
+    ) -> Result<(), SymmetricCipherError> {
+        M::decrypt_detached_in_place(&self.state, nonce, aad, buf, tag)
+    }
+}
+
+impl<P, M, const KEY_LEN: usize, const BLOCK_LEN: usize> EcbEncryptionKey<KEY_LEN, BLOCK_LEN>
+    for ARIAKey<P, M>
+where
+    P: ARIAParams,
+    M: EcbEncryptMode<ARIAInternal<P>, KEY_LEN, BLOCK_LEN>,
+{
+    type Encryptor<'k>
+        = M::Encryptor<'k>
+    where
+        Self: 'k;
+
+    fn create_encryptor<'k>(&'k self) -> Self::Encryptor<'k> {
+        M::encrypt_init(&self.state)
+    }
+}
+
+impl<P, M, const KEY_LEN: usize, const BLOCK_LEN: usize> EcbDecryptionKey<KEY_LEN, BLOCK_LEN>
+    for ARIAKey<P, M>
+where
+    P: ARIAParams,
+    M: EcbDecryptMode<ARIAInternal<P>, KEY_LEN, BLOCK_LEN>,
+{
+    type Decryptor<'k>
+        = M::Decryptor<'k>
+    where
+        Self: 'k;
+
+    fn create_decryptor<'k>(&'k self) -> Self::Decryptor<'k> {
+        M::decrypt_init(&self.state)
+    }
+}
+
+impl<P: ARIAParams, M: MacMode<ARIAInternal<P>>> MacGenerationKey for ARIAKey<P, M> {
+    type Generator<'k>
+        = M::Worker<'k>
+    where
+        Self: 'k;
+
+    fn create_generator<'k>(&'k self) -> Self::Generator<'k> {
+        M::mac_init(&self.state)
+    }
+}
+
+impl<P: ARIAParams, M: MacMode<ARIAInternal<P>>> MacVerificationKey for ARIAKey<P, M> {
+    type Verifier<'k>
+        = M::Worker<'k>
+    where
+        Self: 'k;
+
+    fn create_verifier<'k>(&'k self) -> Self::Verifier<'k> {
+        M::mac_init(&self.state)
     }
 }
