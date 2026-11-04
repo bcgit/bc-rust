@@ -19,8 +19,12 @@
 //! `derive_pk` is a bespoke inherent method rather than an implementation of `DerivePublicKey`, so
 //! it needs its own command function and its own `--idfile` flag.
 
-use crate::helpers::{read_from_file, read_from_file_or_stdin, write_bytes_or_hex};
+use crate::helpers::{
+    println_stdout, read_input_file, read_secret_file, read_secret_file_or_stdin, stream_stdin,
+    write_bytes_or_hex,
+};
 use bouncycastle::core::errors::SignatureError;
+use bouncycastle::core::key_material::KeyMaterialTrait;
 use bouncycastle::core::signature_key::{
     DeterministicSigningKey, SignatureAlgorithm, SigningKey, VerifyingKey,
 };
@@ -37,27 +41,22 @@ use bouncycastle::ecdsa::{
 use bouncycastle::ecdsa::{
     keys_bp256r1, keys_bp384r1, keys_bp512r1, keys_p256, keys_p256k1, keys_p384, keys_p521,
 };
-use bouncycastle::hex;
 use bouncycastle::rng::HashDRBG_SHA512;
 use clap::ValueEnum;
-use std::io;
-use std::io::Read;
 use std::process::exit;
 
 #[derive(ValueEnum, Clone, Debug)]
 pub(crate) enum ECDSAAction {
     /// Generate and output a new private key.
     Keygen,
-    /// Derive and output the public key matching a private key read from stdin.
-    /// Accepts either binary or hex.
+    /// Derive and output the public key matching a private key read from stdin (raw bytes, or
+    /// hex with --hex-input).
     PkFromSk,
     /// Accepts a private key (stdin) and a public key (--pkfile), and checks that they match.
     CheckConsistency,
     /// Sign a message read from stdin with a private key file and output the signature.
-    /// Accepts the private key as binary or hex.
     Sign,
     /// Verify a message read from stdin with a public key file and a signature file.
-    /// Accepts the public key and signature as binary or hex.
     Verify,
 }
 
@@ -88,37 +87,37 @@ pub(crate) fn ecdsa_cmd<
             write_bytes_or_hex(&sk.encode(), output_hex);
         }
         ECDSAAction::PkFromSk => {
-            let buf = read_from_file_or_stdin(skfile);
-            let sk = parse_sk::<SK, SK_LEN>(&buf, alg_name);
+            let sk =
+                parse_sk::<SK, SK_LEN>(read_secret_file_or_stdin(skfile).ref_to_bytes(), alg_name);
             write_bytes_or_hex(&sk.derive_pk().encode(), output_hex);
         }
         ECDSAAction::CheckConsistency => {
-            let buf = read_from_file_or_stdin(skfile);
-            let sk = parse_sk::<SK, SK_LEN>(&buf, alg_name);
+            let sk =
+                parse_sk::<SK, SK_LEN>(read_secret_file_or_stdin(skfile).ref_to_bytes(), alg_name);
 
             let pk_bytes = require_file(pkfile, "pkfile");
             let pk = parse_pk::<PK, PK_LEN>(&pk_bytes, alg_name);
 
             if sk.derive_pk() == pk {
-                println!("SUCCESS: pk and sk match.");
+                println_stdout("SUCCESS: pk and sk match.");
             } else {
                 eprintln!("FAILURE: pk and sk do not match.");
                 exit(-1);
             }
         }
         ECDSAAction::Sign => {
-            let sk_bytes = require_file(skfile, "skfile");
-            let sk = parse_sk::<SK, SK_LEN>(&sk_bytes, alg_name);
+            let sk =
+                parse_sk::<SK, SK_LEN>(require_secret(skfile, "skfile").ref_to_bytes(), alg_name);
 
             // stream the message from stdin; ECDSA has no context string
             let sig = if deterministic {
                 let mut signer = sk.create_signer_deterministic(None).unwrap();
-                stream_stdin_into(|chunk| signer.do_update(chunk));
+                stream_stdin(|chunk| signer.do_update(chunk));
                 signer.do_final().unwrap()
             } else {
                 let mut signer =
                     sk.create_signer(&mut HashDRBG_SHA512::new_from_os(), None).unwrap();
-                stream_stdin_into(|chunk| signer.do_update(chunk));
+                stream_stdin(|chunk| signer.do_update(chunk));
                 signer.do_final().unwrap()
             };
 
@@ -131,10 +130,10 @@ pub(crate) fn ecdsa_cmd<
 
             // stream the message from stdin
             let mut verifier = pk.create_verifier(None).unwrap();
-            stream_stdin_into(|chunk| verifier.do_update(chunk));
+            stream_stdin(|chunk| verifier.do_update(chunk));
 
             if verifier.do_verify_final(&sig).is_ok() {
-                println!("Signature is valid.");
+                println_stdout("Signature is valid.");
             } else {
                 eprintln!("Signature is invalid.");
                 exit(-1);
@@ -143,9 +142,10 @@ pub(crate) fn ecdsa_cmd<
     }
 }
 
+/// `--pkfile` and `--sigfile`, which cannot fall back to stdin (that carries the message).
 fn require_file(file: &Option<String>, flag_name: &str) -> Vec<u8> {
     match file {
-        Some(f) => read_from_file(f),
+        Some(f) => read_input_file(f),
         None => {
             eprintln!("Error: no {flag_name} provided.");
             exit(-1);
@@ -153,31 +153,23 @@ fn require_file(file: &Option<String>, flag_name: &str) -> Vec<u8> {
     }
 }
 
-fn stream_stdin_into(mut update: impl FnMut(&[u8])) {
-    let mut buf = [0u8; 1024];
-    let mut bytes_read = io::stdin().read(&mut buf).expect("Failed to read from stdin");
-    update(&buf[..bytes_read]);
-    while bytes_read != 0 {
-        bytes_read = io::stdin().read(&mut buf).expect("Failed to read from stdin");
-        update(&buf[..bytes_read]);
+/// `--skfile` where signing cannot take the key from stdin.
+fn require_secret(file: &Option<String>, flag_name: &str) -> crate::helpers::SecretBytes {
+    match file {
+        Some(f) => read_secret_file(f),
+        None => {
+            eprintln!("Error: no {flag_name} provided.");
+            exit(-1);
+        }
     }
 }
 
-/// Tries a hex-decoded prefix first, in case `read_from_file`'s own whole-buffer hex decode was
-/// defeated by trailing whitespace (e.g. a newline after a hex-encoded file); falls back to the
-/// bytes as given (already hex-decoded by `read_from_file` when that whole-buffer decode did
-/// succeed, or raw binary otherwise).
+/// The key from its encoding; the bytes are what the file held, or its hex decoded under
+/// `--hex-input`, with nothing guessed from their shape.
 fn parse_sk<SK: SignaturePrivateKey<SK_LEN>, const SK_LEN: usize>(
     bytes: &[u8],
     alg_name: &str,
 ) -> SK {
-    if bytes.len() >= 2 * SK_LEN {
-        if let Ok(decoded) = hex::decode(&bytes[..2 * SK_LEN]) {
-            if let Ok(sk) = SK::from_bytes(&decoded) {
-                return sk;
-            }
-        }
-    }
     match SK::from_bytes(bytes) {
         Ok(sk) => sk,
         Err(_) => {
@@ -192,13 +184,6 @@ fn parse_pk<PK: SignaturePublicKey<PK_LEN>, const PK_LEN: usize>(
     bytes: &[u8],
     alg_name: &str,
 ) -> PK {
-    if bytes.len() >= 2 * PK_LEN {
-        if let Ok(decoded) = hex::decode(&bytes[..2 * PK_LEN]) {
-            if let Ok(pk) = PK::from_bytes(&decoded) {
-                return pk;
-            }
-        }
-    }
     match PK::from_bytes(bytes) {
         Ok(pk) => pk,
         Err(_) => {
