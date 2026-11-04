@@ -55,10 +55,6 @@ fn unhex(s: &str) -> Vec<u8> {
     (0..s.len()).step_by(2).map(|i| u8::from_str_radix(&s[i..i + 2], 16).expect("hex")).collect()
 }
 
-fn tohex(bytes: &[u8]) -> String {
-    bytes.iter().map(|b| format!("{b:02x}")).collect()
-}
-
 fn pseudo_random(len: usize, seed: u32) -> Vec<u8> {
     let mut state = seed.wrapping_mul(2_654_435_761).wrapping_add(1);
     (0..len)
