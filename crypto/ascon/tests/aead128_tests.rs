@@ -495,6 +495,29 @@ fn aead128_key_enforces_the_material_policy() {
         .test::<16, AsconAEAD128Key>(ASCON_AEAD128_NAME, SecurityStrength::_128bit);
 }
 
+/// The AAD phase ends with the first non-empty data call on either decrypt entry point, even
+/// while every byte of it is still held back as a possible tag, and an empty call on either
+/// leaves it open: `do_decrypt_inplace` and `do_decrypt_out` run one phase machine, so a caller
+/// mixing them sees the same answer from `do_update_aad` whichever it used.
+#[test]
+fn both_decrypt_entry_points_close_the_aad_phase_on_the_first_non_empty_call() {
+    let km = aead_key(&KEY);
+    let held = [0x5au8; 16];
+
+    let mut d = km.create_decryptor(&NONCE);
+    assert_eq!(d.do_decrypt_inplace(&mut []), 0);
+    d.do_update_aad(b"still open").unwrap();
+    assert_eq!(d.do_decrypt_inplace(&mut held.clone()), 0, "all held back");
+    assert!(matches!(d.do_update_aad(b"late"), Err(SymmetricCipherError::StateError(_))));
+
+    let mut d = km.create_decryptor(&NONCE);
+    let mut out = [0u8; 16];
+    assert_eq!(d.do_decrypt_out(&[], &mut out).unwrap(), 0);
+    d.do_update_aad(b"still open").unwrap();
+    assert_eq!(d.do_decrypt_out(&held, &mut out).unwrap(), 0, "all held back");
+    assert!(matches!(d.do_update_aad(b"late"), Err(SymmetricCipherError::StateError(_))));
+}
+
 /// The two tag layouts must agree byte for byte: `direct_ciphertext || direct_tag`, produced by
 /// streaming [`Ascon_AEAD128<Encrypting>`] and taking the tag from `do_encrypt_final_detached_out`,
 /// must equal what the inline layout produces for the same key, nonce (driven by the same RNG

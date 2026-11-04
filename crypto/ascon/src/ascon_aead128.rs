@@ -608,6 +608,11 @@ impl Ascon_AEAD128<Decrypting> {
     /// newest `ASCON_AEAD128_TAG_LEN` bytes are held back for the final, so either final can
     /// follow. Whatever is in `data` past the returned count is not plaintext.
     pub fn do_decrypt_inplace(&mut self, data: &mut [u8]) -> usize {
+        // The same phase rule as `do_decrypt_out`: data has started once any ciphertext has
+        // been seen, even while all of it is held back, and an empty call is a no-op.
+        if !data.is_empty() {
+            self.check_data();
+        }
         let release = self.do_decrypt_out_len(data.len());
         let from_held = release.min(self.held_len);
         let from_input = release - from_held;
@@ -624,7 +629,6 @@ impl Ascon_AEAD128<Decrypting> {
         // the input moves right to make room for the held-back bytes ahead of it.
         data.copy_within(..from_input, from_held);
         data[..from_held].copy_from_slice(&self.held[..from_held]);
-        // Called even when `release` is 0, which is what ends the AAD phase.
         self.decrypt_bytes(&mut data[..release]);
 
         self.held = new_held;
