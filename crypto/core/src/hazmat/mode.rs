@@ -20,8 +20,7 @@
 //! Every worker borrows the key state it is made from, for the lifetime `'k` on the mode's
 //! associated worker type: the schedule stays in the key and is read through the reference, so
 //! making a worker copies nothing but the per-message state, and a worker cannot outlive its
-//! key. Resuming a suspended worker takes the same reference, which a key object exposes through
-//! [`ModeKey::state`].
+//! key.
 
 use crate::errors::SymmetricCipherError;
 use crate::key_material::KeyType;
@@ -48,15 +47,6 @@ pub trait Mode<P> {
 
     /// Builds the per-key state from an already-keyed permutation.
     fn key_state(perm: P) -> Self::KeyState;
-}
-
-/// A key object's mode state, borrowed: what a suspended worker is resumed over
-/// (`SuspendableKeyed::Key` on a cipher mode's worker is the mode's `KeyState`). Hazmat because
-/// the state is the bare keyed permutation, which the mode traits take directly; the safe route to
-/// a worker is the key's `create_*` method.
-pub trait ModeKey<P, M: Mode<P>> {
-    /// The mode's per-key state this key holds.
-    fn state(&self) -> &M::KeyState;
 }
 
 // `KEY_LEN` is on these traits as the tie between a key's length and its permutation's: a mode

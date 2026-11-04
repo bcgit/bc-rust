@@ -51,14 +51,6 @@
 //! assert_eq!(<NoPadding as BlockCipherPadding<16>>::unpad(&block), Ok(16));
 //! ```
 //!
-//! # Suspending and resuming execution
-//!
-//! Each adapter implements [`SuspendableKeyed`](bouncycastle_core::traits::SuspendableKeyed), so a
-//! message in progress can be suspended to a byte array and resumed later with the re-supplied key.
-//! The state is the inner cipher's state and the buffered partial block, plus the withheld block on
-//! the decryptor. The array length is `PaddedBlockCipherEncryptor::SUSPENDED_STATE_LEN`; see [the
-//! crate docs](crate#suspending-and-resuming-execution) for an example.
-//!
 //! # Memory Usage
 //!
 //! | Operation                    | Stack (excluding the caller's buffers and the inner cipher) |

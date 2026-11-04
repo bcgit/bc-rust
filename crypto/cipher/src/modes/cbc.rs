@@ -85,13 +85,6 @@
 //! assert_eq!(rest, [[0xBBu8; 16]; 2]);
 //! ```
 //!
-//! # Suspending and resuming execution
-//!
-//! [`Cbc`] implements [`SuspendableKeyed`], so a message in progress can be suspended to a byte
-//! array and resumed later over the re-supplied key state. The state is the chaining block; the
-//! permutation is the key's. The array length is `Cbc::SUSPENDED_STATE_LEN`; see [the
-//! crate docs](crate#suspending-and-resuming-execution) for an example.
-//!
 //! # 🚨 Security Considerations 🚨
 //! ## IV integrity
 //!
@@ -110,7 +103,7 @@ use crate::modes::iv::random_iv;
 use crate::modes::{Blocks, ModeNames};
 use crate::padding::{PaddedBlockCipherDecryptor, PaddedBlockCipherEncryptor};
 use crate::{Decrypting, Encrypting};
-use bouncycastle_core::errors::{SuspendableError, SymmetricCipherError};
+use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::hazmat::{
     BlockDecryptMode, BlockEncryptMode, BlockPermutation, ElectronicCodeBook, Mode,
     SymmetricDecryptMode, SymmetricEncryptMode,
@@ -119,10 +112,6 @@ use bouncycastle_core::key_material::KeyType;
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{
     Algorithm, BlockCipherDecryptor, BlockCipherEncryptor, BlockCipherPadding, RNG,
-    SuspendableKeyed,
-};
-use bouncycastle_utils::suspendable_state::{
-    LIB_VERSION_LEN, SuspendableComponent, resume_component, suspend_component,
 };
 use core::marker::PhantomData;
 
@@ -248,10 +237,6 @@ impl<'k, P, Dir, const BLOCK_LEN: usize> Cbc<'k, P, Dir, BLOCK_LEN>
 where
     P: BlockPermutation<BLOCK_LEN> + ModeNames,
 {
-    /// The `N` of this type's [`SuspendableKeyed<'k, N>`] impl: the version header and the chaining
-    /// block. See [`bouncycastle_utils::suspendable_state`].
-    pub const SUSPENDED_STATE_LEN: usize = LIB_VERSION_LEN + BLOCK_LEN;
-
     /// `C0 = IV`, over an already-keyed permutation: what the [`CBC`] mode impls build.
     pub(crate) fn from_perm(perm: &'k P, iv: [u8; BLOCK_LEN]) -> Self {
         Self { perm, chain: iv, _dir: PhantomData }
@@ -390,46 +375,5 @@ where
             self.decrypt_one(block);
         }
         Ok(len)
-    }
-}
-
-/// The suspended state is the chaining block `Cj-1`, in both directions; the permutation is the
-/// key's, re-supplied by reference. See [`bouncycastle_utils::suspendable_state`].
-impl<'k, P, Dir, const BLOCK_LEN: usize> SuspendableComponent<'k> for Cbc<'k, P, Dir, BLOCK_LEN>
-where
-    P: BlockPermutation<BLOCK_LEN> + ModeNames,
-{
-    const STATE_LEN: usize = BLOCK_LEN;
-    type Key = P;
-
-    fn write_state(&self, out: &mut [u8]) {
-        out.copy_from_slice(&self.chain);
-    }
-
-    fn read_state(state: &[u8], key: &'k Self::Key) -> Result<Self, SuspendableError> {
-        let perm = key;
-        let mut chain = [0u8; BLOCK_LEN];
-        chain.copy_from_slice(state);
-        Ok(Self { perm, chain, _dir: PhantomData })
-    }
-}
-
-/// `N` must be [`Cbc::SUSPENDED_STATE_LEN`]; anything else is a compile error.
-impl<'k, P, Dir, const BLOCK_LEN: usize, const N: usize> SuspendableKeyed<'k, N>
-    for Cbc<'k, P, Dir, BLOCK_LEN>
-where
-    P: BlockPermutation<BLOCK_LEN> + ModeNames,
-{
-    type Key = P;
-
-    fn suspend(self) -> [u8; N] {
-        suspend_component(&self)
-    }
-
-    /// The state carries no direction: one suspended by the other direction's worker is accepted
-    /// and resumes over the same chaining value, which gives wrong output rather than an error.
-    /// Only GCM, whose state means different things per direction, refuses the other one.
-    fn from_suspended(state: [u8; N], key: &'k Self::Key) -> Result<Self, SuspendableError> {
-        resume_component(&state, key)
     }
 }

@@ -185,10 +185,14 @@ taught, as mechanics to apply next time a cipher type is shaped or reshaped:
   helpers for what they do (`absorb_aad`, `encrypt_bytes`, `finish_tag`, `verify_tag`).
 - **Fold wrapper state into the struct.** A decrypt-only buffer (the held-back tag) is carried on
   both directions, unused when encrypting, as `Gcm` already does; that is cheaper than a second
-  type and keeps `SuspendableKeyed` on the cipher itself.
-- **Suspended-state formats are frozen.** Moving the impl or splitting the type must not change a
-  byte of the layout; the call-state byte keeps its direction bits and resume refuses the other
-  direction. When the two directions' states differ in length, publish a constant per direction.
+  type.
+- **Cipher workers do not suspend.** As of #173 no cipher or MAC worker implements
+  `SuspendableKeyed` or `SuspendableComponent`, and `hazmat::ModeKey` is gone with them; HMAC and
+  HKDF are the `SuspendableKeyed` implementors that remain, and the hashes, XOFs and KMAC keep
+  `Suspendable`. A message in progress is paused by holding its worker. A test that needs a
+  worker at a limit the public API cannot reach (GCM at `MAX_DATA_LEN`, the last counter block)
+  is a unit test in the mode's file that sets the private field, not a resume from a patched
+  state.
 - **When public items go, the tests follow the API, and the benches get built.** Integration
   tests move onto the trait methods rather than the inherent ones surviving for their sake.
   `cargo test --workspace` does not compile `benches/` or `mem_usage_benches`, so finish with
@@ -236,14 +240,12 @@ What that taught, as mechanics for the next trait that sheds a constructor:
   function handed `key: &'k K` that names the worker is generic over `'k`; one that builds its
   key locally bounds `for<'k> K::Encryptor<'k>: ..` with `K: 'static`. A test binds the key
   before the worker, since `key_fn().create_encryptor(..)` borrows a temporary.
-- **Resume takes the key object.** `SuspendableKeyed<'k, N>` and `SuspendableComponent<'k>` take
-  the key by `&'k`: a cipher-mode worker's `Key` is the mode's `KeyState`, reached through
-  `hazmat::ModeKey::state`, HMAC's is `HmacKey`, Ascon's is `AsconAEAD128Key`, and HKDF's stays
-  the salt material, since HKDF is not a key object. The suspended layouts did not change. A
-  worker that owns a copy of its key (Ascon, KMAC) implements the traits for every `'k` and
-  ignores it. A struct cannot hold a worker that borrows a key it also owns: HKDF runs its
-  extract-phase HMAC as the two halves `HmacKey::inner_state` / `finish_out`, and the MAC
-  factory is a key enum that hands out a worker enum.
+- **Resume takes the key object.** `SuspendableKeyed<'k, N>` takes the key by `&'k`: HMAC's is
+  `HmacKey`, and HKDF's stays the salt material, since HKDF is not a key object. A worker that
+  owns a copy of its key (KMAC) implements the trait for every `'k` and ignores it. A struct
+  cannot hold a worker that borrows a key it also owns: HKDF runs its extract-phase HMAC as the
+  two halves `HmacKey::inner_state` / `finish_out`, and the MAC factory is a key enum that hands
+  out a worker enum.
 - **What has no key-path twin is dropped, and said so.** `new_allow_weak_key` on a cipher-based
   MAC, a wrong-length `KeyMaterial512` into a fixed-length key, GCM's verify-before-decrypt
   one-shot override: each went with a line in the commit message rather than a shim.

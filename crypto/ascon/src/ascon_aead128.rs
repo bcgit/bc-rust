@@ -19,17 +19,16 @@
 use core::fmt::{self, Debug, Display, Formatter};
 
 use bouncycastle_cipher::{Decrypting, Encrypting};
-use bouncycastle_core::errors::{KeyMaterialError, SuspendableError, SymmetricCipherError};
+use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::symmetric_key::{AeadDecryptionKey, AeadEncryptionKey, FromKeyMaterial};
 use bouncycastle_core::traits::{
-    AEADCipherDecryptor, AEADCipherEncryptor, Algorithm, RNG, SuspendableKeyed,
-    SymmetricCipherDecryptor, SymmetricCipherEncryptor,
+    AEADCipherDecryptor, AEADCipherEncryptor, Algorithm, RNG, SymmetricCipherDecryptor,
+    SymmetricCipherEncryptor,
 };
 use bouncycastle_utils::ct::ct_eq_bytes;
 use bouncycastle_utils::secret::Secret;
-use bouncycastle_utils::suspendable_state::{add_lib_ver, check_lib_ver};
 use core::marker::PhantomData;
 
 use crate::ASCON_AEAD128_NAME;
@@ -53,27 +52,6 @@ enum Phase {
     Init,
     Aad,
     Data,
-}
-
-impl Phase {
-    // Stable encoding of the low bits of the suspended call-state byte; the direction supplies
-    // the rest (see `ENC_DIR_BITS` / `DEC_DIR_BITS`).
-    fn to_u8(self) -> u8 {
-        match self {
-            Phase::Init => 0,
-            Phase::Aad => 1,
-            Phase::Data => 2,
-        }
-    }
-
-    fn from_u8(v: u8) -> Option<Self> {
-        Some(match v {
-            0 => Phase::Init,
-            1 => Phase::Aad,
-            2 => Phase::Data,
-            _ => return None,
-        })
-    }
 }
 
 /// Ascon-AEAD128 (NIST SP 800-232), spelled as the specification spells it, in one direction:
@@ -757,183 +735,5 @@ impl<Dir> Debug for Ascon_AEAD128<Dir> {
 impl<Dir> Display for Ascon_AEAD128<Dir> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
         write!(f, "Ascon-AEAD128 (key/state masked)")
-    }
-}
-
-/// Length in bytes of the serialized state of `Ascon_AEAD128<Encrypting>`:
-/// 3-byte library version || 1-byte state tag || 40-byte permutation state (5 × u64 LE)
-/// || 1-byte byte position within the current rate block || 1-byte call-state/direction.
-/// The secret key is **not** serialized; it is re-supplied to [`SuspendableKeyed::from_suspended`].
-pub const SUSPENDED_ASCON_AEAD128_ENCRYPTOR_STATE_LEN: usize = CIPHER_STATE_LEN;
-
-/// Length in bytes of the serialized state of `Ascon_AEAD128<Decrypting>`: the encrypting
-/// side's layout, then the up to `ASCON_AEAD128_TAG_LEN` bytes it holds back and their count.
-pub const SUSPENDED_ASCON_AEAD128_DECRYPTOR_STATE_LEN: usize =
-    CIPHER_STATE_LEN + ASCON_AEAD128_TAG_LEN + 1;
-
-/// The cipher core's serialized state: the whole of the encrypting side's and the head of the
-/// decrypting side's.
-const CIPHER_STATE_LEN: usize = 46;
-
-/// The byte after the library version that marks a suspended state as Ascon-AEAD128's;
-/// `from_suspended` rejects any other value as [`SuspendableError::InvalidData`]. This is a
-/// bc-rust serialization tag, not an SP 800-232 value (its Table 13 identifies Ascon-AEAD128 as
-/// `v = 1`). The crate's tags are unique: Ascon-Hash256 0x01, Ascon-XOF128 0x02,
-/// Ascon-CXOF128 0x03, Ascon-AEAD128 0x04. Never renumber one, or older states are misread.
-const AEAD128_STATE_TAG: u8 = 0x04;
-
-/// The direction's part of the suspended call-state byte, with the [`Phase`] in the low two
-/// bits: `0..=2` encrypting, `4..=6` decrypting. The encoding predates the direction being in
-/// the type; never renumber it, or older states are misread.
-const ENC_DIR_BITS: u8 = 0;
-const DEC_DIR_BITS: u8 = 4;
-
-impl<'k> SuspendableKeyed<'k, SUSPENDED_ASCON_AEAD128_ENCRYPTOR_STATE_LEN>
-    for Ascon_AEAD128<Encrypting>
-{
-    // The key is never part of the serialized state; the key object the worker was made from is
-    // re-supplied, already validated.
-    type Key = AsconAEAD128Key;
-
-    fn suspend(self) -> [u8; SUSPENDED_ASCON_AEAD128_ENCRYPTOR_STATE_LEN] {
-        self.suspend_as(ENC_DIR_BITS)
-    }
-
-    /// A state suspended by the decrypting side is [`SuspendableError::InvalidData`] here.
-    fn from_suspended(
-        serialized_state: [u8; SUSPENDED_ASCON_AEAD128_ENCRYPTOR_STATE_LEN],
-        key: &'k Self::Key,
-    ) -> Result<Self, SuspendableError> {
-        Self::resume_as(serialized_state, key, ENC_DIR_BITS)
-    }
-}
-
-/// The core's state, then the held-back bytes and their count; see
-/// [`SUSPENDED_ASCON_AEAD128_DECRYPTOR_STATE_LEN`].
-impl<'k> SuspendableKeyed<'k, SUSPENDED_ASCON_AEAD128_DECRYPTOR_STATE_LEN>
-    for Ascon_AEAD128<Decrypting>
-{
-    type Key = AsconAEAD128Key;
-
-    fn suspend(self) -> [u8; SUSPENDED_ASCON_AEAD128_DECRYPTOR_STATE_LEN] {
-        let mut out = [0u8; SUSPENDED_ASCON_AEAD128_DECRYPTOR_STATE_LEN];
-        out[CIPHER_STATE_LEN..CIPHER_STATE_LEN + ASCON_AEAD128_TAG_LEN].copy_from_slice(&self.held);
-        debug_assert!(self.held_len <= ASCON_AEAD128_TAG_LEN);
-        out[CIPHER_STATE_LEN + ASCON_AEAD128_TAG_LEN] = self.held_len as u8;
-        out[..CIPHER_STATE_LEN].copy_from_slice(&self.suspend_as(DEC_DIR_BITS));
-        out
-    }
-
-    /// A state suspended by the encrypting side, a held-back count above `ASCON_AEAD128_TAG_LEN`,
-    /// or held-back bytes before any ciphertext was seen, is [`SuspendableError::InvalidData`].
-    fn from_suspended(
-        serialized_state: [u8; SUSPENDED_ASCON_AEAD128_DECRYPTOR_STATE_LEN],
-        key: &'k Self::Key,
-    ) -> Result<Self, SuspendableError> {
-        // infallible: the slice is exactly CIPHER_STATE_LEN bytes by construction.
-        let cipher_state: [u8; CIPHER_STATE_LEN] =
-            serialized_state[..CIPHER_STATE_LEN].try_into().unwrap();
-        let mut dec = Self::resume_as(cipher_state, key, DEC_DIR_BITS)?;
-        dec.held.copy_from_slice(
-            &serialized_state[CIPHER_STATE_LEN..CIPHER_STATE_LEN + ASCON_AEAD128_TAG_LEN],
-        );
-        dec.held_len = serialized_state[CIPHER_STATE_LEN + ASCON_AEAD128_TAG_LEN] as usize;
-        if dec.held_len > ASCON_AEAD128_TAG_LEN {
-            return Err(SuspendableError::InvalidData);
-        }
-        // Bytes are held back only by `decrypt_bytes`' callers, which move the phase to `Data`.
-        if dec.held_len != 0 && dec.phase != Phase::Data {
-            return Err(SuspendableError::InvalidData);
-        }
-        Ok(dec)
-    }
-}
-
-impl<Dir> Ascon_AEAD128<Dir> {
-    /// The body of both directions' [`SuspendableKeyed::suspend`]; `dir_bits` marks the direction.
-    fn suspend_as(self, dir_bits: u8) -> [u8; CIPHER_STATE_LEN] {
-        let mut out_to_return = [0u8; CIPHER_STATE_LEN];
-        // infallible: add_lib_ver returns a slice of exactly CIPHER_STATE_LEN - 3 = 43 bytes.
-        let out: &mut [u8; CIPHER_STATE_LEN - 3] =
-            add_lib_ver(&mut out_to_return).try_into().unwrap();
-
-        out[0] = AEAD128_STATE_TAG;
-        for i in 0..5 {
-            out[1 + i * 8..1 + i * 8 + 8].copy_from_slice(&self.state[i].to_le_bytes());
-        }
-        debug_assert!(self.pos < RATE);
-        out[41] = self.pos as u8;
-        out[42] = dir_bits | self.phase.to_u8();
-
-        out_to_return
-    }
-
-    /// The body of both directions' [`SuspendableKeyed::from_suspended`]: a call-state byte whose
-    /// direction is not `dir_bits` is refused, so a state never resumes in the other direction.
-    fn resume_as(
-        serialized_state: [u8; CIPHER_STATE_LEN],
-        key: &AsconAEAD128Key,
-        dir_bits: u8,
-    ) -> Result<Self, SuspendableError> {
-        // infallible: check_lib_ver returns a slice of exactly CIPHER_STATE_LEN - 3 = 43 bytes.
-        let input: &[u8; CIPHER_STATE_LEN - 3] =
-            check_lib_ver(&serialized_state, None)?.try_into().unwrap();
-
-        if input[0] != AEAD128_STATE_TAG {
-            return Err(SuspendableError::InvalidData);
-        }
-        let mut s = Secret::<AsconState>::new();
-        for i in 0..5 {
-            // infallible: each slice is exactly 8 bytes (1+i*8..1+i*8+8) by construction.
-            s[i] = u64::from_le_bytes(input[1 + i * 8..1 + i * 8 + 8].try_into().unwrap());
-        }
-        let pos = input[41] as usize;
-        if pos >= RATE {
-            return Err(SuspendableError::InvalidData);
-        }
-        // The phase is the low two bits; everything above them must be exactly this direction.
-        if input[42] & !0x03 != dir_bits {
-            return Err(SuspendableError::InvalidData);
-        }
-        let phase = Phase::from_u8(input[42] & 0x03).ok_or(SuspendableError::InvalidData)?;
-        // A nonzero byte position implies at least one AAD/data byte has already been absorbed
-        // into the current rate block, which is only possible once the Aad or Data phase has
-        // begun -- never while still in Init.
-        if pos != 0 && phase == Phase::Init {
-            return Err(SuspendableError::InvalidData);
-        }
-
-        let mut key_secret = Secret::<[u64; 2]>::new();
-        *key_secret = *key.key;
-
-        Ok(Ascon_AEAD128 {
-            key: key_secret,
-            state: s,
-            pos,
-            phase,
-            held: [0u8; ASCON_AEAD128_TAG_LEN],
-            held_len: 0,
-            _dir: PhantomData,
-        })
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    // Phase is private, so its to_u8/from_u8 round trip -- exercised end-to-end via
-    // suspend/resume in tests/aead128_tests.rs for the phases reachable there -- is pinned
-    // directly here for every discriminant, including ones a successful resume never needs to
-    // decode into (Init and Aad never survive to be the *end* phase of a still-running cipher in
-    // the integration tests, since further processing always advances them to Data).
-    #[test]
-    fn phase_u8_round_trip() {
-        for s in [Phase::Init, Phase::Aad, Phase::Data] {
-            assert_eq!(Phase::from_u8(s.to_u8()), Some(s), "round trip failed for {s:?}");
-        }
-        // The unassigned low-bits value (3, which the old six-state encoding also skipped) must
-        // be rejected, not silently mapped to a variant.
-        assert_eq!(Phase::from_u8(3), None);
     }
 }

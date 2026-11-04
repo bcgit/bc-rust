@@ -8,7 +8,7 @@ use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
 use bouncycastle_core::hazmat::{
     AeadDeclaredDecryptMode, AeadDeclaredEncryptMode, AeadDecryptMode, AeadEncryptMode,
     BlockDecryptMode, BlockEncryptMode, EcbDecryptMode, EcbDecryptionKey, EcbEncryptMode,
-    EcbEncryptionKey, MacMode, Mode, ModeKey, SymmetricDecryptMode, SymmetricEncryptMode,
+    EcbEncryptionKey, MacMode, Mode, SymmetricDecryptMode, SymmetricEncryptMode,
     do_hazardous_operations,
 };
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
@@ -209,12 +209,6 @@ impl<M: Mode<AES256Internal>> FromKeyMaterial<32> for AES256Key<M> {
             _ => AES256Internal::new(&as_cipher_key(key)?)?,
         };
         Ok(Self { state: M::key_state(perm) })
-    }
-}
-
-impl<P: AESParams, M: Mode<AESInternal<P>>> ModeKey<AESInternal<P>, M> for AESKey<P, M> {
-    fn state(&self) -> &M::KeyState {
-        &self.state
     }
 }
 

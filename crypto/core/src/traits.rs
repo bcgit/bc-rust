@@ -971,7 +971,8 @@ pub trait Suspendable<const SERIALIZED_STATE_LEN: usize>: Sized {
     /// Suspend operation by serializing out the state of the object.
     ///
     /// Note that this consumes `self` to prevent accidentally continuing to use the object after serialization.
-    /// If you want to do this intentionally, then you will need to clone the object before serializing it.
+    /// The state is bytes, so nothing stops a caller resuming it twice; two objects resumed from
+    /// one checkpoint continue identically. Treat a checkpoint as single-use.
     ///
     /// The serialized state MUST include a prefix indicating the version of the library that serialized it.
     fn suspend(self) -> [u8; SERIALIZED_STATE_LEN];
@@ -988,20 +989,25 @@ pub trait Suspendable<const SERIALIZED_STATE_LEN: usize>: Sized {
 /// Similar to [`Suspendable`] in that it allows a stateful object to suspend its operation by
 /// serializing its state into a byte array so that it can be resumed later, potentially from a different host.
 ///
-/// The difference is that this trait is for keyed algorithms -- MACs, symmetric ciphers, signatures, etc --
-/// which require a private key in order to resume successfully.
-/// For security reasons, the private key is not included in the serialized state
-/// and must be provided separately as part of the deserialization process.
+/// The difference is that this trait is for keyed algorithms which require a key in order to
+/// resume successfully: the MACs and KDFs built on a hash (HMAC, HKDF). For security reasons, the
+/// key is not included in the serialized state and must be provided separately as part of the
+/// deserialization process.
+///
+/// Cipher and MAC workers do not implement it (#173): a resumed worker is a second copy of a
+/// nonce, counter or keystream position, and two copies that both go on to encrypt reuse
+/// keystream. A message in progress is paused by holding its worker.
 pub trait SuspendableKeyed<'k, const SERIALIZED_STATE_LEN: usize>: Sized {
     /// The type of key that must be re-supplied to resume this object. A worker that borrows its
-    /// key for `'k` names the key's type (the mode's key state, for a cipher mode) and is resumed
-    /// over the reference it is given; one that owns a copy of its key ignores the lifetime.
+    /// key for `'k` names the key's type and is resumed over the reference it is given; one that
+    /// owns a copy of its key ignores the lifetime.
     type Key: ?Sized;
 
     /// Suspend operation by serializing out the state of the object.
     ///
     /// Note that this consumes `self` to prevent accidentally continuing to use the object after serialization.
-    /// If you want to do this intentionally, then you will need to clone the object before serializing it.
+    /// The state is bytes, so nothing stops a caller resuming it twice; two objects resumed from
+    /// one checkpoint continue identically. Treat a checkpoint as single-use.
     ///
     /// The serialized state MUST include a prefix indicating the version of the library that serialized it.
     fn suspend(self) -> [u8; SERIALIZED_STATE_LEN];
