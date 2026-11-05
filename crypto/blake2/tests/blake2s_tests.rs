@@ -19,7 +19,6 @@ mod blake2s_tests {
         MIN_MAC_OUTPUT_LEN, Suspendable, SuspendableKeyed,
     };
     use bouncycastle_core_test_framework::DUMMY_SEED;
-    use bouncycastle_core_test_framework::FixedSeedRNG;
     use bouncycastle_core_test_framework::from_key_material::TestFrameworkFromAnyKeyMaterial;
     use bouncycastle_core_test_framework::hash::TestFrameworkHash;
     use bouncycastle_core_test_framework::mac::TestFrameworkMAC;
@@ -27,6 +26,7 @@ mod blake2s_tests {
         TestFrameworkSuspendableKeyedState, TestFrameworkSuspendableState,
     };
     use bouncycastle_hex as hex;
+    use bouncycastle_rng::FixedSeedRNG;
 
     type H = BLAKE2s_256;
     type K = BLAKE2s_256_MACKey;
@@ -380,12 +380,12 @@ mod blake2s_tests {
     #[test]
     fn key_generate() {
         let seed: [u8; 64] = core::array::from_fn(|i| DUMMY_SEED[300 + i]);
-        let generated = K::generate(&mut FixedSeedRNG::<64>::new(seed)).unwrap();
+        let generated = K::generate(&mut FixedSeedRNG::new(seed)).unwrap();
         let material =
             KeyMaterial::<KK_MAX>::from_bytes_as_type(&seed[..KK_MAX], KeyType::MACKey).unwrap();
         assert_eq!(generated.mac(b"abc"), K::from_key_material(&material).unwrap().mac(b"abc"));
 
-        let mut weak_rng = FixedSeedRNG::<64>::new(seed);
+        let mut weak_rng = FixedSeedRNG::new(seed);
         weak_rng.set_security_strength(SecurityStrength::_112bit);
         assert!(matches!(
             K::generate(&mut weak_rng),

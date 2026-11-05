@@ -23,11 +23,11 @@ mod keyed_hash_tests {
         Algorithm, AlgorithmInfo, HashOneShot, MAC, MIN_MAC_OUTPUT_LEN, SuspendableKeyed,
         XOFSqueezer,
     };
-    use bouncycastle_core_test_framework::FixedSeedRNG;
     use bouncycastle_core_test_framework::from_key_material::TestFrameworkFromAnyKeyMaterial;
     use bouncycastle_core_test_framework::mac::TestFrameworkMAC;
     use bouncycastle_core_test_framework::suspendable_state::TestFrameworkSuspendableKeyedState;
     use bouncycastle_hex as hex;
+    use bouncycastle_rng::FixedSeedRNG;
 
     fn h(s: &str) -> Vec<u8> {
         hex::decode(s).unwrap()
@@ -246,14 +246,14 @@ mod keyed_hash_tests {
         let expected = BLAKE3KeyedHashKey::from_key_material(&from_seed).unwrap().mac(b"abc");
 
         for strength in [SecurityStrength::_128bit, SecurityStrength::_256bit] {
-            let mut rng = FixedSeedRNG::<64>::new(seed);
+            let mut rng = FixedSeedRNG::new(seed);
             rng.set_security_strength(strength);
             let key = BLAKE3KeyedHashKey::generate(&mut rng).unwrap();
             assert_eq!(key.mac(b"abc"), expected, "the first 32 RNG bytes are the key");
         }
 
         for strength in [SecurityStrength::None, SecurityStrength::_112bit] {
-            let mut rng = FixedSeedRNG::<64>::new(seed);
+            let mut rng = FixedSeedRNG::new(seed);
             rng.set_security_strength(strength);
             assert!(matches!(
                 BLAKE3KeyedHashKey::generate(&mut rng),

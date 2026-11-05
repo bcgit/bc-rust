@@ -26,9 +26,9 @@ mod sha3_cmd;
 mod sm2_cmd;
 mod sm3_cmd;
 
+use crate::blake2_cmd::BLAKE2Variant;
 use crate::ecdsa_cmd::ECDSAAction;
 use crate::hkdf_cmd::HKDFVariant;
-use crate::blake2_cmd::BLAKE2Variant;
 use crate::mac_cmd::HMACVariant;
 use crate::mldsa_cmd::{MLDSAAction, PreHashAlg};
 use crate::rng_cmd::DrbgHash;
