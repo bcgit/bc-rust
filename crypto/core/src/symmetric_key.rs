@@ -1226,6 +1226,19 @@ pub trait KeyWrappingKey<const KEK_LEN: usize> {
     ) -> Result<usize, SymmetricCipherError> {
         self.create_wrapper().wrap_out(plaintext, ciphertext)
     }
+
+    /// As [`wrap_out`](Self::wrap_out), allocating the ciphertext.
+    ///
+    /// # Errors
+    /// As [`wrap_out`](Self::wrap_out).
+    #[cfg(feature = "std")]
+    fn wrap(&self, plaintext: &[u8]) -> Result<Vec<u8>, SymmetricCipherError> {
+        let wrapper = self.create_wrapper();
+        let mut ciphertext = vec![0u8; wrapper.wrap_out_len(plaintext.len())];
+        let written = wrapper.wrap_out(plaintext, &mut ciphertext)?;
+        ciphertext.truncate(written);
+        Ok(ciphertext)
+    }
 }
 
 /// A key that can unwrap keys; see [`KeyWrappingKey`] for the shape and the lifetime of the
@@ -1281,5 +1294,20 @@ pub trait KeyUnwrappingKey<const KEK_LEN: usize> {
         plaintext: &mut [u8],
     ) -> Result<usize, SymmetricCipherError> {
         self.create_unwrapper().unwrap_out(ciphertext, plaintext)
+    }
+
+    /// As [`unwrap_out`](Self::unwrap_out), allocating the plaintext, sized to what was recovered.
+    /// A `Vec` is not zeroized on drop: prefer [`unwrap_key`](Self::unwrap_key) when the length is
+    /// known at compile time, and zeroize this one when done with it.
+    ///
+    /// # Errors
+    /// As [`unwrap_out`](Self::unwrap_out).
+    #[cfg(feature = "std")]
+    fn unwrap(&self, ciphertext: &[u8]) -> Result<Vec<u8>, SymmetricCipherError> {
+        let unwrapper = self.create_unwrapper();
+        let mut plaintext = vec![0u8; unwrapper.unwrap_out_max_len(ciphertext.len())];
+        let written = unwrapper.unwrap_out(ciphertext, &mut plaintext)?;
+        plaintext.truncate(written);
+        Ok(plaintext)
     }
 }
