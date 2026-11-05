@@ -2537,7 +2537,9 @@ enum Subcommands {
 
         /// HAZARDOUS: instantiate the DRBG from this file's bytes (raw; hex with --hex-input)
         /// as its entropy input instead of the operating system, so the same file gives the
-        /// same stream. For reproducible test data only; the output is as secret as the file.
+        /// same stream. There is no nonce, so the file must hold 3/2 of the strength: 48 bytes
+        /// for sha512, 24 for sha256. For reproducible test data only; the output is as secret as
+        /// the file.
         #[arg(long)]
         seed_file: Option<String>,
 
