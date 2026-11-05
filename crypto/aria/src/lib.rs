@@ -23,9 +23,11 @@
 //! for CFB128 (Sec 6.3), `CFB8` for the `s = 8` segment size, a different and non-interoperable
 //! mode costing one ARIA call per byte, and `CTR` for CTR (Sec 6.5) with a 12-byte nonce and a
 //! 4-byte counter; `GCM` and `CCM<N, T>` for the authenticated modes (NIST SP 800-38D and
-//! 800-38C), and `CMAC` and `GMAC` for the MACs. The aliases [`ARIA_CBC_128`], [`ARIA_CFB_128`],
-//! [`ARIA_CFB8_128`], [`ARIA_CTR_128`], [`ARIA_GCM_128`], [`ARIA_CCM_128`], [`ARIA_CMAC_128`],
-//! [`ARIA_GMAC_128`] and their `_192` / `_256` siblings name the workers the keys hand out.
+//! 800-38C), `CMAC` and `GMAC` for the MACs, and `KW` and `KWP` for the key wraps (SP 800-38F;
+//! RFC 5794 Appendix B). The aliases [`ARIA_CBC_128`], [`ARIA_CFB_128`], [`ARIA_CFB8_128`],
+//! [`ARIA_CTR_128`], [`ARIA_GCM_128`], [`ARIA_CCM_128`], [`ARIA_CMAC_128`], [`ARIA_GMAC_128`],
+//! [`ARIA_KW_128`], [`ARIA_KWP_128`] and their `_192` / `_256` siblings name the workers the keys
+//! hand out.
 //!
 //! CBC is a block cipher, so it is defined only on whole blocks and the key's mode carries a
 //! padding scheme to bridge the difference; the CFB modes and CTR are stream ciphers and take any
@@ -330,6 +332,7 @@ mod gcm;
 mod gmac;
 pub mod hazmat;
 mod key;
+mod kw;
 mod round;
 mod sbox;
 mod schedule;
@@ -350,6 +353,7 @@ pub use ctr::{ARIA_CTR_128, ARIA_CTR_192, ARIA_CTR_256, CTR_NONCE_LEN};
 pub use gcm::{ARIA_GCM_128, ARIA_GCM_192, ARIA_GCM_256};
 pub use gmac::{ARIA_GMAC_128, ARIA_GMAC_192, ARIA_GMAC_256};
 pub use key::{ARIA128Key, ARIA192Key, ARIA256Key, ARIAKey};
+pub use kw::{ARIA_KW_128, ARIA_KW_192, ARIA_KW_256, ARIA_KWP_128, ARIA_KWP_192, ARIA_KWP_256};
 pub use schedule::{ARIA128Params, ARIA192Params, ARIA256Params, ARIAParams};
 
 // Imports needed for docs

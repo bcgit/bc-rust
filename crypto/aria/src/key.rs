@@ -7,14 +7,14 @@ use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
 use bouncycastle_core::hazmat::{
     AeadDeclaredDecryptMode, AeadDeclaredEncryptMode, AeadDecryptMode, AeadEncryptMode,
     BlockDecryptMode, BlockEncryptMode, EcbDecryptMode, EcbDecryptionKey, EcbEncryptMode,
-    EcbEncryptionKey, MacMode, Mode, SymmetricDecryptMode, SymmetricEncryptMode,
-    do_hazardous_operations,
+    EcbEncryptionKey, KeyUnwrapMode, KeyWrapMode, MacMode, Mode, SymmetricDecryptMode,
+    SymmetricEncryptMode, do_hazardous_operations,
 };
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::symmetric_key::{
     AeadDeclaredDecryptionKey, AeadDeclaredEncryptionKey, AeadDecryptionKey, AeadEncryptionKey,
-    BlockDecryptionKey, BlockEncryptionKey, FromKeyMaterial, MacGenerationKey, MacVerificationKey,
-    SymmetricDecryptionKey, SymmetricEncryptionKey,
+    BlockDecryptionKey, BlockEncryptionKey, FromKeyMaterial, KeyUnwrappingKey, KeyWrappingKey,
+    MacGenerationKey, MacVerificationKey, SymmetricDecryptionKey, SymmetricEncryptionKey,
 };
 use bouncycastle_core::traits::RNG;
 
@@ -29,10 +29,10 @@ use bouncycastle_core::traits::RNG;
 /// traits over the permutation -- the stream modes `CFB`, `CFB8` and `CTR<N>` at any nonce
 /// length `N`, and the padded block modes `CBC<PKCS7>`, `CBC<NoPadding>`, `ECB<PKCS7>` and
 /// `ECB<NoPadding>` -- the block pair for `CBC<Blocks>`, the `hazmat` ECB pair for `ECB<Blocks>`,
-/// the AEAD pairs for `GCM`, `CCM` and `CCM_Packet`, the MAC pair for `CMAC`, and GMAC's
-/// nonce-bound generator and verifier as inherent methods. The crate names the workers of
-/// CBC, CFB, CFB8, CTR, GCM, CCM, CMAC and GMAC as the `ARIA_*` aliases; the rest are reached by
-/// naming the mode.
+/// the AEAD pairs for `GCM`, `CCM` and `CCM_Packet`, the MAC pair for `CMAC`, the key-wrap pair
+/// for `KW` and `KWP`, and GMAC's nonce-bound generator and verifier as inherent methods. The
+/// crate names the workers of CBC, CFB, CFB8, CTR, GCM, CCM, CMAC, GMAC, KW and KWP as the
+/// `ARIA_*` aliases; the rest are reached by naming the mode.
 ///
 /// The only state is the mode's per-key state, which holds the expanded schedule in a `Secret`
 /// and so is zeroized on drop; the key has no `Debug` and no way to read the material back.
@@ -479,5 +479,35 @@ impl<P: ARIAParams, M: MacMode<ARIAInternal<P>>> MacVerificationKey for ARIAKey<
 
     fn create_verifier<'k>(&'k self) -> Self::Verifier<'k> {
         M::mac_init(&self.state)
+    }
+}
+
+impl<P, M, const KEK_LEN: usize> KeyWrappingKey<KEK_LEN> for ARIAKey<P, M>
+where
+    P: ARIAParams,
+    M: KeyWrapMode<ARIAInternal<P>, KEK_LEN>,
+{
+    type Wrapper<'k>
+        = M::Wrapper<'k>
+    where
+        Self: 'k;
+
+    fn create_wrapper<'k>(&'k self) -> Self::Wrapper<'k> {
+        M::wrap_init(&self.state)
+    }
+}
+
+impl<P, M, const KEK_LEN: usize> KeyUnwrappingKey<KEK_LEN> for ARIAKey<P, M>
+where
+    P: ARIAParams,
+    M: KeyUnwrapMode<ARIAInternal<P>, KEK_LEN>,
+{
+    type Unwrapper<'k>
+        = M::Unwrapper<'k>
+    where
+        Self: 'k;
+
+    fn create_unwrapper<'k>(&'k self) -> Self::Unwrapper<'k> {
+        M::unwrap_init(&self.state)
     }
 }

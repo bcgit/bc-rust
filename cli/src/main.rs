@@ -14,6 +14,7 @@ mod aria_cfb8_cmd;
 mod aria_cfb_cmd;
 mod aria_ctr_cmd;
 mod aria_gcm_cmd;
+mod aria_kw_cmd;
 mod ascon_cmd;
 mod chacha20_cmd;
 mod chacha20_poly1305_cmd;
@@ -2349,6 +2350,140 @@ enum Subcommands {
         x: bool,
     },
 
+    /// ARIA-128 Key Wrap (RFC 5794 Appendix B `id-aria128-kw`; NIST SP 800-38F
+    /// Sec 6.2 over the ARIA permutation): `-d encrypt` wraps stdin to stdout, `-d decrypt`
+    /// unwraps it.
+    ///
+    /// The same command as `aes128-kw` over ARIA: see it for the input-length rules, the
+    /// absence of an IV, the authenticated `decrypt` and the non-streaming note.
+    ARIA128_KW {
+        #[arg(short, long)]
+        direction: CipherDirection,
+
+        /// The 16-byte ARIA key-encryption key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 16-byte ARIA key-encryption key (raw bytes; hex with --hex-input).
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// ARIA-192 Key Wrap (RFC 5794 Appendix B `id-aria192-kw`). See `aria128-kw`;
+    /// only the key length differs.
+    ARIA192_KW {
+        #[arg(short, long)]
+        direction: CipherDirection,
+
+        /// The 24-byte ARIA key-encryption key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 24-byte ARIA key-encryption key (raw bytes; hex with --hex-input).
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// ARIA-256 Key Wrap (RFC 5794 Appendix B `id-aria256-kw`). See `aria128-kw`;
+    /// only the key length differs.
+    ARIA256_KW {
+        #[arg(short, long)]
+        direction: CipherDirection,
+
+        /// The 32-byte ARIA key-encryption key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 32-byte ARIA key-encryption key (raw bytes; hex with --hex-input).
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// ARIA-128 Key Wrap with Padding (RFC 5794 Appendix B `id-aria128-kwp`; NIST SP 800-38F
+    /// Sec 6.3 over the ARIA permutation): `-d encrypt` wraps stdin to stdout, `-d decrypt`
+    /// unwraps it.
+    ///
+    /// The same command as `aes128-kwp` over ARIA: see it for the input-length rules, the
+    /// absence of an IV, the authenticated `decrypt` and the non-streaming note.
+    ARIA128_KWP {
+        #[arg(short, long)]
+        direction: CipherDirection,
+
+        /// The 16-byte ARIA key-encryption key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 16-byte ARIA key-encryption key (raw bytes; hex with --hex-input).
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// ARIA-192 Key Wrap with Padding (RFC 5794 Appendix B `id-aria192-kwp`). See `aria128-kwp`;
+    /// only the key length differs.
+    ARIA192_KWP {
+        #[arg(short, long)]
+        direction: CipherDirection,
+
+        /// The 24-byte ARIA key-encryption key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 24-byte ARIA key-encryption key (raw bytes; hex with --hex-input).
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// ARIA-256 Key Wrap with Padding (RFC 5794 Appendix B `id-aria256-kwp`). See `aria128-kwp`;
+    /// only the key length differs.
+    ARIA256_KWP {
+        #[arg(short, long)]
+        direction: CipherDirection,
+
+        /// The 32-byte ARIA key-encryption key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 32-byte ARIA key-encryption key (raw bytes; hex with --hex-input).
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
     /// The ML-KEM-512 key encapsulation algorithm.
     MLKEM512 {
         action: mlkem_cmd::MLKEMAction,
@@ -3939,6 +4074,24 @@ fn run() {
         }
         Some(Subcommands::AES256_KWP { direction, key, key_file, x }) => {
             aes_kw_cmd::aes256_kwp_cmd(direction, key, key_file, *x);
+        }
+        Some(Subcommands::ARIA128_KW { direction, key, key_file, x }) => {
+            aria_kw_cmd::aria128_kw_cmd(direction, key, key_file, *x);
+        }
+        Some(Subcommands::ARIA192_KW { direction, key, key_file, x }) => {
+            aria_kw_cmd::aria192_kw_cmd(direction, key, key_file, *x);
+        }
+        Some(Subcommands::ARIA256_KW { direction, key, key_file, x }) => {
+            aria_kw_cmd::aria256_kw_cmd(direction, key, key_file, *x);
+        }
+        Some(Subcommands::ARIA128_KWP { direction, key, key_file, x }) => {
+            aria_kw_cmd::aria128_kwp_cmd(direction, key, key_file, *x);
+        }
+        Some(Subcommands::ARIA192_KWP { direction, key, key_file, x }) => {
+            aria_kw_cmd::aria192_kwp_cmd(direction, key, key_file, *x);
+        }
+        Some(Subcommands::ARIA256_KWP { direction, key, key_file, x }) => {
+            aria_kw_cmd::aria256_kwp_cmd(direction, key, key_file, *x);
         }
         Some(Subcommands::MLKEM512 { action, skfile, pkfile, ctfile, x }) => {
             mlkem_cmd::mlkem_cmd(&mlkem_cmd::MLKEM512_SET, action, skfile, pkfile, ctfile, *x);

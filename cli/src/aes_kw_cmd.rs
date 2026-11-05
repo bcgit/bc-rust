@@ -138,9 +138,13 @@ pub(crate) fn aes256_kwp_cmd(
 }
 
 /// Reads all of stdin, wraps or unwraps it under `kek`, and writes the result. `alg` names the
-/// algorithm in error messages.
-fn run<K, const KEK_LEN: usize>(direction: &CipherDirection, kek: &K, output_hex: bool, alg: &str)
-where
+/// algorithm in error messages. Shared with the other block ciphers' key-wrap commands.
+pub(crate) fn run<K, const KEK_LEN: usize>(
+    direction: &CipherDirection,
+    kek: &K,
+    output_hex: bool,
+    alg: &str,
+) where
     K: KeyWrappingKey<KEK_LEN> + KeyUnwrappingKey<KEK_LEN>,
 {
     let mut input = Vec::new();
