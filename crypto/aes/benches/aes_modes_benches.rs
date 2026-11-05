@@ -28,13 +28,14 @@ use bouncycastle_aes::{AES128Key, AES256Key};
 use bouncycastle_cipher::modes::hazmat::ecb::{ECB, Ecb};
 use bouncycastle_cipher::modes::{
     Blocks, CBC, CCM, CCM_Packet, CFB, CFB8, CMAC, CTR, Cfb, Cfb8, Ctr, GCM, GCM_NONCE_LEN, GMAC,
+    KW, KWP,
 };
 use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::hazmat::{AeadDeclaredEncryptMode, EcbEncryptionKey, ElectronicCodeBook};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::symmetric_key::{
-    AeadEncryptionKey, BlockDecryptionKey, BlockEncryptionKey, FromKeyMaterial, MacGenerationKey,
-    SymmetricDecryptionKey, SymmetricEncryptionKey,
+    AeadEncryptionKey, BlockDecryptionKey, BlockEncryptionKey, FromKeyMaterial, KeyUnwrappingKey,
+    KeyWrappingKey, MacGenerationKey, SymmetricDecryptionKey, SymmetricEncryptionKey,
 };
 use bouncycastle_core::traits::{
     BlockCipherDecryptor, BlockCipherEncryptor, StreamCipherDecryptor, StreamCipherEncryptor,
@@ -597,9 +598,67 @@ fn bench_gmac(c: &mut Criterion) {
     group.finish();
 }
 
+/// KW and KWP wrapping and unwrapping a 256-bit key -- the common case, where the cost is the
+/// six passes of the wrapping function over five semiblocks -- and KWP over 4 KiB, the
+/// encoded-private-key case, where it is per byte. Throughput is per byte of plaintext. Only the
+/// one-shots are measured, since key wrap has no streaming API, and the key is built outside the
+/// loop as it would be in use.
+fn bench_kw_aes128(c: &mut Criterion) {
+    let kw = AES128Key::<KW>::from_key_material(&key::<16>()).unwrap();
+    let kwp = AES128Key::<KWP>::from_key_material(&key::<16>()).unwrap();
+    let key_to_wrap = [0x5Au8; 32];
+    let kw_ct: [u8; 40] = kw.wrap_key(&key_to_wrap).unwrap();
+    let kwp_ct: [u8; 40] = kwp.wrap_key(&key_to_wrap).unwrap();
+
+    let mut group = c.benchmark_group("modes::kw::AES_128");
+    group.throughput(Throughput::Bytes(key_to_wrap.len() as u64));
+    group.bench_function("KW wrap 32-byte key", |b| {
+        b.iter(|| black_box(kw.wrap_key::<32, 40>(black_box(&key_to_wrap)).unwrap()))
+    });
+    group.bench_function("KW unwrap 32-byte key", |b| {
+        b.iter(|| black_box(kw.unwrap_key::<32, 40>(black_box(&kw_ct)).unwrap()))
+    });
+    group.bench_function("KWP wrap 32-byte key", |b| {
+        b.iter(|| black_box(kwp.wrap_key::<32, 40>(black_box(&key_to_wrap)).unwrap()))
+    });
+    group.bench_function("KWP unwrap 32-byte key", |b| {
+        b.iter(|| black_box(kwp.unwrap_key::<32, 40>(black_box(&kwp_ct)).unwrap()))
+    });
+    group.finish();
+
+    let payload: Vec<u8> = data().as_flattened()[..4096].to_vec();
+    let mut wrapped = vec![0u8; kwp.wrap_out_len(payload.len())];
+    let wrapped_len = kwp.wrap_out(&payload, &mut wrapped).unwrap();
+    wrapped.truncate(wrapped_len);
+
+    let mut group = c.benchmark_group("modes::kwp::AES_128");
+    group.throughput(Throughput::Bytes(payload.len() as u64));
+    group.bench_function("KWP wrap 4KiB", |b| {
+        b.iter_batched(
+            || vec![0u8; wrapped.len()],
+            |mut out| {
+                kwp.wrap_out(black_box(&payload), &mut out).unwrap();
+                black_box(&out);
+            },
+            BatchSize::SmallInput,
+        )
+    });
+    group.bench_function("KWP unwrap 4KiB", |b| {
+        b.iter_batched(
+            || vec![0u8; payload.len()],
+            |mut out| {
+                kwp.unwrap_out(black_box(&wrapped), &mut out).unwrap();
+                black_box(&out);
+            },
+            BatchSize::SmallInput,
+        )
+    });
+    group.finish();
+}
+
 criterion_group!(
     benches, bench_aes128cbc, bench_cfb_aes128, bench_cfb8_aes128, bench_ctr_aes128,
     bench_ecb_aes128, bench_ccm_aes128, bench_ccm_one_shot_pair, bench_gcm_aes128,
-    bench_gcm_aes256, bench_init, bench_cmac, bench_gmac
+    bench_gcm_aes256, bench_init, bench_cmac, bench_gmac, bench_kw_aes128
 );
 criterion_main!(benches);

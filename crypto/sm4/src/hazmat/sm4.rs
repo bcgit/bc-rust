@@ -261,6 +261,8 @@ impl ModeNames for SM4Internal {
     const ECB_ALG_NAME: &'static str = "SM4_ECB";
     const GCM_ALG_NAME: &'static str = "SM4_GCM";
     const GMAC_ALG_NAME: &'static str = "SM4_GMAC";
+    const KW_ALG_NAME: &'static str = "SM4_KW";
+    const KWP_ALG_NAME: &'static str = "SM4_KWP";
 }
 
 impl core::fmt::Debug for SM4Internal {
