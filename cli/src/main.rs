@@ -2210,7 +2210,7 @@ enum Subcommands {
         #[arg(long)]
         key: Option<String>,
 
-        /// A file containing the 16-byte AES key-encryption key, in binary or hex.
+        /// A file containing the 16-byte AES key-encryption key (raw bytes; hex with --hex-input).
         /// If both key and key_file options are provided, the file will be used.
         #[arg(short, long)]
         key_file: Option<String>,
@@ -2234,7 +2234,7 @@ enum Subcommands {
         #[arg(long)]
         key: Option<String>,
 
-        /// A file containing the 24-byte AES key-encryption key, in binary or hex.
+        /// A file containing the 24-byte AES key-encryption key (raw bytes; hex with --hex-input).
         /// If both key and key_file options are provided, the file will be used.
         #[arg(short, long)]
         key_file: Option<String>,
@@ -2258,7 +2258,7 @@ enum Subcommands {
         #[arg(long)]
         key: Option<String>,
 
-        /// A file containing the 32-byte AES key-encryption key, in binary or hex.
+        /// A file containing the 32-byte AES key-encryption key (raw bytes; hex with --hex-input).
         /// If both key and key_file options are provided, the file will be used.
         #[arg(short, long)]
         key_file: Option<String>,
@@ -2287,7 +2287,7 @@ enum Subcommands {
         #[arg(long)]
         key: Option<String>,
 
-        /// A file containing the 16-byte AES key-encryption key, in binary or hex.
+        /// A file containing the 16-byte AES key-encryption key (raw bytes; hex with --hex-input).
         /// If both key and key_file options are provided, the file will be used.
         #[arg(short, long)]
         key_file: Option<String>,
@@ -2310,7 +2310,7 @@ enum Subcommands {
         #[arg(long)]
         key: Option<String>,
 
-        /// A file containing the 24-byte AES key-encryption key, in binary or hex.
+        /// A file containing the 24-byte AES key-encryption key (raw bytes; hex with --hex-input).
         /// If both key and key_file options are provided, the file will be used.
         #[arg(short, long)]
         key_file: Option<String>,
@@ -2333,7 +2333,7 @@ enum Subcommands {
         #[arg(long)]
         key: Option<String>,
 
-        /// A file containing the 32-byte AES key-encryption key, in binary or hex.
+        /// A file containing the 32-byte AES key-encryption key (raw bytes; hex with --hex-input).
         /// If both key and key_file options are provided, the file will be used.
         #[arg(short, long)]
         key_file: Option<String>,

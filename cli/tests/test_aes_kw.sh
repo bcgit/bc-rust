@@ -168,10 +168,11 @@ test_key_file_accepts_hex_and_binary() {
     printf '%s' "$KEK128" >"$TMP/kek.hex"
     unhex "$KEK128" >"$TMP/kek.bin"
     unhex "${RFC3394_KEY_DATA:0:32}" >"$TMP/pt"
-    for form in kek.hex kek.bin; do
-        "$BC_RUST" aes128-kw -d encrypt --key-file "$TMP/$form" <"$TMP/pt" >"$TMP/ct"
-        assert_eq "$(hex "$TMP/ct")" "$RFC3394_4_1_CT" "--key-file $form must give the 4.1 ciphertext"
-    done
+    # The hex form needs --hex-input: a key file is raw bytes unless the flag says otherwise.
+    "$BC_RUST" --hex-input aes128-kw -d encrypt --key-file "$TMP/kek.hex" <"$TMP/pt" >"$TMP/ct"
+    assert_eq "$(hex "$TMP/ct")" "$RFC3394_4_1_CT" "--key-file kek.hex must give the 4.1 ciphertext"
+    "$BC_RUST" aes128-kw -d encrypt --key-file "$TMP/kek.bin" <"$TMP/pt" >"$TMP/ct"
+    assert_eq "$(hex "$TMP/ct")" "$RFC3394_4_1_CT" "--key-file kek.bin must give the 4.1 ciphertext"
 }
 
 test_a_key_of_the_wrong_length_is_rejected() {
