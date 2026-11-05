@@ -3,7 +3,7 @@
 //! `IV || ciphertext || tag` contract, AAD flags and warnings. See `aes_gcm_cmd` and
 //! [`crate::helpers::aead_cipher_helpers`] for the command-line contract.
 
-use crate::helpers::aead_cipher_helpers::{decrypt_gcm, encrypt_gcm, load_aad};
+use crate::helpers::aead_cipher_helpers::{decrypt_aead, encrypt_aead, load_aad};
 use crate::helpers::block_mode_helpers::{CipherDirection, load_iv, load_key_object};
 use bouncycastle::camellia::{Camellia128Key, Camellia192Key, Camellia256Key};
 use bouncycastle::cipher::modes::GCM;
@@ -80,7 +80,11 @@ fn run<K, const KEY_LEN: usize>(
     K: AeadEncryptionKey<KEY_LEN, 12, 16, 16> + AeadDecryptionKey<KEY_LEN, 12, 16, 16>,
 {
     match action {
-        CipherDirection::Encrypt => encrypt_gcm::<K, KEY_LEN, 16>(key, nonce, aad, output_hex),
-        CipherDirection::Decrypt => decrypt_gcm::<K, KEY_LEN, 16>(key, nonce, aad, output_hex),
+        CipherDirection::Encrypt => {
+            encrypt_aead::<K, KEY_LEN, 12, 16, 16>(key, nonce, aad, output_hex)
+        }
+        CipherDirection::Decrypt => {
+            decrypt_aead::<K, KEY_LEN, 12, 16, 16>(key, nonce, aad, output_hex)
+        }
     }
 }

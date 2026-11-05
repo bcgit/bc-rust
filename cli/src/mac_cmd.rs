@@ -16,6 +16,8 @@ use bouncycastle::core::key_material::{KeyMaterialTrait, KeyType};
 use bouncycastle::core::symmetric_key::{FromAnyKeyMaterial, FromKeyMaterial, MacGenerationKey};
 use bouncycastle::core::traits::MAC;
 use bouncycastle::hmac::HmacKey;
+use bouncycastle::poly1305;
+use bouncycastle::poly1305::hazmat::key_from_bytes;
 use bouncycastle::rng::HashDRBG_SHA512;
 use bouncycastle::sha2::{SHA224, SHA256, SHA384, SHA512, SHA512_224, SHA512_256};
 use bouncycastle::sha3::kmac::{KMAC128Key, KMAC256Key, KMACXOF128, KMACXOF256};
@@ -298,6 +300,24 @@ pub(crate) fn aes256_gmac_cmd(
 ) {
     let key: AES256Key<GMAC> = load_key_object_typed(key, key_file, "AES-256", KeyType::MACKey);
     gmac_run(&key, load_iv::<GMAC_NONCE_LEN>(iv, iv_file), verify_val, output_hex);
+}
+
+/// Poly1305 (RFC 8439 Sec 2.5) under a 32-byte one-time key, which must never MAC a second
+/// message. The tag is always the full 16 bytes.
+pub(crate) fn poly1305_cmd(
+    key: &Option<String>,
+    key_file: &Option<String>,
+    verify_val: &Option<String>,
+    output_hex: bool,
+) {
+    let key = load_mac_key(key, key_file);
+    // No key policy, as the other MAC commands take their allow-weak forms: a CLI is used for test
+    // vectors and scripting, where a weak or all-zero key is a legitimate thing to want.
+    let Ok(bytes) = <&[u8; poly1305::KEY_LEN]>::try_from(key.ref_to_bytes()) else {
+        eprintln!("Error: Poly1305 needs a 32-byte one-time key, got {} bytes.", key.key_len());
+        exit(-1)
+    };
+    do_mac(key_from_bytes(bytes).into_mac(), verify_val, output_hex);
 }
 
 /// Streams stdin into `mac`, then writes the tag, or verifies `--verify` against it and reports
