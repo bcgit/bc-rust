@@ -2,6 +2,8 @@
 
 ## Major features
 
+* CHACHA20 -- ChaCha20, Poly1305 and ChaCha20-Poly1305 (RFC 8439).
+
 ## Minor features / bug fixes
 
 * Cipher and MAC workers no longer implement `SuspendableKeyed` (#173): a resumed worker is a second copy of a
