@@ -1,6 +1,8 @@
 pub use bouncycastle_aes as aes;
 pub use bouncycastle_ascon as ascon;
 pub use bouncycastle_base64 as base64;
+pub use bouncycastle_chacha20 as chacha20;
+pub use bouncycastle_chacha20_poly1305_aead as chacha20_poly1305_aead;
 pub use bouncycastle_cipher as cipher;
 pub use bouncycastle_core as core;
 pub use bouncycastle_factory as factory;
@@ -11,6 +13,7 @@ pub use bouncycastle_mldsa as mldsa;
 pub use bouncycastle_mldsa_lowmemory as mldsa_lowmemory;
 pub use bouncycastle_mlkem as mlkem;
 pub use bouncycastle_mlkem_lowmemory as mlkem_lowmemory;
+pub use bouncycastle_poly1305 as poly1305;
 pub use bouncycastle_rng as rng;
 pub use bouncycastle_sha2 as sha2;
 pub use bouncycastle_sha3 as sha3;
