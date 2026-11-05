@@ -22,8 +22,9 @@
 //! | GMAC | [`gmac`] | SP 800-38D Sec 5.2 | A MAC, not a cipher: GCM with no plaintext, so the tag is bound to a 96-bit nonce |
 //! | KW | [`kw`] | SP 800-38F Sec 6.2 | Key Wrap (RFC 3394). **Authenticated**, deterministic, no IV; whole 8-byte semiblocks only |
 //! | KWP | [`kwp`] | SP 800-38F Sec 6.3 | Key Wrap with Padding (RFC 5649). As KW, for data of any length |
+//! | TKW | [`tkw`] | SP 800-38F Sec 7 | TDEA Key Wrap: KW at 64-bit blocks and 32-bit semiblocks. **Legacy only** |
 //!
-//! They divide three ways, plus the key-wrap pair.
+//! They divide three ways, plus the key-wrap trio.
 //!
 //! **ECB and CBC are block ciphers** ([`BlockCipherEncryptor`] / [`BlockCipherDecryptor`]): whole
 //! blocks in, whole blocks out, and arbitrary-length data needs the padding layer.
@@ -39,7 +40,7 @@
 //! [`SymmetricCipherEncryptor`] / [`SymmetricCipherDecryptor`] with no option to provide AAD, and
 //! the tag inline.
 //!
-//! **KW and KWP are key-wrap algorithms** ([`KeyWrapper`] / [`KeyUnwrapper`]): one-shot,
+//! **KW, KWP and TKW are key-wrap algorithms** ([`KeyWrapper`] / [`KeyUnwrapper`]): one-shot,
 //! deterministic and authenticated, with no IV and no streaming API, for wrapping a key (or a
 //! small, non-repeating secret) under a key encryption key. SP 800-38F Sec 3.1 approves them for
 //! general data as well, but they are deterministic, so for data that may repeat an AEAD is the
@@ -53,7 +54,7 @@
 //!
 //! Each mode is also a **mode type** -- [`CBC`], [`CCM`], [`CCM_Packet`], [`CFB`], [`CFB8`],
 //! [`CTR`], [`GCM`], [`hazmat::ecb::ECB`], the MACs [`CMAC`] and [`GMAC`], and the key wraps
-//! [`KW`] and [`KWP`] -- the `M` a mode-bound
+//! [`KW`], [`KWP`] and [`TKW`] -- the `M` a mode-bound
 //! key such as `bouncycastle_aes::AES128Key<M>` is parameterised by. The mode type implements the
 //! hazmat mode traits of [`bouncycastle_core::hazmat`], which is how a key hands out the mode's
 //! encryptors and decryptors through the role traits of `bouncycastle_core::symmetric_key`; a
@@ -178,6 +179,7 @@ pub mod hazmat;
 mod iv;
 pub mod kw;
 pub mod kwp;
+pub mod tkw;
 
 pub use cbc::{CBC, Cbc};
 pub use ccm::{
@@ -191,6 +193,7 @@ pub use gcm::{GCM, GCM_NONCE_LEN, Gcm, GcmKeyState};
 pub use gmac::{GMAC, Gmac};
 pub use kw::{KW, KW_BLOCK_LEN, Kw, SEMIBLOCK_LEN};
 pub use kwp::{KWP, Kwp};
+pub use tkw::{TKW, TKW_BLOCK_LEN, TKW_SEMIBLOCK_LEN, Tkw};
 
 /// Selects the whole-block form of a mode that also has a padded form: `CBC<Blocks>` is a key
 /// for the block-aligned [`Cbc`] itself, on the block key path, where `CBC<PKCS7>` is one for
@@ -222,7 +225,8 @@ pub trait ModeNames {
     const GCM_ALG_NAME: &'static str;
     /// Reported by [`Gmac`].
     const GMAC_ALG_NAME: &'static str;
-    /// Reported by [`Kw`].
+    /// Reported by [`Kw`] over a 128-bit block and by [`Tkw`] over a 64-bit one: a permutation
+    /// has one block length, so one key-wrap algorithm.
     const KW_ALG_NAME: &'static str;
     /// Reported by [`Kwp`].
     const KWP_ALG_NAME: &'static str;

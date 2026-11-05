@@ -246,7 +246,7 @@ where
             let (a, r) = s.split_at_mut(SEMIBLOCK_LEN);
             let (a, _) = a.as_chunks_mut::<SEMIBLOCK_LEN>();
             let (r, _) = r.as_chunks_mut::<SEMIBLOCK_LEN>();
-            w(self.perm, &mut a[0], r);
+            w::<P, KW_BLOCK_LEN, SEMIBLOCK_LEN>(self.perm, &mut a[0], r);
         }
         Ok(ct_len)
     }
@@ -340,7 +340,7 @@ where
             a.copy_from_slice(&ciphertext[..SEMIBLOCK_LEN]);
             r.copy_from_slice(&ciphertext[SEMIBLOCK_LEN..]);
             let (r, _) = r.as_chunks_mut::<SEMIBLOCK_LEN>();
-            w_inv(self.perm, &mut a, r);
+            w_inv::<P, KW_BLOCK_LEN, SEMIBLOCK_LEN>(self.perm, &mut a, r);
         }
 
         // Steps 4-8: every check is made, and the verdicts combined with `&` rather than `&&`, so

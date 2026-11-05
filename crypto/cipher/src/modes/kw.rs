@@ -169,71 +169,87 @@ pub(crate) const fn kw_wrapped_len(len: usize) -> usize {
     len.saturating_add(SEMIBLOCK_LEN)
 }
 
-/// The wrapping function W (SP 800-38F Algorithm 1), in place over `S = a || r`.
+/// The wrapping function W (SP 800-38F Algorithm 1), in place over `S = a || r`, with
+/// `SEMI`-byte semiblocks over a `BLOCK`-byte permutation: 8 and 16 for KW and KWP, 4 and 8 for
+/// TKW, whose TW (Algorithm 7) is this same loop with `[t]32` in place of `[t]64`.
 ///
 /// `a` holds `S1` and `r` holds `S2 .. Sn`, so `r.len() == n - 1`, which must be at least 2
 /// (Algorithm 1 is defined for `n >= 3`). On return `a` holds `C1` and `r` holds `C2 .. Cn`.
 ///
 /// Runs in place rather than through the shift register of the spec's step 2; see the module
 /// docs for why the two are the same computation.
-pub(crate) fn w<P>(perm: &P, a: &mut [u8; SEMIBLOCK_LEN], r: &mut [[u8; SEMIBLOCK_LEN]])
-where
-    P: BlockPermutation<KW_BLOCK_LEN>,
+pub(crate) fn w<P, const BLOCK: usize, const SEMI: usize>(
+    perm: &P,
+    a: &mut [u8; SEMI],
+    r: &mut [[u8; SEMI]],
+) where
+    P: BlockPermutation<BLOCK>,
 {
+    const { assert!(2 * SEMI == BLOCK, "a semiblock is half a block (SP 800-38F Sec 4.1)") };
     debug_assert!(r.len() >= 2, "Algorithm 1 is defined on n >= 3 semiblocks");
     // Everything that passes through `block` is derived from the key being wrapped, so it is
     // scrubbed when this function returns.
-    let mut block: Secret<[u8; KW_BLOCK_LEN]> = Secret::new();
+    let mut block: Secret<[u8; BLOCK]> = Secret::new();
     // Step 1a: s = 6(n-1) steps, indexed by t = 1, ..., s.
     let mut t: u64 = 0;
     for _ in 0..6 {
         for r_i in r.iter_mut() {
             t += 1;
             // Step 2: CIPH_K(A_{t-1} || R2_{t-1}), where R2_{t-1} is this register (module docs).
-            let (halves, _) = block.as_chunks_mut::<SEMIBLOCK_LEN>();
+            let (halves, _) = block.as_chunks_mut::<SEMI>();
             halves[0] = *a;
             halves[1] = *r_i;
             perm.encrypt_block(&mut block);
-            let (halves, _) = block.as_chunks::<SEMIBLOCK_LEN>();
-            // Step 2a: A_t = MSB64(CIPH_K(...)) xor [t]64.
+            let (halves, _) = block.as_chunks::<SEMI>();
+            // Step 2a: A_t = MSB(CIPH_K(...)) xor [t]: the counter as a big-endian semiblock, the
+            // low SEMI bytes of its 8-byte form.
+            let t_bytes = t.to_be_bytes();
             for (a_byte, (c_byte, t_byte)) in
-                a.iter_mut().zip(halves[0].iter().zip(t.to_be_bytes()))
+                a.iter_mut().zip(halves[0].iter().zip(&t_bytes[8 - SEMI..]))
             {
                 *a_byte = c_byte ^ t_byte;
             }
-            // Step 2c: R_n_t = LSB64(CIPH_K(...)), which lands back in this register.
+            // Step 2c: R_n_t = LSB(CIPH_K(...)), which lands back in this register.
             *r_i = halves[1];
         }
     }
     debug_assert_eq!(t as usize, 6 * r.len(), "Algorithm 1 step 1a: s = 6(n-1)");
 }
 
-/// The unwrapping function W⁻¹ (SP 800-38F Algorithm 2), in place over `C = a || r`.
+/// The unwrapping function W⁻¹ (SP 800-38F Algorithm 2), in place over `C = a || r`, with the
+/// same `BLOCK` / `SEMI` parameters as [`w`] (TW⁻¹, Algorithm 8, is the 4-byte-semiblock form).
 ///
 /// `a` holds `C1` and `r` holds `C2 .. Cn`, with `r.len() == n - 1 >= 2`. On return `a` holds
 /// `S1` and `r` holds `S2 .. Sn`. The registers are visited in the reverse of the order [`w`]
 /// visits them, so that step `t` here undoes step `t` there.
-pub(crate) fn w_inv<P>(perm: &P, a: &mut [u8; SEMIBLOCK_LEN], r: &mut [[u8; SEMIBLOCK_LEN]])
-where
-    P: BlockPermutation<KW_BLOCK_LEN>,
+pub(crate) fn w_inv<P, const BLOCK: usize, const SEMI: usize>(
+    perm: &P,
+    a: &mut [u8; SEMI],
+    r: &mut [[u8; SEMI]],
+) where
+    P: BlockPermutation<BLOCK>,
 {
+    const { assert!(2 * SEMI == BLOCK, "a semiblock is half a block (SP 800-38F Sec 4.1)") };
     debug_assert!(r.len() >= 2, "Algorithm 2 is defined on n >= 3 semiblocks");
-    let mut block: Secret<[u8; KW_BLOCK_LEN]> = Secret::new();
+    let mut block: Secret<[u8; BLOCK]> = Secret::new();
     // Step 1a: s = 6(n-1); step 2 runs t = s, s-1, ..., 1.
     let mut t: u64 = 6 * r.len() as u64;
     for _ in 0..6 {
         for r_i in r.iter_mut().rev() {
-            // Steps 2a/2b: CIPH⁻¹_K((A_t xor [t]64) || R_n_t), where R_n_t is this register.
-            let (halves, _) = block.as_chunks_mut::<SEMIBLOCK_LEN>();
-            for (b, (a_byte, t_byte)) in halves[0].iter_mut().zip(a.iter().zip(t.to_be_bytes())) {
+            // Steps 2a/2b: CIPH⁻¹_K((A_t xor [t]) || R_n_t), where R_n_t is this register.
+            let t_bytes = t.to_be_bytes();
+            let (halves, _) = block.as_chunks_mut::<SEMI>();
+            for (b, (a_byte, t_byte)) in
+                halves[0].iter_mut().zip(a.iter().zip(&t_bytes[8 - SEMI..]))
+            {
                 *b = a_byte ^ t_byte;
             }
             halves[1] = *r_i;
             perm.decrypt_block(&mut block);
-            let (halves, _) = block.as_chunks::<SEMIBLOCK_LEN>();
-            // Step 2a: A_{t-1} = MSB64(...).
+            let (halves, _) = block.as_chunks::<SEMI>();
+            // Step 2a: A_{t-1} = MSB(...).
             *a = halves[0];
-            // Step 2b: R2_{t-1} = LSB64(...), which lands back in this register.
+            // Step 2b: R2_{t-1} = LSB(...), which lands back in this register.
             *r_i = halves[1];
             t -= 1;
         }
@@ -376,7 +392,7 @@ where
         r.copy_from_slice(plaintext);
         let (r, _) = r.as_chunks_mut::<SEMIBLOCK_LEN>();
         // Step 3: C = W(S).
-        w(self.perm, a, r);
+        w::<P, KW_BLOCK_LEN, SEMIBLOCK_LEN>(self.perm, a, r);
         Ok(ct_len)
     }
 }
@@ -439,7 +455,7 @@ where
         let r = &mut plaintext[..pt_len];
         r.copy_from_slice(&ciphertext[SEMIBLOCK_LEN..]);
         let (r, _) = r.as_chunks_mut::<SEMIBLOCK_LEN>();
-        w_inv(self.perm, &mut a, r);
+        w_inv::<P, KW_BLOCK_LEN, SEMIBLOCK_LEN>(self.perm, &mut a, r);
 
         // Step 3: if MSB64(S) != ICV1, FAIL. Compared in constant time, and the buffer is scrubbed
         // so that a caller who ignores the `Result` is not left holding the unauthenticated bytes.
