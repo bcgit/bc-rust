@@ -67,5 +67,9 @@ name = "gmac_tests"
 path = "tests/modes/gmac_tests.rs"
 
 [[test]]
+name = "kw_tests"
+path = "tests/modes/kw_tests.rs"
+
+[[test]]
 name = "symmetric_cipher_api_tests"
 path = "tests/modes/symmetric_cipher_api_tests.rs"
