@@ -17,8 +17,8 @@
 //! # No IV
 //!
 //! Key wrap is deterministic: the same input under the same KEK gives the same output, and there
-//! is nothing to prepend or strip. The output is exactly `wrap_out_len` of the input: one 8-byte
-//! semiblock longer for KW, the input rounded up to a multiple of 8 plus 8 for KWP.
+//! is nothing to prepend or strip. The output is one 8-byte semiblock longer than the input for
+//! KW, and the input rounded up to a multiple of 8 plus 8 for KWP.
 //!
 //! # Input lengths
 //!
@@ -149,22 +149,13 @@ where
         exit(-1);
     }
 
-    let (result, mut output) = match direction {
-        CipherDirection::Encrypt => {
-            let mut output = vec![0u8; kek.wrap_out_len(input.len())];
-            (kek.wrap_out(&input, &mut output), output)
-        }
-        CipherDirection::Decrypt => {
-            let mut output = vec![0u8; kek.unwrap_out_max_len(input.len())];
-            (kek.unwrap_out(&input, &mut output), output)
-        }
+    let result = match direction {
+        CipherDirection::Encrypt => kek.wrap(&input),
+        CipherDirection::Decrypt => kek.unwrap(&input),
     };
 
     match result {
-        Ok(n) => {
-            output.truncate(n);
-            write_bytes_or_hex(&output, output_hex);
-        }
+        Ok(output) => write_bytes_or_hex(&output, output_hex),
         Err(SymmetricCipherError::DecryptionFailed) => {
             eprintln!(
                 "Error: {alg} unwrap failed: the input is not an authentic {alg} ciphertext under \
