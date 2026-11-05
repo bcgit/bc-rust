@@ -2,7 +2,9 @@
 //! can carry, then the block, symmetric, stream and AEAD suites.
 
 use bouncycastle_cipher::modes::hazmat::ecb::ECB;
-use bouncycastle_cipher::modes::{Blocks, CBC, CCM_Packet, CFB, CFB8, CMAC, CTR, GCM, ModeNames};
+use bouncycastle_cipher::modes::{
+    Blocks, CBC, CCM_Packet, CFB, CFB8, CMAC, CTR, GCM, KW, KWP, ModeNames,
+};
 use bouncycastle_cipher::padding::{NoPadding, PKCS7};
 use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
 use bouncycastle_core::hazmat::Mode;
@@ -14,6 +16,7 @@ use bouncycastle_core_test_framework::aead::{
 };
 use bouncycastle_core_test_framework::block_cipher::TestFrameworkBlockCipher;
 use bouncycastle_core_test_framework::from_key_material::TestFrameworkFromKeyMaterial;
+use bouncycastle_core_test_framework::key_wrap::TestFrameworkKeyWrap;
 use bouncycastle_core_test_framework::symmetric_ciphers::{
     TestFrameworkStreamCipher, TestFrameworkSymmetricCipher,
 };
@@ -53,6 +56,20 @@ fn every_mode_key_enforces_the_material_policy() {
     construction_suite::<GCM>(SM4Internal::GCM_ALG_NAME);
     construction_suite::<GCM<12>>(SM4Internal::GCM_ALG_NAME);
     construction_suite::<Packet>(SM4Internal::CCM_ALG_NAME);
+    construction_suite::<KW>(SM4Internal::KW_ALG_NAME);
+    construction_suite::<KWP>(SM4Internal::KWP_ALG_NAME);
+}
+
+/// The key-wrap suite: round trips, the length helpers, the error cases and tamper rejection, at
+/// an aligned and an unaligned length and KWP's single-block case. The answers are pinned against
+/// RFC 3394 and RFC 5649 over the raw permutation in `kw_reference_tests.rs`.
+#[test]
+fn kw_and_kwp_keys_pass_the_key_wrap_framework() {
+    let tf = TestFrameworkKeyWrap::new();
+    tf.test::<KEY_LEN, 16, 24, SM4Key<KW>>();
+    tf.test::<KEY_LEN, 32, 40, SM4Key<KW>>();
+    tf.test::<KEY_LEN, 7, 16, SM4Key<KWP>>();
+    tf.test::<KEY_LEN, 20, 32, SM4Key<KWP>>();
 }
 
 /// A 32-byte frame for the fixed-frame CCM key, within the framework's seed buffer.

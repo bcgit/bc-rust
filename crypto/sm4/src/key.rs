@@ -5,13 +5,14 @@ use crate::hazmat::SM4Internal;
 use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
 use bouncycastle_core::hazmat::{
     AeadDeclaredDecryptMode, AeadDeclaredEncryptMode, AeadDecryptMode, AeadEncryptMode,
-    BlockDecryptMode, BlockEncryptMode, Mode, SymmetricDecryptMode, SymmetricEncryptMode,
+    BlockDecryptMode, BlockEncryptMode, KeyUnwrapMode, KeyWrapMode, Mode, SymmetricDecryptMode,
+    SymmetricEncryptMode,
 };
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::symmetric_key::{
     AeadDeclaredDecryptionKey, AeadDeclaredEncryptionKey, AeadDecryptionKey, AeadEncryptionKey,
-    BlockDecryptionKey, BlockEncryptionKey, FromKeyMaterial, SymmetricDecryptionKey,
-    SymmetricEncryptionKey,
+    BlockDecryptionKey, BlockEncryptionKey, FromKeyMaterial, KeyUnwrappingKey, KeyWrappingKey,
+    SymmetricDecryptionKey, SymmetricEncryptionKey,
 };
 use bouncycastle_core::traits::RNG;
 
@@ -24,9 +25,9 @@ use bouncycastle_core::traits::RNG;
 /// holds the mode's per-key state, the workers it hands out borrow it, and which role pair a key
 /// carries is decided by its mode: the symmetric pair for the stream modes and the padded block
 /// modes (`CFB`, `CFB8`, `CTR`, `CBC<PKCS7>`, `ECB<PKCS7>`), the block pair for `CBC<Blocks>`,
-/// and the AEAD pairs for `GCM`, `CCM` and `CCM_Packet`. The six modes this crate aliases as
-/// `SM4_*` are among them; a key under any other mode (`ECB<Blocks>`, the MAC modes) has no role
-/// here.
+/// the AEAD pairs for `GCM`, `CCM` and `CCM_Packet`, and the key-wrap pair for `KW` and `KWP`.
+/// The eight modes this crate aliases as `SM4_*` are among them; a key under any other mode
+/// (`ECB<Blocks>`, the MAC modes) has no role here.
 ///
 /// # Usage Examples
 ///
@@ -314,5 +315,33 @@ where
         tag: &[u8; TAG_LEN],
     ) -> Result<(), SymmetricCipherError> {
         M::decrypt_detached_in_place(&self.state, nonce, aad, buf, tag)
+    }
+}
+
+impl<M, const KEK_LEN: usize> KeyWrappingKey<KEK_LEN> for SM4Key<M>
+where
+    M: KeyWrapMode<SM4Internal, KEK_LEN>,
+{
+    type Wrapper<'k>
+        = M::Wrapper<'k>
+    where
+        Self: 'k;
+
+    fn create_wrapper<'k>(&'k self) -> Self::Wrapper<'k> {
+        M::wrap_init(&self.state)
+    }
+}
+
+impl<M, const KEK_LEN: usize> KeyUnwrappingKey<KEK_LEN> for SM4Key<M>
+where
+    M: KeyUnwrapMode<SM4Internal, KEK_LEN>,
+{
+    type Unwrapper<'k>
+        = M::Unwrapper<'k>
+    where
+        Self: 'k;
+
+    fn create_unwrapper<'k>(&'k self) -> Self::Unwrapper<'k> {
+        M::unwrap_init(&self.state)
     }
 }

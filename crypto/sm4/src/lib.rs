@@ -24,8 +24,10 @@
 //! which is a different and non-interoperable mode costing one SM4 call per byte, `CTR` for
 //! CTR (Sec 8.7) with a 12-byte nonce and a 4-byte counter, and `GCM` and `CCM<N, T>` for the
 //! authenticated modes RFC 8998 Sec 3.5 defines as `AEAD_SM4_GCM` and `AEAD_SM4_CCM`, each with
-//! a 12-byte nonce and a 16-byte tag. The aliases [`SM4_CBC`], [`SM4_CFB`], [`SM4_CFB8`],
-//! [`SM4_CTR`], [`SM4_GCM`] and [`SM4_CCM`] name the workers the key hands out.
+//! a 12-byte nonce and a 16-byte tag; and `KW` and `KWP` for the key wraps (NIST SP 800-38F;
+//! GM/T 0006's `sms4_wrap` and `sms4_wrap_pad`). The aliases [`SM4_CBC`], [`SM4_CFB`],
+//! [`SM4_CFB8`], [`SM4_CTR`], [`SM4_GCM`], [`SM4_CCM`], [`SM4_KW`] and [`SM4_KWP`] name the
+//! workers the key hands out.
 //!
 //! CBC is a block cipher, so it is defined only on whole blocks and the key's mode carries a
 //! padding scheme to bridge the difference; the CFB modes and CTR are stream ciphers and take any
@@ -296,6 +298,7 @@ mod ctr;
 mod gcm;
 pub mod hazmat;
 mod key;
+mod kw;
 mod sbox;
 mod schedule;
 
@@ -316,6 +319,7 @@ pub use cfb8::SM4_CFB8;
 pub use ctr::{CTR_NONCE_LEN, SM4_CTR};
 pub use gcm::SM4_GCM;
 pub use key::SM4Key;
+pub use kw::{SM4_KW, SM4_KWP};
 
 // Imports needed for docs
 #[allow(unused_imports)]

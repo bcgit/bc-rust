@@ -27,6 +27,7 @@ mod sm4_cfb8_cmd;
 mod sm4_cfb_cmd;
 mod sm4_ctr_cmd;
 mod sm4_gcm_cmd;
+mod sm4_kw_cmd;
 
 use crate::hkdf_cmd::HKDFVariant;
 use crate::mac_cmd::HMACVariant;
@@ -2349,6 +2350,53 @@ enum Subcommands {
         x: bool,
     },
 
+    /// SM4 Key Wrap (GM/T 0006 `sms4_wrap`; NIST SP 800-38F Sec 6.2 over the SM4 permutation):
+    /// `-d encrypt` wraps stdin to stdout, `-d decrypt` unwraps it.
+    ///
+    /// The same command as `aes128-kw` over SM4: see it for the input-length rules, the absence
+    /// of an IV, the authenticated `decrypt` and the non-streaming note.
+    SM4_KW {
+        #[arg(short, long)]
+        direction: CipherDirection,
+
+        /// The 16-byte SM4 key-encryption key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 16-byte SM4 key-encryption key (raw bytes; hex with --hex-input).
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// SM4 Key Wrap with Padding (GM/T 0006 `sms4_wrap_pad`; NIST SP 800-38F Sec 6.3 over the SM4
+    /// permutation): `-d encrypt` wraps stdin to stdout, `-d decrypt` unwraps it.
+    ///
+    /// The same command as `aes128-kwp` over SM4: see it and `sm4-kw`.
+    SM4_KWP {
+        #[arg(short, long)]
+        direction: CipherDirection,
+
+        /// The 16-byte SM4 key-encryption key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 16-byte SM4 key-encryption key (raw bytes; hex with --hex-input).
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
     /// The ML-KEM-512 key encapsulation algorithm.
     MLKEM512 {
         action: mlkem_cmd::MLKEMAction,
@@ -3493,6 +3541,12 @@ fn run() {
         }
         Some(Subcommands::AES256_KWP { direction, key, key_file, x }) => {
             aes_kw_cmd::aes256_kwp_cmd(direction, key, key_file, *x);
+        }
+        Some(Subcommands::SM4_KW { direction, key, key_file, x }) => {
+            sm4_kw_cmd::sm4_kw_cmd(direction, key, key_file, *x);
+        }
+        Some(Subcommands::SM4_KWP { direction, key, key_file, x }) => {
+            sm4_kw_cmd::sm4_kwp_cmd(direction, key, key_file, *x);
         }
         Some(Subcommands::MLKEM512 { action, skfile, pkfile, ctfile, x }) => {
             mlkem_cmd::mlkem_cmd(&mlkem_cmd::MLKEM512_SET, action, skfile, pkfile, ctfile, *x);

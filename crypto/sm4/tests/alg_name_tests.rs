@@ -19,7 +19,8 @@ use bouncycastle_core::traits::Algorithm;
 use bouncycastle_rng::HashDRBG_SHA512;
 use bouncycastle_sm4::hazmat::SM4Internal;
 use bouncycastle_sm4::{
-    BLOCK_LEN, CTR_NONCE_LEN, KEY_LEN, LANES, SM4_CBC, SM4_CFB, SM4_CFB8, SM4_CTR, SM4Key,
+    BLOCK_LEN, CTR_NONCE_LEN, KEY_LEN, LANES, SM4_CBC, SM4_CFB, SM4_CFB8, SM4_CTR, SM4_KW, SM4_KWP,
+    SM4Key,
 };
 use core::mem::size_of;
 
@@ -29,6 +30,13 @@ fn check<Enc: Algorithm, Dec: Algorithm>(name: &str) {
     assert_eq!(Dec::ALG_NAME, name);
     assert_eq!(Enc::MAX_SECURITY_STRENGTH, SecurityStrength::_128bit, "{name}");
     assert_eq!(Dec::MAX_SECURITY_STRENGTH, SecurityStrength::_128bit, "{name}");
+}
+
+/// One worker serves both halves of a key wrap, so each alias is checked against itself.
+#[test]
+fn kw_kwp() {
+    check::<SM4_KW<'_>, SM4_KW<'_>>("SM4_KW");
+    check::<SM4_KWP<'_>, SM4_KWP<'_>>("SM4_KWP");
 }
 
 #[test]
