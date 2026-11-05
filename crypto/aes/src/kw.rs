@@ -83,11 +83,9 @@ use bouncycastle_cipher::modes::{Kw, Kwp};
 /// assert_eq!(*kek.unwrap_key::<7, 16>(&wrapped).expect("unwrapping"), key_data);
 ///
 /// let payload = b"an encoded private key, of whatever length it happens to be";
-/// let mut wrapped = vec![0u8; kek.wrap_out_len(payload.len())];
-/// let n = kek.wrap_out(payload, &mut wrapped).expect("wrapping");
-/// let mut recovered = vec![0u8; kek.unwrap_out_max_len(n)];
-/// let m = kek.unwrap_out(&wrapped[..n], &mut recovered).expect("unwrapping");
-/// assert_eq!(&recovered[..m], payload);
+/// let wrapped = kek.wrap(payload).expect("wrapping");
+/// assert_eq!(wrapped.len(), kek.wrap_out_len(payload.len()));
+/// assert_eq!(kek.unwrap(&wrapped).expect("unwrapping"), payload);
 /// ```
 ///
 /// # Memory Usage
