@@ -214,6 +214,8 @@ where
         plaintext: &[u8],
         ciphertext: &mut [u8],
     ) -> Result<usize, SymmetricCipherError> {
+        // Nothing stale may survive a failure, so the whole buffer starts from zero.
+        ciphertext.fill(0);
         let ct_len = kwp_wrapped_len(plaintext.len());
         if ciphertext.len() < ct_len {
             return Err(SymmetricCipherError::OutputBufferTooSmall(ct_len));
@@ -305,13 +307,13 @@ where
         ciphertext: &[u8],
         plaintext: &mut [u8],
     ) -> Result<usize, SymmetricCipherError> {
+        // Nothing this function writes may survive a failure, so start from zero.
+        plaintext.fill(0);
         // 8(n-1) bytes: the padded plaintext.
         let padded_len = self.unwrap_out_max_len(ciphertext.len());
         if plaintext.len() < padded_len {
             return Err(SymmetricCipherError::OutputBufferTooSmall(padded_len));
         }
-        // Nothing this function writes may survive a failure, so start from zero.
-        plaintext.fill(0);
         if !kwp_ciphertext_len_is_valid(ciphertext.len()) {
             return Err(SymmetricCipherError::InvalidInputLength(
                 "a KWP ciphertext is 2 to 2^29 whole 8-byte semiblocks (SP 800-38F Table 1)",
