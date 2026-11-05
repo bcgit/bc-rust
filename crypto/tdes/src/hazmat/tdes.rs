@@ -239,6 +239,8 @@ impl ModeNames for TDESInternal {
     const ECB_ALG_NAME: &'static str = "TDES_ECB";
     const GCM_ALG_NAME: &'static str = "";
     const GMAC_ALG_NAME: &'static str = "";
+    const KW_ALG_NAME: &'static str = "";
+    const KWP_ALG_NAME: &'static str = "";
 }
 
 impl core::fmt::Debug for TDESInternal {
