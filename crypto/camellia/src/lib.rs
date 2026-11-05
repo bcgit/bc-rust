@@ -23,10 +23,11 @@
 //! for CFB128 (Sec 6.3), `CFB8` for the `s = 8` segment size, a different and non-interoperable
 //! mode costing one Camellia call per byte, and `CTR` for CTR (Sec 6.5) with a 12-byte nonce and
 //! a 4-byte counter; `GCM` and `CCM<N, T>` for the authenticated modes (NIST SP 800-38D and
-//! 800-38C; RFC 6367 and RFC 5528 define them over Camellia), and `CMAC` and `GMAC` for the MACs.
-//! The aliases [`Camellia_CBC_128`], [`Camellia_CFB_128`], [`Camellia_CFB8_128`],
-//! [`Camellia_CTR_128`], [`Camellia_GCM_128`], [`Camellia_CCM_128`], [`Camellia_CMAC_128`],
-//! [`Camellia_GMAC_128`] and their `_192` / `_256` siblings name the workers the keys hand out.
+//! 800-38C; RFC 6367 and RFC 5528 define them over Camellia), `CMAC` and `GMAC` for the MACs, and
+//! `KW` for key wrap (NIST SP 800-38F; RFC 3657 defines it over Camellia). The aliases
+//! [`Camellia_CBC_128`], [`Camellia_CFB_128`], [`Camellia_CFB8_128`], [`Camellia_CTR_128`],
+//! [`Camellia_GCM_128`], [`Camellia_CCM_128`], [`Camellia_CMAC_128`], [`Camellia_GMAC_128`],
+//! [`Camellia_KW_128`] and their `_192` / `_256` siblings name the workers the keys hand out.
 //!
 //! CBC is a block cipher, so it is defined only on whole blocks and the key's mode carries a
 //! padding scheme to bridge the difference; the CFB modes and CTR are stream ciphers and take any
@@ -322,6 +323,7 @@ mod gcm;
 mod gmac;
 pub mod hazmat;
 mod key;
+mod kw;
 mod round;
 mod sbox;
 mod schedule;
@@ -342,6 +344,7 @@ pub use ctr::{CTR_NONCE_LEN, Camellia_CTR_128, Camellia_CTR_192, Camellia_CTR_25
 pub use gcm::{Camellia_GCM_128, Camellia_GCM_192, Camellia_GCM_256};
 pub use gmac::{Camellia_GMAC_128, Camellia_GMAC_192, Camellia_GMAC_256};
 pub use key::{Camellia128Key, Camellia192Key, Camellia256Key, CamelliaKey};
+pub use kw::{Camellia_KW_128, Camellia_KW_192, Camellia_KW_256};
 pub use schedule::{Camellia128Params, Camellia192Params, Camellia256Params, CamelliaParams};
 
 // Imports needed for docs

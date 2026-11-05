@@ -12,7 +12,8 @@ use bouncycastle_camellia::hazmat::{
 use bouncycastle_camellia::{
     BLOCK_LEN, CTR_NONCE_LEN, Camellia_CBC_128, Camellia_CBC_192, Camellia_CBC_256,
     Camellia_CFB_128, Camellia_CFB_192, Camellia_CFB_256, Camellia_CFB8_128, Camellia_CFB8_192,
-    Camellia_CFB8_256, Camellia_CTR_128, Camellia_CTR_192, Camellia_CTR_256, Camellia128Key, LANES,
+    Camellia_CFB8_256, Camellia_CTR_128, Camellia_CTR_192, Camellia_CTR_256, Camellia_KW_128,
+    Camellia_KW_192, Camellia_KW_256, Camellia128Key, LANES,
 };
 use bouncycastle_cipher::modes::{CBC, CFB, CFB8, CTR, Cbc, Cfb, Cfb8, Ctr};
 use bouncycastle_cipher::padding::{
@@ -83,6 +84,15 @@ fn cfb_cfb8_ctr() {
     check::<Camellia_CTR_256<'_, Encrypting>, Camellia_CTR_256<'_, Decrypting>>(
         "Camellia_CTR_256", _256bit,
     );
+}
+
+/// One worker serves both halves of a key wrap, so each alias is checked against itself.
+#[test]
+fn kw() {
+    use SecurityStrength::*;
+    check::<Camellia_KW_128<'_>, Camellia_KW_128<'_>>("Camellia_KW_128", _128bit);
+    check::<Camellia_KW_192<'_>, Camellia_KW_192<'_>>("Camellia_KW_192", _192bit);
+    check::<Camellia_KW_256<'_>, Camellia_KW_256<'_>>("Camellia_KW_256", _256bit);
 }
 
 #[test]

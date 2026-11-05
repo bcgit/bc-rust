@@ -15,6 +15,7 @@ mod camellia_cfb8_cmd;
 mod camellia_cfb_cmd;
 mod camellia_ctr_cmd;
 mod camellia_gcm_cmd;
+mod camellia_kw_cmd;
 mod chacha20_cmd;
 mod chacha20_poly1305_cmd;
 mod encoders_cmd;
@@ -2349,6 +2350,73 @@ enum Subcommands {
         x: bool,
     },
 
+    /// Camellia-128 Key Wrap (RFC 3657 `id-camellia128-wrap`; NIST SP 800-38F Sec 6.2 over the
+    /// Camellia permutation): `-d encrypt` wraps stdin to stdout, `-d decrypt` unwraps it.
+    ///
+    /// The same command as `aes128-kw` over Camellia: see it for the input-length rules, the
+    /// absence of an IV, the authenticated `decrypt` and the non-streaming note. RFC 3657 defines
+    /// no padded form, so there is no `camellia*-kwp`.
+    CAMELLIA128_KW {
+        #[arg(short, long)]
+        direction: CipherDirection,
+
+        /// The 16-byte Camellia key-encryption key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 16-byte Camellia key-encryption key (raw bytes; hex with --hex-input).
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// Camellia-192 Key Wrap (RFC 3657 `id-camellia192-wrap`). See `camellia128-kw`; only the key
+    /// length differs.
+    CAMELLIA192_KW {
+        #[arg(short, long)]
+        direction: CipherDirection,
+
+        /// The 24-byte Camellia key-encryption key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 24-byte Camellia key-encryption key (raw bytes; hex with --hex-input).
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// Camellia-256 Key Wrap (RFC 3657 `id-camellia256-wrap`). See `camellia128-kw`; only the key
+    /// length differs.
+    CAMELLIA256_KW {
+        #[arg(short, long)]
+        direction: CipherDirection,
+
+        /// The 32-byte Camellia key-encryption key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 32-byte Camellia key-encryption key (raw bytes; hex with --hex-input).
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
     /// The ML-KEM-512 key encapsulation algorithm.
     MLKEM512 {
         action: mlkem_cmd::MLKEMAction,
@@ -3941,6 +4009,15 @@ fn run() {
         }
         Some(Subcommands::AES256_KWP { direction, key, key_file, x }) => {
             aes_kw_cmd::aes256_kwp_cmd(direction, key, key_file, *x);
+        }
+        Some(Subcommands::CAMELLIA128_KW { direction, key, key_file, x }) => {
+            camellia_kw_cmd::camellia128_kw_cmd(direction, key, key_file, *x);
+        }
+        Some(Subcommands::CAMELLIA192_KW { direction, key, key_file, x }) => {
+            camellia_kw_cmd::camellia192_kw_cmd(direction, key, key_file, *x);
+        }
+        Some(Subcommands::CAMELLIA256_KW { direction, key, key_file, x }) => {
+            camellia_kw_cmd::camellia256_kw_cmd(direction, key, key_file, *x);
         }
         Some(Subcommands::MLKEM512 { action, skfile, pkfile, ctfile, x }) => {
             mlkem_cmd::mlkem_cmd(&mlkem_cmd::MLKEM512_SET, action, skfile, pkfile, ctfile, *x);

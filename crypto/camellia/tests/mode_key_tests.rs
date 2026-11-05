@@ -9,7 +9,7 @@ use bouncycastle_camellia::hazmat::{Camellia128Internal, Camellia256Internal};
 use bouncycastle_camellia::{Camellia128Key, Camellia256Key};
 use bouncycastle_cipher::modes::hazmat::ecb::ECB;
 use bouncycastle_cipher::modes::{
-    Blocks, CBC, CCM_Packet, CFB, CFB8, CMAC, CTR, GCM, GMAC, ModeNames,
+    Blocks, CBC, CCM_Packet, CFB, CFB8, CMAC, CTR, GCM, GMAC, KW, ModeNames,
 };
 use bouncycastle_cipher::padding::{NoPadding, PKCS7};
 use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
@@ -23,6 +23,7 @@ use bouncycastle_core::traits::{BlockCipherEncryptor, MAC};
 use bouncycastle_core_test_framework::aead::TestFrameworkAEADCipher;
 use bouncycastle_core_test_framework::block_cipher::TestFrameworkBlockCipher;
 use bouncycastle_core_test_framework::from_key_material::TestFrameworkFromKeyMaterial;
+use bouncycastle_core_test_framework::key_wrap::TestFrameworkKeyWrap;
 use bouncycastle_core_test_framework::symmetric_ciphers::{
     TestFrameworkStreamCipher, TestFrameworkSymmetricCipher,
 };
@@ -92,6 +93,17 @@ fn every_mode_key_enforces_the_material_policy() {
         Camellia128Internal::CCM_ALG_NAME,
         Camellia256Internal::CCM_ALG_NAME,
     );
+    construction_suite::<KW>(Camellia128Internal::KW_ALG_NAME, Camellia256Internal::KW_ALG_NAME);
+}
+
+/// The key-wrap suite: round trips, the length helpers, the error cases and tamper rejection. The
+/// answers are Wycheproof's, in `kw_wycheproof.rs`.
+#[test]
+fn kw_keys_pass_the_key_wrap_framework() {
+    let tf = TestFrameworkKeyWrap::new();
+    tf.test::<16, 16, 24, Camellia128Key<KW>>();
+    tf.test::<16, 32, 40, Camellia128Key<KW>>();
+    tf.test::<32, 32, 40, Camellia256Key<KW>>();
 }
 
 #[test]

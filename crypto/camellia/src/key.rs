@@ -10,14 +10,14 @@ use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
 use bouncycastle_core::hazmat::{
     AeadDeclaredDecryptMode, AeadDeclaredEncryptMode, AeadDecryptMode, AeadEncryptMode,
     BlockDecryptMode, BlockEncryptMode, EcbDecryptMode, EcbDecryptionKey, EcbEncryptMode,
-    EcbEncryptionKey, MacMode, Mode, SymmetricDecryptMode, SymmetricEncryptMode,
-    do_hazardous_operations,
+    EcbEncryptionKey, KeyUnwrapMode, KeyWrapMode, MacMode, Mode, SymmetricDecryptMode,
+    SymmetricEncryptMode, do_hazardous_operations,
 };
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::symmetric_key::{
     AeadDeclaredDecryptionKey, AeadDeclaredEncryptionKey, AeadDecryptionKey, AeadEncryptionKey,
-    BlockDecryptionKey, BlockEncryptionKey, FromKeyMaterial, MacGenerationKey, MacVerificationKey,
-    SymmetricDecryptionKey, SymmetricEncryptionKey,
+    BlockDecryptionKey, BlockEncryptionKey, FromKeyMaterial, KeyUnwrappingKey, KeyWrappingKey,
+    MacGenerationKey, MacVerificationKey, SymmetricDecryptionKey, SymmetricEncryptionKey,
 };
 use bouncycastle_core::traits::RNG;
 
@@ -33,9 +33,10 @@ use bouncycastle_core::traits::RNG;
 /// by its mode: the symmetric pair for the stream modes and the padded block modes (`CFB`, `CFB8`,
 /// `CTR<N>` at any nonce length, `CBC<PKCS7>`, `CBC<NoPadding>`, `ECB<PKCS7>`, `ECB<NoPadding>`),
 /// the block pair for `CBC<Blocks>`, the `hazmat` ECB pair for `ECB<Blocks>`, the AEAD pairs for
-/// `GCM`, `CCM` and `CCM_Packet`, the MAC pair for `CMAC`, and GMAC's nonce-bound generator and
-/// verifier as inherent methods. The crate names the workers of CBC, CFB, CFB8, CTR, GCM, CCM,
-/// CMAC and GMAC as the `Camellia_*` aliases; the rest are reached by naming the mode.
+/// `GCM`, `CCM` and `CCM_Packet`, the MAC pair for `CMAC`, the key-wrap pair for `KW` and `KWP`,
+/// and GMAC's nonce-bound generator and verifier as inherent methods. The crate names the workers
+/// of CBC, CFB, CFB8, CTR, GCM, CCM, CMAC, GMAC and KW as the `Camellia_*` aliases; the rest are
+/// reached by naming the mode.
 ///
 /// # Usage Examples
 ///
@@ -487,5 +488,35 @@ impl<P: CamelliaParams, M: MacMode<CamelliaInternal<P>>> MacVerificationKey for 
 
     fn create_verifier<'k>(&'k self) -> Self::Verifier<'k> {
         M::mac_init(&self.state)
+    }
+}
+
+impl<P, M, const KEK_LEN: usize> KeyWrappingKey<KEK_LEN> for CamelliaKey<P, M>
+where
+    P: CamelliaParams,
+    M: KeyWrapMode<CamelliaInternal<P>, KEK_LEN>,
+{
+    type Wrapper<'k>
+        = M::Wrapper<'k>
+    where
+        Self: 'k;
+
+    fn create_wrapper<'k>(&'k self) -> Self::Wrapper<'k> {
+        M::wrap_init(&self.state)
+    }
+}
+
+impl<P, M, const KEK_LEN: usize> KeyUnwrappingKey<KEK_LEN> for CamelliaKey<P, M>
+where
+    P: CamelliaParams,
+    M: KeyUnwrapMode<CamelliaInternal<P>, KEK_LEN>,
+{
+    type Unwrapper<'k>
+        = M::Unwrapper<'k>
+    where
+        Self: 'k;
+
+    fn create_unwrapper<'k>(&'k self) -> Self::Unwrapper<'k> {
+        M::unwrap_init(&self.state)
     }
 }
