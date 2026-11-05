@@ -121,6 +121,11 @@ impl TestFrameworkKeyWrap {
         assert_eq!(kek.create_unwrapper().unwrap_out(&ct, &mut pt[..max_pt_len]).unwrap(), KEY_LEN);
         assert_eq!(&pt[..KEY_LEN], &key);
 
+        /* Allocating one-shots agree with the fixed-length API */
+
+        assert_eq!(kek.wrap(&key).unwrap(), ct);
+        assert_eq!(kek.unwrap(&ct).unwrap(), key);
+
         // several workers in flight from one key, and the key unchanged by use
         let a = kek.create_wrapper();
         let b = kek.create_unwrapper();
@@ -163,6 +168,7 @@ impl TestFrameworkKeyWrap {
             _ => panic!("Should have rejected an empty plaintext"),
         }
         assert!(buf.iter().all(|b| *b == 0), "ciphertext buffer not zeroized");
+        assert!(matches!(kek.wrap(&[]), Err(SymmetricCipherError::InvalidInputLength(_))));
         for bad_ct_len in [0, semiblock_len, CT_LEN - 1] {
             pt.fill(0xFF);
             match kek.unwrap_out(&ct[..bad_ct_len], &mut pt) {
@@ -170,6 +176,10 @@ impl TestFrameworkKeyWrap {
                 _ => panic!("Should have rejected a ciphertext of {bad_ct_len} bytes"),
             }
             assert!(pt.iter().all(|b| *b == 0), "plaintext buffer not zeroized");
+            assert!(matches!(
+                kek.unwrap(&ct[..bad_ct_len]),
+                Err(SymmetricCipherError::InvalidInputLength(_))
+            ));
         }
 
         /* Error case: modified ciphertext */
@@ -196,6 +206,7 @@ impl TestFrameworkKeyWrap {
             out.fill(0xFF);
             assert!(kek.unwrap_key_out(&bad_ct, &mut out).is_err());
             assert!(out.iter().all(|b| *b == 0), "the Secret was not zeroized on error");
+            assert!(matches!(kek.unwrap(&bad_ct), Err(SymmetricCipherError::DecryptionFailed)));
         }
 
         /* Error case: wrong KEK */
@@ -240,6 +251,9 @@ impl TestFrameworkKeyWrap {
 
         let bytes_written = kek.unwrap_out(expected_ct, &mut buf).unwrap();
         assert_eq!(&buf[..bytes_written], key);
+
+        assert_eq!(kek.wrap(key).unwrap(), expected_ct);
+        assert_eq!(kek.unwrap(expected_ct).unwrap(), key);
     }
 }
 
