@@ -313,6 +313,8 @@ impl ModeNames for ARIA128Internal {
     const ECB_ALG_NAME: &'static str = "ARIA_ECB_128";
     const GCM_ALG_NAME: &'static str = "ARIA_GCM_128";
     const GMAC_ALG_NAME: &'static str = "ARIA_GMAC_128";
+    const KW_ALG_NAME: &'static str = "ARIA_KW_128";
+    const KWP_ALG_NAME: &'static str = "ARIA_KWP_128";
 }
 
 impl ModeNames for ARIA192Internal {
@@ -325,6 +327,8 @@ impl ModeNames for ARIA192Internal {
     const ECB_ALG_NAME: &'static str = "ARIA_ECB_192";
     const GCM_ALG_NAME: &'static str = "ARIA_GCM_192";
     const GMAC_ALG_NAME: &'static str = "ARIA_GMAC_192";
+    const KW_ALG_NAME: &'static str = "ARIA_KW_192";
+    const KWP_ALG_NAME: &'static str = "ARIA_KWP_192";
 }
 
 impl ModeNames for ARIA256Internal {
@@ -337,6 +341,8 @@ impl ModeNames for ARIA256Internal {
     const ECB_ALG_NAME: &'static str = "ARIA_ECB_256";
     const GCM_ALG_NAME: &'static str = "ARIA_GCM_256";
     const GMAC_ALG_NAME: &'static str = "ARIA_GMAC_256";
+    const KW_ALG_NAME: &'static str = "ARIA_KW_256";
+    const KWP_ALG_NAME: &'static str = "ARIA_KWP_256";
 }
 
 impl<P: ARIAParams> core::fmt::Debug for ARIAInternal<P> {
