@@ -23,8 +23,8 @@ mod sha2_cmd;
 mod sha3_cmd;
 mod sm3_cmd;
 
-use crate::hkdf_cmd::HKDFVariant;
 use crate::blake2_cmd::BLAKE2Variant;
+use crate::hkdf_cmd::HKDFVariant;
 use crate::mac_cmd::HMACVariant;
 use crate::mldsa_cmd::{MLDSAAction, PreHashAlg};
 use crate::rng_cmd::DrbgHash;

@@ -239,15 +239,13 @@ pub(crate) fn strip_trailing_newline(bytes: &[u8]) -> &[u8] {
     bytes.strip_suffix(b"\r\n").or_else(|| bytes.strip_suffix(b"\n")).unwrap_or(bytes)
 }
 
-// ---- stdin as data ---------------------------------------------------------------------------
-
 /// The MAC key from `--key-file` or `--key` (hex), tagged as a MAC key, for the BLAKE2 and
 /// BLAKE3 keyed commands.
 ///
 /// A key outside `min_len..=max_len` bytes is refused here with a message naming the limit, rather
 /// than as an opaque error from the algorithm's constructor. An all-zero key comes back tagged
-/// [`KeyType::Zeroized`], which the MAC key objects accept.
-pub(crate) fn load_mac_key(
+/// [`KeyType::Zeroized`], which the BLAKE key objects accept.
+pub(crate) fn load_blake_mac_key(
     key: &Option<String>,
     key_file: &Option<String>,
     alg_name: &str,
@@ -271,6 +269,8 @@ pub(crate) fn load_mac_key(
     // which fits a KeyMaterial512, and MACKey is a valid type to load.
     KeyMaterial512::from_bytes_as_type(key_bytes.ref_to_bytes(), KeyType::MACKey).unwrap()
 }
+
+// ---- stdin as data ---------------------------------------------------------------------------
 
 /// One read from stdin into `buf`; a read error is reported, not a panic. Returns 0 at the end.
 pub(crate) fn read_stdin_chunk(buf: &mut [u8]) -> usize {
