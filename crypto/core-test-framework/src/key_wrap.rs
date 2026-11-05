@@ -131,35 +131,45 @@ impl TestFrameworkKeyWrap {
 
         /* Error case: output buffers too small */
 
+        // An `_out` method zeroizes its whole output buffer before any check, so a refused
+        // call leaves nothing stale behind either.
+        buf.fill(0xFF);
         match kek.wrap_out(&key, &mut buf[..CT_LEN - 1]) {
             Err(SymmetricCipherError::OutputBufferTooSmall(required)) => {
                 assert_eq!(required, CT_LEN)
             }
             _ => panic!("Should have rejected a ciphertext buffer that is too small"),
         }
+        assert!(buf[..CT_LEN - 1].iter().all(|b| *b == 0), "ciphertext buffer not zeroized");
         // checked before any work is done, so it is the upper bound that is enforced, even when
         // the actual plaintext would have fit
+        pt.fill(0xFF);
         match kek.unwrap_out(&ct, &mut pt[..max_pt_len - 1]) {
             Err(SymmetricCipherError::OutputBufferTooSmall(required)) => {
                 assert_eq!(required, max_pt_len)
             }
             _ => panic!("Should have rejected a plaintext buffer that is too small"),
         }
+        assert!(pt[..max_pt_len - 1].iter().all(|b| *b == 0), "plaintext buffer not zeroized");
 
         /* Error case: input lengths the algorithm is not defined on */
 
         // Every key-wrap algorithm in SP 800-38F (Table 1) needs at least one octet of plaintext
         // and a ciphertext of at least two semiblocks that is a whole number of semiblocks.
         // Empty inputs also catch implementations that subtract before checking the length.
+        buf.fill(0xFF);
         match kek.wrap_out(&[], &mut buf) {
             Err(SymmetricCipherError::InvalidInputLength(_)) => { /* good */ }
             _ => panic!("Should have rejected an empty plaintext"),
         }
+        assert!(buf.iter().all(|b| *b == 0), "ciphertext buffer not zeroized");
         for bad_ct_len in [0, semiblock_len, CT_LEN - 1] {
+            pt.fill(0xFF);
             match kek.unwrap_out(&ct[..bad_ct_len], &mut pt) {
                 Err(SymmetricCipherError::InvalidInputLength(_)) => { /* good */ }
                 _ => panic!("Should have rejected a ciphertext of {bad_ct_len} bytes"),
             }
+            assert!(pt.iter().all(|b| *b == 0), "plaintext buffer not zeroized");
         }
 
         /* Error case: modified ciphertext */
@@ -342,6 +352,7 @@ mod tests {
             plaintext: &[u8],
             ciphertext: &mut [u8],
         ) -> Result<usize, SymmetricCipherError> {
+            ciphertext.fill(0);
             let ct_len = self.wrap_out_len(plaintext.len());
             if ciphertext.len() < ct_len {
                 return Err(SymmetricCipherError::OutputBufferTooSmall(ct_len));
@@ -350,7 +361,6 @@ mod tests {
                 return Err(SymmetricCipherError::InvalidInputLength("plaintext length"));
             }
             let s = &mut ciphertext[..ct_len];
-            s.fill(0);
             s[..4].copy_from_slice(&(plaintext.len() as u32).to_be_bytes());
             s[4..8].copy_from_slice(&checksum(self.kek, plaintext));
             s[8..8 + plaintext.len()].copy_from_slice(plaintext);
@@ -402,11 +412,11 @@ mod tests {
             ciphertext: &[u8],
             plaintext: &mut [u8],
         ) -> Result<usize, SymmetricCipherError> {
+            plaintext.fill(0);
             let max_pt_len = self.unwrap_out_max_len(ciphertext.len());
             if plaintext.len() < max_pt_len {
                 return Err(SymmetricCipherError::OutputBufferTooSmall(max_pt_len));
             }
-            plaintext.fill(0);
             if ciphertext.len() < 2 * MOCK_SEMIBLOCK_LEN
                 || !ciphertext.len().is_multiple_of(MOCK_SEMIBLOCK_LEN)
             {
