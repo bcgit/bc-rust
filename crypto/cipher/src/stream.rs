@@ -297,3 +297,35 @@ where
         self.apply(data)
     }
 }
+
+/// Raw ways into [`StreamCipher`] whose safe use is the caller's responsibility; see
+/// [`bouncycastle_core::hazmat`] for what the path means and the supported uses.
+pub mod hazmat {
+    use super::StreamCipher;
+    use bouncycastle_core::hazmat::KeyStream;
+    use bouncycastle_utils::secret::Secret;
+    use core::marker::PhantomData;
+
+    /// A keystream that runs over no [`BlockPermutation`](bouncycastle_core::hazmat::BlockPermutation),
+    /// such as ChaCha20's, and so has no decrypt-only permutation for [`stream_cipher_over`] to
+    /// refuse. Implemented beside such a keystream's definition. The keystreams of this crate's
+    /// modes do not implement it, and no other crate can implement it for them.
+    pub trait PermutationFreeKeyStream {}
+
+    /// A [`StreamCipher`] over a keystream that is already constructed and positioned, for a
+    /// keystream defined outside this crate.
+    ///
+    /// # 🚨 Security Considerations 🚨
+    /// The nonce and the starting counter are whatever the keystream was constructed with: no
+    /// init data is drawn, and a nonce or counter range repeated under the key is the two-time
+    /// pad. A key's `create_encryptor`, which draws the nonce, is the cipher to use.
+    pub fn stream_cipher_over<KS, Dir, const INIT_DATA_LEN: usize, const BLOCK_LEN: usize>(
+        keystream: KS,
+    ) -> StreamCipher<KS, Dir, INIT_DATA_LEN, BLOCK_LEN>
+    where
+        KS: KeyStream<INIT_DATA_LEN, BLOCK_LEN> + PermutationFreeKeyStream,
+    {
+        StreamCipher::<KS, Dir, INIT_DATA_LEN, BLOCK_LEN>::check_shape();
+        StreamCipher { keystream, pending: Secret::new(), used: BLOCK_LEN, _marker: PhantomData }
+    }
+}
