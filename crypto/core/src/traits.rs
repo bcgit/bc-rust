@@ -673,7 +673,6 @@ pub trait KEMPublicKey<const PK_LEN: usize>:
     fn from_bytes(bytes: &[u8]) -> Result<Self, KEMError>;
 }
 
-/// A keyed keystream generator: the raw primitive under a stream cipher, as
 /// The unwrapping half of a key-wrap algorithm -- KW, KWP or TKW of NIST SP 800-38F (RFC 3394 and
 /// RFC 5649) -- as the worker a key object hands out through
 /// [`KeyUnwrappingKey`](crate::symmetric_key::KeyUnwrappingKey). Wrapping is [`KeyWrapper`]. The
@@ -699,15 +698,19 @@ pub trait KEMPublicKey<const PK_LEN: usize>:
 /// reported as [`SymmetricCipherError::DecryptionFailed`], so that the error does not tell an
 /// attacker which check failed. SP 800-38F reports all of these as a single FAIL; see, for example,
 /// Algorithm 6 (KWP-AD), steps 4, 7 and 8. On any error, the output buffer is zeroized.
-pub trait KeyUnwrapper: Algorithm {
+pub trait KeyUnwrapper: AlgorithmInfo {
     /// One-shot: unwraps a ciphertext whose length is fixed at compile time, returning the
     /// recovered plaintext.
     ///
     /// Provided over [`KeyUnwrapper::unwrap_key_out`].
+    /// Not callable on a trait object: the lengths are properties of the call site.
     fn unwrap_key<const KEY_LEN: usize, const CT_LEN: usize>(
         &self,
         ciphertext: &[u8; CT_LEN],
-    ) -> Result<Secret<[u8; KEY_LEN]>, SymmetricCipherError> {
+    ) -> Result<Secret<[u8; KEY_LEN]>, SymmetricCipherError>
+    where
+        Self: Sized,
+    {
         let mut key = Secret::<[u8; KEY_LEN]>::new();
         let bytes_written = self.unwrap_key_out(ciphertext, &mut key)?;
         debug_assert_eq!(bytes_written, KEY_LEN);
@@ -725,11 +728,14 @@ pub trait KeyUnwrapper: Algorithm {
     /// # Errors
     /// [`SymmetricCipherError::DecryptionFailed`] for any authenticity failure. `key` is zeroized
     /// on error.
+    /// Not callable on a trait object: the lengths are properties of the call site.
     fn unwrap_key_out<const KEY_LEN: usize, const CT_LEN: usize>(
         &self,
         ciphertext: &[u8; CT_LEN],
         key: &mut Secret<[u8; KEY_LEN]>,
-    ) -> Result<usize, SymmetricCipherError>;
+    ) -> Result<usize, SymmetricCipherError>
+    where
+        Self: Sized;
 
     /// An upper bound on the plaintext length for a ciphertext of `ciphertext_len` bytes: the
     /// buffer [`KeyUnwrapper::unwrap_out`] requires. This is `ciphertext_len` minus one semiblock
@@ -750,7 +756,8 @@ pub trait KeyUnwrapper: Algorithm {
     /// [`SymmetricCipherError::OutputBufferTooSmall`] if `plaintext` is too short, checked before
     /// any work is done; [`SymmetricCipherError::InvalidInputLength`] for a ciphertext length the
     /// algorithm is not defined on; and [`SymmetricCipherError::DecryptionFailed`] for any
-    /// authenticity failure. The whole `plaintext` buffer is zeroized on error.
+    /// authenticity failure. The whole `plaintext` buffer is zeroized before anything else, so
+    /// nothing stale survives an error.
     fn unwrap_out(
         &self,
         ciphertext: &[u8],
@@ -776,14 +783,18 @@ pub trait KeyUnwrapper: Algorithm {
 ///
 /// Key wrapping is deterministic: wrapping the same data under the same KEK always produces the
 /// same ciphertext.
-pub trait KeyWrapper: Algorithm {
+pub trait KeyWrapper: AlgorithmInfo {
     /// One-shot: wraps data whose length is fixed at compile time, returning the ciphertext.
     ///
     /// Provided over [`KeyWrapper::wrap_key_out`].
+    /// Not callable on a trait object: the lengths are properties of the call site.
     fn wrap_key<const KEY_LEN: usize, const CT_LEN: usize>(
         &self,
         key: &[u8; KEY_LEN],
-    ) -> Result<[u8; CT_LEN], SymmetricCipherError> {
+    ) -> Result<[u8; CT_LEN], SymmetricCipherError>
+    where
+        Self: Sized,
+    {
         let mut ciphertext = [0u8; CT_LEN];
         let bytes_written = self.wrap_key_out(key, &mut ciphertext)?;
         debug_assert_eq!(bytes_written, CT_LEN);
@@ -802,11 +813,14 @@ pub trait KeyWrapper: Algorithm {
     /// # Errors
     /// None for a valid pair of lengths; the signature carries the `Result` for the run-time
     /// form's sake.
+    /// Not callable on a trait object: the lengths are properties of the call site.
     fn wrap_key_out<const KEY_LEN: usize, const CT_LEN: usize>(
         &self,
         key: &[u8; KEY_LEN],
         ciphertext: &mut [u8; CT_LEN],
-    ) -> Result<usize, SymmetricCipherError>;
+    ) -> Result<usize, SymmetricCipherError>
+    where
+        Self: Sized;
 
     /// The exact ciphertext length for a plaintext of `plaintext_len` bytes: the buffer
     /// [`KeyWrapper::wrap_out`] requires. For example `plaintext_len + 8` for KW, and
@@ -823,7 +837,8 @@ pub trait KeyWrapper: Algorithm {
     /// # Errors
     /// [`SymmetricCipherError::OutputBufferTooSmall`] if `ciphertext` is too short, checked before
     /// any work is done, and [`SymmetricCipherError::InvalidInputLength`] for a plaintext length
-    /// the algorithm is not defined on.
+    /// the algorithm is not defined on. `ciphertext` is zeroized before anything else, so nothing
+    /// stale survives an error.
     fn wrap_out(
         &self,
         plaintext: &[u8],
