@@ -31,6 +31,7 @@ mod tdes_cfb8_cmd;
 mod tdes_cfb_cmd;
 mod tdes_ctr_cmd;
 mod tdes_ecb_cmd;
+mod tdes_tkw_cmd;
 
 use crate::hkdf_cmd::HKDFVariant;
 use crate::mac_cmd::HMACVariant;
@@ -2353,6 +2354,61 @@ enum Subcommands {
         x: bool,
     },
 
+    /// Triple DES Key Wrap, TKW (NIST SP 800-38F Sec 7): `-d encrypt` wraps stdin to stdout,
+    /// `-d decrypt` unwraps it. LEGACY ONLY: SP 800-38F approves TKW to support legacy systems
+    /// and says it should not be used for new applications.
+    ///
+    /// The same command as `aes128-kw` over TDEA at half the width: input to `encrypt` is a whole
+    /// number of 4-byte blocks, at least 8 bytes, and the output is 4 bytes longer; input to
+    /// `decrypt` is a whole number of 4-byte blocks, at least 12 bytes. There is NO IV, and the
+    /// whole input is read before anything is written. See `aes128-kw` for the rest.
+    ///
+    /// The key is 24 bytes, KEY1 || KEY2 || KEY3, with three distinct component keys none of which
+    /// is a weak DES key (SP 800-67 Rev 2 Sec 3.1 and 3.3.2). Two-key TDEA unwraps through
+    /// `tdes2-tkw`.
+    ///
+    /// Note: in production uses, secrets should not be passed on the command-line because they get
+    /// logged in shell history. Use the file-based input instead.
+    TDES_TKW {
+        #[arg(short, long)]
+        direction: CipherDirection,
+
+        /// The 24-byte TDES key-encryption key bundle in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 24-byte TDES key-encryption key bundle (raw bytes; hex with
+        /// --hex-input). If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// Two-key Triple DES Key Wrap (2TDEA TKW), UNWRAPPING ONLY. See `tdes2-cbc` for why there is
+    /// no `encrypt`, and `tdes-tkw` for the input rules.
+    TDES2_TKW {
+        #[arg(short = 'd', long = "direction")]
+        action: DecryptOnlyAction,
+
+        /// The 16-byte two-key TDES bundle in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 16-byte two-key TDES bundle (raw bytes; hex with --hex-input).
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
     /// The ML-KEM-512 key encapsulation algorithm.
     MLKEM512 {
         action: mlkem_cmd::MLKEMAction,
@@ -3574,6 +3630,12 @@ fn run() {
         }
         Some(Subcommands::AES256_KWP { direction, key, key_file, x }) => {
             aes_kw_cmd::aes256_kwp_cmd(direction, key, key_file, *x);
+        }
+        Some(Subcommands::TDES_TKW { direction, key, key_file, x }) => {
+            tdes_tkw_cmd::tdes_tkw_cmd(direction, key, key_file, *x);
+        }
+        Some(Subcommands::TDES2_TKW { action, key, key_file, x }) => {
+            tdes_tkw_cmd::tdes2_tkw_cmd(action, key, key_file, *x);
         }
         Some(Subcommands::MLKEM512 { action, skfile, pkfile, ctfile, x }) => {
             mlkem_cmd::mlkem_cmd(&mlkem_cmd::MLKEM512_SET, action, skfile, pkfile, ctfile, *x);

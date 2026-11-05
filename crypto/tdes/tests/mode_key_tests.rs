@@ -3,7 +3,7 @@
 //! a two-key key can do, decrypt.
 
 use bouncycastle_cipher::modes::hazmat::ecb::ECB;
-use bouncycastle_cipher::modes::{Blocks, CBC, CFB, CFB8, CMAC, CTR, ModeNames};
+use bouncycastle_cipher::modes::{Blocks, CBC, CFB, CFB8, CMAC, CTR, ModeNames, TKW};
 use bouncycastle_cipher::padding::{NoPadding, PKCS7};
 use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
 use bouncycastle_core::hazmat::{BlockPermutation, EcbDecryptionKey, ElectronicCodeBook, Mode};
@@ -17,6 +17,7 @@ use bouncycastle_core::traits::{
 };
 use bouncycastle_core_test_framework::block_cipher::TestFrameworkBlockCipher;
 use bouncycastle_core_test_framework::from_key_material::TestFrameworkFromKeyMaterial;
+use bouncycastle_core_test_framework::key_wrap::TestFrameworkKeyWrap;
 use bouncycastle_core_test_framework::symmetric_ciphers::{
     TestFrameworkStreamCipher, TestFrameworkSymmetricCipher,
 };
@@ -64,6 +65,18 @@ fn every_mode_key_enforces_the_material_policy() {
     construction_suite::<CFB>(TDESInternal::CFB_ALG_NAME, TDES2Internal::CFB_ALG_NAME);
     construction_suite::<CFB8>(TDESInternal::CFB8_ALG_NAME, TDES2Internal::CFB8_ALG_NAME);
     construction_suite::<Ctr6>(TDESInternal::CTR_ALG_NAME, TDES2Internal::CTR_ALG_NAME);
+    construction_suite::<TKW>(TDESInternal::KW_ALG_NAME, TDES2Internal::KW_ALG_NAME);
+}
+
+/// The key-wrap suite over the three-key bundle: round trips, the length helpers, the error
+/// cases and tamper rejection, at the shortest plaintext and two longer ones. The answers are
+/// CAVP's, in `tkw_cavp_tests.rs`; the two-key bundle unwraps only, in `tkw_reference_tests.rs`.
+#[test]
+fn tkw_keys_pass_the_key_wrap_framework() {
+    let tf = TestFrameworkKeyWrap::new();
+    tf.test::<KEY_LEN, 8, 12, TDES3Key<TKW>>();
+    tf.test::<KEY_LEN, 16, 20, TDES3Key<TKW>>();
+    tf.test::<KEY_LEN, 36, 40, TDES3Key<TKW>>();
 }
 
 #[test]

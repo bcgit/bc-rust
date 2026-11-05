@@ -22,8 +22,8 @@ use bouncycastle_core::traits::Algorithm;
 use bouncycastle_rng::HashDRBG_SHA512;
 use bouncycastle_tdes::hazmat::{TDES_ECB, TDES2_ECB, TDES2Internal, TDESInternal};
 use bouncycastle_tdes::{
-    BLOCK_LEN, CTR_NONCE_LEN, KEY_LEN, TDES_CBC, TDES_CFB, TDES_CFB8, TDES_CTR, TDES2_CBC,
-    TDES2_CFB, TDES2_CFB8, TDES2_CTR, TDES3Key,
+    BLOCK_LEN, CTR_NONCE_LEN, KEY_LEN, TDES_CBC, TDES_CFB, TDES_CFB8, TDES_CTR, TDES_TKW,
+    TDES2_CBC, TDES2_CFB, TDES2_CFB8, TDES2_CTR, TDES2_TKW, TDES3Key,
 };
 use core::mem::size_of;
 
@@ -50,6 +50,15 @@ fn cbc() {
     check::<TDES_CBC<'_, Encrypting, PKCS7>, TDES_CBC<'_, Decrypting, PKCS7>>("TDES_CBC", _112bit);
     check_decrypting::<TDES2_CBC<'_, NoPadding>>("TDES2_CBC");
     check_decrypting::<TDES2_CBC<'_, PKCS7>>("TDES2_CBC");
+}
+
+/// One worker serves both halves of a key wrap, so the alias is checked against itself; the
+/// two-key alias has only the unwrapping half.
+#[test]
+fn tkw() {
+    use SecurityStrength::*;
+    check::<TDES_TKW<'_>, TDES_TKW<'_>>("TDES_TKW", _112bit);
+    check_decrypting::<TDES2_TKW<'_>>("TDES2_TKW");
 }
 
 #[test]

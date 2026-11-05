@@ -6,12 +6,13 @@ use crate::hazmat::{TDES2Internal, TDESInternal};
 use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
 use bouncycastle_core::hazmat::{
     BlockDecryptMode, BlockEncryptMode, EcbDecryptMode, EcbDecryptionKey, EcbEncryptMode,
-    EcbEncryptionKey, ElectronicCodeBook, Mode, SymmetricDecryptMode, SymmetricEncryptMode,
+    EcbEncryptionKey, ElectronicCodeBook, KeyUnwrapMode, KeyWrapMode, Mode, SymmetricDecryptMode,
+    SymmetricEncryptMode,
 };
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::symmetric_key::{
-    BlockDecryptionKey, BlockEncryptionKey, FromKeyMaterial, SymmetricDecryptionKey,
-    SymmetricEncryptionKey,
+    BlockDecryptionKey, BlockEncryptionKey, FromKeyMaterial, KeyUnwrappingKey, KeyWrappingKey,
+    SymmetricDecryptionKey, SymmetricEncryptionKey,
 };
 use bouncycastle_core::traits::RNG;
 
@@ -242,5 +243,35 @@ where
 
     fn create_decryptor<'k>(&'k self) -> Self::Decryptor<'k> {
         M::decrypt_init(&self.state)
+    }
+}
+
+impl<P, M, const KEK_LEN: usize> KeyWrappingKey<KEK_LEN> for TDESKey<P, M>
+where
+    P: TDESEngine,
+    M: KeyWrapMode<P, KEK_LEN>,
+{
+    type Wrapper<'k>
+        = M::Wrapper<'k>
+    where
+        Self: 'k;
+
+    fn create_wrapper<'k>(&'k self) -> Self::Wrapper<'k> {
+        M::wrap_init(&self.state)
+    }
+}
+
+impl<P, M, const KEK_LEN: usize> KeyUnwrappingKey<KEK_LEN> for TDESKey<P, M>
+where
+    P: TDESEngine,
+    M: KeyUnwrapMode<P, KEK_LEN>,
+{
+    type Unwrapper<'k>
+        = M::Unwrapper<'k>
+    where
+        Self: 'k;
+
+    fn create_unwrapper<'k>(&'k self) -> Self::Unwrapper<'k> {
+        M::unwrap_init(&self.state)
     }
 }

@@ -138,23 +138,35 @@ pub(crate) fn aes256_kwp_cmd(
 }
 
 /// Reads all of stdin, wraps or unwraps it under `kek`, and writes the result. `alg` names the
-/// algorithm in error messages.
-fn run<K, const KEK_LEN: usize>(direction: &CipherDirection, kek: &K, output_hex: bool, alg: &str)
-where
+/// algorithm in error messages. Shared with the other block ciphers' key-wrap commands.
+pub(crate) fn run<K, const KEK_LEN: usize>(
+    direction: &CipherDirection,
+    kek: &K,
+    output_hex: bool,
+    alg: &str,
+) where
     K: KeyWrappingKey<KEK_LEN> + KeyUnwrappingKey<KEK_LEN>,
 {
+    match direction {
+        CipherDirection::Encrypt => run_with(|input| kek.wrap(input), output_hex, alg),
+        CipherDirection::Decrypt => run_with(|input| kek.unwrap(input), output_hex, alg),
+    }
+}
+
+/// Reads all of stdin, applies `op` to it and writes the result; the unwrap-only commands pass
+/// their key's `unwrap` alone, so that no wrapper is ever instantiated for their key type.
+pub(crate) fn run_with(
+    op: impl FnOnce(&[u8]) -> Result<Vec<u8>, SymmetricCipherError>,
+    output_hex: bool,
+    alg: &str,
+) {
     let mut input = Vec::new();
     if let Err(e) = std::io::stdin().read_to_end(&mut input) {
         eprintln!("Error: couldn't read stdin: {e}");
         exit(-1);
     }
 
-    let result = match direction {
-        CipherDirection::Encrypt => kek.wrap(&input),
-        CipherDirection::Decrypt => kek.unwrap(&input),
-    };
-
-    match result {
+    match op(&input) {
         Ok(output) => write_bytes_or_hex(&output, output_hex),
         Err(SymmetricCipherError::DecryptionFailed) => {
             eprintln!(

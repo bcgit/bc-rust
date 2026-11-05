@@ -239,7 +239,8 @@ impl ModeNames for TDESInternal {
     const ECB_ALG_NAME: &'static str = "TDES_ECB";
     const GCM_ALG_NAME: &'static str = "";
     const GMAC_ALG_NAME: &'static str = "";
-    const KW_ALG_NAME: &'static str = "";
+    /// TKW, the TDEA key wrap of SP 800-38F Sec 7, is the key wrap of a 64-bit block.
+    const KW_ALG_NAME: &'static str = "TDES_TKW";
     const KWP_ALG_NAME: &'static str = "";
 }
 

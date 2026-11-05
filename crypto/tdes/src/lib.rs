@@ -20,9 +20,9 @@
 //! non-interoperable mode costing one TDES call per byte, `CTR<6, 8>` for CTR (Sec 6.5) with a
 //! 6-byte nonce and a 2-byte counter, and `ECB<PKCS7>` for ECB (Sec 6.1), which has no IV and is
 //! for interoperability and test vectors only -- see
-//! [A block permutation is not a cipher](#a-block-permutation-is-not-a-cipher). The aliases
-//! [`TDES_CBC`], [`TDES_CFB`], [`TDES_CFB8`], [`TDES_CTR`] and [`TDES_ECB`] name the workers the
-//! key hands out.
+//! [A block permutation is not a cipher](#a-block-permutation-is-not-a-cipher); and `TKW` for
+//! TDEA Key Wrap (SP 800-38F Sec 7), legacy only. The aliases [`TDES_CBC`], [`TDES_CFB`],
+//! [`TDES_CFB8`], [`TDES_CTR`], [`TDES_ECB`] and [`TDES_TKW`] name the workers the key hands out.
 //!
 //! SP 800-38A Appendix E is what makes these the standard TDEA modes: TECB, TCBC and TCFB of ANSI
 //! X9.52 "are equivalent to" ECB, CBC and CFB "with the TDEA as the underlying block cipher", and
@@ -112,7 +112,8 @@
 //! with the safe API alone (SP 800-38A defines the modes that way). A deployment that must rule
 //! two-key encryption out altogether should expose only the CBC and ECB decryptors. The aliases
 //! [`TDES2_CBC`], [`TDES2_CFB`], [`TDES2_CFB8`], [`TDES2_CTR`] and [`TDES2_ECB`] are those
-//! decryptors, with the IV or nonce supplied by the caller as it was received:
+//! decryptors, with the IV or nonce supplied by the caller as it was received, and [`TDES2_TKW`]
+//! is the key unwrapper, with no wrapper beside it:
 //!
 //! ```
 //! use bouncycastle_tdes::TDES2Key;
@@ -307,6 +308,7 @@ pub mod hazmat;
 mod key;
 mod sbox;
 mod schedule;
+mod tkw;
 
 /// The DEA block length in bytes: 64 bits (SP 800-67r2 Sec 2).
 pub const BLOCK_LEN: usize = 8;
@@ -324,6 +326,7 @@ pub use cfb::{TDES_CFB, TDES2_CFB};
 pub use cfb8::{TDES_CFB8, TDES2_CFB8};
 pub use ctr::{CTR_NONCE_LEN, TDES_CTR, TDES2_CTR};
 pub use key::{TDES2Key, TDES3Key, TDESEngine, TDESKey};
+pub use tkw::{TDES_TKW, TDES2_TKW};
 
 // Imports needed for docs
 #[allow(unused_imports)]

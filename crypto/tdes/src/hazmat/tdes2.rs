@@ -189,7 +189,8 @@ impl ModeNames for TDES2Internal {
     const ECB_ALG_NAME: &'static str = "TDES2_ECB";
     const GCM_ALG_NAME: &'static str = "";
     const GMAC_ALG_NAME: &'static str = "";
-    const KW_ALG_NAME: &'static str = "";
+    /// TKW-AD only: the engine decrypts only, so no wrapper is made over it.
+    const KW_ALG_NAME: &'static str = "TDES2_TKW";
     const KWP_ALG_NAME: &'static str = "";
 }
 
