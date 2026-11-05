@@ -11,6 +11,7 @@
 //! doubling law over many random on-curve points before being ported here.
 
 use crate::p256k1::P256K1FieldElement;
+use crate::p256k1_domain::B_LIMBS;
 use bouncycastle_utils::ct;
 use bouncycastle_utils::ct::Condition;
 
@@ -37,6 +38,16 @@ impl P256K1JacobianPoint {
     /// actually on the curve -- see [`crate::p256k1_sec1`] for that.
     pub fn from_affine(x: P256K1FieldElement, y: P256K1FieldElement) -> Self {
         Self { x, y, z: P256K1FieldElement::ONE }
+    }
+
+    /// `y^2 == x^3 + b` for the affine `(x, y)`: the curve-membership check of
+    /// [`crate::p256k1_sec1::decode`] and of [`crate::p256k1_mul::multiply_point`]'s debug
+    /// assertion, on public points only.
+    pub(crate) fn is_on_curve(x: &P256K1FieldElement, y: &P256K1FieldElement) -> bool {
+        let lhs = y.mul(y);
+        let x_cubed = x.mul(x).mul(x);
+        let rhs = x_cubed.add(&P256K1FieldElement::from_limbs(B_LIMBS));
+        lhs == rhs
     }
 
     /// TRUE iff this is the point at infinity.

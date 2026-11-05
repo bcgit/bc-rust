@@ -155,6 +155,18 @@
 //! (verification's `s`) by the binary extended Euclidean algorithm in [`inverse_vartime`], for
 //! the same reason; and `JacobianPoint::to_affine` branches on the point being the identity, so
 //! it is for output boundaries on already-public points, not for secret intermediates.
+//!
+//! [`p256_mul::multiply_point`] and its siblings -- the `[k]Q` of SP 800-56A Rev. 3 Section
+//! 5.7.1.2's ECC CDH primitive -- check `Q` only by a debug assertion, and their formulas never
+//! read `b`, so in a release build a `Q` that is not on the curve is multiplied, in constant time,
+//! on whichever curve it does lie on, and the result reveals `k` modulo the small factors of that
+//! curve's order: the invalid-curve attack. `Q` must come from [`p256_sec1::decode_point`] (or its
+//! siblings), or from this crate's own arithmetic. The decoder's checks are the three steps SP
+//! 800-56A Rev. 3 Section 5.6.2.3.4 shares with Section 5.6.2.3.3, and its module docs say why,
+//! with `h = 1`, the full routine's fourth step (`nQ = ∅`) holds for every point that passes them.
+//! Section 5.6.2.2.1 requires full validation of a static peer key and Section 5.6.2.2.2 allows the
+//! partial routine for an ephemeral one on an approved curve; either way it happens in the
+//! key-agreement layer, before this function runs.
 
 #![no_std]
 #![forbid(unsafe_code)]

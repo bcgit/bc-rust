@@ -25,6 +25,7 @@
 //! covering every exceptional case above plus the ordinary case.
 
 use crate::p256::P256FieldElement;
+use crate::p256_domain::B_LIMBS;
 use bouncycastle_utils::ct;
 use bouncycastle_utils::ct::Condition;
 
@@ -48,6 +49,17 @@ impl P256JacobianPoint {
     /// actually on the curve -- see [`crate::p256_sec1`] for that.
     pub fn from_affine(x: P256FieldElement, y: P256FieldElement) -> Self {
         Self { x, y, z: P256FieldElement::ONE }
+    }
+
+    /// `y^2 == x^3 - 3x + b` for the affine `(x, y)`: the curve-membership check of
+    /// [`crate::p256_sec1::decode`] and of [`crate::p256_mul::multiply_point`]'s debug assertion,
+    /// on public points only.
+    pub(crate) fn is_on_curve(x: &P256FieldElement, y: &P256FieldElement) -> bool {
+        let lhs = y.mul(y);
+        let x_cubed = x.mul(x).mul(x);
+        let three_x = x.add(x).add(x);
+        let rhs = x_cubed.sub(&three_x).add(&P256FieldElement::from_limbs(B_LIMBS));
+        lhs == rhs
     }
 
     /// TRUE iff this is the point at infinity.

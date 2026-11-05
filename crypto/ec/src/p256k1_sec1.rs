@@ -45,14 +45,6 @@ fn either_out_of_range(x_limbs: &[u64; 4], y_limbs: &[u64; 4]) -> bool {
     !limbs_less_than_p(x_limbs) || !limbs_less_than_p(y_limbs)
 }
 
-/// `y^2 == x^3 + b`.
-fn is_on_curve(x: &P256K1FieldElement, y: &P256K1FieldElement) -> bool {
-    let lhs = y.mul(y);
-    let x_cubed = x.mul(x).mul(x);
-    let rhs = x_cubed.add(&P256K1FieldElement::from_limbs(B_LIMBS));
-    lhs == rhs
-}
-
 /// `base^SQRT_EXPONENT mod p`. Plain (not masked) square-and-multiply: only ever runs on public
 /// data (an incoming encoded point), like [`crate::p256_sec1::pow_public`].
 fn pow_public(base: &P256K1FieldElement, exponent_limbs: &[u64; 4]) -> P256K1FieldElement {
@@ -125,7 +117,7 @@ pub fn decode(bytes: &[u8]) -> Option<(P256K1FieldElement, P256K1FieldElement)> 
             }
             let x = P256K1FieldElement::from_limbs(x_limbs);
             let y = P256K1FieldElement::from_limbs(y_limbs);
-            if !is_on_curve(&x, &y) {
+            if !P256K1JacobianPoint::is_on_curve(&x, &y) {
                 return None;
             }
             Some((x, y))

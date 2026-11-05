@@ -5,6 +5,7 @@
 //! applies unchanged here (P-521 also has `a = -3` and cofactor `h = 1` per SP 800-186 §3.2.1.5).
 
 use crate::p521::P521FieldElement;
+use crate::p521_domain::B_LIMBS;
 use bouncycastle_utils::ct;
 use bouncycastle_utils::ct::Condition;
 
@@ -28,6 +29,17 @@ impl P521JacobianPoint {
     /// actually on the curve -- see [`crate::p521_sec1`] for that.
     pub fn from_affine(x: P521FieldElement, y: P521FieldElement) -> Self {
         Self { x, y, z: P521FieldElement::ONE }
+    }
+
+    /// `y^2 == x^3 - 3x + b` for the affine `(x, y)`: the curve-membership check of
+    /// [`crate::p521_sec1::decode`] and of [`crate::p521_mul::multiply_point`]'s debug assertion,
+    /// on public points only.
+    pub(crate) fn is_on_curve(x: &P521FieldElement, y: &P521FieldElement) -> bool {
+        let lhs = y.mul(y);
+        let x_cubed = x.mul(x).mul(x);
+        let three_x = x.add(x).add(x);
+        let rhs = x_cubed.sub(&three_x).add(&P521FieldElement::from_limbs(B_LIMBS));
+        lhs == rhs
     }
 
     /// TRUE iff this is the point at infinity.

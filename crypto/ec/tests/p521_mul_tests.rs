@@ -2,8 +2,8 @@
 //! the fixed-base comb for `Q = G`, against the variable-time wNAF multiplier for a random `Q`,
 //! and against `[a k mod n]G` for `Q = [a]G` (three multipliers of independent design computing
 //! the same point), plus the edge cases a windowed multiplier can get wrong: `k = 0`, `k = 1`,
-//! `k = n-1`, a window of all ones, `Q` the identity, `Q` negated, and `Q` given in a
-//! non-canonical-`Z` Jacobian representation.
+//! `k = n-1`, a window of all ones, `Q` the identity, `Q` negated, `Q` given in a
+//! non-canonical-`Z` Jacobian representation, and (debug builds only) `Q` off the curve.
 
 use bouncycastle_ec::nat;
 use bouncycastle_ec::p521::P521FieldElement;
@@ -20,6 +20,14 @@ fn g() -> P521JacobianPoint {
     P521JacobianPoint::from_affine(
         P521FieldElement::from_limbs(G_X_LIMBS),
         P521FieldElement::from_limbs(G_Y_LIMBS),
+    )
+}
+
+/// `(G.x, G.y + 1)`, which is not on the curve.
+fn off_curve() -> P521JacobianPoint {
+    P521JacobianPoint::from_affine(
+        P521FieldElement::from_limbs(G_X_LIMBS),
+        P521FieldElement::from_limbs(G_Y_LIMBS).add(&P521FieldElement::ONE),
     )
 }
 
@@ -166,4 +174,11 @@ fn q_in_a_non_canonical_z_representation_gives_the_same_result() {
         multiply_point(&P521Scalar::from_limbs(k), &scaled).to_affine(),
         multiply_point(&P521Scalar::from_limbs(k), &q).to_affine()
     );
+}
+
+#[cfg(debug_assertions)]
+#[test]
+#[should_panic(expected = "Q is not on the curve")]
+fn q_off_the_curve_is_rejected_in_debug_builds() {
+    let _ = multiply_point(&P521Scalar::from_limbs(one()), &off_curve());
 }

@@ -6,6 +6,7 @@
 //! 800-186 §3.2.1.4).
 
 use crate::p384::P384FieldElement;
+use crate::p384_domain::B_LIMBS;
 use bouncycastle_utils::ct;
 use bouncycastle_utils::ct::Condition;
 
@@ -29,6 +30,17 @@ impl P384JacobianPoint {
     /// actually on the curve -- see [`crate::p384_sec1`] for that.
     pub fn from_affine(x: P384FieldElement, y: P384FieldElement) -> Self {
         Self { x, y, z: P384FieldElement::ONE }
+    }
+
+    /// `y^2 == x^3 - 3x + b` for the affine `(x, y)`: the curve-membership check of
+    /// [`crate::p384_sec1::decode`] and of [`crate::p384_mul::multiply_point`]'s debug assertion,
+    /// on public points only.
+    pub(crate) fn is_on_curve(x: &P384FieldElement, y: &P384FieldElement) -> bool {
+        let lhs = y.mul(y);
+        let x_cubed = x.mul(x).mul(x);
+        let three_x = x.add(x).add(x);
+        let rhs = x_cubed.sub(&three_x).add(&P384FieldElement::from_limbs(B_LIMBS));
+        lhs == rhs
     }
 
     /// TRUE iff this is the point at infinity.

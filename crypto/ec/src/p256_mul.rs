@@ -26,7 +26,7 @@
 //! is precomputed and whose additions are mixed) and 1.3 times the variable-time wNAF multiplier
 //! (136 us against 44 us and 106 us in `p256_point_benches` / `p256_scalar_benches`). The table
 //! is `16 * size_of::<P256JacobianPoint>()` bytes of stack. Width 4 over width 5 keeps
-//! that table at 1.5 KiB here and 3.4 KiB on P-521 for one fewer addition in five; a Montgomery
+//! that table at 1.5 KiB on P-256 and 3.4 KiB on P-521 for one fewer addition in five; a Montgomery
 //! ladder would need an addition per bit. The table and the working accumulator are scrubbed
 //! before returning; the caller owns the result and scrubs it when it is done.
 //!
@@ -43,9 +43,21 @@ const BITS: usize = 256;
 const ROUNDS: usize = BITS.div_ceil(WIDTH);
 const TABLE_SIZE: usize = 1 << WIDTH;
 
-/// `[k]Q`, branch-free in `k`. `Q` may be any point, including the identity; `k` may be any
-/// value in `[0, n-1]`, and `[0]Q` is the identity.
+/// `[k]Q`, branch-free in `k`. `k` may be any value in `[0, n-1]`, and `[0]Q` is the identity.
+///
+/// `Q` must be a point on this curve -- the identity included -- which means the output of
+/// [`crate::p256_sec1::decode_point`], whose validation includes the on-curve check, or of this
+/// crate's own arithmetic. A `debug_assert!` rejects any other `Q` in debug builds; release builds
+/// do not check, and the formulas never read `b`, so a `Q` off the curve is multiplied, in the same
+/// constant time, on whichever curve `y^2 = x^3 + ax + b'` it does lie on, and the result then
+/// gives away `k` modulo the small factors of that curve's order (the invalid-curve attack). The
+/// key-agreement layer validates the peer's key before calling this; see the crate's Security
+/// Considerations.
 pub fn multiply_point(k: &P256Scalar, q: &P256JacobianPoint) -> P256JacobianPoint {
+    debug_assert!(
+        q.to_affine().is_none_or(|(x, y)| P256JacobianPoint::is_on_curve(&x, &y)),
+        "Q is not on the curve"
+    );
     let mut table = [P256JacobianPoint::INFINITY; TABLE_SIZE];
     table[1] = *q;
     for i in 2..TABLE_SIZE {

@@ -13,6 +13,7 @@
 //! using brainpoolP384r1's actual `A`, before being ported here.
 
 use crate::bp384r1::Bp384r1FieldElement;
+use crate::bp384r1_domain::B_LIMBS;
 use bouncycastle_utils::ct;
 use bouncycastle_utils::ct::Condition;
 
@@ -49,6 +50,17 @@ impl Bp384r1JacobianPoint {
     /// actually on the curve -- see [`crate::bp384r1_sec1`] for that.
     pub fn from_affine(x: Bp384r1FieldElement, y: Bp384r1FieldElement) -> Self {
         Self { x, y, z: Bp384r1FieldElement::ONE }
+    }
+
+    /// `y^2 == x^3 + Ax + B` for the affine `(x, y)`: the curve-membership check of
+    /// [`crate::bp384r1_sec1::decode`] and of [`crate::bp384r1_mul::multiply_point`]'s debug
+    /// assertion, on public points only.
+    pub(crate) fn is_on_curve(x: &Bp384r1FieldElement, y: &Bp384r1FieldElement) -> bool {
+        let lhs = y.mul(y);
+        let x_cubed = x.mul(x).mul(x);
+        let ax = Bp384r1FieldElement::from_internal_limbs(A_MONTGOMERY_LIMBS).mul(x);
+        let rhs = x_cubed.add(&ax).add(&Bp384r1FieldElement::from_limbs(B_LIMBS));
+        lhs == rhs
     }
 
     /// TRUE iff this is the point at infinity.
