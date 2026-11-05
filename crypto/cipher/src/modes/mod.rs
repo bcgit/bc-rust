@@ -41,7 +41,9 @@
 //!
 //! **KW and KWP are key-wrap algorithms** ([`KeyWrapper`] / [`KeyUnwrapper`]): one-shot,
 //! deterministic and authenticated, with no IV and no streaming API, for wrapping a key (or a
-//! small, non-repeating secret) under a key encryption key. They are not a mode for data.
+//! small, non-repeating secret) under a key encryption key. SP 800-38F Sec 3.1 approves them for
+//! general data as well, but they are deterministic, so for data that may repeat an AEAD is the
+//! better fit (see the [`kw`] security notes).
 //!
 //! CBC, CFB, CFB8 and CTR all generate their own init data: an IV for the first three, a nonce for
 //! CTR, which is shorter than a block because the rest of the counter block is the counter. ECB has

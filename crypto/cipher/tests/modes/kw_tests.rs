@@ -10,12 +10,6 @@ mod common;
 #[allow(dead_code)]
 mod toy_key;
 
-use bouncycastle_cipher::modes::kw::{
-    kw_ciphertext_len_is_valid, kw_plaintext_len_is_valid, kw_wrapped_len,
-};
-use bouncycastle_cipher::modes::kwp::{
-    kwp_ciphertext_len_is_valid, kwp_plaintext_len_is_valid, kwp_wrapped_len,
-};
 use bouncycastle_cipher::modes::{KW, KWP, Kw, Kwp, ModeNames};
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::hazmat::{
@@ -176,73 +170,45 @@ fn kwp_rejects_a_length_field_that_does_not_fit() {
     }
 }
 
-/// The length predicates and helpers are SP 800-38F Table 1 exactly.
+/// The length rules of SP 800-38F Table 1, through the key's run-time API: the lower bounds, the
+/// alignment rule and the length helpers. The 2^54, 2^32 and 2^29 upper bounds, which no buffer
+/// can reach, are unit tests in the mode files.
 #[test]
-fn the_length_helpers_match_table_1() {
+fn the_length_rules_match_table_1() {
     let kw = kw_key();
     let kwp = kwp_key();
+    let mut buf = [0u8; 64];
+    let invalid = |r: Result<usize, SymmetricCipherError>| {
+        matches!(r, Err(SymmetricCipherError::InvalidInputLength(_)))
+    };
 
-    // KW: 2 to 2^54 - 1 semiblocks of plaintext, one more of ciphertext.
-    assert!(!kw_plaintext_len_is_valid(0));
-    assert!(!kw_plaintext_len_is_valid(8));
-    assert!(!kw_plaintext_len_is_valid(12));
-    assert!(kw_plaintext_len_is_valid(16));
-    assert!(kw_plaintext_len_is_valid(24));
-    assert!(!kw_ciphertext_len_is_valid(16));
-    assert!(kw_ciphertext_len_is_valid(24));
-    assert!(!kw_ciphertext_len_is_valid(25));
-    assert_eq!(kw_wrapped_len(16), 24);
-    assert_eq!(kw_wrapped_len(usize::MAX), usize::MAX, "saturates rather than overflowing");
-    // The 2^54 upper bounds, reachable as lengths only on a 64-bit target: the last valid
-    // plaintext is 2^54 - 1 semiblocks, the last valid ciphertext 2^54.
-    #[cfg(target_pointer_width = "64")]
-    {
-        const MAX_PT: usize = ((1usize << 54) - 1) * 8;
-        assert!(kw_plaintext_len_is_valid(MAX_PT));
-        assert!(!kw_plaintext_len_is_valid(MAX_PT + 4));
-        assert!(!kw_plaintext_len_is_valid(MAX_PT + 8));
-        assert!(kw_ciphertext_len_is_valid(MAX_PT + 8));
-        assert!(!kw_ciphertext_len_is_valid(MAX_PT + 16));
-    }
+    // KW: 2 or more whole semiblocks of plaintext, one more of ciphertext.
+    assert!(invalid(kw.wrap_out(&[0u8; 0], &mut buf)));
+    assert!(invalid(kw.wrap_out(&[0u8; 8], &mut buf)));
+    assert!(invalid(kw.wrap_out(&[0u8; 12], &mut buf)));
+    assert_eq!(kw.wrap_out(&[0u8; 16], &mut buf).unwrap(), 24);
+    assert_eq!(kw.wrap_out(&[0u8; 24], &mut buf).unwrap(), 32);
+    assert!(invalid(kw.unwrap_out(&[0u8; 16], &mut buf)));
+    assert!(invalid(kw.unwrap_out(&[0u8; 25], &mut buf)));
+    assert!(!invalid(kw.unwrap_out(&[0u8; 24], &mut buf)));
+    assert_eq!(kw.wrap_out_len(16), 24);
     assert_eq!(kw.wrap_out_len(32), 40);
+    assert_eq!(kw.wrap_out_len(usize::MAX), usize::MAX, "saturates rather than overflowing");
     assert_eq!(kw.unwrap_out_max_len(40), 32);
     assert_eq!(kw.unwrap_out_max_len(0), 0);
 
-    // KWP: 1 to 2^32 - 1 octets of plaintext; 2 to 2^29 semiblocks of ciphertext.
-    assert!(!kwp_plaintext_len_is_valid(0));
-    assert!(kwp_plaintext_len_is_valid(1));
-    assert!(kwp_plaintext_len_is_valid(u32::MAX as usize));
-    assert!(!kwp_plaintext_len_is_valid(u32::MAX as usize + 1));
-    assert!(!kwp_ciphertext_len_is_valid(8));
-    assert!(kwp_ciphertext_len_is_valid(16));
-    assert!(!kwp_ciphertext_len_is_valid(20));
-    assert!(kwp_ciphertext_len_is_valid(8 << 29));
-    assert!(!kwp_ciphertext_len_is_valid((8 << 29) + 8));
-    assert_eq!(kwp_wrapped_len(1), 16);
-    assert_eq!(kwp_wrapped_len(8), 16);
-    assert_eq!(kwp_wrapped_len(9), 24);
-    assert_eq!(kwp_wrapped_len(20), 32);
-    assert_eq!(kwp_wrapped_len(usize::MAX), usize::MAX, "saturates rather than overflowing");
+    // KWP: 1 or more octets of plaintext; 2 or more whole semiblocks of ciphertext.
+    assert!(invalid(kwp.wrap_out(&[0u8; 0], &mut buf)));
+    assert_eq!(kwp.wrap_out(&[0u8; 1], &mut buf).unwrap(), 16);
+    assert!(invalid(kwp.unwrap_out(&[0u8; 8], &mut buf)));
+    assert!(invalid(kwp.unwrap_out(&[0u8; 20], &mut buf)));
+    assert!(!invalid(kwp.unwrap_out(&[0u8; 16], &mut buf)));
+    assert_eq!(kwp.wrap_out_len(1), 16);
+    assert_eq!(kwp.wrap_out_len(8), 16);
+    assert_eq!(kwp.wrap_out_len(9), 24);
+    assert_eq!(kwp.wrap_out_len(20), 32);
+    assert_eq!(kwp.wrap_out_len(usize::MAX), usize::MAX, "saturates rather than overflowing");
     assert_eq!(kwp.unwrap_out_max_len(32), 24);
-
-    // ... and the run-time API enforces them.
-    let mut buf = [0u8; 64];
-    assert!(matches!(
-        kw.wrap_out(&[0u8; 8], &mut buf),
-        Err(SymmetricCipherError::InvalidInputLength(_))
-    ));
-    assert!(matches!(
-        kw.wrap_out(&[0u8; 12], &mut buf),
-        Err(SymmetricCipherError::InvalidInputLength(_))
-    ));
-    assert!(matches!(
-        kw.unwrap_out(&[0u8; 16], &mut buf),
-        Err(SymmetricCipherError::InvalidInputLength(_))
-    ));
-    assert!(matches!(
-        kwp.unwrap_out(&[0u8; 20], &mut buf),
-        Err(SymmetricCipherError::InvalidInputLength(_))
-    ));
 }
 
 /// KW and KWP wrap the same aligned data to different lengths only when it is short enough to

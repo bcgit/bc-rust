@@ -149,7 +149,7 @@ const KW_MAX_PLAINTEXT_SEMIBLOCKS: u64 = (1u64 << 54) - 1;
 
 /// Whether `len` bytes is a plaintext length KW is defined on: 2 to 2^54 - 1 whole semiblocks
 /// (SP 800-38F Table 1).
-pub const fn kw_plaintext_len_is_valid(len: usize) -> bool {
+pub(crate) const fn kw_plaintext_len_is_valid(len: usize) -> bool {
     len.is_multiple_of(SEMIBLOCK_LEN)
         && len >= 2 * SEMIBLOCK_LEN
         && (len / SEMIBLOCK_LEN) as u64 <= KW_MAX_PLAINTEXT_SEMIBLOCKS
@@ -157,7 +157,7 @@ pub const fn kw_plaintext_len_is_valid(len: usize) -> bool {
 
 /// Whether `len` bytes is a ciphertext length KW-AD is defined on: 3 to 2^54 whole semiblocks
 /// (SP 800-38F Table 1).
-pub const fn kw_ciphertext_len_is_valid(len: usize) -> bool {
+pub(crate) const fn kw_ciphertext_len_is_valid(len: usize) -> bool {
     len.is_multiple_of(SEMIBLOCK_LEN)
         && len >= 3 * SEMIBLOCK_LEN
         && (len / SEMIBLOCK_LEN) as u64 <= KW_MAX_PLAINTEXT_SEMIBLOCKS + 1
@@ -165,7 +165,7 @@ pub const fn kw_ciphertext_len_is_valid(len: usize) -> bool {
 
 /// The KW ciphertext length for a plaintext of `len` bytes: one semiblock longer. Algorithm 3
 /// computes `C = W(ICV1 || P)`, and W preserves the length of its input.
-pub const fn kw_wrapped_len(len: usize) -> usize {
+pub(crate) const fn kw_wrapped_len(len: usize) -> usize {
     len.saturating_add(SEMIBLOCK_LEN)
 }
 
@@ -449,5 +449,25 @@ where
         }
         // Step 4: P = LSB64(n-1)(S), which is already in place.
         Ok(pt_len)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    //! The 2^54 upper bounds of SP 800-38F Table 1, which no buffer can reach: the last valid
+    //! plaintext is 2^54 - 1 semiblocks, the last valid ciphertext 2^54. The lower bounds and the
+    //! alignment rule are pinned through the key in `tests/modes/kw_tests.rs`.
+
+    use super::*;
+
+    #[cfg(target_pointer_width = "64")]
+    #[test]
+    fn the_table_1_upper_bounds() {
+        const MAX_PT: usize = ((1usize << 54) - 1) * SEMIBLOCK_LEN;
+        assert!(kw_plaintext_len_is_valid(MAX_PT));
+        assert!(!kw_plaintext_len_is_valid(MAX_PT + SEMIBLOCK_LEN / 2));
+        assert!(!kw_plaintext_len_is_valid(MAX_PT + SEMIBLOCK_LEN));
+        assert!(kw_ciphertext_len_is_valid(MAX_PT + SEMIBLOCK_LEN));
+        assert!(!kw_ciphertext_len_is_valid(MAX_PT + 2 * SEMIBLOCK_LEN));
     }
 }

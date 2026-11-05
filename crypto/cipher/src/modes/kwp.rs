@@ -84,13 +84,13 @@ const KWP_MAX_CIPHERTEXT_SEMIBLOCKS: u64 = 1u64 << 29;
 
 /// Whether `len` bytes is a plaintext length KWP is defined on: 1 to 2^32 - 1 octets (SP 800-38F
 /// Table 1).
-pub const fn kwp_plaintext_len_is_valid(len: usize) -> bool {
+pub(crate) const fn kwp_plaintext_len_is_valid(len: usize) -> bool {
     len >= 1 && len as u64 <= KWP_MAX_PLAINTEXT_LEN
 }
 
 /// Whether `len` bytes is a ciphertext length KWP-AD is defined on: 2 to 2^29 whole semiblocks
 /// (SP 800-38F Table 1).
-pub const fn kwp_ciphertext_len_is_valid(len: usize) -> bool {
+pub(crate) const fn kwp_ciphertext_len_is_valid(len: usize) -> bool {
     len.is_multiple_of(SEMIBLOCK_LEN)
         && len >= 2 * SEMIBLOCK_LEN
         && (len / SEMIBLOCK_LEN) as u64 <= KWP_MAX_CIPHERTEXT_SEMIBLOCKS
@@ -99,7 +99,7 @@ pub const fn kwp_ciphertext_len_is_valid(len: usize) -> bool {
 /// The KWP ciphertext length for a plaintext of `len` bytes: `len` rounded up to a whole number
 /// of semiblocks (Algorithm 5, steps 2-3: `padlen = 8 * ceil(len / 8) - len` zero bytes), plus the
 /// one-semiblock header of step 4.
-pub const fn kwp_wrapped_len(len: usize) -> usize {
+pub(crate) const fn kwp_wrapped_len(len: usize) -> usize {
     len.div_ceil(SEMIBLOCK_LEN).saturating_mul(SEMIBLOCK_LEN).saturating_add(SEMIBLOCK_LEN)
 }
 
@@ -184,7 +184,8 @@ where
     P: BlockPermutation<KW_BLOCK_LEN> + ModeNames,
 {
     /// KWP-AE with the lengths fixed at compile time. `KEY_LEN` may be anything from 1 to
-    /// 2^32 - 1 and `CT_LEN` must be [`kwp_wrapped_len`] of it; anything else fails to compile.
+    /// 2^32 - 1 and `CT_LEN` must be `KEY_LEN` rounded up to a multiple of 8, plus 8; anything
+    /// else fails to compile.
     fn wrap_key_out<const KEY_LEN: usize, const CT_LEN: usize>(
         &self,
         key: &[u8; KEY_LEN],
@@ -361,5 +362,23 @@ where
         // Step 9: P = MSB_{8 Plen}(LSB_{64(n-1)}(S)), already in place, followed by padding that
         // step 8 has just confirmed is zero.
         Ok(plen)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    //! The upper bounds of SP 800-38F Table 1, which no buffer can reach: 2^32 - 1 octets of
+    //! plaintext and 2^29 semiblocks of ciphertext. The lower bounds and the alignment rule are
+    //! pinned through the key in `tests/modes/kw_tests.rs`.
+
+    use super::*;
+
+    #[cfg(target_pointer_width = "64")]
+    #[test]
+    fn the_table_1_upper_bounds() {
+        assert!(kwp_plaintext_len_is_valid(u32::MAX as usize));
+        assert!(!kwp_plaintext_len_is_valid(u32::MAX as usize + 1));
+        assert!(kwp_ciphertext_len_is_valid(SEMIBLOCK_LEN << 29));
+        assert!(!kwp_ciphertext_len_is_valid((SEMIBLOCK_LEN << 29) + SEMIBLOCK_LEN));
     }
 }
