@@ -55,7 +55,7 @@ use bouncycastle_cipher::modes::Tkw;
 pub type TDES_TKW<'k, Dir> = Tkw<'k, TDESInternal, Dir>;
 
 /// Two-key TDEA Key Wrap, unwrapping only: what a [`TDES2Key<TKW>`](crate::TDES2Key) hands out
-/// through `KeyUnwrappingKey`. Two-key TDEA may not apply protection (SP 800-131A Rev 2 Table 1),
+/// through `KeyUnwrappingKey`. Two-key TDEA may not wrap (SP 800-131A Rev 2 Table 6: "Disallowed"),
 /// and its engine decrypts only, so the key's `create_wrapper` and every wrapping one-shot refuse
 /// to compile, exactly as its `create_encryptor` does under the cipher modes:
 ///

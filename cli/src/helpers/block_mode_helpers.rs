@@ -304,9 +304,11 @@ pub(crate) struct InputLimit {
 }
 
 /// SP 800-67 Rev 2 Sec 3.4: "One key bundle shall not be used to apply cryptographic protection
-/// (e.g., encrypt) more than 2^20 64-bit data blocks", 8 MiB. The command is the one place that
-/// sees a bundle's whole use within an invocation, so it holds the input to that; it cannot count
-/// across invocations.
+/// (e.g., encrypt) more than 2^20 64-bit data blocks", 8 MiB for a mode that passes each 8 bytes
+/// of input through TDEA once (ECB, CBC, CFB64, CTR). The bound counts blocks the cipher
+/// processes, so a mode that invokes TDEA more often per byte has a lower figure below. The
+/// command is the one place that sees a bundle's whole use within an invocation, so it holds the
+/// input to that; it cannot count across invocations.
 pub(crate) const TDEA_LIMIT: InputLimit = InputLimit {
     max_bytes: 1 << 23,
     message: "TDEA: one key bundle may protect at most 2^20 blocks (8 MiB; SP 800-67 Rev 2 Sec \
@@ -317,6 +319,24 @@ pub(crate) const TDEA_LIMIT: InputLimit = InputLimit {
 /// padded message still fits.
 pub(crate) const TDEA_LIMIT_PADDED: InputLimit =
     InputLimit { max_bytes: (1 << 23) - 1, message: TDEA_LIMIT.message };
+
+/// The bound for CFB8, which enciphers one block per byte (SP 800-38A Sec 6.3, `s = 8`): 2^20
+/// blocks is 2^20 bytes, 1 MiB.
+pub(crate) const TDEA_LIMIT_CFB8: InputLimit = InputLimit {
+    max_bytes: 1 << 20,
+    message: "TDEA: one key bundle may protect at most 2^20 blocks (SP 800-67 Rev 2 Sec 3.4), and \
+              CFB8 enciphers one block per byte, so the input exceeds that at 1 MiB",
+};
+
+/// The bound for TKW, whose wrapping function makes six TDEA calls per 4-byte semiblock of
+/// plaintext (SP 800-38F Algorithm 7, `s = 6(n - 1)`): 2^20 blocks is `2^20 / 6` semiblocks,
+/// 699,048 bytes.
+pub(crate) const TDEA_LIMIT_TKW: InputLimit = InputLimit {
+    max_bytes: (1 << 20) / 6 * 4,
+    message: "TDEA: one key bundle may protect at most 2^20 blocks (SP 800-67 Rev 2 Sec 3.4), and \
+              TKW makes six TDEA calls per 4-byte block of input, so the input exceeds that at \
+              699,048 bytes",
+};
 
 /// [`encrypt_stream`] under an [`InputLimit`]: the running input total is checked against the
 /// bound before each chunk is encrypted, so nothing past it is ever written.

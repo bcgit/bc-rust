@@ -9,7 +9,9 @@
 //! CFB8 (SP 800-38A Sec 6.3 with `s = 8`; TCFB with `s = 8` in Appendix E) is a **different,
 //! non-interoperable mode** from `tdes-cfb`: the two ciphertexts agree only on their first byte. It
 //! also costs one TDES call per byte, eight times the work of `tdes-cfb`, so prefer that unless a
-//! byte-granular mode is specifically required.
+//! byte-granular mode is specifically required. The SP 800-67 Rev 2 Sec 3.4 bound counts the
+//! blocks TDEA processes, so `encrypt` here refuses input past 2^20 bytes, 1 MiB, where the modes
+//! that process one block per 8 bytes allow 8 MiB.
 //!
 //! # Warning
 //!
@@ -19,7 +21,7 @@
 //! TDEA is a legacy algorithm, disallowed for encryption by NIST SP 800-131A Rev 2 after 2023; see
 //! the `bouncycastle-tdes` crate docs.
 
-use crate::helpers::block_mode_helpers::TDEA_LIMIT;
+use crate::helpers::block_mode_helpers::TDEA_LIMIT_CFB8;
 use crate::helpers::block_mode_helpers::{CipherDirection, load_iv, load_key_object};
 use crate::helpers::stream_mode_helpers::run_stream_mode_bounded;
 use bouncycastle::cipher::modes::CFB8;
@@ -39,6 +41,6 @@ pub(crate) fn tdes_cfb8_cmd(
         &key,
         load_iv(iv, iv_file),
         output_hex,
-        Some(&TDEA_LIMIT),
+        Some(&TDEA_LIMIT_CFB8),
     )
 }

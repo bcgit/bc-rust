@@ -14,7 +14,8 @@
 //! SP 800-38F Sec 8: TKW-AE and TKW-AD "are approved to support legacy systems but should not be
 //! used for new applications". Its forgery probability is 2^-32 per attempt against KW's 2^-64
 //! (Appendix A.3), and TDEA itself is a legacy algorithm; see the `bouncycastle-tdes` crate's
-//! security considerations. Two-key TDEA may not wrap at all: a permutation that decrypts only
+//! security considerations. Two-key TDEA may not wrap at all (SP 800-131A Rev 2 Table 6): a
+//! permutation that decrypts only
 //! ([`BlockPermutation::DECRYPT_ONLY`]) refuses to make a wrapper at compile time, as the
 //! encrypting modes refuse their encryptors, while its unwrapper works -- and the unwrapper,
 //! `Tkw<'k, P, Decrypting>`, is a distinct type with no wrapping method.

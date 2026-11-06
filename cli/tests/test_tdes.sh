@@ -2,11 +2,13 @@
 # The tdes-* subcommands' data limit, end to end through the binary. SP 800-67 Rev 2 Sec 3.4
 # allows one key bundle 2^20 64-bit blocks (8 MiB) of protection; `encrypt` refuses input past
 # that with the usual `Error:` line, before any byte past the bound is processed. CBC's PKCS7
-# padding adds up to a block, so its bound is one byte lower; the stream modes take exactly
-# 8 MiB. CTR never reaches it: its 6-byte nonce leaves a 16-bit counter, so the library's own
-# keystream limit (2^16 blocks, 512 KiB) binds first, as `DataLimitExceeded`. Decryption is not
-# limited. This lives here rather than in `tdes_cli_tests.rs` because 8 MiB through a debug build
-# of the bit-sliced engine takes a minute or two per run, and this file makes five.
+# padding adds up to a block, so its bound is one byte lower; CFB64 takes exactly 8 MiB. The
+# bound counts the blocks TDEA processes, so CFB8 (one block per byte) stops at 1 MiB and TKW
+# (six calls per 4-byte semiblock) at 699,048 bytes. CTR never reaches it: its 6-byte nonce
+# leaves a 16-bit counter, so the library's own keystream limit (2^16 blocks, 512 KiB) binds
+# first, as `DataLimitExceeded`. Decryption is not limited. This lives here rather than in
+# `tdes_cli_tests.rs` because 8 MiB through a debug build of the bit-sliced engine takes a minute
+# or two per run.
 
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
@@ -27,13 +29,27 @@ test_cbc_takes_a_message_that_pads_to_the_limit() {
         "$BC_RUST" tdes-cbc -d encrypt --key "$KEY" < <(zeros $((LIMIT - 1))) >/dev/null
 }
 
-test_cfb_modes_refuse_one_byte_past_the_limit() {
-    local cmd
-    for cmd in tdes-cfb tdes-cfb8; do
-        expect_fail "$cmd: 2^20 blocks plus a byte" \
-            "$BC_RUST" "$cmd" -d encrypt --key "$KEY" < <(zeros $((LIMIT + 1)))
-        assert_stderr_has "Error: TDEA: one key bundle may protect at most 2^20 blocks"
-    done
+test_cfb_refuses_one_byte_past_the_limit() {
+    expect_fail "tdes-cfb: 2^20 blocks plus a byte" \
+        "$BC_RUST" tdes-cfb -d encrypt --key "$KEY" < <(zeros $((LIMIT + 1)))
+    assert_stderr_has "Error: TDEA: one key bundle may protect at most 2^20 blocks"
+}
+
+test_cfb8_counts_a_block_per_byte() {
+    expect_ok "tdes-cfb8: 2^20 bytes is 2^20 blocks" \
+        "$BC_RUST" tdes-cfb8 -d encrypt --key "$KEY" < <(zeros $((1 << 20))) >/dev/null
+    expect_fail "tdes-cfb8: 2^20 bytes plus one" \
+        "$BC_RUST" tdes-cfb8 -d encrypt --key "$KEY" < <(zeros $(((1 << 20) + 1)))
+    assert_stderr_has "Error: TDEA: one key bundle may protect at most 2^20 blocks"
+}
+
+test_tkw_counts_six_blocks_per_semiblock() {
+    local bound=$(((1 << 20) / 6 * 4))
+    expect_ok "tdes-tkw: $bound bytes is 2^20 blocks" \
+        "$BC_RUST" tdes-tkw -d encrypt --key "$KEY" < <(zeros "$bound") >/dev/null
+    expect_fail "tdes-tkw: one semiblock more" \
+        "$BC_RUST" tdes-tkw -d encrypt --key "$KEY" < <(zeros $((bound + 4)))
+    assert_stderr_has "Error: TDEA: one key bundle may protect at most 2^20 blocks"
 }
 
 test_ctr_runs_out_of_counter_first() {

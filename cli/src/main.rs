@@ -2557,6 +2557,9 @@ enum Subcommands {
     /// `decrypt` is a whole number of 4-byte blocks, at least 12 bytes. There is NO IV, and the
     /// whole input is read before anything is written. See `aes128-kw` for the rest.
     ///
+    /// `encrypt` refuses input past the SP 800-67 Rev 2 Sec 3.4 bound, counted as the blocks
+    /// TDEA processes: TKW makes six calls per 4-byte block of input, so at most 699,048 bytes.
+    ///
     /// The key is 24 bytes, KEY1 || KEY2 || KEY3, with three distinct component keys none of which
     /// is a weak DES key (SP 800-67 Rev 2 Sec 3.1 and 3.3.2). Two-key TDEA unwraps through
     /// `tdes2-tkw`.
@@ -3050,7 +3053,9 @@ enum Subcommands {
     ///
     /// CFB8 is a DIFFERENT mode from `tdes-cfb`, not a variant: the two ciphertexts agree only on
     /// their first byte. It also costs one TDES call per byte, eight times the work of `tdes-cfb`,
-    /// so prefer that unless a byte-granular mode is specifically required.
+    /// so prefer that unless a byte-granular mode is specifically required. That is also why
+    /// `encrypt` here refuses input past 2^20 bytes (1 MiB): the SP 800-67 Rev 2 Sec 3.4 bound
+    /// counts the blocks TDEA processes, one per byte in this mode.
     ///
     /// See `tdes-cfb` for the IV convention and input-length rule, and `tdes-cbc` for the key
     /// format and the warnings, which apply unchanged.

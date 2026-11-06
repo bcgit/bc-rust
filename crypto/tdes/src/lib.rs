@@ -220,16 +220,20 @@
 //! of already-protected data".
 //! SP 800-131A Rev 2, Table 1, gives the transition: three-key TDEA encryption "Deprecated through
 //! 2023, Disallowed after 2023", three-key decryption "Legacy use", two-key encryption
-//! "Disallowed". SP 800-57 Part 1 Rev 5, Table 2, rates 3TDEA at 112 bits of security, which is
-//! what [`TDESInternal`] reports as its maximum strength.
+//! "Disallowed". Its Table 6 says the same of key wrapping: two-key wrapping "Disallowed",
+//! three-key wrapping "Deprecated through 2023, Disallowed after 2023" unless other NIST guidance
+//! allows it, and unwrapping under either "Legacy use". SP 800-57 Part 1 Rev 5, Table 2, rates
+//! 3TDEA at 112 bits of security, which is what [`TDESInternal`] reports as its maximum strength.
 //!
 //! This crate exists so that data and protocols that still depend on TDEA can be handled. Do not
 //! choose it for a new design; use AES from `bouncycastle-aes`.
 //!
 //! `BlockPermutation::DECRYPT_ONLY` records this library's policy, not NIST's status: it is set
 //! for two-key TDEA alone. Three-key TDEA encryption, which SP 800-131A Rev 2 also disallows
-//! after 2023, stays available here because the OpenSSL provider this library serves exposes it;
-//! a deployment that must not encrypt under TDEA should not use [`TDES3Key`]'s encrypting roles.
+//! after 2023, stays available here because the OpenSSL provider this library serves exposes it,
+//! and three-key TKW wrapping, the one SP 800-38F key wrap over TDEA, is kept on the same terms;
+//! a deployment that must not encrypt or wrap under TDEA should not use [`TDES3Key`]'s
+//! encrypting and wrapping roles.
 //!
 //! ## The 64-bit block, and the data limit
 //!

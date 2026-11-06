@@ -44,7 +44,7 @@
 //!     | bc-rust aes128-kw -d encrypt --key 000102030405060708090a0b0c0d0e0f -x
 //! ```
 
-use crate::helpers::block_mode_helpers::{CipherDirection, load_key_object};
+use crate::helpers::block_mode_helpers::{CipherDirection, InputLimit, load_key_object};
 use crate::helpers::write_bytes_or_hex;
 use bouncycastle::aes::{AES128Key, AES192Key, AES256Key};
 use bouncycastle::cipher::modes::{KW, KWP};
@@ -62,6 +62,7 @@ pub(crate) fn aes128_kw_cmd(
     run::<_, 16>(
         direction,
         &load_key_object::<AES128Key<KW>, 16>(key, key_file, "AES-128-KW"),
+        None,
         output_hex,
         "AES-128-KW",
     );
@@ -76,6 +77,7 @@ pub(crate) fn aes192_kw_cmd(
     run::<_, 24>(
         direction,
         &load_key_object::<AES192Key<KW>, 24>(key, key_file, "AES-192-KW"),
+        None,
         output_hex,
         "AES-192-KW",
     );
@@ -90,6 +92,7 @@ pub(crate) fn aes256_kw_cmd(
     run::<_, 32>(
         direction,
         &load_key_object::<AES256Key<KW>, 32>(key, key_file, "AES-256-KW"),
+        None,
         output_hex,
         "AES-256-KW",
     );
@@ -104,6 +107,7 @@ pub(crate) fn aes128_kwp_cmd(
     run::<_, 16>(
         direction,
         &load_key_object::<AES128Key<KWP>, 16>(key, key_file, "AES-128-KWP"),
+        None,
         output_hex,
         "AES-128-KWP",
     );
@@ -118,6 +122,7 @@ pub(crate) fn aes192_kwp_cmd(
     run::<_, 24>(
         direction,
         &load_key_object::<AES192Key<KWP>, 24>(key, key_file, "AES-192-KWP"),
+        None,
         output_hex,
         "AES-192-KWP",
     );
@@ -132,6 +137,7 @@ pub(crate) fn aes256_kwp_cmd(
     run::<_, 32>(
         direction,
         &load_key_object::<AES256Key<KWP>, 32>(key, key_file, "AES-256-KWP"),
+        None,
         output_hex,
         "AES-256-KWP",
     );
@@ -142,27 +148,37 @@ pub(crate) fn aes256_kwp_cmd(
 pub(crate) fn run<K, const KEK_LEN: usize>(
     direction: &CipherDirection,
     kek: &K,
+    limit: Option<&InputLimit>,
     output_hex: bool,
     alg: &str,
 ) where
     K: KeyWrappingKey<KEK_LEN> + KeyUnwrappingKey<KEK_LEN>,
 {
     match direction {
-        CipherDirection::Encrypt => run_with(|input| kek.wrap(input), output_hex, alg),
-        CipherDirection::Decrypt => run_with(|input| kek.unwrap(input), output_hex, alg),
+        CipherDirection::Encrypt => run_with(|input| kek.wrap(input), limit, output_hex, alg),
+        CipherDirection::Decrypt => run_with(|input| kek.unwrap(input), None, output_hex, alg),
     }
 }
 
 /// Reads all of stdin, applies `op` to it and writes the result; the unwrap-only commands pass
 /// their key's `unwrap` alone, so that no wrapper is ever instantiated for their key type.
+/// `limit`, for a wrapping command whose standard bounds what one key may protect, is checked
+/// against the whole input before `op` runs.
 pub(crate) fn run_with(
     op: impl FnOnce(&[u8]) -> Result<Vec<u8>, SymmetricCipherError>,
+    limit: Option<&InputLimit>,
     output_hex: bool,
     alg: &str,
 ) {
     let mut input = Vec::new();
     if let Err(e) = std::io::stdin().read_to_end(&mut input) {
         eprintln!("Error: couldn't read stdin: {e}");
+        exit(-1);
+    }
+    if let Some(limit) = limit
+        && input.len() as u64 > limit.max_bytes
+    {
+        eprintln!("Error: {}", limit.message);
         exit(-1);
     }
 
