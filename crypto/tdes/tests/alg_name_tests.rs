@@ -57,7 +57,7 @@ fn cbc() {
 #[test]
 fn tkw() {
     use SecurityStrength::*;
-    check::<TDES_TKW<'_>, TDES_TKW<'_>>("TDES_TKW", _112bit);
+    check::<TDES_TKW<'_, Encrypting>, TDES_TKW<'_, Decrypting>>("TDES_TKW", _112bit);
     check_decrypting::<TDES2_TKW<'_>>("TDES2_TKW");
 }
 

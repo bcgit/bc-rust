@@ -2,6 +2,7 @@
 //! which the crate root re-exports.
 
 use crate::hazmat::{TDES2Internal, TDESInternal};
+use bouncycastle_cipher::Decrypting;
 use bouncycastle_cipher::modes::Tkw;
 
 /// TDEA Key Wrap: the `Tkw` worker of `bouncycastle-cipher` over the three-key TDEA
@@ -42,13 +43,16 @@ use bouncycastle_cipher::modes::Tkw;
 /// assert_eq!(kek.unwrap(&wrapped).expect("unwrapping"), [0x5Au8; 24]);
 /// ```
 ///
+/// `Dir` is [`Encrypting`](bouncycastle_cipher::Encrypting) for the wrapper and [`Decrypting`]
+/// for the unwrapper, as for the cipher modes.
+///
 /// # Memory Usage
 ///
 /// A key is the engine's expanded schedule, as for the other modes (see the crate's table). A
 /// worker is the borrow of it, one pointer, and the wrapping function's scratch is one 8-byte
 /// block on the stack; the data is wrapped and unwrapped in the caller's buffers.
 #[allow(non_camel_case_types)]
-pub type TDES_TKW<'k> = Tkw<'k, TDESInternal>;
+pub type TDES_TKW<'k, Dir> = Tkw<'k, TDESInternal, Dir>;
 
 /// Two-key TDEA Key Wrap, unwrapping only: what a [`TDES2Key<TKW>`](crate::TDES2Key) hands out
 /// through `KeyUnwrappingKey`. Two-key TDEA may not apply protection (SP 800-131A Rev 2 Table 1),
@@ -70,6 +74,43 @@ pub type TDES_TKW<'k> = Tkw<'k, TDESInternal>;
 /// let _ = kek.wrap(&[0u8; 16]);
 /// ```
 ///
+/// The unwrapper the key hands out is `Tkw<'k, TDES2Internal, Decrypting>`, a type with no
+/// wrapping method, so neither of these compiles either:
+///
+/// ```compile_fail
+/// use bouncycastle_tdes::TDES2Key;
+/// use bouncycastle_cipher::modes::TKW;
+/// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
+/// use bouncycastle_core::symmetric_key::{FromKeyMaterial, KeyUnwrappingKey};
+/// use bouncycastle_core::traits::KeyWrapper;
+///
+/// let bytes: [u8; 16] = core::array::from_fn(|i| (i as u8).wrapping_mul(7).wrapping_add(1));
+/// let material = KeyMaterial::<16>::from_bytes_as_type(&bytes, KeyType::SymmetricCipherKey)
+///     .unwrap();
+/// let kek = TDES2Key::<TKW>::from_key_material(&material).unwrap();
+///
+/// // error[E0599]: no method named `wrap_out` found for the unwrapper
+/// let mut out = [0u8; 20];
+/// let _ = kek.create_unwrapper().wrap_out(&[0u8; 16], &mut out);
+/// ```
+///
+/// ```compile_fail
+/// use bouncycastle_tdes::TDES2Key;
+/// use bouncycastle_cipher::modes::TKW;
+/// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
+/// use bouncycastle_core::symmetric_key::{FromKeyMaterial, KeyUnwrappingKey};
+/// use bouncycastle_core::traits::KeyWrapper;
+///
+/// let bytes: [u8; 16] = core::array::from_fn(|i| (i as u8).wrapping_mul(7).wrapping_add(1));
+/// let material = KeyMaterial::<16>::from_bytes_as_type(&bytes, KeyType::SymmetricCipherKey)
+///     .unwrap();
+/// let kek = TDES2Key::<TKW>::from_key_material(&material).unwrap();
+///
+/// // error[E0277]: `KeyWrapper` is not implemented for the unwrapper
+/// let unwrapper = kek.create_unwrapper();
+/// let _: &dyn KeyWrapper = &unwrapper;
+/// ```
+///
 /// Unwrapping works, with the ciphertext as it was received:
 ///
 /// ```
@@ -88,4 +129,4 @@ pub type TDES_TKW<'k> = Tkw<'k, TDESInternal>;
 /// assert!(matches!(kek.unwrap(&[0u8; 20]), Err(SymmetricCipherError::DecryptionFailed)));
 /// ```
 #[allow(non_camel_case_types)]
-pub type TDES2_TKW<'k> = Tkw<'k, TDES2Internal>;
+pub type TDES2_TKW<'k> = Tkw<'k, TDES2Internal, Decrypting>;

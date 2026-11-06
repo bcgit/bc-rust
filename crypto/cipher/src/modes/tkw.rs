@@ -16,7 +16,8 @@
 //! (Appendix A.3), and TDEA itself is a legacy algorithm; see the `bouncycastle-tdes` crate's
 //! security considerations. Two-key TDEA may not wrap at all: a permutation that decrypts only
 //! ([`BlockPermutation::DECRYPT_ONLY`]) refuses to make a wrapper at compile time, as the
-//! encrypting modes refuse their encryptors, while its unwrapper works.
+//! encrypting modes refuse their encryptors, while its unwrapper works -- and the unwrapper,
+//! `Tkw<'k, P, Decrypting>`, is a distinct type with no wrapping method.
 //!
 //! # The length limits
 //!
@@ -26,6 +27,7 @@
 
 use super::ModeNames;
 use super::kw::{w, w_inv};
+use crate::{Decrypting, Encrypting};
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::hazmat::{
     BlockPermutation, ElectronicCodeBook, KeyUnwrapMode, KeyWrapMode, Mode,
@@ -35,6 +37,7 @@ use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{Algorithm, KeyUnwrapper, KeyWrapper};
 use bouncycastle_utils::ct::ct_eq_bytes;
 use bouncycastle_utils::secret::Secret;
+use core::marker::PhantomData;
 
 /// The block length, in bytes, of the permutation under TKW. SP 800-38F Sec 5.1: "For TKW, the
 /// underlying block cipher is specified to be TDEA, and the block size is therefore 64 bits".
@@ -94,7 +97,7 @@ where
     P: ElectronicCodeBook<KEK_LEN, TKW_BLOCK_LEN> + ModeNames + Clone,
 {
     type Wrapper<'k>
-        = Tkw<'k, P>
+        = Tkw<'k, P, Encrypting>
     where
         P: 'k;
 
@@ -114,7 +117,7 @@ where
     P: ElectronicCodeBook<KEK_LEN, TKW_BLOCK_LEN> + ModeNames + Clone,
 {
     type Unwrapper<'k>
-        = Tkw<'k, P>
+        = Tkw<'k, P, Decrypting>
     where
         P: 'k;
 
@@ -124,28 +127,30 @@ where
 }
 
 /// TKW over any 64-bit permutation that impls [`BlockPermutation`]: the one-shot worker a
-/// [`TKW`]-bound key hands out, borrowing the keyed permutation for `'k`, as
-/// [`Kw`](super::kw::Kw) does. It reports the permutation's [`ModeNames::KW_ALG_NAME`], since a
-/// permutation has one block length and so one key-wrap algorithm. See the module docs.
-pub struct Tkw<'k, P>
+/// [`TKW`]-bound key hands out, borrowing the keyed permutation for `'k` and carrying its
+/// direction in `Dir`, as [`Kw`](super::kw::Kw) does. It reports the permutation's
+/// [`ModeNames::KW_ALG_NAME`], since a permutation has one block length and so one key-wrap
+/// algorithm. See the module docs.
+pub struct Tkw<'k, P, Dir>
 where
     P: BlockPermutation<TKW_BLOCK_LEN> + ModeNames,
 {
     perm: &'k P,
+    _dir: PhantomData<Dir>,
 }
 
-impl<'k, P> Tkw<'k, P>
+impl<'k, P, Dir> Tkw<'k, P, Dir>
 where
     P: BlockPermutation<TKW_BLOCK_LEN> + ModeNames,
 {
     /// Over an already-keyed permutation, which the worker borrows: what [`TKW`]'s mode impls
     /// build for a key's roles.
     pub(crate) fn from_perm(perm: &'k P) -> Self {
-        Self { perm }
+        Self { perm, _dir: PhantomData }
     }
 }
 
-impl<'k, P> Algorithm for Tkw<'k, P>
+impl<'k, P, Dir> Algorithm for Tkw<'k, P, Dir>
 where
     P: BlockPermutation<TKW_BLOCK_LEN> + ModeNames,
 {
@@ -155,7 +160,7 @@ where
     const MAX_SECURITY_STRENGTH: SecurityStrength = P::MAX_SECURITY_STRENGTH;
 }
 
-impl<'k, P> KeyWrapper for Tkw<'k, P>
+impl<'k, P> KeyWrapper for Tkw<'k, P, Encrypting>
 where
     P: BlockPermutation<TKW_BLOCK_LEN> + ModeNames,
 {
@@ -216,7 +221,7 @@ where
     }
 }
 
-impl<'k, P> KeyUnwrapper for Tkw<'k, P>
+impl<'k, P> KeyUnwrapper for Tkw<'k, P, Decrypting>
 where
     P: BlockPermutation<TKW_BLOCK_LEN> + ModeNames,
 {
