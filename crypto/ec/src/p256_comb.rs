@@ -40,6 +40,11 @@
 //! positions* read are fixed by the (public) loop structure, and [`table_lookup`] scans every
 //! entry under a mask rather than indexing by the secret digit.
 //!
+//! The lookup's copy of the selected entry, and the lookup's own working arrays, are zeroized once
+//! the loop is done, as QUALITY_AND_STYLE.md asks of a secret-holding local; the accumulator is the
+//! returned value, so scrubbing it is the caller's. What that reaches and what it does not is as
+//! [`crate::p256_mul`]'s docs say.
+//!
 //! Verified (not checked in) against 200 random `k` plus edge cases (`k = 1, 2, 3, n-1`), each
 //! cross-checked against the SP 800-186 Appendix A.1.1 affine group law via repeated doubling and
 //! conditional addition (a world apart from the comb, so this isn't just checking the algorithm
@@ -51,6 +56,7 @@ use crate::p256_point::P256JacobianPoint;
 use crate::p256_scalar::P256Scalar;
 use bouncycastle_utils::ct;
 use bouncycastle_utils::ct::Condition;
+use bouncycastle_utils::secret::zeroize_in_place;
 
 const WIDTH: usize = 6;
 const BITS: usize = 256;
@@ -62,6 +68,9 @@ const TABLE_SIZE: usize = 1 << WIDTH;
 pub fn comb_multiply_base_point(k: &P256Scalar) -> P256JacobianPoint {
     let limbs = k.limbs();
     let mut r = P256JacobianPoint::INFINITY;
+    // The lookup's copy of the selected entry; declared here so one scrub after the loop covers it.
+    let mut x = P256FieldElement::ZERO;
+    let mut y = P256FieldElement::ZERO;
     let top = (FULL_COMB - 1) as isize;
     for i in 0..D {
         let mut secret_index: usize = 0;
@@ -76,9 +85,12 @@ pub fn comb_multiply_base_point(k: &P256Scalar) -> P256JacobianPoint {
             j -= D as isize;
         }
         r = r.double();
-        let (x, y, is_infinity) = table_lookup(secret_index);
+        let is_infinity;
+        (x, y, is_infinity) = table_lookup(secret_index);
         r = r.add_affine(&x, &y, is_infinity);
     }
+    x.zeroize();
+    y.zeroize();
     r
 }
 
@@ -88,21 +100,26 @@ pub fn comb_multiply_base_point(k: &P256Scalar) -> P256JacobianPoint {
 fn table_lookup(secret_index: usize) -> (P256FieldElement, P256FieldElement, Condition<u64>) {
     let mut x_limbs = [0u64; 4];
     let mut y_limbs = [0u64; 4];
+    let mut next_x = [0u64; 4];
+    let mut next_y = [0u64; 4];
     for i in 0..TABLE_SIZE {
         let is_this_entry = Condition::<u64>::is_equal(i as u64, secret_index as u64);
-        let mut next_x = [0u64; 4];
         ct::conditional_select(is_this_entry, &COMB_TABLE_X[i], &x_limbs, &mut next_x);
         x_limbs = next_x;
-        let mut next_y = [0u64; 4];
         ct::conditional_select(is_this_entry, &COMB_TABLE_Y[i], &y_limbs, &mut next_y);
         y_limbs = next_y;
     }
     // Entry 0 is the point at infinity; every other entry is affine (Z == 1). The accumulator's
     // `add_affine` takes the identity as a flag rather than as a `Z == 0` coordinate.
     let is_infinity = Condition::<u64>::is_equal(secret_index as u64, 0);
-    (
+    let entry = (
         P256FieldElement::from_internal_limbs(x_limbs),
         P256FieldElement::from_internal_limbs(y_limbs),
         is_infinity,
-    )
+    );
+    zeroize_in_place(&mut x_limbs);
+    zeroize_in_place(&mut y_limbs);
+    zeroize_in_place(&mut next_x);
+    zeroize_in_place(&mut next_y);
+    entry
 }

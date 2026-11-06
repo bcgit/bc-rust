@@ -43,17 +43,19 @@ pub fn multiply_point(k: &Bp384r1Scalar, q: &Bp384r1JacobianPoint) -> Bp384r1Jac
 
     let limbs = k.limbs();
     let mut r = Bp384r1JacobianPoint::INFINITY;
+    // The lookup's copy of the selected entry; declared here so one scrub after the loop covers it.
+    let mut entry = Bp384r1JacobianPoint::INFINITY;
     for round in 0..ROUNDS {
         let low_bit = (ROUNDS - 1 - round) * WIDTH;
         let window = window_at(limbs, low_bit);
         for _ in 0..WIDTH {
             r = r.double();
         }
-        let mut entry = table_lookup(&table, window);
+        entry = table_lookup(&table, window);
         r = r.add(&entry);
-        entry.zeroize();
     }
 
+    entry.zeroize();
     for entry in table.iter_mut() {
         entry.zeroize();
     }
