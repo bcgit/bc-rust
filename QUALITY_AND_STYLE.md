@@ -180,6 +180,14 @@ Any function that takes an output buffer via an `_out` function must zeroize the
 `out.fill(0)` prior to writing to it. This must be done first, before even any error checking so that no stale content
 is left in the output buffer, even in the case of an error.
 
+A local that holds secret-derived data -- a key or scalar's limbs, a field element or point computed from one, a
+lookup's copy of a table entry -- is zeroized once, at the end of its lifetime, through its type's `zeroize` (built on
+`zeroize_in_place`, whose volatile write the compiler cannot elide), and on every return path, including the error
+ones (`Secret` does this on drop, so a `Secret` local needs no call). A loop-carried value is declared before the loop
+so that end is after it, not once per iteration. This is defence in depth rather than a guarantee: superseded values
+of a by-value accumulator, integer indices and the intermediates in callees' frames are not reached, and a function's
+docs must not claim more than its zeroize calls do.
+
 ## Fallibility
 
 As much as humanly possible, Result and unwrap () should be used for "Bad input data" type things and not "Programmer
