@@ -11,7 +11,7 @@
 //! product `t = a*b` with `a, b < p < 2^521` (so `t < 2^1042`): fold 1 splits `t` into `hi0 =
 //! t >> 521 < 2^521` and `lo0 = t mod 2^521 < 2^521`, giving `acc1 = hi0 + lo0 < 2^522`; fold 2
 //! splits `acc1` into `hi1 = acc1 >> 521 < 2` and `lo1 = acc1 mod 2^521 < 2^521`, giving `acc2 =
-//! hi1 + lo1`. Unlike [`crate::p384::reduce`] (whose analogous two-fold bound leaves room for a
+//! hi1 + lo1`. Unlike `p384::reduce` (whose analogous two-fold bound leaves room for a
 //! rare extra bit above `2^521`'s P-384 equivalent -- see that function's comment for the bug this
 //! caused there), `acc2` here is *provably* always `< 2^521`: `acc1 <= 2*(2^521 - 1) = 2^522 - 2`
 //! (both `hi0` and `lo0` are `<= 2^521 - 1`), which excludes `acc1 = 2^522 - 1`, the only value

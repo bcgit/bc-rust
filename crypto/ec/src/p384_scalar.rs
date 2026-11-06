@@ -3,7 +3,7 @@
 //! same `Secret`/plain scalar split -- with `n` swapped for P-384's; see that module's docs for
 //! the full derivation.
 //!
-//! REDC's accumulator, like [`crate::p256_scalar::redc`]'s, needs one bit of headroom beyond the
+//! REDC's accumulator, like `p256_scalar::redc`'s, needs one bit of headroom beyond the
 //! 12-limb product (`n` is close enough to `2^384` that `2n` can exceed it): verified (not checked
 //! in) against 30,000 random trials plus the `(n-1)*(n-1)` worst case.
 
@@ -298,7 +298,7 @@ fn modulus_times_limb(m: u64) -> [u64; 7] {
 }
 
 /// Montgomery reduction (SOS method): given a 12-limb value `t < n*R`, returns `t * R^-1 mod n` as
-/// 6 limbs. See [`crate::p256_scalar::redc`]'s docs for the algorithm; the 13th accumulator limb
+/// 6 limbs. See `p256_scalar::redc`'s docs for the algorithm; the 13th accumulator limb
 /// plays the same role as that function's 9th.
 fn redc(t: &[u64; 12]) -> [u64; 6] {
     let mut acc = [0u64; 13];

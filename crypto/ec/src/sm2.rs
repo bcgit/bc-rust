@@ -14,7 +14,7 @@
 //! `p` is a generalized Mersenne number, so -- exactly as for [`crate::p256`] -- a 512-bit product
 //! reduces to a fixed sum and difference of 256-bit terms assembled from the product's own 32-bit
 //! words, with no multiplication at all. [`reduce`] uses the same bias-fold-subtract finish as
-//! [`crate::p256::reduce`], but evaluates its term table one 32-bit column at a time rather than
+//! `p256::reduce`, but evaluates its term table one 32-bit column at a time rather than
 //! one 256-bit row at a time -- see its own docs for why that pays here and not for P-256.
 //!
 //! **That table is derived here, not quoted.** SP 800-186 Appendix G.1 publishes such a table for

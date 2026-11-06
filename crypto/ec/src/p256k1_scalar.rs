@@ -3,7 +3,7 @@
 //! same `Secret`/plain scalar split -- with `n` swapped for secp256k1's; see that module's docs for
 //! the full derivation.
 //!
-//! REDC's accumulator, like [`crate::p256_scalar::redc`]'s, needs one bit of headroom beyond the
+//! REDC's accumulator, like `p256_scalar::redc`'s, needs one bit of headroom beyond the
 //! 8-limb product (`n` is close enough to `2^256` that `2n` can exceed it): verified (not checked
 //! in) against 300,000 random trials plus the `(n-1)*(n-1)` worst case.
 
@@ -292,7 +292,7 @@ fn modulus_times_limb(m: u64) -> [u64; 5] {
 }
 
 /// Montgomery reduction (SOS method): given an 8-limb value `t < n*R`, returns `t * R^-1 mod n` as
-/// 4 limbs. See [`crate::p256_scalar::redc`]'s docs for the algorithm and the 9-limb-accumulator
+/// 4 limbs. See `p256_scalar::redc`'s docs for the algorithm and the 9-limb-accumulator
 /// bound this mirrors (secp256k1's `n` is, like P-256's, close enough to `2^256` that `2n` can
 /// exceed it, so the same one-extra-bit headroom is needed -- verified per the module docs, not
 /// assumed).

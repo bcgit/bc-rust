@@ -4,13 +4,13 @@
 //! `Secret`/plain scalar split -- with `n` swapped for P-521's; see [`crate::p256_scalar`]'s docs
 //! for the full derivation.
 //!
-//! Unlike [`crate::p256_scalar::redc`] and [`crate::p384_scalar::redc`], `n` here is not close to
+//! Unlike `p256_scalar::redc` and `p384_scalar::redc`, `n` here is not close to
 //! `R`: `n < 2^521`, some 55 bits short of `R = 2^576`, so `2n` cannot exceed `R` and REDC's
 //! accumulator needs no extra bit of headroom beyond the 18-limb product width. Verified (not
 //! checked in) against 30,000 random trials plus the `(n-1)*(n-1)` worst case that the
 //! accumulator's top limb is always exactly `0` after the reduction rounds -- kept as a
 //! `debug_assert_eq!` rather than removing the (unused) 19th limb, so a future change that makes
-//! it false fails loudly rather than silently dropping a bit the way [`crate::p384::reduce`]'s
+//! it false fails loudly rather than silently dropping a bit the way `p384::reduce`'s
 //! analogous but *wrong* assumption once did.
 //!
 //! That same 55-bit gap bites a different function, [`reduce_wide`] (used by every `from_limbs` in
@@ -328,8 +328,8 @@ fn modulus_times_limb(m: u64) -> [u64; 10] {
 }
 
 /// Montgomery reduction (SOS method): given an 18-limb value `t < n*R`, returns `t * R^-1 mod n`
-/// as 9 limbs. See [`crate::p256_scalar::redc`]'s docs for the algorithm. Unlike that function's
-/// 9th limb (or [`crate::p384_scalar::redc`]'s 13th), the accumulator's 19th limb here is always
+/// as 9 limbs. See `p256_scalar::redc`'s docs for the algorithm. Unlike that function's
+/// 9th limb (or `p384_scalar::redc`'s 13th), the accumulator's 19th limb here is always
 /// `0` (module docs), so it is not consulted after the reduction rounds beyond a debug assertion.
 fn redc(t: &[u64; 18]) -> [u64; 9] {
     let mut acc = [0u64; 19];
