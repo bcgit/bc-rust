@@ -15,6 +15,7 @@ use bouncycastle_aes::{
     AES192Key, AES256Key,
 };
 use bouncycastle_cipher::modes::{KW, KWP, ModeNames};
+use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::hazmat::Mode;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
@@ -210,18 +211,18 @@ fn the_three_key_lengths_are_not_interchangeable() {
 #[test]
 fn the_keys_hand_out_the_aliased_workers() {
     let kek = key128::<KW>(&RFC3394_KEK[..32]);
-    let _: AES_KW_128<'_> = kek.create_wrapper();
-    let _: AES_KW_128<'_> = kek.create_unwrapper();
+    let _: AES_KW_128<'_, Encrypting> = kek.create_wrapper();
+    let _: AES_KW_128<'_, Decrypting> = kek.create_unwrapper();
     let kek = key192::<KW>(&RFC3394_KEK[..48]);
-    let _: AES_KW_192<'_> = kek.create_wrapper();
+    let _: AES_KW_192<'_, Encrypting> = kek.create_wrapper();
     let kek = key256::<KW>(RFC3394_KEK);
-    let _: AES_KW_256<'_> = kek.create_unwrapper();
+    let _: AES_KW_256<'_, Decrypting> = kek.create_unwrapper();
     let kek = key128::<KWP>(&RFC3394_KEK[..32]);
-    let _: AES_KWP_128<'_> = kek.create_wrapper();
+    let _: AES_KWP_128<'_, Encrypting> = kek.create_wrapper();
     let kek = key192::<KWP>(&RFC3394_KEK[..48]);
-    let _: AES_KWP_192<'_> = kek.create_unwrapper();
+    let _: AES_KWP_192<'_, Decrypting> = kek.create_unwrapper();
     let kek = key256::<KWP>(RFC3394_KEK);
-    let _: AES_KWP_256<'_> = kek.create_wrapper();
+    let _: AES_KWP_256<'_, Encrypting> = kek.create_wrapper();
 }
 
 /// The sizes the docs quote: the key is the schedule, the worker is the borrow.
@@ -233,8 +234,8 @@ fn sizes() {
         [size_of::<AES128Internal>(), size_of::<AES192Internal>(), size_of::<AES256Internal>()]
     );
     assert_eq!(size_of::<AES128Key<KWP>>(), size_of::<AES128Key<KW>>());
-    assert_eq!(size_of::<AES_KW_128>(), size_of::<&AES128Internal>());
-    assert_eq!(size_of::<AES_KWP_256>(), size_of::<&AES256Internal>());
+    assert_eq!(size_of::<AES_KW_128<'_, Encrypting>>(), size_of::<&AES128Internal>());
+    assert_eq!(size_of::<AES_KWP_256<'_, Decrypting>>(), size_of::<&AES256Internal>());
 }
 
 /// Equality follows the material: the same bytes compare equal, as does a clone, and different

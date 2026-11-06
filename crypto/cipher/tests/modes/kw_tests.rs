@@ -11,6 +11,7 @@ mod common;
 mod toy_key;
 
 use bouncycastle_cipher::modes::{KW, KWP, Kw, Kwp, ModeNames};
+use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::hazmat::{
     BlockPermutation, ElectronicCodeBook, KeyUnwrapMode, KeyWrapMode, Mode,
@@ -227,7 +228,7 @@ fn kwp_costs_nothing_extra_for_aligned_data() {
 #[test]
 fn sizes() {
     use core::mem::size_of;
-    assert_eq!(size_of::<Kw<'_, Toy>>(), size_of::<&Toy>());
-    assert_eq!(size_of::<Kwp<'_, Toy>>(), size_of::<&Toy>());
+    assert_eq!(size_of::<Kw<'_, Toy, Encrypting>>(), size_of::<&Toy>());
+    assert_eq!(size_of::<Kwp<'_, Toy, Decrypting>>(), size_of::<&Toy>());
     assert_eq!(size_of::<ToyKwKey>(), size_of::<Toy>());
 }

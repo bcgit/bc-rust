@@ -75,12 +75,13 @@
 //! ));
 //! ```
 //!
-//! # No direction marker
+//! # The direction is in the type
 //!
-//! Unlike [`Ecb`](crate::modes::hazmat::ecb::Ecb) and the other modes, [`Kw`] has no `Dir`
-//! parameter. The wrapping and unwrapping halves are already separate traits ([`KeyWrapper`] /
-//! [`KeyUnwrapper`]), so a policy can import one trait and not the other, and there is no
-//! per-direction state for a marker type to select.
+//! [`Kw<'k, P, Dir>`](Kw) carries [`Encrypting`] or [`Decrypting`] as the cipher modes do:
+//! [`KeyWrapper`] is implemented for the encrypting worker alone and [`KeyUnwrapper`] for the
+//! decrypting one, so an unwrapper has no wrapping method to call, and a permutation that
+//! decrypts only ([`BlockPermutation::DECRYPT_ONLY`]) is refused a wrapper at compile time in
+//! `wrap_init`. The worker has no per-direction state; the marker is zero-sized.
 //!
 //! # The wrapping function runs in place, without the shift register
 //!
@@ -122,6 +123,7 @@
 //! [`KeyUnwrappingKey`]: bouncycastle_core::symmetric_key::KeyUnwrappingKey
 
 use super::ModeNames;
+use crate::{Decrypting, Encrypting};
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::hazmat::{
     BlockPermutation, ElectronicCodeBook, KeyUnwrapMode, KeyWrapMode, Mode,
@@ -131,6 +133,7 @@ use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{Algorithm, KeyUnwrapper, KeyWrapper};
 use bouncycastle_utils::ct::ct_eq_bytes;
 use bouncycastle_utils::secret::Secret;
+use core::marker::PhantomData;
 
 /// The block length, in bytes, of the permutation under KW and KWP. SP 800-38F Sec 5.1: "For KW
 /// and KWP, the underlying block cipher shall be approved, and the block size shall be 128 bits."
@@ -279,11 +282,17 @@ where
     P: ElectronicCodeBook<KEK_LEN, KW_BLOCK_LEN> + ModeNames + Clone,
 {
     type Wrapper<'k>
-        = Kw<'k, P>
+        = Kw<'k, P, Encrypting>
     where
         P: 'k;
 
     fn wrap_init<'k>(state: &'k Self::KeyState) -> Self::Wrapper<'k> {
+        const {
+            assert!(
+                !P::DECRYPT_ONLY,
+                "this permutation decrypts only (BlockPermutation::DECRYPT_ONLY): no wrapper may be made over it"
+            )
+        };
         Kw::from_perm(state)
     }
 }
@@ -293,7 +302,7 @@ where
     P: ElectronicCodeBook<KEK_LEN, KW_BLOCK_LEN> + ModeNames + Clone,
 {
     type Unwrapper<'k>
-        = Kw<'k, P>
+        = Kw<'k, P, Decrypting>
     where
         P: 'k;
 
@@ -305,28 +314,29 @@ where
 /// KW over any 128-bit permutation that impls [`BlockPermutation`]: the one-shot worker a
 /// [`KW`]-bound key hands out, borrowing the keyed permutation for `'k`.
 ///
-/// There is no state beyond the borrow and no direction marker: both halves of the algorithm are
-/// the [`KeyWrapper`] and [`KeyUnwrapper`] traits, which this type implements together. See the
-/// module docs for usage and the security notes.
-pub struct Kw<'k, P>
+/// There is no state beyond the borrow; `Dir` is [`Encrypting`] for the wrapper, which alone
+/// implements [`KeyWrapper`], and [`Decrypting`] for the unwrapper, which alone implements
+/// [`KeyUnwrapper`]. See the module docs for usage and the security notes.
+pub struct Kw<'k, P, Dir>
 where
     P: BlockPermutation<KW_BLOCK_LEN> + ModeNames,
 {
     perm: &'k P,
+    _dir: PhantomData<Dir>,
 }
 
-impl<'k, P> Kw<'k, P>
+impl<'k, P, Dir> Kw<'k, P, Dir>
 where
     P: BlockPermutation<KW_BLOCK_LEN> + ModeNames,
 {
     /// Over an already-keyed permutation, which the worker borrows: what [`KW`]'s mode impls
     /// build for a key's roles.
     pub(crate) fn from_perm(perm: &'k P) -> Self {
-        Self { perm }
+        Self { perm, _dir: PhantomData }
     }
 }
 
-impl<'k, P> Algorithm for Kw<'k, P>
+impl<'k, P, Dir> Algorithm for Kw<'k, P, Dir>
 where
     P: BlockPermutation<KW_BLOCK_LEN> + ModeNames,
 {
@@ -336,7 +346,7 @@ where
     const MAX_SECURITY_STRENGTH: SecurityStrength = P::MAX_SECURITY_STRENGTH;
 }
 
-impl<'k, P> KeyWrapper for Kw<'k, P>
+impl<'k, P> KeyWrapper for Kw<'k, P, Encrypting>
 where
     P: BlockPermutation<KW_BLOCK_LEN> + ModeNames,
 {
@@ -397,7 +407,7 @@ where
     }
 }
 
-impl<'k, P> KeyUnwrapper for Kw<'k, P>
+impl<'k, P> KeyUnwrapper for Kw<'k, P, Decrypting>
 where
     P: BlockPermutation<KW_BLOCK_LEN> + ModeNames,
 {

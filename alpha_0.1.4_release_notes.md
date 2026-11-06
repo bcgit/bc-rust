@@ -15,6 +15,10 @@
 
 ## Minor features / bug fixes
 
+* The key-wrap workers `Kw`, `Kwp` and `Tkw` carry their direction in the type, as the cipher modes do:
+  `KeyWrapper` is implemented for the encrypting worker only, so an unwrapper has no wrapping method and a
+  permutation that decrypts only is refused a wrapper at compile time by every route. The `AES_KW_*`, `AES_KWP_*`
+  and `TDES_TKW` aliases gain the `Dir` parameter; `TDES2_TKW` is the decrypting one.
 * Cipher and MAC workers no longer implement `SuspendableKeyed` (#173): a resumed worker is a second copy of a
   nonce, counter or keystream position. The AES modes, CMAC and Ascon-AEAD128 lose their suspended-state
   constants and `hazmat::ModeKey` goes with them; HMAC and HKDF still suspend, and hashes, XOFs and KMAC keep
