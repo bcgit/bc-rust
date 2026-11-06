@@ -1,36 +1,15 @@
-//! Constant-time variable-base scalar multiplication: `[k]Q` for a secret `k` and a point `Q`
-//! that is not the base point -- a peer's public key, for the ECC CDH primitive of SP 800-56A
-//! Rev. 3 Section 5.7.1.2 (`P = h d_A Q_B`).
+//! Constant-time variable-base scalar multiplication on brainpoolP256r1: `[k]Q` for a secret `k`
+//! and a point `Q` that is not the base point, for the ECC CDH primitive of SP 800-56A Rev. 3
+//! Section 5.7.1.2. Identical in shape to [`crate::p256_mul`] -- see its docs for why neither
+//! [`crate::bp256r1_comb`] nor [`crate::bp256r1_wnaf`] covers this case, for the fixed-window
+//! design, and for the cost comparison and the width-4 choice, all of which apply unchanged here.
+//! The table is `16 * size_of::<Bp256r1JacobianPoint>()` = 1536 bytes of stack. The table and the
+//! working accumulator are scrubbed before returning; the caller owns the result and scrubs it when
+//! it is done.
 //!
-//! The crate's other two multipliers do not cover this case: [`crate::bp256r1_comb`] is fixed-base
-//! (`[k]G` from a compile-time table of multiples of `G`), and [`crate::bp256r1_wnaf`] takes
-//! [`crate::bp256r1_scalar::Bp256r1PublicScalar`] and is variable-time by design. This one takes
-//! [`Bp256r1Scalar`], the secret type, and is branch-free in `k` throughout.
-//!
-//! # Fixed window, width 4
-//!
-//! `[k]Q` is computed left to right over `ROUNDS = ceil(BITS / 4)` windows of 4 bits: each round
-//! doubles the accumulator four times and adds `[w]Q` for the round's window value `w`, read off
-//! `k`'s limbs at positions fixed by the loop (so *which* bits are read is public, only their
-//! values are secret). `[w]Q` comes from a table of `[0]Q .. [15]Q` built per call in Jacobian
-//! coordinates -- entry 0 is the identity, the rest by doubling and adding `Q` -- and is read by
-//! `table_lookup`, which scans every entry under a mask rather than indexing by `w`, as the
-//! comb's lookup does. The accumulator's addition is the complete [`Bp256r1JacobianPoint::add`]: it
-//! masks in the identity, same-point and opposite-point cases, so the accumulator may be the
-//! identity (it starts there and stays there through leading zero windows), a table entry may be
-//! the identity (`w = 0`), and `Q` itself may be added to a multiple of `Q`; the comb's "no
-//! offset" argument carries over unchanged.
-//!
-//! Cost: `4 * ROUNDS` doublings, `ROUNDS` full additions, `ROUNDS` masked scans of the table and
-//! 14 point operations to build it; the comparison with the comb and the wNAF multiplier and the
-//! width-4 choice are worked out in [`crate::p256_mul`]'s docs. The table is
-//! `16 * size_of::<Bp256r1JacobianPoint>()` = 1536 bytes of stack. The table and the working
-//! accumulator are scrubbed before returning; the caller owns the result and scrubs it when it is
-//! done.
-//!
-//! Verified against [`crate::bp256r1_comb`] (for `Q = G`), against [`crate::bp256r1_wnaf`] and against
-//! `[a k mod n]G` (for `Q = [a]G`) in `bp256r1_mul_tests.rs`, including `k = 0`, `k = 1`, `k = n-1`,
-//! `Q` the identity, `Q` negated and `Q` in a non-canonical-`Z` representation.
+//! Verified against [`crate::bp256r1_comb`] (for `Q = G`), against [`crate::bp256r1_wnaf`] and
+//! against `[a k mod n]G` (for `Q = [a]G`) in `bp256r1_mul_tests.rs`, with the same edge cases as
+//! P-256's.
 
 use crate::bp256r1_point::{Bp256r1JacobianPoint, select_point};
 use crate::bp256r1_scalar::Bp256r1Scalar;
