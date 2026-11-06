@@ -87,40 +87,6 @@ fn sign_rng_signature_rejected_under_wrong_key() {
 }
 
 #[test]
-fn sign_der_matches_raw_sign_and_round_trips_through_verify_der() {
-    let (pk, sk) = keygen(&mut DefaultRNG::default()).unwrap();
-    let msg = b"DER-encoded ECDSA signing";
-
-    let raw = sk.sign_deterministic(msg, None).unwrap();
-    let (der, der_len) = sk.sign_der_deterministic(msg, None).unwrap();
-
-    let mut r_out = [0u8; 66];
-    let mut s_out = [0u8; 66];
-    bouncycastle_ecdsa::der::decode(&der[..der_len], &mut r_out, &mut s_out)
-        .expect("sign_der's output must be a well-formed DER SEQUENCE { r, s }");
-    assert_eq!(r_out, raw[..66], "DER-decoded r must match sign's raw r");
-    assert_eq!(s_out, raw[66..], "DER-decoded s must match sign's raw s");
-
-    pk.verify_der(msg, None, &der[..der_len]).unwrap();
-
-    let mut tampered = der;
-    tampered[der_len - 1] ^= 0xFF;
-    assert!(
-        pk.verify_der(msg, None, &tampered[..der_len]).is_err(),
-        "a corrupted DER signature must not verify"
-    );
-}
-
-#[test]
-fn sign_der_round_trips_through_either_verify_der() {
-    let (pk, sk) = keygen(&mut DefaultRNG::default()).unwrap();
-    let msg = b"DER-encoded ECDSA signing, random k";
-    let (der, der_len) = sk.sign_der(&mut DefaultRNG::default(), msg, None).unwrap();
-    pk.verify_der(msg, None, &der[..der_len]).unwrap();
-    pk.verify_der(msg, None, &der[..der_len]).unwrap();
-}
-
-#[test]
 fn public_key_uncompressed_and_compressed_round_trip() {
     let (pk, _) = keygen(&mut DefaultRNG::default()).unwrap();
     let uncompressed = pk.encode();

@@ -1,11 +1,12 @@
 //! Test against the project wycheproof repo: `ecdsa_secp384r1_sha384_p1363_test.json` (raw `r ||
 //! s`, against [`ECDSAP384::verify`]) and `ecdsa_secp384r1_sha384_test.json` (DER `SEQUENCE { r, s
-//! }`, RFC 3279 §2.2.3, against [`ECDSAP384::verify_der`]). See `wycheproof.rs`'s docs for the
-//! sibling-clone convention and what wycheproof's value is here (malleability/invalid-encoding
-//! coverage, not signature-generation KATs).
+//! }`, RFC 3279 §2.2.3, against [`ECDSAP384::verify`] after `bouncycastle_ecdsa::der::decode`). See
+//! `wycheproof.rs`'s docs for the sibling-clone convention and what wycheproof's value is here
+//! (malleability/invalid-encoding coverage, not signature-generation KATs).
 
 use bouncycastle_core::signature_key::VerifyingKey;
 use bouncycastle_core::traits::SignaturePublicKey;
+use bouncycastle_ecdsa::der;
 use bouncycastle_ecdsa::keys_p384::ECDSAP384PublicKey;
 use bouncycastle_hex::decode as hex_decode;
 use serde_json::Value;
@@ -88,8 +89,18 @@ fn ecdsa_secp384r1_sha384_p1363_test() {
     );
 }
 
+/// Decodes a DER `SEQUENCE { r, s }` with [`der::decode`] and verifies the raw signature through
+/// [`VerifyingKey::verify`]; a malformed encoding is a failed verification, which is what the
+/// suite's invalid-encoding cases expect.
+fn verify_der(pk: &ECDSAP384PublicKey, msg: &[u8], sig: &[u8]) -> Option<()> {
+    let mut raw = [0u8; 96];
+    let (r, s) = raw.split_at_mut(48);
+    der::decode(sig, r, s)?;
+    pk.verify(msg, None, &raw).ok()
+}
+
 /// The DER counterpart of the above: `ecdsa_secp384r1_sha384_test.json`, against
-/// [`ECDSAP384::verify_der`].
+/// [`ECDSAP384::verify`] after `bouncycastle_ecdsa::der::decode`.
 #[test]
 fn ecdsa_secp384r1_sha384_der_test() {
     let contents = get_test_data("ecdsa_secp384r1_sha384_test.json");
@@ -131,7 +142,7 @@ fn ecdsa_secp384r1_sha384_der_test() {
                 num_invalid += 1;
             }
 
-            let result = pk.as_ref().and_then(|pk| pk.verify_der(&msg, None, &sig).ok());
+            let result = pk.as_ref().and_then(|pk| verify_der(pk, &msg, &sig));
             assert_eq!(
                 result.is_some(),
                 expect_valid,

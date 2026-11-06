@@ -33,9 +33,6 @@ use bouncycastle_utils::secret::Secret;
 /// Raw `r || s` signature length: two 48-byte field-width integers.
 pub const SIG_LEN: usize = 96;
 
-/// Upper bound on a DER-encoded P-384 signature (`r`, `s` each 48 bytes); see [`crate::der::max_len`].
-pub const DER_SIG_MAX_LEN: usize = crate::der::max_len(48);
-
 /// ECDSA over P-384: FIPS 186-5 §6.4.1 (signature generation) and §6.4.2 (verification), fixed
 /// to SHA-384. The algorithm marker the key role traits are implemented over:
 /// [`ECDSAP384PrivateKey`] signs with it through [`SigningKey`] (a random per-message `k`,
@@ -58,7 +55,7 @@ impl SignatureAlgorithm for ECDSAP384 {}
 
 /// What [`ECDetDSAP384Signer`] reports as its algorithm name. The algorithm marker is still
 /// [`ECDSAP384`]; this names the RFC 6979 way of choosing `k`.
-pub const ECDETDSA_P384_NAME: &str = "ECDetDSA-P384";
+const ECDETDSA_P384_NAME: &str = "ECDetDSA-P384";
 
 /// The signer [`SigningKey::create_signer`] hands out: ECDSA with a random `k`.
 ///
@@ -73,7 +70,7 @@ pub struct ECDSAP384Signer<'k> {
 
 /// The signer [`DeterministicSigningKey::create_signer_deterministic`] hands out: Deterministic
 /// ECDSA, `k` from `d` and the message hash by RFC 6979, so the same key and message always give
-/// the same signature and signing draws no randomness. Reports [`ECDETDSA_P384_NAME`].
+/// the same signature and signing draws no randomness. Reports `ECDetDSA-P384`.
 pub struct ECDetDSAP384Signer<'k> {
     sk: &'k ECDSAP384PrivateKey,
     hash: SHA384,
@@ -200,57 +197,6 @@ fn verify_final(hash: SHA384, pk: &ECDSAP384PublicKey, sig: &[u8]) -> Result<(),
     let r1 = P384ScalarField::from_limbs(x_r1.to_limbs());
 
     if r1 == r { Ok(()) } else { Err(SignatureError::SignatureVerificationFailed) }
-}
-
-/// RFC 3279 §2.2.3 `Ecdsa-Sig-Value` from raw `r || s`, with the encoded length; see
-/// `crate::ecdsa_p256`'s `der_encode`.
-fn der_encode(raw: &[u8; SIG_LEN]) -> ([u8; DER_SIG_MAX_LEN], usize) {
-    let mut out = [0u8; DER_SIG_MAX_LEN];
-    let len = crate::der::encode(&raw[..48], &raw[48..], &mut out);
-    (out, len)
-}
-
-/// Raw `r || s` from a DER `Ecdsa-Sig-Value`; a malformed encoding is a verification failure.
-fn der_decode(sig: &[u8]) -> Result<[u8; SIG_LEN], SignatureError> {
-    let mut raw = [0u8; SIG_LEN];
-    let (r_out, s_out) = raw.split_at_mut(48);
-    crate::der::decode(sig, r_out, s_out).ok_or(SignatureError::SignatureVerificationFailed)?;
-    Ok(raw)
-}
-
-impl ECDSAP384PrivateKey {
-    /// [`SigningKey::sign`] with the signature DER-encoded as RFC 3279 §2.2.3's
-    /// `SEQUENCE { r, s }` (see [`crate::der`]); returns the buffer and the encoded length.
-    pub fn sign_der(
-        &self,
-        rng: &mut dyn RNG,
-        msg: &[u8],
-        ctx: Option<&[u8]>,
-    ) -> Result<([u8; DER_SIG_MAX_LEN], usize), SignatureError> {
-        Ok(der_encode(&self.sign(rng, msg, ctx)?))
-    }
-
-    /// [`DeterministicSigningKey::sign_deterministic`], DER-encoded as [`Self::sign_der`].
-    pub fn sign_der_deterministic(
-        &self,
-        msg: &[u8],
-        ctx: Option<&[u8]>,
-    ) -> Result<([u8; DER_SIG_MAX_LEN], usize), SignatureError> {
-        Ok(der_encode(&self.sign_deterministic(msg, ctx)?))
-    }
-}
-
-impl ECDSAP384PublicKey {
-    /// [`VerifyingKey::verify`] of a DER-encoded signature (RFC 3279 §2.2.3); a malformed
-    /// encoding is a verification failure.
-    pub fn verify_der(
-        &self,
-        msg: &[u8],
-        ctx: Option<&[u8]>,
-        sig: &[u8],
-    ) -> Result<(), SignatureError> {
-        self.verify(msg, ctx, &der_decode(sig)?)
-    }
 }
 
 impl SigningKey<ECDSAP384, SIG_LEN> for ECDSAP384PrivateKey {

@@ -33,13 +33,9 @@ use bouncycastle_sha2::SHA512;
 use bouncycastle_utils::secret::Secret;
 
 /// Raw `r || s` signature length: two 64-byte field-width integers, the default encoding.
-/// [`ECDSABp512r1PrivateKey::sign_der`]/[`ECDSABp512r1PublicKey::verify_der`] offer the RFC 3279
-/// §2.2.3 DER `SEQUENCE { r, s }` alternative via [`crate::der`], for interop that needs it.
+/// [`crate::der`] offers the RFC 3279 §2.2.3 DER `SEQUENCE { r, s }` alternative, for interop that
+/// needs it.
 pub const SIG_LEN: usize = 128;
-
-/// Upper bound on a DER-encoded brainpoolP512r1 signature (`r`, `s` each 64 bytes); see
-/// [`crate::der::max_len`].
-pub const DER_SIG_MAX_LEN: usize = crate::der::max_len(64);
 
 /// ECDSA over brainpoolP512r1: FIPS 186-5 §6.4.1 (signature generation) and §6.4.2 (verification), fixed
 /// to SHA-512. The algorithm marker the key role traits are implemented over:
@@ -63,7 +59,7 @@ impl SignatureAlgorithm for ECDSABp512r1 {}
 
 /// What [`ECDetDSABp512r1Signer`] reports as its algorithm name. The algorithm marker is still
 /// [`ECDSABp512r1`]; this names the RFC 6979 way of choosing `k`.
-pub const ECDETDSA_BP512R1_NAME: &str = "ECDetDSA-brainpoolP512r1";
+const ECDETDSA_BP512R1_NAME: &str = "ECDetDSA-brainpoolP512r1";
 
 /// The signer [`SigningKey::create_signer`] hands out: ECDSA with a random `k`.
 ///
@@ -78,7 +74,7 @@ pub struct ECDSABp512r1Signer<'k> {
 
 /// The signer [`DeterministicSigningKey::create_signer_deterministic`] hands out: Deterministic
 /// ECDSA, `k` from `d` and the message hash by RFC 6979, so the same key and message always give
-/// the same signature and signing draws no randomness. Reports [`ECDETDSA_BP512R1_NAME`].
+/// the same signature and signing draws no randomness. Reports `ECDetDSA-brainpoolP512r1`.
 pub struct ECDetDSABp512r1Signer<'k> {
     sk: &'k ECDSABp512r1PrivateKey,
     hash: SHA512,
@@ -217,57 +213,6 @@ fn verify_final(
     let r1 = Bp512r1ScalarField::from_limbs(x_r1.to_limbs()); // steps 7-8
 
     if r1 == r { Ok(()) } else { Err(SignatureError::SignatureVerificationFailed) } // step 9
-}
-
-/// RFC 3279 §2.2.3 `Ecdsa-Sig-Value` from raw `r || s`, with the encoded length; see
-/// `crate::ecdsa_p256`'s `der_encode`.
-fn der_encode(raw: &[u8; SIG_LEN]) -> ([u8; DER_SIG_MAX_LEN], usize) {
-    let mut out = [0u8; DER_SIG_MAX_LEN];
-    let len = crate::der::encode(&raw[..64], &raw[64..], &mut out);
-    (out, len)
-}
-
-/// Raw `r || s` from a DER `Ecdsa-Sig-Value`; a malformed encoding is a verification failure.
-fn der_decode(sig: &[u8]) -> Result<[u8; SIG_LEN], SignatureError> {
-    let mut raw = [0u8; SIG_LEN];
-    let (r_out, s_out) = raw.split_at_mut(64);
-    crate::der::decode(sig, r_out, s_out).ok_or(SignatureError::SignatureVerificationFailed)?;
-    Ok(raw)
-}
-
-impl ECDSABp512r1PrivateKey {
-    /// [`SigningKey::sign`] with the signature DER-encoded as RFC 3279 §2.2.3's
-    /// `SEQUENCE { r, s }` (see [`crate::der`]); returns the buffer and the encoded length.
-    pub fn sign_der(
-        &self,
-        rng: &mut dyn RNG,
-        msg: &[u8],
-        ctx: Option<&[u8]>,
-    ) -> Result<([u8; DER_SIG_MAX_LEN], usize), SignatureError> {
-        Ok(der_encode(&self.sign(rng, msg, ctx)?))
-    }
-
-    /// [`DeterministicSigningKey::sign_deterministic`], DER-encoded as [`Self::sign_der`].
-    pub fn sign_der_deterministic(
-        &self,
-        msg: &[u8],
-        ctx: Option<&[u8]>,
-    ) -> Result<([u8; DER_SIG_MAX_LEN], usize), SignatureError> {
-        Ok(der_encode(&self.sign_deterministic(msg, ctx)?))
-    }
-}
-
-impl ECDSABp512r1PublicKey {
-    /// [`VerifyingKey::verify`] of a DER-encoded signature (RFC 3279 §2.2.3); a malformed
-    /// encoding is a verification failure.
-    pub fn verify_der(
-        &self,
-        msg: &[u8],
-        ctx: Option<&[u8]>,
-        sig: &[u8],
-    ) -> Result<(), SignatureError> {
-        self.verify(msg, ctx, &der_decode(sig)?)
-    }
 }
 
 impl SigningKey<ECDSABp512r1, SIG_LEN> for ECDSABp512r1PrivateKey {

@@ -93,18 +93,24 @@
 //! # Ok::<(), bouncycastle_core::errors::SignatureError>(())
 //! ```
 //!
-//! For interop that needs DER `SEQUENCE { r, s }` rather than raw `r || s`, the keys have
-//! `sign_der` / `sign_der_deterministic` and `verify_der`:
+//! For interop that needs DER `SEQUENCE { r, s }` rather than raw `r || s`, [`der`] encodes and
+//! decodes it around the role traits:
 //!
 //! ```
+//! use bouncycastle_core::signature_key::{SigningKey, VerifyingKey};
+//! use bouncycastle_ecdsa::der;
 //! use bouncycastle_ecdsa::keys_p256::keygen;
 //! use bouncycastle_rng::HashDRBG_SHA512;
 //!
 //! let (pk, sk) = keygen(&mut HashDRBG_SHA512::new_from_os())?;
-//! let (der, der_len) = sk.sign_der(&mut HashDRBG_SHA512::new_from_os(), b"message", None)?;
-//! pk.verify_der(b"message", None, &der[..der_len])?;
-//! let (der, der_len) = sk.sign_der_deterministic(b"message", None)?;
-//! pk.verify_der(b"message", None, &der[..der_len])?;
+//! let raw = sk.sign(&mut HashDRBG_SHA512::new_from_os(), b"message", None)?;
+//! let mut encoded = [0u8; der::max_len(32)];
+//! let len = der::encode(&raw[..32], &raw[32..], &mut encoded);
+//!
+//! let mut decoded = [0u8; 64];
+//! let (r, s) = decoded.split_at_mut(32);
+//! der::decode(&encoded[..len], r, s).expect("a well-formed SEQUENCE { r, s }");
+//! pk.verify(b"message", None, &decoded)?;
 //! # Ok::<(), bouncycastle_core::errors::SignatureError>(())
 //! ```
 //!
@@ -158,8 +164,8 @@
 //!     33 % to 45 % of signatures reject at least one. Under the PRF assumption the count is
 //!     independent of the accepted `k` and reveals nothing about `d`, but it is deterministic per
 //!     `(d, message)`, so a remote observer gets a per-message timing fingerprint. See
-//!     [`rfc6979_p256::generate_k`]'s docs for the argument, the brainpool modules' for the rates, and
-//!     [`rfc6979_bp256r1::generate_k`]'s for what the fingerprint is worth.
+//!     `rfc6979_p256::generate_k`'s docs for the argument, the brainpool modules' for the rates, and
+//!     `rfc6979_bp256r1::generate_k`'s for what the fingerprint is worth.
 //!   - On `r = 0` or `s = 0`, FIPS 186-5 §6.4.1 step 11 has the random-`k` signer draw another
 //!     `k` and the deterministic one output failure (RFC 6979 §3.4 would continue its loop
 //!     instead). Both signers here report failure: the random `k` is drawn when the signer is
@@ -205,10 +211,10 @@ pub mod keys_p256;
 pub mod keys_p256k1;
 pub mod keys_p384;
 pub mod keys_p521;
-pub mod rfc6979_bp256r1;
-pub mod rfc6979_bp384r1;
-pub mod rfc6979_bp512r1;
-pub mod rfc6979_p256;
-pub mod rfc6979_p256k1;
-pub mod rfc6979_p384;
-pub mod rfc6979_p521;
+pub(crate) mod rfc6979_bp256r1;
+pub(crate) mod rfc6979_bp384r1;
+pub(crate) mod rfc6979_bp512r1;
+pub(crate) mod rfc6979_p256;
+pub(crate) mod rfc6979_p256k1;
+pub(crate) mod rfc6979_p384;
+pub(crate) mod rfc6979_p521;

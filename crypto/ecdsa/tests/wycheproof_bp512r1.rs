@@ -1,11 +1,13 @@
-//! Test against the project wycheproof repo: `ecdsa_brainpoolP512r1_sha512_p1363_test.json` (raw
-//! `r || s`, against [`ECDSABp512r1::verify`]) and `ecdsa_brainpoolP512r1_sha512_test.json` (DER
-//! `SEQUENCE { r, s }`, RFC 3279 §2.2.3, against [`ECDSABp512r1::verify_der`]). See
-//! `wycheproof.rs`'s docs for the sibling-clone convention and what wycheproof's value is here
-//! (malleability/invalid-encoding coverage, not signature-generation KATs).
+//! Test against the project wycheproof repo: `ecdsa_brainpoolP512r1_sha512_p1363_test.json` (raw `r
+//! || s`, against [`ECDSABp512r1::verify`]) and `ecdsa_brainpoolP512r1_sha512_test.json` (DER
+//! `SEQUENCE { r, s }`, RFC 3279 §2.2.3, against [`ECDSABp512r1::verify`] after
+//! `bouncycastle_ecdsa::der::decode`). See `wycheproof.rs`'s docs for the sibling-clone convention
+//! and what wycheproof's value is here (malleability/invalid-encoding coverage, not
+//! signature-generation KATs).
 
 use bouncycastle_core::signature_key::VerifyingKey;
 use bouncycastle_core::traits::SignaturePublicKey;
+use bouncycastle_ecdsa::der;
 use bouncycastle_ecdsa::keys_bp512r1::ECDSABp512r1PublicKey;
 use bouncycastle_hex::decode as hex_decode;
 use serde_json::Value;
@@ -88,8 +90,18 @@ fn ecdsa_brainpool_p512r1_sha512_p1363_test() {
     );
 }
 
+/// Decodes a DER `SEQUENCE { r, s }` with [`der::decode`] and verifies the raw signature through
+/// [`VerifyingKey::verify`]; a malformed encoding is a failed verification, which is what the
+/// suite's invalid-encoding cases expect.
+fn verify_der(pk: &ECDSABp512r1PublicKey, msg: &[u8], sig: &[u8]) -> Option<()> {
+    let mut raw = [0u8; 128];
+    let (r, s) = raw.split_at_mut(64);
+    der::decode(sig, r, s)?;
+    pk.verify(msg, None, &raw).ok()
+}
+
 /// The DER counterpart of the above: `ecdsa_brainpoolP512r1_sha512_test.json`, against
-/// [`ECDSABp512r1::verify_der`].
+/// [`ECDSABp512r1::verify`] after `bouncycastle_ecdsa::der::decode`.
 #[test]
 fn ecdsa_brainpool_p512r1_sha512_der_test() {
     let contents = get_test_data("ecdsa_brainpoolP512r1_sha512_test.json");
@@ -131,7 +143,7 @@ fn ecdsa_brainpool_p512r1_sha512_der_test() {
                 num_invalid += 1;
             }
 
-            let result = pk.as_ref().and_then(|pk| pk.verify_der(&msg, None, &sig).ok());
+            let result = pk.as_ref().and_then(|pk| verify_der(pk, &msg, &sig));
             assert_eq!(
                 result.is_some(),
                 expect_valid,
