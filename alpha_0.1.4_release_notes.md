@@ -3,6 +3,12 @@
 ## Major features
 
 * CHACHA20 -- ChaCha20, Poly1305 and ChaCha20-Poly1305 (RFC 8439).
+* TDES -- three-key TDEA (NIST SP 800-67 Rev 2) as a constant-time, table-free bit-sliced engine under `hazmat`,
+  with ECB, CBC, CFB64, CFB8 and CTR (SP 800-38A Appendix E) and TDEA Key Wrap (SP 800-38F TKW) through the key
+  role traits; two-key TDEA decrypts and unwraps only, which `BlockPermutation::DECRYPT_ONLY` makes a compile
+  error for every encrypting route; the `tdes-*` and `tdes2-*` CLI commands, whose `encrypt` refuses input past
+  SP 800-67 Rev 2 Sec 3.4's 2^20 blocks counted as the blocks TDEA processes (8 MiB; 1 MiB for CFB8, 699,048
+  bytes for TKW).
 * AES Key Wrap -- AES_KW and AES_KWP (NIST SP 800-38F; RFC 3394 / RFC 5649) over any 128-bit block permutation,
   with the `KeyWrapper` / `KeyUnwrapper` core traits and the `aes*-kw` / `aes*-kwp` CLI commands.
 * ECDSA -- FIPS 186-5 signatures over P-256, P-384, P-521, secp256k1, brainpoolP256r1, brainpoolP384r1 and
