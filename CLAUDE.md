@@ -241,8 +241,7 @@ What that taught, as mechanics for the next trait that sheds a constructor:
   key locally bounds `for<'k> K::Encryptor<'k>: ..` with `K: 'static`. A test binds the key
   before the worker, since `key_fn().create_encryptor(..)` borrows a temporary.
 - **Resume takes the key object.** `SuspendableKeyed<'k, N>` takes the key by `&'k`: HMAC's is
-  `HmacKey`, and HKDF's stays the salt material, since HKDF is not a key object. A worker that
-  owns a copy of its key (KMAC) implements the trait for every `'k` and ignores it. A struct
+  `HmacKey`, and HKDF's stays the salt material, since HKDF is not a key object. A struct
   cannot hold a worker that borrows a key it also owns: HKDF runs its extract-phase HMAC as the
   two halves `HmacKey::inner_state` / `finish_out`, and the MAC factory is a key enum that hands
   out a worker enum.

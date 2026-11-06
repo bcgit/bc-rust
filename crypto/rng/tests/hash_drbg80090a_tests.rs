@@ -7,9 +7,9 @@ mod tests {
     use bouncycastle_core::security_strength::SecurityStrength;
     use bouncycastle_core::traits::RNG;
     use bouncycastle_core_test_framework::DUMMY_SEED;
-    use bouncycastle_rng::Sp80090ADrbg;
     use bouncycastle_rng::hazmat::NewUninitialized;
     use bouncycastle_rng::{HashDRBG_SHA256, HashDRBG_SHA512};
+    use bouncycastle_rng::{MIN_NONCE_LEN, Sp80090ADrbg};
 
     #[test]
     fn basic_test() {
@@ -59,11 +59,12 @@ mod tests {
         rng.generate_out(&[], &mut out).unwrap();
         assert_ne!(out, [0u8; 32]);
 
-        // Success case: seed len equals required entropy
+        // Success case: seed len equals required entropy, with a nonce
         let mut rng = HashDRBG_SHA256::new_uninitialized();
         let mut out = [0u8; 32];
         let seed = KeyMaterial256::from_bytes_as_type(&DUMMY_SEED[..16], KeyType::Seed).unwrap();
-        rng.instantiate(false, seed, &KeyMaterial0::new(), &[], SecurityStrength::_128bit).unwrap();
+        let nonce = KeyMaterial256::from_bytes_as_type(&DUMMY_SEED[16..24], KeyType::Seed).unwrap();
+        rng.instantiate(false, seed, &nonce, &[], SecurityStrength::_128bit).unwrap();
         rng.generate_out(&[], &mut out).unwrap();
         assert_ne!(out, [0u8; 32]);
 
@@ -77,10 +78,11 @@ mod tests {
             _ => panic!("Expected KeyMaterialError error"),
         }
 
-        // Error case: seed too short
+        // Error case: seed too short, even with a nonce
         let mut rng = HashDRBG_SHA256::new_uninitialized();
-        let seed = KeyMaterial256::from_bytes_as_type(&DUMMY_SEED[..8], KeyType::Seed).unwrap();
-        match rng.instantiate(false, seed, &KeyMaterial0::new(), &[], SecurityStrength::_128bit) {
+        let seed = KeyMaterial256::from_bytes_as_type(&DUMMY_SEED[..15], KeyType::Seed).unwrap();
+        let nonce = KeyMaterial256::from_bytes_as_type(&DUMMY_SEED[16..32], KeyType::Seed).unwrap();
+        match rng.instantiate(false, seed, &nonce, &[], SecurityStrength::_128bit) {
             Err(RNGError::KeyMaterialError(_)) => { /* good */ }
             _ => panic!("Expected KeyMaterialError error"),
         }
@@ -117,6 +119,51 @@ mod tests {
         match rng.instantiate(false, seed, &KeyMaterial0::new(), &[], SecurityStrength::_128bit) {
             Err(RNGError::GenericError(_)) => { /*good*/ }
             _ => panic!("Expected GenericError error"),
+        }
+    }
+
+    /// SP 800-90A Rev. 1 Section 8.6.1 requires a nonce; Section 9.1 lets its entropy come with
+    /// the entropy input instead, which then carries 3/2 of the strength. A nonce shorter than
+    /// `MIN_NONCE_LEN` is refused.
+    #[test]
+    fn a_nonce_or_a_longer_seed_is_required() {
+        fn instantiate<D: Sp80090ADrbg + NewUninitialized>(
+            seed_len: usize,
+            nonce_len: usize,
+            strength: SecurityStrength,
+        ) -> Result<(), RNGError> {
+            let seed =
+                KeyMaterial::<64>::from_bytes_as_type(&DUMMY_SEED[..seed_len], KeyType::Seed)
+                    .unwrap();
+            let nonce = KeyMaterial::<64>::from_bytes_as_type(
+                &DUMMY_SEED[64 - nonce_len..64],
+                KeyType::Seed,
+            )
+            .unwrap();
+            D::new_uninitialized().instantiate(false, seed, &nonce, &[], strength)
+        }
+        fn refused(r: Result<(), RNGError>) -> bool {
+            matches!(r, Err(RNGError::KeyMaterialError(KeyMaterialError::SecurityStrength(_))))
+        }
+        assert_eq!(MIN_NONCE_LEN, 8);
+        for (strength, seed_len) in
+            [(SecurityStrength::_112bit, 14), (SecurityStrength::_128bit, 16)]
+        {
+            let no_nonce_len = seed_len * 3 / 2;
+            instantiate::<HashDRBG_SHA256>(seed_len, MIN_NONCE_LEN, strength).unwrap();
+            assert!(refused(instantiate::<HashDRBG_SHA256>(seed_len, MIN_NONCE_LEN - 1, strength)));
+            assert!(refused(instantiate::<HashDRBG_SHA256>(seed_len, 1, strength)));
+            instantiate::<HashDRBG_SHA256>(no_nonce_len, 0, strength).unwrap();
+            assert!(refused(instantiate::<HashDRBG_SHA256>(no_nonce_len - 1, 0, strength)));
+        }
+        for (strength, seed_len) in
+            [(SecurityStrength::_192bit, 24), (SecurityStrength::_256bit, 32)]
+        {
+            let no_nonce_len = seed_len * 3 / 2;
+            instantiate::<HashDRBG_SHA512>(seed_len, MIN_NONCE_LEN, strength).unwrap();
+            assert!(refused(instantiate::<HashDRBG_SHA512>(seed_len, MIN_NONCE_LEN - 1, strength)));
+            instantiate::<HashDRBG_SHA512>(no_nonce_len, 0, strength).unwrap();
+            assert!(refused(instantiate::<HashDRBG_SHA512>(no_nonce_len - 1, 0, strength)));
         }
     }
 

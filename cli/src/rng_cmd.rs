@@ -39,8 +39,9 @@ pub(crate) fn rng_cmd(
 
 /// A DRBG instantiated from the bytes of `file` as its entropy input, with an empty nonce and
 /// personalization string (SP 800-90A Rev. 1 Section 10.1.1.2): the same file gives the same
-/// stream, which is the point, and the reason the help calls it hazardous. The seed must carry
-/// at least the instance's strength, which the library checks by its length.
+/// stream, which is the point, and the reason the help calls it hazardous. With no nonce, the
+/// seed must carry 3/2 of the instance's strength (Section 9.1), which the library checks by its
+/// length.
 fn seeded<D: NewUninitialized + Sp80090ADrbg>(file: &str, strength: SecurityStrength) -> D {
     let mut seed = read_secret_file(file);
     do_hazardous_operations(&mut seed, |seed| seed.set_key_type(KeyType::Seed)).unwrap_or_else(
@@ -52,7 +53,8 @@ fn seeded<D: NewUninitialized + Sp80090ADrbg>(file: &str, strength: SecurityStre
     let mut drbg = D::new_uninitialized();
     drbg.instantiate(false, seed, &KeyMaterial::<0>::new(), &[], strength).unwrap_or_else(|e| {
         eprintln!(
-            "Error: couldn't instantiate the DRBG from the seed file (it must carry {strength:?} of entropy, by its length): {e:?}"
+            "Error: couldn't instantiate the DRBG from the seed file (with no nonce it must be at least {} bytes): {e:?}",
+            strength.as_int() * 3 / 16
         );
         exit(-1);
     });
