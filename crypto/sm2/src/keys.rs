@@ -190,7 +190,7 @@ impl Display for SM2PublicKey {
 }
 
 impl SM2PublicKey {
-    /// The public key's affine `x`, `y` coordinates -- for [`crate::za`]'s `ZA` computation, which
+    /// The public key's affine `x`, `y` coordinates -- for `za`'s `ZA` computation, which
     /// needs them directly rather than through the SEC 1 encoding.
     pub(crate) fn affine(&self) -> (Sm2FieldElement, Sm2FieldElement) {
         (self.x, self.y)

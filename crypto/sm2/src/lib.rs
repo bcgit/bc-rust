@@ -10,7 +10,7 @@
 //! `draft-shen-sm2-ecdsa-02` also describes an SM2 Key Exchange Protocol (§6) and an SM2 Public Key
 //! Encryption scheme (§7); neither is implemented here. SM2's Digital Signature Algorithm is *not*
 //! ECDSA -- it has its own signing equation and its own identity-binding `ZA` digest (see
-//! [`za`]'s docs) -- despite both being built on the same family of elliptic-curve arithmetic that
+//! `za`'s docs) -- despite both being built on the same family of elliptic-curve arithmetic that
 //! `bouncycastle-ecdsa`'s curves use.
 //!
 //! # `ctx` carries the signer's identity
@@ -137,4 +137,4 @@
 pub mod extra_bits;
 pub mod keys;
 pub mod sm2;
-pub mod za;
+pub(crate) mod za;

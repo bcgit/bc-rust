@@ -1,7 +1,7 @@
 //! `SM2`: GB/T 32918.2-2016 §6.1 (signature generation) and §7.1 (verification), the draft's §5.2
 //! and §5.3 -- the actual SM2 Digital Signature Algorithm, distinct from ECDSA despite both being
 //! built on Weierstrass elliptic-curve arithmetic: SM2's signing equation `s = (1+dA)^-1 * (k -
-//! r*dA) mod n` and its identity-binding `ZA` digest (see [`crate::za`]) have no ECDSA
+//! r*dA) mod n` and its identity-binding `ZA` digest (see `za`) have no ECDSA
 //! equivalent. Fixed to SM3: GB/T 32918.2-2016 §5.4.2 (the draft's §5.1.4.2) admits any approved
 //! hash "such as SM3", but SM3 is what the standard's own Appendix A example, the draft's, and
 //! every deployed implementation use, so no other hash is offered.

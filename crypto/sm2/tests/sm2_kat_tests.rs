@@ -30,7 +30,6 @@
 
 use bouncycastle_core::signature_key::VerifyingKey;
 use bouncycastle_core::traits::{SignaturePrivateKey, SignaturePublicKey};
-use bouncycastle_ec::hazmat::sm2_sec1;
 use bouncycastle_sm2::keys::{SM2PrivateKey, SM2PublicKey};
 
 fn pubkey_from_hex(x_hex: &str, y_hex: &str) -> SM2PublicKey {
@@ -118,51 +117,17 @@ fn known_answer_vectors_reject_wrong_id() {
     }
 }
 
-#[test]
-fn known_answer_za_matches_independent_python_computation() {
-    // Cross-checks crate::za::compute directly, not just the end-to-end verify result -- pins the
-    // intermediate ZA value itself (GB/T 32918.2-2016 S5.5), independent of e/r/s.
-    let expected: [(&str, &str, &[u8], &str); 3] = [
-        (V1.qx, V1.qy, V1.id, "bab69c9204aadd3d49ff244e8fdffb204e1d4249e36855f06a912abd81ddf167"),
-        (
-            V2_EMPTY_ID_AND_MSG.qx,
-            V2_EMPTY_ID_AND_MSG.qy,
-            V2_EMPTY_ID_AND_MSG.id,
-            "c13adcc1829f563f2a01ef3c4e0685647bf32a650a35273443150d44f5809ff8",
-        ),
-        (
-            V3_LONGER_MESSAGE.qx,
-            V3_LONGER_MESSAGE.qy,
-            V3_LONGER_MESSAGE.id,
-            "65052e995e872be0fb904d14ba6c2550a70d751e4dccf3c7a700c4588852e215",
-        ),
-    ];
-    for (qx, qy, id, za_hex) in expected {
-        let x_limbs = sm2_sec1::limbs_from_be_bytes(
-            &bouncycastle_hex::decode(qx).unwrap().try_into().unwrap(),
-        );
-        let y_limbs = sm2_sec1::limbs_from_be_bytes(
-            &bouncycastle_hex::decode(qy).unwrap().try_into().unwrap(),
-        );
-        let x = bouncycastle_ec::hazmat::sm2::Sm2FieldElement::from_limbs(x_limbs);
-        let y = bouncycastle_ec::hazmat::sm2::Sm2FieldElement::from_limbs(y_limbs);
-        let za = bouncycastle_sm2::za::compute(id, &x, &y).unwrap();
-        assert_eq!(bouncycastle_hex::encode(za), za_hex);
-    }
-}
-
 /// BouncyCastle Java's `SM2SignerTest.doSignerTestFpStandardSM3` vector -- see this file's module
 /// docs for its provenance and why it is the one externally-sourced case here.
 ///
 /// Unlike the vectors above it comes with its private key, so this also pins
-/// [`SM2PrivateKey::derive_pk`] (`PA = [dA]G`) and [`bouncycastle_sm2::za::compute`] against the
-/// same external source, not just the end-to-end verify result.
+/// [`SM2PrivateKey::derive_pk`] (`PA = [dA]G`) against the same external source, not just the
+/// end-to-end verify result; its `ZA` is a known answer in `za.rs`'s unit tests.
 #[test]
 fn bc_java_sm2p256v1_vector_verifies() {
     const D_HEX: &str = "110e7973206f68c19ee5f7328c036f26911c8c73b4e4f36ae3291097f8984ffc";
     const PA_X: &str = "d03d30dd01ca3422aeaccf9b88043b554659d3092b0a9e8cce3e8c4530a98cb7";
     const PA_Y: &str = "9d705e6213eee145b748e36e274e5f101dc10d7bbc9dab9a04022e73b76e02cd";
-    const ZA_HEX: &str = "ad1c1335ec4bd951cbb4a2144b8247b78fbe47efce2203086f968be8b730393d";
     const ID: &[u8] = b"sm2test@example.com";
     const MSG: &[u8] = b"hi chappy";
     const R: &str = "05890b9077b92e47b17a1ff42a814280e556afd92b4a98b9670bf8b1a274c2fa";
@@ -172,19 +137,6 @@ fn bc_java_sm2p256v1_vector_verifies() {
         .expect("bc-java's dA is in [1, n-1]");
     let pk = sk.derive_pk();
     assert_eq!(pk, pubkey_from_hex(PA_X, PA_Y), "PA = [dA]G disagrees with the external vector");
-
-    let (x, y) = (pk.encode()[1..33].to_vec(), pk.encode()[33..65].to_vec());
-    let x = bouncycastle_ec::hazmat::sm2::Sm2FieldElement::from_limbs(
-        sm2_sec1::limbs_from_be_bytes(&x.try_into().unwrap()),
-    );
-    let y = bouncycastle_ec::hazmat::sm2::Sm2FieldElement::from_limbs(
-        sm2_sec1::limbs_from_be_bytes(&y.try_into().unwrap()),
-    );
-    assert_eq!(
-        bouncycastle_hex::encode(bouncycastle_sm2::za::compute(ID, &x, &y).unwrap()),
-        ZA_HEX,
-        "ZA disagrees with the external vector"
-    );
 
     let sig = sig_from_hex(R, S);
     pk.verify(MSG, Some(ID), &sig).expect("bc-java's signature must verify");
