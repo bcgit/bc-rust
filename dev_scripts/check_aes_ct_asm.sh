@@ -3,9 +3,13 @@
 # the TDES round function (`spread` in crypto/tdes/src/des.rs) compile to no multiply, call or
 # branch on the targets whose multiply is not fixed-latency.
 # Builds dev_scripts/aes_ct_harness with the nightly toolchain and `-Zbuild-std=core` (the
-# targets have no shipped `core`), emits the assembly and greps the four `splat*` bodies: the
-# barriered pair must be clean, and the plain pair must show the multiply the barrier prevents,
-# so that a grep that matches nothing is noticed. Targets may be given as arguments.
+# targets have no shipped `core`), emits the assembly and greps the checked bodies: the barriered
+# `splat` pair and the TDES round function must be clean, every checked body must be found (an
+# empty body would pass vacuously), and the unbarriered controls must show the multiply the
+# barrier prevents, so that a grep that matches nothing is noticed -- each control on its own
+# where the target has a multiplier (thumbv6m), pooled where it has none (rv32i lowers a small
+# constant multiply to shifts, and only the 64-bit one calls `__muldi3`). Targets may be given as
+# arguments.
 #
 #   rustup toolchain install nightly --profile minimal --component rust-src
 #   ./dev_scripts/check_aes_ct_asm.sh                 # thumbv6m-none-eabi riscv32i-unknown-none-elf
@@ -57,7 +61,10 @@ for t in $TARGETS; do
         if [ "$kind" = all ]; then pat=$bad; what="multiply, call or branch"; else pat=$mul; what="multiply"; fi
         hits=$(body "$asm" "$f" | grep -cE "$pat" || true)
         n=$(body "$asm" "$f" | wc -l)
-        if [ "$hits" -ne 0 ]; then
+        if [ "$n" -eq 0 ]; then
+            echo "FAIL $t $f: not found in the assembly (renamed or inlined?), nothing was checked"
+            status=1
+        elif [ "$hits" -ne 0 ]; then
             echo "FAIL $t $f: $hits $what line(s) in $n instructions"
             body "$asm" "$f" | grep -E "$pat"
             status=1
@@ -65,9 +72,29 @@ for t in $TARGETS; do
             echo "ok   $t $f: no $what in $n instructions"
         fi
     done
-    control=$(for f in splat32_plain splat64_plain spread_plain; do body "$asm" "$f"; done | grep -cE "$mul" || true)
+    # The controls: the same code with the barrier off must show a multiply, or the grep proves
+    # nothing. Each control on its own where the target has a multiplier; pooled where it has none.
+    control=0
+    for f in splat32_plain splat64_plain spread_plain; do
+        n=$(body "$asm" "$f" | wc -l)
+        hits=$(body "$asm" "$f" | grep -cE "$mul" || true)
+        if [ "$n" -eq 0 ]; then
+            echo "FAIL $t $f: control not found in the assembly"
+            status=1
+        fi
+        case "$t" in
+            thumb*|arm*)
+                if [ "$hits" -eq 0 ]; then
+                    echo "FAIL $t $f: the unbarriered body shows no multiply, so the grep proves nothing"
+                    status=1
+                else
+                    echo "ok   $t $f: control shows the multiply ($hits line(s))"
+                fi ;;
+        esac
+        control=$((control + hits))
+    done
     if [ "$control" -eq 0 ]; then
-        echo "FAIL $t: the unbarriered bodies show no multiply, so the grep proves nothing"
+        echo "FAIL $t: no unbarriered body shows a multiply, so the grep proves nothing"
         status=1
     else
         echo "ok   $t control: the unbarriered bodies show the multiply ($control line(s))"

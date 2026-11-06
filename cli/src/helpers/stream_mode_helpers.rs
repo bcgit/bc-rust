@@ -63,11 +63,11 @@ pub(crate) fn encrypt_stream<'k, K, const KEY_LEN: usize, const INIT_DATA_LEN: u
     let mut seen: u64 = 0;
     stream(|data| {
         seen += data.len() as u64;
-        if let Some(limit) = limit {
-            if seen > limit.max_bytes {
-                eprintln!("Error: {}", limit.message);
-                exit(-1);
-            }
+        if let Some(limit) = limit
+            && seen > limit.max_bytes
+        {
+            eprintln!("Error: {}", limit.message);
+            exit(-1);
         }
         // Cannot fail: neither CFB nor CFB8 has a per-IV data limit.
         // CFB and CFB8 cannot fail here; CTR can, once its counter is exhausted, which is a real

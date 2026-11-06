@@ -3090,13 +3090,13 @@ enum Subcommands {
 
     /// Triple DES (three-key TDEA) in CTR mode (SP 800-38A Sec 6.5, TDEA per its Appendix E),
     /// streaming stdin to stdout. LEGACY: see `tdes-cbc`.
-    ///
     /// On `encrypt`, a fresh 6-BYTE NONCE is generated and written as the first 6 bytes of the
     /// output; on `decrypt` it is read back from the first 6 bytes of the input. With `--iv` (hex)
-    /// or `--iv-file` (raw bytes), the nonce is supplied instead and only ciphertext is written or
-    /// read; it MUST then be unique per message under one key bundle. The remaining 2 bytes of the
-    /// 8-byte counter block are the counter, so a single message is limited to 65 536 blocks
-    /// (512 KiB); longer input fails rather than repeating a counter block.
+    /// or `--iv-file` (raw bytes; hex with --hex-input), the nonce is supplied instead and only
+    /// ciphertext is written or read; it MUST then be unique per message under one key bundle. The
+    /// remaining 2 bytes of the 8-byte counter block are the counter, so a single message is
+    /// limited to 65 536 blocks (512 KiB); longer input fails rather than repeating a counter
+    /// block.
     ///
     /// Input may be any length up to that limit: CTR is a stream cipher, so nothing is padded and
     /// the ciphertext is exactly as long as the plaintext.
@@ -3124,8 +3124,8 @@ enum Subcommands {
         #[arg(long)]
         iv: Option<String>,
 
-        /// A file containing the 6-byte nonce, as raw bytes exactly as they are (no hex
-        /// decoding). If both iv and iv_file options are provided, the file will be used.
+        /// A file containing the 6-byte nonce (raw bytes; hex with --hex-input). If both iv and
+        /// iv_file options are provided, the file will be used.
         #[arg(long)]
         iv_file: Option<String>,
 
@@ -3298,8 +3298,8 @@ enum Subcommands {
         #[arg(long)]
         iv: Option<String>,
 
-        /// A file containing the 6-byte nonce, as raw bytes exactly as they are (no hex
-        /// decoding). If both iv and iv_file options are provided, the file will be used.
+        /// A file containing the 6-byte nonce (raw bytes; hex with --hex-input). If both iv and
+        /// iv_file options are provided, the file will be used.
         #[arg(long)]
         iv_file: Option<String>,
 

@@ -36,14 +36,15 @@ pub trait BlockPermutation<const BLOCK_LEN: usize>: Algorithm + Sized {
     fn decrypt_block(&self, block: &mut [u8; BLOCK_LEN]);
 
     /// Whether this library allows the permutation to decrypt only: no encrypting worker may be
-    /// made over it, by a key's `create_encryptor`, by resuming a suspended state in the
-    /// encrypting direction, or otherwise. A mode checks this in an inline `const` wherever it
-    /// makes an encrypting worker, so the refusal is a compile error (reported after
-    /// monomorphization, so by `cargo build` or `cargo test` rather than `cargo check`).
+    /// made over it, by a key's `create_encryptor` or by any other constructor of one, a key
+    /// wrapper included. A mode checks this in an inline `const` in every such constructor, so
+    /// the refusal is a compile error (reported after monomorphization, so by `cargo build` or
+    /// `cargo test` rather than `cargo check`).
     ///
     /// This records the library's policy, not a standard's status. It is `true` for two-key TDEA
     /// alone, which NIST SP 800-131A Rev 2 Table 1 lists as "Disallowed" for encryption and
-    /// "Legacy use" for decryption. Three-key TDEA encryption, which the same table disallows
+    /// "Legacy use" for decryption, and whose key wrapping its Table 6 lists as "Disallowed"
+    /// too. Three-key TDEA encryption, which Table 1 disallows
     /// after 2023, keeps `false` because the OpenSSL provider this library serves still exposes
     /// it; the tdes crate's Security Considerations say so.
     ///

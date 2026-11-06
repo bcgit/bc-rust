@@ -66,3 +66,28 @@ fn two_key_tkw_unwraps_what_algorithm_9_wrapped() {
         assert!(kek.unwrap(&ciphertext).is_err(), "{len} bytes, modified");
     }
 }
+
+/// SP 800-38F Table 1: TKW-AD is defined on three or more semiblocks and TKW-AE on two or more.
+/// The shared suite's bad lengths (0, one semiblock, one byte short) never reach the 8-byte
+/// ciphertext or the 4-byte plaintext, which must be `InvalidInputLength`, not a run of the
+/// algorithm ending in `DecryptionFailed`.
+#[test]
+fn tkw_refuses_a_two_semiblock_ciphertext_and_a_one_semiblock_plaintext() {
+    use bouncycastle_core::errors::SymmetricCipherError;
+    use bouncycastle_core::traits::{KeyUnwrapper, KeyWrapper};
+    let kek = TDES3Key::<TKW>::from_key_material(&material::<KEY_LEN>()).unwrap();
+    let mut out = [0u8; 16];
+    assert!(matches!(
+        kek.create_unwrapper().unwrap_out(&[0u8; 8], &mut out),
+        Err(SymmetricCipherError::InvalidInputLength(_))
+    ));
+    assert!(matches!(
+        kek.create_wrapper().wrap_out(&[0u8; 4], &mut out),
+        Err(SymmetricCipherError::InvalidInputLength(_))
+    ));
+    let kek2 = TDES2Key::<TKW>::from_key_material(&material::<KEY_LEN_2KEY>()).unwrap();
+    assert!(matches!(
+        kek2.create_unwrapper().unwrap_out(&[0u8; 8], &mut out),
+        Err(SymmetricCipherError::InvalidInputLength(_))
+    ));
+}

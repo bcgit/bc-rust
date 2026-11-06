@@ -13,6 +13,7 @@
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 KEY=0123456789abcdef23456789abcdef01456789abcdef0123
+KEY2=0123456789abcdef23456789abcdef01
 LIMIT=$((1 << 23))
 
 # `zeros N` writes N zero bytes.
@@ -58,10 +59,33 @@ test_ctr_runs_out_of_counter_first() {
     assert_stderr_has "DataLimitExceeded"
 }
 
+test_ecb_takes_the_limit_and_refuses_a_block_more() {
+    expect_ok "tdes-ecb: exactly 2^20 blocks" \
+        "$BC_RUST" tdes-ecb -d encrypt --key "$KEY" < <(zeros "$LIMIT") >/dev/null
+    expect_fail "tdes-ecb: 2^20 blocks plus one" \
+        "$BC_RUST" tdes-ecb -d encrypt --key "$KEY" < <(zeros $((LIMIT + 8)))
+    assert_stderr_has "Error: TDEA: one key bundle may protect at most 2^20 blocks"
+}
+
+test_cfb_takes_exactly_the_limit() {
+    expect_ok "tdes-cfb: exactly 2^20 blocks" \
+        "$BC_RUST" tdes-cfb -d encrypt --key "$KEY" < <(zeros "$LIMIT") >/dev/null
+}
+
+test_ctr_takes_its_whole_counter_space() {
+    expect_ok "tdes-ctr: exactly 2^16 blocks" \
+        "$BC_RUST" tdes-ctr -d encrypt --key "$KEY" < <(zeros $((1 << 19))) >/dev/null
+}
+
 test_decrypt_is_not_limited() {
-    # 2^20 + 1 blocks of ciphertext decrypt (ECB, no padding), since the limit is on protecting.
+    # 2^20 + 1 blocks of ciphertext decrypt (ECB, no padding; CFB with the IV read from the
+    # input), under either bundle, since the limit is on protecting.
     expect_ok "tdes-ecb decrypt past the limit" \
         "$BC_RUST" tdes-ecb -d decrypt --key "$KEY" < <(zeros $((LIMIT + 8))) >/dev/null
+    expect_ok "tdes2-ecb decrypt past the limit" \
+        "$BC_RUST" tdes2-ecb -d decrypt --key "$KEY2" < <(zeros $((LIMIT + 8))) >/dev/null
+    expect_ok "tdes2-cfb decrypt past the limit" \
+        "$BC_RUST" tdes2-cfb -d decrypt --key "$KEY2" < <(zeros $((LIMIT + 16))) >/dev/null
 }
 
 run_all

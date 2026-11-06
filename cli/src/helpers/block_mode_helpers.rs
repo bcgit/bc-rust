@@ -360,11 +360,11 @@ pub(crate) fn encrypt_stream_bounded<E, const INIT_DATA_LEN: usize, const BLOCK_
     let mut seen: u64 = 0;
     let total = stream_chunks(|data| {
         seen += data.len() as u64;
-        if let Some(limit) = limit {
-            if seen > limit.max_bytes {
-                eprintln!("Error: {}", limit.message);
-                exit(-1);
-            }
+        if let Some(limit) = limit
+            && seen > limit.max_bytes
+        {
+            eprintln!("Error: {}", limit.message);
+            exit(-1);
         }
         // Cannot fail: `out` has room for every whole block of `data` plus the fewer than
         // `BLOCK_LEN` bytes held over from the last call, and none of these modes has a per-IV

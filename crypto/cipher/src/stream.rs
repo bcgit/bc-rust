@@ -56,9 +56,10 @@ where
 
 /// Whether a keystream's permutation decrypts only (`BlockPermutation::DECRYPT_ONLY`), so that
 /// [`StreamCipher`] can refuse, at compile time, to be made in the encrypting direction over it,
-/// resumed or otherwise. `KeyStream` itself is `dyn`-compatible and so carries no constant; this
-/// sealed trait is implemented for the crate's keystream types alone, which is where every
-/// `StreamCipher` comes from.
+/// whatever constructor makes it. `KeyStream` itself is `dyn`-compatible and so carries no
+/// constant; this sealed trait is implemented for the crate's keystream types. A keystream from
+/// outside the crate reaches [`StreamCipher`] only through [`hazmat::stream_cipher_over`], whose
+/// marker trait is the implementor's promise that no such permutation is under it.
 pub trait KeyStreamPolicy: sealed::Sealed {
     /// The permutation's `DECRYPT_ONLY`.
     const DECRYPT_ONLY: bool;
@@ -308,8 +309,9 @@ pub mod hazmat {
 
     /// A keystream that runs over no [`BlockPermutation`](bouncycastle_core::hazmat::BlockPermutation),
     /// such as ChaCha20's, and so has no decrypt-only permutation for [`stream_cipher_over`] to
-    /// refuse. Implemented beside such a keystream's definition. The keystreams of this crate's
-    /// modes do not implement it, and no other crate can implement it for them.
+    /// refuse. Implemented beside such a keystream's definition, and deliberately unsealed:
+    /// implementing it is the implementor's promise that no permutation that decrypts only is
+    /// under the keystream. The keystreams of this crate's modes do not implement it.
     pub trait PermutationFreeKeyStream {}
 
     /// A [`StreamCipher`] over a keystream that is already constructed and positioned, for a
