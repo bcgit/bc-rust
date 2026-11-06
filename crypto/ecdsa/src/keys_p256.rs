@@ -43,10 +43,12 @@ impl ECDSAP256PrivateKey {
 
 impl DerivePublicKey<ECDSAP256PublicKey, PK_LEN> for ECDSAP256PrivateKey {
     fn derive_pk(&self) -> ECDSAP256PublicKey {
-        let q = comb_multiply_base_point(&self.0);
+        let mut q = comb_multiply_base_point(&self.0);
         // d is in [1, n-1] by construction (every ECDSAP256PrivateKey is built that way; see
         // from_bytes and keygen) and G has prime order n, so [d]G is never the identity.
         let (x, y) = q.to_affine().expect("[d]G is never infinity for d in [1, n-1]");
+        // Only the affine pair is public; the projective coordinates are a function of `d`'s bits.
+        q.zeroize();
         ECDSAP256PublicKey { x, y }
     }
 }
@@ -139,11 +141,13 @@ pub fn keygen(
     rng.next_bytes_out(&mut *extra_bits).map_err(SignatureError::RNGError)?;
     let d = reduce_wide_bits_mod_n_minus_1(&*extra_bits);
 
-    let q = comb_multiply_base_point(&d);
+    let mut q = comb_multiply_base_point(&d);
     // d is in [1, n-1] by construction (see reduce_wide_bits_mod_n_minus_1) and G has prime order
     // n (SP 800-186 §3.2.1.3's cofactor h = 1), so [d]G is never the identity: this holds for every
     // valid d, so branching on it here leaks nothing about which d was drawn.
     let (x, y) = q.to_affine().expect("[d]G is never infinity for d in [1, n-1]");
+    // Only the affine pair is public; the projective coordinates are a function of `d`'s bits.
+    q.zeroize();
 
     Ok((ECDSAP256PublicKey { x, y }, ECDSAP256PrivateKey(d)))
 }

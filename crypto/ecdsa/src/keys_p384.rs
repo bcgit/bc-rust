@@ -50,10 +50,12 @@ impl ECDSAP384PrivateKey {
 
 impl DerivePublicKey<ECDSAP384PublicKey, PK_LEN> for ECDSAP384PrivateKey {
     fn derive_pk(&self) -> ECDSAP384PublicKey {
-        let q = comb_multiply_base_point(&self.0);
+        let mut q = comb_multiply_base_point(&self.0);
         // d is in [1, n-1] by construction (every ECDSAP384PrivateKey is built that way; see
         // from_bytes and keygen) and G has prime order n, so [d]G is never the identity.
         let (x, y) = q.to_affine().expect("[d]G is never infinity for d in [1, n-1]");
+        // Only the affine pair is public; the projective coordinates are a function of `d`'s bits.
+        q.zeroize();
         ECDSAP384PublicKey { x, y }
     }
 }
@@ -144,10 +146,12 @@ pub fn keygen(
     rng.next_bytes_out(&mut *extra_bits).map_err(SignatureError::RNGError)?;
     let d = reduce_wide_bits_mod_n_minus_1(&*extra_bits);
 
-    let q = comb_multiply_base_point(&d);
+    let mut q = comb_multiply_base_point(&d);
     // d is in [1, n-1] by construction and G has prime order n (cofactor h = 1), so [d]G is never
     // the identity for any valid d -- see crate::keys_p256::keygen's identical argument.
     let (x, y) = q.to_affine().expect("[d]G is never infinity for d in [1, n-1]");
+    // Only the affine pair is public; the projective coordinates are a function of `d`'s bits.
+    q.zeroize();
 
     Ok((ECDSAP384PublicKey { x, y }, ECDSAP384PrivateKey(d)))
 }

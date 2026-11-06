@@ -47,10 +47,12 @@ impl ECDSABp384r1PrivateKey {
 
 impl DerivePublicKey<ECDSABp384r1PublicKey, PK_LEN> for ECDSABp384r1PrivateKey {
     fn derive_pk(&self) -> ECDSABp384r1PublicKey {
-        let q = comb_multiply_base_point(&self.0);
+        let mut q = comb_multiply_base_point(&self.0);
         // d is in [1, n-1] by construction (every ECDSABp384r1PrivateKey is built that way; see
         // from_bytes and keygen) and G has prime order n, so [d]G is never the identity.
         let (x, y) = q.to_affine().expect("[d]G is never infinity for d in [1, n-1]");
+        // Only the affine pair is public; the projective coordinates are a function of `d`'s bits.
+        q.zeroize();
         ECDSABp384r1PublicKey { x, y }
     }
 }
@@ -145,11 +147,13 @@ pub fn keygen(
     rng.next_bytes_out(&mut *extra_bits).map_err(SignatureError::RNGError)?;
     let d = reduce_wide_bits_mod_n_minus_1(&*extra_bits);
 
-    let q = comb_multiply_base_point(&d);
+    let mut q = comb_multiply_base_point(&d);
     // d is in [1, n-1] by construction (see reduce_wide_bits_mod_n_minus_1) and G has prime order
     // n (RFC 5639 §3.4's cofactor h = 1), so [d]G is never the identity: this holds for every
     // valid d, so branching on it here leaks nothing about which d was drawn.
     let (x, y) = q.to_affine().expect("[d]G is never infinity for d in [1, n-1]");
+    // Only the affine pair is public; the projective coordinates are a function of `d`'s bits.
+    q.zeroize();
 
     Ok((ECDSABp384r1PublicKey { x, y }, ECDSABp384r1PrivateKey(d)))
 }

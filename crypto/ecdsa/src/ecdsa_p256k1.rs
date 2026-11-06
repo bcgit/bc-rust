@@ -89,8 +89,10 @@ pub struct ECDSASecp256K1Verifier<'k> {
 
 /// `x * z^-2`, branch-free. See [`crate::ecdsa_p256::x_affine_of_signing_point`]'s docs.
 fn x_affine_of_signing_point(point: &P256K1JacobianPoint) -> P256K1FieldElement {
-    let z_inv = point.z.invert();
-    point.x.mul(&z_inv.mul(&z_inv))
+    let mut z_inv = point.z.invert();
+    let x = point.x.mul(&z_inv.mul(&z_inv));
+    z_inv.zeroize();
+    x
 }
 
 /// FIPS 186-5 §6.4.1 steps 4-12, given `k` already generated (step 3).
@@ -104,20 +106,23 @@ fn sign_with_k(
     let mut k_field = P256K1ScalarField::from_secret(&k);
     let mut k_inv = k_field.invert(); // step 4
 
-    let r_point = comb_multiply_base_point(&k); // step 5
+    let mut r_point = comb_multiply_base_point(&k); // step 5
     let x_r = x_affine_of_signing_point(&r_point); // steps 6-7
     let r = P256K1ScalarField::from_limbs(x_r.to_limbs()); // step 8
 
     let mut d_field = P256K1ScalarField::from_secret(sk.scalar());
     let s = k_inv.mul(&e.add(&r.mul(&d_field))); // step 9
 
-    // `k_field`, `k_inv` and `d_field` hold `k`, `k^-1` and `d`. Nothing below needs them, so they
-    // are overwritten here rather than left legible on the stack after this returns -- placed
-    // before step 11's check so that both ways out of the function are covered. `k` itself is a
-    // `Secret` and scrubs when it drops; `e`, `r` and `s` are public by construction.
+    // `k_field`, `k_inv` and `d_field` hold `k`, `k^-1` and `d`, and `r_point`'s projective
+    // coordinates are a function of `k`'s bits even though its affine `x` is the public `r`.
+    // Nothing below needs them, so they are overwritten here rather than left legible on the
+    // stack after this returns -- placed before step 11's check so that both ways out of the
+    // function are covered. `k` itself is a `Secret` and scrubs when it drops; `e`, `r` and `s`
+    // are public by construction.
     k_field.zeroize();
     k_inv.zeroize();
     d_field.zeroize();
+    r_point.zeroize();
 
     if r_or_s_is_zero(&r, &s) {
         return None;

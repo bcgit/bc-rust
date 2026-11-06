@@ -94,8 +94,10 @@ pub struct ECDSABp512r1Verifier<'k> {
 /// `x * z^-2`, branch-free -- see [`crate::ecdsa_p256`]'s module docs for why this isn't
 /// [`Bp512r1JacobianPoint::to_affine`].
 fn x_affine_of_signing_point(point: &Bp512r1JacobianPoint) -> Bp512r1FieldElement {
-    let z_inv = point.z.invert();
-    point.x.mul(&z_inv.mul(&z_inv))
+    let mut z_inv = point.z.invert();
+    let x = point.x.mul(&z_inv.mul(&z_inv));
+    z_inv.zeroize();
+    x
 }
 
 /// FIPS 186-5 §6.4.1 steps 4-12, given `k` already generated (step 3) by one of Appendix A.3's
@@ -110,20 +112,23 @@ fn sign_with_k(
     let mut k_field = Bp512r1ScalarField::from_secret(&k);
     let mut k_inv = k_field.invert(); // step 4
 
-    let r_point = comb_multiply_base_point(&k); // step 5
+    let mut r_point = comb_multiply_base_point(&k); // step 5
     let x_r = x_affine_of_signing_point(&r_point); // steps 6-7
     let r = Bp512r1ScalarField::from_limbs(x_r.to_limbs()); // step 8
 
     let mut d_field = Bp512r1ScalarField::from_secret(sk.scalar());
     let s = k_inv.mul(&e.add(&r.mul(&d_field))); // step 9
 
-    // `k_field`, `k_inv` and `d_field` hold `k`, `k^-1` and `d`. Nothing below needs them, so they
-    // are overwritten here rather than left legible on the stack after this returns -- placed
-    // before step 11's check so that both ways out of the function are covered. `k` itself is a
-    // `Secret` and scrubs when it drops; `e`, `r` and `s` are public by construction.
+    // `k_field`, `k_inv` and `d_field` hold `k`, `k^-1` and `d`, and `r_point`'s projective
+    // coordinates are a function of `k`'s bits even though its affine `x` is the public `r`.
+    // Nothing below needs them, so they are overwritten here rather than left legible on the
+    // stack after this returns -- placed before step 11's check so that both ways out of the
+    // function are covered. `k` itself is a `Secret` and scrubs when it drops; `e`, `r` and `s`
+    // are public by construction.
     k_field.zeroize();
     k_inv.zeroize();
     d_field.zeroize();
+    r_point.zeroize();
 
     // step 11: astronomically unlikely (r, s range over ~2^512 values each); this comparison is
     // FIPS 186-5's own mandated success/failure branch on the just-computed public output, not a
