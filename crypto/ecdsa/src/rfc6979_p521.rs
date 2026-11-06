@@ -6,10 +6,10 @@
 //! module implements RFC 6979 §3.2 in its general form:
 //!
 //! - `int2octets(d)`/`bits2octets(H)` still produce `rlen = 8*ceil(qlen/8) = 528` bits (66 bytes,
-//!   [`RLEN`]) -- one byte wider than `HLEN`'s 64, with the extra byte's low 7 bits always `0`
-//!   ([`P521Scalar::to_be_bytes`](bouncycastle_ec::p521_scalar::P521Scalar::to_be_bytes) and
-//!   [`bits2octets`] both produce values already `< n < 2^521`, so their 66-byte big-endian form
-//!   never sets those bits).
+//! [`RLEN`]) -- one byte wider than `HLEN`'s 64, with the extra byte's low 7 bits always `0`
+//! ([`P521Scalar::to_be_bytes`](bouncycastle_ec::hazmat::p521_scalar::P521Scalar::to_be_bytes) and
+//! [`bits2octets`] both produce values already `< n < 2^521`, so their 66-byte big-endian form
+//! never sets those bits).
 //! - Step h.2's "while `tlen < qlen`" loop runs **twice**: one `HMAC_K(V)` gives only 512 bits,
 //!   short of the 521 needed, so a second round is required, giving `T` of length 1024 bits.
 //! - Step h.3's `bits2int(T)` then keeps the **leftmost 521 bits** of that 1024-bit `T` (RFC 6979
@@ -19,9 +19,9 @@
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::symmetric_key::{FromAnyKeyMaterial, MacGenerationKey};
 use bouncycastle_core::traits::MAC;
+use bouncycastle_ec::hazmat::p521_scalar::{N_LIMBS, P521Scalar};
+use bouncycastle_ec::hazmat::p521_sec1;
 use bouncycastle_ec::nat;
-use bouncycastle_ec::p521_scalar::{N_LIMBS, P521Scalar};
-use bouncycastle_ec::p521_sec1;
 use bouncycastle_hmac::HmacKey;
 use bouncycastle_sha2::SHA512;
 use bouncycastle_utils::ct;

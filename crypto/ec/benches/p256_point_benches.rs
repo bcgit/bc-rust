@@ -1,10 +1,10 @@
 use criterion::{Criterion, criterion_group, criterion_main};
 use std::hint::black_box;
 
-use bouncycastle_ec::p256::P256FieldElement;
-use bouncycastle_ec::p256_mul::multiply_point;
-use bouncycastle_ec::p256_point::P256JacobianPoint;
-use bouncycastle_ec::p256_scalar::P256Scalar;
+use bouncycastle_ec::hazmat::p256::P256FieldElement;
+use bouncycastle_ec::hazmat::p256_mul::multiply_point;
+use bouncycastle_ec::hazmat::p256_point::P256JacobianPoint;
+use bouncycastle_ec::hazmat::p256_scalar::P256Scalar;
 
 fn bench_p256_point(c: &mut Criterion) {
     // G, the P-256 base point (SP 800-186 §3.2.1.3).

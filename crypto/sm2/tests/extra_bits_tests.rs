@@ -10,9 +10,9 @@
 //! `N_MINUS_1_LIMBS`/`TWO_POW_256_MOD_N_MINUS_1_LIMBS` constants surfaced several bit-level and
 //! off-by-one mutants surviving because nothing pinned them against an independent reference.
 
+use bouncycastle_ec::hazmat::sm2_scalar::N_LIMBS;
+use bouncycastle_ec::hazmat::sm2_sec1::be_bytes_from_limbs;
 use bouncycastle_ec::nat;
-use bouncycastle_ec::sm2_scalar::N_LIMBS;
-use bouncycastle_ec::sm2_sec1::be_bytes_from_limbs;
 use bouncycastle_hex::decode as hex_decode;
 use bouncycastle_sm2::extra_bits::{
     reduce_wide_bits_mod_n_minus_1, reduce_wide_bits_mod_n_minus_2,

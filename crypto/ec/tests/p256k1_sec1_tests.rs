@@ -6,9 +6,11 @@
 //! so between them both compressed tags (`0x02`/`0x03`) are exercised. The encodings below were
 //! derived from those coordinates independently in Python via plain big-endian byte packing.
 
-use bouncycastle_ec::p256k1::P256K1FieldElement;
-use bouncycastle_ec::p256k1_domain::{G_X_LIMBS, G_Y_LIMBS};
-use bouncycastle_ec::p256k1_sec1::{decode, decode_point, encode_compressed, encode_uncompressed};
+use bouncycastle_ec::hazmat::p256k1::P256K1FieldElement;
+use bouncycastle_ec::hazmat::p256k1_domain::{G_X_LIMBS, G_Y_LIMBS};
+use bouncycastle_ec::hazmat::p256k1_sec1::{
+    decode, decode_point, encode_compressed, encode_uncompressed,
+};
 
 const SIX_G_X: [u64; 4] =
     [0x2f057a1460297556, 0x82f6472f8568a18b, 0x20453a14355235d3, 0xfff97bd5755eeea4];

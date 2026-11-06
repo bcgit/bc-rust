@@ -1,8 +1,8 @@
 use criterion::{Criterion, criterion_group, criterion_main};
 use std::hint::black_box;
 
-use bouncycastle_ec::sm2::Sm2FieldElement;
-use bouncycastle_ec::sm2_domain::{G_X_LIMBS, G_Y_LIMBS};
+use bouncycastle_ec::hazmat::sm2::Sm2FieldElement;
+use bouncycastle_ec::hazmat::sm2_domain::{G_X_LIMBS, G_Y_LIMBS};
 
 fn bench_sm2_field(c: &mut Criterion) {
     let a = Sm2FieldElement::from_limbs(G_X_LIMBS);

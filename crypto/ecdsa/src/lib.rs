@@ -146,11 +146,11 @@
 //! # 🚨 Security Considerations 🚨
 //!
 //! - **Everything done with the private key `d` and the accepted per-message secret `k` is
-//!   branch-free and does not index memory by their value**: inversion, multiplication, the
-//!   fixed-base scalar multiplication `[k]G`. `d` lives in
-//!   [`bouncycastle_ec::p256_scalar::P256Scalar`] (a [`bouncycastle_utils::secret::Secret`]); see
-//!   [`bouncycastle_ec`]'s own module docs for the constant-time discipline this crate builds on
-//!   and the exceptions it documents. This crate adds two exceptions of its own:
+//! branch-free and does not index memory by their value**: inversion, multiplication, the
+//! fixed-base scalar multiplication `[k]G`. `d` lives in
+//! [`bouncycastle_ec::hazmat::p256_scalar::P256Scalar`] (a [`bouncycastle_utils::secret::Secret`]);
+//! see [`bouncycastle_ec`]'s own module docs for the constant-time discipline this crate builds on
+//! and the exceptions it documents. This crate adds two exceptions of its own:
 //!   - The RFC 6979 candidate loop of the deterministic signers runs a data-dependent number of
 //!     iterations (the random-`k` signers draw `k` per FIPS 186-5 Appendix A.3.1, which has no
 //!     rejection loop). On the NIST curves

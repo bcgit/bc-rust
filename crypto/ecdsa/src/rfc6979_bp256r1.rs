@@ -22,8 +22,8 @@
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::symmetric_key::{FromAnyKeyMaterial, MacGenerationKey};
 use bouncycastle_core::traits::MAC;
-use bouncycastle_ec::bp256r1_scalar::{Bp256r1Scalar, N_LIMBS};
-use bouncycastle_ec::bp256r1_sec1;
+use bouncycastle_ec::hazmat::bp256r1_scalar::{Bp256r1Scalar, N_LIMBS};
+use bouncycastle_ec::hazmat::bp256r1_sec1;
 use bouncycastle_ec::nat;
 use bouncycastle_hmac::HmacKey;
 use bouncycastle_sha2::SHA256;

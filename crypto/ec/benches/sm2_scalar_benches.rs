@@ -8,12 +8,12 @@
 use criterion::{Criterion, criterion_group, criterion_main};
 use std::hint::black_box;
 
-use bouncycastle_ec::sm2::Sm2FieldElement;
-use bouncycastle_ec::sm2_comb::comb_multiply_base_point;
-use bouncycastle_ec::sm2_domain::{G_X_LIMBS, G_Y_LIMBS};
-use bouncycastle_ec::sm2_point::Sm2JacobianPoint;
-use bouncycastle_ec::sm2_scalar::{Sm2PublicScalar, Sm2Scalar, Sm2ScalarField};
-use bouncycastle_ec::sm2_wnaf::shamir_multiply;
+use bouncycastle_ec::hazmat::sm2::Sm2FieldElement;
+use bouncycastle_ec::hazmat::sm2_comb::comb_multiply_base_point;
+use bouncycastle_ec::hazmat::sm2_domain::{G_X_LIMBS, G_Y_LIMBS};
+use bouncycastle_ec::hazmat::sm2_point::Sm2JacobianPoint;
+use bouncycastle_ec::hazmat::sm2_scalar::{Sm2PublicScalar, Sm2Scalar, Sm2ScalarField};
+use bouncycastle_ec::hazmat::sm2_wnaf::shamir_multiply;
 
 const A_LIMBS: [u64; 4] =
     [0x9f8573c9f25dc994, 0x9115361f42389a31, 0xfc83ab74842a0944, 0x285f078965f5a299];

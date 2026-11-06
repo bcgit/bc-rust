@@ -2,7 +2,7 @@
 //! 32918.2-2016, mirrored by the IETF informational draft `draft-shen-sm2-ecdsa-02`, whose §5
 //! is the same algorithm). This crate implements only the Digital Signature Algorithm -- key
 //! generation ([`keys`]) and signing/verification ([`sm2::SM2`]) -- built on
-//! [`bouncycastle_ec::sm2`]'s field/scalar/point arithmetic, SEC 1 encoding, and comb/wNAF
+//! [`bouncycastle_ec::hazmat::sm2`]'s field/scalar/point arithmetic, SEC 1 encoding, and comb/wNAF
 //! multipliers, and [`bouncycastle_sm3`] for the hash (see [`sm2`]'s docs on why only SM3).
 //!
 //! # Scope
@@ -116,13 +116,13 @@
 //! # 🚨 Security Considerations 🚨
 //!
 //! - **Everything done with the private key `dA` and the used per-message secret `k` is
-//!   branch-free and does not index memory by their value**: the inversion of `1 + dA`,
-//!   multiplication, the fixed-base scalar multiplication `[k]G`. `dA` lives in
-//!   [`bouncycastle_ec::sm2_scalar::Sm2Scalar`] (a [`bouncycastle_utils::secret::Secret`]). The
-//!   exceptions are GB/T 32918.2-2016 §6.1's two retry checks, step A5's `r = 0` or `r + k = n`
-//!   and step A6's `s = 0`: each is a branch, taken with probability about `2^-256`, and a taken
-//!   branch discards that `k` (the signer reports failure and the caller makes a fresh one), so
-//!   neither reveals anything about a `k` that is used.
+//! branch-free and does not index memory by their value**: the inversion of `1 + dA`,
+//! multiplication, the fixed-base scalar multiplication `[k]G`. `dA` lives in
+//! [`bouncycastle_ec::hazmat::sm2_scalar::Sm2Scalar`] (a [`bouncycastle_utils::secret::Secret`]).
+//! The exceptions are GB/T 32918.2-2016 §6.1's two retry checks, step A5's `r = 0` or `r + k = n`
+//! and step A6's `s = 0`: each is a branch, taken with probability about `2^-256`, and a taken
+//! branch discards that `k` (the signer reports failure and the caller makes a fresh one), so
+//! neither reveals anything about a `k` that is used.
 //! - **`k` must never repeat across two signatures under the same key with different messages.** As
 //!   with ECDSA, a repeated `k` leaks `dA` directly from two signatures' `(r, s)` pairs. Unlike
 //!   `bouncycastle-ecdsa`'s curves, there is no deterministic (RFC 6979-style) default here: the

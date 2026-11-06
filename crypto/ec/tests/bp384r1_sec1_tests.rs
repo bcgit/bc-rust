@@ -7,9 +7,11 @@
 //! encodings below were derived from those coordinates independently in Python via plain
 //! big-endian byte packing.
 
-use bouncycastle_ec::bp384r1::Bp384r1FieldElement;
-use bouncycastle_ec::bp384r1_domain::{G_X_LIMBS, G_Y_LIMBS};
-use bouncycastle_ec::bp384r1_sec1::{decode, decode_point, encode_compressed, encode_uncompressed};
+use bouncycastle_ec::hazmat::bp384r1::Bp384r1FieldElement;
+use bouncycastle_ec::hazmat::bp384r1_domain::{G_X_LIMBS, G_Y_LIMBS};
+use bouncycastle_ec::hazmat::bp384r1_sec1::{
+    decode, decode_point, encode_compressed, encode_uncompressed,
+};
 
 const FOUR_G_X: [u64; 6] = [
     0xe48921ec979f4a32, 0x1a345294d5446828, 0x8d4462d702c844e1, 0xe45a6dca90945dba,

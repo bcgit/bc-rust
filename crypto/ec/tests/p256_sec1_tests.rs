@@ -7,8 +7,10 @@
 //! `G` has odd `y` (tag `0x03`) and `3G` has even `y` (tag `0x02`), so between them both
 //! compressed tags are exercised.
 
-use bouncycastle_ec::p256::P256FieldElement;
-use bouncycastle_ec::p256_sec1::{decode, decode_point, encode_compressed, encode_uncompressed};
+use bouncycastle_ec::hazmat::p256::P256FieldElement;
+use bouncycastle_ec::hazmat::p256_sec1::{
+    decode, decode_point, encode_compressed, encode_uncompressed,
+};
 
 const G_X: [u64; 4] =
     [0xf4a13945d898c296, 0x77037d812deb33a0, 0xf8bce6e563a440f2, 0x6b17d1f2e12c4247];

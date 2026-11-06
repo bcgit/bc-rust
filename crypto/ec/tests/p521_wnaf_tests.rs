@@ -1,10 +1,10 @@
 //! Known-answer tests for [`shamir_multiply`] (`[u]G + [v]Q`), P-521.
 
-use bouncycastle_ec::p521::P521FieldElement;
-use bouncycastle_ec::p521_comb::comb_multiply_base_point;
-use bouncycastle_ec::p521_point::P521JacobianPoint;
-use bouncycastle_ec::p521_scalar::{P521PublicScalar, P521Scalar};
-use bouncycastle_ec::p521_wnaf::shamir_multiply;
+use bouncycastle_ec::hazmat::p521::P521FieldElement;
+use bouncycastle_ec::hazmat::p521_comb::comb_multiply_base_point;
+use bouncycastle_ec::hazmat::p521_point::P521JacobianPoint;
+use bouncycastle_ec::hazmat::p521_scalar::{P521PublicScalar, P521Scalar};
+use bouncycastle_ec::hazmat::p521_wnaf::shamir_multiply;
 
 const Q_X: [u64; 9] = [
     0xa64dc52cc15bfb04, 0xaca0b282aaa81dc2, 0xeef36ecaa8b95fe2, 0x687b823dcebc81f1,
@@ -155,8 +155,8 @@ fn cross_checked_against_the_comb_multiplier_over_many_pseudorandom_scalars() {
 #[test]
 fn edge_case_q_is_infinity_g_or_minus_g() {
     let g = P521JacobianPoint::from_affine(
-        P521FieldElement::from_limbs(bouncycastle_ec::p521_domain::G_X_LIMBS),
-        P521FieldElement::from_limbs(bouncycastle_ec::p521_domain::G_Y_LIMBS),
+        P521FieldElement::from_limbs(bouncycastle_ec::hazmat::p521_domain::G_X_LIMBS),
+        P521FieldElement::from_limbs(bouncycastle_ec::hazmat::p521_domain::G_Y_LIMBS),
     );
     let mut u = [0u64; 9];
     u[0] = 12345;

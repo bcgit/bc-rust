@@ -6,7 +6,7 @@
 //! callers use) plus pseudorandom values (`random.seed(2026)`).
 
 use bouncycastle_ec::barrett::{limbs_from_be_bytes, reduce};
-use bouncycastle_ec::p256_scalar::N_LIMBS;
+use bouncycastle_ec::hazmat::p256_scalar::N_LIMBS;
 
 const MU_LOW_LIMBS: [u64; 4] =
     [0x012ffd85eedf9bff, 0x43190552df1a6c21, 0xfffffffeffffffff, 0x00000000ffffffff];

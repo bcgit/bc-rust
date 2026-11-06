@@ -18,16 +18,16 @@ use bouncycastle_core::signature_key::{
 use bouncycastle_core::traits::{
     Algorithm, AlgorithmInfo, Hash, RNG, SignatureSigner, SignatureVerifier,
 };
-use bouncycastle_ec::nat;
-use bouncycastle_ec::p256k1::P256K1FieldElement;
-use bouncycastle_ec::p256k1_comb::comb_multiply_base_point;
-use bouncycastle_ec::p256k1_extra_bits::reduce_wide_bits_mod_n_minus_1;
-use bouncycastle_ec::p256k1_point::P256K1JacobianPoint;
-use bouncycastle_ec::p256k1_scalar::{
+use bouncycastle_ec::hazmat::p256k1::P256K1FieldElement;
+use bouncycastle_ec::hazmat::p256k1_comb::comb_multiply_base_point;
+use bouncycastle_ec::hazmat::p256k1_extra_bits::reduce_wide_bits_mod_n_minus_1;
+use bouncycastle_ec::hazmat::p256k1_point::P256K1JacobianPoint;
+use bouncycastle_ec::hazmat::p256k1_scalar::{
     N_LIMBS, P256K1PublicScalar, P256K1Scalar, P256K1ScalarField,
 };
-use bouncycastle_ec::p256k1_sec1;
-use bouncycastle_ec::p256k1_wnaf::shamir_multiply;
+use bouncycastle_ec::hazmat::p256k1_sec1;
+use bouncycastle_ec::hazmat::p256k1_wnaf::shamir_multiply;
+use bouncycastle_ec::nat;
 use bouncycastle_sha2::SHA256;
 use bouncycastle_utils::secret::Secret;
 
@@ -136,8 +136,9 @@ fn sign_with_k(
 
 /// FIPS 186-5 §6.4.1 step 3 by Appendix A.3.1, reduced into `[1, n-1]` by
 /// `reduce_wide_bits_mod_n_minus_1`; the one place [`ECDSASecp256K1`]'s signing paths draw `k`.
-/// Draws A.3.1 step 3's `N + t` bits with `t = 64` (see [`bouncycastle_ec::p256k1_extra_bits`]'s docs for why
-/// that is required here even though secp256k1's `n` would need none for bias alone).
+/// Draws A.3.1 step 3's `N + t` bits with `t = 64` (see
+/// [`bouncycastle_ec::hazmat::p256k1_extra_bits`]'s docs for why that is required here even though
+/// secp256k1's `n` would need none for bias alone).
 fn random_k(rng: &mut dyn RNG) -> Result<P256K1Scalar, SignatureError> {
     // Raw DRBG output, reduced below into the per-message secret: held in `Secret` so it is
     // scrubbed when this function returns rather than left on the stack.

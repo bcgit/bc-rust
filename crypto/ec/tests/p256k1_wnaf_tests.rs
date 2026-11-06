@@ -4,11 +4,11 @@
 //! independently in Python from the affine group law (`a = 0`), the same way as
 //! `p256k1_comb_tests.rs`, with `random.seed(808384)`.
 
-use bouncycastle_ec::p256k1::P256K1FieldElement;
-use bouncycastle_ec::p256k1_comb::comb_multiply_base_point;
-use bouncycastle_ec::p256k1_point::P256K1JacobianPoint;
-use bouncycastle_ec::p256k1_scalar::{P256K1PublicScalar, P256K1Scalar};
-use bouncycastle_ec::p256k1_wnaf::shamir_multiply;
+use bouncycastle_ec::hazmat::p256k1::P256K1FieldElement;
+use bouncycastle_ec::hazmat::p256k1_comb::comb_multiply_base_point;
+use bouncycastle_ec::hazmat::p256k1_point::P256K1JacobianPoint;
+use bouncycastle_ec::hazmat::p256k1_scalar::{P256K1PublicScalar, P256K1Scalar};
+use bouncycastle_ec::hazmat::p256k1_wnaf::shamir_multiply;
 
 const Q_X: [u64; 4] =
     [0x0ea6f07bd759d339, 0xb96d88cc46f523cb, 0x20ca70079f805400, 0x4b0096e546d82613];
@@ -115,8 +115,8 @@ fn cross_checked_against_the_comb_multiplier_over_many_pseudorandom_scalars() {
 #[test]
 fn edge_case_q_is_infinity_g_or_minus_g() {
     let g = P256K1JacobianPoint::from_affine(
-        P256K1FieldElement::from_limbs(bouncycastle_ec::p256k1_domain::G_X_LIMBS),
-        P256K1FieldElement::from_limbs(bouncycastle_ec::p256k1_domain::G_Y_LIMBS),
+        P256K1FieldElement::from_limbs(bouncycastle_ec::hazmat::p256k1_domain::G_X_LIMBS),
+        P256K1FieldElement::from_limbs(bouncycastle_ec::hazmat::p256k1_domain::G_Y_LIMBS),
     );
     let mut u = [0u64; 4];
     u[0] = 12345;

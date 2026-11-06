@@ -10,7 +10,7 @@
 //! # for each i: (-vals[i]) % p, pow(vals[i], p-2, p) if vals[i] != 0 else 0
 //! ```
 
-use bouncycastle_ec::p521::P521FieldElement;
+use bouncycastle_ec::hazmat::p521::P521FieldElement;
 
 const VALS_0: [u64; 9] = [
     0xb08b02bcbe1a026f, 0x6ac488dbbc8cd11f, 0x003d56d89b9f4cbb, 0x4d4bb7d2842e9790,
@@ -219,7 +219,7 @@ fn identities() {
 
 #[test]
 fn from_limbs_reduces_out_of_range_input() {
-    assert_eq!(fe(bouncycastle_ec::p521::P_LIMBS), P521FieldElement::ZERO);
+    assert_eq!(fe(bouncycastle_ec::hazmat::p521::P_LIMBS), P521FieldElement::ZERO);
 
     // p + 1 == 2^521: sets only bit 521 (limb 8's bit 9), the smallest value this type's spare
     // top-limb bits could silently lose if from_limbs simply masked them away instead of folding
@@ -347,7 +347,7 @@ fn square_agrees_with_mul() {
 #[test]
 fn is_zero_distinguishes_zero_from_every_nonzero_limb_position() {
     assert!(P521FieldElement::ZERO.is_zero().to_bool());
-    assert!(fe(bouncycastle_ec::p521::P_LIMBS).is_zero().to_bool(), "p reduces to 0");
+    assert!(fe(bouncycastle_ec::hazmat::p521::P_LIMBS).is_zero().to_bool(), "p reduces to 0");
     assert!(!P521FieldElement::ONE.is_zero().to_bool());
     for limb_idx in 0..9 {
         let mut limbs = [0u64; 9];

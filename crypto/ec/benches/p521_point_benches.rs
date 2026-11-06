@@ -1,11 +1,11 @@
 use criterion::{Criterion, criterion_group, criterion_main};
 use std::hint::black_box;
 
-use bouncycastle_ec::p521::P521FieldElement;
-use bouncycastle_ec::p521_domain::{G_X_LIMBS, G_Y_LIMBS};
-use bouncycastle_ec::p521_mul::multiply_point;
-use bouncycastle_ec::p521_point::P521JacobianPoint;
-use bouncycastle_ec::p521_scalar::P521Scalar;
+use bouncycastle_ec::hazmat::p521::P521FieldElement;
+use bouncycastle_ec::hazmat::p521_domain::{G_X_LIMBS, G_Y_LIMBS};
+use bouncycastle_ec::hazmat::p521_mul::multiply_point;
+use bouncycastle_ec::hazmat::p521_point::P521JacobianPoint;
+use bouncycastle_ec::hazmat::p521_scalar::P521Scalar;
 
 fn bench_p521_point(c: &mut Criterion) {
     let g = P521JacobianPoint::from_affine(

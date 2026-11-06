@@ -5,9 +5,9 @@
 //! generated the same way, with `random.seed(303)`, plus `k = n-1` (the edge case where `[k]G =
 //! -G`, since `n*G` is the identity).
 
-use bouncycastle_ec::p256::P256FieldElement;
-use bouncycastle_ec::p256_comb::comb_multiply_base_point;
-use bouncycastle_ec::p256_scalar::P256Scalar;
+use bouncycastle_ec::hazmat::p256::P256FieldElement;
+use bouncycastle_ec::hazmat::p256_comb::comb_multiply_base_point;
+use bouncycastle_ec::hazmat::p256_scalar::P256Scalar;
 
 fn scalar(limbs: [u64; 4]) -> P256Scalar {
     P256Scalar::from_limbs(limbs)

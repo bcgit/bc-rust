@@ -1,8 +1,8 @@
 use criterion::{Criterion, criterion_group, criterion_main};
 use std::hint::black_box;
 
-use bouncycastle_ec::bp256r1::Bp256r1FieldElement;
-use bouncycastle_ec::bp256r1_domain::{G_X_LIMBS, G_Y_LIMBS};
+use bouncycastle_ec::hazmat::bp256r1::Bp256r1FieldElement;
+use bouncycastle_ec::hazmat::bp256r1_domain::{G_X_LIMBS, G_Y_LIMBS};
 
 fn bench_bp256r1_field(c: &mut Criterion) {
     let a = Bp256r1FieldElement::from_limbs(G_X_LIMBS);

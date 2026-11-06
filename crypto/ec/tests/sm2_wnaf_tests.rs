@@ -4,11 +4,11 @@
 //! independently in Python from the affine group law (`a = -3`), the same way as
 //! `sm2_comb_tests.rs`, with `random.seed(808917)`.
 
-use bouncycastle_ec::sm2::Sm2FieldElement;
-use bouncycastle_ec::sm2_comb::comb_multiply_base_point;
-use bouncycastle_ec::sm2_point::Sm2JacobianPoint;
-use bouncycastle_ec::sm2_scalar::{Sm2PublicScalar, Sm2Scalar};
-use bouncycastle_ec::sm2_wnaf::shamir_multiply;
+use bouncycastle_ec::hazmat::sm2::Sm2FieldElement;
+use bouncycastle_ec::hazmat::sm2_comb::comb_multiply_base_point;
+use bouncycastle_ec::hazmat::sm2_point::Sm2JacobianPoint;
+use bouncycastle_ec::hazmat::sm2_scalar::{Sm2PublicScalar, Sm2Scalar};
+use bouncycastle_ec::hazmat::sm2_wnaf::shamir_multiply;
 
 const Q_X: [u64; 4] =
     [0x30e4445e9ced5d35, 0x9403c12a2c8e5f2b, 0x066493e2dd175d35, 0x414278ad63916c59];
@@ -115,8 +115,8 @@ fn cross_checked_against_the_comb_multiplier_over_many_pseudorandom_scalars() {
 #[test]
 fn edge_case_q_is_infinity_g_or_minus_g() {
     let g = Sm2JacobianPoint::from_affine(
-        Sm2FieldElement::from_limbs(bouncycastle_ec::sm2_domain::G_X_LIMBS),
-        Sm2FieldElement::from_limbs(bouncycastle_ec::sm2_domain::G_Y_LIMBS),
+        Sm2FieldElement::from_limbs(bouncycastle_ec::hazmat::sm2_domain::G_X_LIMBS),
+        Sm2FieldElement::from_limbs(bouncycastle_ec::hazmat::sm2_domain::G_Y_LIMBS),
     );
     let mut u = [0u64; 4];
     u[0] = 12345;

@@ -11,7 +11,7 @@
 //! # for each i: (-vals[i]) % p, pow(vals[i], p-2, p) if vals[i] != 0 else 0
 //! ```
 
-use bouncycastle_ec::p256k1::P256K1FieldElement;
+use bouncycastle_ec::hazmat::p256k1::P256K1FieldElement;
 
 const VALS_0: [u64; 4] =
     [0x1d79dcf976de30b9, 0xc397f473860488a8, 0x71ee41064b94ee22, 0x250bcbb11b3bf238];
@@ -130,7 +130,7 @@ fn identities() {
 
 #[test]
 fn from_limbs_reduces_out_of_range_input() {
-    assert_eq!(fe(bouncycastle_ec::p256k1::P_LIMBS), P256K1FieldElement::ZERO);
+    assert_eq!(fe(bouncycastle_ec::hazmat::p256k1::P_LIMBS), P256K1FieldElement::ZERO);
     let p_plus_1: [u64; 4] =
         [0xfffffffefffffc30, 0xffffffffffffffff, 0xffffffffffffffff, 0xffffffffffffffff];
     assert_eq!(fe(p_plus_1), P256K1FieldElement::ONE);
@@ -242,7 +242,7 @@ fn square_agrees_with_mul() {
 #[test]
 fn is_zero_distinguishes_zero_from_every_nonzero_limb_position() {
     assert!(P256K1FieldElement::ZERO.is_zero().to_bool());
-    assert!(fe(bouncycastle_ec::p256k1::P_LIMBS).is_zero().to_bool(), "p reduces to 0");
+    assert!(fe(bouncycastle_ec::hazmat::p256k1::P_LIMBS).is_zero().to_bool(), "p reduces to 0");
     assert!(!P256K1FieldElement::ONE.is_zero().to_bool());
     for limb_idx in 0..4 {
         let mut limbs = [0u64; 4];

@@ -21,8 +21,8 @@
 //!
 //! with `P_k = k*G` computed by repeated `affine_add` (double-and-add), for small `k`.
 
-use bouncycastle_ec::p256::P256FieldElement;
-use bouncycastle_ec::p256_point::P256JacobianPoint;
+use bouncycastle_ec::hazmat::p256::P256FieldElement;
+use bouncycastle_ec::hazmat::p256_point::P256JacobianPoint;
 
 const P1_X: [u64; 4] =
     [0xf4a13945d898c296, 0x77037d812deb33a0, 0xf8bce6e563a440f2, 0x6b17d1f2e12c4247];
@@ -197,7 +197,10 @@ fn scaled_z_representation_still_adds_correctly() {
 /// (`double` is total, per its docs, and the comb multiplier's accumulator starts there).
 #[test]
 fn is_infinity_is_false_for_finite_points_and_infinity_doubles_to_itself() {
-    let g = pt(bouncycastle_ec::p256_domain::G_X_LIMBS, bouncycastle_ec::p256_domain::G_Y_LIMBS);
+    let g = pt(
+        bouncycastle_ec::hazmat::p256_domain::G_X_LIMBS,
+        bouncycastle_ec::hazmat::p256_domain::G_Y_LIMBS,
+    );
     assert!(!g.is_infinity().to_bool(), "G is not the identity");
     assert!(!g.double().is_infinity().to_bool(), "2G is not the identity");
     assert!(!g.negate().is_infinity().to_bool(), "-G is not the identity");

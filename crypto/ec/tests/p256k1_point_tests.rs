@@ -8,9 +8,9 @@
 //! # affine add/double/scalar-mul via the standard a = 0 formulas
 //! ```
 
-use bouncycastle_ec::p256k1::P256K1FieldElement;
-use bouncycastle_ec::p256k1_domain::{G_X_LIMBS, G_Y_LIMBS};
-use bouncycastle_ec::p256k1_point::P256K1JacobianPoint;
+use bouncycastle_ec::hazmat::p256k1::P256K1FieldElement;
+use bouncycastle_ec::hazmat::p256k1_domain::{G_X_LIMBS, G_Y_LIMBS};
+use bouncycastle_ec::hazmat::p256k1_point::P256K1JacobianPoint;
 
 const TWO_G_X: [u64; 4] =
     [0xabac09b95c709ee5, 0x5c778e4b8cef3ca7, 0x3045406e95c07cd8, 0xc6047f9441ed7d6d];

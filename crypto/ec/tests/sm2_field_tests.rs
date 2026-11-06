@@ -7,7 +7,7 @@
 //! vals = [random.randrange(1, p) for _ in range(3)]
 //! ```
 
-use bouncycastle_ec::sm2::Sm2FieldElement;
+use bouncycastle_ec::hazmat::sm2::Sm2FieldElement;
 
 const VALS_0: [u64; 4] =
     [0xa5a1f45ea143fd85, 0xb169fcb29ca305fd, 0xb041efa5f7f9075e, 0x8273a708ddcf1813];
@@ -112,7 +112,7 @@ fn eq_detects_a_difference_in_any_limb() {
 
 #[test]
 fn from_limbs_reduces_out_of_range_input() {
-    use bouncycastle_ec::sm2::P_LIMBS;
+    use bouncycastle_ec::hazmat::sm2::P_LIMBS;
     assert_eq!(fe(P_LIMBS), Sm2FieldElement::ZERO);
 }
 
@@ -296,7 +296,7 @@ fn square_agrees_with_mul() {
 #[test]
 fn is_zero_distinguishes_zero_from_every_nonzero_limb_position() {
     assert!(Sm2FieldElement::ZERO.is_zero().to_bool());
-    assert!(fe(bouncycastle_ec::sm2::P_LIMBS).is_zero().to_bool(), "p reduces to 0");
+    assert!(fe(bouncycastle_ec::hazmat::sm2::P_LIMBS).is_zero().to_bool(), "p reduces to 0");
     assert!(!Sm2FieldElement::ONE.is_zero().to_bool());
     for limb_idx in 0..4 {
         let mut limbs = [0u64; 4];

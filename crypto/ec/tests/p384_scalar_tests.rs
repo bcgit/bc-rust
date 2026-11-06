@@ -9,7 +9,9 @@
 //! # for each i: (-vals[i]) % n, pow(vals[i], n-2, n)
 //! ```
 
-use bouncycastle_ec::p384_scalar::{N_LIMBS, P384PublicScalar, P384Scalar, P384ScalarField};
+use bouncycastle_ec::hazmat::p384_scalar::{
+    N_LIMBS, P384PublicScalar, P384Scalar, P384ScalarField,
+};
 
 const VALS_0: [u64; 6] = [
     0xc77cb04de57e1b92, 0xb62c49f8ac3809de, 0x87c7a84903ab1b99, 0x68a2bfa3a261cea1,
@@ -282,7 +284,10 @@ fn zeroize_clears_the_value() {
 #[test]
 fn is_zero_distinguishes_zero_from_every_nonzero_limb_position() {
     assert!(P384ScalarField::ZERO.is_zero().to_bool());
-    assert!(fe(bouncycastle_ec::p384_scalar::N_LIMBS).is_zero().to_bool(), "n reduces to 0");
+    assert!(
+        fe(bouncycastle_ec::hazmat::p384_scalar::N_LIMBS).is_zero().to_bool(),
+        "n reduces to 0"
+    );
     assert!(!P384ScalarField::ONE.is_zero().to_bool());
     for limb_idx in 0..6 {
         let mut limbs = [0u64; 6];
@@ -327,7 +332,7 @@ fn known_answer_at_n_minus_1() {
 #[test]
 fn public_scalar_invert_vartime_agrees_with_constant_time_invert() {
     let n_minus_1 = {
-        let mut l = bouncycastle_ec::p384_scalar::N_LIMBS;
+        let mut l = bouncycastle_ec::hazmat::p384_scalar::N_LIMBS;
         l[0] -= 1;
         l
     };
@@ -351,13 +356,15 @@ fn public_scalar_invert_vartime_agrees_with_constant_time_invert() {
     fixed.extend([VALS_0, VALS_1, VALS_2]);
     for limbs in fixed {
         assert_eq!(
-            bouncycastle_ec::p384_scalar::P384PublicScalar::from_limbs(limbs).invert_vartime(),
+            bouncycastle_ec::hazmat::p384_scalar::P384PublicScalar::from_limbs(limbs)
+                .invert_vartime(),
             fe(limbs).invert(),
             "limbs = {limbs:x?}"
         );
     }
     assert_eq!(
-        bouncycastle_ec::p384_scalar::P384PublicScalar::from_limbs([0u64; 6]).invert_vartime(),
+        bouncycastle_ec::hazmat::p384_scalar::P384PublicScalar::from_limbs([0u64; 6])
+            .invert_vartime(),
         P384ScalarField::ZERO,
         "0^-1 == 0 by convention, matching invert"
     );
@@ -372,7 +379,8 @@ fn public_scalar_invert_vartime_agrees_with_constant_time_invert() {
             }
         }
         assert_eq!(
-            bouncycastle_ec::p384_scalar::P384PublicScalar::from_limbs(limbs).invert_vartime(),
+            bouncycastle_ec::hazmat::p384_scalar::P384PublicScalar::from_limbs(limbs)
+                .invert_vartime(),
             fe(limbs).invert(),
             "limbs = {limbs:x?}"
         );

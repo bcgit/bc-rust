@@ -37,14 +37,16 @@ use bouncycastle_core::signature_key::{
 use bouncycastle_core::traits::{
     Algorithm, AlgorithmInfo, Hash, RNG, SignatureSigner, SignatureVerifier,
 };
+use bouncycastle_ec::hazmat::p256::P256FieldElement;
+use bouncycastle_ec::hazmat::p256_comb::comb_multiply_base_point;
+use bouncycastle_ec::hazmat::p256_extra_bits::reduce_wide_bits_mod_n_minus_1;
+use bouncycastle_ec::hazmat::p256_point::P256JacobianPoint;
+use bouncycastle_ec::hazmat::p256_scalar::{
+    N_LIMBS, P256PublicScalar, P256Scalar, P256ScalarField,
+};
+use bouncycastle_ec::hazmat::p256_sec1;
+use bouncycastle_ec::hazmat::p256_wnaf::shamir_multiply;
 use bouncycastle_ec::nat;
-use bouncycastle_ec::p256::P256FieldElement;
-use bouncycastle_ec::p256_comb::comb_multiply_base_point;
-use bouncycastle_ec::p256_extra_bits::reduce_wide_bits_mod_n_minus_1;
-use bouncycastle_ec::p256_point::P256JacobianPoint;
-use bouncycastle_ec::p256_scalar::{N_LIMBS, P256PublicScalar, P256Scalar, P256ScalarField};
-use bouncycastle_ec::p256_sec1;
-use bouncycastle_ec::p256_wnaf::shamir_multiply;
 use bouncycastle_sha2::SHA256;
 use bouncycastle_utils::secret::Secret;
 

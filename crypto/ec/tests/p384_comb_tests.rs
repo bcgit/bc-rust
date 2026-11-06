@@ -4,10 +4,10 @@
 //! `[k]G = -G`) was computed the same way (Python affine group law), `random.seed` not applicable
 //! since it's a fixed edge case.
 
-use bouncycastle_ec::p384::P384FieldElement;
-use bouncycastle_ec::p384_comb::comb_multiply_base_point;
-use bouncycastle_ec::p384_domain::{G_X_LIMBS, G_Y_LIMBS};
-use bouncycastle_ec::p384_scalar::P384Scalar;
+use bouncycastle_ec::hazmat::p384::P384FieldElement;
+use bouncycastle_ec::hazmat::p384_comb::comb_multiply_base_point;
+use bouncycastle_ec::hazmat::p384_domain::{G_X_LIMBS, G_Y_LIMBS};
+use bouncycastle_ec::hazmat::p384_scalar::P384Scalar;
 
 fn scalar(limbs: [u64; 6]) -> P384Scalar {
     P384Scalar::from_limbs(limbs)

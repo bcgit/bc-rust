@@ -270,8 +270,8 @@ fn keygen_rejects_an_rng_below_the_required_strength() {
 /// fact, unboundedly many) valid-looking encodings: `d = n + 1` would load as `d = 1`.
 #[test]
 fn private_key_rejects_values_at_or_above_the_group_order() {
-    let n = bouncycastle_ec::bp512r1_sec1::be_bytes_from_limbs(
-        &bouncycastle_ec::bp512r1_scalar::N_LIMBS,
+    let n = bouncycastle_ec::hazmat::bp512r1_sec1::be_bytes_from_limbs(
+        &bouncycastle_ec::hazmat::bp512r1_scalar::N_LIMBS,
     );
     let mut n_plus_1 = n;
     n_plus_1[63] += 1; // n's last byte is well below 0xff, so this never carries
@@ -329,8 +329,8 @@ fn verify_rejects_r_or_s_outside_1_to_n_minus_1() {
     let sig = sk.sign(&mut DefaultRNG::default(), msg, None).unwrap();
     pk.verify(msg, None, &sig).expect("the untampered signature must verify");
 
-    let n = bouncycastle_ec::bp512r1_sec1::be_bytes_from_limbs(
-        &bouncycastle_ec::bp512r1_scalar::N_LIMBS,
+    let n = bouncycastle_ec::hazmat::bp512r1_sec1::be_bytes_from_limbs(
+        &bouncycastle_ec::hazmat::bp512r1_scalar::N_LIMBS,
     );
     for (name, bad) in [("0", [0u8; 64]), ("n", n), ("2^512 - 1", [0xffu8; 64])] {
         for (half, offset) in [("r", 0usize), ("s", 64usize)] {

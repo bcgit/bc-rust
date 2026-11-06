@@ -4,10 +4,10 @@
 //! `known_answer_large_k` and `n-1` (where `[k]G = -G`) were computed the same way (Python affine
 //! group law, `a = -3`), `random.seed(628917)` for the former.
 
-use bouncycastle_ec::sm2::Sm2FieldElement;
-use bouncycastle_ec::sm2_comb::comb_multiply_base_point;
-use bouncycastle_ec::sm2_domain::{G_X_LIMBS, G_Y_LIMBS};
-use bouncycastle_ec::sm2_scalar::Sm2Scalar;
+use bouncycastle_ec::hazmat::sm2::Sm2FieldElement;
+use bouncycastle_ec::hazmat::sm2_comb::comb_multiply_base_point;
+use bouncycastle_ec::hazmat::sm2_domain::{G_X_LIMBS, G_Y_LIMBS};
+use bouncycastle_ec::hazmat::sm2_scalar::Sm2Scalar;
 
 fn scalar(limbs: [u64; 4]) -> Sm2Scalar {
     Sm2Scalar::from_limbs(limbs)

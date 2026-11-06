@@ -1,7 +1,7 @@
 use criterion::{Criterion, criterion_group, criterion_main};
 use std::hint::black_box;
 
-use bouncycastle_ec::p256::P256FieldElement;
+use bouncycastle_ec::hazmat::p256::P256FieldElement;
 
 fn bench_p256_field(c: &mut Criterion) {
     let a = P256FieldElement::from_limbs([

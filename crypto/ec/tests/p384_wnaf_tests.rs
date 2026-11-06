@@ -4,11 +4,11 @@
 //! independently in Python from the affine group law, the same way as `p384_comb_tests.rs`, with
 //! `random.seed(808384)`.
 
-use bouncycastle_ec::p384::P384FieldElement;
-use bouncycastle_ec::p384_comb::comb_multiply_base_point;
-use bouncycastle_ec::p384_point::P384JacobianPoint;
-use bouncycastle_ec::p384_scalar::{P384PublicScalar, P384Scalar};
-use bouncycastle_ec::p384_wnaf::shamir_multiply;
+use bouncycastle_ec::hazmat::p384::P384FieldElement;
+use bouncycastle_ec::hazmat::p384_comb::comb_multiply_base_point;
+use bouncycastle_ec::hazmat::p384_point::P384JacobianPoint;
+use bouncycastle_ec::hazmat::p384_scalar::{P384PublicScalar, P384Scalar};
+use bouncycastle_ec::hazmat::p384_wnaf::shamir_multiply;
 
 const Q_X: [u64; 6] = [
     0x4f6d6d13beeaa1b2, 0x3cb1efd1edd7bbff, 0xe07a2b63cdb9d941, 0xefec1918a1158b0a,
@@ -148,8 +148,8 @@ fn cross_checked_against_the_comb_multiplier_over_many_pseudorandom_scalars() {
 #[test]
 fn edge_case_q_is_infinity_g_or_minus_g() {
     let g = P384JacobianPoint::from_affine(
-        P384FieldElement::from_limbs(bouncycastle_ec::p384_domain::G_X_LIMBS),
-        P384FieldElement::from_limbs(bouncycastle_ec::p384_domain::G_Y_LIMBS),
+        P384FieldElement::from_limbs(bouncycastle_ec::hazmat::p384_domain::G_X_LIMBS),
+        P384FieldElement::from_limbs(bouncycastle_ec::hazmat::p384_domain::G_Y_LIMBS),
     );
     let mut u = [0u64; 6];
     u[0] = 12345;

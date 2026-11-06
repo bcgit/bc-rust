@@ -1,9 +1,9 @@
 //! Known-answer tests for [`comb_multiply_base_point`] (`[k]G`), P-521.
 
-use bouncycastle_ec::p521::P521FieldElement;
-use bouncycastle_ec::p521_comb::comb_multiply_base_point;
-use bouncycastle_ec::p521_domain::{G_X_LIMBS, G_Y_LIMBS};
-use bouncycastle_ec::p521_scalar::P521Scalar;
+use bouncycastle_ec::hazmat::p521::P521FieldElement;
+use bouncycastle_ec::hazmat::p521_comb::comb_multiply_base_point;
+use bouncycastle_ec::hazmat::p521_domain::{G_X_LIMBS, G_Y_LIMBS};
+use bouncycastle_ec::hazmat::p521_scalar::P521Scalar;
 
 fn scalar(limbs: [u64; 9]) -> P521Scalar {
     P521Scalar::from_limbs(limbs)

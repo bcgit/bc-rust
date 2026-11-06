@@ -12,8 +12,8 @@ use bouncycastle_core::traits::{RNG, SignaturePrivateKey, SignaturePublicKey};
 use bouncycastle_core::traits::{SignatureSigner, SignatureVerifier};
 use bouncycastle_core_test_framework::DUMMY_SEED;
 use bouncycastle_core_test_framework::signature::TestFrameworkSignatureKeys;
-use bouncycastle_ec::sm2_scalar::N_LIMBS;
-use bouncycastle_ec::sm2_sec1::be_bytes_from_limbs;
+use bouncycastle_ec::hazmat::sm2_scalar::N_LIMBS;
+use bouncycastle_ec::hazmat::sm2_sec1::be_bytes_from_limbs;
 use bouncycastle_rng::DefaultRNG;
 use bouncycastle_sm2::keys::{SM2PrivateKey, SM2PublicKey, keygen};
 
@@ -435,7 +435,8 @@ fn verify_rejects_s_equal_to_n_minus_r() {
     let msg = b"t = r + s must not be zero";
     let sig = sk.sign(&mut DefaultRNG::default(), msg, Some(ID)).unwrap();
 
-    let r_limbs = bouncycastle_ec::sm2_sec1::limbs_from_be_bytes(&sig[..32].try_into().unwrap());
+    let r_limbs =
+        bouncycastle_ec::hazmat::sm2_sec1::limbs_from_be_bytes(&sig[..32].try_into().unwrap());
     let (n_minus_r, borrow) = bouncycastle_ec::nat::sub(&N_LIMBS, &r_limbs);
     assert_eq!(borrow, 0, "r is in [1, n-1], so n - r never borrows");
 

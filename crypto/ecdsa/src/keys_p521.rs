@@ -18,19 +18,19 @@
 //! the value unreduced (a bug this module's own tests caught: `keygen`/`ECDSAP521::sign` produced
 //! keys/signatures too broken to round-trip through sign+verify, despite every fixed-input KAT --
 //! which never exercises a raw, unbounded DRBG value -- passing). The reduction is
-//! [`bouncycastle_ec::p521_extra_bits`]'s single fold at bit 521 -- see its docs for why P-521 gets
-//! neither the other curves' Barrett reduction nor the field's Solinas fold.
+//! [`bouncycastle_ec::hazmat::p521_extra_bits`]'s single fold at bit 521 -- see its docs for why
+//! P-521 gets neither the other curves' Barrett reduction nor the field's Solinas fold.
 
 use crate::keys_common::DerivePublicKey;
 use bouncycastle_core::errors::{RNGError, SignatureError};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{RNG, SignaturePrivateKey, SignaturePublicKey};
+use bouncycastle_ec::hazmat::p521::P521FieldElement;
+use bouncycastle_ec::hazmat::p521_comb::comb_multiply_base_point;
+use bouncycastle_ec::hazmat::p521_extra_bits::reduce_wide_bits_mod_n_minus_1;
+use bouncycastle_ec::hazmat::p521_scalar::{N_LIMBS, P521Scalar};
+use bouncycastle_ec::hazmat::p521_sec1;
 use bouncycastle_ec::nat;
-use bouncycastle_ec::p521::P521FieldElement;
-use bouncycastle_ec::p521_comb::comb_multiply_base_point;
-use bouncycastle_ec::p521_extra_bits::reduce_wide_bits_mod_n_minus_1;
-use bouncycastle_ec::p521_scalar::{N_LIMBS, P521Scalar};
-use bouncycastle_ec::p521_sec1;
 use bouncycastle_utils::secret::Secret;
 use core::fmt;
 use core::fmt::{Debug, Display, Formatter};

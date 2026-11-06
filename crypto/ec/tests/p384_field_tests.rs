@@ -12,7 +12,7 @@
 //! # for each i: (-vals[i]) % p, pow(vals[i], p-2, p) if vals[i] != 0 else 0
 //! ```
 
-use bouncycastle_ec::p384::P384FieldElement;
+use bouncycastle_ec::hazmat::p384::P384FieldElement;
 
 const VALS_0: [u64; 6] = [
     0xfbf0df09ff15d76c, 0xf5a7ffb01c944ad6, 0x59c184f6c245b0b0, 0xf42a4e0449f2cb85,
@@ -195,7 +195,7 @@ fn identities() {
 
 #[test]
 fn from_limbs_reduces_out_of_range_input() {
-    assert_eq!(fe(bouncycastle_ec::p384::P_LIMBS), P384FieldElement::ZERO);
+    assert_eq!(fe(bouncycastle_ec::hazmat::p384::P_LIMBS), P384FieldElement::ZERO);
     let p_plus_1: [u64; 6] = [
         0x0000000100000000, 0xffffffff00000000, 0xfffffffffffffffe, 0xffffffffffffffff,
         0xffffffffffffffff, 0xffffffffffffffff,
@@ -416,7 +416,7 @@ fn square_agrees_with_mul() {
 #[test]
 fn is_zero_distinguishes_zero_from_every_nonzero_limb_position() {
     assert!(P384FieldElement::ZERO.is_zero().to_bool());
-    assert!(fe(bouncycastle_ec::p384::P_LIMBS).is_zero().to_bool(), "p reduces to 0");
+    assert!(fe(bouncycastle_ec::hazmat::p384::P_LIMBS).is_zero().to_bool(), "p reduces to 0");
     assert!(!P384FieldElement::ONE.is_zero().to_bool());
     for limb_idx in 0..6 {
         let mut limbs = [0u64; 6];

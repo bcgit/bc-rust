@@ -4,11 +4,11 @@
 //! independently in Python from the SP 800-186 Appendix A.1.1 affine group law, the same way as
 //! `p256_comb_tests.rs`, with `random.seed(808)`.
 
-use bouncycastle_ec::p256::P256FieldElement;
-use bouncycastle_ec::p256_comb::comb_multiply_base_point;
-use bouncycastle_ec::p256_point::P256JacobianPoint;
-use bouncycastle_ec::p256_scalar::{P256PublicScalar, P256Scalar};
-use bouncycastle_ec::p256_wnaf::shamir_multiply;
+use bouncycastle_ec::hazmat::p256::P256FieldElement;
+use bouncycastle_ec::hazmat::p256_comb::comb_multiply_base_point;
+use bouncycastle_ec::hazmat::p256_point::P256JacobianPoint;
+use bouncycastle_ec::hazmat::p256_scalar::{P256PublicScalar, P256Scalar};
+use bouncycastle_ec::hazmat::p256_wnaf::shamir_multiply;
 
 const Q_X: [u64; 4] =
     [0xb8ead9e9b37489ae, 0xb2bd6640d485e210, 0x65021b418d419835, 0x8db3ea9c500e21de];
@@ -146,8 +146,8 @@ fn edge_case_u_v_equal_n_minus_1() {
 #[test]
 fn edge_case_q_is_infinity_g_or_minus_g() {
     let g = P256JacobianPoint::from_affine(
-        P256FieldElement::from_limbs(bouncycastle_ec::p256_domain::G_X_LIMBS),
-        P256FieldElement::from_limbs(bouncycastle_ec::p256_domain::G_Y_LIMBS),
+        P256FieldElement::from_limbs(bouncycastle_ec::hazmat::p256_domain::G_X_LIMBS),
+        P256FieldElement::from_limbs(bouncycastle_ec::hazmat::p256_domain::G_Y_LIMBS),
     );
     let mut u = [0u64; 4];
     u[0] = 12345;

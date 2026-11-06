@@ -4,10 +4,10 @@
 //! `known_answer_large_k` and `n-1` (where `[k]G = -G`) were computed the same way (Python affine
 //! group law, general `a`), `random.seed(628384)` for the former.
 
-use bouncycastle_ec::bp384r1::Bp384r1FieldElement;
-use bouncycastle_ec::bp384r1_comb::comb_multiply_base_point;
-use bouncycastle_ec::bp384r1_domain::{G_X_LIMBS, G_Y_LIMBS};
-use bouncycastle_ec::bp384r1_scalar::Bp384r1Scalar;
+use bouncycastle_ec::hazmat::bp384r1::Bp384r1FieldElement;
+use bouncycastle_ec::hazmat::bp384r1_comb::comb_multiply_base_point;
+use bouncycastle_ec::hazmat::bp384r1_domain::{G_X_LIMBS, G_Y_LIMBS};
+use bouncycastle_ec::hazmat::bp384r1_scalar::Bp384r1Scalar;
 
 fn scalar(limbs: [u64; 6]) -> Bp384r1Scalar {
     Bp384r1Scalar::from_limbs(limbs)

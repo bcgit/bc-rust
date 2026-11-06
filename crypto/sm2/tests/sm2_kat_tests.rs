@@ -30,7 +30,7 @@
 
 use bouncycastle_core::signature_key::VerifyingKey;
 use bouncycastle_core::traits::{SignaturePrivateKey, SignaturePublicKey};
-use bouncycastle_ec::sm2_sec1;
+use bouncycastle_ec::hazmat::sm2_sec1;
 use bouncycastle_sm2::keys::{SM2PrivateKey, SM2PublicKey};
 
 fn pubkey_from_hex(x_hex: &str, y_hex: &str) -> SM2PublicKey {
@@ -144,8 +144,8 @@ fn known_answer_za_matches_independent_python_computation() {
         let y_limbs = sm2_sec1::limbs_from_be_bytes(
             &bouncycastle_hex::decode(qy).unwrap().try_into().unwrap(),
         );
-        let x = bouncycastle_ec::sm2::Sm2FieldElement::from_limbs(x_limbs);
-        let y = bouncycastle_ec::sm2::Sm2FieldElement::from_limbs(y_limbs);
+        let x = bouncycastle_ec::hazmat::sm2::Sm2FieldElement::from_limbs(x_limbs);
+        let y = bouncycastle_ec::hazmat::sm2::Sm2FieldElement::from_limbs(y_limbs);
         let za = bouncycastle_sm2::za::compute(id, &x, &y).unwrap();
         assert_eq!(bouncycastle_hex::encode(za), za_hex);
     }
@@ -174,12 +174,12 @@ fn bc_java_sm2p256v1_vector_verifies() {
     assert_eq!(pk, pubkey_from_hex(PA_X, PA_Y), "PA = [dA]G disagrees with the external vector");
 
     let (x, y) = (pk.encode()[1..33].to_vec(), pk.encode()[33..65].to_vec());
-    let x = bouncycastle_ec::sm2::Sm2FieldElement::from_limbs(sm2_sec1::limbs_from_be_bytes(
-        &x.try_into().unwrap(),
-    ));
-    let y = bouncycastle_ec::sm2::Sm2FieldElement::from_limbs(sm2_sec1::limbs_from_be_bytes(
-        &y.try_into().unwrap(),
-    ));
+    let x = bouncycastle_ec::hazmat::sm2::Sm2FieldElement::from_limbs(
+        sm2_sec1::limbs_from_be_bytes(&x.try_into().unwrap()),
+    );
+    let y = bouncycastle_ec::hazmat::sm2::Sm2FieldElement::from_limbs(
+        sm2_sec1::limbs_from_be_bytes(&y.try_into().unwrap()),
+    );
     assert_eq!(
         bouncycastle_hex::encode(bouncycastle_sm2::za::compute(ID, &x, &y).unwrap()),
         ZA_HEX,

@@ -9,9 +9,9 @@
 //! # affine add/double via the standard a = -3 formulas
 //! ```
 
-use bouncycastle_ec::sm2::Sm2FieldElement;
-use bouncycastle_ec::sm2_domain::{G_X_LIMBS, G_Y_LIMBS};
-use bouncycastle_ec::sm2_point::Sm2JacobianPoint;
+use bouncycastle_ec::hazmat::sm2::Sm2FieldElement;
+use bouncycastle_ec::hazmat::sm2_domain::{G_X_LIMBS, G_Y_LIMBS};
+use bouncycastle_ec::hazmat::sm2_point::Sm2JacobianPoint;
 
 const TWO_G_X: [u64; 4] =
     [0x495c2e1da3f2bd52, 0x9c0dfa08c08a7331, 0x0d58ef57fa73ba4d, 0x56cefd60d7c87c00];

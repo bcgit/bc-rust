@@ -4,11 +4,11 @@
 //! independently in Python from the affine group law (general `a`), the same way as
 //! `bp384r1_comb_tests.rs`, with `random.seed(808384)`.
 
-use bouncycastle_ec::bp384r1::Bp384r1FieldElement;
-use bouncycastle_ec::bp384r1_comb::comb_multiply_base_point;
-use bouncycastle_ec::bp384r1_point::Bp384r1JacobianPoint;
-use bouncycastle_ec::bp384r1_scalar::{Bp384r1PublicScalar, Bp384r1Scalar};
-use bouncycastle_ec::bp384r1_wnaf::shamir_multiply;
+use bouncycastle_ec::hazmat::bp384r1::Bp384r1FieldElement;
+use bouncycastle_ec::hazmat::bp384r1_comb::comb_multiply_base_point;
+use bouncycastle_ec::hazmat::bp384r1_point::Bp384r1JacobianPoint;
+use bouncycastle_ec::hazmat::bp384r1_scalar::{Bp384r1PublicScalar, Bp384r1Scalar};
+use bouncycastle_ec::hazmat::bp384r1_wnaf::shamir_multiply;
 
 const Q_X: [u64; 6] = [
     0x5b44524010bc5404, 0x4357db763fd6cab8, 0x1db62b723f57e3ae, 0x848f29c8305dfe90,
@@ -148,8 +148,8 @@ fn cross_checked_against_the_comb_multiplier_over_many_pseudorandom_scalars() {
 #[test]
 fn edge_case_q_is_infinity_g_or_minus_g() {
     let g = Bp384r1JacobianPoint::from_affine(
-        Bp384r1FieldElement::from_limbs(bouncycastle_ec::bp384r1_domain::G_X_LIMBS),
-        Bp384r1FieldElement::from_limbs(bouncycastle_ec::bp384r1_domain::G_Y_LIMBS),
+        Bp384r1FieldElement::from_limbs(bouncycastle_ec::hazmat::bp384r1_domain::G_X_LIMBS),
+        Bp384r1FieldElement::from_limbs(bouncycastle_ec::hazmat::bp384r1_domain::G_Y_LIMBS),
     );
     let mut u = [0u64; 6];
     u[0] = 12345;

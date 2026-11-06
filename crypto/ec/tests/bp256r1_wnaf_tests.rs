@@ -4,11 +4,11 @@
 //! independently in Python from the affine group law (general `a`), the same way as
 //! `bp256r1_comb_tests.rs`, with `random.seed(808384)`.
 
-use bouncycastle_ec::bp256r1::Bp256r1FieldElement;
-use bouncycastle_ec::bp256r1_comb::comb_multiply_base_point;
-use bouncycastle_ec::bp256r1_point::Bp256r1JacobianPoint;
-use bouncycastle_ec::bp256r1_scalar::{Bp256r1PublicScalar, Bp256r1Scalar};
-use bouncycastle_ec::bp256r1_wnaf::shamir_multiply;
+use bouncycastle_ec::hazmat::bp256r1::Bp256r1FieldElement;
+use bouncycastle_ec::hazmat::bp256r1_comb::comb_multiply_base_point;
+use bouncycastle_ec::hazmat::bp256r1_point::Bp256r1JacobianPoint;
+use bouncycastle_ec::hazmat::bp256r1_scalar::{Bp256r1PublicScalar, Bp256r1Scalar};
+use bouncycastle_ec::hazmat::bp256r1_wnaf::shamir_multiply;
 
 const Q_X: [u64; 4] =
     [0xfec96d58db262cee, 0x2988091aa5352214, 0xf504fa7c525258cb, 0x168b3be33d1862b3];
@@ -115,8 +115,8 @@ fn cross_checked_against_the_comb_multiplier_over_many_pseudorandom_scalars() {
 #[test]
 fn edge_case_q_is_infinity_g_or_minus_g() {
     let g = Bp256r1JacobianPoint::from_affine(
-        Bp256r1FieldElement::from_limbs(bouncycastle_ec::bp256r1_domain::G_X_LIMBS),
-        Bp256r1FieldElement::from_limbs(bouncycastle_ec::bp256r1_domain::G_Y_LIMBS),
+        Bp256r1FieldElement::from_limbs(bouncycastle_ec::hazmat::bp256r1_domain::G_X_LIMBS),
+        Bp256r1FieldElement::from_limbs(bouncycastle_ec::hazmat::bp256r1_domain::G_Y_LIMBS),
     );
     let mut u = [0u64; 4];
     u[0] = 12345;

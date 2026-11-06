@@ -7,9 +7,9 @@
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::symmetric_key::{FromAnyKeyMaterial, MacGenerationKey};
 use bouncycastle_core::traits::MAC;
+use bouncycastle_ec::hazmat::p384_scalar::{N_LIMBS, P384Scalar};
+use bouncycastle_ec::hazmat::p384_sec1;
 use bouncycastle_ec::nat;
-use bouncycastle_ec::p384_scalar::{N_LIMBS, P384Scalar};
-use bouncycastle_ec::p384_sec1;
 use bouncycastle_hmac::HmacKey;
 use bouncycastle_sha2::SHA384;
 use bouncycastle_utils::ct;

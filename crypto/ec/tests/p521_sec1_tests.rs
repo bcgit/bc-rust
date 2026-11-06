@@ -5,8 +5,10 @@
 //! coordinates independently in Python via plain big-endian byte packing. `G` has even `y` (tag
 //! `0x02`) and `3G` has odd `y` (tag `0x03`), so between them both compressed tags are exercised.
 
-use bouncycastle_ec::p521::P521FieldElement;
-use bouncycastle_ec::p521_sec1::{decode, decode_point, encode_compressed, encode_uncompressed};
+use bouncycastle_ec::hazmat::p521::P521FieldElement;
+use bouncycastle_ec::hazmat::p521_sec1::{
+    decode, decode_point, encode_compressed, encode_uncompressed,
+};
 
 const G_X: [u64; 9] = [
     0xf97e7e31c2e5bd66, 0x3348b3c1856a429b, 0xfe1dc127a2ffa8de, 0xa14b5e77efe75928,

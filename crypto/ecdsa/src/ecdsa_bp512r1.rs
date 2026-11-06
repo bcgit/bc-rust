@@ -2,13 +2,12 @@
 //! fixed to SHA-512. [`ECDSABp512r1`] is the algorithm marker; [`ECDSABp512r1PrivateKey`] signs
 //! through [`SigningKey`] (random `k`, §6.3.1) and [`DeterministicSigningKey`] (`k` by RFC 6979,
 //! §6.3.2), [`ECDSABp512r1PublicKey`] verifies through [`VerifyingKey`], as [`crate::ecdsa_p256`]
-//! lays out. Fixed to SHA-512 (the
-//! pairing wycheproof's `ecdsa_brainpoolP512r1_sha512_*` vector files use). Identical in shape to
-//! [`crate::ecdsa_p256`] -- see that module's docs for the full reasoning (`e = bits2int(H)` needs
-//! no truncation since `len(n) == hashlen == 512`; `x_affine_of_signing_point`'s
-//! branch-free-on-a-secret-value argument; both hold unchanged here) -- with brainpoolP512r1's
-//! types, [`crate::keys_bp512r1`], [`bouncycastle_ec::bp512r1_extra_bits`], and [`crate::rfc6979_bp512r1`]
-//! substituted.
+//! lays out. Fixed to SHA-512 (the pairing wycheproof's `ecdsa_brainpoolP512r1_sha512_*` vector
+//! files use). Identical in shape to [`crate::ecdsa_p256`] -- see that module's docs for the full
+//! reasoning (`e = bits2int(H)` needs no truncation since `len(n) == hashlen == 512`;
+//! `x_affine_of_signing_point`'s branch-free-on-a-secret-value argument; both hold unchanged here)
+//! -- with brainpoolP512r1's types, [`crate::keys_bp512r1`],
+//! [`bouncycastle_ec::hazmat::bp512r1_extra_bits`], and [`crate::rfc6979_bp512r1`] substituted.
 
 use crate::keys_bp512r1::{ECDSABp512r1PrivateKey, ECDSABp512r1PublicKey};
 use crate::rfc6979_bp512r1;
@@ -20,15 +19,15 @@ use bouncycastle_core::signature_key::{
 use bouncycastle_core::traits::{
     Algorithm, AlgorithmInfo, Hash, RNG, SignatureSigner, SignatureVerifier,
 };
-use bouncycastle_ec::bp512r1::Bp512r1FieldElement;
-use bouncycastle_ec::bp512r1_comb::comb_multiply_base_point;
-use bouncycastle_ec::bp512r1_extra_bits::reduce_wide_bits_mod_n_minus_1;
-use bouncycastle_ec::bp512r1_point::Bp512r1JacobianPoint;
-use bouncycastle_ec::bp512r1_scalar::{
+use bouncycastle_ec::hazmat::bp512r1::Bp512r1FieldElement;
+use bouncycastle_ec::hazmat::bp512r1_comb::comb_multiply_base_point;
+use bouncycastle_ec::hazmat::bp512r1_extra_bits::reduce_wide_bits_mod_n_minus_1;
+use bouncycastle_ec::hazmat::bp512r1_point::Bp512r1JacobianPoint;
+use bouncycastle_ec::hazmat::bp512r1_scalar::{
     Bp512r1PublicScalar, Bp512r1Scalar, Bp512r1ScalarField, N_LIMBS,
 };
-use bouncycastle_ec::bp512r1_sec1;
-use bouncycastle_ec::bp512r1_wnaf::shamir_multiply;
+use bouncycastle_ec::hazmat::bp512r1_sec1;
+use bouncycastle_ec::hazmat::bp512r1_wnaf::shamir_multiply;
 use bouncycastle_ec::nat;
 use bouncycastle_sha2::SHA512;
 use bouncycastle_utils::secret::Secret;

@@ -1,4 +1,4 @@
-//! Regenerates `src/p256_comb_table.rs`'s `COMB_TABLE_X`/`COMB_TABLE_Y` from scratch and prints
+//! Regenerates `src/hazmat/p256_comb_table.rs`'s `COMB_TABLE_X`/`COMB_TABLE_Y` from scratch and prints
 //! them as Rust source, using only the crate's public point arithmetic (this binary, like every
 //! `examples/` target, only sees the crate's public API -- `p256_comb_table` is `pub(crate)`, so
 //! the actual "does the checked-in table still match" check lives in that module's own unit test,
@@ -9,8 +9,8 @@
 //! cargo run -p bouncycastle-ec --example generate_p256_comb_table
 //! ```
 
-use bouncycastle_ec::p256::P256FieldElement;
-use bouncycastle_ec::p256_point::P256JacobianPoint;
+use bouncycastle_ec::hazmat::p256::P256FieldElement;
+use bouncycastle_ec::hazmat::p256_point::P256JacobianPoint;
 
 const WIDTH: usize = 6;
 const BITS: usize = 256;

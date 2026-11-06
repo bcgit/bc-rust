@@ -1,9 +1,9 @@
 //! Known-answer tests for [`P521JacobianPoint`] arithmetic. `G`, `2G`, `3G` computed independently
 //! in Python via the affine group law (`a = -3`), cross-checked against `n*G == infinity`.
 
-use bouncycastle_ec::p521::P521FieldElement;
-use bouncycastle_ec::p521_domain::{G_X_LIMBS, G_Y_LIMBS};
-use bouncycastle_ec::p521_point::P521JacobianPoint;
+use bouncycastle_ec::hazmat::p521::P521FieldElement;
+use bouncycastle_ec::hazmat::p521_domain::{G_X_LIMBS, G_Y_LIMBS};
+use bouncycastle_ec::hazmat::p521_point::P521JacobianPoint;
 
 const TWO_G_X: [u64; 9] = [
     0xf43e3933ba6d783d, 0xcf2fa364d60fd967, 0xaa104a3a35c5af41, 0xb3b204da6ef55507,

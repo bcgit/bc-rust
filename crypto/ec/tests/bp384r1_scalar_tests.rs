@@ -9,7 +9,7 @@
 //! # for each i: (-vals[i]) % n, pow(vals[i], n-2, n) if vals[i] != 0 else 0
 //! ```
 
-use bouncycastle_ec::bp384r1_scalar::{
+use bouncycastle_ec::hazmat::bp384r1_scalar::{
     Bp384r1PublicScalar, Bp384r1Scalar, Bp384r1ScalarField, N_LIMBS,
 };
 
@@ -521,7 +521,10 @@ fn zeroize_clears_the_value() {
 #[test]
 fn is_zero_distinguishes_zero_from_every_nonzero_limb_position() {
     assert!(Bp384r1ScalarField::ZERO.is_zero().to_bool());
-    assert!(fe(bouncycastle_ec::bp384r1_scalar::N_LIMBS).is_zero().to_bool(), "n reduces to 0");
+    assert!(
+        fe(bouncycastle_ec::hazmat::bp384r1_scalar::N_LIMBS).is_zero().to_bool(),
+        "n reduces to 0"
+    );
     assert!(!Bp384r1ScalarField::ONE.is_zero().to_bool());
     for limb_idx in 0..6 {
         let mut limbs = [0u64; 6];
@@ -566,7 +569,7 @@ fn known_answer_at_n_minus_1() {
 #[test]
 fn public_scalar_invert_vartime_agrees_with_constant_time_invert() {
     let n_minus_1 = {
-        let mut l = bouncycastle_ec::bp384r1_scalar::N_LIMBS;
+        let mut l = bouncycastle_ec::hazmat::bp384r1_scalar::N_LIMBS;
         l[0] -= 1;
         l
     };
@@ -590,14 +593,14 @@ fn public_scalar_invert_vartime_agrees_with_constant_time_invert() {
     fixed.extend([VALS_0, VALS_1, VALS_2]);
     for limbs in fixed {
         assert_eq!(
-            bouncycastle_ec::bp384r1_scalar::Bp384r1PublicScalar::from_limbs(limbs)
+            bouncycastle_ec::hazmat::bp384r1_scalar::Bp384r1PublicScalar::from_limbs(limbs)
                 .invert_vartime(),
             fe(limbs).invert(),
             "limbs = {limbs:x?}"
         );
     }
     assert_eq!(
-        bouncycastle_ec::bp384r1_scalar::Bp384r1PublicScalar::from_limbs([0u64; 6])
+        bouncycastle_ec::hazmat::bp384r1_scalar::Bp384r1PublicScalar::from_limbs([0u64; 6])
             .invert_vartime(),
         Bp384r1ScalarField::ZERO,
         "0^-1 == 0 by convention, matching invert"
@@ -613,7 +616,7 @@ fn public_scalar_invert_vartime_agrees_with_constant_time_invert() {
             }
         }
         assert_eq!(
-            bouncycastle_ec::bp384r1_scalar::Bp384r1PublicScalar::from_limbs(limbs)
+            bouncycastle_ec::hazmat::bp384r1_scalar::Bp384r1PublicScalar::from_limbs(limbs)
                 .invert_vartime(),
             fe(limbs).invert(),
             "limbs = {limbs:x?}"

@@ -9,8 +9,8 @@
 //! # for each i: (-vals[i]) % n, pow(vals[i], n-2, n) if vals[i] != 0 else 0
 //! ```
 
+use bouncycastle_ec::hazmat::sm2_scalar::{N_LIMBS, Sm2PublicScalar, Sm2Scalar, Sm2ScalarField};
 use bouncycastle_ec::nat;
-use bouncycastle_ec::sm2_scalar::{N_LIMBS, Sm2PublicScalar, Sm2Scalar, Sm2ScalarField};
 
 const VALS_0: [u64; 4] =
     [0x9faa8edecf05b151, 0x737180b1df95b1df, 0x5e15f338e5ade727, 0x99f78f956c6fcbdb];
@@ -380,7 +380,7 @@ fn zeroize_clears_the_value() {
 #[test]
 fn is_zero_distinguishes_zero_from_every_nonzero_limb_position() {
     assert!(Sm2ScalarField::ZERO.is_zero().to_bool());
-    assert!(fe(bouncycastle_ec::sm2_scalar::N_LIMBS).is_zero().to_bool(), "n reduces to 0");
+    assert!(fe(bouncycastle_ec::hazmat::sm2_scalar::N_LIMBS).is_zero().to_bool(), "n reduces to 0");
     assert!(!Sm2ScalarField::ONE.is_zero().to_bool());
     for limb_idx in 0..4 {
         let mut limbs = [0u64; 4];

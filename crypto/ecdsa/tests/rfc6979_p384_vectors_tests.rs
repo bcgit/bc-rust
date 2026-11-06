@@ -5,8 +5,8 @@
 use bouncycastle_core::signature_key::{DeterministicSigningKey, VerifyingKey};
 use bouncycastle_core::traits::HashOneShot;
 use bouncycastle_core::traits::{SignaturePrivateKey, SignaturePublicKey};
-use bouncycastle_ec::p384_comb::comb_multiply_base_point;
-use bouncycastle_ec::p384_scalar::P384Scalar;
+use bouncycastle_ec::hazmat::p384_comb::comb_multiply_base_point;
+use bouncycastle_ec::hazmat::p384_scalar::P384Scalar;
 use bouncycastle_ecdsa::keys_p384::{ECDSAP384PrivateKey, ECDSAP384PublicKey};
 use bouncycastle_ecdsa::rfc6979_p384::generate_k;
 use bouncycastle_hex::decode as hex_decode;
@@ -50,8 +50,8 @@ fn public_key_matches_vector() {
     let d = P384Scalar::from_be_bytes(&bytes48(X));
     let q = comb_multiply_base_point(&d);
     let (x, y) = q.to_affine().unwrap();
-    assert_eq!(x.to_limbs(), bouncycastle_ec::p384_sec1::limbs_from_be_bytes(&bytes48(UX)));
-    assert_eq!(y.to_limbs(), bouncycastle_ec::p384_sec1::limbs_from_be_bytes(&bytes48(UY)));
+    assert_eq!(x.to_limbs(), bouncycastle_ec::hazmat::p384_sec1::limbs_from_be_bytes(&bytes48(UX)));
+    assert_eq!(y.to_limbs(), bouncycastle_ec::hazmat::p384_sec1::limbs_from_be_bytes(&bytes48(UY)));
 }
 
 #[test]

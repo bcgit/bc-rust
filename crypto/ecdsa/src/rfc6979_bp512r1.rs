@@ -18,8 +18,8 @@
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::symmetric_key::{FromAnyKeyMaterial, MacGenerationKey};
 use bouncycastle_core::traits::MAC;
-use bouncycastle_ec::bp512r1_scalar::{Bp512r1Scalar, N_LIMBS};
-use bouncycastle_ec::bp512r1_sec1;
+use bouncycastle_ec::hazmat::bp512r1_scalar::{Bp512r1Scalar, N_LIMBS};
+use bouncycastle_ec::hazmat::bp512r1_sec1;
 use bouncycastle_ec::nat;
 use bouncycastle_hmac::HmacKey;
 use bouncycastle_sha2::SHA512;

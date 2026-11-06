@@ -5,8 +5,10 @@
 //! in Python via plain big-endian byte packing. `G` has odd `y` (tag `0x03`) and `2G` has even `y`
 //! (tag `0x02`), so between them both compressed tags are exercised.
 
-use bouncycastle_ec::p384::P384FieldElement;
-use bouncycastle_ec::p384_sec1::{decode, decode_point, encode_compressed, encode_uncompressed};
+use bouncycastle_ec::hazmat::p384::P384FieldElement;
+use bouncycastle_ec::hazmat::p384_sec1::{
+    decode, decode_point, encode_compressed, encode_uncompressed,
+};
 
 const G_X: [u64; 6] = [
     0x3a545e3872760ab7, 0x5502f25dbf55296c, 0x59f741e082542a38, 0x6e1d3b628ba79b98,

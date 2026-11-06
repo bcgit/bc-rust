@@ -8,19 +8,19 @@
 //! generation: `n` is close enough to `2^384` that the reduction's bias is negligible with no
 //! headroom at all. But Appendix A.3.1 -- the randomised per-message secret -- requires `N + t`
 //! bits with `t >= 64` regardless, so both draws are 448 bits (56 bytes) and go through
-//! [`bouncycastle_ec::p384_extra_bits`]'s wide reduction; see that module's docs for the reasoning and for
-//! why key generation uses the same draw.
+//! [`bouncycastle_ec::hazmat::p384_extra_bits`]'s wide reduction; see that module's docs for the
+//! reasoning and for why key generation uses the same draw.
 
 use crate::keys_common::DerivePublicKey;
 use bouncycastle_core::errors::{RNGError, SignatureError};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{RNG, SignaturePrivateKey, SignaturePublicKey};
+use bouncycastle_ec::hazmat::p384::P384FieldElement;
+use bouncycastle_ec::hazmat::p384_comb::comb_multiply_base_point;
+use bouncycastle_ec::hazmat::p384_extra_bits::reduce_wide_bits_mod_n_minus_1;
+use bouncycastle_ec::hazmat::p384_scalar::{N_LIMBS, P384Scalar};
+use bouncycastle_ec::hazmat::p384_sec1;
 use bouncycastle_ec::nat;
-use bouncycastle_ec::p384::P384FieldElement;
-use bouncycastle_ec::p384_comb::comb_multiply_base_point;
-use bouncycastle_ec::p384_extra_bits::reduce_wide_bits_mod_n_minus_1;
-use bouncycastle_ec::p384_scalar::{N_LIMBS, P384Scalar};
-use bouncycastle_ec::p384_sec1;
 use bouncycastle_utils::secret::Secret;
 use core::fmt;
 use core::fmt::{Debug, Display, Formatter};

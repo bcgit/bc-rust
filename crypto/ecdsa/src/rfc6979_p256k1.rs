@@ -12,9 +12,9 @@
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::symmetric_key::{FromAnyKeyMaterial, MacGenerationKey};
 use bouncycastle_core::traits::MAC;
+use bouncycastle_ec::hazmat::p256k1_scalar::{N_LIMBS, P256K1Scalar};
+use bouncycastle_ec::hazmat::p256k1_sec1;
 use bouncycastle_ec::nat;
-use bouncycastle_ec::p256k1_scalar::{N_LIMBS, P256K1Scalar};
-use bouncycastle_ec::p256k1_sec1;
 use bouncycastle_hmac::HmacKey;
 use bouncycastle_sha2::SHA256;
 use bouncycastle_utils::ct;

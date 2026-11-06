@@ -17,14 +17,16 @@ use bouncycastle_core::signature_key::{
 use bouncycastle_core::traits::{
     Algorithm, AlgorithmInfo, Hash, RNG, SignatureSigner, SignatureVerifier,
 };
+use bouncycastle_ec::hazmat::p384::P384FieldElement;
+use bouncycastle_ec::hazmat::p384_comb::comb_multiply_base_point;
+use bouncycastle_ec::hazmat::p384_extra_bits::reduce_wide_bits_mod_n_minus_1;
+use bouncycastle_ec::hazmat::p384_point::P384JacobianPoint;
+use bouncycastle_ec::hazmat::p384_scalar::{
+    N_LIMBS, P384PublicScalar, P384Scalar, P384ScalarField,
+};
+use bouncycastle_ec::hazmat::p384_sec1;
+use bouncycastle_ec::hazmat::p384_wnaf::shamir_multiply;
 use bouncycastle_ec::nat;
-use bouncycastle_ec::p384::P384FieldElement;
-use bouncycastle_ec::p384_comb::comb_multiply_base_point;
-use bouncycastle_ec::p384_extra_bits::reduce_wide_bits_mod_n_minus_1;
-use bouncycastle_ec::p384_point::P384JacobianPoint;
-use bouncycastle_ec::p384_scalar::{N_LIMBS, P384PublicScalar, P384Scalar, P384ScalarField};
-use bouncycastle_ec::p384_sec1;
-use bouncycastle_ec::p384_wnaf::shamir_multiply;
 use bouncycastle_sha2::SHA384;
 use bouncycastle_utils::secret::Secret;
 
@@ -132,8 +134,8 @@ fn sign_with_k(
 
 /// FIPS 186-5 §6.4.1 step 3 by Appendix A.3.1, reduced into `[1, n-1]` by
 /// `reduce_wide_bits_mod_n_minus_1`; the one place [`ECDSAP384`]'s signing paths draw `k`. Draws
-/// A.3.1 step 3's `N + t` bits with `t = 64` (see [`bouncycastle_ec::p384_extra_bits`]'s docs for why that is
-/// required here even though P-384's `n` would need none for bias alone).
+/// A.3.1 step 3's `N + t` bits with `t = 64` (see [`bouncycastle_ec::hazmat::p384_extra_bits`]'s
+/// docs for why that is required here even though P-384's `n` would need none for bias alone).
 fn random_k(rng: &mut dyn RNG) -> Result<P384Scalar, SignatureError> {
     // Raw DRBG output, reduced below into the per-message secret: held in `Secret` so it is
     // scrubbed when this function returns rather than left on the stack.

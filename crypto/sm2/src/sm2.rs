@@ -57,13 +57,13 @@ use bouncycastle_core::signature_key::{SignatureAlgorithm, SigningKey, Verifying
 use bouncycastle_core::traits::{
     Algorithm, AlgorithmInfo, Hash, RNG, SignatureSigner, SignatureVerifier,
 };
+use bouncycastle_ec::hazmat::sm2::Sm2FieldElement;
+use bouncycastle_ec::hazmat::sm2_comb::comb_multiply_base_point;
+use bouncycastle_ec::hazmat::sm2_point::Sm2JacobianPoint;
+use bouncycastle_ec::hazmat::sm2_scalar::{N_LIMBS, Sm2PublicScalar, Sm2Scalar, Sm2ScalarField};
+use bouncycastle_ec::hazmat::sm2_sec1;
+use bouncycastle_ec::hazmat::sm2_wnaf::shamir_multiply;
 use bouncycastle_ec::nat;
-use bouncycastle_ec::sm2::Sm2FieldElement;
-use bouncycastle_ec::sm2_comb::comb_multiply_base_point;
-use bouncycastle_ec::sm2_point::Sm2JacobianPoint;
-use bouncycastle_ec::sm2_scalar::{N_LIMBS, Sm2PublicScalar, Sm2Scalar, Sm2ScalarField};
-use bouncycastle_ec::sm2_sec1;
-use bouncycastle_ec::sm2_wnaf::shamir_multiply;
 use bouncycastle_sm3::SM3;
 use bouncycastle_utils::secret::Secret;
 
@@ -343,7 +343,7 @@ fn in_range(limbs: &[u64; 4]) -> bool {
 
 /// `true` iff either `r'` or `s'` is outside `[1, n-1]` -- §7.1 steps B1-B2's range check, named so
 /// the OR-of-two-checks combination has something to unit test directly (mirroring
-/// `bouncycastle_ec::sm2_sec1::either_out_of_range`'s own naming and reasoning).
+/// `bouncycastle_ec::hazmat::sm2_sec1::either_out_of_range`'s own naming and reasoning).
 fn either_out_of_range(r_limbs: &[u64; 4], s_limbs: &[u64; 4]) -> bool {
     !in_range(r_limbs) || !in_range(s_limbs)
 }

@@ -11,22 +11,22 @@
 //! (144 bits), and every intermediate byte string this module builds -- `ENTLA || IDA`, then each
 //! domain/key coordinate appended -- was checked against the draft's own printed values, as was the
 //! resulting `ZA`. That worked example uses a different (illustrative) curve than the "recommended
-//! parameters" curve `bouncycastle_ec::sm2` implements, so this only validates the algorithm and
-//! byte-encoding, not this crate's own domain constants -- those are separately validated in
-//! `bouncycastle-ec`'s own SM2 tests.
+//! parameters" curve `bouncycastle_ec::hazmat::sm2` implements, so this only validates the
+//! algorithm and byte-encoding, not this crate's own domain constants -- those are separately
+//! validated in `bouncycastle-ec`'s own SM2 tests.
 
 use bouncycastle_core::errors::SignatureError;
 use bouncycastle_core::traits::Hash;
+use bouncycastle_ec::hazmat::sm2::{P_LIMBS, Sm2FieldElement};
+use bouncycastle_ec::hazmat::sm2_domain::{B_LIMBS, G_X_LIMBS, G_Y_LIMBS};
+use bouncycastle_ec::hazmat::sm2_sec1::be_bytes_from_limbs;
 use bouncycastle_ec::nat;
-use bouncycastle_ec::sm2::{P_LIMBS, Sm2FieldElement};
-use bouncycastle_ec::sm2_domain::{B_LIMBS, G_X_LIMBS, G_Y_LIMBS};
-use bouncycastle_ec::sm2_sec1::be_bytes_from_limbs;
 use bouncycastle_sm3::SM3;
 
 /// `a = p - 3` (`draft-shen-sm2-ecdsa-02` Appendix D), computed here rather than exposed by
-/// [`bouncycastle_ec::sm2_domain`]: SM2's own curve arithmetic never needs the literal value of `a`
-/// (it bakes the `a = -3` shortcut directly into its doubling formula -- see
-/// `bouncycastle_ec::sm2_point`'s docs), but `ZA`'s definition below does.
+/// [`bouncycastle_ec::hazmat::sm2_domain`]: SM2's own curve arithmetic never needs the literal
+/// value of `a` (it bakes the `a = -3` shortcut directly into its doubling formula -- see
+/// `bouncycastle_ec::hazmat::sm2_point`'s docs), but `ZA`'s definition below does.
 fn a_limbs() -> [u64; 4] {
     let (diff, borrow) = nat::sub(&P_LIMBS, &[3, 0, 0, 0]);
     debug_assert_eq!(borrow, 0, "p > 3, so p - 3 never borrows");

@@ -1,8 +1,8 @@
 use criterion::{Criterion, criterion_group, criterion_main};
 use std::hint::black_box;
 
-use bouncycastle_ec::p384::P384FieldElement;
-use bouncycastle_ec::p384_domain::{G_X_LIMBS, G_Y_LIMBS};
+use bouncycastle_ec::hazmat::p384::P384FieldElement;
+use bouncycastle_ec::hazmat::p384_domain::{G_X_LIMBS, G_Y_LIMBS};
 
 fn bench_p384_field(c: &mut Criterion) {
     let a = P384FieldElement::from_limbs(G_X_LIMBS);

@@ -13,9 +13,9 @@
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::symmetric_key::{FromAnyKeyMaterial, MacGenerationKey};
 use bouncycastle_core::traits::MAC;
+use bouncycastle_ec::hazmat::p256_scalar::{N_LIMBS, P256Scalar};
+use bouncycastle_ec::hazmat::p256_sec1;
 use bouncycastle_ec::nat;
-use bouncycastle_ec::p256_scalar::{N_LIMBS, P256Scalar};
-use bouncycastle_ec::p256_sec1;
 use bouncycastle_hmac::HmacKey;
 use bouncycastle_sha2::SHA256;
 use bouncycastle_utils::ct;
@@ -54,10 +54,10 @@ fn hmac_k(key: &[u8; HLEN], data: &[&[u8]]) -> Secret<[u8; HLEN]> {
 /// RFC 6979 §2.3.4 `bits2octets(h1)`: reduce the message hash `h1` mod `n`, then §2.3.3
 /// `int2octets`. `h1` is `bits2int`'d as-is (no truncation: `blen == qlen`), so this is one
 /// conditional subtraction -- the same single-subtraction argument
-/// [`P256Scalar::from_limbs`](bouncycastle_ec::p256_scalar::P256Scalar::from_limbs) documents for
-/// any 256-bit input against a modulus this close to `2^256`. `h1` is a public message hash, not a
-/// secret, so there is no constant-time obligation here; the branch-free form is used anyway to
-/// match this crate's house style.
+/// [`P256Scalar::from_limbs`](bouncycastle_ec::hazmat::p256_scalar::P256Scalar::from_limbs)
+/// documents for any 256-bit input against a modulus this close to `2^256`. `h1` is a public
+/// message hash, not a secret, so there is no constant-time obligation here; the branch-free form
+/// is used anyway to match this crate's house style.
 fn bits2octets(h1: &[u8; HLEN]) -> [u8; HLEN] {
     let limbs = p256_sec1::limbs_from_be_bytes(h1);
     let (diff, borrow) = nat::sub(&limbs, &N_LIMBS);
@@ -95,8 +95,8 @@ fn candidate_in_range(candidate: &[u8; HLEN]) -> bool {
 /// `bouncycastle_mldsa` treat their own secret stack intermediates. `bits2octets(h1)` is not
 /// wrapped: it derives from the public message hash, not from `d`.
 ///
-/// One copy is outside this function's reach: `d.to_be_bytes()` hands back a plain array by
-/// design (see [`P256Scalar::to_be_bytes`](bouncycastle_ec::p256_scalar::P256Scalar::to_be_bytes),
+/// One copy is outside this function's reach: `d.to_be_bytes()` hands back a plain array by design
+/// (see [`P256Scalar::to_be_bytes`](bouncycastle_ec::hazmat::p256_scalar::P256Scalar::to_be_bytes),
 /// whose own docs note it "momentarily holds the plain value ... the caller asked for the bytes"),
 /// so that transient is copied into the `Secret` above but the transient itself is not erased.
 ///

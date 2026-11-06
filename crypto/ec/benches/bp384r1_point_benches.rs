@@ -1,11 +1,11 @@
 use criterion::{Criterion, criterion_group, criterion_main};
 use std::hint::black_box;
 
-use bouncycastle_ec::bp384r1::Bp384r1FieldElement;
-use bouncycastle_ec::bp384r1_domain::{G_X_LIMBS, G_Y_LIMBS};
-use bouncycastle_ec::bp384r1_mul::multiply_point;
-use bouncycastle_ec::bp384r1_point::Bp384r1JacobianPoint;
-use bouncycastle_ec::bp384r1_scalar::Bp384r1Scalar;
+use bouncycastle_ec::hazmat::bp384r1::Bp384r1FieldElement;
+use bouncycastle_ec::hazmat::bp384r1_domain::{G_X_LIMBS, G_Y_LIMBS};
+use bouncycastle_ec::hazmat::bp384r1_mul::multiply_point;
+use bouncycastle_ec::hazmat::bp384r1_point::Bp384r1JacobianPoint;
+use bouncycastle_ec::hazmat::bp384r1_scalar::Bp384r1Scalar;
 
 fn bench_bp384r1_point(c: &mut Criterion) {
     let g = Bp384r1JacobianPoint::from_affine(

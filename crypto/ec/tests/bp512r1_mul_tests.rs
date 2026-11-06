@@ -5,15 +5,15 @@
 //! `k = n-1`, a window of all ones, `Q` the identity, `Q` negated, `Q` given in a
 //! non-canonical-`Z` Jacobian representation, and (debug builds only) `Q` off the curve.
 
-use bouncycastle_ec::bp512r1::Bp512r1FieldElement;
-use bouncycastle_ec::bp512r1_comb::comb_multiply_base_point;
-use bouncycastle_ec::bp512r1_domain::{G_X_LIMBS, G_Y_LIMBS};
-use bouncycastle_ec::bp512r1_mul::multiply_point;
-use bouncycastle_ec::bp512r1_point::Bp512r1JacobianPoint;
-use bouncycastle_ec::bp512r1_scalar::{
+use bouncycastle_ec::hazmat::bp512r1::Bp512r1FieldElement;
+use bouncycastle_ec::hazmat::bp512r1_comb::comb_multiply_base_point;
+use bouncycastle_ec::hazmat::bp512r1_domain::{G_X_LIMBS, G_Y_LIMBS};
+use bouncycastle_ec::hazmat::bp512r1_mul::multiply_point;
+use bouncycastle_ec::hazmat::bp512r1_point::Bp512r1JacobianPoint;
+use bouncycastle_ec::hazmat::bp512r1_scalar::{
     Bp512r1PublicScalar, Bp512r1Scalar, Bp512r1ScalarField, N_LIMBS,
 };
-use bouncycastle_ec::bp512r1_wnaf::shamir_multiply;
+use bouncycastle_ec::hazmat::bp512r1_wnaf::shamir_multiply;
 use bouncycastle_ec::nat;
 
 const LIMBS: usize = 8;

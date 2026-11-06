@@ -9,8 +9,8 @@ use bouncycastle_core::traits::{RNG, SignaturePrivateKey, SignaturePublicKey};
 use bouncycastle_core_test_framework::signature::{
     TestFrameworkSignature, TestFrameworkSignatureKeys,
 };
-use bouncycastle_ec::p256_scalar::N_LIMBS;
-use bouncycastle_ec::p256_sec1::be_bytes_from_limbs;
+use bouncycastle_ec::hazmat::p256_scalar::N_LIMBS;
+use bouncycastle_ec::hazmat::p256_sec1::be_bytes_from_limbs;
 use bouncycastle_ecdsa::ecdsa_p256::ECDSAP256;
 use bouncycastle_ecdsa::keys_common::DerivePublicKey;
 use bouncycastle_ecdsa::keys_p256::{ECDSAP256PrivateKey, ECDSAP256PublicKey, keygen};
@@ -337,7 +337,9 @@ fn verify_rejects_r_or_s_outside_1_to_n_minus_1() {
     let sig = sk.sign(&mut DefaultRNG::default(), msg, None).unwrap();
     pk.verify(msg, None, &sig).expect("the untampered signature must verify");
 
-    let n = bouncycastle_ec::p256_sec1::be_bytes_from_limbs(&bouncycastle_ec::p256_scalar::N_LIMBS);
+    let n = bouncycastle_ec::hazmat::p256_sec1::be_bytes_from_limbs(
+        &bouncycastle_ec::hazmat::p256_scalar::N_LIMBS,
+    );
     for (name, bad) in [("0", [0u8; 32]), ("n", n), ("2^256 - 1", [0xffu8; 32])] {
         for (half, offset) in [("r", 0usize), ("s", 32usize)] {
             let mut tampered = sig;

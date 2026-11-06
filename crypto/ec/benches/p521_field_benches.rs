@@ -1,8 +1,8 @@
 use criterion::{Criterion, criterion_group, criterion_main};
 use std::hint::black_box;
 
-use bouncycastle_ec::p521::P521FieldElement;
-use bouncycastle_ec::p521_domain::{G_X_LIMBS, G_Y_LIMBS};
+use bouncycastle_ec::hazmat::p521::P521FieldElement;
+use bouncycastle_ec::hazmat::p521_domain::{G_X_LIMBS, G_Y_LIMBS};
 
 fn bench_p521_field(c: &mut Criterion) {
     let a = P521FieldElement::from_limbs(G_X_LIMBS);

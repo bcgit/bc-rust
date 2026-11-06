@@ -5,9 +5,9 @@
 //! for why this independent-reference pinning matters. Inputs are the 56 bytes (448 bits)
 //! `keys_p384` and `ecdsa_p384` actually draw, except where a shorter input is the point.
 
-use bouncycastle_ec::p384_extra_bits::reduce_wide_bits_mod_n_minus_1;
-use bouncycastle_ec::p384_scalar::N_LIMBS;
-use bouncycastle_ec::p384_sec1::be_bytes_from_limbs;
+use bouncycastle_ec::hazmat::p384_extra_bits::reduce_wide_bits_mod_n_minus_1;
+use bouncycastle_ec::hazmat::p384_scalar::N_LIMBS;
+use bouncycastle_ec::hazmat::p384_sec1::be_bytes_from_limbs;
 use bouncycastle_hex::decode as hex_decode;
 
 fn bytes48(hex: &str) -> [u8; 48] {
@@ -86,7 +86,7 @@ fn known_answer_at_the_n_minus_1_boundary() {
 /// code with the Barrett path beyond `nat`'s add and sub.
 fn reference_bit_serial(bytes: &[u8]) -> [u8; 48] {
     use bouncycastle_ec::nat;
-    let n = bouncycastle_ec::p384_scalar::N_LIMBS;
+    let n = bouncycastle_ec::hazmat::p384_scalar::N_LIMBS;
     let mut m = n;
     m[0] -= 1; // n is odd
     let two_pow_mod_m = nat::sub(&[0u64; 6], &m).0; // 2^384 - m, wrapping
@@ -103,7 +103,7 @@ fn reference_bit_serial(bytes: &[u8]) -> [u8; 48] {
         }
     }
     let plus_one = nat::add(&acc, &[1u64, 0, 0, 0, 0, 0]).0;
-    bouncycastle_ec::p384_sec1::be_bytes_from_limbs(&plus_one)
+    bouncycastle_ec::hazmat::p384_sec1::be_bytes_from_limbs(&plus_one)
 }
 
 /// xorshift64*, fixed seed, as in the `ec` crate's property tests.

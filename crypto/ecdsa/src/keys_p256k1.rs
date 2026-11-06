@@ -7,19 +7,19 @@
 //! secp256k1's `n` is within `2^129` of `2^256`, so Appendix A.4.1's bias bound already holds at
 //! 256 bits and key generation would need no headroom. But Appendix A.3.1 -- the randomised
 //! per-message secret -- requires `N + t` bits with `t >= 64` regardless, so both draws are 320
-//! bits (40 bytes) and go through [`bouncycastle_ec::p256k1_extra_bits`]'s wide reduction; see that
-//! module's docs for the reasoning and for why key generation uses the same draw.
+//! bits (40 bytes) and go through [`bouncycastle_ec::hazmat::p256k1_extra_bits`]'s wide reduction;
+//! see that module's docs for the reasoning and for why key generation uses the same draw.
 
 use crate::keys_common::DerivePublicKey;
 use bouncycastle_core::errors::{RNGError, SignatureError};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{RNG, SignaturePrivateKey, SignaturePublicKey};
+use bouncycastle_ec::hazmat::p256k1::P256K1FieldElement;
+use bouncycastle_ec::hazmat::p256k1_comb::comb_multiply_base_point;
+use bouncycastle_ec::hazmat::p256k1_extra_bits::reduce_wide_bits_mod_n_minus_1;
+use bouncycastle_ec::hazmat::p256k1_scalar::{N_LIMBS, P256K1Scalar};
+use bouncycastle_ec::hazmat::p256k1_sec1;
 use bouncycastle_ec::nat;
-use bouncycastle_ec::p256k1::P256K1FieldElement;
-use bouncycastle_ec::p256k1_comb::comb_multiply_base_point;
-use bouncycastle_ec::p256k1_extra_bits::reduce_wide_bits_mod_n_minus_1;
-use bouncycastle_ec::p256k1_scalar::{N_LIMBS, P256K1Scalar};
-use bouncycastle_ec::p256k1_sec1;
 use bouncycastle_utils::secret::Secret;
 use core::fmt;
 use core::fmt::{Debug, Display, Formatter};

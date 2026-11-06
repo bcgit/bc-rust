@@ -4,12 +4,12 @@
 //! shortcut, unlike every NIST curve or secp256k1 in this crate.
 //!
 //! Every other curve here hand-writes its own `widening_mul`/`redc` (see e.g.
-//! [`crate::p256_scalar`]'s docs on why that isn't expressed generically) because each one's
-//! reduction is tuned to that specific modulus. That tuning is exactly what a "random" prime
-//! doesn't offer, so there is nothing curve-specific left to hand-write per brainpool width --
-//! this module is genuinely shared, parameterized over the limb count `L` via a const generic
-//! (matching [`crate::nat`]'s own `add`/`sub`), with the modulus and Montgomery constants passed
-//! in at each call rather than baked in as per-curve compile-time constants.
+//! [`crate::hazmat::p256_scalar`]'s docs on why that isn't expressed generically) because each
+//! one's reduction is tuned to that specific modulus. That tuning is exactly what a "random" prime
+//! doesn't offer, so there is nothing curve-specific left to hand-write per brainpool width -- this
+//! module is genuinely shared, parameterized over the limb count `L` via a const generic (matching
+//! [`crate::nat`]'s own `add`/`sub`), with the modulus and Montgomery constants passed in at each
+//! call rather than baked in as per-curve compile-time constants.
 //!
 //! # Why a second const generic `L2`
 //!
@@ -69,10 +69,11 @@ pub fn widening_mul<const L: usize, const L2: usize>(a: &[u64; L], b: &[u64; L])
         // contributes nothing to `get(..) as u128 + carry`'s low 64 bits at the next iteration, the
         // stored limb is written unchanged, and the "carry" that comes back out is again pure high
         // bits, propagating forever without ever affecting a stored limb (which is all this
-        // function returns) -- identical reasoning to [`crate::p521`]'s own `widening_mul`, whose
-        // docs have the full argument. Verified (not merely argued) over 100,000+ pseudorandom
-        // trials plus `(p-1)*(p-1)` for each of brainpoolP256r1/384r1/512r1's actual primes: the
-        // mutated function's output matches plain `u128`/bigint multiplication every time.
+        // function returns) -- identical reasoning to [`crate::hazmat::p521`]'s own `widening_mul`,
+        // whose docs have the full argument. Verified (not merely argued) over 100,000+
+        // pseudorandom trials plus `(p-1)*(p-1)` for each of brainpoolP256r1/384r1/512r1's actual
+        // primes: the mutated function's output matches plain `u128`/bigint multiplication every
+        // time.
         let mut k = i + L;
         while k < L2 {
             let s = (result[k] as u128) + carry;

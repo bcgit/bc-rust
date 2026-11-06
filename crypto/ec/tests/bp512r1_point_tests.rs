@@ -9,9 +9,9 @@
 //! # affine add/double via the standard general-a formulas
 //! ```
 
-use bouncycastle_ec::bp512r1::Bp512r1FieldElement;
-use bouncycastle_ec::bp512r1_domain::{G_X_LIMBS, G_Y_LIMBS};
-use bouncycastle_ec::bp512r1_point::Bp512r1JacobianPoint;
+use bouncycastle_ec::hazmat::bp512r1::Bp512r1FieldElement;
+use bouncycastle_ec::hazmat::bp512r1_domain::{G_X_LIMBS, G_Y_LIMBS};
+use bouncycastle_ec::hazmat::bp512r1_point::Bp512r1JacobianPoint;
 
 const TWO_G_X: [u64; 8] = [
     0x080447def02f4850, 0xf698f404089a4cc5, 0x97116e702915a4f4, 0x957877f3a8f0f725,

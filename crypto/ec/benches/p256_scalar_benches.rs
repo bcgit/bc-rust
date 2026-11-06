@@ -8,12 +8,12 @@
 use criterion::{Criterion, criterion_group, criterion_main};
 use std::hint::black_box;
 
-use bouncycastle_ec::p256::P256FieldElement;
-use bouncycastle_ec::p256_comb::comb_multiply_base_point;
-use bouncycastle_ec::p256_domain::{G_X_LIMBS, G_Y_LIMBS};
-use bouncycastle_ec::p256_point::P256JacobianPoint;
-use bouncycastle_ec::p256_scalar::{P256PublicScalar, P256Scalar, P256ScalarField};
-use bouncycastle_ec::p256_wnaf::shamir_multiply;
+use bouncycastle_ec::hazmat::p256::P256FieldElement;
+use bouncycastle_ec::hazmat::p256_comb::comb_multiply_base_point;
+use bouncycastle_ec::hazmat::p256_domain::{G_X_LIMBS, G_Y_LIMBS};
+use bouncycastle_ec::hazmat::p256_point::P256JacobianPoint;
+use bouncycastle_ec::hazmat::p256_scalar::{P256PublicScalar, P256Scalar, P256ScalarField};
+use bouncycastle_ec::hazmat::p256_wnaf::shamir_multiply;
 
 const A_LIMBS: [u64; 4] =
     [0x9f8573c9f25dc994, 0x9115361f42389a31, 0xfc83ab74842a0944, 0x285f078965f5a299];

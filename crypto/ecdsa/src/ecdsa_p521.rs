@@ -19,14 +19,16 @@ use bouncycastle_core::signature_key::{
 use bouncycastle_core::traits::{
     Algorithm, AlgorithmInfo, Hash, RNG, SignatureSigner, SignatureVerifier,
 };
+use bouncycastle_ec::hazmat::p521::P521FieldElement;
+use bouncycastle_ec::hazmat::p521_comb::comb_multiply_base_point;
+use bouncycastle_ec::hazmat::p521_extra_bits::reduce_wide_bits_mod_n_minus_1;
+use bouncycastle_ec::hazmat::p521_point::P521JacobianPoint;
+use bouncycastle_ec::hazmat::p521_scalar::{
+    N_LIMBS, P521PublicScalar, P521Scalar, P521ScalarField,
+};
+use bouncycastle_ec::hazmat::p521_sec1;
+use bouncycastle_ec::hazmat::p521_wnaf::shamir_multiply;
 use bouncycastle_ec::nat;
-use bouncycastle_ec::p521::P521FieldElement;
-use bouncycastle_ec::p521_comb::comb_multiply_base_point;
-use bouncycastle_ec::p521_extra_bits::reduce_wide_bits_mod_n_minus_1;
-use bouncycastle_ec::p521_point::P521JacobianPoint;
-use bouncycastle_ec::p521_scalar::{N_LIMBS, P521PublicScalar, P521Scalar, P521ScalarField};
-use bouncycastle_ec::p521_sec1;
-use bouncycastle_ec::p521_wnaf::shamir_multiply;
 use bouncycastle_sha2::SHA512;
 use bouncycastle_utils::secret::Secret;
 
@@ -135,7 +137,7 @@ fn sign_with_k(
 /// FIPS 186-5 §6.4.1 step 3 by Appendix A.3.1, reduced into `[1, n-1]` by
 /// `reduce_wide_bits_mod_n_minus_1`; the one place [`ECDSAP521`]'s signing paths draw `k`. Draws
 /// A.3.1 step 3's `N + t` bits (`t = 71`, the byte-aligned width at or above `t = 64`) and reduces
-/// them with [`bouncycastle_ec::p521_extra_bits`] -- see that module's docs.
+/// them with [`bouncycastle_ec::hazmat::p521_extra_bits`] -- see that module's docs.
 fn random_k(rng: &mut dyn RNG) -> Result<P521Scalar, SignatureError> {
     // Raw DRBG output, reduced below into the per-message secret: held in `Secret` so it is
     // scrubbed when this function returns rather than left on the stack.
