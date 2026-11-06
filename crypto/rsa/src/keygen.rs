@@ -31,7 +31,7 @@ use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::RNG;
 use bouncycastle_ec::montgomery;
 use bouncycastle_ec::nat;
-use bouncycastle_utils::secret::Secret;
+use bouncycastle_utils::secret::{Secret, zeroize_in_place};
 use core::num::NonZeroUsize;
 
 /// The public exponent every key pair this crate generates uses: `F4 = 2^16 + 1 = 65537`.
@@ -361,13 +361,17 @@ pub fn is_probable_prime<const N: usize, const N2: usize, const N21: usize>(
         return Ok(false);
     }
 
-    // Steps 1-2: w - 1 = 2^a * m with m odd.
-    let w_minus_1 = sub_u64(w, 1);
+    // Steps 1-2: w - 1 = 2^a * m with m odd. `w` is a candidate for a private prime, so these
+    // and the context over `w` are held in `Secret`, scrubbed on each of this function's exits.
+    let mut w_minus_1 = Secret::<[u64; N]>::new();
+    *w_minus_1 = sub_u64(w, 1);
     let a = trailing_zeros(&w_minus_1);
-    let m = shr(&w_minus_1, a);
+    let mut m = Secret::<[u64; N]>::new();
+    *m = shr(&w_minus_1, a);
     // w is odd and nonzero here (both checked above), which is all `MontgomeryContext::new`
     // requires, so this cannot fail.
-    let ctx = MontgomeryContext::new(w).expect("w is odd and nonzero");
+    let mut ctx = Secret::<MontgomeryContext<N>>::new();
+    *ctx = MontgomeryContext::new(w).expect("w is odd and nonzero");
 
     // Step 3: wlen = len(w), the bit length of w -- the bases are drawn at that length (not the
     // full limb width), so that for a w well short of the width a draw still lands below w - 1
@@ -393,20 +397,21 @@ pub fn is_probable_prime<const N: usize, const N2: usize, const N21: usize>(
             ));
         }
         // Step 4.3.
-        let mut z = mod_pow::<N, N2, N21>(&b, &m, &ctx);
+        let mut z = Secret::<[u64; N]>::new();
+        *z = mod_pow::<N, N2, N21>(&b, &m, &ctx);
         // Step 4.4.
-        if z == one || z == w_minus_1 {
+        if *z == one || *z == *w_minus_1 {
             continue;
         }
         // Step 4.5.
         let mut witness = true;
         for _ in 1..a {
-            z = mul_mod::<N, N2, N21>(&z, &z, &ctx);
-            if z == w_minus_1 {
+            *z = mul_mod::<N, N2, N21>(&z, &z, &ctx);
+            if *z == *w_minus_1 {
                 witness = false;
                 break;
             }
-            if z == one {
+            if *z == one {
                 break;
             }
         }
@@ -472,18 +477,22 @@ fn random_prime<const N: usize, const N2: usize, const N21: usize>(
 /// Step 5.5: `|p - q| <= 2^(nlen/2 - 100)` rejects `q` (Appendix A.1.1 criterion 2(d) asks for
 /// `|p - q| > 2^(nlen/2 - 100)`). `nlen/2 = 64 * N` here.
 fn primes_too_close<const N: usize>(p: &[u64; N], q: &[u64; N]) -> bool {
-    let (d1, borrow) = nat::sub(q, p);
-    let (d2, _) = nat::sub(p, q);
-    let diff = if borrow == 1 { d2 } else { d1 };
+    let (mut d1, borrow) = nat::sub(q, p);
+    let (mut d2, _) = nat::sub(p, q);
+    let mut diff = if borrow == 1 { d2 } else { d1 };
     let threshold_bit = 64 * N as u32 - 100;
-    let high = shr(&diff, threshold_bit);
-    if is_zero(&high) {
-        return true; // |p - q| < 2^(nlen/2 - 100)
-    }
+    let mut high = shr(&diff, threshold_bit);
     let mut one = [0u64; N];
     one[0] = 1;
-    // Exactly 2^(nlen/2 - 100) is also "<=": the high part is 1 and nothing is set below it.
-    high == one && diff == shl(&one, threshold_bit)
+    // `|p - q| < 2^(nlen/2 - 100)`, or exactly `2^(nlen/2 - 100)`, which is also "<=": the high
+    // part is 1 and nothing is set below it.
+    let too_close = is_zero(&high) || (high == one && diff == shl(&one, threshold_bit));
+    // The differences are functions of both primes: scrubbed before returning.
+    zeroize_in_place(&mut d1);
+    zeroize_in_place(&mut d2);
+    zeroize_in_place(&mut diff);
+    zeroize_in_place(&mut high);
+    too_close
 }
 
 /// FIPS 186-5 Appendix A.1.3, the whole process, for a modulus of `HALF2` limbs (`nlen = 64 *
@@ -537,9 +546,11 @@ pub fn keygen_from_rng<const HALF: usize, const HALF2: usize, const HALF21: usiz
         *q_minus_1 = sub_u64(&q, 1);
         let mut lcm = Secret::<[u64; HALF2]>::new();
         {
-            let g = gcd(&p_minus_1, &q_minus_1);
-            let q_minus_1_over_g = div(&q_minus_1, &g);
+            let mut g = gcd(&p_minus_1, &q_minus_1);
+            let mut q_minus_1_over_g = div(&q_minus_1, &g);
             *lcm = montgomery::widening_mul::<HALF, HALF2>(&p_minus_1, &q_minus_1_over_g);
+            zeroize_in_place(&mut g);
+            zeroize_in_place(&mut q_minus_1_over_g);
         }
         let mut d = Secret::<[u64; HALF2]>::new();
         *d = inverse_of_e_mod(&lcm);
@@ -564,15 +575,52 @@ pub fn keygen_from_rng<const HALF: usize, const HALF2: usize, const HALF21: usiz
         // the constant-time ladder with p - 2 as the exponent.
         let mut q_inv = Secret::<[u64; HALF]>::new();
         {
-            let q_mod_p = reduce_wide::<HALF, HALF>(&q, &p);
-            let p_minus_2 = sub_u64(&p, 2);
+            let mut q_mod_p = reduce_wide::<HALF, HALF>(&q, &p);
+            let mut p_minus_2 = sub_u64(&p, 2);
             // p is odd by construction (step 4.3), so the context exists.
-            let ctx_p = MontgomeryContext::new(&p).expect("p is odd");
+            let mut ctx_p = Secret::<MontgomeryContext<HALF>>::new();
+            *ctx_p = MontgomeryContext::new(&p).expect("p is odd");
             *q_inv = mod_pow::<HALF, HALF2, HALF21>(&q_mod_p, &p_minus_2, &ctx_p);
+            zeroize_in_place(&mut q_mod_p);
+            zeroize_in_place(&mut p_minus_2);
         }
 
         let sk = RsaPrivateKey::<HALF2, HALF>::from_crt_components(&p, &q, &d_p, &d_q, &q_inv)?;
         let pk = RsaPublicKey::<HALF2>::new(sk.n(), PUBLIC_EXPONENT)?;
         return Ok((pk, sk));
+    }
+}
+
+// `primes_too_close` is private and, through `keygen_from_rng`, only ever reached on two
+// independently drawn `nlen/2`-bit primes, which land within `2^(nlen/2 - 100)` of each other with
+// probability about `2^-100`: no integration test through the public API can exercise its reject
+// path or pin its boundary, so the QUALITY_AND_STYLE.md private-function, known-answer exception
+// applies. Known answers at `N = 2` (`threshold_bit = 28`): a difference below `2^28`, or exactly
+// `2^28`, is too close (Appendix A.1.1 criterion 2(d) is `|p - q| > 2^(nlen/2 - 100)`, so equality
+// fails it); `2^28 + 1` and above is not; and the order of `p` and `q` does not matter.
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const P: [u64; 2] = [0x1234_5678_9abc_def1, 0xc000_0000_0000_0001];
+
+    fn p_plus(d: u64) -> [u64; 2] {
+        nat::add(&P, &[d, 0]).0
+    }
+
+    #[test]
+    fn primes_too_close_boundary_cases() {
+        assert!(primes_too_close(&P, &p_plus(1)));
+        assert!(primes_too_close(&P, &p_plus(4)));
+        assert!(primes_too_close(&P, &p_plus(1 << 28)));
+        assert!(!primes_too_close(&P, &p_plus((1 << 28) + 1)));
+        assert!(!primes_too_close(&P, &p_plus(1 << 29)));
+    }
+
+    #[test]
+    fn primes_too_close_is_symmetric_in_its_arguments() {
+        assert!(primes_too_close(&p_plus(1), &P));
+        assert!(primes_too_close(&p_plus(1 << 28), &P));
+        assert!(!primes_too_close(&p_plus((1 << 28) + 1), &P));
     }
 }

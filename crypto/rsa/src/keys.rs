@@ -21,7 +21,7 @@ use bouncycastle_core::errors::SignatureError;
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_ec::montgomery;
 use bouncycastle_ec::nat;
-use bouncycastle_utils::secret::Secret;
+use bouncycastle_utils::secret::{Secret, zeroize_in_place};
 use core::fmt;
 use core::fmt::{Display, Formatter};
 
@@ -282,22 +282,31 @@ impl<const L: usize, const HALF: usize> RsaPrivateKey<L, HALF> {
             5 * HALF_BYTES,
             "RsaPrivateKey::from_bytes_raw needs SK_LEN == 5 * HALF_BYTES"
         );
-        let p_bytes: [u8; HALF_BYTES] = bytes[..HALF_BYTES].try_into().expect("HALF_BYTES bytes");
-        let q_bytes: [u8; HALF_BYTES] =
+        // Borrowed, not copied: the caller's buffer is the one copy of the encoding.
+        let p_bytes: &[u8; HALF_BYTES] = bytes[..HALF_BYTES].try_into().expect("HALF_BYTES bytes");
+        let q_bytes: &[u8; HALF_BYTES] =
             bytes[HALF_BYTES..2 * HALF_BYTES].try_into().expect("HALF_BYTES bytes");
-        let d_p_bytes: [u8; HALF_BYTES] =
+        let d_p_bytes: &[u8; HALF_BYTES] =
             bytes[2 * HALF_BYTES..3 * HALF_BYTES].try_into().expect("HALF_BYTES bytes");
-        let d_q_bytes: [u8; HALF_BYTES] =
+        let d_q_bytes: &[u8; HALF_BYTES] =
             bytes[3 * HALF_BYTES..4 * HALF_BYTES].try_into().expect("HALF_BYTES bytes");
-        let q_inv_bytes: [u8; HALF_BYTES] =
+        let q_inv_bytes: &[u8; HALF_BYTES] =
             bytes[4 * HALF_BYTES..].try_into().expect("HALF_BYTES bytes");
 
-        let p = limbs_from_be_bytes::<HALF, HALF_BYTES>(&p_bytes);
-        let q = limbs_from_be_bytes::<HALF, HALF_BYTES>(&q_bytes);
-        let d_p = limbs_from_be_bytes::<HALF, HALF_BYTES>(&d_p_bytes);
-        let d_q = limbs_from_be_bytes::<HALF, HALF_BYTES>(&d_q_bytes);
-        let q_inv = limbs_from_be_bytes::<HALF, HALF_BYTES>(&q_inv_bytes);
-        Self::from_crt_components(&p, &q, &d_p, &d_q, &q_inv)
+        let mut p = limbs_from_be_bytes::<HALF, HALF_BYTES>(p_bytes);
+        let mut q = limbs_from_be_bytes::<HALF, HALF_BYTES>(q_bytes);
+        let mut d_p = limbs_from_be_bytes::<HALF, HALF_BYTES>(d_p_bytes);
+        let mut d_q = limbs_from_be_bytes::<HALF, HALF_BYTES>(d_q_bytes);
+        let mut q_inv = limbs_from_be_bytes::<HALF, HALF_BYTES>(q_inv_bytes);
+        let key = Self::from_crt_components(&p, &q, &d_p, &d_q, &q_inv);
+        // The five decoded components now live in the key's `Secret` fields (or the decoding was
+        // rejected); either way these copies are scrubbed before returning.
+        zeroize_in_place(&mut p);
+        zeroize_in_place(&mut q);
+        zeroize_in_place(&mut d_p);
+        zeroize_in_place(&mut d_q);
+        zeroize_in_place(&mut q_inv);
+        key
     }
 }
 

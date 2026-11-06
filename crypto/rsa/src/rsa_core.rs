@@ -15,6 +15,7 @@ use crate::modexp::{MontgomeryContext, mod_pow, mul_mod, reduce_wide, sub_mod};
 use bouncycastle_core::errors::SignatureError;
 use bouncycastle_ec::montgomery;
 use bouncycastle_ec::nat;
+use bouncycastle_utils::secret::{Secret, zeroize_in_place};
 
 /// RSAVP1 (RFC 8017 §5.2.2): `m = s^e mod n`, recovering the message representative from a
 /// signature representative under the public key.
@@ -87,9 +88,12 @@ pub(crate) fn crt_exp<
     sk: &RsaPrivateKey<L, HALF>,
     m: &[u64; L],
 ) -> [u64; L] {
-    let ctx_p = MontgomeryContext::<HALF>::new(sk.p())
+    // The two contexts hold `p` and `q`; `Secret` scrubs them on return.
+    let mut ctx_p = Secret::<MontgomeryContext<HALF>>::new();
+    *ctx_p = MontgomeryContext::<HALF>::new(sk.p())
         .expect("RsaPrivateKey::from_crt_components already validated p is odd and nonzero");
-    let ctx_q = MontgomeryContext::<HALF>::new(sk.q())
+    let mut ctx_q = Secret::<MontgomeryContext<HALF>>::new();
+    *ctx_q = MontgomeryContext::<HALF>::new(sk.q())
         .expect("RsaPrivateKey::from_crt_components already validated q is odd and nonzero");
 
     // RFC 8017 §5.2.1 step 2.b.1: reducing `m` (n-width) down to each prime's width is not itself
@@ -97,11 +101,11 @@ pub(crate) fn crt_exp<
     // is as wide as `n = p * q`, so a real implementation must reduce it first. `p`/`q` are
     // private key material, so this uses the constant-time (in the modulus) `reduce_wide`, not
     // `bouncycastle_ec`-style variable-time reduction (which is only safe for RSA's *public* `n`).
-    let m_mod_p = reduce_wide::<L, HALF>(m, sk.p());
-    let m_mod_q = reduce_wide::<L, HALF>(m, sk.q());
+    let mut m_mod_p = reduce_wide::<L, HALF>(m, sk.p());
+    let mut m_mod_q = reduce_wide::<L, HALF>(m, sk.q());
 
-    let s1 = mod_pow::<HALF, HALF2, HALF21>(&m_mod_p, sk.d_p(), &ctx_p);
-    let s2 = mod_pow::<HALF, HALF2, HALF21>(&m_mod_q, sk.d_q(), &ctx_q);
+    let mut s1 = mod_pow::<HALF, HALF2, HALF21>(&m_mod_p, sk.d_p(), &ctx_p);
+    let mut s2 = mod_pow::<HALF, HALF2, HALF21>(&m_mod_q, sk.d_q(), &ctx_q);
 
     // Step 2.b.3: `h = (s1 - s2) * qInv mod p`, which needs `s2` reduced mod `p` first. RFC 8017
     // does not require `p` and `q` to be close in magnitude (only that both are the modulus's two
@@ -109,19 +113,31 @@ pub(crate) fn crt_exp<
     // `RsaPrivateKey`'s docs. `reduce_wide` (built for exactly this: reducing a value wider than
     // its target modulus, constant-time in that modulus) handles the general case; it does not
     // require its first width to exceed its second.
-    let s2_mod_p = reduce_wide::<HALF, HALF>(&s2, sk.p());
-    let diff = sub_mod::<HALF>(&s1, &s2_mod_p, sk.p());
-    let h = mul_mod::<HALF, HALF2, HALF21>(&diff, sk.q_inv(), &ctx_p);
+    let mut s2_mod_p = reduce_wide::<HALF, HALF>(&s2, sk.p());
+    let mut diff = sub_mod::<HALF>(&s1, &s2_mod_p, sk.p());
+    let mut h = mul_mod::<HALF, HALF2, HALF21>(&diff, sk.q_inv(), &ctx_p);
 
     // Step 2.b.4: `s = s2 + q * h`. `h < p` and `q * h < q * p = n`, and CRT recombination
     // guarantees `s2 + q*h < n` (Garner's algorithm's own correctness property), so this widening
     // multiply-then-add cannot overflow `L` limbs.
-    let q_h = montgomery::widening_mul::<HALF, L>(sk.q(), &h);
+    let mut q_h = montgomery::widening_mul::<HALF, L>(sk.q(), &h);
     let mut s2_wide = [0u64; L];
     s2_wide[..HALF].copy_from_slice(&s2);
     let (s, carry) = nat::add(&s2_wide, &q_h);
     debug_assert_eq!(carry, 0, "CRT recombination must stay within n's width");
 
+    // Everything above but `s` is a function of the private primes -- a half-signature alone
+    // factors `n`, through `gcd(s - s1, n)` -- so it is scrubbed before returning, as
+    // QUALITY_AND_STYLE.md asks of a secret-holding local. `s` is the caller's.
+    zeroize_in_place(&mut m_mod_p);
+    zeroize_in_place(&mut m_mod_q);
+    zeroize_in_place(&mut s1);
+    zeroize_in_place(&mut s2);
+    zeroize_in_place(&mut s2_mod_p);
+    zeroize_in_place(&mut diff);
+    zeroize_in_place(&mut h);
+    zeroize_in_place(&mut q_h);
+    zeroize_in_place(&mut s2_wide);
     s
 }
 

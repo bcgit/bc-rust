@@ -34,6 +34,7 @@
 use bouncycastle_ec::montgomery;
 use bouncycastle_ec::nat;
 use bouncycastle_utils::ct::Condition;
+use bouncycastle_utils::secret::{ZeroizablePrimitive, zeroize_in_place};
 
 /// `n' = -n0^-1 mod 2^64` for an odd `n0`, by Newton's method: `x` is correct to one bit at
 /// `x = 1` (since `n0` is odd, `n0 * 1` is odd, i.e. `≡ 1 mod 2`), and each round of
@@ -143,7 +144,9 @@ fn from_montgomery<const L: usize, const L2: usize, const L21: usize>(
 ) -> [u64; L] {
     let mut padded = [0u64; L2];
     padded[..L].copy_from_slice(a_bar);
-    redc_normalize::<L, L2, L21>(&padded, &ctx.modulus, ctx.n_prime)
+    let result = redc_normalize::<L, L2, L21>(&padded, &ctx.modulus, ctx.n_prime);
+    zeroize_in_place(&mut padded);
+    result
 }
 
 /// `a * b mod ctx.modulus()`, for plain (non-Montgomery) `a`, `b`. Only `b` needs converting into
@@ -156,9 +159,12 @@ pub fn mul_mod<const L: usize, const L2: usize, const L21: usize>(
     b: &[u64; L],
     ctx: &MontgomeryContext<L>,
 ) -> [u64; L] {
-    let b_bar = to_montgomery::<L, L2, L21>(b, ctx);
-    let t = montgomery::widening_mul::<L, L2>(a, &b_bar);
-    redc_normalize::<L, L2, L21>(&t, &ctx.modulus, ctx.n_prime)
+    let mut b_bar = to_montgomery::<L, L2, L21>(b, ctx);
+    let mut t = montgomery::widening_mul::<L, L2>(a, &b_bar);
+    let result = redc_normalize::<L, L2, L21>(&t, &ctx.modulus, ctx.n_prime);
+    zeroize_in_place(&mut b_bar);
+    zeroize_in_place(&mut t);
+    result
 }
 
 /// `(a - b) mod modulus` for `a, b < modulus`, in constant time with respect to `modulus`: RSA's
@@ -226,6 +232,7 @@ pub fn reduce_wide<const WIDE: usize, const NARROW: usize>(
 /// Unlike every curve modulus in `bouncycastle-ec`, `n` here is not known until the key is
 /// loaded, so these constants (see the module docs) are derived at construction time rather than
 /// hard-coded.
+#[derive(Clone, Copy)]
 pub struct MontgomeryContext<const L: usize> {
     modulus: [u64; L],
     n_prime: u64,
@@ -233,6 +240,14 @@ pub struct MontgomeryContext<const L: usize> {
     r_mod_n: [u64; L],
     /// `R^2 mod n`, used to bring a value into Montgomery form.
     r2_mod_n: [u64; L],
+}
+
+/// A context over a private modulus -- `p` or `q` in the CRT, a candidate prime in key
+/// generation -- holds that modulus and constants derived from it, so it is built inside a
+/// [`bouncycastle_utils::secret::Secret`] and scrubbed when dropped. One over the public `n`
+/// gains nothing from this.
+impl<const L: usize> ZeroizablePrimitive for MontgomeryContext<L> {
+    const ZEROED: Self = Self { modulus: [0; L], n_prime: 0, r_mod_n: [0; L], r2_mod_n: [0; L] };
 }
 
 impl<const L: usize> MontgomeryContext<L> {
@@ -265,18 +280,29 @@ pub fn mod_pow<const L: usize, const L2: usize, const L21: usize>(
 
     let mut r0 = ctx.r_mod_n;
     let mut r1 = to_montgomery::<L, L2, L21>(base, ctx);
+    // The step's two products, declared here so one scrub after the ladder covers them.
+    let mut new_r0 = [0u64; L];
+    let mut new_r1 = [0u64; L];
 
     for limb_index in (0..L).rev() {
         for bit_index in (0..64u32).rev() {
             let mask = Condition::<u64>::is_bit_set(exponent[limb_index], bit_index);
             ct_swap_array(mask, &mut r0, &mut r1);
-            let new_r1 = mont_mul::<L, L2, L21>(&r0, &r1, &ctx.modulus, ctx.n_prime);
-            let new_r0 = mont_square::<L, L2, L21>(&r0, &ctx.modulus, ctx.n_prime);
+            new_r1 = mont_mul::<L, L2, L21>(&r0, &r1, &ctx.modulus, ctx.n_prime);
+            new_r0 = mont_square::<L, L2, L21>(&r0, &ctx.modulus, ctx.n_prime);
             r0 = new_r0;
             r1 = new_r1;
             ct_swap_array(mask, &mut r0, &mut r1);
         }
     }
 
-    from_montgomery::<L, L2, L21>(&r0, ctx)
+    let result = from_montgomery::<L, L2, L21>(&r0, ctx);
+    // The ladder's state is a function of the exponent's bits, so it is scrubbed before
+    // returning (QUALITY_AND_STYLE.md's rule on secret-holding locals). The products inside
+    // `mont_mul` and `mont_square` are the callee intermediates that rule does not reach.
+    zeroize_in_place(&mut r0);
+    zeroize_in_place(&mut r1);
+    zeroize_in_place(&mut new_r0);
+    zeroize_in_place(&mut new_r1);
+    result
 }
