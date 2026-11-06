@@ -3,8 +3,8 @@
 //! Identical in shape to [`crate::p256_mul`] -- see its docs for why neither [`crate::p384_comb`]
 //! nor [`crate::p384_wnaf`] covers this case, for the fixed-window design, and for the cost
 //! comparison and the width-4 choice, all of which apply unchanged here. The table is `16 *
-//! size_of::<P384JacobianPoint>()` = 2304 bytes of stack. The table and the working accumulator are
-//! scrubbed before returning; the caller owns the result and scrubs it when it is done.
+//! size_of::<P384JacobianPoint>()` = 2304 bytes of stack, scrubbed before returning to the extent
+//! described there.
 //!
 //! Verified against [`crate::p384_comb`] (for `Q = G`), against [`crate::p384_wnaf`] and against
 //! `[a k mod n]G` (for `Q = [a]G`) in `p384_mul_tests.rs`, with the same edge cases as P-256's.

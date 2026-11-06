@@ -3,9 +3,8 @@
 //! 5.7.1.2. Identical in shape to [`crate::p256_mul`] -- see its docs for why neither
 //! [`crate::p256k1_comb`] nor [`crate::p256k1_wnaf`] covers this case, for the fixed-window design,
 //! and for the cost comparison and the width-4 choice, all of which apply unchanged here. The table
-//! is `16 * size_of::<P256K1JacobianPoint>()` = 1536 bytes of stack. The table and the working
-//! accumulator are scrubbed before returning; the caller owns the result and scrubs it when it is
-//! done.
+//! is `16 * size_of::<P256K1JacobianPoint>()` = 1536 bytes of stack, scrubbed before returning to
+//! the extent described there.
 //!
 //! Verified against [`crate::p256k1_comb`] (for `Q = G`), against [`crate::p256k1_wnaf`] and
 //! against `[a k mod n]G` (for `Q = [a]G`) in `p256k1_mul_tests.rs`, with the same edge cases as

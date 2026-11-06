@@ -5,9 +5,8 @@
 //! comparison and the width-4 choice, all of which apply unchanged here. `multiply_point` measures
 //! 733 us in `p521_point_benches`, against 136 us on P-256, and 521 is not a multiple of 4, so the
 //! top window overhangs the scalar: `window_at` reads the bits at or above `BITS` as zero. The
-//! table is `16 * size_of::<P521JacobianPoint>()` = 3456 bytes of stack. The table and the working
-//! accumulator are scrubbed before returning; the caller owns the result and scrubs it when it is
-//! done.
+//! table is `16 * size_of::<P521JacobianPoint>()` = 3456 bytes of stack, scrubbed before returning
+//! to the extent described there.
 //!
 //! Verified against [`crate::p521_comb`] (for `Q = G`), against [`crate::p521_wnaf`] and against
 //! `[a k mod n]G` (for `Q = [a]G`) in `p521_mul_tests.rs`, with the same edge cases as P-256's.

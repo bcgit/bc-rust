@@ -27,8 +27,12 @@
 //! (136 us against 44 us and 106 us in `p256_point_benches` / `p256_scalar_benches`). The table
 //! is `16 * size_of::<P256JacobianPoint>()` bytes of stack. Width 4 over width 5 keeps
 //! that table at 1.5 KiB on P-256 and 3.4 KiB on P-521 for one fewer addition in five; a Montgomery
-//! ladder would need an addition per bit. The table and the working accumulator are scrubbed
-//! before returning; the caller owns the result and scrubs it when it is done.
+//! ladder would need an addition per bit. The table and the lookup's copy of the selected entry are
+//! zeroized before returning, as defence in depth in the sense of
+//! [`crate::p256::P256FieldElement::zeroize`]: the accumulator's superseded values (each round's
+//! `double` and `add` return by value), the window index and the intermediates in the point
+//! operations' own frames are not reached. The caller owns the result and scrubs it when it is
+//! done.
 //!
 //! Verified against [`crate::p256_comb`] (for `Q = G`), against [`crate::p256_wnaf`] and against
 //! `[a k mod n]G` (for `Q = [a]G`) in `p256_mul_tests.rs`, including `k = 0`, `k = 1`, `k = n-1`,

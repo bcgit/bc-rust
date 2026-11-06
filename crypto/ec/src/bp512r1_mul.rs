@@ -3,9 +3,8 @@
 //! Section 5.7.1.2. Identical in shape to [`crate::p256_mul`] -- see its docs for why neither
 //! [`crate::bp512r1_comb`] nor [`crate::bp512r1_wnaf`] covers this case, for the fixed-window
 //! design, and for the cost comparison and the width-4 choice, all of which apply unchanged here.
-//! The table is `16 * size_of::<Bp512r1JacobianPoint>()` = 3072 bytes of stack. The table and the
-//! working accumulator are scrubbed before returning; the caller owns the result and scrubs it when
-//! it is done.
+//! The table is `16 * size_of::<Bp512r1JacobianPoint>()` = 3072 bytes of stack, scrubbed before
+//! returning to the extent described there.
 //!
 //! Verified against [`crate::bp512r1_comb`] (for `Q = G`), against [`crate::bp512r1_wnaf`] and
 //! against `[a k mod n]G` (for `Q = [a]G`) in `bp512r1_mul_tests.rs`, with the same edge cases as
