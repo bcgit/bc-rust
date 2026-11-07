@@ -175,6 +175,8 @@ mod kdf_factory_tests {
         let _ = KDFFactory::new(factory::DEFAULT).unwrap().derive_key(&key, &[0u8; 0], 64).unwrap();
 
         // All the ways to get "default_128_bit"
+        assert_eq!(KDFFactory::default_128_bit().alg_name(), "HKDF-SHA256");
+        assert_eq!(KDFFactory::default_256_bit().alg_name(), "HKDF-SHA512");
         let _ = KDFFactory::default_128_bit().derive_key(&key, &[0u8; 0], 32).unwrap();
 
         let _ = KDFFactory::new("Default128Bit").unwrap().derive_key(&key, &[0u8; 0], 32).unwrap();
