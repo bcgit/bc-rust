@@ -1,6 +1,6 @@
 //! The KEM roles of this crate's keys over [`KdfParams`]: ML-KEM with its shared secret derived
 //! through a KDF, the algorithms [`MLKEM512_HKDF_SHA256`], [`MLKEM768_HKDF_SHA512`] and
-//! [`MLKEM1024_HKDF_SHA512`] of `bouncycastle_mlkem_common::hkdf`, which says what is derived
+//! [`MLKEM1024_HKDF_SHA512`] of `bouncycastle_mlkem_common::kdf`, which says what is derived
 //! and why the ciphertext is not part of the info. A worker borrows the key, seed or expanded,
 //! as the plain ML-KEM workers do, runs the plain ML-KEM operation and derives from its 𝐾
 //! through the parameter set's [`MLKEMKdfPairing`] with the KDF of the parameters; a key is
@@ -18,7 +18,7 @@ use bouncycastle_core::kem_key::{DecapsulatingKey, EncapsulatingKey};
 use bouncycastle_core::key_material::KeyMaterial;
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{Algorithm, KDF, KEMDecapsulator, KEMEncapsulator, RNG};
-use bouncycastle_mlkem_common::kdf::MLKEMKdfPairing;
+use bouncycastle_mlkem_common::kdf::{MLKEMKdfPairing, PairedKdf};
 use core::marker::PhantomData;
 
 // Imports needed for docs
@@ -31,13 +31,19 @@ use bouncycastle_mlkem_common::kdf::{
 /// The encapsulator an ML-KEM public key hands out through [`EncapsulatingKey`] over
 /// [`KdfParams`]: it borrows the key, holds the parameters, and derives the pairing's key from
 /// each encapsulation's 𝐾.
-pub struct MLKEMKdfEncapsulator<'k, 'p, P: MLKEMParams, D: KDF + ?Sized, const SS_LEN: usize> {
+pub struct MLKEMKdfEncapsulator<
+    'k,
+    'p,
+    P: MLKEMParams,
+    D: KDF + PairedKdf + ?Sized,
+    const SS_LEN: usize,
+> {
     ek: &'k MLKEMPublicKey<P>,
     params: KdfParams<'p, D>,
 }
 
-impl<P: MLKEMParams + MLKEMKdfPairing<D, SS_LEN>, D: KDF + ?Sized, const SS_LEN: usize> Algorithm
-    for MLKEMKdfEncapsulator<'_, '_, P, D, SS_LEN>
+impl<P: MLKEMParams + MLKEMKdfPairing<D, SS_LEN>, D: KDF + PairedKdf + ?Sized, const SS_LEN: usize>
+    Algorithm for MLKEMKdfEncapsulator<'_, '_, P, D, SS_LEN>
 {
     const ALG_NAME: &'static str = <P as MLKEMKdfPairing<D, SS_LEN>>::Algorithm::ALG_NAME;
     const MAX_SECURITY_STRENGTH: SecurityStrength =
@@ -46,7 +52,7 @@ impl<P: MLKEMParams + MLKEMKdfPairing<D, SS_LEN>, D: KDF + ?Sized, const SS_LEN:
 
 impl<
     P: MLKEMParams + CiphertextLen<CT_LEN> + MLKEMKdfPairing<D, SS_LEN>,
-    D: KDF + ?Sized,
+    D: KDF + PairedKdf + ?Sized,
     const CT_LEN: usize,
     const SS_LEN: usize,
 > KEMEncapsulator<CT_LEN, SS_LEN> for MLKEMKdfEncapsulator<'_, '_, P, D, SS_LEN>
@@ -58,7 +64,14 @@ impl<
         ct: &mut [u8; CT_LEN],
     ) -> Result<(KeyMaterial<SS_LEN>, usize), KEMError> {
         let (K, written) = MLKEM::<P>::encaps_with_rng(self.ek, rng, ct)?;
-        Ok((P::derive(self.params, &K)?, written))
+        // A ciphertext for a secret the caller never gets is not left in the buffer.
+        match P::derive(self.params, &K) {
+            Ok(key) => Ok((key, written)),
+            Err(e) => {
+                ct.fill(0);
+                Err(e)
+            }
+        }
     }
 }
 
@@ -69,7 +82,7 @@ pub struct MLKEMKdfDecapsulator<
     'k,
     'p,
     P: MLKEMParams,
-    D: KDF + ?Sized,
+    D: KDF + PairedKdf + ?Sized,
     DK: MLKEMPrivateKeyInternalTrait<P>,
     const SS_LEN: usize,
 > {
@@ -80,7 +93,7 @@ pub struct MLKEMKdfDecapsulator<
 
 impl<
     P: MLKEMParams + MLKEMKdfPairing<D, SS_LEN>,
-    D: KDF + ?Sized,
+    D: KDF + PairedKdf + ?Sized,
     DK: MLKEMPrivateKeyInternalTrait<P>,
     const SS_LEN: usize,
 > Algorithm for MLKEMKdfDecapsulator<'_, '_, P, D, DK, SS_LEN>
@@ -92,7 +105,7 @@ impl<
 
 impl<
     P: MLKEMParams + CiphertextLen<CT_LEN> + MLKEMKdfPairing<D, SS_LEN>,
-    D: KDF + ?Sized,
+    D: KDF + PairedKdf + ?Sized,
     DK: MLKEMPrivateKeyInternalTrait<P>,
     const CT_LEN: usize,
     const SS_LEN: usize,
@@ -110,7 +123,7 @@ impl<'p, P, D, const CT_LEN: usize, const SS_LEN: usize>
     EncapsulatingKey<KdfParams<'p, D>, CT_LEN, SS_LEN> for MLKEMPublicKey<P>
 where
     P: MLKEMParams + CiphertextLen<CT_LEN> + MLKEMKdfPairing<D, SS_LEN>,
-    D: KDF + ?Sized,
+    D: KDF + PairedKdf + ?Sized,
 {
     type Algorithm = <P as MLKEMKdfPairing<D, SS_LEN>>::Algorithm;
     type Encapsulator<'k>
@@ -118,7 +131,8 @@ where
     where
         P: 'k;
 
-    /// Cannot fail: the KDF validated what it was made from when it was made.
+    /// Nothing to check here: a KDF validated what it was made from, and refuses at the
+    /// derivation an instance that has since absorbed input.
     fn create_encapsulator<'k>(
         &'k self,
         params: KdfParams<'p, D>,
@@ -131,7 +145,7 @@ impl<'p, P, D, const CT_LEN: usize, const SS_LEN: usize>
     DecapsulatingKey<KdfParams<'p, D>, CT_LEN, SS_LEN> for MLKEMSeedPrivateKey<P>
 where
     P: MLKEMParams + CiphertextLen<CT_LEN> + MLKEMKdfPairing<D, SS_LEN>,
-    D: KDF + ?Sized,
+    D: KDF + PairedKdf + ?Sized,
 {
     type Algorithm = <P as MLKEMKdfPairing<D, SS_LEN>>::Algorithm;
     type Decapsulator<'k>
@@ -139,7 +153,8 @@ where
     where
         P: 'k;
 
-    /// Cannot fail: the KDF validated what it was made from when it was made.
+    /// Nothing to check here: a KDF validated what it was made from, and refuses at the
+    /// derivation an instance that has since absorbed input.
     fn create_decapsulator<'k>(
         &'k self,
         params: KdfParams<'p, D>,
@@ -152,7 +167,7 @@ impl<'p, P, D, const CT_LEN: usize, const SS_LEN: usize>
     DecapsulatingKey<KdfParams<'p, D>, CT_LEN, SS_LEN> for MLKEMSeedPrivateKeyExpanded<P>
 where
     P: MLKEMParams + CiphertextLen<CT_LEN> + MLKEMKdfPairing<D, SS_LEN>,
-    D: KDF + ?Sized,
+    D: KDF + PairedKdf + ?Sized,
 {
     type Algorithm = <P as MLKEMKdfPairing<D, SS_LEN>>::Algorithm;
     type Decapsulator<'k>
@@ -160,7 +175,8 @@ where
     where
         P: 'k;
 
-    /// Cannot fail: the KDF validated what it was made from when it was made.
+    /// Nothing to check here: a KDF validated what it was made from, and refuses at the
+    /// derivation an instance that has since absorbed input.
     fn create_decapsulator<'k>(
         &'k self,
         params: KdfParams<'p, D>,

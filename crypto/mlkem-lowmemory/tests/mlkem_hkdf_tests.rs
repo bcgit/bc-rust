@@ -12,7 +12,7 @@ mod mlkem_hkdf_tests {
         KeyMaterial, KeyMaterial0, KeyMaterial512, KeyMaterialTrait, KeyType,
     };
     use bouncycastle_core::security_strength::SecurityStrength;
-    use bouncycastle_core::traits::{Algorithm, AlgorithmInfo, KEMDecapsulator};
+    use bouncycastle_core::traits::{Algorithm, AlgorithmInfo, KEMDecapsulator, KEMEncapsulator};
     use bouncycastle_core_test_framework::DUMMY_SEED;
     use bouncycastle_core_test_framework::kem::TestFrameworkKEM;
     use bouncycastle_mlkem as full;
@@ -179,6 +179,26 @@ mod mlkem_hkdf_tests {
         )
         .unwrap();
         assert_eq!(derived, expected);
+    }
+
+    /// An HKDF instance that has absorbed input through the streaming API is not the salted
+    /// instance the pairing wants: the worker is made, since nothing is checked until the
+    /// derivation, and then every encapsulation fails with the ciphertext buffer left zeroed and
+    /// every decapsulation fails.
+    #[test]
+    fn a_kdf_instance_that_absorbed_input_is_refused_and_leaves_no_ciphertext() {
+        let mut rng = DefaultRNG::default();
+        let (pk, sk) = MLKEM512::keygen(&mut rng).unwrap();
+        let salt = salt();
+        let mut hkdf = HKDF_SHA256::new_with_salt(&salt).unwrap();
+        hkdf.do_extract_update_bytes(b"raw ikm").unwrap();
+        let params = KdfParams::new(&hkdf, INFO);
+
+        let encapsulator = pk.create_encapsulator(params).unwrap();
+        let mut ct = [0xAAu8; MLKEM512_CT_LEN];
+        assert!(encapsulator.encaps_out(&mut rng, &mut ct).is_err());
+        assert!(ct.iter().all(|&b| b == 0), "no ciphertext for a secret the caller never got");
+        assert!(sk.decaps(&[0u8; MLKEM512_CT_LEN], params).is_err());
     }
 
     #[test]

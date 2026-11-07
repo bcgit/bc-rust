@@ -449,10 +449,12 @@ impl<P: MLKEMParams> MLKEM<P> {
     }
 
     /// The shared secret as [`KeyMaterial`]: full-entropy bytes at the parameter set's strength.
+    /// Typed inside the hazardous window, where an all-zero value is not re-typed `Zeroized`:
+    /// 𝐾 is uniform, so all zeros (probability 2^-256) is a valid secret, not an error.
     fn shared_secret_key(K: &[u8; MLKEM_SS_LEN]) -> Result<KeyMaterial<MLKEM_SS_LEN>, KEMError> {
-        let mut key =
-            KeyMaterial::<MLKEM_SS_LEN>::from_bytes_as_type(K, KeyType::CryptographicRandom)?;
+        let mut key = KeyMaterial::<MLKEM_SS_LEN>::new();
         do_hazardous_operations(&mut key, |key| {
+            key.set_bytes_as_type(K, KeyType::CryptographicRandom)?;
             key.set_security_strength(P::MAX_SECURITY_STRENGTH)
         })?;
 
