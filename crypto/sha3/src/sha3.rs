@@ -1,15 +1,16 @@
 use crate::SHA3Params;
+use crate::kdf_credit::{KdfCredit, len_prefix};
 use crate::keccak::{
     KeccakInternal, SHA3_FAMILY_STATE_LEN, SUSPENDED_SHA3_STATE_LEN, deserialize_sha3_family_state,
     serialize_sha3_family_state,
 };
 use bouncycastle_core::errors::{HashError, KDFError, SuspendableError};
 use bouncycastle_core::hazmat::do_hazardous_operations;
-use bouncycastle_core::key_material::{KeyMaterialTrait, KeyType};
+use bouncycastle_core::key_material::KeyMaterialTrait;
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{Algorithm, Hash, HashOneShot, KDF, Suspendable};
+use bouncycastle_utils::min;
 use bouncycastle_utils::suspendable_state::{add_lib_ver, check_lib_ver};
-use bouncycastle_utils::{max, min};
 
 /// Internal struct for SHA3.
 /// This uses a private bound so that you cannot instantiate it directly and have to use the
@@ -18,9 +19,6 @@ use bouncycastle_utils::{max, min};
 pub struct SHA3Internal<PARAMS: SHA3Params> {
     _params: core::marker::PhantomData<PARAMS>,
     keccak: KeccakInternal,
-    kdf_key_type: KeyType,
-    kdf_security_strength: SecurityStrength,
-    kdf_entropy: usize,
 }
 
 // Note: zeroizing Drop is not necessary here because all the sensitive info is in KeccakDigest, which has one.
@@ -28,13 +26,7 @@ pub struct SHA3Internal<PARAMS: SHA3Params> {
 impl<PARAMS: SHA3Params> SHA3Internal<PARAMS> {
     /// Get a new SHA3 instance, ready for use.
     pub fn new() -> Self {
-        Self {
-            _params: core::marker::PhantomData,
-            keccak: KeccakInternal::new(PARAMS::SIZE),
-            kdf_key_type: KeyType::Zeroized,
-            kdf_security_strength: SecurityStrength::None,
-            kdf_entropy: 0,
-        }
+        Self { _params: core::marker::PhantomData, keccak: KeccakInternal::new(PARAMS::SIZE) }
     }
 
     /// Appends the SHA3 domain-separation suffix and pads as per FIPS 202 s. 6.1, then squeezes the digest.
@@ -85,60 +77,44 @@ impl<PARAMS: SHA3Params> SHA3Internal<PARAMS> {
         self.keccak.squeeze(&mut output[..n])
     }
 
-    fn mix_key_internal(&mut self, key: &(impl KeyMaterialTrait + ?Sized)) {
-        // track the strongest input key type
-        self.kdf_key_type = *max(&self.kdf_key_type, &key.key_type());
-
-        // track input entropy
-        if key.is_full_entropy() {
-            // Saturating: the counter is bookkeeping, and a resumed state may carry any value.
-            self.kdf_entropy = self.kdf_entropy.saturating_add(key.key_len());
-            self.kdf_security_strength =
-                *max(&self.kdf_security_strength, &key.security_strength());
-            self.kdf_security_strength = *min(
-                &self.kdf_security_strength,
-                &SecurityStrength::from_bits(PARAMS::OUTPUT_LEN * 8 / 2),
-            );
-        }
-
-        self.do_update(key.ref_to_bytes())
-    }
-
-    /// Absorbs `fixed_info`, finalizes, and writes `len` bytes (at most one hash output) into
-    /// `output_key`, typed by the rule of [`KDF`]'s docs: full-entropy output once at least half
-    /// a hash output of full-entropy key material went in, the bytes that carry the strength
-    /// the hash can claim.
-    fn derive_out_final_internal(
-        mut self,
+    /// The derivation of [`KDF`] over this hash: `H(len(ikm_1) || ikm_1 || .. || len(ikm_n) ||
+    /// ikm_n || fixed_info)` from a fresh sponge, each length a 4-byte big-endian count so the
+    /// keys and the info are bound unambiguously, written to `output_key` at `len` bytes, at
+    /// most one hash output, and typed by [`KDF`]'s rule: full-entropy output once at least half
+    /// a hash output of credited key material went in, the bytes that carry the strength the
+    /// hash can claim. What this instance has absorbed plays no part.
+    fn derive_internal(
+        ikms: &[&dyn KeyMaterialTrait],
         fixed_info: &[u8],
         len: usize,
-        output_key: &mut (impl KeyMaterialTrait + ?Sized),
+        output_key: &mut dyn KeyMaterialTrait,
     ) -> Result<usize, KDFError> {
         // The `_out` rule: nothing stale survives, whichever way this returns.
         output_key.zeroize();
+        if len == 0 {
+            return Err(KDFError::InvalidLength("a zero-length derivation is refused"));
+        }
         if len > PARAMS::OUTPUT_LEN {
             return Err(KDFError::InvalidLength("a SHA-3 KDF derives at most one hash output"));
         }
         if len > output_key.capacity() {
             return Err(KDFError::InvalidLength("the output buffer cannot hold len bytes"));
         }
-        if self.kdf_entropy < PARAMS::OUTPUT_LEN / 2 {
-            self.kdf_key_type = *min(&self.kdf_key_type, &KeyType::Unknown);
-            self.kdf_security_strength = SecurityStrength::None;
+
+        let mut credit = KdfCredit::new(SecurityStrength::from_bits(PARAMS::OUTPUT_LEN * 8 / 2));
+        let mut hash = Self::new();
+        for ikm in ikms {
+            let prefix = len_prefix(*ikm)
+                .map_err(|_| KDFError::InvalidLength("an input key longer than 2^32 - 1 bytes"))?;
+            credit.credit(*ikm);
+            hash.do_update(&prefix);
+            hash.do_update(ikm.ref_to_bytes());
         }
+        hash.do_update(fixed_info);
 
-        self.do_update(fixed_info);
-
-        // since computation has been performed, the result will not actually be zeroized,
-        // even if all input key material was zeroized.
-        let key_type = if self.kdf_key_type == KeyType::Zeroized {
-            KeyType::Unknown
-        } else {
-            self.kdf_key_type
-        };
-        let strength = *min(&self.kdf_security_strength, &SecurityStrength::from_bits(len * 8));
+        let (key_type, strength) = credit.output(PARAMS::OUTPUT_LEN / 2, len);
         do_hazardous_operations(output_key, |output_key| {
-            let written = self.do_final_out(&mut output_key.ref_to_bytes_mut()?[..len]);
+            let written = hash.do_final_out(&mut output_key.ref_to_bytes_mut()?[..len]);
             output_key.set_key_len(written)?;
             output_key.set_key_type(key_type)?;
             output_key.set_security_strength(strength)
@@ -212,13 +188,13 @@ impl<PARAMS: SHA3Params> Hash for SHA3Internal<PARAMS> {
     }
 }
 
-/// A plain hash of the concatenated inputs, `H(key_1 || .. || key_n || additional_input)`, with
-/// the entropy bookkeeping of [`KeyMaterialTrait`]. This is not the SP 800-56Cr2 Section 4 one-step
-/// KDF, which hashes a 4-byte big-endian counter before `Z || FixedInfo` on every block.
+/// One hash of the length-prefixed inputs, `H(len(ikm) || ikm || fixed_info)`, from a fresh
+/// sponge, with the entropy bookkeeping of [`KDF`]'s docs. The prefixes bind the keys and the
+/// info: `[a, b]` is not `a || b`, and `(a, info)` is not `(a || info, "")`. This is not the
+/// SP 800-56Cr2 Section 4.1 one-step KDF, `H(counter || Z || FixedInfo)` over a `Z` whose length
+/// the scheme fixes; it has no parameters, so what the instance has absorbed plays no part.
 impl<PARAMS: SHA3Params> KDF for SHA3Internal<PARAMS> {
-    /// `H(ikm || fixed_info)`, truncated to `len` (at most one hash output), with the entropy
-    /// bookkeeping of [`KDF`]'s docs. This is not the SP 800-56Cr2 Section 4 one-step KDF,
-    /// which hashes a 4-byte big-endian counter before `Z || FixedInfo` on every block.
+    /// `H(len(ikm) || ikm || fixed_info)` truncated to `len`, at most one hash output.
     fn derive_key_out(
         &self,
         ikm: &dyn KeyMaterialTrait,
@@ -226,12 +202,10 @@ impl<PARAMS: SHA3Params> KDF for SHA3Internal<PARAMS> {
         len: usize,
         output_key: &mut dyn KeyMaterialTrait,
     ) -> Result<usize, KDFError> {
-        let mut hash = self.clone();
-        hash.mix_key_internal(ikm);
-        hash.derive_out_final_internal(fixed_info, len, output_key)
+        Self::derive_internal(&[ikm], fixed_info, len, output_key)
     }
 
-    /// `H(ikm_1 || .. || ikm_n || fixed_info)`, each key credited.
+    /// `H(len(ikm_1) || ikm_1 || .. || len(ikm_n) || ikm_n || fixed_info)`, each key credited.
     fn derive_key_from_multiple_out(
         &self,
         ikms: &[&dyn KeyMaterialTrait],
@@ -239,11 +213,7 @@ impl<PARAMS: SHA3Params> KDF for SHA3Internal<PARAMS> {
         len: usize,
         output_key: &mut dyn KeyMaterialTrait,
     ) -> Result<usize, KDFError> {
-        let mut hash = self.clone();
-        for ikm in ikms {
-            hash.mix_key_internal(*ikm);
-        }
-        hash.derive_out_final_internal(fixed_info, len, output_key)
+        Self::derive_internal(ikms, fixed_info, len, output_key)
     }
 }
 
@@ -255,14 +225,7 @@ impl<PARAMS: SHA3Params> Suspendable<SUSPENDED_SHA3_STATE_LEN> for SHA3Internal<
         let out: &mut [u8; SHA3_FAMILY_STATE_LEN] =
             add_lib_ver(&mut out_to_return).try_into().unwrap();
 
-        serialize_sha3_family_state(
-            out,
-            PARAMS::STATE_TAG,
-            &self.keccak,
-            self.kdf_key_type,
-            self.kdf_security_strength,
-            self.kdf_entropy,
-        );
+        serialize_sha3_family_state(out, PARAMS::STATE_TAG, &self.keccak);
 
         out_to_return
     }
@@ -277,8 +240,7 @@ impl<PARAMS: SHA3Params> Suspendable<SUSPENDED_SHA3_STATE_LEN> for SHA3Internal<
         // The variant tag rejects states from any other SHA3/SHAKE variant; the rate is then the
         // correct one to rebuild with (both are fully determined by the algorithm parameters).
         let rate = PARAMS::SIZE.rate_bits();
-        let (keccak, kdf_key_type, kdf_security_strength, kdf_entropy) =
-            deserialize_sha3_family_state(input, PARAMS::STATE_TAG, rate)?;
+        let keccak = deserialize_sha3_family_state(input, PARAMS::STATE_TAG, rate)?;
 
         // A SHA3 is only ever suspended while absorbing: finalisation consumes it. A state in
         // the squeezing phase is not one this type produced, and every finalisation of it would
@@ -287,13 +249,7 @@ impl<PARAMS: SHA3Params> Suspendable<SUSPENDED_SHA3_STATE_LEN> for SHA3Internal<
             return Err(SuspendableError::InvalidData);
         }
 
-        Ok(SHA3Internal {
-            _params: core::marker::PhantomData,
-            keccak,
-            kdf_key_type,
-            kdf_security_strength,
-            kdf_entropy,
-        })
+        Ok(SHA3Internal { _params: core::marker::PhantomData, keccak })
     }
 }
 

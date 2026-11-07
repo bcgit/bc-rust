@@ -202,11 +202,11 @@
 //!
 //! | State                                                           | Size (bytes) |
 //! |-----------------------------------------------------------------|--------------|
-//! | SHA3, SHAKE and `SHAKESqueezer`                                 | 415          |
-//! | cSHAKE, KMACXOF, TupleHashXOF, `CSHAKESqueezer`                 | 416          |
-//! | KMAC, TupleHash                                                 | 424          |
-//! | ParallelHashXOF                                                 | 852          |
-//! | ParallelHash                                                    | 860          |
+//! | SHA3, SHAKE and `SHAKESqueezer`                                 | 405          |
+//! | cSHAKE, KMACXOF, TupleHashXOF, `CSHAKESqueezer`                 | 406          |
+//! | KMAC, TupleHash                                                 | 414          |
+//! | ParallelHashXOF                                                 | 832          |
+//! | ParallelHash                                                    | 840          |
 //!
 //! Sizes are `core::mem::size_of` values reported by `mem_usage_benches/bench_sha3_mem_usage.rs`
 //! (`cargo run --release -p mem_usage_benches --bin bench_sha3_mem_usage`), which also has valgrind
@@ -254,6 +254,7 @@ pub mod parallelhash;
 pub mod tuplehash;
 
 mod cshake;
+mod kdf_credit;
 mod keccak;
 mod sha3;
 mod shake;

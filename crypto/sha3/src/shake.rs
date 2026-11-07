@@ -1,15 +1,15 @@
 use crate::SHAKEParams;
+use crate::kdf_credit::{KdfCredit, len_prefix};
 use crate::keccak::{
     KeccakInternal, SHA3_FAMILY_STATE_LEN, SUSPENDED_SHA3_STATE_LEN, deserialize_sha3_family_state,
     serialize_sha3_family_state,
 };
 use bouncycastle_core::errors::{HashError, KDFError, SuspendableError};
 use bouncycastle_core::hazmat::do_hazardous_operations;
-use bouncycastle_core::key_material::{KeyMaterialTrait, KeyType};
+use bouncycastle_core::key_material::KeyMaterialTrait;
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{Algorithm, Hash, HashOneShot, KDF, Suspendable, XOF, XOFSqueezer};
 use bouncycastle_utils::suspendable_state::{add_lib_ver, check_lib_ver};
-use bouncycastle_utils::{max, min};
 
 /// Internal struct for SHAKE. Use [`SHAKE128`](crate::SHAKE128) or [`SHAKE256`](crate::SHAKE256);
 /// the parameter trait is sealed.
@@ -24,9 +24,6 @@ use bouncycastle_utils::{max, min};
 pub struct SHAKEInternal<PARAMS: SHAKEParams> {
     _phantomdata: core::marker::PhantomData<PARAMS>,
     keccak: KeccakInternal,
-    kdf_key_type: KeyType,
-    kdf_security_strength: SecurityStrength,
-    kdf_entropy: usize,
 }
 
 impl<PARAMS: SHAKEParams> Algorithm for SHAKEInternal<PARAMS> {
@@ -37,29 +34,16 @@ impl<PARAMS: SHAKEParams> Algorithm for SHAKEInternal<PARAMS> {
 impl<PARAMS: SHAKEParams> SHAKEInternal<PARAMS> {
     /// Get a new SHAKE instance, ready for use.
     pub fn new() -> Self {
-        Self {
-            _phantomdata: core::marker::PhantomData,
-            keccak: KeccakInternal::new(PARAMS::SIZE),
-            kdf_key_type: KeyType::Zeroized,
-            kdf_security_strength: SecurityStrength::None,
-            kdf_entropy: 0,
-        }
+        Self { _phantomdata: core::marker::PhantomData, keccak: KeccakInternal::new(PARAMS::SIZE) }
     }
 
     /// Writes the SHA3-family state under `tag` into `out`, which is exactly
-    /// `SHA3_FAMILY_STATE_LEN` bytes: the sponge and the KDF metadata, with no version header.
+    /// `SHA3_FAMILY_STATE_LEN` bytes: the sponge, with no version header.
     /// For the functions built on SHAKE, which stamp their own tag and add fields of their own.
     pub(crate) fn write_family_state(&self, tag: u8, out: &mut [u8]) {
         let out: &mut [u8; SHA3_FAMILY_STATE_LEN] =
             out.try_into().expect("a family state is exactly SHA3_FAMILY_STATE_LEN bytes");
-        serialize_sha3_family_state(
-            out,
-            tag,
-            &self.keccak,
-            self.kdf_key_type,
-            self.kdf_security_strength,
-            self.kdf_entropy,
-        );
+        serialize_sha3_family_state(out, tag, &self.keccak);
     }
 
     /// The reverse of [`Self::write_family_state`]. The sponge comes back in whichever phase it
@@ -69,15 +53,8 @@ impl<PARAMS: SHAKEParams> SHAKEInternal<PARAMS> {
         let input: &[u8; SHA3_FAMILY_STATE_LEN] =
             state.try_into().map_err(|_| SuspendableError::InvalidData)?;
         let rate = PARAMS::SIZE.rate_bits();
-        let (keccak, kdf_key_type, kdf_security_strength, kdf_entropy) =
-            deserialize_sha3_family_state(input, tag, rate)?;
-        Ok(Self {
-            _phantomdata: core::marker::PhantomData,
-            keccak,
-            kdf_key_type,
-            kdf_security_strength,
-            kdf_entropy,
-        })
+        let keccak = deserialize_sha3_family_state(input, tag, rate)?;
+        Ok(Self { _phantomdata: core::marker::PhantomData, keccak })
     }
 
     /// Whether the sponge has begun producing output.
@@ -125,56 +102,41 @@ impl<PARAMS: SHAKEParams> SHAKEInternal<PARAMS> {
         self.keccak.squeeze(output)
     }
 
-    fn mix_key_internal(&mut self, key: &(impl KeyMaterialTrait + ?Sized)) {
-        // track the strongest input key type
-        self.kdf_key_type = *max(&self.kdf_key_type, &key.key_type());
-
-        // track input entropy
-        if key.is_full_entropy() {
-            // Saturating: the counter is bookkeeping, and a resumed state may carry any value.
-            self.kdf_entropy = self.kdf_entropy.saturating_add(key.key_len());
-            self.kdf_security_strength =
-                *max(&self.kdf_security_strength, &key.security_strength());
-            self.kdf_security_strength = *min(
-                &self.kdf_security_strength,
-                &SecurityStrength::from_bits(PARAMS::SIZE as usize),
-            );
-        }
-
-        self.keccak.absorb(key.ref_to_bytes());
-    }
-
-    /// Absorbs `fixed_info` and squeezes `len` bytes into `output_key`, typed by the rule of
-    /// [`KDF`]'s docs: full-entropy output once at least the bytes that carry the strength the
-    /// XOF can claim went in as full-entropy key material, 16 for SHAKE128 and 32 for SHAKE256.
-    fn derive_out_final_internal(
-        mut self,
+    /// The derivation of [`KDF`] over this XOF: `SHAKE(len(ikm_1) || ikm_1 || .. || len(ikm_n)
+    /// || ikm_n || fixed_info)` from a fresh sponge, each length a 4-byte big-endian count so
+    /// the keys and the info are bound unambiguously, squeezed to `len` bytes, any length, and
+    /// typed by [`KDF`]'s rule: full-entropy output once at least the bytes that carry the
+    /// strength the XOF can claim went in as credited key material, 16 for SHAKE128 and 32 for
+    /// SHAKE256. What this instance has absorbed plays no part.
+    fn derive_internal(
+        ikms: &[&dyn KeyMaterialTrait],
         fixed_info: &[u8],
         len: usize,
-        output_key: &mut (impl KeyMaterialTrait + ?Sized),
+        output_key: &mut dyn KeyMaterialTrait,
     ) -> Result<usize, KDFError> {
         // The `_out` rule: nothing stale survives, whichever way this returns.
         output_key.zeroize();
+        if len == 0 {
+            return Err(KDFError::InvalidLength("a zero-length derivation is refused"));
+        }
         if len > output_key.capacity() {
             return Err(KDFError::InvalidLength("the output buffer cannot hold len bytes"));
         }
-        if self.kdf_entropy < PARAMS::SIZE as usize / 8 {
-            self.kdf_key_type = *min(&self.kdf_key_type, &KeyType::Unknown);
-            self.kdf_security_strength = SecurityStrength::None;
+
+        let mut credit = KdfCredit::new(SecurityStrength::from_bits(PARAMS::SIZE as usize));
+        let mut xof = Self::new();
+        for ikm in ikms {
+            let prefix = len_prefix(*ikm)
+                .map_err(|_| KDFError::InvalidLength("an input key longer than 2^32 - 1 bytes"))?;
+            credit.credit(*ikm);
+            xof.keccak.absorb(&prefix);
+            xof.keccak.absorb(ikm.ref_to_bytes());
         }
+        xof.keccak.absorb(fixed_info);
 
-        self.keccak.absorb(fixed_info);
-
-        // since computation has been performed, the result will not actually be zeroized, even
-        // if all input key material was zeroized.
-        let key_type = if self.kdf_key_type == KeyType::Zeroized {
-            KeyType::Unknown
-        } else {
-            self.kdf_key_type
-        };
-        let strength = *min(&self.kdf_security_strength, &SecurityStrength::from_bits(len * 8));
+        let (key_type, strength) = credit.output(PARAMS::SIZE as usize / 8, len);
         do_hazardous_operations(output_key, |output_key| {
-            let written = self.squeeze_internal_out(&mut output_key.ref_to_bytes_mut()?[..len]);
+            let written = xof.squeeze_internal_out(&mut output_key.ref_to_bytes_mut()?[..len]);
             output_key.set_key_len(written)?;
             output_key.set_key_type(key_type)?;
             output_key.set_security_strength(strength)
@@ -191,14 +153,7 @@ impl<PARAMS: SHAKEParams> Suspendable<SUSPENDED_SHA3_STATE_LEN> for SHAKEInterna
         let out: &mut [u8; SHA3_FAMILY_STATE_LEN] =
             add_lib_ver(&mut out_to_return).try_into().unwrap();
 
-        serialize_sha3_family_state(
-            out,
-            PARAMS::STATE_TAG,
-            &self.keccak,
-            self.kdf_key_type,
-            self.kdf_security_strength,
-            self.kdf_entropy,
-        );
+        serialize_sha3_family_state(out, PARAMS::STATE_TAG, &self.keccak);
 
         out_to_return
     }
@@ -213,8 +168,7 @@ impl<PARAMS: SHAKEParams> Suspendable<SUSPENDED_SHA3_STATE_LEN> for SHAKEInterna
         // The variant tag rejects states from any other SHA3/SHAKE variant; the rate is then the
         // correct one to rebuild with (both are fully determined by the algorithm parameters).
         let rate = PARAMS::SIZE.rate_bits();
-        let (keccak, kdf_key_type, kdf_security_strength, kdf_entropy) =
-            deserialize_sha3_family_state(input, PARAMS::STATE_TAG, rate)?;
+        let keccak = deserialize_sha3_family_state(input, PARAMS::STATE_TAG, rate)?;
 
         // A SHAKEInternal accepts input, so it must never be rebuilt in the squeezing phase --
         // that is the invariant `Hash::do_update` relies on. A suspended squeezing sponge is a
@@ -224,19 +178,16 @@ impl<PARAMS: SHAKEParams> Suspendable<SUSPENDED_SHA3_STATE_LEN> for SHAKEInterna
             return Err(SuspendableError::InvalidData);
         }
 
-        Ok(SHAKEInternal {
-            _phantomdata: core::marker::PhantomData,
-            keccak,
-            kdf_key_type,
-            kdf_security_strength,
-            kdf_entropy,
-        })
+        Ok(SHAKEInternal { _phantomdata: core::marker::PhantomData, keccak })
     }
 }
 
+/// One squeeze of the length-prefixed inputs, `SHAKE(len(ikm) || ikm || fixed_info)`, from a
+/// fresh sponge, with the entropy bookkeeping of [`KDF`]'s docs; the prefixes bind the keys and
+/// the info as the SHA-3 KDF's do. Not an SP 800-56Cr2 KDF; it has no parameters, so what the
+/// instance has absorbed plays no part.
 impl<PARAMS: SHAKEParams> KDF for SHAKEInternal<PARAMS> {
-    /// `SHAKE(ikm || fixed_info)` squeezed to `len` bytes, any length, with the entropy
-    /// bookkeeping of [`KDF`]'s docs.
+    /// `SHAKE(len(ikm) || ikm || fixed_info)` squeezed to `len` bytes, any length.
     fn derive_key_out(
         &self,
         ikm: &dyn KeyMaterialTrait,
@@ -244,12 +195,10 @@ impl<PARAMS: SHAKEParams> KDF for SHAKEInternal<PARAMS> {
         len: usize,
         output_key: &mut dyn KeyMaterialTrait,
     ) -> Result<usize, KDFError> {
-        let mut xof = self.clone();
-        xof.mix_key_internal(ikm);
-        xof.derive_out_final_internal(fixed_info, len, output_key)
+        Self::derive_internal(&[ikm], fixed_info, len, output_key)
     }
 
-    /// `SHAKE(ikm_1 || .. || ikm_n || fixed_info)`, each key credited.
+    /// `SHAKE(len(ikm_1) || ikm_1 || .. || len(ikm_n) || ikm_n || fixed_info)`, each key credited.
     fn derive_key_from_multiple_out(
         &self,
         ikms: &[&dyn KeyMaterialTrait],
@@ -257,11 +206,7 @@ impl<PARAMS: SHAKEParams> KDF for SHAKEInternal<PARAMS> {
         len: usize,
         output_key: &mut dyn KeyMaterialTrait,
     ) -> Result<usize, KDFError> {
-        let mut xof = self.clone();
-        for ikm in ikms {
-            xof.mix_key_internal(*ikm);
-        }
-        xof.derive_out_final_internal(fixed_info, len, output_key)
+        Self::derive_internal(ikms, fixed_info, len, output_key)
     }
 }
 
@@ -326,8 +271,7 @@ impl<PARAMS: SHAKEParams> Suspendable<SUSPENDED_SHA3_STATE_LEN> for SHAKESqueeze
         let input: &[u8; SHA3_FAMILY_STATE_LEN] =
             check_lib_ver(&serialized_state, None)?.try_into().unwrap();
         let rate = PARAMS::SIZE.rate_bits();
-        let (keccak, kdf_key_type, kdf_security_strength, kdf_entropy) =
-            deserialize_sha3_family_state(input, PARAMS::STATE_TAG, rate)?;
+        let keccak = deserialize_sha3_family_state(input, PARAMS::STATE_TAG, rate)?;
 
         // The mirror of the check in `SHAKEInternal::from_suspended`: a state that had not begun
         // producing output is still absorbing, and resuming it here would skip the domain suffix.
@@ -335,15 +279,7 @@ impl<PARAMS: SHAKEParams> Suspendable<SUSPENDED_SHA3_STATE_LEN> for SHAKESqueeze
             return Err(SuspendableError::InvalidData);
         }
 
-        Ok(Self {
-            shake: SHAKEInternal {
-                _phantomdata: core::marker::PhantomData,
-                keccak,
-                kdf_key_type,
-                kdf_security_strength,
-                kdf_entropy,
-            },
-        })
+        Ok(Self { shake: SHAKEInternal { _phantomdata: core::marker::PhantomData, keccak } })
     }
 }
 
