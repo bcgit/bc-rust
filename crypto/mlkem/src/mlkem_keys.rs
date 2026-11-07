@@ -102,8 +102,8 @@ pub(crate) trait MLKEMPublicKeyInternalTrait<P: MLKEMParams>:
 
 impl<P: MLKEMParams> MLKEMPublicKey<P> {
     /// FIPS 203 Algorithm 13 (K-PKE.KeyGen) line 19, ekPKE ← ByteEncode12(𝐭̂) ‖ 𝜌, into a slice
-    /// of the encoded length. Shared by the array encoding, the private-key encoding that embeds
-    /// ek, and H(ek), so the length is a run-time `debug_assert` here and a type elsewhere.
+    /// of the encoded length. Shared by the array encoding and the private-key encoding that
+    /// embeds ek, so the length is a run-time `debug_assert` here and a type elsewhere.
     pub(crate) fn encode_into(&self, out: &mut [u8]) {
         debug_assert_eq!(POLY_BYTES, 12 * 32);
         debug_assert_eq!(out.len(), P::PK_LEN);
@@ -123,7 +123,9 @@ impl<P: MLKEMParams> MLKEMPublicKey<P> {
     /// The inverse of [`Self::encode_into`], with the Section 7.2 modulus check; see
     /// [`MLKEMPublicKeyTrait::pk_decode`].
     pub(crate) fn decode_from(pk: &[u8]) -> Result<Self, KEMError> {
-        debug_assert_eq!(pk.len(), P::PK_LEN);
+        if pk.len() != P::PK_LEN {
+            return Err(KEMError::DecodingError("Provided key bytes are the incorrect length"));
+        }
         let (pk_chunks, last_chunk) = pk.as_chunks::<POLY_BYTES>();
 
         // that should divide evenly the remainder of the array, leaving space for rho at the end
