@@ -275,6 +275,13 @@ mod shake_tests {
         let derived_key = SHAKE128::new().derive_key_from_multiple(&keys, &[0u8; 0], 32).unwrap();
         assert_eq!(derived_key.key_type(), KeyType::MACKey);
 
+        // exactly SIZE / 8 bytes of typed material is credited
+        let key_material =
+            KeyMaterial256::from_bytes_as_type(&DUMMY_SEED[..16], KeyType::CryptographicRandom)
+                .unwrap();
+        let derived_key = SHAKE128::new().derive_key(&key_material, &[0u8; 0], 32).unwrap();
+        assert_eq!(derived_key.key_type(), KeyType::CryptographicRandom);
+
         // // less entropy than needed -- various permutations, but not exhaustive
 
         let key_material =

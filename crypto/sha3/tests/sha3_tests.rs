@@ -358,6 +358,14 @@ mod sha3_tests {
         assert_eq!(derived_key.key_type(), KeyType::Unknown);
         assert_eq!(derived_key.security_strength(), SecurityStrength::None);
 
+        // exactly half a hash output of typed material is credited
+        let key_material =
+            KeyMaterial256::from_bytes_as_type(&DUMMY_SEED[..16], KeyType::CryptographicRandom)
+                .unwrap();
+        let derived_key = SHA3_256::new().derive_key(&key_material, &[0u8; 0], 32).unwrap();
+        assert_eq!(derived_key.key_type(), KeyType::CryptographicRandom);
+        assert_eq!(derived_key.security_strength(), SecurityStrength::_128bit);
+
         // less entropy than needed, half a hash output (16 bytes for SHA3-256, 32 for
         // SHA3-512, 14 for SHA3-224) -- various permutations, but not exhaustive
         let key_material =
