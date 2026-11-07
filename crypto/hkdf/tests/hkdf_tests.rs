@@ -1,6 +1,6 @@
 #[cfg(test)]
 mod hkdf_tests {
-    use bouncycastle_core::errors::{KDFError, KeyMaterialError, MACError, SuspendableError};
+    use bouncycastle_core::errors::{KDFError, KeyMaterialError, MACError};
     use bouncycastle_core::hazmat::do_hazardous_operations;
     use bouncycastle_core::kdf_params::KdfParams;
     use bouncycastle_core::key_material::{
@@ -18,9 +18,7 @@ mod hkdf_tests {
     use bouncycastle_hkdf::HKDF;
     use bouncycastle_hmac::{HMACParams, HmacKey};
     use bouncycastle_sha2::hkdf::{HKDF_SHA256, HKDF_SHA256_NAME, HKDF_SHA512, HKDF_SHA512_NAME};
-    use bouncycastle_sha2::{
-        SHA256, SHA512, SUSPENDED_SHA256_STATE_LEN, SUSPENDED_SHA512_STATE_LEN,
-    };
+    use bouncycastle_sha2::{SHA256, SHA512};
     use bouncycastle_utils::ct;
 
     #[test]
@@ -635,8 +633,7 @@ mod hkdf_tests {
             t2.do_final_out(&mut expected[hash_len..2 * hash_len]).unwrap();
 
             let mut okm = KeyMaterial::<128>::new();
-            let written =
-                HKDF::<H, 0, 0>::expand_out(&prk, b"info", 2 * hash_len, &mut okm).unwrap();
+            let written = HKDF::<H>::expand_out(&prk, b"info", 2 * hash_len, &mut okm).unwrap();
             assert_eq!(written, 2 * hash_len, "PRK of {n} bytes");
             assert_eq!(okm.ref_to_bytes(), &expected[..2 * hash_len], "PRK of {n} bytes");
         }
@@ -868,106 +865,6 @@ mod hkdf_tests {
             &expected_key,
         );
     }
-    #[test]
-    fn serializable_keyed_state() {
-        use bouncycastle_core::traits::SuspendableKeyed;
-        use bouncycastle_core_test_framework::suspendable_state::TestFrameworkSuspendableKeyedState;
-        use bouncycastle_sha2::hkdf::{
-            SUSPENDED_HKDF_SHA256_STATE_LEN, SUSPENDED_HKDF_SHA512_STATE_LEN,
-        };
-
-        // HKDF is keyed by its salt: the salt is NOT serialized and is re-supplied on resume.
-        let salt = KeyMaterial128::from_bytes_as_type(&DUMMY_SEED[..16], KeyType::MACKey).unwrap();
-        let ikm = &DUMMY_SEED[16..64];
-        let (part1, part2) = ikm.split_at(20);
-
-        // A helper that exercises the full round-trip for one HKDF variant. A concrete `&KeyMaterial128`
-        // works for `do_extract_init` (which wants a `Sized` `&impl KeyMaterialTrait`) and coerces to
-        // `&dyn KeyMaterialTrait` for the serialization APIs.
-        fn round_trip<'k, const HASH_LEN: usize, const LEN: usize, H>(
-            salt: &'k KeyMaterial128,
-            part1: &[u8],
-            part2: &[u8],
-        ) where
-            H: HMACParams,
-            HKDF<H, HASH_LEN, LEN>:
-                Clone + SuspendableKeyed<'k, LEN, Key = dyn KeyMaterialTrait + 'static>,
-        {
-            let hkdf = HKDF::<H, HASH_LEN, LEN>::new();
-
-            // it can be serialized pre-init, which is kinda a no-op, but at least it works.
-            let serialized_state = hkdf.suspend();
-            assert_eq!(serialized_state.len(), LEN);
-            let mut hkdf =
-                HKDF::<H, HASH_LEN, LEN>::from_suspended(serialized_state, salt).unwrap();
-
-            hkdf.do_extract_init(salt).unwrap();
-            hkdf.do_extract_update_bytes(part1).unwrap();
-
-            // generic trait-conformance tests (version header present, [0,0,0]/future rejected)
-            TestFrameworkSuspendableKeyedState::new().test(&hkdf, salt);
-
-            // serialize the in-progress extract state (on a clone), then finish the original
-            let serialized_state = hkdf.clone().suspend();
-            assert_eq!(serialized_state.len(), LEN);
-
-            hkdf.do_extract_update_bytes(part2).unwrap();
-            let prk = hkdf.do_extract_final().unwrap();
-
-            // resume (re-supplying the salt), feed the identical remaining IKM, and compare PRKs
-            let mut resumed =
-                HKDF::<H, HASH_LEN, LEN>::from_suspended(serialized_state, salt).unwrap();
-            resumed.do_extract_update_bytes(part2).unwrap();
-            let prk_resumed = resumed.do_extract_final().unwrap();
-
-            assert_eq!(prk.ref_to_bytes(), prk_resumed.ref_to_bytes());
-        }
-
-        round_trip::<SUSPENDED_SHA256_STATE_LEN, SUSPENDED_HKDF_SHA256_STATE_LEN, SHA256>(
-            &salt, part1, part2,
-        );
-        round_trip::<SUSPENDED_SHA512_STATE_LEN, SUSPENDED_HKDF_SHA512_STATE_LEN, SHA512>(
-            &salt, part1, part2,
-        );
-
-        // Test the guard for invalid states
-        // testing just on HKDF_SHA256
-
-        const UNINITIALIZED: u8 = 0; // HkdfStates::Uninitialized
-        const INITIALIZED: u8 = 1; // HkdfStates::Initialized
-        // Layout: [version(3) | present flag | hmac blob | state | entropy(8) | strength].
-        let present_idx = 3;
-        let state_idx = SUSPENDED_HKDF_SHA256_STATE_LEN - 10;
-
-        // Case 1: no HMAC present but state claims Initialized -> reject.
-        // construct a valid, pre-init state: no HMAC (flag = 0), state = Uninitialized.
-        let valid_uninitialized = HKDF_SHA256::new().suspend();
-        assert_eq!(valid_uninitialized[present_idx], 0);
-        assert_eq!(valid_uninitialized[state_idx], UNINITIALIZED);
-
-        let mut corrupt = valid_uninitialized;
-        corrupt[state_idx] = INITIALIZED;
-        assert!(matches!(
-            HKDF_SHA256::from_suspended(corrupt, &salt),
-            Err(SuspendableError::InvalidData)
-        ));
-
-        // Case 2: HMAC present but state claims Uninitialized -> reject.
-        // construct a valid, mid-extract state: HMAC present (flag = 1), state = Initialized.
-        let mut hkdf = HKDF_SHA256::new();
-        hkdf.do_extract_init(&salt).unwrap();
-        hkdf.do_extract_update_bytes(ikm).unwrap();
-        let valid_initialized = hkdf.suspend();
-        assert_eq!(valid_initialized[present_idx], 1);
-        assert_ne!(valid_initialized[state_idx], UNINITIALIZED);
-
-        let mut corrupt = valid_initialized;
-        corrupt[state_idx] = UNINITIALIZED;
-        assert!(matches!(
-            HKDF_SHA256::from_suspended(corrupt, &salt),
-            Err(SuspendableError::InvalidData)
-        ));
-    }
 
     /// The entropy counter is bookkeeping a resumed state may set to anything: the next credit
     /// saturates rather than overflowing.
@@ -1019,73 +916,6 @@ mod hkdf_tests {
         let prk = HKDF_SHA512::extract(&salt, &z).unwrap();
         assert_eq!(prk.key_type(), KeyType::CryptographicRandom);
         assert_eq!(prk.security_strength(), SecurityStrength::_128bit);
-    }
-
-    /// The two bookkeeping fields of a suspended state are checked on resume: a strength label
-    /// above what the hash can give (half its output), or any entropy or strength on a state that
-    /// was never initialized, is refused, where it used to label a PRK derived from nothing as
-    /// `CryptographicRandom` at `_256bit`.
-    #[test]
-    fn a_forged_state_is_refused() {
-        use bouncycastle_core::errors::SuspendableError;
-        use bouncycastle_core::traits::SuspendableKeyed;
-        use bouncycastle_sha2::hkdf::SUSPENDED_HKDF_SHA256_STATE_LEN;
-
-        let salt = KeyMaterial128::from_bytes_as_type(&DUMMY_SEED[..16], KeyType::MACKey).unwrap();
-        // Layout: [version(3) | present flag | hmac blob | state | entropy(8) | strength].
-        let entropy_idx = SUSPENDED_HKDF_SHA256_STATE_LEN - 9;
-        let strength_idx = SUSPENDED_HKDF_SHA256_STATE_LEN - 1;
-        let refused = |state, what: &str| {
-            assert!(
-                matches!(
-                    HKDF_SHA256::from_suspended(state, &salt),
-                    Err(SuspendableError::InvalidData)
-                ),
-                "{what} must be refused"
-            );
-        };
-
-        let mut hkdf = HKDF_SHA256::new();
-        hkdf.do_extract_init(&salt).unwrap();
-        let good = hkdf.suspend();
-        assert_eq!(good[strength_idx], SecurityStrength::_128bit as u8, "layout check");
-        let mut forged = good;
-        forged[strength_idx] = SecurityStrength::_256bit as u8;
-        refused(forged, "a strength above HMAC-SHA256's 128-bit cap");
-        let mut edge = good;
-        edge[strength_idx] = SecurityStrength::_128bit as u8;
-        assert!(HKDF_SHA256::from_suspended(edge, &salt).is_ok(), "the cap itself resumes");
-
-        let pre_init = HKDF_SHA256::new().suspend();
-        assert!(HKDF_SHA256::from_suspended(pre_init, &salt).is_ok(), "an honest pre-init state");
-        let mut forged = pre_init;
-        forged[entropy_idx..entropy_idx + 8].copy_from_slice(&64u64.to_le_bytes());
-        refused(forged, "entropy on a state that was never initialized");
-        let mut forged = pre_init;
-        forged[strength_idx] = SecurityStrength::_128bit as u8;
-        refused(forged, "a strength on a state that was never initialized");
-    }
-
-    #[test]
-    fn a_resumed_entropy_counter_saturates() {
-        use bouncycastle_core::traits::SuspendableKeyed;
-        use bouncycastle_sha2::hkdf::SUSPENDED_HKDF_SHA256_STATE_LEN;
-
-        let salt = KeyMaterial128::from_bytes_as_type(&DUMMY_SEED[..16], KeyType::MACKey).unwrap();
-        let full_entropy =
-            KeyMaterial128::from_bytes_as_type(&DUMMY_SEED[16..32], KeyType::CryptographicRandom)
-                .unwrap();
-        let mut hkdf = HKDF_SHA256::new();
-        hkdf.do_extract_init(&salt).unwrap();
-        let mut state = hkdf.suspend();
-        // Layout: [version(3) | present flag | hmac blob | state | entropy(8) | strength].
-        let entropy_idx = SUSPENDED_HKDF_SHA256_STATE_LEN - 9;
-        state[entropy_idx..entropy_idx + 8].copy_from_slice(&u64::MAX.to_le_bytes());
-
-        let mut resumed = HKDF_SHA256::from_suspended(state, &salt).unwrap();
-        assert_eq!(resumed.get_entropy(), usize::MAX);
-        assert_eq!(resumed.do_extract_update_key(&full_entropy).unwrap(), 16);
-        assert_eq!(resumed.get_entropy(), usize::MAX);
     }
 
     /// RFC 5869 Sec 2.3: "OKM = first L octets of T", for any L up to 255 * HashLen, so a shorter

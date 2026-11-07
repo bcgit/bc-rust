@@ -27,8 +27,8 @@ use bouncycastle::core::key_material::{KeyMaterial, KeyMaterial256, KeyMaterialT
 use bouncycastle::core::symmetric_key::{FromAnyKeyMaterial, MacGenerationKey};
 use bouncycastle::core::traits::{Hash, HashOneShot, MAC, Suspendable};
 use bouncycastle::hmac::HmacKey;
-use bouncycastle::sm3::hkdf::{HKDF_SM3, SUSPENDED_HKDF_SM3_STATE_LEN};
-use bouncycastle::sm3::hmac::{HMAC_SM3, SUSPENDED_HMAC_SM3_STATE_LEN};
+use bouncycastle::sm3::hkdf::HKDF_SM3;
+use bouncycastle::sm3::hmac::HMAC_SM3;
 use bouncycastle::sm3::{SM3, SUSPENDED_SM3_STATE_LEN};
 
 /// Two full 64-byte blocks and a partial one.
@@ -52,9 +52,7 @@ fn print_struct_sizes() {
     println!("SUSPENDED_SM3_STATE_LEN: {}", SUSPENDED_SM3_STATE_LEN);
     println!("size_of<HMAC_SM3>: {}", size_of::<HMAC_SM3<'static>>());
     println!("size_of<HmacKey<SM3>>: {}", size_of::<HmacKey<SM3>>());
-    println!("SUSPENDED_HMAC_SM3_STATE_LEN: {}", SUSPENDED_HMAC_SM3_STATE_LEN);
     println!("size_of<HKDF_SM3>: {}", size_of::<HKDF_SM3>());
-    println!("SUSPENDED_HKDF_SM3_STATE_LEN: {}", SUSPENDED_HKDF_SM3_STATE_LEN);
 }
 
 /// Runs the operation in its own frame. Returns nothing, so no result crosses the boundary.

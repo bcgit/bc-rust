@@ -157,8 +157,8 @@
 //! connection.
 //!
 //! For this reason, every SHA3, SHAKE and SP 800-185 type impls [`Suspendable`], squeezers included,
-//! so a long output stream can be paused as well as a long input. HMAC is keyed and impls
-//! `SuspendableKeyed` instead; see [hmac].
+//! so a long output stream can be paused as well as a long input. HMAC is keyed and does not
+//! suspend: a message in progress is paused by holding its worker.
 //!
 //!```rust
 //! use bouncycastle_sha3 as sha3;

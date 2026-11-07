@@ -38,8 +38,10 @@
   are likewise one copy over the permutation.
 * Cipher and MAC workers no longer implement `SuspendableKeyed` (#173): a resumed worker is a second copy of a
   nonce, counter or keystream position. The AES modes, CMAC and Ascon-AEAD128 lose their suspended-state
-  constants and `hazmat::ModeKey` goes with them; HMAC and HKDF still suspend, and hashes, XOFs and KMAC keep
-  `Suspendable`.
+  constants and `hazmat::ModeKey` goes with them; hashes, XOFs and KMAC keep `Suspendable`. `SuspendableKeyed` itself
+  then went: HMAC and HKDF no longer suspend (a worker cannot be rebuilt without its key, and the key object makes a
+  new one), which also drops the `SUSPENDED_HMAC_*` and `SUSPENDED_HKDF_*` constants and HKDF's two const parameters,
+  so an instantiation is `HKDF<SHA256>`.
 * KEM encapsulation and decapsulation move onto the keys, as signing did: the `EncapsulatingKey` /
   `DecapsulatingKey` roles in `core::kem_key` hand out `KEMEncapsulator` / `KEMDecapsulator` workers that
   borrow the key, implemented per algorithm over the parameters a worker is made from (`()` for ML-KEM, a

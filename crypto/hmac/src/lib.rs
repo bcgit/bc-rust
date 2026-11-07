@@ -60,10 +60,6 @@
 //!    `KeyMaterial<L>` for an L that matches the size of the underlying hash function. This allows
 //!    this crate to provide blanket [`Algorithm`], [`AlgorithmOID`] and [`HMAC::keygen_from_rng`] impls.
 //! 3. Publish a type alias for the instantiation, `HMAC<SHA256>`.
-//! 4. Optionally publish the suspended-state length as a constant. [`SuspendableKeyed`] is
-//!    implemented automatically for any hash that implements [`Suspendable`], and HMAC's suspended
-//!    state is exactly the inner hash's -- the key is deliberately excluded, and resume takes the
-//!    [`HmacKey`] again -- so the constant is just an alias for the hash's own.
 //!
 //! ## Worked example
 //!
@@ -81,8 +77,6 @@
 //!     const HMAC_OID_DER: &'static [u8] =
 //!         &[0x06, 0x08, 0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x02, 0x09];
 //! }
-//!
-//! pub const SUSPENDED_HMAC_SHA256_STATE_LEN: usize = SUSPENDED_SHA256_STATE_LEN;
 //! ```
 //!
 //! [`HMACParams`] is deliberately **not** sealed, so the same recipe works for a hash function
@@ -109,9 +103,6 @@
 //!   FIPS 140-3 IG C.L Resolution C.4 (formerly NIST SP 800-107r1 Section 5.3.3). It is a floor,
 //!   not a recommendation: RFC 2104 Section 5 recommends that the output length "be not less than
 //!   half the length of the hash output ... and not less than 80 bits".
-//! * The key is deliberately excluded from the suspended state and the [`HmacKey`] must be
-//!   re-supplied on resume. Resuming with the wrong key cannot be detected and silently produces a
-//!   wrong MAC, computed with different keys in the inner and outer pad.
 //! * The two pad states are key-equivalent, as RFC 2104 Section 4 says ("the stored intermediate
 //!   values need to be treated and protected the same as secret keys"). [`HmacKey`] and the worker
 //!   hold them as hash states, which the hash crates zeroize on drop; neither has a `Debug` that
@@ -125,14 +116,12 @@
 
 pub mod hazmat;
 
-use bouncycastle_core::errors::{KeyMaterialError, MACError, RNGError, SuspendableError};
+use bouncycastle_core::errors::{KeyMaterialError, MACError, RNGError};
 use bouncycastle_core::hazmat::do_hazardous_operations;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::symmetric_key::{FromAnyKeyMaterial, MacGenerationKey, MacVerificationKey};
-use bouncycastle_core::traits::{
-    Algorithm, AlgorithmOID, HashAlgParams, HashOneShot, MAC, RNG, Suspendable, SuspendableKeyed,
-};
+use bouncycastle_core::traits::{Algorithm, AlgorithmOID, HashAlgParams, HashOneShot, MAC, RNG};
 use bouncycastle_utils::{ct, secret::Secret};
 use core::fmt::{Debug, Display, Formatter};
 
@@ -466,31 +455,6 @@ impl<HASH: HMACParams> MAC for HMAC<'_, HASH> {
             return false;
         }
         ct::ct_eq_bytes(mac, &out[..output_len])
-    }
-}
-
-/* SerializedState */
-
-/// Suspend / resume for `HMAC`.
-///
-/// The suspended state is exactly the inner hash's: the outer pad state is the key's, which the
-/// worker borrows, so resume takes the [`HmacKey`] the worker was made from and the state carries
-/// one secret fewer. The key is *not* authenticated against the state: resuming with the wrong key
-/// cannot be detected and produces a wrong MAC.
-impl<'k, const HASH_STATE_LEN: usize, HASH: HMACParams + Suspendable<HASH_STATE_LEN>>
-    SuspendableKeyed<'k, HASH_STATE_LEN> for HMAC<'k, HASH>
-{
-    type Key = HmacKey<HASH>;
-
-    fn suspend(self) -> [u8; HASH_STATE_LEN] {
-        self.hasher.suspend()
-    }
-
-    fn from_suspended(
-        state: [u8; HASH_STATE_LEN],
-        key: &'k Self::Key,
-    ) -> Result<Self, SuspendableError> {
-        Ok(HMAC { hasher: HASH::from_suspended(state)?, key })
     }
 }
 

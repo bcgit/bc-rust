@@ -79,8 +79,8 @@ pub(crate) fn hkdf_cmd(
 }
 
 /// Extract then expand through `h`, into `out_key`.
-fn run<H: HMACParams, const HASH_STATE_LEN: usize, const HKDF_STATE_LEN: usize>(
-    mut h: HKDF<H, HASH_STATE_LEN, HKDF_STATE_LEN>,
+fn run<H: HMACParams>(
+    mut h: HKDF<H>,
     salt: &impl KeyMaterialTrait,
     ikm: &impl KeyMaterialTrait,
     info: &[u8],
@@ -90,6 +90,5 @@ fn run<H: HMACParams, const HASH_STATE_LEN: usize, const HKDF_STATE_LEN: usize>(
     h.do_extract_init(salt).map_err(|e| format!("{e:?}"))?;
     h.do_extract_update_bytes(ikm.ref_to_bytes()).map_err(|e| format!("{e:?}"))?;
     let prk = h.do_extract_final().map_err(|e| format!("{e:?}"))?;
-    HKDF::<H, HASH_STATE_LEN, HKDF_STATE_LEN>::expand_out(&prk, info, len, out_key)
-        .map_err(|e| format!("{e:?}"))
+    HKDF::<H>::expand_out(&prk, info, len, out_key).map_err(|e| format!("{e:?}"))
 }

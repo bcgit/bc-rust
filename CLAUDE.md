@@ -187,10 +187,10 @@ taught, as mechanics to apply next time a cipher type is shaped or reshaped:
 - **Fold wrapper state into the struct.** A decrypt-only buffer (the held-back tag) is carried on
   both directions, unused when encrypting, as `Gcm` already does; that is cheaper than a second
   type.
-- **Cipher workers do not suspend.** As of #173 no cipher or MAC worker implements
-  `SuspendableKeyed` or `SuspendableComponent`, and `hazmat::ModeKey` is gone with them; HMAC and
-  HKDF are the `SuspendableKeyed` implementors that remain, and the hashes, XOFs and KMAC keep
-  `Suspendable`. A message in progress is paused by holding its worker. A test that needs a
+- **Keyed workers do not suspend.** As of #173 no cipher or MAC worker implements
+  `SuspendableComponent`, and `hazmat::ModeKey` is gone with them; `SuspendableKeyed` itself went
+  with HMAC's and HKDF's impls (a worker cannot be rebuilt without its key, and its state is
+  key-derived material anyway), and the hashes, XOFs and KMAC keep `Suspendable`. A message in progress is paused by holding its worker. A test that needs a
   worker at a limit the public API cannot reach (GCM at `MAX_DATA_LEN`, the last counter block)
   is a unit test in the mode's file that sets the private field, not a resume from a patched
   state.
@@ -241,9 +241,7 @@ What that taught, as mechanics for the next trait that sheds a constructor:
   function handed `key: &'k K` that names the worker is generic over `'k`; one that builds its
   key locally bounds `for<'k> K::Encryptor<'k>: ..` with `K: 'static`. A test binds the key
   before the worker, since `key_fn().create_encryptor(..)` borrows a temporary.
-- **Resume takes the key object.** `SuspendableKeyed<'k, N>` takes the key by `&'k`: HMAC's is
-  `HmacKey`, and HKDF's stays the salt material, since HKDF is not a key object. A struct
-  cannot hold a worker that borrows a key it also owns: HKDF runs its extract-phase HMAC as the
+- **A struct cannot hold a worker that borrows a key it also owns:** HKDF runs its extract-phase HMAC as the
   two halves `HmacKey::inner_state` / `finish_out`, and the MAC factory is a key enum that hands
   out a worker enum.
 - **What has no key-path twin is dropped, and said so.** `new_allow_weak_key` on a cipher-based

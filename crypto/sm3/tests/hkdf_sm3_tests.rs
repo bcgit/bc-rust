@@ -14,7 +14,7 @@ mod hkdf_sm3_tests {
     use bouncycastle_core_test_framework::DUMMY_SEED;
     use bouncycastle_core_test_framework::kdf::TestFrameworkKDF;
     use bouncycastle_hex as hex;
-    use bouncycastle_sm3::hkdf::{HKDF_SM3, HKDF_SM3_NAME, SUSPENDED_HKDF_SM3_STATE_LEN};
+    use bouncycastle_sm3::hkdf::{HKDF_SM3, HKDF_SM3_NAME};
 
     /// Key material of any length and content, including empty or all-zero, as the RFC 5869
     /// vectors need.
@@ -32,7 +32,6 @@ mod hkdf_sm3_tests {
         assert_eq!(HKDF_SM3::ALG_NAME, HKDF_SM3_NAME);
         assert_eq!(HKDF_SM3::MAX_SECURITY_STRENGTH, SecurityStrength::_128bit);
         assert_eq!(HKDF_SM3::new().alg_name(), "HKDF-SM3");
-        assert_eq!(SUSPENDED_HKDF_SM3_STATE_LEN, 122);
     }
 
     /// `(ikm, salt, info, prk, okm)`, from RFC 5869 Appendix A.1, A.2 and A.3's inputs.
@@ -105,30 +104,6 @@ mod hkdf_sm3_tests {
         let ikm_b = key(&hex::encode(&DUMMY_SEED[32..64]), KeyType::MACKey);
         let keys: [&dyn KeyMaterialTrait; 2] = [&ikm_a, &ikm_b];
         framework.test_kdf_multiple_key(&HKDF_SM3::new(), &keys, info, &expected);
-    }
-
-    #[test]
-    fn suspendable_keyed_state() {
-        use bouncycastle_core::traits::SuspendableKeyed;
-        use bouncycastle_core_test_framework::suspendable_state::TestFrameworkSuspendableKeyedState;
-
-        let salt = key("000102030405060708090a0b0c", KeyType::MACKey);
-        let (part1, part2) = DUMMY_SEED[..48].split_at(20);
-
-        let mut hkdf = HKDF_SM3::new();
-        hkdf.do_extract_init(&salt).unwrap();
-        hkdf.do_extract_update_bytes(part1).unwrap();
-        TestFrameworkSuspendableKeyedState::new().test(&hkdf, &salt);
-
-        let mut uninterrupted = hkdf.clone();
-        uninterrupted.do_extract_update_bytes(part2).unwrap();
-        let expected = uninterrupted.do_extract_final().unwrap();
-
-        let state = hkdf.suspend();
-        assert_eq!(state.len(), SUSPENDED_HKDF_SM3_STATE_LEN);
-        let mut resumed = HKDF_SM3::from_suspended(state, &salt).unwrap();
-        resumed.do_extract_update_bytes(part2).unwrap();
-        assert_eq!(resumed.do_extract_final().unwrap().ref_to_bytes(), expected.ref_to_bytes());
     }
 
     #[test]

@@ -1103,9 +1103,10 @@ pub trait StreamCipherEncryptor<const INIT_DATA_LEN: usize>:
 /// will be more straightforward.
 ///
 /// The serialized state MAY contain short-term sensitive values such as nonces or IVs,
-/// but it MUST NOT include a serialized private key.
-/// Keyed algorithms MUST instead impl
-/// [`SuspendableKeyed`] which requires the key to be supplied independently at the time of deserialization.
+/// but it MUST NOT include a serialized private key. A keyed worker (a MAC, a cipher, HKDF with
+/// its salt) does not suspend: it could not be rebuilt without the key, and its state is
+/// key-derived material in any case. A message in progress is paused by holding the worker, and a
+/// new one comes from the key object.
 pub trait Suspendable<const SERIALIZED_STATE_LEN: usize>: Sized {
     /// Suspend operation by serializing out the state of the object.
     ///
@@ -1123,44 +1124,6 @@ pub trait Suspendable<const SERIALIZED_STATE_LEN: usize>: Sized {
     /// For example, if a given object made a breaking change to its serialization in version 1.2.3, then its
     /// deserializer should reject serialized states from that version or older.
     fn from_suspended(state: [u8; SERIALIZED_STATE_LEN]) -> Result<Self, SuspendableError>;
-}
-
-/// Similar to [`Suspendable`] in that it allows a stateful object to suspend its operation by
-/// serializing its state into a byte array so that it can be resumed later, potentially from a different host.
-///
-/// The difference is that this trait is for keyed algorithms which require a key in order to
-/// resume successfully: the MACs and KDFs built on a hash (HMAC, HKDF). For security reasons, the
-/// key is not included in the serialized state and must be provided separately as part of the
-/// deserialization process.
-///
-/// Cipher and MAC workers do not implement it (#173): a resumed worker is a second copy of a
-/// nonce, counter or keystream position, and two copies that both go on to encrypt reuse
-/// keystream. A message in progress is paused by holding its worker.
-pub trait SuspendableKeyed<'k, const SERIALIZED_STATE_LEN: usize>: Sized {
-    /// The type of key that must be re-supplied to resume this object. A worker that borrows its
-    /// key for `'k` names the key's type and is resumed over the reference it is given; one that
-    /// owns a copy of its key ignores the lifetime.
-    type Key: ?Sized;
-
-    /// Suspend operation by serializing out the state of the object.
-    ///
-    /// Note that this consumes `self` to prevent accidentally continuing to use the object after serialization.
-    /// The state is bytes, so nothing stops a caller resuming it twice; two objects resumed from
-    /// one checkpoint continue identically. Treat a checkpoint as single-use.
-    ///
-    /// The serialized state MUST include a prefix indicating the version of the library that serialized it.
-    fn suspend(self) -> [u8; SERIALIZED_STATE_LEN];
-
-    /// Resume operation from a serialized state and the key.
-    ///
-    /// Deserializers SHOULD check the version and reject serialized states from incompatible versions
-    /// (including rejecting serializations from a future version of the library).
-    /// For example, if a given object made a breaking change to its serialization in version 1.2.3, then its
-    /// deserializer should reject serialized states from that version or older.
-    fn from_suspended(
-        state: [u8; SERIALIZED_STATE_LEN],
-        key: &'k Self::Key,
-    ) -> Result<Self, SuspendableError>;
 }
 
 /// The decryption half of a symmetric cipher's arbitrary-length API. See

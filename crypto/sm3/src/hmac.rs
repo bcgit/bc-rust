@@ -7,7 +7,7 @@
 //! SM3-specific parameters via [`HMACParams`] and publishes the resulting type alias, so that HMAC
 //! over SM3 is found in this crate, and [`bouncycastle_hmac`] serves as a utility crate rather than
 //! as part of the library's public API. See [`bouncycastle_hmac`] for the full description of the
-//! three-phase [`MAC`] lifecycle, key typing and suspend/resume.
+//! three-phase [`MAC`] lifecycle and key typing.
 //!
 //! A key of any length is accepted: per RFC 2104, a key longer than the hash's block -- the 512-bit
 //! block GB/T 32905-2016 s. 5.2 pads to -- is pre-hashed to the output length. The key's two pad
@@ -36,13 +36,11 @@
 //!   IG C.L Resolution C.4 (formerly NIST SP 800-107r1 Section 5.3.3). That is a floor, not a
 //!   recommendation -- RFC 2104 Section 5 recommends that the output length "be not less than half
 //!   the length of the hash output ... and not less than 80 bits".
-//! * Resuming a suspended HMAC with the wrong key cannot be detected and silently produces a wrong
-//!   MAC.
 //! * SM3 is a Merkle-Damgard construction and so is subject to length extension; `SM3(k || m)` is
 //!   not a secure MAC and HMAC-SM3 is the right construction for keyed hashing over SM3.
 
+use crate::SM3;
 use crate::hkdf::HKDF_SM3_NAME;
-use crate::{SM3, SUSPENDED_SM3_STATE_LEN};
 use bouncycastle_core::key_material::KeyMaterial;
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::HashAlgParams;
@@ -75,9 +73,3 @@ impl HMACParams for SM3 {
     const HMAC_OID_DER: &'static [u8] =
         &[0x06, 0x09, 0x2A, 0x81, 0x1C, 0xCF, 0x55, 0x01, 0x83, 0x11, 0x02];
 }
-
-/*** Serialized-state length constants ***/
-// HMAC's suspended state is exactly the inner hasher's state -- the key is deliberately excluded and
-// must be re-supplied on resume -- so this is SM3's own state length.
-/// Length in bytes of the serialized state of [`HMAC_SM3`].
-pub const SUSPENDED_HMAC_SM3_STATE_LEN: usize = SUSPENDED_SM3_STATE_LEN;

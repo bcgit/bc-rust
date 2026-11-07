@@ -223,8 +223,6 @@ pub(crate) fn mlkem_hkdf_cmd<
     PK,
     SK,
     H,
-    const HASH_STATE_LEN: usize,
-    const HKDF_STATE_LEN: usize,
     const PK_LEN: usize,
     const SK_LEN: usize,
     const CT_LEN: usize,
@@ -232,7 +230,7 @@ pub(crate) fn mlkem_hkdf_cmd<
     const PLAIN_SS_LEN: usize,
 >(
     set: &ParameterSet<PK, SK, PK_LEN, SK_LEN, CT_LEN, PLAIN_SS_LEN>,
-    _kdf: PhantomData<HKDF<H, HASH_STATE_LEN, HKDF_STATE_LEN>>,
+    _kdf: PhantomData<HKDF<H>>,
     action: &MLKEMHkdfAction,
     skfile: &Option<String>,
     pkfile: &Option<String>,
@@ -243,18 +241,8 @@ pub(crate) fn mlkem_hkdf_cmd<
     additional_input_file: &Option<String>,
     output_hex: bool,
 ) where
-    PK: KEMPublicKey<PK_LEN>
-        + for<'p> EncapsulatingKey<
-            KdfParams<'p, HKDF<H, HASH_STATE_LEN, HKDF_STATE_LEN>>,
-            CT_LEN,
-            SS_LEN,
-        >,
-    SK: KEMPrivateKey<SK_LEN>
-        + for<'p> DecapsulatingKey<
-            KdfParams<'p, HKDF<H, HASH_STATE_LEN, HKDF_STATE_LEN>>,
-            CT_LEN,
-            SS_LEN,
-        >,
+    PK: KEMPublicKey<PK_LEN> + for<'p> EncapsulatingKey<KdfParams<'p, HKDF<H>>, CT_LEN, SS_LEN>,
+    SK: KEMPrivateKey<SK_LEN> + for<'p> DecapsulatingKey<KdfParams<'p, HKDF<H>>, CT_LEN, SS_LEN>,
     H: HMACParams,
 {
     // RFC 5869 Section 2.2: the salt is optional, "a non-secret random value"; absent, HKDF uses
@@ -279,11 +267,10 @@ pub(crate) fn mlkem_hkdf_cmd<
         (None, Some(hex_str)) => decode_hex_arg(hex_str, "additional-input"),
         (None, None) => Vec::new(),
     };
-    let hkdf =
-        HKDF::<H, HASH_STATE_LEN, HKDF_STATE_LEN>::new_with_salt(&salt).unwrap_or_else(|e| {
-            eprintln!("Error: couldn't load the salt: {e:?}");
-            exit(-1);
-        });
+    let hkdf = HKDF::<H>::new_with_salt(&salt).unwrap_or_else(|e| {
+        eprintln!("Error: couldn't load the salt: {e:?}");
+        exit(-1);
+    });
     let params = KdfParams::new(&hkdf, &info);
 
     match action {
