@@ -21,10 +21,10 @@ use crate::params::{MLKEM512Params, MLKEM768Params, MLKEM1024Params, MLKEMParams
 use bouncycastle_core::errors::KEMError;
 use bouncycastle_core::kdf_params::KdfParams;
 use bouncycastle_core::kem_key::KEMAlgorithm;
-use bouncycastle_core::key_material::KeyMaterial;
+use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{Algorithm, KDF};
-use bouncycastle_sha2::hkdf::{HKDF_SHA256, HKDF_SHA512};
+use bouncycastle_sha2::hkdf::{HKDF_SHA256, HKDF_SHA384, HKDF_SHA512};
 
 /// Algorithm name of ML-KEM-512-HKDF-SHA256, as reported by `Algorithm::ALG_NAME`.
 pub const ML_KEM_512_HKDF_SHA256_NAME: &str = "ML-KEM-512-HKDF-SHA256";
@@ -87,30 +87,55 @@ impl Algorithm for MLKEM1024_HKDF_SHA512 {
 
 impl KEMAlgorithm for MLKEM1024_HKDF_SHA512 {}
 
+/// A KDF the library may pair ML-KEM with: the SHA-2 HKDFs. Sealed, so that the pairing trait,
+/// which is generic over the KDF, cannot be implemented outside this crate: the orphan rule
+/// would otherwise let a downstream crate pair a parameter set with a KDF of its own, under any
+/// name and strength, and the blanket role impls of both ML-KEM crates would take it.
+pub trait PairedKdf: sealed::Sealed {}
+
+impl PairedKdf for HKDF_SHA256 {}
+impl PairedKdf for HKDF_SHA384 {}
+impl PairedKdf for HKDF_SHA512 {}
+
+mod sealed {
+    use bouncycastle_sha2::hkdf::{HKDF_SHA256, HKDF_SHA384, HKDF_SHA512};
+    pub trait Sealed {}
+    impl Sealed for HKDF_SHA256 {}
+    impl Sealed for HKDF_SHA384 {}
+    impl Sealed for HKDF_SHA512 {}
+}
+
 /// A parameter set paired with its KDF: `P: MLKEMKdfPairing<D, SS_LEN>` has one solution per
 /// parameter set, so a role impl generic over `D` and `SS_LEN` and bound on it infers both from
-/// `P` and the parameter type, as `CiphertextLen` does for the ciphertext. Sealed through
-/// [`MLKEMParamsBase`]; the three impls are the pairings the library supports, so a key under a
-/// KDF it is not paired with has no role, and `pk.encaps(&mut rng, params)` with the wrong
-/// `KdfParams` is a compile error. The derivation is the same for every pairing, so it is
-/// provided here.
-pub trait MLKEMKdfPairing<D: KDF + ?Sized, const SS_LEN: usize>: MLKEMParamsBase {
+/// `P` and the parameter type, as `CiphertextLen` does for the ciphertext. Sealed on both sides,
+/// through [`MLKEMParamsBase`] and [`PairedKdf`]; the three impls are the pairings the library
+/// supports, so a key under a KDF it is not paired with has no role, and
+/// `pk.encaps(&mut rng, params)` with the wrong `KdfParams` is a compile error. The derivation
+/// is the same for every pairing, so it is provided here.
+pub trait MLKEMKdfPairing<D: KDF + PairedKdf + ?Sized, const SS_LEN: usize>:
+    MLKEMParamsBase
+{
     /// The algorithm the pairing is.
     type Algorithm: KEMAlgorithm;
 
     /// KDF(𝐾, info) into a key of `SS_LEN` bytes.
     ///
     /// # Errors
-    /// [`KEMError::GenericError`] if the KDF refuses the derivation.
+    /// [`KEMError::GenericError`] if the KDF refuses the derivation (an HKDF instance that has
+    /// absorbed input, say) or writes anything but `SS_LEN` bytes.
     fn derive(
         params: KdfParams<'_, D>,
         K: &KeyMaterial<MLKEM_SS_LEN>,
     ) -> Result<KeyMaterial<SS_LEN>, KEMError> {
         let mut okm = KeyMaterial::new();
-        params
+        let written = params
             .kdf()
             .derive_key_out(K, params.info(), SS_LEN, &mut okm)
             .map_err(|_| KEMError::GenericError("the KDF over the ML-KEM secret failed"))?;
+        // The trait says `len` bytes come back; the key the worker hands out is SS_LEN bytes.
+        if written != SS_LEN || okm.key_len() != SS_LEN {
+            return Err(KEMError::GenericError("the KDF derived a key of the wrong length"));
+        }
         Ok(okm)
     }
 }
