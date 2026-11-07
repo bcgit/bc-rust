@@ -81,8 +81,8 @@
 //! no more calls to [`HKDF::do_extract_update_key`] may be made.
 //! The streaming API is completed with a call to either [`HKDF::do_extract_final`] or [`HKDF::do_extract_final_out`].
 //!
-//! The second stage, [`HKDF::expand_out`] stretches the `prk` into a longer output key, still of the same [`KeyType`]
-//! and [`SecurityStrength`].
+//! The second stage, [`HKDF::expand_out`] stretches the `prk` into a longer output key, typed
+//! [`KeyType::CryptographicRandom`] when the PRK was credited and at the PRK's [`SecurityStrength`].
 //!
 //! A typical flow looks like this:
 //!
@@ -136,9 +136,8 @@
 //!
 //! # Memory Usage
 //!
-//! The HKDF object itself uses no heap memory; the `Vec`-returning and `Box<dyn KeyMaterialTrait>`
-//! -returning convenience methods of the [`KDF`] trait allocate their output, and the `*_out`
-//! variants allocate nothing.
+//! The HKDF object itself uses no heap memory; the `Box<dyn KeyMaterialTrait>`-returning one-shots
+//! of the [`KDF`] trait allocate their output, and the `*_out` variants allocate nothing.
 //!
 //! | Object                                            | Size (bytes) |
 //! |---------------------------------------------------|--------------|
@@ -146,10 +145,11 @@
 //! | `HKDF_SHA384`                                     | 656          |
 //! | `HKDF_SHA512`                                     | 656          |
 //!
-//! The object is an `Option` of the inner extract-phase HMAC -- 224 bytes for SHA-256, 416 for
-//! SHA-384 and SHA-512, each two hash states -- plus the bookkeeping (the entropy counter, the
-//! accumulated security strength and the state-machine tag, with padding); the `Option` is
-//! niche-filled for SHA-256 and not for the larger pair, hence the uneven step.
+//! The object is an `Option` of the extract phase's two halves, the salt key (two hash states,
+//! the pads) and the inner hash absorbing the IKM -- three hash states, 336 bytes for SHA-256,
+//! 624 for SHA-384 and SHA-512 -- plus the bookkeeping (the entropy counter, the accumulated
+//! security strength, the state-machine tag and the absorbed flag, with padding); the `Option`
+//! is niche-filled for SHA-256 and not for the larger pair, hence the uneven step.
 //!
 //! # 🚨 Security Considerations 🚨
 //!
