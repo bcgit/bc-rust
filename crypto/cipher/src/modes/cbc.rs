@@ -147,6 +147,12 @@ where
         state: &'k Self::KeyState,
         rng: &mut dyn RNG,
     ) -> Result<(Self::Encryptor<'k>, [u8; BLOCK_LEN]), SymmetricCipherError> {
+        const {
+            assert!(
+                !P::DECRYPT_ONLY,
+                "this permutation decrypts only (BlockPermutation::DECRYPT_ONLY): no encrypting worker may be made over it"
+            )
+        };
         let iv = random_iv::<BLOCK_LEN>(rng)?;
         Ok((PaddedBlockCipherEncryptor::from_inner(Cbc::from_perm(state, iv)), iv))
     }
@@ -185,6 +191,12 @@ where
         state: &'k Self::KeyState,
         rng: &mut dyn RNG,
     ) -> Result<(Self::Encryptor<'k>, [u8; BLOCK_LEN]), SymmetricCipherError> {
+        const {
+            assert!(
+                !P::DECRYPT_ONLY,
+                "this permutation decrypts only (BlockPermutation::DECRYPT_ONLY): no encrypting worker may be made over it"
+            )
+        };
         let iv = random_iv::<BLOCK_LEN>(rng)?;
         Ok((Cbc::from_perm(state, iv), iv))
     }

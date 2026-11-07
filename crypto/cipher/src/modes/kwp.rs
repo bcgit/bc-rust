@@ -61,6 +61,7 @@
 
 use super::ModeNames;
 use super::kw::{KW_BLOCK_LEN, SEMIBLOCK_LEN, w, w_inv};
+use crate::{Decrypting, Encrypting};
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::hazmat::{
     BlockPermutation, ElectronicCodeBook, KeyUnwrapMode, KeyWrapMode, Mode,
@@ -70,6 +71,7 @@ use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{Algorithm, KeyUnwrapper, KeyWrapper};
 use bouncycastle_utils::ct::{ct_eq_bytes, ct_eq_zero_bytes};
 use bouncycastle_utils::secret::Secret;
+use core::marker::PhantomData;
 
 /// ICV2, the integrity check value of KWP (Algorithm 5, step 1): `0xA65959A6`.
 const ICV2: [u8; 4] = [0xA6, 0x59, 0x59, 0xA6];
@@ -124,11 +126,17 @@ where
     P: ElectronicCodeBook<KEK_LEN, KW_BLOCK_LEN> + ModeNames + Clone,
 {
     type Wrapper<'k>
-        = Kwp<'k, P>
+        = Kwp<'k, P, Encrypting>
     where
         P: 'k;
 
     fn wrap_init<'k>(state: &'k Self::KeyState) -> Self::Wrapper<'k> {
+        const {
+            assert!(
+                !P::DECRYPT_ONLY,
+                "this permutation decrypts only (BlockPermutation::DECRYPT_ONLY): no wrapper may be made over it"
+            )
+        };
         Kwp::from_perm(state)
     }
 }
@@ -138,7 +146,7 @@ where
     P: ElectronicCodeBook<KEK_LEN, KW_BLOCK_LEN> + ModeNames + Clone,
 {
     type Unwrapper<'k>
-        = Kwp<'k, P>
+        = Kwp<'k, P, Decrypting>
     where
         P: 'k;
 
@@ -148,27 +156,28 @@ where
 }
 
 /// KWP over any 128-bit permutation that impls [`BlockPermutation`]: the one-shot worker a
-/// [`KWP`]-bound key hands out, borrowing the keyed permutation for `'k`, as
-/// [`Kw`](super::kw::Kw) does. See the module docs.
-pub struct Kwp<'k, P>
+/// [`KWP`]-bound key hands out, borrowing the keyed permutation for `'k` and carrying its
+/// direction in `Dir`, as [`Kw`](super::kw::Kw) does. See the module docs.
+pub struct Kwp<'k, P, Dir>
 where
     P: BlockPermutation<KW_BLOCK_LEN> + ModeNames,
 {
     perm: &'k P,
+    _dir: PhantomData<Dir>,
 }
 
-impl<'k, P> Kwp<'k, P>
+impl<'k, P, Dir> Kwp<'k, P, Dir>
 where
     P: BlockPermutation<KW_BLOCK_LEN> + ModeNames,
 {
     /// Over an already-keyed permutation, which the worker borrows: what [`KWP`]'s mode impls
     /// build for a key's roles.
     pub(crate) fn from_perm(perm: &'k P) -> Self {
-        Self { perm }
+        Self { perm, _dir: PhantomData }
     }
 }
 
-impl<'k, P> Algorithm for Kwp<'k, P>
+impl<'k, P, Dir> Algorithm for Kwp<'k, P, Dir>
 where
     P: BlockPermutation<KW_BLOCK_LEN> + ModeNames,
 {
@@ -178,7 +187,7 @@ where
     const MAX_SECURITY_STRENGTH: SecurityStrength = P::MAX_SECURITY_STRENGTH;
 }
 
-impl<'k, P> KeyWrapper for Kwp<'k, P>
+impl<'k, P> KeyWrapper for Kwp<'k, P, Encrypting>
 where
     P: BlockPermutation<KW_BLOCK_LEN> + ModeNames,
 {
@@ -245,13 +254,13 @@ where
             let (a, r) = s.split_at_mut(SEMIBLOCK_LEN);
             let (a, _) = a.as_chunks_mut::<SEMIBLOCK_LEN>();
             let (r, _) = r.as_chunks_mut::<SEMIBLOCK_LEN>();
-            w(self.perm, &mut a[0], r);
+            w::<P, KW_BLOCK_LEN, SEMIBLOCK_LEN>(self.perm, &mut a[0], r);
         }
         Ok(ct_len)
     }
 }
 
-impl<'k, P> KeyUnwrapper for Kwp<'k, P>
+impl<'k, P> KeyUnwrapper for Kwp<'k, P, Decrypting>
 where
     P: BlockPermutation<KW_BLOCK_LEN> + ModeNames,
 {
@@ -339,7 +348,7 @@ where
             a.copy_from_slice(&ciphertext[..SEMIBLOCK_LEN]);
             r.copy_from_slice(&ciphertext[SEMIBLOCK_LEN..]);
             let (r, _) = r.as_chunks_mut::<SEMIBLOCK_LEN>();
-            w_inv(self.perm, &mut a, r);
+            w_inv::<P, KW_BLOCK_LEN, SEMIBLOCK_LEN>(self.perm, &mut a, r);
         }
 
         // Steps 4-8: every check is made, and the verdicts combined with `&` rather than `&&`, so

@@ -1,5 +1,6 @@
 use bouncycastle_chacha20::hazmat::{ChaCha20KeyStream, keystream_at};
 use bouncycastle_chacha20::{ChaCha20, ChaCha20Key};
+use bouncycastle_cipher::stream::hazmat::stream_cipher_over;
 use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
 use bouncycastle_core::hazmat::KeyStream;
@@ -23,7 +24,7 @@ fn key() -> ChaCha20Key {
 }
 
 fn at<'k>(key: &'k ChaCha20Key, nonce: &[u8; 12], counter: u32) -> ChaCha20<'k, Encrypting> {
-    ChaCha20::from_keystream(keystream_at(key, nonce, counter))
+    stream_cipher_over(keystream_at(key, nonce, counter))
 }
 
 #[test]
@@ -98,7 +99,7 @@ fn a_keystream_at_its_last_counter_has_no_blocks_left() {
     ks.apply_blocks(&mut [[0u8; 64]; 1]);
     assert_eq!(ks.remaining_blocks(), 0);
     assert!(matches!(
-        ChaCha20::<Encrypting>::from_keystream(ks).do_encrypt_inplace(&mut [0u8; 1]),
+        stream_cipher_over::<_, Encrypting, 12, 64>(ks).do_encrypt_inplace(&mut [0u8; 1]),
         Err(SymmetricCipherError::DataLimitExceeded)
     ));
 }

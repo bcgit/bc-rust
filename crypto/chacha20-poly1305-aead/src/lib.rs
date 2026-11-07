@@ -105,6 +105,7 @@
 
 use bouncycastle_chacha20::hazmat::{ChaCha20KeyStream, keystream_at};
 use bouncycastle_chacha20::{ChaCha20, ChaCha20Key};
+use bouncycastle_cipher::stream::hazmat::stream_cipher_over;
 use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::hazmat::KeyStream;
@@ -195,7 +196,7 @@ impl<'k, Dir> ChaCha20_Poly1305<'k, Dir> {
         // already enforced on the parent cipher key; no entropy heuristic applies here.
         let mac = key_from_bytes(poly1305_key_gen(&mut keystream, &mut block)).into_mac();
         Self {
-            cipher: ChaCha20::from_keystream(keystream),
+            cipher: stream_cipher_over(keystream),
             mac,
             aad_len: 0,
             data_len: 0,
@@ -515,7 +516,7 @@ mod tests {
         let mut cipher = fresh(key);
         // `check_data_len` relies on MAX_MESSAGE_LEN being exactly the data keystream's capacity.
         assert_eq!(cipher.cipher.keystream().remaining_blocks() * 64, MAX_MESSAGE_LEN);
-        cipher.cipher = ChaCha20::from_keystream(keystream_at(key, &[9; 12], u32::MAX));
+        cipher.cipher = stream_cipher_over(keystream_at(key, &[9; 12], u32::MAX));
         cipher.data_len = MAX_MESSAGE_LEN - 64;
         cipher
     }

@@ -163,6 +163,12 @@ where
         state: &'k Self::KeyState,
         rng: &mut dyn RNG,
     ) -> Result<(Self::Encryptor<'k>, [u8; NONCE_LEN]), SymmetricCipherError> {
+        const {
+            assert!(
+                !P::DECRYPT_ONLY,
+                "this permutation decrypts only (BlockPermutation::DECRYPT_ONLY): no encrypting worker may be made over it"
+            )
+        };
         let nonce = random_iv::<NONCE_LEN>(rng)?;
         Ok((StreamCipher::from_keystream(CtrKeyStream::from_perm(state, nonce)), nonce))
     }

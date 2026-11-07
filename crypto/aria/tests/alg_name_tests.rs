@@ -69,12 +69,12 @@ fn cfb_cfb8_ctr() {
 #[test]
 fn kw_kwp() {
     use SecurityStrength::*;
-    check::<ARIA_KW_128<'_>, ARIA_KW_128<'_>>("ARIA_KW_128", _128bit);
-    check::<ARIA_KW_192<'_>, ARIA_KW_192<'_>>("ARIA_KW_192", _192bit);
-    check::<ARIA_KW_256<'_>, ARIA_KW_256<'_>>("ARIA_KW_256", _256bit);
-    check::<ARIA_KWP_128<'_>, ARIA_KWP_128<'_>>("ARIA_KWP_128", _128bit);
-    check::<ARIA_KWP_192<'_>, ARIA_KWP_192<'_>>("ARIA_KWP_192", _192bit);
-    check::<ARIA_KWP_256<'_>, ARIA_KWP_256<'_>>("ARIA_KWP_256", _256bit);
+    check::<ARIA_KW_128<'_, Encrypting>, ARIA_KW_128<'_, Decrypting>>("ARIA_KW_128", _128bit);
+    check::<ARIA_KW_192<'_, Encrypting>, ARIA_KW_192<'_, Decrypting>>("ARIA_KW_192", _192bit);
+    check::<ARIA_KW_256<'_, Encrypting>, ARIA_KW_256<'_, Decrypting>>("ARIA_KW_256", _256bit);
+    check::<ARIA_KWP_128<'_, Encrypting>, ARIA_KWP_128<'_, Decrypting>>("ARIA_KWP_128", _128bit);
+    check::<ARIA_KWP_192<'_, Encrypting>, ARIA_KWP_192<'_, Decrypting>>("ARIA_KWP_192", _192bit);
+    check::<ARIA_KWP_256<'_, Encrypting>, ARIA_KWP_256<'_, Decrypting>>("ARIA_KWP_256", _256bit);
 }
 
 #[test]

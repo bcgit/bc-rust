@@ -35,8 +35,8 @@ fn check<Enc: Algorithm, Dec: Algorithm>(name: &str) {
 /// One worker serves both halves of a key wrap, so each alias is checked against itself.
 #[test]
 fn kw_kwp() {
-    check::<SM4_KW<'_>, SM4_KW<'_>>("SM4_KW");
-    check::<SM4_KWP<'_>, SM4_KWP<'_>>("SM4_KWP");
+    check::<SM4_KW<'_, Encrypting>, SM4_KW<'_, Decrypting>>("SM4_KW");
+    check::<SM4_KWP<'_, Encrypting>, SM4_KWP<'_, Decrypting>>("SM4_KWP");
 }
 
 #[test]

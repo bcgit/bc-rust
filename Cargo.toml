@@ -40,6 +40,7 @@ bouncycastle-sha2 = { path = "./crypto/sha2" }
 bouncycastle-sha3 = { path = "./crypto/sha3" }
 bouncycastle-sm2 = { path = "./crypto/sm2" }
 bouncycastle-sm3 = { path = "./crypto/sm3" }
+bouncycastle-tdes = { path = "./crypto/tdes" }
 bouncycastle-sm4 = { path = "./crypto/sm4" }
 bouncycastle-utils = { path = "./crypto/utils" }
 
@@ -92,4 +93,5 @@ bouncycastle-sha2.workspace = true
 bouncycastle-sha3.workspace = true
 bouncycastle-sm2.workspace = true
 bouncycastle-sm3.workspace = true
+bouncycastle-tdes.workspace = true
 bouncycastle-sm4.workspace = true
