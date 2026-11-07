@@ -19,10 +19,10 @@ use bouncycastle_tdes::{BLOCK_LEN, KEY_LEN, KEY_LEN_2KEY};
 
 #[test]
 fn tdes_conforms_to_electronic_code_book() {
-    TestFrameworkKeyExpansion::new().test::<KEY_LEN, BLOCK_LEN, TDESInternal>();
+    TestFrameworkElectronicCodeBook::new().test::<KEY_LEN, BLOCK_LEN, TDESInternal>();
 }
 
 #[test]
 fn tdes2key_conforms_to_electronic_code_book() {
-    TestFrameworkKeyExpansion::new().test::<KEY_LEN_2KEY, BLOCK_LEN, TDES2Internal>();
+    TestFrameworkElectronicCodeBook::new().test::<KEY_LEN_2KEY, BLOCK_LEN, TDES2Internal>();
 }
