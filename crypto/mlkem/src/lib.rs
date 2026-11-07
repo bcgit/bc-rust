@@ -92,7 +92,7 @@
 //! let (ss, ct) = pk.encaps(&mut rng, ()).unwrap();
 //!
 //! // Recover the shared secret using the private key
-//! let ss1 = match sk.decaps((), &ct) {
+//! let ss1 = match sk.decaps(&ct, ()) {
 //!     Err(KEMError) => panic!("Error decapsulating"),
 //!     Ok(ss) => ss,
 //! };

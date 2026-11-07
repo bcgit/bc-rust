@@ -62,7 +62,7 @@ impl TestFrameworkKEM {
 
         // one-shots
         let (ss, ct) = pk.encaps(&mut rng, params).unwrap();
-        let ss1 = sk.decaps(params, &ct).unwrap();
+        let ss1 = sk.decaps(&ct, params).unwrap();
         assert_eq!(ss, ss1);
 
         // the shared secret is typed, full-entropy material at the algorithm's strength
@@ -102,7 +102,7 @@ impl TestFrameworkKEM {
             // the decapsulator is reusable, and its result is the one-shot's
             assert_eq!(decapsulator.decaps(&ct_a).unwrap(), ss_a);
             assert_eq!(decapsulator.decaps(&ct_a).unwrap(), ss_a);
-            assert_eq!(sk.decaps(params, &ct_a).unwrap(), ss_a);
+            assert_eq!(sk.decaps(&ct_a, params).unwrap(), ss_a);
         }
 
         // the workers are usable as trait objects
@@ -166,7 +166,7 @@ impl TestFrameworkKEM {
         ss: &impl KeyMaterialTrait,
         damaged_ct: &[u8; CT_LEN],
     ) {
-        match sk.decaps(params, damaged_ct) {
+        match sk.decaps(damaged_ct, params) {
             Ok(ss2) if self.is_implicitly_rejecting => {
                 assert!(!ss.equals(&ss2), "a damaged ciphertext must not give the same secret")
             }
@@ -416,7 +416,7 @@ mod tests {
         let (pk, sk) = keygen::<false>().unwrap();
         let mut rng = FixedSeedRNG::new([0x33u8; 64]);
         let (ss, ct) = pk.encaps(&mut rng, &MockKdf { label: 1 }).unwrap();
-        assert_eq!(sk.decaps(&MockKdf { label: 1 }, &ct).unwrap(), ss);
-        assert_ne!(sk.decaps(&MockKdf { label: 2 }, &ct).unwrap(), ss);
+        assert_eq!(sk.decaps(&ct, &MockKdf { label: 1 }).unwrap(), ss);
+        assert_ne!(sk.decaps(&ct, &MockKdf { label: 2 }).unwrap(), ss);
     }
 }

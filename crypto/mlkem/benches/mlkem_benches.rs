@@ -262,7 +262,7 @@ fn bench_mlkem_decaps(c: &mut Criterion) {
     group.bench_function("ML-KEM-512", |b| {
         b.iter(|| {
             for ct in cts.iter() {
-                _ = black_box(sk.decaps((), ct));
+                _ = black_box(sk.decaps(ct, ()));
             }
         })
     });
@@ -283,7 +283,7 @@ fn bench_mlkem_decaps(c: &mut Criterion) {
     group.bench_function("ML-KEM-768", |b| {
         b.iter(|| {
             for ct in cts.iter() {
-                _ = black_box(sk.decaps((), ct));
+                _ = black_box(sk.decaps(ct, ()));
             }
         })
     });
@@ -304,7 +304,7 @@ fn bench_mlkem_decaps(c: &mut Criterion) {
     group.bench_function("ML-KEM-1024", |b| {
         b.iter(|| {
             for ct in cts.iter() {
-                _ = black_box(sk.decaps((), ct));
+                _ = black_box(sk.decaps(ct, ()));
             }
         })
     });
@@ -348,7 +348,7 @@ fn bench_mlkem_decaps_with_expanded_key(c: &mut Criterion) {
     group.bench_function("ML-KEM-512", |b| {
         b.iter(|| {
             for ct in cts.iter() {
-                _ = black_box(sk_expanded.decaps((), ct));
+                _ = black_box(sk_expanded.decaps(ct, ()));
             }
         })
     });
@@ -370,7 +370,7 @@ fn bench_mlkem_decaps_with_expanded_key(c: &mut Criterion) {
     group.bench_function("ML-KEM-768", |b| {
         b.iter(|| {
             for ct in cts.iter() {
-                _ = black_box(sk_expanded.decaps((), ct));
+                _ = black_box(sk_expanded.decaps(ct, ()));
             }
         })
     });
@@ -392,7 +392,7 @@ fn bench_mlkem_decaps_with_expanded_key(c: &mut Criterion) {
     group.bench_function("ML-KEM-1024", |b| {
         b.iter(|| {
             for ct in cts.iter() {
-                _ = black_box(sk_expanded.decaps((), ct));
+                _ = black_box(sk_expanded.decaps(ct, ()));
             }
         })
     });

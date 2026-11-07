@@ -277,7 +277,7 @@ impl EncapDecapTestCase {
                             .unwrap();
                         let ct: [u8; MLKEM512_CT_LEN] =
                             hex::decode(&self.c).unwrap().try_into().unwrap();
-                        let ss = sk.decaps((), &ct).unwrap();
+                        let ss = sk.decaps(&ct, ()).unwrap();
 
                         let expected_ss = hex::decode(&self.k).unwrap();
                         assert_eq!(ss.ref_to_bytes(), expected_ss.as_slice());
@@ -304,7 +304,7 @@ impl EncapDecapTestCase {
                             .unwrap();
                         let ct: [u8; MLKEM768_CT_LEN] =
                             hex::decode(&self.c).unwrap().try_into().unwrap();
-                        let ss = sk.decaps((), &ct).unwrap();
+                        let ss = sk.decaps(&ct, ()).unwrap();
 
                         let expected_ss = hex::decode(&self.k).unwrap();
                         assert_eq!(ss.ref_to_bytes(), expected_ss.as_slice());
@@ -331,7 +331,7 @@ impl EncapDecapTestCase {
                             .unwrap();
                         let ct: [u8; MLKEM1024_CT_LEN] =
                             hex::decode(&self.c).unwrap().try_into().unwrap();
-                        let ss = sk.decaps((), &ct).unwrap();
+                        let ss = sk.decaps(&ct, ()).unwrap();
 
                         let expected_ss = hex::decode(&self.k).unwrap();
                         assert_eq!(ss.ref_to_bytes(), expected_ss.as_slice());

@@ -526,7 +526,7 @@ impl MLKEMTestCase {
             assert_eq!(self.result, "invalid", "a ciphertext of the wrong length must be invalid");
             return;
         };
-        let k = match dk.decaps((), &c) {
+        let k = match dk.decaps(&c, ()) {
             Ok(k) => k,
             Err(e) => {
                 if self.result == "invalid" {
@@ -596,7 +596,7 @@ impl MLKEMTestCase {
             assert_eq!(self.result, "invalid", "a ciphertext of the wrong length must be invalid");
             return;
         };
-        let k = match dk.decaps((), &c) {
+        let k = match dk.decaps(&c, ()) {
             Ok(k) => k,
             Err(e) => {
                 if self.result == "invalid" {
@@ -666,7 +666,7 @@ impl MLKEMTestCase {
             assert_eq!(self.result, "invalid", "a ciphertext of the wrong length must be invalid");
             return;
         };
-        let k = match dk.decaps((), &c) {
+        let k = match dk.decaps(&c, ()) {
             Ok(k) => k,
             Err(e) => {
                 if self.result == "invalid" {

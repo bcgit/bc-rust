@@ -44,7 +44,7 @@
 //! // Pre-expand the private key, which uses more memory, but has performance
 //! // improvements if doing multiple decapsulations with the same key
 //! let sk_expanded = MLKEM768PrivateKeyExpanded::from(&sk);
-//! let ss1 = match sk_expanded.decaps((), &ct) {
+//! let ss1 = match sk_expanded.decaps(&ct, ()) {
 //!     Err(KEMError) => panic!("Error decapsulating"),
 //!     Ok(ss) => ss,
 //! };
@@ -114,7 +114,7 @@
 //! let (ss, ct) = pk.encaps_with_randomness(m);
 //!
 //! // Recover the shared secret using the private key
-//! let ss1 = match sk.decaps((), &ct) {
+//! let ss1 = match sk.decaps(&ct, ()) {
 //!     Err(KEMError) => panic!("Error decapsulating"),
 //!     Ok(ss) => ss,
 //! };
@@ -594,7 +594,7 @@ impl<P: MLKEMParams> MLKEM<P> {
     {
         let (_pk, sk) = Self::keygen_from_seed(seed)?;
 
-        sk.decaps((), ct)
+        sk.decaps(ct, ())
     }
 
     /// Algorithm 20 ML-KEM.Encaps(ek), lines 1-5, over either form of this crate's public key.
