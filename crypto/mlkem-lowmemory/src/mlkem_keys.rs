@@ -106,7 +106,9 @@ impl<P: MLKEMParams> MLKEMPublicKey<P> {
     /// The inverse of [`Self::encode_into`], with the Section 7.2 modulus check; see
     /// [`MLKEMPublicKeyTrait::pk_decode`].
     pub(crate) fn decode_from(pk: &[u8]) -> Result<Self, KEMError> {
-        debug_assert_eq!(pk.len(), P::PK_LEN);
+        if pk.len() != P::PK_LEN {
+            return Err(KEMError::DecodingError("Provided key bytes are the incorrect length"));
+        }
         let pk = Self::new(
             {
                 let mut t = <P::TPacked as ZeroizablePrimitive>::ZEROED;
