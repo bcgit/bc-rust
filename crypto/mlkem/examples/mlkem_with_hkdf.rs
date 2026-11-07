@@ -1,6 +1,6 @@
 //! ML-KEM-768 with its shared secret derived through HKDF-SHA512: `MLKEM768_HKDF_SHA512` on
 //! plain ML-KEM-768 keys, with the HKDF instance and info as the parameters the KEM roles are
-//! made from. See `bouncycastle_mlkem_common::hkdf` for what is derived.
+//! made from. See `bouncycastle_mlkem_common::kdf` for what is derived.
 //!
 //! Run with `cargo run -p bouncycastle-mlkem --example mlkem_with_hkdf`.
 
@@ -21,7 +21,9 @@ fn main() {
 
     // The KDF both parties agree on out of band: HKDF-SHA512 keyed with RFC 5869's salt, and
     // the info. The KDF type on the parameters is what selects ML-KEM-768-HKDF-SHA512 on these
-    // keys; a zero-length salt would be RFC 5869's absent one.
+    // keys. Both parties must hold the same salt: it is not secret (RFC 5869 Section 3.1), so
+    // a protocol fixes it or sends it beside the ciphertext; this example draws one and uses it
+    // on both sides. A zero-length salt would be RFC 5869's absent one.
     let salt = KeyMaterial::<32>::from_rng(&mut rng).unwrap();
     let hkdf = HKDF_SHA512::new_with_salt(&salt).unwrap();
     let params = KdfParams::new(&hkdf, b"example protocol v1");
@@ -32,7 +34,7 @@ fn main() {
     assert_eq!(key, key1);
     println!("derived key: {} bytes at {:?}: {key}", key.key_len(), key.security_strength());
 
-    // A static key holds its worker; the parameters are fixed in it once.
+    // A worker borrows the key and holds the parameters, fixed in it once.
     let decapsulator = sk.create_decapsulator(params).unwrap();
     assert_eq!(decapsulator.decaps(&ct).unwrap(), key);
 
