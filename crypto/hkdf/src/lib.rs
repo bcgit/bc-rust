@@ -121,6 +121,9 @@ pub struct HKDF<H: HMACParams> {
     hmac: Option<HkdfExtract<H>>,
     entropy: HkdfEntropyTracker<H>,
     state: HkdfStates,
+    /// Whether the extract phase has absorbed input keying material through the streaming API,
+    /// which `Initialized` alone does not say: the [`KDF`] derivations refuse such an instance.
+    ikm_absorbed: bool,
 }
 
 /// The extract phase's HMAC, held as its two halves: the salt key and the inner hash absorbing
@@ -161,8 +164,11 @@ struct HkdfEntropyTracker<H: HMACParams> {
 }
 
 impl<H: HMACParams> HkdfEntropyTracker<H> {
-    /// The most the label can say: HMAC's strength is bounded by half the hash output (the
-    /// `min(K, 2C)` rule), so no input, and no resumed state, raises it past this.
+    /// The most the label can say: the hash's collision strength, half its output, which is
+    /// also [`Algorithm::MAX_SECURITY_STRENGTH`] of the hash, the HMAC and this HKDF. Library
+    /// policy: SP 800-56Cr2 Table 4 allows HMAC-hash extraction up to the full output length
+    /// (112 <= s <= 256 for SHA-256), so this is the conservative choice, and it is why a
+    /// 192- or 256-bit secret is paired with HKDF-SHA512. No input raises the label past it.
     const MAX_STRENGTH: SecurityStrength = SecurityStrength::from_bytes(H::OUTPUT_LEN / 2);
 
     fn new() -> Self {
@@ -170,10 +176,14 @@ impl<H: HMACParams> HkdfEntropyTracker<H> {
     }
 
     /// Takes in a KeyMaterial that is being mixed and figures out how much entropy to credit.
-    /// Returns the amount of entropy credited.
+    /// Returns the amount of entropy credited: the key's bytes when it is full-entropy material
+    /// with a strength, nothing otherwise (see [`KDF`]'s entropy accounting).
     fn credit_entropy(&mut self, key: &(impl KeyMaterialTrait + ?Sized)) -> usize {
-        let additional_entropy = if key.is_full_entropy() { key.key_len() } else { 0 };
-        // Saturating: the counter is bookkeeping, and a resumed state may carry any value.
+        if !key.is_full_entropy() || key.security_strength() == SecurityStrength::None {
+            return 0;
+        }
+        let additional_entropy = key.key_len();
+        // Saturating: the counter is bookkeeping.
         self.entropy = self.entropy.saturating_add(additional_entropy);
         self.security_strength = *max(&self.security_strength, &key.security_strength());
         self.security_strength = *min(&self.security_strength, &Self::MAX_STRENGTH);
@@ -185,13 +195,14 @@ impl<H: HMACParams> HkdfEntropyTracker<H> {
     }
 
     // Library policy, not a rule from a standard: the output is credited as CryptographicRandom
-    // once at least OUTPUT_LEN / 2 bytes of typed key material have gone in, the bytes that carry
-    // the most strength HKDF can claim (`MAX_STRENGTH`). SP 800-133r2 Section 6.3 (method 3,
-    // note (g)) asks that the component keys' min-entropies sum to at least the min-entropy the
-    // output needs; this counts bytes of material typed as key rather than min-entropy. The
-    // threshold is the strength bound rather than the full output length so that one 32-byte
-    // key, a KEM shared secret say, seeds HKDF-SHA512 as it does HKDF-SHA256; the output's own
-    // strength stays capped by what was credited, as `credit_entropy` records.
+    // once at least OUTPUT_LEN / 2 bytes of typed key material with a strength have gone in, the
+    // bytes that carry the most this label can say (`MAX_STRENGTH`). SP 800-133r2 Section 6.3
+    // (method 3, note (g)) asks that the component keys' min-entropies sum to at least the
+    // min-entropy the output needs; this counts bytes of material typed as key rather than
+    // min-entropy, and the same key given twice counts twice. The threshold is the strength
+    // bound rather than the full output length so that one 32-byte key, a KEM shared secret say,
+    // seeds HKDF-SHA512 as it does HKDF-SHA256; the output's own strength stays capped by what
+    // was credited, as `credit_entropy` records, and is never None once seeded.
     pub fn is_fully_seeded(&self) -> bool {
         self.entropy >= H::OUTPUT_LEN / 2
     }
@@ -200,6 +211,13 @@ impl<H: HMACParams> HkdfEntropyTracker<H> {
     /// have been credited (see [`Self::is_fully_seeded`]), else [`KeyType::Unknown`].
     fn get_output_key_type(&self) -> KeyType {
         if self.is_fully_seeded() { KeyType::CryptographicRandom } else { KeyType::Unknown }
+    }
+
+    /// For the expand phase, whose only input is the PRK: [`KeyType::CryptographicRandom`] when
+    /// the PRK was credited at all (it is HashLen bytes, so any credit is a full seeding), else
+    /// [`KeyType::Unknown`].
+    fn get_output_key_type_of_prk(&self) -> KeyType {
+        if self.entropy > 0 { KeyType::CryptographicRandom } else { KeyType::Unknown }
     }
 }
 
@@ -219,7 +237,12 @@ impl<H: HMACParams> Default for HKDF<H> {
 impl<H: HMACParams> HKDF<H> {
     /// Get a new, uninstantiated HKDF object.
     pub fn new() -> Self {
-        Self { hmac: None, entropy: HkdfEntropyTracker::new(), state: HkdfStates::Uninitialized }
+        Self {
+            hmac: None,
+            entropy: HkdfEntropyTracker::new(),
+            state: HkdfStates::Uninitialized,
+            ikm_absorbed: false,
+        }
     }
 
     /// An instance keyed with `salt` for the [`KDF`] trait's derivations, which then run
@@ -270,6 +293,8 @@ impl<H: HMACParams> HKDF<H> {
     ///
     /// Salt is optional, which is indicated by providing an uninitialized KeyMaterial object of length zero,
     /// the capacity is irrelevant, so KeyMaterial256::new() or KeyMaterial0::new() would both count as an absent salt.
+    /// An algorithm that derives through HKDF holds the salt in an instance instead, from
+    /// [`HKDF::new_with_salt`] or, for the absent salt, [`HKDF::new`], and derives through [`KDF`].
     pub fn extract(
         salt: &(impl KeyMaterialTrait + ?Sized),
         ikm: &(impl KeyMaterialTrait + ?Sized),
@@ -321,8 +346,13 @@ impl<H: HMACParams> HKDF<H> {
     /// [`KeyMaterialError::InvalidKeyType`]; the IKM can be of any type. The type of the output is
     /// set from what was credited, as [`Self::extract_out`] says.
     ///
-    /// L is the output length. [`KDFError::InvalidLength`] is returned if L exceeds 255 * HashLen,
-    /// if `okm` cannot hold L bytes, or if `prk` is shorter than HashLen (RFC 5869 Section 2.3).
+    /// The output is typed [`KeyType::CryptographicRandom`] when the PRK is full-entropy material
+    /// with a strength, whatever its own type, and [`KeyType::Unknown`] otherwise, at the least of
+    /// the PRK's strength, this HKDF's and the length's.
+    ///
+    /// L is the output length. [`KDFError::InvalidLength`] is returned if L is zero, exceeds
+    /// 255 * HashLen, if `okm` cannot hold L bytes, or if `prk` is shorter than HashLen (RFC 5869
+    /// Section 2.3).
     /// There is no upper bound on the PRK: one longer than the hash block is hashed first, as HMAC
     /// does with a long key (RFC 2104 Section 3), so the output is what HMAC keyed with it gives.
     ///
@@ -352,6 +382,9 @@ impl<H: HMACParams> HKDF<H> {
         //    single octet.)
 
         let hash_len = H::OUTPUT_LEN;
+        if L == 0 {
+            return Err(KDFError::InvalidLength("HKDF-Expand: a zero-length output is refused"));
+        }
         if L > 255 * hash_len {
             return Err(KDFError::InvalidLength(
                 "HKDF-Expand cannot produce more than 255*HashLen bytes of output",
@@ -438,14 +471,11 @@ impl<H: HMACParams> HKDF<H> {
         }
         filled?;
 
-        // Set the KeyType of the output
-        // Since some computation has been performed, the result will not actually be zeroized, even if all input key material was zeroized.
+        // The output is the KDF's, not the PRK's: fresh pseudorandom keying material when the PRK
+        // was credited (full-entropy with a strength), else Unknown, since computation happened
+        // even when the PRK was zeroized.
         do_hazardous_operations(okm, |okm| {
-            if prk.key_type() == KeyType::Zeroized {
-                okm.set_key_type(KeyType::Unknown)?;
-            } else {
-                okm.set_key_type(prk.key_type())?;
-            }
+            okm.set_key_type(entropy.get_output_key_type_of_prk())?;
             okm.set_key_len(bytes_written)?;
             if okm.key_type() <= KeyType::Unknown {
                 okm.set_security_strength(SecurityStrength::None)
@@ -579,6 +609,7 @@ impl<H: HMACParams> HKDF<H> {
 
         let additional_entropy = self.entropy.credit_entropy(ikm);
         self.hmac.as_mut().unwrap().inner.do_update(ikm.ref_to_bytes());
+        self.ikm_absorbed = true;
 
         Ok(additional_entropy)
     }
@@ -601,6 +632,7 @@ impl<H: HMACParams> HKDF<H> {
         self.state = HkdfStates::TakingAdditionalInfo;
 
         self.hmac.as_mut().unwrap().inner.do_update(ikm_chunk);
+        self.ikm_absorbed = true;
         Ok(0)
     }
 
@@ -678,7 +710,13 @@ impl<H: HMACParams> KDF for HKDF<H> {
         self.derive_key_from_multiple_out(&[ikm], fixed_info, len, output_key)
     }
 
-    /// As [`KDF::derive_key_out`] with the IKM the concatenation of `ikms`, each credited.
+    /// As [`KDF::derive_key_out`] with the IKM the concatenation of `ikms`, each credited (the
+    /// same key twice is credited twice).
+    ///
+    /// # Errors
+    /// As [`KDF::derive_key_out`]; and [`KDFError::MACError`] with [`MACError::InvalidState`]
+    /// if this instance has absorbed input keying material through the streaming API, since
+    /// the derivation would then be over that material too.
     fn derive_key_from_multiple_out(
         &self,
         ikms: &[&dyn KeyMaterialTrait],
@@ -687,6 +725,11 @@ impl<H: HMACParams> KDF for HKDF<H> {
         output_key: &mut dyn KeyMaterialTrait,
     ) -> Result<usize, KDFError> {
         output_key.zeroize();
+        if self.ikm_absorbed {
+            return Err(KDFError::MACError(MACError::InvalidState(
+                "a KDF instance holds its salt and nothing else; this HKDF has absorbed input keying material",
+            )));
+        }
         // The extract runs on a copy, so the instance and its salt serve every derivation.
         let mut hkdf = self.clone();
         if hkdf.state == HkdfStates::Uninitialized {
@@ -714,31 +757,45 @@ mod tests {
         assert_eq!(entropy.get_entropy(), 0);
         assert_eq!(entropy.get_output_key_type(), KeyType::Unknown);
 
-        // The threshold is half the hash output: 16 bytes for SHA-256, 32 for SHA-512.
+        // A key too short to carry a strength (8 bytes is 64 bits, below 112) credits nothing.
         let key = KeyMaterial512::from_bytes_as_type(
             b"\x00\x01\x02\x03\x04\x05\x06\x07",
             KeyType::CryptographicRandom,
         )
         .unwrap();
-        entropy.credit_entropy(&key);
-        assert_eq!(entropy.get_entropy(), 8);
+        assert_eq!(key.security_strength(), SecurityStrength::None);
+        assert_eq!(entropy.credit_entropy(&key), 0);
+        assert_eq!(entropy.get_entropy(), 0);
+        assert_eq!(entropy.get_output_key_type(), KeyType::Unknown);
+
+        // The threshold is half the hash output: 16 bytes for SHA-256, 32 for SHA-512; two
+        // distinct 14-byte keys (112 bits each) reach it.
+        let key1 =
+            KeyMaterial512::from_bytes_as_type(&[0x5A; 14], KeyType::CryptographicRandom).unwrap();
+        let key2 =
+            KeyMaterial512::from_bytes_as_type(&[0xA5; 14], KeyType::CryptographicRandom).unwrap();
+        assert_eq!(entropy.credit_entropy(&key1), 14);
+        assert_eq!(entropy.get_entropy(), 14);
         assert_eq!(entropy.is_fully_seeded(), false);
         assert_eq!(entropy.get_output_key_type(), KeyType::Unknown);
 
-        entropy.credit_entropy(&key);
-        assert_eq!(entropy.get_entropy(), 16);
+        assert_eq!(entropy.credit_entropy(&key2), 14);
+        assert_eq!(entropy.get_entropy(), 28);
         assert_eq!(entropy.is_fully_seeded(), true);
         assert_eq!(entropy.get_output_key_type(), KeyType::CryptographicRandom);
+        assert_eq!(entropy.security_strength, SecurityStrength::_112bit);
 
         let mut entropy = HkdfEntropyTracker::<SHA512>::new();
-        let key =
+        let key1 =
             KeyMaterial512::from_bytes_as_type(&[0x5A; 16], KeyType::CryptographicRandom).unwrap();
-        entropy.credit_entropy(&key);
+        let key2 =
+            KeyMaterial512::from_bytes_as_type(&[0xA5; 16], KeyType::CryptographicRandom).unwrap();
+        entropy.credit_entropy(&key1);
         assert_eq!(entropy.get_entropy(), 16);
         assert_eq!(entropy.is_fully_seeded(), false);
         assert_eq!(entropy.get_output_key_type(), KeyType::Unknown);
 
-        entropy.credit_entropy(&key);
+        entropy.credit_entropy(&key2);
         assert_eq!(entropy.get_entropy(), 32);
         assert_eq!(entropy.is_fully_seeded(), true);
         assert_eq!(entropy.get_output_key_type(), KeyType::CryptographicRandom);

@@ -288,11 +288,34 @@ mod hkdf_tests {
         _ = HKDF_SHA256::new().derive_key_out(&ikm, &[], 32, &mut okm);
         assert_eq!(okm.key_type(), KeyType::Unknown);
 
-        // through the KDF trait both keys are IKM and credit: 8 + 8 bytes reach the 16 that
-        // seed HKDF-SHA256, where the same 8-byte value as a public salt credits nothing
+        // through the KDF trait both keys are IKM, but an 8-byte key is too short to carry a
+        // strength (64 bits, below 112) and credits nothing, so 8 + 8 does not reach the 16
+        // that seed HKDF-SHA256
         let keys: [&dyn KeyMaterialTrait; 2] = [&salt, &ikm];
         HKDF_SHA256::new().derive_key_from_multiple_out(&keys, &[], 32, &mut okm).unwrap();
+        assert_eq!(okm.key_type(), KeyType::Unknown);
+        assert_eq!(okm.security_strength(), SecurityStrength::None);
+
+        // two distinct 14-byte keys carry 112 bits each and together reach the threshold, and
+        // the output is labelled at that strength, never CryptographicRandom with none
+        let key_a =
+            KeyMaterial128::from_bytes_as_type(&DUMMY_SEED[..14], KeyType::CryptographicRandom)
+                .unwrap();
+        let key_b =
+            KeyMaterial128::from_bytes_as_type(&DUMMY_SEED[14..28], KeyType::CryptographicRandom)
+                .unwrap();
+        let keys: [&dyn KeyMaterialTrait; 2] = [&key_a, &key_b];
+        HKDF_SHA256::new().derive_key_from_multiple_out(&keys, &[], 32, &mut okm).unwrap();
         assert_eq!(okm.key_type(), KeyType::CryptographicRandom);
+        assert_eq!(okm.security_strength(), SecurityStrength::_112bit);
+
+        // a full-entropy key whose owner lowered its strength to None credits nothing
+        let mut lowered =
+            KeyMaterial256::from_bytes_as_type(&DUMMY_SEED[..32], KeyType::CryptographicRandom)
+                .unwrap();
+        lowered.set_security_strength(SecurityStrength::None).unwrap();
+        HKDF_SHA256::new().derive_key_out(&lowered, &[], 32, &mut okm).unwrap();
+        assert_eq!(okm.key_type(), KeyType::Unknown);
 
         // success case -- insufficient entropy returns KeyType::Unknown: a secret salt and the
         // IKM both credit, but 4 + 8 bytes is below the 16 that seed HKDF-SHA256
@@ -348,13 +371,15 @@ mod hkdf_tests {
         /* get_entropy */
         // This requires using the stateful streaming API and check the amount of entropy it tracks after each addition.
         // The SHA-256 threshold is 16 bytes, so the parts are 8-byte ones.
-        let salt16 = KeyMaterial128::from_bytes_as_type(&DUMMY_SEED[..8], KeyType::MACKey).unwrap();
+        let salt14 =
+            KeyMaterial128::from_bytes_as_type(&DUMMY_SEED[..14], KeyType::MACKey).unwrap();
         let salt64 =
             KeyMaterial512::from_bytes_as_type(&DUMMY_SEED[..64], KeyType::MACKey).unwrap();
         let low_entropy_key16 =
             KeyMaterial128::from_bytes_as_type(&DUMMY_SEED[..16], KeyType::Unknown).unwrap();
-        let full_entropy_key16 =
-            KeyMaterial128::from_bytes_as_type(&DUMMY_SEED[16..24], KeyType::CryptographicRandom)
+        // 14 bytes carry 112 bits, the least a key credits; 8 would carry nothing
+        let full_entropy_key14 =
+            KeyMaterial128::from_bytes_as_type(&DUMMY_SEED[16..30], KeyType::CryptographicRandom)
                 .unwrap();
 
         // can't test with a low entropy salt because the salt has to be full entropy or zero.
@@ -368,8 +393,8 @@ mod hkdf_tests {
         // test do_extract_init with a full entropy salt
         let mut hkdf = HKDF_SHA256::new();
         assert_eq!(hkdf.get_entropy(), 0);
-        hkdf.do_extract_init(&salt16).unwrap();
-        assert_eq!(hkdf.get_entropy(), 8);
+        hkdf.do_extract_init(&salt14).unwrap();
+        assert_eq!(hkdf.get_entropy(), 14);
         assert_eq!(hkdf.is_fully_seeded(), false);
 
         // with enough entropy in the salt.
@@ -382,17 +407,17 @@ mod hkdf_tests {
         // building up to full entropy
         let mut hkdf = HKDF_SHA256::new();
         assert_eq!(hkdf.get_entropy(), 0);
-        hkdf.do_extract_init(&salt16).unwrap();
-        assert_eq!(hkdf.get_entropy(), 8);
+        hkdf.do_extract_init(&salt14).unwrap();
+        assert_eq!(hkdf.get_entropy(), 14);
         assert_eq!(hkdf.is_fully_seeded(), false);
-        hkdf.do_extract_update_key(&full_entropy_key16).unwrap();
-        assert_eq!(hkdf.get_entropy(), 16);
+        hkdf.do_extract_update_key(&full_entropy_key14).unwrap();
+        assert_eq!(hkdf.get_entropy(), 28);
         assert_eq!(hkdf.is_fully_seeded(), true);
-        hkdf.do_extract_update_key(&full_entropy_key16).unwrap();
-        assert_eq!(hkdf.get_entropy(), 24);
+        hkdf.do_extract_update_key(&full_entropy_key14).unwrap();
+        assert_eq!(hkdf.get_entropy(), 42);
         assert_eq!(hkdf.is_fully_seeded(), true);
         hkdf.do_extract_update_bytes(low_entropy_key16.ref_to_bytes()).unwrap();
-        assert_eq!(hkdf.get_entropy(), 24);
+        assert_eq!(hkdf.get_entropy(), 42);
         assert_eq!(hkdf.is_fully_seeded(), true);
     }
 
@@ -899,16 +924,24 @@ mod hkdf_tests {
 
     /// A key agreement's `Z` is credited as keying material, but its strength, not its length,
     /// bounds the output's label: a 32-byte `SharedSecret` at 128 bits gives 128-bit output from
-    /// HKDF-SHA256 and from HKDF-SHA512 alike, never the 256 bits its length would suggest.
+    /// HKDF-SHA256 and from HKDF-SHA512 alike, never the 256 bits its length would suggest; and
+    /// one whose producer stated no strength credits nothing, so the output is `Unknown`.
     #[test]
     fn a_shared_secret_bounds_the_output_by_its_strength() {
         let mut z =
             KeyMaterial256::from_bytes_as_type(&DUMMY_SEED[..32], KeyType::SharedSecret).unwrap();
-        z.set_security_strength(SecurityStrength::_128bit).unwrap();
         let salt =
             KeyMaterial256::from_bytes_as_type(&DUMMY_SEED[32..64], KeyType::CryptographicRandom)
                 .unwrap();
+        assert_eq!(z.security_strength(), SecurityStrength::None, "the default for a Z");
+        {
+            let prk = HKDF_SHA512::extract(&salt, &z).unwrap();
+            assert_eq!(prk.key_type(), KeyType::Unknown);
+            assert_eq!(prk.security_strength(), SecurityStrength::None);
+        }
 
+        do_hazardous_operations(&mut z, |z| z.set_security_strength(SecurityStrength::_128bit))
+            .unwrap();
         let prk = HKDF_SHA256::extract(&salt, &z).unwrap();
         assert_eq!(prk.key_type(), KeyType::CryptographicRandom);
         assert_eq!(prk.security_strength(), SecurityStrength::_128bit);
@@ -919,7 +952,7 @@ mod hkdf_tests {
     }
 
     /// RFC 5869 Sec 2.3: "OKM = first L octets of T", for any L up to 255 * HashLen, so a shorter
-    /// output is a prefix of a longer one. Every L from 0 to 200 covers each value of L mod HashLen
+    /// output is a prefix of a longer one. Every L from 1 to 200 covers each value of L mod HashLen
     /// for both hashes: the last block used to be produced as an HMAC truncated to the remaining
     /// length, which HMAC refuses below 4 bytes, so every L with L mod HashLen in 1..=3 failed.
     #[test]
@@ -930,7 +963,7 @@ mod hkdf_tests {
 
         let mut full = KeyMaterial::<MAX_L>::new();
         HKDF_SHA256::extract_and_expand_out(&salt, &ikm, b"info", MAX_L, &mut full).unwrap();
-        for l in 0..=MAX_L {
+        for l in 1..=MAX_L {
             let mut okm = KeyMaterial::<MAX_L>::new();
             let n = HKDF_SHA256::extract_and_expand_out(&salt, &ikm, b"info", l, &mut okm)
                 .unwrap_or_else(|e| panic!("HKDF-SHA256, L = {l}: {e:?}"));
@@ -940,7 +973,7 @@ mod hkdf_tests {
 
         let mut full = KeyMaterial::<MAX_L>::new();
         HKDF_SHA512::extract_and_expand_out(&salt, &ikm, b"info", MAX_L, &mut full).unwrap();
-        for l in 0..=MAX_L {
+        for l in 1..=MAX_L {
             let mut okm = KeyMaterial::<MAX_L>::new();
             let n = HKDF_SHA512::extract_and_expand_out(&salt, &ikm, b"info", l, &mut okm)
                 .unwrap_or_else(|e| panic!("HKDF-SHA512, L = {l}: {e:?}"));
