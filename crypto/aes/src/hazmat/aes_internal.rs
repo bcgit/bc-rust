@@ -10,7 +10,7 @@
 //! ```
 //! use bouncycastle_aes::hazmat::AES128Internal;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-//! use bouncycastle_core::hazmat::{BlockPermutation, ElectronicCodeBook};
+//! use bouncycastle_core::hazmat::{BlockPermutation, ElectronicCodeBook, KeyExpansion};
 //!
 //! let key = KeyMaterial::<16>::from_bytes_as_type(
 //!     &[0x2b, 0x7e, 0x15, 0x16, 0x28, 0xae, 0xd2, 0xa6,
@@ -52,7 +52,7 @@
 //! ```
 //! use bouncycastle_aes::hazmat::AES256Internal;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-//! use bouncycastle_core::hazmat::{BlockPermutation, ElectronicCodeBook};
+//! use bouncycastle_core::hazmat::{BlockPermutation, ElectronicCodeBook, KeyExpansion};
 //!
 //! let key = KeyMaterial::<32>::from_bytes_as_type(&[0x01; 32], KeyType::SymmetricCipherKey)
 //!     .expect("a 32-byte symmetric cipher key");
@@ -69,7 +69,7 @@
 //! assert_eq!(four, [[0u8; 16], [1u8; 16], [2u8; 16], [3u8; 16]]);
 //! ```
 
-use crate::bitslice::{Block, PlaneWord, Planes};
+use crate::bitslice::{Block, BlockPlanes, PlaneWord, Planes};
 use crate::round::{add_round_key, inv_mix_columns, inv_shift_rows, mix_columns, shift_rows};
 use crate::sbox::{inv_sbox, sbox};
 use crate::schedule::{expand, round_key};
@@ -216,7 +216,7 @@ impl<P: AESParams> AESInternal<P> {
     /// Encrypts the blocks a `T`-wide state holds, in place: transpose in, [`Self::cipher`],
     /// transpose out.
     #[inline(always)]
-    fn encrypt<T: PlaneWord>(&self, blocks: &mut T::Blocks) {
+    fn encrypt<T: BlockPlanes>(&self, blocks: &mut T::Blocks) {
         let mut q = T::pack(blocks);
         self.cipher(&mut q);
         T::unpack(&mut q, blocks);
@@ -225,7 +225,7 @@ impl<P: AESParams> AESInternal<P> {
     /// Decrypts the blocks a `T`-wide state holds, in place: transpose in, [`Self::inv_cipher`],
     /// transpose out.
     #[inline(always)]
-    fn decrypt<T: PlaneWord>(&self, blocks: &mut T::Blocks) {
+    fn decrypt<T: BlockPlanes>(&self, blocks: &mut T::Blocks) {
         let mut q = T::pack(blocks);
         self.inv_cipher(&mut q);
         T::unpack(&mut q, blocks);

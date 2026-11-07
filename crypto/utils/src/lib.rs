@@ -16,6 +16,7 @@
 #![forbid(missing_docs)]
 #![allow(private_bounds)]
 
+pub mod bitslice;
 pub mod ct;
 pub mod secret;
 pub mod suspendable_state;
