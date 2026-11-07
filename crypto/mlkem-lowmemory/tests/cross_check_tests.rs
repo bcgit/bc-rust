@@ -4,8 +4,9 @@
 //! same encapsulation randomness gives the same ciphertext and shared secret, and that each
 //! crate decapsulates the other's ciphertexts.
 
+use bouncycastle_core::kem_key::DecapsulatingKey;
 use bouncycastle_core::key_material::{KeyMaterial512, KeyMaterialTrait, KeyType};
-use bouncycastle_core::traits::{KEMDecapsulator, KEMPrivateKey, KEMPublicKey};
+use bouncycastle_core::traits::{KEMPrivateKey, KEMPublicKey};
 use bouncycastle_core_test_framework::DUMMY_SEED;
 use bouncycastle_mlkem as full;
 use bouncycastle_mlkem_lowmemory as low;
@@ -34,26 +35,26 @@ macro_rules! cross_check {
             let m = [0x5au8; 32];
             let (ss_full, ct_full) = {
                 use full::hazmat::EncapsWithRandomness;
-                full::$set::encaps_with_randomness(&pk_full, None, m)
+                pk_full.encaps_with_randomness(m)
             };
             let (ss_low, ct_low) = {
                 use low::hazmat::EncapsWithRandomness;
-                low::$set::encaps_with_randomness(&pk_low, m)
+                pk_low.encaps_with_randomness(m)
             };
             assert_eq!(ss_full, ss_low, "shared secret");
             assert_eq!(ct_full.as_slice(), ct_low.as_slice(), "ciphertext");
 
             // each decapsulates the other's ciphertext to the same secret
-            let ss = full::$set::decaps(&sk_full, &ct_low).unwrap();
+            let ss = sk_full.decaps((), &ct_low).unwrap();
             assert_eq!(ss.ref_to_bytes(), &ss_full);
-            let ss = low::$set::decaps(&sk_low, &ct_full).unwrap();
+            let ss = sk_low.decaps((), &ct_full).unwrap();
             assert_eq!(ss.ref_to_bytes(), &ss_low);
 
             // and both implicitly reject a damaged ciphertext to the same value
             let mut bad = ct_full;
             bad[0] ^= 1;
-            let rej_full = full::$set::decaps(&sk_full, &bad).unwrap();
-            let rej_low = low::$set::decaps(&sk_low, &bad).unwrap();
+            let rej_full = sk_full.decaps((), &bad).unwrap();
+            let rej_low = sk_low.decaps((), &bad).unwrap();
             assert_eq!(rej_full.ref_to_bytes(), rej_low.ref_to_bytes(), "implicit rejection");
             assert_ne!(rej_full.ref_to_bytes(), &ss_full);
         }
