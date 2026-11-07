@@ -24,3 +24,4 @@ pub use bouncycastle_sha3 as sha3;
 pub use bouncycastle_sm2 as sm2;
 pub use bouncycastle_sm3 as sm3;
 pub use bouncycastle_sm4 as sm4;
+pub use bouncycastle_x963kdf as x963kdf;

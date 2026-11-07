@@ -88,4 +88,9 @@
   validation at decode, key generation by extra random bits), the markers `ECCDHP256` and friends on the
   `AgreementKey` role over `()`, and `ECCDHP256_HKDF_SHA256` over `HkdfParams<SHA256>` on the P-256 keys;
   tested against the CAVP ECC CDH primitive vectors, RFC 7027 Appendix A and the Wycheproof ECDH sets.
+* `bouncycastle-x963kdf`: the ANSI X9.63 KDF of SEC 1 v2 Section 3.6.1 over SHA-224, SHA-256, SHA-384 and
+  SHA-512, on the `KDF` trait and in `KDFFactory` (`X963KDF-SHA256` and so on) and as the `x963kdf-sha*` CLI
+  subcommands, checked against the CAVP ANS X9.63-2001 component vectors; `X963KdfParams<H>` carries its
+  `SharedInfo` as the parameters of the ECC CDH keys' second agreement role, SEC 1 Section 6.1's ECDH scheme
+  (`ECCDHP256_X963KDF_SHA256`, `ECCDHP384_X963KDF_SHA384`, `ECCDHP521_X963KDF_SHA512` and the rest).
 

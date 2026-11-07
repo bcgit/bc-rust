@@ -43,6 +43,7 @@ bouncycastle-sm2 = { path = "./crypto/sm2" }
 bouncycastle-sm3 = { path = "./crypto/sm3" }
 bouncycastle-sm4 = { path = "./crypto/sm4" }
 bouncycastle-utils = { path = "./crypto/utils" }
+bouncycastle-x963kdf = { path = "./crypto/x963kdf" }
 
 
 # *** External Dependencies ***
@@ -95,3 +96,4 @@ bouncycastle-sha3.workspace = true
 bouncycastle-sm2.workspace = true
 bouncycastle-sm3.workspace = true
 bouncycastle-sm4.workspace = true
+bouncycastle-x963kdf.workspace = true
