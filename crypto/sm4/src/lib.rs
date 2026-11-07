@@ -188,11 +188,10 @@
 //!
 //! ## Why "lowmemory"
 //!
-//! Two things. First, no table: a table-driven engine typically carries a 256-byte S-box indexed
-//! by secret data; here the S-box is code. Second, the working set. Eight `u32` planes would take
-//! eight blocks per pass and double the throughput, but every per-call buffer -- the block state
-//! and the planes -- would double with them. Four lanes over `u16` planes keep the whole per-call
-//! working state near 100 bytes.
+//! Two things. First, no table: the S-box is code, as [above](#why-not-a-lookup-table). Second,
+//! the working set. Eight `u32` planes would take eight blocks per pass and double the throughput,
+//! but every per-call buffer -- the block state and the planes -- would double with them. Four
+//! lanes over `u16` planes keep the whole per-call working state near 100 bytes.
 //!
 //! # Memory Usage
 //!
@@ -219,8 +218,6 @@
 //! | `encrypt_block` / `decrypt_block` | 416 B |
 //! | `encrypt_2blocks` / `decrypt_2blocks` | 432 B |
 //! | `encrypt_4blocks` / `decrypt_4blocks` | 416 B |
-//!
-//! For comparison, a table-driven engine carries a 256-byte table on top of the same schedule.
 //!
 //! # 🚨 Security Considerations 🚨
 //!
