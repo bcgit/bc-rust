@@ -175,9 +175,9 @@
 //! here by exhaustive search against the Sec 2.4.1 table, not taken from recall: of the 256
 //! possible input constants exactly one admits such a decomposition, and it is unique up to the
 //! inverse's own symmetries. The search was carried out in the AES representation of the field,
-//! so the 62-gate non-linear section of the Boyar-Peralta AES circuit, copied verbatim from
-//! `bouncycastle-aes`, does the inversion, with generated affine top and bottom layers
-//! pinned by an exhaustive 256-input test. The whole S-box is 121 gates: 32 AND, 74 XOR, 9 XNOR,
+//! so the 62-gate non-linear section of the Boyar-Peralta AES circuit, shared with the other
+//! ciphers through `bouncycastle-utils`, does the inversion, with generated affine top and bottom
+//! layers pinned by an exhaustive 256-input test. The whole S-box is 121 gates: 32 AND, 74 XOR, 9 XNOR,
 //! 6 NOT. The `sbox` module docs give the full derivation.
 //!
 //! `SBOX2`, `SBOX3` and `SBOX4` are `SBOX1` with the output byte rotated left by one, rotated

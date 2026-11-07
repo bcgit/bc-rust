@@ -166,8 +166,9 @@
 //! rather than the AES polynomial), and another affine map -- a decomposition found here by
 //! exhaustive search against the Figure 1 table, not taken from recall. A field isomorphism into
 //! the AES representation then lets the 62-gate non-linear section of the Boyar-Peralta AES
-//! circuit, copied verbatim from `bouncycastle-aes`, do the inversion, with new affine
-//! top and bottom layers derived by linear algebra and pinned by an exhaustive 256-input test.
+//! circuit, shared with the other ciphers through `bouncycastle-utils`, do the inversion, with
+//! new affine top and bottom layers derived by linear algebra and pinned by an exhaustive
+//! 256-input test.
 //! The whole S-box is 127 gates: 32 AND, 82 XOR, 12 XNOR, 1 NOT. The `sbox` module docs give the
 //! full derivation.
 //!
