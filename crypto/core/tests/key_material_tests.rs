@@ -1035,4 +1035,51 @@ mod test_key_material {
             _ => panic!("the guard should have been cleared after the erroring closures"),
         }
     }
+
+    /// `KeyType::SharedSecret` is the raw `Z` of a key agreement: typed keying material whose
+    /// strength the producer sets, so it counts as full entropy, sorts with the other
+    /// algorithm-specific types, and round-trips through its pinned discriminant.
+    #[test]
+    fn shared_secret_key_type() {
+        assert_eq!(KeyType::SharedSecret as u8, 6);
+        assert_eq!(KeyType::try_from(6u8).unwrap(), KeyType::SharedSecret);
+        // and every other discriminant still round-trips to its own variant
+        for (value, key_type) in [
+            (0u8, KeyType::Zeroized),
+            (1, KeyType::Unknown),
+            (2, KeyType::CryptographicRandom),
+            (3, KeyType::Seed),
+            (4, KeyType::MACKey),
+            (5, KeyType::SymmetricCipherKey),
+            (6, KeyType::SharedSecret),
+        ] {
+            assert_eq!(key_type as u8, value);
+            assert_eq!(KeyType::try_from(value).unwrap(), key_type);
+        }
+        assert!(KeyType::try_from(7u8).is_err());
+
+        let z =
+            KeyMaterial256::from_bytes_as_type(&DUMMY_KEY[..32], KeyType::SharedSecret).unwrap();
+        assert_eq!(z.key_type(), KeyType::SharedSecret);
+        assert!(z.is_full_entropy());
+
+        assert!(KeyType::SharedSecret > KeyType::CryptographicRandom);
+        assert!(KeyType::SharedSecret > KeyType::Unknown);
+        assert!(KeyType::SharedSecret > KeyType::Zeroized);
+        assert_eq!(
+            KeyType::SharedSecret.partial_cmp(&KeyType::SymmetricCipherKey),
+            Some(core::cmp::Ordering::Equal)
+        );
+        assert_eq!(
+            KeyType::Seed.partial_cmp(&KeyType::SharedSecret),
+            Some(core::cmp::Ordering::Equal)
+        );
+
+        // Once typed, it stays typed outside a hazardous block, like the other specific types.
+        let mut z = z;
+        match z.set_key_type(KeyType::SymmetricCipherKey) {
+            Err(KeyMaterialError::HazardousOperationNotPermitted) => { /* good */ }
+            _ => panic!("a SharedSecret must not silently become a cipher key"),
+        }
+    }
 }

@@ -282,6 +282,39 @@ cipher and MAC traits had (`local/signer_verifier_init_removal_plan.md`). Mechan
   so are two 64-byte draws (a PSS/SHA-512 salt) from a 64-byte counting seed. Seed it with a
   counting pattern longer than one draw when the test relies on consecutive draws differing.
 
+## Lessons from the KEM rework (November 2026)
+
+The KEM traits moved onto key objects on feature/kem-rework, with the algorithm's parameters
+(a KDF, for a KEM that derives its secret) as part of the design. Mechanics to reuse, for key
+agreement next:
+
+- **The parameters are the role trait's type parameter; the algorithm is an associated type.**
+  `EncapsulatingKey<Params, CT_LEN, SS_LEN> { type Algorithm: KEMAlgorithm; .. }`, implemented
+  over `()` for ML-KEM and over the caller-configured KDF (salt, info) for a KEM that derives
+  its secret. The argument type then selects the impl, the way `a + b` selects an `Add` impl,
+  so `pk.encaps(&mut rng, ())` and `pk.encaps(&mut rng, hkdf_params)` on one key need no
+  turbofish. The first cut put the algorithm marker on the trait and the parameters behind a
+  `Params<'p>` GAT on it; that forced `EncapsulatingKey::<A, _, _>::encaps(&pk, ..)` at every
+  call on a key serving two algorithms, because an associated-type projection does not select
+  an impl. Two algorithms on one key that take the same parameter type need a wrapper key.
+- **`create_*` takes the parameters, the worker holds them.** `create_encapsulator(&'k self,
+  params: Params)` fixes them as `create_signer(rng, ctx)` fixes a context; a parameter type
+  with a lifetime is an impl-level lifetime (`impl<'p> EncapsulatingKey<HkdfParams<'p>, ..>`),
+  and the worker GAT borrows only the key (`type Encapsulator<'k>`).
+- **The framework takes the parameters by value with a `Copy` bound.** `test_kem(keygen,
+  params, ..)` with `Params: Copy` reuses them across every construction; `()` and `&K` are
+  `Copy`, and a parameter struct derives it. A mock that implements a role twice over one
+  parameter type puts the variant on its key type.
+- **A fixed-length input becomes the type.** `decaps(&[u8; CT_LEN])` replaced the slice and
+  its `LengthError`; the test for the wrong length went with it, and a vector runner that
+  reads a ciphertext of arbitrary length treats a failed `try_from` as the invalid vector it is.
+- **Lengths come off the key types the ML-DSA way, with slice helpers where no const is in
+  scope.** `MLKEMPublicKey<P>` encodes into a slice (`encode_into`), hashes itself a polynomial
+  at a time and compares field by field, so nothing inside a generic `impl<P>` needs a
+  `[u8; PK_LEN]`; the array forms are the `KEMPublicKey<N>` impls, bound `P: PublicKeyLen<N>`.
+- **A `--jobs N` mutants run owns N scratch trees.** Every `/tmp/cargo-mutants-bc-rust-*.tmp`
+  with a fresh mtime belongs to the live run; deleting any of them kills it.
+
 ## Working from specifications
 
 QUALITY_AND_STYLE.md is where the requirement for spec-corresponding comments and justified deviations lives. This
