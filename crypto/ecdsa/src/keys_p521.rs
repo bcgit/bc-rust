@@ -8,7 +8,7 @@
 //! generation: `n` is within `2^260` of `2^521`, so the reduction's bias is negligible with no
 //! headroom. But Appendix A.3.1 -- the randomised per-message secret -- requires `N + t` bits with
 //! `t >= 64` regardless, so both draws are `N + 71 = 592` bits (74 bytes, the byte-aligned width
-//! at or above `585`; [`EXTRA_BITS_DRBG_OUTPUT_LEN`]). An earlier version drew the 66-byte
+//! at or above `585`; `EXTRA_BITS_DRBG_OUTPUT_LEN`). An earlier version drew the 66-byte
 //! `SK_LEN` (528 bits, `t = 7`) for both, which met Table A.2 but not A.3.1.
 //!
 //! Even at 528 bits the reduction had to handle a value far wider than `n`: 66 bytes is 7 bits more

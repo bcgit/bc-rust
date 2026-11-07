@@ -14,13 +14,13 @@
 //!
 //! # REDC
 //!
-//! [`redc`] is the textbook "Separated Operand Scanning" (SOS) Montgomery reduction (Koç, Acar &
+//! `redc` is the textbook "Separated Operand Scanning" (SOS) Montgomery reduction (Koç, Acar &
 //! Kaliski, *Analyzing and Comparing Montgomery Multiplication Algorithms*, 1996, Algorithm 2): for
 //! `i` in `0..4`, compute `m = T[i] * n' mod 2^64` (`n' = -n⁻¹ mod 2^64`) and add `m*n` into `T`
 //! at limb offset `i`, which zeroes `T[i]` by construction; after all 4 rounds `T`'s low 4 limbs
 //! are zero and the result is `T`'s remaining limbs, reduced by at most one final subtraction of
 //! `n`. Verified (not checked in) against 30,000 random trials plus the `(n-1)*(n-1)` worst case:
-//! the reduction never touches beyond a 9-limb accumulator, which is what [`redc`] uses.
+//! the reduction never touches beyond a 9-limb accumulator, which is what `redc` uses.
 
 use crate::nat;
 use bouncycastle_utils::ct;
@@ -59,7 +59,7 @@ impl Sm2ScalarField {
     /// The additive identity. `0`'s Montgomery form is `0` itself (`0 * R mod n == 0`).
     pub const ZERO: Self = Self([0, 0, 0, 0]);
 
-    /// The multiplicative identity. Its Montgomery form is `R mod n`, i.e. [`R_LIMBS`], not the
+    /// The multiplicative identity. Its Montgomery form is `R mod n`, i.e. `R_LIMBS`, not the
     /// literal integer `1`.
     pub const ONE: Self = Self(R_LIMBS);
 
@@ -121,7 +121,7 @@ impl Sm2ScalarField {
         Self(result)
     }
 
-    /// `self * other mod n`, via Montgomery multiplication (widening multiply + [`redc`]).
+    /// `self * other mod n`, via Montgomery multiplication (widening multiply + `redc`).
     pub fn mul(&self, other: &Self) -> Self {
         Self(redc(&widening_mul(&self.0, &other.0)))
     }
@@ -143,7 +143,7 @@ impl Sm2ScalarField {
     }
 
     /// `self^2`, via a dedicated squaring rather than `self.mul(self)` -- see
-    /// [`widening_square`].
+    /// `widening_square`.
     ///
     /// Used only by [`Self::invert`]'s exponentiation loop, which calls it hundreds of times in
     /// a row with nothing else competing for registers. (The point arithmetic is on the base

@@ -10,19 +10,19 @@
 //! `p` is a generalized Mersenne number, so a 512-bit product reduces without any multiplication
 //! at all: SP 800-186 (Feb 2023) Appendix G.1.2, "Curve P-256", gives `B = (T + 2S1 + 2S2 + S3 +
 //! S4 - D1 - D2 - D3 - D4) mod p`, where each of the nine terms is a 256-bit value assembled by
-//! concatenating 32-bit words of the product itself. [`reduce`] transcribes that expression
+//! concatenating 32-bit words of the product itself. `reduce` transcribes that expression
 //! directly, so a reviewer with G.1.2 open can match its nine terms to the document row by row.
 //!
 //! G.1's own preamble states both the precondition -- "given an integer A less than m^2" -- and
 //! the shape of the leftover work: "the integer sum or difference can be evaluated and the result
 //! reduced modulo m. The latter reduction can be accomplished by adding or subtracting a few
-//! copies of m." [`reduce`] carries the exact bound on how many copies that is here, and why,
+//! copies of m." `reduce` carries the exact bound on how many copies that is here, and why,
 //! after biasing the accumulator by `5p` so it never goes negative, a single fold of the top limb
 //! plus a single conditional subtraction always lands in `[0, p)`.
 //!
 //! The one identity that outlives the reduction is `2^256 = p + C` where `C = 2^224 - 2^192 -
 //! 2^96 + 1` (i.e. `2^256 mod p = C`): [`P256FieldElement::add`] uses it to correct a carry out
-//! of the top limb, and [`reduce`]'s final fold uses it on the accumulator's top limb.
+//! of the top limb, and `reduce`'s final fold uses it on the accumulator's top limb.
 //!
 //! Every step is a fixed, public-length loop over fixed-size arrays with a single masked select,
 //! so the whole routine is trivially constant-time in the operands.
@@ -159,7 +159,7 @@ impl P256FieldElement {
     }
 
     /// `self^2 mod p`, via a dedicated squaring rather than `self.mul(self)` -- see
-    /// [`widening_square`].
+    /// `widening_square`.
     ///
     /// Worth using in the exponentiation loops ([`Self::invert`], [`crate::hazmat::p256_sec1`]'s
     /// square-and-multiply), which call it hundreds of times in a row with nothing else competing

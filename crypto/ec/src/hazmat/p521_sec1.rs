@@ -6,7 +6,7 @@
 //! same compressed-decode square-root approach applies.
 //!
 //! Unlike P-256/P-384, `66 * 8 = 528` bits is 7 bits wider than `p`'s 521, so a valid encoded
-//! field element's top byte always has its high 7 bits clear; [`limbs_less_than_p`] (via ordinary
+//! field element's top byte always has its high 7 bits clear; `limbs_less_than_p` (via ordinary
 //! big-integer comparison against [`P_LIMBS`]) already rejects any encoding that sets them, since
 //! such a value is `>= p` (indeed `>= 2^521 > p`).
 

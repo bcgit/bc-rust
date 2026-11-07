@@ -7,7 +7,7 @@
 //! reasoning (`e = bits2int(H)` needs no truncation since `len(n) == hashlen == 512`;
 //! `x_affine_of_signing_point`'s branch-free-on-a-secret-value argument; both hold unchanged here)
 //! -- with brainpoolP512r1's types, [`crate::keys_bp512r1`],
-//! [`bouncycastle_ec::hazmat::bp512r1_extra_bits`], and [`crate::rfc6979_bp512r1`] substituted.
+//! [`bouncycastle_ec::hazmat::bp512r1_extra_bits`], and `crate::rfc6979_bp512r1` substituted.
 
 use crate::keys_bp512r1::{ECDSABp512r1PrivateKey, ECDSABp512r1PublicKey};
 use crate::rfc6979_bp512r1;

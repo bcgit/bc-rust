@@ -31,7 +31,7 @@
 //!
 //! `u` and `v` only ever shrink, so both stay below `n` and fit in `L` limbs; `x1` and `x2` are
 //! kept reduced mod `n`, so the only intermediate that can exceed `L` limbs is `x + n` before its
-//! halving, whose carry bit [`shr1_with_carry`] folds back in. `a = 0` has no inverse and returns
+//! halving, whose carry bit `shr1_with_carry` folds back in. `a = 0` has no inverse and returns
 //! `0`, matching the constant-time `invert`'s convention, so callers can substitute one for the
 //! other without a special case.
 
