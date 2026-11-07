@@ -16,11 +16,15 @@
 //! Keying data of any length from a shared secret, [`X963KDF::derive_out`]:
 //!
 //! ```
+//! use bouncycastle_core::hazmat::do_hazardous_operations;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
+//! use bouncycastle_core::security_strength::SecurityStrength;
 //! use bouncycastle_x963kdf::X963KDF_SHA256;
 //!
-//! // The Z of a key agreement, typed for a KDF; here stand-in bytes.
-//! let z = KeyMaterial::<32>::from_bytes_as_type(&[0x5A; 32], KeyType::SharedSecret).unwrap();
+//! // The Z of a key agreement, typed for a KDF at the scheme's strength, which its producer
+//! // states (a `SharedSecret`'s length says nothing about its entropy); here stand-in bytes.
+//! let mut z = KeyMaterial::<32>::from_bytes_as_type(&[0x5A; 32], KeyType::SharedSecret).unwrap();
+//! do_hazardous_operations(&mut z, |z| z.set_security_strength(SecurityStrength::_128bit)).unwrap();
 //!
 //! let mut keying_data = KeyMaterial::<48>::new();
 //! let written = X963KDF_SHA256::derive_out(&z, b"example protocol v1", 48, &mut keying_data).unwrap();
