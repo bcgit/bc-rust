@@ -53,4 +53,13 @@
   derived key is one hash output at the lesser of the KEM's and the KDF's strengths. HKDF credits its output as
   full-entropy once half a hash output of typed key material has gone in, where it needed a full one, so a
   32-byte secret seeds HKDF-SHA512 as it does HKDF-SHA256.
+* Two-party key agreement gets the same shape ahead of the ECC CDH crate: the `AgreementKey` role in
+  `core::agreement_key`, with `KeyAgreementAlgorithm::Params` for a KDF-bearing variant, hands out a
+  `KeyAgreement` worker whose `agree(&peer_pk)` returns `Z` as `KeyType::SharedSecret`; `KeyAgreementError` and
+  the encodable `KeyAgreementPrivateKey` / `KeyAgreementPublicKey` traits go with it.
+* `bouncycastle-eccdh`: ECC CDH (SP 800-56A Rev. 3 Section 5.7.1.2) over P-256, P-384, P-521, secp256k1,
+  brainpoolP256r1, brainpoolP384r1 and brainpoolP512r1, with its own key types per curve (full public-key
+  validation at decode, key generation by extra random bits), the markers `ECCDHP256` and friends on the
+  `AgreementKey` role over `()`, and `ECCDHP256_HKDF_SHA256` over `HkdfParams<SHA256>` on the P-256 keys;
+  tested against the CAVP ECC CDH primitive vectors, RFC 7027 Appendix A and the Wycheproof ECDH sets.
 
