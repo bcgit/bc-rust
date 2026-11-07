@@ -129,7 +129,7 @@ impl P384ScalarField {
     }
 
     /// `self^2`, via a dedicated squaring rather than `self.mul(self)` -- see
-    /// [`widening_square`].
+    /// `widening_square`.
     ///
     /// Used by the exponentiation loops ([`Self::invert`] and friends), which call it hundreds of
     /// times in a row with nothing else competing for registers. Deliberately *not* used by this

@@ -13,7 +13,7 @@
 //!
 //! `p` is a generalized Mersenne number, so -- exactly as for [`crate::hazmat::p256`] -- a 512-bit
 //! product reduces to a fixed sum and difference of 256-bit terms assembled from the product's own
-//! 32-bit words, with no multiplication at all. [`reduce`] uses the same bias-fold-subtract finish
+//! 32-bit words, with no multiplication at all. `reduce` uses the same bias-fold-subtract finish
 //! as `p256::reduce`, but evaluates its term table one 32-bit column at a time rather than one
 //! 256-bit row at a time -- see its own docs for why that pays here and not for P-256.
 //!
@@ -38,7 +38,7 @@
 //!   M_3: +1 +1  0 +1  0  0 +1 +1        M_7: +2 +2  0 +1 +1 +2 +1 +3
 //! ```
 //!
-//! Collecting those coefficients column by column gives [`reduce`]'s `S`/`D` terms: a coefficient
+//! Collecting those coefficients column by column gives `reduce`'s `S`/`D` terms: a coefficient
 //! of `+2` simply means that word appears in two `S` rows. The resulting expression was checked
 //! against Python's arbitrary-precision `%` over 300,000 random `a*b` products with `a, b < p`,
 //! plus `(p-1)*(p-1)`, `(p-1)*(p-2)` and the small cases, before being written here; the
@@ -46,7 +46,7 @@
 //!
 //! The identity `2^256 = p + C` with `C = 2^224 + 2^96 - 2^64 + 1` (i.e. `2^256 mod p = C`)
 //! survives in two places: [`Sm2FieldElement::add`] uses it to correct a carry out of the top
-//! limb, and [`reduce`]'s final fold uses it on the accumulator's top limb.
+//! limb, and `reduce`'s final fold uses it on the accumulator's top limb.
 
 use crate::nat;
 use bouncycastle_utils::ct;
@@ -173,7 +173,7 @@ impl Sm2FieldElement {
     }
 
     /// `self^2`, via a dedicated squaring rather than `self.mul(self)` -- see
-    /// [`widening_square`].
+    /// `widening_square`.
     ///
     /// Used by the exponentiation loops ([`Self::invert`] and friends), which call it hundreds of
     /// times in a row with nothing else competing for registers. Deliberately *not* used by this

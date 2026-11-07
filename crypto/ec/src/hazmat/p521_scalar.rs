@@ -13,7 +13,7 @@
 //! it false fails loudly rather than silently dropping a bit the way `p384::reduce`'s
 //! analogous but *wrong* assumption once did.
 //!
-//! That same 55-bit gap bites a different function, [`reduce_wide`] (used by every `from_limbs` in
+//! That same 55-bit gap bites a different function, `reduce_wide` (used by every `from_limbs` in
 //! this module): a raw `[u64; 9]` can hold values up to `2^576 - 1`, so it is not generally `< 2n`
 //! the way a same-width raw limb array is for P-256/P-384's closer-to-`R` `n` -- see that
 //! function's own docs for the fold this needs and the real bug an earlier, single-subtraction
@@ -78,7 +78,7 @@ impl P521ScalarField {
 
     /// Builds a scalar-field element from little-endian `u64` limbs (an ordinary, non-Montgomery
     /// value; any of the `2^576` values a raw `[u64; 9]` can represent, not just those `< 2n`),
-    /// reducing via [`reduce_wide`], then converting to Montgomery form.
+    /// reducing via `reduce_wide`, then converting to Montgomery form.
     pub fn from_limbs(limbs: [u64; 9]) -> Self {
         let reduced = reduce_wide(limbs);
         Self(redc(&widening_mul(&reduced, &R_SQUARED_LIMBS)))
@@ -152,7 +152,7 @@ impl P521ScalarField {
     }
 
     /// `self^2`, via a dedicated squaring rather than `self.mul(self)` -- see
-    /// [`widening_square`].
+    /// `widening_square`.
     ///
     /// Used by the exponentiation loops ([`Self::invert`] and friends), which call it hundreds of
     /// times in a row with nothing else competing for registers. Deliberately *not* used by this
@@ -423,7 +423,7 @@ fn reduce_wide(limbs: [u64; 9]) -> [u64; 9] {
 pub struct P521Scalar(Secret<[u64; 9]>);
 
 impl P521Scalar {
-    /// Builds a secret scalar from little-endian `u64` limbs, reducing via [`reduce_wide`] (valid
+    /// Builds a secret scalar from little-endian `u64` limbs, reducing via `reduce_wide` (valid
     /// for any of the `2^576` values a raw `[u64; 9]` can represent, not just those `< 2n`).
     pub fn from_limbs(limbs: [u64; 9]) -> Self {
         let mut secret = Secret::<[u64; 9]>::new();
@@ -431,7 +431,7 @@ impl P521Scalar {
         Self(secret)
     }
 
-    /// Builds a secret scalar from SEC 1 §2.3.7 big-endian octets, reducing via [`reduce_wide`] --
+    /// Builds a secret scalar from SEC 1 §2.3.7 big-endian octets, reducing via `reduce_wide` --
     /// needed here specifically: 66 bytes is 528 bits, 7 more than `n`'s 521, so this input is not
     /// generally `< 2n` the way P-256/P-384's exactly-sized SEC 1 encodings are.
     pub fn from_be_bytes(bytes: &[u8; 66]) -> Self {
@@ -456,7 +456,7 @@ impl P521Scalar {
 pub struct P521PublicScalar([u64; 9]);
 
 impl P521PublicScalar {
-    /// Builds a public scalar from little-endian `u64` limbs, reducing via [`reduce_wide`] (valid
+    /// Builds a public scalar from little-endian `u64` limbs, reducing via `reduce_wide` (valid
     /// for any of the `2^576` values a raw `[u64; 9]` can represent, not just those `< 2n`).
     pub fn from_limbs(limbs: [u64; 9]) -> Self {
         Self(reduce_wide(limbs))

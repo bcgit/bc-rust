@@ -7,8 +7,8 @@
 //!
 //! For width `w = 6` and the scalar's bit length `BITS = 256` (SM2's order's bit length,
 //! `draft-shen-sm2-ecdsa-02` Appendix D), `D = ceil(BITS / w) = 43` and `FULL_COMB = D * w = 258`
-//! (two bits more than `BITS`, zero-padded). [`COMB_TABLE_X`]/[`COMB_TABLE_Y`] (in
-//! [`crate::hazmat::sm2_comb_table`]) hold, at index `i`, the point `sum_{bit b set in i} 2^(b*D) *
+//! (two bits more than `BITS`, zero-padded). `COMB_TABLE_X`/`COMB_TABLE_Y` (in
+//! `crate::hazmat::sm2_comb_table`) hold, at index `i`, the point `sum_{bit b set in i} 2^(b*D) *
 //! G` -- i.e. index `i`'s table entry encodes a width-6 "comb digit" as a subset sum of the
 //! doublings `2^(0*D)*G, 2^(1*D)*G, ..., 2^(5*D)*G`.
 //!
@@ -18,7 +18,7 @@
 //! positions is read by exactly one (round, digit-position) pair (verified, not checked in, by
 //! confirming the six per-round ranges tile `0..FULL_COMB` with no gaps or overlaps), and every
 //! step -- bit extraction, the table lookup, the add -- is branch-free in `k`'s value: the *bit
-//! positions* read are fixed by the (public) loop structure, and [`table_lookup`] scans every
+//! positions* read are fixed by the (public) loop structure, and `table_lookup` scans every
 //! entry under a mask rather than indexing by the secret digit.
 //!
 //! Verified (not checked in) against 200 random `k` plus edge cases (`k = 1, 2, 3, n-1`), each
