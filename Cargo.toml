@@ -12,6 +12,8 @@ version = "0.1.4"
 # *** Internal Dependencies ***
 bouncycastle = { path = "./" }
 bouncycastle-aes = { path = "./crypto/aes", default-features = false }
+bouncycastle-camellia = { path = "./crypto/camellia" }
+bouncycastle-aria = { path = "./crypto/aria" }
 bouncycastle-ascon = { path = "./crypto/ascon" }
 bouncycastle-asm = { path = "./crypto/asm" }
 bouncycastle-base64 = { path = "./crypto/base64" }
@@ -19,6 +21,7 @@ bouncycastle-chacha20 = { path = "./crypto/chacha20" }
 bouncycastle-chacha20-poly1305-aead = { path = "./crypto/chacha20-poly1305-aead" }
 bouncycastle-cipher = { path = "./crypto/cipher", default-features = false }
 bouncycastle-core = { path = "crypto/core" }
+bouncycastle-cipher-test-framework = { path = "./crypto/cipher-test-framework" }
 bouncycastle-core-test-framework = { path = "./crypto/core-test-framework" }
 bouncycastle-ec = { path = "./crypto/ec" }
 bouncycastle-ecdsa = { path = "./crypto/ecdsa" }
@@ -38,6 +41,7 @@ bouncycastle-sha2 = { path = "./crypto/sha2" }
 bouncycastle-sha3 = { path = "./crypto/sha3" }
 bouncycastle-sm2 = { path = "./crypto/sm2" }
 bouncycastle-sm3 = { path = "./crypto/sm3" }
+bouncycastle-sm4 = { path = "./crypto/sm4" }
 bouncycastle-utils = { path = "./crypto/utils" }
 
 
@@ -73,6 +77,8 @@ asm = ["bouncycastle-aes/asm", "bouncycastle-cipher/asm"]
 
 [dependencies]
 bouncycastle-aes.workspace = true
+bouncycastle-camellia.workspace = true
+bouncycastle-aria.workspace = true
 bouncycastle-ascon.workspace = true
 bouncycastle-base64.workspace = true
 bouncycastle-chacha20.workspace = true
@@ -94,3 +100,4 @@ bouncycastle-sha2.workspace = true
 bouncycastle-sha3.workspace = true
 bouncycastle-sm2.workspace = true
 bouncycastle-sm3.workspace = true
+bouncycastle-sm4.workspace = true

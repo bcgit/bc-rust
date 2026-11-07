@@ -27,7 +27,7 @@
 //!
 //! Each mode is used through a mode-bound key object such as [`AES256Key<GCM>`](AES256Key),
 //! which validates and expands the material once and hands out the mode's encryptors and
-//! decryptors; see [`AESKey`].
+//! decryptors; see [`AES128Key`].
 //!
 //! AES in ECB mode, [`AES_ECB_128`](hazmat::AES_ECB_128) and friends, is under [`hazmat`] because
 //! it is a building block for other modes, not itself a confidentiality mode for data.
@@ -320,5 +320,5 @@ pub use cmac::{AES_CMAC_128, AES_CMAC_192, AES_CMAC_256};
 pub use ctr::{AES_CTR_128, AES_CTR_192, AES_CTR_256, CTR_NONCE_LEN};
 pub use gcm::{AES_GCM_128, AES_GCM_192, AES_GCM_256, GCM_NONCE_LEN};
 pub use gmac::{AES_GMAC_128, AES_GMAC_192, AES_GMAC_256};
-pub use key::{AES128Key, AES192Key, AES256Key, AESKey};
+pub use key::{AES128Key, AES192Key, AES256Key};
 pub use kw::{AES_KW_128, AES_KW_192, AES_KW_256, AES_KWP_128, AES_KWP_192, AES_KWP_256};

@@ -9,14 +9,14 @@
 // * Encryption and decryption are different functions (the inverse is XOR, then `rotate_right(1)`),
 //   so a mode that called the wrong direction fails, where with `block ^= key` it would round-trip.
 // * It validates its key the way a real permutation does, so key-policy checks run against it.
-//   `tests/toy_block_cipher_tests.rs` pins it to the `ElectronicCodeBook` contract.
+//   `tests/toy_block_cipher_tests.rs` pins it to the `KeyExpansion` contract.
 //
 // Pulled in with `mod toy { include!("<path to this file>"); }` from doctests and unit tests, and
 // with `#[path]` from integration tests, so it carries no inner attributes or `//!` docs.
 
 use bouncycastle_cipher::modes::ModeNames;
 use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
-use bouncycastle_core::hazmat::{BlockPermutation, ElectronicCodeBook};
+use bouncycastle_core::hazmat::{BlockPermutation, KeyExpansion};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::Algorithm;
@@ -51,7 +51,7 @@ impl ModeNames for ToyBlockCipher {
     const KWP_ALG_NAME: &'static str = "ToyBlockCipher_KWP";
 }
 
-impl ElectronicCodeBook<TOY_BLOCK_LEN, TOY_BLOCK_LEN> for ToyBlockCipher {
+impl KeyExpansion<TOY_BLOCK_LEN> for ToyBlockCipher {
     /// Rejects the same keys a real permutation would, so that key-policy checks are meaningful.
     fn new(key: &KeyMaterial<TOY_BLOCK_LEN>) -> Result<Self, SymmetricCipherError> {
         if key.key_type() != KeyType::SymmetricCipherKey {

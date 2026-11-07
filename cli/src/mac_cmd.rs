@@ -7,8 +7,8 @@ use crate::helpers::{
     write_stdout,
 };
 use crate::sha3_cmd::{MAX_FIXED_OUTPUT_LEN, Strength};
-use bouncycastle::aes::hazmat::AESInternal;
-use bouncycastle::aes::{AES128Key, AES192Key, AES256Key, AESKey, AESParams};
+use bouncycastle::aes::{AES128Key, AES192Key, AES256Key};
+use bouncycastle::cipher::BlockCipherKey;
 use bouncycastle::cipher::modes::{CMAC, GMAC, ModeNames};
 use bouncycastle::core::errors::MACError;
 use bouncycastle::core::hazmat::{BlockPermutation, do_hazardous_operations};
@@ -207,14 +207,14 @@ const GMAC_TAG_LEN: usize = 16;
 /// written. `--verify` takes the tag, with `--iv`, or the 28-byte `nonce || tag` without it.
 ///
 /// The GMAC workers have no trait: their generator and verifier are inherent on the key, so
-/// this is generic over the AES parameter set the way the key's own impl is.
-fn gmac_run<P: AESParams>(
-    key: &AESKey<P, GMAC<GMAC_TAG_LEN>>,
+/// this is generic over the permutation the way the key's own impl is.
+fn gmac_run<P>(
+    key: &BlockCipherKey<P, GMAC<GMAC_TAG_LEN>>,
     iv: Option<[u8; GMAC_NONCE_LEN]>,
     verify_val: &Option<String>,
     output_hex: bool,
 ) where
-    AESInternal<P>: BlockPermutation<16> + ModeNames + Clone,
+    P: BlockPermutation<16> + ModeNames + Clone,
 {
     match verify_val {
         None => {

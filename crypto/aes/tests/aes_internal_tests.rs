@@ -13,7 +13,7 @@ use bouncycastle_aes::hazmat::engine::Bitsliced;
 use bouncycastle_aes::hazmat::{AES128Internal, AES192Internal, AES256Internal, AESInternal};
 use bouncycastle_aes::{AES128Params, AES192Params, AES256Params};
 use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
-use bouncycastle_core::hazmat::ElectronicCodeBook;
+use bouncycastle_core::hazmat::KeyExpansion;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::Algorithm;
@@ -107,13 +107,13 @@ fn one_byte_short<const N: usize>() -> KeyMaterial<N> {
     key
 }
 
-// `AESInternal::new` is reached through `ElectronicCodeBook::new`, the public path to it; it
+// `AESInternal::new` is reached through `KeyExpansion::new`, the public path to it; it
 // checks the type, then the length, so a short key of the right type fails on the length.
 
 #[test]
 fn aes128_refuses_a_15_byte_key_with_invalid_length() {
     assert!(matches!(
-        <AES128Internal as ElectronicCodeBook<16, 16>>::new(&one_byte_short::<16>()),
+        <AES128Internal as KeyExpansion<16>>::new(&one_byte_short::<16>()),
         Err(SymmetricCipherError::KeyMaterialError(KeyMaterialError::InvalidLength))
     ));
 }
@@ -121,7 +121,7 @@ fn aes128_refuses_a_15_byte_key_with_invalid_length() {
 #[test]
 fn aes192_refuses_a_23_byte_key_with_invalid_length() {
     assert!(matches!(
-        <AES192Internal as ElectronicCodeBook<24, 16>>::new(&one_byte_short::<24>()),
+        <AES192Internal as KeyExpansion<24>>::new(&one_byte_short::<24>()),
         Err(SymmetricCipherError::KeyMaterialError(KeyMaterialError::InvalidLength))
     ));
 }
@@ -129,7 +129,7 @@ fn aes192_refuses_a_23_byte_key_with_invalid_length() {
 #[test]
 fn aes256_refuses_a_31_byte_key_with_invalid_length() {
     assert!(matches!(
-        <AES256Internal as ElectronicCodeBook<32, 16>>::new(&one_byte_short::<32>()),
+        <AES256Internal as KeyExpansion<32>>::new(&one_byte_short::<32>()),
         Err(SymmetricCipherError::KeyMaterialError(KeyMaterialError::InvalidLength))
     ));
 }

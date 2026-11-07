@@ -184,7 +184,7 @@ use bouncycastle_cipher::modes::hazmat::ecb::Ecb;
 use bouncycastle_cipher::padding::{PaddedBlockCipherDecryptor, PaddedBlockCipherEncryptor};
 use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::errors::SymmetricCipherError;
-use bouncycastle_core::hazmat::{BlockPermutation, ElectronicCodeBook};
+use bouncycastle_core::hazmat::{BlockPermutation, KeyExpansion};
 use bouncycastle_core::key_material::KeyMaterial;
 
 // Imports needed for docs
@@ -247,9 +247,7 @@ pub type AES_ECB_256<'k, Dir, Pad> = <Dir as Direction>::Select<
     >,
 >;
 
-impl<E: Engine<AES128Params>> ElectronicCodeBook<16, AES_BLOCK_LEN>
-    for AESInternal<AES128Params, E>
-{
+impl<E: Engine<AES128Params>> KeyExpansion<16> for AESInternal<AES128Params, E> {
     fn new(key: &KeyMaterial<16>) -> Result<Self, SymmetricCipherError> {
         AESInternal::<AES128Params, E>::new(key)
     }
@@ -276,9 +274,7 @@ impl<E: Engine<AES128Params>> BlockPermutation<AES_BLOCK_LEN> for AESInternal<AE
     }
 }
 
-impl<E: Engine<AES192Params>> ElectronicCodeBook<24, AES_BLOCK_LEN>
-    for AESInternal<AES192Params, E>
-{
+impl<E: Engine<AES192Params>> KeyExpansion<24> for AESInternal<AES192Params, E> {
     fn new(key: &KeyMaterial<24>) -> Result<Self, SymmetricCipherError> {
         AESInternal::<AES192Params, E>::new(key)
     }
@@ -305,9 +301,7 @@ impl<E: Engine<AES192Params>> BlockPermutation<AES_BLOCK_LEN> for AESInternal<AE
     }
 }
 
-impl<E: Engine<AES256Params>> ElectronicCodeBook<32, AES_BLOCK_LEN>
-    for AESInternal<AES256Params, E>
-{
+impl<E: Engine<AES256Params>> KeyExpansion<32> for AESInternal<AES256Params, E> {
     fn new(key: &KeyMaterial<32>) -> Result<Self, SymmetricCipherError> {
         AESInternal::<AES256Params, E>::new(key)
     }
