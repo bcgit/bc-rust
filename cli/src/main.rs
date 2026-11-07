@@ -1711,6 +1711,11 @@ enum Subcommands {
         #[arg(short, long)]
         salt_file: Option<String>,
 
+        /// Treat the salt as a secret (SP 800-56C Rev. 2 Section 5.1) rather than RFC 5869's
+        /// non-secret random value. The output is the same; only its entropy accounting differs.
+        #[arg(long)]
+        secret_salt: bool,
+
         /// An Input Keying Material in hex.
         /// The `ikm_file` option is preferred to avoid leaving key material in command history.
         #[arg(long)]
@@ -1753,6 +1758,11 @@ enum Subcommands {
         /// If both salt and salt_file options are provided, the file will be used.
         #[arg(short, long)]
         salt_file: Option<String>,
+
+        /// Treat the salt as a secret (SP 800-56C Rev. 2 Section 5.1) rather than RFC 5869's
+        /// non-secret random value. The output is the same; only its entropy accounting differs.
+        #[arg(long)]
+        secret_salt: bool,
 
         /// An Input Keying Material in hex.
         /// The `ikm_file` option is preferred to avoid leaving key material in command history.
@@ -1797,6 +1807,11 @@ enum Subcommands {
         #[arg(short, long)]
         salt_file: Option<String>,
 
+        /// Treat the salt as a secret (SP 800-56C Rev. 2 Section 5.1) rather than RFC 5869's
+        /// non-secret random value. The output is the same; only its entropy accounting differs.
+        #[arg(long)]
+        secret_salt: bool,
+
         /// An Input Keying Material in hex.
         /// The `ikm_file` option is preferred to avoid leaving key material in command history.
         #[arg(long)]
@@ -1839,6 +1854,11 @@ enum Subcommands {
         /// If both salt and salt_file options are provided, the file will be used.
         #[arg(short, long)]
         salt_file: Option<String>,
+
+        /// Treat the salt as a secret (SP 800-56C Rev. 2 Section 5.1) rather than RFC 5869's
+        /// non-secret random value. The output is the same; only its entropy accounting differs.
+        #[arg(long)]
+        secret_salt: bool,
 
         /// An Input Keying Material in hex.
         /// The `ikm_file` option is preferred to avoid leaving key material in command history.
@@ -5478,6 +5498,7 @@ fn run() {
             ikm_file,
             additional_input,
             additional_input_file,
+            secret_salt,
             len,
             x,
         }) => hkdf_cmd::hkdf_cmd(
@@ -5488,6 +5509,7 @@ fn run() {
             ikm_file,
             additional_input,
             additional_input_file,
+            *secret_salt,
             *len,
             *x,
         ),
@@ -5498,6 +5520,7 @@ fn run() {
             ikm_file,
             additional_input,
             additional_input_file,
+            secret_salt,
             len,
             x,
         }) => hkdf_cmd::hkdf_cmd(
@@ -5508,6 +5531,7 @@ fn run() {
             ikm_file,
             additional_input,
             additional_input_file,
+            *secret_salt,
             *len,
             *x,
         ),
@@ -5518,6 +5542,7 @@ fn run() {
             ikm_file,
             additional_input,
             additional_input_file,
+            secret_salt,
             len,
             x,
         }) => hkdf_cmd::hkdf_cmd(
@@ -5528,6 +5553,7 @@ fn run() {
             ikm_file,
             additional_input,
             additional_input_file,
+            *secret_salt,
             *len,
             *x,
         ),
@@ -5538,6 +5564,7 @@ fn run() {
             ikm_file,
             additional_input,
             additional_input_file,
+            secret_salt,
             len,
             x,
         }) => hkdf_cmd::hkdf_cmd(
@@ -5548,6 +5575,7 @@ fn run() {
             ikm_file,
             additional_input,
             additional_input_file,
+            *secret_salt,
             *len,
             *x,
         ),

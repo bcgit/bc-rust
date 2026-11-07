@@ -52,5 +52,7 @@
   and as the `mlkem512-hkdf-sha256`, `mlkem768-hkdf-sha512` and `mlkem1024-hkdf-sha512` CLI subcommands; the
   derived key is one hash output at the lesser of the KEM's and the KDF's strengths. HKDF credits its output as
   full-entropy once half a hash output of typed key material has gone in, where it needed a full one, so a
-  32-byte secret seeds HKDF-SHA512 as it does HKDF-SHA256.
+  32-byte secret seeds HKDF-SHA512 as it does HKDF-SHA256. The `hkdf-*` CLI subcommands type their salt as
+  RFC 5869's non-secret random value, as the `mlkem*-hkdf-*` ones do; `--secret-salt` marks it as the secret salt
+  of SP 800-56C Rev. 2 Section 5.1, which HKDF credits.
 
