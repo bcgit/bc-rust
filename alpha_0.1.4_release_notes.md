@@ -59,4 +59,10 @@
   32-byte secret seeds HKDF-SHA512 as it does HKDF-SHA256. The `hkdf-*` CLI subcommands type their salt as
   RFC 5869's non-secret random value, as the `mlkem*-hkdf-*` ones do; `--secret-salt` marks it as the secret salt
   of SP 800-56C Rev. 2 Section 5.1, which HKDF credits.
+* The KDF entropy accounting after review: a full-entropy key with no strength (a `SharedSecret` whose producer
+  stated none, which is now the default for one built from bytes, or a key too short to carry 112 bits) credits
+  nothing, so a `CryptographicRandom` output always carries a strength; a KDF instance that has absorbed input
+  through the streaming API is refused; a zero-length derivation is refused; and SHA-3 and SHAKE as a KDF type
+  their output as the KDF's, derive from a fresh sponge, and hash their inputs length-prefixed
+  (`len(ikm) || ikm || fixed_info`), so two keys are not their concatenation; their known answers change.
 
