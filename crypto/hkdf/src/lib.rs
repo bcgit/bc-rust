@@ -249,16 +249,19 @@ impl<H: HMACParams> HkdfEntropyTracker<H> {
     }
 
     // Library policy, not a rule from a standard: the output is credited as CryptographicRandom
-    // once at least OUTPUT_LEN bytes of typed key material have gone in. SP 800-133r2 Section 6.3
-    // (method 3, note (g)) asks that the component keys' min-entropies sum to at least the
-    // min-entropy the output needs, and "should be at least twice that amount"; this counts bytes
-    // of material typed as key rather than min-entropy, so the threshold is the full output length.
+    // once at least OUTPUT_LEN / 2 bytes of typed key material have gone in, the bytes that carry
+    // the most strength HKDF can claim (`MAX_STRENGTH`). SP 800-133r2 Section 6.3 (method 3,
+    // note (g)) asks that the component keys' min-entropies sum to at least the min-entropy the
+    // output needs; this counts bytes of material typed as key rather than min-entropy. The
+    // threshold is the strength bound rather than the full output length so that one 32-byte
+    // key, a KEM shared secret say, seeds HKDF-SHA512 as it does HKDF-SHA256; the output's own
+    // strength stays capped by what was credited, as `credit_entropy` records.
     pub fn is_fully_seeded(&self) -> bool {
-        self.entropy >= H::OUTPUT_LEN
+        self.entropy >= H::OUTPUT_LEN / 2
     }
 
-    /// [`KeyType::CryptographicRandom`] once at least `OUTPUT_LEN` bytes of typed key material have
-    /// been credited (see [`Self::is_fully_seeded`]), else [`KeyType::Unknown`].
+    /// [`KeyType::CryptographicRandom`] once at least `OUTPUT_LEN / 2` bytes of typed key material
+    /// have been credited (see [`Self::is_fully_seeded`]), else [`KeyType::Unknown`].
     fn get_output_key_type(&self) -> KeyType {
         if self.is_fully_seeded() { KeyType::CryptographicRandom } else { KeyType::Unknown }
     }
@@ -925,7 +928,7 @@ where
 #[cfg(test)]
 mod tests {
     use super::*;
-    use bouncycastle_sha2::SHA256;
+    use bouncycastle_sha2::{SHA256, SHA512};
 
     #[test]
     fn test_entropy_tracker() {
@@ -934,11 +937,25 @@ mod tests {
         assert_eq!(entropy.get_entropy(), 0);
         assert_eq!(entropy.get_output_key_type(), KeyType::Unknown);
 
+        // The threshold is half the hash output: 16 bytes for SHA-256, 32 for SHA-512.
         let key = KeyMaterial512::from_bytes_as_type(
-            b"\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f",
+            b"\x00\x01\x02\x03\x04\x05\x06\x07",
             KeyType::CryptographicRandom,
         )
         .unwrap();
+        entropy.credit_entropy(&key);
+        assert_eq!(entropy.get_entropy(), 8);
+        assert_eq!(entropy.is_fully_seeded(), false);
+        assert_eq!(entropy.get_output_key_type(), KeyType::Unknown);
+
+        entropy.credit_entropy(&key);
+        assert_eq!(entropy.get_entropy(), 16);
+        assert_eq!(entropy.is_fully_seeded(), true);
+        assert_eq!(entropy.get_output_key_type(), KeyType::CryptographicRandom);
+
+        let mut entropy = HkdfEntropyTracker::<SHA512>::new();
+        let key =
+            KeyMaterial512::from_bytes_as_type(&[0x5A; 16], KeyType::CryptographicRandom).unwrap();
         entropy.credit_entropy(&key);
         assert_eq!(entropy.get_entropy(), 16);
         assert_eq!(entropy.is_fully_seeded(), false);

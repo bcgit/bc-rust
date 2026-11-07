@@ -145,17 +145,17 @@ mod hkdf_tests {
 
     #[test]
     fn test_entropy_tracking() {
-        // test the thresholds of HMAC-SHA256
+        // test the thresholds of HMAC-SHA256: half the hash output, 16 bytes
         let key255 =
-            KeyMaterial256::from_bytes_as_type(&DUMMY_SEED[..31], KeyType::MACKey).unwrap();
+            KeyMaterial256::from_bytes_as_type(&DUMMY_SEED[..15], KeyType::MACKey).unwrap();
         let key256 =
-            KeyMaterial256::from_bytes_as_type(&DUMMY_SEED[..32], KeyType::MACKey).unwrap();
+            KeyMaterial256::from_bytes_as_type(&DUMMY_SEED[..16], KeyType::MACKey).unwrap();
         let key512 =
             KeyMaterial512::from_bytes_as_type(&DUMMY_SEED[..64], KeyType::MACKey).unwrap();
         let zero_key = KeyMaterial0::new();
 
         // not enough
-        assert_eq!(key255.security_strength(), SecurityStrength::_192bit);
+        assert_eq!(key255.security_strength(), SecurityStrength::_112bit);
         let mut okm = HKDF_SHA256::extract(&key255, &zero_key).unwrap();
         assert_eq!(okm.key_type(), KeyType::Unknown);
         assert_eq!(okm.security_strength(), SecurityStrength::None);
@@ -173,17 +173,19 @@ mod hkdf_tests {
         assert_eq!(okm.key_type(), KeyType::CryptographicRandom);
         assert_eq!(okm.security_strength(), SecurityStrength::_128bit);
 
-        // just right
+        // just right: 16 bytes seed HKDF-SHA256, and the output's strength is theirs
         let mut okm = HKDF_SHA256::extract(&key256, &zero_key).unwrap();
         assert_eq!(okm.key_type(), KeyType::CryptographicRandom);
+        assert_eq!(okm.security_strength(), SecurityStrength::_128bit);
         _ = HKDF_SHA256::extract_and_expand_out(&key256, &zero_key, &[], 32, &mut okm).unwrap();
         assert_eq!(okm.key_type(), KeyType::CryptographicRandom);
+        assert_eq!(okm.security_strength(), SecurityStrength::_128bit);
 
-        // test the thresholds of HMAC-SHA512
+        // test the thresholds of HMAC-SHA512: half the hash output, 32 bytes
         let key511 =
-            KeyMaterial512::from_bytes_as_type(&DUMMY_SEED[..63], KeyType::MACKey).unwrap();
+            KeyMaterial512::from_bytes_as_type(&DUMMY_SEED[..31], KeyType::MACKey).unwrap();
         let key512 =
-            KeyMaterial512::from_bytes_as_type(&DUMMY_SEED[..64], KeyType::MACKey).unwrap();
+            KeyMaterial512::from_bytes_as_type(&DUMMY_SEED[..32], KeyType::MACKey).unwrap();
         let zero_key = KeyMaterial0::new();
 
         // not enough
@@ -331,8 +333,9 @@ mod hkdf_tests {
         HKDF_SHA256::new().derive_key_from_multiple_out(&keys, &[], &mut okm).unwrap();
         assert_eq!(okm.key_type(), KeyType::Unknown);
 
-        // success case -- insufficient entropy returns KeyType::BytesLowEntropy
-        let salt = KeyMaterial128::from_bytes_as_type(&DUMMY_SEED[..8], KeyType::MACKey).unwrap();
+        // success case -- insufficient entropy returns KeyType::Unknown: a secret salt and the
+        // IKM both credit, but 4 + 8 bytes is below the 16 that seed HKDF-SHA256
+        let salt = KeyMaterial128::from_bytes_as_type(&DUMMY_SEED[..4], KeyType::MACKey).unwrap();
         let ikm =
             KeyMaterial128::from_bytes_as_type(&DUMMY_SEED[8..16], KeyType::CryptographicRandom)
                 .unwrap();
@@ -366,9 +369,9 @@ mod hkdf_tests {
         _ = HKDF_SHA256::new().derive_key_from_multiple_out(&keys, &[], &mut okm);
         assert_eq!(okm.key_type(), KeyType::CryptographicRandom);
 
-        // success case -- insufficient entropy due to key types -- KeyType::BytesLowEntropy
-        // Note: this will still return MACKey because that one was first in the inputs.
-        let salt = KeyMaterial128::from_bytes_as_type(&DUMMY_SEED[..16], KeyType::MACKey).unwrap();
+        // success case -- insufficient entropy due to key types -- KeyType::Unknown: the
+        // Unknown-typed IKM credits nothing, and the 8-byte secret salt alone is below 16
+        let salt = KeyMaterial128::from_bytes_as_type(&DUMMY_SEED[..8], KeyType::MACKey).unwrap();
         let ikm =
             KeyMaterial128::from_bytes_as_type(&DUMMY_SEED[16..32], KeyType::Unknown).unwrap();
 
@@ -383,14 +386,14 @@ mod hkdf_tests {
 
         /* get_entropy */
         // This requires using the stateful streaming API and check the amount of entropy it tracks after each addition.
-        let salt16 =
-            KeyMaterial128::from_bytes_as_type(&DUMMY_SEED[..16], KeyType::MACKey).unwrap();
+        // The SHA-256 threshold is 16 bytes, so the parts are 8-byte ones.
+        let salt16 = KeyMaterial128::from_bytes_as_type(&DUMMY_SEED[..8], KeyType::MACKey).unwrap();
         let salt64 =
             KeyMaterial512::from_bytes_as_type(&DUMMY_SEED[..64], KeyType::MACKey).unwrap();
         let low_entropy_key16 =
             KeyMaterial128::from_bytes_as_type(&DUMMY_SEED[..16], KeyType::Unknown).unwrap();
         let full_entropy_key16 =
-            KeyMaterial128::from_bytes_as_type(&DUMMY_SEED[16..32], KeyType::CryptographicRandom)
+            KeyMaterial128::from_bytes_as_type(&DUMMY_SEED[16..24], KeyType::CryptographicRandom)
                 .unwrap();
 
         // can't test with a low entropy salt because the salt has to be full entropy or zero.
@@ -405,7 +408,7 @@ mod hkdf_tests {
         let mut hkdf = HKDF_SHA256::new();
         assert_eq!(hkdf.get_entropy(), 0);
         hkdf.do_extract_init(&salt16).unwrap();
-        assert_eq!(hkdf.get_entropy(), 16);
+        assert_eq!(hkdf.get_entropy(), 8);
         assert_eq!(hkdf.is_fully_seeded(), false);
 
         // with enough entropy in the salt.
@@ -419,16 +422,16 @@ mod hkdf_tests {
         let mut hkdf = HKDF_SHA256::new();
         assert_eq!(hkdf.get_entropy(), 0);
         hkdf.do_extract_init(&salt16).unwrap();
-        assert_eq!(hkdf.get_entropy(), 16);
+        assert_eq!(hkdf.get_entropy(), 8);
         assert_eq!(hkdf.is_fully_seeded(), false);
         hkdf.do_extract_update_key(&full_entropy_key16).unwrap();
-        assert_eq!(hkdf.get_entropy(), 32);
+        assert_eq!(hkdf.get_entropy(), 16);
         assert_eq!(hkdf.is_fully_seeded(), true);
         hkdf.do_extract_update_key(&full_entropy_key16).unwrap();
-        assert_eq!(hkdf.get_entropy(), 48);
+        assert_eq!(hkdf.get_entropy(), 24);
         assert_eq!(hkdf.is_fully_seeded(), true);
         hkdf.do_extract_update_bytes(low_entropy_key16.ref_to_bytes()).unwrap();
-        assert_eq!(hkdf.get_entropy(), 48);
+        assert_eq!(hkdf.get_entropy(), 24);
         assert_eq!(hkdf.is_fully_seeded(), true);
     }
 
@@ -515,12 +518,12 @@ mod hkdf_tests {
         );
     }
 
-    /// A 16-byte key is below the SHA-256 seeding threshold, so the output is `Unknown` with no
-    /// strength. The multi-key path must agree with the single-key one rather than erroring.
+    /// An 8-byte key is below the SHA-256 seeding threshold (16 bytes), so the output is `Unknown`
+    /// with no strength. The multi-key path must agree with the single-key one rather than erroring.
     #[test]
     fn test_derive_key_from_multiple_partial_entropy_matches_derive_key() {
         let key =
-            KeyMaterial128::from_bytes_as_type(&DUMMY_SEED[..16], KeyType::CryptographicRandom)
+            KeyMaterial128::from_bytes_as_type(&DUMMY_SEED[..8], KeyType::CryptographicRandom)
                 .unwrap();
         let single = HKDF_SHA256::new().derive_key(&key, b"info").unwrap();
         assert_eq!(single.key_type(), KeyType::Unknown);
