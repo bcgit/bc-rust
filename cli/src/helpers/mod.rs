@@ -18,7 +18,7 @@
 //!   an `Error:` line and exit status 255; a panic is never the answer to input.
 
 use bouncycastle::core::hazmat::do_hazardous_operations;
-use bouncycastle::core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
+use bouncycastle::core::key_material::{KeyMaterial, KeyMaterial512, KeyMaterialTrait, KeyType};
 use bouncycastle::core::security_strength::SecurityStrength;
 use bouncycastle::core::traits::{Hash, XOF, XOFSqueezer};
 use bouncycastle::hex;
@@ -237,6 +237,37 @@ pub(crate) fn load_secret(
 /// knows, by the length it expects, whether that byte is part of the value.
 pub(crate) fn strip_trailing_newline(bytes: &[u8]) -> &[u8] {
     bytes.strip_suffix(b"\r\n").or_else(|| bytes.strip_suffix(b"\n")).unwrap_or(bytes)
+}
+
+/// The MAC key from `--key-file` or `--key` (hex), tagged as a MAC key, for the BLAKE2 and
+/// BLAKE3 keyed commands.
+///
+/// A key outside `min_len..=max_len` bytes is refused here with a message naming the limit, rather
+/// than as an opaque error from the algorithm's constructor. An all-zero key comes back tagged
+/// [`KeyType::Zeroized`], which the BLAKE key objects accept.
+pub(crate) fn load_blake_mac_key(
+    key: &Option<String>,
+    key_file: &Option<String>,
+    alg_name: &str,
+    min_len: usize,
+    max_len: usize,
+) -> KeyMaterial512 {
+    let key_bytes = load_secret(key, key_file, "key");
+    let len = key_bytes.key_len();
+    if len < min_len || len > max_len {
+        if min_len == max_len {
+            eprintln!("Error: {alg_name} requires a {min_len}-byte key; got {len} bytes.");
+        } else {
+            eprintln!(
+                "Error: {alg_name} requires a key of {min_len} to {max_len} bytes; got {len} bytes."
+            );
+        }
+        exit(-1);
+    }
+
+    // infallible: the length is at most 64 (checked above, and no caller passes max_len > 64),
+    // which fits a KeyMaterial512, and MACKey is a valid type to load.
+    KeyMaterial512::from_bytes_as_type(key_bytes.ref_to_bytes(), KeyType::MACKey).unwrap()
 }
 
 // ---- stdin as data ---------------------------------------------------------------------------

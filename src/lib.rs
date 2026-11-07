@@ -2,6 +2,8 @@ pub use bouncycastle_aes as aes;
 pub use bouncycastle_aria as aria;
 pub use bouncycastle_ascon as ascon;
 pub use bouncycastle_base64 as base64;
+pub use bouncycastle_blake2 as blake2;
+pub use bouncycastle_blake3 as blake3;
 pub use bouncycastle_camellia as camellia;
 pub use bouncycastle_chacha20 as chacha20;
 pub use bouncycastle_chacha20_poly1305_aead as chacha20_poly1305_aead;
