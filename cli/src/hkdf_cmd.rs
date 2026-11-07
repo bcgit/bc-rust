@@ -3,7 +3,7 @@
 use std::process::exit;
 
 use crate::helpers::{
-    decode_hex_arg, load_secret, read_input_file, write_bytes_or_hex, write_stdout,
+    SecretBytes, decode_hex_arg, load_secret, read_input_file, write_bytes_or_hex, write_stdout,
 };
 use bouncycastle::core::hazmat::do_hazardous_operations;
 use bouncycastle::core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
@@ -35,13 +35,17 @@ pub(crate) fn hkdf_cmd(
     output_hex: bool,
 ) {
     // Each value may come from hex on the command line or from a file; the file wins if both
-    // are given, as the subcommands' help says.
-    let mut salt = load_secret(salt, salt_file, "salt");
+    // are given, as the subcommands' help says. RFC 5869 Section 2.2's salt is optional: absent
+    // (neither flag, or an empty value), HKDF uses a string of HashLen zeros.
+    let mut salt = match (salt_file, salt) {
+        (None, None) => SecretBytes::new(),
+        _ => load_secret(salt, salt_file, "salt"),
+    };
     // RFC 5869 Section 2.2's salt is "a non-secret random value", typed as such, which credits
     // no entropy; `--secret-salt` marks it as SP 800-56C Rev. 2 Section 5.1's secret salt, the
     // MACKey HKDF credits. The output bytes are the same either way, as the mlkem*-hkdf-*
-    // commands' salt is typed. An empty salt is the absent one, typed the same way so that it
-    // is not refused as Unknown.
+    // commands' salt is typed. The absent salt is typed the same way so that it is not refused
+    // as Unknown.
     let key_type = if secret_salt { KeyType::MACKey } else { KeyType::CryptographicRandom };
     do_hazardous_operations(&mut salt, |salt| salt.set_key_type(key_type)).unwrap_or_else(|e| {
         eprintln!("Error: couldn't load the salt: {e:?}");

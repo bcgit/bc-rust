@@ -11,6 +11,14 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 # ---- known answers ------------------------------------------------------------------------
 
+# RFC 5869 Section 2.2: the salt is optional, and no --salt is the same as an empty one.
+test_hkdf_sha256_salt_may_be_omitted() {
+    local with_empty without
+    with_empty=$(hex_out "$BC_RUST" hkdf-sha256 --salt "" --ikm 0b0b0b0b0b0b0b0b --len 32 -x)
+    without=$(hex_out "$BC_RUST" hkdf-sha256 --ikm 0b0b0b0b0b0b0b0b --len 32 -x)
+    assert_eq "$without" "$with_empty" "no --salt is the empty salt"
+}
+
 # `--secret-salt` changes the salt's entropy accounting, not the bytes: RFC 5869 A.1 again.
 test_hkdf_sha256_secret_salt_gives_the_same_okm() {
     local got

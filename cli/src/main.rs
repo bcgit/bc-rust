@@ -1701,8 +1701,9 @@ enum Subcommands {
     /// Note: in production uses, secrets should not be passed on the command-line because they get
     /// logged in shell history. Use the file-based input instead.
     HKDF_SHA256 {
-        /// The salt value in hex.
-        /// The `salt_file` option is preferred to avoid leaving key material in command history.
+        /// The salt value in hex (RFC 5869 Section 2.2). Optional: absent, HKDF uses a string of
+        /// HashLen zeros. The `salt_file` option is preferred to avoid leaving key material in
+        /// command history.
         #[arg(long)]
         salt: Option<String>,
 
@@ -1749,8 +1750,9 @@ enum Subcommands {
     /// Note: in production uses, secrets should not be passed on the command-line because they get
     /// logged in shell history. Use the file-based input instead.
     HKDF_SHA384 {
-        /// The salt value in hex.
-        /// The `salt_file` option is preferred to avoid leaving key material in command history.
+        /// The salt value in hex (RFC 5869 Section 2.2). Optional: absent, HKDF uses a string of
+        /// HashLen zeros. The `salt_file` option is preferred to avoid leaving key material in
+        /// command history.
         #[arg(long)]
         salt: Option<String>,
 
@@ -1797,8 +1799,9 @@ enum Subcommands {
     /// Note: in production uses, secrets should not be passed on the command-line because they get
     /// logged in shell history. Use the file-based input instead.
     HKDF_SHA512 {
-        /// The salt value in hex.
-        /// The `salt_file` option is preferred to avoid leaving key material in command history.
+        /// The salt value in hex (RFC 5869 Section 2.2). Optional: absent, HKDF uses a string of
+        /// HashLen zeros. The `salt_file` option is preferred to avoid leaving key material in
+        /// command history.
         #[arg(long)]
         salt: Option<String>,
 
@@ -1845,8 +1848,9 @@ enum Subcommands {
     /// Note: in production uses, secrets should not be passed on the command-line because they get
     /// logged in shell history. Use the file-based input instead.
     HKDF_SM3 {
-        /// The salt value in hex.
-        /// The `salt_file` option is preferred to avoid leaving key material in command history.
+        /// The salt value in hex (RFC 5869 Section 2.2). Optional: absent, HKDF uses a string of
+        /// HashLen zeros. The `salt_file` option is preferred to avoid leaving key material in
+        /// command history.
         #[arg(long)]
         salt: Option<String>,
 
