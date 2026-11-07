@@ -13,6 +13,7 @@ version = "0.1.4"
 bouncycastle = { path = "./" }
 bouncycastle-aes = { path = "./crypto/aes" }
 bouncycastle-camellia = { path = "./crypto/camellia" }
+bouncycastle-aria = { path = "./crypto/aria" }
 bouncycastle-ascon = { path = "./crypto/ascon" }
 bouncycastle-base64 = { path = "./crypto/base64" }
 bouncycastle-chacha20 = { path = "./crypto/chacha20" }
@@ -67,6 +68,7 @@ edition.workspace = true
 [dependencies]
 bouncycastle-aes.workspace = true
 bouncycastle-camellia.workspace = true
+bouncycastle-aria.workspace = true
 bouncycastle-ascon.workspace = true
 bouncycastle-base64.workspace = true
 bouncycastle-chacha20.workspace = true
