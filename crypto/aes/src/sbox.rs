@@ -36,7 +36,10 @@
 //!   same `t21`) and uses a different but equivalent bottom linear transformation; where they
 //!   disagree this file follows `SLP_AES_113.txt`.
 //!
-//! The gate list is a mechanical transcription of `SLP_AES_113.txt`: `+` became `^`, `x` became
+//! The non-linear section, the 62 gates between the two linear transformations, is
+//! [`bouncycastle_utils::bitslice::gf256_inverse_nonlinear`], shared with the ARIA, Camellia and
+//! SM4 S-boxes, which are built on the same inversion. The gate list is a mechanical
+//! transcription of `SLP_AES_113.txt`: `+` became `^`, `x` became
 //! `&`, `#` became `!(.. ^ ..)`, and the SLP variable names are unchanged apart from case. It is
 //! not independently meaningful line by line and should not be "tidied"; it is verified as a
 //! whole by the known-answer tests in `tests/` (FIPS 197 Appendix B, SP 800-38A F.1 and the ACVP
@@ -52,6 +55,7 @@
 //! -- reversing it produces a wrong S-box, not a subtly different one.
 
 use crate::bitslice::{PlaneWord, Planes};
+use bouncycastle_utils::bitslice::{InverseInputs, InverseOutputs, gf256_inverse_nonlinear};
 
 /// SUBBYTES(): applies the AES S-box to every byte position of every block in `q`
 /// (FIPS 197 Sec 5.1.1, the transformation tabulated in Table 4).
@@ -97,73 +101,51 @@ pub(crate) fn sbox<T: PlaneWord>(q: &mut Planes<T>) {
     let y21 = y13 ^ y16;
     let y18 = u0 ^ y16;
 
-    // Non-linear section (62 gates): the GF(2^8) inversion, and the only ANDs in the circuit.
-    let t2 = y12 & y15;
-    let t3 = y3 & y6;
-    let t4 = t3 ^ t2;
-    let t5 = y4 & u7;
-    let t6 = t5 ^ t2;
-    let t7 = y13 & y16;
-    let t8 = y5 & y1;
-    let t9 = t8 ^ t7;
-    let t10 = y2 & y7;
-    let t11 = t10 ^ t7;
-    let t12 = y9 & y11;
-    let t13 = y14 & y17;
-    let t14 = t13 ^ t12;
-    let t15 = y8 & y10;
-    let t16 = t15 ^ t12;
-    let t17 = t4 ^ y20;
-    let t18 = t6 ^ t16;
-    let t19 = t9 ^ t14;
-    let t20 = t11 ^ t16;
-    let t21 = t17 ^ t14;
-    let t22 = t18 ^ y19;
-    let t23 = t19 ^ y21;
-    let t24 = t20 ^ y18;
-    let t25 = t21 ^ t22;
-    let t26 = t21 & t23;
-    let t27 = t24 ^ t26;
-    let t28 = t25 & t27;
-    let t29 = t28 ^ t22;
-    let t30 = t23 ^ t24;
-    let t31 = t22 ^ t26;
-    let t32 = t31 & t30;
-    let t33 = t32 ^ t24;
-    let t34 = t23 ^ t33;
-    let t35 = t27 ^ t33;
-    let t36 = t24 & t35;
-    // `cargo mutants` reports the `^ -> |` mutant on the next line as surviving. That is a true
-    // equivalence, not a gap: `t36` and `t34` are never both 1 for any of the 256 possible input
-    // bytes, so XOR and OR agree here. It is the only one of the circuit's 77 XOR gates with that
-    // property -- every other `^ -> |` mutant is killed by the known-answer tests in `tests/`.
-    let t37 = t36 ^ t34;
-    let t38 = t27 ^ t36;
-    let t39 = t29 & t38;
-    let t40 = t25 ^ t39;
-    let t41 = t40 ^ t37;
-    let t42 = t29 ^ t33;
-    let t43 = t29 ^ t40;
-    let t44 = t33 ^ t37;
-    let t45 = t42 ^ t41;
-    let z0 = t44 & y15;
-    let z1 = t37 & y6;
-    let z2 = t33 & u7;
-    let z3 = t43 & y16;
-    let z4 = t40 & y1;
-    let z5 = t29 & y7;
-    let z6 = t42 & y11;
-    let z7 = t45 & y17;
-    let z8 = t41 & y10;
-    let z9 = t44 & y12;
-    let z10 = t37 & y3;
-    let z11 = t33 & y4;
-    let z12 = t43 & y13;
-    let z13 = t40 & y5;
-    let z14 = t29 & y2;
-    let z15 = t42 & y9;
-    let z16 = t45 & y14;
-    let z17 = t41 & y8;
+    // Non-linear section (62 gates): the GF(2^8) inversion in the tower-field basis, shared with
+    // the other bit-sliced ciphers in `bouncycastle_utils::bitslice`.
+    let InverseOutputs {
+        z0,
+        z1,
+        z2,
+        z3,
+        z4,
+        z5,
+        z6,
+        z7,
+        z8,
+        z9,
+        z10,
+        z11,
+        z12,
+        z13,
+        z14,
+        z15,
+        z16,
+        z17,
+    } = gf256_inverse_nonlinear(InverseInputs {
+        u7,
+        y1,
+        y2,
+        y3,
+        y4,
+        y5,
+        y6,
+        y7,
+        y8,
+        y9,
+        y10,
+        y11,
+        y12,
+        y13,
+        y14,
+        y15,
+        y16,
+        y17,
+        y18,
+        y19,
+        y20,
+        y21,
+    });
 
     // Bottom linear transformation (28 gates): the output basis change and the affine map of
     // Eq. 5.2, whose `{63}` constant is the four XNORs below.
@@ -222,7 +204,7 @@ pub(crate) fn sbox<T: PlaneWord>(q: &mut Planes<T>) {
 /// `iS(S(y)) = B(A(I(B(A(I(y)) ^ {63} ^ {63})))  ^ {63} ^ {63}) = y`.
 ///
 /// So applying [`inv_affine`], then the forward circuit, then [`inv_affine`] again yields the
-/// inverse S-box, at the cost of 16 extra XORs and 8 complements instead of a whole second
+/// inverse S-box, at the cost of 32 extra XORs and 8 complements instead of a whole second
 /// circuit. Verified against Table 6 by the decryption known-answer tests in `tests/`
 /// (SP 800-38A F.1.2/4/6 and the ACVP decrypt vectors), and against [`sbox`] by the ECB
 /// conformance suite's inverse checks.

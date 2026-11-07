@@ -41,7 +41,7 @@ use bouncycastle_ascon::ASCON_XOF128_NAME;
 use bouncycastle_ascon::AsconXof128;
 use bouncycastle_core::errors::HashError;
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::traits::{Algorithm, Hash, XOF, XOFSqueezer};
+use bouncycastle_core::traits::{AlgorithmInfo, Hash, XOF, XOFSqueezer};
 use bouncycastle_sha3 as sha3;
 use bouncycastle_sha3::{SHAKE128_NAME, SHAKE256_NAME};
 
@@ -94,13 +94,22 @@ impl AlgorithmFactory for XOFFactory {
     }
 }
 
-/// `Hash` requires it, and the factory does not know which algorithm it holds until it is
-/// constructed, so the constants are placeholders -- the same stance `HashFactory` takes. The
-/// per-value answers come from [`Hash::output_len`] and [`Hash::max_security_strength`], which
-/// dispatch on the variant.
-impl Algorithm for XOFFactory {
-    const ALG_NAME: &'static str = "TODO";
-    const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::None;
+impl AlgorithmInfo for XOFFactory {
+    fn alg_name(&self) -> &'static str {
+        match self {
+            Self::SHAKE128(h) => h.alg_name(),
+            Self::SHAKE256(h) => h.alg_name(),
+            Self::AsconXof128(h) => h.alg_name(),
+        }
+    }
+
+    fn max_security_strength(&self) -> SecurityStrength {
+        match self {
+            Self::SHAKE128(h) => h.max_security_strength(),
+            Self::SHAKE256(h) => h.max_security_strength(),
+            Self::AsconXof128(h) => h.max_security_strength(),
+        }
+    }
 }
 
 /// The squeezing phase of whichever XOF the factory selected.
@@ -153,22 +162,6 @@ impl Hash for XOFFactory {
         }
     }
 
-    fn hash(self, data: &[u8]) -> Vec<u8> {
-        match self {
-            Self::SHAKE128(h) => h.hash(data),
-            Self::SHAKE256(h) => h.hash(data),
-            Self::AsconXof128(h) => h.hash(data),
-        }
-    }
-
-    fn hash_out(self, data: &[u8], output: &mut [u8]) -> usize {
-        match self {
-            Self::SHAKE128(h) => h.hash_out(data, output),
-            Self::SHAKE256(h) => h.hash_out(data, output),
-            Self::AsconXof128(h) => h.hash_out(data, output),
-        }
-    }
-
     fn do_update(&mut self, data: &[u8]) {
         match self {
             Self::SHAKE128(h) => h.do_update(data),
@@ -215,14 +208,6 @@ impl Hash for XOFFactory {
             Self::SHAKE128(h) => h.do_final_partial_bits_out(partial_byte, num_bits, output),
             Self::SHAKE256(h) => h.do_final_partial_bits_out(partial_byte, num_bits, output),
             Self::AsconXof128(h) => h.do_final_partial_bits_out(partial_byte, num_bits, output),
-        }
-    }
-
-    fn max_security_strength(&self) -> SecurityStrength {
-        match self {
-            Self::SHAKE128(h) => Hash::max_security_strength(h),
-            Self::SHAKE256(h) => Hash::max_security_strength(h),
-            Self::AsconXof128(h) => Hash::max_security_strength(h),
         }
     }
 }
@@ -272,5 +257,21 @@ impl XOF for XOFFactory {
             Self::SHAKE256(h) => h.xof_out(data, output),
             Self::AsconXof128(h) => h.xof_out(data, output),
         }
+    }
+}
+
+impl XOFFactory {
+    /// One-shot: hashes `data` with this instance's parameters.
+    /// [`HashOneShot`](bouncycastle_core::traits::HashOneShot) is for the hashes
+    /// that take none; here the parameters come with the instance, so the one-shot is a method.
+    pub fn hash(mut self, data: &[u8]) -> Vec<u8> {
+        self.do_update(data);
+        self.do_final()
+    }
+
+    /// As [`Self::hash`], into `output`, which is zeroized first; returns the bytes written.
+    pub fn hash_out(mut self, data: &[u8], output: &mut [u8]) -> usize {
+        self.do_update(data);
+        self.do_final_out(output)
     }
 }

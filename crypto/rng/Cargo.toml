@@ -13,6 +13,7 @@ getrandom = "0.4.0-rc.1"
 
 [dev-dependencies]
 bouncycastle-core-test-framework.workspace = true
+bouncycastle-hex.workspace = true
 criterion.workspace = true
 
 [[bench]]

@@ -16,7 +16,7 @@
 //!    for the next COUNT. 100 counts per file. (This differs from the SHA-3 Monte test, which hashes
 //!    only the previous digest.)
 
-use bouncycastle_core::traits::Hash;
+use bouncycastle_core::traits::HashOneShot;
 use bouncycastle_core_test_framework::test_data_loaders::bc_test_data;
 use bouncycastle_hex as hex;
 use bouncycastle_sha2::{SHA224, SHA256, SHA384, SHA512, SHA512_224, SHA512_256};
@@ -54,12 +54,12 @@ fn parse_msg_file(content: &str) -> Vec<MsgCase> {
 }
 
 /// Hashes the first `len_bits` bits of `msg` (CAVP MSB-first packing, as the API takes it) with `H`.
-fn hash_bits<H: Hash + Default>(msg: &[u8], len_bits: usize) -> Vec<u8> {
+fn hash_bits<H: HashOneShot>(msg: &[u8], len_bits: usize) -> Vec<u8> {
     let whole_bytes = len_bits / 8;
     let partial_bits = len_bits % 8;
     if partial_bits == 0 {
         // Note: CAVP writes `Msg = 00` for Len = 0, so always slice rather than using msg directly.
-        H::default().hash(&msg[..whole_bytes])
+        H::hash(&msg[..whole_bytes])
     } else {
         let mut h = H::default();
         h.do_update(&msg[..whole_bytes]);
@@ -68,7 +68,7 @@ fn hash_bits<H: Hash + Default>(msg: &[u8], len_bits: usize) -> Vec<u8> {
     }
 }
 
-fn run_msg_file<H: Hash + Default>(orientation: &str, filename: &str) {
+fn run_msg_file<H: HashOneShot>(orientation: &str, filename: &str) {
     let Some(content) = bc_test_data(&format!("crypto/sha2/{orientation}"), filename) else {
         return;
     };
@@ -126,7 +126,7 @@ fn parse_monte_file(content: &str) -> MonteFile {
 }
 
 /// SHAVS s. 6.4 Monte Carlo test.
-fn run_monte_file<H: Hash + Default>(orientation: &str, filename: &str) {
+fn run_monte_file<H: HashOneShot>(orientation: &str, filename: &str) {
     let Some(content) = bc_test_data(&format!("crypto/sha2/{orientation}"), filename) else {
         return;
     };
@@ -141,7 +141,7 @@ fn run_monte_file<H: Hash + Default>(orientation: &str, filename: &str) {
             m.extend_from_slice(&md[0]);
             m.extend_from_slice(&md[1]);
             m.extend_from_slice(&md[2]);
-            let next = H::default().hash(&m);
+            let next = H::hash(&m);
             md.rotate_left(1);
             md[2] = next;
         }

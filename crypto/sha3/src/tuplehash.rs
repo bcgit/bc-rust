@@ -14,10 +14,10 @@
 //!
 //! // .hash_tuple() takes tuples as an array of arrays
 //! let tuple: [&[u8]; 2] = [b"user id", b"session"];
-//! let output: Vec<u8> = TupleHash128::new(b"", 32).hash_tuple(&tuple);
+//! let output: Vec<u8> = TupleHash128::new(b"", 32).unwrap().hash_tuple(&tuple);
 //!
 //! // The same computation, one element per .do_update()
-//! let mut th = TupleHash128::new(b"", 32);
+//! let mut th = TupleHash128::new(b"", 32).unwrap();
 //! th.do_update(b"user id");
 //! th.do_update(b"session");
 //! assert_eq!(th.do_final(), output);
@@ -32,7 +32,7 @@
 //!
 //! See [`TupleHashXOF128`] for detail.
 //!
-//! Example of `KMACXOF128`:
+//! Example of `TupleHashXOF128`:
 //!```
 //! use bouncycastle_core::traits::{Hash, XOF, XOFSqueezer};
 //! use bouncycastle_sha3::tuplehash::{TupleHash128, TupleHashXOF128};
@@ -44,7 +44,7 @@
 //! let more: Vec<u8> = squeezer.do_output(1024);
 //!
 //! let bound: Vec<u8> = TupleHashXOF128::new(b"").xof(b"Hello, world!", 32);
-//! assert_eq!(bound, TupleHash128::new(b"", 32).hash(b"Hello, world!"));
+//! assert_eq!(bound, TupleHash128::new(b"", 32).unwrap().hash(b"Hello, world!"));
 //! assert_ne!(bound[..16], first[..]);
 //! ```
 
@@ -76,6 +76,13 @@ pub const SUSPENDED_TUPLEHASHXOF_STATE_LEN: usize = LIB_VERSION_LEN + CSHAKE_COM
 
 /// The function-name string every TupleHash binds, per SP 800-185 Sec 5.3.
 const TUPLEHASH_FUNCTION_NAME: &[u8] = b"TupleHash";
+
+/// The largest `output_len` [`TupleHashInternal::new`] accepts, and the bound a resumed state is
+/// held to: the largest `L` in bits that fits the `u64` the final `right_encode(L)` (Sec 5.3.1
+/// step 3) and the suspended state carry. SP 800-185 Sec 5.3.1 allows any `L < 2^2040`, and Sec
+/// 7.2 lets an implementation limit the lengths it produces; past this one the bit count would
+/// wrap and the fixed-length function would silently become the XOF.
+pub const TUPLEHASH_MAX_OUTPUT_LEN: usize = (u64::MAX / 8) as usize;
 
 /// TupleHash128: the unambiguous tuple hash of NIST SP 800-185 Sec 5, 128-bit strength.
 ///
@@ -127,8 +134,16 @@ impl<PARAMS: SHAKEParams> TupleHashInternal<PARAMS> {
     ///
     /// `output_len` is `L` and is bound into the computation (Sec 5.3 step 4), so a different
     /// length is a different function rather than a longer or shorter view of the same one.
-    pub fn new(customization: &[u8], output_len: usize) -> Self {
-        Self { cshake: CSHAKEInternal::new(TUPLEHASH_FUNCTION_NAME, customization), output_len }
+    ///
+    /// # Errors
+    /// [`HashError::InvalidLength`] if `output_len` is above [`TUPLEHASH_MAX_OUTPUT_LEN`].
+    pub fn new(customization: &[u8], output_len: usize) -> Result<Self, HashError> {
+        if output_len > TUPLEHASH_MAX_OUTPUT_LEN {
+            return Err(HashError::InvalidLength(
+                "TupleHash output length in bits does not fit a u64",
+            ));
+        }
+        Ok(Self { cshake: CSHAKEInternal::new(TUPLEHASH_FUNCTION_NAME, customization), output_len })
     }
 
     /// Hashes a whole tuple in one call, the shape the specification is written in.
@@ -140,7 +155,7 @@ impl<PARAMS: SHAKEParams> TupleHashInternal<PARAMS> {
     }
 }
 
-impl<PARAMS: SHAKEParams> SuspendableComponent for TupleHashInternal<PARAMS> {
+impl<'k, PARAMS: SHAKEParams> SuspendableComponent<'k> for TupleHashInternal<PARAMS> {
     const STATE_LEN: usize = CSHAKE_COMPONENT_LEN + 8;
     type Key = ();
 
@@ -152,11 +167,11 @@ impl<PARAMS: SHAKEParams> SuspendableComponent for TupleHashInternal<PARAMS> {
         debug_assert!(w.is_done());
     }
 
-    fn read_state(state: &[u8], _key: &()) -> Result<Self, SuspendableError> {
+    fn read_state(state: &[u8], _key: &'k ()) -> Result<Self, SuspendableError> {
         let (cshake, rest) = state.split_at(CSHAKE_COMPONENT_LEN);
         let cshake = CSHAKEInternal::read_tagged_customized(cshake, PARAMS::TUPLEHASH_STATE_TAG)?;
         let mut r = Cursor::new(rest);
-        let output_len = bounded_usize(r.u64(), usize::MAX)?;
+        let output_len = bounded_usize(r.u64(), TUPLEHASH_MAX_OUTPUT_LEN)?;
         debug_assert!(r.is_done());
         Ok(Self { cshake, output_len })
     }
@@ -182,18 +197,6 @@ impl<PARAMS: SHAKEParams> Hash for TupleHashInternal<PARAMS> {
 
     fn output_len(&self) -> usize {
         self.output_len
-    }
-
-    /// Hashes `data` as a one-element tuple. For more than one element use
-    /// [`Self::hash_tuple`] or successive [`Hash::do_update`] calls.
-    fn hash(mut self, data: &[u8]) -> Vec<u8> {
-        self.do_update(data);
-        self.do_final()
-    }
-
-    fn hash_out(mut self, data: &[u8], output: &mut [u8]) -> usize {
-        self.do_update(data);
-        self.do_final_out(output)
     }
 
     /// Appends **one tuple element**. See the note on the type: this is not byte-wise streaming.
@@ -247,10 +250,6 @@ impl<PARAMS: SHAKEParams> Hash for TupleHashInternal<PARAMS> {
         }
         Ok(self.do_final_out(output))
     }
-
-    fn max_security_strength(&self) -> SecurityStrength {
-        SecurityStrength::from_bits(PARAMS::SIZE as usize)
-    }
 }
 
 /// Internal struct for TupleHashXOF. Use [`TupleHashXOF128`] or [`TupleHashXOF256`].
@@ -263,9 +262,9 @@ impl<PARAMS: SHAKEParams> Hash for TupleHashInternal<PARAMS> {
 ///
 /// A *final* read binds it, because a caller that names a length and will not be back has said
 /// what `L` is: [`XOFSqueezer::do_output_final`] and [`XOF::xof`] produce the fixed-length
-/// TupleHash of Sec 5.3 (see [`CSHAKESqueezer`]), and the [`Hash`] view -- [`Hash::do_final`],
-/// [`Hash::hash`] and [`Hash::hash_out`] -- does the same at the nominal [`Hash::output_len`],
-/// since a hash's output length is fixed by its type.
+/// TupleHash of Sec 5.3 (see [`CSHAKESqueezer`]), and the [`Hash`] view -- [`Hash::do_final`]
+/// and the inherent [`hash`](Self::hash) and [`hash_out`](Self::hash_out) -- does the same at the
+/// nominal [`Hash::output_len`], since a hash's output length is fixed by its type.
 ///
 /// [`Hash::do_update`] appends one tuple element, exactly as for [`TupleHashInternal`].
 #[derive(Clone)]
@@ -293,7 +292,7 @@ impl<PARAMS: SHAKEParams> TupleHashXOFInternal<PARAMS> {
     }
 }
 
-impl<PARAMS: SHAKEParams> SuspendableComponent for TupleHashXOFInternal<PARAMS> {
+impl<'k, PARAMS: SHAKEParams> SuspendableComponent<'k> for TupleHashXOFInternal<PARAMS> {
     const STATE_LEN: usize = CSHAKE_COMPONENT_LEN;
     type Key = ();
 
@@ -301,13 +300,13 @@ impl<PARAMS: SHAKEParams> SuspendableComponent for TupleHashXOFInternal<PARAMS> 
         self.cshake.write_tagged(PARAMS::TUPLEHASHXOF_STATE_TAG, out)
     }
 
-    fn read_state(state: &[u8], _key: &()) -> Result<Self, SuspendableError> {
+    fn read_state(state: &[u8], _key: &'k ()) -> Result<Self, SuspendableError> {
         let cshake = CSHAKEInternal::read_tagged_customized(state, PARAMS::TUPLEHASHXOF_STATE_TAG)?;
         Ok(Self { cshake })
     }
 }
 
-// The absorbing phase, always between elements; the squeezing half is a LengthBoundSqueezer.
+// The absorbing phase, always between elements; the squeezing half is a CSHAKESqueezer.
 impl<PARAMS: SHAKEParams> Suspendable<SUSPENDED_TUPLEHASHXOF_STATE_LEN>
     for TupleHashXOFInternal<PARAMS>
 {
@@ -332,16 +331,6 @@ impl<PARAMS: SHAKEParams> Hash for TupleHashXOFInternal<PARAMS> {
     /// see [`TupleHashXOFInternal`].
     fn output_len(&self) -> usize {
         self.cshake.output_len()
-    }
-
-    fn hash(mut self, data: &[u8]) -> Vec<u8> {
-        self.do_update(data);
-        self.do_final()
-    }
-
-    fn hash_out(mut self, data: &[u8], output: &mut [u8]) -> usize {
-        self.do_update(data);
-        self.do_final_out(output)
     }
 
     /// Appends **one tuple element**.
@@ -392,17 +381,13 @@ impl<PARAMS: SHAKEParams> Hash for TupleHashXOFInternal<PARAMS> {
         }
         Ok(self.do_final_out(output))
     }
-
-    fn max_security_strength(&self) -> SecurityStrength {
-        SecurityStrength::from_bits(PARAMS::SIZE as usize)
-    }
 }
 
 impl<PARAMS: SHAKEParams> XOF for TupleHashXOFInternal<PARAMS> {
     type Squeezer = CSHAKESqueezer<PARAMS>;
 
     // The `right_encode` of Sec 5.3.1 step 4 is not absorbed here: whether it carries 0 or the
-    // length of a final read is LengthBoundSqueezer's decision.
+    // length of a final read is CSHAKESqueezer's decision.
     fn into_squeezer(self) -> Self::Squeezer {
         CSHAKESqueezer::new(self.cshake)
     }
@@ -418,5 +403,37 @@ impl<PARAMS: SHAKEParams> XOF for TupleHashXOFInternal<PARAMS> {
             ));
         }
         Ok(self.into_squeezer())
+    }
+}
+
+impl<PARAMS: SHAKEParams> TupleHashInternal<PARAMS> {
+    /// One-shot: hashes `data` with this instance's parameters.
+    /// [`HashOneShot`](bouncycastle_core::traits::HashOneShot) is for the hashes
+    /// that take none; here the parameters come with the instance, so the one-shot is a method.
+    pub fn hash(mut self, data: &[u8]) -> Vec<u8> {
+        self.do_update(data);
+        self.do_final()
+    }
+
+    /// As [`Self::hash`], into `output`, which is zeroized first; returns the bytes written.
+    pub fn hash_out(mut self, data: &[u8], output: &mut [u8]) -> usize {
+        self.do_update(data);
+        self.do_final_out(output)
+    }
+}
+
+impl<PARAMS: SHAKEParams> TupleHashXOFInternal<PARAMS> {
+    /// One-shot: hashes `data` with this instance's parameters.
+    /// [`HashOneShot`](bouncycastle_core::traits::HashOneShot) is for the hashes
+    /// that take none; here the parameters come with the instance, so the one-shot is a method.
+    pub fn hash(mut self, data: &[u8]) -> Vec<u8> {
+        self.do_update(data);
+        self.do_final()
+    }
+
+    /// As [`Self::hash`], into `output`, which is zeroized first; returns the bytes written.
+    pub fn hash_out(mut self, data: &[u8], output: &mut [u8]) -> usize {
+        self.do_update(data);
+        self.do_final_out(output)
     }
 }

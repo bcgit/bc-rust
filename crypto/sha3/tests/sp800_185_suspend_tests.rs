@@ -7,14 +7,20 @@
 
 use bouncycastle_core::errors::SuspendableError;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
+use bouncycastle_core::symmetric_key::{FromAnyKeyMaterial, MacGenerationKey};
 use bouncycastle_core::traits::{Hash, MAC, Suspendable, XOF, XOFSqueezer};
 use bouncycastle_core_test_framework::suspendable_state::TestFrameworkSuspendableState;
 use bouncycastle_sha3::kmac::*;
 use bouncycastle_sha3::parallelhash::*;
 use bouncycastle_sha3::tuplehash::*;
 use bouncycastle_sha3::*;
+use core::num::NonZeroUsize;
 
 const PART1: &[u8] = b"Colorless green ideas";
+
+fn nz(n: usize) -> NonZeroUsize {
+    NonZeroUsize::new(n).unwrap()
+}
 const PART2: &[u8] = b" sleep furiously";
 
 const SQUEEZING_FLAG: usize = 3 + 1 + 400;
@@ -92,10 +98,10 @@ fn kmac_round_trips() {
         resumed.do_update(PART2);
         assert!(resumed.do_verify_final(&expected));
     }
-    mac_round_trip(|| KMAC128::new(&key()).unwrap());
-    mac_round_trip(|| KMAC256::new(&key()).unwrap());
+    mac_round_trip(|| KMAC128Key::from_key_material(&key()).unwrap().create_generator());
+    mac_round_trip(|| KMAC256Key::from_key_material(&key()).unwrap().create_generator());
     mac_round_trip(|| {
-        KMAC128::new_with_params(&key(), b"My Tagged Application", 16, false).unwrap()
+        KMAC128Key::with_params(&key(), b"My Tagged Application", 16).unwrap().create_generator()
     });
 }
 
@@ -109,8 +115,8 @@ fn kmacxof_round_trips() {
 
 #[test]
 fn tuplehash_round_trips() {
-    hash_round_trip(|| TupleHash128::new(b"", 32));
-    hash_round_trip(|| TupleHash256::new(b"My Tuple App", 48));
+    hash_round_trip(|| TupleHash128::new(b"", 32).unwrap());
+    hash_round_trip(|| TupleHash256::new(b"My Tuple App", 48).unwrap());
     hash_round_trip(|| TupleHashXOF128::new(b""));
     hash_round_trip(|| TupleHashXOF256::new(b"My Tuple App"));
     squeezer_round_trip(|| TupleHashXOF128::new(b""));
@@ -121,9 +127,9 @@ fn tuplehash_round_trips() {
 fn parallelhash_round_trips() {
     // PART1 is 21 bytes: a block size of 8 suspends five bytes into a block, 7 suspends exactly
     // on a block boundary, and 64 suspends before the first block completes.
-    for block_size in [8usize, 7, 64] {
-        hash_round_trip(|| ParallelHash128::new(block_size, b"", 32));
-        hash_round_trip(|| ParallelHash256::new(block_size, b"Parallel Data", 64));
+    for block_size in [nz(8), nz(7), nz(64)] {
+        hash_round_trip(|| ParallelHash128::new(block_size, b"", 32).unwrap());
+        hash_round_trip(|| ParallelHash256::new(block_size, b"Parallel Data", 64).unwrap());
         hash_round_trip(|| ParallelHashXOF128::new(block_size, b""));
         hash_round_trip(|| ParallelHashXOF256::new(block_size, b"Parallel Data"));
         squeezer_round_trip(|| ParallelHashXOF128::new(block_size, b""));
@@ -156,18 +162,20 @@ fn each_type_rejects_the_others() {
     rejected::<_, KMACXOF128>(squeezer.clone().suspend(), "an unbound squeezer in KMACXOF128");
     rejected::<_, CSHAKE128>(squeezer.suspend(), "an unbound squeezer in cSHAKE128");
 
-    let mut k = KMAC128::new(&key()).unwrap();
+    let k_key = KMAC128Key::from_key_material(&key()).unwrap();
+
+    let mut k = k_key.create_generator();
     k.do_update(PART1);
     rejected::<_, TupleHash128>(k.clone().suspend(), "a KMAC128 state in TupleHash128");
     rejected::<_, KMAC256>(k.suspend(), "a KMAC128 state in KMAC256");
-    let mut t = TupleHash128::new(b"", 32);
+    let mut t = TupleHash128::new(b"", 32).unwrap();
     t.do_update(PART1);
     rejected::<_, KMAC128>(t.suspend(), "a TupleHash128 state in KMAC128");
 
-    let mut p = ParallelHash128::new(8, b"", 32);
+    let mut p = ParallelHash128::new(nz(8), b"", 32).unwrap();
     p.do_update(PART1);
     rejected::<_, ParallelHash256>(p.suspend(), "a ParallelHash128 state in ParallelHash256");
-    let mut p = ParallelHashXOF128::new(8, b"");
+    let mut p = ParallelHashXOF128::new(nz(8), b"");
     p.do_update(PART1);
     rejected::<_, ParallelHashXOF256>(p.suspend(), "a ParallelHashXOF128 state in 256");
 }
@@ -191,11 +199,31 @@ fn corrupt_fields_are_rejected() {
     bad[SQUEEZING_FLAG] = 1;
     rejected::<_, CSHAKE128>(bad, "a squeezing sponge in an absorbing cSHAKE");
 
-    let mut k = KMAC128::new(&key()).unwrap();
+    let k_key = KMAC128Key::from_key_material(&key()).unwrap();
+
+    let mut k = k_key.create_generator();
     k.do_update(PART1);
-    let mut bad = k.suspend();
+    let good = k.suspend();
+    let mut bad = good;
     bad[CUSTOMIZED] = 0;
     rejected::<_, KMAC128>(bad, "a KMAC claiming an empty function name");
+    // The output length is the trailing u64, bounded as `with_params` bounds it.
+    let output_len = good.len() - 8;
+    let mut bad = good;
+    bad[output_len..].copy_from_slice(&0u64.to_le_bytes());
+    rejected::<_, KMAC128>(bad, "a KMAC claiming a zero output length");
+    let mut bad = good;
+    bad[output_len..].copy_from_slice(&3u64.to_le_bytes());
+    rejected::<_, KMAC128>(bad, "a KMAC claiming an output length below the 32-bit floor");
+    let mut bad = good;
+    bad[output_len..].copy_from_slice(&(u64::MAX / 4).to_le_bytes());
+    rejected::<_, KMAC128>(bad, "a KMAC whose output length in bits overflows a u64");
+    let mut edge = good;
+    edge[output_len..].copy_from_slice(&(KMAC_MIN_OUTPUT_LEN as u64).to_le_bytes());
+    assert!(KMAC128::from_suspended(edge).is_ok(), "the floor itself is a valid output length");
+    let mut edge = good;
+    edge[output_len..].copy_from_slice(&(KMAC_MAX_OUTPUT_LEN as u64).to_le_bytes());
+    assert!(KMAC128::from_suspended(edge).is_ok(), "the cap itself is a valid output length");
 
     let mut k = KMACXOF128::new(&key(), b"", false).unwrap();
     k.do_update(PART1);
@@ -207,7 +235,7 @@ fn corrupt_fields_are_rejected() {
     const INNER_SQUEEZING_FLAG: usize = 416 + 1 + 400;
     const BLOCK_SIZE: usize = 416 + 412;
     const BLOCK_FILL: usize = BLOCK_SIZE + 8;
-    let mut p = ParallelHash128::new(8, b"", 32);
+    let mut p = ParallelHash128::new(nz(8), b"", 32).unwrap();
     p.do_update(PART1);
     let good = p.suspend();
     assert_eq!(&good[BLOCK_SIZE..BLOCK_SIZE + 8], &8u64.to_le_bytes(), "layout check");
@@ -224,6 +252,43 @@ fn corrupt_fields_are_rejected() {
     let mut bad = good;
     bad[CUSTOMIZED] = 0;
     rejected::<_, ParallelHash128>(bad, "a ParallelHash claiming an empty function name");
+    // The output length is the trailing u64, bounded as `new` bounds it.
+    let output_len = good.len() - 8;
+    let mut bad = good;
+    bad[output_len..].copy_from_slice(&u64::MAX.to_le_bytes());
+    rejected::<_, ParallelHash128>(
+        bad,
+        "a ParallelHash whose output length in bits overflows a u64",
+    );
+    let mut bad = good;
+    bad[output_len..].copy_from_slice(&(PARALLELHASH_MAX_OUTPUT_LEN as u64 + 1).to_le_bytes());
+    rejected::<_, ParallelHash128>(bad, "a ParallelHash output length one above the cap");
+    let mut edge = good;
+    edge[output_len..].copy_from_slice(&(PARALLELHASH_MAX_OUTPUT_LEN as u64).to_le_bytes());
+    assert!(ParallelHash128::from_suspended(edge).is_ok(), "the cap itself resumes");
+    // The block count may carry any value: the largest resumes, and a further block saturates
+    // the count rather than overflowing it.
+    const BLOCKS: usize = BLOCK_FILL + 8;
+    let mut maxed = good;
+    maxed[BLOCKS..BLOCKS + 8].copy_from_slice(&u64::MAX.to_le_bytes());
+    let mut p = ParallelHash128::from_suspended(maxed).expect("any block count resumes");
+    p.do_update(&[0u8; 16]);
+    assert_eq!(p.do_final().len(), 32);
+
+    // TupleHash: cSHAKE 3..416, then output_len, bounded as `new` bounds it.
+    let mut t = TupleHash128::new(b"", 32).unwrap();
+    t.do_update(PART1);
+    let good = t.suspend();
+    let output_len = good.len() - 8;
+    let mut bad = good;
+    bad[output_len..].copy_from_slice(&u64::MAX.to_le_bytes());
+    rejected::<_, TupleHash128>(bad, "a TupleHash whose output length in bits overflows a u64");
+    let mut bad = good;
+    bad[output_len..].copy_from_slice(&(TUPLEHASH_MAX_OUTPUT_LEN as u64 + 1).to_le_bytes());
+    rejected::<_, TupleHash128>(bad, "a TupleHash output length one above the cap");
+    let mut edge = good;
+    edge[output_len..].copy_from_slice(&(TUPLEHASH_MAX_OUTPUT_LEN as u64).to_le_bytes());
+    assert!(TupleHash128::from_suspended(edge).is_ok(), "the cap itself resumes");
 }
 
 /// Every type in the crate writes a different variant tag, so no state can be misread as
@@ -241,20 +306,20 @@ fn state_tags_are_distinct() {
         tag(SHAKE128::new()),
         tag(SHAKE256::new()),
         tag(CSHAKE128::new(b"", b"S")),
-        tag(KMAC128::new(&key()).unwrap()),
+        tag(KMAC128Key::from_key_material(&key()).unwrap().create_generator()),
         tag(KMACXOF128::new(&key(), b"", false).unwrap()),
-        tag(TupleHash128::new(b"", 32)),
+        tag(TupleHash128::new(b"", 32).unwrap()),
         tag(TupleHashXOF128::new(b"")),
-        tag(ParallelHash128::new(8, b"", 32)),
-        tag(ParallelHashXOF128::new(8, b"")),
+        tag(ParallelHash128::new(nz(8), b"", 32).unwrap()),
+        tag(ParallelHashXOF128::new(nz(8), b"")),
         tag(TupleHashXOF128::new(b"").into_squeezer()),
         tag(CSHAKE256::new(b"", b"S")),
-        tag(KMAC256::new(&key()).unwrap()),
+        tag(KMAC256Key::from_key_material(&key()).unwrap().create_generator()),
         tag(KMACXOF256::new(&key(), b"", false).unwrap()),
-        tag(TupleHash256::new(b"", 32)),
+        tag(TupleHash256::new(b"", 32).unwrap()),
         tag(TupleHashXOF256::new(b"")),
-        tag(ParallelHash256::new(8, b"", 32)),
-        tag(ParallelHashXOF256::new(8, b"")),
+        tag(ParallelHash256::new(nz(8), b"", 32).unwrap()),
+        tag(ParallelHashXOF256::new(nz(8), b"")),
         tag(TupleHashXOF256::new(b"").into_squeezer()),
     ];
     let n = tags.len();
@@ -266,7 +331,7 @@ fn state_tags_are_distinct() {
 #[test]
 fn pin_state_lengths() {
     assert_eq!(SUSPENDED_CSHAKE_STATE_LEN, 416, "3 (version) + 412 (family) + 1 (customized)");
-    assert_eq!(SUSPENDED_LENGTH_BOUND_SQUEEZER_STATE_LEN, 416);
+    assert_eq!(SUSPENDED_CSHAKE_SQUEEZER_STATE_LEN, 416);
     assert_eq!(SUSPENDED_KMACXOF_STATE_LEN, 416);
     assert_eq!(SUSPENDED_TUPLEHASHXOF_STATE_LEN, 416);
     assert_eq!(SUSPENDED_KMAC_STATE_LEN, 424, "416 + 8 (output length)");

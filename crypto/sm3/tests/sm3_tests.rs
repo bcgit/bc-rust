@@ -2,7 +2,9 @@
 mod sm3_tests {
     use bouncycastle_core::errors::{HashError, SuspendableError};
     use bouncycastle_core::security_strength::SecurityStrength;
-    use bouncycastle_core::traits::{Algorithm, AlgorithmOID, Hash, HashAlgParams};
+    use bouncycastle_core::traits::{
+        Algorithm, AlgorithmInfo, AlgorithmOID, Hash, HashAlgParams, HashOneShot,
+    };
     use bouncycastle_core_test_framework::DUMMY_SEED;
     use bouncycastle_core_test_framework::hash::TestFrameworkHash;
     use bouncycastle_hex as hex;
@@ -65,7 +67,7 @@ mod sm3_tests {
             "7C0240F88F1CD4E16352A73C17B7F16F07353E53A176D684A9FE0C6BB798E857",
         ));
         assert_eq!(
-            SM3::new().hash(&msg),
+            SM3::hash(&msg),
             h("f4a38489e32b45b6f876e3ac2168ca392362dc8f23459c1d1146fc3dbfb7bc9a")
         );
     }
@@ -85,7 +87,7 @@ mod sm3_tests {
             (119, "8f3ea392a89a7119982d6634660db1a95f35d68267a2235e3255998a857f4fbf"),
             (128, "a9e7985473ca09df1510d83b572f72375430756c4a661b00724afeb8b75dd0a5"),
         ] {
-            assert_eq!(SM3::new().hash(&DUMMY_SEED[..len]), h(expected), "len={len}");
+            assert_eq!(SM3::hash(&DUMMY_SEED[..len]), h(expected), "len={len}");
 
             // and the same via byte-at-a-time streaming, which exercises every x_buf_off value
             let mut sm3 = SM3::new();
@@ -125,7 +127,7 @@ mod sm3_tests {
     fn partial_bits() {
         let mut a = SM3::new();
         a.do_update(b"abc");
-        assert_eq!(a.do_final_partial_bits(0xFF, 0).unwrap(), SM3::new().hash(b"abc"));
+        assert_eq!(a.do_final_partial_bits(0xFF, 0).unwrap(), SM3::hash(b"abc"));
 
         for bad in [8usize, 9, 16, 64, usize::MAX] {
             let mut sm3 = SM3::new();
@@ -148,8 +150,8 @@ mod sm3_tests {
             let z = SM3::new().do_final_partial_bits(0xA5 ^ 0x80, n).unwrap();
             assert_eq!(x, y, "n={n}");
             assert_ne!(x, z, "n={n}: the leading bit must change the digest");
-            assert_ne!(x, SM3::new().hash(&[]), "n={n}");
-            assert_ne!(x, SM3::new().hash(&[0xA5 & mask]), "n={n}");
+            assert_ne!(x, SM3::hash(&[]), "n={n}");
+            assert_ne!(x, SM3::hash(&[0xA5 & mask]), "n={n}");
         }
 
         for len in [55usize, 56, 63, 64, 119, 128] {
@@ -167,7 +169,7 @@ mod sm3_tests {
     /// `partial_byte` (ASN.1 BIT STRING order).
     #[test]
     fn partial_bits_known_answers() {
-        let cases: [(&[u8], u8, usize, &str); 6] = [
+        let cases: [(&[u8], u8, usize, &str); 7] = [
             (b"", 0x80, 1, "985ffe9568be96328729b1c16631e9328d356432413d7556a646b9eefe479b9e"),
             (b"", 0xA8, 5, "469dd7b688a7b98d6362a8e2488a148cb4231bc196b796eee9652cb9044f3dcd"),
             (b"abc", 0xfe, 7, "5ad9f5745671e4a49f6704fdadff8cc2ff8a9683d1c7c0810a5dd7db367e9d74"),
@@ -176,6 +178,14 @@ mod sm3_tests {
                 0xC0,
                 2,
                 "65985be43230ee70a939d38e34a88198e0d63bb307081459d8d75541d54a382e",
+            ),
+            // l = 447 (mod 512): s. 5.2's prose gives k = 0 and its closed-form k = 512; this is the
+            // prose digest.
+            (
+                &[0x5a; 55],
+                0xFE,
+                7,
+                "e50c8288dfc79d82120e1f33765898380ea6fe6a685a145df0f836ab0e6dac76",
             ),
             (
                 &[0x5a; 111],
@@ -235,5 +245,24 @@ mod sm3_tests {
             Err(SuspendableError::InvalidData) => { /* good */ }
             _ => panic!("Expected an error"),
         }
+
+        // byte_count must agree with x_buf_off modulo the block length, and stay within the
+        // longest message the 64-bit length field can encode, 2^61 - 1 bytes.
+        let with_counts = |byte_count: u64, x_buf_off: u8| {
+            let mut state = serialized_state;
+            state[3 + 32..3 + 40].copy_from_slice(&byte_count.to_le_bytes());
+            state[3 + 104] = x_buf_off;
+            SM3::from_suspended(state)
+        };
+        let off = serialized_state[3 + 104];
+        assert!(with_counts(str.len() as u64 + 64, off).is_ok());
+        assert!(matches!(
+            with_counts(str.len() as u64 + 1, off),
+            Err(SuspendableError::InvalidData)
+        ));
+        let max: u64 = (1 << 61) - 1;
+        assert!(with_counts(max, 63).is_ok());
+        assert!(matches!(with_counts(max + 1, 0), Err(SuspendableError::InvalidData)));
+        assert!(matches!(with_counts(u64::MAX, 63), Err(SuspendableError::InvalidData)));
     }
 }

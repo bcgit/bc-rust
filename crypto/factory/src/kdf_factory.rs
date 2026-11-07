@@ -52,7 +52,7 @@ use crate::{AlgorithmFactory, DEFAULT, DEFAULT_128_BIT, DEFAULT_256_BIT, Factory
 use bouncycastle_core::errors::KDFError;
 use bouncycastle_core::key_material::KeyMaterialTrait;
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::traits::KDF;
+use bouncycastle_core::traits::{AlgorithmInfo, KDF};
 use bouncycastle_sha2::hkdf::{
     HKDF_SHA256, HKDF_SHA256_NAME, HKDF_SHA384, HKDF_SHA384_NAME, HKDF_SHA512, HKDF_SHA512_NAME,
 };
@@ -60,6 +60,7 @@ use bouncycastle_sha3 as sha3;
 use bouncycastle_sha3::{
     SHA3_224_NAME, SHA3_256_NAME, SHA3_384_NAME, SHA3_512_NAME, SHAKE128_NAME, SHAKE256_NAME,
 };
+use bouncycastle_sm3::hkdf::{HKDF_SM3, HKDF_SM3_NAME};
 
 /// Wrapper object for all algorithms that impl [`KDF`].
 #[non_exhaustive]
@@ -73,6 +74,9 @@ pub enum KDFFactory {
     ///
     #[allow(non_camel_case_types)]
     HKDF_SHA512(HKDF_SHA512),
+    /// HKDF over SM3.
+    #[allow(non_camel_case_types)]
+    HKDF_SM3(HKDF_SM3),
     ///
     SHA3_224(sha3::SHA3_224),
     ///
@@ -110,6 +114,7 @@ impl AlgorithmFactory for KDFFactory {
             HKDF_SHA256_NAME => Ok(Self::HKDF_SHA256(HKDF_SHA256::new())),
             HKDF_SHA384_NAME => Ok(Self::HKDF_SHA384(HKDF_SHA384::new())),
             HKDF_SHA512_NAME => Ok(Self::HKDF_SHA512(HKDF_SHA512::new())),
+            HKDF_SM3_NAME => Ok(Self::HKDF_SM3(HKDF_SM3::new())),
             SHA3_224_NAME => Ok(Self::SHA3_224(sha3::SHA3_224::new())),
             SHA3_256_NAME => Ok(Self::SHA3_256(sha3::SHA3_256::new())),
             SHA3_384_NAME => Ok(Self::SHA3_384(sha3::SHA3_384::new())),
@@ -134,6 +139,7 @@ impl KDF for KDFFactory {
             Self::HKDF_SHA256(h) => h.derive_key(key, additional_input),
             Self::HKDF_SHA384(h) => h.derive_key(key, additional_input),
             Self::HKDF_SHA512(h) => h.derive_key(key, additional_input),
+            Self::HKDF_SM3(h) => h.derive_key(key, additional_input),
             Self::SHA3_224(h) => h.derive_key(key, additional_input),
             Self::SHA3_256(h) => h.derive_key(key, additional_input),
             Self::SHA3_384(h) => h.derive_key(key, additional_input),
@@ -153,6 +159,7 @@ impl KDF for KDFFactory {
             Self::HKDF_SHA256(h) => h.derive_key_out(key, additional_input, output_key),
             Self::HKDF_SHA384(h) => h.derive_key_out(key, additional_input, output_key),
             Self::HKDF_SHA512(h) => h.derive_key_out(key, additional_input, output_key),
+            Self::HKDF_SM3(h) => h.derive_key_out(key, additional_input, output_key),
             Self::SHA3_224(h) => h.derive_key_out(key, additional_input, output_key),
             Self::SHA3_256(h) => h.derive_key_out(key, additional_input, output_key),
             Self::SHA3_384(h) => h.derive_key_out(key, additional_input, output_key),
@@ -171,6 +178,7 @@ impl KDF for KDFFactory {
             Self::HKDF_SHA256(h) => h.derive_key_from_multiple(keys, additional_input),
             Self::HKDF_SHA384(h) => h.derive_key_from_multiple(keys, additional_input),
             Self::HKDF_SHA512(h) => h.derive_key_from_multiple(keys, additional_input),
+            Self::HKDF_SM3(h) => h.derive_key_from_multiple(keys, additional_input),
             Self::SHA3_224(h) => h.derive_key_from_multiple(keys, additional_input),
             Self::SHA3_256(h) => h.derive_key_from_multiple(keys, additional_input),
             Self::SHA3_384(h) => h.derive_key_from_multiple(keys, additional_input),
@@ -196,6 +204,7 @@ impl KDF for KDFFactory {
             Self::HKDF_SHA512(h) => {
                 h.derive_key_from_multiple_out(keys, additional_input, output_key)
             }
+            Self::HKDF_SM3(h) => h.derive_key_from_multiple_out(keys, additional_input, output_key),
             Self::SHA3_224(h) => h.derive_key_from_multiple_out(keys, additional_input, output_key),
             Self::SHA3_256(h) => h.derive_key_from_multiple_out(keys, additional_input, output_key),
             Self::SHA3_384(h) => h.derive_key_from_multiple_out(keys, additional_input, output_key),
@@ -204,12 +213,30 @@ impl KDF for KDFFactory {
             Self::SHAKE256(h) => h.derive_key_from_multiple_out(keys, additional_input, output_key),
         }
     }
+}
+
+impl AlgorithmInfo for KDFFactory {
+    fn alg_name(&self) -> &'static str {
+        match self {
+            Self::HKDF_SHA256(h) => h.alg_name(),
+            Self::HKDF_SHA384(h) => h.alg_name(),
+            Self::HKDF_SHA512(h) => h.alg_name(),
+            Self::HKDF_SM3(h) => h.alg_name(),
+            Self::SHA3_224(h) => h.alg_name(),
+            Self::SHA3_256(h) => h.alg_name(),
+            Self::SHA3_384(h) => h.alg_name(),
+            Self::SHA3_512(h) => h.alg_name(),
+            Self::SHAKE128(h) => h.alg_name(),
+            Self::SHAKE256(h) => h.alg_name(),
+        }
+    }
 
     fn max_security_strength(&self) -> SecurityStrength {
         match self {
             Self::HKDF_SHA256(h) => h.max_security_strength(),
             Self::HKDF_SHA384(h) => h.max_security_strength(),
             Self::HKDF_SHA512(h) => h.max_security_strength(),
+            Self::HKDF_SM3(h) => h.max_security_strength(),
             Self::SHA3_224(h) => h.max_security_strength(),
             Self::SHA3_256(h) => h.max_security_strength(),
             Self::SHA3_384(h) => h.max_security_strength(),

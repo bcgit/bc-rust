@@ -1,6 +1,6 @@
 //! This crate implements the Module Lattice Key-Encapsulation Mechanism (ML-KEM) as per FIPS 203.
 //!
-//! # Usage
+//! # Usage Examples
 //!
 //! This crate has been designed to serve a wide range of use cases, from people dabbling in
 //! cryptography for the first time, to cryptographic protocol designers who need access to the internal
@@ -14,7 +14,7 @@
 //! # Primer on KEM algorithms
 //!
 //! Since Key-Encapsulation Mechanisms behave differently from the Diffie-Hellman key exchanges that many people are familiar with,
-//! we start with a brief primer on KEMs.
+//! here is a brief primer on KEMs.
 //!
 //! The core operation of a KEM is "encapsulation" which performs a mathematical operation against a KEM public key and yields
 //! a shared secret key, and a ciphertext. Internally, the encapsulation routine will use a cryptographic random number generator
@@ -27,7 +27,7 @@
 //!
 //! The three operations of a KEM algorithm are:
 //!
-//! * `keygen() -> (pk, sk)`
+//! * `keygen(rng) -> (pk, sk)`
 //! * `encaps(pk) -> (ss, ct)`
 //! * `decaps(sk, ct) -> (ss)`
 //!
@@ -45,9 +45,10 @@
 //! ## Generating Keys
 //!
 //! ```rust
+//! use bouncycastle_rng::HashDRBG_SHA512;
 //! use bouncycastle_mlkem::{MLKEM768, MLKEMTrait};
 //!
-//! let (pk, sk) = MLKEM768::keygen().unwrap();
+//! let (pk, sk) = MLKEM768::keygen(&mut HashDRBG_SHA512::new_from_os()).unwrap();
 //! ```
 //! That's it. That will use the library's default OS-backend RNG.
 //!
@@ -69,16 +70,17 @@
 //! ```
 //!
 //! See [`MLKEM`] and [`MLKEM::decaps_from_seed`] for an API that uses a merged
-//! keygen-and-decaps function to that allows you to store the private key only as a 64-byte seed.
+//! keygen-and-decaps function that allows the private key to be stored only as a 64-byte seed.
 //!
 //! ## Encapsulating and Decapsulating
 //!
 //! ```rust
+//! use bouncycastle_rng::HashDRBG_SHA512;
 //! use bouncycastle_mlkem::{MLKEM768, MLKEMTrait};
 //! use bouncycastle_core::traits::{KEMEncapsulator, KEMDecapsulator};
 //! use bouncycastle_core::errors::KEMError;
 //!
-//! let (pk, sk) = MLKEM768::keygen().unwrap();
+//! let (pk, sk) = MLKEM768::keygen(&mut HashDRBG_SHA512::new_from_os()).unwrap();
 //!
 //! // Create the shared secret and ciphertext using the public key
 //! let (ss, ct) = MLKEM768::encaps(&pk).unwrap();
@@ -93,7 +95,7 @@
 //! ```
 //! And that's the basic usage!
 //!
-//! # Memory Footprint
+//! # Memory Usage
 //!
 //! The following table lists the size of the on-disk bytes encoding and the in-memory struct size of the
 //! standard key objects:
@@ -114,7 +116,17 @@
 //! | ML-KEM-1024_expanded | 1568           | 10272              | 3168            | 12418 |
 //!
 //! All values are in bytes. The "in memory" sizes are measured by rust's `std::mem::size_of`.
-//! Values in parentheses are the usual sizes in the un-optimized implementation in the \[bouncycastle_mldsa] crate.
+//!
+//! Peak stack usage of each operation, measured with `mem_usage_benches/bench_mlkem_mem_usage` under
+//! `valgrind --tool=massif --stacks=yes` (release build, one call on a fixed key, unexpanded keys):
+//!
+//! | Operation | ML-KEM-512 | ML-KEM-768 | ML-KEM-1024 |
+//! |-----------|------------|------------|-------------|
+//! | KeyGen    | 13,960 | 20,520 | 30,152 |
+//! | Encaps    | 16,424 | 27,256 | 38,840 |
+//! | Decaps    | 20,920 | 33,560 | 47,240 |
+//!
+//! Values are in bytes and include the harness's own frames (about 3 KB).
 //!
 //! # 🚨 Security Considerations 🚨
 //!
@@ -139,7 +151,7 @@
 #![no_std]
 #![forbid(unsafe_code)]
 #![forbid(missing_docs)]
-// These are because variable names are matched exactly against FIPS 204, for example both 'K' and 'k',
+// These are because variable names are matched exactly against FIPS 203, for example both 'K' and 'k',
 // or 'A' and 'a' are used and have specific meanings.
 // But need to tell the rust linter to not care.
 #![allow(non_snake_case)]
@@ -158,7 +170,6 @@ mod matrix;
 pub mod mlkem;
 mod mlkem_keys;
 mod params;
-mod polynomial;
 
 /*** Exported types ***/
 pub use mlkem::{MLKEM, MLKEM512, MLKEM768, MLKEM1024, MLKEMTrait};

@@ -7,6 +7,7 @@ mod test_key_material {
         KeyMaterialTrait, KeyType,
     };
     use bouncycastle_core::security_strength::SecurityStrength;
+    use bouncycastle_core::traits::RNG;
 
     const DUMMY_KEY: &[u8; 64] = b"\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0A\x0B\x0C\x0D\x0E\x0F\
                                    \x10\x11\x12\x13\x14\x15\x16\x17\x18\x19\x1A\x1B\x1C\x1D\x1E\x1F\
@@ -212,6 +213,108 @@ mod test_key_material {
         let key = KeyMaterial512::from_rng(&mut rng::DefaultRNG::default()).unwrap();
         assert_eq!(key.key_len(), 64);
         assert_eq!(key.key_type(), KeyType::CryptographicRandom);
+    }
+
+    /// The material carries the RNG's strength, capped at what the key length can carry: the
+    /// default DRBG is 256-bit, so 32 bytes keep that and 16 bytes are a 128-bit key.
+    #[test]
+    fn from_rng_caps_the_strength_at_the_key_length() {
+        use bouncycastle_rng as rng;
+
+        let mut drbg = rng::DefaultRNG::default();
+        let rng_strength = drbg.security_strength();
+        assert!(rng_strength >= SecurityStrength::_256bit, "the default DRBG is 256-bit");
+
+        let key = KeyMaterial256::from_rng(&mut drbg).unwrap();
+        assert_eq!(key.security_strength(), rng_strength, "32 bytes carry the RNG's strength");
+        let key = KeyMaterial128::from_rng(&mut drbg).unwrap();
+        assert_eq!(key.security_strength(), SecurityStrength::_128bit, "16 bytes cap it");
+        let key = KeyMaterial512::from_rng(&mut drbg).unwrap();
+        assert_eq!(key.security_strength(), rng_strength, "64 bytes keep the RNG's strength");
+    }
+
+    /// SP 800-90A r1 Section 8.4: the strength of a draw is the lesser of the RNG's and the
+    /// draw's length, so a short key from a 256-bit RNG is tagged at what its length carries.
+    #[test]
+    fn from_rng_strength_is_capped_by_the_key_length() {
+        use bouncycastle_rng as rng;
+
+        let mut rng = rng::DefaultRNG::default();
+        use bouncycastle_core::traits::RNG;
+        assert_eq!(rng.security_strength(), SecurityStrength::_256bit);
+        let k32 = KeyMaterial256::from_rng(&mut rng).unwrap();
+        assert_eq!(k32.security_strength(), SecurityStrength::_256bit);
+        let k24 = KeyMaterial::<24>::from_rng(&mut rng).unwrap();
+        assert_eq!(k24.security_strength(), SecurityStrength::_192bit);
+        let k16 = KeyMaterial128::from_rng(&mut rng).unwrap();
+        assert_eq!(k16.security_strength(), SecurityStrength::_128bit);
+        let k14 = KeyMaterial::<14>::from_rng(&mut rng).unwrap();
+        assert_eq!(k14.security_strength(), SecurityStrength::_112bit);
+        let k13 = KeyMaterial::<13>::from_rng(&mut rng).unwrap();
+        assert_eq!(k13.key_type(), KeyType::CryptographicRandom);
+        assert_eq!(k13.security_strength(), SecurityStrength::None);
+        let k0 = KeyMaterial0::from_rng(&mut rng).unwrap();
+        assert_eq!(k0.key_len(), 0);
+        assert_eq!(k0.key_type(), KeyType::Zeroized);
+        assert_eq!(k0.security_strength(), SecurityStrength::None);
+    }
+
+    /// A key re-typed or zeroized to Zeroized/Unknown carries no strength, so truncating it is
+    /// fine rather than a panic.
+    #[test]
+    fn retyping_to_unknown_drops_the_strength() {
+        use bouncycastle_rng as rng;
+
+        let mut key = KeyMaterial256::from_rng(&mut rng::DefaultRNG::default()).unwrap();
+        key.set_key_type(KeyType::Unknown).unwrap();
+        assert_eq!(key.security_strength(), SecurityStrength::None);
+        let mut short = KeyMaterial128::new();
+        key.clone().truncate(&mut short);
+        assert_eq!(short.key_type(), KeyType::Unknown);
+        assert_eq!(short.security_strength(), SecurityStrength::None);
+        assert_eq!(short.ref_to_bytes(), &key.ref_to_bytes()[..16]);
+
+        // The same inside a hazardous window.
+        let mut key = KeyMaterial256::from_rng(&mut rng::DefaultRNG::default()).unwrap();
+        do_hazardous_operations(&mut key, |k| k.set_key_type(KeyType::Unknown)).unwrap();
+        assert_eq!(key.security_strength(), SecurityStrength::None);
+
+        // And zeroize.
+        let mut key = KeyMaterial256::from_rng(&mut rng::DefaultRNG::default()).unwrap();
+        key.zeroize();
+        assert_eq!(key.security_strength(), SecurityStrength::None);
+
+        // A typed key still refuses to be re-typed outside a window.
+        let mut key =
+            KeyMaterial256::from_bytes_as_type(&DUMMY_KEY[..32], KeyType::MACKey).unwrap();
+        assert!(matches!(
+            key.set_key_type(KeyType::Unknown),
+            Err(KeyMaterialError::HazardousOperationNotPermitted)
+        ));
+        assert_eq!(key.security_strength(), SecurityStrength::_256bit);
+    }
+
+    /// The window is closed on a clone taken inside it.
+    #[test]
+    fn a_clone_taken_inside_a_window_has_it_closed() {
+        let mut key =
+            KeyMaterial256::from_bytes_as_type(&DUMMY_KEY[..32], KeyType::MACKey).unwrap();
+        let mut copy = None;
+        do_hazardous_operations(&mut key, |k| {
+            copy = Some(k.clone());
+            Ok(())
+        })
+        .unwrap();
+        let mut copy = copy.unwrap();
+        assert!(matches!(
+            copy.set_key_type(KeyType::Seed),
+            Err(KeyMaterialError::HazardousOperationNotPermitted)
+        ));
+        assert!(matches!(
+            copy.ref_to_bytes_mut(),
+            Err(KeyMaterialError::HazardousOperationNotPermitted)
+        ));
+        assert_eq!(copy.ref_to_bytes(), key.ref_to_bytes());
     }
 
     #[test]

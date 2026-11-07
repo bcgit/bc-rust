@@ -61,7 +61,7 @@ test_xof128_output_length_is_a_prefix_of_a_longer_squeeze() {
 test_cxof128_matches_the_kat() {
     local got
     unhex 00 >"$TMP/msg"
-    got=$(hex_out "$BC_RUST" ascon-cxof128 64 --customization 10 -x <"$TMP/msg")
+    got=$(hex_out "$BC_RUST" ascon-cxof128 64 --customization-hex 10 -x <"$TMP/msg")
     assert_eq "$got" \
         "63fa8ba86382f2d544580f51322d080424b42c556eb74503cd73cf052bb993bd6f5210984c71c9c445f43ccc5b158226e509bd339cd634414377f79411aa8d5c" \
         "customized squeeze"
@@ -72,7 +72,7 @@ test_cxof128_matches_the_kat() {
 test_cxof128_with_no_customization_matches_an_empty_one() {
     local without with_empty
     without=$(hex_out "$BC_RUST" ascon-cxof128 64 -x </dev/null)
-    with_empty=$(hex_out "$BC_RUST" ascon-cxof128 64 --customization "" -x </dev/null)
+    with_empty=$(hex_out "$BC_RUST" ascon-cxof128 64 --customization-hex "" -x </dev/null)
     assert_eq "$without" "$with_empty" "absent and empty customization must agree"
     # LWC_CXOF_KAT_128_512.txt Count 1: message and customization both empty.
     assert_eq "$without" \
@@ -113,8 +113,8 @@ test_aead128_encrypt_then_decrypt_round_trips() {
 test_aead128_associated_data_round_trips() {
     rng 16 >"$TMP/key"
     rng 256 >"$TMP/pt"
-    "$BC_RUST" ascon-aead128 -d encrypt --key-file "$TMP/key" --ad deadbeef <"$TMP/pt" >"$TMP/ct"
-    "$BC_RUST" ascon-aead128 -d decrypt --key-file "$TMP/key" --ad deadbeef <"$TMP/ct" >"$TMP/rec"
+    "$BC_RUST" ascon-aead128 -d encrypt --key-file "$TMP/key" --aad deadbeef <"$TMP/pt" >"$TMP/ct"
+    "$BC_RUST" ascon-aead128 -d decrypt --key-file "$TMP/key" --aad deadbeef <"$TMP/ct" >"$TMP/rec"
     assert_same "$TMP/pt" "$TMP/rec" "the same AD on both sides must round-trip"
 }
 
@@ -135,9 +135,9 @@ test_aead128_each_invocation_uses_a_fresh_nonce() {
 test_aead128_wrong_associated_data_is_rejected() {
     rng 16 >"$TMP/key"
     rng 64 >"$TMP/pt"
-    "$BC_RUST" ascon-aead128 -d encrypt --key-file "$TMP/key" --ad deadbeef <"$TMP/pt" >"$TMP/ct"
+    "$BC_RUST" ascon-aead128 -d encrypt --key-file "$TMP/key" --aad deadbeef <"$TMP/pt" >"$TMP/ct"
     expect_fail "different AD must fail the tag check" \
-        "$BC_RUST" ascon-aead128 -d decrypt --key-file "$TMP/key" --ad cafebabe <"$TMP/ct"
+        "$BC_RUST" ascon-aead128 -d decrypt --key-file "$TMP/key" --aad cafebabe <"$TMP/ct"
     assert_stderr_has "authentication failed"
 }
 

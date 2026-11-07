@@ -12,9 +12,21 @@ lib.rs for all crates needs to contain: `#![forbid(missing_docs)]`, `#![no_std]`
 
 All primitives must be accompanied by a CLI in `/cli`.
 
-All algorithms with a state that is exercised across multiple API calls -- typically through a `do_update()`,
-`do_final()` pattern -- should implement SerializableState so that the user can pause the execution of this algorithm to
-a cache and resume later.
+Hashes, XOFs and the MACs and KDFs built on them (KMAC, HMAC, HKDF) implement `Suspendable` or `SuspendableKeyed`, so
+that a computation in progress can be written to a cache and resumed later. Cipher and MAC workers -- the encryptors,
+decryptors, generators and verifiers a key object hands out -- do not: a suspended or cloned worker is a second copy of
+a nonce, counter or keystream position, and two copies that both go on to encrypt reuse keystream (#173). Those workers
+implement neither suspend trait nor `Clone`; a message is paused by holding its worker, and the worker traits are kept
+`dyn`-compatible so it can be held as `&mut dyn` or, where allocation is acceptable, `Box<dyn>`. The `Clone` impls the
+cipher workers still carry come out in the #173 sweep's next step.
+
+`Clone` belongs on the types, not on the `core` traits. Every hash and XOF type is `Clone`, so a computation can be
+forked mid-stream and each copy finished on its own; `Hash` itself carries no `Clone` (and no `Default`), because both
+imply `Sized` and would stop the trait from ever being a trait object. Generic code that forks or constructs a hash
+says so where the need is: `H: Hash + Clone`, `H: HashOneShot`. The same rule applies to every `core` trait that is
+meant to be held as `dyn` -- the hash, XOF, cipher, MAC and signature worker traits: no `Clone`, `Default` or `Sized`
+supertrait, no associated constant (`AlgorithmInfo` is the run-time form of `Algorithm`'s), and `where Self: Sized` on
+any receiver-less or provided by-value method, so the streaming core stays dispatchable through `&mut dyn`.
 
 # Quality
 
@@ -88,7 +100,13 @@ In addition, some library-specific naming conventions:
 ## APIs
 
 Where possible, primitives should expose "one-shot APIs" that simply take data and return a result as a static member
-function that does not require object instantiation.
+function that does not require object instantiation. The exception is anything keyed: a symmetric cipher or MAC is
+reached through a key object (`AES128Key<GCM>`, `HmacKey<SHA256>`, `KMAC128Key`, `AsconAEAD128Key`), built once from
+`KeyMaterial` by `FromKeyMaterial` / `FromAnyKeyMaterial`, and its one-shots and `create_*` constructors are methods on
+that key. The cipher and MAC traits in `core::traits` describe a worker that already exists and carry no constructor
+and no key-taking method, so a key's validation and expansion happen once, where the key is made, rather than per call.
+A worker borrows the key it came from, for the lifetime on the role trait's associated worker type, so making one
+copies no schedule and a worker cannot outlive its key.
 
 Other version of Bouncy Castle have a design pattern where stateful objects follow a pattern of new () -> init () ->
 do_update () -> do_final (), and then optionally reset () that sets the object back to an unitialized state. Instead,
@@ -124,17 +142,24 @@ Take, for example a one-shot API `fn encrypt(plaintext: &[u8]) -> Result<Vec<u8>
 The following prefixes can be applied:
 
 * `do_`: this implies that it is part of a stateful streaming API, will typically take `&mut self`, and is likely
-  accompanied by a `do_encrypt_init()` and `do_encrypt_final()`.
+  accompanied by a `do_encrypt_final()`; the object comes from a key's `create_encryptor()`.
+* `create_`: a key object's constructor for a worker -- `create_encryptor(&self, rng)`, `create_decryptor(&self,
+  init_data)`, `create_generator(&self)`, `create_verifier(&self)`. Whatever draws randomness takes a `&mut dyn RNG`
+  explicitly, so a key has no `_rng` twins and no method that reaches for a default RNG.
 
 The following suffixes can be applied
 
 * `_init / _update / _final`: indicates phase of a stateful streaming API. Other verbs can be used here as appropriate
-  to the primitive, such as `absorb / squeeze`, `encrypt / decrypt`, etc. `_init` is typically a static constructor
-  (though exceptions may exist), and `_final` indicates that this function call renders the object unusable afterwards
-  by consuming `self` via a move: `_final(self, ..)`.
+  to the primitive, such as `absorb / squeeze`, `encrypt / decrypt`, etc. For a keyed primitive (a cipher, a MAC, a
+  signature) the worker is constructed by its key object (`create_encryptor`, `create_generator`, `create_signer`) and
+  carries no `_init`; `_init` is for a primitive that builds its own state from its arguments, such as `MuBuilder`.
+  `_final` indicates that this function call renders the object unusable afterwards by consuming `self` via a move:
+  `_final(self, ..)`.
 * `_rng`: indicates that this version of the function sources its random numbers from a provided `&mut dyn RNG` instead
-  of
-  from the default library RNG. `_rng(.., &mut dyn RNG)`.
+  of from the default library RNG. `_rng(.., &mut dyn RNG)`. Keyed primitives do not have it: their constructors and
+  one-shots take the RNG, full stop.
+* `_nonce`: on an AEAD key, the twin that takes the nonce from the caller instead of drawing it from the RNG, and so
+  does not return one.
 * `_out / _inplace`: indicates that the function works in the provided buffer. `_out` indicates that the function takes
   an output buffer, which may be oversized, and returns the number of bytes written to it:
   `_out(.., out: &mut [u8] -> Result<usize, SymmetricCipherError>`. `_inplace` indicates that the input and output are
@@ -155,6 +180,14 @@ _{init, update, final, etc}_{rng}_{out, out_len, inplace}
 Any function that takes an output buffer via an `_out` function must zeroize the provided output buffer via a
 `out.fill(0)` prior to writing to it. This must be done first, before even any error checking so that no stale content
 is left in the output buffer, even in the case of an error.
+
+A local that holds secret-derived data -- a key or scalar's limbs, a field element or point computed from one, a
+lookup's copy of a table entry -- is zeroized once, at the end of its lifetime, through its type's `zeroize` (built on
+`zeroize_in_place`, whose volatile write the compiler cannot elide), and on every return path, including the error
+ones (`Secret` does this on drop, so a `Secret` local needs no call). A loop-carried value is declared before the loop
+so that end is after it, not once per iteration. This is defence in depth rather than a guarantee: superseded values
+of a by-value accumulator, integer indices and the intermediates in callees' frames are not reached, and a function's
+docs must not claim more than its zeroize calls do.
 
 ## Fallibility
 

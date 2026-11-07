@@ -18,20 +18,21 @@ mod mldsa_key_tests {
         MLDSA44_PK_LEN, MLDSA44_SK_LEN, MLDSA65_PK_LEN, MLDSA65_SK_LEN, MLDSA87_PK_LEN,
         MLDSA87_SK_LEN,
     };
+    use bouncycastle_rng::DefaultRNG;
 
     #[test]
     fn core_framework_tests() {
         let tf = TestFrameworkSignatureKeys::new();
 
-        tf.test_keys::<MLDSA44PublicKey, MLDSA44PrivateKey, MLDSA44_PK_LEN, MLDSA44_SK_LEN>(
-            MLDSA44::keygen,
-        );
-        tf.test_keys::<MLDSA65PublicKey, MLDSA65PrivateKey, MLDSA65_PK_LEN, MLDSA65_SK_LEN>(
-            MLDSA65::keygen,
-        );
-        tf.test_keys::<MLDSA87PublicKey, MLDSA87PrivateKey, MLDSA87_PK_LEN, MLDSA87_SK_LEN>(
-            MLDSA87::keygen,
-        );
+        tf.test_keys::<MLDSA44PublicKey, MLDSA44PrivateKey, MLDSA44_PK_LEN, MLDSA44_SK_LEN>(|| {
+            MLDSA44::keygen(&mut DefaultRNG::default())
+        });
+        tf.test_keys::<MLDSA65PublicKey, MLDSA65PrivateKey, MLDSA65_PK_LEN, MLDSA65_SK_LEN>(|| {
+            MLDSA65::keygen(&mut DefaultRNG::default())
+        });
+        tf.test_keys::<MLDSA87PublicKey, MLDSA87PrivateKey, MLDSA87_PK_LEN, MLDSA87_SK_LEN>(|| {
+            MLDSA87::keygen(&mut DefaultRNG::default())
+        });
     }
 
     #[test]
@@ -91,38 +92,13 @@ mod mldsa_key_tests {
         assert_eq!(pk1_bytes, pk1_bytes_out);
         assert_eq!(sk1_bytes, sk1_bytes_out);
 
-        /* Expanded keys */
+        /* Expanded keys borrow the plain key, whose encoding is theirs */
 
         let (pk1, sk1) = MLDSA65::keygen_from_seed(&seed).unwrap();
         let pk1_expanded = MLDSA65PublicKeyExpanded::from(&pk1);
         let sk1_expanded = MLDSA65PrivateKeyExpanded::from(&sk1);
-        let pk1_bytes = pk1_expanded.encode();
-        let sk1_bytes = sk1_expanded.encode();
-
-        let (pk2, sk2) = MLDSA65::keygen_from_seed(&seed).unwrap();
-        let pk2_expanded = MLDSA65PublicKeyExpanded::from(&pk2);
-        let sk2_expanded = MLDSA65PrivateKeyExpanded::from(&sk2);
-        let pk2_bytes = pk2_expanded.encode();
-        assert_eq!(pk1_bytes, pk2_bytes);
-
-        let sk2_bytes = sk2_expanded.encode();
-        assert_eq!(sk1_bytes, sk2_bytes);
-
-        // test encode_out
-        let mut pk1_bytes_out = [0u8; MLDSA65_PK_LEN];
-        let bytes_written = pk1_expanded.encode_out(&mut pk1_bytes_out);
-        assert_eq!(bytes_written, MLDSA65_PK_LEN);
-
-        let mut sk1_bytes_out = [0u8; MLDSA65_SK_LEN];
-        let bytes_written = sk1.encode_out(&mut sk1_bytes_out);
-        assert_eq!(bytes_written, MLDSA65_SK_LEN);
-
-        assert_eq!(pk1_bytes, pk1_bytes_out);
-        assert_eq!(sk1_bytes, sk1_bytes_out);
-
-        let bytes_written = sk1_expanded.encode_out(&mut sk1_bytes_out);
-        assert_eq!(bytes_written, MLDSA65_SK_LEN);
-        assert_eq!(sk1_expanded.encode(), sk2_expanded.encode());
+        assert_eq!(pk1_expanded.key().encode(), pk1.encode());
+        assert_eq!(sk1_expanded.key().encode(), sk1.encode());
     }
 
     #[test]
@@ -249,7 +225,7 @@ mod mldsa_key_tests {
 
         // key is wrong length
 
-        let (pk, sk) = MLDSA65::keygen().unwrap();
+        let (pk, sk) = MLDSA65::keygen(&mut DefaultRNG::default()).unwrap();
         // too small
         let pk_bytes = pk.encode();
         let sk_bytes = sk.encode();
@@ -257,15 +233,7 @@ mod mldsa_key_tests {
             Err(SignatureError::DecodingError(_)) => { /* good */ }
             _ => panic!("Expected malformed key to be rejected"),
         }
-        match MLDSA65PublicKeyExpanded::from_bytes(&pk_bytes[..MLDSA65_PK_LEN - 1]) {
-            Err(SignatureError::DecodingError(_)) => { /* good */ }
-            _ => panic!("Expected malformed key to be rejected"),
-        }
         match MLDSA65PrivateKey::from_bytes(&sk_bytes[..MLDSA65_SK_LEN - 1]) {
-            Err(SignatureError::DecodingError(_)) => { /* good */ }
-            _ => panic!("Expected malformed key to be rejected"),
-        }
-        match MLDSA65PrivateKeyExpanded::from_bytes(&sk_bytes[..MLDSA65_SK_LEN - 1]) {
             Err(SignatureError::DecodingError(_)) => { /* good */ }
             _ => panic!("Expected malformed key to be rejected"),
         }
@@ -281,15 +249,7 @@ mod mldsa_key_tests {
             Err(SignatureError::DecodingError(_)) => { /* good */ }
             _ => panic!("Expected malformed key to be rejected"),
         }
-        match MLDSA65PublicKeyExpanded::from_bytes(&pk_bytes_big) {
-            Err(SignatureError::DecodingError(_)) => { /* good */ }
-            _ => panic!("Expected malformed key to be rejected"),
-        }
         match MLDSA65PrivateKey::from_bytes(&sk_bytes_big) {
-            Err(SignatureError::DecodingError(_)) => { /* good */ }
-            _ => panic!("Expected malformed key to be rejected"),
-        }
-        match MLDSA65PrivateKeyExpanded::from_bytes(&sk_bytes_big) {
             Err(SignatureError::DecodingError(_)) => { /* good */ }
             _ => panic!("Expected malformed key to be rejected"),
         }
@@ -299,7 +259,7 @@ mod mldsa_key_tests {
     fn test_eq() {
         // MLDSA-44
         {
-            let (pk, sk) = MLDSA44::keygen().unwrap();
+            let (pk, sk) = MLDSA44::keygen(&mut DefaultRNG::default()).unwrap();
 
             // basic equality checks
             assert_eq!(pk, pk);
@@ -327,7 +287,7 @@ mod mldsa_key_tests {
         // MLDSA-65
         mldsa65();
         fn mldsa65() {
-            let (pk, sk) = MLDSA65::keygen().unwrap();
+            let (pk, sk) = MLDSA65::keygen(&mut DefaultRNG::default()).unwrap();
 
             // basic equality checks
             assert_eq!(pk, pk);
@@ -351,7 +311,7 @@ mod mldsa_key_tests {
         // MLDSA-87
         mldsa87();
         fn mldsa87() {
-            let (pk, sk) = MLDSA87::keygen().unwrap();
+            let (pk, sk) = MLDSA87::keygen(&mut DefaultRNG::default()).unwrap();
 
             // basic equality checks
             assert_eq!(pk, pk);
@@ -375,49 +335,41 @@ mod mldsa_key_tests {
         /* Expanded keys */
         expanded_keys();
         fn expanded_keys() {
-            let (pk, sk) = MLDSA65::keygen().unwrap();
-            let pk_expanded = MLDSA65PublicKeyExpanded::from_bytes(&pk.encode()).unwrap();
-            let sk_expanded = MLDSA65PrivateKeyExpanded::from_bytes(&sk.encode()).unwrap();
+            let (pk, sk) = MLDSA65::keygen(&mut DefaultRNG::default()).unwrap();
+            let pk_expanded = MLDSA65PublicKeyExpanded::from(&pk);
+            let sk_expanded = MLDSA65PrivateKeyExpanded::from(&sk);
 
-            // basic equality checks
+            // basic equality checks: an expansion equals itself, its clone, and another
+            // expansion of the same key, and exposes the key it borrows
             assert_eq!(pk_expanded, pk_expanded);
             assert_eq!(pk_expanded, pk_expanded.clone());
-            assert_eq!(pk_expanded, MLDSA65PublicKeyExpanded::from_bytes(&pk.encode()).unwrap());
-            assert_eq!(pk_expanded.encode(), pk.encode());
+            assert_eq!(pk_expanded, MLDSA65PublicKeyExpanded::from(&pk));
+            assert_eq!(pk_expanded.key(), &pk);
 
             assert_eq!(sk_expanded, sk_expanded);
             assert_eq!(sk_expanded, sk_expanded.clone());
-            assert_eq!(sk_expanded, MLDSA65PrivateKeyExpanded::from_bytes(&sk.encode()).unwrap());
-            assert_eq!(sk_expanded.encode(), sk.encode());
-            assert_eq!(sk_expanded.encode(), sk.encode());
-
-            let mut sk_bytes = [0u8; MLDSA65_SK_LEN];
-            let bytes_writen = sk_expanded.encode_out(&mut sk_bytes);
-            assert_eq!(bytes_writen, MLDSA65_SK_LEN);
-            assert_eq!(sk_bytes, sk.encode());
-
-            assert_eq!(sk_expanded, sk_expanded);
-            assert_eq!(sk_expanded, sk_expanded.clone());
-            assert_eq!(sk_expanded, MLDSA65PrivateKeyExpanded::from_bytes(&sk.encode()).unwrap());
-            assert_eq!(sk_expanded.encode(), sk.encode());
+            assert_eq!(sk_expanded, MLDSA65PrivateKeyExpanded::from(&sk));
+            assert_eq!(sk_expanded.key(), &sk);
 
             // inequality checks
             let mut bytes = pk.encode();
             bytes[17] ^= 0x01;
-            assert_ne!(pk_expanded, MLDSA65PublicKeyExpanded::from_bytes(&bytes).unwrap());
+            let other_pk = MLDSA65PublicKey::from_bytes(&bytes).unwrap();
+            assert_ne!(pk_expanded, MLDSA65PublicKeyExpanded::from(&other_pk));
 
             let mut bytes = sk.encode();
             bytes[17] ^= 0x01;
-            assert_ne!(sk_expanded, MLDSA65PrivateKeyExpanded::from_bytes(&bytes).unwrap());
+            let other_sk = MLDSA65PrivateKey::from_bytes(&bytes).unwrap();
+            assert_ne!(sk_expanded, MLDSA65PrivateKeyExpanded::from(&other_sk));
         }
     }
 
     /// Tests that no private data is displayed
     #[test]
     fn test_display() {
-        let (pk44, sk44) = MLDSA44::keygen().unwrap();
-        let (pk65, sk65) = MLDSA65::keygen().unwrap();
-        let (pk87, sk87) = MLDSA87::keygen().unwrap();
+        let (pk44, sk44) = MLDSA44::keygen(&mut DefaultRNG::default()).unwrap();
+        let (pk65, sk65) = MLDSA65::keygen(&mut DefaultRNG::default()).unwrap();
+        let (pk87, sk87) = MLDSA87::keygen(&mut DefaultRNG::default()).unwrap();
 
         /*** MLDSAPublicKey ***/
         // fmt

@@ -1,4 +1,4 @@
-use crate::aux_functions::{byte_decode, byte_encode, expandA};
+use crate::aux_functions::expandA;
 use crate::matrix::VectorTrait;
 use crate::mlkem::{H, POLY_BYTES, q};
 use crate::mlkem::{MLKEM512_PK_LEN, MLKEM512_SK_LEN};
@@ -8,7 +8,8 @@ use crate::params::{MLKEM512Params, MLKEM768Params, MLKEM1024Params, MLKEMParams
 use bouncycastle_core::errors::KEMError;
 use bouncycastle_core::hazmat::do_hazardous_operations;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
-use bouncycastle_core::traits::{Hash, KEMPrivateKey, KEMPublicKey};
+use bouncycastle_core::traits::{HashOneShot, KEMPrivateKey, KEMPublicKey};
+use bouncycastle_mlkem_common::aux_functions::{byte_decode, byte_encode};
 use bouncycastle_sha3::SHA3_256;
 use bouncycastle_utils::secret::Secret;
 use core::fmt;
@@ -18,7 +19,7 @@ use core::fmt::{Debug, Display, Formatter};
 #[allow(unused_imports)]
 use crate::mlkem::MLKEMTrait;
 #[allow(unused_imports)]
-use crate::polynomial::Polynomial;
+use bouncycastle_mlkem_common::polynomial::Polynomial;
 
 /* Pub Types */
 
@@ -90,10 +91,11 @@ impl<P: MLKEMParams, const PK_LEN: usize> Clone for MLKEMPublicKey<P, PK_LEN> {
 
 /// General trait for all ML-KEM public keys types.
 pub trait MLKEMPublicKeyTrait<P: MLKEMParams, const PK_LEN: usize>: KEMPublicKey<PK_LEN> {
-    /// Algorithm 23 pkDecode(𝑝𝑘)
-    /// Reverses the procedure pkEncode.
-    /// Input: Public key 𝑝𝑘 ∈ 𝔹32+32𝑘(bitlen (𝑞−1)−𝑑).
-    /// Output: 𝜌 ∈ 𝔹32, 𝐭1 ∈ 𝑅𝑘 with coefficients in [0, 2bitlen (𝑞−1)−𝑑 − 1].
+    /// Decodes an encapsulation key, FIPS 203 Algorithm 14 (K-PKE.Encrypt) lines 2-3:
+    /// 𝐭̂ ← ByteDecode12(ekPKE\[0 ∶ 384𝑘]), 𝜌 ← ekPKE\[384𝑘 ∶ 384𝑘 + 32], with the Section 7.2
+    /// modulus check on 𝐭̂.
+    /// Input: encapsulation key ek ∈ 𝔹^(384𝑘+32).
+    /// Output: 𝐭̂ ∈ (ℤ𝑞^256)^𝑘, 𝜌 ∈ 𝔹^32, or an error if a coefficient is not in \[0, 𝑞 − 1].
     fn pk_decode(pk: &[u8; PK_LEN]) -> Result<Self, KEMError>;
     /// Get a copy of the expanded public matrix A_hat
     fn A_hat(&self) -> P::MatrixA;
@@ -154,7 +156,7 @@ impl<P: MLKEMParams, const PK_LEN: usize> MLKEMPublicKeyTrait<P, PK_LEN>
 
     fn compute_hash(&self) -> [u8; 32] {
         let mut out = [0u8; 32];
-        let bytes_written = H::default().hash_out(&self.encode(), &mut out);
+        let bytes_written = H::hash_out(&self.encode(), &mut out);
         debug_assert_eq!(bytes_written, 32);
         out
     }
@@ -194,7 +196,7 @@ impl<P: MLKEMParams, const PK_LEN: usize> KEMPublicKey<PK_LEN> for MLKEMPublicKe
         debug_assert_eq!(pk_chunks.len(), P::k);
         debug_assert_eq!(last_chunk.len(), 32);
 
-        for (pk_chunk, t_i) in pk_chunks.into_iter().zip(self.t_hat.elems()) {
+        for (pk_chunk, t_i) in pk_chunks.iter_mut().zip(self.t_hat.elems()) {
             pk_chunk.copy_from_slice(&byte_encode::<12, POLY_BYTES>(t_i));
         }
         last_chunk.copy_from_slice(&self.rho);
@@ -221,14 +223,14 @@ impl<P: MLKEMParams, const PK_LEN: usize> PartialEq for MLKEMPublicKey<P, PK_LEN
 
 impl<P: MLKEMParams, const PK_LEN: usize> Debug for MLKEMPublicKey<P, PK_LEN> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        let hash = SHA3_256::new().hash(&self.encode());
+        let hash = SHA3_256::hash(&self.encode());
         write!(f, "MLKEMPublicKey {{ alg: {}, pub_key_hash: {:x?} }}", P::ALG_NAME, hash)
     }
 }
 
 impl<P: MLKEMParams, const PK_LEN: usize> Display for MLKEMPublicKey<P, PK_LEN> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        let hash = SHA3_256::new().hash(&self.encode());
+        let hash = SHA3_256::hash(&self.encode());
         write!(f, "MLKEMPublicKey {{ alg: {}, pub_key_hash: {:x?} }}", P::ALG_NAME, hash)
     }
 }
@@ -298,7 +300,7 @@ impl<P: MLKEMParams, PK: MLKEMPublicKeyInternalTrait<P, PK_LEN>, const PK_LEN: u
     for MLKEMPublicKeyExpanded<P, PK, PK_LEN>
 {
     fn eq(&self, other: &Self) -> bool {
-        self.encode() == other.encode()
+        self.ek == other.ek
     }
 }
 
@@ -311,7 +313,7 @@ impl<P: MLKEMParams, PK: MLKEMPublicKeyInternalTrait<P, PK_LEN>, const PK_LEN: u
     for MLKEMPublicKeyExpanded<P, PK, PK_LEN>
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        let hash = SHA3_256::new().hash(&self.encode());
+        let hash = SHA3_256::hash(&self.encode());
         write!(f, "MLKEMPublicKeyExpanded {{ alg: {}, pub_key_hash: {:x?} }}", P::ALG_NAME, hash)
     }
 }
@@ -320,7 +322,7 @@ impl<P: MLKEMParams, PK: MLKEMPublicKeyInternalTrait<P, PK_LEN>, const PK_LEN: u
     for MLKEMPublicKeyExpanded<P, PK, PK_LEN>
 {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        let hash = SHA3_256::new().hash(&self.encode());
+        let hash = SHA3_256::hash(&self.encode());
         write!(f, "MLKEMPublicKeyExpanded {{ alg: {}, pub_key_hash: {:x?} }}", P::ALG_NAME, hash)
     }
 }
@@ -346,8 +348,8 @@ impl<P: MLKEMParams, PK: MLKEMPublicKeyInternalTrait<P, PK_LEN>, const PK_LEN: u
 impl<P: MLKEMParams, PK: MLKEMPublicKeyInternalTrait<P, PK_LEN>, const PK_LEN: usize> From<&PK>
     for MLKEMPublicKeyExpanded<P, PK, PK_LEN>
 {
-    /// Fully expands the intermediate values needed for performing multiple encaps operations
-    /// against the same public key, which causes the MLKEMPublicKey struct to take up
+    /// Expands 𝐀̂ from the key's 𝜌 and keeps it alongside a copy of the key, for repeated
+    /// encapsulations against the same key.
     fn from(ek: &PK) -> Self {
         let A_hat = ek.A_hat();
 
@@ -485,21 +487,25 @@ impl<
 > MLKEMPrivateKeyTrait<P, PK, SK_LEN, PK_LEN> for MLKEMPrivateKey<P, PK, SK_LEN, PK_LEN>
 {
     fn seed(&self) -> Option<KeyMaterial<64>> {
-        if self.seed_d.is_none() {
-            None
-        } else {
-            let mut tmp = Secret::<[u8; 64]>::new();
-            tmp[..32].copy_from_slice(&self.seed_d.clone().unwrap().as_ref());
-            tmp[32..].copy_from_slice(&*self.z);
-            let mut seed = KeyMaterial::<64>::from_bytes_as_type(&*tmp, KeyType::Seed).unwrap();
+        let seed_d = self.seed_d.as_ref()?;
 
-            do_hazardous_operations(&mut seed, |seed| {
-                seed.set_security_strength(P::MAX_SECURITY_STRENGTH)
-            })
-            .unwrap();
+        let mut tmp = Secret::<[u8; 64]>::new();
+        tmp[..32].copy_from_slice(seed_d.as_ref());
+        tmp[32..].copy_from_slice(&*self.z);
 
-            Some(seed)
-        }
+        // `from_bytes` types all-zero input as Zeroized, and `set_security_strength` refuses a
+        // strength on a Zeroized key, so the type is set first, inside the hazardous block, where
+        // `set_key_type` is unconditional. After that the strength call can only fail on a key
+        // shorter than the strength needs, and this one is 64 bytes, so the expect never fires.
+        let mut seed =
+            KeyMaterial::<64>::from_bytes(&*tmp).expect("64 bytes fit a KeyMaterial<64>");
+        do_hazardous_operations(&mut seed, |seed| {
+            seed.set_key_type(KeyType::Seed)?;
+            seed.set_security_strength(P::MAX_SECURITY_STRENGTH)
+        })
+        .expect("a 64-byte Seed accepts every ML-KEM security strength");
+
+        Some(seed)
     }
 
     fn pk(&self) -> &PK {
@@ -580,7 +586,7 @@ impl<
         z: Secret<[u8; 32]>,
         seed_d: Option<Secret<[u8; 32]>>,
     ) -> Self {
-        Self { s_hat, ek, pk_hash, z, seed_d: seed_d.clone() }
+        Self { s_hat, ek, pk_hash, z, seed_d }
     }
 
     fn s_hat(&self) -> &P::VecK {
@@ -616,9 +622,6 @@ impl<
         if bytes.len() != SK_LEN {
             return Err(KEMError::DecodingError("Provided key bytes are the incorrect length"));
         }
-        if bytes.len() != SK_LEN {
-            return Err(KEMError::DecodingError("Provided key bytes are the incorrect length"));
-        }
         let bytes_sized: [u8; SK_LEN] = bytes[..SK_LEN].try_into().unwrap();
 
         Self::sk_decode(&bytes_sized)
@@ -642,9 +645,13 @@ impl<
 > PartialEq for MLKEMPrivateKey<P, PK, SK_LEN, PK_LEN>
 {
     fn eq(&self, other: &Self) -> bool {
-        let self_encoded = self.encode();
-        let other_encoded = other.encode();
-        bouncycastle_utils::ct::ct_eq_bytes(self_encoded.as_ref(), other_encoded.as_ref())
+        // The encodings are private-key material; they live in `Secret` buffers for the
+        // comparison and are scrubbed when it returns.
+        let mut self_encoded = Secret::<[u8; SK_LEN]>::new();
+        let mut other_encoded = Secret::<[u8; SK_LEN]>::new();
+        self.encode_out(&mut self_encoded);
+        other.encode_out(&mut other_encoded);
+        bouncycastle_utils::ct::ct_eq_bytes(&*self_encoded, &*other_encoded)
     }
 }
 
@@ -726,8 +733,8 @@ impl<
     const PK_LEN: usize,
 > From<&SK> for MLKEMPrivateKeyExpanded<P, PK, SK, SK_LEN, PK_LEN>
 {
-    /// Fully expands the intermediate values needed for performing multiple encaps operations
-    /// against the same public key, which causes the MLKEMPublicKey struct to take up
+    /// Expands 𝐀̂ from the key's 𝜌 and keeps it alongside a copy of the key, for repeated
+    /// decapsulations with the same key.
     fn from(dk: &SK) -> Self {
         let A_hat = dk.pk().A_hat();
 
@@ -843,7 +850,7 @@ impl<
     }
 
     fn pk_hash(&self) -> &[u8; 32] {
-        &self.dk.pk_hash()
+        self.dk.pk_hash()
     }
 
     fn sk_decode(sk: &[u8; SK_LEN]) -> Result<Self, KEMError> {

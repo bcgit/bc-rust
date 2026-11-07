@@ -1,0 +1,145 @@
+//! Cross-check against an independent Python implementation of RFC 6979 §3.2 (using Python's own
+//! `hmac`/`hashlib`, not derived from this crate) for brainpoolP512r1/SHA-512: RFC 6979 has no
+//! official Appendix A.2.x vectors for brainpool curves; five independently-generated `(d, msg)`
+//! pairs (empty, short ASCII, longer ASCII, all-zero, all-`0xff`), each with the deterministic
+//! `k`, the resulting `(r, s)`, and `Q = [d]G` computed via the standard affine group law (general
+//! `a`), `random.seed 1234567`.
+//!
+//! On this curve the §3.2 step h.3 rejection loop runs on a third of real messages (see
+//! `rfc6979_bp512r1`'s module docs), and these vectors pin it deliberately: CASE_0 and CASE_1
+//! each reject one candidate before their `k`, and a sixth pair, CASE_5, is chosen so that five
+//! in a row are rejected, exercising the `K = HMAC_K(V || 0x00)` re-key five times. Every vector,
+//! including all three rejecting ones, is additionally reproduced by python-ecdsa 0.19.2 (its own
+//! pure-Python RFC 6979) and by OpenSSL 4.0.2's deterministic ECDSA (through the cryptography
+//! 50.0.1 bindings), which also anchors the curve constants a second way.
+
+use bouncycastle_core::signature_key::{DeterministicSigningKey, VerifyingKey};
+use bouncycastle_core::traits::{SignaturePrivateKey, SignaturePublicKey};
+use bouncycastle_ec::hazmat::bp512r1_comb::comb_multiply_base_point;
+use bouncycastle_ec::hazmat::bp512r1_scalar::Bp512r1Scalar;
+use bouncycastle_ecdsa::keys_bp512r1::{ECDSABp512r1PrivateKey, ECDSABp512r1PublicKey};
+use bouncycastle_hex::decode as hex_decode;
+
+struct Vector {
+    d: &'static str,
+    msg: &'static [u8],
+    r: &'static str,
+    s: &'static str,
+    ux: &'static str,
+    uy: &'static str,
+}
+
+// One h.3 rejection: the accepted k is the second candidate, after one re-key of the HMAC chain.
+const CASE_0: Vector = Vector {
+    d: "330EC367DE3D130E41B64A8D9CA805E18BE822EDD22F87F9914BFAF280DD7C1531A01101800F36D7D7F978F0A674894EAF61ACFE376CEAE9AE8692ADE621E465",
+    msg: b"",
+    r: "AA8B911F06FB47FB8CEB47E9E4461DE62F252B786BFA4C0CE25FFE541E77C5A2F51661A49222440CBEE270E3C3DCD63F659A851A63F0FD956D99853764683068",
+    s: "75E16529258661D091F11F214D6A9E89C1857882F3F7BCD8D5DFE606D2FF29F11049683EF23C1034BFB580FBA85044DB627FA9D6AC093B37C8E7D7079C90C740",
+    ux: "4BB89D573182AB456CEE615C3A435A9AF10B7B9BBD35269EA3177993DB6F07A7810D34A808018660A4EE88FB14D220F986BDE200B37841FF8FC8DA3E87A99286",
+    uy: "3B7A607F3E359062492F5D078FEBD595B14A898C4117CFF633CAFB6A57EC5F38390BE97E618B482F10C657D89CC47A16FA93F73A8C99FE050907DDC758DA1BA1",
+};
+
+// One h.3 rejection: the accepted k is the second candidate, after one re-key of the HMAC chain.
+const CASE_1: Vector = Vector {
+    d: "17BAA6642A507BD5336ED46492D516FEE5A381A0C9D32A03D4CCAF167412C30CA67E90EC30BC65D57594E68E791FA9ADF8E3DD706ECB52454C5082AF09E88A09",
+    msg: b"sample",
+    r: "A3452C5439209AEC837D1558214D3BB3CC8837D4B6CDDF472C66704759879071A7DA9E730E429E7E41A1733A339BAF6772DB7DEB540F29F05275CDAEBE87773D",
+    s: "786A229192486D2C69E22F7591C0AF7D5868C3884CA8C4FBD28CB970282B6212B5186A662104523F332C38D0F344ABEB261D63531DC7B5357A446E9DADB5F79A",
+    ux: "7BD4906ECD341E0EBB21359D14B57905BB781DB73C966B95E869FC064E8187E9227C659D4915763E9A3440C9B1D23A2AA8739EE02310CED5173E043F8836D509",
+    uy: "701F14AB67CA27522018F09B9754B90C8DE9BDCE2E84AE5B8AB7416F5AE62087AFB54580EDC9EBE6BF59995B725A93147FFB4923CDB6357BE0FFC94EF603076B",
+};
+
+const CASE_2: Vector = Vector {
+    d: "04D755462F24359A7D8977EF083C9B7AB8BB8C370511F14D57DD04F7D0CF27D0706A18E7C67212978E9A42F0FDF3F46FFCA3DF48D3489CCF392312B11A4F6AF8",
+    msg: b"test message for RFC 6979 brainpoolP512r1 cross-check",
+    r: "2FDB9F8380B2EA96EAE9889F37022143EC557DAE7F2CAC0FA95DDC174CD0FEEBDB6675184CC75EC74589BA16239841B6E403996D8B668A6C0CEFEC8891C27EFE",
+    s: "8E05C6616A5F9423E34639DE67A5EDDAA4A073BF614774A1119290059BDA0A37D186A8BAFFC731C51E81362E7AE8AB40187620B6FD841319DE569105C5F73966",
+    ux: "7C9B80400B43B7BFBE42EFF7F2F1E681D0667EDAC9FE2835C4B67BC8802553ADC37E415B05C2181B26D0526749EA166FB5817FB30D6BADD6F6DDE2D558CCB403",
+    uy: "8D262DB01393F689FB35A205022C4FF69C14E063B6361E22B11ABA0352082386890DA3FAD1B0759F9ADD68242C3BD52D371ABB4469B48F6EF0B2C4F3F0CD7210",
+};
+
+const CASE_3: Vector = Vector {
+    d: "1E484B7A312A44DD6494CF57049E427467DFEBC315C77C8AF429FCF59430B281AEAE2975109B1AD4509AF5ED26B1C7131827FB5CB822F0D43CE7AD71DB8870C7",
+    msg: &[0u8; 32],
+    r: "7FC4472D23D322A8D47D84B3C74DC0EA57228D86EA5BCEB69AFAA3B004D939AE9F3E2E5126B68BC942C50CB7D33D0F5102CE3A21DCE609D35287E95675CCB0A9",
+    s: "564716167DA75BD78AB145EAD26916DA59E32F5F67A56002BDCF038462DAD3A648BA92DB8C6E9552C43C2BF8078D606C37836269BA7B320D26D314B9922F136D",
+    ux: "8090AECA3CA3421547B3EF061A6E95D56A9608288581647FA0FF2AC3C2DE41D6EFED16185A37140B8EFE0446ECD2B9D4A779A28AA1BB830AD0C81B4916C44B39",
+    uy: "6EB7ED76D688B7C89179D29D2653B674DEBD1A15FF210F50D6874724DE654D8B70786AB4B1C6FEC36240464497AD843E1A091FEFED76F5740BE58CB2999194E4",
+};
+
+const CASE_4: Vector = Vector {
+    d: "4B9E378BEEAC6812FF4C1BBBA67BEF083AC2CE16303249B912258C63556A44E17CEE4B4D567578F26A89C3FC0098EFE577CBF8FCAC22AAE164F74D7169CEB006",
+    msg: &[0xffu8; 10],
+    r: "0E91E240E97F6D7B9CB5F5CC99A16FA33D71B1C2AD63BD2B559D223B0E90BFB513BC5EEF94B0435997DD329C286F9C74EC8665C45AC88B1B1616FC5F2C73DA87",
+    s: "79E80AB611E3BEADF15FD136FBA8D4D5E7DFE2D47DACA1E34D8238833E9CFC9B112443147A662F79368D02F230E77B9EC0F40B1B12BE5F4367E07EC5E2953383",
+    ux: "20F1796F4B50A146E6D04C75A3B0D899E6FEACE362D247FCAE6CB2A235F860D7605EDB78E3A56DB9401DBB0DA8A82D491E2F945DDBB16BC3384D4A2154AFD62A",
+    uy: "073A8842B4732D73B6F7213F2DAAC046316A3CDA5D9C4B81B894FEF063340379103826C1CB111DA3161B630FCB6952B49E709903286B6914C1043F75450C1EEB",
+};
+
+// Pins the h.3 continue-chain deliberately: five candidates in a row are >= n, so the accepted k
+// follows five `K = HMAC_K(V || 0x00)` re-keys -- the (d, msg) pair was searched for exactly that.
+const CASE_5: Vector = Vector {
+    d: "2ACDAFAA028C371E193290ECD1F609D3D83EE2CEA56DFBB70023B9242AF6DF75D55ABB2A9EC6C836EE206890D5425531336AC8A86FB7A41E074AA01D2C395E5C",
+    msg: b"brainpoolP512r1 rejection test 113",
+    r: "006EAB155B1A7883362C9FE0A0E84A47A8F4086D594F5F12A3BAC0A0628255DC6860A0649095F365C5B0F571144D00F044188B0DD2471E41BDF100A6FFA85762",
+    s: "92A29C2A899A8F513957A66A0D42F4F7B8E330ECF44A0272AF82568A3EB981169EBB81716A6AE8B395699E64F7C63FAA06C80514717E6F72E8D31536796D0117",
+    ux: "048760C2E0AC7AE2D36049ACB2406A37C6CC4160871B6E0BD69C0F92D95DD626CCFD90717F180EFF435820E8817756AB03D741480C80322C370FA9B8C3C2DBD2",
+    uy: "686B835D888512359FD2EBF73E233E0CFD5C82EDCE1FC9E891BD253C981D55A36D8FEAB7FC1EAAE1DE6E9D4ADD1A6A79A38FC553EA92A75A326ED6FAE1BEF499",
+};
+
+const CASES: [&Vector; 6] = [&CASE_0, &CASE_1, &CASE_2, &CASE_3, &CASE_4, &CASE_5];
+
+fn bytes64(hex: &str) -> [u8; 64] {
+    hex_decode(hex).unwrap().try_into().unwrap()
+}
+
+fn public_key_for(v: &Vector) -> ECDSABp512r1PublicKey {
+    let mut uncompressed = [0u8; 129];
+    uncompressed[0] = 0x04;
+    uncompressed[1..65].copy_from_slice(&bytes64(v.ux));
+    uncompressed[65..129].copy_from_slice(&bytes64(v.uy));
+    ECDSABp512r1PublicKey::from_bytes(&uncompressed).unwrap()
+}
+
+#[test]
+fn public_key_matches_vectors() {
+    for v in CASES {
+        let d = Bp512r1Scalar::from_be_bytes(&bytes64(v.d));
+        let q = comb_multiply_base_point(&d);
+        let (x, y) = q.to_affine().unwrap();
+        assert_eq!(
+            x.to_limbs(),
+            bouncycastle_ec::hazmat::bp512r1_sec1::limbs_from_be_bytes(&bytes64(v.ux)),
+            "Qx for d = {}",
+            v.d
+        );
+        assert_eq!(
+            y.to_limbs(),
+            bouncycastle_ec::hazmat::bp512r1_sec1::limbs_from_be_bytes(&bytes64(v.uy)),
+            "Qy for d = {}",
+            v.d
+        );
+    }
+}
+
+#[test]
+fn deterministic_sign_matches_vectors() {
+    for v in CASES {
+        let sk = ECDSABp512r1PrivateKey::from_bytes(&bytes64(v.d)).unwrap();
+        let sig = sk.sign_deterministic(v.msg, None).unwrap();
+        let mut expected = [0u8; 128];
+        expected[..64].copy_from_slice(&bytes64(v.r));
+        expected[64..].copy_from_slice(&bytes64(v.s));
+        assert_eq!(sig, expected, "signature for message {:?}", v.msg);
+    }
+}
+
+#[test]
+fn deterministic_signature_verifies() {
+    for v in CASES {
+        let sk = ECDSABp512r1PrivateKey::from_bytes(&bytes64(v.d)).unwrap();
+        let pk = public_key_for(v);
+        let sig = sk.sign_deterministic(v.msg, None).unwrap();
+        pk.verify(v.msg, None, &sig).unwrap();
+    }
+}

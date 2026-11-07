@@ -12,9 +12,9 @@
 
 use bouncycastle_core::errors::KDFError;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
-use bouncycastle_core::traits::{Hash, HashAlgParams};
 use bouncycastle_core_test_framework::test_data_loaders::{Value, hex_field, wycheproof_json};
 use bouncycastle_hkdf::HKDF;
+use bouncycastle_hmac::HMACParams;
 use bouncycastle_sha2::hkdf::{
     SUSPENDED_HKDF_SHA256_STATE_LEN, SUSPENDED_HKDF_SHA384_STATE_LEN,
     SUSPENDED_HKDF_SHA512_STATE_LEN,
@@ -30,11 +30,7 @@ const MAX_OKM_LEN: usize = 255 * 64;
 
 /// Runs every case in one `hkdf_*_test.json` file through `HKDF<H, ..>`. The state lengths are
 /// those of `bouncycastle_sha2::hkdf`'s aliases, which cannot be passed as a type here.
-fn run<
-    H: Hash + HashAlgParams + Default,
-    const HASH_STATE_LEN: usize,
-    const HKDF_STATE_LEN: usize,
->(
+fn run<H: HMACParams, const HASH_STATE_LEN: usize, const HKDF_STATE_LEN: usize>(
     filename: &str,
     algorithm: &str,
 ) {

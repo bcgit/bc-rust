@@ -121,6 +121,20 @@ fn cxof128_prefix_property_and_streaming() {
 
     assert_eq!(piecewise, full, "incremental squeeze must equal a single squeeze");
 
+    // Reads smaller than what is left of the last squeezed block are served from it.
+    for n in [1usize, 2, 3, 5, 7] {
+        let mut x = AsconCXof128::with_customization(z).unwrap();
+        x.do_update(&msg);
+        let mut squeezer = x.into_squeezer();
+        let mut piecewise = Vec::new();
+        while piecewise.len() < full.len() {
+            let mut part = vec![0u8; n.min(full.len() - piecewise.len())];
+            assert_eq!(squeezer.do_output_out(&mut part), part.len());
+            piecewise.extend_from_slice(&part);
+        }
+        assert_eq!(piecewise, full, "squeeze in {n}-byte pieces mismatch");
+    }
+
     // Absorbing the message in chunks must equal absorbing it in one call.
     for chunk in [1usize, 8, 9, 64] {
         let mut xc = AsconCXof128::with_customization(z).unwrap();
@@ -144,6 +158,16 @@ fn cxof128_hash_view_metadata() {
     assert_eq!(x.block_bitlen(), 64);
     assert_eq!(x.output_len(), 32);
     assert_eq!(x.hash(b"").len(), 32);
+
+    // hash_out writes the 32-byte Hash view and returns how many bytes it wrote.
+    let expected = AsconCXof128::new().hash(b"abc");
+    let mut out = [0xEEu8; 40];
+    assert_eq!(AsconCXof128::new().hash_out(b"abc", &mut out), 32);
+    assert_eq!(&out[..32], &expected[..]);
+    assert_eq!(&out[32..], &[0u8; 8]);
+    let mut short = [0u8; 10];
+    assert_eq!(AsconCXof128::new().hash_out(b"abc", &mut short), 10);
+    assert_eq!(&short[..], &expected[..10]);
 }
 
 #[test]
@@ -321,6 +345,18 @@ fn cxof128_suspendable_state() {
     combined.extend_from_slice(&tail);
 
     assert_eq!(combined, expected, "resuming mid-squeeze must continue the same output stream");
+    // A squeezer suspended before its first output is a squeezing state too: it resumes as the
+    // squeezer, not as the absorbing type, and continues the same stream.
+    let mut fresh = AsconCXof128::with_customization(z).unwrap();
+    fresh.do_update(&data);
+    let fresh_state = fresh.into_squeezer().suspend();
+    assert!(matches!(
+        AsconCXof128::from_suspended(fresh_state),
+        Err(SuspendableError::InvalidData)
+    ));
+    let mut out = [0u8; 40];
+    AsconCXof128Squeezer::from_suspended(fresh_state).unwrap().do_output_out(&mut out);
+    assert_eq!(out, expected, "a squeezer resumed before its first output must give the stream");
 }
 
 #[test]

@@ -1,66 +1,40 @@
+//! The Ascon subcommands (NIST SP 800-232): `ascon-hash256`, `ascon-xof128`, `ascon-cxof128`
+//! and `ascon-aead128`.
+
 use std::io::{self, Read};
 use std::process::exit;
 
-use bouncycastle::ascon::Ascon_AEAD128;
+use bouncycastle::ascon::AsconAEAD128Key;
 use bouncycastle::ascon::AsconCXof128;
 use bouncycastle::ascon::AsconHash256;
 use bouncycastle::ascon::AsconXof128;
-use bouncycastle::cipher::{Decrypting, Encrypting};
 use bouncycastle::core::errors::SymmetricCipherError;
 use bouncycastle::core::hazmat::do_hazardous_operations;
 use bouncycastle::core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle::core::security_strength::SecurityStrength;
+use bouncycastle::core::symmetric_key::{AeadDecryptionKey, AeadEncryptionKey, FromKeyMaterial};
 use bouncycastle::core::traits::{
     AEADCipherDecryptor, AEADCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
 };
-use bouncycastle::hex;
 
 use crate::helpers;
+use crate::helpers::{CHUNK_LEN, decode_hex_arg, load_secret, read_input_file, read_stdin_chunk};
 
-/// Load a hex string or a binary/hex file into bytes; exits with an error if neither is supplied.
-fn load_bytes(value: &Option<String>, value_file: &Option<String>, label: &str) -> Vec<u8> {
-    if let Some(file) = value_file {
-        helpers::read_from_file(file)
-    } else if let Some(v) = value {
-        hex::decode(v).unwrap_or_else(|_| {
-            eprintln!("Error: {label} is not valid hex.");
-            exit(-1)
-        })
-    } else {
-        eprintln!("Error: {label} must be supplied.");
-        exit(-1)
+/// Build the AEAD key from `--key-file` or `--key`, warning (and forcing usable metadata on the
+/// material) only if the key turns out to be low-entropy (e.g. all-zero), the same way
+/// `helpers::parse_seed` does.
+fn load_aead_key(key: &Option<String>, key_file: &Option<String>) -> AsconAEAD128Key {
+    let secret = load_secret(key, key_file, "key");
+    if secret.key_len() != 16 {
+        eprintln!("Error: the key must be exactly 16 bytes, got {}.", secret.key_len());
+        exit(-1);
     }
-}
-
-fn load_optional_bytes(
-    value: &Option<String>,
-    value_file: &Option<String>,
-    label: &str,
-) -> Option<Vec<u8>> {
-    if let Some(file) = value_file {
-        Some(helpers::read_from_file(file))
-    } else {
-        value.as_ref().map(|v| {
-            hex::decode(v).unwrap_or_else(|_| {
-                eprintln!("Error: {label} is not valid hex.");
-                exit(-1)
-            })
-        })
-    }
-}
-
-fn require_16(bytes: Vec<u8>, label: &str) -> [u8; 16] {
-    bytes.try_into().unwrap_or_else(|_: Vec<u8>| {
-        eprintln!("Error: {label} must be exactly 16 bytes.");
-        exit(-1)
-    })
-}
-
-/// Build a `KeyMaterial<16>` for the AEAD key, warning (and forcing usable metadata) only if the
-/// key turns out to be low-entropy (e.g. all-zero), the same way `helpers::parse_seed` does.
-fn load_key_material(key_bytes: &[u8; 16]) -> KeyMaterial<16> {
     let mut key =
-        KeyMaterial::<16>::from_bytes_as_type(key_bytes, KeyType::SymmetricCipherKey).unwrap();
+        KeyMaterial::<16>::from_bytes_as_type(secret.ref_to_bytes(), KeyType::SymmetricCipherKey)
+            .unwrap_or_else(|e| {
+                eprintln!("Error: couldn't load the key: {e:?}");
+                exit(-1);
+            });
     if key.key_type() == KeyType::Zeroized || key.security_strength() < SecurityStrength::_128bit {
         eprintln!(
             "Warning: low entropy key provided. We'll still process it, but it may be insecure."
@@ -69,9 +43,28 @@ fn load_key_material(key_bytes: &[u8; 16]) -> KeyMaterial<16> {
             k.set_key_type(KeyType::SymmetricCipherKey)?;
             k.set_security_strength(SecurityStrength::_128bit)
         })
-        .unwrap();
+        .unwrap_or_else(|e| {
+            eprintln!("Error: couldn't tag the key: {e:?}");
+            exit(-1);
+        });
     }
-    key
+    AsconAEAD128Key::from_key_material(&key).unwrap_or_else(|e| {
+        eprintln!("Error: couldn't load the key: {e:?}");
+        exit(-1);
+    })
+}
+
+/// The 16-byte nonce from `--nonce-file` or `--nonce` (hex), or none.
+fn load_nonce(nonce: &Option<String>, nonce_file: &Option<String>) -> Option<[u8; 16]> {
+    let bytes = match (nonce_file, nonce) {
+        (Some(file), _) => read_input_file(file),
+        (None, Some(v)) => decode_hex_arg(v, "nonce"),
+        (None, None) => return None,
+    };
+    Some(bytes.try_into().unwrap_or_else(|bytes: Vec<u8>| {
+        eprintln!("Error: the nonce must be exactly 16 bytes, got {}.", bytes.len());
+        exit(-1)
+    }))
 }
 
 /// Ascon-Hash256 of stdin. Streaming update; 256-bit digest.
@@ -84,17 +77,10 @@ pub(crate) fn xof128_cmd(output_len: usize, output_hex: bool) {
     helpers::stream_xof(AsconXof128::new(), output_len, output_hex);
 }
 
-/// Ascon-CXOF128 of stdin with a hex customization string, producing `output_len` bytes.
-pub(crate) fn cxof128_cmd(customization: &Option<String>, output_len: usize, output_hex: bool) {
-    let z = match customization {
-        Some(v) => hex::decode(v).unwrap_or_else(|_| {
-            eprintln!("Error: customization is not valid hex.");
-            exit(-1)
-        }),
-        None => Vec::new(),
-    };
-    let x = AsconCXof128::with_customization(&z).unwrap_or_else(|_| {
-        eprintln!("Error: customization string exceeds 256 bytes.");
+/// Ascon-CXOF128 of stdin with a customization string, producing `output_len` bytes.
+pub(crate) fn cxof128_cmd(customization: &[u8], output_len: usize, output_hex: bool) {
+    let x = AsconCXof128::with_customization(customization).unwrap_or_else(|_| {
+        eprintln!("Error: the customization string exceeds 256 bytes.");
         exit(-1)
     });
     helpers::stream_xof(x, output_len, output_hex);
@@ -114,70 +100,70 @@ pub(crate) fn cxof128_cmd(customization: &Option<String>, output_len: usize, out
 /// ciphertext eagerly, before the tag is known; note that in the decryption direction, plaintext
 /// is likewise emitted before the tag has been checked, so it should not be treated as
 /// authentic until this command exits with status 0 (see the crate's "Security Considerations").
+#[allow(clippy::too_many_arguments)] // one flag per input, each inline or from a file
 pub(crate) fn aead128_cmd(
     key: &Option<String>,
     key_file: &Option<String>,
     nonce: &Option<String>,
     nonce_file: &Option<String>,
-    ad: &Option<String>,
+    aad: &Option<String>,
+    aad_file: &Option<String>,
     decrypt: bool,
     output_hex: bool,
 ) {
-    let key = load_key_material(&require_16(load_bytes(key, key_file, "key"), "key"));
-    let nonce =
-        load_optional_bytes(nonce, nonce_file, "nonce").map(|bytes| require_16(bytes, "nonce"));
-    let ad_bytes = match ad {
-        Some(v) => hex::decode(v).unwrap_or_else(|_| {
-            eprintln!("Error: associated data is not valid hex.");
-            exit(-1)
-        }),
-        None => Vec::new(),
+    let key = load_aead_key(key, key_file);
+    let nonce = load_nonce(nonce, nonce_file);
+    let aad_bytes = match (aad_file, aad) {
+        (Some(file), _) => read_input_file(file),
+        (None, Some(v)) => decode_hex_arg(v, "aad"),
+        (None, None) => Vec::new(),
     };
-    let ad_opt = if ad_bytes.is_empty() { None } else { Some(ad_bytes.as_slice()) };
+    let aad_opt = if aad_bytes.is_empty() { None } else { Some(aad_bytes.as_slice()) };
 
     if decrypt {
-        aead128_decrypt_stream(&key, nonce.as_ref(), ad_opt, output_hex);
+        aead128_decrypt_stream(&key, nonce.as_ref(), aad_opt, output_hex);
     } else {
-        aead128_encrypt_stream(&key, nonce.as_ref(), ad_opt, output_hex);
+        aead128_encrypt_stream(&key, nonce.as_ref(), aad_opt, output_hex);
     }
 }
 
-/// Drives [`Ascon_AEAD128<Encrypting>`] in the inline `ciphertext || tag` layout (the inherited
-/// [`SymmetricCipherEncryptor::do_encrypt_final_out`]). With no nonce given one is generated and
-/// written ahead of the stream; a caller-supplied nonce is not written, since the caller has it.
+/// Drives the key's encryptor in the inline `ciphertext || tag` layout (the inherited
+/// [`SymmetricCipherEncryptor::do_encrypt_final_out`]). With no nonce given one is drawn from the
+/// OS-backed DRBG and written ahead of the stream; a caller-supplied nonce is not written, since
+/// the caller has it.
 fn aead128_encrypt_stream(
-    key: &KeyMaterial<16>,
+    key: &AsconAEAD128Key,
     nonce: Option<&[u8; 16]>,
-    ad_opt: Option<&[u8]>,
+    aad_opt: Option<&[u8]>,
     output_hex: bool,
 ) {
-    let start = match nonce {
-        Some(nonce) => {
-            Ascon_AEAD128::<Encrypting>::do_encrypt_init_nonce(key, nonce).map(|c| (c, None))
-        }
-        None => Ascon_AEAD128::<Encrypting>::do_encrypt_init(key).map(|(c, n)| (c, Some(n))),
+    let (mut cipher, generated_nonce) = match nonce {
+        Some(nonce) => (key.create_encryptor_nonce(nonce), None),
+        None => key
+            .create_encryptor(&mut bouncycastle::rng::HashDRBG_SHA512::new_from_os())
+            .map(|(c, n)| (c, Some(n)))
+            .unwrap_or_else(|e| {
+                eprintln!("Error: couldn't start encryption: {e:?}");
+                exit(-1);
+            }),
     };
-    let (mut cipher, generated_nonce) = start.unwrap_or_else(|e| {
-        eprintln!("Error: couldn't start encryption: {e:?}");
-        exit(-1);
-    });
-    if let Some(ad) = ad_opt {
+    if let Some(aad) = aad_opt {
         // infallible: `do_update_aad` only refuses AAD once plaintext has been fed in, and none
         // has been yet.
-        cipher.do_update_aad(ad).unwrap();
+        cipher.do_update_aad(aad).unwrap();
     }
 
     if let Some(nonce) = generated_nonce {
         helpers::write_bytes_or_hex(&nonce, output_hex);
     }
 
-    let mut buf = [0u8; 1024];
+    let mut buf = [0u8; CHUNK_LEN];
     loop {
-        let n = io::stdin().read(&mut buf).expect("Failed to read from stdin");
+        let n = read_stdin_chunk(&mut buf);
         if n == 0 {
             break;
         }
-        let mut out = [0u8; 1024];
+        let mut out = [0u8; CHUNK_LEN];
         // infallible: `out` is as long as `buf`, so it cannot be shorter than the `n` bytes read
         // into it, which is the only length `OutputBufferTooSmall` could complain about.
         let written = cipher.do_encrypt_out(&buf[..n], &mut out).unwrap();
@@ -193,16 +179,15 @@ fn aead128_encrypt_stream(
 }
 
 /// Decrypts a stream whose final 16 bytes are the tag, which is only known once EOF is reached.
-/// [`Ascon_AEAD128<Decrypting>`] holds the last 16 bytes it has seen back itself, releasing everything
+/// The key's decryptor holds the last 16 bytes it has seen back itself, releasing everything
 /// before them as soon as it is known not to be part of the tag; at EOF
 /// [`SymmetricCipherDecryptor::do_decrypt_final`] checks what it held back as the tag.
 fn aead128_decrypt_stream(
-    key: &KeyMaterial<16>,
+    key: &AsconAEAD128Key,
     nonce: Option<&[u8; 16]>,
-    ad_opt: Option<&[u8]>,
+    aad_opt: Option<&[u8]>,
     output_hex: bool,
 ) {
-    const CHUNK: usize = 1024;
     let nonce = match nonce {
         Some(nonce) => *nonce,
         None => {
@@ -210,33 +195,30 @@ fn aead128_decrypt_stream(
             if let Err(e) = io::stdin().read_exact(&mut nonce) {
                 if e.kind() == io::ErrorKind::UnexpectedEof {
                     eprintln!("Error: ciphertext is shorter than the 16-byte nonce.");
-                    exit(-1);
+                } else {
+                    eprintln!("Error: failed to read from stdin: {e}");
                 }
-                panic!("Failed to read from stdin: {e}");
+                exit(-1);
             }
             nonce
         }
     };
 
-    let mut cipher =
-        Ascon_AEAD128::<Decrypting>::do_decrypt_init(key, &nonce).unwrap_or_else(|e| {
-            eprintln!("Error: couldn't start decryption: {e:?}");
-            exit(-1);
-        });
-    if let Some(ad) = ad_opt {
+    let mut cipher = key.create_decryptor(&nonce);
+    if let Some(aad) = aad_opt {
         // infallible: as on the encrypt side, no ciphertext has been fed in yet.
-        cipher.do_update_aad(ad).unwrap();
+        cipher.do_update_aad(aad).unwrap();
     }
 
-    let mut buf = [0u8; CHUNK];
-    let mut out = [0u8; CHUNK];
+    let mut buf = [0u8; CHUNK_LEN];
+    let mut out = [0u8; CHUNK_LEN];
     loop {
-        let n = io::stdin().read(&mut buf).expect("Failed to read from stdin");
+        let n = read_stdin_chunk(&mut buf);
         if n == 0 {
             break;
         }
         // infallible: the decryptor releases at most what it has held back (16 bytes) plus what
-        // it is given, less the 16 it keeps, so never more than the `n <= CHUNK` bytes read.
+        // it is given, less the 16 it keeps, so never more than the `n <= CHUNK_LEN` bytes read.
         let written = cipher.do_decrypt_out(&buf[..n], &mut out).unwrap();
         helpers::write_bytes_or_hex(&out[..written], output_hex);
     }

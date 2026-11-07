@@ -124,6 +124,20 @@ You can build the main library and the `bc-rust` command-line utility with:
 cargo build -p cli
 ```
 
+The utility exposes every primitive as a streaming stdin-to-stdout subcommand; `bc-rust --help`
+lists them and `bc-rust <subcommand> --help` the flags. For example:
+
+```
+echo -n abc | target/debug/bc-rust sha256 -x
+target/debug/bc-rust rng --len 32 > key.bin
+target/debug/bc-rust aes256-gcm -d encrypt --key-file key.bin < plain > cipher
+target/debug/bc-rust aes256-gcm -d decrypt --key-file key.bin < cipher
+```
+
+Values given inline (`--key`, `--iv`, ...) are hex; files are raw bytes, or hex text with the global
+`--hex-input` flag. The shell tests under `cli/tests/` (`cli/tests/test_all.sh`) show every
+subcommand in use.
+
 Or you can build a single sub-crate by name, for example:
 
 ```

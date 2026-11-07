@@ -157,8 +157,14 @@ pub use bouncycastle_utils::suspendable_state::SuspendableError;
 pub enum SignatureError {
     ///
     GenericError(&'static str),
-    ///
-    ConsistencyCheckFailed(),
+    /// The public and private key of a pair do not belong together.
+    ConsistencyCheckFailed,
+    /// The algorithm bounds its rejection-sampling loop (FIPS 204 Section 6.2 allows ML-DSA to)
+    /// and the bound was reached without a signature; nothing was written. The hedged variant
+    /// draws fresh randomness on a retry; the deterministic variant fails the same way again.
+    RejectionLimitExceeded,
+    /// The pre-hash is weaker than the parameter set (FIPS 204 Section 5.4 for HashML-DSA).
+    PreHashTooWeak,
     ///
     EncodingError(&'static str),
     ///
@@ -198,6 +204,10 @@ pub enum SymmetricCipherError {
     /// The data is not a whole number of blocks, for a block cipher operation that takes only
     /// whole blocks: a misaligned block-cipher ciphertext is malformed. Nothing was processed.
     DataNotBlockAligned,
+    /// The length of the input is outside the range of lengths the algorithm is defined on, for
+    /// example a key-wrap plaintext or ciphertext that is too short. Only returned by APIs that
+    /// take variable-length input; lengths fixed at compile time are validated at compile time.
+    InvalidInputLength(&'static str),
     ///
     KeyMaterialError(KeyMaterialError),
     ///

@@ -10,7 +10,7 @@
 //! ```
 //! use bouncycastle_aes::hazmat::AES128Internal;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-//! use bouncycastle_core::hazmat::ElectronicCodeBook;
+//! use bouncycastle_core::hazmat::{BlockPermutation, ElectronicCodeBook, KeyExpansion};
 //!
 //! let key = KeyMaterial::<16>::from_bytes_as_type(
 //!     &[0x2b, 0x7e, 0x15, 0x16, 0x28, 0xae, 0xd2, 0xa6,
@@ -44,15 +44,15 @@
 //! block: `u16` planes hold one block, `u32` planes two and `u64` planes four (see the
 //! `bitslice` module in the source). The round functions cost about the same whatever the
 //! width, so on a 64-bit machine four independent blocks cost little more than one. Where a
-//! caller has them, [`ElectronicCodeBook::encrypt_4blocks`] is 3.0x the throughput of four
-//! [`ElectronicCodeBook::encrypt_block`] calls on x86-64 (3.7x for decryption), and
-//! [`ElectronicCodeBook::encrypt_2blocks`] 1.75x that of two (1.95x for decryption); the crate
+//! caller has them, [`BlockPermutation::encrypt_4blocks`] is 3.0x the throughput of four
+//! [`BlockPermutation::encrypt_block`] calls on x86-64 (3.7x for decryption), and
+//! [`BlockPermutation::encrypt_2blocks`] 1.75x that of two (1.95x for decryption); the crate
 //! docs have the table and the benches record the numbers:
 //!
 //! ```
 //! use bouncycastle_aes::hazmat::AES256Internal;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-//! use bouncycastle_core::hazmat::ElectronicCodeBook;
+//! use bouncycastle_core::hazmat::{BlockPermutation, ElectronicCodeBook, KeyExpansion};
 //!
 //! let key = KeyMaterial::<32>::from_bytes_as_type(&[0x01; 32], KeyType::SymmetricCipherKey)
 //!     .expect("a 32-byte symmetric cipher key");
@@ -69,7 +69,7 @@
 //! assert_eq!(four, [[0u8; 16], [1u8; 16], [2u8; 16], [3u8; 16]]);
 //! ```
 
-use crate::bitslice::{Block, PlaneWord, Planes};
+use crate::bitslice::{Block, BlockPlanes, PlaneWord, Planes};
 use crate::round::{add_round_key, inv_mix_columns, inv_shift_rows, mix_columns, shift_rows};
 use crate::sbox::{inv_sbox, sbox};
 use crate::schedule::{expand, round_key};
@@ -100,6 +100,17 @@ use bouncycastle_core::hazmat::ElectronicCodeBook;
 pub struct AESInternal<P: AESParams> {
     schedule: Secret<P::Schedule>,
 }
+
+// Written out rather than derived so that `P`, a marker type, need not be `PartialEq`. Round key
+// 0 is the key itself (FIPS 197 Sec 5.2), so two schedules are equal exactly when the keys are;
+// `Secret`'s equality inspects every byte, so the time taken does not say where they differ.
+impl<P: AESParams> PartialEq for AESInternal<P> {
+    fn eq(&self, other: &Self) -> bool {
+        self.schedule == other.schedule
+    }
+}
+
+impl<P: AESParams> Eq for AESInternal<P> {}
 
 /// AES-128: 16-byte key, 10 rounds (FIPS 197 Table 3).
 #[allow(non_camel_case_types)]
@@ -205,7 +216,7 @@ impl<P: AESParams> AESInternal<P> {
     /// Encrypts the blocks a `T`-wide state holds, in place: transpose in, [`Self::cipher`],
     /// transpose out.
     #[inline(always)]
-    fn encrypt<T: PlaneWord>(&self, blocks: &mut T::Blocks) {
+    fn encrypt<T: BlockPlanes>(&self, blocks: &mut T::Blocks) {
         let mut q = T::pack(blocks);
         self.cipher(&mut q);
         T::unpack(&mut q, blocks);
@@ -214,7 +225,7 @@ impl<P: AESParams> AESInternal<P> {
     /// Decrypts the blocks a `T`-wide state holds, in place: transpose in, [`Self::inv_cipher`],
     /// transpose out.
     #[inline(always)]
-    fn decrypt<T: PlaneWord>(&self, blocks: &mut T::Blocks) {
+    fn decrypt<T: BlockPlanes>(&self, blocks: &mut T::Blocks) {
         let mut q = T::pack(blocks);
         self.inv_cipher(&mut q);
         T::unpack(&mut q, blocks);
@@ -276,7 +287,12 @@ impl AES128Internal {
     /// * [`KeyMaterialError::SecurityStrength`] if the key carries a strength below 128 bits.
     pub(crate) fn new(key: &KeyMaterial<16>) -> Result<Self, SymmetricCipherError> {
         Self::validate(key)?;
-        Ok(Self { schedule: expand::<AES128Params>(key.ref_to_bytes()) })
+        // `validate` checked key_len() == 16, which is exactly what ref_to_bytes() spans.
+        let bytes: &[u8; 16] = key
+            .ref_to_bytes()
+            .try_into()
+            .map_err(|_| SymmetricCipherError::KeyMaterialError(KeyMaterialError::InvalidLength))?;
+        Ok(Self { schedule: expand::<AES128Params, 16>(bytes) })
     }
 }
 
@@ -284,7 +300,12 @@ impl AES192Internal {
     /// Expands a 24-byte key into an AES-192 schedule. See [`AES128Internal::new`] for the error cases.
     pub(crate) fn new(key: &KeyMaterial<24>) -> Result<Self, SymmetricCipherError> {
         Self::validate(key)?;
-        Ok(Self { schedule: expand::<AES192Params>(key.ref_to_bytes()) })
+        // `validate` checked key_len() == 24, which is exactly what ref_to_bytes() spans.
+        let bytes: &[u8; 24] = key
+            .ref_to_bytes()
+            .try_into()
+            .map_err(|_| SymmetricCipherError::KeyMaterialError(KeyMaterialError::InvalidLength))?;
+        Ok(Self { schedule: expand::<AES192Params, 24>(bytes) })
     }
 }
 
@@ -292,7 +313,12 @@ impl AES256Internal {
     /// Expands a 32-byte key into an AES-256 schedule. See [`AES128Internal::new`] for the error cases.
     pub(crate) fn new(key: &KeyMaterial<32>) -> Result<Self, SymmetricCipherError> {
         Self::validate(key)?;
-        Ok(Self { schedule: expand::<AES256Params>(key.ref_to_bytes()) })
+        // `validate` checked key_len() == 32, which is exactly what ref_to_bytes() spans.
+        let bytes: &[u8; 32] = key
+            .ref_to_bytes()
+            .try_into()
+            .map_err(|_| SymmetricCipherError::KeyMaterialError(KeyMaterialError::InvalidLength))?;
+        Ok(Self { schedule: expand::<AES256Params, 32>(bytes) })
     }
 }
 
@@ -319,9 +345,13 @@ impl ModeNames for AES128Internal {
     const CCM_ALG_NAME: &'static str = "AES_CCM_128";
     const CFB_ALG_NAME: &'static str = "AES_CFB_128";
     const CFB8_ALG_NAME: &'static str = "AES_CFB8_128";
+    const CMAC_ALG_NAME: &'static str = "AES_CMAC_128";
     const CTR_ALG_NAME: &'static str = "AES_CTR_128";
     const ECB_ALG_NAME: &'static str = "AES_ECB_128";
     const GCM_ALG_NAME: &'static str = "AES_GCM_128";
+    const GMAC_ALG_NAME: &'static str = "AES_GMAC_128";
+    const KW_ALG_NAME: &'static str = "AES_KW_128";
+    const KWP_ALG_NAME: &'static str = "AES_KWP_128";
 }
 
 impl ModeNames for AES192Internal {
@@ -329,9 +359,13 @@ impl ModeNames for AES192Internal {
     const CCM_ALG_NAME: &'static str = "AES_CCM_192";
     const CFB_ALG_NAME: &'static str = "AES_CFB_192";
     const CFB8_ALG_NAME: &'static str = "AES_CFB8_192";
+    const CMAC_ALG_NAME: &'static str = "AES_CMAC_192";
     const CTR_ALG_NAME: &'static str = "AES_CTR_192";
     const ECB_ALG_NAME: &'static str = "AES_ECB_192";
     const GCM_ALG_NAME: &'static str = "AES_GCM_192";
+    const GMAC_ALG_NAME: &'static str = "AES_GMAC_192";
+    const KW_ALG_NAME: &'static str = "AES_KW_192";
+    const KWP_ALG_NAME: &'static str = "AES_KWP_192";
 }
 
 impl ModeNames for AES256Internal {
@@ -339,7 +373,11 @@ impl ModeNames for AES256Internal {
     const CCM_ALG_NAME: &'static str = "AES_CCM_256";
     const CFB_ALG_NAME: &'static str = "AES_CFB_256";
     const CFB8_ALG_NAME: &'static str = "AES_CFB8_256";
+    const CMAC_ALG_NAME: &'static str = "AES_CMAC_256";
     const CTR_ALG_NAME: &'static str = "AES_CTR_256";
     const ECB_ALG_NAME: &'static str = "AES_ECB_256";
     const GCM_ALG_NAME: &'static str = "AES_GCM_256";
+    const GMAC_ALG_NAME: &'static str = "AES_GMAC_256";
+    const KW_ALG_NAME: &'static str = "AES_KW_256";
+    const KWP_ALG_NAME: &'static str = "AES_KWP_256";
 }

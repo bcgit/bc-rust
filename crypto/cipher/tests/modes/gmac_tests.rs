@@ -1,0 +1,159 @@
+//! Structural tests for GMAC, driven by a toy permutation: the key and the mode's own route give
+//! the tag `Gcm` gives over AAD alone, streaming splits, tag, nonce and message sensitivity, and key
+//! validation.
+//! The known-answer tests (ACVP, Wycheproof) are in the `aes` crate, `crypto/aes/tests/gmac_*.rs`.
+
+mod common;
+
+use bouncycastle_cipher::BlockCipherKey;
+use bouncycastle_cipher::modes::{GCM, GCM_NONCE_LEN, GMAC, ModeNames};
+use bouncycastle_core::hazmat::{KeyExpansion, Mode, NonceMacMode};
+use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
+use bouncycastle_core::security_strength::SecurityStrength;
+use bouncycastle_core::symmetric_key::{AeadEncryptionKey, FromKeyMaterial};
+use bouncycastle_core_test_framework::from_key_material::TestFrameworkFromKeyMaterial;
+use bouncycastle_rng::FixedSeedRNG;
+use common::{TOY_LEN, Toy, toy_key};
+
+type ToyGmacKey<const TAG_LEN: usize = 16> = BlockCipherKey<Toy, GMAC<TAG_LEN>>;
+
+fn gmac_key<const TAG_LEN: usize>() -> ToyGmacKey<TAG_LEN> {
+    ToyGmacKey::from_key_material(&mac_key()).expect("the toy MAC key")
+}
+
+const NONCE: [u8; GCM_NONCE_LEN] = [0x5A; GCM_NONCE_LEN];
+
+fn mac_key() -> KeyMaterial<TOY_LEN> {
+    KeyMaterial::<TOY_LEN>::from_bytes_as_type(toy_key().ref_to_bytes(), KeyType::MACKey).unwrap()
+}
+
+/// The mode's own route onto the workers, through the hazmat mode trait the key forwards to.
+fn key_state() -> <GMAC as Mode<Toy>>::KeyState {
+    <GMAC as Mode<Toy>>::key_state(Toy::new(&toy_key()).unwrap())
+}
+
+fn message(len: usize) -> Vec<u8> {
+    (0..len).map(|i| (i as u8).wrapping_mul(29).wrapping_add(3)).collect()
+}
+
+fn rng() -> FixedSeedRNG<[u8; GCM_NONCE_LEN]> {
+    FixedSeedRNG::new(NONCE)
+}
+
+/// GMAC is GCM's tag over AAD alone: every constructor gives that tag, and the 12-byte tag is the
+/// 16-byte one's prefix (Algorithm 4 step 6, `MSB_t`).
+#[test]
+fn every_route_gives_gcm_s_aad_only_tag() {
+    let state = key_state();
+    for len in [0, 1, 15, 16, 17, 32, 33, 100] {
+        let msg = message(len);
+        let (_, gcm_nonce, expected) = BlockCipherKey::<Toy, GCM>::from_key_material(&toy_key())
+            .unwrap()
+            .encrypt_detached_out(&mut rng(), &msg, &[], &mut [])
+            .unwrap();
+        assert_eq!(gcm_nonce, NONCE);
+
+        let key = gmac_key::<16>();
+        let (gen_, nonce) = key.create_generator(&mut rng()).unwrap();
+        assert_eq!(nonce, NONCE, "len {len}");
+        assert_eq!(gen_.mac(&msg), expected, "key.create_generator, len {len}");
+        assert_eq!(
+            key.create_generator_nonce(&NONCE).mac(&msg),
+            expected,
+            "key.create_generator_nonce, len {len}"
+        );
+        assert!(key.create_verifier(&NONCE).verify(&msg, &expected));
+
+        type Full = GMAC<16>;
+        type Short = GMAC<12>;
+        let (gen_, nonce) =
+            <Full as NonceMacMode<Toy, GCM_NONCE_LEN, 16>>::generate_init(&state, &mut rng())
+                .unwrap();
+        assert_eq!(nonce, NONCE, "len {len}");
+        assert_eq!(gen_.mac(&msg), expected, "generate_init, len {len}");
+        assert_eq!(
+            <Full as NonceMacMode<Toy, GCM_NONCE_LEN, 16>>::generate_init_nonce(&state, &NONCE)
+                .mac(&msg),
+            expected,
+            "generate_init_nonce, len {len}"
+        );
+        assert!(
+            <Full as NonceMacMode<Toy, GCM_NONCE_LEN, 16>>::verify_init(&state, &NONCE)
+                .verify(&msg, &expected)
+        );
+
+        let short =
+            <Short as NonceMacMode<Toy, GCM_NONCE_LEN, 12>>::generate_init_nonce(&state, &NONCE)
+                .mac(&msg);
+        assert_eq!(short[..], expected[..12], "len {len}");
+        assert!(
+            <Short as NonceMacMode<Toy, GCM_NONCE_LEN, 12>>::verify_init(&state, &NONCE)
+                .verify(&msg, &short)
+        );
+    }
+}
+
+#[test]
+fn streaming_split_points() {
+    let key = gmac_key::<16>();
+    for mlen in [16, 20, 32, 33, 64] {
+        let msg = message(mlen);
+        let expected = key.create_generator_nonce(&NONCE).mac(&msg);
+        for split in 0..=mlen {
+            let mut gen_ = key.create_generator_nonce(&NONCE);
+            gen_.do_update(&msg[..split]);
+            gen_.do_update(&msg[split..]);
+            assert_eq!(gen_.do_final(), expected, "generate, mlen {mlen}, split at {split}");
+
+            let mut ver = key.create_verifier(&NONCE);
+            ver.do_update(&msg[..split]);
+            ver.do_update(&msg[split..]);
+            assert!(ver.do_verify_final(&expected), "verify, mlen {mlen}, split at {split}");
+        }
+    }
+}
+
+#[test]
+fn rejects_changed_tag_nonce_or_message() {
+    let key = gmac_key::<16>();
+    let msg = message(100);
+    let tag = key.create_generator_nonce(&NONCE).mac(&msg);
+    let verify = |nonce: &[u8; GCM_NONCE_LEN], msg: &[u8], tag: &[u8; 16]| {
+        key.create_verifier(nonce).verify(msg, tag)
+    };
+    assert!(verify(&NONCE, &msg, &tag));
+
+    for i in 0..tag.len() {
+        let mut bad = tag;
+        bad[i] ^= 0x01;
+        assert!(!verify(&NONCE, &msg, &bad), "tag byte {i}");
+    }
+    let mut other_nonce = NONCE;
+    other_nonce[0] ^= 0x80;
+    assert!(!verify(&other_nonce, &msg, &tag));
+    assert!(!verify(&NONCE, &msg[..99], &tag));
+
+    // The empty message has a tag of its own, which is not the tag of anything else.
+    let empty_tag = key.create_generator_nonce(&NONCE).mac(&[]);
+    assert!(verify(&NONCE, &[], &empty_tag));
+    assert!(!verify(&NONCE, &[0], &empty_tag));
+}
+
+/// A nonce drawn per generator: two draws from one RNG are two nonces, and so two tags.
+#[test]
+fn a_fresh_nonce_per_generator() {
+    let key = gmac_key::<16>();
+    let mut rng = FixedSeedRNG::new(core::array::from_fn::<u8, 64, _>(|i| i as u8));
+    let (g1, n1) = key.create_generator(&mut rng).unwrap();
+    let (g2, n2) = key.create_generator(&mut rng).unwrap();
+    assert_ne!(n1, n2);
+    assert_ne!(g1.mac(b"m"), g2.mac(b"m"));
+}
+
+/// The key's construction suite: a `MACKey` of the permutation's length and strength, bound to
+/// the GMAC name or to nothing.
+#[test]
+fn the_key_enforces_the_material_policy() {
+    TestFrameworkFromKeyMaterial::new()
+        .test::<TOY_LEN, ToyGmacKey>(Toy::GMAC_ALG_NAME, SecurityStrength::_128bit);
+}

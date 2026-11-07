@@ -2,6 +2,8 @@
 //! different permutation functions, such as modes of operation and padding.
 //!
 //! * [`modes`] — block cipher modes of operation (NIST SP 800-38A, SP 800-38C and SP 800-38D).
+//! * [`BlockCipherKey`] — the key object the block cipher crates alias: a permutation under a mode,
+//!   handing out that mode's workers through the role traits of `bouncycastle_core::symmetric_key`.
 //! * [`padding`] — block padding schemes, and the adapters that apply them to a block cipher mode.
 //! * [`stream`] — a stream cipher over any keystream, and the helpers shared by stream ciphers that
 //!   cannot be built that way.
@@ -9,38 +11,6 @@
 //! # Usage Examples
 //!
 //! See the [`modes`], [`padding`] and [`stream`] module docs.
-//!
-//! # Suspending and resuming execution
-//!
-//! Every mode and adapter implements `SuspendableKeyed`, so a message in progress can be suspended
-//! to a byte array and resumed later with the re-supplied key. The length of that array is the
-//! type's `SUSPENDED_STATE_LEN`, and a wrong length is a compile error; the mechanism is
-//! [`bouncycastle_utils::suspendable_state`]. A suspended state holds everything the message in
-//! progress depends on except the key -- a chaining block, live keystream, a running MAC -- so
-//! protect it as the plaintext it governs, and never resume one state twice.
-//!
-//! ```
-//! use bouncycastle_cipher::modes::Cbc;
-//! use bouncycastle_cipher::Encrypting;
-//! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-//! use bouncycastle_core::traits::{BlockCipherEncryptor, SuspendableKeyed};
-//! # mod toy { include!("../tests/common/toy_block_cipher.rs"); }
-//! # use toy::ToyBlockCipher;
-//!
-//! type ToyCbc = Cbc<ToyBlockCipher, Encrypting, 16, 16>;
-//! const STATE_LEN: usize = ToyCbc::SUSPENDED_STATE_LEN;
-//!
-//! let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey).unwrap();
-//! let (mut enc, _iv) = ToyCbc::do_encrypt_init(&key).unwrap();
-//! let mut first = [[0x11u8; 16]];
-//! enc.do_encrypt_blocks_inplace(&mut first).unwrap();
-//!
-//! // Suspending consumes the cipher. The key is not in the state and is re-supplied to resume.
-//! let state: [u8; STATE_LEN] = enc.suspend();
-//! let mut enc = ToyCbc::from_suspended(state, &key).unwrap();
-//! let mut second = [[0x22u8; 16]];
-//! enc.do_encrypt_blocks_inplace(&mut second).unwrap();
-//! ```
 //!
 //! # Memory Usage
 //!
@@ -54,14 +24,19 @@
 #![forbid(missing_docs)]
 #![no_std]
 
+extern crate alloc;
+
 // `tests/common/toy_block_cipher.rs` names `bouncycastle_cipher::modes::ModeNames`, and is also
 // `include!`d by unit tests here, where that path would otherwise not resolve.
 #[cfg(test)]
 extern crate self as bouncycastle_cipher;
 
+mod key;
 pub mod modes;
 pub mod padding;
 pub mod stream;
+
+pub use key::BlockCipherKey;
 
 /// Direction marker for a cipher value that encrypts.
 ///
@@ -91,8 +66,8 @@ mod sealed {
 ///
 /// ```text
 /// pub type AES_CBC_128<Dir, Pad> = <Dir as Direction>::Select<
-///     PaddedBlockCipherEncryptor<Cbc<AES128Internal, Encrypting, 16, 16>, Pad, 16, 16, 16>,
-///     PaddedBlockCipherDecryptor<Cbc<AES128Internal, Decrypting, 16, 16>, Pad, 16, 16, 16>,
+///     PaddedBlockCipherEncryptor<Cbc<AES128Internal, Encrypting, 16>, Pad, 16, 16>,
+///     PaddedBlockCipherDecryptor<Cbc<AES128Internal, Decrypting, 16>, Pad, 16, 16>,
 /// >;
 /// ```
 ///

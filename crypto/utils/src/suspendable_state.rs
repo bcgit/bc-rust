@@ -35,7 +35,7 @@
 //! /// A toy: a counter that must never exceed 100, and a key it is checked against on resume.
 //! struct Counter { count: usize }
 //!
-//! impl SuspendableComponent for Counter {
+//! impl<'k> SuspendableComponent<'k> for Counter {
 //!     const STATE_LEN: usize = 8;
 //!     type Key = u8;
 //!     fn write_state(&self, out: &mut [u8]) {
@@ -98,13 +98,20 @@ impl From<SemVer> for [u8; 3] {
 /// Parse a decimal ASCII string (a Cargo version component) into a u8 at compile time.
 const fn parse_version_component(s: &str) -> u8 {
     let bytes = s.as_bytes();
+    assert!(!bytes.is_empty(), "version component must not be empty");
     let mut result: u8 = 0;
     let mut i = 0;
     while i < bytes.len() {
         let d = bytes[i];
         assert!(d >= b'0' && d <= b'9', "version component must be numeric");
-        // A component > 255 overflows u8 and fails the build (SemVer fields are u8 by design).
-        result = result * 10 + (d - b'0');
+        // SemVer fields are u8 by design, so a component > 255 must fail the build. Plain `*` and
+        // `+` would wrap instead when overflow checks are off (const evaluation follows
+        // -C overflow-checks), so the overflow is checked explicitly.
+        let Some(shifted) = result.checked_mul(10) else { panic!("version component exceeds 255") };
+        let Some(next) = shifted.checked_add(d - b'0') else {
+            panic!("version component exceeds 255")
+        };
+        result = next;
         i += 1;
     }
     result
@@ -130,34 +137,46 @@ pub const LIB_VERSION_LEN: usize = 3;
 
 /// Puts the library version into the first three bytes of the state array.
 ///
-/// Hands back a slice to the same array, starting after the version tag.
+/// Hands back a slice to the same array, starting after the version tag. `SERIALIZED_LEN` must be
+/// at least [`LIB_VERSION_LEN`], checked at compile time:
+///
+/// ```compile_fail
+/// use bouncycastle_utils::suspendable_state::add_lib_ver;
+///
+/// let mut state = [0u8; 2];
+/// add_lib_ver(&mut state);
+/// ```
 pub fn add_lib_ver<const SERIALIZED_LEN: usize>(state: &mut [u8; SERIALIZED_LEN]) -> &mut [u8] {
+    const {
+        assert!(
+            SERIALIZED_LEN >= LIB_VERSION_LEN,
+            "the state must have room for the version header"
+        )
+    };
     state[..LIB_VERSION_LEN].copy_from_slice(&<[u8; 3]>::from(LIB_VERSION));
     &mut state[LIB_VERSION_LEN..]
 }
 
-/// A helper for deserializing an object's state
+/// A helper for deserializing an object's state: checks the version tag in its first three bytes.
 ///
-/// The state_out array must have length at least SERIALIZED_LEN - 3.
-///
-/// Returns the number of bytes written to state_out, or a [`SuspendableError::IncompatibleVersion`] if
-/// the version of the serialized state is earlier than the specified `not_before` version, or
-/// is a future MAJOR or MINOR version (but future PATCH versions are ok).
+/// Hands back a slice to the same array, starting after the version tag, or a
+/// [`SuspendableError::IncompatibleVersion`] if the version of the serialized state is earlier than
+/// the specified `not_before` version, or is a future MAJOR or MINOR version (but future PATCH
+/// versions are ok). `SERIALIZED_LEN` must be at least [`LIB_VERSION_LEN`], checked at compile time.
 ///
 /// Note that for testability, this will always reject if the serialized state contains a version tag
 /// of `[0,0,0]`.
-///
-/// Hands back a slice to the same array, starting after the version tag.
 pub fn check_lib_ver<const SERIALIZED_LEN: usize>(
     state: &[u8; SERIALIZED_LEN],
     not_before: Option<[u8; 3]>,
 ) -> Result<&[u8], SuspendableError> {
-    // the .unwrap is infallible after the guard check
-    if state.len() < LIB_VERSION_LEN {
-        return Err(SuspendableError::InvalidData);
-    }
-    let ver_bytes: [u8; 3] = state[..LIB_VERSION_LEN].try_into().unwrap();
-    let ver = SemVer::from(ver_bytes);
+    const {
+        assert!(
+            SERIALIZED_LEN >= LIB_VERSION_LEN,
+            "the state must have room for the version header"
+        )
+    };
+    let ver = SemVer::from([state[0], state[1], state[2]]);
 
     let not_before = SemVer::from(not_before.unwrap_or([0, 0, 0]));
 
@@ -185,10 +204,12 @@ pub fn check_lib_ver<const SERIALIZED_LEN: usize>(
 /// `write_state` and `read_state` are given exactly [`STATE_LEN`](Self::STATE_LEN) bytes. The
 /// version header is not part of it: a composite writes one header for the whole state, through
 /// [`suspend_component`] and [`resume_component`].
-pub trait SuspendableComponent: Sized {
+pub trait SuspendableComponent<'k>: Sized {
     /// The number of bytes `write_state` fills and `read_state` reads.
     const STATE_LEN: usize;
-    /// The key that must be re-supplied to resume. It is never written into the state.
+    /// The key that must be re-supplied to resume. It is never written into the state. A
+    /// component that borrows its key for `'k` names the key's type here and is rebuilt over the
+    /// reference it is given; one that owns a copy ignores the lifetime.
     type Key: ?Sized;
     /// Writes the state into `out`, which is exactly `STATE_LEN` bytes.
     fn write_state(&self, out: &mut [u8]);
@@ -197,13 +218,15 @@ pub trait SuspendableComponent: Sized {
     /// # Errors
     /// [`SuspendableError::InvalidData`] if `state` is not one this component could have
     /// written, or `key` is not a key the component accepts.
-    fn read_state(state: &[u8], key: &Self::Key) -> Result<Self, SuspendableError>;
+    fn read_state(state: &[u8], key: &'k Self::Key) -> Result<Self, SuspendableError>;
 }
 
 /// The `suspend` of a component: the version header, then its state.
 ///
 /// `N` must be `LIB_VERSION_LEN + C::STATE_LEN`, checked at compile time.
-pub fn suspend_component<C: SuspendableComponent, const N: usize>(component: &C) -> [u8; N] {
+pub fn suspend_component<'k, C: SuspendableComponent<'k>, const N: usize>(
+    component: &C,
+) -> [u8; N] {
     const {
         assert!(
             N == LIB_VERSION_LEN + C::STATE_LEN,
@@ -222,9 +245,9 @@ pub fn suspend_component<C: SuspendableComponent, const N: usize>(component: &C)
 /// # Errors
 /// [`SuspendableError::IncompatibleVersion`] from the header check, otherwise whatever
 /// [`SuspendableComponent::read_state`] returns.
-pub fn resume_component<C: SuspendableComponent, const N: usize>(
+pub fn resume_component<'k, C: SuspendableComponent<'k>, const N: usize>(
     state: &[u8; N],
-    key: &C::Key,
+    key: &'k C::Key,
 ) -> Result<C, SuspendableError> {
     const {
         assert!(
@@ -315,6 +338,8 @@ impl<'a> CursorMut<'a> {
 }
 
 /// A `usize` field read back from its `u64` encoding, refused if it is above `max`.
+///
+/// `max` must be a real bound on the field: `usize::MAX` only narrows the width.
 pub fn bounded_usize(v: u64, max: usize) -> Result<usize, SuspendableError> {
     if v > max as u64 { Err(SuspendableError::InvalidData) } else { Ok(v as usize) }
 }
@@ -337,5 +362,32 @@ mod tests {
         assert_eq!(cmp([1, 1, 0], [1, 1, 1]), Ordering::Less);
         assert_eq!(cmp([1, 1, 2], [1, 1, 1]), Ordering::Greater);
         assert_eq!(cmp([1, 1, 1], [1, 1, 1]), Ordering::Equal);
+    }
+
+    #[test]
+    fn test_parse_version_component() {
+        assert_eq!(parse_version_component("0"), 0);
+        assert_eq!(parse_version_component("3"), 3);
+        assert_eq!(parse_version_component("25"), 25);
+        assert_eq!(parse_version_component("255"), 255);
+    }
+
+    #[test]
+    #[should_panic(expected = "version component exceeds 255")]
+    fn test_parse_version_component_256() {
+        parse_version_component("256");
+    }
+
+    #[test]
+    #[should_panic(expected = "version component exceeds 255")]
+    fn test_parse_version_component_300() {
+        // 30 * 10 overflows a u8 (in the multiply, not the add).
+        parse_version_component("300");
+    }
+
+    #[test]
+    #[should_panic(expected = "version component must not be empty")]
+    fn test_parse_version_component_empty() {
+        parse_version_component("");
     }
 }

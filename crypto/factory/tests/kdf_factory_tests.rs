@@ -3,13 +3,44 @@ mod kdf_factory_tests {
     use bouncycastle_core::key_material::{
         KeyMaterial256, KeyMaterial512, KeyMaterialTrait, KeyType,
     };
-    use bouncycastle_core::traits::KDF;
+    use bouncycastle_core::security_strength::SecurityStrength;
+    use bouncycastle_core::traits::{AlgorithmInfo, KDF};
     use bouncycastle_core_test_framework::DUMMY_SEED;
     use bouncycastle_factory as factory;
     use bouncycastle_factory::AlgorithmFactory;
     use bouncycastle_factory::kdf_factory::KDFFactory;
     use bouncycastle_sha2::hkdf::HKDF_SHA384;
+    use bouncycastle_sm3::hkdf::HKDF_SM3;
     use bouncycastle_utils::ct;
+
+    /// `AlgorithmInfo` answers for the algorithm the factory selected, not for the factory.
+    #[test]
+    fn alg_name_and_strength_follow_the_variant() {
+        use SecurityStrength::*;
+        use bouncycastle_sha2::hkdf::{HKDF_SHA256_NAME, HKDF_SHA384_NAME, HKDF_SHA512_NAME};
+        use bouncycastle_sha3::{
+            SHA3_224_NAME, SHA3_256_NAME, SHA3_384_NAME, SHA3_512_NAME, SHAKE128_NAME,
+            SHAKE256_NAME,
+        };
+        use bouncycastle_sm3::hkdf::HKDF_SM3_NAME;
+        let table = [
+            (HKDF_SHA256_NAME, _128bit),
+            (HKDF_SHA384_NAME, _192bit),
+            (HKDF_SHA512_NAME, _256bit),
+            (HKDF_SM3_NAME, _128bit),
+            (SHA3_224_NAME, _112bit),
+            (SHA3_256_NAME, _128bit),
+            (SHA3_384_NAME, _192bit),
+            (SHA3_512_NAME, _256bit),
+            (SHAKE128_NAME, _128bit),
+            (SHAKE256_NAME, _256bit),
+        ];
+        for (name, strength) in table {
+            let k = KDFFactory::new(name).unwrap();
+            assert_eq!(k.alg_name(), name);
+            assert_eq!(k.max_security_strength(), strength, "{name}");
+        }
+    }
 
     #[test]
     fn sha3_kdf_tests() {
@@ -81,6 +112,42 @@ mod kdf_factory_tests {
         let expected_key = HKDF_SHA384::new().derive_key(&key_material, b"info").unwrap();
         assert!(ct::ct_eq_bytes(derived_key.ref_to_bytes(), expected_key.ref_to_bytes()));
         assert_eq!(derived_key.key_len(), 48, "HKDF-SHA384 derives a hash-length key");
+
+        /* HKDF-SM3 */
+        // As for HKDF-SHA384: HKDF_SM3 is checked against known answers in bouncycastle-sm3, so
+        // here the factory's output is compared with the alias used directly.
+        let key_material = KeyMaterial256::from_bytes(&DUMMY_SEED[..32]).unwrap();
+        let derived_key =
+            KDFFactory::new("HKDF-SM3").unwrap().derive_key(&key_material, b"info").unwrap();
+        let expected_key = HKDF_SM3::new().derive_key(&key_material, b"info").unwrap();
+        assert!(ct::ct_eq_bytes(derived_key.ref_to_bytes(), expected_key.ref_to_bytes()));
+        assert_eq!(derived_key.key_len(), 32, "HKDF-SM3 derives a hash-length key");
+
+        // The _out forms fill a longer buffer and report how much they wrote.
+        let mut out = KeyMaterial512::new();
+        let n = KDFFactory::new("HKDF-SM3")
+            .unwrap()
+            .derive_key_out(&key_material, b"info", &mut out)
+            .unwrap();
+        let mut expected_out = KeyMaterial512::new();
+        let expected_n =
+            HKDF_SM3::new().derive_key_out(&key_material, b"info", &mut expected_out).unwrap();
+        assert_eq!(n, 64);
+        assert_eq!(n, expected_n);
+        assert!(ct::ct_eq_bytes(out.ref_to_bytes(), expected_out.ref_to_bytes()));
+
+        let salt =
+            KeyMaterial256::from_bytes_as_type(&DUMMY_SEED[32..64], KeyType::MACKey).unwrap();
+        let n = KDFFactory::new("HKDF-SM3")
+            .unwrap()
+            .derive_key_from_multiple_out(&[&salt, &key_material], b"info", &mut out)
+            .unwrap();
+        let expected_n = HKDF_SM3::new()
+            .derive_key_from_multiple_out(&[&salt, &key_material], b"info", &mut expected_out)
+            .unwrap();
+        assert_eq!(n, 64);
+        assert_eq!(n, expected_n);
+        assert!(ct::ct_eq_bytes(out.ref_to_bytes(), expected_out.ref_to_bytes()));
 
         /* HKDF-SHA512 */
         // Note: this value is not checked against any external reference implementation,

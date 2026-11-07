@@ -1,42 +1,81 @@
-use std::io::Read;
-use std::process::exit;
-use std::{fs, io};
+//! The MAC subcommands: `hmac-*`, `kmac*` and `kmacxof*`, `aes*-cmac` and `aes*-gmac`. A MAC
+//! over stdin, computed or verified.
 
-use bouncycastle::core::hazmat::do_hazardous_operations;
-use bouncycastle::core::key_material::{KeyMaterial512, KeyMaterialTrait, KeyType};
+use crate::helpers::block_mode_helpers::{load_iv, load_key_object_typed};
+use crate::helpers::{
+    SecretBytes, decode_hex_arg, load_secret, stream_stdin, stream_xof, write_bytes_or_hex,
+    write_stdout,
+};
+use crate::sha3_cmd::{MAX_FIXED_OUTPUT_LEN, Strength};
+use bouncycastle::aes::{AES128Key, AES192Key, AES256Key};
+use bouncycastle::cipher::BlockCipherKey;
+use bouncycastle::cipher::modes::{CMAC, GMAC, ModeNames};
+use bouncycastle::core::errors::MACError;
+use bouncycastle::core::hazmat::{BlockPermutation, do_hazardous_operations};
+use bouncycastle::core::key_material::{KeyMaterialTrait, KeyType};
+use bouncycastle::core::symmetric_key::{FromAnyKeyMaterial, FromKeyMaterial, MacGenerationKey};
 use bouncycastle::core::traits::MAC;
-use bouncycastle::hex;
-use bouncycastle::sha2::hmac::{HMAC_SHA256, HMAC_SHA512, HMAC_SHA512_224, HMAC_SHA512_256};
-use bouncycastle::sha3::kmac::{KMAC128, KMAC256};
-use bouncycastle::sm3::hmac::HMAC_SM3;
+use bouncycastle::hmac::HmacKey;
+use bouncycastle::poly1305;
+use bouncycastle::poly1305::hazmat::key_from_bytes;
+use bouncycastle::rng::HashDRBG_SHA512;
+use bouncycastle::sha2::{SHA224, SHA256, SHA384, SHA512, SHA512_224, SHA512_256};
+use bouncycastle::sha3::kmac::{KMAC128Key, KMAC256Key, KMACXOF128, KMACXOF256};
+use bouncycastle::sha3::{SHA3_224, SHA3_256, SHA3_384, SHA3_512};
+use bouncycastle::sm3::SM3;
+use std::process::exit;
 
 #[allow(non_camel_case_types)]
 pub(crate) enum HMACVariant {
+    SHA224,
     SHA256,
+    SHA384,
     SHA512,
     SHA512_224,
     SHA512_256,
+    SHA3_224,
+    SHA3_256,
+    SHA3_384,
+    SHA3_512,
     SM3,
 }
 
-/// Loads a MAC key from `--key` (hex) or `--key-file` (raw), tagged as a MAC key.
-fn load_mac_key(key: &Option<String>, key_file: &Option<String>) -> KeyMaterial512 {
-    let key_bytes: Vec<u8> = if key.is_some() {
-        hex::decode(key.as_ref().unwrap()).unwrap()
-    } else if key_file.is_some() {
-        fs::read(key_file.as_ref().unwrap()).unwrap()
-    } else {
-        eprintln!("Error: either `key` or `key-file` must be supplied.");
-        exit(-1)
-    };
-
-    if key_bytes.len() > 64 {
-        eprintln!("Error: CLI only supports MAC keys 64 bytes.");
-        exit(-1);
+/// The MAC key from `--key-file` or `--key`, tagged as a MAC key. Any length the secret buffer
+/// holds is accepted: HMAC hashes a key longer than its block (RFC 2104 Section 2), and KMAC
+/// encodes the key's length (SP 800-185 Section 4.2).
+fn load_mac_key(key: &Option<String>, key_file: &Option<String>) -> SecretBytes {
+    let mut key = load_secret(key, key_file, "key");
+    if key.key_type() == KeyType::Zeroized {
+        // Same stance as the cipher loaders: warn, then do what was asked. A CLI is used for
+        // test vectors and scripting, where an all-zero key is a legitimate thing to want.
+        eprintln!(
+            "Warning: all-zero (or otherwise zeroized) key provided. Proceeding, but this is not secure."
+        );
     }
-    let mut key = KeyMaterial512::from_bytes(&key_bytes).unwrap();
-    do_hazardous_operations(&mut key, |key| key.set_key_type(KeyType::MACKey)).unwrap();
+    do_hazardous_operations(&mut key, |key| key.set_key_type(KeyType::MACKey)).unwrap_or_else(
+        |e| {
+            eprintln!("Error: couldn't load the key: {e:?}");
+            exit(-1);
+        },
+    );
     key
+}
+
+fn mac_key_error(e: MACError) -> ! {
+    eprintln!("Error: couldn't build the MAC key: {e:?}");
+    exit(-1)
+}
+
+/// HMAC over `H` with the allow-weak key form, as every `hmac-*` command uses: a CLI is used for
+/// test vectors and scripting, where a short or all-zero key is a legitimate thing to want.
+fn hmac<H: bouncycastle::hmac::HMACParams>(
+    key: &SecretBytes,
+    verify_val: &Option<String>,
+    output_hex: bool,
+) {
+    let hmac_key =
+        HmacKey::<H>::from_key_material_allow_weak(key).unwrap_or_else(|e| mac_key_error(e));
+    do_mac(hmac_key.create_generator(), verify_val, output_hex);
 }
 
 pub(crate) fn mac_cmd(
@@ -47,82 +86,257 @@ pub(crate) fn mac_cmd(
     output_hex: bool,
 ) {
     let key = load_mac_key(key, key_file);
-
-    // instantiate the MAC object and call do_mac()
     match hmac_variant {
-        HMACVariant::SHA256 => {
-            let mac = HMAC_SHA256::new_allow_weak_key(&key).unwrap();
-            do_mac(mac, verify_val, output_hex);
-        }
-        HMACVariant::SHA512 => {
-            let mac = HMAC_SHA512::new_allow_weak_key(&key).unwrap();
-            do_mac(mac, verify_val, output_hex);
-        }
-        HMACVariant::SHA512_224 => {
-            let mac = HMAC_SHA512_224::new_allow_weak_key(&key).unwrap();
-            do_mac(mac, verify_val, output_hex);
-        }
-        HMACVariant::SHA512_256 => {
-            let mac = HMAC_SHA512_256::new_allow_weak_key(&key).unwrap();
-            do_mac(mac, verify_val, output_hex);
-        }
-        HMACVariant::SM3 => {
-            let mac = HMAC_SM3::new_allow_weak_key(&key).unwrap();
-            do_mac(mac, verify_val, output_hex);
-        }
+        HMACVariant::SHA224 => hmac::<SHA224>(&key, verify_val, output_hex),
+        HMACVariant::SHA256 => hmac::<SHA256>(&key, verify_val, output_hex),
+        HMACVariant::SHA384 => hmac::<SHA384>(&key, verify_val, output_hex),
+        HMACVariant::SHA512 => hmac::<SHA512>(&key, verify_val, output_hex),
+        HMACVariant::SHA512_224 => hmac::<SHA512_224>(&key, verify_val, output_hex),
+        HMACVariant::SHA512_256 => hmac::<SHA512_256>(&key, verify_val, output_hex),
+        HMACVariant::SHA3_224 => hmac::<SHA3_224>(&key, verify_val, output_hex),
+        HMACVariant::SHA3_256 => hmac::<SHA3_256>(&key, verify_val, output_hex),
+        HMACVariant::SHA3_384 => hmac::<SHA3_384>(&key, verify_val, output_hex),
+        HMACVariant::SHA3_512 => hmac::<SHA3_512>(&key, verify_val, output_hex),
+        HMACVariant::SM3 => hmac::<SM3>(&key, verify_val, output_hex),
     }
 }
 
 /// KMAC (NIST SP 800-185 Sec 4), which unlike HMAC takes a customization string and a caller-
 /// chosen tag length -- both are bound into the computation, so the verifier must use the same.
 pub(crate) fn kmac_cmd(
-    bit_len: usize,
+    strength: Strength,
     length: usize,
-    customization: &Option<String>,
+    customization: &[u8],
+    key: &Option<String>,
+    key_file: &Option<String>,
+    verify_val: &Option<String>,
+    output_hex: bool,
+) {
+    if length > MAX_FIXED_OUTPUT_LEN {
+        eprintln!(
+            "Error: a KMAC tag is computed whole; this command takes at most {MAX_FIXED_OUTPUT_LEN} bytes. Use kmacxof* for a long, streamed output."
+        );
+        exit(-1);
+    }
+    let key = load_mac_key(key, key_file);
+    match strength {
+        Strength::Bits128 => {
+            let kmac_key = KMAC128Key::with_params_allow_weak(&key, customization, length)
+                .unwrap_or_else(|e| mac_key_error(e));
+            do_mac(kmac_key.create_generator(), verify_val, output_hex)
+        }
+        Strength::Bits256 => {
+            let kmac_key = KMAC256Key::with_params_allow_weak(&key, customization, length)
+                .unwrap_or_else(|e| mac_key_error(e));
+            do_mac(kmac_key.create_generator(), verify_val, output_hex)
+        }
+    }
+}
+
+/// KMACXOF (SP 800-185 Sec 4.3.1): KMAC with the length not bound in, so the output is a
+/// stream of any length. There is nothing to verify against: a reader squeezes the same stream.
+pub(crate) fn kmacxof_cmd(
+    strength: Strength,
+    output_len: usize,
+    customization: &[u8],
+    key: &Option<String>,
+    key_file: &Option<String>,
+    output_hex: bool,
+) {
+    let key = load_mac_key(key, key_file);
+    match strength {
+        Strength::Bits128 => {
+            let x = KMACXOF128::new(&key, customization, true).unwrap_or_else(|e| mac_key_error(e));
+            stream_xof(x, output_len, output_hex);
+        }
+        Strength::Bits256 => {
+            let x = KMACXOF256::new(&key, customization, true).unwrap_or_else(|e| mac_key_error(e));
+            stream_xof(x, output_len, output_hex);
+        }
+    }
+}
+
+/// AES-CMAC (NIST SP 800-38B) under the key the command's length selects.
+pub(crate) fn cmac_cmd<K: FromKeyMaterial<KEY_LEN> + MacGenerationKey, const KEY_LEN: usize>(
+    alg: &str,
+    key: &Option<String>,
+    key_file: &Option<String>,
+    verify_val: &Option<String>,
+    output_hex: bool,
+) {
+    let key: K = load_key_object_typed(key, key_file, alg, KeyType::MACKey);
+    do_mac(key.create_generator(), verify_val, output_hex);
+}
+
+pub(crate) fn aes128_cmac_cmd(
+    key: &Option<String>,
+    key_file: &Option<String>,
+    verify_val: &Option<String>,
+    output_hex: bool,
+) {
+    cmac_cmd::<AES128Key<CMAC>, 16>("AES-128", key, key_file, verify_val, output_hex);
+}
+
+pub(crate) fn aes192_cmac_cmd(
+    key: &Option<String>,
+    key_file: &Option<String>,
+    verify_val: &Option<String>,
+    output_hex: bool,
+) {
+    cmac_cmd::<AES192Key<CMAC>, 24>("AES-192", key, key_file, verify_val, output_hex);
+}
+
+pub(crate) fn aes256_cmac_cmd(
+    key: &Option<String>,
+    key_file: &Option<String>,
+    verify_val: &Option<String>,
+    output_hex: bool,
+) {
+    cmac_cmd::<AES256Key<CMAC>, 32>("AES-256", key, key_file, verify_val, output_hex);
+}
+
+/// The GMAC nonce length: GCM's 12 bytes (SP 800-38D Sec 5.2.1.1's recommended IV length).
+const GMAC_NONCE_LEN: usize = 12;
+/// The GMAC tag length the `aes*-gmac` commands fix, as `aes*-gcm` do: the full 128 bits.
+const GMAC_TAG_LEN: usize = 16;
+
+/// AES-GMAC (NIST SP 800-38D Sec 5.2): a GCM tag over the data as AAD. A tag is bound to a
+/// nonce, so the shape is the MAC commands' with the IV flags of `aes*-gcm` added. Without
+/// `--iv` the nonce is drawn from the OS-backed DRBG and written ahead of the tag, so the
+/// output is `nonce || tag` and a reader has what it needs; with `--iv` only the tag is
+/// written. `--verify` takes the tag, with `--iv`, or the 28-byte `nonce || tag` without it.
+///
+/// The GMAC workers have no trait: their generator and verifier are inherent on the key, so
+/// this is generic over the permutation the way the key's own impl is.
+fn gmac_run<P>(
+    key: &BlockCipherKey<P, GMAC<GMAC_TAG_LEN>>,
+    iv: Option<[u8; GMAC_NONCE_LEN]>,
+    verify_val: &Option<String>,
+    output_hex: bool,
+) where
+    P: BlockPermutation<16> + ModeNames + Clone,
+{
+    match verify_val {
+        None => {
+            let (mut mac, generated) = match iv {
+                Some(iv) => (key.create_generator_nonce(&iv), None),
+                None => key
+                    .create_generator(&mut HashDRBG_SHA512::new_from_os())
+                    .map(|(mac, nonce)| (mac, Some(nonce)))
+                    .unwrap_or_else(|e| {
+                        eprintln!("Error: couldn't draw the nonce: {e:?}");
+                        exit(-1);
+                    }),
+            };
+            stream_stdin(|chunk| mac.do_update(chunk));
+            let tag = mac.do_final();
+            if let Some(nonce) = generated {
+                write_bytes_or_hex(&nonce, output_hex);
+            }
+            write_bytes_or_hex(&tag, output_hex);
+            write_stdout(b"\n");
+        }
+        Some(verify_val) => {
+            let given = decode_hex_arg(verify_val, "verify");
+            let (nonce, tag): ([u8; GMAC_NONCE_LEN], &[u8]) = match iv {
+                Some(iv) => (iv, &given),
+                None => {
+                    if given.len() != GMAC_NONCE_LEN + GMAC_TAG_LEN {
+                        eprintln!(
+                            "Error: without --iv, --verify takes the {GMAC_NONCE_LEN}-byte nonce followed by the {GMAC_TAG_LEN}-byte tag."
+                        );
+                        exit(-1);
+                    }
+                    let (nonce, tag) = given.split_at(GMAC_NONCE_LEN);
+                    (nonce.try_into().expect("split at the nonce length"), tag)
+                }
+            };
+            let tag: &[u8; GMAC_TAG_LEN] = tag.try_into().unwrap_or_else(|_| {
+                eprintln!("Error: the tag must be {GMAC_TAG_LEN} bytes, got {}.", tag.len());
+                exit(-1);
+            });
+            let mut mac = key.create_verifier(&nonce);
+            stream_stdin(|chunk| mac.do_update(chunk));
+            if mac.do_verify_final(tag) {
+                exit(0)
+            }
+            eprintln!("Error: MAC verification failed.");
+            exit(-1)
+        }
+    }
+}
+
+pub(crate) fn aes128_gmac_cmd(
+    key: &Option<String>,
+    key_file: &Option<String>,
+    iv: &Option<String>,
+    iv_file: &Option<String>,
+    verify_val: &Option<String>,
+    output_hex: bool,
+) {
+    let key: AES128Key<GMAC> = load_key_object_typed(key, key_file, "AES-128", KeyType::MACKey);
+    gmac_run(&key, load_iv::<GMAC_NONCE_LEN>(iv, iv_file), verify_val, output_hex);
+}
+
+pub(crate) fn aes192_gmac_cmd(
+    key: &Option<String>,
+    key_file: &Option<String>,
+    iv: &Option<String>,
+    iv_file: &Option<String>,
+    verify_val: &Option<String>,
+    output_hex: bool,
+) {
+    let key: AES192Key<GMAC> = load_key_object_typed(key, key_file, "AES-192", KeyType::MACKey);
+    gmac_run(&key, load_iv::<GMAC_NONCE_LEN>(iv, iv_file), verify_val, output_hex);
+}
+
+pub(crate) fn aes256_gmac_cmd(
+    key: &Option<String>,
+    key_file: &Option<String>,
+    iv: &Option<String>,
+    iv_file: &Option<String>,
+    verify_val: &Option<String>,
+    output_hex: bool,
+) {
+    let key: AES256Key<GMAC> = load_key_object_typed(key, key_file, "AES-256", KeyType::MACKey);
+    gmac_run(&key, load_iv::<GMAC_NONCE_LEN>(iv, iv_file), verify_val, output_hex);
+}
+
+/// Poly1305 (RFC 8439 Sec 2.5) under a 32-byte one-time key, which must never MAC a second
+/// message. The tag is always the full 16 bytes.
+pub(crate) fn poly1305_cmd(
     key: &Option<String>,
     key_file: &Option<String>,
     verify_val: &Option<String>,
     output_hex: bool,
 ) {
     let key = load_mac_key(key, key_file);
-    let s = customization.as_deref().unwrap_or("").as_bytes();
-    // new_allow_weak_key, as the HMAC commands do: a CLI is used for test vectors and scripting,
-    // where a short or all-zero key is a legitimate thing to want.
-    match bit_len {
-        128 => do_mac(
-            KMAC128::new_with_params(&key, s, length, true).expect("a valid MAC key"),
-            verify_val,
-            output_hex,
-        ),
-        256 => do_mac(
-            KMAC256::new_with_params(&key, s, length, true).expect("a valid MAC key"),
-            verify_val,
-            output_hex,
-        ),
-        _ => panic!("Unsupported algorithm: KMAC-{bit_len}"),
-    }
+    // No key policy, as the other MAC commands take their allow-weak forms: a CLI is used for test
+    // vectors and scripting, where a weak or all-zero key is a legitimate thing to want.
+    let Ok(bytes) = <&[u8; poly1305::KEY_LEN]>::try_from(key.ref_to_bytes()) else {
+        eprintln!("Error: Poly1305 needs a 32-byte one-time key, got {} bytes.", key.key_len());
+        exit(-1)
+    };
+    do_mac(key_from_bytes(bytes).into_mac(), verify_val, output_hex);
 }
 
-fn do_mac(mut mac: impl MAC, verify_val: &Option<String>, output_hex: bool) {
-    // read the content to be MAC'd from stdin
-    let mut buf: [u8; 1024] = [0u8; 1024];
-    let mut bytes_read = io::stdin().read(&mut buf).expect("Failed to read from stdin");
-    while bytes_read != 0 {
-        mac.do_update(&buf[..bytes_read]);
-        bytes_read = io::stdin().read(&mut buf).expect("Failed to read from stdin");
-    }
+/// Streams stdin into `mac`, then writes the tag, or verifies `--verify` against it and reports
+/// the outcome through the exit status (0 verified, 255 not) and an `Error:` line.
+pub(crate) fn do_mac(mut mac: impl MAC, verify_val: &Option<String>, output_hex: bool) {
+    stream_stdin(|chunk| mac.do_update(chunk));
 
-    if verify_val.is_none() {
-        // compute a MAC value
-        let out = mac.do_final();
-
-        crate::helpers::write_bytes_or_hex(&out, output_hex);
-        crate::helpers::write_stdout(b"\n");
-    } else {
-        // verify a MAC
-        if mac.do_verify_final(&hex::decode(verify_val.as_ref().unwrap()).unwrap()) {
-            exit(0)
-        } else {
+    match verify_val {
+        None => {
+            let out = mac.do_final();
+            write_bytes_or_hex(&out, output_hex);
+            write_stdout(b"\n");
+        }
+        Some(verify_val) => {
+            let expected = decode_hex_arg(verify_val, "verify");
+            if mac.do_verify_final(&expected) {
+                exit(0)
+            }
+            eprintln!("Error: MAC verification failed.");
             exit(-1)
         }
     }

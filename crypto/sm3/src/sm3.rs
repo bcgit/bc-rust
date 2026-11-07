@@ -1,6 +1,5 @@
 use bouncycastle_core::errors::{HashError, SuspendableError};
-use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::traits::{Hash, Suspendable};
+use bouncycastle_core::traits::{Hash, HashOneShot, Suspendable};
 use bouncycastle_utils::suspendable_state::{add_lib_ver, check_lib_ver};
 use bouncycastle_utils::{min, secret::Secret};
 use core::slice;
@@ -71,7 +70,7 @@ fn p1(x: u32) -> u32 {
 pub struct SM3 {
     /// Chaining value V^(i), 8 big-endian words.
     v: Secret<[u32; 8]>,
-    /// Total number of message bytes absorbed so far. Supports messages up to 2^64 bytes.
+    /// Total number of message bytes absorbed so far, at most `MAX_MESSAGE_BYTES`.
     byte_count: u64,
     /// Buffered input that has not yet formed a whole block.
     x_buf: Secret<[u8; 64]>,
@@ -190,8 +189,11 @@ impl SM3 {
         self.x_buf[self.x_buf_off] = pad_byte;
         self.x_buf_off += 1;
 
-        // ... then k zero bits so that l + 1 + k = 448 mod 512. If the 64-bit length field no longer
-        // fits in this block, zero-fill and compress, then start a fresh block.
+        // ... then k zero bits, "where k is the smallest non-negative number that satisfies
+        // l + 1 + k = 448 (mod 512)". If the 64-bit length field no longer fits in this block,
+        // zero-fill and compress, then start a fresh block. At l = 447 (mod 512) this gives k = 0;
+        // the draft's closed form k = 512 - (((l mod 512) + 1 + 64) mod 512) would give k = 512 and
+        // a different digest. The prose rule is followed.
         if self.x_buf_off > 56 {
             self.x_buf[self.x_buf_off..].fill(0x00);
             Self::compress(&mut self.v, slice::from_ref(&self.x_buf));
@@ -235,17 +237,6 @@ impl Hash for SM3 {
 
     fn output_len(&self) -> usize {
         32
-    }
-
-    fn hash(self, data: &[u8]) -> Vec<u8> {
-        let mut output = vec![0u8; 32];
-        self.hash_out(data, &mut output);
-        output
-    }
-
-    fn hash_out(mut self, data: &[u8], output: &mut [u8]) -> usize {
-        self.do_update(data);
-        self.do_final_out(output)
     }
 
     fn do_update(&mut self, block: &[u8]) {
@@ -318,10 +309,6 @@ impl Hash for SM3 {
         }
         Ok(self.do_final_internal(partial_byte, num_partial_bits, output))
     }
-
-    fn max_security_strength(&self) -> SecurityStrength {
-        SecurityStrength::_128bit
-    }
 }
 
 /// Length in bytes of the serialized state of SM3.
@@ -373,7 +360,19 @@ impl Suspendable<SUSPENDED_SM3_STATE_LEN> for SM3 {
         if x_buf_off >= 64 {
             return Err(SuspendableError::InvalidData);
         }
+        // do_update keeps byte_count congruent to x_buf_off modulo the block length, so a state in
+        // which they disagree describes no message and must not resume.
+        if byte_count % 64 != x_buf_off as u64 {
+            return Err(SuspendableError::InvalidData);
+        }
+        // A longer message cannot be encoded in the 64-bit length field (s. 5.1, l < 2^64 bits).
+        if byte_count > MAX_MESSAGE_BYTES {
+            return Err(SuspendableError::InvalidData);
+        }
 
         Ok(SM3 { v, byte_count, x_buf, x_buf_off })
     }
 }
+
+// The one-shot form: `Default` is the function itself.
+impl HashOneShot for SM3 {}

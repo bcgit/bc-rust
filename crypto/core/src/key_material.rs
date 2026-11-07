@@ -221,13 +221,26 @@ pub trait KeyMaterialTrait: KeyMaterialInternalTrait {
 /// A wrapper for holding bytes-like key material (symmetric keys or seeds) which aims to apply a
 /// strict typing system to prevent many kinds of mis-use mistakes.
 /// The capacity of the internal buffer can be set at compile-time via the <KEY_LEN> param.
-#[derive(Clone)]
 pub struct KeyMaterial<const KEY_LEN: usize> {
     buf: Secret<[u8; KEY_LEN]>,
     key_len: Secret<usize>,
     key_type: KeyType,
     security_strength: SecurityStrength,
     allow_hazardous_operations: bool,
+}
+
+/// A clone never carries an open hazardous-operations window: the window belongs to the
+/// `do_hazardous_operations` call that opened it, which closes only the original.
+impl<const KEY_LEN: usize> Clone for KeyMaterial<KEY_LEN> {
+    fn clone(&self) -> Self {
+        Self {
+            buf: self.buf.clone(),
+            key_len: self.key_len.clone(),
+            key_type: self.key_type,
+            security_strength: self.security_strength,
+            allow_hazardous_operations: false,
+        }
+    }
 }
 
 // The explicit `#[repr(u8)]` discriminants are the stable on-the-wire encoding used by
@@ -305,18 +318,28 @@ impl<const KEY_LEN: usize> KeyMaterial<KEY_LEN> {
     }
 
     /// Creates a new instance of KeyMaterial containing random bytes from the provided random number generator.
-    pub fn from_rng(rng: &mut impl RNG) -> Result<Self, KeyMaterialError> {
+    ///
+    /// The key is tagged at the lesser of the RNG's strength and what `KEY_LEN` bytes can carry;
+    /// a `KeyMaterial<0>` comes back [`KeyType::Zeroized`] without consulting the RNG, so an RNG
+    /// that would refuse (reseed required) is not reported for it.
+    pub fn from_rng(rng: &mut (impl RNG + ?Sized)) -> Result<Self, KeyMaterialError> {
         let mut key = Self::new();
+        if KEY_LEN == 0 {
+            return Ok(key);
+        }
 
         do_hazardous_operations(&mut key, |key| {
-            rng.next_bytes_out(&mut key.ref_to_bytes_mut().unwrap())
+            rng.next_bytes_out(key.ref_to_bytes_mut()?)
                 .map_err(|_| KeyMaterialError::GenericError("RNG failed."))?;
-            Ok(())
+            key.set_key_len(KEY_LEN)?;
+            key.set_key_type(KeyType::CryptographicRandom)?;
+            // SP 800-90A r1 Section 8.4: "Security_strength_of_output = min(output_length,
+            // DRBG_security_strength)".
+            key.set_security_strength(*min(
+                &rng.security_strength(),
+                &SecurityStrength::from_bytes(KEY_LEN),
+            ))
         })?;
-
-        *key.key_len = KEY_LEN;
-        key.key_type = KeyType::CryptographicRandom;
-        key.security_strength = rng.security_strength();
         Ok(key)
     }
 
@@ -456,49 +479,24 @@ impl<const KEY_LEN: usize> KeyMaterialTrait for KeyMaterial<KEY_LEN> {
     }
 
     fn set_key_type(&mut self, key_type: KeyType) -> Result<(), KeyMaterialError> {
-        if self.allow_hazardous_operations {
-            // just do it
-            self.key_type = key_type;
-            return Ok(());
-        }
-
-        match self.key_type {
-            KeyType::Zeroized => {
-                return Err(KeyMaterialError::ActingOnZeroizedKey);
-            }
-            KeyType::CryptographicRandom => {
+        if !self.allow_hazardous_operations {
+            match self.key_type {
+                KeyType::Zeroized => return Err(KeyMaterialError::ActingOnZeroizedKey),
                 // raw full entropy can be safely converted to anything.
-                self.key_type = key_type;
+                KeyType::CryptographicRandom => {}
+                // Else: once a KeyMaterial is typed, it should stay that way.
+                current if current != key_type => {
+                    return Err(KeyMaterialError::HazardousOperationNotPermitted);
+                }
+                _ => { /* No change */ }
             }
-            KeyType::Unknown => match key_type {
-                KeyType::Unknown => { /* No change */ }
-                _ => {
-                    return Err(KeyMaterialError::HazardousOperationNotPermitted);
-                }
-            },
-            KeyType::MACKey => match key_type {
-                KeyType::MACKey => { /* No change */ }
-                // Else: Once a KeyMaterial is typed, it should stay that way.
-                _ => {
-                    return Err(KeyMaterialError::HazardousOperationNotPermitted);
-                }
-            },
-            KeyType::SymmetricCipherKey => match key_type {
-                KeyType::SymmetricCipherKey => { /* No change */ }
-                // Else: Once a KeyMaterial is typed, it should stay that way.
-                _ => {
-                    return Err(KeyMaterialError::HazardousOperationNotPermitted);
-                }
-            },
-            KeyType::Seed => match key_type {
-                KeyType::Seed => { /* No change */ }
-                // Else: Once a KeyMaterial is typed, it should stay that way.
-                _ => {
-                    return Err(KeyMaterialError::HazardousOperationNotPermitted);
-                }
-            },
         }
 
+        self.key_type = key_type;
+        // A Zeroized or Unknown key has no security strength (see `KeyType::Unknown`).
+        if key_type <= KeyType::Unknown {
+            self.security_strength = SecurityStrength::None;
+        }
         Ok(())
     }
 
@@ -571,6 +569,7 @@ impl<const KEY_LEN: usize> KeyMaterialTrait for KeyMaterial<KEY_LEN> {
         self.buf.zeroize();
         self.key_len.zeroize();
         self.key_type = KeyType::Zeroized;
+        self.security_strength = SecurityStrength::None;
     }
 
     fn equals(&self, other: &dyn KeyMaterialTrait) -> bool {
@@ -594,16 +593,17 @@ impl<const KEY_LEN: usize> KeyMaterialTrait for KeyMaterial<KEY_LEN> {
             // set the metadata
             into.set_key_len(bytes_to_copy)?;
             into.set_key_type(self.key_type)?;
-            into.set_security_strength(
-                min(&self.security_strength(), &SecurityStrength::from_bytes(bytes_to_copy))
-                    .clone(),
-            )?;
+            into.set_security_strength(*min(
+                &self.security_strength(),
+                &SecurityStrength::from_bytes(bytes_to_copy),
+            ))?;
 
             Ok(())
         })
-        // Swallow all errors generated inside the hazardous operations closure.
-        // The set_* calls here are all infallible inside the hazardous closure.
-        .unwrap();
+        // Infallible: inside the window the setters refuse only a strength the key cannot carry.
+        // The strength is capped at what `bytes_to_copy` bytes carry, and a Zeroized or Unknown
+        // source has strength None, because set_key_type and zeroize keep it so.
+        .expect("truncate's metadata is consistent by construction");
     }
 }
 

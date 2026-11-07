@@ -4,7 +4,8 @@
 //! streaming-equivalence, one-shot/trait-API, metadata, and unsupported-partial-op tests.
 
 use bouncycastle_ascon::AsconHash256;
-use bouncycastle_core::traits::{Hash, HashAlgParams};
+use bouncycastle_core::errors::HashError;
+use bouncycastle_core::traits::{Hash, HashAlgParams, HashOneShot};
 use bouncycastle_core_test_framework::hash::TestFrameworkHash;
 use bouncycastle_hex as hex;
 
@@ -38,7 +39,7 @@ fn hash256_embedded_kat() {
     for (msg_hex, md_hex) in HASH_KAT {
         let msg = dh(msg_hex);
         let expected = dh(md_hex);
-        assert_eq!(AsconHash256::new().hash(&msg).as_slice(), expected.as_slice(), "msg={msg_hex}");
+        assert_eq!(AsconHash256::hash(&msg).as_slice(), expected.as_slice(), "msg={msg_hex}");
 
         // AsconHash256 has no do_final_partial_bits support, so that part of the framework
         // is disabled; everything else (hash/hash_out/do_update+do_final(_out), truncation,
@@ -52,10 +53,10 @@ fn hash256_embedded_kat() {
 fn hash256_streaming_matches_one_shot() {
     let msg = pattern(100);
     let mut expected = [0u8; 32];
-    assert_eq!(AsconHash256::new().hash_out(&msg, &mut expected), 32);
+    assert_eq!(AsconHash256::hash_out(&msg, &mut expected), 32);
 
     // One-shot APIs agree.
-    assert_eq!(AsconHash256::new().hash(&msg), expected);
+    assert_eq!(AsconHash256::hash(&msg), expected);
     let mut buf = [0u8; 32];
     let mut h = AsconHash256::new();
     h.do_update(&msg);
@@ -94,7 +95,7 @@ fn hash256_metadata_accessors() {
 #[test]
 fn hash256_do_final_out_truncates_to_buffer() {
     let msg = pattern(50);
-    let expected = AsconHash256::new().hash(&msg);
+    let expected = AsconHash256::hash(&msg);
 
     let mut h = AsconHash256::new();
     h.do_update(&msg);
@@ -106,19 +107,54 @@ fn hash256_do_final_out_truncates_to_buffer() {
 #[test]
 fn hash256_hash_out_zeroizes_past_output_len() {
     let msg = pattern(50);
-    let expected = AsconHash256::new().hash(&msg);
+    let expected = AsconHash256::hash(&msg);
 
     let mut o = [0xEEu8; 64];
-    assert_eq!(AsconHash256::new().hash_out(&msg, &mut o), 32);
+    assert_eq!(AsconHash256::hash_out(&msg, &mut o), 32);
     assert_eq!(&o[..32], &expected[..]);
     assert_eq!(&o[32..], &[0u8; 32]);
 }
 
 #[test]
 fn hash256_unsupported_partial_ops_return_err() {
-    assert!(AsconHash256::new().do_final_partial_bits(0, 3).is_err());
-    let mut o = [0u8; 32];
-    assert!(AsconHash256::new().do_final_partial_bits_out(0, 3, &mut o).is_err());
+    // num_bits == 0 is byte-aligned input and must behave like ordinary finalization.
+    let data = b"abc";
+    let expected = AsconHash256::hash(data);
+    let mut h = AsconHash256::new();
+    h.do_update(data);
+    assert_eq!(h.do_final_partial_bits(0xFF, 0).unwrap(), expected);
+    let mut h = AsconHash256::new();
+    h.do_update(data);
+    let mut o = [0xEEu8; 40];
+    assert_eq!(h.do_final_partial_bits_out(0xFF, 0, &mut o).unwrap(), 32);
+    assert_eq!(&o[..32], &expected[..]);
+    assert_eq!(&o[32..], &[0u8; 8]);
+
+    for num_bits in [1usize, 3, 7] {
+        assert!(matches!(
+            AsconHash256::new().do_final_partial_bits(0xA0, num_bits),
+            Err(HashError::InvalidInput(_))
+        ));
+        let mut o = [0xEEu8; 32];
+        assert!(matches!(
+            AsconHash256::new().do_final_partial_bits_out(0xA0, num_bits, &mut o),
+            Err(HashError::InvalidInput(_))
+        ));
+        assert_eq!(o, [0u8; 32]);
+    }
+
+    for num_bits in [8usize, 9] {
+        assert!(matches!(
+            AsconHash256::new().do_final_partial_bits(0xFF, num_bits),
+            Err(HashError::InvalidLength(_))
+        ));
+        let mut o = [0xEEu8; 32];
+        assert!(matches!(
+            AsconHash256::new().do_final_partial_bits_out(0xFF, num_bits, &mut o),
+            Err(HashError::InvalidLength(_))
+        ));
+        assert_eq!(o, [0u8; 32]);
+    }
 }
 
 #[test]
@@ -128,7 +164,7 @@ fn hash256_suspendable_state() {
     use bouncycastle_core_test_framework::suspendable_state::TestFrameworkSuspendableState;
 
     let data: Vec<u8> = (0..37u8).collect();
-    let expected = AsconHash256::new().hash(&data);
+    let expected = AsconHash256::hash(&data);
 
     // Suspend mid-absorb, resume, finish, and confirm the digest matches an uninterrupted run.
     let mut h = AsconHash256::new();

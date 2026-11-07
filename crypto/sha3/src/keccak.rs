@@ -2,7 +2,10 @@ use bouncycastle_core::errors::{HashError, SuspendableError};
 use bouncycastle_core::key_material::KeyType;
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_utils::secret::Secret;
+use bouncycastle_utils::suspendable_state::bounded_usize;
 
+/// `RC[ir]` for the 24 rounds of KECCAK-f[1600]: FIPS 202 Algorithm 6 (iota) steps 2-3,
+/// evaluated with the `rc(t)` LFSR of Algorithm 5 for `ir = 0..24` and stored as lanes.
 const KECCAK_ROUND_CONSTANTS: [u64; 24] = [
     0x0000000000000001, 0x0000000000008082, 0x800000000000808A, 0x8000000080008000,
     0x000000000000808B, 0x0000000080000001, 0x8000000080008081, 0x8000000000008009,
@@ -12,6 +15,8 @@ const KECCAK_ROUND_CONSTANTS: [u64; 24] = [
     0x8000000080008081, 0x8000000000008080, 0x0000000080000001, 0x8000000080008008,
 ];
 
+/// The 1600-bit state of FIPS 202 Sec 3.1 as 25 lanes: Sec 3.1.2 puts bit `A[x, y, z]` at
+/// `S[64(5y + x) + z]`, so lane `(x, y)` is `buf[x + 5y]`, little-endian within the word.
 #[derive(Clone)]
 pub(crate) struct KeccakState {
     buf: Secret<[u64; 25]>,
@@ -34,6 +39,9 @@ impl KeccakState {
         Self::permute(self);
     }
 
+    /// KECCAK-p[1600, 24], FIPS 202 Algorithm 7, which Sec 3.4 names KECCAK-f[1600]: the round
+    /// function `Rnd = iota(chi(pi(rho(theta(A)))))` of Sec 3.3 for `ir = 0..24`, on the lanes
+    /// unrolled into locals. `aNN` is lane `(x, y) = (NN mod 5, NN / 5)`.
     pub fn permute(a: &mut Self) {
         let [
             mut a00,
@@ -64,7 +72,8 @@ impl KeccakState {
         ] = *a.buf;
 
         for round_constant in KECCAK_ROUND_CONSTANTS {
-            // theta
+            // theta, Algorithm 1: C[x] = A[x,0] ^ .. ^ A[x,4], D[x] = C[x-1] ^ ROT(C[x+1], 1),
+            // A[x,y] ^= D[x]. The locals are offset: d0 is D[4], d1 is D[0], .., d4 is D[3].
             let mut c0 = a00 ^ a05 ^ a10 ^ a15 ^ a20;
             let mut c1 = a01 ^ a06 ^ a11 ^ a16 ^ a21;
             let c2 = a02 ^ a07 ^ a12 ^ a17 ^ a22;
@@ -103,7 +112,8 @@ impl KeccakState {
             a19 ^= d0;
             a24 ^= d0;
 
-            // rho/pi
+            // rho and pi fused, Algorithms 2 and 3: A'[x,y] = ROT(A[(x+3y) mod 5, x], r), with
+            // r the Table 2 offset of the source lane. c1 holds A[1,0], which lands in A[0,2].
             c1 = a01.rotate_left(1);
             a01 = a06.rotate_left(44);
             a06 = a09.rotate_left(20);
@@ -130,7 +140,8 @@ impl KeccakState {
             a07 = a10.rotate_left(3);
             a10 = c1;
 
-            // chi
+            // chi, Algorithm 4: A'[x,y] = A[x,y] ^ (!A[x+1,y] & A[x+2,y]), one row of five at a
+            // time, with the two lanes a row overwrites before reading them held in c0 and c1.
             c0 = a00 ^ (!a01 & a02);
             c1 = a01 ^ (!a02 & a03);
             a02 ^= !a03 & a04;
@@ -171,7 +182,7 @@ impl KeccakState {
             a20 = c0;
             a21 = c1;
 
-            // iota
+            // iota, Algorithm 6: the round constant into lane (0, 0).
             a00 ^= round_constant;
         }
 
@@ -192,19 +203,33 @@ pub(crate) struct KeccakInternal {
     pub squeezing: bool,
 }
 
-#[derive(Clone)]
-pub(crate) enum KeccakSize {
+/// The security strength of a FIPS 202 function in bits, which is half its sponge capacity:
+/// `c = 2 * size` and the rate is `1600 - c` (FIPS 202 Table 3 and Sec 6.2).
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum KeccakSize {
+    /// SHAKE128.
     _128 = 128,
+    /// SHA3-224.
     _224 = 224,
+    /// SHA3-256 and SHAKE256.
     _256 = 256,
-    _288 = 288,
+    /// SHA3-384.
     _384 = 384,
+    /// SHA3-512.
     _512 = 512,
+}
+
+impl KeccakSize {
+    /// The sponge rate in bits, `1600 - 2 * size`: 1344, 1152, 1088, 832 and 576 (FIPS 202
+    /// Table 3).
+    pub const fn rate_bits(self) -> usize {
+        1600 - 2 * (self as usize)
+    }
 }
 
 impl KeccakInternal {
     pub(super) fn new(size: KeccakSize) -> Self {
-        let rate = 1600 - ((size as usize) << 1);
+        let rate = size.rate_bits();
 
         Self {
             state: KeccakState::new(rate),
@@ -298,6 +323,19 @@ impl KeccakInternal {
         if !self.squeezing {
             self.pad_and_switch_to_squeezing_phase();
         }
+        // The loop below counts in bits, so a slice whose bit length does not fit a `usize` (512
+        // MiB on a 32-bit target) would wrap the bound and stop early; squeeze it in pieces that
+        // fit. On a 64-bit target the piece is larger than any buffer, so this is at most one
+        // iteration (none for an empty `out`, which has nothing to write).
+        for piece in out.chunks_mut(usize::MAX >> 3) {
+            self.squeeze_into(piece);
+        }
+        out.len()
+    }
+
+    /// [`Self::squeeze`]'s loop for a slice of fewer than `usize::MAX / 8` bytes, with the sponge
+    /// already in the squeezing phase.
+    fn squeeze_into(&mut self, out: &mut [u8]) {
         let output_length = out.len() << 3;
 
         let mut i = 0;
@@ -316,7 +354,6 @@ impl KeccakInternal {
             self.bits_in_queue -= partial_block;
             i += partial_block;
         }
-        output_length >> 3
     }
 
     #[inline(always)]
@@ -505,9 +542,16 @@ pub(crate) fn deserialize_sha3_family_state(
     // KeyType and SecurityStrength each own their canonical 1-byte encoding (`as u8` / `TryFrom<u8>`).
     let kdf_key_type = KeyType::try_from(input[1 + KECCAK_SERIALIZED_LEN])?;
     let kdf_security_strength = SecurityStrength::try_from(input[1 + KECCAK_SERIALIZED_LEN + 1])?;
-    let kdf_entropy = u64::from_le_bytes(
-        input[1 + KECCAK_SERIALIZED_LEN + 2..1 + KECCAK_SERIALIZED_LEN + 10].try_into().unwrap(),
-    ) as usize;
+    // `usize::MAX` only narrows the width: any count is valid, but a 32-bit target must not
+    // truncate one that was written on a 64-bit one.
+    let kdf_entropy = bounded_usize(
+        u64::from_le_bytes(
+            input[1 + KECCAK_SERIALIZED_LEN + 2..1 + KECCAK_SERIALIZED_LEN + 10]
+                .try_into()
+                .unwrap(),
+        ),
+        usize::MAX,
+    )?;
 
     Ok((keccak, kdf_key_type, kdf_security_strength, kdf_entropy))
 }
@@ -589,7 +633,7 @@ mod keccak_tests {
     /// in either direction is caught.
     #[test]
     fn sha3_family_state_round_trips_kdf_metadata() {
-        let rate = 1600 - ((KeccakSize::_256 as usize) << 1);
+        let rate = KeccakSize::_256.rate_bits();
         let mut d = KeccakInternal::new(KeccakSize::_256);
         d.absorb(b"message");
 
@@ -637,7 +681,7 @@ mod keccak_tests {
     /// or the pad_and_switch_to_squeezing_phase() invariant.
     #[test]
     fn from_serialized_state_rejects_corrupt_bits_in_queue() {
-        let rate = 1600 - ((KeccakSize::_256 as usize) << 1);
+        let rate = KeccakSize::_256.rate_bits();
 
         // A valid, mid-absorb (not squeezing) serialized state.
         let mut d = KeccakInternal::new(KeccakSize::_256);

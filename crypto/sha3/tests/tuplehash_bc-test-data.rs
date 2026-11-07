@@ -77,8 +77,8 @@ fn nist_sp800_185_tuplehash_sample_values() {
         let want = v.output_len / 8;
         let t = as_slices(&v.tuple);
         let got = match v.strength {
-            128 => TupleHash128::new(v.s.as_bytes(), want).hash_tuple(&t),
-            256 => TupleHash256::new(v.s.as_bytes(), want).hash_tuple(&t),
+            128 => TupleHash128::new(v.s.as_bytes(), want).unwrap().hash_tuple(&t),
+            256 => TupleHash256::new(v.s.as_bytes(), want).unwrap().hash_tuple(&t),
             other => panic!("COUNT {i}: unexpected strength {other}"),
         };
         assert_eq!(
@@ -139,7 +139,7 @@ fn do_final_binds_the_length_when_nothing_has_been_read() {
         match f.strength {
             128 => check_do_final_binds_length(
                 || TupleHashXOF128::new(s),
-                |n| TupleHash128::new(s, n).hash_tuple(&t),
+                |n| TupleHash128::new(s, n).unwrap().hash_tuple(&t),
                 &t,
                 &f.output,
                 &x.output,
@@ -147,7 +147,7 @@ fn do_final_binds_the_length_when_nothing_has_been_read() {
             ),
             256 => check_do_final_binds_length(
                 || TupleHashXOF256::new(s),
-                |n| TupleHash256::new(s, n).hash_tuple(&t),
+                |n| TupleHash256::new(s, n).unwrap().hash_tuple(&t),
                 &t,
                 &f.output,
                 &x.output,
@@ -275,12 +275,16 @@ fn check_fixed_view<H: Hash>(make: impl Fn() -> H, tuple: &[&[u8]], expected: &[
     let Some((last, rest)) = tuple.split_last() else { return };
     let mut h = make();
     rest.iter().for_each(|e| h.do_update(e));
-    assert_eq!(h.hash(last), expected, "{ctx}: hash as the final element");
+    let mut h = h;
+    h.do_update(last);
+    assert_eq!(h.do_final(), expected, "{ctx}: the last element through do_update");
 
     let mut h = make();
     rest.iter().for_each(|e| h.do_update(e));
     let mut out = vec![0u8; n];
-    assert_eq!(h.hash_out(last, &mut out), n, "{ctx}: hash_out returns the length");
+    let mut h = h;
+    h.do_update(last);
+    assert_eq!(h.do_final_out(&mut out), n, "{ctx}: do_final_out returns the length");
     assert_eq!(out, expected, "{ctx}: hash_out");
 }
 
@@ -336,12 +340,16 @@ fn check_xof_view<X: XOF>(
     let Some((last, rest)) = tuple.split_last() else { return };
     let mut x = make();
     rest.iter().for_each(|e| x.do_update(e));
-    assert_eq!(x.hash(last), fixed_expected, "{ctx}: hash");
+    let mut x = x;
+    x.do_update(last);
+    assert_eq!(x.do_final(), fixed_expected, "{ctx}: the last element through do_update");
 
     let mut x = make();
     rest.iter().for_each(|e| x.do_update(e));
     let mut out = vec![0u8; n];
-    assert_eq!(x.hash_out(last, &mut out), n, "{ctx}: hash_out returns the length");
+    let mut x = x;
+    x.do_update(last);
+    assert_eq!(x.do_final_out(&mut out), n, "{ctx}: do_final_out returns the length");
     assert_eq!(out, fixed_expected, "{ctx}: hash_out");
 
     // The XOF reading of the stream is do_output; the one-shots bind the length they are given,
@@ -372,8 +380,18 @@ fn hash_trait_view_agrees_with_the_sample_values() {
         let t = as_slices(&v.tuple);
         let ctx = format!("COUNT {i}: TupleHash{}", v.strength);
         match v.strength {
-            128 => check_fixed_view(|| TupleHash128::new(v.s.as_bytes(), n), &t, &v.output, &ctx),
-            256 => check_fixed_view(|| TupleHash256::new(v.s.as_bytes(), n), &t, &v.output, &ctx),
+            128 => check_fixed_view(
+                || TupleHash128::new(v.s.as_bytes(), n).unwrap(),
+                &t,
+                &v.output,
+                &ctx,
+            ),
+            256 => check_fixed_view(
+                || TupleHash256::new(v.s.as_bytes(), n).unwrap(),
+                &t,
+                &v.output,
+                &ctx,
+            ),
             other => panic!("COUNT {i}: unexpected strength {other}"),
         }
     }

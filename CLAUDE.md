@@ -43,7 +43,8 @@ Revisit this section at the first non-alpha release.
 
 - Builds on Rust **stable**: there is no toolchain pin, and no crate enables a `#![feature(...)]` gate, so
   nightly-only tooling (`-Z` flags and the like) is not available. CI builds, tests and docs on stable; only the
-  `rustfmt` job installs nightly.
+  `rustfmt` job and the AES assembly check (`-Zbuild-std=core` for targets without a shipped `core`) install
+  nightly.
 - 2024 edition (set workspace-wide in the root `Cargo.toml`).
 - Minimum Rust is 1.88: `rust-version` in the root `Cargo.toml`, inherited by `bouncycastle-utils` (the crate that
   needs it, for `slice::as_chunks`) and so enforced for every crate that depends on it.
@@ -97,7 +98,7 @@ way when adding a harness, or `cargo test --workspace` fails to compile them.
 
 The workspace has four top-level kinds of member:
 
-1. `crypto/*` — the library's sub-crates, plus the spine crates `core`, `core-test-framework`, and `factory` described below. Most are one primitive each; some, such as `cipher`, hold generic building blocks (modes, padding) as sub-modules. The set changes over time, so take it from `ls crypto/` or the root `Cargo.toml` rather than from a list here. Each crate is published as `bouncycastle-<name>` and depended on internally via the `workspace.dependencies` table in the root `Cargo.toml`.
+1. `crypto/*` — the library's sub-crates, plus the spine crates `core`, `core-test-framework`, `cipher-test-framework` and `factory` described below. Most are one primitive each; some, such as `cipher`, hold generic building blocks (modes, padding) as sub-modules. The set changes over time, so take it from `ls crypto/` or the root `Cargo.toml` rather than from a list here. Each crate is published as `bouncycastle-<name>` and depended on internally via the `workspace.dependencies` table in the root `Cargo.toml`.
 2. `src/` — the umbrella `bouncycastle` crate, which is just `pub use` re-exports of every sub-crate (e.g. `bouncycastle::sha3`, `bouncycastle::sm3`, `bouncycastle::mlkem`). It exists so downstream users can pull the whole library with one dependency; it has no code of its own.
 3. `cli/` — the `bc-rust` binary built on top of `bouncycastle`, exposing every primitive as a streaming stdin→stdout subcommand using `clap`.
 4. `mem_usage_benches/` — stand-alone binary crates that measure peak stack usage of algorithms (cannot be done via criterion).
@@ -106,7 +107,8 @@ The workspace has four top-level kinds of member:
 
 - `crypto/core` defines the abstract traits (`Hash`, `KDF`, `MAC`, `KEM`, `Signature`, `RNG`, `Algorithm`, `HashAlgParams`, …), error enums (`HashError`, `KDFError`, `KEMError`, `MACError`, `RNGError`, `SignatureError`), and the `KeyMaterial` / `KeyType` wrapper for key bytes. Sensitive data is held in `bouncycastle_utils::secret::Secret<T>`, which `KeyMaterial` is built on (see the sensitive-data rule under "APIs" in QUALITY_AND_STYLE.md).
 - `crypto/core-test-framework` contains the shared per-trait test suite (`hash.rs`, `kdf.rs`, `kem.rs`, `mac.rs`, `signature.rs`). New implementations of a core trait must be exercised through this framework — it's how trait conformance and error-condition coverage stay consistent across implementations.
-- `crypto/factory` provides enum-based string-name factories (`HashFactory`, `KDFFactory`, `MACFactory`, `RNGFactory`, `XOFFactory`). Each factory enum impls the underlying trait so it can be used transparently as that primitive, and each impls `AlgorithmFactory` (`new(name)`, `default_128_bit()`, `default_256_bit()`). When adding a new primitive that fits an existing trait, register it in the corresponding factory.
+- `crypto/cipher-test-framework` holds the suites every block cipher crate runs over `BlockCipherKey<P, M>`: the keys under every mode through the core suites, the padded and stream-mode wiring checks, and the Wycheproof runners, each generic over the permutation and run at one key length per call. It is a sibling of `core-test-framework` rather than part of it because it names `bouncycastle-cipher`'s types, and that crate's own tests depend on the core framework. A new block cipher's `mode_key_tests.rs`, `padded_alias_tests.rs`, `stream_mode_alias_tests.rs` and `*_wycheproof.rs` are calls into it; what stays in the crate is the cipher's own known answers, aliases and sizes.
+- `crypto/factory` provides enum-based string-name factories (`HashFactory`, `KDFFactory`, `MACFactory`, `RNGFactory`, `XOFFactory`). Each factory enum impls the underlying trait so it can be used transparently as that primitive, except `MACFactory`, which is a key enum implementing the MAC role traits and handing out a `MACFactoryWorker` that impls `MAC`; and each impls `AlgorithmFactory` (`new(name)`, `default_128_bit()`, `default_256_bit()`). When adding a new primitive that fits an existing trait, register it in the corresponding factory.
 
 Trait/factory/CLI is the standard layering: a new algorithm typically requires (a) the primitive crate, (b) implementing the relevant `core` trait, (c) wiring it into the matching factory, (d) a CLI subcommand in `cli/src/*_cmd.rs` registered in `cli/src/main.rs`.
 
@@ -173,19 +175,25 @@ taught, as mechanics to apply next time a cipher type is shaped or reshaped:
   struct under the spec-spelled name (`Ascon_AEAD128<Dir>`, `#[allow(non_camel_case_types)]`)
   is the whole public type, with no CamelCase twin and no alias to it.
 - **The trait pair is the API.** Do not keep an inherent streaming or one-shot API beside the
-  `AEADCipher*` / `SymmetricCipher*` impls; everything a caller needs, including a supplied nonce
-  (`do_encrypt_init_nonce`, `encrypt_with_aad_nonce_out`), is on the traits. The only inherent
-  methods a cipher adds are for what the traits lack, in-place streaming (`do_*_inplace`), and
-  their decrypt form keeps the same tag hold-back as `do_decrypt_out` so the two interleave.
+  `AEADCipher*` / `SymmetricCipher*` impls; everything a caller needs is on the traits, and
+  everything that takes a key or draws a nonce, including a supplied nonce
+  (`create_encryptor_nonce`, `encrypt_with_aad_nonce_out`), is on the key object. The only
+  inherent methods a cipher adds are for what the traits lack, in-place streaming
+  (`do_*_inplace`), and their decrypt form keeps the same tag hold-back as `do_decrypt_out` so
+  the two interleave.
 - **Private helpers must not share a trait method's name.** An inherent `do_encrypt_final` with a
   different signature from the trait's is what forced the wrapper newtypes; name the core
   helpers for what they do (`absorb_aad`, `encrypt_bytes`, `finish_tag`, `verify_tag`).
 - **Fold wrapper state into the struct.** A decrypt-only buffer (the held-back tag) is carried on
   both directions, unused when encrypting, as `Gcm` already does; that is cheaper than a second
-  type and keeps `SuspendableKeyed` on the cipher itself.
-- **Suspended-state formats are frozen.** Moving the impl or splitting the type must not change a
-  byte of the layout; the call-state byte keeps its direction bits and resume refuses the other
-  direction. When the two directions' states differ in length, publish a constant per direction.
+  type.
+- **Cipher workers do not suspend.** As of #173 no cipher or MAC worker implements
+  `SuspendableKeyed` or `SuspendableComponent`, and `hazmat::ModeKey` is gone with them; HMAC and
+  HKDF are the `SuspendableKeyed` implementors that remain, and the hashes, XOFs and KMAC keep
+  `Suspendable`. A message in progress is paused by holding its worker. A test that needs a
+  worker at a limit the public API cannot reach (GCM at `MAX_DATA_LEN`, the last counter block)
+  is a unit test in the mode's file that sets the private field, not a resume from a patched
+  state.
 - **When public items go, the tests follow the API, and the benches get built.** Integration
   tests move onto the trait methods rather than the inherent ones surviving for their sake.
   `cargo test --workspace` does not compile `benches/` or `mem_usage_benches`, so finish with
@@ -194,8 +202,85 @@ taught, as mechanics to apply next time a cipher type is shaped or reshaped:
   a CLI path, run it against a known-answer vector (`--nonce` on `ascon-aead128` reproduces the
   LWC KAT tag).
 - **A rename stays in the crate it was asked for.** `do_*_update` to `do_*_inplace` was done for
-  Ascon; the CCM packet type still has its namesake. Note the follow-up rather than widening the
+  Ascon; the CCM type still has its namesake. Note the follow-up rather than widening the
   change.
+
+## Lessons from the key-object rework (October 2026)
+
+The symmetric cipher and MAC traits lost their constructors and key-taking one-shots; keys took them.
+What that taught, as mechanics for the next trait that sheds a constructor:
+
+- **The trait describes a worker that exists.** `SymmetricCipherEncryptor`, `AEADCipherEncryptor`,
+  `BlockCipherEncryptor`, `StreamCipherEncryptor`, their decrypting halves and `MAC` carry only
+  streaming methods and length helpers. Construction is a key object's (`create_encryptor(rng)`,
+  `create_decryptor(init)`, `create_generator()`), and the one-shots are provided on the role
+  traits in `core::symmetric_key` over those. `KEY_LEN` is on the role and mode traits, never on
+  a worker trait.
+- **Mode types carry the role.** A key is `BlockCipherKey<P, M>` (aliased `AES128Key<M>` and the like); which role pairs it implements is
+  decided by `M`'s mode-trait impls in `core::hazmat::mode` (`SymmetricEncryptMode`,
+  `BlockEncryptMode`, `EcbEncryptMode`, `AeadEncryptMode`, `AeadDeclaredEncryptMode`, `MacMode`).
+  Padding and frame parameters live in the mode type (`CBC<PKCS7>`, `CBC<Blocks>`,
+  `ECB<Blocks>`, `CTR<12>`, `CCM_Packet<12, 16, 64, 1024>`), not on a worker alias.
+- **The key length stops at the key.** `BlockPermutation<BLOCK_LEN>` carries the block methods
+  and `ElectronicCodeBook<KEY_LEN, BLOCK_LEN>` adds only `new`, so a worker and a mode's
+  `Mode<P>` impl bound on the former and never name a key length; the GCM, GMAC and CMAC impls
+  are generic in `cipher` for that reason. `KEY_LEN` stays on the mode traits' worker-producing
+  halves as the tie between a key's length and its permutation's, through
+  `P: ElectronicCodeBook<KEY_LEN, ..>`, which is what keeps a key object's role impls to the one
+  length. A mode that must know the block length (`CMAC<BLOCK_LEN>`, `CTR<N, BLOCK_LEN>`) takes
+  it as a parameter, since stable Rust cannot read it off the permutation inside the impl.
+- **Test the key, not the worker pair.** The framework runners are `test_key` over a role pair
+  and the construction suites in `core_test_framework::from_key_material`; a test of "a key of the
+  wrong type is rejected" belongs to the construction suite, once, not to each mode's tests.
+  Known-answer suites keep pinning their IV through `create_encryptor` and a `FixedSeedRNG`.
+- **Workers borrow the key.** The role and mode traits hand out workers through a generic
+  associated type with a lifetime, `type Encryptor<'k>`, and the cipher-crate workers hold
+  `&'k` to the mode's key state, so `create_encryptor` copies no schedule and a worker cannot
+  outlive its key. Spell the mode traits' GAT bound `where P: 'k`, not `where Self::KeyState: 'k`:
+  rustc rejects a generic impl whose key state is a struct over `P` (E0276) under the latter. A
+  function handed `key: &'k K` that names the worker is generic over `'k`; one that builds its
+  key locally bounds `for<'k> K::Encryptor<'k>: ..` with `K: 'static`. A test binds the key
+  before the worker, since `key_fn().create_encryptor(..)` borrows a temporary.
+- **Resume takes the key object.** `SuspendableKeyed<'k, N>` takes the key by `&'k`: HMAC's is
+  `HmacKey`, and HKDF's stays the salt material, since HKDF is not a key object. A struct
+  cannot hold a worker that borrows a key it also owns: HKDF runs its extract-phase HMAC as the
+  two halves `HmacKey::inner_state` / `finish_out`, and the MAC factory is a key enum that hands
+  out a worker enum.
+- **What has no key-path twin is dropped, and said so.** `new_allow_weak_key` on a cipher-based
+  MAC, a wrong-length `KeyMaterial512` into a fixed-length key, GCM's verify-before-decrypt
+  one-shot override: each went with a line in the commit message rather than a shim.
+
+## Lessons from the signature key rework (November 2026)
+
+The signature traits moved construction from the algorithm type onto the key objects, as the
+cipher and MAC traits had (`local/signer_verifier_init_removal_plan.md`). Mechanics to reuse:
+
+- **Lengths the parameter set fixes do not go on the key type.** `MLDSAPublicKey<P>` stores
+  `P::VecK`, not a byte array, so the encoded lengths are needed only where a `core` trait or a
+  method names a `[u8; N]`. Stable Rust cannot write `[u8; P::PK_LEN]` there, so each such impl
+  or method is generic over `N` and bound through a sealed per-length trait with one impl per
+  parameter set (`P: SignatureLen<SIG_LEN>`); the solver then infers `N` from `P`, and
+  `sk.sign(..)` needs no annotation. One trait per length, not one trait for all of them: an
+  impl's const parameter must appear in the trait reference or the self type, and
+  `SignaturePublicKey<PK_LEN>` names only one. Where a whole encoding is needed with no const in
+  scope (`compute_tr`, `PartialEq`), the parameter set supplies the buffer type
+  (`P::PkEncoded`). The alternative, one concrete impl per parameter set, is a macro's worth of
+  copies.
+- **Algorithm-level operations on a key go on the key trait, not as statics on the marker.**
+  `MLDSA65::verify_mu(&pk, Some(&pk.A_hat()), &mu, &sig)` became `pk.verify_mu(&mu, &sig)`: the
+  key trait carries the method, each key type supplies its own cached state (the expanded key's
+  matrix), and the workers hold only the key they were made from.
+- **Two traits with the same method name on one type are ambiguous at every call.** A key that
+  signs both randomized and deterministic variants gets `create_signer` and
+  `create_signer_deterministic`, not two `create_signer`s; the arity does not help.
+- **The algorithm is a trait parameter, the hash a method parameter.** One key encoding serves
+  several algorithms (ML-DSA and HashML-DSA, ECDSA and RFC 6979, PKCS#1 and PSS), so the marker
+  goes on the role trait, not the key type; a pre-hash's hash goes on the method
+  (`create_ph_signer::<SHA512>`), with the strength rule checked at construction.
+- **A test RNG that repeats its seed defeats a "two signatures differ" check.** `FixedSeedRNG`
+  emits its seed cyclically; two 32-byte draws from a 64-byte constant seed are identical, and
+  so are two 64-byte draws (a PSS/SHA-512 salt) from a 64-byte counting seed. Seed it with a
+  counting pattern longer than one draw when the test relies on consecutive draws differing.
 
 ## Working from specifications
 
@@ -236,11 +321,27 @@ external vector suites — is specified in QUALITY_AND_STYLE.md and CONTRIBUTING
   - **`-f`/`--file` does nothing while the checked-in config is in play**, because its `examine_globs` wins over the CLI filter: `cargo mutants -p bouncycastle-sha3 -f '**/kmac.rs'` still examines all ~874 mutants in the crate. To scope a run to the files you changed, copy `.cargo/mutants.toml` somewhere outside the repo, delete its `examine_globs` block, and pass `--config <copy>`; `-f` then filters as documented. (`--config /dev/null` also works but throws away `skip_calls`, `error_values`, `cap_lints` and the timeout multipliers with it.)
   - **Add `--test-workspace true` when a crate's mutants are killed by another crate's tests.** The `core` traits are the case that matters: their default method bodies are exercised from `sha3` and `factory`, so a `-p bouncycastle-core` run alone reports them all as missed.
   - **Symlink the test data into `/tmp`.** `cargo mutants` copies the tree to `/tmp/cargo-mutants-<dir>-XXXX.tmp/`, so the `../../../bc-test-data/...` paths the vector suites use resolve to `/tmp/bc-test-data`. Without `ln -s <path-to>/bc-test-data /tmp/bc-test-data` those tests print their "not found" warning, pass vacuously, and every mutant they would have killed is reported as missed. Use `--jobs 3` and an explicit `--timeout`; note that a mutant which makes a squeeze return no bytes hangs a fill loop for real, so some timeouts are kills rather than false alarms.
+  - **Builds use the `mutants` cargo profile** (`profile = "mutants"` in the config, defined in the root `Cargo.toml`): release optimisation without LTO, with incremental codegen. Measured on `bouncycastle-mldsa-lowmemory`, a mutant rebuilds in under a second and the suite runs in about 4 s, against 160 s per run unoptimised and an 80 s thin-LTO rebuild per mutant under `release`. Do not pass `--profile dev` or `--profile release` to "speed things up"; both are slower here.
 - Integration tests in `tests/` are preferred over in-file `#[cfg(test)] mod tests` blocks — see "Unit tests vs integration tests" in QUALITY_AND_STYLE.md for the reasoning and the exceptions. A unit test is justified for high-risk code that has known-answer values and cannot be reached through the public API; when you write one, all of its helpers go inside that `mod tests`.
 - A property that can be asserted at compile time (`const _: () = assert!(...)`) stays a compile-time assertion even when a test also covers it: `cargo mutants` cannot see a const assertion fail, so pair the two rather than trading the guarantee for the coverage.
-- For traits in `core`, the canonical tests live in `core-test-framework` and are invoked from each implementor's integration tests — don't duplicate them per-implementation.
+- For traits in `core`, the canonical tests live in `core-test-framework` and are invoked from each implementor's integration tests — don't duplicate them per-implementation. The same goes for a block cipher's key, mode-wiring and Wycheproof suites, which live in `cipher-test-framework`, for the CLI block cipher command tests' harness and shared checks in `cli/tests/common/mod.rs`, and for the stack-usage harness in `mem_usage_benches/src/block_cipher_mem_usage.rs`.
 - The per-width `impl Condition<W>` blocks in `crypto/utils/src/ct.rs` (and their test modules) are deliberately duplicated rather than macro-generated: `cargo mutants` cannot see into `macro_rules!` bodies, so a macro would hide the mask identities from mutation testing. Do not fold them back into a macro. Any change to one width in a group (i64/i32, u64/u32) must be applied to every width in that group.
 
 ## CI
 
-The only workflow is `.github/workflows/publish_doc_benches_to_ghpages.yaml`: on every PR it builds rustdoc and runs `quality_stats.sh`; on `main` it additionally runs `cargo bench --all` and publishes docs, code stats, and benchmark results to GitHub Pages (`https://bcgit.github.io/bc-rust/`). There is no separate CI test/lint job — local `cargo test --workspace` is the gate, and nothing but a developer running it stands between a broken test and `main`.
+Six workflows under `.github/workflows/`, all triggered by pull requests:
+
+- `rust-build.yml`: `cargo build --workspace --all-targets --all-features` on stable.
+- `rust-test.yml`: `cargo test --all` on stable.
+- `rust-style.yml`: `cargo fmt --all --check` on **nightly** rustfmt, so format before every commit.
+- `rust-docs.yml`: `cargo doc --all` on stable.
+- `aes-ct-asm.yml`: `dev_scripts/check_aes_ct_asm.sh` on **nightly** with `rust-src`: builds
+  `dev_scripts/aes_ct_harness` for thumbv6m and riscv32i and greps the assembly of the AES round-key
+  widening for a multiply, call or branch (see the comment on `PlaneWord::splat` in the aes crate).
+- `publish_doc_benches_to_ghpages.yaml`: builds rustdoc and runs `quality_stats.sh`; on `main` it also
+  publishes docs and code stats to GitHub Pages (`https://bcgit.github.io/bc-rust/`). Its bench step is
+  commented out because the benches are too slow on the hosted runner, so benchmark figures come from a
+  developer's machine, not CI.
+
+`cargo test --all` is the workspace run, so a failing test does block a PR; what CI does not run is
+`cargo mutants`, the CLI shell tests under `cli/tests/`, or rustdoc with warnings denied.

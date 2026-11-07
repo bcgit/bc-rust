@@ -1,379 +1,15 @@
-//! Implements auxiliary functions for ML-DSA as defined in Section 7 of FIPS 204.
+//! The auxiliary functions of FIPS 204, Section 7, over whole vectors and matrices. The
+//! coefficient- and polynomial-level functions they are built from are in
+//! `bouncycastle_mldsa_common::aux_functions`.
 
 use crate::matrix::{MatrixTrait, VectorTrait};
-use crate::mldsa::{G, H, N, POLY_T0PACKED_LEN, POLY_T1PACKED_LEN, d, q, q_inv};
-use crate::params::{
-    GAMMA1_2_POW_17, GAMMA1_2_POW_19, GAMMA2_Q_MINUS_1_OVER_32, GAMMA2_Q_MINUS_1_OVER_88,
-    MLDSAParams,
+use crate::mldsa::N;
+use crate::params::{MLDSAParams, MLDSAParamsBase};
+use bouncycastle_mldsa_common::aux_functions::{
+    bit_unpack_gamma1, bitpack_gamma1, expand_mask_poly, power_2_round, rej_bounded_poly,
+    rej_ntt_poly,
 };
-use crate::polynomial::Polynomial;
-use bouncycastle_core::traits::{Hash, XOF, XOFSqueezer};
 use bouncycastle_utils::secret::{Secret, ZeroizablePrimitive};
-
-/// Algorithm 14 CoeffFromThreeBytes(𝑏0, 𝑏1, 𝑏2)
-/// Output: An integer modulo 𝑞 or ⊥.
-pub(crate) fn coeff_from_three_bytes(b: &[u8; 3]) -> Result<i32, ()> {
-    // This is the exact alg from FIPS 204:
-    // let mut b2_prime = b2;
-    // if b2_prime > 127 {
-    //     // set the top bit of b2_prime to 0
-    //     b2_prime = b2_prime - 128;
-    // }
-
-    // but this is equivalent and feels more constant-time:
-    let b2_prime = b[2] & 0x7F;
-
-    let z: i32 = ((b2_prime as i32) << 16) | ((b[1] as i32) << 8) | (b[0] as i32);
-
-    // mutants note: yeah, this could be z <= q and nothing changes because z == q is the same as z == 0
-    if z < q { Ok(z) } else { Err(()) }
-}
-
-/// Algorithm 15 CoeffFromHalfByte(𝑏)
-/// Let 𝜂 ∈ {2, 4}. Generates an element of {−𝜂, −𝜂 + 1, … , 𝜂} ∪ {⊥}.
-/// Input: Integer 𝑏 ∈ {0, 1, … , 15}.
-/// Output: An integer between −𝜂 and 𝜂, or ⊥.
-#[inline(always)]
-pub(crate) fn coeff_from_half_byte<P: MLDSAParams>(b: u8) -> Result<i32, ()> {
-    if P::eta == 2 && b < 15 {
-        // Original code is bad because '%' is not constant-time.
-        // Ok(2 - (b % 5) as i32)
-        // I'm still not convinced this is constant-time, but maybe it's closer? And I can't come up with anything better.
-        let b = match b {
-            b if b < 5 => b,
-            b if b < 10 => b - 5,
-            _ => b - 10,
-        };
-        Ok(2 - b as i32)
-    } else {
-        if P::eta == 4 && b < 9 { Ok(4 - b as i32) } else { Err(()) }
-    }
-}
-
-/// A specific instantiation of Algorithm 16 SimpleBitPack(𝑤, 𝑏) with the constants set for packing the t1 vector
-///  Encodes a polynomial 𝑤 into a byte string.
-/// Input: 𝑏 ∈ ℕ and 𝑤 ∈ 𝑅 such that the coefficients of 𝑤 are all in [0, 𝑏].
-/// Output: A byte string of length 32 ⋅ bitlen 𝑏.
-pub(crate) fn simple_bit_pack_t1(w: &Polynomial) -> [u8; POLY_T1PACKED_LEN] {
-    let mut output = [0u8; POLY_T1PACKED_LEN];
-    for i in 0..N / 4 {
-        output[5 * i] = w[4 * i] as u8;
-        output[5 * i + 1] = ((w[4 * i] >> 8) | (w[4 * i + 1] << 2)) as u8;
-        output[5 * i + 2] = ((w[4 * i + 1] >> 6) | (w[4 * i + 2] << 4)) as u8;
-        output[5 * i + 3] = ((w[4 * i + 2] >> 4) | (w[4 * i + 3] << 6)) as u8;
-        output[5 * i + 4] = (w[4 * i + 3] >> 2) as u8;
-    }
-    output
-}
-
-/// A variant of Algorithm 17 BitPack specific to a=eta, b=eta
-/// Encodes a polynomial 𝑤 into a byte string.
-/// Input: 𝑎, 𝑏 ∈ ℕ and 𝑤 ∈ 𝑅 such that the coefficients of 𝑤 are all in \[−eta, eta].
-/// Output: A byte string of length 32 ⋅ bitlen (𝑎 + 𝑏).
-
-// the hope here is that the compiler will aggressively inline this function,
-// and optimize away the branching.
-#[inline(always)]
-pub(crate) fn bit_pack_eta<P: MLDSAParams>(w: &Polynomial, r: &mut [u8]) {
-    // `>=` rather than `==`: skEncode reuses one buffer sized for the largest 𝜂 across all three
-    // parameter sets and copies out only the first `POLY_ETA_PACKED_LEN` bytes, so for 𝜂 = 2 the
-    // buffer is deliberately longer than what gets written. Exactly that many bytes are written out
-    // either way, so this still catches an undersized buffer.
-    debug_assert!(r.len() >= P::POLY_ETA_PACKED_LEN);
-
-    // temp swap space
-    let mut t: [u8; 8] = [0; 8];
-
-    match P::eta {
-        // MLDSA44 and MLDSA87
-        2 => {
-            let eta: i32 = 2;
-            for i in 0..N / 8 {
-                t[0] = (eta - w[8 * i]) as u8;
-                t[1] = (eta - w[8 * i + 1]) as u8;
-                t[2] = (eta - w[8 * i + 2]) as u8;
-                t[3] = (eta - w[8 * i + 3]) as u8;
-                t[4] = (eta - w[8 * i + 4]) as u8;
-                t[5] = (eta - w[8 * i + 5]) as u8;
-                t[6] = (eta - w[8 * i + 6]) as u8;
-                t[7] = (eta - w[8 * i + 7]) as u8;
-
-                r[3 * i] = t[0] | (t[1] << 3) | (t[2] << 6);
-                r[3 * i + 1] = (t[2] >> 2) | (t[3] << 1) | (t[4] << 4) | (t[5] << 7);
-                r[3 * i + 2] = (t[5] >> 1) | (t[6] << 2) | (t[7] << 5);
-            }
-        }
-        // MLDSA65
-        4 => {
-            let eta: i32 = 4;
-            for i in 0..N / 2 {
-                t[0] = (eta - w[2 * i]) as u8;
-                t[1] = (eta - w[2 * i + 1]) as u8;
-                r[i] = t[0] | t[1] << 4;
-            }
-        }
-        _ => panic!("Invalid eta value"),
-    }
-}
-
-/// A variant of Algorithm 17 BitPack specific to packing the t0 polynomial with a=2^{d-1}-1, b=2^{d-1}
-/// Encodes a polynomial 𝑤 into a byte string.
-/// Input: 𝑎, 𝑏 ∈ ℕ and 𝑤 ∈ 𝑅 such that the coefficients of 𝑤 are all in \[−eta, eta].
-/// Output: A byte string of length 32 ⋅ bitlen (𝑎 + 𝑏).
-pub(crate) fn bit_pack_t0(t0: &Polynomial) -> [u8; POLY_T0PACKED_LEN] {
-    let mut r = [0u8; POLY_T0PACKED_LEN];
-
-    let mut t = [0; 8];
-    for i in 0..N / 8 {
-        t[0] = (1 << (d - 1)) - t0[8 * i];
-        t[1] = (1 << (d - 1)) - t0[8 * i + 1];
-        t[2] = (1 << (d - 1)) - t0[8 * i + 2];
-        t[3] = (1 << (d - 1)) - t0[8 * i + 3];
-        t[4] = (1 << (d - 1)) - t0[8 * i + 4];
-        t[5] = (1 << (d - 1)) - t0[8 * i + 5];
-        t[6] = (1 << (d - 1)) - t0[8 * i + 6];
-        t[7] = (1 << (d - 1)) - t0[8 * i + 7];
-
-        r[13 * i] = t[0] as u8;
-        r[13 * i + 1] = (t[0] >> 8) as u8;
-        r[13 * i + 1] |= (t[1] << 5) as u8;
-        r[13 * i + 2] = (t[1] >> 3) as u8;
-        r[13 * i + 3] = (t[1] >> 11) as u8;
-        r[13 * i + 3] |= (t[2] << 2) as u8;
-        r[13 * i + 4] = (t[2] >> 6) as u8;
-        r[13 * i + 4] |= (t[3] << 7) as u8;
-        r[13 * i + 5] = (t[3] >> 1) as u8;
-        r[13 * i + 6] = (t[3] >> 9) as u8;
-        r[13 * i + 6] |= (t[4] << 4) as u8;
-        r[13 * i + 7] = (t[4] >> 4) as u8;
-        r[13 * i + 8] = (t[4] >> 12) as u8;
-        r[13 * i + 8] |= (t[5] << 1) as u8;
-        r[13 * i + 9] = (t[5] >> 7) as u8;
-        r[13 * i + 9] |= (t[6] << 6) as u8;
-        r[13 * i + 10] = (t[6] >> 2) as u8;
-        r[13 * i + 11] = (t[6] >> 10) as u8;
-        r[13 * i + 11] |= (t[7] << 3) as u8;
-        r[13 * i + 12] = (t[7] >> 5) as u8;
-    }
-
-    r
-}
-
-/// A variant of Algorithm 17 specific to packing z in the signature value in \[−𝛾1 + 1, 𝛾1].
-pub(crate) fn bitpack_gamma1<P: MLDSAParams>(z: &Polynomial) -> P::PolyZPacked {
-    let mut out = <P::PolyZPacked as ZeroizablePrimitive>::ZEROED;
-    let r = out.as_mut();
-
-    let mut t: [u32; 4] = [0; 4];
-    // One layout per distinct 𝛾1 rather than one per parameter set; `P::gamma1` is a constant
-    // after monomorphization, so only the matching arm survives.
-    match P::gamma1 {
-        // MLDSA-44
-        GAMMA1_2_POW_17 => {
-            for i in 0..N / 4 {
-                t[0] = (P::gamma1 - z[4 * i]) as u32;
-                t[1] = (P::gamma1 - z[4 * i + 1]) as u32;
-                t[2] = (P::gamma1 - z[4 * i + 2]) as u32;
-                t[3] = (P::gamma1 - z[4 * i + 3]) as u32;
-
-                r[9 * i] = t[0] as u8;
-                r[9 * i + 1] = (t[0] >> 8) as u8;
-                r[9 * i + 2] = ((t[0] >> 16) | (t[1] << 2)) as u8;
-                r[9 * i + 3] = (t[1] >> 6) as u8;
-                r[9 * i + 4] = ((t[1] >> 14) | (t[2] << 4)) as u8;
-                r[9 * i + 5] = (t[2] >> 4) as u8;
-                r[9 * i + 6] = ((t[2] >> 12) | (t[3] << 6)) as u8;
-                r[9 * i + 7] = (t[3] >> 2) as u8;
-                r[9 * i + 8] = (t[3] >> 10) as u8;
-            }
-        }
-        // MLDSA-65 and -87 have the same GAMMA1 value
-        GAMMA1_2_POW_19 => {
-            for i in 0..N / 2 {
-                t[0] = (P::gamma1 - z[2 * i]) as u32;
-                t[1] = (P::gamma1 - z[2 * i + 1]) as u32;
-
-                r[5 * i] = t[0] as u8;
-                r[5 * i + 1] = (t[0] >> 8) as u8;
-                r[5 * i + 2] = ((t[0] >> 16) | (t[1] << 4)) as u8;
-                r[5 * i + 3] = (t[1] >> 4) as u8;
-                r[5 * i + 4] = (t[1] >> 12) as u8;
-            }
-        }
-        _ => {
-            panic!("Invalid gamma1 value")
-        }
-    }
-
-    out
-}
-
-/// A specific instantiation of Algorithm 18 SimpleBitUnpack(v, 𝑏) with the constants set for unpacking the t1 vector
-/// Input: 𝑏 ∈ ℕ and a byte string 𝑣 of length 32 ⋅ bitlen 𝑏.
-/// Output: A polynomial 𝑤 ∈ 𝑅 with coefficients in [0, 2𝑐 − 1], where 𝑐 = bitlen 𝑏.
-/// When 𝑏 + 1 is a power of 2, the coefficients are in [0, 𝑏].
-///
-/// Note: caller is responsible for ensuring correct input array size
-pub(crate) fn simple_bit_unpack_t1(v: &[u8; POLY_T1PACKED_LEN]) -> Polynomial {
-    let mut w = Polynomial::new();
-
-    for i in 0..N / 4 {
-        w[4 * i] = ((v[5 * i] as i32) | ((v[5 * i + 1] as i32) << 8)) & 0x3FF;
-        w[4 * i + 1] = (((v[5 * i + 1] as i32) >> 2) | ((v[5 * i + 2] as i32) << 6)) & 0x3FF;
-        w[4 * i + 2] = (((v[5 * i + 2] as i32) >> 4) | ((v[5 * i + 3] as i32) << 4)) & 0x3FF;
-        w[4 * i + 3] = (((v[5 * i + 3] as i32) >> 6) | ((v[5 * i + 4] as i32) << 2)) & 0x3FF;
-    }
-
-    w
-}
-
-/// A variant of Algorithm 19 BitUnpack specific to a=eta, b=eta
-/// Input: 𝑎, 𝑏 ∈ ℕ and a byte string 𝑣 of length 32 ⋅ bitlen (𝑎 + 𝑏).
-/// Output: A polynomial 𝑤 ∈ 𝑅 with coefficients in [𝑏 − 2𝑐 + 1, 𝑏], where 𝑐 = bitlen (𝑎 + 𝑏).
-/// When 𝑎 + 𝑏 + 1 is a power of 2, the coefficients are in [−𝑎, 𝑏].
-///
-/// Note: caller is responsible for ensuring correct input array size
-
-// the hope here is that the compiler will aggressively inline this function,
-// and optimize away the branching.
-#[inline(always)]
-pub(crate) fn bit_unpack_eta<P: MLDSAParams>(v: &[u8]) -> Polynomial {
-    debug_assert_eq!(v.len(), P::POLY_ETA_PACKED_LEN);
-
-    let mut w = Polynomial::new();
-
-    match P::eta {
-        // MLDSA44 and MLDSA87
-        2 => {
-            let eta: i32 = 2;
-            for i in 0..N / 8 {
-                w[8 * i] = (v[3 * i] & 7) as i32;
-                w[8 * i + 1] = ((v[3 * i] >> 3) & 7) as i32;
-                w[8 * i + 2] = ((v[3 * i] >> 6) | (v[3 * i + 1] << 2) & 7) as i32;
-                w[8 * i + 3] = ((v[3 * i + 1] >> 1) & 7) as i32;
-                w[8 * i + 4] = ((v[3 * i + 1] >> 4) & 7) as i32;
-                w[8 * i + 5] = ((v[3 * i + 1] >> 7) | (v[3 * i + 2] << 1) & 7) as i32;
-                w[8 * i + 6] = ((v[3 * i + 2] >> 2) & 7) as i32;
-                w[8 * i + 7] = ((v[3 * i + 2] >> 5) & 7) as i32;
-
-                w[8 * i] = eta - w[8 * i];
-                w[8 * i + 1] = eta - w[8 * i + 1];
-                w[8 * i + 2] = eta - w[8 * i + 2];
-                w[8 * i + 3] = eta - w[8 * i + 3];
-                w[8 * i + 4] = eta - w[8 * i + 4];
-                w[8 * i + 5] = eta - w[8 * i + 5];
-                w[8 * i + 6] = eta - w[8 * i + 6];
-                w[8 * i + 7] = eta - w[8 * i + 7];
-            }
-        }
-        // MLDSA65
-        4 => {
-            let eta: i32 = 4;
-            for i in 0..N / 2 {
-                w[2 * i] = (v[i] & 0x0F) as i32;
-                w[2 * i + 1] = (v[i] >> 4) as i32;
-
-                w[2 * i] = eta - w[2 * i];
-                w[2 * i + 1] = eta - w[2 * i + 1];
-            }
-        }
-        _ => panic!("Invalid eta value"),
-    }
-
-    w
-}
-
-/// A variant of Algorithm 19 BitUnpack specific to unpacking the t0 polynomial with a=2^{d-1}-1, b=2^{d-1}
-/// Input: 𝑎, 𝑏 ∈ ℕ and a byte string 𝑣 of length 32 ⋅ bitlen (𝑎 + 𝑏).
-/// Output: A polynomial 𝑤 ∈ 𝑅 with coefficients in [𝑏 − 2𝑐 + 1, 𝑏], where 𝑐 = bitlen (𝑎 + 𝑏).
-/// When 𝑎 + 𝑏 + 1 is a power of 2, the coefficients are in [−𝑎, 𝑏].
-pub(crate) fn bit_unpack_t0(a: &[u8; POLY_T0PACKED_LEN]) -> Polynomial {
-    let mut t0 = Polynomial::new();
-
-    for i in 0..N / 8 {
-        t0[8 * i] = ((a[13 * i] as i32) | ((a[13 * i + 1] as i32) << 8)) & 0x1FFF;
-        t0[8 * i + 1] = ((((a[13 * i + 1] as i32) >> 5) | (a[13 * i + 2] as i32) << 3)
-            | ((a[13 * i + 3] as i32) << 11))
-            & 0x1FFF;
-        t0[8 * i + 2] = (((a[13 * i + 3] as i32) >> 2) | ((a[13 * i + 4] as i32) << 6)) & 0x1FFF;
-        t0[8 * i + 3] = ((((a[13 * i + 4] as i32) >> 7) | (a[13 * i + 5] as i32) << 1)
-            | ((a[13 * i + 6] as i32) << 9))
-            & 0x1FFF;
-        t0[8 * i + 4] = ((((a[13 * i + 6] as i32) >> 4) | (a[13 * i + 7] as i32) << 4)
-            | ((a[13 * i + 8] as i32) << 12))
-            & 0x1FFF;
-        t0[8 * i + 5] = (((a[13 * i + 8] as i32) >> 1) | ((a[13 * i + 9] as i32) << 7)) & 0x1FFF;
-        t0[8 * i + 6] = ((((a[13 * i + 9] as i32) >> 6) | (a[13 * i + 10] as i32) << 2)
-            | ((a[13 * i + 11] as i32) << 10))
-            & 0x1FFF;
-        t0[8 * i + 7] = (((a[13 * i + 11] as i32) >> 3) | ((a[13 * i + 12] as i32) << 5)) & 0x1FFF;
-
-        t0[8 * i] = (1 << (d - 1)) - t0[8 * i];
-        t0[8 * i + 1] = (1 << (d - 1)) - t0[8 * i + 1];
-        t0[8 * i + 2] = (1 << (d - 1)) - t0[8 * i + 2];
-        t0[8 * i + 3] = (1 << (d - 1)) - t0[8 * i + 3];
-        t0[8 * i + 4] = (1 << (d - 1)) - t0[8 * i + 4];
-        t0[8 * i + 5] = (1 << (d - 1)) - t0[8 * i + 5];
-        t0[8 * i + 6] = (1 << (d - 1)) - t0[8 * i + 6];
-        t0[8 * i + 7] = (1 << (d - 1)) - t0[8 * i + 7];
-    }
-
-    t0
-}
-
-/// A variant of Algorithm 19 BitUnpack specific to a=𝛾1 − 1, b=𝛾1
-/// Input: 𝑎, 𝑏 ∈ ℕ and a byte string 𝑣 of length 32 ⋅ bitlen (𝑎 + 𝑏).
-/// Output: A polynomial 𝑤 ∈ 𝑅 with coefficients in [𝑏 − 2𝑐 + 1, 𝑏], where 𝑐 = bitlen (𝑎 + 𝑏).
-/// When 𝑎 + 𝑏 + 1 is a power of 2, the coefficients are in [−𝑎, 𝑏].
-///
-/// Note: caller is responsible for ensuring correct input array size
-pub(crate) fn bit_unpack_gamma1<P: MLDSAParams>(v: &[u8]) -> Polynomial {
-    let mut w = Polynomial::new();
-
-    match P::gamma1 {
-        // MLDSA-44
-        GAMMA1_2_POW_17 => {
-            for i in 0..N / 4 {
-                w[4 * i] = (((v[9 * i] as i32) | ((v[9 * i + 1] as i32) << 8))
-                    | ((v[9 * i + 2] as i32) << 16))
-                    & 0x3FFFF;
-                w[4 * i + 1] = ((((v[9 * i + 2] as i32) >> 2) | ((v[9 * i + 3] as i32) << 6))
-                    | ((v[9 * i + 4] as i32) << 14))
-                    & 0x3FFFF;
-                w[4 * i + 2] = ((((v[9 * i + 4] as i32) >> 4) | ((v[9 * i + 5] as i32) << 4))
-                    | ((v[9 * i + 6] as i32) << 12))
-                    & 0x3FFFF;
-                w[4 * i + 3] = ((((v[9 * i + 6] as i32) >> 6) | ((v[9 * i + 7] as i32) << 2))
-                    | ((v[9 * i + 8] as i32) << 10))
-                    & 0x3FFFF;
-
-                w[4 * i] = P::gamma1 - w[4 * i];
-                w[4 * i + 1] = P::gamma1 - w[4 * i + 1];
-                w[4 * i + 2] = P::gamma1 - w[4 * i + 2];
-                w[4 * i + 3] = P::gamma1 - w[4 * i + 3];
-            }
-        }
-        // MLDSA-65 and -87 have the same GAMMA1 value
-        GAMMA1_2_POW_19 => {
-            for i in 0..N / 2 {
-                w[2 * i] = (((v[5 * i] as i32) | ((v[5 * i + 1] as i32) << 8))
-                    | ((v[5 * i + 2] as i32) << 16))
-                    & 0xFFFFF;
-                w[2 * i + 1] = ((((v[5 * i + 2] as i32) >> 4) | ((v[5 * i + 3] as i32) << 4))
-                    | ((v[5 * i + 4] as i32) << 12))
-                    & 0xFFFFF;
-
-                w[2 * i] = P::gamma1 - w[2 * i];
-                w[2 * i + 1] = P::gamma1 - w[2 * i + 1];
-            }
-        }
-        _ => {
-            panic!("Invalid gamma1 value")
-        }
-    };
-
-    w
-}
 
 /// Algorithm 26 sigEncode(̃𝑐_tilde, 𝐳, 𝐡)
 /// Encodes a signature into a byte string.
@@ -403,19 +39,29 @@ pub(crate) fn sig_encode<P: MLDSAParams, const SIG_LEN: usize>(
 
     // This inlines Algorithm 20 HintBitPack(𝐡)
 
-    let mut m: usize = 0;
+    // Algorithm 20
+    // 2: Index ← 0
+    let mut index: usize = 0;
+    // 3: for 𝑖 from 0 to 𝑘 − 1 do
     for i in 0..P::k {
+        // 4: for 𝑗 from 0 to 255 do
         for j in 0..N {
+            // 5-8: if 𝐡[𝑖]_𝑗 ≠ 0 then 𝑦[Index] ← 𝑗; Index ← Index + 1
             if h.elems()[i][j] != 0 {
-                output[pos + m] = j as u8;
-                m += 1;
+                output[pos + index] = j as u8;
+                index += 1;
             }
-            output[pos + P::omega as usize + i] = m as u8;
         }
+        // 10: 𝑦[𝜔 + 𝑖] ← Index
+        output[pos + P::omega as usize + i] = index as u8;
     }
 
     SIG_LEN
 }
+
+/// What [`sig_decode`] returns: (c_tilde, z, h).
+pub(crate) type DecodedSig<P> =
+    (<P as MLDSAParamsBase>::SigCTilde, <P as MLDSAParams>::VecL, <P as MLDSAParams>::VecK);
 
 /// Algorithm 27 sigDecode(𝜎)
 /// Reverses the procedure sigEncode.
@@ -424,7 +70,7 @@ pub(crate) fn sig_encode<P: MLDSAParams, const SIG_LEN: usize>(
 ///   Output: (c_tilde, z, h)
 pub(crate) fn sig_decode<P: MLDSAParams, const SIG_LEN: usize>(
     sig: &[u8; SIG_LEN],
-) -> Result<(P::SigCTilde, P::VecL, P::VecK), ()> {
+) -> Option<DecodedSig<P>> {
     debug_assert_eq!(SIG_LEN, P::SIG_LEN);
     let mut c_tilde = <P::SigCTilde as ZeroizablePrimitive>::ZEROED;
     let mut z = P::VecL::new();
@@ -455,7 +101,7 @@ pub(crate) fn sig_decode<P: MLDSAParams, const SIG_LEN: usize>(
         if sig[pos + (P::omega as usize) + i] < (idx as u8)
             || sig[pos + (P::omega as usize) + i] > P::omega as u8
         {
-            return Err(());
+            return None;
         }
 
         // 6: First ← Index
@@ -466,7 +112,7 @@ pub(crate) fn sig_decode<P: MLDSAParams, const SIG_LEN: usize>(
             // 9:   if 𝑦[Index − 1] ≥ 𝑦[Index] then return ⊥
             //       ▷ malformed input
             if j > idx && sig[pos + j - 1] >= sig[pos + j] {
-                return Err(());
+                return None;
             }
             // 12: 𝐡[𝑖]_𝑦[Index] ← 1
             h.elems_mut()[i][sig[pos + j] as usize] = 1;
@@ -481,169 +127,11 @@ pub(crate) fn sig_decode<P: MLDSAParams, const SIG_LEN: usize>(
     // ▷ read any leftover bytes in the first 𝜔 bytes of 𝑦 for malformed (nonzero) bytes
     for j in idx..P::omega as usize {
         if sig[pos + j] != 0 {
-            return Err(());
+            return None;
         }
     }
 
-    Ok((c_tilde, z, h))
-}
-
-/// Algorithm 29 SampleInBall(𝜌)
-/// Samples a polynomial 𝑐 ∈ 𝑅 with coefficients from {−1, 0, 1} and Hamming weight 𝜏 ≤ 64.
-/// Input: A seed 𝜌 ∈ 𝔹𝜆/4
-/// Output: A polynomial 𝑐 in 𝑅.
-pub(crate) fn sample_in_ball<P: MLDSAParams>(rho: &P::SigCTilde) -> Polynomial {
-    // 1: 𝑐 ← 0
-    let mut c = Polynomial::new();
-
-    // 2: ctx ← H.Init()
-    // 3: ctx ← H.Absorb(ctx, 𝜌)
-    // 4: (ctx, 𝑠) ← H.Squeeze(ctx, 8)
-    let mut h = H::new();
-    h.do_update(rho.as_ref());
-    let mut s = [0u8; 8];
-    let mut h = h.into_squeezer();
-    h.do_output_out(&mut s);
-
-    // 5: ℎ ← BytesToBits(𝑠)
-    //   ▷ ℎ is a bit string of length 64
-    let mut signs: u64 = 0;
-    for (i, item) in s.iter().enumerate().take(8) {
-        signs |= (*item as u64) << (8 * i);
-    }
-
-    // 6: for 𝑖 from 256 − 𝜏 to 255 do
-
-    // let mut pos = 8;
-    // let mut b;
-    let mut j = [0u8];
-    for i in (N - P::tau as usize)..N {
-        // 7: (ctx, 𝑗) ← H.Squeeze(ctx, 1)
-        // Note: Even though it may appear that pre-squeezing a buffer outside the loop would be faster,
-        //       testing it both ways doesn't make a noticeable difference, so this has been left as is
-        //       for better correspondence with the FIPS sample algorithm.
-        h.do_output_out(&mut j);
-
-        // 8: while 𝑗 > 𝑖 do
-        while j[0] as usize > i {
-            // ▷ rejection sampling in {0, … , 𝑖}
-            // 9: (ctx, 𝑗) ← H.Squeeze(ctx, 1)
-            h.do_output_out(&mut j);
-        }
-
-        // 11: 𝑐𝑖 ← 𝑐𝑗
-        c[i] = c[j[0] as usize];
-
-        // 12: 𝑐𝑗 ← (−1)^ℎ[𝑖+𝜏−256]
-        c[j[0] as usize] = (1u64.wrapping_sub(2 * (signs & 1))) as i32;
-        signs >>= 1;
-    }
-
-    // check post-condition
-    // coefficients from {−1, 0, 1} and Hamming weight 𝜏 ≤ 64.
-    #[cfg(debug_assertions)]
-    {
-        let mut hamming_weight: i32 = 0;
-        for i in 0..N {
-            debug_assert!((-1..=1).contains(&c[i]));
-            if c[i] != 0 {
-                hamming_weight += 1;
-            }
-        }
-        debug_assert!(hamming_weight > 0);
-        debug_assert!(hamming_weight <= 64);
-    }
-
-    c
-}
-
-/// Algorithm 30 RejNTTPoly(𝜌)
-/// This is supposed to take a rho: [u8; 34], which is: 𝜌||IntegerToBytes(𝑠, 1)||IntegerToBytes(𝑟, 1)
-/// but to avoid needing to copy bytes and allocate more memory,
-/// that is split into a [u8;32] and a [u8;2]
-pub(crate) fn rej_ntt_poly(rho: &[u8; 32], nonce: &[u8; 2]) -> Polynomial {
-    let mut w_hat = Polynomial::new();
-    let mut j: usize = 0;
-    let mut g = G::new();
-    g.do_update(rho);
-    g.do_update(nonce);
-
-    // SHAKE is fairly inefficient if only 3 bytes are squeezed at a time, so instead this implementation does a block.
-    // Size is not a limitation, so long as it's a multiple of 3.
-    // 288 seemed to be the sweet spot found during experimentation and benchmarking.
-    // It's probably around the average rejection rate, and 288 is a multiple of both 3 (required for this alg)
-    // and 8 (efficient for SHAKE).
-    let mut s = [0u8; 288];
-    let mut g = g.into_squeezer();
-    g.do_output_out(&mut s);
-    let mut idx: usize = 0;
-
-    while j < N {
-        if idx == s.len() {
-            g.do_output_out(&mut s);
-            idx = 0;
-        }
-        w_hat[j] = match coeff_from_three_bytes(&s[idx..idx + 3].try_into().unwrap()) {
-            Ok(c) => c,
-            Err(_) => {
-                // those three bytes were out of range for a coefficient, so go again with the next three bytes
-                // from the SHAKE stream.
-                idx += 3;
-                continue;
-            }
-        };
-        idx += 3;
-        j += 1;
-    }
-
-    w_hat
-}
-
-/// Algorithm 31 RejBoundedPoly(𝜌)
-/// Samples an element 𝑎 ∈ 𝑅 with coefficients in \[−𝜂, 𝜂\] computed via rejection sampling from 𝜌.
-/// Input: A seed 𝜌 ∈ 𝔹66 .
-/// Output: A polynomial 𝑎 ∈ 𝑅.
-///
-/// This is supposed to take a rho: [u8; 66], which is: 𝜌||IntegerToBytes(𝑠, 1)||IntegerToBytes(𝑟, 1)
-/// but to avoid needing to copy bytes and allocate more memory,
-/// that is split into a [u8;64] and a [u8;2]
-pub(crate) fn rej_bounded_poly<P: MLDSAParams>(rho: &[u8; 64], nonce: &[u8; 2]) -> Polynomial {
-    let mut a = Polynomial::new();
-    let mut j: usize = 0;
-    let mut h = H::new();
-    h.do_update(rho);
-    h.do_update(nonce);
-
-    // size doesn't really matter
-    // 312 seemed to be the sweet spot from playing with benchmarks
-    // maybe something to do with the average rejection rate?
-    // Also, 312 is a multiple of 8 (efficient for SHAKE)
-    let mut z_arr = [0u8; 312];
-    let mut h = h.into_squeezer();
-    h.do_output_out(&mut z_arr);
-    let mut idx: usize = 0;
-
-    while j < N {
-        let z0 = coeff_from_half_byte::<P>(z_arr[idx] & 0x0F); // equiv to % 16 (but faster, and more importantly, constant-time)
-        let z1 = coeff_from_half_byte::<P>(z_arr[idx] >> 4); // equiv to div_floor(16) (but faster, and more importantly, constant-time)
-
-        if z0.is_ok() {
-            a[j] = z0.unwrap();
-            j += 1;
-        } /* else: do nothing */
-        if z1.is_ok() && j < 256 {
-            a[j] = z1.unwrap();
-            j += 1;
-        } /* else: do nothing */
-
-        idx += 1;
-        if idx == z_arr.len() {
-            h.do_output_out(&mut z_arr);
-            idx = 0;
-        }
-    }
-
-    a
+    Some((c_tilde, z, h))
 }
 
 /// Algorithm 32 ExpandA(𝜌)
@@ -706,151 +194,13 @@ pub(crate) fn power_2_round_vec<V: VectorTrait>(v: &V) -> (V, V) {
 pub(crate) fn expand_mask<P: MLDSAParams>(rho: &[u8; 64], mu: u16) -> P::VecL {
     let mut y = P::VecL::new();
 
-    // 1: 𝑐 ← 1 + bitlen (𝛾1 − 1)
-    //  ▷ 𝛾1 is always a power of 2
-    // The 32𝑐 bytes squeezed on line 4 are exactly `P::POLY_Z_PACKED_LEN`, so the buffer for them
-    // is `P::PolyZPacked`; see the docs on [`MLDSAParams::POLY_Z_PACKED_LEN`].
-
+    // 2: for 𝑟 from 0 to ℓ − 1 do
+    // 3-5: lines 3 to 5 are one coordinate, see `expand_mask_poly`.
     for r in 0..P::l {
-        // 3: 𝜌′ ← 𝜌||IntegerToBytes(𝜇 + 𝑟, 2)
-        // 4: 𝑣 ← H(𝜌′, 32𝑐)
-        let v = {
-            let mut h = H::new();
-            h.do_update(rho);
-            h.do_update(&(mu + (r as u16)).to_le_bytes());
-            let mut v = <P::PolyZPacked as ZeroizablePrimitive>::ZEROED;
-            let mut h = h.into_squeezer();
-            h.do_output_out(v.as_mut());
-            v
-        };
-
-        // 5: 𝐲[𝑟] ← BitUnpack(𝑣, 𝛾1 − 1, 𝛾1)
-        y.elems_mut()[r] = bit_unpack_gamma1::<P>(v.as_ref());
+        y.elems_mut()[r] = expand_mask_poly::<P>(rho, mu + (r as u16));
     }
 
     y
-}
-
-/// Algorithm 35 Power2Round(𝑟)
-/// Decomposes 𝑟 into (𝑟1, 𝑟0) such that 𝑟 ≡ 𝑟1 2^𝑑 + 𝑟0 mod 𝑞.
-/// Input: 𝑟 ∈ ℤ𝑞.
-/// Output: Integers (𝑟1, 𝑟0).
-pub(crate) fn power_2_round(r: i32) -> (i32, i32) {
-    const u: i32 = (1 << (d - 1)) - 1;
-    const v: i32 = -1 << d;
-
-    let t = r + u;
-    let r0 = r - (t & v);
-
-    (t >> d, r0)
-}
-
-#[test]
-// FIPS 204 describes the output as easy to check:
-// Decomposes 𝑟 into (𝑟1, 𝑟0) such that 𝑟 ≡ 𝑟1 2^𝑑 + 𝑟0 mod 𝑞.
-fn test_power_2_round() {
-    test(1);
-    test(q - 3);
-    test(q);
-    test(q + 3);
-
-    fn test(r: i32) {
-        let (r1, r0) = power_2_round(r);
-        let mut res = ((r1 << d) + r0) % q;
-        if res < 0 {
-            res += q;
-        }
-        assert_eq!(r % q, res);
-    }
-}
-
-/// Algorithm 36 Decompose(𝑟)
-/// Decomposes 𝑟 into (𝑟1, 𝑟0) such that 𝑟 ≡ 𝑟1(2𝛾2) + 𝑟0 mod 𝑞.
-/// Input: 𝑟 ∈ ℤ𝑞.
-/// Output: Integers (𝑟1, 𝑟0).
-pub(crate) fn decompose<P: MLDSAParams>(r: i32) -> (i32, i32) {
-    // 1: 𝑟+ ← 𝑟 mod 𝑞
-    // 2: 𝑟0 ← 𝑟+ mod±(2𝛾2)
-    // 3: if 𝑟+ − 𝑟0 = 𝑞 − 1 then
-    // 4:   𝑟1 ← 0
-    // 5:   𝑟0 ← 𝑟0 − 1
-    // 6: else 𝑟1 ← (𝑟+ − 𝑟0)/(2𝛾2)
-    // 7: end if
-    // 8: return (𝑟1, 𝑟0)
-
-    // By the powers of someone much more clever than me, this is equivalent.
-
-    let mut r1: i32;
-    let mut r0 = (r + 127) >> 7;
-
-    match P::gamma2 {
-        // MLDSA-44
-        GAMMA2_Q_MINUS_1_OVER_88 => {
-            // (q - 1) / 88
-            r0 = (r0 * 11275 + (1 << 23)) >> 24;
-            r0 ^= ((43 - r0) >> 31) & r0;
-        }
-        // ML-DSA-65 and -87 have the same GAMMA2
-        GAMMA2_Q_MINUS_1_OVER_32 => {
-            // (q - 1) / 32;
-            r0 = (r0 * 1025 + (1 << 21)) >> 22;
-            r0 &= 15;
-        }
-        _ => {
-            // this branch should never compile
-            unimplemented!()
-        }
-    }
-
-    r1 = r - r0 * 2 * P::gamma2;
-
-    // mutants note: the choice of (q - 1) is a bit arbitrary in that after doing the bit-shifting,
-    //  this seems to work out mathematically equivalent if doing q/2, or (q+3)/2, but here it is left as (q-1)/2
-    //  since that's algorithmically correct, and just ignore the mutants results.
-    r1 -= (((q - 1) / 2 - r1) >> 31) & q;
-
-    (r0, r1)
-}
-
-/// Algorithm 37 HighBits(𝑟)
-/// Returns 𝑟1 from the output of Decompose (𝑟).
-/// Input: 𝑟 ∈ ℤ𝑞.
-/// Output: Integer 𝑟1.
-pub(crate) fn high_bits<P: MLDSAParams>(r: i32) -> i32 {
-    // 1: (𝑟1, 𝑟0) ← Decompose(𝑟)
-    // 2: return 𝑟1
-    let (r1, _) = decompose::<P>(r);
-    r1
-}
-
-/// Algorithm 38 LowBits(𝑟)
-/// Returns 𝑟0 from the output of Decompose (𝑟).
-/// Input: 𝑟 ∈ ℤ𝑞.
-/// Output: Integer 𝑟0.
-pub(crate) fn low_bits<P: MLDSAParams>(r: i32) -> i32 {
-    // 1: (𝑟1, 𝑟0) ← Decompose(𝑟)
-    // 2: return 𝑟0
-    let (_, r0) = decompose::<P>(r);
-    r0
-}
-
-/// Algorithm 39 MakeHint(𝑧, 𝑟)
-/// Computes hint bit indicating whether adding 𝑧 to 𝑟 alters the high bits of 𝑟.
-/// Input: 𝑧, 𝑟 ∈ ℤ𝑞.
-/// Output: Boolean.
-pub(crate) fn make_hint<P: MLDSAParams>(z: i32, r: i32) -> i32 {
-    // // 1: 𝑟1 ← HighBits(𝑟)
-    // let r1 = high_bits::<P>(r);
-    //
-    // // 2: 𝑣1 ← HighBits(𝑟 + 𝑧)
-    // let v1 = high_bits::<P>(r + z);
-    //
-    // // 3: return [[𝑟1 ≠ 𝑣1]]
-    // if r1 != v1 { 1 } else { 0 }
-
-    // By the powers of someone much more clever than me, this is equivalent.
-    // mutants note: we do not have KATs that exercise all branches of this if
-    if z <= P::gamma2 || z > q - P::gamma2 || (z == q - P::gamma2 && r == 0) { 0 } else { 1 }
 }
 
 /// Creates the hint vector from two Vector<k>'s, and also returns its hamming weight (ie the number of 1's).
@@ -869,186 +219,12 @@ pub(crate) fn make_hint_vecs<P: MLDSAParams>(r: &P::VecK, s: &P::VecK) -> (P::Ve
     (out, count)
 }
 
-/// Algorithm 40 UseHint(ℎ, 𝑟)
-/// Returns the high bits of 𝑟 adjusted according to hint ℎ.
-/// Input: Boolean ℎ, 𝑟 ∈ ℤ𝑞.
-/// Output: 𝑟1 ∈ ℤ with 0 ≤ 𝑟1 ≤ (𝑞−1) / 2*gamma2).
-pub(super) fn use_hint<P: MLDSAParams>(a: i32, hint: i32) -> i32 {
-    let (a0, a1) = decompose::<P>(a);
-
-    if hint == 0 {
-        return a0;
-    }
-
-    debug_assert!(hint == 1);
-
-    match P::gamma2 {
-        GAMMA2_Q_MINUS_1_OVER_88 => {
-            // mutants note: this passes unit tests if it's a1 >= 0
-            //      it is left like this because it matches the spec
-            if a1 > 0 {
-                if a0 == 43 { 0 } else { a0 + 1 }
-            } else {
-                if a0 == 0 { 43 } else { a0 - 1 }
-            }
-        }
-        // ML-DSA65 and 87 have the same GAMMA2
-        GAMMA2_Q_MINUS_1_OVER_32 => {
-            // mutants note: this passes unit tests if it's a1 >= 0
-            //      it is left like this because it matches the spec
-            if a1 > 0 { (a0 + 1) & 15 } else { (a0 - 1) & 15 }
-        }
-        _ => {
-            panic!("Invalid GAMMA2 value")
-        }
-    }
-}
-
-pub(crate) fn use_hint_polys<P: MLDSAParams>(
-    wp_approx: &Polynomial,
-    h: &Polynomial,
-    out: &mut Polynomial,
-) {
-    for i in 0..N {
-        out[i] = use_hint::<P>(wp_approx[i], h[i]);
-    }
-}
-
+/// Algorithm 40 UseHint(ℎ, 𝑟) applied to every coefficient of every coordinate.
 pub(crate) fn use_hint_vecs<P: MLDSAParams>(h: &P::VecK, wp_approx: &P::VecK) -> P::VecK {
-    let mut out = P::VecK::new();
+    let mut out = *wp_approx;
     for i in 0..P::k {
-        use_hint_polys::<P>(&wp_approx.elems()[i], &h.elems()[i], &mut out.elems_mut()[i]);
+        out.elems_mut()[i].use_hint::<P>(&h.elems()[i]);
     }
 
     out
-}
-
-/// Algorithm 45 MultiplyNTT(𝑎, 𝑏)̂
-/// Computes the product 𝑎 ∘̂ 𝑏 of two elements 𝑎, 𝑏 ∈ 𝑇𝑞.
-/// Input: 𝑎, 𝑏 ∈ 𝑇𝑞.
-/// Output: 𝑐 ∈ 𝑇𝑞.
-/// Multiply the coefficients in this polynomial by those in another polynomial and perform montgomery reduction.
-/// Also called pointwise Montgomery multiplication
-pub(crate) fn multiply_ntt(a: &Polynomial, b: &Polynomial) -> Polynomial {
-    let mut out = Polynomial::new();
-    for i in 0..N {
-        out[i] = montgomery_reduce((a[i] as i64) * (b[i] as i64));
-    }
-
-    out
-}
-
-/// FIPS 204 Algorithm 49
-/// As described in FIPS 204 Appendix A, montgomery reduction allows for efficient computation
-/// of expressions of the form c = a * b (mod q).
-/// The output is not necessarily less than q in absolute value, but it is less than 2q in absolute value
-pub(crate) fn montgomery_reduce(a: i64) -> i32 {
-    debug_assert!(a > -((q as i64) << 31) && a < ((q as i64) << 31));
-
-    // 2: 𝑡 ← ((𝑎 mod 2^32) ⋅ QINV) mod 2^32
-    let t: i32 = (a as i32).wrapping_mul(q_inv);
-
-    // 3: 𝑟 ← (𝑎 − 𝑡 ⋅ 𝑞)/2^32
-    ((a - ((t as i64) * (q as i64))) >> 32) as i32
-}
-
-pub(crate) fn conditional_add_q(a: i32) -> i32 {
-    a + ((a >> 31) & q)
-}
-
-/// Plain (non-Montgomery) reduction: for 𝑎 ≤ 2^31 − 2^22 − 1 returns 𝑟 ≡ 𝑎 (mod 𝑞) with |𝑟| ≤ 6283008 < 𝑞.
-/// `reduce32` in the reference implementation (pq-crystals/dilithium, ref/reduce.c).
-///
-/// This is not in FIPS 204 since it assumes all arithmetic is done mod q.
-/// In this implementation, sums of Montgomery products are left unreduced, but `inv_ntt` (Algorithm 42)
-/// needs |input| < 𝑞 to stay within an `i32`, so this is applied to those sums first. Omitting it before
-/// the verifier's NTT⁻¹ is exploitable (<https://eprint.iacr.org/2026/1032>, Wycheproof mldsa_87_verify tcId 240/241).
-pub(crate) fn reduce32(a: i32) -> i32 {
-    // The reference implementation's stated input bound; above it `a + 2^22` overflows.
-    debug_assert!(a <= i32::MAX - (1 << 22));
-    let t = (a + (1 << 22)) >> 23;
-    a - t * q
-}
-
-/// Constants for NTT
-pub(crate) const ZETAS: [i32; 256] = [
-    0, 25847, -2608894, -518909, 237124, -777960, -876248, 466468, 1826347, 2353451, -359251,
-    -2091905, 3119733, -2884855, 3111497, 2680103, 2725464, 1024112, -1079900, 3585928, -549488,
-    -1119584, 2619752, -2108549, -2118186, -3859737, -1399561, -3277672, 1757237, -19422, 4010497,
-    280005, 2706023, 95776, 3077325, 3530437, -1661693, -3592148, -2537516, 3915439, -3861115,
-    -3043716, 3574422, -2867647, 3539968, -300467, 2348700, -539299, -1699267, -1643818, 3505694,
-    -3821735, 3507263, -2140649, -1600420, 3699596, 811944, 531354, 954230, 3881043, 3900724,
-    -2556880, 2071892, -2797779, -3930395, -1528703, -3677745, -3041255, -1452451, 3475950,
-    2176455, -1585221, -1257611, 1939314, -4083598, -1000202, -3190144, -3157330, -3632928, 126922,
-    3412210, -983419, 2147896, 2715295, -2967645, -3693493, -411027, -2477047, -671102, -1228525,
-    -22981, -1308169, -381987, 1349076, 1852771, -1430430, -3343383, 264944, 508951, 3097992,
-    44288, -1100098, 904516, 3958618, -3724342, -8578, 1653064, -3249728, 2389356, -210977, 759969,
-    -1316856, 189548, -3553272, 3159746, -1851402, -2409325, -177440, 1315589, 1341330, 1285669,
-    -1584928, -812732, -1439742, -3019102, -3881060, -3628969, 3839961, 2091667, 3407706, 2316500,
-    3817976, -3342478, 2244091, -2446433, -3562462, 266997, 2434439, -1235728, 3513181, -3520352,
-    -3759364, -1197226, -3193378, 900702, 1859098, 909542, 819034, 495491, -1613174, -43260,
-    -522500, -655327, -3122442, 2031748, 3207046, -3556995, -525098, -768622, -3595838, 342297,
-    286988, -2437823, 4108315, 3437287, -3342277, 1735879, 203044, 2842341, 2691481, -2590150,
-    1265009, 4055324, 1247620, 2486353, 1595974, -3767016, 1250494, 2635921, -3548272, -2994039,
-    1869119, 1903435, -1050970, -1333058, 1237275, -3318210, -1430225, -451100, 1312455, 3306115,
-    -1962642, -1279661, 1917081, -2546312, -1374803, 1500165, 777191, 2235880, 3406031, -542412,
-    -2831860, -1671176, -1846953, -2584293, -3724270, 594136, -3776993, -2013608, 2432395, 2454455,
-    -164721, 1957272, 3369112, 185531, -1207385, -3183426, 162844, 1616392, 3014001, 810149,
-    1652634, -3694233, -1799107, -3038916, 3523897, 3866901, 269760, 2213111, -975884, 1717735,
-    472078, -426683, 1723600, -1803090, 1910376, -1667432, -1104333, -260646, -3833893, -2939036,
-    -2235985, -420899, -2286327, 183443, -976891, 1612842, -3545687, -554416, 3919660, -48306,
-    -1362209, 3937738, 1400424, -846154, 1976782,
-];
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    /// These are the results it's giving; I'm not sure if these are "correct" or not.
-    fn test_conditional_add_q() {
-        assert_eq!(conditional_add_q(-q - 1), -1);
-        assert_eq!(conditional_add_q(-q), 0);
-        assert_eq!(conditional_add_q(-q - 2), -2);
-        assert_eq!(conditional_add_q(-q + 1), 1);
-        assert_eq!(conditional_add_q(-1), q - 1);
-        assert_eq!(conditional_add_q(0), 0);
-        assert_eq!(conditional_add_q(1), 1);
-        assert_eq!(conditional_add_q(q - 1), q - 1);
-        assert_eq!(conditional_add_q(q), q);
-        assert_eq!(conditional_add_q(q + 1), q + 1);
-    }
-
-    #[test]
-    fn test_reduce32() {
-        // congruent to the input mod q, and within the reference implementation's stated output range
-        for &a in &[
-            0,
-            1,
-            -1,
-            q - 1,
-            q,
-            q + 1,
-            -q,
-            -q - 1,
-            8 * q,
-            -8 * q,
-            6283008,
-            -6283008,
-            i32::MIN,
-            i32::MAX - (1 << 22),
-        ] {
-            let r = reduce32(a);
-            assert!((-6283008..=6283008).contains(&r), "reduce32({a}) = {r} out of range");
-            assert_eq!(
-                (r as i64 - a as i64).rem_euclid(q as i64),
-                0,
-                "reduce32({a}) = {r} not congruent"
-            );
-            assert!(r.abs() < q);
-        }
-        // the largest sum inv_ntt may see: (l + 1) products each in (-q, q), for l = 7
-        assert!(reduce32(8 * q - 8).abs() < q);
-        assert!(reduce32(-(8 * q - 8)).abs() < q);
-    }
 }

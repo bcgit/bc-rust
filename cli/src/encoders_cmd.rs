@@ -94,7 +94,7 @@ pub(crate) fn base64_encode_cmd() {
             exit(-1);
         });
         if n == 0 {
-            crate::helpers::write_stdout(encoder.do_final(&[]).as_bytes());
+            crate::helpers::write_stdout(encoder.do_final([]).as_bytes());
             return;
         }
         crate::helpers::write_stdout(encoder.do_update(&buf[..n]).as_bytes());
@@ -125,7 +125,7 @@ pub(crate) fn base64_decode_cmd() {
         let n = read_chunk(&mut buf);
         if n == 0 {
             // End of input with no padding seen: finish whatever partial block is held.
-            crate::helpers::write_stdout(&decoder.do_final(&[]).unwrap_or_else(|e| fail(e)));
+            crate::helpers::write_stdout(&decoder.do_final([]).unwrap_or_else(|e| fail(e)));
             return;
         }
         match decoder.do_update(&buf[..n]) {
@@ -135,7 +135,10 @@ pub(crate) fn base64_decode_cmd() {
                 crate::helpers::write_stdout(
                     &decoder.do_final(&buf[..n]).unwrap_or_else(|e| fail(e)),
                 );
-                // Padding ends the message. Anything but whitespace after it is not base64.
+                // Padding ends the message. Anything but whitespace after it is not base64. The
+                // library refuses data after the padding within the chunk it is given; what later
+                // chunks hold it never sees, since `do_final` consumed the decoder, so the check
+                // is repeated here for them.
                 loop {
                     let n = read_chunk(&mut buf);
                     if n == 0 {

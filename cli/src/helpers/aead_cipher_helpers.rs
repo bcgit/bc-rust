@@ -1,10 +1,10 @@
-//! Shared plumbing for the AEAD subcommands: `aes{128,192,256}-gcm`.
+//! Shared plumbing for the AEAD subcommands: `aes{128,192,256}-gcm` and `chacha20-poly1305`.
 //!
-//! Parallel to [`crate::helpers::stream_mode_helpers`], but for [`bouncycastle::cipher::modes::Gcm`] rather than a
-//! [`StreamCipherEncryptor`](bouncycastle::core::traits::StreamCipherEncryptor) mode: GCM carries
-//! additional authenticated data and a tag, neither of which that trait has room for, so this
-//! module drives it through [`AEADCipherEncryptor`] / [`AEADCipherDecryptor`] instead, which add
-//! `do_update_aad` to the symmetric-cipher streaming methods.
+//! Parallel to [`crate::helpers::stream_mode_helpers`], but for an AEAD key -- one bound to
+//! [`bouncycastle::cipher::modes::GCM`], or a ChaCha20-Poly1305 key -- rather than a stream mode:
+//! an AEAD carries additional authenticated data and a tag, neither of which the stream traits
+//! have room for, so this module drives the key's AEAD workers through [`AEADCipherEncryptor`] /
+//! [`AEADCipherDecryptor`], which add `do_update_aad` to the symmetric-cipher streaming methods.
 //!
 //! # On-the-wire format: `IV || ciphertext || tag`
 //!
@@ -12,8 +12,9 @@
 //! 16-byte tag once stdin is exhausted. `decrypt` reads the 12-byte IV first, then streams the
 //! rest of stdin through the inline decryptor. With `--iv`, the IV is the caller's and is
 //! neither written nor read: the format is `ciphertext || tag` (see
-//! [`crate::helpers::block_mode_helpers`] for the flag). The decryptor, per
-//! [`SymmetricCipherDecryptor`](bouncycastle::core::traits::SymmetricCipherDecryptor)'s contract,
+//! [`crate::helpers::block_mode_helpers`] for the flag). `chacha20-poly1305` frames its 12-byte
+//! nonce the same way, `--iv` included. The decryptor, per
+//! [`SymmetricCipherDecryptor`]'s contract,
 //! holds back the last 16 bytes it has seen because they might be the tag -- and checks the tag on
 //! `do_decrypt_final`.
 //!
@@ -29,19 +30,22 @@
 //! # AAD
 //!
 //! `--aad <hex>` or `--aad-file <path>`; if neither is given, AAD is empty. Fed to the engine in
-//! one call before any ciphertext, matching SP 800-38D Algorithm 4's requirement that AAD precede
-//! data.
+//! one call before any ciphertext, since both GCM (SP 800-38D Algorithm 4) and ChaCha20-Poly1305
+//! (RFC 8439 Sec 2.8) authenticate the AAD ahead of the ciphertext.
 //!
-//! `--aad-file` is read as raw bytes ([`read_from_file_raw`]), never hex-decoded. The
-//! hex-or-raw guess `--key-file` uses would change what is authenticated without any error: a
+//! `--aad-file` is read as raw bytes, or as hex text under the global `--hex-input`; nothing
+//! is guessed from its contents. A guess would change what is authenticated without any error: a
 //! binary header that happens to parse as hex text (`cafe`, or sixteen zero bytes, which the hex
 //! decoder skips) would be authenticated as its decoding, and the tag would not verify against any
-//! other GCM implementation given the same file.
+//! other implementation given the same file.
 
-use crate::helpers::{flush_stdout, read_from_file_raw, write_bytes_or_hex, write_stdout};
-use bouncycastle::core::key_material::KeyMaterial;
-use bouncycastle::core::traits::{AEADCipherDecryptor, AEADCipherEncryptor};
-use bouncycastle::hex;
+use crate::helpers::{
+    decode_hex_arg, flush_stdout, read_input_file, write_bytes_or_hex, write_stdout,
+};
+use bouncycastle::core::symmetric_key::{AeadDecryptionKey, AeadEncryptionKey};
+use bouncycastle::core::traits::{
+    AEADCipherDecryptor, AEADCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
+};
 use std::io;
 use std::io::{Read, Write};
 use std::process::exit;
@@ -51,46 +55,45 @@ use std::process::exit;
 /// its own tuning.
 const CHUNK_LEN: usize = 1024;
 
-/// The GCM IV length `encrypt` generates and writes first, and `decrypt` reads back. SP 800-38D
-/// calls the value the IV; the trait and this file's identifiers call it the nonce.
-const GCM_NONCE_LEN: usize = 12;
-
-/// Loads the additional authenticated data from `--aad` (hex) or `--aad-file` (raw bytes; see the
-/// module docs for why not hex). Empty if neither is given: AAD is optional, unlike the key.
+/// Loads the additional authenticated data from `--aad` (hex) or `--aad-file` (raw bytes; hex
+/// with `--hex-input`). Empty if neither is given: AAD is optional, unlike the key.
 pub fn load_aad(aad: &Option<String>, aad_file: &Option<String>) -> Vec<u8> {
-    if let Some(path) = aad_file {
-        read_from_file_raw(path)
-    } else if let Some(hex_str) = aad {
-        hex::decode(hex_str).unwrap_or_else(|_| {
-            eprintln!("Error: `--aad` must be hex. Use `--aad-file` for raw bytes.");
-            exit(-1);
-        })
-    } else {
-        Vec::new()
+    match (aad_file, aad) {
+        (Some(path), _) => read_input_file(path),
+        (None, Some(hex_str)) => decode_hex_arg(hex_str, "aad"),
+        (None, None) => Vec::new(),
     }
 }
 
-/// Encrypts stdin to stdout under GCM: writes the generated IV (unless `nonce` supplies one),
-/// then the ciphertext as it streams, then the tag.
-pub fn encrypt_gcm<E, const KEY_LEN: usize, const TAG_LEN: usize>(
-    key: &KeyMaterial<KEY_LEN>,
-    nonce: Option<[u8; GCM_NONCE_LEN]>,
+/// Encrypts stdin to stdout under any AEAD key: writes the generated nonce (unless `nonce`
+/// supplies one), then the ciphertext as it streams, then the tag.
+pub fn encrypt_aead<
+    K,
+    const KEY_LEN: usize,
+    const NONCE_LEN: usize,
+    const TAG_LEN: usize,
+    const FINAL_LEN: usize,
+>(
+    key: &K,
+    nonce: Option<[u8; NONCE_LEN]>,
     aad: &[u8],
     output_hex: bool,
 ) where
-    E: AEADCipherEncryptor<KEY_LEN, GCM_NONCE_LEN, TAG_LEN, TAG_LEN>,
+    K: AeadEncryptionKey<KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN>,
 {
     let mut enc = match nonce {
-        Some(nonce) => E::do_encrypt_init_nonce(key, &nonce),
-        None => E::do_encrypt_init(key).map(|(enc, nonce)| {
+        Some(nonce) => key.create_encryptor_nonce(&nonce),
+        None => {
+            let (enc, nonce) = key
+                .create_encryptor(&mut bouncycastle::rng::HashDRBG_SHA512::new_from_os())
+                .unwrap_or_else(|e| {
+                    eprintln!("Error: couldn't start encryption: {e:?}");
+                    exit(-1);
+                });
             write_bytes_or_hex(&nonce, output_hex);
             enc
-        }),
-    }
-    .unwrap_or_else(|e| {
-        eprintln!("Error: couldn't start encryption: {e:?}");
-        exit(-1);
-    });
+        }
+    };
 
     enc.do_update_aad(aad).unwrap_or_else(|e| {
         eprintln!("Error: couldn't absorb the additional authenticated data: {e:?}");
@@ -107,7 +110,8 @@ pub fn encrypt_gcm<E, const KEY_LEN: usize, const TAG_LEN: usize>(
         if n == 0 {
             break;
         }
-        // GCM's encryptor holds nothing back, so `out` (as long as `buf`) always has room.
+        // The AEADs here hold nothing back on encryption, so `out` (as long as `buf`) always has
+        // room; one that did would get `OutputBufferTooSmall` below, not a truncated output.
         let written = enc.do_encrypt_out(&buf[..n], &mut out).unwrap_or_else(|e| {
             eprintln!("Error: encryption failed: {e:?}");
             exit(-1);
@@ -115,43 +119,48 @@ pub fn encrypt_gcm<E, const KEY_LEN: usize, const TAG_LEN: usize>(
         write_bytes_or_hex(&out[..written], output_hex);
     }
 
-    // The detached final flushes nothing for GCM and returns the tag, written last.
-    let (_, _, tag) = enc.do_encrypt_final_detached().unwrap_or_else(|e| {
+    // The detached final returns whatever ciphertext was held back (none, for the AEADs here)
+    // and the tag, written last.
+    let (last, last_len, tag) = enc.do_encrypt_final_detached().unwrap_or_else(|e| {
         eprintln!("Error: encryption failed: {e:?}");
         exit(-1);
     });
+    write_bytes_or_hex(&last[..last_len], output_hex);
     write_bytes_or_hex(&tag, output_hex);
     finish(output_hex);
 }
 
-/// Decrypts stdin to stdout under GCM: takes the 12-byte IV from `nonce` or else reads it
+/// Decrypts stdin to stdout under any AEAD key: takes the nonce from `nonce` or else reads it
 /// first, streams the rest through the inline decryptor, and checks the tag on
 /// `do_decrypt_final`. See the module docs for why plaintext may already be written to stdout by
 /// the time a tag failure is reported.
-pub fn decrypt_gcm<D, const KEY_LEN: usize, const TAG_LEN: usize>(
-    key: &KeyMaterial<KEY_LEN>,
-    nonce: Option<[u8; GCM_NONCE_LEN]>,
+pub fn decrypt_aead<
+    K,
+    const KEY_LEN: usize,
+    const NONCE_LEN: usize,
+    const TAG_LEN: usize,
+    const FINAL_LEN: usize,
+>(
+    key: &K,
+    nonce: Option<[u8; NONCE_LEN]>,
     aad: &[u8],
     output_hex: bool,
 ) where
-    D: AEADCipherDecryptor<KEY_LEN, GCM_NONCE_LEN, TAG_LEN, TAG_LEN>,
+    K: AeadDecryptionKey<KEY_LEN, NONCE_LEN, TAG_LEN, FINAL_LEN>,
 {
     let nonce = nonce.unwrap_or_else(|| {
-        let mut nonce = [0u8; GCM_NONCE_LEN];
+        let mut nonce = [0u8; NONCE_LEN];
         if let Err(e) = io::stdin().read_exact(&mut nonce) {
             eprintln!(
-                "Error: input too short to contain the 12-byte IV that `encrypt` writes first \
-                 ({e}). If the IV is held separately, pass it with --iv."
+                "Error: input too short to contain the {NONCE_LEN}-byte IV that `encrypt` writes \
+                 first ({e}). If the IV is held separately, pass it with --iv."
             );
             exit(-1);
         }
         nonce
     });
 
-    let mut dec = D::do_decrypt_init(key, &nonce).unwrap_or_else(|e| {
-        eprintln!("Error: couldn't start decryption: {e:?}");
-        exit(-1);
-    });
+    let mut dec = key.create_decryptor(&nonce);
     dec.do_update_aad(aad).unwrap_or_else(|e| {
         eprintln!("Error: couldn't absorb the additional authenticated data: {e:?}");
         exit(-1);
@@ -175,12 +184,16 @@ pub fn decrypt_gcm<D, const KEY_LEN: usize, const TAG_LEN: usize>(
         write_bytes_or_hex(&out, output_hex);
     }
 
-    if let Err(e) = dec.do_decrypt_final() {
-        // Whatever plaintext was already written above stands; the exit code is the signal a
-        // script must check (see the module docs).
-        io::stdout().flush().ok();
-        eprintln!("Error: authentication failed: {e:?}");
-        exit(-1);
+    match dec.do_decrypt_final() {
+        // Any plaintext still held back (none, for the AEADs here: the held bytes are the tag).
+        Ok((last, last_len)) => write_bytes_or_hex(&last[..last_len], output_hex),
+        Err(e) => {
+            // Whatever plaintext was already written above stands; the exit code is the signal a
+            // script must check (see the module docs).
+            io::stdout().flush().ok();
+            eprintln!("Error: authentication failed: {e:?}");
+            exit(-1);
+        }
     }
 
     finish(output_hex);

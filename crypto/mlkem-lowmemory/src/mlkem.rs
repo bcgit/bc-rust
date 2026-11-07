@@ -1,6 +1,25 @@
-//! There are no advanced features in this low memory crate that are not already documented in the standard \[bouncycastle_mlkem] crate.
+//! The ML-KEM algorithm over the seed-held private key.
+//!
+//! Beyond the core KEM traits this crate adds `decaps_from_seed`, the `hazmat` module, and
+//! [`MLKEMSeedPrivateKeyExpanded`] with
+//! [`MLKEMTrait::decaps_with_expanded_key`]: a seed key derives 𝐭̂ inside every decapsulation
+//! (a key generation's worth of work), the expanded key holds it, at 384𝑘 more bytes in memory
+//! and the same 64-byte encoding on disk. The pre-expanded 𝐀̂ of the `bouncycastle_mlkem` crate
+//! has no counterpart here: holding 𝐀̂ is what this crate exists to avoid.
+//!
+//! ```rust
+//! use bouncycastle_rng::HashDRBG_SHA512;
+//! use bouncycastle_core::traits::{KEMDecapsulator, KEMEncapsulator};
+//! use bouncycastle_mlkem_lowmemory::{MLKEM768, MLKEM768PrivateKeyExpanded, MLKEMTrait};
+//!
+//! let (pk, sk) = MLKEM768::keygen(&mut HashDRBG_SHA512::new_from_os()).unwrap();
+//! let sk_expanded = MLKEM768PrivateKeyExpanded::from(&sk);
+//!
+//! let (ss, ct) = MLKEM768::encaps(&pk).unwrap();
+//! let ss1 = MLKEM768::decaps_with_expanded_key(&sk_expanded, &ct).unwrap();
+//! assert_eq!(ss, ss1);
+//! ```
 
-use crate::aux_functions::sample_poly_CBD;
 use crate::low_memory_helpers::{
     compress_u_row, compute_A_hat_dot_y_hat, compute_t_hat_dot_y_hat_row, unpack_ciphertext_u_row,
     unpack_ciphertext_v, unpack_t_hat_row,
@@ -9,10 +28,13 @@ use crate::mlkem_keys::{
     MLKEM512PrivateKey, MLKEM512PublicKey, MLKEM768PrivateKey, MLKEM768PublicKey,
     MLKEM1024PrivateKey, MLKEM1024PublicKey,
 };
-use crate::mlkem_keys::{MLKEMPrivateKeyInternalTrait, MLKEMPrivateKeyTrait};
+use crate::mlkem_keys::{
+    MLKEMPrivateKeyInternalTrait, MLKEMPrivateKeyTrait, MLKEMSeedPrivateKeyExpanded,
+};
 use crate::mlkem_keys::{MLKEMPublicKeyInternalTrait, MLKEMPublicKeyTrait};
-use crate::params::{MLKEM512Params, MLKEM768Params, MLKEM1024Params, MLKEMParams};
-use crate::polynomial::Polynomial;
+use crate::params::{
+    MLKEM512Params, MLKEM768Params, MLKEM1024Params, MLKEMParams, MLKEMParamsBase,
+};
 use bouncycastle_core::errors::{KEMError, RNGError};
 use bouncycastle_core::hazmat::do_hazardous_operations;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
@@ -20,33 +42,21 @@ use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{
     Algorithm, AlgorithmOID, Hash, KEMDecapsulator, KEMEncapsulator, RNG, XOF, XOFSqueezer,
 };
+use bouncycastle_mlkem_common::aux_functions::sample_poly_CBD;
+use bouncycastle_mlkem_common::polynomial::Polynomial;
 use bouncycastle_rng::HashDRBG_SHA512;
-use bouncycastle_sha3::{SHA3_256, SHA3_512, SHAKE256};
-use bouncycastle_utils::ct::{conditional_copy_bytes, ct_eq_bytes_mask};
+use bouncycastle_utils::ct::{conditional_copy_bytes, ct_eq_bytes, ct_eq_bytes_mask};
 use bouncycastle_utils::secret::Secret;
 use core::marker::PhantomData;
 /*** Constants ***/
 
-///
-pub const ML_KEM_512_NAME: &str = "ML-KEM-512";
-///
-pub const ML_KEM_768_NAME: &str = "ML-KEM-768";
-///
-pub const ML_KEM_1024_NAME: &str = "ML-KEM-1024";
-
-// From FIPS 203 Table 2 and Table 3
-
-// Constants that are the same for all parameter sets
-/// Length of the \[u8] holding an ML-KEM seed value.
-pub const MLKEM_SEED_LEN: usize = 64;
-/// Length of the \[u8] holding an ML-KEM encaps random value, also sometimes called the message `m`
-pub const MLKEM_RND_LEN: usize = 32;
-/// Size of in bytes of an ML-KEM shared secret key.
-pub const MLKEM_SS_LEN: usize = 32;
-pub(crate) const N: usize = 256;
-pub(crate) const q: i16 = 3329;
-pub(crate) const q_inv: i32 = 62209;
-pub(crate) const POLY_BYTES: usize = 384;
+// The constants, names and hash aliases FIPS 203 fixes for every parameter set are shared with
+// the other ML-KEM crate and live in `bouncycastle-mlkem-common`.
+pub(crate) use bouncycastle_mlkem_common::{G, H, J, N, POLY_BYTES, q};
+#[doc(inline)]
+pub use bouncycastle_mlkem_common::{ML_KEM_512_NAME, ML_KEM_768_NAME, ML_KEM_1024_NAME};
+#[doc(inline)]
+pub use bouncycastle_mlkem_common::{MLKEM_RND_LEN, MLKEM_SEED_LEN, MLKEM_SS_LEN};
 
 /* ML-KEM-512 params */
 
@@ -82,11 +92,6 @@ pub const MLKEM1024_SK_LEN: usize = MLKEM_SEED_LEN;
 pub const MLKEM1024_FULL_SK_LEN: usize = MLKEM1024Params::FULL_SK_LEN;
 /// Length of the \[u8] holding an ML-KEM-1024 ciphertext.
 pub const MLKEM1024_CT_LEN: usize = MLKEM1024Params::CT_LEN;
-
-/*** Typedefs just to make the algorithms look more like the FIPS 204 sample code. ***/
-pub(crate) type G = SHA3_512;
-pub(crate) type H = SHA3_256;
-pub(crate) type J = SHAKE256;
 
 /*** Pub Types ***/
 
@@ -200,9 +205,10 @@ impl<
     /// If you happen to have your seed in a larger KeyMaterial, you'll have to copy it into a
     /// correctly-sized [`KeyMaterial512`] using [`KeyMaterialTrait::truncate`].
     pub(crate) fn keygen_internal(seed: &KeyMaterial<64>) -> Result<(PK, SK), KEMError> {
-        let sk = SK::from_keymaterial(seed)?;
-        let pk = sk.pk();
-        let pk = PK::new(pk.t_hat_packed, pk.rho); // stupid conversion, but it gets around these overly-generified rust types
+        // The key derives the public key once, for its stored H(ek); this takes it rather than
+        // deriving it again.
+        let (sk, pk) = SK::from_keymaterial_with_pk(seed)?;
+        let pk = PK::new(pk.t_hat_packed, pk.rho); // converts the concrete public key into the generic PK
         Ok((pk, sk))
     }
 
@@ -215,7 +221,7 @@ impl<
     fn pke_encrypt(
         t_hat_packed: &P::TPacked,
         rho: &[u8; 32],
-        m: [u8; 32],
+        m: &[u8; 32],
         r: &[u8; 32],
     ) -> [u8; CT_LEN] {
         let mut ct = [0u8; CT_LEN];
@@ -230,12 +236,15 @@ impl<
         // 19: 𝐮 ← NTT−1(𝐀_hat^⊺ ∘ 𝐲_hat) + 𝐞1
         // 22: 𝑐1 ← ByteEncode_𝑑𝑢(Compress_𝑑𝑢(𝐮))
 
-        // Note: y_hat is needed twice: once here at line 19, and again at line 21.
-        // Here it is generated each time it is needed in order to save memory.
+        // 𝐲̂ is used at line 19 (every row of 𝐮 needs all 𝑘 coordinates) and at line 21 (one
+        // coordinate per row of 𝐭̂). Holding it would cost 512𝑘 bytes (1 to 2 KB), so each
+        // coordinate is sampled and transformed again where it is needed: 𝑘(𝑘 + 1) CBD samplings
+        // and NTTs instead of 𝑘, which is 12 instead of 3 for ML-KEM-768. That is the trade this
+        // crate makes, memory over time.
         for i in 0..P::k {
-            let mut u_i = compute_A_hat_dot_y_hat::<P>(rho, &r, i);
+            let mut u_i = compute_A_hat_dot_y_hat::<P>(rho, r, i);
 
-            let e1_i = sample_poly_CBD(&r, (P::k + i) as u8, P::eta2);
+            let e1_i = sample_poly_CBD(r, (P::k + i) as u8, P::eta2);
             u_i.add(&e1_i);
             u_i.poly_reduce();
 
@@ -249,14 +258,14 @@ impl<
         {
             // compute v, which is a single polynomial, but requires iterating over the vectors t_hat and y_hat
             let mut v = compute_t_hat_dot_y_hat_row::<P>(
-                &r,
+                r,
                 &unpack_t_hat_row(t_hat_packed.as_ref(), 0),
                 /*row*/ 0,
             );
 
             for i in 1..P::k {
                 let v_i = compute_t_hat_dot_y_hat_row::<P>(
-                    &r,
+                    r,
                     &unpack_t_hat_row(t_hat_packed.as_ref(), i),
                     /*row*/ i,
                 );
@@ -264,7 +273,7 @@ impl<
             }
 
             // perform polynomial addition
-            let e2 = sample_poly_CBD(&r, 2 * P::k as u8, P::eta2);
+            let e2 = sample_poly_CBD(r, 2 * P::k as u8, P::eta2);
             v.add(&e2);
 
             let mu = Polynomial::from_msg(m);
@@ -288,20 +297,26 @@ impl<
     /// Reachable from outside the crate only through
     /// [`EncapsWithRandomness`](crate::hazmat::EncapsWithRandomness), which carries the security
     /// notes on supplying `m`.
-    pub(crate) fn encaps_internal(ek: &PK, m: [u8; 32]) -> ([u8; 32], [u8; CT_LEN]) {
+    pub(crate) fn encaps_internal(
+        ek: &PK,
+        m: &[u8; 32],
+    ) -> (Secret<[u8; MLKEM_SS_LEN]>, [u8; CT_LEN]) {
         // 1: (𝐾, 𝑟) ← G(𝑚‖H(ek))
-        //  ▷ derive shared secret key 𝐾 and randomness 𝑟
-        let K: [u8; MLKEM_SS_LEN];
-        let r: [u8; 32];
-        (K, r) = {
+        //  ▷ derive shared secret key 𝐾 and randomness 𝑟. Both are secret and held in `Secret`,
+        //  as is the G output they are split from.
+        let (K, r) = {
             let mut g = G::new();
-            g.do_update(&m);
+            g.do_update(m);
             g.do_update(&ek.compute_hash());
-            let mut buf = [0u8; 64];
-            let bytes_written = g.do_final_out(&mut buf);
+            let mut buf = Secret::<[u8; 64]>::new();
+            let bytes_written = g.do_final_out(&mut *buf);
             debug_assert_eq!(bytes_written, 64);
 
-            (buf[..32].try_into().unwrap(), buf[32..64].try_into().unwrap())
+            let mut K = Secret::<[u8; MLKEM_SS_LEN]>::new();
+            K.copy_from_slice(&buf[..32]);
+            let mut r = Secret::<[u8; 32]>::new();
+            r.copy_from_slice(&buf[32..64]);
+            (K, r)
         };
 
         // 2: 𝑐 ← K-PKE.Encrypt(ek, 𝑚, 𝑟)
@@ -317,7 +332,10 @@ impl<
     /// Input: decryption key dkPKE ∈ 𝔹384𝑘.
     /// Input: ciphertext 𝑐 ∈ 𝔹32(𝑑𝑢𝑘+𝑑𝑣).
     /// Output: message 𝑚 ∈ 𝔹32 .
-    fn pke_decrypt(dk: &SK, ct: [u8; CT_LEN]) -> [u8; 32] {
+    fn pke_decrypt<DK: MLKEMPrivateKeyInternalTrait<P, SK_LEN, PK_LEN>>(
+        dk: &DK,
+        ct: &[u8; CT_LEN],
+    ) -> Secret<[u8; 32]> {
         // 1: 𝑐1 ← 𝑐[0 ∶ 32𝑑𝑢𝑘]
         // 3: 𝐮′ ← Decompress_𝑑𝑢(ByteDecode_𝑑𝑢(𝑐1))
 
@@ -331,7 +349,7 @@ impl<
             let mut v1 = {
                 let mut s_hat_i = dk.compute_s_hat_row(0);
                 {
-                    let mut u_prime_i = unpack_ciphertext_u_row::<P, CT_LEN>(0, &ct);
+                    let mut u_prime_i = unpack_ciphertext_u_row::<P, CT_LEN>(0, ct);
                     u_prime_i.ntt();
                     s_hat_i.base_mult_montgomery(&u_prime_i);
                 }
@@ -343,7 +361,7 @@ impl<
             for i in 1..P::k {
                 let mut s_hat_i = dk.compute_s_hat_row(i);
                 {
-                    let mut u_prime_i = unpack_ciphertext_u_row::<P, CT_LEN>(i, &ct);
+                    let mut u_prime_i = unpack_ciphertext_u_row::<P, CT_LEN>(i, ct);
                     u_prime_i.ntt();
                     s_hat_i.base_mult_montgomery(&u_prime_i);
                 }
@@ -359,7 +377,7 @@ impl<
         let w = {
             // second half of
             // 6: 𝑤 ← 𝑣′ − NTT−1(𝐬_hat^T ∘ NTT(𝐮′))
-            let mut v_prime = unpack_ciphertext_v::<P, CT_LEN>(&ct);
+            let mut v_prime = unpack_ciphertext_v::<P, CT_LEN>(ct);
 
             v_prime.sub(&v1);
             v_prime.poly_reduce();
@@ -368,8 +386,11 @@ impl<
         };
 
         // 7: 𝑚 ← ByteEncode1(Compress1(𝑤))
-        //   ▷ decode plaintext 𝑚 from polynomial 𝑤
-        w.to_msg()
+        //   ▷ decode plaintext 𝑚 from polynomial 𝑤, into a `Secret`: it is an internal value
+        //   (FIPS 203 Sec 3.3) that must not outlive the decapsulation.
+        let mut m = Secret::<[u8; 32]>::new();
+        *m = w.to_msg();
+        m
     }
 
     /// Algorithm 18 ML-KEM.Decaps_internal(dk, 𝑐)
@@ -377,7 +398,13 @@ impl<
     /// Input: decapsulation key dk ∈ 𝔹768𝑘+96 .
     /// Input: ciphertext 𝑐 ∈ 𝔹32(𝑑𝑢𝑘+𝑑𝑣).
     /// Output: shared secret key 𝐾 ∈ 𝔹32 .
-    fn decaps_internal(dk: &SK, c: [u8; CT_LEN]) -> [u8; MLKEM_SS_LEN] {
+    fn decaps_internal<
+        DK: MLKEMPrivateKeyTrait<P, SK_LEN, FULL_SK_LEN, PK_LEN>
+            + MLKEMPrivateKeyInternalTrait<P, SK_LEN, PK_LEN>,
+    >(
+        dk: &DK,
+        c: &[u8; CT_LEN],
+    ) -> Secret<[u8; MLKEM_SS_LEN]> {
         // I have tried to keep this as clean as possible for correspondence with the FIPS,
         // but I have moved things around so that I can use unnamed scopes to limit how many
         // stack variables are alive at the same time.
@@ -389,23 +416,23 @@ impl<
         // Nothing to do since dk is already decoded.
 
         // 5: 𝑚′ ← K-PKE.Decrypt(dkPKE, 𝑐)
-        let m_prime = Self::pke_decrypt(&dk, c);
+        let m_prime = Self::pke_decrypt(dk, c);
 
         // Compute the trial shared secret key
         // 6: (𝐾′, 𝑟′) ← G(𝑚′‖ℎ)̄
-        let K_prime: Secret<[u8; MLKEM_SS_LEN]>;
-        let r_prime: [u8; 32];
-        (K_prime, r_prime) = {
+        let (K_prime, r_prime) = {
             let mut buf: Secret<[u8; 64]> = Secret::new();
             let mut g = G::new();
-            g.do_update(&m_prime);
-            g.do_update(&dk.pk().compute_hash());
+            g.do_update(&*m_prime);
+            g.do_update(dk.pk_hash());
             let bytes_written = g.do_final_out(&mut *buf);
             debug_assert_eq!(bytes_written, 64);
 
             let mut K_prime: Secret<[u8; MLKEM_SS_LEN]> = Secret::new();
             K_prime.copy_from_slice(&buf[..32]);
-            (K_prime, buf[32..64].try_into().unwrap())
+            let mut r_prime: Secret<[u8; 32]> = Secret::new();
+            r_prime.copy_from_slice(&buf[32..64]);
+            (K_prime, r_prime)
         };
 
         // 7: 𝐾_bar ← J(𝑧‖𝑐)
@@ -414,12 +441,11 @@ impl<
         //   because if its computation is conditional on the Fujisaki-Okamoto check failing, then
         //   there will be a timing difference between success and failure.
 
-        let K_bar: Secret<[u8; MLKEM_SS_LEN]>;
-        K_bar = {
+        let K_bar: Secret<[u8; MLKEM_SS_LEN]> = {
             let mut K_bar: Secret<[u8; MLKEM_SS_LEN]> = Secret::new();
             let mut j = J::new();
             j.do_update(dk.z());
-            j.do_update(&c);
+            j.do_update(c);
             let mut j = j.into_squeezer();
             let bytes_written = j.do_output_out(&mut *K_bar);
             debug_assert_eq!(bytes_written, MLKEM_SS_LEN);
@@ -429,19 +455,23 @@ impl<
 
         // 8: 𝑐′ ← K-PKE.Encrypt(ekPKE, 𝑚′, 𝑟′)
         //   ▷ re-encrypt using the derived randomness 𝑟′
-        let c_prime = Self::pke_encrypt(&dk.t_hat_packed(), dk.rho(), m_prime, &r_prime);
+        // A seed key holds no 𝐭̂, so it derives one here (Algorithm 13 again, most of what makes
+        // this crate's decapsulation slower than its encapsulation); an expanded key hands over
+        // the copy it holds.
+        let c_prime = Self::pke_encrypt(&dk.t_hat_packed(), dk.rho(), &m_prime, &r_prime);
 
         // 9: if 𝑐 ≠ 𝑐′ then
         // 10: 𝐾′ ← 𝐾_bar
         //  ▷ if ciphertexts do not match, “implicitly reject"
-        let mut K_out = [0u8; MLKEM_SS_LEN];
-        conditional_copy_bytes(&K_prime, &K_bar, &mut K_out, ct_eq_bytes_mask(&c, &c_prime));
+        let mut K_out = Secret::<[u8; MLKEM_SS_LEN]>::new();
+        conditional_copy_bytes(&K_prime, &K_bar, &mut K_out, ct_eq_bytes_mask(c, &c_prime));
 
         K_out
     }
 
-    /// Alternative initialization of the streaming signer where there is a private key
-    /// as a seed and its expansion should be delayed as late as possible to reduce memory-usage.
+    /// Decapsulation from the seed form of the private key: builds the key with
+    /// `MLKEMPrivateKeyTrait::from_keymaterial` and decapsulates with it. Costs a key generation
+    /// on top of the decapsulation.
     pub fn decaps_from_seed(
         seed: &KeyMaterial<64>,
         ct: &[u8],
@@ -477,38 +507,36 @@ impl<
     /// If the provided key and derived key don't match, an error is returned.
     fn keygen_from_seed_and_encoded(
         seed: &KeyMaterial<64>,
-        encoded_sk: &[u8; SK_LEN],
+        encoded_sk: &[u8; FULL_SK_LEN],
     ) -> Result<(PK, SK), KEMError> {
         let (pk, sk) = Self::keygen_internal(seed)?;
 
-        let sk_from_bytes = SK::sk_decode(encoded_sk);
-
-        // MLKEMPrivateKey impls PartialEq with a constant-time equality check.
-        if sk != sk_from_bytes {
+        // The full encoding is private-key material: made in a `Secret` buffer for the comparison.
+        let mut full = Secret::<[u8; FULL_SK_LEN]>::new();
+        sk.encode_full_sk_out(&mut full);
+        if !ct_eq_bytes(&*full, encoded_sk) {
             return Err(KEMError::KeyGenError("Encoded key does not match generated key"));
         }
 
         Ok((pk, sk))
     }
-    /// Given a public key and a secret key, check that the public key matches the secret key.
-    /// This is a sanity check that the public key was generated correctly from the secret key.
-    ///
-    /// At the current time, this is only possible if `sk` either contains a public key (in which case
-    /// the two pk's are encoded and compared for byte equality), or if `sk` contains a seed
-    /// (in which case a keygen_from_seed is run and then the pk's compared).
-    ///
-    /// Returns either `()` or [`KEMError::ConsistencyCheckFailed`].
     fn keypair_consistency_check(pk: &PK, sk: &SK) -> Result<(), KEMError> {
-        let derived_pk = sk.pk();
-        if derived_pk.compute_hash() == pk.compute_hash() {
+        if *sk.pk_hash() == pk.compute_hash() {
             Ok(())
         } else {
-            Err(KEMError::ConsistencyCheckFailed(""))
+            Err(KEMError::ConsistencyCheckFailed("Public key does not match the private key"))
         }
+    }
+
+    fn decaps_with_expanded_key(
+        sk: &MLKEMSeedPrivateKeyExpanded<P, SK_LEN, FULL_SK_LEN, PK_LEN>,
+        ct: &[u8],
+    ) -> Result<KeyMaterial<SS_LEN>, KEMError> {
+        Self::decaps_checked(sk, ct)
     }
 }
 
-/// Trait for all three of the ML-DSA algorithm variants.
+/// Trait for all three of the ML-KEM parameter sets.
 pub trait MLKEMTrait<
     P: MLKEMParams,
     PK: MLKEMPublicKeyTrait<P, PK_LEN> + MLKEMPublicKeyInternalTrait<P, PK_LEN>,
@@ -521,17 +549,13 @@ pub trait MLKEMTrait<
     const SS_LEN: usize,
 >: Sized
 {
-    /// Generates a fresh key pair.
-    fn keygen() -> Result<(PK, SK), KEMError> {
-        let mut os_rng = HashDRBG_SHA512::new_from_os();
-        Self::keygen_from_rng(&mut os_rng)
-    }
-    /// Run a keygen using the provided RNG implementation.
+    /// Key generation from the caller's RNG, which must offer at least the parameter set's
+    /// security strength.
     // Should still be ok in FIPS mode, provided that you're using the FIPS-approved RNG.
-    fn keygen_from_rng(rng: &mut dyn RNG) -> Result<(PK, SK), KEMError> {
+    fn keygen(rng: &mut dyn RNG) -> Result<(PK, SK), KEMError> {
         // Source the seed from the provided RNG
         if rng.security_strength() < P::MAX_SECURITY_STRENGTH {
-            return Err(RNGError::SecurityStrengthInsufficientForAlgorithm)?;
+            Err(RNGError::SecurityStrengthInsufficientForAlgorithm)?;
         }
         let mut seed = KeyMaterial::<64>::new();
         rng.fill_keymaterial_out(&mut seed)?;
@@ -539,25 +563,27 @@ pub trait MLKEMTrait<
     }
     /// Imports a secret key from a seed.
     fn keygen_from_seed(seed: &KeyMaterial<64>) -> Result<(PK, SK), KEMError>;
-    /// Imports a secret key from both a seed and an encoded_sk.
+    /// Imports a secret key from both a seed and its FIPS 203 encoding.
     ///
-    /// This is a convenience function to expand the key from seed and compare it against
-    /// the provided `encoded_sk` using a constant-time equality check.
-    /// If everything checks out, the secret key is returned fully populated with pk and seed.
-    /// If the provided key and derived key don't match, an error is returned.
+    /// Expands the key from the seed and compares its Algorithm 16 encoding
+    /// (what [`MLKEMPrivateKeyTrait::encode_full_sk`] produces) against `encoded_sk` in constant
+    /// time. If they match, the key is returned; if not, [`KEMError::KeyGenError`].
     fn keygen_from_seed_and_encoded(
         seed: &KeyMaterial<64>,
-        encoded_sk: &[u8; SK_LEN],
+        encoded_sk: &[u8; FULL_SK_LEN],
     ) -> Result<(PK, SK), KEMError>;
-    /// Given a public key and a secret key, check that the public key matches the secret key.
-    /// This is a sanity check that the public key was generated correctly from the secret key.
-    ///
-    /// At the current time, this is only possible if `sk` either contains a public key (in which case
-    /// the two pk's are encoded and compared for byte equality), or if `sk` contains a seed
-    /// (in which case a keygen_from_seed is run and then the pk's compared).
+    /// Given a public key and a secret key, check that the public key matches the secret key:
+    /// H(ek) stored in the private key against the hash of `pk`.
     ///
     /// Returns either `()` or [`KEMError::ConsistencyCheckFailed`].
     fn keypair_consistency_check(pk: &PK, sk: &SK) -> Result<(), KEMError>;
+
+    /// Same as [`KEMDecapsulator::decaps`], but acts on an [`MLKEMSeedPrivateKeyExpanded`], which
+    /// holds 𝐭̂ and so skips the key generation a seed key runs inside every decapsulation.
+    fn decaps_with_expanded_key(
+        sk: &MLKEMSeedPrivateKeyExpanded<P, SK_LEN, FULL_SK_LEN, PK_LEN>,
+        ct: &[u8],
+    ) -> Result<KeyMaterial<SS_LEN>, KEMError>;
 }
 
 impl<
@@ -584,15 +610,15 @@ impl<
     ) -> Result<(KeyMaterial<SS_LEN>, [u8; CT_LEN]), KEMError> {
         // Source the random message m from the provided RNG
         if rng.security_strength() < P::MAX_SECURITY_STRENGTH {
-            return Err(RNGError::SecurityStrengthInsufficientForAlgorithm)?;
+            Err(RNGError::SecurityStrengthInsufficientForAlgorithm)?;
         }
-        let mut m = [0u8; 32];
-        rng.next_bytes_out(&mut m)?;
+        let mut m = Secret::<[u8; 32]>::new();
+        rng.next_bytes_out(&mut *m)?;
 
-        let (ss_bytes, ct) = Self::encaps_internal(pk, m);
+        let (ss_bytes, ct) = Self::encaps_internal(pk, &m);
 
         let mut ss_keymaterial =
-            KeyMaterial::<SS_LEN>::from_bytes_as_type(&ss_bytes, KeyType::CryptographicRandom)?;
+            KeyMaterial::<SS_LEN>::from_bytes_as_type(&*ss_bytes, KeyType::CryptographicRandom)?;
         do_hazardous_operations(&mut ss_keymaterial, |ss_keymaterial| {
             ss_keymaterial.set_security_strength(P::MAX_SECURITY_STRENGTH)
         })?;
@@ -620,14 +646,43 @@ impl<
     /// the security level of the ML-KEM parameter set.
     /// As ML-KEM is an implicitly-rejecting KEM, this returns an error only if the ciphertext is invalid (ie the wrong length)..
     fn decaps(sk: &SK, ct: &[u8]) -> Result<KeyMaterial<SS_LEN>, KEMError> {
-        if ct.len() != CT_LEN {
-            return Err(KEMError::LengthError("Invalid ciphertext length"));
-        }
+        Self::decaps_checked(sk, ct)
+    }
+}
 
-        let ss_bytes = Self::decaps_internal(sk, ct.try_into().unwrap());
+impl<
+    P: MLKEMParams,
+    PK: MLKEMPublicKeyTrait<P, PK_LEN> + MLKEMPublicKeyInternalTrait<P, PK_LEN>,
+    SK: MLKEMPrivateKeyTrait<P, SK_LEN, FULL_SK_LEN, PK_LEN>
+        + MLKEMPrivateKeyInternalTrait<P, SK_LEN, PK_LEN>,
+    const PK_LEN: usize,
+    const SK_LEN: usize,
+    const FULL_SK_LEN: usize,
+    const CT_LEN: usize,
+    const SS_LEN: usize,
+> MLKEM<P, PK, SK, PK_LEN, SK_LEN, FULL_SK_LEN, CT_LEN, SS_LEN>
+{
+    /// Algorithm 21 ML-KEM.Decaps(dk, 𝑐) with the Section 7.3 input checks, over either form of
+    /// this crate's private key.
+    fn decaps_checked<
+        DK: MLKEMPrivateKeyTrait<P, SK_LEN, FULL_SK_LEN, PK_LEN>
+            + MLKEMPrivateKeyInternalTrait<P, SK_LEN, PK_LEN>,
+    >(
+        dk: &DK,
+        ct: &[u8],
+    ) -> Result<KeyMaterial<SS_LEN>, KEMError> {
+        // Section 7.3, decapsulation input check 1: 𝑐 is a byte array of length 32(𝑑𝑢𝑘 + 𝑑𝑣).
+        // Checks 2 and 3 concern the FIPS 203 encoding of dk, which this crate's keys never
+        // hold; a key is derived from its seed, so it is consistent by construction.
+        let Ok(ct) = <&[u8; CT_LEN]>::try_from(ct) else {
+            return Err(KEMError::LengthError("Invalid ciphertext length"));
+        };
+
+        // 1: 𝐾′ ← ML-KEM.Decaps_internal(dk, 𝑐)
+        let ss_bytes = Self::decaps_internal(dk, ct);
 
         let mut ss_keymaterial =
-            KeyMaterial::<SS_LEN>::from_bytes_as_type(&ss_bytes, KeyType::CryptographicRandom)?;
+            KeyMaterial::<SS_LEN>::from_bytes_as_type(&*ss_bytes, KeyType::CryptographicRandom)?;
         do_hazardous_operations(&mut ss_keymaterial, |ss_keymaterial| {
             ss_keymaterial.set_security_strength(P::MAX_SECURITY_STRENGTH)
         })?;

@@ -12,14 +12,22 @@
 //! is not secure to use by itself; see
 //! [A block permutation is not a cipher](#a-block-permutation-is-not-a-cipher) below.
 //!
-//! For ready-to-use primitives, see the documentation for one of the provided modes of operation:
+//! For ready-to-use primitives, see the documentation of one of the provided modes of
+//! operation, on the 128-bit alias of each:
 //!
-//! * [AES_CBC](crate::cbc)
-//! * [AES_CCM](crate::ccm)
-//! * [AES_CFB](crate::cfb)
-//! * [AES_CFB8](crate::cfb8)
-//! * [AES_CTR](crate::ctr)
-//! * [AES_GCM](crate::gcm)
+//! * [`AES_CBC_128`]
+//! * [`AES_CCM_128`]
+//! * [`AES_CFB_128`]
+//! * [`AES_CFB8_128`]
+//! * [`AES_CMAC_128`], a MAC rather than a cipher
+//! * [`AES_CTR_128`]
+//! * [`AES_GCM_128`]
+//! * [`AES_GMAC_128`], a nonce-based MAC rather than a cipher
+//! * [`AES_KW_128`] and [`AES_KWP_128`], key wraps rather than ciphers
+//!
+//! Each mode is used through a mode-bound key object such as [`AES256Key<GCM>`](AES256Key),
+//! which validates and expands the material once and hands out the mode's encryptors and
+//! decryptors; see [`AES128Key`].
 //!
 //! AES in ECB mode, [`AES_ECB_128`](hazmat::AES_ECB_128) and friends, is under [`hazmat`] because
 //! it is a building block for other modes, not itself a confidentiality mode for data.
@@ -95,8 +103,9 @@
 //! Per-call stack usage is set by the plane width: 16, 32 or 64 bytes of bit-sliced state for
 //! one, two or four blocks, the same again for the round key widened from its stored one-block
 //! form, plus the S-box circuit's spills. Only key expansion depends on the key length. Measured
-//! as the deepest frame chain below each entry point in the release build (x86-64, return
-//! addresses included):
+//! as the deepest frame chain below each entry point in the release build on x86-64 (return
+//! addresses included); another target lays its frames out differently, and aarch64's are
+//! smaller:
 //!
 //! | Entry point | AES-128 | AES-192 | AES-256 |
 //! |---|---|---|---|
@@ -136,7 +145,14 @@
 //!
 //! * The Rust compiler makes no guarantee it will preserve this. The code is written so that the
 //!   natural code generation is straight-line, and `#![forbid(unsafe_code)]` rules out the usual
-//!   ways of forcing the issue, but the property is not contractual.
+//!   ways of forcing the issue, but the property is not contractual. The one place LLVM is known
+//!   to rewrite the arithmetic, the widening of a round-key word into the 2- and 4-block lanes,
+//!   folds into an integer multiply of a secret; on x86-64 and aarch64 that multiply is
+//!   fixed-latency and is allowed, everywhere else the word passes through
+//!   `bouncycastle_utils::ct::value_barrier` first so the widening stays shifts and ORs (see
+//!   `bitslice.rs`). Debug builds are not covered by any of this.
+//! * The "no secret-dependent branch" claim is about release builds: a `debug_assert` can
+//!   short-circuit on a secret, so the crate keeps none over key-derived values.
 //! * The working state (16, 32 or 64 bytes, by the entry point) is not scrubbed after a call.
 //!   Only the key schedule is wrapped in `Secret`, and so only it is guaranteed to be zeroized on
 //!   drop.
@@ -168,18 +184,22 @@
 #![allow(private_bounds)]
 
 mod bitslice;
-pub mod cbc;
-pub mod ccm;
-pub mod cfb;
-pub mod cfb8;
-pub mod ctr;
-pub mod gcm;
+mod cbc;
+mod ccm;
+mod cfb;
+mod cfb8;
+mod cmac;
+mod ctr;
+mod gcm;
+mod gmac;
 pub mod hazmat;
+mod key;
+mod kw;
 mod round;
 mod sbox;
 mod schedule;
 
-use bouncycastle_utils::secret::ZeroizablePrimitive;
+use bouncycastle_utils::secret::{NoPadding, ZeroizablePrimitive};
 
 /// The AES block length in bytes: 16 (FIPS 197 Sec 3.4, `Nb` = 4 words).
 pub const AES_BLOCK_LEN: usize = 16;
@@ -213,8 +233,8 @@ pub trait AESParams: AESParamsInternalTrait {
     /// The algorithm name, as reported by `Algorithm::ALG_NAME`.
     const ALG_NAME: &'static str;
     /// `[u32; 4 * (NR + 1)]` -- the bit-sliced schedule; its layout is
-    /// described in `schedule.rs`.
-    type Schedule: ZeroizablePrimitive + AsRef<[u32]> + AsMut<[u32]>;
+    /// described in `schedule.rs`. `NoPadding` lets keys compare their schedules in constant time.
+    type Schedule: ZeroizablePrimitive + NoPadding + AsRef<[u32]> + AsMut<[u32]>;
 }
 
 /// AES-128 parameters: 16-byte key, `Nk` = 4, `Nr` = 10 (FIPS 197 Table 3).
@@ -256,11 +276,12 @@ impl AESParams for AES256Params {
 }
 
 pub use cbc::{AES_CBC_128, AES_CBC_192, AES_CBC_256};
-pub use ccm::{
-    AES_CCM_128, AES_CCM_128_Packet, AES_CCM_192, AES_CCM_192_Packet, AES_CCM_256,
-    AES_CCM_256_Packet, CCM_NONCE_LEN, CCM_TAG_LEN,
-};
+pub use ccm::{AES_CCM_128, AES_CCM_192, AES_CCM_256, CCM_NONCE_LEN, CCM_TAG_LEN};
 pub use cfb::{AES_CFB_128, AES_CFB_192, AES_CFB_256};
 pub use cfb8::{AES_CFB8_128, AES_CFB8_192, AES_CFB8_256};
+pub use cmac::{AES_CMAC_128, AES_CMAC_192, AES_CMAC_256};
 pub use ctr::{AES_CTR_128, AES_CTR_192, AES_CTR_256, CTR_NONCE_LEN};
-pub use gcm::{AES_GCM_128, AES_GCM_192, AES_GCM_256};
+pub use gcm::{AES_GCM_128, AES_GCM_192, AES_GCM_256, GCM_NONCE_LEN};
+pub use gmac::{AES_GMAC_128, AES_GMAC_192, AES_GMAC_256};
+pub use key::{AES128Key, AES192Key, AES256Key};
+pub use kw::{AES_KW_128, AES_KW_192, AES_KW_256, AES_KWP_128, AES_KWP_192, AES_KWP_256};

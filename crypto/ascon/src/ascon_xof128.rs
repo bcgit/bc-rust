@@ -7,7 +7,7 @@
 
 use bouncycastle_core::errors::{HashError, SuspendableError};
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::traits::{Algorithm, Hash, Suspendable, XOF, XOFSqueezer};
+use bouncycastle_core::traits::{Algorithm, Hash, HashOneShot, Suspendable, XOF, XOFSqueezer};
 use bouncycastle_utils::secret::Secret;
 use bouncycastle_utils::suspendable_state::{add_lib_ver, check_lib_ver};
 
@@ -39,17 +39,10 @@ impl AsconXof128 {
         }
     }
 
-    /// Produces `output.len()` bytes from the XOF stream.
-    ///
-    /// The first call ends the absorb phase by padding and absorbing the final
-    /// message block. Subsequent calls continue the same output stream.
+    /// Produces the next `output.len()` bytes of the XOF stream; the absorb phase was ended by
+    /// [`XOF::into_squeezer`].
     fn squeeze_into(&mut self, output: &mut [u8]) -> usize {
         output.fill(0);
-
-        if !self.sponge.squeezing() {
-            self.sponge.pad_and_absorb();
-        }
-
         self.sponge.squeeze(output);
         output.len()
     }
@@ -97,16 +90,6 @@ impl Hash for AsconXof128 {
     /// Nominal digest size used when Ascon-XOF128 is viewed through [`Hash`].
     fn output_len(&self) -> usize {
         NOMINAL_OUTPUT_LEN
-    }
-
-    fn hash(mut self, data: &[u8]) -> Vec<u8> {
-        self.do_update(data);
-        self.do_final()
-    }
-
-    fn hash_out(mut self, data: &[u8], output: &mut [u8]) -> usize {
-        self.do_update(data);
-        self.do_final_out(output)
     }
 
     fn do_update(&mut self, data: &[u8]) {
@@ -175,16 +158,15 @@ impl Hash for AsconXof128 {
         let _ = partial_byte;
         Ok(self.do_final_out(output))
     }
-
-    fn max_security_strength(&self) -> SecurityStrength {
-        SecurityStrength::_128bit
-    }
 }
 
 impl XOF for AsconXof128 {
     type Squeezer = AsconXof128Squeezer;
 
-    fn into_squeezer(self) -> Self::Squeezer {
+    fn into_squeezer(mut self) -> Self::Squeezer {
+        // The squeezer is squeezing from the start, so a squeezer suspended before its first
+        // output resumes as a squeezer.
+        self.sponge.finish_absorb();
         AsconXof128Squeezer { xof: self }
     }
 
@@ -331,3 +313,6 @@ impl Suspendable<SUSPENDED_ASCON_XOF128_STATE_LEN> for AsconXof128Squeezer {
         Ok(Self { xof: AsconXof128 { sponge } })
     }
 }
+
+// The one-shot form: `Default` is the function itself.
+impl HashOneShot for AsconXof128 {}

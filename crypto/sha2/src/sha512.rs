@@ -1,7 +1,7 @@
 use crate::SHA512InitValue;
 use bouncycastle_core::errors::{HashError, SuspendableError};
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::traits::{Algorithm, Hash, Suspendable};
+use bouncycastle_core::traits::{Algorithm, Hash, HashOneShot, Suspendable};
 use bouncycastle_utils::suspendable_state::{add_lib_ver, check_lib_ver};
 use bouncycastle_utils::{min, secret::Secret};
 use core::slice;
@@ -427,24 +427,11 @@ impl<PARAMS: SHA512InitValue> Algorithm for SHA512Internal<PARAMS> {
 impl<PARAMS: SHA512InitValue> Hash for SHA512Internal<PARAMS> {
     /// As per FIPS 180-4 Figure 1
     fn block_bitlen(&self) -> usize {
-        1024
+        PARAMS::BLOCK_LEN * 8
     }
 
     fn output_len(&self) -> usize {
         PARAMS::OUTPUT_LEN
-    }
-
-    fn hash(self, data: &[u8]) -> Vec<u8> {
-        let mut output = vec![0u8; self.output_len()];
-        self.hash_out(data, &mut output);
-        output
-    }
-
-    fn hash_out(mut self, data: &[u8], output: &mut [u8]) -> usize {
-        output.fill(0);
-
-        self.do_update(data);
-        self.do_final_out(output)
     }
 
     fn do_update(&mut self, block: &[u8]) {
@@ -468,7 +455,6 @@ impl<PARAMS: SHA512InitValue> Hash for SHA512Internal<PARAMS> {
             block = &block[available..];
 
             self.state.compress(slice::from_ref(&self.x_buf));
-            //self.x_buf_off = 0;
         }
 
         // FIPS 180-4 s. 5.2.2: the message is parsed into 1024-bit blocks; a partial trailing block waits in x_buf.
@@ -517,10 +503,6 @@ impl<PARAMS: SHA512InitValue> Hash for SHA512Internal<PARAMS> {
         }
         Ok(self.do_final_internal(partial_byte, num_partial_bits, output))
     }
-
-    fn max_security_strength(&self) -> SecurityStrength {
-        SecurityStrength::from_bytes(PARAMS::OUTPUT_LEN / 2)
-    }
 }
 
 /// Length in bytes of the serialized state of SHA384, SHA512, SHA512/224 and SHA512/256.
@@ -559,6 +541,10 @@ impl<PARAMS: SHA512InitValue> Suspendable<SUSPENDED_SHA512_STATE_LEN> for SHA512
     fn from_suspended(
         serialized_state: [u8; SUSPENDED_SHA512_STATE_LEN],
     ) -> Result<Self, SuspendableError> {
+        // Resuming builds the state without the initial hash value, so evaluate it here: for
+        // SHA-512/t that is what runs `check_t`, which makes an invalid `t` a compile error on
+        // this path too.
+        const { _ = PARAMS::H0 };
         // check the version tag
         // At the moment, we have no not_before version to specify.
         // infallible: check_lib_ver returns a slice of exactly SUSPENDED_SHA512_STATE_LEN - 3 = 201 bytes.
@@ -584,6 +570,11 @@ impl<PARAMS: SHA512InitValue> Suspendable<SUSPENDED_SHA512_STATE_LEN> for SHA512
         if x_buf_off >= 128 {
             return Err(SuspendableError::InvalidData);
         }
+        // do_update keeps byte_count congruent to x_buf_off modulo the block length, so a state in
+        // which they disagree describes no message and must not resume.
+        if byte_count % 128 != x_buf_off as u64 {
+            return Err(SuspendableError::InvalidData);
+        }
 
         // Construct the object
         let state = Sha512State { _params: core::marker::PhantomData, h };
@@ -596,3 +587,6 @@ impl<PARAMS: SHA512InitValue> Suspendable<SUSPENDED_SHA512_STATE_LEN> for SHA512
         })
     }
 }
+
+// The one-shot form: `Default` is the function itself.
+impl<PARAMS: SHA512InitValue> HashOneShot for SHA512Internal<PARAMS> {}

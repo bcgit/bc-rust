@@ -1,9 +1,11 @@
 //! The generic HMAC-based Extract-and-Expand Key Derivation Function (HKDF) construction, as per
-//! RFC 5869, as allowed by NIST SP 800-56Cr2.
+//! RFC 5869, which NIST SP 800-56Cr2 Section 5.1 describes as "a version of the above
+//! extraction-then-expansion key-derivation procedure using HMAC for both the extraction and
+//! expansion steps".
 //!
 //! This is a utility crate and is not intended to be used directly. It provides [`HKDF`] -- the
-//! construction, generic over any struct that implements [`Hash`] and [`HashAlgParams`], the extension
-//! point through which a hash declares the metadata from which the HKDF instance is built.
+//! construction, generic over any hash that implements [`HMACParams`], the extension point through
+//! which a hash declares the metadata from which the HMAC and HKDF instances are built.
 //! The library provides the following concrete instantiations of HKDF:
 //!
 //! | Hash family | Instantiations                                                           |
@@ -12,11 +14,10 @@
 //!
 //! # Instantiating HKDF over a hash
 //!
-//! HKDF uses HMAC as its underlying primitive, so it works with any hash that HMAC works with:
-//! [`HKDF`] needs only [`Hash`] + [`HashAlgParams`] + [`Default`]. Unlike HMAC there is no additional
-//! HKDF params trait to implement -- HKDF has no per-hash OIDs and derives its name from nothing --
-//! so an instantiation is just a type alias plus, by convention, a name constant and a suspended-state
-//! length.
+//! HKDF uses HMAC as its underlying primitive, so it works with exactly the hashes HMAC works with:
+//! [`HKDF`] needs [`HMACParams`], which also carries the HKDF name ([`HMACParams::HKDF_ALG_NAME`]).
+//! There is no separate HKDF params trait -- HKDF has no per-hash OIDs -- so an instantiation is just
+//! a type alias plus, by convention, a suspended-state length.
 //!
 //! What the alias has to supply is [`HKDF`]'s two const parameters:
 //!
@@ -88,7 +89,10 @@
 //! * HKDF is keyed by its `salt`, which keys the extract-phase HMAC. The salt is deliberately
 //!   excluded from the suspended state and must be re-supplied on resume; resuming with a different
 //!   salt cannot be detected and silently produces a different PRK.
-//! * Entropy is credited only for input supplied via [`HKDF::do_extract_update_key`]. Bytes supplied
+//! * Entropy is credited only for input supplied via [`HKDF::do_extract_update_key`], and for a
+//!   salt typed [`KeyType::MACKey`], which is how a caller marks it as the secret salt of SP
+//!   800-56Cr2 Section 5.1. A salt of any other type is RFC 5869 Section 2.2's "non-secret random
+//!   value" and credits nothing: anyone who knows it can compute the PRK from the IKM. Bytes supplied
 //!   via [`HKDF::do_extract_update_bytes`] are treated as uncredited context, so a PRK derived only
 //!   from raw bytes will not be tagged as full-entropy key material even if those bytes were random.
 //!   [`HKDF::do_extract_update_key`] is rejected after the first call to
@@ -112,9 +116,12 @@ use bouncycastle_core::key_material::{
     KeyMaterial, KeyMaterial0, KeyMaterial512, KeyMaterialTrait, KeyType,
 };
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::traits::{Hash, HashAlgParams, KDF, MAC, Suspendable, SuspendableKeyed};
-use bouncycastle_hmac::HMAC;
-use bouncycastle_utils::suspendable_state::{add_lib_ver, check_lib_ver};
+use bouncycastle_core::symmetric_key::{FromAnyKeyMaterial, MacGenerationKey};
+use bouncycastle_core::traits::{Algorithm, KDF, MAC, Suspendable, SuspendableKeyed};
+use bouncycastle_hmac::hazmat as hmac_hazmat;
+use bouncycastle_hmac::{HMACParams, HmacKey, LARGEST_HASHER_BLOCK_LEN};
+use bouncycastle_utils::secret::Secret;
+use bouncycastle_utils::suspendable_state::{add_lib_ver, bounded_usize, check_lib_ver};
 use bouncycastle_utils::{max, min};
 use std::marker::PhantomData;
 // Imports needed only for docs
@@ -157,20 +164,26 @@ pub const MAX_HMAC_OUTPUT_LEN: usize = 64;
 /// todo: once rust stabilizes generic_const_exprs, delete both const parameters and write the impl as
 ///     `SuspendableKeyed<{HASH_STATE_LEN + 14}>` over `H: Suspendable<HASH_STATE_LEN>`.
 #[derive(Clone)]
-pub struct HKDF<
-    H: Hash + HashAlgParams + Default,
-    const HASH_STATE_LEN: usize,
-    const HKDF_STATE_LEN: usize,
-> {
-    // Optional because an HMAC cannot be constructed until a key is provided
-    // to initialize it with.
+pub struct HKDF<H: HMACParams, const HASH_STATE_LEN: usize, const HKDF_STATE_LEN: usize> {
+    // Optional because the extract-phase HMAC cannot be keyed until the salt is provided.
     // None must correspond to a state of Uninitialized.
-    hmac: Option<HMAC<H>>,
+    hmac: Option<HkdfExtract<H>>,
     entropy: HkdfEntropyTracker<H>,
     state: HkdfStates,
 }
 
-// Note: does not need to impl Drop because HKDF itself does not hold any sensitive state data.
+/// The extract phase's HMAC, held as its two halves: the salt key and the inner hash absorbing
+/// the IKM. An `HMAC` worker borrows its key, and a struct cannot borrow from itself, so the
+/// phase is run through `bouncycastle_hmac::hazmat`'s `inner_state` and `finish_out` instead.
+#[derive(Clone)]
+struct HkdfExtract<H: HMACParams> {
+    key: HmacKey<H>,
+    inner: H,
+}
+
+// No Drop impl of its own: the sensitive state is the salt-keyed pad states inside `hmac` (RFC
+// 2104 Section 4 says they "need to be treated and protected the same as secret keys"), and the
+// hash types zeroize those in their own Drop.
 
 #[derive(Clone, Debug, PartialOrd, PartialEq)]
 #[repr(u8)]
@@ -205,13 +218,17 @@ impl TryFrom<u8> for HkdfStates {
 }
 
 #[derive(Clone)]
-struct HkdfEntropyTracker<H: Hash + HashAlgParams + Default> {
+struct HkdfEntropyTracker<H: HMACParams> {
     _phantomhash: PhantomData<H>,
     entropy: usize,
     security_strength: SecurityStrength,
 }
 
-impl<H: Hash + HashAlgParams + Default> HkdfEntropyTracker<H> {
+impl<H: HMACParams> HkdfEntropyTracker<H> {
+    /// The most the label can say: HMAC's strength is bounded by half the hash output (the
+    /// `min(K, 2C)` rule), so no input, and no resumed state, raises it past this.
+    const MAX_STRENGTH: SecurityStrength = SecurityStrength::from_bytes(H::OUTPUT_LEN / 2);
+
     fn new() -> Self {
         Self { _phantomhash: PhantomData, entropy: 0, security_strength: SecurityStrength::None }
     }
@@ -220,10 +237,10 @@ impl<H: Hash + HashAlgParams + Default> HkdfEntropyTracker<H> {
     /// Returns the amount of entropy credited.
     fn credit_entropy(&mut self, key: &impl KeyMaterialTrait) -> usize {
         let additional_entropy = if key.is_full_entropy() { key.key_len() } else { 0 };
-        self.entropy += additional_entropy;
+        // Saturating: the counter is bookkeeping, and a resumed state may carry any value.
+        self.entropy = self.entropy.saturating_add(additional_entropy);
         self.security_strength = max(&self.security_strength, &key.security_strength()).clone();
-        self.security_strength =
-            min(&self.security_strength, &SecurityStrength::from_bytes(H::OUTPUT_LEN / 2)).clone();
+        self.security_strength = min(&self.security_strength, &Self::MAX_STRENGTH).clone();
         additional_entropy
     }
 
@@ -231,27 +248,40 @@ impl<H: Hash + HashAlgParams + Default> HkdfEntropyTracker<H> {
         self.entropy
     }
 
-    // According to NIST SP 800-56Cr2, a KDF is fully seeded when its underlying hash primitive has a full block.
+    // Library policy, not a rule from a standard: the output is credited as CryptographicRandom
+    // once at least OUTPUT_LEN bytes of typed key material have gone in. SP 800-133r2 Section 6.3
+    // (method 3, note (g)) asks that the component keys' min-entropies sum to at least the
+    // min-entropy the output needs, and "should be at least twice that amount"; this counts bytes
+    // of material typed as key rather than min-entropy, so the threshold is the full output length.
     pub fn is_fully_seeded(&self) -> bool {
         self.entropy >= H::OUTPUT_LEN
     }
 
-    /// Either [`KeyMaterialTrait::BytesLowEntropy`] or [`KeyMaterialTrait::BytesFullEntropy`] depending on
-    /// whether enough input key material was provided for the internal hash function to have a full block.
+    /// [`KeyType::CryptographicRandom`] once at least `OUTPUT_LEN` bytes of typed key material have
+    /// been credited (see [`Self::is_fully_seeded`]), else [`KeyType::Unknown`].
     fn get_output_key_type(&self) -> KeyType {
         if self.is_fully_seeded() { KeyType::CryptographicRandom } else { KeyType::Unknown }
     }
 }
 
-impl<H: Hash + HashAlgParams + Default, const HASH_STATE_LEN: usize, const HKDF_STATE_LEN: usize>
-    Default for HKDF<H, HASH_STATE_LEN, HKDF_STATE_LEN>
+/// The name is [`HMACParams::HKDF_ALG_NAME`]; the strength is the hash's, which the extract
+/// and expand HMACs cannot exceed.
+impl<H: HMACParams, const HASH_STATE_LEN: usize, const HKDF_STATE_LEN: usize> Algorithm
+    for HKDF<H, HASH_STATE_LEN, HKDF_STATE_LEN>
+{
+    const ALG_NAME: &'static str = H::HKDF_ALG_NAME;
+    const MAX_SECURITY_STRENGTH: SecurityStrength = H::MAX_SECURITY_STRENGTH;
+}
+
+impl<H: HMACParams, const HASH_STATE_LEN: usize, const HKDF_STATE_LEN: usize> Default
+    for HKDF<H, HASH_STATE_LEN, HKDF_STATE_LEN>
 {
     fn default() -> Self {
         Self::new()
     }
 }
 
-impl<H: Hash + HashAlgParams + Default, const HASH_STATE_LEN: usize, const HKDF_STATE_LEN: usize>
+impl<H: HMACParams, const HASH_STATE_LEN: usize, const HKDF_STATE_LEN: usize>
     HKDF<H, HASH_STATE_LEN, HKDF_STATE_LEN>
 {
     /// Get a new, uninstantiated HKDF object.
@@ -269,6 +299,8 @@ impl<H: Hash + HashAlgParams + Default, const HASH_STATE_LEN: usize, const HKDF_
         self.entropy.is_fully_seeded()
     }
 
+    /// RFC 5869 Section 2.2:
+    ///
     /// HKDF-Extract(salt, IKM) -> PRK
     ///    Options:
     ///       Hash     a hash function; HashLen denotes the length of the
@@ -282,12 +314,16 @@ impl<H: Hash + HashAlgParams + Default, const HASH_STATE_LEN: usize, const HKDF_
     ///    Output:
     ///       PRK      a pseudorandom key (of HashLen octets)
     ///
-    /// The KeyMaterial input parameters can be of any [`KeyType`]; but the type of the output will be set accordingly.
+    /// The salt can be of any [`KeyType`] but [`KeyType::Unknown`], which is refused as
+    /// [`KeyMaterialError::InvalidKeyType`]; the IKM can be of any type, and credits entropy only
+    /// when it is a full-entropy one. The salt credits entropy only when it is typed
+    /// [`KeyType::MACKey`], a secret salt; see the crate's Security Considerations. The type of the
+    /// output is set from what was credited.
     /// The output KeyMaterial will be of fixed size, with a capacity large enough to cover any
     /// underlying hash function, but the actual key length will be appropriate to the underlying hash function.
     ///
     /// Salt is optional, which is indicated by providing an uninitialized KeyMaterial object of length zero,
-    /// the capacity is irrelevant, so KeyMateriol256::new() or KeyMaterial_internal::<0>::new() would both count as an absent salt.
+    /// the capacity is irrelevant, so KeyMaterial256::new() or KeyMaterial0::new() would both count as an absent salt.
     pub fn extract(
         salt: &impl KeyMaterialTrait,
         ikm: &impl KeyMaterialTrait,
@@ -335,9 +371,14 @@ impl<H: Hash + HashAlgParams + Default, const HASH_STATE_LEN: usize, const HKDF_
     /// therefore this function is provided only as expand_out(), filling the provided KeyMaterial object,
     /// and no analogous expand() is provided.
     ///
-    /// The KeyMaterial input parameters can be of any KeyType; but the type of the output will be set accordingly.
+    /// The salt can be of any [`KeyType`] but [`KeyType::Unknown`], which is refused as
+    /// [`KeyMaterialError::InvalidKeyType`]; the IKM can be of any type. The type of the output is
+    /// set from what was credited, as [`Self::extract_out`] says.
     ///
-    /// L is the output length. This will throw a [`MACError::InvalidLength`] if the provided KeyMaterial is too small to hold the requested output.
+    /// L is the output length. [`KDFError::InvalidLength`] is returned if L exceeds 255 * HashLen,
+    /// if `okm` cannot hold L bytes, or if `prk` is shorter than HashLen (RFC 5869 Section 2.3).
+    /// There is no upper bound on the PRK: one longer than the hash block is hashed first, as HMAC
+    /// does with a long key (RFC 2104 Section 3), so the output is what HMAC keyed with it gives.
     ///
     /// Returns the number of bytes written.
     #[allow(non_snake_case)] // for L
@@ -347,7 +388,7 @@ impl<H: Hash + HashAlgParams + Default, const HASH_STATE_LEN: usize, const HKDF_
         L: usize,
         okm: &mut impl KeyMaterialTrait,
     ) -> Result<usize, KDFError> {
-        // From RFC5896
+        // RFC 5869 Section 2.3:
         //    N = ceil(L/HashLen)
         //    T = T(1) | T(2) | T(3) | ... | T(N)
         //    OKM = first L octets of T
@@ -365,13 +406,20 @@ impl<H: Hash + HashAlgParams + Default, const HASH_STATE_LEN: usize, const HKDF_
         let hash_len = H::OUTPUT_LEN;
         if L > 255 * hash_len {
             return Err(KDFError::InvalidLength(
-                "HMAC can not produce more than 255*HashLen bytes out output",
+                "HKDF-Expand cannot produce more than 255*HashLen bytes of output",
             ));
         }
 
         if L > okm.capacity() {
             return Err(KDFError::InvalidLength(
                 "Provided KeyMaterial is too small to hold the requested output length.",
+            ));
+        }
+
+        // RFC 5869 Section 2.3: "PRK  a pseudorandom key of at least HashLen octets".
+        if prk.key_len() < hash_len {
+            return Err(KDFError::InvalidLength(
+                "HKDF-Expand: PRK must be at least HashLen bytes (RFC 5869 Sec 2.3)",
             ));
         }
 
@@ -384,56 +432,63 @@ impl<H: Hash + HashAlgParams + Default, const HASH_STATE_LEN: usize, const HKDF_
 
         // Could potentially speed this up by unrolling T(0) and T(1)
 
-        // The prk key type must be temporarily changed to MACKey to satisfy HMAC, then restored afterwards.
-        let prk_as_mac_key = KeyMaterial::<MAX_HMAC_OUTPUT_LEN>::from_bytes_as_type(
-            prk.ref_to_bytes(),
-            KeyType::MACKey,
-        )?;
+        // The PRK, re-typed as the MAC key it is (see mac_key_copy). One key object for the whole
+        // expansion: the pads are computed once here, before any byte of `okm` is written, and each
+        // block's HMAC starts from a clone of them.
+        let prk_key = HmacKey::<H>::from_key_material(&Self::mac_key_copy(prk.ref_to_bytes())?)?;
 
+        // T(i) is output key material, so it zeroizes on drop.
         #[allow(non_snake_case)]
-        let mut T = [0u8; MAX_HMAC_OUTPUT_LEN];
+        let mut T: Secret<[u8; MAX_HMAC_OUTPUT_LEN]> = Secret::new();
         let mut t_len: usize = 0;
         let mut i = 1u8;
 
-        do_hazardous_operations(okm, |okm| {
-            let out = okm.ref_to_bytes_mut()?;
-            while i < N {
-                let mut hmac = HMAC::<H>::new(&prk_as_mac_key)
-                    .map_err(|_| KeyMaterialError::GenericError("HMAC initialization failed"))?;
-                hmac.do_update(&T[..t_len]);
-                hmac.do_update(info);
-                hmac.do_update(&[i]);
+        let filled: Result<(), KDFError> = (|| {
+            do_hazardous_operations(okm, |okm| {
+                let out = okm.ref_to_bytes_mut()?;
+                while i < N {
+                    let mut hmac = prk_key.create_generator();
+                    hmac.do_update(&T[..t_len]);
+                    hmac.do_update(info);
+                    hmac.do_update(&[i]);
 
-                t_len = hmac
-                    .do_final_out(&mut T)
-                    .map_err(|_| KeyMaterialError::GenericError("HMAC finalization failed"))?;
-                debug_assert_eq!(t_len, hash_len); // this will be true for every iteration after T(0) / T(1)
-                out[bytes_written..bytes_written + t_len].copy_from_slice(&T[..t_len]);
-                bytes_written += t_len;
-                i += 1;
-            }
+                    t_len = hmac
+                        .do_final_out(&mut T[..])
+                        .map_err(|_| KeyMaterialError::GenericError("HMAC finalization failed"))?;
+                    debug_assert_eq!(t_len, hash_len); // this will be true for every iteration after T(0) / T(1)
+                    out[bytes_written..bytes_written + t_len].copy_from_slice(&T[..t_len]);
+                    bytes_written += t_len;
+                    i += 1;
+                }
+                Ok(())
+            })?;
+
+            // Part of the output is not taken on the last iteration. "OKM = first L octets of T", so the
+            // last block T(N) is computed in full and only its first `remaining` octets are kept. Asking
+            // HMAC for a `remaining`-octet output instead would be a truncated MAC, which HMAC refuses
+            // below MIN_FIPS_DIGEST_LEN: that rejected every L with L mod HashLen in 1..=3.
+            let remaining = L - bytes_written;
+            let mut hmac = prk_key.create_generator();
+            hmac.do_update(&T[..t_len]);
+            hmac.do_update(info);
+            hmac.do_update(&[i]);
+
+            t_len = hmac.do_final_out(&mut T[..hash_len])?;
+            debug_assert_eq!(t_len, hash_len);
+
+            do_hazardous_operations(okm, |okm| {
+                let out = okm.ref_to_bytes_mut()?;
+                out[bytes_written..bytes_written + remaining].copy_from_slice(&T[..remaining]);
+                Ok(())
+            })?;
+            bytes_written += remaining;
             Ok(())
-        })?;
-
-        // Part of the output is not taken on the last iteration. "OKM = first L octets of T", so the
-        // last block T(N) is computed in full and only its first `remaining` octets are kept. Asking
-        // HMAC for a `remaining`-octet output instead would be a truncated MAC, which HMAC refuses
-        // below MIN_FIPS_DIGEST_LEN: that rejected every L with L mod HashLen in 1..=3.
-        let remaining = L - bytes_written;
-        let mut hmac = HMAC::<H>::new(&prk_as_mac_key)?;
-        hmac.do_update(&T[..t_len]);
-        hmac.do_update(info);
-        hmac.do_update(&[i]);
-
-        t_len = hmac.do_final_out(&mut T[..hash_len])?;
-        debug_assert_eq!(t_len, hash_len);
-
-        do_hazardous_operations(okm, |okm| {
-            let out = okm.ref_to_bytes_mut()?;
-            out[bytes_written..bytes_written + remaining].copy_from_slice(&T[..remaining]);
-            Ok(())
-        })?;
-        bytes_written += remaining;
+        })();
+        // A partly written OKM is key material: on any failure above, none of it is left behind.
+        if filled.is_err() {
+            okm.zeroize();
+        }
+        filled?;
 
         // Set the KeyType of the output
         // Since some computation has been performed, the result will not actually be zeroized, even if all input key material was zeroized.
@@ -458,7 +513,7 @@ impl<H: Hash + HashAlgParams + Default, const HASH_STATE_LEN: usize, const HKDF_
     }
 
     /// Salt is optional, which is indicated by providing an uninitialized KeyMaterial object of length zero,
-    /// the capacity is irrelevant, so KeyMateriol256::new() or KeyMaterial_internal::<0>::new() would both count as an absent salt.
+    /// the capacity is irrelevant, so KeyMaterial256::new() or KeyMaterial0::new() would both count as an absent salt.
     #[allow(non_snake_case)]
     pub fn extract_and_expand_out(
         salt: &impl KeyMaterialTrait,
@@ -471,28 +526,77 @@ impl<H: Hash + HashAlgParams + Default, const HASH_STATE_LEN: usize, const HKDF_
         Self::expand_out(&prk, info, L, okm)
     }
 
+    /// The salt as the MAC key it is: RFC 5869 Section 2.2, `PRK = HMAC-Hash(salt, IKM)`.
+    ///
+    /// [`HmacKey`] accepts only [`KeyType::MACKey`] or [`KeyType::Zeroized`] material, while a salt
+    /// may carry any `KeyType` (a nonce drawn from an RNG is `CryptographicRandom`), so it is
+    /// copied and re-typed here through [`Self::mac_key_copy`], as [`Self::expand_out`] does for
+    /// the PRK. The exception is [`KeyType::Unknown`]: bytes of unknown provenance are promoted to
+    /// a key only inside [`do_hazardous_operations`], never here, so they are refused. The empty
+    /// salt stays an empty `Zeroized` key, which HMAC zero-pads
+    /// to a block (RFC 2104 Section 2 step (1)): that is both RFC 5869 Section 2.2's "string of
+    /// HashLen zeros" and SP 800-56Cr2 Section 5.1's "all-zero byte string whose length is equal to
+    /// that of a single input block", so all three default salts key HMAC the same way.
+    fn salt_as_mac_key(
+        salt: &impl KeyMaterialTrait,
+    ) -> Result<KeyMaterial<LARGEST_HASHER_BLOCK_LEN>, MACError> {
+        if salt.key_type() == KeyType::Unknown {
+            return Err(MACError::KeyMaterialError(KeyMaterialError::InvalidKeyType(
+                "HKDF salt must not be KeyType::Unknown",
+            )));
+        }
+        Ok(Self::mac_key_copy(salt.ref_to_bytes())?)
+    }
+
+    /// `bytes` as a [`KeyType::MACKey`] of [`LARGEST_HASHER_BLOCK_LEN`] capacity, HMAC's own bound.
+    ///
+    /// HMAC replaces a key "longer than B bytes" by its hash (RFC 2104 Section 3), so bytes longer
+    /// than the hash block are hashed here first: the copy then keys HMAC identically to `bytes`
+    /// and never overflows. The salt and the PRK both go through this.
+    fn mac_key_copy(
+        bytes: &[u8],
+    ) -> Result<KeyMaterial<LARGEST_HASHER_BLOCK_LEN>, KeyMaterialError> {
+        const { assert!(H::BLOCK_LEN <= LARGEST_HASHER_BLOCK_LEN) };
+        const { assert!(H::OUTPUT_LEN <= MAX_HMAC_OUTPUT_LEN) };
+        if bytes.len() <= H::BLOCK_LEN {
+            return KeyMaterial::from_bytes_as_type(bytes, KeyType::MACKey);
+        }
+        let mut digest: Secret<[u8; MAX_HMAC_OUTPUT_LEN]> = Secret::new();
+        let written = H::hash_out(bytes, &mut digest[..H::OUTPUT_LEN]);
+        KeyMaterial::from_bytes_as_type(&digest[..written], KeyType::MACKey)
+    }
+
     /// This, together with [`HKDF::do_extract_update_key`], [`HKDF::do_extract_update_bytes`] and [`HKDF::do_extract_final`]
     /// provide a streaming interface for very long values of `ikm`.
-    /// In this mode, the entropy of `ikm` is untracked, and so only the entropy ef `salt` is taken into account
-    /// when computing the entropy of the output `prk`.
-    /// The KeyMaterial input parameters can be of any [`KeyType`]; but the type of the output will be set accordingly.
+    /// In this mode, entropy is credited for the keys given to [`HKDF::do_extract_update_key`] and
+    /// for a salt typed [`KeyType::MACKey`] (a secret salt); a salt of any other type credits
+    /// nothing, since RFC 5869 Section 2.2's salt is "a non-secret random value".
+    /// The salt can be of any [`KeyType`] but [`KeyType::Unknown`], which is refused as
+    /// [`KeyMaterialError::InvalidKeyType`]; the type of the output is set from what was credited.
     /// The output KeyMaterial will be of fixed size, with a capacity large enough to cover any
     /// underlying hash function, but the actual key length will be appropriate to the underlying hash function.
     ///
     /// Salt is optional; to omit it, provide a KeyMaterial0, which will cause HKDF to use the default all-zero salt.
     ///
-    /// Returns the number of bits of entropy credited to this input key material.
+    /// Returns the number of bytes of entropy credited to this input key material.
     pub fn do_extract_init(&mut self, salt: &impl KeyMaterialTrait) -> Result<usize, MACError> {
         if self.state >= HkdfStates::Initialized {
             return Err(MACError::InvalidState("Initialized twice"));
         };
 
-        // Often HMAC is initialized with a zero salt,
-        // Key strength errors are ignored here.
-        // This will all be tabulated correctly via entropy.credit_entropy()
-        self.hmac = Some(HMAC::<H>::new_allow_weak_key(salt)?);
+        // The salt is often empty or short, so HMAC's key-strength check is skipped; the entropy
+        // tracker below accounts for it.
+        let salt_key = Self::salt_as_mac_key(salt)?;
+        let key = HmacKey::<H>::from_key_material_allow_weak(&salt_key)?;
+        let inner = hmac_hazmat::inner_state(&key);
+        self.hmac = Some(HkdfExtract { key, inner });
 
-        let additional_entropy = self.entropy.credit_entropy(salt);
+        // RFC 5869 Section 2.2 defines the salt as "a non-secret random value", and SP 800-133r2
+        // Section 6.3 note (g) counts the component keys' entropy, not the salt's: a salt the
+        // caller has not marked as a key credits nothing, or a public salt alone would label the
+        // PRK full-entropy key material. A MACKey salt is SP 800-56Cr2 Section 5.1's secret salt.
+        let additional_entropy =
+            if salt.key_type() == KeyType::MACKey { self.entropy.credit_entropy(salt) } else { 0 };
         self.state = HkdfStates::Initialized;
 
         Ok(additional_entropy)
@@ -503,7 +607,7 @@ impl<H: Hash + HashAlgParams + Default, const HASH_STATE_LEN: usize, const HKDF_
     /// This function may be called zero or more times in a workflow.
     /// In particular, this function may be called multiple times to add more than one IKM.
     ///
-    /// Returns the number of bits of entropy credited to this input key material.
+    /// Returns the number of bytes of entropy credited to this input key material.
     pub fn do_extract_update_key(
         &mut self,
         ikm: &impl KeyMaterialTrait,
@@ -523,9 +627,7 @@ impl<H: Hash + HashAlgParams + Default, const HASH_STATE_LEN: usize, const HKDF_
         debug_assert!(self.hmac.is_some());
 
         let additional_entropy = self.entropy.credit_entropy(ikm);
-        let hmac_ref: &mut HMAC<H> = self.hmac.as_mut().unwrap();
-        hmac_ref.do_update(ikm.ref_to_bytes());
-        // self.hmac.as_mut().unwrap().do_update(ikm.ref_to_bytes());
+        self.hmac.as_mut().unwrap().inner.do_update(ikm.ref_to_bytes());
 
         Ok(additional_entropy)
     }
@@ -538,7 +640,7 @@ impl<H: Hash + HashAlgParams + Default, const HASH_STATE_LEN: usize, const HKDF_
     /// State machine: this function must be called after [`HKDF::do_extract_init`], followed by
     /// zero or more calls of [`HKDF::do_extract_update_key`], and before [`HKDF::do_extract_final`].
     ///
-    /// Returns the number of bits of entropy credited to this input key material, which is always 0 for this function.
+    /// Returns the number of bytes of entropy credited to this input key material, which is always 0 for this function.
     pub fn do_extract_update_bytes(&mut self, ikm_chunk: &[u8]) -> Result<usize, MACError> {
         if self.state == HkdfStates::Uninitialized {
             return Err(MACError::InvalidState(
@@ -547,7 +649,7 @@ impl<H: Hash + HashAlgParams + Default, const HASH_STATE_LEN: usize, const HKDF_
         };
         self.state = HkdfStates::TakingAdditionalInfo;
 
-        self.hmac.as_mut().unwrap().do_update(ikm_chunk);
+        self.hmac.as_mut().unwrap().inner.do_update(ikm_chunk);
         Ok(0)
     }
 
@@ -560,7 +662,7 @@ impl<H: Hash + HashAlgParams + Default, const HASH_STATE_LEN: usize, const HKDF_
     }
 
     /// Finish the HKDF-Extract phase and fill the provided `prk`.
-    /// Note that the provided KeyMaterial must be correctly sized to the HMAC block length.
+    /// The PRK is `HashLen` bytes (RFC 5869 Section 2.2), which the provided KeyMaterial always holds.
     #[allow(non_snake_case)]
     pub fn do_extract_final_out(
         self,
@@ -576,11 +678,9 @@ impl<H: Hash + HashAlgParams + Default, const HASH_STATE_LEN: usize, const HKDF_
         let output_key_type = self.entropy.get_output_key_type(); // need to do this above self.hmac.do_final_out, which will consume self.
 
         let mut bytes_written = 0;
+        let HkdfExtract { key, inner } = self.hmac.unwrap();
         do_hazardous_operations(prk, |okm| {
-            bytes_written = self
-                .hmac
-                .unwrap()
-                .do_final_out(&mut okm.ref_to_bytes_mut()?)
+            bytes_written = hmac_hazmat::finish_out(&key, inner, okm.ref_to_bytes_mut()?)
                 .map_err(|_| KeyMaterialError::GenericError("HMAC do_final_out failed"))?;
             okm.set_key_len(bytes_written)?;
             okm.set_key_type(output_key_type)?;
@@ -603,17 +703,21 @@ impl<H: Hash + HashAlgParams + Default, const HASH_STATE_LEN: usize, const HKDF_
     }
 }
 
-/// As per NIST SP 800-56Cr2 section 5.1, HKDF extract_and_expand can be used as a KDF.
-/// Additionally, section 4.1 says that when using HMAC as a KDF, the salt may be set to
-/// a string of HashLen zeros. All key material and additional_input is mapped to HKDF's ikm input.
+/// HKDF's extract-then-expand is RFC 5869's, which NIST SP 800-56Cr2 Section 5.1 names as "a
+/// version of" its two-step key derivation "using HMAC for both the extraction and expansion
+/// steps"; the expansion step's input layout (`T(i-1) || info || i`) is RFC 5869's own rather than
+/// SP 800-108r1 Section 4.2's feedback mode. The default salt is empty: RFC 5869 Section 2.2 sets an absent salt
+/// to "a string of HashLen zeros", SP 800-56Cr2 Section 5.1 to an all-zero string of one hash input
+/// block, and HMAC zero-pads its key to a block, so the three key HMAC identically (see
+/// `salt_as_mac_key`). All key material and additional_input is mapped to HKDF's ikm input.
 /// While this is not the only mode in which HKDF can be used as a KDF, this is considered the default mode
 /// that is exposed through [`KDF::derive_key`] and [`KDF::derive_key_out`].
 /// More advanced control of the inputs to HKDF can be achieved by using [`KDF::derive_key_from_multiple`] and
 /// [`KDF::derive_key_from_multiple_out`], or by using the [`HKDF`] impl directly.
 ///
 /// Entropy tracking: this implementation will map entropy from the input keys to the output key.
-impl<H: Hash + HashAlgParams + Default, const HASH_STATE_LEN: usize, const HKDF_STATE_LEN: usize>
-    KDF for HKDF<H, HASH_STATE_LEN, HKDF_STATE_LEN>
+impl<H: HMACParams, const HASH_STATE_LEN: usize, const HKDF_STATE_LEN: usize> KDF
+    for HKDF<H, HASH_STATE_LEN, HKDF_STATE_LEN>
 {
     /// This invokes [`HKDF::extract_and_expand_out`] with a zero salt and using the provided key as ikm.
     /// This provides a fixed-length output, which may be truncated as needed.
@@ -674,43 +778,24 @@ impl<H: Hash + HashAlgParams + Default, const HASH_STATE_LEN: usize, const HKDF_
         additional_input: &[u8],
         output_key: &mut impl KeyMaterialTrait,
     ) -> Result<usize, KDFError> {
+        // The object's own tracker credits every key: the salt in do_extract_init and each ikm in
+        // do_extract_update_key. do_extract_final_out types the PRK from it and expand_out types
+        // the output from the PRK, so no second tracker and no override are needed here.
         let mut hkdf = Self::new();
-        let mut entropy = HkdfEntropyTracker::<H>::new();
-
-        if keys.len() >= 1 {
-            hkdf.do_extract_init(keys[0])?;
-            entropy.credit_entropy(keys[0]);
-        } else {
-            hkdf.do_extract_init(&KeyMaterial0::new())?;
-        };
-
-        if keys.len() != 0 {
-            for key in &keys[1..] {
-                hkdf.do_extract_update_bytes(key.ref_to_bytes())?;
-                entropy.credit_entropy(*key);
+        match keys.split_first() {
+            Some((salt, ikms)) => {
+                hkdf.do_extract_init(*salt)?;
+                for ikm in ikms {
+                    hkdf.do_extract_update_key(*ikm)?;
+                }
+            }
+            None => {
+                hkdf.do_extract_init(&KeyMaterial0::new())?;
             }
         }
         let mut prk = KeyMaterial::<MAX_HMAC_OUTPUT_LEN>::new();
         _ = hkdf.do_extract_final_out(&mut prk)?;
-        let bytes_written =
-            Self::expand_out(&prk, additional_input, output_key.capacity(), output_key)?;
-
-        do_hazardous_operations(output_key, |output_key| {
-            output_key.set_key_type(entropy.get_output_key_type())?;
-            output_key.set_security_strength(
-                min(
-                    &SecurityStrength::from_bytes(output_key.key_len()),
-                    &entropy.security_strength,
-                )
-                .clone(),
-            )
-        })?;
-
-        Ok(bytes_written)
-    }
-
-    fn max_security_strength(&self) -> SecurityStrength {
-        H::default().max_security_strength()
+        Self::expand_out(&prk, additional_input, output_key.capacity(), output_key)
     }
 }
 
@@ -739,10 +824,10 @@ impl<H: Hash + HashAlgParams + Default, const HASH_STATE_LEN: usize, const HKDF_
 /// So the total per HKDF variant is the 3-byte version header + 11 bytes of HKDF bookkeeping
 /// (present flag, state tag, entropy counter, security strength) + the inner HMAC's blob = `B + 14`,
 /// which is the relationship `HKDF_STATE_LEN == HASH_STATE_LEN + 14` asserted below.
-impl<H, const HASH_STATE_LEN: usize, const HKDF_STATE_LEN: usize> SuspendableKeyed<HKDF_STATE_LEN>
-    for HKDF<H, HASH_STATE_LEN, HKDF_STATE_LEN>
+impl<'k, H, const HASH_STATE_LEN: usize, const HKDF_STATE_LEN: usize>
+    SuspendableKeyed<'k, HKDF_STATE_LEN> for HKDF<H, HASH_STATE_LEN, HKDF_STATE_LEN>
 where
-    H: Hash + HashAlgParams + Default + Suspendable<HASH_STATE_LEN>,
+    H: HMACParams + Suspendable<HASH_STATE_LEN>,
 {
     // HMAC accepts any key material, so the key type is the trait object `dyn KeyMaterialTrait`
     // rather than a single concrete key type. The key is only used (by reference) to reload the key
@@ -760,7 +845,7 @@ where
         // The present flag, then (when present) the inner salt-keyed HMAC blob right after it.
         if let Some(hmac) = self.hmac {
             state[3] = 1; // present flag
-            state[4..4 + HASH_STATE_LEN].copy_from_slice(&hmac.suspend());
+            state[4..4 + HASH_STATE_LEN].copy_from_slice(&hmac.inner.suspend());
         }
         // else None:
         //  the presence flag = 0
@@ -777,7 +862,7 @@ where
 
     fn from_suspended(
         state: [u8; HKDF_STATE_LEN],
-        salt: &Self::Key,
+        salt: &'k Self::Key,
     ) -> Result<Self, SuspendableError> {
         debug_assert_eq!(HKDF_STATE_LEN, HASH_STATE_LEN + 14);
 
@@ -788,10 +873,11 @@ where
         let hmac = match state[3] {
             0 => None,
             // infallible: the sub-slice is exactly HASH_STATE_LEN bytes by const construction.
-            1 => Some(HMAC::<H>::from_suspended(
-                state[4..4 + HASH_STATE_LEN].try_into().unwrap(),
-                salt,
-            )?),
+            1 => Some(HkdfExtract {
+                key: HmacKey::<H>::from_key_material_allow_weak(salt)
+                    .map_err(|_| SuspendableError::InvalidData)?,
+                inner: H::from_suspended(state[4..4 + HASH_STATE_LEN].try_into().unwrap())?,
+            }),
             _ => return Err(SuspendableError::InvalidData),
         };
 
@@ -805,11 +891,27 @@ where
             return Err(SuspendableError::InvalidData);
         }
 
-        // infallible: the sub-slice is exactly 8 bytes by const construction.
-        let entropy =
-            u64::from_le_bytes(state[5 + HASH_STATE_LEN..13 + HASH_STATE_LEN].try_into().unwrap())
-                as usize;
+        // infallible: the sub-slice is exactly 8 bytes by const construction. The counter is
+        // refused rather than truncated where `usize` is narrower than the encoding.
+        let entropy = bounded_usize(
+            u64::from_le_bytes(state[5 + HASH_STATE_LEN..13 + HASH_STATE_LEN].try_into().unwrap()),
+            usize::MAX,
+        )?;
         let security_strength = SecurityStrength::try_from(state[13 + HASH_STATE_LEN])?;
+        // The bookkeeping is checked against what this type writes: the label never exceeds the
+        // hash's cap (credit_entropy applies it), and a state that has not been initialized
+        // carries no entropy and no strength (new() has none). Otherwise a state whose two
+        // bookkeeping bytes were edited would label a PRK derived from nothing as full-entropy
+        // material at a strength the hash cannot give. A state past Uninitialized whose entropy
+        // and strength were edited within the cap still resumes with that label: whether a key
+        // was credited is not recorded in the state, so the rule cannot be tighter than the cap
+        // without a new state field (2026-11-04 verification, P190-hkdf-1).
+        if security_strength > HkdfEntropyTracker::<H>::MAX_STRENGTH
+            || (hkdf_state == HkdfStates::Uninitialized
+                && (entropy != 0 || security_strength != SecurityStrength::None))
+        {
+            return Err(SuspendableError::InvalidData);
+        }
 
         Ok(HKDF {
             hmac,

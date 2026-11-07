@@ -1,11 +1,11 @@
 //! Generic behaviour tests for anything that implements [`KEMEncapsulator`] and [`KEMDecapsulator`].
 
-use crate::FixedSeedRNG;
 use bouncycastle_core::errors::KEMError;
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{
     KEMDecapsulator, KEMEncapsulator, KEMPrivateKey, KEMPublicKey, RNG,
 };
+use bouncycastle_rng::FixedSeedRNG;
 
 /// Instance of the test framework.
 pub struct TestFrameworkKEM {

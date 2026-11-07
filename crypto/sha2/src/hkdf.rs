@@ -186,20 +186,17 @@
 //!
 //! | Object                                            | Size (bytes) |
 //! |---------------------------------------------------|--------------|
-//! | `HKDF_SHA256`                                     | 296          |
-//! | `HKDF_SHA384`                                     | 392          |
-//! | `HKDF_SHA512`                                     | 392          |
+//! | `HKDF_SHA256`                                     | 368          |
+//! | `HKDF_SHA384`                                     | 656          |
+//! | `HKDF_SHA512`                                     | 656          |
 //! | Suspended `HKDF_SHA256` state                     | 122          |
 //! | Suspended `HKDF_SHA384` state                     | 218          |
 //! | Suspended `HKDF_SHA512` state                     | 218          |
 //!
-//! The object is an `Option` of the inner extract-phase HMAC -- 272 bytes for SHA-256, 368 for
-//! SHA-384 and SHA-512 -- plus 24 bytes of bookkeeping (the entropy counter, the accumulated security strength
-//! and the state-machine tag, with padding). Note that the inner HMAC is written as `HMAC<H>`, which
-//! takes the *default* key buffer length: the largest block length across all supported hashes
-//! (144 bytes) rather than the 64 or 128 that SHA-256 and SHA-512 actually need. So the inner
-//! `HMAC<SHA256>` is 264 bytes where the published [`crate::hmac::HMAC_SHA256`] is 184, and an
-//! `HKDF_SHA256` is correspondingly larger than the HMAC it is built on.
+//! The object is an `Option` of the inner extract-phase HMAC -- 224 bytes for SHA-256, 416 for
+//! SHA-384 and SHA-512, each two hash states -- plus the bookkeeping (the entropy counter, the
+//! accumulated security strength and the state-machine tag, with padding); the `Option` is
+//! niche-filled for SHA-256 and not for the larger pair, hence the uneven step.
 //!
 //! The suspended state is the inner HMAC's suspended state (which is the hash's) plus 14 bytes; the
 //! salt is deliberately excluded and must be re-supplied on resume.
@@ -208,7 +205,9 @@
 //!
 //! * Resuming a suspended HKDF with a different salt cannot be detected and silently produces a
 //!   different PRK; see the suspend/resume section above.
-//! * Entropy is only credited for input supplied via [`HKDF::do_extract_update_key`]. Bytes supplied
+//! * Entropy is only credited for input supplied via [`HKDF::do_extract_update_key`], and for a salt
+//!   typed [`bouncycastle_core::key_material::KeyType::MACKey`] (a secret salt); any other salt is RFC
+//!   5869's non-secret value and credits nothing. Bytes supplied
 //!   via [`HKDF::do_extract_update_bytes`] are treated as uncredited context, so a PRK derived only
 //!   from raw bytes will not be tagged as full-entropy key material even if those bytes were in fact
 //!   random.
@@ -216,8 +215,8 @@
 //!   does not create entropy: asking for 200 bytes of output from a 128-bit seed yields 200 bytes at
 //!   a 128-bit security level, not a 1600-bit key.
 //! * RFC 5869 Section 3.1 recommends a random salt where one is available; SP 800-56Cr2 permits an
-//!   all-zero salt. An all-zero salt is not a [`KeyType::MACKey`], so it needs
-//!   `MAC::new_allow_weak_key` semantics -- which is exactly what the extract phase does internally.
+//!   all-zero salt. An all-zero salt is below any HMAC's strength, so it needs the HMAC key's
+//!   `from_key_material_allow_weak` -- which is exactly what the extract phase does internally.
 use crate::hmac::{
     SUSPENDED_HMAC_SHA256_STATE_LEN, SUSPENDED_HMAC_SHA384_STATE_LEN,
     SUSPENDED_HMAC_SHA512_STATE_LEN,
@@ -235,12 +234,18 @@ use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{KDF, SuspendableKeyed, XOF};
 
 /*** String constants ***/
-///
+/// The name of HKDF over SHA-224, for `HMACParams::HKDF_ALG_NAME`.
+pub const HKDF_SHA224_NAME: &str = "HKDF-SHA224";
+/// The name of HKDF over SHA-256, for `HMACParams::HKDF_ALG_NAME`.
 pub const HKDF_SHA256_NAME: &str = "HKDF-SHA256";
-///
+/// The name of HKDF over SHA-384, for `HMACParams::HKDF_ALG_NAME`.
 pub const HKDF_SHA384_NAME: &str = "HKDF-SHA384";
-///
+/// The name of HKDF over SHA-512, for `HMACParams::HKDF_ALG_NAME`.
 pub const HKDF_SHA512_NAME: &str = "HKDF-SHA512";
+/// The name of HKDF over SHA-512/224, for `HMACParams::HKDF_ALG_NAME`.
+pub const HKDF_SHA512_224_NAME: &str = "HKDF-SHA512/224";
+/// The name of HKDF over SHA-512/256, for `HMACParams::HKDF_ALG_NAME`.
+pub const HKDF_SHA512_256_NAME: &str = "HKDF-SHA512/256";
 
 /*** Serialized-state length constants ***/
 // HKDF wraps the inner extract-phase HMAC's blob in 14 bytes of its own bookkeeping (a 3-byte library

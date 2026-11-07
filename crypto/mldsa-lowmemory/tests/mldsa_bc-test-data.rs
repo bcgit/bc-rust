@@ -12,8 +12,11 @@ use bouncycastle_core::errors::SignatureError;
 use bouncycastle_core::hazmat::do_hazardous_operations;
 use bouncycastle_core::key_material::{KeyMaterial256, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
+use bouncycastle_core::signature_key::{
+    DeterministicPreHashSigningKey, PreHashVerifyingKey, VerifyingKey,
+};
 use bouncycastle_core::traits::{
-    Hash, SignaturePrivateKey, SignaturePublicKey, SignatureVerifier, XOF, XOFSqueezer,
+    Hash, HashOneShot, SignaturePrivateKey, SignaturePublicKey, XOF, XOFSqueezer,
 };
 use bouncycastle_core_test_framework::test_data_loaders::bc_test_data;
 use bouncycastle_hex as hex;
@@ -21,11 +24,12 @@ use bouncycastle_mldsa_lowmemory::mldsa::{
     MLDSA44_FULL_SK_LEN, MLDSA65_FULL_SK_LEN, MLDSA87_FULL_SK_LEN,
 };
 use bouncycastle_mldsa_lowmemory::{
-    HashMLDSA44_with_SHA512, HashMLDSA65_with_SHA512, HashMLDSA87_with_SHA512, MLDSA44,
-    MLDSA44_PK_LEN, MLDSA44_SK_LEN, MLDSA44PrivateKey, MLDSA44PublicKey, MLDSA65, MLDSA65_PK_LEN,
-    MLDSA65_SK_LEN, MLDSA65PrivateKey, MLDSA65PublicKey, MLDSA87, MLDSA87_PK_LEN, MLDSA87_SK_LEN,
-    MLDSA87PrivateKey, MLDSA87PublicKey, MLDSAPrivateKeyTrait, MLDSAPublicKeyTrait, MLDSATrait,
+    MLDSA44, MLDSA44_PK_LEN, MLDSA44_SK_LEN, MLDSA44PrivateKey, MLDSA44PublicKey, MLDSA65,
+    MLDSA65_PK_LEN, MLDSA65_SK_LEN, MLDSA65PrivateKey, MLDSA65PublicKey, MLDSA87, MLDSA87_PK_LEN,
+    MLDSA87_SK_LEN, MLDSA87PrivateKey, MLDSA87PublicKey, MLDSAPrivateKeyTrait, MLDSAPublicKeyTrait,
+    MLDSATrait, MuBuilder,
 };
+use bouncycastle_rng::FixedSeedRNG;
 use bouncycastle_sha2::SHA512;
 use bouncycastle_sha3::SHAKE256;
 
@@ -260,28 +264,21 @@ impl SigGenTestCase {
     fn run(&self) {
         assert_eq!(self.mode, "sigGen");
 
-        let rnd = if self.deterministic {
-            [0u8; 32]
-        } else {
-            hex::decode(&self.rnd).unwrap().as_slice().try_into().unwrap()
-        };
-
         match self.parameter_set.as_str() {
             "ML-DSA-44" => {
                 let sk = MLDSA44PrivateKey::from_bytes(&hex::decode(&self.sk).unwrap()).unwrap();
 
-                // note: a sign_mu_deterministic() is being exposed, but not sign_deterministic()
-                // so it is necessary to manually compute mu
-                // let mu = MLDSA44::compute_mu_from_tr(
-                //     &hex::decode(&self.message).unwrap(),
-                //     None,
-                //     sk.tr(),
-                // ).unwrap();
+                // The vector is for the internal interface, so mu is built without the ctx framing.
                 let mut mb = BustedMuBuilder::do_init(&sk.tr()).unwrap();
                 mb.do_update(&hex::decode(&self.message).unwrap());
                 let mu = mb.do_final();
 
-                let sig = MLDSA44::sign_mu_deterministic(&sk, &mu, rnd).unwrap();
+                let sig = if self.deterministic {
+                    sk.sign_mu_deterministic(&mu).unwrap()
+                } else {
+                    sk.sign_mu(&mu, &mut FixedSeedRNG::new(&hex::decode(&self.rnd).unwrap()))
+                        .unwrap()
+                };
                 assert_eq!(
                     &sig,
                     &*hex::decode(&self.signature).unwrap(),
@@ -295,35 +292,33 @@ impl SigGenTestCase {
             "ML-DSA-65" => {
                 let sk = MLDSA65PrivateKey::from_bytes(&hex::decode(&self.sk).unwrap()).unwrap();
 
-                // note: a sign_mu_deterministic() is being exposed, but not sign_deterministic()
-                // so it is necessary to manually compute mu
-                // let mu = MLDSA65::compute_mu_from_tr(
-                //     &hex::decode(&self.message).unwrap(),
-                //     None,
-                //     sk.tr(),
-                // ).unwrap();
+                // The vector is for the internal interface, so mu is built without the ctx framing.
                 let mut mb = BustedMuBuilder::do_init(&sk.tr()).unwrap();
                 mb.do_update(&hex::decode(&self.message).unwrap());
                 let mu = mb.do_final();
 
-                let sig = MLDSA65::sign_mu_deterministic(&sk, &mu, rnd).unwrap();
+                let sig = if self.deterministic {
+                    sk.sign_mu_deterministic(&mu).unwrap()
+                } else {
+                    sk.sign_mu(&mu, &mut FixedSeedRNG::new(&hex::decode(&self.rnd).unwrap()))
+                        .unwrap()
+                };
                 assert_eq!(&sig, &*hex::decode(&self.signature).unwrap());
             }
             "ML-DSA-87" => {
                 let sk = MLDSA87PrivateKey::from_bytes(&hex::decode(&self.sk).unwrap()).unwrap();
 
-                // note: a sign_mu_deterministic() is being exposed, but not sign_deterministic()
-                // so it is necessary to manually compute mu
-                // let mu = MLDSA87::compute_mu_from_tr(
-                //     &hex::decode(&self.message).unwrap(),
-                //     None,
-                //     sk.tr(),
-                // ).unwrap();
+                // The vector is for the internal interface, so mu is built without the ctx framing.
                 let mut mb = BustedMuBuilder::do_init(&sk.tr()).unwrap();
                 mb.do_update(&hex::decode(&self.message).unwrap());
                 let mu = mb.do_final();
 
-                let sig = MLDSA87::sign_mu_deterministic(&sk, &mu, rnd).unwrap();
+                let sig = if self.deterministic {
+                    sk.sign_mu_deterministic(&mu).unwrap()
+                } else {
+                    sk.sign_mu(&mu, &mut FixedSeedRNG::new(&hex::decode(&self.rnd).unwrap()))
+                        .unwrap()
+                };
                 assert_eq!(&sig, &*hex::decode(&self.signature).unwrap());
             }
             val => panic!("Invalid parameter set: {}", val),
@@ -434,7 +429,7 @@ impl SigVerTestCase {
                 .unwrap();
                 let sig =
                     hex::decode(&self.signature).unwrap().try_into().expect("signature length");
-                match MLDSA44::verify_mu(&pk, &mu, &sig) {
+                match pk.verify_mu(&mu, &sig) {
                     Ok(()) => {
                         if !self.test_passed {
                             panic!("Verification succeeded when it shouldn't have!")
@@ -461,7 +456,7 @@ impl SigVerTestCase {
                 .unwrap();
                 let sig =
                     hex::decode(&self.signature).unwrap().try_into().expect("signature length");
-                match MLDSA65::verify_mu(&pk, &mu, &sig) {
+                match pk.verify_mu(&mu, &sig) {
                     Ok(()) => {
                         if self.test_passed { /* good */
                         } else {
@@ -487,7 +482,7 @@ impl SigVerTestCase {
                 .unwrap();
                 let sig =
                     hex::decode(&self.signature).unwrap().try_into().expect("signature length");
-                match MLDSA87::verify_mu(&pk, &mu, &sig) {
+                match pk.verify_mu(&mu, &sig) {
                     Ok(()) => {
                         if self.test_passed { /* good */
                         } else {
@@ -643,8 +638,10 @@ impl<const IS_HASH_MLDSA: bool> MldsaRspTestCase<IS_HASH_MLDSA> {
         if self.no_context {
             BustedMuBuilder::compute_mu(&msg, tr).unwrap()
         } else {
-            MLDSA65::compute_mu_from_tr(tr, &msg, Some(&hex::decode(&self.context).unwrap()))
-                .unwrap()
+            let mut mb =
+                MuBuilder::from_tr(tr, Some(&hex::decode(&self.context).unwrap())).unwrap();
+            mb.do_update(&msg);
+            mb.do_final()
         }
     }
 
@@ -673,38 +670,36 @@ impl<const IS_HASH_MLDSA: bool> MldsaRspTestCase<IS_HASH_MLDSA> {
 
                 if IS_HASH_MLDSA {
                     // we're only testing SHA512
-                    let ph: [u8; 64] = SHA512::new()
-                        .hash(&hex::decode(&self.msg).unwrap())
+                    let ph: [u8; 64] = SHA512::hash(&hex::decode(&self.msg).unwrap())
                         .as_slice()
                         .try_into()
                         .unwrap();
                     assert_eq!(ph, &*hex::decode(&self.message_hash).unwrap());
 
-                    let sig = HashMLDSA44_with_SHA512::sign_ph_deterministic(
-                        &sk,
-                        Some(&*hex::decode(&self.context).unwrap()),
-                        &ph,
-                        [0u8; 32],
-                    )
-                    .unwrap();
+                    let sig = sk
+                        .sign_ph_deterministic::<SHA512>(
+                            &ph,
+                            Some(&*hex::decode(&self.context).unwrap()),
+                        )
+                        .unwrap();
                     assert_eq!(sig, &*hex::decode(&self.sm).unwrap());
 
-                    HashMLDSA44_with_SHA512::verify(
-                        &pk,
-                        &*hex::decode(&self.msg).unwrap(),
+                    pk.verify_ph::<SHA512>(
+                        &SHA512::hash(&hex::decode(&self.msg).unwrap()),
                         Some(&*hex::decode(&self.context).unwrap()),
                         &sig,
                     )
-                    .expect(&format!(
-                        "paramSet: {}, is_hash: {}, count: {}",
-                        parameter_set, IS_HASH_MLDSA, self.count
-                    ));
+                    .unwrap_or_else(|_| {
+                        panic!(
+                            "paramSet: {}, is_hash: {}, count: {}",
+                            parameter_set, IS_HASH_MLDSA, self.count
+                        )
+                    });
                 } else {
-                    // note: we're exposing a sign_mu_deterministic(), but not sign_deterministic()
-                    // so need to manually compute mu
+                    // The vector is for the internal interface, so mu is built without the ctx framing.
                     let mu = self.mu(&sk.tr());
 
-                    let sig = MLDSA44::sign_mu_deterministic(&sk, &mu, [0u8; 32]).unwrap();
+                    let sig = sk.sign_mu_deterministic(&mu).unwrap();
                     assert_eq!(
                         sig,
                         &*hex::decode(&self.sm).unwrap(),
@@ -714,10 +709,9 @@ impl<const IS_HASH_MLDSA: bool> MldsaRspTestCase<IS_HASH_MLDSA> {
                     );
 
                     if self.no_context {
-                        MLDSA44::verify_mu(&pk, &mu, &sig)
+                        pk.verify_mu(&mu, &sig)
                     } else {
-                        MLDSA44::verify(
-                            &pk,
+                        pk.verify(
                             &hex::decode(&self.msg).unwrap(),
                             Some(&hex::decode(&self.context).unwrap()),
                             &sig,
@@ -749,45 +743,42 @@ impl<const IS_HASH_MLDSA: bool> MldsaRspTestCase<IS_HASH_MLDSA> {
 
                 if IS_HASH_MLDSA {
                     // we're only testing SHA512
-                    let ph: [u8; 64] = SHA512::new()
-                        .hash(&hex::decode(&self.msg).unwrap())
+                    let ph: [u8; 64] = SHA512::hash(&hex::decode(&self.msg).unwrap())
                         .as_slice()
                         .try_into()
                         .unwrap();
                     assert_eq!(ph, &*hex::decode(&self.message_hash).unwrap());
 
-                    let sig = HashMLDSA65_with_SHA512::sign_ph_deterministic(
-                        &sk,
-                        Some(&*hex::decode(&self.context).unwrap()),
-                        &ph,
-                        [0u8; 32],
-                    )
-                    .unwrap();
+                    let sig = sk
+                        .sign_ph_deterministic::<SHA512>(
+                            &ph,
+                            Some(&*hex::decode(&self.context).unwrap()),
+                        )
+                        .unwrap();
                     assert_eq!(sig, &*hex::decode(&self.sm).unwrap());
 
-                    HashMLDSA65_with_SHA512::verify(
-                        &pk,
-                        &*hex::decode(&self.msg).unwrap(),
+                    pk.verify_ph::<SHA512>(
+                        &SHA512::hash(&hex::decode(&self.msg).unwrap()),
                         Some(&*hex::decode(&self.context).unwrap()),
                         &sig,
                     )
-                    .expect(&format!(
-                        "paramSet: {}, isHash: {}, count: {}",
-                        parameter_set, IS_HASH_MLDSA, self.count
-                    ));
+                    .unwrap_or_else(|_| {
+                        panic!(
+                            "paramSet: {}, isHash: {}, count: {}",
+                            parameter_set, IS_HASH_MLDSA, self.count
+                        )
+                    });
                 } else {
-                    // note: we're exposing a sign_mu_deterministic(), but not sign_deterministic()
-                    // so need to manually compute mu
+                    // The vector is for the internal interface, so mu is built without the ctx framing.
                     let mu = self.mu(&sk.tr());
 
-                    let sig = MLDSA65::sign_mu_deterministic(&sk, &mu, [0u8; 32]).unwrap();
+                    let sig = sk.sign_mu_deterministic(&mu).unwrap();
                     assert_eq!(sig, &*hex::decode(&self.sm).unwrap());
 
                     if self.no_context {
-                        MLDSA65::verify_mu(&pk, &mu, &sig)
+                        pk.verify_mu(&mu, &sig)
                     } else {
-                        MLDSA65::verify(
-                            &pk,
+                        pk.verify(
                             &hex::decode(&self.msg).unwrap(),
                             Some(&hex::decode(&self.context).unwrap()),
                             &sig,
@@ -819,42 +810,37 @@ impl<const IS_HASH_MLDSA: bool> MldsaRspTestCase<IS_HASH_MLDSA> {
 
                 if IS_HASH_MLDSA {
                     // we're only testing SHA512
-                    let ph: [u8; 64] = SHA512::new()
-                        .hash(&hex::decode(&self.msg).unwrap())
+                    let ph: [u8; 64] = SHA512::hash(&hex::decode(&self.msg).unwrap())
                         .as_slice()
                         .try_into()
                         .unwrap();
                     assert_eq!(ph, &*hex::decode(&self.message_hash).unwrap());
 
-                    let sig = HashMLDSA87_with_SHA512::sign_ph_deterministic(
-                        &sk,
-                        Some(&*hex::decode(&self.context).unwrap()),
-                        &ph,
-                        [0u8; 32],
-                    )
-                    .unwrap();
+                    let sig = sk
+                        .sign_ph_deterministic::<SHA512>(
+                            &ph,
+                            Some(&*hex::decode(&self.context).unwrap()),
+                        )
+                        .unwrap();
                     assert_eq!(sig, &*hex::decode(&self.sm).unwrap());
 
-                    HashMLDSA87_with_SHA512::verify(
-                        &pk,
-                        &*hex::decode(&self.msg).unwrap(),
+                    pk.verify_ph::<SHA512>(
+                        &SHA512::hash(&hex::decode(&self.msg).unwrap()),
                         Some(&*hex::decode(&self.context).unwrap()),
                         &sig,
                     )
                     .unwrap();
                 } else {
-                    // note: we're exposing a sign_mu_deterministic(), but not sign_deterministic()
-                    // so need to manually compute mu
+                    // The vector is for the internal interface, so mu is built without the ctx framing.
                     let mu = self.mu(&sk.tr());
 
-                    let sig = MLDSA87::sign_mu_deterministic(&sk, &mu, [0u8; 32]).unwrap();
+                    let sig = sk.sign_mu_deterministic(&mu).unwrap();
                     assert_eq!(sig, &*hex::decode(&self.sm).unwrap());
 
                     if self.no_context {
-                        MLDSA87::verify_mu(&pk, &mu, &sig)
+                        pk.verify_mu(&mu, &sig)
                     } else {
-                        MLDSA87::verify(
-                            &pk,
+                        pk.verify(
                             &hex::decode(&self.msg).unwrap(),
                             Some(&hex::decode(&self.context).unwrap()),
                             &sig,
@@ -878,7 +864,7 @@ impl BustedMuBuilder {
     /// Algorithm 7
     /// 6: 𝜇 ← H(BytesToBits(𝑡𝑟)||𝑀′, 64)
     pub fn compute_mu(msg: &[u8], tr: &[u8; 64]) -> Result<[u8; 64], SignatureError> {
-        let mut mu_builder = Self::do_init(&tr)?;
+        let mut mu_builder = Self::do_init(tr)?;
         mu_builder.do_update(msg);
         let mu = mu_builder.do_final();
 

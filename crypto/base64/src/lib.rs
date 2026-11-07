@@ -109,6 +109,14 @@ pub enum Base64Error {
 
     /// Input contained a character that was not in the base64 alphabet. The index of the illegal character is included in the output.
     InvalidB64Character(usize),
+
+    /// Padding where the data cannot end, or something other than the rest of the padding (and,
+    /// when whitespace is skipped, whitespace) after it. The index of the offending character in
+    /// the input to [`Base64Decoder::do_final`] is included.
+    InvalidPadding(usize),
+
+    /// The input ended one symbol into a block: six bits, which encode no whole byte.
+    TruncatedInput,
 }
 
 /// The stateful base64 encoder that supports streaming.
@@ -255,14 +263,16 @@ impl Base64Decoder {
     /// Streaming API that performs Base64 encoding of the provided input, but does not apply
     /// the final padding and will hold an incomplete block while waiting for more input.
     pub fn do_update<T: AsRef<[u8]>>(&mut self, input: T) -> Result<Vec<u8>, Base64Error> {
-        self.decode_internal(input, true)
+        self.decode_internal(input, true).map(|(out, _)| out)
     }
 
+    /// Decodes up to the first padding character, returning the output and, if there was one, the
+    /// padding character's index.
     fn decode_internal<T: AsRef<[u8]>>(
         &mut self,
         input: T,
         rollback_if_padding: bool,
-    ) -> Result<Vec<u8>, Base64Error> {
+    ) -> Result<(Vec<u8>, Option<usize>), Base64Error> {
         // copy the current state so that we can restore it if we encounter a padding character.
         let starting_state: [u8; 4] = self.buf.clone();
         let starting_vals_in_block: usize = self.vals_in_buf;
@@ -296,7 +306,7 @@ impl Base64Decoder {
                     self.vals_in_buf = starting_vals_in_block;
                     return Err(Base64Error::PaddingEncounteredDuringDoUpdate);
                 }
-                return Ok(out);
+                return Ok((out, Some(i)));
             }
 
             i += 1;
@@ -313,34 +323,58 @@ impl Base64Decoder {
             }
         }
 
-        Ok(out)
+        Ok((out, None))
     }
 
     /// As can be expected, do_final() consumes the object.
+    ///
+    /// Missing padding is tolerated, but padding must come where the data can end, after two or
+    /// three symbols of a block, and may be followed only by the rest of that padding (and
+    /// whitespace, when it is skipped): anything else is [`Base64Error::InvalidPadding`]. Input
+    /// ending one symbol into a block is [`Base64Error::TruncatedInput`].
     pub fn do_final<T: AsRef<[u8]>>(mut self, input: T) -> Result<Vec<u8>, Base64Error> {
+        let input = input.as_ref();
         // process as much as we can the usual way.
-        let mut out = match self.decode_internal(input, false) {
-            Ok(out) => out,
+        let (mut out, pad_at) = match self.decode_internal(input, false) {
+            Ok(decoded) => decoded,
             Err(Base64Error::PaddingEncounteredDuringDoUpdate) => {
-                panic!(
+                unreachable!(
                     "rollback_if_padding = false should not produce a Base64Error::PaddingEncounteredDuringDoUpdate"
                 );
             }
             Err(e) => return Err(e),
         };
 
-        // now, a single block containing padding remains to be dealt with.
-        if self.vals_in_buf != 0 {
-            // be tolerant of missing padding
-            // if it is not a complete block at the end, the infer the byte count from the number of leftover symbols
-            let pad_count: u8 = 3 - (self.vals_in_buf as u8 - 1);
-
-            out.push(self.buf[0] << 2 | self.buf[1] >> 4);
-            if pad_count != 2 {
-                out.push(self.buf[1] << 4 | self.buf[2] >> 2);
+        // RFC 4648 Section 4: a final quantum of 8 bits is two symbols and "==", of 16 bits three
+        // symbols and "=". Section 3.3: implementations "MUST reject the encoded data if it
+        // contains characters outside the base alphabet", which includes anything after the
+        // padding, such as a second message.
+        if let Some(pad_at) = pad_at {
+            let pads_due = match self.vals_in_buf {
+                2 => 2,
+                3 => 1,
+                _ => return Err(Base64Error::InvalidPadding(pad_at)),
+            };
+            let mut pads = 0;
+            for (offset, &c) in input[pad_at..].iter().enumerate() {
+                // Only padding and whitespace may follow, both public, so branching is fine.
+                match Self::ct_b64_to_bin(c) {
+                    0x81 if pads < pads_due => pads += 1,
+                    0x80 if self.skip_whitespace => {}
+                    _ => return Err(Base64Error::InvalidPadding(pad_at + offset)),
+                }
             }
-            if pad_count == 0 {
-                out.push(self.buf[2] << 6 | self.buf[3]);
+        }
+
+        // now, a single block containing padding remains to be dealt with.
+        match self.vals_in_buf {
+            0 => {}
+            // Six bits encode no whole byte.
+            1 => return Err(Base64Error::TruncatedInput),
+            2 => out.push(self.buf[0] << 2 | self.buf[1] >> 4),
+            _ => {
+                out.push(self.buf[0] << 2 | self.buf[1] >> 4);
+                out.push(self.buf[1] << 4 | self.buf[2] >> 2);
             }
         }
 

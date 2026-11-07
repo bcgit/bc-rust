@@ -23,7 +23,7 @@ pub const CSHAKE256_NAME: &str = "CSHAKE256";
 /// Length in bytes of the suspended state of cSHAKE.
 pub const SUSPENDED_CSHAKE_STATE_LEN: usize = LIB_VERSION_LEN + CSHAKE_COMPONENT_LEN;
 /// Length in bytes of the suspended state of a [`CSHAKESqueezer`].
-pub const SUSPENDED_LENGTH_BOUND_SQUEEZER_STATE_LEN: usize = SUSPENDED_CSHAKE_STATE_LEN;
+pub const SUSPENDED_CSHAKE_SQUEEZER_STATE_LEN: usize = SUSPENDED_CSHAKE_STATE_LEN;
 /// The cSHAKE state without its version header: the SHA3-family state, then one byte saying
 /// whether `N` or `S` was non-empty. The functions built on cSHAKE write this first, under their
 /// own tag, and their own fields after it.
@@ -200,7 +200,7 @@ impl<PARAMS: SHAKEParams> CSHAKEInternal<PARAMS> {
     }
 }
 
-impl<PARAMS: SHAKEParams> SuspendableComponent for CSHAKEInternal<PARAMS> {
+impl<'k, PARAMS: SHAKEParams> SuspendableComponent<'k> for CSHAKEInternal<PARAMS> {
     const STATE_LEN: usize = CSHAKE_COMPONENT_LEN;
     type Key = ();
 
@@ -208,7 +208,7 @@ impl<PARAMS: SHAKEParams> SuspendableComponent for CSHAKEInternal<PARAMS> {
         self.write_tagged(PARAMS::CSHAKE_STATE_TAG, out)
     }
 
-    fn read_state(state: &[u8], _key: &()) -> Result<Self, SuspendableError> {
+    fn read_state(state: &[u8], _key: &'k ()) -> Result<Self, SuspendableError> {
         Self::read_tagged(state, PARAMS::CSHAKE_STATE_TAG)
     }
 }
@@ -239,16 +239,6 @@ impl<PARAMS: SHAKEParams> Hash for CSHAKEInternal<PARAMS> {
 
     fn output_len(&self) -> usize {
         self.shake.output_len()
-    }
-
-    fn hash(mut self, data: &[u8]) -> Vec<u8> {
-        self.do_update(data);
-        self.do_final()
-    }
-
-    fn hash_out(mut self, data: &[u8], output: &mut [u8]) -> usize {
-        self.do_update(data);
-        self.do_final_out(output)
     }
 
     fn do_update(&mut self, data: &[u8]) {
@@ -299,10 +289,6 @@ impl<PARAMS: SHAKEParams> Hash for CSHAKEInternal<PARAMS> {
         let written = n.min(output.len());
         output[written..].fill(0);
         Ok(squeezer.do_output_final_out(&mut output[..written]))
-    }
-
-    fn max_security_strength(&self) -> SecurityStrength {
-        Hash::max_security_strength(&self.shake)
     }
 }
 
@@ -356,24 +342,21 @@ pub(crate) fn left_encode(value: u64) -> ([u8; MAX_ENCODED_LEN], usize) {
     let n = value_bytes(value);
     buf[0] = n as u8;
     // Steps 2-4: the base-256 digits of value, most significant first.
-    for i in 0..n {
-        buf[1 + i] = (value >> (8 * (n - 1 - i))) as u8;
+    for (i, digit) in buf[1..=n].iter_mut().enumerate() {
+        *digit = (value >> (8 * (n - 1 - i))) as u8;
     }
     (buf, n + 1)
 }
 
 /// `right_encode(x)`: SP 800-185 Sec 2.3.1.
 ///
-/// Unused until KMAC and TupleHash land, which bind the requested output length with it.
-///
 /// As [`left_encode`], but the length byte comes *last*, so the encoding can be parsed from the end
 /// of a string. The spec's example: `right_encode(0)` is the bytes `00 01`.
-#[allow(dead_code)] // used by KMAC and TupleHash
 pub(crate) fn right_encode(value: u64) -> ([u8; MAX_ENCODED_LEN], usize) {
     let mut buf = [0u8; MAX_ENCODED_LEN];
     let n = value_bytes(value);
-    for i in 0..n {
-        buf[i] = (value >> (8 * (n - 1 - i))) as u8;
+    for (i, digit) in buf[..n].iter_mut().enumerate() {
+        *digit = (value >> (8 * (n - 1 - i))) as u8;
     }
     buf[n] = n as u8;
     (buf, n + 1)
@@ -470,12 +453,12 @@ impl<PARAMS: SHAKEParams> CSHAKESqueezer<PARAMS> {
 
 /// Both phases suspend. The sponge's own phase flag records which, so the state is the cSHAKE
 /// layout under one tag, and a resumed `Unbound` squeezer still has its first read to make.
-impl<PARAMS: SHAKEParams> SuspendableComponent for CSHAKESqueezer<PARAMS> {
+impl<'k, PARAMS: SHAKEParams> SuspendableComponent<'k> for CSHAKESqueezer<PARAMS> {
     const STATE_LEN: usize = CSHAKE_COMPONENT_LEN;
     type Key = ();
 
     fn write_state(&self, out: &mut [u8]) {
-        let tag = PARAMS::LENGTH_BOUND_SQUEEZER_STATE_TAG;
+        let tag = PARAMS::CSHAKE_SQUEEZER_STATE_TAG;
         match &self.phase {
             Phase::Unbound(cshake) => cshake.write_tagged(tag, out),
             Phase::Squeezing(squeezer) => {
@@ -490,12 +473,10 @@ impl<PARAMS: SHAKEParams> SuspendableComponent for CSHAKESqueezer<PARAMS> {
         }
     }
 
-    fn read_state(state: &[u8], _key: &()) -> Result<Self, SuspendableError> {
+    fn read_state(state: &[u8], _key: &'k ()) -> Result<Self, SuspendableError> {
         let (family, rest) = state.split_at(SHA3_FAMILY_STATE_LEN);
-        let shake = SHAKEInternal::<PARAMS>::read_family_state(
-            family,
-            PARAMS::LENGTH_BOUND_SQUEEZER_STATE_TAG,
-        )?;
+        let shake =
+            SHAKEInternal::<PARAMS>::read_family_state(family, PARAMS::CSHAKE_SQUEEZER_STATE_TAG)?;
         let mut r = Cursor::new(rest);
         if r.u8() != 1 {
             return Err(SuspendableError::InvalidData);
@@ -510,15 +491,15 @@ impl<PARAMS: SHAKEParams> SuspendableComponent for CSHAKESqueezer<PARAMS> {
     }
 }
 
-impl<PARAMS: SHAKEParams> Suspendable<SUSPENDED_LENGTH_BOUND_SQUEEZER_STATE_LEN>
+impl<PARAMS: SHAKEParams> Suspendable<SUSPENDED_CSHAKE_SQUEEZER_STATE_LEN>
     for CSHAKESqueezer<PARAMS>
 {
-    fn suspend(self) -> [u8; SUSPENDED_LENGTH_BOUND_SQUEEZER_STATE_LEN] {
+    fn suspend(self) -> [u8; SUSPENDED_CSHAKE_SQUEEZER_STATE_LEN] {
         suspend_component(&self)
     }
 
     fn from_suspended(
-        state: [u8; SUSPENDED_LENGTH_BOUND_SQUEEZER_STATE_LEN],
+        state: [u8; SUSPENDED_CSHAKE_SQUEEZER_STATE_LEN],
     ) -> Result<Self, SuspendableError> {
         resume_component(&state, &())
     }
@@ -547,6 +528,22 @@ impl<PARAMS: SHAKEParams> XOFSqueezer for CSHAKESqueezer<PARAMS> {
     /// is already in the sponge and this just continues that stream.
     fn do_output_final_out(mut self, output: &mut [u8]) -> usize {
         self.read((output.len() as u64) * 8, output)
+    }
+}
+
+impl<PARAMS: SHAKEParams> CSHAKEInternal<PARAMS> {
+    /// One-shot: hashes `data` with this instance's parameters.
+    /// [`HashOneShot`](bouncycastle_core::traits::HashOneShot) is for the hashes
+    /// that take none; here the parameters come with the instance, so the one-shot is a method.
+    pub fn hash(mut self, data: &[u8]) -> Vec<u8> {
+        self.do_update(data);
+        self.do_final()
+    }
+
+    /// As [`Self::hash`], into `output`, which is zeroized first; returns the bytes written.
+    pub fn hash_out(mut self, data: &[u8], output: &mut [u8]) -> usize {
+        self.do_update(data);
+        self.do_final_out(output)
     }
 }
 

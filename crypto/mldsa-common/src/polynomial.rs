@@ -1,0 +1,465 @@
+//! A polynomial over the ML-DSA ring, with the NTT and the coefficient-wise operations of
+//! FIPS 204 Section 7, and reduction modulo 𝑞.
+
+use crate::aux_functions::{high_bits, low_bits, make_hint, use_hint};
+use crate::params::{GAMMA2_Q_MINUS_1_OVER_32, GAMMA2_Q_MINUS_1_OVER_88, MLDSAParamsBase};
+use crate::{N, d, q, q_inv};
+use bouncycastle_utils::secret::ZeroizablePrimitive;
+use core::ops::{Index, IndexMut};
+
+/// A polynomial over the ML-DSA ring.
+///
+/// # 🚨 Security Considerations 🚨
+/// Polynomials themselves are not inherently secret since sometimes they are part of public keys
+/// and sometimes private keys.
+/// It is the responsibility of the caller to wrap sensitive instances in `Secret<Polynomial>`.
+///
+/// `coeffs` is public because the two ML-DSA crates build their vector types and key encodings
+/// on it; outside them a `Polynomial` is an opaque handle.
+#[derive(Clone, Copy)]
+pub struct Polynomial {
+    /// The 256 coefficients, 𝑤0 … 𝑤255.
+    pub coeffs: [i32; N],
+}
+
+/// Convenience function to avoid ".0" all over the place.
+impl Index<usize> for Polynomial {
+    type Output = i32;
+
+    fn index(&self, index: usize) -> &Self::Output {
+        &self.coeffs[index]
+    }
+}
+/// Convenience function to avoid ".0" all over the place.
+impl IndexMut<usize> for Polynomial {
+    fn index_mut(&mut self, index: usize) -> &mut Self::Output {
+        &mut self.coeffs[index]
+    }
+}
+
+impl Default for Polynomial {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl Polynomial {
+    /// Create a new polynomial with all coefficients set to zero.
+    pub const fn new() -> Self {
+        Self { coeffs: [0i32; N] }
+    }
+
+    /// Adds 𝑞 to every negative coefficient.
+    pub fn conditional_add_q(&mut self) {
+        for x in self.coeffs.iter_mut() {
+            *x = conditional_add_q(*x);
+        }
+    }
+
+    /// Montgomery-reduces every coefficient.
+    pub fn reduce(&mut self) {
+        for i in 0..N {
+            self[i] = montgomery_reduce(self[i] as i64);
+        }
+    }
+
+    /// Reduces every coefficient to |𝑐| < 𝑞 without changing its residue. See [`reduce32`] for when
+    /// this is required; note that [`Self::reduce`] is a *Montgomery* reduction and is not a substitute.
+    pub fn reduce32(&mut self) {
+        for x in self.coeffs.iter_mut() {
+            *x = reduce32(*x);
+        }
+    }
+
+    /// Algorithm 44 AddNTT(𝑎, 𝑏)̂
+    /// Computes the sum a + 𝑏 of two elements 𝑎, 𝑏 ∈ 𝑇𝑞.
+    /// Note: result could be up to 2q.
+    pub fn add_ntt(&mut self, w: &Self) {
+        for i in 0..N {
+            self[i] += w[i];
+        }
+    }
+
+    /// Subtracts `w` coefficient by coefficient.
+    pub fn sub(&mut self, w: &Self) {
+        for i in 0..N {
+            self[i] -= w[i];
+        }
+    }
+
+    /// Algorithm 45 MultiplyNTT(𝑎, 𝑏)̂, in place: `self` becomes 𝑠𝑒𝑙𝑓 ∘̂ 𝑏.
+    /// See [`multiply_ntt`] for the form that returns a new polynomial.
+    pub fn multiply_ntt(&mut self, b: &Polynomial) {
+        for i in 0..N {
+            self[i] = montgomery_reduce((self[i] as i64) * (b[i] as i64));
+        }
+    }
+
+    /// Algorithm 37 HighBits(𝑟) applied to every coefficient, in place.
+    pub fn high_bits_inplace<P: MLDSAParamsBase>(&mut self) {
+        for i in 0..N {
+            self[i] = high_bits::<P>(self[i]);
+        }
+    }
+
+    /// Algorithm 38 LowBits(𝑟) applied to every coefficient, in place.
+    pub fn low_bits_inplace<P: MLDSAParamsBase>(&mut self) {
+        for i in 0..N {
+            self[i] = low_bits::<P>(self[i]);
+        }
+    }
+
+    /// Algorithm 37 HighBits(𝑟) applied to every coefficient, leaving `self` as it was.
+    #[must_use]
+    pub fn high_bits<P: MLDSAParamsBase>(&self) -> Self {
+        let mut w = *self;
+        w.high_bits_inplace::<P>();
+        w
+    }
+
+    /// Algorithm 38 LowBits(𝑟) applied to every coefficient, leaving `self` as it was.
+    #[must_use]
+    pub fn low_bits<P: MLDSAParamsBase>(&self) -> Self {
+        let mut w = *self;
+        w.low_bits_inplace::<P>();
+        w
+    }
+
+    /// Tests whether any coefficient has absolute value at least `bound`.
+    ///
+    /// `bound` is a runtime argument rather than a const generic because every call site passes a
+    /// value derived from the parameter set (𝛾1 − 𝛽, 𝛾2 − 𝛽, or 𝛾2), and an associated const of a
+    /// type parameter cannot be used as a const generic argument. It is still a constant after
+    /// monomorphization, so this costs nothing.
+    pub fn check_norm(&self, bound: i32) -> bool {
+        // Note: this formulation of the check_norm function usually requires this bounds check
+        //  if bound > (q - 1) / 8 {
+        //     return true;
+        //  }
+        // but since every caller passes a parameter-set constant, a debug_assert is performed
+        // instead to make sure the value is what we expect.
+        debug_assert!(bound <= (q - 1) / 8);
+
+        // Branch-free: the early return of the reference implementation reveals only that a
+        // candidate was rejected, but also the index of the first coefficient over the bound,
+        // a position-dependent fact about the rejected y + c*s1. |x| < 2^31 - 1 and bound > 0, so
+        // `bound - 1 - t` cannot overflow and is negative exactly when t >= bound.
+        let mut acc: i32 = 0;
+        for x in self.coeffs.iter() {
+            let t = *x - ((*x >> 31) & (2 * *x));
+            acc |= (bound - 1 - t) >> 31;
+        }
+        acc != 0
+    }
+
+    /// Multiplies every coefficient by 2^𝑑.
+    ///
+    /// 𝑑 is 13 for all three parameter sets (FIPS 204, Table 1), so it is read from the global
+    /// constant rather than being passed in.
+    pub fn shift_left_d(&mut self) {
+        for x in self.coeffs.iter_mut() {
+            *x <<= d;
+        }
+    }
+
+    /// The hint polynomial of `self` = LowBits(w - cs2) + ct0 against `r` = HighBits(w), coefficient
+    /// by coefficient (see [`make_hint`]), and its Hamming weight (the number of 1's).
+    pub fn make_hint<P: MLDSAParamsBase>(&self, r: &Self) -> (Self, i32) {
+        let mut out = Polynomial::new();
+        let mut count = 0i32;
+        for i in 0..N {
+            let x = make_hint::<P>(self[i], r[i]);
+            out[i] = x;
+
+            // mutants note: this chains up to hint_hamming_weight > OMEGA and there is no test KAT that triggers this branch
+            count += x;
+        }
+
+        (out, count)
+    }
+
+    /// Algorithm 40 UseHint(ℎ, 𝑟) applied coefficient by coefficient, in place: `self` is
+    /// 𝐰'_approx on entry and 𝐰1' on return.
+    pub fn use_hint<P: MLDSAParamsBase>(&mut self, h: &Polynomial) {
+        for i in 0..N {
+            self[i] = use_hint::<P>(self[i], h[i]);
+        }
+    }
+
+    /// SimpleBitPack(𝐰1[𝑖], (𝑞 − 1)/(2𝛾2) − 1), the per-coordinate body of
+    /// FIPS 204, Algorithm 28 (w1Encode), line 3.
+    ///
+    /// The coefficient width is bitlen ((𝑞 − 1)/(2𝛾2) − 1), which is 6 bits for 𝛾2 = (𝑞 − 1)/88 and
+    /// 4 bits for 𝛾2 = (𝑞 − 1)/32, so there is one packing layout per distinct 𝛾2 rather than one
+    /// per parameter set. `P::gamma2` is a constant after monomorphization, so only the matching
+    /// arm survives.
+    pub fn w1_encode<P: MLDSAParamsBase>(&self) -> P::PolyW1Packed {
+        // A scope-local output buffer rather than a caller-supplied one: measured roughly an order
+        // of magnitude faster, presumably because the compiler keeps the intermediate values in
+        // registers once it can see the buffer does not escape, and the peak memory is the same.
+        let mut out = <P::PolyW1Packed as ZeroizablePrimitive>::ZEROED;
+        let r = out.as_mut();
+
+        match P::gamma2 {
+            // ML-DSA-44: (𝑞 − 1)/(2𝛾2) − 1 = 43, so four 6-bit coefficients pack into three bytes.
+            GAMMA2_Q_MINUS_1_OVER_88 => {
+                for i in 0..N / 4 {
+                    r[3 * i] = ((self[4 * i]) as u8) | ((self[4 * i + 1] << 6) as u8);
+                    r[3 * i + 1] = ((self[4 * i + 1] >> 2) as u8) | ((self[4 * i + 2] << 4) as u8);
+                    r[3 * i + 2] = ((self[4 * i + 2] >> 4) as u8) | ((self[4 * i + 3] << 2) as u8);
+                }
+            }
+            // ML-DSA-65 and ML-DSA-87 share this 𝛾2: (𝑞 − 1)/(2𝛾2) − 1 = 15, so two 4-bit
+            // coefficients pack into one byte.
+            GAMMA2_Q_MINUS_1_OVER_32 => {
+                for i in 0..N / 2 {
+                    r[i] = ((self[2 * i]) | (self[2 * i + 1] << 4)) as u8;
+                }
+            }
+            _ => {
+                unreachable!()
+            }
+        }
+
+        out
+    }
+
+    /// Algorithm 41 NTT(𝑤)
+    /// Computes the NTT.
+    /// Input: Polynomial 𝑤(𝑋) = Σ_{j=0}^{255} 𝑤𝑗𝑋𝑗 ∈ 𝑅𝑞.
+    /// Output: 𝑤_hat = (𝑤_hat\[0], ..., 𝑤_hat\[255]) ∈ 𝑇𝑞.
+    ///
+    /// Note: by convention, variables holding the output of the NTT function should be named "_hat"
+    /// to indicate that they are in the NTT domain (sometimes called the frequency domain), not the natural domain.
+    /// Usage of the rust type system to enforce this is arguably unnecessary, since that's what the NIST
+    /// test vectors are for.
+    ///
+    /// The transform is done in place.
+    ///
+    /// Lazy reduction: the butterfly omits an explicit reduction modulo `q`
+    /// This is safe only because ‖input‖∞ ≤ q-1 (i.e. intermediates stay below ~5q
+    /// (well within i32) and the input of montgomery_reduce input stays below q·2^{31}) and
+    /// the final result is reduced downstream.
+    pub fn ntt(&mut self) {
+        let mut m: usize = 0;
+        let mut len: usize = 128;
+
+        while len >= 1 {
+            let mut start: usize = 0;
+            while start < N {
+                m += 1;
+                let z: i32 = ZETAS[m];
+
+                for j in start..start + len {
+                    let t = montgomery_reduce(z as i64 * self[j + len] as i64);
+                    // '% q' not strictly needed cause it gets reduced at some point later.
+                    // Removing it gave +5% in benchmarking
+                    self[j + len] = self[j] - t;
+                    self[j] += t; // '% q' not strictly needed
+                }
+                start += 2 * len;
+            }
+            len >>= 1;
+        }
+    }
+
+    /// Algorithm 42 NTT−1(𝑤_hat)
+    /// Computes the inverse of the NTT.
+    /// Input: 𝑤_hat = (𝑤_hat[0], … , 𝑤_hat[255]) ∈ 𝑇𝑞.
+    /// Output: Polynomial 𝑤(𝑋) = Σ_{j=0}^{255} 𝑤𝑗𝑋𝑗 ∈ 𝑅𝑞
+    pub fn inv_ntt(&mut self) {
+        // A core input condition on the InverseNTT is that every input
+        // coefficient must satisfy |𝑤| < 𝑞 for the sums to stay within an i32.
+        // The reason this is required is because Algorithm 42's butterflies (steps 13-14)
+        // run 8 levels without reducing, leading to an i32 overflow if the input was out-of-range.
+        // Callers must pass them through `reduce32` first.
+        // Note that only a crafted input, such as (Wycheproof mldsa_87_verify tcId 240/241) will trigger this.
+        debug_assert!(
+            self.coeffs.iter().all(|c| c.abs() < q),
+            "inv_ntt input coefficient not reduced below q; call reduce32() first"
+        );
+
+        let mut m: usize = N;
+        let mut len: usize = 1;
+
+        while len < N {
+            let mut start: usize = 0;
+            while start < N {
+                m -= 1;
+                let z = -ZETAS[m];
+
+                // j = start;
+                // while j < start + len {
+                for j in start..start + len {
+                    // 𝑡 ← 𝑤𝑗
+                    let t: i32 = self[j];
+
+                    // 𝑤𝑗 ← (𝑡 + 𝑤𝑗+𝑙𝑒𝑛) mod 𝑞
+                    self[j] = t + self[j + len];
+
+                    // 𝑤𝑗+𝑙𝑒𝑛 ← (𝑡 − 𝑤𝑗+𝑙𝑒𝑛) mod 𝑞
+                    self[j + len] = t - self[j + len];
+
+                    // 𝑤𝑗+𝑙𝑒𝑛 ← (𝑧 ⋅ 𝑤𝑗+𝑙𝑒𝑛) mod 𝑞
+                    self[j + len] = montgomery_reduce(z as i64 * self[j + len] as i64);
+                }
+                start += 2 * len;
+                // could be optimized to save the multiply-by-two since j finishes as `start + len`.
+                // That said 2* is just << 1, which is basically free.
+            }
+            len <<= 1;
+        }
+
+        // Final 1/256 normalization, in Montgomery form to match the montgomery_reduce
+        // bookkeeping used by every butterfly above (each contributes a 2^-32 factor).
+        // Note: f != 256^-1 mod q = 8347681. That value is only correct
+        // applied as a plain multiply (FIPS 204 Alg 42: w_j <- f * w_j mod q).
+        // Here we apply f via montgomery_reduce(f * w_j), so the constant is the
+        // Montgomery-domain form:  f = mont^2 / 256 mod q = 41978,  mont = 2^32 mod q.
+        // Do NOT substitute 8347681, as it is invalid through montgomery_reduce.
+        const f: i64 = 41978;
+        for j in 0..N {
+            // equiv. to the global constant N
+            self[j] = montgomery_reduce(f * self[j] as i64);
+        }
+    }
+}
+
+/// Algorithm 45 MultiplyNTT(𝑎, 𝑏)̂
+/// Computes the product 𝑎 ∘̂ 𝑏 of two elements 𝑎, 𝑏 ∈ 𝑇𝑞.
+/// Input: 𝑎, 𝑏 ∈ 𝑇𝑞.
+/// Output: 𝑐 ∈ 𝑇𝑞.
+/// Multiply the coefficients in this polynomial by those in another polynomial and perform montgomery reduction.
+/// Also called pointwise Montgomery multiplication. See [`Polynomial::multiply_ntt`] for the in-place form.
+pub fn multiply_ntt(a: &Polynomial, b: &Polynomial) -> Polynomial {
+    let mut out = *a;
+    out.multiply_ntt(b);
+    out
+}
+
+/// FIPS 204 Algorithm 49
+/// As described in FIPS 204 Appendix A, montgomery reduction allows for efficient computation
+/// of expressions of the form c = a * b (mod q).
+/// The output is not necessarily less than q in absolute value, but it is less than 2q in absolute value
+pub fn montgomery_reduce(a: i64) -> i32 {
+    debug_assert!(a > -((q as i64) << 31) && a < ((q as i64) << 31));
+
+    // 2: 𝑡 ← ((𝑎 mod 2^32) ⋅ QINV) mod 2^32
+    let t: i32 = (a as i32).wrapping_mul(q_inv);
+
+    // 3: 𝑟 ← (𝑎 − 𝑡 ⋅ 𝑞)/2^32
+    ((a - ((t as i64) * (q as i64))) >> 32) as i32
+}
+
+/// Adds 𝑞 to a negative coefficient, so that one in (−𝑞, 𝑞) lands in [0, 𝑞).
+pub fn conditional_add_q(a: i32) -> i32 {
+    a + ((a >> 31) & q)
+}
+
+/// Plain (non-Montgomery) reduction: for 𝑎 ≤ 2^31 − 2^22 − 1 returns 𝑟 ≡ 𝑎 (mod 𝑞) with |𝑟| ≤ 6283008 < 𝑞.
+/// `reduce32` in the reference implementation (pq-crystals/dilithium, ref/reduce.c).
+///
+/// This is not in FIPS 204 since it assumes all arithmetic is done mod q.
+/// In this implementation, sums of Montgomery products are left unreduced, but `inv_ntt` (Algorithm 42)
+/// needs |input| < 𝑞 to stay within an `i32`, so this is applied to those sums first. Omitting it before
+/// the verifier's NTT⁻¹ is exploitable (<https://eprint.iacr.org/2026/1032>, Wycheproof mldsa_87_verify tcId 240/241).
+pub fn reduce32(a: i32) -> i32 {
+    // The reference implementation's stated input bound; above it `a + 2^22` overflows.
+    debug_assert!(a <= i32::MAX - (1 << 22));
+    let t = (a + (1 << 22)) >> 23;
+    a - t * q
+}
+
+/// Constants for NTT
+pub const ZETAS: [i32; N] = [
+    0, 25847, -2608894, -518909, 237124, -777960, -876248, 466468, 1826347, 2353451, -359251,
+    -2091905, 3119733, -2884855, 3111497, 2680103, 2725464, 1024112, -1079900, 3585928, -549488,
+    -1119584, 2619752, -2108549, -2118186, -3859737, -1399561, -3277672, 1757237, -19422, 4010497,
+    280005, 2706023, 95776, 3077325, 3530437, -1661693, -3592148, -2537516, 3915439, -3861115,
+    -3043716, 3574422, -2867647, 3539968, -300467, 2348700, -539299, -1699267, -1643818, 3505694,
+    -3821735, 3507263, -2140649, -1600420, 3699596, 811944, 531354, 954230, 3881043, 3900724,
+    -2556880, 2071892, -2797779, -3930395, -1528703, -3677745, -3041255, -1452451, 3475950,
+    2176455, -1585221, -1257611, 1939314, -4083598, -1000202, -3190144, -3157330, -3632928, 126922,
+    3412210, -983419, 2147896, 2715295, -2967645, -3693493, -411027, -2477047, -671102, -1228525,
+    -22981, -1308169, -381987, 1349076, 1852771, -1430430, -3343383, 264944, 508951, 3097992,
+    44288, -1100098, 904516, 3958618, -3724342, -8578, 1653064, -3249728, 2389356, -210977, 759969,
+    -1316856, 189548, -3553272, 3159746, -1851402, -2409325, -177440, 1315589, 1341330, 1285669,
+    -1584928, -812732, -1439742, -3019102, -3881060, -3628969, 3839961, 2091667, 3407706, 2316500,
+    3817976, -3342478, 2244091, -2446433, -3562462, 266997, 2434439, -1235728, 3513181, -3520352,
+    -3759364, -1197226, -3193378, 900702, 1859098, 909542, 819034, 495491, -1613174, -43260,
+    -522500, -655327, -3122442, 2031748, 3207046, -3556995, -525098, -768622, -3595838, 342297,
+    286988, -2437823, 4108315, 3437287, -3342277, 1735879, 203044, 2842341, 2691481, -2590150,
+    1265009, 4055324, 1247620, 2486353, 1595974, -3767016, 1250494, 2635921, -3548272, -2994039,
+    1869119, 1903435, -1050970, -1333058, 1237275, -3318210, -1430225, -451100, 1312455, 3306115,
+    -1962642, -1279661, 1917081, -2546312, -1374803, 1500165, 777191, 2235880, 3406031, -542412,
+    -2831860, -1671176, -1846953, -2584293, -3724270, 594136, -3776993, -2013608, 2432395, 2454455,
+    -164721, 1957272, 3369112, 185531, -1207385, -3183426, 162844, 1616392, 3014001, 810149,
+    1652634, -3694233, -1799107, -3038916, 3523897, 3866901, 269760, 2213111, -975884, 1717735,
+    472078, -426683, 1723600, -1803090, 1910376, -1667432, -1104333, -260646, -3833893, -2939036,
+    -2235985, -420899, -2286327, 183443, -976891, 1612842, -3545687, -554416, 3919660, -48306,
+    -1362209, 3937738, 1400424, -846154, 1976782,
+];
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_conditional_add_q() {
+        assert_eq!(conditional_add_q(-q - 1), -1);
+        assert_eq!(conditional_add_q(-q), 0);
+        assert_eq!(conditional_add_q(-q - 2), -2);
+        assert_eq!(conditional_add_q(-q + 1), 1);
+        assert_eq!(conditional_add_q(-1), q - 1);
+        assert_eq!(conditional_add_q(0), 0);
+        assert_eq!(conditional_add_q(1), 1);
+        assert_eq!(conditional_add_q(q - 1), q - 1);
+        assert_eq!(conditional_add_q(q), q);
+        assert_eq!(conditional_add_q(q + 1), q + 1);
+    }
+
+    #[test]
+    fn test_reduce32() {
+        // congruent to the input mod q, and within the reference implementation's stated output range
+        for &a in &[
+            0,
+            1,
+            -1,
+            q - 1,
+            q,
+            q + 1,
+            -q,
+            -q - 1,
+            8 * q,
+            -8 * q,
+            6283008,
+            -6283008,
+            i32::MIN,
+            i32::MAX - (1 << 22),
+        ] {
+            let r = reduce32(a);
+            assert!((-6283008..=6283008).contains(&r), "reduce32({a}) = {r} out of range");
+            assert_eq!(
+                (r as i64 - a as i64).rem_euclid(q as i64),
+                0,
+                "reduce32({a}) = {r} not congruent"
+            );
+            assert!(r.abs() < q);
+        }
+        // the largest sum inv_ntt may see: (l + 1) products each in (-q, q), for l = 7
+        assert!(reduce32(8 * q - 8).abs() < q);
+        assert!(reduce32(-(8 * q - 8)).abs() < q);
+    }
+
+    #[test]
+    fn test_montgomery_reduce_is_a_times_2_pow_minus_32() {
+        // Algorithm 49: the output is congruent to 𝑎 ⋅ 2^(−32) mod 𝑞 and lies in (−𝑞, 𝑞).
+        const MONT: i64 = (1i64 << 32) % q as i64;
+        for &a in &[0i64, 1, -1, q as i64 - 1, -(q as i64), 123456789012, -987654321098] {
+            let r = montgomery_reduce(a);
+            assert!(r.abs() < q, "montgomery_reduce({a}) = {r} out of range");
+            // r * 2^32 ≡ a  (mod q)
+            assert_eq!((r as i64 * MONT - a).rem_euclid(q as i64), 0, "montgomery_reduce({a})");
+        }
+    }
+}

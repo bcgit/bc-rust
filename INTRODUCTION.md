@@ -114,7 +114,7 @@ pub type SHAKE128 = SHAKE<SHAKE128Params>;
 pub type SHAKE256 = SHAKE<SHAKE256Params>;
 ```
 
-so that in the end `SHA3_256::new().hash(&data)` just does what you expect. The "If it compiles, then it's safe"
+so that in the end `SHA3_256::hash(&data)` just does what you expect. The "If it compiles, then it's safe"
 paradigm is, however, still somewhat aspirational and not a total _fait accompli_, and as the library matures, we will
 continue to find ways to refine our type system to turn ever more runtime error conditions into compile-time conditions.
 
@@ -256,11 +256,13 @@ the `core-interface` sub-crate.
 
 Next up will be to round out the set of cryptographic primitives:
 
-* Block ciphers (AES)
-* Signatures (Ed25519, Ed448, ML-DSA, SLH-DSA)
-* Key Establishment (X25519, X448, ML-KEM)
+* Block ciphers (AES, ARIA, Camellia, SM4)
+* Signatures (Ed25519, Ed448, ML-DSA, SLH-DSA, ECDSA, RSA)
+* Key Establishment (X25519, X448, ML-KEM, ECDH)
 
-(yes, you have noticed that RSA, ECDSA and ECDH are not on the list. I suppose we could, but we'd really rather not.)
+(an earlier draft of this list left out RSA, ECDSA and ECDH on purpose; there has been a change of heart, and they
+are being implemented on the same terms as everything else: fixed-width constant-time arithmetic, no runtime-described
+parameters.)
 
 After that, we'll tackle in some kind of order (depending on public interest and funding):
 

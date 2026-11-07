@@ -9,5 +9,8 @@
 pub mod errors;
 pub mod hazmat;
 pub mod key_material;
+mod provided;
 pub mod security_strength;
+pub mod signature_key;
+pub mod symmetric_key;
 pub mod traits;

@@ -16,6 +16,10 @@ name = "bench_mlkem_mem_usage"
 path = "src/bench_mlkem_mem_usage.rs"
 
 [[bin]]
+name = "bench_sha2_mem_usage"
+path = "src/bench_sha2_mem_usage.rs"
+
+[[bin]]
 name = "bench_sha3_mem_usage"
 path = "src/bench_sha3_mem_usage.rs"
 
@@ -28,9 +32,45 @@ name = "bench_ccm_mem_usage"
 path = "src/bench_ccm_mem_usage.rs"
 
 [[bin]]
+name = "bench_ecdsa_mem_usage"
+path = "src/bench_ecdsa_mem_usage.rs"
+
+[[bin]]
+name = "bench_sm2_mem_usage"
+path = "src/bench_sm2_mem_usage.rs"
+
+[[bin]]
 name = "bench_ascon_mem_usage"
 path = "src/bench_ascon_mem_usage.rs"
 
 [[bin]]
 name = "bench_x25519_mem_usage"
 path = "src/bench_x25519_mem_usage.rs"
+
+[[bin]]
+name = "bench_sm4_mem_usage"
+path = "src/bench_sm4_mem_usage.rs"
+
+[[bin]]
+name = "bench_camellia_mem_usage"
+path = "src/bench_camellia_mem_usage.rs"
+
+[[bin]]
+name = "bench_aria_mem_usage"
+path = "src/bench_aria_mem_usage.rs"
+
+[[bin]]
+name = "bench_sm3_mem_usage"
+path = "src/bench_sm3_mem_usage.rs"
+
+[[bin]]
+name = "bench_chacha20_mem_usage"
+path = "src/bench_chacha20_mem_usage.rs"
+
+[[bin]]
+name = "bench_poly1305_mem_usage"
+path = "src/bench_poly1305_mem_usage.rs"
+
+[[bin]]
+name = "bench_chacha20_poly1305_mem_usage"
+path = "src/bench_chacha20_poly1305_mem_usage.rs"

@@ -120,10 +120,13 @@ test_key_file_accepts_binary_hex_and_a_trailing_newline() {
     "$BC_RUST" aes128-cfb -d encrypt --key-file "$TMP/key.bin" <"$TMP/pt" >"$TMP/ct"
 
     local form
-    for form in key.hex key.hex.nl key.bin.nl; do
-        "$BC_RUST" aes128-cfb -d decrypt --key-file "$TMP/$form" <"$TMP/ct" >"$TMP/rec"
+    # The hex forms need --hex-input: a key file is raw bytes unless the flag says otherwise.
+    for form in key.hex key.hex.nl; do
+        "$BC_RUST" --hex-input aes128-cfb -d decrypt --key-file "$TMP/$form" <"$TMP/ct" >"$TMP/rec"
         assert_same "$TMP/pt" "$TMP/rec" "$form must load as the same key as key.bin"
     done
+    "$BC_RUST" aes128-cfb -d decrypt --key-file "$TMP/key.bin.nl" <"$TMP/ct" >"$TMP/rec"
+    assert_same "$TMP/pt" "$TMP/rec" "key.bin.nl must load as the same key as key.bin"
 }
 
 test_key_on_the_command_line_matches_the_key_file() {

@@ -1,0 +1,399 @@
+//! The three ML-DSA parameter sets of FIPS 204, Section 4, as a sealed trait with one type per set.
+//!
+//! [`MLDSAParamsBase`] holds what both ML-DSA crates read from a parameter set: the values of
+//! Table 1 and Table 2, the algorithm metadata, and the byte-buffer types whose length they fix.
+//! Each crate extends it with a trait of its own for the types only it needs (the vector and matrix
+//! types in `bouncycastle-mldsa`, the packed-vector buffers in `bouncycastle-mldsa-lowmemory`), and
+//! implements that extension for the three marker types defined here.
+//!
+//! # Derived parameters
+//!
+//! FIPS 204, Table 1 assigns eight independent values per set (𝜏, 𝜆, 𝛾1, 𝛾2, (𝑘, ℓ), 𝜂, 𝜔) plus the
+//! three sizes of Table 2. Everything else the implementations need is a function of those, so it
+//! is written once as a defaulted associated const rather than three times as a hand-computed
+//! number. `params::tests` checks every derivation against the values tabulated in FIPS 204.
+
+use crate::{ML_DSA_44_NAME, ML_DSA_65_NAME, ML_DSA_87_NAME, q};
+use bouncycastle_core::security_strength::SecurityStrength;
+use bouncycastle_utils::secret::ZeroizablePrimitive;
+
+/// `bitlen 𝑥`, the length of the binary expansion of 𝑥 (FIPS 204, Section 2.3).
+///
+/// `bitlen 0` is 0; every use below has a positive argument.
+pub const fn bitlen(x: u32) -> usize {
+    if x == 0 { 0 } else { x.ilog2() as usize + 1 }
+}
+
+/// A fixed-size byte buffer whose length depends on the parameter set.
+///
+/// [`ZeroizablePrimitive`] rather than [`Default`] supplies the all-zero value, because `Default`
+/// for arrays stops at 32 elements and every buffer here is longer than that.
+pub trait ByteBuffer: ZeroizablePrimitive + AsRef<[u8]> + AsMut<[u8]> {}
+impl<const N: usize> ByteBuffer for [u8; N] {}
+
+mod sealed {
+    /// Prevents a new ML-DSA parameter set from being defined outside this crate: the three
+    /// marker types below are the only implementations, here and in the crates that extend
+    /// [`super::MLDSAParamsBase`].
+    pub trait Sealed {}
+}
+
+/// One ML-DSA parameter set: the values of FIPS 204, Table 1 and Table 2, and the byte buffers
+/// whose size they determine.
+///
+/// Sealed, so [`MLDSA44Params`], [`MLDSA65Params`] and [`MLDSA87Params`] are the only
+/// implementations.
+pub trait MLDSAParamsBase: sealed::Sealed {
+    /* FIPS 204, Table 1: the values assigned by each parameter set. */
+
+    /// 𝜏, the number of ±1's in the polynomial 𝑐.
+    const tau: i32;
+    /// 𝜆, the collision strength of 𝑐̃, in bits.
+    const lambda: i32;
+    /// 𝛾1, the coefficient range of 𝐲. Always a power of two.
+    const gamma1: i32;
+    /// 𝛾2, the low-order rounding range.
+    const gamma2: i32;
+    /// 𝑘, the number of rows of 𝐀.
+    const k: usize;
+    /// ℓ, the number of columns of 𝐀.
+    const l: usize;
+    /// 𝜂, the private key range.
+    const eta: usize;
+    /// 𝜔, the maximum number of 1's in the hint 𝐡.
+    const omega: i32;
+
+    /* FIPS 204, Table 2: sizes in bytes of keys and signatures. */
+
+    /// The length of an encoded public key.
+    const PK_LEN: usize;
+    /// The length of the FIPS 204 encoding of a private key, the output of Algorithm 24 (skEncode).
+    ///
+    /// Named `FULL_SK_LEN` because a crate may store a private key in another form (the 32-byte
+    /// seed 𝜉, in `bouncycastle-mldsa-lowmemory`) and reserve `SK_LEN` for what it stores.
+    const FULL_SK_LEN: usize;
+    /// The length of a signature.
+    const SIG_LEN: usize;
+
+    /* Algorithm meta-data */
+
+    /// The algorithm name, as reported by `Algorithm::ALG_NAME`.
+    const ALG_NAME: &'static str;
+    /// The strength claimed for this parameter set, as reported by `Algorithm::MAX_SECURITY_STRENGTH`.
+    const MAX_SECURITY_STRENGTH: SecurityStrength;
+    /// The OID in component form, as reported by `AlgorithmOID::OID`.
+    const OID: &'static [u32];
+    /// The DER encoding of [`MLDSAParamsBase::OID`], as reported by `AlgorithmOID::OID_DER`.
+    const OID_DER: &'static [u8];
+
+    /* Derived. Never written out per parameter set -- see the module docs. */
+
+    /// 𝛽, which FIPS 204, Table 1 defines as "𝛽 = 𝜏 ⋅ 𝜂".
+    const beta: i32 = Self::tau * Self::eta as i32;
+
+    /// The length of the commitment hash 𝑐̃, which FIPS 204, Algorithm 26 (sigEncode) gives as
+    /// 𝑐̃ ∈ 𝔹^(𝜆/4).
+    const C_TILDE_LEN: usize = Self::lambda as usize / 4;
+
+    /// The packed length of one coordinate of 𝐳: FIPS 204, Algorithm 26 (sigEncode) writes each of
+    /// the ℓ coordinates as 𝔹^(32⋅(1+bitlen (𝛾1−1))).
+    ///
+    /// This is also the number of bytes ExpandMask squeezes per coordinate: FIPS 204,
+    /// Algorithm 34, line 1 sets 𝑐 ← 1 + bitlen (𝛾1 − 1) and line 4 squeezes 32𝑐 bytes.
+    const POLY_Z_PACKED_LEN: usize = 32 * (1 + bitlen(Self::gamma1 as u32 - 1));
+
+    /// The packed length of one coordinate of 𝐬1 or 𝐬2: FIPS 204, Algorithm 24 (skEncode), line 3
+    /// packs each with BitPack(𝐬1\[𝑖], 𝜂, 𝜂), and Algorithm 17 (BitPack) outputs
+    /// 𝔹^(32⋅bitlen (𝑎+𝑏)), so 32⋅bitlen (2𝜂).
+    const POLY_ETA_PACKED_LEN: usize = 32 * bitlen(2 * Self::eta as u32);
+
+    /// The packed length of one coordinate of 𝐰1: FIPS 204, Algorithm 28 (w1Encode) outputs
+    /// 𝔹^(32𝑘⋅bitlen ((𝑞−1)/(2𝛾2)−1)) for all 𝑘 coordinates together.
+    const POLY_W1_PACKED_LEN: usize = 32 * bitlen(((q - 1) / (2 * Self::gamma2)) as u32 - 1);
+
+    /// 𝛾1 − 𝛽, the rejection bound on ‖𝐳‖∞ (FIPS 204, Algorithm 7, line 23).
+    const gamma1_minus_beta: i32 = Self::gamma1 - Self::beta;
+
+    /// 𝛾2 − 𝛽, the rejection bound on ‖𝐫0‖∞ (FIPS 204, Algorithm 7, line 23).
+    const gamma2_minus_beta: i32 = Self::gamma2 - Self::beta;
+
+    /* Types whose size depends on the parameter set. */
+
+    /// The commitment hash 𝑐̃, of [`MLDSAParamsBase::C_TILDE_LEN`] bytes.
+    type SigCTilde: ByteBuffer;
+    /// One packed coordinate of 𝐳, of [`MLDSAParamsBase::POLY_Z_PACKED_LEN`] bytes.
+    ///
+    /// ExpandMask squeezes into a buffer of this same length; see
+    /// [`MLDSAParamsBase::POLY_Z_PACKED_LEN`].
+    type PolyZPacked: ByteBuffer;
+    /// One packed coordinate of 𝐰1, of [`MLDSAParamsBase::POLY_W1_PACKED_LEN`] bytes.
+    type PolyW1Packed: ByteBuffer;
+}
+
+/// The ML-DSA-44 parameter set (FIPS 204, Table 1).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MLDSA44Params;
+/// The ML-DSA-65 parameter set (FIPS 204, Table 1).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MLDSA65Params;
+/// The ML-DSA-87 parameter set (FIPS 204, Table 1).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MLDSA87Params;
+
+impl sealed::Sealed for MLDSA44Params {}
+impl sealed::Sealed for MLDSA65Params {}
+impl sealed::Sealed for MLDSA87Params {}
+
+impl MLDSAParamsBase for MLDSA44Params {
+    const tau: i32 = 39;
+    const lambda: i32 = 128;
+    const gamma1: i32 = 1 << 17;
+    // mutants note: because of the bitshifting, the "- 1" ends up not mattering.
+    const gamma2: i32 = (q - 1) / 88;
+    const k: usize = 4;
+    const l: usize = 4;
+    const eta: usize = 2;
+    const omega: i32 = 80;
+
+    const PK_LEN: usize = 1312;
+    const FULL_SK_LEN: usize = 2560;
+    const SIG_LEN: usize = 2420;
+
+    const ALG_NAME: &'static str = ML_DSA_44_NAME;
+    const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_128bit;
+    /// Assigned by NIST in the Computer Security Objects Register: id-ml-dsa-44 { sigAlgs 17 }
+    const OID: &'static [u32] = &[2, 16, 840, 1, 101, 3, 4, 3, 17];
+    const OID_DER: &'static [u8] =
+        &[0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x03, 0x11];
+
+    type SigCTilde = [u8; 32]; // 𝜆/4 = 128/4
+    type PolyZPacked = [u8; 576]; // 32 * (1 + bitlen(2^17 - 1)) = 32 * 18
+    type PolyW1Packed = [u8; 192]; // 32 * bitlen(44 - 1) = 32 * 6
+}
+
+impl MLDSAParamsBase for MLDSA65Params {
+    const tau: i32 = 49;
+    const lambda: i32 = 192;
+    const gamma1: i32 = 1 << 19;
+    // mutants note: because of the bitshifting, the "- 1" ends up not mattering.
+    const gamma2: i32 = (q - 1) / 32;
+    const k: usize = 6;
+    const l: usize = 5;
+    const eta: usize = 4;
+    const omega: i32 = 55;
+
+    const PK_LEN: usize = 1952;
+    const FULL_SK_LEN: usize = 4032;
+    const SIG_LEN: usize = 3309;
+
+    const ALG_NAME: &'static str = ML_DSA_65_NAME;
+    const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_192bit;
+    /// Assigned by NIST in the Computer Security Objects Register: id-ml-dsa-65 { sigAlgs 18 }
+    const OID: &'static [u32] = &[2, 16, 840, 1, 101, 3, 4, 3, 18];
+    const OID_DER: &'static [u8] =
+        &[0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x03, 0x12];
+
+    type SigCTilde = [u8; 48]; // 𝜆/4 = 192/4
+    type PolyZPacked = [u8; 640]; // 32 * (1 + bitlen(2^19 - 1)) = 32 * 20
+    type PolyW1Packed = [u8; 128]; // 32 * bitlen(16 - 1) = 32 * 4
+}
+
+impl MLDSAParamsBase for MLDSA87Params {
+    const tau: i32 = 60;
+    const lambda: i32 = 256;
+    const gamma1: i32 = 1 << 19;
+    // mutants note: because of the bitshifting, the "- 1" ends up not mattering.
+    const gamma2: i32 = (q - 1) / 32;
+    const k: usize = 8;
+    const l: usize = 7;
+    const eta: usize = 2;
+    const omega: i32 = 75;
+
+    const PK_LEN: usize = 2592;
+    const FULL_SK_LEN: usize = 4896;
+    const SIG_LEN: usize = 4627;
+
+    const ALG_NAME: &'static str = ML_DSA_87_NAME;
+    const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_256bit;
+    /// Assigned by NIST in the Computer Security Objects Register: id-ml-dsa-87 { sigAlgs 19 }
+    const OID: &'static [u32] = &[2, 16, 840, 1, 101, 3, 4, 3, 19];
+    const OID_DER: &'static [u8] =
+        &[0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x03, 0x13];
+
+    type SigCTilde = [u8; 64]; // 𝜆/4 = 256/4
+    type PolyZPacked = [u8; 640]; // 32 * (1 + bitlen(2^19 - 1)) = 32 * 20
+    type PolyW1Packed = [u8; 128]; // 32 * bitlen(16 - 1) = 32 * 4
+}
+
+/// The two distinct values 𝛾1 takes across the three parameter sets (FIPS 204, Table 1).
+///
+/// The bit-packing routines have one layout per distinct 𝛾1, so they dispatch on these rather than
+/// on the parameter set. ML-DSA-65 and ML-DSA-87 share the second value.
+pub const GAMMA1_2_POW_17: i32 = MLDSA44Params::gamma1;
+/// See [`GAMMA1_2_POW_17`].
+pub const GAMMA1_2_POW_19: i32 = MLDSA65Params::gamma1;
+
+/// The two distinct values 𝛾2 takes across the three parameter sets (FIPS 204, Table 1).
+///
+/// As with 𝛾1, the routines that depend on 𝛾2 have one form per distinct value rather than one per
+/// parameter set. ML-DSA-65 and ML-DSA-87 share the second value.
+pub const GAMMA2_Q_MINUS_1_OVER_88: i32 = MLDSA44Params::gamma2;
+/// See [`GAMMA2_Q_MINUS_1_OVER_88`].
+pub const GAMMA2_Q_MINUS_1_OVER_32: i32 = MLDSA65Params::gamma2;
+
+/// The weaker of two security strengths.
+///
+/// [`SecurityStrength`]'s discriminants are assigned in increasing order of strength, so comparing
+/// them as integers orders them. A `const fn` because the strength of a HashML-DSA pairing is a
+/// defaulted associated const.
+pub const fn weaker_of(a: SecurityStrength, b: SecurityStrength) -> SecurityStrength {
+    if (a as u8) <= (b as u8) { a } else { b }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::d;
+
+    /// One row of FIPS 204 Table 1: `(tau, lambda, gamma1, gamma2, k, l, eta, omega)`.
+    type Table1Row = (i32, i32, i32, i32, usize, usize, usize, i32);
+
+    /// FIPS 204, Table 1, transcribed column by column: the eight values each parameter set
+    /// assigns.
+    const TABLE_1: [Table1Row; 3] = [
+        (39, 128, 131072, (q - 1) / 88, 4, 4, 2, 80),
+        (49, 192, 524288, (q - 1) / 32, 6, 5, 4, 55),
+        (60, 256, 524288, (q - 1) / 32, 8, 7, 2, 75),
+    ];
+
+    /// FIPS 204, Table 2, transcribed row by row: `(private key, public key, signature)` in bytes.
+    const TABLE_2: [(usize, usize, usize); 3] =
+        [(2560, 1312, 2420), (4032, 1952, 3309), (4896, 2592, 4627)];
+
+    /// FIPS 204, Table 1 also tabulates 𝛽, which it labels "𝛽 = 𝜏 ⋅ 𝜂".
+    const TABLE_1_BETA: [i32; 3] = [78, 196, 120];
+
+    fn check_table_1<P: MLDSAParamsBase>(i: usize) {
+        let (tau, lambda, gamma1, gamma2, k, l, eta, omega) = TABLE_1[i];
+        assert_eq!(P::tau, tau, "{}: 𝜏", P::ALG_NAME);
+        assert_eq!(P::lambda, lambda, "{}: 𝜆", P::ALG_NAME);
+        assert_eq!(P::gamma1, gamma1, "{}: 𝛾1", P::ALG_NAME);
+        assert_eq!(P::gamma2, gamma2, "{}: 𝛾2", P::ALG_NAME);
+        assert_eq!(P::k, k, "{}: 𝑘", P::ALG_NAME);
+        assert_eq!(P::l, l, "{}: ℓ", P::ALG_NAME);
+        assert_eq!(P::eta, eta, "{}: 𝜂", P::ALG_NAME);
+        assert_eq!(P::omega, omega, "{}: 𝜔", P::ALG_NAME);
+        assert_eq!(P::beta, TABLE_1_BETA[i], "{}: 𝛽 = 𝜏 ⋅ 𝜂", P::ALG_NAME);
+    }
+
+    fn check_table_2<P: MLDSAParamsBase>(i: usize) {
+        let (full_sk_len, pk_len, sig_len) = TABLE_2[i];
+        assert_eq!(P::FULL_SK_LEN, full_sk_len, "{}: private key size", P::ALG_NAME);
+        assert_eq!(P::PK_LEN, pk_len, "{}: public key size", P::ALG_NAME);
+        assert_eq!(P::SIG_LEN, sig_len, "{}: signature size", P::ALG_NAME);
+    }
+
+    /// Each of the three sizes of Table 2 also has a formula in FIPS 204, and the two must agree.
+    /// Table 2 is what is written down above; this is what re-derives it.
+    fn check_table_2_formulas<P: MLDSAParamsBase>() {
+        // Algorithm 22 (pkEncode): 𝑝𝑘 ∈ 𝔹^(32+32𝑘(bitlen (𝑞−1)−𝑑)).
+        let pk_len = 32 + 32 * P::k * (bitlen((q - 1) as u32) - d as usize);
+        assert_eq!(P::PK_LEN, pk_len, "{}: Algorithm 22 output size", P::ALG_NAME);
+
+        // Algorithm 24 (skEncode): 𝑠𝑘 ∈ 𝔹^(32+32+64+32⋅((𝑘+ℓ)⋅bitlen (2𝜂)+𝑑𝑘)).
+        let full_sk_len =
+            32 + 32 + 64 + 32 * ((P::k + P::l) * bitlen(2 * P::eta as u32) + d as usize * P::k);
+        assert_eq!(P::FULL_SK_LEN, full_sk_len, "{}: Algorithm 24 output size", P::ALG_NAME);
+
+        // Algorithm 26 (sigEncode): 𝜎 ∈ 𝔹^(𝜆/4+ℓ⋅32⋅(1+bitlen (𝛾1−1))+𝜔+𝑘).
+        let sig_len = P::lambda as usize / 4
+            + P::l * 32 * (1 + bitlen(P::gamma1 as u32 - 1))
+            + P::omega as usize
+            + P::k;
+        assert_eq!(P::SIG_LEN, sig_len, "{}: Algorithm 26 output size", P::ALG_NAME);
+    }
+
+    /// The associated types must be exactly as long as the consts that describe them; they are
+    /// written out by hand per parameter set, so this guards against a typo in one of them.
+    fn check_associated_type_sizes<P: MLDSAParamsBase>() {
+        for (got, want, what) in [
+            (size_of::<P::SigCTilde>(), P::C_TILDE_LEN, "SigCTilde"),
+            (size_of::<P::PolyZPacked>(), P::POLY_Z_PACKED_LEN, "PolyZPacked"),
+            (size_of::<P::PolyW1Packed>(), P::POLY_W1_PACKED_LEN, "PolyW1Packed"),
+        ] {
+            assert_eq!(got, want, "{}: {} vs its length const", P::ALG_NAME, what);
+        }
+    }
+
+    #[test]
+    fn test_parameter_sets_match_fips204_table_1() {
+        check_table_1::<MLDSA44Params>(0);
+        check_table_1::<MLDSA65Params>(1);
+        check_table_1::<MLDSA87Params>(2);
+    }
+
+    #[test]
+    fn test_sizes_match_fips204_table_2() {
+        check_table_2::<MLDSA44Params>(0);
+        check_table_2::<MLDSA65Params>(1);
+        check_table_2::<MLDSA87Params>(2);
+    }
+
+    #[test]
+    fn test_table_2_sizes_agree_with_the_encoding_formulas() {
+        check_table_2_formulas::<MLDSA44Params>();
+        check_table_2_formulas::<MLDSA65Params>();
+        check_table_2_formulas::<MLDSA87Params>();
+    }
+
+    #[test]
+    fn test_associated_types_are_the_length_their_consts_claim() {
+        check_associated_type_sizes::<MLDSA44Params>();
+        check_associated_type_sizes::<MLDSA65Params>();
+        check_associated_type_sizes::<MLDSA87Params>();
+    }
+
+    #[test]
+    fn test_bitlen_matches_its_definition() {
+        // FIPS 204 Section 2.3 defines bitlen 𝑥 as the length of the binary expansion of 𝑥.
+        assert_eq!(bitlen(0), 0);
+        assert_eq!(bitlen(1), 1);
+        assert_eq!(bitlen(2), 2);
+        assert_eq!(bitlen(3), 2);
+        assert_eq!(bitlen(4), 3);
+        // The two arguments the derivations above actually use, plus bitlen(𝑞 − 1) = 23.
+        assert_eq!(bitlen((1 << 17) - 1), 17);
+        assert_eq!(bitlen((1 << 19) - 1), 19);
+        assert_eq!(bitlen((q - 1) as u32), 23);
+    }
+
+    #[test]
+    fn test_gamma_dispatch_constants_cover_every_parameter_set() {
+        // The packing routines dispatch on these; a parameter set whose 𝛾 is neither value would
+        // fall through to a panic at runtime rather than fail to compile, so pin them here.
+        for gamma1 in [MLDSA44Params::gamma1, MLDSA65Params::gamma1, MLDSA87Params::gamma1] {
+            assert!(gamma1 == GAMMA1_2_POW_17 || gamma1 == GAMMA1_2_POW_19);
+        }
+        for gamma2 in [MLDSA44Params::gamma2, MLDSA65Params::gamma2, MLDSA87Params::gamma2] {
+            assert!(gamma2 == GAMMA2_Q_MINUS_1_OVER_88 || gamma2 == GAMMA2_Q_MINUS_1_OVER_32);
+        }
+        assert_ne!(GAMMA1_2_POW_17, GAMMA1_2_POW_19);
+        assert_ne!(GAMMA2_Q_MINUS_1_OVER_88, GAMMA2_Q_MINUS_1_OVER_32);
+    }
+
+    #[test]
+    fn test_weaker_of_picks_the_lower_strength() {
+        assert_eq!(
+            weaker_of(SecurityStrength::_128bit, SecurityStrength::_256bit),
+            SecurityStrength::_128bit
+        );
+        assert_eq!(
+            weaker_of(SecurityStrength::_256bit, SecurityStrength::_128bit),
+            SecurityStrength::_128bit
+        );
+        assert_eq!(
+            weaker_of(SecurityStrength::_192bit, SecurityStrength::_192bit),
+            SecurityStrength::_192bit
+        );
+    }
+}

@@ -4,7 +4,7 @@
 
 use bouncycastle_core::errors::{HashError, SuspendableError};
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::traits::{Algorithm, Hash, HashAlgParams, Suspendable};
+use bouncycastle_core::traits::{Algorithm, Hash, HashAlgParams, HashOneShot, Suspendable};
 use bouncycastle_utils::secret::Secret;
 use bouncycastle_utils::suspendable_state::{add_lib_ver, check_lib_ver};
 
@@ -35,7 +35,7 @@ impl AsconHash256 {
     // Algorithm 5). The 32-byte digest is exactly RATE * 4 bytes, so a single generic
     // `Sponge::squeeze()` call over the whole output produces all four blocks with no leftover.
     fn squeeze_into(&mut self, output: &mut [u8; DIGEST_BYTES]) {
-        self.sponge.pad_and_absorb();
+        self.sponge.finish_absorb();
         self.sponge.squeeze(output);
     }
 }
@@ -65,23 +65,6 @@ impl Hash for AsconHash256 {
         DIGEST_BYTES
     }
 
-    fn hash(mut self, data: &[u8]) -> Vec<u8> {
-        self.sponge.absorb(data);
-        let mut out = [0u8; DIGEST_BYTES];
-        self.squeeze_into(&mut out);
-        out.to_vec()
-    }
-
-    fn hash_out(mut self, data: &[u8], output: &mut [u8]) -> usize {
-        self.sponge.absorb(data);
-        output.fill(0);
-        let mut out = [0u8; DIGEST_BYTES];
-        self.squeeze_into(&mut out);
-        let n = core::cmp::min(output.len(), DIGEST_BYTES);
-        output[..n].copy_from_slice(&out[..n]);
-        n
-    }
-
     fn do_update(&mut self, data: &[u8]) {
         self.sponge.absorb(data);
     }
@@ -103,23 +86,44 @@ impl Hash for AsconHash256 {
 
     fn do_final_partial_bits(
         self,
-        _partial_byte: u8,
-        _num_partial_bits: usize,
+        partial_byte: u8,
+        num_bits: usize,
     ) -> Result<Vec<u8>, HashError> {
-        Err(HashError::InvalidInput("Ascon-Hash256 does not support partial byte input"))
+        if num_bits > 7 {
+            return Err(HashError::InvalidLength("num_bits must be in the range [0,7]"));
+        }
+
+        if num_bits != 0 {
+            return Err(HashError::InvalidInput(
+                "Ascon-Hash256 does not support partial byte input",
+            ));
+        }
+
+        // A zero-bit partial byte means the message is byte-aligned.
+        let _ = partial_byte;
+        Ok(self.do_final())
     }
 
     fn do_final_partial_bits_out(
         self,
-        _partial_byte: u8,
-        _num_partial_bits: usize,
-        _output: &mut [u8],
+        partial_byte: u8,
+        num_bits: usize,
+        output: &mut [u8],
     ) -> Result<usize, HashError> {
-        Err(HashError::InvalidInput("Ascon-Hash256 does not support partial byte input"))
-    }
+        output.fill(0);
+        if num_bits > 7 {
+            return Err(HashError::InvalidLength("num_bits must be in the range [0,7]"));
+        }
 
-    fn max_security_strength(&self) -> SecurityStrength {
-        SecurityStrength::_128bit
+        if num_bits != 0 {
+            return Err(HashError::InvalidInput(
+                "Ascon-Hash256 does not support partial byte input",
+            ));
+        }
+
+        // A zero-bit partial byte means the message is byte-aligned.
+        let _ = partial_byte;
+        Ok(self.do_final_out(output))
     }
 }
 
@@ -176,3 +180,6 @@ impl Suspendable<SUSPENDED_ASCON_HASH256_STATE_LEN> for AsconHash256 {
         Ok(AsconHash256 { sponge: Sponge::from_parts(s, buf, buf_pos, false) })
     }
 }
+
+// The one-shot form: `Default` is the function itself.
+impl HashOneShot for AsconHash256 {}

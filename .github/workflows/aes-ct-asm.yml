@@ -1,0 +1,26 @@
+name: AES Constant-Time Assembly
+
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: aes-ct-asm-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  aes-ct-asm:
+    if: github.repository == 'bcgit/bc-rust'
+    name: aes-ct-asm
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install nightly with rust-src
+        run: rustup toolchain install nightly --profile minimal --component rust-src
+
+      - name: Check the round-key widening assembly on Cortex-M0 and RISC-V 32I
+        run: ./dev_scripts/check_aes_ct_asm.sh
