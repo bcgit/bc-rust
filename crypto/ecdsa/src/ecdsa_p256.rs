@@ -20,7 +20,7 @@
 //!
 //! `R = [k]G` is Jacobian-coordinate output of a secret scalar multiplication, so converting it to
 //! affine cannot use [`P256JacobianPoint::to_affine`] -- that function's own docs say it branches
-//! on infinity and is "not for use on a secret intermediate value". [`x_affine_of_signing_point`]
+//! on infinity and is "not for use on a secret intermediate value". `x_affine_of_signing_point`
 //! instead always computes `X * Z^-2`, branch-free, exactly mirroring what `to_affine` does in its
 //! non-infinity case; `Z` is never `0` here since `k` is in `[1, n-1]` (RFC 6979 or Appendix A.3.1,
 //! both of which produce a `k` in that range by construction) and `G` has prime order `n` (SP
