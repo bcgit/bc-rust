@@ -412,7 +412,7 @@ impl<P: MLKEMParams> MLKEM<P> {
     }
 
     /// Algorithm 20 ML-KEM.Encaps(ek), lines 1-5.
-    fn encaps_with_rng<const CT_LEN: usize>(
+    pub(crate) fn encaps_with_rng<const CT_LEN: usize>(
         ek: &MLKEMPublicKey<P>,
         rng: &mut dyn RNG,
         ct: &mut [u8; CT_LEN],
@@ -438,7 +438,7 @@ impl<P: MLKEMParams> MLKEM<P> {
     /// Of the Section 7.3 decapsulation input checks, 1 (the ciphertext length) is the type of
     /// `ct`; 2 and 3 concern the FIPS 203 encoding of dk, which this crate's keys never hold: a
     /// key is derived from its seed, so it is consistent by construction.
-    fn decaps_checked<DK: MLKEMPrivateKeyInternalTrait<P>, const CT_LEN: usize>(
+    pub(crate) fn decaps_checked<DK: MLKEMPrivateKeyInternalTrait<P>, const CT_LEN: usize>(
         dk: &DK,
         ct: &[u8; CT_LEN],
     ) -> Result<KeyMaterial<MLKEM_SS_LEN>, KEMError> {

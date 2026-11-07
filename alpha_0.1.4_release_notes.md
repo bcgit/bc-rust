@@ -46,6 +46,13 @@
   configured KDF for a KEM that derives its secret), which select the algorithm at the call. The static `encaps(pk)` with its
   OS DRBG, the run-time ciphertext length check and the expanded-key statics are gone; the ML-KEM key types
   carry only their parameter set. `KeyType::SharedSecret` is added for the raw `Z` of a key agreement.
+* ML-KEM with its shared secret derived through HKDF: `MLKEM512_HKDF_SHA256`, `MLKEM768_HKDF_SHA512` and
+  `MLKEM1024_HKDF_SHA512` are roles the plain ML-KEM keys carry over `HkdfParams<H>`, RFC 5869's salt and info
+  from `bouncycastle-hkdf` with the hash as the type's parameter selecting the algorithm, in both ML-KEM crates
+  and as the `mlkem512-hkdf-sha256`, `mlkem768-hkdf-sha512` and `mlkem1024-hkdf-sha512` CLI subcommands; the
+  derived key is one hash output at the lesser of the KEM's and the KDF's strengths. HKDF credits its output as
+  full-entropy once half a hash output of typed key material has gone in, where it needed a full one, so a
+  32-byte secret seeds HKDF-SHA512 as it does HKDF-SHA256.
 * Two-party key agreement gets the same shape ahead of the ECC CDH crate: the `AgreementKey` role in
   `core::agreement_key`, with `KeyAgreementAlgorithm::Params` for a KDF-bearing variant, hands out a
   `KeyAgreement` worker whose `agree(&peer_pk)` returns `Z` as `KeyType::SharedSecret`; `KeyAgreementError` and
