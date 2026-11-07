@@ -18,7 +18,7 @@
 //! ```
 //! # mod toy { include!("../../../tests/common/toy_block_cipher.rs"); }
 //! # use toy::ToyBlockCipher;
-//! use bouncycastle_core::hazmat::{EcbDecryptMode, EcbEncryptMode, ElectronicCodeBook, Mode};
+//! use bouncycastle_core::hazmat::{EcbDecryptMode, EcbEncryptMode, ElectronicCodeBook, KeyExpansion, Mode};
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 //! use bouncycastle_core::traits::{BlockCipherDecryptor, BlockCipherEncryptor};
 //! use bouncycastle_cipher::modes::hazmat::ecb::ECB;

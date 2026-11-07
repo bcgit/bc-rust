@@ -3,8 +3,8 @@
 //! The stream-cipher counterpart of [`crate::helpers::block_mode_helpers`], and deliberately parallel to it:
 //! same key loading (reused directly from there), same IV convention, same `-x` hex output, same
 //! 1 KiB streaming chunk. Everything here is mode-independent and generic over
-//! [`StreamCipherEncryptor`] / [`StreamCipherDecryptor`], so `aes_cfb_cmd`, `aes_cfb8_cmd` and
-//! `aes_ctr_cmd` are thin dispatchers over it and cannot drift apart on the parts that matter for
+//! [`StreamCipherEncryptor`] / [`StreamCipherDecryptor`], so `cfb_cmd`, `cfb8_cmd` and
+//! `ctr_cmd` are thin dispatchers over it and cannot drift apart on the parts that matter for
 //! correctness. The init data length is a parameter, so it need not be a whole block: it is the
 //! block for the CFB modes and a 12-byte nonce for CTR.
 //!
@@ -149,8 +149,8 @@ fn finish(output_hex: bool) {
     flush_stdout();
 }
 
-/// Runs one direction of a stream mode under its key. The `run` dispatchers in `aes_cfb_cmd`,
-/// `aes_cfb8_cmd` and `aes_ctr_cmd` differ only in which key type they load, so the match lives
+/// Runs one direction of a stream mode under its key. The `run` dispatchers in `cfb_cmd`,
+/// `cfb8_cmd` and `ctr_cmd` differ only in which key type they load, so the match lives
 /// here.
 pub(crate) fn run_stream_mode<'k, K, const KEY_LEN: usize, const INIT_DATA_LEN: usize>(
     action: &CipherDirection,

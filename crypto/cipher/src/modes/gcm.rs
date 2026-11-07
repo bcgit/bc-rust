@@ -19,16 +19,15 @@
 //! implements [`AEADCipherEncryptor`] / [`AEADCipherDecryptor`] with `FINAL_LEN = TAG_LEN`, and the
 //! [`SymmetricCipherEncryptor`] / [`SymmetricCipherDecryptor`] traits they extend. The key holds a
 //! [`GcmKeyState`] and starts each message from it; over the toy permutation the key is the test
-//! suite's `ToyKey`, the shape of the AES one.
+//! [`BlockCipherKey`](crate::BlockCipherKey), as it is for AES.
 //!
 //! Through the SymmetricCipher methods there is no additional associated data (aad), and the tag
 //! is inlined into the ciphertext as `ciphertext || tag`:
 //!
 //! ```
 //! # mod toy { include!("../../tests/common/toy_block_cipher.rs"); }
-//! # #[allow(dead_code)] mod toy_key { include!("../../tests/common/toy_key.rs"); }
 //! # use toy::ToyBlockCipher;
-//! # use toy_key::ToyKey;
+//! use bouncycastle_cipher::BlockCipherKey;
 //! use bouncycastle_core::errors::SymmetricCipherError;
 //! use bouncycastle_core::key_material::{KeyMaterial128, KeyType};
 //! use bouncycastle_core::traits::{SymmetricCipherDecryptor, SymmetricCipherEncryptor};
@@ -38,7 +37,7 @@
 //!
 //! let material = KeyMaterial128::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
 //!     .expect("a 16-byte symmetric cipher key");
-//! let key = ToyKey::<ToyBlockCipher, GCM>::from_key_material(&material).expect("a valid key");
+//! let key = BlockCipherKey::<ToyBlockCipher, GCM>::from_key_material(&material).expect("a valid key");
 //! let plaintext: [u8; 16] = *b"attack at dawn!!";
 //!
 //! let (mut enc, nonce) =
@@ -72,9 +71,8 @@
 //!
 //! ```
 //! # mod toy { include!("../../tests/common/toy_block_cipher.rs"); }
-//! # #[allow(dead_code)] mod toy_key { include!("../../tests/common/toy_key.rs"); }
 //! # use toy::ToyBlockCipher;
-//! # use toy_key::ToyKey;
+//! use bouncycastle_cipher::BlockCipherKey;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 //! use bouncycastle_core::traits::{
 //!     AEADCipherDecryptor, AEADCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
@@ -85,7 +83,7 @@
 //!
 //! let material = KeyMaterial::<16>::from_bytes_as_type(&[0x07; 16], KeyType::SymmetricCipherKey)
 //!     .expect("a 16-byte symmetric cipher key");
-//! let key = ToyKey::<ToyBlockCipher, GCM>::from_key_material(&material).expect("a valid key");
+//! let key = BlockCipherKey::<ToyBlockCipher, GCM>::from_key_material(&material).expect("a valid key");
 //! let aad = b"some associated data";
 //! let message = b"a message that streams in over more than one call";
 //!
@@ -110,9 +108,8 @@
 //!
 //! ```
 //! # mod toy { include!("../../tests/common/toy_block_cipher.rs"); }
-//! # #[allow(dead_code)] mod toy_key { include!("../../tests/common/toy_key.rs"); }
 //! # use toy::ToyBlockCipher;
-//! # use toy_key::ToyKey;
+//! use bouncycastle_cipher::BlockCipherKey;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 //! use bouncycastle_core::traits::{
 //!     AEADCipherDecryptor, AEADCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
@@ -123,7 +120,7 @@
 //!
 //! let material = KeyMaterial::<16>::from_bytes_as_type(&[0x07; 16], KeyType::SymmetricCipherKey)
 //!     .expect("a 16-byte symmetric cipher key");
-//! let key = ToyKey::<ToyBlockCipher, GCM>::from_key_material(&material).expect("a valid key");
+//! let key = BlockCipherKey::<ToyBlockCipher, GCM>::from_key_material(&material).expect("a valid key");
 //! let aad = b"some associated data";
 //! let message = b"a message that streams in over more than one call";
 //!
@@ -1219,6 +1216,7 @@ mod tests {
 
     use super::modes_common::{Toy, toy_key};
     use super::*;
+    use bouncycastle_core::hazmat::KeyExpansion;
 
     fn key_state() -> GcmKeyState<Toy> {
         <GCM<16> as Mode<Toy>>::key_state(Toy::new(&toy_key()).unwrap())

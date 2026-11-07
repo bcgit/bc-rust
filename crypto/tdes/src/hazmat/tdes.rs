@@ -7,7 +7,7 @@ use crate::schedule::{PARITY_MASK, expand, is_weak};
 use crate::{BLOCK_LEN, KEY_LEN};
 use bouncycastle_cipher::modes::ModeNames;
 use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
-use bouncycastle_core::hazmat::{BlockPermutation, ElectronicCodeBook};
+use bouncycastle_core::hazmat::{BlockPermutation, KeyExpansion};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::Algorithm;
@@ -24,7 +24,7 @@ pub(crate) type Block = [u8; BLOCK_LEN];
 /// the same round keys backwards (Sec 2.2), so one value serves both directions, and a
 /// constructed value is always ready to use, so there is no `init()` or `reset()`.
 ///
-/// Only bundles of three distinct keys are accepted; its [`ElectronicCodeBook::new`] says what is
+/// Only bundles of three distinct keys are accepted; its [`KeyExpansion::new`] says what is
 /// rejected and why. For two-key TDEA, which is decryption-only, see
 /// [`TDES2Internal`](super::TDES2Internal). See the crate docs for the standing of TDEA today.
 #[derive(Clone)]
@@ -150,7 +150,7 @@ impl Algorithm for TDESInternal {
     const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_112bit;
 }
 
-impl ElectronicCodeBook<KEY_LEN, BLOCK_LEN> for TDESInternal {
+impl KeyExpansion<KEY_LEN> for TDESInternal {
     /// Expands a 24-byte key bundle `Key1 || Key2 || Key3` into the three DEA key schedules.
     ///
     /// The parity bits (the last bit of each key byte, Appendix A) are ignored, as the algorithm

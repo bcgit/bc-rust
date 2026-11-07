@@ -34,7 +34,7 @@
 //! rule is defined by SP 800-20, and implementing it is a separate piece of work from the engine.
 
 use bouncycastle_cipher::modes::{Blocks, CBC, CFB, CFB8};
-use bouncycastle_core::hazmat::{BlockPermutation, ElectronicCodeBook, Mode};
+use bouncycastle_core::hazmat::{BlockPermutation, KeyExpansion, Mode};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::symmetric_key::{
     BlockDecryptionKey, BlockEncryptionKey, FromKeyMaterial, SymmetricDecryptionKey,

@@ -2,7 +2,7 @@
 //! `tdes2-tkw -d decrypt` (two-key, unwrapping only), stdin to stdout.
 //!
 //! They are the `aes*-kw` command over TDEA (NIST SP 800-38F Sec 7, TKW), so everything in
-//! [`crate::aes_kw_cmd`] -- the whole-input reading, the absence of an IV, the fail-closed unwrap
+//! [`crate::kw_cmd`] -- the whole-input reading, the absence of an IV, the fail-closed unwrap
 //! -- applies unchanged, at half the width: the input is a whole number of 4-byte semiblocks, at
 //! least 8 bytes, and the output is 4 bytes longer. `encrypt` has the SP 800-67 Rev 2 Sec 3.4
 //! bound the other `tdes-*` encrypting commands have, counted as blocks TDEA processes: TW makes
@@ -11,10 +11,10 @@
 //! TDEA may not wrap at all (SP 800-131A Rev 2 Table 6), so `tdes2-tkw` has no `encrypt`, as the
 //! other `tdes2-*` commands have none.
 
-use crate::aes_kw_cmd::{run, run_with};
 use crate::helpers::block_mode_helpers::{
     CipherDirection, DecryptOnlyAction, TDEA_LIMIT_TKW, load_key_object,
 };
+use crate::kw_cmd::{run, run_with};
 use bouncycastle::cipher::modes::TKW;
 use bouncycastle::core::symmetric_key::KeyUnwrappingKey;
 use bouncycastle::tdes::{KEY_LEN, KEY_LEN_2KEY, TDES2Key, TDES3Key};

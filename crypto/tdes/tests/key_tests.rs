@@ -1,4 +1,4 @@
-//! Key-bundle handling: what the engines' `ElectronicCodeBook::new` accepts and rejects, and why.
+//! Key-bundle handling: what the engines' `KeyExpansion::new` accepts and rejects, and why.
 //! The keys at the crate root run these checks through it, see `mode_key_tests.rs`.
 //!
 //! * The 4 weak, 12 semi-weak and 48 possibly weak DEA keys listed in SP 800-67r2 Sec 3.3.2, all
@@ -11,7 +11,7 @@
 
 use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
 use bouncycastle_core::hazmat::do_hazardous_operations;
-use bouncycastle_core::hazmat::{BlockPermutation, ElectronicCodeBook};
+use bouncycastle_core::hazmat::{BlockPermutation, KeyExpansion};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::Algorithm;

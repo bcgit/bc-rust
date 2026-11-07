@@ -6,25 +6,20 @@
 //! which the per-byte toy deliberately lacks, so a flipped register byte never reaches the ICV.
 
 mod common;
-#[path = "../common/toy_key.rs"]
-#[allow(dead_code)]
-mod toy_key;
 
+use bouncycastle_cipher::BlockCipherKey;
 use bouncycastle_cipher::modes::{KW, KWP, Kw, Kwp, ModeNames};
 use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::errors::SymmetricCipherError;
-use bouncycastle_core::hazmat::{
-    BlockPermutation, ElectronicCodeBook, KeyUnwrapMode, KeyWrapMode, Mode,
-};
+use bouncycastle_core::hazmat::{BlockPermutation, KeyExpansion, KeyUnwrapMode, KeyWrapMode, Mode};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::symmetric_key::{FromKeyMaterial, KeyUnwrappingKey, KeyWrappingKey};
 use bouncycastle_core::traits::{KeyUnwrapper, KeyWrapper};
 use bouncycastle_core_test_framework::from_key_material::TestFrameworkFromKeyMaterial;
 use common::{TOY_LEN, Toy, toy_key};
-use toy_key::ToyKey;
 
-type ToyKwKey = ToyKey<Toy, KW>;
-type ToyKwpKey = ToyKey<Toy, KWP>;
+type ToyKwKey = BlockCipherKey<Toy, KW>;
+type ToyKwpKey = BlockCipherKey<Toy, KWP>;
 
 fn kw_key() -> ToyKwKey {
     ToyKwKey::from_key_material(&toy_key()).expect("the toy KEK")
@@ -57,8 +52,6 @@ fn the_key_and_the_mode_route_agree() {
     let unwrapper = <KW as KeyUnwrapMode<Toy, TOY_LEN>>::unwrap_init(&state);
     assert_eq!(*unwrapper.unwrap_key::<32, 40>(&from_key).unwrap(), data);
     assert_eq!(*key.unwrap_key::<32, 40>(&from_worker).unwrap(), data);
-    let over_the_key_state = <KW as KeyUnwrapMode<Toy, TOY_LEN>>::unwrap_init(key.state());
-    assert_eq!(*over_the_key_state.unwrap_key::<32, 40>(&from_key).unwrap(), data);
 
     let key = kwp_key();
     let state = <KWP as Mode<Toy>>::key_state(Toy::new(&toy_key()).unwrap());

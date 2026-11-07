@@ -5,7 +5,7 @@
 //! bundle and CAVP tests TKW with three keys only.
 
 use bouncycastle_cipher::modes::TKW;
-use bouncycastle_core::hazmat::{BlockPermutation, ElectronicCodeBook};
+use bouncycastle_core::hazmat::{BlockPermutation, KeyExpansion};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::symmetric_key::{FromKeyMaterial, KeyUnwrappingKey, KeyWrappingKey};
 use bouncycastle_tdes::hazmat::{TDES2Internal, TDESInternal};

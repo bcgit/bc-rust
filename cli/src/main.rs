@@ -1,34 +1,20 @@
 #![forbid(unsafe_code)]
 
-mod aes_cbc_cmd;
-mod aes_ccm_cmd;
-mod aes_cfb8_cmd;
-mod aes_cfb_cmd;
-mod aes_ctr_cmd;
-mod aes_ecb_cmd;
-mod aes_gcm_cmd;
-mod aes_kw_cmd;
-mod aria_cbc_cmd;
-mod aria_ccm_cmd;
-mod aria_cfb8_cmd;
-mod aria_cfb_cmd;
-mod aria_ctr_cmd;
-mod aria_gcm_cmd;
-mod aria_kw_cmd;
 mod ascon_cmd;
-mod camellia_cbc_cmd;
-mod camellia_ccm_cmd;
-mod camellia_cfb8_cmd;
-mod camellia_cfb_cmd;
-mod camellia_ctr_cmd;
-mod camellia_gcm_cmd;
-mod camellia_kw_cmd;
+mod cbc_cmd;
+mod ccm_cmd;
+mod cfb8_cmd;
+mod cfb_cmd;
 mod chacha20_cmd;
 mod chacha20_poly1305_cmd;
+mod ctr_cmd;
+mod ecb_cmd;
 mod ecdsa_cmd;
 mod encoders_cmd;
+mod gcm_cmd;
 mod helpers;
 mod hkdf_cmd;
+mod kw_cmd;
 mod mac_cmd;
 mod mldsa_cmd;
 mod mlkem_cmd;
@@ -37,13 +23,6 @@ mod sha2_cmd;
 mod sha3_cmd;
 mod sm2_cmd;
 mod sm3_cmd;
-mod sm4_cbc_cmd;
-mod sm4_ccm_cmd;
-mod sm4_cfb8_cmd;
-mod sm4_cfb_cmd;
-mod sm4_ctr_cmd;
-mod sm4_gcm_cmd;
-mod sm4_kw_cmd;
 mod tdes2_cbc_cmd;
 mod tdes2_cfb8_cmd;
 mod tdes2_cfb_cmd;
@@ -64,6 +43,12 @@ use crate::rng_cmd::DrbgHash;
 use crate::sha2_cmd::SHA2Variant;
 use crate::sha3_cmd::{SHA3Variant, Strength};
 use crate::sm2_cmd::SM2Action;
+use bouncycastle::aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
+use bouncycastle::aria::hazmat::{ARIA128Internal, ARIA192Internal, ARIA256Internal};
+use bouncycastle::camellia::hazmat::{
+    Camellia128Internal, Camellia192Internal, Camellia256Internal,
+};
+use bouncycastle::sm4::hazmat::SM4Internal;
 use clap::{Parser, Subcommand};
 use helpers::block_mode_helpers::{CipherDirection, DecryptOnlyAction};
 
@@ -5505,7 +5490,9 @@ fn run() {
 
     match &cli.subcommands {
         Some(Subcommands::AES128_CBC { direction, key, key_file, iv, iv_file, x }) => {
-            aes_cbc_cmd::aes128_cbc_cmd(direction, key, key_file, iv, iv_file, *x);
+            cbc_cmd::cbc_cmd::<AES128Internal, 16>(
+                direction, key, key_file, iv, iv_file, *x, "AES-128",
+            );
         }
         Some(Subcommands::AES128_CCM {
             direction,
@@ -5518,21 +5505,27 @@ fn run() {
             tag_len,
             x,
         }) => {
-            aes_ccm_cmd::aes128_ccm_cmd(
-                direction, key, key_file, nonce, nonce_file, aad, aad_file, *tag_len, *x,
+            ccm_cmd::ccm_cmd::<AES128Internal, 16>(
+                direction, key, key_file, nonce, nonce_file, aad, aad_file, *tag_len, *x, "AES-128",
             );
         }
         Some(Subcommands::AES128_CFB { direction, key, key_file, iv, iv_file, x }) => {
-            aes_cfb_cmd::aes128_cfb_cmd(direction, key, key_file, iv, iv_file, *x);
+            cfb_cmd::cfb_cmd::<AES128Internal, 16>(
+                direction, key, key_file, iv, iv_file, *x, "AES-128",
+            );
         }
         Some(Subcommands::AES128_CFB8 { direction, key, key_file, iv, iv_file, x }) => {
-            aes_cfb8_cmd::aes128_cfb8_cmd(direction, key, key_file, iv, iv_file, *x);
+            cfb8_cmd::cfb8_cmd::<AES128Internal, 16>(
+                direction, key, key_file, iv, iv_file, *x, "AES-128",
+            );
         }
         Some(Subcommands::AES128_CTR { direction, key, key_file, iv, iv_file, x }) => {
-            aes_ctr_cmd::aes128_ctr_cmd(direction, key, key_file, iv, iv_file, *x);
+            ctr_cmd::ctr_cmd::<AES128Internal, 16>(
+                direction, key, key_file, iv, iv_file, *x, "AES-128",
+            );
         }
         Some(Subcommands::AES128_ECB { direction, key, key_file, x }) => {
-            aes_ecb_cmd::aes128_ecb_cmd(direction, key, key_file, *x);
+            ecb_cmd::ecb_cmd::<AES128Internal, 16>(direction, key, key_file, *x, "AES-128");
         }
         Some(Subcommands::AES128_GCM {
             direction,
@@ -5544,10 +5537,14 @@ fn run() {
             aad_file,
             x,
         }) => {
-            aes_gcm_cmd::aes128_gcm_cmd(direction, key, key_file, iv, iv_file, aad, aad_file, *x);
+            gcm_cmd::gcm_cmd::<AES128Internal, 16>(
+                direction, key, key_file, iv, iv_file, aad, aad_file, *x, "AES-128",
+            );
         }
         Some(Subcommands::AES192_CBC { direction, key, key_file, iv, iv_file, x }) => {
-            aes_cbc_cmd::aes192_cbc_cmd(direction, key, key_file, iv, iv_file, *x);
+            cbc_cmd::cbc_cmd::<AES192Internal, 24>(
+                direction, key, key_file, iv, iv_file, *x, "AES-192",
+            );
         }
         Some(Subcommands::AES192_CCM {
             direction,
@@ -5560,21 +5557,27 @@ fn run() {
             tag_len,
             x,
         }) => {
-            aes_ccm_cmd::aes192_ccm_cmd(
-                direction, key, key_file, nonce, nonce_file, aad, aad_file, *tag_len, *x,
+            ccm_cmd::ccm_cmd::<AES192Internal, 24>(
+                direction, key, key_file, nonce, nonce_file, aad, aad_file, *tag_len, *x, "AES-192",
             );
         }
         Some(Subcommands::AES192_CFB { direction, key, key_file, iv, iv_file, x }) => {
-            aes_cfb_cmd::aes192_cfb_cmd(direction, key, key_file, iv, iv_file, *x);
+            cfb_cmd::cfb_cmd::<AES192Internal, 24>(
+                direction, key, key_file, iv, iv_file, *x, "AES-192",
+            );
         }
         Some(Subcommands::AES192_CFB8 { direction, key, key_file, iv, iv_file, x }) => {
-            aes_cfb8_cmd::aes192_cfb8_cmd(direction, key, key_file, iv, iv_file, *x);
+            cfb8_cmd::cfb8_cmd::<AES192Internal, 24>(
+                direction, key, key_file, iv, iv_file, *x, "AES-192",
+            );
         }
         Some(Subcommands::AES192_CTR { direction, key, key_file, iv, iv_file, x }) => {
-            aes_ctr_cmd::aes192_ctr_cmd(direction, key, key_file, iv, iv_file, *x);
+            ctr_cmd::ctr_cmd::<AES192Internal, 24>(
+                direction, key, key_file, iv, iv_file, *x, "AES-192",
+            );
         }
         Some(Subcommands::AES192_ECB { direction, key, key_file, x }) => {
-            aes_ecb_cmd::aes192_ecb_cmd(direction, key, key_file, *x);
+            ecb_cmd::ecb_cmd::<AES192Internal, 24>(direction, key, key_file, *x, "AES-192");
         }
         Some(Subcommands::AES192_GCM {
             direction,
@@ -5586,10 +5589,14 @@ fn run() {
             aad_file,
             x,
         }) => {
-            aes_gcm_cmd::aes192_gcm_cmd(direction, key, key_file, iv, iv_file, aad, aad_file, *x);
+            gcm_cmd::gcm_cmd::<AES192Internal, 24>(
+                direction, key, key_file, iv, iv_file, aad, aad_file, *x, "AES-192",
+            );
         }
         Some(Subcommands::AES256_CBC { direction, key, key_file, iv, iv_file, x }) => {
-            aes_cbc_cmd::aes256_cbc_cmd(direction, key, key_file, iv, iv_file, *x);
+            cbc_cmd::cbc_cmd::<AES256Internal, 32>(
+                direction, key, key_file, iv, iv_file, *x, "AES-256",
+            );
         }
         Some(Subcommands::AES256_CCM {
             direction,
@@ -5602,21 +5609,27 @@ fn run() {
             tag_len,
             x,
         }) => {
-            aes_ccm_cmd::aes256_ccm_cmd(
-                direction, key, key_file, nonce, nonce_file, aad, aad_file, *tag_len, *x,
+            ccm_cmd::ccm_cmd::<AES256Internal, 32>(
+                direction, key, key_file, nonce, nonce_file, aad, aad_file, *tag_len, *x, "AES-256",
             );
         }
         Some(Subcommands::AES256_CFB { direction, key, key_file, iv, iv_file, x }) => {
-            aes_cfb_cmd::aes256_cfb_cmd(direction, key, key_file, iv, iv_file, *x);
+            cfb_cmd::cfb_cmd::<AES256Internal, 32>(
+                direction, key, key_file, iv, iv_file, *x, "AES-256",
+            );
         }
         Some(Subcommands::AES256_CFB8 { direction, key, key_file, iv, iv_file, x }) => {
-            aes_cfb8_cmd::aes256_cfb8_cmd(direction, key, key_file, iv, iv_file, *x);
+            cfb8_cmd::cfb8_cmd::<AES256Internal, 32>(
+                direction, key, key_file, iv, iv_file, *x, "AES-256",
+            );
         }
         Some(Subcommands::AES256_CTR { direction, key, key_file, iv, iv_file, x }) => {
-            aes_ctr_cmd::aes256_ctr_cmd(direction, key, key_file, iv, iv_file, *x);
+            ctr_cmd::ctr_cmd::<AES256Internal, 32>(
+                direction, key, key_file, iv, iv_file, *x, "AES-256",
+            );
         }
         Some(Subcommands::AES256_ECB { direction, key, key_file, x }) => {
-            aes_ecb_cmd::aes256_ecb_cmd(direction, key, key_file, *x);
+            ecb_cmd::ecb_cmd::<AES256Internal, 32>(direction, key, key_file, *x, "AES-256");
         }
         Some(Subcommands::AES256_GCM {
             direction,
@@ -5628,7 +5641,9 @@ fn run() {
             aad_file,
             x,
         }) => {
-            aes_gcm_cmd::aes256_gcm_cmd(direction, key, key_file, iv, iv_file, aad, aad_file, *x);
+            gcm_cmd::gcm_cmd::<AES256Internal, 32>(
+                direction, key, key_file, iv, iv_file, aad, aad_file, *x, "AES-256",
+            );
         }
         Some(Subcommands::AsconAEAD128 {
             key,
@@ -5938,55 +5953,55 @@ fn run() {
             mldsa_cmd::mldsa_cmd(&mldsa_cmd::MLDSA87_SET, action, &files, None, *deterministic, *x);
         }
         Some(Subcommands::AES128_KW { direction, key, key_file, x }) => {
-            aes_kw_cmd::aes128_kw_cmd(direction, key, key_file, *x);
+            kw_cmd::kw_cmd::<AES128Internal, 16>(direction, key, key_file, *x, "AES-128");
         }
         Some(Subcommands::AES192_KW { direction, key, key_file, x }) => {
-            aes_kw_cmd::aes192_kw_cmd(direction, key, key_file, *x);
+            kw_cmd::kw_cmd::<AES192Internal, 24>(direction, key, key_file, *x, "AES-192");
         }
         Some(Subcommands::AES256_KW { direction, key, key_file, x }) => {
-            aes_kw_cmd::aes256_kw_cmd(direction, key, key_file, *x);
+            kw_cmd::kw_cmd::<AES256Internal, 32>(direction, key, key_file, *x, "AES-256");
         }
         Some(Subcommands::AES128_KWP { direction, key, key_file, x }) => {
-            aes_kw_cmd::aes128_kwp_cmd(direction, key, key_file, *x);
+            kw_cmd::kwp_cmd::<AES128Internal, 16>(direction, key, key_file, *x, "AES-128");
         }
         Some(Subcommands::AES192_KWP { direction, key, key_file, x }) => {
-            aes_kw_cmd::aes192_kwp_cmd(direction, key, key_file, *x);
+            kw_cmd::kwp_cmd::<AES192Internal, 24>(direction, key, key_file, *x, "AES-192");
         }
         Some(Subcommands::AES256_KWP { direction, key, key_file, x }) => {
-            aes_kw_cmd::aes256_kwp_cmd(direction, key, key_file, *x);
+            kw_cmd::kwp_cmd::<AES256Internal, 32>(direction, key, key_file, *x, "AES-256");
         }
         Some(Subcommands::CAMELLIA128_KW { direction, key, key_file, x }) => {
-            camellia_kw_cmd::camellia128_kw_cmd(direction, key, key_file, *x);
+            kw_cmd::kw_cmd::<Camellia128Internal, 16>(direction, key, key_file, *x, "Camellia-128");
         }
         Some(Subcommands::CAMELLIA192_KW { direction, key, key_file, x }) => {
-            camellia_kw_cmd::camellia192_kw_cmd(direction, key, key_file, *x);
+            kw_cmd::kw_cmd::<Camellia192Internal, 24>(direction, key, key_file, *x, "Camellia-192");
         }
         Some(Subcommands::CAMELLIA256_KW { direction, key, key_file, x }) => {
-            camellia_kw_cmd::camellia256_kw_cmd(direction, key, key_file, *x);
+            kw_cmd::kw_cmd::<Camellia256Internal, 32>(direction, key, key_file, *x, "Camellia-256");
         }
         Some(Subcommands::ARIA128_KW { direction, key, key_file, x }) => {
-            aria_kw_cmd::aria128_kw_cmd(direction, key, key_file, *x);
+            kw_cmd::kw_cmd::<ARIA128Internal, 16>(direction, key, key_file, *x, "ARIA-128");
         }
         Some(Subcommands::ARIA192_KW { direction, key, key_file, x }) => {
-            aria_kw_cmd::aria192_kw_cmd(direction, key, key_file, *x);
+            kw_cmd::kw_cmd::<ARIA192Internal, 24>(direction, key, key_file, *x, "ARIA-192");
         }
         Some(Subcommands::ARIA256_KW { direction, key, key_file, x }) => {
-            aria_kw_cmd::aria256_kw_cmd(direction, key, key_file, *x);
+            kw_cmd::kw_cmd::<ARIA256Internal, 32>(direction, key, key_file, *x, "ARIA-256");
         }
         Some(Subcommands::ARIA128_KWP { direction, key, key_file, x }) => {
-            aria_kw_cmd::aria128_kwp_cmd(direction, key, key_file, *x);
+            kw_cmd::kwp_cmd::<ARIA128Internal, 16>(direction, key, key_file, *x, "ARIA-128");
         }
         Some(Subcommands::ARIA192_KWP { direction, key, key_file, x }) => {
-            aria_kw_cmd::aria192_kwp_cmd(direction, key, key_file, *x);
+            kw_cmd::kwp_cmd::<ARIA192Internal, 24>(direction, key, key_file, *x, "ARIA-192");
         }
         Some(Subcommands::ARIA256_KWP { direction, key, key_file, x }) => {
-            aria_kw_cmd::aria256_kwp_cmd(direction, key, key_file, *x);
+            kw_cmd::kwp_cmd::<ARIA256Internal, 32>(direction, key, key_file, *x, "ARIA-256");
         }
         Some(Subcommands::SM4_KW { direction, key, key_file, x }) => {
-            sm4_kw_cmd::sm4_kw_cmd(direction, key, key_file, *x);
+            kw_cmd::kw_cmd::<SM4Internal, 16>(direction, key, key_file, *x, "SM4");
         }
         Some(Subcommands::SM4_KWP { direction, key, key_file, x }) => {
-            sm4_kw_cmd::sm4_kwp_cmd(direction, key, key_file, *x);
+            kw_cmd::kwp_cmd::<SM4Internal, 16>(direction, key, key_file, *x, "SM4");
         }
         Some(Subcommands::TDES_TKW { direction, key, key_file, x }) => {
             tdes_tkw_cmd::tdes_tkw_cmd(direction, key, key_file, *x);
@@ -6072,13 +6087,19 @@ fn run() {
             sm3_cmd::sm3_cmd(*x);
         }
         Some(Subcommands::CAMELLIA128_CBC { direction, key, key_file, iv, iv_file, x }) => {
-            camellia_cbc_cmd::camellia128_cbc_cmd(direction, key, key_file, iv, iv_file, *x);
+            cbc_cmd::cbc_cmd::<Camellia128Internal, 16>(
+                direction, key, key_file, iv, iv_file, *x, "Camellia-128",
+            );
         }
         Some(Subcommands::CAMELLIA192_CBC { direction, key, key_file, iv, iv_file, x }) => {
-            camellia_cbc_cmd::camellia192_cbc_cmd(direction, key, key_file, iv, iv_file, *x);
+            cbc_cmd::cbc_cmd::<Camellia192Internal, 24>(
+                direction, key, key_file, iv, iv_file, *x, "Camellia-192",
+            );
         }
         Some(Subcommands::CAMELLIA256_CBC { direction, key, key_file, iv, iv_file, x }) => {
-            camellia_cbc_cmd::camellia256_cbc_cmd(direction, key, key_file, iv, iv_file, *x);
+            cbc_cmd::cbc_cmd::<Camellia256Internal, 32>(
+                direction, key, key_file, iv, iv_file, *x, "Camellia-256",
+            );
         }
         Some(Subcommands::CAMELLIA128_CCM {
             direction,
@@ -6091,12 +6112,15 @@ fn run() {
             tag_len,
             x,
         }) => {
-            camellia_ccm_cmd::camellia128_ccm_cmd(
+            ccm_cmd::ccm_cmd::<Camellia128Internal, 16>(
                 direction, key, key_file, nonce, nonce_file, aad, aad_file, *tag_len, *x,
+                "Camellia-128",
             );
         }
         Some(Subcommands::CAMELLIA128_CFB { direction, key, key_file, iv, iv_file, x }) => {
-            camellia_cfb_cmd::camellia128_cfb_cmd(direction, key, key_file, iv, iv_file, *x);
+            cfb_cmd::cfb_cmd::<Camellia128Internal, 16>(
+                direction, key, key_file, iv, iv_file, *x, "Camellia-128",
+            );
         }
         Some(Subcommands::CAMELLIA192_CCM {
             direction,
@@ -6109,12 +6133,15 @@ fn run() {
             tag_len,
             x,
         }) => {
-            camellia_ccm_cmd::camellia192_ccm_cmd(
+            ccm_cmd::ccm_cmd::<Camellia192Internal, 24>(
                 direction, key, key_file, nonce, nonce_file, aad, aad_file, *tag_len, *x,
+                "Camellia-192",
             );
         }
         Some(Subcommands::CAMELLIA192_CFB { direction, key, key_file, iv, iv_file, x }) => {
-            camellia_cfb_cmd::camellia192_cfb_cmd(direction, key, key_file, iv, iv_file, *x);
+            cfb_cmd::cfb_cmd::<Camellia192Internal, 24>(
+                direction, key, key_file, iv, iv_file, *x, "Camellia-192",
+            );
         }
         Some(Subcommands::CAMELLIA256_CCM {
             direction,
@@ -6127,24 +6154,35 @@ fn run() {
             tag_len,
             x,
         }) => {
-            camellia_ccm_cmd::camellia256_ccm_cmd(
+            ccm_cmd::ccm_cmd::<Camellia256Internal, 32>(
                 direction, key, key_file, nonce, nonce_file, aad, aad_file, *tag_len, *x,
+                "Camellia-256",
             );
         }
         Some(Subcommands::CAMELLIA256_CFB { direction, key, key_file, iv, iv_file, x }) => {
-            camellia_cfb_cmd::camellia256_cfb_cmd(direction, key, key_file, iv, iv_file, *x);
+            cfb_cmd::cfb_cmd::<Camellia256Internal, 32>(
+                direction, key, key_file, iv, iv_file, *x, "Camellia-256",
+            );
         }
         Some(Subcommands::CAMELLIA128_CFB8 { direction, key, key_file, iv, iv_file, x }) => {
-            camellia_cfb8_cmd::camellia128_cfb8_cmd(direction, key, key_file, iv, iv_file, *x);
+            cfb8_cmd::cfb8_cmd::<Camellia128Internal, 16>(
+                direction, key, key_file, iv, iv_file, *x, "Camellia-128",
+            );
         }
         Some(Subcommands::CAMELLIA192_CFB8 { direction, key, key_file, iv, iv_file, x }) => {
-            camellia_cfb8_cmd::camellia192_cfb8_cmd(direction, key, key_file, iv, iv_file, *x);
+            cfb8_cmd::cfb8_cmd::<Camellia192Internal, 24>(
+                direction, key, key_file, iv, iv_file, *x, "Camellia-192",
+            );
         }
         Some(Subcommands::CAMELLIA256_CFB8 { direction, key, key_file, iv, iv_file, x }) => {
-            camellia_cfb8_cmd::camellia256_cfb8_cmd(direction, key, key_file, iv, iv_file, *x);
+            cfb8_cmd::cfb8_cmd::<Camellia256Internal, 32>(
+                direction, key, key_file, iv, iv_file, *x, "Camellia-256",
+            );
         }
         Some(Subcommands::CAMELLIA128_CTR { direction, key, key_file, iv, iv_file, x }) => {
-            camellia_ctr_cmd::camellia128_ctr_cmd(direction, key, key_file, iv, iv_file, *x);
+            ctr_cmd::ctr_cmd::<Camellia128Internal, 16>(
+                direction, key, key_file, iv, iv_file, *x, "Camellia-128",
+            );
         }
         Some(Subcommands::CAMELLIA128_GCM {
             direction,
@@ -6156,12 +6194,14 @@ fn run() {
             aad_file,
             x,
         }) => {
-            camellia_gcm_cmd::camellia128_gcm_cmd(
-                direction, key, key_file, iv, iv_file, aad, aad_file, *x,
+            gcm_cmd::gcm_cmd::<Camellia128Internal, 16>(
+                direction, key, key_file, iv, iv_file, aad, aad_file, *x, "Camellia-128",
             );
         }
         Some(Subcommands::CAMELLIA192_CTR { direction, key, key_file, iv, iv_file, x }) => {
-            camellia_ctr_cmd::camellia192_ctr_cmd(direction, key, key_file, iv, iv_file, *x);
+            ctr_cmd::ctr_cmd::<Camellia192Internal, 24>(
+                direction, key, key_file, iv, iv_file, *x, "Camellia-192",
+            );
         }
         Some(Subcommands::CAMELLIA192_GCM {
             direction,
@@ -6173,12 +6213,14 @@ fn run() {
             aad_file,
             x,
         }) => {
-            camellia_gcm_cmd::camellia192_gcm_cmd(
-                direction, key, key_file, iv, iv_file, aad, aad_file, *x,
+            gcm_cmd::gcm_cmd::<Camellia192Internal, 24>(
+                direction, key, key_file, iv, iv_file, aad, aad_file, *x, "Camellia-192",
             );
         }
         Some(Subcommands::CAMELLIA256_CTR { direction, key, key_file, iv, iv_file, x }) => {
-            camellia_ctr_cmd::camellia256_ctr_cmd(direction, key, key_file, iv, iv_file, *x);
+            ctr_cmd::ctr_cmd::<Camellia256Internal, 32>(
+                direction, key, key_file, iv, iv_file, *x, "Camellia-256",
+            );
         }
         Some(Subcommands::CAMELLIA256_GCM {
             direction,
@@ -6190,18 +6232,24 @@ fn run() {
             aad_file,
             x,
         }) => {
-            camellia_gcm_cmd::camellia256_gcm_cmd(
-                direction, key, key_file, iv, iv_file, aad, aad_file, *x,
+            gcm_cmd::gcm_cmd::<Camellia256Internal, 32>(
+                direction, key, key_file, iv, iv_file, aad, aad_file, *x, "Camellia-256",
             );
         }
         Some(Subcommands::ARIA128_CBC { direction, key, key_file, iv, iv_file, x }) => {
-            aria_cbc_cmd::aria128_cbc_cmd(direction, key, key_file, iv, iv_file, *x);
+            cbc_cmd::cbc_cmd::<ARIA128Internal, 16>(
+                direction, key, key_file, iv, iv_file, *x, "ARIA-128",
+            );
         }
         Some(Subcommands::ARIA192_CBC { direction, key, key_file, iv, iv_file, x }) => {
-            aria_cbc_cmd::aria192_cbc_cmd(direction, key, key_file, iv, iv_file, *x);
+            cbc_cmd::cbc_cmd::<ARIA192Internal, 24>(
+                direction, key, key_file, iv, iv_file, *x, "ARIA-192",
+            );
         }
         Some(Subcommands::ARIA256_CBC { direction, key, key_file, iv, iv_file, x }) => {
-            aria_cbc_cmd::aria256_cbc_cmd(direction, key, key_file, iv, iv_file, *x);
+            cbc_cmd::cbc_cmd::<ARIA256Internal, 32>(
+                direction, key, key_file, iv, iv_file, *x, "ARIA-256",
+            );
         }
         Some(Subcommands::ARIA128_CCM {
             direction,
@@ -6214,12 +6262,15 @@ fn run() {
             tag_len,
             x,
         }) => {
-            aria_ccm_cmd::aria128_ccm_cmd(
+            ccm_cmd::ccm_cmd::<ARIA128Internal, 16>(
                 direction, key, key_file, nonce, nonce_file, aad, aad_file, *tag_len, *x,
+                "ARIA-128",
             );
         }
         Some(Subcommands::ARIA128_CFB { direction, key, key_file, iv, iv_file, x }) => {
-            aria_cfb_cmd::aria128_cfb_cmd(direction, key, key_file, iv, iv_file, *x);
+            cfb_cmd::cfb_cmd::<ARIA128Internal, 16>(
+                direction, key, key_file, iv, iv_file, *x, "ARIA-128",
+            );
         }
         Some(Subcommands::ARIA192_CCM {
             direction,
@@ -6232,12 +6283,15 @@ fn run() {
             tag_len,
             x,
         }) => {
-            aria_ccm_cmd::aria192_ccm_cmd(
+            ccm_cmd::ccm_cmd::<ARIA192Internal, 24>(
                 direction, key, key_file, nonce, nonce_file, aad, aad_file, *tag_len, *x,
+                "ARIA-192",
             );
         }
         Some(Subcommands::ARIA192_CFB { direction, key, key_file, iv, iv_file, x }) => {
-            aria_cfb_cmd::aria192_cfb_cmd(direction, key, key_file, iv, iv_file, *x);
+            cfb_cmd::cfb_cmd::<ARIA192Internal, 24>(
+                direction, key, key_file, iv, iv_file, *x, "ARIA-192",
+            );
         }
         Some(Subcommands::ARIA256_CCM {
             direction,
@@ -6250,24 +6304,35 @@ fn run() {
             tag_len,
             x,
         }) => {
-            aria_ccm_cmd::aria256_ccm_cmd(
+            ccm_cmd::ccm_cmd::<ARIA256Internal, 32>(
                 direction, key, key_file, nonce, nonce_file, aad, aad_file, *tag_len, *x,
+                "ARIA-256",
             );
         }
         Some(Subcommands::ARIA256_CFB { direction, key, key_file, iv, iv_file, x }) => {
-            aria_cfb_cmd::aria256_cfb_cmd(direction, key, key_file, iv, iv_file, *x);
+            cfb_cmd::cfb_cmd::<ARIA256Internal, 32>(
+                direction, key, key_file, iv, iv_file, *x, "ARIA-256",
+            );
         }
         Some(Subcommands::ARIA128_CFB8 { direction, key, key_file, iv, iv_file, x }) => {
-            aria_cfb8_cmd::aria128_cfb8_cmd(direction, key, key_file, iv, iv_file, *x);
+            cfb8_cmd::cfb8_cmd::<ARIA128Internal, 16>(
+                direction, key, key_file, iv, iv_file, *x, "ARIA-128",
+            );
         }
         Some(Subcommands::ARIA192_CFB8 { direction, key, key_file, iv, iv_file, x }) => {
-            aria_cfb8_cmd::aria192_cfb8_cmd(direction, key, key_file, iv, iv_file, *x);
+            cfb8_cmd::cfb8_cmd::<ARIA192Internal, 24>(
+                direction, key, key_file, iv, iv_file, *x, "ARIA-192",
+            );
         }
         Some(Subcommands::ARIA256_CFB8 { direction, key, key_file, iv, iv_file, x }) => {
-            aria_cfb8_cmd::aria256_cfb8_cmd(direction, key, key_file, iv, iv_file, *x);
+            cfb8_cmd::cfb8_cmd::<ARIA256Internal, 32>(
+                direction, key, key_file, iv, iv_file, *x, "ARIA-256",
+            );
         }
         Some(Subcommands::ARIA128_CTR { direction, key, key_file, iv, iv_file, x }) => {
-            aria_ctr_cmd::aria128_ctr_cmd(direction, key, key_file, iv, iv_file, *x);
+            ctr_cmd::ctr_cmd::<ARIA128Internal, 16>(
+                direction, key, key_file, iv, iv_file, *x, "ARIA-128",
+            );
         }
         Some(Subcommands::ARIA128_GCM {
             direction,
@@ -6279,10 +6344,14 @@ fn run() {
             aad_file,
             x,
         }) => {
-            aria_gcm_cmd::aria128_gcm_cmd(direction, key, key_file, iv, iv_file, aad, aad_file, *x);
+            gcm_cmd::gcm_cmd::<ARIA128Internal, 16>(
+                direction, key, key_file, iv, iv_file, aad, aad_file, *x, "ARIA-128",
+            );
         }
         Some(Subcommands::ARIA192_CTR { direction, key, key_file, iv, iv_file, x }) => {
-            aria_ctr_cmd::aria192_ctr_cmd(direction, key, key_file, iv, iv_file, *x);
+            ctr_cmd::ctr_cmd::<ARIA192Internal, 24>(
+                direction, key, key_file, iv, iv_file, *x, "ARIA-192",
+            );
         }
         Some(Subcommands::ARIA192_GCM {
             direction,
@@ -6294,10 +6363,14 @@ fn run() {
             aad_file,
             x,
         }) => {
-            aria_gcm_cmd::aria192_gcm_cmd(direction, key, key_file, iv, iv_file, aad, aad_file, *x);
+            gcm_cmd::gcm_cmd::<ARIA192Internal, 24>(
+                direction, key, key_file, iv, iv_file, aad, aad_file, *x, "ARIA-192",
+            );
         }
         Some(Subcommands::ARIA256_CTR { direction, key, key_file, iv, iv_file, x }) => {
-            aria_ctr_cmd::aria256_ctr_cmd(direction, key, key_file, iv, iv_file, *x);
+            ctr_cmd::ctr_cmd::<ARIA256Internal, 32>(
+                direction, key, key_file, iv, iv_file, *x, "ARIA-256",
+            );
         }
         Some(Subcommands::ARIA256_GCM {
             direction,
@@ -6309,10 +6382,12 @@ fn run() {
             aad_file,
             x,
         }) => {
-            aria_gcm_cmd::aria256_gcm_cmd(direction, key, key_file, iv, iv_file, aad, aad_file, *x);
+            gcm_cmd::gcm_cmd::<ARIA256Internal, 32>(
+                direction, key, key_file, iv, iv_file, aad, aad_file, *x, "ARIA-256",
+            );
         }
         Some(Subcommands::SM4_CBC { direction, key, key_file, iv, iv_file, x }) => {
-            sm4_cbc_cmd::sm4_cbc_cmd(direction, key, key_file, iv, iv_file, *x);
+            cbc_cmd::cbc_cmd::<SM4Internal, 16>(direction, key, key_file, iv, iv_file, *x, "SM4");
         }
         Some(Subcommands::SM4_CCM {
             direction,
@@ -6325,21 +6400,23 @@ fn run() {
             tag_len,
             x,
         }) => {
-            sm4_ccm_cmd::sm4_ccm_cmd(
-                direction, key, key_file, nonce, nonce_file, aad, aad_file, *tag_len, *x,
+            ccm_cmd::ccm_cmd::<SM4Internal, 16>(
+                direction, key, key_file, nonce, nonce_file, aad, aad_file, *tag_len, *x, "SM4",
             );
         }
         Some(Subcommands::SM4_CFB { direction, key, key_file, iv, iv_file, x }) => {
-            sm4_cfb_cmd::sm4_cfb_cmd(direction, key, key_file, iv, iv_file, *x);
+            cfb_cmd::cfb_cmd::<SM4Internal, 16>(direction, key, key_file, iv, iv_file, *x, "SM4");
         }
         Some(Subcommands::SM4_CFB8 { direction, key, key_file, iv, iv_file, x }) => {
-            sm4_cfb8_cmd::sm4_cfb8_cmd(direction, key, key_file, iv, iv_file, *x);
+            cfb8_cmd::cfb8_cmd::<SM4Internal, 16>(direction, key, key_file, iv, iv_file, *x, "SM4");
         }
         Some(Subcommands::SM4_CTR { direction, key, key_file, iv, iv_file, x }) => {
-            sm4_ctr_cmd::sm4_ctr_cmd(direction, key, key_file, iv, iv_file, *x);
+            ctr_cmd::ctr_cmd::<SM4Internal, 16>(direction, key, key_file, iv, iv_file, *x, "SM4");
         }
         Some(Subcommands::SM4_GCM { direction, key, key_file, iv, iv_file, aad, aad_file, x }) => {
-            sm4_gcm_cmd::sm4_gcm_cmd(direction, key, key_file, iv, iv_file, aad, aad_file, *x);
+            gcm_cmd::gcm_cmd::<SM4Internal, 16>(
+                direction, key, key_file, iv, iv_file, aad, aad_file, *x, "SM4",
+            );
         }
         Some(Subcommands::TDES_CBC { direction, key, key_file, iv, iv_file, x }) => {
             tdes_cbc_cmd::tdes_cbc_cmd(direction, key, key_file, iv, iv_file, *x);

@@ -106,7 +106,7 @@ pub type TDES_CTR<'k, Dir> = Ctr<'k, TDESInternal, Dir, BLOCK_LEN, CTR_NONCE_LEN
 /// use bouncycastle_tdes::hazmat::TDES2Internal;
 /// use bouncycastle_tdes::{BLOCK_LEN, CTR_NONCE_LEN, TDES2Key};
 /// use bouncycastle_cipher::modes::CTR;
-/// use bouncycastle_core::hazmat::{BlockPermutation, ElectronicCodeBook};
+/// use bouncycastle_core::hazmat::{BlockPermutation, ElectronicCodeBook, KeyExpansion};
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_core::symmetric_key::{FromKeyMaterial, SymmetricDecryptionKey};
 ///

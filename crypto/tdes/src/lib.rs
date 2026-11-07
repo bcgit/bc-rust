@@ -66,11 +66,11 @@
 //!
 //! ## The raw permutation
 //!
-//! The engine transforms one block, and `ElectronicCodeBook::new` on it is the one-shot:
+//! The engine transforms one block, and `KeyExpansion::new` on it is the one-shot:
 //!
 //! ```
 //! use bouncycastle_tdes::hazmat::TDESInternal;
-//! use bouncycastle_core::hazmat::{BlockPermutation, ElectronicCodeBook};
+//! use bouncycastle_core::hazmat::{BlockPermutation, ElectronicCodeBook, KeyExpansion};
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 //!
 //! // NIST CAVP TECBMMT3.rsp, [ENCRYPT] COUNT = 0: KEY1 || KEY2 || KEY3.

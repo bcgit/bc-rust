@@ -6,7 +6,7 @@ use crate::hazmat::{TDES2Internal, TDESInternal};
 use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
 use bouncycastle_core::hazmat::{
     BlockDecryptMode, BlockEncryptMode, EcbDecryptMode, EcbDecryptionKey, EcbEncryptMode,
-    EcbEncryptionKey, ElectronicCodeBook, KeyUnwrapMode, KeyWrapMode, Mode, SymmetricDecryptMode,
+    EcbEncryptionKey, KeyExpansion, KeyUnwrapMode, KeyWrapMode, Mode, SymmetricDecryptMode,
     SymmetricEncryptMode,
 };
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};

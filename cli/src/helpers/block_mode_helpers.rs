@@ -2,7 +2,7 @@
 //!
 //! Everything here is mode-independent -- key loading, stdin framing, block-alignment enforcement,
 //! output formatting -- and is generic over the mode via [`SymmetricCipherEncryptor`] /
-//! [`SymmetricCipherDecryptor`]. `aes_cbc_cmd` and `aes_ecb_cmd` are thin dispatchers over it,
+//! [`SymmetricCipherDecryptor`]. `cbc_cmd` and `ecb_cmd` are thin dispatchers over it,
 //! driving it with the workers their keys hand out, `CBC<PKCS7>` and `ECB<NoPadding>`, so the
 //! commands cannot drift apart on the parts that matter for correctness.
 //!

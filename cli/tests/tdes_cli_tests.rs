@@ -154,7 +154,7 @@ fn vector(file: &str, section: &str) -> Option<Vector> {
 /// of the bundle's length. Appended to an unpadded known-answer ciphertext, it gives the PKCS7
 /// ciphertext of the same plaintext, which is how the commands frame it.
 fn pkcs7_block(key_hex: &str, prev_hex: &str) -> String {
-    use bouncycastle::core::hazmat::{BlockPermutation, ElectronicCodeBook};
+    use bouncycastle::core::hazmat::{BlockPermutation, KeyExpansion};
     use bouncycastle::core::key_material::{KeyMaterial, KeyType};
     use bouncycastle::tdes::hazmat::{TDES2Internal, TDESInternal};
 

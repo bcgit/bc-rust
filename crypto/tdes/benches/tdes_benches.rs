@@ -6,7 +6,7 @@
 //! four-block path costs the same as four single-block calls, i.e. that nothing is lost by a mode
 //! preferring it.
 
-use bouncycastle_core::hazmat::{BlockPermutation, ElectronicCodeBook};
+use bouncycastle_core::hazmat::{BlockPermutation, KeyExpansion};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::traits::RNG;
 use bouncycastle_rng as rng;

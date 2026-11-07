@@ -5,7 +5,7 @@ use crate::schedule::{ARIA128Params, ARIA192Params, ARIA256Params, ARIAParams, e
 use crate::{BLOCK_LEN, LANES};
 use bouncycastle_cipher::modes::ModeNames;
 use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
-use bouncycastle_core::hazmat::{BlockPermutation, ElectronicCodeBook};
+use bouncycastle_core::hazmat::{BlockPermutation, KeyExpansion};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::Algorithm;
@@ -15,7 +15,7 @@ use bouncycastle_utils::secret::Secret;
 pub type Block = [u8; BLOCK_LEN];
 
 /// The ARIA keyed permutation, parameterised by key length, constant-time: the engine under
-/// [`ARIAKey`](crate::ARIAKey).
+/// [`ARIA128Key`](crate::ARIA128Key).
 ///
 /// Use the aliases [`ARIA128Internal`], [`ARIA192Internal`] and [`ARIA256Internal`] rather than
 /// naming this directly. `P` is sealed to the three parameter sets of RFC 5794, so no fourth
@@ -179,7 +179,7 @@ impl ARIA128Internal {
 }
 
 impl ARIA192Internal {
-    /// Expands a 24-byte key into the ARIA-192 round keys. See [`ElectronicCodeBook::new`] for the error
+    /// Expands a 24-byte key into the ARIA-192 round keys. See [`KeyExpansion::new`] for the error
     /// cases.
     pub(crate) fn new(key: &KeyMaterial<24>) -> Result<Self, SymmetricCipherError> {
         Self::validate(key)?;
@@ -188,7 +188,7 @@ impl ARIA192Internal {
 }
 
 impl ARIA256Internal {
-    /// Expands a 32-byte key into the ARIA-256 round keys. See [`ElectronicCodeBook::new`] for the error
+    /// Expands a 32-byte key into the ARIA-256 round keys. See [`KeyExpansion::new`] for the error
     /// cases.
     pub(crate) fn new(key: &KeyMaterial<32>) -> Result<Self, SymmetricCipherError> {
         Self::validate(key)?;
@@ -219,7 +219,7 @@ impl Algorithm for ARIA256Internal {
 // cost one set of circuit passes per round where two single-block calls would cost two, and four
 // blocks are one full pass where two pair calls would be two.
 
-impl ElectronicCodeBook<16, BLOCK_LEN> for ARIA128Internal {
+impl KeyExpansion<16> for ARIA128Internal {
     fn new(key: &KeyMaterial<16>) -> Result<Self, SymmetricCipherError> {
         ARIA128Internal::new(key)
     }
@@ -246,7 +246,7 @@ impl BlockPermutation<BLOCK_LEN> for ARIA128Internal {
     }
 }
 
-impl ElectronicCodeBook<24, BLOCK_LEN> for ARIA192Internal {
+impl KeyExpansion<24> for ARIA192Internal {
     fn new(key: &KeyMaterial<24>) -> Result<Self, SymmetricCipherError> {
         ARIA192Internal::new(key)
     }
@@ -273,7 +273,7 @@ impl BlockPermutation<BLOCK_LEN> for ARIA192Internal {
     }
 }
 
-impl ElectronicCodeBook<32, BLOCK_LEN> for ARIA256Internal {
+impl KeyExpansion<32> for ARIA256Internal {
     fn new(key: &KeyMaterial<32>) -> Result<Self, SymmetricCipherError> {
         ARIA256Internal::new(key)
     }

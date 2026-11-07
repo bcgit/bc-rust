@@ -14,20 +14,19 @@
 //! # Usage Examples
 //!
 //! From a mode-bound key over `ToyBlockCipher`; over the toy permutation the key is the test
-//! suite's `ToyKey`, the shape of the AES one:
+//! [`BlockCipherKey`](crate::BlockCipherKey), as it is for AES:
 //!
 //! ```
 //! # mod toy { include!("../../tests/common/toy_block_cipher.rs"); }
-//! # #[allow(dead_code)] mod toy_key { include!("../../tests/common/toy_key.rs"); }
 //! # use toy::ToyBlockCipher;
-//! # use toy_key::ToyKey;
+//! use bouncycastle_cipher::BlockCipherKey;
 //! use bouncycastle_cipher::modes::KWP;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 //! use bouncycastle_core::symmetric_key::{FromKeyMaterial, KeyUnwrappingKey, KeyWrappingKey};
 //!
 //! let kek = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
 //!     .expect("a 16-byte symmetric cipher key");
-//! let key = ToyKey::<ToyBlockCipher, KWP>::from_key_material(&kek).expect("a valid KEK");
+//! let key = BlockCipherKey::<ToyBlockCipher, KWP>::from_key_material(&kek).expect("a valid KEK");
 //!
 //! // 20 bytes pad to 24, plus the 8-byte header: 32 bytes of ciphertext.
 //! let data = [0x5Au8; 20];

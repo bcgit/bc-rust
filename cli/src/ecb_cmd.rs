@@ -1,4 +1,5 @@
-//! AES-ECB encryption and decryption, streaming stdin to stdout.
+//! ECB encryption and decryption over any 128-bit block permutation, streaming stdin to stdout:
+//! the `aes*-ecb` commands, one generic function that `main` instantiates per key length.
 //!
 //! Only the mode wiring lives here: key loading, stdin framing and block-alignment enforcement are
 //! all in [`crate::helpers::block_mode_helpers`], shared with the `aes*-cbc` and `aes*-cfb` commands. See that
@@ -18,67 +19,48 @@
 use crate::helpers::block_mode_helpers::{
     CipherDirection, decrypt_stream, encrypt_stream, load_key_object, start_encryptor,
 };
-use bouncycastle::aes::{AES_BLOCK_LEN, AES128Key, AES192Key, AES256Key};
+use bouncycastle::cipher::BlockCipherKey;
+use bouncycastle::cipher::modes::ModeNames;
 use bouncycastle::cipher::modes::hazmat::ecb::ECB;
 use bouncycastle::cipher::padding::NoPadding;
+use bouncycastle::core::hazmat::ElectronicCodeBook;
 use bouncycastle::core::symmetric_key::{SymmetricDecryptionKey, SymmetricEncryptionKey};
 
-/// Names the mode in error messages.
+/// The 128-bit block of the ciphers these commands serve; TDES has its own commands.
+const BLOCK_LEN: usize = 16;
+
 const MODE: &str = "ECB";
 
-pub(crate) fn aes128_ecb_cmd(
+/// ECB without padding under a `KEY_LEN`-byte key for the permutation `P`; `alg` names the
+/// cipher and key length in messages.
+pub(crate) fn ecb_cmd<P, const KEY_LEN: usize>(
     action: &CipherDirection,
     key: &Option<String>,
     key_file: &Option<String>,
     output_hex: bool,
-) {
-    run::<_, 16>(
+    alg: &str,
+) where
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames + Clone,
+{
+    run::<_, KEY_LEN>(
         action,
-        &load_key_object::<AES128Key<ECB<NoPadding>>, 16>(key, key_file, "AES-128"),
+        &load_key_object::<BlockCipherKey<P, ECB<NoPadding>>, KEY_LEN>(key, key_file, alg),
         output_hex,
     );
 }
 
-pub(crate) fn aes192_ecb_cmd(
-    action: &CipherDirection,
-    key: &Option<String>,
-    key_file: &Option<String>,
-    output_hex: bool,
-) {
-    run::<_, 24>(
-        action,
-        &load_key_object::<AES192Key<ECB<NoPadding>>, 24>(key, key_file, "AES-192"),
-        output_hex,
-    );
-}
-
-pub(crate) fn aes256_ecb_cmd(
-    action: &CipherDirection,
-    key: &Option<String>,
-    key_file: &Option<String>,
-    output_hex: bool,
-) {
-    run::<_, 32>(
-        action,
-        &load_key_object::<AES256Key<ECB<NoPadding>>, 32>(key, key_file, "AES-256"),
-        output_hex,
-    );
-}
-
-/// Dispatches to the shared streaming loops under the key's ECB mode. `INIT_DATA_LEN` is 0, so
-/// the loops write and read no IV, and `NoPadding` makes them refuse a partial final block.
 fn run<K, const KEY_LEN: usize>(action: &CipherDirection, key: &K, output_hex: bool)
 where
-    K: SymmetricEncryptionKey<KEY_LEN, 0, AES_BLOCK_LEN>
-        + SymmetricDecryptionKey<KEY_LEN, 0, AES_BLOCK_LEN>,
+    K: SymmetricEncryptionKey<KEY_LEN, 0, BLOCK_LEN>
+        + SymmetricDecryptionKey<KEY_LEN, 0, BLOCK_LEN>,
 {
     match action {
         CipherDirection::Encrypt => {
             // ECB has no IV: the constructor's RNG draws nothing, and nothing is written.
             let (enc, _) = start_encryptor(None, |rng| key.create_encryptor(rng));
-            encrypt_stream::<_, 0, AES_BLOCK_LEN>(enc, None, output_hex, Some(MODE))
+            encrypt_stream::<_, 0, BLOCK_LEN>(enc, None, output_hex, Some(MODE))
         }
-        CipherDirection::Decrypt => decrypt_stream::<_, 0, AES_BLOCK_LEN>(
+        CipherDirection::Decrypt => decrypt_stream::<_, 0, BLOCK_LEN>(
             None,
             |no_iv| key.create_decryptor(no_iv),
             output_hex,

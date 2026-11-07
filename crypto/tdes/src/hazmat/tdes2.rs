@@ -9,7 +9,7 @@ use crate::hazmat::tdes::{
 use crate::schedule::expand;
 use bouncycastle_cipher::modes::ModeNames;
 use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
-use bouncycastle_core::hazmat::{BlockPermutation, ElectronicCodeBook};
+use bouncycastle_core::hazmat::{BlockPermutation, KeyExpansion};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::Algorithm;
@@ -104,7 +104,7 @@ impl Algorithm for TDES2Internal {
     const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::None;
 }
 
-impl ElectronicCodeBook<KEY_LEN_2KEY, BLOCK_LEN> for TDES2Internal {
+impl KeyExpansion<KEY_LEN_2KEY> for TDES2Internal {
     /// Expands a 16-byte key bundle `Key1 || Key2` into the two DEA key schedules.
     ///
     /// Parity bits are ignored, as for [`TDESInternal`](super::TDESInternal).

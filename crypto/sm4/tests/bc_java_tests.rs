@@ -19,7 +19,7 @@
 //! the decryption half of `test1000000()`, which the draft does not print. That test is ignored in
 //! unoptimised builds (see its attribute) and runs under `cargo test --release`.
 
-use bouncycastle_core::hazmat::{BlockPermutation, ElectronicCodeBook};
+use bouncycastle_core::hazmat::{BlockPermutation, KeyExpansion};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_hex as hex;
 use bouncycastle_sm4::BLOCK_LEN;

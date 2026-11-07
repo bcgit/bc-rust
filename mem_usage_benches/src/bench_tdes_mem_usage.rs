@@ -52,7 +52,7 @@
 #![allow(dead_code)]
 #![allow(unused_imports)]
 
-use bouncycastle::core::hazmat::{BlockPermutation, ElectronicCodeBook};
+use bouncycastle::core::hazmat::{BlockPermutation, KeyExpansion};
 use bouncycastle::core::key_material::{KeyMaterial, KeyType};
 use bouncycastle::tdes::hazmat::{TDES2Internal, TDESInternal};
 use bouncycastle::tdes::{BLOCK_LEN, KEY_LEN, KEY_LEN_2KEY};

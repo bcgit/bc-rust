@@ -6,7 +6,7 @@ use bouncycastle_cipher::modes::hazmat::ecb::ECB;
 use bouncycastle_cipher::modes::{Blocks, CBC, CFB, CFB8, CMAC, CTR, ModeNames, TKW};
 use bouncycastle_cipher::padding::{NoPadding, PKCS7};
 use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
-use bouncycastle_core::hazmat::{BlockPermutation, EcbDecryptionKey, ElectronicCodeBook, Mode};
+use bouncycastle_core::hazmat::{BlockPermutation, EcbDecryptionKey, KeyExpansion, Mode};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::symmetric_key::{

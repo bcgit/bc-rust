@@ -1,5 +1,5 @@
-//! The [`BlockPermutation`] trait, a keyed block permutation, and [`ElectronicCodeBook`], which
-//! adds its construction from key material.
+//! The [`BlockPermutation`] trait, a keyed block permutation; [`KeyExpansion`], its construction
+//! from key material; and [`ElectronicCodeBook`], the two together.
 
 use crate::errors::SymmetricCipherError;
 use crate::key_material::KeyMaterial;
@@ -11,7 +11,7 @@ use crate::key_material::KeyType;
 // end of imports needed for docs
 
 /// A keyed block permutation: the `CIPH_K` / `CIPH^-1_K` of NIST SP 800-38A Sec 5.1, already
-/// keyed. A key object builds it through [`ElectronicCodeBook::new`]; the modes in
+/// keyed. A key object builds it through [`KeyExpansion::new`]; the modes in
 /// `bouncycastle_cipher::modes` bound on this trait alone.
 ///
 /// # 🚨 Security Considerations 🚨
@@ -26,7 +26,7 @@ use crate::key_material::KeyType;
 /// # Why the block methods are infallible
 ///
 /// Every length here is fixed by a type, and a constructed value is always ready to use, so there
-/// is nothing a caller can get wrong once [`ElectronicCodeBook::new`] has returned; that
+/// is nothing a caller can get wrong once [`KeyExpansion::new`] has returned; that
 /// constructor is the one fallible step, and only because of the key.
 pub trait BlockPermutation<const BLOCK_LEN: usize>: Algorithm + Sized {
     /// The forward cipher function, in place.
@@ -95,11 +95,11 @@ pub trait BlockPermutation<const BLOCK_LEN: usize>: Algorithm + Sized {
     fn decrypt_4blocks(&self, blocks: &mut [[u8; BLOCK_LEN]; 4]);
 }
 
-/// A [`BlockPermutation`] that can be built from `KEY_LEN` bytes of key material: what a key
-/// object does once, when it is made.
-pub trait ElectronicCodeBook<const KEY_LEN: usize, const BLOCK_LEN: usize>:
-    BlockPermutation<BLOCK_LEN>
-{
+/// A permutation that is built from `KEY_LEN` bytes of key material: what a key object does once,
+/// when it is made. The key length is the trait's parameter so that a generic key object can be
+/// constructed over any implementor without naming the block length, which the mode traits tie
+/// in through [`ElectronicCodeBook`].
+pub trait KeyExpansion<const KEY_LEN: usize>: Sized {
     /// Expands the key.
     ///
     /// # Errors
@@ -107,4 +107,18 @@ pub trait ElectronicCodeBook<const KEY_LEN: usize, const BLOCK_LEN: usize>:
     /// security strength is below [`Algorithm::MAX_SECURITY_STRENGTH`], both as a
     /// [`SymmetricCipherError::KeyMaterialError`].
     fn new(key: &KeyMaterial<KEY_LEN>) -> Result<Self, SymmetricCipherError>;
+}
+
+/// A [`BlockPermutation`] with its [`KeyExpansion`]: the bound the modes in
+/// `bouncycastle_cipher::modes` place on their permutation, tying the key length a mode trait
+/// names to the block length the permutation has. Implemented for every type that implements
+/// both; implement those two, not this.
+pub trait ElectronicCodeBook<const KEY_LEN: usize, const BLOCK_LEN: usize>:
+    KeyExpansion<KEY_LEN> + BlockPermutation<BLOCK_LEN>
+{
+}
+
+impl<P, const KEY_LEN: usize, const BLOCK_LEN: usize> ElectronicCodeBook<KEY_LEN, BLOCK_LEN> for P where
+    P: KeyExpansion<KEY_LEN> + BlockPermutation<BLOCK_LEN>
+{
 }

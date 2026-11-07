@@ -1,277 +1,29 @@
-//! Known-answer tests against Project Wycheproof's `testvectors_v1/camellia_ccm_test.json`.
-//!
-//! Requires the Wycheproof repository (https://github.com/C2SP/wycheproof) to be cloned alongside
-//! this repository, i.e. at `../wycheproof` relative to the root of this git project. If it is
-//! absent the test prints a warning and passes, matching the convention used by the other vector
-//! suites in this crate.
-//!
-//! # What this set covers
-//!
-//! There is no NIST vector file for Camellia-CCM, so this is the crate's only CCM known answer,
-//! and it is deliberately adversarial in the ways a conformance set is not: malformed and truncated tags, every
-//! nonce length from 8 to 2144 *bits* (most of which A.1 does not permit at all), a tag size of
-//! 16 bits that SP 800-38C Appendix B.2 calls insecure, and pseudorandom sizes meant to catch an
-//! implementation that only handles the common cases. See
-//! `camellia_ccm_test.json`'s own `"notes"` object for exactly what each
-//! `flags` entry is checking.
-//!
-//! # Ciphertext and tag are separate fields
-//!
-//! Wycheproof's AEAD schema carries `ct` and `tag` as distinct fields (the `aead_test_schema_v1`
-//! schema), so these cases go through the key's detached in-place one-shots
-//! (`Camellia*Key<CCM<N, T>>`), not the inline pair.
-//!
-//! # Most of the parameter space cannot be dispatched to at all, by design
-//!
-//! The mode's `NONCE_LEN` and `TAG_LEN` are const generics restricted to A.1's sets --
-//! `NONCE_LEN` in `7..=13` bytes, `TAG_LEN` in `{4, 6, 8, 10, 12, 14, 16}` bytes -- so there is no
-//! instantiation to dispatch a group whose `ivSize`/`tagSize` falls outside them to at all; unlike
-//! a runtime check, this is not something a case can "fail", because it is a compile-time property
-//! of the type, not a value the library ever sees. Those groups (most of the file: the point of
-//! `InvalidNonceSize`/`InvalidTagSize` and most of the `Pseudorandom` groups is to probe exactly
-//! this boundary) are counted as not supported rather than silently dropped, and the counts are
-//! asserted at the end so a change in the vector file's shape is visible.
+//! Project Wycheproof's `camellia_ccm_test.json` through `Camellia*Key<CCM<N, T>>`, via the shared
+//! runner. The set is adversarial: most of its nonce and tag sizes are outside SP 800-38C A.1's
+//! sets and so have no key type to run under, and are counted rather than dropped. Requires the
+//! Wycheproof repository at `../wycheproof`; absent, the test warns and passes.
 
-use bouncycastle_camellia::{Camellia128Key, Camellia192Key, Camellia256Key};
-use bouncycastle_cipher::modes::CCM;
-use bouncycastle_core::errors::SymmetricCipherError;
-use bouncycastle_core::hazmat::do_hazardous_operations;
-use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
-use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::symmetric_key::{
-    AeadDeclaredDecryptionKey, AeadDeclaredEncryptionKey, FromKeyMaterial,
+use bouncycastle_camellia::hazmat::{
+    Camellia128Internal, Camellia192Internal, Camellia256Internal,
 };
-use bouncycastle_core_test_framework::test_data_loaders::{Value, hex_field, wycheproof_json};
-
-/// Wraps the vector's raw key bytes, promoting them if `KeyMaterial`'s entropy heuristic declined
-/// to call them a cipher key. Same helper as the CMAC suite in this crate.
-fn cipher_key<const N: usize>(bytes: &[u8]) -> KeyMaterial<N> {
-    assert_eq!(bytes.len(), N, "key length should match the parameter set");
-    let mut key = KeyMaterial::<N>::from_bytes_as_type(bytes, KeyType::SymmetricCipherKey)
-        .expect("wycheproof key bytes fit the buffer");
-
-    if key.key_type() != KeyType::SymmetricCipherKey {
-        do_hazardous_operations(&mut key, |k| {
-            k.set_key_type(KeyType::SymmetricCipherKey)?;
-            k.set_security_strength(SecurityStrength::from_bytes(N))
-        })
-        .expect("promoting a wycheproof test key");
-    }
-    key
-}
-
-/// Runs one case at a fully-instantiated `(KEY_LEN, NONCE_LEN, TAG_LEN)` key type `K`, through
-/// the key's detached in-place one-shots.
-///
-/// For a `result: "valid"` case, `msg` must encrypt to exactly `expected_ct`/`expected_tag`, and
-/// `expected_ct`/`expected_tag` must decrypt back to `msg`. For `result: "invalid"`, only the
-/// decrypt direction is checked -- re-encrypting `msg` has no reason to reproduce a deliberately
-/// corrupted `ct`/`tag` -- and it must fail the tag check rather than return a payload, leaving
-/// the buffer zeroized as the mode's in-place decrypt documents.
-#[allow(clippy::too_many_arguments)]
-fn run_case<const KEY_LEN: usize, const NONCE_LEN: usize, const TAG_LEN: usize, K>(
-    tc_id: u64,
-    key_bytes: &[u8],
-    nonce_bytes: &[u8],
-    aad: &[u8],
-    msg: &[u8],
-    expected_ct: &[u8],
-    expected_tag: &[u8],
-    valid: bool,
-) where
-    K: FromKeyMaterial<KEY_LEN>
-        + AeadDeclaredEncryptionKey<KEY_LEN, NONCE_LEN, TAG_LEN, TAG_LEN>
-        + AeadDeclaredDecryptionKey<KEY_LEN, NONCE_LEN, TAG_LEN, TAG_LEN>,
-{
-    let key = K::from_key_material(&cipher_key::<KEY_LEN>(key_bytes)).expect("a wycheproof key");
-    let nonce: [u8; NONCE_LEN] =
-        nonce_bytes.try_into().unwrap_or_else(|_| panic!("tcId {tc_id}: bad nonce length"));
-    let tag: [u8; TAG_LEN] =
-        expected_tag.try_into().unwrap_or_else(|_| panic!("tcId {tc_id}: bad tag length"));
-
-    if valid {
-        let mut ct = msg.to_vec();
-        let got_tag = key
-            .encrypt_detached_in_place_nonce(&nonce, aad, &mut ct)
-            .unwrap_or_else(|e| panic!("tcId {tc_id}: valid case failed to encrypt: {e:?}"));
-        assert_eq!(ct, expected_ct, "tcId {tc_id}: ciphertext mismatch");
-        assert_eq!(got_tag, tag, "tcId {tc_id}: tag mismatch");
-    }
-
-    let mut plaintext = expected_ct.to_vec();
-    match key.decrypt_detached_in_place(&nonce, aad, &mut plaintext, &tag) {
-        Ok(()) => {
-            assert!(valid, "tcId {tc_id}: an invalid vector decrypted and verified anyway");
-            assert_eq!(plaintext, msg, "tcId {tc_id}: decrypted plaintext mismatch");
-        }
-        Err(SymmetricCipherError::AEADTagCheckFailed) => {
-            assert!(!valid, "tcId {tc_id}: a valid vector failed its tag check");
-            assert!(
-                plaintext.iter().all(|&b| b == 0),
-                "tcId {tc_id}: a failed tag check must leave the output buffer zeroized"
-            );
-        }
-        Err(e) => panic!("tcId {tc_id}: unexpected CCM error: {e:?}"),
-    }
-}
-
-/// Dispatches to one of the 3 (key) x 7 (nonce) x 7 (tag) valid instantiations, or reports that
-/// the case's parameter sizes have no instantiation to dispatch to at all.
-#[allow(clippy::too_many_arguments)]
-fn dispatch(
-    tc_id: u64,
-    key_len_bytes: u64,
-    nonce_len_bytes: u64,
-    tag_len_bytes: u64,
-    key_bytes: &[u8],
-    nonce_bytes: &[u8],
-    aad: &[u8],
-    msg: &[u8],
-    expected_ct: &[u8],
-    expected_tag: &[u8],
-    valid: bool,
-) -> bool {
-    macro_rules! with_key_len {
-        ($n:literal, $t:literal) => {
-            match key_len_bytes {
-                16 => {
-                    run_case::<16, $n, $t, Camellia128Key<CCM<$n, $t>>>(
-                        tc_id, key_bytes, nonce_bytes, aad, msg, expected_ct, expected_tag, valid,
-                    );
-                    true
-                }
-                24 => {
-                    run_case::<24, $n, $t, Camellia192Key<CCM<$n, $t>>>(
-                        tc_id, key_bytes, nonce_bytes, aad, msg, expected_ct, expected_tag, valid,
-                    );
-                    true
-                }
-                32 => {
-                    run_case::<32, $n, $t, Camellia256Key<CCM<$n, $t>>>(
-                        tc_id, key_bytes, nonce_bytes, aad, msg, expected_ct, expected_tag, valid,
-                    );
-                    true
-                }
-                _ => false,
-            }
-        };
-    }
-    macro_rules! with_tag_len {
-        ($n:literal) => {
-            match tag_len_bytes {
-                4 => with_key_len!($n, 4),
-                6 => with_key_len!($n, 6),
-                8 => with_key_len!($n, 8),
-                10 => with_key_len!($n, 10),
-                12 => with_key_len!($n, 12),
-                14 => with_key_len!($n, 14),
-                16 => with_key_len!($n, 16),
-                _ => false,
-            }
-        };
-    }
-    match nonce_len_bytes {
-        7 => with_tag_len!(7),
-        8 => with_tag_len!(8),
-        9 => with_tag_len!(9),
-        10 => with_tag_len!(10),
-        11 => with_tag_len!(11),
-        12 => with_tag_len!(12),
-        13 => with_tag_len!(13),
-        _ => false,
-    }
-}
+use bouncycastle_cipher_test_framework::wycheproof;
 
 #[test]
 fn wycheproof_camellia_ccm_known_answer_tests() {
-    let Some(doc) = wycheproof_json("camellia_ccm_test.json") else { return };
-
-    let groups = doc.get("testGroups").and_then(Value::as_array).expect("testGroups");
-
-    let mut run = 0usize;
-    let mut valid_count = 0usize;
-    let mut invalid_count = 0usize;
-    let mut unsupported_groups = 0usize;
-    let mut unsupported_cases = 0usize;
-
-    for group in groups {
-        let iv_size_bits = group.get("ivSize").and_then(Value::as_u64).expect("ivSize");
-        let key_size_bits = group.get("keySize").and_then(Value::as_u64).expect("keySize");
-        let tag_size_bits = group.get("tagSize").and_then(Value::as_u64).expect("tagSize");
-        assert_eq!(iv_size_bits % 8, 0, "ivSize must be a whole number of octets");
-        assert_eq!(key_size_bits % 8, 0, "keySize must be a whole number of octets");
-        assert_eq!(tag_size_bits % 8, 0, "tagSize must be a whole number of octets");
-
-        // A group is only fully within A.1's dispatchable sets if its *declared* nonce/tag sizes
-        // are; a `Pseudorandom` group whose individual tests vary can still contribute some
-        // dispatched and some unsupported cases, so this is a per-group tally for the printout, not
-        // something the per-case counts below depend on.
-        if !(7..=13).contains(&(iv_size_bits / 8))
-            || ![4u64, 6, 8, 10, 12, 14, 16].contains(&(tag_size_bits / 8))
-        {
-            unsupported_groups += 1;
-        }
-
-        let tests = group.get("tests").and_then(Value::as_array).expect("tests");
-
-        // Each case is dispatched on its own actual field lengths, not the group's declared
-        // sizes: a `Pseudorandom` group's whole point is varying them per test, and `dispatch`
-        // itself is the authority on what it can run (only A.1's own sets).
-        for test in tests {
-            let tc_id = test.get("tcId").and_then(Value::as_u64).expect("tcId");
-            let key_bytes = hex_field(test, "key", tc_id);
-            let nonce_bytes = hex_field(test, "iv", tc_id);
-            let aad = hex_field(test, "aad", tc_id);
-            let msg = hex_field(test, "msg", tc_id);
-            let ct = hex_field(test, "ct", tc_id);
-            let tag = hex_field(test, "tag", tc_id);
-            let result = test.get("result").and_then(Value::as_str).expect("result");
-            let valid = match result {
-                "valid" => true,
-                "invalid" => false,
-                other => panic!("tcId {tc_id}: unexpected result {other}"),
-            };
-
-            let ran = dispatch(
-                tc_id,
-                key_bytes.len() as u64,
-                nonce_bytes.len() as u64,
-                tag.len() as u64,
-                &key_bytes,
-                &nonce_bytes,
-                &aad,
-                &msg,
-                &ct,
-                &tag,
-                valid,
-            );
-
-            if ran {
-                run += 1;
-                if valid {
-                    valid_count += 1;
-                } else {
-                    invalid_count += 1;
-                }
-            } else {
-                unsupported_cases += 1;
-            }
-        }
-    }
-
-    println!(
-        "Wycheproof Camellia-CCM: {run} cases run ({valid_count} valid, {invalid_count} invalid), \
-         {unsupported_cases} cases in {unsupported_groups} groups not supported \
-         (no A.1 instantiation)"
-    );
-
-    // Guards against a silently-vacuous run: at least the common 96-bit-nonce/128-bit-tag groups
-    // must have been dispatched to and must have included both valid and invalid cases.
-    assert!(run > 0, "expected at least some cases to be within A.1's dispatchable sets");
-    assert!(valid_count > 0, "expected at least some valid cases to be run");
-    assert!(invalid_count > 0, "expected at least some invalid (tag-failure) cases to be run");
+    let Some(counts) = wycheproof::ccm::<Camellia128Internal, 16>("camellia_ccm_test.json") else {
+        return;
+    };
+    let counts = counts
+        + wycheproof::ccm::<Camellia192Internal, 24>("camellia_ccm_test.json")
+            .expect("the file was found above");
+    let counts = counts
+        + wycheproof::ccm::<Camellia256Internal, 32>("camellia_ccm_test.json")
+            .expect("the file was found above");
+    assert!(counts.run() > 0, "expected at least some cases to be within A.1's dispatchable sets");
+    assert!(counts.valid > 0, "expected at least some valid cases to be run");
+    assert!(counts.invalid > 0, "expected at least some invalid (tag-failure) cases to be run");
     assert!(
-        unsupported_groups > 0,
+        counts.unsupported > 0,
         "expected most of this adversarial set to be outside A.1's sets"
     );
 }

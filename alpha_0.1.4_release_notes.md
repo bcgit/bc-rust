@@ -37,6 +37,12 @@
   `KeyWrapper` is implemented for the encrypting worker only, so an unwrapper has no wrapping method and a
   permutation that decrypts only is refused a wrapper at compile time by every route. The `AES_KW_*`, `AES_KWP_*`
   and `TDES_TKW` aliases gain the `Dir` parameter; `TDES2_TKW` is the decrypting one.
+* `BlockCipherKey<P, M>` in `bouncycastle-cipher` is the one block cipher key object: the role impls, the key-material
+  constructor and GMAC's nonce-bound pair are written once over the permutation, and `AES128Key<M>`, `ARIA256Key<M>`,
+  `Camellia192Key<M>`, `SM4Key<M>` and the rest are aliases of it; `KeyExpansion<KEY_LEN>` carries a permutation's
+  constructor, with `ElectronicCodeBook` the tie of key length to block length. The CLI's block cipher commands, the
+  block cipher test suites (`bouncycastle-cipher-test-framework`), the CLI test harness and the stack-usage harness
+  are likewise one copy over the permutation.
 * Cipher and MAC workers no longer implement `SuspendableKeyed` (#173): a resumed worker is a second copy of a
   nonce, counter or keystream position. The AES modes, CMAC and Ascon-AEAD128 lose their suspended-state
   constants and `hazmat::ModeKey` goes with them; HMAC and HKDF still suspend, and hashes, XOFs and KMAC keep

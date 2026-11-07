@@ -19,7 +19,9 @@
 //! The important stuff for benchmarking goes to stderr so the junk can be piped to /dev/null.
 //!
 //! Main is at the bottom, and controls which of these actually runs -- measure one at a time,
-//! because massif reports the peak across the whole process.
+//! because massif reports the peak across the whole process. The operations themselves are the
+//! shared `block_cipher_mem_usage` harness over this cipher's permutations; this file holds the
+//! keys and the choice.
 //!
 //! # What to expect, and why massif cannot see it
 //!
@@ -50,41 +52,13 @@
 //! `decrypt_4blocks`, 528 B for `encrypt_4blocks`.
 
 #![allow(dead_code)]
-#![allow(unused_imports)]
 
-use bouncycastle::camellia::LANES;
 use bouncycastle::camellia::hazmat::{
     Camellia128Internal, Camellia192Internal, Camellia256Internal,
 };
-use bouncycastle::core::hazmat::{BlockPermutation, ElectronicCodeBook};
-use bouncycastle::core::key_material::{KeyMaterial, KeyType};
 
-/// This exists so /usr/bin/time can measure the base memory footprint of the harness itself.
-fn bench_do_nothing() {
-    eprintln!("DoNothing");
+use mem_usage_benches::block_cipher_mem_usage as bench;
 
-    print!("{}", 1 + 1);
-}
-
-/// Prints the in-memory size of each engine, i.e. the persistent cost of holding the subkeys.
-fn print_struct_sizes() {
-    use core::mem::size_of;
-
-    // RFC 3713 Sec 2.2: kw1..kw4, k1..k18 and ke1..ke4 for 128-bit keys (26 x 8 bytes);
-    // kw1..kw4, k1..k24 and ke1..ke6 otherwise (34 x 8 bytes).
-    println!("size_of<Camellia128Internal>: {}", size_of::<Camellia128Internal>());
-    println!("size_of<Camellia192Internal>: {}", size_of::<Camellia192Internal>());
-    println!("size_of<Camellia256Internal>: {}", size_of::<Camellia256Internal>());
-}
-
-/// Runs the operation in its own frame. Returns nothing, so no result crosses the boundary and
-/// the closure's frame is exactly the operation's.
-#[inline(never)]
-fn measure(f: impl FnOnce()) {
-    f()
-}
-
-/// The RFC 3713 Appendix A keys, so the engines under measurement are known ones.
 const KEY_128: [u8; 16] = [
     0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef, 0xfe, 0xdc, 0xba, 0x98, 0x76, 0x54, 0x32, 0x10,
 ];
@@ -97,271 +71,37 @@ const KEY_256: [u8; 32] = [
     0x00, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88, 0x99, 0xaa, 0xbb, 0xcc, 0xdd, 0xee, 0xff,
 ];
 
-/// Wraps a hard-coded key. `#[inline(never)]` so the wrapping is a sibling frame of whatever
-/// uses the key, not part of it.
-#[inline(never)]
-fn key<const N: usize>(bytes: &[u8; N]) -> KeyMaterial<N> {
-    KeyMaterial::<N>::from_bytes_as_type(bytes, KeyType::SymmetricCipherKey).unwrap()
-}
-
-/// Expands the key into an engine, in its own frame, so the expansion's temporaries are popped
-/// before an operation on the engine runs.
-#[inline(never)]
-fn load_camellia128() -> Camellia128Internal {
-    Camellia128Internal::new(&key(&KEY_128)).unwrap()
-}
-#[inline(never)]
-fn load_camellia192() -> Camellia192Internal {
-    Camellia192Internal::new(&key(&KEY_192)).unwrap()
-}
-#[inline(never)]
-fn load_camellia256() -> Camellia256Internal {
-    Camellia256Internal::new(&key(&KEY_256)).unwrap()
-}
-
-// ---- key expansion: the expansion is the operation, so it runs inside `measure` ------------
-
-fn bench_camellia128_key_expansion() {
-    eprintln!("Camellia128Internal::new (key expansion)");
-    let key = key(&KEY_128);
-    measure(|| {
-        let camellia = Camellia128Internal::new(&key).unwrap();
-        print!("{camellia:?}");
-    });
-}
-
-fn bench_camellia192_key_expansion() {
-    eprintln!("Camellia192Internal::new (key expansion)");
-    let key = key(&KEY_192);
-    measure(|| {
-        let camellia = Camellia192Internal::new(&key).unwrap();
-        print!("{camellia:?}");
-    });
-}
-
-fn bench_camellia256_key_expansion() {
-    eprintln!("Camellia256Internal::new (key expansion)");
-    let key = key(&KEY_256);
-    measure(|| {
-        let camellia = Camellia256Internal::new(&key).unwrap();
-        print!("{camellia:?}");
-    });
-}
-
-// ---- the six entry points, per key length -------------------------------------------------
-//
-// Every entry point runs the same four-lane circuit: a single block fills all four lanes with
-// copies, two blocks fill two, so the working state is the same size throughout. The blocks are
-// stack arrays in the closure, never a heap buffer, so massif's --heap=no does not hide them.
-
-fn bench_camellia128_encrypt_block() {
-    eprintln!("Camellia128Internal::encrypt_block");
-    let camellia = load_camellia128();
-    measure(|| {
-        let mut block = [0x11u8; 16];
-        camellia.encrypt_block(&mut block);
-        print!("{block:x?}");
-    });
-}
-
-fn bench_camellia128_decrypt_block() {
-    eprintln!("Camellia128Internal::decrypt_block");
-    let camellia = load_camellia128();
-    measure(|| {
-        let mut block = [0x11u8; 16];
-        camellia.decrypt_block(&mut block);
-        print!("{block:x?}");
-    });
-}
-
-fn bench_camellia128_encrypt_2blocks() {
-    eprintln!("Camellia128Internal::encrypt_2blocks");
-    let camellia = load_camellia128();
-    measure(|| {
-        let mut blocks = [[0x11u8; 16], [0x22u8; 16]];
-        camellia.encrypt_2blocks(&mut blocks);
-        print!("{blocks:x?}");
-    });
-}
-
-fn bench_camellia128_decrypt_2blocks() {
-    eprintln!("Camellia128Internal::decrypt_2blocks");
-    let camellia = load_camellia128();
-    measure(|| {
-        let mut blocks = [[0x11u8; 16], [0x22u8; 16]];
-        camellia.decrypt_2blocks(&mut blocks);
-        print!("{blocks:x?}");
-    });
-}
-
-fn bench_camellia128_encrypt_4blocks() {
-    eprintln!("Camellia128Internal::encrypt_4blocks");
-    let camellia = load_camellia128();
-    measure(|| {
-        let mut blocks: [[u8; 16]; LANES] =
-            [[0x11u8; 16], [0x22u8; 16], [0x33u8; 16], [0x44u8; 16]];
-        camellia.encrypt_4blocks(&mut blocks);
-        print!("{blocks:x?}");
-    });
-}
-
-fn bench_camellia128_decrypt_4blocks() {
-    eprintln!("Camellia128Internal::decrypt_4blocks");
-    let camellia = load_camellia128();
-    measure(|| {
-        let mut blocks: [[u8; 16]; LANES] =
-            [[0x11u8; 16], [0x22u8; 16], [0x33u8; 16], [0x44u8; 16]];
-        camellia.decrypt_4blocks(&mut blocks);
-        print!("{blocks:x?}");
-    });
-}
-
-fn bench_camellia192_encrypt_block() {
-    eprintln!("Camellia192Internal::encrypt_block");
-    let camellia = load_camellia192();
-    measure(|| {
-        let mut block = [0x11u8; 16];
-        camellia.encrypt_block(&mut block);
-        print!("{block:x?}");
-    });
-}
-
-fn bench_camellia192_decrypt_block() {
-    eprintln!("Camellia192Internal::decrypt_block");
-    let camellia = load_camellia192();
-    measure(|| {
-        let mut block = [0x11u8; 16];
-        camellia.decrypt_block(&mut block);
-        print!("{block:x?}");
-    });
-}
-
-fn bench_camellia192_encrypt_2blocks() {
-    eprintln!("Camellia192Internal::encrypt_2blocks");
-    let camellia = load_camellia192();
-    measure(|| {
-        let mut blocks = [[0x11u8; 16], [0x22u8; 16]];
-        camellia.encrypt_2blocks(&mut blocks);
-        print!("{blocks:x?}");
-    });
-}
-
-fn bench_camellia192_decrypt_2blocks() {
-    eprintln!("Camellia192Internal::decrypt_2blocks");
-    let camellia = load_camellia192();
-    measure(|| {
-        let mut blocks = [[0x11u8; 16], [0x22u8; 16]];
-        camellia.decrypt_2blocks(&mut blocks);
-        print!("{blocks:x?}");
-    });
-}
-
-fn bench_camellia192_encrypt_4blocks() {
-    eprintln!("Camellia192Internal::encrypt_4blocks");
-    let camellia = load_camellia192();
-    measure(|| {
-        let mut blocks: [[u8; 16]; LANES] =
-            [[0x11u8; 16], [0x22u8; 16], [0x33u8; 16], [0x44u8; 16]];
-        camellia.encrypt_4blocks(&mut blocks);
-        print!("{blocks:x?}");
-    });
-}
-
-fn bench_camellia192_decrypt_4blocks() {
-    eprintln!("Camellia192Internal::decrypt_4blocks");
-    let camellia = load_camellia192();
-    measure(|| {
-        let mut blocks: [[u8; 16]; LANES] =
-            [[0x11u8; 16], [0x22u8; 16], [0x33u8; 16], [0x44u8; 16]];
-        camellia.decrypt_4blocks(&mut blocks);
-        print!("{blocks:x?}");
-    });
-}
-
-fn bench_camellia256_encrypt_block() {
-    eprintln!("Camellia256Internal::encrypt_block");
-    let camellia = load_camellia256();
-    measure(|| {
-        let mut block = [0x11u8; 16];
-        camellia.encrypt_block(&mut block);
-        print!("{block:x?}");
-    });
-}
-
-fn bench_camellia256_decrypt_block() {
-    eprintln!("Camellia256Internal::decrypt_block");
-    let camellia = load_camellia256();
-    measure(|| {
-        let mut block = [0x11u8; 16];
-        camellia.decrypt_block(&mut block);
-        print!("{block:x?}");
-    });
-}
-
-fn bench_camellia256_encrypt_2blocks() {
-    eprintln!("Camellia256Internal::encrypt_2blocks");
-    let camellia = load_camellia256();
-    measure(|| {
-        let mut blocks = [[0x11u8; 16], [0x22u8; 16]];
-        camellia.encrypt_2blocks(&mut blocks);
-        print!("{blocks:x?}");
-    });
-}
-
-fn bench_camellia256_decrypt_2blocks() {
-    eprintln!("Camellia256Internal::decrypt_2blocks");
-    let camellia = load_camellia256();
-    measure(|| {
-        let mut blocks = [[0x11u8; 16], [0x22u8; 16]];
-        camellia.decrypt_2blocks(&mut blocks);
-        print!("{blocks:x?}");
-    });
-}
-
-fn bench_camellia256_encrypt_4blocks() {
-    eprintln!("Camellia256Internal::encrypt_4blocks");
-    let camellia = load_camellia256();
-    measure(|| {
-        let mut blocks: [[u8; 16]; LANES] =
-            [[0x11u8; 16], [0x22u8; 16], [0x33u8; 16], [0x44u8; 16]];
-        camellia.encrypt_4blocks(&mut blocks);
-        print!("{blocks:x?}");
-    });
-}
-
-fn bench_camellia256_decrypt_4blocks() {
-    eprintln!("Camellia256Internal::decrypt_4blocks");
-    let camellia = load_camellia256();
-    measure(|| {
-        let mut blocks: [[u8; 16]; LANES] =
-            [[0x11u8; 16], [0x22u8; 16], [0x33u8; 16], [0x44u8; 16]];
-        camellia.decrypt_4blocks(&mut blocks);
-        print!("{blocks:x?}");
-    });
+fn print_struct_sizes() {
+    bench::print_struct_size::<Camellia128Internal>("Camellia128Internal");
+    bench::print_struct_size::<Camellia192Internal>("Camellia192Internal");
+    bench::print_struct_size::<Camellia256Internal>("Camellia256Internal");
 }
 
 fn main() {
     print_struct_sizes()
-    // bench_do_nothing()
-    // bench_camellia128_key_expansion()
-    // bench_camellia192_key_expansion()
-    // bench_camellia256_key_expansion()
-    // bench_camellia128_encrypt_block()
-    // bench_camellia128_decrypt_block()
-    // bench_camellia128_encrypt_2blocks()
-    // bench_camellia128_decrypt_2blocks()
-    // bench_camellia128_encrypt_4blocks()
-    // bench_camellia128_decrypt_4blocks()
-    // bench_camellia192_encrypt_block()
-    // bench_camellia192_decrypt_block()
-    // bench_camellia192_encrypt_2blocks()
-    // bench_camellia192_decrypt_2blocks()
-    // bench_camellia192_encrypt_4blocks()
-    // bench_camellia192_decrypt_4blocks()
-    // bench_camellia256_encrypt_block()
-    // bench_camellia256_decrypt_block()
-    // bench_camellia256_encrypt_2blocks()
-    // bench_camellia256_decrypt_2blocks()
-    // bench_camellia256_encrypt_4blocks()
-    // bench_camellia256_decrypt_4blocks()
+    // bench::do_nothing()
+    // bench::all::<Camellia128Internal, 16>("Camellia128Internal", &KEY_128)
+    // bench::key_expansion::<Camellia128Internal, 16>("Camellia128Internal", &KEY_128)
+    // bench::encrypt_block::<Camellia128Internal, 16>("Camellia128Internal", &KEY_128)
+    // bench::decrypt_block::<Camellia128Internal, 16>("Camellia128Internal", &KEY_128)
+    // bench::encrypt_2blocks::<Camellia128Internal, 16>("Camellia128Internal", &KEY_128)
+    // bench::decrypt_2blocks::<Camellia128Internal, 16>("Camellia128Internal", &KEY_128)
+    // bench::encrypt_4blocks::<Camellia128Internal, 16>("Camellia128Internal", &KEY_128)
+    // bench::decrypt_4blocks::<Camellia128Internal, 16>("Camellia128Internal", &KEY_128)
+    // bench::all::<Camellia192Internal, 24>("Camellia192Internal", &KEY_192)
+    // bench::key_expansion::<Camellia192Internal, 24>("Camellia192Internal", &KEY_192)
+    // bench::encrypt_block::<Camellia192Internal, 24>("Camellia192Internal", &KEY_192)
+    // bench::decrypt_block::<Camellia192Internal, 24>("Camellia192Internal", &KEY_192)
+    // bench::encrypt_2blocks::<Camellia192Internal, 24>("Camellia192Internal", &KEY_192)
+    // bench::decrypt_2blocks::<Camellia192Internal, 24>("Camellia192Internal", &KEY_192)
+    // bench::encrypt_4blocks::<Camellia192Internal, 24>("Camellia192Internal", &KEY_192)
+    // bench::decrypt_4blocks::<Camellia192Internal, 24>("Camellia192Internal", &KEY_192)
+    // bench::all::<Camellia256Internal, 32>("Camellia256Internal", &KEY_256)
+    // bench::key_expansion::<Camellia256Internal, 32>("Camellia256Internal", &KEY_256)
+    // bench::encrypt_block::<Camellia256Internal, 32>("Camellia256Internal", &KEY_256)
+    // bench::decrypt_block::<Camellia256Internal, 32>("Camellia256Internal", &KEY_256)
+    // bench::encrypt_2blocks::<Camellia256Internal, 32>("Camellia256Internal", &KEY_256)
+    // bench::decrypt_2blocks::<Camellia256Internal, 32>("Camellia256Internal", &KEY_256)
+    // bench::encrypt_4blocks::<Camellia256Internal, 32>("Camellia256Internal", &KEY_256)
+    // bench::decrypt_4blocks::<Camellia256Internal, 32>("Camellia256Internal", &KEY_256)
 }

@@ -29,7 +29,7 @@
 //! ```
 //! # mod toy { include!("../../tests/common/toy_block_cipher.rs"); }
 //! # use toy::ToyBlockCipher;
-//! use bouncycastle_core::hazmat::{BlockDecryptMode, BlockEncryptMode, ElectronicCodeBook, Mode};
+//! use bouncycastle_core::hazmat::{BlockDecryptMode, BlockEncryptMode, ElectronicCodeBook, KeyExpansion, Mode};
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 //! use bouncycastle_core::traits::{BlockCipherDecryptor, BlockCipherEncryptor};
 //! use bouncycastle_cipher::modes::{Blocks, CBC};
@@ -61,7 +61,7 @@
 //! ```
 //! # mod toy { include!("../../tests/common/toy_block_cipher.rs"); }
 //! # use toy::ToyBlockCipher;
-//! use bouncycastle_core::hazmat::{BlockDecryptMode, BlockEncryptMode, ElectronicCodeBook, Mode};
+//! use bouncycastle_core::hazmat::{BlockDecryptMode, BlockEncryptMode, ElectronicCodeBook, KeyExpansion, Mode};
 //! use bouncycastle_core::key_material::{KeyMaterial128, KeyType};
 //! use bouncycastle_core::traits::{BlockCipherDecryptor, BlockCipherEncryptor};
 //! use bouncycastle_cipher::modes::{Blocks, CBC};
