@@ -10,7 +10,7 @@ mod hkdf_tests {
     use bouncycastle_core::security_strength::SecurityStrength;
     use bouncycastle_core::symmetric_key::{FromAnyKeyMaterial, MacGenerationKey};
     use bouncycastle_core::traits::{
-        Algorithm, AlgorithmInfo, HashAlgParams, HashOneShot, KDF, MAC,
+        Algorithm, AlgorithmInfo, HashAlgParams, HashOneShot, KDF, KDF_ONE_SHOT_MAX_LEN, MAC,
     };
     use bouncycastle_core_test_framework::DUMMY_SEED;
     use bouncycastle_core_test_framework::kdf::TestFrameworkKDF;
@@ -949,6 +949,33 @@ mod hkdf_tests {
         let prk = HKDF_SHA512::extract(&salt, &z).unwrap();
         assert_eq!(prk.key_type(), KeyType::CryptographicRandom);
         assert_eq!(prk.security_strength(), SecurityStrength::_128bit);
+    }
+
+    /// The provided one-shots derive exactly `KDF_ONE_SHOT_MAX_LEN` bytes and refuse one more,
+    /// before the function's own bound, which for HKDF-SHA256 lies well past it.
+    #[test]
+    fn the_one_shots_derive_up_to_their_cap() {
+        let ikm = KeyMaterial256::from_bytes_as_type(&DUMMY_SEED[..32], KeyType::Seed).unwrap();
+        let hkdf = HKDF_SHA256::new();
+        let at_cap = hkdf.derive_key(&ikm, b"info", KDF_ONE_SHOT_MAX_LEN).unwrap();
+        assert_eq!(at_cap.key_len(), KDF_ONE_SHOT_MAX_LEN);
+        let keys: [&dyn KeyMaterialTrait; 1] = [&ikm];
+        let multiple = hkdf.derive_key_from_multiple(&keys, b"info", KDF_ONE_SHOT_MAX_LEN).unwrap();
+        assert!(multiple.equals(&*at_cap));
+        assert!(matches!(
+            hkdf.derive_key(&ikm, b"info", KDF_ONE_SHOT_MAX_LEN + 1),
+            Err(KDFError::InvalidLength(_))
+        ));
+        assert!(matches!(
+            hkdf.derive_key_from_multiple(&keys, b"info", KDF_ONE_SHOT_MAX_LEN + 1),
+            Err(KDFError::InvalidLength(_))
+        ));
+        // the _out form takes the length the function allows
+        let mut long = KeyMaterial::<{ KDF_ONE_SHOT_MAX_LEN + 1 }>::new();
+        assert_eq!(
+            hkdf.derive_key_out(&ikm, b"info", KDF_ONE_SHOT_MAX_LEN + 1, &mut long).unwrap(),
+            KDF_ONE_SHOT_MAX_LEN + 1
+        );
     }
 
     /// RFC 5869 Sec 2.3: "OKM = first L octets of T", for any L up to 255 * HashLen, so a shorter
