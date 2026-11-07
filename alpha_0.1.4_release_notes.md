@@ -2,6 +2,18 @@
 
 ## Major features
 
+* ARIA -- `bouncycastle-aria`, the RFC 5794 block cipher at 128, 192 and 256 bits, constant-time and table-free (the
+  S-boxes as bit-sliced Boolean circuits, four blocks at a time), on the key objects as `ARIA128Key<M>` and friends
+  with CBC, CFB, CFB8, CTR, GCM, CCM, CMAC, GMAC, KW and KWP; the `aria*-{cbc,cfb,cfb8,ctr,gcm,ccm,kw,kwp}` CLI
+  commands.
+* Camellia -- `bouncycastle-camellia`, the RFC 3713 block cipher at 128, 192 and 256 bits, constant-time and table-free
+  (the S-box as a bit-sliced Boolean circuit, four blocks at a time), on the key objects as `Camellia128Key<M>` and
+  friends with CBC, CFB, CFB8, CTR, GCM, CCM, CMAC, GMAC and KW; the `camellia*-{cbc,cfb,cfb8,ctr,gcm,ccm,kw}` CLI
+  commands.
+* SM4 -- `bouncycastle-sm4`, the GB/T 32907-2016 block cipher (draft-ribose-cfrg-sm4-10), constant-time and
+  table-free (the S-box as a bit-sliced Boolean circuit, four blocks at a time), on the key object `SM4Key<M>` with
+  CBC, CFB, CFB8, CTR, GCM and CCM (RFC 8998's AEAD_SM4_GCM and AEAD_SM4_CCM), KW and KWP; the
+  `sm4-{cbc,cfb,cfb8,ctr,gcm,ccm,kw,kwp}` CLI commands.
 * CHACHA20 -- ChaCha20, Poly1305 and ChaCha20-Poly1305 (RFC 8439).
 * TDES -- three-key TDEA (NIST SP 800-67 Rev 2) as a constant-time, table-free bit-sliced engine under `hazmat`,
   with ECB, CBC, CFB64, CFB8 and CTR (SP 800-38A Appendix E) and TDEA Key Wrap (SP 800-38F TKW) through the key

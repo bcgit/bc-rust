@@ -63,7 +63,7 @@ use crate::helpers::block_mode_helpers::{CipherDirection, load_key};
 /// The one-shots this command uses are on the key's role traits, and the key type carries the
 /// nonce and tag lengths as const parameters, so a generic `run` over the key length needs a way
 /// to name the key type for an `(N, T)` it chooses at run time: this generic associated type.
-trait CcmKeys<const KEY_LEN: usize> {
+pub(crate) trait CcmKeys<const KEY_LEN: usize> {
     /// The key type at nonce length `N` and tag length `T`.
     type Key<const N: usize, const T: usize>: FromKeyMaterial<KEY_LEN>
         + AeadDeclaredEncryptionKey<KEY_LEN, N, T, T>
@@ -227,7 +227,7 @@ fn load_aad(aad: &Option<String>, aad_file: &Option<String>) -> Vec<u8> {
 /// be matched into one of the permitted instantiations. The two nested matches are the price of
 /// that, and they are exhaustive over A.1's sets: 7 nonce lengths x 7 tag lengths.
 #[allow(clippy::too_many_arguments)] // the three key lengths' inputs, already parsed
-fn run<F: CcmKeys<KEY_LEN>, const KEY_LEN: usize>(
+pub(crate) fn run<F: CcmKeys<KEY_LEN>, const KEY_LEN: usize>(
     action: &CipherDirection,
     key: &KeyMaterial<KEY_LEN>,
     nonce: &Option<String>,
