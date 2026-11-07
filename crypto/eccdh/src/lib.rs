@@ -113,8 +113,22 @@
 //! | ECC CDH brainpoolP384r1  | 97              | 96                | 48              | 48                |
 //! | ECC CDH brainpoolP512r1  | 129             | 128               | 64              | 64                |
 //!
-//! Peak stack usage of key generation and agreement per curve is measured by `mem_usage_benches`'
-//! `bench_eccdh_mem_usage` harness under `valgrind --tool=massif --stacks=yes`; see its docs.
+//! Peak stack usage of each operation, in bytes, as the deepest frame chain below the
+//! `mem_usage_benches` harness's `measure` wrapper (the sum of the frames on the deepest path
+//! through the crate's own symbols, plus a return address per hop, from the compiler's
+//! frame-layout remarks and the release binary's call graph; rustc 1.97.0-nightly, x86-64).
+//! `agree` is dominated by the variable-base multiplier's per-call table of sixteen Jacobian
+//! points; `keygen`'s figure excludes the caller's RNG, which it reaches through `dyn RNG`:
+//!
+//! | Curve           | keygen | agree |
+//! |-----------------|--------|-------|
+//! | P-256           | 2,600  | 4,216 |
+//! | P-384           | 2,232  | 5,736 |
+//! | P-521           | 5,352  | 8,520 |
+//! | secp256k1       | 2,424  | 4,056 |
+//! | brainpoolP256r1 | 2,712  | 4,312 |
+//! | brainpoolP384r1 | 2,528  | 5,712 |
+//! | brainpoolP512r1 | 4,672  | 7,600 |
 //!
 //! # 🚨 Security Considerations 🚨
 //!
