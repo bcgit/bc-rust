@@ -1,4 +1,4 @@
-//! Raw primitives whose safe use is the caller's responsibility; see [`bouncycastle_core::hazmat`]
+//! Raw primitives whose safe use is the caller's responsibility; see `bouncycastle_core::hazmat`
 //! for what the path means and the supported uses.
 //!
 //! Everything curve-specific lives here, per curve: the base field, the scalar field, Jacobian

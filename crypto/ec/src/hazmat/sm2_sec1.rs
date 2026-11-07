@@ -21,7 +21,7 @@
 //!
 //! [`decode`] is SEC 1 §2.3.4 cases 2 and 3 (again, no case 1, for the same reason). It performs
 //! partial public-key validation as part of decoding, not as a separate step: not-infinity holds
-//! by construction (see above), `x`, `y` in `[0, p)` is [`limbs_less_than_p`], and on-the-curve is
+//! by construction (see above), `x`, `y` in `[0, p)` is `limbs_less_than_p`, and on-the-curve is
 //! explicit for the uncompressed case and automatic for the compressed case, since its `y` is
 //! constructed as an actual square root of `x^3 - 3x + b`. The additional "full validation" step,
 //! `nQ = ∅`, is not needed: this curve has cofactor `h = 1` (derived directly from the Hasse bound
@@ -34,7 +34,7 @@
 //!
 //! `p ≡ 3 (mod 4)` (verified directly in this module's tests), so a square root of a residue `α`
 //! is `β = α^((p+1)/4) mod p` (`β² = α^((p+1)/2) = α^((p-1)/2) * α = α` when `α` is a residue, by
-//! Euler's criterion). [`SQRT_EXPONENT`] is `(p+1)/4`. [`decode`] verifies `β² == α` and rejects if
+//! Euler's criterion). `SQRT_EXPONENT` is `(p+1)/4`. [`decode`] verifies `β² == α` and rejects if
 //! not: that check is what makes "α has no square root" (SEC 1 §2.3.4 step 2.4.1) detectable, since
 //! the exponentiation itself is total and returns *something* whether or not `α` is a residue.
 //!

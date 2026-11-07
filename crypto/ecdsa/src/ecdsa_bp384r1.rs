@@ -7,7 +7,7 @@
 //! reasoning (`e = bits2int(H)` needs no truncation since `len(n) == hashlen == 384`;
 //! `x_affine_of_signing_point`'s branch-free-on-a-secret-value argument; both hold unchanged here)
 //! -- with brainpoolP384r1's types, [`crate::keys_bp384r1`],
-//! [`bouncycastle_ec::hazmat::bp384r1_extra_bits`], and [`crate::rfc6979_bp384r1`] substituted.
+//! [`bouncycastle_ec::hazmat::bp384r1_extra_bits`], and `crate::rfc6979_bp384r1` substituted.
 
 use crate::keys_bp384r1::{ECDSABp384r1PrivateKey, ECDSABp384r1PublicKey};
 use crate::rfc6979_bp384r1;

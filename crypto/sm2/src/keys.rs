@@ -61,7 +61,7 @@ pub(crate) const EXTRA_BITS_DRBG_OUTPUT_LEN: usize = 40;
 /// key alone, not on the message or `k`. Recomputing it per signature was a constant-time
 /// Fermat inversion each time -- roughly the same cost as `to_affine`'s field inversion, about a
 /// tenth of a signature on P-256-class hardware -- for a value that never changes. It is computed
-/// once, in [`SM2PrivateKey::from_validated_scalar`], and held in [`Sm2Scalar`], the same
+/// once, in `SM2PrivateKey::from_validated_scalar`, and held in [`Sm2Scalar`], the same
 /// [`bouncycastle_utils::secret::Secret`] wrapper as `dA`: anyone holding `(1 + dA)^-1` recovers
 /// `dA` by inverting and subtracting one, so it is exactly as sensitive. That is 32 more bytes in
 /// memory (128 in all, per the crate docs' Memory Footprint table).

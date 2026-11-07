@@ -13,7 +13,7 @@
 //!   or long form (an initial octet with bit 8 set and bits 7-1 giving the count of subsequent
 //!   octets, which then big-endian-encode the length). [`max_len`]'s bound (66-byte `r`/`s`, the
 //!   widest this crate supports, for P-521) never needs more than one subsequent length octet, so
-//!   [`parse_length`]/[`write_length`] don't implement the general long form, only that one case.
+//!   `parse_length`/`write_length` don't implement the general long form, only that one case.
 //! - **DER's length restriction** (§10.1): "the minimum number of octets" -- so a long-form length
 //!   encoding a value `< 128` (which should have used the short form) is rejected, and the
 //!   indefinite form (§8.1.3.6, a single `0x80` octet) is not a definite length at all and is
@@ -22,7 +22,7 @@
 //!   §8.3.2 forbids a leading octet (plus bit 8 of the next) that is "all ones" or "all zero",
 //!   since either means a redundant leading byte. `r` and `s` are always non-negative (RFC 3279's
 //!   `Ecdsa-Sig-Value` uses `INTEGER` for values that are never negative in practice), so
-//!   [`parse_integer`] rejects the "all ones" (negative) case unconditionally rather than checking
+//!   `parse_integer` rejects the "all ones" (negative) case unconditionally rather than checking
 //!   it for redundancy, and rejects a redundant leading `0x00` per §8.3.2's "all zero" case.
 //!
 //! [`decode`] additionally checks that parsing the `SEQUENCE`'s two `INTEGER`s consumes it exactly

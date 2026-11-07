@@ -11,15 +11,15 @@
 //!
 //! A width-`w` NAF (non-adjacent form) represents a scalar as signed digits, each `0` or odd and
 //! in `(-2^(w-1), 2^(w-1))`, with the property that any `w` consecutive digits contain at most one
-//! nonzero one -- so on average only 1-in-(w+1) digits need a point addition. [`compute_wnaf`]
+//! nonzero one -- so on average only 1-in-(w+1) digits need a point addition. `compute_wnaf`
 //! computes this the standard way: while the running value is nonzero, if it's odd, take
 //! `digit = value mod 2^w`, recentre it into `(-2^(w-1), 2^(w-1)]` if it's `>= 2^(w-1)`, and
 //! subtract it off (a small, `< 2^w`, signed adjustment -- a single-limb add or subtract of the
 //! 4-limb value); then shift right by one bit regardless. Width `w = 5` is used here, giving 8
-//! precomputed odd multiples per point ([`ODD_MULTIPLE_COUNT`]).
+//! precomputed odd multiples per point (`ODD_MULTIPLE_COUNT`).
 //!
 //! `G` is the curve's constant, so its odd multiples are a compile-time table of affine points
-//! ([`G_ODD_MULTIPLES_X`]/[`G_ODD_MULTIPLES_Y`], width 7 -- [`G_WIDTH`]) and every `[u]G` digit
+//! (`G_ODD_MULTIPLES_X`/`G_ODD_MULTIPLES_Y`, width 7 -- `G_WIDTH`) and every `[u]G` digit
 //! is a mixed addition; only `Q`'s table (width 5) is built per call.
 //!
 //! [`shamir_multiply`] runs both scalars' wNAF digit sequences through the same doubling loop
