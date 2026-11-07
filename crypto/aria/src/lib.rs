@@ -199,9 +199,7 @@
 //!
 //! ## Why "lowmemory"
 //!
-//! Two things. First, no tables: a straightforward implementation carries four 256-byte S-boxes
-//! indexed by secret data (and OpenSSL's `aria.c` 4 KiB of combined tables); here the S-boxes are
-//! code.
+//! Two things. First, no tables: the S-boxes are code, as [above](#why-not-a-lookup-table).
 //! Second, the working set. Eight `u32` planes would take eight blocks per pass and double the
 //! throughput, but every per-call buffer -- the block state, the planes -- would double with them.
 //! Four lanes over `u16` planes keep the per-call working state -- the block state, the class

@@ -119,6 +119,10 @@ fn as_cipher_key<const N: usize>(
 ) -> Result<KeyMaterial<N>, SymmetricCipherError> {
     let mut cipher_key =
         KeyMaterial::<N>::from_bytes_as_type(key.ref_to_bytes(), KeyType::SymmetricCipherKey)?;
+    // The type is set again inside the hazardous block on purpose: `from_bytes_as_type` tags
+    // all-zero material `Zeroized` regardless of the type asked for, and a MAC key that is
+    // deliberately all zeros (made under `do_hazardous_operations`) must stay usable, as `AESKey`
+    // keeps it.
     do_hazardous_operations(&mut cipher_key, |k| {
         k.set_key_type(KeyType::SymmetricCipherKey)?;
         k.set_security_strength(key.security_strength())
