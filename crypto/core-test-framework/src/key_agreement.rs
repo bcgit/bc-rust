@@ -20,7 +20,9 @@ impl TestFrameworkKeyAgreement {
     /// Every member of [`AgreementKey`] and of the workers it produces, for the algorithm the
     /// keys `keygen` returns implement over the parameter type of `params`, which every
     /// construction takes a copy of. Key generation is not part of the trait, so the caller
-    /// supplies it, and it must return a fresh pair on each call.
+    /// supplies it, and it must return a fresh pair on each call. The secret's `KeyType` is not
+    /// pinned here, since a raw primitive returns `SharedSecret` and a KDF-bearing algorithm its
+    /// derived key; an implementor's own tests pin which.
     pub fn test_key_agreement<
         Params: Copy,
         PK,
@@ -39,9 +41,10 @@ impl TestFrameworkKeyAgreement {
         let z_ba = sk_b.agree(&pk_a, params).unwrap();
         assert!(z_ab.equals(&z_ba), "both parties must compute the same shared secret");
 
-        // the shared secret is typed for a KDF, at the algorithm's strength
+        // the secret is typed full-entropy material at the algorithm's strength: the raw
+        // primitive's `SharedSecret`, or a KDF-bearing algorithm's derived key
         assert_eq!(z_ab.key_len(), SS_LEN);
-        assert_eq!(z_ab.key_type(), KeyType::SharedSecret);
+        assert_ne!(z_ab.key_type(), KeyType::Unknown);
         assert_eq!(z_ab.security_strength(), SK::Algorithm::MAX_SECURITY_STRENGTH);
         assert!(z_ab.is_full_entropy());
 
