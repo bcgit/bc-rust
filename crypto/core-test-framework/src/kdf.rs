@@ -1,6 +1,7 @@
 //! Generic behaviour tests for anything that implements [`KDF`].
 
 use bouncycastle_core::errors::KDFError;
+use bouncycastle_core::hazmat::do_hazardous_operations;
 use bouncycastle_core::key_material::{
     KeyMaterial, KeyMaterial256, KeyMaterial512, KeyMaterialTrait, KeyType,
 };
@@ -101,6 +102,41 @@ impl TestFrameworkKDF {
         let out_key = kdf.derive_key(&full_entropy_key, &[0u8; 10], len).unwrap();
         assert_eq!(out_key.key_type(), KeyType::CryptographicRandom);
         assert!(out_key.security_strength() > SecurityStrength::None);
+
+        // the output is the KDF's, not the input's: a Seed, a MACKey or a SharedSecret with a
+        // strength in gives CryptographicRandom out
+        for key_type in [KeyType::Seed, KeyType::MACKey, KeyType::SharedSecret] {
+            let mut typed = KeyMaterial512::from_bytes_as_type(&[2u8; 64], key_type).unwrap();
+            if key_type == KeyType::SharedSecret {
+                do_hazardous_operations(&mut typed, |z| {
+                    z.set_security_strength(SecurityStrength::_128bit)
+                })
+                .unwrap();
+            }
+            let out_key = kdf.derive_key(&typed, &[0u8; 10], len).unwrap();
+            assert_eq!(out_key.key_type(), KeyType::CryptographicRandom, "{key_type:?} in");
+            assert!(out_key.security_strength() > SecurityStrength::None, "{key_type:?} in");
+        }
+
+        // a full-entropy key with no strength credits nothing: a SharedSecret whose producer
+        // stated none
+        let z = KeyMaterial512::from_bytes_as_type(&[3u8; 64], KeyType::SharedSecret).unwrap();
+        assert_eq!(z.security_strength(), SecurityStrength::None);
+        let out_key = kdf.derive_key(&z, &[0u8; 10], len).unwrap();
+        assert_eq!(out_key.key_type(), KeyType::Unknown);
+        assert_eq!(out_key.security_strength(), SecurityStrength::None);
+
+        /*** a zero-length derivation is refused, and the one-shot refuses a length past its cap ***/
+        assert!(matches!(kdf.derive_key(key, fixed_info, 0), Err(KDFError::InvalidLength(_))));
+        let mut zero = KeyMaterial::<10>::new();
+        assert!(matches!(
+            kdf.derive_key_out(key, fixed_info, 0, &mut zero),
+            Err(KDFError::InvalidLength(_))
+        ));
+        assert!(matches!(
+            kdf.derive_key(key, fixed_info, KDF_ONE_SHOT_MAX_LEN + 1),
+            Err(KDFError::InvalidLength(_))
+        ));
     }
 
     /// The multi-key members of [`KDF`] on `kdf`: `keys` concatenated must give
