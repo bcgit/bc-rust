@@ -1033,7 +1033,7 @@ pub trait SignaturePublicKey<const PK_LEN: usize>:
 /// [`DeterministicSigningKey`](crate::signature_key::DeterministicSigningKey). The key and any
 /// randomness the algorithm needs were fixed when the worker was made, so the message is the only
 /// input left.
-pub trait SignatureSigner<const SIG_LEN: usize>: AlgorithmInfo + Sized {
+pub trait SignatureSigner<const SIG_LEN: usize>: AlgorithmInfo {
     /// Absorbs the next chunk of the message. May be called any number of times with chunks of
     /// any size; a sequence of calls is equivalent to one call over the concatenation.
     fn do_update(&mut self, msg_chunk: &[u8]);
@@ -1054,7 +1054,7 @@ pub trait SignatureSigner<const SIG_LEN: usize>: AlgorithmInfo + Sized {
 /// The verifying half of a signature in progress: the streaming worker a verifying key hands out
 /// through [`VerifyingKey`](crate::signature_key::VerifyingKey). It is a separate trait from
 /// [`SignatureSigner`] so that a key, or a policy, can allow verification without signing.
-pub trait SignatureVerifier: AlgorithmInfo + Sized {
+pub trait SignatureVerifier: AlgorithmInfo {
     /// Absorbs the next chunk of the message. May be called any number of times with chunks of
     /// any size; a sequence of calls is equivalent to one call over the concatenation.
     fn do_update(&mut self, msg_chunk: &[u8]);
