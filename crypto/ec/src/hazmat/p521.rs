@@ -57,7 +57,7 @@ impl P521FieldElement {
     /// those spare bits away would silently discard them -- `p + 1 = 2^521` sets only bit 521, so
     /// masking it off would wrongly produce `0` instead of correctly reducing to `1` -- so instead
     /// the top limb's bits 9-63 (`>> 9`, at most 55 bits) are folded back in via `2^521 ≡ 1 (mod
-    /// p)`, the same identity [`reduce`] uses: the fold's sum is `< 2^521 + 2^55`, comfortably `<
+    /// p)`, the same identity `reduce` uses: the fold's sum is `< 2^521 + 2^55`, comfortably `<
     /// 2p`, so one conditional subtraction still suffices.
     pub fn from_limbs(limbs: [u64; 9]) -> Self {
         let hi_val = limbs[8] >> 9;
@@ -148,7 +148,7 @@ impl P521FieldElement {
     }
 
     /// `self^2`, via a dedicated squaring rather than `self.mul(self)` -- see
-    /// [`widening_square`].
+    /// `widening_square`.
     ///
     /// Used by the exponentiation loops ([`Self::invert`] and friends), which call it hundreds of
     /// times in a row with nothing else competing for registers. Deliberately *not* used by this

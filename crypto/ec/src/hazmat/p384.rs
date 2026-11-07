@@ -19,11 +19,11 @@
 //! G.1's preamble states the precondition ("given an integer A less than m^2") and the shape of
 //! the leftover work ("the integer sum or difference can be evaluated and the result reduced
 //! modulo m. The latter reduction can be accomplished by adding or subtracting a few copies of
-//! m."); [`reduce`] carries the exact bound on how many copies that is here.
+//! m."); `reduce` carries the exact bound on how many copies that is here.
 //!
 //! The identity `2^384 = p + C` with `C = 2^128 + 2^96 - 2^32 + 1` (i.e. `2^384 mod p = C`)
 //! survives in two places: [`P384FieldElement::add`] uses it to correct a carry out of the top
-//! limb, and [`reduce`]'s final fold uses it on the accumulator's top limb.
+//! limb, and `reduce`'s final fold uses it on the accumulator's top limb.
 
 use crate::nat;
 use bouncycastle_utils::ct;
@@ -155,7 +155,7 @@ impl P384FieldElement {
     }
 
     /// `self^2`, via a dedicated squaring rather than `self.mul(self)` -- see
-    /// [`widening_square`].
+    /// `widening_square`.
     ///
     /// Used by the exponentiation loops ([`Self::invert`] and friends), which call it hundreds of
     /// times in a row with nothing else competing for registers. Deliberately *not* used by this

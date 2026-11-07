@@ -41,7 +41,7 @@
 //! `[k]G` (§6.1 step A4) is Jacobian-coordinate output of a *secret* scalar multiplication, so
 //! converting it to affine cannot use [`Sm2JacobianPoint::to_affine`] -- that function's own docs
 //! say it branches on infinity and is "not for use on a secret intermediate value".
-//! [`x_affine_of_signing_point`] instead always computes `X * Z^-2`, branch-free; see its docs for
+//! `x_affine_of_signing_point` instead always computes `X * Z^-2`, branch-free; see its docs for
 //! why `Z` is never zero here. This mirrors what every curve in `bouncycastle-ecdsa` does for the
 //! same step, and is what makes this crate's "never handled in variable time" claim for `k` (see
 //! [`crate`]'s Security Considerations) true of the signing path as a whole.
