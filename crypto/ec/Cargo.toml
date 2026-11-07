@@ -7,11 +7,8 @@ edition.workspace = true
 bouncycastle-utils.workspace = true
 
 [dev-dependencies]
-bouncycastle-core.workspace = true # examples/p256_key_agreement.rs
+bouncycastle-core.workspace = true
 bouncycastle-hex.workspace = true
-bouncycastle-hkdf.workspace = true # examples/p256_key_agreement.rs
-bouncycastle-rng.workspace = true # examples/p256_key_agreement.rs
-bouncycastle-sha2.workspace = true # examples/p256_key_agreement.rs
 criterion.workspace = true
 
 [[bench]]
