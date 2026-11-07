@@ -582,68 +582,47 @@ pub trait KDF: AlgorithmInfo + Default {
     ) -> Result<usize, KDFError>;
 }
 
-/// A Key Encapsulation Mechanism (KEM) is defined as a set of three operations:
-/// key generation, encapsulation, and decapsulation.
+/// The decapsulating half of a KEM: the worker a decapsulating key hands out through
+/// [`DecapsulatingKey`](crate::kem_key::DecapsulatingKey). The key and any parameters the
+/// algorithm takes (a KDF, say) were fixed when the worker was made, so the ciphertext is the only
+/// input left. It is a separate trait from [`KEMEncapsulator`] so that a key, or a policy, can
+/// allow existing ciphertexts to be decapsulated while forbidding new ones.
 ///
-/// This trait represents the decapsulation operation performed by the holder of the private key.
-/// Encapsulation operations are performed by the corresponding [`KEMEncapsulator`] trait, and key
-/// generation is provided as an inherent associated function directly on the algorithm struct.
-/// There are several reasons for this split: first is architectural; some complex algorithms may
-/// benefit from having the encapsulation and decapsulation implementations split into separate modules.
-/// Second is for compliance: sometimes a policy soft-deprecates an algorithm so that new ciphertexts
-/// can no longer be created, but existing ciphertexts can still be decapsulated. Splitting the traits
-/// makes this policy easier to enforce.
-///
-/// The arrays used to encode private keys, ciphertexts, and shared secrets are statically-sized
-/// because this allows us to safely remove runtime checks for array lengths, which overall reduces
-/// the fallibility of the library. This design choice could make this trait complicated to apply
-/// to a KEM algorithm that does not have fixed sizes for the encodings of these objects.
-pub trait KEMDecapsulator<
-    SK: KEMPrivateKey<SK_LEN>,
-    const SK_LEN: usize,
-    const CT_LEN: usize,
-    const SS_LEN: usize,
->: Sized
-{
-    /// Performs a decapsulation of the given ciphertext.
-    /// Returns the derived shared secret.
-    fn decaps(sk: &SK, ct: &[u8]) -> Result<KeyMaterial<SS_LEN>, KEMError>;
+/// The ciphertext and shared secret are fixed-length arrays, so a ciphertext of the wrong length
+/// is a compile error rather than a run-time one.
+pub trait KEMDecapsulator<const CT_LEN: usize, const SS_LEN: usize>: AlgorithmInfo {
+    /// Decapsulates `ct` into the shared secret. The worker is reusable: a static key
+    /// decapsulates many ciphertexts.
+    ///
+    /// # Errors
+    /// [`KEMError::DecapsulationFailed`] for an explicitly rejecting KEM whose check fails; an
+    /// implicitly rejecting KEM (ML-KEM) returns a key for every ciphertext and errs only if the
+    /// shared secret cannot be built.
+    fn decaps(&self, ct: &[u8; CT_LEN]) -> Result<KeyMaterial<SS_LEN>, KEMError>;
 }
 
-/// A Key Encapsulation Mechanism (KEM) is defined as a set of three operations:
-/// key generation, encapsulation, and decapsulation.
-///
-/// This trait represents the encapsulation operation performed by the holder of the public key.
-/// Decapsulation operations are performed by the corresponding [`KEMDecapsulator`] trait, and key
-/// generation is provided as an inherent associated function directly on the algorithm struct.
-/// There are several reasons for this split: first is architectural; some complex algorithms may
-/// benefit from having the encapsulation and decapsulation implementations split into separate modules.
-/// Second is for compliance: sometimes a policy soft-deprecates an algorithm so that new ciphertexts
-/// can no longer be created, but existing ciphertexts can still be decapsulated. Splitting the traits
-/// makes this policy easier to enforce.
-///
-/// The arrays used to encode public keys, ciphertexts, and shared secrets are statically-sized
-/// because this allows us to safely remove runtime checks for array lengths, which overall reduces
-/// the fallibility of the library. This design choice could make this trait complicated to apply
-/// to a KEM algorithm that does not have fixed sizes for the encodings of these objects.
-pub trait KEMEncapsulator<
-    PK: KEMPublicKey<PK_LEN>,
-    const PK_LEN: usize,
-    const CT_LEN: usize,
-    const SS_LEN: usize,
->: Sized
-{
-    /// Performs an encapsulation against the given public key.
-    /// Sources randomness from the library's default OS-backed RNG.
-    /// Returns the ciphertext and derived shared secret.
-    fn encaps(pk: &PK) -> Result<(KeyMaterial<SS_LEN>, [u8; CT_LEN]), KEMError>;
-    /// Performs an encapsulation against the given public key.
-    /// Sources randomness from the provided RNG.
-    /// Returns the ciphertext and derived shared secret.
-    fn encaps_rng(
-        pk: &PK,
+/// The encapsulating half of a KEM: the worker an encapsulating key hands out through
+/// [`EncapsulatingKey`](crate::kem_key::EncapsulatingKey). The key and any parameters the
+/// algorithm takes were fixed when the worker was made; each call draws fresh randomness from the
+/// caller's RNG, so the worker is reusable.
+pub trait KEMEncapsulator<const CT_LEN: usize, const SS_LEN: usize>: AlgorithmInfo {
+    /// Encapsulates to the key: writes the ciphertext into `ct`, which is zeroized first, and
+    /// returns the shared secret with the number of bytes written, always `CT_LEN`.
+    ///
+    /// # Errors
+    /// [`KEMError::RNGError`] if `rng` is weaker than the algorithm or fails to deliver.
+    fn encaps_out(
+        &self,
         rng: &mut dyn RNG,
-    ) -> Result<(KeyMaterial<SS_LEN>, [u8; CT_LEN]), KEMError>;
+        ct: &mut [u8; CT_LEN],
+    ) -> Result<(KeyMaterial<SS_LEN>, usize), KEMError>;
+
+    /// As [`encaps_out`](Self::encaps_out), returning the ciphertext.
+    fn encaps(&self, rng: &mut dyn RNG) -> Result<(KeyMaterial<SS_LEN>, [u8; CT_LEN]), KEMError> {
+        let mut ct = [0u8; CT_LEN];
+        let (ss, _) = self.encaps_out(rng, &mut ct)?;
+        Ok((ss, ct))
+    }
 }
 
 // todo: could the public and private key types impl Into<T: AsRef<[u8]>> and From<T: AsRef<[u8]>>

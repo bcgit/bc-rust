@@ -19,4 +19,10 @@
   nonce, counter or keystream position. The AES modes, CMAC and Ascon-AEAD128 lose their suspended-state
   constants and `hazmat::ModeKey` goes with them; HMAC and HKDF still suspend, and hashes, XOFs and KMAC keep
   `Suspendable`.
+* KEM encapsulation and decapsulation move onto the keys, as signing did: the `EncapsulatingKey` /
+  `DecapsulatingKey` roles in `core::kem_key` hand out `KEMEncapsulator` / `KEMDecapsulator` workers that
+  borrow the key, implemented per algorithm over the parameters a worker is made from (`()` for ML-KEM, a
+  configured KDF for a KEM that derives its secret), which select the algorithm at the call. The static `encaps(pk)` with its
+  OS DRBG, the run-time ciphertext length check and the expanded-key statics are gone; the ML-KEM key types
+  carry only their parameter set. `KeyType::SharedSecret` is added for the raw `Z` of a key agreement.
 

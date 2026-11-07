@@ -16,6 +16,7 @@
 //! * Password-based key derivation functions act on KeyMaterial of any type, and in the case of RawFullEntropy, RawLowEntropy, or RawUnknownEntropy, will preserve the entropy rating.
 //! * Keyed KDFs that are given a key of RawFullEntropy or KeyedHashKey a KeyMaterial data of type RawLowEntropy or RawUnknownEntropy will promote it into RawFullEntropy.
 //! * Symmetric ciphers or asymmetric ciphers such as X25519 or ML-KEM that accept private key seeds will expect KeyMaterial of type AsymmetricPrivateKeySeed.
+//! * A key-agreement primitive (ECC CDH) returns its raw shared secret `Z` as a KeyMaterial of type SharedSecret, to be used only as the input of a KDF.
 //!
 //! However, there is a [`KeyMaterialTrait::set_key_type`] for cases where the user has more context knowledge than the library.
 //! Some conversions, such as converting a key of type RawLowEntropy into a SymmetricCipherKey, will fail unless
@@ -278,6 +279,13 @@ pub enum KeyType {
 
     /// A key for a symmetric block or stream cipher.
     SymmetricCipherKey = 5,
+
+    /// The raw shared secret `Z` of a key-agreement primitive: secret keying material that is not
+    /// uniformly distributed, to be used only as the input of a KDF (SP 800-56Ar3, Section 5.8).
+    /// The producer sets its security strength. A KEM's shared secret is not this: it is
+    /// [`KeyType::CryptographicRandom`] when the algorithm's output is uniform (ML-KEM), or the
+    /// KDF's output type when the KEM derives it.
+    SharedSecret = 6,
 }
 
 impl TryFrom<u8> for KeyType {
@@ -292,6 +300,7 @@ impl TryFrom<u8> for KeyType {
             3 => Self::Seed,
             4 => Self::MACKey,
             5 => Self::SymmetricCipherKey,
+            6 => Self::SharedSecret,
             _ => return Err(SuspendableError::InvalidData),
         })
     }
@@ -560,7 +569,8 @@ impl<const KEY_LEN: usize> KeyMaterialTrait for KeyMaterial<KEY_LEN> {
             KeyType::CryptographicRandom
             | KeyType::Seed
             | KeyType::MACKey
-            | KeyType::SymmetricCipherKey => true,
+            | KeyType::SymmetricCipherKey
+            | KeyType::SharedSecret => true,
             KeyType::Zeroized | KeyType::Unknown => false,
         }
     }
@@ -622,7 +632,7 @@ impl<const KEY_LEN: usize> PartialEq for KeyMaterial<KEY_LEN> {
 impl<const KEY_LEN: usize> Eq for KeyMaterial<KEY_LEN> {}
 
 /// Ordering is as follows:
-/// Zeroized < BytesLowEntropy < BytesFullEntropy < {Seed = MACKey = SymmetricCipherKey}
+/// Zeroized < BytesLowEntropy < BytesFullEntropy < {Seed = MACKey = SymmetricCipherKey = SharedSecret}
 impl PartialOrd for KeyType {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         match self {
@@ -640,13 +650,17 @@ impl PartialOrd for KeyType {
                 KeyType::CryptographicRandom => Some(Ordering::Equal),
                 _ => Some(Ordering::Less),
             },
-            KeyType::Seed | KeyType::MACKey | KeyType::SymmetricCipherKey => match other {
+            KeyType::Seed
+            | KeyType::MACKey
+            | KeyType::SymmetricCipherKey
+            | KeyType::SharedSecret => match other {
                 KeyType::Zeroized | KeyType::Unknown | KeyType::CryptographicRandom => {
                     Some(Ordering::Greater)
                 }
-                KeyType::Seed | KeyType::MACKey | KeyType::SymmetricCipherKey => {
-                    Some(Ordering::Equal)
-                }
+                KeyType::Seed
+                | KeyType::MACKey
+                | KeyType::SymmetricCipherKey
+                | KeyType::SharedSecret => Some(Ordering::Equal),
             },
         }
     }

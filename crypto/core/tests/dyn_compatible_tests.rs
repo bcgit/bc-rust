@@ -1,12 +1,13 @@
-//! The cipher and MAC worker traits are dyn-compatible: a worker can be held as a trait object
-//! (issue #173), as can a hash or XOF, since `Clone` lives on the types rather than on `Hash`.
+//! The cipher, MAC and KEM worker traits are dyn-compatible: a worker can be held as a trait
+//! object (issue #173), as can a hash or XOF, since `Clone` lives on the types rather than on
+//! `Hash`.
 //! The functions take trait objects and do nothing; compiling them is the test.
 
 use bouncycastle_core::hazmat::KeyStream;
 use bouncycastle_core::traits::{
     AEADCipherDecryptor, AEADCipherEncryptor, BlockCipherDecryptor, BlockCipherEncryptor, Hash,
-    KeyUnwrapper, KeyWrapper, MAC, StreamCipherDecryptor, StreamCipherEncryptor,
-    SymmetricCipherDecryptor, SymmetricCipherEncryptor, XOF, XOFSqueezer,
+    KEMDecapsulator, KEMEncapsulator, KeyUnwrapper, KeyWrapper, MAC, StreamCipherDecryptor,
+    StreamCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor, XOF, XOFSqueezer,
 };
 
 fn symmetric(
@@ -21,6 +22,7 @@ fn mac(_: &mut dyn MAC) {}
 /// The run-time-length half of key wrap; the const-generic one-shots are `Self: Sized`.
 fn key_wrap(_: &dyn KeyWrapper, _: &dyn KeyUnwrapper) {}
 fn key_stream(_: &mut dyn KeyStream<12, 16>) {}
+fn kem(_: &dyn KEMEncapsulator<1088, 32>, _: &dyn KEMDecapsulator<1088, 32>) {}
 fn hash(_: &mut dyn Hash) {}
 /// A XOF names its squeezer type, so the object type is `dyn XOF<Squeezer = S>`.
 fn xof<S: XOFSqueezer>(_: &mut dyn XOF<Squeezer = S>, _: &mut dyn XOFSqueezer) {}
@@ -30,7 +32,7 @@ fn the_worker_traits_are_dyn_compatible() {
     // Referenced so the functions are not dead code; the compile is the assertion.
     let _ = (
         symmetric as fn(_, _), aead as fn(_, _), stream as fn(_, _), block as fn(_, _),
-        mac as fn(_), key_wrap as fn(_, _), key_stream as fn(_), hash as fn(_),
+        mac as fn(_), key_wrap as fn(_, _), key_stream as fn(_), kem as fn(_, _), hash as fn(_),
     );
     fn reference_xof<S: XOFSqueezer>() {
         let _ = xof::<S> as fn(_, _);
