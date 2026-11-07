@@ -3,6 +3,8 @@
 //! As with all Factory objects, this implements constructions from strings and defaults, and
 //! returns a [`KDFFactory`] object which itself implements the [`KDF`] trait as a pass-through to the underlying algorithm.
 //! See [`KDF`] for the full key-derivation API, key-material handling rules, and additional-input semantics.
+//! The HKDF variants are `HKDF::new()`, RFC 5869's absent salt; a salted instance is built from
+//! the hash crate's alias, `HKDF_SHA256::new_with_salt`, which the factory does not reach.
 //!
 //! Example usage:
 //! ```
