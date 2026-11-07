@@ -284,9 +284,11 @@ pub enum KeyType {
 
     /// The raw shared secret `Z` of a key-agreement primitive: secret keying material that is not
     /// uniformly distributed, to be used only as the input of a KDF (SP 800-56Ar3, Section 5.8).
-    /// The producer sets its security strength. A KDF credits it as keying material, as it does
-    /// the other key types, but its length overstates its entropy, so the strength is what bounds
-    /// the label of the KDF's output. A KEM's shared secret is not this: it is
+    /// Its length overstates its entropy, so [`KeyMaterialTrait::set_bytes_as_type`] gives it
+    /// [`SecurityStrength::None`] rather than the length's, and the producer, which knows the
+    /// scheme's strength, raises it under [`do_hazardous_operations`]. A KDF credits a `Z` with a
+    /// strength as keying material, as it does the other key types, and one with none credits
+    /// nothing, so a `Z` whose producer did not say what it is worth derives `Unknown` output. A KEM's shared secret is not this: it is
     /// [`KeyType::CryptographicRandom`] when the algorithm's output is uniform (ML-KEM), or the
     /// KDF's output type when the KEM derives it.
     SharedSecret = 6,
@@ -424,7 +426,9 @@ impl<const KEY_LEN: usize> KeyMaterialTrait for KeyMaterial<KEY_LEN> {
         self.key_type = new_key_type;
 
         do_hazardous_operations(self, |s| {
-            if new_key_type <= KeyType::Unknown {
+            // A SharedSecret's length says nothing about its entropy (see `KeyType::SharedSecret`),
+            // so its producer states the strength; every other typed key is worth its length.
+            if new_key_type <= KeyType::Unknown || new_key_type == KeyType::SharedSecret {
                 s.set_security_strength(SecurityStrength::None)?;
             } else {
                 s.set_security_strength(SecurityStrength::from_bits(source.len() * 8))?;

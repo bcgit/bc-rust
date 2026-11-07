@@ -1061,6 +1061,14 @@ mod test_key_material {
         let z =
             KeyMaterial256::from_bytes_as_type(&DUMMY_KEY[..32], KeyType::SharedSecret).unwrap();
         assert_eq!(z.key_type(), KeyType::SharedSecret);
+        // its length says nothing about its entropy: no strength until the producer states one,
+        // which it does inside the hazardous window, since raising a strength is hazardous
+        assert_eq!(z.security_strength(), SecurityStrength::None);
+        let mut z = z;
+        assert!(z.set_security_strength(SecurityStrength::_128bit).is_err());
+        do_hazardous_operations(&mut z, |z| z.set_security_strength(SecurityStrength::_128bit))
+            .unwrap();
+        assert_eq!(z.security_strength(), SecurityStrength::_128bit);
         assert!(z.is_full_entropy());
 
         assert!(KeyType::SharedSecret > KeyType::CryptographicRandom);

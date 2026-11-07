@@ -10,11 +10,13 @@ use crate::traits::KDF;
 /// The KDF is the type's parameter, so as the `Params` of a key's role impl the value selects
 /// the algorithm at the call, `pk.encaps(&mut rng, params)`, with no annotation, and a KDF the
 /// key is not paired with is a compile error. The instance holds whatever the KDF is made from
-/// (an HKDF's salt, through `new_with_salt`), validated when it was made, so a worker made from
-/// these parameters has nothing of its own to refuse. The info is the fixed info of
-/// [`KDF::derive_key_out`] (RFC 5869's info, SEC 1's `SharedInfo`). It is `Copy`, so one value
-/// serves every construction on both sides of an exchange; `K` may be unsized, so
-/// `KdfParams<'p, dyn KDF>` is a derivation chosen at run time.
+/// (an HKDF's salt, through `new_with_salt`), validated when it was made; one that has also
+/// absorbed input through a streaming API is refused at the derivation, as [`KDF`]'s docs say,
+/// so give an algorithm a fresh instance. The info is the fixed info of [`KDF::derive_key_out`]
+/// (RFC 5869's info, SEC 1's `SharedInfo`). It is `Copy`, so one value serves every
+/// construction on both sides of an exchange. `K` may be unsized, so a role implemented over
+/// `KdfParams<'p, dyn KDF>` would take a derivation chosen at run time; the library's pairings
+/// are over concrete KDF types.
 pub struct KdfParams<'p, K: KDF + ?Sized> {
     kdf: &'p K,
     info: &'p [u8],

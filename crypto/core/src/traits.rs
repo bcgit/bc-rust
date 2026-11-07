@@ -502,20 +502,29 @@ pub const KDF_ONE_SHOT_MAX_LEN: usize = 1024;
 /// # Entropy accounting
 /// The output is typed from what went in. Library policy, not a rule of any standard: the
 /// output is [`KeyType::CryptographicRandom`] once the full-entropy input keys (those for which
-/// [`KeyMaterialTrait::is_full_entropy`] holds) together carry at least as many bytes as the
-/// function's own strength bound, half a hash output for a hash-based KDF, and otherwise
+/// [`KeyMaterialTrait::is_full_entropy`] holds and whose [`KeyMaterialTrait::security_strength`]
+/// is not [`SecurityStrength::None`]) together carry at least as many bytes as the function's
+/// own strength bound, half a hash output for a hash-based KDF, and otherwise
 /// [`KeyType::Unknown`] with no strength; its strength is the least of the inputs' strongest,
-/// the function's and the length's. `fixed_info` is context and credits nothing. A
-/// [`KeyType::Zeroized`] or [`KeyType::Unknown`] input is derived from and yields `Unknown`
-/// output rather than an error, since a KDF cannot tell such bytes from random ones.
+/// the function's and the length's, so a `CryptographicRandom` output always carries a
+/// strength. A key with no strength (a [`KeyType::SharedSecret`] whose producer set none, a key
+/// too short to carry 112 bits) credits nothing. The count is of the keys as given: the same key
+/// passed twice in `ikms` counts twice, which is the caller's to avoid. `fixed_info` is context
+/// and credits nothing. A [`KeyType::Zeroized`] or [`KeyType::Unknown`] input is derived from
+/// and yields `Unknown` output rather than an error, since a KDF cannot tell such bytes from
+/// random ones.
+///
+/// An instance holds only what it was made from (an HKDF's salt): one that has also absorbed
+/// input through a streaming API is refused by the derivations, and a hash or XOF used as a KDF
+/// derives from a fresh state whatever it has absorbed. A zero-length derivation is refused.
 pub trait KDF: AlgorithmInfo {
     /// Derives `len` bytes of keying material from `ikm` and `fixed_info` into the front of
     /// `output_key`, which is zeroized first, and returns `len`.
     ///
     /// # Errors
-    /// [`KDFError::InvalidLength`] if `len` exceeds what the function produces (a hash output
-    /// for SHA-3, `255 * HashLen` for HKDF) or `output_key`'s capacity; `output_key` is left
-    /// zeroized.
+    /// [`KDFError::InvalidLength`] if `len` is zero or exceeds what the function produces (a hash
+    /// output for SHA-3, `255 * HashLen` for HKDF) or `output_key`'s capacity; `output_key` is
+    /// left zeroized.
     fn derive_key_out(
         &self,
         ikm: &dyn KeyMaterialTrait,
@@ -539,13 +548,17 @@ pub trait KDF: AlgorithmInfo {
     /// over [`derive_key_out`](Self::derive_key_out).
     ///
     /// # Errors
-    /// As [`derive_key_out`](Self::derive_key_out).
+    /// [`KDFError::InvalidLength`] if `len` exceeds [`KDF_ONE_SHOT_MAX_LEN`], else as
+    /// [`derive_key_out`](Self::derive_key_out).
     fn derive_key(
         &self,
         ikm: &dyn KeyMaterialTrait,
         fixed_info: &[u8],
         len: usize,
     ) -> Result<Box<dyn KeyMaterialTrait>, KDFError> {
+        if len > KDF_ONE_SHOT_MAX_LEN {
+            return Err(KDFError::InvalidLength(ONE_SHOT_TOO_LONG));
+        }
         let mut output_key = KeyMaterial::<KDF_ONE_SHOT_MAX_LEN>::new();
         self.derive_key_out(ikm, fixed_info, len, &mut output_key)?;
         Ok(Box::new(output_key))
@@ -554,18 +567,26 @@ pub trait KDF: AlgorithmInfo {
     /// One-shot over [`derive_key_from_multiple_out`](Self::derive_key_from_multiple_out).
     ///
     /// # Errors
-    /// As [`derive_key_out`](Self::derive_key_out).
+    /// As [`derive_key`](Self::derive_key).
     fn derive_key_from_multiple(
         &self,
         ikms: &[&dyn KeyMaterialTrait],
         fixed_info: &[u8],
         len: usize,
     ) -> Result<Box<dyn KeyMaterialTrait>, KDFError> {
+        if len > KDF_ONE_SHOT_MAX_LEN {
+            return Err(KDFError::InvalidLength(ONE_SHOT_TOO_LONG));
+        }
         let mut output_key = KeyMaterial::<KDF_ONE_SHOT_MAX_LEN>::new();
         self.derive_key_from_multiple_out(ikms, fixed_info, len, &mut output_key)?;
         Ok(Box::new(output_key))
     }
 }
+
+/// The one-shots' refusal of a length past [`KDF_ONE_SHOT_MAX_LEN`]; the `_out` forms take any
+/// length the function and the buffer allow.
+const ONE_SHOT_TOO_LONG: &str =
+    "the KDF one-shots derive at most KDF_ONE_SHOT_MAX_LEN bytes; use the _out form for more";
 
 /// The decapsulating half of a KEM: the worker a decapsulating key hands out through
 /// [`DecapsulatingKey`](crate::kem_key::DecapsulatingKey). The key and any parameters the
