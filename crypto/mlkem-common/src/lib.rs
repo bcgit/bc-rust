@@ -5,7 +5,7 @@
 //! differ in how they hold a private key and in how they schedule FIPS 203's algorithms, but they
 //! agree on the ring arithmetic, the samplers, the byte encodings, the compression and the
 //! parameter tables; this crate holds that one copy, and the markers of ML-KEM with its secret
-//! derived through HKDF ([`hkdf`]), which both crates implement. Use one of those two crates.
+//! derived through HKDF ([`kdf`]), which both crates implement. Use one of those two crates.
 //!
 //! # 🚨 Security Considerations 🚨
 //!
@@ -23,7 +23,7 @@
 #[doc(hidden)]
 pub mod aux_functions;
 #[doc(hidden)]
-pub mod hkdf;
+pub mod kdf;
 #[doc(hidden)]
 pub mod params;
 #[doc(hidden)]

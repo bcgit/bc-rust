@@ -49,8 +49,8 @@
   no longer extend `KEMPublicKey` / `KEMPrivateKey`. `KeyType::SharedSecret` is added for the raw `Z` of a key
   agreement; a KDF credits it, labelling its output with no more than `Z`'s strength.
 * ML-KEM with its shared secret derived through HKDF: `MLKEM512_HKDF_SHA256`, `MLKEM768_HKDF_SHA512` and
-  `MLKEM1024_HKDF_SHA512` are roles the plain ML-KEM keys carry over `HkdfParams<H>`, RFC 5869's salt and info
-  from `bouncycastle-hkdf` with the hash as the type's parameter selecting the algorithm, in both ML-KEM crates
+  `MLKEM1024_HKDF_SHA512` are roles the plain ML-KEM keys carry over `core::kdf_params::KdfParams<K>`, a borrowed KDF
+  instance (an HKDF keyed with RFC 5869's salt through `new_with_salt`) and the info, the KDF type selecting the algorithm, in both ML-KEM crates
   and as the `mlkem512-hkdf-sha256`, `mlkem768-hkdf-sha512` and `mlkem1024-hkdf-sha512` CLI subcommands; the
   derived key is one hash output at the lesser of the KEM's and the KDF's strengths. HKDF credits its output as
   full-entropy once half a hash output of typed key material has gone in, where it needed a full one, so a

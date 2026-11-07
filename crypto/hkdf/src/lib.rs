@@ -12,8 +12,9 @@
 //! |-------------|--------------------------------------------------------------------------|
 //! | SHA-2       | `bouncycastle_sha2::hkdf` -- `HKDF_SHA256`, `HKDF_SHA384`, `HKDF_SHA512` |
 //!
-//! [`HkdfParams`] is the salt and info an algorithm that derives its output through HKDF (a KEM
-//! such as ML-KEM-512-HKDF-SHA256) is made from; the hash is its type parameter.
+//! An algorithm that derives its output through HKDF (a KEM such as ML-KEM-512-HKDF-SHA256) is
+//! made from an instance keyed with its salt through [`HKDF::new_with_salt`], as the KDF of a
+//! `bouncycastle_core::kdf_params::KdfParams`.
 //!
 //! # Instantiating HKDF over a hash
 //!
@@ -284,51 +285,6 @@ impl<H: HMACParams, const HASH_STATE_LEN: usize, const HKDF_STATE_LEN: usize> De
         Self::new()
     }
 }
-
-/// The HKDF configuration an algorithm that derives its output through HKDF over `H` is made
-/// from, a KEM such as `MLKEM512_HKDF_SHA256` say: RFC 5869's salt and info, borrowed from the
-/// caller for `'p`.
-///
-/// The hash is the type's one parameter, so `HkdfParams::<SHA256>::new(&salt, info)` names the
-/// HKDF instantiation, and as the `Params` of a key's role impl it selects the algorithm at the
-/// call, `pk.encaps(&mut rng, params)`, with no annotation. It is `Copy`, so one value serves
-/// every construction on both sides of an exchange.
-///
-/// The salt is key material of any length and of any [`KeyType`] but [`KeyType::Unknown`], as
-/// [`HKDF::extract`] takes it; a zero-length one is RFC 5869 Section 2.2's absent salt, "a string
-/// of HashLen zeros". It is held as a trait object so that its length is no part of this type.
-/// The info is RFC 5869 Section 2.3's "optional context and application specific information".
-pub struct HkdfParams<'p, H: HMACParams> {
-    salt: &'p dyn KeyMaterialTrait,
-    info: &'p [u8],
-    _hash: PhantomData<H>,
-}
-
-impl<'p, H: HMACParams> HkdfParams<'p, H> {
-    /// The salt and info of RFC 5869.
-    pub fn new(salt: &'p dyn KeyMaterialTrait, info: &'p [u8]) -> Self {
-        Self { salt, info, _hash: PhantomData }
-    }
-
-    /// The salt.
-    pub fn salt(&self) -> &'p dyn KeyMaterialTrait {
-        self.salt
-    }
-
-    /// The info.
-    pub fn info(&self) -> &'p [u8] {
-        self.info
-    }
-}
-
-// Written out rather than derived: a derive would demand `H: Copy` of the hash marker.
-impl<H: HMACParams> Clone for HkdfParams<'_, H> {
-    fn clone(&self) -> Self {
-        *self
-    }
-}
-
-impl<H: HMACParams> Copy for HkdfParams<'_, H> {}
 
 impl<H: HMACParams, const HASH_STATE_LEN: usize, const HKDF_STATE_LEN: usize>
     HKDF<H, HASH_STATE_LEN, HKDF_STATE_LEN>

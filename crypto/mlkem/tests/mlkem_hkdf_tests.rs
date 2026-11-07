@@ -6,7 +6,6 @@
 
 #[cfg(test)]
 mod mlkem_hkdf_tests {
-    use bouncycastle_core::errors::{KEMError, KeyMaterialError};
     use bouncycastle_core::kem_key::{DecapsulatingKey, EncapsulatingKey};
     use bouncycastle_core::key_material::{KeyMaterial, KeyMaterial0, KeyMaterialTrait, KeyType};
     use bouncycastle_core::security_strength::SecurityStrength;
@@ -14,7 +13,7 @@ mod mlkem_hkdf_tests {
     use bouncycastle_core_test_framework::DUMMY_SEED;
     use bouncycastle_core_test_framework::kem::TestFrameworkKEM;
     use bouncycastle_mlkem::{
-        HkdfParams, MLKEM512, MLKEM512_CT_LEN, MLKEM512_HKDF_SHA256, MLKEM512_HKDF_SHA256_SS_LEN,
+        KdfParams, MLKEM512, MLKEM512_CT_LEN, MLKEM512_HKDF_SHA256, MLKEM512_HKDF_SHA256_SS_LEN,
         MLKEM512PrivateKey, MLKEM512PrivateKeyExpanded, MLKEM512PublicKey,
         MLKEM512PublicKeyExpanded, MLKEM768, MLKEM768_CT_LEN, MLKEM768_HKDF_SHA512,
         MLKEM768_HKDF_SHA512_SS_LEN, MLKEM768PrivateKey, MLKEM768PublicKey, MLKEM1024,
@@ -23,7 +22,6 @@ mod mlkem_hkdf_tests {
     };
     use bouncycastle_rng::DefaultRNG;
     use bouncycastle_sha2::hkdf::{HKDF_SHA256, HKDF_SHA512};
-    use bouncycastle_sha2::{SHA256, SHA512};
 
     /// A 32-byte salt of the kind a protocol draws: typed, not secret.
     fn salt() -> KeyMaterial<32> {
@@ -37,25 +35,27 @@ mod mlkem_hkdf_tests {
     fn core_framework_tests() {
         let tf = TestFrameworkKEM::new(false, true);
         let salt = salt();
-        let sha256 = HkdfParams::<SHA256>::new(&salt, INFO);
-        let sha512 = HkdfParams::<SHA512>::new(&salt, INFO);
+        let hkdf256 = HKDF_SHA256::new_with_salt(&salt).unwrap();
+        let hkdf512 = HKDF_SHA512::new_with_salt(&salt).unwrap();
+        let sha256 = KdfParams::new(&hkdf256, INFO);
+        let sha512 = KdfParams::new(&hkdf512, INFO);
 
         tf.test_kem::<
-            HkdfParams<'_, SHA256>,
+            KdfParams<'_, HKDF_SHA256>,
             MLKEM512PublicKey,
             MLKEM512PrivateKey,
             MLKEM512_CT_LEN,
             MLKEM512_HKDF_SHA256_SS_LEN,
         >(|| MLKEM512::keygen(&mut DefaultRNG::default()), sha256, false);
         tf.test_kem::<
-            HkdfParams<'_, SHA512>,
+            KdfParams<'_, HKDF_SHA512>,
             MLKEM768PublicKey,
             MLKEM768PrivateKey,
             MLKEM768_CT_LEN,
             MLKEM768_HKDF_SHA512_SS_LEN,
         >(|| MLKEM768::keygen(&mut DefaultRNG::default()), sha512, false);
         tf.test_kem::<
-            HkdfParams<'_, SHA512>,
+            KdfParams<'_, HKDF_SHA512>,
             MLKEM1024PublicKey,
             MLKEM1024PrivateKey,
             MLKEM1024_CT_LEN,
@@ -64,7 +64,7 @@ mod mlkem_hkdf_tests {
 
         // the expanded keys carry the same roles
         tf.test_kem::<
-            HkdfParams<'_, SHA256>,
+            KdfParams<'_, HKDF_SHA256>,
             MLKEM512PublicKeyExpanded,
             MLKEM512PrivateKeyExpanded,
             MLKEM512_CT_LEN,
@@ -85,9 +85,11 @@ mod mlkem_hkdf_tests {
     fn the_derived_key_is_hkdf_over_the_plain_secret() {
         let mut rng = DefaultRNG::default();
         let salt = salt();
+        let hkdf256 = HKDF_SHA256::new_with_salt(&salt).unwrap();
+        let hkdf512 = HKDF_SHA512::new_with_salt(&salt).unwrap();
 
         let (pk, sk) = MLKEM512::keygen(&mut rng).unwrap();
-        let params = HkdfParams::<SHA256>::new(&salt, INFO);
+        let params = KdfParams::new(&hkdf256, INFO);
         let (key, ct) = pk.encaps(&mut rng, params).unwrap();
         let K = sk.decaps(&ct, ()).unwrap();
         let mut expected = KeyMaterial::<MLKEM512_HKDF_SHA256_SS_LEN>::new();
@@ -106,7 +108,7 @@ mod mlkem_hkdf_tests {
         assert_eq!(sk.decaps(&ct, params).unwrap(), expected);
 
         let (pk, sk) = MLKEM768::keygen(&mut rng).unwrap();
-        let params = HkdfParams::<SHA512>::new(&salt, INFO);
+        let params = KdfParams::new(&hkdf512, INFO);
         let (key, ct) = pk.encaps(&mut rng, params).unwrap();
         let K = sk.decaps(&ct, ()).unwrap();
         let mut expected = KeyMaterial::<MLKEM768_HKDF_SHA512_SS_LEN>::new();
@@ -145,20 +147,23 @@ mod mlkem_hkdf_tests {
     fn salt_and_info_select_the_key() {
         let mut rng = DefaultRNG::default();
         let salt = salt();
+        let hkdf256 = HKDF_SHA256::new_with_salt(&salt).unwrap();
         let (pk, sk) = MLKEM512::keygen(&mut rng).unwrap();
-        let params = HkdfParams::<SHA256>::new(&salt, INFO);
+        let params = KdfParams::new(&hkdf256, INFO);
         let (key, ct) = pk.encaps(&mut rng, params).unwrap();
 
-        let other_info = HkdfParams::<SHA256>::new(&salt, b"another context");
+        let other_info = KdfParams::new(&hkdf256, b"another context");
         assert_ne!(sk.decaps(&ct, other_info).unwrap(), key);
 
         let other_salt =
             KeyMaterial::<32>::from_bytes_as_type(&DUMMY_SEED[96..128], KeyType::MACKey).unwrap();
-        let other = HkdfParams::<SHA256>::new(&other_salt, INFO);
+        let hkdf_other_salt = HKDF_SHA256::new_with_salt(&other_salt).unwrap();
+        let other = KdfParams::new(&hkdf_other_salt, INFO);
         assert_ne!(sk.decaps(&ct, other).unwrap(), key);
 
         let absent = KeyMaterial0::new();
-        let no_salt = HkdfParams::<SHA256>::new(&absent, INFO);
+        let hkdf_absent = HKDF_SHA256::new_with_salt(&absent).unwrap();
+        let no_salt = KdfParams::new(&hkdf_absent, INFO);
         let derived = sk.decaps(&ct, no_salt).unwrap();
         assert_ne!(derived, key);
         let K = sk.decaps(&ct, ()).unwrap();
@@ -174,26 +179,6 @@ mod mlkem_hkdf_tests {
         assert_eq!(derived, expected);
     }
 
-    /// A salt typed `Unknown` is refused when the worker is made, by every construction path.
-    #[test]
-    fn an_unknown_salt_is_refused_at_construction() {
-        let mut rng = DefaultRNG::default();
-        let (pk, sk) = MLKEM512::keygen(&mut rng).unwrap();
-        let unknown =
-            KeyMaterial::<32>::from_bytes_as_type(&DUMMY_SEED[..32], KeyType::Unknown).unwrap();
-        let params = HkdfParams::<SHA256>::new(&unknown, INFO);
-        let refused = |r: Result<_, KEMError>| {
-            assert!(matches!(
-                r,
-                Err(KEMError::KeyMaterialError(KeyMaterialError::InvalidKeyType(_)))
-            ));
-        };
-        refused(pk.create_encapsulator(params).map(|_| ()));
-        refused(sk.create_decapsulator(params).map(|_| ()));
-        refused(pk.encaps(&mut rng, params).map(|_| ()));
-        refused(sk.decaps(&[0u8; MLKEM512_CT_LEN], params).map(|_| ()));
-    }
-
     #[test]
     fn algorithm_names_and_strengths() {
         assert_eq!(MLKEM512_HKDF_SHA256::ALG_NAME, "ML-KEM-512-HKDF-SHA256");
@@ -204,8 +189,9 @@ mod mlkem_hkdf_tests {
         assert_eq!(MLKEM1024_HKDF_SHA512::MAX_SECURITY_STRENGTH, SecurityStrength::_256bit);
 
         let salt = salt();
+        let hkdf512 = HKDF_SHA512::new_with_salt(&salt).unwrap();
         let (_pk, sk) = MLKEM768::keygen(&mut DefaultRNG::default()).unwrap();
-        let worker = sk.create_decapsulator(HkdfParams::<SHA512>::new(&salt, INFO)).unwrap();
+        let worker = sk.create_decapsulator(KdfParams::new(&hkdf512, INFO)).unwrap();
         assert_eq!(worker.alg_name(), "ML-KEM-768-HKDF-SHA512");
         let _: &dyn KEMDecapsulator<MLKEM768_CT_LEN, MLKEM768_HKDF_SHA512_SS_LEN> = &worker;
     }

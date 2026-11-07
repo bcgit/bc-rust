@@ -2,6 +2,7 @@
 mod hkdf_tests {
     use bouncycastle_core::errors::{KDFError, KeyMaterialError, MACError, SuspendableError};
     use bouncycastle_core::hazmat::do_hazardous_operations;
+    use bouncycastle_core::kdf_params::KdfParams;
     use bouncycastle_core::key_material::{
         KeyMaterial, KeyMaterial0, KeyMaterial128, KeyMaterial256, KeyMaterial512,
         KeyMaterialTrait, KeyType,
@@ -14,7 +15,7 @@ mod hkdf_tests {
     use bouncycastle_core_test_framework::DUMMY_SEED;
     use bouncycastle_core_test_framework::kdf::TestFrameworkKDF;
     use bouncycastle_hex as hex;
-    use bouncycastle_hkdf::{HKDF, HkdfParams};
+    use bouncycastle_hkdf::HKDF;
     use bouncycastle_hmac::{HMACParams, HmacKey};
     use bouncycastle_sha2::hkdf::{HKDF_SHA256, HKDF_SHA256_NAME, HKDF_SHA512, HKDF_SHA512_NAME};
     use bouncycastle_sha2::{
@@ -505,44 +506,35 @@ mod hkdf_tests {
         assert_eq!(salt_only.security_strength(), SecurityStrength::None);
     }
 
-    /// `HkdfParams` holds the salt as a trait object: the extract and the one-shot take it as
-    /// they take a `KeyMaterial`, a zero-length salt is the absent one, and the value is `Copy`.
+    /// `KdfParams` borrows the KDF instance and the info: a derivation through it is the
+    /// instance's (its salt, a zero-length one being the absent salt), and the value is `Copy`.
     #[test]
-    fn hkdf_params_carry_the_salt_and_info() {
+    fn kdf_params_carry_the_kdf_and_info() {
         let salt =
             KeyMaterial256::from_bytes_as_type(&DUMMY_SEED[..13], KeyType::CryptographicRandom)
                 .unwrap();
         let ikm = KeyMaterial256::from_bytes_as_type(&DUMMY_SEED[32..64], KeyType::Seed).unwrap();
-        let params = HkdfParams::<SHA256>::new(&salt, b"info");
+        let hkdf = HKDF_SHA256::new_with_salt(&salt).unwrap();
+        let params = KdfParams::new(&hkdf, b"info");
         let copy = params;
         assert_eq!(params.info(), b"info");
-        assert_eq!(params.salt().ref_to_bytes(), &DUMMY_SEED[..13]);
-
+        let via_params = params.kdf().derive_key(&ikm, copy.info(), 32).unwrap();
         let mut direct = KeyMaterial256::new();
         HKDF_SHA256::extract_and_expand_out(&salt, &ikm, b"info", 32, &mut direct).unwrap();
-        let mut via_params = KeyMaterial256::new();
-        HKDF_SHA256::extract_and_expand_out(copy.salt(), &ikm, copy.info(), 32, &mut via_params)
-            .unwrap();
-        assert_eq!(direct, via_params);
-        assert_eq!(
-            HKDF_SHA256::extract(params.salt(), &ikm).unwrap().ref_to_bytes(),
-            HKDF_SHA256::extract(&salt, &ikm).unwrap().ref_to_bytes()
-        );
+        assert!(via_params.equals(&direct));
 
         let absent = KeyMaterial0::new();
-        let params = HkdfParams::<SHA256>::new(&absent, b"");
-        let mut via_params = KeyMaterial256::new();
-        HKDF_SHA256::extract_and_expand_out(
-            params.salt(),
-            &ikm,
-            params.info(),
-            32,
-            &mut via_params,
-        )
-        .unwrap();
+        let no_salt = HKDF_SHA256::new_with_salt(&absent).unwrap();
+        let params = KdfParams::new(&no_salt, b"");
+        let via_params = params.kdf().derive_key(&ikm, params.info(), 32).unwrap();
         let mut direct = KeyMaterial256::new();
-        HKDF_SHA256::extract_and_expand_out(&absent, &ikm, &[], 32, &mut direct).unwrap();
-        assert_eq!(direct, via_params);
+        HKDF_SHA256::extract_and_expand_out(&absent, &ikm, b"", 32, &mut direct).unwrap();
+        assert!(via_params.equals(&direct));
+
+        // what an instance refuses is refused before any parameters exist
+        let unknown =
+            KeyMaterial256::from_bytes_as_type(&DUMMY_SEED[..32], KeyType::Unknown).unwrap();
+        assert!(HKDF_SHA256::new_with_salt(&unknown).is_err());
     }
 
     /// RFC 5869 Section 2.2 types the salt only as "a non-secret random value"; material of any

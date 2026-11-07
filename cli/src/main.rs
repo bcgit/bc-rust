@@ -5733,7 +5733,7 @@ fn run() {
         }) => {
             mlkem_cmd::mlkem_hkdf_cmd(
                 &mlkem_cmd::MLKEM512_SET,
-                std::marker::PhantomData::<bouncycastle::sha2::SHA256>,
+                std::marker::PhantomData::<bouncycastle::sha2::hkdf::HKDF_SHA256>,
                 action,
                 skfile,
                 pkfile,
@@ -5758,7 +5758,7 @@ fn run() {
         }) => {
             mlkem_cmd::mlkem_hkdf_cmd(
                 &mlkem_cmd::MLKEM768_SET,
-                std::marker::PhantomData::<bouncycastle::sha2::SHA512>,
+                std::marker::PhantomData::<bouncycastle::sha2::hkdf::HKDF_SHA512>,
                 action,
                 skfile,
                 pkfile,
@@ -5783,7 +5783,7 @@ fn run() {
         }) => {
             mlkem_cmd::mlkem_hkdf_cmd(
                 &mlkem_cmd::MLKEM1024_SET,
-                std::marker::PhantomData::<bouncycastle::sha2::SHA512>,
+                std::marker::PhantomData::<bouncycastle::sha2::hkdf::HKDF_SHA512>,
                 action,
                 skfile,
                 pkfile,

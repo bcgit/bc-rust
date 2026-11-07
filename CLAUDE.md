@@ -290,8 +290,9 @@ agreement next:
 
 - **The parameters are the role trait's type parameter; the algorithm is an associated type.**
   `EncapsulatingKey<Params, CT_LEN, SS_LEN> { type Algorithm: KEMAlgorithm; .. }`, implemented
-  over `()` for ML-KEM and over the caller-configured KDF (salt, info) for a KEM that derives
-  its secret. The argument type then selects the impl, the way `a + b` selects an `Add` impl,
+  over `()` for ML-KEM and over `core::kdf_params::KdfParams<'p, K>` (a borrowed KDF instance and
+  the fixed info) for a KEM that derives its secret. The argument type then selects the impl, the
+  way `a + b` selects an `Add` impl,
   so `pk.encaps(&mut rng, ())` and `pk.encaps(&mut rng, hkdf_params)` on one key need no
   turbofish. The first cut put the algorithm marker on the trait and the parameters behind a
   `Params<'p>` GAT on it; that forced `EncapsulatingKey::<A, _, _>::encaps(&pk, ..)` at every
@@ -299,7 +300,7 @@ agreement next:
   an impl. Two algorithms on one key that take the same parameter type need a wrapper key.
 - **`create_*` takes the parameters, the worker holds them.** `create_encapsulator(&'k self,
   params: Params)` fixes them as `create_signer(rng, ctx)` fixes a context; a parameter type
-  with a lifetime is an impl-level lifetime (`impl<'p> EncapsulatingKey<HkdfParams<'p>, ..>`),
+  with a lifetime is an impl-level lifetime (`impl<'p> EncapsulatingKey<KdfParams<'p, K>, ..>`),
   and the worker GAT borrows only the key (`type Encapsulator<'k>`).
 - **The framework takes the parameters by value with a `Copy` bound.** `test_kem(keygen,
   params, ..)` with `Params: Copy` reuses them across every construction; `()` and `&K` are

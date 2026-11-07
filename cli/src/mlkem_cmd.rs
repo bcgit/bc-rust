@@ -16,10 +16,11 @@ use crate::helpers::{
 };
 use bouncycastle::core::errors::KEMError;
 use bouncycastle::core::hazmat::do_hazardous_operations;
+use bouncycastle::core::kdf_params::KdfParams;
 use bouncycastle::core::kem_key::{DecapsulatingKey, EncapsulatingKey};
 use bouncycastle::core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle::core::traits::{KEMPrivateKey, KEMPublicKey, RNG};
-use bouncycastle::hkdf::HkdfParams;
+use bouncycastle::hkdf::HKDF;
 use bouncycastle::hmac::HMACParams;
 use bouncycastle::mlkem::{
     MLKEM512, MLKEM512_CT_LEN, MLKEM512_PK_LEN, MLKEM512_SK_LEN, MLKEM512PrivateKey,
@@ -215,12 +216,15 @@ pub(crate) enum MLKEMHkdfAction {
 }
 
 /// One body for the three `mlkem*-hkdf-*` subcommands: the plain set's keys, and the roles over
-/// `HkdfParams<H>`, which `hash` names. The derived key's length is the pairing's.
+/// `KdfParams` of the HKDF `_kdf` names, keyed with the salt. The derived key's length is the
+/// pairing's.
 #[allow(clippy::too_many_arguments)] // one flag per input, the HKDF ones each inline or from a file
 pub(crate) fn mlkem_hkdf_cmd<
     PK,
     SK,
     H,
+    const HASH_STATE_LEN: usize,
+    const HKDF_STATE_LEN: usize,
     const PK_LEN: usize,
     const SK_LEN: usize,
     const CT_LEN: usize,
@@ -228,7 +232,7 @@ pub(crate) fn mlkem_hkdf_cmd<
     const PLAIN_SS_LEN: usize,
 >(
     set: &ParameterSet<PK, SK, PK_LEN, SK_LEN, CT_LEN, PLAIN_SS_LEN>,
-    _hash: PhantomData<H>,
+    _kdf: PhantomData<HKDF<H, HASH_STATE_LEN, HKDF_STATE_LEN>>,
     action: &MLKEMHkdfAction,
     skfile: &Option<String>,
     pkfile: &Option<String>,
@@ -239,8 +243,18 @@ pub(crate) fn mlkem_hkdf_cmd<
     additional_input_file: &Option<String>,
     output_hex: bool,
 ) where
-    PK: KEMPublicKey<PK_LEN> + for<'p> EncapsulatingKey<HkdfParams<'p, H>, CT_LEN, SS_LEN>,
-    SK: KEMPrivateKey<SK_LEN> + for<'p> DecapsulatingKey<HkdfParams<'p, H>, CT_LEN, SS_LEN>,
+    PK: KEMPublicKey<PK_LEN>
+        + for<'p> EncapsulatingKey<
+            KdfParams<'p, HKDF<H, HASH_STATE_LEN, HKDF_STATE_LEN>>,
+            CT_LEN,
+            SS_LEN,
+        >,
+    SK: KEMPrivateKey<SK_LEN>
+        + for<'p> DecapsulatingKey<
+            KdfParams<'p, HKDF<H, HASH_STATE_LEN, HKDF_STATE_LEN>>,
+            CT_LEN,
+            SS_LEN,
+        >,
     H: HMACParams,
 {
     // RFC 5869 Section 2.2: the salt is optional, "a non-secret random value"; absent, HKDF uses
@@ -265,7 +279,12 @@ pub(crate) fn mlkem_hkdf_cmd<
         (None, Some(hex_str)) => decode_hex_arg(hex_str, "additional-input"),
         (None, None) => Vec::new(),
     };
-    let params = HkdfParams::<H>::new(&salt, &info);
+    let hkdf =
+        HKDF::<H, HASH_STATE_LEN, HKDF_STATE_LEN>::new_with_salt(&salt).unwrap_or_else(|e| {
+            eprintln!("Error: couldn't load the salt: {e:?}");
+            exit(-1);
+        });
+    let params = KdfParams::new(&hkdf, &info);
 
     match action {
         MLKEMHkdfAction::Encaps => {
