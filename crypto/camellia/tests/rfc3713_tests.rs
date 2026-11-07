@@ -10,7 +10,7 @@ use bouncycastle_camellia::hazmat::{
     Camellia128Internal, Camellia192Internal, Camellia256Internal, CamelliaInternal,
 };
 use bouncycastle_camellia::{BLOCK_LEN, LANES};
-use bouncycastle_core::hazmat::{BlockPermutation, ElectronicCodeBook};
+use bouncycastle_core::hazmat::{BlockPermutation, ElectronicCodeBook, KeyExpansion};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use common::bytes;
 

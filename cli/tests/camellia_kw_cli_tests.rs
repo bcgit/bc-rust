@@ -9,11 +9,8 @@
 //! Wycheproof's `camellia_wrap_test.json` (tcId 7, 48, 101); the full set runs in
 //! `crypto/camellia/tests/kw_wycheproof.rs`.
 
-use std::io::{ErrorKind, Write};
-use std::process::{Command, Output, Stdio};
-
-/// The path to the binary under test, resolved by cargo.
-const BC_RUST: &str = env!("CARGO_BIN_EXE_bc-rust");
+mod common;
+use common::{listed_in_help, run_err_silent, run_ok, tohex, unhex};
 
 /// `(subcommand, kek, plaintext, ciphertext)`.
 const VECTORS: [(&str, &str, &str, &str); 3] = [
@@ -37,55 +34,6 @@ const VECTORS: [(&str, &str, &str, &str); 3] = [
     ),
 ];
 
-/// Runs `bc-rust <args...>` with `stdin_bytes` on stdin and returns the completed output.
-fn run(args: &[&str], stdin_bytes: &[u8]) -> Output {
-    let mut child = Command::new(BC_RUST)
-        .args(args)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("failed to spawn bc-rust");
-    // A command that exits before reading stdin makes this write race its exit; that is the
-    // expected outcome for the error-path tests, which assert on the status and stderr only.
-    match child.stdin.as_mut().expect("stdin piped").write_all(stdin_bytes) {
-        Ok(()) => {}
-        Err(e) if e.kind() == ErrorKind::BrokenPipe => {}
-        Err(e) => panic!("failed to write to stdin: {e}"),
-    }
-    child.wait_with_output().expect("failed to wait for bc-rust")
-}
-
-fn run_ok(args: &[&str], stdin_bytes: &[u8]) -> Vec<u8> {
-    let out = run(args, stdin_bytes);
-    assert!(
-        out.status.success(),
-        "expected success from {args:?}, got {:?}\nstderr: {}",
-        out.status,
-        String::from_utf8_lossy(&out.stderr)
-    );
-    out.stdout
-}
-
-fn run_err(args: &[&str], stdin_bytes: &[u8]) -> String {
-    let out = run(args, stdin_bytes);
-    assert!(
-        !out.status.success(),
-        "expected failure from {args:?}, but it succeeded\nstdout: {:?}",
-        String::from_utf8_lossy(&out.stdout)
-    );
-    assert!(out.stdout.is_empty(), "a rejected unwrap must write nothing: {args:?}");
-    String::from_utf8_lossy(&out.stderr).into_owned()
-}
-
-fn unhex(s: &str) -> Vec<u8> {
-    (0..s.len()).step_by(2).map(|i| u8::from_str_radix(&s[i..i + 2], 16).expect("hex")).collect()
-}
-
-fn tohex(bytes: &[u8]) -> String {
-    bytes.iter().map(|b| format!("{b:02x}")).collect()
-}
-
 #[test]
 fn the_wycheproof_answers_in_both_directions() {
     for (cmd, kek, pt, ct) in VECTORS {
@@ -103,11 +51,11 @@ fn a_tampered_ciphertext_and_the_wrong_kek_are_rejected() {
     for (cmd, kek, _, ct) in VECTORS {
         let mut bad = unhex(ct);
         bad[13] ^= 0x01;
-        let err = run_err(&[cmd, "-d", "decrypt", "--key", kek], &bad);
+        let err = run_err_silent(&[cmd, "-d", "decrypt", "--key", kek], &bad);
         assert!(err.contains("not an authentic"), "{cmd}: {err}");
         let mut wrong = unhex(kek);
         wrong[0] ^= 0x01;
-        let err = run_err(&[cmd, "-d", "decrypt", "--key", &tohex(&wrong)], &unhex(ct));
+        let err = run_err_silent(&[cmd, "-d", "decrypt", "--key", &tohex(&wrong)], &unhex(ct));
         assert!(err.contains("not an authentic"), "{cmd}: {err}");
     }
 }
@@ -115,14 +63,11 @@ fn a_tampered_ciphertext_and_the_wrong_kek_are_rejected() {
 #[test]
 fn unaligned_input_is_refused() {
     let (cmd, kek, _, _) = VECTORS[0];
-    let err = run_err(&[cmd, "-d", "encrypt", "--key", kek], &[0x5Au8; 20]);
+    let err = run_err_silent(&[cmd, "-d", "encrypt", "--key", kek], &[0x5Au8; 20]);
     assert!(err.contains("20 bytes rejected"), "{err}");
 }
 
 #[test]
 fn the_subcommands_are_listed_in_help() {
-    let help = String::from_utf8(run_ok(&["--help"], b"")).unwrap();
-    for cmd in VECTORS.map(|v| v.0) {
-        assert!(help.contains(cmd), "--help should list {cmd}");
-    }
+    listed_in_help(&["camellia128-kw", "camellia192-kw", "camellia256-kw"]);
 }

@@ -1,4 +1,6 @@
-//! AES-CFB128 encryption and decryption, streaming stdin to stdout.
+//! CFB128 encryption and decryption over any 128-bit block permutation, streaming stdin to
+//! stdout: the `aes*-cfb`, `aria*-cfb`, `camellia*-cfb` and `sm4-cfb` commands, one generic
+//! function that `main` instantiates per cipher and key length.
 //!
 //! Only the mode wiring lives here: the IV convention, key loading and stdin framing are in
 //! [`crate::helpers::stream_mode_helpers`] (and [`crate::helpers::block_mode_helpers`] for the key loader), shared with the
@@ -28,54 +30,29 @@
 
 use crate::helpers::block_mode_helpers::{BLOCK_LEN, CipherDirection, load_iv, load_key_object};
 use crate::helpers::stream_mode_helpers::run_stream_mode;
-use bouncycastle::aes::{AES128Key, AES192Key, AES256Key};
+use bouncycastle::cipher::BlockCipherKey;
 use bouncycastle::cipher::modes::CFB;
+use bouncycastle::cipher::modes::ModeNames;
+use bouncycastle::core::hazmat::ElectronicCodeBook;
 use bouncycastle::core::symmetric_key::{SymmetricDecryptionKey, SymmetricEncryptionKey};
 use bouncycastle::core::traits::{StreamCipherDecryptor, StreamCipherEncryptor};
 
-pub(crate) fn aes128_cfb_cmd(
+/// CFB under a `KEY_LEN`-byte key for the permutation `P`; `alg` names the cipher and key
+/// length in messages.
+pub(crate) fn cfb_cmd<P, const KEY_LEN: usize>(
     action: &CipherDirection,
     key: &Option<String>,
     key_file: &Option<String>,
     iv: &Option<String>,
     iv_file: &Option<String>,
     output_hex: bool,
-) {
-    run::<_, 16>(
+    alg: &str,
+) where
+    P: ElectronicCodeBook<KEY_LEN, BLOCK_LEN> + ModeNames + Clone,
+{
+    run::<_, KEY_LEN>(
         action,
-        &load_key_object::<AES128Key<CFB>, 16>(key, key_file, "AES-128"),
-        load_iv::<BLOCK_LEN>(iv, iv_file),
-        output_hex,
-    );
-}
-
-pub(crate) fn aes192_cfb_cmd(
-    action: &CipherDirection,
-    key: &Option<String>,
-    key_file: &Option<String>,
-    iv: &Option<String>,
-    iv_file: &Option<String>,
-    output_hex: bool,
-) {
-    run::<_, 24>(
-        action,
-        &load_key_object::<AES192Key<CFB>, 24>(key, key_file, "AES-192"),
-        load_iv::<BLOCK_LEN>(iv, iv_file),
-        output_hex,
-    );
-}
-
-pub(crate) fn aes256_cfb_cmd(
-    action: &CipherDirection,
-    key: &Option<String>,
-    key_file: &Option<String>,
-    iv: &Option<String>,
-    iv_file: &Option<String>,
-    output_hex: bool,
-) {
-    run::<_, 32>(
-        action,
-        &load_key_object::<AES256Key<CFB>, 32>(key, key_file, "AES-256"),
+        &load_key_object::<BlockCipherKey<P, CFB>, KEY_LEN>(key, key_file, alg),
         load_iv::<BLOCK_LEN>(iv, iv_file),
         output_hex,
     );

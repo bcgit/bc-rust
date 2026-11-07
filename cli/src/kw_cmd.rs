@@ -1,9 +1,11 @@
-//! AES key wrap (KW, NIST SP 800-38F Sec 6.2 / RFC 3394) and key wrap with padding (KWP, Sec 6.3
-//! / RFC 5649): `aes{128,192,256}-{kw,kwp} -d encrypt|decrypt`, stdin to stdout. `encrypt` wraps
+//! Key wrap (KW, NIST SP 800-38F Sec 6.2 / RFC 3394) and key wrap with padding (KWP, Sec 6.3 /
+//! RFC 5649) over any 128-bit block permutation: the `aes*-kw`, `aria*-kw`, `camellia*-kw`,
+//! `sm4-kw` and `*-kwp` commands, `-d encrypt|decrypt`, stdin to stdout, as two generic
+//! functions that `main` instantiates per cipher and key length. `encrypt` wraps
 //! and `decrypt` unwraps: the spelling is shared with every other cipher command, and SP 800-38F
 //! itself calls the two halves authenticated encryption and decryption (KW-AE, KW-AD).
 //!
-//! Key loading is shared with the other AES commands ([`crate::helpers::block_mode_helpers::load_key_object`]),
+//! Key loading is shared with the other cipher commands ([`crate::helpers::block_mode_helpers::load_key_object`]),
 //! so `--key` / `--key-file` behave identically. Everything else differs from the streaming
 //! commands, because key wrap is a one-shot algorithm:
 //!
@@ -46,105 +48,58 @@
 
 use crate::helpers::block_mode_helpers::{CipherDirection, load_key_object};
 use crate::helpers::write_bytes_or_hex;
-use bouncycastle::aes::{AES128Key, AES192Key, AES256Key};
+use bouncycastle::cipher::BlockCipherKey;
+use bouncycastle::cipher::modes::ModeNames;
 use bouncycastle::cipher::modes::{KW, KWP};
 use bouncycastle::core::errors::SymmetricCipherError;
+use bouncycastle::core::hazmat::ElectronicCodeBook;
 use bouncycastle::core::symmetric_key::{KeyUnwrappingKey, KeyWrappingKey};
 use std::io::Read;
 use std::process::exit;
 
-pub(crate) fn aes128_kw_cmd(
+/// KW under a `KEY_LEN`-byte key-encryption key for the permutation `P`; `alg` names the cipher
+/// and key length, "AES-128" and the like, and the messages add the algorithm.
+pub(crate) fn kw_cmd<P, const KEY_LEN: usize>(
     direction: &CipherDirection,
     key: &Option<String>,
     key_file: &Option<String>,
     output_hex: bool,
-) {
-    run::<_, 16>(
+    alg: &str,
+) where
+    P: ElectronicCodeBook<KEY_LEN, 16> + ModeNames + Clone,
+{
+    let alg = format!("{alg}-KW");
+    run::<_, KEY_LEN>(
         direction,
-        &load_key_object::<AES128Key<KW>, 16>(key, key_file, "AES-128-KW"),
+        &load_key_object::<BlockCipherKey<P, KW>, KEY_LEN>(key, key_file, &alg),
         output_hex,
-        "AES-128-KW",
+        &alg,
     );
 }
 
-pub(crate) fn aes192_kw_cmd(
+/// KWP, as [`kw_cmd`].
+pub(crate) fn kwp_cmd<P, const KEY_LEN: usize>(
     direction: &CipherDirection,
     key: &Option<String>,
     key_file: &Option<String>,
     output_hex: bool,
-) {
-    run::<_, 24>(
+    alg: &str,
+) where
+    P: ElectronicCodeBook<KEY_LEN, 16> + ModeNames + Clone,
+{
+    let alg = format!("{alg}-KWP");
+    run::<_, KEY_LEN>(
         direction,
-        &load_key_object::<AES192Key<KW>, 24>(key, key_file, "AES-192-KW"),
+        &load_key_object::<BlockCipherKey<P, KWP>, KEY_LEN>(key, key_file, &alg),
         output_hex,
-        "AES-192-KW",
-    );
-}
-
-pub(crate) fn aes256_kw_cmd(
-    direction: &CipherDirection,
-    key: &Option<String>,
-    key_file: &Option<String>,
-    output_hex: bool,
-) {
-    run::<_, 32>(
-        direction,
-        &load_key_object::<AES256Key<KW>, 32>(key, key_file, "AES-256-KW"),
-        output_hex,
-        "AES-256-KW",
-    );
-}
-
-pub(crate) fn aes128_kwp_cmd(
-    direction: &CipherDirection,
-    key: &Option<String>,
-    key_file: &Option<String>,
-    output_hex: bool,
-) {
-    run::<_, 16>(
-        direction,
-        &load_key_object::<AES128Key<KWP>, 16>(key, key_file, "AES-128-KWP"),
-        output_hex,
-        "AES-128-KWP",
-    );
-}
-
-pub(crate) fn aes192_kwp_cmd(
-    direction: &CipherDirection,
-    key: &Option<String>,
-    key_file: &Option<String>,
-    output_hex: bool,
-) {
-    run::<_, 24>(
-        direction,
-        &load_key_object::<AES192Key<KWP>, 24>(key, key_file, "AES-192-KWP"),
-        output_hex,
-        "AES-192-KWP",
-    );
-}
-
-pub(crate) fn aes256_kwp_cmd(
-    direction: &CipherDirection,
-    key: &Option<String>,
-    key_file: &Option<String>,
-    output_hex: bool,
-) {
-    run::<_, 32>(
-        direction,
-        &load_key_object::<AES256Key<KWP>, 32>(key, key_file, "AES-256-KWP"),
-        output_hex,
-        "AES-256-KWP",
+        &alg,
     );
 }
 
 /// Reads all of stdin, wraps or unwraps it under `kek`, and writes the result. `alg` names the
-/// algorithm in error messages. Shared with the other block ciphers' key-wrap commands.
-pub(crate) fn run<K, const KEK_LEN: usize>(
-    direction: &CipherDirection,
-    kek: &K,
-    output_hex: bool,
-    alg: &str,
-) where
+/// algorithm in error messages.
+fn run<K, const KEK_LEN: usize>(direction: &CipherDirection, kek: &K, output_hex: bool, alg: &str)
+where
     K: KeyWrappingKey<KEK_LEN> + KeyUnwrappingKey<KEK_LEN>,
 {
     let mut input = Vec::new();

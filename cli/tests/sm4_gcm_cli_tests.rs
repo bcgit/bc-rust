@@ -6,11 +6,12 @@
 //! what comes out really is GCM over SM4, held to RFC 8998 Appendix A.1's `AEAD_SM4_GCM` vector
 //! and to the library's own `SM4Key<GCM>`.
 
-use std::io::{ErrorKind, Write};
-use std::process::{Command, Output, Stdio};
-
-/// The path to the binary under test, resolved by cargo.
-const BC_RUST: &str = env!("CARGO_BIN_EXE_bc-rust");
+mod common;
+use bouncycastle::sm4::hazmat::SM4Internal;
+use common::{
+    Framing, KEY16, KEY32, any_input_length, fresh_prefix_per_invocation, library_gcm_decrypt,
+    pseudo_random, round_trips, run_err, run_ok, tohex, unhex, wrong_key_lengths,
+};
 
 /// The single SM4 key length.
 const KEY: &str = "0123456789abcdeffedcba9876543210";
@@ -18,93 +19,6 @@ const KEY: &str = "0123456789abcdeffedcba9876543210";
 /// GCM's framing: the 12-byte nonce leads and the 16-byte tag follows the ciphertext.
 const NONCE_LEN: usize = 12;
 const TAG_LEN: usize = 16;
-
-/// Runs `bc-rust <args...>` with `stdin_bytes` on stdin and returns the completed output.
-fn run(args: &[&str], stdin_bytes: &[u8]) -> Output {
-    let mut child = Command::new(BC_RUST)
-        .args(args)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("failed to spawn bc-rust");
-
-    // The error-path tests hand a rejected key to a command that `exit`s before it ever reads
-    // stdin, so this write races the child's exit and sometimes loses -- reliably so on a loaded
-    // CI runner. That is an expected outcome, not a harness failure: `wait_with_output` still
-    // returns the exit status and stderr, which is all those tests assert on. Any other write
-    // error is a real problem and still panics.
-    match child.stdin.as_mut().expect("stdin piped").write_all(stdin_bytes) {
-        Ok(()) => {}
-        Err(e) if e.kind() == ErrorKind::BrokenPipe => {}
-        Err(e) => panic!("failed to write to stdin: {e}"),
-    }
-
-    child.wait_with_output().expect("failed to wait for bc-rust")
-}
-
-/// Runs a command that is expected to succeed, returning stdout.
-fn run_ok(args: &[&str], stdin_bytes: &[u8]) -> Vec<u8> {
-    let out = run(args, stdin_bytes);
-    assert!(
-        out.status.success(),
-        "expected success from {args:?}, got {:?}\nstderr: {}",
-        out.status,
-        String::from_utf8_lossy(&out.stderr)
-    );
-    out.stdout
-}
-
-/// Runs a command that is expected to fail, returning stderr as a string.
-fn run_err(args: &[&str], stdin_bytes: &[u8]) -> String {
-    let out = run(args, stdin_bytes);
-    assert!(
-        !out.status.success(),
-        "expected failure from {args:?}, but it succeeded\nstdout: {:?}",
-        String::from_utf8_lossy(&out.stdout)
-    );
-    String::from_utf8_lossy(&out.stderr).into_owned()
-}
-
-fn unhex(s: &str) -> Vec<u8> {
-    assert!(s.len().is_multiple_of(2), "hex string must have even length");
-    (0..s.len())
-        .step_by(2)
-        .map(|i| u8::from_str_radix(&s[i..i + 2], 16).expect("valid hex"))
-        .collect()
-}
-
-fn tohex(bytes: &[u8]) -> String {
-    bytes.iter().map(|b| format!("{b:02x}")).collect()
-}
-
-/// Deterministic pseudo-random bytes, so the tests do not depend on an RNG.
-fn pseudo_random(len: usize, seed: u32) -> Vec<u8> {
-    let mut state = seed.wrapping_mul(2_654_435_761).wrapping_add(1);
-    (0..len)
-        .map(|_| {
-            state ^= state << 13;
-            state ^= state >> 17;
-            state ^= state << 5;
-            (state >> 24) as u8
-        })
-        .collect()
-}
-/// The library's answer for the same key, nonce, AAD and inline `ciphertext || tag`, so the
-/// CLI can be held to it: the key object's inline one-shot under `GCM`.
-fn library_gcm_decrypt(key_hex: &str, nonce: &[u8], aad: &[u8], ciphertext: &[u8]) -> Vec<u8> {
-    use bouncycastle::cipher::modes::GCM;
-    use bouncycastle::core::key_material::{KeyMaterial, KeyType};
-    use bouncycastle::core::symmetric_key::{AeadDecryptionKey, FromKeyMaterial};
-    use bouncycastle::sm4::SM4Key;
-
-    let key_bytes: [u8; 16] = unhex(key_hex).try_into().expect("a 16-byte key");
-    let material = KeyMaterial::<16>::from_bytes_as_type(&key_bytes, KeyType::SymmetricCipherKey)
-        .expect("a valid symmetric cipher key");
-    let key = SM4Key::<GCM>::from_key_material(&material).expect("a valid key");
-    let nonce: [u8; NONCE_LEN] = nonce.try_into().expect("a 12-byte nonce");
-    key.decrypt_with_aad(&nonce, aad, ciphertext).expect("the tag verifies")
-}
 
 /// RFC 8998 Appendix A.1, the `AEAD_SM4_GCM` vector, through the command with the vector's
 /// nonce supplied: the output is exactly `ciphertext || tag`, and it decrypts back.
@@ -146,7 +60,8 @@ fn the_command_is_gcm_over_sm4() {
         assert_eq!(out.len(), NONCE_LEN + len + TAG_LEN, "len {len}: nonce, body and tag");
 
         let (nonce, body) = out.split_at(NONCE_LEN);
-        let recovered = library_gcm_decrypt(KEY, nonce, &unhex("deadbeef"), body);
+        let recovered =
+            library_gcm_decrypt::<SM4Internal, 16>(KEY, nonce, &unhex("deadbeef"), body);
         assert_eq!(recovered, plaintext, "len {len}: the CLI should agree with the library");
 
         let back = run_ok(&["sm4-gcm", "-d", "decrypt", "--key", KEY, "--aad", "deadbeef"], &out);
@@ -180,20 +95,6 @@ fn tampering_and_a_changed_aad_fail_authentication() {
     assert!(err.contains("authentication failed"), "stderr was: {err}");
 }
 
-/// A fresh nonce per invocation: a repeated GCM nonce under one key also gives away the hash
-/// subkey, so this is the whole security argument for the default framing.
-#[test]
-fn each_invocation_uses_a_fresh_nonce() {
-    let plaintext = pseudo_random(64, 11);
-    let mut seen = std::collections::BTreeSet::new();
-    for _ in 0..8 {
-        let ciphertext = run_ok(&["sm4-gcm", "-d", "encrypt", "--key", KEY], &plaintext);
-        assert!(seen.insert(ciphertext[..NONCE_LEN].to_vec()), "the CLI reused a nonce");
-        let recovered = run_ok(&["sm4-gcm", "-d", "decrypt", "--key", KEY], &ciphertext);
-        assert_eq!(recovered, plaintext);
-    }
-}
-
 /// The same with `-x`: identical answer in hex plus a trailing newline.
 #[test]
 fn hex_output_matches_binary_output() {
@@ -208,14 +109,6 @@ fn hex_output_matches_binary_output() {
     assert_eq!(binary, plaintext);
 }
 
-/// SM4 has exactly one key length. An AES-256-sized key is an error naming the algorithm.
-#[test]
-fn a_key_of_the_wrong_length_is_rejected() {
-    let key_256 = "603deb1015ca71be2b73aef0857d77811f352c073b6108d72d9810a30914dff4";
-    let err = run_err(&["sm4-gcm", "-d", "encrypt", "--key", key_256], &[0u8; 16]);
-    assert!(err.contains("SM4 needs a 16-byte key, got 32 bytes"), "stderr was: {err}");
-}
-
 /// The subcommand is discoverable, and its help says it authenticates and takes AAD.
 #[test]
 fn the_subcommand_is_listed_in_help() {
@@ -226,4 +119,24 @@ fn the_subcommand_is_listed_in_help() {
     let help = String::from_utf8_lossy(&out);
     assert!(help.to_lowercase().contains("authenticat"), "help should mention authentication");
     assert!(help.contains("aad"), "help should mention AAD: {help}");
+}
+
+#[test]
+fn encrypt_then_decrypt_round_trips() {
+    round_trips(&[("sm4-gcm", KEY16)], &[], Framing { prefix: 12, suffix: 16, pads: false });
+}
+
+#[test]
+fn any_input_length_is_accepted() {
+    any_input_length("sm4-gcm", KEY16, &[], Framing { prefix: 12, suffix: 16, pads: false });
+}
+
+#[test]
+fn a_key_of_the_wrong_length_is_rejected() {
+    wrong_key_lengths(&[("sm4-gcm", KEY32, "SM4 needs a 16-byte key, got 32 bytes")], &[]);
+}
+
+#[test]
+fn each_invocation_uses_a_fresh_nonce() {
+    fresh_prefix_per_invocation("sm4-gcm", KEY16, 12);
 }

@@ -9,11 +9,11 @@
 //! for each key length the four entries chain into one four-block CFB128 message under the IV
 //! `000102..0f`; see `crypto/camellia/tests/stream_mode_tests.rs`.
 
-use std::io::{ErrorKind, Write};
-use std::process::{Command, Output, Stdio};
-
-/// The path to the binary under test, resolved by cargo.
-const BC_RUST: &str = env!("CARGO_BIN_EXE_bc-rust");
+mod common;
+use common::{
+    Framing, KEY16, KEY24, KEY32, any_input_length, listed_in_help, round_trips, run_ok, tohex,
+    unhex, wrong_key_lengths,
+};
 
 /// The IV of the first entry of every chain.
 const IV: &str = "000102030405060708090a0b0c0d0e0f";
@@ -48,78 +48,6 @@ const CT_256: &str = concat!(
     "555fc3f34bdd2d54c62d9e3bf338c1c4",
     "5953adce14db8c7f39f1bd39f359bffa",
 );
-
-/// Runs `bc-rust <args...>` with `stdin_bytes` on stdin and returns the completed output.
-fn run(args: &[&str], stdin_bytes: &[u8]) -> Output {
-    let mut child = Command::new(BC_RUST)
-        .args(args)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("failed to spawn bc-rust");
-
-    // The error-path tests hand a rejected key to a command that `exit`s before it ever reads
-    // stdin, so this write races the child's exit and sometimes loses -- reliably so on a loaded
-    // CI runner. That is an expected outcome, not a harness failure: `wait_with_output` still
-    // returns the exit status and stderr, which is all those tests assert on. Any other write
-    // error is a real problem and still panics.
-    match child.stdin.as_mut().expect("stdin piped").write_all(stdin_bytes) {
-        Ok(()) => {}
-        Err(e) if e.kind() == ErrorKind::BrokenPipe => {}
-        Err(e) => panic!("failed to write to stdin: {e}"),
-    }
-
-    child.wait_with_output().expect("failed to wait for bc-rust")
-}
-
-/// Runs a command that is expected to succeed, returning stdout.
-fn run_ok(args: &[&str], stdin_bytes: &[u8]) -> Vec<u8> {
-    let out = run(args, stdin_bytes);
-    assert!(
-        out.status.success(),
-        "expected success from {args:?}, got {:?}\nstderr: {}",
-        out.status,
-        String::from_utf8_lossy(&out.stderr)
-    );
-    out.stdout
-}
-
-/// Runs a command that is expected to fail, returning stderr as a string.
-fn run_err(args: &[&str], stdin_bytes: &[u8]) -> String {
-    let out = run(args, stdin_bytes);
-    assert!(
-        !out.status.success(),
-        "expected failure from {args:?}, but it succeeded\nstdout: {:?}",
-        String::from_utf8_lossy(&out.stdout)
-    );
-    String::from_utf8_lossy(&out.stderr).into_owned()
-}
-
-fn unhex(s: &str) -> Vec<u8> {
-    assert!(s.len().is_multiple_of(2), "hex string must have even length");
-    (0..s.len())
-        .step_by(2)
-        .map(|i| u8::from_str_radix(&s[i..i + 2], 16).expect("valid hex"))
-        .collect()
-}
-
-fn tohex(bytes: &[u8]) -> String {
-    bytes.iter().map(|b| format!("{b:02x}")).collect()
-}
-
-/// Deterministic pseudo-random bytes, so the tests do not depend on an RNG.
-fn pseudo_random(len: usize, seed: u32) -> Vec<u8> {
-    let mut state = seed.wrapping_mul(2_654_435_761).wrapping_add(1);
-    (0..len)
-        .map(|_| {
-            state ^= state << 13;
-            state ^= state >> 17;
-            state ^= state << 5;
-            (state >> 24) as u8
-        })
-        .collect()
-}
 
 const VARIANTS: [(&str, &str, &str); 3] = [
     ("camellia128-cfb", KEY_128, CT_128),
@@ -159,53 +87,33 @@ fn hex_output_matches_binary_output() {
     assert_eq!(String::from_utf8_lossy(&out), format!("{PLAINTEXT}\n"));
 }
 
-/// `encrypt | decrypt` composes: the IV rides in the first block, and the plaintext comes back.
 #[test]
 fn encrypt_then_decrypt_round_trips() {
-    let plaintext = pseudo_random(4096, 0xC0FFEE);
-
-    for (cmd, key, _) in VARIANTS {
-        let ciphertext = run_ok(&[cmd, "-d", "encrypt", "--key", key], &plaintext);
-        assert_eq!(ciphertext.len(), 16 + plaintext.len(), "{cmd}: IV plus an equal-length body");
-        assert_ne!(&ciphertext[16..], &plaintext[..]);
-
-        let recovered = run_ok(&[cmd, "-d", "decrypt", "--key", key], &ciphertext);
-        assert_eq!(recovered, plaintext, "{cmd}");
-    }
+    round_trips(
+        &[("camellia128-cfb", KEY16), ("camellia192-cfb", KEY24), ("camellia256-cfb", KEY32)],
+        &[],
+        Framing { prefix: 16, suffix: 0, pads: false },
+    );
 }
 
-/// Unlike `camellia*-cbc`, any length is accepted and nothing is padded: CFB is a stream cipher.
 #[test]
 fn any_input_length_is_accepted() {
-    for len in [0usize, 1, 15, 17, 33] {
-        let plaintext = pseudo_random(len, len as u32);
-        let ciphertext =
-            run_ok(&["camellia128-cfb", "-d", "encrypt", "--key", KEY_128], &plaintext);
-        assert_eq!(ciphertext.len(), 16 + len, "len {len}: IV plus an equal-length body");
-        let recovered =
-            run_ok(&["camellia128-cfb", "-d", "decrypt", "--key", KEY_128], &ciphertext);
-        assert_eq!(recovered, plaintext, "len {len}: round trip");
-    }
+    any_input_length("camellia128-cfb", KEY16, &[], Framing { prefix: 16, suffix: 0, pads: false });
 }
 
-/// Each command wants exactly its key length. The 256-bit key to the 128-bit command, and so on,
-/// are errors naming the algorithm.
 #[test]
 fn a_key_of_the_wrong_length_is_rejected() {
-    let err = run_err(&["camellia128-cfb", "-d", "encrypt", "--key", KEY_256], &[0u8; 16]);
-    assert!(err.contains("Camellia-128 needs a 16-byte key, got 32 bytes"), "stderr was: {err}");
-    let err = run_err(&["camellia192-cfb", "-d", "encrypt", "--key", KEY_128], &[0u8; 16]);
-    assert!(err.contains("Camellia-192 needs a 24-byte key, got 16 bytes"), "stderr was: {err}");
-    let err = run_err(&["camellia256-cfb", "-d", "encrypt", "--key", KEY_192], &[0u8; 16]);
-    assert!(err.contains("Camellia-256 needs a 32-byte key, got 24 bytes"), "stderr was: {err}");
+    wrong_key_lengths(
+        &[
+            ("camellia128-cfb", KEY32, "Camellia-128 needs a 16-byte key, got 32 bytes"),
+            ("camellia192-cfb", KEY32, "Camellia-192 needs a 24-byte key, got 32 bytes"),
+            ("camellia256-cfb", KEY24, "Camellia-256 needs a 32-byte key, got 24 bytes"),
+        ],
+        &[],
+    );
 }
 
-/// The subcommands are discoverable.
 #[test]
 fn the_subcommands_are_listed_in_help() {
-    let out = run_ok(&["--help"], &[]);
-    let help = String::from_utf8_lossy(&out);
-    for cmd in ["camellia128-cfb", "camellia192-cfb", "camellia256-cfb"] {
-        assert!(help.contains(cmd), "`--help` should list {cmd}");
-    }
+    listed_in_help(&["camellia128-cfb", "camellia192-cfb", "camellia256-cfb"]);
 }

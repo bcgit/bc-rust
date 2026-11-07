@@ -4,21 +4,18 @@
 //! The known-answer tests (ACVP, Wycheproof) are in the `aes` crate, `crypto/aes/tests/gmac_*.rs`.
 
 mod common;
-#[path = "../common/toy_key.rs"]
-#[allow(dead_code)]
-mod toy_key;
 
+use bouncycastle_cipher::BlockCipherKey;
 use bouncycastle_cipher::modes::{GCM, GCM_NONCE_LEN, GMAC, ModeNames};
-use bouncycastle_core::hazmat::{ElectronicCodeBook, Mode, NonceMacMode};
+use bouncycastle_core::hazmat::{KeyExpansion, Mode, NonceMacMode};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::symmetric_key::{AeadEncryptionKey, FromKeyMaterial};
 use bouncycastle_core_test_framework::from_key_material::TestFrameworkFromKeyMaterial;
 use bouncycastle_rng::FixedSeedRNG;
 use common::{TOY_LEN, Toy, toy_key};
-use toy_key::ToyKey;
 
-type ToyGmacKey<const TAG_LEN: usize = 16> = ToyKey<Toy, GMAC<TAG_LEN>>;
+type ToyGmacKey<const TAG_LEN: usize = 16> = BlockCipherKey<Toy, GMAC<TAG_LEN>>;
 
 fn gmac_key<const TAG_LEN: usize>() -> ToyGmacKey<TAG_LEN> {
     ToyGmacKey::from_key_material(&mac_key()).expect("the toy MAC key")
@@ -50,7 +47,7 @@ fn every_route_gives_gcm_s_aad_only_tag() {
     let state = key_state();
     for len in [0, 1, 15, 16, 17, 32, 33, 100] {
         let msg = message(len);
-        let (_, gcm_nonce, expected) = ToyKey::<Toy, GCM>::from_key_material(&toy_key())
+        let (_, gcm_nonce, expected) = BlockCipherKey::<Toy, GCM>::from_key_material(&toy_key())
             .unwrap()
             .encrypt_detached_out(&mut rng(), &msg, &[], &mut [])
             .unwrap();

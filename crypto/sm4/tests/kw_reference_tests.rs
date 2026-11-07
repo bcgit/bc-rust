@@ -5,7 +5,7 @@
 //! produce. The algorithm's own answers under AES are pinned in `bouncycastle-aes`.
 
 use bouncycastle_cipher::modes::{KW, KWP};
-use bouncycastle_core::hazmat::{BlockPermutation, ElectronicCodeBook};
+use bouncycastle_core::hazmat::{BlockPermutation, KeyExpansion};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::symmetric_key::{FromKeyMaterial, KeyUnwrappingKey, KeyWrappingKey};
 use bouncycastle_sm4::hazmat::SM4Internal;

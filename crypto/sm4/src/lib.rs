@@ -89,11 +89,11 @@
 //!
 //! ## The raw permutation
 //!
-//! The engine transforms one block, and `ElectronicCodeBook::new` on it is the one-shot:
+//! The engine transforms one block, and `KeyExpansion::new` on it is the one-shot:
 //!
 //! ```
 //! use bouncycastle_sm4::hazmat::SM4Internal;
-//! use bouncycastle_core::hazmat::{BlockPermutation, ElectronicCodeBook};
+//! use bouncycastle_core::hazmat::{BlockPermutation, ElectronicCodeBook, KeyExpansion};
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 //!
 //! // GB/T 32907-2016 Example 1 (draft-ribose-cfrg-sm4-10 Appendix A.1.1).
@@ -127,7 +127,7 @@
 //! ```
 //! use bouncycastle_sm4::hazmat::SM4Internal;
 //! use bouncycastle_sm4::LANES;
-//! use bouncycastle_core::hazmat::{BlockPermutation, ElectronicCodeBook};
+//! use bouncycastle_core::hazmat::{BlockPermutation, ElectronicCodeBook, KeyExpansion};
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 //!
 //! let key = KeyMaterial::<16>::from_bytes_as_type(&[0x42; 16], KeyType::SymmetricCipherKey)
