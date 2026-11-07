@@ -598,7 +598,7 @@ impl<P: MLKEMParams> MLKEM<P> {
     }
 
     /// Algorithm 20 ML-KEM.Encaps(ek), lines 1-5, over either form of this crate's public key.
-    fn encaps_with_rng<EK: MLKEMPublicKeyInternalTrait<P>, const CT_LEN: usize>(
+    pub(crate) fn encaps_with_rng<EK: MLKEMPublicKeyInternalTrait<P>, const CT_LEN: usize>(
         ek: &EK,
         rng: &mut dyn RNG,
         ct: &mut [u8; CT_LEN],
@@ -624,7 +624,7 @@ impl<P: MLKEMParams> MLKEM<P> {
     /// Of the Section 7.3 decapsulation input checks, 1 (the ciphertext length) is the type of
     /// `ct`, and 2 (the key encoding) and 3 (the hash check) are done once, when the key is
     /// loaded, by [`MLKEMPrivateKeyTrait::sk_decode`].
-    fn decaps_checked<DK: MLKEMPrivateKeyInternalTrait<P>, const CT_LEN: usize>(
+    pub(crate) fn decaps_checked<DK: MLKEMPrivateKeyInternalTrait<P>, const CT_LEN: usize>(
         dk: &DK,
         ct: &[u8; CT_LEN],
     ) -> Result<KeyMaterial<MLKEM_SS_LEN>, KEMError> {
