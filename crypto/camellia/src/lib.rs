@@ -203,8 +203,7 @@
 //!
 //! ## Why "lowmemory"
 //!
-//! Two things. First, no tables: a table-driven implementation carries anywhere from 256 bytes to
-//! 4 KiB of them, indexed by secret data; here the S-box is code. Second,
+//! Two things. First, no tables: the S-box is code, as [above](#why-not-a-lookup-table). Second,
 //! the working set. Eight `u64` planes would take eight blocks per pass and double the throughput
 //! on a 64-bit machine, but every per-call buffer -- the block state, the planes, their copy during
 //! the byte rotations -- would double with them. Four lanes over `u32` planes keep the whole
@@ -240,9 +239,6 @@
 //! | `encrypt_2blocks` / `decrypt_2blocks` | 512 B | 512 B | 512 B |
 //! | `encrypt_4blocks` | 528 B | 528 B | 528 B |
 //! | `decrypt_4blocks` | 512 B | 512 B | 512 B |
-//!
-//! For comparison, a table-driven implementation carries anywhere from 256 bytes to 4 KiB of
-//! tables on top of a 272-byte subkey array sized for the largest key.
 //!
 //! # 🚨 Security Considerations 🚨
 //!
