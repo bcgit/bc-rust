@@ -199,7 +199,9 @@ pub trait KeyMaterialTrait: KeyMaterialInternalTrait {
     fn set_security_strength(&mut self, strength: SecurityStrength)
     -> Result<(), KeyMaterialError>;
 
-    /// Whether or not the KeyMaterial is one of the full entropy key types.
+    /// Whether the KeyMaterial is of a type a KDF credits as keying material: every type but
+    /// [`KeyType::Zeroized`] and [`KeyType::Unknown`]. The security strength, not this, says how
+    /// much entropy it carries; for a [`KeyType::SharedSecret`] that is less than its length.
     fn is_full_entropy(&self) -> bool;
 
     /// Securely resets the contents to all zeroes.
@@ -282,7 +284,9 @@ pub enum KeyType {
 
     /// The raw shared secret `Z` of a key-agreement primitive: secret keying material that is not
     /// uniformly distributed, to be used only as the input of a KDF (SP 800-56Ar3, Section 5.8).
-    /// The producer sets its security strength. A KEM's shared secret is not this: it is
+    /// The producer sets its security strength. A KDF credits it as keying material, as it does
+    /// the other key types, but its length overstates its entropy, so the strength is what bounds
+    /// the label of the KDF's output. A KEM's shared secret is not this: it is
     /// [`KeyType::CryptographicRandom`] when the algorithm's output is uniform (ML-KEM), or the
     /// KDF's output type when the KEM derives it.
     SharedSecret = 6,

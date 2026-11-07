@@ -44,8 +44,10 @@
   `DecapsulatingKey` roles in `core::kem_key` hand out `KEMEncapsulator` / `KEMDecapsulator` workers that
   borrow the key, implemented per algorithm over the parameters a worker is made from (`()` for ML-KEM, a
   configured KDF for a KEM that derives its secret), which select the algorithm at the call. The static `encaps(pk)` with its
-  OS DRBG, the run-time ciphertext length check and the expanded-key statics are gone; the ML-KEM key types
-  carry only their parameter set. `KeyType::SharedSecret` is added for the raw `Z` of a key agreement.
+  OS DRBG, the run-time ciphertext length check with `KEMError::LengthError`, and the expanded-key statics are
+  gone; the ML-KEM key types carry only their parameter set, and `MLKEMPublicKeyTrait` / `MLKEMPrivateKeyTrait`
+  no longer extend `KEMPublicKey` / `KEMPrivateKey`. `KeyType::SharedSecret` is added for the raw `Z` of a key
+  agreement; a KDF credits it, labelling its output with no more than `Z`'s strength.
 * ML-KEM with its shared secret derived through HKDF: `MLKEM512_HKDF_SHA256`, `MLKEM768_HKDF_SHA512` and
   `MLKEM1024_HKDF_SHA512` are roles the plain ML-KEM keys carry over `HkdfParams<H>`, RFC 5869's salt and info
   from `bouncycastle-hkdf` with the hash as the type's parameter selecting the algorithm, in both ML-KEM crates

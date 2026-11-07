@@ -78,8 +78,6 @@ pub enum KEMError {
     ///
     KeyMaterialError(KeyMaterialError),
     ///
-    LengthError(&'static str),
-    ///
     RNGError(RNGError),
 }
 

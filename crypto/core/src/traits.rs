@@ -595,7 +595,8 @@ pub trait KEMEncapsulator<const CT_LEN: usize, const SS_LEN: usize>: AlgorithmIn
     /// returns the shared secret with the number of bytes written, always `CT_LEN`.
     ///
     /// # Errors
-    /// [`KEMError::RNGError`] if `rng` is weaker than the algorithm or fails to deliver.
+    /// [`KEMError::RNGError`] if `rng` is weaker than the algorithm or fails to deliver;
+    /// [`KEMError::KeyMaterialError`] if the shared secret cannot be built.
     fn encaps_out(
         &self,
         rng: &mut dyn RNG,
