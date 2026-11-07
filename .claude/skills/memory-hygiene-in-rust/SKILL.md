@@ -1,6 +1,6 @@
 ---
 name: memory-hygiene-in-rust
-description:
+description: >-
   How to keep peak stack memory down for free in any Rust crypto code, and how to measure it honestly. Applies to every crate under crypto/*, not only the *_lowmemory ones: those crates trade performance for memory by algorithmic design, whereas everything here costs nothing and there is no reason to be wasteful anywhere. Use this whenever work adds or changes a function signature, return type, constructor, key or signature decoder, or anything holding a polynomial, vector, matrix or byte array of a kilobyte or more; whenever a change touches `mem_usage_benches` or a "Memory Usage" table in a crate's docs; and for any claim about copies, stack frames, out-parameters, `.try_into()`, return-by-value, `#[inline(never)]`, `.clone()`, `Copy` derives, valgrind/massif, or "does this change affect memory". Also use it when reviewing a PR that says a change is "free", "zero-cost" or "just a small struct", and when a bench number moved and nobody knows why. This work is easier to get right with a strong model (Fable or higher); if the session model is weaker, say so and measure twice as much.
 ---
 
@@ -82,7 +82,8 @@ and *what else is live in that function*.
   decoding). Two frames that would have been siblings become one large frame. This is the mechanism behind most "why did
   the number move?" mysteries.
 - **A `let` in an unused `match` arm still costs its full size.** The slot exists on every path.
-  `None => { let mut a = Matrix::new(); ... }` charged every `Some` caller 57 kB. Move the arm's body into a separate
+  `None => { let mut a = Matrix::new(); ... }` charged every `Some` caller 57 kB (an earlier shape of the ML-DSA verify path, since replaced by the key
+  methods, which expand into a local or borrow the expanded key's matrix). Move the arm's body into a separate
   `#[inline(never)]` function so the slot exists only when taken.
 - **Every boundary costs a copy of what crosses it.** A non-inlined call returning a 2.4 kB signature by value costs 2.4
   kB in the caller and 2.4 kB in the callee. A closure that returns a value has the same cost. If you add a boundary to
@@ -152,8 +153,8 @@ fn bench_mldsa44_sign() {
     let sk = load_mldsa44_sk();
     let msg = b"...";
     measure(|| {
-        let mu = MLDSA44::compute_mu_from_sk(&sk, msg, None).unwrap();
-        let sig = MLDSA44::sign_mu_deterministic(&sk, None, &mu, [0u8; 32]).unwrap();
+        let mu = sk.compute_mu(msg, None).unwrap();
+        let sig = sk.sign_mu_deterministic(&mu).unwrap();
         print!("{:x?}", sig);   // inside: keeps the optimizer honest, and nothing is returned
     });
 }

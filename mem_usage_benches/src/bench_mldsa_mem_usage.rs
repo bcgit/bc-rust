@@ -1643,8 +1643,8 @@ fn bench_mldsa44_verify_expanded_pk() {
     // let (mldsa44_pk, _mldsa44_sk) = MLDSA44::keygen_from_seed(&seed).unwrap();
 
     // eprintln!("pk:\n{}", &*hex::encode(&mldsa44_pk.encode()));
-    // let mu = MLDSA44::compute_mu_from_sk(&mldsa44_sk, msg, None).unwrap();
-    // let sig = MLDSA44::sign_mu_deterministic(&mldsa44_sk, &mu, [0u8; 32]).unwrap();
+    // let mu = mldsa44_sk.compute_mu(msg, None).unwrap();
+    // let sig = mldsa44_sk.sign_mu_deterministic(&mu).unwrap();
     // eprintln!("sig:\n{}", &*hex::encode(sig));
 
     let mldsa44_pk = load_mldsa44_pk();
@@ -2541,8 +2541,8 @@ fn bench_mldsa65_verify_expanded_pk() {
     // let (mldsa65_pk, mldsa65_sk) = MLDSA65::keygen_from_seed(&seed).unwrap();
     //
     // eprintln!("pk:\n{}", &*hex::encode(&mldsa65_pk.encode()));
-    // let mu = MLDSA65::compute_mu_from_sk(&mldsa65_sk, msg, None).unwrap();
-    // let sig = MLDSA65::sign_mu_deterministic(&mldsa65_sk, &mu, [0u8; 32]).unwrap();
+    // let mu = mldsa65_sk.compute_mu(msg, None).unwrap();
+    // let sig = mldsa65_sk.sign_mu_deterministic(&mu).unwrap();
     // eprintln!("sig:\n{}", &*hex::encode(sig));
 
     let mldsa65_pk = load_mldsa65_pk();
@@ -3382,8 +3382,8 @@ fn bench_mldsa87_verify() {
     // let (mldsa65_pk, mldsa65_sk) = MLDSA87::keygen_from_seed(&seed).unwrap();
     //
     // eprintln!("pk:\n{}", &*hex::encode(&mldsa65_pk.encode()));
-    // let mu = MLDSA87::compute_mu_from_sk(&mldsa65_sk, msg, None).unwrap();
-    // let sig = MLDSA87::sign_mu_deterministic(&mldsa65_sk, &mu, [0u8; 32]).unwrap();
+    // let mu = mldsa65_sk.compute_mu(msg, None).unwrap();
+    // let sig = mldsa65_sk.sign_mu_deterministic(&mu).unwrap();
     // eprintln!("sig:\n{}", &*hex::encode(sig));
 
     let pk = load_mldsa87_pk();
@@ -3733,8 +3733,8 @@ fn bench_mldsa87_verify_expanded_pk() {
     // let (mldsa65_pk, mldsa65_sk) = MLDSA87::keygen_from_seed(&seed).unwrap();
     //
     // eprintln!("pk:\n{}", &*hex::encode(&mldsa65_pk.encode()));
-    // let mu = MLDSA87::compute_mu_from_sk(&mldsa65_sk, msg, None).unwrap();
-    // let sig = MLDSA87::sign_mu_deterministic(&mldsa65_sk, &mu, [0u8; 32]).unwrap();
+    // let mu = mldsa65_sk.compute_mu(msg, None).unwrap();
+    // let sig = mldsa65_sk.sign_mu_deterministic(&mu).unwrap();
     // eprintln!("sig:\n{}", &*hex::encode(sig));
 
     let pk = load_mldsa87_pk();

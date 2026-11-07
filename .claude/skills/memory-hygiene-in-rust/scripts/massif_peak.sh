@@ -4,7 +4,7 @@
 #   massif_peak.sh <bin> <label> <bench_fn>...
 #   e.g. massif_peak.sh bench_mldsa_mem_usage after bench_mldsa44_sign bench_mldsa44_verify
 #
-# For each function it rewrites main() of mem_usage_benches/<bin>.rs to call only that function,
+# For each function it rewrites main() of mem_usage_benches/src/<bin>.rs to call only that function,
 # builds --release, runs the binary under massif with --heap=no --stacks=yes, and prints
 # "<label> <fn> <peak_bytes>". The bench source is restored afterwards (also on failure).
 # Per-run artifacts go to $MASSIF_OUT (default /tmp/massif_peak): the massif file, stdout and stderr
@@ -16,7 +16,7 @@
 set -euo pipefail
 BIN=$1; LABEL=$2; shift 2
 OUT=${MASSIF_OUT:-/tmp/massif_peak}; mkdir -p "$OUT"
-F="mem_usage_benches/$BIN.rs"
+F="mem_usage_benches/src/$BIN.rs"
 SAVED="$OUT/${BIN}_saved_${LABEL}.rs"
 cp "$F" "$SAVED"
 trap 'cp "$SAVED" "$F"' EXIT
