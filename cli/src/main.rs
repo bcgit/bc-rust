@@ -24,6 +24,7 @@ mod sha2_cmd;
 mod sha3_cmd;
 mod sm2_cmd;
 mod sm3_cmd;
+mod x963kdf_cmd;
 
 use crate::eccdh_cmd::ECCDHAction;
 use crate::ecdsa_cmd::ECDSAAction;
@@ -34,6 +35,7 @@ use crate::rng_cmd::DrbgHash;
 use crate::sha2_cmd::SHA2Variant;
 use crate::sha3_cmd::{SHA3Variant, Strength};
 use crate::sm2_cmd::SM2Action;
+use crate::x963kdf_cmd::X963KDFVariant;
 use bouncycastle::aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
 use bouncycastle::aria::hazmat::{ARIA128Internal, ARIA192Internal, ARIA256Internal};
 use bouncycastle::camellia::hazmat::{
@@ -1818,6 +1820,105 @@ enum Subcommands {
     /// Encode binary data from stdin to hex.
     /// Supports streaming for low memory footprint and continuous processing from stdin to stdout.
     HexEncode,
+
+    /// The ANSI X9.63 KDF over SHA-256 (SEC 1 v2 Section 3.6.1): keying data of len bytes from a
+    /// shared secret and the optional SharedInfo, K_i = Hash(Z || Counter || SharedInfo).
+    /// Note: in production uses, secrets should not be passed on the command-line because they get
+    /// logged in shell history. Use the file-based input instead.
+    X963KDF_SHA256 {
+        /// The shared secret Z in hex.
+        /// The `ikm_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        ikm: Option<String>,
+
+        /// A file containing the shared secret Z in binary.
+        /// If both ikm and ikm_file options are provided, the file will be used.
+        #[arg(short, long)]
+        ikm_file: Option<String>,
+
+        /// The SharedInfo input in hex. Optional; defaults to empty.
+        #[arg(long)]
+        additional_input: Option<String>,
+
+        /// A file containing the SharedInfo input in binary. Optional; defaults to empty.
+        /// If both additional_input and additional_input_file options are provided, the file will be used.
+        #[arg(short, long)]
+        additional_input_file: Option<String>,
+
+        /// Length of keying data to produce, in bytes: at most 16320.
+        #[arg(short, long)]
+        len: usize,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// The ANSI X9.63 KDF over SHA-384 (SEC 1 v2 Section 3.6.1): keying data of len bytes from a
+    /// shared secret and the optional SharedInfo, K_i = Hash(Z || Counter || SharedInfo).
+    /// Note: in production uses, secrets should not be passed on the command-line because they get
+    /// logged in shell history. Use the file-based input instead.
+    X963KDF_SHA384 {
+        /// The shared secret Z in hex.
+        /// The `ikm_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        ikm: Option<String>,
+
+        /// A file containing the shared secret Z in binary.
+        /// If both ikm and ikm_file options are provided, the file will be used.
+        #[arg(short, long)]
+        ikm_file: Option<String>,
+
+        /// The SharedInfo input in hex. Optional; defaults to empty.
+        #[arg(long)]
+        additional_input: Option<String>,
+
+        /// A file containing the SharedInfo input in binary. Optional; defaults to empty.
+        /// If both additional_input and additional_input_file options are provided, the file will be used.
+        #[arg(short, long)]
+        additional_input_file: Option<String>,
+
+        /// Length of keying data to produce, in bytes: at most 16320.
+        #[arg(short, long)]
+        len: usize,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// The ANSI X9.63 KDF over SHA-512 (SEC 1 v2 Section 3.6.1): keying data of len bytes from a
+    /// shared secret and the optional SharedInfo, K_i = Hash(Z || Counter || SharedInfo).
+    /// Note: in production uses, secrets should not be passed on the command-line because they get
+    /// logged in shell history. Use the file-based input instead.
+    X963KDF_SHA512 {
+        /// The shared secret Z in hex.
+        /// The `ikm_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        ikm: Option<String>,
+
+        /// A file containing the shared secret Z in binary.
+        /// If both ikm and ikm_file options are provided, the file will be used.
+        #[arg(short, long)]
+        ikm_file: Option<String>,
+
+        /// The SharedInfo input in hex. Optional; defaults to empty.
+        #[arg(long)]
+        additional_input: Option<String>,
+
+        /// A file containing the SharedInfo input in binary. Optional; defaults to empty.
+        /// If both additional_input and additional_input_file options are provided, the file will be used.
+        #[arg(short, long)]
+        additional_input_file: Option<String>,
+
+        /// Length of keying data to produce, in bytes: at most 16320.
+        #[arg(short, long)]
+        len: usize,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
 
     /// Perform HKDF-SHA256 (RFC 5869 extract-then-expand) of the provided input keying material:
     ///     OKM = HKDF-Expand(HKDF-Extract(salt, ikm), info, len)
@@ -5638,6 +5739,60 @@ fn run() {
         }
         Some(Subcommands::HexEncode) => {
             encoders_cmd::hex_encode_cmd();
+        }
+        Some(Subcommands::X963KDF_SHA256 {
+            ikm,
+            ikm_file,
+            additional_input,
+            additional_input_file,
+            len,
+            x,
+        }) => {
+            x963kdf_cmd::x963kdf_cmd(
+                X963KDFVariant::SHA256,
+                ikm,
+                ikm_file,
+                additional_input,
+                additional_input_file,
+                *len,
+                *x,
+            );
+        }
+        Some(Subcommands::X963KDF_SHA384 {
+            ikm,
+            ikm_file,
+            additional_input,
+            additional_input_file,
+            len,
+            x,
+        }) => {
+            x963kdf_cmd::x963kdf_cmd(
+                X963KDFVariant::SHA384,
+                ikm,
+                ikm_file,
+                additional_input,
+                additional_input_file,
+                *len,
+                *x,
+            );
+        }
+        Some(Subcommands::X963KDF_SHA512 {
+            ikm,
+            ikm_file,
+            additional_input,
+            additional_input_file,
+            len,
+            x,
+        }) => {
+            x963kdf_cmd::x963kdf_cmd(
+                X963KDFVariant::SHA512,
+                ikm,
+                ikm_file,
+                additional_input,
+                additional_input_file,
+                *len,
+                *x,
+            );
         }
         Some(Subcommands::HKDF_SHA256 {
             salt,
