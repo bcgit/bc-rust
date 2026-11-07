@@ -521,7 +521,9 @@ impl<P: MLKEMParams> MLKEM<P> {
         // 2: ekPKE ← dk[384𝑘 ∶ 768𝑘 + 32] ▷ extract PKE encryption key
         // 3: ℎ ← dk[768𝑘 + 32 ∶ 768𝑘 + 64] ▷ extract hash of PKE encryption key
         // 4: 𝑧 ← dk[768𝑘 + 64 ∶ 768𝑘 + 96] ▷ extract implicit rejection value
-        // Nothing to do since dk is already decoded.
+        // Nothing to do since dk is already decoded: ℎ is the stored hash, which the decoder
+        // checked against H(ek) (Section 7.3), so it is used as Algorithm 18 says rather than
+        // recomputed from ek on every decapsulation.
 
         // 5: 𝑚′ ← K-PKE.Decrypt(dkPKE, 𝑐)
         let m_prime = Self::pke_decrypt(dk, c);
@@ -533,7 +535,7 @@ impl<P: MLKEMParams> MLKEM<P> {
         let (K_prime, r_prime) = {
             let mut g = G::new();
             g.do_update(&*m_prime);
-            g.do_update(&dk.pk().compute_hash());
+            g.do_update(dk.pk_hash());
             let mut buf = Secret::<[u8; 64]>::new();
             let bytes_written = g.do_final_out(&mut *buf);
             debug_assert_eq!(bytes_written, 64);
@@ -635,10 +637,12 @@ impl<P: MLKEMParams> MLKEM<P> {
     }
 
     /// The shared secret as [`KeyMaterial`]: full-entropy bytes at the parameter set's strength.
+    /// Typed inside the hazardous window, where an all-zero value is not re-typed `Zeroized`:
+    /// 𝐾 is uniform, so all zeros (probability 2^-256) is a valid secret, not an error.
     fn shared_secret_key(K: &[u8; MLKEM_SS_LEN]) -> Result<KeyMaterial<MLKEM_SS_LEN>, KEMError> {
-        let mut key =
-            KeyMaterial::<MLKEM_SS_LEN>::from_bytes_as_type(K, KeyType::CryptographicRandom)?;
+        let mut key = KeyMaterial::<MLKEM_SS_LEN>::new();
         do_hazardous_operations(&mut key, |key| {
+            key.set_bytes_as_type(K, KeyType::CryptographicRandom)?;
             key.set_security_strength(P::MAX_SECURITY_STRENGTH)
         })?;
 
