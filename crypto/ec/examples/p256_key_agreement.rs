@@ -3,15 +3,16 @@
 //! `bouncycastle-ecdh` crate will hold, in one file, checked against RFC 5903 Section 8.1.
 //!
 //! The raw primitive is the role impl over `()`. The same keys implement the role a second
-//! time over an HKDF configuration, `HkdfParams`, deriving a key from `Z` with HKDF-SHA256 as
-//! the two-step key-derivation method of SP 800-56C does; the parameter type picks between the
-//! two at the call. The derived key reports 128 bits, HKDF-SHA256's cap, which is also the
-//! curve's strength.
+//! time over `bouncycastle_hkdf::HkdfParams<'p, SHA256>`, the salt and info the ML-KEM-with-HKDF
+//! roles take, as `ECCDH_P256_HKDF_SHA256`: a key derived from `Z` with HKDF-SHA256, the two-step
+//! key-derivation method of SP 800-56C; the hash on the parameter type picks the algorithm at
+//! the call. The derived key is one hash output at 128 bits, the curve's strength, which
+//! HKDF-SHA256 also caps at.
 //!
 //! Run with `cargo run -p bouncycastle-ec --example p256_key_agreement`.
 
 use bouncycastle_core::agreement_key::{AgreementKey, KeyAgreementAlgorithm};
-use bouncycastle_core::errors::{KeyAgreementError, RNGError};
+use bouncycastle_core::errors::{KeyAgreementError, KeyMaterialError, RNGError};
 use bouncycastle_core::hazmat::do_hazardous_operations;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
@@ -26,7 +27,9 @@ use bouncycastle_ec::hazmat::p256_point::P256JacobianPoint;
 use bouncycastle_ec::hazmat::p256_scalar::P256Scalar;
 use bouncycastle_ec::hazmat::p256_sec1;
 use bouncycastle_hex as hex;
+use bouncycastle_hkdf::HkdfParams;
 use bouncycastle_rng::HashDRBG_SHA512;
+use bouncycastle_sha2::SHA256;
 use bouncycastle_sha2::hkdf::HKDF_SHA256;
 use bouncycastle_utils::secret::Secret;
 use core::fmt;
@@ -189,18 +192,11 @@ impl AgreementKey<(), SS_LEN> for P256PrivateKey {
 
 /*** The same keys under a KDF: ECC CDH with HKDF-SHA256 ***/
 
-/// The length of the derived key.
+/// The length of the derived key: one SHA-256 output.
 const DERIVED_LEN: usize = 32;
 
-/// The HKDF configuration a worker is made from: RFC 5869's salt and info, borrowed from the
-/// caller for `'p`. `Copy` so that the one value serves every construction.
-#[derive(Clone, Copy)]
-struct HkdfParams<'p> {
-    salt: &'p KeyMaterial<32>,
-    info: &'p [u8],
-}
-
-/// The marker: ECC CDH over P-256 whose output is HKDF-SHA256(salt, Z, info).
+/// The marker: ECC CDH over P-256 whose output is HKDF-SHA256(salt, Z, info), the salt and info
+/// being the caller's `HkdfParams<'p, SHA256>`.
 #[allow(non_camel_case_types)]
 struct ECCDH_P256_HKDF_SHA256;
 
@@ -214,7 +210,7 @@ impl KeyAgreementAlgorithm for ECCDH_P256_HKDF_SHA256 {}
 /// The worker: the raw primitive's worker and the HKDF configuration, borrowed separately.
 struct P256HkdfAgreement<'k, 'p> {
     inner: P256Agreement<'k>,
-    params: HkdfParams<'p>,
+    params: HkdfParams<'p, SHA256>,
 }
 
 impl Algorithm for P256HkdfAgreement<'_, '_> {
@@ -232,27 +228,33 @@ impl KeyAgreement<P256PublicKey, DERIVED_LEN> for P256HkdfAgreement<'_, '_> {
         let z = self.inner.agree(peer_pk)?;
         let mut okm = KeyMaterial::<DERIVED_LEN>::new();
         HKDF_SHA256::extract_and_expand_out(
-            self.params.salt, &z, self.params.info, DERIVED_LEN, &mut okm,
+            self.params.salt(),
+            &z,
+            self.params.info(),
+            DERIVED_LEN,
+            &mut okm,
         )
         .map_err(|_| KeyAgreementError::GenericError("HKDF failed"))?;
         Ok(okm)
     }
 }
 
-impl<'p> AgreementKey<HkdfParams<'p>, DERIVED_LEN> for P256PrivateKey {
+impl<'p> AgreementKey<HkdfParams<'p, SHA256>, DERIVED_LEN> for P256PrivateKey {
     type Algorithm = ECCDH_P256_HKDF_SHA256;
     type PublicKey = P256PublicKey;
     type Agreement<'k> = P256HkdfAgreement<'k, 'p>;
 
     fn create_agreement<'k>(
         &'k self,
-        params: HkdfParams<'p>,
+        params: HkdfParams<'p, SHA256>,
     ) -> Result<Self::Agreement<'k>, KeyAgreementError> {
-        // Where a KDF-bearing agreement validates its parameters, once, before any agreement.
-        if params.salt.key_type() == KeyType::Unknown {
-            return Err(KeyAgreementError::GenericError(
-                "the HKDF salt must be typed key material",
-            ));
+        // Where a KDF-bearing agreement validates its parameters, once, before any agreement:
+        // HKDF refuses a salt typed Unknown, as the ML-KEM roles' `check_salt` says.
+        if params.salt().key_type() == KeyType::Unknown {
+            return Err(KeyMaterialError::InvalidKeyType(
+                "the HKDF salt must not be KeyType::Unknown",
+            )
+            .into());
         }
         Ok(P256HkdfAgreement { inner: P256Agreement { d: self }, params })
     }
@@ -320,14 +322,14 @@ fn main() {
     ));
     println!("fresh pair agreed; off-curve peer key refused at decode");
 
-    // The same keys under HKDF-SHA256: the parameter type selects the algorithm.
+    // The same keys under HKDF-SHA256: the hash on the parameter type selects the algorithm.
     let salt = KeyMaterial::<32>::from_rng(&mut rng).unwrap();
-    let params = HkdfParams { salt: &salt, info: b"example protocol v1" };
+    let params = HkdfParams::<SHA256>::new(&salt, b"example protocol v1");
     let key_a = sk_a.agree(&pk_b, params).unwrap();
     let key_b = sk_b.agree(&pk_a, params).unwrap();
     assert!(key_a.equals(&key_b));
     assert!(!key_a.equals(&sk_a.agree(&pk_b, ()).unwrap()), "derived key is not the raw Z");
-    let other = HkdfParams { salt: &salt, info: b"example protocol v2" };
+    let other = HkdfParams::<SHA256>::new(&salt, b"example protocol v2");
     assert!(
         !sk_b.agree(&pk_a, other).unwrap().equals(&key_a),
         "a different context, a different key"
