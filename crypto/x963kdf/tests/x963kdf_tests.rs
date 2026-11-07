@@ -87,6 +87,12 @@ fn length_bounds_are_refused_and_the_buffer_zeroized() {
     ));
     assert_eq!(out.key_len(), 0);
 
+    // a zero-length derivation is refused
+    assert!(matches!(
+        X963KDF_SHA256::derive_out(&z, b"", 0, &mut out),
+        Err(KDFError::InvalidLength(_))
+    ));
+
     // just below the bound the length check passes and the buffer check is what refuses it
     assert!(matches!(
         X963KDF_SHA256::derive_out(&z, b"", 32 * 0xFFFF_FFFF - 1, &mut out),

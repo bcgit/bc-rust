@@ -169,7 +169,7 @@ impl<H: X963KDFParams> X963KDF<H> {
     ///
     /// # Errors
     /// [`KDFError::InvalidLength`] if `key_data_len` is not below `hashlen * (2^32 - 1)`
-    /// (Section 3.6.1 step 2) or exceeds `okm`'s capacity; `okm` is left zeroized.
+    /// (Section 3.6.1 step 2), is zero, or exceeds `okm`'s capacity; `okm` is left zeroized.
     pub fn derive_out(
         z: &(impl KeyMaterialTrait + ?Sized),
         shared_info: &[u8],
@@ -195,6 +195,10 @@ impl<H: X963KDFParams> X963KDF<H> {
         // The `_out` rule: nothing stale survives, whichever way this returns.
         okm.zeroize();
 
+        // A zero-length derivation is refused, as every KDF's is ([`KDF`]'s docs).
+        if key_data_len == 0 {
+            return Err(KDFError::InvalidLength("a zero-length derivation is refused"));
+        }
         // Step 2: keydatalen < hashlen * (2^32 - 1), which is what keeps the counter in four
         // octets; and the caller's buffer must hold it.
         if key_data_len as u128 >= H::OUTPUT_LEN as u128 * 0xFFFF_FFFF {
@@ -209,7 +213,9 @@ impl<H: X963KDFParams> X963KDF<H> {
         let mut credited = 0usize;
         let mut strength = SecurityStrength::None;
         for key in keys {
-            if key.is_full_entropy() {
+            // [`KDF`]'s rule: a full-entropy key with a strength credits its bytes; one with
+            // none (a `SharedSecret` whose producer stated nothing) credits nothing.
+            if key.is_full_entropy() && key.security_strength() != SecurityStrength::None {
                 credited = credited.saturating_add(key.key_len());
                 strength = *max(&strength, &key.security_strength());
             }
