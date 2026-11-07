@@ -489,97 +489,82 @@ pub trait HashAlgParams: Algorithm {
     const BLOCK_LEN: usize;
 }
 
-/// A Key Derivation Function (KDF) is a function that takes in one or more input key and some unstructured
-/// additional input, and uses them to produces a derived key.
-pub trait KDF: AlgorithmInfo + Default {
-    /// Implementations of this function are capable of deriving an output key from an input key,
-    /// assuming that they have been properly initialized.
-    ///
-    /// # Entropy Conversion rules
-    /// Implementations SHOULD act on a KeyMaterial of any [`KeyType`] and will generally
-    /// return a KeyMaterial of the same type
-    ///
-    /// ex.:
-    ///
-    ///   * [`KeyType::Unknown`] -> [`KeyType::Unknown`])
-    ///   * [`KeyType::CryptographicRandom`] -> [`KeyType::CryptographicRandom`])
-    ///   * [`KeyType::SymmetricCipherKey`] -> [`KeyType::SymmetricCipherKey`])
-    ///
-    /// If provided with an input key, even if it is [`KeyType::CryptographicRandom`], but that
-    /// contains less key material than the internal block size of the KDF, then the KDF
-    /// will not be considered properly seeded, and the output [`KeyMaterial`] will be set to
-    /// [`KeyType::Unknown`] -- for example, seeding SHA3-256 with a [`KeyMaterial`] containing
-    /// only 128 bits of key material.
-    ///
-    /// An implementation can, and in most cases SHOULD, return a [`HashError`] if provided
-    /// with a [`KeyMaterial`] of type [`KeyType::Zeroized`].
-    ///
-    /// # Additional Input
-    /// The `additional_input` parameter is used in deriving the key, but is not credited with any entropy,
-    /// and therefore does not affect the type of the output [`KeyMaterial`].
-    /// This corresponds directly to `FixedInfo` as defined in NIST SP 800-56C.
-    /// The `additional_input` parameter can be empty by passing in `&[0u8; 0]`.
-    ///
-    /// Output length: this function will create a KeyMaterial populated with the default output length
-    /// of the underlying hash primitive.
-    fn derive_key(
-        self,
-        key: &impl KeyMaterialTrait,
-        additional_input: &[u8],
-    ) -> Result<Box<dyn KeyMaterialTrait>, KDFError>;
+/// The most keying material the provided one-shots [`KDF::derive_key`] and
+/// [`KDF::derive_key_from_multiple`] return at once; the `_out` methods take any length the
+/// function and the buffer allow.
+pub const KDF_ONE_SHOT_MAX_LEN: usize = 1024;
 
-    /// Same as [`KDF::derive_key`], but fills the provided output [`KeyMaterial`].
+/// A key derivation function that already holds whatever parameters it has (HKDF its salt; the
+/// X9.63 KDF, SHA-3 and SHAKE none), deriving keying material of a requested length from input
+/// keying material and a context string, SP 800-56C's `FixedInfo`. Every method takes `&self`,
+/// so one instance serves any number of derivations and the trait is usable as `dyn KDF`.
+///
+/// # Entropy accounting
+/// The output is typed from what went in. Library policy, not a rule of any standard: the
+/// output is [`KeyType::CryptographicRandom`] once the full-entropy input keys (those for which
+/// [`KeyMaterialTrait::is_full_entropy`] holds) together carry at least as many bytes as the
+/// function's own strength bound, half a hash output for a hash-based KDF, and otherwise
+/// [`KeyType::Unknown`] with no strength; its strength is the least of the inputs' strongest,
+/// the function's and the length's. `fixed_info` is context and credits nothing. A
+/// [`KeyType::Zeroized`] or [`KeyType::Unknown`] input is derived from and yields `Unknown`
+/// output rather than an error, since a KDF cannot tell such bytes from random ones.
+pub trait KDF: AlgorithmInfo {
+    /// Derives `len` bytes of keying material from `ikm` and `fixed_info` into the front of
+    /// `output_key`, which is zeroized first, and returns `len`.
     ///
-    /// Output length: this function will behave differently depending on the underlying hash primitive;
-    /// some, such as SHA2 or SHA3 will produce a fixed-length output, while others, such as SHAKE or HKDF,
-    /// will fill the provided KeyMaterial to capacity and require you to truncate it afterward
-    /// using [`KeyMaterialTrait::set_key_len`].
+    /// # Errors
+    /// [`KDFError::InvalidLength`] if `len` exceeds what the function produces (a hash output
+    /// for SHA-3, `255 * HashLen` for HKDF) or `output_key`'s capacity; `output_key` is left
+    /// zeroized.
     fn derive_key_out(
-        self,
-        key: &impl KeyMaterialTrait,
-        additional_input: &[u8],
-        output_key: &mut impl KeyMaterialTrait,
+        &self,
+        ikm: &dyn KeyMaterialTrait,
+        fixed_info: &[u8],
+        len: usize,
+        output_key: &mut dyn KeyMaterialTrait,
     ) -> Result<usize, KDFError>;
 
-    /// Meant to be used for hybrid key establishment schemes or other spit-key scenarios where multiple
-    /// keys need to be combined into a single key of the same length.
-    ///
-    /// This function can also be used to mix a KeyMaterial of low entropy with one of full entropy to
-    /// produce a new full entropy key. For the purposes of determining whether enough input key material
-    /// was provided, the lengths of all full-entropy input keys are added together.
-    ///
-    /// Implementations that are not safe to be used as a split-key PRF MAY still implement this function
-    /// and return a result, but SHOULD set the entropy level of the returned key appropriately; for example
-    /// a KDF that is only full-entropy when keyed in the first input SHOULD return a full entropy key
-    /// only if the first input is full entropy.
-    ///
-    /// Implementations can, and in most cases SHOULD, return a [`KeyMaterial`] of the same type as the
-    /// strongest key, and SHOULD throw a [`HashError`] if all input keys are zeroized.
-    /// For example output a [`KeyType::CryptographicRandom`] key whenever any one of
-    /// the input keys is a [`KeyType::CryptographicRandom`] key.
-    /// As another example, combining a [`KeyType::Unknown`] key with a [`KeyType::MACKey`] key
-    /// should return a [`KeyType::MACKey`].
-    ///
-    /// Output length: this function will create a KeyMaterial populated with the default output length
-    /// of the underlying hash primitive.
-    fn derive_key_from_multiple(
-        self,
-        keys: &[&impl KeyMaterialTrait],
-        additional_input: &[u8],
-    ) -> Result<Box<dyn KeyMaterialTrait>, KDFError>;
-
-    /// Same as [`KDF::derive_key`], but fills the provided output [`KeyMaterial`].
-    ///
-    /// Output length: this function will behave differently depending on the underlying hash primitive;
-    /// some, such as SHA2 or SHA3 will produce a fixed-length output, while others, such as SHAKE or HKDF,
-    /// will fill the provided KeyMaterial to capacity and require you to truncate it afterward
-    /// by using [`KeyMaterialTrait::set_key_len`].
+    /// As [`derive_key_out`](Self::derive_key_out) with the input keying material the
+    /// concatenation of `ikms` in order: a hybrid shared secret, or a key mixed with a weaker one.
+    /// Every full-entropy key is credited, so the output's type is what the sum gives.
     fn derive_key_from_multiple_out(
-        self,
-        keys: &[&impl KeyMaterialTrait],
-        additional_input: &[u8],
-        output_key: &mut impl KeyMaterialTrait,
+        &self,
+        ikms: &[&dyn KeyMaterialTrait],
+        fixed_info: &[u8],
+        len: usize,
+        output_key: &mut dyn KeyMaterialTrait,
     ) -> Result<usize, KDFError>;
+
+    /// One-shot: `len` bytes, at most [`KDF_ONE_SHOT_MAX_LEN`], as new key material. Provided
+    /// over [`derive_key_out`](Self::derive_key_out).
+    ///
+    /// # Errors
+    /// As [`derive_key_out`](Self::derive_key_out).
+    fn derive_key(
+        &self,
+        ikm: &dyn KeyMaterialTrait,
+        fixed_info: &[u8],
+        len: usize,
+    ) -> Result<Box<dyn KeyMaterialTrait>, KDFError> {
+        let mut output_key = KeyMaterial::<KDF_ONE_SHOT_MAX_LEN>::new();
+        self.derive_key_out(ikm, fixed_info, len, &mut output_key)?;
+        Ok(Box::new(output_key))
+    }
+
+    /// One-shot over [`derive_key_from_multiple_out`](Self::derive_key_from_multiple_out).
+    ///
+    /// # Errors
+    /// As [`derive_key_out`](Self::derive_key_out).
+    fn derive_key_from_multiple(
+        &self,
+        ikms: &[&dyn KeyMaterialTrait],
+        fixed_info: &[u8],
+        len: usize,
+    ) -> Result<Box<dyn KeyMaterialTrait>, KDFError> {
+        let mut output_key = KeyMaterial::<KDF_ONE_SHOT_MAX_LEN>::new();
+        self.derive_key_from_multiple_out(ikms, fixed_info, len, &mut output_key)?;
+        Ok(Box::new(output_key))
+    }
 }
 
 /// The decapsulating half of a KEM: the worker a decapsulating key hands out through

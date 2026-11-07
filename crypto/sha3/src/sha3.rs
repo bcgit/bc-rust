@@ -5,7 +5,7 @@ use crate::keccak::{
 };
 use bouncycastle_core::errors::{HashError, KDFError, SuspendableError};
 use bouncycastle_core::hazmat::do_hazardous_operations;
-use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
+use bouncycastle_core::key_material::{KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{Algorithm, Hash, HashOneShot, KDF, Suspendable};
 use bouncycastle_utils::suspendable_state::{add_lib_ver, check_lib_ver};
@@ -85,7 +85,7 @@ impl<PARAMS: SHA3Params> SHA3Internal<PARAMS> {
         self.keccak.squeeze(&mut output[..n])
     }
 
-    fn mix_key_internal(&mut self, key: &impl KeyMaterialTrait) {
+    fn mix_key_internal(&mut self, key: &(impl KeyMaterialTrait + ?Sized)) {
         // track the strongest input key type
         self.kdf_key_type = *max(&self.kdf_key_type, &key.key_type());
 
@@ -104,59 +104,46 @@ impl<PARAMS: SHA3Params> SHA3Internal<PARAMS> {
         self.do_update(key.ref_to_bytes())
     }
 
-    fn derive_key_final_internal(
-        self,
-        additional_input: &[u8],
-    ) -> Result<Box<dyn KeyMaterialTrait>, KDFError> {
-        let mut output_key = KeyMaterial::<64>::new();
-        self.derive_key_out_final_internal(additional_input, &mut output_key)?;
-
-        Ok(Box::new(output_key))
-    }
-
-    fn derive_key_out_final_internal(
+    /// Absorbs `fixed_info`, finalizes, and writes `len` bytes (at most one hash output) into
+    /// `output_key`, typed by the rule of [`KDF`]'s docs: full-entropy output once at least half
+    /// a hash output of full-entropy key material went in, the bytes that carry the strength
+    /// the hash can claim.
+    fn derive_out_final_internal(
         mut self,
-        additional_input: &[u8],
-        output_key: &mut impl KeyMaterialTrait,
+        fixed_info: &[u8],
+        len: usize,
+        output_key: &mut (impl KeyMaterialTrait + ?Sized),
     ) -> Result<usize, KDFError> {
-        // This library's rule, not a NIST one: the derived key is tagged full-entropy only if at
-        // least a digest's worth of full-entropy key material went in.
-        if self.kdf_entropy < PARAMS::OUTPUT_LEN {
+        // The `_out` rule: nothing stale survives, whichever way this returns.
+        output_key.zeroize();
+        if len > PARAMS::OUTPUT_LEN {
+            return Err(KDFError::InvalidLength("a SHA-3 KDF derives at most one hash output"));
+        }
+        if len > output_key.capacity() {
+            return Err(KDFError::InvalidLength("the output buffer cannot hold len bytes"));
+        }
+        if self.kdf_entropy < PARAMS::OUTPUT_LEN / 2 {
             self.kdf_key_type = *min(&self.kdf_key_type, &KeyType::Unknown);
-            self.kdf_security_strength = SecurityStrength::None; // BytesLowEntropy can't have a securtiy level.
+            self.kdf_security_strength = SecurityStrength::None;
         }
 
-        self.do_update(additional_input);
-
-        let mut key_type = self.kdf_key_type;
-        let output_security_strength = self.kdf_security_strength;
-        let mut bytes_written: usize = 0;
-        do_hazardous_operations(output_key, |output_key| {
-            bytes_written = self.do_final_out(output_key.ref_to_bytes_mut()?);
-            output_key.set_key_len(bytes_written)?;
-            Ok(())
-        })
-        .expect(
-            "both mut_ref_to_bytes() and set_key_len() should be infallible within a hazop block",
-        );
+        self.do_update(fixed_info);
 
         // since computation has been performed, the result will not actually be zeroized,
         // even if all input key material was zeroized.
-        if key_type == KeyType::Zeroized {
-            key_type = KeyType::Unknown;
-        }
-        do_hazardous_operations(&mut *output_key, |output_key| {
+        let key_type = if self.kdf_key_type == KeyType::Zeroized {
+            KeyType::Unknown
+        } else {
+            self.kdf_key_type
+        };
+        let strength = *min(&self.kdf_security_strength, &SecurityStrength::from_bits(len * 8));
+        do_hazardous_operations(output_key, |output_key| {
+            let written = self.do_final_out(&mut output_key.ref_to_bytes_mut()?[..len]);
+            output_key.set_key_len(written)?;
             output_key.set_key_type(key_type)?;
-            output_key.set_security_strength(*min(
-                &output_security_strength,
-                &SecurityStrength::from_bits(bytes_written * 8),
-            ))
-        })
-        .expect(
-            "both set_key_type() and set_security_strength() should be infallible within a hazop block",
-        );
-
-        Ok(bytes_written)
+            output_key.set_security_strength(strength)
+        })?;
+        Ok(len)
     }
 }
 
@@ -226,54 +213,37 @@ impl<PARAMS: SHA3Params> Hash for SHA3Internal<PARAMS> {
 }
 
 /// A plain hash of the concatenated inputs, `H(key_1 || .. || key_n || additional_input)`, with
-/// the entropy bookkeeping of [`KeyMaterial`]. This is not the SP 800-56Cr2 Section 4 one-step
+/// the entropy bookkeeping of [`KeyMaterialTrait`]. This is not the SP 800-56Cr2 Section 4 one-step
 /// KDF, which hashes a 4-byte big-endian counter before `Z || FixedInfo` on every block.
 impl<PARAMS: SHA3Params> KDF for SHA3Internal<PARAMS> {
-    /// Returns a [`KeyMaterial`].
-    /// For the KDF to be considered "fully-seeded" and be capable of outputting full-entropy KeyMaterials,
-    /// it requires full-entropy input that is at least the bit size (ie 256 bits for SHA3-256, etc).
-    fn derive_key(
-        mut self,
-        key: &impl KeyMaterialTrait,
-        additional_input: &[u8],
-    ) -> Result<Box<dyn KeyMaterialTrait>, KDFError> {
-        self.mix_key_internal(key);
-        self.derive_key_final_internal(additional_input)
-    }
-
+    /// `H(ikm || fixed_info)`, truncated to `len` (at most one hash output), with the entropy
+    /// bookkeeping of [`KDF`]'s docs. This is not the SP 800-56Cr2 Section 4 one-step KDF,
+    /// which hashes a 4-byte big-endian counter before `Z || FixedInfo` on every block.
     fn derive_key_out(
-        mut self,
-        key: &impl KeyMaterialTrait,
-        additional_input: &[u8],
-        output_key: &mut impl KeyMaterialTrait,
+        &self,
+        ikm: &dyn KeyMaterialTrait,
+        fixed_info: &[u8],
+        len: usize,
+        output_key: &mut dyn KeyMaterialTrait,
     ) -> Result<usize, KDFError> {
-        // self.derive_key_from_multiple_out(&[key], additional_input, output_key)
-        self.mix_key_internal(key);
-        self.derive_key_out_final_internal(additional_input, output_key)
+        let mut hash = self.clone();
+        hash.mix_key_internal(ikm);
+        hash.derive_out_final_internal(fixed_info, len, output_key)
     }
 
-    fn derive_key_from_multiple(
-        mut self,
-        keys: &[&impl KeyMaterialTrait],
-        additional_input: &[u8],
-    ) -> Result<Box<dyn KeyMaterialTrait>, KDFError> {
-        for key in keys {
-            self.mix_key_internal(*key);
-        }
-        self.derive_key_final_internal(additional_input)
-    }
-
+    /// `H(ikm_1 || .. || ikm_n || fixed_info)`, each key credited.
     fn derive_key_from_multiple_out(
-        mut self,
-        keys: &[&impl KeyMaterialTrait],
-        additional_input: &[u8],
-        output_key: &mut impl KeyMaterialTrait,
+        &self,
+        ikms: &[&dyn KeyMaterialTrait],
+        fixed_info: &[u8],
+        len: usize,
+        output_key: &mut dyn KeyMaterialTrait,
     ) -> Result<usize, KDFError> {
-        // self.derive_key_from_multiple_internal(keys, additional_input, output_key)
-        for key in keys {
-            self.mix_key_internal(*key);
+        let mut hash = self.clone();
+        for ikm in ikms {
+            hash.mix_key_internal(*ikm);
         }
-        self.derive_key_out_final_internal(additional_input, output_key)
+        hash.derive_out_final_internal(fixed_info, len, output_key)
     }
 }
 

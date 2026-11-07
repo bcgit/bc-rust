@@ -121,7 +121,7 @@
 //! use bouncycastle_sha3 as sha3;
 //!
 //! let input_key = KeyMaterial256::from_bytes(b"\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0A\x0B\x0C\x0D\x0E\x0F").unwrap();
-//! let output_key = sha3::SHA3_256::new().derive_key(&input_key, b"Additional input").unwrap();
+//! let output_key = sha3::SHA3_256::new().derive_key(&input_key, b"Additional input", 32).unwrap();
 //!```
 //! In the previous example, since [`KeyMaterial::from_bytes`] cannot know the amount of entropy in the input data,
 //! it automatically tags it as [`KeyType::Unknown`], and thus [`SHA3Internal::derive_key`] produces an output key

@@ -5,7 +5,7 @@ use crate::keccak::{
 };
 use bouncycastle_core::errors::{HashError, KDFError, SuspendableError};
 use bouncycastle_core::hazmat::do_hazardous_operations;
-use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
+use bouncycastle_core::key_material::{KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{Algorithm, Hash, HashOneShot, KDF, Suspendable, XOF, XOFSqueezer};
 use bouncycastle_utils::suspendable_state::{add_lib_ver, check_lib_ver};
@@ -125,7 +125,7 @@ impl<PARAMS: SHAKEParams> SHAKEInternal<PARAMS> {
         self.keccak.squeeze(output)
     }
 
-    fn mix_key_internal(&mut self, key: &impl KeyMaterialTrait) {
+    fn mix_key_internal(&mut self, key: &(impl KeyMaterialTrait + ?Sized)) {
         // track the strongest input key type
         self.kdf_key_type = *max(&self.kdf_key_type, &key.key_type());
 
@@ -144,53 +144,42 @@ impl<PARAMS: SHAKEParams> SHAKEInternal<PARAMS> {
         self.keccak.absorb(key.ref_to_bytes());
     }
 
-    fn derive_key_final_internal(
+    /// Absorbs `fixed_info` and squeezes `len` bytes into `output_key`, typed by the rule of
+    /// [`KDF`]'s docs: full-entropy output once at least the bytes that carry the strength the
+    /// XOF can claim went in as full-entropy key material, 16 for SHAKE128 and 32 for SHAKE256.
+    fn derive_out_final_internal(
         mut self,
-        additional_input: &[u8],
-    ) -> Result<Box<dyn KeyMaterialTrait>, KDFError> {
-        // The buffer is the larger nominal length; the key is cut to this instance's.
-        let nominal = self.output_len();
-        let mut output_key = KeyMaterial::<64>::new();
-        self.derive_key_out_final_internal(additional_input, &mut output_key)?;
-        output_key.set_key_len(nominal).expect("the nominal length is at most the buffer's 64");
-        Ok(Box::new(output_key))
-    }
-
-    fn derive_key_out_final_internal(
-        &mut self,
-        additional_input: &[u8],
-        output_key: &mut impl KeyMaterialTrait,
+        fixed_info: &[u8],
+        len: usize,
+        output_key: &mut (impl KeyMaterialTrait + ?Sized),
     ) -> Result<usize, KDFError> {
-        // This library's rule, not a NIST one: the derived key is tagged full-entropy only if at
-        // least a capacity's worth of full-entropy key material went in -- 32 bytes for SHAKE128,
-        // 64 for SHAKE256.
-        if self.kdf_entropy < 2 * (PARAMS::SIZE as usize) / 8 {
+        // The `_out` rule: nothing stale survives, whichever way this returns.
+        output_key.zeroize();
+        if len > output_key.capacity() {
+            return Err(KDFError::InvalidLength("the output buffer cannot hold len bytes"));
+        }
+        if self.kdf_entropy < PARAMS::SIZE as usize / 8 {
             self.kdf_key_type = *min(&self.kdf_key_type, &KeyType::Unknown);
-            self.kdf_security_strength = SecurityStrength::None; // BytesLowEntropy can't have a securtiy level.
+            self.kdf_security_strength = SecurityStrength::None;
         }
 
-        self.keccak.absorb(additional_input);
+        self.keccak.absorb(fixed_info);
 
-        let mut bytes_written: usize = 0;
+        // since computation has been performed, the result will not actually be zeroized, even
+        // if all input key material was zeroized.
+        let key_type = if self.kdf_key_type == KeyType::Zeroized {
+            KeyType::Unknown
+        } else {
+            self.kdf_key_type
+        };
+        let strength = *min(&self.kdf_security_strength, &SecurityStrength::from_bits(len * 8));
         do_hazardous_operations(output_key, |output_key| {
-            bytes_written = self.squeeze_internal_out(
-                output_key.ref_to_bytes_mut().expect("Infallible within do_hazardous_operations"),
-            );
-            output_key.set_key_len(bytes_written)
+            let written = self.squeeze_internal_out(&mut output_key.ref_to_bytes_mut()?[..len]);
+            output_key.set_key_len(written)?;
+            output_key.set_key_type(key_type)?;
+            output_key.set_security_strength(strength)
         })?;
-
-        // since computation has been performed, the result will not actually be zeroized, even if all input key material was zeroized.
-        if self.kdf_key_type == KeyType::Zeroized {
-            self.kdf_key_type = KeyType::Unknown;
-        }
-        do_hazardous_operations(output_key, |output_key| {
-            output_key.set_key_type(self.kdf_key_type)?;
-            output_key.set_security_strength(*min(
-                &self.kdf_security_strength,
-                &SecurityStrength::from_bits(bytes_written * 8),
-            ))
-        })?;
-        Ok(bytes_written)
+        Ok(len)
     }
 }
 
@@ -246,65 +235,33 @@ impl<PARAMS: SHAKEParams> Suspendable<SUSPENDED_SHA3_STATE_LEN> for SHAKEInterna
 }
 
 impl<PARAMS: SHAKEParams> KDF for SHAKEInternal<PARAMS> {
-    /// Returns a [`KeyMaterial`].
-    /// For the KDF to be considered "fully-seeded" and be capable of outputting full-entropy KeyMaterials,
-    /// it requires full-entropy input that is at least 2x the bit size (ie 256 bits for SHAKE128, and 512 bits for SHAKE256).
-    /// Returns a 32 byte key for SHAKE128 and a 64 byte key for SHAKE256.
-    /// To produce longer keys, use [`KDF::derive_key_out`].
-    /// To produce shorter keys, either use [`KDF::derive_key_out`], truncate this result in place with
-    /// [`KeyMaterial::set_key_len`], or copy it into a smaller [`KeyMaterial`] with
-    /// [`KeyMaterialTrait::truncate`].
-    fn derive_key(
-        mut self,
-        key: &impl KeyMaterialTrait,
-        additional_input: &[u8],
-    ) -> Result<Box<dyn KeyMaterialTrait>, KDFError> {
-        // self.derive_key_from_multiple(&[key], additional_input)
-        self.mix_key_internal(key);
-        self.derive_key_final_internal(additional_input)
-    }
-
+    /// `SHAKE(ikm || fixed_info)` squeezed to `len` bytes, any length, with the entropy
+    /// bookkeeping of [`KDF`]'s docs.
     fn derive_key_out(
-        mut self,
-        key: &impl KeyMaterialTrait,
-        additional_input: &[u8],
-        output_key: &mut impl KeyMaterialTrait,
+        &self,
+        ikm: &dyn KeyMaterialTrait,
+        fixed_info: &[u8],
+        len: usize,
+        output_key: &mut dyn KeyMaterialTrait,
     ) -> Result<usize, KDFError> {
-        // self.derive_key_from_multiple_out(&[key], additional_input, output)
-        self.mix_key_internal(key);
-        self.derive_key_out_final_internal(additional_input, output_key)
+        let mut xof = self.clone();
+        xof.mix_key_internal(ikm);
+        xof.derive_out_final_internal(fixed_info, len, output_key)
     }
 
-    /// Always returns a full [`KeyMaterial`]; ie that fills the internal buffer of the
-    /// appropriately-sized key material for the underlying cryptographic hash function.
-    /// This can be truncated down in place with [`KeyMaterial::set_key_len`], or copied into a smaller
-    /// [`KeyMaterial`] with [`KeyMaterialTrait::truncate`].
-    /// Returns a 32 byte key for SHAKE128 and a 64 byte key for SHAKE256.
-    /// To produce longer keys, use [`KDF::derive_key_out`].
-    /// To produce shorter keys, either use [`KDF::derive_key_out`], truncate this result in place with
-    /// [`KeyMaterial::set_key_len`], or copy it into a smaller [`KeyMaterial`] with
-    /// [`KeyMaterialTrait::truncate`].
-    fn derive_key_from_multiple(
-        mut self,
-        keys: &[&impl KeyMaterialTrait],
-        additional_input: &[u8],
-    ) -> Result<Box<dyn KeyMaterialTrait>, KDFError> {
-        for key in keys {
-            self.mix_key_internal(*key);
-        }
-        self.derive_key_final_internal(additional_input)
-    }
-
+    /// `SHAKE(ikm_1 || .. || ikm_n || fixed_info)`, each key credited.
     fn derive_key_from_multiple_out(
-        mut self,
-        keys: &[&impl KeyMaterialTrait],
-        additional_input: &[u8],
-        output_key: &mut impl KeyMaterialTrait,
+        &self,
+        ikms: &[&dyn KeyMaterialTrait],
+        fixed_info: &[u8],
+        len: usize,
+        output_key: &mut dyn KeyMaterialTrait,
     ) -> Result<usize, KDFError> {
-        for key in keys {
-            self.mix_key_internal(*key);
+        let mut xof = self.clone();
+        for ikm in ikms {
+            xof.mix_key_internal(*ikm);
         }
-        self.derive_key_out_final_internal(additional_input, output_key)
+        xof.derive_out_final_internal(fixed_info, len, output_key)
     }
 }
 

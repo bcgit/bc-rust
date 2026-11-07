@@ -55,13 +55,9 @@ mod hkdf_tests {
 
     #[test]
     fn derive_and_derive_from_multiple() {
-        // This test does not use known-answer tests, but instead tests that the various APIs are equivalent
-        // to each other as documented.
-
-        // derive_key is equivalent to extract_and_expand() with a zero salt,
-        // which is actually equivalent to no salt because of how HMAC pads the key internally.
-
-        // Set up input variables
+        // No known answers here: the KDF trait's methods must agree with extract_and_expand_out,
+        // the salt being the instance's (HKDF::new_with_salt) or the absent one (HKDF::new), and
+        // the keys of derive_key_from_multiple the IKM in order.
         let info: &[u8] = b"\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0A\x0B\x0C\x0D\x0E\0xF";
 
         let zero_key = KeyMaterial0::new();
@@ -70,77 +66,58 @@ mod hkdf_tests {
             KeyMaterial256::from_bytes_as_type(&DUMMY_SEED[32..64], KeyType::MACKey).unwrap();
         let key3 =
             KeyMaterial256::from_bytes_as_type(&DUMMY_SEED[64..96], KeyType::MACKey).unwrap();
+        let expected = |salt: &dyn KeyMaterialTrait, ikm: &dyn KeyMaterialTrait| {
+            let mut expected_okm = KeyMaterial512::new();
+            HKDF_SHA256::extract_and_expand_out(salt, ikm, info, 32, &mut expected_okm).unwrap();
+            expected_okm
+        };
 
-        /* test case: 0 input keys (ie empty salt and no ikm's) */
-        let mut expected_okm = KeyMaterial512::new();
-        HKDF_SHA256::extract_and_expand_out(
-            &KeyMaterial256::new(),
-            &KeyMaterial0::new(),
-            info,
-            32,
-            &mut expected_okm,
-        )
-        .unwrap();
+        /* no salt, no IKM */
+        let okm = HKDF_SHA256::new().derive_key(&zero_key, info, 32).unwrap();
+        assert!(ct::ct_eq_bytes(okm.ref_to_bytes(), expected(&zero_key, &zero_key).ref_to_bytes()));
+        let keys: [&dyn KeyMaterialTrait; 2] = [&KeyMaterial0::new(), &KeyMaterial0::new()];
+        let okm = HKDF_SHA256::new().derive_key_from_multiple(&keys, info, 32).unwrap();
+        assert!(ct::ct_eq_bytes(okm.ref_to_bytes(), expected(&zero_key, &zero_key).ref_to_bytes()));
 
-        let okm1 = HKDF_SHA256::new().derive_key(&zero_key, info).unwrap();
-        assert_eq!(okm1.ref_to_bytes(), expected_okm.ref_to_bytes());
-        assert!(ct::ct_eq_bytes(okm1.ref_to_bytes(), expected_okm.ref_to_bytes()));
+        /* no salt, one IKM: derive_key and the one-key multi form agree with the absent salt */
+        let okm = HKDF_SHA256::new().derive_key(&key1, info, 32).unwrap();
+        assert!(ct::ct_eq_bytes(okm.ref_to_bytes(), expected(&zero_key, &key1).ref_to_bytes()));
+        let keys: [&dyn KeyMaterialTrait; 1] = [&key1];
+        let okm = HKDF_SHA256::new().derive_key_from_multiple(&keys, info, 32).unwrap();
+        assert!(ct::ct_eq_bytes(okm.ref_to_bytes(), expected(&zero_key, &key1).ref_to_bytes()));
 
-        let keys = [&KeyMaterial0::new(), &KeyMaterial0::new()];
-        let okm2 = HKDF_SHA256::new().derive_key_from_multiple(&keys, info).unwrap();
-        assert!(ct::ct_eq_bytes(okm2.ref_to_bytes(), expected_okm.ref_to_bytes()));
+        /* a salt and no IKM */
+        let okm =
+            HKDF_SHA256::new_with_salt(&key1).unwrap().derive_key(&zero_key, info, 32).unwrap();
+        assert!(ct::ct_eq_bytes(okm.ref_to_bytes(), expected(&key1, &zero_key).ref_to_bytes()));
 
-        /* test case: 1 input ikm key (ie empty salt) */
-        // derive_key_from_multiple(&[&KeyMaterial0, &key) is equivalent to derive_key(&key) above
-        // which is equivalent to extract_and_expand((&KeyMaterial0::new(), &key, info)
-        let mut expected_okm = KeyMaterial512::new();
-        HKDF_SHA256::extract_and_expand_out(
-            &KeyMaterial0::new(),
-            &key1,
-            info,
-            32,
-            &mut expected_okm,
-        )
-        .unwrap();
+        /* a salt and one IKM */
+        let okm = HKDF_SHA256::new_with_salt(&key1).unwrap().derive_key(&key2, info, 32).unwrap();
+        assert!(ct::ct_eq_bytes(okm.ref_to_bytes(), expected(&key1, &key2).ref_to_bytes()));
 
-        let okm1 = HKDF_SHA256::new().derive_key(&key1, info).unwrap();
-        assert!(ct::ct_eq_bytes(okm1.ref_to_bytes(), expected_okm.ref_to_bytes()));
-
-        let keys = [&KeyMaterial256::new(), &key1];
-        let okm2 = HKDF_SHA256::new().derive_key_from_multiple(&keys, info).unwrap();
-        assert!(ct::ct_eq_bytes(okm2.ref_to_bytes(), expected_okm.ref_to_bytes()));
-
-        /* test case: 1 input keys (salt and no ikm's) */
-        let mut expected_okm = KeyMaterial512::new();
-        HKDF_SHA256::extract_and_expand_out(&key1, &zero_key, info, 32, &mut expected_okm).unwrap();
-
-        // no way to test this with .derive_key since it hard-codes a zero salt
-
-        let keys = [&key1, &KeyMaterial256::new()];
-        let okm2 = HKDF_SHA256::new().derive_key_from_multiple(&keys, info).unwrap();
-        assert!(ct::ct_eq_bytes(okm2.ref_to_bytes(), expected_okm.ref_to_bytes()));
-
-        /* test case: 2 input keys (ie salt and one ikm) */
-        let mut expected_okm = KeyMaterial512::new();
-        HKDF_SHA256::extract_and_expand_out(&key1, &key2, info, 32, &mut expected_okm).unwrap();
-
-        // no way to test this with .derive_key since it hard-codes a zero salt
-
-        let keys = [&key1, &key2];
-        let okm2 = HKDF_SHA256::new().derive_key_from_multiple(&keys, info).unwrap();
-        assert!(ct::ct_eq_bytes(okm2.ref_to_bytes(), expected_okm.ref_to_bytes()));
-
-        /* test case: 3 input keys (ie salt and two ikm's) */
+        /* a salt and two IKMs: the keys concatenate */
         let key23 =
             KeyMaterial512::from_bytes_as_type(&DUMMY_SEED[32..96], KeyType::MACKey).unwrap();
-        let mut expected_okm = KeyMaterial512::new();
-        HKDF_SHA256::extract_and_expand_out(&key1, &key23, info, 32, &mut expected_okm).unwrap();
+        let keys: [&dyn KeyMaterialTrait; 2] = [&key2, &key3];
+        let okm = HKDF_SHA256::new_with_salt(&key1)
+            .unwrap()
+            .derive_key_from_multiple(&keys, info, 32)
+            .unwrap();
+        assert!(ct::ct_eq_bytes(okm.ref_to_bytes(), expected(&key1, &key23).ref_to_bytes()));
 
-        // no way to test this with .derive_key since it hard-codes a zero salt
+        /* the instance is reusable: a second derivation with the same salt gives the same key */
+        let hkdf = HKDF_SHA256::new_with_salt(&key1).unwrap();
+        let a = hkdf.derive_key(&key2, info, 32).unwrap();
+        let b = hkdf.derive_key(&key2, info, 32).unwrap();
+        assert!(ct::ct_eq_bytes(a.ref_to_bytes(), b.ref_to_bytes()));
 
-        let keys = [&key1, &key2, &key3];
-        let okm2 = HKDF_SHA256::new().derive_key_from_multiple(&keys, info).unwrap();
-        assert!(ct::ct_eq_bytes(okm2.ref_to_bytes(), expected_okm.ref_to_bytes()));
+        /* a salt typed Unknown is refused by the constructor */
+        let unknown =
+            KeyMaterial256::from_bytes_as_type(&DUMMY_SEED[..32], KeyType::Unknown).unwrap();
+        assert!(matches!(
+            HKDF_SHA256::new_with_salt(&unknown),
+            Err(MACError::KeyMaterialError(KeyMaterialError::InvalidKeyType(_)))
+        ));
     }
 
     #[test]
@@ -226,18 +203,10 @@ mod hkdf_tests {
             }
         };
 
-        let keys = [&low_entropy_key];
-        match HKDF_SHA256::new().derive_key_from_multiple(&keys, &[]) {
-            Ok(_) => {
-                panic!("Should have thrown a KeyMaterialError");
-            }
-            Err(KDFError::MACError(MACError::KeyMaterialError(
-                KeyMaterialError::InvalidKeyType(_),
-            ))) => { /* good */ }
-            Err(_) => {
-                panic!("Should have thrown a KeyMaterialError");
-            }
-        };
+        // the KDF trait's keys are IKM, never the salt, so an Unknown one is derived from
+        let keys: [&dyn KeyMaterialTrait; 1] = [&low_entropy_key];
+        let okm_unknown = HKDF_SHA256::new().derive_key_from_multiple(&keys, &[], 32).unwrap();
+        assert_eq!(okm_unknown.key_type(), KeyType::Unknown);
 
         // as both salt and ikm
         match HKDF_SHA256::extract_and_expand_out(
@@ -258,18 +227,9 @@ mod hkdf_tests {
             }
         };
 
-        let keys = [&low_entropy_key, &low_entropy_key];
-        match HKDF_SHA256::new().derive_key_from_multiple(&keys, &[]) {
-            Ok(_) => {
-                panic!("Should have thrown a KeyMaterialError");
-            }
-            Err(KDFError::MACError(MACError::KeyMaterialError(
-                KeyMaterialError::InvalidKeyType(_),
-            ))) => { /* good */ }
-            Err(_) => {
-                panic!("Should have thrown a KeyMaterialError");
-            }
-        };
+        let keys: [&dyn KeyMaterialTrait; 2] = [&low_entropy_key, &low_entropy_key];
+        let okm_unknown = HKDF_SHA256::new().derive_key_from_multiple(&keys, &[], 32).unwrap();
+        assert_eq!(okm_unknown.key_type(), KeyType::Unknown);
 
         // zero-length salt is allowed -- zeroized ikm
         _ = HKDF_SHA256::extract_and_expand_out(
@@ -283,12 +243,12 @@ mod hkdf_tests {
         // okm should be tracked as LowEntropy
         assert_eq!(okm.key_type(), KeyType::Unknown);
 
-        HKDF_SHA256::new().derive_key_out(&KeyMaterial0::new(), &[], &mut okm).unwrap();
+        HKDF_SHA256::new().derive_key_out(&KeyMaterial0::new(), &[], 32, &mut okm).unwrap();
         // okm should be tracked as LowEntropy
         assert_eq!(okm.key_type(), KeyType::Unknown);
 
-        let keys = [&KeyMaterial0::new(), &KeyMaterial0::new()];
-        HKDF_SHA256::new().derive_key_from_multiple_out(&keys, &[], &mut okm).unwrap();
+        let keys: [&dyn KeyMaterialTrait; 2] = [&KeyMaterial0::new(), &KeyMaterial0::new()];
+        HKDF_SHA256::new().derive_key_from_multiple_out(&keys, &[], 32, &mut okm).unwrap();
         // okm should be tracked as LowEntropy
         assert_eq!(okm.key_type(), KeyType::Unknown);
 
@@ -304,12 +264,12 @@ mod hkdf_tests {
         // okm should be tracked as LowEntropy
         assert_eq!(okm.key_type(), KeyType::Unknown);
 
-        HKDF_SHA256::new().derive_key_out(&low_entropy_key, &[], &mut okm).unwrap();
+        HKDF_SHA256::new().derive_key_out(&low_entropy_key, &[], 32, &mut okm).unwrap();
         // okm should be tracked as LowEntropy
         assert_eq!(okm.key_type(), KeyType::Unknown);
 
-        let keys = [&KeyMaterial256::new(), &low_entropy_key];
-        HKDF_SHA256::new().derive_key_from_multiple_out(&keys, &[], &mut okm).unwrap();
+        let keys: [&dyn KeyMaterialTrait; 2] = [&KeyMaterial256::new(), &low_entropy_key];
+        HKDF_SHA256::new().derive_key_from_multiple_out(&keys, &[], 32, &mut okm).unwrap();
         // okm should be tracked as LowEntropy
         assert_eq!(okm.key_type(), KeyType::Unknown);
 
@@ -326,12 +286,14 @@ mod hkdf_tests {
         assert_eq!(okm.key_type(), KeyType::Unknown);
 
         // derive_key uses the zero salt and ikm alone: the same output type.
-        _ = HKDF_SHA256::new().derive_key_out(&ikm, &[], &mut okm);
+        _ = HKDF_SHA256::new().derive_key_out(&ikm, &[], 32, &mut okm);
         assert_eq!(okm.key_type(), KeyType::Unknown);
 
-        let keys = [&salt, &ikm];
-        HKDF_SHA256::new().derive_key_from_multiple_out(&keys, &[], &mut okm).unwrap();
-        assert_eq!(okm.key_type(), KeyType::Unknown);
+        // through the KDF trait both keys are IKM and credit: 8 + 8 bytes reach the 16 that
+        // seed HKDF-SHA256, where the same 8-byte value as a public salt credits nothing
+        let keys: [&dyn KeyMaterialTrait; 2] = [&salt, &ikm];
+        HKDF_SHA256::new().derive_key_from_multiple_out(&keys, &[], 32, &mut okm).unwrap();
+        assert_eq!(okm.key_type(), KeyType::CryptographicRandom);
 
         // success case -- insufficient entropy returns KeyType::Unknown: a secret salt and the
         // IKM both credit, but 4 + 8 bytes is below the 16 that seed HKDF-SHA256
@@ -343,11 +305,11 @@ mod hkdf_tests {
         _ = HKDF_SHA256::extract_and_expand_out(&salt, &ikm, &[], 32, &mut okm);
         assert_eq!(okm.key_type(), KeyType::Unknown);
 
-        _ = HKDF_SHA256::new().derive_key_out(&salt, &[], &mut okm);
+        _ = HKDF_SHA256::new().derive_key_out(&salt, &[], 32, &mut okm);
         assert_eq!(okm.key_type(), KeyType::Unknown);
 
-        let keys = [&salt, &ikm];
-        _ = HKDF_SHA256::new().derive_key_from_multiple_out(&keys, &[], &mut okm);
+        let keys: [&dyn KeyMaterialTrait; 2] = [&salt, &ikm];
+        _ = HKDF_SHA256::new().derive_key_from_multiple_out(&keys, &[], 32, &mut okm);
         assert_eq!(okm.key_type(), KeyType::Unknown);
 
         // success case -- sufficient entropy returns the highest input key type -- KeyType::BytesFullEntropy
@@ -362,11 +324,11 @@ mod hkdf_tests {
         assert_eq!(okm.key_type(), KeyType::CryptographicRandom);
 
         let salt1 = KeyMaterial512::from_bytes_as_type(&DUMMY_SEED[..64], KeyType::MACKey).unwrap();
-        _ = HKDF_SHA256::new().derive_key_out(&salt1, &[], &mut okm);
+        _ = HKDF_SHA256::new().derive_key_out(&salt1, &[], 32, &mut okm);
         assert_eq!(okm.key_type(), KeyType::CryptographicRandom);
 
-        let keys = [&salt, &ikm];
-        _ = HKDF_SHA256::new().derive_key_from_multiple_out(&keys, &[], &mut okm);
+        let keys: [&dyn KeyMaterialTrait; 2] = [&salt, &ikm];
+        _ = HKDF_SHA256::new().derive_key_from_multiple_out(&keys, &[], 32, &mut okm);
         assert_eq!(okm.key_type(), KeyType::CryptographicRandom);
 
         // success case -- insufficient entropy due to key types -- KeyType::Unknown: the
@@ -380,8 +342,8 @@ mod hkdf_tests {
 
         // derive_key_out can't reproduce the two-input salt+ikm arrangement
 
-        let keys = [&salt, &ikm];
-        _ = HKDF_SHA256::new().derive_key_from_multiple_out(&keys, &[], &mut okm);
+        let keys: [&dyn KeyMaterialTrait; 2] = [&salt, &ikm];
+        _ = HKDF_SHA256::new().derive_key_from_multiple_out(&keys, &[], 32, &mut okm);
         assert_eq!(okm.key_type(), KeyType::Unknown);
 
         /* get_entropy */
@@ -525,20 +487,20 @@ mod hkdf_tests {
         let key =
             KeyMaterial128::from_bytes_as_type(&DUMMY_SEED[..8], KeyType::CryptographicRandom)
                 .unwrap();
-        let single = HKDF_SHA256::new().derive_key(&key, b"info").unwrap();
+        let single = HKDF_SHA256::new().derive_key(&key, b"info", 32).unwrap();
         assert_eq!(single.key_type(), KeyType::Unknown);
         assert_eq!(single.security_strength(), SecurityStrength::None);
 
         // An empty first key is the absent salt, so this is derive_key(&key) through the other path.
         let multi = HKDF_SHA256::new()
-            .derive_key_from_multiple(&[&KeyMaterial128::new(), &key], b"info")
+            .derive_key_from_multiple(&[&KeyMaterial128::new(), &key], b"info", 32)
             .unwrap();
         assert_eq!(multi.key_type(), KeyType::Unknown);
         assert_eq!(multi.security_strength(), SecurityStrength::None);
         assert_eq!(multi.ref_to_bytes(), single.ref_to_bytes());
 
         // The key alone, as the salt.
-        let salt_only = HKDF_SHA256::new().derive_key_from_multiple(&[&key], b"info").unwrap();
+        let salt_only = HKDF_SHA256::new().derive_key_from_multiple(&[&key], b"info", 32).unwrap();
         assert_eq!(salt_only.key_type(), KeyType::Unknown);
         assert_eq!(salt_only.security_strength(), SecurityStrength::None);
     }
@@ -603,7 +565,7 @@ mod hkdf_tests {
         let b =
             KeyMaterial256::from_bytes_as_type(&DUMMY_SEED[32..64], KeyType::CryptographicRandom)
                 .unwrap();
-        let okm = HKDF_SHA256::new().derive_key_from_multiple(&[&a, &b], b"").unwrap();
+        let okm = HKDF_SHA256::new().derive_key_from_multiple(&[&a, &b], b"", 32).unwrap();
         assert_eq!(okm.key_type(), KeyType::CryptographicRandom);
     }
 
@@ -649,12 +611,14 @@ mod hkdf_tests {
         assert_eq!(HKDF_SHA512::expand_out(&prk_of(64), b"", 64, &mut okm).unwrap(), 64);
     }
 
-    /// A refused expand leaves nothing of the output behind: the buffer reads as it did before.
+    /// A refused expand leaves nothing of the output behind: the buffer is zeroized before any
+    /// check, as every `_out` function's is.
     #[test]
-    fn test_expand_failure_leaves_okm_untouched() {
+    fn test_expand_failure_leaves_okm_zeroized() {
         let mut okm = KeyMaterial512::from_bytes_as_type(&[0xAA; 64], KeyType::MACKey).unwrap();
         assert!(HKDF_SHA256::expand_out(&prk_of(31), b"info", 32, &mut okm).is_err());
-        assert_eq!(okm.ref_to_bytes(), &[0xAA; 64]);
+        assert_eq!(okm.key_len(), 0);
+        assert_eq!(okm.key_type(), KeyType::Zeroized);
     }
 
     /// A PRK longer than the hash block gives what HMAC keyed with it gives (RFC 2104 Section 3
@@ -851,10 +815,13 @@ mod hkdf_tests {
          *
          **/
 
-        // SP800-56Cr2 tcId 1
+        // SP800-56Cr2 tcId 1. The vector's salt is 64 zero bytes, typed here as a public value:
+        // it keys the extract as any typing of the same bytes does, and credits nothing, which the
+        // framework's entropy checks on the instance rely on (a MACKey salt would seed the output
+        // on its own).
         let mut salt = KeyMaterial::<128>::new(); // have to do it this way for it to accept a zeroized key
         do_hazardous_operations(&mut salt, |salt| {
-            salt.set_bytes_as_type(&hex::decode("00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000").unwrap(), KeyType::MACKey)
+            salt.set_bytes_as_type(&hex::decode("00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000").unwrap(), KeyType::CryptographicRandom)
         }).unwrap();
 
         // ikm = z||t
@@ -885,22 +852,28 @@ mod hkdf_tests {
         assert_eq!(bytes_written, 128);
         assert_eq!(output_key.ref_to_bytes(), expected_key.ref_to_bytes());
 
-        // One-key derive_key -- since HKDF.derive_key() doesn't accept a salt but sets it to zero, we can only test vectors with a zero salt.
-        let hkdf = HKDF_SHA256::default();
-        let output_key = hkdf.derive_key(&ikm, &additional_input).unwrap();
-        // kdf.derive_key is a one-step that doesn't expand, so need to truncate the expected key to match.
-        let mut expected_key_truncated = expected_key.clone();
-        expected_key_truncated.set_key_len(output_key.key_len()).unwrap();
-        assert_eq!(output_key.ref_to_bytes(), expected_key_truncated.ref_to_bytes());
+        // The KDF trait with the vector's salt in the instance, at the vector's full length.
+        let hkdf = HKDF_SHA256::new_with_salt(&salt).unwrap();
+        let output_key = hkdf.derive_key(&ikm, &additional_input, 128).unwrap();
+        assert_eq!(output_key.ref_to_bytes(), expected_key.ref_to_bytes());
 
-        testframework
-            .test_kdf_single_key::<HKDF_SHA256>(&ikm, &additional_input, &expected_key_truncated);
+        testframework.test_kdf_single_key(&hkdf, &ikm, &additional_input, &expected_key);
 
-        let keys = [&salt, &ikm];
-        testframework.test_kdf_multiple_key::<HKDF_SHA256>(
+        // The IKM in two halves through the multi-key form is the same IKM.
+        let (ikm_a, ikm_b) = {
+            let bytes = ikm.ref_to_bytes();
+            let mid = bytes.len() / 2;
+            (
+                KeyMaterial::<128>::from_bytes_as_type(&bytes[..mid], ikm.key_type()).unwrap(),
+                KeyMaterial::<128>::from_bytes_as_type(&bytes[mid..], ikm.key_type()).unwrap(),
+            )
+        };
+        let keys: [&dyn KeyMaterialTrait; 2] = [&ikm_a, &ikm_b];
+        testframework.test_kdf_multiple_key(
+            &hkdf,
             &keys,
             additional_input.as_slice(),
-            &mut expected_key,
+            &expected_key,
         );
     }
     #[test]

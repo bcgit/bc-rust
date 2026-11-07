@@ -40,12 +40,13 @@
 //!             KeyType::Seed).unwrap();
 //!
 //! let hkdf = HKDF_SHA256::new();
-//! let key = hkdf.derive_key(&key, b"extra input").unwrap();
+//! let key = hkdf.derive_key(&key, b"extra input", 32).unwrap();
 //! ```
 //!
-//! [`KDF::derive_key`] will produce a key the same length as the underlying hash function.
-//! Longer output can be requested by instead using [`KDF::derive_key_out`] and providing a larger output buffer,
-//! which will be filled.
+//! [`KDF::derive_key`] takes the length to produce, up to `255 * HashLen` (RFC 5869 Section 2.3);
+//! [`KDF::derive_key_out`] writes it into a buffer of the caller's. An instance from
+//! [`HKDF::new_with_salt`] runs the extract phase with that salt, one from [`HKDF::new`] with the
+//! absent salt.
 //!
 //! As with other uses of [`KeyMaterialTrait`], the [`KDF::derive_key`] function will track the entropy of the input
 //! key material, and will set the entropy of the output key material accordingly.

@@ -89,20 +89,22 @@ mod hkdf_sm3_tests {
 
     #[test]
     fn as_kdf() {
-        // derive_key uses an all-zero salt and a hash-length output, which is the extract and
-        // expand of the same inputs truncated to 32 bytes.
+        // An instance from `new` runs extract-then-expand with the absent salt, which HMAC pads
+        // to the same key as 32 zero bytes; the KDF trait's keys are the IKM, so two halves of it
+        // through the multi-key form are the same derivation.
         let ikm = key(&hex::encode(&DUMMY_SEED[..64]), KeyType::MACKey);
         let zero_salt = key(&"00".repeat(32), KeyType::MACKey);
         let info = &DUMMY_SEED[64..80];
 
         let mut expected = KeyMaterial::<64>::new();
         HKDF_SM3::extract_and_expand_out(&zero_salt, &ikm, info, 64, &mut expected).unwrap();
-        let mut expected_truncated = expected.clone();
-        expected_truncated.set_key_len(32).unwrap();
 
         let framework = TestFrameworkKDF::new();
-        framework.test_kdf_single_key::<HKDF_SM3>(&ikm, info, &expected_truncated);
-        framework.test_kdf_multiple_key::<HKDF_SM3>(&[&zero_salt, &ikm], info, &mut expected);
+        framework.test_kdf_single_key(&HKDF_SM3::new(), &ikm, info, &expected);
+        let ikm_a = key(&hex::encode(&DUMMY_SEED[..32]), KeyType::MACKey);
+        let ikm_b = key(&hex::encode(&DUMMY_SEED[32..64]), KeyType::MACKey);
+        let keys: [&dyn KeyMaterialTrait; 2] = [&ikm_a, &ikm_b];
+        framework.test_kdf_multiple_key(&HKDF_SM3::new(), &keys, info, &expected);
     }
 
     #[test]
