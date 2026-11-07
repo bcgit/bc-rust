@@ -21,15 +21,17 @@
 #![allow(dead_code)]
 
 use bouncycastle_core::hazmat::do_hazardous_operations;
+use bouncycastle_core::kem_key::DecapsulatingKey;
 use bouncycastle_core::key_material::{KeyMaterial512, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::traits::{KEMDecapsulator, KEMPrivateKey, KEMPublicKey};
+use bouncycastle_core::traits::{KEMPrivateKey, KEMPublicKey};
 use bouncycastle_core_test_framework::test_data_loaders::{Value, wycheproof_json};
 use bouncycastle_hex as hex;
 use bouncycastle_mlkem::hazmat::EncapsWithRandomness;
 use bouncycastle_mlkem::{
-    MLKEM512, MLKEM512PrivateKey, MLKEM512PublicKey, MLKEM768, MLKEM768PrivateKey,
-    MLKEM768PublicKey, MLKEM1024, MLKEM1024PrivateKey, MLKEM1024PublicKey, MLKEMTrait,
+    MLKEM512, MLKEM512_CT_LEN, MLKEM512PrivateKey, MLKEM512PublicKey, MLKEM768, MLKEM768_CT_LEN,
+    MLKEM768PrivateKey, MLKEM768PublicKey, MLKEM1024, MLKEM1024_CT_LEN, MLKEM1024PrivateKey,
+    MLKEM1024PublicKey, MLKEMTrait,
 };
 
 #[test]
@@ -279,11 +281,7 @@ impl MLKEMEncapsTestCase {
 
         /* Perform the deterministic encaps and compare results */
 
-        let (k, ct) = MLKEM512::encaps_with_randomness(
-            &ek,
-            None,
-            hex::decode(&self.m).unwrap().try_into().unwrap(),
-        );
+        let (k, ct) = ek.encaps_with_randomness(hex::decode(&self.m).unwrap().try_into().unwrap());
 
         if self.result == "valid" {
             assert_eq!(k, hex::decode(&self.k).unwrap().as_slice());
@@ -312,11 +310,7 @@ impl MLKEMEncapsTestCase {
 
         /* Perform the deterministic encaps and compare results */
 
-        let (k, ct) = MLKEM768::encaps_with_randomness(
-            &ek,
-            None,
-            hex::decode(&self.m).unwrap().try_into().unwrap(),
-        );
+        let (k, ct) = ek.encaps_with_randomness(hex::decode(&self.m).unwrap().try_into().unwrap());
 
         if self.result == "valid" {
             assert_eq!(k, hex::decode(&self.k).unwrap().as_slice());
@@ -345,11 +339,7 @@ impl MLKEMEncapsTestCase {
 
         /* Perform the deterministic encaps and compare results */
 
-        let (k, ct) = MLKEM1024::encaps_with_randomness(
-            &ek,
-            None,
-            hex::decode(&self.m).unwrap().try_into().unwrap(),
-        );
+        let (k, ct) = ek.encaps_with_randomness(hex::decode(&self.m).unwrap().try_into().unwrap());
 
         if self.result == "valid" {
             assert_eq!(k, hex::decode(&self.k).unwrap().as_slice());
@@ -666,7 +656,12 @@ impl MLKEMTestCase {
         // these tests don't provide m, so can't test deterministic encaps
 
         // test decaps
-        let k = match MLKEM512::decaps(&dk, hex::decode(&self.c).unwrap().as_slice()) {
+        // A ciphertext of the wrong length cannot reach `decaps`: the length is its type.
+        let Ok(c) = <[u8; MLKEM512_CT_LEN]>::try_from(hex::decode(&self.c).unwrap()) else {
+            assert_eq!(self.result, "invalid", "a ciphertext of the wrong length must be invalid");
+            return;
+        };
+        let k = match dk.decaps((), &c) {
             Ok(k) => k,
             Err(e) => {
                 if self.result == "invalid" {
@@ -732,7 +727,12 @@ impl MLKEMTestCase {
         // these tests don't provide m, so can't test deterministic encaps
 
         // test decaps
-        let k = match MLKEM768::decaps(&dk, hex::decode(&self.c).unwrap().as_slice()) {
+        // A ciphertext of the wrong length cannot reach `decaps`: the length is its type.
+        let Ok(c) = <[u8; MLKEM768_CT_LEN]>::try_from(hex::decode(&self.c).unwrap()) else {
+            assert_eq!(self.result, "invalid", "a ciphertext of the wrong length must be invalid");
+            return;
+        };
+        let k = match dk.decaps((), &c) {
             Ok(k) => k,
             Err(e) => {
                 if self.result == "invalid" {
@@ -798,7 +798,12 @@ impl MLKEMTestCase {
         // these tests don't provide m, so can't test deterministic encaps
 
         // test decaps
-        let k = match MLKEM1024::decaps(&dk, hex::decode(&self.c).unwrap().as_slice()) {
+        // A ciphertext of the wrong length cannot reach `decaps`: the length is its type.
+        let Ok(c) = <[u8; MLKEM1024_CT_LEN]>::try_from(hex::decode(&self.c).unwrap()) else {
+            assert_eq!(self.result, "invalid", "a ciphertext of the wrong length must be invalid");
+            return;
+        };
+        let k = match dk.decaps((), &c) {
             Ok(k) => k,
             Err(e) => {
                 if self.result == "invalid" {

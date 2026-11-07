@@ -11,10 +11,9 @@ use crate::helpers::{
     write_bytes_or_hex, write_bytes_or_hex_to_file,
 };
 use bouncycastle::core::errors::KEMError;
+use bouncycastle::core::kem_key::{DecapsulatingKey, EncapsulatingKey};
 use bouncycastle::core::key_material::{KeyMaterial, KeyMaterialTrait};
-use bouncycastle::core::traits::{
-    KEMDecapsulator, KEMEncapsulator, KEMPrivateKey, KEMPublicKey, RNG,
-};
+use bouncycastle::core::traits::{KEMPrivateKey, KEMPublicKey, RNG};
 use bouncycastle::mlkem::{
     MLKEM512, MLKEM512_CT_LEN, MLKEM512_PK_LEN, MLKEM512_SK_LEN, MLKEM512PrivateKey,
     MLKEM512PublicKey, MLKEM768, MLKEM768_CT_LEN, MLKEM768_PK_LEN, MLKEM768_SK_LEN,
@@ -56,9 +55,10 @@ pub(crate) enum MLKEMAction {
     Decaps,
 }
 
-/// A parameter set as the command sees it: its name for messages, and the operations the key
-/// types and the `KEM*` traits do not carry on their own. The three sets below are the only
-/// instances.
+/// A parameter set as the command sees it: its name for messages, the operations the key types
+/// and the KEM role traits do not carry on their own, and the role one-shots as function
+/// pointers so that the command body names no algorithm marker. The three sets below are the
+/// only instances.
 #[allow(clippy::type_complexity)] // the function-pointer fields are the table's point
 pub(crate) struct ParameterSet<
     PK,
@@ -73,8 +73,8 @@ pub(crate) struct ParameterSet<
     keygen_from_seed: fn(&KeyMaterial<SEED_LEN>) -> Result<(PK, SK), KEMError>,
     keypair_consistency_check: fn(&PK, &SK) -> Result<(), KEMError>,
     pk_of: fn(&SK) -> PK,
-    encaps: fn(&PK) -> Result<(KeyMaterial<SS_LEN>, [u8; CT_LEN]), KEMError>,
-    decaps: fn(&SK, &[u8]) -> Result<KeyMaterial<SS_LEN>, KEMError>,
+    encaps: fn(&PK, &mut dyn RNG) -> Result<(KeyMaterial<SS_LEN>, [u8; CT_LEN]), KEMError>,
+    decaps: fn(&SK, &[u8; CT_LEN]) -> Result<KeyMaterial<SS_LEN>, KEMError>,
 }
 
 pub(crate) const MLKEM512_SET: ParameterSet<
@@ -90,8 +90,8 @@ pub(crate) const MLKEM512_SET: ParameterSet<
     keygen_from_seed: MLKEM512::keygen_from_seed,
     keypair_consistency_check: MLKEM512::keypair_consistency_check,
     pk_of: |sk| sk.pk().clone(),
-    encaps: MLKEM512::encaps,
-    decaps: MLKEM512::decaps,
+    encaps: |pk, rng| pk.encaps(rng, ()),
+    decaps: |sk, ct| sk.decaps((), ct),
 };
 
 pub(crate) const MLKEM768_SET: ParameterSet<
@@ -107,8 +107,8 @@ pub(crate) const MLKEM768_SET: ParameterSet<
     keygen_from_seed: MLKEM768::keygen_from_seed,
     keypair_consistency_check: MLKEM768::keypair_consistency_check,
     pk_of: |sk| sk.pk().clone(),
-    encaps: MLKEM768::encaps,
-    decaps: MLKEM768::decaps,
+    encaps: |pk, rng| pk.encaps(rng, ()),
+    decaps: |sk, ct| sk.decaps((), ct),
 };
 
 pub(crate) const MLKEM1024_SET: ParameterSet<
@@ -124,8 +124,8 @@ pub(crate) const MLKEM1024_SET: ParameterSet<
     keygen_from_seed: MLKEM1024::keygen_from_seed,
     keypair_consistency_check: MLKEM1024::keypair_consistency_check,
     pk_of: |sk| sk.pk().clone(),
-    encaps: MLKEM1024::encaps,
-    decaps: MLKEM1024::decaps,
+    encaps: |pk, rng| pk.encaps(rng, ()),
+    decaps: |sk, ct| sk.decaps((), ct),
 };
 
 pub(crate) fn mlkem_cmd<
@@ -173,10 +173,11 @@ pub(crate) fn mlkem_cmd<
         }
         MLKEMAction::Encaps => {
             let pk = parse_pk(set, &read_input_file_or_stdin(pkfile));
-            let (ss, ct) = (set.encaps)(&pk).unwrap_or_else(|e| {
-                eprintln!("Error: encapsulation failed: {e:?}");
-                exit(-1);
-            });
+            let (ss, ct) =
+                (set.encaps)(&pk, &mut HashDRBG_SHA512::new_from_os()).unwrap_or_else(|e| {
+                    eprintln!("Error: encapsulation failed: {e:?}");
+                    exit(-1);
+                });
             if let Some(ctfile) = ctfile {
                 // write ct to file and ss to stdout
                 write_bytes_or_hex_to_file(&ct, ctfile, output_hex);
@@ -191,14 +192,14 @@ pub(crate) fn mlkem_cmd<
         MLKEMAction::Decaps => {
             let sk = parse_sk(set, read_secret_file_or_stdin(skfile).ref_to_bytes());
             let ct = read_input_file_or_stdin(ctfile);
-            if ct.len() != CT_LEN {
+            let Ok(ct) = <[u8; CT_LEN]>::try_from(ct.as_slice()) else {
                 eprintln!(
                     "Error: the ciphertext is {} bytes; an {} ciphertext is {CT_LEN}.",
                     ct.len(),
                     set.name
                 );
                 exit(-1);
-            }
+            };
             let ss = (set.decaps)(&sk, &ct).unwrap_or_else(|e| {
                 eprintln!("Error: decapsulation failed: {e:?}");
                 exit(-1);

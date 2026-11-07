@@ -74,26 +74,35 @@
 //!
 //! ## Encapsulating and Decapsulating
 //!
+//! Encapsulation and decapsulation are methods of the keys, through the
+//! [`EncapsulatingKey`](bouncycastle_core::kem_key::EncapsulatingKey) and
+//! [`DecapsulatingKey`](bouncycastle_core::kem_key::DecapsulatingKey) roles. Each takes the
+//! caller's RNG and the parameters the algorithm is made from, which for ML-KEM are none: `()`.
+//!
 //! ```rust
 //! use bouncycastle_rng::HashDRBG_SHA512;
 //! use bouncycastle_mlkem::{MLKEM768, MLKEMTrait};
-//! use bouncycastle_core::traits::{KEMEncapsulator, KEMDecapsulator};
+//! use bouncycastle_core::kem_key::{EncapsulatingKey, DecapsulatingKey};
 //! use bouncycastle_core::errors::KEMError;
 //!
-//! let (pk, sk) = MLKEM768::keygen(&mut HashDRBG_SHA512::new_from_os()).unwrap();
+//! let mut rng = HashDRBG_SHA512::new_from_os();
+//! let (pk, sk) = MLKEM768::keygen(&mut rng).unwrap();
 //!
 //! // Create the shared secret and ciphertext using the public key
-//! let (ss, ct) = MLKEM768::encaps(&pk).unwrap();
+//! let (ss, ct) = pk.encaps(&mut rng, ()).unwrap();
 //!
 //! // Recover the shared secret using the private key
-//! let ss1 = match MLKEM768::decaps(&sk, &ct) {
+//! let ss1 = match sk.decaps((), &ct) {
 //!     Err(KEMError) => panic!("Error decapsulating"),
 //!     Ok(ss) => ss,
 //! };
 //!
 //! assert_eq!(ss, ss1);
 //! ```
-//! And that's the basic usage!
+//! And that's the basic usage! A key that will be used many times hands out a worker once
+//! instead, `pk.create_encapsulator(())?` or `sk.create_decapsulator(())?`, which the
+//! [`KEMEncapsulator`](bouncycastle_core::traits::KEMEncapsulator) and
+//! [`KEMDecapsulator`](bouncycastle_core::traits::KEMDecapsulator) traits describe.
 //!
 //! # Memory Usage
 //!
@@ -173,6 +182,7 @@ mod params;
 
 /*** Exported types ***/
 pub use mlkem::{MLKEM, MLKEM512, MLKEM768, MLKEM1024, MLKEMTrait};
+pub use mlkem::{MLKEMDecapsulator, MLKEMEncapsulator};
 pub use mlkem_keys::{
     MLKEM512PrivateKey, MLKEM768PrivateKey, MLKEM1024PrivateKey, MLKEMPrivateKey,
 };
@@ -186,6 +196,7 @@ pub use mlkem_keys::{
     MLKEMPublicKeyExpanded,
 };
 pub use mlkem_keys::{MLKEMPrivateKeyTrait, MLKEMPublicKeyTrait};
+pub use params::{CiphertextLen, PrivateKeyLen, PublicKeyLen};
 
 /*** Exported constants ***/
 pub use mlkem::ML_KEM_512_NAME;
