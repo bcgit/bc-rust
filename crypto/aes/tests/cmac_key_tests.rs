@@ -5,7 +5,7 @@ use bouncycastle_aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
 use bouncycastle_aes::{AES_CMAC_128, AES_CMAC_192, AES_CMAC_256, AES128Key, AES192Key, AES256Key};
 use bouncycastle_cipher::modes::{CMAC, CmacKeyState};
 use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
-use bouncycastle_core::hazmat::{ElectronicCodeBook, MacMode, Mode};
+use bouncycastle_core::hazmat::{KeyExpansion, MacMode, Mode};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::symmetric_key::{FromKeyMaterial, MacGenerationKey, MacVerificationKey};

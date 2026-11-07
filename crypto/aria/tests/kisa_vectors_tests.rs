@@ -16,7 +16,7 @@ mod common;
 use bouncycastle_aria::hazmat::{ARIA128Internal, ARIA192Internal, ARIA256Internal, ARIAInternal};
 use bouncycastle_aria::{ARIA128Key, ARIA192Key, ARIA256Key, ARIAParams, BLOCK_LEN};
 use bouncycastle_cipher::modes::{Blocks, CBC};
-use bouncycastle_core::hazmat::{BlockPermutation, ElectronicCodeBook};
+use bouncycastle_core::hazmat::{BlockPermutation, KeyExpansion};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::symmetric_key::{BlockDecryptionKey, BlockEncryptionKey, FromKeyMaterial};
 use bouncycastle_core::traits::{BlockCipherDecryptor, BlockCipherEncryptor};

@@ -11,10 +11,11 @@
 //! rest of the file; RFC 8998's vector is transcribed from the downloaded text of the RFC and
 //! pinned in the crate's `rfc8998_tests.rs` too.
 
-use std::io::{ErrorKind, Write};
-use std::process::{Command, Output, Stdio};
-
-const BC_RUST: &str = env!("CARGO_BIN_EXE_bc-rust");
+mod common;
+use common::{
+    Framing, KEY16, KEY32, any_input_length, listed_in_help, round_trips, run, run_err, run_ok,
+    tohex, unhex, wrong_key_lengths,
+};
 
 /// (command, key, nonce, aad, msg, ct, tag): RFC 8998 Appendix A.2, then Wycheproof tcId 12.
 const VECTORS: [(&str, &str, &str, &str, &str, &str, &str); 2] = [
@@ -37,47 +38,6 @@ const VECTORS: [(&str, &str, &str, &str, &str, &str, &str); 2] = [
         "ac84f69adb93437df53a8b0c4a8a81e1",
     ),
 ];
-
-fn run(args: &[&str], stdin_bytes: &[u8]) -> Output {
-    let mut child = Command::new(BC_RUST)
-        .args(args)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("failed to spawn bc-rust");
-    match child.stdin.as_mut().expect("stdin piped").write_all(stdin_bytes) {
-        Ok(()) => {}
-        Err(e) if e.kind() == ErrorKind::BrokenPipe => {}
-        Err(e) => panic!("failed to write to stdin: {e}"),
-    }
-    child.wait_with_output().expect("failed to wait for bc-rust")
-}
-
-fn run_ok(args: &[&str], stdin_bytes: &[u8]) -> Vec<u8> {
-    let out = run(args, stdin_bytes);
-    assert!(
-        out.status.success(),
-        "expected success from {args:?}, got {:?}\nstderr: {}",
-        out.status,
-        String::from_utf8_lossy(&out.stderr)
-    );
-    out.stdout
-}
-
-fn run_err(args: &[&str], stdin_bytes: &[u8]) -> String {
-    let out = run(args, stdin_bytes);
-    assert!(!out.status.success(), "expected failure from {args:?}, but it succeeded");
-    String::from_utf8_lossy(&out.stderr).into_owned()
-}
-
-fn unhex(s: &str) -> Vec<u8> {
-    (0..s.len()).step_by(2).map(|i| u8::from_str_radix(&s[i..i + 2], 16).expect("hex")).collect()
-}
-
-fn tohex(bytes: &[u8]) -> String {
-    bytes.iter().map(|b| format!("{b:02x}")).collect()
-}
 
 /// `encrypt` reproduces the RFC 8998 and Wycheproof ciphertexts and tags, as `ciphertext || tag`,
 /// and `decrypt` takes them back to the message.
@@ -117,32 +77,34 @@ fn tampering_fails_the_tag_check() {
     assert!(run_err(&other_nonce, &bytes).contains("authentic"));
 }
 
-/// Any length round-trips, with the default 16-byte tag and a shorter one.
 #[test]
 fn encrypt_then_decrypt_round_trips() {
-    let message: Vec<u8> = (0..3000u32).map(|i| (i % 251) as u8).collect();
-    let key = "000102030405060708090a0b0c0d0e0f";
-    for tag_len in ["16", "8"] {
-        let nonce = "000102030405060708090a0b";
-        let base = ["sm4-ccm", "--key", key, "--nonce", nonce, "--tag-len", tag_len];
-        let ct = run_ok(&[&base[..], &["-d", "encrypt"]].concat(), &message);
-        assert_eq!(ct.len(), message.len() + tag_len.parse::<usize>().unwrap());
-        let back = run_ok(&[&base[..], &["-d", "decrypt"]].concat(), &ct);
-        assert_eq!(back, message);
-    }
+    round_trips(
+        &[("sm4-ccm", KEY16)],
+        &["--nonce", "000102030405060708090a0b"],
+        Framing { prefix: 0, suffix: 16, pads: false },
+    );
+}
+
+#[test]
+fn any_input_length_is_accepted() {
+    any_input_length(
+        "sm4-ccm",
+        KEY16,
+        &["--nonce", "000102030405060708090a0b"],
+        Framing { prefix: 0, suffix: 16, pads: false },
+    );
 }
 
 #[test]
 fn a_key_of_the_wrong_length_is_rejected() {
-    let err = run_err(
-        &["sm4-ccm", "-d", "encrypt", "--key", "0011", "--nonce", "000102030405060708090a0b"],
-        b"x",
+    wrong_key_lengths(
+        &[("sm4-ccm", KEY32, "SM4 needs a 16-byte key, got 32 bytes")],
+        &["--nonce", "000102030405060708090a0b"],
     );
-    assert!(err.contains("16-byte key"), "{err}");
 }
 
 #[test]
 fn the_subcommands_are_listed_in_help() {
-    let help = String::from_utf8(run_ok(&["--help"], b"")).unwrap();
-    assert!(help.contains("sm4-ccm"), "--help should list sm4-ccm");
+    listed_in_help(&["sm4-ccm"]);
 }

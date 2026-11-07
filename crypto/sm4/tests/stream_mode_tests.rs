@@ -26,7 +26,7 @@
 
 use bouncycastle_cipher::modes::{CFB, CFB8, CTR};
 use bouncycastle_core::errors::SymmetricCipherError;
-use bouncycastle_core::hazmat::{BlockPermutation, ElectronicCodeBook};
+use bouncycastle_core::hazmat::{BlockPermutation, KeyExpansion};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::symmetric_key::{
     FromKeyMaterial, SymmetricDecryptionKey, SymmetricEncryptionKey,

@@ -1,7 +1,9 @@
-//! AES-GCM authenticated encryption and decryption, streaming stdin to stdout.
+//! GCM authenticated encryption and decryption over any 128-bit block permutation, streaming
+//! stdin to stdout: the `aes*-gcm`, `aria*-gcm`, `camellia*-gcm` and `sm4-gcm` commands, one
+//! generic function that `main` instantiates per cipher and key length.
 //!
 //! Only the mode wiring lives here: the IV/tag framing, AAD loading and stdin streaming are in
-//! [`crate::helpers::aead_cipher_helpers`], shared across all three key lengths. See that module for the
+//! [`crate::helpers::aead_cipher_helpers`], shared across every cipher and key length. See that module for the
 //! command-line contract (`IV || ciphertext || tag`, the AAD flags, and why a tag failure may be
 //! reported after plaintext has already reached stdout).
 //!
@@ -15,12 +17,16 @@
 
 use crate::helpers::aead_cipher_helpers::{decrypt_aead, encrypt_aead, load_aad};
 use crate::helpers::block_mode_helpers::{CipherDirection, load_iv, load_key_object};
-use bouncycastle::aes::{AES128Key, AES192Key, AES256Key};
-use bouncycastle::cipher::modes::GCM;
+use bouncycastle::cipher::BlockCipherKey;
+use bouncycastle::cipher::modes::ModeNames;
+use bouncycastle::cipher::modes::{GCM, GCM_NONCE_LEN};
+use bouncycastle::core::hazmat::ElectronicCodeBook;
 use bouncycastle::core::symmetric_key::{AeadDecryptionKey, AeadEncryptionKey};
 
+/// GCM with a 128-bit tag under a `KEY_LEN`-byte key for the permutation `P`; `alg` names the
+/// cipher and key length in messages.
 #[allow(clippy::too_many_arguments)] // one flag per input, each inline or from a file
-pub(crate) fn aes128_gcm_cmd(
+pub(crate) fn gcm_cmd<P, const KEY_LEN: usize>(
     action: &CipherDirection,
     key: &Option<String>,
     key_file: &Option<String>,
@@ -29,51 +35,14 @@ pub(crate) fn aes128_gcm_cmd(
     aad: &Option<String>,
     aad_file: &Option<String>,
     output_hex: bool,
-) {
-    run::<AES128Key<GCM>, 16>(
+    alg: &str,
+) where
+    P: ElectronicCodeBook<KEY_LEN, 16> + ModeNames + Clone,
+{
+    run::<BlockCipherKey<P, GCM>, KEY_LEN>(
         action,
-        &load_key_object::<_, 16>(key, key_file, "AES-128"),
-        load_iv::<12>(iv, iv_file),
-        &load_aad(aad, aad_file),
-        output_hex,
-    );
-}
-
-#[allow(clippy::too_many_arguments)] // one flag per input, each inline or from a file
-pub(crate) fn aes192_gcm_cmd(
-    action: &CipherDirection,
-    key: &Option<String>,
-    key_file: &Option<String>,
-    iv: &Option<String>,
-    iv_file: &Option<String>,
-    aad: &Option<String>,
-    aad_file: &Option<String>,
-    output_hex: bool,
-) {
-    run::<AES192Key<GCM>, 24>(
-        action,
-        &load_key_object::<_, 24>(key, key_file, "AES-192"),
-        load_iv::<12>(iv, iv_file),
-        &load_aad(aad, aad_file),
-        output_hex,
-    );
-}
-
-#[allow(clippy::too_many_arguments)] // one flag per input, each inline or from a file
-pub(crate) fn aes256_gcm_cmd(
-    action: &CipherDirection,
-    key: &Option<String>,
-    key_file: &Option<String>,
-    iv: &Option<String>,
-    iv_file: &Option<String>,
-    aad: &Option<String>,
-    aad_file: &Option<String>,
-    output_hex: bool,
-) {
-    run::<AES256Key<GCM>, 32>(
-        action,
-        &load_key_object::<_, 32>(key, key_file, "AES-256"),
-        load_iv::<12>(iv, iv_file),
+        &load_key_object::<_, KEY_LEN>(key, key_file, alg),
+        load_iv::<GCM_NONCE_LEN>(iv, iv_file),
         &load_aad(aad, aad_file),
         output_hex,
     );

@@ -21,13 +21,12 @@
 //! # Usage Examples
 //!
 //! From a mode-bound key, which holds the key state the workers borrow; over the toy permutation
-//! the key is the test suite's `ToyKey`, the shape of the AES one:
+//! the key is [`BlockCipherKey`](crate::BlockCipherKey), as it is for AES:
 //!
 //! ```
 //! # mod toy { include!("../../tests/common/toy_block_cipher.rs"); }
-//! # #[allow(dead_code)] mod toy_key { include!("../../tests/common/toy_key.rs"); }
 //! # use toy::ToyBlockCipher;
-//! # use toy_key::ToyKey;
+//! use bouncycastle_cipher::BlockCipherKey;
 //! use bouncycastle_cipher::modes::GMAC;
 //! use bouncycastle_core::key_material::{KeyMaterial128, KeyType};
 //! use bouncycastle_core::symmetric_key::FromKeyMaterial;
@@ -35,7 +34,7 @@
 //!
 //! let mut rng = HashDRBG_SHA512::new_from_os();
 //! let material = KeyMaterial128::from_bytes_as_type(&[0x42; 16], KeyType::MACKey).unwrap();
-//! let key = ToyKey::<ToyBlockCipher, GMAC>::from_key_material(&material).unwrap();
+//! let key = BlockCipherKey::<ToyBlockCipher, GMAC>::from_key_material(&material).unwrap();
 //!
 //! let (mut generator, nonce) = key.create_generator(&mut rng).unwrap();
 //! generator.do_update(b"a message ");

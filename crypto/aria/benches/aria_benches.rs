@@ -10,7 +10,7 @@
 
 use bouncycastle_aria::hazmat::{ARIA128Internal, ARIA256Internal};
 use bouncycastle_aria::{BLOCK_LEN, LANES};
-use bouncycastle_core::hazmat::{BlockPermutation, ElectronicCodeBook};
+use bouncycastle_core::hazmat::{BlockPermutation, KeyExpansion};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::traits::RNG;
 use bouncycastle_rng as rng;

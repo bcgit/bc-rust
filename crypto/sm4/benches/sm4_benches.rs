@@ -6,7 +6,7 @@
 //! uses) should be close to four times the throughput; the two-block path sits at half. Decryption
 //! costs the same as encryption (the same loop with the round keys read backwards).
 
-use bouncycastle_core::hazmat::{BlockPermutation, ElectronicCodeBook};
+use bouncycastle_core::hazmat::{BlockPermutation, KeyExpansion};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::traits::RNG;
 use bouncycastle_rng as rng;

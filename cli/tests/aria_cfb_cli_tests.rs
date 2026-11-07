@@ -8,11 +8,11 @@
 //! Vectors are the `ARIA-*-CFB` entries of OpenSSL's `evpciph_aria.txt` (OpenSSL 3.6.2),
 //! which are KISA's published ARIA test vectors; see `crypto/aria/tests/stream_mode_tests.rs`.
 
-use std::io::{ErrorKind, Write};
-use std::process::{Command, Output, Stdio};
-
-/// The path to the binary under test, resolved by cargo.
-const BC_RUST: &str = env!("CARGO_BIN_EXE_bc-rust");
+mod common;
+use common::{
+    Framing, KEY16, KEY24, KEY32, any_input_length, listed_in_help, round_trips, run_ok, tohex,
+    unhex, wrong_key_lengths,
+};
 
 /// The IV the CFB128 and CFB8 vectors share -- the same one the CBC vectors use.
 const IV: &str = "0f1e2d3c4b5a69788796a5b4c3d2e1f0";
@@ -66,78 +66,6 @@ const CT_256: &str = concat!(
     "cbcfa62a045d726df71b6bda0eeca0be",
 );
 
-/// Runs `bc-rust <args...>` with `stdin_bytes` on stdin and returns the completed output.
-fn run(args: &[&str], stdin_bytes: &[u8]) -> Output {
-    let mut child = Command::new(BC_RUST)
-        .args(args)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("failed to spawn bc-rust");
-
-    // The error-path tests hand a rejected key to a command that `exit`s before it ever reads
-    // stdin, so this write races the child's exit and sometimes loses -- reliably so on a loaded
-    // CI runner. That is an expected outcome, not a harness failure: `wait_with_output` still
-    // returns the exit status and stderr, which is all those tests assert on. Any other write
-    // error is a real problem and still panics.
-    match child.stdin.as_mut().expect("stdin piped").write_all(stdin_bytes) {
-        Ok(()) => {}
-        Err(e) if e.kind() == ErrorKind::BrokenPipe => {}
-        Err(e) => panic!("failed to write to stdin: {e}"),
-    }
-
-    child.wait_with_output().expect("failed to wait for bc-rust")
-}
-
-/// Runs a command that is expected to succeed, returning stdout.
-fn run_ok(args: &[&str], stdin_bytes: &[u8]) -> Vec<u8> {
-    let out = run(args, stdin_bytes);
-    assert!(
-        out.status.success(),
-        "expected success from {args:?}, got {:?}\nstderr: {}",
-        out.status,
-        String::from_utf8_lossy(&out.stderr)
-    );
-    out.stdout
-}
-
-/// Runs a command that is expected to fail, returning stderr as a string.
-fn run_err(args: &[&str], stdin_bytes: &[u8]) -> String {
-    let out = run(args, stdin_bytes);
-    assert!(
-        !out.status.success(),
-        "expected failure from {args:?}, but it succeeded\nstdout: {:?}",
-        String::from_utf8_lossy(&out.stdout)
-    );
-    String::from_utf8_lossy(&out.stderr).into_owned()
-}
-
-fn unhex(s: &str) -> Vec<u8> {
-    assert!(s.len().is_multiple_of(2), "hex string must have even length");
-    (0..s.len())
-        .step_by(2)
-        .map(|i| u8::from_str_radix(&s[i..i + 2], 16).expect("valid hex"))
-        .collect()
-}
-
-fn tohex(bytes: &[u8]) -> String {
-    bytes.iter().map(|b| format!("{b:02x}")).collect()
-}
-
-/// Deterministic pseudo-random bytes, so the tests do not depend on an RNG.
-fn pseudo_random(len: usize, seed: u32) -> Vec<u8> {
-    let mut state = seed.wrapping_mul(2_654_435_761).wrapping_add(1);
-    (0..len)
-        .map(|_| {
-            state ^= state << 13;
-            state ^= state >> 17;
-            state ^= state << 5;
-            (state >> 24) as u8
-        })
-        .collect()
-}
-
 const VARIANTS: [(&str, &str, &str); 3] = [
     ("aria128-cfb", KEY_128, CT_128),
     ("aria192-cfb", KEY_192, CT_192),
@@ -176,51 +104,33 @@ fn hex_output_matches_binary_output() {
     assert_eq!(String::from_utf8_lossy(&out), format!("{PLAINTEXT}\n"));
 }
 
-/// `encrypt | decrypt` composes: the IV rides at the front, and the plaintext comes back.
 #[test]
 fn encrypt_then_decrypt_round_trips() {
-    let plaintext = pseudo_random(4096, 0xC0FFEE);
-
-    for (cmd, key, _) in VARIANTS {
-        let ciphertext = run_ok(&[cmd, "-d", "encrypt", "--key", key], &plaintext);
-        assert_eq!(ciphertext.len(), 16 + plaintext.len(), "{cmd}: IV plus an equal-length body");
-        assert_ne!(&ciphertext[16..], &plaintext[..]);
-
-        let recovered = run_ok(&[cmd, "-d", "decrypt", "--key", key], &ciphertext);
-        assert_eq!(recovered, plaintext, "{cmd}");
-    }
+    round_trips(
+        &[("aria128-cfb", KEY16), ("aria192-cfb", KEY24), ("aria256-cfb", KEY32)],
+        &[],
+        Framing { prefix: 16, suffix: 0, pads: false },
+    );
 }
 
-/// Unlike `aria*-cbc`, any length is accepted and nothing is padded: this is a stream cipher.
 #[test]
 fn any_input_length_is_accepted() {
-    for len in [0usize, 1, 15, 17, 33] {
-        let plaintext = pseudo_random(len, len as u32);
-        let ciphertext = run_ok(&["aria128-cfb", "-d", "encrypt", "--key", KEY_128], &plaintext);
-        assert_eq!(ciphertext.len(), 16 + len, "len {len}: IV plus an equal-length body");
-        let recovered = run_ok(&["aria128-cfb", "-d", "decrypt", "--key", KEY_128], &ciphertext);
-        assert_eq!(recovered, plaintext, "len {len}: round trip");
-    }
+    any_input_length("aria128-cfb", KEY16, &[], Framing { prefix: 16, suffix: 0, pads: false });
 }
 
-/// Each command wants exactly its key length. The 256-bit key to the 128-bit command, and so on,
-/// are errors naming the algorithm.
 #[test]
 fn a_key_of_the_wrong_length_is_rejected() {
-    let err = run_err(&["aria128-cfb", "-d", "encrypt", "--key", KEY_256], &[0u8; 16]);
-    assert!(err.contains("ARIA-128 needs a 16-byte key, got 32 bytes"), "stderr was: {err}");
-    let err = run_err(&["aria192-cfb", "-d", "encrypt", "--key", KEY_128], &[0u8; 16]);
-    assert!(err.contains("ARIA-192 needs a 24-byte key, got 16 bytes"), "stderr was: {err}");
-    let err = run_err(&["aria256-cfb", "-d", "encrypt", "--key", KEY_192], &[0u8; 16]);
-    assert!(err.contains("ARIA-256 needs a 32-byte key, got 24 bytes"), "stderr was: {err}");
+    wrong_key_lengths(
+        &[
+            ("aria128-cfb", KEY32, "ARIA-128 needs a 16-byte key, got 32 bytes"),
+            ("aria192-cfb", KEY32, "ARIA-192 needs a 24-byte key, got 32 bytes"),
+            ("aria256-cfb", KEY24, "ARIA-256 needs a 32-byte key, got 24 bytes"),
+        ],
+        &[],
+    );
 }
 
-/// The subcommands are discoverable.
 #[test]
 fn the_subcommands_are_listed_in_help() {
-    let out = run_ok(&["--help"], &[]);
-    let help = String::from_utf8_lossy(&out);
-    for cmd in ["aria128-cfb", "aria192-cfb", "aria256-cfb"] {
-        assert!(help.contains(cmd), "`--help` should list {cmd}");
-    }
+    listed_in_help(&["aria128-cfb", "aria192-cfb", "aria256-cfb"]);
 }

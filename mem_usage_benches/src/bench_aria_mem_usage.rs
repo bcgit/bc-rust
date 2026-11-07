@@ -19,7 +19,9 @@
 //! The important stuff for benchmarking goes to stderr so the junk can be piped to /dev/null.
 //!
 //! Main is at the bottom, and controls which of these actually runs -- measure one at a time,
-//! because massif reports the peak across the whole process.
+//! because massif reports the peak across the whole process. The operations themselves are the
+//! shared `block_cipher_mem_usage` harness over this cipher's permutations; this file holds the
+//! keys and the choice.
 //!
 //! # What to expect, and why massif cannot see it
 //!
@@ -43,39 +45,11 @@
 //! The crate docs' Memory Usage table is the result; its caption says the toolchain.
 
 #![allow(dead_code)]
-#![allow(unused_imports)]
 
-use bouncycastle::aria::LANES;
 use bouncycastle::aria::hazmat::{ARIA128Internal, ARIA192Internal, ARIA256Internal};
-use bouncycastle::core::hazmat::{BlockPermutation, ElectronicCodeBook};
-use bouncycastle::core::key_material::{KeyMaterial, KeyType};
 
-/// This exists so /usr/bin/time can measure the base memory footprint of the harness itself.
-fn bench_do_nothing() {
-    eprintln!("DoNothing");
+use mem_usage_benches::block_cipher_mem_usage as bench;
 
-    print!("{}", 1 + 1);
-}
-
-/// Prints the in-memory size of each engine, i.e. the persistent cost of holding the round keys.
-fn print_struct_sizes() {
-    use core::mem::size_of;
-
-    // RFC 5794 Sec 2.2: ek1 .. ek{n+1} for n = 12, 14, 16 rounds -- 13, 15 or 17 keys of 16 bytes.
-    println!("size_of<ARIA128Internal>: {}", size_of::<ARIA128Internal>());
-    println!("size_of<ARIA192Internal>: {}", size_of::<ARIA192Internal>());
-    println!("size_of<ARIA256Internal>: {}", size_of::<ARIA256Internal>());
-}
-
-/// Runs the operation in its own frame. Returns nothing, so no result crosses the boundary and
-/// the closure's frame is exactly the operation's.
-#[inline(never)]
-fn measure(f: impl FnOnce()) {
-    f()
-}
-
-/// The RFC 5794 Appendix A keys (`00 01 02 .. 1f`, truncated to the key length), so the engines
-/// under measurement are known ones.
 const KEY_128: [u8; 16] = [
     0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f,
 ];
@@ -88,271 +62,37 @@ const KEY_256: [u8; 32] = [
     0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f,
 ];
 
-/// Wraps a hard-coded key. `#[inline(never)]` so the wrapping is a sibling frame of whatever
-/// uses the key, not part of it.
-#[inline(never)]
-fn key<const N: usize>(bytes: &[u8; N]) -> KeyMaterial<N> {
-    KeyMaterial::<N>::from_bytes_as_type(bytes, KeyType::SymmetricCipherKey).unwrap()
-}
-
-/// Expands the key into an engine, in its own frame, so the expansion's temporaries are popped
-/// before an operation on the engine runs.
-#[inline(never)]
-fn load_aria128() -> ARIA128Internal {
-    ARIA128Internal::new(&key(&KEY_128)).unwrap()
-}
-#[inline(never)]
-fn load_aria192() -> ARIA192Internal {
-    ARIA192Internal::new(&key(&KEY_192)).unwrap()
-}
-#[inline(never)]
-fn load_aria256() -> ARIA256Internal {
-    ARIA256Internal::new(&key(&KEY_256)).unwrap()
-}
-
-// ---- key expansion: the expansion is the operation, so it runs inside `measure` ------------
-
-fn bench_aria128_key_expansion() {
-    eprintln!("ARIA128Internal::new (key expansion)");
-    let key = key(&KEY_128);
-    measure(|| {
-        let aria = ARIA128Internal::new(&key).unwrap();
-        print!("{aria:?}");
-    });
-}
-
-fn bench_aria192_key_expansion() {
-    eprintln!("ARIA192Internal::new (key expansion)");
-    let key = key(&KEY_192);
-    measure(|| {
-        let aria = ARIA192Internal::new(&key).unwrap();
-        print!("{aria:?}");
-    });
-}
-
-fn bench_aria256_key_expansion() {
-    eprintln!("ARIA256Internal::new (key expansion)");
-    let key = key(&KEY_256);
-    measure(|| {
-        let aria = ARIA256Internal::new(&key).unwrap();
-        print!("{aria:?}");
-    });
-}
-
-// ---- the six entry points, per key length -------------------------------------------------
-//
-// Every entry point runs the same four-lane circuit: a single block fills all four lanes with
-// copies, two blocks fill two, so the working state is the same size throughout. The blocks are
-// stack arrays in the closure, never a heap buffer, so massif's --heap=no does not hide them.
-
-fn bench_aria128_encrypt_block() {
-    eprintln!("ARIA128Internal::encrypt_block");
-    let aria = load_aria128();
-    measure(|| {
-        let mut block = [0x11u8; 16];
-        aria.encrypt_block(&mut block);
-        print!("{block:x?}");
-    });
-}
-
-fn bench_aria128_decrypt_block() {
-    eprintln!("ARIA128Internal::decrypt_block");
-    let aria = load_aria128();
-    measure(|| {
-        let mut block = [0x11u8; 16];
-        aria.decrypt_block(&mut block);
-        print!("{block:x?}");
-    });
-}
-
-fn bench_aria128_encrypt_2blocks() {
-    eprintln!("ARIA128Internal::encrypt_2blocks");
-    let aria = load_aria128();
-    measure(|| {
-        let mut blocks = [[0x11u8; 16], [0x22u8; 16]];
-        aria.encrypt_2blocks(&mut blocks);
-        print!("{blocks:x?}");
-    });
-}
-
-fn bench_aria128_decrypt_2blocks() {
-    eprintln!("ARIA128Internal::decrypt_2blocks");
-    let aria = load_aria128();
-    measure(|| {
-        let mut blocks = [[0x11u8; 16], [0x22u8; 16]];
-        aria.decrypt_2blocks(&mut blocks);
-        print!("{blocks:x?}");
-    });
-}
-
-fn bench_aria128_encrypt_4blocks() {
-    eprintln!("ARIA128Internal::encrypt_4blocks");
-    let aria = load_aria128();
-    measure(|| {
-        let mut blocks: [[u8; 16]; LANES] =
-            [[0x11u8; 16], [0x22u8; 16], [0x33u8; 16], [0x44u8; 16]];
-        aria.encrypt_4blocks(&mut blocks);
-        print!("{blocks:x?}");
-    });
-}
-
-fn bench_aria128_decrypt_4blocks() {
-    eprintln!("ARIA128Internal::decrypt_4blocks");
-    let aria = load_aria128();
-    measure(|| {
-        let mut blocks: [[u8; 16]; LANES] =
-            [[0x11u8; 16], [0x22u8; 16], [0x33u8; 16], [0x44u8; 16]];
-        aria.decrypt_4blocks(&mut blocks);
-        print!("{blocks:x?}");
-    });
-}
-
-fn bench_aria192_encrypt_block() {
-    eprintln!("ARIA192Internal::encrypt_block");
-    let aria = load_aria192();
-    measure(|| {
-        let mut block = [0x11u8; 16];
-        aria.encrypt_block(&mut block);
-        print!("{block:x?}");
-    });
-}
-
-fn bench_aria192_decrypt_block() {
-    eprintln!("ARIA192Internal::decrypt_block");
-    let aria = load_aria192();
-    measure(|| {
-        let mut block = [0x11u8; 16];
-        aria.decrypt_block(&mut block);
-        print!("{block:x?}");
-    });
-}
-
-fn bench_aria192_encrypt_2blocks() {
-    eprintln!("ARIA192Internal::encrypt_2blocks");
-    let aria = load_aria192();
-    measure(|| {
-        let mut blocks = [[0x11u8; 16], [0x22u8; 16]];
-        aria.encrypt_2blocks(&mut blocks);
-        print!("{blocks:x?}");
-    });
-}
-
-fn bench_aria192_decrypt_2blocks() {
-    eprintln!("ARIA192Internal::decrypt_2blocks");
-    let aria = load_aria192();
-    measure(|| {
-        let mut blocks = [[0x11u8; 16], [0x22u8; 16]];
-        aria.decrypt_2blocks(&mut blocks);
-        print!("{blocks:x?}");
-    });
-}
-
-fn bench_aria192_encrypt_4blocks() {
-    eprintln!("ARIA192Internal::encrypt_4blocks");
-    let aria = load_aria192();
-    measure(|| {
-        let mut blocks: [[u8; 16]; LANES] =
-            [[0x11u8; 16], [0x22u8; 16], [0x33u8; 16], [0x44u8; 16]];
-        aria.encrypt_4blocks(&mut blocks);
-        print!("{blocks:x?}");
-    });
-}
-
-fn bench_aria192_decrypt_4blocks() {
-    eprintln!("ARIA192Internal::decrypt_4blocks");
-    let aria = load_aria192();
-    measure(|| {
-        let mut blocks: [[u8; 16]; LANES] =
-            [[0x11u8; 16], [0x22u8; 16], [0x33u8; 16], [0x44u8; 16]];
-        aria.decrypt_4blocks(&mut blocks);
-        print!("{blocks:x?}");
-    });
-}
-
-fn bench_aria256_encrypt_block() {
-    eprintln!("ARIA256Internal::encrypt_block");
-    let aria = load_aria256();
-    measure(|| {
-        let mut block = [0x11u8; 16];
-        aria.encrypt_block(&mut block);
-        print!("{block:x?}");
-    });
-}
-
-fn bench_aria256_decrypt_block() {
-    eprintln!("ARIA256Internal::decrypt_block");
-    let aria = load_aria256();
-    measure(|| {
-        let mut block = [0x11u8; 16];
-        aria.decrypt_block(&mut block);
-        print!("{block:x?}");
-    });
-}
-
-fn bench_aria256_encrypt_2blocks() {
-    eprintln!("ARIA256Internal::encrypt_2blocks");
-    let aria = load_aria256();
-    measure(|| {
-        let mut blocks = [[0x11u8; 16], [0x22u8; 16]];
-        aria.encrypt_2blocks(&mut blocks);
-        print!("{blocks:x?}");
-    });
-}
-
-fn bench_aria256_decrypt_2blocks() {
-    eprintln!("ARIA256Internal::decrypt_2blocks");
-    let aria = load_aria256();
-    measure(|| {
-        let mut blocks = [[0x11u8; 16], [0x22u8; 16]];
-        aria.decrypt_2blocks(&mut blocks);
-        print!("{blocks:x?}");
-    });
-}
-
-fn bench_aria256_encrypt_4blocks() {
-    eprintln!("ARIA256Internal::encrypt_4blocks");
-    let aria = load_aria256();
-    measure(|| {
-        let mut blocks: [[u8; 16]; LANES] =
-            [[0x11u8; 16], [0x22u8; 16], [0x33u8; 16], [0x44u8; 16]];
-        aria.encrypt_4blocks(&mut blocks);
-        print!("{blocks:x?}");
-    });
-}
-
-fn bench_aria256_decrypt_4blocks() {
-    eprintln!("ARIA256Internal::decrypt_4blocks");
-    let aria = load_aria256();
-    measure(|| {
-        let mut blocks: [[u8; 16]; LANES] =
-            [[0x11u8; 16], [0x22u8; 16], [0x33u8; 16], [0x44u8; 16]];
-        aria.decrypt_4blocks(&mut blocks);
-        print!("{blocks:x?}");
-    });
+fn print_struct_sizes() {
+    bench::print_struct_size::<ARIA128Internal>("ARIA128Internal");
+    bench::print_struct_size::<ARIA192Internal>("ARIA192Internal");
+    bench::print_struct_size::<ARIA256Internal>("ARIA256Internal");
 }
 
 fn main() {
     print_struct_sizes()
-    // bench_do_nothing()
-    // bench_aria128_key_expansion()
-    // bench_aria192_key_expansion()
-    // bench_aria256_key_expansion()
-    // bench_aria128_encrypt_block()
-    // bench_aria128_decrypt_block()
-    // bench_aria128_encrypt_2blocks()
-    // bench_aria128_decrypt_2blocks()
-    // bench_aria128_encrypt_4blocks()
-    // bench_aria128_decrypt_4blocks()
-    // bench_aria192_encrypt_block()
-    // bench_aria192_decrypt_block()
-    // bench_aria192_encrypt_2blocks()
-    // bench_aria192_decrypt_2blocks()
-    // bench_aria192_encrypt_4blocks()
-    // bench_aria192_decrypt_4blocks()
-    // bench_aria256_encrypt_block()
-    // bench_aria256_decrypt_block()
-    // bench_aria256_encrypt_2blocks()
-    // bench_aria256_decrypt_2blocks()
-    // bench_aria256_encrypt_4blocks()
-    // bench_aria256_decrypt_4blocks()
+    // bench::do_nothing()
+    // bench::all::<ARIA128Internal, 16>("ARIA128Internal", &KEY_128)
+    // bench::key_expansion::<ARIA128Internal, 16>("ARIA128Internal", &KEY_128)
+    // bench::encrypt_block::<ARIA128Internal, 16>("ARIA128Internal", &KEY_128)
+    // bench::decrypt_block::<ARIA128Internal, 16>("ARIA128Internal", &KEY_128)
+    // bench::encrypt_2blocks::<ARIA128Internal, 16>("ARIA128Internal", &KEY_128)
+    // bench::decrypt_2blocks::<ARIA128Internal, 16>("ARIA128Internal", &KEY_128)
+    // bench::encrypt_4blocks::<ARIA128Internal, 16>("ARIA128Internal", &KEY_128)
+    // bench::decrypt_4blocks::<ARIA128Internal, 16>("ARIA128Internal", &KEY_128)
+    // bench::all::<ARIA192Internal, 24>("ARIA192Internal", &KEY_192)
+    // bench::key_expansion::<ARIA192Internal, 24>("ARIA192Internal", &KEY_192)
+    // bench::encrypt_block::<ARIA192Internal, 24>("ARIA192Internal", &KEY_192)
+    // bench::decrypt_block::<ARIA192Internal, 24>("ARIA192Internal", &KEY_192)
+    // bench::encrypt_2blocks::<ARIA192Internal, 24>("ARIA192Internal", &KEY_192)
+    // bench::decrypt_2blocks::<ARIA192Internal, 24>("ARIA192Internal", &KEY_192)
+    // bench::encrypt_4blocks::<ARIA192Internal, 24>("ARIA192Internal", &KEY_192)
+    // bench::decrypt_4blocks::<ARIA192Internal, 24>("ARIA192Internal", &KEY_192)
+    // bench::all::<ARIA256Internal, 32>("ARIA256Internal", &KEY_256)
+    // bench::key_expansion::<ARIA256Internal, 32>("ARIA256Internal", &KEY_256)
+    // bench::encrypt_block::<ARIA256Internal, 32>("ARIA256Internal", &KEY_256)
+    // bench::decrypt_block::<ARIA256Internal, 32>("ARIA256Internal", &KEY_256)
+    // bench::encrypt_2blocks::<ARIA256Internal, 32>("ARIA256Internal", &KEY_256)
+    // bench::decrypt_2blocks::<ARIA256Internal, 32>("ARIA256Internal", &KEY_256)
+    // bench::encrypt_4blocks::<ARIA256Internal, 32>("ARIA256Internal", &KEY_256)
+    // bench::decrypt_4blocks::<ARIA256Internal, 32>("ARIA256Internal", &KEY_256)
 }

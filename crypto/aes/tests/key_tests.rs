@@ -7,7 +7,9 @@ use bouncycastle_aes::{AES_GCM_128, AES128Key, AES192Key, AES256Key};
 use bouncycastle_cipher::modes::{CTR, GCM, ModeNames};
 use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
-use bouncycastle_core::hazmat::{AeadDecryptMode, AeadEncryptMode, ElectronicCodeBook, Mode};
+use bouncycastle_core::hazmat::{
+    AeadDecryptMode, AeadEncryptMode, ElectronicCodeBook, KeyExpansion, Mode,
+};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::symmetric_key::{AeadDecryptionKey, AeadEncryptionKey, FromKeyMaterial};

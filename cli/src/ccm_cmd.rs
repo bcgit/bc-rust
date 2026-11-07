@@ -1,4 +1,6 @@
-//! AES-CCM authenticated encryption and decryption (NIST SP 800-38C).
+//! CCM authenticated encryption and decryption (NIST SP 800-38C) over any 128-bit block
+//! permutation: the `aes*-ccm`, `aria*-ccm`, `camellia*-ccm` and `sm4-ccm` commands, one generic
+//! function that `main` instantiates per cipher and key length.
 //!
 //! # This command does not stream, and cannot
 //!
@@ -47,9 +49,11 @@
 
 use std::process::exit;
 
-use bouncycastle::aes::{AES128Key, AES192Key, AES256Key};
+use bouncycastle::cipher::BlockCipherKey;
 use bouncycastle::cipher::modes::CCM;
+use bouncycastle::cipher::modes::ModeNames;
 use bouncycastle::core::errors::SymmetricCipherError;
+use bouncycastle::core::hazmat::ElectronicCodeBook;
 use bouncycastle::core::key_material::KeyMaterial;
 use bouncycastle::core::symmetric_key::{
     AeadDeclaredDecryptionKey, AeadDeclaredEncryptionKey, FromKeyMaterial,
@@ -58,37 +62,11 @@ use bouncycastle::core::symmetric_key::{
 use crate::helpers;
 use crate::helpers::block_mode_helpers::{CipherDirection, load_key};
 
-/// The CCM key type for one AES key length, at every nonce and tag length `run` can dispatch to.
-///
-/// The one-shots this command uses are on the key's role traits, and the key type carries the
-/// nonce and tag lengths as const parameters, so a generic `run` over the key length needs a way
-/// to name the key type for an `(N, T)` it chooses at run time: this generic associated type.
-pub(crate) trait CcmKeys<const KEY_LEN: usize> {
-    /// The key type at nonce length `N` and tag length `T`.
-    type Key<const N: usize, const T: usize>: FromKeyMaterial<KEY_LEN>
-        + AeadDeclaredEncryptionKey<KEY_LEN, N, T, T>
-        + AeadDeclaredDecryptionKey<KEY_LEN, N, T, T>;
-}
-
-struct Aes128;
-struct Aes192;
-struct Aes256;
-
-impl CcmKeys<16> for Aes128 {
-    type Key<const N: usize, const T: usize> = AES128Key<CCM<N, T>>;
-}
-
-impl CcmKeys<24> for Aes192 {
-    type Key<const N: usize, const T: usize> = AES192Key<CCM<N, T>>;
-}
-
-impl CcmKeys<32> for Aes256 {
-    type Key<const N: usize, const T: usize> = AES256Key<CCM<N, T>>;
-}
-
-/// AES-128 CCM. See the module docs and the subcommand help.
+/// CCM under a `KEY_LEN`-byte key for the permutation `P`, at the nonce and tag lengths the
+/// flags select; `alg` names the cipher and key length in messages. See the module docs and the
+/// subcommand help.
 #[allow(clippy::too_many_arguments)] // one flag per input, each inline or from a file
-pub(crate) fn aes128_ccm_cmd(
+pub(crate) fn ccm_cmd<P, const KEY_LEN: usize>(
     action: &CipherDirection,
     key: &Option<String>,
     key_file: &Option<String>,
@@ -98,66 +76,20 @@ pub(crate) fn aes128_ccm_cmd(
     aad_file: &Option<String>,
     tag_len: usize,
     output_hex: bool,
-) {
-    run::<Aes128, 16>(
+    alg: &str,
+) where
+    P: ElectronicCodeBook<KEY_LEN, 16> + ModeNames + Clone,
+{
+    run::<P, KEY_LEN>(
         action,
-        &load_key::<16>(key, key_file, "AES-128"),
+        &load_key::<KEY_LEN>(key, key_file, alg),
         nonce,
         nonce_file,
         aad,
         aad_file,
         tag_len,
         output_hex,
-    );
-}
-
-/// AES-192 CCM. See [`aes128_ccm_cmd`].
-#[allow(clippy::too_many_arguments)] // one flag per input, each inline or from a file
-pub(crate) fn aes192_ccm_cmd(
-    action: &CipherDirection,
-    key: &Option<String>,
-    key_file: &Option<String>,
-    nonce: &Option<String>,
-    nonce_file: &Option<String>,
-    aad: &Option<String>,
-    aad_file: &Option<String>,
-    tag_len: usize,
-    output_hex: bool,
-) {
-    run::<Aes192, 24>(
-        action,
-        &load_key::<24>(key, key_file, "AES-192"),
-        nonce,
-        nonce_file,
-        aad,
-        aad_file,
-        tag_len,
-        output_hex,
-    );
-}
-
-/// AES-256 CCM. See [`aes128_ccm_cmd`].
-#[allow(clippy::too_many_arguments)] // one flag per input, each inline or from a file
-pub(crate) fn aes256_ccm_cmd(
-    action: &CipherDirection,
-    key: &Option<String>,
-    key_file: &Option<String>,
-    nonce: &Option<String>,
-    nonce_file: &Option<String>,
-    aad: &Option<String>,
-    aad_file: &Option<String>,
-    tag_len: usize,
-    output_hex: bool,
-) {
-    run::<Aes256, 32>(
-        action,
-        &load_key::<32>(key, key_file, "AES-256"),
-        nonce,
-        nonce_file,
-        aad,
-        aad_file,
-        tag_len,
-        output_hex,
+        alg,
     );
 }
 
@@ -226,8 +158,8 @@ fn load_aad(aad: &Option<String>, aad_file: &Option<String>) -> Vec<u8> {
 /// length conditions compile-time checks rather than runtime ones -- so a command-line value has to
 /// be matched into one of the permitted instantiations. The two nested matches are the price of
 /// that, and they are exhaustive over A.1's sets: 7 nonce lengths x 7 tag lengths.
-#[allow(clippy::too_many_arguments)] // the three key lengths' inputs, already parsed
-pub(crate) fn run<F: CcmKeys<KEY_LEN>, const KEY_LEN: usize>(
+#[allow(clippy::too_many_arguments)] // the inputs, already parsed
+fn run<P, const KEY_LEN: usize>(
     action: &CipherDirection,
     key: &KeyMaterial<KEY_LEN>,
     nonce: &Option<String>,
@@ -236,7 +168,10 @@ pub(crate) fn run<F: CcmKeys<KEY_LEN>, const KEY_LEN: usize>(
     aad_file: &Option<String>,
     tag_len: usize,
     output_hex: bool,
-) {
+    alg: &str,
+) where
+    P: ElectronicCodeBook<KEY_LEN, 16> + ModeNames + Clone,
+{
     // Reject this before opening nonce/AAD files or waiting for stdin. Appendix A.1: "t is an
     // element of {4, 6, 8, 10, 12, 14, 16}".
     if !matches!(tag_len, 4 | 6 | 8 | 10 | 12 | 14 | 16) {
@@ -256,13 +191,27 @@ pub(crate) fn run<F: CcmKeys<KEY_LEN>, const KEY_LEN: usize>(
     macro_rules! with_tag_len {
         ($n:literal) => {
             match tag_len {
-                4 => go::<F, KEY_LEN, $n, 4>(key, &nonce_bytes, &aad, input, encrypt, output_hex),
-                6 => go::<F, KEY_LEN, $n, 6>(key, &nonce_bytes, &aad, input, encrypt, output_hex),
-                8 => go::<F, KEY_LEN, $n, 8>(key, &nonce_bytes, &aad, input, encrypt, output_hex),
-                10 => go::<F, KEY_LEN, $n, 10>(key, &nonce_bytes, &aad, input, encrypt, output_hex),
-                12 => go::<F, KEY_LEN, $n, 12>(key, &nonce_bytes, &aad, input, encrypt, output_hex),
-                14 => go::<F, KEY_LEN, $n, 14>(key, &nonce_bytes, &aad, input, encrypt, output_hex),
-                16 => go::<F, KEY_LEN, $n, 16>(key, &nonce_bytes, &aad, input, encrypt, output_hex),
+                4 => go::<P, KEY_LEN, $n, 4>(
+                    key, &nonce_bytes, &aad, input, encrypt, output_hex, alg,
+                ),
+                6 => go::<P, KEY_LEN, $n, 6>(
+                    key, &nonce_bytes, &aad, input, encrypt, output_hex, alg,
+                ),
+                8 => go::<P, KEY_LEN, $n, 8>(
+                    key, &nonce_bytes, &aad, input, encrypt, output_hex, alg,
+                ),
+                10 => go::<P, KEY_LEN, $n, 10>(
+                    key, &nonce_bytes, &aad, input, encrypt, output_hex, alg,
+                ),
+                12 => go::<P, KEY_LEN, $n, 12>(
+                    key, &nonce_bytes, &aad, input, encrypt, output_hex, alg,
+                ),
+                14 => go::<P, KEY_LEN, $n, 14>(
+                    key, &nonce_bytes, &aad, input, encrypt, output_hex, alg,
+                ),
+                16 => go::<P, KEY_LEN, $n, 16>(
+                    key, &nonce_bytes, &aad, input, encrypt, output_hex, alg,
+                ),
                 _ => unreachable!("tag length was validated before stdin was read"),
             }
         };
@@ -309,24 +258,28 @@ fn payload_past_the_q_limit<const NONCE_LEN: usize>(msg: &str, payload_len: usiz
 /// buffer the size of `input` to allocate or copy into, and on the decrypt side nothing is written
 /// to stdout until the tag has verified: the one-shot zeroizes the buffer on a failed check, so
 /// Sec 6.2's "the payload P and the MAC T shall not be revealed" holds end to end.
-fn go<F: CcmKeys<KEY_LEN>, const KEY_LEN: usize, const NONCE_LEN: usize, const TAG_LEN: usize>(
+fn go<P, const KEY_LEN: usize, const NONCE_LEN: usize, const TAG_LEN: usize>(
     key: &KeyMaterial<KEY_LEN>,
     nonce_bytes: &[u8],
     aad: &[u8],
     mut input: Vec<u8>,
     encrypt: bool,
     output_hex: bool,
-) {
+    alg: &str,
+) where
+    P: ElectronicCodeBook<KEY_LEN, 16> + ModeNames + Clone,
+{
     // `run` dispatched on this exact length, so the conversion cannot fail.
     let Ok(nonce) = <[u8; NONCE_LEN]>::try_from(nonce_bytes) else {
         eprintln!("Error: internal nonce length mismatch.");
         exit(-1)
     };
     // `load_key` has already checked the length and type, so this is the schedule expansion.
-    let key = F::Key::<NONCE_LEN, TAG_LEN>::from_key_material(key).unwrap_or_else(|e| {
-        eprintln!("Error: AES-CCM key is not usable: {e:?}");
-        exit(-1)
-    });
+    let key =
+        BlockCipherKey::<P, CCM<NONCE_LEN, TAG_LEN>>::from_key_material(key).unwrap_or_else(|e| {
+            eprintln!("Error: {alg}-CCM key is not usable: {e:?}");
+            exit(-1)
+        });
 
     if encrypt {
         match key.encrypt_detached_in_place_nonce(&nonce, aad, &mut input) {
@@ -341,7 +294,7 @@ fn go<F: CcmKeys<KEY_LEN>, const KEY_LEN: usize, const NONCE_LEN: usize, const T
                 payload_past_the_q_limit::<NONCE_LEN>(msg, input.len())
             }
             Err(e) => {
-                eprintln!("Error: AES-CCM encryption failed: {e:?}");
+                eprintln!("Error: {alg}-CCM encryption failed: {e:?}");
                 exit(-1)
             }
         }
@@ -364,14 +317,14 @@ fn go<F: CcmKeys<KEY_LEN>, const KEY_LEN: usize, const NONCE_LEN: usize, const T
                 }
             }
             Err(SymmetricCipherError::AEADTagCheckFailed) => {
-                eprintln!("Error: AES-CCM authentication failed; the input is not authentic.");
+                eprintln!("Error: {alg}-CCM authentication failed; the input is not authentic.");
                 exit(-1)
             }
             Err(SymmetricCipherError::GenericError(msg)) => {
                 payload_past_the_q_limit::<NONCE_LEN>(msg, data.len())
             }
             Err(e) => {
-                eprintln!("Error: AES-CCM decryption failed: {e:?}");
+                eprintln!("Error: {alg}-CCM decryption failed: {e:?}");
                 exit(-1)
             }
         }

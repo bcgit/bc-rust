@@ -33,7 +33,7 @@
 use bouncycastle_aes::hazmat::AES128Internal;
 use bouncycastle_aes::{AES128Key, AES192Key, AES256Key};
 use bouncycastle_cipher::modes::CFB8;
-use bouncycastle_core::hazmat::{BlockPermutation, ElectronicCodeBook};
+use bouncycastle_core::hazmat::{BlockPermutation, KeyExpansion};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::symmetric_key::{
     FromKeyMaterial, SymmetricDecryptionKey, SymmetricEncryptionKey,
@@ -229,8 +229,7 @@ fn f_3_12_cfb8_aes256_decrypt() {
 #[test]
 fn the_tabulated_blocks_are_the_shift_register() {
     let key = key_material::<16>(KEY_128);
-    let perm =
-        <AES128Internal as ElectronicCodeBook<16, BLOCK_LEN>>::new(&key).expect("a valid key");
+    let perm = <AES128Internal as KeyExpansion<16>>::new(&key).expect("a valid key");
     let plaintext = bytes(PLAINTEXT);
     let ciphertext = bytes(CIPHERTEXT_128);
 

@@ -7,7 +7,7 @@ use crate::schedule::{
 use crate::{BLOCK_LEN, LANES};
 use bouncycastle_cipher::modes::ModeNames;
 use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
-use bouncycastle_core::hazmat::{BlockPermutation, ElectronicCodeBook};
+use bouncycastle_core::hazmat::{BlockPermutation, KeyExpansion};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::Algorithm;
@@ -17,7 +17,7 @@ use bouncycastle_utils::secret::Secret;
 pub type Block = [u8; BLOCK_LEN];
 
 /// The Camellia keyed permutation, parameterised by key length, constant-time: the engine under
-/// [`CamelliaKey`](crate::CamelliaKey).
+/// [`Camellia128Key`](crate::Camellia128Key).
 ///
 /// Use the aliases [`Camellia128Internal`], [`Camellia192Internal`] and [`Camellia256Internal`]
 /// rather than naming this directly. `P` is sealed to the three parameter sets of RFC 3713, so no
@@ -224,7 +224,7 @@ impl Algorithm for Camellia256Internal {
 // cost one circuit pass per round where two single-block calls would cost two, and four blocks
 // are one full pass where two pair calls would be two.
 
-impl ElectronicCodeBook<16, BLOCK_LEN> for Camellia128Internal {
+impl KeyExpansion<16> for Camellia128Internal {
     fn new(key: &KeyMaterial<16>) -> Result<Self, SymmetricCipherError> {
         Camellia128Internal::new(key)
     }
@@ -251,7 +251,7 @@ impl BlockPermutation<BLOCK_LEN> for Camellia128Internal {
     }
 }
 
-impl ElectronicCodeBook<24, BLOCK_LEN> for Camellia192Internal {
+impl KeyExpansion<24> for Camellia192Internal {
     fn new(key: &KeyMaterial<24>) -> Result<Self, SymmetricCipherError> {
         Camellia192Internal::new(key)
     }
@@ -278,7 +278,7 @@ impl BlockPermutation<BLOCK_LEN> for Camellia192Internal {
     }
 }
 
-impl ElectronicCodeBook<32, BLOCK_LEN> for Camellia256Internal {
+impl KeyExpansion<32> for Camellia256Internal {
     fn new(key: &KeyMaterial<32>) -> Result<Self, SymmetricCipherError> {
         Camellia256Internal::new(key)
     }

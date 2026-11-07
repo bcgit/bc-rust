@@ -91,11 +91,11 @@
 //!
 //! ## The raw permutation
 //!
-//! The engine transforms one block, and `ElectronicCodeBook::new` on it is the one-shot:
+//! The engine transforms one block, and `KeyExpansion::new` on it is the one-shot:
 //!
 //! ```
 //! use bouncycastle_aria::hazmat::ARIA128Internal;
-//! use bouncycastle_core::hazmat::{BlockPermutation, ElectronicCodeBook};
+//! use bouncycastle_core::hazmat::{BlockPermutation, ElectronicCodeBook, KeyExpansion};
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 //!
 //! // RFC 5794 Appendix A.1, "128-Bit Key".
@@ -133,7 +133,7 @@
 //! ```
 //! use bouncycastle_aria::hazmat::ARIA256Internal;
 //! use bouncycastle_aria::LANES;
-//! use bouncycastle_core::hazmat::{BlockPermutation, ElectronicCodeBook};
+//! use bouncycastle_core::hazmat::{BlockPermutation, ElectronicCodeBook, KeyExpansion};
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 //!
 //! let key = KeyMaterial::<32>::from_bytes_as_type(&[0x42; 32], KeyType::SymmetricCipherKey)
@@ -350,7 +350,7 @@ pub use cmac::{ARIA_CMAC_128, ARIA_CMAC_192, ARIA_CMAC_256};
 pub use ctr::{ARIA_CTR_128, ARIA_CTR_192, ARIA_CTR_256, CTR_NONCE_LEN};
 pub use gcm::{ARIA_GCM_128, ARIA_GCM_192, ARIA_GCM_256};
 pub use gmac::{ARIA_GMAC_128, ARIA_GMAC_192, ARIA_GMAC_256};
-pub use key::{ARIA128Key, ARIA192Key, ARIA256Key, ARIAKey};
+pub use key::{ARIA128Key, ARIA192Key, ARIA256Key};
 pub use kw::{ARIA_KW_128, ARIA_KW_192, ARIA_KW_256, ARIA_KWP_128, ARIA_KWP_192, ARIA_KWP_256};
 pub use schedule::{ARIA128Params, ARIA192Params, ARIA256Params, ARIAParams};
 
