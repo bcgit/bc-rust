@@ -9,6 +9,7 @@ mod chacha20_cmd;
 mod chacha20_poly1305_cmd;
 mod ctr_cmd;
 mod ecb_cmd;
+mod eccdh_cmd;
 mod ecdsa_cmd;
 mod encoders_cmd;
 mod gcm_cmd;
@@ -24,6 +25,7 @@ mod sha3_cmd;
 mod sm2_cmd;
 mod sm3_cmd;
 
+use crate::eccdh_cmd::ECCDHAction;
 use crate::ecdsa_cmd::ECDSAAction;
 use crate::hkdf_cmd::HKDFVariant;
 use crate::mac_cmd::HMACVariant;
@@ -1209,6 +1211,127 @@ enum Subcommands {
         /// and the message rather than drawn from the RNG, so signing is repeatable. Verification
         /// is the same either way.
         deterministic: bool,
+    },
+
+    /// ECC CDH key agreement over NIST P-256 (SP 800-56A Rev. 3 Section 5.7.1.2). `agree` writes
+    /// the raw shared secret Z, which must be passed through a KDF (for example `hkdf-sha256
+    /// --ikm`) before use as a key; keys are for key agreement only, never also for signing.
+    ECCDH_P256 {
+        action: ECCDHAction,
+
+        #[arg(long)]
+        /// The private key file (raw bytes; hex with --hex-input); stdin if absent
+        skfile: Option<String>,
+
+        #[arg(long)]
+        /// The public key file (raw bytes; hex with --hex-input): the own key for check-consistency, the peer's for agree
+        pkfile: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// ECC CDH key agreement over NIST P-384 (SP 800-56A Rev. 3 Section 5.7.1.2). See eccdh-p256.
+    ECCDH_P384 {
+        action: ECCDHAction,
+
+        #[arg(long)]
+        /// The private key file (raw bytes; hex with --hex-input); stdin if absent
+        skfile: Option<String>,
+
+        #[arg(long)]
+        /// The public key file (raw bytes; hex with --hex-input): the own key for check-consistency, the peer's for agree
+        pkfile: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// ECC CDH key agreement over NIST P-521 (SP 800-56A Rev. 3 Section 5.7.1.2). See eccdh-p256.
+    ECCDH_P521 {
+        action: ECCDHAction,
+
+        #[arg(long)]
+        /// The private key file (raw bytes; hex with --hex-input); stdin if absent
+        skfile: Option<String>,
+
+        #[arg(long)]
+        /// The public key file (raw bytes; hex with --hex-input): the own key for check-consistency, the peer's for agree
+        pkfile: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// ECC CDH key agreement over secp256k1 (SEC 2) (SP 800-56A Rev. 3 Section 5.7.1.2). See eccdh-p256.
+    ECCDH_SECP256K1 {
+        action: ECCDHAction,
+
+        #[arg(long)]
+        /// The private key file (raw bytes; hex with --hex-input); stdin if absent
+        skfile: Option<String>,
+
+        #[arg(long)]
+        /// The public key file (raw bytes; hex with --hex-input): the own key for check-consistency, the peer's for agree
+        pkfile: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// ECC CDH key agreement over brainpoolP256r1 (RFC 5639) (SP 800-56A Rev. 3 Section 5.7.1.2). See eccdh-p256.
+    ECCDH_BP256R1 {
+        action: ECCDHAction,
+
+        #[arg(long)]
+        /// The private key file (raw bytes; hex with --hex-input); stdin if absent
+        skfile: Option<String>,
+
+        #[arg(long)]
+        /// The public key file (raw bytes; hex with --hex-input): the own key for check-consistency, the peer's for agree
+        pkfile: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// ECC CDH key agreement over brainpoolP384r1 (RFC 5639) (SP 800-56A Rev. 3 Section 5.7.1.2). See eccdh-p256.
+    ECCDH_BP384R1 {
+        action: ECCDHAction,
+
+        #[arg(long)]
+        /// The private key file (raw bytes; hex with --hex-input); stdin if absent
+        skfile: Option<String>,
+
+        #[arg(long)]
+        /// The public key file (raw bytes; hex with --hex-input): the own key for check-consistency, the peer's for agree
+        pkfile: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// ECC CDH key agreement over brainpoolP512r1 (RFC 5639) (SP 800-56A Rev. 3 Section 5.7.1.2). See eccdh-p256.
+    ECCDH_BP512R1 {
+        action: ECCDHAction,
+
+        #[arg(long)]
+        /// The private key file (raw bytes; hex with --hex-input); stdin if absent
+        skfile: Option<String>,
+
+        #[arg(long)]
+        /// The public key file (raw bytes; hex with --hex-input): the own key for check-consistency, the peer's for agree
+        pkfile: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
     },
 
     AES256_ECB {
@@ -5405,6 +5528,27 @@ fn run() {
         }
         Some(Subcommands::ECDSA_BP512R1 { action, skfile, pkfile, sigfile, x, deterministic }) => {
             ecdsa_cmd::ecdsa_bp512r1_cmd(action, skfile, pkfile, sigfile, *x, *deterministic);
+        }
+        Some(Subcommands::ECCDH_P256 { action, skfile, pkfile, x }) => {
+            eccdh_cmd::eccdh_p256_cmd(action, skfile, pkfile, *x);
+        }
+        Some(Subcommands::ECCDH_P384 { action, skfile, pkfile, x }) => {
+            eccdh_cmd::eccdh_p384_cmd(action, skfile, pkfile, *x);
+        }
+        Some(Subcommands::ECCDH_P521 { action, skfile, pkfile, x }) => {
+            eccdh_cmd::eccdh_p521_cmd(action, skfile, pkfile, *x);
+        }
+        Some(Subcommands::ECCDH_SECP256K1 { action, skfile, pkfile, x }) => {
+            eccdh_cmd::eccdh_secp256k1_cmd(action, skfile, pkfile, *x);
+        }
+        Some(Subcommands::ECCDH_BP256R1 { action, skfile, pkfile, x }) => {
+            eccdh_cmd::eccdh_bp256r1_cmd(action, skfile, pkfile, *x);
+        }
+        Some(Subcommands::ECCDH_BP384R1 { action, skfile, pkfile, x }) => {
+            eccdh_cmd::eccdh_bp384r1_cmd(action, skfile, pkfile, *x);
+        }
+        Some(Subcommands::ECCDH_BP512R1 { action, skfile, pkfile, x }) => {
+            eccdh_cmd::eccdh_bp512r1_cmd(action, skfile, pkfile, *x);
         }
         Some(Subcommands::CHACHA20 { direction, key, key_file, iv, iv_file, x }) => {
             chacha20_cmd::chacha20_cmd(direction, key, key_file, iv, iv_file, *x);
