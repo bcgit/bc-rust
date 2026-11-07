@@ -14,7 +14,7 @@
 //!
 //! ```text
 //! let agreement = sk_a.create_agreement(())?;      // AgreementKey<(), _>, ECC CDH
-//! let z = agreement.agree(&pk_b)?;                 // the same Z as sk_b.agree((), &pk_a)?
+//! let z = agreement.agree(&pk_b)?;                 // the same Z as sk_b.agree(&pk_a, ())?
 //! ```
 //!
 //! `Z` comes back as [`KeyMaterial`] typed [`KeyType::SharedSecret`](crate::key_material::KeyType::SharedSecret)
@@ -64,8 +64,8 @@ pub trait AgreementKey<Params, const SS_LEN: usize> {
     /// Those of [`create_agreement`](Self::create_agreement) and of [`KeyAgreement::agree`].
     fn agree(
         &self,
-        params: Params,
         peer_pk: &Self::PublicKey,
+        params: Params,
     ) -> Result<KeyMaterial<SS_LEN>, KeyAgreementError> {
         self.create_agreement(params)?.agree(peer_pk)
     }

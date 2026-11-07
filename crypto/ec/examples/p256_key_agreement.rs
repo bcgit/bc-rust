@@ -297,7 +297,7 @@ fn main() {
     assert_eq!(derive_pk(&r), gr);
 
     // The agreement, one-shot and through a worker, matches the vector from both sides.
-    let z_i = i.agree((), &gr).unwrap();
+    let z_i = i.agree(&gr, ()).unwrap();
     let z_r = r.create_agreement(()).unwrap().agree(&gi).unwrap();
     assert_eq!(z_i.ref_to_bytes(), girx.as_slice());
     assert!(z_i.equals(&z_r));
@@ -309,7 +309,7 @@ fn main() {
     let (pk_a, sk_a) = keygen(&mut rng).unwrap();
     let (pk_b, sk_b) = keygen(&mut rng).unwrap();
     let agreement_a = sk_a.create_agreement(()).unwrap();
-    assert!(agreement_a.agree(&pk_b).unwrap().equals(&sk_b.agree((), &pk_a).unwrap()));
+    assert!(agreement_a.agree(&pk_b).unwrap().equals(&sk_b.agree(&pk_a, ()).unwrap()));
 
     // The peer key is validated when decoded: a point off the curve never reaches `agree`.
     let mut off_curve = pk_b.encode();
@@ -323,13 +323,13 @@ fn main() {
     // The same keys under HKDF-SHA256: the parameter type selects the algorithm.
     let salt = KeyMaterial::<32>::from_rng(&mut rng).unwrap();
     let params = HkdfParams { salt: &salt, info: b"example protocol v1" };
-    let key_a = sk_a.agree(params, &pk_b).unwrap();
-    let key_b = sk_b.agree(params, &pk_a).unwrap();
+    let key_a = sk_a.agree(&pk_b, params).unwrap();
+    let key_b = sk_b.agree(&pk_a, params).unwrap();
     assert!(key_a.equals(&key_b));
-    assert!(!key_a.equals(&sk_a.agree((), &pk_b).unwrap()), "derived key is not the raw Z");
+    assert!(!key_a.equals(&sk_a.agree(&pk_b, ()).unwrap()), "derived key is not the raw Z");
     let other = HkdfParams { salt: &salt, info: b"example protocol v2" };
     assert!(
-        !sk_b.agree(other, &pk_a).unwrap().equals(&key_a),
+        !sk_b.agree(&pk_a, other).unwrap().equals(&key_a),
         "a different context, a different key"
     );
     let agreement = sk_a.create_agreement(params).unwrap(); // a static key's worker, params fixed once

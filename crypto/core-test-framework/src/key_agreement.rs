@@ -35,8 +35,8 @@ impl TestFrameworkKeyAgreement {
         let (pk_b, sk_b) = keygen().unwrap();
 
         // one-shots agree from both sides
-        let z_ab = sk_a.agree(params, &pk_b).unwrap();
-        let z_ba = sk_b.agree(params, &pk_a).unwrap();
+        let z_ab = sk_a.agree(&pk_b, params).unwrap();
+        let z_ba = sk_b.agree(&pk_a, params).unwrap();
         assert!(z_ab.equals(&z_ba), "both parties must compute the same shared secret");
 
         // the shared secret is typed for a KDF, at the algorithm's strength
@@ -56,7 +56,7 @@ impl TestFrameworkKeyAgreement {
         let (pk_c, sk_c) = keygen().unwrap();
         let z_ac = agreement.agree(&pk_c).unwrap();
         assert!(!z_ac.equals(&z_ab), "a different peer must give a different secret");
-        assert!(sk_c.agree(params, &pk_a).unwrap().equals(&z_ac));
+        assert!(sk_c.agree(&pk_a, params).unwrap().equals(&z_ac));
 
         // the worker is usable as a trait object
         let dyn_agreement: &dyn KeyAgreement<PK, SS_LEN> = &agreement;
@@ -294,9 +294,9 @@ mod tests {
     fn different_params_give_different_secrets() {
         let (pk_a, sk_a) = keygen().unwrap();
         let (pk_b, sk_b) = keygen().unwrap();
-        let z1 = sk_a.agree(&MockContext { label: 1 }, &pk_b).unwrap();
-        assert!(sk_b.agree(&MockContext { label: 1 }, &pk_a).unwrap().equals(&z1));
-        assert!(!sk_b.agree(&MockContext { label: 2 }, &pk_a).unwrap().equals(&z1));
+        let z1 = sk_a.agree(&pk_b, &MockContext { label: 1 }).unwrap();
+        assert!(sk_b.agree(&pk_a, &MockContext { label: 1 }).unwrap().equals(&z1));
+        assert!(!sk_b.agree(&pk_a, &MockContext { label: 2 }).unwrap().equals(&z1));
     }
 
     /// The identity element has no secret: the mock's analogue of SP 800-56Ar3 Section 5.7.1.2
@@ -304,7 +304,7 @@ mod tests {
     #[test]
     fn identity_peer_fails() {
         let (_pk, sk) = keygen().unwrap();
-        match sk.agree(&MockContext { label: 1 }, &MockPublicKey(1)) {
+        match sk.agree(&MockPublicKey(1), &MockContext { label: 1 }) {
             Err(KeyAgreementError::AgreementFailed) => {}
             other => panic!("expected AgreementFailed, got {other:?}"),
         }
