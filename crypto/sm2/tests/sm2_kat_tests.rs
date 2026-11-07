@@ -1,0 +1,147 @@
+//! Known-answer tests for [`SM2::verify`] against `draft-shen-sm2-ecdsa-02` Appendix D's actual
+//! "recommended parameters" curve (the curve `bouncycastle-ec`'s `sm2` module implements) -- unlike
+//! this crate's [`crate::za`]-validation notes, which cross-check against the draft's own Appendix
+//! A.2 worked example (a *different*, illustrative curve), these vectors were independently
+//! generated in Python from scratch, against the real production curve, using: a from-scratch
+//! affine-coordinate implementation of the group law (not ported from any Rust code here), Python's
+//! `hashlib.new("sm3", ...)` (OpenSSL-backed) for the hash, and this crate's already-verified `ZA`
+//! and signing-equation logic (steps A1-A7/B1-B7, matched against the draft's Appendix A.2 example
+//! before any Rust was written). `d`, `k` below are arbitrary fixed test-only integers, not real
+//! keys.
+//!
+//! These tests exercise [`SM2::verify`] (not `sign`): this crate's `k` is drawn through
+//! [`bouncycastle_ec`]'s wide-DRBG-output reduction ([`crate::extra_bits`]), whose output for a
+//! given raw DRBG string does not equal the raw `k` these Python vectors used directly, so signing
+//! with a matching `k` isn't reproducible through the public API. Verification has no such
+//! constraint: it only needs a public key and a signature, both computed once in Python and fixed
+//! here.
+//!
+//! `bc_java_sm2p256v1_vector_verifies` below is the exception, and the only vector here whose
+//! expected values did not originate with this workspace at all: it is BouncyCastle Java's own
+//! `SM2SignerTest.doSignerTestFpStandardSM3` case (`core/src/test/java/org/bouncycastle/crypto/
+//! test/SM2SignerTest.java`), on the same `sm2p256v1` curve with SM3. A separate implementation
+//! produced it, so it cross-checks this crate's domain constants, `ZA`, `e = SM3(ZA || M)` and the
+//! GB/T 32918.2-2016 §7.1 verification equation against something external -- which the
+//! Python-generated vectors
+//! above, sharing this crate's own `ZA` and signing logic, cannot do. It was additionally
+//! reproduced from scratch (in Python, not checked in: affine group law, `hashlib.new("sm3")`,
+//! and the draft's published domain parameters) before being written here, so it rests on two
+//! independent derivations rather than on trusting either one.
+
+use bouncycastle_core::signature_key::VerifyingKey;
+use bouncycastle_core::traits::{SignaturePrivateKey, SignaturePublicKey};
+use bouncycastle_sm2::keys::{SM2PrivateKey, SM2PublicKey};
+
+fn pubkey_from_hex(x_hex: &str, y_hex: &str) -> SM2PublicKey {
+    let mut bytes = [0u8; 65];
+    bytes[0] = 0x04;
+    bytes[1..33].copy_from_slice(&bouncycastle_hex::decode(x_hex).unwrap());
+    bytes[33..65].copy_from_slice(&bouncycastle_hex::decode(y_hex).unwrap());
+    SM2PublicKey::from_bytes(&bytes).unwrap()
+}
+
+fn sig_from_hex(r_hex: &str, s_hex: &str) -> [u8; 64] {
+    let mut sig = [0u8; 64];
+    sig[..32].copy_from_slice(&bouncycastle_hex::decode(r_hex).unwrap());
+    sig[32..].copy_from_slice(&bouncycastle_hex::decode(s_hex).unwrap());
+    sig
+}
+
+struct Vector {
+    qx: &'static str,
+    qy: &'static str,
+    id: &'static [u8],
+    msg_hex: &'static str,
+    r: &'static str,
+    s: &'static str,
+}
+
+const V1: Vector = Vector {
+    qx: "17b937e7b5d2d00ceaec4ff25c6b74eaa57c8b67518fb630ec28ac04faf97f24",
+    qy: "71fa5c9eb79214b79568b2597a3c87fe8d3c0fb9a96b3cc36594bff402218fb1",
+    id: b"ALICE123@YAHOO.COM",
+    msg_hex: "6d65737361676520646967657374",
+    r: "250273e780744ebc1578119e0d1355e16ed1a75233ccae4c897fdab262908b05",
+    s: "1203d8c1b8341f5a668ff87979ba89cae12300a170849a2d47cf9d57a9d19362",
+};
+
+const V2_EMPTY_ID_AND_MSG: Vector = Vector {
+    qx: "32c4ae2c1f1981195f9904466a39c9948fe30bbff2660be1715a4589334c74c7",
+    qy: "bc3736a2f4f6779c59bdcee36b692153d0a9877cc62a474002df32e52139f0a0",
+    id: b"",
+    msg_hex: "",
+    r: "12c8bbc33bb8ebed2883e559dd4a26a4720659b025dc8c1414a3d6c00305b9e7",
+    s: "769ba21de2238a096bbe0d53115aecad7ffec2dd7df4bc8b9f8c0ea49b67c39f",
+};
+
+const V3_LONGER_MESSAGE: Vector = Vector {
+    qx: "6d06baebf91d46e720c2a37f59ae6a070efdc56aa79be2c992e9bed2af4706bf",
+    qy: "8a8c2b9d86f05a6fb94ba694cf0ea5bcaf48020fcd22cdef90c118b522b3a9d1",
+    id: b"user@example.com",
+    msg_hex: "54686520717569636b2062726f776e20666f78206a756d7073206f76657220746865206c617a7920646f6754686520717569636b2062726f776e20666f78206a756d7073206f76657220746865206c617a7920646f6754686520717569636b2062726f776e20666f78206a756d7073206f76657220746865206c617a7920646f67",
+    r: "f8824e311760a45e6ea155514ec7a09260058657911c4ea8d86febfe002f5d9c",
+    s: "9016d56b07b2acb2677869e049a4d99cc33e0352d9cbf8f6dd86bead038c29fa",
+};
+
+const VECTORS: [Vector; 3] = [V1, V2_EMPTY_ID_AND_MSG, V3_LONGER_MESSAGE];
+
+#[test]
+fn known_answer_vectors_verify() {
+    for v in VECTORS {
+        let pk = pubkey_from_hex(v.qx, v.qy);
+        let msg = bouncycastle_hex::decode(v.msg_hex).unwrap();
+        let sig = sig_from_hex(v.r, v.s);
+        pk.verify(&msg, Some(v.id), &sig)
+            .unwrap_or_else(|e| panic!("KAT vector failed to verify: {e:?}"));
+    }
+}
+
+#[test]
+fn known_answer_vectors_reject_tampered_r() {
+    for v in VECTORS {
+        let pk = pubkey_from_hex(v.qx, v.qy);
+        let msg = bouncycastle_hex::decode(v.msg_hex).unwrap();
+        let mut sig = sig_from_hex(v.r, v.s);
+        sig[0] ^= 0xFF;
+        assert!(pk.verify(&msg, Some(v.id), &sig).is_err());
+    }
+}
+
+#[test]
+fn known_answer_vectors_reject_wrong_id() {
+    for v in VECTORS {
+        let pk = pubkey_from_hex(v.qx, v.qy);
+        let msg = bouncycastle_hex::decode(v.msg_hex).unwrap();
+        let sig = sig_from_hex(v.r, v.s);
+        assert!(pk.verify(&msg, Some(b"wrong identity"), &sig).is_err());
+    }
+}
+
+/// BouncyCastle Java's `SM2SignerTest.doSignerTestFpStandardSM3` vector -- see this file's module
+/// docs for its provenance and why it is the one externally-sourced case here.
+///
+/// Unlike the vectors above it comes with its private key, so this also pins
+/// [`SM2PrivateKey::derive_pk`] (`PA = [dA]G`) against the same external source, not just the
+/// end-to-end verify result; its `ZA` is a known answer in `za.rs`'s unit tests.
+#[test]
+fn bc_java_sm2p256v1_vector_verifies() {
+    const D_HEX: &str = "110e7973206f68c19ee5f7328c036f26911c8c73b4e4f36ae3291097f8984ffc";
+    const PA_X: &str = "d03d30dd01ca3422aeaccf9b88043b554659d3092b0a9e8cce3e8c4530a98cb7";
+    const PA_Y: &str = "9d705e6213eee145b748e36e274e5f101dc10d7bbc9dab9a04022e73b76e02cd";
+    const ID: &[u8] = b"sm2test@example.com";
+    const MSG: &[u8] = b"hi chappy";
+    const R: &str = "05890b9077b92e47b17a1ff42a814280e556afd92b4a98b9670bf8b1a274c2fa";
+    const S: &str = "e3abbb8db2b6ecd9b24eccea7f679fb9a4b1db52f4aa985e443ad73237fa1993";
+
+    let sk = SM2PrivateKey::from_bytes(&bouncycastle_hex::decode(D_HEX).unwrap())
+        .expect("bc-java's dA is in [1, n-1]");
+    let pk = sk.derive_pk();
+    assert_eq!(pk, pubkey_from_hex(PA_X, PA_Y), "PA = [dA]G disagrees with the external vector");
+
+    let sig = sig_from_hex(R, S);
+    pk.verify(MSG, Some(ID), &sig).expect("bc-java's signature must verify");
+
+    // and it must be specific to that identity and message
+    assert!(pk.verify(MSG, Some(b"someone-else"), &sig).is_err());
+    assert!(pk.verify(b"hi chappy!", Some(ID), &sig).is_err());
+}
