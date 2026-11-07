@@ -72,65 +72,20 @@
 //! byte-lane, block B in the odd), which ties every mask to one width. Keeping each block in its
 //! own lane instead is what lets one set of `u16` patterns serve `u16`, `u32` and `u64` planes.
 
-use bouncycastle_utils::ct;
-use core::ops::{BitAnd, BitOr, BitXor, BitXorAssign, Not, Shl, Shr};
-
-/// Targets whose integer multiply is fixed-latency, so the round-key widening in
-/// [`PlaneWord::splat`] may be left for LLVM to fold into one. A `const` rather than a `cfg` on
-/// the two bodies, so both compile on every target.
-const MULTIPLY_IS_FIXED_LATENCY: bool = cfg!(any(target_arch = "x86_64", target_arch = "aarch64"));
+pub(crate) use bouncycastle_utils::bitslice::{PlaneWord, Planes, ortho};
 
 /// One 16-byte AES block, in the order of FIPS 197 Eq (3.6): `block[r + 4c] == s[r,c]`.
 pub type Block = [u8; crate::AES_BLOCK_LEN];
 
-/// The eight bit-planes holding one, two or four blocks, by the width of `T`. See the module
-/// docs for the layout.
-/// T impls PlaneWord, which is defined for u16 (1 block), u32 (2 blocks), and u64 (4 blocks).
-pub(crate) type Planes<T> = [T; 8];
-
-/// A plane word: `u16`, `u32` or `u64`, holding one, two or four blocks.
-///
-/// The operator bounds are what the S-box circuit and the round functions use; the methods are
-/// the width-specific parts, which are exactly the four things that know a block is 16 bits wide.
-/// Each width is implemented longhand below rather than through a macro, so that every mask and
-/// shift is visible to `cargo mutants` and to a reviewer.
-pub(crate) trait PlaneWord:
-    Copy
-    + Eq
-    + core::fmt::Debug
-    + BitAnd<Output = Self>
-    + BitOr<Output = Self>
-    + BitXor<Output = Self>
-    + BitXorAssign
-    + Not<Output = Self>
-    + Shl<u32, Output = Self>
-    + Shr<u32, Output = Self>
-{
+/// What a plane word knows about AES blocks: how many a state of its width holds, and how to
+/// load and unload them. The arithmetic the circuits need is the shared [`PlaneWord`]; this is
+/// the part that knows a block is 16 bytes in FIPS 197's order. Each width is implemented
+/// longhand below rather than through a macro, so that every placement is visible to
+/// `cargo mutants` and to a reviewer.
+pub(crate) trait BlockPlanes: PlaneWord {
     /// The blocks a state of this width holds: `[Block; N]` with `N` the word width divided by
     /// 16, so one, two or four.
     type Blocks: AsRef<[Block]> + AsMut<[Block]> + Default;
-
-    /// Replicates a 16-bit pattern into every block lane: the mask that applies `pattern` to one
-    /// block, applied to all of them.
-    fn splat(pattern: u16) -> Self;
-
-    /// Rotates every 16-bit lane right by `n` bits, each lane independently, for `0 < n < 16`.
-    ///
-    /// A whole-word rotation would carry the bottom of one block's lane into the top of the
-    /// next block's; this keeps each block's bits inside its own lane. The bits that stay inside
-    /// their lane move down by `n` and are the low `16 - n` bits of it; the `n` bits that would
-    /// fall out of the bottom of each lane re-enter as its top `n` bits. Each mask also discards
-    /// what the shift carried in from the neighbouring lane. The two masks are complementary, so
-    /// the operands are disjoint and `|` and `^` agree here (a known surviving `cargo mutants`).
-    ///
-    /// Provided for every width; `u16`, having a single lane, overrides it with the word
-    /// rotation.
-    #[inline(always)]
-    fn rotate_lanes_right(self, n: u32) -> Self {
-        debug_assert!(0 < n && n < 16);
-        ((self >> n) & Self::splat(0xFFFF >> n))
-            | ((self << (16 - n)) & Self::splat(0xFFFF << (16 - n)))
-    }
 
     /// Loads the blocks into bit-planes, block `b` into lane `b`.
     fn pack(blocks: &Self::Blocks) -> Planes<Self>;
@@ -164,19 +119,8 @@ fn words_to_block(words: &[u16; 8], block: &mut Block) {
     }
 }
 
-impl PlaneWord for u16 {
+impl BlockPlanes for u16 {
     type Blocks = [Block; 1];
-
-    #[inline(always)]
-    fn splat(pattern: u16) -> Self {
-        pattern
-    }
-
-    #[inline(always)]
-    fn rotate_lanes_right(self, n: u32) -> Self {
-        // One lane, so this is the word rotation.
-        self.rotate_right(n)
-    }
 
     #[inline(always)]
     fn pack(blocks: &[Block; 1]) -> Planes<Self> {
@@ -192,30 +136,8 @@ impl PlaneWord for u16 {
     }
 }
 
-impl PlaneWord for u32 {
+impl BlockPlanes for u32 {
     type Blocks = [Block; 2];
-
-    /// Shift-and-or rather than the equivalent `u32::from(pattern) * 0x0001_0001`, because
-    /// integer multiplication is not constant-time on every target. LLVM knows the
-    /// zero-extended `x` has no bits above 16, so the ORs are disjoint, so it may rewrite them
-    /// into that multiply anyway: it does on aarch64 and x86-64, where `mul` / `imul` are
-    /// fixed-latency and nothing is leaked, and (checked in a `no_std` harness, 2026-11-04) on
-    /// AVR, Cortex-M0 and RISC-V 32I, where the multiply is a `muls` or a `__mulsi3` call. So
-    /// everywhere but the two fixed-latency targets `x` first goes through
-    /// [`ct::value_barrier`], which hides its known-zero bits; the ORs then stay ORs (none of
-    /// the five harness targets emits a multiply or a branch). On x86-64 and aarch64 the
-    /// barrier would cost about 60 % of the 2-block and 190 % of the 4-block throughput
-    /// (measured), for a multiply that is already constant-time, so there the fold is allowed.
-    /// The gate is by architecture alone, so 32-bit Arm, x86 and wasm32 pay the barrier too,
-    /// whether or not their multiply is fixed-latency: conservative, and cheap off the hot
-    /// 64-bit targets. `dev_scripts/check_aes_ct_asm.sh` rebuilds the harness and greps its
-    /// assembly; CI runs it on the Cortex-M0 and RISC-V 32I targets.
-    #[inline(always)]
-    fn splat(pattern: u16) -> Self {
-        let x = u32::from(pattern);
-        let x = if MULTIPLY_IS_FIXED_LATENCY { x } else { ct::value_barrier(x) };
-        x | (x << 16)
-    }
 
     #[inline(always)]
     fn pack(blocks: &[Block; 2]) -> Planes<Self> {
@@ -239,18 +161,8 @@ impl PlaneWord for u32 {
     }
 }
 
-impl PlaneWord for u64 {
+impl BlockPlanes for u64 {
     type Blocks = [Block; 4];
-
-    /// Shift-and-or equivalent of `u64::from(pattern) * 0x0001_0001_0001_0001`, with the same
-    /// barrier as the `u32` version, for the same reason (on AVR and RISC-V 32I the fold is a
-    /// `__muldi3` call).
-    #[inline(always)]
-    fn splat(pattern: u16) -> Self {
-        let x = u64::from(pattern);
-        let x = if MULTIPLY_IS_FIXED_LATENCY { x } else { ct::value_barrier(x) };
-        x | (x << 16) | (x << 32) | (x << 48)
-    }
 
     #[inline(always)]
     fn pack(blocks: &[Block; 4]) -> Planes<Self> {
@@ -279,43 +191,6 @@ impl PlaneWord for u64 {
     }
 }
 
-/// Transposes bytes into bit-planes, and back -- it is its own inverse.
-///
-/// Three stages of masked swaps exchange bit-fields of width 1, 2 and 4 between pairs of words,
-/// which together transpose the 8x8 bit matrix inside each byte-lane. The width of the words does
-/// not matter: the masks are byte patterns replicated across the word, and every byte-lane is
-/// transposed at once. See the module docs for the resulting layout.
-///
-/// Translated from BearSSL `aes_ct.c:br_aes_ct_ortho` (the `SWAP2`/`SWAP4`/`SWAP8` macros).
-pub(crate) fn ortho<T: PlaneWord>(q: &mut Planes<T>) {
-    /// One masked swap: exchanges the `cl`-selected fields of `y` into `x` and the `ch`-selected
-    /// fields of `x` into `y`, moving them by `s` bit positions.
-    ///
-    /// `cl` and `ch` are complementary, and `s` is exactly the field width, so in each returned
-    /// word the two combined operands occupy disjoint bits: `(x & cl)` and `(y & cl) << s` cannot
-    /// both be set in the same position. `|` and `^` therefore compute the same function here,
-    /// which is why `cargo mutants` reports the `| -> ^` mutants in this function as surviving --
-    /// they are equivalent programs. `test_ortho_is_an_involution` and
-    /// `test_layout_matches_the_documented_table` are what actually pin this code.
-    #[inline(always)]
-    fn swap<T: PlaneWord>(cl: T, ch: T, s: u32, x: T, y: T) -> (T, T) {
-        ((x & cl) | ((y & cl) << s), ((x & ch) >> s) | (y & ch))
-    }
-
-    // Stage 1: swap single bits between adjacent words (0x55 = even bits, 0xAA = odd bits).
-    for (a, b) in [(0, 1), (2, 3), (4, 5), (6, 7)] {
-        (q[a], q[b]) = swap(T::splat(0x5555), T::splat(0xAAAA), 1, q[a], q[b]);
-    }
-    // Stage 2: swap 2-bit fields between words two apart.
-    for (a, b) in [(0, 2), (1, 3), (4, 6), (5, 7)] {
-        (q[a], q[b]) = swap(T::splat(0x3333), T::splat(0xCCCC), 2, q[a], q[b]);
-    }
-    // Stage 3: swap nibbles between words four apart.
-    for (a, b) in [(0, 4), (1, 5), (2, 6), (3, 7)] {
-        (q[a], q[b]) = swap(T::splat(0x0F0F), T::splat(0xF0F0), 4, q[a], q[b]);
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -335,7 +210,7 @@ mod tests {
     }
 
     /// One distinct pseudo-random block per lane.
-    fn pseudo_random_blocks<T: PlaneWord>(seed: u32) -> T::Blocks {
+    fn pseudo_random_blocks<T: BlockPlanes>(seed: u32) -> T::Blocks {
         let mut blocks = T::Blocks::default();
         for (b, block) in blocks.as_mut().iter_mut().enumerate() {
             *block = pseudo_random_block(seed + 1000 * b as u32);
@@ -344,7 +219,7 @@ mod tests {
     }
 
     /// The number of blocks a state of width `T` holds.
-    fn num_blocks<T: PlaneWord>() -> usize {
+    fn num_blocks<T: BlockPlanes>() -> usize {
         T::Blocks::default().as_ref().len()
     }
 
@@ -356,7 +231,7 @@ mod tests {
         lane0 << (16 * b as u32)
     }
 
-    fn check_layout_matches_the_documented_table<T: PlaneWord>() {
+    fn check_layout_matches_the_documented_table<T: BlockPlanes>() {
         // Pins the module doc table: bit (16b + 4r + c) of plane k is bit k of s[r,c] of block b.
         // Every mask in `round` depends on it. Done one bit at a time -- a block that is zero
         // except for bit k of byte j -- so a set bit must land as exactly one bit in exactly one
@@ -388,7 +263,7 @@ mod tests {
         check_layout_matches_the_documented_table::<u64>();
     }
 
-    fn check_ortho_is_an_involution<T: PlaneWord>() {
+    fn check_ortho_is_an_involution<T: BlockPlanes>() {
         let original = T::pack(&pseudo_random_blocks::<T>(3));
         let mut q = original;
         ortho(&mut q);
@@ -404,7 +279,7 @@ mod tests {
         check_ortho_is_an_involution::<u64>();
     }
 
-    fn check_unpack_inverts_pack<T: PlaneWord>() {
+    fn check_unpack_inverts_pack<T: BlockPlanes>() {
         for seed in 0..64 {
             let blocks = pseudo_random_blocks::<T>(seed);
             let mut out = T::Blocks::default();
@@ -420,7 +295,7 @@ mod tests {
         check_unpack_inverts_pack::<u64>();
     }
 
-    fn check_the_blocks_are_independent<T: PlaneWord>() {
+    fn check_the_blocks_are_independent<T: BlockPlanes>() {
         // Each block's lane must depend on that block alone: packing all the blocks together
         // gives, lane by lane, exactly what packing each block on its own gives, and a block
         // packed on its own puts nothing outside its lane. This pins that the side-by-side

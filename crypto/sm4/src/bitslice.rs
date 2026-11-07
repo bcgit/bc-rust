@@ -28,48 +28,15 @@
 //!
 //! # Provenance
 //!
-//! The three-stage masked-swap transpose is the one `bouncycastle-aes` uses on `u32` words,
-//! narrowed to `u16`: it transposes within each byte-lane, so the number of byte-lanes per word
-//! does not enter into it. Both are translated from BearSSL `src/symcipher/aes_ct.c`
-//! (`br_aes_ct_ortho`) by Thomas Pornin, MIT licensed. It is duplicated rather than shared
-//! because it is each crate's private detail and neither should depend on the other.
+//! The transpose is [`bouncycastle_utils::bitslice::ortho`], shared with the other bit-sliced
+//! ciphers; it transposes within each byte-lane, so the number of byte-lanes per word does not
+//! enter into it, and this crate instantiates it at `u16`.
 
 /// The eight bit-planes holding the two 16-bit halves of one word from each of four blocks. See
 /// the module docs.
 pub(crate) type Planes = [u16; 8];
 
-/// Transposes bytes into bit-planes, and back -- it is its own inverse.
-///
-/// Three stages of masked swaps exchange bit-fields of width 1, 2 and 4 between pairs of words,
-/// which together transpose the 8x8 bit matrix inside each byte-lane.
-pub(crate) fn ortho(q: &mut Planes) {
-    /// One masked swap: exchanges the `cl`-selected fields of `y` into `x` and the `ch`-selected
-    /// fields of `x` into `y`, moving them by `s` bit positions.
-    ///
-    /// `cl` and `ch` are complementary, and `s` is exactly the field width, so in each returned
-    /// word the two combined operands occupy disjoint bits: `(x & cl)` and `(y & cl) << s` cannot
-    /// both be set in the same position. `|` and `^` therefore compute the same function here,
-    /// which is why `cargo mutants` reports the `| -> ^` mutants in this function as surviving --
-    /// they are equivalent programs. `test_ortho_is_an_involution` and
-    /// `test_layout_matches_the_documented_table` are what actually pin this code.
-    #[inline(always)]
-    fn swap(cl: u16, ch: u16, s: u32, x: u16, y: u16) -> (u16, u16) {
-        ((x & cl) | ((y & cl) << s), ((x & ch) >> s) | (y & ch))
-    }
-
-    // Stage 1: swap single bits between adjacent words (0x55 = even bits, 0xAA = odd bits).
-    for (a, b) in [(0, 1), (2, 3), (4, 5), (6, 7)] {
-        (q[a], q[b]) = swap(0x5555, 0xAAAA, 1, q[a], q[b]);
-    }
-    // Stage 2: swap 2-bit fields between words two apart.
-    for (a, b) in [(0, 2), (1, 3), (4, 6), (5, 7)] {
-        (q[a], q[b]) = swap(0x3333, 0xCCCC, 2, q[a], q[b]);
-    }
-    // Stage 3: swap nibbles between words four apart.
-    for (a, b) in [(0, 4), (1, 5), (2, 6), (3, 7)] {
-        (q[a], q[b]) = swap(0x0F0F, 0xF0F0, 4, q[a], q[b]);
-    }
-}
+pub(crate) use bouncycastle_utils::bitslice::ortho;
 
 #[cfg(test)]
 mod tests {
