@@ -1008,6 +1008,27 @@ mod hkdf_tests {
         assert!(hkdf.is_fully_seeded());
     }
 
+    /// A key agreement's `Z` is credited as keying material, but its strength, not its length,
+    /// bounds the output's label: a 32-byte `SharedSecret` at 128 bits gives 128-bit output from
+    /// HKDF-SHA256 and from HKDF-SHA512 alike, never the 256 bits its length would suggest.
+    #[test]
+    fn a_shared_secret_bounds_the_output_by_its_strength() {
+        let mut z =
+            KeyMaterial256::from_bytes_as_type(&DUMMY_SEED[..32], KeyType::SharedSecret).unwrap();
+        z.set_security_strength(SecurityStrength::_128bit).unwrap();
+        let salt =
+            KeyMaterial256::from_bytes_as_type(&DUMMY_SEED[32..64], KeyType::CryptographicRandom)
+                .unwrap();
+
+        let prk = HKDF_SHA256::extract(&salt, &z).unwrap();
+        assert_eq!(prk.key_type(), KeyType::CryptographicRandom);
+        assert_eq!(prk.security_strength(), SecurityStrength::_128bit);
+
+        let prk = HKDF_SHA512::extract(&salt, &z).unwrap();
+        assert_eq!(prk.key_type(), KeyType::CryptographicRandom);
+        assert_eq!(prk.security_strength(), SecurityStrength::_128bit);
+    }
+
     /// The two bookkeeping fields of a suspended state are checked on resume: a strength label
     /// above what the hash can give (half its output), or any entropy or strength on a state that
     /// was never initialized, is refused, where it used to label a PRK derived from nothing as
