@@ -216,11 +216,11 @@ impl<HASH: HMACParams> HmacKey<HASH> {
     /// the block, with both pad blocks absorbed so that the states are ready for steps (4) and (7).
     /// No key checks: the callers do those.
     fn from_key_bytes(key_bytes: &[u8]) -> Self {
-        let block_len = HASH::default().block_bitlen() / 8;
-        assert!(
-            block_len <= LARGEST_HASHER_BLOCK_LEN,
-            "Fatal error: hash block length exceeds HMAC's pad scratch"
-        );
+        // The pad scratch and the output scratch are sized for the library's hashes; a foreign
+        // `HMACParams` hash past either bound is a compile error, not a panic at the first key.
+        const { assert!(HASH::BLOCK_LEN <= LARGEST_HASHER_BLOCK_LEN) };
+        const { assert!(HASH::OUTPUT_LEN <= LARGEST_HASHER_OUTPUT_LEN) };
+        let block_len = HASH::BLOCK_LEN;
 
         // Step (1): "append zeros to the end of K to create a B byte string". The scratch is
         // already zero, so only K (or, per Section 3, H(K) when K is "longer than B bytes") is
@@ -334,10 +334,11 @@ impl<HASH: HMACParams> HmacKey<HASH> {
                 "HMAC truncation too short for FIPS 140-3 guidelines",
             ));
         }
-        let mut ihash = vec![0u8; inner.output_len()];
-        inner.do_final_out(&mut ihash); // step (4)
+        // The inner hash is keying material in flight; a stack scratch, zeroized on drop.
+        let mut ihash: Secret<[u8; LARGEST_HASHER_OUTPUT_LEN]> = Secret::new();
+        let n = inner.do_final_out(&mut ihash[..HASH::OUTPUT_LEN]); // step (4)
         let mut outer = self.outer.clone();
-        outer.do_update(&ihash); // step (6)
+        outer.do_update(&ihash[..n]); // step (6)
         Ok(outer.do_final_out(out)) // step (7)
     }
 }
