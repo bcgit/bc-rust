@@ -25,4 +25,8 @@
   configured KDF for a KEM that derives its secret), which select the algorithm at the call. The static `encaps(pk)` with its
   OS DRBG, the run-time ciphertext length check and the expanded-key statics are gone; the ML-KEM key types
   carry only their parameter set. `KeyType::SharedSecret` is added for the raw `Z` of a key agreement.
+* Two-party key agreement gets the same shape ahead of the ECC CDH crate: the `AgreementKey` role in
+  `core::agreement_key`, with `KeyAgreementAlgorithm::Params` for a KDF-bearing variant, hands out a
+  `KeyAgreement` worker whose `agree(&peer_pk)` returns `Z` as `KeyType::SharedSecret`; `KeyAgreementError` and
+  the encodable `KeyAgreementPrivateKey` / `KeyAgreementPublicKey` traits go with it.
 

@@ -652,6 +652,49 @@ pub trait KEMPublicKey<const PK_LEN: usize>:
     fn from_bytes(bytes: &[u8]) -> Result<Self, KEMError>;
 }
 
+/// A private key for a key-agreement algorithm, often denoted "sk" (for "secret key").
+pub trait KeyAgreementPrivateKey<const SK_LEN: usize>: PartialEq + Eq + Clone + Sized {
+    /// Write it out to bytes in its standard encoding.
+    fn encode(&self) -> [u8; SK_LEN];
+    /// Write it out to bytes in its standard encoding.
+    /// The entire output buffer is zeroized before the encoding is written.
+    fn encode_out(&self, out: &mut [u8; SK_LEN]) -> usize;
+    /// Read it in from bytes in its standard encoding.
+    fn from_bytes(bytes: &[u8]) -> Result<Self, KeyAgreementError>;
+}
+
+/// A public key for a key-agreement algorithm, often denoted "pk". Decoding it validates it as
+/// the algorithm requires, so a key that exists has passed the checks the agreement relies on.
+pub trait KeyAgreementPublicKey<const PK_LEN: usize>:
+    PartialEq + Eq + Clone + Debug + Display + Sized
+{
+    /// Write it out to bytes in its standard encoding.
+    fn encode(&self) -> [u8; PK_LEN];
+    /// Write it out to bytes in its standard encoding.
+    /// The entire output buffer is zeroized before the encoding is written.
+    fn encode_out(&self, out: &mut [u8; PK_LEN]) -> usize;
+    /// Read it in from bytes in its standard encoding.
+    fn from_bytes(bytes: &[u8]) -> Result<Self, KeyAgreementError>;
+}
+
+/// A two-party key agreement in progress: the worker an agreement key hands out through
+/// [`AgreementKey`](crate::agreement_key::AgreementKey). The own key and any parameters the
+/// algorithm takes were fixed when the worker was made, so the peer's public key is the only
+/// input left. `PK` is the peer key type the algorithm agrees with.
+///
+/// The shared secret `Z` is the primitive's raw output, typed [`KeyType::SharedSecret`]: secret
+/// keying material that is not uniformly distributed, to be used only as the input of a KDF
+/// (SP 800-56Ar3 Section 5.8) and never as a key itself.
+pub trait KeyAgreement<PK, const SS_LEN: usize>: AlgorithmInfo {
+    /// Computes the shared secret with `peer_pk`. The worker is reusable: a static key agrees
+    /// with many peers.
+    ///
+    /// # Errors
+    /// [`KeyAgreementError::AgreementFailed`] if the primitive produces no secret (ECC CDH:
+    /// the computed point is the point at infinity, SP 800-56Ar3 Section 5.7.1.2 step 2).
+    fn agree(&self, peer_pk: &PK) -> Result<KeyMaterial<SS_LEN>, KeyAgreementError>;
+}
+
 /// The unwrapping half of a key-wrap algorithm -- KW, KWP or TKW of NIST SP 800-38F (RFC 3394 and
 /// RFC 5649) -- as the worker a key object hands out through
 /// [`KeyUnwrappingKey`](crate::symmetric_key::KeyUnwrappingKey). Wrapping is [`KeyWrapper`]. The

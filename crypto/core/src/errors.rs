@@ -83,6 +83,29 @@ pub enum KEMError {
     RNGError(RNGError),
 }
 
+/// Errors of the key-agreement traits ([`crate::agreement_key`], [`crate::traits::KeyAgreement`]).
+#[derive(Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum KeyAgreementError {
+    ///
+    GenericError(&'static str),
+    /// The primitive produced no shared secret: for ECC CDH, SP 800-56Ar3 Section 5.7.1.2
+    /// step 2, the computed point is the point at infinity.
+    AgreementFailed,
+    ///
+    DecodingError(&'static str),
+    ///
+    EncodingError(&'static str),
+    ///
+    KeyGenError(&'static str),
+    ///
+    KeyMaterialError(KeyMaterialError),
+    ///
+    LengthError(&'static str),
+    ///
+    RNGError(RNGError),
+}
+
 ///
 #[derive(Debug, PartialEq, Eq)]
 #[non_exhaustive]
@@ -264,6 +287,18 @@ impl From<KeyMaterialError> for KEMError {
 
 impl From<RNGError> for KEMError {
     fn from(e: RNGError) -> KEMError {
+        Self::RNGError(e)
+    }
+}
+
+impl From<KeyMaterialError> for KeyAgreementError {
+    fn from(e: KeyMaterialError) -> KeyAgreementError {
+        Self::KeyMaterialError(e)
+    }
+}
+
+impl From<RNGError> for KeyAgreementError {
+    fn from(e: RNGError) -> KeyAgreementError {
         Self::RNGError(e)
     }
 }
