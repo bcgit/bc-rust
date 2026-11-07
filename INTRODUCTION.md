@@ -256,7 +256,7 @@ the `core-interface` sub-crate.
 
 Next up will be to round out the set of cryptographic primitives:
 
-* Block ciphers (AES)
+* Block ciphers (AES, ARIA, Camellia)
 * Signatures (Ed25519, Ed448, ML-DSA, SLH-DSA, ECDSA, RSA)
 * Key Establishment (X25519, X448, ML-KEM, ECDH)
 
