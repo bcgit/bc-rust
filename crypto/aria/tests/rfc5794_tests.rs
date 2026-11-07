@@ -10,7 +10,7 @@ mod common;
 
 use bouncycastle_aria::hazmat::{ARIA128Internal, ARIA192Internal, ARIA256Internal, ARIAInternal};
 use bouncycastle_aria::{ARIAParams, BLOCK_LEN, LANES};
-use bouncycastle_core::hazmat::{BlockPermutation, ElectronicCodeBook};
+use bouncycastle_core::hazmat::{BlockPermutation, ElectronicCodeBook, KeyExpansion};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use common::bytes;
 

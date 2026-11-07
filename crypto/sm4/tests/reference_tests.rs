@@ -8,7 +8,7 @@
 
 mod common;
 
-use bouncycastle_core::hazmat::{BlockPermutation, ElectronicCodeBook};
+use bouncycastle_core::hazmat::{BlockPermutation, KeyExpansion};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_sm4::hazmat::SM4Internal;
 use bouncycastle_sm4::{BLOCK_LEN, LANES};

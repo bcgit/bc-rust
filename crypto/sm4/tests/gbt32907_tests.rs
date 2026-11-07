@@ -16,7 +16,7 @@
 //! The two 1,000,000-iteration examples are ignored in unoptimised builds (see their attributes)
 //! and run under `cargo test --release`.
 
-use bouncycastle_core::hazmat::{BlockPermutation, ElectronicCodeBook};
+use bouncycastle_core::hazmat::{BlockPermutation, KeyExpansion};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_sm4::BLOCK_LEN;

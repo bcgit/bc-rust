@@ -91,11 +91,11 @@
 //!
 //! ## The raw permutation
 //!
-//! The engine transforms one block, and `ElectronicCodeBook::new` on it is the one-shot:
+//! The engine transforms one block, and `KeyExpansion::new` on it is the one-shot:
 //!
 //! ```
 //! use bouncycastle_camellia::hazmat::Camellia128Internal;
-//! use bouncycastle_core::hazmat::{BlockPermutation, ElectronicCodeBook};
+//! use bouncycastle_core::hazmat::{BlockPermutation, ElectronicCodeBook, KeyExpansion};
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 //!
 //! // RFC 3713 Appendix A, "128-bit key".
@@ -133,7 +133,7 @@
 //! ```
 //! use bouncycastle_camellia::hazmat::Camellia256Internal;
 //! use bouncycastle_camellia::LANES;
-//! use bouncycastle_core::hazmat::{BlockPermutation, ElectronicCodeBook};
+//! use bouncycastle_core::hazmat::{BlockPermutation, ElectronicCodeBook, KeyExpansion};
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 //!
 //! let key = KeyMaterial::<32>::from_bytes_as_type(&[0x42; 32], KeyType::SymmetricCipherKey)
@@ -339,7 +339,7 @@ pub use cmac::{Camellia_CMAC_128, Camellia_CMAC_192, Camellia_CMAC_256};
 pub use ctr::{CTR_NONCE_LEN, Camellia_CTR_128, Camellia_CTR_192, Camellia_CTR_256};
 pub use gcm::{Camellia_GCM_128, Camellia_GCM_192, Camellia_GCM_256};
 pub use gmac::{Camellia_GMAC_128, Camellia_GMAC_192, Camellia_GMAC_256};
-pub use key::{Camellia128Key, Camellia192Key, Camellia256Key, CamelliaKey};
+pub use key::{Camellia128Key, Camellia192Key, Camellia256Key};
 pub use kw::{Camellia_KW_128, Camellia_KW_192, Camellia_KW_256};
 pub use schedule::{Camellia128Params, Camellia192Params, Camellia256Params, CamelliaParams};
 

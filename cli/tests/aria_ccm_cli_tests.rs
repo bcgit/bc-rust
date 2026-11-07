@@ -9,10 +9,11 @@
 //! (ARIA-128) and tcId 168 (ARIA-256), both with a 12-byte nonce, a 16-byte tag, 8 bytes of AAD
 //! and a 16-byte message; the crate's `ccm_wycheproof.rs` runs them with the rest of the file.
 
-use std::io::{ErrorKind, Write};
-use std::process::{Command, Output, Stdio};
-
-const BC_RUST: &str = env!("CARGO_BIN_EXE_bc-rust");
+mod common;
+use common::{
+    Framing, KEY16, KEY24, KEY32, any_input_length, listed_in_help, round_trips, run, run_err,
+    run_ok, tohex, unhex, wrong_key_lengths,
+};
 
 /// (command, key, nonce, aad, msg, ct, tag)
 const VECTORS: [(&str, &str, &str, &str, &str, &str, &str); 2] = [
@@ -35,47 +36,6 @@ const VECTORS: [(&str, &str, &str, &str, &str, &str, &str); 2] = [
         "045d2149987ecce6ec6b089ab5c9ae84",
     ),
 ];
-
-fn run(args: &[&str], stdin_bytes: &[u8]) -> Output {
-    let mut child = Command::new(BC_RUST)
-        .args(args)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .expect("failed to spawn bc-rust");
-    match child.stdin.as_mut().expect("stdin piped").write_all(stdin_bytes) {
-        Ok(()) => {}
-        Err(e) if e.kind() == ErrorKind::BrokenPipe => {}
-        Err(e) => panic!("failed to write to stdin: {e}"),
-    }
-    child.wait_with_output().expect("failed to wait for bc-rust")
-}
-
-fn run_ok(args: &[&str], stdin_bytes: &[u8]) -> Vec<u8> {
-    let out = run(args, stdin_bytes);
-    assert!(
-        out.status.success(),
-        "expected success from {args:?}, got {:?}\nstderr: {}",
-        out.status,
-        String::from_utf8_lossy(&out.stderr)
-    );
-    out.stdout
-}
-
-fn run_err(args: &[&str], stdin_bytes: &[u8]) -> String {
-    let out = run(args, stdin_bytes);
-    assert!(!out.status.success(), "expected failure from {args:?}, but it succeeded");
-    String::from_utf8_lossy(&out.stderr).into_owned()
-}
-
-fn unhex(s: &str) -> Vec<u8> {
-    (0..s.len()).step_by(2).map(|i| u8::from_str_radix(&s[i..i + 2], 16).expect("hex")).collect()
-}
-
-fn tohex(bytes: &[u8]) -> String {
-    bytes.iter().map(|b| format!("{b:02x}")).collect()
-}
 
 /// `encrypt` reproduces the Wycheproof ciphertext and tag, as `ciphertext || tag`, and
 /// `decrypt` takes them back to the message, at both key lengths.
@@ -115,39 +75,38 @@ fn tampering_fails_the_tag_check() {
     assert!(run_err(&other_nonce, &bytes).contains("authentic"));
 }
 
-/// Any length round-trips at every key length, with the default 16-byte tag and a shorter one.
 #[test]
-fn encrypt_then_decrypt_round_trips_at_every_key_length() {
-    let message: Vec<u8> = (0..3000u32).map(|i| (i % 251) as u8).collect();
-    for (cmd, key) in [
-        ("aria128-ccm", "000102030405060708090a0b0c0d0e0f"),
-        ("aria192-ccm", "000102030405060708090a0b0c0d0e0f1011121314151617"),
-        ("aria256-ccm", "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"),
-    ] {
-        for tag_len in ["16", "8"] {
-            let nonce = "000102030405060708090a0b";
-            let base = [cmd, "--key", key, "--nonce", nonce, "--tag-len", tag_len];
-            let ct = run_ok(&[&base[..], &["-d", "encrypt"]].concat(), &message);
-            assert_eq!(ct.len(), message.len() + tag_len.parse::<usize>().unwrap(), "{cmd}");
-            let back = run_ok(&[&base[..], &["-d", "decrypt"]].concat(), &ct);
-            assert_eq!(back, message, "{cmd}");
-        }
-    }
+fn encrypt_then_decrypt_round_trips() {
+    round_trips(
+        &[("aria128-ccm", KEY16), ("aria192-ccm", KEY24), ("aria256-ccm", KEY32)],
+        &["--nonce", "000102030405060708090a0b"],
+        Framing { prefix: 0, suffix: 16, pads: false },
+    );
+}
+
+#[test]
+fn any_input_length_is_accepted() {
+    any_input_length(
+        "aria128-ccm",
+        KEY16,
+        &["--nonce", "000102030405060708090a0b"],
+        Framing { prefix: 0, suffix: 16, pads: false },
+    );
 }
 
 #[test]
 fn a_key_of_the_wrong_length_is_rejected() {
-    let err = run_err(
-        &["aria128-ccm", "-d", "encrypt", "--key", "0011", "--nonce", "000102030405060708090a0b"],
-        b"x",
+    wrong_key_lengths(
+        &[
+            ("aria128-ccm", KEY32, "ARIA-128 needs a 16-byte key, got 32 bytes"),
+            ("aria192-ccm", KEY32, "ARIA-192 needs a 24-byte key, got 32 bytes"),
+            ("aria256-ccm", KEY24, "ARIA-256 needs a 32-byte key, got 24 bytes"),
+        ],
+        &["--nonce", "000102030405060708090a0b"],
     );
-    assert!(err.contains("16-byte key"), "{err}");
 }
 
 #[test]
 fn the_subcommands_are_listed_in_help() {
-    let help = String::from_utf8(run_ok(&["--help"], b"")).unwrap();
-    for name in ["aria128-ccm", "aria192-ccm", "aria256-ccm"] {
-        assert!(help.contains(name), "--help should list {name}");
-    }
+    listed_in_help(&["aria128-ccm", "aria192-ccm", "aria256-ccm"]);
 }

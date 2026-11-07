@@ -13,11 +13,11 @@ mod common;
 
 use bouncycastle_aria::hazmat::{ARIA128Internal, ARIA192Internal, ARIA256Internal};
 use bouncycastle_aria::{BLOCK_LEN, LANES};
-use bouncycastle_core::hazmat::ElectronicCodeBook;
+use bouncycastle_core::hazmat::{ElectronicCodeBook, KeyExpansion};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 
 fn engine<const KEY_LEN: usize, P: ElectronicCodeBook<KEY_LEN, 16>>(key: &[u8; KEY_LEN]) -> P {
-    <P as ElectronicCodeBook<KEY_LEN, 16>>::new(
+    <P as KeyExpansion<KEY_LEN>>::new(
         &KeyMaterial::<KEY_LEN>::from_bytes_as_type(key, KeyType::SymmetricCipherKey)
             .expect("a valid symmetric cipher key"),
     )

@@ -10,7 +10,7 @@
 //! ```
 //! use bouncycastle_aes::hazmat::AES128Internal;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-//! use bouncycastle_core::hazmat::{BlockPermutation, ElectronicCodeBook};
+//! use bouncycastle_core::hazmat::{BlockPermutation, ElectronicCodeBook, KeyExpansion};
 //!
 //! let key = KeyMaterial::<16>::from_bytes_as_type(
 //!     &[0x2b, 0x7e, 0x15, 0x16, 0x28, 0xae, 0xd2, 0xa6,
@@ -52,7 +52,7 @@
 //! ```
 //! use bouncycastle_aes::hazmat::AES256Internal;
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
-//! use bouncycastle_core::hazmat::{BlockPermutation, ElectronicCodeBook};
+//! use bouncycastle_core::hazmat::{BlockPermutation, ElectronicCodeBook, KeyExpansion};
 //!
 //! let key = KeyMaterial::<32>::from_bytes_as_type(&[0x01; 32], KeyType::SymmetricCipherKey)
 //!     .expect("a 32-byte symmetric cipher key");

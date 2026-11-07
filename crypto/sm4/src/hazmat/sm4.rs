@@ -6,7 +6,7 @@ use crate::schedule::{RoundKeys, expand};
 use crate::{BLOCK_LEN, KEY_LEN, LANES};
 use bouncycastle_cipher::modes::ModeNames;
 use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
-use bouncycastle_core::hazmat::{BlockPermutation, ElectronicCodeBook};
+use bouncycastle_core::hazmat::{BlockPermutation, KeyExpansion};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::Algorithm;
@@ -221,7 +221,7 @@ impl Algorithm for SM4Internal {
 // cost one circuit pass per round where two single-block calls would cost two, and four blocks
 // are one full pass where two pair calls would be two.
 
-impl ElectronicCodeBook<KEY_LEN, BLOCK_LEN> for SM4Internal {
+impl KeyExpansion<KEY_LEN> for SM4Internal {
     fn new(key: &KeyMaterial<KEY_LEN>) -> Result<Self, SymmetricCipherError> {
         SM4Internal::new(key)
     }

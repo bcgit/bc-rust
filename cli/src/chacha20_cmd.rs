@@ -9,7 +9,7 @@
 //! # Warning
 //!
 //! ChaCha20 alone provides confidentiality only, and is as malleable as CTR: see
-//! [`crate::aes_ctr_cmd`]. Use `chacha20-poly1305` unless the ciphertext is authenticated by
+//! [`crate::ctr_cmd`]. Use `chacha20-poly1305` unless the ciphertext is authenticated by
 //! some other means. A supplied nonce must never repeat under one key: the keystream would repeat
 //! with it.
 

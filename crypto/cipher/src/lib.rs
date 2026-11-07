@@ -2,6 +2,8 @@
 //! different permutation functions, such as modes of operation and padding.
 //!
 //! * [`modes`] — block cipher modes of operation (NIST SP 800-38A, SP 800-38C and SP 800-38D).
+//! * [`BlockCipherKey`] — the key object the block cipher crates alias: a permutation under a mode,
+//!   handing out that mode's workers through the role traits of `bouncycastle_core::symmetric_key`.
 //! * [`padding`] — block padding schemes, and the adapters that apply them to a block cipher mode.
 //! * [`stream`] — a stream cipher over any keystream, and the helpers shared by stream ciphers that
 //!   cannot be built that way.
@@ -29,9 +31,12 @@ extern crate alloc;
 #[cfg(test)]
 extern crate self as bouncycastle_cipher;
 
+mod key;
 pub mod modes;
 pub mod padding;
 pub mod stream;
+
+pub use key::BlockCipherKey;
 
 /// Direction marker for a cipher value that encrypts.
 ///
