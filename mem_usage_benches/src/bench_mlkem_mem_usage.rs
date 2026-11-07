@@ -951,7 +951,7 @@ fn bench_mlkem512_decaps() {
     ];
 
     let (_pk, sk) = MLKEM512::keygen_from_seed(&seed).unwrap();
-    let ss = sk.decaps((), &ct).unwrap();
+    let ss = sk.decaps(&ct, ()).unwrap();
     print!("{:x?}", ss);
 }
 
@@ -1034,7 +1034,7 @@ fn bench_mlkem512_lowmemory_decaps() {
     ];
 
     let (_pk, sk) = MLKEM512::keygen_from_seed(&seed).unwrap();
-    let ss = sk.decaps((), &ct).unwrap();
+    let ss = sk.decaps(&ct, ()).unwrap();
     print!("{:x?}", ss);
 }
 
@@ -1138,7 +1138,7 @@ fn bench_mlkem768_decaps() {
     ];
 
     let (_pk, sk) = MLKEM768::keygen_from_seed(&seed).unwrap();
-    let ss = sk.decaps((), &ct).unwrap();
+    let ss = sk.decaps(&ct, ()).unwrap();
     print!("{:x?}", ss);
 }
 
@@ -1242,7 +1242,7 @@ fn bench_mlkem768_lowmemory_decaps() {
     ];
 
     let (_pk, sk) = MLKEM768::keygen_from_seed(&seed).unwrap();
-    let ss = sk.decaps((), &ct).unwrap();
+    let ss = sk.decaps(&ct, ()).unwrap();
     print!("{:x?}", ss);
 }
 
@@ -1378,7 +1378,7 @@ fn bench_mlkem1024_decaps() {
     ];
 
     let (_pk, sk) = MLKEM1024::keygen_from_seed(&seed).unwrap();
-    let ss = sk.decaps((), &ct).unwrap();
+    let ss = sk.decaps(&ct, ()).unwrap();
     print!("{:x?}", ss);
 }
 
@@ -1514,7 +1514,7 @@ fn bench_mlkem1024_lowmemory_decaps() {
     ];
 
     let (_pk, sk) = MLKEM1024::keygen_from_seed(&seed).unwrap();
-    let ss = sk.decaps((), &ct).unwrap();
+    let ss = sk.decaps(&ct, ()).unwrap();
     print!("{:x?}", ss);
 }
 

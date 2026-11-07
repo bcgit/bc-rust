@@ -17,7 +17,7 @@
 //! let sk_expanded = MLKEM768PrivateKeyExpanded::from(&sk);
 //!
 //! let (ss, ct) = pk.encaps(&mut rng, ()).unwrap();
-//! let ss1 = sk_expanded.decaps((), &ct).unwrap();
+//! let ss1 = sk_expanded.decaps(&ct, ()).unwrap();
 //! assert_eq!(ss, ss1);
 //! ```
 
@@ -408,7 +408,7 @@ impl<P: MLKEMParams> MLKEM<P> {
     {
         let sk = MLKEMSeedPrivateKey::<P>::from_keymaterial(seed)?;
 
-        sk.decaps((), ct)
+        sk.decaps(ct, ())
     }
 
     /// Algorithm 20 ML-KEM.Encaps(ek), lines 1-5.

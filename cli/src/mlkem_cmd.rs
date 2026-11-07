@@ -91,7 +91,7 @@ pub(crate) const MLKEM512_SET: ParameterSet<
     keypair_consistency_check: MLKEM512::keypair_consistency_check,
     pk_of: |sk| sk.pk().clone(),
     encaps: |pk, rng| pk.encaps(rng, ()),
-    decaps: |sk, ct| sk.decaps((), ct),
+    decaps: |sk, ct| sk.decaps(ct, ()),
 };
 
 pub(crate) const MLKEM768_SET: ParameterSet<
@@ -108,7 +108,7 @@ pub(crate) const MLKEM768_SET: ParameterSet<
     keypair_consistency_check: MLKEM768::keypair_consistency_check,
     pk_of: |sk| sk.pk().clone(),
     encaps: |pk, rng| pk.encaps(rng, ()),
-    decaps: |sk, ct| sk.decaps((), ct),
+    decaps: |sk, ct| sk.decaps(ct, ()),
 };
 
 pub(crate) const MLKEM1024_SET: ParameterSet<
@@ -125,7 +125,7 @@ pub(crate) const MLKEM1024_SET: ParameterSet<
     keypair_consistency_check: MLKEM1024::keypair_consistency_check,
     pk_of: |sk| sk.pk().clone(),
     encaps: |pk, rng| pk.encaps(rng, ()),
-    decaps: |sk, ct| sk.decaps((), ct),
+    decaps: |sk, ct| sk.decaps(ct, ()),
 };
 
 pub(crate) fn mlkem_cmd<

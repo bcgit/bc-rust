@@ -16,7 +16,7 @@
 //! ```text
 //! let enc = pk.create_encapsulator(())?;         // EncapsulatingKey<(), _, _>, ML-KEM-768
 //! let (ss, ct) = enc.encaps(&mut rng)?;
-//! let ss1 = sk.decaps((), &ct)?;                 // DecapsulatingKey<(), _, _>
+//! let ss1 = sk.decaps(&ct, ())?;                 // DecapsulatingKey<(), _, _>
 //! ```
 //!
 //! Nothing here instantiates a DRBG for the caller: a method that draws randomness takes
@@ -111,7 +111,7 @@ pub trait DecapsulatingKey<Params, const CT_LEN: usize, const SS_LEN: usize> {
     /// # Errors
     /// Those of [`create_decapsulator`](Self::create_decapsulator) and of
     /// [`KEMDecapsulator::decaps`].
-    fn decaps(&self, params: Params, ct: &[u8; CT_LEN]) -> Result<KeyMaterial<SS_LEN>, KEMError> {
+    fn decaps(&self, ct: &[u8; CT_LEN], params: Params) -> Result<KeyMaterial<SS_LEN>, KEMError> {
         self.create_decapsulator(params)?.decaps(ct)
     }
 }

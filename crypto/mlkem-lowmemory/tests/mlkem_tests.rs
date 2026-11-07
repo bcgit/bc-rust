@@ -272,7 +272,7 @@ mod mlkem_tests {
         assert_eq!(ct, expected_ciphertext);
 
         // decaps
-        let ss2 = sk.decaps((), &ct).unwrap();
+        let ss2 = sk.decaps(&ct, ()).unwrap();
         assert_eq!(ss, ss2.ref_to_bytes());
     }
 
@@ -342,10 +342,10 @@ mod mlkem_tests {
 
                 // decapsulates to the same secret, and rejects the same way
                 let (ss, ct) = pk.encaps(&mut DefaultRNG::default(), ()).unwrap();
-                assert_eq!(sk_expanded.decaps((), &ct).unwrap(), ss);
+                assert_eq!(sk_expanded.decaps(&ct, ()).unwrap(), ss);
                 let mut bad = ct;
                 bad[1] ^= 0x80;
-                assert_eq!(sk_expanded.decaps((), &bad).unwrap(), sk.decaps((), &bad).unwrap());
+                assert_eq!(sk_expanded.decaps(&bad, ()).unwrap(), sk.decaps(&bad, ()).unwrap());
 
                 // round trips through its 64-byte encoding and through the seed
                 let reloaded = $expanded::from_bytes(&sk_expanded.encode()).unwrap();
@@ -478,7 +478,7 @@ mod mlkem_tests {
         let mut busted_ciphertext = ct;
         busted_ciphertext[17] ^= 0xFF;
 
-        match sk.decaps((), &busted_ciphertext) {
+        match sk.decaps(&busted_ciphertext, ()) {
             Ok(ss) => {
                 // check that it returned the correct rejection value K_bar = J(z||c)
                 //  z is the second half of the private keyseed.

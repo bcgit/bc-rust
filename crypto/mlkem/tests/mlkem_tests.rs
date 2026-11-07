@@ -255,7 +255,7 @@ mod mlkem_tests {
         assert_eq!(ct, expected_ciphertext);
 
         // decaps
-        let ss2 = sk.decaps((), &ct).unwrap();
+        let ss2 = sk.decaps(&ct, ()).unwrap();
         assert_eq!(ss, ss2.ref_to_bytes());
     }
 
@@ -468,7 +468,7 @@ mod mlkem_tests {
         let mut busted_ciphertext = ct;
         busted_ciphertext[17] ^= 0xFF;
 
-        match sk.decaps((), &busted_ciphertext) {
+        match sk.decaps(&busted_ciphertext, ()) {
             Ok(ss) => {
                 // check that it returned the correct rejection value K_bar = J(z||c)
                 //  z is the second half of the private keyseed.
@@ -536,7 +536,7 @@ mod mlkem_tests {
         let (ss, ct) = pk_expanded.encaps(&mut DefaultRNG::default(), ()).unwrap();
 
         let sk_expanded = MLKEM512PrivateKeyExpanded::from(&sk);
-        let ss1 = match sk_expanded.decaps((), &ct) {
+        let ss1 = match sk_expanded.decaps(&ct, ()) {
             Err(_) => panic!("Error decapsulating"),
             Ok(ss) => ss,
         };
@@ -550,7 +550,7 @@ mod mlkem_tests {
         let (ss, ct) = pk_expanded.encaps(&mut DefaultRNG::default(), ()).unwrap();
 
         let sk_expanded = MLKEM768PrivateKeyExpanded::from(&sk);
-        let ss1 = match sk_expanded.decaps((), &ct) {
+        let ss1 = match sk_expanded.decaps(&ct, ()) {
             Err(_) => panic!("Error decapsulating"),
             Ok(ss) => ss,
         };
@@ -564,7 +564,7 @@ mod mlkem_tests {
         let (ss, ct) = pk_expanded.encaps(&mut DefaultRNG::default(), ()).unwrap();
 
         let sk_expanded = MLKEM1024PrivateKeyExpanded::from(&sk);
-        let ss1 = match sk_expanded.decaps((), &ct) {
+        let ss1 = match sk_expanded.decaps(&ct, ()) {
             Err(_) => panic!("Error decapsulating"),
             Ok(ss) => ss,
         };

@@ -45,16 +45,16 @@ macro_rules! cross_check {
             assert_eq!(ct_full.as_slice(), ct_low.as_slice(), "ciphertext");
 
             // each decapsulates the other's ciphertext to the same secret
-            let ss = sk_full.decaps((), &ct_low).unwrap();
+            let ss = sk_full.decaps(&ct_low, ()).unwrap();
             assert_eq!(ss.ref_to_bytes(), &ss_full);
-            let ss = sk_low.decaps((), &ct_full).unwrap();
+            let ss = sk_low.decaps(&ct_full, ()).unwrap();
             assert_eq!(ss.ref_to_bytes(), &ss_low);
 
             // and both implicitly reject a damaged ciphertext to the same value
             let mut bad = ct_full;
             bad[0] ^= 1;
-            let rej_full = sk_full.decaps((), &bad).unwrap();
-            let rej_low = sk_low.decaps((), &bad).unwrap();
+            let rej_full = sk_full.decaps(&bad, ()).unwrap();
+            let rej_low = sk_low.decaps(&bad, ()).unwrap();
             assert_eq!(rej_full.ref_to_bytes(), rej_low.ref_to_bytes(), "implicit rejection");
             assert_ne!(rej_full.ref_to_bytes(), &ss_full);
         }

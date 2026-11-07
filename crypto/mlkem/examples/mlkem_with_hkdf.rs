@@ -94,7 +94,7 @@ impl KEMEncapsulator<MLKEM768_CT_LEN, DERIVED_LEN> for HkdfWorker<'_, '_, MLKEM7
 
 impl KEMDecapsulator<MLKEM768_CT_LEN, DERIVED_LEN> for HkdfWorker<'_, '_, MLKEM768PrivateKey> {
     fn decaps(&self, ct: &[u8; MLKEM768_CT_LEN]) -> Result<KeyMaterial<DERIVED_LEN>, KEMError> {
-        let K = self.key.decaps((), ct)?;
+        let K = self.key.decaps(ct, ())?;
         derive(self.params, &K, ct)
     }
 }
@@ -141,7 +141,7 @@ fn main() {
 
     // One-shots: the parameter type says which algorithm, so nothing else needs naming.
     let (key, ct) = pk.encaps(&mut rng, params).unwrap();
-    let key1 = sk.decaps(params, &ct).unwrap();
+    let key1 = sk.decaps(&ct, params).unwrap();
     assert_eq!(key, key1);
     println!("derived key: {key}");
 
@@ -151,10 +151,10 @@ fn main() {
 
     // A different context derives a different key from the same ciphertext.
     let other = HkdfParams { salt: &salt, info: b"example protocol v2" };
-    assert_ne!(sk.decaps(other, &ct).unwrap(), key);
+    assert_ne!(sk.decaps(&ct, other).unwrap(), key);
 
     // The same key pair still runs plain ML-KEM-768, with `()` selecting it.
     let (K, ct) = pk.encaps(&mut rng, ()).unwrap();
-    assert_eq!(sk.decaps((), &ct).unwrap(), K);
+    assert_eq!(sk.decaps(&ct, ()).unwrap(), K);
     println!("plain ML-KEM secret: {K}");
 }
