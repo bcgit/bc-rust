@@ -124,6 +124,7 @@ impl TestFrameworkKEM {
         // Test that decaps fails for a damaged ciphertext
         let (pk, sk) = keygen().unwrap();
         let (ss, mut ct) = pk.encaps(&mut rng, params).unwrap();
+        assert!(CT_LEN > 17, "the suite damages byte 17, so a ciphertext must be longer than that");
         ct[17] ^= 0xFF;
         self.check_rejection(&sk, params, &ss, &ct);
 
