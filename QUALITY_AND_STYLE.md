@@ -24,9 +24,10 @@ cipher workers still carry come out in the #173 sweep's next step.
 forked mid-stream and each copy finished on its own; `Hash` itself carries no `Clone` (and no `Default`), because both
 imply `Sized` and would stop the trait from ever being a trait object. Generic code that forks or constructs a hash
 says so where the need is: `H: Hash + Clone`, `H: HashOneShot`. The same rule applies to every `core` trait that is
-meant to be held as `dyn` -- the hash, XOF, cipher, MAC and signature worker traits: no `Clone`, `Default` or `Sized`
-supertrait, no associated constant (`AlgorithmInfo` is the run-time form of `Algorithm`'s), and `where Self: Sized` on
-any receiver-less or provided by-value method, so the streaming core stays dispatchable through `&mut dyn`.
+meant to be held as `dyn` -- the hash, XOF, cipher, MAC, KEM and signature worker traits: no `Clone`, `Default` or
+`Sized` supertrait, no associated constant (`AlgorithmInfo` is the run-time form of `Algorithm`'s), and
+`where Self: Sized` on any receiver-less or provided by-value method, so the streaming core stays dispatchable through
+`&mut dyn`.
 
 # Quality
 
