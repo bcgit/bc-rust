@@ -21,9 +21,10 @@
 //! # What the circuits compute, and where they came from
 //!
 //! `SB1` is the AES S-box (Sec 2.4.2's table is FIPS 197 Table 4, which `test_sb1_is_the_aes_sbox`
-//! checks), so [`sb1`] is the 113-gate Boyar-Peralta straight-line program for it, copied verbatim
-//! from `bouncycastle-aes` (`src/sbox.rs`, a transcription of Peralta's
-//! `SLP_AES_113.txt`), with the SLP's `U0`-is-MSB input convention mapped onto the planes.
+//! checks), so [`sb1`] is the 113-gate Boyar-Peralta straight-line program for it, as
+//! `bouncycastle-aes` transcribes it from Peralta's `SLP_AES_113.txt`, with the SLP's `U0`-is-MSB
+//! input convention mapped onto the planes; its non-linear section is the one
+//! shared with the other bit-sliced ciphers as [`bouncycastle_utils::bitslice::gf256_inverse_nonlinear`].
 //!
 //! The other three have the same algebraic shape -- an affine map, inversion in GF(2^8), and
 //! another affine map. Writing `inv` for inversion in the AES field (`x^8 + x^4 + x^3 + x + 1`,
@@ -57,7 +58,7 @@
 //! Each generated circuit is therefore a **top affine layer** (generated: `M * x xor c` composed
 //! with the Boyar-Peralta input basis change, as one affine map from the eight input planes to the
 //! 22 signals the non-linear section consumes), the **non-linear section** of the Boyar-Peralta
-//! circuit (**copied verbatim**: 32 AND and 30 XOR gates computing the inverse in a tower-field
+//! circuit (**shared**, as `gf256_inverse_nonlinear`: 32 AND and 30 XOR gates computing the inverse in a tower-field
 //! representation), and a **bottom affine layer** (generated: the tower field back to the AES
 //! polynomial basis, then `N * . xor d`, as one affine map from the 18 non-linear outputs to the
 //! eight output planes). The affine layers were fitted by linear algebra over GF(2) and reduced
@@ -84,6 +85,7 @@
 //! generated circuits the inputs are bound from the top layer, so that convention never appears.
 
 use crate::bitslice::Planes;
+use bouncycastle_utils::bitslice::{InverseInputs, InverseOutputs, gf256_inverse_nonlinear};
 
 /// `SB1` (Sec 2.4.2) -- the AES S-box -- applied to every byte position of the planes: `q[k]`
 /// holds bit `k` of each byte on entry and on exit. The 113-gate Boyar-Peralta program; see the
@@ -124,73 +126,51 @@ pub(crate) fn sb1(q: &mut Planes) {
     let y21 = y13 ^ y16;
     let y18 = u0 ^ y16;
 
-    // Non-linear section (62 gates): the GF(2^8) inversion, and the only ANDs in the circuit.
-    let t2 = y12 & y15;
-    let t3 = y3 & y6;
-    let t4 = t3 ^ t2;
-    let t5 = y4 & u7;
-    let t6 = t5 ^ t2;
-    let t7 = y13 & y16;
-    let t8 = y5 & y1;
-    let t9 = t8 ^ t7;
-    let t10 = y2 & y7;
-    let t11 = t10 ^ t7;
-    let t12 = y9 & y11;
-    let t13 = y14 & y17;
-    let t14 = t13 ^ t12;
-    let t15 = y8 & y10;
-    let t16 = t15 ^ t12;
-    let t17 = t4 ^ y20;
-    let t18 = t6 ^ t16;
-    let t19 = t9 ^ t14;
-    let t20 = t11 ^ t16;
-    let t21 = t17 ^ t14;
-    let t22 = t18 ^ y19;
-    let t23 = t19 ^ y21;
-    let t24 = t20 ^ y18;
-    let t25 = t21 ^ t22;
-    let t26 = t21 & t23;
-    let t27 = t24 ^ t26;
-    let t28 = t25 & t27;
-    let t29 = t28 ^ t22;
-    let t30 = t23 ^ t24;
-    let t31 = t22 ^ t26;
-    let t32 = t31 & t30;
-    let t33 = t32 ^ t24;
-    let t34 = t23 ^ t33;
-    let t35 = t27 ^ t33;
-    let t36 = t24 & t35;
-    // `cargo mutants` reports the `^ -> |` mutant on the next line as surviving. That is a true
-    // equivalence, not a gap: `t36` and `t34` are never both 1 for any of the 256 possible input
-    // bytes, so XOR and OR agree here. It is the same gate the AES crate
-    // documents, since this section is copied from there.
-    let t37 = t36 ^ t34;
-    let t38 = t27 ^ t36;
-    let t39 = t29 & t38;
-    let t40 = t25 ^ t39;
-    let t41 = t40 ^ t37;
-    let t42 = t29 ^ t33;
-    let t43 = t29 ^ t40;
-    let t44 = t33 ^ t37;
-    let t45 = t42 ^ t41;
-    let z0 = t44 & y15;
-    let z1 = t37 & y6;
-    let z2 = t33 & u7;
-    let z3 = t43 & y16;
-    let z4 = t40 & y1;
-    let z5 = t29 & y7;
-    let z6 = t42 & y11;
-    let z7 = t45 & y17;
-    let z8 = t41 & y10;
-    let z9 = t44 & y12;
-    let z10 = t37 & y3;
-    let z11 = t33 & y4;
-    let z12 = t43 & y13;
-    let z13 = t40 & y5;
-    let z14 = t29 & y2;
-    let z15 = t42 & y9;
-    let z16 = t45 & y14;
-    let z17 = t41 & y8;
+    // Non-linear section (62 gates): the GF(2^8) inversion in the tower-field basis, shared with
+    // the other bit-sliced ciphers in `bouncycastle_utils::bitslice`.
+    let InverseOutputs {
+        z0,
+        z1,
+        z2,
+        z3,
+        z4,
+        z5,
+        z6,
+        z7,
+        z8,
+        z9,
+        z10,
+        z11,
+        z12,
+        z13,
+        z14,
+        z15,
+        z16,
+        z17,
+    } = gf256_inverse_nonlinear(InverseInputs {
+        u7,
+        y1,
+        y2,
+        y3,
+        y4,
+        y5,
+        y6,
+        y7,
+        y8,
+        y9,
+        y10,
+        y11,
+        y12,
+        y13,
+        y14,
+        y15,
+        y16,
+        y17,
+        y18,
+        y19,
+        y20,
+        y21,
+    });
 
     // Bottom linear transformation (28 gates): the output basis change and the AES affine map,
     // whose `{63}` constant is the four XNORs.
@@ -300,74 +280,51 @@ pub(crate) fn sb2(q: &mut Planes) {
     let y20 = a8;
     let y21 = a29;
 
-    // Non-linear section (62 gates): GF(2^8) inversion, copied verbatim from the Boyar-Peralta
-    // AES circuit in `bouncycastle-aes` (`src/sbox.rs`).
-    let t2 = y12 & y15;
-    let t3 = y3 & y6;
-    let t4 = t3 ^ t2;
-    let t5 = y4 & u7;
-    let t6 = t5 ^ t2;
-    let t7 = y13 & y16;
-    let t8 = y5 & y1;
-    let t9 = t8 ^ t7;
-    let t10 = y2 & y7;
-    let t11 = t10 ^ t7;
-    let t12 = y9 & y11;
-    let t13 = y14 & y17;
-    let t14 = t13 ^ t12;
-    let t15 = y8 & y10;
-    let t16 = t15 ^ t12;
-    let t17 = t4 ^ y20;
-    let t18 = t6 ^ t16;
-    let t19 = t9 ^ t14;
-    let t20 = t11 ^ t16;
-    let t21 = t17 ^ t14;
-    let t22 = t18 ^ y19;
-    let t23 = t19 ^ y21;
-    let t24 = t20 ^ y18;
-    let t25 = t21 ^ t22;
-    let t26 = t21 & t23;
-    let t27 = t24 ^ t26;
-    let t28 = t25 & t27;
-    let t29 = t28 ^ t22;
-    let t30 = t23 ^ t24;
-    let t31 = t22 ^ t26;
-    let t32 = t31 & t30;
-    let t33 = t32 ^ t24;
-    let t34 = t23 ^ t33;
-    let t35 = t27 ^ t33;
-    let t36 = t24 & t35;
-    // `cargo mutants` reports the `^ -> |` mutant on the next line as surviving. That is a true
-    // equivalence, not a gap: `t36` and `t34` are never both 1 for any of the 256 possible input
-    // bytes, so XOR and OR agree here. It is the same gate the AES crate
-    // documents, since this section is copied from there.
-    let t37 = t36 ^ t34;
-    let t38 = t27 ^ t36;
-    let t39 = t29 & t38;
-    let t40 = t25 ^ t39;
-    let t41 = t40 ^ t37;
-    let t42 = t29 ^ t33;
-    let t43 = t29 ^ t40;
-    let t44 = t33 ^ t37;
-    let t45 = t42 ^ t41;
-    let z0 = t44 & y15;
-    let z1 = t37 & y6;
-    let z2 = t33 & u7;
-    let z3 = t43 & y16;
-    let z4 = t40 & y1;
-    let z5 = t29 & y7;
-    let z6 = t42 & y11;
-    let z7 = t45 & y17;
-    let z8 = t41 & y10;
-    let z9 = t44 & y12;
-    let z10 = t37 & y3;
-    let z11 = t33 & y4;
-    let z12 = t43 & y13;
-    let z13 = t40 & y5;
-    let z14 = t29 & y2;
-    let z15 = t42 & y9;
-    let z16 = t45 & y14;
-    let z17 = t41 & y8;
+    // Non-linear section (62 gates): the GF(2^8) inversion in the tower-field basis, shared with
+    // the other bit-sliced ciphers in `bouncycastle_utils::bitslice`.
+    let InverseOutputs {
+        z0,
+        z1,
+        z2,
+        z3,
+        z4,
+        z5,
+        z6,
+        z7,
+        z8,
+        z9,
+        z10,
+        z11,
+        z12,
+        z13,
+        z14,
+        z15,
+        z16,
+        z17,
+    } = gf256_inverse_nonlinear(InverseInputs {
+        u7,
+        y1,
+        y2,
+        y3,
+        y4,
+        y5,
+        y6,
+        y7,
+        y8,
+        y9,
+        y10,
+        y11,
+        y12,
+        y13,
+        y14,
+        y15,
+        y16,
+        y17,
+        y18,
+        y19,
+        y20,
+        y21,
+    });
 
     // Bottom affine layer (28 gates, generated): tower field back to the AES polynomial basis
     // and the output affine map `N * . xor 0xe2`. Plane j receives bit j of the output.
@@ -476,74 +433,51 @@ pub(crate) fn sb3(q: &mut Planes) {
     let y20 = a29;
     let y21 = x4;
 
-    // Non-linear section (62 gates): GF(2^8) inversion, copied verbatim from the Boyar-Peralta
-    // AES circuit in `bouncycastle-aes` (`src/sbox.rs`).
-    let t2 = y12 & y15;
-    let t3 = y3 & y6;
-    let t4 = t3 ^ t2;
-    let t5 = y4 & u7;
-    let t6 = t5 ^ t2;
-    let t7 = y13 & y16;
-    let t8 = y5 & y1;
-    let t9 = t8 ^ t7;
-    let t10 = y2 & y7;
-    let t11 = t10 ^ t7;
-    let t12 = y9 & y11;
-    let t13 = y14 & y17;
-    let t14 = t13 ^ t12;
-    let t15 = y8 & y10;
-    let t16 = t15 ^ t12;
-    let t17 = t4 ^ y20;
-    let t18 = t6 ^ t16;
-    let t19 = t9 ^ t14;
-    let t20 = t11 ^ t16;
-    let t21 = t17 ^ t14;
-    let t22 = t18 ^ y19;
-    let t23 = t19 ^ y21;
-    let t24 = t20 ^ y18;
-    let t25 = t21 ^ t22;
-    let t26 = t21 & t23;
-    let t27 = t24 ^ t26;
-    let t28 = t25 & t27;
-    let t29 = t28 ^ t22;
-    let t30 = t23 ^ t24;
-    let t31 = t22 ^ t26;
-    let t32 = t31 & t30;
-    let t33 = t32 ^ t24;
-    let t34 = t23 ^ t33;
-    let t35 = t27 ^ t33;
-    let t36 = t24 & t35;
-    // `cargo mutants` reports the `^ -> |` mutant on the next line as surviving. That is a true
-    // equivalence, not a gap: `t36` and `t34` are never both 1 for any of the 256 possible input
-    // bytes, so XOR and OR agree here. It is the same gate the AES crate
-    // documents, since this section is copied from there.
-    let t37 = t36 ^ t34;
-    let t38 = t27 ^ t36;
-    let t39 = t29 & t38;
-    let t40 = t25 ^ t39;
-    let t41 = t40 ^ t37;
-    let t42 = t29 ^ t33;
-    let t43 = t29 ^ t40;
-    let t44 = t33 ^ t37;
-    let t45 = t42 ^ t41;
-    let z0 = t44 & y15;
-    let z1 = t37 & y6;
-    let z2 = t33 & u7;
-    let z3 = t43 & y16;
-    let z4 = t40 & y1;
-    let z5 = t29 & y7;
-    let z6 = t42 & y11;
-    let z7 = t45 & y17;
-    let z8 = t41 & y10;
-    let z9 = t44 & y12;
-    let z10 = t37 & y3;
-    let z11 = t33 & y4;
-    let z12 = t43 & y13;
-    let z13 = t40 & y5;
-    let z14 = t29 & y2;
-    let z15 = t42 & y9;
-    let z16 = t45 & y14;
-    let z17 = t41 & y8;
+    // Non-linear section (62 gates): the GF(2^8) inversion in the tower-field basis, shared with
+    // the other bit-sliced ciphers in `bouncycastle_utils::bitslice`.
+    let InverseOutputs {
+        z0,
+        z1,
+        z2,
+        z3,
+        z4,
+        z5,
+        z6,
+        z7,
+        z8,
+        z9,
+        z10,
+        z11,
+        z12,
+        z13,
+        z14,
+        z15,
+        z16,
+        z17,
+    } = gf256_inverse_nonlinear(InverseInputs {
+        u7,
+        y1,
+        y2,
+        y3,
+        y4,
+        y5,
+        y6,
+        y7,
+        y8,
+        y9,
+        y10,
+        y11,
+        y12,
+        y13,
+        y14,
+        y15,
+        y16,
+        y17,
+        y18,
+        y19,
+        y20,
+        y21,
+    });
 
     // Bottom affine layer (33 gates, generated): tower field back to the AES polynomial basis
     // and the output affine map `N * . xor 0x00`. Plane j receives bit j of the output.
@@ -657,74 +591,51 @@ pub(crate) fn sb4(q: &mut Planes) {
     let y20 = a28;
     let y21 = a29;
 
-    // Non-linear section (62 gates): GF(2^8) inversion, copied verbatim from the Boyar-Peralta
-    // AES circuit in `bouncycastle-aes` (`src/sbox.rs`).
-    let t2 = y12 & y15;
-    let t3 = y3 & y6;
-    let t4 = t3 ^ t2;
-    let t5 = y4 & u7;
-    let t6 = t5 ^ t2;
-    let t7 = y13 & y16;
-    let t8 = y5 & y1;
-    let t9 = t8 ^ t7;
-    let t10 = y2 & y7;
-    let t11 = t10 ^ t7;
-    let t12 = y9 & y11;
-    let t13 = y14 & y17;
-    let t14 = t13 ^ t12;
-    let t15 = y8 & y10;
-    let t16 = t15 ^ t12;
-    let t17 = t4 ^ y20;
-    let t18 = t6 ^ t16;
-    let t19 = t9 ^ t14;
-    let t20 = t11 ^ t16;
-    let t21 = t17 ^ t14;
-    let t22 = t18 ^ y19;
-    let t23 = t19 ^ y21;
-    let t24 = t20 ^ y18;
-    let t25 = t21 ^ t22;
-    let t26 = t21 & t23;
-    let t27 = t24 ^ t26;
-    let t28 = t25 & t27;
-    let t29 = t28 ^ t22;
-    let t30 = t23 ^ t24;
-    let t31 = t22 ^ t26;
-    let t32 = t31 & t30;
-    let t33 = t32 ^ t24;
-    let t34 = t23 ^ t33;
-    let t35 = t27 ^ t33;
-    let t36 = t24 & t35;
-    // `cargo mutants` reports the `^ -> |` mutant on the next line as surviving. That is a true
-    // equivalence, not a gap: `t36` and `t34` are never both 1 for any of the 256 possible input
-    // bytes, so XOR and OR agree here. It is the same gate the AES crate
-    // documents, since this section is copied from there.
-    let t37 = t36 ^ t34;
-    let t38 = t27 ^ t36;
-    let t39 = t29 & t38;
-    let t40 = t25 ^ t39;
-    let t41 = t40 ^ t37;
-    let t42 = t29 ^ t33;
-    let t43 = t29 ^ t40;
-    let t44 = t33 ^ t37;
-    let t45 = t42 ^ t41;
-    let z0 = t44 & y15;
-    let z1 = t37 & y6;
-    let z2 = t33 & u7;
-    let z3 = t43 & y16;
-    let z4 = t40 & y1;
-    let z5 = t29 & y7;
-    let z6 = t42 & y11;
-    let z7 = t45 & y17;
-    let z8 = t41 & y10;
-    let z9 = t44 & y12;
-    let z10 = t37 & y3;
-    let z11 = t33 & y4;
-    let z12 = t43 & y13;
-    let z13 = t40 & y5;
-    let z14 = t29 & y2;
-    let z15 = t42 & y9;
-    let z16 = t45 & y14;
-    let z17 = t41 & y8;
+    // Non-linear section (62 gates): the GF(2^8) inversion in the tower-field basis, shared with
+    // the other bit-sliced ciphers in `bouncycastle_utils::bitslice`.
+    let InverseOutputs {
+        z0,
+        z1,
+        z2,
+        z3,
+        z4,
+        z5,
+        z6,
+        z7,
+        z8,
+        z9,
+        z10,
+        z11,
+        z12,
+        z13,
+        z14,
+        z15,
+        z16,
+        z17,
+    } = gf256_inverse_nonlinear(InverseInputs {
+        u7,
+        y1,
+        y2,
+        y3,
+        y4,
+        y5,
+        y6,
+        y7,
+        y8,
+        y9,
+        y10,
+        y11,
+        y12,
+        y13,
+        y14,
+        y15,
+        y16,
+        y17,
+        y18,
+        y19,
+        y20,
+        y21,
+    });
 
     // Bottom affine layer (30 gates, generated): tower field back to the AES polynomial basis
     // and the output affine map `N * . xor 0x00`. Plane j receives bit j of the output.
