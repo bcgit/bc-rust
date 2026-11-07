@@ -7,8 +7,9 @@
 
 use bouncycastle_core::errors::{KEMError, KeyAgreementError, RNGError};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
-use bouncycastle_core::traits::{Algorithm, Hash, HashAlgParams, MAC, RNG};
-use bouncycastle_hmac::HMAC;
+use bouncycastle_core::symmetric_key::{FromAnyKeyMaterial, MacGenerationKey};
+use bouncycastle_core::traits::{Algorithm, HashAlgParams, MAC, RNG};
+use bouncycastle_hmac::{HMACParams, HmacKey};
 use bouncycastle_utils::secret::Secret;
 use core::marker::PhantomData;
 
@@ -36,7 +37,7 @@ pub trait DHKEMParams<const N_PK: usize, const N_SK: usize, const N_DH: usize>: 
     /// The group's private key.
     type PrivateKey;
     /// The hash of the DHKEM's KDF, which is HKDF over this hash.
-    type KDFHash: Hash + HashAlgParams + Default;
+    type KDFHash: HMACParams;
     /// The `kem_id` of RFC 9180 Section 7.1, Table 2.
     const KEM_ID: u16;
 
@@ -249,7 +250,9 @@ impl<
         // An empty salt is an empty HMAC key. RFC 5869 Section 2.2 says an absent salt "is set to a
         // string of HashLen zeros", which is the same HMAC key, as HMAC zero-pads its key.
         // Cannot fail: an empty KeyMaterial is Zeroized, which HMAC accepts as a weak key.
-        let mut hmac = HMAC::<G::KDFHash>::new_allow_weak_key(&KeyMaterial::<0>::new()).unwrap();
+        let salt =
+            HmacKey::<G::KDFHash>::from_key_material_allow_weak(&KeyMaterial::<0>::new()).unwrap();
+        let mut hmac = salt.create_generator();
         // labeled_ikm = concat("HPKE-v1", suite_id, label, ikm)
         // Deviation from the RFC: the parts of labeled_ikm are absorbed by HMAC in order rather than
         // concatenated first.
@@ -282,7 +285,8 @@ impl<
         for (i, okm_chunk) in out.chunks_mut(nh).enumerate() {
             // T(i) = HMAC-Hash(PRK, T(i-1) | info | i), with info = labeled_info
             // Cannot fail: the PRK is a MAC key of the hash's full output length.
-            let mut hmac = HMAC::<G::KDFHash>::new(prk).unwrap();
+            let key = HmacKey::<G::KDFHash>::from_key_material(prk).unwrap();
+            let mut hmac = key.create_generator();
             hmac.do_update(&t[..t_len]);
             // labeled_info = concat(I2OSP(L, 2), "HPKE-v1", suite_id, label, info)
             // Deviation from the RFC: absorbed in parts, as in labeled_extract.

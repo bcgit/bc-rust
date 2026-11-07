@@ -3,7 +3,7 @@
 # DHKEM(X25519, HKDF-SHA256) encapsulation (RFC 9180).
 #
 # The known answers: the key agreement is RFC 7748 Section 6.1; the decapsulation is RFC 9180
-# Appendix A.1.1.
+# Appendix A.1.1. Hex keys and ciphertexts are read under --hex-input; without it they are raw bytes.
 
 source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
@@ -24,10 +24,10 @@ SHARED_SECRET=fe0e18c9f024ce43799ae393c7e8fe8fce9d218875e8227b0187c04e7d2ea1fc
 
 test_pk_from_sk_matches_rfc7748() {
     local got
-    got=$(hex_out "$BC_RUST" x25519 pk-from-sk -x < <(printf '%s' "$ALICE_SK"))
+    got=$(hex_out "$BC_RUST" --hex-input x25519 pk-from-sk -x < <(printf '%s' "$ALICE_SK"))
     assert_eq "$got" "$ALICE_PK" "RFC 7748 6.1 Alice's public key"
     printf '%s' "$BOB_SK" >"$TMP/bob.sk"
-    got=$(hex_out "$BC_RUST" x25519 pk-from-sk --skfile "$TMP/bob.sk" -x)
+    got=$(hex_out "$BC_RUST" --hex-input x25519 pk-from-sk --skfile "$TMP/bob.sk" -x)
     assert_eq "$got" "$BOB_PK" "RFC 7748 6.1 Bob's public key"
 }
 
@@ -37,21 +37,21 @@ test_agree_matches_rfc7748() {
     printf '%s' "$ALICE_PK" >"$TMP/alice.pk"
     printf '%s' "$BOB_SK" >"$TMP/bob.sk"
     printf '%s' "$BOB_PK" >"$TMP/bob.pk"
-    got=$(hex_out "$BC_RUST" x25519 agree --skfile "$TMP/alice.sk" --pkfile "$TMP/bob.pk" -x)
+    got=$(hex_out "$BC_RUST" --hex-input x25519 agree --skfile "$TMP/alice.sk" --pkfile "$TMP/bob.pk" -x)
     assert_eq "$got" "$SHARED_K" "RFC 7748 6.1 K, computed by Alice"
-    got=$(hex_out "$BC_RUST" x25519 agree --pkfile "$TMP/alice.pk" -x <"$TMP/bob.sk")
+    got=$(hex_out "$BC_RUST" --hex-input x25519 agree --pkfile "$TMP/alice.pk" -x <"$TMP/bob.sk")
     assert_eq "$got" "$SHARED_K" "RFC 7748 6.1 K, computed by Bob with the sk on stdin"
 }
 
 test_decaps_matches_rfc9180_a1_1() {
     local got
     printf '%s' "$SK_RM" >"$TMP/sk"
-    got=$(hex_out "$BC_RUST" x25519 pk-from-sk --skfile "$TMP/sk" -x)
+    got=$(hex_out "$BC_RUST" --hex-input x25519 pk-from-sk --skfile "$TMP/sk" -x)
     assert_eq "$got" "$PK_RM" "RFC 9180 A.1.1 pkRm"
-    got=$(hex_out "$BC_RUST" x25519 decaps --skfile "$TMP/sk" -x < <(printf '%s' "$ENC"))
+    got=$(hex_out "$BC_RUST" --hex-input x25519 decaps --skfile "$TMP/sk" -x < <(printf '%s' "$ENC"))
     assert_eq "$got" "$SHARED_SECRET" "RFC 9180 A.1.1 shared_secret, enc on stdin"
     printf '%s' "$ENC" >"$TMP/ct"
-    got=$(hex_out "$BC_RUST" x25519 decaps --skfile "$TMP/sk" --ctfile "$TMP/ct" -x)
+    got=$(hex_out "$BC_RUST" --hex-input x25519 decaps --skfile "$TMP/sk" --ctfile "$TMP/ct" -x)
     assert_eq "$got" "$SHARED_SECRET" "RFC 9180 A.1.1 shared_secret, enc from --ctfile"
 }
 
@@ -122,14 +122,14 @@ test_encaps_to_stdout_round_trip() {
     ss=$(sed -n 2p "$TMP/out")
     assert_eq "${#ct}" 64 "hex ciphertext length"
     assert_eq "${#ss}" 64 "hex shared secret length"
-    got=$(hex_out "$BC_RUST" x25519 decaps --skfile "$TMP/sk" -x < <(printf '%s' "$ct"))
+    got=$(hex_out "$BC_RUST" x25519 decaps --skfile "$TMP/sk" -x < <(unhex "$ct"))
     assert_eq "$got" "$ss" "decaps must recover the encapsulated secret"
 }
 
 test_encaps_is_randomized() {
     printf '%s' "$PK_RM" >"$TMP/pk"
-    "$BC_RUST" x25519 encaps --pkfile "$TMP/pk" --ctfile "$TMP/ct1" >"$TMP/ss1"
-    "$BC_RUST" x25519 encaps --pkfile "$TMP/pk" --ctfile "$TMP/ct2" >"$TMP/ss2"
+    "$BC_RUST" --hex-input x25519 encaps --pkfile "$TMP/pk" --ctfile "$TMP/ct1" >"$TMP/ss1"
+    "$BC_RUST" --hex-input x25519 encaps --pkfile "$TMP/pk" --ctfile "$TMP/ct2" >"$TMP/ss2"
     assert_differs "$TMP/ct1" "$TMP/ct2" "two encapsulations must give different ciphertexts"
     assert_differs "$TMP/ss1" "$TMP/ss2" "two encapsulations must give different secrets"
 }
@@ -138,7 +138,7 @@ test_encaps_is_randomized() {
 test_decaps_with_wrong_key_gives_different_secret() {
     local got
     "$BC_RUST" x25519 keygen >"$TMP/sk"
-    got=$(hex_out "$BC_RUST" x25519 decaps --skfile "$TMP/sk" -x < <(printf '%s' "$ENC"))
+    got=$(hex_out "$BC_RUST" x25519 decaps --skfile "$TMP/sk" -x < <(unhex "$ENC"))
     assert_eq "${#got}" 64 "hex shared secret length"
     [ "$got" != "$SHARED_SECRET" ] || fail "the wrong private key must not give the RFC secret"
 }
@@ -151,34 +151,34 @@ test_low_order_public_key_is_rejected() {
     printf '%s' "$ALICE_SK" >"$TMP/sk"
     printf '%064d' 0 >"$TMP/zero.pk"
     expect_fail "agree with an all-zero public key" \
-        "$BC_RUST" x25519 agree --skfile "$TMP/sk" --pkfile "$TMP/zero.pk"
+        "$BC_RUST" --hex-input x25519 agree --skfile "$TMP/sk" --pkfile "$TMP/zero.pk"
     assert_stderr_has "InvalidPublicKey"
     expect_fail "encaps to an all-zero public key" \
-        "$BC_RUST" x25519 encaps --pkfile "$TMP/zero.pk" --ctfile "$TMP/ct"
+        "$BC_RUST" --hex-input x25519 encaps --pkfile "$TMP/zero.pk" --ctfile "$TMP/ct"
     expect_fail "decaps of an all-zero enc" \
-        "$BC_RUST" x25519 decaps --skfile "$TMP/sk" --ctfile "$TMP/zero.pk"
+        "$BC_RUST" --hex-input x25519 decaps --skfile "$TMP/sk" --ctfile "$TMP/zero.pk"
 }
 
 test_wrong_length_inputs_are_rejected() {
     printf '%s' "$ALICE_SK" >"$TMP/sk"
     printf '%s' "${BOB_PK:0:62}" >"$TMP/short.pk"
-    expect_fail "31-byte private key" "$BC_RUST" x25519 pk-from-sk < <(printf '%s' "${ALICE_SK:0:62}")
+    expect_fail "31-byte private key" "$BC_RUST" --hex-input x25519 pk-from-sk < <(printf '%s' "${ALICE_SK:0:62}")
     assert_stderr_has "private key"
     expect_fail "31-byte public key" \
-        "$BC_RUST" x25519 agree --skfile "$TMP/sk" --pkfile "$TMP/short.pk"
+        "$BC_RUST" --hex-input x25519 agree --skfile "$TMP/sk" --pkfile "$TMP/short.pk"
     assert_stderr_has "public key"
     expect_fail "31-byte ciphertext" \
-        "$BC_RUST" x25519 decaps --skfile "$TMP/sk" --ctfile "$TMP/short.pk"
+        "$BC_RUST" --hex-input x25519 decaps --skfile "$TMP/sk" --ctfile "$TMP/short.pk"
     assert_stderr_has "ciphertext"
 }
 
 test_missing_files_are_rejected() {
     printf '%s' "$ALICE_SK" >"$TMP/sk"
-    expect_fail "agree without --pkfile" "$BC_RUST" x25519 agree <"$TMP/sk"
+    expect_fail "agree without --pkfile" "$BC_RUST" --hex-input x25519 agree <"$TMP/sk"
     assert_stderr_has "pkfile"
-    expect_fail "check-consistency without --pkfile" "$BC_RUST" x25519 check-consistency <"$TMP/sk"
+    expect_fail "check-consistency without --pkfile" "$BC_RUST" --hex-input x25519 check-consistency <"$TMP/sk"
     assert_stderr_has "pkfile"
-    expect_fail "decaps without --skfile" "$BC_RUST" x25519 decaps < <(printf '%s' "$ENC")
+    expect_fail "decaps without --skfile" "$BC_RUST" --hex-input x25519 decaps < <(printf '%s' "$ENC")
     assert_stderr_has "skfile"
 }
 

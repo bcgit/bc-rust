@@ -1,7 +1,8 @@
 use bouncycastle_core::key_material::{KeyMaterial256, KeyType};
 use bouncycastle_core::traits::{KEMDecapsulator, KEMEncapsulator, KeyAgreement};
-use bouncycastle_core_test_framework::{DUMMY_SEED, FixedSeedRNG};
+use bouncycastle_core_test_framework::DUMMY_SEED;
 use bouncycastle_ed::x25519::{X25519, X25519PrivateKey, X25519PublicKey};
+use bouncycastle_rng::FixedSeedRNG;
 use criterion::{Criterion, criterion_group, criterion_main};
 use std::hint::black_box;
 

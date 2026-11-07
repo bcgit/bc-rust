@@ -1,5 +1,6 @@
 use crate::helpers::{
-    read_from_file, read_from_file_or_stdin, write_bytes_or_hex, write_bytes_or_hex_to_file,
+    read_input_file, read_input_file_or_stdin, read_secret_file, read_secret_file_or_stdin,
+    write_bytes_or_hex, write_bytes_or_hex_to_file,
 };
 use bouncycastle::core::key_material::KeyMaterialTrait;
 use bouncycastle::core::traits::{
@@ -50,11 +51,11 @@ pub(crate) fn x25519_cmd(
             write_bytes_or_hex(&sk.encode(), output_hex);
         }
         X25519Action::PkFromSk => {
-            let sk = parse_sk(&read_from_file_or_stdin(skfile));
+            let sk = parse_sk(read_secret_file_or_stdin(skfile).ref_to_bytes());
             write_bytes_or_hex(&sk.pk().encode(), output_hex);
         }
         X25519Action::CheckConsistency => {
-            let sk = parse_sk(&read_from_file_or_stdin(skfile));
+            let sk = parse_sk(read_secret_file_or_stdin(skfile).ref_to_bytes());
             let pk = parse_pk(&read_pkfile(pkfile));
 
             match X25519::keypair_consistency_check(&pk, &sk) {
@@ -68,7 +69,7 @@ pub(crate) fn x25519_cmd(
             }
         }
         X25519Action::Agree => {
-            let sk = parse_sk(&read_from_file_or_stdin(skfile));
+            let sk = parse_sk(read_secret_file_or_stdin(skfile).ref_to_bytes());
             let pk = parse_pk(&read_pkfile(pkfile));
 
             let ss = match X25519::key_agreement(&pk, &sk) {
@@ -81,7 +82,7 @@ pub(crate) fn x25519_cmd(
             write_bytes_or_hex(ss.as_ref(), output_hex);
         }
         X25519Action::Encaps => {
-            let pk = parse_pk(&read_from_file_or_stdin(pkfile));
+            let pk = parse_pk(&read_input_file_or_stdin(pkfile));
 
             let (ss, ct) = match X25519::encaps(&pk) {
                 Ok(r) => r,
@@ -104,14 +105,14 @@ pub(crate) fn x25519_cmd(
         }
         X25519Action::Decaps => {
             let sk = match skfile {
-                Some(f) => parse_sk(&read_from_file(f)),
+                Some(f) => parse_sk(read_secret_file(f).ref_to_bytes()),
                 None => {
                     eprintln!("Error: no skfile provided.");
                     exit(-1);
                 }
             };
 
-            let ct = read_from_file_or_stdin(ctfile);
+            let ct = read_input_file_or_stdin(ctfile);
             if ct.len() != POINT_LEN {
                 eprintln!("Error: ciphertext is not the correct length.");
                 exit(-1);
@@ -131,7 +132,7 @@ pub(crate) fn x25519_cmd(
 
 fn read_pkfile(pkfile: &Option<String>) -> Vec<u8> {
     match pkfile {
-        Some(f) => read_from_file(f),
+        Some(f) => read_input_file(f),
         None => {
             eprintln!("Error: no pkfile provided.");
             exit(-1);
