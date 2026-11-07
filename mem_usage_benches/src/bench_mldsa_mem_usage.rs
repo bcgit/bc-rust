@@ -424,7 +424,7 @@ fn load_mldsa44_sk() -> bouncycastle::mldsa::MLDSA44PrivateKey {
 }
 
 fn bench_mldsa44_sign() {
-    use bouncycastle::mldsa::{MLDSA44, MLDSA44_SK_LEN, MLDSATrait};
+    use bouncycastle::mldsa::{MLDSA44, MLDSA44_SK_LEN, MLDSAPrivateKeyTrait, MLDSATrait};
 
     eprintln!("MLDSA44/Sign");
 
@@ -442,14 +442,16 @@ fn bench_mldsa44_sign() {
     let msg = b"The quick brown fox jumped over the lazy dog";
 
     measure(|| {
-        let mu = MLDSA44::compute_mu_from_sk(&sk, msg, None).unwrap();
-        let sig = MLDSA44::sign_mu_deterministic(&sk, None, &mu, [0u8; 32]).unwrap();
+        let mu = sk.compute_mu(msg, None).unwrap();
+        let sig = sk.sign_mu_deterministic(&mu).unwrap();
         print!("{:x?}", sig);
     });
 }
 
 fn bench_mldsa44_sign_expanded_sk() {
-    use bouncycastle::mldsa::{MLDSA44, MLDSA44_SK_LEN, MLDSAPrivateKeyTrait, MLDSATrait};
+    use bouncycastle::mldsa::{
+        MLDSA44, MLDSA44_SK_LEN, MLDSA44PrivateKeyExpanded, MLDSAPrivateKeyTrait, MLDSATrait,
+    };
 
     eprintln!("MLDSA44/Sign_with_expanded_key");
 
@@ -463,13 +465,13 @@ fn bench_mldsa44_sign_expanded_sk() {
     // eprintln!("sk:\n{}", &hex::encode(sk.encode()));
 
     let sk = load_mldsa44_sk();
-    let a_hat = sk.A_hat();
+    let sk_expanded = MLDSA44PrivateKeyExpanded::from(&sk);
 
     let msg = b"The quick brown fox jumped over the lazy dog";
 
     measure(|| {
-        let mu = MLDSA44::compute_mu_from_sk(&sk, msg, None).unwrap();
-        let sig = MLDSA44::sign_mu_deterministic(&sk, Some(&a_hat), &mu, [0u8; 32]).unwrap();
+        let mu = sk_expanded.compute_mu(msg, None).unwrap();
+        let sig = sk_expanded.sign_mu_deterministic(&mu).unwrap();
         print!("{:x?}", sig);
     });
 }
@@ -489,7 +491,9 @@ fn load_mldsa44_lowmemory_sk() -> bouncycastle::mldsa_lowmemory::MLDSA44PrivateK
 }
 
 fn bench_mldsa44_lowmemory_sign() {
-    use bouncycastle::mldsa_lowmemory::{MLDSA44, MLDSA44_SK_LEN, MLDSATrait};
+    use bouncycastle::mldsa_lowmemory::{
+        MLDSA44, MLDSA44_SK_LEN, MLDSAPrivateKeyTrait, MLDSATrait,
+    };
 
     eprintln!("MLDSA44_lowmemory/Sign");
 
@@ -507,8 +511,8 @@ fn bench_mldsa44_lowmemory_sign() {
     let msg = b"The quick brown fox jumped over the lazy dog";
 
     measure(|| {
-        let mu = MLDSA44::compute_mu_from_sk(&sk, msg, None).unwrap();
-        let sig = MLDSA44::sign_mu_deterministic(&sk, &mu, [0u8; 32]).unwrap();
+        let mu = sk.compute_mu(msg, None).unwrap();
+        let sig = sk.sign_mu_deterministic(&mu).unwrap();
         print!("{:x?}", sig);
     });
 }
@@ -794,7 +798,7 @@ fn load_mldsa65_sk() -> bouncycastle::mldsa::MLDSA65PrivateKey {
 }
 
 fn bench_mldsa65_sign() {
-    use bouncycastle::mldsa::{MLDSA65, MLDSA65_SK_LEN, MLDSATrait};
+    use bouncycastle::mldsa::{MLDSA65, MLDSA65_SK_LEN, MLDSAPrivateKeyTrait, MLDSATrait};
 
     eprintln!("MLDSA65/Sign");
 
@@ -813,14 +817,16 @@ fn bench_mldsa65_sign() {
     let msg = b"The quick brown fox jumped over the lazy dog";
 
     measure(|| {
-        let mu = MLDSA65::compute_mu_from_sk(&sk, msg, None).unwrap();
-        let sig = MLDSA65::sign_mu_deterministic(&sk, None, &mu, [0u8; 32]).unwrap();
+        let mu = sk.compute_mu(msg, None).unwrap();
+        let sig = sk.sign_mu_deterministic(&mu).unwrap();
         print!("{:x?}", sig);
     });
 }
 
 fn bench_mldsa65_sign_expanded_sk() {
-    use bouncycastle::mldsa::{MLDSA65, MLDSA65_SK_LEN, MLDSAPrivateKeyTrait, MLDSATrait};
+    use bouncycastle::mldsa::{
+        MLDSA65, MLDSA65_SK_LEN, MLDSA65PrivateKeyExpanded, MLDSAPrivateKeyTrait, MLDSATrait,
+    };
 
     eprintln!("MLDSA65/Sign_with_expanded_key");
 
@@ -835,13 +841,13 @@ fn bench_mldsa65_sign_expanded_sk() {
     // eprintln!("sk:\n{}", &hex::encode(sk.encode()));
 
     let sk = load_mldsa65_sk();
-    let a_hat = sk.A_hat();
+    let sk_expanded = MLDSA65PrivateKeyExpanded::from(&sk);
 
     let msg = b"The quick brown fox jumped over the lazy dog";
 
     measure(|| {
-        let mu = MLDSA65::compute_mu_from_sk(&sk, msg, None).unwrap();
-        let sig = MLDSA65::sign_mu_deterministic(&sk, Some(&a_hat), &mu, [0u8; 32]).unwrap();
+        let mu = sk_expanded.compute_mu(msg, None).unwrap();
+        let sig = sk_expanded.sign_mu_deterministic(&mu).unwrap();
         print!("{:x?}", sig);
     });
 }
@@ -861,7 +867,9 @@ fn load_mldsa65_lowmemory_sk() -> bouncycastle::mldsa_lowmemory::MLDSA65PrivateK
 }
 
 fn bench_mldsa65_lowmemory_sign() {
-    use bouncycastle::mldsa_lowmemory::{MLDSA65, MLDSA65_SK_LEN, MLDSATrait};
+    use bouncycastle::mldsa_lowmemory::{
+        MLDSA65, MLDSA65_SK_LEN, MLDSAPrivateKeyTrait, MLDSATrait,
+    };
 
     eprintln!("MLDSA65_lowmemory/Sign");
 
@@ -879,8 +887,8 @@ fn bench_mldsa65_lowmemory_sign() {
     let msg = b"The quick brown fox jumped over the lazy dog";
 
     measure(|| {
-        let mu = MLDSA65::compute_mu_from_sk(&sk, msg, None).unwrap();
-        let sig = MLDSA65::sign_mu_deterministic(&sk, &mu, [0u8; 32]).unwrap();
+        let mu = sk.compute_mu(msg, None).unwrap();
+        let sig = sk.sign_mu_deterministic(&mu).unwrap();
         print!("{:x?}", sig);
     });
 }
@@ -1224,7 +1232,7 @@ fn load_mldsa87_sk() -> bouncycastle::mldsa::MLDSA87PrivateKey {
 }
 
 fn bench_mldsa87_sign() {
-    use bouncycastle::mldsa::{MLDSA87, MLDSATrait};
+    use bouncycastle::mldsa::{MLDSA87, MLDSAPrivateKeyTrait, MLDSATrait};
 
     eprintln!("MLDSA87/Sign");
 
@@ -1243,14 +1251,16 @@ fn bench_mldsa87_sign() {
     let sk = load_mldsa87_sk();
 
     measure(|| {
-        let mu = MLDSA87::compute_mu_from_sk(&sk, msg, None).unwrap();
-        let sig = MLDSA87::sign_mu_deterministic(&sk, None, &mu, [0u8; 32]).unwrap();
+        let mu = sk.compute_mu(msg, None).unwrap();
+        let sig = sk.sign_mu_deterministic(&mu).unwrap();
         print!("{:x?}", sig);
     });
 }
 
 fn bench_mldsa87_sign_expanded_sk() {
-    use bouncycastle::mldsa::{MLDSA87, MLDSAPrivateKeyTrait, MLDSATrait};
+    use bouncycastle::mldsa::{
+        MLDSA87, MLDSA87PrivateKeyExpanded, MLDSAPrivateKeyTrait, MLDSATrait,
+    };
 
     eprintln!("MLDSA87/Sign_with_expanded_key");
 
@@ -1267,11 +1277,11 @@ fn bench_mldsa87_sign_expanded_sk() {
 
     // let (_pk, sk) = MLDSA87::keygen_from_seed(&seed).unwrap();
     let sk = load_mldsa87_sk();
-    let a_hat = sk.A_hat();
+    let sk_expanded = MLDSA87PrivateKeyExpanded::from(&sk);
 
     measure(|| {
-        let mu = MLDSA87::compute_mu_from_sk(&sk, msg, None).unwrap();
-        let sig = MLDSA87::sign_mu_deterministic(&sk, Some(&a_hat), &mu, [0u8; 32]).unwrap();
+        let mu = sk_expanded.compute_mu(msg, None).unwrap();
+        let sig = sk_expanded.sign_mu_deterministic(&mu).unwrap();
         print!("{:x?}", sig);
     });
 }
@@ -1291,7 +1301,9 @@ fn load_mldsa87_lowmemory_sk() -> bouncycastle::mldsa_lowmemory::MLDSA87PrivateK
 }
 
 fn bench_mldsa87_lowmemory_sign() {
-    use bouncycastle::mldsa_lowmemory::{MLDSA87, MLDSA87_SK_LEN, MLDSATrait};
+    use bouncycastle::mldsa_lowmemory::{
+        MLDSA87, MLDSA87_SK_LEN, MLDSAPrivateKeyTrait, MLDSATrait,
+    };
 
     eprintln!("MLDSA87_lowmemory/Sign");
 
@@ -1309,8 +1321,8 @@ fn bench_mldsa87_lowmemory_sign() {
     let msg = b"The quick brown fox jumped over the lazy dog";
 
     measure(|| {
-        let mu = MLDSA87::compute_mu_from_sk(&sk, msg, None).unwrap();
-        let sig = MLDSA87::sign_mu_deterministic(&sk, &mu, [0u8; 32]).unwrap();
+        let mu = sk.compute_mu(msg, None).unwrap();
+        let sig = sk.sign_mu_deterministic(&mu).unwrap();
         print!("{:x?}", sig);
     });
 }
@@ -1415,7 +1427,7 @@ fn load_mldsa44_pk() -> bouncycastle::mldsa::MLDSA44PublicKey {
 }
 
 fn bench_mldsa44_verify() {
-    use bouncycastle::mldsa::{MLDSA44, MLDSA44_SIG_LEN, MLDSATrait};
+    use bouncycastle::mldsa::{MLDSA44, MLDSA44_SIG_LEN, MLDSAPrivateKeyTrait, MLDSATrait};
 
     eprintln!("MLDSA44/Verify");
 
@@ -1601,7 +1613,7 @@ fn bench_mldsa44_verify() {
     ];
 
     measure(|| {
-        if MLDSA44::verify(&mldsa44_pk, msg, None, &sig).is_ok() {
+        if mldsa44_pk.verify(msg, None, &sig).is_ok() {
             println!("Verification succeeded!");
         } else {
             panic!("Verification failed! -- figure that out");
@@ -1803,7 +1815,7 @@ fn bench_mldsa44_verify_expanded_pk() {
 
     measure(|| {
         let pk_expanded = MLDSA44PublicKeyExpanded::from(&mldsa44_pk);
-        if MLDSA44::verify_with_expanded_key(&pk_expanded, msg, None, &sig).is_ok() {
+        if pk_expanded.verify(msg, None, &sig).is_ok() {
             println!("Verification succeeded!");
         } else {
             panic!("Verification failed! -- figure that out");
@@ -1911,7 +1923,9 @@ fn load_mldsa44_lowmemory_pk() -> bouncycastle::mldsa_lowmemory::MLDSA44PublicKe
 }
 
 fn bench_mldsa44_lowmemory_verify() {
-    use bouncycastle::mldsa_lowmemory::{MLDSA44, MLDSA44_SIG_LEN, MLDSATrait};
+    use bouncycastle::mldsa_lowmemory::{
+        MLDSA44, MLDSA44_SIG_LEN, MLDSAPrivateKeyTrait, MLDSATrait,
+    };
 
     eprintln!("MLDSA44_lowmemory/Verify");
 
@@ -2097,7 +2111,7 @@ fn bench_mldsa44_lowmemory_verify() {
     ];
 
     measure(|| {
-        if MLDSA44::verify(&pk, msg, None, &sig).is_ok() {
+        if pk.verify(msg, None, &sig).is_ok() {
             println!("Verification succeeded!");
         } else {
             panic!("Verification failed! -- figure that out");
@@ -2248,7 +2262,7 @@ fn load_mldsa65_pk() -> bouncycastle::mldsa::MLDSA65PublicKey {
 }
 
 fn bench_mldsa65_verify() {
-    use bouncycastle::mldsa::{MLDSA65, MLDSA65_SIG_LEN, MLDSATrait};
+    use bouncycastle::mldsa::{MLDSA65, MLDSA65_SIG_LEN, MLDSAPrivateKeyTrait, MLDSATrait};
 
     eprintln!("MLDSA65/Verify");
 
@@ -2496,7 +2510,7 @@ fn bench_mldsa65_verify() {
     ];
 
     measure(|| {
-        if MLDSA65::verify(&mldsa65_pk, msg, None, &sig).is_ok() {
+        if mldsa65_pk.verify(msg, None, &sig).is_ok() {
             println!("Verification succeeded!");
         } else {
             panic!("Verification failed! -- figure that out");
@@ -2760,7 +2774,7 @@ fn bench_mldsa65_verify_expanded_pk() {
 
     measure(|| {
         let pk_expanded = MLDSA65PublicKeyExpanded::from(&mldsa65_pk);
-        if MLDSA65::verify_with_expanded_key(&pk_expanded, msg, None, &sig).is_ok() {
+        if pk_expanded.verify(msg, None, &sig).is_ok() {
             println!("Verification succeeded!");
         } else {
             panic!("Verification failed! -- figure that out");
@@ -2911,7 +2925,9 @@ fn load_mldsa65_lowmemory_pk() -> bouncycastle::mldsa_lowmemory::MLDSA65PublicKe
 }
 
 fn bench_mldsa65_lowmemory_verify() {
-    use bouncycastle::mldsa_lowmemory::{MLDSA65, MLDSA65_SIG_LEN, MLDSATrait};
+    use bouncycastle::mldsa_lowmemory::{
+        MLDSA65, MLDSA65_SIG_LEN, MLDSAPrivateKeyTrait, MLDSATrait,
+    };
 
     eprintln!("MLDSA65_lowmemory/Verify");
 
@@ -3157,7 +3173,7 @@ fn bench_mldsa65_lowmemory_verify() {
     ];
 
     measure(|| {
-        if MLDSA65::verify(&mldsa65_pk, msg, None, &sig).is_ok() {
+        if mldsa65_pk.verify(msg, None, &sig).is_ok() {
             eprintln!("Verification succeeded!");
         } else {
             panic!("Verification failed! -- figure that out");
@@ -3684,7 +3700,7 @@ fn bench_mldsa87_verify() {
     ];
 
     measure(|| {
-        if MLDSA87::verify(&pk, msg, None, &sig).is_ok() {
+        if pk.verify(msg, None, &sig).is_ok() {
             eprintln!("Verification succeeded!");
         } else {
             panic!("Verification failed! -- figure that out");
@@ -4036,7 +4052,7 @@ fn bench_mldsa87_verify_expanded_pk() {
 
     measure(|| {
         let pk_expanded = MLDSA87PublicKeyExpanded::from(&pk);
-        if MLDSA87::verify_with_expanded_key(&pk_expanded, msg, None, &sig).is_ok() {
+        if pk_expanded.verify(msg, None, &sig).is_ok() {
             eprintln!("Verification succeeded!");
         } else {
             panic!("Verification failed! -- figure that out");
@@ -4229,7 +4245,9 @@ fn load_mldsa87_lowmemory_pk() -> bouncycastle::mldsa_lowmemory::MLDSA87PublicKe
 }
 
 fn bench_mldsa87_lowmemory_verify() {
-    use bouncycastle::mldsa_lowmemory::{MLDSA87, MLDSA87_SIG_LEN, MLDSATrait};
+    use bouncycastle::mldsa_lowmemory::{
+        MLDSA87, MLDSA87_SIG_LEN, MLDSAPrivateKeyTrait, MLDSATrait,
+    };
 
     eprintln!("MLDSA87/Verify");
 
@@ -4563,7 +4581,7 @@ fn bench_mldsa87_lowmemory_verify() {
     ];
 
     measure(|| {
-        if MLDSA87::verify(&mldsa87_pk, msg, None, &sig).is_ok() {
+        if mldsa87_pk.verify(msg, None, &sig).is_ok() {
             eprintln!("Verification succeeded!");
         } else {
             panic!("Verification failed! -- figure that out");
