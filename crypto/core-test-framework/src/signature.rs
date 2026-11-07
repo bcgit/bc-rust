@@ -81,6 +81,18 @@ impl TestFrameworkSignature {
         assert_eq!(signer.do_final_out(&mut out).unwrap(), SIG_LEN);
         pk.verify(DUMMY_SEED, Some(b"streaming"), &out).unwrap();
 
+        // the workers can be held as trait objects
+        let mut signer = sk.create_signer(&mut rng, None).unwrap();
+        let dyn_signer: &mut dyn SignatureSigner<SIG_LEN> = &mut signer;
+        assert_eq!(dyn_signer.alg_name(), A::ALG_NAME);
+        dyn_signer.do_update(MSG);
+        let sig_dyn = signer.do_final().unwrap();
+        let mut verifier = pk.create_verifier(None).unwrap();
+        let dyn_verifier: &mut dyn SignatureVerifier = &mut verifier;
+        assert_eq!(dyn_verifier.alg_name(), A::ALG_NAME);
+        dyn_verifier.do_update(MSG);
+        verifier.do_verify_final(&sig_dyn).unwrap();
+
         // streaming verifier, in one chunk and in many
         let mut verifier = pk.create_verifier(Some(b"streaming")).unwrap();
         assert_eq!(verifier.alg_name(), A::ALG_NAME);
