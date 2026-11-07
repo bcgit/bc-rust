@@ -150,3 +150,37 @@ fn public_key_display_names_the_type() {
     let (pk, _sk) = keygen_default().unwrap();
     assert!(format!("{pk}").starts_with("ECCDHBp384r1PublicKey"));
 }
+
+/// ECC-CDH-brainpoolP384r1-X963KDF-SHA-384 on the same keys: the keying data is the X9.63 KDF over the
+/// raw Z with the SharedInfo, both sides agree, and the SharedInfo selects the key.
+#[test]
+fn x963kdf_variant() {
+    use bouncycastle_core::key_material::KeyMaterial;
+    use bouncycastle_eccdh::eccdh_bp384r1::{ECCDHBp384r1_X963KDF_SHA384, X963KDF_SHA384_SS_LEN};
+    use bouncycastle_sha2::SHA384;
+    use bouncycastle_x963kdf::{X963KDF_SHA384, X963KdfParams};
+
+    let params = X963KdfParams::<SHA384>::new(b"eccdh x963 tests");
+    TestFrameworkKeyAgreement::new().test_key_agreement(keygen_default, params);
+    assert_eq!(ECCDHBp384r1_X963KDF_SHA384::ALG_NAME, "ECC-CDH-brainpoolP384r1-X963KDF-SHA-384");
+    assert_eq!(ECCDHBp384r1_X963KDF_SHA384::MAX_SECURITY_STRENGTH, SecurityStrength::_192bit);
+
+    let (pk_a, sk_a) = keygen_default().unwrap();
+    let (pk_b, sk_b) = keygen_default().unwrap();
+    let key = sk_a.agree(&pk_b, params).unwrap();
+    assert!(key.equals(&sk_b.agree(&pk_a, params).unwrap()));
+    assert_eq!(key.key_len(), X963KDF_SHA384_SS_LEN);
+    assert_eq!(key.key_type(), KeyType::CryptographicRandom);
+    assert_eq!(key.security_strength(), SecurityStrength::_192bit);
+
+    let z = sk_a.agree(&pk_b, ()).unwrap();
+    let mut expected = KeyMaterial::<X963KDF_SHA384_SS_LEN>::new();
+    X963KDF_SHA384::derive_out(&z, b"eccdh x963 tests", X963KDF_SHA384_SS_LEN, &mut expected)
+        .unwrap();
+    assert!(key.equals(&expected));
+
+    let other = X963KdfParams::<SHA384>::new(b"another context");
+    assert!(!sk_a.agree(&pk_b, other).unwrap().equals(&key));
+    let none = X963KdfParams::<SHA384>::new(b"");
+    assert!(!sk_a.agree(&pk_b, none).unwrap().equals(&key));
+}

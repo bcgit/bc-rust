@@ -1,6 +1,7 @@
 //! The ECC CDH primitive over P-521 (SP 800-56A Rev. 3 Section 5.7.1.2) on the key-agreement
 //! roles of [`bouncycastle_core::agreement_key`]: the marker [`ECCDHP521`], the worker a private
-//! key hands out, and the role impl over `()`.
+//! key hands out, the role impl over `()`, and the same keys under the ANSI X9.63 KDF as
+//! [`ECCDHP521_X963KDF_SHA512`].
 
 use crate::keys_p521::{ECCDHP521PrivateKey, ECCDHP521PublicKey};
 use bouncycastle_core::agreement_key::{AgreementKey, KeyAgreementAlgorithm};
@@ -13,7 +14,9 @@ use bouncycastle_ec::hazmat::p521::P521FieldElement;
 use bouncycastle_ec::hazmat::p521_mul::multiply_point;
 use bouncycastle_ec::hazmat::p521_point::P521JacobianPoint;
 use bouncycastle_ec::hazmat::p521_sec1;
+use bouncycastle_sha2::SHA512;
 use bouncycastle_utils::secret::Secret;
+use bouncycastle_x963kdf::{X963KDF_SHA512, X963KdfParams};
 
 /// Length of the shared secret `Z`: Appendix C.2's field-element-to-byte-string conversion of
 /// `x_P`, `ceil(log2 p / 8)` = 66 bytes.
@@ -117,5 +120,65 @@ impl AgreementKey<(), SS_LEN> for ECCDHP521PrivateKey {
         _params: (),
     ) -> Result<Self::Agreement<'k>, KeyAgreementError> {
         Ok(ECCDHP521Agreement { sk: self })
+    }
+}
+
+/*** The same keys under the ANSI X9.63 KDF: SEC 1 Section 6.1's ECDH scheme ***/
+
+/// Length of the keying data ECC-CDH-P-521-X963KDF-SHA-512 derives: one SHA-512 output.
+pub const X963KDF_SHA512_SS_LEN: usize = 64;
+
+/// ECC CDH over P-521 with the keying data derived through the ANSI X9.63 KDF over
+/// SHA-512 (SEC 1 v2 Sections 3.6.1 and 6.1): the algorithm a [`ECCDHP521PrivateKey`] runs when made
+/// into a worker from `X963KdfParams<'p, SHA512>`. The key is `KDF(Z, SharedInfo)` with
+/// `keydatalen` one hash output, at the curve's strength.
+#[allow(non_camel_case_types)]
+pub struct ECCDHP521_X963KDF_SHA512;
+
+impl Algorithm for ECCDHP521_X963KDF_SHA512 {
+    const ALG_NAME: &'static str = "ECC-CDH-P521-X963KDF-SHA-512";
+    const MAX_SECURITY_STRENGTH: SecurityStrength = ECCDHP521::MAX_SECURITY_STRENGTH;
+}
+
+impl KeyAgreementAlgorithm for ECCDHP521_X963KDF_SHA512 {}
+
+/// The worker [`AgreementKey::create_agreement`] hands out over [`X963KdfParams`]: the own key
+/// and the `SharedInfo`, borrowed separately. Reusable against any number of peers.
+pub struct ECCDHP521X963KdfAgreement<'k, 'p> {
+    sk: &'k ECCDHP521PrivateKey,
+    params: X963KdfParams<'p, SHA512>,
+}
+
+impl Algorithm for ECCDHP521X963KdfAgreement<'_, '_> {
+    const ALG_NAME: &'static str = ECCDHP521_X963KDF_SHA512::ALG_NAME;
+    const MAX_SECURITY_STRENGTH: SecurityStrength = ECCDHP521_X963KDF_SHA512::MAX_SECURITY_STRENGTH;
+}
+
+impl KeyAgreement<ECCDHP521PublicKey, X963KDF_SHA512_SS_LEN> for ECCDHP521X963KdfAgreement<'_, '_> {
+    /// SEC 1 Section 6.1 steps: `Z` from the primitive, then `KDF(Z, SharedInfo)`; `Z` is typed
+    /// `SharedSecret`, which the KDF credits, and it never leaves this call.
+    fn agree(
+        &self,
+        peer_pk: &ECCDHP521PublicKey,
+    ) -> Result<KeyMaterial<X963KDF_SHA512_SS_LEN>, KeyAgreementError> {
+        let z = agree(self.sk, peer_pk)?;
+        let mut okm = KeyMaterial::<X963KDF_SHA512_SS_LEN>::new();
+        X963KDF_SHA512::derive_out(&z, self.params.shared_info(), X963KDF_SHA512_SS_LEN, &mut okm)
+            .map_err(|_| KeyAgreementError::GenericError("X9.63 KDF over Z failed"))?;
+        Ok(okm)
+    }
+}
+
+impl<'p> AgreementKey<X963KdfParams<'p, SHA512>, X963KDF_SHA512_SS_LEN> for ECCDHP521PrivateKey {
+    type Algorithm = ECCDHP521_X963KDF_SHA512;
+    type PublicKey = ECCDHP521PublicKey;
+    type Agreement<'k> = ECCDHP521X963KdfAgreement<'k, 'p>;
+
+    /// The KDF takes no parameter it can refuse, so this never fails.
+    fn create_agreement<'k>(
+        &'k self,
+        params: X963KdfParams<'p, SHA512>,
+    ) -> Result<Self::Agreement<'k>, KeyAgreementError> {
+        Ok(ECCDHP521X963KdfAgreement { sk: self, params })
     }
 }

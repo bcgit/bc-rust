@@ -153,3 +153,37 @@ fn public_key_display_names_the_type() {
     let (pk, _sk) = keygen_default().unwrap();
     assert!(format!("{pk}").starts_with("ECCDHSecp256K1PublicKey"));
 }
+
+/// ECC-CDH-secp256k1-X963KDF-SHA-256 on the same keys: the keying data is the X9.63 KDF over the
+/// raw Z with the SharedInfo, both sides agree, and the SharedInfo selects the key.
+#[test]
+fn x963kdf_variant() {
+    use bouncycastle_core::key_material::KeyMaterial;
+    use bouncycastle_eccdh::eccdh_p256k1::{ECCDHSecp256K1_X963KDF_SHA256, X963KDF_SHA256_SS_LEN};
+    use bouncycastle_sha2::SHA256;
+    use bouncycastle_x963kdf::{X963KDF_SHA256, X963KdfParams};
+
+    let params = X963KdfParams::<SHA256>::new(b"eccdh x963 tests");
+    TestFrameworkKeyAgreement::new().test_key_agreement(keygen_default, params);
+    assert_eq!(ECCDHSecp256K1_X963KDF_SHA256::ALG_NAME, "ECC-CDH-secp256k1-X963KDF-SHA-256");
+    assert_eq!(ECCDHSecp256K1_X963KDF_SHA256::MAX_SECURITY_STRENGTH, SecurityStrength::_128bit);
+
+    let (pk_a, sk_a) = keygen_default().unwrap();
+    let (pk_b, sk_b) = keygen_default().unwrap();
+    let key = sk_a.agree(&pk_b, params).unwrap();
+    assert!(key.equals(&sk_b.agree(&pk_a, params).unwrap()));
+    assert_eq!(key.key_len(), X963KDF_SHA256_SS_LEN);
+    assert_eq!(key.key_type(), KeyType::CryptographicRandom);
+    assert_eq!(key.security_strength(), SecurityStrength::_128bit);
+
+    let z = sk_a.agree(&pk_b, ()).unwrap();
+    let mut expected = KeyMaterial::<X963KDF_SHA256_SS_LEN>::new();
+    X963KDF_SHA256::derive_out(&z, b"eccdh x963 tests", X963KDF_SHA256_SS_LEN, &mut expected)
+        .unwrap();
+    assert!(key.equals(&expected));
+
+    let other = X963KdfParams::<SHA256>::new(b"another context");
+    assert!(!sk_a.agree(&pk_b, other).unwrap().equals(&key));
+    let none = X963KdfParams::<SHA256>::new(b"");
+    assert!(!sk_a.agree(&pk_b, none).unwrap().equals(&key));
+}

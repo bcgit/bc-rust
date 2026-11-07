@@ -7,8 +7,11 @@
 //! secret `Z` comes back as [`KeyMaterial`](bouncycastle_core::key_material::KeyMaterial) typed
 //! [`KeyType::SharedSecret`](bouncycastle_core::key_material::KeyType::SharedSecret): keying
 //! material for a KDF (Section 5.8), which nothing else accepts as a key. The raw primitive is
-//! the role impl over `()`; on P-256 the same keys also run `ECCDHP256_HKDF_SHA256` over
-//! [`HkdfParams<'p, SHA256>`](bouncycastle_hkdf::HkdfParams), `Z` derived through HKDF-SHA256.
+//! the role impl over `()`. The same keys also run SEC 1 Section 6.1's ECDH scheme, `Z` through the
+//! ANSI X9.63 KDF over the hash matched to the curve, over
+//! [`X963KdfParams<'p, H>`](bouncycastle_x963kdf::X963KdfParams) (`ECCDHP256_X963KDF_SHA256`,
+//! `ECCDHP384_X963KDF_SHA384`, `ECCDHP521_X963KDF_SHA512` and so on), and on P-256
+//! `ECCDHP256_HKDF_SHA256` over [`HkdfParams<'p, SHA256>`](bouncycastle_hkdf::HkdfParams).
 //!
 //! # Usage Examples
 //!
@@ -92,8 +95,9 @@
 //! # Status
 //!
 //! Seven curves: P-256, P-384, P-521, secp256k1, brainpoolP256r1, brainpoolP384r1 and
-//! brainpoolP512r1, each with cofactor 1. The KDF step is on the P-256 keys as
-//! ECC-CDH-P256-HKDF-SHA256; the other curves return `Z` for the caller's KDF. Not here: the
+//! brainpoolP512r1, each with cofactor 1. Every curve carries the X9.63 KDF variant over the hash
+//! matched to its strength (SHA-256, SHA-384 or SHA-512), and P-256 the HKDF-SHA256 one; the raw
+//! `Z` is there for any other KDF. Not here: the
 //! key-agreement schemes of SP 800-56A Rev. 3 Section 6 and key confirmation, ECC MQV
 //! (Section 5.7.2.3), X25519/X448 (another curve form), and SM2 key exchange.
 //!

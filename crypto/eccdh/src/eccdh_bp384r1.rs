@@ -1,6 +1,7 @@
 //! The ECC CDH primitive over brainpoolP384r1 (SP 800-56A Rev. 3 Section 5.7.1.2) on the key-agreement
 //! roles of [`bouncycastle_core::agreement_key`]: the marker [`ECCDHBp384r1`], the worker a private
-//! key hands out, and the role impl over `()`.
+//! key hands out, the role impl over `()`, and the same keys under the ANSI X9.63 KDF as
+//! [`ECCDHBp384r1_X963KDF_SHA384`].
 
 use crate::keys_bp384r1::{ECCDHBp384r1PrivateKey, ECCDHBp384r1PublicKey};
 use bouncycastle_core::agreement_key::{AgreementKey, KeyAgreementAlgorithm};
@@ -13,7 +14,9 @@ use bouncycastle_ec::hazmat::bp384r1::Bp384r1FieldElement;
 use bouncycastle_ec::hazmat::bp384r1_mul::multiply_point;
 use bouncycastle_ec::hazmat::bp384r1_point::Bp384r1JacobianPoint;
 use bouncycastle_ec::hazmat::bp384r1_sec1;
+use bouncycastle_sha2::SHA384;
 use bouncycastle_utils::secret::Secret;
+use bouncycastle_x963kdf::{X963KDF_SHA384, X963KdfParams};
 
 /// Length of the shared secret `Z`: Appendix C.2's field-element-to-byte-string conversion of
 /// `x_P`, `ceil(log2 p / 8)` = 48 bytes.
@@ -117,5 +120,68 @@ impl AgreementKey<(), SS_LEN> for ECCDHBp384r1PrivateKey {
         _params: (),
     ) -> Result<Self::Agreement<'k>, KeyAgreementError> {
         Ok(ECCDHBp384r1Agreement { sk: self })
+    }
+}
+
+/*** The same keys under the ANSI X9.63 KDF: SEC 1 Section 6.1's ECDH scheme ***/
+
+/// Length of the keying data ECC-CDH-brainpoolP384r1-X963KDF-SHA-384 derives: one SHA-384 output.
+pub const X963KDF_SHA384_SS_LEN: usize = 48;
+
+/// ECC CDH over brainpoolP384r1 with the keying data derived through the ANSI X9.63 KDF over
+/// SHA-384 (SEC 1 v2 Sections 3.6.1 and 6.1): the algorithm a [`ECCDHBp384r1PrivateKey`] runs when made
+/// into a worker from `X963KdfParams<'p, SHA384>`. The key is `KDF(Z, SharedInfo)` with
+/// `keydatalen` one hash output, at the curve's strength.
+#[allow(non_camel_case_types)]
+pub struct ECCDHBp384r1_X963KDF_SHA384;
+
+impl Algorithm for ECCDHBp384r1_X963KDF_SHA384 {
+    const ALG_NAME: &'static str = "ECC-CDH-brainpoolP384r1-X963KDF-SHA-384";
+    const MAX_SECURITY_STRENGTH: SecurityStrength = ECCDHBp384r1::MAX_SECURITY_STRENGTH;
+}
+
+impl KeyAgreementAlgorithm for ECCDHBp384r1_X963KDF_SHA384 {}
+
+/// The worker [`AgreementKey::create_agreement`] hands out over [`X963KdfParams`]: the own key
+/// and the `SharedInfo`, borrowed separately. Reusable against any number of peers.
+pub struct ECCDHBp384r1X963KdfAgreement<'k, 'p> {
+    sk: &'k ECCDHBp384r1PrivateKey,
+    params: X963KdfParams<'p, SHA384>,
+}
+
+impl Algorithm for ECCDHBp384r1X963KdfAgreement<'_, '_> {
+    const ALG_NAME: &'static str = ECCDHBp384r1_X963KDF_SHA384::ALG_NAME;
+    const MAX_SECURITY_STRENGTH: SecurityStrength =
+        ECCDHBp384r1_X963KDF_SHA384::MAX_SECURITY_STRENGTH;
+}
+
+impl KeyAgreement<ECCDHBp384r1PublicKey, X963KDF_SHA384_SS_LEN>
+    for ECCDHBp384r1X963KdfAgreement<'_, '_>
+{
+    /// SEC 1 Section 6.1 steps: `Z` from the primitive, then `KDF(Z, SharedInfo)`; `Z` is typed
+    /// `SharedSecret`, which the KDF credits, and it never leaves this call.
+    fn agree(
+        &self,
+        peer_pk: &ECCDHBp384r1PublicKey,
+    ) -> Result<KeyMaterial<X963KDF_SHA384_SS_LEN>, KeyAgreementError> {
+        let z = agree(self.sk, peer_pk)?;
+        let mut okm = KeyMaterial::<X963KDF_SHA384_SS_LEN>::new();
+        X963KDF_SHA384::derive_out(&z, self.params.shared_info(), X963KDF_SHA384_SS_LEN, &mut okm)
+            .map_err(|_| KeyAgreementError::GenericError("X9.63 KDF over Z failed"))?;
+        Ok(okm)
+    }
+}
+
+impl<'p> AgreementKey<X963KdfParams<'p, SHA384>, X963KDF_SHA384_SS_LEN> for ECCDHBp384r1PrivateKey {
+    type Algorithm = ECCDHBp384r1_X963KDF_SHA384;
+    type PublicKey = ECCDHBp384r1PublicKey;
+    type Agreement<'k> = ECCDHBp384r1X963KdfAgreement<'k, 'p>;
+
+    /// The KDF takes no parameter it can refuse, so this never fails.
+    fn create_agreement<'k>(
+        &'k self,
+        params: X963KdfParams<'p, SHA384>,
+    ) -> Result<Self::Agreement<'k>, KeyAgreementError> {
+        Ok(ECCDHBp384r1X963KdfAgreement { sk: self, params })
     }
 }

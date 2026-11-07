@@ -9,6 +9,7 @@ bouncycastle-ec.workspace = true
 bouncycastle-hkdf.workspace = true
 bouncycastle-sha2.workspace = true
 bouncycastle-utils.workspace = true
+bouncycastle-x963kdf.workspace = true
 
 [dev-dependencies]
 bouncycastle-core-test-framework.workspace = true
