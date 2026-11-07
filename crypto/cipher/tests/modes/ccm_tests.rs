@@ -15,10 +15,8 @@
 //! Spec references are to NIST SP 800-38C (May 2004, errata update 07-20-2007).
 
 mod common;
-#[path = "../common/toy_key.rs"]
-#[allow(dead_code)]
-mod toy_key;
 
+use bouncycastle_cipher::BlockCipherKey;
 use bouncycastle_cipher::modes::{CCM, CCM_Packet, ModeNames};
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::hazmat::ElectronicCodeBook;
@@ -33,7 +31,6 @@ use bouncycastle_core::traits::{
 };
 use bouncycastle_core_test_framework::from_key_material::TestFrameworkFromKeyMaterial;
 use common::{ForwardOnlyToy, SwappedFourToy, SwappedPairToy, TOY_LEN, Toy, toy_key};
-use toy_key::ToyKey;
 
 /// The default shape under test: a 12-byte nonce, so `q = 3`, and a full 16-byte tag.
 const NONCE_LEN: usize = 12;
@@ -42,10 +39,10 @@ const TAG_LEN: usize = 16;
 const AAD_LEN: usize = 64;
 
 /// The toy key under the in-place pair, which takes any length.
-type DeclaredKey<P> = ToyKey<P, CCM<NONCE_LEN, TAG_LEN>>;
+type DeclaredKey<P> = BlockCipherKey<P, CCM<NONCE_LEN, TAG_LEN>>;
 /// The toy key under the fixed-frame streams, whose frame is `DATA_LEN`.
 type FrameKey<P, const DATA_LEN: usize> =
-    ToyKey<P, CCM_Packet<NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>>;
+    BlockCipherKey<P, CCM_Packet<NONCE_LEN, TAG_LEN, AAD_LEN, DATA_LEN>>;
 
 fn pinned_nonce() -> [u8; NONCE_LEN] {
     core::array::from_fn(|i| 0xA0 ^ (i as u8))
@@ -363,7 +360,8 @@ fn tag_length_changes_the_tag_but_not_the_ciphertext_and_tags_do_not_nest() {
 
     macro_rules! check_tag_len {
         ($t:literal) => {{
-            let key = ToyKey::<Toy, CCM<NONCE_LEN, $t>>::from_key_material(&toy_key()).unwrap();
+            let key =
+                BlockCipherKey::<Toy, CCM<NONCE_LEN, $t>>::from_key_material(&toy_key()).unwrap();
             let mut buf = plaintext.clone();
             let tag = key.encrypt_detached_in_place_nonce(&nonce, aad, &mut buf).unwrap();
             assert_eq!(buf, ct16, "ciphertext must not depend on TAG_LEN ({})", $t);
@@ -415,7 +413,7 @@ fn every_permitted_nonce_length_works() {
             expected_max_payload,
             "n = {N}: the payload limit 2^8q - 1 that q = 15 - n implies"
         );
-        let key = ToyKey::<P, Mode<N>>::from_perm(P::new(key).unwrap());
+        let key = BlockCipherKey::<P, Mode<N>>::from_key_material(key).expect("a valid key");
 
         let nonce: [u8; N] = core::array::from_fn(|i| (i as u8).wrapping_mul(11).wrapping_add(3));
         let plaintext = message(100);

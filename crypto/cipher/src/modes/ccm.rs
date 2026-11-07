@@ -27,7 +27,7 @@
 //! # mod toy { include!("../../tests/common/toy_block_cipher.rs"); }
 //! # use toy::ToyBlockCipher;
 //! use bouncycastle_core::errors::SymmetricCipherError;
-//! use bouncycastle_core::hazmat::{AeadDeclaredDecryptMode, AeadDeclaredEncryptMode, ElectronicCodeBook, Mode};
+//! use bouncycastle_core::hazmat::{AeadDeclaredDecryptMode, AeadDeclaredEncryptMode, ElectronicCodeBook, KeyExpansion, Mode};
 //! use bouncycastle_core::key_material::{KeyMaterial128, KeyType};
 //! use bouncycastle_cipher::modes::CCM;
 //!
@@ -888,7 +888,7 @@ where
 /// ```
 /// # mod toy { include!("../../tests/common/toy_block_cipher.rs"); }
 /// # use toy::ToyBlockCipher;
-/// use bouncycastle_core::hazmat::{AeadDecryptMode, AeadEncryptMode, ElectronicCodeBook, Mode};
+/// use bouncycastle_core::hazmat::{AeadDecryptMode, AeadEncryptMode, ElectronicCodeBook, KeyExpansion, Mode};
 /// use bouncycastle_core::key_material::{KeyMaterial128, KeyType};
 /// use bouncycastle_core::traits::{AEADCipherDecryptor, AEADCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor};
 /// use bouncycastle_cipher::modes::CCM_Packet;
@@ -939,7 +939,7 @@ where
 /// ```
 /// # mod toy { include!("../../tests/common/toy_block_cipher.rs"); }
 /// # use toy::ToyBlockCipher;
-/// use bouncycastle_core::hazmat::{AeadEncryptMode, ElectronicCodeBook, Mode};
+/// use bouncycastle_core::hazmat::{AeadEncryptMode, ElectronicCodeBook, KeyExpansion, Mode};
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_core::traits::{AEADCipherEncryptor, SymmetricCipherEncryptor};
 /// use bouncycastle_cipher::modes::CCM_Packet;
@@ -1834,6 +1834,7 @@ mod tests {
     //! the AAD length encoding against the document rather than against this implementation.
 
     use super::*;
+    use bouncycastle_core::hazmat::KeyExpansion;
     use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 
     /// A stand-in permutation: the identity. `B0` and `Ctr_i` are formatted *before* any cipher
@@ -1860,7 +1861,7 @@ mod tests {
         const KWP_ALG_NAME: &'static str = "identity_KWP";
     }
 
-    impl ElectronicCodeBook<16, 16> for Identity {
+    impl KeyExpansion<16> for Identity {
         fn new(_key: &KeyMaterial<16>) -> Result<Self, SymmetricCipherError> {
             Ok(Identity)
         }

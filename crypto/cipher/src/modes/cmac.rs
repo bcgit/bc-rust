@@ -13,20 +13,19 @@
 //! # Usage Examples
 //!
 //! One-shot, and verifying, from a mode-bound key over `ToyBlockCipher` (see the
-//! [module docs](super) for why); over the toy permutation the key is the test suite's `ToyKey`,
+//! [module docs](super) for why); over the toy permutation the key is [`BlockCipherKey`](crate::BlockCipherKey),
 //! the shape of the AES one:
 //!
 //! ```
 //! # mod toy { include!("../../tests/common/toy_block_cipher.rs"); }
-//! # #[allow(dead_code)] mod toy_key { include!("../../tests/common/toy_key.rs"); }
 //! # use toy::ToyBlockCipher;
-//! # use toy_key::ToyKey;
+//! use bouncycastle_cipher::BlockCipherKey;
 //! use bouncycastle_cipher::modes::CMAC;
 //! use bouncycastle_core::key_material::{KeyMaterial128, KeyType};
 //! use bouncycastle_core::symmetric_key::{FromKeyMaterial, MacGenerationKey, MacVerificationKey};
 //!
 //! let material = KeyMaterial128::from_bytes_as_type(&[0x42; 16], KeyType::MACKey).unwrap();
-//! let key = ToyKey::<ToyBlockCipher, CMAC>::from_key_material(&material).unwrap();
+//! let key = BlockCipherKey::<ToyBlockCipher, CMAC>::from_key_material(&material).unwrap();
 //! let tag = key.mac(b"a message");
 //! assert_eq!(tag.len(), 16);
 //! assert!(key.verify(b"a message", &tag));
@@ -36,16 +35,15 @@
 //!
 //! ```
 //! # mod toy { include!("../../tests/common/toy_block_cipher.rs"); }
-//! # #[allow(dead_code)] mod toy_key { include!("../../tests/common/toy_key.rs"); }
 //! # use toy::ToyBlockCipher;
-//! # use toy_key::ToyKey;
+//! use bouncycastle_cipher::BlockCipherKey;
 //! use bouncycastle_cipher::modes::CMAC;
 //! use bouncycastle_core::key_material::{KeyMaterial128, KeyType};
 //! use bouncycastle_core::symmetric_key::{FromKeyMaterial, MacGenerationKey};
 //! use bouncycastle_core::traits::MAC;
 //!
 //! let material = KeyMaterial128::from_bytes_as_type(&[0x42; 16], KeyType::MACKey).unwrap();
-//! let key = ToyKey::<ToyBlockCipher, CMAC>::from_key_material(&material).unwrap();
+//! let key = BlockCipherKey::<ToyBlockCipher, CMAC>::from_key_material(&material).unwrap();
 //!
 //! let mut cmac = key.create_generator();
 //! cmac.do_update(b"a message that arrives ");

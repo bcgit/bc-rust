@@ -1,0 +1,46 @@
+//! Type aliases for Camellia in CMAC (NIST SP 800-38B). The docs are on [`Camellia_CMAC_128`], which the
+//! crate root re-exports.
+
+use crate::hazmat::{Camellia128Internal, Camellia192Internal, Camellia256Internal};
+use bouncycastle_cipher::modes::Cmac;
+
+/// Camellia-128 in CMAC: the `Cmac` worker of `bouncycastle-cipher` over the Camellia permutation, which
+/// implements `MAC`, from an `Camellia128Key<CMAC>` of `KeyType::MACKey` material through
+/// `MacGenerationKey` and `MacVerificationKey`. The construction, the key requirements,
+/// truncation and the security considerations are those of [`bouncycastle_cipher::modes::cmac`]
+/// and, alias for alias, of `AES_CMAC_128` in `bouncycastle-aes`; only the permutation differs.
+///
+/// # Usage Examples
+///
+/// ```
+/// use bouncycastle_camellia::Camellia256Key;
+/// use bouncycastle_cipher::modes::CMAC;
+/// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
+/// use bouncycastle_core::symmetric_key::{FromKeyMaterial, MacGenerationKey, MacVerificationKey};
+/// use bouncycastle_core::traits::MAC;
+///
+/// let material = KeyMaterial::<32>::from_bytes_as_type(&[0x42; 32], KeyType::MACKey).unwrap();
+/// let key = Camellia256Key::<CMAC>::from_key_material(&material).expect("a valid Camellia-256 MAC key");
+///
+/// let mut generator = key.create_generator();
+/// generator.do_update(b"a message that arrives ");
+/// generator.do_update(b"in pieces");
+/// let tag = generator.do_final();
+/// assert!(key.verify(b"a message that arrives in pieces", &tag));
+/// assert!(!key.verify(b"another message", &tag));
+/// ```
+///
+/// # Memory Usage
+///
+/// A key is the expanded schedule plus the two 16-byte subkeys: 240, 304 and 304 bytes for
+/// Camellia-128, -192 and -256. A worker borrows that and adds 48 bytes, as under AES.
+#[allow(non_camel_case_types)]
+pub type Camellia_CMAC_128<'k> = Cmac<'k, Camellia128Internal, 16>;
+
+/// Camellia-192 in CMAC. See [`Camellia_CMAC_128`].
+#[allow(non_camel_case_types)]
+pub type Camellia_CMAC_192<'k> = Cmac<'k, Camellia192Internal, 16>;
+
+/// Camellia-256 in CMAC. See [`Camellia_CMAC_128`].
+#[allow(non_camel_case_types)]
+pub type Camellia_CMAC_256<'k> = Cmac<'k, Camellia256Internal, 16>;

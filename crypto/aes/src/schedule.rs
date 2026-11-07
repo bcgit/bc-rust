@@ -26,7 +26,7 @@
 //! tables from the cipher, and not from the key schedule, still leaks through the schedule.
 
 use crate::AESParams;
-use crate::bitslice::{Block, PlaneWord, Planes, ortho};
+use crate::bitslice::{Block, BlockPlanes, PlaneWord, Planes, ortho};
 use crate::sbox::sbox;
 use bouncycastle_utils::secret::Secret;
 

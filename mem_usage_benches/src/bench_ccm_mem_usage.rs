@@ -31,9 +31,7 @@
 use bouncycastle::aes::AES128Key;
 use bouncycastle::aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
 use bouncycastle::cipher::modes::{CCM, CCM_Packet, CcmPacketDecryptor, CcmPacketEncryptor};
-use bouncycastle::core::hazmat::{
-    AeadDeclaredDecryptMode, AeadDeclaredEncryptMode, ElectronicCodeBook,
-};
+use bouncycastle::core::hazmat::{AeadDeclaredDecryptMode, AeadDeclaredEncryptMode, KeyExpansion};
 use bouncycastle::core::key_material::{KeyMaterial, KeyType};
 use bouncycastle::core::symmetric_key::{AeadDecryptionKey, AeadEncryptionKey, FromKeyMaterial};
 use bouncycastle::core::traits::{
