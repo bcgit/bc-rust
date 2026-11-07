@@ -130,13 +130,6 @@ impl<P: MLDSAParams> MLDSAPublicKey<P> {
 
         <Self as MLDSAPublicKeyInternalTrait<P>>::new(rho, t1)
     }
-
-    /// The public matrix 𝐀̂ = ExpandA(𝜌), FIPS 204 Algorithm 32; the expanded keys cache it.
-    pub(crate) fn A_hat(&self) -> P::MatrixA {
-        let mut A_hat = P::MatrixA::new();
-        expandA::<P>(&self.rho, &mut A_hat);
-        A_hat
-    }
 }
 
 /// General trait for all ML-DSA public keys types.
@@ -209,7 +202,12 @@ impl<P: MLDSAParams> MLDSAPublicKeyTrait<P> for MLDSAPublicKey<P> {
     where
         P: SignatureLen<SIG_LEN>,
     {
-        verify_internal::<P, Self, SIG_LEN>(self, &self.A_hat(), mu, sig)
+        // 𝐀̂ = ExpandA(𝜌), FIPS 204 Algorithm 32, into a local of this frame: a by-value helper
+        // would leave a second copy of the matrix live for the verification (the expanded key
+        // is the way to pay for it once).
+        let mut A_hat = P::MatrixA::new();
+        expandA::<P>(&self.rho, &mut A_hat);
+        verify_internal::<P, Self, SIG_LEN>(self, &A_hat, mu, sig)
     }
 }
 
@@ -469,13 +467,6 @@ impl<P: MLDSAParams> MLDSAPrivateKey<P> {
         let mut out = Secret::<P::SkEncoded>::new();
         self.sk_encode_out((*out).as_mut());
         out
-    }
-
-    /// The public matrix 𝐀̂ = ExpandA(𝜌), FIPS 204 Algorithm 32; the expanded key caches it.
-    pub(crate) fn A_hat(&self) -> P::MatrixA {
-        let mut A_hat = P::MatrixA::new();
-        expandA::<P>(&self.rho, &mut A_hat);
-        A_hat
     }
 
     /// Algorithm 25 skDecode(𝑠𝑘)
@@ -930,7 +921,10 @@ impl<P: MLDSAParams> SignMuWithRnd<P> for MLDSAPrivateKey<P> {
     where
         P: SignatureLen<SIG_LEN>,
     {
-        sign_internal::<P, Self, SIG_LEN>(self, &self.A_hat(), mu, rnd, output)
+        // 𝐀̂ = ExpandA(𝜌) into a local of this frame, as `verify_mu` does.
+        let mut A_hat = P::MatrixA::new();
+        expandA::<P>(&self.rho, &mut A_hat);
+        sign_internal::<P, Self, SIG_LEN>(self, &A_hat, mu, rnd, output)
     }
 }
 
