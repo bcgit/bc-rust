@@ -73,6 +73,10 @@
 //! * HKDF stretches key material but does not create entropy. The output key inherits the
 //!   [`SecurityStrength`] of its inputs: 200 bytes expanded from a 128-bit seed is 200 bytes at a
 //!   128-bit security level, not a 1600-bit key.
+//! * The output is labelled full-entropy only once the credited input carries half a hash output
+//!   of bytes, so the hash sets the bar: a 16-byte `CryptographicRandom` key seeds HKDF-SHA256
+//!   and derives a `CryptographicRandom` key at 128 bits, but through HKDF-SHA512 the same key
+//!   derives `Unknown` output. Choosing the stronger hash does not strengthen the label.
 //! * RFC 5869 Section 3.1 recommends a random salt where one is available. SP 800-56Cr2 permits an
 //!   all-zero salt, and the extract phase accepts one, but a salt that the caller believes to be
 //!   random and is not provides none of the benefit the recommendation is aimed at.
