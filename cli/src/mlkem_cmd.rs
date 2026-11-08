@@ -16,7 +16,7 @@ use crate::helpers::{
 };
 use bouncycastle::core::errors::KEMError;
 use bouncycastle::core::hazmat::do_hazardous_operations;
-use bouncycastle::core::kdf_params::KdfParams;
+use bouncycastle::core::kdf_params::{KdfParams, KeyLen};
 use bouncycastle::core::kem_key::{DecapsulatingKey, EncapsulatingKey};
 use bouncycastle::core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle::core::traits::{KEMPrivateKey, KEMPublicKey, RNG};
@@ -273,7 +273,7 @@ pub(crate) fn mlkem_hkdf_cmd<
         eprintln!("Error: couldn't load the salt: {e:?}");
         exit(-1);
     });
-    let params = KdfParams::new(&hkdf, &info);
+    let params = KdfParams::new(&hkdf, &info, KeyLen);
 
     match action {
         MLKEMHkdfAction::Encaps => {
