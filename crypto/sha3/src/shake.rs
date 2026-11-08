@@ -119,6 +119,9 @@ impl<PARAMS: SHAKEParams> SHAKEInternal<PARAMS> {
         if len == 0 {
             return Err(KDFError::InvalidLength("a zero-length derivation is refused"));
         }
+        if ikms.is_empty() {
+            return Err(KDFError::InvalidLength("a derivation from no keys is refused"));
+        }
         if len > output_key.capacity() {
             return Err(KDFError::InvalidLength("the output buffer cannot hold len bytes"));
         }

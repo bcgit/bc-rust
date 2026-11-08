@@ -94,6 +94,9 @@ impl<PARAMS: SHA3Params> SHA3Internal<PARAMS> {
         if len == 0 {
             return Err(KDFError::InvalidLength("a zero-length derivation is refused"));
         }
+        if ikms.is_empty() {
+            return Err(KDFError::InvalidLength("a derivation from no keys is refused"));
+        }
         if len > PARAMS::OUTPUT_LEN {
             return Err(KDFError::InvalidLength("a SHA-3 KDF derives at most one hash output"));
         }
