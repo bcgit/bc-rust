@@ -6,7 +6,11 @@
 //! key of FIPS 203 Algorithm 17 (ML-KEM.Encaps_internal), the KDF's input key material, and the
 //! KDF instance, the info and the length are the caller's [`KdfParams`], the length anything from
 //! one byte to 255 hash outputs (RFC 5869 Section 2.3), checked when the roles are instantiated. For the HKDF pairings that is HKDF-Hash(salt, 𝐾,
-//! info), the salt being what the instance was made with. The ciphertext is not fed into the
+//! info), the salt being what the instance was made with. The length is part of the protocol's
+//! agreement as the info is, and it is not folded into the info: the key at one length is a
+//! prefix of the key at a longer one under the same info (RFC 5869 Section 2.3), so a protocol
+//! that wants two keys from one encapsulation gives them two infos, not two lengths (SP 800-56C
+//! Rev. 2 Section 4.1 puts `L` in `FixedInfo` for that reason). The ciphertext is not fed into the
 //! info: Algorithm 17 line 1 derives 𝐾 as part of G(𝑚‖H(ek)) and line 2 derives 𝑐 from the same
 //! 𝑚 and ek, so 𝐾 is already bound to the encapsulation key and the ciphertext.
 //!
