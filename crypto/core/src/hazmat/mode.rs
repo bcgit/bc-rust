@@ -12,10 +12,11 @@
 //! shapes with no tag: [`SymmetricEncryptMode`] / [`SymmetricDecryptMode`] for a mode that takes
 //! data of any length (padded CBC, CFB, CFB8, CTR), [`BlockEncryptMode`] / [`BlockDecryptMode`]
 //! for one that takes whole blocks (CBC with no padding layer), and [`EcbEncryptMode`] /
-//! [`EcbDecryptMode`] for ECB, which has no init data and so takes no RNG. A MAC mode -- CMAC --
-//! implements [`MacMode`], whose generator and verifier take no nonce; a nonce-based MAC -- GMAC
-//! -- implements [`NonceMacMode`], whose generator and verifier are made as an AEAD mode's
-//! workers are. A key-wrap mode -- KW, KWP -- implements [`KeyWrapMode`] /
+//! [`EcbDecryptMode`] for ECB, which has no init data and so takes no RNG. Every other encrypting
+//! mode has a drawing constructor and a `_nonce` one that takes the caller's value, as the AEAD
+//! modes do. A MAC mode -- CMAC -- implements [`MacMode`], whose generator and verifier take no
+//! nonce; a nonce-based MAC -- GMAC -- implements [`NonceMacMode`], whose generator and verifier
+//! are made as an AEAD mode's workers are. A key-wrap mode -- KW, KWP -- implements [`KeyWrapMode`] /
 //! [`KeyUnwrapMode`], whose workers are one-shot and take no nonce either.
 //!
 //! Every worker borrows the key state it is made from, for the lifetime `'k` on the mode's
@@ -302,6 +303,14 @@ pub trait SymmetricEncryptMode<
         state: &'k Self::KeyState,
         rng: &mut dyn RNG,
     ) -> Result<(Self::Encryptor<'k>, [u8; INIT_DATA_LEN]), SymmetricCipherError>;
+
+    /// Begins an encryption from `state` under init data the caller supplies. Infallible, as
+    /// [`SymmetricDecryptMode::decrypt_init`] is; the obligation on the value is the caller's,
+    /// see [`crate::symmetric_key::SymmetricEncryptionKey`].
+    fn encrypt_init_nonce<'k>(
+        state: &'k Self::KeyState,
+        init_data: &[u8; INIT_DATA_LEN],
+    ) -> Self::Encryptor<'k>;
 }
 
 /// The decryption side of an unauthenticated mode over `P` that takes data of any length.
@@ -347,6 +356,13 @@ pub trait BlockEncryptMode<
         state: &'k Self::KeyState,
         rng: &mut dyn RNG,
     ) -> Result<(Self::Encryptor<'k>, [u8; INIT_DATA_LEN]), SymmetricCipherError>;
+
+    /// Begins an encryption from `state` under init data the caller supplies. Infallible, as
+    /// [`BlockDecryptMode::decrypt_init`] is.
+    fn encrypt_init_nonce<'k>(
+        state: &'k Self::KeyState,
+        init_data: &[u8; INIT_DATA_LEN],
+    ) -> Self::Encryptor<'k>;
 }
 
 /// The decryption side of a whole-block mode over `P`.

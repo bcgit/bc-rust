@@ -96,11 +96,11 @@ enum Subcommands {
 
         /// The 16-byte IV in hex. Supplied instead of generated: `encrypt` then writes none
         /// and `decrypt` reads none. See the IV paragraph above.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce")]
         iv: Option<String>,
 
         /// A file containing the 16-byte IV, (raw bytes; hex with --hex-input). If both iv and iv_file options are provided, the file will be used.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce-file")]
         iv_file: Option<String>,
 
         #[arg(short)]
@@ -162,11 +162,11 @@ enum Subcommands {
         key_file: Option<String>,
 
         /// The nonce in hex, 7 to 13 bytes. MUST be unique per encryption under a given key.
-        #[arg(long)]
+        #[arg(long, visible_alias = "iv")]
         nonce: Option<String>,
 
         /// A file containing the nonce, (raw bytes; hex with --hex-input).
-        #[arg(long)]
+        #[arg(long, visible_alias = "iv-file")]
         nonce_file: Option<String>,
 
         /// Associated data in hex: authenticated but not encrypted. Must match on decrypt.
@@ -228,12 +228,12 @@ enum Subcommands {
 
         /// The 16-byte IV in hex. Supplied instead of generated: `encrypt` then writes no IV and
         /// `decrypt` reads none. See the IV paragraph above.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce")]
         iv: Option<String>,
 
         /// A file containing the 16-byte IV, (raw bytes; hex with --hex-input).
         /// If both iv and iv_file options are provided, the file will be used.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce-file")]
         iv_file: Option<String>,
 
         #[arg(short)]
@@ -284,12 +284,12 @@ enum Subcommands {
 
         /// The 16-byte IV in hex. Supplied instead of generated: `encrypt` then writes no IV and
         /// `decrypt` reads none. See the IV paragraph above.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce")]
         iv: Option<String>,
 
         /// A file containing the 16-byte IV, (raw bytes; hex with --hex-input).
         /// If both iv and iv_file options are provided, the file will be used.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce-file")]
         iv_file: Option<String>,
 
         #[arg(short)]
@@ -365,11 +365,11 @@ enum Subcommands {
 
         /// The 12-byte nonce in hex. Supplied instead of generated: `encrypt` then writes none
         /// and `decrypt` reads none. See the nonce paragraph above.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce")]
         iv: Option<String>,
 
         /// A file containing the 12-byte nonce, (raw bytes; hex with --hex-input). If both iv and iv_file options are provided, the file will be used.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce-file")]
         iv_file: Option<String>,
 
         #[arg(short)]
@@ -456,12 +456,12 @@ enum Subcommands {
 
         /// The 12-byte IV in hex. Supplied instead of generated: `encrypt` then writes none and
         /// `decrypt` reads none. See the IV paragraph above.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce")]
         iv: Option<String>,
 
         /// A file containing the 12-byte IV, (raw bytes; hex with --hex-input).
         /// If both iv and iv_file options are provided, the file will be used.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce-file")]
         iv_file: Option<String>,
 
         /// The additional authenticated data, in hex. Covered by the tag but not encrypted.
@@ -498,12 +498,12 @@ enum Subcommands {
 
         /// The 12-byte nonce in hex. Hazardous: supplying it makes uniqueness the caller's
         /// responsibility.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce")]
         iv: Option<String>,
 
         /// A file containing the 12-byte nonce (raw bytes; hex with --hex-input); the same
         /// hazardous override.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce-file")]
         iv_file: Option<String>,
 
         /// A MAC value to be verified: the tag (with --iv) or nonce || tag.
@@ -536,11 +536,11 @@ enum Subcommands {
 
         /// The 16-byte IV in hex. Supplied instead of generated: `encrypt` then writes none
         /// and `decrypt` reads none. See the IV paragraph above.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce")]
         iv: Option<String>,
 
         /// A file containing the 16-byte IV, (raw bytes; hex with --hex-input). If both iv and iv_file options are provided, the file will be used.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce-file")]
         iv_file: Option<String>,
 
         #[arg(short)]
@@ -567,11 +567,11 @@ enum Subcommands {
         key_file: Option<String>,
 
         /// The nonce in hex, 7 to 13 bytes. MUST be unique per encryption under a given key.
-        #[arg(long)]
+        #[arg(long, visible_alias = "iv")]
         nonce: Option<String>,
 
         /// A file containing the nonce, (raw bytes; hex with --hex-input).
-        #[arg(long)]
+        #[arg(long, visible_alias = "iv-file")]
         nonce_file: Option<String>,
 
         /// Associated data in hex: authenticated but not encrypted. Must match on decrypt.
@@ -612,12 +612,12 @@ enum Subcommands {
 
         /// The 16-byte IV in hex. Supplied instead of generated: `encrypt` then writes no IV and
         /// `decrypt` reads none. See the IV paragraph above.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce")]
         iv: Option<String>,
 
         /// A file containing the 16-byte IV, (raw bytes; hex with --hex-input).
         /// If both iv and iv_file options are provided, the file will be used.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce-file")]
         iv_file: Option<String>,
 
         #[arg(short)]
@@ -645,12 +645,12 @@ enum Subcommands {
 
         /// The 16-byte IV in hex. Supplied instead of generated: `encrypt` then writes no IV and
         /// `decrypt` reads none. See the IV paragraph above.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce")]
         iv: Option<String>,
 
         /// A file containing the 16-byte IV, (raw bytes; hex with --hex-input).
         /// If both iv and iv_file options are provided, the file will be used.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce-file")]
         iv_file: Option<String>,
 
         #[arg(short)]
@@ -703,11 +703,11 @@ enum Subcommands {
 
         /// The 12-byte nonce in hex. Supplied instead of generated: `encrypt` then writes none
         /// and `decrypt` reads none. See the nonce paragraph above.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce")]
         iv: Option<String>,
 
         /// A file containing the 12-byte nonce, (raw bytes; hex with --hex-input). If both iv and iv_file options are provided, the file will be used.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce-file")]
         iv_file: Option<String>,
 
         #[arg(short)]
@@ -758,12 +758,12 @@ enum Subcommands {
 
         /// The 12-byte IV in hex. Supplied instead of generated: `encrypt` then writes none and
         /// `decrypt` reads none. See the IV paragraph above.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce")]
         iv: Option<String>,
 
         /// A file containing the 12-byte IV, (raw bytes; hex with --hex-input).
         /// If both iv and iv_file options are provided, the file will be used.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce-file")]
         iv_file: Option<String>,
 
         /// The additional authenticated data, in hex. Covered by the tag but not encrypted.
@@ -800,12 +800,12 @@ enum Subcommands {
 
         /// The 12-byte nonce in hex. Hazardous: supplying it makes uniqueness the caller's
         /// responsibility.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce")]
         iv: Option<String>,
 
         /// A file containing the 12-byte nonce (raw bytes; hex with --hex-input); the same
         /// hazardous override.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce-file")]
         iv_file: Option<String>,
 
         /// A MAC value to be verified: the tag (with --iv) or nonce || tag.
@@ -838,11 +838,11 @@ enum Subcommands {
 
         /// The 16-byte IV in hex. Supplied instead of generated: `encrypt` then writes none
         /// and `decrypt` reads none. See the IV paragraph above.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce")]
         iv: Option<String>,
 
         /// A file containing the 16-byte IV, (raw bytes; hex with --hex-input). If both iv and iv_file options are provided, the file will be used.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce-file")]
         iv_file: Option<String>,
 
         #[arg(short)]
@@ -869,11 +869,11 @@ enum Subcommands {
         key_file: Option<String>,
 
         /// The nonce in hex, 7 to 13 bytes. MUST be unique per encryption under a given key.
-        #[arg(long)]
+        #[arg(long, visible_alias = "iv")]
         nonce: Option<String>,
 
         /// A file containing the nonce, (raw bytes; hex with --hex-input).
-        #[arg(long)]
+        #[arg(long, visible_alias = "iv-file")]
         nonce_file: Option<String>,
 
         /// Associated data in hex: authenticated but not encrypted. Must match on decrypt.
@@ -914,12 +914,12 @@ enum Subcommands {
 
         /// The 16-byte IV in hex. Supplied instead of generated: `encrypt` then writes no IV and
         /// `decrypt` reads none. See the IV paragraph above.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce")]
         iv: Option<String>,
 
         /// A file containing the 16-byte IV, (raw bytes; hex with --hex-input).
         /// If both iv and iv_file options are provided, the file will be used.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce-file")]
         iv_file: Option<String>,
 
         #[arg(short)]
@@ -947,12 +947,12 @@ enum Subcommands {
 
         /// The 16-byte IV in hex. Supplied instead of generated: `encrypt` then writes no IV and
         /// `decrypt` reads none. See the IV paragraph above.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce")]
         iv: Option<String>,
 
         /// A file containing the 16-byte IV, (raw bytes; hex with --hex-input).
         /// If both iv and iv_file options are provided, the file will be used.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce-file")]
         iv_file: Option<String>,
 
         #[arg(short)]
@@ -1005,11 +1005,11 @@ enum Subcommands {
 
         /// The 12-byte nonce in hex. Supplied instead of generated: `encrypt` then writes none
         /// and `decrypt` reads none. See the nonce paragraph above.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce")]
         iv: Option<String>,
 
         /// A file containing the 12-byte nonce, (raw bytes; hex with --hex-input). If both iv and iv_file options are provided, the file will be used.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce-file")]
         iv_file: Option<String>,
 
         #[arg(short)]
@@ -1250,12 +1250,12 @@ enum Subcommands {
 
         /// The 12-byte IV in hex. Supplied instead of generated: `encrypt` then writes none and
         /// `decrypt` reads none. See the IV paragraph above.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce")]
         iv: Option<String>,
 
         /// A file containing the 12-byte IV, (raw bytes; hex with --hex-input).
         /// If both iv and iv_file options are provided, the file will be used.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce-file")]
         iv_file: Option<String>,
 
         /// The additional authenticated data, in hex. Covered by the tag but not encrypted.
@@ -1292,12 +1292,12 @@ enum Subcommands {
 
         /// The 12-byte nonce in hex. Hazardous: supplying it makes uniqueness the caller's
         /// responsibility.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce")]
         iv: Option<String>,
 
         /// A file containing the 12-byte nonce (raw bytes; hex with --hex-input); the same
         /// hazardous override.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce-file")]
         iv_file: Option<String>,
 
         /// A MAC value to be verified: the tag (with --iv) or nonce || tag.
@@ -1343,11 +1343,11 @@ enum Subcommands {
 
         /// The 128-bit nonce in hex. Hazardous override: supplying it keeps the nonce out of the
         /// stream (see above), and reusing one under a given key breaks the cipher.
-        #[arg(long)]
+        #[arg(long, visible_alias = "iv")]
         nonce: Option<String>,
 
         /// A file containing a 128-bit nonce (raw bytes; hex with --hex-input); the same hazardous override.
-        #[arg(long)]
+        #[arg(long, visible_alias = "iv-file")]
         nonce_file: Option<String>,
 
         /// Associated data in hex (authenticated but not encrypted).
@@ -1450,12 +1450,12 @@ enum Subcommands {
 
         /// The 12-byte nonce in hex. Supplied instead of generated: `encrypt` then writes none
         /// and `decrypt` reads none. See the nonce paragraph above.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce")]
         iv: Option<String>,
 
         /// A file containing the 12-byte nonce (raw bytes; hex with --hex-input). If both iv and
         /// iv_file options are provided, the file will be used.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce-file")]
         iv_file: Option<String>,
 
         #[arg(short)]
@@ -1524,12 +1524,12 @@ enum Subcommands {
 
         /// The 12-byte nonce in hex. Supplied instead of generated: `encrypt` then writes none and
         /// `decrypt` reads none. See the nonce paragraph above.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce")]
         iv: Option<String>,
 
         /// A file containing the 12-byte nonce (raw bytes; hex with --hex-input). If both iv and
         /// iv_file options are provided, the file will be used.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce-file")]
         iv_file: Option<String>,
 
         /// The additional authenticated data, in hex. Covered by the tag but not encrypted.
@@ -3317,12 +3317,12 @@ enum Subcommands {
 
         /// The 16-byte IV in hex. Supplied instead of generated: `encrypt` then writes no IV and
         /// `decrypt` reads none. See the IV paragraph above.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce")]
         iv: Option<String>,
 
         /// A file containing the 16-byte IV, (raw bytes; hex with --hex-input).
         /// If both iv and iv_file options are provided, the file will be used.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce-file")]
         iv_file: Option<String>,
 
         #[arg(short)]
@@ -3350,12 +3350,12 @@ enum Subcommands {
 
         /// The 16-byte IV in hex. Supplied instead of generated: `encrypt` then writes no IV and
         /// `decrypt` reads none. See the IV paragraph above.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce")]
         iv: Option<String>,
 
         /// A file containing the 16-byte IV, (raw bytes; hex with --hex-input).
         /// If both iv and iv_file options are provided, the file will be used.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce-file")]
         iv_file: Option<String>,
 
         #[arg(short)]
@@ -3383,12 +3383,12 @@ enum Subcommands {
 
         /// The 16-byte IV in hex. Supplied instead of generated: `encrypt` then writes no IV and
         /// `decrypt` reads none. See the IV paragraph above.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce")]
         iv: Option<String>,
 
         /// A file containing the 16-byte IV, (raw bytes; hex with --hex-input).
         /// If both iv and iv_file options are provided, the file will be used.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce-file")]
         iv_file: Option<String>,
 
         #[arg(short)]
@@ -3449,11 +3449,11 @@ enum Subcommands {
         key_file: Option<String>,
 
         /// The nonce in hex, 7 to 13 bytes. MUST be unique per encryption under a given key.
-        #[arg(long)]
+        #[arg(long, visible_alias = "iv")]
         nonce: Option<String>,
 
         /// A file containing the nonce, (raw bytes; hex with --hex-input).
-        #[arg(long)]
+        #[arg(long, visible_alias = "iv-file")]
         nonce_file: Option<String>,
 
         /// Associated data in hex: authenticated but not encrypted. Must match on decrypt.
@@ -3503,12 +3503,12 @@ enum Subcommands {
 
         /// The 16-byte IV in hex. Supplied instead of generated: `encrypt` then writes no IV and
         /// `decrypt` reads none. See the IV paragraph above.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce")]
         iv: Option<String>,
 
         /// A file containing the 16-byte IV, (raw bytes; hex with --hex-input).
         /// If both iv and iv_file options are provided, the file will be used.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce-file")]
         iv_file: Option<String>,
 
         #[arg(short)]
@@ -3534,11 +3534,11 @@ enum Subcommands {
         key_file: Option<String>,
 
         /// The nonce in hex, 7 to 13 bytes. MUST be unique per encryption under a given key.
-        #[arg(long)]
+        #[arg(long, visible_alias = "iv")]
         nonce: Option<String>,
 
         /// A file containing the nonce, (raw bytes; hex with --hex-input).
-        #[arg(long)]
+        #[arg(long, visible_alias = "iv-file")]
         nonce_file: Option<String>,
 
         /// Associated data in hex: authenticated but not encrypted. Must match on decrypt.
@@ -3580,12 +3580,12 @@ enum Subcommands {
 
         /// The 16-byte IV in hex. Supplied instead of generated: `encrypt` then writes no IV and
         /// `decrypt` reads none. See the IV paragraph above.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce")]
         iv: Option<String>,
 
         /// A file containing the 16-byte IV, (raw bytes; hex with --hex-input).
         /// If both iv and iv_file options are provided, the file will be used.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce-file")]
         iv_file: Option<String>,
 
         #[arg(short)]
@@ -3611,11 +3611,11 @@ enum Subcommands {
         key_file: Option<String>,
 
         /// The nonce in hex, 7 to 13 bytes. MUST be unique per encryption under a given key.
-        #[arg(long)]
+        #[arg(long, visible_alias = "iv")]
         nonce: Option<String>,
 
         /// A file containing the nonce, (raw bytes; hex with --hex-input).
-        #[arg(long)]
+        #[arg(long, visible_alias = "iv-file")]
         nonce_file: Option<String>,
 
         /// Associated data in hex: authenticated but not encrypted. Must match on decrypt.
@@ -3657,12 +3657,12 @@ enum Subcommands {
 
         /// The 16-byte IV in hex. Supplied instead of generated: `encrypt` then writes no IV and
         /// `decrypt` reads none. See the IV paragraph above.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce")]
         iv: Option<String>,
 
         /// A file containing the 16-byte IV, (raw bytes; hex with --hex-input).
         /// If both iv and iv_file options are provided, the file will be used.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce-file")]
         iv_file: Option<String>,
 
         #[arg(short)]
@@ -3700,12 +3700,12 @@ enum Subcommands {
 
         /// The 16-byte IV in hex. Supplied instead of generated: `encrypt` then writes no IV and
         /// `decrypt` reads none. See the IV paragraph above.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce")]
         iv: Option<String>,
 
         /// A file containing the 16-byte IV, (raw bytes; hex with --hex-input).
         /// If both iv and iv_file options are provided, the file will be used.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce-file")]
         iv_file: Option<String>,
 
         #[arg(short)]
@@ -3733,12 +3733,12 @@ enum Subcommands {
 
         /// The 16-byte IV in hex. Supplied instead of generated: `encrypt` then writes no IV and
         /// `decrypt` reads none. See the IV paragraph above.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce")]
         iv: Option<String>,
 
         /// A file containing the 16-byte IV, (raw bytes; hex with --hex-input).
         /// If both iv and iv_file options are provided, the file will be used.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce-file")]
         iv_file: Option<String>,
 
         #[arg(short)]
@@ -3766,12 +3766,12 @@ enum Subcommands {
 
         /// The 16-byte IV in hex. Supplied instead of generated: `encrypt` then writes no IV and
         /// `decrypt` reads none. See the IV paragraph above.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce")]
         iv: Option<String>,
 
         /// A file containing the 16-byte IV, (raw bytes; hex with --hex-input).
         /// If both iv and iv_file options are provided, the file will be used.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce-file")]
         iv_file: Option<String>,
 
         #[arg(short)]
@@ -3808,12 +3808,12 @@ enum Subcommands {
 
         /// The 12-byte nonce in hex. Supplied instead of generated: `encrypt` then writes none
         /// and `decrypt` reads none. See the nonce paragraph above.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce")]
         iv: Option<String>,
 
         /// A file containing the 12-byte nonce, as raw bytes exactly as they are (no hex
         /// decoding). If both iv and iv_file options are provided, the file will be used.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce-file")]
         iv_file: Option<String>,
 
         #[arg(short)]
@@ -3865,12 +3865,12 @@ enum Subcommands {
 
         /// The 12-byte IV in hex. Supplied instead of generated: `encrypt` then writes none and
         /// `decrypt` reads none. See the IV paragraph above.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce")]
         iv: Option<String>,
 
         /// A file containing the 12-byte IV, (raw bytes; hex with --hex-input).
         /// If both iv and iv_file options are provided, the file will be used.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce-file")]
         iv_file: Option<String>,
 
         /// The additional authenticated data, in hex. Covered by the tag but not encrypted.
@@ -3907,12 +3907,12 @@ enum Subcommands {
 
         /// The 12-byte nonce in hex. Supplied instead of generated: `encrypt` then writes none
         /// and `decrypt` reads none. See the nonce paragraph above.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce")]
         iv: Option<String>,
 
         /// A file containing the 12-byte nonce, as raw bytes exactly as they are (no hex
         /// decoding). If both iv and iv_file options are provided, the file will be used.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce-file")]
         iv_file: Option<String>,
 
         #[arg(short)]
@@ -3940,12 +3940,12 @@ enum Subcommands {
 
         /// The 12-byte IV in hex. Supplied instead of generated: `encrypt` then writes none and
         /// `decrypt` reads none. See the IV paragraph above.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce")]
         iv: Option<String>,
 
         /// A file containing the 12-byte IV, (raw bytes; hex with --hex-input).
         /// If both iv and iv_file options are provided, the file will be used.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce-file")]
         iv_file: Option<String>,
 
         /// The additional authenticated data, in hex. Covered by the tag but not encrypted.
@@ -3982,12 +3982,12 @@ enum Subcommands {
 
         /// The 12-byte nonce in hex. Supplied instead of generated: `encrypt` then writes none
         /// and `decrypt` reads none. See the nonce paragraph above.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce")]
         iv: Option<String>,
 
         /// A file containing the 12-byte nonce, as raw bytes exactly as they are (no hex
         /// decoding). If both iv and iv_file options are provided, the file will be used.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce-file")]
         iv_file: Option<String>,
 
         #[arg(short)]
@@ -4015,12 +4015,12 @@ enum Subcommands {
 
         /// The 12-byte IV in hex. Supplied instead of generated: `encrypt` then writes none and
         /// `decrypt` reads none. See the IV paragraph above.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce")]
         iv: Option<String>,
 
         /// A file containing the 12-byte IV, (raw bytes; hex with --hex-input).
         /// If both iv and iv_file options are provided, the file will be used.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce-file")]
         iv_file: Option<String>,
 
         /// The additional authenticated data, in hex. Covered by the tag but not encrypted.
@@ -4066,12 +4066,12 @@ enum Subcommands {
 
         /// The 16-byte IV in hex. Supplied instead of generated: `encrypt` then writes no IV and
         /// `decrypt` reads none. See the IV paragraph above.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce")]
         iv: Option<String>,
 
         /// A file containing the 16-byte IV, (raw bytes; hex with --hex-input).
         /// If both iv and iv_file options are provided, the file will be used.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce-file")]
         iv_file: Option<String>,
 
         #[arg(short)]
@@ -4099,12 +4099,12 @@ enum Subcommands {
 
         /// The 16-byte IV in hex. Supplied instead of generated: `encrypt` then writes no IV and
         /// `decrypt` reads none. See the IV paragraph above.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce")]
         iv: Option<String>,
 
         /// A file containing the 16-byte IV, (raw bytes; hex with --hex-input).
         /// If both iv and iv_file options are provided, the file will be used.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce-file")]
         iv_file: Option<String>,
 
         #[arg(short)]
@@ -4132,12 +4132,12 @@ enum Subcommands {
 
         /// The 16-byte IV in hex. Supplied instead of generated: `encrypt` then writes no IV and
         /// `decrypt` reads none. See the IV paragraph above.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce")]
         iv: Option<String>,
 
         /// A file containing the 16-byte IV, (raw bytes; hex with --hex-input).
         /// If both iv and iv_file options are provided, the file will be used.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce-file")]
         iv_file: Option<String>,
 
         #[arg(short)]
@@ -4198,11 +4198,11 @@ enum Subcommands {
         key_file: Option<String>,
 
         /// The nonce in hex, 7 to 13 bytes. MUST be unique per encryption under a given key.
-        #[arg(long)]
+        #[arg(long, visible_alias = "iv")]
         nonce: Option<String>,
 
         /// A file containing the nonce, (raw bytes; hex with --hex-input).
-        #[arg(long)]
+        #[arg(long, visible_alias = "iv-file")]
         nonce_file: Option<String>,
 
         /// Associated data in hex: authenticated but not encrypted. Must match on decrypt.
@@ -4252,12 +4252,12 @@ enum Subcommands {
 
         /// The 16-byte IV in hex. Supplied instead of generated: `encrypt` then writes no IV and
         /// `decrypt` reads none. See the IV paragraph above.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce")]
         iv: Option<String>,
 
         /// A file containing the 16-byte IV, (raw bytes; hex with --hex-input).
         /// If both iv and iv_file options are provided, the file will be used.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce-file")]
         iv_file: Option<String>,
 
         #[arg(short)]
@@ -4283,11 +4283,11 @@ enum Subcommands {
         key_file: Option<String>,
 
         /// The nonce in hex, 7 to 13 bytes. MUST be unique per encryption under a given key.
-        #[arg(long)]
+        #[arg(long, visible_alias = "iv")]
         nonce: Option<String>,
 
         /// A file containing the nonce, (raw bytes; hex with --hex-input).
-        #[arg(long)]
+        #[arg(long, visible_alias = "iv-file")]
         nonce_file: Option<String>,
 
         /// Associated data in hex: authenticated but not encrypted. Must match on decrypt.
@@ -4329,12 +4329,12 @@ enum Subcommands {
 
         /// The 16-byte IV in hex. Supplied instead of generated: `encrypt` then writes no IV and
         /// `decrypt` reads none. See the IV paragraph above.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce")]
         iv: Option<String>,
 
         /// A file containing the 16-byte IV, (raw bytes; hex with --hex-input).
         /// If both iv and iv_file options are provided, the file will be used.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce-file")]
         iv_file: Option<String>,
 
         #[arg(short)]
@@ -4360,11 +4360,11 @@ enum Subcommands {
         key_file: Option<String>,
 
         /// The nonce in hex, 7 to 13 bytes. MUST be unique per encryption under a given key.
-        #[arg(long)]
+        #[arg(long, visible_alias = "iv")]
         nonce: Option<String>,
 
         /// A file containing the nonce, (raw bytes; hex with --hex-input).
-        #[arg(long)]
+        #[arg(long, visible_alias = "iv-file")]
         nonce_file: Option<String>,
 
         /// Associated data in hex: authenticated but not encrypted. Must match on decrypt.
@@ -4406,12 +4406,12 @@ enum Subcommands {
 
         /// The 16-byte IV in hex. Supplied instead of generated: `encrypt` then writes no IV and
         /// `decrypt` reads none. See the IV paragraph above.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce")]
         iv: Option<String>,
 
         /// A file containing the 16-byte IV, (raw bytes; hex with --hex-input).
         /// If both iv and iv_file options are provided, the file will be used.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce-file")]
         iv_file: Option<String>,
 
         #[arg(short)]
@@ -4449,12 +4449,12 @@ enum Subcommands {
 
         /// The 16-byte IV in hex. Supplied instead of generated: `encrypt` then writes no IV and
         /// `decrypt` reads none. See the IV paragraph above.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce")]
         iv: Option<String>,
 
         /// A file containing the 16-byte IV, (raw bytes; hex with --hex-input).
         /// If both iv and iv_file options are provided, the file will be used.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce-file")]
         iv_file: Option<String>,
 
         #[arg(short)]
@@ -4482,12 +4482,12 @@ enum Subcommands {
 
         /// The 16-byte IV in hex. Supplied instead of generated: `encrypt` then writes no IV and
         /// `decrypt` reads none. See the IV paragraph above.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce")]
         iv: Option<String>,
 
         /// A file containing the 16-byte IV, (raw bytes; hex with --hex-input).
         /// If both iv and iv_file options are provided, the file will be used.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce-file")]
         iv_file: Option<String>,
 
         #[arg(short)]
@@ -4515,12 +4515,12 @@ enum Subcommands {
 
         /// The 16-byte IV in hex. Supplied instead of generated: `encrypt` then writes no IV and
         /// `decrypt` reads none. See the IV paragraph above.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce")]
         iv: Option<String>,
 
         /// A file containing the 16-byte IV, (raw bytes; hex with --hex-input).
         /// If both iv and iv_file options are provided, the file will be used.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce-file")]
         iv_file: Option<String>,
 
         #[arg(short)]
@@ -4555,12 +4555,12 @@ enum Subcommands {
 
         /// The 12-byte nonce in hex. Supplied instead of generated: `encrypt` then writes no nonce
         /// and `decrypt` reads none. See the nonce paragraph above.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce")]
         iv: Option<String>,
 
         /// A file containing the 12-byte nonce, as raw bytes exactly as they are (no hex
         /// decoding). If both iv and iv_file options are provided, the file will be used.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce-file")]
         iv_file: Option<String>,
 
         #[arg(short)]
@@ -4612,12 +4612,12 @@ enum Subcommands {
 
         /// The 12-byte IV in hex. Supplied instead of generated: `encrypt` then writes none and
         /// `decrypt` reads none. See the IV paragraph above.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce")]
         iv: Option<String>,
 
         /// A file containing the 12-byte IV, (raw bytes; hex with --hex-input).
         /// If both iv and iv_file options are provided, the file will be used.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce-file")]
         iv_file: Option<String>,
 
         /// The additional authenticated data, in hex. Covered by the tag but not encrypted.
@@ -4654,12 +4654,12 @@ enum Subcommands {
 
         /// The 12-byte nonce in hex. Supplied instead of generated: `encrypt` then writes no nonce
         /// and `decrypt` reads none. See the nonce paragraph above.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce")]
         iv: Option<String>,
 
         /// A file containing the 12-byte nonce, as raw bytes exactly as they are (no hex
         /// decoding). If both iv and iv_file options are provided, the file will be used.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce-file")]
         iv_file: Option<String>,
 
         #[arg(short)]
@@ -4687,12 +4687,12 @@ enum Subcommands {
 
         /// The 12-byte IV in hex. Supplied instead of generated: `encrypt` then writes none and
         /// `decrypt` reads none. See the IV paragraph above.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce")]
         iv: Option<String>,
 
         /// A file containing the 12-byte IV, (raw bytes; hex with --hex-input).
         /// If both iv and iv_file options are provided, the file will be used.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce-file")]
         iv_file: Option<String>,
 
         /// The additional authenticated data, in hex. Covered by the tag but not encrypted.
@@ -4729,12 +4729,12 @@ enum Subcommands {
 
         /// The 12-byte nonce in hex. Supplied instead of generated: `encrypt` then writes no nonce
         /// and `decrypt` reads none. See the nonce paragraph above.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce")]
         iv: Option<String>,
 
         /// A file containing the 12-byte nonce, as raw bytes exactly as they are (no hex
         /// decoding). If both iv and iv_file options are provided, the file will be used.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce-file")]
         iv_file: Option<String>,
 
         #[arg(short)]
@@ -4762,12 +4762,12 @@ enum Subcommands {
 
         /// The 12-byte IV in hex. Supplied instead of generated: `encrypt` then writes none and
         /// `decrypt` reads none. See the IV paragraph above.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce")]
         iv: Option<String>,
 
         /// A file containing the 12-byte IV, (raw bytes; hex with --hex-input).
         /// If both iv and iv_file options are provided, the file will be used.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce-file")]
         iv_file: Option<String>,
 
         /// The additional authenticated data, in hex. Covered by the tag but not encrypted.
@@ -4813,12 +4813,12 @@ enum Subcommands {
 
         /// The 16-byte IV in hex. Supplied instead of generated: `encrypt` then writes no IV and
         /// `decrypt` reads none. See the IV paragraph above.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce")]
         iv: Option<String>,
 
         /// A file containing the 16-byte IV, (raw bytes; hex with --hex-input).
         /// If both iv and iv_file options are provided, the file will be used.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce-file")]
         iv_file: Option<String>,
 
         #[arg(short)]
@@ -4880,11 +4880,11 @@ enum Subcommands {
         key_file: Option<String>,
 
         /// The nonce in hex, 7 to 13 bytes. MUST be unique per encryption under a given key.
-        #[arg(long)]
+        #[arg(long, visible_alias = "iv")]
         nonce: Option<String>,
 
         /// A file containing the nonce, (raw bytes; hex with --hex-input).
-        #[arg(long)]
+        #[arg(long, visible_alias = "iv-file")]
         nonce_file: Option<String>,
 
         /// Associated data in hex: authenticated but not encrypted. Must match on decrypt.
@@ -4934,12 +4934,12 @@ enum Subcommands {
 
         /// The 16-byte IV in hex. Supplied instead of generated: `encrypt` then writes no IV and
         /// `decrypt` reads none. See the IV paragraph above.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce")]
         iv: Option<String>,
 
         /// A file containing the 16-byte IV, (raw bytes; hex with --hex-input).
         /// If both iv and iv_file options are provided, the file will be used.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce-file")]
         iv_file: Option<String>,
 
         #[arg(short)]
@@ -4978,12 +4978,12 @@ enum Subcommands {
 
         /// The 16-byte IV in hex. Supplied instead of generated: `encrypt` then writes no IV and
         /// `decrypt` reads none. See the IV paragraph above.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce")]
         iv: Option<String>,
 
         /// A file containing the 16-byte IV, (raw bytes; hex with --hex-input).
         /// If both iv and iv_file options are provided, the file will be used.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce-file")]
         iv_file: Option<String>,
 
         #[arg(short)]
@@ -5020,12 +5020,12 @@ enum Subcommands {
 
         /// The 12-byte nonce in hex. Supplied instead of generated: `encrypt` then writes none
         /// and `decrypt` reads none. See the nonce paragraph above.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce")]
         iv: Option<String>,
 
         /// A file containing the 12-byte nonce, as raw bytes exactly as they are (no hex
         /// decoding). If both iv and iv_file options are provided, the file will be used.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce-file")]
         iv_file: Option<String>,
 
         #[arg(short)]
@@ -5063,12 +5063,12 @@ enum Subcommands {
 
         /// The 12-byte IV in hex. Supplied instead of generated: `encrypt` then writes none and
         /// `decrypt` reads none. See the IV paragraph above.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce")]
         iv: Option<String>,
 
         /// A file containing the 12-byte IV, (raw bytes; hex with --hex-input).
         /// If both iv and iv_file options are provided, the file will be used.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce-file")]
         iv_file: Option<String>,
 
         /// The additional authenticated data, in hex. Covered by the tag but not encrypted.

@@ -164,16 +164,14 @@ pub fn cbc_blocks_agrees_with_no_padding<P: Permutation<KEY_LEN>, const KEY_LEN:
     let msg: [u8; 48] = core::array::from_fn(|i| (i * 7 + 3) as u8);
 
     let mut in_place = msg;
-    let (n, iv_blocks) = make_key::<P, CBC<Blocks>, KEY_LEN>()
-        .encrypt_inplace(&mut FixedSeedRNG::new(iv), &mut in_place)
-        .unwrap();
-    assert_eq!((n, iv_blocks), (48, iv));
+    let n =
+        make_key::<P, CBC<Blocks>, KEY_LEN>().encrypt_inplace_nonce(&iv, &mut in_place).unwrap();
+    assert_eq!(n, 48);
 
     let mut out = [0u8; 48];
-    let (m, iv_np) = make_key::<P, CBC<NoPadding>, KEY_LEN>()
-        .encrypt_out(&mut FixedSeedRNG::new(iv), &msg, &mut out)
-        .unwrap();
-    assert_eq!((m, iv_np), (48, iv));
+    let m =
+        make_key::<P, CBC<NoPadding>, KEY_LEN>().encrypt_nonce_out(&iv, &msg, &mut out).unwrap();
+    assert_eq!(m, 48);
     assert_eq!(out, in_place);
 
     make_key::<P, CBC<Blocks>, KEY_LEN>().decrypt_inplace(&iv, &mut out).unwrap();

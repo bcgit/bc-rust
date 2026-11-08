@@ -865,8 +865,20 @@ pub trait AeadDeclaredDecryptionKey<
 /// [`SymmetricCipherEncryptor`]; this trait adds where it comes from, and the one-shots are
 /// provided over [`create_encryptor`](Self::create_encryptor) and the worker's streaming methods.
 ///
-/// The init data (an IV or nonce) is drawn from the RNG the key is given and returned; there is
-/// no form that takes one, since these modes need it unpredictable (SP 800-38A Appendix C).
+/// # The init data is drawn by default
+///
+/// Every form without `_nonce` in its name draws the init data (an IV for CBC, CFB and CFB8, a
+/// nonce for CTR and a stream cipher) from the RNG it is given and returns it. The `_nonce` forms
+/// take it from the caller, for a protocol whose nonce is a counter or whose format carries the
+/// IV; the caller then takes on the obligation the drawing forms discharge. For CBC and CFB that
+/// is unpredictability: SP 800-38A Appendix C, "For the CBC and CFB modes, the IVs must be
+/// unpredictable", which the drawing forms meet by its second method, "a random data block using
+/// a FIPS-approved random number generator", and a caller may meet by its first, the forward
+/// cipher function under the same key applied to a nonce unique to the message. For CTR it is
+/// uniqueness: Appendix B requires "a unique counter block for each plaintext block that is ever
+/// encrypted under a given key, across all messages", which a per-message nonce in the leading
+/// bits of the counter block provides (Appendix B.2). For ChaCha20 the nonce "MUST not be
+/// repeated for the same key" (RFC 8439 Section 2.4).
 pub trait SymmetricEncryptionKey<
     const KEY_LEN: usize,
     const INIT_DATA_LEN: usize,
@@ -888,6 +900,12 @@ pub trait SymmetricEncryptionKey<
         &'k self,
         rng: &mut dyn RNG,
     ) -> Result<(Self::Encryptor<'k>, [u8; INIT_DATA_LEN]), SymmetricCipherError>;
+
+    /// Begins an encryption under init data the caller supplies. Infallible, as
+    /// [`SymmetricDecryptionKey::create_decryptor`] is; the obligation on the value is the
+    /// caller's, see above.
+    fn create_encryptor_nonce<'k>(&'k self, init_data: &[u8; INIT_DATA_LEN])
+    -> Self::Encryptor<'k>;
 
     /// One-shot: encrypts `plaintext` into `ciphertext`, which needs `encrypt_out_len` bytes of
     /// the encryptor type, and returns the number of bytes written with the generated init data.
@@ -947,6 +965,61 @@ pub trait SymmetricEncryptionKey<
         let (mut enc, init_data) = self.create_encryptor(rng)?;
         let written = StreamCipherEncryptor::do_encrypt_inplace(&mut enc, data)?;
         Ok((written, init_data))
+    }
+
+    /// As [`encrypt_out`](Self::encrypt_out) under init data the caller supplies, which is not
+    /// returned.
+    ///
+    /// # Errors
+    /// [`SymmetricCipherError::OutputBufferTooSmall`] if `ciphertext` is too short, or any error
+    /// of the encryptor's streaming methods.
+    fn encrypt_nonce_out(
+        &self,
+        init_data: &[u8; INIT_DATA_LEN],
+        plaintext: &[u8],
+        ciphertext: &mut [u8],
+    ) -> Result<usize, SymmetricCipherError> {
+        let enc = self.create_encryptor_nonce(init_data);
+        crate::provided::symmetric_encrypt_out(enc, plaintext, ciphertext)
+    }
+
+    /// As [`encrypt_nonce_out`](Self::encrypt_nonce_out), allocating the ciphertext.
+    ///
+    /// # Errors
+    /// As [`encrypt_nonce_out`](Self::encrypt_nonce_out).
+    #[cfg(feature = "std")]
+    fn encrypt_nonce(
+        &self,
+        init_data: &[u8; INIT_DATA_LEN],
+        plaintext: &[u8],
+    ) -> Result<Vec<u8>, SymmetricCipherError> {
+        let mut ciphertext = vec![
+            0u8;
+            <Self::Encryptor<'_> as SymmetricCipherEncryptor<
+                INIT_DATA_LEN,
+                FINAL_LEN,
+            >>::encrypt_out_len(plaintext.len())
+        ];
+        let written = self.encrypt_nonce_out(init_data, plaintext, &mut ciphertext)?;
+        ciphertext.truncate(written);
+        Ok(ciphertext)
+    }
+
+    /// As [`encrypt_inplace`](Self::encrypt_inplace) under init data the caller supplies, which
+    /// is not returned.
+    ///
+    /// # Errors
+    /// [`StreamCipherEncryptor::do_encrypt_inplace`]'s.
+    fn encrypt_inplace_nonce<'k>(
+        &'k self,
+        init_data: &[u8; INIT_DATA_LEN],
+        data: &mut [u8],
+    ) -> Result<usize, SymmetricCipherError>
+    where
+        Self::Encryptor<'k>: StreamCipherEncryptor<INIT_DATA_LEN>,
+    {
+        let mut enc = self.create_encryptor_nonce(init_data);
+        StreamCipherEncryptor::do_encrypt_inplace(&mut enc, data)
     }
 }
 
@@ -1031,7 +1104,8 @@ pub trait SymmetricDecryptionKey<
 /// A key that can begin a whole-block encryption: the encryption half of a key for CBC without
 /// a padding layer. The encryptor is a [`BlockCipherEncryptor`], whose buffers are
 /// block-aligned arrays checked at compile time; data of arbitrary length goes through a padded
-/// mode and [`SymmetricEncryptionKey`] instead.
+/// mode and [`SymmetricEncryptionKey`] instead. The init data is drawn by default and taken from
+/// the caller by the `_nonce` forms, with the obligation [`SymmetricEncryptionKey`] describes.
 pub trait BlockEncryptionKey<
     const KEY_LEN: usize,
     const INIT_DATA_LEN: usize,
@@ -1054,6 +1128,11 @@ pub trait BlockEncryptionKey<
         rng: &mut dyn RNG,
     ) -> Result<(Self::Encryptor<'k>, [u8; INIT_DATA_LEN]), SymmetricCipherError>;
 
+    /// Begins an encryption under init data the caller supplies. Infallible, as
+    /// [`BlockDecryptionKey::create_decryptor`] is.
+    fn create_encryptor_nonce<'k>(&'k self, init_data: &[u8; INIT_DATA_LEN])
+    -> Self::Encryptor<'k>;
+
     /// One-shot: encrypts `data`, which must be a whole number of blocks, in place under init
     /// data drawn from `rng`, and returns the number of bytes written with the init data.
     ///
@@ -1072,6 +1151,23 @@ pub trait BlockEncryptionKey<
         let (mut enc, init_data) = self.create_encryptor(rng)?;
         let written = enc.do_encrypt_blocks_inplace(blocks)?;
         Ok((written, init_data))
+    }
+
+    /// As [`encrypt_inplace`](Self::encrypt_inplace) under init data the caller supplies, which
+    /// is not returned.
+    ///
+    /// # Errors
+    /// [`SymmetricCipherError::DataNotBlockAligned`] if `data.len()` is not a multiple of
+    /// `BLOCK_LEN`; otherwise the encryptor's own refusals.
+    fn encrypt_inplace_nonce(
+        &self,
+        init_data: &[u8; INIT_DATA_LEN],
+        data: &mut [u8],
+    ) -> Result<usize, SymmetricCipherError> {
+        let (blocks, []) = data.as_chunks_mut::<BLOCK_LEN>() else {
+            return Err(SymmetricCipherError::DataNotBlockAligned);
+        };
+        self.create_encryptor_nonce(init_data).do_encrypt_blocks_inplace(blocks)
     }
 }
 
