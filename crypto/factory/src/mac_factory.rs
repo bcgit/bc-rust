@@ -1,17 +1,20 @@
 //! MAC factory for creating MAC keys by algorithm name.
 //!
 //! As with all Factory objects, this implements constructions from strings and defaults, and
-//! returns a [`MACFactory`] object: a key, which implements [`MacGenerationKey`] and
-//! [`MacVerificationKey`] as a pass-through to the underlying key type, and whose workers,
-//! [`MACFactoryWorker`], implement [`MAC`] the same way.
-//! See [`MAC`] for the full message-authentication API, key handling, streaming workflow, and verification guidance.
+//! returns a [`MACFactory`] object: a key, the named algorithm's own key object behind one enum,
+//! whose workers, [`MACFactoryWorker`], are the named algorithm's own workers behind another.
+//!
+//! The factory is the run-time form of the MAC roles: the algorithm is chosen by a string, so the
+//! tag length is a run-time value ([`MACFactory::output_len`]) rather than the const parameter
+//! the role traits in `bouncycastle_core::symmetric_key` carry, and the one-shots and finals here
+//! take and return slices and `Vec`s where the roles take arrays. A caller that knows its
+//! algorithm at compile time uses the key type directly.
 //!
 //! Example usage:
 //! Generating and verifying a MAC value for a given piece of data:
 //!
 //! ```
 //! use bouncycastle_core::key_material::{KeyMaterial256, KeyType};
-//! use bouncycastle_core::symmetric_key::{MacGenerationKey, MacVerificationKey};
 //! use bouncycastle_hex as hex;
 //! use bouncycastle_factory::AlgorithmFactory;
 //! use bouncycastle_factory::mac_factory::MACFactory;
@@ -29,7 +32,7 @@
 //! let mac_value: Vec<u8> = hmac.mac(data);
 //!
 //! // Verify the MAC value; the key is used for any number of messages
-//! if hmac.verify(data, &mac_value,) {
+//! if hmac.verify(data, &mac_value).is_ok() {
 //!     println!("MAC verified successfully!")
 //! } else {
 //!     println!("MAC verification failed")
@@ -73,11 +76,12 @@
 //! ```
 
 use crate::{DEFAULT, DEFAULT_128_BIT, DEFAULT_256_BIT, FactoryError};
+use bouncycastle_core::direction::{Decrypting, Encrypting};
 use bouncycastle_core::errors::MACError;
 use bouncycastle_core::key_material::KeyMaterialTrait;
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::symmetric_key::{FromAnyKeyMaterial, MacGenerationKey, MacVerificationKey};
-use bouncycastle_core::traits::{AlgorithmInfo, MAC};
+use bouncycastle_core::traits::{AlgorithmInfo, HashAlgParams, MACGenerator, MACVerifier};
 use bouncycastle_hmac::{HMAC, HmacKey};
 use bouncycastle_sha2 as sha2;
 use bouncycastle_sha2::hmac::{
@@ -103,7 +107,9 @@ pub const DEFAULT_128BIT_MAC_NAME: &str = HMAC_SHA256_NAME;
 pub const DEFAULT_256BIT_MAC_NAME: &str = HMAC_SHA512_NAME;
 
 /// A MAC key selected by name: the key object of whichever algorithm was named, which hands out
-/// [`MACFactoryWorker`]s through [`MacGenerationKey`] and [`MacVerificationKey`].
+/// [`MACFactoryWorker`]s through [`create_generator`](Self::create_generator) and
+/// [`create_verifier`](Self::create_verifier), with the one-shots [`mac`](Self::mac),
+/// [`mac_out`](Self::mac_out) and [`verify`](Self::verify) over them.
 /// MACFactory deviates from the usual AlgorithmFactory trait because MAC keys do not have a no-arg
 /// constructor; instead they have a constructor that takes a [`KeyMaterialTrait`] and can return
 /// an error.
@@ -142,36 +148,38 @@ pub enum MACFactory {
 }
 
 /// The worker a [`MACFactory`] key hands out: the named algorithm's own worker, borrowing the key
-/// for `'k`, behind one [`MAC`] impl.
+/// for `'k`, generating a tag (`Dir = Encrypting`, from [`MACFactory::create_generator`]) or
+/// verifying one (`Dir = Decrypting`, from [`MACFactory::create_verifier`]). Its finals take
+/// run-time-length buffers, since the algorithm is chosen at run time.
 #[allow(non_camel_case_types)]
 #[non_exhaustive]
-pub enum MACFactoryWorker<'k> {
+pub enum MACFactoryWorker<'k, Dir> {
     ///
-    KMAC128(KMAC128),
+    KMAC128(KMAC128<Dir>),
     ///
-    KMAC256(KMAC256),
+    KMAC256(KMAC256<Dir>),
     ///
-    HMAC_SHA224(HMAC<'k, sha2::SHA224>),
+    HMAC_SHA224(HMAC<'k, sha2::SHA224, Dir>),
     ///
-    HMAC_SHA256(HMAC<'k, sha2::SHA256>),
+    HMAC_SHA256(HMAC<'k, sha2::SHA256, Dir>),
     ///
-    HMAC_SHA384(HMAC<'k, sha2::SHA384>),
+    HMAC_SHA384(HMAC<'k, sha2::SHA384, Dir>),
     ///
-    HMAC_SHA512(HMAC<'k, sha2::SHA512>),
+    HMAC_SHA512(HMAC<'k, sha2::SHA512, Dir>),
     ///
-    HMAC_SHA512_224(HMAC<'k, sha2::SHA512_224>),
+    HMAC_SHA512_224(HMAC<'k, sha2::SHA512_224, Dir>),
     ///
-    HMAC_SHA512_256(HMAC<'k, sha2::SHA512_256>),
+    HMAC_SHA512_256(HMAC<'k, sha2::SHA512_256, Dir>),
     ///
-    HMAC_SHA3_224(HMAC<'k, sha3::SHA3_224>),
+    HMAC_SHA3_224(HMAC<'k, sha3::SHA3_224, Dir>),
     ///
-    HMAC_SHA3_256(HMAC<'k, sha3::SHA3_256>),
+    HMAC_SHA3_256(HMAC<'k, sha3::SHA3_256, Dir>),
     ///
-    HMAC_SHA3_384(HMAC<'k, sha3::SHA3_384>),
+    HMAC_SHA3_384(HMAC<'k, sha3::SHA3_384, Dir>),
     ///
-    HMAC_SHA3_512(HMAC<'k, sha3::SHA3_512>),
+    HMAC_SHA3_512(HMAC<'k, sha3::SHA3_512, Dir>),
     ///
-    HMAC_SM3(HMAC<'k, sm3::SM3>),
+    HMAC_SM3(HMAC<'k, sm3::SM3, Dir>),
 }
 
 impl MACFactory {
@@ -213,8 +221,29 @@ impl MACFactory {
         }
     }
 
-    /// The worker for one message, from whichever key this is.
-    fn worker(&self) -> MACFactoryWorker<'_> {
+    /// The tag length of the selected algorithm, in bytes: the hash's output length for an HMAC,
+    /// 32 for KMAC128 and 64 for KMAC256.
+    pub fn output_len(&self) -> usize {
+        match self {
+            Self::KMAC128(_) => 32,
+            Self::KMAC256(_) => 64,
+            Self::HMAC_SHA224(_) => <sha2::SHA224 as HashAlgParams>::OUTPUT_LEN,
+            Self::HMAC_SHA256(_) => <sha2::SHA256 as HashAlgParams>::OUTPUT_LEN,
+            Self::HMAC_SHA384(_) => <sha2::SHA384 as HashAlgParams>::OUTPUT_LEN,
+            Self::HMAC_SHA512(_) => <sha2::SHA512 as HashAlgParams>::OUTPUT_LEN,
+            Self::HMAC_SHA512_224(_) => <sha2::SHA512_224 as HashAlgParams>::OUTPUT_LEN,
+            Self::HMAC_SHA512_256(_) => <sha2::SHA512_256 as HashAlgParams>::OUTPUT_LEN,
+            Self::HMAC_SHA3_224(_) => <sha3::SHA3_224 as HashAlgParams>::OUTPUT_LEN,
+            Self::HMAC_SHA3_256(_) => <sha3::SHA3_256 as HashAlgParams>::OUTPUT_LEN,
+            Self::HMAC_SHA3_384(_) => <sha3::SHA3_384 as HashAlgParams>::OUTPUT_LEN,
+            Self::HMAC_SHA3_512(_) => <sha3::SHA3_512 as HashAlgParams>::OUTPUT_LEN,
+            Self::HMAC_SM3(_) => <sm3::SM3 as HashAlgParams>::OUTPUT_LEN,
+        }
+    }
+
+    /// Begins a tag over a new message: the named algorithm's generator. Infallible, and any
+    /// number can be in flight from one key.
+    pub fn create_generator(&self) -> MACFactoryWorker<'_, Encrypting> {
         match self {
             Self::KMAC128(k) => MACFactoryWorker::KMAC128(k.create_generator()),
             Self::KMAC256(k) => MACFactoryWorker::KMAC256(k.create_generator()),
@@ -231,105 +260,75 @@ impl MACFactory {
             Self::HMAC_SM3(k) => MACFactoryWorker::HMAC_SM3(k.create_generator()),
         }
     }
+
+    /// Begins the verification of a tag over a new message: the named algorithm's verifier.
+    pub fn create_verifier(&self) -> MACFactoryWorker<'_, Decrypting> {
+        match self {
+            Self::KMAC128(k) => MACFactoryWorker::KMAC128(k.create_verifier()),
+            Self::KMAC256(k) => MACFactoryWorker::KMAC256(k.create_verifier()),
+            Self::HMAC_SHA224(k) => MACFactoryWorker::HMAC_SHA224(k.create_verifier()),
+            Self::HMAC_SHA256(k) => MACFactoryWorker::HMAC_SHA256(k.create_verifier()),
+            Self::HMAC_SHA384(k) => MACFactoryWorker::HMAC_SHA384(k.create_verifier()),
+            Self::HMAC_SHA512(k) => MACFactoryWorker::HMAC_SHA512(k.create_verifier()),
+            Self::HMAC_SHA512_224(k) => MACFactoryWorker::HMAC_SHA512_224(k.create_verifier()),
+            Self::HMAC_SHA512_256(k) => MACFactoryWorker::HMAC_SHA512_256(k.create_verifier()),
+            Self::HMAC_SHA3_224(k) => MACFactoryWorker::HMAC_SHA3_224(k.create_verifier()),
+            Self::HMAC_SHA3_256(k) => MACFactoryWorker::HMAC_SHA3_256(k.create_verifier()),
+            Self::HMAC_SHA3_384(k) => MACFactoryWorker::HMAC_SHA3_384(k.create_verifier()),
+            Self::HMAC_SHA3_512(k) => MACFactoryWorker::HMAC_SHA3_512(k.create_verifier()),
+            Self::HMAC_SM3(k) => MACFactoryWorker::HMAC_SM3(k.create_verifier()),
+        }
+    }
+
+    /// One-shot: the tag of `data`, [`output_len`](Self::output_len) bytes.
+    pub fn mac(&self, data: &[u8]) -> Vec<u8> {
+        let mut generator = self.create_generator();
+        generator.do_update(data);
+        generator.do_final()
+    }
+
+    /// One-shot: the tag of `data` into `out`, which is zeroized first; returns the number of
+    /// bytes written, [`output_len`](Self::output_len).
+    ///
+    /// # Errors
+    /// [`MACError::InvalidLength`] if `out` is shorter than the tag.
+    pub fn mac_out(&self, data: &[u8], out: &mut [u8]) -> Result<usize, MACError> {
+        let mut generator = self.create_generator();
+        generator.do_update(data);
+        generator.do_final_out(out)
+    }
+
+    /// One-shot: checks `mac` against `data`, in constant time.
+    ///
+    /// # Errors
+    /// [`MACError::InvalidLength`] if `mac` is not [`output_len`](Self::output_len) bytes;
+    /// [`MACError::VerificationFailed`] if it is not the tag of `data` under this key.
+    pub fn verify(&self, data: &[u8], mac: &[u8]) -> Result<(), MACError> {
+        let mut verifier = self.create_verifier();
+        verifier.do_update(data);
+        verifier.do_verify_final(mac)
+    }
 }
 
-impl MacGenerationKey for MACFactory {
-    type Generator<'k>
-        = MACFactoryWorker<'k>
-    where
-        Self: 'k;
-
-    fn create_generator<'k>(&'k self) -> Self::Generator<'k> {
-        self.worker()
-    }
+/// `tag` into the front of `out`, for the run-time-length finals: the length check is the
+/// caller's.
+fn write_tag<const N: usize>(tag: [u8; N], out: &mut [u8]) -> usize {
+    out[..N].copy_from_slice(&tag);
+    N
 }
 
-impl MacVerificationKey for MACFactory {
-    type Verifier<'k>
-        = MACFactoryWorker<'k>
-    where
-        Self: 'k;
-
-    fn create_verifier<'k>(&'k self) -> Self::Verifier<'k> {
-        self.worker()
-    }
+/// `mac` as the fixed-length tag `verifier` takes, or `InvalidLength`.
+fn verify_tag<const N: usize, V: MACVerifier<N>>(verifier: V, mac: &[u8]) -> Result<(), MACError> {
+    let Ok(mac) = <&[u8; N]>::try_from(mac) else {
+        return Err(MACError::InvalidLength("the tag is not the algorithm's output length"));
+    };
+    verifier.do_verify_final(mac)
 }
 
-impl MAC for MACFactoryWorker<'_> {
-    fn output_len(&self) -> usize {
-        match self {
-            Self::KMAC128(h) => h.output_len(),
-            Self::KMAC256(h) => h.output_len(),
-            Self::HMAC_SHA224(h) => h.output_len(),
-            Self::HMAC_SHA256(h) => h.output_len(),
-            Self::HMAC_SHA384(h) => h.output_len(),
-            Self::HMAC_SHA512(h) => h.output_len(),
-            Self::HMAC_SHA512_224(h) => h.output_len(),
-            Self::HMAC_SHA512_256(h) => h.output_len(),
-            Self::HMAC_SHA3_224(h) => h.output_len(),
-            Self::HMAC_SHA3_256(h) => h.output_len(),
-            Self::HMAC_SHA3_384(h) => h.output_len(),
-            Self::HMAC_SHA3_512(h) => h.output_len(),
-            Self::HMAC_SM3(h) => h.output_len(),
-        }
-    }
-
-    fn mac(self, data: &[u8]) -> Vec<u8> {
-        match self {
-            Self::KMAC128(h) => h.mac(data),
-            Self::KMAC256(h) => h.mac(data),
-            Self::HMAC_SHA224(h) => h.mac(data),
-            Self::HMAC_SHA256(h) => h.mac(data),
-            Self::HMAC_SHA384(h) => h.mac(data),
-            Self::HMAC_SHA512(h) => h.mac(data),
-            Self::HMAC_SHA512_224(h) => h.mac(data),
-            Self::HMAC_SHA512_256(h) => h.mac(data),
-            Self::HMAC_SHA3_224(h) => h.mac(data),
-            Self::HMAC_SHA3_256(h) => h.mac(data),
-            Self::HMAC_SHA3_384(h) => h.mac(data),
-            Self::HMAC_SHA3_512(h) => h.mac(data),
-            Self::HMAC_SM3(h) => h.mac(data),
-        }
-    }
-
-    fn mac_out(self, data: &[u8], out: &mut [u8]) -> Result<usize, MACError> {
-        out.fill(0);
-        match self {
-            Self::KMAC128(h) => h.mac_out(data, out),
-            Self::KMAC256(h) => h.mac_out(data, out),
-            Self::HMAC_SHA224(h) => h.mac_out(data, out),
-            Self::HMAC_SHA256(h) => h.mac_out(data, out),
-            Self::HMAC_SHA384(h) => h.mac_out(data, out),
-            Self::HMAC_SHA512(h) => h.mac_out(data, out),
-            Self::HMAC_SHA512_224(h) => h.mac_out(data, out),
-            Self::HMAC_SHA512_256(h) => h.mac_out(data, out),
-            Self::HMAC_SHA3_224(h) => h.mac_out(data, out),
-            Self::HMAC_SHA3_256(h) => h.mac_out(data, out),
-            Self::HMAC_SHA3_384(h) => h.mac_out(data, out),
-            Self::HMAC_SHA3_512(h) => h.mac_out(data, out),
-            Self::HMAC_SM3(h) => h.mac_out(data, out),
-        }
-    }
-
-    fn verify(self, data: &[u8], mac: &[u8]) -> bool {
-        match self {
-            Self::KMAC128(h) => h.verify(data, mac),
-            Self::KMAC256(h) => h.verify(data, mac),
-            Self::HMAC_SHA224(h) => h.verify(data, mac),
-            Self::HMAC_SHA256(h) => h.verify(data, mac),
-            Self::HMAC_SHA384(h) => h.verify(data, mac),
-            Self::HMAC_SHA512(h) => h.verify(data, mac),
-            Self::HMAC_SHA512_224(h) => h.verify(data, mac),
-            Self::HMAC_SHA512_256(h) => h.verify(data, mac),
-            Self::HMAC_SHA3_224(h) => h.verify(data, mac),
-            Self::HMAC_SHA3_256(h) => h.verify(data, mac),
-            Self::HMAC_SHA3_384(h) => h.verify(data, mac),
-            Self::HMAC_SHA3_512(h) => h.verify(data, mac),
-            Self::HMAC_SM3(h) => h.verify(data, mac),
-        }
-    }
-
-    fn do_update(&mut self, data: &[u8]) {
+impl MACFactoryWorker<'_, Encrypting> {
+    /// Absorbs the next chunk of the message; see
+    /// [`MACGenerator::do_update`](bouncycastle_core::traits::MACGenerator::do_update).
+    pub fn do_update(&mut self, data: &[u8]) {
         match self {
             Self::KMAC128(h) => h.do_update(data),
             Self::KMAC256(h) => h.do_update(data),
@@ -347,63 +346,120 @@ impl MAC for MACFactoryWorker<'_> {
         }
     }
 
-    fn do_final(self) -> Vec<u8> {
+    /// Produces the tag, the algorithm's output length. Consumes the worker.
+    pub fn do_final(self) -> Vec<u8> {
         match self {
-            Self::KMAC128(h) => h.do_final(),
-            Self::KMAC256(h) => h.do_final(),
-            Self::HMAC_SHA224(h) => h.do_final(),
-            Self::HMAC_SHA256(h) => h.do_final(),
-            Self::HMAC_SHA384(h) => h.do_final(),
-            Self::HMAC_SHA512(h) => h.do_final(),
-            Self::HMAC_SHA512_224(h) => h.do_final(),
-            Self::HMAC_SHA512_256(h) => h.do_final(),
-            Self::HMAC_SHA3_224(h) => h.do_final(),
-            Self::HMAC_SHA3_256(h) => h.do_final(),
-            Self::HMAC_SHA3_384(h) => h.do_final(),
-            Self::HMAC_SHA3_512(h) => h.do_final(),
-            Self::HMAC_SM3(h) => h.do_final(),
+            Self::KMAC128(h) => h.do_final().to_vec(),
+            Self::KMAC256(h) => h.do_final().to_vec(),
+            Self::HMAC_SHA224(h) => h.do_final().to_vec(),
+            Self::HMAC_SHA256(h) => h.do_final().to_vec(),
+            Self::HMAC_SHA384(h) => h.do_final().to_vec(),
+            Self::HMAC_SHA512(h) => h.do_final().to_vec(),
+            Self::HMAC_SHA512_224(h) => h.do_final().to_vec(),
+            Self::HMAC_SHA512_256(h) => h.do_final().to_vec(),
+            Self::HMAC_SHA3_224(h) => h.do_final().to_vec(),
+            Self::HMAC_SHA3_256(h) => h.do_final().to_vec(),
+            Self::HMAC_SHA3_384(h) => h.do_final().to_vec(),
+            Self::HMAC_SHA3_512(h) => h.do_final().to_vec(),
+            Self::HMAC_SM3(h) => h.do_final().to_vec(),
         }
     }
 
-    fn do_final_out(self, out: &mut [u8]) -> Result<usize, MACError> {
+    /// Produces the tag into `out`, which is zeroized first; returns the number of bytes
+    /// written, the algorithm's output length. Consumes the worker.
+    ///
+    /// # Errors
+    /// [`MACError::InvalidLength`] if `out` is shorter than the tag; it is left zeroized.
+    pub fn do_final_out(self, out: &mut [u8]) -> Result<usize, MACError> {
         out.fill(0);
+        if out.len() < self.output_len() {
+            return Err(MACError::InvalidLength("output buffer is smaller than the tag"));
+        }
+        Ok(match self {
+            Self::KMAC128(h) => write_tag(h.do_final(), out),
+            Self::KMAC256(h) => write_tag(h.do_final(), out),
+            Self::HMAC_SHA224(h) => write_tag(h.do_final(), out),
+            Self::HMAC_SHA256(h) => write_tag(h.do_final(), out),
+            Self::HMAC_SHA384(h) => write_tag(h.do_final(), out),
+            Self::HMAC_SHA512(h) => write_tag(h.do_final(), out),
+            Self::HMAC_SHA512_224(h) => write_tag(h.do_final(), out),
+            Self::HMAC_SHA512_256(h) => write_tag(h.do_final(), out),
+            Self::HMAC_SHA3_224(h) => write_tag(h.do_final(), out),
+            Self::HMAC_SHA3_256(h) => write_tag(h.do_final(), out),
+            Self::HMAC_SHA3_384(h) => write_tag(h.do_final(), out),
+            Self::HMAC_SHA3_512(h) => write_tag(h.do_final(), out),
+            Self::HMAC_SM3(h) => write_tag(h.do_final(), out),
+        })
+    }
+}
+
+impl MACFactoryWorker<'_, Decrypting> {
+    /// Absorbs the next chunk of the message; see
+    /// [`MACVerifier::do_update`](bouncycastle_core::traits::MACVerifier::do_update).
+    pub fn do_update(&mut self, data: &[u8]) {
         match self {
-            Self::KMAC128(h) => h.do_final_out(out),
-            Self::KMAC256(h) => h.do_final_out(out),
-            Self::HMAC_SHA224(h) => h.do_final_out(out),
-            Self::HMAC_SHA256(h) => h.do_final_out(out),
-            Self::HMAC_SHA384(h) => h.do_final_out(out),
-            Self::HMAC_SHA512(h) => h.do_final_out(out),
-            Self::HMAC_SHA512_224(h) => h.do_final_out(out),
-            Self::HMAC_SHA512_256(h) => h.do_final_out(out),
-            Self::HMAC_SHA3_224(h) => h.do_final_out(out),
-            Self::HMAC_SHA3_256(h) => h.do_final_out(out),
-            Self::HMAC_SHA3_384(h) => h.do_final_out(out),
-            Self::HMAC_SHA3_512(h) => h.do_final_out(out),
-            Self::HMAC_SM3(h) => h.do_final_out(out),
+            Self::KMAC128(h) => h.do_update(data),
+            Self::KMAC256(h) => h.do_update(data),
+            Self::HMAC_SHA224(h) => h.do_update(data),
+            Self::HMAC_SHA256(h) => h.do_update(data),
+            Self::HMAC_SHA384(h) => h.do_update(data),
+            Self::HMAC_SHA512(h) => h.do_update(data),
+            Self::HMAC_SHA512_224(h) => h.do_update(data),
+            Self::HMAC_SHA512_256(h) => h.do_update(data),
+            Self::HMAC_SHA3_224(h) => h.do_update(data),
+            Self::HMAC_SHA3_256(h) => h.do_update(data),
+            Self::HMAC_SHA3_384(h) => h.do_update(data),
+            Self::HMAC_SHA3_512(h) => h.do_update(data),
+            Self::HMAC_SM3(h) => h.do_update(data),
         }
     }
 
-    fn do_verify_final(self, mac: &[u8]) -> bool {
+    /// Checks `mac` against the message absorbed so far, in constant time. Consumes the worker.
+    ///
+    /// # Errors
+    /// [`MACError::InvalidLength`] if `mac` is not the algorithm's output length;
+    /// [`MACError::VerificationFailed`] if it is not the tag of the message under the key.
+    pub fn do_verify_final(self, mac: &[u8]) -> Result<(), MACError> {
         match self {
-            Self::KMAC128(h) => h.do_verify_final(mac),
-            Self::KMAC256(h) => h.do_verify_final(mac),
-            Self::HMAC_SHA224(h) => h.do_verify_final(mac),
-            Self::HMAC_SHA256(h) => h.do_verify_final(mac),
-            Self::HMAC_SHA384(h) => h.do_verify_final(mac),
-            Self::HMAC_SHA512(h) => h.do_verify_final(mac),
-            Self::HMAC_SHA512_224(h) => h.do_verify_final(mac),
-            Self::HMAC_SHA512_256(h) => h.do_verify_final(mac),
-            Self::HMAC_SHA3_224(h) => h.do_verify_final(mac),
-            Self::HMAC_SHA3_256(h) => h.do_verify_final(mac),
-            Self::HMAC_SHA3_384(h) => h.do_verify_final(mac),
-            Self::HMAC_SHA3_512(h) => h.do_verify_final(mac),
-            Self::HMAC_SM3(h) => h.do_verify_final(mac),
+            Self::KMAC128(h) => verify_tag(h, mac),
+            Self::KMAC256(h) => verify_tag(h, mac),
+            Self::HMAC_SHA224(h) => verify_tag(h, mac),
+            Self::HMAC_SHA256(h) => verify_tag(h, mac),
+            Self::HMAC_SHA384(h) => verify_tag(h, mac),
+            Self::HMAC_SHA512(h) => verify_tag(h, mac),
+            Self::HMAC_SHA512_224(h) => verify_tag(h, mac),
+            Self::HMAC_SHA512_256(h) => verify_tag(h, mac),
+            Self::HMAC_SHA3_224(h) => verify_tag(h, mac),
+            Self::HMAC_SHA3_256(h) => verify_tag(h, mac),
+            Self::HMAC_SHA3_384(h) => verify_tag(h, mac),
+            Self::HMAC_SHA3_512(h) => verify_tag(h, mac),
+            Self::HMAC_SM3(h) => verify_tag(h, mac),
         }
     }
 }
 
-impl AlgorithmInfo for MACFactoryWorker<'_> {
+impl<Dir> MACFactoryWorker<'_, Dir> {
+    /// The tag length of the selected algorithm, in bytes: [`MACFactory::output_len`].
+    pub fn output_len(&self) -> usize {
+        match self {
+            Self::KMAC128(_) => 32,
+            Self::KMAC256(_) => 64,
+            Self::HMAC_SHA224(_) => <sha2::SHA224 as HashAlgParams>::OUTPUT_LEN,
+            Self::HMAC_SHA256(_) => <sha2::SHA256 as HashAlgParams>::OUTPUT_LEN,
+            Self::HMAC_SHA384(_) => <sha2::SHA384 as HashAlgParams>::OUTPUT_LEN,
+            Self::HMAC_SHA512(_) => <sha2::SHA512 as HashAlgParams>::OUTPUT_LEN,
+            Self::HMAC_SHA512_224(_) => <sha2::SHA512_224 as HashAlgParams>::OUTPUT_LEN,
+            Self::HMAC_SHA512_256(_) => <sha2::SHA512_256 as HashAlgParams>::OUTPUT_LEN,
+            Self::HMAC_SHA3_224(_) => <sha3::SHA3_224 as HashAlgParams>::OUTPUT_LEN,
+            Self::HMAC_SHA3_256(_) => <sha3::SHA3_256 as HashAlgParams>::OUTPUT_LEN,
+            Self::HMAC_SHA3_384(_) => <sha3::SHA3_384 as HashAlgParams>::OUTPUT_LEN,
+            Self::HMAC_SHA3_512(_) => <sha3::SHA3_512 as HashAlgParams>::OUTPUT_LEN,
+            Self::HMAC_SM3(_) => <sm3::SM3 as HashAlgParams>::OUTPUT_LEN,
+        }
+    }
+}
+
+impl<Dir> AlgorithmInfo for MACFactoryWorker<'_, Dir> {
     fn alg_name(&self) -> &'static str {
         match self {
             Self::KMAC128(h) => h.alg_name(),
