@@ -30,11 +30,11 @@
 #![allow(dead_code)]
 #![allow(unused_imports)]
 
+use bouncycastle::core::kem_key::{DecapsulatingKey, EncapsulatingKey};
 use bouncycastle::core::key_material::KeyMaterialTrait;
 use bouncycastle::core::signature_key::{DeterministicSigningKey, SigningKey, VerifyingKey};
 use bouncycastle::core::traits::{
-    KEMDecapsulator, KEMEncapsulator, KEMPrivateKey, KEMPublicKey, SignaturePrivateKey,
-    SignaturePublicKey,
+    KEMPrivateKey, KEMPublicKey, SignaturePrivateKey, SignaturePublicKey,
 };
 use bouncycastle::rng::DefaultRNG;
 use bouncycastle::rsa::{rsa_1024, rsa_1536, rsa_2048, rsa_3072, rsa_4096, rsa_8192};
@@ -365,7 +365,7 @@ fn bench_2048_rsasve_encaps() {
     let sk = genuine_2048_key();
     let pk = rsa_2048::RSA2048PublicKey::new(sk.n(), 0x10001).unwrap();
     let pk = rsa_2048::RSA2048KEMPublicKey::from_bytes(&pk.encode()).unwrap();
-    let (ss, ct) = rsa_2048::RSASVE::encaps(&pk).unwrap();
+    let (ss, ct) = pk.encaps(&mut DefaultRNG::default(), ()).unwrap();
     println!("{:x?}", ct);
     println!("{}", ss.key_len());
 }
@@ -377,7 +377,7 @@ fn bench_2048_rsasve_decaps() {
     let sk = rsa_2048::RSA2048KEMPrivateKey::from_bytes(&genuine_2048_key().encode()).unwrap();
     let mut ct = [0x5Au8; rsa_2048::CT_LEN];
     ct[0] = 0x01; // well inside (1, n - 1)
-    let ss = rsa_2048::RSASVE::decaps(&sk, &ct).unwrap();
+    let ss = sk.decaps(&ct, ()).unwrap();
     println!("{}", ss.key_len());
 }
 
@@ -388,7 +388,7 @@ fn bench_8192_rsasve_encaps() {
     let sk = genuine_8192_key();
     let pk = rsa_8192::RSA8192PublicKey::new(sk.n(), 0x10001).unwrap();
     let pk = rsa_8192::RSA8192KEMPublicKey::from_bytes(&pk.encode()).unwrap();
-    let (ss, ct) = rsa_8192::RSASVE::encaps(&pk).unwrap();
+    let (ss, ct) = pk.encaps(&mut DefaultRNG::default(), ()).unwrap();
     println!("{:x?}", ct);
     println!("{}", ss.key_len());
 }
@@ -400,7 +400,7 @@ fn bench_8192_rsasve_decaps() {
     let sk = rsa_8192::RSA8192KEMPrivateKey::from_bytes(&genuine_8192_key().encode()).unwrap();
     let mut ct = [0x5Au8; rsa_8192::CT_LEN];
     ct[0] = 0x01; // well inside (1, n - 1)
-    let ss = rsa_8192::RSASVE::decaps(&sk, &ct).unwrap();
+    let ss = sk.decaps(&ct, ()).unwrap();
     println!("{}", ss.key_len());
 }
 
