@@ -187,10 +187,10 @@ taught, as mechanics to apply next time a cipher type is shaped or reshaped:
 - **Fold wrapper state into the struct.** A decrypt-only buffer (the held-back tag) is carried on
   both directions, unused when encrypting, as `Gcm` already does; that is cheaper than a second
   type.
-- **Cipher workers do not suspend.** As of #173 no cipher or MAC worker implements
-  `SuspendableKeyed` or `SuspendableComponent`, and `hazmat::ModeKey` is gone with them; HMAC and
-  HKDF are the `SuspendableKeyed` implementors that remain, and the hashes, XOFs and KMAC keep
-  `Suspendable`. A message in progress is paused by holding its worker. A test that needs a
+- **Keyed workers do not suspend.** As of #173 no cipher or MAC worker implements
+  `SuspendableComponent`, and `hazmat::ModeKey` is gone with them; `SuspendableKeyed` itself went
+  with HMAC's and HKDF's impls (a worker cannot be rebuilt without its key, and its state is
+  key-derived material anyway), and the hashes, XOFs and KMAC keep `Suspendable`. A message in progress is paused by holding its worker. A test that needs a
   worker at a limit the public API cannot reach (GCM at `MAX_DATA_LEN`, the last counter block)
   is a unit test in the mode's file that sets the private field, not a resume from a patched
   state.
@@ -241,9 +241,7 @@ What that taught, as mechanics for the next trait that sheds a constructor:
   function handed `key: &'k K` that names the worker is generic over `'k`; one that builds its
   key locally bounds `for<'k> K::Encryptor<'k>: ..` with `K: 'static`. A test binds the key
   before the worker, since `key_fn().create_encryptor(..)` borrows a temporary.
-- **Resume takes the key object.** `SuspendableKeyed<'k, N>` takes the key by `&'k`: HMAC's is
-  `HmacKey`, and HKDF's stays the salt material, since HKDF is not a key object. A struct
-  cannot hold a worker that borrows a key it also owns: HKDF runs its extract-phase HMAC as the
+- **A struct cannot hold a worker that borrows a key it also owns:** HKDF runs its extract-phase HMAC as the
   two halves `HmacKey::inner_state` / `finish_out`, and the MAC factory is a key enum that hands
   out a worker enum.
 - **What has no key-path twin is dropped, and said so.** `new_allow_weak_key` on a cipher-based
@@ -281,6 +279,40 @@ cipher and MAC traits had (`local/signer_verifier_init_removal_plan.md`). Mechan
   emits its seed cyclically; two 32-byte draws from a 64-byte constant seed are identical, and
   so are two 64-byte draws (a PSS/SHA-512 salt) from a 64-byte counting seed. Seed it with a
   counting pattern longer than one draw when the test relies on consecutive draws differing.
+
+## Lessons from the KEM rework (November 2026)
+
+The KEM traits moved onto key objects on feature/kem-rework, with the algorithm's parameters
+(a KDF, for a KEM that derives its secret) as part of the design. Mechanics to reuse, for key
+agreement next:
+
+- **The parameters are the role trait's type parameter; the algorithm is an associated type.**
+  `EncapsulatingKey<Params, CT_LEN, SS_LEN> { type Algorithm: KEMAlgorithm; .. }`, implemented
+  over `()` for ML-KEM and over `core::kdf_params::KdfParams<'p, K>` (a borrowed KDF instance and
+  the fixed info) for a KEM that derives its secret. The argument type then selects the impl, the
+  way `a + b` selects an `Add` impl,
+  so `pk.encaps(&mut rng, ())` and `pk.encaps(&mut rng, hkdf_params)` on one key need no
+  turbofish. The first cut put the algorithm marker on the trait and the parameters behind a
+  `Params<'p>` GAT on it; that forced `EncapsulatingKey::<A, _, _>::encaps(&pk, ..)` at every
+  call on a key serving two algorithms, because an associated-type projection does not select
+  an impl. Two algorithms on one key that take the same parameter type need a wrapper key.
+- **`create_*` takes the parameters, the worker holds them.** `create_encapsulator(&'k self,
+  params: Params)` fixes them as `create_signer(rng, ctx)` fixes a context; a parameter type
+  with a lifetime is an impl-level lifetime (`impl<'p> EncapsulatingKey<KdfParams<'p, K>, ..>`),
+  and the worker GAT borrows only the key (`type Encapsulator<'k>`).
+- **The framework takes the parameters by value with a `Copy` bound.** `test_kem(keygen,
+  params, ..)` with `Params: Copy` reuses them across every construction; `()` and `&K` are
+  `Copy`, and a parameter struct derives it. A mock that implements a role twice over one
+  parameter type puts the variant on its key type.
+- **A fixed-length input becomes the type.** `decaps(&[u8; CT_LEN])` replaced the slice and
+  its `LengthError`; the test for the wrong length went with it, and a vector runner that
+  reads a ciphertext of arbitrary length treats a failed `try_from` as the invalid vector it is.
+- **Lengths come off the key types the ML-DSA way, with slice helpers where no const is in
+  scope.** `MLKEMPublicKey<P>` encodes into a slice (`encode_into`), hashes itself a polynomial
+  at a time and compares field by field, so nothing inside a generic `impl<P>` needs a
+  `[u8; PK_LEN]`; the array forms are the `KEMPublicKey<N>` impls, bound `P: PublicKeyLen<N>`.
+- **A `--jobs N` mutants run owns N scratch trees.** Every `/tmp/cargo-mutants-bc-rust-*.tmp`
+  with a fresh mtime belongs to the live run; deleting any of them kills it.
 
 ## Working from specifications
 

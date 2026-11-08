@@ -1701,8 +1701,9 @@ enum Subcommands {
     /// Note: in production uses, secrets should not be passed on the command-line because they get
     /// logged in shell history. Use the file-based input instead.
     HKDF_SHA256 {
-        /// The salt value in hex.
-        /// The `salt_file` option is preferred to avoid leaving key material in command history.
+        /// The salt value in hex (RFC 5869 Section 2.2). Optional: absent, HKDF uses a string of
+        /// HashLen zeros. The `salt_file` option is preferred to avoid leaving key material in
+        /// command history.
         #[arg(long)]
         salt: Option<String>,
 
@@ -1710,6 +1711,11 @@ enum Subcommands {
         /// If both salt and salt_file options are provided, the file will be used.
         #[arg(short, long)]
         salt_file: Option<String>,
+
+        /// Treat the salt as a secret (SP 800-56C Rev. 2 Section 5.1) rather than RFC 5869's
+        /// non-secret random value. The output is the same; only its entropy accounting differs.
+        #[arg(long)]
+        secret_salt: bool,
 
         /// An Input Keying Material in hex.
         /// The `ikm_file` option is preferred to avoid leaving key material in command history.
@@ -1744,8 +1750,9 @@ enum Subcommands {
     /// Note: in production uses, secrets should not be passed on the command-line because they get
     /// logged in shell history. Use the file-based input instead.
     HKDF_SHA384 {
-        /// The salt value in hex.
-        /// The `salt_file` option is preferred to avoid leaving key material in command history.
+        /// The salt value in hex (RFC 5869 Section 2.2). Optional: absent, HKDF uses a string of
+        /// HashLen zeros. The `salt_file` option is preferred to avoid leaving key material in
+        /// command history.
         #[arg(long)]
         salt: Option<String>,
 
@@ -1753,6 +1760,11 @@ enum Subcommands {
         /// If both salt and salt_file options are provided, the file will be used.
         #[arg(short, long)]
         salt_file: Option<String>,
+
+        /// Treat the salt as a secret (SP 800-56C Rev. 2 Section 5.1) rather than RFC 5869's
+        /// non-secret random value. The output is the same; only its entropy accounting differs.
+        #[arg(long)]
+        secret_salt: bool,
 
         /// An Input Keying Material in hex.
         /// The `ikm_file` option is preferred to avoid leaving key material in command history.
@@ -1787,8 +1799,9 @@ enum Subcommands {
     /// Note: in production uses, secrets should not be passed on the command-line because they get
     /// logged in shell history. Use the file-based input instead.
     HKDF_SHA512 {
-        /// The salt value in hex.
-        /// The `salt_file` option is preferred to avoid leaving key material in command history.
+        /// The salt value in hex (RFC 5869 Section 2.2). Optional: absent, HKDF uses a string of
+        /// HashLen zeros. The `salt_file` option is preferred to avoid leaving key material in
+        /// command history.
         #[arg(long)]
         salt: Option<String>,
 
@@ -1796,6 +1809,11 @@ enum Subcommands {
         /// If both salt and salt_file options are provided, the file will be used.
         #[arg(short, long)]
         salt_file: Option<String>,
+
+        /// Treat the salt as a secret (SP 800-56C Rev. 2 Section 5.1) rather than RFC 5869's
+        /// non-secret random value. The output is the same; only its entropy accounting differs.
+        #[arg(long)]
+        secret_salt: bool,
 
         /// An Input Keying Material in hex.
         /// The `ikm_file` option is preferred to avoid leaving key material in command history.
@@ -1830,8 +1848,9 @@ enum Subcommands {
     /// Note: in production uses, secrets should not be passed on the command-line because they get
     /// logged in shell history. Use the file-based input instead.
     HKDF_SM3 {
-        /// The salt value in hex.
-        /// The `salt_file` option is preferred to avoid leaving key material in command history.
+        /// The salt value in hex (RFC 5869 Section 2.2). Optional: absent, HKDF uses a string of
+        /// HashLen zeros. The `salt_file` option is preferred to avoid leaving key material in
+        /// command history.
         #[arg(long)]
         salt: Option<String>,
 
@@ -1839,6 +1858,11 @@ enum Subcommands {
         /// If both salt and salt_file options are provided, the file will be used.
         #[arg(short, long)]
         salt_file: Option<String>,
+
+        /// Treat the salt as a secret (SP 800-56C Rev. 2 Section 5.1) rather than RFC 5869's
+        /// non-secret random value. The output is the same; only its entropy accounting differs.
+        #[arg(long)]
+        secret_salt: bool,
 
         /// An Input Keying Material in hex.
         /// The `ikm_file` option is preferred to avoid leaving key material in command history.
@@ -2848,6 +2872,135 @@ enum Subcommands {
         #[arg(long)]
         /// The ciphertext value file (raw bytes; hex with --hex-input) either for encaps to output to, or for decaps to read from.
         ctfile: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// ML-KEM-512 with the shared secret derived through HKDF-SHA256 (MLKEM512-HKDF-SHA256):
+    /// encaps and decaps with mlkem512 keys, the output being
+    /// HKDF-SHA256(salt, K, info) over the ML-KEM secret K, one hash output long. Keys are made
+    /// with the mlkem512 subcommand.
+    MLKEM512_HKDF_SHA256 {
+        action: mlkem_cmd::MLKEMHkdfAction,
+
+        #[arg(long)]
+        /// The private key file (raw bytes; hex with --hex-input) for decaps
+        skfile: Option<String>,
+
+        #[arg(long)]
+        /// The public key file (raw bytes; hex with --hex-input) for encaps
+        pkfile: Option<String>,
+
+        #[arg(long)]
+        /// The ciphertext value file (raw bytes; hex with --hex-input) either for encaps to output to, or for decaps to read from.
+        ctfile: Option<String>,
+
+        /// The HKDF salt (RFC 5869 Section 2.2, a non-secret random value) in hex. Optional:
+        /// absent, HKDF uses a string of HashLen zeros.
+        #[arg(long)]
+        salt: Option<String>,
+
+        /// A file containing the HKDF salt in binary.
+        /// If both salt and salt_file options are provided, the file will be used.
+        #[arg(short, long)]
+        salt_file: Option<String>,
+
+        /// The HKDF `info` input (RFC 5869 Section 2.3) in hex. Optional; defaults to empty.
+        #[arg(long)]
+        additional_input: Option<String>,
+
+        /// A file containing the HKDF `info` input in binary. Optional; defaults to empty.
+        /// If both additional_input and additional_input_file options are provided, the file will be used.
+        #[arg(short, long)]
+        additional_input_file: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// ML-KEM-768 with the shared secret derived through HKDF-SHA512 (MLKEM768-HKDF-SHA512):
+    /// encaps and decaps with mlkem768 keys, the output being
+    /// HKDF-SHA512(salt, K, info) over the ML-KEM secret K, one hash output long. Keys are made
+    /// with the mlkem768 subcommand.
+    MLKEM768_HKDF_SHA512 {
+        action: mlkem_cmd::MLKEMHkdfAction,
+
+        #[arg(long)]
+        /// The private key file (raw bytes; hex with --hex-input) for decaps
+        skfile: Option<String>,
+
+        #[arg(long)]
+        /// The public key file (raw bytes; hex with --hex-input) for encaps
+        pkfile: Option<String>,
+
+        #[arg(long)]
+        /// The ciphertext value file (raw bytes; hex with --hex-input) either for encaps to output to, or for decaps to read from.
+        ctfile: Option<String>,
+
+        /// The HKDF salt (RFC 5869 Section 2.2, a non-secret random value) in hex. Optional:
+        /// absent, HKDF uses a string of HashLen zeros.
+        #[arg(long)]
+        salt: Option<String>,
+
+        /// A file containing the HKDF salt in binary.
+        /// If both salt and salt_file options are provided, the file will be used.
+        #[arg(short, long)]
+        salt_file: Option<String>,
+
+        /// The HKDF `info` input (RFC 5869 Section 2.3) in hex. Optional; defaults to empty.
+        #[arg(long)]
+        additional_input: Option<String>,
+
+        /// A file containing the HKDF `info` input in binary. Optional; defaults to empty.
+        /// If both additional_input and additional_input_file options are provided, the file will be used.
+        #[arg(short, long)]
+        additional_input_file: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// ML-KEM-1024 with the shared secret derived through HKDF-SHA512 (MLKEM1024-HKDF-SHA512):
+    /// encaps and decaps with mlkem1024 keys, the output being
+    /// HKDF-SHA512(salt, K, info) over the ML-KEM secret K, one hash output long. Keys are made
+    /// with the mlkem1024 subcommand.
+    MLKEM1024_HKDF_SHA512 {
+        action: mlkem_cmd::MLKEMHkdfAction,
+
+        #[arg(long)]
+        /// The private key file (raw bytes; hex with --hex-input) for decaps
+        skfile: Option<String>,
+
+        #[arg(long)]
+        /// The public key file (raw bytes; hex with --hex-input) for encaps
+        pkfile: Option<String>,
+
+        #[arg(long)]
+        /// The ciphertext value file (raw bytes; hex with --hex-input) either for encaps to output to, or for decaps to read from.
+        ctfile: Option<String>,
+
+        /// The HKDF salt (RFC 5869 Section 2.2, a non-secret random value) in hex. Optional:
+        /// absent, HKDF uses a string of HashLen zeros.
+        #[arg(long)]
+        salt: Option<String>,
+
+        /// A file containing the HKDF salt in binary.
+        /// If both salt and salt_file options are provided, the file will be used.
+        #[arg(short, long)]
+        salt_file: Option<String>,
+
+        /// The HKDF `info` input (RFC 5869 Section 2.3) in hex. Optional; defaults to empty.
+        #[arg(long)]
+        additional_input: Option<String>,
+
+        /// A file containing the HKDF `info` input in binary. Optional; defaults to empty.
+        /// If both additional_input and additional_input_file options are provided, the file will be used.
+        #[arg(short, long)]
+        additional_input_file: Option<String>,
 
         #[arg(short)]
         /// Output in hex format.
@@ -5349,6 +5502,7 @@ fn run() {
             ikm_file,
             additional_input,
             additional_input_file,
+            secret_salt,
             len,
             x,
         }) => hkdf_cmd::hkdf_cmd(
@@ -5359,6 +5513,7 @@ fn run() {
             ikm_file,
             additional_input,
             additional_input_file,
+            *secret_salt,
             *len,
             *x,
         ),
@@ -5369,6 +5524,7 @@ fn run() {
             ikm_file,
             additional_input,
             additional_input_file,
+            secret_salt,
             len,
             x,
         }) => hkdf_cmd::hkdf_cmd(
@@ -5379,6 +5535,7 @@ fn run() {
             ikm_file,
             additional_input,
             additional_input_file,
+            *secret_salt,
             *len,
             *x,
         ),
@@ -5389,6 +5546,7 @@ fn run() {
             ikm_file,
             additional_input,
             additional_input_file,
+            secret_salt,
             len,
             x,
         }) => hkdf_cmd::hkdf_cmd(
@@ -5399,6 +5557,7 @@ fn run() {
             ikm_file,
             additional_input,
             additional_input_file,
+            *secret_salt,
             *len,
             *x,
         ),
@@ -5409,6 +5568,7 @@ fn run() {
             ikm_file,
             additional_input,
             additional_input_file,
+            secret_salt,
             len,
             x,
         }) => hkdf_cmd::hkdf_cmd(
@@ -5419,6 +5579,7 @@ fn run() {
             ikm_file,
             additional_input,
             additional_input_file,
+            *secret_salt,
             *len,
             *x,
         ),
@@ -5562,6 +5723,96 @@ fn run() {
         }
         Some(Subcommands::MLKEM1024 { action, skfile, pkfile, ctfile, x }) => {
             mlkem_cmd::mlkem_cmd(&mlkem_cmd::MLKEM1024_SET, action, skfile, pkfile, ctfile, *x);
+        }
+        Some(Subcommands::MLKEM512_HKDF_SHA256 {
+            action,
+            skfile,
+            pkfile,
+            ctfile,
+            salt,
+            salt_file,
+            additional_input,
+            additional_input_file,
+            x,
+        }) => {
+            mlkem_cmd::mlkem_hkdf_cmd(
+                &mlkem_cmd::MLKEM512_SET,
+                std::marker::PhantomData::<
+                    bouncycastle::mlkem::KdfParams<
+                        bouncycastle::sha2::hkdf::HKDF_SHA256,
+                        { bouncycastle::mlkem::MLKEM512_HKDF_SHA256_SS_LEN },
+                    >,
+                >,
+                action,
+                skfile,
+                pkfile,
+                ctfile,
+                salt,
+                salt_file,
+                additional_input,
+                additional_input_file,
+                *x,
+            );
+        }
+        Some(Subcommands::MLKEM768_HKDF_SHA512 {
+            action,
+            skfile,
+            pkfile,
+            ctfile,
+            salt,
+            salt_file,
+            additional_input,
+            additional_input_file,
+            x,
+        }) => {
+            mlkem_cmd::mlkem_hkdf_cmd(
+                &mlkem_cmd::MLKEM768_SET,
+                std::marker::PhantomData::<
+                    bouncycastle::mlkem::KdfParams<
+                        bouncycastle::sha2::hkdf::HKDF_SHA512,
+                        { bouncycastle::mlkem::MLKEM768_HKDF_SHA512_SS_LEN },
+                    >,
+                >,
+                action,
+                skfile,
+                pkfile,
+                ctfile,
+                salt,
+                salt_file,
+                additional_input,
+                additional_input_file,
+                *x,
+            );
+        }
+        Some(Subcommands::MLKEM1024_HKDF_SHA512 {
+            action,
+            skfile,
+            pkfile,
+            ctfile,
+            salt,
+            salt_file,
+            additional_input,
+            additional_input_file,
+            x,
+        }) => {
+            mlkem_cmd::mlkem_hkdf_cmd(
+                &mlkem_cmd::MLKEM1024_SET,
+                std::marker::PhantomData::<
+                    bouncycastle::mlkem::KdfParams<
+                        bouncycastle::sha2::hkdf::HKDF_SHA512,
+                        { bouncycastle::mlkem::MLKEM1024_HKDF_SHA512_SS_LEN },
+                    >,
+                >,
+                action,
+                skfile,
+                pkfile,
+                ctfile,
+                salt,
+                salt_file,
+                additional_input,
+                additional_input_file,
+                *x,
+            );
         }
         Some(Subcommands::PARALLELHASH128 {
             length,
