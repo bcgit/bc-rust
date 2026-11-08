@@ -44,7 +44,9 @@ fn main() {
     assert_ne!(sk.decaps(&ct, other).unwrap(), key);
 
     // A 32-byte key from the same exchange: by RFC 5869 Section 2.3 the OKM is the first L
-    // octets of the expand stream, so it is the first half of the 64-byte one.
+    // octets of the expand stream, so it is the first half of the 64-byte one. That is why the
+    // length is the protocol's to fix along with the info, and why two keys from one exchange
+    // take two infos (as `other` above does), never two lengths of one.
     let short = KdfParams::new(&hkdf, b"example protocol v1", KeyLen::<32>);
     let key32 = sk.decaps(&ct, short).unwrap();
     assert_eq!(key32.ref_to_bytes(), &key.ref_to_bytes()[..32]);
