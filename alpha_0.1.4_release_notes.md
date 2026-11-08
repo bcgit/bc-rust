@@ -65,4 +65,7 @@
   through the streaming API is refused; a zero-length derivation is refused; and SHA-3 and SHAKE as a KDF type
   their output as the KDF's, derive from a fresh sponge, and hash their inputs length-prefixed
   (`len(ikm) || ikm || fixed_info`), so two keys are not their concatenation; their known answers change.
+  A derivation from no keys is refused; HKDF's `extract_out`, `extract_and_expand_out` and
+  `do_extract_final_out` zeroize the output before any check, as the `_out` rule asks; and the ML-KEM pairings
+  cap the derived key's label at the pairing's strength, so a secret salt does not lift it.
 
