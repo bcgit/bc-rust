@@ -284,3 +284,16 @@ fn kmacxof_one_shots_are_the_hash_view() {
     assert_eq!(out[..32], expected);
     assert_eq!(out[32..], [0u8; 8]);
 }
+
+/// `generate` tags the drawn key at the RNG's strength when that is below what the length
+/// carries, so a 128-bit DRBG makes a key KMAC256 refuses and KMAC128 accepts.
+#[test]
+fn generate_refuses_an_rng_below_the_kmac_strength() {
+    let mut weak = bouncycastle_rng::FixedSeedRNG::new([0x5Au8; 32]);
+    weak.set_security_strength(bouncycastle_core::security_strength::SecurityStrength::_128bit);
+    assert!(matches!(
+        KMAC256Key::<64>::generate(&mut weak),
+        Err(MACError::KeyMaterialError(KeyMaterialError::SecurityStrength(_)))
+    ));
+    assert!(KMAC128Key::<32>::generate(&mut weak).is_ok());
+}
