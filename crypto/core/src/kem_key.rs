@@ -23,7 +23,7 @@
 //! `&mut dyn RNG`.
 
 use crate::errors::KEMError;
-use crate::key_material::KeyMaterial;
+use crate::key_material::{KeyMaterial, KeyMaterialTrait};
 use crate::traits::{Algorithm, KEMDecapsulator, KEMEncapsulator, RNG};
 
 /// Marker for one KEM algorithm: ML-KEM-768, or RSA-KEM under a named KDF. It carries the
@@ -57,20 +57,22 @@ pub trait EncapsulatingKey<Params, const CT_LEN: usize, const SS_LEN: usize> {
         params: Params,
     ) -> Result<Self::Encapsulator<'k>, KEMError>;
 
-    /// One-shot: encapsulates into `ct`, which is zeroized first, and returns the shared secret
-    /// with the number of bytes written, always `CT_LEN`.
+    /// One-shot: encapsulates into `ct` and `ss`, both zeroized first, and returns the number of
+    /// ciphertext bytes written, always `CT_LEN`.
     ///
     /// # Errors
     /// Those of [`create_encapsulator`](Self::create_encapsulator) and of
-    /// [`KEMEncapsulator::encaps_out`].
+    /// [`KEMEncapsulator::encaps_out`]; both buffers are left zeroized.
     fn encaps_out(
         &self,
         rng: &mut dyn RNG,
         params: Params,
         ct: &mut [u8; CT_LEN],
-    ) -> Result<(KeyMaterial<SS_LEN>, usize), KEMError> {
+        ss: &mut KeyMaterial<SS_LEN>,
+    ) -> Result<usize, KEMError> {
         ct.fill(0);
-        self.create_encapsulator(params)?.encaps_out(rng, ct)
+        ss.zeroize();
+        self.create_encapsulator(params)?.encaps_out(rng, ct, ss)
     }
 
     /// One-shot: the shared secret and the ciphertext.
@@ -106,11 +108,26 @@ pub trait DecapsulatingKey<Params, const CT_LEN: usize, const SS_LEN: usize> {
         params: Params,
     ) -> Result<Self::Decapsulator<'k>, KEMError>;
 
-    /// One-shot: the shared secret of `ct`.
+    /// One-shot: decapsulates `ct` into `ss`, zeroized first, and returns the number of bytes
+    /// written, always `SS_LEN`.
     ///
     /// # Errors
     /// Those of [`create_decapsulator`](Self::create_decapsulator) and of
-    /// [`KEMDecapsulator::decaps`].
+    /// [`KEMDecapsulator::decaps_out`]; `ss` is left zeroized.
+    fn decaps_out(
+        &self,
+        ct: &[u8; CT_LEN],
+        params: Params,
+        ss: &mut KeyMaterial<SS_LEN>,
+    ) -> Result<usize, KEMError> {
+        ss.zeroize();
+        self.create_decapsulator(params)?.decaps_out(ct, ss)
+    }
+
+    /// One-shot: the shared secret of `ct`.
+    ///
+    /// # Errors
+    /// As [`decaps_out`](Self::decaps_out).
     fn decaps(&self, ct: &[u8; CT_LEN], params: Params) -> Result<KeyMaterial<SS_LEN>, KEMError> {
         self.create_decapsulator(params)?.decaps(ct)
     }

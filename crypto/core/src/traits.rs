@@ -602,14 +602,27 @@ const ONE_SHOT_TOO_LONG: &str =
 /// The ciphertext and shared secret are fixed-length arrays, so a ciphertext of the wrong length
 /// is a compile error rather than a run-time one.
 pub trait KEMDecapsulator<const CT_LEN: usize, const SS_LEN: usize>: AlgorithmInfo {
-    /// Decapsulates `ct` into the shared secret. The worker is reusable: a static key
-    /// decapsulates many ciphertexts.
+    /// Decapsulates `ct` into `ss`, which is zeroized first, and returns the number of bytes
+    /// written, always `SS_LEN`. The worker is reusable: a static key decapsulates many
+    /// ciphertexts. The caller's buffer is where the secret lives, so a long derived key costs
+    /// the caller's frame, not the worker's.
     ///
     /// # Errors
     /// [`KEMError::DecapsulationFailed`] for an explicitly rejecting KEM whose check fails; an
     /// implicitly rejecting KEM (ML-KEM) returns a key for every ciphertext and errs only if the
-    /// shared secret cannot be built.
-    fn decaps(&self, ct: &[u8; CT_LEN]) -> Result<KeyMaterial<SS_LEN>, KEMError>;
+    /// shared secret cannot be built. `ss` is left zeroized on every error.
+    fn decaps_out(
+        &self,
+        ct: &[u8; CT_LEN],
+        ss: &mut KeyMaterial<SS_LEN>,
+    ) -> Result<usize, KEMError>;
+
+    /// As [`decaps_out`](Self::decaps_out), returning the shared secret.
+    fn decaps(&self, ct: &[u8; CT_LEN]) -> Result<KeyMaterial<SS_LEN>, KEMError> {
+        let mut ss = KeyMaterial::new();
+        self.decaps_out(ct, &mut ss)?;
+        Ok(ss)
+    }
 }
 
 /// The encapsulating half of a KEM: the worker an encapsulating key hands out through
@@ -617,22 +630,27 @@ pub trait KEMDecapsulator<const CT_LEN: usize, const SS_LEN: usize>: AlgorithmIn
 /// algorithm takes were fixed when the worker was made; each call draws fresh randomness from the
 /// caller's RNG, so the worker is reusable.
 pub trait KEMEncapsulator<const CT_LEN: usize, const SS_LEN: usize>: AlgorithmInfo {
-    /// Encapsulates to the key: writes the ciphertext into `ct`, which is zeroized first, and
-    /// returns the shared secret with the number of bytes written, always `CT_LEN`.
+    /// Encapsulates to the key: writes the ciphertext into `ct` and the shared secret into
+    /// `ss`, both zeroized first, and returns the number of ciphertext bytes written, always
+    /// `CT_LEN`. The caller's buffer is where the secret lives, so a long derived key costs the
+    /// caller's frame, not the worker's.
     ///
     /// # Errors
     /// [`KEMError::RNGError`] if `rng` is weaker than the algorithm or fails to deliver;
-    /// [`KEMError::KeyMaterialError`] if the shared secret cannot be built.
+    /// [`KEMError::KeyMaterialError`] if the shared secret cannot be built. Both buffers are
+    /// left zeroized on every error.
     fn encaps_out(
         &self,
         rng: &mut dyn RNG,
         ct: &mut [u8; CT_LEN],
-    ) -> Result<(KeyMaterial<SS_LEN>, usize), KEMError>;
+        ss: &mut KeyMaterial<SS_LEN>,
+    ) -> Result<usize, KEMError>;
 
-    /// As [`encaps_out`](Self::encaps_out), returning the ciphertext.
+    /// As [`encaps_out`](Self::encaps_out), returning the shared secret and the ciphertext.
     fn encaps(&self, rng: &mut dyn RNG) -> Result<(KeyMaterial<SS_LEN>, [u8; CT_LEN]), KEMError> {
         let mut ct = [0u8; CT_LEN];
-        let (ss, _) = self.encaps_out(rng, &mut ct)?;
+        let mut ss = KeyMaterial::new();
+        self.encaps_out(rng, &mut ct, &mut ss)?;
         Ok((ss, ct))
     }
 }
