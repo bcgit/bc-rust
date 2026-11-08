@@ -14,7 +14,9 @@
 //! `KdfParams<'p, HKDF_SHA256>` for ML-KEM-512 and over `KdfParams<'p, HKDF_SHA512>` for the
 //! other two, so the parameter type selects the algorithm at the call. A marker's strength is the
 //! lesser of the parameter set's and the KDF's, and the derived key carries it: HKDF credits the
-//! 32-byte 𝐾 as seeding it fully, and caps the output at 𝐾's strength.
+//! 32-byte 𝐾 as seeding it fully, and caps the output at 𝐾's strength; the pairing then caps the
+//! label at its own, so a secret salt (SP 800-56C Rev. 2 Section 5.1, a `MACKey`), which HKDF
+//! also credits, does not lift the key above what the algorithm claims.
 
 use crate::MLKEM_SS_LEN;
 use crate::params::{MLKEM512Params, MLKEM768Params, MLKEM1024Params, MLKEMParamsBase};
@@ -118,7 +120,8 @@ pub trait MLKEMKdfPairing<D: KDF + PairedKdf + ?Sized, const SS_LEN: usize>:
     /// The algorithm the pairing is.
     type Algorithm: KEMAlgorithm;
 
-    /// KDF(𝐾, info) into a key of `SS_LEN` bytes.
+    /// KDF(𝐾, info) into a key of `SS_LEN` bytes, labelled at no more than the algorithm's
+    /// strength.
     ///
     /// # Errors
     /// [`KEMError::GenericError`] if the KDF refuses the derivation (an HKDF instance that has
@@ -136,6 +139,12 @@ pub trait MLKEMKdfPairing<D: KDF + PairedKdf + ?Sized, const SS_LEN: usize>:
         if written != SS_LEN || okm.key_len() != SS_LEN {
             return Err(KEMError::GenericError("the KDF derived a key of the wrong length"));
         }
+        // The label is the pairing's: HKDF credits a secret salt and would label the key above
+        // the KEM's strength, which this algorithm does not claim. Lowering needs no window.
+        let strength =
+            min_strength(okm.security_strength(), Self::Algorithm::MAX_SECURITY_STRENGTH);
+        okm.set_security_strength(strength)
+            .map_err(|_| KEMError::GenericError("the derived key's strength could not be set"))?;
         Ok(okm)
     }
 }
