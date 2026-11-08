@@ -7,6 +7,7 @@
 
 #[cfg(test)]
 mod mlkem_hkdf_tests {
+    use bouncycastle_core::errors::{KDFError, KEMError, MACError};
     use bouncycastle_core::kem_key::{DecapsulatingKey, EncapsulatingKey};
     use bouncycastle_core::key_material::{
         KeyMaterial, KeyMaterial0, KeyMaterial512, KeyMaterialTrait, KeyType,
@@ -60,6 +61,12 @@ mod mlkem_hkdf_tests {
             MLKEM768_CT_LEN,
             MLKEM768_HKDF_SHA512_SS_LEN,
         >(|| MLKEM768::keygen(&mut DefaultRNG::default()), sha512, false);
+        // a derived key shorter than the strength's bytes carries what it can
+        tf.test_kem::<KdfParams<'_, HKDF_SHA512, 16>, MLKEM768PublicKey, MLKEM768PrivateKey, MLKEM768_CT_LEN, 16>(
+            || MLKEM768::keygen(&mut DefaultRNG::default()),
+            KdfParams::new(&hkdf512, INFO, KeyLen::<16>),
+            false,
+        );
         tf.test_kem::<
             KdfParams<'_, HKDF_SHA512, MLKEM1024_HKDF_SHA512_SS_LEN>,
             MLKEM1024PublicKey,
@@ -280,11 +287,17 @@ mod mlkem_hkdf_tests {
             KeyType::Seed,
         )
         .unwrap();
-        assert!(encapsulator.encaps_out(&mut rng, &mut ct, &mut ss).is_err());
+        assert!(matches!(
+            encapsulator.encaps_out(&mut rng, &mut ct, &mut ss),
+            Err(KEMError::KDFError(KDFError::MACError(MACError::InvalidState(_))))
+        ));
         assert!(ct.iter().all(|&b| b == 0), "no ciphertext for a secret the caller never got");
         assert_eq!(ss.key_len(), 0, "and nothing of the stale buffer either");
         assert_eq!(ss.key_type(), KeyType::Zeroized);
-        assert!(sk.decaps(&[0u8; MLKEM512_CT_LEN], params).is_err());
+        assert!(matches!(
+            sk.decaps(&[0u8; MLKEM512_CT_LEN], params),
+            Err(KEMError::KDFError(KDFError::MACError(MACError::InvalidState(_))))
+        ));
     }
 
     #[test]
