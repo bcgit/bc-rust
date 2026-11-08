@@ -33,7 +33,7 @@ exposed parameters. If your application requires you to use the fully-parametriz
 these public APIs of BC-Rust's HKDF implementation:
 
 ```rust
-impl<H: HMACParams, ..> HKDF<H, ..> {
+impl<H: HMACParams> HKDF<H> {
     do_extract_init(salt: & impl KeyMaterial) -> Result<usize, MACError>;
 
     do_extract_update_key(ikm: & impl KeyMaterial) -> Result<usize, MACError>;

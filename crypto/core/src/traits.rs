@@ -523,9 +523,8 @@ pub trait KDF: AlgorithmInfo {
     /// `output_key`, which is zeroized first, and returns `len`.
     ///
     /// # Errors
-    /// [`KDFError::InvalidLength`] if `len` is zero or exceeds what the function produces (a hash
-    /// output for SHA-3, `255 * HashLen` for HKDF) or `output_key`'s capacity; `output_key` is
-    /// left zeroized.
+    /// [`KDFError::InvalidLength`] if `len` is zero or exceeds what the function produces
+    /// (`255 * HashLen` for HKDF) or `output_key`'s capacity; `output_key` is left zeroized.
     fn derive_key_out(
         &self,
         ikm: &dyn KeyMaterialTrait,
