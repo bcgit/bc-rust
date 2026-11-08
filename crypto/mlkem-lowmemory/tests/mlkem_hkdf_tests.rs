@@ -181,6 +181,38 @@ mod mlkem_hkdf_tests {
         assert_eq!(derived, expected);
     }
 
+    /// A secret salt (SP 800-56C Rev. 2 Section 5.1, a `MACKey`) is credited by HKDF, which
+    /// labels the derivation above the KEM's strength; the pairing caps the key's label at its
+    /// own.
+    #[test]
+    fn a_secret_salt_does_not_lift_the_key_above_the_pairings_strength() {
+        let mut rng = DefaultRNG::default();
+        let secret_salt =
+            KeyMaterial::<64>::from_bytes_as_type(&DUMMY_SEED[..64], KeyType::MACKey).unwrap();
+        let hkdf512 = HKDF_SHA512::new_with_salt(&secret_salt).unwrap();
+        let params = KdfParams::new(&hkdf512, INFO);
+        let (pk, sk) = MLKEM768::keygen(&mut rng).unwrap();
+        let (key, ct) = pk.encaps(&mut rng, params).unwrap();
+        assert_eq!(key.key_type(), KeyType::CryptographicRandom);
+        assert_eq!(key.security_strength(), MLKEM768_HKDF_SHA512::MAX_SECURITY_STRENGTH);
+        assert_eq!(key.security_strength(), SecurityStrength::_192bit);
+        assert_eq!(sk.decaps(&ct, params).unwrap(), key);
+
+        // the same derivation through HKDF alone carries the salt's strength
+        let K = sk.decaps(&ct, ()).unwrap();
+        let mut alone = KeyMaterial::<MLKEM768_HKDF_SHA512_SS_LEN>::new();
+        HKDF_SHA512::extract_and_expand_out(
+            &secret_salt,
+            &K,
+            INFO,
+            MLKEM768_HKDF_SHA512_SS_LEN,
+            &mut alone,
+        )
+        .unwrap();
+        assert_eq!(alone.security_strength(), SecurityStrength::_256bit);
+        assert_eq!(alone.ref_to_bytes(), key.ref_to_bytes());
+    }
+
     /// An HKDF instance that has absorbed input through the streaming API is not the salted
     /// instance the pairing wants: the worker is made, since nothing is checked until the
     /// derivation, and then every encapsulation fails with the ciphertext buffer left zeroed and
