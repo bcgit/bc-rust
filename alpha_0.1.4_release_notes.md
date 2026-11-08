@@ -67,6 +67,15 @@
   32-byte secret seeds HKDF-SHA512 as it does HKDF-SHA256. The `hkdf-*` CLI subcommands type their salt as
   RFC 5869's non-secret random value, as the `mlkem*-hkdf-*` ones do; `--secret-salt` marks it as the secret salt
   of SP 800-56C Rev. 2 Section 5.1, which HKDF credits.
+* Every encrypting key takes a caller-supplied IV or nonce as the AEAD keys already did:
+  `SymmetricEncryptionKey` and `BlockEncryptionKey` gain `create_encryptor_nonce` and the `encrypt_nonce_out` /
+  `encrypt_nonce` / `encrypt_inplace_nonce` one-shots, `SymmetricEncryptMode` and `BlockEncryptMode` the
+  `encrypt_init_nonce` constructor, implemented by CBC, CFB, CFB8, CTR, padded ECB and `ChaCha20Key`. The drawing
+  forms remain the default; the caller of a `_nonce` form takes on the obligation they discharge (SP 800-38A
+  Appendix C's unpredictable IV for CBC and CFB, Appendix B's unique counter blocks for CTR, RFC 8439 Sec 2.4's
+  never-repeated nonce for ChaCha20). The known-answer suites pin their IVs through the new forms instead of a
+  seeded RNG, and the CLI's `--iv` flags run through them; `--iv` / `--iv-file` and `--nonce` / `--nonce-file` are
+  two spellings of one flag on every command that has either.
 * The KDF entropy accounting after review: a full-entropy key with no strength (a `SharedSecret` whose producer
   stated none, which is now the default for one built from bytes, or a key too short to carry 112 bits) credits
   nothing, so a `CryptographicRandom` output of 14 bytes or more carries a strength; a KDF instance that has absorbed input

@@ -45,8 +45,9 @@
 //! general data as well, but they are deterministic, so for data that may repeat an AEAD is the
 //! better fit (see the [`kw`] security notes).
 //!
-//! CBC, CFB, CFB8 and CTR all generate their own init data: an IV for the first three, a nonce for
-//! CTR, which is shorter than a block because the rest of the counter block is the counter. ECB has
+//! CBC, CFB, CFB8 and CTR all generate their own init data, or take the caller's through the key's
+//! `_nonce` forms: an IV for the first three, a nonce for CTR, which is shorter than a block
+//! because the rest of the counter block is the counter. ECB has
 //! none at all (`INIT_DATA_LEN = 0`) and is the raw permutation applied block by block, which is
 //! why it lives under [`hazmat`] -- see [`hazmat::ecb::Ecb`] and
 //! [Choosing between the modes](#choosing-between-the-modes).
