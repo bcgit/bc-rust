@@ -2,18 +2,17 @@
 //! Appendix A.1 vectors and the core-test-framework KEM suites.
 
 use bouncycastle_core::errors::{KEMError, RNGError};
+use bouncycastle_core::kem_key::{DecapsulatingKey, EncapsulatingKey};
 use bouncycastle_core::key_material::{KeyMaterial256, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::traits::{
-    KEMDecapsulator, KEMEncapsulator, KEMPrivateKey, KEMPublicKey, RNG,
-};
+use bouncycastle_core::traits::{KEMPrivateKey, KEMPublicKey, RNG};
 use bouncycastle_core_test_framework::kem::{TestFrameworkKEM, TestFrameworkKEMKeys};
 use bouncycastle_ed::x25519::{
     DHKEM_SS_LEN, POINT_LEN, SCALAR_LEN, X25519, X25519PrivateKey, X25519PublicKey,
 };
 use bouncycastle_hex as hex;
 use bouncycastle_hpke::dhkem::DHKEM;
-use bouncycastle_rng::FixedSeedRNG;
+use bouncycastle_rng::{FixedSeedRNG, HashDRBG_SHA512};
 
 type X25519DHKEM = DHKEM<X25519, POINT_LEN, SCALAR_LEN, POINT_LEN, DHKEM_SS_LEN>;
 
@@ -82,7 +81,7 @@ fn rfc9180_encaps() {
     for (i, v) in VECTORS.iter().enumerate() {
         let pk_r = X25519PublicKey::from_bytes(&decode_32(v.pk_rm)).unwrap();
         let mut rng = FixedSeedRNG::new(decode_32(v.sk_em));
-        let (ss, enc) = X25519::encaps_rng(&pk_r, &mut rng).unwrap();
+        let (ss, enc) = pk_r.encaps(&mut rng, ()).unwrap();
         assert_eq!(enc, decode_32(v.enc), "vector {i}: enc");
         assert_eq!(enc, decode_32(v.pk_em), "vector {i}: enc = pkEm");
         assert_eq!(ss.ref_to_bytes(), decode_32(v.shared_secret), "vector {i}: shared_secret");
@@ -96,7 +95,7 @@ fn rfc9180_decaps() {
     for (i, v) in VECTORS.iter().enumerate() {
         let sk_r = X25519PrivateKey::from_bytes(&decode_32(v.sk_rm)).unwrap();
         assert_eq!(sk_r.pk().as_bytes(), &decode_32(v.pk_rm), "vector {i}: pk(skRm)");
-        let ss = X25519::decaps(&sk_r, &decode_32(v.enc)).unwrap();
+        let ss = sk_r.decaps(&decode_32(v.enc), ()).unwrap();
         assert_eq!(ss.ref_to_bytes(), decode_32(v.shared_secret), "vector {i}: shared_secret");
         assert_eq!(ss.key_type(), KeyType::CryptographicRandom, "vector {i}");
         assert_eq!(ss.security_strength(), SecurityStrength::_128bit, "vector {i}");
@@ -151,21 +150,21 @@ fn derive_key_pair_rejects_bad_ikm() {
     X25519DHKEM::derive_key_pair(&long).unwrap();
 }
 
-/// `encaps_rng` rejects an RNG below 128 bits and accepts one at exactly 128 bits.
+/// `encaps` rejects an RNG below 128 bits and accepts one at exactly 128 bits.
 #[test]
 fn encaps_rng_security_strength() {
     let (pk, _) = X25519::keygen().unwrap();
 
     let mut weak = FixedSeedRNG::new([0x5A; 32]);
     weak.set_security_strength(SecurityStrength::_112bit);
-    match X25519::encaps_rng(&pk, &mut weak) {
+    match pk.encaps(&mut weak, ()) {
         Err(KEMError::RNGError(_)) => { /* good */ }
         _ => panic!("expected RNGError for a 112-bit RNG"),
     }
 
     let mut just_right = FixedSeedRNG::new([0x5A; 32]);
     just_right.set_security_strength(SecurityStrength::_128bit);
-    X25519::encaps_rng(&pk, &mut just_right).unwrap();
+    pk.encaps(&mut just_right, ()).unwrap();
 }
 
 /// An RNG at full strength whose every request fails.
@@ -196,7 +195,7 @@ impl RNG for FailingRNG {
 #[test]
 fn encaps_rng_passes_through_rng_failure() {
     let (pk, _) = X25519::keygen().unwrap();
-    match X25519::encaps_rng(&pk, &mut FailingRNG) {
+    match pk.encaps(&mut FailingRNG, ()) {
         Err(KEMError::RNGError(RNGError::GenericError(_))) => { /* good */ }
         other => panic!("expected the RNG's error, got {other:?}"),
     }
@@ -208,15 +207,12 @@ fn kem_framework() {
     // different shared secret, which is the behaviour the framework checks for an implicitly
     // rejecting KEM. Full bit-flipping is off: flipping bit 255 of enc gives the same shared
     // secret, since X25519 ignores that bit (RFC 7748 Section 5).
-    TestFrameworkKEM::new(false, true).test_kem::<
-        X25519PublicKey,
-        X25519PrivateKey,
-        X25519,
-        POINT_LEN,
-        SCALAR_LEN,
-        POINT_LEN,
-        DHKEM_SS_LEN,
-    >(keygen, false);
+    TestFrameworkKEM::new(false, true)
+        .test_kem::<(), X25519PublicKey, X25519PrivateKey, POINT_LEN, DHKEM_SS_LEN>(
+            keygen,
+            (),
+            false,
+        );
 }
 
 #[test]
@@ -235,11 +231,14 @@ fn rejects_low_order_public_key() {
     let p = decode_32("edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f");
 
     for u in [[0_u8; 32], p, zero_bit_255] {
-        match X25519::encaps(&X25519PublicKey::from_bytes(&u).unwrap()) {
+        match X25519PublicKey::from_bytes(&u)
+            .unwrap()
+            .encaps(&mut HashDRBG_SHA512::new_from_os(), ())
+        {
             Err(KEMError::InvalidPublicKey(_)) => { /* good */ }
             other => panic!("encaps: expected InvalidPublicKey for u = {u:02x?}, got {other:?}"),
         }
-        match X25519::decaps(&sk, &u) {
+        match sk.decaps(&u, ()) {
             Err(KEMError::DecapsulationFailed) => { /* good */ }
             other => panic!("decaps: expected DecapsulationFailed for u = {u:02x?}, got {other:?}"),
         }

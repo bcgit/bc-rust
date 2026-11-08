@@ -1,5 +1,6 @@
+use bouncycastle_core::kem_key::{DecapsulatingKey, EncapsulatingKey};
 use bouncycastle_core::key_material::{KeyMaterial256, KeyType};
-use bouncycastle_core::traits::{KEMDecapsulator, KEMEncapsulator, KeyAgreement};
+use bouncycastle_core::traits::KeyAgreement;
 use bouncycastle_core_test_framework::DUMMY_SEED;
 use bouncycastle_ed::x25519::{X25519, X25519PrivateKey, X25519PublicKey};
 use bouncycastle_rng::FixedSeedRNG;
@@ -87,7 +88,7 @@ fn bench_x25519_encaps(c: &mut Criterion) {
         b.iter(|| {
             for i in 0..NUM_ELEMS {
                 let mut rng = FixedSeedRNG::new(ephemeral_seeds[i]);
-                _ = black_box(X25519::encaps_rng(&keys[i].0, &mut rng));
+                _ = black_box(keys[i].0.encaps(&mut rng, ()));
             }
         })
     });
@@ -101,14 +102,16 @@ fn bench_x25519_decaps(c: &mut Criterion) {
     let keys = key_pairs();
 
     // Set up the ciphertexts outside of the timing loop.
-    let cts: Vec<[u8; 32]> = keys.iter().map(|(pk, _sk)| X25519::encaps(pk).unwrap().1).collect();
+    let mut rng = FixedSeedRNG::new(&DUMMY_SEED[..32]);
+    let cts: Vec<[u8; 32]> =
+        keys.iter().map(|(pk, _sk)| pk.encaps(&mut rng, ()).unwrap().1).collect();
 
     group.throughput(criterion::Throughput::Elements(NUM_ELEMS as u64));
 
     group.bench_function("DHKEM(X25519, HKDF-SHA256)", |b| {
         b.iter(|| {
             for i in 0..NUM_ELEMS {
-                _ = black_box(X25519::decaps(&keys[i].1, &cts[i]));
+                _ = black_box(keys[i].1.decaps(&cts[i], ()));
             }
         })
     });

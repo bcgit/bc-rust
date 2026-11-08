@@ -5,15 +5,14 @@
 //! group that implements [`dhkem::DHKEMParams`], the extension point through which a group
 //! declares its keys, its DH operation and the KDF that the DHKEM pairs it with. Each group's crate
 //! implements that trait and exposes the result through the
-//! [`KEMEncapsulator`](bouncycastle_core::traits::KEMEncapsulator) and
-//! [`KEMDecapsulator`](bouncycastle_core::traits::KEMDecapsulator) traits on its own algorithm
-//! struct
+//! [`EncapsulatingKey`](bouncycastle_core::kem_key::EncapsulatingKey) and
+//! [`DecapsulatingKey`](bouncycastle_core::kem_key::DecapsulatingKey) roles on its own key types.
 //!
 //! For example:
 //!
-//! | KEM                          | kem_id | Exposed as                     |
-//! |------------------------------|--------|--------------------------------|
-//! | DHKEM(X25519, HKDF-SHA256)   | 0x0020 | `bouncycastle_ed::x25519::X25519` |
+//! | KEM                        | kem_id | Exposed as                                                     |
+//! |----------------------------|--------|----------------------------------------------------------------|
+//! | DHKEM(X25519, HKDF-SHA256) | 0x0020 | `bouncycastle_ed::x25519::{X25519PublicKey, X25519PrivateKey}` |
 //!
 //! The KDF is HKDF over the hash named by [`dhkem::DHKEMParams::KDFHash`], computed on
 //! [`HMAC`](bouncycastle_hmac::HMAC) as RFC 5869 defines it, so any hash that

@@ -20,11 +20,11 @@
 #![allow(dead_code)]
 #![allow(unused_imports)]
 
+use bouncycastle::core::kem_key::{DecapsulatingKey, EncapsulatingKey};
 use bouncycastle::core::key_material::{KeyMaterial256, KeyType};
-use bouncycastle::core::traits::{
-    KEMDecapsulator, KEMEncapsulator, KeyAgreement, KeyAgreementPrivateKey, KeyAgreementPublicKey,
-};
+use bouncycastle::core::traits::{KeyAgreement, KeyAgreementPrivateKey, KeyAgreementPublicKey};
 use bouncycastle::ed::x25519::{X25519, X25519PrivateKey, X25519PublicKey};
+use bouncycastle::rng::HashDRBG_SHA512;
 
 /// Runs the operation under test in its own stack frame, with the key already loaded by the
 /// caller.
@@ -136,7 +136,7 @@ fn bench_x25519_encaps() {
 
     let pk = load_pk_rm();
     measure(|| {
-        let (ss, ct) = X25519::encaps(&pk).unwrap();
+        let (ss, ct) = pk.encaps(&mut HashDRBG_SHA512::new_from_os(), ()).unwrap();
         print!("{:x?}", ss);
         print!("{:x?}", ct);
     });
@@ -154,7 +154,7 @@ fn bench_x25519_decaps() {
 
     let sk = load_sk_rm();
     measure(|| {
-        let ss = X25519::decaps(&sk, &ct).unwrap();
+        let ss = sk.decaps(&ct, ()).unwrap();
         print!("{:x?}", ss);
     });
 }

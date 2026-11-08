@@ -1,9 +1,9 @@
 //! The DH-Based KEM (DHKEM) of RFC 9180 Section 4.1, generic over the Diffie-Hellman group.
 //!
 //! A group's crate implements [`DHKEMParams`] for its algorithm struct and then calls
-//! [`DHKEM::encap_rng`] and [`DHKEM::decap`] from its
-//! [`KEMEncapsulator`](bouncycastle_core::traits::KEMEncapsulator) and
-//! [`KEMDecapsulator`](bouncycastle_core::traits::KEMDecapsulator) impls.
+//! [`DHKEM::encap_rng`] and [`DHKEM::decap`] from the workers its keys hand out through
+//! [`EncapsulatingKey`](bouncycastle_core::kem_key::EncapsulatingKey) and
+//! [`DecapsulatingKey`](bouncycastle_core::kem_key::DecapsulatingKey).
 
 use bouncycastle_core::errors::{KEMError, KeyAgreementError, RNGError};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};

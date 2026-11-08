@@ -75,7 +75,7 @@
 //!     context[32..].copy_from_slice(pk_B.as_ref());
 //!
 //!     let mut key = KeyMaterial256::new();
-//!     HKDF_SHA256::new().derive_key_out(&ikm, &context, &mut key).unwrap();
+//!     HKDF_SHA256::new().derive_key_out(&ikm, &context, 32, &mut key).unwrap();
 //!     key
 //! }
 //!
@@ -100,22 +100,25 @@
 //!
 //! ## X25519 as a KEM
 //!
-//! [`X25519`] also implements [`KEMEncapsulator`] and [`KEMDecapsulator`] as DHKEM(X25519,
-//! HKDF-SHA256) of RFC 9180 §4.1, the KEM used by HPKE. The sender encapsulates against the
-//! recipient's public key, and gets a shared secret and a 32-byte ciphertext (an ephemeral public
-//! key) to send. The shared secret is already the output of a KDF, ready to use as a key.
+//! [`X25519PublicKey`] and [`X25519PrivateKey`] also implement [`EncapsulatingKey`] and
+//! [`DecapsulatingKey`], with `()` as the parameters, as DHKEM(X25519, HKDF-SHA256) of RFC 9180
+//! §4.1, the KEM used by HPKE. The sender encapsulates against the recipient's public key, and
+//! gets a shared secret and a 32-byte ciphertext (an ephemeral public key) to send. The shared
+//! secret is already the output of a KDF, ready to use as a key.
 //!
 //! ```rust
-//! use bouncycastle_core::traits::{KEMDecapsulator, KEMEncapsulator};
+//! use bouncycastle_core::kem_key::{DecapsulatingKey, EncapsulatingKey};
 //! use bouncycastle_ed::x25519::X25519;
+//! use bouncycastle_rng::HashDRBG_SHA512;
 //!
 //! let (pk, sk) = X25519::keygen().unwrap();
+//! let mut rng = HashDRBG_SHA512::new_from_os();
 //!
 //! // The sender encapsulates against the recipient's public key...
-//! let (ss, ct) = X25519::encaps(&pk).unwrap();
+//! let (ss, ct) = pk.encaps(&mut rng, ()).unwrap();
 //!
 //! // ...and the recipient recovers the same shared secret from the ciphertext.
-//! let ss1 = X25519::decaps(&sk, &ct).unwrap();
+//! let ss1 = sk.decaps(&ct, ()).unwrap();
 //! assert_eq!(ss, ss1);
 //! ```
 //!
@@ -185,8 +188,8 @@
 //! | `X25519::keygen_from_seed`      | 1200 B |
 //! | `X25519PrivateKey::from_bytes`  | 1136 B |
 //! | `X25519::key_agreement`         | 1072 B |
-//! | `X25519::encaps` / `encaps_rng` | 2368 B |
-//! | `X25519::decaps`                | 1872 B |
+//! | `encaps` on the public key      | 2368 B |
+//! | `decaps` on the private key     | 1872 B |
 //!
 //! Key generation, decoding a private key, and key agreement each run one Montgomery ladder plus
 //! the field inversion.
@@ -206,7 +209,7 @@
 //! identifier and knowledge of a shared secret as proof of ownership (without including the public
 //! keys in the key derivation) might lead to subtle vulnerabilities".
 //! This is the reason for including both public keys in the key derivation step.
-//! Note that the HPKE DHKEM exposed via the [`KEMEncapsulator`] / [`KEMDecapsulator`] traits protects
+//! Note that the HPKE DHKEM exposed via the [`EncapsulatingKey`] / [`DecapsulatingKey`] roles protects
 //! against this.
 //!
 //! RFC 9180 §9.7.4: "HPKE ciphertexts are not forward secret with respect to recipient compromise
@@ -216,6 +219,7 @@
 //! is layered on top.
 
 use bouncycastle_core::errors::{KEMError, KeyAgreementError, RNGError};
+use bouncycastle_core::kem_key::{DecapsulatingKey, EncapsulatingKey, KEMAlgorithm};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterial256, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{
@@ -889,51 +893,89 @@ impl DHKEMParams<POINT_LEN, SCALAR_LEN, POINT_LEN> for X25519 {
     }
 }
 
-/// X25519 as a KEM: DHKEM(X25519, HKDF-SHA256) of RFC 9180 §4.1, where the ciphertext is an
-/// ephemeral public key (`enc`) and the shared secret is derived with HKDF-SHA256 from the X25519
-/// output and both public keys.
-impl KEMEncapsulator<X25519PublicKey, POINT_LEN, POINT_LEN, DHKEM_SS_LEN> for X25519 {
-    /// `Encap(pkR)` (RFC 9180 §4.1), drawing the ephemeral key pair from the library's default RNG,
-    /// seeded from the OS.
-    ///
-    /// # Errors
-    ///
-    /// [`KEMError::InvalidPublicKey`] if `pk` gives an all-zero X25519 output, as for
-    /// [`X25519::key_agreement`].
-    fn encaps(
-        pk: &X25519PublicKey,
-    ) -> Result<(KeyMaterial<DHKEM_SS_LEN>, [u8; POINT_LEN]), KEMError> {
-        let mut os_rng = HashDRBG_SHA512::new_from_os();
-        Self::encaps_rng(pk, &mut os_rng)
-    }
+impl KEMAlgorithm for X25519 {}
 
+/// The encapsulator an [`X25519PublicKey`] hands out through [`EncapsulatingKey`]:
+/// DHKEM(X25519, HKDF-SHA256) of RFC 9180 §4.1, where the ciphertext is an ephemeral public key
+/// (`enc`) and the shared secret is derived with HKDF-SHA256 from the X25519 output and both
+/// public keys. It borrows the recipient's key.
+pub struct X25519Encapsulator<'k> {
+    pk: &'k X25519PublicKey,
+}
+
+impl Algorithm for X25519Encapsulator<'_> {
+    const ALG_NAME: &'static str = X25519::ALG_NAME;
+    const MAX_SECURITY_STRENGTH: SecurityStrength = X25519::MAX_SECURITY_STRENGTH;
+}
+
+impl KEMEncapsulator<POINT_LEN, DHKEM_SS_LEN> for X25519Encapsulator<'_> {
     /// `Encap(pkR)` (RFC 9180 §4.1), drawing the ephemeral key pair from `rng`.
     ///
     /// # Errors
     ///
     /// * [`KEMError::RNGError`] if `rng`'s security strength is below 128 bits.
-    /// * [`KEMError::InvalidPublicKey`] if `pk` gives an all-zero X25519 output, as for
+    /// * [`KEMError::InvalidPublicKey`] if the key gives an all-zero X25519 output, as for
     ///   [`X25519::key_agreement`].
-    fn encaps_rng(
-        pk: &X25519PublicKey,
+    fn encaps_out(
+        &self,
         rng: &mut dyn RNG,
-    ) -> Result<(KeyMaterial<DHKEM_SS_LEN>, [u8; POINT_LEN]), KEMError> {
-        X25519DHKEM::encap_rng(pk, rng)
+        ct: &mut [u8; POINT_LEN],
+        ss: &mut KeyMaterial<DHKEM_SS_LEN>,
+    ) -> Result<usize, KEMError> {
+        ct.fill(0);
+        ss.zeroize();
+        let (shared_secret, enc) = X25519DHKEM::encap_rng(self.pk, rng)?;
+        *ct = enc;
+        *ss = shared_secret;
+        Ok(POINT_LEN)
     }
 }
 
-impl KEMDecapsulator<X25519PrivateKey, SCALAR_LEN, POINT_LEN, DHKEM_SS_LEN> for X25519 {
+/// X25519 public keys encapsulate as DHKEM(X25519, HKDF-SHA256), with `()` as the parameters.
+impl EncapsulatingKey<(), POINT_LEN, DHKEM_SS_LEN> for X25519PublicKey {
+    type Algorithm = X25519;
+    type Encapsulator<'k> = X25519Encapsulator<'k>;
+
+    fn create_encapsulator<'k>(&'k self, _params: ()) -> Result<X25519Encapsulator<'k>, KEMError> {
+        Ok(X25519Encapsulator { pk: self })
+    }
+}
+
+/// The decapsulator an [`X25519PrivateKey`] hands out through [`DecapsulatingKey`]:
+/// DHKEM(X25519, HKDF-SHA256) `Decap` of RFC 9180 §4.1. It borrows the recipient's key.
+pub struct X25519Decapsulator<'k> {
+    sk: &'k X25519PrivateKey,
+}
+
+impl Algorithm for X25519Decapsulator<'_> {
+    const ALG_NAME: &'static str = X25519::ALG_NAME;
+    const MAX_SECURITY_STRENGTH: SecurityStrength = X25519::MAX_SECURITY_STRENGTH;
+}
+
+impl KEMDecapsulator<POINT_LEN, DHKEM_SS_LEN> for X25519Decapsulator<'_> {
     /// `Decap(enc, skR)` (RFC 9180 §4.1), with the ciphertext `ct` as `enc`.
     ///
     /// # Errors
     ///
-    /// * [`KEMError::LengthError`] if `ct` is not 32 bytes.
-    /// * [`KEMError::DecapsulationFailed`] if `ct` gives an all-zero X25519 output.
-    fn decaps(sk: &X25519PrivateKey, ct: &[u8]) -> Result<KeyMaterial<DHKEM_SS_LEN>, KEMError> {
-        let enc: &[u8; POINT_LEN] = ct
-            .try_into()
-            .map_err(|_| KEMError::LengthError("An X25519 KEM ciphertext must be 32 bytes"))?;
-        X25519DHKEM::decap(enc, sk)
+    /// [`KEMError::DecapsulationFailed`] if `ct` gives an all-zero X25519 output.
+    fn decaps_out(
+        &self,
+        ct: &[u8; POINT_LEN],
+        ss: &mut KeyMaterial<DHKEM_SS_LEN>,
+    ) -> Result<usize, KEMError> {
+        ss.zeroize();
+        *ss = X25519DHKEM::decap(ct, self.sk)?;
+        Ok(DHKEM_SS_LEN)
+    }
+}
+
+/// X25519 private keys decapsulate as DHKEM(X25519, HKDF-SHA256), with `()` as the parameters.
+impl DecapsulatingKey<(), POINT_LEN, DHKEM_SS_LEN> for X25519PrivateKey {
+    type Algorithm = X25519;
+    type Decapsulator<'k> = X25519Decapsulator<'k>;
+
+    fn create_decapsulator<'k>(&'k self, _params: ()) -> Result<X25519Decapsulator<'k>, KEMError> {
+        Ok(X25519Decapsulator { sk: self })
     }
 }
 

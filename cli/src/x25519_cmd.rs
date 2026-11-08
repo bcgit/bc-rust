@@ -2,11 +2,11 @@ use crate::helpers::{
     read_input_file, read_input_file_or_stdin, read_secret_file, read_secret_file_or_stdin,
     write_bytes_or_hex, write_bytes_or_hex_to_file,
 };
+use bouncycastle::core::kem_key::{DecapsulatingKey, EncapsulatingKey};
 use bouncycastle::core::key_material::KeyMaterialTrait;
-use bouncycastle::core::traits::{
-    KEMDecapsulator, KEMEncapsulator, KeyAgreement, KeyAgreementPrivateKey, KeyAgreementPublicKey,
-};
+use bouncycastle::core::traits::{KeyAgreement, KeyAgreementPrivateKey, KeyAgreementPublicKey};
 use bouncycastle::ed::x25519::{POINT_LEN, X25519, X25519PrivateKey, X25519PublicKey};
+use bouncycastle::rng::HashDRBG_SHA512;
 use clap::ValueEnum;
 use std::process::exit;
 
@@ -84,7 +84,7 @@ pub(crate) fn x25519_cmd(
         X25519Action::Encaps => {
             let pk = parse_pk(&read_input_file_or_stdin(pkfile));
 
-            let (ss, ct) = match X25519::encaps(&pk) {
+            let (ss, ct) = match pk.encaps(&mut HashDRBG_SHA512::new_from_os(), ()) {
                 Ok(r) => r,
                 Err(e) => {
                     eprintln!("Error: {:?}", e);
@@ -113,12 +113,12 @@ pub(crate) fn x25519_cmd(
             };
 
             let ct = read_input_file_or_stdin(ctfile);
-            if ct.len() != POINT_LEN {
+            let Ok(ct) = <[u8; POINT_LEN]>::try_from(ct.as_slice()) else {
                 eprintln!("Error: ciphertext is not the correct length.");
                 exit(-1);
-            }
+            };
 
-            let ss = match X25519::decaps(&sk, &ct) {
+            let ss = match sk.decaps(&ct, ()) {
                 Ok(ss) => ss,
                 Err(e) => {
                     eprintln!("Error: {:?}", e);
