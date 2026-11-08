@@ -16,15 +16,17 @@ use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::symmetric_key::{
     AeadDecryptionKey, AeadEncryptionKey, BlockDecryptionKey, BlockEncryptionKey, FromKeyMaterial,
-    MacGenerationKey, MacVerificationKey, SymmetricDecryptionKey, SymmetricEncryptionKey,
+    MacGenerationKey, MacVerificationKey, NonceMacGenerationKey, NonceMacVerificationKey,
+    SymmetricDecryptionKey, SymmetricEncryptionKey,
 };
-use bouncycastle_core::traits::{BlockCipherEncryptor, MAC};
+use bouncycastle_core::traits::{BlockCipherEncryptor, MACGenerator};
 use bouncycastle_core_test_framework::aead::{
     TestFrameworkAEADCipher, TestFrameworkAEADTaggedLayout,
 };
 use bouncycastle_core_test_framework::block_cipher::TestFrameworkBlockCipher;
 use bouncycastle_core_test_framework::from_key_material::TestFrameworkFromKeyMaterial;
 use bouncycastle_core_test_framework::key_wrap::TestFrameworkKeyWrap;
+use bouncycastle_core_test_framework::mac::TestFrameworkMAC;
 use bouncycastle_core_test_framework::symmetric_ciphers::{
     TestFrameworkStreamCipher, TestFrameworkSymmetricCipher,
 };
@@ -232,23 +234,21 @@ pub fn mac_material_policy<P: Permutation<KEY_LEN>, const KEY_LEN: usize>() {
     }
 }
 
-/// A CMAC key tags and verifies through the role pair, several workers from one key agree, and
-/// the tag is bound to the message and the key.
+/// A CMAC key tags and verifies through the role pair, passes the shared MAC key suite, and the
+/// tag is bound to the message and the key.
 pub fn cmac_round_trip<P: Permutation<KEY_LEN>, const KEY_LEN: usize>() {
     let key = BlockCipherKey::<P, CMAC>::from_key_material(&mac_material::<KEY_LEN>()).unwrap();
     let mut generator = key.create_generator();
     generator.do_update(b"a message that arrives ");
     generator.do_update(b"in pieces");
-    let tag = generator.do_final();
-    assert_eq!(tag.len(), 16);
+    let tag: [u8; 16] = generator.do_final();
     assert_eq!(key.mac(b"a message that arrives in pieces"), tag);
-    assert!(key.verify(b"a message that arrives in pieces", &tag));
-    assert!(!key.verify(b"another message", &tag));
+    TestFrameworkMAC::new().test_mac_key(&key, b"a message that arrives in pieces", &tag);
     let other = BlockCipherKey::<P, CMAC>::from_key_material(
         &KeyMaterial::<KEY_LEN>::from_bytes_as_type(&[0x43; KEY_LEN], KeyType::MACKey).unwrap(),
     )
     .unwrap();
-    assert!(!other.verify(b"a message that arrives in pieces", &tag));
+    assert!(other.verify(b"a message that arrives in pieces", &tag).is_err());
 }
 
 /// A GMAC key's generator draws a nonce, its verifier checks under it, the tag is bound to the
@@ -259,15 +259,14 @@ pub fn gmac_round_trip<P: Permutation<KEY_LEN>, const KEY_LEN: usize>() {
     let (mut generator, nonce) = key.create_generator(&mut rng()).unwrap();
     generator.do_update(b"a message that arrives ");
     generator.do_update(b"in pieces");
-    let tag = generator.do_final();
-    assert!(key.create_verifier(&nonce).verify(b"a message that arrives in pieces", &tag));
-    assert!(!key.create_verifier(&nonce).verify(b"another message", &tag));
-    let mut other_nonce = nonce;
-    other_nonce[0] ^= 1;
-    assert!(!key.create_verifier(&other_nonce).verify(b"a message that arrives in pieces", &tag));
-    let mut again = key.create_generator_nonce(&nonce);
-    again.do_update(b"a message that arrives in pieces");
-    assert_eq!(again.do_final(), tag, "the same nonce and message give the same tag");
+    let tag: [u8; 16] = generator.do_final();
+    assert!(key.verify(&nonce, b"a message that arrives in pieces", &tag).is_ok());
+    TestFrameworkMAC::new().test_nonce_mac_key(
+        &key,
+        &nonce,
+        b"a message that arrives in pieces",
+        &tag,
+    );
     let (_, second_nonce) = key.create_generator(&mut rng()).unwrap();
     assert_ne!(second_nonce, nonce, "each generator draws its own nonce");
 
@@ -280,6 +279,6 @@ pub fn gmac_round_trip<P: Permutation<KEY_LEN>, const KEY_LEN: usize>() {
     )
     .unwrap();
     let gmac = BlockCipherKey::<P, GMAC>::from_key_material(&as_mac).unwrap();
-    assert_eq!(gmac.create_generator_nonce(&nonce).mac(MSG), from_gcm);
-    assert!(gmac.create_verifier(&nonce).verify(MSG, &from_gcm));
+    assert_eq!(gmac.mac_nonce(&nonce, MSG), from_gcm);
+    assert!(gmac.verify(&nonce, MSG, &from_gcm).is_ok());
 }
