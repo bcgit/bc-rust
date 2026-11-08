@@ -81,7 +81,8 @@
   `HKDF<SHA3_256>` and its siblings, written out; there is no alias or factory entry for it.
 * Two-party key agreement gets the same shape ahead of the ECC CDH crate: the `AgreementKey` role in
   `core::agreement_key`, with `KeyAgreementAlgorithm::Params` for a KDF-bearing variant, hands out a
-  `KeyAgreement` worker whose `agree(&peer_pk)` returns `Z` as `KeyType::SharedSecret`; `KeyAgreementError` and
+  `KeyAgreement` worker whose `agree_out(&peer_pk, &mut z)` writes `Z` into the caller's buffer as
+  `KeyType::SharedSecret`, zeroized first, with `agree(&peer_pk)` provided over it on the worker and the key; `KeyAgreementError` and
   the encodable `KeyAgreementPrivateKey` / `KeyAgreementPublicKey` traits go with it.
 * `bouncycastle-eccdh`: ECC CDH (SP 800-56A Rev. 3 Section 5.7.1.2) over P-256, P-384, P-521, secp256k1,
   brainpoolP256r1, brainpoolP384r1 and brainpoolP512r1, with its own key types per curve (full public-key
