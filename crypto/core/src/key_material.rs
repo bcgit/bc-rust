@@ -171,7 +171,9 @@ pub trait KeyMaterialTrait: KeyMaterialInternalTrait {
     /// key may be converted to any type, and any type may be converted to itself (a no-op).
     /// A hazardous conversion attempted outside a [`do_hazardous_operations`] closure returns
     /// [`KeyMaterialError::HazardousOperationNotPermitted`], and converting a [`KeyType::Zeroized`] key
-    /// returns [`KeyMaterialError::ActingOnZeroizedKey`].
+    /// returns [`KeyMaterialError::ActingOnZeroizedKey`]. A key converted to [`KeyType::Zeroized`],
+    /// [`KeyType::Unknown`] or [`KeyType::SharedSecret`] carries no security strength afterwards: the
+    /// first two cannot, and a shared secret's producer states it inside the closure.
     fn set_key_type(&mut self, key_type: KeyType) -> Result<(), KeyMaterialError>;
 
     /// Security Strength, as used here, aligns with NIST SP 800-90A guidance for random number generation,
@@ -510,8 +512,10 @@ impl<const KEY_LEN: usize> KeyMaterialTrait for KeyMaterial<KEY_LEN> {
         }
 
         self.key_type = key_type;
-        // A Zeroized or Unknown key has no security strength (see `KeyType::Unknown`).
-        if key_type <= KeyType::Unknown {
+        // A Zeroized or Unknown key has no security strength (see `KeyType::Unknown`), and a
+        // SharedSecret's length says nothing about its entropy: its producer states the
+        // strength inside the hazardous window, as `set_bytes_as_type` leaves it to do.
+        if key_type <= KeyType::Unknown || key_type == KeyType::SharedSecret {
             self.security_strength = SecurityStrength::None;
         }
         Ok(())

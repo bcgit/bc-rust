@@ -1071,6 +1071,18 @@ mod test_key_material {
         assert_eq!(z.security_strength(), SecurityStrength::_128bit);
         assert!(z.is_full_entropy());
 
+        // re-typing to SharedSecret drops the strength the bytes had carried, outside the
+        // window (allowed from CryptographicRandom) and inside it alike, so a KDF credits only
+        // what the producer then states
+        let mut z = KeyMaterial256::from_rng(&mut bouncycastle_rng::DefaultRNG::default()).unwrap();
+        assert_eq!(z.security_strength(), SecurityStrength::_256bit);
+        z.set_key_type(KeyType::SharedSecret).unwrap();
+        assert_eq!(z.key_type(), KeyType::SharedSecret);
+        assert_eq!(z.security_strength(), SecurityStrength::None);
+        let mut z = KeyMaterial256::from_rng(&mut bouncycastle_rng::DefaultRNG::default()).unwrap();
+        do_hazardous_operations(&mut z, |z| z.set_key_type(KeyType::SharedSecret)).unwrap();
+        assert_eq!(z.security_strength(), SecurityStrength::None);
+
         assert!(KeyType::SharedSecret > KeyType::CryptographicRandom);
         assert!(KeyType::SharedSecret > KeyType::Unknown);
         assert!(KeyType::SharedSecret > KeyType::Zeroized);
