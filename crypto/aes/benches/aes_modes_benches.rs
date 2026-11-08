@@ -35,10 +35,12 @@ use bouncycastle_core::hazmat::{AeadDeclaredEncryptMode, EcbEncryptionKey, KeyEx
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::symmetric_key::{
     AeadEncryptionKey, BlockDecryptionKey, BlockEncryptionKey, FromKeyMaterial, KeyUnwrappingKey,
-    KeyWrappingKey, MacGenerationKey, SymmetricDecryptionKey, SymmetricEncryptionKey,
+    KeyWrappingKey, MacGenerationKey, NonceMacGenerationKey, SymmetricDecryptionKey,
+    SymmetricEncryptionKey,
 };
 use bouncycastle_core::traits::{
-    BlockCipherDecryptor, BlockCipherEncryptor, StreamCipherDecryptor, StreamCipherEncryptor,
+    BlockCipherDecryptor, BlockCipherEncryptor, MACGenerator, StreamCipherDecryptor,
+    StreamCipherEncryptor,
 };
 use bouncycastle_rng::FixedSeedRNG;
 use criterion::{BatchSize, Criterion, Throughput, criterion_group, criterion_main};
@@ -582,16 +584,18 @@ fn bench_gmac(c: &mut Criterion) {
     let key_object_128 = AES128Key::<GMAC>::from_key_material(&key128).unwrap();
     group.bench_function("AES_128 key object 16KiB", |b| {
         b.iter(|| {
-            let (gen_, _) = key_object_128.create_generator(&mut rng).unwrap();
-            black_box(gen_.mac(black_box(&data)))
+            let (mut gen_, _) = key_object_128.create_generator(&mut rng).unwrap();
+            gen_.do_update(black_box(&data));
+            black_box(gen_.do_final())
         })
     });
     let key256 = mac_key::<32>();
     let key_object_256 = AES256Key::<GMAC>::from_key_material(&key256).unwrap();
     group.bench_function("AES_256 key object 16KiB", |b| {
         b.iter(|| {
-            let (gen_, _) = key_object_256.create_generator(&mut rng).unwrap();
-            black_box(gen_.mac(black_box(&data)))
+            let (mut gen_, _) = key_object_256.create_generator(&mut rng).unwrap();
+            gen_.do_update(black_box(&data));
+            black_box(gen_.do_final())
         })
     });
 

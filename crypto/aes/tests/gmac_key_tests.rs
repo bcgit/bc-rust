@@ -8,7 +8,10 @@ use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::symmetric_key::{AeadEncryptionKey, FromKeyMaterial};
+use bouncycastle_core::symmetric_key::{
+    AeadEncryptionKey, FromKeyMaterial, NonceMacGenerationKey, NonceMacVerificationKey,
+};
+use bouncycastle_core::traits::{MACGenerator, MACVerifier};
 use bouncycastle_rng::FixedSeedRNG;
 
 const NONCE: [u8; GCM_NONCE_LEN] = [0x5A; GCM_NONCE_LEN];
@@ -22,6 +25,12 @@ fn rng() -> FixedSeedRNG<[u8; GCM_NONCE_LEN]> {
     FixedSeedRNG::new(NONCE)
 }
 
+/// The tag a generator gives over `msg`.
+fn tag_of<const N: usize>(mut generator: impl MACGenerator<N>, msg: &[u8]) -> [u8; N] {
+    generator.do_update(msg);
+    generator.do_final()
+}
+
 /// The key object and GCM over AAD alone give one tag, at every key length and through both
 /// generator constructors.
 #[test]
@@ -32,15 +41,10 @@ fn the_key_and_the_other_routes_agree_at_every_key_length() {
             let key = <$key>::from_key_material(&mac_key).unwrap();
             let (gen_, nonce) = key.create_generator(&mut rng()).unwrap();
             assert_eq!(nonce, NONCE);
-            let tag = gen_.mac(MSG);
-            assert_eq!(
-                key.create_generator_nonce(&NONCE).mac(MSG),
-                tag,
-                "{} supplied nonce",
-                $klen
-            );
-            assert!(key.create_verifier(&NONCE).verify(MSG, &tag));
-            assert!(!key.create_verifier(&NONCE).verify(b"another message", &tag));
+            let tag = tag_of(gen_, MSG);
+            assert_eq!(key.mac_nonce(&NONCE, MSG), tag, "{} supplied nonce", $klen);
+            assert!(key.verify(&NONCE, MSG, &tag).is_ok());
+            assert!(key.verify(&NONCE, b"another message", &tag).is_err());
             tag
         }};
     }
@@ -61,18 +65,17 @@ fn the_key_and_the_other_routes_agree_at_every_key_length() {
 #[test]
 fn a_shorter_tag_is_the_prefix() {
     let k = material::<16>(0x44, KeyType::MACKey);
-    let full =
-        AES128Key::<GMAC>::from_key_material(&k).unwrap().create_generator_nonce(&NONCE).mac(MSG);
+    let full = AES128Key::<GMAC>::from_key_material(&k).unwrap().mac_nonce(&NONCE, MSG);
     let short = AES128Key::<GMAC<12>>::from_key_material(&k).unwrap();
-    assert_eq!(short.create_generator_nonce(&NONCE).mac(MSG)[..], full[..12]);
-    assert!(short.create_verifier(&NONCE).verify(MSG, full[..12].try_into().unwrap()));
+    assert_eq!(short.mac_nonce(&NONCE, MSG)[..], full[..12]);
+    assert!(short.verify(&NONCE, MSG, full[..12].try_into().unwrap()).is_ok());
 }
 
 /// Workers from one key are independent of each other and leave the key as it was.
 #[test]
 fn several_workers_from_one_key_are_independent_and_the_key_is_unchanged() {
     let key = AES256Key::<GMAC>::from_key_material(&material::<32>(0x55, KeyType::MACKey)).unwrap();
-    let expected = key.create_generator_nonce(&NONCE).mac(MSG);
+    let expected = key.mac_nonce(&NONCE, MSG);
 
     let mut a = key.create_generator_nonce(&NONCE);
     let mut b = key.create_generator_nonce(&NONCE);
@@ -84,9 +87,9 @@ fn several_workers_from_one_key_are_independent_and_the_key_is_unchanged() {
     v.do_update(&MSG[30..]);
     b.do_update(&MSG[20..]);
     assert_eq!(b.do_final(), expected);
-    assert!(v.do_verify_final(&expected));
+    assert!(v.do_verify_final(&expected).is_ok());
     assert_eq!(a.do_final(), expected);
-    assert_eq!(key.create_generator_nonce(&NONCE).mac(MSG), expected);
+    assert_eq!(key.mac_nonce(&NONCE, MSG), expected);
 }
 
 /// Two draws from one RNG are two nonces, and so two tags.
@@ -97,7 +100,7 @@ fn a_fresh_nonce_per_generator() {
     let (g1, n1) = key.create_generator(&mut rng).unwrap();
     let (g2, n2) = key.create_generator(&mut rng).unwrap();
     assert_ne!(n1, n2);
-    assert_ne!(g1.mac(MSG), g2.mac(MSG));
+    assert_ne!(tag_of(g1, MSG), tag_of(g2, MSG));
 }
 
 /// A GMAC key is `MACKey` material: a cipher key is refused, and the same bytes tagged `MACKey`
@@ -131,8 +134,8 @@ fn a_key_below_its_own_strength_is_refused_at_construction() {
 fn generate_draws_a_mac_key() {
     let mut rng = FixedSeedRNG::new([0x24u8; 32]);
     let key = AES256Key::<GMAC>::generate(&mut rng).unwrap();
-    let tag = key.create_generator_nonce(&NONCE).mac(MSG);
-    assert!(key.create_verifier(&NONCE).verify(MSG, &tag));
+    let tag = key.mac_nonce(&NONCE, MSG);
+    assert!(key.verify(&NONCE, MSG, &tag).is_ok());
 }
 
 /// The sizes the docs quote: a GMAC key is a GCM key, and a worker is a `Gcm`.
