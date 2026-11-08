@@ -3,20 +3,21 @@
 //! key hands out, the role impl over `()`, and the same keys under the ANSI X9.63 KDF as
 //! [`ECCDHP384_X963KDF_SHA384`].
 
+use crate::kdf::{KdfPairing, PairedKdf, derive};
 use crate::keys_p384::{ECCDHP384PrivateKey, ECCDHP384PublicKey};
 use bouncycastle_core::agreement_key::{AgreementKey, KeyAgreementAlgorithm};
 use bouncycastle_core::errors::KeyAgreementError;
 use bouncycastle_core::hazmat::do_hazardous_operations;
+use bouncycastle_core::kdf_params::KdfParams;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::traits::{Algorithm, KeyAgreement};
+use bouncycastle_core::traits::{Algorithm, KDF, KeyAgreement};
 use bouncycastle_ec::hazmat::p384::P384FieldElement;
 use bouncycastle_ec::hazmat::p384_mul::multiply_point;
 use bouncycastle_ec::hazmat::p384_point::P384JacobianPoint;
 use bouncycastle_ec::hazmat::p384_sec1;
-use bouncycastle_sha2::SHA384;
 use bouncycastle_utils::secret::Secret;
-use bouncycastle_x963kdf::{X963KDF_SHA384, X963KdfParams};
+use bouncycastle_x963kdf::X963KDF_SHA384;
 
 /// Length of the shared secret `Z`: Appendix C.2's field-element-to-byte-string conversion of
 /// `x_P`, `ceil(log2 p / 8)` = 48 bytes.
@@ -123,14 +124,14 @@ impl AgreementKey<(), SS_LEN> for ECCDHP384PrivateKey {
     }
 }
 
-/*** The same keys under the ANSI X9.63 KDF: SEC 1 Section 6.1's ECDH scheme ***/
+/*** The same keys under a KDF: the pairings, and one role impl over them ***/
 
-/// Length of the keying data ECC-CDH-P-384-X963KDF-SHA-384 derives: one SHA-384 output.
+/// The length the tests derive for ECC-CDH-P-384-X963KDF-SHA-384, one SHA-384 output; the parameters name any.
 pub const X963KDF_SHA384_SS_LEN: usize = 48;
 
 /// ECC CDH over P-384 with the keying data derived through the ANSI X9.63 KDF over
 /// SHA-384 (SEC 1 v2 Sections 3.6.1 and 6.1): the algorithm a [`ECCDHP384PrivateKey`] runs when made
-/// into a worker from `X963KdfParams<'p, SHA384>`. The key is `KDF(Z, SharedInfo)` with
+/// into a worker from `KdfParams<'p, X963KDF_SHA384, LEN>`. The key is `KDF(Z, SharedInfo)` with
 /// `keydatalen` one hash output, at the curve's strength.
 #[allow(non_camel_case_types)]
 pub struct ECCDHP384_X963KDF_SHA384;
@@ -142,43 +143,58 @@ impl Algorithm for ECCDHP384_X963KDF_SHA384 {
 
 impl KeyAgreementAlgorithm for ECCDHP384_X963KDF_SHA384 {}
 
-/// The worker [`AgreementKey::create_agreement`] hands out over [`X963KdfParams`]: the own key
-/// and the `SharedInfo`, borrowed separately. Reusable against any number of peers.
-pub struct ECCDHP384X963KdfAgreement<'k, 'p> {
+impl<const SS_LEN: usize> KdfPairing<X963KDF_SHA384, SS_LEN> for ECCDHP384 {
+    type Algorithm = ECCDHP384_X963KDF_SHA384;
+}
+
+/// The worker [`AgreementKey::create_agreement`] hands out over [`KdfParams`]: the own key and
+/// the KDF's parameters, borrowed separately. Reusable against any number of peers.
+pub struct ECCDHP384KdfAgreement<'k, 'p, D: KDF + PairedKdf + ?Sized, const SS_LEN: usize> {
     sk: &'k ECCDHP384PrivateKey,
-    params: X963KdfParams<'p, SHA384>,
+    params: KdfParams<'p, D, SS_LEN>,
 }
 
-impl Algorithm for ECCDHP384X963KdfAgreement<'_, '_> {
-    const ALG_NAME: &'static str = ECCDHP384_X963KDF_SHA384::ALG_NAME;
-    const MAX_SECURITY_STRENGTH: SecurityStrength = ECCDHP384_X963KDF_SHA384::MAX_SECURITY_STRENGTH;
+impl<D: KDF + PairedKdf + ?Sized, const SS_LEN: usize> Algorithm
+    for ECCDHP384KdfAgreement<'_, '_, D, SS_LEN>
+where
+    ECCDHP384: KdfPairing<D, SS_LEN>,
+{
+    const ALG_NAME: &'static str = <ECCDHP384 as KdfPairing<D, SS_LEN>>::Algorithm::ALG_NAME;
+    const MAX_SECURITY_STRENGTH: SecurityStrength =
+        <ECCDHP384 as KdfPairing<D, SS_LEN>>::Algorithm::MAX_SECURITY_STRENGTH;
 }
 
-impl KeyAgreement<ECCDHP384PublicKey, X963KDF_SHA384_SS_LEN> for ECCDHP384X963KdfAgreement<'_, '_> {
-    /// SEC 1 Section 6.1 steps: `Z` from the primitive, then `KDF(Z, SharedInfo)`; `Z` is typed
-    /// `SharedSecret`, which the KDF credits, and it never leaves this call.
+impl<D: KDF + PairedKdf + ?Sized, const SS_LEN: usize> KeyAgreement<ECCDHP384PublicKey, SS_LEN>
+    for ECCDHP384KdfAgreement<'_, '_, D, SS_LEN>
+where
+    ECCDHP384: KdfPairing<D, SS_LEN>,
+{
+    /// `Z` from the primitive, then the KDF (SP 800-56A Rev. 3 Section 5.8; SEC 1 Section 6.1's
+    /// steps for the X9.63 KDF): `Z` is typed `SharedSecret`, which the KDF credits, and it never
+    /// leaves this call.
     fn agree(
         &self,
         peer_pk: &ECCDHP384PublicKey,
-    ) -> Result<KeyMaterial<X963KDF_SHA384_SS_LEN>, KeyAgreementError> {
+    ) -> Result<KeyMaterial<SS_LEN>, KeyAgreementError> {
         let z = agree(self.sk, peer_pk)?;
-        let mut okm = KeyMaterial::<X963KDF_SHA384_SS_LEN>::new();
-        X963KDF_SHA384::derive_out(&z, self.params.shared_info(), X963KDF_SHA384_SS_LEN, &mut okm)
-            .map_err(|_| KeyAgreementError::GenericError("X9.63 KDF over Z failed"))?;
-        Ok(okm)
+        derive(self.params, &z)
     }
 }
 
-impl<'p> AgreementKey<X963KdfParams<'p, SHA384>, X963KDF_SHA384_SS_LEN> for ECCDHP384PrivateKey {
-    type Algorithm = ECCDHP384_X963KDF_SHA384;
+impl<'p, D: KDF + PairedKdf + ?Sized, const SS_LEN: usize>
+    AgreementKey<KdfParams<'p, D, SS_LEN>, SS_LEN> for ECCDHP384PrivateKey
+where
+    ECCDHP384: KdfPairing<D, SS_LEN>,
+{
+    type Algorithm = <ECCDHP384 as KdfPairing<D, SS_LEN>>::Algorithm;
     type PublicKey = ECCDHP384PublicKey;
-    type Agreement<'k> = ECCDHP384X963KdfAgreement<'k, 'p>;
+    type Agreement<'k> = ECCDHP384KdfAgreement<'k, 'p, D, SS_LEN>;
 
-    /// The KDF takes no parameter it can refuse, so this never fails.
+    /// Cannot fail: the KDF validated what it was made from when it was made.
     fn create_agreement<'k>(
         &'k self,
-        params: X963KdfParams<'p, SHA384>,
+        params: KdfParams<'p, D, SS_LEN>,
     ) -> Result<Self::Agreement<'k>, KeyAgreementError> {
-        Ok(ECCDHP384X963KdfAgreement { sk: self, params })
+        Ok(ECCDHP384KdfAgreement { sk: self, params })
     }
 }

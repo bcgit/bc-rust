@@ -1,27 +1,27 @@
 //! The ECC CDH primitive over P-256 (SP 800-56A Rev. 3 Section 5.7.1.2) on the key-agreement
 //! roles of [`bouncycastle_core::agreement_key`]: the marker [`ECCDHP256`], the worker a private
 //! key hands out, the role impl over `()`, and the same keys under the ANSI X9.63 KDF as
-//! [`ECCDHP256_X963KDF_SHA256`]. The same keys implement the
-//! role a second time over [`HkdfParams<'p, SHA256>`] as [`ECCDHP256_HKDF_SHA256`]: `Z` through
-//! HKDF-SHA256, the two-step key-derivation method of SP 800-56C Rev. 2 Section 5.1, with the
-//! caller's salt and info; the hash on the parameter type selects the algorithm at the call.
+//! [`ECCDHP256_X963KDF_SHA256`]. The same keys run
+//! HKDF-SHA256, the two-step key-derivation method of SP 800-56C Rev. 2 Section 5.1, as
+//! [`ECCDHP256_HKDF_SHA256`]; the KDF type on the parameters selects the algorithm at the call,
+//! and the pairings are in [`crate::kdf`].
 
+use crate::kdf::{KdfPairing, PairedKdf, derive};
 use crate::keys_p256::{ECCDHP256PrivateKey, ECCDHP256PublicKey};
 use bouncycastle_core::agreement_key::{AgreementKey, KeyAgreementAlgorithm};
-use bouncycastle_core::errors::{KeyAgreementError, KeyMaterialError};
+use bouncycastle_core::errors::KeyAgreementError;
 use bouncycastle_core::hazmat::do_hazardous_operations;
+use bouncycastle_core::kdf_params::KdfParams;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::traits::{Algorithm, KeyAgreement};
+use bouncycastle_core::traits::{Algorithm, KDF, KeyAgreement};
 use bouncycastle_ec::hazmat::p256::P256FieldElement;
 use bouncycastle_ec::hazmat::p256_mul::multiply_point;
 use bouncycastle_ec::hazmat::p256_point::P256JacobianPoint;
 use bouncycastle_ec::hazmat::p256_sec1;
-use bouncycastle_hkdf::HkdfParams;
-use bouncycastle_sha2::SHA256;
 use bouncycastle_sha2::hkdf::HKDF_SHA256;
 use bouncycastle_utils::secret::Secret;
-use bouncycastle_x963kdf::{X963KDF_SHA256, X963KdfParams};
+use bouncycastle_x963kdf::X963KDF_SHA256;
 
 /// Length of the shared secret `Z`: Appendix C.2's field-element-to-byte-string conversion of
 /// `x_P`, `ceil(log2 p / 8)` = 32 bytes.
@@ -128,15 +128,16 @@ impl AgreementKey<(), SS_LEN> for ECCDHP256PrivateKey {
     }
 }
 
-/*** The same keys under a KDF: ECC CDH with HKDF-SHA256 ***/
+/*** The same keys under a KDF: the pairings, and one role impl over them ***/
 
-/// Length of the key ECC-CDH-P256-HKDF-SHA256 derives: one SHA-256 output.
+/// The length the tests derive for ECC-CDH-P256-HKDF-SHA256, one SHA-256 output; the parameters name any.
 pub const HKDF_SHA256_SS_LEN: usize = 32;
 
 /// ECC CDH over P-256 with the shared secret derived through HKDF-SHA256: the algorithm an
-/// [`ECCDHP256PrivateKey`] runs when made into a worker from `HkdfParams<'p, SHA256>`. The key is
-/// HKDF-SHA256(salt, Z, info) over the primitive's `Z`, one hash output long, at 128 bits: the
-/// curve's strength, which HKDF-SHA256 also caps at.
+/// [`ECCDHP256PrivateKey`] runs when made into a worker from `KdfParams<'p, HKDF_SHA256, LEN>`. The
+/// key is HKDF-SHA256(salt, Z, info) over the primitive's `Z`, the salt the instance's, one hash
+/// output long unless the parameters say otherwise, at 128 bits: the curve's strength, which
+/// HKDF-SHA256 also caps at.
 #[allow(non_camel_case_types)]
 pub struct ECCDHP256_HKDF_SHA256;
 
@@ -147,68 +148,12 @@ impl Algorithm for ECCDHP256_HKDF_SHA256 {
 
 impl KeyAgreementAlgorithm for ECCDHP256_HKDF_SHA256 {}
 
-/// The worker [`AgreementKey::create_agreement`] hands out over [`HkdfParams`]: the own key and
-/// the HKDF configuration, borrowed separately. Reusable against any number of peers.
-pub struct ECCDHP256HkdfAgreement<'k, 'p> {
-    sk: &'k ECCDHP256PrivateKey,
-    params: HkdfParams<'p, SHA256>,
-}
-
-impl Algorithm for ECCDHP256HkdfAgreement<'_, '_> {
-    const ALG_NAME: &'static str = ECCDHP256_HKDF_SHA256::ALG_NAME;
-    const MAX_SECURITY_STRENGTH: SecurityStrength = ECCDHP256_HKDF_SHA256::MAX_SECURITY_STRENGTH;
-}
-
-impl KeyAgreement<ECCDHP256PublicKey, HKDF_SHA256_SS_LEN> for ECCDHP256HkdfAgreement<'_, '_> {
-    /// `Z` from the primitive, then the KDF (SP 800-56A Rev. 3 Section 5.8): `Z` is typed
-    /// `SharedSecret`, which HKDF credits as keying material, and it never leaves this call.
-    fn agree(
-        &self,
-        peer_pk: &ECCDHP256PublicKey,
-    ) -> Result<KeyMaterial<HKDF_SHA256_SS_LEN>, KeyAgreementError> {
-        let z = agree(self.sk, peer_pk)?;
-        let mut okm = KeyMaterial::<HKDF_SHA256_SS_LEN>::new();
-        HKDF_SHA256::extract_and_expand_out(
-            self.params.salt(),
-            &z,
-            self.params.info(),
-            HKDF_SHA256_SS_LEN,
-            &mut okm,
-        )
-        .map_err(|_| KeyAgreementError::GenericError("HKDF-SHA256 over Z failed"))?;
-        Ok(okm)
-    }
-}
-
-impl<'p> AgreementKey<HkdfParams<'p, SHA256>, HKDF_SHA256_SS_LEN> for ECCDHP256PrivateKey {
-    type Algorithm = ECCDHP256_HKDF_SHA256;
-    type PublicKey = ECCDHP256PublicKey;
-    type Agreement<'k> = ECCDHP256HkdfAgreement<'k, 'p>;
-
-    /// Refuses a salt typed [`KeyType::Unknown`] here, once, rather than at every agreement:
-    /// HKDF does not promote bytes of unknown provenance to a key.
-    fn create_agreement<'k>(
-        &'k self,
-        params: HkdfParams<'p, SHA256>,
-    ) -> Result<Self::Agreement<'k>, KeyAgreementError> {
-        if params.salt().key_type() == KeyType::Unknown {
-            return Err(KeyMaterialError::InvalidKeyType(
-                "the HKDF salt must not be KeyType::Unknown",
-            )
-            .into());
-        }
-        Ok(ECCDHP256HkdfAgreement { sk: self, params })
-    }
-}
-
-/*** The same keys under the ANSI X9.63 KDF: SEC 1 Section 6.1's ECDH scheme ***/
-
-/// Length of the keying data ECC-CDH-P-256-X963KDF-SHA-256 derives: one SHA-256 output.
+/// The length the tests derive for ECC-CDH-P-256-X963KDF-SHA-256, one SHA-256 output; the parameters name any.
 pub const X963KDF_SHA256_SS_LEN: usize = 32;
 
 /// ECC CDH over P-256 with the keying data derived through the ANSI X9.63 KDF over
 /// SHA-256 (SEC 1 v2 Sections 3.6.1 and 6.1): the algorithm a [`ECCDHP256PrivateKey`] runs when made
-/// into a worker from `X963KdfParams<'p, SHA256>`. The key is `KDF(Z, SharedInfo)` with
+/// into a worker from `KdfParams<'p, X963KDF_SHA256, LEN>`. The key is `KDF(Z, SharedInfo)` with
 /// `keydatalen` one hash output, at the curve's strength.
 #[allow(non_camel_case_types)]
 pub struct ECCDHP256_X963KDF_SHA256;
@@ -220,43 +165,62 @@ impl Algorithm for ECCDHP256_X963KDF_SHA256 {
 
 impl KeyAgreementAlgorithm for ECCDHP256_X963KDF_SHA256 {}
 
-/// The worker [`AgreementKey::create_agreement`] hands out over [`X963KdfParams`]: the own key
-/// and the `SharedInfo`, borrowed separately. Reusable against any number of peers.
-pub struct ECCDHP256X963KdfAgreement<'k, 'p> {
+impl<const SS_LEN: usize> KdfPairing<HKDF_SHA256, SS_LEN> for ECCDHP256 {
+    type Algorithm = ECCDHP256_HKDF_SHA256;
+}
+
+impl<const SS_LEN: usize> KdfPairing<X963KDF_SHA256, SS_LEN> for ECCDHP256 {
+    type Algorithm = ECCDHP256_X963KDF_SHA256;
+}
+
+/// The worker [`AgreementKey::create_agreement`] hands out over [`KdfParams`]: the own key and
+/// the KDF's parameters, borrowed separately. Reusable against any number of peers.
+pub struct ECCDHP256KdfAgreement<'k, 'p, D: KDF + PairedKdf + ?Sized, const SS_LEN: usize> {
     sk: &'k ECCDHP256PrivateKey,
-    params: X963KdfParams<'p, SHA256>,
+    params: KdfParams<'p, D, SS_LEN>,
 }
 
-impl Algorithm for ECCDHP256X963KdfAgreement<'_, '_> {
-    const ALG_NAME: &'static str = ECCDHP256_X963KDF_SHA256::ALG_NAME;
-    const MAX_SECURITY_STRENGTH: SecurityStrength = ECCDHP256_X963KDF_SHA256::MAX_SECURITY_STRENGTH;
+impl<D: KDF + PairedKdf + ?Sized, const SS_LEN: usize> Algorithm
+    for ECCDHP256KdfAgreement<'_, '_, D, SS_LEN>
+where
+    ECCDHP256: KdfPairing<D, SS_LEN>,
+{
+    const ALG_NAME: &'static str = <ECCDHP256 as KdfPairing<D, SS_LEN>>::Algorithm::ALG_NAME;
+    const MAX_SECURITY_STRENGTH: SecurityStrength =
+        <ECCDHP256 as KdfPairing<D, SS_LEN>>::Algorithm::MAX_SECURITY_STRENGTH;
 }
 
-impl KeyAgreement<ECCDHP256PublicKey, X963KDF_SHA256_SS_LEN> for ECCDHP256X963KdfAgreement<'_, '_> {
-    /// SEC 1 Section 6.1 steps: `Z` from the primitive, then `KDF(Z, SharedInfo)`; `Z` is typed
-    /// `SharedSecret`, which the KDF credits, and it never leaves this call.
+impl<D: KDF + PairedKdf + ?Sized, const SS_LEN: usize> KeyAgreement<ECCDHP256PublicKey, SS_LEN>
+    for ECCDHP256KdfAgreement<'_, '_, D, SS_LEN>
+where
+    ECCDHP256: KdfPairing<D, SS_LEN>,
+{
+    /// `Z` from the primitive, then the KDF (SP 800-56A Rev. 3 Section 5.8; SEC 1 Section 6.1's
+    /// steps for the X9.63 KDF): `Z` is typed `SharedSecret`, which the KDF credits, and it never
+    /// leaves this call.
     fn agree(
         &self,
         peer_pk: &ECCDHP256PublicKey,
-    ) -> Result<KeyMaterial<X963KDF_SHA256_SS_LEN>, KeyAgreementError> {
+    ) -> Result<KeyMaterial<SS_LEN>, KeyAgreementError> {
         let z = agree(self.sk, peer_pk)?;
-        let mut okm = KeyMaterial::<X963KDF_SHA256_SS_LEN>::new();
-        X963KDF_SHA256::derive_out(&z, self.params.shared_info(), X963KDF_SHA256_SS_LEN, &mut okm)
-            .map_err(|_| KeyAgreementError::GenericError("X9.63 KDF over Z failed"))?;
-        Ok(okm)
+        derive(self.params, &z)
     }
 }
 
-impl<'p> AgreementKey<X963KdfParams<'p, SHA256>, X963KDF_SHA256_SS_LEN> for ECCDHP256PrivateKey {
-    type Algorithm = ECCDHP256_X963KDF_SHA256;
+impl<'p, D: KDF + PairedKdf + ?Sized, const SS_LEN: usize>
+    AgreementKey<KdfParams<'p, D, SS_LEN>, SS_LEN> for ECCDHP256PrivateKey
+where
+    ECCDHP256: KdfPairing<D, SS_LEN>,
+{
+    type Algorithm = <ECCDHP256 as KdfPairing<D, SS_LEN>>::Algorithm;
     type PublicKey = ECCDHP256PublicKey;
-    type Agreement<'k> = ECCDHP256X963KdfAgreement<'k, 'p>;
+    type Agreement<'k> = ECCDHP256KdfAgreement<'k, 'p, D, SS_LEN>;
 
-    /// The KDF takes no parameter it can refuse, so this never fails.
+    /// Cannot fail: the KDF validated what it was made from when it was made.
     fn create_agreement<'k>(
         &'k self,
-        params: X963KdfParams<'p, SHA256>,
+        params: KdfParams<'p, D, SS_LEN>,
     ) -> Result<Self::Agreement<'k>, KeyAgreementError> {
-        Ok(ECCDHP256X963KdfAgreement { sk: self, params })
+        Ok(ECCDHP256KdfAgreement { sk: self, params })
     }
 }

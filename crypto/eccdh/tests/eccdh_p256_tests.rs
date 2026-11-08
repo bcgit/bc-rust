@@ -3,6 +3,7 @@
 
 use bouncycastle_core::agreement_key::AgreementKey;
 use bouncycastle_core::errors::{KeyAgreementError, RNGError};
+use bouncycastle_core::kdf_params::{KdfParams, KeyLen};
 use bouncycastle_core::key_material::{KeyMaterial0, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::Algorithm;
@@ -152,20 +153,19 @@ fn public_key_display_names_the_type() {
 }
 
 /// ECC-CDH-P256-HKDF-SHA256 on the same keys: the derived key is HKDF-SHA256(salt, Z, info) over
-/// the raw Z, both sides agree, the salt and info select the key, and an Unknown salt is refused.
+/// the raw Z, both sides agree, the salt and info select the key, and an Unknown salt is refused
+/// by HKDF before any parameters exist.
 #[test]
 fn hkdf_sha256_variant() {
-    use bouncycastle_core::errors::KeyMaterialError;
     use bouncycastle_core::key_material::KeyMaterial;
     use bouncycastle_core_test_framework::DUMMY_SEED;
     use bouncycastle_eccdh::eccdh_p256::{ECCDHP256_HKDF_SHA256, HKDF_SHA256_SS_LEN};
-    use bouncycastle_hkdf::HkdfParams;
-    use bouncycastle_sha2::SHA256;
 
     let salt =
         KeyMaterial::<32>::from_bytes_as_type(&DUMMY_SEED[..32], KeyType::CryptographicRandom)
             .unwrap();
-    let params = HkdfParams::<SHA256>::new(&salt, b"eccdh hkdf tests");
+    let hkdf = HKDF_SHA256::new_with_salt(&salt).unwrap();
+    let params = KdfParams::new(&hkdf, b"eccdh hkdf tests", KeyLen::<HKDF_SHA256_SS_LEN>);
     TestFrameworkKeyAgreement::new().test_key_agreement(keygen_default, params);
     assert_eq!(ECCDHP256_HKDF_SHA256::ALG_NAME, "ECC-CDH-P256-HKDF-SHA256");
     assert_eq!(ECCDHP256_HKDF_SHA256::MAX_SECURITY_STRENGTH, SecurityStrength::_128bit);
@@ -186,23 +186,16 @@ fn hkdf_sha256_variant() {
     .unwrap();
     assert!(key.equals(&expected));
 
-    let other_info = HkdfParams::<SHA256>::new(&salt, b"another context");
+    let other_info = KdfParams::new(&hkdf, b"another context", KeyLen::<HKDF_SHA256_SS_LEN>);
     assert!(!sk_a.agree(&pk_b, other_info).unwrap().equals(&key));
     let absent = KeyMaterial0::new();
-    let no_salt = HkdfParams::<SHA256>::new(&absent, b"eccdh hkdf tests");
+    let hkdf_absent = HKDF_SHA256::new_with_salt(&absent).unwrap();
+    let no_salt = KdfParams::new(&hkdf_absent, b"eccdh hkdf tests", KeyLen::<HKDF_SHA256_SS_LEN>);
     assert!(!sk_a.agree(&pk_b, no_salt).unwrap().equals(&key));
 
     let unknown =
         KeyMaterial::<32>::from_bytes_as_type(&DUMMY_SEED[..32], KeyType::Unknown).unwrap();
-    let bad = HkdfParams::<SHA256>::new(&unknown, b"eccdh hkdf tests");
-    assert!(matches!(
-        sk_a.create_agreement(bad).map(|_| ()),
-        Err(KeyAgreementError::KeyMaterialError(KeyMaterialError::InvalidKeyType(_)))
-    ));
-    assert!(matches!(
-        sk_a.agree(&pk_b, bad).map(|_| ()),
-        Err(KeyAgreementError::KeyMaterialError(KeyMaterialError::InvalidKeyType(_)))
-    ));
+    assert!(HKDF_SHA256::new_with_salt(&unknown).is_err());
 }
 
 /// ECC-CDH-P-256-X963KDF-SHA-256 on the same keys: the keying data is the X9.63 KDF over the
@@ -211,10 +204,10 @@ fn hkdf_sha256_variant() {
 fn x963kdf_variant() {
     use bouncycastle_core::key_material::KeyMaterial;
     use bouncycastle_eccdh::eccdh_p256::{ECCDHP256_X963KDF_SHA256, X963KDF_SHA256_SS_LEN};
-    use bouncycastle_sha2::SHA256;
-    use bouncycastle_x963kdf::{X963KDF_SHA256, X963KdfParams};
+    use bouncycastle_x963kdf::X963KDF_SHA256;
 
-    let params = X963KdfParams::<SHA256>::new(b"eccdh x963 tests");
+    let kdf = X963KDF_SHA256::new();
+    let params = KdfParams::new(&kdf, b"eccdh x963 tests", KeyLen::<X963KDF_SHA256_SS_LEN>);
     TestFrameworkKeyAgreement::new().test_key_agreement(keygen_default, params);
     assert_eq!(ECCDHP256_X963KDF_SHA256::ALG_NAME, "ECC-CDH-P256-X963KDF-SHA-256");
     assert_eq!(ECCDHP256_X963KDF_SHA256::MAX_SECURITY_STRENGTH, SecurityStrength::_128bit);
@@ -233,8 +226,46 @@ fn x963kdf_variant() {
         .unwrap();
     assert!(key.equals(&expected));
 
-    let other = X963KdfParams::<SHA256>::new(b"another context");
+    let other = KdfParams::new(&kdf, b"another context", KeyLen::<X963KDF_SHA256_SS_LEN>);
     assert!(!sk_a.agree(&pk_b, other).unwrap().equals(&key));
-    let none = X963KdfParams::<SHA256>::new(b"");
+    let none = KdfParams::new(&kdf, b"", KeyLen::<X963KDF_SHA256_SS_LEN>);
     assert!(!sk_a.agree(&pk_b, none).unwrap().equals(&key));
+}
+
+/// The parameters name the derived key's length: HKDF-SHA256 at 16 bytes (what 16 bytes carry,
+/// 128 bits, the curve's strength too) and at its 255-output cap, the X9.63 KDF at 48 bytes,
+/// past one hash output so the counter runs; each is what the KDF gives by hand (RFC 5869
+/// Section 2.3's OKM is the first L octets of T, SEC 1 v2 Section 3.6.1 step 5 the leftmost
+/// keydatalen octets).
+#[test]
+fn the_parameters_name_the_length() {
+    use bouncycastle_core::key_material::KeyMaterial;
+    use bouncycastle_core_test_framework::DUMMY_SEED;
+    use bouncycastle_x963kdf::X963KDF_SHA256;
+
+    let salt =
+        KeyMaterial::<32>::from_bytes_as_type(&DUMMY_SEED[..32], KeyType::CryptographicRandom)
+            .unwrap();
+    let hkdf = HKDF_SHA256::new_with_salt(&salt).unwrap();
+    let (pk_a, sk_a) = keygen_default().unwrap();
+    let (pk_b, sk_b) = keygen_default().unwrap();
+    let z = sk_a.agree(&pk_b, ()).unwrap();
+
+    let key = sk_a.agree(&pk_b, KdfParams::new(&hkdf, b"info", KeyLen::<32>)).unwrap();
+    let short = sk_b.agree(&pk_a, KdfParams::new(&hkdf, b"info", KeyLen::<16>)).unwrap();
+    assert_eq!(short.key_len(), 16);
+    assert_eq!(short.ref_to_bytes(), &key.ref_to_bytes()[..16]);
+    assert_eq!(short.key_type(), KeyType::CryptographicRandom);
+    assert_eq!(short.security_strength(), SecurityStrength::_128bit);
+    let long = sk_a.agree(&pk_b, KdfParams::new(&hkdf, b"info", KeyLen::<{ 255 * 32 }>)).unwrap();
+    assert_eq!(long.key_len(), 255 * 32);
+    assert_eq!(&long.ref_to_bytes()[..32], key.ref_to_bytes());
+
+    let kdf = X963KDF_SHA256::new();
+    let key48 = sk_a.agree(&pk_b, KdfParams::new(&kdf, b"info", KeyLen::<48>)).unwrap();
+    assert_eq!(key48.key_len(), 48);
+    assert_eq!(key48.security_strength(), SecurityStrength::_128bit);
+    let mut expected = KeyMaterial::<48>::new();
+    X963KDF_SHA256::derive_out(&z, b"info", 48, &mut expected).unwrap();
+    assert!(key48.equals(&expected));
 }

@@ -3,6 +3,7 @@
 
 use bouncycastle_core::agreement_key::AgreementKey;
 use bouncycastle_core::errors::{KeyAgreementError, RNGError};
+use bouncycastle_core::kdf_params::{KdfParams, KeyLen};
 use bouncycastle_core::key_material::{KeyMaterial0, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::Algorithm;
@@ -157,10 +158,10 @@ fn public_key_display_names_the_type() {
 fn x963kdf_variant() {
     use bouncycastle_core::key_material::KeyMaterial;
     use bouncycastle_eccdh::eccdh_bp256r1::{ECCDHBp256r1_X963KDF_SHA256, X963KDF_SHA256_SS_LEN};
-    use bouncycastle_sha2::SHA256;
-    use bouncycastle_x963kdf::{X963KDF_SHA256, X963KdfParams};
+    use bouncycastle_x963kdf::X963KDF_SHA256;
 
-    let params = X963KdfParams::<SHA256>::new(b"eccdh x963 tests");
+    let kdf = X963KDF_SHA256::new();
+    let params = KdfParams::new(&kdf, b"eccdh x963 tests", KeyLen::<X963KDF_SHA256_SS_LEN>);
     TestFrameworkKeyAgreement::new().test_key_agreement(keygen_default, params);
     assert_eq!(ECCDHBp256r1_X963KDF_SHA256::ALG_NAME, "ECC-CDH-brainpoolP256r1-X963KDF-SHA-256");
     assert_eq!(ECCDHBp256r1_X963KDF_SHA256::MAX_SECURITY_STRENGTH, SecurityStrength::_128bit);
@@ -179,8 +180,8 @@ fn x963kdf_variant() {
         .unwrap();
     assert!(key.equals(&expected));
 
-    let other = X963KdfParams::<SHA256>::new(b"another context");
+    let other = KdfParams::new(&kdf, b"another context", KeyLen::<X963KDF_SHA256_SS_LEN>);
     assert!(!sk_a.agree(&pk_b, other).unwrap().equals(&key));
-    let none = X963KdfParams::<SHA256>::new(b"");
+    let none = KdfParams::new(&kdf, b"", KeyLen::<X963KDF_SHA256_SS_LEN>);
     assert!(!sk_a.agree(&pk_b, none).unwrap().equals(&key));
 }
