@@ -1,7 +1,7 @@
 //! CLI wiring for RSASVE (SP 800-56B Rev. 2 §7.2.1), `bouncycastle_rsa`'s RSA KEM. There is one
 //! command per modulus size, since the size fixes the key, ciphertext and shared-secret lengths
 //! (the same split `rsa_cmd.rs` makes for signatures). A single generic [`rsasve_cmd`], bound over
-//! the `KEMEncapsulator`/`KEMDecapsulator` traits, is monomorphised once per size.
+//! the `EncapsulatingKey` / `DecapsulatingKey` roles, is monomorphised once per size.
 //!
 //! The shape follows `mlkem_cmd.rs`'s `Encaps`/`Decaps`. The shared secret always goes to stdout
 //! and is never written to a file. `encaps` writes the ciphertext to `--ctfile` if one is given;
@@ -23,10 +23,9 @@ use crate::helpers::{
     write_bytes_or_hex_to_file,
 };
 use bouncycastle::core::errors::KEMError;
+use bouncycastle::core::kem_key::{DecapsulatingKey, EncapsulatingKey};
 use bouncycastle::core::key_material::KeyMaterialTrait;
-use bouncycastle::core::traits::{
-    KEMDecapsulator, KEMEncapsulator, KEMPrivateKey, KEMPublicKey, RNG,
-};
+use bouncycastle::core::traits::{KEMPrivateKey, KEMPublicKey, RNG};
 use bouncycastle::rng::HashDRBG_SHA512;
 use bouncycastle::rsa::{rsa_2048, rsa_3072, rsa_4096, rsa_8192};
 use clap::ValueEnum;
@@ -59,9 +58,8 @@ fn require_secret(file: &Option<String>, flag_name: &str) -> crate::helpers::Sec
 
 /// One modulus size's RSASVE, per `action`.
 fn rsasve_cmd<
-    PK: KEMPublicKey<PK_LEN>,
-    SK: KEMPrivateKey<SK_LEN>,
-    K: KEMEncapsulator<PK, PK_LEN, CT_LEN, SS_LEN> + KEMDecapsulator<SK, SK_LEN, CT_LEN, SS_LEN>,
+    PK: KEMPublicKey<PK_LEN> + EncapsulatingKey<(), CT_LEN, SS_LEN>,
+    SK: KEMPrivateKey<SK_LEN> + DecapsulatingKey<(), CT_LEN, SS_LEN>,
     const PK_LEN: usize,
     const SK_LEN: usize,
     const CT_LEN: usize,
@@ -99,7 +97,7 @@ fn rsasve_cmd<
                 );
                 exit(-1);
             });
-            let (ss, ct) = K::encaps(&pk).unwrap_or_else(|e| {
+            let (ss, ct) = pk.encaps(&mut HashDRBG_SHA512::new_from_os(), ()).unwrap_or_else(|e| {
                 eprintln!("Error: {alg_name} encapsulation failed: {e:?}");
                 exit(-1);
             });
@@ -123,8 +121,8 @@ fn rsasve_cmd<
                 );
                 exit(-1);
             });
-            // `decaps` reports a wrong-length ciphertext itself (as `LengthError`).
-            let ss = K::decaps(&sk, &read_input_file_or_stdin(ctfile)).unwrap_or_else(|e| {
+            let ct = crate::mlkem_cmd::read_ciphertext::<CT_LEN>(ctfile, alg_name);
+            let ss = sk.decaps(&ct, ()).unwrap_or_else(|e| {
                 eprintln!("Error: {alg_name} decapsulation failed: {e:?}");
                 exit(-1);
             });
@@ -143,7 +141,7 @@ pub(crate) fn rsasve_2048_cmd(
     use rsa_2048::{
         CT_LEN, PK_LEN, RSA2048KEMPrivateKey, RSA2048KEMPublicKey, RSASVE, SK_LEN, SS_LEN,
     };
-    rsasve_cmd::<RSA2048KEMPublicKey, RSA2048KEMPrivateKey, RSASVE, PK_LEN, SK_LEN, CT_LEN, SS_LEN>(
+    rsasve_cmd::<RSA2048KEMPublicKey, RSA2048KEMPrivateKey, PK_LEN, SK_LEN, CT_LEN, SS_LEN>(
         action,
         RSASVE::keygen,
         skfile,
@@ -164,7 +162,7 @@ pub(crate) fn rsasve_3072_cmd(
     use rsa_3072::{
         CT_LEN, PK_LEN, RSA3072KEMPrivateKey, RSA3072KEMPublicKey, RSASVE, SK_LEN, SS_LEN,
     };
-    rsasve_cmd::<RSA3072KEMPublicKey, RSA3072KEMPrivateKey, RSASVE, PK_LEN, SK_LEN, CT_LEN, SS_LEN>(
+    rsasve_cmd::<RSA3072KEMPublicKey, RSA3072KEMPrivateKey, PK_LEN, SK_LEN, CT_LEN, SS_LEN>(
         action,
         RSASVE::keygen,
         skfile,
@@ -185,7 +183,7 @@ pub(crate) fn rsasve_4096_cmd(
     use rsa_4096::{
         CT_LEN, PK_LEN, RSA4096KEMPrivateKey, RSA4096KEMPublicKey, RSASVE, SK_LEN, SS_LEN,
     };
-    rsasve_cmd::<RSA4096KEMPublicKey, RSA4096KEMPrivateKey, RSASVE, PK_LEN, SK_LEN, CT_LEN, SS_LEN>(
+    rsasve_cmd::<RSA4096KEMPublicKey, RSA4096KEMPrivateKey, PK_LEN, SK_LEN, CT_LEN, SS_LEN>(
         action,
         RSASVE::keygen,
         skfile,
@@ -206,7 +204,7 @@ pub(crate) fn rsasve_8192_cmd(
     use rsa_8192::{
         CT_LEN, PK_LEN, RSA8192KEMPrivateKey, RSA8192KEMPublicKey, RSASVE, SK_LEN, SS_LEN,
     };
-    rsasve_cmd::<RSA8192KEMPublicKey, RSA8192KEMPrivateKey, RSASVE, PK_LEN, SK_LEN, CT_LEN, SS_LEN>(
+    rsasve_cmd::<RSA8192KEMPublicKey, RSA8192KEMPrivateKey, PK_LEN, SK_LEN, CT_LEN, SS_LEN>(
         action,
         RSASVE::keygen,
         skfile,

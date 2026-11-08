@@ -316,7 +316,10 @@ fn write_encaps_output<const SS_LEN: usize, const CT_LEN: usize>(
 }
 
 /// The ciphertext from `--ctfile` or stdin, which must be exactly the parameter set's length.
-fn read_ciphertext<const CT_LEN: usize>(ctfile: &Option<String>, name: &str) -> [u8; CT_LEN] {
+pub(crate) fn read_ciphertext<const CT_LEN: usize>(
+    ctfile: &Option<String>,
+    name: &str,
+) -> [u8; CT_LEN] {
     let ct = read_input_file_or_stdin(ctfile);
     <[u8; CT_LEN]>::try_from(ct.as_slice()).unwrap_or_else(|_| {
         eprintln!("Error: the ciphertext is {} bytes; an {name} ciphertext is {CT_LEN}.", ct.len());
