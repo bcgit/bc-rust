@@ -271,3 +271,16 @@ fn the_shortest_output_length_works() {
     assert_eq!(shortest.verify(b"abc", &tag), Ok(()));
     assert_eq!(shortest.verify(b"abd", &tag), Err(MACError::VerificationFailed));
 }
+
+/// KMACXOF's inherent one-shots are its `Hash` view in one call: a final read at the nominal
+/// length, which is fixed-length KMAC at that length.
+#[test]
+fn kmacxof_one_shots_are_the_hash_view() {
+    let key = key_material(&[0x42u8; 32]);
+    let expected = KMAC128Key::<32>::from_key_material(&key).unwrap().mac(b"abc");
+    assert_eq!(KMACXOF128::new(&key, b"", false).unwrap().hash(b"abc"), expected);
+    let mut out = [0xFFu8; 40];
+    assert_eq!(KMACXOF128::new(&key, b"", false).unwrap().hash_out(b"abc", &mut out), 32);
+    assert_eq!(out[..32], expected);
+    assert_eq!(out[32..], [0u8; 8]);
+}
