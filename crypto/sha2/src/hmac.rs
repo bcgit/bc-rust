@@ -14,15 +14,15 @@
 //!
 //! # Usage
 //!
-//! An [`HmacKey`] is built once from key material and hands out [`MAC`] workers, one per message:
+//! An [`HmacKey`] is built once from key material and hands out [`MACGenerator`] / [`MACVerifier`] workers, one per message:
 //!
 //! * [`FromAnyKeyMaterial::from_key_material`] checks that the material is a [`KeyType::MACKey`]
 //!   tagged at the security strength of the chosen hash. Where a protocol calls for a weak key
 //!   (an all-zero salt, say), [`FromAnyKeyMaterial::from_key_material_allow_weak`] skips the
 //!   strength check.
 //! * [`MacGenerationKey::create_generator`] / [`MacVerificationKey::create_verifier`] start a
-//!   worker, whose [`MAC::do_update`] takes the content in chunks and whose [`MAC::do_final`] /
-//!   [`MAC::do_verify_final`] finish it. The key's own [`MacGenerationKey::mac`] and
+//!   worker, whose [`MACGenerator::do_update`] takes the content in chunks and whose
+//!   [`MACGenerator::do_final`] / [`MACVerifier::do_verify_final`] finish it. The key's own [`MacGenerationKey::mac`] and
 //!   [`MacVerificationKey::verify`] are the one-shots.
 //!
 //! # Usage Examples
@@ -73,15 +73,16 @@
 //!         .expect("Will only fail if the system RNG can't start up.");
 //!
 //! let data: &[u8] = b"Hello, world!";
-//! let output: Vec<u8> = key.mac(data);
+//! let output: [u8; 32] = key.mac(data);
 //! ```
 //!
 //! A worker holds state between successive calls, for example if input is received in chunks and
 //! not all available at the same time:
 //!
 //! ```
+//! use bouncycastle_core::direction::Encrypting;
 //! use bouncycastle_core::symmetric_key::{FromAnyKeyMaterial, MacGenerationKey};
-//! use bouncycastle_core::traits::MAC;
+//! use bouncycastle_core::traits::MACGenerator;
 //! use bouncycastle_hmac::HmacKey;
 //! use bouncycastle_rng::HashDRBG_SHA256;
 //! use bouncycastle_sha2::SHA256;
@@ -91,10 +92,10 @@
 //! let key = HmacKey::<SHA256>::generate(&mut rng)
 //!         .expect("Will only fail if the system RNG can't start up.");
 //!
-//! let mut hmac: HMAC_SHA256 = key.create_generator();
+//! let mut hmac: HMAC_SHA256<Encrypting> = key.create_generator();
 //! hmac.do_update(b"Hello,");
 //! hmac.do_update(b" world!");
-//! let output: Vec<u8> = hmac.do_final();
+//! let output: [u8; 32] = hmac.do_final();
 //! ```
 //!
 //! ## Verifying a MAC
@@ -119,10 +120,8 @@
 //!
 //! let data: &[u8] = b"Hello, world!";
 //!
-//! // .verify() returns a bool: true if the MAC is valid, false otherwise.
-//! if key.verify(data,
-//!               b"\xa2\xd1\x2e\xcf\xfc\x41\xba\xf1\x23\xd6\x3e\x44\xfc\x27\x88\x90
-//!                  \x47\xcd\x08\xe7\x05\xd7\x0f\xa3\xb8\xaa\x8a\x5c\x18\x7c\x6c\xa9")
+//! // verify() is Ok(()) when the MAC is valid; the tag is the hash's full output.
+//! if key.verify(data, b"\xa2\xd1\x2e\xcf\xfc\x41\xba\xf1\x23\xd6\x3e\x44\xfc\x27\x88\x90\x47\xcd\x08\xe7\x05\xd7\x0f\xa3\xb8\xaa\x8a\x5c\x18\x7c\x6c\xa9").is_ok()
 //! {
 //!     println!("MAC is valid!");
 //! } else {
@@ -131,12 +130,13 @@
 //! ```
 //!
 //! Similarly, a streaming version is available, which is identical to the streaming interface for
-//! computing a mac value, but calls [`MAC::do_verify_final`] instead of [`MAC::do_final`].
+//! computing a mac value, but calls [`MACVerifier::do_verify_final`] instead of
+//! [`MACGenerator::do_final`].
 //!
 //! ```
 //! use bouncycastle_core::key_material::{KeyMaterial256, KeyType};
 //! use bouncycastle_core::symmetric_key::{FromAnyKeyMaterial, MacVerificationKey};
-//! use bouncycastle_core::traits::MAC;
+//! use bouncycastle_core::traits::MACVerifier;
 //! use bouncycastle_hmac::HmacKey;
 //! use bouncycastle_sha2::SHA256;
 //!
@@ -149,8 +149,7 @@
 //! let mut hmac = key.create_verifier();
 //! hmac.do_update(b"Hello,");
 //! hmac.do_update(b" world!");
-//! if hmac.do_verify_final(b"\xa2\xd1\x2e\xcf\xfc\x41\xba\xf1\x23\xd6\x3e\x44\xfc\x27\x88\x90\x47\xcd\x08\xe7\x05\xd7\x0f\xa3\xb8\xaa\x8a\x5c\x18\x7c\x6c\xa9"
-//!                     )
+//! if hmac.do_verify_final(b"\xa2\xd1\x2e\xcf\xfc\x41\xba\xf1\x23\xd6\x3e\x44\xfc\x27\x88\x90\x47\xcd\x08\xe7\x05\xd7\x0f\xa3\xb8\xaa\x8a\x5c\x18\x7c\x6c\xa9").is_ok()
 //! {
 //!     println!("MAC is valid!");
 //! } else {
@@ -160,8 +159,7 @@
 //!
 //! # Memory Usage
 //!
-//! No heap memory is used by the algorithm itself; the `Vec<u8>`-returning convenience methods
-//! allocate only the output buffer, and the `*_out` variants allocate nothing.
+//! No heap memory is used: the tag is a fixed-length array.
 //!
 //! | Object                                                    | Size (bytes) |
 //! |-----------------------------------------------------------|--------------|
@@ -181,13 +179,13 @@
 //!   [`FromAnyKeyMaterial::from_key_material_allow_weak`] deliberately skips the check; use it only
 //!   where a weak or all-zero key is called for by the protocol (an all-zero HKDF salt, for
 //!   example), not to silence an error.
-//! * Verify with [`MAC::verify`] or [`MAC::do_verify_final`] rather than computing the MAC yourself
-//!   and comparing: those use a constant-time comparison, while `==` on the byte slices leaks how
-//!   many leading bytes matched.
-//! * Truncating the MAC output below [`MIN_FIPS_DIGEST_LEN`] (4 bytes) is rejected, per FIPS 140-3
-//!   IG C.L Resolution C.4 (formerly NIST SP 800-107r1 Section 5.3.3). That is a floor, not a
-//!   recommendation -- RFC 2104 Section 5 recommends that the output length "be not less than half
-//!   the length of the hash output ... and not less than 80 bits".
+//! * Verify with [`MacVerificationKey::verify`] or [`MACVerifier::do_verify_final`] rather than
+//!   computing the MAC yourself and comparing: those use a constant-time comparison, while `==` on
+//!   the byte slices leaks how many leading bytes matched.
+//! * The tag is the hash's full output; a protocol that truncates it does so on the array it gets
+//!   back, and the verifier takes only the full length. RFC 2104 Section 5 recommends that a
+//!   truncated length "be not less than half the length of the hash output ... and not less than
+//!   80 bits"; FIPS 140-3 IG C.L Resolution C.4 sets the floor at 32 bits.
 //! * A key longer than the hash's block length is pre-hashed down to the output length (RFC 2104
 //!   Section 2), so very long keys add no strength beyond that point.
 use crate::{SHA224, SHA256, SHA384, SHA512, SHA512_224, SHA512_256};
@@ -202,9 +200,9 @@ use bouncycastle_core::key_material::KeyType;
 #[allow(unused_imports)]
 use bouncycastle_core::symmetric_key::{FromAnyKeyMaterial, MacGenerationKey, MacVerificationKey};
 #[allow(unused_imports)]
-use bouncycastle_core::traits::MAC;
+use bouncycastle_core::traits::{MACGenerator, MACVerifier};
 #[allow(unused_imports)]
-use bouncycastle_hmac::{HmacKey, MIN_FIPS_DIGEST_LEN};
+use bouncycastle_hmac::HmacKey;
 
 /*** String constants ***/
 /// Algorithm name string for HMAC over SHA-224.
@@ -223,7 +221,7 @@ pub const HMAC_SHA512_256_NAME: &str = "HMAC-SHA512/256";
 /*** Type aliases ***/
 /// Public type for HMAC using SHA224.
 #[allow(non_camel_case_types)]
-pub type HMAC_SHA224<'k> = HMAC<'k, SHA224>;
+pub type HMAC_SHA224<'k, Dir> = HMAC<'k, SHA224, Dir>;
 impl HMACParams for SHA224 {
     type MACKey = KeyMaterial<{ <SHA224 as HashAlgParams>::OUTPUT_LEN }>;
     const HMAC_ALG_NAME: &'static str = HMAC_SHA224_NAME;
@@ -237,7 +235,7 @@ impl HMACParams for SHA224 {
 
 /// Public type for HMAC using SHA256.
 #[allow(non_camel_case_types)]
-pub type HMAC_SHA256<'k> = HMAC<'k, SHA256>;
+pub type HMAC_SHA256<'k, Dir> = HMAC<'k, SHA256, Dir>;
 impl HMACParams for SHA256 {
     type MACKey = KeyMaterial<{ <SHA256 as HashAlgParams>::OUTPUT_LEN }>;
     const HMAC_ALG_NAME: &'static str = HMAC_SHA256_NAME;
@@ -251,7 +249,7 @@ impl HMACParams for SHA256 {
 
 /// Public type for HMAC using SHA384.
 #[allow(non_camel_case_types)]
-pub type HMAC_SHA384<'k> = HMAC<'k, SHA384>;
+pub type HMAC_SHA384<'k, Dir> = HMAC<'k, SHA384, Dir>;
 impl HMACParams for SHA384 {
     type MACKey = KeyMaterial<{ <SHA384 as HashAlgParams>::OUTPUT_LEN }>;
     const HMAC_ALG_NAME: &'static str = HMAC_SHA384_NAME;
@@ -265,7 +263,7 @@ impl HMACParams for SHA384 {
 
 /// Public type for HMAC using SHA512.
 #[allow(non_camel_case_types)]
-pub type HMAC_SHA512<'k> = HMAC<'k, SHA512>;
+pub type HMAC_SHA512<'k, Dir> = HMAC<'k, SHA512, Dir>;
 impl HMACParams for SHA512 {
     type MACKey = KeyMaterial<{ <SHA512 as HashAlgParams>::OUTPUT_LEN }>;
     const HMAC_ALG_NAME: &'static str = HMAC_SHA512_NAME;
@@ -279,7 +277,7 @@ impl HMACParams for SHA512 {
 
 /// Public type for HMAC using SHA512/224.
 #[allow(non_camel_case_types)]
-pub type HMAC_SHA512_224<'k> = HMAC<'k, SHA512_224>;
+pub type HMAC_SHA512_224<'k, Dir> = HMAC<'k, SHA512_224, Dir>;
 impl HMACParams for SHA512_224 {
     type MACKey = KeyMaterial<{ <SHA512_224 as HashAlgParams>::OUTPUT_LEN }>;
     const HMAC_ALG_NAME: &'static str = HMAC_SHA512_224_NAME;
@@ -293,7 +291,7 @@ impl HMACParams for SHA512_224 {
 
 /// Public type for HMAC using SHA512/256.
 #[allow(non_camel_case_types)]
-pub type HMAC_SHA512_256<'k> = HMAC<'k, SHA512_256>;
+pub type HMAC_SHA512_256<'k, Dir> = HMAC<'k, SHA512_256, Dir>;
 impl HMACParams for SHA512_256 {
     type MACKey = KeyMaterial<{ <SHA512_256 as HashAlgParams>::OUTPUT_LEN }>;
     const HMAC_ALG_NAME: &'static str = HMAC_SHA512_256_NAME;

@@ -3,7 +3,7 @@
 //! This crate provides the following primitives:
 //!
 //! * SHA2 [`Hash`] functions.
-//! * HMAC_SHA2* [`MAC`] functions.
+//! * HMAC_SHA2* MACs, as [`MACGenerator`] / [`MACVerifier`] workers from an `HmacKey`.
 //! * HKDF-SHA2* [`KDF`] functions.
 //!
 //! # Usage Examples
@@ -151,7 +151,7 @@ use bouncycastle_core::traits::{Algorithm, AlgorithmOID, HashAlgParams};
 
 /*** Imports needed for docs ***/
 #[allow(unused_imports)]
-use bouncycastle_core::traits::{Hash, KDF, MAC, Suspendable};
+use bouncycastle_core::traits::{Hash, KDF, MACGenerator, MACVerifier, Suspendable};
 /*** end of doc-only imports ***/
 
 /*** String constants ***/
