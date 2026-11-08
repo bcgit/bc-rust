@@ -91,12 +91,16 @@ pub enum MACError {
     GenericError(&'static str),
     ///
     HashError(HashError),
-    ///
+    /// A run-time-length output buffer shorter than the tag.
     InvalidLength(&'static str),
     ///
     InvalidState(&'static str),
     ///
     KeyMaterialError(KeyMaterialError),
+    /// The RNG a nonce was to be drawn from failed or is too weak.
+    RNGError(RNGError),
+    /// The tag is not the MAC of the message under the key.
+    VerificationFailed,
 }
 
 ///
@@ -282,6 +286,12 @@ impl From<KeyMaterialError> for MACError {
 impl From<HashError> for MACError {
     fn from(e: HashError) -> MACError {
         Self::HashError(e)
+    }
+}
+
+impl From<RNGError> for MACError {
+    fn from(e: RNGError) -> MACError {
+        Self::RNGError(e)
     }
 }
 

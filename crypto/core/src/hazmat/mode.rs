@@ -13,9 +13,9 @@
 //! data of any length (padded CBC, CFB, CFB8, CTR), [`BlockEncryptMode`] / [`BlockDecryptMode`]
 //! for one that takes whole blocks (CBC with no padding layer), and [`EcbEncryptMode`] /
 //! [`EcbDecryptMode`] for ECB, which has no init data and so takes no RNG. A MAC mode -- CMAC --
-//! implements [`MacMode`], whose worker takes no nonce and serves both roles; a nonce-based MAC
-//! -- GMAC -- implements [`NonceMacMode`], whose generator and verifier are made as an AEAD
-//! mode's workers are. A key-wrap mode -- KW, KWP -- implements [`KeyWrapMode`] /
+//! implements [`MacMode`], whose generator and verifier take no nonce; a nonce-based MAC -- GMAC
+//! -- implements [`NonceMacMode`], whose generator and verifier are made as an AEAD mode's
+//! workers are. A key-wrap mode -- KW, KWP -- implements [`KeyWrapMode`] /
 //! [`KeyUnwrapMode`], whose workers are one-shot and take no nonce either.
 //!
 //! Every worker borrows the key state it is made from, for the lifetime `'k` on the mode's
@@ -23,11 +23,12 @@
 //! making a worker copies nothing but the per-message state, and a worker cannot outlive its
 //! key.
 
-use crate::errors::SymmetricCipherError;
+use crate::errors::{MACError, SymmetricCipherError};
 use crate::key_material::KeyType;
 use crate::traits::{
     AEADCipherDecryptor, AEADCipherEncryptor, BlockCipherDecryptor, BlockCipherEncryptor,
-    KeyUnwrapper, KeyWrapper, MAC, RNG, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
+    KeyUnwrapper, KeyWrapper, MACGenerator, MACVerifier, RNG, SymmetricCipherDecryptor,
+    SymmetricCipherEncryptor,
 };
 
 /// A mode's per-key state over the permutation `P`.
@@ -392,20 +393,29 @@ pub trait EcbDecryptMode<P, const KEY_LEN: usize, const BLOCK_LEN: usize>: Mode<
     fn decrypt_init<'k>(state: &'k Self::KeyState) -> Self::Decryptor<'k>;
 }
 
-/// A MAC mode over `P`: the mode's own constructor for its worker, which generates and verifies
-/// alike. The role traits [`crate::symmetric_key::MacGenerationKey`] and
-/// [`crate::symmetric_key::MacVerificationKey`] forward to it.
-pub trait MacMode<P>: Mode<P> {
-    /// The streaming MAC worker this mode produces over `P`. It borrows the key state it was made
+/// A MAC mode over `P` -- CMAC -- whose tag is bound to no nonce: the mode's own constructors for
+/// its generator and verifier, which the role traits [`crate::symmetric_key::MacGenerationKey`]
+/// and [`crate::symmetric_key::MacVerificationKey`] forward to. `MAC_LEN` is the tag length.
+pub trait MacMode<P, const MAC_LEN: usize>: Mode<P> {
+    /// The streaming generator this mode produces over `P`. It borrows the key state it was made
     /// from for `'k`: the schedule is read through the reference, never copied into the worker,
     /// and the worker cannot outlive the state.
-    type Worker<'k>: MAC
+    type Generator<'k>: MACGenerator<MAC_LEN>
     where
         P: 'k;
 
-    /// Begins a MAC over a new message from `state`. Infallible: the state is keyed and there is
+    /// The streaming verifier this mode produces over `P`, borrowing the key state as
+    /// [`Generator`](Self::Generator) does.
+    type Verifier<'k>: MACVerifier<MAC_LEN>
+    where
+        P: 'k;
+
+    /// Begins a tag over a new message from `state`. Infallible: the state is keyed and there is
     /// nothing to draw.
-    fn mac_init<'k>(state: &'k Self::KeyState) -> Self::Worker<'k>;
+    fn generate_init<'k>(state: &'k Self::KeyState) -> Self::Generator<'k>;
+
+    /// Begins the verification of a tag over a new message from `state`. Infallible.
+    fn verify_init<'k>(state: &'k Self::KeyState) -> Self::Verifier<'k>;
 }
 
 /// The wrapping side of a key-wrap mode over `P`: the mode's own constructor for its
@@ -438,17 +448,17 @@ pub trait KeyUnwrapMode<P, const KEK_LEN: usize>: Mode<P> {
 
 /// A nonce-based MAC mode over `P` -- GMAC -- whose tag is bound to a nonce, so its two sides are
 /// made as an AEAD mode's workers are: the generator under a nonce drawn from an RNG or supplied
-/// by the caller, the verifier under the nonce the tag was made under. There is no role trait
-/// for it in [`crate::symmetric_key`], GMAC being the only such MAC in the tree; a key type's
-/// inherent generator/verifier pair forwards here.
-pub trait NonceMacMode<P, const NONCE_LEN: usize, const TAG_LEN: usize>: Mode<P> {
+/// by the caller, the verifier under the nonce the tag was made under. The role traits
+/// [`crate::symmetric_key::NonceMacGenerationKey`] and
+/// [`crate::symmetric_key::NonceMacVerificationKey`] forward to it.
+pub trait NonceMacMode<P, const NONCE_LEN: usize, const MAC_LEN: usize>: Mode<P> {
     /// The streaming generator this mode produces over `P`, borrowing the key state for `'k`.
-    type Generator<'k>
+    type Generator<'k>: MACGenerator<MAC_LEN>
     where
         P: 'k;
 
     /// The streaming verifier this mode produces over `P`, borrowing the key state for `'k`.
-    type Verifier<'k>
+    type Verifier<'k>: MACVerifier<MAC_LEN>
     where
         P: 'k;
 
@@ -456,11 +466,11 @@ pub trait NonceMacMode<P, const NONCE_LEN: usize, const TAG_LEN: usize>: Mode<P>
     /// generator.
     ///
     /// # Errors
-    /// [`SymmetricCipherError::RNGError`] if the nonce draw fails; nothing else can.
+    /// [`MACError::RNGError`] if the nonce draw fails; nothing else can.
     fn generate_init<'k>(
         state: &'k Self::KeyState,
         rng: &mut dyn RNG,
-    ) -> Result<(Self::Generator<'k>, [u8; NONCE_LEN]), SymmetricCipherError>;
+    ) -> Result<(Self::Generator<'k>, [u8; NONCE_LEN]), MACError>;
 
     /// Begins a tag from `state` under a nonce the caller supplies, who takes on the obligation
     /// that it never repeat under this key.
