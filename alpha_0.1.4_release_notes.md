@@ -67,6 +67,24 @@
   32-byte secret seeds HKDF-SHA512 as it does HKDF-SHA256. The `hkdf-*` CLI subcommands type their salt as
   RFC 5869's non-secret random value, as the `mlkem*-hkdf-*` ones do; `--secret-salt` marks it as the secret salt
   of SP 800-56C Rev. 2 Section 5.1, which HKDF credits.
+* The MAC worker trait splits in two, as the signature and cipher workers are: `MACGenerator<MAC_LEN>`
+  (`do_update`, `do_final_out` into a `[u8; MAC_LEN]`, `do_final`) and `MACVerifier<MAC_LEN>` (`do_update`,
+  `do_verify_final(&[u8; MAC_LEN]) -> Result<(), MACError>`) replace `MAC`, whose finals and key-era one-shots
+  were on one trait, so a verify-only key no longer hands out a worker that can produce a tag. The tag is the
+  construction's full output as a const-generic array: no run-time length, no `InvalidLength` on the streaming
+  path, no truncation method (a protocol that truncates does so on the array it gets back), and verification
+  is a `Result` with `MACError::VerificationFailed` rather than a `bool`. The worker types carry their direction,
+  `HMAC<'k, H, Dir>`, `KMAC128<Dir, MAC_LEN>`, `Cmac<'k, P, Dir, BLOCK_LEN>`, `Poly1305<Dir>`, with the
+  `Encrypting` / `Decrypting` markers now in `bouncycastle_core::direction` (re-exported by `bouncycastle-cipher`).
+  `MacGenerationKey<MAC_LEN>` / `MacVerificationKey<MAC_LEN>` bound their workers on the split traits; GMAC gets
+  the nonce-bound role pair `NonceMacGenerationKey` / `NonceMacVerificationKey` in place of the inherent pair on
+  the key; `MacMode<P, MAC_LEN>` has `generate_init` / `verify_init` for `mac_init`. KMAC's output length is the
+  key type's const parameter, `KMAC128Key<MAC_LEN = 32>` / `KMAC256Key<MAC_LEN = 64>`, and `with_params` takes
+  only the customization string; `HMAC::keygen_from_rng` is `HmacKey::keygen_from_rng`, `Poly1305Key::into_mac`
+  is `into_generator` / `into_verifier`, and `MIN_FIPS_DIGEST_LEN`, `CMAC_MIN_TAG_LEN` and `hmac::hazmat::finish_out`'s
+  `Result` go with the truncation floors. `MACFactory` keeps run-time lengths as the run-time form: its `mac`,
+  `mac_out`, `verify` and `MACFactoryWorker<Dir>`'s finals are inherent over slices and `Vec`s. The `kmac*` CLI
+  commands compute their tag through KMACXOF's length-binding final read.
 * The KDF entropy accounting after review: a full-entropy key with no strength (a `SharedSecret` whose producer
   stated none, which is now the default for one built from bytes, or a key too short to carry 112 bits) credits
   nothing, so a `CryptographicRandom` output of 14 bytes or more carries a strength; a KDF instance that has absorbed input
