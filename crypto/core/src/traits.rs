@@ -715,13 +715,27 @@ pub trait KeyAgreementPublicKey<const PK_LEN: usize>:
 /// keying material that is not uniformly distributed, to be used only as the input of a KDF
 /// (SP 800-56Ar3 Section 5.8) and never as a key itself.
 pub trait KeyAgreement<PK, const SS_LEN: usize>: AlgorithmInfo {
-    /// Computes the shared secret with `peer_pk`. The worker is reusable: a static key agrees
-    /// with many peers.
+    /// Computes the shared secret with `peer_pk` into `ss`, which is zeroized first, and
+    /// returns the number of bytes written, always `SS_LEN`. The worker is reusable: a static
+    /// key agrees with many peers. The caller's buffer is where the secret lives, so a long
+    /// derived key costs the caller's frame, not the worker's.
     ///
     /// # Errors
     /// [`KeyAgreementError::AgreementFailed`] if the primitive produces no secret (ECC CDH:
-    /// the computed point is the point at infinity, SP 800-56Ar3 Section 5.7.1.2 step 2).
-    fn agree(&self, peer_pk: &PK) -> Result<KeyMaterial<SS_LEN>, KeyAgreementError>;
+    /// the computed point is the point at infinity, SP 800-56Ar3 Section 5.7.1.2 step 2). `ss`
+    /// is left zeroized on every error.
+    fn agree_out(
+        &self,
+        peer_pk: &PK,
+        ss: &mut KeyMaterial<SS_LEN>,
+    ) -> Result<usize, KeyAgreementError>;
+
+    /// As [`agree_out`](Self::agree_out), returning the shared secret.
+    fn agree(&self, peer_pk: &PK) -> Result<KeyMaterial<SS_LEN>, KeyAgreementError> {
+        let mut ss = KeyMaterial::new();
+        self.agree_out(peer_pk, &mut ss)?;
+        Ok(ss)
+    }
 }
 
 /// The unwrapping half of a key-wrap algorithm -- KW, KWP or TKW of NIST SP 800-38F (RFC 3394 and

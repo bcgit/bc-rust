@@ -15,13 +15,14 @@
 //! ```text
 //! let agreement = sk_a.create_agreement(())?;      // AgreementKey<(), _>, ECC CDH
 //! let z = agreement.agree(&pk_b)?;                 // the same Z as sk_b.agree(&pk_a, ())?
+//! agreement.agree_out(&pk_b, &mut z_buf)?;        // or into a buffer the caller owns
 //! ```
 //!
 //! `Z` comes back as [`KeyMaterial`] typed [`KeyType::SharedSecret`](crate::key_material::KeyType::SharedSecret)
 //! at the algorithm's strength: keying material for a KDF (Section 5.8), not a key.
 
 use crate::errors::KeyAgreementError;
-use crate::key_material::KeyMaterial;
+use crate::key_material::{KeyMaterial, KeyMaterialTrait};
 use crate::traits::{Algorithm, KeyAgreement};
 
 /// Marker for one key-agreement algorithm: ECC CDH over P-256, say. It carries the metadata
@@ -58,10 +59,26 @@ pub trait AgreementKey<Params, const SS_LEN: usize> {
         params: Params,
     ) -> Result<Self::Agreement<'k>, KeyAgreementError>;
 
+    /// One-shot: the shared secret with `peer_pk` into `ss`, zeroized first, and the number of
+    /// bytes written, always `SS_LEN`.
+    ///
+    /// # Errors
+    /// Those of [`create_agreement`](Self::create_agreement) and of
+    /// [`KeyAgreement::agree_out`]; `ss` is left zeroized.
+    fn agree_out(
+        &self,
+        peer_pk: &Self::PublicKey,
+        params: Params,
+        ss: &mut KeyMaterial<SS_LEN>,
+    ) -> Result<usize, KeyAgreementError> {
+        ss.zeroize();
+        self.create_agreement(params)?.agree_out(peer_pk, ss)
+    }
+
     /// One-shot: the shared secret with `peer_pk`.
     ///
     /// # Errors
-    /// Those of [`create_agreement`](Self::create_agreement) and of [`KeyAgreement::agree`].
+    /// As [`agree_out`](Self::agree_out).
     fn agree(
         &self,
         peer_pk: &Self::PublicKey,
