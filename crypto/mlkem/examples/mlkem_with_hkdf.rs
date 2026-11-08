@@ -11,7 +11,7 @@ use bouncycastle_core::kdf_params::{KdfParams, KeyLen};
 use bouncycastle_core::kem_key::{DecapsulatingKey, EncapsulatingKey};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait};
 use bouncycastle_core::traits::KEMDecapsulator;
-use bouncycastle_mlkem::{MLKEM768, MLKEMTrait};
+use bouncycastle_mlkem::{MLKEM768, MLKEM768_CT_LEN, MLKEMTrait};
 use bouncycastle_rng::HashDRBG_SHA512;
 use bouncycastle_sha2::hkdf::HKDF_SHA512;
 
@@ -51,6 +51,19 @@ fn main() {
     let key32 = sk.decaps(&ct, short).unwrap();
     assert_eq!(key32.ref_to_bytes(), &key.ref_to_bytes()[..32]);
     println!("derived key: {} bytes at {:?}", key32.key_len(), key32.security_strength());
+
+    // The `_out` forms write into buffers the caller owns, zeroized first: the ciphertext and
+    // the derived key on encapsulation, the key on decapsulation. Where the key lives is then
+    // the caller's choice, which is what a long `KeyLen` or a small stack wants.
+    let mut ct_out = [0u8; MLKEM768_CT_LEN];
+    let mut key_a = KeyMaterial::<64>::new();
+    let written = pk.encaps_out(&mut rng, params, &mut ct_out, &mut key_a).unwrap();
+    assert_eq!(written, MLKEM768_CT_LEN);
+    let mut key_b = KeyMaterial::<64>::new();
+    let decapsulator = sk.create_decapsulator(params).unwrap();
+    assert_eq!(decapsulator.decaps_out(&ct_out, &mut key_b).unwrap(), 64);
+    assert_eq!(key_a, key_b);
+    println!("derived key, _out: {key_b}");
 
     // The same key pair still runs plain ML-KEM-768, with `()` selecting it.
     let (K, ct) = pk.encaps(&mut rng, ()).unwrap();

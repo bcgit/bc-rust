@@ -762,8 +762,12 @@ impl<
         &self,
         rng: &mut dyn RNG,
         ct: &mut [u8; CT_LEN],
-    ) -> Result<(KeyMaterial<MLKEM_SS_LEN>, usize), KEMError> {
-        MLKEM::<P>::encaps_with_rng(self.ek, rng, ct)
+        ss: &mut KeyMaterial<MLKEM_SS_LEN>,
+    ) -> Result<usize, KEMError> {
+        ss.zeroize();
+        let (K, written) = MLKEM::<P>::encaps_with_rng(self.ek, rng, ct)?;
+        *ss = K;
+        Ok(written)
     }
 }
 
@@ -790,8 +794,14 @@ impl<
     /// Algorithm 21 ML-KEM.Decaps(dk, 𝑐). The shared secret comes back as a [`KeyMaterial`] of
     /// type [`KeyType::CryptographicRandom`] at the parameter set's security strength. ML-KEM
     /// rejects implicitly, so a damaged ciphertext yields a different secret, not an error.
-    fn decaps(&self, ct: &[u8; CT_LEN]) -> Result<KeyMaterial<MLKEM_SS_LEN>, KEMError> {
-        MLKEM::<P>::decaps_checked(self.dk, ct)
+    fn decaps_out(
+        &self,
+        ct: &[u8; CT_LEN],
+        ss: &mut KeyMaterial<MLKEM_SS_LEN>,
+    ) -> Result<usize, KEMError> {
+        ss.zeroize();
+        *ss = MLKEM::<P>::decaps_checked(self.dk, ct)?;
+        Ok(MLKEM_SS_LEN)
     }
 }
 
