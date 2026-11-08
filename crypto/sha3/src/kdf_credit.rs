@@ -27,7 +27,7 @@ impl KdfCredit {
             return;
         }
         self.bytes = self.bytes.saturating_add(key.key_len());
-        self.strength = *min(&*max(&self.strength, &key.security_strength()), &self.cap);
+        self.strength = *min(max(&self.strength, &key.security_strength()), &self.cap);
     }
 
     /// The output's type and strength: [`KeyType::CryptographicRandom`] once at least
