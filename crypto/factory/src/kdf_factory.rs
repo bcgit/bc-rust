@@ -126,21 +126,6 @@ impl AlgorithmFactory for KDFFactory {
 }
 
 impl KDF for KDFFactory {
-    fn derive_key(
-        self,
-        key: &impl KeyMaterialTrait,
-        additional_input: &[u8],
-    ) -> Result<Box<dyn KeyMaterialTrait>, KDFError> {
-        match self {
-            Self::HKDF_SHA256(h) => h.derive_key(key, additional_input),
-            Self::HKDF_SHA384(h) => h.derive_key(key, additional_input),
-            Self::HKDF_SHA512(h) => h.derive_key(key, additional_input),
-            Self::HKDF_SM3(h) => h.derive_key(key, additional_input),
-            Self::X963KDF_SHA256(h) => h.derive_key(key, additional_input),
-            Self::X963KDF_SHA384(h) => h.derive_key(key, additional_input),
-            Self::X963KDF_SHA512(h) => h.derive_key(key, additional_input),
-        }
-    }
     fn derive_key_out(
         &self,
         ikm: &dyn KeyMaterialTrait,
@@ -153,28 +138,9 @@ impl KDF for KDFFactory {
             Self::HKDF_SHA384(h) => h.derive_key_out(ikm, fixed_info, len, output_key),
             Self::HKDF_SHA512(h) => h.derive_key_out(ikm, fixed_info, len, output_key),
             Self::HKDF_SM3(h) => h.derive_key_out(ikm, fixed_info, len, output_key),
-            Self::HKDF_SHA256(h) => h.derive_key_out(key, additional_input, output_key),
-            Self::HKDF_SHA384(h) => h.derive_key_out(key, additional_input, output_key),
-            Self::HKDF_SHA512(h) => h.derive_key_out(key, additional_input, output_key),
-            Self::HKDF_SM3(h) => h.derive_key_out(key, additional_input, output_key),
-            Self::X963KDF_SHA256(h) => h.derive_key_out(key, additional_input, output_key),
-            Self::X963KDF_SHA384(h) => h.derive_key_out(key, additional_input, output_key),
-            Self::X963KDF_SHA512(h) => h.derive_key_out(key, additional_input, output_key),
-        }
-    }
-    fn derive_key_from_multiple(
-        self,
-        keys: &[&impl KeyMaterialTrait],
-        additional_input: &[u8],
-    ) -> Result<Box<dyn KeyMaterialTrait>, KDFError> {
-        match self {
-            Self::HKDF_SHA256(h) => h.derive_key_from_multiple(keys, additional_input),
-            Self::HKDF_SHA384(h) => h.derive_key_from_multiple(keys, additional_input),
-            Self::HKDF_SHA512(h) => h.derive_key_from_multiple(keys, additional_input),
-            Self::HKDF_SM3(h) => h.derive_key_from_multiple(keys, additional_input),
-            Self::X963KDF_SHA256(h) => h.derive_key_from_multiple(keys, additional_input),
-            Self::X963KDF_SHA384(h) => h.derive_key_from_multiple(keys, additional_input),
-            Self::X963KDF_SHA512(h) => h.derive_key_from_multiple(keys, additional_input),
+            Self::X963KDF_SHA256(h) => h.derive_key_out(ikm, fixed_info, len, output_key),
+            Self::X963KDF_SHA384(h) => h.derive_key_out(ikm, fixed_info, len, output_key),
+            Self::X963KDF_SHA512(h) => h.derive_key_out(ikm, fixed_info, len, output_key),
         }
     }
 
@@ -196,15 +162,14 @@ impl KDF for KDFFactory {
                 h.derive_key_from_multiple_out(ikms, fixed_info, len, output_key)
             }
             Self::HKDF_SM3(h) => h.derive_key_from_multiple_out(ikms, fixed_info, len, output_key),
-            Self::HKDF_SM3(h) => h.derive_key_from_multiple_out(keys, additional_input, output_key),
             Self::X963KDF_SHA256(h) => {
-                h.derive_key_from_multiple_out(keys, additional_input, output_key)
+                h.derive_key_from_multiple_out(ikms, fixed_info, len, output_key)
             }
             Self::X963KDF_SHA384(h) => {
-                h.derive_key_from_multiple_out(keys, additional_input, output_key)
+                h.derive_key_from_multiple_out(ikms, fixed_info, len, output_key)
             }
             Self::X963KDF_SHA512(h) => {
-                h.derive_key_from_multiple_out(keys, additional_input, output_key)
+                h.derive_key_from_multiple_out(ikms, fixed_info, len, output_key)
             }
         }
     }

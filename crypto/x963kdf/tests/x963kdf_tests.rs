@@ -12,7 +12,7 @@ use bouncycastle_hex::decode as hex_decode;
 use bouncycastle_sha2::{SHA256, SHA512};
 use bouncycastle_x963kdf::{
     X963KDF_SHA224, X963KDF_SHA256, X963KDF_SHA256_NAME, X963KDF_SHA384, X963KDF_SHA512,
-    X963KDF_SHA512_NAME, X963KdfParams,
+    X963KDF_SHA512_NAME,
 };
 
 /// CAVP `ansx963_2001.rsp`, `[SHA-256]`, shared secret 192 bits, SharedInfo 128 bits, key data
@@ -29,20 +29,21 @@ fn z() -> KeyMaterial<32> {
 fn core_framework_suites() {
     // The framework compares `derive_key` with a whole hash output, so the expected value is
     // the vector's first 32 bytes; a 1024-bit vector has them.
-    let mut expected = KeyMaterial::<32>::from_bytes_as_type(
+    let expected = KeyMaterial::<32>::from_bytes_as_type(
         &hex_decode(KEY_DATA).unwrap()[..32],
         KeyType::CryptographicRandom,
     )
     .unwrap();
     let info = hex_decode(SHARED_INFO).unwrap();
     let tf = TestFrameworkKDF::new();
-    tf.test_kdf_single_key::<X963KDF_SHA256>(&z(), &info, &expected);
+    tf.test_kdf_single_key(&X963KDF_SHA256::new(), &z(), &info, &expected);
 
     // Z as two keys: the concatenation, so the same answer as one key of the joined bytes.
     let z_bytes = hex_decode(Z).unwrap();
     let a = KeyMaterial::<32>::from_bytes_as_type(&z_bytes[..12], KeyType::SharedSecret).unwrap();
     let b = KeyMaterial::<32>::from_bytes_as_type(&z_bytes[12..], KeyType::SharedSecret).unwrap();
-    tf.test_kdf_multiple_key::<X963KDF_SHA256>(&[&a, &b], &info, &mut expected);
+    let keys: [&dyn KeyMaterialTrait; 2] = [&a, &b];
+    tf.test_kdf_multiple_key(&X963KDF_SHA256::new(), &keys, &info, &expected);
 }
 
 /// SEC 1 Section 3.6.1 steps 3 to 5 by hand: K_i = Hash(Z || Counter || SharedInfo) with a
@@ -152,12 +153,23 @@ fn entropy_accounting() {
     assert_eq!(out.key_len(), 32);
 }
 
+/// The last block is truncated to what keydatalen leaves, into a buffer with no room beyond it.
+#[test]
+fn a_partial_last_block_fits_an_exact_buffer() {
+    let z = z();
+    let mut out = KeyMaterial::<33>::new();
+    assert_eq!(X963KDF_SHA256::derive_out(&z, b"", 33, &mut out).unwrap(), 33);
+    let mut longer = KeyMaterial::<64>::new();
+    X963KDF_SHA256::derive_out(&z, b"", 64, &mut longer).unwrap();
+    assert_eq!(out.ref_to_bytes(), &longer.ref_to_bytes()[..33]);
+}
+
 #[test]
 fn shared_info_selects_the_key() {
     let z = z();
-    let a = X963KDF_SHA256::new().derive_key(&z, b"context a").unwrap();
-    let b = X963KDF_SHA256::new().derive_key(&z, b"context b").unwrap();
-    let none = X963KDF_SHA256::new().derive_key(&z, b"").unwrap();
+    let a = X963KDF_SHA256::new().derive_key(&z, b"context a", 32).unwrap();
+    let b = X963KDF_SHA256::new().derive_key(&z, b"context b", 32).unwrap();
+    let none = X963KDF_SHA256::new().derive_key(&z, b"", 32).unwrap();
     assert_ne!(a.ref_to_bytes(), b.ref_to_bytes());
     assert_ne!(a.ref_to_bytes(), none.ref_to_bytes());
 }
@@ -170,18 +182,10 @@ fn names_strengths_and_output_lengths() {
     assert_eq!(X963KDF_SHA256::MAX_SECURITY_STRENGTH, SHA256::MAX_SECURITY_STRENGTH);
     assert_eq!(X963KDF_SHA512::MAX_SECURITY_STRENGTH, SHA512::MAX_SECURITY_STRENGTH);
     let z = z();
-    assert_eq!(X963KDF_SHA224::new().derive_key(&z, b"").unwrap().key_len(), 28);
-    assert_eq!(X963KDF_SHA256::new().derive_key(&z, b"").unwrap().key_len(), 32);
-    assert_eq!(X963KDF_SHA384::new().derive_key(&z, b"").unwrap().key_len(), 48);
-    assert_eq!(X963KDF_SHA512::new().derive_key(&z, b"").unwrap().key_len(), 64);
+    assert_eq!(X963KDF_SHA224::new().derive_key(&z, b"", 28).unwrap().key_len(), 28);
+    assert_eq!(X963KDF_SHA256::new().derive_key(&z, b"", 32).unwrap().key_len(), 32);
+    assert_eq!(X963KDF_SHA384::new().derive_key(&z, b"", 48).unwrap().key_len(), 48);
+    assert_eq!(X963KDF_SHA512::new().derive_key(&z, b"", 64).unwrap().key_len(), 64);
     let mut out = KeyMaterial512::new();
-    assert_eq!(X963KDF_SHA256::new().derive_key_out(&z, b"", &mut out).unwrap(), 64);
-}
-
-#[test]
-fn params_carry_the_shared_info() {
-    let params = X963KdfParams::<SHA256>::new(b"shared info");
-    let copy = params;
-    assert_eq!(copy.shared_info(), b"shared info");
-    assert_eq!(X963KdfParams::<SHA512>::new(b"").shared_info(), b"");
+    assert_eq!(X963KDF_SHA256::new().derive_key_out(&z, b"", 64, &mut out).unwrap(), 64);
 }
