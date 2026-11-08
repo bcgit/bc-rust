@@ -879,7 +879,7 @@ mod hkdf_tests {
         /*L*/
         additional_input.append(&mut hex::decode("00000400").unwrap());
 
-        let mut expected_key = KeyMaterial::<128>::from_bytes_as_type(&hex::decode("1f6f7381c72f1d46d83e819bedeb482944adb0e3352cf2718e4bd334d95699e7256d01a48f35016f807bc1b739d41f5d53e442c67f6b455776d50d8667d62b3f3b632c5a88c371f7229a4c88beea1f28752a95fb2c533af28e6bfb19e69d750bbadc6609b2715dac19de9d9a6cfe3472a5e5312eabfd9bdbfa222cc7046ce3f7").unwrap(), KeyType::MACKey).unwrap();
+        let expected_key = KeyMaterial::<128>::from_bytes_as_type(&hex::decode("1f6f7381c72f1d46d83e819bedeb482944adb0e3352cf2718e4bd334d95699e7256d01a48f35016f807bc1b739d41f5d53e442c67f6b455776d50d8667d62b3f3b632c5a88c371f7229a4c88beea1f28752a95fb2c533af28e6bfb19e69d750bbadc6609b2715dac19de9d9a6cfe3472a5e5312eabfd9bdbfa222cc7046ce3f7").unwrap(), KeyType::MACKey).unwrap();
 
         // do it manually just to check that we have the test vector right.
         let mut output_key = KeyMaterial::<128>::new();
