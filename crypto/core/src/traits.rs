@@ -506,8 +506,9 @@ pub const KDF_ONE_SHOT_MAX_LEN: usize = 1024;
 /// is not [`SecurityStrength::None`]) together carry at least as many bytes as the function's
 /// own strength bound, half a hash output for a hash-based KDF, and otherwise
 /// [`KeyType::Unknown`] with no strength; its strength is the least of the inputs' strongest,
-/// the function's and the length's, so a `CryptographicRandom` output always carries a
-/// strength. A key with no strength (a [`KeyType::SharedSecret`] whose producer set none, a key
+/// the function's and the length's, so a `CryptographicRandom` output carries a strength
+/// whenever its length can hold one, 14 bytes for the least; a shorter one carries none. A key
+/// with no strength (a [`KeyType::SharedSecret`] whose producer set none, a key
 /// too short to carry 112 bits) credits nothing. The count is of the keys as given: the same key
 /// passed twice in `ikms` counts twice, which is the caller's to avoid. `fixed_info` is context
 /// and credits nothing. A [`KeyType::Zeroized`] or [`KeyType::Unknown`] input is derived from
