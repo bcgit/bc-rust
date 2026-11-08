@@ -176,6 +176,17 @@ impl TestFrameworkKDF {
         let out_key2 = kdf.derive_key_from_multiple(keys, b"some additional input", len).unwrap();
         assert_ne!(out_key1.ref_to_bytes(), out_key2.ref_to_bytes());
 
+        /*** a derivation from no keys is refused ***/
+        assert!(matches!(
+            kdf.derive_key_from_multiple(&[], fixed_info, len),
+            Err(KDFError::InvalidLength(_))
+        ));
+        let mut none = KeyMaterial::<KDF_ONE_SHOT_MAX_LEN>::new();
+        assert!(matches!(
+            kdf.derive_key_from_multiple_out(&[], fixed_info, len, &mut none),
+            Err(KDFError::InvalidLength(_))
+        ));
+
         /*** entropy accounting ***/
         // two zeroized keys -> Unknown
         let zeroized_key = KeyMaterial256::new();
