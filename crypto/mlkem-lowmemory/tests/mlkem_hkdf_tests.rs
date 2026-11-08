@@ -17,11 +17,12 @@ mod mlkem_hkdf_tests {
     use bouncycastle_core_test_framework::kem::TestFrameworkKEM;
     use bouncycastle_mlkem as full;
     use bouncycastle_mlkem_lowmemory::{
-        KdfParams, MLKEM512, MLKEM512_CT_LEN, MLKEM512_HKDF_SHA256, MLKEM512_HKDF_SHA256_SS_LEN,
-        MLKEM512PrivateKey, MLKEM512PrivateKeyExpanded, MLKEM512PublicKey, MLKEM768,
-        MLKEM768_CT_LEN, MLKEM768_HKDF_SHA512, MLKEM768_HKDF_SHA512_SS_LEN, MLKEM768PrivateKey,
-        MLKEM768PublicKey, MLKEM1024, MLKEM1024_CT_LEN, MLKEM1024_HKDF_SHA512,
-        MLKEM1024_HKDF_SHA512_SS_LEN, MLKEM1024PrivateKey, MLKEM1024PublicKey, MLKEMTrait,
+        KdfParams, KeyLen, MLKEM512, MLKEM512_CT_LEN, MLKEM512_HKDF_SHA256,
+        MLKEM512_HKDF_SHA256_SS_LEN, MLKEM512PrivateKey, MLKEM512PrivateKeyExpanded,
+        MLKEM512PublicKey, MLKEM768, MLKEM768_CT_LEN, MLKEM768_HKDF_SHA512,
+        MLKEM768_HKDF_SHA512_SS_LEN, MLKEM768PrivateKey, MLKEM768PublicKey, MLKEM1024,
+        MLKEM1024_CT_LEN, MLKEM1024_HKDF_SHA512, MLKEM1024_HKDF_SHA512_SS_LEN, MLKEM1024PrivateKey,
+        MLKEM1024PublicKey, MLKEMTrait,
     };
     use bouncycastle_rng::DefaultRNG;
     use bouncycastle_sha2::hkdf::{HKDF_SHA256, HKDF_SHA512};
@@ -42,8 +43,8 @@ mod mlkem_hkdf_tests {
         let salt = salt();
         let hkdf256 = HKDF_SHA256::new_with_salt(&salt).unwrap();
         let hkdf512 = HKDF_SHA512::new_with_salt(&salt).unwrap();
-        let sha256 = KdfParams::<_, MLKEM512_HKDF_SHA256_SS_LEN>::new(&hkdf256, INFO);
-        let sha512 = KdfParams::<_, MLKEM768_HKDF_SHA512_SS_LEN>::new(&hkdf512, INFO);
+        let sha256 = KdfParams::new(&hkdf256, INFO, KeyLen::<MLKEM512_HKDF_SHA256_SS_LEN>);
+        let sha512 = KdfParams::new(&hkdf512, INFO, KeyLen::<MLKEM768_HKDF_SHA512_SS_LEN>);
 
         tf.test_kem::<
             KdfParams<'_, HKDF_SHA256, MLKEM512_HKDF_SHA256_SS_LEN>,
@@ -94,7 +95,7 @@ mod mlkem_hkdf_tests {
         let hkdf512 = HKDF_SHA512::new_with_salt(&salt).unwrap();
 
         let (pk, sk) = MLKEM512::keygen(&mut rng).unwrap();
-        let params = KdfParams::<_, MLKEM512_HKDF_SHA256_SS_LEN>::new(&hkdf256, INFO);
+        let params = KdfParams::new(&hkdf256, INFO, KeyLen::<MLKEM512_HKDF_SHA256_SS_LEN>);
         let (key, ct) = pk.encaps(&mut rng, params).unwrap();
         let K = sk.decaps(&ct, ()).unwrap();
         let mut expected = KeyMaterial::<MLKEM512_HKDF_SHA256_SS_LEN>::new();
@@ -113,7 +114,7 @@ mod mlkem_hkdf_tests {
         assert_eq!(sk.decaps(&ct, params).unwrap(), expected);
 
         let (pk, sk) = MLKEM768::keygen(&mut rng).unwrap();
-        let params = KdfParams::<_, MLKEM768_HKDF_SHA512_SS_LEN>::new(&hkdf512, INFO);
+        let params = KdfParams::new(&hkdf512, INFO, KeyLen::<MLKEM768_HKDF_SHA512_SS_LEN>);
         let (key, ct) = pk.encaps(&mut rng, params).unwrap();
         let K = sk.decaps(&ct, ()).unwrap();
         let mut expected = KeyMaterial::<MLKEM768_HKDF_SHA512_SS_LEN>::new();
@@ -153,11 +154,11 @@ mod mlkem_hkdf_tests {
         let salt = salt();
         let hkdf256 = HKDF_SHA256::new_with_salt(&salt).unwrap();
         let (pk, sk) = MLKEM512::keygen(&mut rng).unwrap();
-        let params = KdfParams::<_, MLKEM512_HKDF_SHA256_SS_LEN>::new(&hkdf256, INFO);
+        let params = KdfParams::new(&hkdf256, INFO, KeyLen::<MLKEM512_HKDF_SHA256_SS_LEN>);
         let (key, ct) = pk.encaps(&mut rng, params).unwrap();
 
         let other_info =
-            KdfParams::<_, MLKEM512_HKDF_SHA256_SS_LEN>::new(&hkdf256, b"another context");
+            KdfParams::new(&hkdf256, b"another context", KeyLen::<MLKEM512_HKDF_SHA256_SS_LEN>);
         assert_ne!(sk.decaps(&ct, other_info).unwrap(), key);
 
         let other_salt =
@@ -166,7 +167,7 @@ mod mlkem_hkdf_tests {
         assert_ne!(
             sk.decaps(
                 &ct,
-                KdfParams::<_, MLKEM512_HKDF_SHA256_SS_LEN>::new(&hkdf_other_salt, INFO)
+                KdfParams::new(&hkdf_other_salt, INFO, KeyLen::<MLKEM512_HKDF_SHA256_SS_LEN>)
             )
             .unwrap(),
             key
@@ -175,7 +176,7 @@ mod mlkem_hkdf_tests {
         let absent = KeyMaterial0::new();
         let hkdf_absent = HKDF_SHA256::new_with_salt(&absent).unwrap();
         let derived = sk
-            .decaps(&ct, KdfParams::<_, MLKEM512_HKDF_SHA256_SS_LEN>::new(&hkdf_absent, INFO))
+            .decaps(&ct, KdfParams::new(&hkdf_absent, INFO, KeyLen::<MLKEM512_HKDF_SHA256_SS_LEN>))
             .unwrap();
         assert_ne!(derived, key);
         let K = sk.decaps(&ct, ()).unwrap();
@@ -201,19 +202,19 @@ mod mlkem_hkdf_tests {
         let salt = salt();
         let hkdf512 = HKDF_SHA512::new_with_salt(&salt).unwrap();
         let (pk, sk) = MLKEM768::keygen(&mut rng).unwrap();
-        let (key, ct) = pk.encaps(&mut rng, KdfParams::<_, 64>::new(&hkdf512, INFO)).unwrap();
+        let (key, ct) = pk.encaps(&mut rng, KdfParams::new(&hkdf512, INFO, KeyLen::<64>)).unwrap();
 
-        let short = sk.decaps(&ct, KdfParams::<_, 32>::new(&hkdf512, INFO)).unwrap();
+        let short = sk.decaps(&ct, KdfParams::new(&hkdf512, INFO, KeyLen::<32>)).unwrap();
         assert_eq!(short.key_len(), 32);
         assert_eq!(short.ref_to_bytes(), &key.ref_to_bytes()[..32]);
         assert_eq!(short.key_type(), KeyType::CryptographicRandom);
         assert_eq!(short.security_strength(), SecurityStrength::_192bit);
 
-        let tiny = sk.decaps(&ct, KdfParams::<_, 16>::new(&hkdf512, INFO)).unwrap();
+        let tiny = sk.decaps(&ct, KdfParams::new(&hkdf512, INFO, KeyLen::<16>)).unwrap();
         assert_eq!(tiny.ref_to_bytes(), &key.ref_to_bytes()[..16]);
         assert_eq!(tiny.security_strength(), SecurityStrength::_128bit);
 
-        let long = sk.decaps(&ct, KdfParams::<_, { 255 * 64 }>::new(&hkdf512, INFO)).unwrap();
+        let long = sk.decaps(&ct, KdfParams::new(&hkdf512, INFO, KeyLen::<{ 255 * 64 }>)).unwrap();
         assert_eq!(long.key_len(), 255 * 64);
         assert_eq!(&long.ref_to_bytes()[..64], key.ref_to_bytes());
         assert_eq!(long.security_strength(), SecurityStrength::_192bit);
@@ -221,8 +222,8 @@ mod mlkem_hkdf_tests {
         // HKDF-SHA256's cap is 255 of its own outputs
         let hkdf256 = HKDF_SHA256::new_with_salt(&salt).unwrap();
         let (pk, sk) = MLKEM512::keygen(&mut rng).unwrap();
-        let (key, ct) = pk.encaps(&mut rng, KdfParams::<_, 32>::new(&hkdf256, INFO)).unwrap();
-        let long = sk.decaps(&ct, KdfParams::<_, { 255 * 32 }>::new(&hkdf256, INFO)).unwrap();
+        let (key, ct) = pk.encaps(&mut rng, KdfParams::new(&hkdf256, INFO, KeyLen::<32>)).unwrap();
+        let long = sk.decaps(&ct, KdfParams::new(&hkdf256, INFO, KeyLen::<{ 255 * 32 }>)).unwrap();
         assert_eq!(long.key_len(), 255 * 32);
         assert_eq!(&long.ref_to_bytes()[..32], key.ref_to_bytes());
     }
@@ -236,7 +237,7 @@ mod mlkem_hkdf_tests {
         let secret_salt =
             KeyMaterial::<64>::from_bytes_as_type(&DUMMY_SEED[..64], KeyType::MACKey).unwrap();
         let hkdf512 = HKDF_SHA512::new_with_salt(&secret_salt).unwrap();
-        let params = KdfParams::<_, MLKEM768_HKDF_SHA512_SS_LEN>::new(&hkdf512, INFO);
+        let params = KdfParams::new(&hkdf512, INFO, KeyLen::<MLKEM768_HKDF_SHA512_SS_LEN>);
         let (pk, sk) = MLKEM768::keygen(&mut rng).unwrap();
         let (key, ct) = pk.encaps(&mut rng, params).unwrap();
         assert_eq!(key.key_type(), KeyType::CryptographicRandom);
@@ -270,7 +271,7 @@ mod mlkem_hkdf_tests {
         let salt = salt();
         let mut hkdf = HKDF_SHA256::new_with_salt(&salt).unwrap();
         hkdf.do_extract_update_bytes(b"raw ikm").unwrap();
-        let params = KdfParams::<_, MLKEM512_HKDF_SHA256_SS_LEN>::new(&hkdf, INFO);
+        let params = KdfParams::new(&hkdf, INFO, KeyLen::<MLKEM512_HKDF_SHA256_SS_LEN>);
 
         let encapsulator = pk.create_encapsulator(params).unwrap();
         let mut ct = [0xAAu8; MLKEM512_CT_LEN];
@@ -292,7 +293,11 @@ mod mlkem_hkdf_tests {
         let hkdf512 = HKDF_SHA512::new_with_salt(&salt).unwrap();
         let (_pk, sk) = MLKEM768::keygen(&mut DefaultRNG::default()).unwrap();
         let worker = sk
-            .create_decapsulator(KdfParams::<_, MLKEM768_HKDF_SHA512_SS_LEN>::new(&hkdf512, INFO))
+            .create_decapsulator(KdfParams::new(
+                &hkdf512,
+                INFO,
+                KeyLen::<MLKEM768_HKDF_SHA512_SS_LEN>,
+            ))
             .unwrap();
         assert_eq!(worker.alg_name(), "ML-KEM-768-HKDF-SHA512");
         let _: &dyn KEMDecapsulator<MLKEM768_CT_LEN, MLKEM768_HKDF_SHA512_SS_LEN> = &worker;
@@ -309,7 +314,7 @@ mod mlkem_hkdf_tests {
 
         let (pk_low, sk_low) = MLKEM512::keygen_from_seed(&seed).unwrap();
         let (pk_full, sk_full) = full::MLKEM512::keygen_from_seed(&seed).unwrap();
-        let params = KdfParams::<_, MLKEM512_HKDF_SHA256_SS_LEN>::new(&hkdf256, INFO);
+        let params = KdfParams::new(&hkdf256, INFO, KeyLen::<MLKEM512_HKDF_SHA256_SS_LEN>);
         let (key, ct) = pk_low.encaps(&mut rng, params).unwrap();
         assert_eq!(sk_full.decaps(&ct, params).unwrap(), key);
         let (key, ct) = pk_full.encaps(&mut rng, params).unwrap();
@@ -317,7 +322,7 @@ mod mlkem_hkdf_tests {
 
         let (pk_low, sk_low) = MLKEM1024::keygen_from_seed(&seed).unwrap();
         let (_pk_full, sk_full) = full::MLKEM1024::keygen_from_seed(&seed).unwrap();
-        let params = KdfParams::<_, MLKEM1024_HKDF_SHA512_SS_LEN>::new(&hkdf512, INFO);
+        let params = KdfParams::new(&hkdf512, INFO, KeyLen::<MLKEM1024_HKDF_SHA512_SS_LEN>);
         let (key, ct) = pk_low.encaps(&mut rng, params).unwrap();
         assert_eq!(sk_full.decaps(&ct, params).unwrap(), key);
         assert_eq!(sk_low.decaps(&ct, params).unwrap(), key);

@@ -226,7 +226,7 @@
 //!
 //! ```rust
 //! use bouncycastle_rng::HashDRBG_SHA512;
-//! use bouncycastle_mlkem_lowmemory::{KdfParams, MLKEM512, MLKEMTrait};
+//! use bouncycastle_mlkem_lowmemory::{KdfParams, KeyLen, MLKEM512, MLKEMTrait};
 //! use bouncycastle_core::kem_key::{EncapsulatingKey, DecapsulatingKey};
 //! use bouncycastle_core::key_material::KeyMaterial;
 //! use bouncycastle_sha2::hkdf::HKDF_SHA256;
@@ -238,7 +238,7 @@
 //! let salt = KeyMaterial::<32>::from_rng(&mut rng).unwrap();
 //! let hkdf = HKDF_SHA256::new_with_salt(&salt).unwrap();
 //! // The parameters name the key's length too: here one SHA-256 output.
-//! let params = KdfParams::<_, 32>::new(&hkdf, b"example protocol v1");
+//! let params = KdfParams::new(&hkdf, b"example protocol v1", KeyLen::<32>);
 //!
 //! let (key, ct) = pk.encaps(&mut rng, params).unwrap();
 //! let key1 = sk.decaps(&ct, params).unwrap();
@@ -297,7 +297,7 @@ mod mlkem_keys;
 mod params;
 
 /*** Exported types ***/
-pub use bouncycastle_core::kdf_params::KdfParams;
+pub use bouncycastle_core::kdf_params::{KdfParams, KeyLen};
 #[doc(inline)]
 pub use bouncycastle_mlkem_common::kdf::{
     ML_KEM_512_HKDF_SHA256_NAME, ML_KEM_768_HKDF_SHA512_NAME, ML_KEM_1024_HKDF_SHA512_NAME,
