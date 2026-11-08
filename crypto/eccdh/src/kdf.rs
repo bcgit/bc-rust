@@ -4,7 +4,12 @@
 //! [`KdfParams`] as the parameters: a borrowed KDF
 //! instance, the fixed info (RFC 5869's info, SEC 1's `SharedInfo`) and the length. The derived
 //! key is KDF(Z, info), of the length the parameters name, at the curve's strength, which the
-//! KDF caps at.
+//! KDF caps at. The length is part of the protocol's agreement as the info is, and it does not
+//! separate keys: under one info the key at one length is a prefix of the key at a longer one
+//! (RFC 5869 Section 2.3's OKM is the first L octets of T; SEC 1 v2 Section 3.6.1 step 5's K
+//! the leftmost keydatalen octets of K1 || K2 || ..), so a protocol that wants two keys from
+//! one agreement gives them two infos, not two lengths (SP 800-56C Rev. 2 Section 4.1 puts `L`
+//! in `FixedInfo` for that reason).
 //!
 //! The pairings are one `impl KdfPairing<KDF, SS_LEN> for Curve` each, in the curve's module:
 //! the X9.63 KDF over the hash matched to the curve on every curve, and HKDF-SHA256 on P-256.
