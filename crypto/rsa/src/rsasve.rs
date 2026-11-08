@@ -1,8 +1,9 @@
 //! RSASVE, RSA Secret-Value Encapsulation (NIST SP 800-56B Rev. 2 §7.2.1), as a
-//! [`bouncycastle_core`] KEM: [`RSASVE`] implements
-//! [`KEMEncapsulator`]/[`KEMDecapsulator`], with RSASVE.GENERATE (§7.2.1.2) as `encaps` and
-//! RSASVE.RECOVER (§7.2.1.3) as `decaps`, over the KEM-only key types [`RsaKEMPublicKey`] and
-//! [`RsaKEMPrivateKey`].
+//! [`bouncycastle_core`] KEM on the key objects: the KEM-only key types [`RsaKEMPublicKey`] and
+//! [`RsaKEMPrivateKey`] implement the `EncapsulatingKey` / `DecapsulatingKey` roles over `()`
+//! in each size module, naming [`RSASVE`] as the algorithm and handing out the workers
+//! [`RsasveEncapsulator`] and [`RsasveDecapsulator`], whose `encaps_out` is RSASVE.GENERATE
+//! (§7.2.1.2) and whose `decaps_out` is RSASVE.RECOVER (§7.2.1.3).
 //!
 //! This is the scheme BC FIPS Java 2.0 exposes as `FipsRSA.KTS_SVE` (JCA name `RSA-KAS-KEM`): the
 //! encapsulating party draws a random `z` with `1 < z < n - 1` and sends `C = z^e mod n`, and both
@@ -16,7 +17,7 @@
 //!
 //! The key types here wrap the signature schemes' [`RsaPublicKey`]/[`RsaPrivateKey`] rather than
 //! reusing them, so the type system keeps key-establishment and signing keys apart. There is no
-//! signing-role impl for an [`RsaKEMPrivateKey`] and no `KEMDecapsulator` impl for an
+//! signing-role impl for an [`RsaKEMPrivateKey`] and no decapsulating role for an
 //! [`RsaPrivateKey`]. SP 800-56B Rev. 2 §6.1 item 5 is the requirement: "One key pair shall not
 //! be used for different cryptographic purposes (for example, a digital-signature key pair shall
 //! not be used for key establishment or vice versa)". BC FIPS Java checks the same thing at runtime with
@@ -48,13 +49,11 @@ use crate::keys::{RsaPrivateKey, RsaPublicKey};
 use crate::rsa_core::{crt_exp, public_exp};
 use bouncycastle_core::errors::{KEMError, RNGError, SignatureError};
 use bouncycastle_core::hazmat::do_hazardous_operations;
+use bouncycastle_core::kem_key::KEMAlgorithm;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::traits::{
-    KEMDecapsulator, KEMEncapsulator, KEMPrivateKey, KEMPublicKey, RNG,
-};
+use bouncycastle_core::traits::{Algorithm, KEMDecapsulator, KEMEncapsulator, RNG};
 use bouncycastle_ec::nat;
-use bouncycastle_rng::DefaultRNG;
 use bouncycastle_utils::secret::Secret;
 use core::fmt;
 use core::fmt::{Display, Formatter};
@@ -202,19 +201,16 @@ impl<const L: usize, const HALF: usize> RsaKEMPrivateKey<L, HALF> {
     }
 }
 
-/// RSASVE (SP 800-56B Rev. 2 §7.2.1) at one modulus size, as a
-/// [`KEMEncapsulator`]/[`KEMDecapsulator`]. Each size module names its own instantiation (e.g.
-/// `crate::rsa_2048::RSASVE`), along with that size's `keygen(rng)` as an inherent associated
-/// function, which is where the KEM traits' docs put key generation.
+/// RSASVE (SP 800-56B Rev. 2 §7.2.1) at one modulus size: the [`KEMAlgorithm`] marker the key
+/// roles name, carrying the metadata and no state. Each size module names its own instantiation
+/// (e.g. `crate::rsa_2048::RSASVE`), along with that size's `keygen(rng)` as an inherent
+/// associated function.
 ///
 /// `L`/`L2`/`L21`/`HALF`/`HALF2`/`HALF21` are the widths the rest of this crate threads through
 /// `rsa_core` (see [`crate::modexp`]). `N_BYTES = 8 * L` is `nLen`, which is both the ciphertext
 /// length and the shared-secret length. `SECURITY_BITS` is the modulus's SP 800-57 Part 1
-/// security strength, the same value that size's `keygen` demands of its RNG. `encaps_rng`
+/// security strength, the same value that size's `keygen` demands of its RNG. Encapsulation
 /// demands it too, and the shared secret is labelled with it.
-///
-/// Uninhabited: every operation is an associated function, as with the other KEMs in this
-/// workspace.
 #[allow(non_camel_case_types)]
 pub struct RSASVE<
     const L: usize,
@@ -229,6 +225,17 @@ pub struct RSASVE<
     _widths: PhantomData<[u64; L]>,
 }
 
+/// The algorithm name at one modulus size, from the limb count.
+const fn alg_name(l: usize) -> &'static str {
+    match l {
+        32 => "RSASVE-2048",
+        48 => "RSASVE-3072",
+        64 => "RSASVE-4096",
+        128 => "RSASVE-8192",
+        _ => "RSASVE",
+    }
+}
+
 impl<
     const L: usize,
     const L2: usize,
@@ -238,35 +245,95 @@ impl<
     const HALF21: usize,
     const N_BYTES: usize,
     const SECURITY_BITS: usize,
-    const PK_LEN: usize,
-> KEMEncapsulator<RsaKEMPublicKey<L>, PK_LEN, N_BYTES, N_BYTES>
-    for RSASVE<L, L2, L21, HALF, HALF2, HALF21, N_BYTES, SECURITY_BITS>
-where
-    RsaKEMPublicKey<L>: KEMPublicKey<PK_LEN>,
+> Algorithm for RSASVE<L, L2, L21, HALF, HALF2, HALF21, N_BYTES, SECURITY_BITS>
 {
-    /// RSASVE.GENERATE, drawing `Z` from the library's default OS-backed RNG. See
-    /// [`Self::encaps_rng`].
-    fn encaps(pk: &RsaKEMPublicKey<L>) -> Result<(KeyMaterial<N_BYTES>, [u8; N_BYTES]), KEMError> {
-        Self::encaps_rng(pk, &mut DefaultRNG::default())
-    }
+    const ALG_NAME: &'static str = alg_name(L);
+    const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::from_bits(SECURITY_BITS);
+}
 
-    /// RSASVE.GENERATE((n, e)) (SP 800-56B Rev. 2 §7.2.1.2), drawing `Z` from `rng`. Returns
-    /// `(Z, C)`: the secret value as a [`KeyMaterial`] of type
-    /// [`KeyType::CryptographicRandom`] at the modulus's security strength, and the ciphertext.
+impl<
+    const L: usize,
+    const L2: usize,
+    const L21: usize,
+    const HALF: usize,
+    const HALF2: usize,
+    const HALF21: usize,
+    const N_BYTES: usize,
+    const SECURITY_BITS: usize,
+> KEMAlgorithm for RSASVE<L, L2, L21, HALF, HALF2, HALF21, N_BYTES, SECURITY_BITS>
+{
+}
+
+/// The encapsulator an [`RsaKEMPublicKey`] hands out through `EncapsulatingKey<()>`: it borrows
+/// the key and draws `Z` from the RNG of each call. The widths are the size module's.
+pub struct RsasveEncapsulator<
+    'k,
+    const L: usize,
+    const L2: usize,
+    const L21: usize,
+    const N_BYTES: usize,
+    const SECURITY_BITS: usize,
+> {
+    pk: &'k RsaKEMPublicKey<L>,
+}
+
+impl<
+    'k,
+    const L: usize,
+    const L2: usize,
+    const L21: usize,
+    const N_BYTES: usize,
+    const SECURITY_BITS: usize,
+> RsasveEncapsulator<'k, L, L2, L21, N_BYTES, SECURITY_BITS>
+{
+    /// Borrows `pk`; the size modules' role impls call this.
+    pub(crate) fn new(pk: &'k RsaKEMPublicKey<L>) -> Self {
+        Self { pk }
+    }
+}
+
+impl<
+    const L: usize,
+    const L2: usize,
+    const L21: usize,
+    const N_BYTES: usize,
+    const SECURITY_BITS: usize,
+> Algorithm for RsasveEncapsulator<'_, L, L2, L21, N_BYTES, SECURITY_BITS>
+{
+    const ALG_NAME: &'static str = alg_name(L);
+    const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::from_bits(SECURITY_BITS);
+}
+
+impl<
+    const L: usize,
+    const L2: usize,
+    const L21: usize,
+    const N_BYTES: usize,
+    const SECURITY_BITS: usize,
+> KEMEncapsulator<N_BYTES, N_BYTES> for RsasveEncapsulator<'_, L, L2, L21, N_BYTES, SECURITY_BITS>
+{
+    /// RSASVE.GENERATE((n, e)) (SP 800-56B Rev. 2 §7.2.1.2), drawing `Z` from `rng`: the
+    /// ciphertext `C` into `ct` and the secret value `Z` into `ss`, as a [`KeyMaterial`] of type
+    /// [`KeyType::CryptographicRandom`] at the modulus's security strength.
     ///
     /// Errors: `RNGError(SecurityStrengthInsufficientForAlgorithm)` if `rng` is weaker than the
     /// modulus (§5.3: an RBG generating `Z` "shall be instantiated to support a security strength
     /// that is equal to or greater than the security strength associated with the RSA modulus
     /// length"),
     /// `RNGError` if `rng` fails, and `GenericError` if [`MAX_GENERATE_ATTEMPTS`] draws all fall
-    /// outside `(1, n - 1)`, which a working RNG does not do (see that constant).
+    /// outside `(1, n - 1)`, which a working RNG does not do (see that constant). Both buffers
+    /// are left zeroized on every error.
     // `Z`, `C`: SP 800-56B's own names (see QUALITY_AND_STYLE.md's naming exception).
     #[allow(non_snake_case)]
-    fn encaps_rng(
-        pk: &RsaKEMPublicKey<L>,
+    fn encaps_out(
+        &self,
         rng: &mut dyn RNG,
-    ) -> Result<(KeyMaterial<N_BYTES>, [u8; N_BYTES]), KEMError> {
+        ct: &mut [u8; N_BYTES],
+        ss: &mut KeyMaterial<N_BYTES>,
+    ) -> Result<usize, KEMError> {
         debug_assert_eq!(N_BYTES, 8 * L, "RSASVE needs N_BYTES == 8 * L");
+        ct.fill(0);
+        ss.zeroize();
         if rng.security_strength() < SecurityStrength::from_bits(SECURITY_BITS) {
             return Err(KEMError::RNGError(RNGError::SecurityStrengthInsufficientForAlgorithm));
         }
@@ -292,7 +359,7 @@ where
             // Step 2.b: "z = BS2I(Z, nLen)."
             *z = limbs_from_be_bytes::<L, N_BYTES>(&Z);
             // Step 2.c: "If z does not satisfy 1 < z < (n – 1), then go to step 2a."
-            if in_open_range(&z, pk.n()) {
+            if in_open_range(&z, self.pk.n()) {
                 break;
             }
         }
@@ -300,16 +367,69 @@ where
         // Step 3.a: "c = RSAEP((n, e), z)". RSAEP's own step 1 range check (§7.1.1, "1 < m <
         // (n – 1)") is the one step 2.c has just ensured, so it is not repeated: `public_exp` is
         // RSAEP's step 2, `c = z^e mod n`.
-        let c = public_exp::<L, L2, L21>(&pk.0, &z);
+        let c = public_exp::<L, L2, L21>(&self.pk.0, &z);
         // Step 3.b: "C = I2BS(c, nLen)."
-        let C = be_bytes_from_limbs::<L, N_BYTES>(&c);
+        *ct = be_bytes_from_limbs::<L, N_BYTES>(&c);
 
         // Step 4: "Output the string Z as the secret value, and the ciphertext C."
-        let mut ss = KeyMaterial::<N_BYTES>::from_bytes_as_type(&*Z, KeyType::CryptographicRandom)?;
-        do_hazardous_operations(&mut ss, |ss| {
-            ss.set_security_strength(SecurityStrength::from_bits(SECURITY_BITS))
-        })?;
-        Ok((ss, C))
+        if let Err(e) = secret_value_into::<N_BYTES, SECURITY_BITS>(&Z, ss) {
+            ct.fill(0);
+            return Err(e);
+        }
+        Ok(N_BYTES)
+    }
+}
+
+/// `Z` into `ss` as [`KeyType::CryptographicRandom`] at the modulus's strength, zeroizing `ss`
+/// first and again if the label cannot be set.
+#[allow(non_snake_case)]
+fn secret_value_into<const N_BYTES: usize, const SECURITY_BITS: usize>(
+    Z: &[u8; N_BYTES],
+    ss: &mut KeyMaterial<N_BYTES>,
+) -> Result<(), KEMError> {
+    ss.zeroize();
+    let result = do_hazardous_operations(ss, |ss| {
+        ss.set_bytes_as_type(Z, KeyType::CryptographicRandom)?;
+        ss.set_security_strength(SecurityStrength::from_bits(SECURITY_BITS))
+    });
+    if let Err(e) = result {
+        ss.zeroize();
+        return Err(e.into());
+    }
+    Ok(())
+}
+
+/// The decapsulator an [`RsaKEMPrivateKey`] hands out through `DecapsulatingKey<()>`: it borrows
+/// the key. The widths are the size module's.
+pub struct RsasveDecapsulator<
+    'k,
+    const L: usize,
+    const L2: usize,
+    const L21: usize,
+    const HALF: usize,
+    const HALF2: usize,
+    const HALF21: usize,
+    const N_BYTES: usize,
+    const SECURITY_BITS: usize,
+> {
+    sk: &'k RsaKEMPrivateKey<L, HALF>,
+}
+
+impl<
+    'k,
+    const L: usize,
+    const L2: usize,
+    const L21: usize,
+    const HALF: usize,
+    const HALF2: usize,
+    const HALF21: usize,
+    const N_BYTES: usize,
+    const SECURITY_BITS: usize,
+> RsasveDecapsulator<'k, L, L2, L21, HALF, HALF2, HALF21, N_BYTES, SECURITY_BITS>
+{
+    /// Borrows `sk`; the size modules' role impls call this.
+    pub(crate) fn new(sk: &'k RsaKEMPrivateKey<L, HALF>) -> Self {
+        Self { sk }
     }
 }
 
@@ -322,37 +442,49 @@ impl<
     const HALF21: usize,
     const N_BYTES: usize,
     const SECURITY_BITS: usize,
-    const SK_LEN: usize,
-> KEMDecapsulator<RsaKEMPrivateKey<L, HALF>, SK_LEN, N_BYTES, N_BYTES>
-    for RSASVE<L, L2, L21, HALF, HALF2, HALF21, N_BYTES, SECURITY_BITS>
-where
-    RsaKEMPrivateKey<L, HALF>: KEMPrivateKey<SK_LEN>,
+> Algorithm for RsasveDecapsulator<'_, L, L2, L21, HALF, HALF2, HALF21, N_BYTES, SECURITY_BITS>
+{
+    const ALG_NAME: &'static str = alg_name(L);
+    const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::from_bits(SECURITY_BITS);
+}
+
+impl<
+    const L: usize,
+    const L2: usize,
+    const L21: usize,
+    const HALF: usize,
+    const HALF2: usize,
+    const HALF21: usize,
+    const N_BYTES: usize,
+    const SECURITY_BITS: usize,
+> KEMDecapsulator<N_BYTES, N_BYTES>
+    for RsasveDecapsulator<'_, L, L2, L21, HALF, HALF2, HALF21, N_BYTES, SECURITY_BITS>
 {
     /// RSASVE.RECOVER((n, d), C) (SP 800-56B Rev. 2 §7.2.1.3), with the private key in CRT form
-    /// (§7.1.2.3's RSADP). Returns `Z` as a [`KeyMaterial`] of type
-    /// [`KeyType::CryptographicRandom`] at the modulus's security strength, matching what
-    /// [`KEMEncapsulator::encaps_rng`] returned to the other party.
+    /// (§7.1.2.3's RSADP): `Z` into `ss` as a [`KeyMaterial`] of type
+    /// [`KeyType::CryptographicRandom`] at the modulus's security strength, matching what the
+    /// encapsulator gave the other party.
     ///
-    /// Errors: `LengthError` if `ct` is not `nLen` bytes long (step 2), and `DecapsulationFailed`
-    /// if RSADP finds the ciphertext out of range (step 3.c). §7.2.1.3 calls both "an indication
-    /// of a decryption error". They are kept as separate variants because every KEM in this workspace reports a
-    /// wrong-length ciphertext as `LengthError`, which `bouncycastle_core_test_framework`'s KEM
-    /// suite checks. A ciphertext that is in range but was never produced by `encaps` is *not*
-    /// detected. RSASVE has no redundancy to check, so such a ciphertext just recovers a different
-    /// `Z` (see the crate docs' `# Security Considerations`).
+    /// Errors: `DecapsulationFailed` if RSADP finds the ciphertext out of range (step 3.c),
+    /// which §7.2.1.3 calls "an indication of a decryption error"; step 2's length check is the
+    /// type's. A ciphertext that is in range but was never produced by an encapsulation is *not*
+    /// detected. RSASVE has no redundancy to check, so such a ciphertext just recovers a
+    /// different `Z` (see the crate docs' `# Security Considerations`). `ss` is left zeroized
+    /// on every error.
     #[allow(non_snake_case)]
-    fn decaps(sk: &RsaKEMPrivateKey<L, HALF>, ct: &[u8]) -> Result<KeyMaterial<N_BYTES>, KEMError> {
+    fn decaps_out(
+        &self,
+        ct: &[u8; N_BYTES],
+        ss: &mut KeyMaterial<N_BYTES>,
+    ) -> Result<usize, KEMError> {
         debug_assert_eq!(N_BYTES, 8 * L, "RSASVE needs N_BYTES == 8 * L");
-        // Step 1: "nLen = len(n)/8" -- N_BYTES, as in `encaps_rng`.
-
+        ss.zeroize();
+        // Step 1: "nLen = len(n)/8" -- N_BYTES, as in `encaps_out`.
         // Step 2: "If the length of the ciphertext C is not nLen bytes in length, output an
-        // indication of a decryption error".
-        let C: &[u8; N_BYTES] = ct
-            .try_into()
-            .map_err(|_| KEMError::LengthError("RSASVE ciphertext must be exactly nLen bytes"))?;
+        // indication of a decryption error" -- the array type.
 
         // Step 3.a: "c = BS2I(C)."
-        let c = limbs_from_be_bytes::<L, N_BYTES>(C);
+        let c = limbs_from_be_bytes::<L, N_BYTES>(ct);
 
         // Step 3.b/3.c: "z = RSADP((n, d), c)", and "If RSADP indicates that the ciphertext is
         // out of range, output an indication of a decryption error". This is RSADP's step 1
@@ -361,22 +493,19 @@ where
         // c^dP mod p`, `mq = c^dQ mod q`, `h = ((mp − mq) × qInv) mod p`, `m = mq + q × h`).
         // `c` is the public ciphertext, so the range check need not be constant-time, although
         // it is.
-        if !in_open_range(&c, sk.n()) {
+        if !in_open_range(&c, self.sk.n()) {
             return Err(KEMError::DecapsulationFailed);
         }
         let mut z = Secret::<[u64; L]>::new();
-        *z = crt_exp::<L, L2, L21, HALF, HALF2, HALF21>(&sk.0, &c);
+        *z = crt_exp::<L, L2, L21, HALF, HALF2, HALF21>(&self.sk.0, &c);
 
         // Step 3.d: "Z = I2BS(z, nLen)."
         let mut Z = Secret::<[u8; N_BYTES]>::new();
         *Z = be_bytes_from_limbs::<L, N_BYTES>(&z);
 
         // Step 4: "Output the string Z as the secret value (i.e., the shared secret)".
-        let mut ss = KeyMaterial::<N_BYTES>::from_bytes_as_type(&*Z, KeyType::CryptographicRandom)?;
-        do_hazardous_operations(&mut ss, |ss| {
-            ss.set_security_strength(SecurityStrength::from_bits(SECURITY_BITS))
-        })?;
-        Ok(ss)
+        secret_value_into::<N_BYTES, SECURITY_BITS>(&Z, ss)?;
+        Ok(N_BYTES)
     }
 }
 

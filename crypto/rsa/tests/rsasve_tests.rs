@@ -6,7 +6,7 @@
 //!   (`gen-val/json-files/KAS-IFC-SSC-Sp800-56Br2/internalProjection.json`). Its KAS1 (2048-bit) and
 //!   KAS2 (3072-bit) groups with CRT keys (`rsakpg1-crt`/`rsakpg2-crt`) carry RSASVE ciphertexts
 //!   with their secret values in both directions: `serverZ^iutE = serverC` and `iutZ^serverE =
-//!   iutC`. They exercise `decaps` directly, and `encaps_rng` through an RNG that emits the
+//!   iutC`. They exercise `decaps` directly, and `encaps` through an RNG that emits the
 //!   vector's `Z`, since RSASVE.GENERATE's step 2.b turns the RNG's bytes straight into `z`. The
 //!   `failChangedZ` cases carry a `Z` inconsistent with `C`, which must not be recovered.
 //! * `acvp/RSA-DecryptionPrimitive-Sp800-56Br2.json`: ACVP-Server's RSADP vector set
@@ -22,9 +22,10 @@
 //!   suites below use as their fixed keys.
 
 use bouncycastle_core::errors::{KEMError, RNGError};
+use bouncycastle_core::kem_key::{DecapsulatingKey, EncapsulatingKey};
 use bouncycastle_core::key_material::{KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::traits::{KEMDecapsulator, KEMEncapsulator, KEMPrivateKey, KEMPublicKey};
+use bouncycastle_core::traits::{KEMPrivateKey, KEMPublicKey};
 use bouncycastle_core_test_framework::kem::{TestFrameworkKEM, TestFrameworkKEMKeys};
 use bouncycastle_hex::decode as hex_decode;
 use bouncycastle_rng::DefaultRNG;
@@ -89,7 +90,7 @@ macro_rules! rsasve_suite {
     ($module:ident, $size:ident, $bits:literal, $L:literal, $HALF:literal, $strength:expr, $weaker:expr) => {
         mod $module {
             use super::*;
-            use bouncycastle_rsa::$size::{CT_LEN, PK_LEN, RSASVE, SK_LEN, SS_LEN};
+            use bouncycastle_rsa::$size::{CT_LEN, PK_LEN, SK_LEN, SS_LEN};
 
             type PK = bouncycastle_rsa::rsasve::RsaKEMPublicKey<$L>;
             type SK = bouncycastle_rsa::rsasve::RsaKEMPrivateKey<$L, $HALF>;
@@ -129,10 +130,11 @@ macro_rules! rsasve_suite {
                 // Not deterministic (fresh `Z` per call). "Implicitly rejecting" in the test
                 // framework's sense: a corrupted but in-range ciphertext recovers a different `Z`
                 // rather than an error, since RSASVE has no redundancy to check.
-                TestFrameworkKEM::new(false, true)
-                    .test_kem::<PK, SK, RSASVE, PK_LEN, SK_LEN, CT_LEN, SS_LEN>(
-                        openssl_keypair, false,
-                    );
+                TestFrameworkKEM::new(false, true).test_kem::<(), PK, SK, CT_LEN, SS_LEN>(
+                    openssl_keypair,
+                    (),
+                    false,
+                );
             }
 
             #[test]
@@ -159,7 +161,7 @@ macro_rules! rsasve_suite {
             }
 
             /// OpenSSL encapsulated; this crate decapsulates. And the other way round: fed
-            /// OpenSSL's `Z` as its RNG output, `encaps_rng` must produce OpenSSL's `C` exactly
+            /// OpenSSL's `Z` as its RNG output, `encaps` must produce OpenSSL's `C` exactly
             /// (RSAEP is deterministic in `z`).
             #[test]
             fn openssl_rsasve_vectors() {
@@ -171,12 +173,11 @@ macro_rules! rsasve_suite {
                     let c = be_bytes::<CT_LEN>(enc["C"].as_str().unwrap());
                     let z = be_bytes::<SS_LEN>(enc["Z"].as_str().unwrap());
 
-                    let ss = RSASVE::decaps(&sk, &c).unwrap();
+                    let ss = sk.decaps(&c, ()).unwrap();
                     assert_eq!(ss.ref_to_bytes(), &z[..]);
 
                     let (ss, ct) =
-                        RSASVE::encaps_rng(&pk, &mut rng_emitting(z, SecurityStrength::_256bit))
-                            .unwrap();
+                        pk.encaps(&mut rng_emitting(z, SecurityStrength::_256bit), ()).unwrap();
                     assert_eq!(ct, c);
                     assert_eq!(ss.ref_to_bytes(), &z[..]);
                 }
@@ -185,11 +186,11 @@ macro_rules! rsasve_suite {
             #[test]
             fn shared_secret_is_labelled_with_the_modulus_strength() {
                 let (pk, sk) = openssl_keypair().unwrap();
-                let (ss, ct) = RSASVE::encaps(&pk).unwrap();
+                let (ss, ct) = pk.encaps(&mut DefaultRNG::default(), ()).unwrap();
                 assert_eq!(ss.key_len(), SS_LEN);
                 assert_eq!(ss.key_type(), KeyType::CryptographicRandom);
                 assert_eq!(ss.security_strength(), $strength);
-                let ss2 = RSASVE::decaps(&sk, &ct).unwrap();
+                let ss2 = sk.decaps(&ct, ()).unwrap();
                 assert_eq!(ss2.key_len(), SS_LEN);
                 assert_eq!(ss2.key_type(), KeyType::CryptographicRandom);
                 assert_eq!(ss2.security_strength(), $strength);
@@ -197,13 +198,11 @@ macro_rules! rsasve_suite {
             }
 
             #[test]
-            fn encaps_rng_accepts_exactly_the_modulus_strength_and_rejects_below_it() {
+            fn encaps_accepts_exactly_the_modulus_strength_and_rejects_below_it() {
                 let (pk, _) = openssl_keypair().unwrap();
-                assert!(
-                    RSASVE::encaps_rng(&pk, &mut rng_emitting([0x5Au8; CT_LEN], $strength)).is_ok()
-                );
+                assert!(pk.encaps(&mut rng_emitting([0x5Au8; CT_LEN], $strength), ()).is_ok());
                 assert!(matches!(
-                    RSASVE::encaps_rng(&pk, &mut rng_emitting([0x5Au8; CT_LEN], $weaker)),
+                    pk.encaps(&mut rng_emitting([0x5Au8; CT_LEN], $weaker), ()),
                     Err(KEMError::RNGError(RNGError::SecurityStrengthInsufficientForAlgorithm))
                 ));
             }
@@ -233,13 +232,11 @@ macro_rules! rsasve_suite {
                         let mut stream = [0u8; 2 * CT_LEN];
                         stream[..CT_LEN].copy_from_slice(&bad);
                         stream[CT_LEN..].copy_from_slice(&good);
-                        let (ss, ct) = RSASVE::encaps_rng(
-                            &pk,
-                            &mut rng_emitting(stream, SecurityStrength::_256bit),
-                        )
-                        .unwrap();
+                        let (ss, ct) = pk
+                            .encaps(&mut rng_emitting(stream, SecurityStrength::_256bit), ())
+                            .unwrap();
                         assert_eq!(ss.ref_to_bytes(), &good[..]);
-                        assert_eq!(RSASVE::decaps(&sk, &ct).unwrap().ref_to_bytes(), &good[..]);
+                        assert_eq!(sk.decaps(&ct, ()).unwrap().ref_to_bytes(), &good[..]);
                     }
                 }
             }
@@ -249,10 +246,7 @@ macro_rules! rsasve_suite {
                 let (pk, _) = openssl_keypair().unwrap();
                 for stuck in [[0xFFu8; CT_LEN], [0u8; CT_LEN]] {
                     assert!(matches!(
-                        RSASVE::encaps_rng(
-                            &pk,
-                            &mut rng_emitting(stuck, SecurityStrength::_256bit)
-                        ),
+                        pk.encaps(&mut rng_emitting(stuck, SecurityStrength::_256bit), ()),
                         Err(KEMError::GenericError(_))
                     ));
                 }
@@ -263,7 +257,7 @@ macro_rules! rsasve_suite {
                 stream[(ATTEMPTS - 1) * CT_LEN..].fill(0x5A);
                 let seed: [u8; ATTEMPTS * CT_LEN] = stream.try_into().unwrap();
                 let mut rng = FixedSeedRNG::new(seed);
-                let (ss, _) = RSASVE::encaps_rng(&pk, &mut rng).unwrap();
+                let (ss, _) = pk.encaps(&mut rng, ()).unwrap();
                 assert_eq!(ss.ref_to_bytes(), &[0x5Au8; CT_LEN][..]);
             }
 
@@ -283,24 +277,10 @@ macro_rules! rsasve_suite {
                 one[CT_LEN - 1] = 1;
 
                 for bad in [[0u8; CT_LEN], one, n_minus_1, n, [0xFFu8; CT_LEN]] {
-                    assert!(matches!(
-                        RSASVE::decaps(&sk, &bad),
-                        Err(KEMError::DecapsulationFailed)
-                    ));
+                    assert!(matches!(sk.decaps(&bad, ()), Err(KEMError::DecapsulationFailed)));
                 }
                 for good in [two, n_minus_2] {
-                    assert!(RSASVE::decaps(&sk, &good).is_ok());
-                }
-            }
-
-            #[test]
-            fn recover_rejects_a_wrong_length_ciphertext() {
-                let (_, sk) = openssl_keypair().unwrap();
-                for len in [0, CT_LEN - 1, CT_LEN + 1] {
-                    assert!(matches!(
-                        RSASVE::decaps(&sk, &vec![0x5Au8; len]),
-                        Err(KEMError::LengthError(_))
-                    ));
+                    assert!(sk.decaps(&good, ()).is_ok());
                 }
             }
 
@@ -406,10 +386,10 @@ rsasve_suite!(
 );
 
 /// ACVP KAS-IFC-SSC's KAS1 group (2048-bit, CRT IUT key, IUT as responder): the server
-/// encapsulated to the IUT's key. Also checks `encaps_rng` reproduces `serverC` from `serverZ`.
+/// encapsulated to the IUT's key. Also checks `encaps` reproduces `serverC` from `serverZ`.
 #[test]
 fn acvp_kas_ifc_ssc_kas1_2048() {
-    use bouncycastle_rsa::rsa_2048::{CT_LEN, RSA2048KEMPrivateKey, RSA2048KEMPublicKey, RSASVE};
+    use bouncycastle_rsa::rsa_2048::{CT_LEN, RSA2048KEMPrivateKey, RSA2048KEMPublicKey};
     let d = get_test_data("acvp/KAS-IFC-SSC-Sp800-56Br2.json");
     let group = d["testGroups"]
         .as_array()
@@ -433,11 +413,10 @@ fn acvp_kas_ifc_ssc_kas1_2048() {
         let pk = RSA2048KEMPublicKey::new(&limbs(s("iutN")), e).unwrap();
         let c = be_bytes::<CT_LEN>(s("serverC"));
         let z = be_bytes::<CT_LEN>(s("serverZ"));
-        let recovered = RSASVE::decaps(&sk, &c).unwrap();
+        let recovered = sk.decaps(&c, ()).unwrap();
         if t["testPassed"].as_bool().unwrap() {
             assert_eq!(recovered.ref_to_bytes(), &z[..], "tcId {}", t["tcId"]);
-            let (_, ct) =
-                RSASVE::encaps_rng(&pk, &mut rng_emitting(z, SecurityStrength::_256bit)).unwrap();
+            let (_, ct) = pk.encaps(&mut rng_emitting(z, SecurityStrength::_256bit), ()).unwrap();
             assert_eq!(ct, c, "tcId {}", t["tcId"]);
             passed += 1;
         } else {
@@ -452,7 +431,7 @@ fn acvp_kas_ifc_ssc_kas1_2048() {
 /// direction per case.
 #[test]
 fn acvp_kas_ifc_ssc_kas2_3072() {
-    use bouncycastle_rsa::rsa_3072::{CT_LEN, RSA3072KEMPrivateKey, RSA3072KEMPublicKey, RSASVE};
+    use bouncycastle_rsa::rsa_3072::{CT_LEN, RSA3072KEMPrivateKey, RSA3072KEMPublicKey};
     let d = get_test_data("acvp/KAS-IFC-SSC-Sp800-56Br2.json");
     let group = d["testGroups"]
         .as_array()
@@ -489,12 +468,11 @@ fn acvp_kas_ifc_ssc_kas2_3072() {
         for (pk, sk, c, z) in directions {
             let c = be_bytes::<CT_LEN>(c);
             let z = be_bytes::<CT_LEN>(z);
-            let recovered = RSASVE::decaps(sk, &c).unwrap();
+            let recovered = sk.decaps(&c, ()).unwrap();
             if ok {
                 assert_eq!(recovered.ref_to_bytes(), &z[..], "tcId {}", t["tcId"]);
                 let (_, ct) =
-                    RSASVE::encaps_rng(pk, &mut rng_emitting(z, SecurityStrength::_256bit))
-                        .unwrap();
+                    pk.encaps(&mut rng_emitting(z, SecurityStrength::_256bit), ()).unwrap();
                 assert_eq!(ct, c, "tcId {}", t["tcId"]);
             } else {
                 assert_ne!(recovered.ref_to_bytes(), &z[..], "tcId {}", t["tcId"]);
@@ -516,7 +494,7 @@ macro_rules! acvp_rsadp {
     ($name:ident, $size:ident, $bits:literal, $L:literal, $HALF:literal) => {
         #[test]
         fn $name() {
-            use bouncycastle_rsa::$size::{CT_LEN, RSASVE};
+            use bouncycastle_rsa::$size::CT_LEN;
             type SK = bouncycastle_rsa::rsasve::RsaKEMPrivateKey<$L, $HALF>;
             let d = get_test_data("acvp/RSA-DecryptionPrimitive-Sp800-56Br2.json");
             let group = d["testGroups"]
@@ -540,7 +518,7 @@ macro_rules! acvp_rsadp {
                 if t["testPassed"].as_bool().unwrap() {
                     let pt = be_bytes::<CT_LEN>(s("pt"));
                     assert_eq!(
-                        RSASVE::decaps(&sk, &ct).unwrap().ref_to_bytes(),
+                        sk.decaps(&ct, ()).unwrap().ref_to_bytes(),
                         &pt[..],
                         "tcId {}",
                         t["tcId"]
@@ -548,7 +526,7 @@ macro_rules! acvp_rsadp {
                     passed += 1;
                 } else {
                     assert!(
-                        matches!(RSASVE::decaps(&sk, &ct), Err(KEMError::DecapsulationFailed)),
+                        matches!(sk.decaps(&ct, ()), Err(KEMError::DecapsulationFailed)),
                         "tcId {}",
                         t["tcId"]
                     );
@@ -573,8 +551,8 @@ fn keygen_produces_working_kem_keys() {
     let (pk, sk) = RSASVE::keygen(&mut DefaultRNG::default()).unwrap();
     assert_eq!(pk.e(), 65537);
     assert_eq!(pk.n(), sk.n());
-    let (ss, ct) = RSASVE::encaps(&pk).unwrap();
-    assert_eq!(RSASVE::decaps(&sk, &ct).unwrap(), ss);
+    let (ss, ct) = pk.encaps(&mut DefaultRNG::default(), ()).unwrap();
+    assert_eq!(sk.decaps(&ct, ()).unwrap(), ss);
 
     // A stuck RNG exhausts FIPS 186-5 A.1.3's candidate limit (see `keygen_tests.rs`'s
     // `keygen_gives_up_on_a_stuck_rng`), and the KEM keygen passes that error through
@@ -604,8 +582,8 @@ macro_rules! kem_keygen_round_trip {
             let (pk, sk) = RSASVE::keygen(&mut DefaultRNG::default()).unwrap();
             assert_eq!(pk.e(), 65537);
             assert_eq!(pk.n(), sk.n());
-            let (ss, ct) = RSASVE::encaps(&pk).unwrap();
-            assert_eq!(RSASVE::decaps(&sk, &ct).unwrap(), ss);
+            let (ss, ct) = pk.encaps(&mut DefaultRNG::default(), ()).unwrap();
+            assert_eq!(sk.decaps(&ct, ()).unwrap(), ss);
         }
     };
 }

@@ -4,12 +4,12 @@
 //! genuine key is the same one `tests/rsa_2048_pkcs1_v1_5_tests.rs` recovers from Wycheproof's
 //! `rsa_pkcs1_2048_sig_gen_test.json` (see that file for the full, sourced provenance).
 
+use bouncycastle_core::kem_key::{DecapsulatingKey, EncapsulatingKey};
 use bouncycastle_core::signature_key::{DeterministicSigningKey, SigningKey, VerifyingKey};
 use bouncycastle_core::traits::{
-    KEMDecapsulator, KEMEncapsulator, KEMPrivateKey, KEMPublicKey, SignaturePrivateKey,
-    SignaturePublicKey,
+    KEMPrivateKey, KEMPublicKey, SignaturePrivateKey, SignaturePublicKey,
 };
-use bouncycastle_rsa::rsa_2048::{RSA2048KEMPrivateKey, RSA2048KEMPublicKey, RSASVE};
+use bouncycastle_rsa::rsa_2048::{RSA2048KEMPrivateKey, RSA2048KEMPublicKey};
 use criterion::{Criterion, criterion_group, criterion_main};
 use std::hint::black_box;
 
@@ -257,12 +257,12 @@ fn bench_rsa_2048(c: &mut Criterion) {
     // draw; decapsulation is the same CRT exponentiation signing does.
     let kem_sk = RSA2048KEMPrivateKey::from_bytes(&sk.encode()).unwrap();
     let kem_pk = RSA2048KEMPublicKey::from_bytes(&pk.encode()).unwrap();
-    let (_, kem_ct) = RSASVE::encaps(&kem_pk).unwrap();
+    let (_, kem_ct) = kem_pk.encaps(&mut rng, ()).unwrap();
     group.bench_function("rsasve_encaps", |b| {
-        b.iter(|| black_box(RSASVE::encaps_rng(black_box(&kem_pk), &mut rng).unwrap()))
+        b.iter(|| black_box(black_box(&kem_pk).encaps(&mut rng, ()).unwrap()))
     });
     group.bench_function("rsasve_decaps", |b| {
-        b.iter(|| black_box(RSASVE::decaps(black_box(&kem_sk), black_box(&kem_ct)).unwrap()))
+        b.iter(|| black_box(black_box(&kem_sk).decaps(black_box(&kem_ct), ()).unwrap()))
     });
 
     group.finish();

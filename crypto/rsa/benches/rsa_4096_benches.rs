@@ -3,12 +3,12 @@
 //! `rsa_pkcs1_4096_sig_gen_test.json`. `shake256` (not `shake128`) is the SHAKE choice wired up at
 //! this modulus size (RFC 8702 SS5).
 
+use bouncycastle_core::kem_key::{DecapsulatingKey, EncapsulatingKey};
 use bouncycastle_core::signature_key::{DeterministicSigningKey, SigningKey, VerifyingKey};
 use bouncycastle_core::traits::{
-    KEMDecapsulator, KEMEncapsulator, KEMPrivateKey, KEMPublicKey, SignaturePrivateKey,
-    SignaturePublicKey,
+    KEMPrivateKey, KEMPublicKey, SignaturePrivateKey, SignaturePublicKey,
 };
-use bouncycastle_rsa::rsa_4096::{RSA4096KEMPrivateKey, RSA4096KEMPublicKey, RSASVE};
+use bouncycastle_rsa::rsa_4096::{RSA4096KEMPrivateKey, RSA4096KEMPublicKey};
 use criterion::{Criterion, criterion_group, criterion_main};
 use std::hint::black_box;
 
@@ -275,12 +275,12 @@ fn bench_rsa_4096(c: &mut Criterion) {
     // draw; decapsulation is the same CRT exponentiation signing does.
     let kem_sk = RSA4096KEMPrivateKey::from_bytes(&sk.encode()).unwrap();
     let kem_pk = RSA4096KEMPublicKey::from_bytes(&pk.encode()).unwrap();
-    let (_, kem_ct) = RSASVE::encaps(&kem_pk).unwrap();
+    let (_, kem_ct) = kem_pk.encaps(&mut rng, ()).unwrap();
     group.bench_function("rsasve_encaps", |b| {
-        b.iter(|| black_box(RSASVE::encaps_rng(black_box(&kem_pk), &mut rng).unwrap()))
+        b.iter(|| black_box(black_box(&kem_pk).encaps(&mut rng, ()).unwrap()))
     });
     group.bench_function("rsasve_decaps", |b| {
-        b.iter(|| black_box(RSASVE::decaps(black_box(&kem_sk), black_box(&kem_ct)).unwrap()))
+        b.iter(|| black_box(black_box(&kem_sk).decaps(black_box(&kem_ct), ()).unwrap()))
     });
 
     group.finish();

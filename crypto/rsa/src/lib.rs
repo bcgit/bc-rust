@@ -128,14 +128,17 @@
 //! # Ok::<(), bouncycastle_core::errors::SignatureError>(())
 //! ```
 //!
-//! RSASVE through the `bouncycastle_core` KEM traits ([`rsa_2048::RSASVE`]). The shared secret is
+//! RSASVE through the `bouncycastle_core` KEM roles on the key types ([`rsa_2048::RSASVE`] is the
+//! algorithm they name). The shared secret is
 //! the raw `Z`, which goes through a KDF, as SP 800-56B's KAS1/KAS2 schemes require, before it is
 //! used as a key:
 //!
 //! ```
 //! use bouncycastle_core::key_material::KeyMaterialTrait;
-//! use bouncycastle_core::traits::{KEMDecapsulator, KEMEncapsulator, KEMPrivateKey, KEMPublicKey, KDF};
-//! use bouncycastle_rsa::rsa_2048::{RSASVE, RSA2048KEMPrivateKey, RSA2048KEMPublicKey, CT_LEN};
+//! use bouncycastle_core::kem_key::{DecapsulatingKey, EncapsulatingKey};
+//! use bouncycastle_core::traits::KDF;
+//! use bouncycastle_rsa::rsa_2048::{RSA2048KEMPrivateKey, RSA2048KEMPublicKey, CT_LEN};
+//! use bouncycastle_rng::DefaultRNG;
 //! # const P: [u64; 16] = [0x0ea36cfb3a5b18f1, 0x48a6e65332119129, 0x110ad9e7b48a1c93, 0x569156b90113e2e9, 0xe79813a575cfad9c, 0x69d659d143ec6f17, 0xe81e6bab5ddaa783, 0xbff1c5b80a69f788, 0x978f6c35814f50ee, 0xe6a289ad4cfbf78f, 0x34d5681e5809d415, 0xbb028bda42eeb5d2, 0x41c56e4de086b0d5, 0x58b8d1e24f3b55d0, 0xfb5248247d98cb7d, 0xdc431050f782e894];
 //! # const Q: [u64; 16] = [0x669f140cfbc20f25, 0xb97bb03677207d95, 0xfd4e06f3ed7299d4, 0x160f90536abc9492, 0xf5b131f39098f7bc, 0xae8d72c57088d7ab, 0x89b94fbde542aba9, 0x3d3f9880ec47d5e0, 0x1378a6868af3b7a0, 0x5544070beb057c94, 0x16611debc472fac4, 0xe500ffb79f5b8868, 0x308a5e32196603b2, 0xea5fb19eb4eabc38, 0x122273ae3222b598, 0xbd1a81e7977f9898];
 //! # const D_P: [u64; 16] = [0x209f33f09515d7c1, 0xb4a9b37656917205, 0x276933bb07e4efb9, 0x8c14019808e00414, 0x289f96da220711e5, 0xfbbd2923d31532fe, 0xc06b414e61c0e1e7, 0x4c23c4588488961d, 0x4dc48ae34514759c, 0x9c786961ae3e2c35, 0x497e8d9c650688e0, 0x18bf08472612dbe5, 0x8885fb161870ee12, 0xf21d7c1479d99d47, 0x9121d91952ffd1c7, 0xa94b528b28f29159];
@@ -147,23 +150,23 @@
 //! let pk = RSA2048KEMPublicKey::new(sk.n(), 65537)?;
 //!
 //! // The encapsulating party: a fresh secret value Z and its ciphertext C = z^e mod n.
-//! let (z, ct) = RSASVE::encaps(&pk)?;
+//! let (z, ct) = pk.encaps(&mut DefaultRNG::default(), ())?;
 //! assert_eq!(ct.len(), CT_LEN);
 //!
 //! // The private-key holder recovers the same Z from C.
-//! let z_again = RSASVE::decaps(&sk, &ct)?;
+//! let z_again = sk.decaps(&ct, ())?;
 //! assert_eq!(z_again, z);
 //!
 //! // Z is a shared secret, not a key: derive the key actually used, here with HKDF-SHA-256
 //! // (SP 800-56C Rev. 2's two-step method), binding in whatever context the protocol defines.
 //! let key = bouncycastle_sha2::hkdf::HKDF_SHA256::default()
-//!     .derive_key(&z, b"example protocol v1")
+//!     .derive_key(&z, b"example protocol v1", 32)
 //!     .expect("HKDF accepts any non-empty input key");
 //! assert_eq!(key.key_len(), 32);
 //!
-//! // A wrong-length ciphertext is an error. So is one outside (1, n - 1) (SP 800-56B §7.1.2.3).
-//! assert!(RSASVE::decaps(&sk, &ct[1..]).is_err());
-//! assert!(RSASVE::decaps(&sk, &[0u8; CT_LEN]).is_err());
+//! // A ciphertext outside (1, n - 1) is an error (SP 800-56B §7.1.2.3); a wrong length is a
+//! // type error, since the ciphertext is a `[u8; CT_LEN]`.
+//! assert!(sk.decaps(&[0u8; CT_LEN], ()).is_err());
 //! # Ok::<(), bouncycastle_core::errors::KEMError>(())
 //! ```
 //!

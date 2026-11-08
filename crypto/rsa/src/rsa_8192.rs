@@ -4,8 +4,9 @@
 use crate::keys::{RsaPrivateKey, RsaPublicKey};
 use crate::rsassa_pkcs1_v1_5::RSASSA_PKCS1_v1_5;
 use crate::rsassa_pss::RSASSA_PSS;
-use crate::rsasve::{RsaKEMPrivateKey, RsaKEMPublicKey};
+use crate::rsasve::{RsaKEMPrivateKey, RsaKEMPublicKey, RsasveDecapsulator, RsasveEncapsulator};
 use bouncycastle_core::errors::{KEMError, SignatureError};
+use bouncycastle_core::kem_key::{DecapsulatingKey, EncapsulatingKey};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{
     KEMPrivateKey, KEMPublicKey, RNG, SignaturePrivateKey, SignaturePublicKey,
@@ -117,7 +118,8 @@ pub const CT_LEN: usize = 1024;
 /// value, not a derived key: see [`crate::rsasve`].
 pub const SS_LEN: usize = 1024;
 
-/// RSASVE (SP 800-56B Rev. 2 §7.2.1) over RSA-8192 as a `KEMEncapsulator`/`KEMDecapsulator`:
+/// RSASVE (SP 800-56B Rev. 2 §7.2.1) over RSA-8192, the algorithm the KEM roles of
+/// [`RSA8192KEMPublicKey`] and [`RSA8192KEMPrivateKey`] name:
 /// [`crate::rsasve::RSASVE`] at this size's widths and its 192-bit security strength.
 pub type RSASVE = crate::rsasve::RSASVE<128, 256, 257, 64, 128, 129, 1024, 192>;
 
@@ -128,6 +130,26 @@ impl RSASVE {
         rng: &mut dyn RNG,
     ) -> Result<(RSA8192KEMPublicKey, RSA8192KEMPrivateKey), KEMError> {
         crate::rsasve::keygen_from(keygen(rng))
+    }
+}
+
+impl EncapsulatingKey<(), CT_LEN, SS_LEN> for RSA8192KEMPublicKey {
+    type Algorithm = RSASVE;
+    type Encapsulator<'k> = RsasveEncapsulator<'k, 128, 256, 257, 1024, 192>;
+
+    /// The raw KEM takes nothing beyond the key, so this never fails.
+    fn create_encapsulator<'k>(&'k self, _params: ()) -> Result<Self::Encapsulator<'k>, KEMError> {
+        Ok(RsasveEncapsulator::new(self))
+    }
+}
+
+impl DecapsulatingKey<(), CT_LEN, SS_LEN> for RSA8192KEMPrivateKey {
+    type Algorithm = RSASVE;
+    type Decapsulator<'k> = RsasveDecapsulator<'k, 128, 256, 257, 64, 128, 129, 1024, 192>;
+
+    /// The raw KEM takes nothing beyond the key, so this never fails.
+    fn create_decapsulator<'k>(&'k self, _params: ()) -> Result<Self::Decapsulator<'k>, KEMError> {
+        Ok(RsasveDecapsulator::new(self))
     }
 }
 
