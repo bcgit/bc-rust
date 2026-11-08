@@ -516,7 +516,8 @@ pub const KDF_ONE_SHOT_MAX_LEN: usize = 1024;
 ///
 /// An instance holds only what it was made from (an HKDF's salt): one that has also absorbed
 /// input through a streaming API is refused by the derivations, and a hash or XOF used as a KDF
-/// derives from a fresh state whatever it has absorbed. A zero-length derivation is refused.
+/// derives from a fresh state whatever it has absorbed. A zero-length derivation is refused, and
+/// so is one from no keys, whose output would be a function of the info alone.
 pub trait KDF: AlgorithmInfo {
     /// Derives `len` bytes of keying material from `ikm` and `fixed_info` into the front of
     /// `output_key`, which is zeroized first, and returns `len`.
@@ -536,6 +537,10 @@ pub trait KDF: AlgorithmInfo {
     /// As [`derive_key_out`](Self::derive_key_out) with the input keying material the
     /// concatenation of `ikms` in order: a hybrid shared secret, or a key mixed with a weaker one.
     /// Every full-entropy key is credited, so the output's type is what the sum gives.
+    ///
+    /// # Errors
+    /// As [`derive_key_out`](Self::derive_key_out); [`KDFError::InvalidLength`] if `ikms` is
+    /// empty.
     fn derive_key_from_multiple_out(
         &self,
         ikms: &[&dyn KeyMaterialTrait],
