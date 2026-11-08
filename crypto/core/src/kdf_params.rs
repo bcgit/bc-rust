@@ -18,7 +18,10 @@ pub struct KeyLen<const N: usize>;
 /// `pk.encaps(&mut rng, params)`: a KDF the key is not paired with is a compile error, and the
 /// length is the one the caller named, `KdfParams::new(&hkdf, info, KeyLen::<32>)`, or with a
 /// bare `KeyLen` the one the key it binds has, `let key: KeyMaterial<32> = ..`. What lengths a
-/// pairing allows is the pairing's to say and check. The instance holds whatever the KDF is made from (an HKDF's salt,
+/// pairing allows is the pairing's to say and check. The length is the protocol's to fix, as the
+/// info is: a KDF's outputs at two lengths under one info are not independent keys (HKDF's
+/// shorter one is a prefix of the longer, RFC 5869 Section 2.3), so two keys from one exchange
+/// take two infos, never two lengths. The instance holds whatever the KDF is made from (an HKDF's salt,
 /// through `new_with_salt`), validated when it was made; one that has also absorbed input
 /// through a streaming API is refused at the derivation, as [`KDF`]'s docs say, so give an
 /// algorithm a fresh instance. The info is the fixed info of [`KDF::derive_key_out`] (RFC 5869's
@@ -35,7 +38,9 @@ impl<'p, K: KDF + ?Sized, const LEN: usize> KdfParams<'p, K, LEN> {
     /// The length of the key derived through these parameters, in bytes.
     pub const LEN: usize = LEN;
 
-    /// The KDF instance, the fixed info and the length of the key to derive.
+    /// The KDF instance, the fixed info and the length of the key to derive. The length is
+    /// agreed by the protocol as the info is, and it does not separate keys: outputs at two
+    /// lengths under one info are prefixes of each other, so two keys want two infos.
     pub fn new(kdf: &'p K, info: &'p [u8], _len: KeyLen<LEN>) -> Self {
         Self { kdf, info }
     }
