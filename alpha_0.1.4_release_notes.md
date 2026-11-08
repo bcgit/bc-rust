@@ -55,7 +55,7 @@
 * ML-KEM with its shared secret derived through HKDF: `MLKEM512_HKDF_SHA256`, `MLKEM768_HKDF_SHA512` and
   `MLKEM1024_HKDF_SHA512` are roles the plain ML-KEM keys carry over `core::kdf_params::KdfParams<K, LEN>`, a borrowed KDF
   instance (an HKDF keyed with RFC 5869's salt through `new_with_salt`), the info and the derived key's length, the KDF
-  type selecting the algorithm and the const the length (one byte to 255 hash outputs, checked at compile time;
+  type selecting the algorithm and `KeyLen::<N>` the length (one byte to 255 hash outputs, checked at compile time;
   the `*_SS_LEN` constants are the one-hash-output lengths the CLI derives), in both ML-KEM crates
   and as the `mlkem512-hkdf-sha256`, `mlkem768-hkdf-sha512` and `mlkem1024-hkdf-sha512` CLI subcommands; the
   derived key is one hash output at the lesser of the KEM's and the KDF's strengths. HKDF credits its output as
