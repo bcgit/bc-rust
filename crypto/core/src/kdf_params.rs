@@ -1,29 +1,35 @@
 //! The parameters an algorithm that derives its output through a KDF is made from: a borrowed
-//! KDF instance and the fixed info of the derivation.
+//! KDF instance, the fixed info of the derivation, and the length of what it derives.
 
 use crate::traits::KDF;
 
-/// A KDF instance and the fixed info an algorithm that derives its output through it is made
-/// from, borrowed from the caller for `'p`: a KEM such as ML-KEM-512-HKDF-SHA256, or a key
-/// agreement such as ECC-CDH-P256-X963KDF-SHA256.
+/// A KDF instance, the fixed info and the output length an algorithm that derives its output
+/// through a KDF is made from, the first two borrowed from the caller for `'p`: a KEM such as
+/// ML-KEM-512-HKDF-SHA256, or a key agreement such as ECC-CDH-P256-X963KDF-SHA256.
 ///
-/// The KDF is the type's parameter, so as the `Params` of a key's role impl the value selects
-/// the algorithm at the call, `pk.encaps(&mut rng, params)`, with no annotation, and a KDF the
-/// key is not paired with is a compile error. The instance holds whatever the KDF is made from
-/// (an HKDF's salt, through `new_with_salt`), validated when it was made; one that has also
-/// absorbed input through a streaming API is refused at the derivation, as [`KDF`]'s docs say,
-/// so give an algorithm a fresh instance. The info is the fixed info of [`KDF::derive_key_out`]
-/// (RFC 5869's info, SEC 1's `SharedInfo`). It is `Copy`, so one value serves every
-/// construction on both sides of an exchange. `K` may be unsized, so a role implemented over
-/// `KdfParams<'p, dyn KDF>` would take a derivation chosen at run time; the library's pairings
-/// are over concrete KDF types.
-pub struct KdfParams<'p, K: KDF + ?Sized> {
+/// The KDF is the type's parameter and the length its const, so as the `Params` of a key's role
+/// impl the value selects the algorithm and the derived key's length at the call,
+/// `pk.encaps(&mut rng, params)`: a KDF the key is not paired with is a compile error, and the
+/// length is the one the caller wrote, `KdfParams::<_, 32>::new(&hkdf, info)`, or the one the
+/// key it binds has, `let key: KeyMaterial<32> = ..`. What lengths a pairing allows is the
+/// pairing's to say and check. The instance holds whatever the KDF is made from (an HKDF's salt,
+/// through `new_with_salt`), validated when it was made; one that has also absorbed input
+/// through a streaming API is refused at the derivation, as [`KDF`]'s docs say, so give an
+/// algorithm a fresh instance. The info is the fixed info of [`KDF::derive_key_out`] (RFC 5869's
+/// info, SEC 1's `SharedInfo`). It is `Copy`, so one value serves every construction on both
+/// sides of an exchange. `K` may be unsized, so a role implemented over
+/// `KdfParams<'p, dyn KDF, LEN>` would take a derivation chosen at run time; the library's
+/// pairings are over concrete KDF types.
+pub struct KdfParams<'p, K: KDF + ?Sized, const LEN: usize> {
     kdf: &'p K,
     info: &'p [u8],
 }
 
-impl<'p, K: KDF + ?Sized> KdfParams<'p, K> {
-    /// The KDF instance and the fixed info.
+impl<'p, K: KDF + ?Sized, const LEN: usize> KdfParams<'p, K, LEN> {
+    /// The length of the key derived through these parameters, in bytes.
+    pub const LEN: usize = LEN;
+
+    /// The KDF instance and the fixed info, for a key of `LEN` bytes.
     pub fn new(kdf: &'p K, info: &'p [u8]) -> Self {
         Self { kdf, info }
     }
@@ -40,10 +46,10 @@ impl<'p, K: KDF + ?Sized> KdfParams<'p, K> {
 }
 
 // Written out rather than derived: a derive would demand `K: Copy` of the KDF.
-impl<K: KDF + ?Sized> Clone for KdfParams<'_, K> {
+impl<K: KDF + ?Sized, const LEN: usize> Clone for KdfParams<'_, K, LEN> {
     fn clone(&self) -> Self {
         *self
     }
 }
 
-impl<K: KDF + ?Sized> Copy for KdfParams<'_, K> {}
+impl<K: KDF + ?Sized, const LEN: usize> Copy for KdfParams<'_, K, LEN> {}
