@@ -102,11 +102,14 @@ pub(crate) fn agree(
 }
 
 impl KeyAgreement<ECCDHBp512r1PublicKey, SS_LEN> for ECCDHBp512r1Agreement<'_> {
-    fn agree(
+    fn agree_out(
         &self,
         peer_pk: &ECCDHBp512r1PublicKey,
-    ) -> Result<KeyMaterial<SS_LEN>, KeyAgreementError> {
-        agree(self.sk, peer_pk)
+        ss: &mut KeyMaterial<SS_LEN>,
+    ) -> Result<usize, KeyAgreementError> {
+        ss.zeroize();
+        *ss = agree(self.sk, peer_pk)?;
+        Ok(SS_LEN)
     }
 }
 
@@ -169,15 +172,18 @@ impl<D: KDF + PairedKdf + ?Sized, const SS_LEN: usize> KeyAgreement<ECCDHBp512r1
 where
     ECCDHBp512r1: KdfPairing<D, SS_LEN>,
 {
-    /// `Z` from the primitive, then the KDF (SP 800-56A Rev. 3 Section 5.8; SEC 1 Section 6.1's
-    /// steps for the X9.63 KDF): `Z` is typed `SharedSecret`, which the KDF credits, and it never
-    /// leaves this call.
-    fn agree(
+    /// `Z` from the primitive, then the KDF into the caller's buffer (SP 800-56A Rev. 3 Section
+    /// 5.8; SEC 1 Section 6.1's steps for the X9.63 KDF): `Z` is typed `SharedSecret`, which the
+    /// KDF credits, and it never leaves this call.
+    fn agree_out(
         &self,
         peer_pk: &ECCDHBp512r1PublicKey,
-    ) -> Result<KeyMaterial<SS_LEN>, KeyAgreementError> {
+        ss: &mut KeyMaterial<SS_LEN>,
+    ) -> Result<usize, KeyAgreementError> {
+        ss.zeroize();
         let z = agree(self.sk, peer_pk)?;
-        derive(self.params, &z)
+        derive(self.params, &z, ss)?;
+        Ok(SS_LEN)
     }
 }
 

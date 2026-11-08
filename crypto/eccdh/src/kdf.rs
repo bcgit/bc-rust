@@ -14,7 +14,7 @@
 use bouncycastle_core::agreement_key::KeyAgreementAlgorithm;
 use bouncycastle_core::errors::KeyAgreementError;
 use bouncycastle_core::kdf_params::KdfParams;
-use bouncycastle_core::key_material::KeyMaterial;
+use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait};
 use bouncycastle_core::traits::{HashAlgParams, KDF};
 use bouncycastle_sha2::SHA256;
 use bouncycastle_sha2::hkdf::HKDF_SHA256;
@@ -55,23 +55,33 @@ pub trait KdfPairing<D: KDF + PairedKdf + ?Sized, const SS_LEN: usize>:
     type Algorithm: KeyAgreementAlgorithm;
 }
 
-/// KDF(Z, info) into a key of `SS_LEN` bytes: `Z` is typed `SharedSecret`, which the KDF credits.
+/// KDF(Z, info) into `out`, zeroized first, a key of `SS_LEN` bytes: `Z` is typed
+/// `SharedSecret`, which the KDF credits. The caller's buffer is where the key lives.
+///
+/// # Errors
+/// [`KeyAgreementError::GenericError`] if the KDF refuses the derivation or writes anything but
+/// `SS_LEN` bytes; `out` is left zeroized.
 pub(crate) fn derive<D: KDF + PairedKdf + ?Sized, const Z_LEN: usize, const SS_LEN: usize>(
     params: KdfParams<'_, D, SS_LEN>,
     z: &KeyMaterial<Z_LEN>,
-) -> Result<KeyMaterial<SS_LEN>, KeyAgreementError> {
+    out: &mut KeyMaterial<SS_LEN>,
+) -> Result<(), KeyAgreementError> {
     const {
         assert!(
             SS_LEN > 0 && SS_LEN <= D::MAX_LEN,
             "the derived key is from one byte to the KDF's MAX_LEN long"
         )
     };
-    let mut okm = KeyMaterial::new();
-    params
+    // `derive_key_out` zeroizes `out` first and leaves it so on its errors.
+    let written = params
         .kdf()
-        .derive_key_out(z, params.info(), SS_LEN, &mut okm)
+        .derive_key_out(z, params.info(), SS_LEN, out)
         .map_err(|_| KeyAgreementError::GenericError("the KDF over Z failed"))?;
-    Ok(okm)
+    if written != SS_LEN || out.key_len() != SS_LEN {
+        out.zeroize();
+        return Err(KeyAgreementError::GenericError("the KDF derived a key of the wrong length"));
+    }
+    Ok(())
 }
 
 mod sealed {
