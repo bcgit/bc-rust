@@ -26,7 +26,7 @@ use bouncycastle_core::kem_key::KEMAlgorithm;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{Algorithm, KDF};
-use bouncycastle_sha2::hkdf::{HKDF_SHA256, HKDF_SHA384, HKDF_SHA512};
+use bouncycastle_sha2::hkdf::{HKDF_SHA256, HKDF_SHA512};
 
 /// Algorithm name of ML-KEM-512-HKDF-SHA256, as reported by `Algorithm::ALG_NAME`.
 pub const ML_KEM_512_HKDF_SHA256_NAME: &str = "ML-KEM-512-HKDF-SHA256";
@@ -89,21 +89,19 @@ impl Algorithm for MLKEM1024_HKDF_SHA512 {
 
 impl KEMAlgorithm for MLKEM1024_HKDF_SHA512 {}
 
-/// A KDF the library may pair ML-KEM with: the SHA-2 HKDFs. Sealed, so that the pairing trait,
+/// A KDF the library pairs ML-KEM with: HKDF-SHA256 and HKDF-SHA512. Sealed, so that the pairing trait,
 /// which is generic over the KDF, cannot be implemented outside this crate: the orphan rule
 /// would otherwise let a downstream crate pair a parameter set with a KDF of its own, under any
 /// name and strength, and the blanket role impls of both ML-KEM crates would take it.
 pub trait PairedKdf: sealed::Sealed {}
 
 impl PairedKdf for HKDF_SHA256 {}
-impl PairedKdf for HKDF_SHA384 {}
 impl PairedKdf for HKDF_SHA512 {}
 
 mod sealed {
-    use bouncycastle_sha2::hkdf::{HKDF_SHA256, HKDF_SHA384, HKDF_SHA512};
+    use bouncycastle_sha2::hkdf::{HKDF_SHA256, HKDF_SHA512};
     pub trait Sealed {}
     impl Sealed for HKDF_SHA256 {}
-    impl Sealed for HKDF_SHA384 {}
     impl Sealed for HKDF_SHA512 {}
 }
 
