@@ -3,7 +3,7 @@
 //!
 //! Offsets used below, from the layouts in the crate: 3 version bytes, then the variant tag at
 //! 3, the sponge's `squeezing` flag at 404 (tag + 400 bytes of Keccak state), the cSHAKE
-//! `customized` byte at 415, and whatever the function adds from 416.
+//! `customized` byte at 405, and whatever the function adds from 406.
 
 use bouncycastle_core::errors::SuspendableError;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
@@ -24,7 +24,7 @@ fn nz(n: usize) -> NonZeroUsize {
 const PART2: &[u8] = b" sleep furiously";
 
 const SQUEEZING_FLAG: usize = 3 + 1 + 400;
-const CUSTOMIZED: usize = 3 + 412;
+const CUSTOMIZED: usize = 3 + 402;
 
 fn key() -> KeyMaterial<32> {
     KeyMaterial::<32>::from_bytes_as_type(&[0x42u8; 32], KeyType::MACKey).expect("a MAC key")
@@ -231,9 +231,9 @@ fn corrupt_fields_are_rejected() {
     bad[CUSTOMIZED] = 0;
     rejected::<_, CSHAKESqueezer<SHAKE128Params>>(bad, "a squeezer claiming no function name");
 
-    // ParallelHash: outer cSHAKE 3..416, inner SHAKE 416..828, then block_size, block_fill, blocks.
-    const INNER_SQUEEZING_FLAG: usize = 416 + 1 + 400;
-    const BLOCK_SIZE: usize = 416 + 412;
+    // ParallelHash: outer cSHAKE 3..406, inner SHAKE 406..808, then block_size, block_fill, blocks.
+    const INNER_SQUEEZING_FLAG: usize = 406 + 1 + 400;
+    const BLOCK_SIZE: usize = 406 + 402;
     const BLOCK_FILL: usize = BLOCK_SIZE + 8;
     let mut p = ParallelHash128::new(nz(8), b"", 32).unwrap();
     p.do_update(PART1);
@@ -330,12 +330,12 @@ fn state_tags_are_distinct() {
 
 #[test]
 fn pin_state_lengths() {
-    assert_eq!(SUSPENDED_CSHAKE_STATE_LEN, 416, "3 (version) + 412 (family) + 1 (customized)");
-    assert_eq!(SUSPENDED_CSHAKE_SQUEEZER_STATE_LEN, 416);
-    assert_eq!(SUSPENDED_KMACXOF_STATE_LEN, 416);
-    assert_eq!(SUSPENDED_TUPLEHASHXOF_STATE_LEN, 416);
-    assert_eq!(SUSPENDED_KMAC_STATE_LEN, 424, "416 + 8 (output length)");
-    assert_eq!(SUSPENDED_TUPLEHASH_STATE_LEN, 424);
-    assert_eq!(SUSPENDED_PARALLELHASHXOF_STATE_LEN, 852, "416 + 412 (inner) + 3 * 8");
-    assert_eq!(SUSPENDED_PARALLELHASH_STATE_LEN, 860, "852 + 8 (output length)");
+    assert_eq!(SUSPENDED_CSHAKE_STATE_LEN, 406, "3 (version) + 402 (family) + 1 (customized)");
+    assert_eq!(SUSPENDED_CSHAKE_SQUEEZER_STATE_LEN, 406);
+    assert_eq!(SUSPENDED_KMACXOF_STATE_LEN, 406);
+    assert_eq!(SUSPENDED_TUPLEHASHXOF_STATE_LEN, 406);
+    assert_eq!(SUSPENDED_KMAC_STATE_LEN, 414, "406 + 8 (output length)");
+    assert_eq!(SUSPENDED_TUPLEHASH_STATE_LEN, 414);
+    assert_eq!(SUSPENDED_PARALLELHASHXOF_STATE_LEN, 832, "406 + 402 (inner) + 3 * 8");
+    assert_eq!(SUSPENDED_PARALLELHASH_STATE_LEN, 840, "832 + 8 (output length)");
 }

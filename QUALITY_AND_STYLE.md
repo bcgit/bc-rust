@@ -12,11 +12,11 @@ lib.rs for all crates needs to contain: `#![forbid(missing_docs)]`, `#![no_std]`
 
 All primitives must be accompanied by a CLI in `/cli`.
 
-Hashes, XOFs and the MACs and KDFs built on them (KMAC, HMAC, HKDF) implement `Suspendable` or `SuspendableKeyed`, so
-that a computation in progress can be written to a cache and resumed later. Cipher and MAC workers -- the encryptors,
-decryptors, generators and verifiers a key object hands out -- do not: a suspended or cloned worker is a second copy of
+Hashes, XOFs and KMAC implement `Suspendable`, so that a computation in progress can be written to a cache and
+resumed later. Keyed workers -- the encryptors, decryptors, generators and verifiers a key object hands out, HMAC's
+included -- and HKDF do not: a suspended or cloned worker is a second copy of
 a nonce, counter or keystream position, and two copies that both go on to encrypt reuse keystream (#173). Those workers
-implement neither suspend trait nor `Clone`; a message is paused by holding its worker, and the worker traits are kept
+implement neither `Suspendable` nor `Clone`; a message is paused by holding its worker, and the worker traits are kept
 `dyn`-compatible so it can be held as `&mut dyn` or, where allocation is acceptable, `Box<dyn>`. The `Clone` impls the
 cipher workers still carry come out in the #173 sweep's next step.
 
@@ -24,9 +24,10 @@ cipher workers still carry come out in the #173 sweep's next step.
 forked mid-stream and each copy finished on its own; `Hash` itself carries no `Clone` (and no `Default`), because both
 imply `Sized` and would stop the trait from ever being a trait object. Generic code that forks or constructs a hash
 says so where the need is: `H: Hash + Clone`, `H: HashOneShot`. The same rule applies to every `core` trait that is
-meant to be held as `dyn` -- the hash, XOF, cipher, MAC and signature worker traits: no `Clone`, `Default` or `Sized`
-supertrait, no associated constant (`AlgorithmInfo` is the run-time form of `Algorithm`'s), and `where Self: Sized` on
-any receiver-less or provided by-value method, so the streaming core stays dispatchable through `&mut dyn`.
+meant to be held as `dyn` -- the hash, XOF, cipher, MAC, KEM and signature worker traits: no `Clone`, `Default` or
+`Sized` supertrait, no associated constant (`AlgorithmInfo` is the run-time form of `Algorithm`'s), and
+`where Self: Sized` on any receiver-less or provided by-value method, so the streaming core stays dispatchable through
+`&mut dyn`.
 
 # Quality
 

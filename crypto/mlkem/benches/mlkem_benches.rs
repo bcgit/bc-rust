@@ -1,11 +1,12 @@
+use bouncycastle_core::kem_key::DecapsulatingKey;
 use bouncycastle_core::key_material::{KeyMaterial512, KeyType};
-use bouncycastle_core::traits::KEMDecapsulator;
 use bouncycastle_hex as hex;
 use bouncycastle_mlkem::hazmat::EncapsWithRandomness;
 use bouncycastle_mlkem::{
-    MLKEM_RND_LEN, MLKEM512, MLKEM512_CT_LEN, MLKEM512PrivateKeyExpanded, MLKEM768,
-    MLKEM768_CT_LEN, MLKEM768PrivateKeyExpanded, MLKEM1024, MLKEM1024_CT_LEN,
-    MLKEM1024PrivateKeyExpanded, MLKEMPublicKeyTrait, MLKEMTrait,
+    MLKEM_RND_LEN, MLKEM512, MLKEM512_CT_LEN, MLKEM512PrivateKeyExpanded,
+    MLKEM512PublicKeyExpanded, MLKEM768, MLKEM768_CT_LEN, MLKEM768PrivateKeyExpanded,
+    MLKEM768PublicKeyExpanded, MLKEM1024, MLKEM1024_CT_LEN, MLKEM1024PrivateKeyExpanded,
+    MLKEM1024PublicKeyExpanded, MLKEMTrait,
 };
 use criterion::{Criterion, criterion_group, criterion_main};
 use std::hint::black_box;
@@ -123,7 +124,7 @@ fn bench_mlkem_encaps(c: &mut Criterion) {
     group.bench_function("ML-KEM-512", |b| {
         b.iter(|| {
             for nonce in nonces.iter() {
-                _ = black_box(MLKEM512::encaps_with_randomness(&pk, None, *nonce));
+                _ = black_box(pk.encaps_with_randomness(*nonce));
             }
         })
     });
@@ -136,7 +137,7 @@ fn bench_mlkem_encaps(c: &mut Criterion) {
     group.bench_function("ML-KEM-768", |b| {
         b.iter(|| {
             for nonce in nonces.iter() {
-                _ = black_box(MLKEM768::encaps_with_randomness(&pk, None, *nonce));
+                _ = black_box(pk.encaps_with_randomness(*nonce));
             }
         })
     });
@@ -149,7 +150,7 @@ fn bench_mlkem_encaps(c: &mut Criterion) {
     group.bench_function("ML-KEM-1024", |b| {
         b.iter(|| {
             for nonce in nonces.iter() {
-                _ = black_box(MLKEM1024::encaps_with_randomness(&pk, None, *nonce));
+                _ = black_box(pk.encaps_with_randomness(*nonce));
             }
         })
     });
@@ -183,42 +184,42 @@ fn bench_mlkem_encaps_for_expanded(c: &mut Criterion) {
 
     /*** ML-KEM-512 ***/
     let (pk, _sk) = MLKEM512::keygen_from_seed(&seed).unwrap();
-    let a_hat = pk.A_hat();
+    let pk = MLKEM512PublicKeyExpanded::from(&pk);
 
     group.throughput(criterion::Throughput::Elements(NUM_ELEMS as u64));
 
     group.bench_function("ML-KEM-512", |b| {
         b.iter(|| {
             for nonce in nonces.iter() {
-                _ = black_box(MLKEM512::encaps_with_randomness(&pk, Some(&a_hat), *nonce));
+                _ = black_box(pk.encaps_with_randomness(*nonce));
             }
         })
     });
 
     /*** ML-KEM-768 ***/
     let (pk, _sk) = MLKEM768::keygen_from_seed(&seed).unwrap();
-    let a_hat = pk.A_hat();
+    let pk = MLKEM768PublicKeyExpanded::from(&pk);
 
     group.throughput(criterion::Throughput::Elements(NUM_ELEMS as u64));
 
     group.bench_function("ML-KEM-768", |b| {
         b.iter(|| {
             for nonce in nonces.iter() {
-                _ = black_box(MLKEM768::encaps_with_randomness(&pk, Some(&a_hat), *nonce));
+                _ = black_box(pk.encaps_with_randomness(*nonce));
             }
         })
     });
 
     /*** ML-KEM-1024 ***/
     let (pk, _sk) = MLKEM1024::keygen_from_seed(&seed).unwrap();
-    let a_hat = pk.A_hat();
+    let pk = MLKEM1024PublicKeyExpanded::from(&pk);
 
     group.throughput(criterion::Throughput::Elements(NUM_ELEMS as u64));
 
     group.bench_function("ML-KEM-1024", |b| {
         b.iter(|| {
             for nonce in nonces.iter() {
-                _ = black_box(MLKEM1024::encaps_with_randomness(&pk, Some(&a_hat), *nonce));
+                _ = black_box(pk.encaps_with_randomness(*nonce));
             }
         })
     });
@@ -253,9 +254,7 @@ fn bench_mlkem_decaps(c: &mut Criterion) {
     for (i, ct) in cts.iter_mut().enumerate() {
         // Create each ct with a unique nonce
         // encaps_with_randomness() returns (ss, ct) ... we only want ct, hence the ".1"
-        ct.copy_from_slice(
-            &MLKEM512::encaps_with_randomness(&pk, None, [i as u8; MLKEM_RND_LEN]).1,
-        );
+        ct.copy_from_slice(&pk.encaps_with_randomness([i as u8; MLKEM_RND_LEN]).1);
     }
 
     group.throughput(criterion::Throughput::Elements(NUM_ELEMS as u64));
@@ -263,7 +262,7 @@ fn bench_mlkem_decaps(c: &mut Criterion) {
     group.bench_function("ML-KEM-512", |b| {
         b.iter(|| {
             for ct in cts.iter() {
-                _ = black_box(MLKEM512::decaps(&sk, ct));
+                _ = black_box(sk.decaps(ct, ()));
             }
         })
     });
@@ -276,9 +275,7 @@ fn bench_mlkem_decaps(c: &mut Criterion) {
     for (i, ct) in cts.iter_mut().enumerate() {
         // Create each ct with a unique nonce
         // encaps_with_randomness() returns (ss, ct) ... we only want ct, hence the ".1"
-        ct.copy_from_slice(
-            &MLKEM768::encaps_with_randomness(&pk, None, [i as u8; MLKEM_RND_LEN]).1,
-        );
+        ct.copy_from_slice(&pk.encaps_with_randomness([i as u8; MLKEM_RND_LEN]).1);
     }
 
     group.throughput(criterion::Throughput::Elements(NUM_ELEMS as u64));
@@ -286,7 +283,7 @@ fn bench_mlkem_decaps(c: &mut Criterion) {
     group.bench_function("ML-KEM-768", |b| {
         b.iter(|| {
             for ct in cts.iter() {
-                _ = black_box(MLKEM768::decaps(&sk, ct));
+                _ = black_box(sk.decaps(ct, ()));
             }
         })
     });
@@ -299,9 +296,7 @@ fn bench_mlkem_decaps(c: &mut Criterion) {
     for (i, ct) in cts.iter_mut().enumerate() {
         // Create each ct with a unique nonce
         // encaps_with_randomness() returns (ss, ct) ... we only want ct, hence the ".1"
-        ct.copy_from_slice(
-            &MLKEM1024::encaps_with_randomness(&pk, None, [i as u8; MLKEM_RND_LEN]).1,
-        );
+        ct.copy_from_slice(&pk.encaps_with_randomness([i as u8; MLKEM_RND_LEN]).1);
     }
 
     group.throughput(criterion::Throughput::Elements(NUM_ELEMS as u64));
@@ -309,7 +304,7 @@ fn bench_mlkem_decaps(c: &mut Criterion) {
     group.bench_function("ML-KEM-1024", |b| {
         b.iter(|| {
             for ct in cts.iter() {
-                _ = black_box(MLKEM1024::decaps(&sk, ct));
+                _ = black_box(sk.decaps(ct, ()));
             }
         })
     });
@@ -345,9 +340,7 @@ fn bench_mlkem_decaps_with_expanded_key(c: &mut Criterion) {
     for (i, ct) in cts.iter_mut().enumerate() {
         // Create each ct with a unique nonce
         // encaps_with_randomness() returns (ss, ct) ... we only want ct, hence the ".1"
-        ct.copy_from_slice(
-            &MLKEM512::encaps_with_randomness(&pk, None, [i as u8; MLKEM_RND_LEN]).1,
-        );
+        ct.copy_from_slice(&pk.encaps_with_randomness([i as u8; MLKEM_RND_LEN]).1);
     }
 
     group.throughput(criterion::Throughput::Elements(NUM_ELEMS as u64));
@@ -355,7 +348,7 @@ fn bench_mlkem_decaps_with_expanded_key(c: &mut Criterion) {
     group.bench_function("ML-KEM-512", |b| {
         b.iter(|| {
             for ct in cts.iter() {
-                _ = black_box(MLKEM512::decaps_with_expanded_key(&sk_expanded, ct));
+                _ = black_box(sk_expanded.decaps(ct, ()));
             }
         })
     });
@@ -369,9 +362,7 @@ fn bench_mlkem_decaps_with_expanded_key(c: &mut Criterion) {
     for (i, ct) in cts.iter_mut().enumerate() {
         // Create each ct with a unique nonce
         // encaps_with_randomness() returns (ss, ct) ... we only want ct, hence the ".1"
-        ct.copy_from_slice(
-            &MLKEM768::encaps_with_randomness(&pk, None, [i as u8; MLKEM_RND_LEN]).1,
-        );
+        ct.copy_from_slice(&pk.encaps_with_randomness([i as u8; MLKEM_RND_LEN]).1);
     }
 
     group.throughput(criterion::Throughput::Elements(NUM_ELEMS as u64));
@@ -379,7 +370,7 @@ fn bench_mlkem_decaps_with_expanded_key(c: &mut Criterion) {
     group.bench_function("ML-KEM-768", |b| {
         b.iter(|| {
             for ct in cts.iter() {
-                _ = black_box(MLKEM768::decaps_with_expanded_key(&sk_expanded, ct));
+                _ = black_box(sk_expanded.decaps(ct, ()));
             }
         })
     });
@@ -393,9 +384,7 @@ fn bench_mlkem_decaps_with_expanded_key(c: &mut Criterion) {
     for (i, ct) in cts.iter_mut().enumerate() {
         // Create each ct with a unique nonce
         // encaps_with_randomness() returns (ss, ct) ... we only want ct, hence the ".1"
-        ct.copy_from_slice(
-            &MLKEM1024::encaps_with_randomness(&pk, None, [i as u8; MLKEM_RND_LEN]).1,
-        );
+        ct.copy_from_slice(&pk.encaps_with_randomness([i as u8; MLKEM_RND_LEN]).1);
     }
 
     group.throughput(criterion::Throughput::Elements(NUM_ELEMS as u64));
@@ -403,7 +392,7 @@ fn bench_mlkem_decaps_with_expanded_key(c: &mut Criterion) {
     group.bench_function("ML-KEM-1024", |b| {
         b.iter(|| {
             for ct in cts.iter() {
-                _ = black_box(MLKEM1024::decaps_with_expanded_key(&sk_expanded, ct));
+                _ = black_box(sk_expanded.decaps(ct, ()));
             }
         })
     });
@@ -438,9 +427,7 @@ fn bench_mlkem_decaps_from_seed(c: &mut Criterion) {
     for (i, ct) in cts.iter_mut().enumerate() {
         // Create each ct with a unique nonce
         // encaps_with_randomness() returns (ss, ct) ... we only want ct, hence the ".1"
-        ct.copy_from_slice(
-            &MLKEM512::encaps_with_randomness(&pk, None, [i as u8; MLKEM_RND_LEN]).1,
-        );
+        ct.copy_from_slice(&pk.encaps_with_randomness([i as u8; MLKEM_RND_LEN]).1);
     }
 
     group.throughput(criterion::Throughput::Elements(NUM_ELEMS as u64));
@@ -461,9 +448,7 @@ fn bench_mlkem_decaps_from_seed(c: &mut Criterion) {
     for (i, ct) in cts.iter_mut().enumerate() {
         // Create each ct with a unique nonce
         // encaps_with_randomness() returns (ss, ct) ... we only want ct, hence the ".1"
-        ct.copy_from_slice(
-            &MLKEM768::encaps_with_randomness(&pk, None, [i as u8; MLKEM_RND_LEN]).1,
-        );
+        ct.copy_from_slice(&pk.encaps_with_randomness([i as u8; MLKEM_RND_LEN]).1);
     }
 
     group.throughput(criterion::Throughput::Elements(NUM_ELEMS as u64));
@@ -484,9 +469,7 @@ fn bench_mlkem_decaps_from_seed(c: &mut Criterion) {
     for (i, ct) in cts.iter_mut().enumerate() {
         // Create each ct with a unique nonce
         // encaps_with_randomness() returns (ss, ct) ... we only want ct, hence the ".1"
-        ct.copy_from_slice(
-            &MLKEM1024::encaps_with_randomness(&pk, None, [i as u8; MLKEM_RND_LEN]).1,
-        );
+        ct.copy_from_slice(&pk.encaps_with_randomness([i as u8; MLKEM_RND_LEN]).1);
     }
 
     group.throughput(criterion::Throughput::Elements(NUM_ELEMS as u64));

@@ -5,10 +5,10 @@ use bouncycastle_core::errors::{KeyMaterialError, MACError};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterial256, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::symmetric_key::{FromAnyKeyMaterial, MacGenerationKey, MacVerificationKey};
-use bouncycastle_core::traits::{MAC, RNG, SuspendableKeyed};
-use bouncycastle_hmac::{HMAC, HMACParams, HmacKey};
+use bouncycastle_core::traits::{MAC, RNG};
+use bouncycastle_hmac::{HMACParams, HmacKey};
 use bouncycastle_rng::FixedSeedRNG;
-use bouncycastle_sha2::{SHA224, SHA256, SHA512, SUSPENDED_SHA256_STATE_LEN};
+use bouncycastle_sha2::{SHA224, SHA256, SHA512};
 use bouncycastle_sha3::SHA3_256;
 
 fn mac_key<const N: usize>(fill: u8) -> KeyMaterial<N> {
@@ -184,18 +184,6 @@ fn generate_draws_a_key_of_the_hash_output_length_at_the_rng_strength() {
     let tag = key.mac(MSG);
     assert_eq!(tag.len(), 28);
     assert!(key.verify(MSG, &tag));
-}
-
-#[test]
-fn a_worker_from_the_key_suspends_and_resumes() {
-    let km = mac_key::<32>(0x0b);
-    let key = HmacKey::<SHA256>::from_key_material(&km).unwrap();
-    let mut w = key.create_generator();
-    w.do_update(&MSG[..7]);
-    let state: [u8; SUSPENDED_SHA256_STATE_LEN] = w.suspend();
-    let mut resumed = HMAC::<SHA256>::from_suspended(state, &key).unwrap();
-    resumed.do_update(&MSG[7..]);
-    assert_eq!(resumed.do_final(), key.mac(MSG));
 }
 
 #[test]
