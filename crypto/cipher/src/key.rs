@@ -2,20 +2,19 @@
 //! validated and expanded once, from which the mode's workers are made. The docs are on
 //! [`BlockCipherKey`], which the crate root re-exports.
 
-use crate::modes::{GCM_NONCE_LEN, GMAC, Gmac, ModeNames};
-use crate::{Decrypting, Encrypting};
-use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
+use bouncycastle_core::errors::{KeyMaterialError, MACError, SymmetricCipherError};
 use bouncycastle_core::hazmat::{
     AeadDeclaredDecryptMode, AeadDeclaredEncryptMode, AeadDecryptMode, AeadEncryptMode,
-    BlockDecryptMode, BlockEncryptMode, BlockPermutation, EcbDecryptMode, EcbDecryptionKey,
-    EcbEncryptMode, EcbEncryptionKey, KeyExpansion, KeyUnwrapMode, KeyWrapMode, MacMode, Mode,
-    NonceMacMode, SymmetricDecryptMode, SymmetricEncryptMode, do_hazardous_operations,
+    BlockDecryptMode, BlockEncryptMode, EcbDecryptMode, EcbDecryptionKey, EcbEncryptMode,
+    EcbEncryptionKey, KeyExpansion, KeyUnwrapMode, KeyWrapMode, MacMode, Mode, NonceMacMode,
+    SymmetricDecryptMode, SymmetricEncryptMode, do_hazardous_operations,
 };
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::symmetric_key::{
     AeadDeclaredDecryptionKey, AeadDeclaredEncryptionKey, AeadDecryptionKey, AeadEncryptionKey,
     BlockDecryptionKey, BlockEncryptionKey, FromKeyMaterial, KeyUnwrappingKey, KeyWrappingKey,
-    MacGenerationKey, MacVerificationKey, SymmetricDecryptionKey, SymmetricEncryptionKey,
+    MacGenerationKey, MacVerificationKey, NonceMacGenerationKey, NonceMacVerificationKey,
+    SymmetricDecryptionKey, SymmetricEncryptionKey,
 };
 use bouncycastle_core::traits::RNG;
 
@@ -407,25 +406,68 @@ where
     }
 }
 
-impl<P, M: MacMode<P>> MacGenerationKey for BlockCipherKey<P, M> {
+impl<P, M, const MAC_LEN: usize> MacGenerationKey<MAC_LEN> for BlockCipherKey<P, M>
+where
+    M: MacMode<P, MAC_LEN>,
+{
     type Generator<'k>
-        = M::Worker<'k>
+        = M::Generator<'k>
     where
         Self: 'k;
 
     fn create_generator<'k>(&'k self) -> Self::Generator<'k> {
-        M::mac_init(&self.state)
+        M::generate_init(&self.state)
     }
 }
 
-impl<P, M: MacMode<P>> MacVerificationKey for BlockCipherKey<P, M> {
+impl<P, M, const MAC_LEN: usize> MacVerificationKey<MAC_LEN> for BlockCipherKey<P, M>
+where
+    M: MacMode<P, MAC_LEN>,
+{
     type Verifier<'k>
-        = M::Worker<'k>
+        = M::Verifier<'k>
     where
         Self: 'k;
 
     fn create_verifier<'k>(&'k self) -> Self::Verifier<'k> {
-        M::mac_init(&self.state)
+        M::verify_init(&self.state)
+    }
+}
+
+impl<P, M, const NONCE_LEN: usize, const MAC_LEN: usize> NonceMacGenerationKey<NONCE_LEN, MAC_LEN>
+    for BlockCipherKey<P, M>
+where
+    M: NonceMacMode<P, NONCE_LEN, MAC_LEN>,
+{
+    type Generator<'k>
+        = M::Generator<'k>
+    where
+        Self: 'k;
+
+    fn create_generator<'k>(
+        &'k self,
+        rng: &mut dyn RNG,
+    ) -> Result<(Self::Generator<'k>, [u8; NONCE_LEN]), MACError> {
+        M::generate_init(&self.state, rng)
+    }
+
+    fn create_generator_nonce<'k>(&'k self, nonce: &[u8; NONCE_LEN]) -> Self::Generator<'k> {
+        M::generate_init_nonce(&self.state, nonce)
+    }
+}
+
+impl<P, M, const NONCE_LEN: usize, const MAC_LEN: usize> NonceMacVerificationKey<NONCE_LEN, MAC_LEN>
+    for BlockCipherKey<P, M>
+where
+    M: NonceMacMode<P, NONCE_LEN, MAC_LEN>,
+{
+    type Verifier<'k>
+        = M::Verifier<'k>
+    where
+        Self: 'k;
+
+    fn create_verifier<'k>(&'k self, nonce: &[u8; NONCE_LEN]) -> Self::Verifier<'k> {
+        M::verify_init(&self.state, nonce)
     }
 }
 
@@ -454,42 +496,5 @@ where
 
     fn create_unwrapper<'k>(&'k self) -> Self::Unwrapper<'k> {
         M::unwrap_init(&self.state)
-    }
-}
-
-// GMAC's pair is inherent rather than a role trait, since a GMAC tag is bound to a nonce; it
-// forwards to the mode's `NonceMacMode` impl as the role impls forward to theirs. The tag length
-// is the self type's so that the impl names it; the nonce length is GCM's.
-impl<P, const TAG_LEN: usize> BlockCipherKey<P, GMAC<TAG_LEN>>
-where
-    P: BlockPermutation<16> + ModeNames + Clone,
-{
-    /// Begins a tag under a nonce drawn from `rng`, which is returned with the generator.
-    ///
-    /// # Errors
-    /// [`SymmetricCipherError::RNGError`] if the nonce draw fails; nothing else can.
-    #[allow(clippy::type_complexity)] // the worker and its nonce
-    pub fn create_generator<'k>(
-        &'k self,
-        rng: &mut dyn RNG,
-    ) -> Result<(Gmac<'k, P, Encrypting, TAG_LEN>, [u8; GCM_NONCE_LEN]), SymmetricCipherError> {
-        GMAC::<TAG_LEN>::generate_init(&self.state, rng)
-    }
-
-    /// Begins a tag under a nonce the caller supplies, who takes on the obligation that it never
-    /// repeat under this key.
-    pub fn create_generator_nonce<'k>(
-        &'k self,
-        nonce: &[u8; GCM_NONCE_LEN],
-    ) -> Gmac<'k, P, Encrypting, TAG_LEN> {
-        GMAC::<TAG_LEN>::generate_init_nonce(&self.state, nonce)
-    }
-
-    /// Begins the verification of a tag made under `nonce`. Infallible.
-    pub fn create_verifier<'k>(
-        &'k self,
-        nonce: &[u8; GCM_NONCE_LEN],
-    ) -> Gmac<'k, P, Decrypting, TAG_LEN> {
-        GMAC::<TAG_LEN>::verify_init(&self.state, nonce)
     }
 }

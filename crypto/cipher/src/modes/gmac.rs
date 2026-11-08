@@ -9,11 +9,12 @@
 //! carry over too: `Gmac<'k, .., Encrypting, ..>` generates a tag and `Gmac<'k, .., Decrypting, ..>`
 //! verifies one.
 //!
-//! Every tag is bound to a nonce, which is why GMAC implements neither [`MAC`] (whose workers take
-//! no nonce) nor the MAC mode trait. The generating side draws the nonce from the RNG
-//! it is given and returns it, or takes one from a caller who manages its own; the verifying side
-//! takes the nonce the tag was made under. A mode-bound key, `AES128Key<GMAC>`, hands out both
-//! sides from one stored `H`, which the workers borrow.
+//! Every tag is bound to a nonce, which is why GMAC is a [`NonceMacMode`] rather than a `MacMode`,
+//! and a mode-bound key, `AES128Key<GMAC>`, hands out both sides through the nonce-bound role
+//! pair [`NonceMacGenerationKey`] / [`NonceMacVerificationKey`] from one stored `H`, which the
+//! workers borrow: the generating side draws the nonce from the RNG it is given and returns it,
+//! or takes one from a caller who manages its own; the verifying side takes the nonce the tag was
+//! made under. The workers are the ordinary [`MACGenerator`] / [`MACVerifier`].
 //!
 //! The key is [`KeyType::MACKey`] material, as CMAC's is, and so cannot also be a GCM key: a
 //! nonce shared between a GMAC tag and a GCM message under one key is a repeated nonce.
@@ -29,7 +30,8 @@
 //! use bouncycastle_cipher::BlockCipherKey;
 //! use bouncycastle_cipher::modes::GMAC;
 //! use bouncycastle_core::key_material::{KeyMaterial128, KeyType};
-//! use bouncycastle_core::symmetric_key::FromKeyMaterial;
+//! use bouncycastle_core::symmetric_key::{FromKeyMaterial, NonceMacGenerationKey, NonceMacVerificationKey};
+//! use bouncycastle_core::traits::{MACGenerator, MACVerifier};
 //! use bouncycastle_rng::HashDRBG_SHA512;
 //!
 //! let mut rng = HashDRBG_SHA512::new_from_os();
@@ -39,11 +41,12 @@
 //! let (mut generator, nonce) = key.create_generator(&mut rng).unwrap();
 //! generator.do_update(b"a message ");
 //! generator.do_update(b"in two parts");
-//! let tag = generator.do_final();
+//! let tag: [u8; 16] = generator.do_final();
 //!
 //! let mut verifier = key.create_verifier(&nonce);
 //! verifier.do_update(b"a message in two parts");
-//! assert!(verifier.do_verify_final(&tag));
+//! assert!(verifier.do_verify_final(&tag).is_ok());
+//! assert!(key.verify(&nonce, b"a message in two parts", &tag).is_ok());   // the one-shot
 //! ```
 //!
 //! # 🚨 Security Considerations 🚨
@@ -53,24 +56,24 @@
 //! (SP 800-38D Sec 8 and Appendix A), and the key is limited to 2^32 invocations (Sec 8.3). The
 //! `_nonce` constructors put the uniqueness obligation on the caller.
 //!
-//! [`MAC`]: bouncycastle_core::traits::MAC
+//! [`NonceMacGenerationKey`]: bouncycastle_core::symmetric_key::NonceMacGenerationKey
+//! [`NonceMacVerificationKey`]: bouncycastle_core::symmetric_key::NonceMacVerificationKey
 //! [`KeyType::MACKey`]: bouncycastle_core::key_material::KeyType::MACKey
 
 use crate::modes::ModeNames;
 use crate::modes::gcm::{GCM_NONCE_LEN, Gcm, GcmKeyState};
 use crate::{Decrypting, Encrypting};
-use bouncycastle_core::errors::SymmetricCipherError;
+use bouncycastle_core::errors::MACError;
 use bouncycastle_core::hazmat::{BlockPermutation, Mode, NonceMacMode};
 use bouncycastle_core::key_material::KeyType;
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::traits::{Algorithm, RNG};
+use bouncycastle_core::traits::{Algorithm, MACGenerator, MACVerifier, RNG};
 
 /// The GMAC mode type: the `M` of a mode-bound key such as `AES128Key<GMAC>`. `GMAC` is GMAC with
 /// the full 128-bit tag; `GMAC<12>` and so on select a shorter tag, within the `12..=16` byte
 /// range [`Gcm`] accepts. Its key state is [`GcmKeyState`], so a GMAC key caches `H` as a GCM key
 /// does. The [`Mode`] and [`NonceMacMode`] impls below are generic over any [`BlockPermutation`]
-/// with a 128-bit block; the generator/verifier pair is inherent on each key type and forwards
-/// to the latter, since a GMAC tag is bound to a nonce and so fits neither MAC role trait.
+/// with a 128-bit block, and a key's nonce-bound role pair forwards to the latter.
 pub struct GMAC<const TAG_LEN: usize = 16>;
 
 impl<P, const TAG_LEN: usize> Mode<P> for GMAC<TAG_LEN>
@@ -101,7 +104,7 @@ where
     fn generate_init<'k>(
         state: &'k Self::KeyState,
         rng: &mut dyn RNG,
-    ) -> Result<(Self::Generator<'k>, [u8; GCM_NONCE_LEN]), SymmetricCipherError> {
+    ) -> Result<(Self::Generator<'k>, [u8; GCM_NONCE_LEN]), MACError> {
         Gmac::<P, Encrypting, TAG_LEN>::from_key_state(state, rng)
     }
 
@@ -149,13 +152,16 @@ where
     /// key's `create_generator` calls.
     ///
     /// # Errors
-    /// [`SymmetricCipherError::RNGError`] if the nonce draw fails; nothing else can.
+    /// [`MACError::RNGError`] if the nonce draw fails; nothing else can.
     pub(crate) fn from_key_state(
         state: &'k GcmKeyState<P>,
         rng: &mut dyn RNG,
-    ) -> Result<(Self, [u8; GCM_NONCE_LEN]), SymmetricCipherError> {
-        let (gcm, nonce) = Gcm::<P, Encrypting, TAG_LEN>::from_key_state(state, rng)?;
-        Ok((Self { gcm }, nonce))
+    ) -> Result<(Self, [u8; GCM_NONCE_LEN]), MACError> {
+        // The draw is `Gcm`'s (SP 800-38A Appendix C's "random data block"), under this mode's
+        // error type.
+        let mut nonce = [0u8; GCM_NONCE_LEN];
+        rng.next_bytes_out(&mut nonce)?;
+        Ok((Self::from_key_state_nonce(state, &nonce), nonce))
     }
 
     /// As [`from_key_state`](Self::from_key_state) under a nonce the caller supplies, who takes
@@ -166,21 +172,19 @@ where
     ) -> Self {
         Self { gcm: Gcm::from_key_state_nonce(state, nonce) }
     }
+}
 
-    /// Absorbs more of the message.
-    pub fn do_update(&mut self, data: &[u8]) {
+impl<'k, P, const TAG_LEN: usize> MACGenerator<TAG_LEN> for Gmac<'k, P, Encrypting, TAG_LEN>
+where
+    P: BlockPermutation<16> + ModeNames,
+{
+    fn do_update(&mut self, data: &[u8]) {
         self.gcm.absorb_aad(data).expect(AAD_INFALLIBLE);
     }
 
-    /// The tag over everything passed to [`do_update`](Self::do_update).
-    pub fn do_final(self) -> [u8; TAG_LEN] {
-        self.gcm.finish()
-    }
-
-    /// One-shot: the tag over `data`, consuming the generator.
-    pub fn mac(mut self, data: &[u8]) -> [u8; TAG_LEN] {
-        self.do_update(data);
-        self.do_final()
+    fn do_final_out(self, out: &mut [u8; TAG_LEN]) -> usize {
+        *out = self.gcm.finish();
+        TAG_LEN
     }
 }
 
@@ -194,21 +198,18 @@ where
     pub(crate) fn from_key_state(state: &'k GcmKeyState<P>, nonce: &[u8; GCM_NONCE_LEN]) -> Self {
         Self { gcm: Gcm::<P, Decrypting, TAG_LEN>::from_key_state(state, nonce) }
     }
+}
 
-    /// Absorbs more of the message.
-    pub fn do_update(&mut self, data: &[u8]) {
+impl<'k, P, const TAG_LEN: usize> MACVerifier<TAG_LEN> for Gmac<'k, P, Decrypting, TAG_LEN>
+where
+    P: BlockPermutation<16> + ModeNames,
+{
+    fn do_update(&mut self, data: &[u8]) {
         self.gcm.absorb_aad(data).expect(AAD_INFALLIBLE);
     }
 
-    /// Whether `tag` is the tag over everything passed to [`do_update`](Self::do_update),
-    /// compared in constant time.
-    pub fn do_verify_final(self, tag: &[u8; TAG_LEN]) -> bool {
-        self.gcm.finish(tag).is_ok()
-    }
-
-    /// One-shot: whether `tag` is the tag over `data`, consuming the verifier.
-    pub fn verify(mut self, data: &[u8], tag: &[u8; TAG_LEN]) -> bool {
-        self.do_update(data);
-        self.do_verify_final(tag)
+    /// `Gcm`'s tag check, in constant time.
+    fn do_verify_final(self, tag: &[u8; TAG_LEN]) -> Result<(), MACError> {
+        self.gcm.finish(tag).map_err(|_| MACError::VerificationFailed)
     }
 }
