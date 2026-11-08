@@ -5,7 +5,8 @@ use bouncycastle_core::errors::{KeyMaterialError, MACError};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterial256, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::symmetric_key::{FromAnyKeyMaterial, MacGenerationKey, MacVerificationKey};
-use bouncycastle_core::traits::{MACGenerator, MACVerifier, RNG};
+use bouncycastle_core::traits::{Hash, MACGenerator, MACVerifier, RNG};
+use bouncycastle_hmac::hazmat::{finish_out, inner_state};
 use bouncycastle_hmac::{HMACParams, HmacKey};
 use bouncycastle_rng::FixedSeedRNG;
 use bouncycastle_sha2::{SHA224, SHA256, SHA512};
@@ -184,4 +185,27 @@ fn generate_draws_a_key_of_the_hash_output_length_at_the_rng_strength() {
 fn a_cloned_key_is_the_same_key() {
     let key = HmacKey::<SHA3_256>::from_key_material(&mac_key::<32>(0x33)).unwrap();
     assert_eq!(key.clone().mac(MSG), key.mac(MSG));
+}
+
+/// The hazmat halves compose to the worker's tag: `inner_state` fed the message and finished
+/// through `finish_out` is the key's one-shot, written in full with the count returned and the
+/// rest of the buffer zeroized, and a short buffer takes the prefix as `Hash::do_final_out` does.
+#[test]
+fn the_hazmat_halves_compose_to_the_tag() {
+    let key = HmacKey::<SHA256>::from_key_material(&mac_key::<32>(0x0b)).unwrap();
+    let mut inner = inner_state(&key);
+    inner.do_update(MSG);
+    let mut out = [0xEEu8; 40];
+    assert_eq!(finish_out(&key, inner, &mut out), 32);
+    assert_eq!(out[..32], key.mac(MSG));
+    assert_eq!(out[32..], [0u8; 8]);
+
+    // A fresh inner state is the key's, not a default hash: finished at once it is the empty
+    // message's tag.
+    assert_eq!(finish_out(&key, inner_state(&key), &mut out), 32);
+    assert_eq!(out[..32], key.mac(b""));
+
+    let mut short = [0xEEu8; 16];
+    assert_eq!(finish_out(&key, inner_state(&key), &mut short), 16);
+    assert_eq!(short, key.mac(b"")[..16]);
 }
