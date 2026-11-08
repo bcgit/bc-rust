@@ -4,8 +4,8 @@
 //! and why the ciphertext is not part of the info. A worker borrows the key, seed or expanded,
 //! as the plain ML-KEM workers do, runs the plain ML-KEM operation and derives from its 𝐾
 //! through the parameter set's [`MLKEMKdfPairing`] with the KDF of the parameters; a key is
-//! paired with one KDF, so the parameter type selects the algorithm and a KDF the key is not
-//! paired with is a compile error.
+//! paired with one KDF, so the parameter type selects the algorithm and names the derived key's
+//! length, and a KDF the key is not paired with is a compile error.
 
 use crate::mlkem::MLKEM;
 use crate::mlkem_keys::{
@@ -39,7 +39,7 @@ pub struct MLKEMKdfEncapsulator<
     const SS_LEN: usize,
 > {
     ek: &'k MLKEMPublicKey<P>,
-    params: KdfParams<'p, D>,
+    params: KdfParams<'p, D, SS_LEN>,
 }
 
 impl<P: MLKEMParams + MLKEMKdfPairing<D, SS_LEN>, D: KDF + PairedKdf + ?Sized, const SS_LEN: usize>
@@ -87,7 +87,7 @@ pub struct MLKEMKdfDecapsulator<
     const SS_LEN: usize,
 > {
     dk: &'k DK,
-    params: KdfParams<'p, D>,
+    params: KdfParams<'p, D, SS_LEN>,
     _phantom: PhantomData<P>,
 }
 
@@ -120,7 +120,7 @@ impl<
 }
 
 impl<'p, P, D, const CT_LEN: usize, const SS_LEN: usize>
-    EncapsulatingKey<KdfParams<'p, D>, CT_LEN, SS_LEN> for MLKEMPublicKey<P>
+    EncapsulatingKey<KdfParams<'p, D, SS_LEN>, CT_LEN, SS_LEN> for MLKEMPublicKey<P>
 where
     P: MLKEMParams + CiphertextLen<CT_LEN> + MLKEMKdfPairing<D, SS_LEN>,
     D: KDF + PairedKdf + ?Sized,
@@ -135,14 +135,14 @@ where
     /// derivation an instance that has since absorbed input.
     fn create_encapsulator<'k>(
         &'k self,
-        params: KdfParams<'p, D>,
+        params: KdfParams<'p, D, SS_LEN>,
     ) -> Result<Self::Encapsulator<'k>, KEMError> {
         Ok(MLKEMKdfEncapsulator { ek: self, params })
     }
 }
 
 impl<'p, P, D, const CT_LEN: usize, const SS_LEN: usize>
-    DecapsulatingKey<KdfParams<'p, D>, CT_LEN, SS_LEN> for MLKEMSeedPrivateKey<P>
+    DecapsulatingKey<KdfParams<'p, D, SS_LEN>, CT_LEN, SS_LEN> for MLKEMSeedPrivateKey<P>
 where
     P: MLKEMParams + CiphertextLen<CT_LEN> + MLKEMKdfPairing<D, SS_LEN>,
     D: KDF + PairedKdf + ?Sized,
@@ -157,14 +157,14 @@ where
     /// derivation an instance that has since absorbed input.
     fn create_decapsulator<'k>(
         &'k self,
-        params: KdfParams<'p, D>,
+        params: KdfParams<'p, D, SS_LEN>,
     ) -> Result<Self::Decapsulator<'k>, KEMError> {
         Ok(MLKEMKdfDecapsulator { dk: self, params, _phantom: PhantomData })
     }
 }
 
 impl<'p, P, D, const CT_LEN: usize, const SS_LEN: usize>
-    DecapsulatingKey<KdfParams<'p, D>, CT_LEN, SS_LEN> for MLKEMSeedPrivateKeyExpanded<P>
+    DecapsulatingKey<KdfParams<'p, D, SS_LEN>, CT_LEN, SS_LEN> for MLKEMSeedPrivateKeyExpanded<P>
 where
     P: MLKEMParams + CiphertextLen<CT_LEN> + MLKEMKdfPairing<D, SS_LEN>,
     D: KDF + PairedKdf + ?Sized,
@@ -179,7 +179,7 @@ where
     /// derivation an instance that has since absorbed input.
     fn create_decapsulator<'k>(
         &'k self,
-        params: KdfParams<'p, D>,
+        params: KdfParams<'p, D, SS_LEN>,
     ) -> Result<Self::Decapsulator<'k>, KEMError> {
         Ok(MLKEMKdfDecapsulator { dk: self, params, _phantom: PhantomData })
     }

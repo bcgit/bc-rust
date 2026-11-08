@@ -237,7 +237,8 @@
 //! // The KDF and info both parties agree on: HKDF-SHA256 keyed with the salt.
 //! let salt = KeyMaterial::<32>::from_rng(&mut rng).unwrap();
 //! let hkdf = HKDF_SHA256::new_with_salt(&salt).unwrap();
-//! let params = KdfParams::new(&hkdf, b"example protocol v1");
+//! // The parameters name the key's length too: here one SHA-256 output.
+//! let params = KdfParams::<_, 32>::new(&hkdf, b"example protocol v1");
 //!
 //! let (key, ct) = pk.encaps(&mut rng, params).unwrap();
 //! let key1 = sk.decaps(&ct, params).unwrap();
