@@ -41,7 +41,9 @@
   constants and `hazmat::ModeKey` goes with them; hashes, XOFs and KMAC keep `Suspendable`. `SuspendableKeyed` itself
   then went: HMAC and HKDF no longer suspend (a worker cannot be rebuilt without its key, and the key object makes a
   new one), which also drops the `SUSPENDED_HMAC_*` and `SUSPENDED_HKDF_*` constants and HKDF's two const parameters,
-  so an instantiation is `HKDF<SHA256>`.
+  so an instantiation is `HKDF<SHA256>`. The SHA-3 family's suspended states are 10 bytes shorter than before
+  (SHA-3 and SHAKE 405, cSHAKE 406, KMAC and TupleHash 414, ParallelHashXOF 832, ParallelHash 840), the KDF
+  bookkeeping having left the sponge; a state suspended by an earlier build does not resume.
 * KEM encapsulation and decapsulation move onto the keys, as signing did: the `EncapsulatingKey` /
   `DecapsulatingKey` roles in `core::kem_key` hand out `KEMEncapsulator` / `KEMDecapsulator` workers that
   borrow the key, implemented per algorithm over the parameters a worker is made from (`()` for ML-KEM, a
@@ -61,7 +63,7 @@
   of SP 800-56C Rev. 2 Section 5.1, which HKDF credits.
 * The KDF entropy accounting after review: a full-entropy key with no strength (a `SharedSecret` whose producer
   stated none, which is now the default for one built from bytes, or a key too short to carry 112 bits) credits
-  nothing, so a `CryptographicRandom` output always carries a strength; a KDF instance that has absorbed input
+  nothing, so a `CryptographicRandom` output of 14 bytes or more carries a strength; a KDF instance that has absorbed input
   through the streaming API is refused; and a zero-length derivation is refused.
   A derivation from no keys is refused; HKDF's `extract_out`, `extract_and_expand_out` and
   `do_extract_final_out` zeroize the output before any check, as the `_out` rule asks; and the ML-KEM pairings
