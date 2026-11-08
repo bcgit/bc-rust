@@ -217,7 +217,7 @@
 //!
 //! The same keys run ML-KEM-512-HKDF-SHA256, ML-KEM-768-HKDF-SHA512 and ML-KEM-1024-HKDF-SHA512
 //! ([`MLKEM512_HKDF_SHA256`], [`MLKEM768_HKDF_SHA512`], [`MLKEM1024_HKDF_SHA512`]), whose shared
-//! secret is HKDF-Hash(salt, 𝐾, info) over the ML-KEM secret 𝐾, one hash output long. The
+//! secret is HKDF-Hash(salt, 𝐾, info) over the ML-KEM secret 𝐾, of the length the parameters name. The
 //! parameters are a [`KdfParams`]: a borrowed HKDF instance keyed with RFC 5869's salt through
 //! `new_with_salt` (key material of any length but
 //! [`KeyType::Unknown`](bouncycastle_core::key_material::KeyType::Unknown); a zero-length one is

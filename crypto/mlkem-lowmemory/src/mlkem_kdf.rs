@@ -131,12 +131,13 @@ where
     where
         P: 'k;
 
-    /// Nothing to check here: a KDF validated what it was made from, and refuses at the
-    /// derivation an instance that has since absorbed input.
+    /// The length is checked at compile time; a KDF validated what it was made from, and
+    /// refuses at the derivation an instance that has since absorbed input.
     fn create_encapsulator<'k>(
         &'k self,
         params: KdfParams<'p, D, SS_LEN>,
     ) -> Result<Self::Encapsulator<'k>, KEMError> {
+        const { P::LEN_CHECK };
         Ok(MLKEMKdfEncapsulator { ek: self, params })
     }
 }
@@ -153,12 +154,13 @@ where
     where
         P: 'k;
 
-    /// Nothing to check here: a KDF validated what it was made from, and refuses at the
-    /// derivation an instance that has since absorbed input.
+    /// The length is checked at compile time; a KDF validated what it was made from, and
+    /// refuses at the derivation an instance that has since absorbed input.
     fn create_decapsulator<'k>(
         &'k self,
         params: KdfParams<'p, D, SS_LEN>,
     ) -> Result<Self::Decapsulator<'k>, KEMError> {
+        const { P::LEN_CHECK };
         Ok(MLKEMKdfDecapsulator { dk: self, params, _phantom: PhantomData })
     }
 }
@@ -175,12 +177,13 @@ where
     where
         P: 'k;
 
-    /// Nothing to check here: a KDF validated what it was made from, and refuses at the
-    /// derivation an instance that has since absorbed input.
+    /// The length is checked at compile time; a KDF validated what it was made from, and
+    /// refuses at the derivation an instance that has since absorbed input.
     fn create_decapsulator<'k>(
         &'k self,
         params: KdfParams<'p, D, SS_LEN>,
     ) -> Result<Self::Decapsulator<'k>, KEMError> {
+        const { P::LEN_CHECK };
         Ok(MLKEMKdfDecapsulator { dk: self, params, _phantom: PhantomData })
     }
 }
