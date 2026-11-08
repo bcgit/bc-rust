@@ -184,8 +184,8 @@
 //! and 1536 (verification only, per `# Scope` above) and 2048/3072/4096/8192 (both directions) --
 //! and validated against genuine vectors: Wycheproof for every size except 8192, which it has no
 //! key material for at all (cross-checked against BC Java instead); see each `rsa_*.rs` module's
-//! own tests for the specifics at each size. Every pairing also implements `bouncycastle_core`'s
-//! `Signer`/`SignatureVerifier` traits (see `# Scope`), exercised through
+//! own tests for the specifics at each size. Every pairing is a marker the key types' `SigningKey`
+//! / `DeterministicSigningKey` / `VerifyingKey` roles name (see `# Scope`), exercised through
 //! `bouncycastle_core_test_framework`'s shared signature conformance suite at each size.
 //!
 //! RSASSA-PSS-SHAKE128 and RSASSA-PSS-SHAKE256 (RFC 8702 §3.2.1 -- SHAKE128/SHAKE256 used
@@ -235,9 +235,8 @@
 //! measurement harness (see its own doc comment for the `valgrind`/`massif` invocation) -- only
 //! one representative (scheme, hash) pairing is profiled there per modulus size, since stack
 //! usage is dominated by the modulus's own limb count `L`, not by which hash or scheme fed into
-//! RSASP1/RSAVP1's modular exponentiation. A `Signer`/`SignatureVerifier` streaming state
-//! (`RSASSA_*` in each size module) additionally holds a clone of its key for its lifetime --
-//! the "SK size in memory" column, for a signer -- plus the hash state.
+//! RSASP1/RSAVP1's modular exponentiation. A `SignatureSigner` / `SignatureVerifier` worker
+//! borrows its key for its lifetime and holds the hash state beside it.
 //!
 //! # Security Considerations
 //!
