@@ -216,8 +216,8 @@ pub(crate) enum MLKEMHkdfAction {
 }
 
 /// One body for the three `mlkem*-hkdf-*` subcommands: the plain set's keys, and the roles over
-/// `KdfParams` of the HKDF `_kdf` names, keyed with the salt. The derived key's length is the
-/// pairing's.
+/// `KdfParams` the `_params` marker names, keyed with the salt. The derived key is one hash
+/// output long, the crate's `*_SS_LEN`.
 #[allow(clippy::too_many_arguments)] // one flag per input, the HKDF ones each inline or from a file
 pub(crate) fn mlkem_hkdf_cmd<
     PK,
@@ -230,7 +230,7 @@ pub(crate) fn mlkem_hkdf_cmd<
     const PLAIN_SS_LEN: usize,
 >(
     set: &ParameterSet<PK, SK, PK_LEN, SK_LEN, CT_LEN, PLAIN_SS_LEN>,
-    _kdf: PhantomData<HKDF<H>>,
+    _params: PhantomData<KdfParams<'static, HKDF<H>, SS_LEN>>,
     action: &MLKEMHkdfAction,
     skfile: &Option<String>,
     pkfile: &Option<String>,
@@ -241,8 +241,10 @@ pub(crate) fn mlkem_hkdf_cmd<
     additional_input_file: &Option<String>,
     output_hex: bool,
 ) where
-    PK: KEMPublicKey<PK_LEN> + for<'p> EncapsulatingKey<KdfParams<'p, HKDF<H>>, CT_LEN, SS_LEN>,
-    SK: KEMPrivateKey<SK_LEN> + for<'p> DecapsulatingKey<KdfParams<'p, HKDF<H>>, CT_LEN, SS_LEN>,
+    PK: KEMPublicKey<PK_LEN>
+        + for<'p> EncapsulatingKey<KdfParams<'p, HKDF<H>, SS_LEN>, CT_LEN, SS_LEN>,
+    SK: KEMPrivateKey<SK_LEN>
+        + for<'p> DecapsulatingKey<KdfParams<'p, HKDF<H>, SS_LEN>, CT_LEN, SS_LEN>,
     H: HMACParams,
 {
     // RFC 5869 Section 2.2: the salt is optional, "a non-secret random value"; absent, HKDF uses
