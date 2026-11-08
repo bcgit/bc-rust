@@ -55,10 +55,13 @@ impl TestFrameworkKEM {
         assert_eq!(PK::Algorithm::ALG_NAME, SK::Algorithm::ALG_NAME);
         assert_eq!(PK::Algorithm::MAX_SECURITY_STRENGTH, SK::Algorithm::MAX_SECURITY_STRENGTH);
 
-        // The seed cycles, so it is longer than one draw: a 32-byte encapsulation message drawn
-        // twice from a 32-byte constant seed would repeat, and the "two encapsulations differ"
-        // check below would fail.
-        let mut rng = FixedSeedRNG::new(core::array::from_fn::<u8, 256, _>(|i| i as u8));
+        // The seed cycles, so it is longer than two draws of the largest KEM's randomness (RSASVE
+        // over RSA-8192 draws 1024 bytes per encapsulation), and it does not repeat within
+        // itself (a counting byte pattern repeats every 256 bytes, so two 256-byte draws from it
+        // are identical): otherwise the "two encapsulations differ" check below would fail.
+        let mut rng = FixedSeedRNG::new(core::array::from_fn::<u8, 4096, _>(|i| {
+            ((i as u64).wrapping_mul(0x9E37_79B9_7F4A_7C15) >> 56) as u8
+        }));
         let (pk, sk) = keygen().unwrap();
 
         // one-shots
