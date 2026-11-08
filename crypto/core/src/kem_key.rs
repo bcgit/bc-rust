@@ -70,9 +70,15 @@ pub trait EncapsulatingKey<Params, const CT_LEN: usize, const SS_LEN: usize> {
         ct: &mut [u8; CT_LEN],
         ss: &mut KeyMaterial<SS_LEN>,
     ) -> Result<usize, KEMError> {
-        ct.fill(0);
-        ss.zeroize();
-        self.create_encapsulator(params)?.encaps_out(rng, ct, ss)
+        match self.create_encapsulator(params) {
+            Ok(encapsulator) => encapsulator.encaps_out(rng, ct, ss),
+            Err(e) => {
+                // The worker zeroizes both first; a refused construction leaves them so too.
+                ct.fill(0);
+                ss.zeroize();
+                Err(e)
+            }
+        }
     }
 
     /// One-shot: the shared secret and the ciphertext.
@@ -120,8 +126,13 @@ pub trait DecapsulatingKey<Params, const CT_LEN: usize, const SS_LEN: usize> {
         params: Params,
         ss: &mut KeyMaterial<SS_LEN>,
     ) -> Result<usize, KEMError> {
-        ss.zeroize();
-        self.create_decapsulator(params)?.decaps_out(ct, ss)
+        match self.create_decapsulator(params) {
+            Ok(decapsulator) => decapsulator.decaps_out(ct, ss),
+            Err(e) => {
+                ss.zeroize();
+                Err(e)
+            }
+        }
     }
 
     /// One-shot: the shared secret of `ct`.
