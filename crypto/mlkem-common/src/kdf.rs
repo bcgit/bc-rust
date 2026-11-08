@@ -143,33 +143,38 @@ pub trait MLKEMKdfPairing<D: KDF + PairedKdf + ?Sized, const SS_LEN: usize>:
         "the derived key is from one byte to the KDF's MAX_LEN long"
     );
 
-    /// KDF(𝐾, info) into a key of `SS_LEN` bytes, labelled at no more than the algorithm's
-    /// strength.
+    /// KDF(𝐾, info) into `out`, zeroized first: a key of `SS_LEN` bytes, labelled at no more
+    /// than the algorithm's strength. The caller's buffer is where the key lives, so its length
+    /// costs the caller's frame.
     ///
     /// # Errors
     /// [`KEMError::GenericError`] if the KDF refuses the derivation (an HKDF instance that has
-    /// absorbed input, say) or writes anything but `SS_LEN` bytes.
+    /// absorbed input, say) or writes anything but `SS_LEN` bytes; `out` is left zeroized.
     fn derive(
         params: KdfParams<'_, D, SS_LEN>,
         K: &KeyMaterial<MLKEM_SS_LEN>,
-    ) -> Result<KeyMaterial<SS_LEN>, KEMError> {
+        out: &mut KeyMaterial<SS_LEN>,
+    ) -> Result<(), KEMError> {
         const { Self::LEN_CHECK };
-        let mut okm = KeyMaterial::new();
+        // `derive_key_out` zeroizes `out` first and leaves it so on its errors.
         let written = params
             .kdf()
-            .derive_key_out(K, params.info(), SS_LEN, &mut okm)
+            .derive_key_out(K, params.info(), SS_LEN, out)
             .map_err(|_| KEMError::GenericError("the KDF over the ML-KEM secret failed"))?;
         // The trait says `len` bytes come back; the key the worker hands out is SS_LEN bytes.
-        if written != SS_LEN || okm.key_len() != SS_LEN {
+        if written != SS_LEN || out.key_len() != SS_LEN {
+            out.zeroize();
             return Err(KEMError::GenericError("the KDF derived a key of the wrong length"));
         }
         // The label is the pairing's: HKDF credits a secret salt and would label the key above
         // the KEM's strength, which this algorithm does not claim. Lowering needs no window.
         let strength =
-            min_strength(okm.security_strength(), Self::Algorithm::MAX_SECURITY_STRENGTH);
-        okm.set_security_strength(strength)
-            .map_err(|_| KEMError::GenericError("the derived key's strength could not be set"))?;
-        Ok(okm)
+            min_strength(out.security_strength(), Self::Algorithm::MAX_SECURITY_STRENGTH);
+        if out.set_security_strength(strength).is_err() {
+            out.zeroize();
+            return Err(KEMError::GenericError("the derived key's strength could not be set"));
+        }
+        Ok(())
     }
 }
 
