@@ -5,7 +5,8 @@
 //! The derived key is KDF(𝐾, info), of the length the parameters name: 𝐾 is the shared secret
 //! key of FIPS 203 Algorithm 17 (ML-KEM.Encaps_internal), the KDF's input key material, and the
 //! KDF instance, the info and the length are the caller's [`KdfParams`], the length anything from
-//! one byte to 255 hash outputs (RFC 5869 Section 2.3), checked when the roles are instantiated. For the HKDF pairings that is HKDF-Hash(salt, 𝐾,
+//! one byte to 255 hash outputs (RFC 5869 Section 2.3), checked when a worker is made or a derivation
+//! compiled. For the HKDF pairings that is HKDF-Hash(salt, 𝐾,
 //! info), the salt being what the instance was made with. The length is part of the protocol's
 //! agreement as the info is, and it is not folded into the info: the key at one length is a
 //! prefix of the key at a longer one under the same info (RFC 5869 Section 2.3), so a protocol
@@ -18,7 +19,8 @@
 //! [`MLKEM1024_HKDF_SHA512`]: the key types of either crate implement the roles over
 //! `KdfParams<'p, HKDF_SHA256, LEN>` for ML-KEM-512 and over `KdfParams<'p, HKDF_SHA512, LEN>`
 //! for the other two, so the parameter type selects the algorithm and the length at the call. A marker's strength is the
-//! lesser of the parameter set's and the KDF's, and the derived key carries it: HKDF credits the
+//! lesser of the parameter set's and the KDF's, and the derived key carries no more than it, and
+//! no more than its length holds (a key under 14 bytes carries none): HKDF credits the
 //! 32-byte 𝐾 as seeding it fully, and caps the output at 𝐾's strength; the pairing then caps the
 //! label at its own, so a secret salt (SP 800-56C Rev. 2 Section 5.1, a `MACKey`), which HKDF
 //! also credits, does not lift the key above what the algorithm claims.
@@ -121,7 +123,8 @@ mod sealed {
 /// A parameter set paired with its KDF: `P: MLKEMKdfPairing<D, SS_LEN>` has one solution per
 /// parameter set and length, so a role impl generic over `D` and `SS_LEN` and bound on it takes
 /// both from the parameter type, `KdfParams<'p, D, SS_LEN>`. The length is the caller's, from one
-/// byte to the KDF's [`PairedKdf::MAX_LEN`], checked when the role is instantiated. Sealed on both sides,
+/// byte to the KDF's [`PairedKdf::MAX_LEN`], checked by [`MLKEMKdfPairing::LEN_CHECK`] when a
+/// worker is made or a derivation compiled. Sealed on both sides,
 /// through [`MLKEMParamsBase`] and [`PairedKdf`]; the three impls are the pairings the library
 /// supports, so a key under a KDF it is not paired with has no role, and
 /// `pk.encaps(&mut rng, params)` with the wrong `KdfParams` is a compile error. The derivation
@@ -131,6 +134,14 @@ pub trait MLKEMKdfPairing<D: KDF + PairedKdf + ?Sized, const SS_LEN: usize>:
 {
     /// The algorithm the pairing is.
     type Algorithm: KEMAlgorithm;
+
+    /// The length check, a compile-time error where it is evaluated: `SS_LEN` is from one byte
+    /// to the KDF's [`PairedKdf::MAX_LEN`]. The role impls evaluate it when a worker is made,
+    /// and [`derive`](Self::derive) does, so no worker exists at a length no derivation accepts.
+    const LEN_CHECK: () = assert!(
+        SS_LEN > 0 && SS_LEN <= D::MAX_LEN,
+        "the derived key is from one byte to the KDF's MAX_LEN long"
+    );
 
     /// KDF(𝐾, info) into a key of `SS_LEN` bytes, labelled at no more than the algorithm's
     /// strength.
@@ -142,12 +153,7 @@ pub trait MLKEMKdfPairing<D: KDF + PairedKdf + ?Sized, const SS_LEN: usize>:
         params: KdfParams<'_, D, SS_LEN>,
         K: &KeyMaterial<MLKEM_SS_LEN>,
     ) -> Result<KeyMaterial<SS_LEN>, KEMError> {
-        const {
-            assert!(
-                SS_LEN > 0 && SS_LEN <= D::MAX_LEN,
-                "the derived key is from one byte to the KDF's MAX_LEN long"
-            )
-        };
+        const { Self::LEN_CHECK };
         let mut okm = KeyMaterial::new();
         let written = params
             .kdf()
