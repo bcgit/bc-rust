@@ -157,6 +157,13 @@ impl SymmetricEncryptionKey<KEY_LEN, NONCE_LEN, 0> for ChaCha20Key {
         rng.next_bytes_out(&mut nonce)?;
         Ok((stream_cipher_over(ChaCha20KeyStream::start_at(&self.state, &nonce, 0)), nonce))
     }
+
+    /// Under a nonce the caller supplies, for the protocols RFC 8439 Sec 2.4 has in mind ("In some
+    /// protocols, this is known as the Initialization Vector"); it "MUST not be repeated for the
+    /// same key", which is then the caller's to ensure.
+    fn create_encryptor_nonce<'k>(&'k self, nonce: &[u8; NONCE_LEN]) -> Self::Encryptor<'k> {
+        stream_cipher_over(ChaCha20KeyStream::start_at(&self.state, nonce, 0))
+    }
 }
 
 impl SymmetricDecryptionKey<KEY_LEN, NONCE_LEN, 0> for ChaCha20Key {

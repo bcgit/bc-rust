@@ -172,6 +172,13 @@ where
         let nonce = random_iv::<NONCE_LEN>(rng)?;
         Ok((StreamCipher::from_keystream(CtrKeyStream::from_perm(state, nonce)), nonce))
     }
+
+    fn encrypt_init_nonce<'k>(
+        state: &'k Self::KeyState,
+        nonce: &[u8; NONCE_LEN],
+    ) -> Self::Encryptor<'k> {
+        StreamCipher::from_keystream(CtrKeyStream::from_perm(state, *nonce))
+    }
 }
 
 impl<P, const KEY_LEN: usize, const BLOCK_LEN: usize, const NONCE_LEN: usize>

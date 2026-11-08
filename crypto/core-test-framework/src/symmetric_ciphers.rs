@@ -255,6 +255,30 @@ impl TestFrameworkSymmetricCipher {
                 "same key and init data must give the same ciphertext"
             );
 
+            // the supplied-init-data twin gives the drawn encryptor's ciphertext for the same
+            // init data, through the worker and the one-shot
+            let mut enc = key.create_encryptor_nonce(&seed);
+            let mut supplied = vec![0u8; enc.do_encrypt_out_len(len)];
+            let n = enc.do_encrypt_out(msg, &mut supplied).unwrap();
+            supplied.truncate(n);
+            let (last, last_len) = enc.do_encrypt_final().unwrap();
+            supplied.extend_from_slice(&last[..last_len]);
+            assert_eq!(supplied, streamed, "create_encryptor_nonce must reproduce the ciphertext");
+            let mut one_shot = vec![0u8; encrypt_out_len(len)];
+            let n3 = key.encrypt_nonce_out(&seed, msg, &mut one_shot).unwrap();
+            assert_eq!(&one_shot[..n3], &streamed[..], "encrypt_nonce_out");
+            let ct_std = key.encrypt_nonce(&seed, msg).unwrap();
+            assert_eq!(ct_std, streamed, "encrypt_nonce must agree with encrypt_nonce_out");
+            // ...and other init data gives other ciphertext (a message of at least a block,
+            // so a feedback mode's first segment cannot coincide by chance)
+            if len >= 16 {
+                let mut other = seed;
+                other[0] ^= 0x80;
+                let mut other_ct = vec![0u8; encrypt_out_len(len)];
+                let n4 = key.encrypt_nonce_out(&other, msg, &mut other_ct).unwrap();
+                assert_ne!(&other_ct[..n4], &streamed[..], "other init data, other ciphertext");
+            }
+
             // ...and two draws from a real RNG differ
             let (_, a) = key.create_encryptor(rng).unwrap();
             let (_, b) = key.create_encryptor(rng).unwrap();
@@ -504,6 +528,15 @@ impl TestFrameworkStreamCipher {
         let (_, iv_again) = key.encrypt_inplace(&mut FixedSeedRNG::new(pinned), &mut buf2).unwrap();
         assert_eq!(iv, iv_again);
         assert_eq!(&buf[..], &buf2[..]);
+
+        // the supplied-init-data twins give the same ciphertext for the same init data
+        let mut buf3 = *DUMMY_SEED;
+        assert_eq!(key.encrypt_inplace_nonce(&iv, &mut buf3).unwrap(), buf3.len());
+        assert_eq!(&buf3[..], &buf[..], "encrypt_inplace_nonce");
+        let mut buf4 = *DUMMY_SEED;
+        let mut supplied = key.create_encryptor_nonce(&iv);
+        supplied.do_encrypt_inplace(&mut buf4).unwrap();
+        assert_eq!(&buf4[..], &buf[..], "create_encryptor_nonce");
 
         // the init data is random: not the same on two runs, and different init data under the
         // same key gives different ciphertext

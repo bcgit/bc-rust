@@ -41,7 +41,11 @@ pub(crate) fn tdes_ecb_cmd(
     match action {
         CipherDirection::Encrypt => {
             // ECB has no IV: the constructor's RNG draws nothing, and nothing is written.
-            let (enc, _) = start_encryptor(None, |rng| key.create_encryptor(rng));
+            let (enc, _) = start_encryptor(
+                None,
+                |rng| key.create_encryptor(rng),
+                |no_iv| key.create_encryptor_nonce(no_iv),
+            );
             encrypt_stream_bounded::<_, 0, BLOCK_LEN>(
                 enc,
                 None,

@@ -36,7 +36,11 @@ pub(crate) fn tdes_cbc_cmd(
     let iv = load_iv::<BLOCK_LEN>(iv, iv_file);
     match action {
         CipherDirection::Encrypt => {
-            let (enc, generated_iv) = start_encryptor(iv, |rng| key.create_encryptor(rng));
+            let (enc, generated_iv) = start_encryptor(
+                iv,
+                |rng| key.create_encryptor(rng),
+                |iv| key.create_encryptor_nonce(iv),
+            );
             encrypt_stream_bounded::<_, BLOCK_LEN, BLOCK_LEN>(
                 enc,
                 generated_iv.as_ref(),

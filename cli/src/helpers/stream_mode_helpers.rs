@@ -51,7 +51,8 @@ pub(crate) fn encrypt_stream<'k, K, const KEY_LEN: usize, const INIT_DATA_LEN: u
     K: SymmetricEncryptionKey<KEY_LEN, INIT_DATA_LEN, 0>,
     K::Encryptor<'k>: StreamCipherEncryptor<INIT_DATA_LEN>,
 {
-    let (mut enc, generated_iv) = start_encryptor(iv, |rng| key.create_encryptor(rng));
+    let (mut enc, generated_iv) =
+        start_encryptor(iv, |rng| key.create_encryptor(rng), |iv| key.create_encryptor_nonce(iv));
 
     // A generated IV goes out ahead of the ciphertext, so `decrypt` can pick it up. A supplied
     // one is the caller's to carry.

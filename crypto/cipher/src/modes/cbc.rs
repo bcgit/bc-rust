@@ -156,6 +156,13 @@ where
         let iv = random_iv::<BLOCK_LEN>(rng)?;
         Ok((PaddedBlockCipherEncryptor::from_inner(Cbc::from_perm(state, iv)), iv))
     }
+
+    fn encrypt_init_nonce<'k>(
+        state: &'k Self::KeyState,
+        iv: &[u8; BLOCK_LEN],
+    ) -> Self::Encryptor<'k> {
+        PaddedBlockCipherEncryptor::from_inner(Cbc::from_perm(state, *iv))
+    }
 }
 
 impl<P, Pad, const KEY_LEN: usize, const BLOCK_LEN: usize>
@@ -199,6 +206,13 @@ where
         };
         let iv = random_iv::<BLOCK_LEN>(rng)?;
         Ok((Cbc::from_perm(state, iv), iv))
+    }
+
+    fn encrypt_init_nonce<'k>(
+        state: &'k Self::KeyState,
+        iv: &[u8; BLOCK_LEN],
+    ) -> Self::Encryptor<'k> {
+        Cbc::from_perm(state, *iv)
     }
 }
 

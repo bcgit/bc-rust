@@ -26,13 +26,12 @@
 //! ```
 //!
 //! Every mode with an IV or nonce (CBC, CFB, CFB8, CTR, GCM) also takes `--iv` / `--iv-file`,
-//! loaded by [`load_iv`], for a format that carries the IV itself and for reproducing published
-//! vectors. With it, `encrypt` uses the supplied value and writes **only the ciphertext**, and
-//! `decrypt` takes it from the flag and reads **only ciphertext** from stdin. The keys' constructors
-//! draw the IV from an RNG, so it reaches them through [`start_encryptor`] and a [`FixedIv`] that
-//! hands out exactly those bytes (GCM keys have `create_encryptor_nonce` and use that).
-//! Unpredictability, and for CTR and GCM uniqueness, is then the caller's responsibility. CCM
-//! keeps its own `--nonce`, which is variable-length and was never generated.
+//! or `--nonce` / `--nonce-file`, which spell the same flag, loaded by [`load_iv`], for a format
+//! that carries the IV itself and for reproducing published vectors. With it, `encrypt` runs the
+//! key's `create_encryptor_nonce` through [`start_encryptor`] and writes **only the ciphertext**,
+//! and `decrypt` takes it from the flag and reads **only ciphertext** from stdin. Unpredictability
+//! for CBC and CFB, and uniqueness for CTR and GCM, is then the caller's responsibility. CCM keeps
+//! its own variable-length nonce, which was never generated, under the same two spellings.
 //!
 //! The IV is not secret (Sec 5.3), so shipping it in the clear is correct. Its *integrity* is not
 //! protected, and neither is the ciphertext's -- see the warnings on each subcommand.
@@ -58,7 +57,7 @@ use crate::helpers::{
     decode_hex_arg, flush_stdout, hex_input, load_secret, read_input_file, strip_trailing_newline,
     write_bytes_or_hex, write_stdout,
 };
-use bouncycastle::core::errors::{RNGError, SymmetricCipherError};
+use bouncycastle::core::errors::SymmetricCipherError;
 use bouncycastle::core::hazmat::do_hazardous_operations;
 use bouncycastle::core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle::core::security_strength::SecurityStrength;
@@ -175,53 +174,6 @@ pub(crate) fn load_key_object_typed<K: FromKeyMaterial<KEY_LEN>, const KEY_LEN: 
     )
 }
 
-/// An [`RNG`] that yields the caller's IV once, so `--iv` can reach a key whose only
-/// constructor draws the IV from an RNG. A second draw, or one of the
-/// wrong length, is an error rather than a repeat: the IV must be consumed exactly as given.
-pub(crate) struct FixedIv<const N: usize> {
-    iv: [u8; N],
-    used: bool,
-}
-
-impl<const N: usize> FixedIv<N> {
-    pub(crate) fn new(iv: [u8; N]) -> Self {
-        Self { iv, used: false }
-    }
-}
-
-impl<const N: usize> RNG for FixedIv<N> {
-    fn add_seed_keymaterial(&mut self, _: &dyn KeyMaterialTrait) -> Result<(), RNGError> {
-        Err(RNGError::GenericError("a fixed IV cannot be reseeded"))
-    }
-
-    fn next_int(&mut self) -> Result<u32, RNGError> {
-        Err(RNGError::GenericError("a fixed IV only supplies the IV"))
-    }
-
-    fn next_bytes(&mut self, len: usize) -> Result<Vec<u8>, RNGError> {
-        let mut out = vec![0u8; len];
-        self.next_bytes_out(&mut out)?;
-        Ok(out)
-    }
-
-    fn next_bytes_out(&mut self, out: &mut [u8]) -> Result<usize, RNGError> {
-        if self.used || out.len() != N {
-            return Err(RNGError::GenericError("the cipher asked for more than the one IV"));
-        }
-        self.used = true;
-        out.copy_from_slice(&self.iv);
-        Ok(N)
-    }
-
-    fn fill_keymaterial_out(&mut self, _: &mut dyn KeyMaterialTrait) -> Result<usize, RNGError> {
-        Err(RNGError::GenericError("a fixed IV only supplies the IV"))
-    }
-
-    fn security_strength(&self) -> SecurityStrength {
-        SecurityStrength::None
-    }
-}
-
 /// Loads `--iv-file` (raw bytes; hex with `--hex-input`) or `--iv` (hex); the file wins if
 /// both are given, as for `--key-file`. `None` when neither is given, which selects the
 /// generated, in-band IV. The IV must be exactly `INIT_DATA_LEN` bytes.
@@ -256,22 +208,24 @@ pub(crate) fn load_iv<const INIT_DATA_LEN: usize>(
     }))
 }
 
-/// Starts an encryptor from `create`, the key's constructor: under `iv` when one was supplied,
-/// through a [`FixedIv`], and otherwise under a fresh IV from the OS-backed DRBG. A generated IV
-/// comes back for the caller to write ahead of the ciphertext; a supplied one does not, since it
-/// is the caller's to carry.
+/// Starts an encryptor from the key's constructors: `create_nonce` under `iv` when one was
+/// supplied, and otherwise `create` under a fresh IV from the OS-backed DRBG. A generated IV comes
+/// back for the caller to write ahead of the ciphertext; a supplied one does not, since it is the
+/// caller's to carry.
 pub(crate) fn start_encryptor<E, const INIT_DATA_LEN: usize>(
     iv: Option<[u8; INIT_DATA_LEN]>,
     create: impl FnOnce(&mut dyn RNG) -> Result<(E, [u8; INIT_DATA_LEN]), SymmetricCipherError>,
+    create_nonce: impl FnOnce(&[u8; INIT_DATA_LEN]) -> E,
 ) -> (E, Option<[u8; INIT_DATA_LEN]>) {
-    let started = match iv {
-        Some(iv) => create(&mut FixedIv::new(iv)).map(|(enc, _)| (enc, None)),
-        None => create(&mut HashDRBG_SHA512::new_from_os()).map(|(enc, iv)| (enc, Some(iv))),
-    };
-    started.unwrap_or_else(|e| {
-        eprintln!("Error: couldn't start encryption: {e:?}");
-        exit(-1);
-    })
+    match iv {
+        Some(iv) => (create_nonce(&iv), None),
+        None => create(&mut HashDRBG_SHA512::new_from_os())
+            .map(|(enc, iv)| (enc, Some(iv)))
+            .unwrap_or_else(|e| {
+                eprintln!("Error: couldn't start encryption: {e:?}");
+                exit(-1);
+            }),
+    }
 }
 
 /// Encrypts stdin to stdout through `enc`, a worker the command's key has already made, writing
