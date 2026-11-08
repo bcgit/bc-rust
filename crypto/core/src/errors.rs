@@ -79,6 +79,8 @@ pub enum KEMError {
     KeyMaterialError(KeyMaterialError),
     ///
     RNGError(RNGError),
+    /// The KDF an algorithm derives its output through refused the derivation.
+    KDFError(KDFError),
 }
 
 ///
@@ -262,6 +264,12 @@ impl From<KeyMaterialError> for KEMError {
 impl From<RNGError> for KEMError {
     fn from(e: RNGError) -> KEMError {
         Self::RNGError(e)
+    }
+}
+
+impl From<KDFError> for KEMError {
+    fn from(e: KDFError) -> KEMError {
+        Self::KDFError(e)
     }
 }
 
