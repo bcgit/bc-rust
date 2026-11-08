@@ -3,7 +3,7 @@
 
 use bouncycastle_core::errors::KEMError;
 use bouncycastle_core::kem_key::{DecapsulatingKey, EncapsulatingKey};
-use bouncycastle_core::key_material::KeyMaterialTrait;
+use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::Algorithm;
 use bouncycastle_core::traits::{
@@ -84,12 +84,19 @@ impl TestFrameworkKEM {
             let seed = [0x5A; 64];
             let (ss_a, ct_a) = pk.encaps(&mut FixedSeedRNG::new(seed), params).unwrap();
             let (ss_b, ct_b) = encapsulator.encaps(&mut FixedSeedRNG::new(seed)).unwrap();
+            // the `_out` buffers are prefilled: whatever was there is gone
+            let stale = || {
+                KeyMaterial::<SS_LEN>::from_bytes_as_type(&[0xFF; SS_LEN], KeyType::Seed).unwrap()
+            };
             let mut ct_c = [0xFFu8; CT_LEN];
-            let (ss_c, written) =
-                encapsulator.encaps_out(&mut FixedSeedRNG::new(seed), &mut ct_c).unwrap();
+            let mut ss_c = stale();
+            let written = encapsulator
+                .encaps_out(&mut FixedSeedRNG::new(seed), &mut ct_c, &mut ss_c)
+                .unwrap();
             let mut ct_d = [0xFFu8; CT_LEN];
-            let (ss_d, written_d) =
-                pk.encaps_out(&mut FixedSeedRNG::new(seed), params, &mut ct_d).unwrap();
+            let mut ss_d = stale();
+            let written_d =
+                pk.encaps_out(&mut FixedSeedRNG::new(seed), params, &mut ct_d, &mut ss_d).unwrap();
             assert_eq!(ss_a, ss_b, "encaps must be deterministic given fixed RNG output");
             assert_eq!(ct_a, ct_b, "encaps must be deterministic given fixed RNG output");
             assert_eq!(ss_a, ss_c);
@@ -99,10 +106,17 @@ impl TestFrameworkKEM {
             assert_eq!(ct_a, ct_d);
             assert_eq!(written_d, CT_LEN);
 
-            // the decapsulator is reusable, and its result is the one-shot's
+            // the decapsulator is reusable, and its result is the one-shot's; the `_out` forms
+            // write the same secret over a prefilled buffer
             assert_eq!(decapsulator.decaps(&ct_a).unwrap(), ss_a);
             assert_eq!(decapsulator.decaps(&ct_a).unwrap(), ss_a);
             assert_eq!(sk.decaps(&ct_a, params).unwrap(), ss_a);
+            let mut ss_e = stale();
+            assert_eq!(decapsulator.decaps_out(&ct_a, &mut ss_e).unwrap(), SS_LEN);
+            assert_eq!(ss_e, ss_a);
+            let mut ss_f = stale();
+            assert_eq!(sk.decaps_out(&ct_a, params, &mut ss_f).unwrap(), SS_LEN);
+            assert_eq!(ss_f, ss_a);
         }
 
         // the workers are usable as trait objects
@@ -111,6 +125,9 @@ impl TestFrameworkKEM {
             let dyn_dec: &dyn KEMDecapsulator<CT_LEN, SS_LEN> = &decapsulator;
             let (ss_e, ct_e) = dyn_enc.encaps(&mut rng).unwrap();
             assert_eq!(dyn_dec.decaps(&ct_e).unwrap(), ss_e);
+            let mut ss_g = KeyMaterial::<SS_LEN>::new();
+            assert_eq!(dyn_dec.decaps_out(&ct_e, &mut ss_g).unwrap(), SS_LEN);
+            assert_eq!(ss_g, ss_e);
         }
 
         // Test non-determinism
@@ -332,8 +349,10 @@ mod tests {
             &self,
             rng: &mut dyn RNG,
             ct: &mut [u8; CT_LEN],
-        ) -> Result<(KeyMaterial<KEY_LEN>, usize), KEMError> {
+            ss: &mut KeyMaterial<KEY_LEN>,
+        ) -> Result<usize, KEMError> {
             ct.fill(0);
+            ss.zeroize();
             if rng.security_strength() < Self::MAX_SECURITY_STRENGTH {
                 return Err(RNGError::SecurityStrengthInsufficientForAlgorithm.into());
             }
@@ -343,12 +362,18 @@ mod tests {
                 ct[i] = r[i] ^ self.key[i];
             }
             ct[KEY_LEN..].copy_from_slice(&tag(self.key, &r));
-            Ok((shared_secret(self.key, &r, self.kdf), CT_LEN))
+            *ss = shared_secret(self.key, &r, self.kdf);
+            Ok(CT_LEN)
         }
     }
 
     impl<const E: bool> KEMDecapsulator<CT_LEN, KEY_LEN> for MockWorker<'_, '_, E> {
-        fn decaps(&self, ct: &[u8; CT_LEN]) -> Result<KeyMaterial<KEY_LEN>, KEMError> {
+        fn decaps_out(
+            &self,
+            ct: &[u8; CT_LEN],
+            ss: &mut KeyMaterial<KEY_LEN>,
+        ) -> Result<usize, KEMError> {
+            ss.zeroize();
             let mut r = [0u8; KEY_LEN];
             for i in 0..KEY_LEN {
                 r[i] = ct[i] ^ self.key[i];
@@ -362,9 +387,11 @@ mod tests {
                 for (i, b) in rejected.iter_mut().enumerate() {
                     *b = ct[i] ^ ct[KEY_LEN + (i % TAG_LEN)] ^ 0xA5;
                 }
-                return Ok(shared_secret(self.key, &rejected, self.kdf));
+                *ss = shared_secret(self.key, &rejected, self.kdf);
+                return Ok(KEY_LEN);
             }
-            Ok(shared_secret(self.key, &r, self.kdf))
+            *ss = shared_secret(self.key, &r, self.kdf);
+            Ok(KEY_LEN)
         }
     }
 
