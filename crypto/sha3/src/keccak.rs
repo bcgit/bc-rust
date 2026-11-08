@@ -401,8 +401,8 @@ impl KeccakInternal {
 
 /*** State serialization ***/
 //
-// The SHA3 and SHAKE public objects have identical state: a [KeccakDigest] plus three pieces of
-// KDF metadata. The helpers below serialize that shared state so the `SerializableState` impls in
+// The SHA3 and SHAKE public objects have identical state: a [KeccakDigest]. The helpers below
+// serialize that shared state so the `SerializableState` impls in
 // `sha3.rs` and `shake.rs` are just thin wrappers that add/check the library version header.
 
 /// Number of bytes needed to serialize a [`KeccakInternal`]'s mutable state.
@@ -417,8 +417,8 @@ impl KeccakInternal {
 ///   [400 .. 401)  squeezing     bool  (0 or 1)
 const KECCAK_SERIALIZED_LEN: usize = 200 + 192 + 8 + 1;
 
-/// Number of bytes needed to serialize the shared SHA3-family state (a variant tag, a [`KeccakInternal`],
-/// plus the three KDF metadata fields), excluding the library version header.
+/// Number of bytes needed to serialize the shared SHA3-family state (a variant tag and a
+/// [`KeccakInternal`]), excluding the library version header.
 ///
 /// The leading variant tag distinguishes every SHA3/SHAKE variant — crucially including same-rate
 /// pairs such as SHA3-256 and SHAKE256 — so a serialized state can never be deserialized into a

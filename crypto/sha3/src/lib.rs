@@ -4,7 +4,6 @@
 //!
 //! * SHA3 [`Hash`] functions.
 //! * SHAKE [`XOF`] functions.
-//! * SHA3-based [`KDF`] functions.
 //! * HMAC_SHA3_* [`MAC`] functions.
 //! * The SP 800-185 functions: cSHAKE ([`XOF`]), KMAC ([`MAC`]), TupleHash and ParallelHash
 //!   ([`Hash`]), and their arbitrary-output-length forms KMACXOF, TupleHashXOF and
@@ -103,32 +102,6 @@
 //! [`Hash::do_final`] produces the nominal digest size, 32 bytes for SHAKE128 and 64 for SHAKE256
 //! (the length at which the output carries the full security level), and the one-shot
 //! [`HashOneShot::hash`] does the same.
-//!
-//! ## KDF
-//! SHA3 offers Key Derivation Functions in the form of KDF, which is accessed through the [`KDF`] trait,
-//! which is implemented by all SHA3 and SHAKE variants.
-//! [`KDF`] acts on [`KeyMaterial`] objects as both the input and output values.
-//! In the case of SHA3, the [`KDF`] interfaces hash the concatenated input keys and additional input
-//! with the underlying SHA3 or SHAKE primitive, maintaining the length and entropy metadata of the key
-//! material; they are not the SP 800-56Cr2 one-step KDF, which puts a counter before the input.
-//! This is intended to act as a developer aid to prevent some classes of developer mistakes, such as
-//! deriving a cryptographic key from uninitialized (aka zeroized) input key material, or using low-entropy
-//! input key material to derive a MAC, symmetric, or asymmetric key.
-//!
-//! ```
-//! use bouncycastle_core::traits::KDF;
-//! use bouncycastle_core::key_material::{KeyMaterial256, KeyType};
-//! use bouncycastle_sha3 as sha3;
-//!
-//! let input_key = KeyMaterial256::from_bytes(b"\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0A\x0B\x0C\x0D\x0E\x0F").unwrap();
-//! let output_key = sha3::SHA3_256::new().derive_key(&input_key, b"Additional input", 32).unwrap();
-//!```
-//! In the previous example, since [`KeyMaterial::from_bytes`] cannot know the amount of entropy in the input data,
-//! it automatically tags it as [`KeyType::Unknown`], and thus [`SHA3Internal::derive_key`] produces an output key
-//! which also has type [`KeyType::Unknown`].
-//! This would also be the case even if the input had type
-//! [`KeyType::CryptographicRandom`] since the input [`KeyMaterial`] is 16 bytes but [`SHA3_256`] needs at least 32 bytes of
-//! full-entropy input key material in order to be able to produce full entropy output key material.
 //!
 //! ## HMAC
 //! See [hmac].
@@ -245,7 +218,7 @@ use bouncycastle_core::errors::HashError;
 #[allow(unused_imports)]
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 #[allow(unused_imports)]
-use bouncycastle_core::traits::{Hash, HashOneShot, KDF, MAC, Suspendable, XOF, XOFSqueezer};
+use bouncycastle_core::traits::{Hash, HashOneShot, MAC, Suspendable, XOF, XOFSqueezer};
 // end of doc-only imports
 
 pub mod hmac;
@@ -254,7 +227,6 @@ pub mod parallelhash;
 pub mod tuplehash;
 
 mod cshake;
-mod kdf_credit;
 mod keccak;
 mod sha3;
 mod shake;

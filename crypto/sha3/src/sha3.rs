@@ -1,14 +1,11 @@
 use crate::SHA3Params;
-use crate::kdf_credit::{KdfCredit, len_prefix};
 use crate::keccak::{
     KeccakInternal, SHA3_FAMILY_STATE_LEN, SUSPENDED_SHA3_STATE_LEN, deserialize_sha3_family_state,
     serialize_sha3_family_state,
 };
-use bouncycastle_core::errors::{HashError, KDFError, SuspendableError};
-use bouncycastle_core::hazmat::do_hazardous_operations;
-use bouncycastle_core::key_material::KeyMaterialTrait;
+use bouncycastle_core::errors::{HashError, SuspendableError};
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::traits::{Algorithm, Hash, HashOneShot, KDF, Suspendable};
+use bouncycastle_core::traits::{Algorithm, Hash, HashOneShot, Suspendable};
 use bouncycastle_utils::min;
 use bouncycastle_utils::suspendable_state::{add_lib_ver, check_lib_ver};
 
@@ -76,54 +73,6 @@ impl<PARAMS: SHA3Params> SHA3Internal<PARAMS> {
         let n = *min(&output.len(), &PARAMS::OUTPUT_LEN);
         self.keccak.squeeze(&mut output[..n])
     }
-
-    /// The derivation of [`KDF`] over this hash: `H(len(ikm_1) || ikm_1 || .. || len(ikm_n) ||
-    /// ikm_n || fixed_info)` from a fresh sponge, each length a 4-byte big-endian count so the
-    /// keys and the info are bound unambiguously, written to `output_key` at `len` bytes, at
-    /// most one hash output, and typed by [`KDF`]'s rule: full-entropy output once at least half
-    /// a hash output of credited key material went in, the bytes that carry the strength the
-    /// hash can claim. What this instance has absorbed plays no part.
-    fn derive_internal(
-        ikms: &[&dyn KeyMaterialTrait],
-        fixed_info: &[u8],
-        len: usize,
-        output_key: &mut dyn KeyMaterialTrait,
-    ) -> Result<usize, KDFError> {
-        // The `_out` rule: nothing stale survives, whichever way this returns.
-        output_key.zeroize();
-        if len == 0 {
-            return Err(KDFError::InvalidLength("a zero-length derivation is refused"));
-        }
-        if ikms.is_empty() {
-            return Err(KDFError::InvalidLength("a derivation from no keys is refused"));
-        }
-        if len > PARAMS::OUTPUT_LEN {
-            return Err(KDFError::InvalidLength("a SHA-3 KDF derives at most one hash output"));
-        }
-        if len > output_key.capacity() {
-            return Err(KDFError::InvalidLength("the output buffer cannot hold len bytes"));
-        }
-
-        let mut credit = KdfCredit::new(SecurityStrength::from_bits(PARAMS::OUTPUT_LEN * 8 / 2));
-        let mut hash = Self::new();
-        for ikm in ikms {
-            let prefix = len_prefix(*ikm)
-                .map_err(|_| KDFError::InvalidLength("an input key longer than 2^32 - 1 bytes"))?;
-            credit.credit(*ikm);
-            hash.do_update(&prefix);
-            hash.do_update(ikm.ref_to_bytes());
-        }
-        hash.do_update(fixed_info);
-
-        let (key_type, strength) = credit.output(PARAMS::OUTPUT_LEN / 2, len);
-        do_hazardous_operations(output_key, |output_key| {
-            let written = hash.do_final_out(&mut output_key.ref_to_bytes_mut()?[..len]);
-            output_key.set_key_len(written)?;
-            output_key.set_key_type(key_type)?;
-            output_key.set_security_strength(strength)
-        })?;
-        Ok(len)
-    }
 }
 
 impl<PARAMS: SHA3Params> Default for SHA3Internal<PARAMS> {
@@ -188,35 +137,6 @@ impl<PARAMS: SHA3Params> Hash for SHA3Internal<PARAMS> {
         }
         // do_final_bits_out appends the SHA-3 `01` suffix, pads, and squeezes.
         Ok(self.do_final_bits_out(partial_byte, num_partial_bits, output))
-    }
-}
-
-/// One hash of the length-prefixed inputs, `H(len(ikm) || ikm || fixed_info)`, from a fresh
-/// sponge, with the entropy bookkeeping of [`KDF`]'s docs. The prefixes bind the keys and the
-/// info: `[a, b]` is not `a || b`, and `(a, info)` is not `(a || info, "")`. This is not the
-/// SP 800-56Cr2 Section 4.1 one-step KDF, `H(counter || Z || FixedInfo)` over a `Z` whose length
-/// the scheme fixes; it has no parameters, so what the instance has absorbed plays no part.
-impl<PARAMS: SHA3Params> KDF for SHA3Internal<PARAMS> {
-    /// `H(len(ikm) || ikm || fixed_info)` truncated to `len`, at most one hash output.
-    fn derive_key_out(
-        &self,
-        ikm: &dyn KeyMaterialTrait,
-        fixed_info: &[u8],
-        len: usize,
-        output_key: &mut dyn KeyMaterialTrait,
-    ) -> Result<usize, KDFError> {
-        Self::derive_internal(&[ikm], fixed_info, len, output_key)
-    }
-
-    /// `H(len(ikm_1) || ikm_1 || .. || len(ikm_n) || ikm_n || fixed_info)`, each key credited.
-    fn derive_key_from_multiple_out(
-        &self,
-        ikms: &[&dyn KeyMaterialTrait],
-        fixed_info: &[u8],
-        len: usize,
-        output_key: &mut dyn KeyMaterialTrait,
-    ) -> Result<usize, KDFError> {
-        Self::derive_internal(ikms, fixed_info, len, output_key)
     }
 }
 

@@ -1,14 +1,11 @@
 use crate::SHAKEParams;
-use crate::kdf_credit::{KdfCredit, len_prefix};
 use crate::keccak::{
     KeccakInternal, SHA3_FAMILY_STATE_LEN, SUSPENDED_SHA3_STATE_LEN, deserialize_sha3_family_state,
     serialize_sha3_family_state,
 };
-use bouncycastle_core::errors::{HashError, KDFError, SuspendableError};
-use bouncycastle_core::hazmat::do_hazardous_operations;
-use bouncycastle_core::key_material::KeyMaterialTrait;
+use bouncycastle_core::errors::{HashError, SuspendableError};
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::traits::{Algorithm, Hash, HashOneShot, KDF, Suspendable, XOF, XOFSqueezer};
+use bouncycastle_core::traits::{Algorithm, Hash, HashOneShot, Suspendable, XOF, XOFSqueezer};
 use bouncycastle_utils::suspendable_state::{add_lib_ver, check_lib_ver};
 
 /// Internal struct for SHAKE. Use [`SHAKE128`](crate::SHAKE128) or [`SHAKE256`](crate::SHAKE256);
@@ -101,51 +98,6 @@ impl<PARAMS: SHAKEParams> SHAKEInternal<PARAMS> {
         }
         self.keccak.squeeze(output)
     }
-
-    /// The derivation of [`KDF`] over this XOF: `SHAKE(len(ikm_1) || ikm_1 || .. || len(ikm_n)
-    /// || ikm_n || fixed_info)` from a fresh sponge, each length a 4-byte big-endian count so
-    /// the keys and the info are bound unambiguously, squeezed to `len` bytes, any length, and
-    /// typed by [`KDF`]'s rule: full-entropy output once at least the bytes that carry the
-    /// strength the XOF can claim went in as credited key material, 16 for SHAKE128 and 32 for
-    /// SHAKE256. What this instance has absorbed plays no part.
-    fn derive_internal(
-        ikms: &[&dyn KeyMaterialTrait],
-        fixed_info: &[u8],
-        len: usize,
-        output_key: &mut dyn KeyMaterialTrait,
-    ) -> Result<usize, KDFError> {
-        // The `_out` rule: nothing stale survives, whichever way this returns.
-        output_key.zeroize();
-        if len == 0 {
-            return Err(KDFError::InvalidLength("a zero-length derivation is refused"));
-        }
-        if ikms.is_empty() {
-            return Err(KDFError::InvalidLength("a derivation from no keys is refused"));
-        }
-        if len > output_key.capacity() {
-            return Err(KDFError::InvalidLength("the output buffer cannot hold len bytes"));
-        }
-
-        let mut credit = KdfCredit::new(SecurityStrength::from_bits(PARAMS::SIZE as usize));
-        let mut xof = Self::new();
-        for ikm in ikms {
-            let prefix = len_prefix(*ikm)
-                .map_err(|_| KDFError::InvalidLength("an input key longer than 2^32 - 1 bytes"))?;
-            credit.credit(*ikm);
-            xof.keccak.absorb(&prefix);
-            xof.keccak.absorb(ikm.ref_to_bytes());
-        }
-        xof.keccak.absorb(fixed_info);
-
-        let (key_type, strength) = credit.output(PARAMS::SIZE as usize / 8, len);
-        do_hazardous_operations(output_key, |output_key| {
-            let written = xof.squeeze_internal_out(&mut output_key.ref_to_bytes_mut()?[..len]);
-            output_key.set_key_len(written)?;
-            output_key.set_key_type(key_type)?;
-            output_key.set_security_strength(strength)
-        })?;
-        Ok(len)
-    }
 }
 
 impl<PARAMS: SHAKEParams> Suspendable<SUSPENDED_SHA3_STATE_LEN> for SHAKEInternal<PARAMS> {
@@ -182,34 +134,6 @@ impl<PARAMS: SHAKEParams> Suspendable<SUSPENDED_SHA3_STATE_LEN> for SHAKEInterna
         }
 
         Ok(SHAKEInternal { _phantomdata: core::marker::PhantomData, keccak })
-    }
-}
-
-/// One squeeze of the length-prefixed inputs, `SHAKE(len(ikm) || ikm || fixed_info)`, from a
-/// fresh sponge, with the entropy bookkeeping of [`KDF`]'s docs; the prefixes bind the keys and
-/// the info as the SHA-3 KDF's do. Not an SP 800-56Cr2 KDF; it has no parameters, so what the
-/// instance has absorbed plays no part.
-impl<PARAMS: SHAKEParams> KDF for SHAKEInternal<PARAMS> {
-    /// `SHAKE(len(ikm) || ikm || fixed_info)` squeezed to `len` bytes, any length.
-    fn derive_key_out(
-        &self,
-        ikm: &dyn KeyMaterialTrait,
-        fixed_info: &[u8],
-        len: usize,
-        output_key: &mut dyn KeyMaterialTrait,
-    ) -> Result<usize, KDFError> {
-        Self::derive_internal(&[ikm], fixed_info, len, output_key)
-    }
-
-    /// `SHAKE(len(ikm_1) || ikm_1 || .. || len(ikm_n) || ikm_n || fixed_info)`, each key credited.
-    fn derive_key_from_multiple_out(
-        &self,
-        ikms: &[&dyn KeyMaterialTrait],
-        fixed_info: &[u8],
-        len: usize,
-        output_key: &mut dyn KeyMaterialTrait,
-    ) -> Result<usize, KDFError> {
-        Self::derive_internal(ikms, fixed_info, len, output_key)
     }
 }
 
@@ -306,9 +230,8 @@ impl<PARAMS: SHAKEParams> Hash for SHAKEInternal<PARAMS> {
     ///
     /// Absorbing after squeezing has begun would be wrong -- FIPS 202 defines SHAKE as a single
     /// function of the whole message, so re-absorbing would be an unapproved duplex -- and it cannot
-    /// be expressed: producing output goes through [`XOF::into_squeezer`], which consumes the value,
-    /// and every `KDF` entry point takes `self` by value too. A `SHAKEInternal` a caller can still
-    /// name has therefore never squeezed.
+    /// be expressed: producing output goes through [`XOF::into_squeezer`], which consumes the
+    /// value. A `SHAKEInternal` a caller can still name has therefore never squeezed.
     fn do_update(&mut self, data: &[u8]) {
         // Pins the invariant the doc above argues for, so a future change that lets a squeezing
         // SHAKE escape fails the test suite rather than silently corrupting the sponge.
