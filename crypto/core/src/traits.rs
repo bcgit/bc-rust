@@ -495,7 +495,7 @@ pub trait HashAlgParams: Algorithm {
 pub const KDF_ONE_SHOT_MAX_LEN: usize = 1024;
 
 /// A key derivation function that already holds whatever parameters it has (HKDF its salt; the
-/// X9.63 KDF, SHA-3 and SHAKE none), deriving keying material of a requested length from input
+/// X9.63 KDF none), deriving keying material of a requested length from input
 /// keying material and a context string, SP 800-56C's `FixedInfo`. Every method takes `&self`,
 /// so one instance serves any number of derivations and the trait is usable as `dyn KDF`.
 ///
@@ -515,9 +515,8 @@ pub const KDF_ONE_SHOT_MAX_LEN: usize = 1024;
 /// random ones.
 ///
 /// An instance holds only what it was made from (an HKDF's salt): one that has also absorbed
-/// input through a streaming API is refused by the derivations, and a hash or XOF used as a KDF
-/// derives from a fresh state whatever it has absorbed. A zero-length derivation is refused, and
-/// so is one from no keys, whose output would be a function of the info alone.
+/// input through a streaming API is refused by the derivations. A zero-length derivation is
+/// refused, and so is one from no keys, whose output would be a function of the info alone.
 pub trait KDF: AlgorithmInfo {
     /// Derives `len` bytes of keying material from `ikm` and `fixed_info` into the front of
     /// `output_key`, which is zeroized first, and returns `len`.
