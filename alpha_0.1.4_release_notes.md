@@ -62,10 +62,13 @@
 * The KDF entropy accounting after review: a full-entropy key with no strength (a `SharedSecret` whose producer
   stated none, which is now the default for one built from bytes, or a key too short to carry 112 bits) credits
   nothing, so a `CryptographicRandom` output always carries a strength; a KDF instance that has absorbed input
-  through the streaming API is refused; a zero-length derivation is refused; and SHA-3 and SHAKE as a KDF type
-  their output as the KDF's, derive from a fresh sponge, and hash their inputs length-prefixed
-  (`len(ikm) || ikm || fixed_info`), so two keys are not their concatenation; their known answers change.
+  through the streaming API is refused; and a zero-length derivation is refused.
   A derivation from no keys is refused; HKDF's `extract_out`, `extract_and_expand_out` and
   `do_extract_final_out` zeroize the output before any check, as the `_out` rule asks; and the ML-KEM pairings
   cap the derived key's label at the pairing's strength, so a secret salt does not lift it.
+* SHA-3 and SHAKE no longer implement `KDF`, and `KDFFactory` loses the `SHA3-224` to `SHA3-512`, `SHAKE128` and
+  `SHAKE256` names. The construction was this library's own, a single hash of the keys and the info, which no
+  standard describes: SP 800-56C Rev. 2 Section 4.1's one-step KDF puts a counter before `Z || FixedInfo` and
+  admits the SHA-3 hashes and KMAC as its function, and SHAKE not at all. HKDF over SHA-3 remains, through the
+  `HKDF_SHA3_*` names.
 
