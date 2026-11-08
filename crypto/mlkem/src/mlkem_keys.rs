@@ -8,7 +8,7 @@ use bouncycastle_core::errors::KEMError;
 use bouncycastle_core::hazmat::do_hazardous_operations;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::traits::{Hash, KEMPrivateKey, KEMPublicKey};
-use bouncycastle_mlkem_common::aux_functions::{byte_decode, byte_encode};
+use bouncycastle_mlkem_common::aux_functions::{byte_decode, byte_encode, byte_encode_out};
 use bouncycastle_utils::ct::ct_eq_bytes;
 use bouncycastle_utils::secret::Secret;
 use core::fmt;
@@ -390,9 +390,11 @@ impl<P: MLKEMParams> MLKEMPrivateKey<P> {
 
         /* dk_pke */
         // Alg 13; line 20: dkPKE ← ByteEncode12(𝐬)
-        for i in 0..P::k {
-            out[i * POLY_BYTES..(i + 1) * POLY_BYTES]
-                .copy_from_slice(&byte_encode::<12, POLY_BYTES>(&self.s_hat[i]));
+        // Encoded straight into the caller's buffer: 𝐬̂ is private-key material, and a
+        // by-value encoding would pass through a stack temporary that nothing zeroizes.
+        let (chunks, _) = out[..P::k * POLY_BYTES].as_chunks_mut::<POLY_BYTES>();
+        for (chunk, s_i) in chunks.iter_mut().zip(self.s_hat.elems()) {
+            byte_encode_out::<12, POLY_BYTES>(s_i, chunk);
         }
         pos += P::k * POLY_BYTES;
 
@@ -607,8 +609,8 @@ impl<P: MLKEMParams> PartialEq for MLKEMPrivateKey<P> {
             // Encoded 𝐬̂ is private-key material: held in `Secret` buffers for the comparison.
             let mut a_encoded = Secret::<[u8; POLY_BYTES]>::new();
             let mut b_encoded = Secret::<[u8; POLY_BYTES]>::new();
-            *a_encoded = byte_encode::<12, POLY_BYTES>(a);
-            *b_encoded = byte_encode::<12, POLY_BYTES>(b);
+            byte_encode_out::<12, POLY_BYTES>(a, &mut a_encoded);
+            byte_encode_out::<12, POLY_BYTES>(b, &mut b_encoded);
             equal &= ct_eq_bytes(&*a_encoded, &*b_encoded);
         }
         equal &= self.ek == other.ek;
