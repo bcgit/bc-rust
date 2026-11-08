@@ -311,6 +311,8 @@ impl<H: HMACParams> HKDF<H> {
         ikm: &(impl KeyMaterialTrait + ?Sized),
         prk: &mut KeyMaterial<MAX_HMAC_OUTPUT_LEN>,
     ) -> Result<usize, MACError> {
+        // The `_out` rule: nothing stale survives, whichever way this returns.
+        prk.zeroize();
         // PRK = HMAC-Hash(salt, IKM)
 
         let mut hkdf = Self::new();
@@ -500,6 +502,8 @@ impl<H: HMACParams> HKDF<H> {
         L: usize,
         okm: &mut (impl KeyMaterialTrait + ?Sized),
     ) -> Result<usize, KDFError> {
+        // The `_out` rule: nothing stale survives, whichever way this returns.
+        okm.zeroize();
         let prk = Self::extract(salt, ikm)?;
         Self::expand_out(&prk, info, L, okm)
     }
@@ -651,6 +655,8 @@ impl<H: HMACParams> HKDF<H> {
         self,
         prk: &mut KeyMaterial<MAX_HMAC_OUTPUT_LEN>,
     ) -> Result<usize, MACError> {
+        // The `_out` rule: nothing stale survives, whichever way this returns.
+        prk.zeroize();
         if self.state == HkdfStates::Uninitialized {
             return Err(MACError::InvalidState(
                 "Must call do_extract_init() before calling do_extract_final().",
@@ -714,9 +720,10 @@ impl<H: HMACParams> KDF for HKDF<H> {
     /// same key twice is credited twice).
     ///
     /// # Errors
-    /// As [`KDF::derive_key_out`]; and [`KDFError::MACError`] with [`MACError::InvalidState`]
-    /// if this instance has absorbed input keying material through the streaming API, since
-    /// the derivation would then be over that material too.
+    /// As [`KDF::derive_key_out`]; [`KDFError::InvalidLength`] if `ikms` is empty; and
+    /// [`KDFError::MACError`] with [`MACError::InvalidState`] if this instance has absorbed
+    /// input keying material through the streaming API, since the derivation would then be over
+    /// that material too.
     fn derive_key_from_multiple_out(
         &self,
         ikms: &[&dyn KeyMaterialTrait],
@@ -725,6 +732,9 @@ impl<H: HMACParams> KDF for HKDF<H> {
         output_key: &mut dyn KeyMaterialTrait,
     ) -> Result<usize, KDFError> {
         output_key.zeroize();
+        if ikms.is_empty() {
+            return Err(KDFError::InvalidLength("a derivation from no keys is refused"));
+        }
         if self.ikm_absorbed {
             return Err(KDFError::MACError(MACError::InvalidState(
                 "a KDF instance holds its salt and nothing else; this HKDF has absorbed input keying material",

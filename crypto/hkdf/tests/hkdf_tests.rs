@@ -636,6 +636,34 @@ mod hkdf_tests {
         assert_eq!(okm.key_type(), KeyType::Zeroized);
     }
 
+    /// A refused extract leaves nothing of the output behind either: `extract_out` and
+    /// `extract_and_expand_out` with a salt typed `Unknown`, and `do_extract_final_out` on an
+    /// instance never initialised, zeroize the buffer before the check that refuses them.
+    #[test]
+    fn test_extract_failure_leaves_output_zeroized() {
+        let unknown =
+            KeyMaterial256::from_bytes_as_type(&DUMMY_SEED[..32], KeyType::Unknown).unwrap();
+        let ikm = KeyMaterial256::from_bytes_as_type(&DUMMY_SEED[32..64], KeyType::MACKey).unwrap();
+        let prefilled = || KeyMaterial512::from_bytes_as_type(&[0x5A; 64], KeyType::Seed).unwrap();
+
+        let mut prk = prefilled();
+        assert!(HKDF_SHA256::extract_out(&unknown, &ikm, &mut prk).is_err());
+        assert_eq!(prk.key_len(), 0);
+        assert_eq!(prk.key_type(), KeyType::Zeroized);
+
+        let mut okm = prefilled();
+        assert!(
+            HKDF_SHA256::extract_and_expand_out(&unknown, &ikm, b"info", 32, &mut okm).is_err()
+        );
+        assert_eq!(okm.key_len(), 0);
+        assert_eq!(okm.key_type(), KeyType::Zeroized);
+
+        let mut prk = prefilled();
+        assert!(HKDF_SHA256::new().do_extract_final_out(&mut prk).is_err());
+        assert_eq!(prk.key_len(), 0);
+        assert_eq!(prk.key_type(), KeyType::Zeroized);
+    }
+
     /// A PRK longer than the hash block gives what HMAC keyed with it gives (RFC 2104 Section 3
     /// hashes such a key first): T(1) || T(2) computed with HMAC directly.
     fn check_expand_long_prk<H>(lens: &[usize])
