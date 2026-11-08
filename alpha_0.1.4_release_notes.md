@@ -47,7 +47,10 @@
 * KEM encapsulation and decapsulation move onto the keys, as signing did: the `EncapsulatingKey` /
   `DecapsulatingKey` roles in `core::kem_key` hand out `KEMEncapsulator` / `KEMDecapsulator` workers that
   borrow the key, implemented per algorithm over the parameters a worker is made from (`()` for ML-KEM, a
-  configured KDF for a KEM that derives its secret), which select the algorithm at the call. The static `encaps(pk)` with its
+  configured KDF for a KEM that derives its secret), which select the algorithm at the call. `encaps_out` writes the
+  shared secret into the caller's `KeyMaterial<SS_LEN>` beside the ciphertext and `decaps_out` is the decapsulating
+  primitive, each zeroizing its buffers first and leaving them so on error, with `encaps` and `decaps` provided over
+  them: the caller decides where a derived key lives. The static `encaps(pk)` with its
   OS DRBG, the run-time ciphertext length check with `KEMError::LengthError`, and the expanded-key statics are
   gone; the ML-KEM key types carry only their parameter set, and `MLKEMPublicKeyTrait` / `MLKEMPrivateKeyTrait`
   no longer extend `KEMPublicKey` / `KEMPrivateKey`. `KeyType::SharedSecret` is added for the raw `Z` of a key
