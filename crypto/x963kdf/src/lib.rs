@@ -6,9 +6,9 @@
 //!
 //! [`X963KDF<H>`] is the function over any hash that implements [`X963KDFParams`];
 //! [`X963KDF_SHA224`], [`X963KDF_SHA256`], [`X963KDF_SHA384`] and [`X963KDF_SHA512`] are the
-//! instantiations over the SHA-2 hashes SEC 1 Section 3.5 lists. [`X963KdfParams`] carries the
-//! `SharedInfo` as the parameters a key-agreement role impl is made from, as `HkdfParams` does for
-//! HKDF, so that `sk.agree(&peer_pk, X963KdfParams::<SHA256>::new(shared_info))` is the agreement
+//! instantiations over the SHA-2 hashes SEC 1 Section 3.5 lists. An instance and the `SharedInfo`
+//! are the `bouncycastle_core::kdf_params::KdfParams` a key-agreement role impl is made from, so
+//! that `sk.agree(&peer_pk, KdfParams::new(&X963KDF_SHA256::new(), shared_info))` is the agreement
 //! with the KDF applied.
 //!
 //! # Usage Examples
@@ -32,8 +32,7 @@
 //! assert_eq!(keying_data.key_type(), KeyType::CryptographicRandom);
 //! ```
 //!
-//! Through the [`KDF`] trait, which fixes the output at one hash output (`derive_key`) or fills
-//! the buffer it is given (`derive_key_out`), with `SharedInfo` as the additional input:
+//! Through the [`KDF`] trait, with `SharedInfo` as the fixed info and the length asked for:
 //!
 //! ```
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
@@ -41,7 +40,7 @@
 //! use bouncycastle_x963kdf::X963KDF_SHA256;
 //!
 //! let z = KeyMaterial::<32>::from_bytes_as_type(&[0x5A; 32], KeyType::SharedSecret).unwrap();
-//! let key = X963KDF_SHA256::new().derive_key(&z, b"example protocol v1").unwrap();
+//! let key = X963KDF_SHA256::new().derive_key(&z, b"example protocol v1", 32).unwrap();
 //! assert_eq!(key.key_len(), 32);
 //! ```
 //!
@@ -72,7 +71,7 @@
 
 use bouncycastle_core::errors::KDFError;
 use bouncycastle_core::hazmat::do_hazardous_operations;
-use bouncycastle_core::key_material::{KeyMaterial512, KeyMaterialTrait, KeyType};
+use bouncycastle_core::key_material::{KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{Algorithm, HashAlgParams, HashOneShot, KDF};
 use bouncycastle_sha2::{SHA224, SHA256, SHA384, SHA512};
@@ -132,8 +131,7 @@ pub type X963KDF_SHA384 = X963KDF<SHA384>;
 pub type X963KDF_SHA512 = X963KDF<SHA512>;
 
 /// The ANSI X9.63 KDF (SEC 1 v2 Section 3.6.1) over the hash `H`. It holds no state: the
-/// derivation is [`X963KDF::derive_out`], and the [`KDF`] trait's methods run it at the trait's
-/// lengths.
+/// derivation is [`X963KDF::derive_out`], which the [`KDF`] trait's methods run.
 pub struct X963KDF<H: X963KDFParams> {
     _hash: PhantomData<H>,
 }
@@ -178,7 +176,7 @@ impl<H: X963KDFParams> X963KDF<H> {
         z: &(impl KeyMaterialTrait + ?Sized),
         shared_info: &[u8],
         key_data_len: usize,
-        okm: &mut impl KeyMaterialTrait,
+        okm: &mut (impl KeyMaterialTrait + ?Sized),
     ) -> Result<usize, KDFError> {
         Self::derive_keys_out(&[z], shared_info, key_data_len, okm)
     }
@@ -191,7 +189,7 @@ impl<H: X963KDFParams> X963KDF<H> {
         keys: &[&K],
         shared_info: &[u8],
         key_data_len: usize,
-        okm: &mut impl KeyMaterialTrait,
+        okm: &mut (impl KeyMaterialTrait + ?Sized),
     ) -> Result<usize, KDFError> {
         const { assert!(H::OUTPUT_LEN <= MAX_HASH_OUTPUT_LEN) };
         const { assert!(H::OUTPUT_LEN > 0) };
@@ -199,9 +197,13 @@ impl<H: X963KDFParams> X963KDF<H> {
         // The `_out` rule: nothing stale survives, whichever way this returns.
         okm.zeroize();
 
-        // A zero-length derivation is refused, as every KDF's is ([`KDF`]'s docs).
+        // A zero-length derivation is refused, as every KDF's is ([`KDF`]'s docs), and so is one
+        // from no keys, whose output would be a function of the SharedInfo alone.
         if key_data_len == 0 {
             return Err(KDFError::InvalidLength("a zero-length derivation is refused"));
+        }
+        if keys.is_empty() {
+            return Err(KDFError::InvalidLength("a derivation from no keys is refused"));
         }
         // Step 2: keydatalen < hashlen * (2^32 - 1), which is what keeps the counter in four
         // octets; and the caller's buffer must hold it.
@@ -262,77 +264,26 @@ impl<H: X963KDFParams> X963KDF<H> {
 }
 
 impl<H: X963KDFParams> KDF for X963KDF<H> {
-    /// One hash output of keying data, `SharedInfo` being `additional_input`.
-    fn derive_key(
-        self,
-        key: &impl KeyMaterialTrait,
-        additional_input: &[u8],
-    ) -> Result<alloc::boxed::Box<dyn KeyMaterialTrait>, KDFError> {
-        let mut output_key = KeyMaterial512::new();
-        Self::derive_out(key, additional_input, H::OUTPUT_LEN, &mut output_key)?;
-        Ok(alloc::boxed::Box::new(output_key))
-    }
-
-    /// Fills `output_key` to its capacity, `SharedInfo` being `additional_input`.
+    /// [`X963KDF::derive_out`], `SharedInfo` being `fixed_info`.
     fn derive_key_out(
-        self,
-        key: &impl KeyMaterialTrait,
-        additional_input: &[u8],
-        output_key: &mut impl KeyMaterialTrait,
+        &self,
+        ikm: &dyn KeyMaterialTrait,
+        fixed_info: &[u8],
+        len: usize,
+        output_key: &mut dyn KeyMaterialTrait,
     ) -> Result<usize, KDFError> {
-        Self::derive_out(key, additional_input, output_key.capacity(), output_key)
+        Self::derive_out(ikm, fixed_info, len, output_key)
     }
 
-    /// As [`KDF::derive_key`] with `Z` the concatenation of `keys`.
-    fn derive_key_from_multiple(
-        self,
-        keys: &[&impl KeyMaterialTrait],
-        additional_input: &[u8],
-    ) -> Result<alloc::boxed::Box<dyn KeyMaterialTrait>, KDFError> {
-        let mut output_key = KeyMaterial512::new();
-        Self::derive_keys_out(keys, additional_input, H::OUTPUT_LEN, &mut output_key)?;
-        Ok(alloc::boxed::Box::new(output_key))
-    }
-
-    /// As [`KDF::derive_key_out`] with `Z` the concatenation of `keys`.
+    /// [`X963KDF::derive_out`] with `Z` the concatenation of `ikms`; an empty `ikms` is
+    /// [`KDFError::InvalidLength`].
     fn derive_key_from_multiple_out(
-        self,
-        keys: &[&impl KeyMaterialTrait],
-        additional_input: &[u8],
-        output_key: &mut impl KeyMaterialTrait,
+        &self,
+        ikms: &[&dyn KeyMaterialTrait],
+        fixed_info: &[u8],
+        len: usize,
+        output_key: &mut dyn KeyMaterialTrait,
     ) -> Result<usize, KDFError> {
-        Self::derive_keys_out(keys, additional_input, output_key.capacity(), output_key)
+        Self::derive_keys_out(ikms, fixed_info, len, output_key)
     }
 }
-
-extern crate alloc;
-
-/// The `SharedInfo` an algorithm that derives its output through the X9.63 KDF over `H` is made
-/// from, borrowed from the caller for `'p`, with the hash as the type's parameter: as the
-/// `Params` of a key-agreement role impl, `X963KdfParams::<SHA256>::new(shared_info)` selects
-/// the algorithm at the call. `Copy`, so one value serves every construction on both sides.
-pub struct X963KdfParams<'p, H: X963KDFParams> {
-    shared_info: &'p [u8],
-    _hash: PhantomData<H>,
-}
-
-impl<'p, H: X963KDFParams> X963KdfParams<'p, H> {
-    /// The `SharedInfo` of SEC 1 Section 3.6.1, which may be empty.
-    pub fn new(shared_info: &'p [u8]) -> Self {
-        Self { shared_info, _hash: PhantomData }
-    }
-
-    /// The `SharedInfo`.
-    pub fn shared_info(&self) -> &'p [u8] {
-        self.shared_info
-    }
-}
-
-// Written out rather than derived: a derive would demand `H: Copy` of the hash marker.
-impl<H: X963KDFParams> Clone for X963KdfParams<'_, H> {
-    fn clone(&self) -> Self {
-        *self
-    }
-}
-
-impl<H: X963KDFParams> Copy for X963KdfParams<'_, H> {}
