@@ -83,6 +83,27 @@ pub trait MLKEMParamsBase: sealed::Sealed {
     const SS_LEN: usize = MLKEM_SS_LEN;
 }
 
+/// A parameter set's encapsulation-key length as a const generic: `P: PublicKeyLen<N>` has
+/// exactly one solution per parameter set, so an impl or method generic over `N` and bound on it
+/// infers `N` from `P`. That is what lets the key types carry only `P` while the `core` traits
+/// keep their `[u8; N]` arrays. [`PrivateKeyLen`] (the FIPS 203 encoding of `dk`, Algorithm 16)
+/// and [`CiphertextLen`] are the same for the other two lengths.
+pub trait PublicKeyLen<const N: usize>: MLKEMParamsBase {}
+/// See [`PublicKeyLen`].
+pub trait PrivateKeyLen<const N: usize>: MLKEMParamsBase {}
+/// See [`PublicKeyLen`].
+pub trait CiphertextLen<const N: usize>: MLKEMParamsBase {}
+
+impl PublicKeyLen<{ MLKEM512Params::PK_LEN }> for MLKEM512Params {}
+impl PrivateKeyLen<{ MLKEM512Params::FULL_SK_LEN }> for MLKEM512Params {}
+impl CiphertextLen<{ MLKEM512Params::CT_LEN }> for MLKEM512Params {}
+impl PublicKeyLen<{ MLKEM768Params::PK_LEN }> for MLKEM768Params {}
+impl PrivateKeyLen<{ MLKEM768Params::FULL_SK_LEN }> for MLKEM768Params {}
+impl CiphertextLen<{ MLKEM768Params::CT_LEN }> for MLKEM768Params {}
+impl PublicKeyLen<{ MLKEM1024Params::PK_LEN }> for MLKEM1024Params {}
+impl PrivateKeyLen<{ MLKEM1024Params::FULL_SK_LEN }> for MLKEM1024Params {}
+impl CiphertextLen<{ MLKEM1024Params::CT_LEN }> for MLKEM1024Params {}
+
 /// The ML-KEM-512 parameter set (FIPS 203, Table 2).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MLKEM512Params;

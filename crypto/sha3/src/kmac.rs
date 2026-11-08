@@ -341,10 +341,10 @@ impl<'k, PARAMS: SHAKEParams> SuspendableComponent<'k> for KMACInternal<PARAMS> 
     }
 }
 
-// `Suspendable` rather than `SuspendableKeyed`, keyed though KMAC is. `SuspendableKeyed` lets a
-// state omit the key because the key is wanted again at resume -- HMAC needs it for the outer
-// `K xor opad` step. KMAC's key goes into the sponge in `with_params` and is never touched
-// again, so a re-supplied key could neither rebuild anything nor be checked.
+// `Suspendable`, keyed though KMAC is: the key goes into the sponge in `with_params` and is never
+// touched again, so a re-supplied key could neither rebuild anything nor be checked, which is
+// why KMAC suspends where HMAC (whose key is wanted again for the outer `K xor opad` step) does
+// not.
 /// The suspended state is not key-free: Keccak-f is a permutation, so anyone holding the state
 /// and the data absorbed so far can invert it back to the key. Store it as securely as the key.
 impl<PARAMS: SHAKEParams> Suspendable<SUSPENDED_KMAC_STATE_LEN> for KMACInternal<PARAMS> {

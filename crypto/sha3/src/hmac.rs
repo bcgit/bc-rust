@@ -160,55 +160,6 @@
 //! }
 //! ```
 //!
-//! ## Suspending and resuming execution
-//!
-//! When MAC'ing a large message, it can be advantageous to be able to suspend the operation
-//! to a cache and resume it later; for example if waiting for the message to stream over a slow
-//! network connection. For this reason, all HMAC algorithms impl [`SuspendableKeyed`].
-//!
-//! Note that since HMAC is a keyed algorithm and we do not want to serialize the private key into
-//! the state, the trait structure forces you to re-provide the same key when you resume the
-//! operation. Securely storing this key in the interim is the responsibility of the caller. The
-//! state is not key-free, though: it is the inner sponge after absorbing `K ⊕ ipad`, and Keccak-f
-//! is a permutation, so anyone holding the state and the message absorbed so far can invert it
-//! back to `K ⊕ ipad` and hence the key. Store the suspended state as securely as the key. Note
-//! also that if you resume the HMAC with the wrong key, [`SuspendableKeyed::from_suspended`] has no
-//! way to detect this, so the end result will be a broken MAC value computed with different keys in
-//! the inner and outer pad. So make sure you resume with the same key!
-//!
-//! ```rust
-//! use bouncycastle_core::key_material::{KeyMaterial256, KeyType};
-//! use bouncycastle_core::symmetric_key::{FromAnyKeyMaterial, MacGenerationKey};
-//! use bouncycastle_core::traits::{MAC, SuspendableKeyed};
-//! use bouncycastle_hmac::HmacKey;
-//! use bouncycastle_sha3::SHA3_256;
-//! use bouncycastle_sha3::hmac::HMAC_SHA3_256;
-//!
-//! let msg_part1 = b"The quick brown fox";
-//! let msg_part2 = b" jumped over the lazy dog";
-//!
-//! let key = KeyMaterial256::from_bytes_as_type(
-//!             b"\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f",
-//!             KeyType::MACKey).unwrap();
-//!
-//! let key = HmacKey::<SHA3_256>::from_key_material(&key).unwrap();
-//! let mut hmac = key.create_generator();
-//! hmac.do_update(msg_part1);
-//!
-//! // suspend the in-progress mac (the key is NOT included in the serialized state)
-//! let serialized_state = hmac.suspend();
-//!
-//! // ...
-//! // do other things in the meantime
-//! // ...
-//!
-//! // ... later, possibly on another host: resume from the serialized state by re-supplying
-//! // the same key object (make sure you store the material securely!).
-//! let mut hmac_resumed = HMAC_SHA3_256::from_suspended(serialized_state, &key).unwrap();
-//! hmac_resumed.do_update(msg_part2);
-//! let h: Vec<u8> = hmac_resumed.do_final();
-//! ```
-//!
 //! # Memory Usage
 //!
 //! No heap memory is used by the algorithm itself; the `Vec<u8>`-returning convenience methods
@@ -218,12 +169,10 @@
 //! |---------------------------------------------------------|--------------|
 //! | `HmacKey` for `HMAC_SHA3_224` .. `HMAC_SHA3_512`         | 880          |
 //! | `HMAC_SHA3_224` .. `HMAC_SHA3_512` worker                | 448          |
-//! | Suspended state, all four ([`SuspendableKeyed`])        | 415          |
 //!
 //! The key is two Keccak-f\[1600\] sponges (440 bytes each, see the crate-level Memory Usage
 //! section): the inner and the outer pad state. The worker is the inner sponge plus a reference
-//! to the key it borrows. The suspended state is exactly the inner hash's suspended state -- the
-//! key is deliberately excluded -- so all four share the sponge's single value.
+//! to the key it borrows.
 //!
 //! # 🚨 Security Considerations 🚨
 //!
@@ -238,15 +187,11 @@
 //!   IG C.L Resolution C.4 (formerly NIST SP 800-107r1 Section 5.3.3). That is a floor, not a
 //!   recommendation -- RFC 2104 Section 5 recommends that the output length "be not less than half
 //!   the length of the hash output ... and not less than 80 bits".
-//! * A suspended HMAC state can be inverted to the key and must be stored as securely as the key;
-//!   and resuming with the wrong key cannot be detected and silently produces a wrong MAC. See the
-//!   suspend/resume section above.
 //! * SHA-3 is a sponge and is not vulnerable to the length-extension attack that motivates HMAC for
 //!   Merkle-Damgard hashes, so a plain `SHA3(k || m)` is not broken the way `SHA256(k || m)` is.
 //!   HMAC-SHA3 remains the right choice for interoperability and for FIPS 198-1 conformance, and
 //!   KMAC (NIST SP 800-185) is the SHA-3-native alternative.
 
-use crate::SUSPENDED_SHA3_STATE_LEN;
 use crate::{SHA3_224, SHA3_256, SHA3_384, SHA3_512};
 use bouncycastle_core::key_material::KeyMaterial;
 use bouncycastle_core::security_strength::SecurityStrength;
@@ -259,7 +204,7 @@ use bouncycastle_core::key_material::KeyType;
 #[allow(unused_imports)]
 use bouncycastle_core::symmetric_key::{FromAnyKeyMaterial, MacGenerationKey, MacVerificationKey};
 #[allow(unused_imports)]
-use bouncycastle_core::traits::{MAC, SuspendableKeyed};
+use bouncycastle_core::traits::MAC;
 #[allow(unused_imports)]
 use bouncycastle_hmac::{HmacKey, MIN_FIPS_DIGEST_LEN};
 
@@ -338,16 +283,3 @@ impl HMACParams for SHA3_512 {
     const HMAC_OID_DER: &'static [u8] =
         &[0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02, 0x10];
 }
-
-/*** Serialized-state length constants ***/
-// HMAC's suspended state is exactly the inner hasher's state -- the key is deliberately excluded and
-// must be re-supplied on resume -- so each of these is the underlying hash's own state length. All
-// four SHA-3 hashes share one Keccak state size, hence one constant.
-/// Length in bytes of the serialized state of [`HMAC_SHA3_224`].
-pub const SUSPENDED_HMAC_SHA3_224_STATE_LEN: usize = SUSPENDED_SHA3_STATE_LEN;
-/// Length in bytes of the serialized state of [`HMAC_SHA3_256`].
-pub const SUSPENDED_HMAC_SHA3_256_STATE_LEN: usize = SUSPENDED_SHA3_STATE_LEN;
-/// Length in bytes of the serialized state of [`HMAC_SHA3_384`].
-pub const SUSPENDED_HMAC_SHA3_384_STATE_LEN: usize = SUSPENDED_SHA3_STATE_LEN;
-/// Length in bytes of the serialized state of [`HMAC_SHA3_512`].
-pub const SUSPENDED_HMAC_SHA3_512_STATE_LEN: usize = SUSPENDED_SHA3_STATE_LEN;

@@ -2,8 +2,8 @@
 //! [`bouncycastle_core::hazmat`] for what the path means and the supported uses.
 //!
 //! [`EncapsWithRandomness`] takes the encapsulation randomness from the caller; the
-//! [`KEMEncapsulator`](bouncycastle_core::traits::KEMEncapsulator) methods draw it from the DRBG
-//! and are the ones to use.
+//! [`EncapsulatingKey`](bouncycastle_core::kem_key::EncapsulatingKey) methods draw it from the
+//! DRBG and are the ones to use.
 
 mod encaps_with_randomness;
 

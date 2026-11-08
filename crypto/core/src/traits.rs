@@ -489,161 +489,169 @@ pub trait HashAlgParams: Algorithm {
     const BLOCK_LEN: usize;
 }
 
-/// A Key Derivation Function (KDF) is a function that takes in one or more input key and some unstructured
-/// additional input, and uses them to produces a derived key.
-pub trait KDF: AlgorithmInfo + Default {
-    /// Implementations of this function are capable of deriving an output key from an input key,
-    /// assuming that they have been properly initialized.
-    ///
-    /// # Entropy Conversion rules
-    /// Implementations SHOULD act on a KeyMaterial of any [`KeyType`] and will generally
-    /// return a KeyMaterial of the same type
-    ///
-    /// ex.:
-    ///
-    ///   * [`KeyType::Unknown`] -> [`KeyType::Unknown`])
-    ///   * [`KeyType::CryptographicRandom`] -> [`KeyType::CryptographicRandom`])
-    ///   * [`KeyType::SymmetricCipherKey`] -> [`KeyType::SymmetricCipherKey`])
-    ///
-    /// If provided with an input key, even if it is [`KeyType::CryptographicRandom`], but that
-    /// contains less key material than the internal block size of the KDF, then the KDF
-    /// will not be considered properly seeded, and the output [`KeyMaterial`] will be set to
-    /// [`KeyType::Unknown`] -- for example, seeding SHA3-256 with a [`KeyMaterial`] containing
-    /// only 128 bits of key material.
-    ///
-    /// An implementation can, and in most cases SHOULD, return a [`HashError`] if provided
-    /// with a [`KeyMaterial`] of type [`KeyType::Zeroized`].
-    ///
-    /// # Additional Input
-    /// The `additional_input` parameter is used in deriving the key, but is not credited with any entropy,
-    /// and therefore does not affect the type of the output [`KeyMaterial`].
-    /// This corresponds directly to `FixedInfo` as defined in NIST SP 800-56C.
-    /// The `additional_input` parameter can be empty by passing in `&[0u8; 0]`.
-    ///
-    /// Output length: this function will create a KeyMaterial populated with the default output length
-    /// of the underlying hash primitive.
-    fn derive_key(
-        self,
-        key: &impl KeyMaterialTrait,
-        additional_input: &[u8],
-    ) -> Result<Box<dyn KeyMaterialTrait>, KDFError>;
+/// The most keying material the provided one-shots [`KDF::derive_key`] and
+/// [`KDF::derive_key_from_multiple`] return at once; the `_out` methods take any length the
+/// function and the buffer allow.
+pub const KDF_ONE_SHOT_MAX_LEN: usize = 1024;
 
-    /// Same as [`KDF::derive_key`], but fills the provided output [`KeyMaterial`].
+/// A key derivation function that already holds whatever parameters it has (HKDF its salt; the
+/// X9.63 KDF none), deriving keying material of a requested length from input
+/// keying material and a context string, SP 800-56C's `FixedInfo`. Every method takes `&self`,
+/// so one instance serves any number of derivations and the trait is usable as `dyn KDF`.
+///
+/// # Entropy accounting
+/// The output is typed from what went in. Library policy, not a rule of any standard: the
+/// output is [`KeyType::CryptographicRandom`] once the full-entropy input keys (those for which
+/// [`KeyMaterialTrait::is_full_entropy`] holds and whose [`KeyMaterialTrait::security_strength`]
+/// is not [`SecurityStrength::None`]) together carry at least as many bytes as the function's
+/// own strength bound, half a hash output for a hash-based KDF, and otherwise
+/// [`KeyType::Unknown`] with no strength; its strength is the least of the inputs' strongest,
+/// the function's and the length's, so a `CryptographicRandom` output carries a strength
+/// whenever its length can hold one, 14 bytes for the least; a shorter one carries none. A key
+/// with no strength (a [`KeyType::SharedSecret`] whose producer set none, a key
+/// too short to carry 112 bits) credits nothing. The count is of the keys as given: the same key
+/// passed twice in `ikms` counts twice, which is the caller's to avoid. `fixed_info` is context
+/// and credits nothing. A [`KeyType::Zeroized`] or [`KeyType::Unknown`] input is derived from
+/// and yields `Unknown` output rather than an error, since a KDF cannot tell such bytes from
+/// random ones.
+///
+/// An instance holds only what it was made from (an HKDF's salt): one that has also absorbed
+/// input through a streaming API is refused by the derivations. A zero-length derivation is
+/// refused, and so is one from no keys, whose output would be a function of the info alone.
+pub trait KDF: AlgorithmInfo {
+    /// Derives `len` bytes of keying material from `ikm` and `fixed_info` into the front of
+    /// `output_key`, which is zeroized first, and returns `len`.
     ///
-    /// Output length: this function will behave differently depending on the underlying hash primitive;
-    /// some, such as SHA2 or SHA3 will produce a fixed-length output, while others, such as SHAKE or HKDF,
-    /// will fill the provided KeyMaterial to capacity and require you to truncate it afterward
-    /// using [`KeyMaterialTrait::set_key_len`].
+    /// # Errors
+    /// [`KDFError::InvalidLength`] if `len` is zero or exceeds what the function produces
+    /// (`255 * HashLen` for HKDF) or `output_key`'s capacity; `output_key` is left zeroized.
     fn derive_key_out(
-        self,
-        key: &impl KeyMaterialTrait,
-        additional_input: &[u8],
-        output_key: &mut impl KeyMaterialTrait,
+        &self,
+        ikm: &dyn KeyMaterialTrait,
+        fixed_info: &[u8],
+        len: usize,
+        output_key: &mut dyn KeyMaterialTrait,
     ) -> Result<usize, KDFError>;
 
-    /// Meant to be used for hybrid key establishment schemes or other spit-key scenarios where multiple
-    /// keys need to be combined into a single key of the same length.
+    /// As [`derive_key_out`](Self::derive_key_out) with the input keying material the
+    /// concatenation of `ikms` in order: a hybrid shared secret, or a key mixed with a weaker one.
+    /// Every full-entropy key is credited, so the output's type is what the sum gives.
     ///
-    /// This function can also be used to mix a KeyMaterial of low entropy with one of full entropy to
-    /// produce a new full entropy key. For the purposes of determining whether enough input key material
-    /// was provided, the lengths of all full-entropy input keys are added together.
-    ///
-    /// Implementations that are not safe to be used as a split-key PRF MAY still implement this function
-    /// and return a result, but SHOULD set the entropy level of the returned key appropriately; for example
-    /// a KDF that is only full-entropy when keyed in the first input SHOULD return a full entropy key
-    /// only if the first input is full entropy.
-    ///
-    /// Implementations can, and in most cases SHOULD, return a [`KeyMaterial`] of the same type as the
-    /// strongest key, and SHOULD throw a [`HashError`] if all input keys are zeroized.
-    /// For example output a [`KeyType::CryptographicRandom`] key whenever any one of
-    /// the input keys is a [`KeyType::CryptographicRandom`] key.
-    /// As another example, combining a [`KeyType::Unknown`] key with a [`KeyType::MACKey`] key
-    /// should return a [`KeyType::MACKey`].
-    ///
-    /// Output length: this function will create a KeyMaterial populated with the default output length
-    /// of the underlying hash primitive.
-    fn derive_key_from_multiple(
-        self,
-        keys: &[&impl KeyMaterialTrait],
-        additional_input: &[u8],
-    ) -> Result<Box<dyn KeyMaterialTrait>, KDFError>;
-
-    /// Same as [`KDF::derive_key`], but fills the provided output [`KeyMaterial`].
-    ///
-    /// Output length: this function will behave differently depending on the underlying hash primitive;
-    /// some, such as SHA2 or SHA3 will produce a fixed-length output, while others, such as SHAKE or HKDF,
-    /// will fill the provided KeyMaterial to capacity and require you to truncate it afterward
-    /// by using [`KeyMaterialTrait::set_key_len`].
+    /// # Errors
+    /// As [`derive_key_out`](Self::derive_key_out); [`KDFError::InvalidLength`] if `ikms` is
+    /// empty.
     fn derive_key_from_multiple_out(
-        self,
-        keys: &[&impl KeyMaterialTrait],
-        additional_input: &[u8],
-        output_key: &mut impl KeyMaterialTrait,
+        &self,
+        ikms: &[&dyn KeyMaterialTrait],
+        fixed_info: &[u8],
+        len: usize,
+        output_key: &mut dyn KeyMaterialTrait,
     ) -> Result<usize, KDFError>;
+
+    /// One-shot: `len` bytes, at most [`KDF_ONE_SHOT_MAX_LEN`], as new key material. Provided
+    /// over [`derive_key_out`](Self::derive_key_out).
+    ///
+    /// # Errors
+    /// [`KDFError::InvalidLength`] if `len` exceeds [`KDF_ONE_SHOT_MAX_LEN`], else as
+    /// [`derive_key_out`](Self::derive_key_out).
+    fn derive_key(
+        &self,
+        ikm: &dyn KeyMaterialTrait,
+        fixed_info: &[u8],
+        len: usize,
+    ) -> Result<Box<dyn KeyMaterialTrait>, KDFError> {
+        if len > KDF_ONE_SHOT_MAX_LEN {
+            return Err(KDFError::InvalidLength(ONE_SHOT_TOO_LONG));
+        }
+        let mut output_key = KeyMaterial::<KDF_ONE_SHOT_MAX_LEN>::new();
+        self.derive_key_out(ikm, fixed_info, len, &mut output_key)?;
+        Ok(Box::new(output_key))
+    }
+
+    /// One-shot over [`derive_key_from_multiple_out`](Self::derive_key_from_multiple_out).
+    ///
+    /// # Errors
+    /// As [`derive_key`](Self::derive_key).
+    fn derive_key_from_multiple(
+        &self,
+        ikms: &[&dyn KeyMaterialTrait],
+        fixed_info: &[u8],
+        len: usize,
+    ) -> Result<Box<dyn KeyMaterialTrait>, KDFError> {
+        if len > KDF_ONE_SHOT_MAX_LEN {
+            return Err(KDFError::InvalidLength(ONE_SHOT_TOO_LONG));
+        }
+        let mut output_key = KeyMaterial::<KDF_ONE_SHOT_MAX_LEN>::new();
+        self.derive_key_from_multiple_out(ikms, fixed_info, len, &mut output_key)?;
+        Ok(Box::new(output_key))
+    }
 }
 
-/// A Key Encapsulation Mechanism (KEM) is defined as a set of three operations:
-/// key generation, encapsulation, and decapsulation.
+/// The one-shots' refusal of a length past [`KDF_ONE_SHOT_MAX_LEN`]; the `_out` forms take any
+/// length the function and the buffer allow.
+const ONE_SHOT_TOO_LONG: &str =
+    "the KDF one-shots derive at most KDF_ONE_SHOT_MAX_LEN bytes; use the _out form for more";
+
+/// The decapsulating half of a KEM: the worker a decapsulating key hands out through
+/// [`DecapsulatingKey`](crate::kem_key::DecapsulatingKey). The key and any parameters the
+/// algorithm takes (a KDF, say) were fixed when the worker was made, so the ciphertext is the only
+/// input left. It is a separate trait from [`KEMEncapsulator`] so that a key, or a policy, can
+/// allow existing ciphertexts to be decapsulated while forbidding new ones.
 ///
-/// This trait represents the decapsulation operation performed by the holder of the private key.
-/// Encapsulation operations are performed by the corresponding [`KEMEncapsulator`] trait, and key
-/// generation is provided as an inherent associated function directly on the algorithm struct.
-/// There are several reasons for this split: first is architectural; some complex algorithms may
-/// benefit from having the encapsulation and decapsulation implementations split into separate modules.
-/// Second is for compliance: sometimes a policy soft-deprecates an algorithm so that new ciphertexts
-/// can no longer be created, but existing ciphertexts can still be decapsulated. Splitting the traits
-/// makes this policy easier to enforce.
-///
-/// The arrays used to encode private keys, ciphertexts, and shared secrets are statically-sized
-/// because this allows us to safely remove runtime checks for array lengths, which overall reduces
-/// the fallibility of the library. This design choice could make this trait complicated to apply
-/// to a KEM algorithm that does not have fixed sizes for the encodings of these objects.
-pub trait KEMDecapsulator<
-    SK: KEMPrivateKey<SK_LEN>,
-    const SK_LEN: usize,
-    const CT_LEN: usize,
-    const SS_LEN: usize,
->: Sized
-{
-    /// Performs a decapsulation of the given ciphertext.
-    /// Returns the derived shared secret.
-    fn decaps(sk: &SK, ct: &[u8]) -> Result<KeyMaterial<SS_LEN>, KEMError>;
+/// The ciphertext and shared secret are fixed-length arrays, so a ciphertext of the wrong length
+/// is a compile error rather than a run-time one.
+pub trait KEMDecapsulator<const CT_LEN: usize, const SS_LEN: usize>: AlgorithmInfo {
+    /// Decapsulates `ct` into `ss`, which is zeroized first, and returns the number of bytes
+    /// written, always `SS_LEN`. The worker is reusable: a static key decapsulates many
+    /// ciphertexts. The caller's buffer is where the secret lives, so a long derived key costs
+    /// the caller's frame, not the worker's.
+    ///
+    /// # Errors
+    /// [`KEMError::DecapsulationFailed`] for an explicitly rejecting KEM whose check fails; an
+    /// implicitly rejecting KEM (ML-KEM) returns a key for every ciphertext and errs only if the
+    /// shared secret cannot be built. `ss` is left zeroized on every error.
+    fn decaps_out(
+        &self,
+        ct: &[u8; CT_LEN],
+        ss: &mut KeyMaterial<SS_LEN>,
+    ) -> Result<usize, KEMError>;
+
+    /// As [`decaps_out`](Self::decaps_out), returning the shared secret.
+    fn decaps(&self, ct: &[u8; CT_LEN]) -> Result<KeyMaterial<SS_LEN>, KEMError> {
+        let mut ss = KeyMaterial::new();
+        self.decaps_out(ct, &mut ss)?;
+        Ok(ss)
+    }
 }
 
-/// A Key Encapsulation Mechanism (KEM) is defined as a set of three operations:
-/// key generation, encapsulation, and decapsulation.
-///
-/// This trait represents the encapsulation operation performed by the holder of the public key.
-/// Decapsulation operations are performed by the corresponding [`KEMDecapsulator`] trait, and key
-/// generation is provided as an inherent associated function directly on the algorithm struct.
-/// There are several reasons for this split: first is architectural; some complex algorithms may
-/// benefit from having the encapsulation and decapsulation implementations split into separate modules.
-/// Second is for compliance: sometimes a policy soft-deprecates an algorithm so that new ciphertexts
-/// can no longer be created, but existing ciphertexts can still be decapsulated. Splitting the traits
-/// makes this policy easier to enforce.
-///
-/// The arrays used to encode public keys, ciphertexts, and shared secrets are statically-sized
-/// because this allows us to safely remove runtime checks for array lengths, which overall reduces
-/// the fallibility of the library. This design choice could make this trait complicated to apply
-/// to a KEM algorithm that does not have fixed sizes for the encodings of these objects.
-pub trait KEMEncapsulator<
-    PK: KEMPublicKey<PK_LEN>,
-    const PK_LEN: usize,
-    const CT_LEN: usize,
-    const SS_LEN: usize,
->: Sized
-{
-    /// Performs an encapsulation against the given public key.
-    /// Sources randomness from the library's default OS-backed RNG.
-    /// Returns the ciphertext and derived shared secret.
-    fn encaps(pk: &PK) -> Result<(KeyMaterial<SS_LEN>, [u8; CT_LEN]), KEMError>;
-    /// Performs an encapsulation against the given public key.
-    /// Sources randomness from the provided RNG.
-    /// Returns the ciphertext and derived shared secret.
-    fn encaps_rng(
-        pk: &PK,
+/// The encapsulating half of a KEM: the worker an encapsulating key hands out through
+/// [`EncapsulatingKey`](crate::kem_key::EncapsulatingKey). The key and any parameters the
+/// algorithm takes were fixed when the worker was made; each call draws fresh randomness from the
+/// caller's RNG, so the worker is reusable.
+pub trait KEMEncapsulator<const CT_LEN: usize, const SS_LEN: usize>: AlgorithmInfo {
+    /// Encapsulates to the key: writes the ciphertext into `ct` and the shared secret into
+    /// `ss`, both zeroized first, and returns the number of ciphertext bytes written, always
+    /// `CT_LEN`. The caller's buffer is where the secret lives, so a long derived key costs the
+    /// caller's frame, not the worker's.
+    ///
+    /// # Errors
+    /// [`KEMError::RNGError`] if `rng` is weaker than the algorithm or fails to deliver;
+    /// [`KEMError::KeyMaterialError`] if the shared secret cannot be built. Both buffers are
+    /// left zeroized on every error.
+    fn encaps_out(
+        &self,
         rng: &mut dyn RNG,
-    ) -> Result<(KeyMaterial<SS_LEN>, [u8; CT_LEN]), KEMError>;
+        ct: &mut [u8; CT_LEN],
+        ss: &mut KeyMaterial<SS_LEN>,
+    ) -> Result<usize, KEMError>;
+
+    /// As [`encaps_out`](Self::encaps_out), returning the shared secret and the ciphertext.
+    fn encaps(&self, rng: &mut dyn RNG) -> Result<(KeyMaterial<SS_LEN>, [u8; CT_LEN]), KEMError> {
+        let mut ct = [0u8; CT_LEN];
+        let mut ss = KeyMaterial::new();
+        self.encaps_out(rng, &mut ct, &mut ss)?;
+        Ok((ss, ct))
+    }
 }
 
 // todo: could the public and private key types impl Into<T: AsRef<[u8]>> and From<T: AsRef<[u8]>>
@@ -1138,9 +1146,10 @@ pub trait StreamCipherEncryptor<const INIT_DATA_LEN: usize>:
 /// will be more straightforward.
 ///
 /// The serialized state MAY contain short-term sensitive values such as nonces or IVs,
-/// but it MUST NOT include a serialized private key.
-/// Keyed algorithms MUST instead impl
-/// [`SuspendableKeyed`] which requires the key to be supplied independently at the time of deserialization.
+/// but it MUST NOT include a serialized private key. A keyed worker (a MAC, a cipher, HKDF with
+/// its salt) does not suspend: it could not be rebuilt without the key, and its state is
+/// key-derived material in any case. A message in progress is paused by holding the worker, and a
+/// new one comes from the key object.
 pub trait Suspendable<const SERIALIZED_STATE_LEN: usize>: Sized {
     /// Suspend operation by serializing out the state of the object.
     ///
@@ -1158,44 +1167,6 @@ pub trait Suspendable<const SERIALIZED_STATE_LEN: usize>: Sized {
     /// For example, if a given object made a breaking change to its serialization in version 1.2.3, then its
     /// deserializer should reject serialized states from that version or older.
     fn from_suspended(state: [u8; SERIALIZED_STATE_LEN]) -> Result<Self, SuspendableError>;
-}
-
-/// Similar to [`Suspendable`] in that it allows a stateful object to suspend its operation by
-/// serializing its state into a byte array so that it can be resumed later, potentially from a different host.
-///
-/// The difference is that this trait is for keyed algorithms which require a key in order to
-/// resume successfully: the MACs and KDFs built on a hash (HMAC, HKDF). For security reasons, the
-/// key is not included in the serialized state and must be provided separately as part of the
-/// deserialization process.
-///
-/// Cipher and MAC workers do not implement it (#173): a resumed worker is a second copy of a
-/// nonce, counter or keystream position, and two copies that both go on to encrypt reuse
-/// keystream. A message in progress is paused by holding its worker.
-pub trait SuspendableKeyed<'k, const SERIALIZED_STATE_LEN: usize>: Sized {
-    /// The type of key that must be re-supplied to resume this object. A worker that borrows its
-    /// key for `'k` names the key's type and is resumed over the reference it is given; one that
-    /// owns a copy of its key ignores the lifetime.
-    type Key: ?Sized;
-
-    /// Suspend operation by serializing out the state of the object.
-    ///
-    /// Note that this consumes `self` to prevent accidentally continuing to use the object after serialization.
-    /// The state is bytes, so nothing stops a caller resuming it twice; two objects resumed from
-    /// one checkpoint continue identically. Treat a checkpoint as single-use.
-    ///
-    /// The serialized state MUST include a prefix indicating the version of the library that serialized it.
-    fn suspend(self) -> [u8; SERIALIZED_STATE_LEN];
-
-    /// Resume operation from a serialized state and the key.
-    ///
-    /// Deserializers SHOULD check the version and reject serialized states from incompatible versions
-    /// (including rejecting serializations from a future version of the library).
-    /// For example, if a given object made a breaking change to its serialization in version 1.2.3, then its
-    /// deserializer should reject serialized states from that version or older.
-    fn from_suspended(
-        state: [u8; SERIALIZED_STATE_LEN],
-        key: &'k Self::Key,
-    ) -> Result<Self, SuspendableError>;
 }
 
 /// The decryption half of a symmetric cipher's arbitrary-length API. See
