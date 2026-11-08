@@ -3,7 +3,7 @@
 use std::process::exit;
 
 use crate::helpers::{
-    decode_hex_arg, load_secret, read_input_file, write_bytes_or_hex, write_stdout,
+    SecretBytes, decode_hex_arg, load_secret, read_input_file, write_bytes_or_hex, write_stdout,
 };
 use bouncycastle::core::hazmat::do_hazardous_operations;
 use bouncycastle::core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
@@ -30,20 +30,27 @@ pub(crate) fn hkdf_cmd(
     ikm_file: &Option<String>,
     additional_input: &Option<String>,
     additional_input_file: &Option<String>,
+    secret_salt: bool,
     len: usize,
     output_hex: bool,
 ) {
     // Each value may come from hex on the command line or from a file; the file wins if both
-    // are given, as the subcommands' help says.
-    let mut salt = load_secret(salt, salt_file, "salt");
-    // Tagged as the secret salt of SP 800-56C: that is what credits its entropy, and an all-zero
-    // or empty salt is a legitimate thing to give on the command line.
-    do_hazardous_operations(&mut salt, |salt| salt.set_key_type(KeyType::MACKey)).unwrap_or_else(
-        |e| {
-            eprintln!("Error: couldn't load the salt: {e:?}");
-            exit(-1);
-        },
-    );
+    // are given, as the subcommands' help says. RFC 5869 Section 2.2's salt is optional: absent
+    // (neither flag, or an empty value), HKDF uses a string of HashLen zeros.
+    let mut salt = match (salt_file, salt) {
+        (None, None) => SecretBytes::new(),
+        _ => load_secret(salt, salt_file, "salt"),
+    };
+    // RFC 5869 Section 2.2's salt is "a non-secret random value", typed as such, which credits
+    // no entropy; `--secret-salt` marks it as SP 800-56C Rev. 2 Section 5.1's secret salt, the
+    // MACKey HKDF credits. The output bytes are the same either way, as the mlkem*-hkdf-*
+    // commands' salt is typed. The absent salt is typed the same way so that it is not refused
+    // as Unknown.
+    let key_type = if secret_salt { KeyType::MACKey } else { KeyType::CryptographicRandom };
+    do_hazardous_operations(&mut salt, |salt| salt.set_key_type(key_type)).unwrap_or_else(|e| {
+        eprintln!("Error: couldn't load the salt: {e:?}");
+        exit(-1);
+    });
     let ikm = load_secret(ikm, ikm_file, "ikm");
 
     // RFC 5869 Section 2.3: info is "optional context and application specific information (can
@@ -76,8 +83,8 @@ pub(crate) fn hkdf_cmd(
 }
 
 /// Extract then expand through `h`, into `out_key`.
-fn run<H: HMACParams, const HASH_STATE_LEN: usize, const HKDF_STATE_LEN: usize>(
-    mut h: HKDF<H, HASH_STATE_LEN, HKDF_STATE_LEN>,
+fn run<H: HMACParams>(
+    mut h: HKDF<H>,
     salt: &impl KeyMaterialTrait,
     ikm: &impl KeyMaterialTrait,
     info: &[u8],
@@ -87,6 +94,5 @@ fn run<H: HMACParams, const HASH_STATE_LEN: usize, const HKDF_STATE_LEN: usize>(
     h.do_extract_init(salt).map_err(|e| format!("{e:?}"))?;
     h.do_extract_update_bytes(ikm.ref_to_bytes()).map_err(|e| format!("{e:?}"))?;
     let prk = h.do_extract_final().map_err(|e| format!("{e:?}"))?;
-    HKDF::<H, HASH_STATE_LEN, HKDF_STATE_LEN>::expand_out(&prk, info, len, out_key)
-        .map_err(|e| format!("{e:?}"))
+    HKDF::<H>::expand_out(&prk, info, len, out_key).map_err(|e| format!("{e:?}"))
 }

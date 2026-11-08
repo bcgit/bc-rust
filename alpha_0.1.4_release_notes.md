@@ -48,6 +48,45 @@
   are likewise one copy over the permutation.
 * Cipher and MAC workers no longer implement `SuspendableKeyed` (#173): a resumed worker is a second copy of a
   nonce, counter or keystream position. The AES modes, CMAC and Ascon-AEAD128 lose their suspended-state
-  constants and `hazmat::ModeKey` goes with them; HMAC and HKDF still suspend, and hashes, XOFs and KMAC keep
-  `Suspendable`.
+  constants and `hazmat::ModeKey` goes with them; hashes, XOFs and KMAC keep `Suspendable`. `SuspendableKeyed` itself
+  then went: HMAC and HKDF no longer suspend (a worker cannot be rebuilt without its key, and the key object makes a
+  new one), which also drops the `SUSPENDED_HMAC_*` and `SUSPENDED_HKDF_*` constants and HKDF's two const parameters,
+  so an instantiation is `HKDF<SHA256>`. The SHA-3 family's suspended states are 10 bytes shorter than before
+  (SHA-3 and SHAKE 405, cSHAKE 406, KMAC and TupleHash 414, ParallelHashXOF 832, ParallelHash 840), the KDF
+  bookkeeping having left the sponge; a state suspended by an earlier build does not resume.
+* KEM encapsulation and decapsulation move onto the keys, as signing did: the `EncapsulatingKey` /
+  `DecapsulatingKey` roles in `core::kem_key` hand out `KEMEncapsulator` / `KEMDecapsulator` workers that
+  borrow the key, implemented per algorithm over the parameters a worker is made from (`()` for ML-KEM, a
+  configured KDF for a KEM that derives its secret), which select the algorithm at the call. `encaps_out` writes the
+  shared secret into the caller's `KeyMaterial<SS_LEN>` beside the ciphertext and `decaps_out` is the decapsulating
+  primitive, each zeroizing its buffers first and leaving them so on error, with `encaps` and `decaps` provided over
+  them: the caller decides where a derived key lives. The static `encaps(pk)` with its
+  OS DRBG, the run-time ciphertext length check with `KEMError::LengthError`, and the expanded-key statics are
+  gone; the ML-KEM key types carry only their parameter set, and `MLKEMPublicKeyTrait` / `MLKEMPrivateKeyTrait`
+  no longer extend `KEMPublicKey` / `KEMPrivateKey`. `KeyType::SharedSecret` is added for the raw `Z` of a key
+  agreement; a KDF credits it, labelling its output with no more than `Z`'s strength.
+* ML-KEM with its shared secret derived through HKDF: `MLKEM512_HKDF_SHA256`, `MLKEM768_HKDF_SHA512` and
+  `MLKEM1024_HKDF_SHA512` are roles the plain ML-KEM keys carry over `core::kdf_params::KdfParams<K, LEN>`, a borrowed KDF
+  instance (an HKDF keyed with RFC 5869's salt through `new_with_salt`), the info and the derived key's length, the KDF
+  type selecting the algorithm and `KeyLen::<N>` the length (one byte to 255 hash outputs, checked at compile time;
+  the `*_SS_LEN` constants are the one-hash-output lengths the CLI derives), in both ML-KEM crates
+  and as the `mlkem512-hkdf-sha256`, `mlkem768-hkdf-sha512` and `mlkem1024-hkdf-sha512` CLI subcommands; the
+  derived key is labelled at no more than the lesser of the KEM's and the KDF's strengths, and no more than its
+  length holds. HKDF credits its output as
+  full-entropy once half a hash output of typed key material has gone in, where it needed a full one, so a
+  32-byte secret seeds HKDF-SHA512 as it does HKDF-SHA256. The `hkdf-*` CLI subcommands type their salt as
+  RFC 5869's non-secret random value, as the `mlkem*-hkdf-*` ones do; `--secret-salt` marks it as the secret salt
+  of SP 800-56C Rev. 2 Section 5.1, which HKDF credits.
+* The KDF entropy accounting after review: a full-entropy key with no strength (a `SharedSecret` whose producer
+  stated none, which is now the default for one built from bytes, or a key too short to carry 112 bits) credits
+  nothing, so a `CryptographicRandom` output of 14 bytes or more carries a strength; a KDF instance that has absorbed input
+  through the streaming API is refused; and a zero-length derivation is refused.
+  A derivation from no keys is refused; HKDF's `extract_out`, `extract_and_expand_out` and
+  `do_extract_final_out` zeroize the output before any check, as the `_out` rule asks; and the ML-KEM pairings
+  cap the derived key's label at the pairing's strength, so a secret salt does not lift it.
+* SHA-3 and SHAKE no longer implement `KDF`, and `KDFFactory` loses the `SHA3-224` to `SHA3-512`, `SHAKE128` and
+  `SHAKE256` names. The construction was this library's own, a single hash of the keys and the info, which no
+  standard describes: SP 800-56C Rev. 2 Section 4.1's one-step KDF puts a counter before `Z || FixedInfo` and
+  admits the SHA-3 hashes and KMAC as its function, and SHAKE not at all. HKDF over SHA-3 remains as
+  `HKDF<SHA3_256>` and its siblings, written out; there is no alias or factory entry for it.
 

@@ -158,52 +158,6 @@
 //! }
 //! ```
 //!
-//! ## Suspending and resuming execution
-//!
-//! When MAC'ing a large message, it can be advantageous to be able to suspend the operation
-//! to a cache and resume it later; for example if waiting for the message to stream over a slow
-//! network connection. For this reason, all HMAC algorithms impl [`SuspendableKeyed`].
-//!
-//! Note that since HMAC is a keyed algorithm and we do not want to serialize the private key into
-//! the state, the trait structure forces you to re-provide the same key when you resume the
-//! operation. Securely storing this key in the interim is the responsibility of the caller. Note
-//! also that if you resume the HMAC with the wrong key, [`SuspendableKeyed::from_suspended`] has no
-//! way to detect this, so the end result will be a broken MAC value computed with different keys in
-//! the inner and outer pad. So make sure you resume with the same key!
-//!
-//! ```rust
-//! use bouncycastle_core::key_material::{KeyMaterial256, KeyType};
-//! use bouncycastle_core::symmetric_key::{FromAnyKeyMaterial, MacGenerationKey};
-//! use bouncycastle_core::traits::{MAC, SuspendableKeyed};
-//! use bouncycastle_hmac::HmacKey;
-//! use bouncycastle_sha2::SHA256;
-//! use bouncycastle_sha2::hmac::HMAC_SHA256;
-//!
-//! let msg_part1 = b"The quick brown fox";
-//! let msg_part2 = b" jumped over the lazy dog";
-//!
-//! let key = KeyMaterial256::from_bytes_as_type(
-//!             b"\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f",
-//!             KeyType::MACKey).unwrap();
-//!
-//! let key = HmacKey::<SHA256>::from_key_material(&key).unwrap();
-//! let mut hmac = key.create_generator();
-//! hmac.do_update(msg_part1);
-//!
-//! // suspend the in-progress mac (the key is NOT included in the serialized state)
-//! let serialized_state = hmac.suspend();
-//!
-//! // ...
-//! // do other things in the meantime
-//! // ...
-//!
-//! // ... later, possibly on another host: resume from the serialized state by re-supplying
-//! // the same key object (make sure you store the material securely!).
-//! let mut hmac_resumed = HMAC_SHA256::from_suspended(serialized_state, &key).unwrap();
-//! hmac_resumed.do_update(msg_part2);
-//! let h: Vec<u8> = hmac_resumed.do_final();
-//! ```
-//!
 //! # Memory Usage
 //!
 //! No heap memory is used by the algorithm itself; the `Vec<u8>`-returning convenience methods
@@ -215,14 +169,10 @@
 //! | `HmacKey` for `HMAC_SHA384`, `HMAC_SHA512`                 | 416          |
 //! | `HMAC_SHA224`, `HMAC_SHA256` worker                        | 120          |
 //! | `HMAC_SHA384`, `HMAC_SHA512` worker                        | 216          |
-//! | Suspended `HMAC_SHA224`/`HMAC_SHA256` state               | 108          |
-//! | Suspended `HMAC_SHA384`/`HMAC_SHA512` state               | 204          |
 //!
 //! The key is two of the underlying hash object (see the crate-level Memory Usage section): the
 //! inner and the outer pad state, 2 x 112 = 224 for the SHA-256 family, 2 x 208 = 416 for the
-//! SHA-512 family. The worker is the inner hash plus a reference to the key it borrows. The
-//! suspended state is exactly the inner hash's suspended state -- the key is deliberately
-//! excluded -- so it matches the corresponding row for the bare hash.
+//! SHA-512 family. The worker is the inner hash plus a reference to the key it borrows.
 //!
 //! # 🚨 Security Considerations 🚨
 //!
@@ -238,12 +188,9 @@
 //!   IG C.L Resolution C.4 (formerly NIST SP 800-107r1 Section 5.3.3). That is a floor, not a
 //!   recommendation -- RFC 2104 Section 5 recommends that the output length "be not less than half
 //!   the length of the hash output ... and not less than 80 bits".
-//! * Resuming a suspended HMAC with the wrong key cannot be detected and silently produces a wrong
-//!   MAC; see the suspend/resume section above.
 //! * A key longer than the hash's block length is pre-hashed down to the output length (RFC 2104
 //!   Section 2), so very long keys add no strength beyond that point.
 use crate::{SHA224, SHA256, SHA384, SHA512, SHA512_224, SHA512_256};
-use crate::{SUSPENDED_SHA256_STATE_LEN, SUSPENDED_SHA512_STATE_LEN};
 use bouncycastle_core::key_material::KeyMaterial;
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::HashAlgParams;
@@ -255,7 +202,7 @@ use bouncycastle_core::key_material::KeyType;
 #[allow(unused_imports)]
 use bouncycastle_core::symmetric_key::{FromAnyKeyMaterial, MacGenerationKey, MacVerificationKey};
 #[allow(unused_imports)]
-use bouncycastle_core::traits::{MAC, SuspendableKeyed};
+use bouncycastle_core::traits::MAC;
 #[allow(unused_imports)]
 use bouncycastle_hmac::{HmacKey, MIN_FIPS_DIGEST_LEN};
 
@@ -357,19 +304,3 @@ impl HMACParams for SHA512_256 {
     const HMAC_OID_DER: &'static [u8] =
         &[0x06, 0x08, 0x2a, 0x86, 0x48, 0x86, 0xf7, 0x0d, 0x02, 0x0d];
 }
-
-/*** Serialized-state length constants ***/
-// HMAC's suspended state is exactly the inner hasher's state -- the key is deliberately excluded and
-// must be re-supplied on resume -- so each of these is the underlying hash's own state length.
-/// Length in bytes of the serialized state of [`HMAC_SHA224`].
-pub const SUSPENDED_HMAC_SHA224_STATE_LEN: usize = SUSPENDED_SHA256_STATE_LEN;
-/// Length in bytes of the serialized state of [`HMAC_SHA256`].
-pub const SUSPENDED_HMAC_SHA256_STATE_LEN: usize = SUSPENDED_SHA256_STATE_LEN;
-/// Length in bytes of the serialized state of [`HMAC_SHA384`].
-pub const SUSPENDED_HMAC_SHA384_STATE_LEN: usize = SUSPENDED_SHA512_STATE_LEN;
-/// Length in bytes of the serialized state of [`HMAC_SHA512`].
-pub const SUSPENDED_HMAC_SHA512_STATE_LEN: usize = SUSPENDED_SHA512_STATE_LEN;
-/// Length in bytes of the serialized state of [`HMAC_SHA512_224`].
-pub const SUSPENDED_HMAC_SHA512_224_STATE_LEN: usize = SUSPENDED_SHA512_STATE_LEN;
-/// Length in bytes of the serialized state of [`HMAC_SHA512_256`].
-pub const SUSPENDED_HMAC_SHA512_256_STATE_LEN: usize = SUSPENDED_SHA512_STATE_LEN;

@@ -74,26 +74,67 @@
 //!
 //! ## Encapsulating and Decapsulating
 //!
+//! Encapsulation and decapsulation are methods of the keys, through the
+//! [`EncapsulatingKey`](bouncycastle_core::kem_key::EncapsulatingKey) and
+//! [`DecapsulatingKey`](bouncycastle_core::kem_key::DecapsulatingKey) roles. Each takes the
+//! caller's RNG and the parameters the algorithm is made from, which for ML-KEM are none: `()`.
+//!
 //! ```rust
 //! use bouncycastle_rng::HashDRBG_SHA512;
 //! use bouncycastle_mlkem::{MLKEM768, MLKEMTrait};
-//! use bouncycastle_core::traits::{KEMEncapsulator, KEMDecapsulator};
+//! use bouncycastle_core::kem_key::{EncapsulatingKey, DecapsulatingKey};
 //! use bouncycastle_core::errors::KEMError;
 //!
-//! let (pk, sk) = MLKEM768::keygen(&mut HashDRBG_SHA512::new_from_os()).unwrap();
+//! let mut rng = HashDRBG_SHA512::new_from_os();
+//! let (pk, sk) = MLKEM768::keygen(&mut rng).unwrap();
 //!
 //! // Create the shared secret and ciphertext using the public key
-//! let (ss, ct) = MLKEM768::encaps(&pk).unwrap();
+//! let (ss, ct) = pk.encaps(&mut rng, ()).unwrap();
 //!
 //! // Recover the shared secret using the private key
-//! let ss1 = match MLKEM768::decaps(&sk, &ct) {
+//! let ss1 = match sk.decaps(&ct, ()) {
 //!     Err(KEMError) => panic!("Error decapsulating"),
 //!     Ok(ss) => ss,
 //! };
 //!
 //! assert_eq!(ss, ss1);
 //! ```
-//! And that's the basic usage!
+//! And that's the basic usage! A key that will be used many times hands out a worker once
+//! instead, `pk.create_encapsulator(())?` or `sk.create_decapsulator(())?`, which the
+//! [`KEMEncapsulator`](bouncycastle_core::traits::KEMEncapsulator) and
+//! [`KEMDecapsulator`](bouncycastle_core::traits::KEMDecapsulator) traits describe.
+//!
+//! ## Deriving the shared secret through HKDF
+//!
+//! The same keys run ML-KEM-512-HKDF-SHA256, ML-KEM-768-HKDF-SHA512 and ML-KEM-1024-HKDF-SHA512
+//! ([`MLKEM512_HKDF_SHA256`], [`MLKEM768_HKDF_SHA512`], [`MLKEM1024_HKDF_SHA512`]), whose shared
+//! secret is HKDF-Hash(salt, 𝐾, info) over the ML-KEM secret 𝐾, of the length the parameters name. The
+//! parameters are a [`KdfParams`]: a borrowed HKDF instance keyed with RFC 5869's salt through
+//! `new_with_salt` (key material of any length but
+//! [`KeyType::Unknown`](bouncycastle_core::key_material::KeyType::Unknown); a zero-length one is
+//! the absent salt), and the info. The KDF type on the parameters selects the algorithm, and each
+//! parameter set is paired with one HKDF, so the wrong one is a compile error.
+//!
+//! ```rust
+//! use bouncycastle_rng::HashDRBG_SHA512;
+//! use bouncycastle_mlkem::{KdfParams, KeyLen, MLKEM512, MLKEMTrait};
+//! use bouncycastle_core::kem_key::{EncapsulatingKey, DecapsulatingKey};
+//! use bouncycastle_core::key_material::KeyMaterial;
+//! use bouncycastle_sha2::hkdf::HKDF_SHA256;
+//!
+//! let mut rng = HashDRBG_SHA512::new_from_os();
+//! let (pk, sk) = MLKEM512::keygen(&mut rng).unwrap();
+//!
+//! // The KDF and info both parties agree on: HKDF-SHA256 keyed with the salt.
+//! let salt = KeyMaterial::<32>::from_rng(&mut rng).unwrap();
+//! let hkdf = HKDF_SHA256::new_with_salt(&salt).unwrap();
+//! // The parameters name the key's length too: here one SHA-256 output.
+//! let params = KdfParams::new(&hkdf, b"example protocol v1", KeyLen::<32>);
+//!
+//! let (key, ct) = pk.encaps(&mut rng, params).unwrap();
+//! let key1 = sk.decaps(&ct, params).unwrap();
+//! assert_eq!(key, key1);
+//! ```
 //!
 //! # Memory Usage
 //!
@@ -168,11 +209,27 @@ mod aux_functions;
 pub mod hazmat;
 mod matrix;
 pub mod mlkem;
+mod mlkem_kdf;
 mod mlkem_keys;
 mod params;
 
 /*** Exported types ***/
+pub use bouncycastle_core::kdf_params::{KdfParams, KeyLen};
+#[doc(inline)]
+pub use bouncycastle_mlkem_common::kdf::{
+    ML_KEM_512_HKDF_SHA256_NAME, ML_KEM_768_HKDF_SHA512_NAME, ML_KEM_1024_HKDF_SHA512_NAME,
+};
+#[doc(inline)]
+pub use bouncycastle_mlkem_common::kdf::{
+    MLKEM512_HKDF_SHA256, MLKEM768_HKDF_SHA512, MLKEM1024_HKDF_SHA512, MLKEMKdfPairing,
+};
+#[doc(inline)]
+pub use bouncycastle_mlkem_common::kdf::{
+    MLKEM512_HKDF_SHA256_SS_LEN, MLKEM768_HKDF_SHA512_SS_LEN, MLKEM1024_HKDF_SHA512_SS_LEN,
+};
 pub use mlkem::{MLKEM, MLKEM512, MLKEM768, MLKEM1024, MLKEMTrait};
+pub use mlkem::{MLKEMDecapsulator, MLKEMEncapsulator};
+pub use mlkem_kdf::{MLKEMKdfDecapsulator, MLKEMKdfEncapsulator};
 pub use mlkem_keys::{
     MLKEM512PrivateKey, MLKEM768PrivateKey, MLKEM1024PrivateKey, MLKEMPrivateKey,
 };
@@ -186,6 +243,7 @@ pub use mlkem_keys::{
     MLKEMPublicKeyExpanded,
 };
 pub use mlkem_keys::{MLKEMPrivateKeyTrait, MLKEMPublicKeyTrait};
+pub use params::{CiphertextLen, PrivateKeyLen, PublicKeyLen};
 
 /*** Exported constants ***/
 pub use mlkem::ML_KEM_512_NAME;

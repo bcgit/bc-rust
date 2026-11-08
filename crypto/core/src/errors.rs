@@ -81,9 +81,9 @@ pub enum KEMError {
     ///
     KeyMaterialError(KeyMaterialError),
     ///
-    LengthError(&'static str),
-    ///
     RNGError(RNGError),
+    /// The KDF an algorithm derives its output through refused the derivation.
+    KDFError(KDFError),
 }
 
 ///
@@ -129,9 +129,8 @@ pub enum RNGError {
     KeyMaterialError(KeyMaterialError),
 }
 
-/// Errors from [`Suspendable`](crate::traits::Suspendable) and
-/// [`SuspendableKeyed`](crate::traits::SuspendableKeyed). Defined in `bouncycastle-utils` next to
-/// the version-header helpers that raise it, and re-exported here with the other error types.
+/// Errors from [`Suspendable`](crate::traits::Suspendable). Defined in `bouncycastle-utils` next
+/// to the version-header helpers that raise it, and re-exported here with the other error types.
 pub use bouncycastle_utils::suspendable_state::SuspendableError;
 
 ///
@@ -268,6 +267,12 @@ impl From<KeyMaterialError> for KEMError {
 impl From<RNGError> for KEMError {
     fn from(e: RNGError) -> KEMError {
         Self::RNGError(e)
+    }
+}
+
+impl From<KDFError> for KEMError {
+    fn from(e: KDFError) -> KEMError {
+        Self::KDFError(e)
     }
 }
 

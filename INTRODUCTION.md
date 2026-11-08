@@ -33,7 +33,7 @@ exposed parameters. If your application requires you to use the fully-parametriz
 these public APIs of BC-Rust's HKDF implementation:
 
 ```rust
-impl<H: Hash + Default> HKDF<H> {
+impl<H: HMACParams> HKDF<H> {
     do_extract_init(salt: & impl KeyMaterial) -> Result<usize, MACError>;
 
     do_extract_update_key(ikm: & impl KeyMaterial) -> Result<usize, MACError>;
@@ -57,13 +57,13 @@ much simplified KDF trait and KDFFactory that lets you do the whole operation in
 
 ```rust
 let mut kdf = KDFFactory::new("HKDF-SHA256") ?;
-let new_key = kdf.derive_key( & seed_key, b"additional_input") ?;
+let new_key = kdf.derive_key(&seed_key, b"additional_input", 32)?;
 ```
 
 or even one line if you need a KDF and aren't picky about which one:
 
 ```rust
-let new_key = KDFFactory::default ().derive_key( & seed_key, b"additional_input") ?;
+let new_key = KDFFactory::default().derive_key(&seed_key, b"additional_input", 32)?;
 ```
 
 ## Library features and functionality
