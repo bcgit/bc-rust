@@ -262,8 +262,8 @@ mod mlkem_hkdf_tests {
 
     /// An HKDF instance that has absorbed input through the streaming API is not the salted
     /// instance the pairing wants: the worker is made, since nothing is checked until the
-    /// derivation, and then every encapsulation fails with the ciphertext buffer left zeroed and
-    /// every decapsulation fails.
+    /// derivation, and then every encapsulation fails with the ciphertext and key buffers left
+    /// zeroed and every decapsulation fails.
     #[test]
     fn a_kdf_instance_that_absorbed_input_is_refused_and_leaves_no_ciphertext() {
         let mut rng = DefaultRNG::default();
@@ -275,8 +275,15 @@ mod mlkem_hkdf_tests {
 
         let encapsulator = pk.create_encapsulator(params).unwrap();
         let mut ct = [0xAAu8; MLKEM512_CT_LEN];
-        assert!(encapsulator.encaps_out(&mut rng, &mut ct).is_err());
+        let mut ss = KeyMaterial::<MLKEM512_HKDF_SHA256_SS_LEN>::from_bytes_as_type(
+            &DUMMY_SEED[..MLKEM512_HKDF_SHA256_SS_LEN],
+            KeyType::Seed,
+        )
+        .unwrap();
+        assert!(encapsulator.encaps_out(&mut rng, &mut ct, &mut ss).is_err());
         assert!(ct.iter().all(|&b| b == 0), "no ciphertext for a secret the caller never got");
+        assert_eq!(ss.key_len(), 0, "and nothing of the stale buffer either");
+        assert_eq!(ss.key_type(), KeyType::Zeroized);
         assert!(sk.decaps(&[0u8; MLKEM512_CT_LEN], params).is_err());
     }
 

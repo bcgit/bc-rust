@@ -15,7 +15,7 @@ use crate::params::{CiphertextLen, MLKEMParams};
 use bouncycastle_core::errors::KEMError;
 use bouncycastle_core::kdf_params::KdfParams;
 use bouncycastle_core::kem_key::{DecapsulatingKey, EncapsulatingKey};
-use bouncycastle_core::key_material::KeyMaterial;
+use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{Algorithm, KDF, KEMDecapsulator, KEMEncapsulator, RNG};
 use bouncycastle_mlkem_common::kdf::{MLKEMKdfPairing, PairedKdf};
@@ -62,16 +62,17 @@ impl<
         &self,
         rng: &mut dyn RNG,
         ct: &mut [u8; CT_LEN],
-    ) -> Result<(KeyMaterial<SS_LEN>, usize), KEMError> {
+        ss: &mut KeyMaterial<SS_LEN>,
+    ) -> Result<usize, KEMError> {
+        ss.zeroize();
         let (K, written) = MLKEM::<P>::encaps_with_rng(self.ek, rng, ct)?;
-        // A ciphertext for a secret the caller never gets is not left in the buffer.
-        match P::derive(self.params, &K) {
-            Ok(key) => Ok((key, written)),
-            Err(e) => {
-                ct.fill(0);
-                Err(e)
-            }
+        // A ciphertext for a secret the caller never gets is not left in the buffer; `derive`
+        // leaves `ss` zeroized on its errors.
+        if let Err(e) = P::derive(self.params, &K, ss) {
+            ct.fill(0);
+            return Err(e);
         }
+        Ok(written)
     }
 }
 
@@ -113,9 +114,15 @@ impl<
 {
     /// Algorithm 21 ML-KEM.Decaps(dk, 𝑐) for 𝐾, then the pairing's KDF over it. ML-KEM rejects
     /// implicitly, so a damaged ciphertext yields a different key, not an error.
-    fn decaps(&self, ct: &[u8; CT_LEN]) -> Result<KeyMaterial<SS_LEN>, KEMError> {
+    fn decaps_out(
+        &self,
+        ct: &[u8; CT_LEN],
+        ss: &mut KeyMaterial<SS_LEN>,
+    ) -> Result<usize, KEMError> {
+        ss.zeroize();
         let K = MLKEM::<P>::decaps_checked(self.dk, ct)?;
-        P::derive(self.params, &K)
+        P::derive(self.params, &K, ss)?;
+        Ok(SS_LEN)
     }
 }
 
