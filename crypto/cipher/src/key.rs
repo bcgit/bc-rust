@@ -327,6 +327,13 @@ where
     ) -> Result<(Self::Encryptor<'k>, [u8; INIT_DATA_LEN]), SymmetricCipherError> {
         M::encrypt_init(&self.state, rng)
     }
+
+    fn create_encryptor_nonce<'k>(
+        &'k self,
+        init_data: &[u8; INIT_DATA_LEN],
+    ) -> Self::Encryptor<'k> {
+        M::encrypt_init_nonce(&self.state, init_data)
+    }
 }
 
 impl<P, M, const KEY_LEN: usize, const INIT_DATA_LEN: usize, const FINAL_LEN: usize>
@@ -359,6 +366,13 @@ where
         rng: &mut dyn RNG,
     ) -> Result<(Self::Encryptor<'k>, [u8; INIT_DATA_LEN]), SymmetricCipherError> {
         M::encrypt_init(&self.state, rng)
+    }
+
+    fn create_encryptor_nonce<'k>(
+        &'k self,
+        init_data: &[u8; INIT_DATA_LEN],
+    ) -> Self::Encryptor<'k> {
+        M::encrypt_init_nonce(&self.state, init_data)
     }
 }
 

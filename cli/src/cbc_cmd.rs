@@ -55,7 +55,11 @@ fn run<K, const KEY_LEN: usize>(
 {
     match action {
         CipherDirection::Encrypt => {
-            let (enc, generated_iv) = start_encryptor(iv, |rng| key.create_encryptor(rng));
+            let (enc, generated_iv) = start_encryptor(
+                iv,
+                |rng| key.create_encryptor(rng),
+                |iv| key.create_encryptor_nonce(iv),
+            );
             encrypt_stream::<_, BLOCK_LEN>(enc, generated_iv.as_ref(), output_hex, None)
         }
         CipherDirection::Decrypt => {
