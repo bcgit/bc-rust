@@ -3,7 +3,7 @@
 
 use bouncycastle_core::agreement_key::AgreementKey;
 use bouncycastle_core::errors::KeyAgreementError;
-use bouncycastle_core::key_material::{KeyMaterialTrait, KeyType};
+use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::traits::{
     Algorithm, AlgorithmInfo, KeyAgreement, KeyAgreementPrivateKey, KeyAgreementPublicKey,
 };
@@ -55,6 +55,19 @@ impl TestFrameworkKeyAgreement {
         assert!(agreement.agree(&pk_b).unwrap().equals(&z_ab));
         assert!(agreement.agree(&pk_b).unwrap().equals(&z_ab));
 
+        // the `_out` forms write the same secret over a prefilled buffer, on the worker and
+        // on the key
+        let stale =
+            || KeyMaterial::<SS_LEN>::from_bytes_as_type(&[0xFF; SS_LEN], KeyType::Seed).unwrap();
+        let mut z_out = stale();
+        assert_eq!(agreement.agree_out(&pk_b, &mut z_out).unwrap(), SS_LEN);
+        assert!(z_out.equals(&z_ab));
+        assert_eq!(z_out.key_type(), z_ab.key_type());
+        assert_eq!(z_out.security_strength(), z_ab.security_strength());
+        let mut z_out = stale();
+        assert_eq!(sk_a.agree_out(&pk_b, params, &mut z_out).unwrap(), SS_LEN);
+        assert!(z_out.equals(&z_ab));
+
         // a third party gives a different secret, from the same worker
         let (pk_c, sk_c) = keygen().unwrap();
         let z_ac = agreement.agree(&pk_c).unwrap();
@@ -64,6 +77,9 @@ impl TestFrameworkKeyAgreement {
         // the worker is usable as a trait object
         let dyn_agreement: &dyn KeyAgreement<PK, SS_LEN> = &agreement;
         assert!(dyn_agreement.agree(&pk_b).unwrap().equals(&z_ab));
+        let mut z_out = KeyMaterial::<SS_LEN>::new();
+        assert_eq!(dyn_agreement.agree_out(&pk_b, &mut z_out).unwrap(), SS_LEN);
+        assert!(z_out.equals(&z_ab));
     }
 }
 
@@ -238,7 +254,12 @@ mod tests {
     }
 
     impl KeyAgreement<MockPublicKey, SS_LEN> for MockAgreement<'_, '_> {
-        fn agree(&self, peer_pk: &MockPublicKey) -> Result<KeyMaterial<SS_LEN>, KeyAgreementError> {
+        fn agree_out(
+            &self,
+            peer_pk: &MockPublicKey,
+            ss: &mut KeyMaterial<SS_LEN>,
+        ) -> Result<usize, KeyAgreementError> {
+            ss.zeroize();
             let z = pow_mod(peer_pk.0 as u128, self.sk.0 as u128);
             if z == 1 {
                 return Err(KeyAgreementError::AgreementFailed);
@@ -257,7 +278,8 @@ mod tests {
             do_hazardous_operations(&mut z, |z| {
                 z.set_security_strength(SecurityStrength::_128bit)
             })?;
-            Ok(z)
+            *ss = z;
+            Ok(SS_LEN)
         }
     }
 
