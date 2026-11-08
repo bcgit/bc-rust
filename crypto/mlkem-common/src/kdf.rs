@@ -148,8 +148,9 @@ pub trait MLKEMKdfPairing<D: KDF + PairedKdf + ?Sized, const SS_LEN: usize>:
     /// costs the caller's frame.
     ///
     /// # Errors
-    /// [`KEMError::GenericError`] if the KDF refuses the derivation (an HKDF instance that has
-    /// absorbed input, say) or writes anything but `SS_LEN` bytes; `out` is left zeroized.
+    /// [`KEMError::KDFError`] with what the KDF refused (an HKDF instance that has absorbed
+    /// input, say); [`KEMError::GenericError`] if it writes anything but `SS_LEN` bytes. `out`
+    /// is left zeroized.
     fn derive(
         params: KdfParams<'_, D, SS_LEN>,
         K: &KeyMaterial<MLKEM_SS_LEN>,
@@ -160,7 +161,7 @@ pub trait MLKEMKdfPairing<D: KDF + PairedKdf + ?Sized, const SS_LEN: usize>:
         let written = params
             .kdf()
             .derive_key_out(K, params.info(), SS_LEN, out)
-            .map_err(|_| KEMError::GenericError("the KDF over the ML-KEM secret failed"))?;
+            .map_err(KEMError::KDFError)?;
         // The trait says `len` bytes come back; the key the worker hands out is SS_LEN bytes.
         if written != SS_LEN || out.key_len() != SS_LEN {
             out.zeroize();
