@@ -1377,7 +1377,7 @@ pub trait SymmetricCipherEncryptor<const INIT_DATA_LEN: usize, const FINAL_LEN: 
 /// 16 bytes twice gives the same 32 bytes as reading 32 once.
 ///
 /// [`do_output_final`](Self::do_output_final) means something weaker than `do_final` does on
-/// [`Hash`] and [`MAC`]. There it is load-bearing -- the only way to get output, and it must
+/// [`Hash`] and [`MACGenerator`]. There it is load-bearing -- the only way to get output, and it must
 /// consume the value because finalizing pads the state. An XOF squeeze has nothing to finalize, so
 /// it produces exactly the bytes [`do_output`](Self::do_output) would and differs only in taking
 /// ownership: it is how a caller says "this read is my last", and it ends the stream at the point
