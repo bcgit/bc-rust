@@ -327,7 +327,7 @@ fn verify_tag<const N: usize, V: MACVerifier<N>>(verifier: V, mac: &[u8]) -> Res
 
 impl MACFactoryWorker<'_, Encrypting> {
     /// Absorbs the next chunk of the message; see
-    /// [`MACGenerator::do_update`](bouncycastle_core::traits::MACGenerator::do_update).
+    /// [`MACGenerator::do_update`].
     pub fn do_update(&mut self, data: &[u8]) {
         match self {
             Self::KMAC128(h) => h.do_update(data),
@@ -395,7 +395,7 @@ impl MACFactoryWorker<'_, Encrypting> {
 
 impl MACFactoryWorker<'_, Decrypting> {
     /// Absorbs the next chunk of the message; see
-    /// [`MACVerifier::do_update`](bouncycastle_core::traits::MACVerifier::do_update).
+    /// [`MACVerifier::do_update`].
     pub fn do_update(&mut self, data: &[u8]) {
         match self {
             Self::KMAC128(h) => h.do_update(data),
