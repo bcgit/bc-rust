@@ -194,7 +194,7 @@ mod mlkem_hkdf_tests {
     /// The parameters name the derived key's length: ML-KEM-768-HKDF-SHA512 derives 32 bytes
     /// when asked, the first 32 of the 64-byte key (RFC 5869 Section 2.3's OKM is the first L
     /// octets of T), typed and at the pairing's strength; 16 bytes carry what 16 bytes can; and
-    /// 255 hash outputs is the most.
+    /// 255 hash outputs is the most, for either HKDF.
     #[test]
     fn the_parameters_name_the_length() {
         let mut rng = DefaultRNG::default();
@@ -217,6 +217,14 @@ mod mlkem_hkdf_tests {
         assert_eq!(long.key_len(), 255 * 64);
         assert_eq!(&long.ref_to_bytes()[..64], key.ref_to_bytes());
         assert_eq!(long.security_strength(), SecurityStrength::_192bit);
+
+        // HKDF-SHA256's cap is 255 of its own outputs
+        let hkdf256 = HKDF_SHA256::new_with_salt(&salt).unwrap();
+        let (pk, sk) = MLKEM512::keygen(&mut rng).unwrap();
+        let (key, ct) = pk.encaps(&mut rng, KdfParams::<_, 32>::new(&hkdf256, INFO)).unwrap();
+        let long = sk.decaps(&ct, KdfParams::<_, { 255 * 32 }>::new(&hkdf256, INFO)).unwrap();
+        assert_eq!(long.key_len(), 255 * 32);
+        assert_eq!(&long.ref_to_bytes()[..32], key.ref_to_bytes());
     }
 
     /// A secret salt (SP 800-56C Rev. 2 Section 5.1, a `MACKey`) is credited by HKDF, which
