@@ -10,6 +10,7 @@ use bouncycastle_core::traits::{
     AlgorithmInfo, KEMDecapsulator, KEMEncapsulator, KEMPrivateKey, KEMPublicKey, RNG,
 };
 use bouncycastle_rng::FixedSeedRNG;
+use bouncycastle_utils::min;
 
 /// Instance of the test framework.
 pub struct TestFrameworkKEM {
@@ -65,10 +66,13 @@ impl TestFrameworkKEM {
         let ss1 = sk.decaps(&ct, params).unwrap();
         assert_eq!(ss, ss1);
 
-        // the shared secret is typed, full-entropy material at the algorithm's strength
+        // the shared secret is typed, full-entropy material at the algorithm's strength, or at
+        // what its length can hold when a derived key is shorter than that
         assert_eq!(ss.key_len(), SS_LEN);
         assert!(ss.is_full_entropy(), "the shared secret must be full-entropy material");
-        assert_eq!(ss.security_strength(), PK::Algorithm::MAX_SECURITY_STRENGTH);
+        let expected_strength =
+            *min(&PK::Algorithm::MAX_SECURITY_STRENGTH, &SecurityStrength::from_bytes(SS_LEN));
+        assert_eq!(ss.security_strength(), expected_strength);
 
         // the workers carry the algorithm's metadata
         let encapsulator = pk.create_encapsulator(params).unwrap();
