@@ -538,7 +538,7 @@ mod hkdf_tests {
                 .unwrap();
         let ikm = KeyMaterial256::from_bytes_as_type(&DUMMY_SEED[32..64], KeyType::Seed).unwrap();
         let hkdf = HKDF_SHA256::new_with_salt(&salt).unwrap();
-        let params = KdfParams::new(&hkdf, b"info");
+        let params = KdfParams::<_, 32>::new(&hkdf, b"info");
         let copy = params;
         assert_eq!(params.info(), b"info");
         let via_params = params.kdf().derive_key(&ikm, copy.info(), 32).unwrap();
@@ -548,7 +548,7 @@ mod hkdf_tests {
 
         let absent = KeyMaterial0::new();
         let no_salt = HKDF_SHA256::new_with_salt(&absent).unwrap();
-        let params = KdfParams::new(&no_salt, b"");
+        let params = KdfParams::<_, 32>::new(&no_salt, b"");
         let via_params = params.kdf().derive_key(&ikm, params.info(), 32).unwrap();
         let mut direct = KeyMaterial256::new();
         HKDF_SHA256::extract_and_expand_out(&absent, &ikm, b"", 32, &mut direct).unwrap();
