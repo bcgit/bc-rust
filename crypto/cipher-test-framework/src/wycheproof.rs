@@ -147,10 +147,9 @@ fn cbc_case<P: Permutation<KEY_LEN>, const KEY_LEN: usize>(
             '_,
         > as SymmetricCipherEncryptor<BLOCK_LEN, BLOCK_LEN>>::encrypt_out_len(msg.len());
         let mut ct = vec![0u8; ct_len];
-        let (written, got_iv) = key
-            .encrypt_out(&mut FixedSeedRNG::new(iv), msg, &mut ct)
+        let written = key
+            .encrypt_nonce_out(&iv, msg, &mut ct)
             .unwrap_or_else(|e| panic!("tcId {tc_id}: valid case failed to encrypt: {e:?}"));
-        assert_eq!(got_iv, iv, "tcId {tc_id}: the seeded RNG must reproduce the vector's IV");
         ct.truncate(written);
         assert_eq!(ct, expected_ct, "tcId {tc_id}: ciphertext mismatch");
     }
