@@ -1,13 +1,14 @@
 //! KMAC and KMACXOF behaviour tests. The SP 800-185 sample values are in `kmac_bc-test-data.rs`.
 
+use bouncycastle_core::direction::{Decrypting, Encrypting};
 use bouncycastle_core::errors::{KeyMaterialError, MACError};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::symmetric_key::{FromAnyKeyMaterial, MacGenerationKey, MacVerificationKey};
-use bouncycastle_core::traits::{Algorithm, Hash, MAC, XOF, XOFSqueezer};
+use bouncycastle_core::traits::{Algorithm, Hash, MACGenerator, XOF, XOFSqueezer};
 use bouncycastle_core_test_framework::from_key_material::TestFrameworkFromAnyKeyMaterial;
+use bouncycastle_core_test_framework::mac::TestFrameworkMAC;
 use bouncycastle_sha3::kmac::{
-    KMAC_MAX_OUTPUT_LEN, KMAC_MIN_OUTPUT_LEN, KMAC128, KMAC128Key, KMAC256, KMAC256Key, KMACXOF128,
-    KMACXOF256,
+    KMAC_MIN_OUTPUT_LEN, KMAC128, KMAC128Key, KMAC256, KMAC256Key, KMACXOF128, KMACXOF256,
 };
 
 /// A 32-byte MAC key carries a 256-bit strength, so it satisfies both KMAC128 and KMAC256 without
@@ -17,16 +18,15 @@ fn key_material(bytes: &[u8]) -> KeyMaterial<32> {
     KeyMaterial::<32>::from_bytes_as_type(bytes, KeyType::MACKey).expect("a valid MAC key")
 }
 
-/// The output length is absorbed, so asking for a different length is a different function -- not
-/// a prefix. Sec 1: "any change in the requested output length completely changes the function".
+/// The output length is absorbed, so a key type at a different length is a different function --
+/// not a prefix. Sec 1: "any change in the requested output length completely changes the
+/// function".
 #[test]
 fn output_length_changes_the_function() {
     let key = key_material(&[0x42u8; 32]);
-    let short = KMAC128Key::with_params(&key, b"", 16).unwrap().mac(b"abc");
-    let long = KMAC128Key::with_params(&key, b"", 32).unwrap().mac(b"abc");
+    let short: [u8; 16] = KMAC128Key::<16>::with_params(&key, b"").unwrap().mac(b"abc");
+    let long: [u8; 32] = KMAC128Key::<32>::with_params(&key, b"").unwrap().mac(b"abc");
 
-    assert_eq!(short.len(), 16);
-    assert_eq!(long.len(), 32);
     assert_ne!(&long[..16], &short[..], "a longer KMAC must not extend a shorter one");
 }
 
@@ -34,32 +34,32 @@ fn output_length_changes_the_function() {
 #[test]
 fn customization_separates_the_functions() {
     let key = key_material(&[0x42u8; 32]);
-    let plain = KMAC128Key::with_params(&key, b"", 32).unwrap().mac(b"abc");
-    let custom = KMAC128Key::with_params(&key, b"My Tagged Application", 32).unwrap().mac(b"abc");
+    let plain = KMAC128Key::<32>::with_params(&key, b"").unwrap().mac(b"abc");
+    let custom = KMAC128Key::<32>::with_params(&key, b"My Tagged Application").unwrap().mac(b"abc");
     assert_ne!(plain, custom, "a customization string must change the output");
 }
 
-/// Streaming input must equal the one-shot, and `verify` must accept only the right tag.
+/// Streaming input must equal the one-shot, and `verify` must accept only the right tag: the
+/// shared MAC key suite, over both parameter sets and a non-default length.
 #[test]
 fn streaming_and_verification() {
     let key = key_material(&[0x11u8; 32]);
     let msg: Vec<u8> = (0..=255u8).collect();
 
-    let key = KMAC128Key::with_params(&key, b"", 32).unwrap();
-    let one = key.mac(&msg);
-
-    let mut k = key.create_generator();
+    let key128 = KMAC128Key::<32>::with_params(&key, b"").unwrap();
+    let one = key128.mac(&msg);
+    let mut k = key128.create_generator();
     for chunk in msg.chunks(13) {
         k.do_update(chunk);
     }
     assert_eq!(k.do_final(), one, "chunked input must equal the one-shot");
+    TestFrameworkMAC::new().test_mac_key(&key128, &msg, &one);
 
-    assert!(key.verify(&msg, &one), "the correct tag must verify");
+    let key256 = KMAC256Key::<64>::with_params(&key, b"S").unwrap();
+    TestFrameworkMAC::new().test_mac_key(&key256, &msg, &key256.mac(&msg));
 
-    let mut wrong = one.clone();
-    wrong[0] ^= 1;
-    assert!(!key.verify(&msg, &wrong), "a corrupted tag must not verify");
-    assert!(!key.verify(&msg, &one[..16]), "a truncated tag must not verify");
+    let key16 = KMAC128Key::<16>::with_params(&key, b"").unwrap();
+    TestFrameworkMAC::new().test_mac_key(&key16, &msg, &key16.mac(&msg));
 }
 
 /// Sec 8.4.1 wants the key at least as long as the security strength; the tag on the key material
@@ -73,16 +73,16 @@ fn weak_keys_are_refused_unless_allowed() {
     );
 
     assert!(
-        KMAC256Key::from_key_material(&weak).is_err(),
+        KMAC256Key::<64>::from_key_material(&weak).is_err(),
         "a 128-bit key must not make a KMAC256 key"
     );
     assert!(
-        KMAC256Key::from_key_material_allow_weak(&weak).is_ok(),
+        KMAC256Key::<64>::from_key_material_allow_weak(&weak).is_ok(),
         "... unless explicitly allowed"
     );
-    assert!(KMAC256Key::with_params(&weak, b"S", 16).is_err());
-    assert!(KMAC256Key::with_params_allow_weak(&weak, b"S", 16).is_ok());
-    assert!(KMAC128Key::from_key_material(&weak).is_ok(), "but it is enough for KMAC128");
+    assert!(KMAC256Key::<16>::with_params(&weak, b"S").is_err());
+    assert!(KMAC256Key::<16>::with_params_allow_weak(&weak, b"S").is_ok());
+    assert!(KMAC128Key::<32>::from_key_material(&weak).is_ok(), "but it is enough for KMAC128");
 }
 
 /// The construction suite for both keys: a weak key accepted only through the `_allow_weak`
@@ -91,40 +91,44 @@ fn weak_keys_are_refused_unless_allowed() {
 fn the_keys_enforce_the_material_policy() {
     let key = key_material(&[0x42u8; 32]);
     let framework = TestFrameworkFromAnyKeyMaterial::new();
-    framework.test::<KMAC128Key>(&key);
-    framework.test::<KMAC256Key>(&key);
+    framework.test::<32, KMAC128Key>(&key);
+    framework.test::<64, KMAC256Key>(&key);
+    framework.test::<16, KMAC128Key<16>>(&key);
 }
 
-/// `from_key_material`: no customization, nominal output length.
+/// `from_key_material`: no customization string, at the key type's length.
 #[test]
-fn from_key_material_uses_the_nominal_length() {
+fn from_key_material_has_no_customization() {
     let key = key_material(&[0x42u8; 32]);
-    assert_eq!(KMAC128Key::from_key_material(&key).unwrap().create_generator().output_len(), 32);
-    assert_eq!(KMAC256Key::from_key_material(&key).unwrap().create_generator().output_len(), 64);
-
-    // ... and agrees with spelling the same thing out in full.
-    assert_eq!(
-        KMAC128Key::from_key_material(&key).unwrap().mac(b"abc"),
-        KMAC128Key::with_params(&key, b"", 32).unwrap().mac(b"abc"),
-    );
+    let nominal: [u8; 32] = KMAC128Key::<32>::from_key_material(&key).unwrap().mac(b"abc");
+    assert_eq!(nominal, KMAC128Key::<32>::with_params(&key, b"").unwrap().mac(b"abc"));
+    let nominal: [u8; 64] = KMAC256Key::<64>::from_key_material(&key).unwrap().mac(b"abc");
+    assert_eq!(nominal, KMAC256Key::<64>::with_params(&key, b"").unwrap().mac(b"abc"));
+    let short: [u8; 8] = KMAC256Key::<8>::from_key_material(&key).unwrap().mac(b"abc");
+    assert_eq!(short, KMAC256Key::<8>::with_params(&key, b"").unwrap().mac(b"abc"));
 }
 
 /// `generate` draws a key of the strength's length and tags it a MAC key, so the key it builds
-/// is a full-strength one at the nominal length.
+/// is a full-strength one.
 #[test]
-fn generate_draws_a_key_at_the_nominal_length() {
+fn generate_draws_a_key() {
     let mut rng = bouncycastle_rng::HashDRBG_SHA512::new_from_os();
-    let key = KMAC256Key::generate(&mut rng).unwrap();
-    assert_eq!(key.create_generator().output_len(), 64);
-    let tag = key.mac(b"abc");
-    assert!(key.verify(b"abc", &tag));
-    assert_ne!(KMAC256Key::generate(&mut rng).unwrap().mac(b"abc"), tag, "a fresh key each time");
+    let key = KMAC256Key::<64>::generate(&mut rng).unwrap();
+    let tag: [u8; 64] = key.mac(b"abc");
+    assert_eq!(key.verify(b"abc", &tag), Ok(()));
+    assert_ne!(
+        KMAC256Key::<64>::generate(&mut rng).unwrap().mac(b"abc"),
+        tag,
+        "a fresh key each time"
+    );
 }
 
 #[test]
 fn algorithm_names() {
-    assert_eq!(KMAC128::ALG_NAME, "KMAC128");
-    assert_eq!(KMAC256::ALG_NAME, "KMAC256");
+    assert_eq!(KMAC128::<Encrypting>::ALG_NAME, "KMAC128");
+    assert_eq!(KMAC128::<Decrypting>::ALG_NAME, "KMAC128");
+    assert_eq!(KMAC256::<Encrypting>::ALG_NAME, "KMAC256");
+    assert_eq!(KMAC256::<Decrypting, 16>::ALG_NAME, "KMAC256");
 }
 
 /// The counterpart to `output_length_changes_the_function`: read as a stream, KMACXOF binds
@@ -151,7 +155,7 @@ fn kmacxof_output_is_one_stream() {
     assert_ne!(&long[..32], &via_hash[..], "the Hash view binds L, so it leaves the stream");
     assert_eq!(
         via_hash,
-        KMAC128Key::from_key_material(&key).unwrap().mac(b"abc"),
+        KMAC128Key::<32>::from_key_material(&key).unwrap().mac(b"abc"),
         "... and lands on fixed-length KMAC128 at the nominal length"
     );
 }
@@ -181,18 +185,16 @@ fn kmacxof_algorithm_names() {
 }
 
 /// `from_key_material_allow_weak` is `from_key_material` without the strength check: same
-/// customization, same nominal length, same tag.
+/// customization, same length, same tag.
 #[test]
-fn from_key_material_allow_weak_uses_the_nominal_length() {
+fn from_key_material_allow_weak_has_no_customization() {
     let key = key_material(&[0x42u8; 32]);
 
-    let k = KMAC128Key::from_key_material_allow_weak(&key).unwrap();
-    assert_eq!(k.create_generator().output_len(), 32);
-    assert_eq!(k.mac(b"abc"), KMAC128Key::from_key_material(&key).unwrap().mac(b"abc"));
+    let k = KMAC128Key::<32>::from_key_material_allow_weak(&key).unwrap();
+    assert_eq!(k.mac(b"abc"), KMAC128Key::<32>::from_key_material(&key).unwrap().mac(b"abc"));
 
-    let k = KMAC256Key::from_key_material_allow_weak(&key).unwrap();
-    assert_eq!(k.create_generator().output_len(), 64);
-    assert_eq!(k.mac(b"abc"), KMAC256Key::from_key_material(&key).unwrap().mac(b"abc"));
+    let k = KMAC256Key::<64>::from_key_material_allow_weak(&key).unwrap();
+    assert_eq!(k.mac(b"abc"), KMAC256Key::<64>::from_key_material(&key).unwrap().mac(b"abc"));
 }
 
 /// The same stance as HMAC: a key tagged `MACKey` or `Zeroized` is accepted, anything else is
@@ -203,11 +205,11 @@ fn key_type_is_checked() {
     let cipher_key =
         KeyMaterial::<32>::from_bytes_as_type(&[0x42u8; 32], KeyType::SymmetricCipherKey).unwrap();
     assert!(matches!(
-        KMAC128Key::from_key_material(&cipher_key),
+        KMAC128Key::<32>::from_key_material(&cipher_key),
         Err(MACError::KeyMaterialError(KeyMaterialError::InvalidKeyType(_)))
     ));
     assert!(matches!(
-        KMAC128Key::with_params_allow_weak(&cipher_key, b"", 32),
+        KMAC128Key::<32>::with_params_allow_weak(&cipher_key, b""),
         Err(MACError::KeyMaterialError(KeyMaterialError::InvalidKeyType(_)))
     ));
     assert!(matches!(
@@ -218,14 +220,14 @@ fn key_type_is_checked() {
     let zero = KeyMaterial::<32>::new();
     assert_eq!(zero.key_type(), KeyType::Zeroized);
     assert!(
-        KMAC128Key::from_key_material(&zero).is_err(),
+        KMAC128Key::<32>::from_key_material(&zero).is_err(),
         "a zeroized key has no security strength"
     );
     assert!(
-        KMAC128Key::with_params_allow_weak(&zero, b"", 32).is_ok(),
+        KMAC128Key::<32>::with_params_allow_weak(&zero, b"").is_ok(),
         "... but is the right type"
     );
-    assert!(KMAC128Key::from_key_material_allow_weak(&zero).is_ok());
+    assert!(KMAC128Key::<32>::from_key_material_allow_weak(&zero).is_ok());
     assert!(KMACXOF128::new(&zero, b"", true).is_ok());
 }
 
@@ -258,35 +260,14 @@ fn kmacxof_hash_view_partial_bits() {
     ));
 }
 
-/// SP 800-185 Sec 8.4.2's floor and the `right_encode` cap, on both constructors: below the floor
-/// a zero-length tag would verify every message, above the cap `8 * L` does not fit the `u64`.
+/// SP 800-185 Sec 8.4.2's floor is the shortest key type that compiles (a shorter one is a
+/// compile error, see the `KMACKeyInternal` docs), and a key at the floor works.
 #[test]
-fn output_length_is_bounded() {
+fn the_shortest_output_length_works() {
     let key = key_material(&[0x42; 32]);
     assert_eq!(KMAC_MIN_OUTPUT_LEN, 4);
-    for n in 0..KMAC_MIN_OUTPUT_LEN {
-        assert!(
-            matches!(KMAC128Key::with_params(&key, b"", n), Err(MACError::InvalidLength(_))),
-            "an output length of {n} must be refused"
-        );
-        assert!(
-            matches!(
-                KMAC256Key::with_params_allow_weak(&key, b"", n),
-                Err(MACError::InvalidLength(_))
-            ),
-            "an output length of {n} must be refused by the weak-key form too"
-        );
-    }
-    let shortest = KMAC128Key::with_params(&key, b"", KMAC_MIN_OUTPUT_LEN).unwrap();
-    assert_eq!(shortest.mac(b"abc").len(), KMAC_MIN_OUTPUT_LEN);
-    assert!(!shortest.create_verifier().verify(b"abc", &[]), "an empty tag never verifies");
-
-    // Construction only: the length is absorbed at the final, nothing is allocated for it here.
-    assert!(KMAC128Key::with_params(&key, b"", KMAC_MAX_OUTPUT_LEN).is_ok());
-    if let Some(over) = KMAC_MAX_OUTPUT_LEN.checked_add(1) {
-        assert!(matches!(
-            KMAC128Key::with_params(&key, b"", over),
-            Err(MACError::InvalidLength(_))
-        ));
-    }
+    let shortest = KMAC128Key::<KMAC_MIN_OUTPUT_LEN>::with_params(&key, b"").unwrap();
+    let tag = shortest.mac(b"abc");
+    assert_eq!(shortest.verify(b"abc", &tag), Ok(()));
+    assert_eq!(shortest.verify(b"abd", &tag), Err(MACError::VerificationFailed));
 }
