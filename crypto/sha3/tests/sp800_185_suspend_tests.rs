@@ -9,7 +9,7 @@ use bouncycastle_core::direction::{Decrypting, Encrypting};
 use bouncycastle_core::errors::SuspendableError;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::symmetric_key::{FromAnyKeyMaterial, MacGenerationKey};
-use bouncycastle_core::traits::{Hash, MACGenerator, Suspendable, XOF, XOFSqueezer};
+use bouncycastle_core::traits::{Hash, MACGenerator, MACVerifier, Suspendable, XOF, XOFSqueezer};
 use bouncycastle_core_test_framework::suspendable_state::TestFrameworkSuspendableState;
 use bouncycastle_sha3::kmac::*;
 use bouncycastle_sha3::parallelhash::*;
@@ -181,6 +181,31 @@ fn each_type_rejects_the_others() {
     let mut p = ParallelHashXOF128::new(nz(8), b"");
     p.do_update(PART1);
     rejected::<_, ParallelHashXOF256>(p.suspend(), "a ParallelHashXOF128 state in 256");
+}
+
+/// The shortest KMAC the floor allows suspends and resumes in both directions, and its state
+/// is refused by the default-length type.
+#[test]
+fn minimum_length_kmac_suspends_and_resumes() {
+    let k_key = KMAC128Key::<{ KMAC_MIN_OUTPUT_LEN }>::from_key_material(&key()).unwrap();
+    let tag = k_key.mac(PART1);
+    assert_eq!(tag.len(), KMAC_MIN_OUTPUT_LEN);
+
+    let mut g = k_key.create_generator();
+    g.do_update(&PART1[..3]);
+    let state = g.suspend();
+    let output_len = state.len() - 8;
+    assert_eq!(state[output_len..], (KMAC_MIN_OUTPUT_LEN as u64).to_le_bytes());
+    let mut g = KMAC128::<Encrypting, { KMAC_MIN_OUTPUT_LEN }>::from_suspended(state).unwrap();
+    g.do_update(&PART1[3..]);
+    assert_eq!(g.do_final(), tag);
+    let mut v = KMAC128::<Decrypting, { KMAC_MIN_OUTPUT_LEN }>::from_suspended(state).unwrap();
+    v.do_update(&PART1[3..]);
+    assert_eq!(v.do_verify_final(&tag), Ok(()));
+    assert!(matches!(
+        KMAC128::<Encrypting>::from_suspended(state),
+        Err(SuspendableError::InvalidData)
+    ));
 }
 
 #[test]

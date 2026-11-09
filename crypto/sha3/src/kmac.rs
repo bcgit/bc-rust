@@ -85,8 +85,8 @@ pub const KMACXOF128_NAME: &str = "KMACXOF128";
 pub const KMACXOF256_NAME: &str = "KMACXOF256";
 
 /// The shortest KMAC output, in bytes. SP 800-185 Sec 8.4.2: applications "shall not select an
-/// output length L that is less than 32 bits". A key type with a shorter `MAC_LEN` fails to
-/// compile.
+/// output length L that is less than 32 bits". A key or worker type with a shorter `MAC_LEN`
+/// fails to compile.
 pub const KMAC_MIN_OUTPUT_LEN: usize = 4;
 /// The longest KMAC output, in bytes: `8 * n` is what `right_encode` absorbs (Sec 4.3 step 1),
 /// and it is a `u64` here.
@@ -97,6 +97,20 @@ pub const KMAC_MAX_OUTPUT_LEN: usize = (u64::MAX / 8) as usize;
 /// The worker a [`KMAC128Key`] hands out: `Dir` is [`Encrypting`] for the generator and
 /// [`Decrypting`] for the verifier, and `MAC_LEN` the key's output length, 32 bytes by default.
 /// [`KMACXOF128`] is the separate arbitrary-length function of Sec 4.3.1.
+///
+/// A worker below the Sec 8.4.2 floor cannot be made, not even from a suspended state whose
+/// stored length says otherwise:
+///
+/// ```compile_fail,E0080
+/// use bouncycastle_core::direction::Decrypting;
+/// use bouncycastle_core::traits::{MACVerifier, Suspendable};
+/// use bouncycastle_sha3::kmac::{KMAC128, SUSPENDED_KMAC_STATE_LEN};
+///
+/// let forged = [0u8; SUSPENDED_KMAC_STATE_LEN];
+/// if let Ok(verifier) = KMAC128::<Decrypting, 0>::from_suspended(forged) {
+///     let _ = verifier.do_verify_final(&[]);
+/// }
+/// ```
 pub type KMAC128<Dir, const MAC_LEN: usize = 32> = KMACInternal<SHAKE128Params, Dir, MAC_LEN>;
 /// KMAC256: the Keccak MAC of NIST SP 800-185 Sec 4, at a 256-bit security strength.
 ///
@@ -169,8 +183,9 @@ fn keyed_cshake<PARAMS: SHAKEParams>(
 
 impl<PARAMS: SHAKEParams, const MAC_LEN: usize> KMACKeyInternal<PARAMS, MAC_LEN> {
     /// The MAC's bounds on `L`, a compile-time error where a key type is used: from
-    /// [`KMAC_MIN_OUTPUT_LEN`] to [`KMAC_MAX_OUTPUT_LEN`]. KMACXOF is the `L = 0` form
-    /// (Sec 4.3.1) and does not pass here.
+    /// [`KMAC_MIN_OUTPUT_LEN`] to [`KMAC_MAX_OUTPUT_LEN`]. It is evaluated when the type is
+    /// instantiated, so `cargo build` and `cargo test` report it and `cargo check` does not.
+    /// KMACXOF is the `L = 0` form (Sec 4.3.1) and does not pass here.
     const LEN_CHECK: () = assert!(
         MAC_LEN >= KMAC_MIN_OUTPUT_LEN && MAC_LEN <= KMAC_MAX_OUTPUT_LEN,
         "a KMAC output length is from 4 bytes (SP 800-185 Sec 8.4.2) to what right_encode takes"
@@ -306,6 +321,15 @@ impl<PARAMS: SHAKEParams, Dir, const MAC_LEN: usize> KMACInternal<PARAMS, Dir, M
     /// Sec 4.3 step 1's tail: `right_encode(L)` absorbed after the message, then `L` bytes
     /// squeezed into `out`.
     fn finish(mut self, out: &mut [u8; MAC_LEN]) -> usize {
+        // The floor on the worker as well as on the key: every tag in either direction passes
+        // here, so a worker below it cannot exist, not even one resumed from a state whose stored
+        // length says otherwise.
+        const {
+            assert!(
+                MAC_LEN >= KMAC_MIN_OUTPUT_LEN && MAC_LEN <= KMAC_MAX_OUTPUT_LEN,
+                "a KMAC output length is from 4 bytes (SP 800-185 Sec 8.4.2) to what right_encode takes"
+            )
+        };
         let (buf, len) = right_encode((MAC_LEN as u64) * 8);
         self.cshake.do_update(&buf[..len]);
         self.cshake.into_squeezer().do_output_out(out)
@@ -346,6 +370,9 @@ impl<'k, PARAMS: SHAKEParams, Dir, const MAC_LEN: usize> SuspendableComponent<'k
 // not.
 /// The suspended state is not key-free: Keccak-f is a permutation, so anyone holding the state
 /// and the data absorbed so far can invert it back to the key. Store it as securely as the key.
+/// It carries the output length and the customization and not the direction, so a generator's
+/// state resumes as a verifier and the reverse; nothing is lost while the key type carries both
+/// roles.
 impl<PARAMS: SHAKEParams, Dir, const MAC_LEN: usize> Suspendable<SUSPENDED_KMAC_STATE_LEN>
     for KMACInternal<PARAMS, Dir, MAC_LEN>
 {
