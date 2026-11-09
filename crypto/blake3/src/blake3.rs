@@ -15,8 +15,7 @@ use bouncycastle_core::key_material::{KeyMaterial256, KeyMaterialTrait, KeyType}
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::symmetric_key::{FromAnyKeyMaterial, MacGenerationKey, MacVerificationKey};
 use bouncycastle_core::traits::{
-    Hash, HashOneShot, MAC, MIN_MAC_OUTPUT_LEN, RNG, Suspendable, SuspendableKeyed, XOF,
-    XOFSqueezer,
+    Hash, HashOneShot, MAC, MIN_MAC_OUTPUT_LEN, RNG, Suspendable, XOF, XOFSqueezer,
 };
 use bouncycastle_utils::suspendable_state::{add_lib_ver, check_lib_ver};
 use bouncycastle_utils::{ct, min, secret::Secret};
@@ -1163,54 +1162,6 @@ impl MAC for BLAKE3KeyedHash {
         }
         let computed = self.do_final();
         ct::ct_eq_bytes(&computed, mac)
-    }
-}
-
-/// Length in bytes of the serialized state of [`BLAKE3KeyedHash`].
-///
-/// Layout (after the 3-byte library version header; all integers little-endian). The key words and
-/// the KEYED_HASH flag are not stored: the key is re-supplied to
-/// [`SuspendableKeyed::from_suspended`] and the flag is implied by the type.
-/// ```text
-///   [0    .. 32)    chunk chaining_value  [u32; 8], all zero when blocks_compressed == 0
-///                                         (it is then the key itself)
-///   [32   .. 40)    chunk_counter         u64 (< 2^54)
-///   [40   .. 104)   block                 [u8; 64], zero past block_len
-///   [104  .. 105)   block_len             u8 (0..=64)
-///   [105  .. 106)   blocks_compressed     u8 (0..=15)
-///   [106  .. 107)   cv_stack_len          u8 (0..=54, == chunk_counter.count_ones())
-///   [107  .. 1835)  cv_stack              54 x [u32; 8], zero past cv_stack_len
-/// ```
-pub const SUSPENDED_BLAKE3_KEYED_HASH_STATE_LEN: usize = 3 + CORE_STATE_LEN;
-
-/// The key is never written into the serialized state; resume takes the key object. A wrong key
-/// is not detected; it gives a different tag, except in the case below.
-///
-/// # 🚨 Security Considerations 🚨
-/// While the absorbed prefix P is 65..=1024 bytes (one block of the first chunk compressed, CV
-/// stack empty), the state finishes the tag of P || X without the key for every X that keeps the
-/// total at or under 1024 bytes. Protect a suspended keyed state like the key.
-// The key words are stored nowhere: the chunk chaining value is zeroed while it is still the key
-// (s. 2.4) and rebuilt on resume. The worker owns its key words, so `'k` is unused.
-impl<'k> SuspendableKeyed<'k, SUSPENDED_BLAKE3_KEYED_HASH_STATE_LEN> for BLAKE3KeyedHash {
-    type Key = BLAKE3KeyedHashKey;
-
-    fn suspend(self) -> [u8; SUSPENDED_BLAKE3_KEYED_HASH_STATE_LEN] {
-        let mut out_to_return = [0u8; SUSPENDED_BLAKE3_KEYED_HASH_STATE_LEN];
-        // infallible: add_lib_ver returns a slice of exactly CORE_STATE_LEN bytes.
-        let out: &mut [u8; CORE_STATE_LEN] = add_lib_ver(&mut out_to_return).try_into().unwrap();
-        self.core.write_state(out);
-        out_to_return
-    }
-
-    fn from_suspended(
-        state: [u8; SUSPENDED_BLAKE3_KEYED_HASH_STATE_LEN],
-        key: &'k Self::Key,
-    ) -> Result<Self, SuspendableError> {
-        // infallible: check_lib_ver returns a slice of exactly CORE_STATE_LEN bytes.
-        let input: &[u8; CORE_STATE_LEN] = check_lib_ver(&state, None)?.try_into().unwrap();
-        let core = Blake3Core::read_state(input, &key.key_words, KEYED_HASH)?;
-        Ok(Self { core })
     }
 }
 

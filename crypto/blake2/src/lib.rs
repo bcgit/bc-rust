@@ -54,8 +54,8 @@
 //! |---------------------------------------------------------|--------------|
 //! | [`BLAKE2b_512`], [`BLAKE2b_512_MAC`], [`BLAKE2b_512_MACKey`] | 224     |
 //! | [`BLAKE2s_256`], [`BLAKE2s_256_MAC`], [`BLAKE2s_256_MACKey`] | 120     |
-//! | BLAKE2b-512 suspended state (hash and MAC)              | 213          |
-//! | BLAKE2s-256 suspended state (hash and MAC)              | 109          |
+//! | BLAKE2b-512 suspended state                            | 213          |
+//! | BLAKE2s-256 suspended state                            | 109          |
 //!
 //! The compression function also uses 256 bytes (BLAKE2b) or 128 bytes (BLAKE2s) of stack.
 //!
@@ -71,13 +71,11 @@
 //! * BLAKE2 is byte-oriented: [`Hash::do_final_partial_bits`] refuses 1 to 7 partial bits.
 //! * State and buffered input, including the key block, are zeroized on drop; the compression
 //!   function's stack locals are not. There are no data-dependent branches or table lookups.
-//! * A suspended MAC state holds no key bytes, but once input has been absorbed it can finish the
-//!   MAC of any extension of that input without the key. Protect it like the key.
 //!
 //! # Suspending and resuming execution
 //!
-//! The hash types impl [`Suspendable`], and the MAC workers impl [`SuspendableKeyed`], which takes
-//! the key object again to resume:
+//! The hash types impl [`Suspendable`]. The MAC workers do not suspend: a keyed state is key-derived
+//! material, and a message in progress is paused by holding its worker.
 //!
 //! ```rust
 //! use bouncycastle_blake2::BLAKE2b_512;
@@ -103,12 +101,10 @@ mod blake2b;
 mod blake2s;
 
 pub use self::blake2b::{
-    BLAKE2b_512, BLAKE2b_512_MAC, BLAKE2b_512_MACKey, SUSPENDED_BLAKE2B_512_MAC_STATE_LEN,
-    SUSPENDED_BLAKE2B_512_STATE_LEN,
+    BLAKE2b_512, BLAKE2b_512_MAC, BLAKE2b_512_MACKey, SUSPENDED_BLAKE2B_512_STATE_LEN,
 };
 pub use self::blake2s::{
-    BLAKE2s_256, BLAKE2s_256_MAC, BLAKE2s_256_MACKey, SUSPENDED_BLAKE2S_256_MAC_STATE_LEN,
-    SUSPENDED_BLAKE2S_256_STATE_LEN,
+    BLAKE2s_256, BLAKE2s_256_MAC, BLAKE2s_256_MACKey, SUSPENDED_BLAKE2S_256_STATE_LEN,
 };
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{Algorithm, AlgorithmOID, HashAlgParams};
@@ -117,7 +113,7 @@ use bouncycastle_core::traits::{Algorithm, AlgorithmOID, HashAlgParams};
 #[allow(unused_imports)]
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 #[allow(unused_imports)]
-use bouncycastle_core::traits::{Hash, MAC, MIN_MAC_OUTPUT_LEN, Suspendable, SuspendableKeyed};
+use bouncycastle_core::traits::{Hash, MAC, MIN_MAC_OUTPUT_LEN, Suspendable};
 
 /// Algorithm name string for BLAKE2b-512, as used by the factories and CLI.
 pub const BLAKE2B_512_NAME: &str = "BLAKE2b-512";

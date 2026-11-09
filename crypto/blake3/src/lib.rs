@@ -63,7 +63,6 @@
 //! | [`BLAKE3Squeezer`]                        | 192          |
 //! | [`BLAKE3KeyedSqueezer`], [`BLAKE3DeriveKeySqueezer`] | 192 |
 //! | [`SUSPENDED_BLAKE3_STATE_LEN`]            | 1874         |
-//! | [`SUSPENDED_BLAKE3_KEYED_HASH_STATE_LEN`] | 1838         |
 //! | [`SUSPENDED_BLAKE3_SQUEEZER_STATE_LEN`]   | 180          |
 //!
 //! 1728 bytes of a hasher are the chaining-value stack, sized for the full 2^64-byte input range
@@ -83,35 +82,24 @@
 //! * BLAKE3 is byte-oriented: a partial final byte is refused.
 //! * State and buffers are zeroized on drop; there are no data-dependent branches or table
 //!   lookups.
-//! * A suspended `keyed_hash` state can finish some messages without the key (see
-//!   [`BLAKE3KeyedHash`]'s [`SuspendableKeyed`] impl); protect it like the key. `derive_key` is not
-//!   suspendable at all, since its state holds key material.
+//! * The `keyed_hash` and `derive_key` workers are not suspendable: their states hold key
+//!   material.
 //!
 //! # Suspending and resuming execution
 //!
-//! [`BLAKE3`] and [`BLAKE3Squeezer`] implement [`Suspendable`]; [`BLAKE3KeyedHash`] implements
-//! [`SuspendableKeyed`], which never writes the key into the state and takes the key object on
-//! resume. [`BLAKE3DeriveKey`], [`BLAKE3DeriveKeySqueezer`] and [`BLAKE3KeyedSqueezer`] cannot be
-//! suspended, because their states can contain key material.
+//! [`BLAKE3`] and [`BLAKE3Squeezer`] implement [`Suspendable`]. [`BLAKE3KeyedHash`],
+//! [`BLAKE3KeyedSqueezer`], [`BLAKE3DeriveKey`] and [`BLAKE3DeriveKeySqueezer`] cannot be
+//! suspended, because their states contain key material; a message in progress is paused by
+//! holding the worker.
 //! ```
-//! use bouncycastle_core::key_material::{KeyMaterial256, KeyType};
-//! use bouncycastle_core::symmetric_key::{FromAnyKeyMaterial, MacGenerationKey};
-//! use bouncycastle_core::traits::{Hash, HashOneShot, MAC, Suspendable, SuspendableKeyed};
-//! use bouncycastle_blake3::{BLAKE3, BLAKE3KeyedHash, BLAKE3KeyedHashKey};
+//! use bouncycastle_core::traits::{Hash, HashOneShot, Suspendable};
+//! use bouncycastle_blake3::BLAKE3;
 //!
 //! let mut blake3 = BLAKE3::new();
 //! blake3.do_update(b"part one, ");
 //! let mut resumed = BLAKE3::from_suspended(blake3.suspend()).unwrap();
 //! resumed.do_update(b"part two");
 //! assert_eq!(resumed.do_final(), BLAKE3::hash(b"part one, part two"));
-//!
-//! let material = KeyMaterial256::from_bytes_as_type(&[0x42u8; 32], KeyType::MACKey).unwrap();
-//! let key = BLAKE3KeyedHashKey::from_key_material(&material).unwrap();
-//! let mut mac = key.create_generator();
-//! mac.do_update(b"part one, ");
-//! let mut resumed = BLAKE3KeyedHash::from_suspended(mac.suspend(), &key).unwrap();
-//! resumed.do_update(b"part two");
-//! assert_eq!(resumed.do_final(), key.mac(b"part one, part two"));
 //! ```
 
 // todo #![no_std]
@@ -125,8 +113,8 @@ mod compress;
 
 pub use self::blake3::{
     BLAKE3, BLAKE3DeriveKey, BLAKE3DeriveKeySqueezer, BLAKE3KeyedHash, BLAKE3KeyedHashKey,
-    BLAKE3KeyedSqueezer, BLAKE3Squeezer, SUSPENDED_BLAKE3_KEYED_HASH_STATE_LEN,
-    SUSPENDED_BLAKE3_SQUEEZER_STATE_LEN, SUSPENDED_BLAKE3_STATE_LEN,
+    BLAKE3KeyedSqueezer, BLAKE3Squeezer, SUSPENDED_BLAKE3_SQUEEZER_STATE_LEN,
+    SUSPENDED_BLAKE3_STATE_LEN,
 };
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{Algorithm, HashAlgParams};
@@ -135,9 +123,7 @@ use bouncycastle_core::traits::{Algorithm, HashAlgParams};
 #[allow(unused_imports)]
 use bouncycastle_core::key_material::KeyType;
 #[allow(unused_imports)]
-use bouncycastle_core::traits::{
-    Hash, MAC, MIN_MAC_OUTPUT_LEN, Suspendable, SuspendableKeyed, XOF,
-};
+use bouncycastle_core::traits::{Hash, MAC, MIN_MAC_OUTPUT_LEN, Suspendable, XOF};
 
 /// Algorithm name string for BLAKE3 (`hash` mode), as used by the factories and CLI.
 pub const BLAKE3_NAME: &str = "BLAKE3";

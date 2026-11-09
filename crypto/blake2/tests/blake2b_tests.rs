@@ -16,15 +16,13 @@ mod blake2b_tests {
     };
     use bouncycastle_core::traits::{
         Algorithm, AlgorithmInfo, AlgorithmOID, Hash, HashAlgParams, HashOneShot, MAC,
-        MIN_MAC_OUTPUT_LEN, Suspendable, SuspendableKeyed,
+        MIN_MAC_OUTPUT_LEN, Suspendable,
     };
     use bouncycastle_core_test_framework::DUMMY_SEED;
     use bouncycastle_core_test_framework::from_key_material::TestFrameworkFromAnyKeyMaterial;
     use bouncycastle_core_test_framework::hash::TestFrameworkHash;
     use bouncycastle_core_test_framework::mac::TestFrameworkMAC;
-    use bouncycastle_core_test_framework::suspendable_state::{
-        TestFrameworkSuspendableKeyedState, TestFrameworkSuspendableState,
-    };
+    use bouncycastle_core_test_framework::suspendable_state::TestFrameworkSuspendableState;
     use bouncycastle_hex as hex;
     use bouncycastle_rng::FixedSeedRNG;
 
@@ -38,7 +36,6 @@ mod blake2b_tests {
     /// Largest key, kk.
     const KK_MAX: usize = 64;
     const STATE_LEN: usize = SUSPENDED_BLAKE2B_512_STATE_LEN;
-    const MAC_STATE_LEN: usize = SUSPENDED_BLAKE2B_512_MAC_STATE_LEN;
     /// Offsets in the suspended state (after the 3-byte version header) of t, buf, buf_len and kk.
     const T_OFF: usize = 3 + 64;
     const BUF_OFF: usize = 3 + 80;
@@ -278,7 +275,6 @@ mod blake2b_tests {
         assert_eq!(H::OID, &[1, 3, 6, 1, 4, 1, 1722, 12, 2, 1, 16]);
         assert_eq!(H::OID_DER, h("060b2b060104018d3a0c020110").as_slice());
         assert_eq!(STATE_LEN, 3 + 64 + 16 + BB + 2);
-        assert_eq!(MAC_STATE_LEN, STATE_LEN);
         assert_eq!(MIN_MAC_OUTPUT_LEN, 4);
         // RFC 7693 s. 4: the same OID covers keyed hashing.
         assert_eq!(M::OID, H::OID);
@@ -529,34 +525,14 @@ mod blake2b_tests {
         assert_eq!(state[BUF_OFF], BB as u8, "buf holds message byte bb");
         assert_eq!(state[BUF_LEN_OFF], 1);
         assert_eq!(state[KK_OFF], 0, "kk = 0 for the unkeyed hash");
-
-        let mut mac = kat_key().create_generator();
-        mac.do_update(b"x");
-        assert_eq!(mac.suspend()[KK_OFF], KK_MAX as u8, "kk is the key length");
     }
 
-    /// After a compression the hash and MAC states have the same shape and only kk tells them
-    /// apart: a MAC state must not finish as a keyless hash, a hash state must not verify as a
-    /// MAC, and a key of another length is refused.
+    /// kk above the RFC's maximum is never produced, so a state carrying one is rejected.
     #[test]
-    fn suspend_rejects_cross_type_after_compression() {
-        let key = kat_key();
-        let mut mac = key.create_generator();
-        mac.do_update(msg(BB + 1));
-        let mac_state = mac.suspend();
-        assert!(matches!(H::from_suspended(mac_state), Err(SuspendableError::InvalidData)));
-
+    fn suspend_rejects_bad_kk() {
         let mut hash = H::new();
         hash.do_update(msg(BB + 1));
-        let hash_state = hash.suspend();
-        assert!(matches!(M::from_suspended(hash_state, &key), Err(SuspendableError::InvalidData)));
-
-        let short =
-            K::from_key_material_allow_weak(&key_with(KK_MAX - 1, SecurityStrength::None)).unwrap();
-        assert!(matches!(M::from_suspended(mac_state, &short), Err(SuspendableError::InvalidData)));
-
-        // kk above the RFC's maximum is never produced.
-        let mut st = hash_state;
+        let mut st = hash.suspend();
         st[KK_OFF] = KK_MAX as u8 + 1;
         assert!(matches!(H::from_suspended(st), Err(SuspendableError::InvalidData)));
     }
@@ -571,13 +547,6 @@ mod blake2b_tests {
         assert_eq!(state[BUF_LEN_OFF], 1);
         state[BUF_LEN_OFF] = 0;
         assert!(matches!(H::from_suspended(state), Err(SuspendableError::InvalidData)));
-
-        let key = kat_key();
-        let mut mac = key.create_generator();
-        mac.do_update(b"x");
-        let mut state = mac.suspend();
-        state[BUF_LEN_OFF] = 0;
-        assert!(matches!(M::from_suspended(state, &key), Err(SuspendableError::InvalidData)));
     }
 
     #[test]
@@ -596,14 +565,10 @@ mod blake2b_tests {
         assert!(matches!(H::from_suspended(state), Err(SuspendableError::InvalidData)));
     }
 
-    /// Before any compression the hash's h must be the unkeyed initial state: a keyed state
-    /// (h carries kk in p[0]) or a tampered h is rejected.
+    /// Before any compression the hash's h must be the unkeyed initial state: a tampered h is
+    /// rejected.
     #[test]
     fn suspend_hash_rejects_foreign_h() {
-        // A fresh MAC state has the same shape as a hash state with a full buffer.
-        let mac_state: [u8; STATE_LEN] = kat_key().create_generator().suspend();
-        assert!(matches!(H::from_suspended(mac_state), Err(SuspendableError::InvalidData)));
-
         let mut hash = H::new();
         hash.do_update(b"abc");
         let state = hash.suspend();
@@ -623,7 +588,7 @@ mod blake2b_tests {
         assert!(H::from_suspended(hash.suspend()).is_ok());
     }
 
-    /// t must be a whole number of blocks, in both the hash and the MAC state.
+    /// t must be a whole number of blocks.
     #[test]
     fn suspend_rejects_bad_t() {
         let mut hash = H::new();
@@ -639,125 +604,5 @@ mod blake2b_tests {
         let mut st = state;
         st[T_OFF + 1] = 1;
         assert!(H::from_suspended(st).is_ok());
-
-        let key = kat_key();
-        let mut mac = key.create_generator();
-        mac.do_update(b"x");
-        let state = mac.suspend();
-        assert_eq!(state[T_OFF], BB as u8);
-        for bad in [1u8, BB as u8 - 1, BB as u8 + 1] {
-            let mut st = state;
-            st[T_OFF] = bad;
-            assert!(matches!(M::from_suspended(st, &key), Err(SuspendableError::InvalidData)));
-        }
-    }
-
-    /// Before any input the serialized buffer is ignored and rebuilt from the supplied key.
-    #[test]
-    fn suspend_mac_ignores_serialized_key_block() {
-        let key = kat_key();
-        let (_, tag) = kat(3);
-        let mut state = key.create_generator().suspend();
-        state[BUF_OFF..BUF_OFF + BB].fill(0x5A);
-        assert_eq!(M::from_suspended(state, &key).unwrap().mac(msg(3)), tag);
-    }
-
-    /// The key never appears in a keyed state, and resuming with the key gives the KAT tag.
-    #[test]
-    fn suspend_resume_mac() {
-        let key = kat_key();
-        let (_, tag) = kat(255);
-        for at in [0, 1, BB - 1, BB, BB + 1, 255] {
-            let mut mac = key.create_generator();
-            mac.do_update(&msg(255)[..at]);
-            let state = mac.suspend();
-            if at == 0 {
-                // Before any input the buffer is the key block, which must be written as zeros.
-                assert!(state[BUF_OFF..BUF_OFF + BB].iter().all(|&b| b == 0));
-                assert_eq!(state[BUF_LEN_OFF], BB as u8);
-            }
-            let mut resumed = M::from_suspended(state, &key).unwrap();
-            resumed.do_update(&msg(255)[at..]);
-            assert_eq!(resumed.do_final(), tag, "suspended at {at}");
-
-            // The KAT key 0, 1, 2, ... is also a run of the KAT message, so look for a key that
-            // cannot occur in the message: 0xA5 repeated.
-            let distinct = key_with(KK_MAX, SecurityStrength::_256bit);
-            let mut mac = K::from_key_material(&distinct).unwrap().create_generator();
-            mac.do_update(&msg(255)[..at]);
-            let state = mac.suspend();
-            assert!(
-                !state.windows(8).any(|w| w == &distinct.ref_to_bytes()[..8]),
-                "key bytes found in the state suspended at {at}"
-            );
-        }
-
-        TestFrameworkSuspendableKeyedState::new().test(&key.create_generator(), &key);
-        let mut mac = key.create_generator();
-        mac.do_update(msg(BB + 3));
-        TestFrameworkSuspendableKeyedState::new().test(&mac, &key);
-    }
-
-    /// Before any input, the resumed MAC depends on the supplied key; after it, the key has been
-    /// folded into h and the supplied key is validated but not used.
-    #[test]
-    fn suspend_mac_wrong_key() {
-        let key = kat_key();
-        let other = K::from_key_material(&key_with(KK_MAX, SecurityStrength::_256bit)).unwrap();
-        let (_, tag) = kat(3);
-
-        let state = key.create_generator().suspend();
-        assert_ne!(M::from_suspended(state, &other).unwrap().mac(msg(3)), tag);
-        assert_eq!(M::from_suspended(state, &key).unwrap().mac(msg(3)), tag);
-
-        let mut mac = key.create_generator();
-        mac.do_update(msg(1));
-        let state = mac.suspend();
-        let mut resumed = M::from_suspended(state, &other).unwrap();
-        resumed.do_update(&msg(3)[1..]);
-        assert_eq!(resumed.do_final(), tag);
-    }
-
-    /// A wrong key type or length cannot reach resume (the key object enforces them), but a valid
-    /// key of a different length can: kk is bound into h, so a state taken before any input is
-    /// rejected. The strength is not re-checked, so a MAC from a weak key resumes.
-    #[test]
-    fn suspend_mac_key_length_and_strength() {
-        let state = kat_key().create_generator().suspend();
-        let short =
-            K::from_key_material_allow_weak(&key_with(KK_MAX - 1, SecurityStrength::_256bit))
-                .unwrap();
-        assert!(matches!(M::from_suspended(state, &short), Err(SuspendableError::InvalidData)));
-
-        let weak =
-            K::from_key_material_allow_weak(&key_with(KK_MAX, SecurityStrength::None)).unwrap();
-        let weak_state = weak.create_generator().suspend();
-        assert_eq!(M::from_suspended(weak_state, &weak).unwrap().mac(b"abc"), weak.mac(b"abc"));
-    }
-
-    #[test]
-    fn suspend_mac_rejects_bad_state() {
-        let key = kat_key();
-
-        // Before any input the buffer must be the full key block.
-        let mut state = key.create_generator().suspend();
-        state[BUF_LEN_OFF] = BB as u8 - 1;
-        assert!(matches!(M::from_suspended(state, &key), Err(SuspendableError::InvalidData)));
-        state[BUF_LEN_OFF] = BB as u8 + 1;
-        assert!(matches!(M::from_suspended(state, &key), Err(SuspendableError::InvalidData)));
-
-        // An unkeyed hash state of the same shape (t == 0, full buffer) is not a keyed state.
-        let mut hash = H::new();
-        hash.do_update(&[0u8; BB]);
-        let hash_state = hash.suspend();
-        let as_mac: [u8; MAC_STATE_LEN] = hash_state;
-        assert!(matches!(M::from_suspended(as_mac, &key), Err(SuspendableError::InvalidData)));
-
-        // After input, buf_len is still bounded.
-        let mut mac = key.create_generator();
-        mac.do_update(b"x");
-        let mut state = mac.suspend();
-        state[BUF_LEN_OFF] = BB as u8 + 1;
-        assert!(matches!(M::from_suspended(state, &key), Err(SuspendableError::InvalidData)));
     }
 }

@@ -11,7 +11,7 @@ mod vectors;
 mod keyed_hash_tests {
     use super::vectors::{CASES, KEY, OUTPUT_LEN, input};
     use bouncycastle_blake3::*;
-    use bouncycastle_core::errors::{KeyMaterialError, MACError, SuspendableError};
+    use bouncycastle_core::errors::{KeyMaterialError, MACError};
     use bouncycastle_core::key_material::{
         KeyMaterial256, KeyMaterial512, KeyMaterialTrait, KeyType,
     };
@@ -20,12 +20,10 @@ mod keyed_hash_tests {
         FromAnyKeyMaterial, MacGenerationKey, MacVerificationKey,
     };
     use bouncycastle_core::traits::{
-        Algorithm, AlgorithmInfo, HashOneShot, MAC, MIN_MAC_OUTPUT_LEN, SuspendableKeyed,
-        XOFSqueezer,
+        Algorithm, AlgorithmInfo, HashOneShot, MAC, MIN_MAC_OUTPUT_LEN, XOFSqueezer,
     };
     use bouncycastle_core_test_framework::from_key_material::TestFrameworkFromAnyKeyMaterial;
     use bouncycastle_core_test_framework::mac::TestFrameworkMAC;
-    use bouncycastle_core_test_framework::suspendable_state::TestFrameworkSuspendableKeyedState;
     use bouncycastle_hex as hex;
     use bouncycastle_rng::FixedSeedRNG;
 
@@ -107,18 +105,6 @@ mod keyed_hash_tests {
     #[test]
     fn core_test_framework_from_any_key_material() {
         TestFrameworkFromAnyKeyMaterial::new().test::<BLAKE3KeyedHashKey>(&material());
-    }
-
-    #[test]
-    fn core_test_framework_suspendable_keyed() {
-        let tf = TestFrameworkSuspendableKeyedState::new();
-        let k = key();
-        let msg = input(5000);
-        for len in [0usize, 1, 64, 65, 1024, 1025, 5000] {
-            let mut m = k.create_generator();
-            m.do_update(&msg[..len]);
-            tf.test(&m, &k);
-        }
     }
 
     /* ------------------------------------- MAC behaviour ------------------------------------ */
@@ -268,125 +254,6 @@ mod keyed_hash_tests {
         assert_eq!(BLAKE3KeyedHash::ALG_NAME, BLAKE3_KEYED_HASH_NAME);
         assert_eq!(BLAKE3KeyedHash::MAX_SECURITY_STRENGTH, SecurityStrength::_128bit);
         assert_eq!(key().create_generator().max_security_strength(), SecurityStrength::_128bit);
-        assert_eq!(SUSPENDED_BLAKE3_KEYED_HASH_STATE_LEN, 1838);
         assert_eq!(size_of::<BLAKE3KeyedHashKey>(), 32);
-    }
-
-    /* ------------------------------------ suspend/resume ------------------------------------ */
-
-    /// No byte sequence of the key may appear in a keyed state: checked for a fresh MAC (whose
-    /// chunk chaining value *is* the key), mid-first-block, after exactly one compressed block,
-    /// and at chunk boundaries.
-    #[test]
-    fn keyed_state_excludes_key() {
-        let k = key();
-        let msg = input(3000);
-        for len in [0usize, 1, 63, 64, 65, 129, 1024, 1025, 2048, 2049, 3000] {
-            let mut m = k.create_generator();
-            m.do_update(&msg[..len]);
-            let state = m.suspend();
-            for w in KEY.chunks(4) {
-                assert!(
-                    !state.windows(4).any(|x| x == w),
-                    "key bytes {w:?} found in state after {len} bytes"
-                );
-            }
-            if len <= 64 {
-                assert_eq!(state[3..3 + 32], [0u8; 32], "chunk CV is zeroed / {len}");
-            }
-        }
-    }
-
-    /// Resume at many points, including before any input (the key-is-the-CV case) and after one
-    /// compressed block.
-    #[test]
-    fn keyed_suspend_round_trip() {
-        let case = CASES.iter().find(|c| c.input_len == 4097).unwrap();
-        let msg = input(case.input_len);
-        let expected = h(case.keyed_hash);
-        let k = key();
-        for prefix in [0usize, 1, 64, 65, 1024, 1025, 2048, 4096, 4097] {
-            let mut m = k.create_generator();
-            m.do_update(&msg[..prefix]);
-            let mut resumed = BLAKE3KeyedHash::from_suspended(m.suspend(), &k).unwrap();
-            resumed.do_update(&msg[prefix..]);
-            assert_eq!(resumed.into_squeezer().do_output(OUTPUT_LEN), expected, "prefix {prefix}");
-        }
-    }
-
-    /// A wrong key resumes but gives a different tag whenever the key is still needed (see
-    /// `mid_chunk_state_finishes_without_key` for when it is not). A key of the wrong type or
-    /// length cannot be supplied: resume takes a `BLAKE3KeyedHashKey`.
-    #[test]
-    fn keyed_resume_wrong_key() {
-        let k = key();
-        let msg = input(3000);
-        // prefix 0: the chunk CV is the key. prefix 100: the rest of the message starts new chunks.
-        for prefix in [0usize, 100] {
-            let mut m = k.create_generator();
-            m.do_update(&msg[..prefix]);
-            let state = m.suspend();
-            let finish = |mut m: BLAKE3KeyedHash| {
-                m.do_update(&msg[prefix..]);
-                m.do_final()
-            };
-            let right = finish(BLAKE3KeyedHash::from_suspended(state, &k).unwrap());
-            let wrong = finish(BLAKE3KeyedHash::from_suspended(state, &other_key()).unwrap());
-            assert_eq!(right, k.mac(&msg));
-            assert_ne!(wrong, right, "prefix {prefix}");
-        }
-    }
-
-    /// Pins a property of BLAKE3 itself that the docs warn about: the key words enter only as the
-    /// first chaining value of each chunk and of each parent (spec s. 2.4, 2.5). For a prefix of
-    /// 65..=1024 bytes (first chunk, a block compressed, empty CV stack), a state resumed with the
-    /// WRONG key still produces the right tag for any extension that keeps the message at or under
-    /// 1024 bytes -- and does not for an extension that crosses the chunk boundary, nor for any
-    /// multi-chunk prefix.
-    #[test]
-    fn mid_chunk_state_finishes_without_key() {
-        let k = key();
-        let other = other_key();
-        let msg = input(3000);
-        // (prefix length, total length, does the wrong key reproduce the right tag?)
-        for (prefix, total, key_free) in [
-            (65usize, 66usize, true),
-            (100, 1024, true),
-            (1024, 1024, true),
-            (64, 100, false),   // nothing compressed yet: the chunk CV is the key
-            (100, 1025, false), // crosses into a second chunk
-            (1024, 1025, false),
-            (1100, 1200, false), // CV stack non-empty: the root is a parent node
-            (2100, 2200, false),
-        ] {
-            let mut m = k.create_generator();
-            m.do_update(&msg[..prefix]);
-            let mut resumed = BLAKE3KeyedHash::from_suspended(m.suspend(), &other).unwrap();
-            resumed.do_update(&msg[prefix..total]);
-            let right = k.mac(&msg[..total]);
-            assert_eq!(resumed.do_final() == right, key_free, "prefix {prefix}, total {total}");
-        }
-    }
-
-    /// The keyed state shares the chunk/stack validation with BLAKE3; spot-check that it is wired
-    /// in (the full branch-by-branch test is in blake3_tests.rs).
-    #[test]
-    fn keyed_suspend_validation() {
-        let k = key();
-        let mut m = k.create_generator();
-        m.do_update(&input(100));
-        let state = m.suspend();
-        let mut bad = state;
-        bad[3 + 104] = 65; // block_len
-        assert!(matches!(
-            BLAKE3KeyedHash::from_suspended(bad, &k),
-            Err(SuspendableError::InvalidData)
-        ));
-        let mut bad = state;
-        bad[3 + 106] = 1; // cv_stack_len vs chunk_counter 0
-        assert!(matches!(
-            BLAKE3KeyedHash::from_suspended(bad, &k),
-            Err(SuspendableError::InvalidData)
-        ));
     }
 }

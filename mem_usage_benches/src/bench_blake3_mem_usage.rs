@@ -27,8 +27,8 @@
 
 use bouncycastle::blake3::{
     BLAKE3, BLAKE3DeriveKey, BLAKE3DeriveKeySqueezer, BLAKE3KeyedHash, BLAKE3KeyedHashKey,
-    BLAKE3KeyedSqueezer, BLAKE3Squeezer, SUSPENDED_BLAKE3_KEYED_HASH_STATE_LEN,
-    SUSPENDED_BLAKE3_SQUEEZER_STATE_LEN, SUSPENDED_BLAKE3_STATE_LEN,
+    BLAKE3KeyedSqueezer, BLAKE3Squeezer, SUSPENDED_BLAKE3_SQUEEZER_STATE_LEN,
+    SUSPENDED_BLAKE3_STATE_LEN,
 };
 use bouncycastle::core::key_material::{KeyMaterial256, KeyType};
 use bouncycastle::core::symmetric_key::{FromAnyKeyMaterial, MacGenerationKey};
@@ -50,7 +50,6 @@ fn print_struct_sizes() {
     println!("size_of<BLAKE3DeriveKey>: {}", size_of::<BLAKE3DeriveKey>());
     println!("size_of<BLAKE3DeriveKeySqueezer>: {}", size_of::<BLAKE3DeriveKeySqueezer>());
     println!("SUSPENDED_BLAKE3_STATE_LEN: {}", SUSPENDED_BLAKE3_STATE_LEN);
-    println!("SUSPENDED_BLAKE3_KEYED_HASH_STATE_LEN: {}", SUSPENDED_BLAKE3_KEYED_HASH_STATE_LEN);
     println!("SUSPENDED_BLAKE3_SQUEEZER_STATE_LEN: {}", SUSPENDED_BLAKE3_SQUEEZER_STATE_LEN);
 }
 

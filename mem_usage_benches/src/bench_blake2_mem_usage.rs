@@ -27,12 +27,11 @@
 
 use bouncycastle::blake2::{
     BLAKE2b_512, BLAKE2b_512_MAC, BLAKE2b_512_MACKey, BLAKE2s_256, BLAKE2s_256_MAC,
-    BLAKE2s_256_MACKey, SUSPENDED_BLAKE2B_512_MAC_STATE_LEN, SUSPENDED_BLAKE2B_512_STATE_LEN,
-    SUSPENDED_BLAKE2S_256_MAC_STATE_LEN, SUSPENDED_BLAKE2S_256_STATE_LEN,
+    BLAKE2s_256_MACKey, SUSPENDED_BLAKE2B_512_STATE_LEN, SUSPENDED_BLAKE2S_256_STATE_LEN,
 };
 use bouncycastle::core::key_material::{KeyMaterial256, KeyMaterial512, KeyType};
 use bouncycastle::core::symmetric_key::{FromAnyKeyMaterial, MacGenerationKey};
-use bouncycastle::core::traits::{Hash, HashOneShot, MAC, Suspendable, SuspendableKeyed};
+use bouncycastle::core::traits::{Hash, HashOneShot, MAC, Suspendable};
 
 /// A 1 KiB message: 8 BLAKE2b blocks, 16 BLAKE2s blocks.
 const MSG: [u8; 1024] = [0xA5; 1024];
@@ -49,9 +48,7 @@ fn print_struct_sizes() {
     println!("size_of<BLAKE2s_256_MAC>: {}", size_of::<BLAKE2s_256_MAC>());
     println!("size_of<BLAKE2s_256_MACKey>: {}", size_of::<BLAKE2s_256_MACKey>());
     println!("SUSPENDED_BLAKE2B_512_STATE_LEN: {}", SUSPENDED_BLAKE2B_512_STATE_LEN);
-    println!("SUSPENDED_BLAKE2B_512_MAC_STATE_LEN: {}", SUSPENDED_BLAKE2B_512_MAC_STATE_LEN);
     println!("SUSPENDED_BLAKE2S_256_STATE_LEN: {}", SUSPENDED_BLAKE2S_256_STATE_LEN);
-    println!("SUSPENDED_BLAKE2S_256_MAC_STATE_LEN: {}", SUSPENDED_BLAKE2S_256_MAC_STATE_LEN);
 }
 
 fn bench_do_nothing() {
@@ -138,24 +135,6 @@ fn bench_blake2b_512_suspend_resume() {
     println!("{:x?}", out);
 }
 
-fn bench_blake2s_256_mac_suspend_resume() {
-    eprintln!("BLAKE2s-256-MAC/suspend+from_suspended");
-
-    let key = KeyMaterial256::from_bytes_as_type(&[0x0Bu8; 32], KeyType::MACKey)
-        .expect("a 32-byte MAC key");
-    let mac_key =
-        BLAKE2s_256_MACKey::from_key_material_allow_weak(&key).expect("a 32-byte MAC key");
-    let mut mac = mac_key.create_generator();
-    mac.do_update(&MSG[..500]);
-    let state = mac.suspend();
-    let mut mac = BLAKE2s_256_MAC::from_suspended(state, &mac_key)
-        .expect("round-trip of a freshly suspended state");
-    mac.do_update(&MSG[500..]);
-    let mut out = [0u8; 32];
-    mac.do_final_out(&mut out).expect("a 32-byte output buffer");
-    println!("{:x?}", out);
-}
-
 fn main() {
     print_struct_sizes()
     // bench_do_nothing()
@@ -166,5 +145,4 @@ fn main() {
     // bench_blake2b_512_mac()
     // bench_blake2s_256_mac()
     // bench_blake2b_512_suspend_resume()
-    // bench_blake2s_256_mac_suspend_resume()
 }

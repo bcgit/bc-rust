@@ -9,9 +9,7 @@ use bouncycastle_core::hazmat::do_hazardous_operations;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::symmetric_key::{FromAnyKeyMaterial, MacGenerationKey, MacVerificationKey};
-use bouncycastle_core::traits::{
-    Hash, HashOneShot, MAC, MIN_MAC_OUTPUT_LEN, RNG, Suspendable, SuspendableKeyed,
-};
+use bouncycastle_core::traits::{Hash, HashOneShot, MAC, MIN_MAC_OUTPUT_LEN, RNG, Suspendable};
 use bouncycastle_utils::suspendable_state::{add_lib_ver, check_lib_ver};
 use bouncycastle_utils::{ct, min, secret::Secret};
 
@@ -290,19 +288,16 @@ impl Blake2sCore {
     }
 
     /// Serializes `h || t || buf || buf_len || kk` (all little-endian) into `out`, which must be
-    /// zeroed. `buf` is written as its first `buf_len` bytes followed by zeros, or as all zeros
-    /// when `zero_buf` is set.
-    fn write_state(&self, out: &mut [u8; CORE_STATE_LEN], zero_buf: bool) {
+    /// zeroed. `buf` is written as its first `buf_len` bytes followed by zeros.
+    fn write_state(&self, out: &mut [u8; CORE_STATE_LEN]) {
         let (words, _) = out[..32].as_chunks_mut::<4>();
         for (bytes, word) in words.iter_mut().zip(self.h.iter()) {
             *bytes = word.to_le_bytes();
         }
         out[32..40].copy_from_slice(&self.t.to_le_bytes());
         // Only the valid bytes: past buf_len the buffer still holds stale bytes of earlier
-        // blocks -- in keyed mode, of the key block d[0] -- which must not leak into the state.
-        if !zero_buf {
-            out[40..40 + self.buf_len].copy_from_slice(&self.buf[..self.buf_len]);
-        }
+        // blocks, which must not leak into the state.
+        out[40..40 + self.buf_len].copy_from_slice(&self.buf[..self.buf_len]);
         debug_assert!(self.buf_len <= BB);
         out[104] = self.buf_len as u8;
         out[105] = self.kk;
@@ -356,13 +351,6 @@ const CORE_STATE_LEN: usize = 32 + 8 + BB + 2;
 ///   [104 .. 105)  buf_len  u8 (always <= 64)
 ///   [105 .. 106)  kk       u8 (key length; 0 for this unkeyed hash)
 pub const SUSPENDED_BLAKE2S_256_STATE_LEN: usize = 3 + CORE_STATE_LEN;
-
-/// Length in bytes of the serialized state of [`BLAKE2s_256_MAC`].
-///
-/// Same layout as [`SUSPENDED_BLAKE2S_256_STATE_LEN`], except that `buf` is written as zeros while
-/// it holds the padded key block (`t == 0`), so the key never appears in the state. The two lengths
-/// are equal today; depend on the one for the type you are suspending.
-pub const SUSPENDED_BLAKE2S_256_MAC_STATE_LEN: usize = 3 + CORE_STATE_LEN;
 
 /// The BLAKE2s hash with a 32-byte digest, unkeyed (RFC 7693, kk = 0, nn = 32).
 ///
@@ -457,7 +445,7 @@ impl Suspendable<SUSPENDED_BLAKE2S_256_STATE_LEN> for BLAKE2s_256 {
     fn suspend(self) -> [u8; SUSPENDED_BLAKE2S_256_STATE_LEN] {
         let mut out_to_return = [0u8; SUSPENDED_BLAKE2S_256_STATE_LEN];
         let mut out = [0u8; CORE_STATE_LEN];
-        self.core.write_state(&mut out, false);
+        self.core.write_state(&mut out);
         // add_lib_ver returns the CORE_STATE_LEN bytes after the 3-byte version header.
         add_lib_ver(&mut out_to_return).copy_from_slice(&out);
         out_to_return
@@ -659,68 +647,5 @@ impl MAC for BLAKE2s_256_MAC {
     fn do_verify_final(self, mac: &[u8]) -> bool {
         let computed = self.do_final();
         ct::ct_eq_bytes(&computed, mac)
-    }
-}
-
-/// The key is never written into the serialized state; resume takes the [`BLAKE2s_256_MACKey`]
-/// again.
-///
-/// Before any message byte (`t == 0`) the buffer holds the padded key block, so `suspend` writes
-/// zeros there and `from_suspended` rebuilds it from the key. Once a message byte arrives the key
-/// is folded into `h`, and from then on only the key's length is checked: resuming with a
-/// different key of the same length gives the original MAC.
-///
-/// # 🚨 Security Considerations 🚨
-/// Although it holds no key bytes, a suspended state with `t > 0` is a MAC oracle for every
-/// extension of the absorbed prefix: its chaining value `h` alone finishes the MAC, so anyone
-/// holding it can compute valid tags for any message that starts with that prefix. Protect it like
-/// the key.
-impl<'k> SuspendableKeyed<'k, SUSPENDED_BLAKE2S_256_MAC_STATE_LEN> for BLAKE2s_256_MAC {
-    type Key = BLAKE2s_256_MACKey;
-
-    fn suspend(self) -> [u8; SUSPENDED_BLAKE2S_256_MAC_STATE_LEN] {
-        let mut out_to_return = [0u8; SUSPENDED_BLAKE2S_256_MAC_STATE_LEN];
-        let mut out = [0u8; CORE_STATE_LEN];
-        // t == 0 exactly when buf still holds the key block d[0].
-        self.core.write_state(&mut out, self.core.t == 0);
-        // add_lib_ver returns the CORE_STATE_LEN bytes after the 3-byte version header.
-        add_lib_ver(&mut out_to_return).copy_from_slice(&out);
-        out_to_return
-    }
-
-    /// # Errors
-    /// * [`SuspendableError::IncompatibleVersion`] for a state from an incompatible library
-    ///   version.
-    /// * [`SuspendableError::InvalidData`] if the state's key length differs from `key`'s (which
-    ///   includes an unkeyed hash state), the buffered length exceeds one block, `t` is not a
-    ///   whole number of blocks, the buffer is empty after a compression, or a state taken before
-    ///   any input (`t == 0`) does not match a fresh worker of `key`.
-    fn from_suspended(
-        state: [u8; SUSPENDED_BLAKE2S_256_MAC_STATE_LEN],
-        key: &'k Self::Key,
-    ) -> Result<Self, SuspendableError> {
-        // At the moment, we have no not_before version to specify.
-        // check_lib_ver returns the CORE_STATE_LEN bytes after the 3-byte version header.
-        let mut input = [0u8; CORE_STATE_LEN];
-        input.copy_from_slice(check_lib_ver(&state, None)?);
-        let core = Blake2sCore::read_state(&input)?;
-
-        // A hash state (kk = 0) would verify a plain digest as a tag. A single-byte compare has no
-        // early exit to time.
-        if core.kk != key.core.kk {
-            return Err(SuspendableError::InvalidData);
-        }
-
-        if core.t == 0 {
-            // Before any input the state is exactly the key's: h is the initial state for this
-            // kk and buf is the full key block. The serialized buffer is zeros, so the key's own
-            // state is taken as a whole.
-            if core.buf_len != BB || !core.h_ct_eq(&key.core.h) {
-                return Err(SuspendableError::InvalidData);
-            }
-            return Ok(Self { core: key.core.clone() });
-        }
-
-        Ok(Self { core })
     }
 }
