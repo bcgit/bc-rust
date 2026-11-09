@@ -105,7 +105,7 @@ The workspace has four top-level kinds of member:
 
 ### The `core` / `core-test-framework` / `factory` spine
 
-- `crypto/core` defines the abstract traits (`Hash`, `KDF`, `MAC`, `KEM`, `Signature`, `RNG`, `Algorithm`, `HashAlgParams`, …), error enums (`HashError`, `KDFError`, `KEMError`, `MACError`, `RNGError`, `SignatureError`), and the `KeyMaterial` / `KeyType` wrapper that all sensitive byte buffers are required to use (see `Secret` super-trait requirement in QUALITY_AND_STYLE.md).
+- `crypto/core` defines the abstract traits (`Hash`, `KDF`, `MACGenerator` / `MACVerifier`, `KEM`, `Signature`, `RNG`, `Algorithm`, `HashAlgParams`, …), error enums (`HashError`, `KDFError`, `KEMError`, `MACError`, `RNGError`, `SignatureError`), and the `KeyMaterial` / `KeyType` wrapper that all sensitive byte buffers are required to use (see `Secret` super-trait requirement in QUALITY_AND_STYLE.md).
 - `crypto/core-test-framework` contains the shared per-trait test suite (`hash.rs`, `kdf.rs`, `kem.rs`, `mac.rs`, `signature.rs`). New implementations of a core trait must be exercised through this framework — it's how trait conformance and error-condition coverage stay consistent across implementations.
 - `crypto/cipher-test-framework` holds the suites every block cipher crate runs over `BlockCipherKey<P, M>`: the keys under every mode through the core suites, the padded and stream-mode wiring checks, and the Wycheproof runners, each generic over the permutation and run at one key length per call. It is a sibling of `core-test-framework` rather than part of it because it names `bouncycastle-cipher`'s types, and that crate's own tests depend on the core framework. A new block cipher's `mode_key_tests.rs`, `padded_alias_tests.rs`, `stream_mode_alias_tests.rs` and `*_wycheproof.rs` are calls into it; what stays in the crate is the cipher's own known answers, aliases and sizes.
 - `crypto/factory` provides enum-based string-name factories (`HashFactory`, `KDFFactory`, `MACFactory`, `RNGFactory`, `XOFFactory`). Each factory enum impls the underlying trait so it can be used transparently as that primitive, except `MACFactory`, which is a key enum whose algorithm is chosen at run time and so keeps run-time tag lengths: inherent `mac` / `mac_out` / `verify` over slices, and `create_generator` / `create_verifier` handing out a `MACFactoryWorker<Dir>` with inherent finals, where the role traits take `[u8; MAC_LEN]`; and each impls `AlgorithmFactory` (`new(name)`, `default_128_bit()`, `default_256_bit()`). When adding a new primitive that fits an existing trait, register it in the corresponding factory.
@@ -211,7 +211,7 @@ The symmetric cipher and MAC traits lost their constructors and key-taking one-s
 What that taught, as mechanics for the next trait that sheds a constructor:
 
 - **The trait describes a worker that exists.** `SymmetricCipherEncryptor`, `AEADCipherEncryptor`,
-  `BlockCipherEncryptor`, `StreamCipherEncryptor`, their decrypting halves and `MAC` carry only
+  `BlockCipherEncryptor`, `StreamCipherEncryptor`, their decrypting halves and `MACGenerator` / `MACVerifier` carry only
   streaming methods and length helpers. Construction is a key object's (`create_encryptor(rng)`,
   `create_decryptor(init)`, `create_generator()`), and the one-shots are provided on the role
   traits in `core::symmetric_key` over those. `KEY_LEN` is on the role and mode traits, never on
