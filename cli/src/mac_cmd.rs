@@ -3,8 +3,8 @@
 
 use crate::helpers::block_mode_helpers::{load_iv, load_key_object_typed};
 use crate::helpers::{
-    SecretBytes, decode_hex_arg, load_secret, stream_stdin, stream_xof, write_bytes_or_hex,
-    write_stdout,
+    SecretBytes, decode_hex_arg, load_secret, stream_stdin, stream_xof, warn_if_zeroized_key,
+    write_bytes_or_hex, write_stdout,
 };
 use crate::sha3_cmd::{MAX_FIXED_OUTPUT_LEN, Strength};
 use bouncycastle::aes::{AES128Key, AES192Key, AES256Key};
@@ -48,13 +48,7 @@ pub(crate) enum HMACVariant {
 /// encodes the key's length (SP 800-185 Section 4.2).
 fn load_mac_key(key: &Option<String>, key_file: &Option<String>) -> SecretBytes {
     let mut key = load_secret(key, key_file, "key");
-    if key.key_type() == KeyType::Zeroized {
-        // Same stance as the cipher loaders: warn, then do what was asked. A CLI is used for
-        // test vectors and scripting, where an all-zero key is a legitimate thing to want.
-        eprintln!(
-            "Warning: all-zero (or otherwise zeroized) key provided. Proceeding, but this is not secure."
-        );
-    }
+    warn_if_zeroized_key(&key);
     do_hazardous_operations(&mut key, |key| key.set_key_type(KeyType::MACKey)).unwrap_or_else(
         |e| {
             eprintln!("Error: couldn't load the key: {e:?}");

@@ -53,11 +53,19 @@
 //! | Object                                                  | Size (bytes) |
 //! |---------------------------------------------------------|--------------|
 //! | [`BLAKE2b_512`], [`BLAKE2b_512_MAC`], [`BLAKE2b_512_MACKey`] | 224     |
-//! | [`BLAKE2s_256`], [`BLAKE2s_256_MAC`], [`BLAKE2s_256_MACKey`] | 120     |
-//! | BLAKE2b-512 suspended state                            | 213          |
-//! | BLAKE2s-256 suspended state                            | 109          |
+//! | [`BLAKE2s_256`], [`BLAKE2s_256_MAC`], [`BLAKE2s_256_MACKey`] | 112     |
+//! | BLAKE2b-512 suspended state                             | 212          |
+//! | BLAKE2s-256 suspended state                             | 108          |
 //!
-//! The compression function also uses 256 bytes (BLAKE2b) or 128 bytes (BLAKE2s) of stack.
+//! Peak stack per call, measured as the deepest point below a non-inlined call into the operation
+//! (the object, a 1 KiB input and the output buffer included; release build, x86_64, rustc 1.101):
+//!
+//! | Operation                                   | BLAKE2b-512 | BLAKE2s-256 |
+//! |---------------------------------------------|-------------|-------------|
+//! | hash, one-shot or streaming                 | 1176 B      | 688 B       |
+//! | MAC key from [`KeyMaterial`]                | 792 B       | 440 B       |
+//! | MAC, `mac_out`                              | 1064 B      | 656 B       |
+//! | hash `suspend`, `from_suspended`, finish    | 1896 B      | 992 B       |
 //!
 //! # 🚨 Security Considerations 🚨
 //!

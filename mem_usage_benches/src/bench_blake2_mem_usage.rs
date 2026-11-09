@@ -135,6 +135,20 @@ fn bench_blake2b_512_suspend_resume() {
     println!("{:x?}", out);
 }
 
+fn bench_blake2s_256_suspend_resume() {
+    eprintln!("BLAKE2s-256/suspend+from_suspended");
+
+    let mut h = BLAKE2s_256::new();
+    h.do_update(&MSG[..500]);
+    let state = h.suspend();
+    let mut h =
+        BLAKE2s_256::from_suspended(state).expect("round-trip of a freshly suspended state");
+    h.do_update(&MSG[500..]);
+    let mut out = [0u8; 32];
+    h.do_final_out(&mut out);
+    println!("{:x?}", out);
+}
+
 fn main() {
     print_struct_sizes()
     // bench_do_nothing()
@@ -145,4 +159,5 @@ fn main() {
     // bench_blake2b_512_mac()
     // bench_blake2s_256_mac()
     // bench_blake2b_512_suspend_resume()
+    // bench_blake2s_256_suspend_resume()
 }

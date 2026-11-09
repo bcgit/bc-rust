@@ -175,28 +175,18 @@ struct Blake2bCore {
     buf: Secret<[u8; BB]>,
     /// Number of valid bytes in `buf`, in `0..=BB`.
     buf_len: usize,
-    /// The key length kk of the parameter block (0 for the unkeyed hash). After the first
-    /// compression nothing else in the state shows which parameter block produced it, so this is
-    /// what lets resume refuse a hash state as a MAC and the reverse.
-    kk: u8,
 }
 
 impl Blake2bCore {
     /// The unkeyed state (kk = 0).
     fn new_unkeyed() -> Self {
-        Self { h: initial_h(0), t: 0, buf: Secret::new(), buf_len: 0, kk: 0 }
+        Self { h: initial_h(0), t: 0, buf: Secret::new(), buf_len: 0 }
     }
 
     /// The keyed state. `key` must be 1..=64 bytes; the callers validate it.
     fn new_keyed(key: &[u8]) -> Self {
         debug_assert!(!key.is_empty() && key.len() <= MAX_KK);
-        let mut core = Self {
-            h: initial_h(key.len()),
-            t: 0,
-            buf: Secret::new(),
-            buf_len: 0,
-            kk: key.len() as u8,
-        };
+        let mut core = Self { h: initial_h(key.len()), t: 0, buf: Secret::new(), buf_len: 0 };
         core.load_key_block(key);
         core
     }
@@ -288,7 +278,7 @@ impl Blake2bCore {
         n
     }
 
-    /// Serializes `h || t || buf || buf_len || kk` (all little-endian) into `out`, which must be
+    /// Serializes `h || t || buf || buf_len` (all little-endian) into `out`, which must be
     /// zeroed. `buf` is written as its first `buf_len` bytes followed by zeros.
     fn write_state(&self, out: &mut [u8; CORE_STATE_LEN]) {
         let (words, _) = out[..64].as_chunks_mut::<8>();
@@ -301,16 +291,14 @@ impl Blake2bCore {
         out[80..80 + self.buf_len].copy_from_slice(&self.buf[..self.buf_len]);
         debug_assert!(self.buf_len <= BB);
         out[208] = self.buf_len as u8;
-        out[209] = self.kk;
     }
 
     /// Inverse of [`Self::write_state`]. Rejects a `buf_len` larger than a block (a full block,
     /// `buf_len == bb`, is valid: it is compressed only when more input arrives), a `t` that is
-    /// not a whole number of blocks, an empty buffer after a compression, and a kk above 64.
+    /// not a whole number of blocks, and an empty buffer after a compression.
     fn read_state(input: &[u8; CORE_STATE_LEN]) -> Result<Self, SuspendableError> {
         let buf_len = input[208] as usize;
-        let kk = input[209];
-        if buf_len > BB || kk as usize > MAX_KK {
+        if buf_len > BB {
             return Err(SuspendableError::InvalidData);
         }
 
@@ -323,8 +311,7 @@ impl Blake2bCore {
         t_bytes.copy_from_slice(&input[64..80]);
         let t = u128::from_le_bytes(t_bytes);
         // A compression only ever happens on a full block (s. 3.3 "(i + 1) * bb"), so at rest t is
-        // a multiple of bb. For the keyed type this also rules out 0 < t < bb: the key block is
-        // compressed first, with t = bb.
+        // a multiple of bb.
         if t % (BB as u128) != 0 {
             return Err(SuspendableError::InvalidData);
         }
@@ -336,12 +323,12 @@ impl Blake2bCore {
         let mut buf = Secret::<[u8; BB]>::new();
         buf.copy_from_slice(&input[80..208]);
 
-        Ok(Self { h, t, buf, buf_len, kk })
+        Ok(Self { h, t, buf, buf_len })
     }
 }
 
 /// Length of the serialized engine state, without the version header.
-const CORE_STATE_LEN: usize = 64 + 16 + BB + 2;
+const CORE_STATE_LEN: usize = 64 + 16 + BB + 1;
 
 /// Length in bytes of the serialized state of [`BLAKE2b_512`].
 ///
@@ -350,7 +337,6 @@ const CORE_STATE_LEN: usize = 64 + 16 + BB + 2;
 ///   [64  .. 80)   t        u128 (RFC 7693 s. 2.2 byte offset)
 ///   [80  .. 208)  buf      [u8; 128]
 ///   [208 .. 209)  buf_len  u8 (always <= 128)
-///   [209 .. 210)  kk       u8 (key length; 0 for this unkeyed hash)
 pub const SUSPENDED_BLAKE2B_512_STATE_LEN: usize = 3 + CORE_STATE_LEN;
 
 /// The BLAKE2b hash with a 64-byte digest, unkeyed (RFC 7693, kk = 0, nn = 64).
@@ -455,10 +441,9 @@ impl Suspendable<SUSPENDED_BLAKE2B_512_STATE_LEN> for BLAKE2b_512 {
     /// # Errors
     /// * [`SuspendableError::IncompatibleVersion`] for a state from an incompatible library
     ///   version.
-    /// * [`SuspendableError::InvalidData`] for a keyed state (`kk != 0`), a buffered length over
-    ///   one block, a `t` that is not a whole number of blocks, an empty buffer after a
-    ///   compression, or a state taken before any compression whose `h` is not the unkeyed initial
-    ///   state.
+    /// * [`SuspendableError::InvalidData`] for a buffered length over one block, a `t` that is not
+    ///   a whole number of blocks, an empty buffer after a compression, or a state taken before any
+    ///   compression whose `h` is not the unkeyed initial state.
     fn from_suspended(
         state: [u8; SUSPENDED_BLAKE2B_512_STATE_LEN],
     ) -> Result<Self, SuspendableError> {
@@ -467,10 +452,6 @@ impl Suspendable<SUSPENDED_BLAKE2B_512_STATE_LEN> for BLAKE2b_512 {
         let mut input = [0u8; CORE_STATE_LEN];
         input.copy_from_slice(check_lib_ver(&state, None)?);
         let core = Blake2bCore::read_state(&input)?;
-        // A keyed state finished here would be its MAC computed without the key.
-        if core.kk != 0 {
-            return Err(SuspendableError::InvalidData);
-        }
         // Before any compression h is exactly the unkeyed initial state.
         if core.t == 0 && !core.h_ct_eq(&initial_h(0)) {
             return Err(SuspendableError::InvalidData);

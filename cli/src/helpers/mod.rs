@@ -239,12 +239,28 @@ pub(crate) fn strip_trailing_newline(bytes: &[u8]) -> &[u8] {
     bytes.strip_suffix(b"\r\n").or_else(|| bytes.strip_suffix(b"\n")).unwrap_or(bytes)
 }
 
+/// Warns on stderr, then lets the caller carry on, if `key` is empty or all zero bytes. A CLI is
+/// used for test vectors and scripting, where such a key is a legitimate thing to want, so this
+/// is a warning and not a refusal. Shared by every MAC key loader so they all say the same thing.
+///
+/// This looks at the bytes, not at [`KeyType::Zeroized`]: the secret readers above tag what they
+/// read `Unknown` inside a hazardous-operations closure, which never produces `Zeroized`.
+pub(crate) fn warn_if_zeroized_key(key: &impl KeyMaterialTrait) {
+    // OR-accumulate rather than `all()`, so the time taken does not depend on where a non-zero
+    // byte first appears.
+    if key.ref_to_bytes().iter().fold(0u8, |acc, b| acc | b) == 0 {
+        eprintln!(
+            "Warning: all-zero (or otherwise zeroized) key provided. Proceeding, but this is not secure."
+        );
+    }
+}
+
 /// The MAC key from `--key-file` or `--key` (hex), tagged as a MAC key, for the BLAKE2 and
 /// BLAKE3 keyed commands.
 ///
 /// A key outside `min_len..=max_len` bytes is refused here with a message naming the limit, rather
-/// than as an opaque error from the algorithm's constructor. An all-zero key comes back tagged
-/// [`KeyType::Zeroized`], which the BLAKE key objects accept.
+/// than as an opaque error from the algorithm's constructor. An all-zero key is accepted with a
+/// warning, see [`warn_if_zeroized_key`].
 pub(crate) fn load_blake_mac_key(
     key: &Option<String>,
     key_file: &Option<String>,
@@ -264,6 +280,7 @@ pub(crate) fn load_blake_mac_key(
         }
         exit(-1);
     }
+    warn_if_zeroized_key(&key_bytes);
 
     // infallible: the length is at most 64 (checked above, and no caller passes max_len > 64),
     // which fits a KeyMaterial512, and MACKey is a valid type to load.

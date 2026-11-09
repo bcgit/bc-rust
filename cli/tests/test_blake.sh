@@ -162,6 +162,29 @@ test_blake2_mac_rejects_bad_keys() {
     done
 }
 
+# An all-zero key warns on stderr, like the HMAC/KMAC loader, and still produces its tag on
+# stdout; a non-zero key is silent. The tag is the same whether the key comes inline or from a file.
+test_blake_keyed_commands_warn_on_an_all_zero_key() {
+    local spec sub len key tag
+    printf abc >"$TMP/msg"
+    for spec in blake2b-512-mac:64 blake2s-256-mac:32 blake3-keyed-hash:32; do
+        sub=${spec%%:*}
+        len=${spec##*:}
+        key=$(printf '%0*d' $((len * 2)) 0)
+        tag=$("$BC_RUST" "$sub" --key "$key" -x <"$TMP/msg" 2>"$LAST_STDERR") ||
+            fail "$sub: an all-zero key should still work"
+        assert_stderr_has "Warning: all-zero"
+        case $tag in *arning*) fail "$sub: the warning leaked onto stdout: $tag" ;; esac
+        [ -n "$tag" ] || fail "$sub: no tag on stdout"
+        unhex "$key" >"$TMP/zero_key"
+        assert_eq "$("$BC_RUST" "$sub" --key-file "$TMP/zero_key" -x <"$TMP/msg" 2>/dev/null)" \
+            "$tag" "$sub: tag from the key file"
+        expect_ok "$sub: a non-zero key" "$BC_RUST" "$sub" --key "${key:0:$((len * 2 - 2))}01" \
+            <"$TMP/msg" >/dev/null
+        [ ! -s "$LAST_STDERR" ] || fail "$sub: a non-zero key should be silent: $(cat "$LAST_STDERR")"
+    done
+}
+
 # ---- blake3 ---------------------------------------------------------------------------------
 
 test_blake3_default_length_is_the_first_32_bytes_of_the_vector() {

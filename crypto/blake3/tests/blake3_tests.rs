@@ -251,6 +251,20 @@ mod blake3_tests {
         assert_eq!(out, expected[..5]);
     }
 
+    /// The same contract for the inherent `BLAKE3DeriveKey::hash_out`.
+    #[test]
+    fn derive_key_hash_out_lengths() {
+        let expected = BLAKE3DeriveKey::new(CONTEXT).hash(b"abc");
+        let mut out = [0xAAu8; 100];
+        assert_eq!(BLAKE3DeriveKey::new(CONTEXT).hash_out(b"abc", &mut out), 32);
+        assert_eq!(out[..32], expected);
+        assert!(out[32..].iter().all(|&b| b == 0));
+        assert_eq!(BLAKE3DeriveKey::new(CONTEXT).hash_out(b"abc", &mut []), 0);
+        let mut out = [0u8; 5];
+        assert_eq!(BLAKE3DeriveKey::new(CONTEXT).hash_out(b"abc", &mut out), 5);
+        assert_eq!(out, expected[..5]);
+    }
+
     #[test]
     fn constants_and_params() {
         assert_eq!(BLAKE3_NAME, "BLAKE3");

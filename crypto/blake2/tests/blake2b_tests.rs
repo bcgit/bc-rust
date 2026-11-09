@@ -36,11 +36,10 @@ mod blake2b_tests {
     /// Largest key, kk.
     const KK_MAX: usize = 64;
     const STATE_LEN: usize = SUSPENDED_BLAKE2B_512_STATE_LEN;
-    /// Offsets in the suspended state (after the 3-byte version header) of t, buf, buf_len and kk.
+    /// Offsets in the suspended state (after the 3-byte version header) of t, buf and buf_len.
     const T_OFF: usize = 3 + 64;
     const BUF_OFF: usize = 3 + 80;
     const BUF_LEN_OFF: usize = 3 + 208;
-    const KK_OFF: usize = 3 + 209;
 
     /// RFC 7693 Appendix A: BLAKE2b-512("abc"), copied by script from the RFC text.
     const RFC_ABC: &str = "ba80a53f981c4d0d6a2797b69f12f6e94c212f14685ac4b74b12bb6fdbffa2d17d87c5392aab792dc252d5de4533cc9518d38aa8dbf1925ab92386edd4009923";
@@ -274,7 +273,7 @@ mod blake2b_tests {
         // `openssl asn1parse -genstr OID:1.3.6.1.4.1.1722.12.2.1.16`.
         assert_eq!(H::OID, &[1, 3, 6, 1, 4, 1, 1722, 12, 2, 1, 16]);
         assert_eq!(H::OID_DER, h("060b2b060104018d3a0c020110").as_slice());
-        assert_eq!(STATE_LEN, 3 + 64 + 16 + BB + 2);
+        assert_eq!(STATE_LEN, 3 + 64 + 16 + BB + 1);
         assert_eq!(MIN_MAC_OUTPUT_LEN, 4);
         // RFC 7693 s. 4: the same OID covers keyed hashing.
         assert_eq!(M::OID, H::OID);
@@ -524,17 +523,6 @@ mod blake2b_tests {
         assert_eq!(state[T_OFF], BB as u8, "t = bb after one block");
         assert_eq!(state[BUF_OFF], BB as u8, "buf holds message byte bb");
         assert_eq!(state[BUF_LEN_OFF], 1);
-        assert_eq!(state[KK_OFF], 0, "kk = 0 for the unkeyed hash");
-    }
-
-    /// kk above the RFC's maximum is never produced, so a state carrying one is rejected.
-    #[test]
-    fn suspend_rejects_bad_kk() {
-        let mut hash = H::new();
-        hash.do_update(msg(BB + 1));
-        let mut st = hash.suspend();
-        st[KK_OFF] = KK_MAX as u8 + 1;
-        assert!(matches!(H::from_suspended(st), Err(SuspendableError::InvalidData)));
     }
 
     /// `update` keeps at least one byte back after a compression, so an empty buffer with t > 0
@@ -565,14 +553,20 @@ mod blake2b_tests {
         assert!(matches!(H::from_suspended(state), Err(SuspendableError::InvalidData)));
     }
 
-    /// Before any compression the hash's h must be the unkeyed initial state: a tampered h is
-    /// rejected.
+    /// Before any compression the hash's h must be the unkeyed initial state: a keyed state
+    /// (h carries kk in p[0]) or a tampered h is rejected.
     #[test]
     fn suspend_hash_rejects_foreign_h() {
         let mut hash = H::new();
         hash.do_update(b"abc");
         let state = hash.suspend();
         assert!(H::from_suspended(state).is_ok());
+
+        // A keyed initial state: s. 2.5 puts kk in byte 1 of p[0], so that is h's second
+        // little-endian byte.
+        let mut st = state;
+        st[4] ^= KK_MAX as u8;
+        assert!(matches!(H::from_suspended(st), Err(SuspendableError::InvalidData)));
         for i in [3, 4, (3 + T_OFF) / 2, T_OFF - 1] {
             let mut st = state;
             st[i] ^= 0x01;
