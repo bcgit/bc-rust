@@ -148,19 +148,27 @@ pub(crate) fn kmac_cmd(
 
 /// Streams stdin into `kmac` and binds `length` at the final read, then writes the tag or
 /// verifies `--verify` against it in constant time, reporting through the exit status and an
-/// `Error:` line as [`do_mac`] does.
+/// `Error:` line as [`do_mac`] does; as there, a `--verify` of the wrong length is refused before
+/// any input is read.
 fn kmac_run(mut kmac: impl XOF, length: usize, verify_val: &Option<String>, output_hex: bool) {
+    let expected = verify_val.as_ref().map(|verify_val| {
+        let expected = decode_hex_arg(verify_val, "verify");
+        if expected.len() != length {
+            eprintln!("Error: the MAC must be {length} bytes, got {}.", expected.len());
+            exit(-1)
+        }
+        expected
+    });
     stream_stdin(|chunk| kmac.do_update(chunk));
     let mut tag = vec![0u8; length];
     kmac.into_squeezer().do_output_final_out(&mut tag);
-    match verify_val {
+    match expected {
         None => {
             write_bytes_or_hex(&tag, output_hex);
             write_stdout(b"\n");
         }
-        Some(verify_val) => {
-            let expected = decode_hex_arg(verify_val, "verify");
-            if expected.len() == length && ct_eq_bytes(&expected, &tag) {
+        Some(expected) => {
+            if ct_eq_bytes(&expected, &tag) {
                 exit(0)
             }
             eprintln!("Error: MAC verification failed.");
