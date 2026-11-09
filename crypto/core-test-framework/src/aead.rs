@@ -15,7 +15,7 @@
 //! [`SymmetricCipherEncryptor`]: bouncycastle_core::traits::SymmetricCipherEncryptor
 //! [`SymmetricCipherDecryptor`]: bouncycastle_core::traits::SymmetricCipherDecryptor
 
-use crate::DUMMY_SEED;
+use crate::{DUMMY_SEED, FailingRNG};
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::symmetric_key::{AeadDecryptionKey, AeadEncryptionKey};
 use bouncycastle_core::traits::{
@@ -121,6 +121,15 @@ impl TestFrameworkAEADCipher {
             }
             let mut ct = vec![0u8; encrypt_detached_out_len(len)];
             let (ct_len, nonce, tag) = key.encrypt_detached_out(rng, aad, msg, &mut ct).unwrap();
+
+            // the _out rule holds on the error path: when the nonce cannot be drawn, both
+            // one-shots leave the buffer zeroized rather than with its stale contents
+            let mut stale = vec![0xA5u8; encrypt_detached_out_len(len)];
+            assert!(key.encrypt_detached_out(&mut FailingRNG, aad, msg, &mut stale).is_err());
+            assert!(stale.iter().all(|&b| b == 0), "encrypt_detached_out must zeroize first");
+            let mut stale = vec![0xA5u8; encrypt_out_len(len)];
+            assert!(key.encrypt_with_aad_out(&mut FailingRNG, aad, msg, &mut stale).is_err());
+            assert!(stale.iter().all(|&b| b == 0), "encrypt_with_aad_out must zeroize first");
             ct.truncate(ct_len);
             assert_ne!(tag, [0u8; TAG_LEN], "len {len}: the tag must not be all zeros");
             // Only assert the ciphertext differs from the plaintext once there is enough of it for

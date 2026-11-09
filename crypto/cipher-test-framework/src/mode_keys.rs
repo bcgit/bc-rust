@@ -14,12 +14,14 @@ use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
 use bouncycastle_core::hazmat::{EcbEncryptionKey, Mode};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
+use bouncycastle_core::symmetric_key::AeadDeclaredEncryptionKey;
 use bouncycastle_core::symmetric_key::{
     AeadDecryptionKey, AeadEncryptionKey, BlockDecryptionKey, BlockEncryptionKey, FromKeyMaterial,
     MacGenerationKey, MacVerificationKey, NonceMacGenerationKey, NonceMacVerificationKey,
     SymmetricDecryptionKey, SymmetricEncryptionKey,
 };
 use bouncycastle_core::traits::{BlockCipherEncryptor, MACGenerator};
+use bouncycastle_core_test_framework::FailingRNG;
 use bouncycastle_core_test_framework::aead::{
     TestFrameworkAEADCipher, TestFrameworkAEADTaggedLayout,
 };
@@ -115,6 +117,27 @@ pub fn aead_modes<P: Permutation<KEY_LEN>, const KEY_LEN: usize>() {
     let mut framework = TestFrameworkAEADCipher::new();
     framework.fixed_message_len = Some(32);
     framework.test_key::<KEY_LEN, 12, 16, 16, _>(&make_key::<P, Packet, KEY_LEN>(), &mut rng());
+
+    // the declared-length role's drawing one-shots zeroize the buffer before an RNG error too;
+    // the core suite reaches only the plain AEAD role's
+    let packet = make_key::<P, bouncycastle_cipher::modes::CCM<12, 16>, KEY_LEN>();
+    let msg = [0x42u8; 32];
+    let mut stale = [0xA5u8; 48];
+    assert!(
+        AeadDeclaredEncryptionKey::<KEY_LEN, 12, 16, 16>::encrypt_with_aad_out(
+            &packet, &mut FailingRNG, b"aad", &msg, &mut stale
+        )
+        .is_err()
+    );
+    assert!(stale.iter().all(|&b| b == 0), "encrypt_with_aad_out must zeroize first");
+    let mut stale = [0xA5u8; 32];
+    assert!(
+        AeadDeclaredEncryptionKey::<KEY_LEN, 12, 16, 16>::encrypt_detached_out(
+            &packet, &mut FailingRNG, b"aad", &msg, &mut stale
+        )
+        .is_err()
+    );
+    assert!(stale.iter().all(|&b| b == 0), "encrypt_detached_out must zeroize first");
 }
 
 /// The nonce is drawn per GCM encryption, so the same plaintext gives different ciphertext, and
