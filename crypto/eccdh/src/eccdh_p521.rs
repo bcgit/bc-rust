@@ -1,10 +1,11 @@
 //! The ECC CDH primitive over P-521 (SP 800-56A Rev. 3 Section 5.7.1.2) on the key-agreement
 //! roles of [`bouncycastle_core::agreement_key`]: the marker [`ECCDHP521`], the worker a private
 //! key hands out, the role impl over `()`, and the same keys under the ANSI X9.63 KDF as
-//! [`ECCDHP521_X963KDF_SHA512`].
+//! [`ECCDHP521_X963KDF_SHA512`], and under the NIST concatenation KDF as [`ECCDHP521_ConcatKDF_SHA512`].
 
 use crate::kdf::{KdfPairing, PairedKdf, derive};
 use crate::keys_p521::{ECCDHP521PrivateKey, ECCDHP521PublicKey};
+use bouncycastle_concatkdf::ConcatKDF_SHA512;
 use bouncycastle_core::agreement_key::{AgreementKey, KeyAgreementAlgorithm};
 use bouncycastle_core::errors::KeyAgreementError;
 use bouncycastle_core::hazmat::do_hazardous_operations;
@@ -148,6 +149,28 @@ impl KeyAgreementAlgorithm for ECCDHP521_X963KDF_SHA512 {}
 
 impl<const SS_LEN: usize> KdfPairing<X963KDF_SHA512, SS_LEN> for ECCDHP521 {
     type Algorithm = ECCDHP521_X963KDF_SHA512;
+}
+
+/// The length the tests derive for ECC-CDH-P521-ConcatKDF-SHA-512, one SHA-512 output; the parameters name any.
+pub const CONCAT_KDF_SHA512_SS_LEN: usize = 64;
+
+/// ECC CDH over P521 with the keying material derived through the NIST concatenation KDF over
+/// SHA-512 (SP 800-56C Rev. 2 Section 4.1, Option 1, as SP 800-56A Rev. 3 Section 5.8 calls for):
+/// the algorithm a [`ECCDHP521PrivateKey`] runs when made into a worker from
+/// `KdfParams<'p, ConcatKDF_SHA512, LEN>`. The key is `KDM(Z, OtherInput)` with `FixedInfo` the
+/// parameters' fixed info and `L` their length, at the curve's strength.
+#[allow(non_camel_case_types)]
+pub struct ECCDHP521_ConcatKDF_SHA512;
+
+impl Algorithm for ECCDHP521_ConcatKDF_SHA512 {
+    const ALG_NAME: &'static str = "ECC-CDH-P521-ConcatKDF-SHA-512";
+    const MAX_SECURITY_STRENGTH: SecurityStrength = ECCDHP521::MAX_SECURITY_STRENGTH;
+}
+
+impl KeyAgreementAlgorithm for ECCDHP521_ConcatKDF_SHA512 {}
+
+impl<const SS_LEN: usize> KdfPairing<ConcatKDF_SHA512, SS_LEN> for ECCDHP521 {
+    type Algorithm = ECCDHP521_ConcatKDF_SHA512;
 }
 
 /// The worker [`AgreementKey::create_agreement`] hands out over [`KdfParams`]: the own key and

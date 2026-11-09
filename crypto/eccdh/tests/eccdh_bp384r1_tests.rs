@@ -185,3 +185,44 @@ fn x963kdf_variant() {
     let none = KdfParams::new(&kdf, b"", KeyLen::<X963KDF_SHA384_SS_LEN>);
     assert!(!sk_a.agree(&pk_b, none).unwrap().equals(&key));
 }
+
+/// ECC-CDH-brainpoolP384r1-ConcatKDF-SHA-384 on the same keys: the keying material is the concatenation
+/// KDF over the raw Z with the FixedInfo, both sides agree, and the FixedInfo selects the key.
+#[test]
+fn concatkdf_variant() {
+    use bouncycastle_concatkdf::ConcatKDF_SHA384;
+    use bouncycastle_core::key_material::KeyMaterial;
+    use bouncycastle_eccdh::eccdh_bp384r1::{
+        CONCAT_KDF_SHA384_SS_LEN, ECCDHBp384r1_ConcatKDF_SHA384,
+    };
+
+    let kdf = ConcatKDF_SHA384::new();
+    let params = KdfParams::new(&kdf, b"eccdh concatkdf tests", KeyLen::<CONCAT_KDF_SHA384_SS_LEN>);
+    TestFrameworkKeyAgreement::new().test_key_agreement(keygen_default, params);
+    assert_eq!(
+        ECCDHBp384r1_ConcatKDF_SHA384::ALG_NAME,
+        "ECC-CDH-brainpoolP384r1-ConcatKDF-SHA-384"
+    );
+    assert_eq!(ECCDHBp384r1_ConcatKDF_SHA384::MAX_SECURITY_STRENGTH, SecurityStrength::_192bit);
+
+    let (pk_a, sk_a) = keygen_default().unwrap();
+    let (pk_b, sk_b) = keygen_default().unwrap();
+    let key = sk_a.agree(&pk_b, params).unwrap();
+    assert!(key.equals(&sk_b.agree(&pk_a, params).unwrap()));
+    assert_eq!(key.key_len(), CONCAT_KDF_SHA384_SS_LEN);
+    assert_eq!(key.key_type(), KeyType::CryptographicRandom);
+    assert_eq!(key.security_strength(), SecurityStrength::_192bit);
+
+    let z = sk_a.agree(&pk_b, ()).unwrap();
+    let mut expected = KeyMaterial::<CONCAT_KDF_SHA384_SS_LEN>::new();
+    ConcatKDF_SHA384::derive_out(
+        &z, b"eccdh concatkdf tests", CONCAT_KDF_SHA384_SS_LEN, &mut expected,
+    )
+    .unwrap();
+    assert!(key.equals(&expected));
+
+    let other = KdfParams::new(&kdf, b"another context", KeyLen::<CONCAT_KDF_SHA384_SS_LEN>);
+    assert!(!sk_a.agree(&pk_b, other).unwrap().equals(&key));
+    let none = KdfParams::new(&kdf, b"", KeyLen::<CONCAT_KDF_SHA384_SS_LEN>);
+    assert!(!sk_a.agree(&pk_b, none).unwrap().equals(&key));
+}

@@ -1,13 +1,14 @@
 //! The ECC CDH primitive over P-256 (SP 800-56A Rev. 3 Section 5.7.1.2) on the key-agreement
 //! roles of [`bouncycastle_core::agreement_key`]: the marker [`ECCDHP256`], the worker a private
 //! key hands out, the role impl over `()`, and the same keys under the ANSI X9.63 KDF as
-//! [`ECCDHP256_X963KDF_SHA256`]. The same keys run
+//! [`ECCDHP256_X963KDF_SHA256`], and under the NIST concatenation KDF as [`ECCDHP256_ConcatKDF_SHA256`]. The same keys run
 //! HKDF-SHA256, the two-step key-derivation method of SP 800-56C Rev. 2 Section 5.1, as
 //! [`ECCDHP256_HKDF_SHA256`]; the KDF type on the parameters selects the algorithm at the call,
 //! and the pairings are in [`crate::kdf`].
 
 use crate::kdf::{KdfPairing, PairedKdf, derive};
 use crate::keys_p256::{ECCDHP256PrivateKey, ECCDHP256PublicKey};
+use bouncycastle_concatkdf::ConcatKDF_SHA256;
 use bouncycastle_core::agreement_key::{AgreementKey, KeyAgreementAlgorithm};
 use bouncycastle_core::errors::KeyAgreementError;
 use bouncycastle_core::hazmat::do_hazardous_operations;
@@ -174,6 +175,28 @@ impl<const SS_LEN: usize> KdfPairing<HKDF_SHA256, SS_LEN> for ECCDHP256 {
 
 impl<const SS_LEN: usize> KdfPairing<X963KDF_SHA256, SS_LEN> for ECCDHP256 {
     type Algorithm = ECCDHP256_X963KDF_SHA256;
+}
+
+/// The length the tests derive for ECC-CDH-P256-ConcatKDF-SHA-256, one SHA-256 output; the parameters name any.
+pub const CONCAT_KDF_SHA256_SS_LEN: usize = 32;
+
+/// ECC CDH over P256 with the keying material derived through the NIST concatenation KDF over
+/// SHA-256 (SP 800-56C Rev. 2 Section 4.1, Option 1, as SP 800-56A Rev. 3 Section 5.8 calls for):
+/// the algorithm a [`ECCDHP256PrivateKey`] runs when made into a worker from
+/// `KdfParams<'p, ConcatKDF_SHA256, LEN>`. The key is `KDM(Z, OtherInput)` with `FixedInfo` the
+/// parameters' fixed info and `L` their length, at the curve's strength.
+#[allow(non_camel_case_types)]
+pub struct ECCDHP256_ConcatKDF_SHA256;
+
+impl Algorithm for ECCDHP256_ConcatKDF_SHA256 {
+    const ALG_NAME: &'static str = "ECC-CDH-P256-ConcatKDF-SHA-256";
+    const MAX_SECURITY_STRENGTH: SecurityStrength = ECCDHP256::MAX_SECURITY_STRENGTH;
+}
+
+impl KeyAgreementAlgorithm for ECCDHP256_ConcatKDF_SHA256 {}
+
+impl<const SS_LEN: usize> KdfPairing<ConcatKDF_SHA256, SS_LEN> for ECCDHP256 {
+    type Algorithm = ECCDHP256_ConcatKDF_SHA256;
 }
 
 /// The worker [`AgreementKey::create_agreement`] hands out over [`KdfParams`]: the own key and

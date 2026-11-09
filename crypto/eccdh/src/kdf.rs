@@ -12,10 +12,12 @@
 //! in `FixedInfo` for that reason).
 //!
 //! The pairings are one `impl KdfPairing<KDF, SS_LEN> for Curve` each, in the curve's module:
-//! the X9.63 KDF over the hash matched to the curve on every curve, and HKDF-SHA256 on P-256.
+//! the X9.63 KDF and the NIST concatenation KDF over the hash matched to the curve on every
+//! curve, and HKDF-SHA256 on P-256.
 //! A key under a KDF its curve is not paired with has no role, so the wrong KDF is a compile
 //! error; a further pairing is one marker and one impl.
 
+use bouncycastle_concatkdf::{ConcatKDF, ConcatKDFParams};
 use bouncycastle_core::agreement_key::KeyAgreementAlgorithm;
 use bouncycastle_core::errors::KeyAgreementError;
 use bouncycastle_core::kdf_params::KdfParams;
@@ -25,12 +27,14 @@ use bouncycastle_sha2::SHA256;
 use bouncycastle_sha2::hkdf::HKDF_SHA256;
 use bouncycastle_x963kdf::{X963KDF, X963KDFParams};
 
-/// A KDF the library pairs a curve with: HKDF-SHA256 and the X9.63 KDFs. Sealed, so that the
+/// A KDF the library pairs a curve with: HKDF-SHA256, the X9.63 KDFs and the concatenation KDFs. Sealed, so that the
 /// pairing trait, generic over the KDF, cannot be implemented outside this crate under a name
 /// and strength of a downstream crate's choosing.
 pub trait PairedKdf: sealed::Sealed {
     /// The most bytes one derivation produces: 255 hash outputs for HKDF (RFC 5869 Section
-    /// 2.3); below `hashlen * (2^32 - 1)` for the X9.63 KDF (SEC 1 v2 Section 3.6.1 step 2).
+    /// 2.3); below `hashlen * (2^32 - 1)` for the X9.63 KDF (SEC 1 v2 Section 3.6.1 step 2); at
+    /// most `2^32 - 1` hash outputs for the concatenation KDF (SP 800-56C Rev. 2 Section 4.1
+    /// step 2).
     const MAX_LEN: usize;
 }
 
@@ -40,6 +44,10 @@ impl PairedKdf for HKDF_SHA256 {
 
 impl<H: X963KDFParams> PairedKdf for X963KDF<H> {
     const MAX_LEN: usize = x963_max_len(H::OUTPUT_LEN);
+}
+
+impl<H: ConcatKDFParams> PairedKdf for ConcatKDF<H> {
+    const MAX_LEN: usize = ConcatKDF::<H>::MAX_LEN;
 }
 
 /// `hashlen * (2^32 - 1) - 1`, or `usize::MAX` where that does not fit.
@@ -93,6 +101,7 @@ mod sealed {
     pub trait Sealed {}
     impl Sealed for bouncycastle_sha2::hkdf::HKDF_SHA256 {}
     impl<H: bouncycastle_x963kdf::X963KDFParams> Sealed for bouncycastle_x963kdf::X963KDF<H> {}
+    impl<H: bouncycastle_concatkdf::ConcatKDFParams> Sealed for bouncycastle_concatkdf::ConcatKDF<H> {}
     impl Sealed for crate::eccdh_p256::ECCDHP256 {}
     impl Sealed for crate::eccdh_p384::ECCDHP384 {}
     impl Sealed for crate::eccdh_p521::ECCDHP521 {}

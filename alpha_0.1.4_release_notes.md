@@ -106,5 +106,6 @@
 * `bouncycastle-concatkdf`: the NIST concatenation KDF, SP 800-56C Rev. 2 Section 4.1's one-step KDF with
   `H(x) = hash(x)`, over SHA-2 and SHA-3 (`ConcatKDF_SHA256` and so on) on the `KDF` trait and in `KDFFactory`
   (`ConcatKDF-SHA256` and so on) and as the `concatkdf-sha*` CLI subcommands, checked against the ACVP KDA OneStep
-  SP800-56Cr2 vectors.
+  SP800-56Cr2 vectors; `KdfParams<ConcatKDF_SHA256, LEN>` and its siblings are a third KDF role on the ECC CDH keys,
+  SP 800-56A Rev. 3 Section 5.8's one-step derivation (`ECCDHP256_ConcatKDF_SHA256` and the rest).
 

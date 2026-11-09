@@ -1,10 +1,11 @@
 //! The ECC CDH primitive over secp256k1 (SP 800-56A Rev. 3 Section 5.7.1.2) on the key-agreement
 //! roles of [`bouncycastle_core::agreement_key`]: the marker [`ECCDHSecp256K1`], the worker a private
 //! key hands out, the role impl over `()`, and the same keys under the ANSI X9.63 KDF as
-//! [`ECCDHSecp256K1_X963KDF_SHA256`].
+//! [`ECCDHSecp256K1_X963KDF_SHA256`], and under the NIST concatenation KDF as [`ECCDHSecp256K1_ConcatKDF_SHA256`].
 
 use crate::kdf::{KdfPairing, PairedKdf, derive};
 use crate::keys_p256k1::{ECCDHSecp256K1PrivateKey, ECCDHSecp256K1PublicKey};
+use bouncycastle_concatkdf::ConcatKDF_SHA256;
 use bouncycastle_core::agreement_key::{AgreementKey, KeyAgreementAlgorithm};
 use bouncycastle_core::errors::KeyAgreementError;
 use bouncycastle_core::hazmat::do_hazardous_operations;
@@ -148,6 +149,28 @@ impl KeyAgreementAlgorithm for ECCDHSecp256K1_X963KDF_SHA256 {}
 
 impl<const SS_LEN: usize> KdfPairing<X963KDF_SHA256, SS_LEN> for ECCDHSecp256K1 {
     type Algorithm = ECCDHSecp256K1_X963KDF_SHA256;
+}
+
+/// The length the tests derive for ECC-CDH-secp256k1-ConcatKDF-SHA-256, one SHA-256 output; the parameters name any.
+pub const CONCAT_KDF_SHA256_SS_LEN: usize = 32;
+
+/// ECC CDH over secp256k1 with the keying material derived through the NIST concatenation KDF over
+/// SHA-256 (SP 800-56C Rev. 2 Section 4.1, Option 1, as SP 800-56A Rev. 3 Section 5.8 calls for):
+/// the algorithm a [`ECCDHSecp256K1PrivateKey`] runs when made into a worker from
+/// `KdfParams<'p, ConcatKDF_SHA256, LEN>`. The key is `KDM(Z, OtherInput)` with `FixedInfo` the
+/// parameters' fixed info and `L` their length, at the curve's strength.
+#[allow(non_camel_case_types)]
+pub struct ECCDHSecp256K1_ConcatKDF_SHA256;
+
+impl Algorithm for ECCDHSecp256K1_ConcatKDF_SHA256 {
+    const ALG_NAME: &'static str = "ECC-CDH-secp256k1-ConcatKDF-SHA-256";
+    const MAX_SECURITY_STRENGTH: SecurityStrength = ECCDHSecp256K1::MAX_SECURITY_STRENGTH;
+}
+
+impl KeyAgreementAlgorithm for ECCDHSecp256K1_ConcatKDF_SHA256 {}
+
+impl<const SS_LEN: usize> KdfPairing<ConcatKDF_SHA256, SS_LEN> for ECCDHSecp256K1 {
+    type Algorithm = ECCDHSecp256K1_ConcatKDF_SHA256;
 }
 
 /// The worker [`AgreementKey::create_agreement`] hands out over [`KdfParams`]: the own key and

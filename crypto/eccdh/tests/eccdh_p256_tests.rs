@@ -269,3 +269,39 @@ fn the_parameters_name_the_length() {
     X963KDF_SHA256::derive_out(&z, b"info", 48, &mut expected).unwrap();
     assert!(key48.equals(&expected));
 }
+
+/// ECC-CDH-P256-ConcatKDF-SHA-256 on the same keys: the keying material is the concatenation
+/// KDF over the raw Z with the FixedInfo, both sides agree, and the FixedInfo selects the key.
+#[test]
+fn concatkdf_variant() {
+    use bouncycastle_concatkdf::ConcatKDF_SHA256;
+    use bouncycastle_core::key_material::KeyMaterial;
+    use bouncycastle_eccdh::eccdh_p256::{CONCAT_KDF_SHA256_SS_LEN, ECCDHP256_ConcatKDF_SHA256};
+
+    let kdf = ConcatKDF_SHA256::new();
+    let params = KdfParams::new(&kdf, b"eccdh concatkdf tests", KeyLen::<CONCAT_KDF_SHA256_SS_LEN>);
+    TestFrameworkKeyAgreement::new().test_key_agreement(keygen_default, params);
+    assert_eq!(ECCDHP256_ConcatKDF_SHA256::ALG_NAME, "ECC-CDH-P256-ConcatKDF-SHA-256");
+    assert_eq!(ECCDHP256_ConcatKDF_SHA256::MAX_SECURITY_STRENGTH, SecurityStrength::_128bit);
+
+    let (pk_a, sk_a) = keygen_default().unwrap();
+    let (pk_b, sk_b) = keygen_default().unwrap();
+    let key = sk_a.agree(&pk_b, params).unwrap();
+    assert!(key.equals(&sk_b.agree(&pk_a, params).unwrap()));
+    assert_eq!(key.key_len(), CONCAT_KDF_SHA256_SS_LEN);
+    assert_eq!(key.key_type(), KeyType::CryptographicRandom);
+    assert_eq!(key.security_strength(), SecurityStrength::_128bit);
+
+    let z = sk_a.agree(&pk_b, ()).unwrap();
+    let mut expected = KeyMaterial::<CONCAT_KDF_SHA256_SS_LEN>::new();
+    ConcatKDF_SHA256::derive_out(
+        &z, b"eccdh concatkdf tests", CONCAT_KDF_SHA256_SS_LEN, &mut expected,
+    )
+    .unwrap();
+    assert!(key.equals(&expected));
+
+    let other = KdfParams::new(&kdf, b"another context", KeyLen::<CONCAT_KDF_SHA256_SS_LEN>);
+    assert!(!sk_a.agree(&pk_b, other).unwrap().equals(&key));
+    let none = KdfParams::new(&kdf, b"", KeyLen::<CONCAT_KDF_SHA256_SS_LEN>);
+    assert!(!sk_a.agree(&pk_b, none).unwrap().equals(&key));
+}

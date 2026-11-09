@@ -11,7 +11,9 @@
 //! [`KdfParams`](bouncycastle_core::kdf_params::KdfParams) naming a borrowed KDF instance and
 //! the fixed info: SEC 1 Section 6.1's ECDH scheme, the ANSI X9.63 KDF over the hash matched to
 //! the curve (`ECCDHP256_X963KDF_SHA256`, `ECCDHP384_X963KDF_SHA384`, `ECCDHP521_X963KDF_SHA512`
-//! and so on), and on P-256 HKDF-SHA256 (`ECCDHP256_HKDF_SHA256`); the pairings are in [`kdf`].
+//! and so on), SP 800-56A Rev. 3 Section 5.8's one-step derivation, the NIST concatenation KDF
+//! over the same hash (`ECCDHP256_ConcatKDF_SHA256` and so on), and on P-256 HKDF-SHA256
+//! (`ECCDHP256_HKDF_SHA256`); the pairings are in [`kdf`].
 //!
 //! # Usage Examples
 //!
@@ -95,8 +97,9 @@
 //! # Status
 //!
 //! Seven curves: P-256, P-384, P-521, secp256k1, brainpoolP256r1, brainpoolP384r1 and
-//! brainpoolP512r1, each with cofactor 1. Every curve carries the X9.63 KDF variant over the hash
-//! matched to its strength (SHA-256, SHA-384 or SHA-512), and P-256 the HKDF-SHA256 one; the raw
+//! brainpoolP512r1, each with cofactor 1. Every curve carries the X9.63 KDF and the
+//! concatenation KDF variants over the hash matched to its strength (SHA-256, SHA-384 or
+//! SHA-512), and P-256 the HKDF-SHA256 one; the raw
 //! `Z` is there for any other KDF. Not here: the
 //! key-agreement schemes of SP 800-56A Rev. 3 Section 6 and key confirmation, ECC MQV
 //! (Section 5.7.2.3), X25519/X448 (another curve form), and SM2 key exchange.
