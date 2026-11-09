@@ -27,10 +27,8 @@
 //!
 //! # Driving the IV
 //!
-//! There is no API for supplying an IV -- see the crate docs. Encryption is therefore driven
-//! through the key's [`SymmetricEncryptionKey::create_encryptor`] with a [`FixedSeedRNG`] whose
-//! stream is the vector's IV, and the test asserts the returned init data really is that IV before
-//! comparing any ciphertext. Decryption takes the IV directly, as init data.
+//! Encryption takes the vector's IV through the key's
+//! [`SymmetricEncryptionKey::create_encryptor_nonce`]; decryption takes it as init data.
 
 use bouncycastle_aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
 use bouncycastle_aes::{AES128Key, AES192Key, AES256Key};
@@ -42,7 +40,6 @@ use bouncycastle_core::symmetric_key::{
 };
 use bouncycastle_core::traits::{StreamCipherDecryptor, StreamCipherEncryptor};
 use bouncycastle_hex as hex;
-use bouncycastle_rng::FixedSeedRNG;
 
 const BLOCK_LEN: usize = 16;
 
@@ -146,11 +143,7 @@ where
     let pt = blocks(&PLAINTEXTS);
     let ct = blocks(expected);
 
-    let init = || {
-        let (enc, got_iv) = key.create_encryptor(&mut FixedSeedRNG::new(iv)).unwrap();
-        assert_eq!(got_iv, iv, "{section}: the pinned RNG should produce the vector's IV");
-        enc
-    };
+    let init = || key.create_encryptor_nonce(&iv);
 
     // All four segments in one call.
     let mut enc = init();
@@ -347,8 +340,7 @@ fn cfb128_agrees_with_ofb_on_the_first_block_only() {
 
     let key = AES128Key::<CFB>::from_key_material(&key_material::<16>(KEY_128)).unwrap();
     let iv = block(IV);
-    let (mut enc, got_iv) = key.create_encryptor(&mut FixedSeedRNG::new(iv)).unwrap();
-    assert_eq!(got_iv, iv);
+    let mut enc = key.create_encryptor_nonce(&iv);
 
     let mut c1 = block(PLAINTEXTS[0]);
     enc.do_encrypt_inplace(&mut c1).unwrap();

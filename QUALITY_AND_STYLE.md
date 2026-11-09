@@ -165,8 +165,10 @@ The following suffixes can be applied
 * `_rng`: indicates that this version of the function sources its random numbers from a provided `&mut dyn RNG` instead
   of from the default library RNG. `_rng(.., &mut dyn RNG)`. Keyed primitives do not have it: their constructors and
   one-shots take the RNG, full stop.
-* `_nonce`: on an AEAD key, the twin that takes the nonce from the caller instead of drawing it from the RNG, and so
-  does not return one.
+* `_nonce`: on a key whose encryptor takes init data (an AEAD, CBC, CFB, CTR or stream cipher key), the twin that
+  takes the nonce or IV from the caller instead of drawing it from the RNG, and so does not return one. The caller
+  then carries the obligation the drawing form discharges: unpredictability for a CBC or CFB IV, uniqueness for a
+  nonce.
 * `_out / _inplace`: indicates that the function works in the provided buffer. `_out` indicates that the function takes
   an output buffer, which may be oversized, and returns the number of bytes written to it:
   `_out(.., out: &mut [u8] -> Result<usize, SymmetricCipherError>`. `_inplace` indicates that the input and output are

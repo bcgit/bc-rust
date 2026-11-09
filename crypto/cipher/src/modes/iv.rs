@@ -9,9 +9,8 @@ use bouncycastle_core::traits::RNG;
 /// that CBC and CFB require. This is the second one verbatim: "to generate a random data block
 /// using a FIPS-approved random number generator".
 ///
-/// The first method -- applying the forward cipher function to a nonce under the same key -- is not
-/// implemented, because it needs a nonce the caller has to guarantee unique, and the API
-/// deliberately does not accept caller-supplied initialization data at all.
+/// The first method -- applying the forward cipher function to a nonce under the same key -- is
+/// the caller's to run, and hand to the keys' `_nonce` constructors, which take the IV as given.
 ///
 /// Appendix C also notes the IV "need not be secret", so this is not wrapped in a `Secret`: it is
 /// returned to the caller to transmit alongside the ciphertext. Its *integrity* is a different

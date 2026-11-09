@@ -239,7 +239,7 @@ What that taught, as mechanics for the next trait that sheds a constructor:
 - **Test the key, not the worker pair.** The framework runners are `test_key` over a role pair
   and the construction suites in `core_test_framework::from_key_material`; a test of "a key of the
   wrong type is rejected" belongs to the construction suite, once, not to each mode's tests.
-  Known-answer suites keep pinning their IV through `create_encryptor` and a `FixedSeedRNG`.
+  Known-answer suites pin their IV through `create_encryptor_nonce`.
 - **Workers borrow the key.** The role and mode traits hand out workers through a generic
   associated type with a lifetime, `type Encryptor<'k>`, and the cipher-crate workers hold
   `&'k` to the mode's key state, so `create_encryptor` copies no schedule and a worker cannot

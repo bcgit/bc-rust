@@ -11,7 +11,6 @@ use bouncycastle_core::symmetric_key::{
     FromKeyMaterial, SymmetricDecryptionKey, SymmetricEncryptionKey,
 };
 use bouncycastle_core::traits::{StreamCipherDecryptor, StreamCipherEncryptor};
-use bouncycastle_rng::FixedSeedRNG;
 
 const BLOCK_LEN: usize = 16;
 const CTR_NONCE_LEN: usize = 12;
@@ -114,15 +113,12 @@ pub fn cfb128_and_cfb8_are_not_interchangeable<P: Permutation<KEY_LEN>, const KE
 
     let cfb_key = key::<P, CFB, KEY_LEN>();
     let mut as_cfb = plaintext.clone();
-    let (mut enc, got) = cfb_key.create_encryptor(&mut FixedSeedRNG::new(iv)).expect("CFB128 init");
-    assert_eq!(got, iv, "the pinned RNG should produce the chosen IV");
+    let mut enc = cfb_key.create_encryptor_nonce(&iv);
     enc.do_encrypt_inplace(&mut as_cfb).expect("CFB128");
 
     let cfb8_key = key::<P, CFB8, KEY_LEN>();
     let mut as_cfb8 = plaintext.clone();
-    let (mut enc8, got8) =
-        cfb8_key.create_encryptor(&mut FixedSeedRNG::new(iv)).expect("CFB8 init");
-    assert_eq!(got8, iv);
+    let mut enc8 = cfb8_key.create_encryptor_nonce(&iv);
     enc8.do_encrypt_inplace(&mut as_cfb8).expect("CFB8");
 
     assert_eq!(as_cfb[0], as_cfb8[0], "both take MSB_8 of the same first output block");
