@@ -6,6 +6,7 @@ pub use bouncycastle_camellia as camellia;
 pub use bouncycastle_chacha20 as chacha20;
 pub use bouncycastle_chacha20_poly1305_aead as chacha20_poly1305_aead;
 pub use bouncycastle_cipher as cipher;
+pub use bouncycastle_concatkdf as concatkdf;
 pub use bouncycastle_core as core;
 pub use bouncycastle_eccdh as eccdh;
 pub use bouncycastle_ecdsa as ecdsa;
