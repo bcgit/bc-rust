@@ -104,6 +104,6 @@
   siblings, the KDF instance, `SharedInfo` and `keydatalen`, are the parameters of the ECC CDH keys' second agreement role, SEC 1 Section 6.1's ECDH scheme
   (`ECCDHP256_X963KDF_SHA256`, `ECCDHP384_X963KDF_SHA384`, `ECCDHP521_X963KDF_SHA512` and the rest).
 * `bouncycastle-concatkdf`: the NIST concatenation KDF, SP 800-56C Rev. 2 Section 4.1's one-step KDF with
-  `H(x) = hash(x)`, over SHA-2 and SHA-3 (`ConcatKDF_SHA256` and so on) on the `KDF` trait, checked against the ACVP
-  KDA OneStep SP800-56Cr2 vectors.
+  `H(x) = hash(x)`, over SHA-2 and SHA-3 (`ConcatKDF_SHA256` and so on) on the `KDF` trait and in `KDFFactory`
+  (`ConcatKDF-SHA256` and so on), checked against the ACVP KDA OneStep SP800-56Cr2 vectors.
 

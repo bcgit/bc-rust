@@ -32,6 +32,43 @@ mod kdf_factory_tests {
         }
     }
 
+    /// Each concatenation KDF name selects its own instantiation: the factory's name, strength
+    /// and output, through both `_out` forms, are the alias's (whose vectors live in
+    /// `bouncycastle-concatkdf`).
+    #[test]
+    fn concat_kdf_variants_route_to_their_instantiation() {
+        use bouncycastle_concatkdf::{
+            ConcatKDF_SHA3_256, ConcatKDF_SHA3_384, ConcatKDF_SHA3_512, ConcatKDF_SHA256,
+            ConcatKDF_SHA384, ConcatKDF_SHA512,
+        };
+        let z = KeyMaterial512::from_bytes_as_type(&DUMMY_SEED[..64], KeyType::CryptographicRandom)
+            .unwrap();
+        let direct: [(&dyn KDF, SecurityStrength); 6] = [
+            (&ConcatKDF_SHA256::new(), SecurityStrength::_128bit),
+            (&ConcatKDF_SHA384::new(), SecurityStrength::_192bit),
+            (&ConcatKDF_SHA512::new(), SecurityStrength::_256bit),
+            (&ConcatKDF_SHA3_256::new(), SecurityStrength::_128bit),
+            (&ConcatKDF_SHA3_384::new(), SecurityStrength::_192bit),
+            (&ConcatKDF_SHA3_512::new(), SecurityStrength::_256bit),
+        ];
+        for (kdf, strength) in direct {
+            let name = kdf.alg_name();
+            let f = KDFFactory::new(name).unwrap();
+            assert_eq!(f.alg_name(), name);
+            assert_eq!(f.max_security_strength(), strength, "{name}");
+
+            let (mut out, mut expected) = (KeyMaterial512::new(), KeyMaterial512::new());
+            assert_eq!(f.derive_key_out(&z, b"info", 40, &mut out).unwrap(), 40);
+            kdf.derive_key_out(&z, b"info", 40, &mut expected).unwrap();
+            assert!(ct::ct_eq_bytes(out.ref_to_bytes(), expected.ref_to_bytes()), "{name}");
+
+            let keys: [&dyn KeyMaterialTrait; 2] = [&z, &z];
+            assert_eq!(f.derive_key_from_multiple_out(&keys, b"info", 40, &mut out).unwrap(), 40);
+            kdf.derive_key_from_multiple_out(&keys, b"info", 40, &mut expected).unwrap();
+            assert!(ct::ct_eq_bytes(out.ref_to_bytes(), expected.ref_to_bytes()), "{name}");
+        }
+    }
+
     #[test]
     fn hkdf_tests() {
         /* HKDF-SHA256 */

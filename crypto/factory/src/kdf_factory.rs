@@ -51,6 +51,11 @@
 //! ```
 
 use crate::{AlgorithmFactory, DEFAULT, DEFAULT_128_BIT, DEFAULT_256_BIT, FactoryError};
+use bouncycastle_concatkdf::{
+    CONCAT_KDF_SHA3_256_NAME, CONCAT_KDF_SHA3_384_NAME, CONCAT_KDF_SHA3_512_NAME,
+    CONCAT_KDF_SHA256_NAME, CONCAT_KDF_SHA384_NAME, CONCAT_KDF_SHA512_NAME, ConcatKDF_SHA3_256,
+    ConcatKDF_SHA3_384, ConcatKDF_SHA3_512, ConcatKDF_SHA256, ConcatKDF_SHA384, ConcatKDF_SHA512,
+};
 use bouncycastle_core::errors::KDFError;
 use bouncycastle_core::key_material::KeyMaterialTrait;
 use bouncycastle_core::security_strength::SecurityStrength;
@@ -88,6 +93,24 @@ pub enum KDFFactory {
     /// The ANSI X9.63 KDF over SHA-512.
     #[allow(non_camel_case_types)]
     X963KDF_SHA512(X963KDF_SHA512),
+    /// The NIST concatenation KDF over SHA-256 (SP 800-56C Rev. 2 Section 4.1, Option 1).
+    #[allow(non_camel_case_types)]
+    ConcatKDF_SHA256(ConcatKDF_SHA256),
+    /// The NIST concatenation KDF over SHA-384.
+    #[allow(non_camel_case_types)]
+    ConcatKDF_SHA384(ConcatKDF_SHA384),
+    /// The NIST concatenation KDF over SHA-512.
+    #[allow(non_camel_case_types)]
+    ConcatKDF_SHA512(ConcatKDF_SHA512),
+    /// The NIST concatenation KDF over SHA3-256.
+    #[allow(non_camel_case_types)]
+    ConcatKDF_SHA3_256(ConcatKDF_SHA3_256),
+    /// The NIST concatenation KDF over SHA3-384.
+    #[allow(non_camel_case_types)]
+    ConcatKDF_SHA3_384(ConcatKDF_SHA3_384),
+    /// The NIST concatenation KDF over SHA3-512.
+    #[allow(non_camel_case_types)]
+    ConcatKDF_SHA3_512(ConcatKDF_SHA3_512),
 }
 
 impl Default for KDFFactory {
@@ -117,6 +140,12 @@ impl AlgorithmFactory for KDFFactory {
             X963KDF_SHA256_NAME => Ok(Self::X963KDF_SHA256(X963KDF_SHA256::new())),
             X963KDF_SHA384_NAME => Ok(Self::X963KDF_SHA384(X963KDF_SHA384::new())),
             X963KDF_SHA512_NAME => Ok(Self::X963KDF_SHA512(X963KDF_SHA512::new())),
+            CONCAT_KDF_SHA256_NAME => Ok(Self::ConcatKDF_SHA256(ConcatKDF_SHA256::new())),
+            CONCAT_KDF_SHA384_NAME => Ok(Self::ConcatKDF_SHA384(ConcatKDF_SHA384::new())),
+            CONCAT_KDF_SHA512_NAME => Ok(Self::ConcatKDF_SHA512(ConcatKDF_SHA512::new())),
+            CONCAT_KDF_SHA3_256_NAME => Ok(Self::ConcatKDF_SHA3_256(ConcatKDF_SHA3_256::new())),
+            CONCAT_KDF_SHA3_384_NAME => Ok(Self::ConcatKDF_SHA3_384(ConcatKDF_SHA3_384::new())),
+            CONCAT_KDF_SHA3_512_NAME => Ok(Self::ConcatKDF_SHA3_512(ConcatKDF_SHA3_512::new())),
             _ => Err(FactoryError::UnsupportedAlgorithm(format!(
                 "The algorithm: \"{}\" is not a known KDF",
                 alg_name
@@ -141,6 +170,12 @@ impl KDF for KDFFactory {
             Self::X963KDF_SHA256(h) => h.derive_key_out(ikm, fixed_info, len, output_key),
             Self::X963KDF_SHA384(h) => h.derive_key_out(ikm, fixed_info, len, output_key),
             Self::X963KDF_SHA512(h) => h.derive_key_out(ikm, fixed_info, len, output_key),
+            Self::ConcatKDF_SHA256(h) => h.derive_key_out(ikm, fixed_info, len, output_key),
+            Self::ConcatKDF_SHA384(h) => h.derive_key_out(ikm, fixed_info, len, output_key),
+            Self::ConcatKDF_SHA512(h) => h.derive_key_out(ikm, fixed_info, len, output_key),
+            Self::ConcatKDF_SHA3_256(h) => h.derive_key_out(ikm, fixed_info, len, output_key),
+            Self::ConcatKDF_SHA3_384(h) => h.derive_key_out(ikm, fixed_info, len, output_key),
+            Self::ConcatKDF_SHA3_512(h) => h.derive_key_out(ikm, fixed_info, len, output_key),
         }
     }
 
@@ -171,6 +206,24 @@ impl KDF for KDFFactory {
             Self::X963KDF_SHA512(h) => {
                 h.derive_key_from_multiple_out(ikms, fixed_info, len, output_key)
             }
+            Self::ConcatKDF_SHA256(h) => {
+                h.derive_key_from_multiple_out(ikms, fixed_info, len, output_key)
+            }
+            Self::ConcatKDF_SHA384(h) => {
+                h.derive_key_from_multiple_out(ikms, fixed_info, len, output_key)
+            }
+            Self::ConcatKDF_SHA512(h) => {
+                h.derive_key_from_multiple_out(ikms, fixed_info, len, output_key)
+            }
+            Self::ConcatKDF_SHA3_256(h) => {
+                h.derive_key_from_multiple_out(ikms, fixed_info, len, output_key)
+            }
+            Self::ConcatKDF_SHA3_384(h) => {
+                h.derive_key_from_multiple_out(ikms, fixed_info, len, output_key)
+            }
+            Self::ConcatKDF_SHA3_512(h) => {
+                h.derive_key_from_multiple_out(ikms, fixed_info, len, output_key)
+            }
         }
     }
 }
@@ -185,6 +238,12 @@ impl AlgorithmInfo for KDFFactory {
             Self::X963KDF_SHA256(h) => h.alg_name(),
             Self::X963KDF_SHA384(h) => h.alg_name(),
             Self::X963KDF_SHA512(h) => h.alg_name(),
+            Self::ConcatKDF_SHA256(h) => h.alg_name(),
+            Self::ConcatKDF_SHA384(h) => h.alg_name(),
+            Self::ConcatKDF_SHA512(h) => h.alg_name(),
+            Self::ConcatKDF_SHA3_256(h) => h.alg_name(),
+            Self::ConcatKDF_SHA3_384(h) => h.alg_name(),
+            Self::ConcatKDF_SHA3_512(h) => h.alg_name(),
         }
     }
 
@@ -197,6 +256,12 @@ impl AlgorithmInfo for KDFFactory {
             Self::X963KDF_SHA256(h) => h.max_security_strength(),
             Self::X963KDF_SHA384(h) => h.max_security_strength(),
             Self::X963KDF_SHA512(h) => h.max_security_strength(),
+            Self::ConcatKDF_SHA256(h) => h.max_security_strength(),
+            Self::ConcatKDF_SHA384(h) => h.max_security_strength(),
+            Self::ConcatKDF_SHA512(h) => h.max_security_strength(),
+            Self::ConcatKDF_SHA3_256(h) => h.max_security_strength(),
+            Self::ConcatKDF_SHA3_384(h) => h.max_security_strength(),
+            Self::ConcatKDF_SHA3_512(h) => h.max_security_strength(),
         }
     }
 }
