@@ -177,6 +177,7 @@ pub trait AeadEncryptionKey<
         plaintext: &[u8],
         ciphertext: &mut [u8],
     ) -> Result<(usize, [u8; NONCE_LEN]), SymmetricCipherError> {
+        ciphertext.fill(0);
         let (enc, nonce) = self.create_encryptor(rng)?;
         let written = crate::provided::encrypt_inline(enc, aad, plaintext, ciphertext)?;
         Ok((written, nonce))
@@ -218,6 +219,7 @@ pub trait AeadEncryptionKey<
         plaintext: &[u8],
         ciphertext: &mut [u8],
     ) -> Result<(usize, [u8; NONCE_LEN], [u8; TAG_LEN]), SymmetricCipherError> {
+        ciphertext.fill(0);
         let (enc, nonce) = self.create_encryptor(rng)?;
         let (written, tag) = crate::provided::encrypt_detached(enc, aad, plaintext, ciphertext)?;
         Ok((written, nonce, tag))
@@ -553,6 +555,7 @@ pub trait AeadDeclaredEncryptionKey<
         plaintext: &[u8],
         ciphertext: &mut [u8],
     ) -> Result<(usize, [u8; NONCE_LEN]), SymmetricCipherError> {
+        ciphertext.fill(0);
         let (enc, nonce) = self.create_encryptor(rng, aad.len(), plaintext.len())?;
         let written = crate::provided::encrypt_inline(enc, aad, plaintext, ciphertext)?;
         Ok((written, nonce))
@@ -592,6 +595,7 @@ pub trait AeadDeclaredEncryptionKey<
         plaintext: &[u8],
         ciphertext: &mut [u8],
     ) -> Result<(usize, [u8; NONCE_LEN], [u8; TAG_LEN]), SymmetricCipherError> {
+        ciphertext.fill(0);
         let (enc, nonce) = self.create_encryptor(rng, aad.len(), plaintext.len())?;
         let (written, tag) = crate::provided::encrypt_detached(enc, aad, plaintext, ciphertext)?;
         Ok((written, nonce, tag))
@@ -920,6 +924,7 @@ pub trait SymmetricEncryptionKey<
         plaintext: &[u8],
         ciphertext: &mut [u8],
     ) -> Result<(usize, [u8; INIT_DATA_LEN]), SymmetricCipherError> {
+        ciphertext.fill(0);
         let (enc, init_data) = self.create_encryptor(rng)?;
         let written = crate::provided::symmetric_encrypt_out(enc, plaintext, ciphertext)?;
         Ok((written, init_data))
@@ -1293,6 +1298,7 @@ pub trait NonceMacGenerationKey<const NONCE_LEN: usize, const MAC_LEN: usize> {
         data: &[u8],
         out: &mut [u8; MAC_LEN],
     ) -> Result<(usize, [u8; NONCE_LEN]), MACError> {
+        out.fill(0);
         let (mut generator, nonce) = self.create_generator(rng)?;
         generator.do_update(data);
         Ok((generator.do_final_out(out), nonce))
