@@ -133,8 +133,9 @@ where
 }
 
 /// `Gcm`'s AAD absorption fails only if AAD follows data, which GMAC never supplies, or if the
-/// running AAD length overflows a `u64`, which needs 2^64 bytes of input.
-const AAD_INFALLIBLE: &str = "GMAC: GCM rejects AAD only after data or past 2^64 bytes";
+/// running AAD length passes `MAX_AAD_LEN`, 2^61 - 1 bytes (SP 800-38D Sec 5.2.1.1's 2^64 - 1
+/// bits), which no caller reaches.
+const AAD_INFALLIBLE: &str = "GMAC: GCM rejects AAD only after data or past 2^61 - 1 bytes";
 
 impl<'k, P, Dir, const TAG_LEN: usize> Algorithm for Gmac<'k, P, Dir, TAG_LEN>
 where
