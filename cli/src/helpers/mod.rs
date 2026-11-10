@@ -246,9 +246,7 @@ pub(crate) fn strip_trailing_newline(bytes: &[u8]) -> &[u8] {
 /// This looks at the bytes, not at [`KeyType::Zeroized`]: the secret readers above tag what they
 /// read `Unknown` inside a hazardous-operations closure, which never produces `Zeroized`.
 pub(crate) fn warn_if_zeroized_key(key: &impl KeyMaterialTrait) {
-    // OR-accumulate rather than `all()`, so the time taken does not depend on where a non-zero
-    // byte first appears.
-    if key.ref_to_bytes().iter().fold(0u8, |acc, b| acc | b) == 0 {
+    if bouncycastle_utils::ct::ct_eq_zero_bytes(key.ref_to_bytes()) {
         eprintln!(
             "Warning: all-zero (or otherwise zeroized) key provided. Proceeding, but this is not secure."
         );

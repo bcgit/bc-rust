@@ -193,21 +193,6 @@ impl Blake2bCore {
         core
     }
 
-    /// Whether `h` equals `other`, compared in constant time.
-    fn h_ct_eq(&self, other: &Secret<[u64; 8]>) -> bool {
-        let mut a = Secret::<[u8; 64]>::new();
-        let mut b = Secret::<[u8; 64]>::new();
-        let (a_words, _) = a.as_chunks_mut::<8>();
-        let (b_words, _) = b.as_chunks_mut::<8>();
-        for ((x, y), (hx, hy)) in
-            a_words.iter_mut().zip(b_words).zip(self.h.iter().zip(other.iter()))
-        {
-            *x = hx.to_le_bytes();
-            *y = hy.to_le_bytes();
-        }
-        ct::ct_eq_bytes(&*a, &*b)
-    }
-
     /// s. 3.3: "If a secret key is used (kk > 0), it is padded with zero bytes and set as `d[0]`."
     /// `d[0]` is left in the buffer as a full block, which is compressed as soon as any message
     /// byte arrives, or as the final block if none does
@@ -449,9 +434,8 @@ impl Suspendable<SUSPENDED_BLAKE2B_512_STATE_LEN> for BLAKE2b_512 {
     /// # Errors
     /// * [`SuspendableError::IncompatibleVersion`] for a state from an incompatible library
     ///   version.
-    /// * [`SuspendableError::InvalidData`] for a buffered length over one block, a `t` that is not
-    ///   a whole number of blocks or is in the upper half of its range, an empty buffer after a compression, or a state taken before any
-    ///   compression whose `h` is not the unkeyed initial state.
+    /// * [`SuspendableError::InvalidData`] for a state this type did not produce, which includes
+    ///   a keyed state. The checks are `read_state`'s.
     fn from_suspended(
         state: [u8; SUSPENDED_BLAKE2B_512_STATE_LEN],
     ) -> Result<Self, SuspendableError> {
@@ -460,9 +444,17 @@ impl Suspendable<SUSPENDED_BLAKE2B_512_STATE_LEN> for BLAKE2b_512 {
         let mut input = Secret::<[u8; CORE_STATE_LEN]>::new();
         input.copy_from_slice(check_lib_ver(&state, None)?);
         let core = Blake2bCore::read_state(&input)?;
-        // Before any compression h is exactly the unkeyed initial state.
-        if core.t == 0 && !core.h_ct_eq(&initial_h(0)) {
-            return Err(SuspendableError::InvalidData);
+        // Before any compression h is exactly the unkeyed initial state, a public constant,
+        // compared against the serialized h bytes as BLAKE3's resume compares its IV.
+        if core.t == 0 {
+            let mut unkeyed = [0u8; 64];
+            for (bytes, word) in unkeyed.as_chunks_mut::<8>().0.iter_mut().zip(initial_h(0).iter())
+            {
+                *bytes = word.to_le_bytes();
+            }
+            if !ct::ct_eq_bytes(&input[..64], &unkeyed) {
+                return Err(SuspendableError::InvalidData);
+            }
         }
         Ok(Self { core })
     }

@@ -853,11 +853,9 @@ impl Suspendable<SUSPENDED_BLAKE3_SQUEEZER_STATE_LEN> for BLAKE3Squeezer {
         out_to_return
     }
 
-    /// Rejects with [`SuspendableError::InvalidData`] a state no [`BLAKE3Squeezer`] reaches: a
-    /// buffer position past 64; root flags other than a parent node's (with a 64-byte block) or a
-    /// chunk's last block's, which also refuses the keyed and derive_key streams, never
-    /// suspendable; a root block length above 64; an output block counter of 0 with a position
-    /// below 64; and a counter above 2^58 (s. 2.6: "outputs of any byte length 0 <= ell < 2^64").
+    /// Rejects with [`SuspendableError::InvalidData`] a state no [`BLAKE3Squeezer`] reaches, which
+    /// includes any state of a keyed_hash or derive_key stream and a counter a resumed stream
+    /// could wrap. The checks are listed in the body.
     fn from_suspended(
         serialized_state: [u8; SUSPENDED_BLAKE3_SQUEEZER_STATE_LEN],
     ) -> Result<Self, SuspendableError> {
@@ -1057,9 +1055,9 @@ impl BLAKE3KeyedHashKey {
         // Strength before length, so that an under-strength key is reported as such whatever its
         // length (the shared key-construction suite relies on this).
         if !allow_weak_key && key.security_strength() < SecurityStrength::_128bit {
-            Err(KeyMaterialError::SecurityStrength(
+            return Err(MACError::KeyMaterialError(KeyMaterialError::SecurityStrength(
                 "BLAKE3KeyedHashKey: the key's security strength is below 128 bits",
-            ))?
+            )));
         }
         // s. 2.3: "a 256-bit key". BLAKE3 defines no way to use a key of any other length.
         if key.key_len() != KEY_LEN {
