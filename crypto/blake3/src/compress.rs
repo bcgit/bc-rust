@@ -101,13 +101,14 @@ fn permute(m: &mut [u32; 16]) {
 /// t1 the higher order word", "The number of input bytes in the block, b (32 bits)", and "A set
 /// of domain separation bit flags, d (32 bits)".
 ///
-/// Returns the full 16-word output h'0 ... h'15. "The output of the compression function is most
+/// Writes the full 16-word output h'0 ... h'15 to `out`. "The output of the compression function is most
 /// often truncated to produce 256-bit chaining values" -- callers that want a chaining value take
 /// the first 8 words; the extendable output of s. 2.6 uses all 16.
 ///
 /// The working state and the permuted message copy are ordinary stack locals and are not
-/// zeroized; the persistent chaining values and buffers live in `Secret`s in the callers.
-pub(crate) fn compress(h: &[u32; 8], m: &[u32; 16], t: u64, b: u32, d: u32) -> [u32; 16] {
+/// zeroized, as in the other hash crates' compression functions; the output goes to the caller's
+/// buffer, a `Secret` at every call site.
+pub(crate) fn compress(h: &[u32; 8], m: &[u32; 16], t: u64, b: u32, d: u32, out: &mut [u32; 16]) {
     // t = t0, t1: "t0 the lower order word and t1 the higher order word".
     let t0 = t as u32;
     let t1 = (t >> 32) as u32;
@@ -138,12 +139,10 @@ pub(crate) fn compress(h: &[u32; 8], m: &[u32; 16], t: u64, b: u32, d: u32) -> [
     // "The output of the compression function h'0 ... h'15 is defined as:"
     //   h'i     <- v'i ^ v'(i+8)    for i = 0..7
     //   h'(i+8) <- v'(i+8) ^ hi     for i = 0..7
-    // The left column must read v'(i+8) before the right column overwrites it.
     for i in 0..8 {
-        v[i] ^= v[i + 8];
-        v[i + 8] ^= h[i];
+        out[i] = v[i] ^ v[i + 8];
+        out[i + 8] = v[i + 8] ^ h[i];
     }
-    v
 }
 
 /// BLAKE3 spec s. 2.4: "Each block is parsed in little-endian order into message words

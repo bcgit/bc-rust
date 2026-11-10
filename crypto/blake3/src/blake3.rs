@@ -38,10 +38,8 @@ const MAX_DEPTH: usize = 54;
 /// The first 8 words of a compression output: "The output of the compression function is most
 /// often truncated to produce 256-bit chaining values" (s. 2.2).
 #[inline]
-fn first_8_words(words: &[u32; 16]) -> [u32; 8] {
-    let mut cv = [0u32; 8];
+fn first_8_words(words: &[u32; 16], cv: &mut [u32; 8]) {
     cv.copy_from_slice(&words[..8]);
-    cv
 }
 
 /// Reads a little-endian u32 from exactly 4 bytes (serialized-state decoding).
@@ -84,18 +82,21 @@ struct Output {
 }
 
 impl Output {
-    /// This node's chaining value: it is not the root, so ROOT is not set.
-    fn chaining_value(&self) -> [u32; 8] {
-        first_8_words(&compress(
+    /// This node's chaining value, into `cv`: it is not the root, so ROOT is not set.
+    fn chaining_value(&self, cv: &mut [u32; 8]) {
+        let mut words = Secret::<[u32; 16]>::new();
+        compress(
             &self.input_chaining_value,
             &self.block_words,
             self.counter,
             self.block_len,
             self.flags,
-        ))
+            &mut words,
+        );
+        first_8_words(&words, cv);
     }
 
-    /// One 64-byte block of root output, as 16 words.
+    /// One 64-byte block of root output, as 16 words into `out`.
     ///
     /// BLAKE3 spec s. 2.6: "This is done by repeating the root compression -- that is, the very
     /// last call to the compression function, which sets the ROOT flag -- with incrementing
@@ -108,13 +109,14 @@ impl Output {
     ///
     /// So `self.counter` is not used here: it is always 0 for a root (the root is either the only
     /// chunk, index 0, or a parent node, counter 0), and the output block counter replaces it.
-    fn root_output_block(&self, output_block_counter: u64) -> [u32; 16] {
+    fn root_output_block(&self, output_block_counter: u64, out: &mut [u32; 16]) {
         compress(
             &self.input_chaining_value,
             &self.block_words,
             output_block_counter,
             self.block_len,
             self.flags | ROOT,
+            out,
         )
     }
 }
@@ -211,15 +213,16 @@ impl ChunkState {
     /// chunk state waits to compress the next block until both the buffer is full and the caller
     /// has supplied more input."
     fn update(&mut self, mut input: &[u8]) {
+        let mut block_words = Secret::<[u32; 16]>::new();
+        let mut words = Secret::<[u32; 16]>::new();
         while !input.is_empty() {
             // The buffer is full and more input is here, so this block is not the chunk's last:
             // no CHUNK_END, no ROOT.
             if self.block_len as usize == BLOCK_LEN {
-                let mut block_words = Secret::<[u32; 16]>::new();
                 // s. 2.4: "Each block is parsed in little-endian order into message words m0 ...
                 // m15 and compressed."
                 words_from_le_bytes(&*self.block, &mut block_words);
-                let cv = first_8_words(&compress(
+                compress(
                     &self.chaining_value,
                     &block_words,
                     // s. 2.4: "The counter t for each block is the chunk index"
@@ -230,10 +233,11 @@ impl ChunkState {
                     // Mutants note: the mode flag and CHUNK_START are distinct bits, so `|` and
                     // `^` are equivalent here; a surviving swap is an equivalent mutant.
                     self.flags | self.start_flag(),
-                ));
+                    &mut words,
+                );
                 // s. 2.4: "The input chaining value for subsequent blocks in each chunk is the
                 // output of the truncated compression function for the previous block."
-                self.chaining_value.copy_from_slice(&cv);
+                first_8_words(&words, &mut self.chaining_value);
                 self.blocks_compressed += 1;
                 // "the buffer is cleared": only the length is reset. The stale bytes are never
                 // read, because `output` zero-pads everything past `block_len` itself.
@@ -346,6 +350,9 @@ impl Blake3Core {
     ///   caller has supplied more input", so a compression is always followed by at least one
     ///   buffered byte. (Resuming such a state would finish the chunk on an empty block without
     ///   CHUNK_START, which no input produces.)
+    /// * `chunk_counter > 0` with an empty chunk: s. 5.1.1, "chunk CVs are added only after the
+    ///   caller supplies at least 1 byte for the following chunk", so a chunk after the first is
+    ///   never empty. (Resuming it would merge an empty chunk into the tree.)
     ///
     /// While `blocks_compressed == 0` the chunk chaining value is taken from `key_words`
     /// unconditionally; the serialized bytes for it are never read.
@@ -366,6 +373,7 @@ impl Blake3Core {
             || chunk_counter >= (1u64 << MAX_DEPTH)
             || chunk_counter.count_ones() != cv_stack_len as u32
             || (blocks_compressed > 0 && block_len == 0)
+            || (chunk_counter > 0 && blocks_compressed == 0 && block_len == 0)
         {
             return Err(SuspendableError::InvalidData);
         }
@@ -410,37 +418,39 @@ impl<K: KeyWords> Blake3Core<K> {
         self.cv_stack_len += 1;
     }
 
-    fn pop_stack(&mut self) -> [u32; 8] {
+    fn pop_stack(&mut self, cv: &mut [u32; 8]) {
         self.cv_stack_len -= 1;
-        self.cv_stack[self.cv_stack_len as usize]
+        *cv = self.cv_stack[self.cv_stack_len as usize];
     }
 
     /// BLAKE3 spec s. 5.1.2, Listing 1: "For each trailing 0-bit in the new total number of chunks,
     /// pop a CV off the stack, and merge it with the new CV we were about to add. Finally, push the
     /// fully merged result onto the stack."
-    fn add_chunk_chaining_value(&mut self, mut new_cv: [u32; 8], mut total_chunks: u64) {
+    fn add_chunk_chaining_value(&mut self, new_cv: &mut [u32; 8], mut total_chunks: u64) {
         // "The entries in the CV stack behave like the 1-bits in the binary representation of the
         // total number of chunks so far." Each trailing 0-bit of the new total is a completed
         // subtree whose left child is on top of the stack and whose right child is `new_cv`.
+        let mut left_child_cv = Secret::<[u32; 8]>::new();
         while total_chunks & 1 == 0 {
-            let left_child_cv = self.pop_stack();
-            new_cv = parent_output(&left_child_cv, &new_cv, self.key_words.words(), self.flags)
-                .chaining_value();
+            self.pop_stack(&mut left_child_cv);
+            parent_output(&left_child_cv, new_cv, self.key_words.words(), self.flags)
+                .chaining_value(new_cv);
             total_chunks >>= 1;
         }
-        self.push_stack(&new_cv);
+        self.push_stack(new_cv);
     }
 
     fn update(&mut self, mut input: &[u8]) {
+        let mut chunk_cv = Secret::<[u32; 8]>::new();
         while !input.is_empty() {
             // s. 5.1.1: "chunk CVs are added only after the caller supplies at least 1 byte for the
             // following chunk" -- so a full chunk is finalized here, where more input is known to
             // follow, and it is therefore not the root (s. 5.1.2: "we know that none of these
             // chunks or parent nodes is the root of the tree").
             if self.chunk_state.len() == CHUNK_LEN {
-                let chunk_cv = self.chunk_state.output().chaining_value();
+                self.chunk_state.output().chaining_value(&mut chunk_cv);
                 let total_chunks = self.chunk_state.chunk_counter + 1;
-                self.add_chunk_chaining_value(chunk_cv, total_chunks);
+                self.add_chunk_chaining_value(&mut chunk_cv, total_chunks);
                 self.chunk_state =
                     ChunkState::new(self.key_words.words(), total_chunks, self.flags);
             }
@@ -463,11 +473,13 @@ impl<K: KeyWords> Blake3Core<K> {
     fn root_output(&self) -> Output {
         let mut output = self.chunk_state.output();
         let mut parent_nodes_remaining = self.cv_stack_len as usize;
+        let mut cv = Secret::<[u32; 8]>::new();
         while parent_nodes_remaining > 0 {
             parent_nodes_remaining -= 1;
+            output.chaining_value(&mut cv);
             output = parent_output(
                 &self.cv_stack[parent_nodes_remaining],
-                &output.chaining_value(),
+                &cv,
                 self.key_words.words(),
                 self.flags,
             );
@@ -575,8 +587,11 @@ impl BLAKE3 {
         // "Then the key material is hashed, with k0 ... k7 set to the first 8 output words of the
         // first stage, and the DERIVE_KEY_MATERIAL flag set for every compression." The first
         // 8 output words are the first 8 words of root output block 0 (s. 2.6).
-        let first_stage_output = context_hasher.root_output().root_output_block(0);
-        Self { core: Blake3Core::new(&first_8_words(&first_stage_output), DERIVE_KEY_MATERIAL) }
+        let mut first_stage_output = Secret::<[u32; 16]>::new();
+        context_hasher.root_output().root_output_block(0, &mut first_stage_output);
+        let mut context_key = Secret::<[u32; 8]>::new();
+        first_8_words(&first_stage_output, &mut context_key);
+        Self { core: Blake3Core::new(&context_key, DERIVE_KEY_MATERIAL) }
     }
 }
 
@@ -773,12 +788,13 @@ impl XOFSqueezer for BLAKE3Squeezer {
         // Zeroized first per the house rule, although every byte is then overwritten.
         output.fill(0);
         let mut written = 0;
+        let mut words = Secret::<[u32; 16]>::new();
         while written < output.len() {
             if self.buf_pos as usize == BLOCK_LEN {
                 // s. 2.6: "When building the output, BLAKE3 uses the full output of the
                 // compression function (cf. s. 2.2). Each 16-word output is encoded as 64 bytes in
                 // little-endian order."
-                let words = self.root.root_output_block(self.output_block_counter);
+                self.root.root_output_block(self.output_block_counter, &mut words);
                 for (i, word) in words.iter().enumerate() {
                     self.buf[i * 4..i * 4 + 4].copy_from_slice(&word.to_le_bytes());
                 }
@@ -809,13 +825,14 @@ impl XOFSqueezer for BLAKE3Squeezer {
 ///   [96  .. 100)  root block_len             u32
 ///   [100 .. 104)  root flags                 u32 (without ROOT; never KEYED_HASH)
 ///   [104 .. 112)  output_block_counter       u64
-///   [112 .. 176)  output buffer              [u8; 64]
-///   [176 .. 177)  buffer position            u8 (0..=64)
+///   [112 .. 113)  buffer position            u8 (0..=64)
 /// ```
 /// The root's own counter is not stored: s. 2.6, "the first root compression always uses the
 /// counter value t = 0", and the output block counter takes its place. The stream position is
-/// `64 * (output_block_counter - 1) + buffer position` once a block has been produced.
-pub const SUSPENDED_BLAKE3_SQUEEZER_STATE_LEN: usize = 3 + 177;
+/// `64 * (output_block_counter - 1) + buffer position` once a block has been produced. The
+/// output buffer is not stored either: it is root output block `output_block_counter - 1`, and
+/// resuming recomputes it.
+pub const SUSPENDED_BLAKE3_SQUEEZER_STATE_LEN: usize = 3 + 113;
 
 /// The most output blocks a squeezer can have produced: s. 2.6 bounds the output at
 /// "0 <= ell < 2^64" bytes, which is 2^58 blocks of 64 bytes.
@@ -826,8 +843,8 @@ const MAX_OUTPUT_BLOCKS: u64 = 1 << 58;
 impl Suspendable<SUSPENDED_BLAKE3_SQUEEZER_STATE_LEN> for BLAKE3Squeezer {
     fn suspend(self) -> [u8; SUSPENDED_BLAKE3_SQUEEZER_STATE_LEN] {
         let mut out_to_return = [0u8; SUSPENDED_BLAKE3_SQUEEZER_STATE_LEN];
-        // infallible: add_lib_ver returns a slice of exactly 177 bytes.
-        let out: &mut [u8; 177] = add_lib_ver(&mut out_to_return).try_into().unwrap();
+        // infallible: add_lib_ver returns a slice of exactly 113 bytes.
+        let out: &mut [u8; 113] = add_lib_ver(&mut out_to_return).try_into().unwrap();
 
         for (i, word) in self.root.input_chaining_value.iter().enumerate() {
             out[i * 4..i * 4 + 4].copy_from_slice(&word.to_le_bytes());
@@ -838,41 +855,36 @@ impl Suspendable<SUSPENDED_BLAKE3_SQUEEZER_STATE_LEN> for BLAKE3Squeezer {
         out[96..100].copy_from_slice(&self.root.block_len.to_le_bytes());
         out[100..104].copy_from_slice(&self.root.flags.to_le_bytes());
         out[104..112].copy_from_slice(&self.output_block_counter.to_le_bytes());
-        out[112..176].copy_from_slice(&*self.buf);
-        out[176] = self.buf_pos;
+        out[112] = self.buf_pos;
 
         out_to_return
     }
 
-    /// Rejects with [`SuspendableError::InvalidData`] a buffer position past 64, and root flags
-    /// that no [`BLAKE3`] root can have: the stored flags are a node-type part (CHUNK_START,
-    /// CHUNK_END, PARENT) and no mode flag. In particular KEYED_HASH and DERIVE_KEY_MATERIAL are
-    /// rejected (those streams are never suspendable, see [`BLAKE3KeyedSqueezer`] and
-    /// [`BLAKE3DeriveKeySqueezer`]), as is ROOT (it is added per output block, never stored).
-    /// Also rejected, as states no squeezer reaches:
-    /// * a root `block_len` above 64: a root is a chunk's last block (b <= 64, s. 2.4) or a
-    ///   parent node (b = 64, s. 2.5);
-    /// * `output_block_counter == 0` with a position below 64: a fresh squeezer starts at position
-    ///   64 (no block computed), and computing a block makes the counter at least 1, so such a
-    ///   state would hand out buffer bytes that were never computed;
-    /// * `output_block_counter` above 2^58: s. 2.6 allows "outputs of any byte
-    ///   length 0 <= ell < 2^64", at most 2^58 blocks, and a counter near `u64::MAX` would wrap
-    ///   and repeat output already handed out.
+    /// Rejects with [`SuspendableError::InvalidData`] a state no [`BLAKE3Squeezer`] reaches: a
+    /// buffer position past 64; root flags other than a parent node's (with a 64-byte block) or a
+    /// chunk's last block's, which also refuses the keyed and derive_key streams, never
+    /// suspendable; a root block length above 64; an output block counter of 0 with a position
+    /// below 64; and a counter above 2^58 (s. 2.6: "outputs of any byte length 0 <= ell < 2^64").
     fn from_suspended(
         serialized_state: [u8; SUSPENDED_BLAKE3_SQUEEZER_STATE_LEN],
     ) -> Result<Self, SuspendableError> {
-        // infallible: check_lib_ver returns a slice of exactly 177 bytes.
-        let input: &[u8; 177] = check_lib_ver(&serialized_state, None)?.try_into().unwrap();
+        // infallible: check_lib_ver returns a slice of exactly 113 bytes.
+        let input: &[u8; 113] = check_lib_ver(&serialized_state, None)?.try_into().unwrap();
 
-        let buf_pos = input[176];
+        let buf_pos = input[112];
         let flags = u32_from_le(&input[100..104]);
         // Mutants note: the three node-type flags are distinct bits, so `|` and `^` build the same
         // mask; surviving swaps here are equivalent mutants.
         let mode_flags = flags & !(CHUNK_START | CHUNK_END | PARENT);
         let block_len = u32_from_le(&input[96..100]);
         let output_block_counter = u64_from_le(&input[104..112]);
+        // A root is a parent node (s. 2.5: PARENT, b = 64) or the only chunk's last block (s. 2.4:
+        // CHUNK_END, with CHUNK_START if it is also the first).
+        let parent_root = flags == PARENT && block_len as usize == BLOCK_LEN;
+        let chunk_root = flags & CHUNK_END != 0 && flags & PARENT == 0;
         if buf_pos as usize > BLOCK_LEN
             || mode_flags != 0
+            || !(parent_root || chunk_root)
             || block_len as usize > BLOCK_LEN
             || (output_block_counter == 0 && (buf_pos as usize) < BLOCK_LEN)
             || output_block_counter > MAX_OUTPUT_BLOCKS
@@ -886,7 +898,15 @@ impl Suspendable<SUSPENDED_BLAKE3_SQUEEZER_STATE_LEN> for BLAKE3Squeezer {
         words_from_le_bytes(&input[32..96], &mut block_words);
         let root = Output { input_chaining_value, block_words, counter: 0, block_len, flags };
         let mut buf = Secret::<[u8; BLOCK_LEN]>::new();
-        buf.copy_from_slice(&input[112..176]);
+        if (buf_pos as usize) < BLOCK_LEN {
+            // The rest of block output_block_counter - 1 is still to be read (counter >= 1 here,
+            // checked above), so compute it again rather than trust a stored copy.
+            let mut words = Secret::<[u32; 16]>::new();
+            root.root_output_block(output_block_counter - 1, &mut words);
+            for (i, word) in words.iter().enumerate() {
+                buf[i * 4..i * 4 + 4].copy_from_slice(&word.to_le_bytes());
+            }
+        }
 
         Ok(Self { root, output_block_counter, buf, buf_pos })
     }

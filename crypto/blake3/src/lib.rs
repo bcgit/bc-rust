@@ -63,7 +63,7 @@
 //! | [`BLAKE3Squeezer`]                        | 192          |
 //! | [`BLAKE3KeyedSqueezer`], [`BLAKE3DeriveKeySqueezer`] | 192 |
 //! | [`SUSPENDED_BLAKE3_STATE_LEN`]            | 1874         |
-//! | [`SUSPENDED_BLAKE3_SQUEEZER_STATE_LEN`]   | 180          |
+//! | [`SUSPENDED_BLAKE3_SQUEEZER_STATE_LEN`]   | 116          |
 //!
 //! 1728 bytes of a hasher are the chaining-value stack, sized for the full 2^64-byte input range
 //! (spec s. 5.4).

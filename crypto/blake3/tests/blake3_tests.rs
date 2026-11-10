@@ -278,7 +278,7 @@ mod blake3_tests {
         assert_eq!(BLAKE3::new().block_bitlen(), 512);
         assert_eq!(BLAKE3::hash(b"abc"), BLAKE3::hash(b"abc"));
         assert_eq!(SUSPENDED_BLAKE3_STATE_LEN, 1874);
-        assert_eq!(SUSPENDED_BLAKE3_SQUEEZER_STATE_LEN, 180);
+        assert_eq!(SUSPENDED_BLAKE3_SQUEEZER_STATE_LEN, 116);
     }
 
     /// Prints, and pins, the `size_of` figures quoted in the crate docs' Memory Usage table.
@@ -465,8 +465,11 @@ mod blake3_tests {
         assert!(BLAKE3::from_suspended(s).is_ok());
         s[BLOCK_LEN_AT] = 0;
         assert!(rejected(s), "blocks_compressed > 0 with an empty block");
+        // A chunk after the first is never empty: the hasher starts one only when a byte for it
+        // arrives (s. 5.1.1). Only the first chunk of an empty input is.
         s[BLOCKS_COMPRESSED] = 0;
-        assert!(BLAKE3::from_suspended(s).is_ok(), "an empty chunk with nothing compressed");
+        assert!(rejected(s), "an empty chunk after the first");
+        assert!(BLAKE3::from_suspended(state_after(0)).is_ok(), "the empty input");
     }
 
     /// While no block of the chunk is compressed, the chunk CV comes from the key words and the
@@ -491,6 +494,7 @@ mod blake3_tests {
         let mut s = state_after(0);
         s[CHUNK_COUNTER..CHUNK_COUNTER + 8].copy_from_slice(&((1u64 << 54) - 1).to_le_bytes());
         s[CV_STACK_LEN] = 54;
+        s[BLOCK_LEN_AT] = 1; // a chunk after the first holds at least one byte
         let mut b = BLAKE3::from_suspended(s).unwrap();
         b.do_update(&input(2048));
         assert_eq!(b.do_final().len(), 32);
@@ -509,7 +513,7 @@ mod blake3_tests {
         let mut state = s.suspend();
         // output_block_counter = 2^32, buffer position 64 (the next read computes a new block).
         state[3 + 104..3 + 112].copy_from_slice(&(1u64 << 32).to_le_bytes());
-        state[3 + 176] = 64;
+        state[3 + 112] = 64;
         let mut far = BLAKE3Squeezer::from_suspended(state).unwrap();
         let far_blocks = far.do_output(128);
         assert_ne!(far_blocks[..64], blocks_0_1[..64], "block 2^32 must differ from block 0");
@@ -524,12 +528,12 @@ mod blake3_tests {
         let mut s = b.into_squeezer();
         let _ = s.do_output(10);
         let state = s.suspend();
-        assert_eq!(state[3 + 176], 10, "buffer position");
+        assert_eq!(state[3 + 112], 10, "buffer position");
 
         let mut bad = state;
-        bad[3 + 176] = 64;
+        bad[3 + 112] = 64;
         assert!(BLAKE3Squeezer::from_suspended(bad).is_ok());
-        bad[3 + 176] = 65;
+        bad[3 + 112] = 65;
         assert!(matches!(BLAKE3Squeezer::from_suspended(bad), Err(SuspendableError::InvalidData)));
 
         // Root block_len <= 64 ("abc": 3).
@@ -545,30 +549,38 @@ mod blake3_tests {
         let mut bad = state;
         bad[3 + 104..3 + 112].copy_from_slice(&0u64.to_le_bytes());
         assert!(matches!(BLAKE3Squeezer::from_suspended(bad), Err(SuspendableError::InvalidData)));
-        bad[3 + 176] = 63;
+        bad[3 + 112] = 63;
         assert!(matches!(BLAKE3Squeezer::from_suspended(bad), Err(SuspendableError::InvalidData)));
-        bad[3 + 176] = 64;
+        bad[3 + 112] = 64;
         assert!(BLAKE3Squeezer::from_suspended(bad).is_ok(), "a fresh squeezer");
         let fresh = BLAKE3::new().into_squeezer().suspend();
         assert_eq!(fresh[3 + 104..3 + 112], 0u64.to_le_bytes());
-        assert_eq!(fresh[3 + 176], 64);
+        assert_eq!(fresh[3 + 112], 64);
         assert!(BLAKE3Squeezer::from_suspended(fresh).is_ok());
 
-        // Root flags: a node-type part and no mode flag; never ROOT, KEYED_HASH or
-        // DERIVE_KEY_MATERIAL.
-        // "abc" is a one-block chunk root: CHUNK_START | CHUNK_END.
+        // Root flags: a parent node's (with b = 64) or a chunk's last block's (CHUNK_END, with
+        // or without CHUNK_START), and no mode flag; never ROOT, KEYED_HASH or
+        // DERIVE_KEY_MATERIAL. "abc" is a one-block chunk root: CHUNK_START | CHUNK_END, b = 3.
         assert_eq!(state[3 + 100..3 + 104], 3u32.to_le_bytes());
         let with_flags = |flags: u32| {
             let mut st = state;
             st[3 + 100..3 + 104].copy_from_slice(&flags.to_le_bytes());
             BLAKE3Squeezer::from_suspended(st)
         };
-        for ok in [0u32, 1, 2, 3, 4] {
+        for ok in [2u32, 3] {
             assert!(with_flags(ok).is_ok(), "flags {ok}");
         }
-        for bad in [8u32, 16, 16 | 3, 32, 64, 64 | 3, 64 | 4, 64 | 16, 64 | 8, 128, 1 << 31] {
+        for bad in [0u32, 1, 4, 4 | 1, 4 | 2, 4 | 3, 8, 16, 16 | 3, 32, 64, 64 | 3, 64 | 4, 128] {
             assert!(matches!(with_flags(bad), Err(SuspendableError::InvalidData)), "flags {bad}");
         }
+        assert!(matches!(with_flags(1 << 31), Err(SuspendableError::InvalidData)));
+        // PARENT alone is a root only with a 64-byte block.
+        let mut st = state;
+        st[3 + 100..3 + 104].copy_from_slice(&4u32.to_le_bytes());
+        st[3 + 96..3 + 100].copy_from_slice(&64u32.to_le_bytes());
+        assert!(BLAKE3Squeezer::from_suspended(st).is_ok());
+        st[3 + 96..3 + 100].copy_from_slice(&63u32.to_le_bytes());
+        assert!(matches!(BLAKE3Squeezer::from_suspended(st), Err(SuspendableError::InvalidData)));
 
         // output_block_counter <= 2^58: s. 2.6 caps output below 2^64 bytes, and a counter near
         // u64::MAX would wrap and repeat blocks already handed out.
