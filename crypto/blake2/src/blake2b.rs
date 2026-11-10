@@ -6,7 +6,6 @@
 
 use bouncycastle_core::direction::{Decrypting, Encrypting};
 use bouncycastle_core::errors::{HashError, KeyMaterialError, MACError, SuspendableError};
-use bouncycastle_core::hazmat::do_hazardous_operations;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::symmetric_key::{FromAnyKeyMaterial, MacGenerationKey, MacVerificationKey};
@@ -528,19 +527,8 @@ impl FromAnyKeyMaterial for BLAKE2b_512_MACKey {
     /// [`MACError::KeyMaterialError`] if the RNG fails, or with
     /// [`KeyMaterialError::SecurityStrength`] if its strength is below 256 bits.
     fn generate(rng: &mut dyn RNG) -> Result<Self, MACError> {
-        let mut key = KeyMaterial::<MAX_KK>::new();
-        do_hazardous_operations(&mut key, |key| {
-            rng.next_bytes_out(key.ref_to_bytes_mut()?)
-                .map_err(|_| KeyMaterialError::GenericError("RNG failed."))?;
-            key.set_key_len(MAX_KK)?;
-            key.set_key_type(KeyType::MACKey)?;
-            // The RNG's strength, capped at what the length carries, as KMACKey::generate does.
-            // Mutants note: at by_rng == by_len both arms give the same strength, so `<` -> `<=`
-            // is an equivalent mutant.
-            let by_len = SecurityStrength::from_bits(MAX_KK * 8);
-            let by_rng = rng.security_strength();
-            key.set_security_strength(if by_rng < by_len { by_rng } else { by_len })
-        })?;
+        // The longest key the RFC allows, at the RNG's strength capped by the length.
+        let key = KeyMaterial::<MAX_KK>::from_rng_as_type(rng, MAX_KK, KeyType::MACKey)?;
         Self::from_key_material(&key)
     }
 }
