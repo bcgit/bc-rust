@@ -142,7 +142,7 @@ impl AgreementKey<(), SS_LEN> for ECCDHBp384r1PrivateKey {
 
 /*** The same keys under a KDF: the pairings, and one role impl over them ***/
 
-/// The length the tests derive for ECC-CDH-brainpoolP384r1-X963KDF-SHA-384, one SHA-384 output; the parameters name any.
+/// The length the tests derive for ECC-CDH-brainpoolP384r1-X963KDF-SHA384, one SHA-384 output; the parameters name any.
 pub const X963KDF_SHA384_SS_LEN: usize = 48;
 
 /// ECC CDH over brainpoolP384r1 with the keying data derived through the ANSI X9.63 KDF over
@@ -153,7 +153,7 @@ pub const X963KDF_SHA384_SS_LEN: usize = 48;
 pub struct ECCDHBp384r1_X963KDF_SHA384;
 
 impl Algorithm for ECCDHBp384r1_X963KDF_SHA384 {
-    const ALG_NAME: &'static str = "ECC-CDH-brainpoolP384r1-X963KDF-SHA-384";
+    const ALG_NAME: &'static str = "ECC-CDH-brainpoolP384r1-X963KDF-SHA384";
     const MAX_SECURITY_STRENGTH: SecurityStrength = ECCDHBp384r1::MAX_SECURITY_STRENGTH;
 }
 
@@ -163,7 +163,7 @@ impl<const SS_LEN: usize> KdfPairing<X963KDF_SHA384, SS_LEN> for ECCDHBp384r1 {
     type Algorithm = ECCDHBp384r1_X963KDF_SHA384;
 }
 
-/// The length the tests derive for ECC-CDH-brainpoolP384r1-ConcatKDF-SHA-384, one SHA-384 output; the parameters name any.
+/// The length the tests derive for ECC-CDH-brainpoolP384r1-ConcatKDF-SHA384, one SHA-384 output; the parameters name any.
 pub const CONCAT_KDF_SHA384_SS_LEN: usize = 48;
 
 /// ECC CDH over brainpoolP384r1 with the keying material derived through the NIST concatenation KDF over
@@ -175,7 +175,7 @@ pub const CONCAT_KDF_SHA384_SS_LEN: usize = 48;
 pub struct ECCDHBp384r1_ConcatKDF_SHA384;
 
 impl Algorithm for ECCDHBp384r1_ConcatKDF_SHA384 {
-    const ALG_NAME: &'static str = "ECC-CDH-brainpoolP384r1-ConcatKDF-SHA-384";
+    const ALG_NAME: &'static str = "ECC-CDH-brainpoolP384r1-ConcatKDF-SHA384";
     const MAX_SECURITY_STRENGTH: SecurityStrength = ECCDHBp384r1::MAX_SECURITY_STRENGTH;
 }
 

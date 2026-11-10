@@ -142,7 +142,7 @@ impl AgreementKey<(), SS_LEN> for ECCDHP521PrivateKey {
 
 /*** The same keys under a KDF: the pairings, and one role impl over them ***/
 
-/// The length the tests derive for ECC-CDH-P-521-X963KDF-SHA-512, one SHA-512 output; the parameters name any.
+/// The length the tests derive for ECC-CDH-P521-X963KDF-SHA512, one SHA-512 output; the parameters name any.
 pub const X963KDF_SHA512_SS_LEN: usize = 64;
 
 /// ECC CDH over P-521 with the keying data derived through the ANSI X9.63 KDF over
@@ -153,7 +153,7 @@ pub const X963KDF_SHA512_SS_LEN: usize = 64;
 pub struct ECCDHP521_X963KDF_SHA512;
 
 impl Algorithm for ECCDHP521_X963KDF_SHA512 {
-    const ALG_NAME: &'static str = "ECC-CDH-P521-X963KDF-SHA-512";
+    const ALG_NAME: &'static str = "ECC-CDH-P521-X963KDF-SHA512";
     const MAX_SECURITY_STRENGTH: SecurityStrength = ECCDHP521::MAX_SECURITY_STRENGTH;
 }
 
@@ -163,7 +163,7 @@ impl<const SS_LEN: usize> KdfPairing<X963KDF_SHA512, SS_LEN> for ECCDHP521 {
     type Algorithm = ECCDHP521_X963KDF_SHA512;
 }
 
-/// The length the tests derive for ECC-CDH-P521-ConcatKDF-SHA-512, one SHA-512 output; the parameters name any.
+/// The length the tests derive for ECC-CDH-P521-ConcatKDF-SHA512, one SHA-512 output; the parameters name any.
 pub const CONCAT_KDF_SHA512_SS_LEN: usize = 64;
 
 /// ECC CDH over P521 with the keying material derived through the NIST concatenation KDF over
@@ -175,7 +175,7 @@ pub const CONCAT_KDF_SHA512_SS_LEN: usize = 64;
 pub struct ECCDHP521_ConcatKDF_SHA512;
 
 impl Algorithm for ECCDHP521_ConcatKDF_SHA512 {
-    const ALG_NAME: &'static str = "ECC-CDH-P521-ConcatKDF-SHA-512";
+    const ALG_NAME: &'static str = "ECC-CDH-P521-ConcatKDF-SHA512";
     const MAX_SECURITY_STRENGTH: SecurityStrength = ECCDHP521::MAX_SECURITY_STRENGTH;
 }
 

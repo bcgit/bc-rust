@@ -103,11 +103,12 @@ fn public_key_off_the_curve_is_refused() {
     }
 }
 
-/// Section 5.6.1.2.1 step 4: the RBG must offer the curve's strength.
+/// Section 5.6.1.2.1 step 4: the RBG must offer the curve's strength; one step below it is
+/// refused.
 #[test]
 fn keygen_refuses_a_weak_rng() {
     let mut weak = FixedSeedRNG::new([0x5Au8; 64]);
-    weak.set_security_strength(SecurityStrength::None);
+    weak.set_security_strength(SecurityStrength::_112bit);
     match keygen(&mut weak) {
         Err(KeyAgreementError::RNGError(RNGError::SecurityStrengthInsufficientForAlgorithm)) => {}
         other => panic!("expected the RNG to be refused, got {other:?}"),
@@ -155,7 +156,7 @@ fn public_key_display_names_the_type() {
     assert!(format!("{pk}").starts_with("ECCDHSecp256K1PublicKey"));
 }
 
-/// ECC-CDH-secp256k1-X963KDF-SHA-256 on the same keys: the keying data is the X9.63 KDF over the
+/// ECC-CDH-secp256k1-X963KDF-SHA256 on the same keys: the keying data is the X9.63 KDF over the
 /// raw Z with the SharedInfo, both sides agree, and the SharedInfo selects the key.
 #[test]
 fn x963kdf_variant() {
@@ -166,7 +167,7 @@ fn x963kdf_variant() {
     let kdf = X963KDF_SHA256::new();
     let params = KdfParams::new(&kdf, b"eccdh x963 tests", KeyLen::<X963KDF_SHA256_SS_LEN>);
     TestFrameworkKeyAgreement::new().test_key_agreement(keygen_default, params);
-    assert_eq!(ECCDHSecp256K1_X963KDF_SHA256::ALG_NAME, "ECC-CDH-secp256k1-X963KDF-SHA-256");
+    assert_eq!(ECCDHSecp256K1_X963KDF_SHA256::ALG_NAME, "ECC-CDH-secp256k1-X963KDF-SHA256");
     assert_eq!(ECCDHSecp256K1_X963KDF_SHA256::MAX_SECURITY_STRENGTH, SecurityStrength::_128bit);
 
     let (pk_a, sk_a) = keygen_default().unwrap();
@@ -189,7 +190,7 @@ fn x963kdf_variant() {
     assert!(!sk_a.agree(&pk_b, none).unwrap().equals(&key));
 }
 
-/// ECC-CDH-secp256k1-ConcatKDF-SHA-256 on the same keys: the keying material is the concatenation
+/// ECC-CDH-secp256k1-ConcatKDF-SHA256 on the same keys: the keying material is the concatenation
 /// KDF over the raw Z with the FixedInfo, both sides agree, and the FixedInfo selects the key.
 #[test]
 fn concatkdf_variant() {
@@ -202,7 +203,7 @@ fn concatkdf_variant() {
     let kdf = ConcatKDF_SHA256::new();
     let params = KdfParams::new(&kdf, b"eccdh concatkdf tests", KeyLen::<CONCAT_KDF_SHA256_SS_LEN>);
     TestFrameworkKeyAgreement::new().test_key_agreement(keygen_default, params);
-    assert_eq!(ECCDHSecp256K1_ConcatKDF_SHA256::ALG_NAME, "ECC-CDH-secp256k1-ConcatKDF-SHA-256");
+    assert_eq!(ECCDHSecp256K1_ConcatKDF_SHA256::ALG_NAME, "ECC-CDH-secp256k1-ConcatKDF-SHA256");
     assert_eq!(ECCDHSecp256K1_ConcatKDF_SHA256::MAX_SECURITY_STRENGTH, SecurityStrength::_128bit);
 
     let (pk_a, sk_a) = keygen_default().unwrap();

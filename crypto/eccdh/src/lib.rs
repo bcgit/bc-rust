@@ -97,7 +97,11 @@
 //! # Status
 //!
 //! Seven curves: P-256, P-384, P-521, secp256k1, brainpoolP256r1, brainpoolP384r1 and
-//! brainpoolP512r1, each with cofactor 1. Every curve carries the X9.63 KDF and the
+//! brainpoolP512r1, each with cofactor 1. SP 800-56A Rev. 3 approves the NIST curves for key
+//! agreement (Appendix D); secp256k1 and the brainpool curves are not in that list, so its
+//! procedures are applied to them by analogy, as SP 800-186 Appendix H allows the brainpool
+//! curves "for interoperability reasons" and secp256k1 "for blockchain-related applications".
+//! Every curve carries the X9.63 KDF and the
 //! concatenation KDF variants over the hash matched to its strength (SHA-256, SHA-384 or
 //! SHA-512), and P-256 the HKDF-SHA256 one; the raw
 //! `Z` is there for any other KDF. Not here: the
@@ -152,15 +156,22 @@
 //!   not computed because every curve here has cofactor 1, so a point on the curve other than the
 //!   identity has order n. Full validation is what static keys require (Section 5.6.2.2.1), and
 //!   it is applied to every key, ephemeral or not.
-//! - **Everything done with `d` is branch-free and does not index memory by its value**: the
-//!   variable-base multiplication `[d]Q`, the affine conversion of `x_P` and the encoding. Of
-//!   Section 5.7.1.2 step 4's destruction of intermediates, this crate does its own part: `P`,
-//!   `z`, the inverse of `P`'s `Z` coordinate and its square, and the byte string are zeroized
-//!   on every path; the arithmetic's intermediates in [`bouncycastle_ec`] (the multiplier's
-//!   superseded accumulators and table, the inversion's table of powers) are that crate's and
-//!   are not reached, as its docs say. The one branch is Section 5.7.1.2 step 2's test for the
-//!   identity, which no validated peer key and in-range `d` can reach. Key generation draws
-//!   `len(n) + 64` bits and reduces them in constant time (Section 5.6.1.2.1).
+//! - **Everything done with `d` and `Z` is branch-free and does not index memory by its value,
+//!   in optimised builds**: the variable-base multiplication `[d]Q`, the affine conversion of
+//!   `x_P`, the encoding and the private key's range check (debug builds also run
+//!   [`bouncycastle_ec`]'s debug assertions, which can short-circuit on a carry). Four decisions
+//!   depend on secret data, each on a condition that is public or that no valid input reaches:
+//!   Section 5.7.1.2 step 2's identity test, made after the intermediates are scrubbed and false
+//!   for every validated peer key and in-range `d`; the typing of an all-zero `Z` (`x_P = 0`, on
+//!   the curve for P-256, P-384 and P-521 only, and not arrangeable without `d`); the one masked
+//!   decision of the private key's range check, which reveals whether the key loaded; and
+//!   `to_affine`'s identity branch at key generation, false for every valid `d`. Of Section
+//!   5.7.1.2 step 4's destruction of intermediates, this crate does its own part: `P`, `z`, the
+//!   inverse of `P`'s `Z` coordinate and its square, and the byte string are zeroized on every
+//!   path; the arithmetic's intermediates in [`bouncycastle_ec`] (the multiplier's superseded
+//!   accumulators and table, the inversion's table of powers) are that crate's and are not
+//!   reached, as its docs say. Key generation draws at least `len(n) + 64` bits, rounded up to
+//!   a byte, and reduces them in constant time (Section 5.6.1.2.1).
 
 #![no_std]
 #![forbid(unsafe_code)]

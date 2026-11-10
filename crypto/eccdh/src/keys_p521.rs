@@ -25,8 +25,9 @@ pub const SK_LEN: usize = 66;
 /// [`ECCDHP521PublicKey::from_bytes`] also accepts the 67-byte compressed form.
 pub const PK_LEN: usize = 133;
 
-/// The DRBG output [`keygen`] draws: SP 800-56A Rev. 3 Section 5.6.1.2.1 step 3, `L = len(n) + 64`
-/// = 585 bits, rounded up to 74 bytes.
+/// The DRBG output [`keygen`] draws: SP 800-56A Rev. 3 Section 5.6.1.2.1 step 3 asks for
+/// `L = len(n) + 64` = 585 bits; the DRBG is asked for whole bytes, 74, so 592 bits, at least
+/// the 64 extra bits the step is there for.
 pub(crate) const EXTRA_BITS_DRBG_OUTPUT_LEN: usize = 74;
 
 /// An ECC CDH P-521 private key: `d` in `[1, n-1]` (SP 800-56A Rev. 3 Section 5.6.2.1.2), held
@@ -150,7 +151,8 @@ pub fn keygen(
         ));
     }
 
-    // Steps 3 and 4: L = len(n) + 64 bits of DRBG output, held in `Secret` so it is scrubbed when
+    // Steps 3 and 4: at least L = len(n) + 64 bits of DRBG output (74 bytes, 592 bits for the
+    // 585 the step names), held in `Secret` so it is scrubbed when
     // this function returns rather than left on the stack.
     let mut extra_bits = Secret::<[u8; EXTRA_BITS_DRBG_OUTPUT_LEN]>::new();
     rng.next_bytes_out(&mut *extra_bits).map_err(KeyAgreementError::RNGError)?;

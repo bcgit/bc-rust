@@ -164,7 +164,7 @@ impl Algorithm for ECCDHP256_HKDF_SHA256 {
 
 impl KeyAgreementAlgorithm for ECCDHP256_HKDF_SHA256 {}
 
-/// The length the tests derive for ECC-CDH-P-256-X963KDF-SHA-256, one SHA-256 output; the parameters name any.
+/// The length the tests derive for ECC-CDH-P256-X963KDF-SHA256, one SHA-256 output; the parameters name any.
 pub const X963KDF_SHA256_SS_LEN: usize = 32;
 
 /// ECC CDH over P-256 with the keying data derived through the ANSI X9.63 KDF over
@@ -175,7 +175,7 @@ pub const X963KDF_SHA256_SS_LEN: usize = 32;
 pub struct ECCDHP256_X963KDF_SHA256;
 
 impl Algorithm for ECCDHP256_X963KDF_SHA256 {
-    const ALG_NAME: &'static str = "ECC-CDH-P256-X963KDF-SHA-256";
+    const ALG_NAME: &'static str = "ECC-CDH-P256-X963KDF-SHA256";
     const MAX_SECURITY_STRENGTH: SecurityStrength = ECCDHP256::MAX_SECURITY_STRENGTH;
 }
 
@@ -189,7 +189,7 @@ impl<const SS_LEN: usize> KdfPairing<X963KDF_SHA256, SS_LEN> for ECCDHP256 {
     type Algorithm = ECCDHP256_X963KDF_SHA256;
 }
 
-/// The length the tests derive for ECC-CDH-P256-ConcatKDF-SHA-256, one SHA-256 output; the parameters name any.
+/// The length the tests derive for ECC-CDH-P256-ConcatKDF-SHA256, one SHA-256 output; the parameters name any.
 pub const CONCAT_KDF_SHA256_SS_LEN: usize = 32;
 
 /// ECC CDH over P256 with the keying material derived through the NIST concatenation KDF over
@@ -201,7 +201,7 @@ pub const CONCAT_KDF_SHA256_SS_LEN: usize = 32;
 pub struct ECCDHP256_ConcatKDF_SHA256;
 
 impl Algorithm for ECCDHP256_ConcatKDF_SHA256 {
-    const ALG_NAME: &'static str = "ECC-CDH-P256-ConcatKDF-SHA-256";
+    const ALG_NAME: &'static str = "ECC-CDH-P256-ConcatKDF-SHA256";
     const MAX_SECURITY_STRENGTH: SecurityStrength = ECCDHP256::MAX_SECURITY_STRENGTH;
 }
 

@@ -142,7 +142,7 @@ impl AgreementKey<(), SS_LEN> for ECCDHBp256r1PrivateKey {
 
 /*** The same keys under a KDF: the pairings, and one role impl over them ***/
 
-/// The length the tests derive for ECC-CDH-brainpoolP256r1-X963KDF-SHA-256, one SHA-256 output; the parameters name any.
+/// The length the tests derive for ECC-CDH-brainpoolP256r1-X963KDF-SHA256, one SHA-256 output; the parameters name any.
 pub const X963KDF_SHA256_SS_LEN: usize = 32;
 
 /// ECC CDH over brainpoolP256r1 with the keying data derived through the ANSI X9.63 KDF over
@@ -153,7 +153,7 @@ pub const X963KDF_SHA256_SS_LEN: usize = 32;
 pub struct ECCDHBp256r1_X963KDF_SHA256;
 
 impl Algorithm for ECCDHBp256r1_X963KDF_SHA256 {
-    const ALG_NAME: &'static str = "ECC-CDH-brainpoolP256r1-X963KDF-SHA-256";
+    const ALG_NAME: &'static str = "ECC-CDH-brainpoolP256r1-X963KDF-SHA256";
     const MAX_SECURITY_STRENGTH: SecurityStrength = ECCDHBp256r1::MAX_SECURITY_STRENGTH;
 }
 
@@ -163,7 +163,7 @@ impl<const SS_LEN: usize> KdfPairing<X963KDF_SHA256, SS_LEN> for ECCDHBp256r1 {
     type Algorithm = ECCDHBp256r1_X963KDF_SHA256;
 }
 
-/// The length the tests derive for ECC-CDH-brainpoolP256r1-ConcatKDF-SHA-256, one SHA-256 output; the parameters name any.
+/// The length the tests derive for ECC-CDH-brainpoolP256r1-ConcatKDF-SHA256, one SHA-256 output; the parameters name any.
 pub const CONCAT_KDF_SHA256_SS_LEN: usize = 32;
 
 /// ECC CDH over brainpoolP256r1 with the keying material derived through the NIST concatenation KDF over
@@ -175,7 +175,7 @@ pub const CONCAT_KDF_SHA256_SS_LEN: usize = 32;
 pub struct ECCDHBp256r1_ConcatKDF_SHA256;
 
 impl Algorithm for ECCDHBp256r1_ConcatKDF_SHA256 {
-    const ALG_NAME: &'static str = "ECC-CDH-brainpoolP256r1-ConcatKDF-SHA-256";
+    const ALG_NAME: &'static str = "ECC-CDH-brainpoolP256r1-ConcatKDF-SHA256";
     const MAX_SECURITY_STRENGTH: SecurityStrength = ECCDHBp256r1::MAX_SECURITY_STRENGTH;
 }
 

@@ -16,6 +16,44 @@
 //! curve, and HKDF-SHA256 on P-256.
 //! A key under a KDF its curve is not paired with has no role, so the wrong KDF is a compile
 //! error; a further pairing is one marker and one impl.
+//!
+//! The derived key is typed by the KDF's accounting ([`KDF`]'s docs): `CryptographicRandom` at
+//! the least of the curve's strength, the KDF's and the length's, so a key shorter than 14
+//! bytes carries no strength although the algorithm's `MAX_SECURITY_STRENGTH` is the curve's.
+//! An all-zero `Z` (`x_P = 0`, on the curve for P-256, P-384 and P-521 and not arrangeable
+//! without `d`) reaches the KDF typed `Zeroized` and credits nothing: the X9.63 and
+//! concatenation roles, and HKDF with an empty salt, return a key typed `Unknown` with no
+//! strength, while HKDF with a typed salt credits the salt and returns `CryptographicRandom`.
+//! None of that is an error.
+//!
+//! The length is checked when a role is instantiated, in codegen rather than type checking, so
+//! `cargo check` passes what `cargo build` refuses: a zero length,
+//!
+//! ```compile_fail
+//! use bouncycastle_core::agreement_key::AgreementKey;
+//! use bouncycastle_core::kdf_params::{KdfParams, KeyLen};
+//! use bouncycastle_eccdh::keys_p256::keygen;
+//! use bouncycastle_rng::HashDRBG_SHA512;
+//! use bouncycastle_x963kdf::X963KDF_SHA256;
+//!
+//! let (pk, sk) = keygen(&mut HashDRBG_SHA512::new_from_os()).unwrap();
+//! let kdf = X963KDF_SHA256::new();
+//! let _ = sk.agree(&pk, KdfParams::new(&kdf, b"", KeyLen::<0>));
+//! ```
+//!
+//! and one past the KDF's [`PairedKdf::MAX_LEN`], 255 hash outputs for HKDF-SHA256:
+//!
+//! ```compile_fail
+//! use bouncycastle_core::agreement_key::AgreementKey;
+//! use bouncycastle_core::kdf_params::{KdfParams, KeyLen};
+//! use bouncycastle_eccdh::keys_p256::keygen;
+//! use bouncycastle_rng::HashDRBG_SHA512;
+//! use bouncycastle_sha2::hkdf::HKDF_SHA256;
+//!
+//! let (pk, sk) = keygen(&mut HashDRBG_SHA512::new_from_os()).unwrap();
+//! let hkdf = HKDF_SHA256::new();
+//! let _ = sk.agree(&pk, KdfParams::new(&hkdf, b"", KeyLen::<8161>));
+//! ```
 
 use bouncycastle_concatkdf::{ConcatKDF, ConcatKDFParams};
 use bouncycastle_core::agreement_key::KeyAgreementAlgorithm;
@@ -72,8 +110,9 @@ pub trait KdfPairing<D: KDF + PairedKdf + ?Sized, const SS_LEN: usize>:
 /// `SharedSecret`, which the KDF credits. The caller's buffer is where the key lives.
 ///
 /// # Errors
-/// [`KeyAgreementError::GenericError`] if the KDF refuses the derivation or writes anything but
-/// `SS_LEN` bytes; `out` is left zeroized.
+/// [`KeyAgreementError::KDFError`] with the KDF's own error if it refuses the derivation, and
+/// [`KeyAgreementError::GenericError`] if it writes anything but `SS_LEN` bytes; `out` is left
+/// zeroized.
 pub(crate) fn derive<D: KDF + PairedKdf + ?Sized, const Z_LEN: usize, const SS_LEN: usize>(
     params: KdfParams<'_, D, SS_LEN>,
     z: &KeyMaterial<Z_LEN>,
@@ -89,7 +128,7 @@ pub(crate) fn derive<D: KDF + PairedKdf + ?Sized, const Z_LEN: usize, const SS_L
     let written = params
         .kdf()
         .derive_key_out(z, params.info(), SS_LEN, out)
-        .map_err(|_| KeyAgreementError::GenericError("the KDF over Z failed"))?;
+        .map_err(KeyAgreementError::KDFError)?;
     if written != SS_LEN || out.key_len() != SS_LEN {
         out.zeroize();
         return Err(KeyAgreementError::GenericError("the KDF derived a key of the wrong length"));
