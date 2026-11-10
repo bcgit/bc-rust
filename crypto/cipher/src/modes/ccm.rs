@@ -237,7 +237,7 @@ where
                 "CCM: a generated nonce needs NONCE_LEN >= 12; supply the nonce for a shorter one"
             );
         }
-        random_iv::<NONCE_LEN>(rng)
+        Ok(random_iv::<NONCE_LEN>(rng)?)
     }
 
     /// Supplies the next piece of the AAD whose length was declared at construction. A sequence of

@@ -22,10 +22,11 @@
 
 use core::hint::black_box;
 
+use bouncycastle::core::direction::Encrypting;
 use bouncycastle::core::errors::{KDFError, MACError};
 use bouncycastle::core::key_material::{KeyMaterial, KeyMaterial256, KeyMaterialTrait, KeyType};
 use bouncycastle::core::symmetric_key::{FromAnyKeyMaterial, MacGenerationKey};
-use bouncycastle::core::traits::{Hash, HashOneShot, MAC, Suspendable};
+use bouncycastle::core::traits::{Hash, HashOneShot, Suspendable};
 use bouncycastle::hmac::HmacKey;
 use bouncycastle::sm3::hkdf::HKDF_SM3;
 use bouncycastle::sm3::hmac::HMAC_SM3;
@@ -50,7 +51,7 @@ fn print_struct_sizes() {
 
     println!("size_of<SM3>: {}", size_of::<SM3>());
     println!("SUSPENDED_SM3_STATE_LEN: {}", SUSPENDED_SM3_STATE_LEN);
-    println!("size_of<HMAC_SM3>: {}", size_of::<HMAC_SM3<'static>>());
+    println!("size_of<HMAC_SM3>: {}", size_of::<HMAC_SM3<'static, Encrypting>>());
     println!("size_of<HmacKey<SM3>>: {}", size_of::<HmacKey<SM3>>());
     println!("size_of<HKDF_SM3>: {}", size_of::<HKDF_SM3>());
 }
@@ -194,10 +195,10 @@ fn bench_hmac_sm3_mac_out() {
     measure(move || {
         let mut out = [0u8; 32];
         let op = black_box(
-            <HmacKey<SM3> as MacGenerationKey>::mac_out
-                as fn(&HmacKey<SM3>, &[u8], &mut [u8]) -> Result<usize, MACError>,
+            <HmacKey<SM3> as MacGenerationKey<32>>::mac_out
+                as fn(&HmacKey<SM3>, &[u8], &mut [u8; 32]) -> usize,
         );
-        let n = op(&k, &msg, &mut out).unwrap();
+        let n = op(&k, &msg, &mut out);
         print!("{:x?}", &out[..n]);
     });
 }

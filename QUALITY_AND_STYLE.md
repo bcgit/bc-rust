@@ -181,7 +181,8 @@ _{init, update, final, etc}_{rng}_{out, out_len, inplace}
 
 Any function that takes an output buffer via an `_out` function must zeroize the provided output buffer via a
 `out.fill(0)` prior to writing to it. This must be done first, before even any error checking so that no stale content
-is left in the output buffer, even in the case of an error.
+is left in the output buffer, even in the case of an error. The one exception is an infallible function whose output
+is a `[u8; N]` it overwrites in full: nothing stale can remain, so it does not clear first.
 
 A local that holds secret-derived data -- a key or scalar's limbs, a field element or point computed from one, a
 lookup's copy of a table entry -- is zeroized once, at the end of its lifetime, through its type's `zeroize` (built on

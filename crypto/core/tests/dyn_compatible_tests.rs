@@ -6,9 +6,9 @@
 use bouncycastle_core::hazmat::KeyStream;
 use bouncycastle_core::traits::{
     AEADCipherDecryptor, AEADCipherEncryptor, BlockCipherDecryptor, BlockCipherEncryptor, Hash,
-    KEMDecapsulator, KEMEncapsulator, KeyUnwrapper, KeyWrapper, MAC, SignatureSigner,
-    SignatureVerifier, StreamCipherDecryptor, StreamCipherEncryptor, SymmetricCipherDecryptor,
-    SymmetricCipherEncryptor, XOF, XOFSqueezer,
+    KEMDecapsulator, KEMEncapsulator, KeyUnwrapper, KeyWrapper, MACGenerator, MACVerifier,
+    SignatureSigner, SignatureVerifier, StreamCipherDecryptor, StreamCipherEncryptor,
+    SymmetricCipherDecryptor, SymmetricCipherEncryptor, XOF, XOFSqueezer,
 };
 
 fn symmetric(
@@ -19,7 +19,7 @@ fn symmetric(
 fn aead(_: &mut dyn AEADCipherEncryptor<12, 16, 16>, _: &mut dyn AEADCipherDecryptor<12, 16, 16>) {}
 fn stream(_: &mut dyn StreamCipherEncryptor<16>, _: &mut dyn StreamCipherDecryptor<16>) {}
 fn block(_: &mut dyn BlockCipherEncryptor<16, 16>, _: &mut dyn BlockCipherDecryptor<16, 16>) {}
-fn mac(_: &mut dyn MAC) {}
+fn mac(_: &mut dyn MACGenerator<32>, _: &mut dyn MACVerifier<32>) {}
 fn signature(_: &mut dyn SignatureSigner<64>, _: &mut dyn SignatureVerifier) {}
 /// The run-time-length half of key wrap; the const-generic one-shots are `Self: Sized`.
 fn key_wrap(_: &dyn KeyWrapper, _: &dyn KeyUnwrapper) {}
@@ -34,7 +34,7 @@ fn the_worker_traits_are_dyn_compatible() {
     // Referenced so the functions are not dead code; the compile is the assertion.
     let _ = (
         symmetric as fn(_, _), aead as fn(_, _), stream as fn(_, _), block as fn(_, _),
-        mac as fn(_), signature as fn(_, _), key_wrap as fn(_, _), key_stream as fn(_),
+        mac as fn(_, _), signature as fn(_, _), key_wrap as fn(_, _), key_stream as fn(_),
         kem as fn(_, _), hash as fn(_),
     );
     fn reference_xof<S: XOFSqueezer>() {

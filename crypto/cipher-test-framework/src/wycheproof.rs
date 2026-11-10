@@ -10,7 +10,7 @@
 use crate::Permutation;
 use crate::material::{cipher_key, mac_key};
 use bouncycastle_cipher::BlockCipherKey;
-use bouncycastle_cipher::modes::{CBC, CCM, CMAC, CMAC_MIN_TAG_LEN, GCM, GCM_NONCE_LEN, GMAC};
+use bouncycastle_cipher::modes::{CBC, CCM, CMAC, GCM, GCM_NONCE_LEN, GMAC};
 use bouncycastle_cipher::padding::PKCS7;
 use bouncycastle_core::errors::{PaddingError, SymmetricCipherError};
 use bouncycastle_core::hazmat::Mode;
@@ -18,9 +18,11 @@ use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::symmetric_key::{
     AeadDeclaredDecryptionKey, AeadDeclaredEncryptionKey, AeadDecryptionKey, AeadEncryptionKey,
     FromKeyMaterial, KeyUnwrappingKey, KeyWrappingKey, MacGenerationKey, MacVerificationKey,
-    SymmetricDecryptionKey, SymmetricEncryptionKey,
+    NonceMacGenerationKey, SymmetricDecryptionKey, SymmetricEncryptionKey,
 };
-use bouncycastle_core::traits::{MAC, SymmetricCipherDecryptor, SymmetricCipherEncryptor};
+use bouncycastle_core::traits::{
+    MACGenerator, MACVerifier, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
+};
 use bouncycastle_core_test_framework::test_data_loaders::{Value, hex_field, wycheproof_json};
 use bouncycastle_rng::FixedSeedRNG;
 use core::ops::Add;
@@ -504,8 +506,7 @@ pub fn gmac_from_empty_gcm_cases<P: Permutation<KEY_LEN>, const KEY_LEN: usize>(
             let got: [u8; 16] =
                 BlockCipherKey::<P, GMAC>::from_key_material(&mac_key::<KEY_LEN>(&key_bytes))
                     .unwrap()
-                    .create_generator_nonce(&iv)
-                    .mac(&aad);
+                    .mac_nonce(&iv, &aad);
             assert_eq!(got.as_slice(), tag.as_slice(), "tcId {tc_id}: GMAC tag mismatch");
             run += 1;
         }
@@ -514,8 +515,8 @@ pub fn gmac_from_empty_gcm_cases<P: Permutation<KEY_LEN>, const KEY_LEN: usize>(
     Some(run)
 }
 
-/// One CMAC case through the worker a `BlockCipherKey<P, CMAC>` hands out and through the key's
-/// own one-shots, so the two routes are held to the same answers.
+/// One CMAC case through the key's one-shots and its workers: every group is a 128-bit tag,
+/// the block, so the tag goes straight into the array the roles take.
 fn cmac_case<P: Permutation<KEY_LEN>, const KEY_LEN: usize>(
     tc_id: u64,
     key: &[u8],
@@ -525,15 +526,17 @@ fn cmac_case<P: Permutation<KEY_LEN>, const KEY_LEN: usize>(
 ) {
     let key = BlockCipherKey::<P, CMAC>::from_key_material(&mac_key::<KEY_LEN>(key))
         .unwrap_or_else(|e| panic!("tcId {tc_id}: {e:?}"));
-    let full = key.create_generator().mac(msg);
+    let tag: [u8; 16] = tag.try_into().unwrap_or_else(|_| panic!("tcId {tc_id}: a 16-byte tag"));
+    let full = key.mac(msg);
     assert_eq!(full == tag, valid, "tcId {tc_id}");
-    assert_eq!(key.create_generator().verify(msg, tag), valid, "tcId {tc_id}");
-    assert_eq!(key.verify(msg, tag), valid, "tcId {tc_id}: via the key's one-shot");
+    assert_eq!(key.verify(msg, &tag).is_ok(), valid, "tcId {tc_id}: via the key's one-shot");
+    let mut verifier = key.create_verifier();
+    verifier.do_update(msg);
+    assert_eq!(verifier.do_verify_final(&tag).is_ok(), valid, "tcId {tc_id}: via the worker");
     if valid {
-        assert_eq!(key.mac(msg), tag, "tcId {tc_id}: via the key's one-shot");
-        let mut out = [0u8; CMAC_MIN_TAG_LEN];
-        key.mac_out(msg, &mut out).unwrap();
-        assert_eq!(out[..], tag[..CMAC_MIN_TAG_LEN], "tcId {tc_id}: truncated tag");
+        let mut generator = key.create_generator();
+        generator.do_update(msg);
+        assert_eq!(generator.do_final(), tag, "tcId {tc_id}: via the worker");
     }
 }
 

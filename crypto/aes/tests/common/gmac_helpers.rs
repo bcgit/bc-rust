@@ -10,7 +10,10 @@ mod cmac_helpers;
 
 use bouncycastle_aes::{AES128Key, AES192Key, AES256Key};
 use bouncycastle_cipher::modes::{GCM_NONCE_LEN, GMAC};
-use bouncycastle_core::symmetric_key::FromKeyMaterial;
+use bouncycastle_core::symmetric_key::{
+    FromKeyMaterial, NonceMacGenerationKey, NonceMacVerificationKey,
+};
+use bouncycastle_core::traits::MACGenerator;
 use bouncycastle_rng::FixedSeedRNG;
 use cmac_helpers::mac_key;
 
@@ -26,12 +29,13 @@ pub fn run_key_object_case(
         ($key:ty, $klen:literal, $tlen:literal) => {{
             let key = <$key>::from_key_material(&mac_key::<$klen>(key_bytes)).expect("a MAC key");
             let tag: [u8; $tlen] = tag.try_into().expect("tag length matches TAG_LEN");
-            assert_eq!(key.create_verifier(&nonce).verify(msg, &tag), valid, "key object verify");
+            assert_eq!(key.verify(&nonce, msg, &tag).is_ok(), valid, "key object verify");
             if valid {
-                let (gen_, got) = key.create_generator(&mut FixedSeedRNG::new(nonce)).unwrap();
+                let (mut gen_, got) = key.create_generator(&mut FixedSeedRNG::new(nonce)).unwrap();
                 assert_eq!(got, nonce, "the pinned RNG should give the vector's IV");
-                assert_eq!(gen_.mac(msg), tag, "key object generate");
-                assert_eq!(key.create_generator_nonce(&nonce).mac(msg), tag, "supplied nonce");
+                gen_.do_update(msg);
+                assert_eq!(gen_.do_final(), tag, "key object generate");
+                assert_eq!(key.mac_nonce(&nonce, msg), tag, "supplied nonce");
             }
         }};
     }

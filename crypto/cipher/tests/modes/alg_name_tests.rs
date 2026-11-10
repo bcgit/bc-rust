@@ -62,7 +62,8 @@ fn each_mode_reports_its_own_name() {
     check::<Gcm<'_, Toy, Decrypting, 16>>(Toy::GCM_ALG_NAME);
     check::<CcmPacketEncryptor<'_, Toy, 16, 12, 16, 16, 32>>(Toy::CCM_ALG_NAME);
     check::<CcmPacketDecryptor<'_, Toy, 16, 12, 16, 16, 32>>(Toy::CCM_ALG_NAME);
-    check::<Cmac<'_, Toy, 16>>(Toy::CMAC_ALG_NAME);
+    check::<Cmac<'_, Toy, Encrypting, 16>>(Toy::CMAC_ALG_NAME);
+    check::<Cmac<'_, Toy, Decrypting, 16>>(Toy::CMAC_ALG_NAME);
     check::<Gmac<'_, Toy, Encrypting, 16>>(Toy::GMAC_ALG_NAME);
     check::<Gmac<'_, Toy, Decrypting, 16>>(Toy::GMAC_ALG_NAME);
     check::<Kw<'_, Toy, Encrypting>>(Toy::KW_ALG_NAME);

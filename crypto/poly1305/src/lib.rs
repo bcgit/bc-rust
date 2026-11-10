@@ -1,9 +1,9 @@
 //! Poly1305 one-time authentication from [RFC 8439, section 2.5](https://www.rfc-editor.org/rfc/rfc8439#section-2.5).
 //!
-//! A [`Poly1305Key`] authenticates exactly one message: [`Poly1305Key::into_mac`] consumes it into
-//! the one [`Poly1305`] worker it makes, which implements [`MAC`] with full 16-byte tags only:
-//! truncation is rejected. Streaming and output-buffer methods do not allocate. Secret state is
-//! zeroized on drop.
+//! A [`Poly1305Key`] authenticates exactly one message: [`Poly1305Key::into_generator`] or
+//! [`Poly1305Key::into_verifier`] consumes it into the one [`Poly1305`] worker it makes, a
+//! [`MACGenerator`] or a [`MACVerifier`] with a full 16-byte tag. Nothing allocates. Secret state
+//! is zeroized on drop.
 //!
 //! A key is made from raw bytes by [`hazmat::key_from_bytes`], for a construction that derives a
 //! fresh key for every message, as ChaCha20-Poly1305 does. For a key that authenticates any
@@ -14,16 +14,18 @@
 //! # Usage Examples
 //!
 //! ```
-//! use bouncycastle_core::traits::MAC;
+//! use bouncycastle_core::traits::{MACGenerator, MACVerifier};
 //! use bouncycastle_poly1305::TAG_LEN;
 //! use bouncycastle_poly1305::hazmat::key_from_bytes;
 //! // Illustrative key only; a real one-time key is fresh, unpredictable and used once.
 //! let one_time_key = [0x42; 32];
-//! let mut mac = key_from_bytes(&one_time_key).into_mac();
+//! let mut mac = key_from_bytes(&one_time_key).into_generator();
 //! mac.do_update(b"message");
 //! let mut tag = [0u8; TAG_LEN];
-//! mac.do_final_out(&mut tag).unwrap();
-//! assert!(key_from_bytes(&one_time_key).into_mac().verify(b"message", &tag));
+//! mac.do_final_out(&mut tag);
+//! let mut verifier = key_from_bytes(&one_time_key).into_verifier();
+//! verifier.do_update(b"message");
+//! assert!(verifier.do_verify_final(&tag).is_ok());
 //! ```
 //!
 //! # Memory Usage
@@ -33,8 +35,7 @@
 //! | [`Poly1305Key`] | 88 |
 //! | [`Poly1305`] | 192 |
 //!
-//! "In-memory size" is `core::mem::size_of` on a 64-bit target. There are no heap allocations in
-//! the streaming and `*_out` APIs.
+//! "In-memory size" is `core::mem::size_of` on a 64-bit target. There are no heap allocations.
 //!
 //! Per-call stack usage does not depend on the data length. Measured as the deepest frame chain
 //! below each entry point in the release build (x86-64 Linux, rustc 1.97.0-nightly, return
@@ -43,10 +44,9 @@
 //! | Entry point | Stack |
 //! |---|---|
 //! | `hazmat::key_from_bytes` | 16 B |
-//! | `Poly1305Key::into_mac` | 8 B |
+//! | `Poly1305Key::into_generator` | 8 B |
 //! | `do_update` | 120 B |
 //! | `do_final_out` / `do_verify_final` | 456 B / 248 B |
-//! | `mac_out` (one-shot) | 648 B |
 //!
 //! # 🚨 Security Considerations 🚨
 //!
@@ -60,16 +60,15 @@
 #![forbid(unsafe_code)]
 #![forbid(missing_docs)]
 
-extern crate alloc;
-
 pub mod hazmat;
 
-use alloc::vec::Vec;
+use bouncycastle_core::direction::{Decrypting, Encrypting};
 use bouncycastle_core::errors::MACError;
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::traits::{Algorithm, MAC};
+use bouncycastle_core::traits::{Algorithm, MACGenerator, MACVerifier};
 use bouncycastle_utils::ct::{self, Condition};
 use bouncycastle_utils::secret::Secret;
+use core::marker::PhantomData;
 
 /// One-time key length in bytes.
 pub const KEY_LEN: usize = 32;
@@ -93,11 +92,11 @@ const FULL_BLOCK_BIT: u64 = 1 << 24;
 /// authenticate any number. None of these compiles:
 ///
 /// ```compile_fail
-/// # use bouncycastle_core::traits::MAC;
+/// # use bouncycastle_core::traits::MACGenerator;
 /// # use bouncycastle_poly1305::hazmat::key_from_bytes;
 /// let key = key_from_bytes(&[0x42; 32]);
-/// let first = key.into_mac().mac(b"first message");
-/// let second = key.into_mac().mac(b"second message");
+/// let first = key.into_generator().do_final();
+/// let second = key.into_generator().do_final();
 /// ```
 /// ```compile_fail
 /// # use bouncycastle_poly1305::Poly1305Key;
@@ -107,13 +106,13 @@ const FULL_BLOCK_BIT: u64 = 1 << 24;
 /// ```compile_fail
 /// # use bouncycastle_core::symmetric_key::MacGenerationKey;
 /// # use bouncycastle_poly1305::Poly1305Key;
-/// fn generation_key<K: MacGenerationKey>() {}
+/// fn generation_key<K: MacGenerationKey<16>>() {}
 /// generation_key::<Poly1305Key>();
 /// ```
 /// ```compile_fail
 /// # use bouncycastle_core::symmetric_key::MacVerificationKey;
 /// # use bouncycastle_poly1305::Poly1305Key;
-/// fn verification_key<K: MacVerificationKey>() {}
+/// fn verification_key<K: MacVerificationKey<16>>() {}
 /// verification_key::<Poly1305Key>();
 /// ```
 ///
@@ -121,14 +120,14 @@ const FULL_BLOCK_BIT: u64 = 1 << 24;
 ///
 /// ```
 /// # use bouncycastle_core::symmetric_key::{MacGenerationKey, MacVerificationKey};
-/// # use bouncycastle_core::traits::MAC;
+/// # use bouncycastle_core::traits::MACGenerator;
 /// # use bouncycastle_poly1305::hazmat::key_from_bytes;
 /// # use bouncycastle_poly1305::{Poly1305, Poly1305Key};
 /// let key = key_from_bytes(&[0x42; 32]);
-/// let first = key.into_mac().mac(b"first message");
+/// let first = key.into_generator().do_final();
 /// fn cloneable<T: Clone>() {}
-/// fn generation_key<K: MacGenerationKey>() {}
-/// fn verification_key<K: MacVerificationKey>() {}
+/// fn generation_key<K: MacGenerationKey<16>>() {}
+/// fn verification_key<K: MacVerificationKey<16>>() {}
 /// ```
 pub struct Poly1305Key {
     /// `r`, clamped, in five radix-2^26 limbs.
@@ -166,25 +165,32 @@ impl Poly1305Key {
         Self { r, r5, pad }
     }
 
-    /// Consumes the key into the [`MAC`] worker for its one message, which can compute the tag
-    /// or check one.
-    pub fn into_mac(self) -> Poly1305 {
+    /// Consumes the key into the [`MACGenerator`] worker for its one message.
+    pub fn into_generator(self) -> Poly1305<Encrypting> {
+        Poly1305::from_key(self)
+    }
+
+    /// Consumes the key into the [`MACVerifier`] worker for its one message.
+    pub fn into_verifier(self) -> Poly1305<Decrypting> {
         Poly1305::from_key(self)
     }
 }
 
-/// The worker for a single Poly1305 message, made by [`Poly1305Key::into_mac`]. It cannot be
-/// cloned, since two workers under one key could authenticate two messages:
+/// The worker for a single Poly1305 message, made by [`Poly1305Key::into_generator`]
+/// (`Dir = Encrypting`, a [`MACGenerator`]) or [`Poly1305Key::into_verifier`]
+/// (`Dir = Decrypting`, a [`MACVerifier`]). It cannot be cloned, since two workers under one key
+/// could authenticate two messages:
 ///
 /// ```compile_fail
+/// # use bouncycastle_core::direction::Encrypting;
 /// # use bouncycastle_poly1305::Poly1305;
 /// fn cloneable<T: Clone>() {}
-/// cloneable::<Poly1305>();
+/// cloneable::<Poly1305<Encrypting>>();
 /// ```
 ///
 /// The implementation has no secret-dependent branches or memory indices. Multiplication
 /// must have operand-independent timing on the target processor for constant-time execution.
-pub struct Poly1305 {
+pub struct Poly1305<Dir> {
     // The key the worker was made from, moved in: a key makes one worker, so there is nothing to
     // borrow it from.
     key: Poly1305Key,
@@ -195,17 +201,25 @@ pub struct Poly1305 {
     product: Secret<[u64; 5]>,
     buffer: Secret<[u8; BLOCK_LEN]>,
     buffered: usize,
+    dir: PhantomData<Dir>,
 }
 
-impl Algorithm for Poly1305 {
+impl<Dir> Algorithm for Poly1305<Dir> {
     const ALG_NAME: &'static str = "Poly1305";
     const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_128bit;
 }
 
-impl Poly1305 {
+impl<Dir> Poly1305<Dir> {
     /// A fresh message under `key`.
     fn from_key(key: Poly1305Key) -> Self {
-        Self { key, h: Secret::new(), product: Secret::new(), buffer: Secret::new(), buffered: 0 }
+        Self {
+            key,
+            h: Secret::new(),
+            product: Secret::new(),
+            buffer: Secret::new(),
+            buffered: 0,
+            dir: PhantomData,
+        }
     }
 
     /// RFC 8439 Sec 2.5's `Acc = ((Acc+block)*r) % p` for one 16-byte block, with `high_bit` its
@@ -242,13 +256,35 @@ impl Poly1305 {
         self.h[0] &= MASK;
     }
 
-    /// Consumes this message and returns its full authentication tag: the body of the `MAC`
-    /// impl's three finals.
+    /// Both directions' `do_update`: a partial block left by an earlier call is topped up first,
+    /// and is the only data that goes through the buffer apart from this call's own tail.
+    fn absorb(&mut self, mut data: &[u8]) {
+        if self.buffered != 0 {
+            let n = (BLOCK_LEN - self.buffered).min(data.len());
+            self.buffer[self.buffered..self.buffered + n].copy_from_slice(&data[..n]);
+            self.buffered += n;
+            data = &data[n..];
+            if self.buffered < BLOCK_LEN {
+                return;
+            }
+            let block = core::mem::replace(&mut self.buffer, Secret::new());
+            self.process_block(&block, FULL_BLOCK_BIT);
+            self.buffered = 0;
+        }
+        let (blocks, tail) = data.as_chunks::<BLOCK_LEN>();
+        for block in blocks {
+            self.process_block(block, FULL_BLOCK_BIT);
+        }
+        self.buffer[..tail.len()].copy_from_slice(tail);
+        self.buffered = tail.len();
+    }
+
+    /// Consumes this message and returns its full authentication tag: the body of both finals.
     fn finalize(mut self) -> [u8; TAG_LEN] {
         if self.buffered != 0 {
             // The last, partial block: Sec 2.5.1's `| [0x01]` after its bytes, then zeros.
             // The bytes past `buffered` are already zero: the buffer is a fresh `Secret`
-            // whenever a block completes, and `do_update` writes only the first `buffered`.
+            // whenever a block completes, and `absorb` writes only the first `buffered`.
             let mut block = core::mem::replace(&mut self.buffer, Secret::new());
             block[self.buffered] = 1;
             self.process_block(&block, 0);
@@ -300,65 +336,27 @@ fn load32<const N: usize>(bytes: &[u8; N], at: usize) -> u64 {
     u64::from(u32::from_le_bytes([bytes[at], bytes[at + 1], bytes[at + 2], bytes[at + 3]]))
 }
 
-impl MAC for Poly1305 {
-    fn output_len(&self) -> usize {
+impl MACGenerator<TAG_LEN> for Poly1305<Encrypting> {
+    fn do_update(&mut self, data: &[u8]) {
+        self.absorb(data)
+    }
+
+    fn do_final_out(self, out: &mut [u8; TAG_LEN]) -> usize {
+        *out = self.finalize();
         TAG_LEN
     }
+}
 
-    fn mac(mut self, data: &[u8]) -> Vec<u8> {
-        self.do_update(data);
-        self.do_final()
+impl MACVerifier<TAG_LEN> for Poly1305<Decrypting> {
+    fn do_update(&mut self, data: &[u8]) {
+        self.absorb(data)
     }
 
-    fn mac_out(mut self, data: &[u8], out: &mut [u8]) -> Result<usize, MACError> {
-        self.do_update(data);
-        self.do_final_out(out)
-    }
-
-    fn verify(mut self, data: &[u8], mac: &[u8]) -> bool {
-        self.do_update(data);
-        self.do_verify_final(mac)
-    }
-
-    fn do_update(&mut self, mut data: &[u8]) {
-        // A partial block left by an earlier call is topped up first, and is the only data
-        // that goes through the buffer apart from this call's own tail.
-        if self.buffered != 0 {
-            let n = (BLOCK_LEN - self.buffered).min(data.len());
-            self.buffer[self.buffered..self.buffered + n].copy_from_slice(&data[..n]);
-            self.buffered += n;
-            data = &data[n..];
-            if self.buffered < BLOCK_LEN {
-                return;
-            }
-            let block = core::mem::replace(&mut self.buffer, Secret::new());
-            self.process_block(&block, FULL_BLOCK_BIT);
-            self.buffered = 0;
-        }
-        let (blocks, tail) = data.as_chunks::<BLOCK_LEN>();
-        for block in blocks {
-            self.process_block(block, FULL_BLOCK_BIT);
-        }
-        self.buffer[..tail.len()].copy_from_slice(tail);
-        self.buffered = tail.len();
-    }
-
-    fn do_final(self) -> Vec<u8> {
-        self.finalize().to_vec()
-    }
-
-    /// Writes the full 16-byte tag and clears the rest of `out`. Short buffers are cleared
-    /// and rejected: Poly1305 tags must not be truncated.
-    fn do_final_out(self, out: &mut [u8]) -> Result<usize, MACError> {
-        out.fill(0);
-        if out.len() < TAG_LEN {
-            return Err(MACError::InvalidLength("Poly1305 requires a full 16-byte tag"));
-        }
-        out[..TAG_LEN].copy_from_slice(&self.finalize());
-        Ok(TAG_LEN)
-    }
-
-    fn do_verify_final(self, mac: &[u8]) -> bool {
-        ct::ct_eq_bytes(&self.finalize(), mac)
+    fn do_verify_final(self, mac: &[u8; TAG_LEN]) -> Result<(), MACError> {
+        // The recomputed tag is the valid tag of whatever message was absorbed, so it is kept
+        // off the stack's leftovers, as the HMAC and KMAC verifiers keep theirs.
+        let mut computed: Secret<[u8; TAG_LEN]> = Secret::new();
+        *computed = self.finalize();
+        if ct::ct_eq_bytes(&*computed, mac) { Ok(()) } else { Err(MACError::VerificationFailed) }
     }
 }
