@@ -157,8 +157,8 @@ pub trait HMACParams: HashOneShot + HashAlgParams + Clone {
     /// `MACKey = KeyMaterial<N>`, which is how the output length reaches a const parameter.
     ///
     /// Implementors must set this to `KeyMaterial<{Self::OUTPUT_LEN}>`; any other length fails to
-    /// compile at the first tag. The check is evaluated when the worker is instantiated, so
-    /// `cargo build` and `cargo test` report it and `cargo check` does not.
+    /// compile at the first tag. The check is evaluated when the worker's `finish` is
+    /// monomorphised, so `cargo build` and `cargo test` report it and `cargo check` does not.
     ///
     // todo: once rust stabilizes generic_const_exprs, delete this and use
     //     `Self::OUTPUT_LEN` as the role impls' MAC_LEN instead.
@@ -402,8 +402,16 @@ where
 /// The HMAC worker for one message: the inner hash, absorbing the message, and the key it was made
 /// from, borrowed for `'k`, whose outer pad state it is finished through. Obtained from an
 /// [`HmacKey`]: `Dir` is [`Encrypting`] for the generator, which implements [`MACGenerator`],
-/// and [`Decrypting`] for the verifier, which implements [`MACVerifier`]. Not `Clone`, as no MAC
-/// worker is: a second worker comes from the key.
+/// and [`Decrypting`] for the verifier, which implements [`MACVerifier`]. Not `Clone`: a second
+/// worker comes from the key.
+///
+/// ```compile_fail
+/// # use bouncycastle_core::direction::Encrypting;
+/// # use bouncycastle_hmac::HMAC;
+/// # use bouncycastle_sha2::SHA256;
+/// fn cloneable<T: Clone>() {}
+/// cloneable::<HMAC<'static, SHA256, Encrypting>>();
+/// ```
 pub struct HMAC<'k, HASH: HMACParams, Dir> {
     /// RFC 2104 Section 2 steps (3)-(4): `H(K XOR ipad, text)` in progress.
     hasher: HASH,
