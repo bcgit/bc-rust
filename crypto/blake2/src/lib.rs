@@ -70,9 +70,10 @@
 //! # 🚨 Security Considerations 🚨
 //!
 //! * BLAKE2b-512 offers 256 bits and BLAKE2s-256 128 bits of collision resistance (RFC 7693 s. 4).
-//! * Use the MAC keys for keyed hashing: BLAKE2 "has a built-in keying mechanism" (RFC 7693 s. 1)
-//!   and its final-block flag (s. 3.2) rules out length extension. A MAC key should be uniformly
-//!   random.
+//! * Use the MAC keys for keyed hashing: BLAKE2 "has a built-in keying mechanism" (RFC 7693
+//!   s. 1). Because the last block is compressed with the finalization flag set, the keyed mode
+//!   is not open to length extension the way a Merkle-Damgard hash of key || message is. A MAC
+//!   key should be uniformly random.
 //! * A truncated output is the full digest cut short, not BLAKE2 with a smaller `nn`, which is a
 //!   different function.
 //! * Verify tags with `verify` / [`MACVerifier::do_verify_final`], which compare in constant time.

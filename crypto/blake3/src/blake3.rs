@@ -691,20 +691,17 @@ impl XOF for BLAKE3 {
 }
 
 /// Length in bytes of the serialized state of [`BLAKE3`].
-///
-/// Layout (after the 3-byte library version header; all integers little-endian):
-/// ```text
-///   [0  .. 4)     flags       u32: always 0 (hash mode)
-///   [4  .. 36)    key_words   [u32; 8]: always IV0 ... IV7
-///   [36 .. 1871)  the chunk state and CV stack:
-///     [36   .. 68)    chunk chaining_value  [u32; 8], all zero when blocks_compressed == 0
-///     [68   .. 76)    chunk_counter         u64 (< 2^54)
-///     [76   .. 140)   block                 [u8; 64], zero past block_len
-///     [140  .. 141)   block_len             u8 (0..=64)
-///     [141  .. 142)   blocks_compressed     u8 (0..=15)
-///     [142  .. 143)   cv_stack_len          u8 (0..=54, == chunk_counter.count_ones())
-///     [143  .. 1871)  cv_stack              54 x [u32; 8], zero past cv_stack_len
-/// ```
+// Layout (after the 3-byte library version header; all integers little-endian):
+//   [0  .. 4)     flags       u32: always 0 (hash mode)
+//   [4  .. 36)    key_words   [u32; 8]: always IV0 ... IV7
+//   [36 .. 1871)  the chunk state and CV stack:
+//     [36   .. 68)    chunk chaining_value  [u32; 8], all zero when blocks_compressed == 0
+//     [68   .. 76)    chunk_counter         u64 (< 2^54)
+//     [76   .. 140)   block                 [u8; 64], zero past block_len
+//     [140  .. 141)   block_len             u8 (0..=64)
+//     [141  .. 142)   blocks_compressed     u8 (0..=15)
+//     [142  .. 143)   cv_stack_len          u8 (0..=54, == chunk_counter.count_ones())
+//     [143  .. 1871)  cv_stack              54 x [u32; 8], zero past cv_stack_len
 pub const SUSPENDED_BLAKE3_STATE_LEN: usize = 3 + 4 + 32 + CORE_STATE_LEN;
 
 impl Suspendable<SUSPENDED_BLAKE3_STATE_LEN> for BLAKE3 {
@@ -723,9 +720,8 @@ impl Suspendable<SUSPENDED_BLAKE3_STATE_LEN> for BLAKE3 {
         out_to_return
     }
 
-    /// Rejects with [`SuspendableError::InvalidData`]: a flags word other than 0 or key words
-    /// other than IV0 ... IV7 (only the `hash` mode is suspendable, s. 2.3); and the chunk-state
-    /// and CV-stack inconsistencies listed in the layout above.
+    /// Rejects with [`SuspendableError::InvalidData`] a state no [`BLAKE3`] hasher reaches, which
+    /// includes any state of a keyed_hash or derive_key computation.
     fn from_suspended(
         serialized_state: [u8; SUSPENDED_BLAKE3_STATE_LEN],
     ) -> Result<Self, SuspendableError> {
@@ -817,21 +813,18 @@ impl XOFSqueezer for BLAKE3Squeezer {
 }
 
 /// Length in bytes of the serialized state of [`BLAKE3Squeezer`].
-///
-/// Layout (after the 3-byte library version header; all integers little-endian):
-/// ```text
-///   [0   .. 32)   root input_chaining_value  [u32; 8]
-///   [32  .. 96)   root block_words           [u32; 16]
-///   [96  .. 100)  root block_len             u32
-///   [100 .. 104)  root flags                 u32 (without ROOT; never KEYED_HASH)
-///   [104 .. 112)  output_block_counter       u64
-///   [112 .. 113)  buffer position            u8 (0..=64)
-/// ```
-/// The root's own counter is not stored: s. 2.6, "the first root compression always uses the
-/// counter value t = 0", and the output block counter takes its place. The stream position is
-/// `64 * (output_block_counter - 1) + buffer position` once a block has been produced. The
-/// output buffer is not stored either: it is root output block `output_block_counter - 1`, and
-/// resuming recomputes it.
+// Layout (after the 3-byte library version header; all integers little-endian):
+//   [0   .. 32)   root input_chaining_value  [u32; 8]
+//   [32  .. 96)   root block_words           [u32; 16]
+//   [96  .. 100)  root block_len             u32
+//   [100 .. 104)  root flags                 u32 (without ROOT; never KEYED_HASH)
+//   [104 .. 112)  output_block_counter       u64
+//   [112 .. 113)  buffer position            u8 (0..=64)
+// The root's own counter is not stored: s. 2.6, "the first root compression always uses the
+// counter value t = 0", and the output block counter takes its place. The stream position is
+// `64 * (output_block_counter - 1) + buffer position` once a block has been produced. The
+// output buffer is not stored either: it is root output block `output_block_counter - 1`, and
+// resuming recomputes it.
 pub const SUSPENDED_BLAKE3_SQUEEZER_STATE_LEN: usize = 3 + 113;
 
 /// The most output blocks a squeezer can have produced: s. 2.6 bounds the output at
@@ -923,9 +916,8 @@ impl Suspendable<SUSPENDED_BLAKE3_SQUEEZER_STATE_LEN> for BLAKE3Squeezer {
 /// The context string "should be hardcoded, globally unique, and application-specific" and "should
 /// not contain variable data, like salts, IDs, or the current time" (s. 6.2).
 ///
-/// It deliberately does **not** implement [`Suspendable`]: its state holds up to 64 bytes of the
-/// key material verbatim, and values derived from all of it, while [`Suspendable`] forbids a
-/// serialized private key. Its squeezer, [`BLAKE3DeriveKeySqueezer`], is not suspendable either.
+/// It deliberately does **not** implement [`Suspendable`]: its state would contain the key
+/// material, while [`Suspendable`] forbids a serialized private key. Its squeezer, [`BLAKE3DeriveKeySqueezer`], is not suspendable either.
 ///
 /// ```compile_fail
 /// use bouncycastle_blake3::BLAKE3DeriveKey;
@@ -1016,8 +1008,7 @@ impl XOF for BLAKE3DeriveKey {
 }
 
 /// The squeezing half of [`BLAKE3DeriveKey`]. Like [`BLAKE3KeyedSqueezer`] it is deliberately not
-/// [`Suspendable`]: the root compression it holds is the last block of key material, or a parent
-/// node over chaining values derived from it.
+/// [`Suspendable`]: its state would contain the key material.
 #[derive(Clone)]
 pub struct BLAKE3DeriveKeySqueezer(BLAKE3Squeezer);
 
@@ -1198,9 +1189,7 @@ impl MACVerifier<OUT_LEN> for BLAKE3KeyedHash<'_, Decrypting> {
 
 /// The squeezing half of [`BLAKE3KeyedHash`]: what [`BLAKE3KeyedHash::into_squeezer`] hands back.
 ///
-/// It deliberately does **not** implement [`Suspendable`]: for every multi-chunk message (s. 2.5)
-/// and every message of at most 64 bytes (s. 2.4) the root's input chaining value is the key words
-/// themselves, so its state would contain the key.
+/// It deliberately does **not** implement [`Suspendable`]: its state would contain the key.
 ///
 /// There is no route to suspending it:
 ///

@@ -415,9 +415,6 @@ impl Hash for BLAKE2b_512 {
     ///
     /// `num_bits == 0` means the message ended on a byte boundary and is exactly
     /// [`Hash::do_final_out`]; `partial_byte` is ignored.
-    ///
-    /// This is the convention of Ascon-XOF128 / CXOF128 in this library. KMACXOF differs: it
-    /// returns [`HashError::InvalidLength`] for every non-zero `num_bits`.
     fn do_final_partial_bits_out(
         self,
         _partial_byte: u8,
@@ -472,8 +469,7 @@ impl Suspendable<SUSPENDED_BLAKE2B_512_STATE_LEN> for BLAKE2b_512 {
 /// A BLAKE2b MAC key: RFC 7693 keyed BLAKE2b (kk = 1..=64, nn = 64), the key object for
 /// [`BLAKE2b_512_MAC`].
 ///
-/// This is the keyed BLAKE2b of the RFC ("BLAKE2BMAC" in OpenSSL), not HMAC-BLAKE2b. The key holds
-/// the state after keyed initialisation (RFC 7693 s. 3.3), so every worker starts from it.
+/// This is the keyed BLAKE2b of the RFC ("BLAKE2BMAC" in OpenSSL), not HMAC-BLAKE2b.
 ///
 /// # Keys
 /// Material must be tagged [`KeyType::MACKey`] (or be all-zero, [`KeyType::Zeroized`]) and be 1 to
