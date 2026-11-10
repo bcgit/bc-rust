@@ -219,7 +219,7 @@ where
 {
     /// `Z` from the primitive, then the KDF into the caller's buffer (SP 800-56A Rev. 3 Section
     /// 5.8; SEC 1 Section 6.1's steps for the X9.63 KDF): `Z` is typed `SharedSecret`, which the
-    /// KDF credits, and it never leaves this call.
+    /// KDF credits; this crate's frames hold it in one local, wiped when it drops.
     fn agree_out(
         &self,
         peer_pk: &ECCDHP521PublicKey,
@@ -227,7 +227,8 @@ where
     ) -> Result<usize, KeyAgreementError> {
         ss.zeroize();
         // Z lives in this local, zeroized when it drops, and is written into it rather than
-        // returned, so no copy of it is staged on the way to the KDF.
+        // returned, so this crate stages no copy of it on the way to the KDF. The copy the KDF's
+        // hash leaves when it finalises by value is the crate docs' subject, not this frame's.
         let mut z = KeyMaterial::<{ crate::eccdh_p521::SS_LEN }>::new();
         agree_out(self.sk, peer_pk, &mut z)?;
         derive(self.params, &z, ss)?;

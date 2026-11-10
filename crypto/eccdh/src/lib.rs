@@ -169,10 +169,15 @@
 //!   `d`. Of Section 5.7.1.2 step 4's destruction of intermediates, this crate does its own
 //!   part: `P`, `z`, the inverse of `P`'s `Z` coordinate and its square, and the byte string are
 //!   zeroized on every path, and `Z` is written into the caller's buffer. What is not reached:
-//!   a value a one-shot returns (`agree`'s `Z` or derived key, `keygen`'s private key) is moved
-//!   out of the frame that built it, and a move does not wipe its source, so use the `_out`
-//!   forms into a buffer you own where that matters; the field element's conversion to limbs
-//!   returns by value; and the arithmetic's intermediates in [`bouncycastle_ec`] (the
+//!   a value a one-shot returns (`agree`'s `Z` or derived key, `keygen`'s private key, the key
+//!   `from_bytes` decodes) is moved out of the frame that built it, and a move does not wipe its
+//!   source, so use the `_out` forms into a buffer you own where that matters -- agreement and
+//!   the paired derivations have one, a private key has none, so key generation and decoding
+//!   leave `d` where the move staged it; the KDF's hash finalises by value
+//!   ([`Hash::do_final_out`](bouncycastle_core::traits::Hash::do_final_out) takes `self`), so
+//!   the hasher's block buffer, which held `Z`, is moved and its source is not wiped, on the
+//!   `_out` path too; the field element's conversion to limbs returns by value; and the
+//!   arithmetic's intermediates in [`bouncycastle_ec`] (the
 //!   multiplier's superseded accumulators, table and a limb of the scalar in its frames, the
 //!   inversion's table of powers) are that crate's and are not reached, as its docs say. Key
 //!   generation draws at least `len(n) + 64` bits, rounded up to a byte, and reduces them in
