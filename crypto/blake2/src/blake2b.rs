@@ -321,6 +321,8 @@ impl Blake2bCore {
         // s. 2.1 bounds the input at "0 <= ll < 2**128" bytes. A t in the upper half of the
         // counter's range is refused, so that a resumed state is at least 2**127 bytes of input
         // from wrapping `t` in `add_to_t`, which no caller can supply.
+        // Mutants note: `u128::MAX >> 1` is all ones, never a multiple of bb, so the check above
+        // already refuses it and `>` -> `>=` is an equivalent mutant.
         if t > u128::MAX >> 1 {
             return Err(SuspendableError::InvalidData);
         }
