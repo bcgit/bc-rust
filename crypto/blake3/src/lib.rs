@@ -68,19 +68,20 @@
 //! 1728 bytes of a hasher are the chaining-value stack, sized for the full 2^64-byte input range
 //! (spec s. 5.4).
 //!
-//! Peak stack per call, measured as the deepest point below a non-inlined call into the operation
-//! (the object, a 4 KiB input and the output buffer included; release build, x86_64, rustc 1.101):
+//! Peak stack per call, measured by painting the stack below a non-inlined call into the operation
+//! (the object and the output buffer included, the 4 KiB input static; release build with thin
+//! LTO, x86_64, rustc 1.97.0-nightly):
 //!
 //! | Operation                                              | Stack   |
 //! |--------------------------------------------------------|---------|
-//! | [`BLAKE3`] hash, one-shot or streaming                 | 5832 B  |
-//! | [`BLAKE3`] XOF, 512 bytes of output                    | 5992 B  |
-//! | [`BLAKE3`] `suspend`, `from_suspended`, finish         | 13456 B |
-//! | [`BLAKE3Squeezer`] `suspend`, `from_suspended`, output | 6280 B  |
-//! | [`BLAKE3KeyedHashKey`] from key material               | 184 B   |
-//! | [`BLAKE3KeyedHash`] `mac_out`                          | 6804 B  |
-//! | [`BLAKE3KeyedHash`] `into_squeezer`, 512 bytes         | 6488 B  |
-//! | [`BLAKE3DeriveKey`] `new`, `hash_out`                  | 6312 B  |
+//! | [`BLAKE3`] hash, one-shot or streaming                 | 6864 B  |
+//! | [`BLAKE3`] XOF, 512 bytes of output                    | 5552 B  |
+//! | [`BLAKE3`] `suspend`, `from_suspended`, finish         | 11696 B |
+//! | [`BLAKE3Squeezer`] `suspend`, `from_suspended`, output | 5648 B  |
+//! | [`BLAKE3KeyedHashKey`] from key material               | 104 B   |
+//! | [`BLAKE3KeyedHashKey`] `mac_out`                       | 5080 B  |
+//! | [`BLAKE3KeyedHash`] `into_squeezer`, 512 bytes         | 5576 B  |
+//! | [`BLAKE3DeriveKey`] `new`, `hash_out`                  | 10592 B |
 //!
 //! # 🚨 Security Considerations 🚨
 //!
