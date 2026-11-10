@@ -15,7 +15,6 @@
 //! [`HmacKey::create_generator`]: bouncycastle_core::symmetric_key::MacGenerationKey::create_generator
 
 use crate::{HMACParams, HmacKey};
-use bouncycastle_core::errors::MACError;
 
 /// `H` after absorbing `K XOR ipad`, ready for the text: the start of RFC 2104 Section 2 step
 /// (4). What a worker's updates feed; [`finish_out`] is its other half.
@@ -24,15 +23,10 @@ pub fn inner_state<HASH: HMACParams>(key: &HmacKey<HASH>) -> HASH {
 }
 
 /// RFC 2104 Section 2 steps (4), (6) and (7) over an inner hash that has absorbed the text:
-/// finishes it, feeds the result to the key's outer pad state, and finishes that into `out`,
-/// which is zeroized first. Returns the number of bytes written.
-///
-/// # Errors
-/// [`MACError::InvalidLength`] if `out` is shorter than [`MIN_FIPS_DIGEST_LEN`](crate::MIN_FIPS_DIGEST_LEN).
-pub fn finish_out<HASH: HMACParams>(
-    key: &HmacKey<HASH>,
-    inner: HASH,
-    out: &mut [u8],
-) -> Result<usize, MACError> {
+/// finishes it, feeds the result to the key's outer pad state, and finishes that into `out` as
+/// `Hash::do_final_out` does: the whole buffer is zeroized first, a buffer shorter than the
+/// hash's output takes a truncated tag, and a longer one takes the tag at its start and zeros
+/// after. Returns the number of bytes written.
+pub fn finish_out<HASH: HMACParams>(key: &HmacKey<HASH>, inner: HASH, out: &mut [u8]) -> usize {
     key.finish_out(inner, out)
 }

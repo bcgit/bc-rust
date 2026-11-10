@@ -108,7 +108,7 @@ test_each_invocation_without_iv_uses_a_fresh_nonce() {
         head -c $NONCE_LEN "$TMP/ct" | "$BC_RUST" hex-encode >>"$TMP/nonces"
         echo >>"$TMP/nonces"
     done
-    assert_eq "$(sort -u "$TMP/nonces" | wc -l)" 8 "eight encryptions must draw eight distinct nonces"
+    assert_eq "$(( $(sort -u "$TMP/nonces" | wc -l) ))" 8 "eight encryptions must draw eight distinct nonces"
 }
 
 # A supplied nonce is used exactly as given: under the nonce a default run generated, `--iv` gives

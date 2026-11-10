@@ -25,9 +25,10 @@
 #![allow(dead_code)]
 #![allow(unused_imports)]
 
+use bouncycastle::core::direction::Encrypting;
 use bouncycastle::core::key_material::{KeyMaterial256, KeyType};
 use bouncycastle::core::symmetric_key::{FromAnyKeyMaterial, MacGenerationKey};
-use bouncycastle::core::traits::{Hash, HashOneShot, MAC, Suspendable};
+use bouncycastle::core::traits::{Hash, HashOneShot, Suspendable};
 use bouncycastle::hmac::HmacKey;
 use bouncycastle::sha2::hmac::{HMAC_SHA256, HMAC_SHA512};
 use bouncycastle::sha2::{
@@ -53,9 +54,9 @@ fn print_struct_sizes() {
     println!("SUSPENDED_SHA512_STATE_LEN: {}", SUSPENDED_SHA512_STATE_LEN);
 
     println!("\nHMAC-SHA-2");
-    println!("size_of<HMAC_SHA256>: {}", size_of::<HMAC_SHA256>());
+    println!("size_of<HMAC_SHA256>: {}", size_of::<HMAC_SHA256<Encrypting>>());
     println!("size_of<HmacKey<SHA256>>: {}", size_of::<HmacKey<SHA256>>());
-    println!("size_of<HMAC_SHA512>: {}", size_of::<HMAC_SHA512>());
+    println!("size_of<HMAC_SHA512>: {}", size_of::<HMAC_SHA512<Encrypting>>());
     println!("size_of<HmacKey<SHA512>>: {}", size_of::<HmacKey<SHA512>>());
 }
 
@@ -112,7 +113,7 @@ fn bench_hmac_sha256() {
     let key = KeyMaterial256::from_bytes_as_type(&MSG[..32], KeyType::MACKey).unwrap();
     let key = HmacKey::<SHA256>::from_key_material(&key).unwrap();
     let mut out = [0u8; 32];
-    key.mac_out(&MSG, &mut out).unwrap();
+    key.mac_out(&MSG, &mut out);
     println!("{:x?}", out);
 }
 

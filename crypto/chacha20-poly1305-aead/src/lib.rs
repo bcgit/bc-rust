@@ -112,11 +112,12 @@ use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::symmetric_key::{AeadDecryptionKey, AeadEncryptionKey, FromKeyMaterial};
 use bouncycastle_core::traits::{
-    AEADCipherDecryptor, AEADCipherEncryptor, Algorithm, MAC, RNG, StreamCipherDecryptor,
-    StreamCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
+    AEADCipherDecryptor, AEADCipherEncryptor, Algorithm, MACGenerator, MACVerifier, RNG,
+    StreamCipherDecryptor, StreamCipherEncryptor, SymmetricCipherDecryptor,
+    SymmetricCipherEncryptor,
 };
-use bouncycastle_poly1305::Poly1305;
 use bouncycastle_poly1305::hazmat::key_from_bytes;
+use bouncycastle_poly1305::{Poly1305, Poly1305Key};
 use bouncycastle_utils::secret::Secret;
 
 /// Key length in bytes.
@@ -167,7 +168,8 @@ pub struct ChaCha20_Poly1305<'k, Dir> {
     // The data keystream, from block counter 1. Decrypting, it is RFC 8439 Sec 2.8's "ChaCha20
     // encryption function ... applied to the ciphertext": both directions are the same XOR.
     cipher: ChaCha20<'k, Dir>,
-    mac: Poly1305,
+    // The one-time MAC in the same direction: generating the tag, or verifying it.
+    mac: Poly1305<Dir>,
     aad_len: u64,
     data_len: u64,
     data_started: bool,
@@ -184,7 +186,41 @@ impl<Dir> Algorithm for ChaCha20_Poly1305<'_, Dir> {
     const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_256bit;
 }
 
-impl<'k, Dir> ChaCha20_Poly1305<'k, Dir> {
+/// The one-time MAC in either direction: its constructor and `do_update` are the generator's
+/// and the verifier's, two traits' methods, and the code both directions share is generic over
+/// `Dir`.
+trait OneTimeMac {
+    fn from_key(key: Poly1305Key) -> Self;
+    fn absorb(&mut self, data: &[u8]);
+}
+
+impl OneTimeMac for Poly1305<Encrypting> {
+    fn from_key(key: Poly1305Key) -> Self {
+        key.into_generator()
+    }
+
+    fn absorb(&mut self, data: &[u8]) {
+        self.do_update(data)
+    }
+}
+
+impl OneTimeMac for Poly1305<Decrypting> {
+    fn from_key(key: Poly1305Key) -> Self {
+        key.into_verifier()
+    }
+
+    fn absorb(&mut self, data: &[u8]) {
+        self.do_update(data)
+    }
+}
+
+// The bound names a private trait: it is how the two directions share this block, and nothing a
+// caller can satisfy or needs to, since `Dir` is only ever `Encrypting` or `Decrypting`.
+#[allow(private_bounds)]
+impl<'k, Dir> ChaCha20_Poly1305<'k, Dir>
+where
+    Poly1305<Dir>: OneTimeMac,
+{
     /// The setup of both directions from the message's keystream at block counter 0.
     fn new(mut keystream: ChaCha20KeyStream<'k>) -> Self {
         // RFC 8439 Sec 2.8: the one-time key is the first 32 bytes of block 0 (Sec 2.6.1,
@@ -193,7 +229,7 @@ impl<'k, Dir> ChaCha20_Poly1305<'k, Dir> {
         let mut block = Secret::new();
         // A derived one-time key, including the (possible) all-zero value. Key strength was
         // already enforced on the parent cipher key; no entropy heuristic applies here.
-        let mac = key_from_bytes(poly1305_key_gen(&mut keystream, &mut block)).into_mac();
+        let mac = Poly1305::from_key(key_from_bytes(poly1305_key_gen(&mut keystream, &mut block)));
         Self {
             cipher: ChaCha20::from_keystream(keystream),
             mac,
@@ -218,7 +254,7 @@ impl<'k, Dir> ChaCha20_Poly1305<'k, Dir> {
             .aad_len
             .checked_add(aad.len() as u64)
             .ok_or(SymmetricCipherError::StateError("ChaCha20-Poly1305 AAD length overflow"))?;
-        self.mac.do_update(aad);
+        self.mac.absorb(aad);
         self.aad_len = length;
         Ok(())
     }
@@ -235,30 +271,27 @@ impl<'k, Dir> ChaCha20_Poly1305<'k, Dir> {
 
     fn start_data(&mut self) {
         if !self.data_started {
-            self.mac.do_update(&[0u8; 15][..padding_len(self.aad_len)]);
+            self.mac.absorb(&[0u8; 15][..padding_len(self.aad_len)]);
             self.data_started = true;
         }
     }
 
     /// The MAC with the rest of RFC 8439 Sec 2.8's input absorbed, the data's padding and the two
     /// lengths, ready for its final.
-    fn finish_mac(mut self) -> Poly1305 {
+    fn finish_mac(mut self) -> Poly1305<Dir> {
         self.start_data();
-        self.mac.do_update(&[0u8; 15][..padding_len(self.data_len)]);
-        self.mac.do_update(&self.aad_len.to_le_bytes());
-        self.mac.do_update(&self.data_len.to_le_bytes());
+        self.mac.absorb(&[0u8; 15][..padding_len(self.data_len)]);
+        self.mac.absorb(&self.aad_len.to_le_bytes());
+        self.mac.absorb(&self.data_len.to_le_bytes());
         self.mac
-    }
-
-    fn finish_tag(self) -> [u8; TAG_LEN] {
-        let mut tag = [0u8; TAG_LEN];
-        // infallible: Poly1305 refuses only a buffer shorter than its tag.
-        self.finish_mac().do_final_out(&mut tag).unwrap();
-        tag
     }
 }
 
 impl ChaCha20_Poly1305<'_, Encrypting> {
+    fn finish_tag(self) -> [u8; TAG_LEN] {
+        self.finish_mac().do_final()
+    }
+
     fn encrypt_bytes(&mut self, data: &mut [u8]) -> Result<(), SymmetricCipherError> {
         // do_encrypt_out, the only caller, has already checked the length.
         self.start_data();
@@ -281,11 +314,7 @@ impl ChaCha20_Poly1305<'_, Decrypting> {
 
     fn verify_tag(self, tag: &[u8; TAG_LEN]) -> Result<(), SymmetricCipherError> {
         // Poly1305's do_verify_final compares in constant time.
-        if self.finish_mac().do_verify_final(tag) {
-            Ok(())
-        } else {
-            Err(SymmetricCipherError::AEADTagCheckFailed)
-        }
+        self.finish_mac().do_verify_final(tag).map_err(|_| SymmetricCipherError::AEADTagCheckFailed)
     }
 }
 
@@ -506,12 +535,18 @@ mod tests {
         ChaCha20Key::from_key_material(&material.unwrap()).unwrap()
     }
 
-    fn fresh<Dir>(key: &ChaCha20Key) -> ChaCha20_Poly1305<'_, Dir> {
+    fn fresh<Dir>(key: &ChaCha20Key) -> ChaCha20_Poly1305<'_, Dir>
+    where
+        Poly1305<Dir>: OneTimeMac,
+    {
         ChaCha20_Poly1305::new(keystream_at(key, &[9; 12], 0))
     }
 
     /// One block of data left: the keystream at its last counter, and `data_len` to match.
-    fn near_limit<Dir>(key: &ChaCha20Key) -> ChaCha20_Poly1305<'_, Dir> {
+    fn near_limit<Dir>(key: &ChaCha20Key) -> ChaCha20_Poly1305<'_, Dir>
+    where
+        Poly1305<Dir>: OneTimeMac,
+    {
         let mut cipher = fresh(key);
         // `check_data_len` relies on MAX_MESSAGE_LEN being exactly the data keystream's capacity.
         assert_eq!(cipher.cipher.keystream().remaining_blocks() * 64, MAX_MESSAGE_LEN);

@@ -7,11 +7,16 @@ mod common;
 
 use bouncycastle_cipher::BlockCipherKey;
 use bouncycastle_cipher::modes::{GCM, GCM_NONCE_LEN, GMAC, ModeNames};
+use bouncycastle_core::errors::MACError;
 use bouncycastle_core::hazmat::{KeyExpansion, Mode, NonceMacMode};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::symmetric_key::{AeadEncryptionKey, FromKeyMaterial};
+use bouncycastle_core::symmetric_key::{
+    AeadEncryptionKey, FromKeyMaterial, NonceMacGenerationKey, NonceMacVerificationKey,
+};
+use bouncycastle_core::traits::{MACGenerator, MACVerifier};
 use bouncycastle_core_test_framework::from_key_material::TestFrameworkFromKeyMaterial;
+use bouncycastle_core_test_framework::mac::TestFrameworkMAC;
 use bouncycastle_rng::FixedSeedRNG;
 use common::{TOY_LEN, Toy, toy_key};
 
@@ -40,8 +45,21 @@ fn rng() -> FixedSeedRNG<[u8; GCM_NONCE_LEN]> {
     FixedSeedRNG::new(NONCE)
 }
 
+/// The tag a generator gives over `msg`.
+fn tag_of<const N: usize>(mut generator: impl MACGenerator<N>, msg: &[u8]) -> [u8; N] {
+    generator.do_update(msg);
+    generator.do_final()
+}
+
+/// Whether a verifier accepts `tag` over `msg`.
+fn accepts<const N: usize>(mut verifier: impl MACVerifier<N>, msg: &[u8], tag: &[u8; N]) -> bool {
+    verifier.do_update(msg);
+    verifier.do_verify_final(tag).is_ok()
+}
+
 /// GMAC is GCM's tag over AAD alone: every constructor gives that tag, and the 12-byte tag is the
-/// 16-byte one's prefix (Algorithm 4 step 6, `MSB_t`).
+/// 16-byte one's prefix (Algorithm 4 step 6, `MSB_t`). The key passes the shared nonce-bound MAC
+/// key suite against it.
 #[test]
 fn every_route_gives_gcm_s_aad_only_tag() {
     let state = key_state();
@@ -56,13 +74,10 @@ fn every_route_gives_gcm_s_aad_only_tag() {
         let key = gmac_key::<16>();
         let (gen_, nonce) = key.create_generator(&mut rng()).unwrap();
         assert_eq!(nonce, NONCE, "len {len}");
-        assert_eq!(gen_.mac(&msg), expected, "key.create_generator, len {len}");
-        assert_eq!(
-            key.create_generator_nonce(&NONCE).mac(&msg),
-            expected,
-            "key.create_generator_nonce, len {len}"
-        );
-        assert!(key.create_verifier(&NONCE).verify(&msg, &expected));
+        assert_eq!(tag_of(gen_, &msg), expected, "key.create_generator, len {len}");
+        assert_eq!(key.mac_nonce(&NONCE, &msg), expected, "key.mac_nonce, len {len}");
+        assert_eq!(key.verify(&NONCE, &msg, &expected), Ok(()));
+        TestFrameworkMAC::new().test_nonce_mac_key(&key, &NONCE, &msg, &expected);
 
         type Full = GMAC<16>;
         type Short = GMAC<12>;
@@ -70,26 +85,31 @@ fn every_route_gives_gcm_s_aad_only_tag() {
             <Full as NonceMacMode<Toy, GCM_NONCE_LEN, 16>>::generate_init(&state, &mut rng())
                 .unwrap();
         assert_eq!(nonce, NONCE, "len {len}");
-        assert_eq!(gen_.mac(&msg), expected, "generate_init, len {len}");
+        assert_eq!(tag_of(gen_, &msg), expected, "generate_init, len {len}");
         assert_eq!(
-            <Full as NonceMacMode<Toy, GCM_NONCE_LEN, 16>>::generate_init_nonce(&state, &NONCE)
-                .mac(&msg),
+            tag_of(
+                <Full as NonceMacMode<Toy, GCM_NONCE_LEN, 16>>::generate_init_nonce(&state, &NONCE),
+                &msg
+            ),
             expected,
             "generate_init_nonce, len {len}"
         );
-        assert!(
-            <Full as NonceMacMode<Toy, GCM_NONCE_LEN, 16>>::verify_init(&state, &NONCE)
-                .verify(&msg, &expected)
-        );
+        assert!(accepts(
+            <Full as NonceMacMode<Toy, GCM_NONCE_LEN, 16>>::verify_init(&state, &NONCE),
+            &msg,
+            &expected
+        ));
 
-        let short =
-            <Short as NonceMacMode<Toy, GCM_NONCE_LEN, 12>>::generate_init_nonce(&state, &NONCE)
-                .mac(&msg);
-        assert_eq!(short[..], expected[..12], "len {len}");
-        assert!(
-            <Short as NonceMacMode<Toy, GCM_NONCE_LEN, 12>>::verify_init(&state, &NONCE)
-                .verify(&msg, &short)
+        let short = tag_of(
+            <Short as NonceMacMode<Toy, GCM_NONCE_LEN, 12>>::generate_init_nonce(&state, &NONCE),
+            &msg,
         );
+        assert_eq!(short[..], expected[..12], "len {len}");
+        assert!(accepts(
+            <Short as NonceMacMode<Toy, GCM_NONCE_LEN, 12>>::verify_init(&state, &NONCE),
+            &msg,
+            &short
+        ));
     }
 }
 
@@ -98,7 +118,7 @@ fn streaming_split_points() {
     let key = gmac_key::<16>();
     for mlen in [16, 20, 32, 33, 64] {
         let msg = message(mlen);
-        let expected = key.create_generator_nonce(&NONCE).mac(&msg);
+        let expected = key.mac_nonce(&NONCE, &msg);
         for split in 0..=mlen {
             let mut gen_ = key.create_generator_nonce(&NONCE);
             gen_.do_update(&msg[..split]);
@@ -108,7 +128,11 @@ fn streaming_split_points() {
             let mut ver = key.create_verifier(&NONCE);
             ver.do_update(&msg[..split]);
             ver.do_update(&msg[split..]);
-            assert!(ver.do_verify_final(&expected), "verify, mlen {mlen}, split at {split}");
+            assert_eq!(
+                ver.do_verify_final(&expected),
+                Ok(()),
+                "verify, mlen {mlen}, split {split}"
+            );
         }
     }
 }
@@ -117,29 +141,29 @@ fn streaming_split_points() {
 fn rejects_changed_tag_nonce_or_message() {
     let key = gmac_key::<16>();
     let msg = message(100);
-    let tag = key.create_generator_nonce(&NONCE).mac(&msg);
-    let verify = |nonce: &[u8; GCM_NONCE_LEN], msg: &[u8], tag: &[u8; 16]| {
-        key.create_verifier(nonce).verify(msg, tag)
-    };
-    assert!(verify(&NONCE, &msg, &tag));
+    let tag = key.mac_nonce(&NONCE, &msg);
+    let verify =
+        |nonce: &[u8; GCM_NONCE_LEN], msg: &[u8], tag: &[u8; 16]| key.verify(nonce, msg, tag);
+    assert_eq!(verify(&NONCE, &msg, &tag), Ok(()));
 
     for i in 0..tag.len() {
         let mut bad = tag;
         bad[i] ^= 0x01;
-        assert!(!verify(&NONCE, &msg, &bad), "tag byte {i}");
+        assert_eq!(verify(&NONCE, &msg, &bad), Err(MACError::VerificationFailed), "tag byte {i}");
     }
     let mut other_nonce = NONCE;
     other_nonce[0] ^= 0x80;
-    assert!(!verify(&other_nonce, &msg, &tag));
-    assert!(!verify(&NONCE, &msg[..99], &tag));
+    assert_eq!(verify(&other_nonce, &msg, &tag), Err(MACError::VerificationFailed));
+    assert_eq!(verify(&NONCE, &msg[..99], &tag), Err(MACError::VerificationFailed));
 
     // The empty message has a tag of its own, which is not the tag of anything else.
-    let empty_tag = key.create_generator_nonce(&NONCE).mac(&[]);
-    assert!(verify(&NONCE, &[], &empty_tag));
-    assert!(!verify(&NONCE, &[0], &empty_tag));
+    let empty_tag = key.mac_nonce(&NONCE, &[]);
+    assert_eq!(verify(&NONCE, &[], &empty_tag), Ok(()));
+    assert_eq!(verify(&NONCE, &[0], &empty_tag), Err(MACError::VerificationFailed));
 }
 
-/// A nonce drawn per generator: two draws from one RNG are two nonces, and so two tags.
+/// A nonce drawn per generator: two draws from one RNG are two nonces, and so two tags; the
+/// drawing one-shots return the nonce they drew.
 #[test]
 fn a_fresh_nonce_per_generator() {
     let key = gmac_key::<16>();
@@ -147,7 +171,15 @@ fn a_fresh_nonce_per_generator() {
     let (g1, n1) = key.create_generator(&mut rng).unwrap();
     let (g2, n2) = key.create_generator(&mut rng).unwrap();
     assert_ne!(n1, n2);
-    assert_ne!(g1.mac(b"m"), g2.mac(b"m"));
+    assert_ne!(tag_of(g1, b"m"), tag_of(g2, b"m"));
+
+    let (n3, t3) = key.mac(&mut rng, b"m").unwrap();
+    assert_eq!(t3, key.mac_nonce(&n3, b"m"));
+    let mut out = [0u8; 16];
+    let (written, n4) = key.mac_out(&mut rng, b"m", &mut out).unwrap();
+    assert_eq!(written, 16);
+    assert_ne!(n4, n3);
+    assert_eq!(out, key.mac_nonce(&n4, b"m"));
 }
 
 /// The key's construction suite: a `MACKey` of the permutation's length and strength, bound to
