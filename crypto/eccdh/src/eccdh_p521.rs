@@ -113,14 +113,22 @@ fn z_from_product(
     //    accepts it as a key, at the curve's strength rather than the length-derived default. An
     //    all-zero Z (x_P = 0, a valid field element) is typed Zeroized by the buffer, which says
     //    so through its courtesy error, and takes no strength; that is not an error.
+    //    Neither error below is reachable (the buffer is SS_LEN bytes and SharedSecret takes a
+    //    strength), but each leaves the buffer zeroized, as the doc above says.
     match ss.set_bytes_as_type(&*Z, KeyType::SharedSecret) {
         Ok(()) | Err(KeyMaterialError::ActingOnZeroizedKey) => {}
-        Err(e) => return Err(KeyAgreementError::KeyMaterialError(e)),
+        Err(e) => {
+            ss.zeroize();
+            return Err(KeyAgreementError::KeyMaterialError(e));
+        }
     }
-    if ss.key_type() == KeyType::SharedSecret {
-        do_hazardous_operations(ss, |ss| {
+    if ss.key_type() == KeyType::SharedSecret
+        && let Err(e) = do_hazardous_operations(ss, |ss| {
             ss.set_security_strength(ECCDHP521::MAX_SECURITY_STRENGTH)
-        })?;
+        })
+    {
+        ss.zeroize();
+        return Err(KeyAgreementError::KeyMaterialError(e));
     }
     Ok(())
 }
