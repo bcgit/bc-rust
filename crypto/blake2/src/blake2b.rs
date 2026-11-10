@@ -279,10 +279,9 @@ impl Blake2bCore {
         out[208] = self.buf_len as u8;
     }
 
-    /// Inverse of [`Self::write_state`]. Rejects a `buf_len` larger than a block (a full block,
-    /// `buf_len == bb`, is valid: it is compressed only when more input arrives), a `t` that is
-    /// not a whole number of blocks or is in the upper half of its range, and an empty buffer
-    /// after a compression.
+    /// Inverse of [`Self::write_state`]. Rejects, with `InvalidData`, a state no run of `update`
+    /// produces; each check says why where it is made. (A full block, `buf_len == bb`, is valid:
+    /// it is compressed only when more input arrives.)
     fn read_state(input: &[u8; CORE_STATE_LEN]) -> Result<Self, SuspendableError> {
         let buf_len = input[208] as usize;
         if buf_len > BB {
@@ -326,12 +325,11 @@ impl Blake2bCore {
 const CORE_STATE_LEN: usize = 64 + 16 + BB + 1;
 
 /// Length in bytes of the serialized state of [`BLAKE2b_512`].
-///
-/// Layout (after the 3-byte library version header; all integers little-endian):
-///   [0   .. 64)   h        [u64; 8]
-///   [64  .. 80)   t        u128 (RFC 7693 s. 2.2 byte offset)
-///   [80  .. 208)  buf      [u8; 128]
-///   [208 .. 209)  buf_len  u8 (always <= 128)
+// Layout (after the 3-byte library version header; all integers little-endian):
+//   [0   .. 64)   h        [u64; 8]
+//   [64  .. 80)   t        u128 (RFC 7693 s. 2.2 byte offset)
+//   [80  .. 208)  buf      [u8; 128]
+//   [208 .. 209)  buf_len  u8 (always <= 128)
 pub const SUSPENDED_BLAKE2B_512_STATE_LEN: usize = 3 + CORE_STATE_LEN;
 
 /// The BLAKE2b hash with a 64-byte digest, unkeyed (RFC 7693, kk = 0, nn = 64).
