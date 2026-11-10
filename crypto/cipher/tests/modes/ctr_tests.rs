@@ -22,14 +22,12 @@
 //! ACVP suite supplies the actual known-answer coverage.
 
 mod common;
-#[path = "../common/toy_key.rs"]
-#[allow(dead_code)]
-mod toy_key;
 
+use bouncycastle_cipher::BlockCipherKey;
 use bouncycastle_cipher::modes::{CTR, Ctr, ModeNames};
 use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::errors::SymmetricCipherError;
-use bouncycastle_core::hazmat::{BlockPermutation, ElectronicCodeBook};
+use bouncycastle_core::hazmat::{BlockPermutation, ElectronicCodeBook, KeyExpansion};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::symmetric_key::{
@@ -39,8 +37,8 @@ use bouncycastle_core::traits::{StreamCipherDecryptor, StreamCipherEncryptor};
 use bouncycastle_core_test_framework::from_key_material::TestFrameworkFromKeyMaterial;
 use bouncycastle_core_test_framework::symmetric_ciphers::TestFrameworkStreamCipher;
 use bouncycastle_rng::FixedSeedRNG;
+use common::os_rng;
 use common::{ForwardOnlyToy, SwappedFourToy, SwappedPairToy, TOY_LEN, Toy, toy_key};
-use toy_key::{ToyKey, os_rng};
 
 /// The default shape under test: a 12-byte nonce, so a 4-byte counter.
 const NONCE_LEN: usize = 12;
@@ -51,7 +49,7 @@ type ToyCtr<'k, Dir> = Ctr<'k, Toy, Dir, TOY_LEN, NONCE_LEN>;
 const SHORT_CTR_NONCE_LEN: usize = 15;
 type TinyCtr<'k, Dir> = Ctr<'k, Toy, Dir, TOY_LEN, SHORT_CTR_NONCE_LEN>;
 
-type ToyCtrKey = ToyKey<Toy, CTR<NONCE_LEN>>;
+type ToyCtrKey = BlockCipherKey<Toy, CTR<NONCE_LEN>>;
 
 fn ctr_key() -> ToyCtrKey {
     ctr_key_n()
@@ -62,24 +60,24 @@ fn ctr_key() -> ToyCtrKey {
 static KEY: std::sync::LazyLock<ToyCtrKey> = std::sync::LazyLock::new(ctr_key);
 
 /// The toy key under CTR at any permitted nonce length.
-fn ctr_key_n<const N: usize>() -> ToyKey<Toy, CTR<N>> {
-    ToyKey::from_key_material(&toy_key()).expect("the toy key")
+fn ctr_key_n<const N: usize>() -> BlockCipherKey<Toy, CTR<N>> {
+    BlockCipherKey::from_key_material(&toy_key()).expect("the toy key")
 }
 
-fn tiny_key() -> ToyKey<Toy, CTR<SHORT_CTR_NONCE_LEN>> {
+fn tiny_key() -> BlockCipherKey<Toy, CTR<SHORT_CTR_NONCE_LEN>> {
     ctr_key_n()
 }
 
-fn swapped_key() -> ToyKey<SwappedPairToy, CTR<NONCE_LEN>> {
-    ToyKey::from_key_material(&toy_key()).expect("the toy key")
+fn swapped_key() -> BlockCipherKey<SwappedPairToy, CTR<NONCE_LEN>> {
+    BlockCipherKey::from_key_material(&toy_key()).expect("the toy key")
 }
 
-fn swapped_four_key() -> ToyKey<SwappedFourToy, CTR<NONCE_LEN>> {
-    ToyKey::from_key_material(&toy_key()).expect("the toy key")
+fn swapped_four_key() -> BlockCipherKey<SwappedFourToy, CTR<NONCE_LEN>> {
+    BlockCipherKey::from_key_material(&toy_key()).expect("the toy key")
 }
 
-fn forward_only_key() -> ToyKey<ForwardOnlyToy, CTR<NONCE_LEN>> {
-    ToyKey::from_key_material(&toy_key()).expect("the toy key")
+fn forward_only_key() -> BlockCipherKey<ForwardOnlyToy, CTR<NONCE_LEN>> {
+    BlockCipherKey::from_key_material(&toy_key()).expect("the toy key")
 }
 /// Capacity of a 1-byte counter, in bytes.
 const TINY_CAPACITY: usize = 256 * TOY_LEN;
@@ -173,7 +171,7 @@ fn reference_ctr(perm: &Toy, nonce: [u8; NONCE_LEN], input: &[u8]) -> Vec<u8> {
 #[test]
 fn the_mode_matches_the_spec_equations() {
     let nonce = pinned_nonce();
-    let perm = <Toy as ElectronicCodeBook<TOY_LEN, TOY_LEN>>::new(&toy_key()).unwrap();
+    let perm = <Toy as KeyExpansion<TOY_LEN>>::new(&toy_key()).unwrap();
 
     for len in [1, TOY_LEN - 1, TOY_LEN, TOY_LEN + 1, 5 * TOY_LEN, 5 * TOY_LEN + 9] {
         let plaintext = message(len);
@@ -246,7 +244,7 @@ fn check_counter_blocks<const N: usize>(blocks: usize) {
         TOY_LEN - N
     }
 
-    let perm = <Toy as ElectronicCodeBook<TOY_LEN, TOY_LEN>>::new(&toy_key()).unwrap();
+    let perm = <Toy as KeyExpansion<TOY_LEN>>::new(&toy_key()).unwrap();
     let nonce: [u8; N] = core::array::from_fn(|i| (i as u8).wrapping_mul(13).wrapping_add(5));
 
     let key = ctr_key_n::<N>();
@@ -537,7 +535,8 @@ fn chunking_matches_a_single_call_over_several_batches() {
         let key =
             KeyMaterial::<KEY_LEN>::from_bytes_as_type(&key_bytes, KeyType::SymmetricCipherKey)
                 .expect("a valid key");
-        let key = ToyKey::<P, CTR<NONCE_LEN>>::from_perm(P::new(&key).expect("a valid key"));
+        let key =
+            BlockCipherKey::<P, CTR<NONCE_LEN>>::from_key_material(&key).expect("a valid key");
         let nonce: [u8; 12] = core::array::from_fn(|i| 0xC3 ^ (i as u8));
         let plaintext: Vec<u8> = (0..171).map(|i| (i * 7 + i / 16) as u8).collect();
 

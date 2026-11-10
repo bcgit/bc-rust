@@ -2,7 +2,7 @@ use bouncycastle_rng as rng;
 use criterion::{BatchSize, Criterion, Throughput, criterion_group, criterion_main};
 use std::hint::black_box;
 
-use bouncycastle_core::traits::{MAC, RNG};
+use bouncycastle_core::traits::{MACGenerator, RNG};
 use bouncycastle_poly1305::hazmat::key_from_bytes;
 
 const DATA_LEN: usize = 16 * 1024;
@@ -22,12 +22,13 @@ fn bench_poly1305(c: &mut Criterion) {
     let mut group = c.benchmark_group("poly1305::Poly1305");
     group.throughput(Throughput::Bytes(DATA_LEN as u64));
 
-    group.bench_function(format!("{DATA_LEN} bytes -- ::mac_out()"), |b| {
+    group.bench_function(format!("{DATA_LEN} bytes -- do_update + do_final_out"), |b| {
         // A key is consumed by its one message, so each iteration is given its own.
         b.iter_batched(
-            || key_from_bytes(&key).into_mac(),
-            |mac| {
-                mac.mac_out(black_box(&data), &mut tag).unwrap();
+            || key_from_bytes(&key).into_generator(),
+            |mut mac| {
+                mac.do_update(black_box(&data));
+                mac.do_final_out(&mut tag);
                 black_box(&tag);
             },
             BatchSize::SmallInput,

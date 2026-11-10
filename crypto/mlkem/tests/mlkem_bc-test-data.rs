@@ -6,16 +6,18 @@
 //! present the tests print a warning and pass vacuously.
 
 use bouncycastle_core::hazmat::do_hazardous_operations;
+use bouncycastle_core::kem_key::DecapsulatingKey;
 use bouncycastle_core::key_material::{KeyMaterial512, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::traits::{KEMDecapsulator, KEMPrivateKey, KEMPublicKey};
+use bouncycastle_core::traits::{KEMPrivateKey, KEMPublicKey};
 use bouncycastle_core_test_framework::test_data_loaders::bc_test_data;
 use bouncycastle_hex as hex;
 use bouncycastle_mlkem::hazmat::EncapsWithRandomness;
 use bouncycastle_mlkem::{
-    MLKEM512, MLKEM512_PK_LEN, MLKEM512_SK_LEN, MLKEM512PrivateKey, MLKEM512PublicKey, MLKEM768,
-    MLKEM768_PK_LEN, MLKEM768_SK_LEN, MLKEM768PrivateKey, MLKEM768PublicKey, MLKEM1024,
-    MLKEM1024_PK_LEN, MLKEM1024_SK_LEN, MLKEM1024PrivateKey, MLKEM1024PublicKey, MLKEMTrait,
+    MLKEM512, MLKEM512_CT_LEN, MLKEM512_PK_LEN, MLKEM512_SK_LEN, MLKEM512PrivateKey,
+    MLKEM512PublicKey, MLKEM768, MLKEM768_CT_LEN, MLKEM768_PK_LEN, MLKEM768_SK_LEN,
+    MLKEM768PrivateKey, MLKEM768PublicKey, MLKEM1024, MLKEM1024_CT_LEN, MLKEM1024_PK_LEN,
+    MLKEM1024_SK_LEN, MLKEM1024PrivateKey, MLKEM1024PublicKey, MLKEMTrait,
 };
 
 const TEST_DATA_DIR: &str = "pqc/crypto/mlkem";
@@ -262,7 +264,7 @@ impl EncapDecapTestCase {
                         let pk =
                             MLKEM512PublicKey::from_bytes(&hex::decode(&self.ek).unwrap()).unwrap();
                         let m: [u8; 32] = hex::decode(&self.m).unwrap().try_into().unwrap();
-                        let (ss, ct) = MLKEM512::encaps_with_randomness(&pk, None, m);
+                        let (ss, ct) = pk.encaps_with_randomness(m);
 
                         let expected_ss = hex::decode(&self.k).unwrap();
                         let expected_ct = hex::decode(&self.c).unwrap();
@@ -273,8 +275,9 @@ impl EncapDecapTestCase {
                     "decapsulation" => {
                         let sk = MLKEM512PrivateKey::from_bytes(&hex::decode(&self.dk).unwrap())
                             .unwrap();
-                        let ct = hex::decode(&self.c).unwrap();
-                        let ss = MLKEM512::decaps(&sk, ct.as_slice()).unwrap();
+                        let ct: [u8; MLKEM512_CT_LEN] =
+                            hex::decode(&self.c).unwrap().try_into().unwrap();
+                        let ss = sk.decaps(&ct, ()).unwrap();
 
                         let expected_ss = hex::decode(&self.k).unwrap();
                         assert_eq!(ss.ref_to_bytes(), expected_ss.as_slice());
@@ -288,7 +291,7 @@ impl EncapDecapTestCase {
                         let pk =
                             MLKEM768PublicKey::from_bytes(&hex::decode(&self.ek).unwrap()).unwrap();
                         let m: [u8; 32] = hex::decode(&self.m).unwrap().try_into().unwrap();
-                        let (ss, ct) = MLKEM768::encaps_with_randomness(&pk, None, m);
+                        let (ss, ct) = pk.encaps_with_randomness(m);
 
                         let expected_ss = hex::decode(&self.k).unwrap();
                         let expected_ct = hex::decode(&self.c).unwrap();
@@ -299,8 +302,9 @@ impl EncapDecapTestCase {
                     "decapsulation" => {
                         let sk = MLKEM768PrivateKey::from_bytes(&hex::decode(&self.dk).unwrap())
                             .unwrap();
-                        let ct = hex::decode(&self.c).unwrap();
-                        let ss = MLKEM768::decaps(&sk, ct.as_slice()).unwrap();
+                        let ct: [u8; MLKEM768_CT_LEN] =
+                            hex::decode(&self.c).unwrap().try_into().unwrap();
+                        let ss = sk.decaps(&ct, ()).unwrap();
 
                         let expected_ss = hex::decode(&self.k).unwrap();
                         assert_eq!(ss.ref_to_bytes(), expected_ss.as_slice());
@@ -314,7 +318,7 @@ impl EncapDecapTestCase {
                         let pk = MLKEM1024PublicKey::from_bytes(&hex::decode(&self.ek).unwrap())
                             .unwrap();
                         let m: [u8; 32] = hex::decode(&self.m).unwrap().try_into().unwrap();
-                        let (ss, ct) = MLKEM1024::encaps_with_randomness(&pk, None, m);
+                        let (ss, ct) = pk.encaps_with_randomness(m);
 
                         let expected_ss = hex::decode(&self.k).unwrap();
                         let expected_ct = hex::decode(&self.c).unwrap();
@@ -325,8 +329,9 @@ impl EncapDecapTestCase {
                     "decapsulation" => {
                         let sk = MLKEM1024PrivateKey::from_bytes(&hex::decode(&self.dk).unwrap())
                             .unwrap();
-                        let ct = hex::decode(&self.c).unwrap();
-                        let ss = MLKEM1024::decaps(&sk, ct.as_slice()).unwrap();
+                        let ct: [u8; MLKEM1024_CT_LEN] =
+                            hex::decode(&self.c).unwrap().try_into().unwrap();
+                        let ss = sk.decaps(&ct, ()).unwrap();
 
                         let expected_ss = hex::decode(&self.k).unwrap();
                         assert_eq!(ss.ref_to_bytes(), expected_ss.as_slice());

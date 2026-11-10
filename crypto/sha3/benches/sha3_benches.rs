@@ -241,7 +241,7 @@ fn bench_kmac128(c: &mut Criterion) {
     group.throughput(Throughput::Bytes(big_data.len() as u64));
     group.bench_function(format!("{} bytes -- key.mac_out()", big_data.len()), |b| {
         b.iter(|| {
-            key.mac_out(black_box(&big_data), &mut tag).unwrap();
+            key.mac_out(black_box(&big_data), &mut tag);
             black_box(&tag);
         })
     });

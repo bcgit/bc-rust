@@ -2,9 +2,8 @@
 //! suspended state starts with, the error type, and the component trait that composite states
 //! are built from.
 //!
-//! The traits themselves -- `Suspendable` and `SuspendableKeyed` -- live in `bouncycastle-core`,
-//! since they are part of the trait vocabulary every primitive implements. What is here is the
-//! machinery their implementations share.
+//! The trait itself, `Suspendable`, lives in `bouncycastle-core`, since it is part of the trait
+//! vocabulary the hashes implement. What is here is the machinery its implementations share.
 //!
 //! # The version header
 //!
@@ -16,12 +15,12 @@
 //!
 //! # Composing suspended states
 //!
-//! The traits carry the state length as a const generic parameter, `SuspendableKeyed<N>`, so a
+//! The trait carries the state length as a const generic parameter, `Suspendable<N>`, so a
 //! generic adapter over an inner type -- a block cipher mode over a permutation, a stream cipher
 //! over a keystream -- cannot write its own `N` as "the inner length plus my own" on stable Rust
 //! (`generic_const_exprs`). [`SuspendableComponent`] is the workaround: it names the length as
 //! an associated const and reads and writes state through slices, so composition is ordinary
-//! code. Each public type's `SuspendableKeyed<N>` impl is then a shell over
+//! code. Each public type's `Suspendable<N>` impl is then a shell over
 //! [`suspend_component`] and [`resume_component`], which add the version header and check at
 //! compile time that `N` is the component's length plus [`LIB_VERSION_LEN`]. A wrong `N` is a
 //! compile error at the call site.
@@ -199,7 +198,7 @@ pub fn check_lib_ver<const SERIALIZED_LEN: usize>(
 }
 
 /// A piece of state that can be written to, and rebuilt from, a byte slice of a length it names,
-/// given a key. See the module docs for why this exists alongside the `SuspendableKeyed` trait.
+/// given a key. See the module docs for why this exists alongside the `Suspendable` trait.
 ///
 /// `write_state` and `read_state` are given exactly [`STATE_LEN`](Self::STATE_LEN) bytes. The
 /// version header is not part of it: a composite writes one header for the whole state, through

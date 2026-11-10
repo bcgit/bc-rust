@@ -10,20 +10,17 @@
 //!
 //! # Driving the IV
 //!
-//! There is no API for supplying an IV -- see the crate docs. Encryption is therefore driven
-//! through the key's [`BlockEncryptionKey::create_encryptor`] with a [`FixedSeedRNG`] whose
-//! stream is the vector's IV, and the test asserts the returned init data really is that IV before
-//! comparing any ciphertext. Decryption takes the IV directly, as init data.
+//! Encryption takes the vector's IV through the key's
+//! [`BlockEncryptionKey::create_encryptor_nonce`]; decryption takes it as init data.
 
 use bouncycastle_aes::hazmat::AES128Internal;
 use bouncycastle_aes::{AES128Key, AES192Key, AES256Key};
 use bouncycastle_cipher::modes::{Blocks, CBC};
-use bouncycastle_core::hazmat::{BlockPermutation, ElectronicCodeBook};
+use bouncycastle_core::hazmat::{BlockPermutation, KeyExpansion};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::symmetric_key::{BlockDecryptionKey, BlockEncryptionKey, FromKeyMaterial};
 use bouncycastle_core::traits::{BlockCipherDecryptor, BlockCipherEncryptor};
 use bouncycastle_hex as hex;
-use bouncycastle_rng::FixedSeedRNG;
 
 const BLOCK_LEN: usize = 16;
 
@@ -102,14 +99,13 @@ where
     let ct = blocks(expected);
 
     // All four blocks in one call.
-    let (mut enc, got_iv) = key.create_encryptor(&mut FixedSeedRNG::new(iv)).unwrap();
-    assert_eq!(got_iv, iv, "{section}: the pinned RNG should produce the vector's IV");
+    let mut enc = key.create_encryptor_nonce(&iv);
     let mut data = flat(&PLAINTEXTS);
     enc.do_encrypt_blocks_inplace(data.as_chunks_mut().0).unwrap();
     assert_eq!(data, flat(expected), "{section}: four blocks in one call");
 
     // One block at a time.
-    let (mut enc, _) = key.create_encryptor(&mut FixedSeedRNG::new(iv)).unwrap();
+    let mut enc = key.create_encryptor_nonce(&iv);
     for (i, (p, c)) in pt.iter().zip(ct.iter()).enumerate() {
         let mut got = *p;
         enc.do_encrypt_blocks_inplace(got.as_chunks_mut().0).unwrap();
@@ -200,14 +196,14 @@ fn cbc_differs_from_ecb_by_the_iv() {
     // The raw permutation on P1 alone is the ECB answer from F.1.1.
     let mut ecb = block(PLAINTEXTS[0]);
     <AES128Internal as BlockPermutation<16>>::encrypt_block(
-        &<AES128Internal as ElectronicCodeBook<16, 16>>::new(&key).unwrap(),
+        &<AES128Internal as KeyExpansion<16>>::new(&key).unwrap(),
         &mut ecb,
     );
     assert_eq!(ecb, block("3ad77bb40d7a3660a89ecaf32466ef97"), "F.1.1 block #1");
 
     // CBC's C1 = CIPH_K(P1 XOR IV) is the F.2.1 answer, and differs.
     let key_object = AES128Key::<CBC<Blocks>>::from_key_material(&key).unwrap();
-    let (mut enc, _) = key_object.create_encryptor(&mut FixedSeedRNG::new(iv)).unwrap();
+    let mut enc = key_object.create_encryptor_nonce(&iv);
     let mut cbc = block(PLAINTEXTS[0]);
     enc.do_encrypt_blocks_inplace(cbc.as_chunks_mut().0).unwrap();
     assert_eq!(cbc, block(CIPHERTEXTS_128[0]), "F.2.1 block #1");

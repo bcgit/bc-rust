@@ -6,10 +6,7 @@
 
 mod common;
 
-#[path = "../common/toy_key.rs"]
-#[allow(dead_code)]
-mod toy_key;
-
+use bouncycastle_cipher::BlockCipherKey;
 use bouncycastle_cipher::modes::{Blocks, CBC, ModeNames};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::symmetric_key::{BlockDecryptionKey, BlockEncryptionKey, FromKeyMaterial};
@@ -17,21 +14,21 @@ use bouncycastle_core::traits::{BlockCipherDecryptor, BlockCipherEncryptor};
 use bouncycastle_core_test_framework::block_cipher::TestFrameworkBlockCipher;
 use bouncycastle_core_test_framework::electronic_code_book::TestFrameworkElectronicCodeBook;
 use bouncycastle_core_test_framework::from_key_material::TestFrameworkFromKeyMaterial;
+use common::os_rng;
 use common::{SwappedFourToy, SwappedPairToy, TOY_LEN, Toy, toy_key};
-use toy_key::{ToyKey, os_rng};
 
-type ToyCbcKey = ToyKey<Toy, CBC<Blocks>>;
+type ToyCbcKey = BlockCipherKey<Toy, CBC<Blocks>>;
 
 fn cbc_key() -> ToyCbcKey {
     ToyCbcKey::from_key_material(&toy_key()).expect("the toy key")
 }
 
-fn swapped_key() -> ToyKey<SwappedPairToy, CBC<Blocks>> {
-    ToyKey::from_key_material(&toy_key()).expect("the toy key")
+fn swapped_key() -> BlockCipherKey<SwappedPairToy, CBC<Blocks>> {
+    BlockCipherKey::from_key_material(&toy_key()).expect("the toy key")
 }
 
-fn swapped_four_key() -> ToyKey<SwappedFourToy, CBC<Blocks>> {
-    ToyKey::from_key_material(&toy_key()).expect("the toy key")
+fn swapped_four_key() -> BlockCipherKey<SwappedFourToy, CBC<Blocks>> {
+    BlockCipherKey::from_key_material(&toy_key()).expect("the toy key")
 }
 
 /// The implementor hook `do_encrypt_blocks_inplace`, by value, for tests whose data is

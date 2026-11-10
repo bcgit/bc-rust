@@ -17,10 +17,8 @@
 //! * and that the length predictions are exact, not upper bounds.
 
 mod common;
-#[path = "../common/toy_key.rs"]
-#[allow(dead_code)]
-mod toy_key;
 
+use bouncycastle_cipher::BlockCipherKey;
 use bouncycastle_cipher::modes::{CFB, CFB8, CTR, Ctr};
 use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::hazmat::Mode;
@@ -32,14 +30,14 @@ use bouncycastle_core::traits::{
     SymmetricCipherEncryptor,
 };
 use bouncycastle_core_test_framework::symmetric_ciphers::TestFrameworkSymmetricCipher;
+use common::os_rng;
 use common::{TOY_LEN, Toy, toy_key};
-use toy_key::{ToyKey, os_rng};
 
 type ToyCtr<'k, Dir> = Ctr<'k, Toy, Dir, TOY_LEN, 12>;
 
 /// The toy key under the stream mode `M`.
-fn key_for<M: Mode<Toy>>() -> ToyKey<Toy, M> {
-    ToyKey::from_key_material(&toy_key()).expect("the toy key")
+fn key_for<M: Mode<Toy>>() -> BlockCipherKey<Toy, M> {
+    BlockCipherKey::from_key_material(&toy_key()).expect("the toy key")
 }
 
 /// All three stream modes must satisfy the shared conformance suite for the symmetric-cipher

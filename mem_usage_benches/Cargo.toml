@@ -32,8 +32,28 @@ name = "bench_ccm_mem_usage"
 path = "src/bench_ccm_mem_usage.rs"
 
 [[bin]]
+name = "bench_ecdsa_mem_usage"
+path = "src/bench_ecdsa_mem_usage.rs"
+
+[[bin]]
+name = "bench_sm2_mem_usage"
+path = "src/bench_sm2_mem_usage.rs"
+
+[[bin]]
 name = "bench_ascon_mem_usage"
 path = "src/bench_ascon_mem_usage.rs"
+
+[[bin]]
+name = "bench_sm4_mem_usage"
+path = "src/bench_sm4_mem_usage.rs"
+
+[[bin]]
+name = "bench_camellia_mem_usage"
+path = "src/bench_camellia_mem_usage.rs"
+
+[[bin]]
+name = "bench_aria_mem_usage"
+path = "src/bench_aria_mem_usage.rs"
 
 [[bin]]
 name = "bench_sm3_mem_usage"

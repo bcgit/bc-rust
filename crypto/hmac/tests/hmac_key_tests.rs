@@ -5,10 +5,11 @@ use bouncycastle_core::errors::{KeyMaterialError, MACError};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterial256, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::symmetric_key::{FromAnyKeyMaterial, MacGenerationKey, MacVerificationKey};
-use bouncycastle_core::traits::{MAC, RNG, SuspendableKeyed};
-use bouncycastle_hmac::{HMAC, HMACParams, HmacKey};
+use bouncycastle_core::traits::{Hash, MACGenerator, MACVerifier, RNG};
+use bouncycastle_hmac::hazmat::{finish_out, inner_state};
+use bouncycastle_hmac::{HMACParams, HmacKey};
 use bouncycastle_rng::FixedSeedRNG;
-use bouncycastle_sha2::{SHA224, SHA256, SHA512, SUSPENDED_SHA256_STATE_LEN};
+use bouncycastle_sha2::{SHA224, SHA256, SHA512};
 use bouncycastle_sha3::SHA3_256;
 
 fn mac_key<const N: usize>(fill: u8) -> KeyMaterial<N> {
@@ -39,21 +40,21 @@ fn the_key_follows_rfc_2104_for_every_key_shape() {
         outer.do_update(&inner.do_final());
         outer.do_final()
     }
-    fn check<H: HMACParams>(key_bytes: &[u8]) {
+    fn check<const N: usize, H: HMACParams<MACKey = KeyMaterial<N>>>(key_bytes: &[u8]) {
         let km = KeyMaterial::<200>::from_bytes_as_type(key_bytes, KeyType::MACKey).unwrap();
         let expected = reference::<H>(key_bytes, MSG);
         let key = HmacKey::<H>::from_key_material_allow_weak(&km).unwrap();
-        assert_eq!(key.mac(MSG), expected);
+        assert_eq!(key.mac(MSG)[..], expected[..]);
         let mut generator = key.create_generator();
         generator.do_update(&MSG[..10]);
         generator.do_update(&MSG[10..]);
-        assert_eq!(generator.do_final(), expected);
+        assert_eq!(generator.do_final()[..], expected[..]);
     }
     for len in [1usize, 20, 64, 65, 136, 137, 200] {
         let bytes: Vec<u8> = (0..len).map(|i| i as u8).collect();
-        check::<SHA256>(&bytes);
-        check::<SHA512>(&bytes);
-        check::<SHA3_256>(&bytes);
+        check::<32, SHA256>(&bytes);
+        check::<64, SHA512>(&bytes);
+        check::<32, SHA3_256>(&bytes);
     }
 }
 
@@ -67,39 +68,34 @@ fn several_workers_from_one_key_are_independent_and_the_key_is_unchanged() {
     a.do_update(b"message one");
     b.do_update(b"message two");
     let mut tag_b = [0u8; 32];
-    let nb = b.do_final_out(&mut tag_b).unwrap(); // finished in the other order
+    let nb = b.do_final_out(&mut tag_b); // finished in the other order
     let mut tag_a = [0u8; 32];
-    let na = a.do_final_out(&mut tag_a).unwrap();
+    let na = a.do_final_out(&mut tag_a);
     assert_eq!((na, nb), (32, 32));
     assert_ne!(tag_a, tag_b);
-    assert_eq!(tag_a.to_vec(), key.mac(b"message one"));
+    assert_eq!(tag_a, key.mac(b"message one"));
 
     let mut v = key.create_verifier();
     v.do_update(b"message one");
-    assert!(v.do_verify_final(&tag_a));
-    assert!(key.verify(b"message two", &tag_b));
-    assert!(!key.verify(b"message two", &tag_a));
+    assert_eq!(v.do_verify_final(&tag_a), Ok(()));
+    assert_eq!(key.verify(b"message two", &tag_b), Ok(()));
+    assert_eq!(key.verify(b"message two", &tag_a), Err(MACError::VerificationFailed));
     assert_eq!(key.mac(MSG), before);
 }
 
 #[test]
-fn one_shots_match_the_streaming_path_and_zeroize_the_output_first() {
+fn one_shots_match_the_streaming_path() {
     let key = HmacKey::<SHA512>::from_key_material(&mac_key::<64>(0x42)).unwrap();
     let full = key.mac(MSG);
-    assert_eq!(full.len(), 64);
 
-    let mut out = [0xEEu8; 80];
-    let n = key.mac_out(MSG, &mut out).unwrap();
+    let mut out = [0xEEu8; 64];
+    let n = key.mac_out(MSG, &mut out);
     assert_eq!(n, 64);
-    assert_eq!(&out[..64], &full[..]);
-    assert!(out[64..].iter().all(|&b| b == 0), "the whole output buffer is zeroized first");
+    assert_eq!(out, full);
 
-    // Truncation below the FIPS floor is refused, as on the worker.
-    assert!(matches!(key.mac_out(MSG, &mut [0u8; 3]), Err(MACError::InvalidLength(_))));
-    // A 16-byte truncation is accepted and is a prefix of the full MAC.
-    let mut short = [0u8; 16];
-    assert_eq!(key.mac_out(MSG, &mut short).unwrap(), 16);
-    assert_eq!(short, full[..16]);
+    let mut generator = key.create_generator();
+    generator.do_update(MSG);
+    assert_eq!(generator.do_final(), full);
 }
 
 #[test]
@@ -129,7 +125,7 @@ fn construction_applies_the_key_type_and_strength_policy() {
     let no_salt = KeyMaterial256::new();
     let salt_key = HmacKey::<SHA256>::from_key_material_allow_weak(&no_salt).unwrap();
     assert_eq!(
-        salt_key.mac(b"Hi There"),
+        &salt_key.mac(b"Hi There"),
         b"\xe4\x84\x11\x26\x27\x15\xc8\x37\x0c\xd5\xe7\xbf\x8e\x82\xbe\xf5\x3b\xd5\x37\x12\xd0\x07\xf3\x42\x93\x51\x84\x3b\x77\xc7\xbb\x9b"
     );
 }
@@ -140,10 +136,10 @@ fn generate_draws_a_key_of_the_hash_output_length_at_the_rng_strength() {
     let key =
         HmacKey::<SHA256>::generate(&mut rng).expect("a 256-bit RNG suffices for HMAC-SHA256");
     let tag = key.mac(MSG);
-    assert!(key.verify(MSG, &tag));
+    assert_eq!(key.verify(MSG, &tag), Ok(()));
     // A draw from another RNG stream is a different key.
     let other = HmacKey::<SHA256>::generate(&mut FixedSeedRNG::new([0xA5u8; 32])).unwrap();
-    assert!(!other.verify(MSG, &tag));
+    assert_eq!(other.verify(MSG, &tag), Err(MACError::VerificationFailed));
 
     // The drawn material is the hash's output length, tagged MACKey: the same bytes through
     // `from_key_material` give the same key.
@@ -181,25 +177,35 @@ fn generate_draws_a_key_of_the_hash_output_length_at_the_rng_strength() {
     // 28 bytes carry rather than refused for claiming the RNG's 256 bits.
     let key = HmacKey::<SHA224>::generate(&mut FixedSeedRNG::new([0x5Au8; 32]))
         .expect("a 256-bit RNG suffices for HMAC-SHA224");
-    let tag = key.mac(MSG);
-    assert_eq!(tag.len(), 28);
-    assert!(key.verify(MSG, &tag));
-}
-
-#[test]
-fn a_worker_from_the_key_suspends_and_resumes() {
-    let km = mac_key::<32>(0x0b);
-    let key = HmacKey::<SHA256>::from_key_material(&km).unwrap();
-    let mut w = key.create_generator();
-    w.do_update(&MSG[..7]);
-    let state: [u8; SUSPENDED_SHA256_STATE_LEN] = w.suspend();
-    let mut resumed = HMAC::<SHA256>::from_suspended(state, &key).unwrap();
-    resumed.do_update(&MSG[7..]);
-    assert_eq!(resumed.do_final(), key.mac(MSG));
+    let tag: [u8; 28] = key.mac(MSG);
+    assert_eq!(key.verify(MSG, &tag), Ok(()));
 }
 
 #[test]
 fn a_cloned_key_is_the_same_key() {
     let key = HmacKey::<SHA3_256>::from_key_material(&mac_key::<32>(0x33)).unwrap();
     assert_eq!(key.clone().mac(MSG), key.mac(MSG));
+}
+
+/// The hazmat halves compose to the worker's tag: `inner_state` fed the message and finished
+/// through `finish_out` is the key's one-shot, written in full with the count returned and the
+/// rest of the buffer zeroized, and a short buffer takes the prefix as `Hash::do_final_out` does.
+#[test]
+fn the_hazmat_halves_compose_to_the_tag() {
+    let key = HmacKey::<SHA256>::from_key_material(&mac_key::<32>(0x0b)).unwrap();
+    let mut inner = inner_state(&key);
+    inner.do_update(MSG);
+    let mut out = [0xEEu8; 40];
+    assert_eq!(finish_out(&key, inner, &mut out), 32);
+    assert_eq!(out[..32], key.mac(MSG));
+    assert_eq!(out[32..], [0u8; 8]);
+
+    // A fresh inner state is the key's, not a default hash: finished at once it is the empty
+    // message's tag.
+    assert_eq!(finish_out(&key, inner_state(&key), &mut out), 32);
+    assert_eq!(out[..32], key.mac(b""));
+
+    let mut short = [0xEEu8; 16];
+    assert_eq!(finish_out(&key, inner_state(&key), &mut short), 16);
+    assert_eq!(short, key.mac(b"")[..16]);
 }

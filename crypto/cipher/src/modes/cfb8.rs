@@ -97,6 +97,13 @@ where
         let iv = random_iv::<BLOCK_LEN>(rng)?;
         Ok((Cfb8 { perm: state, chain: iv, _dir: PhantomData }, iv))
     }
+
+    fn encrypt_init_nonce<'k>(
+        state: &'k Self::KeyState,
+        iv: &[u8; BLOCK_LEN],
+    ) -> Self::Encryptor<'k> {
+        Cfb8 { perm: state, chain: *iv, _dir: PhantomData }
+    }
 }
 
 impl<P, const KEY_LEN: usize, const BLOCK_LEN: usize> SymmetricDecryptMode<P, KEY_LEN, BLOCK_LEN, 0>

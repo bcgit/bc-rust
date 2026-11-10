@@ -4,7 +4,8 @@
 //! See the trait-level documentation for the primitive family behind each factory:
 //! [`hash_factory::HashFactory`] implements [`bouncycastle_core::traits::Hash`],
 //! [`kdf_factory::KDFFactory`] implements [`bouncycastle_core::traits::KDF`],
-//! [`mac_factory::MACFactory`] implements [`bouncycastle_core::traits::MAC`],
+//! [`mac_factory::MACFactory`] is a MAC key chosen by name, with run-time-length one-shots and
+//! workers over the algorithm's own,
 //! [`rng_factory::RNGFactory`] implements [`bouncycastle_core::traits::RNG`], and
 //! [`xof_factory::XOFFactory`] implements [`bouncycastle_core::traits::XOF`].
 //!

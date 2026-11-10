@@ -81,6 +81,18 @@ impl TestFrameworkSignature {
         assert_eq!(signer.do_final_out(&mut out).unwrap(), SIG_LEN);
         pk.verify(DUMMY_SEED, Some(b"streaming"), &out).unwrap();
 
+        // the workers can be held as trait objects
+        let mut signer = sk.create_signer(&mut rng, None).unwrap();
+        let dyn_signer: &mut dyn SignatureSigner<SIG_LEN> = &mut signer;
+        assert_eq!(dyn_signer.alg_name(), A::ALG_NAME);
+        dyn_signer.do_update(MSG);
+        let sig_dyn = signer.do_final().unwrap();
+        let mut verifier = pk.create_verifier(None).unwrap();
+        let dyn_verifier: &mut dyn SignatureVerifier = &mut verifier;
+        assert_eq!(dyn_verifier.alg_name(), A::ALG_NAME);
+        dyn_verifier.do_update(MSG);
+        verifier.do_verify_final(&sig_dyn).unwrap();
+
         // streaming verifier, in one chunk and in many
         let mut verifier = pk.create_verifier(Some(b"streaming")).unwrap();
         assert_eq!(verifier.alg_name(), A::ALG_NAME);
@@ -136,7 +148,10 @@ impl TestFrameworkSignature {
         // streaming signer, in one chunk and in many, equals the one-shot
         let sig = sk.sign_deterministic(DUMMY_SEED, Some(b"streaming")).unwrap();
         let mut signer = sk.create_signer_deterministic(Some(b"streaming")).unwrap();
-        assert_eq!(signer.alg_name(), A::ALG_NAME);
+        // A deterministic variant may name how it picks its nonce (`ECDetDSA-P256` for RFC 6979
+        // under the `ECDSAP256` marker), so only the strength is pinned to the marker here.
+        assert!(!signer.alg_name().is_empty());
+        assert_eq!(signer.max_security_strength(), A::MAX_SECURITY_STRENGTH);
         signer.do_update(DUMMY_SEED);
         assert_eq!(signer.do_final().unwrap(), sig);
 
@@ -278,7 +293,10 @@ impl TestFrameworkSignature {
         let sig = sk.sign_ph_deterministic::<H>(&ph, Some(b"ph")).unwrap();
         assert_eq!(sig, sk.sign_ph_deterministic::<H>(&ph, Some(b"ph")).unwrap());
         let mut signer = sk.create_ph_signer_deterministic::<H>(Some(b"ph")).unwrap();
-        assert_eq!(signer.alg_name(), A::ALG_NAME);
+        // A deterministic variant may name how it picks its nonce (`ECDetDSA-P256` for RFC 6979
+        // under the `ECDSAP256` marker), so only the strength is pinned to the marker here.
+        assert!(!signer.alg_name().is_empty());
+        assert_eq!(signer.max_security_strength(), A::MAX_SECURITY_STRENGTH);
         for chunk in DUMMY_SEED.chunks(100) {
             signer.do_update(chunk);
         }

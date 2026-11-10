@@ -13,13 +13,11 @@
 //! is not re-run.
 
 mod common;
-#[path = "../common/toy_key.rs"]
-#[allow(dead_code)]
-mod toy_key;
 
+use bouncycastle_cipher::BlockCipherKey;
 use bouncycastle_cipher::modes::{Blocks, CBC, CFB, Cbc, Cfb, ModeNames};
 use bouncycastle_cipher::{Decrypting, Encrypting};
-use bouncycastle_core::hazmat::{BlockPermutation, ElectronicCodeBook};
+use bouncycastle_core::hazmat::{BlockPermutation, ElectronicCodeBook, KeyExpansion};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::symmetric_key::{
@@ -31,12 +29,12 @@ use bouncycastle_core::traits::{
 use bouncycastle_core_test_framework::from_key_material::TestFrameworkFromKeyMaterial;
 use bouncycastle_core_test_framework::symmetric_ciphers::TestFrameworkStreamCipher;
 use bouncycastle_rng::FixedSeedRNG;
+use common::os_rng;
 use common::{ForwardOnlyToy, SwappedFourToy, SwappedPairToy, TOY_LEN, Toy, toy_key};
-use toy_key::{ToyKey, os_rng};
 
 type ToyCfb<'k, Dir> = Cfb<'k, Toy, Dir, TOY_LEN>;
 
-type ToyCfbKey = ToyKey<Toy, CFB>;
+type ToyCfbKey = BlockCipherKey<Toy, CFB>;
 
 fn cfb_key() -> ToyCfbKey {
     ToyCfbKey::from_key_material(&toy_key()).expect("the toy key")
@@ -46,16 +44,16 @@ fn cfb_key() -> ToyCfbKey {
 /// its key, so the helpers' key lives for the whole test binary.
 static KEY: std::sync::LazyLock<ToyCfbKey> = std::sync::LazyLock::new(cfb_key);
 
-fn swapped_key() -> ToyKey<SwappedPairToy, CFB> {
-    ToyKey::from_key_material(&toy_key()).expect("the toy key")
+fn swapped_key() -> BlockCipherKey<SwappedPairToy, CFB> {
+    BlockCipherKey::from_key_material(&toy_key()).expect("the toy key")
 }
 
-fn swapped_four_key() -> ToyKey<SwappedFourToy, CFB> {
-    ToyKey::from_key_material(&toy_key()).expect("the toy key")
+fn swapped_four_key() -> BlockCipherKey<SwappedFourToy, CFB> {
+    BlockCipherKey::from_key_material(&toy_key()).expect("the toy key")
 }
 
-fn forward_only_key() -> ToyKey<ForwardOnlyToy, CFB> {
-    ToyKey::from_key_material(&toy_key()).expect("the toy key")
+fn forward_only_key() -> BlockCipherKey<ForwardOnlyToy, CFB> {
+    BlockCipherKey::from_key_material(&toy_key()).expect("the toy key")
 }
 
 /// `do_encrypt_inplace`, by value.
@@ -176,7 +174,7 @@ fn reference_cfb(perm: &Toy, iv: [u8; TOY_LEN], input: &[u8], encrypt: bool) -> 
 #[test]
 fn the_mode_matches_the_spec_equations() {
     let iv = pinned_iv();
-    let perm = <Toy as ElectronicCodeBook<TOY_LEN, TOY_LEN>>::new(&toy_key()).unwrap();
+    let perm = <Toy as KeyExpansion<TOY_LEN>>::new(&toy_key()).unwrap();
 
     for len in [5 * TOY_LEN, 5 * TOY_LEN + 9, TOY_LEN - 1, 1] {
         let plaintext = message(len);
@@ -215,7 +213,7 @@ fn the_mode_matches_the_spec_equations() {
     );
 
     // ...and CFB is not CBC: CBC computes `CIPH_K(P1 XOR IV)`, CFB computes `P1 XOR CIPH_K(IV)`.
-    let cbc_key = ToyKey::<Toy, CBC<Blocks>>::from_key_material(&toy_key()).unwrap();
+    let cbc_key = BlockCipherKey::<Toy, CBC<Blocks>>::from_key_material(&toy_key()).unwrap();
     let (mut cbc, _) = cbc_key.create_encryptor(&mut pinned_rng(iv)).unwrap();
     let mut cbc_c1: [u8; TOY_LEN] = plaintext[..TOY_LEN].try_into().unwrap();
     cbc.do_encrypt_blocks_inplace(cbc_c1.as_chunks_mut().0).unwrap();
@@ -232,7 +230,7 @@ fn the_mode_matches_the_spec_equations() {
 #[test]
 fn the_final_short_segment_is_xored_with_the_leading_keystream_bytes() {
     let iv = pinned_iv();
-    let perm = <Toy as ElectronicCodeBook<TOY_LEN, TOY_LEN>>::new(&toy_key()).unwrap();
+    let perm = <Toy as KeyExpansion<TOY_LEN>>::new(&toy_key()).unwrap();
 
     let mut o1 = iv;
     perm.encrypt_block(&mut o1);
@@ -418,7 +416,7 @@ fn chunking_matches_a_single_call_over_several_batches() {
         let key =
             KeyMaterial::<KEY_LEN>::from_bytes_as_type(&key_bytes, KeyType::SymmetricCipherKey)
                 .expect("a valid key");
-        let key = ToyKey::<P, CFB>::from_perm(P::new(&key).expect("a valid key"));
+        let key = BlockCipherKey::<P, CFB>::from_key_material(&key).expect("a valid key");
         let iv: [u8; 16] = core::array::from_fn(|i| 0xC3 ^ (i as u8));
         let plaintext: Vec<u8> = (0..171).map(|i| (i * 7 + i / 16) as u8).collect();
 

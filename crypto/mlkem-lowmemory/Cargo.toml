@@ -15,6 +15,7 @@ bouncycastle-core-test-framework.workspace = true
 bouncycastle-mlkem.workspace = true
 bouncycastle-hex.workspace = true
 bouncycastle-rng.workspace = true
+bouncycastle-sha2.workspace = true # the hashes the HKDF tests and docs name
 criterion.workspace = true
 
 [[bench]]

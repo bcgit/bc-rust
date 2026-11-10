@@ -144,18 +144,9 @@ fn gmac() {
 #[test]
 fn cmac() {
     use SecurityStrength::*;
-    assert_eq!(
-        (AES_CMAC_128::ALG_NAME, AES_CMAC_128::MAX_SECURITY_STRENGTH),
-        ("AES_CMAC_128", _128bit)
-    );
-    assert_eq!(
-        (AES_CMAC_192::ALG_NAME, AES_CMAC_192::MAX_SECURITY_STRENGTH),
-        ("AES_CMAC_192", _192bit)
-    );
-    assert_eq!(
-        (AES_CMAC_256::ALG_NAME, AES_CMAC_256::MAX_SECURITY_STRENGTH),
-        ("AES_CMAC_256", _256bit)
-    );
+    check::<AES_CMAC_128<'_, Encrypting>, AES_CMAC_128<'_, Decrypting>>("AES_CMAC_128", _128bit);
+    check::<AES_CMAC_192<'_, Encrypting>, AES_CMAC_192<'_, Decrypting>>("AES_CMAC_192", _192bit);
+    check::<AES_CMAC_256<'_, Encrypting>, AES_CMAC_256<'_, Decrypting>>("AES_CMAC_256", _256bit);
 }
 
 /// One worker serves both halves of a key wrap, so there is one name per alias to check.

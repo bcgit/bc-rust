@@ -25,22 +25,19 @@
 //!
 //! # Driving the IV
 //!
-//! There is no API for supplying an IV -- see the crate docs. Encryption is therefore driven
-//! through the key's [`SymmetricEncryptionKey::create_encryptor`] with a [`FixedSeedRNG`] whose
-//! stream is the vector's IV, and the test asserts the returned init data really is that IV before
-//! comparing any ciphertext. Decryption takes the IV directly, as init data.
+//! Encryption takes the vector's IV through the key's
+//! [`SymmetricEncryptionKey::create_encryptor_nonce`]; decryption takes it as init data.
 
 use bouncycastle_aes::hazmat::AES128Internal;
 use bouncycastle_aes::{AES128Key, AES192Key, AES256Key};
 use bouncycastle_cipher::modes::CFB8;
-use bouncycastle_core::hazmat::{BlockPermutation, ElectronicCodeBook};
+use bouncycastle_core::hazmat::{BlockPermutation, KeyExpansion};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::symmetric_key::{
     FromKeyMaterial, SymmetricDecryptionKey, SymmetricEncryptionKey,
 };
 use bouncycastle_core::traits::{StreamCipherDecryptor, StreamCipherEncryptor};
 use bouncycastle_hex as hex;
-use bouncycastle_rng::FixedSeedRNG;
 
 const BLOCK_LEN: usize = 16;
 
@@ -147,8 +144,7 @@ where
     assert_eq!(plaintext.len(), 18, "{section}: the CFB8 subsections use 18 one-byte segments");
 
     for chunk in [plaintext.len()].into_iter().chain(CHUNKINGS) {
-        let (mut enc, got_iv) = key.create_encryptor(&mut FixedSeedRNG::new(iv)).unwrap();
-        assert_eq!(got_iv, iv, "{section}: the pinned RNG should produce the vector's IV");
+        let mut enc = key.create_encryptor_nonce(&iv);
 
         let mut data = plaintext.clone();
         for piece in data.chunks_mut(chunk) {
@@ -229,8 +225,7 @@ fn f_3_12_cfb8_aes256_decrypt() {
 #[test]
 fn the_tabulated_blocks_are_the_shift_register() {
     let key = key_material::<16>(KEY_128);
-    let perm =
-        <AES128Internal as ElectronicCodeBook<16, BLOCK_LEN>>::new(&key).expect("a valid key");
+    let perm = <AES128Internal as KeyExpansion<16>>::new(&key).expect("a valid key");
     let plaintext = bytes(PLAINTEXT);
     let ciphertext = bytes(CIPHERTEXT_128);
 

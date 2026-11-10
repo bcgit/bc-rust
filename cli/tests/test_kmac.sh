@@ -70,6 +70,16 @@ test_kmac128_refuses_a_tag_that_does_not_fit() {
     kmac_refused_length kmac128 9223372036854775808
 }
 
+# A --verify of the wrong length is refused with the length message before any input is read,
+# as the other MAC commands do: stdin is a pipe that stays open past the deadline, so a command
+# that read it first is killed by `timeout` without printing the message.
+test_kmac128_refuses_a_wrong_length_verify_before_reading() {
+    rng 32 >"$TMP/key"
+    expect_fail "a 1-byte --verify against a 32-byte tag must be refused" \
+        timeout 5 "$BC_RUST" kmac128 32 --key-file "$TMP/key" -v 00 < <(sleep 8)
+    assert_stderr_has "the MAC must be 32 bytes, got 1"
+}
+
 test_kmac256_refuses_a_tag_that_does_not_fit() {
     kmac_refused_length kmac256 9223372036854775808
 }

@@ -67,6 +67,15 @@ impl TestFrameworkBlockCipher {
         assert_eq!(iv, iv_streamed);
         assert_eq!(buf, expected);
 
+        // the supplied-init-data twins give the same ciphertext for the same init data
+        let mut buf = *one_block;
+        assert_eq!(key.encrypt_inplace_nonce(&iv, &mut buf).unwrap(), BLOCK_LEN);
+        assert_eq!(buf, expected, "encrypt_inplace_nonce");
+        let mut buf = *one_block;
+        let mut supplied = key.create_encryptor_nonce(&iv);
+        supplied.do_encrypt_blocks_inplace(core::slice::from_mut(&mut buf)).unwrap();
+        assert_eq!(buf, expected, "create_encryptor_nonce");
+
         // The one-shots take a runtime length, so they must refuse data that is not a whole number
         // of blocks, before touching it.
         for len in [1, BLOCK_LEN - 1, BLOCK_LEN + 1, 2 * BLOCK_LEN + 1] {

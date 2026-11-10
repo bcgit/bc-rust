@@ -15,25 +15,15 @@ use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core_test_framework::test_data_loaders::{Value, hex_field, wycheproof_json};
 use bouncycastle_hkdf::HKDF;
 use bouncycastle_hmac::HMACParams;
-use bouncycastle_sha2::hkdf::{
-    SUSPENDED_HKDF_SHA256_STATE_LEN, SUSPENDED_HKDF_SHA384_STATE_LEN,
-    SUSPENDED_HKDF_SHA512_STATE_LEN,
-};
-use bouncycastle_sha2::{
-    SHA256, SHA384, SHA512, SUSPENDED_SHA256_STATE_LEN, SUSPENDED_SHA512_STATE_LEN,
-};
+use bouncycastle_sha2::{SHA256, SHA384, SHA512};
 
 /// The longest IKM or salt in any of the files is 80 bytes.
 const MAX_INPUT_LEN: usize = 80;
 /// 255 * 64, the most HKDF-SHA-512 can produce.
 const MAX_OKM_LEN: usize = 255 * 64;
 
-/// Runs every case in one `hkdf_*_test.json` file through `HKDF<H, ..>`. The state lengths are
-/// those of `bouncycastle_sha2::hkdf`'s aliases, which cannot be passed as a type here.
-fn run<H: HMACParams, const HASH_STATE_LEN: usize, const HKDF_STATE_LEN: usize>(
-    filename: &str,
-    algorithm: &str,
-) {
+/// Runs every case in one `hkdf_*_test.json` file through `HKDF<H>`.
+fn run<H: HMACParams>(filename: &str, algorithm: &str) {
     let Some(doc) = wycheproof_json(filename) else { return };
 
     assert_eq!(doc.get("algorithm").and_then(Value::as_str), Some(algorithm), "{filename}");
@@ -58,9 +48,7 @@ fn run<H: HMACParams, const HASH_STATE_LEN: usize, const HKDF_STATE_LEN: usize>(
             let size = test.get("size").and_then(Value::as_u64).expect("size") as usize;
 
             let mut okm = KeyMaterial::<MAX_OKM_LEN>::new();
-            let result = HKDF::<H, HASH_STATE_LEN, HKDF_STATE_LEN>::extract_and_expand_out(
-                &salt, &ikm, &info, size, &mut okm,
-            );
+            let result = HKDF::<H>::extract_and_expand_out(&salt, &ikm, &info, size, &mut okm);
 
             match test.get("result").and_then(Value::as_str).expect("result") {
                 "valid" => {
@@ -91,21 +79,15 @@ fn run<H: HMACParams, const HASH_STATE_LEN: usize, const HKDF_STATE_LEN: usize>(
 
 #[test]
 fn wycheproof_hkdf_sha256() {
-    run::<SHA256, SUSPENDED_SHA256_STATE_LEN, SUSPENDED_HKDF_SHA256_STATE_LEN>(
-        "hkdf_sha256_test.json", "HKDF-SHA-256",
-    );
+    run::<SHA256>("hkdf_sha256_test.json", "HKDF-SHA-256");
 }
 
 #[test]
 fn wycheproof_hkdf_sha384() {
-    run::<SHA384, SUSPENDED_SHA512_STATE_LEN, SUSPENDED_HKDF_SHA384_STATE_LEN>(
-        "hkdf_sha384_test.json", "HKDF-SHA-384",
-    );
+    run::<SHA384>("hkdf_sha384_test.json", "HKDF-SHA-384");
 }
 
 #[test]
 fn wycheproof_hkdf_sha512() {
-    run::<SHA512, SUSPENDED_SHA512_STATE_LEN, SUSPENDED_HKDF_SHA512_STATE_LEN>(
-        "hkdf_sha512_test.json", "HKDF-SHA-512",
-    );
+    run::<SHA512>("hkdf_sha512_test.json", "HKDF-SHA-512");
 }

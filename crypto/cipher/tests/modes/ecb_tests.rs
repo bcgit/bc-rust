@@ -12,16 +12,13 @@
 
 mod common;
 
-#[path = "../common/toy_key.rs"]
-#[allow(dead_code)]
-mod toy_key;
-
+use bouncycastle_cipher::BlockCipherKey;
 use bouncycastle_cipher::modes::hazmat::ecb::{ECB, Ecb};
 use bouncycastle_cipher::modes::{Blocks, CBC, Cbc, ModeNames};
 use bouncycastle_cipher::padding::PKCS7;
 use bouncycastle_cipher::{Decrypting, Encrypting};
 use bouncycastle_core::hazmat::{
-    BlockPermutation, EcbDecryptionKey, EcbEncryptionKey, ElectronicCodeBook,
+    BlockPermutation, EcbDecryptionKey, EcbEncryptionKey, KeyExpansion,
 };
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::symmetric_key::{
@@ -34,10 +31,9 @@ use bouncycastle_core_test_framework::block_cipher::TestFrameworkBlockCipher;
 use bouncycastle_core_test_framework::from_key_material::TestFrameworkFromKeyMaterial;
 use bouncycastle_rng::FixedSeedRNG;
 use common::{SwappedFourToy, SwappedPairToy, TOY_LEN, Toy, toy_key};
-use toy_key::ToyKey;
 
 type ToyEcb<'k, Dir> = Ecb<'k, Toy, Dir, TOY_LEN>;
-type ToyEcbKey = ToyKey<Toy, ECB<Blocks>>;
+type ToyEcbKey = BlockCipherKey<Toy, ECB<Blocks>>;
 
 fn ecb_key() -> ToyEcbKey {
     ToyEcbKey::from_key_material(&toy_key()).expect("the toy key")
@@ -47,12 +43,12 @@ fn ecb_key() -> ToyEcbKey {
 /// its key, so the helpers' key lives for the whole test binary.
 static KEY: std::sync::LazyLock<ToyEcbKey> = std::sync::LazyLock::new(ecb_key);
 
-fn swapped_key() -> ToyKey<SwappedPairToy, ECB<Blocks>> {
-    ToyKey::from_key_material(&toy_key()).expect("the toy key")
+fn swapped_key() -> BlockCipherKey<SwappedPairToy, ECB<Blocks>> {
+    BlockCipherKey::from_key_material(&toy_key()).expect("the toy key")
 }
 
-fn swapped_four_key() -> ToyKey<SwappedFourToy, ECB<Blocks>> {
-    ToyKey::from_key_material(&toy_key()).expect("the toy key")
+fn swapped_four_key() -> BlockCipherKey<SwappedFourToy, ECB<Blocks>> {
+    BlockCipherKey::from_key_material(&toy_key()).expect("the toy key")
 }
 
 /// The implementor hook `do_encrypt_blocks_inplace`, by value, for tests whose data is
@@ -121,7 +117,7 @@ fn reference_ecb(perm: &Toy, input: &[[u8; TOY_LEN]], encrypt: bool) -> Vec<[u8;
 /// first block, since CBC XORs the IV in before the cipher call.
 #[test]
 fn the_mode_matches_the_spec_equations() {
-    let perm = <Toy as ElectronicCodeBook<TOY_LEN, TOY_LEN>>::new(&toy_key()).unwrap();
+    let perm = <Toy as KeyExpansion<TOY_LEN>>::new(&toy_key()).unwrap();
     let plaintext: [[u8; TOY_LEN]; 5] =
         core::array::from_fn(|i| core::array::from_fn(|j| (i * 31 + j * 7 + 1) as u8));
 
@@ -150,7 +146,7 @@ fn the_mode_matches_the_spec_equations() {
 
     // ...and ECB is not CBC: CBC computes CIPH_K(P1 XOR IV), ECB computes CIPH_K(P1).
     let iv: [u8; TOY_LEN] = core::array::from_fn(|i| 0xF0 ^ (i as u8));
-    let cbc_key = ToyKey::<Toy, CBC<Blocks>>::from_key_material(&toy_key()).unwrap();
+    let cbc_key = BlockCipherKey::<Toy, CBC<Blocks>>::from_key_material(&toy_key()).unwrap();
     let (mut cbc, _) = cbc_key.create_encryptor(&mut FixedSeedRNG::new(iv)).unwrap();
     let mut first = plaintext[0];
     cbc.do_encrypt_blocks_inplace(first.as_chunks_mut().0).unwrap();
@@ -351,8 +347,10 @@ fn a_ciphertext_bit_error_affects_only_its_own_block() {
 fn the_keys_enforce_the_material_policy() {
     let framework = TestFrameworkFromKeyMaterial::new();
     framework.test::<TOY_LEN, ToyEcbKey>(Toy::ECB_ALG_NAME, SecurityStrength::_128bit);
-    framework
-        .test::<TOY_LEN, ToyKey<Toy, ECB<PKCS7>>>(Toy::ECB_ALG_NAME, SecurityStrength::_128bit);
+    framework.test::<TOY_LEN, BlockCipherKey<Toy, ECB<PKCS7>>>(
+        Toy::ECB_ALG_NAME,
+        SecurityStrength::_128bit,
+    );
 }
 
 // ---- composition with the padding layer --------------------------------------------------
@@ -364,7 +362,7 @@ fn the_keys_enforce_the_material_policy() {
 /// path draws nothing.
 #[test]
 fn the_padding_layer_round_trips_every_length() {
-    type Key = ToyKey<Toy, ECB<PKCS7>>;
+    type Key = BlockCipherKey<Toy, ECB<PKCS7>>;
     type Enc<'k> = <Key as SymmetricEncryptionKey<TOY_LEN, 0, TOY_LEN>>::Encryptor<'k>;
     type Dec<'k> = <Key as SymmetricDecryptionKey<TOY_LEN, 0, TOY_LEN>>::Decryptor<'k>;
     let key = Key::from_key_material(&toy_key()).expect("the toy key");

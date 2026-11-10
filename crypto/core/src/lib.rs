@@ -6,8 +6,11 @@
 #![forbid(unsafe_code)]
 #![forbid(missing_docs)]
 
+pub mod direction;
 pub mod errors;
 pub mod hazmat;
+pub mod kdf_params;
+pub mod kem_key;
 pub mod key_material;
 mod provided;
 pub mod security_strength;

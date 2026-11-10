@@ -192,4 +192,49 @@ test_hex_key_files_need_the_hex_input_flag() {
     done
 }
 
+# ML-KEM-512-HKDF-SHA256 on the plain mlkem512 keys: encaps and decaps agree on a 32-byte key
+# (one SHA-256 output); the key is HKDF-SHA256(salt, K, info) over the plain mlkem512 secret of
+# the same ciphertext, which the hkdf-sha256 subcommand reproduces from that secret; a different
+# info derives a different key; and no --salt is RFC 5869's absent salt, hkdf-sha256's `--salt ""`.
+test_mlkem512_hkdf_sha256_derives_hkdf_of_the_plain_secret() {
+    local salt=000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f info=6d6c6b656d20686b6466
+    local ss_enc ss_dec plain via_hkdf other
+    "$BC_RUST" mlkem512 keygen >"$TMP/dk"
+    "$BC_RUST" mlkem512 pk-from-sk --skfile "$TMP/dk" >"$TMP/ek"
+    ss_enc=$("$BC_RUST" mlkem512-hkdf-sha256 encaps --pkfile "$TMP/ek" --ctfile "$TMP/ct" --salt "$salt" --additional-input "$info" </dev/null | "$BC_RUST" hex-encode)
+    assert_size "$TMP/ct" 768 "ct length of ML-KEM-512"
+    assert_eq "${#ss_enc}" 64 "a 32-byte derived key"
+    ss_dec=$(hex_out "$BC_RUST" mlkem512-hkdf-sha256 decaps --skfile "$TMP/dk" --salt "$salt" --additional-input "$info" -x <"$TMP/ct")
+    assert_eq "$ss_dec" "$ss_enc" "decaps must recover the derived key"
+    plain=$(hex_out "$BC_RUST" mlkem512 decaps --skfile "$TMP/dk" -x <"$TMP/ct")
+    via_hkdf=$(hex_out "$BC_RUST" hkdf-sha256 --salt "$salt" --ikm "$plain" --additional-input "$info" --len 32 -x </dev/null)
+    assert_eq "$ss_dec" "$via_hkdf" "the derived key is HKDF-SHA256(salt, K, info)"
+    other=$(hex_out "$BC_RUST" mlkem512-hkdf-sha256 decaps --skfile "$TMP/dk" --salt "$salt" --additional-input 6f74686572 -x <"$TMP/ct")
+    [ "$other" != "$ss_dec" ] || fail "a different info must derive a different key"
+    ss_dec=$(hex_out "$BC_RUST" mlkem512-hkdf-sha256 decaps --skfile "$TMP/dk" --ctfile "$TMP/ct" --additional-input "$info" -x </dev/null)
+    via_hkdf=$(hex_out "$BC_RUST" hkdf-sha256 --salt "" --ikm "$plain" --additional-input "$info" --len 32 -x </dev/null)
+    assert_eq "$ss_dec" "$via_hkdf" "no salt is RFC 5869's absent salt"
+    expect_fail "a wrong-length ciphertext is refused" "$BC_RUST" mlkem512-hkdf-sha256 decaps --skfile "$TMP/dk" --salt "$salt" <"$TMP/ek"
+    assert_stderr_has "ciphertext is 800 bytes"
+}
+
+# ML-KEM-768-HKDF-SHA512 and ML-KEM-1024-HKDF-SHA512: the same, with a 64-byte key (one SHA-512
+# output) that hkdf-sha512 reproduces, the salt from a file.
+test_mlkem768_and_1024_hkdf_sha512_derive_hkdf_of_the_plain_secret() {
+    local set info=6d6c6b656d20686b6466 ss_enc ss_dec plain via_hkdf
+    rng 32 >"$TMP/salt"
+    for set in 768:1088 1024:1568; do
+        "$BC_RUST" mlkem${set%:*} keygen >"$TMP/dk"
+        "$BC_RUST" mlkem${set%:*} pk-from-sk --skfile "$TMP/dk" >"$TMP/ek"
+        ss_enc=$("$BC_RUST" mlkem${set%:*}-hkdf-sha512 encaps --pkfile "$TMP/ek" --ctfile "$TMP/ct" --salt-file "$TMP/salt" --additional-input "$info" </dev/null | "$BC_RUST" hex-encode)
+        assert_size "$TMP/ct" "${set#*:}" "ct length of ML-KEM-${set%:*}"
+        assert_eq "${#ss_enc}" 128 "a 64-byte derived key"
+        ss_dec=$(hex_out "$BC_RUST" mlkem${set%:*}-hkdf-sha512 decaps --skfile "$TMP/dk" --salt-file "$TMP/salt" --additional-input "$info" -x <"$TMP/ct")
+        assert_eq "$ss_dec" "$ss_enc" "decaps must recover the derived key"
+        plain=$(hex_out "$BC_RUST" mlkem${set%:*} decaps --skfile "$TMP/dk" -x <"$TMP/ct")
+        via_hkdf=$(hex_out "$BC_RUST" hkdf-sha512 --salt-file "$TMP/salt" --ikm "$plain" --additional-input "$info" --len 64 -x </dev/null)
+        assert_eq "$ss_dec" "$via_hkdf" "the derived key is HKDF-SHA512(salt, K, info)"
+    done
+}
+
 run_all

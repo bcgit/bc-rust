@@ -8,7 +8,7 @@ use bouncycastle_core::hazmat::do_hazardous_operations;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterial512, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::symmetric_key::{FromAnyKeyMaterial, FromKeyMaterial, MacGenerationKey};
-use bouncycastle_core::traits::{AlgorithmInfo, MAC};
+use bouncycastle_core::traits::{AlgorithmInfo, MACGenerator};
 use bouncycastle_rng::FixedSeedRNG;
 
 /// Instance of the test framework.
@@ -135,12 +135,15 @@ impl TestFrameworkFromAnyKeyMaterial {
     ///   accepted by `from_key_material_allow_weak`;
     /// * material of the wrong [`KeyType`] is refused with [`KeyMaterialError::InvalidKeyType`];
     /// * [`FromAnyKeyMaterial::generate`] draws a usable key.
-    pub fn test<K: FromAnyKeyMaterial + MacGenerationKey>(&self, key: &impl KeyMaterialTrait) {
+    pub fn test<const MAC_LEN: usize, K: FromAnyKeyMaterial + MacGenerationKey<MAC_LEN>>(
+        &self,
+        key: &impl KeyMaterialTrait,
+    ) {
         let weak_ok = K::from_key_material_allow_weak(key).expect("allow_weak must accept the key");
         let strength = weak_ok.create_generator().max_security_strength();
         let mut generator = weak_ok.create_generator();
         generator.do_update(b"Hi There");
-        assert_eq!(generator.do_final().len(), weak_ok.create_generator().output_len());
+        assert_eq!(generator.do_final(), weak_ok.mac(b"Hi There"));
 
         // a no-security (and non-zero) key is refused at any strength
         let mut key_none =
@@ -215,6 +218,7 @@ impl TestFrameworkFromAnyKeyMaterial {
         let generated = K::generate(&mut rng).expect("generate from a 256-bit RNG");
         let mut generator = generated.create_generator();
         generator.do_update(b"Hi There");
-        assert_eq!(generator.do_final().len(), generated.create_generator().output_len());
+        assert_eq!(generator.do_final(), generated.mac(b"Hi There"));
+        assert_ne!(generated.mac(b"Hi There"), weak_ok.mac(b"Hi There"), "a fresh key");
     }
 }

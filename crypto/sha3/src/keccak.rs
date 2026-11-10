@@ -1,8 +1,5 @@
 use bouncycastle_core::errors::{HashError, SuspendableError};
-use bouncycastle_core::key_material::KeyType;
-use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_utils::secret::Secret;
-use bouncycastle_utils::suspendable_state::bounded_usize;
 
 /// `RC[ir]` for the 24 rounds of KECCAK-f[1600]: FIPS 202 Algorithm 6 (iota) steps 2-3,
 /// evaluated with the `rc(t)` LFSR of Algorithm 5 for `ir = 0..24` and stored as lanes.
@@ -404,8 +401,8 @@ impl KeccakInternal {
 
 /*** State serialization ***/
 //
-// The SHA3 and SHAKE public objects have identical state: a [KeccakDigest] plus three pieces of
-// KDF metadata. The helpers below serialize that shared state so the `SerializableState` impls in
+// The SHA3 and SHAKE public objects have identical state: a [KeccakDigest]. The helpers below
+// serialize that shared state so the `SerializableState` impls in
 // `sha3.rs` and `shake.rs` are just thin wrappers that add/check the library version header.
 
 /// Number of bytes needed to serialize a [`KeccakInternal`]'s mutable state.
@@ -420,8 +417,8 @@ impl KeccakInternal {
 ///   [400 .. 401)  squeezing     bool  (0 or 1)
 const KECCAK_SERIALIZED_LEN: usize = 200 + 192 + 8 + 1;
 
-/// Number of bytes needed to serialize the shared SHA3-family state (a variant tag, a [`KeccakInternal`],
-/// plus the three KDF metadata fields), excluding the library version header.
+/// Number of bytes needed to serialize the shared SHA3-family state (a variant tag and a
+/// [`KeccakInternal`]), excluding the library version header.
 ///
 /// The leading variant tag distinguishes every SHA3/SHAKE variant — crucially including same-rate
 /// pairs such as SHA3-256 and SHAKE256 — so a serialized state can never be deserialized into a
@@ -430,10 +427,7 @@ const KECCAK_SERIALIZED_LEN: usize = 200 + 192 + 8 + 1;
 /// Layout (all integers little-endian):
 ///   [0 .. 1)                              variant tag           (see `STATE_TAG` on the param traits)
 ///   [1 .. 1 + KECCAK_SERIALIZED_LEN)      keccak digest state
-///   [.. + 1)                              kdf_key_type          (1 byte enum tag)
-///   [.. + 1)                              kdf_security_strength (1 byte enum tag)
-///   [.. + 8)                              kdf_entropy           usize serialized as u64
-pub(crate) const SHA3_FAMILY_STATE_LEN: usize = 1 + KECCAK_SERIALIZED_LEN + 10;
+pub(crate) const SHA3_FAMILY_STATE_LEN: usize = 1 + KECCAK_SERIALIZED_LEN;
 
 /// Length in bytes of the serialized state of a SHA3 or SHAKE instance.
 pub const SUSPENDED_SHA3_STATE_LEN: usize = 3 + SHA3_FAMILY_STATE_LEN;
@@ -498,26 +492,18 @@ impl KeccakInternal {
     }
 }
 
-/// Serializes the state shared by all SHA3-family objects (the `variant_tag`, a [`KeccakInternal`], plus
-/// the three KDF metadata fields) into `out`. See [`SHA3_FAMILY_STATE_LEN`] for the layout.
+/// Serializes the state shared by all SHA3-family objects (the `variant_tag` and a
+/// [`KeccakInternal`]) into `out`. See [`SHA3_FAMILY_STATE_LEN`] for the layout.
 pub(crate) fn serialize_sha3_family_state(
     out: &mut [u8; SHA3_FAMILY_STATE_LEN],
     variant_tag: u8,
     keccak: &KeccakInternal,
-    kdf_key_type: KeyType,
-    kdf_security_strength: SecurityStrength,
-    kdf_entropy: usize,
 ) {
     out[0] = variant_tag;
 
     let keccak_out: &mut [u8; KECCAK_SERIALIZED_LEN] =
         (&mut out[1..1 + KECCAK_SERIALIZED_LEN]).try_into().unwrap();
     keccak.serialize_state(keccak_out);
-
-    out[1 + KECCAK_SERIALIZED_LEN] = kdf_key_type as u8;
-    out[1 + KECCAK_SERIALIZED_LEN + 1] = kdf_security_strength as u8;
-    out[1 + KECCAK_SERIALIZED_LEN + 2..1 + KECCAK_SERIALIZED_LEN + 10]
-        .copy_from_slice(&(kdf_entropy as u64).to_le_bytes());
 }
 
 /// Reconstructs the shared SHA3-family state from a buffer produced by [`serialize_sha3_family_state`].
@@ -530,30 +516,14 @@ pub(crate) fn deserialize_sha3_family_state(
     input: &[u8; SHA3_FAMILY_STATE_LEN],
     expected_variant_tag: u8,
     rate: usize,
-) -> Result<(KeccakInternal, KeyType, SecurityStrength, usize), SuspendableError> {
+) -> Result<KeccakInternal, SuspendableError> {
     if input[0] != expected_variant_tag {
         return Err(SuspendableError::InvalidData);
     }
 
     let keccak_in: &[u8; KECCAK_SERIALIZED_LEN] =
         input[1..1 + KECCAK_SERIALIZED_LEN].try_into().unwrap();
-    let keccak = KeccakInternal::from_serialized_state(keccak_in, rate)?;
-
-    // KeyType and SecurityStrength each own their canonical 1-byte encoding (`as u8` / `TryFrom<u8>`).
-    let kdf_key_type = KeyType::try_from(input[1 + KECCAK_SERIALIZED_LEN])?;
-    let kdf_security_strength = SecurityStrength::try_from(input[1 + KECCAK_SERIALIZED_LEN + 1])?;
-    // `usize::MAX` only narrows the width: any count is valid, but a 32-bit target must not
-    // truncate one that was written on a 64-bit one.
-    let kdf_entropy = bounded_usize(
-        u64::from_le_bytes(
-            input[1 + KECCAK_SERIALIZED_LEN + 2..1 + KECCAK_SERIALIZED_LEN + 10]
-                .try_into()
-                .unwrap(),
-        ),
-        usize::MAX,
-    )?;
-
-    Ok((keccak, kdf_key_type, kdf_security_strength, kdf_entropy))
+    KeccakInternal::from_serialized_state(keccak_in, rate)
 }
 
 #[cfg(test)]
@@ -621,58 +591,8 @@ mod keccak_tests {
             KECCAK_SERIALIZED_LEN, 401,
             "200 (state) + 192 (queue) + 8 (bits) + 1 (squeezing)"
         );
-        assert_eq!(SHA3_FAMILY_STATE_LEN, 412, "1 (tag) + 401 (keccak) + 1 + 1 + 8 (kdf metadata)");
-        assert_eq!(SUSPENDED_SHA3_STATE_LEN, 415, "3 (lib version) + 412");
-    }
-
-    /// The three KDF metadata fields sit in adjacent slots after the keccak state, and the public
-    /// `Suspendable` impls can only ever serialize them at their defaults (the KDF entry points are
-    /// one-shot and consume `self`), so the integration-level round-trip tests cannot tell the slots
-    /// apart.
-    /// Test: Round-trip distinct, non-zero values for every field here so that a mixed-up offset
-    /// in either direction is caught.
-    #[test]
-    fn sha3_family_state_round_trips_kdf_metadata() {
-        let rate = KeccakSize::_256.rate_bits();
-        let mut d = KeccakInternal::new(KeccakSize::_256);
-        d.absorb(b"message");
-
-        // Every field gets a value that is distinct from every other field's value, and non-zero.
-        let (tag, key_type, strength, entropy) =
-            (0x42u8, KeyType::Unknown, SecurityStrength::_192bit, 0x0102_0304_0506_0708usize);
-        // Check that these two in fact serialize to different byte values.
-        assert_ne!(key_type as u8, strength as u8);
-
-        let mut out = [0u8; SHA3_FAMILY_STATE_LEN];
-        serialize_sha3_family_state(&mut out, tag, &d, key_type, strength, entropy);
-
-        // Layout per the doc comment on SHA3_FAMILY_STATE_LEN.
-        assert_eq!(out[0], tag);
-        assert_eq!(out[1 + KECCAK_SERIALIZED_LEN], key_type as u8);
-        assert_eq!(out[1 + KECCAK_SERIALIZED_LEN + 1], strength as u8);
-        assert_eq!(
-            &out[1 + KECCAK_SERIALIZED_LEN + 2..],
-            &(entropy as u64).to_le_bytes(),
-            "kdf_entropy occupies the final 8 bytes"
-        );
-
-        let (d2, kt2, ss2, e2) = deserialize_sha3_family_state(&out, tag, rate).unwrap();
-        assert_eq!(kt2, key_type);
-        assert_eq!(ss2, strength);
-        assert_eq!(e2, entropy);
-
-        // The keccak state itself must also have survived: both sponges give the same output.
-        let (mut o1, mut o2) = ([0u8; 32], [0u8; 32]);
-        d.squeeze(&mut o1);
-        let mut d2 = d2;
-        d2.squeeze(&mut o2);
-        assert_eq!(o1, o2);
-
-        // A wrong tag is rejected before anything else is inspected.
-        assert!(matches!(
-            deserialize_sha3_family_state(&out, tag ^ 1, rate),
-            Err(SuspendableError::InvalidData)
-        ));
+        assert_eq!(SHA3_FAMILY_STATE_LEN, 402, "1 (tag) + 401 (keccak)");
+        assert_eq!(SUSPENDED_SHA3_STATE_LEN, 405, "3 (lib version) + 402");
     }
 
     /// Regression test for from_serialized_state's validation of a not-yet-squeezing queue: a corrupt

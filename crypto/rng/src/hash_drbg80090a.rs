@@ -4,8 +4,8 @@
 // This is here cause HashDRBG80090AParams is private on purpose so that people can't instantiate new parameter sets other than the ones prescribed by NIST.
 #![allow(private_bounds)]
 
-use crate::Sp80090ADrbg;
 use crate::hazmat::NewUninitialized;
+use crate::{MIN_NONCE_LEN, Sp80090ADrbg};
 
 use bouncycastle_core::errors::{KeyMaterialError, RNGError};
 use bouncycastle_core::hazmat::do_hazardous_operations;
@@ -227,6 +227,20 @@ impl<H: HashDRBG80090AParams> Sp80090ADrbg for HashDRBG80090A<H> {
         if (seed.key_len() as u64) > H::MAX_SEED_LEN {
             return Err(KeyMaterialError::SecurityStrength(
                 "Provided seed exceeds the maximum seed length.",
+            ))?;
+        }
+        // Section 8.6.1: "a nonce shall be used". Section 9.1, instantiate parameter 2, allows
+        // its entropy to come with the entropy input instead, the strength asked of that input
+        // "increased by at least ½ security_strength".
+        if nonce.key_len() == 0 {
+            if (seed.key_len() as u32) * 16 < security_strength.as_int() * 3 {
+                return Err(KeyMaterialError::SecurityStrength(
+                    "Without a nonce, the seed must be at least 3/2 of the DRBG security strength.",
+                ))?;
+            }
+        } else if nonce.key_len() < MIN_NONCE_LEN {
+            return Err(KeyMaterialError::SecurityStrength(
+                "A nonce must be at least MIN_NONCE_LEN (8) bytes.",
             ))?;
         }
         // On purpose not checking the SecurityStrength field of the seed,

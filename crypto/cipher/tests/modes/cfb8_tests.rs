@@ -12,13 +12,11 @@
 //! is not re-run.
 
 mod common;
-#[path = "../common/toy_key.rs"]
-#[allow(dead_code)]
-mod toy_key;
 
+use bouncycastle_cipher::BlockCipherKey;
 use bouncycastle_cipher::modes::{CFB, CFB8, Cfb8, ModeNames};
 use bouncycastle_cipher::{Decrypting, Encrypting};
-use bouncycastle_core::hazmat::{BlockPermutation, ElectronicCodeBook};
+use bouncycastle_core::hazmat::{BlockPermutation, ElectronicCodeBook, KeyExpansion};
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::symmetric_key::{
@@ -28,12 +26,12 @@ use bouncycastle_core::traits::{StreamCipherDecryptor, StreamCipherEncryptor};
 use bouncycastle_core_test_framework::from_key_material::TestFrameworkFromKeyMaterial;
 use bouncycastle_core_test_framework::symmetric_ciphers::TestFrameworkStreamCipher;
 use bouncycastle_rng::FixedSeedRNG;
+use common::os_rng;
 use common::{ForwardOnlyToy, SwappedFourToy, SwappedPairToy, TOY_LEN, Toy, toy_key};
-use toy_key::{ToyKey, os_rng};
 
 type ToyCfb8<'k, Dir> = Cfb8<'k, Toy, Dir, TOY_LEN>;
 
-type ToyCfb8Key = ToyKey<Toy, CFB8>;
+type ToyCfb8Key = BlockCipherKey<Toy, CFB8>;
 
 fn cfb8_key() -> ToyCfb8Key {
     ToyCfb8Key::from_key_material(&toy_key()).expect("the toy key")
@@ -43,16 +41,16 @@ fn cfb8_key() -> ToyCfb8Key {
 /// its key, so the helpers' key lives for the whole test binary.
 static KEY: std::sync::LazyLock<ToyCfb8Key> = std::sync::LazyLock::new(cfb8_key);
 
-fn swapped_key() -> ToyKey<SwappedPairToy, CFB8> {
-    ToyKey::from_key_material(&toy_key()).expect("the toy key")
+fn swapped_key() -> BlockCipherKey<SwappedPairToy, CFB8> {
+    BlockCipherKey::from_key_material(&toy_key()).expect("the toy key")
 }
 
-fn swapped_four_key() -> ToyKey<SwappedFourToy, CFB8> {
-    ToyKey::from_key_material(&toy_key()).expect("the toy key")
+fn swapped_four_key() -> BlockCipherKey<SwappedFourToy, CFB8> {
+    BlockCipherKey::from_key_material(&toy_key()).expect("the toy key")
 }
 
-fn forward_only_key() -> ToyKey<ForwardOnlyToy, CFB8> {
-    ToyKey::from_key_material(&toy_key()).expect("the toy key")
+fn forward_only_key() -> BlockCipherKey<ForwardOnlyToy, CFB8> {
+    BlockCipherKey::from_key_material(&toy_key()).expect("the toy key")
 }
 
 /// `do_encrypt_inplace`, by value.
@@ -161,7 +159,7 @@ fn reference_cfb8(perm: &Toy, iv: [u8; TOY_LEN], input: &[u8], encrypt: bool) ->
 #[test]
 fn the_mode_matches_the_spec_equations() {
     let iv = pinned_iv();
-    let perm = <Toy as ElectronicCodeBook<TOY_LEN, TOY_LEN>>::new(&toy_key()).unwrap();
+    let perm = <Toy as KeyExpansion<TOY_LEN>>::new(&toy_key()).unwrap();
 
     for len in [1, 2, TOY_LEN - 1, TOY_LEN, TOY_LEN + 1, 3 * TOY_LEN + 5] {
         let plaintext = message(len);
@@ -229,7 +227,7 @@ fn cfb8_is_not_cfb128() {
 
     let cfb8 = enc(&mut pinned_encryptor(iv), &plaintext);
 
-    let cfb128_key = ToyKey::<Toy, CFB>::from_key_material(&toy_key()).unwrap();
+    let cfb128_key = BlockCipherKey::<Toy, CFB>::from_key_material(&toy_key()).unwrap();
     let (mut cfb, got) = cfb128_key.create_encryptor(&mut pinned_rng(iv)).unwrap();
     assert_eq!(got, iv);
     let mut cfb128 = plaintext.clone();
@@ -389,7 +387,7 @@ fn chunking_matches_a_single_call_at_every_batch_remainder() {
         let key =
             KeyMaterial::<KEY_LEN>::from_bytes_as_type(&key_bytes, KeyType::SymmetricCipherKey)
                 .expect("a valid key");
-        let key = ToyKey::<P, CFB8>::from_perm(P::new(&key).expect("a valid key"));
+        let key = BlockCipherKey::<P, CFB8>::from_key_material(&key).expect("a valid key");
         let iv: [u8; 16] = core::array::from_fn(|i| 0xC3 ^ (i as u8));
         let plaintext: Vec<u8> = (0..171).map(|i| (i * 7 + i / 16) as u8).collect();
 

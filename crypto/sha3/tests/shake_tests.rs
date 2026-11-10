@@ -3,16 +3,12 @@ extern crate core;
 #[cfg(test)]
 mod shake_tests {
     use bouncycastle_core::errors::HashError;
-    use bouncycastle_core::key_material::{
-        KeyMaterial, KeyMaterial256, KeyMaterial512, KeyMaterialTrait, KeyType,
-    };
     use bouncycastle_core::security_strength::SecurityStrength;
     use bouncycastle_core::traits::{
-        AlgorithmInfo, Hash, HashAlgParams, HashOneShot, KDF, XOF, XOFSqueezer,
+        AlgorithmInfo, Hash, HashAlgParams, HashOneShot, XOF, XOFSqueezer,
     };
     use bouncycastle_core_test_framework::DUMMY_SEED;
     use bouncycastle_core_test_framework::hash::TestFrameworkHash;
-    use bouncycastle_core_test_framework::kdf::TestFrameworkKDF;
     use bouncycastle_core_test_framework::xof::TestFrameworkXOF;
     use bouncycastle_sha3::{SHA3_256, SHAKE128, SHAKE256};
 
@@ -141,154 +137,6 @@ mod shake_tests {
         let mut hash_view = [0xFFu8; 100];
         assert_eq!(SHAKE256::hash_out(b"abc", &mut hash_view), 64, "the nominal length");
         assert_eq!(&hash_view[64..], &[0u8; 36][..], "everything past output_len is zeroized");
-    }
-
-    #[test]
-    fn test_kdf() {
-        let testframework = TestFrameworkKDF::new();
-
-        let key_material = KeyMaterial256::from_bytes(&DUMMY_SEED[..32]).unwrap();
-        // println!("{:x?}", &DUMMY_SEED[..32]);
-
-        // Without additional input -- SHAKE128
-        let derived_key = SHAKE128::new().derive_key(&key_material, &[0u8; 0]).unwrap();
-        assert_eq!(derived_key.key_len(), 32);
-        let expected_key = KeyMaterial256::from_bytes(b"\x06\x6a\x36\x1d\xc6\x75\xf8\x56\xce\xcd\xc0\x2b\x25\x21\x8a\x10\xce\xc0\xce\xcf\x79\x85\x9e\xc0\xfe\xc3\xd4\x09\xe5\x84\x7a\x92").unwrap();
-        assert_eq!(derived_key.ref_to_bytes(), expected_key.ref_to_bytes());
-        testframework.test_kdf_single_key::<SHAKE128>(&key_material, &[0u8; 0], &expected_key);
-
-        // Without additional input -- SHAKE256
-        let derived_key = SHAKE256::new().derive_key(&key_material, &[0u8; 0]).unwrap();
-        assert_eq!(derived_key.key_len(), 64);
-        let expected_key = KeyMaterial512::from_bytes(b"\x69\xf0\x7c\x88\x40\xce\x80\x02\x4d\xb3\x09\x39\x88\x2c\x3d\x5b\xbc\x9c\x98\xb3\xe3\x1e\x45\x13\xeb\xd2\xca\x9b\x45\x03\xcd\xd3\xc9\xc9\x07\x42\x45\x2c\x71\x73\xd4\xa7\x5a\xc4\x91\x63\xe1\x4e\xe0\xcc\x24\xef\x70\x35\xb2\x72\xd1\x9a\x7a\xf1\x09\x9b\x33\x3f").unwrap();
-        assert_eq!(derived_key.ref_to_bytes(), expected_key.ref_to_bytes());
-        testframework.test_kdf_single_key::<SHAKE256>(&key_material, &[0u8; 0], &expected_key);
-
-        // With additional input
-        let derived_key = SHAKE128::new().derive_key(&key_material, &[0u8; 8]).unwrap();
-        let expected_key = KeyMaterial256::from_bytes(b"\xfb\x4e\x8b\x67\xbb\xb8\xe1\x16\xa7\x76\x17\x2d\xb6\x64\xc9\xcd\x71\xad\x3b\xc0\xce\x45\xd3\xe8\xd0\x43\x43\x97\x79\xeb\x2d\xd1").unwrap();
-        assert_eq!(derived_key.ref_to_bytes(), expected_key.ref_to_bytes());
-        testframework.test_kdf_single_key::<SHAKE128>(&key_material, &[0u8; 8], &expected_key);
-
-        // derive_key_from_multiple
-        let keys = [&key_material, &key_material];
-        let derived_key = SHAKE128::new().derive_key_from_multiple(&keys, &[0u8; 0]).unwrap();
-        let mut expected_key = KeyMaterial256::from_bytes(b"\xc2\x44\x60\x7f\x7b\x84\x3a\xe3\xc7\x69\x3d\x0b\x39\x9a\x3d\x50\x2e\x42\x58\x96\x33\xc7\x3a\xc1\x1f\xae\x0a\x04\x7b\x49\x1e\xf4").unwrap();
-        assert_eq!(derived_key.ref_to_bytes(), expected_key.ref_to_bytes());
-        testframework.test_kdf_multiple_key::<SHAKE128>(&keys, &[0u8; 0], &mut expected_key);
-
-        // success case -- output version
-        let mut derived_key = KeyMaterial256::new();
-        SHAKE128::new().derive_key_out(&key_material, &[0u8; 0], &mut derived_key).unwrap();
-        assert_eq!(derived_key.key_len(), 32);
-        let expected_key = KeyMaterial256::from_bytes(b"\x06\x6a\x36\x1d\xc6\x75\xf8\x56\xce\xcd\xc0\x2b\x25\x21\x8a\x10\xce\xc0\xce\xcf\x79\x85\x9e\xc0\xfe\xc3\xd4\x09\xe5\x84\x7a\x92").unwrap();
-        assert_eq!(derived_key.ref_to_bytes(), expected_key.ref_to_bytes());
-
-        // test with a really long output key
-        let mut derived_key = KeyMaterial::<10_000>::new();
-        SHAKE128::new().derive_key_out(&key_material, &[0u8; 0], &mut derived_key).unwrap();
-        assert_eq!(derived_key.key_len(), 10_000);
-        // check that data was written to the end of the buffer
-        assert_ne!(derived_key.ref_to_bytes()[10_000 - 10..10_000], [0u8; 10]);
-    }
-
-    #[test]
-    fn test_kdf_undersized_and_oversized() {
-        let key_material = KeyMaterial256::from_bytes(&DUMMY_SEED[..32]).unwrap();
-
-        // at size
-        let mut derived_key = KeyMaterial::<32>::new();
-        SHAKE128::new().derive_key_out(&key_material, &[0u8; 0], &mut derived_key).unwrap();
-        assert_eq!(derived_key.key_len(), 32);
-        let expected_key = KeyMaterial256::from_bytes(b"\x06\x6a\x36\x1d\xc6\x75\xf8\x56\xce\xcd\xc0\x2b\x25\x21\x8a\x10\xce\xc0\xce\xcf\x79\x85\x9e\xc0\xfe\xc3\xd4\x09\xe5\x84\x7a\x92").unwrap();
-        assert_eq!(derived_key.ref_to_bytes(), expected_key.ref_to_bytes());
-
-        // undersized -- should truncate
-        let mut derived_key = KeyMaterial::<16>::new();
-        SHAKE128::new().derive_key_out(&key_material, &[0u8; 0], &mut derived_key).unwrap();
-        assert_eq!(derived_key.key_len(), 16);
-        let expected_key = KeyMaterial256::from_bytes(
-            b"\x06\x6a\x36\x1d\xc6\x75\xf8\x56\xce\xcd\xc0\x2b\x25\x21\x8a\x10",
-        )
-        .unwrap();
-        assert_eq!(derived_key.ref_to_bytes(), expected_key.ref_to_bytes());
-
-        // oversized -- SHAKE128 is an XOF, so it should fill the provided buffer
-        let mut derived_key = KeyMaterial::<200>::new();
-        SHAKE128::new().derive_key_out(&key_material, &[0u8; 0], &mut derived_key).unwrap();
-        assert_eq!(derived_key.key_len(), 200);
-        let expected_key = KeyMaterial256::from_bytes(b"\x06\x6a\x36\x1d\xc6\x75\xf8\x56\xce\xcd\xc0\x2b\x25\x21\x8a\x10\xce\xc0\xce\xcf\x79\x85\x9e\xc0\xfe\xc3\xd4\x09\xe5\x84\x7a\x92").unwrap();
-        assert_eq!(&derived_key.ref_to_bytes()[..32], expected_key.ref_to_bytes());
-        // and there should be data all the way to the end, but I don't have a reference vector for it...
-        assert_ne!(&derived_key.ref_to_bytes()[32..], [0u8; 200 - 32]);
-    }
-
-    #[test]
-    fn kdf_input_entropy() {
-        // Exact entropy
-        let key_material =
-            KeyMaterial256::from_bytes_as_type(&DUMMY_SEED[..32], KeyType::CryptographicRandom)
-                .unwrap();
-        let derived_key = SHAKE128::new().derive_key(&key_material, &[0u8; 0]).unwrap();
-        let expected_key = KeyMaterial256::from_bytes(b"\x06\x6a\x36\x1d\xc6\x75\xf8\x56\xce\xcd\xc0\x2b\x25\x21\x8a\x10\xce\xc0\xce\xcf\x79\x85\x9e\xc0\xfe\xc3\xd4\x09\xe5\x84\x7a\x92").unwrap();
-        assert_eq!(derived_key.ref_to_bytes(), expected_key.ref_to_bytes());
-        assert_eq!(derived_key.key_type(), KeyType::CryptographicRandom);
-
-        // more entropy than needed -- single input key
-        let key_material =
-            KeyMaterial512::from_bytes_as_type(&DUMMY_SEED[..64], KeyType::CryptographicRandom)
-                .unwrap();
-        let derived_key = SHAKE128::new().derive_key(&key_material, &[0u8; 0]).unwrap();
-        assert_eq!(derived_key.key_type(), KeyType::CryptographicRandom);
-
-        // // more entropy than needed -- multiple input keys
-        let key_material =
-            KeyMaterial256::from_bytes_as_type(&DUMMY_SEED[..16], KeyType::CryptographicRandom)
-                .unwrap();
-        let keys = [&key_material, &key_material];
-        let derived_key = SHAKE128::new().derive_key_from_multiple(&keys, &[0u8; 0]).unwrap();
-        assert_eq!(derived_key.key_type(), KeyType::CryptographicRandom);
-
-        // more entropy than needed -- multiple input keys of different full-entropy types;
-        // should get the type of the first one
-        let key_material1 =
-            KeyMaterial256::from_bytes_as_type(&DUMMY_SEED[..16], KeyType::MACKey).unwrap();
-        let key_material2 =
-            KeyMaterial256::from_bytes_as_type(&DUMMY_SEED[..16], KeyType::SymmetricCipherKey)
-                .unwrap();
-        let keys = [&key_material1, &key_material2];
-        let derived_key = SHAKE128::new().derive_key_from_multiple(&keys, &[0u8; 0]).unwrap();
-        assert_eq!(derived_key.key_type(), KeyType::MACKey);
-
-        // // less entropy than needed -- various permutations, but not exhaustive
-
-        let key_material =
-            KeyMaterial256::from_bytes_as_type(&DUMMY_SEED[..31], KeyType::CryptographicRandom)
-                .unwrap();
-        let derived_key = SHAKE128::new().derive_key(&key_material, &[0u8; 0]).unwrap();
-        assert_eq!(derived_key.key_type(), KeyType::Unknown);
-
-        let key_material =
-            KeyMaterial256::from_bytes_as_type(&DUMMY_SEED[..16], KeyType::CryptographicRandom)
-                .unwrap();
-        let keys = [&key_material, &key_material];
-        let derived_key = SHAKE256::new().derive_key_from_multiple(&keys, &[0u8; 0]).unwrap();
-        assert_eq!(derived_key.key_type(), KeyType::Unknown);
-
-        let key_material =
-            KeyMaterial256::from_bytes_as_type(&DUMMY_SEED[..8], KeyType::CryptographicRandom)
-                .unwrap();
-        let derived_key = SHAKE128::new().derive_key(&key_material, &[0u8; 0]).unwrap();
-        assert_eq!(derived_key.key_type(), KeyType::Unknown);
-
-        let key_low_entropy =
-            KeyMaterial256::from_bytes_as_type(&DUMMY_SEED[..32], KeyType::Unknown).unwrap();
-        let key_material =
-            KeyMaterial256::from_bytes_as_type(&DUMMY_SEED[..16], KeyType::CryptographicRandom)
-                .unwrap();
-        let keys = [&key_material, &key_low_entropy];
-        let derived_key = SHAKE128::new().derive_key_from_multiple(&keys, &[0u8; 0]).unwrap();
-        assert_eq!(derived_key.key_type(), KeyType::Unknown);
     }
 
     #[test]

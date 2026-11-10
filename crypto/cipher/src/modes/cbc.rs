@@ -29,7 +29,7 @@
 //! ```
 //! # mod toy { include!("../../tests/common/toy_block_cipher.rs"); }
 //! # use toy::ToyBlockCipher;
-//! use bouncycastle_core::hazmat::{BlockDecryptMode, BlockEncryptMode, ElectronicCodeBook, Mode};
+//! use bouncycastle_core::hazmat::{BlockDecryptMode, BlockEncryptMode, ElectronicCodeBook, KeyExpansion, Mode};
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 //! use bouncycastle_core::traits::{BlockCipherDecryptor, BlockCipherEncryptor};
 //! use bouncycastle_cipher::modes::{Blocks, CBC};
@@ -61,7 +61,7 @@
 //! ```
 //! # mod toy { include!("../../tests/common/toy_block_cipher.rs"); }
 //! # use toy::ToyBlockCipher;
-//! use bouncycastle_core::hazmat::{BlockDecryptMode, BlockEncryptMode, ElectronicCodeBook, Mode};
+//! use bouncycastle_core::hazmat::{BlockDecryptMode, BlockEncryptMode, ElectronicCodeBook, KeyExpansion, Mode};
 //! use bouncycastle_core::key_material::{KeyMaterial128, KeyType};
 //! use bouncycastle_core::traits::{BlockCipherDecryptor, BlockCipherEncryptor};
 //! use bouncycastle_cipher::modes::{Blocks, CBC};
@@ -150,6 +150,13 @@ where
         let iv = random_iv::<BLOCK_LEN>(rng)?;
         Ok((PaddedBlockCipherEncryptor::from_inner(Cbc::from_perm(state, iv)), iv))
     }
+
+    fn encrypt_init_nonce<'k>(
+        state: &'k Self::KeyState,
+        iv: &[u8; BLOCK_LEN],
+    ) -> Self::Encryptor<'k> {
+        PaddedBlockCipherEncryptor::from_inner(Cbc::from_perm(state, *iv))
+    }
 }
 
 impl<P, Pad, const KEY_LEN: usize, const BLOCK_LEN: usize>
@@ -187,6 +194,13 @@ where
     ) -> Result<(Self::Encryptor<'k>, [u8; BLOCK_LEN]), SymmetricCipherError> {
         let iv = random_iv::<BLOCK_LEN>(rng)?;
         Ok((Cbc::from_perm(state, iv), iv))
+    }
+
+    fn encrypt_init_nonce<'k>(
+        state: &'k Self::KeyState,
+        iv: &[u8; BLOCK_LEN],
+    ) -> Self::Encryptor<'k> {
+        Cbc::from_perm(state, *iv)
     }
 }
 

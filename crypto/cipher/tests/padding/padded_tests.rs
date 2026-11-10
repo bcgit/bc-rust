@@ -5,10 +5,8 @@
 
 #[path = "../common/toy_block_cipher.rs"]
 mod toy_block_cipher;
-#[path = "../common/toy_key.rs"]
-#[allow(dead_code)]
-mod toy_key;
 
+use bouncycastle_cipher::BlockCipherKey;
 use bouncycastle_cipher::modes::{Blocks, CBC, ModeNames};
 use bouncycastle_cipher::padding::{NoPadding, PKCS7};
 use bouncycastle_core::errors::{PaddingError, SymmetricCipherError};
@@ -26,15 +24,14 @@ use bouncycastle_core_test_framework::from_key_material::TestFrameworkFromKeyMat
 use bouncycastle_core_test_framework::symmetric_ciphers::TestFrameworkSymmetricCipher;
 use bouncycastle_rng::FixedSeedRNG;
 use toy_block_cipher::{TOY_BLOCK_LEN, ToyBlockCipher};
-use toy_key::{ToyKey, os_rng};
 
 const B: usize = TOY_BLOCK_LEN;
 
-type Key = ToyKey<ToyBlockCipher, CBC<PKCS7>>;
+type Key = BlockCipherKey<ToyBlockCipher, CBC<PKCS7>>;
 type Enc<'k> = <Key as SymmetricEncryptionKey<B, B, B>>::Encryptor<'k>;
 type Dec<'k> = <Key as SymmetricDecryptionKey<B, B, B>>::Decryptor<'k>;
 /// The same adapters over `NoPadding`: an alignment check rather than a padding scheme.
-type KeyNP = ToyKey<ToyBlockCipher, CBC<NoPadding>>;
+type KeyNP = BlockCipherKey<ToyBlockCipher, CBC<NoPadding>>;
 type EncNP<'k> = <KeyNP as SymmetricEncryptionKey<B, B, B>>::Encryptor<'k>;
 type DecNP<'k> = <KeyNP as SymmetricDecryptionKey<B, B, B>>::Decryptor<'k>;
 
@@ -42,8 +39,8 @@ fn material() -> KeyMaterial<B> {
     KeyMaterial::<B>::from_bytes_as_type(&[0x5a; B], KeyType::SymmetricCipherKey).unwrap()
 }
 
-fn key_for<M: Mode<ToyBlockCipher>>() -> ToyKey<ToyBlockCipher, M> {
-    ToyKey::from_key_material(&material()).expect("the toy key")
+fn key_for<M: Mode<ToyBlockCipher>>() -> BlockCipherKey<ToyBlockCipher, M> {
+    BlockCipherKey::from_key_material(&material()).expect("the toy key")
 }
 
 fn key() -> Key {
@@ -356,4 +353,8 @@ fn no_padding_decryptor_accepts_empty_and_rejects_unaligned() {
             "len {len}: an unaligned ciphertext is malformed"
         );
     }
+}
+
+fn os_rng() -> bouncycastle_rng::HashDRBG_SHA512 {
+    bouncycastle_rng::HashDRBG_SHA512::new_from_os()
 }

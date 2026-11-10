@@ -24,7 +24,7 @@ fn bench_hmac_sm3(c: &mut Criterion) {
     group.throughput(Throughput::Bytes(big_data.len() as u64));
     group.bench_function(format!("{} bytes -- key.mac_out()", big_data.len() as u64), |b| {
         b.iter(|| {
-            key.mac_out(black_box(&big_data), &mut out).unwrap();
+            key.mac_out(black_box(&big_data), &mut out);
             black_box(&out);
         })
     });

@@ -71,6 +71,10 @@ pub type Default128BitRNG = HashDRBG_SHA256;
 /// The library's default RNG at the 256-bit security level.
 pub type Default256BitRNG = HashDRBG_SHA512;
 
+/// The shortest non-empty nonce [`Sp80090ADrbg::instantiate`] accepts, in bytes: a 64-bit
+/// timestamp, which can meet SP 800-90A Rev. 1 Section 8.6.7 b.
+pub const MIN_NONCE_LEN: usize = 8;
+
 /// The DRBG mechanism functions of SP 800-90A Rev. 1 Section 7.4: instantiate, generate and
 /// reseed are the methods below; uninstantiate is Rust's `Drop` on the sensitive working state;
 /// the health test is not implemented yet. `prediction_resistance` is not supported: only
@@ -106,12 +110,12 @@ pub trait Sp80090ADrbg {
     /// The nonce is Section 8.6.7's: "either: a. A value with at least (security_strength/2) bits
     /// of entropy, or b. A value that is expected to repeat no more often than a
     /// (security_strength/2)-bit random string would be expected to repeat", unique to the module
-    /// and "considered to be a critical security parameter" though it "need not be secret". It is
-    /// not checked here, which is why it is a KeyMaterial: so that it gets the erasure and logging
-    /// protections of one. An empty nonce is accepted and the seed then has to carry the whole
-    /// requirement on its own: `new_from_os` passes one, with a seed of twice the strength, which
-    /// covers Section 8.6.7's alternative of an entropy input of `(3/2 security_strength)` bits
-    /// in place of a nonce. Neither is checked here (the deferred R6).
+    /// and "considered to be a critical security parameter" though it "need not be secret", which
+    /// is why it is a KeyMaterial. Only its length can be checked: a non-empty nonce shorter than
+    /// [`MIN_NONCE_LEN`] bytes is refused. An empty nonce is Section 9.1's alternative of drawing
+    /// the nonce's entropy with the entropy input, so the seed must then be at least
+    /// `3 * security_strength / 2` bits long; `new_from_os` takes this route with a seed of twice
+    /// the strength.
     fn instantiate(
         &mut self,
         prediction_resistance: bool,

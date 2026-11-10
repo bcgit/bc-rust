@@ -40,12 +40,13 @@
 //!             KeyType::Seed).unwrap();
 //!
 //! let hkdf = HKDF_SHA256::new();
-//! let key = hkdf.derive_key(&key, b"extra input").unwrap();
+//! let key = hkdf.derive_key(&key, b"extra input", 32).unwrap();
 //! ```
 //!
-//! [`KDF::derive_key`] will produce a key the same length as the underlying hash function.
-//! Longer output can be requested by instead using [`KDF::derive_key_out`] and providing a larger output buffer,
-//! which will be filled.
+//! [`KDF::derive_key`] takes the length to produce, up to `255 * HashLen` (RFC 5869 Section 2.3);
+//! [`KDF::derive_key_out`] writes it into a buffer of the caller's. An instance from
+//! [`HKDF::new_with_salt`] runs the extract phase with that salt, one from [`HKDF::new`] with the
+//! absent salt.
 //!
 //! As with other uses of [`KeyMaterialTrait`], the [`KDF::derive_key`] function will track the entropy of the input
 //! key material, and will set the entropy of the output key material accordingly.
@@ -80,8 +81,8 @@
 //! no more calls to [`HKDF::do_extract_update_key`] may be made.
 //! The streaming API is completed with a call to either [`HKDF::do_extract_final`] or [`HKDF::do_extract_final_out`].
 //!
-//! The second stage, [`HKDF::expand_out`] stretches the `prk` into a longer output key, still of the same [`KeyType`]
-//! and [`SecurityStrength`].
+//! The second stage, [`HKDF::expand_out`] stretches the `prk` into a longer output key, typed
+//! [`KeyType::CryptographicRandom`] when the PRK was credited and at the PRK's [`SecurityStrength`].
 //!
 //! A typical flow looks like this:
 //!
@@ -133,78 +134,25 @@
 //! let _bytes_written = HKDF_SHA256::extract_and_expand_out(&salt, &ikm, info, 200, &mut okm).unwrap();
 //! ```
 //!
-//! ## Suspending and resuming execution
-//!
-//! The *HKDF-Extract* phase supports a streaming API whereby any amount of additional input keying
-//! material can be provided either via [`HKDF::do_extract_update_key`] -- which will
-//! credit the entropy of the provided [`KeyMaterial`] -- or as raw uncredited bytes via
-//! [`HKDF::do_extract_update_bytes`].
-//!
-//! As such, the *HKDF-Extract* phase can be suspended to a cache and resumed later via the
-//! [`SuspendableKeyed`] trait.
-//!
-//! The HKDF algorithm is keyed by a `salt`, which is required twice: once at initialization and again
-//! during finalization. Suspension and resumption are supported via the [`SuspendableKeyed`] trait
-//! which requires the caller to store the salt securely and provide it again during resumption.
-//! Note that providing a different salt during resumption cannot be detected by the library and
-//! would silently produce a different PRK.
-//!
-//! ```rust
-//! use bouncycastle_core::key_material::{KeyMaterial256, KeyType};
-//! use bouncycastle_core::traits::SuspendableKeyed;
-//! use bouncycastle_sha2::hkdf::HKDF_SHA256;
-//!
-//! let salt = KeyMaterial256::from_bytes_as_type(
-//!             b"\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0a\x0b\x0c\x0d\x0e\x0f",
-//!             KeyType::MACKey).unwrap();
-//! let ikm_part1 = b"input keying material part 1";
-//! let ikm_part2 = b" ...and part 2";
-//!
-//! let mut hkdf = HKDF_SHA256::new();
-//! hkdf.do_extract_init(&salt).unwrap();
-//! hkdf.do_extract_update_bytes(ikm_part1).unwrap();
-//!
-//! // suspend the in-progress extract (the salt is NOT included in the serialized state)
-//! let serialized_state = hkdf.suspend();
-//!
-//! // ...
-//! // do other things in the meantime
-//! // ...
-//!
-//! // ... later, possibly on another host: resume from the serialized state by re-supplying
-//! // the same salt (make sure you store it securely!).
-//! let mut hkdf = HKDF_SHA256::from_suspended(serialized_state, &salt).unwrap();
-//! hkdf.do_extract_update_bytes(ikm_part2).unwrap();
-//! let _prk = hkdf.do_extract_final().unwrap();
-//! ```
-//!
 //! # Memory Usage
 //!
-//! The HKDF object itself uses no heap memory; the `Vec`-returning and `Box<dyn KeyMaterialTrait>`
-//! -returning convenience methods of the [`KDF`] trait allocate their output, and the `*_out`
-//! variants allocate nothing.
+//! The HKDF object itself uses no heap memory; the `Box<dyn KeyMaterialTrait>`-returning one-shots
+//! of the [`KDF`] trait allocate their output, and the `*_out` variants allocate nothing.
 //!
 //! | Object                                            | Size (bytes) |
 //! |---------------------------------------------------|--------------|
 //! | `HKDF_SHA256`                                     | 368          |
 //! | `HKDF_SHA384`                                     | 656          |
 //! | `HKDF_SHA512`                                     | 656          |
-//! | Suspended `HKDF_SHA256` state                     | 122          |
-//! | Suspended `HKDF_SHA384` state                     | 218          |
-//! | Suspended `HKDF_SHA512` state                     | 218          |
 //!
-//! The object is an `Option` of the inner extract-phase HMAC -- 224 bytes for SHA-256, 416 for
-//! SHA-384 and SHA-512, each two hash states -- plus the bookkeeping (the entropy counter, the
-//! accumulated security strength and the state-machine tag, with padding); the `Option` is
-//! niche-filled for SHA-256 and not for the larger pair, hence the uneven step.
-//!
-//! The suspended state is the inner HMAC's suspended state (which is the hash's) plus 14 bytes; the
-//! salt is deliberately excluded and must be re-supplied on resume.
+//! The object is an `Option` of the extract phase's two halves, the salt key (two hash states,
+//! the pads) and the inner hash absorbing the IKM -- three hash states, 336 bytes for SHA-256,
+//! 624 for SHA-384 and SHA-512 -- plus the bookkeeping (the entropy counter, the accumulated
+//! security strength, the state-machine tag and the absorbed flag, with padding); the `Option`
+//! is niche-filled for SHA-256 and not for the larger pair, hence the uneven step.
 //!
 //! # 🚨 Security Considerations 🚨
 //!
-//! * Resuming a suspended HKDF with a different salt cannot be detected and silently produces a
-//!   different PRK; see the suspend/resume section above.
 //! * Entropy is only credited for input supplied via [`HKDF::do_extract_update_key`], and for a salt
 //!   typed [`bouncycastle_core::key_material::KeyType::MACKey`] (a secret salt); any other salt is RFC
 //!   5869's non-secret value and credits nothing. Bytes supplied
@@ -217,12 +165,7 @@
 //! * RFC 5869 Section 3.1 recommends a random salt where one is available; SP 800-56Cr2 permits an
 //!   all-zero salt. An all-zero salt is below any HMAC's strength, so it needs the HMAC key's
 //!   `from_key_material_allow_weak` -- which is exactly what the extract phase does internally.
-use crate::hmac::{
-    SUSPENDED_HMAC_SHA256_STATE_LEN, SUSPENDED_HMAC_SHA384_STATE_LEN,
-    SUSPENDED_HMAC_SHA512_STATE_LEN,
-};
 use crate::{SHA256, SHA384, SHA512};
-use crate::{SUSPENDED_SHA256_STATE_LEN, SUSPENDED_SHA512_STATE_LEN};
 use bouncycastle_hkdf::HKDF;
 
 /*** Imports needed for docs ***/
@@ -231,7 +174,7 @@ use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 #[allow(unused_imports)]
 use bouncycastle_core::security_strength::SecurityStrength;
 #[allow(unused_imports)]
-use bouncycastle_core::traits::{KDF, SuspendableKeyed, XOF};
+use bouncycastle_core::traits::{KDF, XOF};
 
 /*** String constants ***/
 /// The name of HKDF over SHA-224, for `HMACParams::HKDF_ALG_NAME`.
@@ -247,25 +190,13 @@ pub const HKDF_SHA512_224_NAME: &str = "HKDF-SHA512/224";
 /// The name of HKDF over SHA-512/256, for `HMACParams::HKDF_ALG_NAME`.
 pub const HKDF_SHA512_256_NAME: &str = "HKDF-SHA512/256";
 
-/*** Serialized-state length constants ***/
-// HKDF wraps the inner extract-phase HMAC's blob in 14 bytes of its own bookkeeping (a 3-byte library
-// version header plus 11 bytes of present flag, state tag, entropy counter and security strength);
-// see the `SuspendableKeyed` impl in `bouncycastle-hkdf` for the layout.
-/// Length in bytes of the serialized state of [`HKDF_SHA256`].
-pub const SUSPENDED_HKDF_SHA256_STATE_LEN: usize = SUSPENDED_HMAC_SHA256_STATE_LEN + 14;
-/// Length in bytes of the serialized state of [`HKDF_SHA384`].
-pub const SUSPENDED_HKDF_SHA384_STATE_LEN: usize = SUSPENDED_HMAC_SHA384_STATE_LEN + 14;
-/// Length in bytes of the serialized state of [`HKDF_SHA512`].
-pub const SUSPENDED_HKDF_SHA512_STATE_LEN: usize = SUSPENDED_HMAC_SHA512_STATE_LEN + 14;
-
 /*** Type aliases ***/
 /// Public type for HKDF using SHA256.
 #[allow(non_camel_case_types)]
-pub type HKDF_SHA256 = HKDF<SHA256, SUSPENDED_SHA256_STATE_LEN, SUSPENDED_HKDF_SHA256_STATE_LEN>;
-/// Public type for HKDF using SHA384. SHA-384 is a member of the SHA-512 family, so it shares
-/// SHA-512's suspended-state length.
+pub type HKDF_SHA256 = HKDF<SHA256>;
+/// Public type for HKDF using SHA384.
 #[allow(non_camel_case_types)]
-pub type HKDF_SHA384 = HKDF<SHA384, SUSPENDED_SHA512_STATE_LEN, SUSPENDED_HKDF_SHA384_STATE_LEN>;
+pub type HKDF_SHA384 = HKDF<SHA384>;
 /// Public type for HKDF using SHA512.
 #[allow(non_camel_case_types)]
-pub type HKDF_SHA512 = HKDF<SHA512, SUSPENDED_SHA512_STATE_LEN, SUSPENDED_HKDF_SHA512_STATE_LEN>;
+pub type HKDF_SHA512 = HKDF<SHA512>;

@@ -4,10 +4,10 @@
 //! cloned alongside this repo at "../bc-test-data" (same convention as the sha2/sha3 crates), under
 //! `crypto/sp800-185/`. If it is not present the tests print a warning and pass vacuously.
 
-use bouncycastle_core::errors::MACError;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::symmetric_key::MacGenerationKey;
-use bouncycastle_core::traits::{Hash, MAC, XOF, XOFSqueezer};
+use bouncycastle_core::traits::{Hash, XOF, XOFSqueezer};
+use bouncycastle_core_test_framework::mac::TestFrameworkMAC;
 use bouncycastle_core_test_framework::test_data_loaders::bc_test_data;
 use bouncycastle_core_test_framework::xof::TestFrameworkXOF;
 use bouncycastle_hex as hex;
@@ -71,7 +71,30 @@ fn key_material(bytes: &[u8]) -> KeyMaterial<32> {
     KeyMaterial::<32>::from_bytes_as_type(bytes, KeyType::MACKey).expect("a valid MAC key")
 }
 
-/// KMAC (Sec 4.3): the requested output length is bound into the input.
+/// Fixed-length KMAC128 at the length `n` through the key type of that length, for the lengths
+/// the sample values and their derived checks use: the published 32 and the shorter 16 and 31.
+fn kmac128_at(key: &KeyMaterial<32>, s: &[u8], msg: &[u8], n: usize) -> Vec<u8> {
+    match n {
+        16 => KMAC128Key::<16>::with_params(key, s).expect("a valid key").mac(msg).to_vec(),
+        31 => KMAC128Key::<31>::with_params(key, s).expect("a valid key").mac(msg).to_vec(),
+        32 => KMAC128Key::<32>::with_params(key, s).expect("a valid key").mac(msg).to_vec(),
+        other => panic!("no KMAC128 key type is instantiated at {other} bytes"),
+    }
+}
+
+/// As [`kmac128_at`] for KMAC256: the published 64 and the shorter 32 and 63.
+fn kmac256_at(key: &KeyMaterial<32>, s: &[u8], msg: &[u8], n: usize) -> Vec<u8> {
+    match n {
+        32 => KMAC256Key::<32>::with_params(key, s).expect("a valid key").mac(msg).to_vec(),
+        63 => KMAC256Key::<63>::with_params(key, s).expect("a valid key").mac(msg).to_vec(),
+        64 => KMAC256Key::<64>::with_params(key, s).expect("a valid key").mac(msg).to_vec(),
+        other => panic!("no KMAC256 key type is instantiated at {other} bytes"),
+    }
+}
+
+/// KMAC (Sec 4.3): the requested output length is bound into the input. Each sample value runs
+/// through the shared MAC key suite as well, which pins the `_out` forms, the streaming workers
+/// and verification against it.
 #[test]
 fn nist_sp800_185_kmac_sample_values() {
     let Some(vectors) = read_vectors("KMAC.rsp") else { return };
@@ -81,17 +104,24 @@ fn nist_sp800_185_kmac_sample_values() {
         assert!(v.output_len.is_multiple_of(8), "COUNT {i}: byte-aligned outputs only");
         let want = v.output_len / 8;
         let key = key_material(&v.key);
+        let s = v.s.as_bytes();
+        let ctx = format!("COUNT {i}: KMAC{} S={:?}", v.strength, v.s);
 
-        let got = match v.strength {
-            128 => KMAC128Key::with_params(&key, v.s.as_bytes(), want)
-                .expect("a valid key")
-                .mac(&v.msg),
-            256 => KMAC256Key::with_params(&key, v.s.as_bytes(), want)
-                .expect("a valid key")
-                .mac(&v.msg),
-            other => panic!("COUNT {i}: unexpected strength {other}"),
-        };
-        assert_eq!(got, v.output, "COUNT {i}: KMAC{} S={:?}", v.strength, v.s);
+        match (v.strength, want) {
+            (128, 32) => {
+                let k = KMAC128Key::<32>::with_params(&key, s).expect("a valid key");
+                let expected: [u8; 32] = v.output.as_slice().try_into().expect("32 bytes");
+                assert_eq!(k.mac(&v.msg), expected, "{ctx}");
+                TestFrameworkMAC::new().test_mac_key(&k, &v.msg, &expected);
+            }
+            (256, 64) => {
+                let k = KMAC256Key::<64>::with_params(&key, s).expect("a valid key");
+                let expected: [u8; 64] = v.output.as_slice().try_into().expect("64 bytes");
+                assert_eq!(k.mac(&v.msg), expected, "{ctx}");
+                TestFrameworkMAC::new().test_mac_key(&k, &v.msg, &expected);
+            }
+            other => panic!("{ctx}: unexpected (strength, length) {other:?}"),
+        }
     }
     println!("KMAC: {} sample values", vectors.len());
 }
@@ -174,7 +204,7 @@ fn do_final_binds_the_length_when_nothing_has_been_read() {
         match f.strength {
             128 => check_do_final_binds_length(
                 || KMACXOF128::new(&key, s, false).expect("a valid key"),
-                |n| KMAC128Key::with_params(&key, s, n).expect("a valid key").mac(&f.msg),
+                |n| kmac128_at(&key, s, &f.msg, n),
                 &f.msg,
                 &f.output,
                 &x.output,
@@ -182,7 +212,7 @@ fn do_final_binds_the_length_when_nothing_has_been_read() {
             ),
             256 => check_do_final_binds_length(
                 || KMACXOF256::new(&key, s, false).expect("a valid key"),
-                |n| KMAC256Key::with_params(&key, s, n).expect("a valid key").mac(&f.msg),
+                |n| kmac256_at(&key, s, &f.msg, n),
                 &f.msg,
                 &f.output,
                 &x.output,
@@ -281,76 +311,4 @@ fn test_framework_xof() {
         &v.msg,
         &v.output,
     );
-}
-
-/// `mac_out` and `do_final_out` against one sample value. The sample-value test above goes through
-/// `mac` only, so these two, their returned lengths, and the buffer-length check in `do_final_out`
-/// were all invisible to `cargo mutants`.
-fn check_out_variants<M: MAC>(make: impl Fn() -> M, msg: &[u8], expected: &[u8], ctx: &str) {
-    let n = expected.len();
-
-    let mut out = vec![0xFFu8; n];
-    assert_eq!(make().mac_out(msg, &mut out).unwrap(), n, "{ctx}: mac_out returns the length");
-    assert_eq!(out, expected, "{ctx}: mac_out");
-
-    // mac_out zero-fills the whole buffer first, so a longer one ends in zeros
-    let mut out = vec![0xFFu8; n + 5];
-    assert_eq!(make().mac_out(msg, &mut out).unwrap(), n);
-    assert_eq!(&out[..n], expected, "{ctx}: mac_out, oversized buffer");
-    assert_eq!(&out[n..], &[0u8; 5], "{ctx}: mac_out zeroizes past the tag");
-
-    let mut m = make();
-    msg.chunks(7).for_each(|c| m.do_update(c));
-    let mut out = vec![0xFFu8; n];
-    assert_eq!(m.do_final_out(&mut out).unwrap(), n, "{ctx}: do_final_out returns the length");
-    assert_eq!(out, expected, "{ctx}: do_final_out");
-
-    // do_final_out writes output_len bytes and zeroizes the rest, as mac_out above does -- the two
-    // used to disagree, mac_out zero-filling and do_final_out leaving the caller's bytes in place.
-    let mut m = make();
-    m.do_update(msg);
-    let mut out = vec![0xFFu8; n + 5];
-    assert_eq!(m.do_final_out(&mut out).unwrap(), n);
-    assert_eq!(&out[..n], expected, "{ctx}: do_final_out, oversized buffer");
-    assert_eq!(&out[n..], &[0u8; 5], "{ctx}: do_final_out zeroizes past the tag");
-
-    // a buffer one byte short is refused, by both, and zeroized on the way out
-    let mut out = vec![0xFFu8; n - 1];
-    assert!(
-        matches!(make().do_final_out(&mut out), Err(MACError::InvalidLength(_))),
-        "{ctx}: do_final_out must refuse a short buffer"
-    );
-    assert!(out.iter().all(|&b| b == 0), "{ctx}: do_final_out zeroizes a refused buffer");
-    let mut out = vec![0xFFu8; n - 1];
-    assert!(
-        matches!(make().mac_out(msg, &mut out), Err(MACError::InvalidLength(_))),
-        "{ctx}: mac_out must refuse a short buffer"
-    );
-    assert!(out.iter().all(|&b| b == 0), "{ctx}: mac_out zeroizes a refused buffer");
-}
-
-#[test]
-fn mac_out_and_do_final_out_agree_with_the_sample_values() {
-    let Some(vectors) = read_vectors("KMAC.rsp") else { return };
-    for (i, v) in vectors.iter().enumerate() {
-        let n = v.output_len / 8;
-        let key = key_material(&v.key);
-        let s = v.s.as_bytes();
-        let ctx = format!("COUNT {i}: KMAC{} S={:?}", v.strength, v.s);
-        match v.strength {
-            128 => check_out_variants(
-                || KMAC128Key::with_params(&key, s, n).unwrap().create_generator(),
-                &v.msg,
-                &v.output,
-                &ctx,
-            ),
-            256 => check_out_variants(
-                || KMAC256Key::with_params(&key, s, n).unwrap().create_generator(),
-                &v.msg,
-                &v.output,
-                &ctx,
-            ),
-            other => panic!("COUNT {i}: unexpected strength {other}"),
-        }
-    }
 }

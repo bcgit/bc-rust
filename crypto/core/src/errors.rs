@@ -78,9 +78,9 @@ pub enum KEMError {
     ///
     KeyMaterialError(KeyMaterialError),
     ///
-    LengthError(&'static str),
-    ///
     RNGError(RNGError),
+    /// The KDF an algorithm derives its output through refused the derivation.
+    KDFError(KDFError),
 }
 
 ///
@@ -91,12 +91,17 @@ pub enum MACError {
     GenericError(&'static str),
     ///
     HashError(HashError),
-    ///
+    /// A run-time-length buffer or tag that is not the construction's length: an output buffer
+    /// shorter than the tag, or a tag offered for verification at another length.
     InvalidLength(&'static str),
     ///
     InvalidState(&'static str),
     ///
     KeyMaterialError(KeyMaterialError),
+    /// The RNG a nonce was to be drawn from failed or is too weak.
+    RNGError(RNGError),
+    /// The tag is not the MAC of the message under the key.
+    VerificationFailed,
 }
 
 ///
@@ -126,9 +131,8 @@ pub enum RNGError {
     KeyMaterialError(KeyMaterialError),
 }
 
-/// Errors from [`Suspendable`](crate::traits::Suspendable) and
-/// [`SuspendableKeyed`](crate::traits::SuspendableKeyed). Defined in `bouncycastle-utils` next to
-/// the version-header helpers that raise it, and re-exported here with the other error types.
+/// Errors from [`Suspendable`](crate::traits::Suspendable). Defined in `bouncycastle-utils` next
+/// to the version-header helpers that raise it, and re-exported here with the other error types.
 pub use bouncycastle_utils::suspendable_state::SuspendableError;
 
 ///
@@ -268,6 +272,12 @@ impl From<RNGError> for KEMError {
     }
 }
 
+impl From<KDFError> for KEMError {
+    fn from(e: KDFError) -> KEMError {
+        Self::KDFError(e)
+    }
+}
+
 impl From<KeyMaterialError> for MACError {
     fn from(e: KeyMaterialError) -> MACError {
         Self::KeyMaterialError(e)
@@ -277,6 +287,12 @@ impl From<KeyMaterialError> for MACError {
 impl From<HashError> for MACError {
     fn from(e: HashError) -> MACError {
         Self::HashError(e)
+    }
+}
+
+impl From<RNGError> for MACError {
+    fn from(e: RNGError) -> MACError {
+        Self::RNGError(e)
     }
 }
 

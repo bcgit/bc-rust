@@ -165,7 +165,7 @@ mod tests {
     use super::modes_common::{ForwardOnlyToy, TOY_LEN, Toy};
     use super::*;
     use crate::Encrypting;
-    use bouncycastle_core::hazmat::ElectronicCodeBook;
+    use bouncycastle_core::hazmat::KeyExpansion;
     use bouncycastle_core::key_material::{KeyMaterial, KeyType};
     use bouncycastle_core::traits::StreamCipherEncryptor;
     use bouncycastle_core_test_framework::key_stream::TestFrameworkKeyStream;

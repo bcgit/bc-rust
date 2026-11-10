@@ -4,9 +4,9 @@
 //!
 //! * SHA3 [`Hash`] functions.
 //! * SHAKE [`XOF`] functions.
-//! * SHA3-based [`KDF`] functions.
-//! * HMAC_SHA3_* [`MAC`] functions.
-//! * The SP 800-185 functions: cSHAKE ([`XOF`]), KMAC ([`MAC`]), TupleHash and ParallelHash
+//! * HMAC_SHA3_* MACs, as [`MACGenerator`] / [`MACVerifier`] workers from an `HmacKey`.
+//! * The SP 800-185 functions: cSHAKE ([`XOF`]), KMAC (the same two worker traits, from a
+//!   `KMAC128Key` / `KMAC256Key`), TupleHash and ParallelHash
 //!   ([`Hash`]), and their arbitrary-output-length forms KMACXOF, TupleHashXOF and
 //!   ParallelHashXOF ([`XOF`]).
 //!
@@ -104,32 +104,6 @@
 //! (the length at which the output carries the full security level), and the one-shot
 //! [`HashOneShot::hash`] does the same.
 //!
-//! ## KDF
-//! SHA3 offers Key Derivation Functions in the form of KDF, which is accessed through the [`KDF`] trait,
-//! which is implemented by all SHA3 and SHAKE variants.
-//! [`KDF`] acts on [`KeyMaterial`] objects as both the input and output values.
-//! In the case of SHA3, the [`KDF`] interfaces hash the concatenated input keys and additional input
-//! with the underlying SHA3 or SHAKE primitive, maintaining the length and entropy metadata of the key
-//! material; they are not the SP 800-56Cr2 one-step KDF, which puts a counter before the input.
-//! This is intended to act as a developer aid to prevent some classes of developer mistakes, such as
-//! deriving a cryptographic key from uninitialized (aka zeroized) input key material, or using low-entropy
-//! input key material to derive a MAC, symmetric, or asymmetric key.
-//!
-//! ```
-//! use bouncycastle_core::traits::KDF;
-//! use bouncycastle_core::key_material::{KeyMaterial256, KeyType};
-//! use bouncycastle_sha3 as sha3;
-//!
-//! let input_key = KeyMaterial256::from_bytes(b"\x00\x01\x02\x03\x04\x05\x06\x07\x08\x09\x0A\x0B\x0C\x0D\x0E\x0F").unwrap();
-//! let output_key = sha3::SHA3_256::new().derive_key(&input_key, b"Additional input").unwrap();
-//!```
-//! In the previous example, since [`KeyMaterial::from_bytes`] cannot know the amount of entropy in the input data,
-//! it automatically tags it as [`KeyType::Unknown`], and thus [`SHA3Internal::derive_key`] produces an output key
-//! which also has type [`KeyType::Unknown`].
-//! This would also be the case even if the input had type
-//! [`KeyType::CryptographicRandom`] since the input [`KeyMaterial`] is 16 bytes but [`SHA3_256`] needs at least 32 bytes of
-//! full-entropy input key material in order to be able to produce full entropy output key material.
-//!
 //! ## HMAC
 //! See [hmac].
 //!
@@ -157,8 +131,8 @@
 //! connection.
 //!
 //! For this reason, every SHA3, SHAKE and SP 800-185 type impls [`Suspendable`], squeezers included,
-//! so a long output stream can be paused as well as a long input. HMAC is keyed and impls
-//! `SuspendableKeyed` instead; see [hmac].
+//! so a long output stream can be paused as well as a long input. HMAC is keyed and does not
+//! suspend: a message in progress is paused by holding its worker.
 //!
 //!```rust
 //! use bouncycastle_sha3 as sha3;
@@ -202,11 +176,11 @@
 //!
 //! | State                                                           | Size (bytes) |
 //! |-----------------------------------------------------------------|--------------|
-//! | SHA3, SHAKE and `SHAKESqueezer`                                 | 415          |
-//! | cSHAKE, KMACXOF, TupleHashXOF, `CSHAKESqueezer`                 | 416          |
-//! | KMAC, TupleHash                                                 | 424          |
-//! | ParallelHashXOF                                                 | 852          |
-//! | ParallelHash                                                    | 860          |
+//! | SHA3, SHAKE and `SHAKESqueezer`                                 | 405          |
+//! | cSHAKE, KMACXOF, TupleHashXOF, `CSHAKESqueezer`                 | 406          |
+//! | KMAC, TupleHash                                                 | 414          |
+//! | ParallelHashXOF                                                 | 832          |
+//! | ParallelHash                                                    | 840          |
 //!
 //! Sizes are `core::mem::size_of` values reported by `mem_usage_benches/bench_sha3_mem_usage.rs`
 //! (`cargo run --release -p mem_usage_benches --bin bench_sha3_mem_usage`), which also has valgrind
@@ -222,9 +196,9 @@
 //! * The sponge state and queue are held in [`bouncycastle_utils::secret::Secret`] and zeroized on
 //!   drop.
 //! * KMAC's security rests on its key and output lengths (SP 800-185 Sec 8.4): the key check is
-//!   [`kmac::KMACKeyInternal::with_params`]'s, with `with_params_allow_weak` as the bypass, and an output
-//!   shorter than 8 bytes is the caller's to justify (Sec 8.4.2: never below 4, and below 8
-//!   only after a risk analysis).
+//!   [`kmac::KMACKeyInternal::with_params`]'s, with `with_params_allow_weak` as the bypass, and
+//!   the output length is the key type's const parameter, with a length shorter than 8 bytes the
+//!   caller's to justify (Sec 8.4.2: never below 4, and below 8 only after a risk analysis).
 //! * cSHAKE has SHAKE's prefix property; the fixed-length KMAC, TupleHash and ParallelHash do
 //!   not, because the output length is bound in, but their XOF forms read as a stream do
 //!   (Sec 8.2.2).
@@ -245,7 +219,9 @@ use bouncycastle_core::errors::HashError;
 #[allow(unused_imports)]
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 #[allow(unused_imports)]
-use bouncycastle_core::traits::{Hash, HashOneShot, KDF, MAC, Suspendable, XOF, XOFSqueezer};
+use bouncycastle_core::traits::{
+    Hash, HashOneShot, MACGenerator, MACVerifier, Suspendable, XOF, XOFSqueezer,
+};
 // end of doc-only imports
 
 pub mod hmac;

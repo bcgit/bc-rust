@@ -41,7 +41,7 @@
 //! ```
 //! # mod toy { include!("../../tests/common/toy_block_cipher.rs"); }
 //! # use toy::ToyBlockCipher;
-//! use bouncycastle_core::hazmat::{ElectronicCodeBook, Mode, SymmetricDecryptMode, SymmetricEncryptMode};
+//! use bouncycastle_core::hazmat::{ElectronicCodeBook, KeyExpansion, Mode, SymmetricDecryptMode, SymmetricEncryptMode};
 //! use bouncycastle_core::key_material::{KeyMaterial128, KeyType};
 //! use bouncycastle_core::traits::{StreamCipherDecryptor, StreamCipherEncryptor};
 //! use bouncycastle_cipher::modes::CTR;
@@ -69,7 +69,7 @@
 //! ```
 //! # mod toy { include!("../../tests/common/toy_block_cipher.rs"); }
 //! # use toy::ToyBlockCipher;
-//! use bouncycastle_core::hazmat::{ElectronicCodeBook, Mode, SymmetricDecryptMode, SymmetricEncryptMode};
+//! use bouncycastle_core::hazmat::{ElectronicCodeBook, KeyExpansion, Mode, SymmetricDecryptMode, SymmetricEncryptMode};
 //! use bouncycastle_core::key_material::{KeyMaterial128, KeyType};
 //! use bouncycastle_core::traits::{StreamCipherDecryptor, StreamCipherEncryptor};
 //! use bouncycastle_cipher::modes::CTR;
@@ -166,6 +166,13 @@ where
         let nonce = random_iv::<NONCE_LEN>(rng)?;
         Ok((StreamCipher::from_keystream(CtrKeyStream::from_perm(state, nonce)), nonce))
     }
+
+    fn encrypt_init_nonce<'k>(
+        state: &'k Self::KeyState,
+        nonce: &[u8; NONCE_LEN],
+    ) -> Self::Encryptor<'k> {
+        StreamCipher::from_keystream(CtrKeyStream::from_perm(state, *nonce))
+    }
 }
 
 impl<P, const KEY_LEN: usize, const BLOCK_LEN: usize, const NONCE_LEN: usize>
@@ -204,7 +211,7 @@ where
 /// ```
 /// # mod toy { include!("../../tests/common/toy_block_cipher.rs"); }
 /// # use toy::ToyBlockCipher;
-/// use bouncycastle_core::hazmat::{ElectronicCodeBook, Mode, SymmetricEncryptMode};
+/// use bouncycastle_core::hazmat::{ElectronicCodeBook, KeyExpansion, Mode, SymmetricEncryptMode};
 /// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 /// use bouncycastle_cipher::modes::CTR;
 /// use bouncycastle_rng::HashDRBG_SHA512;

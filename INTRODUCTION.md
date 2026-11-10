@@ -33,7 +33,7 @@ exposed parameters. If your application requires you to use the fully-parametriz
 these public APIs of BC-Rust's HKDF implementation:
 
 ```rust
-impl<H: Hash + Default> HKDF<H> {
+impl<H: HMACParams> HKDF<H> {
     do_extract_init(salt: & impl KeyMaterial) -> Result<usize, MACError>;
 
     do_extract_update_key(ikm: & impl KeyMaterial) -> Result<usize, MACError>;
@@ -57,13 +57,13 @@ much simplified KDF trait and KDFFactory that lets you do the whole operation in
 
 ```rust
 let mut kdf = KDFFactory::new("HKDF-SHA256") ?;
-let new_key = kdf.derive_key( & seed_key, b"additional_input") ?;
+let new_key = kdf.derive_key(&seed_key, b"additional_input", 32)?;
 ```
 
 or even one line if you need a KDF and aren't picky about which one:
 
 ```rust
-let new_key = KDFFactory::default ().derive_key( & seed_key, b"additional_input") ?;
+let new_key = KDFFactory::default().derive_key(&seed_key, b"additional_input", 32)?;
 ```
 
 ## Library features and functionality
@@ -256,11 +256,13 @@ the `core-interface` sub-crate.
 
 Next up will be to round out the set of cryptographic primitives:
 
-* Block ciphers (AES)
-* Signatures (Ed25519, Ed448, ML-DSA, SLH-DSA)
-* Key Establishment (X25519, X448, ML-KEM)
+* Block ciphers (AES, ARIA, Camellia, SM4)
+* Signatures (Ed25519, Ed448, ML-DSA, SLH-DSA, ECDSA, RSA)
+* Key Establishment (X25519, X448, ML-KEM, ECDH)
 
-(yes, you have noticed that RSA, ECDSA and ECDH are not on the list. I suppose we could, but we'd really rather not.)
+(an earlier draft of this list left out RSA, ECDSA and ECDH on purpose; there has been a change of heart, and they
+are being implemented on the same terms as everything else: fixed-width constant-time arithmetic, no runtime-described
+parameters.)
 
 After that, we'll tackle in some kind of order (depending on public interest and funding):
 

@@ -9,7 +9,8 @@ use crate::mlkem::MLKEM_SEED_LEN;
 use bouncycastle_mlkem_common::params::ByteBuffer;
 
 pub use bouncycastle_mlkem_common::params::{
-    MLKEM512Params, MLKEM768Params, MLKEM1024Params, MLKEMParamsBase,
+    CiphertextLen, MLKEM512Params, MLKEM768Params, MLKEM1024Params, MLKEMParamsBase, PrivateKeyLen,
+    PublicKeyLen,
 };
 
 /// One ML-KEM parameter set as this crate uses it: everything on [`MLKEMParamsBase`], plus the

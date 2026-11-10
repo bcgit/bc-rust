@@ -25,6 +25,7 @@
 #![allow(dead_code)]
 #![allow(unused_imports)]
 
+use bouncycastle::core::direction::Encrypting;
 use bouncycastle::core::traits::{Hash, HashOneShot, Suspendable, XOF, XOFSqueezer};
 use bouncycastle::sha3::kmac::{KMAC128, KMAC128Key, KMAC256, KMAC256Key, KMACXOF128, KMACXOF256};
 use bouncycastle::sha3::parallelhash::{
@@ -58,8 +59,8 @@ fn print_struct_sizes() {
     println!("size_of<CSHAKE256>: {}", size_of::<CSHAKE256>());
     println!("size_of<KMAC128Key>: {}", size_of::<KMAC128Key>());
     println!("size_of<KMAC256Key>: {}", size_of::<KMAC256Key>());
-    println!("size_of<KMAC128>: {}", size_of::<KMAC128>());
-    println!("size_of<KMAC256>: {}", size_of::<KMAC256>());
+    println!("size_of<KMAC128>: {}", size_of::<KMAC128<Encrypting>>());
+    println!("size_of<KMAC256>: {}", size_of::<KMAC256<Encrypting>>());
     println!("size_of<KMACXOF128>: {}", size_of::<KMACXOF128>());
     println!("size_of<KMACXOF256>: {}", size_of::<KMACXOF256>());
     println!("size_of<TUPLEHASH128>: {}", size_of::<TupleHash128>());

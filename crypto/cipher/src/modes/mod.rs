@@ -13,7 +13,7 @@
 //! |---|---|---|---|
 //! | CBC | [`cbc`] | SP 800-38A Sec 6.2 | Cipher Block Chaining |
 //! | CCM | [`ccm`] | SP 800-38C | Counter with CBC-MAC. **Authenticated**: CTR plus CBC-MAC, with a tag and AAD |
-//! | CMAC | [`cmac`] | SP 800-38B | A MAC ([`MAC`]), not a cipher: 64- or 128-bit block ciphers, tags truncatable to 64 bits |
+//! | CMAC | [`cmac`] | SP 800-38B | A MAC ([`MACGenerator`] / [`MACVerifier`]), not a cipher: 64- or 128-bit block ciphers, one block of tag |
 //! | CFB | [`cfb`] | SP 800-38A Sec 6.3 | Cipher Feedback, full-block segment (`s = b`), i.e. CFB128 for AES |
 //! | CFB8 | [`cfb8`] | SP 800-38A Sec 6.3 | Cipher Feedback, 8-bit segment (`s = 8`) |
 //! | CTR | [`ctr`] | SP 800-38A Sec 6.5 | Counter. Nonce plus counter, both directions parallel |
@@ -45,8 +45,9 @@
 //! general data as well, but they are deterministic, so for data that may repeat an AEAD is the
 //! better fit (see the [`kw`] security notes).
 //!
-//! CBC, CFB, CFB8 and CTR all generate their own init data: an IV for the first three, a nonce for
-//! CTR, which is shorter than a block because the rest of the counter block is the counter. ECB has
+//! CBC, CFB, CFB8 and CTR all generate their own init data, or take the caller's through the key's
+//! `_nonce` forms: an IV for the first three, a nonce for CTR, which is shorter than a block
+//! because the rest of the counter block is the counter. ECB has
 //! none at all (`INIT_DATA_LEN = 0`) and is the raw permutation applied block by block, which is
 //! why it lives under [`hazmat`] -- see [`hazmat::ecb::Ecb`] and
 //! [Choosing between the modes](#choosing-between-the-modes).
@@ -185,7 +186,7 @@ pub use ccm::{
 };
 pub use cfb::{CFB, Cfb};
 pub use cfb8::{CFB8, Cfb8};
-pub use cmac::{CMAC, CMAC_MIN_TAG_LEN, Cmac, CmacKeyState};
+pub use cmac::{CMAC, Cmac, CmacKeyState};
 pub use ctr::{CTR, Ctr};
 pub use gcm::{GCM, GCM_NONCE_LEN, Gcm, GcmKeyState};
 pub use gmac::{GMAC, Gmac};
@@ -234,7 +235,8 @@ use bouncycastle_core::hazmat::ElectronicCodeBook;
 #[allow(unused_imports)]
 use bouncycastle_core::traits::{
     AEADCipherDecryptor, AEADCipherEncryptor, Algorithm, BlockCipherDecryptor,
-    BlockCipherEncryptor, KeyUnwrapper, KeyWrapper, MAC, StreamCipherDecryptor,
-    StreamCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
+    BlockCipherEncryptor, KeyUnwrapper, KeyWrapper, MACGenerator, MACVerifier,
+    StreamCipherDecryptor, StreamCipherEncryptor, SymmetricCipherDecryptor,
+    SymmetricCipherEncryptor,
 };
 // end of imports needed for docs

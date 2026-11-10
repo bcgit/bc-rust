@@ -51,21 +51,26 @@ test_streaming_until_the_reader_closes_exits_zero() {
 
 # --seed-file instantiates the DRBG from the file (SP 800-90A Rev. 1 Section 10.1.1.2 with the
 # file as the entropy input), so the same file gives the same bytes, another file different ones,
-# and a file too short for the instance's strength is refused with a message.
+# and a file too short for the instance's strength is refused with a message. There is no nonce,
+# so the file must carry 3/2 of the strength (Section 9.1): 48 bytes at 256 bits, 24 at 128.
 test_seed_file_gives_a_reproducible_stream() {
-    rng 32 >"$TMP/seed"
-    rng 32 >"$TMP/seed2"
+    rng 48 >"$TMP/seed"
+    rng 48 >"$TMP/seed2"
     "$BC_RUST" rng --len 1000 --seed-file "$TMP/seed" >"$TMP/a"
     "$BC_RUST" rng --len 1000 --seed-file "$TMP/seed" >"$TMP/b"
     assert_same "$TMP/a" "$TMP/b" "the same seed file must give the same stream"
     "$BC_RUST" rng --len 1000 --seed-file "$TMP/seed2" >"$TMP/c"
     assert_differs "$TMP/a" "$TMP/c" "another seed file must give another stream"
     assert_eq "$(hex_out "$BC_RUST" --hex-input rng --len 16 --seed-file <(hex "$TMP/seed") -x)" "$(head -c 16 "$TMP/a" | hex_out "$BC_RUST" hex-encode)" "a hex seed file with --hex-input is the same seed"
-    rng 16 >"$TMP/short"
-    expect_fail "16 bytes is below the 256-bit instance" "$BC_RUST" rng --len 16 --seed-file "$TMP/short"
+    head -c 47 "$TMP/seed" >"$TMP/short"
+    expect_fail "47 bytes is below the 256-bit instance" "$BC_RUST" rng --len 16 --seed-file "$TMP/short"
     assert_stderr_has "Error"
+    head -c 24 "$TMP/seed" >"$TMP/short"
     "$BC_RUST" rng --len 16 --hash sha256 --seed-file "$TMP/short" >"$TMP/d"
-    assert_size "$TMP/d" 16 "16 bytes seeds the 128-bit SHA-256 instance"
+    assert_size "$TMP/d" 16 "24 bytes seeds the 128-bit SHA-256 instance"
+    head -c 23 "$TMP/seed" >"$TMP/short"
+    expect_fail "23 bytes is below the 128-bit instance" "$BC_RUST" rng --len 16 --hash sha256 --seed-file "$TMP/short"
+    assert_stderr_has "Error"
 }
 
 test_hash_selects_the_drbg() {

@@ -34,7 +34,6 @@ use bouncycastle_core::symmetric_key::{
 };
 use bouncycastle_core::traits::{StreamCipherDecryptor, StreamCipherEncryptor};
 use bouncycastle_hex as hex;
-use bouncycastle_rng::FixedSeedRNG;
 
 const BLOCK_LEN: usize = 16;
 const NONCE_LEN: usize = 12;
@@ -115,9 +114,7 @@ where
 
     // Encryption, in one call and in every chunking.
     for chunk in [plaintext.len()].into_iter().chain(CHUNKINGS) {
-        let (mut enc, got) =
-            key.create_encryptor(&mut FixedSeedRNG::new(nonce)).expect("encrypt init");
-        assert_eq!(got, nonce, "{name}: the pinned RNG should reproduce the nonce");
+        let mut enc = key.create_encryptor_nonce(&nonce);
 
         let mut data = plaintext.clone();
         for piece in data.chunks_mut(chunk) {
