@@ -1232,7 +1232,6 @@ pub trait MacGenerationKey<const MAC_LEN: usize> {
     /// One-shot: the tag of `data` into `out`, written in full; returns the number of bytes
     /// written, always `MAC_LEN`.
     fn mac_out(&self, data: &[u8], out: &mut [u8; MAC_LEN]) -> usize {
-        out.fill(0);
         let mut generator = self.create_generator();
         generator.do_update(data);
         generator.do_final_out(out)
@@ -1332,7 +1331,6 @@ pub trait NonceMacGenerationKey<const NONCE_LEN: usize, const MAC_LEN: usize> {
         data: &[u8],
         out: &mut [u8; MAC_LEN],
     ) -> usize {
-        out.fill(0);
         let mut generator = self.create_generator_nonce(nonce);
         generator.do_update(data);
         generator.do_final_out(out)
