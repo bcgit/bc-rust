@@ -62,6 +62,24 @@ use bouncycastle_utils::secret::Secret;
 /// let _ = key.create_encryptor(&mut HashDRBG_SHA512::new_from_os());
 /// ```
 ///
+/// Nor may it generate a CMAC tag, through the generic `BlockCipherKey` that is the only key with
+/// a MAC role over TDEA (SP 800-131A Rev 2 Table 9); the same key's `create_verifier` works:
+///
+/// ```compile_fail
+/// use bouncycastle_cipher::BlockCipherKey;
+/// use bouncycastle_cipher::modes::CMAC;
+/// use bouncycastle_core::key_material::{KeyMaterial, KeyType};
+/// use bouncycastle_core::symmetric_key::{FromKeyMaterial, MacGenerationKey};
+/// use bouncycastle_tdes::hazmat::TDES2Internal;
+///
+/// let bytes: [u8; 16] = core::array::from_fn(|i| (i as u8).wrapping_mul(7).wrapping_add(1));
+/// let material = KeyMaterial::<16>::from_bytes_as_type(&bytes, KeyType::MACKey).unwrap();
+/// let key = BlockCipherKey::<TDES2Internal, CMAC<8>>::from_key_material(&material).unwrap();
+///
+/// // Two-key TDEA may not generate a tag: this does not compile.
+/// let _ = key.create_generator();
+/// ```
+///
 /// `create_decryptor` on every mode works, and this crate names those decryptors
 /// [`TDES2_CBC`](crate::TDES2_CBC), [`TDES2_CFB`](crate::TDES2_CFB),
 /// [`TDES2_CFB8`](crate::TDES2_CFB8), [`TDES2_CTR`](crate::TDES2_CTR) and

@@ -113,7 +113,12 @@
 //! two-key encryption out altogether should expose only the CBC and ECB decryptors. The aliases
 //! [`TDES2_CBC`], [`TDES2_CFB`], [`TDES2_CFB8`], [`TDES2_CTR`] and [`TDES2_ECB`] are those
 //! decryptors, with the IV or nonce supplied by the caller as it was received, and [`TDES2_TKW`]
-//! is the key unwrapper, with no wrapper beside it:
+//! is the key unwrapper, with no wrapper beside it. CMAC follows the same line: SP 800-131A Rev 2
+//! Table 9 lists two-key TDEA CMAC generation as "Disallowed" and verification as "Legacy use",
+//! and `CMAC`'s generating constructor carries the same compile-time check, so a two-key key
+//! under CMAC verifies tags and cannot produce them. [`TDESKey`] carries no MAC role at all; CMAC
+//! over either bundle is reached through the generic `bouncycastle_cipher::BlockCipherKey`
+//! (`BlockCipherKey<TDES2Internal, CMAC<8>>`), a hazmat type name.
 //!
 //! ```
 //! use bouncycastle_tdes::TDES2Key;
@@ -231,15 +236,20 @@
 //! `BlockPermutation::DECRYPT_ONLY` records this library's policy, not NIST's status: it is set
 //! for two-key TDEA alone. Three-key TDEA encryption, which SP 800-131A Rev 2 also disallows
 //! after 2023, stays available here because the OpenSSL provider this library serves exposes it,
-//! and three-key TKW wrapping, the one SP 800-38F key wrap over TDEA, is kept on the same terms;
-//! a deployment that must not encrypt or wrap under TDEA should not use [`TDES3Key`]'s
-//! encrypting and wrapping roles.
+//! and three-key TKW wrapping, the one SP 800-38F key wrap over TDEA, and three-key CMAC
+//! generation (Table 9: "Deprecated through 2023, Disallowed after 2023", reachable only through
+//! `bouncycastle_cipher::BlockCipherKey`) are kept on the same terms; a deployment that must not
+//! encrypt, wrap or generate tags under TDEA should not use [`TDES3Key`]'s encrypting and
+//! wrapping roles or a `BlockCipherKey<TDESInternal, CMAC<8>>`.
 //!
 //! ## The 64-bit block, and the data limit
 //!
 //! SP 800-67r2 Sec 3.4: "One key bundle shall not be used to apply cryptographic protection (e.g.,
-//! encrypt) more than 2^20 64-bit data blocks" -- 8 MiB per key bundle, in total, across all
-//! messages. The limit exists because a 64-bit block cipher in CBC or CFB leaks plaintext
+//! encrypt) more than 2^20 64-bit data blocks" -- in total, across all messages, and counted
+//! as the blocks TDEA processes: 8 MiB of plaintext for ECB, CBC, CFB64 and CTR, 1 MiB for CFB8
+//! (one block operation per byte), and 699,048 bytes of TKW plaintext (six block operations per
+//! 4-byte semiblock), which is where the `tdes-*` CLI commands stop. The limit exists because a
+//! 64-bit block cipher in CBC or CFB leaks plaintext
 //! relationships once about 2^32 blocks have been seen under one key (the birthday bound). This
 //! crate cannot count blocks across the uses of a key, so the limit has to be enforced by whoever
 //! manages the key.
