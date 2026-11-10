@@ -82,16 +82,18 @@ impl KeyAgreementPrivateKey<SK_LEN> for ECCDHP384PrivateKey {
         let mut limbs = Secret::<[u64; 6]>::new();
         *limbs = p384_sec1::limbs_from_be_bytes(bytes);
         let mut diff = Secret::<[u64; 6]>::new();
-        let borrow;
-        (*diff, borrow) = nat::sub(&limbs, &N_LIMBS);
+        diff.copy_from_slice(&*limbs);
+        let borrow = nat::sub_assign(&mut diff, &N_LIMBS);
         let in_range = !nat::is_zero(&limbs) & Condition::<u64>::is_equal(borrow, 1);
         if !in_range.to_bool() {
             return Err(KeyAgreementError::DecodingError(
                 "ECC CDH P-384 private key must be in [1, n-1]",
             ));
         }
-        // `from_be_bytes` reads the borrowed input again, so this frame holds no plain copy of d.
-        Ok(Self(P384Scalar::from_be_bytes(bytes)))
+        // The scalar is reduced from the borrowed `Secret` limbs straight into its own `Secret`,
+        // so no plain copy of d is staged in this frame; the returned key is moved out, and a
+        // move does not wipe where it was built.
+        Ok(Self(P384Scalar::from_borrowed_limbs(&limbs)))
     }
 }
 

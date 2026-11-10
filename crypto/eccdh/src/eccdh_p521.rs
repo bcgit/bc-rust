@@ -7,7 +7,7 @@ use crate::kdf::{KdfPairing, PairedKdf, derive};
 use crate::keys_p521::{ECCDHP521PrivateKey, ECCDHP521PublicKey};
 use bouncycastle_concatkdf::ConcatKDF_SHA512;
 use bouncycastle_core::agreement_key::{AgreementKey, KeyAgreementAlgorithm};
-use bouncycastle_core::errors::KeyAgreementError;
+use bouncycastle_core::errors::{KeyAgreementError, KeyMaterialError};
 use bouncycastle_core::hazmat::do_hazardous_operations;
 use bouncycastle_core::kdf_params::KdfParams;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
@@ -61,23 +61,31 @@ fn x_affine(point: &P521JacobianPoint) -> P521FieldElement {
 }
 
 /// SP 800-56A Rev. 3 Section 5.7.1.2, the ECC CDH primitive, with `d` this worker's key and `Q`
-/// the peer's. Returns `Z` typed [`KeyType::SharedSecret`] at the curve's strength: keying
-/// material for a KDF (Section 5.8), which nothing else accepts as a key.
-pub(crate) fn agree(
+/// the peer's: `Z` into `ss`, zeroized first, typed [`KeyType::SharedSecret`] at the curve's
+/// strength, keying material for a KDF (Section 5.8), which nothing else accepts as a key. Into
+/// the caller's buffer rather than returned, so that no copy of `Z` is staged in a return slot.
+pub(crate) fn agree_out(
     sk: &ECCDHP521PrivateKey,
     peer_pk: &ECCDHP521PublicKey,
-) -> Result<KeyMaterial<SS_LEN>, KeyAgreementError> {
+    ss: &mut KeyMaterial<SS_LEN>,
+) -> Result<(), KeyAgreementError> {
     // 1. Compute the point P = h d_A Q_B. The cofactor h is 1 (SP 800-186 Section 3.2.1.5 (P-521; Section 3.2.1: "For pseudorandom curves, the cofactor h = 1")), so this is [d]Q, in
     //    constant time in d; Q passed full validation when the key was decoded.
     let q = P521JacobianPoint::from_affine(peer_pk.x, peer_pk.y);
     let mut p = multiply_point(sk.scalar(), &q);
-    z_from_product(&mut p)
+    z_from_product(&mut p, ss)
 }
 
-/// Steps 2 to 5 of Section 5.7.1.2 from `P = [d]Q`, which is destroyed here. Apart from the
-/// multiplication so that step 2's identity path, which no validated key reaches, has a test.
+/// Steps 2 to 5 of Section 5.7.1.2 from `P = [d]Q`, which is destroyed here, into `ss`,
+/// zeroized first and left so on the error path. Apart from the multiplication so that step 2's
+/// identity path, which no validated key reaches, has a test.
 #[allow(non_snake_case)] // `z` and `Z` are Section 5.7.1.2's names for x_P and its byte string
-fn z_from_product(p: &mut P521JacobianPoint) -> Result<KeyMaterial<SS_LEN>, KeyAgreementError> {
+fn z_from_product(
+    p: &mut P521JacobianPoint,
+    ss: &mut KeyMaterial<SS_LEN>,
+) -> Result<(), KeyAgreementError> {
+    ss.zeroize();
+
     // 2. If P = O, destroy all intermediate values ... and output an error indicator. [d]Q is
     //    the identity only for a Q of order dividing d, which a validated point of prime order n
     //    never is; the test is kept, on a condition no valid input reaches, and acted on after
@@ -101,17 +109,20 @@ fn z_from_product(p: &mut P521JacobianPoint) -> Result<KeyMaterial<SS_LEN>, KeyA
         return Err(KeyAgreementError::AgreementFailed);
     }
 
-    // 5. Output Z, typed so that a KDF credits it and nothing else accepts it as a key, at the
-    //    curve's strength rather than the length-derived default. An all-zero Z (x_P = 0, a valid
-    //    field element, probability about 2^-521) comes back typed Zeroized and takes no
-    //    strength; that is not an error.
-    let mut shared = KeyMaterial::<SS_LEN>::from_bytes_as_type(&*Z, KeyType::SharedSecret)?;
-    if shared.key_type() == KeyType::SharedSecret {
-        do_hazardous_operations(&mut shared, |shared| {
-            shared.set_security_strength(ECCDHP521::MAX_SECURITY_STRENGTH)
+    // 5. Output Z into the caller's buffer, typed so that a KDF credits it and nothing else
+    //    accepts it as a key, at the curve's strength rather than the length-derived default. An
+    //    all-zero Z (x_P = 0, a valid field element) is typed Zeroized by the buffer, which says
+    //    so through its courtesy error, and takes no strength; that is not an error.
+    match ss.set_bytes_as_type(&*Z, KeyType::SharedSecret) {
+        Ok(()) | Err(KeyMaterialError::ActingOnZeroizedKey) => {}
+        Err(e) => return Err(KeyAgreementError::KeyMaterialError(e)),
+    }
+    if ss.key_type() == KeyType::SharedSecret {
+        do_hazardous_operations(ss, |ss| {
+            ss.set_security_strength(ECCDHP521::MAX_SECURITY_STRENGTH)
         })?;
     }
-    Ok(shared)
+    Ok(())
 }
 
 impl KeyAgreement<ECCDHP521PublicKey, SS_LEN> for ECCDHP521Agreement<'_> {
@@ -120,8 +131,7 @@ impl KeyAgreement<ECCDHP521PublicKey, SS_LEN> for ECCDHP521Agreement<'_> {
         peer_pk: &ECCDHP521PublicKey,
         ss: &mut KeyMaterial<SS_LEN>,
     ) -> Result<usize, KeyAgreementError> {
-        ss.zeroize();
-        *ss = agree(self.sk, peer_pk)?;
+        agree_out(self.sk, peer_pk, ss)?;
         Ok(SS_LEN)
     }
 }
@@ -216,7 +226,10 @@ where
         ss: &mut KeyMaterial<SS_LEN>,
     ) -> Result<usize, KeyAgreementError> {
         ss.zeroize();
-        let z = agree(self.sk, peer_pk)?;
+        // Z lives in this local, zeroized when it drops, and is written into it rather than
+        // returned, so no copy of it is staged on the way to the KDF.
+        let mut z = KeyMaterial::<{ crate::eccdh_p521::SS_LEN }>::new();
+        agree_out(self.sk, peer_pk, &mut z)?;
         derive(self.params, &z, ss)?;
         Ok(SS_LEN)
     }
@@ -248,8 +261,12 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_identity_product_is_an_error() {
+    fn the_identity_product_is_an_error_and_leaves_the_buffer_zeroized() {
         let mut o = P521JacobianPoint::INFINITY;
-        assert!(matches!(z_from_product(&mut o), Err(KeyAgreementError::AgreementFailed)));
+        let mut ss =
+            KeyMaterial::<SS_LEN>::from_bytes_as_type(&[0xFF; SS_LEN], KeyType::Seed).unwrap();
+        assert!(matches!(z_from_product(&mut o, &mut ss), Err(KeyAgreementError::AgreementFailed)));
+        assert_eq!(ss.key_type(), KeyType::Zeroized);
+        assert_eq!(ss.key_len(), 0);
     }
 }

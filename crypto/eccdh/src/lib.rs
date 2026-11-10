@@ -165,13 +165,18 @@
 //!   for every validated peer key and in-range `d`; the typing of an all-zero `Z` (`x_P = 0`, on
 //!   the curve for P-256, P-384 and P-521 only, and not arrangeable without `d`); the one masked
 //!   decision of the private key's range check, which reveals whether the key loaded; and
-//!   `to_affine`'s identity branch at key generation, false for every valid `d`. Of Section
-//!   5.7.1.2 step 4's destruction of intermediates, this crate does its own part: `P`, `z`, the
-//!   inverse of `P`'s `Z` coordinate and its square, and the byte string are zeroized on every
-//!   path; the arithmetic's intermediates in [`bouncycastle_ec`] (the multiplier's superseded
-//!   accumulators and table, the inversion's table of powers) are that crate's and are not
-//!   reached, as its docs say. Key generation draws at least `len(n) + 64` bits, rounded up to
-//!   a byte, and reduces them in constant time (Section 5.6.1.2.1).
+//!   `to_affine`'s identity branch at key generation and in `derive_pk`, false for every valid
+//!   `d`. Of Section 5.7.1.2 step 4's destruction of intermediates, this crate does its own
+//!   part: `P`, `z`, the inverse of `P`'s `Z` coordinate and its square, and the byte string are
+//!   zeroized on every path, and `Z` is written into the caller's buffer. What is not reached:
+//!   a value a one-shot returns (`agree`'s `Z` or derived key, `keygen`'s private key) is moved
+//!   out of the frame that built it, and a move does not wipe its source, so use the `_out`
+//!   forms into a buffer you own where that matters; the field element's conversion to limbs
+//!   returns by value; and the arithmetic's intermediates in [`bouncycastle_ec`] (the
+//!   multiplier's superseded accumulators, table and a limb of the scalar in its frames, the
+//!   inversion's table of powers) are that crate's and are not reached, as its docs say. Key
+//!   generation draws at least `len(n) + 64` bits, rounded up to a byte, and reduces them in
+//!   constant time (Section 5.6.1.2.1), writing each step into a `Secret`.
 
 #![no_std]
 #![forbid(unsafe_code)]
