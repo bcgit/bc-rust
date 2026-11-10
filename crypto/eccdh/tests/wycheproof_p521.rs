@@ -12,6 +12,7 @@ fn ecdh_secp521r1_test() {
         "ecdh_secp521r1_test.json",
         "secp521r1",
         916,
+        633,
     );
 }
 
@@ -21,5 +22,6 @@ fn ecdh_secp521r1_ecpoint_test() {
         "ecdh_secp521r1_ecpoint_test.json",
         "secp521r1",
         661,
+        633,
     );
 }

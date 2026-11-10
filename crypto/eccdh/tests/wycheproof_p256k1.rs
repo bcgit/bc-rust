@@ -16,5 +16,5 @@ fn ecdh_secp256k1_test() {
         PK_LEN,
         SK_LEN,
         SS_LEN,
-    >("ecdh_secp256k1_test.json", "secp256k1", 752);
+    >("ecdh_secp256k1_test.json", "secp256k1", 752, 474);
 }

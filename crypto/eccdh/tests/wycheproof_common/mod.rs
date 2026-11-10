@@ -9,7 +9,10 @@
 //! minimal lengths, no trailing bytes), requires the `AlgorithmIdentifier` to be byte-identical
 //! to the curve's own from the file's first `Normal` vector, and treats anything else as a key
 //! rejected at decode. Verdicts: `valid` must decode and agree to `shared`; `invalid` must fail
-//! at decode or at `agree`; `acceptable` may do either, but an agreement must equal `shared`.
+//! at decode or at `agree`; `acceptable` may do either, but an agreement must equal `shared`,
+//! and a compressed point (flag `CompressedPoint`, the one acceptable case the decoder accepts)
+//! must agree. The number that agreed is pinned per file, so a decoder that starts rejecting
+//! what it accepted, or the DER walk masking a vector, is noticed.
 
 #![allow(dead_code)]
 
@@ -86,11 +89,14 @@ fn private_key_bytes<const SK_LEN: usize>(hex: &str) -> Option<[u8; SK_LEN]> {
     Some(out)
 }
 
-/// Runs one file. `expected` is the file's `numberOfTests`, pinned so a changed clone is noticed.
+/// Runs one file. `expected` is the file's `numberOfTests`, pinned so a changed clone is noticed,
+/// and `expected_agreed` how many vectors must reach the library and agree: the valid ones and
+/// the compressed point.
 pub fn run<PK, SK, const PK_LEN: usize, const SK_LEN: usize, const SS_LEN: usize>(
     filename: &str,
     curve: &str,
     expected: usize,
+    expected_agreed: usize,
 ) where
     PK: KeyAgreementPublicKey<PK_LEN>,
     SK: KeyAgreementPrivateKey<SK_LEN> + AgreementKey<(), SS_LEN, PublicKey = PK>,
@@ -168,6 +174,10 @@ pub fn run<PK, SK, const PK_LEN: usize, const SK_LEN: usize, const SS_LEN: usize
                         test["comment"]
                     );
                 }
+                ("acceptable", None) if has_flag(flags, "CompressedPoint") => panic!(
+                    "tcId {tc_id}: a compressed point was rejected; flags {flags}, comment {:?}",
+                    test["comment"]
+                ),
                 (_, None) => {}
             }
         }
@@ -176,4 +186,9 @@ pub fn run<PK, SK, const PK_LEN: usize, const SK_LEN: usize, const SS_LEN: usize
         "{filename}: {expected} vectors ({valid} valid, {acceptable} acceptable, {invalid} invalid), {agreed} agreed"
     );
     assert_eq!(valid + invalid + acceptable, expected);
+    assert_eq!(agreed, expected_agreed, "{filename}: vectors that reached the library and agreed");
+}
+
+fn has_flag(flags: &Value, flag: &str) -> bool {
+    flags.as_array().is_some_and(|flags| flags.iter().any(|f| f == flag))
 }

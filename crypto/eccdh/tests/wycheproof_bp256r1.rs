@@ -14,5 +14,6 @@ fn ecdh_brainpoolp256r1_test() {
         "ecdh_brainpoolP256r1_test.json",
         "brainpoolP256r1",
         804,
+        518,
     );
 }

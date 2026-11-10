@@ -12,6 +12,7 @@ fn ecdh_secp384r1_test() {
         "ecdh_secp384r1_test.json",
         "secp384r1",
         1047,
+        772,
     );
 }
 
@@ -21,5 +22,6 @@ fn ecdh_secp384r1_ecpoint_test() {
         "ecdh_secp384r1_ecpoint_test.json",
         "secp384r1",
         790,
+        772,
     );
 }
