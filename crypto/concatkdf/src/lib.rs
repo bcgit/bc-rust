@@ -250,7 +250,8 @@ impl<H: ConcatKDFParams> ConcatKDF<H> {
         dkm.zeroize();
 
         // Step 1: L > 0, else an error. A derivation from no keys is refused too: its output
-        // would be a function of FixedInfo alone.
+        // would be a function of FixedInfo alone. A key of length zero is not refused: the
+        // trait derives from `Zeroized` and empty material and types the output `Unknown`.
         if len == 0 {
             return Err(KDFError::InvalidLength("a zero-length derivation is refused"));
         }
