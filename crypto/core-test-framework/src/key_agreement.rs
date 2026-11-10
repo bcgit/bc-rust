@@ -288,10 +288,14 @@ mod tests {
         type PublicKey = MockPublicKey;
         type Agreement<'k> = MockAgreement<'k, 'p>;
 
+        /// A label of `0` stands for parameters the algorithm rejects.
         fn create_agreement<'k>(
             &'k self,
             params: &'p MockContext,
         ) -> Result<Self::Agreement<'k>, KeyAgreementError> {
+            if params.label == 0 {
+                return Err(KeyAgreementError::GenericError("label 0 is not a context"));
+            }
             Ok(MockAgreement { sk: self, ctx: params })
         }
     }
@@ -333,5 +337,43 @@ mod tests {
             Err(KeyAgreementError::AgreementFailed) => {}
             other => panic!("expected AgreementFailed, got {other:?}"),
         }
+    }
+
+    /// `agree_out` leaves a prefilled buffer zeroized on every error: on the worker, and through
+    /// the role's one-shots whether the worker fails (the identity peer) or `create_agreement`
+    /// does (a rejected context), where only the role's own clearing reaches the buffer.
+    #[test]
+    fn agree_out_leaves_the_buffer_zeroized_on_error() {
+        let (pk, sk) = keygen().unwrap();
+        let ctx = MockContext { label: 1 };
+        let stale =
+            || KeyMaterial::<SS_LEN>::from_bytes_as_type(&[0xFF; SS_LEN], KeyType::Seed).unwrap();
+        let zeroized =
+            |ss: &KeyMaterial<SS_LEN>| ss.key_type() == KeyType::Zeroized && ss.key_len() == 0;
+
+        let agreement = sk.create_agreement(&ctx).unwrap();
+        let mut ss = stale();
+        assert!(matches!(
+            agreement.agree_out(&MockPublicKey(1), &mut ss),
+            Err(KeyAgreementError::AgreementFailed)
+        ));
+        assert!(zeroized(&ss), "the worker's error leaves the buffer zeroized");
+
+        let mut ss = stale();
+        assert!(matches!(
+            sk.agree_out(&MockPublicKey(1), &ctx, &mut ss),
+            Err(KeyAgreementError::AgreementFailed)
+        ));
+        assert!(zeroized(&ss), "the role's one-shot passes the worker's error through");
+
+        let rejected = MockContext { label: 0 };
+        assert!(matches!(sk.create_agreement(&rejected), Err(KeyAgreementError::GenericError(_))));
+        let mut ss = stale();
+        assert!(matches!(
+            sk.agree_out(&pk, &rejected, &mut ss),
+            Err(KeyAgreementError::GenericError(_))
+        ));
+        assert!(zeroized(&ss), "a rejected construction leaves the buffer zeroized");
+        assert!(matches!(sk.agree(&pk, &rejected), Err(KeyAgreementError::GenericError(_))));
     }
 }
