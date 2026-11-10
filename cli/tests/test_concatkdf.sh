@@ -32,6 +32,22 @@ test_concatkdf_sha3_512_matches_acvp() {
     assert_eq "$got" "b0929368505833505374586a7912add0e85c97912e59727370ee4b4d6ff5da4a82798da67f7c35dadb47834b9442576c7faec268885f1adbb13fe3f8d9c07028a5e9d3f60cee9914e8f0012a0b42dab3ffd2eb37a66f33a89c45b494c58c52a85fe12c14991d83803801cfcc21d5ca951ab6f03111cd4775b050e655e8b0768e" "dkm"
 }
 
+# The other four variants against SP 800-56C Rev. 2 Section 4.1 computed in Python with
+# hashlib (counter || Z || FixedInfo per block, counter from 1, leftmost L bytes): Z = 32 bytes
+# 00112233..eeff twice, FixedInfo a1b2c3d4e5f6, L past one hash output so the counter runs.
+# The ACVP sample has no group for these four hashes.
+test_concatkdf_other_variants_match_hashlib() {
+    local z=00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff info=a1b2c3d4e5f6 got
+    got=$(hex_out "$BC_RUST" concatkdf-sha256 --ikm "$z" --additional-input "$info" --len 48 -x)
+    assert_eq "$got" "bc406a73a8ea56a4b6f9a5962a691e2ed2419740ac8c374ee50596cc7fc34ca32dda1ed0e381636a21e1937358ec5975" "concatkdf-sha256"
+    got=$(hex_out "$BC_RUST" concatkdf-sha384 --ikm "$z" --additional-input "$info" --len 64 -x)
+    assert_eq "$got" "c26778863377d1eae1881d5b2dca36490163b9fe3c86e805f48008ea50514538cf3b83e26151218850d5e983e27991f223f582bc4ce4762d69ad622e22490d21" "concatkdf-sha384"
+    got=$(hex_out "$BC_RUST" concatkdf-sha3-256 --ikm "$z" --additional-input "$info" --len 48 -x)
+    assert_eq "$got" "188a1406f70f3555c082c134662a5222641ad08b834daa429a672dbf986b1b13749eea21e2a0c83349a461e97c70ed62" "concatkdf-sha3-256"
+    got=$(hex_out "$BC_RUST" concatkdf-sha3-384 --ikm "$z" --additional-input "$info" --len 64 -x)
+    assert_eq "$got" "2b1fe0d17f85e7502f86bb80ba8ab3f12bd7bd0862531f7c3b93fb25ca1f347f140257b062c01accf6f7a18fe97ebaf4151b54929750ec0b65426f62b5a4a8d7" "concatkdf-sha3-384"
+}
+
 # The other four variants each select their own hash: no two agree on one input.
 test_concatkdf_variants_differ() {
     local a b c d
