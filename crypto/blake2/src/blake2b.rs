@@ -4,14 +4,16 @@
 //! This file and `blake2s.rs` are deliberately structurally identical -- RFC 7693 s. 2.1 describes
 //! one algorithm with two parameter columns -- so that a reviewer can diff them. Keep them in step.
 
+use bouncycastle_core::direction::{Decrypting, Encrypting};
 use bouncycastle_core::errors::{HashError, KeyMaterialError, MACError, SuspendableError};
 use bouncycastle_core::hazmat::do_hazardous_operations;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::symmetric_key::{FromAnyKeyMaterial, MacGenerationKey, MacVerificationKey};
-use bouncycastle_core::traits::{Hash, HashOneShot, MAC, MIN_MAC_OUTPUT_LEN, RNG, Suspendable};
+use bouncycastle_core::traits::{Hash, HashOneShot, MACGenerator, MACVerifier, RNG, Suspendable};
 use bouncycastle_utils::suspendable_state::{add_lib_ver, check_lib_ver};
 use bouncycastle_utils::{ct, min, secret::Secret};
+use core::marker::PhantomData;
 
 /// RFC 7693 s. 2.1: "Block bytes | bb = 128".
 const BB: usize = 128;
@@ -546,88 +548,67 @@ impl FromAnyKeyMaterial for BLAKE2b_512_MACKey {
     }
 }
 
-impl MacGenerationKey for BLAKE2b_512_MACKey {
+impl MacGenerationKey<NN> for BLAKE2b_512_MACKey {
     type Generator<'k>
-        = BLAKE2b_512_MAC
+        = BLAKE2b_512_MAC<Encrypting>
     where
         Self: 'k;
 
     fn create_generator<'k>(&'k self) -> Self::Generator<'k> {
-        BLAKE2b_512_MAC { core: self.core.clone() }
+        BLAKE2b_512_MAC { core: self.core.clone(), dir: PhantomData }
     }
 }
 
-impl MacVerificationKey for BLAKE2b_512_MACKey {
+impl MacVerificationKey<NN> for BLAKE2b_512_MACKey {
     type Verifier<'k>
-        = BLAKE2b_512_MAC
+        = BLAKE2b_512_MAC<Decrypting>
     where
         Self: 'k;
 
     fn create_verifier<'k>(&'k self) -> Self::Verifier<'k> {
-        self.create_generator()
+        BLAKE2b_512_MAC { core: self.core.clone(), dir: PhantomData }
     }
 }
 
-/// The keyed BLAKE2b worker handed out by a [`BLAKE2b_512_MACKey`].
+/// The keyed BLAKE2b worker handed out by a [`BLAKE2b_512_MACKey`]: `Dir` is [`Encrypting`] for
+/// the generator, which implements [`MACGenerator`], and [`Decrypting`] for the verifier, which
+/// implements [`MACVerifier`]. Not `Clone`: a second worker comes from the key.
 ///
 /// See the [crate-level documentation](crate) for usage.
+///
+/// ```compile_fail
+/// # use bouncycastle_core::direction::Encrypting;
+/// # use bouncycastle_blake2::BLAKE2b_512_MAC;
+/// fn cloneable<T: Clone>() {}
+/// cloneable::<BLAKE2b_512_MAC<Encrypting>>();
+/// ```
 #[allow(non_camel_case_types)]
-#[derive(Clone)]
-pub struct BLAKE2b_512_MAC {
+pub struct BLAKE2b_512_MAC<Dir> {
     core: Blake2bCore,
+    dir: PhantomData<Dir>,
 }
 
-impl MAC for BLAKE2b_512_MAC {
-    fn output_len(&self) -> usize {
-        NN
-    }
-
-    fn mac(mut self, data: &[u8]) -> Vec<u8> {
-        self.do_update(data);
-        self.do_final()
-    }
-
-    fn mac_out(mut self, data: &[u8], out: &mut [u8]) -> Result<usize, MACError> {
-        out.fill(0);
-        self.do_update(data);
-        self.do_final_out(out)
-    }
-
-    fn verify(mut self, data: &[u8], mac: &[u8]) -> bool {
-        self.do_update(data);
-        self.do_verify_final(mac)
-    }
-
+impl MACGenerator<NN> for BLAKE2b_512_MAC<Encrypting> {
     fn do_update(&mut self, data: &[u8]) {
         self.core.update(data);
     }
 
-    fn do_final(self) -> Vec<u8> {
-        let mut out = vec![0u8; NN];
-        self.core.finalize(&mut out);
-        out
+    fn do_final_out(self, out: &mut [u8; NN]) -> usize {
+        self.core.finalize(out)
+    }
+}
+
+impl MACVerifier<NN> for BLAKE2b_512_MAC<Decrypting> {
+    fn do_update(&mut self, data: &[u8]) {
+        self.core.update(data);
     }
 
-    /// Zeroizes all of `out`, then writes the first `min(out.len(), 64)` bytes of the tag and
-    /// returns that count. A truncated tag is the 64-byte tag cut short, not the RFC's BLAKE2b with
-    /// a smaller nn (which binds nn into the parameter block, s. 2.5, and is a different function).
-    ///
-    /// # Errors
-    /// [`MACError::InvalidLength`] if `out` is shorter than [`MIN_MAC_OUTPUT_LEN`].
-    fn do_final_out(self, out: &mut [u8]) -> Result<usize, MACError> {
-        out.fill(0);
-        if out.len() < MIN_MAC_OUTPUT_LEN {
-            return Err(MACError::InvalidLength(
-                "output buffer is shorter than MIN_MAC_OUTPUT_LEN (4 bytes)",
-            ));
-        }
-        Ok(self.core.finalize(out))
-    }
-
-    /// Compares in constant time against the full 64-byte tag: a truncated or extended `mac` is
-    /// not a match.
-    fn do_verify_final(self, mac: &[u8]) -> bool {
-        let computed = self.do_final();
-        ct::ct_eq_bytes(&computed, mac)
+    /// Recomputes the tag and compares it in constant time.
+    fn do_verify_final(self, mac: &[u8; NN]) -> Result<(), MACError> {
+        // The recomputed tag is the valid tag of whatever message was absorbed, so it is kept
+        // off the stack's leftovers.
+        let mut computed: Secret<[u8; NN]> = Secret::new();
+        self.core.finalize(&mut *computed);
+        if ct::ct_eq_bytes(&*computed, mac) { Ok(()) } else { Err(MACError::VerificationFailed) }
     }
 }

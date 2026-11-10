@@ -15,7 +15,7 @@ mod bc_test_data {
     use bouncycastle_core::symmetric_key::{
         FromAnyKeyMaterial, MacGenerationKey, MacVerificationKey,
     };
-    use bouncycastle_core::traits::{HashOneShot, MAC};
+    use bouncycastle_core::traits::{HashOneShot, MACVerifier};
     use bouncycastle_hex as hex;
     use std::fs;
     use std::path::Path;
@@ -86,7 +86,11 @@ mod bc_test_data {
 
     /// Runs one record through the hash (empty key) or the MAC (non-empty key), one-shot and
     /// streamed byte-at-a-time.
-    fn check<HASH: HashOneShot, KEY: FromAnyKeyMaterial + MacGenerationKey + MacVerificationKey>(
+    fn check<
+        const N: usize,
+        HASH: HashOneShot,
+        KEY: FromAnyKeyMaterial + MacGenerationKey<N> + MacVerificationKey<N>,
+    >(
         r: &Record,
     ) {
         if r.key.is_empty() {
@@ -97,10 +101,11 @@ mod bc_test_data {
             }
             assert_eq!(hash.do_final(), r.digest, "{} streamed len {}", r.alg, r.input.len());
         } else {
+            let digest: [u8; N] = r.digest.as_slice().try_into().unwrap();
             let key = KeyMaterial::<64>::from_bytes_as_type(&r.key, KeyType::MACKey).unwrap();
             assert_eq!(
                 KEY::from_key_material(&key).unwrap().mac(&r.input),
-                r.digest,
+                digest,
                 "keyed {} len {}",
                 r.alg,
                 r.input.len()
@@ -111,7 +116,7 @@ mod bc_test_data {
                 mac.do_update(core::slice::from_ref(byte));
             }
             assert!(
-                mac.do_verify_final(&r.digest),
+                mac.do_verify_final(&digest).is_ok(),
                 "keyed {} streamed len {}",
                 r.alg,
                 r.input.len()
@@ -131,11 +136,11 @@ mod bc_test_data {
         for r in &records {
             match r.alg.as_str() {
                 "blake2b" => {
-                    check::<BLAKE2b_512, BLAKE2b_512_MACKey>(r);
+                    check::<64, BLAKE2b_512, BLAKE2b_512_MACKey>(r);
                     b += 1;
                 }
                 "blake2s" => {
-                    check::<BLAKE2s_256, BLAKE2s_256_MACKey>(r);
+                    check::<32, BLAKE2s_256, BLAKE2s_256_MACKey>(r);
                     s += 1;
                 }
                 _ => {}

@@ -11,6 +11,7 @@ mod vectors;
 mod blake3_tests {
     use super::vectors::{CASES, CONTEXT, OUTPUT_LEN, input};
     use bouncycastle_blake3::*;
+    use bouncycastle_core::direction::Encrypting;
     use bouncycastle_core::errors::{HashError, SuspendableError};
     use bouncycastle_core::security_strength::SecurityStrength;
     use bouncycastle_core::traits::{
@@ -284,13 +285,16 @@ mod blake3_tests {
     #[test]
     fn print_sizes() {
         assert_eq!(size_of::<BLAKE3>(), 1880);
-        assert_eq!(size_of::<BLAKE3KeyedHash>(), 1880);
+        assert_eq!(size_of::<BLAKE3KeyedHash<Encrypting>>(), 1880);
         assert_eq!(size_of::<BLAKE3Squeezer>(), 192);
         assert_eq!(size_of::<BLAKE3KeyedSqueezer>(), 192);
         assert_eq!(size_of::<BLAKE3DeriveKey>(), 1880);
         assert_eq!(size_of::<BLAKE3DeriveKeySqueezer>(), 192);
         println!("size_of::<BLAKE3>() = {}", size_of::<BLAKE3>());
-        println!("size_of::<BLAKE3KeyedHash>() = {}", size_of::<BLAKE3KeyedHash>());
+        println!(
+            "size_of::<BLAKE3KeyedHash<Encrypting>>() = {}",
+            size_of::<BLAKE3KeyedHash<Encrypting>>()
+        );
         println!("size_of::<BLAKE3Squeezer>() = {}", size_of::<BLAKE3Squeezer>());
         println!("size_of::<BLAKE3KeyedSqueezer>() = {}", size_of::<BLAKE3KeyedSqueezer>());
     }

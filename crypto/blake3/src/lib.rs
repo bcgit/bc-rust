@@ -5,7 +5,7 @@
 //! * [`BLAKE3`]: the `hash` mode, as a [`Hash`] and a [`XOF`].
 //! * [`BLAKE3DeriveKey`]: the `derive_key` mode, as a [`Hash`] and a [`XOF`].
 //! * [`BLAKE3KeyedHashKey`]: the `keyed_hash` key, which hands out [`BLAKE3KeyedHash`] workers, a
-//!   [`MAC`] with extended keyed output via [`BLAKE3KeyedHash::into_squeezer`].
+//!   MAC with extended keyed output via [`BLAKE3KeyedHash::into_squeezer`].
 //!
 //! # Usage Examples
 //! ```
@@ -35,14 +35,14 @@
 //! use bouncycastle_core::symmetric_key::{
 //!     FromAnyKeyMaterial, MacGenerationKey, MacVerificationKey,
 //! };
-//! use bouncycastle_core::traits::{MAC, XOFSqueezer};
+//! use bouncycastle_core::traits::{MACGenerator, XOFSqueezer};
 //! use bouncycastle_blake3::BLAKE3KeyedHashKey;
 //!
 //! let material = KeyMaterial256::from_bytes_as_type(&[0x42u8; 32], KeyType::MACKey).unwrap();
 //! let key = BLAKE3KeyedHashKey::from_key_material(&material).unwrap();
 //!
-//! let tag: Vec<u8> = key.mac(b"message");
-//! assert!(key.verify(b"message", &tag)); // constant-time comparison
+//! let tag: [u8; 32] = key.mac(b"message");
+//! assert!(key.verify(b"message", &tag).is_ok()); // constant-time comparison
 //!
 //! // Streaming, then extended keyed output: its first 32 bytes are the tag.
 //! let mut mac = key.create_generator();
@@ -89,8 +89,7 @@
 //! * Shorter outputs are prefixes of longer ones (s. 2.6): the output length is not bound into the
 //!   result.
 //! * `keyed_hash` is a MAC and PRF by design (s. 6.1); its key must be 32 uniformly random bytes.
-//!   The [`MAC`] trait will not truncate a tag below [`MIN_MAC_OUTPUT_LEN`] bytes;
-//!   [`BLAKE3KeyedHash::into_squeezer`] has no floor.
+//!   [`BLAKE3KeyedHash::into_squeezer`] has no output-length floor.
 //! * The `derive_key` context string must be hardcoded, globally unique and application-specific,
 //!   never variable data (s. 6.2); see [`BLAKE3DeriveKey`].
 //! * BLAKE3 is byte-oriented: a partial final byte is refused.
@@ -137,7 +136,7 @@ use bouncycastle_core::traits::{Algorithm, HashAlgParams};
 #[allow(unused_imports)]
 use bouncycastle_core::key_material::KeyType;
 #[allow(unused_imports)]
-use bouncycastle_core::traits::{Hash, MAC, MIN_MAC_OUTPUT_LEN, Suspendable, XOF};
+use bouncycastle_core::traits::{Hash, MACGenerator, Suspendable, XOF};
 
 /// Algorithm name string for BLAKE3 (`hash` mode), as used by the factories and CLI.
 pub const BLAKE3_NAME: &str = "BLAKE3";
@@ -155,7 +154,7 @@ impl Algorithm for BLAKE3 {
 }
 
 /// As for [`BLAKE3`]: the 256-bit key is "an extra defense layer" (s. 4.1), not a higher target.
-impl Algorithm for BLAKE3KeyedHash {
+impl<Dir> Algorithm for BLAKE3KeyedHash<Dir> {
     const ALG_NAME: &'static str = BLAKE3_KEYED_HASH_NAME;
     const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_128bit;
 }

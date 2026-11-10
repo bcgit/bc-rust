@@ -365,8 +365,11 @@ pub(crate) fn poly1305_cmd(
 }
 
 /// [`do_mac`] over the workers a reusable MAC key hands out.
-fn do_mac_with_key<const N: usize, K>(key: &K, verify_val: &Option<String>, output_hex: bool)
-where
+pub(crate) fn do_mac_with_key<const N: usize, K>(
+    key: &K,
+    verify_val: &Option<String>,
+    output_hex: bool,
+) where
     K: MacGenerationKey<N> + MacVerificationKey<N>,
 {
     do_mac(|| key.create_generator(), || key.create_verifier(), verify_val, output_hex)

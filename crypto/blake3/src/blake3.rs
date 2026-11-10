@@ -9,16 +9,18 @@ use crate::compress::{
     BLOCK_LEN, CHUNK_END, CHUNK_LEN, CHUNK_START, DERIVE_KEY_CONTEXT, DERIVE_KEY_MATERIAL, IV,
     KEYED_HASH, PARENT, ROOT, compress, words_from_le_bytes,
 };
+use bouncycastle_core::direction::{Decrypting, Encrypting};
 use bouncycastle_core::errors::{HashError, KeyMaterialError, MACError, SuspendableError};
 use bouncycastle_core::hazmat::do_hazardous_operations;
 use bouncycastle_core::key_material::{KeyMaterial256, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::symmetric_key::{FromAnyKeyMaterial, MacGenerationKey, MacVerificationKey};
 use bouncycastle_core::traits::{
-    Hash, HashOneShot, MAC, MIN_MAC_OUTPUT_LEN, RNG, Suspendable, XOF, XOFSqueezer,
+    Hash, HashOneShot, MACGenerator, MACVerifier, RNG, Suspendable, XOF, XOFSqueezer,
 };
 use bouncycastle_utils::suspendable_state::{add_lib_ver, check_lib_ver};
 use bouncycastle_utils::{ct, min, secret::Secret};
+use core::marker::PhantomData;
 
 /// BLAKE3 spec s. 2.1: "The chaining value of the root node, encoded as 32 bytes in little-endian
 /// order, is the default-length BLAKE3 hash of the input."
@@ -1064,104 +1066,83 @@ impl FromAnyKeyMaterial for BLAKE3KeyedHashKey {
     }
 }
 
-impl MacGenerationKey for BLAKE3KeyedHashKey {
+impl BLAKE3KeyedHashKey {
+    fn worker<Dir>(&self) -> BLAKE3KeyedHash<Dir> {
+        // s. 2.3: "In the keyed_hash mode, k0 ... k7 are parsed ... from the 256-bit key ..., and
+        // the KEYED_HASH flag is set for every compression."
+        BLAKE3KeyedHash { core: Blake3Core::new(&self.key_words, KEYED_HASH), dir: PhantomData }
+    }
+}
+
+impl MacGenerationKey<OUT_LEN> for BLAKE3KeyedHashKey {
     type Generator<'k>
-        = BLAKE3KeyedHash
+        = BLAKE3KeyedHash<Encrypting>
     where
         Self: 'k;
 
     fn create_generator<'k>(&'k self) -> Self::Generator<'k> {
-        // s. 2.3: "In the keyed_hash mode, k0 ... k7 are parsed ... from the 256-bit key ..., and
-        // the KEYED_HASH flag is set for every compression."
-        BLAKE3KeyedHash { core: Blake3Core::new(&self.key_words, KEYED_HASH) }
+        self.worker()
     }
 }
 
-impl MacVerificationKey for BLAKE3KeyedHashKey {
+impl MacVerificationKey<OUT_LEN> for BLAKE3KeyedHashKey {
     type Verifier<'k>
-        = BLAKE3KeyedHash
+        = BLAKE3KeyedHash<Decrypting>
     where
         Self: 'k;
 
     fn create_verifier<'k>(&'k self) -> Self::Verifier<'k> {
-        self.create_generator()
+        self.worker()
     }
 }
 
-/// BLAKE3 in its `keyed_hash` mode (spec s. 2.3), as a [`MAC`]: the worker a
-/// [`BLAKE3KeyedHashKey`] hands out.
+/// BLAKE3 in its `keyed_hash` mode (spec s. 2.3): the worker a [`BLAKE3KeyedHashKey`] hands
+/// out. `Dir` is [`Encrypting`] for the generator, which implements [`MACGenerator`] and has
+/// [`BLAKE3KeyedHash::into_squeezer`] for keyed output of any length, and [`Decrypting`] for the
+/// verifier, which implements [`MACVerifier`]. Not `Clone`: a second worker comes from the key.
 ///
-/// The [`MAC`] methods produce the default 32-byte tag; [`BLAKE3KeyedHash::into_squeezer`] gives
-/// keyed output of any length (BLAKE3 as a PRF or XOF).
-#[derive(Clone)]
-pub struct BLAKE3KeyedHash {
+/// ```compile_fail
+/// # use bouncycastle_core::direction::Encrypting;
+/// # use bouncycastle_blake3::BLAKE3KeyedHash;
+/// fn cloneable<T: Clone>() {}
+/// cloneable::<BLAKE3KeyedHash<Encrypting>>();
+/// ```
+pub struct BLAKE3KeyedHash<Dir> {
     core: Blake3Core,
+    dir: PhantomData<Dir>,
 }
 
-impl BLAKE3KeyedHash {
+impl BLAKE3KeyedHash<Encrypting> {
     /// Ends the input and returns a squeezer for keyed output of any length (s. 2.6). Its first
-    /// 32 bytes are the [`MAC`] tag. No minimum length applies: choosing a safe output length is
-    /// the caller's responsibility.
+    /// 32 bytes are the [`MACGenerator`] tag. No minimum length applies: choosing a safe output
+    /// length is the caller's responsibility.
     pub fn into_squeezer(self) -> BLAKE3KeyedSqueezer {
         BLAKE3KeyedSqueezer(BLAKE3Squeezer::new(self.core.root_output()))
     }
 }
 
-impl MAC for BLAKE3KeyedHash {
-    fn output_len(&self) -> usize {
-        OUT_LEN
-    }
-
-    fn mac(mut self, data: &[u8]) -> Vec<u8> {
-        self.do_update(data);
-        self.do_final()
-    }
-
-    fn mac_out(mut self, data: &[u8], out: &mut [u8]) -> Result<usize, MACError> {
-        out.fill(0);
-        self.do_update(data);
-        self.do_final_out(out)
-    }
-
-    fn verify(mut self, data: &[u8], mac: &[u8]) -> bool {
-        self.do_update(data);
-        self.do_verify_final(mac)
-    }
-
+impl MACGenerator<OUT_LEN> for BLAKE3KeyedHash<Encrypting> {
     fn do_update(&mut self, data: &[u8]) {
         self.core.update(data);
     }
 
-    fn do_final(self) -> Vec<u8> {
-        let mut out = vec![0u8; OUT_LEN];
-        self.into_squeezer().do_output_out(&mut out);
-        out
+    fn do_final_out(self, out: &mut [u8; OUT_LEN]) -> usize {
+        self.into_squeezer().do_output_out(out)
+    }
+}
+
+impl MACVerifier<OUT_LEN> for BLAKE3KeyedHash<Decrypting> {
+    fn do_update(&mut self, data: &[u8]) {
+        self.core.update(data);
     }
 
-    /// Zeroizes `out` (also on error), then writes `min(out.len(), 32)` bytes of the tag (a
-    /// shorter buffer truncates it) and returns that count.
-    ///
-    /// # Errors
-    /// [`MACError::InvalidLength`] if `out` is shorter than [`MIN_MAC_OUTPUT_LEN`].
-    fn do_final_out(self, out: &mut [u8]) -> Result<usize, MACError> {
-        out.fill(0);
-        if out.len() < MIN_MAC_OUTPUT_LEN {
-            return Err(MACError::InvalidLength(
-                "BLAKE3KeyedHash: output buffer is shorter than MIN_MAC_OUTPUT_LEN",
-            ));
-        }
-        let n = *min(&out.len(), &OUT_LEN);
-        Ok(self.into_squeezer().do_output_out(&mut out[..n]))
-    }
-
-    /// Compares in constant time against the full 32-byte tag; a truncated or extended `mac` does
-    /// not verify.
-    fn do_verify_final(self, mac: &[u8]) -> bool {
-        if mac.len() != OUT_LEN {
-            return false;
-        }
-        let computed = self.do_final();
-        ct::ct_eq_bytes(&computed, mac)
+    /// Recomputes the tag and compares it in constant time.
+    fn do_verify_final(self, mac: &[u8; OUT_LEN]) -> Result<(), MACError> {
+        // The recomputed tag is the valid tag of whatever message was absorbed, so it is kept
+        // off the stack's leftovers.
+        let mut computed: Secret<[u8; OUT_LEN]> = Secret::new();
+        BLAKE3Squeezer::new(self.core.root_output()).do_output_out(&mut *computed);
+        if ct::ct_eq_bytes(&*computed, mac) { Ok(()) } else { Err(MACError::VerificationFailed) }
     }
 }
 
@@ -1183,7 +1164,6 @@ impl MAC for BLAKE3KeyedHash {
 /// let key = BLAKE3KeyedHashKey::from_key_material(&material).unwrap();
 /// let _ = key.create_generator().into_squeezer().suspend(); // not Suspendable
 /// ```
-#[derive(Clone)]
 pub struct BLAKE3KeyedSqueezer(BLAKE3Squeezer);
 
 impl XOFSqueezer for BLAKE3KeyedSqueezer {

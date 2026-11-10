@@ -30,9 +30,10 @@ use bouncycastle::blake3::{
     BLAKE3KeyedSqueezer, BLAKE3Squeezer, SUSPENDED_BLAKE3_SQUEEZER_STATE_LEN,
     SUSPENDED_BLAKE3_STATE_LEN,
 };
+use bouncycastle::core::direction::Encrypting;
 use bouncycastle::core::key_material::{KeyMaterial256, KeyType};
 use bouncycastle::core::symmetric_key::{FromAnyKeyMaterial, MacGenerationKey};
-use bouncycastle::core::traits::{Hash, HashOneShot, MAC, Suspendable, XOF, XOFSqueezer};
+use bouncycastle::core::traits::{Hash, HashOneShot, MACGenerator, Suspendable, XOF, XOFSqueezer};
 
 /// A 4 KiB message: four 1 KiB chunks, so the CV stack is pushed and merged (BLAKE3 spec s. 5.1.2).
 const MSG: [u8; 4096] = [0xA5; 4096];
@@ -43,7 +44,7 @@ fn print_struct_sizes() {
 
     println!("\nBLAKE3");
     println!("size_of<BLAKE3>: {}", size_of::<BLAKE3>());
-    println!("size_of<BLAKE3KeyedHash>: {}", size_of::<BLAKE3KeyedHash>());
+    println!("size_of<BLAKE3KeyedHash>: {}", size_of::<BLAKE3KeyedHash<Encrypting>>());
     println!("size_of<BLAKE3KeyedHashKey>: {}", size_of::<BLAKE3KeyedHashKey>());
     println!("size_of<BLAKE3Squeezer>: {}", size_of::<BLAKE3Squeezer>());
     println!("size_of<BLAKE3KeyedSqueezer>: {}", size_of::<BLAKE3KeyedSqueezer>());
@@ -98,7 +99,7 @@ fn bench_blake3_keyed_hash() {
     let mac_key =
         BLAKE3KeyedHashKey::from_key_material_allow_weak(&key).expect("a 32-byte MAC key");
     let mut out = [0u8; 32];
-    mac_key.create_generator().mac_out(&MSG, &mut out).expect("a 32-byte output buffer");
+    mac_key.mac_out(&MSG, &mut out);
     println!("{:x?}", out);
 }
 

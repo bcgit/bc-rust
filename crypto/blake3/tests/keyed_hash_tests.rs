@@ -11,6 +11,7 @@ mod vectors;
 mod keyed_hash_tests {
     use super::vectors::{CASES, KEY, OUTPUT_LEN, input};
     use bouncycastle_blake3::*;
+    use bouncycastle_core::direction::Encrypting;
     use bouncycastle_core::errors::{KeyMaterialError, MACError};
     use bouncycastle_core::key_material::{
         KeyMaterial256, KeyMaterial512, KeyMaterialTrait, KeyType,
@@ -20,7 +21,7 @@ mod keyed_hash_tests {
         FromAnyKeyMaterial, MacGenerationKey, MacVerificationKey,
     };
     use bouncycastle_core::traits::{
-        Algorithm, AlgorithmInfo, HashOneShot, MAC, MIN_MAC_OUTPUT_LEN, XOFSqueezer,
+        Algorithm, AlgorithmInfo, HashOneShot, MACGenerator, MACVerifier, XOFSqueezer,
     };
     use bouncycastle_core_test_framework::from_key_material::TestFrameworkFromAnyKeyMaterial;
     use bouncycastle_core_test_framework::mac::TestFrameworkMAC;
@@ -29,6 +30,11 @@ mod keyed_hash_tests {
 
     fn h(s: &str) -> Vec<u8> {
         hex::decode(s).unwrap()
+    }
+
+    /// The 32-byte tag: the first 32 bytes of a vector's keyed output.
+    fn tag32(v: &[u8]) -> [u8; 32] {
+        v[..32].try_into().unwrap()
     }
 
     fn material() -> KeyMaterial256 {
@@ -56,8 +62,8 @@ mod keyed_hash_tests {
             let expected = h(case.keyed_hash);
             let len = case.input_len;
 
-            assert_eq!(k.mac(&msg), expected[..32], "len {len}");
-            assert!(k.verify(&msg, &expected[..32]));
+            assert_eq!(k.mac(&msg), tag32(&expected), "len {len}");
+            assert_eq!(k.verify(&msg, &tag32(&expected)), Ok(()));
 
             let mut m = k.create_generator();
             m.do_update(&msg);
@@ -83,7 +89,12 @@ mod keyed_hash_tests {
         m.do_update(&input(CASES[3].input_len));
         let mut s = m.into_squeezer();
         let first = s.do_output(10);
-        assert_eq!([first, s.clone().do_output_final(121)].concat(), expected);
+        assert_eq!([first, s.do_output_final(121)].concat(), expected);
+
+        let mut m = key().create_generator();
+        m.do_update(&input(CASES[3].input_len));
+        let mut s = m.into_squeezer();
+        s.do_output(10);
         let mut rest = vec![0u8; 121];
         assert_eq!(s.do_output_final_out(&mut rest), 121);
         assert_eq!(rest, expected[10..]);
@@ -96,7 +107,7 @@ mod keyed_hash_tests {
         let tf = TestFrameworkMAC::new();
         let k = key();
         for case in CASES.iter().filter(|c| c.input_len <= 4097) {
-            tf.test_mac_key(&k, &input(case.input_len), &h(case.keyed_hash)[..32]);
+            tf.test_mac_key(&k, &input(case.input_len), &tag32(&h(case.keyed_hash)));
         }
     }
 
@@ -104,80 +115,44 @@ mod keyed_hash_tests {
     /// strength) and `generate`.
     #[test]
     fn core_test_framework_from_any_key_material() {
-        TestFrameworkFromAnyKeyMaterial::new().test::<BLAKE3KeyedHashKey>(&material());
+        TestFrameworkFromAnyKeyMaterial::new().test::<32, BLAKE3KeyedHashKey>(&material());
     }
 
     /* ------------------------------------- MAC behaviour ------------------------------------ */
 
-    /// Output buffers: a short buffer truncates down to MIN_MAC_OUTPUT_LEN, below that is an
-    /// error, a long buffer gets 32 bytes and zeros.
+    /// The `_out` forms overwrite the whole array with the tag and report its length.
     #[test]
     fn mac_output_buffers() {
-        assert_eq!(MIN_MAC_OUTPUT_LEN, 4);
         let k = key();
         let tag = k.mac(b"abc");
-        assert_eq!(k.create_generator().output_len(), 32);
+        let mut out = [0xAAu8; 32];
+        assert_eq!(k.mac_out(b"abc", &mut out), 32);
+        assert_eq!(out, tag);
 
-        for len in [4usize, 5, 31, 32] {
-            let mut out = vec![0xAAu8; len];
-            assert_eq!(k.mac_out(b"abc", &mut out).unwrap(), len);
-            assert_eq!(out, tag[..len]);
-
-            let mut m = k.create_generator();
-            m.do_update(b"abc");
-            let mut out = vec![0xAAu8; len];
-            assert_eq!(m.do_final_out(&mut out).unwrap(), len);
-            assert_eq!(out, tag[..len]);
-        }
-
-        // Below the floor: an error, and the buffer still comes back zeroized.
-        for len in [0usize, 1, 3] {
-            let mut out = vec![0xA5u8; len];
-            assert!(matches!(k.mac_out(b"abc", &mut out), Err(MACError::InvalidLength(_))));
-            assert!(out.iter().all(|&b| b == 0), "key mac_out / len {len}");
-
-            let mut out = vec![0xA5u8; len];
-            assert!(matches!(
-                k.create_generator().mac_out(b"abc", &mut out),
-                Err(MACError::InvalidLength(_))
-            ));
-            assert!(out.iter().all(|&b| b == 0), "worker mac_out / len {len}");
-
-            let mut out = vec![0xA5u8; len];
-            let mut m = k.create_generator();
-            m.do_update(b"abc");
-            assert!(matches!(m.do_final_out(&mut out), Err(MACError::InvalidLength(_))));
-            assert!(out.iter().all(|&b| b == 0), "do_final_out / len {len}");
-        }
-
-        let mut out = [0xAAu8; 50];
-        assert_eq!(k.create_generator().mac_out(b"abc", &mut out).unwrap(), 32);
-        assert_eq!(out[..32], tag);
-        assert_eq!(out[32..], [0u8; 18]);
+        let mut m = k.create_generator();
+        m.do_update(b"abc");
+        let mut out = [0xAAu8; 32];
+        assert_eq!(m.do_final_out(&mut out), 32);
+        assert_eq!(out, tag);
     }
 
-    /// Verification needs the exact, full-length tag.
+    /// Verification needs the exact tag of the exact message.
     #[test]
     fn verify_exact_match() {
         let k = key();
         let tag = k.mac(b"abc");
-        assert!(k.verify(b"abc", &tag));
-        assert!(!k.verify(b"abd", &tag));
-        assert!(!k.verify(b"abc", &tag[..31]), "truncated tag");
-        assert!(!k.verify(b"abc", &[&tag[..], &[0u8]].concat()), "extended tag");
-        let mut flipped = tag.clone();
+        assert_eq!(k.verify(b"abc", &tag), Ok(()));
+        assert_eq!(k.verify(b"abd", &tag), Err(MACError::VerificationFailed));
+        let mut flipped = tag;
         flipped[31] ^= 1;
-        assert!(!k.verify(b"abc", &flipped));
+        assert_eq!(k.verify(b"abc", &flipped), Err(MACError::VerificationFailed));
 
         let mut m = k.create_verifier();
         m.do_update(b"abc");
-        assert!(m.clone().do_verify_final(&tag));
-        assert!(!m.do_verify_final(&tag[..16]));
-
-        // The worker's own one-shot.
-        assert!(k.create_verifier().verify(b"abc", &tag));
-        assert!(!k.create_verifier().verify(b"abd", &tag));
-        assert!(!k.create_verifier().verify(b"abc", &tag[..31]));
+        assert_eq!(m.do_verify_final(&tag), Ok(()));
+        let mut m = k.create_verifier();
+        m.do_update(b"abc");
+        assert_eq!(m.do_verify_final(&flipped), Err(MACError::VerificationFailed));
     }
 
     /// The keyed mode differs from the hash mode, and from other keys.
@@ -185,7 +160,7 @@ mod keyed_hash_tests {
     fn keyed_differs() {
         let a = key().mac(b"abc");
         assert_ne!(a, other_key().mac(b"abc"));
-        assert_ne!(a, BLAKE3::hash(b"abc"));
+        assert_ne!(a.to_vec(), BLAKE3::hash(b"abc"));
     }
 
     /// The BLAKE3-specific construction rule the shared suite cannot know: exactly 32 bytes
@@ -251,8 +226,8 @@ mod keyed_hash_tests {
     #[test]
     fn constants_and_params() {
         assert_eq!(BLAKE3_KEYED_HASH_NAME, "BLAKE3-KeyedHash");
-        assert_eq!(BLAKE3KeyedHash::ALG_NAME, BLAKE3_KEYED_HASH_NAME);
-        assert_eq!(BLAKE3KeyedHash::MAX_SECURITY_STRENGTH, SecurityStrength::_128bit);
+        assert_eq!(BLAKE3KeyedHash::<Encrypting>::ALG_NAME, BLAKE3_KEYED_HASH_NAME);
+        assert_eq!(BLAKE3KeyedHash::<Encrypting>::MAX_SECURITY_STRENGTH, SecurityStrength::_128bit);
         assert_eq!(key().create_generator().max_security_strength(), SecurityStrength::_128bit);
         assert_eq!(size_of::<BLAKE3KeyedHashKey>(), 32);
     }

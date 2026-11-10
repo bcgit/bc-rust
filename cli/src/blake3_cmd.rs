@@ -1,15 +1,14 @@
 //! BLAKE3 (BLAKE3 specification, version 20211102173700): the `hash`, `keyed_hash` and
 //! `derive_key` modes, each with output of any length.
 
-use std::io::{self, Read};
 use std::process::exit;
 
 use bouncycastle::blake3::{BLAKE3, BLAKE3DeriveKey, BLAKE3KeyedHashKey};
 use bouncycastle::core::symmetric_key::{FromAnyKeyMaterial, MacGenerationKey};
-use bouncycastle::core::traits::{MAC, XOFSqueezer};
+use bouncycastle::core::traits::MACGenerator;
 
-use crate::helpers::{load_blake_mac_key, stream_xof, write_bytes_or_hex, write_stdout};
-use crate::mac_cmd::do_mac;
+use crate::helpers::{load_blake_mac_key, squeeze_to_stdout, stream_stdin, stream_xof};
+use crate::mac_cmd::do_mac_with_key;
 
 /// BLAKE3 spec s. 2.3: `keyed_hash` "takes an input of any length together with a 256-bit key".
 /// The crate has no public constant for it.
@@ -43,8 +42,8 @@ pub(crate) fn blake3_keyed_hash_cmd(
     output_len: usize,
     output_hex: bool,
 ) {
-    // Verification goes through MAC::do_verify_final, which compares the default 32-byte tag in
-    // constant time and requires an exact length match; an extended output length has no
+    // Verification goes through MACVerifier::do_verify_final, which compares the default 32-byte
+    // tag in constant time; an extended output length has no
     // meaning there, so refuse the combination rather than silently ignore --length.
     if verify_val.is_some() && output_len != BLAKE3_DEFAULT_OUT_LEN {
         eprintln!(
@@ -60,25 +59,15 @@ pub(crate) fn blake3_keyed_hash_cmd(
     // infallible: a 32-byte MACKey (or Zeroized) key is exactly what the key object accepts once
     // the strength check is skipped.
     let mac_key = BLAKE3KeyedHashKey::from_key_material_allow_weak(&key).unwrap();
-    let mut mac = mac_key.create_generator();
 
     if verify_val.is_some() {
-        // do_mac streams stdin and, given a value to verify, exits with the result.
-        do_mac(mac, verify_val, output_hex);
+        // do_mac_with_key streams stdin and, given a value to verify, exits with the result.
+        do_mac_with_key(&mac_key, verify_val, output_hex);
         return;
     }
 
-    // Hand-rolled rather than a helper: stream_xof needs an XOF and do_mac finishes with
-    // MAC::do_final, but extended keyed output needs the inherent into_squeezer afterwards.
-    let mut buf: [u8; 1024] = [0u8; 1024];
-    let mut bytes_read = io::stdin().read(&mut buf).expect("Failed to read from stdin");
-    while bytes_read != 0 {
-        mac.do_update(&buf[..bytes_read]);
-        bytes_read = io::stdin().read(&mut buf).expect("Failed to read from stdin");
-    }
-
     // BLAKE3 spec s. 2.6: the keyed output stream, of which the MAC tag is the first 32 bytes.
-    let out = mac.into_squeezer().do_output_final(output_len);
-    write_bytes_or_hex(&out, output_hex);
-    write_stdout(b"\n");
+    let mut mac = mac_key.create_generator();
+    stream_stdin(|chunk| mac.do_update(chunk));
+    squeeze_to_stdout(mac.into_squeezer(), output_len, output_hex);
 }

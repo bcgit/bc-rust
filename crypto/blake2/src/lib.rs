@@ -31,19 +31,19 @@
 //! use bouncycastle_core::key_material::{KeyMaterial256, KeyType};
 //! use bouncycastle_core::symmetric_key::FromAnyKeyMaterial;
 //! use bouncycastle_core::symmetric_key::{MacGenerationKey, MacVerificationKey};
-//! use bouncycastle_core::traits::MAC;
+//! use bouncycastle_core::traits::MACVerifier;
 //! use bouncycastle_blake2::BLAKE2s_256_MACKey;
 //!
 //! let material = KeyMaterial256::from_bytes_as_type(&[0x0Bu8; 32], KeyType::MACKey).unwrap();
 //! let key = BLAKE2s_256_MACKey::from_key_material(&material).unwrap();
 //!
-//! let tag: Vec<u8> = key.mac(b"message");
-//! assert!(key.verify(b"message", &tag));
+//! let tag: [u8; 32] = key.mac(b"message");
+//! assert!(key.verify(b"message", &tag).is_ok());
 //!
 //! let mut mac = key.create_verifier();
 //! mac.do_update(b"mess");
 //! mac.do_update(b"age");
-//! assert!(mac.do_verify_final(&tag));
+//! assert!(mac.do_verify_final(&tag).is_ok());
 //! ```
 //!
 //! # Memory Usage
@@ -74,8 +74,8 @@
 //!   and its final-block flag (s. 3.2) rules out length extension. A MAC key should be uniformly
 //!   random.
 //! * A truncated output is the full digest cut short, not BLAKE2 with a smaller `nn`, which is a
-//!   different function. MAC tags are not truncated below [`MIN_MAC_OUTPUT_LEN`] bytes.
-//! * Verify tags with `verify` / [`MAC::do_verify_final`], which compare in constant time.
+//!   different function.
+//! * Verify tags with `verify` / [`MACVerifier::do_verify_final`], which compare in constant time.
 //! * BLAKE2 is byte-oriented: [`Hash::do_final_partial_bits`] refuses 1 to 7 partial bits.
 //! * State and buffered input, including the key block, are zeroized on drop; the compression
 //!   function's stack locals are not. There are no data-dependent branches or table lookups.
@@ -121,7 +121,7 @@ use bouncycastle_core::traits::{Algorithm, AlgorithmOID, HashAlgParams};
 #[allow(unused_imports)]
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 #[allow(unused_imports)]
-use bouncycastle_core::traits::{Hash, MAC, MIN_MAC_OUTPUT_LEN, Suspendable};
+use bouncycastle_core::traits::{Hash, MACVerifier, Suspendable};
 
 /// Algorithm name string for BLAKE2b-512, as used by the factories and CLI.
 pub const BLAKE2B_512_NAME: &str = "BLAKE2b-512";
@@ -145,13 +145,13 @@ impl Algorithm for BLAKE2s_256 {
 }
 
 /// Keyed BLAKE2b-512: the same strength as the hash.
-impl Algorithm for BLAKE2b_512_MAC {
+impl<Dir> Algorithm for BLAKE2b_512_MAC<Dir> {
     const ALG_NAME: &'static str = BLAKE2B_512_MAC_NAME;
     const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_256bit;
 }
 
 /// Keyed BLAKE2s-256: the same strength as the hash.
-impl Algorithm for BLAKE2s_256_MAC {
+impl<Dir> Algorithm for BLAKE2s_256_MAC<Dir> {
     const ALG_NAME: &'static str = BLAKE2S_256_MAC_NAME;
     const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_128bit;
 }
@@ -186,13 +186,13 @@ impl AlgorithmOID for BLAKE2s_256 {
 
 /// RFC 7693 s. 4: "The same OID can be used for both keyed and unkeyed hashing since in the latter
 /// case the key simply has zero length." So keyed BLAKE2b-512 shares id-blake2b512.
-impl AlgorithmOID for BLAKE2b_512_MAC {
+impl<Dir> AlgorithmOID for BLAKE2b_512_MAC<Dir> {
     const OID: &'static [u32] = BLAKE2b_512::OID;
     const OID_DER: &'static [u8] = BLAKE2b_512::OID_DER;
 }
 
 /// RFC 7693 s. 4, as for [`BLAKE2b_512_MAC`]: keyed BLAKE2s-256 shares id-blake2s256.
-impl AlgorithmOID for BLAKE2s_256_MAC {
+impl<Dir> AlgorithmOID for BLAKE2s_256_MAC<Dir> {
     const OID: &'static [u32] = BLAKE2s_256::OID;
     const OID_DER: &'static [u8] = BLAKE2s_256::OID_DER;
 }

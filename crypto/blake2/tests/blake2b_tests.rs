@@ -7,6 +7,7 @@
 #[cfg(test)]
 mod blake2b_tests {
     use bouncycastle_blake2::*;
+    use bouncycastle_core::direction::Encrypting;
     use bouncycastle_core::errors::{HashError, KeyMaterialError, MACError, SuspendableError};
     use bouncycastle_core::hazmat::do_hazardous_operations;
     use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
@@ -15,8 +16,8 @@ mod blake2b_tests {
         FromAnyKeyMaterial, MacGenerationKey, MacVerificationKey,
     };
     use bouncycastle_core::traits::{
-        Algorithm, AlgorithmInfo, AlgorithmOID, Hash, HashAlgParams, HashOneShot, MAC,
-        MIN_MAC_OUTPUT_LEN, Suspendable,
+        Algorithm, AlgorithmInfo, AlgorithmOID, Hash, HashAlgParams, HashOneShot, MACGenerator,
+        MACVerifier, Suspendable,
     };
     use bouncycastle_core_test_framework::DUMMY_SEED;
     use bouncycastle_core_test_framework::from_key_material::TestFrameworkFromAnyKeyMaterial;
@@ -28,7 +29,7 @@ mod blake2b_tests {
 
     type H = BLAKE2b_512;
     type K = BLAKE2b_512_MACKey;
-    type M = BLAKE2b_512_MAC;
+    type M = BLAKE2b_512_MAC<Encrypting>;
     /// RFC 7693 s. 2.1 block bytes bb.
     const BB: usize = 128;
     /// Digest bytes nn.
@@ -172,9 +173,9 @@ mod blake2b_tests {
         key
     }
 
-    fn kat(len: usize) -> (Vec<u8>, Vec<u8>) {
+    fn kat(len: usize) -> (Vec<u8>, [u8; NN]) {
         let (_, unkeyed, keyed) = KAT.iter().find(|(n, _, _)| *n == len).unwrap();
-        (h(unkeyed), h(keyed))
+        (h(unkeyed), h(keyed).try_into().unwrap())
     }
 
     #[test]
@@ -186,7 +187,7 @@ mod blake2b_tests {
     #[test]
     fn official_kat() {
         for (len, unkeyed, keyed) in KAT {
-            let (unkeyed, keyed) = (h(unkeyed), h(keyed));
+            let (unkeyed, keyed): (Vec<u8>, [u8; NN]) = (h(unkeyed), h(keyed).try_into().unwrap());
             let m = msg(len);
 
             assert_eq!(H::hash(m), unkeyed, "hash, len {len}");
@@ -196,7 +197,7 @@ mod blake2b_tests {
             }
             assert_eq!(hash.do_final(), unkeyed, "byte-at-a-time hash, len {len}");
 
-            assert_eq!(kat_key().create_generator().mac(m), keyed, "mac, len {len}");
+            assert_eq!(kat_key().mac(m), keyed, "mac, len {len}");
             let mut mac = kat_key().create_generator();
             for byte in m {
                 mac.do_update(core::slice::from_ref(byte));
@@ -251,7 +252,7 @@ mod blake2b_tests {
         for len in [0, 3, BB, BB + 1, 255] {
             tf.test_mac_key(&kat_key(), msg(len), &kat(len).1);
         }
-        TestFrameworkFromAnyKeyMaterial::new().test::<K>(&kat_material());
+        TestFrameworkFromAnyKeyMaterial::new().test::<NN, K>(&kat_material());
     }
 
     #[test]
@@ -268,13 +269,11 @@ mod blake2b_tests {
         assert_eq!(H::BLOCK_LEN, BB);
         assert_eq!(H::new().output_len(), NN);
         assert_eq!(H::default().block_bitlen(), BB * 8);
-        assert_eq!(kat_key().create_generator().output_len(), NN);
         // RFC 7693 s. 4: id-blake2b512 = 1.3.6.1.4.1.1722.12.2.1.16. DER checked with
         // `openssl asn1parse -genstr OID:1.3.6.1.4.1.1722.12.2.1.16`.
         assert_eq!(H::OID, &[1, 3, 6, 1, 4, 1, 1722, 12, 2, 1, 16]);
         assert_eq!(H::OID_DER, h("060b2b060104018d3a0c020110").as_slice());
         assert_eq!(STATE_LEN, 3 + 64 + 16 + BB + 1);
-        assert_eq!(MIN_MAC_OUTPUT_LEN, 4);
         // RFC 7693 s. 4: the same OID covers keyed hashing.
         assert_eq!(M::OID, H::OID);
         assert_eq!(M::OID_DER, H::OID_DER);
@@ -368,7 +367,7 @@ mod blake2b_tests {
             Err(MACError::KeyMaterialError(KeyMaterialError::SecurityStrength(_)))
         ));
         let tag = K::from_key_material_allow_weak(&zero).unwrap().mac(b"abc");
-        assert_ne!(tag, H::hash(b"abc"));
+        assert_ne!(tag.to_vec(), H::hash(b"abc"));
     }
 
     /// generate draws KK_MAX bytes from the RNG and refuses an RNG below the MAC's strength.
@@ -398,91 +397,41 @@ mod blake2b_tests {
         let padded =
             KeyMaterial::<KK_MAX>::from_bytes_as_type(&padded_bytes, KeyType::MACKey).unwrap();
         assert_ne!(
-            K::from_key_material_allow_weak(&short).unwrap().create_generator().mac(b"abc"),
-            K::from_key_material_allow_weak(&padded).unwrap().create_generator().mac(b"abc")
+            K::from_key_material_allow_weak(&short).unwrap().mac(b"abc"),
+            K::from_key_material_allow_weak(&padded).unwrap().mac(b"abc")
         );
     }
 
+    /// The `_out` forms overwrite the whole array with the tag and report its length.
     #[test]
     fn mac_output_buffers() {
         let (_, tag) = kat(65);
-        let started = || {
-            let mut mac = kat_key().create_generator();
-            mac.do_update(msg(65));
-            mac
-        };
-
-        // Below the floor: rejected, through every entry point, with the buffer zeroed first.
-        for len in 0..MIN_MAC_OUTPUT_LEN {
-            let mut out = vec![0xAAu8; len];
-            assert!(matches!(started().do_final_out(&mut out), Err(MACError::InvalidLength(_))));
-            assert!(out.iter().all(|&b| b == 0));
-            out.fill(0xAA);
-            assert!(matches!(
-                kat_key().create_generator().mac_out(msg(65), &mut out),
-                Err(MACError::InvalidLength(_))
-            ));
-            assert!(out.iter().all(|&b| b == 0));
-            out.fill(0xAA);
-            assert!(matches!(
-                kat_key().mac_out(msg(65), &mut out),
-                Err(MACError::InvalidLength(_))
-            ));
-            assert!(out.iter().all(|&b| b == 0));
-        }
-        // At the floor and above: truncated.
-        for len in MIN_MAC_OUTPUT_LEN..=NN {
-            let mut out = vec![0xAAu8; len];
-            assert_eq!(started().do_final_out(&mut out).unwrap(), len);
-            assert_eq!(out, tag[..len]);
-            let mut out = vec![0xAAu8; len];
-            assert_eq!(kat_key().create_generator().mac_out(msg(65), &mut out).unwrap(), len);
-            assert_eq!(out, tag[..len]);
-        }
-        // Oversized: the tag, then zeros.
-        let mut out = vec![0xAAu8; NN + 7];
-        assert_eq!(started().do_final_out(&mut out).unwrap(), NN);
-        assert_eq!(&out[..NN], tag.as_slice());
-        assert!(out[NN..].iter().all(|&b| b == 0));
+        let mut out = [0xAAu8; NN];
+        assert_eq!(kat_key().mac_out(msg(65), &mut out), NN);
+        assert_eq!(out, tag);
+        let mut mac = kat_key().create_generator();
+        mac.do_update(msg(65));
+        let mut out = [0xAAu8; NN];
+        assert_eq!(mac.do_final_out(&mut out), NN);
+        assert_eq!(out, tag);
     }
 
     #[test]
     fn mac_verify() {
         let (_, tag) = kat(65);
-        assert!(kat_key().verify(msg(65), &tag));
-        assert!(kat_key().create_verifier().verify(msg(65), &tag));
-        // Exact length only.
-        assert!(!kat_key().verify(msg(65), &tag[..NN - 1]));
-        let mut longer = tag.clone();
-        longer.push(0);
-        assert!(!kat_key().verify(msg(65), &longer));
+        assert_eq!(kat_key().verify(msg(65), &tag), Ok(()));
         // Any flipped bit fails.
         for i in [0, NN / 2, NN - 1] {
-            let mut bad = tag.clone();
+            let mut bad = tag;
             bad[i] ^= 0x01;
-            assert!(!kat_key().verify(msg(65), &bad));
-            assert!(!kat_key().create_verifier().verify(msg(65), &bad));
-            let mut mac = kat_key().create_generator();
+            assert_eq!(kat_key().verify(msg(65), &bad), Err(MACError::VerificationFailed));
+            let mut mac = kat_key().create_verifier();
             mac.do_update(msg(65));
-            assert!(!mac.do_verify_final(&bad));
+            assert_eq!(mac.do_verify_final(&bad), Err(MACError::VerificationFailed));
         }
-        let mut mac = kat_key().create_generator();
+        let mut mac = kat_key().create_verifier();
         mac.do_update(msg(65));
-        assert!(mac.do_verify_final(&tag));
-    }
-
-    #[test]
-    fn mac_clone() {
-        let (_, tag) = kat(255);
-        let mut mac = kat_key().create_generator();
-        mac.do_update(&msg(255)[..100]);
-        let mut fork = mac.clone();
-        mac.do_update(&msg(255)[100..]);
-        fork.do_update(&msg(255)[100..]);
-        assert_eq!(mac.do_final(), tag);
-        assert_eq!(fork.clone().do_final(), tag);
-        fork.do_update(b"x");
-        assert_ne!(fork.do_final(), tag);
+        assert_eq!(mac.do_verify_final(&tag), Ok(()));
     }
 
     /// Suspending at every interesting position and resuming finishes with the same digest.

@@ -898,13 +898,6 @@ pub trait MACVerifier<const MAC_LEN: usize>: AlgorithmInfo {
     fn do_verify_final(self, mac: &[u8; MAC_LEN]) -> Result<(), MACError>;
 }
 
-/// The shortest output a [`MAC`] worker's `do_final_out` / `mac_out` will truncate a tag to, for
-/// MACs whose specification sets no floor of its own (keyed BLAKE2 and BLAKE3); a shorter buffer is
-/// rejected with [`MACError::InvalidLength`]. Four bytes matches HMAC's FIPS minimum
-/// (`bouncycastle_hmac::MIN_FIPS_DIGEST_LEN`), so that a tag cannot be cut to a trivially
-/// forgeable length by accident.
-pub const MIN_MAC_OUTPUT_LEN: usize = 4;
-
 /// A block padding scheme, used to extend arbitrary-length data to a whole number of blocks so that it
 /// can be processed by a [`BlockCipherEncryptor`]. Implementations are pure functions of the block
 /// contents: no key, no state.

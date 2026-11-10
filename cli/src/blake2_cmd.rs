@@ -1,10 +1,10 @@
 //! BLAKE2b-512 and BLAKE2s-256 (RFC 7693): the unkeyed hashes and their built-in keyed (MAC) mode.
 
 use bouncycastle::blake2::{BLAKE2b_512, BLAKE2b_512_MACKey, BLAKE2s_256, BLAKE2s_256_MACKey};
-use bouncycastle::core::symmetric_key::{FromAnyKeyMaterial, MacGenerationKey};
+use bouncycastle::core::symmetric_key::FromAnyKeyMaterial;
 
 use crate::helpers::{load_blake_mac_key, stream_hash};
-use crate::mac_cmd::do_mac;
+use crate::mac_cmd::do_mac_with_key;
 
 #[allow(non_camel_case_types)]
 pub(crate) enum BLAKE2Variant {
@@ -40,13 +40,13 @@ pub(crate) fn blake2_mac_cmd(
             // infallible: a 1..=64-byte MACKey (or Zeroized) key is exactly what the key object
             // accepts once the strength check is skipped.
             let mac_key = BLAKE2b_512_MACKey::from_key_material_allow_weak(&key).unwrap();
-            do_mac(mac_key.create_generator(), verify_val, output_hex);
+            do_mac_with_key(&mac_key, verify_val, output_hex);
         }
         BLAKE2Variant::BLAKE2s_256 => {
             let key = load_blake_mac_key(key, key_file, "BLAKE2s-256-MAC", 1, 32);
             // infallible: as above, with the 1..=32-byte range of BLAKE2s.
             let mac_key = BLAKE2s_256_MACKey::from_key_material_allow_weak(&key).unwrap();
-            do_mac(mac_key.create_generator(), verify_val, output_hex);
+            do_mac_with_key(&mac_key, verify_val, output_hex);
         }
     }
 }
