@@ -1,5 +1,5 @@
-//! Type aliases for AES in GMAC (NIST SP 800-38D Sec 5.2), and the generator/verifier pair that
-//! makes [`AES128Key<GMAC>`] and friends GMAC keys. The docs are on [`AES_GMAC_128`], which the
+//! Type aliases for AES in GMAC (NIST SP 800-38D Sec 5.2), and the nonce-bound MAC roles that
+//! make [`AES128Key<GMAC>`] and friends GMAC keys. The docs are on [`AES_GMAC_128`], which the
 //! crate root re-exports.
 
 use crate::hazmat::{AES128Internal, AES192Internal, AES256Internal};
@@ -18,9 +18,9 @@ use crate::AES128Key;
 /// the tag at 128 bits, as the `AES_GCM_*` aliases do; for a shorter tag name
 /// [`Gmac`] directly, or the key's mode as `GMAC<12>`.
 ///
-/// A GMAC tag is bound to a nonce, so the pair is the MAC role pair's names with the nonce added,
-/// which is the AEAD role pair's shape with no ciphertext. It is inherent on the key rather than a
-/// role trait in `core` because GMAC is the only nonce-based MAC in the tree.
+/// A GMAC tag is bound to a nonce, so the key, [`AES128Key<GMAC>`], carries the nonce-bound role
+/// pair [`NonceMacGenerationKey`] / [`NonceMacVerificationKey`]: the MAC roles' shape with the
+/// nonce added, which is the AEAD roles' shape with no ciphertext.
 ///
 /// # Usage Examples
 ///
@@ -28,7 +28,8 @@ use crate::AES128Key;
 /// use bouncycastle_aes::AES256Key;
 /// use bouncycastle_cipher::modes::GMAC;
 /// use bouncycastle_core::key_material::{KeyMaterial256, KeyType};
-/// use bouncycastle_core::symmetric_key::FromKeyMaterial;
+/// use bouncycastle_core::symmetric_key::{FromKeyMaterial, NonceMacGenerationKey, NonceMacVerificationKey};
+/// use bouncycastle_core::traits::MACGenerator;
 /// use bouncycastle_rng::HashDRBG_SHA512;
 ///
 /// let mut rng = HashDRBG_SHA512::new_from_os();   // one RNG, held across messages
@@ -41,9 +42,9 @@ use crate::AES128Key;
 /// generator.do_update(b"in pieces");
 /// let tag = generator.do_final();
 ///
-/// // Verification needs the nonce the tag was made under, and is infallible to set up.
-/// assert!(key.create_verifier(&nonce).verify(b"a message that arrives in pieces", &tag));
-/// assert!(!key.create_verifier(&nonce).verify(b"another message", &tag));
+/// // Verification needs the nonce the tag was made under.
+/// assert!(key.verify(&nonce, b"a message that arrives in pieces", &tag).is_ok());
+/// assert!(key.verify(&nonce, b"another message", &tag).is_err());
 /// ```
 ///
 /// # Memory Usage
@@ -52,6 +53,8 @@ use crate::AES128Key;
 /// and 256 bytes for AES-128, -192 and -256. A worker is a `Gcm` of the same shape.
 ///
 /// [`AES128Key<GMAC>`]: crate::AES128Key
+/// [`NonceMacGenerationKey`]: bouncycastle_core::symmetric_key::NonceMacGenerationKey
+/// [`NonceMacVerificationKey`]: bouncycastle_core::symmetric_key::NonceMacVerificationKey
 #[allow(non_camel_case_types)]
 pub type AES_GMAC_128<'k, Dir> = Gmac<'k, AES128Internal, Dir, 16>;
 

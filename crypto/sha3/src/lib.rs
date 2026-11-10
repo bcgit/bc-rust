@@ -4,8 +4,9 @@
 //!
 //! * SHA3 [`Hash`] functions.
 //! * SHAKE [`XOF`] functions.
-//! * HMAC_SHA3_* [`MAC`] functions.
-//! * The SP 800-185 functions: cSHAKE ([`XOF`]), KMAC ([`MAC`]), TupleHash and ParallelHash
+//! * HMAC_SHA3_* MACs, as [`MACGenerator`] / [`MACVerifier`] workers from an `HmacKey`.
+//! * The SP 800-185 functions: cSHAKE ([`XOF`]), KMAC (the same two worker traits, from a
+//!   `KMAC128Key` / `KMAC256Key`), TupleHash and ParallelHash
 //!   ([`Hash`]), and their arbitrary-output-length forms KMACXOF, TupleHashXOF and
 //!   ParallelHashXOF ([`XOF`]).
 //!
@@ -195,9 +196,9 @@
 //! * The sponge state and queue are held in [`bouncycastle_utils::secret::Secret`] and zeroized on
 //!   drop.
 //! * KMAC's security rests on its key and output lengths (SP 800-185 Sec 8.4): the key check is
-//!   [`kmac::KMACKeyInternal::with_params`]'s, with `with_params_allow_weak` as the bypass, and an output
-//!   shorter than 8 bytes is the caller's to justify (Sec 8.4.2: never below 4, and below 8
-//!   only after a risk analysis).
+//!   [`kmac::KMACKeyInternal::with_params`]'s, with `with_params_allow_weak` as the bypass, and
+//!   the output length is the key type's const parameter, with a length shorter than 8 bytes the
+//!   caller's to justify (Sec 8.4.2: never below 4, and below 8 only after a risk analysis).
 //! * cSHAKE has SHAKE's prefix property; the fixed-length KMAC, TupleHash and ParallelHash do
 //!   not, because the output length is bound in, but their XOF forms read as a stream do
 //!   (Sec 8.2.2).
@@ -218,7 +219,9 @@ use bouncycastle_core::errors::HashError;
 #[allow(unused_imports)]
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 #[allow(unused_imports)]
-use bouncycastle_core::traits::{Hash, HashOneShot, MAC, Suspendable, XOF, XOFSqueezer};
+use bouncycastle_core::traits::{
+    Hash, HashOneShot, MACGenerator, MACVerifier, Suspendable, XOF, XOFSqueezer,
+};
 // end of doc-only imports
 
 pub mod hmac;

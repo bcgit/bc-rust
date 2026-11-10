@@ -18,8 +18,9 @@
 
 use core::hint::black_box;
 
+use bouncycastle::core::direction::{Decrypting, Encrypting};
 use bouncycastle::core::errors::MACError;
-use bouncycastle::core::traits::MAC;
+use bouncycastle::core::traits::{MACGenerator, MACVerifier};
 use bouncycastle::poly1305::hazmat::key_from_bytes;
 use bouncycastle::poly1305::{KEY_LEN, Poly1305, Poly1305Key, TAG_LEN};
 
@@ -33,7 +34,8 @@ const KEY: [u8; KEY_LEN] = [0x42; KEY_LEN];
 fn print_struct_sizes() {
     use core::mem::size_of;
     println!("size_of<Poly1305Key>: {}", size_of::<Poly1305Key>());
-    println!("size_of<Poly1305>: {}", size_of::<Poly1305>());
+    println!("size_of<Poly1305<Encrypting>>: {}", size_of::<Poly1305<Encrypting>>());
+    println!("size_of<Poly1305<Decrypting>>: {}", size_of::<Poly1305<Decrypting>>());
 }
 
 /// Runs the operation in its own frame. Returns nothing, so no result crosses the boundary.
@@ -56,10 +58,18 @@ fn key() -> Poly1305Key {
     key_from_bytes(&message::<KEY_LEN>(KEY[0]))
 }
 
-/// A worker that has taken the message, so the final pads a partial block.
+/// A generator that has taken the message, so the final pads a partial block.
 #[inline(never)]
-fn worker_after_data() -> Poly1305 {
-    let mut mac = key().into_mac();
+fn generator_after_data() -> Poly1305<Encrypting> {
+    let mut mac = key().into_generator();
+    mac.do_update(&message::<MSG_LEN>(0xa5));
+    mac
+}
+
+/// A verifier that has taken the message.
+#[inline(never)]
+fn verifier_after_data() -> Poly1305<Decrypting> {
+    let mut mac = key().into_verifier();
     mac.do_update(&message::<MSG_LEN>(0xa5));
     mac
 }
@@ -77,11 +87,11 @@ fn bench_key_from_bytes() {
 }
 
 #[inline(never)]
-fn bench_into_mac() {
-    eprintln!("Poly1305Key::into_mac");
+fn bench_into_generator() {
+    eprintln!("Poly1305Key::into_generator");
     let key = black_box(key());
     measure(move || {
-        let op = black_box(Poly1305Key::into_mac as fn(Poly1305Key) -> Poly1305);
+        let op = black_box(Poly1305Key::into_generator as fn(Poly1305Key) -> Poly1305<Encrypting>);
         let mac = op(key);
         black_box(&mac);
     });
@@ -90,11 +100,14 @@ fn bench_into_mac() {
 #[inline(never)]
 fn bench_do_update() {
     eprintln!("Poly1305::do_update, {MSG_LEN} B");
-    let mac = black_box(key().into_mac());
+    let mac = black_box(key().into_generator());
     let data = black_box(message::<MSG_LEN>(0xa5));
     measure(move || {
         let mut mac = mac;
-        let op = black_box(<Poly1305 as MAC>::do_update as fn(&mut Poly1305, &[u8]));
+        let op = black_box(
+            <Poly1305<Encrypting> as MACGenerator<TAG_LEN>>::do_update
+                as fn(&mut Poly1305<Encrypting>, &[u8]),
+        );
         op(&mut mac, &data);
         black_box(&mac);
     });
@@ -104,13 +117,14 @@ fn bench_do_update() {
 #[inline(never)]
 fn bench_do_final_out() {
     eprintln!("Poly1305::do_final_out");
-    let mac = black_box(worker_after_data());
+    let mac = black_box(generator_after_data());
     measure(move || {
         let mut tag = [0u8; TAG_LEN];
         let op = black_box(
-            <Poly1305 as MAC>::do_final_out as fn(Poly1305, &mut [u8]) -> Result<usize, MACError>,
+            <Poly1305<Encrypting> as MACGenerator<TAG_LEN>>::do_final_out
+                as fn(Poly1305<Encrypting>, &mut [u8; TAG_LEN]) -> usize,
         );
-        let n = op(mac, &mut tag).unwrap();
+        let n = op(mac, &mut tag);
         print!("{:x?}", &tag[..n]);
     });
 }
@@ -118,36 +132,22 @@ fn bench_do_final_out() {
 #[inline(never)]
 fn bench_do_verify_final() {
     eprintln!("Poly1305::do_verify_final");
-    let mac = black_box(worker_after_data());
+    let mac = black_box(verifier_after_data());
     let tag = black_box(message::<TAG_LEN>(0x3c));
     measure(move || {
-        let op = black_box(<Poly1305 as MAC>::do_verify_final as fn(Poly1305, &[u8]) -> bool);
-        print!("{}", op(mac, &tag));
-    });
-}
-
-/// The one-shot: the whole message and the final in one call.
-#[inline(never)]
-fn bench_mac_out() {
-    eprintln!("Poly1305::mac_out, {MSG_LEN} B");
-    let mac = black_box(key().into_mac());
-    let data = black_box(message::<MSG_LEN>(0xa5));
-    measure(move || {
-        let mut tag = [0u8; TAG_LEN];
         let op = black_box(
-            <Poly1305 as MAC>::mac_out as fn(Poly1305, &[u8], &mut [u8]) -> Result<usize, MACError>,
+            <Poly1305<Decrypting> as MACVerifier<TAG_LEN>>::do_verify_final
+                as fn(Poly1305<Decrypting>, &[u8; TAG_LEN]) -> Result<(), MACError>,
         );
-        let n = op(mac, &data, &mut tag).unwrap();
-        print!("{:x?}", &tag[..n]);
+        print!("{:?}", op(mac, &tag));
     });
 }
 
 fn main() {
     print_struct_sizes()
     // bench_key_from_bytes()
-    // bench_into_mac()
+    // bench_into_generator()
     // bench_do_update()
     // bench_do_final_out()
     // bench_do_verify_final()
-    // bench_mac_out()
 }

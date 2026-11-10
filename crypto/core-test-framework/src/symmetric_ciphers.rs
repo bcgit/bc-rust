@@ -2,7 +2,7 @@
 //! [`SymmetricCipherDecryptor`] and their stream-cipher refinement. The block-cipher and AEAD
 //! refinements have their own runners in [`crate::block_cipher`] and [`crate::aead`].
 
-use crate::DUMMY_SEED;
+use crate::{DUMMY_SEED, FailingRNG};
 use bouncycastle_core::errors::SymmetricCipherError;
 use bouncycastle_core::symmetric_key::{SymmetricDecryptionKey, SymmetricEncryptionKey};
 use bouncycastle_core::traits::{
@@ -105,6 +105,18 @@ impl TestFrameworkSymmetricCipher {
             let mut ct = vec![0u8; encrypt_out_len(len)];
             let (ct_len, init_data) = key.encrypt_out(rng, msg, &mut ct).unwrap();
             assert_eq!(ct_len, ct.len(), "encrypt_out must write exactly encrypt_out_len bytes");
+
+            // the _out rule holds on the error path: when the init data cannot be drawn, the
+            // buffer comes back zeroized rather than with its stale contents
+            let mut stale = vec![0xA5u8; encrypt_out_len(len)];
+            match key.encrypt_out(&mut FailingRNG, msg, &mut stale) {
+                Err(SymmetricCipherError::RNGError(_)) => assert!(
+                    stale.iter().all(|&b| b == 0),
+                    "encrypt_out must zeroize the buffer before an RNG error"
+                ),
+                Err(e) => panic!("a failing RNG must surface as RNGError, not {e:?}"),
+                Ok(_) => assert_eq!(INIT_DATA_LEN, 0, "only a key with no init data draws nothing"),
+            }
 
             let mut pt = vec![0u8; decrypt_out_len(ct_len)];
             let pt_len = key.decrypt_out(&init_data, &ct[..ct_len], &mut pt).unwrap();
