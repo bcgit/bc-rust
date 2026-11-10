@@ -654,6 +654,7 @@ pub trait AeadDeclaredEncryptionKey<
         plaintext: &[u8],
         ciphertext: &mut [u8],
     ) -> Result<usize, SymmetricCipherError> {
+        ciphertext.fill(0);
         let enc = self.create_encryptor_nonce(nonce, aad.len(), plaintext.len())?;
         crate::provided::encrypt_inline(enc, aad, plaintext, ciphertext)
     }
@@ -692,6 +693,7 @@ pub trait AeadDeclaredEncryptionKey<
         plaintext: &[u8],
         ciphertext: &mut [u8],
     ) -> Result<(usize, [u8; TAG_LEN]), SymmetricCipherError> {
+        ciphertext.fill(0);
         let enc = self.create_encryptor_nonce(nonce, aad.len(), plaintext.len())?;
         crate::provided::encrypt_detached(enc, aad, plaintext, ciphertext)
     }
@@ -776,6 +778,7 @@ pub trait AeadDeclaredDecryptionKey<
         ciphertext: &[u8],
         plaintext: &mut [u8],
     ) -> Result<usize, SymmetricCipherError> {
+        plaintext.fill(0);
         let payload_len = crate::provided::inline_payload_len::<TAG_LEN>(ciphertext.len())?;
         let dec = self.create_decryptor(nonce, aad.len(), payload_len)?;
         crate::provided::decrypt_inline(dec, aad, ciphertext, plaintext)
@@ -817,6 +820,7 @@ pub trait AeadDeclaredDecryptionKey<
         tag: &[u8; TAG_LEN],
         plaintext: &mut [u8],
     ) -> Result<usize, SymmetricCipherError> {
+        plaintext.fill(0);
         let dec = self.create_decryptor(nonce, aad.len(), ciphertext.len())?;
         crate::provided::decrypt_detached(dec, aad, ciphertext, tag, plaintext)
     }
@@ -1228,6 +1232,7 @@ pub trait MacGenerationKey<const MAC_LEN: usize> {
     /// One-shot: the tag of `data` into `out`, written in full; returns the number of bytes
     /// written, always `MAC_LEN`.
     fn mac_out(&self, data: &[u8], out: &mut [u8; MAC_LEN]) -> usize {
+        out.fill(0);
         let mut generator = self.create_generator();
         generator.do_update(data);
         generator.do_final_out(out)
@@ -1327,6 +1332,7 @@ pub trait NonceMacGenerationKey<const NONCE_LEN: usize, const MAC_LEN: usize> {
         data: &[u8],
         out: &mut [u8; MAC_LEN],
     ) -> usize {
+        out.fill(0);
         let mut generator = self.create_generator_nonce(nonce);
         generator.do_update(data);
         generator.do_final_out(out)
@@ -1476,6 +1482,7 @@ pub trait KeyUnwrappingKey<const KEK_LEN: usize> {
         ciphertext: &[u8; CT_LEN],
         key: &mut Secret<[u8; KEY_LEN]>,
     ) -> Result<usize, SymmetricCipherError> {
+        key.zeroize();
         self.create_unwrapper().unwrap_key_out(ciphertext, key)
     }
 
