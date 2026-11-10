@@ -81,8 +81,8 @@ use bouncycastle_core::errors::MACError;
 use bouncycastle_core::key_material::KeyMaterialTrait;
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::symmetric_key::{FromAnyKeyMaterial, MacGenerationKey, MacVerificationKey};
-use bouncycastle_core::traits::{AlgorithmInfo, HashAlgParams, MACGenerator, MACVerifier};
-use bouncycastle_hmac::{HMAC, HmacKey};
+use bouncycastle_core::traits::{AlgorithmInfo, MACGenerator, MACVerifier};
+use bouncycastle_hmac::{HMAC, HMACParams, HmacKey};
 use bouncycastle_sha2 as sha2;
 use bouncycastle_sha2::hmac::{
     HMAC_SHA224_NAME, HMAC_SHA256_NAME, HMAC_SHA384_NAME, HMAC_SHA512_224_NAME,
@@ -222,22 +222,22 @@ impl MACFactory {
     }
 
     /// The tag length of the selected algorithm, in bytes: the hash's output length for an HMAC,
-    /// 32 for KMAC128 and 64 for KMAC256.
+    /// 32 for KMAC128 and 64 for KMAC256, read off the key type.
     pub fn output_len(&self) -> usize {
         match self {
-            Self::KMAC128(_) => 32,
-            Self::KMAC256(_) => 64,
-            Self::HMAC_SHA224(_) => <sha2::SHA224 as HashAlgParams>::OUTPUT_LEN,
-            Self::HMAC_SHA256(_) => <sha2::SHA256 as HashAlgParams>::OUTPUT_LEN,
-            Self::HMAC_SHA384(_) => <sha2::SHA384 as HashAlgParams>::OUTPUT_LEN,
-            Self::HMAC_SHA512(_) => <sha2::SHA512 as HashAlgParams>::OUTPUT_LEN,
-            Self::HMAC_SHA512_224(_) => <sha2::SHA512_224 as HashAlgParams>::OUTPUT_LEN,
-            Self::HMAC_SHA512_256(_) => <sha2::SHA512_256 as HashAlgParams>::OUTPUT_LEN,
-            Self::HMAC_SHA3_224(_) => <sha3::SHA3_224 as HashAlgParams>::OUTPUT_LEN,
-            Self::HMAC_SHA3_256(_) => <sha3::SHA3_256 as HashAlgParams>::OUTPUT_LEN,
-            Self::HMAC_SHA3_384(_) => <sha3::SHA3_384 as HashAlgParams>::OUTPUT_LEN,
-            Self::HMAC_SHA3_512(_) => <sha3::SHA3_512 as HashAlgParams>::OUTPUT_LEN,
-            Self::HMAC_SM3(_) => <sm3::SM3 as HashAlgParams>::OUTPUT_LEN,
+            Self::KMAC128(k) => tag_len(k),
+            Self::KMAC256(k) => tag_len(k),
+            Self::HMAC_SHA224(k) => tag_len(k),
+            Self::HMAC_SHA256(k) => tag_len(k),
+            Self::HMAC_SHA384(k) => tag_len(k),
+            Self::HMAC_SHA512(k) => tag_len(k),
+            Self::HMAC_SHA512_224(k) => tag_len(k),
+            Self::HMAC_SHA512_256(k) => tag_len(k),
+            Self::HMAC_SHA3_224(k) => tag_len(k),
+            Self::HMAC_SHA3_256(k) => tag_len(k),
+            Self::HMAC_SHA3_384(k) => tag_len(k),
+            Self::HMAC_SHA3_512(k) => tag_len(k),
+            Self::HMAC_SM3(k) => tag_len(k),
         }
     }
 
@@ -310,11 +310,43 @@ impl MACFactory {
     }
 }
 
-/// `tag` into the front of `out`, for the run-time-length finals: the length check is the
-/// caller's.
-fn write_tag<const N: usize>(tag: [u8; N], out: &mut [u8]) -> usize {
-    out[..N].copy_from_slice(&tag);
-    N
+/// The tag length a key or worker type carries: `MAC_LEN` for KMAC, the hash's output length
+/// for HMAC. One source for both `output_len`s, so the two cannot disagree.
+trait TagLen {
+    const LEN: usize;
+}
+impl<const N: usize> TagLen for KMAC128Key<N> {
+    const LEN: usize = N;
+}
+impl<const N: usize> TagLen for KMAC256Key<N> {
+    const LEN: usize = N;
+}
+impl<Dir, const N: usize> TagLen for KMAC128<Dir, N> {
+    const LEN: usize = N;
+}
+impl<Dir, const N: usize> TagLen for KMAC256<Dir, N> {
+    const LEN: usize = N;
+}
+impl<H: HMACParams> TagLen for HmacKey<H> {
+    const LEN: usize = H::OUTPUT_LEN;
+}
+impl<H: HMACParams, Dir> TagLen for HMAC<'_, H, Dir> {
+    const LEN: usize = H::OUTPUT_LEN;
+}
+fn tag_len<T: TagLen>(_: &T) -> usize {
+    T::LEN
+}
+
+/// `generator`'s tag into the front of `out`, for the run-time-length finals: `out` must hold
+/// `N` bytes, else `InvalidLength` and nothing is written.
+fn final_into<const N: usize, G: MACGenerator<N>>(
+    generator: G,
+    out: &mut [u8],
+) -> Result<usize, MACError> {
+    let Some(slot) = out.get_mut(..N).and_then(|s| <&mut [u8; N]>::try_from(s).ok()) else {
+        return Err(MACError::InvalidLength("output buffer is smaller than the tag"));
+    };
+    Ok(generator.do_final_out(slot))
 }
 
 /// `mac` as the fixed-length tag `verifier` takes, or `InvalidLength`.
@@ -372,24 +404,21 @@ impl MACFactoryWorker<'_, Encrypting> {
     /// [`MACError::InvalidLength`] if `out` is shorter than the tag; it is left zeroized.
     pub fn do_final_out(self, out: &mut [u8]) -> Result<usize, MACError> {
         out.fill(0);
-        if out.len() < self.output_len() {
-            return Err(MACError::InvalidLength("output buffer is smaller than the tag"));
+        match self {
+            Self::KMAC128(h) => final_into(h, out),
+            Self::KMAC256(h) => final_into(h, out),
+            Self::HMAC_SHA224(h) => final_into(h, out),
+            Self::HMAC_SHA256(h) => final_into(h, out),
+            Self::HMAC_SHA384(h) => final_into(h, out),
+            Self::HMAC_SHA512(h) => final_into(h, out),
+            Self::HMAC_SHA512_224(h) => final_into(h, out),
+            Self::HMAC_SHA512_256(h) => final_into(h, out),
+            Self::HMAC_SHA3_224(h) => final_into(h, out),
+            Self::HMAC_SHA3_256(h) => final_into(h, out),
+            Self::HMAC_SHA3_384(h) => final_into(h, out),
+            Self::HMAC_SHA3_512(h) => final_into(h, out),
+            Self::HMAC_SM3(h) => final_into(h, out),
         }
-        Ok(match self {
-            Self::KMAC128(h) => write_tag(h.do_final(), out),
-            Self::KMAC256(h) => write_tag(h.do_final(), out),
-            Self::HMAC_SHA224(h) => write_tag(h.do_final(), out),
-            Self::HMAC_SHA256(h) => write_tag(h.do_final(), out),
-            Self::HMAC_SHA384(h) => write_tag(h.do_final(), out),
-            Self::HMAC_SHA512(h) => write_tag(h.do_final(), out),
-            Self::HMAC_SHA512_224(h) => write_tag(h.do_final(), out),
-            Self::HMAC_SHA512_256(h) => write_tag(h.do_final(), out),
-            Self::HMAC_SHA3_224(h) => write_tag(h.do_final(), out),
-            Self::HMAC_SHA3_256(h) => write_tag(h.do_final(), out),
-            Self::HMAC_SHA3_384(h) => write_tag(h.do_final(), out),
-            Self::HMAC_SHA3_512(h) => write_tag(h.do_final(), out),
-            Self::HMAC_SM3(h) => write_tag(h.do_final(), out),
-        })
     }
 }
 
@@ -442,19 +471,19 @@ impl<Dir> MACFactoryWorker<'_, Dir> {
     /// The tag length of the selected algorithm, in bytes: [`MACFactory::output_len`].
     pub fn output_len(&self) -> usize {
         match self {
-            Self::KMAC128(_) => 32,
-            Self::KMAC256(_) => 64,
-            Self::HMAC_SHA224(_) => <sha2::SHA224 as HashAlgParams>::OUTPUT_LEN,
-            Self::HMAC_SHA256(_) => <sha2::SHA256 as HashAlgParams>::OUTPUT_LEN,
-            Self::HMAC_SHA384(_) => <sha2::SHA384 as HashAlgParams>::OUTPUT_LEN,
-            Self::HMAC_SHA512(_) => <sha2::SHA512 as HashAlgParams>::OUTPUT_LEN,
-            Self::HMAC_SHA512_224(_) => <sha2::SHA512_224 as HashAlgParams>::OUTPUT_LEN,
-            Self::HMAC_SHA512_256(_) => <sha2::SHA512_256 as HashAlgParams>::OUTPUT_LEN,
-            Self::HMAC_SHA3_224(_) => <sha3::SHA3_224 as HashAlgParams>::OUTPUT_LEN,
-            Self::HMAC_SHA3_256(_) => <sha3::SHA3_256 as HashAlgParams>::OUTPUT_LEN,
-            Self::HMAC_SHA3_384(_) => <sha3::SHA3_384 as HashAlgParams>::OUTPUT_LEN,
-            Self::HMAC_SHA3_512(_) => <sha3::SHA3_512 as HashAlgParams>::OUTPUT_LEN,
-            Self::HMAC_SM3(_) => <sm3::SM3 as HashAlgParams>::OUTPUT_LEN,
+            Self::KMAC128(h) => tag_len(h),
+            Self::KMAC256(h) => tag_len(h),
+            Self::HMAC_SHA224(h) => tag_len(h),
+            Self::HMAC_SHA256(h) => tag_len(h),
+            Self::HMAC_SHA384(h) => tag_len(h),
+            Self::HMAC_SHA512(h) => tag_len(h),
+            Self::HMAC_SHA512_224(h) => tag_len(h),
+            Self::HMAC_SHA512_256(h) => tag_len(h),
+            Self::HMAC_SHA3_224(h) => tag_len(h),
+            Self::HMAC_SHA3_256(h) => tag_len(h),
+            Self::HMAC_SHA3_384(h) => tag_len(h),
+            Self::HMAC_SHA3_512(h) => tag_len(h),
+            Self::HMAC_SM3(h) => tag_len(h),
         }
     }
 }
