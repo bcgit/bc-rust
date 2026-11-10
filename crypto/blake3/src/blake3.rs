@@ -891,6 +891,10 @@ impl Suspendable<SUSPENDED_BLAKE3_SQUEEZER_STATE_LEN> for BLAKE3Squeezer {
         words_from_le_bytes(&input[32..96], &mut block_words);
         let root = Output { input_chaining_value, block_words, counter: 0, block_len, flags };
         let mut buf = Secret::<[u8; BLOCK_LEN]>::new();
+        // Mutants note: `<` -> `<=` survives. At position 64 the buffer is never read, so it only
+        // adds a compression; for a fresh squeezer (counter 0) it would also underflow the
+        // subtraction below, which panics only where overflow checks are on, and the mutants
+        // profile has them off.
         if (buf_pos as usize) < BLOCK_LEN {
             // The rest of block output_block_counter - 1 is still to be read (counter >= 1 here,
             // checked above), so compute it again rather than trust a stored copy.
