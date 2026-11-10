@@ -353,10 +353,10 @@ impl MACVerifier<TAG_LEN> for Poly1305<Decrypting> {
     }
 
     fn do_verify_final(self, mac: &[u8; TAG_LEN]) -> Result<(), MACError> {
-        if ct::ct_eq_bytes(&self.finalize(), mac) {
-            Ok(())
-        } else {
-            Err(MACError::VerificationFailed)
-        }
+        // The recomputed tag is the valid tag of whatever message was absorbed, so it is kept
+        // off the stack's leftovers, as the HMAC and KMAC verifiers keep theirs.
+        let mut computed: Secret<[u8; TAG_LEN]> = Secret::new();
+        *computed = self.finalize();
+        if ct::ct_eq_bytes(&*computed, mac) { Ok(()) } else { Err(MACError::VerificationFailed) }
     }
 }
