@@ -8,14 +8,15 @@ mod hkdf_tests {
         KeyMaterialTrait, KeyType,
     };
     use bouncycastle_core::security_strength::SecurityStrength;
-    use bouncycastle_core::symmetric_key::{FromAnyKeyMaterial, MacGenerationKey};
+    use bouncycastle_core::symmetric_key::FromAnyKeyMaterial;
     use bouncycastle_core::traits::{
-        Algorithm, AlgorithmInfo, HashAlgParams, HashOneShot, KDF, KDF_ONE_SHOT_MAX_LEN, MAC,
+        Algorithm, AlgorithmInfo, HashAlgParams, HashOneShot, KDF, KDF_ONE_SHOT_MAX_LEN,
     };
     use bouncycastle_core_test_framework::DUMMY_SEED;
     use bouncycastle_core_test_framework::kdf::TestFrameworkKDF;
     use bouncycastle_hex as hex;
     use bouncycastle_hkdf::HKDF;
+    use bouncycastle_hmac::hazmat as hmac_hazmat;
     use bouncycastle_hmac::{HMACParams, HmacKey};
     use bouncycastle_sha2::hkdf::{HKDF_SHA256, HKDF_SHA256_NAME, HKDF_SHA512, HKDF_SHA512_NAME};
     use bouncycastle_sha2::{SHA256, SHA512};
@@ -675,15 +676,17 @@ mod hkdf_tests {
             let prk = prk_of(n);
             let key = HmacKey::<H>::from_key_material(&prk).unwrap();
             let mut expected = [0u8; 128];
-            let mut t1 = key.create_generator();
+            // HMAC as its hazmat halves, which are generic over the hash where the role
+            // impls want the tag length as a const.
+            let mut t1 = hmac_hazmat::inner_state(&key);
             t1.do_update(b"info");
             t1.do_update(&[1]);
-            t1.do_final_out(&mut expected[..hash_len]).unwrap();
-            let mut t2 = key.create_generator();
+            hmac_hazmat::finish_out(&key, t1, &mut expected[..hash_len]);
+            let mut t2 = hmac_hazmat::inner_state(&key);
             t2.do_update(&expected[..hash_len]);
             t2.do_update(b"info");
             t2.do_update(&[2]);
-            t2.do_final_out(&mut expected[hash_len..2 * hash_len]).unwrap();
+            hmac_hazmat::finish_out(&key, t2, &mut expected[hash_len..2 * hash_len]);
 
             let mut okm = KeyMaterial::<128>::new();
             let written = HKDF::<H>::expand_out(&prk, b"info", 2 * hash_len, &mut okm).unwrap();

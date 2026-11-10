@@ -911,90 +911,48 @@ pub trait KeyWrapper: AlgorithmInfo {
     ) -> Result<usize, SymmetricCipherError>;
 }
 
-/// A Message Authentication Code algorithm is a keyed hash function that behaves somewhat like a symmetric signature function.
-/// A MAC algorithm takes in a key and some data, and produces a MAC (message authentication code) that
-/// can be used to verify the integrity of data.
-///
-/// This trait provides one-shot functions [`MAC::mac`], [`MAC::mac_out`], and [`MAC::verify`].
-/// It also provides streaming functions [`MAC::do_update`], [`MAC::do_final`], [`MAC::do_final_out`],
-/// and [`MAC::do_verify_final`].
-/// The workflow is that a MAC object is obtained from a key object (`HmacKey`, `KMAC128Key`,
-/// `AES128Key<CMAC>` and the like, through `create_generator` / `create_verifier`), then data is
-/// processed into one or more calls to [`MAC::do_update`],
-/// after that the object can either create a MAC with [`MAC::do_final`] or [`MAC::do_final_out`] (which are final functions, and so consume the object),
-/// or the object can be used to verify a MAC.
-///
-/// For varifying an existing MAC, it is functionally equivalent to use the provided [`MAC::verify`] and [`MAC::do_verify_final`]
-/// function or to compute a new MAC and compare it to the existing MAC, however the provided verification functions
-/// use constant-time comparison to avoid cryptographic timing attacks whereby an attacker could learn
-/// the bytes of the MAC value under some conditions. Therefore, it is highly recommended to use the provided verification functions.
-///
-/// Note that the MAC key is not represented in this trait because it belongs to the key object
-/// that makes the worker.
-///
-/// MACs do not implement Default because they do not have a sensible no-args constructor.
-pub trait MAC: AlgorithmInfo {
-    /// The size of the output in bytes.
-    fn output_len(&self) -> usize;
-
-    /// One-shot API that computes a MAC for the provided data.
-    /// `data` can be of any length, including zero bytes.
-    ///
-    /// Note about the security strength of the provided key:
-    /// If the provided key is tagged at a lower [`SecurityStrength`] than the instantiated MAC algorithm,
-    /// this will fail with an error:
-    /// ```text
-    /// MACError::KeyMaterialError(KeyMaterialError::SecurityStrength("HMAC::init(): provided key has a lower security strength than the instantiated HMAC")
-    /// ```
-    fn mac(self, data: &[u8]) -> Vec<u8>;
-
-    /// One-shot API that computes a MAC for the provided data and writes it into the provided output slice.
-    /// `data` can be of any length, including zero bytes.
-    ///
-    /// Depending on the underlying MAC implementation, NIST may require that the library enforce
-    /// a minimum length on the mac output value. See documentation for the underlying implementation
-    /// to see conditions under which it throws [`MACError::InvalidLength`].
-    ///
-    /// The entire output buffer is zeroized before the MAC value is written.
-    fn mac_out(self, data: &[u8], out: &mut [u8]) -> Result<usize, MACError>;
-
-    /// One-shot API that verifies a MAC for the provided data.
-    /// `data` can be of any length, including zero bytes.
-    ///
-    /// Internally, this will re-compute the MAC value and then compare it to the provided mac value
-    /// using constant-time comparison. It is highly encouraged to use this utility function instead of
-    /// comparing mac values for equality yourself.
-    ///
-    /// Returns a bool to indicate successful verification of the provided mac value.
-    /// The provided mac value must be an exact match, including length; for example a mac value
-    /// which has been truncated, or which contains extra bytes at the end is considered to not be a match
-    /// and will return false.
-    fn verify(self, data: &[u8], mac: &[u8]) -> bool;
-
-    /// Provide a chunk of data to be absorbed into the MAC.
-    /// `data` can be of any length, including zero bytes.
-    /// do_update() is intended to be used as part of a streaming interface, and so may by called multiple times.
+/// The generating half of a MAC in progress: the streaming worker a MAC key hands out through
+/// [`MacGenerationKey`](crate::symmetric_key::MacGenerationKey) or, under a nonce,
+/// [`NonceMacGenerationKey`](crate::symmetric_key::NonceMacGenerationKey). The key, and any
+/// nonce, were fixed when the worker was made, so the message is the only input left. The tag is
+/// `MAC_LEN` bytes, the construction's full output; a protocol that truncates its tags does so on
+/// the array it gets back. It is a separate trait from [`MACVerifier`] so that a key, or a policy,
+/// can allow verification without generation.
+pub trait MACGenerator<const MAC_LEN: usize>: AlgorithmInfo {
+    /// Absorbs the next chunk of the message. May be called any number of times with chunks of
+    /// any size, including zero; a sequence of calls is equivalent to one call over the
+    /// concatenation.
     fn do_update(&mut self, data: &[u8]);
 
-    /// Finish absorbing input and produce the MAC value.
-    fn do_final(self) -> Vec<u8>;
+    /// Produces the tag into `out`, written in full, and returns the number of bytes written,
+    /// always `MAC_LEN`. Consumes the worker.
+    fn do_final_out(self, out: &mut [u8; MAC_LEN]) -> usize;
 
-    /// Depending on the underlying MAC implementation, NIST may require that the library enforce
-    /// a minimum length on the mac output value. See documentation for the underlying implementation
-    /// to see conditions under which it throws [`MACError::InvalidLength`].
-    ///
-    /// The entire output buffer is zeroized before the MAC value is written.
-    fn do_final_out(self, out: &mut [u8]) -> Result<usize, MACError>;
+    /// Produces the tag. Consumes the worker.
+    fn do_final(self) -> [u8; MAC_LEN]
+    where
+        Self: Sized,
+    {
+        let mut out = [0u8; MAC_LEN];
+        self.do_final_out(&mut out);
+        out
+    }
+}
 
-    /// Internally, this will re-compute the MAC value and then compare it to the provided mac value
-    /// using constant-time comparison. It is highly encouraged to use this utility function instead of
-    /// comparing mac values for equality yourself.
+/// The verifying half of a MAC in progress: the streaming worker a MAC key hands out through
+/// [`MacVerificationKey`](crate::symmetric_key::MacVerificationKey) or, under a nonce,
+/// [`NonceMacVerificationKey`](crate::symmetric_key::NonceMacVerificationKey). The comparison is
+/// in constant time, so recomputing the tag and comparing it with `==`, which leaks how many
+/// leading bytes matched, is never needed.
+pub trait MACVerifier<const MAC_LEN: usize>: AlgorithmInfo {
+    /// Absorbs the next chunk of the message, as [`MACGenerator::do_update`] does.
+    fn do_update(&mut self, data: &[u8]);
+
+    /// Checks `mac` against the message absorbed so far. Consumes the worker.
     ///
-    /// Returns a bool to indicate successful verification of the provided mac value.
-    /// The provided mac value must be an exact match, including length; for example a mac value
-    /// which has been truncated, or which contains extra bytes at the end is considered to not be a match
-    /// and will return false.
-    fn do_verify_final(self, mac: &[u8]) -> bool;
+    /// # Errors
+    /// [`MACError::VerificationFailed`] if `mac` is not the tag of the message under the key.
+    fn do_verify_final(self, mac: &[u8; MAC_LEN]) -> Result<(), MACError>;
 }
 
 /// A block padding scheme, used to extend arbitrary-length data to a whole number of blocks so that it
@@ -1476,7 +1434,7 @@ pub trait SymmetricCipherEncryptor<const INIT_DATA_LEN: usize, const FINAL_LEN: 
 /// 16 bytes twice gives the same 32 bytes as reading 32 once.
 ///
 /// [`do_output_final`](Self::do_output_final) means something weaker than `do_final` does on
-/// [`Hash`] and [`MAC`]. There it is load-bearing -- the only way to get output, and it must
+/// [`Hash`] and [`MACGenerator`]. There it is load-bearing -- the only way to get output, and it must
 /// consume the value because finalizing pads the state. An XOF squeeze has nothing to finalize, so
 /// it produces exactly the bytes [`do_output`](Self::do_output) would and differs only in taking
 /// ownership: it is how a caller says "this read is my last", and it ends the stream at the point

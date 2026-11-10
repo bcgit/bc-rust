@@ -87,8 +87,8 @@ use bouncycastle_core::errors::{KDFError, KeyMaterialError, MACError};
 use bouncycastle_core::hazmat::do_hazardous_operations;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterial0, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::symmetric_key::{FromAnyKeyMaterial, MacGenerationKey};
-use bouncycastle_core::traits::{Algorithm, KDF, MAC};
+use bouncycastle_core::symmetric_key::FromAnyKeyMaterial;
+use bouncycastle_core::traits::{Algorithm, KDF};
 use bouncycastle_hmac::hazmat as hmac_hazmat;
 use bouncycastle_hmac::{HMACParams, HmacKey, LARGEST_HASHER_BLOCK_LEN};
 use bouncycastle_utils::secret::Secret;
@@ -434,14 +434,14 @@ impl<H: HMACParams> HKDF<H> {
             do_hazardous_operations(okm, |okm| {
                 let out = okm.ref_to_bytes_mut()?;
                 while i < N {
-                    let mut hmac = prk_key.create_generator();
+                    // The HMAC as its two hazmat halves, generic over the hash: the role impls
+                    // name the tag length as a const, which `H: HMACParams` alone does not give.
+                    let mut hmac = hmac_hazmat::inner_state(&prk_key);
                     hmac.do_update(&T[..t_len]);
                     hmac.do_update(info);
                     hmac.do_update(&[i]);
 
-                    t_len = hmac
-                        .do_final_out(&mut T[..])
-                        .map_err(|_| KeyMaterialError::GenericError("HMAC finalization failed"))?;
+                    t_len = hmac_hazmat::finish_out(&prk_key, hmac, &mut T[..hash_len]);
                     debug_assert_eq!(t_len, hash_len); // this will be true for every iteration after T(0) / T(1)
                     out[bytes_written..bytes_written + t_len].copy_from_slice(&T[..t_len]);
                     bytes_written += t_len;
@@ -451,16 +451,14 @@ impl<H: HMACParams> HKDF<H> {
             })?;
 
             // Part of the output is not taken on the last iteration. "OKM = first L octets of T", so the
-            // last block T(N) is computed in full and only its first `remaining` octets are kept. Asking
-            // HMAC for a `remaining`-octet output instead would be a truncated MAC, which HMAC refuses
-            // below MIN_FIPS_DIGEST_LEN: that rejected every L with L mod HashLen in 1..=3.
+            // last block T(N) is computed in full and only its first `remaining` octets are kept.
             let remaining = L - bytes_written;
-            let mut hmac = prk_key.create_generator();
+            let mut hmac = hmac_hazmat::inner_state(&prk_key);
             hmac.do_update(&T[..t_len]);
             hmac.do_update(info);
             hmac.do_update(&[i]);
 
-            t_len = hmac.do_final_out(&mut T[..hash_len])?;
+            t_len = hmac_hazmat::finish_out(&prk_key, hmac, &mut T[..hash_len]);
             debug_assert_eq!(t_len, hash_len);
 
             do_hazardous_operations(okm, |okm| {
@@ -673,8 +671,7 @@ impl<H: HMACParams> HKDF<H> {
         let mut bytes_written = 0;
         let HkdfExtract { key, inner } = self.hmac.unwrap();
         do_hazardous_operations(prk, |okm| {
-            bytes_written = hmac_hazmat::finish_out(&key, inner, okm.ref_to_bytes_mut()?)
-                .map_err(|_| KeyMaterialError::GenericError("HMAC do_final_out failed"))?;
+            bytes_written = hmac_hazmat::finish_out(&key, inner, okm.ref_to_bytes_mut()?);
             okm.set_key_len(bytes_written)?;
             okm.set_key_type(output_key_type)?;
             if output_key_type <= KeyType::Unknown {

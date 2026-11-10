@@ -67,6 +67,28 @@
   32-byte secret seeds HKDF-SHA512 as it does HKDF-SHA256. The `hkdf-*` CLI subcommands type their salt as
   RFC 5869's non-secret random value, as the `mlkem*-hkdf-*` ones do; `--secret-salt` marks it as the secret salt
   of SP 800-56C Rev. 2 Section 5.1, which HKDF credits.
+* The MAC worker trait splits in two, as the signature and cipher workers are: `MACGenerator<MAC_LEN>`
+  (`do_update`, `do_final_out` into a `[u8; MAC_LEN]`, `do_final`) and `MACVerifier<MAC_LEN>` (`do_update`,
+  `do_verify_final(&[u8; MAC_LEN]) -> Result<(), MACError>`) replace `MAC`, whose finals and key-era one-shots
+  were on one trait, so a verify-only key no longer hands out a worker that can produce a tag. The tag is the
+  construction's full output as a const-generic array: no run-time length, no `InvalidLength` on the streaming
+  path, no truncation method (a protocol that truncates does so on the array it gets back), and verification
+  is a `Result` with `MACError::VerificationFailed` rather than a `bool`. The worker types carry their direction,
+  `HMAC<'k, H, Dir>`, `KMAC128<Dir, MAC_LEN>`, `Cmac<'k, P, Dir, BLOCK_LEN>`, `Poly1305<Dir>`, with the
+  `Encrypting` / `Decrypting` markers now in `bouncycastle_core::direction` (re-exported by `bouncycastle-cipher`).
+  `MacGenerationKey<MAC_LEN>` / `MacVerificationKey<MAC_LEN>` bound their workers on the split traits; GMAC gets
+  the nonce-bound role pair `NonceMacGenerationKey` / `NonceMacVerificationKey` in place of the inherent pair on
+  the key; `MacMode<P, MAC_LEN>` has `generate_init` / `verify_init` for `mac_init`. KMAC's output length is the
+  key type's const parameter, `KMAC128Key<MAC_LEN = 32>` / `KMAC256Key<MAC_LEN = 64>`, and `with_params` takes
+  only the customization string; `HMAC::keygen_from_rng` is `HmacKey::keygen_from_rng`, `Poly1305Key::into_mac`
+  is `into_generator` / `into_verifier`, and `MIN_FIPS_DIGEST_LEN`, `CMAC_MIN_TAG_LEN` and `hmac::hazmat::finish_out`'s
+  `Result` go with the truncation floors. `MACFactory` keeps run-time lengths as the run-time form: its `mac`,
+  `mac_out`, `verify` and `MACFactoryWorker<Dir>`'s finals are inherent over slices and `Vec`s; `MACFactory` no
+  longer implements the `MacGenerationKey` / `MacVerificationKey` roles and `MACFactoryWorker` no core worker trait,
+  so code generic over the roles takes a concrete key. A truncated tag cannot be verified through the role or
+  factory APIs (SP 800-38B Sec 6.3's truncated verification is not implemented). The `kmac*` CLI
+  commands compute their tag through KMACXOF's length-binding final read, and refuse a wrong-length `--verify`
+  before reading input as the other MAC commands do.
 * Every encrypting key takes a caller-supplied IV or nonce as the AEAD keys already did:
   `SymmetricEncryptionKey` and `BlockEncryptionKey` gain `create_encryptor_nonce` and the `encrypt_nonce_out` /
   `encrypt_nonce` / `encrypt_inplace_nonce` one-shots, `SymmetricEncryptMode` and `BlockEncryptMode` the

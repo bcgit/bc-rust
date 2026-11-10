@@ -7,6 +7,7 @@
 #![forbid(missing_docs)]
 
 pub mod agreement_key;
+pub mod direction;
 pub mod errors;
 pub mod hazmat;
 pub mod kdf_params;

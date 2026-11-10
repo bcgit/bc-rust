@@ -1,9 +1,8 @@
 //! CMAC, the block-cipher-based message authentication code of NIST SP 800-38B.
 //!
-//! [`Cmac`] implements [`MAC`] over any [`BlockPermutation`] permutation with a 64- or 128-bit
-//! block (the two block sizes SP 800-38B Sec 5.3 defines `R_b` for). The output is one full block,
-//! which [`MAC::mac_out`] / [`MAC::do_final_out`] truncate to the caller's buffer, down to
-//! [`CMAC_MIN_TAG_LEN`] bytes.
+//! [`Cmac`] implements [`MACGenerator`] (`Dir = Encrypting`) and [`MACVerifier`]
+//! (`Dir = Decrypting`) over any [`BlockPermutation`] permutation with a 64- or 128-bit block (the
+//! two block sizes SP 800-38B Sec 5.3 defines `R_b` for). The tag is one full block.
 //!
 //! The way onto it is a mode-bound key, built with `from_key_material`, which holds a
 //! [`CmacKeyState`] -- the keyed permutation and the two subkeys, derived once -- and hands out
@@ -26,12 +25,11 @@
 //!
 //! let material = KeyMaterial128::from_bytes_as_type(&[0x42; 16], KeyType::MACKey).unwrap();
 //! let key = BlockCipherKey::<ToyBlockCipher, CMAC>::from_key_material(&material).unwrap();
-//! let tag = key.mac(b"a message");
-//! assert_eq!(tag.len(), 16);
-//! assert!(key.verify(b"a message", &tag));
+//! let tag: [u8; 16] = key.mac(b"a message");
+//! assert!(key.verify(b"a message", &tag).is_ok());
 //! ```
 //!
-//! Streaming, with a tag truncated to 8 bytes:
+//! Streaming:
 //!
 //! ```
 //! # mod toy { include!("../../tests/common/toy_block_cipher.rs"); }
@@ -40,7 +38,7 @@
 //! use bouncycastle_cipher::modes::CMAC;
 //! use bouncycastle_core::key_material::{KeyMaterial128, KeyType};
 //! use bouncycastle_core::symmetric_key::{FromKeyMaterial, MacGenerationKey};
-//! use bouncycastle_core::traits::MAC;
+//! use bouncycastle_core::traits::MACGenerator;
 //!
 //! let material = KeyMaterial128::from_bytes_as_type(&[0x42; 16], KeyType::MACKey).unwrap();
 //! let key = BlockCipherKey::<ToyBlockCipher, CMAC>::from_key_material(&material).unwrap();
@@ -48,47 +46,44 @@
 //! let mut cmac = key.create_generator();
 //! cmac.do_update(b"a message that arrives ");
 //! cmac.do_update(b"in pieces");
-//! let mut tag = [0u8; 8];
-//! assert_eq!(cmac.do_final_out(&mut tag).unwrap(), 8);
+//! let mut tag = [0u8; 16];
+//! assert_eq!(cmac.do_final_out(&mut tag), 16);
 //! ```
 //!
 //! # 🚨 Security Considerations 🚨
 //!
 //! * **Tag length** (Appendix A): a forger guesses a `Tlen`-bit tag with probability `2^-Tlen`, so
-//!   shorter tags need a limit on failed verifications. Truncation below 64 bits is refused
-//!   ([`CMAC_MIN_TAG_LEN`]). SP 800-38B Sec 5.5 also requires `Tlen` to be fixed for every use of
+//!   shorter tags need a limit on failed verifications. The worker produces the full block; a
+//!   protocol that truncates does so on the array it gets back, and takes on Appendix A.2's rule
+//!   that "A value of Tlen that is less than 64 shall only be used in conjunction with a careful
+//!   analysis of the risks". SP 800-38B Sec 5.5 also requires `Tlen` to be fixed for every use of
 //!   a key; that is the caller's to keep.
 //! * **Message span** (Appendix B): limit a key to 2^48 messages with a 128-bit block cipher, and
 //!   2^21 with a 64-bit one.
 //! * **Key separation** (Sec 5.2): the key "shall be used exclusively for the CMAC mode of the
 //!   chosen block cipher", so the key's `from_key_material` accepts only a [`KeyType::MACKey`]
-//!   key, never a [`KeyType::SymmetricCipherKey`] and not an all-zero (`Zeroized`) one; resume
-//!   goes through the same key object.
+//!   key, never a [`KeyType::SymmetricCipherKey`] and not an all-zero (`Zeroized`) one.
 //! * **Replay** (Appendix C): a valid tag says nothing about freshness; that is the protocol's job.
 //!
 //! [`KeyType::MACKey`]: bouncycastle_core::key_material::KeyType::MACKey
 //! [`KeyType::SymmetricCipherKey`]: bouncycastle_core::key_material::KeyType::SymmetricCipherKey
 
 use super::ModeNames;
-use alloc::vec::Vec;
+use crate::{Decrypting, Encrypting};
 use bouncycastle_core::errors::MACError;
 use bouncycastle_core::hazmat::{BlockPermutation, MacMode, Mode};
 use bouncycastle_core::key_material::KeyType;
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::traits::{Algorithm, MAC};
+use bouncycastle_core::traits::{Algorithm, MACGenerator, MACVerifier};
 use bouncycastle_utils::ct::ct_eq_bytes;
 use bouncycastle_utils::secret::Secret;
-
-/// The shortest tag [`MAC::mac_out`] / [`MAC::do_final_out`] will truncate to: 64 bits, the length
-/// SP 800-38B Appendix A.2 says "should provide sufficient protection against guessing attacks" for
-/// most applications ("A value of Tlen that is less than 64 shall only be used in conjunction with
-/// a careful analysis of the risks").
-pub const CMAC_MIN_TAG_LEN: usize = 8;
+use core::marker::PhantomData;
 
 /// The CMAC mode, as a key type names it: `AES128Key<CMAC>`. `BLOCK_LEN` is the permutation's
 /// block length, 16 by default and 8 for a 64-bit block cipher; it is a parameter because stable
-/// Rust cannot read it off the permutation from inside the mode impl, as for `CTR`. The impls
-/// below are generic over any [`BlockPermutation`] of that block length.
+/// Rust cannot read it off the permutation from inside the mode impl, as for `CTR`. It is also
+/// the tag length. The impls below are generic over any [`BlockPermutation`] of that block
+/// length.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CMAC<const BLOCK_LEN: usize = 16>;
 
@@ -104,16 +99,24 @@ where
     }
 }
 
-impl<P, const BLOCK_LEN: usize> MacMode<P> for CMAC<BLOCK_LEN>
+impl<P, const BLOCK_LEN: usize> MacMode<P, BLOCK_LEN> for CMAC<BLOCK_LEN>
 where
     P: BlockPermutation<BLOCK_LEN> + ModeNames + Clone,
 {
-    type Worker<'k>
-        = Cmac<'k, P, BLOCK_LEN>
+    type Generator<'k>
+        = Cmac<'k, P, Encrypting, BLOCK_LEN>
+    where
+        P: 'k;
+    type Verifier<'k>
+        = Cmac<'k, P, Decrypting, BLOCK_LEN>
     where
         P: 'k;
 
-    fn mac_init<'k>(state: &'k Self::KeyState) -> Self::Worker<'k> {
+    fn generate_init<'k>(state: &'k Self::KeyState) -> Self::Generator<'k> {
+        Cmac::from_key_state(state)
+    }
+
+    fn verify_init<'k>(state: &'k Self::KeyState) -> Self::Verifier<'k> {
         Cmac::from_key_state(state)
     }
 }
@@ -177,9 +180,10 @@ impl<P, const BLOCK_LEN: usize> CmacKeyState<P, BLOCK_LEN> {
     }
 }
 
-/// CMAC (SP 800-38B) over the permutation `P`, with a `BLOCK_LEN` of 8 or 16 bytes. See the
-/// module docs.
-pub struct Cmac<'k, P, const BLOCK_LEN: usize>
+/// CMAC (SP 800-38B) over the permutation `P`, with a `BLOCK_LEN` of 8 or 16 bytes, generating
+/// (`Dir = Encrypting`) or verifying (`Dir = Decrypting`) a `BLOCK_LEN`-byte tag. See the module
+/// docs.
+pub struct Cmac<'k, P, Dir, const BLOCK_LEN: usize>
 where
     P: BlockPermutation<BLOCK_LEN> + ModeNames,
 {
@@ -187,20 +191,21 @@ where
     /// `C_i` of Sec 6.2 step 6 for the blocks absorbed so far; `C_0 = 0^b` (step 5).
     c: Secret<[u8; BLOCK_LEN]>,
     /// The last `pending_len` bytes of message seen. Held back even when full, because only
-    /// `do_final` knows whether it is `M_n*` (step 4) and so which subkey it takes.
+    /// the final knows whether it is `M_n*` (step 4) and so which subkey it takes.
     pending: Secret<[u8; BLOCK_LEN]>,
     /// `0` only before any message byte has arrived; `1..=BLOCK_LEN` after.
     pending_len: usize,
+    dir: PhantomData<Dir>,
 }
 
-impl<'k, P, const BLOCK_LEN: usize> Cmac<'k, P, BLOCK_LEN>
+impl<'k, P, Dir, const BLOCK_LEN: usize> Cmac<'k, P, Dir, BLOCK_LEN>
 where
     P: BlockPermutation<BLOCK_LEN> + ModeNames,
 {
     /// Begins a MAC over a new message over a key state, which the worker borrows: the
     /// permutation and the subkeys stay in the key. [`CMAC`]'s `MacMode` impl.
     pub(crate) fn from_key_state(key: &'k CmacKeyState<P, BLOCK_LEN>) -> Self {
-        Self { key, c: Secret::new(), pending: Secret::new(), pending_len: 0 }
+        Self { key, c: Secret::new(), pending: Secret::new(), pending_len: 0, dir: PhantomData }
     }
 
     /// Sec 6.2 step 6 for one block: `C_i = CIPH_K(C_{i-1} (+) M_i)`, in place in `c`.
@@ -214,58 +219,9 @@ where
         perm.encrypt_block(c);
     }
 
-    /// Sec 6.2 steps 4-6 for the final block, leaving `C_n` in `self.c`: `M_n = K1 (+) M_n*` if
-    /// `M_n*` is complete, else `M_n = K2 (+) (M_n* || 10^j)`. An empty message (step 2's `n = 1`)
-    /// is the incomplete case with an empty `M_n*`.
-    fn finish(&mut self) {
-        let subkey = if self.pending_len == BLOCK_LEN {
-            &self.key.k1
-        } else {
-            self.pending[self.pending_len] = 0x80;
-            self.pending[self.pending_len + 1..].fill(0);
-            &self.key.k2
-        };
-        for (m, k) in self.pending.iter_mut().zip(subkey.iter()) {
-            *m ^= k;
-        }
-        Self::absorb(&self.key.perm, &mut self.c, &self.pending);
-    }
-}
-
-impl<'k, P, const BLOCK_LEN: usize> Algorithm for Cmac<'k, P, BLOCK_LEN>
-where
-    P: BlockPermutation<BLOCK_LEN> + ModeNames,
-{
-    const ALG_NAME: &'static str = P::CMAC_ALG_NAME;
-    const MAX_SECURITY_STRENGTH: SecurityStrength = P::MAX_SECURITY_STRENGTH;
-}
-
-impl<'k, P, const BLOCK_LEN: usize> MAC for Cmac<'k, P, BLOCK_LEN>
-where
-    P: BlockPermutation<BLOCK_LEN> + ModeNames,
-{
-    fn output_len(&self) -> usize {
-        BLOCK_LEN
-    }
-
-    fn mac(mut self, data: &[u8]) -> Vec<u8> {
-        self.do_update(data);
-        self.do_final()
-    }
-
-    fn mac_out(mut self, data: &[u8], out: &mut [u8]) -> Result<usize, MACError> {
-        self.do_update(data);
-        self.do_final_out(out)
-    }
-
-    fn verify(mut self, data: &[u8], mac: &[u8]) -> bool {
-        self.do_update(data);
-        self.do_verify_final(mac)
-    }
-
     /// Absorbs every complete block except the last one seen, which stays pending until more data
-    /// arrives or [`MAC::do_final`] decides which subkey it takes.
-    fn do_update(&mut self, mut data: &[u8]) {
+    /// arrives or the final decides which subkey it takes: both directions' `do_update`.
+    fn absorb_bytes(&mut self, mut data: &[u8]) {
         let take = (BLOCK_LEN - self.pending_len).min(data.len());
         self.pending[self.pending_len..self.pending_len + take].copy_from_slice(&data[..take]);
         self.pending_len += take;
@@ -286,33 +242,59 @@ where
         self.pending_len = data.len();
     }
 
-    /// The full `BLOCK_LEN`-byte tag.
-    fn do_final(mut self) -> Vec<u8> {
-        self.finish();
-        self.c.to_vec()
-    }
-
-    /// Sec 6.2 step 7, `T = MSB_Tlen(C_n)`, with `Tlen` the length of `out` up to `BLOCK_LEN`.
-    ///
-    /// # Errors
-    /// [`MACError::InvalidLength`] if `out` is shorter than [`CMAC_MIN_TAG_LEN`].
-    fn do_final_out(mut self, out: &mut [u8]) -> Result<usize, MACError> {
-        out.fill(0);
-        if out.len() < CMAC_MIN_TAG_LEN {
-            return Err(MACError::InvalidLength(
-                "CMAC: tags shorter than 64 bits are not supported (SP 800-38B Appendix A.2)",
-            ));
+    /// Sec 6.2 steps 4-6 for the final block, leaving `C_n` in `self.c`: `M_n = K1 (+) M_n*` if
+    /// `M_n*` is complete, else `M_n = K2 (+) (M_n* || 10^j)`. An empty message (step 2's `n = 1`)
+    /// is the incomplete case with an empty `M_n*`. Step 7 with `Tlen = b` is then `T = C_n`.
+    fn finish(&mut self) {
+        let subkey = if self.pending_len == BLOCK_LEN {
+            &self.key.k1
+        } else {
+            self.pending[self.pending_len] = 0x80;
+            self.pending[self.pending_len + 1..].fill(0);
+            &self.key.k2
+        };
+        for (m, k) in self.pending.iter_mut().zip(subkey.iter()) {
+            *m ^= k;
         }
-        self.finish();
-        let n = out.len().min(BLOCK_LEN);
-        out[..n].copy_from_slice(&self.c[..n]);
-        Ok(n)
+        Self::absorb(&self.key.perm, &mut self.c, &self.pending);
+    }
+}
+
+impl<'k, P, Dir, const BLOCK_LEN: usize> Algorithm for Cmac<'k, P, Dir, BLOCK_LEN>
+where
+    P: BlockPermutation<BLOCK_LEN> + ModeNames,
+{
+    const ALG_NAME: &'static str = P::CMAC_ALG_NAME;
+    const MAX_SECURITY_STRENGTH: SecurityStrength = P::MAX_SECURITY_STRENGTH;
+}
+
+impl<'k, P, const BLOCK_LEN: usize> MACGenerator<BLOCK_LEN> for Cmac<'k, P, Encrypting, BLOCK_LEN>
+where
+    P: BlockPermutation<BLOCK_LEN> + ModeNames,
+{
+    fn do_update(&mut self, data: &[u8]) {
+        self.absorb_bytes(data)
     }
 
-    /// Sec 6.3: recomputes the full tag and compares it in constant time. A truncated `mac` never
-    /// matches, as the trait requires.
-    fn do_verify_final(mut self, mac: &[u8]) -> bool {
+    /// The full `BLOCK_LEN`-byte tag, `T = C_n` (Sec 6.2 step 7 with `Tlen = b`).
+    fn do_final_out(mut self, out: &mut [u8; BLOCK_LEN]) -> usize {
         self.finish();
-        mac.len() == BLOCK_LEN && ct_eq_bytes(mac, &self.c[..])
+        out.copy_from_slice(&self.c[..]);
+        BLOCK_LEN
+    }
+}
+
+impl<'k, P, const BLOCK_LEN: usize> MACVerifier<BLOCK_LEN> for Cmac<'k, P, Decrypting, BLOCK_LEN>
+where
+    P: BlockPermutation<BLOCK_LEN> + ModeNames,
+{
+    fn do_update(&mut self, data: &[u8]) {
+        self.absorb_bytes(data)
+    }
+
+    /// Sec 6.3: recomputes the tag and compares it in constant time.
+    fn do_verify_final(mut self, mac: &[u8; BLOCK_LEN]) -> Result<(), MACError> {
+        self.finish();
+        if ct_eq_bytes(mac, &self.c[..]) { Ok(()) } else { Err(MACError::VerificationFailed) }
     }
 }
