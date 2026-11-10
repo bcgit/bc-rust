@@ -110,10 +110,11 @@ impl TestFrameworkSymmetricCipher {
             // buffer comes back zeroized rather than with its stale contents
             let mut stale = vec![0xA5u8; encrypt_out_len(len)];
             match key.encrypt_out(&mut FailingRNG, msg, &mut stale) {
-                Err(_) => assert!(
+                Err(SymmetricCipherError::RNGError(_)) => assert!(
                     stale.iter().all(|&b| b == 0),
                     "encrypt_out must zeroize the buffer before an RNG error"
                 ),
+                Err(e) => panic!("a failing RNG must surface as RNGError, not {e:?}"),
                 Ok(_) => assert_eq!(INIT_DATA_LEN, 0, "only a key with no init data draws nothing"),
             }
 

@@ -14,7 +14,7 @@ use bouncycastle_core::errors::{KeyMaterialError, SymmetricCipherError};
 use bouncycastle_core::hazmat::{EcbEncryptionKey, Mode};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::symmetric_key::AeadDeclaredEncryptionKey;
+use bouncycastle_core::symmetric_key::{AeadDeclaredDecryptionKey, AeadDeclaredEncryptionKey};
 use bouncycastle_core::symmetric_key::{
     AeadDecryptionKey, AeadEncryptionKey, BlockDecryptionKey, BlockEncryptionKey, FromKeyMaterial,
     MacGenerationKey, MacVerificationKey, NonceMacGenerationKey, NonceMacVerificationKey,
@@ -138,6 +138,49 @@ pub fn aead_modes<P: Permutation<KEY_LEN>, const KEY_LEN: usize>() {
         .is_err()
     );
     assert!(stale.iter().all(|&b| b == 0), "encrypt_detached_out must zeroize first");
+
+    // ...and so do its supplied-nonce and decrypting one-shots when the declared lengths are
+    // refused (a 13-byte CCM nonce caps the payload at 2^16 - 1 bytes) or the inline ciphertext
+    // is shorter than a tag
+    let short_nonce_key = make_key::<P, bouncycastle_cipher::modes::CCM<13, 16>, KEY_LEN>();
+    let nonce = [0u8; 13];
+    let too_long = vec![0u8; 1 << 16];
+    let mut stale = vec![0xA5u8; too_long.len() + 16];
+    assert!(
+        AeadDeclaredEncryptionKey::<KEY_LEN, 13, 16, 16>::encrypt_with_aad_nonce_out(
+            &short_nonce_key, &nonce, b"aad", &too_long, &mut stale
+        )
+        .is_err()
+    );
+    assert!(stale.iter().all(|&b| b == 0), "encrypt_with_aad_nonce_out must zeroize first");
+    let mut stale = vec![0xA5u8; too_long.len()];
+    assert!(
+        AeadDeclaredEncryptionKey::<KEY_LEN, 13, 16, 16>::encrypt_detached_nonce_out(
+            &short_nonce_key, &nonce, b"aad", &too_long, &mut stale
+        )
+        .is_err()
+    );
+    assert!(stale.iter().all(|&b| b == 0), "encrypt_detached_nonce_out must zeroize first");
+    let mut stale = [0xA5u8; 32];
+    assert!(
+        AeadDeclaredDecryptionKey::<KEY_LEN, 13, 16, 16>::decrypt_with_aad_out(
+            &short_nonce_key,
+            &nonce,
+            b"aad",
+            &[],
+            &mut stale
+        )
+        .is_err()
+    );
+    assert!(stale.iter().all(|&b| b == 0), "decrypt_with_aad_out must zeroize first");
+    let mut stale = vec![0xA5u8; too_long.len()];
+    assert!(
+        AeadDeclaredDecryptionKey::<KEY_LEN, 13, 16, 16>::decrypt_detached_out(
+            &short_nonce_key, &nonce, b"aad", &too_long, &[0u8; 16], &mut stale
+        )
+        .is_err()
+    );
+    assert!(stale.iter().all(|&b| b == 0), "decrypt_detached_out must zeroize first");
 }
 
 /// The nonce is drawn per GCM encryption, so the same plaintext gives different ciphertext, and

@@ -128,9 +128,13 @@ impl TestFrameworkMAC {
         // the _out rule holds on the error path: when the nonce cannot be drawn, the buffer
         // comes back zeroized rather than with its stale contents
         let mut out = [0xA5u8; MAC_LEN];
-        assert!(key.mac_out(&mut FailingRNG, input, &mut out).is_err());
+        assert!(matches!(
+            key.mac_out(&mut FailingRNG, input, &mut out),
+            Err(MACError::RNGError(_))
+        ));
         assert_eq!(out, [0u8; MAC_LEN], "mac_out must zeroize the buffer before an RNG error");
-        assert!(key.mac(&mut FailingRNG, input).is_err());
+        assert!(matches!(key.mac(&mut FailingRNG, input), Err(MACError::RNGError(_))));
+        assert!(matches!(key.create_generator(&mut FailingRNG), Err(MACError::RNGError(_))));
         assert_eq!(key.verify(nonce, input, expected_output), Ok(()));
         assert_eq!(
             key.verify(nonce, b"not the input", expected_output),

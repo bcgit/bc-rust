@@ -125,10 +125,16 @@ impl TestFrameworkAEADCipher {
             // the _out rule holds on the error path: when the nonce cannot be drawn, both
             // one-shots leave the buffer zeroized rather than with its stale contents
             let mut stale = vec![0xA5u8; encrypt_detached_out_len(len)];
-            assert!(key.encrypt_detached_out(&mut FailingRNG, aad, msg, &mut stale).is_err());
+            assert!(matches!(
+                key.encrypt_detached_out(&mut FailingRNG, aad, msg, &mut stale),
+                Err(SymmetricCipherError::RNGError(_))
+            ));
             assert!(stale.iter().all(|&b| b == 0), "encrypt_detached_out must zeroize first");
             let mut stale = vec![0xA5u8; encrypt_out_len(len)];
-            assert!(key.encrypt_with_aad_out(&mut FailingRNG, aad, msg, &mut stale).is_err());
+            assert!(matches!(
+                key.encrypt_with_aad_out(&mut FailingRNG, aad, msg, &mut stale),
+                Err(SymmetricCipherError::RNGError(_))
+            ));
             assert!(stale.iter().all(|&b| b == 0), "encrypt_with_aad_out must zeroize first");
             ct.truncate(ct_len);
             assert_ne!(tag, [0u8; TAG_LEN], "len {len}: the tag must not be all zeros");
