@@ -91,8 +91,8 @@ pub enum MACError {
     GenericError(&'static str),
     ///
     HashError(HashError),
-    /// A run-time-length output buffer shorter than the tag, or a tag handed to the factory's
-    /// verifier that is not the algorithm's output length.
+    /// A run-time-length buffer or tag that is not the construction's length: an output buffer
+    /// shorter than the tag, or a tag offered for verification at another length.
     InvalidLength(&'static str),
     ///
     InvalidState(&'static str),
