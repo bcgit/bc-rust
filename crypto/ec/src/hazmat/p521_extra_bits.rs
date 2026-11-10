@@ -16,8 +16,8 @@
 
 use crate::hazmat::p521_scalar::{N_LIMBS, P521Scalar};
 use crate::nat;
-use bouncycastle_utils::ct;
 use bouncycastle_utils::ct::Condition;
+use bouncycastle_utils::secret::Secret;
 
 /// `n - 1`, little-endian `u64` limbs. `N_LIMBS[0]` is odd (`n` is prime), so the subtraction
 /// never borrows out of the low limb.
@@ -60,28 +60,38 @@ pub fn reduce_wide_bits_mod_n_minus_1(bytes: &[u8]) -> P521Scalar {
         "reduce_wide_bits_mod_n_minus_1 given {} bytes, more than 80",
         bytes.len()
     );
-    let x = crate::barrett::limbs_from_be_bytes::<10>(bytes);
+    // Every value from the DRBG output to d is the key at some stage, so each is held in a
+    // `Secret`, scrubbed when this function returns rather than left on the stack.
+    let mut x = Secret::<[u64; 10]>::new();
+    *x = crate::barrett::limbs_from_be_bytes::<10>(bytes);
 
     // lo = x mod 2^521: the low 8 limbs plus the low 9 bits of limb 8.
-    let mut lo = [0u64; 9];
+    let mut lo = Secret::<[u64; 9]>::new();
     lo[..8].copy_from_slice(&x[..8]);
     lo[8] = x[8] & 0x1ff;
     // hi = x >> 521: bits 9..63 of limb 8 and all of limb 9, at most 119 bits.
-    let mut hi = [0u64; 9];
+    let mut hi = Secret::<[u64; 9]>::new();
     hi[0] = (x[8] >> 9) | (x[9] << 55);
     hi[1] = x[9] >> 9;
 
-    let product = crate::montgomery::widening_mul::<9, 18>(&hi, &TWO_POW_521_MOD_N_MINUS_1_LIMBS);
+    let mut product = Secret::<[u64; 18]>::new();
+    *product = crate::montgomery::widening_mul::<9, 18>(&hi, &TWO_POW_521_MOD_N_MINUS_1_LIMBS);
     debug_assert!(product[9..].iter().all(|&limb| limb == 0), "hi * C must fit in 9 limbs");
-    let mut folded = [0u64; 9];
-    folded.copy_from_slice(&product[..9]);
-    let (sum, carry) = nat::add(&folded, &lo);
+    let mut sum = Secret::<[u64; 9]>::new();
+    sum.copy_from_slice(&product[..9]);
+    let carry;
+    (*sum, carry) = nat::add(&sum, &lo);
     debug_assert_eq!(carry, 0, "the fold's sum must fit in 9 limbs");
 
-    let (reduced, borrow) = nat::sub(&sum, &N_MINUS_1_LIMBS);
-    let mut acc = [0u64; 9];
-    ct::conditional_select(Condition::<u64>::from_lsb(borrow), &sum, &reduced, &mut acc);
+    // d - 1 = sum, or sum - (n - 1) where that does not borrow, moved in under the borrow's mask.
+    let mut d = Secret::<[u64; 9]>::new();
+    let borrow;
+    (*d, borrow) = nat::sub(&sum, &N_MINUS_1_LIMBS);
+    let keep_sum = Condition::<u64>::from_lsb(borrow);
+    for i in 0..9 {
+        keep_sum.mov(sum[i], &mut d[i]);
+    }
 
-    let (plus_one, _) = nat::add(&acc, &[1, 0, 0, 0, 0, 0, 0, 0, 0]);
-    P521Scalar::from_limbs(plus_one)
+    (*d, _) = nat::add(&d, &[1, 0, 0, 0, 0, 0, 0, 0, 0]);
+    P521Scalar::from_limbs(*d)
 }

@@ -39,6 +39,7 @@
 use crate::barrett;
 use crate::hazmat::p256_scalar::{N_LIMBS, P256Scalar};
 use crate::nat;
+use bouncycastle_utils::secret::Secret;
 
 /// `n - 1`, little-endian `u64` limbs. `N_LIMBS[0]` is odd (SP 800-186 §3.2.1.3's `n`), so the
 /// subtraction never borrows out of the low limb.
@@ -60,8 +61,12 @@ pub fn reduce_wide_bits_mod_n_minus_1(bytes: &[u8]) -> P256Scalar {
         "reduce_wide_bits_mod_n_minus_1 given {} bytes, more than 63",
         bytes.len()
     );
-    let t = barrett::limbs_from_be_bytes::<8>(bytes);
-    let reduced = barrett::reduce::<4, 8, 5>(&t, &N_MINUS_1_LIMBS, &MU_LOW_LIMBS);
-    let (plus_one, _) = nat::add(&reduced, &[1, 0, 0, 0]);
-    P256Scalar::from_limbs(plus_one)
+    // The DRBG output, its reduction and d itself are the key at three stages, so each is held
+    // in a `Secret`, scrubbed when this function returns rather than left on the stack.
+    let mut t = Secret::<[u64; 8]>::new();
+    *t = barrett::limbs_from_be_bytes::<8>(bytes);
+    let mut d = Secret::<[u64; 4]>::new();
+    *d = barrett::reduce::<4, 8, 5>(&t, &N_MINUS_1_LIMBS, &MU_LOW_LIMBS);
+    (*d, _) = nat::add(&d, &[1, 0, 0, 0]);
+    P256Scalar::from_limbs(*d)
 }
