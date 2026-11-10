@@ -44,7 +44,7 @@ fn print_struct_sizes() {
 
     println!("\nBLAKE3");
     println!("size_of<BLAKE3>: {}", size_of::<BLAKE3>());
-    println!("size_of<BLAKE3KeyedHash>: {}", size_of::<BLAKE3KeyedHash<Encrypting>>());
+    println!("size_of<BLAKE3KeyedHash>: {}", size_of::<BLAKE3KeyedHash<'static, Encrypting>>());
     println!("size_of<BLAKE3KeyedHashKey>: {}", size_of::<BLAKE3KeyedHashKey>());
     println!("size_of<BLAKE3Squeezer>: {}", size_of::<BLAKE3Squeezer>());
     println!("size_of<BLAKE3KeyedSqueezer>: {}", size_of::<BLAKE3KeyedSqueezer>());

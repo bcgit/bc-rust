@@ -289,12 +289,14 @@ const CORE_STATE_LEN: usize = 32 + 8 + BLOCK_LEN + 1 + 1 + 1 + MAX_DEPTH * 32;
 /// BLAKE3 spec s. 5.1: "An incremental implementation of BLAKE3 has two major components: the
 /// state of the current chunk and a stack of subtree chaining values (the "CV stack")."
 ///
-/// Shared by all three modes, which differ only in `key_words` and `flags` (s. 2.3).
+/// Shared by all three modes, which differ only in `key_words` and `flags` (s. 2.3). `K` holds the
+/// key words: owned by the unkeyed and derive_key hashers, borrowed from the key object by a
+/// keyed_hash worker.
 #[derive(Clone)]
-struct Blake3Core {
+struct Blake3Core<K: KeyWords = Secret<[u32; 8]>> {
     chunk_state: ChunkState,
     /// k0 ... k7 (s. 2.3).
-    key_words: Secret<[u32; 8]>,
+    key_words: K,
     /// "Space for 54 subtree chaining values: 2^54 * CHUNK_LEN = 2^64" (reference impl).
     cv_stack: Secret<[[u32; 8]; MAX_DEPTH]>,
     cv_stack_len: u8,
@@ -302,134 +304,32 @@ struct Blake3Core {
     flags: u32,
 }
 
+/// Where a [`Blake3Core`] reads its key words from.
+trait KeyWords {
+    fn words(&self) -> &[u32; 8];
+}
+
+impl KeyWords for Secret<[u32; 8]> {
+    fn words(&self) -> &[u32; 8] {
+        self
+    }
+}
+
+impl KeyWords for &Secret<[u32; 8]> {
+    fn words(&self) -> &[u32; 8] {
+        self
+    }
+}
+
 impl Blake3Core {
+    /// A core that owns a copy of `key_words`.
     fn new(key_words: &[u32; 8], flags: u32) -> Self {
         let mut kw = Secret::<[u32; 8]>::new();
         kw.copy_from_slice(key_words);
-        Self {
-            chunk_state: ChunkState::new(key_words, 0, flags),
-            key_words: kw,
-            cv_stack: Secret::new(),
-            cv_stack_len: 0,
-            flags,
-        }
+        Self::with_key_words(kw, flags)
     }
 
-    fn push_stack(&mut self, cv: &[u32; 8]) {
-        // The stack cannot overflow for any input BLAKE3 accepts: s. 2.1 caps the input at
-        // ell < 2^64 bytes, i.e. fewer than 2^54 chunks, and s. 5.4 derives the depth bound of 54
-        // from exactly that. Reaching this would need 2^64 bytes of input, so a debug assertion
-        // is enough; in release the index below would panic rather than corrupt memory.
-        debug_assert!((self.cv_stack_len as usize) < MAX_DEPTH, "BLAKE3 input exceeds 2^64 bytes");
-        self.cv_stack[self.cv_stack_len as usize] = *cv;
-        self.cv_stack_len += 1;
-    }
-
-    fn pop_stack(&mut self) -> [u32; 8] {
-        self.cv_stack_len -= 1;
-        self.cv_stack[self.cv_stack_len as usize]
-    }
-
-    /// BLAKE3 spec s. 5.1.2, Listing 1: "For each trailing 0-bit in the new total number of chunks,
-    /// pop a CV off the stack, and merge it with the new CV we were about to add. Finally, push the
-    /// fully merged result onto the stack."
-    fn add_chunk_chaining_value(&mut self, mut new_cv: [u32; 8], mut total_chunks: u64) {
-        // "The entries in the CV stack behave like the 1-bits in the binary representation of the
-        // total number of chunks so far." Each trailing 0-bit of the new total is a completed
-        // subtree whose left child is on top of the stack and whose right child is `new_cv`.
-        while total_chunks & 1 == 0 {
-            let left_child_cv = self.pop_stack();
-            new_cv = parent_output(&left_child_cv, &new_cv, &self.key_words, self.flags)
-                .chaining_value();
-            total_chunks >>= 1;
-        }
-        self.push_stack(&new_cv);
-    }
-
-    fn update(&mut self, mut input: &[u8]) {
-        while !input.is_empty() {
-            // s. 5.1.1: "chunk CVs are added only after the caller supplies at least 1 byte for the
-            // following chunk" -- so a full chunk is finalized here, where more input is known to
-            // follow, and it is therefore not the root (s. 5.1.2: "we know that none of these
-            // chunks or parent nodes is the root of the tree").
-            if self.chunk_state.len() == CHUNK_LEN {
-                let chunk_cv = self.chunk_state.output().chaining_value();
-                let total_chunks = self.chunk_state.chunk_counter + 1;
-                self.add_chunk_chaining_value(chunk_cv, total_chunks);
-                self.chunk_state = ChunkState::new(&self.key_words, total_chunks, self.flags);
-            }
-
-            // Absorb as much as fits in the current chunk.
-            let take = *min(&(CHUNK_LEN - self.chunk_state.len()), &input.len());
-            self.chunk_state.update(&input[..take]);
-            input = &input[take..];
-        }
-    }
-
-    /// The root node's held-back compression.
-    ///
-    /// BLAKE3 spec s. 5.1.2: "Once we reach the end of the input, we can use a simpler algorithm
-    /// to compute the root hash. Finalize the CV of the current chunk, which may be incomplete or
-    /// empty. Then, merge that CV with every CV currently in the stack, regardless of the number
-    /// of chunks so far. Set the ROOT flag for the last parent node to be merged. Or if there are
-    /// no CVs in the stack, and thus no parents to merge, set the ROOT flag for chunk
-    /// finalization instead." (ROOT itself is applied by [`Output::root_output_block`].)
-    fn root_output(&self) -> Output {
-        let mut output = self.chunk_state.output();
-        let mut parent_nodes_remaining = self.cv_stack_len as usize;
-        while parent_nodes_remaining > 0 {
-            parent_nodes_remaining -= 1;
-            output = parent_output(
-                &self.cv_stack[parent_nodes_remaining],
-                &output.chaining_value(),
-                &self.key_words,
-                self.flags,
-            );
-        }
-        output
-    }
-
-    /// Serializes the chunk state and CV stack (not `key_words` or `flags`, which each public type
-    /// handles itself) into `CORE_STATE_LEN` bytes. All integers little-endian.
-    ///
-    /// ```text
-    ///   [0    .. 32)    chunk chaining_value  [u32; 8], all zero when blocks_compressed == 0
-    ///   [32   .. 40)    chunk_counter         u64
-    ///   [40   .. 104)   block                 [u8; 64], zero past block_len
-    ///   [104  .. 105)   block_len             u8 (0..=64)
-    ///   [105  .. 106)   blocks_compressed     u8 (0..=15)
-    ///   [106  .. 107)   cv_stack_len          u8 (0..=54, == chunk_counter.count_ones())
-    ///   [107  .. 1835)  cv_stack              54 x [u32; 8], zero past cv_stack_len
-    /// ```
-    ///
-    /// The chunk chaining value is omitted while no block of the chunk has been compressed,
-    /// because it then *is* the key words (s. 2.4: "The input chaining value h0 ... h7 for the
-    /// first block of each chunk is composed of the key words k0 ... k7"), and in keyed_hash mode
-    /// those are the key. `read_state` restores it from the key words. Stale bytes past
-    /// `block_len` and stale CVs past `cv_stack_len` are not written either.
-    fn write_state(&self, out: &mut [u8]) {
-        debug_assert_eq!(out.len(), CORE_STATE_LEN);
-        let cs = &self.chunk_state;
-        if cs.blocks_compressed != 0 {
-            for (i, word) in cs.chaining_value.iter().enumerate() {
-                out[i * 4..i * 4 + 4].copy_from_slice(&word.to_le_bytes());
-            }
-        }
-        out[32..40].copy_from_slice(&cs.chunk_counter.to_le_bytes());
-        let block_len = cs.block_len as usize;
-        out[40..40 + block_len].copy_from_slice(&cs.block[..block_len]);
-        out[104] = cs.block_len;
-        out[105] = cs.blocks_compressed;
-        out[106] = self.cv_stack_len;
-        for (j, cv) in self.cv_stack[..self.cv_stack_len as usize].iter().enumerate() {
-            for (i, word) in cv.iter().enumerate() {
-                let at = 107 + j * 32 + i * 4;
-                out[at..at + 4].copy_from_slice(&word.to_le_bytes());
-            }
-        }
-    }
-
-    /// The inverse of [`Self::write_state`], given the key words and mode flag.
+    /// The inverse of [`Blake3Core::write_state`], given the key words and mode flag.
     ///
     /// Rejects with [`SuspendableError::InvalidData`] any state the hasher could not have reached,
     /// where resuming it would index out of bounds or underflow the stack:
@@ -486,6 +386,133 @@ impl Blake3Core {
         }
         core.cv_stack_len = cv_stack_len;
         Ok(core)
+    }
+}
+
+impl<K: KeyWords> Blake3Core<K> {
+    fn with_key_words(key_words: K, flags: u32) -> Self {
+        Self {
+            chunk_state: ChunkState::new(key_words.words(), 0, flags),
+            key_words,
+            cv_stack: Secret::new(),
+            cv_stack_len: 0,
+            flags,
+        }
+    }
+
+    fn push_stack(&mut self, cv: &[u32; 8]) {
+        // The stack cannot overflow for any input BLAKE3 accepts: s. 2.1 caps the input at
+        // ell < 2^64 bytes, i.e. fewer than 2^54 chunks, and s. 5.4 derives the depth bound of 54
+        // from exactly that. Reaching this would need 2^64 bytes of input, so a debug assertion
+        // is enough; in release the index below would panic rather than corrupt memory.
+        debug_assert!((self.cv_stack_len as usize) < MAX_DEPTH, "BLAKE3 input exceeds 2^64 bytes");
+        self.cv_stack[self.cv_stack_len as usize] = *cv;
+        self.cv_stack_len += 1;
+    }
+
+    fn pop_stack(&mut self) -> [u32; 8] {
+        self.cv_stack_len -= 1;
+        self.cv_stack[self.cv_stack_len as usize]
+    }
+
+    /// BLAKE3 spec s. 5.1.2, Listing 1: "For each trailing 0-bit in the new total number of chunks,
+    /// pop a CV off the stack, and merge it with the new CV we were about to add. Finally, push the
+    /// fully merged result onto the stack."
+    fn add_chunk_chaining_value(&mut self, mut new_cv: [u32; 8], mut total_chunks: u64) {
+        // "The entries in the CV stack behave like the 1-bits in the binary representation of the
+        // total number of chunks so far." Each trailing 0-bit of the new total is a completed
+        // subtree whose left child is on top of the stack and whose right child is `new_cv`.
+        while total_chunks & 1 == 0 {
+            let left_child_cv = self.pop_stack();
+            new_cv = parent_output(&left_child_cv, &new_cv, self.key_words.words(), self.flags)
+                .chaining_value();
+            total_chunks >>= 1;
+        }
+        self.push_stack(&new_cv);
+    }
+
+    fn update(&mut self, mut input: &[u8]) {
+        while !input.is_empty() {
+            // s. 5.1.1: "chunk CVs are added only after the caller supplies at least 1 byte for the
+            // following chunk" -- so a full chunk is finalized here, where more input is known to
+            // follow, and it is therefore not the root (s. 5.1.2: "we know that none of these
+            // chunks or parent nodes is the root of the tree").
+            if self.chunk_state.len() == CHUNK_LEN {
+                let chunk_cv = self.chunk_state.output().chaining_value();
+                let total_chunks = self.chunk_state.chunk_counter + 1;
+                self.add_chunk_chaining_value(chunk_cv, total_chunks);
+                self.chunk_state =
+                    ChunkState::new(self.key_words.words(), total_chunks, self.flags);
+            }
+
+            // Absorb as much as fits in the current chunk.
+            let take = *min(&(CHUNK_LEN - self.chunk_state.len()), &input.len());
+            self.chunk_state.update(&input[..take]);
+            input = &input[take..];
+        }
+    }
+
+    /// The root node's held-back compression.
+    ///
+    /// BLAKE3 spec s. 5.1.2: "Once we reach the end of the input, we can use a simpler algorithm
+    /// to compute the root hash. Finalize the CV of the current chunk, which may be incomplete or
+    /// empty. Then, merge that CV with every CV currently in the stack, regardless of the number
+    /// of chunks so far. Set the ROOT flag for the last parent node to be merged. Or if there are
+    /// no CVs in the stack, and thus no parents to merge, set the ROOT flag for chunk
+    /// finalization instead." (ROOT itself is applied by [`Output::root_output_block`].)
+    fn root_output(&self) -> Output {
+        let mut output = self.chunk_state.output();
+        let mut parent_nodes_remaining = self.cv_stack_len as usize;
+        while parent_nodes_remaining > 0 {
+            parent_nodes_remaining -= 1;
+            output = parent_output(
+                &self.cv_stack[parent_nodes_remaining],
+                &output.chaining_value(),
+                self.key_words.words(),
+                self.flags,
+            );
+        }
+        output
+    }
+
+    /// Serializes the chunk state and CV stack (not `key_words` or `flags`, which each public type
+    /// handles itself) into `CORE_STATE_LEN` bytes. All integers little-endian.
+    ///
+    /// ```text
+    ///   [0    .. 32)    chunk chaining_value  [u32; 8], all zero when blocks_compressed == 0
+    ///   [32   .. 40)    chunk_counter         u64
+    ///   [40   .. 104)   block                 [u8; 64], zero past block_len
+    ///   [104  .. 105)   block_len             u8 (0..=64)
+    ///   [105  .. 106)   blocks_compressed     u8 (0..=15)
+    ///   [106  .. 107)   cv_stack_len          u8 (0..=54, == chunk_counter.count_ones())
+    ///   [107  .. 1835)  cv_stack              54 x [u32; 8], zero past cv_stack_len
+    /// ```
+    ///
+    /// The chunk chaining value is omitted while no block of the chunk has been compressed,
+    /// because it then *is* the key words (s. 2.4: "The input chaining value h0 ... h7 for the
+    /// first block of each chunk is composed of the key words k0 ... k7"), and in keyed_hash mode
+    /// those are the key. `read_state` restores it from the key words. Stale bytes past
+    /// `block_len` and stale CVs past `cv_stack_len` are not written either.
+    fn write_state(&self, out: &mut [u8]) {
+        debug_assert_eq!(out.len(), CORE_STATE_LEN);
+        let cs = &self.chunk_state;
+        if cs.blocks_compressed != 0 {
+            for (i, word) in cs.chaining_value.iter().enumerate() {
+                out[i * 4..i * 4 + 4].copy_from_slice(&word.to_le_bytes());
+            }
+        }
+        out[32..40].copy_from_slice(&cs.chunk_counter.to_le_bytes());
+        let block_len = cs.block_len as usize;
+        out[40..40 + block_len].copy_from_slice(&cs.block[..block_len]);
+        out[104] = cs.block_len;
+        out[105] = cs.blocks_compressed;
+        out[106] = self.cv_stack_len;
+        for (j, cv) in self.cv_stack[..self.cv_stack_len as usize].iter().enumerate() {
+            for (i, word) in cv.iter().enumerate() {
+                let at = 107 + j * 32 + i * 4;
+                out[at..at + 4].copy_from_slice(&word.to_le_bytes());
+            }
+        }
     }
 }
 
@@ -994,7 +1021,7 @@ impl XOFSqueezer for BLAKE3DeriveKeySqueezer {
 /// Construction is [`FromAnyKeyMaterial`]: the material must be exactly 32 bytes, tagged
 /// [`KeyType::MACKey`] (or [`KeyType::Zeroized`]). An empty key is refused like any other length;
 /// unkeyed BLAKE3 is [`BLAKE3`]. The workers come from [`MacGenerationKey`] and
-/// [`MacVerificationKey`], each holding its own copy of the key words.
+/// [`MacVerificationKey`], each borrowing the key.
 #[derive(Clone)]
 pub struct BLAKE3KeyedHashKey {
     key_words: Secret<[u32; 8]>,
@@ -1067,16 +1094,19 @@ impl FromAnyKeyMaterial for BLAKE3KeyedHashKey {
 }
 
 impl BLAKE3KeyedHashKey {
-    fn worker<Dir>(&self) -> BLAKE3KeyedHash<Dir> {
+    fn worker<Dir>(&self) -> BLAKE3KeyedHash<'_, Dir> {
         // s. 2.3: "In the keyed_hash mode, k0 ... k7 are parsed ... from the 256-bit key ..., and
-        // the KEYED_HASH flag is set for every compression."
-        BLAKE3KeyedHash { core: Blake3Core::new(&self.key_words, KEYED_HASH), dir: PhantomData }
+        // the KEYED_HASH flag is set for every compression." The worker reads them from the key.
+        BLAKE3KeyedHash {
+            core: Blake3Core::with_key_words(&self.key_words, KEYED_HASH),
+            dir: PhantomData,
+        }
     }
 }
 
 impl MacGenerationKey<OUT_LEN> for BLAKE3KeyedHashKey {
     type Generator<'k>
-        = BLAKE3KeyedHash<Encrypting>
+        = BLAKE3KeyedHash<'k, Encrypting>
     where
         Self: 'k;
 
@@ -1087,7 +1117,7 @@ impl MacGenerationKey<OUT_LEN> for BLAKE3KeyedHashKey {
 
 impl MacVerificationKey<OUT_LEN> for BLAKE3KeyedHashKey {
     type Verifier<'k>
-        = BLAKE3KeyedHash<Decrypting>
+        = BLAKE3KeyedHash<'k, Decrypting>
     where
         Self: 'k;
 
@@ -1097,7 +1127,7 @@ impl MacVerificationKey<OUT_LEN> for BLAKE3KeyedHashKey {
 }
 
 /// BLAKE3 in its `keyed_hash` mode (spec s. 2.3): the worker a [`BLAKE3KeyedHashKey`] hands
-/// out. `Dir` is [`Encrypting`] for the generator, which implements [`MACGenerator`] and has
+/// out, borrowing it for `'k`. `Dir` is [`Encrypting`] for the generator, which implements [`MACGenerator`] and has
 /// [`BLAKE3KeyedHash::into_squeezer`] for keyed output of any length, and [`Decrypting`] for the
 /// verifier, which implements [`MACVerifier`]. Not `Clone`: a second worker comes from the key.
 ///
@@ -1105,14 +1135,14 @@ impl MacVerificationKey<OUT_LEN> for BLAKE3KeyedHashKey {
 /// # use bouncycastle_core::direction::Encrypting;
 /// # use bouncycastle_blake3::BLAKE3KeyedHash;
 /// fn cloneable<T: Clone>() {}
-/// cloneable::<BLAKE3KeyedHash<Encrypting>>();
+/// cloneable::<BLAKE3KeyedHash<'static, Encrypting>>();
 /// ```
-pub struct BLAKE3KeyedHash<Dir> {
-    core: Blake3Core,
+pub struct BLAKE3KeyedHash<'k, Dir> {
+    core: Blake3Core<&'k Secret<[u32; 8]>>,
     dir: PhantomData<Dir>,
 }
 
-impl BLAKE3KeyedHash<Encrypting> {
+impl BLAKE3KeyedHash<'_, Encrypting> {
     /// Ends the input and returns a squeezer for keyed output of any length (s. 2.6). Its first
     /// 32 bytes are the [`MACGenerator`] tag. No minimum length applies: choosing a safe output
     /// length is the caller's responsibility.
@@ -1121,7 +1151,7 @@ impl BLAKE3KeyedHash<Encrypting> {
     }
 }
 
-impl MACGenerator<OUT_LEN> for BLAKE3KeyedHash<Encrypting> {
+impl MACGenerator<OUT_LEN> for BLAKE3KeyedHash<'_, Encrypting> {
     fn do_update(&mut self, data: &[u8]) {
         self.core.update(data);
     }
@@ -1131,7 +1161,7 @@ impl MACGenerator<OUT_LEN> for BLAKE3KeyedHash<Encrypting> {
     }
 }
 
-impl MACVerifier<OUT_LEN> for BLAKE3KeyedHash<Decrypting> {
+impl MACVerifier<OUT_LEN> for BLAKE3KeyedHash<'_, Decrypting> {
     fn do_update(&mut self, data: &[u8]) {
         self.core.update(data);
     }

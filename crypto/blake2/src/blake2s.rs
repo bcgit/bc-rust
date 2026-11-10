@@ -549,27 +549,28 @@ impl FromAnyKeyMaterial for BLAKE2s_256_MACKey {
 
 impl MacGenerationKey<NN> for BLAKE2s_256_MACKey {
     type Generator<'k>
-        = BLAKE2s_256_MAC<Encrypting>
+        = BLAKE2s_256_MAC<'k, Encrypting>
     where
         Self: 'k;
 
     fn create_generator<'k>(&'k self) -> Self::Generator<'k> {
-        BLAKE2s_256_MAC { core: self.core.clone(), dir: PhantomData }
+        BLAKE2s_256_MAC { core: self.core.clone(), key: PhantomData, dir: PhantomData }
     }
 }
 
 impl MacVerificationKey<NN> for BLAKE2s_256_MACKey {
     type Verifier<'k>
-        = BLAKE2s_256_MAC<Decrypting>
+        = BLAKE2s_256_MAC<'k, Decrypting>
     where
         Self: 'k;
 
     fn create_verifier<'k>(&'k self) -> Self::Verifier<'k> {
-        BLAKE2s_256_MAC { core: self.core.clone(), dir: PhantomData }
+        BLAKE2s_256_MAC { core: self.core.clone(), key: PhantomData, dir: PhantomData }
     }
 }
 
-/// The keyed BLAKE2s worker handed out by a [`BLAKE2s_256_MACKey`]: `Dir` is [`Encrypting`] for
+/// The keyed BLAKE2s worker handed out by a [`BLAKE2s_256_MACKey`], borrowing it for `'k`: `Dir` is
+/// [`Encrypting`] for
 /// the generator, which implements [`MACGenerator`], and [`Decrypting`] for the verifier, which
 /// implements [`MACVerifier`]. Not `Clone`: a second worker comes from the key.
 ///
@@ -579,15 +580,17 @@ impl MacVerificationKey<NN> for BLAKE2s_256_MACKey {
 /// # use bouncycastle_core::direction::Encrypting;
 /// # use bouncycastle_blake2::BLAKE2s_256_MAC;
 /// fn cloneable<T: Clone>() {}
-/// cloneable::<BLAKE2s_256_MAC<Encrypting>>();
+/// cloneable::<BLAKE2s_256_MAC<'static, Encrypting>>();
 /// ```
 #[allow(non_camel_case_types)]
-pub struct BLAKE2s_256_MAC<Dir> {
+pub struct BLAKE2s_256_MAC<'k, Dir> {
+    /// A copy of the key's keyed state: the worker advances `h` and overwrites the key block.
     core: Blake2sCore,
+    key: PhantomData<&'k BLAKE2s_256_MACKey>,
     dir: PhantomData<Dir>,
 }
 
-impl MACGenerator<NN> for BLAKE2s_256_MAC<Encrypting> {
+impl MACGenerator<NN> for BLAKE2s_256_MAC<'_, Encrypting> {
     fn do_update(&mut self, data: &[u8]) {
         self.core.update(data);
     }
@@ -597,7 +600,7 @@ impl MACGenerator<NN> for BLAKE2s_256_MAC<Encrypting> {
     }
 }
 
-impl MACVerifier<NN> for BLAKE2s_256_MAC<Decrypting> {
+impl MACVerifier<NN> for BLAKE2s_256_MAC<'_, Decrypting> {
     fn do_update(&mut self, data: &[u8]) {
         self.core.update(data);
     }

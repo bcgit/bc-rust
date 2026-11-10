@@ -43,10 +43,10 @@ fn print_struct_sizes() {
 
     println!("\nBLAKE2");
     println!("size_of<BLAKE2b_512>: {}", size_of::<BLAKE2b_512>());
-    println!("size_of<BLAKE2b_512_MAC>: {}", size_of::<BLAKE2b_512_MAC<Encrypting>>());
+    println!("size_of<BLAKE2b_512_MAC>: {}", size_of::<BLAKE2b_512_MAC<'static, Encrypting>>());
     println!("size_of<BLAKE2b_512_MACKey>: {}", size_of::<BLAKE2b_512_MACKey>());
     println!("size_of<BLAKE2s_256>: {}", size_of::<BLAKE2s_256>());
-    println!("size_of<BLAKE2s_256_MAC>: {}", size_of::<BLAKE2s_256_MAC<Encrypting>>());
+    println!("size_of<BLAKE2s_256_MAC>: {}", size_of::<BLAKE2s_256_MAC<'static, Encrypting>>());
     println!("size_of<BLAKE2s_256_MACKey>: {}", size_of::<BLAKE2s_256_MACKey>());
     println!("SUSPENDED_BLAKE2B_512_STATE_LEN: {}", SUSPENDED_BLAKE2B_512_STATE_LEN);
     println!("SUSPENDED_BLAKE2S_256_STATE_LEN: {}", SUSPENDED_BLAKE2S_256_STATE_LEN);

@@ -29,7 +29,7 @@ mod blake2b_tests {
 
     type H = BLAKE2b_512;
     type K = BLAKE2b_512_MACKey;
-    type M = BLAKE2b_512_MAC<Encrypting>;
+    type M = BLAKE2b_512_MAC<'static, Encrypting>;
     /// RFC 7693 s. 2.1 block bytes bb.
     const BB: usize = 128;
     /// Digest bytes nn.
@@ -198,7 +198,8 @@ mod blake2b_tests {
             assert_eq!(hash.do_final(), unkeyed, "byte-at-a-time hash, len {len}");
 
             assert_eq!(kat_key().mac(m), keyed, "mac, len {len}");
-            let mut mac = kat_key().create_generator();
+            let key = kat_key();
+            let mut mac = key.create_generator();
             for byte in m {
                 mac.do_update(core::slice::from_ref(byte));
             }
@@ -219,14 +220,17 @@ mod blake2b_tests {
             hash.do_update(&m[split..]);
             assert_eq!(hash.do_final(), unkeyed, "split at {split}");
 
-            let mut mac = kat_key().create_generator();
+            let key = kat_key();
+
+            let mut mac = key.create_generator();
             mac.do_update(&m[..split]);
             mac.do_update(&m[split..]);
             assert_eq!(mac.do_final(), keyed, "keyed split at {split}");
         }
         for chunk in 1..=(2 * BB + 1) {
             let mut hash = H::new();
-            let mut mac = kat_key().create_generator();
+            let key = kat_key();
+            let mut mac = key.create_generator();
             for part in m.chunks(chunk) {
                 hash.do_update(part);
                 mac.do_update(part);
@@ -409,7 +413,8 @@ mod blake2b_tests {
         let mut out = [0xAAu8; NN];
         assert_eq!(kat_key().mac_out(msg(65), &mut out), NN);
         assert_eq!(out, tag);
-        let mut mac = kat_key().create_generator();
+        let key = kat_key();
+        let mut mac = key.create_generator();
         mac.do_update(msg(65));
         let mut out = [0xAAu8; NN];
         assert_eq!(mac.do_final_out(&mut out), NN);
@@ -425,11 +430,13 @@ mod blake2b_tests {
             let mut bad = tag;
             bad[i] ^= 0x01;
             assert_eq!(kat_key().verify(msg(65), &bad), Err(MACError::VerificationFailed));
-            let mut mac = kat_key().create_verifier();
+            let key = kat_key();
+            let mut mac = key.create_verifier();
             mac.do_update(msg(65));
             assert_eq!(mac.do_verify_final(&bad), Err(MACError::VerificationFailed));
         }
-        let mut mac = kat_key().create_verifier();
+        let key = kat_key();
+        let mut mac = key.create_verifier();
         mac.do_update(msg(65));
         assert_eq!(mac.do_verify_final(&tag), Ok(()));
     }

@@ -85,13 +85,14 @@ mod keyed_hash_tests {
     #[test]
     fn keyed_squeezer_do_output_final() {
         let expected = h(CASES[3].keyed_hash);
-        let mut m = key().create_generator();
+        let k = key();
+        let mut m = k.create_generator();
         m.do_update(&input(CASES[3].input_len));
         let mut s = m.into_squeezer();
         let first = s.do_output(10);
         assert_eq!([first, s.do_output_final(121)].concat(), expected);
 
-        let mut m = key().create_generator();
+        let mut m = k.create_generator();
         m.do_update(&input(CASES[3].input_len));
         let mut s = m.into_squeezer();
         s.do_output(10);
@@ -226,8 +227,11 @@ mod keyed_hash_tests {
     #[test]
     fn constants_and_params() {
         assert_eq!(BLAKE3_KEYED_HASH_NAME, "BLAKE3-KeyedHash");
-        assert_eq!(BLAKE3KeyedHash::<Encrypting>::ALG_NAME, BLAKE3_KEYED_HASH_NAME);
-        assert_eq!(BLAKE3KeyedHash::<Encrypting>::MAX_SECURITY_STRENGTH, SecurityStrength::_128bit);
+        assert_eq!(BLAKE3KeyedHash::<'static, Encrypting>::ALG_NAME, BLAKE3_KEYED_HASH_NAME);
+        assert_eq!(
+            BLAKE3KeyedHash::<'static, Encrypting>::MAX_SECURITY_STRENGTH,
+            SecurityStrength::_128bit
+        );
         assert_eq!(key().create_generator().max_security_strength(), SecurityStrength::_128bit);
         assert_eq!(size_of::<BLAKE3KeyedHashKey>(), 32);
     }

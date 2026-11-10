@@ -285,15 +285,15 @@ mod blake3_tests {
     #[test]
     fn print_sizes() {
         assert_eq!(size_of::<BLAKE3>(), 1880);
-        assert_eq!(size_of::<BLAKE3KeyedHash<Encrypting>>(), 1880);
+        assert_eq!(size_of::<BLAKE3KeyedHash<'static, Encrypting>>(), 1856);
         assert_eq!(size_of::<BLAKE3Squeezer>(), 192);
         assert_eq!(size_of::<BLAKE3KeyedSqueezer>(), 192);
         assert_eq!(size_of::<BLAKE3DeriveKey>(), 1880);
         assert_eq!(size_of::<BLAKE3DeriveKeySqueezer>(), 192);
         println!("size_of::<BLAKE3>() = {}", size_of::<BLAKE3>());
         println!(
-            "size_of::<BLAKE3KeyedHash<Encrypting>>() = {}",
-            size_of::<BLAKE3KeyedHash<Encrypting>>()
+            "size_of::<BLAKE3KeyedHash<'static, Encrypting>>() = {}",
+            size_of::<BLAKE3KeyedHash<'static, Encrypting>>()
         );
         println!("size_of::<BLAKE3Squeezer>() = {}", size_of::<BLAKE3Squeezer>());
         println!("size_of::<BLAKE3KeyedSqueezer>() = {}", size_of::<BLAKE3KeyedSqueezer>());

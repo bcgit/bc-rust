@@ -196,11 +196,11 @@ pub enum MACFactoryWorker<'k, Dir> {
     ///
     HMAC_SM3(HMAC<'k, sm3::SM3, Dir>),
     /// BLAKE2b-512 keyed-mode worker.
-    BLAKE2b_512_MAC(blake2::BLAKE2b_512_MAC<Dir>),
+    BLAKE2b_512_MAC(blake2::BLAKE2b_512_MAC<'k, Dir>),
     /// BLAKE2s-256 keyed-mode worker.
-    BLAKE2s_256_MAC(blake2::BLAKE2s_256_MAC<Dir>),
+    BLAKE2s_256_MAC(blake2::BLAKE2s_256_MAC<'k, Dir>),
     /// BLAKE3 `keyed_hash` worker.
-    BLAKE3KeyedHash(blake3::BLAKE3KeyedHash<Dir>),
+    BLAKE3KeyedHash(blake3::BLAKE3KeyedHash<'k, Dir>),
 }
 
 impl MACFactory {
@@ -376,19 +376,19 @@ impl<H: HMACParams, Dir> TagLen for HMAC<'_, H, Dir> {
 impl TagLen for blake2::BLAKE2b_512_MACKey {
     const LEN: usize = 64;
 }
-impl<Dir> TagLen for blake2::BLAKE2b_512_MAC<Dir> {
+impl<Dir> TagLen for blake2::BLAKE2b_512_MAC<'_, Dir> {
     const LEN: usize = 64;
 }
 impl TagLen for blake2::BLAKE2s_256_MACKey {
     const LEN: usize = 32;
 }
-impl<Dir> TagLen for blake2::BLAKE2s_256_MAC<Dir> {
+impl<Dir> TagLen for blake2::BLAKE2s_256_MAC<'_, Dir> {
     const LEN: usize = 32;
 }
 impl TagLen for blake3::BLAKE3KeyedHashKey {
     const LEN: usize = 32;
 }
-impl<Dir> TagLen for blake3::BLAKE3KeyedHash<Dir> {
+impl<Dir> TagLen for blake3::BLAKE3KeyedHash<'_, Dir> {
     const LEN: usize = 32;
 }
 fn tag_len<T: TagLen>(_: &T) -> usize {

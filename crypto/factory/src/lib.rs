@@ -50,9 +50,9 @@
 //! | [`xof_factory::XOFFactory`]                | 1888         |
 //! | [`xof_factory::XOFFactorySqueezer`]        | 432          |
 //! | [`mac_factory::MACFactory`]                | 864          |
-//! | [`mac_factory::MACFactoryWorker`]          | 1888         |
+//! | [`mac_factory::MACFactoryWorker`]          | 1872         |
 //!
-//! The 1888-byte ones are set by BLAKE3, whose hasher carries a 1728-byte chaining-value stack
+//! The three largest are set by BLAKE3, whose hasher carries a 1728-byte chaining-value stack
 //! sized for the full 2^64-byte input range (BLAKE3 spec s. 5.4); without it the largest variant
 //! is a SHA-3 or KMAC state of at most 440 bytes. Where that matters, use the algorithm's own type
 //! rather than the factory.

@@ -59,7 +59,7 @@
 //! |-------------------------------------------|--------------|
 //! | [`BLAKE3`], [`BLAKE3DeriveKey`]           | 1880         |
 //! | [`BLAKE3KeyedHashKey`]                    | 32           |
-//! | [`BLAKE3KeyedHash`]                       | 1880         |
+//! | [`BLAKE3KeyedHash`]                       | 1856         |
 //! | [`BLAKE3Squeezer`]                        | 192          |
 //! | [`BLAKE3KeyedSqueezer`], [`BLAKE3DeriveKeySqueezer`] | 192 |
 //! | [`SUSPENDED_BLAKE3_STATE_LEN`]            | 1874         |
@@ -154,7 +154,7 @@ impl Algorithm for BLAKE3 {
 }
 
 /// As for [`BLAKE3`]: the 256-bit key is "an extra defense layer" (s. 4.1), not a higher target.
-impl<Dir> Algorithm for BLAKE3KeyedHash<Dir> {
+impl<Dir> Algorithm for BLAKE3KeyedHash<'_, Dir> {
     const ALG_NAME: &'static str = BLAKE3_KEYED_HASH_NAME;
     const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_128bit;
 }

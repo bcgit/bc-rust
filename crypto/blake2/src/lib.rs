@@ -145,13 +145,13 @@ impl Algorithm for BLAKE2s_256 {
 }
 
 /// Keyed BLAKE2b-512: the same strength as the hash.
-impl<Dir> Algorithm for BLAKE2b_512_MAC<Dir> {
+impl<Dir> Algorithm for BLAKE2b_512_MAC<'_, Dir> {
     const ALG_NAME: &'static str = BLAKE2B_512_MAC_NAME;
     const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_256bit;
 }
 
 /// Keyed BLAKE2s-256: the same strength as the hash.
-impl<Dir> Algorithm for BLAKE2s_256_MAC<Dir> {
+impl<Dir> Algorithm for BLAKE2s_256_MAC<'_, Dir> {
     const ALG_NAME: &'static str = BLAKE2S_256_MAC_NAME;
     const MAX_SECURITY_STRENGTH: SecurityStrength = SecurityStrength::_128bit;
 }
@@ -186,13 +186,13 @@ impl AlgorithmOID for BLAKE2s_256 {
 
 /// RFC 7693 s. 4: "The same OID can be used for both keyed and unkeyed hashing since in the latter
 /// case the key simply has zero length." So keyed BLAKE2b-512 shares id-blake2b512.
-impl<Dir> AlgorithmOID for BLAKE2b_512_MAC<Dir> {
+impl<Dir> AlgorithmOID for BLAKE2b_512_MAC<'_, Dir> {
     const OID: &'static [u32] = BLAKE2b_512::OID;
     const OID_DER: &'static [u8] = BLAKE2b_512::OID_DER;
 }
 
 /// RFC 7693 s. 4, as for [`BLAKE2b_512_MAC`]: keyed BLAKE2s-256 shares id-blake2s256.
-impl<Dir> AlgorithmOID for BLAKE2s_256_MAC<Dir> {
+impl<Dir> AlgorithmOID for BLAKE2s_256_MAC<'_, Dir> {
     const OID: &'static [u32] = BLAKE2s_256::OID;
     const OID_DER: &'static [u8] = BLAKE2s_256::OID_DER;
 }
