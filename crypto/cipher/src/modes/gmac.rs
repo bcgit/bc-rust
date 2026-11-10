@@ -160,8 +160,7 @@ where
     ) -> Result<(Self, [u8; GCM_NONCE_LEN]), MACError> {
         // The draw is `Gcm`'s (SP 800-38A Appendix C's "random data block"), under this mode's
         // error type.
-        let mut nonce = [0u8; GCM_NONCE_LEN];
-        rng.next_bytes_out(&mut nonce)?;
+        let nonce = crate::modes::iv::random_iv::<GCM_NONCE_LEN>(rng)?;
         Ok((Self::from_key_state_nonce(state, &nonce), nonce))
     }
 
