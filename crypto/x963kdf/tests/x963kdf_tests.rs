@@ -79,7 +79,7 @@ fn length_bounds_are_refused_and_the_buffer_zeroized() {
         out.set_bytes_as_type(&[0xAA; 64], KeyType::CryptographicRandom).unwrap();
         assert!(matches!(
             X963KDF_SHA256::derive_out(&z, b"", bound, &mut out),
-            Err(KDFError::InvalidLength(m)) if m.contains("keydatalen")
+            Err(KDFError::InvalidLength(m)) if m.contains("below hashlen")
         ));
         assert_eq!(out.key_len(), 0);
         assert_eq!(out.key_type(), KeyType::Zeroized);
