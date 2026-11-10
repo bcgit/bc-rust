@@ -62,9 +62,11 @@
 //!   output fresh. Outputs at two lengths under one `FixedInfo` are prefixes of each other, which
 //!   is why SP 800-56C suggests `L` be part of `FixedInfo`.
 //! - `L` is a whole number of bytes here, at most `H_outputBits / 8 * (2^32 - 1)` (Section 4.1
-//!   step 2) and no more than the output buffer holds; step 4's bound on `counter || Z ||
-//!   FixedInfo` is the hash's maximum message length, which no slice reaches for the SHA-2 hashes
-//!   and which SHA-3 does not have, so it is not checked.
+//!   step 2) and no more than the output buffer holds. Step 4's bound on `counter || Z ||
+//!   FixedInfo`, the hash's maximum message length, is not checked: it is `2^61 - 1` bytes for
+//!   SHA-224 and SHA-256 and `2^125 - 1` for the other SHA-2 hashes, which no buffer this
+//!   library is given in practice comes near, though a 64-bit slice could in principle reach
+//!   the former; SHA-3 has no such limit.
 
 #![no_std]
 #![forbid(unsafe_code)]
@@ -234,9 +236,11 @@ impl<H: ConcatKDFParams> ConcatKDF<H> {
         Self::derive_keys_out(&[z], fixed_info, len, dkm)
     }
 
-    /// [`ConcatKDF::derive_out`] with `Z` the concatenation of `keys`, for a hybrid shared secret
-    /// (`Z' = Z || T`, SP 800-56C Rev. 2 Section 2) and the [`KDF`] trait's multi-key methods; the
-    /// entropy credited is the sum of the full-entropy keys', at the strongest's strength.
+    /// [`ConcatKDF::derive_out`] with `Z` the concatenation of `keys`, as the [`KDF`] trait's
+    /// multi-key methods define their input: a bare concatenation with no length framing, which
+    /// is SP 800-56C Rev. 2 Section 2's hybrid `Z' = Z || T` only when the parties have agreed
+    /// the format and length of `T`, as that section requires and the caller is left to meet.
+    /// The entropy credited is the sum of the full-entropy keys', at the strongest's strength.
     fn derive_keys_out<K: KeyMaterialTrait + ?Sized>(
         keys: &[&K],
         fixed_info: &[u8],
@@ -286,7 +290,7 @@ impl<H: ConcatKDFParams> ConcatKDF<H> {
         // note), and step 5's Result is `dkm` itself.
         let mut block = Secret::<[u8; MAX_HASH_OUTPUT_LEN]>::new();
         let reps = len.div_ceil(H::OUTPUT_LEN);
-        do_hazardous_operations(dkm, |dkm| {
+        let labelled = do_hazardous_operations(dkm, |dkm| {
             let out = dkm.ref_to_bytes_mut()?;
             let mut written = 0usize;
             // Step 3: counter = 0x00000000; step 6: for i = 1 to reps, step 6.1 incrementing it
@@ -315,7 +319,13 @@ impl<H: ConcatKDFParams> ConcatKDF<H> {
                 dkm.set_key_type(KeyType::Unknown)?;
                 dkm.set_security_strength(SecurityStrength::None)
             }
-        })?;
+        });
+        // The blocks are in `dkm` by now, so the `_out` rule's promise for the error path is kept
+        // here, although no setter after the loop fails on a buffer that passed the checks above.
+        if labelled.is_err() {
+            dkm.zeroize();
+        }
+        labelled?;
         Ok(len)
     }
 }
