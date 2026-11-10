@@ -67,19 +67,23 @@ fn matches_the_hash_of_z_counter_shared_info() {
     }
 }
 
-/// Step 2: keydatalen below hashlen * (2^32 - 1); and the buffer must hold it. Either error
-/// leaves the buffer zeroized.
+/// Step 2: keydatalen below hashlen * (2^32 - 1), tested at the bound itself, which step 2
+/// refuses before the buffer check would; and the buffer must hold it. Either error leaves the
+/// buffer zeroized. The bound does not fit a 32-bit `usize`, so those cases run on 64-bit only.
 #[test]
 fn length_bounds_are_refused_and_the_buffer_zeroized() {
     let z = z();
+    let bound = usize::try_from(32u128 * 0xFFFF_FFFF).ok();
     let mut out = KeyMaterial::<64>::new();
-    out.set_bytes_as_type(&[0xAA; 64], KeyType::CryptographicRandom).unwrap();
-    assert!(matches!(
-        X963KDF_SHA256::derive_out(&z, b"", 32 * 0xFFFF_FFFF, &mut out),
-        Err(KDFError::InvalidLength(_))
-    ));
-    assert_eq!(out.key_len(), 0);
-    assert_eq!(out.key_type(), KeyType::Zeroized);
+    if let Some(bound) = bound {
+        out.set_bytes_as_type(&[0xAA; 64], KeyType::CryptographicRandom).unwrap();
+        assert!(matches!(
+            X963KDF_SHA256::derive_out(&z, b"", bound, &mut out),
+            Err(KDFError::InvalidLength(m)) if m.contains("keydatalen")
+        ));
+        assert_eq!(out.key_len(), 0);
+        assert_eq!(out.key_type(), KeyType::Zeroized);
+    }
 
     out.set_bytes_as_type(&[0xAA; 64], KeyType::CryptographicRandom).unwrap();
     assert!(matches!(
@@ -95,10 +99,42 @@ fn length_bounds_are_refused_and_the_buffer_zeroized() {
     ));
 
     // just below the bound the length check passes and the buffer check is what refuses it
+    if let Some(bound) = bound {
+        assert!(matches!(
+            X963KDF_SHA256::derive_out(&z, b"", bound - 1, &mut out),
+            Err(KDFError::InvalidLength(m)) if m.contains("buffer")
+        ));
+    }
+}
+
+/// The KDF trait's rule at the edge: a derivation from no keys is refused, while a key of
+/// length zero is derived from, giving Hash(Counter || SharedInfo) typed Unknown with no
+/// strength, and beside a real key it adds nothing to the concatenation.
+#[test]
+fn no_keys_are_refused_and_an_empty_key_derives_unknown_output() {
+    let mut out = KeyMaterial::<32>::new();
+    let none: [&dyn KeyMaterialTrait; 0] = [];
     assert!(matches!(
-        X963KDF_SHA256::derive_out(&z, b"", 32 * 0xFFFF_FFFF - 1, &mut out),
-        Err(KDFError::InvalidLength(m)) if m.contains("buffer")
+        X963KDF_SHA256::new().derive_key_from_multiple_out(&none, b"info", 32, &mut out),
+        Err(KDFError::InvalidLength(m)) if m.contains("no keys")
     ));
+
+    let empty = KeyMaterial::<32>::new();
+    assert_eq!(empty.key_len(), 0);
+    assert_eq!(X963KDF_SHA256::derive_out(&empty, b"info", 32, &mut out).unwrap(), 32);
+    assert_eq!(out.key_type(), KeyType::Unknown);
+    assert_eq!(out.security_strength(), SecurityStrength::None);
+    let mut msg = 1u32.to_be_bytes().to_vec();
+    msg.extend_from_slice(b"info");
+    assert_eq!(out.ref_to_bytes(), &SHA256::hash(&msg));
+
+    let z = z();
+    let padded: [&dyn KeyMaterialTrait; 2] = [&empty, &z];
+    assert_eq!(
+        X963KDF_SHA256::new().derive_key_from_multiple_out(&padded, b"info", 32, &mut out).unwrap(),
+        32
+    );
+    assert!(out.equals(&*X963KDF_SHA256::new().derive_key(&z, b"info", 32).unwrap()));
 }
 
 /// The output is credited only from typed full-entropy material of at least half a hash output,

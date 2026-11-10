@@ -61,9 +61,13 @@
 //!   supply the same octets. There is no salt; a fresh `Z` per agreement is what makes the output
 //!   fresh.
 //! - `keydatalen` must be below `hashlen * (2^32 - 1)` (Section 3.6.1 step 2) and fit the output
-//!   buffer; step 1's bound on `|Z| + |SharedInfo| + 4` is the hash's maximum message length,
-//!   which the SHA-2 hashes put far beyond any slice this function can be handed, so it is not
-//!   checked.
+//!   buffer. Step 1's bound, `|Z| + |SharedInfo| + 4 < hashmaxlen`, is not checked: hashmaxlen
+//!   is `2^61 - 1` octets for SHA-224 and SHA-256 and `2^125 - 1` for SHA-384 and SHA-512
+//!   (Section 3.5), and no buffer this library is given in practice comes near the former,
+//!   though a 64-bit slice could in principle.
+//! - A derivation from no keys is refused, as the [`KDF`] trait says; a key of length zero, like a
+//!   `Zeroized` one, is derived from (the output is then `Hash(Counter || SharedInfo)`) and
+//!   yields `Unknown` output with no strength, the trait's rule for material it cannot credit.
 
 #![no_std]
 #![forbid(unsafe_code)]
@@ -181,10 +185,10 @@ impl<H: X963KDFParams> X963KDF<H> {
         Self::derive_keys_out(&[z], shared_info, key_data_len, okm)
     }
 
-    /// [`X963KDF::derive_out`] with `Z` the concatenation of `keys`, for a hybrid shared secret
-    /// (`Z || T`, as SP 800-56C Rev. 2 Section 2 allows) and the [`KDF`] trait's multi-key
-    /// methods; the entropy credited is the sum of the full-entropy keys', at the strongest's
-    /// strength.
+    /// [`X963KDF::derive_out`] with `Z` the concatenation of `keys`, as the [`KDF`] trait's
+    /// multi-key methods define their input: this library's convention, a bare concatenation
+    /// with no length framing, since SEC 1 specifies the KDF over one `Z`. The entropy credited
+    /// is the sum of the full-entropy keys', at the strongest's strength.
     fn derive_keys_out<K: KeyMaterialTrait + ?Sized>(
         keys: &[&K],
         shared_info: &[u8],
@@ -198,7 +202,9 @@ impl<H: X963KDFParams> X963KDF<H> {
         okm.zeroize();
 
         // A zero-length derivation is refused, as every KDF's is ([`KDF`]'s docs), and so is one
-        // from no keys, whose output would be a function of the SharedInfo alone.
+        // from no keys, whose output would be a function of the SharedInfo alone. A key of
+        // length zero is not refused: the trait derives from `Zeroized` and empty material and
+        // types the output `Unknown`, which the accounting below does.
         if key_data_len == 0 {
             return Err(KDFError::InvalidLength("a zero-length derivation is refused"));
         }
@@ -230,7 +236,7 @@ impl<H: X963KDFParams> X963KDF<H> {
         // Steps 3 to 5. K_i is keying material, so its block zeroizes on drop.
         let mut block = Secret::<[u8; MAX_HASH_OUTPUT_LEN]>::new();
         let blocks = key_data_len.div_ceil(H::OUTPUT_LEN);
-        do_hazardous_operations(okm, |okm| {
+        let labelled = do_hazardous_operations(okm, |okm| {
             let out = okm.ref_to_bytes_mut()?;
             let mut written = 0usize;
             // Step 3: Counter starts at 00000001; step 4: for i = 1 to ceil(keydatalen / hashlen).
@@ -258,7 +264,13 @@ impl<H: X963KDFParams> X963KDF<H> {
                 okm.set_key_type(KeyType::Unknown)?;
                 okm.set_security_strength(SecurityStrength::None)
             }
-        })?;
+        });
+        // The blocks are in `okm` by now, so the `_out` rule's promise for the error path is kept
+        // here, although no setter after the loop fails on a buffer that passed the checks above.
+        if labelled.is_err() {
+            okm.zeroize();
+        }
+        labelled?;
         Ok(key_data_len)
     }
 }
