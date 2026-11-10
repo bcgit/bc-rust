@@ -215,6 +215,19 @@ fn reduce_once(limbs: [u64; 4]) -> [u64; 4] {
     result
 }
 
+/// [`reduce_once`] of a borrowed value into `out`, in place: `out` takes `limbs - n`, and
+/// `limbs` is moved back in under the borrow's mask where the subtraction borrowed. For a
+/// secret value, so that no copy of it is staged in a return slot: `limbs` is the caller's and
+/// `out` the new `Secret`'s array.
+fn reduce_once_into(limbs: &[u64; 4], out: &mut [u64; 4]) {
+    out.copy_from_slice(limbs);
+    let borrow = crate::nat::sub_assign(out, &N_LIMBS);
+    let keep = Condition::<u64>::from_lsb(borrow);
+    for i in 0..4 {
+        keep.mov(limbs[i], &mut out[i]);
+    }
+}
+
 /// A scalar mod `n`, `< n`, held in `Secret`. See [`crate::hazmat::p256_scalar::P256Scalar`]'s
 /// docs.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -222,9 +235,18 @@ pub struct Bp256r1Scalar(Secret<[u64; 4]>);
 
 impl Bp256r1Scalar {
     /// Builds a secret scalar from little-endian `u64` limbs, reducing once if `limbs >= n`.
-    pub fn from_limbs(limbs: [u64; 4]) -> Self {
+    pub fn from_limbs(mut limbs: [u64; 4]) -> Self {
+        let scalar = Self::from_borrowed_limbs(&limbs);
+        bouncycastle_utils::secret::zeroize_in_place(&mut limbs);
+        scalar
+    }
+
+    /// As [`Self::from_limbs`], from limbs the caller holds (a `Secret`'s, usually): the
+    /// reduction is made in the new `Secret` itself, so no by-value copy of the value is staged
+    /// on the way. The returned scalar is moved out, which a move does not wipe.
+    pub fn from_borrowed_limbs(limbs: &[u64; 4]) -> Self {
         let mut secret = Secret::<[u64; 4]>::new();
-        *secret = reduce_once(limbs);
+        reduce_once_into(limbs, &mut secret);
         Self(secret)
     }
 

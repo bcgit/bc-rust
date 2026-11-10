@@ -625,3 +625,19 @@ fn public_scalar_invert_vartime_agrees_with_constant_time_invert() {
         );
     }
 }
+
+/// `from_borrowed_limbs` is `from_limbs` on a borrowed array: the same scalar at 0, 1, n - 1,
+/// n, n + 1 and all ones, the values either side of the reduction's one conditional step.
+#[test]
+fn from_borrowed_limbs_matches_from_limbs() {
+    use bouncycastle_ec::hazmat::bp512r1_scalar::{Bp512r1Scalar, N_LIMBS};
+    let mut one = [0u64; 8];
+    one[0] = 1;
+    let (n_minus_1, _) = bouncycastle_ec::nat::sub(&N_LIMBS, &one);
+    let (n_plus_1, _) = bouncycastle_ec::nat::add(&N_LIMBS, &one);
+    for limbs in [[0u64; 8], one, n_minus_1, N_LIMBS, n_plus_1, [u64::MAX; 8]] {
+        let borrowed = Bp512r1Scalar::from_borrowed_limbs(&limbs);
+        assert_eq!(borrowed, Bp512r1Scalar::from_limbs(limbs));
+        assert_eq!(borrowed.to_be_bytes(), Bp512r1Scalar::from_limbs(limbs).to_be_bytes());
+    }
+}

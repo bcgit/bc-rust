@@ -59,11 +59,13 @@ pub fn reduce_wide_bits_mod_n_minus_1(bytes: &[u8]) -> P384Scalar {
         bytes.len()
     );
     // The DRBG output, its reduction and d itself are the key at three stages, so each is held
-    // in a `Secret`, scrubbed when this function returns rather than left on the stack.
+    // in a `Secret`, scrubbed when this function returns rather than left on the stack, and
+    // every step writes into that `Secret` rather than returning the value through a slot a
+    // return would stage it in. What remains is the returned scalar's own move.
     let mut t = Secret::<[u64; 12]>::new();
-    *t = barrett::limbs_from_be_bytes::<12>(bytes);
+    barrett::limbs_from_be_bytes_into::<12>(bytes, &mut t);
     let mut d = Secret::<[u64; 6]>::new();
-    *d = barrett::reduce::<6, 12, 7>(&t, &N_MINUS_1_LIMBS, &MU_LOW_LIMBS);
-    (*d, _) = nat::add(&d, &[1, 0, 0, 0, 0, 0]);
-    P384Scalar::from_limbs(*d)
+    barrett::reduce_into::<6, 12, 7>(&t, &N_MINUS_1_LIMBS, &MU_LOW_LIMBS, &mut d);
+    nat::add_assign(&mut d, &[1, 0, 0, 0, 0, 0]);
+    P384Scalar::from_borrowed_limbs(&d)
 }

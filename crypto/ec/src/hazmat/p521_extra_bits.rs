@@ -61,9 +61,11 @@ pub fn reduce_wide_bits_mod_n_minus_1(bytes: &[u8]) -> P521Scalar {
         bytes.len()
     );
     // Every value from the DRBG output to d is the key at some stage, so each is held in a
-    // `Secret`, scrubbed when this function returns rather than left on the stack.
+    // `Secret`, scrubbed when this function returns rather than left on the stack, and every
+    // step writes into that `Secret` rather than returning the value through a slot a return
+    // would stage it in. What remains is the returned scalar's own move.
     let mut x = Secret::<[u64; 10]>::new();
-    *x = crate::barrett::limbs_from_be_bytes::<10>(bytes);
+    crate::barrett::limbs_from_be_bytes_into::<10>(bytes, &mut x);
 
     // lo = x mod 2^521: the low 8 limbs plus the low 9 bits of limb 8.
     let mut lo = Secret::<[u64; 9]>::new();
@@ -75,23 +77,26 @@ pub fn reduce_wide_bits_mod_n_minus_1(bytes: &[u8]) -> P521Scalar {
     hi[1] = x[9] >> 9;
 
     let mut product = Secret::<[u64; 18]>::new();
-    *product = crate::montgomery::widening_mul::<9, 18>(&hi, &TWO_POW_521_MOD_N_MINUS_1_LIMBS);
+    crate::montgomery::widening_mul_into::<9, 18>(
+        &hi,
+        &TWO_POW_521_MOD_N_MINUS_1_LIMBS,
+        &mut product,
+    );
     debug_assert!(product[9..].iter().all(|&limb| limb == 0), "hi * C must fit in 9 limbs");
     let mut sum = Secret::<[u64; 9]>::new();
     sum.copy_from_slice(&product[..9]);
-    let carry;
-    (*sum, carry) = nat::add(&sum, &lo);
+    let carry = nat::add_assign(&mut sum, &lo);
     debug_assert_eq!(carry, 0, "the fold's sum must fit in 9 limbs");
 
     // d - 1 = sum, or sum - (n - 1) where that does not borrow, moved in under the borrow's mask.
     let mut d = Secret::<[u64; 9]>::new();
-    let borrow;
-    (*d, borrow) = nat::sub(&sum, &N_MINUS_1_LIMBS);
+    d.copy_from_slice(&*sum);
+    let borrow = nat::sub_assign(&mut d, &N_MINUS_1_LIMBS);
     let keep_sum = Condition::<u64>::from_lsb(borrow);
     for i in 0..9 {
         keep_sum.mov(sum[i], &mut d[i]);
     }
 
-    (*d, _) = nat::add(&d, &[1, 0, 0, 0, 0, 0, 0, 0, 0]);
-    P521Scalar::from_limbs(*d)
+    nat::add_assign(&mut d, &[1, 0, 0, 0, 0, 0, 0, 0, 0]);
+    P521Scalar::from_borrowed_limbs(&d)
 }
