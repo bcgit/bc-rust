@@ -50,17 +50,19 @@ impl Algorithm for ECCDHBp256r1Agreement<'_> {
 
 /// `x * z^-2`, branch-free: the affine x of a Jacobian point without
 /// [`Bp256r1JacobianPoint::to_affine`]'s branch on the identity, which the caller tests separately.
+/// The inverse and its square are scrubbed here; the inversion's own intermediates are not.
 fn x_affine(point: &Bp256r1JacobianPoint) -> Bp256r1FieldElement {
     let mut z_inv = point.z.invert();
-    let x = point.x.mul(&z_inv.mul(&z_inv));
+    let mut z_inv_sq = z_inv.mul(&z_inv);
+    let x = point.x.mul(&z_inv_sq);
     z_inv.zeroize();
+    z_inv_sq.zeroize();
     x
 }
 
 /// SP 800-56A Rev. 3 Section 5.7.1.2, the ECC CDH primitive, with `d` this worker's key and `Q`
 /// the peer's. Returns `Z` typed [`KeyType::SharedSecret`] at the curve's strength: keying
 /// material for a KDF (Section 5.8), which nothing else accepts as a key.
-#[allow(non_snake_case)] // `z` and `Z` are Section 5.7.1.2's names for x_P and its byte string
 pub(crate) fn agree(
     sk: &ECCDHBp256r1PrivateKey,
     peer_pk: &ECCDHBp256r1PublicKey,
@@ -69,7 +71,13 @@ pub(crate) fn agree(
     //    constant time in d; Q passed full validation when the key was decoded.
     let q = Bp256r1JacobianPoint::from_affine(peer_pk.x, peer_pk.y);
     let mut p = multiply_point(sk.scalar(), &q);
+    z_from_product(&mut p)
+}
 
+/// Steps 2 to 5 of Section 5.7.1.2 from `P = [d]Q`, which is destroyed here. Apart from the
+/// multiplication so that step 2's identity path, which no validated key reaches, has a test.
+#[allow(non_snake_case)] // `z` and `Z` are Section 5.7.1.2's names for x_P and its byte string
+fn z_from_product(p: &mut Bp256r1JacobianPoint) -> Result<KeyMaterial<SS_LEN>, KeyAgreementError> {
     // 2. If P = O, destroy all intermediate values ... and output an error indicator. [d]Q is
     //    the identity only for a Q of order dividing d, which a validated point of prime order n
     //    never is; the test is kept, on a condition no valid input reaches, and acted on after
@@ -77,12 +85,16 @@ pub(crate) fn agree(
     let p_is_infinity = p.is_infinity();
 
     // 3. Set z = x_P and convert z to Z (Appendix C.2, the field-element-to-byte-string
-    //    conversion: big-endian, SS_LEN bytes, which is SEC 1's form).
-    let mut z = x_affine(&p);
+    //    conversion: big-endian, SS_LEN bytes, which is SEC 1's form). The limbs and the bytes
+    //    are held in `Secret`s, scrubbed on return.
+    let mut z = x_affine(p);
+    let mut z_limbs = Secret::<[u64; 4]>::new();
+    *z_limbs = z.to_limbs();
     let mut Z = Secret::<[u8; SS_LEN]>::new();
-    *Z = bp256r1_sec1::be_bytes_from_limbs(&z.to_limbs());
+    *Z = bp256r1_sec1::be_bytes_from_limbs(&z_limbs);
 
-    // 4. Destroy the results of all intermediate calculations (including P and z).
+    // 4. Destroy the results of all intermediate calculations (including P and z): those this
+    //    function holds; the arithmetic's own intermediates are `bouncycastle_ec`'s.
     p.zeroize();
     z.zeroize();
     if p_is_infinity.to_bool() {
@@ -225,5 +237,19 @@ where
         params: KdfParams<'p, D, SS_LEN>,
     ) -> Result<Self::Agreement<'k>, KeyAgreementError> {
         Ok(ECCDHBp256r1KdfAgreement { sk: self, params })
+    }
+}
+
+// Section 5.7.1.2 step 2's identity check is on a condition no validated peer key and in-range d
+// can reach ([d]Q = O needs a Q of order dividing d, and every point here has prime order n), so
+// no integration test can drive it; it is pinned here on the product directly.
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_identity_product_is_an_error() {
+        let mut o = Bp256r1JacobianPoint::INFINITY;
+        assert!(matches!(z_from_product(&mut o), Err(KeyAgreementError::AgreementFailed)));
     }
 }

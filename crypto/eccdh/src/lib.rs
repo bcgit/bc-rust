@@ -153,11 +153,14 @@
 //!   identity has order n. Full validation is what static keys require (Section 5.6.2.2.1), and
 //!   it is applied to every key, ephemeral or not.
 //! - **Everything done with `d` is branch-free and does not index memory by its value**: the
-//!   variable-base multiplication `[d]Q`, the affine conversion of `x_P` and the encoding, with
-//!   the intermediates zeroized as Section 5.7.1.2 step 4 asks. The one branch is Section
-//!   5.7.1.2 step 2's test for the identity, which no validated peer key and in-range `d` can
-//!   reach. Key generation draws `len(n) + 64` bits and reduces them in constant time (Section
-//!   5.6.1.2.1).
+//!   variable-base multiplication `[d]Q`, the affine conversion of `x_P` and the encoding. Of
+//!   Section 5.7.1.2 step 4's destruction of intermediates, this crate does its own part: `P`,
+//!   `z`, the inverse of `P`'s `Z` coordinate and its square, and the byte string are zeroized
+//!   on every path; the arithmetic's intermediates in [`bouncycastle_ec`] (the multiplier's
+//!   superseded accumulators and table, the inversion's table of powers) are that crate's and
+//!   are not reached, as its docs say. The one branch is Section 5.7.1.2 step 2's test for the
+//!   identity, which no validated peer key and in-range `d` can reach. Key generation draws
+//!   `len(n) + 64` bits and reduces them in constant time (Section 5.6.1.2.1).
 
 #![no_std]
 #![forbid(unsafe_code)]

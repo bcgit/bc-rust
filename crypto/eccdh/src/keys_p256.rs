@@ -11,6 +11,7 @@ use bouncycastle_ec::hazmat::p256_extra_bits::reduce_wide_bits_mod_n_minus_1;
 use bouncycastle_ec::hazmat::p256_scalar::{N_LIMBS, P256Scalar};
 use bouncycastle_ec::hazmat::p256_sec1;
 use bouncycastle_ec::nat;
+use bouncycastle_utils::ct::Condition;
 use bouncycastle_utils::secret::Secret;
 use core::fmt;
 use core::fmt::{Debug, Display, Formatter};
@@ -65,24 +66,32 @@ impl KeyAgreementPrivateKey<SK_LEN> for ECCDHP256PrivateKey {
     }
 
     fn from_bytes(bytes: &[u8]) -> Result<Self, KeyAgreementError> {
-        let array: [u8; SK_LEN] = bytes.try_into().map_err(|_| {
+        let bytes: &[u8; SK_LEN] = bytes.try_into().map_err(|_| {
             KeyAgreementError::DecodingError("ECC CDH P-256 private key must be 32 bytes")
         })?;
         // SP 800-56A Rev. 3 Section 5.6.2.1.2: "the private keys are in the interval [1, n - 1]",
         // checked on the raw big-endian value *before* any reduction. `P256Scalar::from_be_bytes`
         // reduces mod n, so checking afterwards would accept an out-of-range encoding as a
-        // different, perfectly valid key: `d = n + 1` would load as `d = 1`. Comparing against the
-        // fixed public values 0 and n is a one-time validation of caller-supplied bytes at load
-        // time, not a computation on a secret intermediate, so branching on it leaks nothing
-        // beyond what the caller already knows from having supplied these exact bytes.
-        let limbs = p256_sec1::limbs_from_be_bytes(&array);
-        let (_, borrow) = nat::sub(&limbs, &N_LIMBS);
-        if limbs == [0; 4] || borrow != 1 {
+        // different, perfectly valid key: `d = n + 1` would load as `d = 1`. The candidate is a
+        // secret from the moment it arrives (a service loading a stored key for a request does so
+        // in front of observers who are not the caller), so the limbs and the difference live in
+        // `Secret`s, scrubbed on both exits, and the two bounds are tested without a comparison
+        // or branch on their value: `nat::sub`'s borrow for `d < n` and the OR of the limbs for
+        // `d != 0`, combined under masks into one decision, which reveals only whether the key
+        // loaded, as the return value does.
+        let mut limbs = Secret::<[u64; 4]>::new();
+        *limbs = p256_sec1::limbs_from_be_bytes(bytes);
+        let mut diff = Secret::<[u64; 4]>::new();
+        let borrow;
+        (*diff, borrow) = nat::sub(&limbs, &N_LIMBS);
+        let in_range = !nat::is_zero(&limbs) & Condition::<u64>::is_equal(borrow, 1);
+        if !in_range.to_bool() {
             return Err(KeyAgreementError::DecodingError(
                 "ECC CDH P-256 private key must be in [1, n-1]",
             ));
         }
-        Ok(Self(P256Scalar::from_limbs(limbs)))
+        // `from_be_bytes` reads the borrowed input again, so this frame holds no plain copy of d.
+        Ok(Self(P256Scalar::from_be_bytes(bytes)))
     }
 }
 
