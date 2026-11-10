@@ -1218,8 +1218,10 @@ enum Subcommands {
     },
 
     /// ECC CDH key agreement over NIST P-256 (SP 800-56A Rev. 3 Section 5.7.1.2). `agree` writes
-    /// the raw shared secret Z, which must be passed through a KDF (for example `hkdf-sha256
-    /// --ikm`) before use as a key; keys are for key agreement only, never also for signing.
+    /// the raw shared secret Z, which must be passed through a KDF before use as a key: write it
+    /// to a file and give that to `hkdf-sha256 --ikm-file` or `x963kdf-sha256 --ikm-file`, not
+    /// the inline `--ikm`, which leaves Z in the command history. Keys are for key agreement
+    /// only, never also for signing.
     ECCDH_P256 {
         action: ECCDHAction,
 

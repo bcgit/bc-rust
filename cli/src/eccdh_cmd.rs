@@ -2,8 +2,9 @@
 //! [`eccdh_cmd`] per curve, as `ecdsa_cmd.rs` does for ECDSA, since every curve implements the
 //! identical `KeyAgreementPrivateKey` / `KeyAgreementPublicKey` / `DerivePublicKey` /
 //! `AgreementKey<()>` shape. `agree` writes the raw shared secret `Z` of SP 800-56A Rev. 3
-//! Section 5.7.1.2, which is keying material for a KDF (`hkdf-sha256` and friends take it as
-//! `--ikm`), not a key.
+//! Section 5.7.1.2, which is keying material for a KDF (`hkdf-sha256` and friends take it from
+//! a file through `--ikm-file`; the inline `--ikm` would leave it in the command history), not a
+//! key.
 
 use crate::helpers::{
     println_stdout, read_input_file, read_secret_file_or_stdin, write_bytes_or_hex,

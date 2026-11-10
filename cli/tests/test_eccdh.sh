@@ -79,20 +79,21 @@ test_eccdh_refuses_invalid_keys() {
     expect_fail "a P-384 key is not a P-256 key" "$BC_RUST" eccdh-p384 agree --skfile "$TMP/a.sk" --pkfile "$TMP/a.pk"
 }
 
-# Z is keying material for a KDF: the raw Z piped as hkdf-sha256's --ikm derives a key, and both
-# sides derive the same one.
+# Z is keying material for a KDF: the raw Z written to a file and given to hkdf-sha256 as
+# --ikm-file (never the inline --ikm, which would leave Z in the command history) derives a key,
+# and both sides derive the same one.
 test_eccdh_z_into_hkdf() {
-    local za zb ka kb
+    local ka kb
     "$BC_RUST" eccdh-p256 keygen >"$TMP/a.sk"
     "$BC_RUST" eccdh-p256 pk-from-sk --skfile "$TMP/a.sk" >"$TMP/a.pk"
     "$BC_RUST" eccdh-p256 keygen >"$TMP/b.sk"
     "$BC_RUST" eccdh-p256 pk-from-sk --skfile "$TMP/b.sk" >"$TMP/b.pk"
-    za=$(hex_out "$BC_RUST" eccdh-p256 agree --skfile "$TMP/a.sk" --pkfile "$TMP/b.pk" -x)
-    zb=$(hex_out "$BC_RUST" eccdh-p256 agree --skfile "$TMP/b.sk" --pkfile "$TMP/a.pk" -x)
-    ka=$(hex_out "$BC_RUST" hkdf-sha256 --salt 000102030405060708090a0b0c0d0e0f --ikm "$za" --additional-input 6b6579 --len 32 -x </dev/null)
-    kb=$(hex_out "$BC_RUST" hkdf-sha256 --salt 000102030405060708090a0b0c0d0e0f --ikm "$zb" --additional-input 6b6579 --len 32 -x </dev/null)
+    "$BC_RUST" eccdh-p256 agree --skfile "$TMP/a.sk" --pkfile "$TMP/b.pk" >"$TMP/z.a"
+    "$BC_RUST" eccdh-p256 agree --skfile "$TMP/b.sk" --pkfile "$TMP/a.pk" >"$TMP/z.b"
+    ka=$(hex_out "$BC_RUST" hkdf-sha256 --salt 000102030405060708090a0b0c0d0e0f --ikm-file "$TMP/z.a" --additional-input 6b6579 --len 32 -x </dev/null)
+    kb=$(hex_out "$BC_RUST" hkdf-sha256 --salt 000102030405060708090a0b0c0d0e0f --ikm-file "$TMP/z.b" --additional-input 6b6579 --len 32 -x </dev/null)
     assert_eq "$kb" "$ka" "both sides derive the same key"
-    [ "$ka" != "$za" ] || fail "the derived key is not Z"
+    [ "$ka" != "$(hex "$TMP/z.a")" ] || fail "the derived key is not Z"
 }
 
 run_all
