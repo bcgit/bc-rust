@@ -7,7 +7,7 @@ use bouncycastle::blake3::{BLAKE3, BLAKE3DeriveKey, BLAKE3KeyedHashKey};
 use bouncycastle::core::symmetric_key::{FromAnyKeyMaterial, MacGenerationKey};
 use bouncycastle::core::traits::MACGenerator;
 
-use crate::helpers::{load_blake_mac_key, squeeze_to_stdout, stream_stdin, stream_xof};
+use crate::helpers::{load_mac_key, squeeze_to_stdout, stream_stdin, stream_xof};
 use crate::mac_cmd::do_mac_with_key;
 
 /// BLAKE3 spec s. 2.3: `keyed_hash` "takes an input of any length together with a 256-bit key".
@@ -53,7 +53,8 @@ pub(crate) fn blake3_keyed_hash_cmd(
         exit(-1);
     }
 
-    let key = load_blake_mac_key(key, key_file, "BLAKE3-KeyedHash", BLAKE3_KEY_LEN, BLAKE3_KEY_LEN);
+    let key =
+        load_mac_key(key, key_file, Some(("BLAKE3-KeyedHash", BLAKE3_KEY_LEN..=BLAKE3_KEY_LEN)));
     // The allow-weak form, as the HMAC and KMAC commands use: a CLI is used for test vectors and
     // scripting, where a low-entropy or all-zero key is a legitimate thing to want.
     // infallible: a 32-byte MACKey (or Zeroized) key is exactly what the key object accepts once
