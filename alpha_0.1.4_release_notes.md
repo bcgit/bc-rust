@@ -111,7 +111,8 @@
   admits the SHA-3 hashes and KMAC as its function, and SHAKE not at all. HKDF over SHA-3 remains as
   `HKDF<SHA3_256>` and its siblings, written out; there is no alias or factory entry for it.
 * Two-party key agreement gets the same shape ahead of the ECC CDH crate: the `AgreementKey` role in
-  `core::agreement_key`, with `KeyAgreementAlgorithm::Params` for a KDF-bearing variant, hands out a
+  `core::agreement_key`, `AgreementKey<Params, SS_LEN>` with `()` the raw primitive's parameters and a KDF's
+  `KdfParams` a KDF-bearing variant's, hands out a
   `KeyAgreement` worker whose `agree_out(&peer_pk, &mut z)` writes `Z` into the caller's buffer as
   `KeyType::SharedSecret`, zeroized first, with `agree(&peer_pk)` provided over it on the worker and the key; `KeyAgreementError` and
   the encodable `KeyAgreementPrivateKey` / `KeyAgreementPublicKey` traits go with it.
