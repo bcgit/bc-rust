@@ -85,8 +85,8 @@ pub const KMACXOF128_NAME: &str = "KMACXOF128";
 pub const KMACXOF256_NAME: &str = "KMACXOF256";
 
 /// The shortest KMAC output, in bytes. SP 800-185 Sec 8.4.2: applications "shall not select an
-/// output length L that is less than 32 bits". A key or worker type with a shorter `MAC_LEN`
-/// fails to compile.
+/// output length L that is less than 32 bits". A key type with a shorter `MAC_LEN` fails to
+/// compile, and so does any worker that would produce or verify a tag at one.
 pub const KMAC_MIN_OUTPUT_LEN: usize = 4;
 /// The longest KMAC output, in bytes: `8 * n` is what `right_encode` absorbs (Sec 4.3 step 1),
 /// and it is a `u64` here.
@@ -98,8 +98,9 @@ pub const KMAC_MAX_OUTPUT_LEN: usize = (u64::MAX / 8) as usize;
 /// [`Decrypting`] for the verifier, and `MAC_LEN` the key's output length, 32 bytes by default.
 /// [`KMACXOF128`] is the separate arbitrary-length function of Sec 4.3.1.
 ///
-/// A worker below the Sec 8.4.2 floor cannot be made, not even from a suspended state whose
-/// stored length says otherwise:
+/// No tag is produced or verified below the Sec 8.4.2 floor, not even by a worker resumed from a
+/// suspended state whose stored length says otherwise (such a worker can be resumed and fed, and
+/// that is all):
 ///
 /// ```compile_fail,E0080
 /// use bouncycastle_core::direction::Decrypting;
@@ -109,6 +110,19 @@ pub const KMAC_MAX_OUTPUT_LEN: usize = (u64::MAX / 8) as usize;
 /// let forged = [0u8; SUSPENDED_KMAC_STATE_LEN];
 /// if let Ok(verifier) = KMAC128::<Decrypting, 0>::from_suspended(forged) {
 ///     let _ = verifier.do_verify_final(&[]);
+/// }
+/// ```
+///
+/// and one byte under the floor, in the other direction:
+///
+/// ```compile_fail,E0080
+/// use bouncycastle_core::direction::Encrypting;
+/// use bouncycastle_core::traits::{MACGenerator, Suspendable};
+/// use bouncycastle_sha3::kmac::{KMAC128, SUSPENDED_KMAC_STATE_LEN};
+///
+/// let forged = [0u8; SUSPENDED_KMAC_STATE_LEN];
+/// if let Ok(generator) = KMAC128::<Encrypting, 3>::from_suspended(forged) {
+///     let _: [u8; 3] = generator.do_final();
 /// }
 /// ```
 pub type KMAC128<Dir, const MAC_LEN: usize = 32> = KMACInternal<SHAKE128Params, Dir, MAC_LEN>;
@@ -183,8 +197,8 @@ fn keyed_cshake<PARAMS: SHAKEParams>(
 
 impl<PARAMS: SHAKEParams, const MAC_LEN: usize> KMACKeyInternal<PARAMS, MAC_LEN> {
     /// The MAC's bounds on `L`, a compile-time error where a key type is used: from
-    /// [`KMAC_MIN_OUTPUT_LEN`] to [`KMAC_MAX_OUTPUT_LEN`]. It is evaluated when the type is
-    /// instantiated, so `cargo build` and `cargo test` report it and `cargo check` does not.
+    /// [`KMAC_MIN_OUTPUT_LEN`] to [`KMAC_MAX_OUTPUT_LEN`]. It is evaluated when a constructor is
+    /// monomorphised, so `cargo build` and `cargo test` report it and `cargo check` does not.
     /// KMACXOF is the `L = 0` form (Sec 4.3.1) and does not pass here.
     const LEN_CHECK: () = assert!(
         MAC_LEN >= KMAC_MIN_OUTPUT_LEN && MAC_LEN <= KMAC_MAX_OUTPUT_LEN,
@@ -322,8 +336,8 @@ impl<PARAMS: SHAKEParams, Dir, const MAC_LEN: usize> KMACInternal<PARAMS, Dir, M
     /// squeezed into `out`.
     fn finish(mut self, out: &mut [u8; MAC_LEN]) -> usize {
         // The floor on the worker as well as on the key: every tag in either direction passes
-        // here, so a worker below it cannot exist, not even one resumed from a state whose stored
-        // length says otherwise.
+        // here, so none is produced or verified below it, not even by a worker resumed from a
+        // state whose stored length says otherwise.
         const {
             assert!(
                 MAC_LEN >= KMAC_MIN_OUTPUT_LEN && MAC_LEN <= KMAC_MAX_OUTPUT_LEN,
