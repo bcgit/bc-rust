@@ -538,7 +538,7 @@ mod blake2b_tests {
         assert!(H::from_suspended(hash.suspend()).is_ok());
     }
 
-    /// t must be a whole number of blocks.
+    /// t must be a whole number of blocks, in the lower half of its range.
     #[test]
     fn suspend_rejects_bad_t() {
         let mut hash = H::new();
@@ -553,6 +553,16 @@ mod blake2b_tests {
         // A larger multiple of bb is fine.
         let mut st = state;
         st[T_OFF + 1] = 1;
+        assert!(H::from_suspended(st).is_ok());
+        // The top half of t's range is refused, so the counter cannot wrap after a resume; the
+        // largest multiple of bb below it is accepted.
+        let mut st = state;
+        st[BUF_OFF - 1] = 0x80;
+        assert!(matches!(H::from_suspended(st), Err(SuspendableError::InvalidData)));
+        let mut st = state;
+        st[T_OFF] = 0;
+        st[T_OFF + 1..BUF_OFF].fill(0xFF);
+        st[BUF_OFF - 1] = 0x7F;
         assert!(H::from_suspended(st).is_ok());
     }
 }

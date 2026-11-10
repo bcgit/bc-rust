@@ -297,7 +297,8 @@ impl Blake2bCore {
 
     /// Inverse of [`Self::write_state`]. Rejects a `buf_len` larger than a block (a full block,
     /// `buf_len == bb`, is valid: it is compressed only when more input arrives), a `t` that is
-    /// not a whole number of blocks, and an empty buffer after a compression.
+    /// not a whole number of blocks or is in the upper half of its range, and an empty buffer
+    /// after a compression.
     fn read_state(input: &[u8; CORE_STATE_LEN]) -> Result<Self, SuspendableError> {
         let buf_len = input[208] as usize;
         if buf_len > BB {
@@ -315,6 +316,12 @@ impl Blake2bCore {
         // A compression only ever happens on a full block (s. 3.3 "(i + 1) * bb"), so at rest t is
         // a multiple of bb.
         if t % (BB as u128) != 0 {
+            return Err(SuspendableError::InvalidData);
+        }
+        // s. 2.1 bounds the input at "0 <= ll < 2**128" bytes. A t in the upper half of the
+        // counter's range is refused, so that a resumed state is at least 2**127 bytes of input
+        // from wrapping `t` in `add_to_t`, which no caller can supply.
+        if t > u128::MAX >> 1 {
             return Err(SuspendableError::InvalidData);
         }
         // `update` keeps at least one byte back after every compression, so a compressed state
@@ -433,10 +440,10 @@ impl Hash for BLAKE2b_512 {
 impl Suspendable<SUSPENDED_BLAKE2B_512_STATE_LEN> for BLAKE2b_512 {
     fn suspend(self) -> [u8; SUSPENDED_BLAKE2B_512_STATE_LEN] {
         let mut out_to_return = [0u8; SUSPENDED_BLAKE2B_512_STATE_LEN];
-        let mut out = [0u8; CORE_STATE_LEN];
+        let mut out = Secret::<[u8; CORE_STATE_LEN]>::new();
         self.core.write_state(&mut out);
         // add_lib_ver returns the CORE_STATE_LEN bytes after the 3-byte version header.
-        add_lib_ver(&mut out_to_return).copy_from_slice(&out);
+        add_lib_ver(&mut out_to_return).copy_from_slice(&*out);
         out_to_return
     }
 
@@ -444,14 +451,14 @@ impl Suspendable<SUSPENDED_BLAKE2B_512_STATE_LEN> for BLAKE2b_512 {
     /// * [`SuspendableError::IncompatibleVersion`] for a state from an incompatible library
     ///   version.
     /// * [`SuspendableError::InvalidData`] for a buffered length over one block, a `t` that is not
-    ///   a whole number of blocks, an empty buffer after a compression, or a state taken before any
+    ///   a whole number of blocks or is in the upper half of its range, an empty buffer after a compression, or a state taken before any
     ///   compression whose `h` is not the unkeyed initial state.
     fn from_suspended(
         state: [u8; SUSPENDED_BLAKE2B_512_STATE_LEN],
     ) -> Result<Self, SuspendableError> {
         // At the moment, we have no not_before version to specify.
         // check_lib_ver returns the CORE_STATE_LEN bytes after the 3-byte version header.
-        let mut input = [0u8; CORE_STATE_LEN];
+        let mut input = Secret::<[u8; CORE_STATE_LEN]>::new();
         input.copy_from_slice(check_lib_ver(&state, None)?);
         let core = Blake2bCore::read_state(&input)?;
         // Before any compression h is exactly the unkeyed initial state.
