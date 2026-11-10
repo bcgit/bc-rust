@@ -11,8 +11,14 @@ use bouncycastle_core::traits::{
 /// Instance of the test framework.
 pub struct TestFrameworkKeyAgreement {}
 
+impl Default for TestFrameworkKeyAgreement {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl TestFrameworkKeyAgreement {
-    ///
+    /// A framework instance; it holds no configuration.
     pub fn new() -> Self {
         Self {}
     }
@@ -86,8 +92,14 @@ impl TestFrameworkKeyAgreement {
 /// Instance of the test framework.
 pub struct TestFrameworkKeyAgreementKeys {}
 
+impl Default for TestFrameworkKeyAgreementKeys {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl TestFrameworkKeyAgreementKeys {
-    ///
+    /// A framework instance; it holds no configuration.
     pub fn new() -> Self {
         Self {}
     }
