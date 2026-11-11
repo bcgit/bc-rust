@@ -60,7 +60,6 @@ use crate::cshake::{CSHAKE_COMPONENT_LEN, CSHAKEInternal, CSHAKESqueezer, right_
 use crate::{SHAKE128Params, SHAKE256Params, SHAKEParams};
 use bouncycastle_core::direction::{Decrypting, Encrypting};
 use bouncycastle_core::errors::{HashError, KeyMaterialError, MACError, SuspendableError};
-use bouncycastle_core::hazmat::do_hazardous_operations;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::symmetric_key::{FromAnyKeyMaterial, MacGenerationKey, MacVerificationKey};
@@ -255,19 +254,10 @@ impl<PARAMS: SHAKEParams, const MAC_LEN: usize> FromAnyKeyMaterial
     /// [`MACError::KeyMaterialError`] if the RNG fails, or with
     /// [`KeyMaterialError::SecurityStrength`] if its strength is below the KMAC's.
     fn generate(rng: &mut dyn RNG) -> Result<Self, MACError> {
-        let key_len = (PARAMS::SIZE as usize) / 8;
-        let mut key = KeyMaterial::<32>::new();
-        do_hazardous_operations(&mut key, |key| {
-            rng.next_bytes_out(&mut key.ref_to_bytes_mut()?[..key_len])
-                .map_err(|_| KeyMaterialError::GenericError("RNG failed."))?;
-            key.set_key_len(key_len)?;
-            key.set_key_type(KeyType::MACKey)?;
-            // The RNG's strength, capped at what the length carries, as KeyMaterial::from_rng
-            // does: a 16-byte KMAC128 key from a 256-bit DRBG is a 128-bit key.
-            let by_len = SecurityStrength::from_bits(key_len * 8);
-            let by_rng = rng.security_strength();
-            key.set_security_strength(if by_rng < by_len { by_rng } else { by_len })
-        })?;
+        // A key of the parameter set's strength in bytes, at the RNG's strength capped by the
+        // length: a 16-byte KMAC128 key from a 256-bit DRBG is a 128-bit key.
+        let key =
+            KeyMaterial::<32>::from_rng_as_type(rng, (PARAMS::SIZE as usize) / 8, KeyType::MACKey)?;
         Self::from_key_material(&key)
     }
 }
