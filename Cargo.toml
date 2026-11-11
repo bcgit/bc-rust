@@ -16,6 +16,8 @@ bouncycastle-camellia = { path = "./crypto/camellia" }
 bouncycastle-aria = { path = "./crypto/aria" }
 bouncycastle-ascon = { path = "./crypto/ascon" }
 bouncycastle-base64 = { path = "./crypto/base64" }
+bouncycastle-blake2 = { path = "./crypto/blake2" }
+bouncycastle-blake3 = { path = "./crypto/blake3" }
 bouncycastle-chacha20 = { path = "./crypto/chacha20" }
 bouncycastle-chacha20-poly1305-aead = { path = "./crypto/chacha20-poly1305-aead" }
 bouncycastle-cipher = { path = "./crypto/cipher" }
@@ -76,6 +78,8 @@ bouncycastle-camellia.workspace = true
 bouncycastle-aria.workspace = true
 bouncycastle-ascon.workspace = true
 bouncycastle-base64.workspace = true
+bouncycastle-blake2.workspace = true
+bouncycastle-blake3.workspace = true
 bouncycastle-chacha20.workspace = true
 bouncycastle-chacha20-poly1305-aead.workspace = true
 bouncycastle-cipher.workspace = true
