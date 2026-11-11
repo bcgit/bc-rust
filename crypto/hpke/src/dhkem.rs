@@ -7,8 +7,9 @@
 
 use bouncycastle_core::errors::{KEMError, KeyAgreementError, RNGError};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
-use bouncycastle_core::symmetric_key::{FromAnyKeyMaterial, MacGenerationKey};
-use bouncycastle_core::traits::{Algorithm, HashAlgParams, MAC, RNG};
+use bouncycastle_core::symmetric_key::FromAnyKeyMaterial;
+use bouncycastle_core::traits::{Algorithm, Hash, HashAlgParams, RNG};
+use bouncycastle_hmac::hazmat as hmac_hazmat;
 use bouncycastle_hmac::{HMACParams, HmacKey};
 use bouncycastle_utils::secret::Secret;
 use core::marker::PhantomData;
@@ -121,7 +122,7 @@ impl<
         let () = Self::PARAMS_CHECK;
 
         if rng.security_strength() < G::MAX_SECURITY_STRENGTH {
-            return Err(RNGError::SecurityStrengthInsufficientForAlgorithm)?;
+            return Err(RNGError::SecurityStrengthInsufficientForAlgorithm.into());
         }
 
         // skE, pkE = GenerateKeyPair()
@@ -252,7 +253,9 @@ impl<
         // Cannot fail: an empty KeyMaterial is Zeroized, which HMAC accepts as a weak key.
         let salt =
             HmacKey::<G::KDFHash>::from_key_material_allow_weak(&KeyMaterial::<0>::new()).unwrap();
-        let mut hmac = salt.create_generator();
+        // HMAC through its hazmat halves, as HKDF's expand loop runs it: the role wants the tag
+        // length as a const, which a hash-generic KDF does not have.
+        let mut hmac = hmac_hazmat::inner_state(&salt);
         // labeled_ikm = concat("HPKE-v1", suite_id, label, ikm)
         // Deviation from the RFC: the parts of labeled_ikm are absorbed by HMAC in order rather than
         // concatenated first.
@@ -263,7 +266,8 @@ impl<
 
         let mut prk = Secret::<[u8; MAX_NH]>::new();
         // Cannot fail: the buffer is at least the hash output length (PARAMS_CHECK).
-        let nh = hmac.do_final_out(&mut *prk).unwrap();
+        let nh = <G::KDFHash as HashAlgParams>::OUTPUT_LEN;
+        let nh = hmac_hazmat::finish_out(&salt, hmac, &mut prk[..nh]);
         // Cannot fail: nh <= MAX_NH bytes fit a KeyMaterial<MAX_NH>.
         KeyMaterial::from_bytes_as_type(&prk[..nh], KeyType::MACKey).unwrap()
     }
@@ -286,7 +290,7 @@ impl<
             // T(i) = HMAC-Hash(PRK, T(i-1) | info | i), with info = labeled_info
             // Cannot fail: the PRK is a MAC key of the hash's full output length.
             let key = HmacKey::<G::KDFHash>::from_key_material(prk).unwrap();
-            let mut hmac = key.create_generator();
+            let mut hmac = hmac_hazmat::inner_state(&key);
             hmac.do_update(&t[..t_len]);
             // labeled_info = concat(I2OSP(L, 2), "HPKE-v1", suite_id, label, info)
             // Deviation from the RFC: absorbed in parts, as in labeled_extract.
@@ -300,7 +304,7 @@ impl<
             // i <= N <= 255, since L <= 255*HashLen.
             hmac.do_update(&[(i + 1) as u8]);
             // Cannot fail: the buffer is at least the hash output length (PARAMS_CHECK).
-            t_len = hmac.do_final_out(&mut *t).unwrap();
+            t_len = hmac_hazmat::finish_out(&key, hmac, &mut t[..nh]);
             okm_chunk.copy_from_slice(&t[..okm_chunk.len()]);
         }
     }
