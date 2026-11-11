@@ -17,8 +17,9 @@
 //!   know the lengths up front, [`SymmetricEncryptionKey`] / [`SymmetricDecryptionKey`] for the
 //!   unauthenticated modes that take data of any length (padded CBC, CFB, CFB8, CTR),
 //!   [`BlockEncryptionKey`] / [`BlockDecryptionKey`] for the whole-block modes, the ECB pair in
-//!   [`crate::hazmat`], [`MacGenerationKey`] / [`MacVerificationKey`], and
-//!   [`KeyWrappingKey`] / [`KeyUnwrappingKey`] for the key-wrap modes. A key type
+//!   [`crate::hazmat`], [`MacGenerationKey`] / [`MacVerificationKey`], their nonce-bound forms
+//!   [`NonceMacGenerationKey`] / [`NonceMacVerificationKey`] for a MAC whose tag is bound to a
+//!   nonce (GMAC), and [`KeyWrappingKey`] / [`KeyUnwrappingKey`] for the key-wrap modes. A key type
 //!   implements the sides it is allowed to use, so a decrypt-only or verify-only key refuses the
 //!   other side at compile time. The one-shots are provided methods over `create_*` and the
 //!   worker's streaming methods, the cipher traits in [`crate::traits`].
@@ -51,8 +52,8 @@ use crate::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use crate::traits::AEADEncryptedTuple;
 use crate::traits::{
     AEADCipherDecryptor, AEADCipherEncryptor, BlockCipherDecryptor, BlockCipherEncryptor,
-    KeyUnwrapper, KeyWrapper, MAC, RNG, StreamCipherDecryptor, StreamCipherEncryptor,
-    SymmetricCipherDecryptor, SymmetricCipherEncryptor,
+    KeyUnwrapper, KeyWrapper, MACGenerator, MACVerifier, RNG, StreamCipherDecryptor,
+    StreamCipherEncryptor, SymmetricCipherDecryptor, SymmetricCipherEncryptor,
 };
 use bouncycastle_utils::secret::Secret;
 
@@ -176,6 +177,7 @@ pub trait AeadEncryptionKey<
         plaintext: &[u8],
         ciphertext: &mut [u8],
     ) -> Result<(usize, [u8; NONCE_LEN]), SymmetricCipherError> {
+        ciphertext.fill(0);
         let (enc, nonce) = self.create_encryptor(rng)?;
         let written = crate::provided::encrypt_inline(enc, aad, plaintext, ciphertext)?;
         Ok((written, nonce))
@@ -217,6 +219,7 @@ pub trait AeadEncryptionKey<
         plaintext: &[u8],
         ciphertext: &mut [u8],
     ) -> Result<(usize, [u8; NONCE_LEN], [u8; TAG_LEN]), SymmetricCipherError> {
+        ciphertext.fill(0);
         let (enc, nonce) = self.create_encryptor(rng)?;
         let (written, tag) = crate::provided::encrypt_detached(enc, aad, plaintext, ciphertext)?;
         Ok((written, nonce, tag))
@@ -552,6 +555,7 @@ pub trait AeadDeclaredEncryptionKey<
         plaintext: &[u8],
         ciphertext: &mut [u8],
     ) -> Result<(usize, [u8; NONCE_LEN]), SymmetricCipherError> {
+        ciphertext.fill(0);
         let (enc, nonce) = self.create_encryptor(rng, aad.len(), plaintext.len())?;
         let written = crate::provided::encrypt_inline(enc, aad, plaintext, ciphertext)?;
         Ok((written, nonce))
@@ -591,6 +595,7 @@ pub trait AeadDeclaredEncryptionKey<
         plaintext: &[u8],
         ciphertext: &mut [u8],
     ) -> Result<(usize, [u8; NONCE_LEN], [u8; TAG_LEN]), SymmetricCipherError> {
+        ciphertext.fill(0);
         let (enc, nonce) = self.create_encryptor(rng, aad.len(), plaintext.len())?;
         let (written, tag) = crate::provided::encrypt_detached(enc, aad, plaintext, ciphertext)?;
         Ok((written, nonce, tag))
@@ -649,6 +654,7 @@ pub trait AeadDeclaredEncryptionKey<
         plaintext: &[u8],
         ciphertext: &mut [u8],
     ) -> Result<usize, SymmetricCipherError> {
+        ciphertext.fill(0);
         let enc = self.create_encryptor_nonce(nonce, aad.len(), plaintext.len())?;
         crate::provided::encrypt_inline(enc, aad, plaintext, ciphertext)
     }
@@ -687,6 +693,7 @@ pub trait AeadDeclaredEncryptionKey<
         plaintext: &[u8],
         ciphertext: &mut [u8],
     ) -> Result<(usize, [u8; TAG_LEN]), SymmetricCipherError> {
+        ciphertext.fill(0);
         let enc = self.create_encryptor_nonce(nonce, aad.len(), plaintext.len())?;
         crate::provided::encrypt_detached(enc, aad, plaintext, ciphertext)
     }
@@ -771,6 +778,7 @@ pub trait AeadDeclaredDecryptionKey<
         ciphertext: &[u8],
         plaintext: &mut [u8],
     ) -> Result<usize, SymmetricCipherError> {
+        plaintext.fill(0);
         let payload_len = crate::provided::inline_payload_len::<TAG_LEN>(ciphertext.len())?;
         let dec = self.create_decryptor(nonce, aad.len(), payload_len)?;
         crate::provided::decrypt_inline(dec, aad, ciphertext, plaintext)
@@ -812,6 +820,7 @@ pub trait AeadDeclaredDecryptionKey<
         tag: &[u8; TAG_LEN],
         plaintext: &mut [u8],
     ) -> Result<usize, SymmetricCipherError> {
+        plaintext.fill(0);
         let dec = self.create_decryptor(nonce, aad.len(), ciphertext.len())?;
         crate::provided::decrypt_detached(dec, aad, ciphertext, tag, plaintext)
     }
@@ -864,8 +873,20 @@ pub trait AeadDeclaredDecryptionKey<
 /// [`SymmetricCipherEncryptor`]; this trait adds where it comes from, and the one-shots are
 /// provided over [`create_encryptor`](Self::create_encryptor) and the worker's streaming methods.
 ///
-/// The init data (an IV or nonce) is drawn from the RNG the key is given and returned; there is
-/// no form that takes one, since these modes need it unpredictable (SP 800-38A Appendix C).
+/// # The init data is drawn by default
+///
+/// Every form without `_nonce` in its name draws the init data (an IV for CBC, CFB and CFB8, a
+/// nonce for CTR and a stream cipher) from the RNG it is given and returns it. The `_nonce` forms
+/// take it from the caller, for a protocol whose nonce is a counter or whose format carries the
+/// IV; the caller then takes on the obligation the drawing forms discharge. For CBC and CFB that
+/// is unpredictability: SP 800-38A Appendix C, "For the CBC and CFB modes, the IVs must be
+/// unpredictable", which the drawing forms meet by its second method, "a random data block using
+/// a FIPS-approved random number generator", and a caller may meet by its first, the forward
+/// cipher function under the same key applied to a nonce unique to the message. For CTR it is
+/// uniqueness: Appendix B requires "a unique counter block for each plaintext block that is ever
+/// encrypted under a given key, across all messages", which a per-message nonce in the leading
+/// bits of the counter block provides (Appendix B.2). For ChaCha20 the nonce "MUST not be
+/// repeated for the same key" (RFC 8439 Section 2.4).
 pub trait SymmetricEncryptionKey<
     const KEY_LEN: usize,
     const INIT_DATA_LEN: usize,
@@ -888,6 +909,12 @@ pub trait SymmetricEncryptionKey<
         rng: &mut dyn RNG,
     ) -> Result<(Self::Encryptor<'k>, [u8; INIT_DATA_LEN]), SymmetricCipherError>;
 
+    /// Begins an encryption under init data the caller supplies. Infallible, as
+    /// [`SymmetricDecryptionKey::create_decryptor`] is; the obligation on the value is the
+    /// caller's, see above.
+    fn create_encryptor_nonce<'k>(&'k self, init_data: &[u8; INIT_DATA_LEN])
+    -> Self::Encryptor<'k>;
+
     /// One-shot: encrypts `plaintext` into `ciphertext`, which needs `encrypt_out_len` bytes of
     /// the encryptor type, and returns the number of bytes written with the generated init data.
     /// The entire output buffer is zeroized before the ciphertext is written.
@@ -901,6 +928,7 @@ pub trait SymmetricEncryptionKey<
         plaintext: &[u8],
         ciphertext: &mut [u8],
     ) -> Result<(usize, [u8; INIT_DATA_LEN]), SymmetricCipherError> {
+        ciphertext.fill(0);
         let (enc, init_data) = self.create_encryptor(rng)?;
         let written = crate::provided::symmetric_encrypt_out(enc, plaintext, ciphertext)?;
         Ok((written, init_data))
@@ -946,6 +974,61 @@ pub trait SymmetricEncryptionKey<
         let (mut enc, init_data) = self.create_encryptor(rng)?;
         let written = StreamCipherEncryptor::do_encrypt_inplace(&mut enc, data)?;
         Ok((written, init_data))
+    }
+
+    /// As [`encrypt_out`](Self::encrypt_out) under init data the caller supplies, which is not
+    /// returned.
+    ///
+    /// # Errors
+    /// [`SymmetricCipherError::OutputBufferTooSmall`] if `ciphertext` is too short, or any error
+    /// of the encryptor's streaming methods.
+    fn encrypt_nonce_out(
+        &self,
+        init_data: &[u8; INIT_DATA_LEN],
+        plaintext: &[u8],
+        ciphertext: &mut [u8],
+    ) -> Result<usize, SymmetricCipherError> {
+        let enc = self.create_encryptor_nonce(init_data);
+        crate::provided::symmetric_encrypt_out(enc, plaintext, ciphertext)
+    }
+
+    /// As [`encrypt_nonce_out`](Self::encrypt_nonce_out), allocating the ciphertext.
+    ///
+    /// # Errors
+    /// As [`encrypt_nonce_out`](Self::encrypt_nonce_out).
+    #[cfg(feature = "std")]
+    fn encrypt_nonce(
+        &self,
+        init_data: &[u8; INIT_DATA_LEN],
+        plaintext: &[u8],
+    ) -> Result<Vec<u8>, SymmetricCipherError> {
+        let mut ciphertext = vec![
+            0u8;
+            <Self::Encryptor<'_> as SymmetricCipherEncryptor<
+                INIT_DATA_LEN,
+                FINAL_LEN,
+            >>::encrypt_out_len(plaintext.len())
+        ];
+        let written = self.encrypt_nonce_out(init_data, plaintext, &mut ciphertext)?;
+        ciphertext.truncate(written);
+        Ok(ciphertext)
+    }
+
+    /// As [`encrypt_inplace`](Self::encrypt_inplace) under init data the caller supplies, which
+    /// is not returned.
+    ///
+    /// # Errors
+    /// [`StreamCipherEncryptor::do_encrypt_inplace`]'s.
+    fn encrypt_inplace_nonce<'k>(
+        &'k self,
+        init_data: &[u8; INIT_DATA_LEN],
+        data: &mut [u8],
+    ) -> Result<usize, SymmetricCipherError>
+    where
+        Self::Encryptor<'k>: StreamCipherEncryptor<INIT_DATA_LEN>,
+    {
+        let mut enc = self.create_encryptor_nonce(init_data);
+        StreamCipherEncryptor::do_encrypt_inplace(&mut enc, data)
     }
 }
 
@@ -1030,7 +1113,8 @@ pub trait SymmetricDecryptionKey<
 /// A key that can begin a whole-block encryption: the encryption half of a key for CBC without
 /// a padding layer. The encryptor is a [`BlockCipherEncryptor`], whose buffers are
 /// block-aligned arrays checked at compile time; data of arbitrary length goes through a padded
-/// mode and [`SymmetricEncryptionKey`] instead.
+/// mode and [`SymmetricEncryptionKey`] instead. The init data is drawn by default and taken from
+/// the caller by the `_nonce` forms, with the obligation [`SymmetricEncryptionKey`] describes.
 pub trait BlockEncryptionKey<
     const KEY_LEN: usize,
     const INIT_DATA_LEN: usize,
@@ -1053,6 +1137,11 @@ pub trait BlockEncryptionKey<
         rng: &mut dyn RNG,
     ) -> Result<(Self::Encryptor<'k>, [u8; INIT_DATA_LEN]), SymmetricCipherError>;
 
+    /// Begins an encryption under init data the caller supplies. Infallible, as
+    /// [`BlockDecryptionKey::create_decryptor`] is.
+    fn create_encryptor_nonce<'k>(&'k self, init_data: &[u8; INIT_DATA_LEN])
+    -> Self::Encryptor<'k>;
+
     /// One-shot: encrypts `data`, which must be a whole number of blocks, in place under init
     /// data drawn from `rng`, and returns the number of bytes written with the init data.
     ///
@@ -1071,6 +1160,23 @@ pub trait BlockEncryptionKey<
         let (mut enc, init_data) = self.create_encryptor(rng)?;
         let written = enc.do_encrypt_blocks_inplace(blocks)?;
         Ok((written, init_data))
+    }
+
+    /// As [`encrypt_inplace`](Self::encrypt_inplace) under init data the caller supplies, which
+    /// is not returned.
+    ///
+    /// # Errors
+    /// [`SymmetricCipherError::DataNotBlockAligned`] if `data.len()` is not a multiple of
+    /// `BLOCK_LEN`; otherwise the encryptor's own refusals.
+    fn encrypt_inplace_nonce(
+        &self,
+        init_data: &[u8; INIT_DATA_LEN],
+        data: &mut [u8],
+    ) -> Result<usize, SymmetricCipherError> {
+        let (blocks, []) = data.as_chunks_mut::<BLOCK_LEN>() else {
+            return Err(SymmetricCipherError::DataNotBlockAligned);
+        };
+        self.create_encryptor_nonce(init_data).do_encrypt_blocks_inplace(blocks)
     }
 }
 
@@ -1108,17 +1214,14 @@ pub trait BlockDecryptionKey<
     }
 }
 
-// The MAC worker is bounded on `MAC` as a whole for now: splitting its finals into `MACGenerator`
-// and `MACVerifier` while `MAC` still carries them would put the same method names on two traits,
-// which is ambiguous at every call site that has both in scope (`do_update` is on `MAC`, `do_final`
-// would be on both). The split waits on `MAC` losing its finals; its constructors are already gone.
-
 /// A key that can generate MACs. Each call to [`create_generator`](Self::create_generator) starts
 /// a fresh worker over the key's per-key state, so any number of generators can be in flight from
-/// one key and finish in any order; the key is never changed by use.
-pub trait MacGenerationKey {
-    /// The streaming worker this key produces for generation, borrowing the key for `'k`.
-    type Generator<'k>: MAC
+/// one key and finish in any order; the key is never changed by use. `MAC_LEN` is the tag length,
+/// the construction's full output: the hash's output length for HMAC, the block length for CMAC,
+/// the length a KMAC key was made for.
+pub trait MacGenerationKey<const MAC_LEN: usize> {
+    /// The streaming generator this key produces, borrowing the key for `'k`.
+    type Generator<'k>: MACGenerator<MAC_LEN>
     where
         Self: 'k;
 
@@ -1126,43 +1229,146 @@ pub trait MacGenerationKey {
     /// check.
     fn create_generator<'k>(&'k self) -> Self::Generator<'k>;
 
-    /// One-shot: the MAC of `data` into `out`, which is zeroized first; returns the number of
-    /// bytes written.
-    ///
-    /// # Errors
-    /// [`MACError::InvalidLength`] if `out` is shorter than the worker's minimum output.
-    fn mac_out(&self, data: &[u8], out: &mut [u8]) -> Result<usize, MACError> {
-        out.fill(0);
+    /// One-shot: the tag of `data` into `out`, written in full; returns the number of bytes
+    /// written, always `MAC_LEN`.
+    fn mac_out(&self, data: &[u8], out: &mut [u8; MAC_LEN]) -> usize {
         let mut generator = self.create_generator();
         generator.do_update(data);
         generator.do_final_out(out)
     }
 
-    /// One-shot: the full-length MAC of `data`.
-    #[cfg(feature = "std")]
-    fn mac(&self, data: &[u8]) -> Vec<u8> {
-        let mut generator = self.create_generator();
-        generator.do_update(data);
-        generator.do_final()
+    /// One-shot: the tag of `data`.
+    fn mac(&self, data: &[u8]) -> [u8; MAC_LEN] {
+        let mut out = [0u8; MAC_LEN];
+        self.mac_out(data, &mut out);
+        out
     }
 }
 
 /// A key that can verify MACs; see [`MacGenerationKey`] for the lifetime of the workers. A key
 /// may implement this and not [`MacGenerationKey`], which is what a verify-only token key is.
-pub trait MacVerificationKey {
-    /// The streaming worker this key produces for verification, borrowing the key for `'k`.
-    type Verifier<'k>: MAC
+pub trait MacVerificationKey<const MAC_LEN: usize> {
+    /// The streaming verifier this key produces, borrowing the key for `'k`.
+    type Verifier<'k>: MACVerifier<MAC_LEN>
     where
         Self: 'k;
 
     /// Begins the verification of a new message. Infallible.
     fn create_verifier<'k>(&'k self) -> Self::Verifier<'k>;
 
-    /// One-shot: whether `mac` is the MAC of `data`, compared in constant time.
-    fn verify(&self, data: &[u8], mac: &[u8]) -> bool {
-        let mut ver = self.create_verifier();
-        ver.do_update(data);
-        ver.do_verify_final(mac)
+    /// One-shot: checks `mac` against `data`, in constant time.
+    ///
+    /// # Errors
+    /// [`MACError::VerificationFailed`] if `mac` is not the tag of `data` under this key.
+    fn verify(&self, data: &[u8], mac: &[u8; MAC_LEN]) -> Result<(), MACError> {
+        let mut verifier = self.create_verifier();
+        verifier.do_update(data);
+        verifier.do_verify_final(mac)
+    }
+}
+
+/// A key that generates MACs bound to a nonce: GMAC (SP 800-38D Sec 5.2). The shape is
+/// [`AeadEncryptionKey`]'s with no ciphertext: every form without `_nonce` in its name draws the
+/// nonce from the RNG it is given and returns it, and the `_nonce` forms take the nonce from a
+/// caller who manages its own, who then takes on the obligation that it never repeat under this
+/// key. The verifier takes the nonce the tag was made under.
+pub trait NonceMacGenerationKey<const NONCE_LEN: usize, const MAC_LEN: usize> {
+    /// The streaming generator this key produces, borrowing the key for `'k`.
+    type Generator<'k>: MACGenerator<MAC_LEN>
+    where
+        Self: 'k;
+
+    /// Begins a tag under a nonce drawn from `rng`, which is returned alongside the generator and
+    /// must reach the verifier.
+    ///
+    /// # Errors
+    /// [`MACError::RNGError`] if the nonce draw fails; nothing else can.
+    fn create_generator<'k>(
+        &'k self,
+        rng: &mut dyn RNG,
+    ) -> Result<(Self::Generator<'k>, [u8; NONCE_LEN]), MACError>;
+
+    /// Begins a tag under a nonce the caller supplies. Infallible.
+    fn create_generator_nonce<'k>(&'k self, nonce: &[u8; NONCE_LEN]) -> Self::Generator<'k>;
+
+    /// One-shot: the tag of `data` under a nonce drawn from `rng`, into `out`, written in full;
+    /// returns the number of bytes written, always `MAC_LEN`, with the nonce.
+    ///
+    /// # Errors
+    /// As [`create_generator`](Self::create_generator).
+    fn mac_out(
+        &self,
+        rng: &mut dyn RNG,
+        data: &[u8],
+        out: &mut [u8; MAC_LEN],
+    ) -> Result<(usize, [u8; NONCE_LEN]), MACError> {
+        out.fill(0);
+        let (mut generator, nonce) = self.create_generator(rng)?;
+        generator.do_update(data);
+        Ok((generator.do_final_out(out), nonce))
+    }
+
+    /// One-shot: the nonce drawn from `rng` and the tag of `data` under it, in that order, as
+    /// they travel.
+    ///
+    /// # Errors
+    /// As [`create_generator`](Self::create_generator).
+    fn mac(
+        &self,
+        rng: &mut dyn RNG,
+        data: &[u8],
+    ) -> Result<([u8; NONCE_LEN], [u8; MAC_LEN]), MACError> {
+        let mut out = [0u8; MAC_LEN];
+        let (_, nonce) = self.mac_out(rng, data, &mut out)?;
+        Ok((nonce, out))
+    }
+
+    /// One-shot: the tag of `data` under `nonce` into `out`, written in full; returns the number
+    /// of bytes written, always `MAC_LEN`.
+    fn mac_nonce_out(
+        &self,
+        nonce: &[u8; NONCE_LEN],
+        data: &[u8],
+        out: &mut [u8; MAC_LEN],
+    ) -> usize {
+        let mut generator = self.create_generator_nonce(nonce);
+        generator.do_update(data);
+        generator.do_final_out(out)
+    }
+
+    /// One-shot: the tag of `data` under `nonce`.
+    fn mac_nonce(&self, nonce: &[u8; NONCE_LEN], data: &[u8]) -> [u8; MAC_LEN] {
+        let mut out = [0u8; MAC_LEN];
+        self.mac_nonce_out(nonce, data, &mut out);
+        out
+    }
+}
+
+/// A key that verifies MACs bound to a nonce; the counterpart of [`NonceMacGenerationKey`]. A key
+/// may implement this and not the generating trait, which is what a verify-only key is.
+pub trait NonceMacVerificationKey<const NONCE_LEN: usize, const MAC_LEN: usize> {
+    /// The streaming verifier this key produces, borrowing the key for `'k`.
+    type Verifier<'k>: MACVerifier<MAC_LEN>
+    where
+        Self: 'k;
+
+    /// Begins the verification of a tag made under `nonce`. Infallible.
+    fn create_verifier<'k>(&'k self, nonce: &[u8; NONCE_LEN]) -> Self::Verifier<'k>;
+
+    /// One-shot: checks `mac` against `data` under `nonce`, in constant time.
+    ///
+    /// # Errors
+    /// [`MACError::VerificationFailed`] if `mac` is not the tag of `data` under `nonce` and this
+    /// key.
+    fn verify(
+        &self,
+        nonce: &[u8; NONCE_LEN],
+        data: &[u8],
+        mac: &[u8; MAC_LEN],
+    ) -> Result<(), MACError> {
+        let mut verifier = self.create_verifier(nonce);
+        verifier.do_update(data);
+        verifier.do_verify_final(mac)
     }
 }
 
@@ -1274,6 +1480,7 @@ pub trait KeyUnwrappingKey<const KEK_LEN: usize> {
         ciphertext: &[u8; CT_LEN],
         key: &mut Secret<[u8; KEY_LEN]>,
     ) -> Result<usize, SymmetricCipherError> {
+        key.zeroize();
         self.create_unwrapper().unwrap_key_out(ciphertext, key)
     }
 

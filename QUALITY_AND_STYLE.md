@@ -159,8 +159,10 @@ The following suffixes can be applied
 * `_rng`: indicates that this version of the function sources its random numbers from a provided `&mut dyn RNG` instead
   of from the default library RNG. `_rng(.., &mut dyn RNG)`. Keyed primitives do not have it: their constructors and
   one-shots take the RNG, full stop.
-* `_nonce`: on an AEAD key, the twin that takes the nonce from the caller instead of drawing it from the RNG, and so
-  does not return one.
+* `_nonce`: on a key whose encryptor takes init data (an AEAD, CBC, CFB, CTR or stream cipher key), the twin that
+  takes the nonce or IV from the caller instead of drawing it from the RNG, and so does not return one. The caller
+  then carries the obligation the drawing form discharges: unpredictability for a CBC or CFB IV, uniqueness for a
+  nonce.
 * `_out / _inplace`: indicates that the function works in the provided buffer. `_out` indicates that the function takes
   an output buffer, which may be oversized, and returns the number of bytes written to it:
   `_out(.., out: &mut [u8] -> Result<usize, SymmetricCipherError>`. `_inplace` indicates that the input and output are
@@ -180,7 +182,8 @@ _{init, update, final, etc}_{rng}_{out, out_len, inplace}
 
 Any function that takes an output buffer via an `_out` function must zeroize the provided output buffer via a
 `out.fill(0)` prior to writing to it. This must be done first, before even any error checking so that no stale content
-is left in the output buffer, even in the case of an error.
+is left in the output buffer, even in the case of an error. The one exception is an infallible function whose output
+is a `[u8; N]` it overwrites in full: nothing stale can remain, so it does not clear first.
 
 A local that holds secret-derived data -- a key or scalar's limbs, a field element or point computed from one, a
 lookup's copy of a table entry -- is zeroized once, at the end of its lifetime, through its type's `zeroize` (built on

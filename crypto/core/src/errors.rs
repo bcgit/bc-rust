@@ -85,22 +85,25 @@ pub enum KEMError {
     KDFError(KDFError),
 }
 
-///
+/// Errors of the key-agreement traits ([`crate::agreement_key`], [`crate::traits::KeyAgreement`]).
 #[derive(Debug, PartialEq, Eq)]
 #[non_exhaustive]
 pub enum KeyAgreementError {
-    ///
+    /// A failure the other variants do not describe, with a message.
     GenericError(&'static str),
-    ///
-    ConsistencyCheckFailed(&'static str),
-    /// A key encoding could not be decoded, for example because it is the wrong length.
+    /// The primitive produced no shared secret: for ECC CDH, SP 800-56Ar3 Section 5.7.1.2
+    /// step 2, the computed point is the point at infinity.
+    AgreementFailed,
+    /// An encoded key was not of the expected length or form, or failed the validation its
+    /// decoding carries (a public key off the curve, a private key outside `[1, n - 1]`). The
+    /// length is part of the form: there is no separate length variant.
     DecodingError(&'static str),
-    /// The peer's public key is unusable for key agreement, for example a point of small order.
-    InvalidPublicKey(&'static str),
-    ///
-    KeyGenError(&'static str),
-    ///
+    /// The shared secret or derived key could not be typed or labelled as the algorithm asks.
+    KeyMaterialError(KeyMaterialError),
+    /// The RNG refused or failed to deliver, or is weaker than the algorithm requires.
     RNGError(RNGError),
+    /// The KDF an algorithm derives its output through refused the derivation.
+    KDFError(KDFError),
 }
 
 ///
@@ -111,12 +114,17 @@ pub enum MACError {
     GenericError(&'static str),
     ///
     HashError(HashError),
-    ///
+    /// A run-time-length buffer or tag that is not the construction's length: an output buffer
+    /// shorter than the tag, or a tag offered for verification at another length.
     InvalidLength(&'static str),
     ///
     InvalidState(&'static str),
     ///
     KeyMaterialError(KeyMaterialError),
+    /// The RNG a nonce was to be drawn from failed or is too weak.
+    RNGError(RNGError),
+    /// The tag is not the MAC of the message under the key.
+    VerificationFailed,
 }
 
 ///
@@ -287,14 +295,26 @@ impl From<RNGError> for KEMError {
     }
 }
 
+impl From<KDFError> for KEMError {
+    fn from(e: KDFError) -> KEMError {
+        Self::KDFError(e)
+    }
+}
+
+impl From<KeyMaterialError> for KeyAgreementError {
+    fn from(e: KeyMaterialError) -> KeyAgreementError {
+        Self::KeyMaterialError(e)
+    }
+}
+
 impl From<RNGError> for KeyAgreementError {
     fn from(e: RNGError) -> KeyAgreementError {
         Self::RNGError(e)
     }
 }
 
-impl From<KDFError> for KEMError {
-    fn from(e: KDFError) -> KEMError {
+impl From<KDFError> for KeyAgreementError {
+    fn from(e: KDFError) -> KeyAgreementError {
         Self::KDFError(e)
     }
 }
@@ -308,6 +328,12 @@ impl From<KeyMaterialError> for MACError {
 impl From<HashError> for MACError {
     fn from(e: HashError) -> MACError {
         Self::HashError(e)
+    }
+}
+
+impl From<RNGError> for MACError {
+    fn from(e: RNGError) -> MACError {
+        Self::RNGError(e)
     }
 }
 

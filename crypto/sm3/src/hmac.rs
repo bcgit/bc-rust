@@ -7,7 +7,7 @@
 //! SM3-specific parameters via [`HMACParams`] and publishes the resulting type alias, so that HMAC
 //! over SM3 is found in this crate, and [`bouncycastle_hmac`] serves as a utility crate rather than
 //! as part of the library's public API. See [`bouncycastle_hmac`] for the full description of the
-//! three-phase [`MAC`] lifecycle and key typing.
+//! key and the [`MACGenerator`] / [`MACVerifier`] workers it hands out.
 //!
 //! A key of any length is accepted: per RFC 2104, a key longer than the hash's block -- the 512-bit
 //! block GB/T 32905-2016 s. 5.2 pads to -- is pre-hashed to the output length. The key's two pad
@@ -29,13 +29,13 @@
 //!
 //! # 🚨 Security Considerations 🚨
 //!
-//! * Verify with [`MAC::verify`] or [`MAC::do_verify_final`] rather than computing the MAC yourself
-//!   and comparing: those use a constant-time comparison, while `==` on the byte slices leaks how
-//!   many leading bytes matched.
-//! * Truncating the MAC output below [`MIN_FIPS_DIGEST_LEN`] (4 bytes) is rejected, per FIPS 140-3
-//!   IG C.L Resolution C.4 (formerly NIST SP 800-107r1 Section 5.3.3). That is a floor, not a
-//!   recommendation -- RFC 2104 Section 5 recommends that the output length "be not less than half
-//!   the length of the hash output ... and not less than 80 bits".
+//! * Verify with [`MacVerificationKey::verify`] or [`MACVerifier::do_verify_final`] rather than
+//!   computing the MAC yourself and comparing: those use a constant-time comparison, while `==` on
+//!   the byte slices leaks how many leading bytes matched.
+//! * The tag is the hash's full output; a protocol that truncates it does so on the array it gets
+//!   back, and the verifier takes only the full length. RFC 2104 Section 5 recommends that a
+//!   truncated length "be not less than half the length of the hash output ... and not less than
+//!   80 bits"; FIPS 140-3 IG C.L Resolution C.4 sets the floor at 32 bits.
 //! * SM3 is a Merkle-Damgard construction and so is subject to length extension; `SM3(k || m)` is
 //!   not a secure MAC and HMAC-SM3 is the right construction for keyed hashing over SM3.
 
@@ -50,9 +50,11 @@ use bouncycastle_hmac::{HMAC, HMACParams};
 #[allow(unused_imports)]
 use bouncycastle_core::key_material::KeyType;
 #[allow(unused_imports)]
-use bouncycastle_core::traits::MAC;
+use bouncycastle_core::symmetric_key::MacVerificationKey;
 #[allow(unused_imports)]
-use bouncycastle_hmac::{HmacKey, MIN_FIPS_DIGEST_LEN};
+use bouncycastle_core::traits::{MACGenerator, MACVerifier};
+#[allow(unused_imports)]
+use bouncycastle_hmac::HmacKey;
 /*** end of doc-only imports ***/
 
 /*** String constants ***/
@@ -62,7 +64,7 @@ pub const HMAC_SM3_NAME: &str = "HMAC-SM3";
 /*** Type aliases ***/
 /// Public type for HMAC using SM3.
 #[allow(non_camel_case_types)]
-pub type HMAC_SM3<'k> = HMAC<'k, SM3>;
+pub type HMAC_SM3<'k, Dir> = HMAC<'k, SM3, Dir>;
 impl HMACParams for SM3 {
     type MACKey = KeyMaterial<{ <SM3 as HashAlgParams>::OUTPUT_LEN }>;
     const HMAC_ALG_NAME: &'static str = HMAC_SM3_NAME;

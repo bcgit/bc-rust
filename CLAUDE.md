@@ -105,10 +105,10 @@ The workspace has four top-level kinds of member:
 
 ### The `core` / `core-test-framework` / `factory` spine
 
-- `crypto/core` defines the abstract traits (`Hash`, `KDF`, `MAC`, `KEM`, `Signature`, `RNG`, `Algorithm`, `HashAlgParams`, …), error enums (`HashError`, `KDFError`, `KEMError`, `MACError`, `RNGError`, `SignatureError`), and the `KeyMaterial` / `KeyType` wrapper for key bytes. Sensitive data is held in `bouncycastle_utils::secret::Secret<T>`, which `KeyMaterial` is built on (see the sensitive-data rule under "APIs" in QUALITY_AND_STYLE.md).
+- `crypto/core` defines the abstract traits (`Hash`, `KDF`, `MACGenerator` / `MACVerifier`, `KEM`, `Signature`, `RNG`, `Algorithm`, `HashAlgParams`, …), error enums (`HashError`, `KDFError`, `KEMError`, `MACError`, `RNGError`, `SignatureError`), and the `KeyMaterial` / `KeyType` wrapper that all sensitive byte buffers are required to use (see `Secret` super-trait requirement in QUALITY_AND_STYLE.md).
 - `crypto/core-test-framework` contains the shared per-trait test suite (`hash.rs`, `kdf.rs`, `kem.rs`, `mac.rs`, `signature.rs`). New implementations of a core trait must be exercised through this framework — it's how trait conformance and error-condition coverage stay consistent across implementations.
 - `crypto/cipher-test-framework` holds the suites every block cipher crate runs over `BlockCipherKey<P, M>`: the keys under every mode through the core suites, the padded and stream-mode wiring checks, and the Wycheproof runners, each generic over the permutation and run at one key length per call. It is a sibling of `core-test-framework` rather than part of it because it names `bouncycastle-cipher`'s types, and that crate's own tests depend on the core framework. A new block cipher's `mode_key_tests.rs`, `padded_alias_tests.rs`, `stream_mode_alias_tests.rs` and `*_wycheproof.rs` are calls into it; what stays in the crate is the cipher's own known answers, aliases and sizes.
-- `crypto/factory` provides enum-based string-name factories (`HashFactory`, `KDFFactory`, `MACFactory`, `RNGFactory`, `XOFFactory`). Each factory enum impls the underlying trait so it can be used transparently as that primitive, except `MACFactory`, which is a key enum implementing the MAC role traits and handing out a `MACFactoryWorker` that impls `MAC`; and each impls `AlgorithmFactory` (`new(name)`, `default_128_bit()`, `default_256_bit()`). When adding a new primitive that fits an existing trait, register it in the corresponding factory.
+- `crypto/factory` provides enum-based string-name factories (`HashFactory`, `KDFFactory`, `MACFactory`, `RNGFactory`, `XOFFactory`). Each factory enum impls the underlying trait so it can be used transparently as that primitive, except `MACFactory`, which is a key enum whose algorithm is chosen at run time and so keeps run-time tag lengths: inherent `mac` / `mac_out` / `verify` over slices, and `create_generator` / `create_verifier` handing out a `MACFactoryWorker<Dir>` with inherent finals, where the role traits take `[u8; MAC_LEN]`; and each impls `AlgorithmFactory` (`new(name)`, `default_128_bit()`, `default_256_bit()`). When adding a new primitive that fits an existing trait, register it in the corresponding factory.
 
 Trait/factory/CLI is the standard layering: a new algorithm typically requires (a) the primitive crate, (b) implementing the relevant `core` trait, (c) wiring it into the matching factory, (d) a CLI subcommand in `cli/src/*_cmd.rs` registered in `cli/src/main.rs`.
 
@@ -211,7 +211,7 @@ The symmetric cipher and MAC traits lost their constructors and key-taking one-s
 What that taught, as mechanics for the next trait that sheds a constructor:
 
 - **The trait describes a worker that exists.** `SymmetricCipherEncryptor`, `AEADCipherEncryptor`,
-  `BlockCipherEncryptor`, `StreamCipherEncryptor`, their decrypting halves and `MAC` carry only
+  `BlockCipherEncryptor`, `StreamCipherEncryptor`, their decrypting halves and `MACGenerator` / `MACVerifier` carry only
   streaming methods and length helpers. Construction is a key object's (`create_encryptor(rng)`,
   `create_decryptor(init)`, `create_generator()`), and the one-shots are provided on the role
   traits in `core::symmetric_key` over those. `KEY_LEN` is on the role and mode traits, never on
@@ -232,7 +232,7 @@ What that taught, as mechanics for the next trait that sheds a constructor:
 - **Test the key, not the worker pair.** The framework runners are `test_key` over a role pair
   and the construction suites in `core_test_framework::from_key_material`; a test of "a key of the
   wrong type is rejected" belongs to the construction suite, once, not to each mode's tests.
-  Known-answer suites keep pinning their IV through `create_encryptor` and a `FixedSeedRNG`.
+  Known-answer suites pin their IV through `create_encryptor_nonce`.
 - **Workers borrow the key.** The role and mode traits hand out workers through a generic
   associated type with a lifetime, `type Encryptor<'k>`, and the cipher-crate workers hold
   `&'k` to the mode's key state, so `create_encryptor` copies no schedule and a worker cannot
@@ -313,6 +313,28 @@ agreement next:
   `[u8; PK_LEN]`; the array forms are the `KEMPublicKey<N>` impls, bound `P: PublicKeyLen<N>`.
 - **A `--jobs N` mutants run owns N scratch trees.** Every `/tmp/cargo-mutants-bc-rust-*.tmp`
   with a fresh mtime belongs to the live run; deleting any of them kills it.
+
+## Lessons from the MAC rework (November 2026)
+
+`MAC` became `MACGenerator<MAC_LEN>` / `MACVerifier<MAC_LEN>` on feature/mac-rework, with the
+direction in the worker types. Mechanics to reuse:
+
+- **Two traits with a `do_update` each need two types.** A type implementing both makes
+  `w.do_update(..)` ambiguous wherever both traits are in scope, so every MAC worker carries
+  `Dir` (`HMAC<'k, H, Dir>`, `Poly1305<Dir>`) and implements one trait per marker. The
+  markers live in `core::direction` so that crates `cipher` does not reach can name them.
+- **A const the parameters already spell as a type reaches a const parameter through an
+  associated-type equality bound.** `HmacKey<H>: MacGenerationKey<N> where
+  H: HMACParams<MACKey = KeyMaterial<N>>`: the solver normalizes `MACKey` and unifies `N`, so
+  `key.mac(msg)` needs no annotation, and `const { assert!(N == H::OUTPUT_LEN) }` in the worker
+  makes a foreign `HMACParams` with the wrong `MACKey` a compile error.
+- **A type alias's default const is not applied in a path expression.** `KMAC128Key::<32>` is
+  needed at `KMAC128Key::with_params(..)` in expression position; `let key: KMAC128Key = ..`
+  takes the default. Code generic over the hash (HKDF, its tests) uses the hazmat halves
+  `inner_state` / `finish_out` rather than the role, which wants the length as a const.
+- **A run-time-length tag has one home, the factory.** `MACFactory` and the `kmac*` CLI
+  commands (which bind their length through KMACXOF's final read, SP 800-185 Sec 4.3.1) are
+  where a length chosen at run time lives; everywhere else it is the key type's.
 
 ## Working from specifications
 

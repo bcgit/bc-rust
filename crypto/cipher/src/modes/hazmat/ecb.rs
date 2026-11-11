@@ -155,6 +155,10 @@ where
     ) -> Result<(Self::Encryptor<'k>, [u8; 0]), SymmetricCipherError> {
         Ok((PaddedBlockCipherEncryptor::from_inner(Ecb::from_perm(state)), []))
     }
+
+    fn encrypt_init_nonce<'k>(state: &'k Self::KeyState, _: &[u8; 0]) -> Self::Encryptor<'k> {
+        PaddedBlockCipherEncryptor::from_inner(Ecb::from_perm(state))
+    }
 }
 
 impl<P, Pad, const KEY_LEN: usize, const BLOCK_LEN: usize>

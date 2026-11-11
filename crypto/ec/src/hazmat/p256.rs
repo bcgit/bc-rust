@@ -80,6 +80,12 @@ impl P256FieldElement {
         self.0
     }
 
+    /// [`Self::to_limbs`] into `out`: for a secret value, so that no copy of it is staged in a
+    /// return slot.
+    pub fn to_limbs_into(&self, out: &mut [u64; 4]) {
+        out.copy_from_slice(&self.0);
+    }
+
     /// The limbs exactly as this type stores them: the canonical value itself, so this is
     /// [`Self::to_limbs`] by another name. Paired with [`Self::from_internal_limbs`] so the
     /// crate's point arithmetic can select between the coordinates of two existing points without

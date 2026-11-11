@@ -5,12 +5,14 @@
 
 use bouncycastle_aes::hazmat::{AES128Internal, AES256Internal};
 use bouncycastle_aes::{AES_CMAC_128, AES_CMAC_256, AES128Key, AES192Key, AES256Key};
-use bouncycastle_cipher::modes::{CMAC, CMAC_MIN_TAG_LEN, ModeNames};
+use bouncycastle_cipher::modes::{CMAC, ModeNames};
+use bouncycastle_cipher::{Decrypting, Encrypting};
+use bouncycastle_core::errors::MACError;
 use bouncycastle_core::hazmat::do_hazardous_operations;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::symmetric_key::{FromKeyMaterial, MacGenerationKey, MacVerificationKey};
-use bouncycastle_core::traits::{Algorithm, AlgorithmInfo, MAC};
+use bouncycastle_core::traits::{Algorithm, AlgorithmInfo, MACGenerator};
 use bouncycastle_core_test_framework::from_key_material::TestFrameworkFromKeyMaterial;
 use bouncycastle_core_test_framework::mac::TestFrameworkMAC;
 use bouncycastle_hex as hex;
@@ -27,6 +29,11 @@ fn mac_key<const N: usize>(key_hex: &str) -> KeyMaterial<N> {
         .unwrap();
     }
     key
+}
+
+/// A 16-byte tag from hex.
+fn tag(hex: &str) -> [u8; 16] {
+    hex::decode(hex).unwrap().try_into().expect("a 16-byte tag")
 }
 
 // NIST CSRC "CMAC Mode for Authentication" examples (AES_CMAC.pdf, linked from SP 800-38B
@@ -63,16 +70,16 @@ fn csrc_examples() {
     let msg = hex::decode(MSG).unwrap();
     let tf = TestFrameworkMAC::new();
     let key_128 = AES128Key::<CMAC>::from_key_material(&mac_key::<16>(KEY_128)).unwrap();
-    for (mlen, tag) in MLENS.iter().zip(TAGS_128) {
-        tf.test_mac_key(&key_128, &msg[..*mlen], &hex::decode(tag).unwrap());
+    for (mlen, t) in MLENS.iter().zip(TAGS_128) {
+        tf.test_mac_key(&key_128, &msg[..*mlen], &tag(t));
     }
     let key_192 = AES192Key::<CMAC>::from_key_material(&mac_key::<24>(KEY_192)).unwrap();
-    for (mlen, tag) in MLENS.iter().zip(TAGS_192) {
-        tf.test_mac_key(&key_192, &msg[..*mlen], &hex::decode(tag).unwrap());
+    for (mlen, t) in MLENS.iter().zip(TAGS_192) {
+        tf.test_mac_key(&key_192, &msg[..*mlen], &tag(t));
     }
     let key_256 = AES256Key::<CMAC>::from_key_material(&mac_key::<32>(KEY_256)).unwrap();
-    for (mlen, tag) in MLENS.iter().zip(TAGS_256) {
-        tf.test_mac_key(&key_256, &msg[..*mlen], &hex::decode(tag).unwrap());
+    for (mlen, t) in MLENS.iter().zip(TAGS_256) {
+        tf.test_mac_key(&key_256, &msg[..*mlen], &tag(t));
     }
 }
 
@@ -96,11 +103,7 @@ fn streaming_split_points() {
         }
         assert_eq!(cmac.do_final(), expected, "mlen {mlen}, byte at a time");
     }
-    assert_eq!(
-        key.mac(&msg),
-        hex::decode(TAGS_128[3]).unwrap(),
-        "the 64-byte one-shot is the CSRC example"
-    );
+    assert_eq!(key.mac(&msg), tag(TAGS_128[3]), "the 64-byte one-shot is the CSRC example");
 }
 
 /// The key's construction suite at both ends of the key-length range: a `MACKey` of the right
@@ -114,23 +117,27 @@ fn the_key_enforces_the_material_policy() {
         .test::<32, AES256Key<CMAC>>(AES256Internal::CMAC_ALG_NAME, SecurityStrength::_256bit);
 }
 
+/// The tag is the whole block; a protocol that truncates does so on what it gets back, and the
+/// verifier takes only the full tag.
 #[test]
-fn truncation_to_the_minimum_tag() {
+fn the_tag_is_the_whole_block() {
     let key = AES128Key::<CMAC>::from_key_material(&mac_key::<16>(KEY_128)).unwrap();
     let msg = hex::decode(MSG).unwrap();
-    let full = hex::decode(TAGS_128[2]).unwrap();
-    let mut out = [0xAAu8; CMAC_MIN_TAG_LEN];
-    assert_eq!(key.mac_out(&msg[..20], &mut out).unwrap(), 8);
-    assert_eq!(out[..], full[..8]);
-    assert!(!key.verify(&msg[..20], &full[..8]));
+    let full = key.mac(&msg[..20]);
+    assert_eq!(full, tag(TAGS_128[2]));
+    assert_eq!(key.verify(&msg[..20], &full), Ok(()));
+    let mut truncated_then_padded = full;
+    truncated_then_padded[8..].fill(0);
+    assert_eq!(key.verify(&msg[..20], &truncated_then_padded), Err(MACError::VerificationFailed));
 }
 
 #[test]
 fn algorithm_params() {
-    assert_eq!(AES_CMAC_128::ALG_NAME, "AES_CMAC_128");
-    assert_eq!(AES_CMAC_256::MAX_SECURITY_STRENGTH, SecurityStrength::_256bit);
+    assert_eq!(AES_CMAC_128::<Encrypting>::ALG_NAME, "AES_CMAC_128");
+    assert_eq!(AES_CMAC_128::<Decrypting>::ALG_NAME, "AES_CMAC_128");
+    assert_eq!(AES_CMAC_256::<Encrypting>::MAX_SECURITY_STRENGTH, SecurityStrength::_256bit);
     let key = AES192Key::<CMAC>::from_key_material(&mac_key::<24>(KEY_192)).unwrap();
     let cmac = key.create_generator();
-    assert_eq!(cmac.output_len(), 16);
     assert_eq!(cmac.max_security_strength(), SecurityStrength::_192bit);
+    assert_eq!(key.create_verifier().alg_name(), "AES_CMAC_192");
 }

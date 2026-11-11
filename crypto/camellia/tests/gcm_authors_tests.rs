@@ -16,7 +16,9 @@ use bouncycastle_cipher::modes::{GCM, GMAC};
 use bouncycastle_core::hazmat::do_hazardous_operations;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::symmetric_key::{AeadDecryptionKey, AeadEncryptionKey, FromKeyMaterial};
+use bouncycastle_core::symmetric_key::{
+    AeadDecryptionKey, AeadEncryptionKey, FromKeyMaterial, NonceMacGenerationKey,
+};
 use common::bytes;
 
 /// (case, key, IV, AAD, plaintext, ciphertext, tag).
@@ -189,12 +191,10 @@ fn the_empty_cases_are_gmac_known_answers() {
         let got = match case.1.len() {
             32 => Camellia128Key::<GMAC>::from_key_material(&mac_key::<16>(case.1))
                 .unwrap()
-                .create_generator_nonce(&iv)
-                .mac(&[]),
+                .mac_nonce(&iv, &[]),
             _ => Camellia256Key::<GMAC>::from_key_material(&mac_key::<32>(case.1))
                 .unwrap()
-                .create_generator_nonce(&iv)
-                .mac(&[]),
+                .mac_nonce(&iv, &[]),
         };
         assert_eq!(got, expected, "case {}", case.0);
     }

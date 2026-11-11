@@ -45,12 +45,19 @@ use bouncycastle_utils::ct::Condition;
 /// Panics if `bytes` is longer than the limbs can hold: a caller passing the wrong width is a
 /// programming error, not a data error.
 pub fn limbs_from_be_bytes<const L2: usize>(bytes: &[u8]) -> [u64; L2] {
-    assert!(bytes.len() <= 8 * L2, "{} bytes do not fit in {L2} limbs", bytes.len());
     let mut limbs = [0u64; L2];
-    for (i, &byte) in bytes.iter().rev().enumerate() {
-        limbs[i / 8] |= (byte as u64) << (8 * (i % 8));
-    }
+    limbs_from_be_bytes_into(bytes, &mut limbs);
     limbs
+}
+
+/// [`limbs_from_be_bytes`] into `out`, overwritten in full: the form for a value that must not be
+/// staged in a return slot, with `out` the caller's `Secret`.
+pub fn limbs_from_be_bytes_into<const L2: usize>(bytes: &[u8], out: &mut [u64; L2]) {
+    assert!(bytes.len() <= 8 * L2, "{} bytes do not fit in {L2} limbs", bytes.len());
+    out.fill(0);
+    for (i, &byte) in bytes.iter().rev().enumerate() {
+        out[i / 8] |= (byte as u64) << (8 * (i % 8));
+    }
 }
 
 /// `t mod m` for a `2L`-limb `t < m * 2^(64L)` and an `L`-limb modulus `2^(64L-1) < m < 2^(64L)`,
@@ -62,6 +69,20 @@ pub fn reduce<const L: usize, const L2: usize, const L1: usize>(
     m: &[u64; L],
     mu_low: &[u64; L],
 ) -> [u64; L] {
+    let mut out = [0u64; L];
+    reduce_into::<L, L2, L1>(t, m, mu_low, &mut out);
+    out
+}
+
+/// [`reduce`] into `out`, overwritten in full: the form for a result that must not be staged in
+/// a return slot, with `out` the caller's `Secret`. The reduction's own working values are
+/// this function's locals.
+pub fn reduce_into<const L: usize, const L2: usize, const L1: usize>(
+    t: &[u64; L2],
+    m: &[u64; L],
+    mu_low: &[u64; L],
+    out: &mut [u64; L],
+) {
     debug_assert_eq!(L2, 2 * L, "reduce's L2 must be exactly 2 * L");
     debug_assert_eq!(L1, L + 1, "reduce's L1 must be exactly L + 1");
     debug_assert!(m[L - 1] >> 63 == 1, "reduce needs a modulus with its top bit set");
@@ -100,7 +121,5 @@ pub fn reduce<const L: usize, const L2: usize, const L1: usize>(
     }
     debug_assert_eq!(r[L], 0, "r still exceeds L limbs after three subtractions");
 
-    let mut out = [0u64; L];
     out.copy_from_slice(&r[..L]);
-    out
 }

@@ -1,14 +1,14 @@
-//! The cipher, MAC, KEM and signature worker traits are dyn-compatible: a worker can be held
-//! as a trait object (issue #173), as can a hash or XOF, since `Clone` lives on the types rather
-//! than on `Hash`.
+//! The cipher, MAC, KEM, key-agreement and signature worker traits are dyn-compatible: a worker
+//! can be held as a trait object (issue #173), as can a hash or XOF, since `Clone` lives on the
+//! types rather than on `Hash`.
 //! The functions take trait objects and do nothing; compiling them is the test.
 
 use bouncycastle_core::hazmat::KeyStream;
 use bouncycastle_core::traits::{
     AEADCipherDecryptor, AEADCipherEncryptor, BlockCipherDecryptor, BlockCipherEncryptor, Hash,
-    KEMDecapsulator, KEMEncapsulator, KeyUnwrapper, KeyWrapper, MAC, SignatureSigner,
-    SignatureVerifier, StreamCipherDecryptor, StreamCipherEncryptor, SymmetricCipherDecryptor,
-    SymmetricCipherEncryptor, XOF, XOFSqueezer,
+    KEMDecapsulator, KEMEncapsulator, KeyAgreement, KeyUnwrapper, KeyWrapper, MACGenerator,
+    MACVerifier, SignatureSigner, SignatureVerifier, StreamCipherDecryptor, StreamCipherEncryptor,
+    SymmetricCipherDecryptor, SymmetricCipherEncryptor, XOF, XOFSqueezer,
 };
 
 fn symmetric(
@@ -19,12 +19,14 @@ fn symmetric(
 fn aead(_: &mut dyn AEADCipherEncryptor<12, 16, 16>, _: &mut dyn AEADCipherDecryptor<12, 16, 16>) {}
 fn stream(_: &mut dyn StreamCipherEncryptor<16>, _: &mut dyn StreamCipherDecryptor<16>) {}
 fn block(_: &mut dyn BlockCipherEncryptor<16, 16>, _: &mut dyn BlockCipherDecryptor<16, 16>) {}
-fn mac(_: &mut dyn MAC) {}
+fn mac(_: &mut dyn MACGenerator<32>, _: &mut dyn MACVerifier<32>) {}
 fn signature(_: &mut dyn SignatureSigner<64>, _: &mut dyn SignatureVerifier) {}
 /// The run-time-length half of key wrap; the const-generic one-shots are `Self: Sized`.
 fn key_wrap(_: &dyn KeyWrapper, _: &dyn KeyUnwrapper) {}
 fn key_stream(_: &mut dyn KeyStream<12, 16>) {}
 fn kem(_: &dyn KEMEncapsulator<1088, 32>, _: &dyn KEMDecapsulator<1088, 32>) {}
+/// The peer key type is a parameter of the worker trait, so the object type names it.
+fn key_agreement(_: &dyn KeyAgreement<[u8; 65], 32>) {}
 fn hash(_: &mut dyn Hash) {}
 /// A XOF names its squeezer type, so the object type is `dyn XOF<Squeezer = S>`.
 fn xof<S: XOFSqueezer>(_: &mut dyn XOF<Squeezer = S>, _: &mut dyn XOFSqueezer) {}
@@ -34,8 +36,8 @@ fn the_worker_traits_are_dyn_compatible() {
     // Referenced so the functions are not dead code; the compile is the assertion.
     let _ = (
         symmetric as fn(_, _), aead as fn(_, _), stream as fn(_, _), block as fn(_, _),
-        mac as fn(_), signature as fn(_, _), key_wrap as fn(_, _), key_stream as fn(_),
-        kem as fn(_, _), hash as fn(_),
+        mac as fn(_, _), signature as fn(_, _), key_wrap as fn(_, _), key_stream as fn(_),
+        kem as fn(_, _), key_agreement as fn(_), hash as fn(_),
     );
     fn reference_xof<S: XOFSqueezer>() {
         let _ = xof::<S> as fn(_, _);
