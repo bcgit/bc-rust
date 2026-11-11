@@ -14,28 +14,13 @@ use bouncycastle_concatkdf::{
     ConcatKDF_SHA512_256,
 };
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
-use serde_json::Value;
+use bouncycastle_core_test_framework::test_data_loaders::{Value, bc_test_data_json};
 use std::collections::HashMap;
-use std::fs;
-use std::path::Path;
-
-const TEST_DATA_PATH_RELATIVE: &str = "../../../bc-test-data/crypto/acvp/KDA-OneStep-Sp800-56Cr2";
-const TEST_DATA_PATH: &str = "../bc-test-data/crypto/acvp/KDA-OneStep-Sp800-56Cr2";
 
 fn get_test_data(filename: &str) -> Value {
-    let dir = [TEST_DATA_PATH_RELATIVE, TEST_DATA_PATH]
-        .into_iter()
-        .find(|d| Path::new(d).exists())
-        .unwrap_or_else(|| {
-            panic!(
-                "bc-test-data not found (looked in {TEST_DATA_PATH_RELATIVE:?} and \
-                 {TEST_DATA_PATH:?}); the concatenation KDF ACVP suite requires it rather than \
-                 skipping"
-            )
-        });
-    let text = fs::read_to_string(format!("{dir}/{filename}"))
-        .unwrap_or_else(|e| panic!("failed to read ACVP vector file {dir}/{filename}: {e}"));
-    serde_json::from_str(&text).unwrap()
+    bc_test_data_json("crypto/acvp/KDA-OneStep-Sp800-56Cr2", filename).unwrap_or_else(|| {
+        panic!("bc-test-data not found beside this repository; the concatenation KDF ACVP suite requires it rather than skipping")
+    })
 }
 
 fn hex(v: &Value) -> Vec<u8> {

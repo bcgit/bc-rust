@@ -23,7 +23,8 @@
 //! An all-zero `Z` (`x_P = 0`, on the curve for P-256, P-384 and P-521 and not arrangeable
 //! without `d`) reaches the KDF typed `Zeroized` and credits nothing: the X9.63 and
 //! concatenation roles, and HKDF with an empty salt, return a key typed `Unknown` with no
-//! strength, while HKDF with a typed salt credits the salt and returns `CryptographicRandom`.
+//! strength, while HKDF with a `MACKey` salt credits the salt and returns `CryptographicRandom`
+//! (a salt of any other type is credited nothing, as HKDF's docs say).
 //! None of that is an error.
 //!
 //! The length is checked when a role is instantiated, in codegen rather than type checking, so
@@ -125,10 +126,7 @@ pub(crate) fn derive<D: KDF + PairedKdf + ?Sized, const Z_LEN: usize, const SS_L
         )
     };
     // `derive_key_out` zeroizes `out` first and leaves it so on its errors.
-    let written = params
-        .kdf()
-        .derive_key_out(z, params.info(), SS_LEN, out)
-        .map_err(KeyAgreementError::KDFError)?;
+    let written = params.kdf().derive_key_out(z, params.info(), SS_LEN, out)?;
     if written != SS_LEN || out.key_len() != SS_LEN {
         out.zeroize();
         return Err(KeyAgreementError::GenericError("the KDF derived a key of the wrong length"));

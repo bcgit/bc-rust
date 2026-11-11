@@ -5,25 +5,13 @@
 //! has no SHA-1. A missing `bc-test-data` checkout fails the test rather than skipping it.
 
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
+use bouncycastle_core_test_framework::test_data_loaders::bc_test_data;
 use bouncycastle_x963kdf::{X963KDF_SHA224, X963KDF_SHA256, X963KDF_SHA384, X963KDF_SHA512};
-use std::fs;
-use std::path::Path;
-
-const TEST_DATA_PATH_RELATIVE: &str = "../../../bc-test-data/crypto/cavp";
-const TEST_DATA_PATH: &str = "../bc-test-data/crypto/cavp";
 
 fn get_test_data(filename: &str) -> String {
-    let dir = [TEST_DATA_PATH_RELATIVE, TEST_DATA_PATH]
-        .into_iter()
-        .find(|d| Path::new(d).exists())
-        .unwrap_or_else(|| {
-            panic!(
-                "bc-test-data not found (looked in {TEST_DATA_PATH_RELATIVE:?} and \
-                 {TEST_DATA_PATH:?}); the X9.63 KDF CAVP suite requires it rather than skipping"
-            )
-        });
-    fs::read_to_string(format!("{dir}/{filename}"))
-        .unwrap_or_else(|e| panic!("failed to read CAVP vector file {dir}/{filename}: {e}"))
+    bc_test_data("crypto/cavp", filename).unwrap_or_else(|| {
+        panic!("bc-test-data not found beside this repository; the X9.63 KDF CAVP suite requires it rather than skipping")
+    })
 }
 
 struct Record {

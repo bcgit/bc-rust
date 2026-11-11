@@ -25,7 +25,7 @@ use bouncycastle_x963kdf::X963KDF_SHA512;
 pub const SS_LEN: usize = 64;
 
 /// ECC CDH over brainpoolP512r1: the algorithm a [`ECCDHBp512r1PrivateKey`] runs when made into a worker from
-/// `()`. The cofactor is 1 (RFC 5639 Section 3.7 (h = 1)), so `Z` is the same value plain ECDH gives; what the name says
+/// `()`. The cofactor is 1 (see the crate docs), so `Z` is the same value plain ECDH gives; what the name says
 /// is that the peer key was fully validated and the identity checked, as Section 5.7.1.2 asks.
 pub struct ECCDHBp512r1;
 
@@ -69,7 +69,7 @@ pub(crate) fn agree_out(
     peer_pk: &ECCDHBp512r1PublicKey,
     ss: &mut KeyMaterial<SS_LEN>,
 ) -> Result<(), KeyAgreementError> {
-    // 1. Compute the point P = h d_A Q_B. The cofactor h is 1 (RFC 5639 Section 3.7 (h = 1)), so this is [d]Q, in
+    // 1. Compute the point P = h d_A Q_B. The cofactor h is 1 (the crate docs), so this is [d]Q, in
     //    constant time in d; Q passed full validation when the key was decoded.
     let q = Bp512r1JacobianPoint::from_affine(peer_pk.x, peer_pk.y);
     let mut p = multiply_point(sk.scalar(), &q);
@@ -97,9 +97,9 @@ fn z_from_product(
     //    are held in `Secret`s, scrubbed on return.
     let mut z = x_affine(p);
     let mut z_limbs = Secret::<[u64; 8]>::new();
-    *z_limbs = z.to_limbs();
+    z.to_limbs_into(&mut z_limbs);
     let mut Z = Secret::<[u8; SS_LEN]>::new();
-    *Z = bp512r1_sec1::be_bytes_from_limbs(&z_limbs);
+    bp512r1_sec1::be_bytes_from_limbs_into(&z_limbs, &mut Z);
 
     // 4. Destroy the results of all intermediate calculations (including P and z): those this
     //    function holds; the arithmetic's own intermediates are `bouncycastle_ec`'s.
@@ -112,14 +112,16 @@ fn z_from_product(
     // 5. Output Z into the caller's buffer, typed so that a KDF credits it and nothing else
     //    accepts it as a key, at the curve's strength rather than the length-derived default. An
     //    all-zero Z (x_P = 0, a valid field element) is typed Zeroized by the buffer, which says
-    //    so through its courtesy error, and takes no strength; that is not an error.
+    //    so through its courtesy error, and takes no strength; that is not an error. The buffer
+    //    skips that zero test while the caller's hazardous window is open, so an open buffer
+    //    gets an all-zero Z typed SharedSecret: closing the window is the caller's side of it.
     //    Neither error below is reachable (the buffer is SS_LEN bytes and SharedSecret takes a
     //    strength), but each leaves the buffer zeroized, as the doc above says.
     match ss.set_bytes_as_type(&*Z, KeyType::SharedSecret) {
         Ok(()) | Err(KeyMaterialError::ActingOnZeroizedKey) => {}
         Err(e) => {
             ss.zeroize();
-            return Err(KeyAgreementError::KeyMaterialError(e));
+            return Err(e.into());
         }
     }
     if ss.key_type() == KeyType::SharedSecret
@@ -128,7 +130,7 @@ fn z_from_product(
         })
     {
         ss.zeroize();
-        return Err(KeyAgreementError::KeyMaterialError(e));
+        return Err(e.into());
     }
     Ok(())
 }
@@ -277,5 +279,23 @@ mod tests {
         assert!(matches!(z_from_product(&mut o, &mut ss), Err(KeyAgreementError::AgreementFailed)));
         assert_eq!(ss.key_type(), KeyType::Zeroized);
         assert_eq!(ss.key_len(), 0);
+    }
+
+    /// Step 5's typing on a real product (G, so Z is G's x), and step 4's destruction of P, which
+    /// no integration test can see.
+    #[test]
+    fn a_real_product_types_z_at_the_curve_strength_and_zeroizes_the_point() {
+        use bouncycastle_ec::hazmat::bp512r1_domain::{G_X_LIMBS, G_Y_LIMBS};
+        let mut p = Bp512r1JacobianPoint::from_affine(
+            Bp512r1FieldElement::from_limbs(G_X_LIMBS),
+            Bp512r1FieldElement::from_limbs(G_Y_LIMBS),
+        );
+        let mut ss =
+            KeyMaterial::<SS_LEN>::from_bytes_as_type(&[0xFF; SS_LEN], KeyType::Seed).unwrap();
+        assert_eq!(z_from_product(&mut p, &mut ss), Ok(()));
+        assert_eq!(ss.key_type(), KeyType::SharedSecret);
+        assert_eq!(ss.security_strength(), ECCDHBp512r1::MAX_SECURITY_STRENGTH);
+        assert_eq!(ss.ref_to_bytes(), &bp512r1_sec1::be_bytes_from_limbs(&G_X_LIMBS)[..]);
+        assert_eq!([p.x.to_limbs(), p.y.to_limbs(), p.z.to_limbs()], [[0u64; 8]; 3]);
     }
 }

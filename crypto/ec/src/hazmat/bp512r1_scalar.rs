@@ -217,13 +217,12 @@ impl PartialEq for Bp512r1ScalarField {
 impl Eq for Bp512r1ScalarField {}
 
 fn reduce_once(limbs: [u64; 8]) -> [u64; 8] {
-    let (diff, borrow) = crate::nat::sub(&limbs, &N_LIMBS);
-    let mut result = [0u64; 8];
-    ct::conditional_select(Condition::<u64>::from_lsb(borrow), &limbs, &diff, &mut result);
-    result
+    let mut out = [0u64; 8];
+    reduce_once_into(&limbs, &mut out);
+    out
 }
 
-/// [`reduce_once`] of a borrowed value into `out`, in place: `out` takes `limbs - n`, and
+/// The one conditional subtraction of `n`, of a borrowed value into `out`, in place: `out` takes `limbs - n`, and
 /// `limbs` is moved back in under the borrow's mask where the subtraction borrowed. For a
 /// secret value, so that no copy of it is staged in a return slot: `limbs` is the caller's and
 /// `out` the new `Secret`'s array.

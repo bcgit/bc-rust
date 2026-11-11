@@ -81,4 +81,14 @@ test_concatkdf_refuses_an_oversized_len() {
     assert_stderr_has "at most"
 }
 
+# An empty Z derives a key from nothing (the KDF trait allows it; no command-line user means
+# it): refused before any derivation, inline and from a file.
+test_concatkdf_refuses_an_empty_ikm() {
+    expect_fail "an empty --ikm is refused" "$BC_RUST" concatkdf-sha256 --ikm "" --len 16
+    assert_stderr_has "empty"
+    : >"$TMP/empty"
+    expect_fail "an empty --ikm-file is refused" "$BC_RUST" concatkdf-sha256 --ikm-file "$TMP/empty" --len 16
+    assert_stderr_has "empty"
+}
+
 run_all

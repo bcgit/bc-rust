@@ -9,7 +9,6 @@ mod cfb8_cmd;
 mod cfb_cmd;
 mod chacha20_cmd;
 mod chacha20_poly1305_cmd;
-mod concatkdf_cmd;
 mod ctr_cmd;
 mod ecb_cmd;
 mod eccdh_cmd;
@@ -18,6 +17,7 @@ mod encoders_cmd;
 mod gcm_cmd;
 mod helpers;
 mod hkdf_cmd;
+mod kdf_cmd;
 mod kw_cmd;
 mod mac_cmd;
 mod mldsa_cmd;
@@ -27,10 +27,8 @@ mod sha2_cmd;
 mod sha3_cmd;
 mod sm2_cmd;
 mod sm3_cmd;
-mod x963kdf_cmd;
 
 use crate::blake2_cmd::BLAKE2Variant;
-use crate::concatkdf_cmd::ConcatKDFVariant;
 use crate::eccdh_cmd::ECCDHAction;
 use crate::ecdsa_cmd::ECDSAAction;
 use crate::hkdf_cmd::HKDFVariant;
@@ -40,13 +38,17 @@ use crate::rng_cmd::DrbgHash;
 use crate::sha2_cmd::SHA2Variant;
 use crate::sha3_cmd::{SHA3Variant, Strength};
 use crate::sm2_cmd::SM2Action;
-use crate::x963kdf_cmd::X963KDFVariant;
 use bouncycastle::aes::hazmat::{AES128Internal, AES192Internal, AES256Internal};
 use bouncycastle::aria::hazmat::{ARIA128Internal, ARIA192Internal, ARIA256Internal};
 use bouncycastle::camellia::hazmat::{
     Camellia128Internal, Camellia192Internal, Camellia256Internal,
 };
+use bouncycastle::concatkdf::{
+    ConcatKDF_SHA3_256, ConcatKDF_SHA3_384, ConcatKDF_SHA3_512, ConcatKDF_SHA256, ConcatKDF_SHA384,
+    ConcatKDF_SHA512,
+};
 use bouncycastle::sm4::hazmat::SM4Internal;
+use bouncycastle::x963kdf::{X963KDF_SHA256, X963KDF_SHA384, X963KDF_SHA512};
 use clap::{Parser, Subcommand};
 use helpers::block_mode_helpers::CipherDirection;
 
@@ -6116,8 +6118,8 @@ fn run() {
             len,
             x,
         }) => {
-            concatkdf_cmd::concatkdf_cmd(
-                ConcatKDFVariant::SHA256,
+            kdf_cmd::kdf_cmd(
+                &ConcatKDF_SHA256::default(),
                 ikm,
                 ikm_file,
                 additional_input,
@@ -6134,8 +6136,8 @@ fn run() {
             len,
             x,
         }) => {
-            concatkdf_cmd::concatkdf_cmd(
-                ConcatKDFVariant::SHA384,
+            kdf_cmd::kdf_cmd(
+                &ConcatKDF_SHA384::default(),
                 ikm,
                 ikm_file,
                 additional_input,
@@ -6152,8 +6154,8 @@ fn run() {
             len,
             x,
         }) => {
-            concatkdf_cmd::concatkdf_cmd(
-                ConcatKDFVariant::SHA512,
+            kdf_cmd::kdf_cmd(
+                &ConcatKDF_SHA512::default(),
                 ikm,
                 ikm_file,
                 additional_input,
@@ -6170,8 +6172,8 @@ fn run() {
             len,
             x,
         }) => {
-            concatkdf_cmd::concatkdf_cmd(
-                ConcatKDFVariant::SHA3_256,
+            kdf_cmd::kdf_cmd(
+                &ConcatKDF_SHA3_256::default(),
                 ikm,
                 ikm_file,
                 additional_input,
@@ -6188,8 +6190,8 @@ fn run() {
             len,
             x,
         }) => {
-            concatkdf_cmd::concatkdf_cmd(
-                ConcatKDFVariant::SHA3_384,
+            kdf_cmd::kdf_cmd(
+                &ConcatKDF_SHA3_384::default(),
                 ikm,
                 ikm_file,
                 additional_input,
@@ -6206,8 +6208,8 @@ fn run() {
             len,
             x,
         }) => {
-            concatkdf_cmd::concatkdf_cmd(
-                ConcatKDFVariant::SHA3_512,
+            kdf_cmd::kdf_cmd(
+                &ConcatKDF_SHA3_512::default(),
                 ikm,
                 ikm_file,
                 additional_input,
@@ -6224,8 +6226,8 @@ fn run() {
             len,
             x,
         }) => {
-            x963kdf_cmd::x963kdf_cmd(
-                X963KDFVariant::SHA256,
+            kdf_cmd::kdf_cmd(
+                &X963KDF_SHA256::default(),
                 ikm,
                 ikm_file,
                 additional_input,
@@ -6242,8 +6244,8 @@ fn run() {
             len,
             x,
         }) => {
-            x963kdf_cmd::x963kdf_cmd(
-                X963KDFVariant::SHA384,
+            kdf_cmd::kdf_cmd(
+                &X963KDF_SHA384::default(),
                 ikm,
                 ikm_file,
                 additional_input,
@@ -6260,8 +6262,8 @@ fn run() {
             len,
             x,
         }) => {
-            x963kdf_cmd::x963kdf_cmd(
-                X963KDFVariant::SHA512,
+            kdf_cmd::kdf_cmd(
+                &X963KDF_SHA512::default(),
                 ikm,
                 ikm_file,
                 additional_input,

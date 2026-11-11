@@ -348,13 +348,12 @@ fn redc(t: &[u64; 8]) -> [u64; 4] {
 }
 
 fn reduce_once(limbs: [u64; 4]) -> [u64; 4] {
-    let (diff, borrow) = nat::sub(&limbs, &N_LIMBS);
-    let mut result = [0u64; 4];
-    ct::conditional_select(Condition::<u64>::from_lsb(borrow), &limbs, &diff, &mut result);
-    result
+    let mut out = [0u64; 4];
+    reduce_once_into(&limbs, &mut out);
+    out
 }
 
-/// [`reduce_once`] of a borrowed value into `out`, in place: `out` takes `limbs - n`, and
+/// The one conditional subtraction of `n`, of a borrowed value into `out`, in place: `out` takes `limbs - n`, and
 /// `limbs` is moved back in under the borrow's mask where the subtraction borrowed. For a
 /// secret value, so that no copy of it is staged in a return slot: `limbs` is the caller's and
 /// `out` the new `Secret`'s array.

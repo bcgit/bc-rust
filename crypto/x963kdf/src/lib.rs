@@ -83,11 +83,6 @@ use bouncycastle_utils::secret::Secret;
 use bouncycastle_utils::{max, min};
 use core::marker::PhantomData;
 
-// Imports needed for docs
-#[allow(unused_imports)]
-use bouncycastle_core::key_material::KeyMaterial;
-// End imports needed for docs
-
 /// The largest hash output this crate's block buffer holds: 64 bytes, SHA-512's. A hash with a
 /// longer output is refused at compile time.
 pub const MAX_HASH_OUTPUT_LEN: usize = 64;
@@ -287,7 +282,8 @@ impl<H: X963KDFParams> KDF for X963KDF<H> {
         Self::derive_out(ikm, fixed_info, len, output_key)
     }
 
-    /// [`X963KDF::derive_out`] with `Z` the concatenation of `ikms`; an empty `ikms` is
+    /// [`X963KDF::derive_out`] with `Z` the bare concatenation of `ikms`, with no length framing
+    /// (this library's convention for the multi-key forms); an empty `ikms` is
     /// [`KDFError::InvalidLength`].
     fn derive_key_from_multiple_out(
         &self,

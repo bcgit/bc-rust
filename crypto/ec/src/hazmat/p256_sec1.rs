@@ -52,22 +52,35 @@ const SQRT_EXPONENT: [u64; 4] =
 
 /// Converts 32 big-endian bytes to little-endian `u64` limbs.
 pub fn limbs_from_be_bytes(bytes: &[u8; 32]) -> [u64; 4] {
-    [
-        u64::from_be_bytes(bytes[24..32].try_into().unwrap()),
-        u64::from_be_bytes(bytes[16..24].try_into().unwrap()),
-        u64::from_be_bytes(bytes[8..16].try_into().unwrap()),
-        u64::from_be_bytes(bytes[0..8].try_into().unwrap()),
-    ]
+    let mut limbs = [0u64; 4];
+    limbs_from_be_bytes_into(bytes, &mut limbs);
+    limbs
+}
+
+/// [`limbs_from_be_bytes`] into `out`: for a secret value, so that no copy of it is staged in
+/// a return slot.
+pub fn limbs_from_be_bytes_into(bytes: &[u8; 32], out: &mut [u64; 4]) {
+    for (i, chunk) in bytes.rchunks(8).enumerate() {
+        let mut limb = [0u8; 8];
+        limb[8 - chunk.len()..].copy_from_slice(chunk);
+        out[i] = u64::from_be_bytes(limb);
+    }
 }
 
 /// Converts little-endian `u64` limbs to 32 big-endian bytes.
 pub fn be_bytes_from_limbs(limbs: &[u64; 4]) -> [u8; 32] {
     let mut out = [0u8; 32];
-    out[0..8].copy_from_slice(&limbs[3].to_be_bytes());
-    out[8..16].copy_from_slice(&limbs[2].to_be_bytes());
-    out[16..24].copy_from_slice(&limbs[1].to_be_bytes());
-    out[24..32].copy_from_slice(&limbs[0].to_be_bytes());
+    be_bytes_from_limbs_into(limbs, &mut out);
     out
+}
+
+/// [`be_bytes_from_limbs`] into `out`: for a secret value, so that no copy of it is staged in
+/// a return slot.
+pub fn be_bytes_from_limbs_into(limbs: &[u64; 4], out: &mut [u8; 32]) {
+    for (i, chunk) in out.rchunks_mut(8).enumerate() {
+        let n = chunk.len();
+        chunk.copy_from_slice(&limbs[i].to_be_bytes()[8 - n..]);
+    }
 }
 
 fn limbs_less_than_p(limbs: &[u64; 4]) -> bool {

@@ -63,7 +63,8 @@ pub fn reduce_wide_bits_mod_n_minus_1(bytes: &[u8]) -> P521Scalar {
     // Every value from the DRBG output to d is the key at some stage, so each is held in a
     // `Secret`, scrubbed when this function returns rather than left on the stack, and every
     // step writes into that `Secret` rather than returning the value through a slot a return
-    // would stage it in. What this frame leaves is the returned scalar's own move.
+    // would stage it in; the fold's working values are this file's own. What this frame leaves
+    // is the returned scalar's own move.
     let mut x = Secret::<[u64; 10]>::new();
     crate::barrett::limbs_from_be_bytes_into::<10>(bytes, &mut x);
 

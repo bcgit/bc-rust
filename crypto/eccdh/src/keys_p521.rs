@@ -77,11 +77,11 @@ impl KeyAgreementPrivateKey<SK_LEN> for ECCDHP521PrivateKey {
         // secret from the moment it arrives (a service loading a stored key for a request does so
         // in front of observers who are not the caller), so the limbs and the difference live in
         // `Secret`s, scrubbed on both exits, and the two bounds are tested without a comparison
-        // or branch on their value: `nat::sub`'s borrow for `d < n` and the OR of the limbs for
+        // or branch on their value: `nat::sub_assign`'s borrow for `d < n` and the OR of the limbs for
         // `d != 0`, combined under masks into one decision, which reveals only whether the key
         // loaded, as the return value does.
         let mut limbs = Secret::<[u64; 9]>::new();
-        *limbs = p521_sec1::limbs_from_be_bytes(bytes);
+        p521_sec1::limbs_from_be_bytes_into(bytes, &mut limbs);
         let mut diff = Secret::<[u64; 9]>::new();
         diff.copy_from_slice(&*limbs);
         let borrow = nat::sub_assign(&mut diff, &N_LIMBS);
@@ -157,14 +157,14 @@ pub fn keygen(
     // 585 the step names), held in `Secret` so it is scrubbed when
     // this function returns rather than left on the stack.
     let mut extra_bits = Secret::<[u8; EXTRA_BITS_DRBG_OUTPUT_LEN]>::new();
-    rng.next_bytes_out(&mut *extra_bits).map_err(KeyAgreementError::RNGError)?;
+    rng.next_bytes_out(&mut *extra_bits)?;
     // Steps 5 and 6: c from the bits (Appendix C.4), d = (c mod (n - 1)) + 1, in constant time.
     let d = reduce_wide_bits_mod_n_minus_1(&*extra_bits);
 
     // Step 7: Q = dG.
     let mut q = comb_multiply_base_point(&d);
     // d is in [1, n-1] by construction (see reduce_wide_bits_mod_n_minus_1) and G has prime order
-    // n (the cofactor is 1: SP 800-186 Section 3.2.1.5 (P-521; Section 3.2.1: "For pseudorandom curves, the cofactor h = 1")), so [d]G is never the identity: this holds for every valid d,
+    // n (the cofactor is 1, see the crate docs), so [d]G is never the identity: this holds for every valid d,
     // so branching on it here leaks nothing about which d was drawn.
     let (x, y) = q.to_affine().expect("[d]G is never infinity for d in [1, n-1]");
     // Only the affine pair is public; the projective coordinates are a function of `d`'s bits.

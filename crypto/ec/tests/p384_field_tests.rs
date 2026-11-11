@@ -452,3 +452,21 @@ fn known_answer_add_carry_and_sub_borrow_at_the_extremes() {
     assert_eq!(P384FieldElement::ONE.invert(), P384FieldElement::ONE, "1^-1 == 1");
     assert_eq!(p_minus_1.invert(), p_minus_1, "(p-1)^-1 == p-1, since (p-1)^2 == 1");
 }
+
+/// `to_limbs_into` owes the caller a full overwrite of a prefilled buffer with the canonical
+/// limbs, the same ones `to_limbs` returns.
+#[test]
+fn to_limbs_into_overwrites_a_prefilled_buffer_with_the_canonical_limbs() {
+    let mut patterns = [[0u64; 6], [u64::MAX; 6], [0u64; 6], [0u64; 6]];
+    patterns[2][0] = 1;
+    for (i, limb) in patterns[3].iter_mut().enumerate() {
+        *limb = 0x0123_4567_89ab_cdef_u64.rotate_left(7 * i as u32);
+    }
+    for limbs in patterns {
+        let x = P384FieldElement::from_limbs(limbs);
+        let mut out = [u64::MAX; 6];
+        x.to_limbs_into(&mut out);
+        assert_eq!(out, x.to_limbs(), "{limbs:x?}");
+        assert_eq!(P384FieldElement::from_limbs(out), x);
+    }
+}

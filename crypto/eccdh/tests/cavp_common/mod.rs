@@ -1,32 +1,20 @@
 //! Parser for the legacy NIST CAVP `.txt` record format of `KAS_ECC_CDH_PrimitiveTest.txt` in
-//! `bc-test-data/crypto/cavp/`, reduced from `bouncycastle-ecdsa`'s `tests/cavp_common`. A
+//! `bc-test-data/crypto/cavp/`, read through the framework's loader. A
 //! missing `bc-test-data` checkout is a test **failure**, not a skip: these records are the only
 //! external check of this crate's `Z` against NIST's own values. Clone `bc-test-data` next to this
 //! repository (and symlink it at `/tmp/bc-test-data` for `cargo mutants`; see `CLAUDE.md`).
 
 #![allow(dead_code)]
 
+use bouncycastle_core_test_framework::test_data_loaders::bc_test_data;
 use std::collections::BTreeMap;
-use std::fs;
-use std::path::Path;
 
-const TEST_DATA_PATH_RELATIVE: &str = "../../../bc-test-data/crypto/cavp";
-const TEST_DATA_PATH: &str = "../bc-test-data/crypto/cavp";
-
-/// The contents of `filename` from `bc-test-data/crypto/cavp/`; panics if the checkout or the
-/// file is missing.
+/// The contents of `filename` from `bc-test-data/crypto/cavp/`, through the framework's loader;
+/// panics if the checkout or the file is missing.
 pub fn get_test_data(filename: &str) -> String {
-    let dir = [TEST_DATA_PATH_RELATIVE, TEST_DATA_PATH]
-        .into_iter()
-        .find(|d| Path::new(d).exists())
-        .unwrap_or_else(|| {
-            panic!(
-                "bc-test-data not found (looked in {TEST_DATA_PATH_RELATIVE:?} and \
-                 {TEST_DATA_PATH:?}); the ECC CDH CAVP suites require it rather than skipping"
-            )
-        });
-    fs::read_to_string(format!("{dir}/{filename}"))
-        .unwrap_or_else(|e| panic!("failed to read CAVP vector file {dir}/{filename}: {e}"))
+    bc_test_data("crypto/cavp", filename).unwrap_or_else(|| {
+        panic!("bc-test-data not found beside this repository; the ECC CDH CAVP suites require it rather than skipping")
+    })
 }
 
 /// One `Key = value`-line record, plus the `[...]` section header it fell under.

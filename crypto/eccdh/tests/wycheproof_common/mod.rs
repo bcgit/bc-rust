@@ -19,25 +19,15 @@
 use bouncycastle_core::agreement_key::AgreementKey;
 use bouncycastle_core::key_material::KeyMaterialTrait;
 use bouncycastle_core::traits::{KeyAgreementPrivateKey, KeyAgreementPublicKey};
+use bouncycastle_core_test_framework::test_data_loaders::{Value, wycheproof_json};
 use bouncycastle_hex::decode as hex_decode;
-use serde_json::Value;
-use std::fs;
-use std::path::Path;
 
-const TEST_DATA_PATH_RELATIVE: &str = "../../../wycheproof/testvectors_v1";
-const TEST_DATA_PATH: &str = "../wycheproof/testvectors_v1";
-
-fn get_test_data(filename: &str) -> String {
-    for dir in [TEST_DATA_PATH_RELATIVE, TEST_DATA_PATH] {
-        let path = format!("{dir}/{filename}");
-        if Path::new(&path).exists() {
-            return fs::read_to_string(path).unwrap();
-        }
-    }
-    panic!(
-        "wycheproof not found (looked for {filename} in {TEST_DATA_PATH_RELATIVE:?} and \
-         {TEST_DATA_PATH:?}); these suites require it rather than skipping"
-    );
+/// The contents of `filename` from `wycheproof/testvectors_v1/`, through the framework's
+/// loader; panics if the checkout or the file is missing.
+fn get_test_data(filename: &str) -> Value {
+    wycheproof_json(filename).unwrap_or_else(|| {
+        panic!("wycheproof not found beside this repository; the ECDH Wycheproof suites require it rather than skipping")
+    })
 }
 
 /// One DER TLV at the front of `bytes`: `(tag, content, rest)`, with the length minimal as DER
@@ -101,7 +91,7 @@ pub fn run<PK, SK, const PK_LEN: usize, const SK_LEN: usize, const SS_LEN: usize
     PK: KeyAgreementPublicKey<PK_LEN>,
     SK: KeyAgreementPrivateKey<SK_LEN> + AgreementKey<(), SS_LEN, PublicKey = PK>,
 {
-    let doc: Value = serde_json::from_str(&get_test_data(filename)).unwrap();
+    let doc = get_test_data(filename);
     assert_eq!(doc["numberOfTests"].as_u64().unwrap() as usize, expected, "{filename}");
     let groups = doc["testGroups"].as_array().unwrap();
 
@@ -112,7 +102,8 @@ pub fn run<PK, SK, const PK_LEN: usize, const SK_LEN: usize, const SS_LEN: usize
             continue;
         }
         for test in group["tests"].as_array().unwrap() {
-            if test["result"] == "valid" && test["flags"] == serde_json::json!(["Normal"]) {
+            let normal = test["flags"].as_array().is_some_and(|f| f.len() == 1 && f[0] == "Normal");
+            if test["result"] == "valid" && normal {
                 let spki = hex_decode(test["public"].as_str().unwrap()).unwrap();
                 expected_alg = Some(spki_point(&spki).expect("a Normal SPKI parses").1.to_vec());
                 break;

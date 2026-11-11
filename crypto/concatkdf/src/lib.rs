@@ -342,7 +342,8 @@ impl<H: ConcatKDFParams> KDF for ConcatKDF<H> {
         Self::derive_out(ikm, fixed_info, len, output_key)
     }
 
-    /// [`ConcatKDF::derive_out`] with `Z` the concatenation of `ikms`; an empty `ikms` is
+    /// [`ConcatKDF::derive_out`] with `Z` the bare concatenation of `ikms`, with no length framing
+    /// (this library's convention for the multi-key forms); an empty `ikms` is
     /// [`KDFError::InvalidLength`].
     fn derive_key_from_multiple_out(
         &self,

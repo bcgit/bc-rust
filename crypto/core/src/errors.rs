@@ -93,16 +93,11 @@ pub enum KeyAgreementError {
     /// step 2, the computed point is the point at infinity.
     AgreementFailed,
     /// An encoded key was not of the expected length or form, or failed the validation its
-    /// decoding carries (a public key off the curve, a private key outside `[1, n - 1]`).
+    /// decoding carries (a public key off the curve, a private key outside `[1, n - 1]`). The
+    /// length is part of the form: there is no separate length variant.
     DecodingError(&'static str),
-    /// A key could not be encoded.
-    EncodingError(&'static str),
-    /// Key-pair generation failed.
-    KeyGenError(&'static str),
     /// The shared secret or derived key could not be typed or labelled as the algorithm asks.
     KeyMaterialError(KeyMaterialError),
-    /// A buffer or input was not of the length the algorithm requires.
-    LengthError(&'static str),
     /// The RNG refused or failed to deliver, or is weaker than the algorithm requires.
     RNGError(RNGError),
     /// The KDF an algorithm derives its output through refused the derivation.
@@ -313,6 +308,12 @@ impl From<KeyMaterialError> for KeyAgreementError {
 impl From<RNGError> for KeyAgreementError {
     fn from(e: RNGError) -> KeyAgreementError {
         Self::RNGError(e)
+    }
+}
+
+impl From<KDFError> for KeyAgreementError {
+    fn from(e: KDFError) -> KeyAgreementError {
+        Self::KDFError(e)
     }
 }
 

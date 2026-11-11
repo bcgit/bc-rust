@@ -435,15 +435,24 @@ fn public_scalar_invert_vartime_agrees_with_constant_time_invert() {
 /// `from_borrowed_limbs` is `from_limbs` on a borrowed array: the same scalar at 0, 1, n - 1,
 /// n, n + 1 and all ones, the values either side of the reduction's one conditional step.
 #[test]
-fn from_borrowed_limbs_matches_from_limbs() {
+fn from_borrowed_limbs_reduces_once_and_matches_from_limbs() {
     use bouncycastle_ec::hazmat::p521_scalar::{N_LIMBS, P521Scalar};
     let mut one = [0u64; 9];
     one[0] = 1;
     let (n_minus_1, _) = bouncycastle_ec::nat::sub(&N_LIMBS, &one);
     let (n_plus_1, _) = bouncycastle_ec::nat::add(&N_LIMBS, &one);
     for limbs in [[0u64; 9], one, n_minus_1, N_LIMBS, n_plus_1, [u64::MAX; 9]] {
+        // Against the value itself, not only against `from_limbs`: an input below n is unchanged
+        // and one at or above it loses one n, once the bits above 2^521 are folded in (not exercised here).
         let borrowed = P521Scalar::from_borrowed_limbs(&limbs);
+        if limbs[8] >> 9 == 0 {
+            let (diff, borrow) = bouncycastle_ec::nat::sub(&limbs, &N_LIMBS);
+            let expected = if borrow == 1 { limbs } else { diff };
+            assert_eq!(
+                borrowed.to_be_bytes(),
+                bouncycastle_ec::hazmat::p521_sec1::be_bytes_from_limbs(&expected)
+            );
+        }
         assert_eq!(borrowed, P521Scalar::from_limbs(limbs));
-        assert_eq!(borrowed.to_be_bytes(), P521Scalar::from_limbs(limbs).to_be_bytes());
     }
 }

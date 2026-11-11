@@ -60,7 +60,8 @@ pub fn reduce_wide_bits_mod_n_minus_1(bytes: &[u8]) -> Bp512r1Scalar {
     // The DRBG output, its reduction and d itself are the key at three stages, so each is held
     // in a `Secret`, scrubbed when this function returns rather than left on the stack, and
     // every step writes into that `Secret` rather than returning the value through a slot a
-    // return would stage it in. What this frame leaves is the returned scalar's own move.
+    // return would stage it in; the reduction's own working values are plain locals, as
+    // `barrett::reduce_into` says. What this frame leaves is the returned scalar's own move.
     let mut t = Secret::<[u64; 16]>::new();
     barrett::limbs_from_be_bytes_into::<16>(bytes, &mut t);
     let mut d = Secret::<[u64; 8]>::new();

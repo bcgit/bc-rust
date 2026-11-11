@@ -163,7 +163,8 @@
 //!   depend on secret data, each on a condition that is public or that no valid input reaches:
 //!   Section 5.7.1.2 step 2's identity test, made after the intermediates are scrubbed and false
 //!   for every validated peer key and in-range `d`; the typing of an all-zero `Z` (`x_P = 0`, on
-//!   the curve for P-256, P-384 and P-521 only, and not arrangeable without `d`); the one masked
+//!   the curve for P-256, P-384 and P-521 only, and not arrangeable without `d`; the buffer
+//!   decides it, and skips the test while the caller's hazardous window is open); the one masked
 //!   decision of the private key's range check, which reveals whether the key loaded; and
 //!   `to_affine`'s identity branch at key generation and in `derive_pk`, false for every valid
 //!   `d`. Of Section 5.7.1.2 step 4's destruction of intermediates, this crate does its own
@@ -176,8 +177,7 @@
 //!   leave `d` where the move staged it; the KDF's hash finalises by value
 //!   ([`Hash::do_final_out`](bouncycastle_core::traits::Hash::do_final_out) takes `self`), so
 //!   the hasher's block buffer, which held `Z`, is moved and its source is not wiped, on the
-//!   `_out` path too; the field element's conversion to limbs returns by value; and the
-//!   arithmetic's intermediates in [`bouncycastle_ec`] (the
+//!   `_out` path too; and the arithmetic's intermediates in [`bouncycastle_ec`] (the
 //!   multiplier's superseded accumulators, table and a limb of the scalar in its frames, the
 //!   inversion's table of powers) are that crate's and are not reached, as its docs say. Key
 //!   generation draws at least `len(n) + 64` bits, rounded up to a byte, and reduces them in
