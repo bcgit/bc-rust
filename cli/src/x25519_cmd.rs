@@ -1,40 +1,33 @@
+//! The `x25519` subcommand: X25519 key agreement (RFC 7748) through the agreement role, and
+//! DHKEM(X25519, HKDF-SHA256) (RFC 9180) through the KEM roles, on one key pair. `agree` writes
+//! the raw shared secret for a KDF (`hkdf-* --ikm-file` and the others), as `eccdh-*` does.
+
 use crate::helpers::{
-    read_input_file, read_input_file_or_stdin, read_secret_file, read_secret_file_or_stdin,
-    write_bytes_or_hex, write_bytes_or_hex_to_file,
+    println_stdout, read_input_file, read_input_file_or_stdin, read_secret_file,
+    read_secret_file_or_stdin, write_bytes_or_hex, write_bytes_or_hex_to_file, write_stdout,
 };
+use bouncycastle::core::agreement_key::AgreementKey;
 use bouncycastle::core::kem_key::{DecapsulatingKey, EncapsulatingKey};
 use bouncycastle::core::key_material::KeyMaterialTrait;
-use bouncycastle::core::traits::{KeyAgreement, KeyAgreementPrivateKey, KeyAgreementPublicKey};
-use bouncycastle::ed::x25519::{POINT_LEN, X25519, X25519PrivateKey, X25519PublicKey};
+use bouncycastle::core::traits::{KeyAgreementPrivateKey, KeyAgreementPublicKey};
+use bouncycastle::ed::x25519::{POINT_LEN, X25519PrivateKey, X25519PublicKey, keygen};
 use bouncycastle::rng::HashDRBG_SHA512;
 use clap::ValueEnum;
 use std::process::exit;
 
 #[derive(ValueEnum, Clone, Debug)]
 pub(crate) enum X25519Action {
-    /// Generate and output a new private key.
+    /// Generate a private key (32 bytes) to stdout.
     Keygen,
-    /// Output the public key of a private key read from skfile or stdin.
-    /// Accepts either binary or hex.
+    /// Derive the public key from the private key.
     PkFromSk,
-    /// Accepts a sk (from skfile or stdin) and a pk (from pkfile), and checks that they match.
+    /// Check that a public key matches a private key.
     CheckConsistency,
-    /// Perform an X25519 key agreement between a private key (from skfile or stdin) and the
-    /// peer's public key (from pkfile), and output the shared secret to stdout.
-    /// The output is the raw X25519 shared secret: derive keys from it with a KDF, such as the
-    /// hkdf-sha256 subcommand, rather than using it as a key directly.
+    /// The raw X25519 shared secret from the private key and the peer's public key, for a KDF.
     Agree,
-    /// Perform a DHKEM(X25519, HKDF-SHA256) encapsulation (RFC 9180 Sec 4.1) with a public key,
-    /// and output the shared secret and the ciphertext (the encapsulated key).
-    /// If a ctfile is provided, then the shared secret is output to stdout in either binary or hex
-    /// and the ciphertext to file also in binary or hex.
-    /// If no ctfile is provided then ct followed by ss are output to stdout in hex, separated by a newline.
-    /// The shared secret is always output to stdout to prevent it
-    /// staying in a file longer than it should and causing a vulnerability.
+    /// DHKEM encapsulation against the public key: the shared secret, and the ciphertext.
     Encaps,
-    /// Perform a DHKEM(X25519, HKDF-SHA256) decapsulation with a private key and ciphertext, and
-    /// output the shared secret to stdout either in binary or hex.
-    /// The private key is read from skfile, and the ciphertext from ctfile or stdin, in binary or hex.
+    /// DHKEM decapsulation of the ciphertext with the private key.
     Decaps,
 }
 
@@ -47,7 +40,10 @@ pub(crate) fn x25519_cmd(
 ) {
     match action {
         X25519Action::Keygen => {
-            let (_pk, sk) = X25519::keygen().unwrap();
+            let (_pk, sk) = keygen(&mut HashDRBG_SHA512::new_from_os()).unwrap_or_else(|e| {
+                eprintln!("Error: key generation failed: {e:?}");
+                exit(-1);
+            });
             write_bytes_or_hex(&sk.encode(), output_hex);
         }
         X25519Action::PkFromSk => {
@@ -57,49 +53,34 @@ pub(crate) fn x25519_cmd(
         X25519Action::CheckConsistency => {
             let sk = parse_sk(read_secret_file_or_stdin(skfile).ref_to_bytes());
             let pk = parse_pk(&read_pkfile(pkfile));
-
-            match X25519::keypair_consistency_check(&pk, &sk) {
-                Ok(_) => {
-                    crate::helpers::println_stdout("SUCCESS: pk and sk match.");
-                }
-                Err(_) => {
-                    eprintln!("FAILURE: pk and sk do not match.");
-                    exit(-1);
-                }
+            if sk.pk() == pk {
+                println_stdout("SUCCESS: pk and sk match.");
+            } else {
+                eprintln!("FAILURE: pk and sk do not match.");
+                exit(-1);
             }
         }
         X25519Action::Agree => {
             let sk = parse_sk(read_secret_file_or_stdin(skfile).ref_to_bytes());
             let pk = parse_pk(&read_pkfile(pkfile));
-
-            let ss = match X25519::key_agreement(&pk, &sk) {
-                Ok(ss) => ss,
-                Err(e) => {
-                    eprintln!("Error: {:?}", e);
-                    exit(-1);
-                }
-            };
-            write_bytes_or_hex(ss.as_ref(), output_hex);
+            let z = sk.agree(&pk, ()).unwrap_or_else(|e| {
+                eprintln!("Error: key agreement failed: {e:?}");
+                exit(-1);
+            });
+            write_bytes_or_hex(z.ref_to_bytes(), output_hex);
         }
         X25519Action::Encaps => {
             let pk = parse_pk(&read_input_file_or_stdin(pkfile));
-
-            let (ss, ct) = match pk.encaps(&mut HashDRBG_SHA512::new_from_os(), ()) {
-                Ok(r) => r,
-                Err(e) => {
-                    eprintln!("Error: {:?}", e);
-                    exit(-1);
-                }
-            };
-
-            if ctfile.is_some() {
-                // write ct to file and ss to stdout
-                write_bytes_or_hex_to_file(&ct, ctfile.as_ref().unwrap(), output_hex);
+            let (ss, ct) = pk.encaps(&mut HashDRBG_SHA512::new_from_os(), ()).unwrap_or_else(|e| {
+                eprintln!("Error: encapsulation failed: {e:?}");
+                exit(-1);
+            });
+            if let Some(ctfile) = ctfile {
+                write_bytes_or_hex_to_file(&ct, ctfile, output_hex);
                 write_bytes_or_hex(ss.ref_to_bytes(), output_hex);
             } else {
-                // write both to stdout in hex, separated by a newline.
                 write_bytes_or_hex(&ct, true);
-                crate::helpers::write_stdout(b"\n");
+                write_stdout(b"\n");
                 write_bytes_or_hex(ss.ref_to_bytes(), true);
             }
         }
@@ -111,20 +92,15 @@ pub(crate) fn x25519_cmd(
                     exit(-1);
                 }
             };
-
             let ct = read_input_file_or_stdin(ctfile);
             let Ok(ct) = <[u8; POINT_LEN]>::try_from(ct.as_slice()) else {
                 eprintln!("Error: ciphertext is not the correct length.");
                 exit(-1);
             };
-
-            let ss = match sk.decaps(&ct, ()) {
-                Ok(ss) => ss,
-                Err(e) => {
-                    eprintln!("Error: {:?}", e);
-                    exit(-1);
-                }
-            };
+            let ss = sk.decaps(&ct, ()).unwrap_or_else(|e| {
+                eprintln!("Error: decapsulation failed: {e:?}");
+                exit(-1);
+            });
             write_bytes_or_hex(ss.ref_to_bytes(), output_hex);
         }
     }
@@ -141,21 +117,15 @@ fn read_pkfile(pkfile: &Option<String>) -> Vec<u8> {
 }
 
 fn parse_sk(bytes: &[u8]) -> X25519PrivateKey {
-    match X25519PrivateKey::from_bytes(bytes) {
-        Ok(sk) => sk,
-        Err(_) => {
-            eprintln!("Error: couldn't parse the input as a 32-byte X25519 private key.");
-            exit(-1);
-        }
-    }
+    X25519PrivateKey::from_bytes(bytes).unwrap_or_else(|_| {
+        eprintln!("Error: couldn't parse the input as a 32-byte X25519 private key.");
+        exit(-1);
+    })
 }
 
 fn parse_pk(bytes: &[u8]) -> X25519PublicKey {
-    match X25519PublicKey::from_bytes(bytes) {
-        Ok(pk) => pk,
-        Err(_) => {
-            eprintln!("Error: couldn't parse the input as a 32-byte X25519 public key.");
-            exit(-1);
-        }
-    }
+    X25519PublicKey::from_bytes(bytes).unwrap_or_else(|_| {
+        eprintln!("Error: couldn't parse the input as a 32-byte X25519 public key.");
+        exit(-1);
+    })
 }

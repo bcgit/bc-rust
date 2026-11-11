@@ -152,7 +152,7 @@ test_low_order_public_key_is_rejected() {
     printf '%064d' 0 >"$TMP/zero.pk"
     expect_fail "agree with an all-zero public key" \
         "$BC_RUST" --hex-input x25519 agree --skfile "$TMP/sk" --pkfile "$TMP/zero.pk"
-    assert_stderr_has "InvalidPublicKey"
+    assert_stderr_has "AgreementFailed"
     expect_fail "encaps to an all-zero public key" \
         "$BC_RUST" --hex-input x25519 encaps --pkfile "$TMP/zero.pk" --ctfile "$TMP/ct"
     expect_fail "decaps of an all-zero enc" \
