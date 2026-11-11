@@ -52,6 +52,7 @@ pub(crate) fn hkdf_cmd(
         exit(-1);
     });
     let ikm = load_secret(ikm, ikm_file, "ikm");
+    crate::kdf_cmd::refuse_empty_ikm(&ikm);
 
     // RFC 5869 Section 2.3: info is "optional context and application specific information (can
     // be a zero-length string)", so neither flag is required.

@@ -123,7 +123,6 @@ pub mod hazmat;
 
 use bouncycastle_core::direction::{Decrypting, Encrypting};
 use bouncycastle_core::errors::{KeyMaterialError, MACError, RNGError};
-use bouncycastle_core::hazmat::do_hazardous_operations;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::symmetric_key::{FromAnyKeyMaterial, MacGenerationKey, MacVerificationKey};
@@ -327,19 +326,13 @@ impl<HASH: HMACParams> FromAnyKeyMaterial for HmacKey<HASH> {
     /// [`MACError::KeyMaterialError`] if the RNG fails, or with
     /// [`KeyMaterialError::SecurityStrength`] if its strength is below the HMAC's.
     fn generate(rng: &mut dyn RNG) -> Result<Self, MACError> {
-        let output_len = HASH::default().output_len();
-        let mut key = KeyMaterial::<LARGEST_HASHER_OUTPUT_LEN>::new();
-        do_hazardous_operations(&mut key, |key| {
-            rng.next_bytes_out(&mut key.ref_to_bytes_mut()?[..output_len])
-                .map_err(|_| KeyMaterialError::GenericError("RNG failed."))?;
-            key.set_key_len(output_len)?;
-            key.set_key_type(KeyType::MACKey)?;
-            // The RNG's strength, capped at what the length carries, as KeyMaterial::from_rng
-            // does: a 28-byte HMAC-SHA224 key from a 256-bit DRBG is a 192-bit key.
-            let by_len = SecurityStrength::from_bits(output_len * 8);
-            let by_rng = rng.security_strength();
-            key.set_security_strength(if by_rng < by_len { by_rng } else { by_len })
-        })?;
+        // A hash output's worth of key, at the RNG's strength capped by the length: a 28-byte
+        // HMAC-SHA224 key from a 256-bit DRBG is a 192-bit key.
+        let key = KeyMaterial::<LARGEST_HASHER_OUTPUT_LEN>::from_rng_as_type(
+            rng,
+            HASH::default().output_len(),
+            KeyType::MACKey,
+        )?;
         Self::from_key_material(&key)
     }
 }

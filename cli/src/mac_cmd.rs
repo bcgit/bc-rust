@@ -3,14 +3,13 @@
 
 use crate::helpers::block_mode_helpers::{load_iv, load_key_object_typed};
 use crate::helpers::{
-    SecretBytes, decode_hex_arg, load_secret, stream_stdin, stream_xof, write_bytes_or_hex,
+    SecretBytes, decode_hex_arg, load_mac_key, stream_stdin, stream_xof, write_bytes_or_hex,
     write_stdout,
 };
 use crate::sha3_cmd::{MAX_FIXED_OUTPUT_LEN, Strength};
 use bouncycastle::aes::{AES128Key, AES192Key, AES256Key};
 use bouncycastle::cipher::modes::{CMAC, GMAC};
 use bouncycastle::core::errors::MACError;
-use bouncycastle::core::hazmat::do_hazardous_operations;
 use bouncycastle::core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle::core::symmetric_key::{
     FromAnyKeyMaterial, FromKeyMaterial, MacGenerationKey, MacVerificationKey,
@@ -43,27 +42,6 @@ pub(crate) enum HMACVariant {
     SM3,
 }
 
-/// The MAC key from `--key-file` or `--key`, tagged as a MAC key. Any length the secret buffer
-/// holds is accepted: HMAC hashes a key longer than its block (RFC 2104 Section 2), and KMAC
-/// encodes the key's length (SP 800-185 Section 4.2).
-fn load_mac_key(key: &Option<String>, key_file: &Option<String>) -> SecretBytes {
-    let mut key = load_secret(key, key_file, "key");
-    if key.key_type() == KeyType::Zeroized {
-        // Same stance as the cipher loaders: warn, then do what was asked. A CLI is used for
-        // test vectors and scripting, where an all-zero key is a legitimate thing to want.
-        eprintln!(
-            "Warning: all-zero (or otherwise zeroized) key provided. Proceeding, but this is not secure."
-        );
-    }
-    do_hazardous_operations(&mut key, |key| key.set_key_type(KeyType::MACKey)).unwrap_or_else(
-        |e| {
-            eprintln!("Error: couldn't load the key: {e:?}");
-            exit(-1);
-        },
-    );
-    key
-}
-
 fn mac_key_error(e: MACError) -> ! {
     eprintln!("Error: couldn't build the MAC key: {e:?}");
     exit(-1)
@@ -88,7 +66,7 @@ pub(crate) fn mac_cmd(
     verify_val: &Option<String>,
     output_hex: bool,
 ) {
-    let key = load_mac_key(key, key_file);
+    let key = load_mac_key(key, key_file, None);
     match hmac_variant {
         HMACVariant::SHA224 => hmac::<28, SHA224>(&key, verify_val, output_hex),
         HMACVariant::SHA256 => hmac::<32, SHA256>(&key, verify_val, output_hex),
@@ -133,7 +111,7 @@ pub(crate) fn kmac_cmd(
         );
         exit(-1);
     }
-    let key = load_mac_key(key, key_file);
+    let key = load_mac_key(key, key_file, None);
     match strength {
         Strength::Bits128 => {
             let x = KMACXOF128::new(&key, customization, true).unwrap_or_else(|e| mac_key_error(e));
@@ -187,7 +165,7 @@ pub(crate) fn kmacxof_cmd(
     key_file: &Option<String>,
     output_hex: bool,
 ) {
-    let key = load_mac_key(key, key_file);
+    let key = load_mac_key(key, key_file, None);
     match strength {
         Strength::Bits128 => {
             let x = KMACXOF128::new(&key, customization, true).unwrap_or_else(|e| mac_key_error(e));
@@ -354,7 +332,7 @@ pub(crate) fn poly1305_cmd(
     verify_val: &Option<String>,
     output_hex: bool,
 ) {
-    let key = load_mac_key(key, key_file);
+    let key = load_mac_key(key, key_file, None);
     // No key policy, as the other MAC commands take their allow-weak forms: a CLI is used for test
     // vectors and scripting, where a weak or all-zero key is a legitimate thing to want.
     let Ok(bytes) = <&[u8; poly1305::KEY_LEN]>::try_from(key.ref_to_bytes()) else {
@@ -371,8 +349,11 @@ pub(crate) fn poly1305_cmd(
 }
 
 /// [`do_mac`] over the workers a reusable MAC key hands out.
-fn do_mac_with_key<const N: usize, K>(key: &K, verify_val: &Option<String>, output_hex: bool)
-where
+pub(crate) fn do_mac_with_key<const N: usize, K>(
+    key: &K,
+    verify_val: &Option<String>,
+    output_hex: bool,
+) where
     K: MacGenerationKey<N> + MacVerificationKey<N>,
 {
     do_mac(|| key.create_generator(), || key.create_verifier(), verify_val, output_hex)

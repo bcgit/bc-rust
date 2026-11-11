@@ -5,7 +5,9 @@
 //! `m - 1`, `m`, `m + 1`, `2m - 1`, `4m - 1`, `m * 2^256 - 1`, the all-ones values at the widths
 //! callers use) plus pseudorandom values (`random.seed(2026)`).
 
-use bouncycastle_ec::barrett::{limbs_from_be_bytes, reduce};
+use bouncycastle_ec::barrett::{
+    limbs_from_be_bytes, limbs_from_be_bytes_into, reduce, reduce_into,
+};
 use bouncycastle_ec::hazmat::p256_scalar::N_LIMBS;
 
 const MU_LOW_LIMBS: [u64; 4] =
@@ -127,4 +129,23 @@ fn limbs_from_be_bytes_packs_big_endian_input_little_endian_zero_extended() {
 #[should_panic(expected = "do not fit")]
 fn limbs_from_be_bytes_rejects_input_wider_than_the_limbs() {
     let _ = limbs_from_be_bytes::<2>(&[0u8; 17]);
+}
+
+/// The out-parameter forms write what the by-value forms return, over a buffer that held
+/// something else, with the P-256 group order's `n - 1` as the modulus.
+#[test]
+fn into_forms_match_the_by_value_forms() {
+    const MU_LOW: [u64; 4] =
+        [0x012ffd85eedf9bff, 0x43190552df1a6c21, 0xfffffffeffffffff, 0x00000000ffffffff];
+    let bytes: [u8; 44] = core::array::from_fn(|i| (i as u8).wrapping_mul(37).wrapping_add(11));
+    let t: [u64; 8] = limbs_from_be_bytes(&bytes);
+    let mut t_into = [u64::MAX; 8];
+    limbs_from_be_bytes_into(&bytes, &mut t_into);
+    assert_eq!(t_into, t);
+
+    let m = n_minus_1();
+    let r = reduce::<4, 8, 5>(&t, &m, &MU_LOW);
+    let mut r_into = [u64::MAX; 4];
+    reduce_into::<4, 8, 5>(&t, &m, &MU_LOW, &mut r_into);
+    assert_eq!(r_into, r);
 }

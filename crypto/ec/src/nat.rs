@@ -35,6 +35,33 @@ pub fn sub<const L: usize>(a: &[u64; L], b: &[u64; L]) -> ([u64; L], u64) {
     (result, borrow)
 }
 
+/// `a += b` in place over `L` limbs. Returns the carry out of the top limb (0 or 1). The
+/// in-place form of [`add`], for a sum that must not be staged in a return value: `a` is the
+/// caller's `Secret`, and nothing but the carry leaves it.
+pub fn add_assign<const L: usize>(a: &mut [u64; L], b: &[u64; L]) -> u64 {
+    let mut carry: u64 = 0;
+    for i in 0..L {
+        let (s1, c1) = a[i].overflowing_add(b[i]);
+        let (s2, c2) = s1.overflowing_add(carry);
+        a[i] = s2;
+        carry = (c1 as u64) | (c2 as u64);
+    }
+    carry
+}
+
+/// `a -= b` in place over `L` limbs. Returns the borrow out of the top limb (0 or 1). The
+/// in-place form of [`sub`], as [`add_assign`] is of [`add`].
+pub fn sub_assign<const L: usize>(a: &mut [u64; L], b: &[u64; L]) -> u64 {
+    let mut borrow: u64 = 0;
+    for i in 0..L {
+        let (d1, b1) = a[i].overflowing_sub(b[i]);
+        let (d2, b2) = d1.overflowing_sub(borrow);
+        a[i] = d2;
+        borrow = (b1 as u64) | (b2 as u64);
+    }
+    borrow
+}
+
 /// TRUE iff every limb of `a` is zero.
 pub fn is_zero<const L: usize>(a: &[u64; L]) -> bouncycastle_utils::ct::Condition<u64> {
     let mut acc = 0u64;

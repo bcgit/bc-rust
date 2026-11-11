@@ -70,6 +70,13 @@ impl Bp512r1FieldElement {
         montgomery::redc::<8, 16, 17>(&t, &P_LIMBS, N_PRIME).0
     }
 
+    /// [`Self::to_limbs`] into `out`. The conversion out of Montgomery form is a REDC, whose
+    /// result is returned by value inside this call before it is copied into `out`; that copy
+    /// is one of the multiplier's intermediates the crate docs say are not scrubbed.
+    pub fn to_limbs_into(&self, out: &mut [u64; 8]) {
+        *out = self.to_limbs();
+    }
+
     /// The limbs exactly as this type stores them: the Montgomery form `x*R mod p`, not the
     /// integer `x`. Paired with [`Self::from_internal_limbs`] so the crate's point arithmetic can
     /// select between the coordinates of two existing points without converting each one out of
