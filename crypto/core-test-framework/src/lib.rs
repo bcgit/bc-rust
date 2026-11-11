@@ -21,6 +21,7 @@ pub mod from_key_material;
 pub mod hash;
 pub mod kdf;
 pub mod kem;
+pub mod key_agreement;
 pub mod key_stream;
 pub mod key_wrap;
 pub mod mac;

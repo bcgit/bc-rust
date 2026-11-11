@@ -32,6 +32,89 @@ mod kdf_factory_tests {
         }
     }
 
+    /// Each concatenation KDF name selects its own instantiation: the factory's name, strength
+    /// and output, through both `_out` forms, are the alias's (whose vectors live in
+    /// `bouncycastle-concatkdf`).
+    #[test]
+    fn concat_kdf_variants_route_to_their_instantiation() {
+        use bouncycastle_concatkdf::{
+            ConcatKDF_SHA3_256, ConcatKDF_SHA3_384, ConcatKDF_SHA3_512, ConcatKDF_SHA256,
+            ConcatKDF_SHA384, ConcatKDF_SHA512,
+        };
+        let z = KeyMaterial512::from_bytes_as_type(&DUMMY_SEED[..64], KeyType::CryptographicRandom)
+            .unwrap();
+        let direct: [(&dyn KDF, SecurityStrength); 6] = [
+            (&ConcatKDF_SHA256::new(), SecurityStrength::_128bit),
+            (&ConcatKDF_SHA384::new(), SecurityStrength::_192bit),
+            (&ConcatKDF_SHA512::new(), SecurityStrength::_256bit),
+            (&ConcatKDF_SHA3_256::new(), SecurityStrength::_128bit),
+            (&ConcatKDF_SHA3_384::new(), SecurityStrength::_192bit),
+            (&ConcatKDF_SHA3_512::new(), SecurityStrength::_256bit),
+        ];
+        for (kdf, strength) in direct {
+            let name = kdf.alg_name();
+            let f = KDFFactory::new(name).unwrap();
+            assert_eq!(f.alg_name(), name);
+            assert_eq!(f.max_security_strength(), strength, "{name}");
+
+            let (mut out, mut expected) = (KeyMaterial512::new(), KeyMaterial512::new());
+            assert_eq!(f.derive_key_out(&z, b"info", 40, &mut out).unwrap(), 40);
+            kdf.derive_key_out(&z, b"info", 40, &mut expected).unwrap();
+            assert!(ct::ct_eq_bytes(out.ref_to_bytes(), expected.ref_to_bytes()), "{name}");
+
+            let keys: [&dyn KeyMaterialTrait; 2] = [&z, &z];
+            assert_eq!(f.derive_key_from_multiple_out(&keys, b"info", 40, &mut out).unwrap(), 40);
+            kdf.derive_key_from_multiple_out(&keys, b"info", 40, &mut expected).unwrap();
+            assert!(ct::ct_eq_bytes(out.ref_to_bytes(), expected.ref_to_bytes()), "{name}");
+        }
+    }
+
+    /// Each X9.63 KDF name selects its own instantiation, checked against a known answer per
+    /// arm: NIST CAVP `ansx963_2001.rsp` (the file `bouncycastle-x963kdf` reads from
+    /// bc-test-data), the first record of the `[SHA-256]`, `[SHA-384]` and `[SHA-512]` sections
+    /// with a 192-bit shared secret, no SharedInfo and 128 bits of key data.
+    #[test]
+    fn x963_kdf_variants_route_to_their_instantiation() {
+        use bouncycastle_hex::decode as hex_decode;
+        use bouncycastle_x963kdf::{X963KDF_SHA256_NAME, X963KDF_SHA384_NAME, X963KDF_SHA512_NAME};
+        let table = [
+            (
+                X963KDF_SHA256_NAME,
+                SecurityStrength::_128bit,
+                "96c05619d56c328ab95fe84b18264b08725b85e33fd34f08",
+                "443024c3dae66b95e6f5670601558f71",
+            ),
+            (
+                X963KDF_SHA384_NAME,
+                SecurityStrength::_192bit,
+                "d8554db1b392cd55c3fe957bed76af09c13ac2a9392f88f6",
+                "671a46aada145162f8ddf1ca586a1cda",
+            ),
+            (
+                X963KDF_SHA512_NAME,
+                SecurityStrength::_256bit,
+                "87fc0d8c4477485bb574f5fcea264b30885dc8d90ad82782",
+                "947665fbb9152153ef460238506a0245",
+            ),
+        ];
+        for (name, strength, z, key_data) in table {
+            let f = KDFFactory::new(name).unwrap();
+            assert_eq!(f.alg_name(), name);
+            assert_eq!(f.max_security_strength(), strength, "{name}");
+
+            let z =
+                KeyMaterial256::from_bytes_as_type(&hex_decode(z).unwrap(), KeyType::SharedSecret)
+                    .unwrap();
+            let expected = hex_decode(key_data).unwrap();
+            let mut out = KeyMaterial256::new();
+            assert_eq!(f.derive_key_out(&z, b"", 16, &mut out).unwrap(), 16, "{name}");
+            assert!(ct::ct_eq_bytes(out.ref_to_bytes(), &expected), "{name}");
+            let keys: [&dyn KeyMaterialTrait; 1] = [&z];
+            assert_eq!(f.derive_key_from_multiple_out(&keys, b"", 16, &mut out).unwrap(), 16);
+            assert!(ct::ct_eq_bytes(out.ref_to_bytes(), &expected), "{name}");
+        }
+    }
+
     #[test]
     fn hkdf_tests() {
         /* HKDF-SHA256 */

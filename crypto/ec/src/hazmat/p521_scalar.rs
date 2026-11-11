@@ -394,27 +394,39 @@ fn redc(t: &[u64; 18]) -> [u64; 9] {
 /// two-step shape as this crate's Solinas-prime field reductions, just with a genuine ~259-bit fold
 /// constant instead of a small one, since `n` has no special algebraic form to exploit.
 fn reduce_wide(limbs: [u64; 9]) -> [u64; 9] {
-    let hi = limbs[8] >> 9;
-    let mut lo = limbs;
-    lo[8] &= 0x1ff;
+    let mut out = [0u64; 9];
+    reduce_wide_into(&limbs, &mut out);
+    out
+}
 
-    let mut hi_limbs = [0u64; 9];
-    hi_limbs[0] = hi;
-    let product = widening_mul(&hi_limbs, &TWO_POW_521_MOD_N_LIMBS);
-    let product_low: [u64; 9] = product[..9].try_into().unwrap();
-    debug_assert_eq!(
-        &product[9..],
-        &[0u64; 9],
-        "hi * C must fit in 9 limbs (hi < 2^55, C < 2^259)"
+/// The fold of the bits above 2^521 and the one conditional subtraction of `n`, of a borrowed
+/// value into `out`, in place, for a secret value: the fold's
+/// sum is formed in a `Secret`, `n` subtracted from a copy of it in `out`, and the sum moved
+/// back in under the borrow's mask where the subtraction borrowed, so no copy of the result is
+/// staged in a return slot. `limbs` is the caller's and `out` the new `Secret`'s array.
+fn reduce_wide_into(limbs: &[u64; 9], out: &mut [u64; 9]) {
+    // hi * C, as in `reduce_wide`; hi has at most 55 bits, so the product fits 9 limbs.
+    let mut hi_limbs = Secret::<[u64; 9]>::new();
+    hi_limbs[0] = limbs[8] >> 9;
+    let mut product = Secret::<[u64; 18]>::new();
+    crate::montgomery::widening_mul_into::<9, 18>(
+        &hi_limbs, &TWO_POW_521_MOD_N_LIMBS, &mut product,
     );
-
-    let (folded, carry) = nat::add(&lo, &product_low);
+    debug_assert_eq!(&product[9..], &[0u64; 9], "hi * C must fit in 9 limbs");
+    // sum = lo + hi * C; out = sum - n, or sum where that borrows.
+    let mut sum = Secret::<[u64; 9]>::new();
+    sum.copy_from_slice(limbs);
+    sum[8] &= 0x1ff;
+    let mut product_low = Secret::<[u64; 9]>::new();
+    product_low.copy_from_slice(&product[..9]);
+    let carry = nat::add_assign(&mut sum, &product_low);
     debug_assert_eq!(carry, 0, "fold sum must fit in 9 limbs (proven < 2n < 2^522)");
-
-    let (diff, borrow) = nat::sub(&folded, &N_LIMBS);
-    let mut result = [0u64; 9];
-    ct::conditional_select(Condition::<u64>::from_lsb(borrow), &folded, &diff, &mut result);
-    result
+    out.copy_from_slice(&*sum);
+    let borrow = nat::sub_assign(out, &N_LIMBS);
+    let keep_sum = Condition::<u64>::from_lsb(borrow);
+    for i in 0..9 {
+        keep_sum.mov(sum[i], &mut out[i]);
+    }
 }
 
 /// A scalar mod `n`, `< n`, held in `Secret`. See [`crate::hazmat::p256_scalar::P256Scalar`]'s
@@ -425,9 +437,18 @@ pub struct P521Scalar(Secret<[u64; 9]>);
 impl P521Scalar {
     /// Builds a secret scalar from little-endian `u64` limbs, reducing via `reduce_wide` (valid
     /// for any of the `2^576` values a raw `[u64; 9]` can represent, not just those `< 2n`).
-    pub fn from_limbs(limbs: [u64; 9]) -> Self {
+    pub fn from_limbs(mut limbs: [u64; 9]) -> Self {
+        let scalar = Self::from_borrowed_limbs(&limbs);
+        bouncycastle_utils::secret::zeroize_in_place(&mut limbs);
+        scalar
+    }
+
+    /// As [`Self::from_limbs`], from limbs the caller holds (a `Secret`'s, usually): the
+    /// reduction is made in the new `Secret` itself, so no by-value copy of the value is staged
+    /// on the way. The returned scalar is moved out, which a move does not wipe.
+    pub fn from_borrowed_limbs(limbs: &[u64; 9]) -> Self {
         let mut secret = Secret::<[u64; 9]>::new();
-        *secret = reduce_wide(limbs);
+        reduce_wide_into(limbs, &mut secret);
         Self(secret)
     }
 
