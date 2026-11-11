@@ -199,6 +199,12 @@ where
         state: &'k Self::KeyState,
         iv: &[u8; BLOCK_LEN],
     ) -> Self::Encryptor<'k> {
+        const {
+            assert!(
+                !P::DECRYPT_ONLY,
+                "this permutation decrypts only (BlockPermutation::DECRYPT_ONLY): no encrypting worker may be made over it"
+            )
+        };
         Cfb::start(state, *iv)
     }
 }
