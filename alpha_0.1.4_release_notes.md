@@ -24,6 +24,13 @@
 * `bouncycastle-ec` -- the constant-time, fixed-width curve arithmetic under both: per-curve field, scalar and
   Jacobian-point arithmetic, SEC 1 codec and comb, wNAF and variable-base multipliers, all under `hazmat`, with the
   generic limb arithmetic (`nat`, `montgomery`, `barrett`, `inverse_vartime`) at the crate root.
+* X25519 -- `bouncycastle-ed`, the Diffie-Hellman function of RFC 7748 over Curve25519, on the key agreement
+  roles: `X25519PrivateKey` implements `AgreementKey` over `()` for the raw shared secret and over
+  `KdfParams<HKDF_SHA256, LEN>` for a derived key (`X25519_HKDF_SHA256`), and with `X25519PublicKey` the KEM roles
+  as DHKEM(X25519, HKDF-SHA256) of RFC 9180 Section 4.1, through the new `bouncycastle-hpke` crate's generic DHKEM;
+  `keygen` draws the key from the caller's RNG; checked against RFC 7748's vectors, RFC 9180 Appendix A.1 and
+  Wycheproof's X25519 set; the `x25519` CLI subcommand covers keygen, pk-from-sk, check-consistency, agree, encaps
+  and decaps.
 
 ## Minor features / bug fixes
 
