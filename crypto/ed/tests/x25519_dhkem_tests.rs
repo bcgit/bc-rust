@@ -8,11 +8,12 @@ use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{KEMPrivateKey, KEMPublicKey, RNG};
 use bouncycastle_core_test_framework::kem::{TestFrameworkKEM, TestFrameworkKEMKeys};
 use bouncycastle_ed::x25519::{
-    DHKEM_SS_LEN, POINT_LEN, SCALAR_LEN, X25519, X25519PrivateKey, X25519PublicKey,
+    DHKEM_SS_LEN, POINT_LEN, SCALAR_LEN, X25519, X25519PrivateKey, X25519PublicKey, keygen,
+    keygen_from_seed,
 };
 use bouncycastle_hex as hex;
 use bouncycastle_hpke::dhkem::DHKEM;
-use bouncycastle_rng::{FixedSeedRNG, HashDRBG_SHA512};
+use bouncycastle_rng::{DefaultRNG, FixedSeedRNG, HashDRBG_SHA512};
 
 type X25519DHKEM = DHKEM<X25519, POINT_LEN, SCALAR_LEN, POINT_LEN, DHKEM_SS_LEN>;
 
@@ -69,9 +70,9 @@ fn clamp(mut k: [u8; 32]) -> [u8; 32] {
     k
 }
 
-/// `X25519::keygen` with its error mapped, in the shape the KEM test framework takes.
-fn keygen() -> Result<(X25519PublicKey, X25519PrivateKey), KEMError> {
-    X25519::keygen().map_err(|_| KEMError::KeyGenError("X25519 keygen failed"))
+/// `keygen` with its error mapped, in the shape the KEM test framework takes.
+fn keygen_kem() -> Result<(X25519PublicKey, X25519PrivateKey), KEMError> {
+    keygen(&mut DefaultRNG::default()).map_err(|_| KEMError::KeyGenError("X25519 keygen failed"))
 }
 
 /// `Encap` with the vector's ephemeral key: the RNG emits skEm, which keygen uses as the private
@@ -153,7 +154,7 @@ fn derive_key_pair_rejects_bad_ikm() {
 /// `encaps` rejects an RNG below 128 bits and accepts one at exactly 128 bits.
 #[test]
 fn encaps_rng_security_strength() {
-    let (pk, _) = X25519::keygen().unwrap();
+    let (pk, _) = keygen(&mut DefaultRNG::default()).unwrap();
 
     let mut weak = FixedSeedRNG::new([0x5A; 32]);
     weak.set_security_strength(SecurityStrength::_112bit);
@@ -194,7 +195,7 @@ impl RNG for FailingRNG {
 /// An RNG failure while generating the ephemeral key pair is passed through as the RNG's error.
 #[test]
 fn encaps_rng_passes_through_rng_failure() {
-    let (pk, _) = X25519::keygen().unwrap();
+    let (pk, _) = keygen(&mut DefaultRNG::default()).unwrap();
     match pk.encaps(&mut FailingRNG, ()) {
         Err(KEMError::RNGError(RNGError::GenericError(_))) => { /* good */ }
         other => panic!("expected the RNG's error, got {other:?}"),
@@ -209,7 +210,7 @@ fn kem_framework() {
     // secret, since X25519 ignores that bit (RFC 7748 Section 5).
     TestFrameworkKEM::new(false, true)
         .test_kem::<(), X25519PublicKey, X25519PrivateKey, POINT_LEN, DHKEM_SS_LEN>(
-            keygen,
+            keygen_kem,
             (),
             false,
         );
@@ -218,14 +219,14 @@ fn kem_framework() {
 #[test]
 fn kem_keys_framework() {
     TestFrameworkKEMKeys::new()
-        .test_keys::<X25519PublicKey, X25519PrivateKey, POINT_LEN, SCALAR_LEN>(keygen);
+        .test_keys::<X25519PublicKey, X25519PrivateKey, POINT_LEN, SCALAR_LEN>(keygen_kem);
 }
 
 /// Low-order public keys give an all-zero X25519 output, which RFC 9180 Section 7.1.4 requires
 /// both sides to reject.
 #[test]
 fn rejects_low_order_public_key() {
-    let (_, sk) = X25519::keygen().unwrap();
+    let (_, sk) = keygen(&mut DefaultRNG::default()).unwrap();
     let mut zero_bit_255 = [0_u8; 32];
     zero_bit_255[31] = 0x80;
     let p = decode_32("edffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff7f");
@@ -259,12 +260,12 @@ fn private_key_encoding_is_clamped() {
     assert_eq!(out, clamp(raw));
 
     // A key from keygen_from_seed keeps the unclamped bytes, but is equal to the clamped one.
-    let (_, unclamped) = X25519::keygen_from_seed(&seed(VECTORS[0].sk_rm)).unwrap();
+    let (_, unclamped) = keygen_from_seed(&seed(VECTORS[0].sk_rm)).unwrap();
     assert!(unclamped == sk);
     assert_eq!(unclamped.encode(), clamp(raw));
     assert!(unclamped.clone() == sk);
 
-    let (_, other) = X25519::keygen().unwrap();
+    let (_, other) = keygen(&mut DefaultRNG::default()).unwrap();
     assert!(other != sk);
 }
 

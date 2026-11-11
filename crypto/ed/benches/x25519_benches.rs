@@ -1,8 +1,8 @@
+use bouncycastle_core::agreement_key::AgreementKey;
 use bouncycastle_core::kem_key::{DecapsulatingKey, EncapsulatingKey};
 use bouncycastle_core::key_material::{KeyMaterial256, KeyType};
-use bouncycastle_core::traits::KeyAgreement;
 use bouncycastle_core_test_framework::DUMMY_SEED;
-use bouncycastle_ed::x25519::{X25519, X25519PrivateKey, X25519PublicKey};
+use bouncycastle_ed::x25519::{X25519PrivateKey, X25519PublicKey, keygen_from_seed};
 use bouncycastle_rng::FixedSeedRNG;
 use criterion::{Criterion, criterion_group, criterion_main};
 use std::hint::black_box;
@@ -29,7 +29,7 @@ fn seeds() -> Vec<KeyMaterial256> {
 
 /// A key pair for each of [`seeds`].
 fn key_pairs() -> Vec<(X25519PublicKey, X25519PrivateKey)> {
-    seeds().iter().map(|seed| X25519::keygen_from_seed(seed).unwrap()).collect()
+    seeds().iter().map(|seed| keygen_from_seed(seed).unwrap()).collect()
 }
 
 fn bench_x25519_keygen(c: &mut Criterion) {
@@ -43,7 +43,7 @@ fn bench_x25519_keygen(c: &mut Criterion) {
     group.bench_function("X25519", |b| {
         b.iter(|| {
             for seed in seeds.iter() {
-                _ = black_box(X25519::keygen_from_seed(seed));
+                _ = black_box(keygen_from_seed(seed));
             }
         })
     });
@@ -63,7 +63,7 @@ fn bench_x25519_key_agreement(c: &mut Criterion) {
         b.iter(|| {
             for i in 0..keys.len() {
                 let pk = &keys[(i + 1) % keys.len()].0;
-                _ = black_box(X25519::key_agreement(pk, &keys[i].1));
+                _ = black_box(keys[i].1.agree(pk, ()));
             }
         })
     });

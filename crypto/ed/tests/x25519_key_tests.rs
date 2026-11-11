@@ -1,10 +1,13 @@
-use bouncycastle_core::errors::{KeyAgreementError, RNGError};
+use bouncycastle_core::errors::{KeyAgreementError, KeyMaterialError, RNGError};
 use bouncycastle_core::key_material::{KeyMaterial256, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{KeyAgreementPrivateKey, KeyAgreementPublicKey};
-use bouncycastle_ed::x25519::{POINT_LEN, SCALAR_LEN, X25519, X25519PrivateKey, X25519PublicKey};
+use bouncycastle_core_test_framework::key_agreement::TestFrameworkKeyAgreementKeys;
+use bouncycastle_ed::x25519::{
+    POINT_LEN, SCALAR_LEN, X25519PrivateKey, X25519PublicKey, keygen, keygen_from_seed,
+};
 use bouncycastle_hex as hex;
-use bouncycastle_rng::FixedSeedRNG;
+use bouncycastle_rng::{DefaultRNG, FixedSeedRNG};
 
 /// RFC 7748 Section 6.1: Alice's private key a and public key X25519(a, 9).
 const ALICE_SK: &str = "77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a";
@@ -14,137 +17,110 @@ fn seed(hex_str: &str, key_type: KeyType) -> KeyMaterial256 {
     KeyMaterial256::from_bytes_as_type(&hex::decode(hex_str).unwrap(), key_type).unwrap()
 }
 
-#[test]
-fn core_framework_tests() {
-    use bouncycastle_core_test_framework::key_agreement::TestFrameworkKeyAgreementKeys;
-
-    let tf = TestFrameworkKeyAgreementKeys::new();
-
-    tf.test_keys::<X25519PublicKey, X25519PrivateKey, POINT_LEN, SCALAR_LEN>(X25519::keygen);
+fn keygen_default() -> Result<(X25519PublicKey, X25519PrivateKey), KeyAgreementError> {
+    keygen(&mut DefaultRNG::default())
 }
 
 #[test]
-fn keygen_from_seed() {
+fn core_framework_tests() {
+    TestFrameworkKeyAgreementKeys::new()
+        .test_keys::<X25519PublicKey, X25519PrivateKey, POINT_LEN, SCALAR_LEN>(keygen_default);
+}
+
+#[test]
+fn keygen_from_seed_takes_a_seed_or_random_material() {
     for key_type in [KeyType::Seed, KeyType::CryptographicRandom] {
-        let (pk, sk) = X25519::keygen_from_seed(&seed(ALICE_SK, key_type)).unwrap();
+        let (pk, sk) = keygen_from_seed(&seed(ALICE_SK, key_type)).unwrap();
         assert_eq!(pk.as_bytes().as_slice(), hex::decode(ALICE_PK).unwrap());
-        X25519::keypair_consistency_check(&pk, &sk).unwrap();
+        assert_eq!(sk.pk(), pk);
     }
 }
 
 #[test]
 fn keygen_from_seed_rejects_bad_seeds() {
     // Wrong key type.
-    match X25519::keygen_from_seed(&seed(ALICE_SK, KeyType::MACKey)) {
-        Err(KeyAgreementError::KeyGenError(_)) => { /* good */ }
-        _ => panic!("expected KeyGenError"),
+    match keygen_from_seed(&seed(ALICE_SK, KeyType::MACKey)) {
+        Err(KeyAgreementError::KeyMaterialError(KeyMaterialError::InvalidKeyType(_))) => {}
+        other => panic!("expected InvalidKeyType, got {:?}", other.err()),
     }
 
     // All zeros: KeyMaterial marks it KeyType::Zeroized.
-    match X25519::keygen_from_seed(&seed(&"00".repeat(32), KeyType::Seed)) {
-        Err(KeyAgreementError::KeyGenError(_)) => { /* good */ }
-        _ => panic!("expected KeyGenError"),
+    match keygen_from_seed(&seed(&"00".repeat(32), KeyType::Seed)) {
+        Err(KeyAgreementError::KeyMaterialError(KeyMaterialError::InvalidKeyType(_))) => {}
+        other => panic!("expected InvalidKeyType, got {:?}", other.err()),
     }
 
     // Undersized.
     let short = seed(&ALICE_SK[..62], KeyType::Seed);
     assert_eq!(short.key_len(), 31);
-    match X25519::keygen_from_seed(&short) {
-        Err(KeyAgreementError::KeyGenError(_)) => { /* good */ }
-        _ => panic!("expected KeyGenError"),
+    match keygen_from_seed(&short) {
+        Err(KeyAgreementError::KeyMaterialError(KeyMaterialError::InvalidKeyType(_))) => {}
+        other => panic!("expected InvalidKeyType, got {:?}", other.err()),
     }
 
     // Security strength below the algorithm's, and exactly at it.
     let mut weak = seed(ALICE_SK, KeyType::Seed);
     weak.set_security_strength(SecurityStrength::_112bit).unwrap();
-    match X25519::keygen_from_seed(&weak) {
-        Err(KeyAgreementError::KeyGenError(_)) => { /* good */ }
-        _ => panic!("expected KeyGenError"),
+    match keygen_from_seed(&weak) {
+        Err(KeyAgreementError::KeyMaterialError(KeyMaterialError::SecurityStrength(_))) => {}
+        other => panic!("expected SecurityStrength, got {:?}", other.err()),
     }
     let mut just_right = seed(ALICE_SK, KeyType::Seed);
     just_right.set_security_strength(SecurityStrength::_128bit).unwrap();
-    X25519::keygen_from_seed(&just_right).unwrap();
+    keygen_from_seed(&just_right).unwrap();
 }
 
 #[test]
-fn keygen_from_rng() {
+fn keygen_uses_the_rng_output_as_the_key() {
     // The RNG output is used as the seed, so this must match keygen_from_seed.
     let seed_bytes: [u8; 32] = hex::decode(ALICE_SK).unwrap().try_into().unwrap();
     let mut rng = FixedSeedRNG::new(seed_bytes);
-    let (pk, sk) = X25519::keygen_from_rng(&mut rng).unwrap();
+    let (pk, sk) = keygen(&mut rng).unwrap();
     assert_eq!(pk.as_bytes().as_slice(), hex::decode(ALICE_PK).unwrap());
-    X25519::keypair_consistency_check(&pk, &sk).unwrap();
+    assert_eq!(sk.pk(), pk);
 
     // RNG too weak.
     let mut rng = FixedSeedRNG::new(seed_bytes);
     rng.set_security_strength(SecurityStrength::_112bit);
-    match X25519::keygen_from_rng(&mut rng) {
-        Err(KeyAgreementError::RNGError(RNGError::SecurityStrengthInsufficientForAlgorithm)) => {
-            /* good */
+    match keygen(&mut rng) {
+        Err(KeyAgreementError::RNGError(RNGError::SecurityStrengthInsufficientForAlgorithm)) => {}
+        other => {
+            panic!(
+                "expected RNGError::SecurityStrengthInsufficientForAlgorithm, got {:?}",
+                other.err()
+            )
         }
-        _ => panic!("expected RNGError::SecurityStrengthInsufficientForAlgorithm"),
     }
 
     // RNG just right.
     let mut rng = FixedSeedRNG::new(seed_bytes);
     rng.set_security_strength(SecurityStrength::_128bit);
-    X25519::keygen_from_rng(&mut rng).unwrap();
+    keygen(&mut rng).unwrap();
 }
 
 #[test]
-fn keygen() {
-    let (pk1, sk1) = X25519::keygen().unwrap();
-    let (pk2, sk2) = X25519::keygen().unwrap();
+fn keygen_gives_fresh_pairs_whose_public_keys_belong_to_them() {
+    let (pk1, sk1) = keygen_default().unwrap();
+    let (pk2, sk2) = keygen_default().unwrap();
     assert_ne!(pk1, pk2);
-    X25519::keypair_consistency_check(&pk1, &sk1).unwrap();
-    X25519::keypair_consistency_check(&pk2, &sk2).unwrap();
-}
-
-#[test]
-fn keypair_consistency_check() {
-    let (pk1, sk1) = X25519::keygen().unwrap();
-    let (pk2, sk2) = X25519::keygen().unwrap();
-    X25519::keypair_consistency_check(&pk1, &sk1).unwrap();
-
-    match X25519::keypair_consistency_check(&pk1, &sk2) {
-        Err(KeyAgreementError::ConsistencyCheckFailed(_)) => { /* good */ }
-        _ => panic!("expected ConsistencyCheckFailed"),
-    }
-    match X25519::keypair_consistency_check(&pk2, &sk1) {
-        Err(KeyAgreementError::ConsistencyCheckFailed(_)) => { /* good */ }
-        _ => panic!("expected ConsistencyCheckFailed"),
-    }
+    assert_eq!(sk1.pk(), pk1);
+    assert_eq!(sk2.pk(), pk2);
+    assert_ne!(sk1.pk(), pk2);
+    assert_ne!(sk2.pk(), pk1);
 }
 
 #[test]
 fn private_key_pk() {
-    let (_, sk) = X25519::keygen_from_seed(&seed(ALICE_SK, KeyType::Seed)).unwrap();
+    let (_, sk) = keygen_from_seed(&seed(ALICE_SK, KeyType::Seed)).unwrap();
     assert_eq!(sk.pk().as_bytes().as_slice(), hex::decode(ALICE_PK).unwrap());
 
-    let (pk, sk) = X25519::keygen().unwrap();
+    let (pk, sk) = keygen_default().unwrap();
     assert_eq!(sk.pk(), pk);
 }
 
 #[test]
-fn private_key_consistency_check() {
-    let (pk1, sk1) = X25519::keygen().unwrap();
-    let (pk2, sk2) = X25519::keygen().unwrap();
-    sk1.consistency_check(&pk1).unwrap();
-    sk2.consistency_check(&pk2).unwrap();
-
-    match sk1.consistency_check(&pk2) {
-        Err(KeyAgreementError::ConsistencyCheckFailed(_)) => { /* good */ }
-        _ => panic!("expected ConsistencyCheckFailed"),
-    }
-    match sk2.consistency_check(&pk1) {
-        Err(KeyAgreementError::ConsistencyCheckFailed(_)) => { /* good */ }
-        _ => panic!("expected ConsistencyCheckFailed"),
-    }
-}
-
-#[test]
 fn public_key_to_bytes() {
-    let (pk, _) = X25519::keygen_from_seed(&seed(ALICE_SK, KeyType::Seed)).unwrap();
+    let (pk, _) = keygen_from_seed(&seed(ALICE_SK, KeyType::Seed)).unwrap();
     let expected = hex::decode(ALICE_PK).unwrap();
 
     let as_ref: &[u8] = pk.as_ref();
@@ -204,7 +180,7 @@ fn private_key_encoding() {
 
     // A key built from the unclamped seed is the same key, with the same encoding, and it
     // round-trips through its encoding.
-    let (_, from_seed) = X25519::keygen_from_seed(&seed(ALICE_SK, KeyType::Seed)).unwrap();
+    let (_, from_seed) = keygen_from_seed(&seed(ALICE_SK, KeyType::Seed)).unwrap();
     assert!(from_seed == sk);
     assert_eq!(KeyAgreementPrivateKey::encode(&from_seed), clamp(raw));
     let encoded = KeyAgreementPrivateKey::encode(&from_seed);

@@ -1,18 +1,54 @@
+use bouncycastle_core::agreement_key::AgreementKey;
 use bouncycastle_core::errors::KeyAgreementError;
-use bouncycastle_core::key_material::{KeyMaterial256, KeyType};
-use bouncycastle_core::traits::{KeyAgreement, KeyAgreementPublicKey};
-use bouncycastle_ed::x25519::{POINT_LEN, SCALAR_LEN, X25519, X25519PrivateKey, X25519PublicKey};
+use bouncycastle_core::kdf_params::{KdfParams, KeyLen};
+use bouncycastle_core::key_material::{KeyMaterial, KeyMaterial256, KeyMaterialTrait, KeyType};
+use bouncycastle_core::security_strength::SecurityStrength;
+use bouncycastle_core::traits::{KDF, KeyAgreementPublicKey};
+use bouncycastle_core_test_framework::key_agreement::TestFrameworkKeyAgreement;
+use bouncycastle_ed::x25519::{
+    POINT_LEN, SCALAR_LEN, X25519PrivateKey, X25519PublicKey, keygen, keygen_from_seed,
+};
 use bouncycastle_hex as hex;
+use bouncycastle_rng::DefaultRNG;
+use bouncycastle_sha2::hkdf::HKDF_SHA256;
 
+fn keygen_default() -> Result<(X25519PublicKey, X25519PrivateKey), KeyAgreementError> {
+    keygen(&mut DefaultRNG::default())
+}
+
+/// The framework's agreement suite over the raw primitive and over the HKDF-SHA256 pairing.
 #[test]
 fn core_framework_tests() {
-    use bouncycastle_core_test_framework::key_agreement::TestFrameworkKeyAgreement;
-
-    let tf = TestFrameworkKeyAgreement::new();
-
-    tf.test_key_agreement::<X25519PublicKey, X25519PrivateKey, X25519, POINT_LEN, SCALAR_LEN>(
-        X25519::keygen,
+    TestFrameworkKeyAgreement::new().test_key_agreement(keygen_default, ());
+    let hkdf = HKDF_SHA256::new();
+    TestFrameworkKeyAgreement::new().test_key_agreement(
+        keygen_default,
+        KdfParams::new(&hkdf, b"X25519 framework info", KeyLen::<32>),
     );
+}
+
+/// The raw agreement's output is `K` typed for a KDF at X25519's strength, and the HKDF-SHA256
+/// pairing is HKDF run by hand over that `K` with the same info.
+#[test]
+fn raw_z_is_a_shared_secret_and_the_pairing_is_hkdf_over_it() {
+    let (alice_pk, alice_sk) = keygen_default().unwrap();
+    let (bob_pk, bob_sk) = keygen_default().unwrap();
+
+    let z = alice_sk.agree(&bob_pk, ()).unwrap();
+    assert_eq!(z.key_type(), KeyType::SharedSecret);
+    assert_eq!(z.security_strength(), SecurityStrength::_128bit);
+    assert_eq!(z.key_len(), POINT_LEN);
+
+    let mut info = [0u8; 2 * POINT_LEN];
+    info[..POINT_LEN].copy_from_slice(&alice_pk.encode());
+    info[POINT_LEN..].copy_from_slice(&bob_pk.encode());
+    let hkdf = HKDF_SHA256::new();
+    let derived = bob_sk.agree(&alice_pk, KdfParams::new(&hkdf, &info, KeyLen::<48>)).unwrap();
+    let mut by_hand = KeyMaterial::<48>::new();
+    hkdf.derive_key_out(&z, &info, 48, &mut by_hand).unwrap();
+    assert!(derived.equals(&by_hand));
+    assert_eq!(derived.key_type(), KeyType::CryptographicRandom);
+    assert_eq!(derived.security_strength(), SecurityStrength::_128bit);
 }
 
 #[test]
@@ -77,15 +113,15 @@ fn rfc7748_section_6_1() {
     );
 
     let k = "4a5d9d5ba4ce2de1728e3bf480350f25e07e21c947d19e3376f09b3c1e161742";
-    let alice_k = X25519::key_agreement(&bob_pk, &alice_sk).unwrap();
-    let bob_k = X25519::key_agreement(&alice_pk, &bob_sk).unwrap();
-    check_value(alice_k.as_ref(), "Section 6.1 K (Alice)", k);
-    check_value(bob_k.as_ref(), "Section 6.1 K (Bob)", k);
+    let alice_k = alice_sk.agree(&bob_pk, ()).unwrap();
+    let bob_k = bob_sk.agree(&alice_pk, ()).unwrap();
+    check_value(alice_k.ref_to_bytes(), "Section 6.1 K (Alice)", k);
+    check_value(bob_k.ref_to_bytes(), "Section 6.1 K (Bob)", k);
 }
 
-/// [`X25519::key_agreement`] rejects a public key that gives an all-zero shared secret, however
-/// that key is encoded: u = 0, u = p (non-canonical, reduces to 0), and u = 0 with the ignored
-/// bit 255 set.
+/// The agreement rejects a public key that gives an all-zero shared secret, however that key
+/// is encoded: u = 0, u = p (non-canonical, reduces to 0), and u = 0 with the ignored bit 255
+/// set. The caller's buffer is left zeroized.
 #[test]
 fn key_agreement_rejects_all_zero_shared_secret() {
     let zero = [0_u8; POINT_LEN];
@@ -97,11 +133,18 @@ fn key_agreement_rejects_all_zero_shared_secret() {
         let sk = sk_from_bytes(&decode_32(
             "77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a",
         ));
-        match X25519::key_agreement(&X25519PublicKey::from_bytes(&u).unwrap(), &sk) {
-            Err(KeyAgreementError::InvalidPublicKey(_)) => { /* good */ }
-            Err(e) => panic!("expected InvalidPublicKey for u = {u:02x?}, got {e:?}"),
-            Ok(_) => panic!("expected InvalidPublicKey for u = {u:02x?}, got Ok"),
+        let pk = X25519PublicKey::from_bytes(&u).unwrap();
+        match sk.agree(&pk, ()) {
+            Err(KeyAgreementError::AgreementFailed) => { /* good */ }
+            Err(e) => panic!("expected AgreementFailed for u = {u:02x?}, got {e:?}"),
+            Ok(_) => panic!("expected AgreementFailed for u = {u:02x?}, got Ok"),
         }
+        let mut ss =
+            KeyMaterial::<POINT_LEN>::from_bytes_as_type(&[0xFF; POINT_LEN], KeyType::Seed)
+                .unwrap();
+        assert!(matches!(sk.agree_out(&pk, (), &mut ss), Err(KeyAgreementError::AgreementFailed)));
+        assert_eq!(ss.key_type(), KeyType::Zeroized);
+        assert_eq!(ss.key_len(), 0);
     }
 }
 
@@ -109,10 +152,10 @@ fn decode_32(s: &str) -> [u8; 32] {
     hex::decode(s).unwrap().try_into().unwrap()
 }
 
-/// A private key from its 32 bytes, via [`X25519::keygen_from_seed`].
+/// A private key from its 32 bytes, via [`keygen_from_seed`].
 fn sk_from_bytes(bytes: &[u8]) -> X25519PrivateKey {
     let seed = KeyMaterial256::from_bytes_as_type(bytes, KeyType::Seed).unwrap();
-    X25519::keygen_from_seed(&seed).unwrap().1
+    keygen_from_seed(&seed).unwrap().1
 }
 
 /// The iterated test of RFC 7748 Section 5.2: starting from k = u = 9, each iteration sets k to
@@ -130,12 +173,10 @@ fn rfc7748_check_iterated(count: usize) {
     u[0] = 9;
     let mut iterations = 0;
     while iterations < count {
-        let r =
-            X25519::key_agreement(&X25519PublicKey::from_bytes(&u).unwrap(), &sk_from_bytes(&k))
-                .unwrap();
+        let r = sk_from_bytes(&k).agree(&X25519PublicKey::from_bytes(&u).unwrap(), ()).unwrap();
 
         u = k;
-        k.copy_from_slice(r.as_ref());
+        k.copy_from_slice(r.ref_to_bytes());
 
         iterations += 1;
 
@@ -169,6 +210,6 @@ fn check_vector(sk: &str, su: &str, se: &str, text: &str) {
     let k = sk_from_bytes(&decode_32(sk));
     let u = X25519PublicKey::from_bytes(&decode_32(su)).unwrap();
 
-    let r = X25519::key_agreement(&u, &k).unwrap();
-    check_value(r.as_ref(), text, se);
+    let r = k.agree(&u, ()).unwrap();
+    check_value(r.ref_to_bytes(), text, se);
 }

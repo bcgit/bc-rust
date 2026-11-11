@@ -9,13 +9,16 @@
 //! each one is checked for exact output. The `acceptable` cases are low-order, twist and
 //! non-canonical public keys, which RFC 7748 Section 5 requires to be processed rather than
 //! rejected. The exception is those whose shared secret is all zeros (flag `ZeroSharedSecret`),
-//! which `key_agreement` rejects with `KeyAgreementError::InvalidPublicKey`.
+//! which the agreement refuses as `KeyAgreementError::AgreementFailed`.
 
+use bouncycastle_core::agreement_key::AgreementKey;
 use bouncycastle_core::errors::KeyAgreementError;
-use bouncycastle_core::key_material::{KeyMaterial256, KeyType};
-use bouncycastle_core::traits::{KeyAgreement, KeyAgreementPublicKey};
+use bouncycastle_core::key_material::{KeyMaterial256, KeyMaterialTrait, KeyType};
+use bouncycastle_core::traits::KeyAgreementPublicKey;
 use bouncycastle_core_test_framework::test_data_loaders::{Value, hex_field, wycheproof_json};
-use bouncycastle_ed::x25519::{POINT_LEN, SCALAR_LEN, X25519, X25519PrivateKey, X25519PublicKey};
+use bouncycastle_ed::x25519::{
+    POINT_LEN, SCALAR_LEN, X25519PrivateKey, X25519PublicKey, keygen_from_seed,
+};
 
 #[test]
 fn wycheproof_x25519() {
@@ -44,9 +47,9 @@ fn wycheproof_x25519() {
             let shared = hex_field(test, "shared", tc_id);
 
             let (k, u) = (sk_from_bytes(&k), X25519PublicKey::from_bytes(&u).unwrap());
-            match X25519::key_agreement(&u, &k) {
-                Ok(r) => assert_eq!(r.as_ref(), shared.as_slice(), "{ctx}: shared secret"),
-                Err(KeyAgreementError::InvalidPublicKey(_)) => {
+            match k.agree(&u, ()) {
+                Ok(r) => assert_eq!(r.ref_to_bytes(), shared.as_slice(), "{ctx}: shared secret"),
+                Err(KeyAgreementError::AgreementFailed) => {
                     assert!(shared.iter().all(|&b| b == 0), "{ctx}: rejected a non-zero secret");
                     zero_shared += 1;
                 }
@@ -66,8 +69,8 @@ fn wycheproof_x25519() {
     );
 }
 
-/// A private key from its 32 bytes, via [`X25519::keygen_from_seed`].
+/// A private key from its 32 bytes, via [`keygen_from_seed`].
 fn sk_from_bytes(bytes: &[u8]) -> X25519PrivateKey {
     let seed = KeyMaterial256::from_bytes_as_type(bytes, KeyType::Seed).unwrap();
-    X25519::keygen_from_seed(&seed).unwrap().1
+    keygen_from_seed(&seed).unwrap().1
 }
