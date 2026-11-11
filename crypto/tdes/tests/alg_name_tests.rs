@@ -7,7 +7,7 @@
 //! report the same name.
 
 use bouncycastle_cipher::modes::hazmat::ecb::{ECB, Ecb};
-use bouncycastle_cipher::modes::{CBC, Cbc, Cfb, Cfb8, Ctr};
+use bouncycastle_cipher::modes::{CBC, Cbc, Cfb, Cfb8, Cmac, Ctr};
 use bouncycastle_cipher::padding::{
     NoPadding, PKCS7, PaddedBlockCipherDecryptor, PaddedBlockCipherEncryptor,
 };
@@ -50,6 +50,18 @@ fn cbc() {
     check::<TDES_CBC<'_, Encrypting, PKCS7>, TDES_CBC<'_, Decrypting, PKCS7>>("TDES_CBC", _112bit);
     check_decrypting::<TDES2_CBC<'_, NoPadding>>("TDES2_CBC");
     check_decrypting::<TDES2_CBC<'_, PKCS7>>("TDES2_CBC");
+}
+
+/// CMAC has no alias in this crate (it is reached through the generic `BlockCipherKey`), so the
+/// worker is named directly; the two-key engine has only the verifying direction.
+#[test]
+fn cmac() {
+    use SecurityStrength::*;
+    check::<
+        Cmac<'_, TDESInternal, Encrypting, BLOCK_LEN>,
+        Cmac<'_, TDESInternal, Decrypting, BLOCK_LEN>,
+    >("TDES_CMAC", _112bit);
+    check_decrypting::<Cmac<'_, TDES2Internal, Decrypting, BLOCK_LEN>>("TDES2_CMAC");
 }
 
 /// One worker serves both halves of a key wrap, so the alias is checked against itself; the

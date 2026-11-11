@@ -214,13 +214,14 @@ impl BlockPermutation<BLOCK_LEN> for TDES2Internal {
     }
 }
 
-/// The same modes as the three-key engine, under their own names.
+/// The same modes as the three-key engine, under their own names; CMAC and TKW have only their
+/// verifying and unwrapping halves.
 impl ModeNames for TDES2Internal {
     const CBC_ALG_NAME: &'static str = "TDES2_CBC";
     const CCM_ALG_NAME: &'static str = "";
     const CFB_ALG_NAME: &'static str = "TDES2_CFB";
     const CFB8_ALG_NAME: &'static str = "TDES2_CFB8";
-    const CMAC_ALG_NAME: &'static str = "";
+    const CMAC_ALG_NAME: &'static str = "TDES2_CMAC";
     const CTR_ALG_NAME: &'static str = "TDES2_CTR";
     const ECB_ALG_NAME: &'static str = "TDES2_ECB";
     const GCM_ALG_NAME: &'static str = "";
