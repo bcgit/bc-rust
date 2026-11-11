@@ -7,6 +7,8 @@ pub mod block_cipher_mem_usage;
 mod bench_aes_mem_usage;
 mod bench_aria_mem_usage;
 mod bench_ascon_mem_usage;
+mod bench_blake2_mem_usage;
+mod bench_blake3_mem_usage;
 mod bench_camellia_mem_usage;
 mod bench_ccm_mem_usage;
 mod bench_chacha20_mem_usage;

@@ -25,6 +25,7 @@ use bouncycastle::hex;
 use std::fs::File;
 use std::io;
 use std::io::{Read, Write};
+use std::ops::RangeInclusive;
 use std::process::exit;
 use std::sync::atomic::{AtomicBool, Ordering};
 
@@ -237,6 +238,59 @@ pub(crate) fn load_secret(
 /// knows, by the length it expects, whether that byte is part of the value.
 pub(crate) fn strip_trailing_newline(bytes: &[u8]) -> &[u8] {
     bytes.strip_suffix(b"\r\n").or_else(|| bytes.strip_suffix(b"\n")).unwrap_or(bytes)
+}
+
+/// Warns on stderr, then lets the caller carry on, if `key` is empty or all zero bytes. A CLI is
+/// used for test vectors and scripting, where such a key is a legitimate thing to want, so this
+/// is a warning and not a refusal. Shared by every MAC key loader so they all say the same thing.
+///
+/// This looks at the bytes, not at [`KeyType::Zeroized`]: the secret readers above tag what they
+/// read `Unknown` inside a hazardous-operations closure, which never produces `Zeroized`.
+pub(crate) fn warn_if_zeroized_key(key: &impl KeyMaterialTrait) {
+    if bouncycastle_utils::ct::ct_eq_zero_bytes(key.ref_to_bytes()) {
+        eprintln!(
+            "Warning: all-zero (or otherwise zeroized) key provided. Proceeding, but this is not secure."
+        );
+    }
+}
+
+/// The MAC key from `--key-file` or `--key` (hex), tagged as a MAC key with no stated strength
+/// (a CLI is used for test vectors and scripting, so the commands build their keys allow-weak).
+/// An all-zero key is accepted with a warning, see [`warn_if_zeroized_key`].
+///
+/// `len` is the algorithm's bound on the key length where it has one (BLAKE2b 1 to 64 bytes,
+/// BLAKE2s 1 to 32, BLAKE3 exactly 32), refused here with a message naming the limit rather than
+/// as the constructor's error. HMAC and KMAC pass `None`: HMAC hashes a key longer than its block
+/// (RFC 2104 Section 2) and KMAC encodes the key's length (SP 800-185 Section 4.2), so any length
+/// the secret buffer holds is accepted.
+pub(crate) fn load_mac_key(
+    key: &Option<String>,
+    key_file: &Option<String>,
+    len: Option<(&str, RangeInclusive<usize>)>,
+) -> SecretBytes {
+    let mut key = load_secret(key, key_file, "key");
+    if let Some((alg_name, range)) = len {
+        let got = key.key_len();
+        if !range.contains(&got) {
+            let (min_len, max_len) = (range.start(), range.end());
+            if min_len == max_len {
+                eprintln!("Error: {alg_name} requires a {min_len}-byte key; got {got} bytes.");
+            } else {
+                eprintln!(
+                    "Error: {alg_name} requires a key of {min_len} to {max_len} bytes; got {got} bytes."
+                );
+            }
+            exit(-1);
+        }
+    }
+    warn_if_zeroized_key(&key);
+    do_hazardous_operations(&mut key, |key| key.set_key_type(KeyType::MACKey)).unwrap_or_else(
+        |e| {
+            eprintln!("Error: couldn't load the key: {e:?}");
+            exit(-1);
+        },
+    );
+    key
 }
 
 // ---- stdin as data ---------------------------------------------------------------------------

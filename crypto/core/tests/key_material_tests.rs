@@ -215,6 +215,34 @@ mod test_key_material {
         assert_eq!(key.key_type(), KeyType::CryptographicRandom);
     }
 
+    /// `from_rng_as_type` draws `len` bytes into a longer buffer under the caller's type, caps the
+    /// strength at `len`, gives a zero draw back Zeroized without touching the RNG, and refuses a
+    /// `len` past the capacity.
+    #[test]
+    fn from_rng_as_type_draws_a_shorter_typed_key() {
+        use bouncycastle_rng as rng;
+
+        let mut drbg = rng::DefaultRNG::default();
+        let key = KeyMaterial512::from_rng_as_type(&mut drbg, 28, KeyType::MACKey).unwrap();
+        assert_eq!(key.key_len(), 28);
+        assert_eq!(key.key_type(), KeyType::MACKey);
+        assert_eq!(key.security_strength(), SecurityStrength::_192bit, "28 bytes carry 192 bits");
+        assert_ne!(key.ref_to_bytes(), &[0u8; 28], "the bytes came from the RNG");
+
+        let key = KeyMaterial512::from_rng_as_type(&mut drbg, 64, KeyType::MACKey).unwrap();
+        assert_eq!(key.key_len(), 64);
+        assert_eq!(key.security_strength(), drbg.security_strength(), "64 bytes keep the RNG's");
+
+        let key = KeyMaterial512::from_rng_as_type(&mut drbg, 0, KeyType::MACKey).unwrap();
+        assert_eq!(key.key_type(), KeyType::Zeroized);
+        assert_eq!(key.key_len(), 0);
+
+        assert!(matches!(
+            KeyMaterial256::from_rng_as_type(&mut drbg, 33, KeyType::MACKey),
+            Err(KeyMaterialError::InputDataLongerThanKeyCapacity)
+        ));
+    }
+
     /// The material carries the RNG's strength, capped at what the key length can carry: the
     /// default DRBG is 256-bit, so 32 bytes keep that and 16 bytes are a 128-bit key.
     #[test]
