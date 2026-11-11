@@ -20,10 +20,11 @@
 #![allow(dead_code)]
 #![allow(unused_imports)]
 
+use bouncycastle::core::agreement_key::AgreementKey;
 use bouncycastle::core::kem_key::{DecapsulatingKey, EncapsulatingKey};
-use bouncycastle::core::key_material::{KeyMaterial256, KeyType};
-use bouncycastle::core::traits::{KeyAgreement, KeyAgreementPrivateKey, KeyAgreementPublicKey};
-use bouncycastle::ed::x25519::{X25519, X25519PrivateKey, X25519PublicKey};
+use bouncycastle::core::key_material::{KeyMaterial256, KeyMaterialTrait, KeyType};
+use bouncycastle::core::traits::{KeyAgreementPrivateKey, KeyAgreementPublicKey};
+use bouncycastle::ed::x25519::{X25519PrivateKey, X25519PublicKey, keygen_from_seed};
 use bouncycastle::rng::HashDRBG_SHA512;
 
 /// Runs the operation under test in its own stack frame, with the key already loaded by the
@@ -112,7 +113,7 @@ fn bench_x25519_keygen() {
     .unwrap();
 
     measure(|| {
-        let (pk, _sk) = X25519::keygen_from_seed(&seed).unwrap();
+        let (pk, _sk) = keygen_from_seed(&seed).unwrap();
         print!("{:x?}", pk.encode());
     });
 }
@@ -124,8 +125,8 @@ fn bench_x25519_key_agreement() {
     let sk = load_alice_sk();
     let pk = load_bob_pk();
     measure(|| {
-        let k = X25519::key_agreement(&pk, &sk).unwrap();
-        print!("{:x?}", k.as_ref());
+        let k = sk.agree(&pk, ()).unwrap();
+        print!("{:x?}", k.ref_to_bytes());
     });
 }
 
