@@ -21,10 +21,12 @@ bouncycastle-blake3 = { path = "./crypto/blake3" }
 bouncycastle-chacha20 = { path = "./crypto/chacha20" }
 bouncycastle-chacha20-poly1305-aead = { path = "./crypto/chacha20-poly1305-aead" }
 bouncycastle-cipher = { path = "./crypto/cipher" }
+bouncycastle-concatkdf = { path = "./crypto/concatkdf" }
 bouncycastle-core = { path = "crypto/core" }
 bouncycastle-cipher-test-framework = { path = "./crypto/cipher-test-framework" }
 bouncycastle-core-test-framework = { path = "./crypto/core-test-framework" }
 bouncycastle-ec = { path = "./crypto/ec" }
+bouncycastle-eccdh = { path = "./crypto/eccdh" }
 bouncycastle-ecdsa = { path = "./crypto/ecdsa" }
 bouncycastle-factory = { path = "./crypto/factory" }
 bouncycastle-hex = { path = "./crypto/hex" }
@@ -44,6 +46,7 @@ bouncycastle-sm2 = { path = "./crypto/sm2" }
 bouncycastle-sm3 = { path = "./crypto/sm3" }
 bouncycastle-sm4 = { path = "./crypto/sm4" }
 bouncycastle-utils = { path = "./crypto/utils" }
+bouncycastle-x963kdf = { path = "./crypto/x963kdf" }
 
 
 # *** External Dependencies ***
@@ -80,7 +83,9 @@ bouncycastle-blake3.workspace = true
 bouncycastle-chacha20.workspace = true
 bouncycastle-chacha20-poly1305-aead.workspace = true
 bouncycastle-cipher.workspace = true
+bouncycastle-concatkdf.workspace = true
 bouncycastle-core.workspace = true
+bouncycastle-eccdh.workspace = true
 bouncycastle-ecdsa.workspace = true
 bouncycastle-factory.workspace = true
 bouncycastle-hex.workspace = true
@@ -97,3 +102,4 @@ bouncycastle-sha3.workspace = true
 bouncycastle-sm2.workspace = true
 bouncycastle-sm3.workspace = true
 bouncycastle-sm4.workspace = true
+bouncycastle-x963kdf.workspace = true

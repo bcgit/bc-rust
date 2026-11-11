@@ -33,6 +33,7 @@
 use crate::barrett;
 use crate::hazmat::p256k1_scalar::{N_LIMBS, P256K1Scalar};
 use crate::nat;
+use bouncycastle_utils::secret::Secret;
 
 /// `n - 1`, little-endian `u64` limbs. `N_LIMBS[0]` is odd (`n` is prime), so the subtraction
 /// never borrows out of the low limb.
@@ -54,8 +55,14 @@ pub fn reduce_wide_bits_mod_n_minus_1(bytes: &[u8]) -> P256K1Scalar {
         "reduce_wide_bits_mod_n_minus_1 given {} bytes, more than 63",
         bytes.len()
     );
-    let t = barrett::limbs_from_be_bytes::<8>(bytes);
-    let reduced = barrett::reduce::<4, 8, 5>(&t, &N_MINUS_1_LIMBS, &MU_LOW_LIMBS);
-    let (plus_one, _) = nat::add(&reduced, &[1, 0, 0, 0]);
-    P256K1Scalar::from_limbs(plus_one)
+    // The DRBG output, its reduction and d itself are the key at three stages, so each is held
+    // in a `Secret`, scrubbed when this function returns rather than left on the stack, and
+    // every step writes into that `Secret` rather than returning the value through a slot a
+    // return would stage it in. What this frame leaves is the returned scalar's own move.
+    let mut t = Secret::<[u64; 8]>::new();
+    barrett::limbs_from_be_bytes_into::<8>(bytes, &mut t);
+    let mut d = Secret::<[u64; 4]>::new();
+    barrett::reduce_into::<4, 8, 5>(&t, &N_MINUS_1_LIMBS, &MU_LOW_LIMBS, &mut d);
+    nat::add_assign(&mut d, &[1, 0, 0, 0]);
+    P256K1Scalar::from_borrowed_limbs(&d)
 }
