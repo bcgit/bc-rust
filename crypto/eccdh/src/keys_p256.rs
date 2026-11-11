@@ -2,12 +2,10 @@
 //! 5.6.2.1.2 and 5.6.2.3.3).
 
 use crate::keys_common::DerivePublicKey;
-use bouncycastle_core::errors::{KeyAgreementError, RNGError};
-use bouncycastle_core::security_strength::SecurityStrength;
+use bouncycastle_core::errors::KeyAgreementError;
 use bouncycastle_core::traits::{KeyAgreementPrivateKey, KeyAgreementPublicKey, RNG};
 use bouncycastle_ec::hazmat::p256::P256FieldElement;
-use bouncycastle_ec::hazmat::p256_comb::comb_multiply_base_point;
-use bouncycastle_ec::hazmat::p256_extra_bits::reduce_wide_bits_mod_n_minus_1;
+use bouncycastle_ec::hazmat::p256_keygen;
 use bouncycastle_ec::hazmat::p256_scalar::{N_LIMBS, P256Scalar};
 use bouncycastle_ec::hazmat::p256_sec1;
 use bouncycastle_ec::nat;
@@ -44,12 +42,7 @@ impl ECCDHP256PrivateKey {
 
 impl DerivePublicKey<ECCDHP256PublicKey, PK_LEN> for ECCDHP256PrivateKey {
     fn derive_pk(&self) -> ECCDHP256PublicKey {
-        let mut q = comb_multiply_base_point(&self.0);
-        // d is in [1, n-1] by construction (every ECCDHP256PrivateKey is built that way; see
-        // from_bytes and keygen) and G has prime order n, so [d]G is never the identity.
-        let (x, y) = q.to_affine().expect("[d]G is never infinity for d in [1, n-1]");
-        // Only the affine pair is public; the projective coordinates are a function of `d`'s bits.
-        q.zeroize();
+        let (x, y) = p256_keygen::public_point(&self.0);
         ECCDHP256PublicKey { x, y }
     }
 }
@@ -145,28 +138,8 @@ impl Display for ECCDHP256PublicKey {
 pub fn keygen(
     rng: &mut dyn RNG,
 ) -> Result<(ECCDHP256PublicKey, ECCDHP256PrivateKey), KeyAgreementError> {
-    // Step 4's RBG strength: SP 800-57 Part 1 Rev. 5 Table 2 gives 128 bits for this order.
-    if rng.security_strength() < SecurityStrength::_128bit {
-        return Err(KeyAgreementError::RNGError(
-            RNGError::SecurityStrengthInsufficientForAlgorithm,
-        ));
-    }
-
-    // Steps 3 and 4: L = len(n) + 64 bits of DRBG output, held in `Secret` so it is scrubbed when
-    // this function returns rather than left on the stack.
-    let mut extra_bits = Secret::<[u8; EXTRA_BITS_DRBG_OUTPUT_LEN]>::new();
-    rng.next_bytes_out(&mut *extra_bits)?;
-    // Steps 5 and 6: c from the bits (Appendix C.4), d = (c mod (n - 1)) + 1, in constant time.
-    let d = reduce_wide_bits_mod_n_minus_1(&*extra_bits);
-
-    // Step 7: Q = dG.
-    let mut q = comb_multiply_base_point(&d);
-    // d is in [1, n-1] by construction (see reduce_wide_bits_mod_n_minus_1) and G has prime order
-    // n (the cofactor is 1, see the crate docs), so [d]G is never the identity: this holds for every valid d,
-    // so branching on it here leaks nothing about which d was drawn.
-    let (x, y) = q.to_affine().expect("[d]G is never infinity for d in [1, n-1]");
-    // Only the affine pair is public; the projective coordinates are a function of `d`'s bits.
-    q.zeroize();
-
+    // The pair comes from ec's generator, which checks the RNG's strength, draws
+    // EXTRA_BITS_DRBG_OUTPUT_LEN bytes and reduces them; this crate names the key types.
+    let (d, (x, y)) = p256_keygen::keygen::<EXTRA_BITS_DRBG_OUTPUT_LEN>(rng)?;
     Ok((ECCDHP256PublicKey { x, y }, ECCDHP256PrivateKey(d)))
 }
