@@ -1,16 +1,13 @@
 //! ECDSA P-256 key types (FIPS 186-5 §6.2) and key-pair generation (Appendix A.2.1).
 
 use crate::keys_common::DerivePublicKey;
-use bouncycastle_core::errors::{RNGError, SignatureError};
-use bouncycastle_core::security_strength::SecurityStrength;
+use bouncycastle_core::errors::SignatureError;
 use bouncycastle_core::traits::{RNG, SignaturePrivateKey, SignaturePublicKey};
 use bouncycastle_ec::hazmat::p256::P256FieldElement;
-use bouncycastle_ec::hazmat::p256_comb::comb_multiply_base_point;
-use bouncycastle_ec::hazmat::p256_extra_bits::reduce_wide_bits_mod_n_minus_1;
+use bouncycastle_ec::hazmat::p256_keygen;
 use bouncycastle_ec::hazmat::p256_scalar::{N_LIMBS, P256Scalar};
 use bouncycastle_ec::hazmat::p256_sec1;
 use bouncycastle_ec::nat;
-use bouncycastle_utils::secret::Secret;
 use core::fmt;
 use core::fmt::{Debug, Display, Formatter};
 
@@ -43,12 +40,7 @@ impl ECDSAP256PrivateKey {
 
 impl DerivePublicKey<ECDSAP256PublicKey, PK_LEN> for ECDSAP256PrivateKey {
     fn derive_pk(&self) -> ECDSAP256PublicKey {
-        let mut q = comb_multiply_base_point(&self.0);
-        // d is in [1, n-1] by construction (every ECDSAP256PrivateKey is built that way; see
-        // from_bytes and keygen) and G has prime order n, so [d]G is never the identity.
-        let (x, y) = q.to_affine().expect("[d]G is never infinity for d in [1, n-1]");
-        // Only the affine pair is public; the projective coordinates are a function of `d`'s bits.
-        q.zeroize();
+        let (x, y) = p256_keygen::public_point(&self.0);
         ECDSAP256PublicKey { x, y }
     }
 }
@@ -129,25 +121,8 @@ impl Display for ECDSAP256PublicKey {
 pub fn keygen(
     rng: &mut dyn RNG,
 ) -> Result<(ECDSAP256PublicKey, ECDSAP256PrivateKey), SignatureError> {
-    // FIPS 186-5 Appendix A.2.1 step 3: the DRBG must offer at least the security
-    // strength P-256's 256-bit order calls for (SP 800-57 Part 1 Rev. 5, Table 2: 128 bits).
-    if rng.security_strength() < SecurityStrength::_128bit {
-        return Err(SignatureError::RNGError(RNGError::SecurityStrengthInsufficientForAlgorithm));
-    }
-
-    // Raw DRBG output, reduced below into the private key / per-message secret: held in
-    // `Secret` so it is scrubbed when this function returns rather than left on the stack.
-    let mut extra_bits = Secret::<[u8; EXTRA_BITS_DRBG_OUTPUT_LEN]>::new();
-    rng.next_bytes_out(&mut *extra_bits).map_err(SignatureError::RNGError)?;
-    let d = reduce_wide_bits_mod_n_minus_1(&*extra_bits);
-
-    let mut q = comb_multiply_base_point(&d);
-    // d is in [1, n-1] by construction (see reduce_wide_bits_mod_n_minus_1) and G has prime order
-    // n (SP 800-186 §3.2.1.3's cofactor h = 1), so [d]G is never the identity: this holds for every
-    // valid d, so branching on it here leaks nothing about which d was drawn.
-    let (x, y) = q.to_affine().expect("[d]G is never infinity for d in [1, n-1]");
-    // Only the affine pair is public; the projective coordinates are a function of `d`'s bits.
-    q.zeroize();
-
+    // The pair comes from ec's generator, which checks the RNG's strength, draws
+    // EXTRA_BITS_DRBG_OUTPUT_LEN bytes and reduces them; this crate names the key types.
+    let (d, (x, y)) = p256_keygen::keygen::<EXTRA_BITS_DRBG_OUTPUT_LEN>(rng)?;
     Ok((ECDSAP256PublicKey { x, y }, ECDSAP256PrivateKey(d)))
 }
