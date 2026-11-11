@@ -3,12 +3,13 @@
 //!
 //! Offsets used below, from the layouts in the crate: 3 version bytes, then the variant tag at
 //! 3, the sponge's `squeezing` flag at 404 (tag + 400 bytes of Keccak state), the cSHAKE
-//! `customized` byte at 415, and whatever the function adds from 416.
+//! `customized` byte at 405, and whatever the function adds from 406.
 
+use bouncycastle_core::direction::{Decrypting, Encrypting};
 use bouncycastle_core::errors::SuspendableError;
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::symmetric_key::{FromAnyKeyMaterial, MacGenerationKey};
-use bouncycastle_core::traits::{Hash, MAC, Suspendable, XOF, XOFSqueezer};
+use bouncycastle_core::traits::{Hash, MACGenerator, MACVerifier, Suspendable, XOF, XOFSqueezer};
 use bouncycastle_core_test_framework::suspendable_state::TestFrameworkSuspendableState;
 use bouncycastle_sha3::kmac::*;
 use bouncycastle_sha3::parallelhash::*;
@@ -24,7 +25,7 @@ fn nz(n: usize) -> NonZeroUsize {
 const PART2: &[u8] = b" sleep furiously";
 
 const SQUEEZING_FLAG: usize = 3 + 1 + 400;
-const CUSTOMIZED: usize = 3 + 412;
+const CUSTOMIZED: usize = 3 + 402;
 
 fn key() -> KeyMaterial<32> {
     KeyMaterial::<32>::from_bytes_as_type(&[0x42u8; 32], KeyType::MACKey).expect("a MAC key")
@@ -85,7 +86,10 @@ fn cshake_round_trips() {
 
 #[test]
 fn kmac_round_trips() {
-    fn mac_round_trip<const N: usize, M: MAC + Suspendable<N> + Clone>(make: impl Fn() -> M) {
+    fn mac_round_trip<const N: usize, const MAC_LEN: usize, M>(make: impl Fn() -> M)
+    where
+        M: MACGenerator<MAC_LEN> + Suspendable<N> + Clone,
+    {
         let mut m = make();
         m.do_update(PART1);
         TestFrameworkSuspendableState::new().test(&m);
@@ -94,14 +98,13 @@ fn kmac_round_trips() {
         let expected = m.do_final();
 
         let mut resumed = M::from_suspended(state).expect("a KMAC state resumes");
-        assert_eq!(resumed.output_len(), expected.len(), "the output length is part of the state");
         resumed.do_update(PART2);
-        assert!(resumed.do_verify_final(&expected));
+        assert_eq!(resumed.do_final(), expected);
     }
-    mac_round_trip(|| KMAC128Key::from_key_material(&key()).unwrap().create_generator());
-    mac_round_trip(|| KMAC256Key::from_key_material(&key()).unwrap().create_generator());
+    mac_round_trip(|| KMAC128Key::<32>::from_key_material(&key()).unwrap().create_generator());
+    mac_round_trip(|| KMAC256Key::<64>::from_key_material(&key()).unwrap().create_generator());
     mac_round_trip(|| {
-        KMAC128Key::with_params(&key(), b"My Tagged Application", 16).unwrap().create_generator()
+        KMAC128Key::<16>::with_params(&key(), b"My Tagged Application").unwrap().create_generator()
     });
 }
 
@@ -162,15 +165,15 @@ fn each_type_rejects_the_others() {
     rejected::<_, KMACXOF128>(squeezer.clone().suspend(), "an unbound squeezer in KMACXOF128");
     rejected::<_, CSHAKE128>(squeezer.suspend(), "an unbound squeezer in cSHAKE128");
 
-    let k_key = KMAC128Key::from_key_material(&key()).unwrap();
+    let k_key = KMAC128Key::<32>::from_key_material(&key()).unwrap();
 
     let mut k = k_key.create_generator();
     k.do_update(PART1);
     rejected::<_, TupleHash128>(k.clone().suspend(), "a KMAC128 state in TupleHash128");
-    rejected::<_, KMAC256>(k.suspend(), "a KMAC128 state in KMAC256");
+    rejected::<_, KMAC256<Encrypting>>(k.suspend(), "a KMAC128 state in KMAC256");
     let mut t = TupleHash128::new(b"", 32).unwrap();
     t.do_update(PART1);
-    rejected::<_, KMAC128>(t.suspend(), "a TupleHash128 state in KMAC128");
+    rejected::<_, KMAC128<Encrypting>>(t.suspend(), "a TupleHash128 state in KMAC128");
 
     let mut p = ParallelHash128::new(nz(8), b"", 32).unwrap();
     p.do_update(PART1);
@@ -178,6 +181,31 @@ fn each_type_rejects_the_others() {
     let mut p = ParallelHashXOF128::new(nz(8), b"");
     p.do_update(PART1);
     rejected::<_, ParallelHashXOF256>(p.suspend(), "a ParallelHashXOF128 state in 256");
+}
+
+/// The shortest KMAC the floor allows suspends and resumes in both directions, and its state
+/// is refused by the default-length type.
+#[test]
+fn minimum_length_kmac_suspends_and_resumes() {
+    let k_key = KMAC128Key::<{ KMAC_MIN_OUTPUT_LEN }>::from_key_material(&key()).unwrap();
+    let tag = k_key.mac(PART1);
+    assert_eq!(tag.len(), KMAC_MIN_OUTPUT_LEN);
+
+    let mut g = k_key.create_generator();
+    g.do_update(&PART1[..3]);
+    let state = g.suspend();
+    let output_len = state.len() - 8;
+    assert_eq!(state[output_len..], (KMAC_MIN_OUTPUT_LEN as u64).to_le_bytes());
+    let mut g = KMAC128::<Encrypting, { KMAC_MIN_OUTPUT_LEN }>::from_suspended(state).unwrap();
+    g.do_update(&PART1[3..]);
+    assert_eq!(g.do_final(), tag);
+    let mut v = KMAC128::<Decrypting, { KMAC_MIN_OUTPUT_LEN }>::from_suspended(state).unwrap();
+    v.do_update(&PART1[3..]);
+    assert_eq!(v.do_verify_final(&tag), Ok(()));
+    assert!(matches!(
+        KMAC128::<Encrypting>::from_suspended(state),
+        Err(SuspendableError::InvalidData)
+    ));
 }
 
 #[test]
@@ -199,31 +227,35 @@ fn corrupt_fields_are_rejected() {
     bad[SQUEEZING_FLAG] = 1;
     rejected::<_, CSHAKE128>(bad, "a squeezing sponge in an absorbing cSHAKE");
 
-    let k_key = KMAC128Key::from_key_material(&key()).unwrap();
+    let k_key = KMAC128Key::<32>::from_key_material(&key()).unwrap();
 
     let mut k = k_key.create_generator();
     k.do_update(PART1);
     let good = k.suspend();
     let mut bad = good;
     bad[CUSTOMIZED] = 0;
-    rejected::<_, KMAC128>(bad, "a KMAC claiming an empty function name");
-    // The output length is the trailing u64, bounded as `with_params` bounds it.
+    rejected::<_, KMAC128<Encrypting>>(bad, "a KMAC claiming an empty function name");
+    // The output length is the trailing u64, and it is the type's: a state written at any other
+    // length is another function's, and the type that wrote it is the one that resumes it.
     let output_len = good.len() - 8;
+    assert_eq!(good[output_len..], 32u64.to_le_bytes(), "KMAC128Key's default length");
     let mut bad = good;
     bad[output_len..].copy_from_slice(&0u64.to_le_bytes());
-    rejected::<_, KMAC128>(bad, "a KMAC claiming a zero output length");
-    let mut bad = good;
-    bad[output_len..].copy_from_slice(&3u64.to_le_bytes());
-    rejected::<_, KMAC128>(bad, "a KMAC claiming an output length below the 32-bit floor");
+    rejected::<_, KMAC128<Encrypting>>(bad, "a KMAC claiming a zero output length");
     let mut bad = good;
     bad[output_len..].copy_from_slice(&(u64::MAX / 4).to_le_bytes());
-    rejected::<_, KMAC128>(bad, "a KMAC whose output length in bits overflows a u64");
-    let mut edge = good;
-    edge[output_len..].copy_from_slice(&(KMAC_MIN_OUTPUT_LEN as u64).to_le_bytes());
-    assert!(KMAC128::from_suspended(edge).is_ok(), "the floor itself is a valid output length");
-    let mut edge = good;
-    edge[output_len..].copy_from_slice(&(KMAC_MAX_OUTPUT_LEN as u64).to_le_bytes());
-    assert!(KMAC128::from_suspended(edge).is_ok(), "the cap itself is a valid output length");
+    rejected::<_, KMAC128<Encrypting>>(bad, "a KMAC whose output length in bits overflows a u64");
+    let mut other = good;
+    other[output_len..].copy_from_slice(&(KMAC_MIN_OUTPUT_LEN as u64).to_le_bytes());
+    rejected::<_, KMAC128<Encrypting>>(other, "a 4-byte KMAC state in the 32-byte type");
+    assert!(
+        KMAC128::<Encrypting, KMAC_MIN_OUTPUT_LEN>::from_suspended(other).is_ok(),
+        "... which the 4-byte type resumes"
+    );
+    assert!(
+        KMAC128::<Decrypting>::from_suspended(good).is_ok(),
+        "a generator's state resumes as a verifier of the same function"
+    );
 
     let mut k = KMACXOF128::new(&key(), b"", false).unwrap();
     k.do_update(PART1);
@@ -231,9 +263,9 @@ fn corrupt_fields_are_rejected() {
     bad[CUSTOMIZED] = 0;
     rejected::<_, CSHAKESqueezer<SHAKE128Params>>(bad, "a squeezer claiming no function name");
 
-    // ParallelHash: outer cSHAKE 3..416, inner SHAKE 416..828, then block_size, block_fill, blocks.
-    const INNER_SQUEEZING_FLAG: usize = 416 + 1 + 400;
-    const BLOCK_SIZE: usize = 416 + 412;
+    // ParallelHash: outer cSHAKE 3..406, inner SHAKE 406..808, then block_size, block_fill, blocks.
+    const INNER_SQUEEZING_FLAG: usize = 406 + 1 + 400;
+    const BLOCK_SIZE: usize = 406 + 402;
     const BLOCK_FILL: usize = BLOCK_SIZE + 8;
     let mut p = ParallelHash128::new(nz(8), b"", 32).unwrap();
     p.do_update(PART1);
@@ -306,7 +338,7 @@ fn state_tags_are_distinct() {
         tag(SHAKE128::new()),
         tag(SHAKE256::new()),
         tag(CSHAKE128::new(b"", b"S")),
-        tag(KMAC128Key::from_key_material(&key()).unwrap().create_generator()),
+        tag(KMAC128Key::<32>::from_key_material(&key()).unwrap().create_generator()),
         tag(KMACXOF128::new(&key(), b"", false).unwrap()),
         tag(TupleHash128::new(b"", 32).unwrap()),
         tag(TupleHashXOF128::new(b"")),
@@ -314,7 +346,7 @@ fn state_tags_are_distinct() {
         tag(ParallelHashXOF128::new(nz(8), b"")),
         tag(TupleHashXOF128::new(b"").into_squeezer()),
         tag(CSHAKE256::new(b"", b"S")),
-        tag(KMAC256Key::from_key_material(&key()).unwrap().create_generator()),
+        tag(KMAC256Key::<64>::from_key_material(&key()).unwrap().create_generator()),
         tag(KMACXOF256::new(&key(), b"", false).unwrap()),
         tag(TupleHash256::new(b"", 32).unwrap()),
         tag(TupleHashXOF256::new(b"")),
@@ -330,12 +362,12 @@ fn state_tags_are_distinct() {
 
 #[test]
 fn pin_state_lengths() {
-    assert_eq!(SUSPENDED_CSHAKE_STATE_LEN, 416, "3 (version) + 412 (family) + 1 (customized)");
-    assert_eq!(SUSPENDED_CSHAKE_SQUEEZER_STATE_LEN, 416);
-    assert_eq!(SUSPENDED_KMACXOF_STATE_LEN, 416);
-    assert_eq!(SUSPENDED_TUPLEHASHXOF_STATE_LEN, 416);
-    assert_eq!(SUSPENDED_KMAC_STATE_LEN, 424, "416 + 8 (output length)");
-    assert_eq!(SUSPENDED_TUPLEHASH_STATE_LEN, 424);
-    assert_eq!(SUSPENDED_PARALLELHASHXOF_STATE_LEN, 852, "416 + 412 (inner) + 3 * 8");
-    assert_eq!(SUSPENDED_PARALLELHASH_STATE_LEN, 860, "852 + 8 (output length)");
+    assert_eq!(SUSPENDED_CSHAKE_STATE_LEN, 406, "3 (version) + 402 (family) + 1 (customized)");
+    assert_eq!(SUSPENDED_CSHAKE_SQUEEZER_STATE_LEN, 406);
+    assert_eq!(SUSPENDED_KMACXOF_STATE_LEN, 406);
+    assert_eq!(SUSPENDED_TUPLEHASHXOF_STATE_LEN, 406);
+    assert_eq!(SUSPENDED_KMAC_STATE_LEN, 414, "406 + 8 (output length)");
+    assert_eq!(SUSPENDED_TUPLEHASH_STATE_LEN, 414);
+    assert_eq!(SUSPENDED_PARALLELHASHXOF_STATE_LEN, 832, "406 + 402 (inner) + 3 * 8");
+    assert_eq!(SUSPENDED_PARALLELHASH_STATE_LEN, 840, "832 + 8 (output length)");
 }

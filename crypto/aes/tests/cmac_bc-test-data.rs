@@ -4,8 +4,8 @@
 //! relative to the root of this git project. If it is missing, the test prints a warning and
 //! passes without checking anything.
 //!
-//! The set includes 8- and 56-bit tags, below the `CMAC_MIN_TAG_LEN` that `mac_out` will truncate
-//! to, so every case is computed as a full tag and compared on its first `macLen` bits.
+//! The set includes 8- and 56-bit tags, so every case is computed as the full tag and compared
+//! on its first `macLen` bits; the full-length cases also go through the key's `verify`.
 
 use bouncycastle_aes::{AES128Key, AES192Key, AES256Key};
 use bouncycastle_cipher::modes::CMAC;
@@ -24,21 +24,22 @@ const RESPONSE_FILE: &str = "CMAC-AES.4014544.rsp.json";
 /// The full 16-byte AES-CMAC tag of `msg` under `key`, dispatched on the key length.
 fn aes_cmac(key: &[u8], msg: &[u8]) -> Vec<u8> {
     match key.len() {
-        16 => AES128Key::<CMAC>::from_key_material(&mac_key::<16>(key)).unwrap().mac(msg),
-        24 => AES192Key::<CMAC>::from_key_material(&mac_key::<24>(key)).unwrap().mac(msg),
-        32 => AES256Key::<CMAC>::from_key_material(&mac_key::<32>(key)).unwrap().mac(msg),
+        16 => AES128Key::<CMAC>::from_key_material(&mac_key::<16>(key)).unwrap().mac(msg).to_vec(),
+        24 => AES192Key::<CMAC>::from_key_material(&mac_key::<24>(key)).unwrap().mac(msg).to_vec(),
+        32 => AES256Key::<CMAC>::from_key_material(&mac_key::<32>(key)).unwrap().mac(msg).to_vec(),
         other => panic!("unexpected AES key length {other}"),
     }
 }
 
 /// The key's `verify` of a full-length tag, dispatched on the key length.
-fn aes_cmac_verify(key: &[u8], msg: &[u8], tag: &[u8]) -> bool {
+fn aes_cmac_verify(key: &[u8], msg: &[u8], tag: &[u8; 16]) -> bool {
     match key.len() {
         16 => AES128Key::<CMAC>::from_key_material(&mac_key::<16>(key)).unwrap().verify(msg, tag),
         24 => AES192Key::<CMAC>::from_key_material(&mac_key::<24>(key)).unwrap().verify(msg, tag),
         32 => AES256Key::<CMAC>::from_key_material(&mac_key::<32>(key)).unwrap().verify(msg, tag),
         other => panic!("unexpected AES key length {other}"),
     }
+    .is_ok()
 }
 
 #[test]
@@ -75,8 +76,8 @@ fn acvp_cmac_aes() {
                     let passed = answer["testPassed"].as_bool().unwrap();
                     let tag = hex_field(test, "mac", tc_id);
                     assert_eq!(full[..mac_len] == tag[..], passed, "tcId {tc_id}");
-                    if mac_len == 16 {
-                        assert_eq!(aes_cmac_verify(&key, &msg, &tag), passed, "tcId {tc_id}");
+                    if let Ok(tag) = <&[u8; 16]>::try_from(tag.as_slice()) {
+                        assert_eq!(aes_cmac_verify(&key, &msg, tag), passed, "tcId {tc_id}");
                     }
                     if passed { verified += 1 } else { rejected += 1 }
                 }

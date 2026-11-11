@@ -16,6 +16,7 @@
 //! * Password-based key derivation functions act on KeyMaterial of any type, and in the case of RawFullEntropy, RawLowEntropy, or RawUnknownEntropy, will preserve the entropy rating.
 //! * Keyed KDFs that are given a key of RawFullEntropy or KeyedHashKey a KeyMaterial data of type RawLowEntropy or RawUnknownEntropy will promote it into RawFullEntropy.
 //! * Symmetric ciphers or asymmetric ciphers such as X25519 or ML-KEM that accept private key seeds will expect KeyMaterial of type AsymmetricPrivateKeySeed.
+//! * A key-agreement primitive (ECC CDH) returns its raw shared secret `Z` as a KeyMaterial of type SharedSecret, to be used only as the input of a KDF.
 //!
 //! However, there is a [`KeyMaterialTrait::set_key_type`] for cases where the user has more context knowledge than the library.
 //! Some conversions, such as converting a key of type RawLowEntropy into a SymmetricCipherKey, will fail unless
@@ -170,7 +171,9 @@ pub trait KeyMaterialTrait: KeyMaterialInternalTrait {
     /// key may be converted to any type, and any type may be converted to itself (a no-op).
     /// A hazardous conversion attempted outside a [`do_hazardous_operations`] closure returns
     /// [`KeyMaterialError::HazardousOperationNotPermitted`], and converting a [`KeyType::Zeroized`] key
-    /// returns [`KeyMaterialError::ActingOnZeroizedKey`].
+    /// returns [`KeyMaterialError::ActingOnZeroizedKey`]. A key converted to [`KeyType::Zeroized`],
+    /// [`KeyType::Unknown`] or [`KeyType::SharedSecret`] carries no security strength afterwards: the
+    /// first two cannot, and a shared secret's producer states it inside the closure.
     fn set_key_type(&mut self, key_type: KeyType) -> Result<(), KeyMaterialError>;
 
     /// Security Strength, as used here, aligns with NIST SP 800-90A guidance for random number generation,
@@ -198,7 +201,9 @@ pub trait KeyMaterialTrait: KeyMaterialInternalTrait {
     fn set_security_strength(&mut self, strength: SecurityStrength)
     -> Result<(), KeyMaterialError>;
 
-    /// Whether or not the KeyMaterial is one of the full entropy key types.
+    /// Whether the KeyMaterial is of a type a KDF credits as keying material: every type but
+    /// [`KeyType::Zeroized`] and [`KeyType::Unknown`]. The security strength, not this, says how
+    /// much entropy it carries; for a [`KeyType::SharedSecret`] that is less than its length.
     fn is_full_entropy(&self) -> bool;
 
     /// Securely resets the contents to all zeroes.
@@ -278,6 +283,17 @@ pub enum KeyType {
 
     /// A key for a symmetric block or stream cipher.
     SymmetricCipherKey = 5,
+
+    /// The raw shared secret `Z` of a key-agreement primitive: secret keying material that is not
+    /// uniformly distributed, to be used only as the input of a KDF (SP 800-56Ar3, Section 5.8).
+    /// Its length overstates its entropy, so [`KeyMaterialTrait::set_bytes_as_type`] gives it
+    /// [`SecurityStrength::None`] rather than the length's, and the producer, which knows the
+    /// scheme's strength, raises it under [`do_hazardous_operations`]. A KDF credits a `Z` with a
+    /// strength as keying material, as it does the other key types, and one with none credits
+    /// nothing, so a `Z` whose producer did not say what it is worth derives `Unknown` output. A KEM's shared secret is not this: it is
+    /// [`KeyType::CryptographicRandom`] when the algorithm's output is uniform (ML-KEM), or the
+    /// KDF's output type when the KEM derives it.
+    SharedSecret = 6,
 }
 
 impl TryFrom<u8> for KeyType {
@@ -292,6 +308,7 @@ impl TryFrom<u8> for KeyType {
             3 => Self::Seed,
             4 => Self::MACKey,
             5 => Self::SymmetricCipherKey,
+            6 => Self::SharedSecret,
             _ => return Err(SuspendableError::InvalidData),
         })
     }
@@ -319,25 +336,47 @@ impl<const KEY_LEN: usize> KeyMaterial<KEY_LEN> {
 
     /// Creates a new instance of KeyMaterial containing random bytes from the provided random number generator.
     ///
-    /// The key is tagged at the lesser of the RNG's strength and what `KEY_LEN` bytes can carry;
-    /// a `KeyMaterial<0>` comes back [`KeyType::Zeroized`] without consulting the RNG, so an RNG
-    /// that would refuse (reseed required) is not reported for it.
+    /// The key is tagged [`KeyType::CryptographicRandom`] at the lesser of the RNG's strength and
+    /// what `KEY_LEN` bytes can carry; a `KeyMaterial<0>` comes back [`KeyType::Zeroized`]
+    /// without consulting the RNG, so an RNG that would refuse (reseed required) is not reported
+    /// for it.
     pub fn from_rng(rng: &mut (impl RNG + ?Sized)) -> Result<Self, KeyMaterialError> {
+        Self::from_rng_as_type(rng, KEY_LEN, KeyType::CryptographicRandom)
+    }
+
+    /// `len` random bytes from `rng`, tagged `key_type` at the lesser of the RNG's strength and
+    /// what `len` bytes can carry (SP 800-90A r1 Section 8.4: "Security_strength_of_output =
+    /// min(output_length, DRBG_security_strength)"): the draw behind [`Self::from_rng`] and
+    /// behind a MAC key's `generate`, whose key is shorter than its buffer and a
+    /// [`KeyType::MACKey`]. A `len` of 0 comes back [`KeyType::Zeroized`] without consulting the
+    /// RNG.
+    ///
+    /// # Errors
+    /// [`KeyMaterialError::InputDataLongerThanKeyCapacity`] if `len` exceeds `KEY_LEN`;
+    /// [`KeyMaterialError::GenericError`] if the RNG fails.
+    pub fn from_rng_as_type(
+        rng: &mut (impl RNG + ?Sized),
+        len: usize,
+        key_type: KeyType,
+    ) -> Result<Self, KeyMaterialError> {
         let mut key = Self::new();
-        if KEY_LEN == 0 {
+        if len > KEY_LEN {
+            return Err(KeyMaterialError::InputDataLongerThanKeyCapacity);
+        }
+        if len == 0 {
             return Ok(key);
         }
 
         do_hazardous_operations(&mut key, |key| {
-            rng.next_bytes_out(key.ref_to_bytes_mut()?)
+            rng.next_bytes_out(&mut key.ref_to_bytes_mut()?[..len])
                 .map_err(|_| KeyMaterialError::GenericError("RNG failed."))?;
-            key.set_key_len(KEY_LEN)?;
-            key.set_key_type(KeyType::CryptographicRandom)?;
-            // SP 800-90A r1 Section 8.4: "Security_strength_of_output = min(output_length,
-            // DRBG_security_strength)".
+            key.set_key_len(len)?;
+            key.set_key_type(key_type)?;
+            // Mutants note: at equal strengths both arms of the min give the same value, so
+            // `<` -> `<=` in `min` is an equivalent mutant.
             key.set_security_strength(*min(
                 &rng.security_strength(),
-                &SecurityStrength::from_bytes(KEY_LEN),
+                &SecurityStrength::from_bytes(len),
             ))
         })?;
         Ok(key)
@@ -411,7 +450,9 @@ impl<const KEY_LEN: usize> KeyMaterialTrait for KeyMaterial<KEY_LEN> {
         self.key_type = new_key_type;
 
         do_hazardous_operations(self, |s| {
-            if new_key_type <= KeyType::Unknown {
+            // A SharedSecret's length says nothing about its entropy (see `KeyType::SharedSecret`),
+            // so its producer states the strength; every other typed key is worth its length.
+            if new_key_type <= KeyType::Unknown || new_key_type == KeyType::SharedSecret {
                 s.set_security_strength(SecurityStrength::None)?;
             } else {
                 s.set_security_strength(SecurityStrength::from_bits(source.len() * 8))?;
@@ -493,8 +534,10 @@ impl<const KEY_LEN: usize> KeyMaterialTrait for KeyMaterial<KEY_LEN> {
         }
 
         self.key_type = key_type;
-        // A Zeroized or Unknown key has no security strength (see `KeyType::Unknown`).
-        if key_type <= KeyType::Unknown {
+        // A Zeroized or Unknown key has no security strength (see `KeyType::Unknown`), and a
+        // SharedSecret's length says nothing about its entropy: its producer states the
+        // strength inside the hazardous window, as `set_bytes_as_type` leaves it to do.
+        if key_type <= KeyType::Unknown || key_type == KeyType::SharedSecret {
             self.security_strength = SecurityStrength::None;
         }
         Ok(())
@@ -560,7 +603,8 @@ impl<const KEY_LEN: usize> KeyMaterialTrait for KeyMaterial<KEY_LEN> {
             KeyType::CryptographicRandom
             | KeyType::Seed
             | KeyType::MACKey
-            | KeyType::SymmetricCipherKey => true,
+            | KeyType::SymmetricCipherKey
+            | KeyType::SharedSecret => true,
             KeyType::Zeroized | KeyType::Unknown => false,
         }
     }
@@ -622,7 +666,7 @@ impl<const KEY_LEN: usize> PartialEq for KeyMaterial<KEY_LEN> {
 impl<const KEY_LEN: usize> Eq for KeyMaterial<KEY_LEN> {}
 
 /// Ordering is as follows:
-/// Zeroized < BytesLowEntropy < BytesFullEntropy < {Seed = MACKey = SymmetricCipherKey}
+/// Zeroized < BytesLowEntropy < BytesFullEntropy < {Seed = MACKey = SymmetricCipherKey = SharedSecret}
 impl PartialOrd for KeyType {
     fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
         match self {
@@ -640,13 +684,17 @@ impl PartialOrd for KeyType {
                 KeyType::CryptographicRandom => Some(Ordering::Equal),
                 _ => Some(Ordering::Less),
             },
-            KeyType::Seed | KeyType::MACKey | KeyType::SymmetricCipherKey => match other {
+            KeyType::Seed
+            | KeyType::MACKey
+            | KeyType::SymmetricCipherKey
+            | KeyType::SharedSecret => match other {
                 KeyType::Zeroized | KeyType::Unknown | KeyType::CryptographicRandom => {
                     Some(Ordering::Greater)
                 }
-                KeyType::Seed | KeyType::MACKey | KeyType::SymmetricCipherKey => {
-                    Some(Ordering::Equal)
-                }
+                KeyType::Seed
+                | KeyType::MACKey
+                | KeyType::SymmetricCipherKey
+                | KeyType::SharedSecret => Some(Ordering::Equal),
             },
         }
     }

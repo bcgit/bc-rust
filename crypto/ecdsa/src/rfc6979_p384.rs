@@ -6,7 +6,7 @@
 
 use bouncycastle_core::key_material::{KeyMaterial, KeyType};
 use bouncycastle_core::symmetric_key::{FromAnyKeyMaterial, MacGenerationKey};
-use bouncycastle_core::traits::MAC;
+use bouncycastle_core::traits::MACGenerator;
 use bouncycastle_ec::hazmat::p384_scalar::{N_LIMBS, P384Scalar};
 use bouncycastle_ec::hazmat::p384_sec1;
 use bouncycastle_ec::nat;
@@ -33,7 +33,7 @@ fn hmac_k(key: &[u8; HLEN], data: &[&[u8]]) -> Secret<[u8; HLEN]> {
         hmac.do_update(piece);
     }
     let mut out = Secret::<[u8; HLEN]>::new();
-    hmac.do_final_out(&mut *out).expect("HLEN-byte output buffer always fits HMAC-SHA384's output");
+    hmac.do_final_out(&mut out);
     out
 }
 

@@ -25,25 +25,34 @@ const SQRT_EXPONENT: [u64; 9] = [
 /// Converts 66 big-endian bytes to little-endian `u64` limbs.
 pub fn limbs_from_be_bytes(bytes: &[u8; 66]) -> [u64; 9] {
     let mut limbs = [0u64; 9];
-    for i in 0..8 {
-        limbs[i] = u64::from_be_bytes(bytes[(58 - i * 8)..(66 - i * 8)].try_into().unwrap());
-    }
-    // `bytes[0] << 8` occupies bits 8-15 and `bytes[1]` occupies bits 0-7 -- disjoint, so `|` and
-    // `^` are equivalent here (an accepted mutant, not a bug: this repo's stated policy for
-    // OR/XOR-over-disjoint-bits cases).
-    limbs[8] = (u64::from(bytes[0]) << 8) | u64::from(bytes[1]);
+    limbs_from_be_bytes_into(bytes, &mut limbs);
     limbs
+}
+
+/// [`limbs_from_be_bytes`] into `out`: for a secret value, so that no copy of it is staged in
+/// a return slot.
+pub fn limbs_from_be_bytes_into(bytes: &[u8; 66], out: &mut [u64; 9]) {
+    for (i, chunk) in bytes.rchunks(8).enumerate() {
+        let mut limb = [0u8; 8];
+        limb[8 - chunk.len()..].copy_from_slice(chunk);
+        out[i] = u64::from_be_bytes(limb);
+    }
 }
 
 /// Converts little-endian `u64` limbs to 66 big-endian bytes.
 pub fn be_bytes_from_limbs(limbs: &[u64; 9]) -> [u8; 66] {
     let mut out = [0u8; 66];
-    for i in 0..8 {
-        out[(58 - i * 8)..(66 - i * 8)].copy_from_slice(&limbs[i].to_be_bytes());
-    }
-    let top = limbs[8] as u16;
-    out[0..2].copy_from_slice(&top.to_be_bytes());
+    be_bytes_from_limbs_into(limbs, &mut out);
     out
+}
+
+/// [`be_bytes_from_limbs`] into `out`: for a secret value, so that no copy of it is staged in
+/// a return slot.
+pub fn be_bytes_from_limbs_into(limbs: &[u64; 9], out: &mut [u8; 66]) {
+    for (i, chunk) in out.rchunks_mut(8).enumerate() {
+        let n = chunk.len();
+        chunk.copy_from_slice(&limbs[i].to_be_bytes()[8 - n..]);
+    }
 }
 
 fn limbs_less_than_p(limbs: &[u64; 9]) -> bool {

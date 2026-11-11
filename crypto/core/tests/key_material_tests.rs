@@ -215,6 +215,34 @@ mod test_key_material {
         assert_eq!(key.key_type(), KeyType::CryptographicRandom);
     }
 
+    /// `from_rng_as_type` draws `len` bytes into a longer buffer under the caller's type, caps the
+    /// strength at `len`, gives a zero draw back Zeroized without touching the RNG, and refuses a
+    /// `len` past the capacity.
+    #[test]
+    fn from_rng_as_type_draws_a_shorter_typed_key() {
+        use bouncycastle_rng as rng;
+
+        let mut drbg = rng::DefaultRNG::default();
+        let key = KeyMaterial512::from_rng_as_type(&mut drbg, 28, KeyType::MACKey).unwrap();
+        assert_eq!(key.key_len(), 28);
+        assert_eq!(key.key_type(), KeyType::MACKey);
+        assert_eq!(key.security_strength(), SecurityStrength::_192bit, "28 bytes carry 192 bits");
+        assert_ne!(key.ref_to_bytes(), &[0u8; 28], "the bytes came from the RNG");
+
+        let key = KeyMaterial512::from_rng_as_type(&mut drbg, 64, KeyType::MACKey).unwrap();
+        assert_eq!(key.key_len(), 64);
+        assert_eq!(key.security_strength(), drbg.security_strength(), "64 bytes keep the RNG's");
+
+        let key = KeyMaterial512::from_rng_as_type(&mut drbg, 0, KeyType::MACKey).unwrap();
+        assert_eq!(key.key_type(), KeyType::Zeroized);
+        assert_eq!(key.key_len(), 0);
+
+        assert!(matches!(
+            KeyMaterial256::from_rng_as_type(&mut drbg, 33, KeyType::MACKey),
+            Err(KeyMaterialError::InputDataLongerThanKeyCapacity)
+        ));
+    }
+
     /// The material carries the RNG's strength, capped at what the key length can carry: the
     /// default DRBG is 256-bit, so 32 bytes keep that and 16 bytes are a 128-bit key.
     #[test]
@@ -1033,6 +1061,73 @@ mod test_key_material {
         match key.set_key_type(KeyType::Seed) {
             Err(KeyMaterialError::HazardousOperationNotPermitted) => { /* good */ }
             _ => panic!("the guard should have been cleared after the erroring closures"),
+        }
+    }
+
+    /// `KeyType::SharedSecret` is the raw `Z` of a key agreement: typed keying material whose
+    /// strength the producer sets, so it counts as full entropy, sorts with the other
+    /// algorithm-specific types, and round-trips through its pinned discriminant.
+    #[test]
+    fn shared_secret_key_type() {
+        assert_eq!(KeyType::SharedSecret as u8, 6);
+        assert_eq!(KeyType::try_from(6u8).unwrap(), KeyType::SharedSecret);
+        // and every other discriminant still round-trips to its own variant
+        for (value, key_type) in [
+            (0u8, KeyType::Zeroized),
+            (1, KeyType::Unknown),
+            (2, KeyType::CryptographicRandom),
+            (3, KeyType::Seed),
+            (4, KeyType::MACKey),
+            (5, KeyType::SymmetricCipherKey),
+            (6, KeyType::SharedSecret),
+        ] {
+            assert_eq!(key_type as u8, value);
+            assert_eq!(KeyType::try_from(value).unwrap(), key_type);
+        }
+        assert!(KeyType::try_from(7u8).is_err());
+
+        let z =
+            KeyMaterial256::from_bytes_as_type(&DUMMY_KEY[..32], KeyType::SharedSecret).unwrap();
+        assert_eq!(z.key_type(), KeyType::SharedSecret);
+        // its length says nothing about its entropy: no strength until the producer states one,
+        // which it does inside the hazardous window, since raising a strength is hazardous
+        assert_eq!(z.security_strength(), SecurityStrength::None);
+        let mut z = z;
+        assert!(z.set_security_strength(SecurityStrength::_128bit).is_err());
+        do_hazardous_operations(&mut z, |z| z.set_security_strength(SecurityStrength::_128bit))
+            .unwrap();
+        assert_eq!(z.security_strength(), SecurityStrength::_128bit);
+        assert!(z.is_full_entropy());
+
+        // re-typing to SharedSecret drops the strength the bytes had carried, outside the
+        // window (allowed from CryptographicRandom) and inside it alike, so a KDF credits only
+        // what the producer then states
+        let mut z = KeyMaterial256::from_rng(&mut bouncycastle_rng::DefaultRNG::default()).unwrap();
+        assert_eq!(z.security_strength(), SecurityStrength::_256bit);
+        z.set_key_type(KeyType::SharedSecret).unwrap();
+        assert_eq!(z.key_type(), KeyType::SharedSecret);
+        assert_eq!(z.security_strength(), SecurityStrength::None);
+        let mut z = KeyMaterial256::from_rng(&mut bouncycastle_rng::DefaultRNG::default()).unwrap();
+        do_hazardous_operations(&mut z, |z| z.set_key_type(KeyType::SharedSecret)).unwrap();
+        assert_eq!(z.security_strength(), SecurityStrength::None);
+
+        assert!(KeyType::SharedSecret > KeyType::CryptographicRandom);
+        assert!(KeyType::SharedSecret > KeyType::Unknown);
+        assert!(KeyType::SharedSecret > KeyType::Zeroized);
+        assert_eq!(
+            KeyType::SharedSecret.partial_cmp(&KeyType::SymmetricCipherKey),
+            Some(core::cmp::Ordering::Equal)
+        );
+        assert_eq!(
+            KeyType::Seed.partial_cmp(&KeyType::SharedSecret),
+            Some(core::cmp::Ordering::Equal)
+        );
+
+        // Once typed, it stays typed outside a hazardous block, like the other specific types.
+        let mut z = z;
+        match z.set_key_type(KeyType::SymmetricCipherKey) {
+            Err(KeyMaterialError::HazardousOperationNotPermitted) => { /* good */ }
+            _ => panic!("a SharedSecret must not silently become a cipher key"),
         }
     }
 }

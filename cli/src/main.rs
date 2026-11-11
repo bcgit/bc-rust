@@ -1,6 +1,8 @@
 #![forbid(unsafe_code)]
 
 mod ascon_cmd;
+mod blake2_cmd;
+mod blake3_cmd;
 mod cbc_cmd;
 mod ccm_cmd;
 mod cfb8_cmd;
@@ -9,11 +11,13 @@ mod chacha20_cmd;
 mod chacha20_poly1305_cmd;
 mod ctr_cmd;
 mod ecb_cmd;
+mod eccdh_cmd;
 mod ecdsa_cmd;
 mod encoders_cmd;
 mod gcm_cmd;
 mod helpers;
 mod hkdf_cmd;
+mod kdf_cmd;
 mod kw_cmd;
 mod mac_cmd;
 mod mldsa_cmd;
@@ -24,6 +28,8 @@ mod sha3_cmd;
 mod sm2_cmd;
 mod sm3_cmd;
 
+use crate::blake2_cmd::BLAKE2Variant;
+use crate::eccdh_cmd::ECCDHAction;
 use crate::ecdsa_cmd::ECDSAAction;
 use crate::hkdf_cmd::HKDFVariant;
 use crate::mac_cmd::HMACVariant;
@@ -37,7 +43,12 @@ use bouncycastle::aria::hazmat::{ARIA128Internal, ARIA192Internal, ARIA256Intern
 use bouncycastle::camellia::hazmat::{
     Camellia128Internal, Camellia192Internal, Camellia256Internal,
 };
+use bouncycastle::concatkdf::{
+    ConcatKDF_SHA3_256, ConcatKDF_SHA3_384, ConcatKDF_SHA3_512, ConcatKDF_SHA256, ConcatKDF_SHA384,
+    ConcatKDF_SHA512,
+};
 use bouncycastle::sm4::hazmat::SM4Internal;
+use bouncycastle::x963kdf::{X963KDF_SHA256, X963KDF_SHA384, X963KDF_SHA512};
 use clap::{Parser, Subcommand};
 use helpers::block_mode_helpers::CipherDirection;
 
@@ -96,11 +107,11 @@ enum Subcommands {
 
         /// The 16-byte IV in hex. Supplied instead of generated: `encrypt` then writes none
         /// and `decrypt` reads none. See the IV paragraph above.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce")]
         iv: Option<String>,
 
         /// A file containing the 16-byte IV, (raw bytes; hex with --hex-input). If both iv and iv_file options are provided, the file will be used.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce-file")]
         iv_file: Option<String>,
 
         #[arg(short)]
@@ -162,11 +173,11 @@ enum Subcommands {
         key_file: Option<String>,
 
         /// The nonce in hex, 7 to 13 bytes. MUST be unique per encryption under a given key.
-        #[arg(long)]
+        #[arg(long, visible_alias = "iv")]
         nonce: Option<String>,
 
         /// A file containing the nonce, (raw bytes; hex with --hex-input).
-        #[arg(long)]
+        #[arg(long, visible_alias = "iv-file")]
         nonce_file: Option<String>,
 
         /// Associated data in hex: authenticated but not encrypted. Must match on decrypt.
@@ -228,12 +239,12 @@ enum Subcommands {
 
         /// The 16-byte IV in hex. Supplied instead of generated: `encrypt` then writes no IV and
         /// `decrypt` reads none. See the IV paragraph above.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce")]
         iv: Option<String>,
 
         /// A file containing the 16-byte IV, (raw bytes; hex with --hex-input).
         /// If both iv and iv_file options are provided, the file will be used.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce-file")]
         iv_file: Option<String>,
 
         #[arg(short)]
@@ -284,12 +295,12 @@ enum Subcommands {
 
         /// The 16-byte IV in hex. Supplied instead of generated: `encrypt` then writes no IV and
         /// `decrypt` reads none. See the IV paragraph above.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce")]
         iv: Option<String>,
 
         /// A file containing the 16-byte IV, (raw bytes; hex with --hex-input).
         /// If both iv and iv_file options are provided, the file will be used.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce-file")]
         iv_file: Option<String>,
 
         #[arg(short)]
@@ -365,11 +376,11 @@ enum Subcommands {
 
         /// The 12-byte nonce in hex. Supplied instead of generated: `encrypt` then writes none
         /// and `decrypt` reads none. See the nonce paragraph above.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce")]
         iv: Option<String>,
 
         /// A file containing the 12-byte nonce, (raw bytes; hex with --hex-input). If both iv and iv_file options are provided, the file will be used.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce-file")]
         iv_file: Option<String>,
 
         #[arg(short)]
@@ -456,12 +467,12 @@ enum Subcommands {
 
         /// The 12-byte IV in hex. Supplied instead of generated: `encrypt` then writes none and
         /// `decrypt` reads none. See the IV paragraph above.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce")]
         iv: Option<String>,
 
         /// A file containing the 12-byte IV, (raw bytes; hex with --hex-input).
         /// If both iv and iv_file options are provided, the file will be used.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce-file")]
         iv_file: Option<String>,
 
         /// The additional authenticated data, in hex. Covered by the tag but not encrypted.
@@ -498,12 +509,12 @@ enum Subcommands {
 
         /// The 12-byte nonce in hex. Hazardous: supplying it makes uniqueness the caller's
         /// responsibility.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce")]
         iv: Option<String>,
 
         /// A file containing the 12-byte nonce (raw bytes; hex with --hex-input); the same
         /// hazardous override.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce-file")]
         iv_file: Option<String>,
 
         /// A MAC value to be verified: the tag (with --iv) or nonce || tag.
@@ -536,11 +547,11 @@ enum Subcommands {
 
         /// The 16-byte IV in hex. Supplied instead of generated: `encrypt` then writes none
         /// and `decrypt` reads none. See the IV paragraph above.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce")]
         iv: Option<String>,
 
         /// A file containing the 16-byte IV, (raw bytes; hex with --hex-input). If both iv and iv_file options are provided, the file will be used.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce-file")]
         iv_file: Option<String>,
 
         #[arg(short)]
@@ -567,11 +578,11 @@ enum Subcommands {
         key_file: Option<String>,
 
         /// The nonce in hex, 7 to 13 bytes. MUST be unique per encryption under a given key.
-        #[arg(long)]
+        #[arg(long, visible_alias = "iv")]
         nonce: Option<String>,
 
         /// A file containing the nonce, (raw bytes; hex with --hex-input).
-        #[arg(long)]
+        #[arg(long, visible_alias = "iv-file")]
         nonce_file: Option<String>,
 
         /// Associated data in hex: authenticated but not encrypted. Must match on decrypt.
@@ -612,12 +623,12 @@ enum Subcommands {
 
         /// The 16-byte IV in hex. Supplied instead of generated: `encrypt` then writes no IV and
         /// `decrypt` reads none. See the IV paragraph above.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce")]
         iv: Option<String>,
 
         /// A file containing the 16-byte IV, (raw bytes; hex with --hex-input).
         /// If both iv and iv_file options are provided, the file will be used.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce-file")]
         iv_file: Option<String>,
 
         #[arg(short)]
@@ -645,12 +656,12 @@ enum Subcommands {
 
         /// The 16-byte IV in hex. Supplied instead of generated: `encrypt` then writes no IV and
         /// `decrypt` reads none. See the IV paragraph above.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce")]
         iv: Option<String>,
 
         /// A file containing the 16-byte IV, (raw bytes; hex with --hex-input).
         /// If both iv and iv_file options are provided, the file will be used.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce-file")]
         iv_file: Option<String>,
 
         #[arg(short)]
@@ -703,11 +714,11 @@ enum Subcommands {
 
         /// The 12-byte nonce in hex. Supplied instead of generated: `encrypt` then writes none
         /// and `decrypt` reads none. See the nonce paragraph above.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce")]
         iv: Option<String>,
 
         /// A file containing the 12-byte nonce, (raw bytes; hex with --hex-input). If both iv and iv_file options are provided, the file will be used.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce-file")]
         iv_file: Option<String>,
 
         #[arg(short)]
@@ -758,12 +769,12 @@ enum Subcommands {
 
         /// The 12-byte IV in hex. Supplied instead of generated: `encrypt` then writes none and
         /// `decrypt` reads none. See the IV paragraph above.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce")]
         iv: Option<String>,
 
         /// A file containing the 12-byte IV, (raw bytes; hex with --hex-input).
         /// If both iv and iv_file options are provided, the file will be used.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce-file")]
         iv_file: Option<String>,
 
         /// The additional authenticated data, in hex. Covered by the tag but not encrypted.
@@ -800,12 +811,12 @@ enum Subcommands {
 
         /// The 12-byte nonce in hex. Hazardous: supplying it makes uniqueness the caller's
         /// responsibility.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce")]
         iv: Option<String>,
 
         /// A file containing the 12-byte nonce (raw bytes; hex with --hex-input); the same
         /// hazardous override.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce-file")]
         iv_file: Option<String>,
 
         /// A MAC value to be verified: the tag (with --iv) or nonce || tag.
@@ -838,11 +849,11 @@ enum Subcommands {
 
         /// The 16-byte IV in hex. Supplied instead of generated: `encrypt` then writes none
         /// and `decrypt` reads none. See the IV paragraph above.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce")]
         iv: Option<String>,
 
         /// A file containing the 16-byte IV, (raw bytes; hex with --hex-input). If both iv and iv_file options are provided, the file will be used.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce-file")]
         iv_file: Option<String>,
 
         #[arg(short)]
@@ -869,11 +880,11 @@ enum Subcommands {
         key_file: Option<String>,
 
         /// The nonce in hex, 7 to 13 bytes. MUST be unique per encryption under a given key.
-        #[arg(long)]
+        #[arg(long, visible_alias = "iv")]
         nonce: Option<String>,
 
         /// A file containing the nonce, (raw bytes; hex with --hex-input).
-        #[arg(long)]
+        #[arg(long, visible_alias = "iv-file")]
         nonce_file: Option<String>,
 
         /// Associated data in hex: authenticated but not encrypted. Must match on decrypt.
@@ -914,12 +925,12 @@ enum Subcommands {
 
         /// The 16-byte IV in hex. Supplied instead of generated: `encrypt` then writes no IV and
         /// `decrypt` reads none. See the IV paragraph above.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce")]
         iv: Option<String>,
 
         /// A file containing the 16-byte IV, (raw bytes; hex with --hex-input).
         /// If both iv and iv_file options are provided, the file will be used.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce-file")]
         iv_file: Option<String>,
 
         #[arg(short)]
@@ -947,12 +958,12 @@ enum Subcommands {
 
         /// The 16-byte IV in hex. Supplied instead of generated: `encrypt` then writes no IV and
         /// `decrypt` reads none. See the IV paragraph above.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce")]
         iv: Option<String>,
 
         /// A file containing the 16-byte IV, (raw bytes; hex with --hex-input).
         /// If both iv and iv_file options are provided, the file will be used.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce-file")]
         iv_file: Option<String>,
 
         #[arg(short)]
@@ -1005,11 +1016,11 @@ enum Subcommands {
 
         /// The 12-byte nonce in hex. Supplied instead of generated: `encrypt` then writes none
         /// and `decrypt` reads none. See the nonce paragraph above.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce")]
         iv: Option<String>,
 
         /// A file containing the 12-byte nonce, (raw bytes; hex with --hex-input). If both iv and iv_file options are provided, the file will be used.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce-file")]
         iv_file: Option<String>,
 
         #[arg(short)]
@@ -1211,6 +1222,130 @@ enum Subcommands {
         deterministic: bool,
     },
 
+    /// ECC CDH key agreement over NIST P-256 (SP 800-56A Rev. 3 Section 5.7.1.2). `agree` writes
+    /// the raw shared secret Z, which must be passed through a KDF before use as a key: write it
+    /// to a file and give that to `hkdf-sha256 --ikm-file`, `x963kdf-sha256 --ikm-file` or
+    /// `concatkdf-sha256 --ikm-file`, not the inline `--ikm`, which leaves Z in the command
+    /// history. Keys are for key agreement
+    /// only, never also for signing.
+    ECCDH_P256 {
+        action: ECCDHAction,
+
+        #[arg(long)]
+        /// The private key file (raw bytes; hex with --hex-input); stdin if absent
+        skfile: Option<String>,
+
+        #[arg(long)]
+        /// The public key file (raw bytes; hex with --hex-input): the own key for check-consistency, the peer's for agree
+        pkfile: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// ECC CDH key agreement over NIST P-384 (SP 800-56A Rev. 3 Section 5.7.1.2). See eccdh-p256.
+    ECCDH_P384 {
+        action: ECCDHAction,
+
+        #[arg(long)]
+        /// The private key file (raw bytes; hex with --hex-input); stdin if absent
+        skfile: Option<String>,
+
+        #[arg(long)]
+        /// The public key file (raw bytes; hex with --hex-input): the own key for check-consistency, the peer's for agree
+        pkfile: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// ECC CDH key agreement over NIST P-521 (SP 800-56A Rev. 3 Section 5.7.1.2). See eccdh-p256.
+    ECCDH_P521 {
+        action: ECCDHAction,
+
+        #[arg(long)]
+        /// The private key file (raw bytes; hex with --hex-input); stdin if absent
+        skfile: Option<String>,
+
+        #[arg(long)]
+        /// The public key file (raw bytes; hex with --hex-input): the own key for check-consistency, the peer's for agree
+        pkfile: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// ECC CDH key agreement over secp256k1 (SEC 2) (SP 800-56A Rev. 3 Section 5.7.1.2). See eccdh-p256.
+    ECCDH_SECP256K1 {
+        action: ECCDHAction,
+
+        #[arg(long)]
+        /// The private key file (raw bytes; hex with --hex-input); stdin if absent
+        skfile: Option<String>,
+
+        #[arg(long)]
+        /// The public key file (raw bytes; hex with --hex-input): the own key for check-consistency, the peer's for agree
+        pkfile: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// ECC CDH key agreement over brainpoolP256r1 (RFC 5639) (SP 800-56A Rev. 3 Section 5.7.1.2). See eccdh-p256.
+    ECCDH_BP256R1 {
+        action: ECCDHAction,
+
+        #[arg(long)]
+        /// The private key file (raw bytes; hex with --hex-input); stdin if absent
+        skfile: Option<String>,
+
+        #[arg(long)]
+        /// The public key file (raw bytes; hex with --hex-input): the own key for check-consistency, the peer's for agree
+        pkfile: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// ECC CDH key agreement over brainpoolP384r1 (RFC 5639) (SP 800-56A Rev. 3 Section 5.7.1.2). See eccdh-p256.
+    ECCDH_BP384R1 {
+        action: ECCDHAction,
+
+        #[arg(long)]
+        /// The private key file (raw bytes; hex with --hex-input); stdin if absent
+        skfile: Option<String>,
+
+        #[arg(long)]
+        /// The public key file (raw bytes; hex with --hex-input): the own key for check-consistency, the peer's for agree
+        pkfile: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// ECC CDH key agreement over brainpoolP512r1 (RFC 5639) (SP 800-56A Rev. 3 Section 5.7.1.2). See eccdh-p256.
+    ECCDH_BP512R1 {
+        action: ECCDHAction,
+
+        #[arg(long)]
+        /// The private key file (raw bytes; hex with --hex-input); stdin if absent
+        skfile: Option<String>,
+
+        #[arg(long)]
+        /// The public key file (raw bytes; hex with --hex-input): the own key for check-consistency, the peer's for agree
+        pkfile: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
     AES256_ECB {
         #[arg(short, long)]
         direction: CipherDirection,
@@ -1250,12 +1385,12 @@ enum Subcommands {
 
         /// The 12-byte IV in hex. Supplied instead of generated: `encrypt` then writes none and
         /// `decrypt` reads none. See the IV paragraph above.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce")]
         iv: Option<String>,
 
         /// A file containing the 12-byte IV, (raw bytes; hex with --hex-input).
         /// If both iv and iv_file options are provided, the file will be used.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce-file")]
         iv_file: Option<String>,
 
         /// The additional authenticated data, in hex. Covered by the tag but not encrypted.
@@ -1292,12 +1427,12 @@ enum Subcommands {
 
         /// The 12-byte nonce in hex. Hazardous: supplying it makes uniqueness the caller's
         /// responsibility.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce")]
         iv: Option<String>,
 
         /// A file containing the 12-byte nonce (raw bytes; hex with --hex-input); the same
         /// hazardous override.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce-file")]
         iv_file: Option<String>,
 
         /// A MAC value to be verified: the tag (with --iv) or nonce || tag.
@@ -1343,11 +1478,11 @@ enum Subcommands {
 
         /// The 128-bit nonce in hex. Hazardous override: supplying it keeps the nonce out of the
         /// stream (see above), and reusing one under a given key breaks the cipher.
-        #[arg(long)]
+        #[arg(long, visible_alias = "iv")]
         nonce: Option<String>,
 
         /// A file containing a 128-bit nonce (raw bytes; hex with --hex-input); the same hazardous override.
-        #[arg(long)]
+        #[arg(long, visible_alias = "iv-file")]
         nonce_file: Option<String>,
 
         /// Associated data in hex (authenticated but not encrypted).
@@ -1450,12 +1585,12 @@ enum Subcommands {
 
         /// The 12-byte nonce in hex. Supplied instead of generated: `encrypt` then writes none
         /// and `decrypt` reads none. See the nonce paragraph above.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce")]
         iv: Option<String>,
 
         /// A file containing the 12-byte nonce (raw bytes; hex with --hex-input). If both iv and
         /// iv_file options are provided, the file will be used.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce-file")]
         iv_file: Option<String>,
 
         #[arg(short)]
@@ -1524,12 +1659,12 @@ enum Subcommands {
 
         /// The 12-byte nonce in hex. Supplied instead of generated: `encrypt` then writes none and
         /// `decrypt` reads none. See the nonce paragraph above.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce")]
         iv: Option<String>,
 
         /// A file containing the 12-byte nonce (raw bytes; hex with --hex-input). If both iv and
         /// iv_file options are provided, the file will be used.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce-file")]
         iv_file: Option<String>,
 
         /// The additional authenticated data, in hex. Covered by the tag but not encrypted.
@@ -1540,6 +1675,87 @@ enum Subcommands {
         /// If both aad and aad_file options are provided, the file will be used.
         #[arg(long)]
         aad_file: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// Perform BLAKE2b-512 (RFC 7693) of the content provided on stdin.
+    /// Supports streaming update for low memory footprint.
+    BLAKE2b_512 {
+        #[arg(short)]
+        /// Output the digest in hex format.
+        x: bool,
+    },
+
+    /// Perform BLAKE2s-256 (RFC 7693) of the content provided on stdin.
+    /// Supports streaming update for low memory footprint.
+    BLAKE2s_256 {
+        #[arg(short)]
+        /// Output the digest in hex format.
+        x: bool,
+    },
+
+    /// Perform keyed BLAKE2b-512 (RFC 7693 Sec 3.3, BLAKE2's built-in MAC; not HMAC) of the
+    /// content provided on stdin. The key is 1 to 64 bytes.
+    /// Supports streaming update for low memory footprint.
+    /// Note: in production uses, secrets should not be passed on the command-line because they get
+    /// logged in shell history. Use the file-based input instead.
+    BLAKE2b_512_MAC {
+        /// The MAC key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the MAC key in binary.
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        /// A MAC value to be verified.
+        /// The command will output either 0 for success or -1 for verification failure.
+        #[arg(short, long)]
+        verify: Option<String>,
+
+        #[arg(short)]
+        /// Output the tag in hex format.
+        x: bool,
+    },
+
+    /// Perform keyed BLAKE2s-256 (RFC 7693 Sec 3.3, BLAKE2's built-in MAC; not HMAC) of the
+    /// content provided on stdin. The key is 1 to 32 bytes.
+    /// Supports streaming update for low memory footprint.
+    /// Note: in production uses, secrets should not be passed on the command-line because they get
+    /// logged in shell history. Use the file-based input instead.
+    BLAKE2s_256_MAC {
+        /// The MAC key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the MAC key in binary.
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        /// A MAC value to be verified.
+        /// The command will output either 0 for success or -1 for verification failure.
+        #[arg(short, long)]
+        verify: Option<String>,
+
+        #[arg(short)]
+        /// Output the tag in hex format.
+        x: bool,
+    },
+
+    /// Perform BLAKE3 of the content provided on stdin, with output of any length (32 bytes by
+    /// default). Shorter outputs are prefixes of longer ones.
+    /// Supports streaming update for low memory footprint.
+    BLAKE3 {
+        /// Length of the output in bytes.
+        #[arg(short, long, default_value_t = blake3_cmd::BLAKE3_DEFAULT_OUT_LEN)]
+        length: usize,
 
         #[arg(short)]
         /// Output in hex format.
@@ -1562,6 +1778,56 @@ enum Subcommands {
         #[arg(long)]
         /// Customization string S in hex, for bytes that are not text.
         customization_hex: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// Perform BLAKE3 in keyed_hash mode (a MAC and PRF) of the content provided on stdin. The key
+    /// must be exactly 32 bytes. Output of any length (32 bytes by default); --verify checks the
+    /// 32-byte tag.
+    /// Supports streaming update for low memory footprint.
+    /// Note: in production uses, secrets should not be passed on the command-line because they get
+    /// logged in shell history. Use the file-based input instead.
+    BLAKE3_KeyedHash {
+        /// The 32-byte MAC key in hex.
+        /// The `key_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        key: Option<String>,
+
+        /// A file containing the 32-byte MAC key in binary.
+        /// If both key and key_file options are provided, the file will be used.
+        #[arg(short, long)]
+        key_file: Option<String>,
+
+        /// A 32-byte tag (hex) to be verified. Cannot be combined with --length.
+        /// The command will output either 0 for success or -1 for verification failure.
+        #[arg(short, long)]
+        verify: Option<String>,
+
+        /// Length of the output in bytes.
+        #[arg(short, long, default_value_t = blake3_cmd::BLAKE3_DEFAULT_OUT_LEN)]
+        length: usize,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// Perform BLAKE3 in derive_key mode: derive a key of any length (32 bytes by default) from
+    /// the key material provided on stdin, under a context string. The context string should be
+    /// hardcoded, globally unique and application-specific (BLAKE3 spec Sec 6.2).
+    /// Supports streaming update for low memory footprint.
+    BLAKE3_DeriveKey {
+        /// The context string, e.g. "example.com 2019-12-25 16:18:03 session tokens v1" (BLAKE3
+        /// spec Sec 6.2).
+        #[arg(short, long)]
+        context: String,
+
+        /// Length of the derived key in bytes.
+        #[arg(short, long, default_value_t = blake3_cmd::BLAKE3_DEFAULT_OUT_LEN)]
+        length: usize,
 
         #[arg(short)]
         /// Output in hex format.
@@ -1696,13 +1962,323 @@ enum Subcommands {
     /// Supports streaming for low memory footprint and continuous processing from stdin to stdout.
     HexEncode,
 
+    /// The NIST concatenation KDF over SHA-256 (SP 800-56C Rev. 2 Section 4.1, H(x) = hash(x)):
+    /// keying material of len bytes from a shared secret and the optional FixedInfo,
+    /// K(i) = H(counter || Z || FixedInfo).
+    /// Note: in production uses, secrets should not be passed on the command-line because they get
+    /// logged in shell history. Use the file-based input instead.
+    #[command(name = "concatkdf-sha256")]
+    ConcatKDF_SHA256 {
+        /// The shared secret Z in hex.
+        /// The `ikm_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        ikm: Option<String>,
+
+        /// A file containing the shared secret Z in binary.
+        /// If both ikm and ikm_file options are provided, the file will be used.
+        #[arg(short, long)]
+        ikm_file: Option<String>,
+
+        /// The FixedInfo input in hex. Optional; defaults to empty.
+        #[arg(long)]
+        additional_input: Option<String>,
+
+        /// A file containing the FixedInfo input in binary. Optional; defaults to empty.
+        /// If both additional_input and additional_input_file options are provided, the file will be used.
+        #[arg(short, long)]
+        additional_input_file: Option<String>,
+
+        /// Length of keying material to produce, in bytes: at most 16320.
+        #[arg(short, long)]
+        len: usize,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// The NIST concatenation KDF over SHA-384 (SP 800-56C Rev. 2 Section 4.1, H(x) = hash(x)):
+    /// keying material of len bytes from a shared secret and the optional FixedInfo,
+    /// K(i) = H(counter || Z || FixedInfo).
+    /// Note: in production uses, secrets should not be passed on the command-line because they get
+    /// logged in shell history. Use the file-based input instead.
+    #[command(name = "concatkdf-sha384")]
+    ConcatKDF_SHA384 {
+        /// The shared secret Z in hex.
+        /// The `ikm_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        ikm: Option<String>,
+
+        /// A file containing the shared secret Z in binary.
+        /// If both ikm and ikm_file options are provided, the file will be used.
+        #[arg(short, long)]
+        ikm_file: Option<String>,
+
+        /// The FixedInfo input in hex. Optional; defaults to empty.
+        #[arg(long)]
+        additional_input: Option<String>,
+
+        /// A file containing the FixedInfo input in binary. Optional; defaults to empty.
+        /// If both additional_input and additional_input_file options are provided, the file will be used.
+        #[arg(short, long)]
+        additional_input_file: Option<String>,
+
+        /// Length of keying material to produce, in bytes: at most 16320.
+        #[arg(short, long)]
+        len: usize,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// The NIST concatenation KDF over SHA-512 (SP 800-56C Rev. 2 Section 4.1, H(x) = hash(x)):
+    /// keying material of len bytes from a shared secret and the optional FixedInfo,
+    /// K(i) = H(counter || Z || FixedInfo).
+    /// Note: in production uses, secrets should not be passed on the command-line because they get
+    /// logged in shell history. Use the file-based input instead.
+    #[command(name = "concatkdf-sha512")]
+    ConcatKDF_SHA512 {
+        /// The shared secret Z in hex.
+        /// The `ikm_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        ikm: Option<String>,
+
+        /// A file containing the shared secret Z in binary.
+        /// If both ikm and ikm_file options are provided, the file will be used.
+        #[arg(short, long)]
+        ikm_file: Option<String>,
+
+        /// The FixedInfo input in hex. Optional; defaults to empty.
+        #[arg(long)]
+        additional_input: Option<String>,
+
+        /// A file containing the FixedInfo input in binary. Optional; defaults to empty.
+        /// If both additional_input and additional_input_file options are provided, the file will be used.
+        #[arg(short, long)]
+        additional_input_file: Option<String>,
+
+        /// Length of keying material to produce, in bytes: at most 16320.
+        #[arg(short, long)]
+        len: usize,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// The NIST concatenation KDF over SHA3-256 (SP 800-56C Rev. 2 Section 4.1, H(x) = hash(x)):
+    /// keying material of len bytes from a shared secret and the optional FixedInfo,
+    /// K(i) = H(counter || Z || FixedInfo).
+    /// Note: in production uses, secrets should not be passed on the command-line because they get
+    /// logged in shell history. Use the file-based input instead.
+    #[command(name = "concatkdf-sha3-256")]
+    ConcatKDF_SHA3_256 {
+        /// The shared secret Z in hex.
+        /// The `ikm_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        ikm: Option<String>,
+
+        /// A file containing the shared secret Z in binary.
+        /// If both ikm and ikm_file options are provided, the file will be used.
+        #[arg(short, long)]
+        ikm_file: Option<String>,
+
+        /// The FixedInfo input in hex. Optional; defaults to empty.
+        #[arg(long)]
+        additional_input: Option<String>,
+
+        /// A file containing the FixedInfo input in binary. Optional; defaults to empty.
+        /// If both additional_input and additional_input_file options are provided, the file will be used.
+        #[arg(short, long)]
+        additional_input_file: Option<String>,
+
+        /// Length of keying material to produce, in bytes: at most 16320.
+        #[arg(short, long)]
+        len: usize,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// The NIST concatenation KDF over SHA3-384 (SP 800-56C Rev. 2 Section 4.1, H(x) = hash(x)):
+    /// keying material of len bytes from a shared secret and the optional FixedInfo,
+    /// K(i) = H(counter || Z || FixedInfo).
+    /// Note: in production uses, secrets should not be passed on the command-line because they get
+    /// logged in shell history. Use the file-based input instead.
+    #[command(name = "concatkdf-sha3-384")]
+    ConcatKDF_SHA3_384 {
+        /// The shared secret Z in hex.
+        /// The `ikm_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        ikm: Option<String>,
+
+        /// A file containing the shared secret Z in binary.
+        /// If both ikm and ikm_file options are provided, the file will be used.
+        #[arg(short, long)]
+        ikm_file: Option<String>,
+
+        /// The FixedInfo input in hex. Optional; defaults to empty.
+        #[arg(long)]
+        additional_input: Option<String>,
+
+        /// A file containing the FixedInfo input in binary. Optional; defaults to empty.
+        /// If both additional_input and additional_input_file options are provided, the file will be used.
+        #[arg(short, long)]
+        additional_input_file: Option<String>,
+
+        /// Length of keying material to produce, in bytes: at most 16320.
+        #[arg(short, long)]
+        len: usize,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// The NIST concatenation KDF over SHA3-512 (SP 800-56C Rev. 2 Section 4.1, H(x) = hash(x)):
+    /// keying material of len bytes from a shared secret and the optional FixedInfo,
+    /// K(i) = H(counter || Z || FixedInfo).
+    /// Note: in production uses, secrets should not be passed on the command-line because they get
+    /// logged in shell history. Use the file-based input instead.
+    #[command(name = "concatkdf-sha3-512")]
+    ConcatKDF_SHA3_512 {
+        /// The shared secret Z in hex.
+        /// The `ikm_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        ikm: Option<String>,
+
+        /// A file containing the shared secret Z in binary.
+        /// If both ikm and ikm_file options are provided, the file will be used.
+        #[arg(short, long)]
+        ikm_file: Option<String>,
+
+        /// The FixedInfo input in hex. Optional; defaults to empty.
+        #[arg(long)]
+        additional_input: Option<String>,
+
+        /// A file containing the FixedInfo input in binary. Optional; defaults to empty.
+        /// If both additional_input and additional_input_file options are provided, the file will be used.
+        #[arg(short, long)]
+        additional_input_file: Option<String>,
+
+        /// Length of keying material to produce, in bytes: at most 16320.
+        #[arg(short, long)]
+        len: usize,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// The ANSI X9.63 KDF over SHA-256 (SEC 1 v2 Section 3.6.1): keying data of len bytes from a
+    /// shared secret and the optional SharedInfo, K_i = Hash(Z || Counter || SharedInfo).
+    /// Note: in production uses, secrets should not be passed on the command-line because they get
+    /// logged in shell history. Use the file-based input instead.
+    X963KDF_SHA256 {
+        /// The shared secret Z in hex.
+        /// The `ikm_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        ikm: Option<String>,
+
+        /// A file containing the shared secret Z in binary.
+        /// If both ikm and ikm_file options are provided, the file will be used.
+        #[arg(short, long)]
+        ikm_file: Option<String>,
+
+        /// The SharedInfo input in hex. Optional; defaults to empty.
+        #[arg(long)]
+        additional_input: Option<String>,
+
+        /// A file containing the SharedInfo input in binary. Optional; defaults to empty.
+        /// If both additional_input and additional_input_file options are provided, the file will be used.
+        #[arg(short, long)]
+        additional_input_file: Option<String>,
+
+        /// Length of keying data to produce, in bytes: at most 16320.
+        #[arg(short, long)]
+        len: usize,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// The ANSI X9.63 KDF over SHA-384 (SEC 1 v2 Section 3.6.1): keying data of len bytes from a
+    /// shared secret and the optional SharedInfo, K_i = Hash(Z || Counter || SharedInfo).
+    /// Note: in production uses, secrets should not be passed on the command-line because they get
+    /// logged in shell history. Use the file-based input instead.
+    X963KDF_SHA384 {
+        /// The shared secret Z in hex.
+        /// The `ikm_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        ikm: Option<String>,
+
+        /// A file containing the shared secret Z in binary.
+        /// If both ikm and ikm_file options are provided, the file will be used.
+        #[arg(short, long)]
+        ikm_file: Option<String>,
+
+        /// The SharedInfo input in hex. Optional; defaults to empty.
+        #[arg(long)]
+        additional_input: Option<String>,
+
+        /// A file containing the SharedInfo input in binary. Optional; defaults to empty.
+        /// If both additional_input and additional_input_file options are provided, the file will be used.
+        #[arg(short, long)]
+        additional_input_file: Option<String>,
+
+        /// Length of keying data to produce, in bytes: at most 16320.
+        #[arg(short, long)]
+        len: usize,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// The ANSI X9.63 KDF over SHA-512 (SEC 1 v2 Section 3.6.1): keying data of len bytes from a
+    /// shared secret and the optional SharedInfo, K_i = Hash(Z || Counter || SharedInfo).
+    /// Note: in production uses, secrets should not be passed on the command-line because they get
+    /// logged in shell history. Use the file-based input instead.
+    X963KDF_SHA512 {
+        /// The shared secret Z in hex.
+        /// The `ikm_file` option is preferred to avoid leaving key material in command history.
+        #[arg(long)]
+        ikm: Option<String>,
+
+        /// A file containing the shared secret Z in binary.
+        /// If both ikm and ikm_file options are provided, the file will be used.
+        #[arg(short, long)]
+        ikm_file: Option<String>,
+
+        /// The SharedInfo input in hex. Optional; defaults to empty.
+        #[arg(long)]
+        additional_input: Option<String>,
+
+        /// A file containing the SharedInfo input in binary. Optional; defaults to empty.
+        /// If both additional_input and additional_input_file options are provided, the file will be used.
+        #[arg(short, long)]
+        additional_input_file: Option<String>,
+
+        /// Length of keying data to produce, in bytes: at most 16320.
+        #[arg(short, long)]
+        len: usize,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
     /// Perform HKDF-SHA256 (RFC 5869 extract-then-expand) of the provided input keying material:
     ///     OKM = HKDF-Expand(HKDF-Extract(salt, ikm), info, len)
     /// Note: in production uses, secrets should not be passed on the command-line because they get
     /// logged in shell history. Use the file-based input instead.
     HKDF_SHA256 {
-        /// The salt value in hex.
-        /// The `salt_file` option is preferred to avoid leaving key material in command history.
+        /// The salt value in hex (RFC 5869 Section 2.2). Optional: absent, HKDF uses a string of
+        /// HashLen zeros. The `salt_file` option is preferred to avoid leaving key material in
+        /// command history.
         #[arg(long)]
         salt: Option<String>,
 
@@ -1710,6 +2286,11 @@ enum Subcommands {
         /// If both salt and salt_file options are provided, the file will be used.
         #[arg(short, long)]
         salt_file: Option<String>,
+
+        /// Treat the salt as a secret (SP 800-56C Rev. 2 Section 5.1) rather than RFC 5869's
+        /// non-secret random value. The output is the same; only its entropy accounting differs.
+        #[arg(long)]
+        secret_salt: bool,
 
         /// An Input Keying Material in hex.
         /// The `ikm_file` option is preferred to avoid leaving key material in command history.
@@ -1744,8 +2325,9 @@ enum Subcommands {
     /// Note: in production uses, secrets should not be passed on the command-line because they get
     /// logged in shell history. Use the file-based input instead.
     HKDF_SHA384 {
-        /// The salt value in hex.
-        /// The `salt_file` option is preferred to avoid leaving key material in command history.
+        /// The salt value in hex (RFC 5869 Section 2.2). Optional: absent, HKDF uses a string of
+        /// HashLen zeros. The `salt_file` option is preferred to avoid leaving key material in
+        /// command history.
         #[arg(long)]
         salt: Option<String>,
 
@@ -1753,6 +2335,11 @@ enum Subcommands {
         /// If both salt and salt_file options are provided, the file will be used.
         #[arg(short, long)]
         salt_file: Option<String>,
+
+        /// Treat the salt as a secret (SP 800-56C Rev. 2 Section 5.1) rather than RFC 5869's
+        /// non-secret random value. The output is the same; only its entropy accounting differs.
+        #[arg(long)]
+        secret_salt: bool,
 
         /// An Input Keying Material in hex.
         /// The `ikm_file` option is preferred to avoid leaving key material in command history.
@@ -1787,8 +2374,9 @@ enum Subcommands {
     /// Note: in production uses, secrets should not be passed on the command-line because they get
     /// logged in shell history. Use the file-based input instead.
     HKDF_SHA512 {
-        /// The salt value in hex.
-        /// The `salt_file` option is preferred to avoid leaving key material in command history.
+        /// The salt value in hex (RFC 5869 Section 2.2). Optional: absent, HKDF uses a string of
+        /// HashLen zeros. The `salt_file` option is preferred to avoid leaving key material in
+        /// command history.
         #[arg(long)]
         salt: Option<String>,
 
@@ -1796,6 +2384,11 @@ enum Subcommands {
         /// If both salt and salt_file options are provided, the file will be used.
         #[arg(short, long)]
         salt_file: Option<String>,
+
+        /// Treat the salt as a secret (SP 800-56C Rev. 2 Section 5.1) rather than RFC 5869's
+        /// non-secret random value. The output is the same; only its entropy accounting differs.
+        #[arg(long)]
+        secret_salt: bool,
 
         /// An Input Keying Material in hex.
         /// The `ikm_file` option is preferred to avoid leaving key material in command history.
@@ -1830,8 +2423,9 @@ enum Subcommands {
     /// Note: in production uses, secrets should not be passed on the command-line because they get
     /// logged in shell history. Use the file-based input instead.
     HKDF_SM3 {
-        /// The salt value in hex.
-        /// The `salt_file` option is preferred to avoid leaving key material in command history.
+        /// The salt value in hex (RFC 5869 Section 2.2). Optional: absent, HKDF uses a string of
+        /// HashLen zeros. The `salt_file` option is preferred to avoid leaving key material in
+        /// command history.
         #[arg(long)]
         salt: Option<String>,
 
@@ -1839,6 +2433,11 @@ enum Subcommands {
         /// If both salt and salt_file options are provided, the file will be used.
         #[arg(short, long)]
         salt_file: Option<String>,
+
+        /// Treat the salt as a secret (SP 800-56C Rev. 2 Section 5.1) rather than RFC 5869's
+        /// non-secret random value. The output is the same; only its entropy accounting differs.
+        #[arg(long)]
+        secret_salt: bool,
 
         /// An Input Keying Material in hex.
         /// The `ikm_file` option is preferred to avoid leaving key material in command history.
@@ -2854,6 +3453,135 @@ enum Subcommands {
         x: bool,
     },
 
+    /// ML-KEM-512 with the shared secret derived through HKDF-SHA256 (MLKEM512-HKDF-SHA256):
+    /// encaps and decaps with mlkem512 keys, the output being
+    /// HKDF-SHA256(salt, K, info) over the ML-KEM secret K, one hash output long. Keys are made
+    /// with the mlkem512 subcommand.
+    MLKEM512_HKDF_SHA256 {
+        action: mlkem_cmd::MLKEMHkdfAction,
+
+        #[arg(long)]
+        /// The private key file (raw bytes; hex with --hex-input) for decaps
+        skfile: Option<String>,
+
+        #[arg(long)]
+        /// The public key file (raw bytes; hex with --hex-input) for encaps
+        pkfile: Option<String>,
+
+        #[arg(long)]
+        /// The ciphertext value file (raw bytes; hex with --hex-input) either for encaps to output to, or for decaps to read from.
+        ctfile: Option<String>,
+
+        /// The HKDF salt (RFC 5869 Section 2.2, a non-secret random value) in hex. Optional:
+        /// absent, HKDF uses a string of HashLen zeros.
+        #[arg(long)]
+        salt: Option<String>,
+
+        /// A file containing the HKDF salt in binary.
+        /// If both salt and salt_file options are provided, the file will be used.
+        #[arg(short, long)]
+        salt_file: Option<String>,
+
+        /// The HKDF `info` input (RFC 5869 Section 2.3) in hex. Optional; defaults to empty.
+        #[arg(long)]
+        additional_input: Option<String>,
+
+        /// A file containing the HKDF `info` input in binary. Optional; defaults to empty.
+        /// If both additional_input and additional_input_file options are provided, the file will be used.
+        #[arg(short, long)]
+        additional_input_file: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// ML-KEM-768 with the shared secret derived through HKDF-SHA512 (MLKEM768-HKDF-SHA512):
+    /// encaps and decaps with mlkem768 keys, the output being
+    /// HKDF-SHA512(salt, K, info) over the ML-KEM secret K, one hash output long. Keys are made
+    /// with the mlkem768 subcommand.
+    MLKEM768_HKDF_SHA512 {
+        action: mlkem_cmd::MLKEMHkdfAction,
+
+        #[arg(long)]
+        /// The private key file (raw bytes; hex with --hex-input) for decaps
+        skfile: Option<String>,
+
+        #[arg(long)]
+        /// The public key file (raw bytes; hex with --hex-input) for encaps
+        pkfile: Option<String>,
+
+        #[arg(long)]
+        /// The ciphertext value file (raw bytes; hex with --hex-input) either for encaps to output to, or for decaps to read from.
+        ctfile: Option<String>,
+
+        /// The HKDF salt (RFC 5869 Section 2.2, a non-secret random value) in hex. Optional:
+        /// absent, HKDF uses a string of HashLen zeros.
+        #[arg(long)]
+        salt: Option<String>,
+
+        /// A file containing the HKDF salt in binary.
+        /// If both salt and salt_file options are provided, the file will be used.
+        #[arg(short, long)]
+        salt_file: Option<String>,
+
+        /// The HKDF `info` input (RFC 5869 Section 2.3) in hex. Optional; defaults to empty.
+        #[arg(long)]
+        additional_input: Option<String>,
+
+        /// A file containing the HKDF `info` input in binary. Optional; defaults to empty.
+        /// If both additional_input and additional_input_file options are provided, the file will be used.
+        #[arg(short, long)]
+        additional_input_file: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
+    /// ML-KEM-1024 with the shared secret derived through HKDF-SHA512 (MLKEM1024-HKDF-SHA512):
+    /// encaps and decaps with mlkem1024 keys, the output being
+    /// HKDF-SHA512(salt, K, info) over the ML-KEM secret K, one hash output long. Keys are made
+    /// with the mlkem1024 subcommand.
+    MLKEM1024_HKDF_SHA512 {
+        action: mlkem_cmd::MLKEMHkdfAction,
+
+        #[arg(long)]
+        /// The private key file (raw bytes; hex with --hex-input) for decaps
+        skfile: Option<String>,
+
+        #[arg(long)]
+        /// The public key file (raw bytes; hex with --hex-input) for encaps
+        pkfile: Option<String>,
+
+        #[arg(long)]
+        /// The ciphertext value file (raw bytes; hex with --hex-input) either for encaps to output to, or for decaps to read from.
+        ctfile: Option<String>,
+
+        /// The HKDF salt (RFC 5869 Section 2.2, a non-secret random value) in hex. Optional:
+        /// absent, HKDF uses a string of HashLen zeros.
+        #[arg(long)]
+        salt: Option<String>,
+
+        /// A file containing the HKDF salt in binary.
+        /// If both salt and salt_file options are provided, the file will be used.
+        #[arg(short, long)]
+        salt_file: Option<String>,
+
+        /// The HKDF `info` input (RFC 5869 Section 2.3) in hex. Optional; defaults to empty.
+        #[arg(long)]
+        additional_input: Option<String>,
+
+        /// A file containing the HKDF `info` input in binary. Optional; defaults to empty.
+        /// If both additional_input and additional_input_file options are provided, the file will be used.
+        #[arg(short, long)]
+        additional_input_file: Option<String>,
+
+        #[arg(short)]
+        /// Output in hex format.
+        x: bool,
+    },
+
     /// Perform ParallelHash128 (NIST SP 800-185 Sec 6) of the content provided on stdin.
     /// The block size is part of the function: the same input under a different block size gives
     /// an unrelated hash, so both sides must use the same value.
@@ -3164,12 +3892,12 @@ enum Subcommands {
 
         /// The 16-byte IV in hex. Supplied instead of generated: `encrypt` then writes no IV and
         /// `decrypt` reads none. See the IV paragraph above.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce")]
         iv: Option<String>,
 
         /// A file containing the 16-byte IV, (raw bytes; hex with --hex-input).
         /// If both iv and iv_file options are provided, the file will be used.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce-file")]
         iv_file: Option<String>,
 
         #[arg(short)]
@@ -3197,12 +3925,12 @@ enum Subcommands {
 
         /// The 16-byte IV in hex. Supplied instead of generated: `encrypt` then writes no IV and
         /// `decrypt` reads none. See the IV paragraph above.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce")]
         iv: Option<String>,
 
         /// A file containing the 16-byte IV, (raw bytes; hex with --hex-input).
         /// If both iv and iv_file options are provided, the file will be used.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce-file")]
         iv_file: Option<String>,
 
         #[arg(short)]
@@ -3230,12 +3958,12 @@ enum Subcommands {
 
         /// The 16-byte IV in hex. Supplied instead of generated: `encrypt` then writes no IV and
         /// `decrypt` reads none. See the IV paragraph above.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce")]
         iv: Option<String>,
 
         /// A file containing the 16-byte IV, (raw bytes; hex with --hex-input).
         /// If both iv and iv_file options are provided, the file will be used.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce-file")]
         iv_file: Option<String>,
 
         #[arg(short)]
@@ -3296,11 +4024,11 @@ enum Subcommands {
         key_file: Option<String>,
 
         /// The nonce in hex, 7 to 13 bytes. MUST be unique per encryption under a given key.
-        #[arg(long)]
+        #[arg(long, visible_alias = "iv")]
         nonce: Option<String>,
 
         /// A file containing the nonce, (raw bytes; hex with --hex-input).
-        #[arg(long)]
+        #[arg(long, visible_alias = "iv-file")]
         nonce_file: Option<String>,
 
         /// Associated data in hex: authenticated but not encrypted. Must match on decrypt.
@@ -3350,12 +4078,12 @@ enum Subcommands {
 
         /// The 16-byte IV in hex. Supplied instead of generated: `encrypt` then writes no IV and
         /// `decrypt` reads none. See the IV paragraph above.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce")]
         iv: Option<String>,
 
         /// A file containing the 16-byte IV, (raw bytes; hex with --hex-input).
         /// If both iv and iv_file options are provided, the file will be used.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce-file")]
         iv_file: Option<String>,
 
         #[arg(short)]
@@ -3381,11 +4109,11 @@ enum Subcommands {
         key_file: Option<String>,
 
         /// The nonce in hex, 7 to 13 bytes. MUST be unique per encryption under a given key.
-        #[arg(long)]
+        #[arg(long, visible_alias = "iv")]
         nonce: Option<String>,
 
         /// A file containing the nonce, (raw bytes; hex with --hex-input).
-        #[arg(long)]
+        #[arg(long, visible_alias = "iv-file")]
         nonce_file: Option<String>,
 
         /// Associated data in hex: authenticated but not encrypted. Must match on decrypt.
@@ -3427,12 +4155,12 @@ enum Subcommands {
 
         /// The 16-byte IV in hex. Supplied instead of generated: `encrypt` then writes no IV and
         /// `decrypt` reads none. See the IV paragraph above.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce")]
         iv: Option<String>,
 
         /// A file containing the 16-byte IV, (raw bytes; hex with --hex-input).
         /// If both iv and iv_file options are provided, the file will be used.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce-file")]
         iv_file: Option<String>,
 
         #[arg(short)]
@@ -3458,11 +4186,11 @@ enum Subcommands {
         key_file: Option<String>,
 
         /// The nonce in hex, 7 to 13 bytes. MUST be unique per encryption under a given key.
-        #[arg(long)]
+        #[arg(long, visible_alias = "iv")]
         nonce: Option<String>,
 
         /// A file containing the nonce, (raw bytes; hex with --hex-input).
-        #[arg(long)]
+        #[arg(long, visible_alias = "iv-file")]
         nonce_file: Option<String>,
 
         /// Associated data in hex: authenticated but not encrypted. Must match on decrypt.
@@ -3504,12 +4232,12 @@ enum Subcommands {
 
         /// The 16-byte IV in hex. Supplied instead of generated: `encrypt` then writes no IV and
         /// `decrypt` reads none. See the IV paragraph above.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce")]
         iv: Option<String>,
 
         /// A file containing the 16-byte IV, (raw bytes; hex with --hex-input).
         /// If both iv and iv_file options are provided, the file will be used.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce-file")]
         iv_file: Option<String>,
 
         #[arg(short)]
@@ -3547,12 +4275,12 @@ enum Subcommands {
 
         /// The 16-byte IV in hex. Supplied instead of generated: `encrypt` then writes no IV and
         /// `decrypt` reads none. See the IV paragraph above.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce")]
         iv: Option<String>,
 
         /// A file containing the 16-byte IV, (raw bytes; hex with --hex-input).
         /// If both iv and iv_file options are provided, the file will be used.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce-file")]
         iv_file: Option<String>,
 
         #[arg(short)]
@@ -3580,12 +4308,12 @@ enum Subcommands {
 
         /// The 16-byte IV in hex. Supplied instead of generated: `encrypt` then writes no IV and
         /// `decrypt` reads none. See the IV paragraph above.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce")]
         iv: Option<String>,
 
         /// A file containing the 16-byte IV, (raw bytes; hex with --hex-input).
         /// If both iv and iv_file options are provided, the file will be used.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce-file")]
         iv_file: Option<String>,
 
         #[arg(short)]
@@ -3613,12 +4341,12 @@ enum Subcommands {
 
         /// The 16-byte IV in hex. Supplied instead of generated: `encrypt` then writes no IV and
         /// `decrypt` reads none. See the IV paragraph above.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce")]
         iv: Option<String>,
 
         /// A file containing the 16-byte IV, (raw bytes; hex with --hex-input).
         /// If both iv and iv_file options are provided, the file will be used.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce-file")]
         iv_file: Option<String>,
 
         #[arg(short)]
@@ -3655,12 +4383,12 @@ enum Subcommands {
 
         /// The 12-byte nonce in hex. Supplied instead of generated: `encrypt` then writes none
         /// and `decrypt` reads none. See the nonce paragraph above.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce")]
         iv: Option<String>,
 
         /// A file containing the 12-byte nonce, as raw bytes exactly as they are (no hex
         /// decoding). If both iv and iv_file options are provided, the file will be used.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce-file")]
         iv_file: Option<String>,
 
         #[arg(short)]
@@ -3712,12 +4440,12 @@ enum Subcommands {
 
         /// The 12-byte IV in hex. Supplied instead of generated: `encrypt` then writes none and
         /// `decrypt` reads none. See the IV paragraph above.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce")]
         iv: Option<String>,
 
         /// A file containing the 12-byte IV, (raw bytes; hex with --hex-input).
         /// If both iv and iv_file options are provided, the file will be used.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce-file")]
         iv_file: Option<String>,
 
         /// The additional authenticated data, in hex. Covered by the tag but not encrypted.
@@ -3754,12 +4482,12 @@ enum Subcommands {
 
         /// The 12-byte nonce in hex. Supplied instead of generated: `encrypt` then writes none
         /// and `decrypt` reads none. See the nonce paragraph above.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce")]
         iv: Option<String>,
 
         /// A file containing the 12-byte nonce, as raw bytes exactly as they are (no hex
         /// decoding). If both iv and iv_file options are provided, the file will be used.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce-file")]
         iv_file: Option<String>,
 
         #[arg(short)]
@@ -3787,12 +4515,12 @@ enum Subcommands {
 
         /// The 12-byte IV in hex. Supplied instead of generated: `encrypt` then writes none and
         /// `decrypt` reads none. See the IV paragraph above.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce")]
         iv: Option<String>,
 
         /// A file containing the 12-byte IV, (raw bytes; hex with --hex-input).
         /// If both iv and iv_file options are provided, the file will be used.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce-file")]
         iv_file: Option<String>,
 
         /// The additional authenticated data, in hex. Covered by the tag but not encrypted.
@@ -3829,12 +4557,12 @@ enum Subcommands {
 
         /// The 12-byte nonce in hex. Supplied instead of generated: `encrypt` then writes none
         /// and `decrypt` reads none. See the nonce paragraph above.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce")]
         iv: Option<String>,
 
         /// A file containing the 12-byte nonce, as raw bytes exactly as they are (no hex
         /// decoding). If both iv and iv_file options are provided, the file will be used.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce-file")]
         iv_file: Option<String>,
 
         #[arg(short)]
@@ -3862,12 +4590,12 @@ enum Subcommands {
 
         /// The 12-byte IV in hex. Supplied instead of generated: `encrypt` then writes none and
         /// `decrypt` reads none. See the IV paragraph above.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce")]
         iv: Option<String>,
 
         /// A file containing the 12-byte IV, (raw bytes; hex with --hex-input).
         /// If both iv and iv_file options are provided, the file will be used.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce-file")]
         iv_file: Option<String>,
 
         /// The additional authenticated data, in hex. Covered by the tag but not encrypted.
@@ -3913,12 +4641,12 @@ enum Subcommands {
 
         /// The 16-byte IV in hex. Supplied instead of generated: `encrypt` then writes no IV and
         /// `decrypt` reads none. See the IV paragraph above.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce")]
         iv: Option<String>,
 
         /// A file containing the 16-byte IV, (raw bytes; hex with --hex-input).
         /// If both iv and iv_file options are provided, the file will be used.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce-file")]
         iv_file: Option<String>,
 
         #[arg(short)]
@@ -3946,12 +4674,12 @@ enum Subcommands {
 
         /// The 16-byte IV in hex. Supplied instead of generated: `encrypt` then writes no IV and
         /// `decrypt` reads none. See the IV paragraph above.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce")]
         iv: Option<String>,
 
         /// A file containing the 16-byte IV, (raw bytes; hex with --hex-input).
         /// If both iv and iv_file options are provided, the file will be used.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce-file")]
         iv_file: Option<String>,
 
         #[arg(short)]
@@ -3979,12 +4707,12 @@ enum Subcommands {
 
         /// The 16-byte IV in hex. Supplied instead of generated: `encrypt` then writes no IV and
         /// `decrypt` reads none. See the IV paragraph above.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce")]
         iv: Option<String>,
 
         /// A file containing the 16-byte IV, (raw bytes; hex with --hex-input).
         /// If both iv and iv_file options are provided, the file will be used.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce-file")]
         iv_file: Option<String>,
 
         #[arg(short)]
@@ -4045,11 +4773,11 @@ enum Subcommands {
         key_file: Option<String>,
 
         /// The nonce in hex, 7 to 13 bytes. MUST be unique per encryption under a given key.
-        #[arg(long)]
+        #[arg(long, visible_alias = "iv")]
         nonce: Option<String>,
 
         /// A file containing the nonce, (raw bytes; hex with --hex-input).
-        #[arg(long)]
+        #[arg(long, visible_alias = "iv-file")]
         nonce_file: Option<String>,
 
         /// Associated data in hex: authenticated but not encrypted. Must match on decrypt.
@@ -4099,12 +4827,12 @@ enum Subcommands {
 
         /// The 16-byte IV in hex. Supplied instead of generated: `encrypt` then writes no IV and
         /// `decrypt` reads none. See the IV paragraph above.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce")]
         iv: Option<String>,
 
         /// A file containing the 16-byte IV, (raw bytes; hex with --hex-input).
         /// If both iv and iv_file options are provided, the file will be used.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce-file")]
         iv_file: Option<String>,
 
         #[arg(short)]
@@ -4130,11 +4858,11 @@ enum Subcommands {
         key_file: Option<String>,
 
         /// The nonce in hex, 7 to 13 bytes. MUST be unique per encryption under a given key.
-        #[arg(long)]
+        #[arg(long, visible_alias = "iv")]
         nonce: Option<String>,
 
         /// A file containing the nonce, (raw bytes; hex with --hex-input).
-        #[arg(long)]
+        #[arg(long, visible_alias = "iv-file")]
         nonce_file: Option<String>,
 
         /// Associated data in hex: authenticated but not encrypted. Must match on decrypt.
@@ -4176,12 +4904,12 @@ enum Subcommands {
 
         /// The 16-byte IV in hex. Supplied instead of generated: `encrypt` then writes no IV and
         /// `decrypt` reads none. See the IV paragraph above.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce")]
         iv: Option<String>,
 
         /// A file containing the 16-byte IV, (raw bytes; hex with --hex-input).
         /// If both iv and iv_file options are provided, the file will be used.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce-file")]
         iv_file: Option<String>,
 
         #[arg(short)]
@@ -4207,11 +4935,11 @@ enum Subcommands {
         key_file: Option<String>,
 
         /// The nonce in hex, 7 to 13 bytes. MUST be unique per encryption under a given key.
-        #[arg(long)]
+        #[arg(long, visible_alias = "iv")]
         nonce: Option<String>,
 
         /// A file containing the nonce, (raw bytes; hex with --hex-input).
-        #[arg(long)]
+        #[arg(long, visible_alias = "iv-file")]
         nonce_file: Option<String>,
 
         /// Associated data in hex: authenticated but not encrypted. Must match on decrypt.
@@ -4253,12 +4981,12 @@ enum Subcommands {
 
         /// The 16-byte IV in hex. Supplied instead of generated: `encrypt` then writes no IV and
         /// `decrypt` reads none. See the IV paragraph above.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce")]
         iv: Option<String>,
 
         /// A file containing the 16-byte IV, (raw bytes; hex with --hex-input).
         /// If both iv and iv_file options are provided, the file will be used.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce-file")]
         iv_file: Option<String>,
 
         #[arg(short)]
@@ -4296,12 +5024,12 @@ enum Subcommands {
 
         /// The 16-byte IV in hex. Supplied instead of generated: `encrypt` then writes no IV and
         /// `decrypt` reads none. See the IV paragraph above.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce")]
         iv: Option<String>,
 
         /// A file containing the 16-byte IV, (raw bytes; hex with --hex-input).
         /// If both iv and iv_file options are provided, the file will be used.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce-file")]
         iv_file: Option<String>,
 
         #[arg(short)]
@@ -4329,12 +5057,12 @@ enum Subcommands {
 
         /// The 16-byte IV in hex. Supplied instead of generated: `encrypt` then writes no IV and
         /// `decrypt` reads none. See the IV paragraph above.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce")]
         iv: Option<String>,
 
         /// A file containing the 16-byte IV, (raw bytes; hex with --hex-input).
         /// If both iv and iv_file options are provided, the file will be used.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce-file")]
         iv_file: Option<String>,
 
         #[arg(short)]
@@ -4362,12 +5090,12 @@ enum Subcommands {
 
         /// The 16-byte IV in hex. Supplied instead of generated: `encrypt` then writes no IV and
         /// `decrypt` reads none. See the IV paragraph above.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce")]
         iv: Option<String>,
 
         /// A file containing the 16-byte IV, (raw bytes; hex with --hex-input).
         /// If both iv and iv_file options are provided, the file will be used.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce-file")]
         iv_file: Option<String>,
 
         #[arg(short)]
@@ -4402,12 +5130,12 @@ enum Subcommands {
 
         /// The 12-byte nonce in hex. Supplied instead of generated: `encrypt` then writes no nonce
         /// and `decrypt` reads none. See the nonce paragraph above.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce")]
         iv: Option<String>,
 
         /// A file containing the 12-byte nonce, as raw bytes exactly as they are (no hex
         /// decoding). If both iv and iv_file options are provided, the file will be used.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce-file")]
         iv_file: Option<String>,
 
         #[arg(short)]
@@ -4459,12 +5187,12 @@ enum Subcommands {
 
         /// The 12-byte IV in hex. Supplied instead of generated: `encrypt` then writes none and
         /// `decrypt` reads none. See the IV paragraph above.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce")]
         iv: Option<String>,
 
         /// A file containing the 12-byte IV, (raw bytes; hex with --hex-input).
         /// If both iv and iv_file options are provided, the file will be used.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce-file")]
         iv_file: Option<String>,
 
         /// The additional authenticated data, in hex. Covered by the tag but not encrypted.
@@ -4501,12 +5229,12 @@ enum Subcommands {
 
         /// The 12-byte nonce in hex. Supplied instead of generated: `encrypt` then writes no nonce
         /// and `decrypt` reads none. See the nonce paragraph above.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce")]
         iv: Option<String>,
 
         /// A file containing the 12-byte nonce, as raw bytes exactly as they are (no hex
         /// decoding). If both iv and iv_file options are provided, the file will be used.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce-file")]
         iv_file: Option<String>,
 
         #[arg(short)]
@@ -4534,12 +5262,12 @@ enum Subcommands {
 
         /// The 12-byte IV in hex. Supplied instead of generated: `encrypt` then writes none and
         /// `decrypt` reads none. See the IV paragraph above.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce")]
         iv: Option<String>,
 
         /// A file containing the 12-byte IV, (raw bytes; hex with --hex-input).
         /// If both iv and iv_file options are provided, the file will be used.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce-file")]
         iv_file: Option<String>,
 
         /// The additional authenticated data, in hex. Covered by the tag but not encrypted.
@@ -4576,12 +5304,12 @@ enum Subcommands {
 
         /// The 12-byte nonce in hex. Supplied instead of generated: `encrypt` then writes no nonce
         /// and `decrypt` reads none. See the nonce paragraph above.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce")]
         iv: Option<String>,
 
         /// A file containing the 12-byte nonce, as raw bytes exactly as they are (no hex
         /// decoding). If both iv and iv_file options are provided, the file will be used.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce-file")]
         iv_file: Option<String>,
 
         #[arg(short)]
@@ -4609,12 +5337,12 @@ enum Subcommands {
 
         /// The 12-byte IV in hex. Supplied instead of generated: `encrypt` then writes none and
         /// `decrypt` reads none. See the IV paragraph above.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce")]
         iv: Option<String>,
 
         /// A file containing the 12-byte IV, (raw bytes; hex with --hex-input).
         /// If both iv and iv_file options are provided, the file will be used.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce-file")]
         iv_file: Option<String>,
 
         /// The additional authenticated data, in hex. Covered by the tag but not encrypted.
@@ -4660,12 +5388,12 @@ enum Subcommands {
 
         /// The 16-byte IV in hex. Supplied instead of generated: `encrypt` then writes no IV and
         /// `decrypt` reads none. See the IV paragraph above.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce")]
         iv: Option<String>,
 
         /// A file containing the 16-byte IV, (raw bytes; hex with --hex-input).
         /// If both iv and iv_file options are provided, the file will be used.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce-file")]
         iv_file: Option<String>,
 
         #[arg(short)]
@@ -4727,11 +5455,11 @@ enum Subcommands {
         key_file: Option<String>,
 
         /// The nonce in hex, 7 to 13 bytes. MUST be unique per encryption under a given key.
-        #[arg(long)]
+        #[arg(long, visible_alias = "iv")]
         nonce: Option<String>,
 
         /// A file containing the nonce, (raw bytes; hex with --hex-input).
-        #[arg(long)]
+        #[arg(long, visible_alias = "iv-file")]
         nonce_file: Option<String>,
 
         /// Associated data in hex: authenticated but not encrypted. Must match on decrypt.
@@ -4781,12 +5509,12 @@ enum Subcommands {
 
         /// The 16-byte IV in hex. Supplied instead of generated: `encrypt` then writes no IV and
         /// `decrypt` reads none. See the IV paragraph above.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce")]
         iv: Option<String>,
 
         /// A file containing the 16-byte IV, (raw bytes; hex with --hex-input).
         /// If both iv and iv_file options are provided, the file will be used.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce-file")]
         iv_file: Option<String>,
 
         #[arg(short)]
@@ -4825,12 +5553,12 @@ enum Subcommands {
 
         /// The 16-byte IV in hex. Supplied instead of generated: `encrypt` then writes no IV and
         /// `decrypt` reads none. See the IV paragraph above.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce")]
         iv: Option<String>,
 
         /// A file containing the 16-byte IV, (raw bytes; hex with --hex-input).
         /// If both iv and iv_file options are provided, the file will be used.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce-file")]
         iv_file: Option<String>,
 
         #[arg(short)]
@@ -4867,12 +5595,12 @@ enum Subcommands {
 
         /// The 12-byte nonce in hex. Supplied instead of generated: `encrypt` then writes none
         /// and `decrypt` reads none. See the nonce paragraph above.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce")]
         iv: Option<String>,
 
         /// A file containing the 12-byte nonce, as raw bytes exactly as they are (no hex
         /// decoding). If both iv and iv_file options are provided, the file will be used.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce-file")]
         iv_file: Option<String>,
 
         #[arg(short)]
@@ -4910,12 +5638,12 @@ enum Subcommands {
 
         /// The 12-byte IV in hex. Supplied instead of generated: `encrypt` then writes none and
         /// `decrypt` reads none. See the IV paragraph above.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce")]
         iv: Option<String>,
 
         /// A file containing the 12-byte IV, (raw bytes; hex with --hex-input).
         /// If both iv and iv_file options are provided, the file will be used.
-        #[arg(long)]
+        #[arg(long, visible_alias = "nonce-file")]
         iv_file: Option<String>,
 
         /// The additional authenticated data, in hex. Covered by the tag but not encrypted.
@@ -5253,6 +5981,27 @@ fn run() {
         Some(Subcommands::ECDSA_BP512R1 { action, skfile, pkfile, sigfile, x, deterministic }) => {
             ecdsa_cmd::ecdsa_bp512r1_cmd(action, skfile, pkfile, sigfile, *x, *deterministic);
         }
+        Some(Subcommands::ECCDH_P256 { action, skfile, pkfile, x }) => {
+            eccdh_cmd::eccdh_p256_cmd(action, skfile, pkfile, *x);
+        }
+        Some(Subcommands::ECCDH_P384 { action, skfile, pkfile, x }) => {
+            eccdh_cmd::eccdh_p384_cmd(action, skfile, pkfile, *x);
+        }
+        Some(Subcommands::ECCDH_P521 { action, skfile, pkfile, x }) => {
+            eccdh_cmd::eccdh_p521_cmd(action, skfile, pkfile, *x);
+        }
+        Some(Subcommands::ECCDH_SECP256K1 { action, skfile, pkfile, x }) => {
+            eccdh_cmd::eccdh_secp256k1_cmd(action, skfile, pkfile, *x);
+        }
+        Some(Subcommands::ECCDH_BP256R1 { action, skfile, pkfile, x }) => {
+            eccdh_cmd::eccdh_bp256r1_cmd(action, skfile, pkfile, *x);
+        }
+        Some(Subcommands::ECCDH_BP384R1 { action, skfile, pkfile, x }) => {
+            eccdh_cmd::eccdh_bp384r1_cmd(action, skfile, pkfile, *x);
+        }
+        Some(Subcommands::ECCDH_BP512R1 { action, skfile, pkfile, x }) => {
+            eccdh_cmd::eccdh_bp512r1_cmd(action, skfile, pkfile, *x);
+        }
         Some(Subcommands::CHACHA20 { direction, key, key_file, iv, iv_file, x }) => {
             chacha20_cmd::chacha20_cmd(direction, key, key_file, iv, iv_file, *x);
         }
@@ -5269,6 +6018,25 @@ fn run() {
             chacha20_poly1305_cmd::chacha20_poly1305_cmd(
                 direction, key, key_file, iv, iv_file, aad, aad_file, *x,
             );
+        }
+        Some(Subcommands::BLAKE2b_512 { x }) => {
+            blake2_cmd::blake2_cmd(BLAKE2Variant::BLAKE2b_512, *x);
+        }
+        Some(Subcommands::BLAKE2s_256 { x }) => {
+            blake2_cmd::blake2_cmd(BLAKE2Variant::BLAKE2s_256, *x);
+        }
+        Some(Subcommands::BLAKE2b_512_MAC { key, key_file, verify, x }) => {
+            blake2_cmd::blake2_mac_cmd(BLAKE2Variant::BLAKE2b_512, key, key_file, verify, *x)
+        }
+        Some(Subcommands::BLAKE2s_256_MAC { key, key_file, verify, x }) => {
+            blake2_cmd::blake2_mac_cmd(BLAKE2Variant::BLAKE2s_256, key, key_file, verify, *x)
+        }
+        Some(Subcommands::BLAKE3 { length, x }) => blake3_cmd::blake3_cmd(*length, *x),
+        Some(Subcommands::BLAKE3_KeyedHash { key, key_file, verify, length, x }) => {
+            blake3_cmd::blake3_keyed_hash_cmd(key, key_file, verify, *length, *x)
+        }
+        Some(Subcommands::BLAKE3_DeriveKey { context, length, x }) => {
+            blake3_cmd::blake3_derive_key_cmd(context, *length, *x)
         }
         Some(Subcommands::HashMLDSA44 {
             action,
@@ -5342,6 +6110,168 @@ fn run() {
         Some(Subcommands::HexEncode) => {
             encoders_cmd::hex_encode_cmd();
         }
+        Some(Subcommands::ConcatKDF_SHA256 {
+            ikm,
+            ikm_file,
+            additional_input,
+            additional_input_file,
+            len,
+            x,
+        }) => {
+            kdf_cmd::kdf_cmd(
+                &ConcatKDF_SHA256::default(),
+                ikm,
+                ikm_file,
+                additional_input,
+                additional_input_file,
+                *len,
+                *x,
+            );
+        }
+        Some(Subcommands::ConcatKDF_SHA384 {
+            ikm,
+            ikm_file,
+            additional_input,
+            additional_input_file,
+            len,
+            x,
+        }) => {
+            kdf_cmd::kdf_cmd(
+                &ConcatKDF_SHA384::default(),
+                ikm,
+                ikm_file,
+                additional_input,
+                additional_input_file,
+                *len,
+                *x,
+            );
+        }
+        Some(Subcommands::ConcatKDF_SHA512 {
+            ikm,
+            ikm_file,
+            additional_input,
+            additional_input_file,
+            len,
+            x,
+        }) => {
+            kdf_cmd::kdf_cmd(
+                &ConcatKDF_SHA512::default(),
+                ikm,
+                ikm_file,
+                additional_input,
+                additional_input_file,
+                *len,
+                *x,
+            );
+        }
+        Some(Subcommands::ConcatKDF_SHA3_256 {
+            ikm,
+            ikm_file,
+            additional_input,
+            additional_input_file,
+            len,
+            x,
+        }) => {
+            kdf_cmd::kdf_cmd(
+                &ConcatKDF_SHA3_256::default(),
+                ikm,
+                ikm_file,
+                additional_input,
+                additional_input_file,
+                *len,
+                *x,
+            );
+        }
+        Some(Subcommands::ConcatKDF_SHA3_384 {
+            ikm,
+            ikm_file,
+            additional_input,
+            additional_input_file,
+            len,
+            x,
+        }) => {
+            kdf_cmd::kdf_cmd(
+                &ConcatKDF_SHA3_384::default(),
+                ikm,
+                ikm_file,
+                additional_input,
+                additional_input_file,
+                *len,
+                *x,
+            );
+        }
+        Some(Subcommands::ConcatKDF_SHA3_512 {
+            ikm,
+            ikm_file,
+            additional_input,
+            additional_input_file,
+            len,
+            x,
+        }) => {
+            kdf_cmd::kdf_cmd(
+                &ConcatKDF_SHA3_512::default(),
+                ikm,
+                ikm_file,
+                additional_input,
+                additional_input_file,
+                *len,
+                *x,
+            );
+        }
+        Some(Subcommands::X963KDF_SHA256 {
+            ikm,
+            ikm_file,
+            additional_input,
+            additional_input_file,
+            len,
+            x,
+        }) => {
+            kdf_cmd::kdf_cmd(
+                &X963KDF_SHA256::default(),
+                ikm,
+                ikm_file,
+                additional_input,
+                additional_input_file,
+                *len,
+                *x,
+            );
+        }
+        Some(Subcommands::X963KDF_SHA384 {
+            ikm,
+            ikm_file,
+            additional_input,
+            additional_input_file,
+            len,
+            x,
+        }) => {
+            kdf_cmd::kdf_cmd(
+                &X963KDF_SHA384::default(),
+                ikm,
+                ikm_file,
+                additional_input,
+                additional_input_file,
+                *len,
+                *x,
+            );
+        }
+        Some(Subcommands::X963KDF_SHA512 {
+            ikm,
+            ikm_file,
+            additional_input,
+            additional_input_file,
+            len,
+            x,
+        }) => {
+            kdf_cmd::kdf_cmd(
+                &X963KDF_SHA512::default(),
+                ikm,
+                ikm_file,
+                additional_input,
+                additional_input_file,
+                *len,
+                *x,
+            );
+        }
         Some(Subcommands::HKDF_SHA256 {
             salt,
             salt_file,
@@ -5349,6 +6279,7 @@ fn run() {
             ikm_file,
             additional_input,
             additional_input_file,
+            secret_salt,
             len,
             x,
         }) => hkdf_cmd::hkdf_cmd(
@@ -5359,6 +6290,7 @@ fn run() {
             ikm_file,
             additional_input,
             additional_input_file,
+            *secret_salt,
             *len,
             *x,
         ),
@@ -5369,6 +6301,7 @@ fn run() {
             ikm_file,
             additional_input,
             additional_input_file,
+            secret_salt,
             len,
             x,
         }) => hkdf_cmd::hkdf_cmd(
@@ -5379,6 +6312,7 @@ fn run() {
             ikm_file,
             additional_input,
             additional_input_file,
+            *secret_salt,
             *len,
             *x,
         ),
@@ -5389,6 +6323,7 @@ fn run() {
             ikm_file,
             additional_input,
             additional_input_file,
+            secret_salt,
             len,
             x,
         }) => hkdf_cmd::hkdf_cmd(
@@ -5399,6 +6334,7 @@ fn run() {
             ikm_file,
             additional_input,
             additional_input_file,
+            *secret_salt,
             *len,
             *x,
         ),
@@ -5409,6 +6345,7 @@ fn run() {
             ikm_file,
             additional_input,
             additional_input_file,
+            secret_salt,
             len,
             x,
         }) => hkdf_cmd::hkdf_cmd(
@@ -5419,6 +6356,7 @@ fn run() {
             ikm_file,
             additional_input,
             additional_input_file,
+            *secret_salt,
             *len,
             *x,
         ),
@@ -5562,6 +6500,96 @@ fn run() {
         }
         Some(Subcommands::MLKEM1024 { action, skfile, pkfile, ctfile, x }) => {
             mlkem_cmd::mlkem_cmd(&mlkem_cmd::MLKEM1024_SET, action, skfile, pkfile, ctfile, *x);
+        }
+        Some(Subcommands::MLKEM512_HKDF_SHA256 {
+            action,
+            skfile,
+            pkfile,
+            ctfile,
+            salt,
+            salt_file,
+            additional_input,
+            additional_input_file,
+            x,
+        }) => {
+            mlkem_cmd::mlkem_hkdf_cmd(
+                &mlkem_cmd::MLKEM512_SET,
+                std::marker::PhantomData::<
+                    bouncycastle::mlkem::KdfParams<
+                        bouncycastle::sha2::hkdf::HKDF_SHA256,
+                        { bouncycastle::mlkem::MLKEM512_HKDF_SHA256_SS_LEN },
+                    >,
+                >,
+                action,
+                skfile,
+                pkfile,
+                ctfile,
+                salt,
+                salt_file,
+                additional_input,
+                additional_input_file,
+                *x,
+            );
+        }
+        Some(Subcommands::MLKEM768_HKDF_SHA512 {
+            action,
+            skfile,
+            pkfile,
+            ctfile,
+            salt,
+            salt_file,
+            additional_input,
+            additional_input_file,
+            x,
+        }) => {
+            mlkem_cmd::mlkem_hkdf_cmd(
+                &mlkem_cmd::MLKEM768_SET,
+                std::marker::PhantomData::<
+                    bouncycastle::mlkem::KdfParams<
+                        bouncycastle::sha2::hkdf::HKDF_SHA512,
+                        { bouncycastle::mlkem::MLKEM768_HKDF_SHA512_SS_LEN },
+                    >,
+                >,
+                action,
+                skfile,
+                pkfile,
+                ctfile,
+                salt,
+                salt_file,
+                additional_input,
+                additional_input_file,
+                *x,
+            );
+        }
+        Some(Subcommands::MLKEM1024_HKDF_SHA512 {
+            action,
+            skfile,
+            pkfile,
+            ctfile,
+            salt,
+            salt_file,
+            additional_input,
+            additional_input_file,
+            x,
+        }) => {
+            mlkem_cmd::mlkem_hkdf_cmd(
+                &mlkem_cmd::MLKEM1024_SET,
+                std::marker::PhantomData::<
+                    bouncycastle::mlkem::KdfParams<
+                        bouncycastle::sha2::hkdf::HKDF_SHA512,
+                        { bouncycastle::mlkem::MLKEM1024_HKDF_SHA512_SS_LEN },
+                    >,
+                >,
+                action,
+                skfile,
+                pkfile,
+                ctfile,
+                salt,
+                salt_file,
+                additional_input,
+                additional_input_file,
+                *x,
+            );
         }
         Some(Subcommands::PARALLELHASH128 {
             length,

@@ -11,6 +11,27 @@ source "$(dirname "${BASH_SOURCE[0]}")/lib.sh"
 
 # ---- known answers ------------------------------------------------------------------------
 
+# RFC 5869 Section 2.2: the salt is optional, and no --salt is the same as an empty one.
+test_hkdf_sha256_salt_may_be_omitted() {
+    local with_empty without
+    with_empty=$(hex_out "$BC_RUST" hkdf-sha256 --salt "" --ikm 0b0b0b0b0b0b0b0b --len 32 -x)
+    without=$(hex_out "$BC_RUST" hkdf-sha256 --ikm 0b0b0b0b0b0b0b0b --len 32 -x)
+    assert_eq "$without" "$with_empty" "no --salt is the empty salt"
+}
+
+# `--secret-salt` changes the salt's entropy accounting, not the bytes: RFC 5869 A.1 again.
+test_hkdf_sha256_secret_salt_gives_the_same_okm() {
+    local got
+    got=$(hex_out "$BC_RUST" hkdf-sha256 \
+        --salt 000102030405060708090a0b0c --secret-salt \
+        --ikm 0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b \
+        --additional-input f0f1f2f3f4f5f6f7f8f9 \
+        --len 42 -x)
+    assert_eq "$got" \
+        "3cb25f25faacd57a90434f64d0362f2a2d2d0a90cf1a5a4c5db02d56ecc4c5bf34007208d5b887185865" \
+        "RFC 5869 A.1 OKM with --secret-salt"
+}
+
 test_hkdf_sha256_matches_rfc5869_a1() {
     local got
     got=$(hex_out "$BC_RUST" hkdf-sha256 \
@@ -141,6 +162,16 @@ test_hkdf_sha512_one_octet_past_a_block() {
 
 test_hkdf_sm3_one_octet_past_a_block() {
     hkdf_short_output_is_a_prefix hkdf-sm3 33
+}
+
+# An empty Z derives a key from nothing (the KDF trait allows it; no command-line user means
+# it): refused before any derivation, inline and from a file.
+test_hkdf_refuses_an_empty_ikm() {
+    expect_fail "an empty --ikm is refused" "$BC_RUST" hkdf-sha256 --salt 000102 --ikm "" --len 16
+    assert_stderr_has "empty"
+    : >"$TMP/empty"
+    expect_fail "an empty --ikm-file is refused" "$BC_RUST" hkdf-sha256 --salt 000102 --ikm-file "$TMP/empty" --len 16
+    assert_stderr_has "empty"
 }
 
 run_all

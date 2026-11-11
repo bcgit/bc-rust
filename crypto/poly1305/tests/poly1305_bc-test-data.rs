@@ -1,5 +1,5 @@
 //! RFC known-answer vectors are loaded from bc-test-data, with no embedded fixture data.
-use bouncycastle_core::traits::MAC;
+use bouncycastle_core::traits::{MACGenerator, MACVerifier};
 use bouncycastle_core_test_framework::mac::TestFrameworkMAC;
 use bouncycastle_core_test_framework::test_data_loaders::bc_test_data_json;
 use bouncycastle_poly1305::hazmat::key_from_bytes;
@@ -13,21 +13,22 @@ fn rfc8439_poly1305_including_reduction_edge_cases() {
         let decode = |field: &str| bouncycastle_hex::decode(case[field].as_str().unwrap()).unwrap();
         let key: [u8; 32] = decode("key").try_into().unwrap();
         let msg = decode("msg");
-        let tag = decode("tag");
+        let tag: [u8; 16] = decode("tag").try_into().unwrap();
         let id = case["id"].as_str().unwrap();
         // A published key, so a test may make as many keys from it as it likes.
-        let generator = || key_from_bytes(&key).into_mac();
+        let generator = || key_from_bytes(&key).into_generator();
+        let verifier = || key_from_bytes(&key).into_verifier();
         // Under `r = 0` (A.3.1, A.3.2) the tag is `s` whatever the message, which the generic
         // suite's check that another message gets another tag cannot allow for.
         if key[..16] != [0; 16] {
-            TestFrameworkMAC::new().test_one_time_mac(generator, &msg, &tag);
+            TestFrameworkMAC::new().test_one_time_mac(generator, verifier, &msg, &tag);
         }
-        assert_eq!(generator().mac(&msg), tag, "RFC {id}");
-        let mut out = [0xa5; 24];
-        assert_eq!(generator().mac_out(&msg, &mut out).unwrap(), 16);
-        assert_eq!(&out[..16], tag);
-        assert_eq!(&out[16..], &[0; 8]);
-        assert!(key_from_bytes(&key).into_mac().verify(&msg, &tag));
+        let mut mac = generator();
+        mac.do_update(&msg);
+        assert_eq!(mac.do_final(), tag, "RFC {id}");
+        let mut mac = verifier();
+        mac.do_update(&msg);
+        assert_eq!(mac.do_verify_final(&tag), Ok(()), "RFC {id}");
         // Every split of each published message exercises full and partial buffered blocks.
         for split in 0..=msg.len() {
             let mut mac = generator();
