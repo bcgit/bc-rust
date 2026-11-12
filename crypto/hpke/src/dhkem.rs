@@ -5,8 +5,9 @@
 //! [`EncapsulatingKey`](bouncycastle_core::kem_key::EncapsulatingKey) and
 //! [`DecapsulatingKey`](bouncycastle_core::kem_key::DecapsulatingKey).
 
-use bouncycastle_core::errors::{KEMError, KeyAgreementError, RNGError};
+use bouncycastle_core::errors::{KEMError, KeyAgreementError, KeyMaterialError, RNGError};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
+use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::symmetric_key::FromAnyKeyMaterial;
 use bouncycastle_core::traits::{Algorithm, Hash, HashAlgParams, RNG};
 use bouncycastle_hmac::hazmat as hmac_hazmat;
@@ -26,6 +27,19 @@ const LABEL_SK: &[u8] = b"sk";
 /// The largest Nh among the KDFs of RFC 9180 Section 7.2 (HKDF-SHA512). The PRK and HKDF-Expand
 /// block buffers are sized to it.
 const MAX_NH: usize = 64;
+
+/// A strength as a bit count, for the compile-time check that a group's hash is long enough.
+const fn strength_bits(strength: SecurityStrength) -> usize {
+    match strength {
+        SecurityStrength::None => 0,
+        SecurityStrength::_112bit => 112,
+        SecurityStrength::_128bit => 128,
+        SecurityStrength::_192bit => 192,
+        SecurityStrength::_256bit => 256,
+        #[allow(unreachable_patterns)] // the enum is non_exhaustive
+        _ => 256,
+    }
+}
 
 /// The Diffie-Hellman group of a DHKEM, and the KDF it is paired with: DHKEM(Group, KDF) in RFC 9180
 /// Section 4.1.
@@ -54,12 +68,20 @@ pub trait DHKEMParams<const N_PK: usize, const N_SK: usize, const N_DH: usize>: 
     /// `pk(skX)` (RFC 9180 Section 4): the public key of `sk`.
     fn pk(sk: &Self::PrivateKey) -> Self::PublicKey;
 
-    /// `DH(skX, pkY)` (RFC 9180 Section 4.1), including the validation of its output that RFC 9180
-    /// Section 7.1.4 requires for the group. A validation failure is an `Err`.
-    fn dh(
+    /// Whether `DeriveKeyPair` (RFC 9180 Section 7.1.3) is the X25519 and X448 form, `sk =
+    /// LabeledExpand(dkp_prk, "sk", "", Nsk)` with no rejection loop, which is the only form
+    /// [`DHKEM::derive_key_pair`] implements: a group whose form is the NIST curves' candidate
+    /// loop sets this `false` and gets a compile error from `derive_key_pair` instead of a wrong
+    /// key.
+    const DERIVE_KEY_PAIR_BY_EXPAND: bool;
+    /// `DH(skX, pkY)` (RFC 9180 Section 4.1) into `out`, including the validation of its output
+    /// that RFC 9180 Section 7.1.4 requires for the group. A validation failure is an `Err`, with
+    /// `out` left zeroized.
+    fn dh_into(
         sk: &Self::PrivateKey,
         pk: &Self::PublicKey,
-    ) -> Result<Secret<[u8; N_DH]>, KeyAgreementError>;
+        out: &mut Secret<[u8; N_DH]>,
+    ) -> Result<(), KeyAgreementError>;
 
     /// `SerializePublicKey(pkX)` (RFC 9180 Section 7.1.1).
     fn serialize_public_key(pk: &Self::PublicKey) -> [u8; N_PK];
@@ -102,6 +124,13 @@ impl<
         // HKDF-Expand's L, which here is Nsecret or Nsk, must be at most 255*HashLen (RFC 5869
         // Section 2.3), and fit the two bytes of I2OSP(L, 2) in LabeledExpand.
         assert!(N_SK <= 255 * nh && N_SK <= 0xFFFF, "Nsk is too long for HKDF-Expand");
+        // RFC 9180 Section 7.1, Table 2 pairs each group with a hash of at least twice its
+        // strength (X25519 with SHA-256, P-384 with SHA-384, P-521 and X448 with SHA-512); a
+        // shorter hash would cap the KEM's secret below the group.
+        assert!(
+            8 * nh >= 2 * strength_bits(G::MAX_SECURITY_STRENGTH),
+            "the KDF's hash must offer twice the group's strength"
+        );
     };
 
     /// `Encap(pkR)` (RFC 9180 Section 4.1), drawing the ephemeral key pair from `rng`.
@@ -111,37 +140,51 @@ impl<
     ///
     /// # Errors
     ///
+    /// `Encap(pkR)` (RFC 9180 Section 4.1), with the ephemeral key pair generated from `rng`:
+    /// the shared secret into `shared_secret` and `enc`, the ephemeral public key, into `enc`,
+    /// each zeroized first and left so on the error path.
+    ///
+    /// # Errors
     /// * [`KEMError::RNGError`] if `rng`'s security strength is below the group's.
     /// * [`KEMError::InvalidPublicKey`] if `pk_r` fails the group's validation (RFC 9180 Section
-    ///   7.1.4: "the sender MUST validate the recipient's public key pkR").
-    /// * Any error from [`DHKEMParams::generate_key_pair_rng`].
+    ///   7.1.4), such as an all-zero X25519 output.
+    pub fn encap_rng_out(
+        pk_r: &G::PublicKey,
+        rng: &mut dyn RNG,
+        enc: &mut [u8; N_PK],
+        shared_secret: &mut KeyMaterial<N_SECRET>,
+    ) -> Result<(), KEMError> {
+        let () = Self::PARAMS_CHECK;
+        enc.fill(0);
+        shared_secret.zeroize();
+        if rng.security_strength() < G::MAX_SECURITY_STRENGTH {
+            return Err(RNGError::SecurityStrengthInsufficientForAlgorithm.into());
+        }
+        // skE, pkE = GenerateKeyPair()
+        let (pk_e, sk_e) = G::generate_key_pair_rng(rng)?;
+        // dh = DH(skE, pkR)
+        let mut dh = Secret::<[u8; N_DH]>::new();
+        G::dh_into(&sk_e, pk_r, &mut dh).map_err(|_| {
+            KEMError::InvalidPublicKey("The recipient's public key failed validation")
+        })?;
+        // enc = SerializePublicKey(pkE)
+        *enc = G::serialize_public_key(&pk_e);
+        // pkRm = SerializePublicKey(pkR); kem_context = concat(enc, pkRm)
+        let pk_rm = G::serialize_public_key(pk_r);
+        // shared_secret = ExtractAndExpand(dh, kem_context)
+        Self::extract_and_expand_into(&*dh, &[&*enc, &pk_rm], shared_secret);
+        Ok(())
+    }
+
+    /// [`Self::encap_rng_out`] returning the pair by value: the shared secret is moved out of
+    /// this frame, which does not wipe its source; prefer the `_out` form where that matters.
     pub fn encap_rng(
         pk_r: &G::PublicKey,
         rng: &mut dyn RNG,
     ) -> Result<(KeyMaterial<N_SECRET>, [u8; N_PK]), KEMError> {
-        let () = Self::PARAMS_CHECK;
-
-        if rng.security_strength() < G::MAX_SECURITY_STRENGTH {
-            return Err(RNGError::SecurityStrengthInsufficientForAlgorithm.into());
-        }
-
-        // skE, pkE = GenerateKeyPair()
-        let (pk_e, sk_e) = G::generate_key_pair_rng(rng)?;
-        // dh = DH(skE, pkR)
-        let dh = G::dh(&sk_e, pk_r).map_err(|_| {
-            KEMError::InvalidPublicKey("The recipient's public key failed validation")
-        })?;
-        // enc = SerializePublicKey(pkE)
-        let enc = G::serialize_public_key(&pk_e);
-
-        // pkRm = SerializePublicKey(pkR)
-        let pk_rm = G::serialize_public_key(pk_r);
-        // kem_context = concat(enc, pkRm)
-        // shared_secret = ExtractAndExpand(dh, kem_context)
-        // Deviation from the RFC: kem_context is passed as its two parts rather than concatenated,
-        // since it is only ever fed to HMAC, which absorbs the parts in order.
-        let shared_secret = Self::extract_and_expand(&*dh, &[&enc, &pk_rm]);
-        // return shared_secret, enc
+        let mut enc = [0u8; N_PK];
+        let mut shared_secret = KeyMaterial::new();
+        Self::encap_rng_out(pk_r, rng, &mut enc, &mut shared_secret)?;
         Ok((shared_secret, enc))
     }
 
@@ -152,27 +195,39 @@ impl<
     ///
     /// # Errors
     ///
-    /// [`KEMError::DecapsulationFailed`] if `enc` does not deserialize, or fails the group's
-    /// validation (RFC 9180 Section 7.1.4: "the recipient MUST validate the ephemeral public key
-    /// pkE").
+    /// `Decap(enc, skR)` (RFC 9180 Section 4.1) into `shared_secret`, zeroized first and left so
+    /// on the error path.
+    ///
+    /// # Errors
+    /// [`KEMError::DecapsulationFailed`] if `enc` does not deserialize or the DH output fails the
+    /// group's validation.
+    pub fn decap_out(
+        enc: &[u8; N_PK],
+        sk_r: &G::PrivateKey,
+        shared_secret: &mut KeyMaterial<N_SECRET>,
+    ) -> Result<(), KEMError> {
+        let () = Self::PARAMS_CHECK;
+        shared_secret.zeroize();
+        // pkE = DeserializePublicKey(enc)
+        let pk_e = G::deserialize_public_key(enc).map_err(|_| KEMError::DecapsulationFailed)?;
+        // dh = DH(skR, pkE)
+        let mut dh = Secret::<[u8; N_DH]>::new();
+        G::dh_into(sk_r, &pk_e, &mut dh).map_err(|_| KEMError::DecapsulationFailed)?;
+        // pkRm = SerializePublicKey(pk(skR)); kem_context = concat(enc, pkRm)
+        let pk_rm = G::serialize_public_key(&G::pk(sk_r));
+        // shared_secret = ExtractAndExpand(dh, kem_context)
+        Self::extract_and_expand_into(&*dh, &[enc, &pk_rm], shared_secret);
+        Ok(())
+    }
+
+    /// [`Self::decap_out`] returning the shared secret by value: it is moved out of this frame,
+    /// which does not wipe its source; prefer the `_out` form where that matters.
     pub fn decap(
         enc: &[u8; N_PK],
         sk_r: &G::PrivateKey,
     ) -> Result<KeyMaterial<N_SECRET>, KEMError> {
-        let () = Self::PARAMS_CHECK;
-
-        // pkE = DeserializePublicKey(enc)
-        let pk_e = G::deserialize_public_key(enc).map_err(|_| KEMError::DecapsulationFailed)?;
-        // dh = DH(skR, pkE)
-        let dh = G::dh(sk_r, &pk_e).map_err(|_| KEMError::DecapsulationFailed)?;
-
-        // pkRm = SerializePublicKey(pk(skR))
-        let pk_rm = G::serialize_public_key(&G::pk(sk_r));
-        // kem_context = concat(enc, pkRm)
-        // shared_secret = ExtractAndExpand(dh, kem_context)
-        // Deviation from the RFC: kem_context is passed in two parts; see encap_rng.
-        let shared_secret = Self::extract_and_expand(&*dh, &[enc, &pk_rm]);
-        // return shared_secret
+        let mut shared_secret = KeyMaterial::new();
+        Self::decap_out(enc, sk_r, &mut shared_secret)?;
         Ok(shared_secret)
     }
 
@@ -191,6 +246,12 @@ impl<
         ikm: &impl KeyMaterialTrait,
     ) -> Result<(G::PublicKey, G::PrivateKey), KEMError> {
         let () = Self::PARAMS_CHECK;
+        const {
+            assert!(
+                G::DERIVE_KEY_PAIR_BY_EXPAND,
+                "derive_key_pair implements only the X25519 / X448 form of RFC 9180 Section 7.1.3"
+            )
+        };
 
         if !(ikm.key_type() == KeyType::Seed || ikm.key_type() == KeyType::CryptographicRandom)
             || ikm.key_len() < N_SK
@@ -222,24 +283,30 @@ impl<
     /// so pseudorandom, unlike the DH output it is derived from.
     // #[inline(never)]: inlined into encap_rng, its two HMAC states were allocated for the whole
     // encapsulation, on top of the key generation that sets the peak.
+    /// `ExtractAndExpand(dh, kem_context)` (RFC 9180 Section 4.1) into `out`: the shared secret,
+    /// typed `CryptographicRandom` at the group's strength. `out` is zeroized first.
     #[inline(never)]
-    fn extract_and_expand(dh: &[u8], kem_context: &[&[u8]]) -> KeyMaterial<N_SECRET> {
+    fn extract_and_expand_into(dh: &[u8], kem_context: &[&[u8]], out: &mut KeyMaterial<N_SECRET>) {
+        out.zeroize();
         // eae_prk = LabeledExtract("", "eae_prk", dh)
         let eae_prk = Self::labeled_extract(LABEL_EAE_PRK, dh);
         // shared_secret = LabeledExpand(eae_prk, "shared_secret", kem_context, Nsecret)
         let mut shared_secret = Secret::<[u8; N_SECRET]>::new();
         Self::labeled_expand(&eae_prk, LABEL_SHARED_SECRET, kem_context, &mut *shared_secret);
 
-        // Cannot fail: N_SECRET bytes fit a KeyMaterial<N_SECRET>, and an all-zero output gives
-        // Ok(Zeroized).
-        let mut key =
-            KeyMaterial::from_bytes_as_type(&*shared_secret, KeyType::CryptographicRandom).unwrap();
-        if key.key_type() == KeyType::CryptographicRandom {
-            // Cannot fail: N_SECRET >= 32 bytes is enough for any strength, and the inferred
-            // strength (from_bytes_as_type sets it from the length) is lowered, never raised.
-            key.set_security_strength(G::MAX_SECURITY_STRENGTH).unwrap();
+        // An all-zero output, one HMAC value in 2^(8 * Nsecret), is typed Zeroized by the buffer
+        // and carries no strength; that is not an error, as for an all-zero agreement output.
+        // Nothing else can fail: Nsecret bytes fit the buffer.
+        match out.set_bytes_as_type(&*shared_secret, KeyType::CryptographicRandom) {
+            Ok(()) | Err(KeyMaterialError::ActingOnZeroizedKey) => {}
+            Err(_) => unreachable!("Nsecret bytes fit a KeyMaterial<N_SECRET>"),
         }
-        key
+        if out.key_type() == KeyType::CryptographicRandom {
+            // Cannot fail: N_SECRET >= 32 bytes is enough for any strength, and the inferred
+            // strength (set from the length) is lowered, never raised.
+            out.set_security_strength(G::MAX_SECURITY_STRENGTH)
+                .expect("the group's strength is within Nsecret's");
+        }
     }
 
     /// `LabeledExtract("", label, ikm)` (RFC 9180 Section 4), where `Extract` is HKDF-Extract
@@ -268,8 +335,11 @@ impl<
         // Cannot fail: the buffer is at least the hash output length (PARAMS_CHECK).
         let nh = <G::KDFHash as HashAlgParams>::OUTPUT_LEN;
         let nh = hmac_hazmat::finish_out(&salt, hmac, &mut prk[..nh]);
-        // Cannot fail: nh <= MAX_NH bytes fit a KeyMaterial<MAX_NH>.
-        KeyMaterial::from_bytes_as_type(&prk[..nh], KeyType::MACKey).unwrap()
+        // nh <= MAX_NH bytes fit a KeyMaterial<MAX_NH>; the one way this fails is an all-zero
+        // PRK (one HMAC output in 2^(8 * nh)), which the buffer types Zeroized and the expand's
+        // HmacKey then refuses. Not reachable in practice; a panic is the right report for it.
+        KeyMaterial::from_bytes_as_type(&prk[..nh], KeyType::MACKey)
+            .expect("an all-zero PRK, one HMAC output in 2^(8 * nh)")
     }
 
     /// `LabeledExpand(prk, label, info, L)` (RFC 9180 Section 4), where `Expand` is HKDF-Expand (RFC
@@ -285,11 +355,14 @@ impl<
         let mut t = Secret::<[u8; MAX_NH]>::new();
         let mut t_len = 0;
         // N = ceil(L/HashLen); T = T(1) | T(2) | ... | T(N); OKM = first L octets of T
+        // The PRK keys one HmacKey for the whole expand (review of PR #186: keying it per
+        // iteration left one more SHA-256 schedule of `prk XOR opad` per block). It refuses an
+        // all-zero PRK, one HMAC output in 2^(8 * nh); see labeled_extract.
+        let key = HmacKey::<G::KDFHash>::from_key_material(prk)
+            .expect("an all-zero PRK, one HMAC output in 2^(8 * nh)");
         // Each chunk of `out` is one T(i), the last one truncated.
         for (i, okm_chunk) in out.chunks_mut(nh).enumerate() {
             // T(i) = HMAC-Hash(PRK, T(i-1) | info | i), with info = labeled_info
-            // Cannot fail: the PRK is a MAC key of the hash's full output length.
-            let key = HmacKey::<G::KDFHash>::from_key_material(prk).unwrap();
             let mut hmac = hmac_hazmat::inner_state(&key);
             hmac.do_update(&t[..t_len]);
             // labeled_info = concat(I2OSP(L, 2), "HPKE-v1", suite_id, label, info)
@@ -307,5 +380,22 @@ impl<
             t_len = hmac_hazmat::finish_out(&key, hmac, &mut t[..nh]);
             okm_chunk.copy_from_slice(&t[..okm_chunk.len()]);
         }
+    }
+}
+
+// `strength_bits` is private and only read by the compile-time `PARAMS_CHECK`, which `cargo
+// mutants` cannot see fail, so its table is pinned here as well.
+#[cfg(test)]
+mod tests {
+    use super::strength_bits;
+    use bouncycastle_core::security_strength::SecurityStrength;
+
+    #[test]
+    fn strength_bits_is_the_strength_as_a_bit_count() {
+        assert_eq!(strength_bits(SecurityStrength::None), 0);
+        assert_eq!(strength_bits(SecurityStrength::_112bit), 112);
+        assert_eq!(strength_bits(SecurityStrength::_128bit), 128);
+        assert_eq!(strength_bits(SecurityStrength::_192bit), 192);
+        assert_eq!(strength_bits(SecurityStrength::_256bit), 256);
     }
 }

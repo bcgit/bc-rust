@@ -23,11 +23,19 @@
 //!
 //! # 🚨 Security Considerations 🚨
 //!
-//! * [`dhkem::DHKEMParams::dh`] must perform the group's validation of the DH output (RFC 9180
+//! * [`dhkem::DHKEMParams::dh_into`] must perform the group's validation of the DH output (RFC 9180
 //!   Section 7.1.4), such as rejecting the all-zero X25519 output. [`dhkem::DHKEM`] relies on it to
 //!   reject unusable public keys.
 //! * [`dhkem::DHKEM::derive_key_pair`] is deterministic: the key pair is only as secret as the
 //!   input keying material.
+//! * The DH output, the PRKs and the derived values live in `Secret`s here and are wiped at the
+//!   end of their lifetime, and the `_out` forms write into the caller's buffers. What is not
+//!   reached: the by-value `encap_rng`, `decap` and `derive_key_pair` move their result out of
+//!   the frame that built it, and the HMAC the KDF runs leaves its inner and outer chaining states
+//!   and the SHA-256 message schedule of `prk XOR opad` on the dead stack below this crate's
+//!   frames, from which the PRK is recoverable; that residue is `hmac`'s and `sha2`'s (the
+//!   review of PR #186 measured it), and the PRK keys one `HmacKey` per expand so it is left once.
+//! * The crate's own source is `no_std`, but `bouncycastle-core`, `hmac` and `hkdf` are not yet.
 
 #![no_std]
 #![forbid(unsafe_code)]
