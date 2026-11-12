@@ -18,6 +18,9 @@
 //! # Usage Examples
 //!
 //! See the [`x25519`] module for X25519 key generation and sample Alice-and-Bob key agreement schemes.
+//!
+//! The crate's own source is `no_std`, but its dependencies are not yet (`bouncycastle-core`'s
+//! `Vec` returns and the `std` uses in `hmac` and `hkdf`), so a bare-metal build waits on them.
 
 #![no_std]
 #![forbid(unsafe_code)]

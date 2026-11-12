@@ -44,10 +44,10 @@ fn keygen_from_seed_rejects_bad_seeds() {
         other => panic!("expected InvalidKeyType, got {:?}", other.err()),
     }
 
-    // All zeros: KeyMaterial marks it KeyType::Zeroized.
+    // All zeros: KeyMaterial marks it KeyType::Zeroized, and the refusal says so.
     match keygen_from_seed(&seed(&"00".repeat(32), KeyType::Seed)) {
-        Err(KeyAgreementError::KeyMaterialError(KeyMaterialError::InvalidKeyType(_))) => {}
-        other => panic!("expected InvalidKeyType, got {:?}", other.err()),
+        Err(KeyAgreementError::KeyMaterialError(KeyMaterialError::ActingOnZeroizedKey)) => {}
+        other => panic!("expected ActingOnZeroizedKey, got {:?}", other.err()),
     }
 
     // Undersized.

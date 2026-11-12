@@ -3,10 +3,11 @@ use bouncycastle_core::errors::KeyAgreementError;
 use bouncycastle_core::kdf_params::{KdfParams, KeyLen};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterial256, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::traits::{KDF, KeyAgreementPublicKey};
+use bouncycastle_core::traits::{KDF, KeyAgreement, KeyAgreementPublicKey};
 use bouncycastle_core_test_framework::key_agreement::TestFrameworkKeyAgreement;
 use bouncycastle_ed::x25519::{
-    POINT_LEN, SCALAR_LEN, X25519PrivateKey, X25519PublicKey, keygen, keygen_from_seed,
+    HKDF_SHA256_MAX_LEN, POINT_LEN, SCALAR_LEN, X25519PrivateKey, X25519PublicKey, keygen,
+    keygen_from_seed,
 };
 use bouncycastle_hex as hex;
 use bouncycastle_rng::DefaultRNG;
@@ -49,6 +50,22 @@ fn raw_z_is_a_shared_secret_and_the_pairing_is_hkdf_over_it() {
     assert!(derived.equals(&by_hand));
     assert_eq!(derived.key_type(), KeyType::CryptographicRandom);
     assert_eq!(derived.security_strength(), SecurityStrength::_128bit);
+}
+
+/// The pairing derives its longest key, RFC 5869 Section 2.3's 255 * HashLen bytes, in one call.
+#[test]
+fn the_pairing_derives_its_longest_key() {
+    let (alice_pk, alice_sk) = keygen_default().unwrap();
+    let (bob_pk, bob_sk) = keygen_default().unwrap();
+    let hkdf = HKDF_SHA256::new();
+    let key_a = alice_sk
+        .agree(&bob_pk, KdfParams::new(&hkdf, b"longest", KeyLen::<HKDF_SHA256_MAX_LEN>))
+        .unwrap();
+    let key_b = bob_sk
+        .agree(&alice_pk, KdfParams::new(&hkdf, b"longest", KeyLen::<HKDF_SHA256_MAX_LEN>))
+        .unwrap();
+    assert_eq!(key_a.key_len(), HKDF_SHA256_MAX_LEN);
+    assert!(key_a.equals(&key_b));
 }
 
 #[test]
@@ -212,4 +229,43 @@ fn check_vector(sk: &str, su: &str, se: &str, text: &str) {
 
     let r = k.agree(&u, ()).unwrap();
     check_value(r.ref_to_bytes(), text, se);
+}
+
+/// Review of PR #186, B1: Alice's key against a u whose K is 21. The last multiply returns the
+/// representation `r + p` for every r in about `[19, 2^207)`, which the old normalize's debug
+/// assertion rejected, so this agreement panicked in a debug build. Debug and release give 21.
+#[test]
+fn a_shared_secret_of_21_is_computed_in_every_build() {
+    let sk = sk_from_bytes(&decode_32(
+        "77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a",
+    ));
+    let pk = X25519PublicKey::from_bytes(&decode_32(
+        "564f21c353c8571dc99804aa5508352172195d6fd4a24387112d5caaf30d6951",
+    ))
+    .unwrap();
+    let mut expected = [0u8; POINT_LEN];
+    expected[0] = 21;
+    assert_eq!(sk.agree(&pk, ()).unwrap().ref_to_bytes(), &expected);
+}
+
+/// The workers called directly, not through the role's provided `agree_out` (which zeroizes the
+/// buffer itself): each leaves a stale buffer zeroized when the peer key has small order.
+#[test]
+fn the_workers_leave_a_stale_buffer_zeroized_on_a_small_order_peer() {
+    let (_, sk) = keygen_default().unwrap();
+    let zero_pk = X25519PublicKey::from_bytes(&[0u8; POINT_LEN]).unwrap();
+
+    let raw = sk.create_agreement(()).unwrap();
+    let mut ss =
+        KeyMaterial::<POINT_LEN>::from_bytes_as_type(&[0xFF; POINT_LEN], KeyType::Seed).unwrap();
+    assert!(matches!(raw.agree_out(&zero_pk, &mut ss), Err(KeyAgreementError::AgreementFailed)));
+    assert_eq!(ss.key_type(), KeyType::Zeroized);
+    assert_eq!(ss.key_len(), 0);
+
+    let hkdf = HKDF_SHA256::new();
+    let paired = sk.create_agreement(KdfParams::new(&hkdf, b"info", KeyLen::<32>)).unwrap();
+    let mut ss = KeyMaterial::<32>::from_bytes_as_type(&[0xFF; 32], KeyType::Seed).unwrap();
+    assert!(matches!(paired.agree_out(&zero_pk, &mut ss), Err(KeyAgreementError::AgreementFailed)));
+    assert_eq!(ss.key_type(), KeyType::Zeroized);
+    assert_eq!(ss.key_len(), 0);
 }

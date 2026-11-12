@@ -10,8 +10,10 @@
 //!
 //! [`keygen`] draws the 32-byte private key from the caller's RNG, which must offer 128 bits;
 //! [`keygen_from_seed`] takes those bytes as a [`KeyMaterial256`] of [`KeyType::Seed`] or
-//! [`KeyType::CryptographicRandom`] at [`SecurityStrength::_128bit`] or more, which is also how
-//! an existing private key is imported (as is [`X25519PrivateKey::from_bytes`]).
+//! [`KeyType::CryptographicRandom`] at [`SecurityStrength::_128bit`] or more, and refuses an
+//! all-zero one, which `KeyMaterial` types `Zeroized`. [`X25519PrivateKey::from_bytes`] imports
+//! an existing private key from any 32 bytes, all-zero included (a valid key, `2^254` once
+//! clamped), and stores them clamped.
 //!
 //! ```rust
 //! use bouncycastle_ed::x25519::keygen;
@@ -93,6 +95,12 @@
 //! # Ok::<(), bouncycastle_core::errors::KEMError>(())
 //! ```
 //!
+//! A public key is its 32 bytes, compared as bytes: two encodings of one point (bit 255 set, or
+//! `u + p`) are two keys to [`PartialEq`] and to `check-consistency`, and encapsulating to a
+//! non-canonical encoding of the recipient's key gives a secret the recipient cannot derive from
+//! the canonical one. Both follow RFC 7748 Section 5 and RFC 9180 Section 7.1.1 to the letter;
+//! a protocol that compares keys should compare canonical encodings.
+//!
 //! Like any unauthenticated Diffie-Hellman, X25519 on its own resists only passive
 //! eavesdroppers. An active attacker who can substitute public keys in transit can sit in the
 //! middle, so a protocol must authenticate them, for example by signing them.
@@ -149,6 +157,23 @@
 //! (Section 7), so `K` would be the same for every private key and known to whoever chose the
 //! peer key.
 //!
+//! **What step-4-style destruction reaches here, and what it does not.** `K`, the decoded
+//! scalar, the ladder's and the inversion's field elements and the DHKEM's intermediates each
+//! live in a `Secret` or a self-wiping field element and are cleared at the end of their
+//! lifetime, and `agree_out` writes into the caller's buffer. What is not reached: a key pair
+//! returned by [`keygen`], [`keygen_from_seed`] or `DeriveKeyPair` is moved out of the frame that
+//! built it (one copy of the scalar, as a move does not wipe its source), `encode` returns the
+//! clamped scalar as a plain array by the trait's contract, the by-value `agree`, `encaps` and
+//! `decaps` of `core` move their result out the same way, and HKDF's frame keeps its copies of
+//! `K` and of the PRK's HMAC states in the pairing and the DHKEM (see `bouncycastle_hpke`'s
+//! Security Considerations), so use the `_out` forms into a buffer you own where that matters.
+//!
+//! The pairing's derived key carries the least of X25519's 128 bits, the KDF's and the length's
+//! strength, so a `LEN` below 16 bytes is typed `CryptographicRandom` at less than 128 bits.
+//!
+//! On a 32-bit target every `i128` product of the field arithmetic is a call into the compiler's
+//! runtime (`__multi3`), so constant time there rests on that routine, not on this crate.
+//!
 //! RFC 9180 Section 9.7.4: "HPKE ciphertexts are not forward secret with respect to recipient
 //! compromise in any mode". Anyone who later obtains a long-term DHKEM private key can decrypt
 //! everything ever sent to it. This equally applies to most uses of the raw agreement unless a
@@ -169,7 +194,7 @@ use bouncycastle_hpke::dhkem::{DHKEM, DHKEMParams};
 use bouncycastle_sha2::SHA256;
 use bouncycastle_sha2::hkdf::HKDF_SHA256;
 use bouncycastle_utils::ct::{Condition, ct_eq_bytes, ct_eq_zero_bytes};
-use bouncycastle_utils::secret::Secret;
+use bouncycastle_utils::secret::{Secret, zeroize_in_place};
 use core::fmt::{self, Display, Formatter};
 
 use crate::curve25519::FieldElement25519;
@@ -231,9 +256,12 @@ pub fn keygen(rng: &mut dyn RNG) -> Result<(X25519PublicKey, X25519PrivateKey), 
     if rng.security_strength() < X25519::MAX_SECURITY_STRENGTH {
         return Err(RNGError::SecurityStrengthInsufficientForAlgorithm.into());
     }
-    let mut seed = KeyMaterial256::new();
-    rng.fill_keymaterial_out(&mut seed)?;
-    keygen_from_seed(&seed)
+    // The key is built in place: the RNG writes the scalar into the key's own Secret, and the
+    // public key is set beside it. What is left is the pair's move out through the Result.
+    let mut sk = X25519PrivateKey { k: Secret::new(), pk: X25519PublicKey([0; POINT_LEN]) };
+    rng.next_bytes_out(&mut *sk.k)?;
+    sk.pk = scalar_mult_base(&sk.k);
+    Ok((sk.pk, sk))
 }
 
 /// The key pair whose private key is `seed`'s 32 bytes: a [`KeyMaterial256`] typed
@@ -247,6 +275,9 @@ pub fn keygen(rng: &mut dyn RNG) -> Result<(X25519PublicKey, X25519PrivateKey), 
 pub fn keygen_from_seed(
     seed: &KeyMaterial256,
 ) -> Result<(X25519PublicKey, X25519PrivateKey), KeyAgreementError> {
+    if seed.key_type() == KeyType::Zeroized {
+        return Err(KeyMaterialError::ActingOnZeroizedKey.into());
+    }
     if !(seed.key_type() == KeyType::Seed || seed.key_type() == KeyType::CryptographicRandom)
         || seed.key_len() != SCALAR_LEN
     {
@@ -262,15 +293,18 @@ pub fn keygen_from_seed(
         .into());
     }
 
-    let mut k: Secret<[u8; SCALAR_LEN]> = Secret::new();
-    k.copy_from_slice(seed.ref_to_bytes());
-    let sk = X25519PrivateKey { pk: scalar_mult_base(&k), k };
-
-    Ok((sk.pk(), sk))
+    let mut sk = X25519PrivateKey { k: Secret::new(), pk: X25519PublicKey([0; POINT_LEN]) };
+    sk.k.copy_from_slice(seed.ref_to_bytes());
+    sk.pk = scalar_mult_base(&sk.k);
+    Ok((sk.pk, sk))
 }
 
 /// `K = X25519(k, u)` of RFC 7748 Section 6.1, the u-coordinate of the peer's public key
 /// multiplied by our scalar, as its 32-byte little-endian encoding, refused when all zero.
+///
+/// `K = X25519(k, u)` of RFC 7748 Section 6.1 into `out`, the u-coordinate of the peer's public
+/// key multiplied by our scalar as its 32-byte little-endian encoding, refused when all zero
+/// (and `out` left zeroized then).
 ///
 /// Any 32 bytes are accepted as `pk`: per Section 5, bit 255 is ignored and values `>= p` are
 /// processed as if reduced mod p. An all-zero output means `pk` has small order; the check is
@@ -279,15 +313,14 @@ pub fn keygen_from_seed(
 fn raw_shared_secret(
     sk: &X25519PrivateKey,
     pk: &X25519PublicKey,
-) -> Result<Secret<[u8; POINT_LEN]>, KeyAgreementError> {
-    let mut r = scalar_mult(&sk.k, pk);
-    let mut k = Secret::<[u8; POINT_LEN]>::new();
-    *k = r.0;
-    r.0.fill(0);
-    if ct_eq_zero_bytes(&*k) {
+    out: &mut Secret<[u8; POINT_LEN]>,
+) -> Result<(), KeyAgreementError> {
+    scalar_mult_into(&sk.k, pk, out);
+    if ct_eq_zero_bytes(&**out) {
+        zeroize_in_place(&mut **out);
         return Err(KeyAgreementError::AgreementFailed);
     }
-    Ok(k)
+    Ok(())
 }
 
 /// The worker an [`X25519PrivateKey`] hands out through [`AgreementKey`] over `()`: the raw
@@ -309,7 +342,10 @@ impl KeyAgreement<X25519PublicKey, POINT_LEN> for X25519Agreement<'_> {
         ss: &mut KeyMaterial<POINT_LEN>,
     ) -> Result<usize, KeyAgreementError> {
         ss.zeroize();
-        let k = raw_shared_secret(self.sk, peer_pk)?;
+        // `K` is computed into this frame's one Secret, which is wiped when it drops; the field
+        // elements of the ladder and the inversion below it wipe themselves the same way.
+        let mut k = Secret::<[u8; POINT_LEN]>::new();
+        raw_shared_secret(self.sk, peer_pk, &mut k)?;
         // `K` is never all zero here, so the buffer's own zero test cannot type it `Zeroized`.
         // A SharedSecret's strength is its producer's to state: X25519's 128 bits.
         if let Err(e) = ss.set_bytes_as_type(&*k, KeyType::SharedSecret).and_then(|()| {
@@ -360,7 +396,9 @@ pub const HKDF_SHA256_MAX_LEN: usize = 255 * 32;
 
 /// The worker an [`X25519PrivateKey`] hands out through [`AgreementKey`] over
 /// [`KdfParams`] of HKDF-SHA256: `K` from the primitive, then the KDF into the caller's
-/// buffer, `K` living in one local of this frame, wiped when it drops.
+/// buffer. `K` lives in one local of this frame, wiped when it drops; HKDF's own frame below
+/// it keeps its copies of `K` and of the PRK's HMAC states, which are that crate's (see the
+/// crate docs' Security Considerations).
 pub struct X25519KdfAgreement<'k, 'p, const LEN: usize> {
     sk: &'k X25519PrivateKey,
     params: KdfParams<'p, HKDF_SHA256, LEN>,
@@ -433,10 +471,10 @@ impl X25519PrivateKey {
     }
 
     /// The key bytes, [`clamp`]ed.
-    fn clamped(&self) -> Secret<[u8; SCALAR_LEN]> {
-        let mut k = self.k.clone();
-        clamp(&mut k);
-        k
+    /// The key bytes, [`clamp`]ed, into `out`.
+    fn clamped_into(&self, out: &mut [u8; SCALAR_LEN]) {
+        *out = *self.k;
+        clamp(out);
     }
 }
 
@@ -458,13 +496,16 @@ fn clamp(k: &mut [u8; SCALAR_LEN]) {
 /// RFC 9180 §7.1.2 says "The SerializePrivateKey() function MUST clamp its output and the
 /// DeserializePrivateKey() function MUST clamp its input".
 impl KeyAgreementPrivateKey<SCALAR_LEN> for X25519PrivateKey {
+    /// The clamped scalar as a plain array, the trait's contract; prefer `encode_out` into a
+    /// buffer you own, since the array is moved out unwiped.
     fn encode(&self) -> [u8; SCALAR_LEN] {
-        *self.clamped()
+        let mut out = [0u8; SCALAR_LEN];
+        self.clamped_into(&mut out);
+        out
     }
 
     fn encode_out(&self, out: &mut [u8; SCALAR_LEN]) -> usize {
-        out.fill(0);
-        *out = *self.clamped();
+        self.clamped_into(out);
         SCALAR_LEN
     }
 
@@ -477,17 +518,21 @@ impl KeyAgreementPrivateKey<SCALAR_LEN> for X25519PrivateKey {
         let bytes: &[u8; SCALAR_LEN] = bytes.try_into().map_err(|_| {
             KeyAgreementError::DecodingError("An X25519 private key must be 32 bytes")
         })?;
-        let mut k: Secret<[u8; SCALAR_LEN]> = Secret::new();
-        *k = *bytes;
-        clamp(&mut k);
-        Ok(Self { pk: scalar_mult_base(&k), k })
+        let mut sk = Self { k: Secret::new(), pk: X25519PublicKey([0; POINT_LEN]) };
+        *sk.k = *bytes;
+        clamp(&mut sk.k);
+        sk.pk = scalar_mult_base(&sk.k);
+        Ok(sk)
     }
 }
 
 /// Constant-time comparison of the clamped scalars.
 impl PartialEq for X25519PrivateKey {
     fn eq(&self, other: &Self) -> bool {
-        ct_eq_bytes(&*self.clamped(), &*other.clamped())
+        let (mut a, mut b) = (Secret::<[u8; SCALAR_LEN]>::new(), Secret::<[u8; SCALAR_LEN]>::new());
+        self.clamped_into(&mut a);
+        other.clamped_into(&mut b);
+        ct_eq_bytes(&*a, &*b)
     }
 }
 
@@ -673,7 +718,7 @@ fn ladder_double(x: &mut FieldElement25519, z: &mut FieldElement25519) {
 /// * `u`, a 32-byte little-endian u-coordinate
 ///
 /// Output: The canonical little-endian encoding of the u-coordinate of `k * u`.
-fn scalar_mult(k: &[u8; SCALAR_LEN], u: &X25519PublicKey) -> X25519PublicKey {
+fn scalar_mult_into(k: &[u8; SCALAR_LEN], u: &X25519PublicKey, out: &mut [u8; POINT_LEN]) {
     // The decoded scalar is as secret as `k` itself.
     let mut n: Secret<[u32; 8]> = Secret::new();
     decode_scalar_25519(k, &mut n);
@@ -689,10 +734,10 @@ fn scalar_mult(k: &[u8; SCALAR_LEN], u: &X25519PublicKey) -> X25519PublicKey {
     let mut z2 = FieldElement25519::zero();
     ladder(&n, &x1, &mut x2, &mut z2);
 
-    x2 = x2.mul(&z2.inv());
-    let mut out = [0_u8; POINT_LEN];
-    encode_u_coordinate(&x2, &mut out);
-    X25519PublicKey(out)
+    // Every field element here wipes itself when it drops: the result, the ladder's registers
+    // and the inversion chain's. The encoding goes straight into the caller's buffer.
+    let r = x2.mul(&z2.inv());
+    encode_u_coordinate(&r, out);
 }
 
 /// The Montgomery ladder of [`scalar_mult`]: writes the projective u-coordinate of `n * x1` to
@@ -723,8 +768,10 @@ fn ladder(
     //
     //  1. Rotated body. The arithmetic comes first here and the swap last.
     //  2. t = 254 is not in the loop because bit 254 is always set, so that iteration's swap is known in
-    //     advance: the registers above are seeded with the RFC's x_2 = 1, z_2 = 0, x_3 = u,
-    //     z_3 = 1 *after* it has been applied, and `swap` starts at k_254. So the loop starts at 253 and not 254.
+    //     advance: the RFC starts from x_2 = 1, z_2 = 0, x_3 = u, z_3 = 1 and its first swap
+    //     exchanges the pairs, so the registers above are seeded with the swapped values,
+    //     x_2 = u, z_2 = 1, x_3 = 1, z_3 = 0, and `swap` starts at k_254. So the loop starts at
+    //     253 and not 254.
     //  3. t = 2, 1, 0 are not in the loop because bits 0..2 are always clear, so those iterations reduce
     //     to doubling the (x_2, z_2) branch and their swaps are no-ops. They become the three
     //     ladder_double calls after the loop, and the RFC's post-loop cswap is dropped for the same
@@ -771,7 +818,7 @@ fn ladder(
         // (completes x_3)
         x3 = x3.sqr();
         // (completes z_3)
-        z3 = z3.sqr().mul(&x1);
+        z3 = z3.sqr().mul(x1);
 
         // This differs from the ladder presentation in the RFC because it implements the
         // constant-time cswap recommendation at the bottom of §5 using an all-ones/all-zeros
@@ -800,9 +847,11 @@ fn ladder(
 }
 
 fn scalar_mult_base(k: &[u8; SCALAR_LEN]) -> X25519PublicKey {
-    // Equivalent (but much slower) -- since the BASE_POINT never changes, you can
-    //         precompute lookup tables for the multiples of BASE_POINT. TODO
-    scalar_mult(k, &BASE_POINT)
+    // The result is public, so it may live in the plain array of the key type. A fixed-base
+    // table would make this faster; the variable-base ladder serves for now.
+    let mut out = [0u8; POINT_LEN];
+    scalar_mult_into(k, &BASE_POINT, &mut out);
+    X25519PublicKey(out)
 }
 
 /*** DHKEM ***/
@@ -835,21 +884,25 @@ impl DHKEMParams<POINT_LEN, SCALAR_LEN, POINT_LEN> for X25519 {
         })
     }
 
+    const DERIVE_KEY_PAIR_BY_EXPAND: bool = true;
+
     fn private_key_from_bytes(sk: &[u8; SCALAR_LEN]) -> X25519PrivateKey {
-        let mut k: Secret<[u8; SCALAR_LEN]> = Secret::new();
-        *k = *sk;
-        X25519PrivateKey { pk: scalar_mult_base(&k), k }
+        let mut key = X25519PrivateKey { k: Secret::new(), pk: X25519PublicKey([0; POINT_LEN]) };
+        *key.k = *sk;
+        key.pk = scalar_mult_base(&key.k);
+        key
     }
 
     fn pk(sk: &X25519PrivateKey) -> X25519PublicKey {
         sk.pk()
     }
 
-    fn dh(
+    fn dh_into(
         sk: &X25519PrivateKey,
         pk: &X25519PublicKey,
-    ) -> Result<Secret<[u8; POINT_LEN]>, KeyAgreementError> {
-        raw_shared_secret(sk, pk)
+        out: &mut Secret<[u8; POINT_LEN]>,
+    ) -> Result<(), KeyAgreementError> {
+        raw_shared_secret(sk, pk, out)
     }
 
     // RFC 9180 §7.1.1: "For X25519 and X448, the SerializePublicKey() and DeserializePublicKey()
@@ -894,9 +947,7 @@ impl KEMEncapsulator<POINT_LEN, DHKEM_SS_LEN> for X25519Encapsulator<'_> {
     ) -> Result<usize, KEMError> {
         ct.fill(0);
         ss.zeroize();
-        let (shared_secret, enc) = X25519DHKEM::encap_rng(self.pk, rng)?;
-        *ct = enc;
-        *ss = shared_secret;
+        X25519DHKEM::encap_rng_out(self.pk, rng, ct, ss)?;
         Ok(POINT_LEN)
     }
 }
@@ -934,7 +985,7 @@ impl KEMDecapsulator<POINT_LEN, DHKEM_SS_LEN> for X25519Decapsulator<'_> {
         ss: &mut KeyMaterial<DHKEM_SS_LEN>,
     ) -> Result<usize, KEMError> {
         ss.zeroize();
-        *ss = X25519DHKEM::decap(ct, self.sk)?;
+        X25519DHKEM::decap_out(ct, self.sk, ss)?;
         Ok(DHKEM_SS_LEN)
     }
 }
