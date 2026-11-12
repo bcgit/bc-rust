@@ -11,9 +11,9 @@
 //! one agreement gives them two infos, not two lengths (SP 800-56C Rev. 2 Section 4.1 puts `L`
 //! in `FixedInfo` for that reason).
 //!
-//! The pairings are one `impl KdfPairing<KDF, SS_LEN> for Curve` each, in the curve's module:
-//! the X9.63 KDF and the NIST concatenation KDF over the hash matched to the curve on every
-//! curve, and HKDF-SHA256 on P-256.
+//! The pairings are `impl KdfPairing<KDF, SS_LEN> for ECCDH<C>` in [`crate::eccdh`]: the X9.63
+//! KDF and the NIST concatenation KDF over the hash matched to the curve
+//! ([`MatchedHash`](crate::eccdh::MatchedHash)) on every curve, and HKDF-SHA256 on P-256.
 //! A key under a KDF its curve is not paired with has no role, so the wrong KDF is a compile
 //! error; a further pairing is one marker and one impl.
 //!
@@ -33,11 +33,12 @@
 //! ```compile_fail
 //! use bouncycastle_core::agreement_key::AgreementKey;
 //! use bouncycastle_core::kdf_params::{KdfParams, KeyLen};
-//! use bouncycastle_eccdh::keys_p256::keygen;
+//! use bouncycastle_ec::P256;
+//! use bouncycastle_eccdh::keys::keygen;
 //! use bouncycastle_rng::HashDRBG_SHA512;
 //! use bouncycastle_x963kdf::X963KDF_SHA256;
 //!
-//! let (pk, sk) = keygen(&mut HashDRBG_SHA512::new_from_os()).unwrap();
+//! let (pk, sk) = keygen::<P256>(&mut HashDRBG_SHA512::new_from_os()).unwrap();
 //! let kdf = X963KDF_SHA256::new();
 //! let _ = sk.agree(&pk, KdfParams::new(&kdf, b"", KeyLen::<0>));
 //! ```
@@ -47,11 +48,12 @@
 //! ```compile_fail
 //! use bouncycastle_core::agreement_key::AgreementKey;
 //! use bouncycastle_core::kdf_params::{KdfParams, KeyLen};
-//! use bouncycastle_eccdh::keys_p256::keygen;
+//! use bouncycastle_ec::P256;
+//! use bouncycastle_eccdh::keys::keygen;
 //! use bouncycastle_rng::HashDRBG_SHA512;
 //! use bouncycastle_sha2::hkdf::HKDF_SHA256;
 //!
-//! let (pk, sk) = keygen(&mut HashDRBG_SHA512::new_from_os()).unwrap();
+//! let (pk, sk) = keygen::<P256>(&mut HashDRBG_SHA512::new_from_os()).unwrap();
 //! let hkdf = HKDF_SHA256::new();
 //! let _ = sk.agree(&pk, KdfParams::new(&hkdf, b"", KeyLen::<8161>));
 //! ```
@@ -95,8 +97,8 @@ const fn x963_max_len(hash_len: usize) -> usize {
     if max > usize::MAX as u128 { usize::MAX } else { max as usize }
 }
 
-/// A curve paired with a KDF: `Curve: KdfPairing<D, SS_LEN>` has one solution per curve, KDF
-/// and length, so the curve's role impl, generic over `D` and `SS_LEN` and bound on it, takes
+/// A curve paired with a KDF: `ECCDH<C>: KdfPairing<D, SS_LEN>` has one solution per curve, KDF
+/// and length, so the role impl, generic over `D` and `SS_LEN` and bound on it, takes
 /// both from the parameter type, `KdfParams<'p, D, SS_LEN>`. The length is the caller's, from
 /// one byte to the KDF's [`PairedKdf::MAX_LEN`], checked when the role is instantiated. Sealed
 /// on both sides: the pairings are the library's.
@@ -139,11 +141,5 @@ mod sealed {
     impl Sealed for bouncycastle_sha2::hkdf::HKDF_SHA256 {}
     impl<H: bouncycastle_x963kdf::X963KDFParams> Sealed for bouncycastle_x963kdf::X963KDF<H> {}
     impl<H: bouncycastle_concatkdf::ConcatKDFParams> Sealed for bouncycastle_concatkdf::ConcatKDF<H> {}
-    impl Sealed for crate::eccdh_p256::ECCDHP256 {}
-    impl Sealed for crate::eccdh_p384::ECCDHP384 {}
-    impl Sealed for crate::eccdh_p521::ECCDHP521 {}
-    impl Sealed for crate::eccdh_p256k1::ECCDHSecp256K1 {}
-    impl Sealed for crate::eccdh_bp256r1::ECCDHBp256r1 {}
-    impl Sealed for crate::eccdh_bp384r1::ECCDHBp384r1 {}
-    impl Sealed for crate::eccdh_bp512r1::ECCDHBp512r1 {}
+    impl<C: bouncycastle_ec::curve::Curve> Sealed for crate::eccdh::ECCDH<C> {}
 }

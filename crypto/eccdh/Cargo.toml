@@ -18,29 +18,5 @@ bouncycastle-rng.workspace = true
 criterion.workspace = true
 
 [[bench]]
-name = "eccdh_p256_benches"
-harness = false
-
-[[bench]]
-name = "eccdh_p384_benches"
-harness = false
-
-[[bench]]
-name = "eccdh_p521_benches"
-harness = false
-
-[[bench]]
-name = "eccdh_p256k1_benches"
-harness = false
-
-[[bench]]
-name = "eccdh_bp256r1_benches"
-harness = false
-
-[[bench]]
-name = "eccdh_bp384r1_benches"
-harness = false
-
-[[bench]]
-name = "eccdh_bp512r1_benches"
+name = "eccdh_benches"
 harness = false

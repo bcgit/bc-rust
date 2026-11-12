@@ -1,7 +1,5 @@
 //! Generic CLI wiring for every curve in `bouncycastle-eccdh`: one instantiation of
-//! [`eccdh_cmd`] per curve, as `ecdsa_cmd.rs` does for ECDSA, since every curve implements the
-//! identical `KeyAgreementPrivateKey` / `KeyAgreementPublicKey` / `DerivePublicKey` /
-//! `AgreementKey<()>` shape. `agree` writes the raw shared secret `Z` of SP 800-56A Rev. 3
+//! [`eccdh_cmd`] per curve marker, as `ecdsa_cmd.rs` does for ECDSA. `agree` writes the raw shared secret `Z` of SP 800-56A Rev. 3
 //! Section 5.7.1.2, which is keying material for a KDF (`hkdf-sha256` and friends take it from
 //! a file through `--ikm-file`; the inline `--ikm` would leave it in the command history), not a
 //! key.
@@ -13,13 +11,10 @@ use bouncycastle::core::agreement_key::AgreementKey;
 use bouncycastle::core::errors::KeyAgreementError;
 use bouncycastle::core::key_material::KeyMaterialTrait;
 use bouncycastle::core::traits::{KeyAgreementPrivateKey, KeyAgreementPublicKey, RNG};
+use bouncycastle::ec::curve::Curve;
+use bouncycastle::ec::{Bp256r1, Bp384r1, Bp512r1, P256, P384, P521, Secp256K1};
+use bouncycastle::eccdh::keys::{ECCDHPrivateKey, ECCDHPublicKey, keygen};
 use bouncycastle::eccdh::keys_common::DerivePublicKey;
-use bouncycastle::eccdh::{
-    eccdh_bp256r1, eccdh_bp384r1, eccdh_bp512r1, eccdh_p256, eccdh_p256k1, eccdh_p384, eccdh_p521,
-};
-use bouncycastle::eccdh::{
-    keys_bp256r1, keys_bp384r1, keys_bp512r1, keys_p256, keys_p256k1, keys_p384, keys_p521,
-};
 use bouncycastle::rng::HashDRBG_SHA512;
 use clap::ValueEnum;
 use std::process::exit;
@@ -139,14 +134,13 @@ pub(crate) fn eccdh_p256_cmd(
     pkfile: &Option<String>,
     output_hex: bool,
 ) {
-    eccdh_cmd::<_, _, { keys_p256::SK_LEN }, { keys_p256::PK_LEN }, { eccdh_p256::SS_LEN }>(
-        action,
-        keys_p256::keygen,
-        skfile,
-        pkfile,
-        output_hex,
-        "ECC CDH P-256",
-    )
+    eccdh_cmd::<
+        ECCDHPublicKey<P256>,
+        ECCDHPrivateKey<P256>,
+        { P256::SCALAR_LEN },
+        { P256::PK_UNCOMPRESSED_LEN },
+        { P256::FE_LEN },
+    >(action, keygen::<P256>, skfile, pkfile, output_hex, "ECC CDH P-256")
 }
 
 pub(crate) fn eccdh_p384_cmd(
@@ -155,14 +149,13 @@ pub(crate) fn eccdh_p384_cmd(
     pkfile: &Option<String>,
     output_hex: bool,
 ) {
-    eccdh_cmd::<_, _, { keys_p384::SK_LEN }, { keys_p384::PK_LEN }, { eccdh_p384::SS_LEN }>(
-        action,
-        keys_p384::keygen,
-        skfile,
-        pkfile,
-        output_hex,
-        "ECC CDH P-384",
-    )
+    eccdh_cmd::<
+        ECCDHPublicKey<P384>,
+        ECCDHPrivateKey<P384>,
+        { P384::SCALAR_LEN },
+        { P384::PK_UNCOMPRESSED_LEN },
+        { P384::FE_LEN },
+    >(action, keygen::<P384>, skfile, pkfile, output_hex, "ECC CDH P-384")
 }
 
 pub(crate) fn eccdh_p521_cmd(
@@ -171,14 +164,13 @@ pub(crate) fn eccdh_p521_cmd(
     pkfile: &Option<String>,
     output_hex: bool,
 ) {
-    eccdh_cmd::<_, _, { keys_p521::SK_LEN }, { keys_p521::PK_LEN }, { eccdh_p521::SS_LEN }>(
-        action,
-        keys_p521::keygen,
-        skfile,
-        pkfile,
-        output_hex,
-        "ECC CDH P-521",
-    )
+    eccdh_cmd::<
+        ECCDHPublicKey<P521>,
+        ECCDHPrivateKey<P521>,
+        { P521::SCALAR_LEN },
+        { P521::PK_UNCOMPRESSED_LEN },
+        { P521::FE_LEN },
+    >(action, keygen::<P521>, skfile, pkfile, output_hex, "ECC CDH P-521")
 }
 
 pub(crate) fn eccdh_secp256k1_cmd(
@@ -187,14 +179,13 @@ pub(crate) fn eccdh_secp256k1_cmd(
     pkfile: &Option<String>,
     output_hex: bool,
 ) {
-    eccdh_cmd::<_, _, { keys_p256k1::SK_LEN }, { keys_p256k1::PK_LEN }, { eccdh_p256k1::SS_LEN }>(
-        action,
-        keys_p256k1::keygen,
-        skfile,
-        pkfile,
-        output_hex,
-        "ECC CDH secp256k1",
-    )
+    eccdh_cmd::<
+        ECCDHPublicKey<Secp256K1>,
+        ECCDHPrivateKey<Secp256K1>,
+        { Secp256K1::SCALAR_LEN },
+        { Secp256K1::PK_UNCOMPRESSED_LEN },
+        { Secp256K1::FE_LEN },
+    >(action, keygen::<Secp256K1>, skfile, pkfile, output_hex, "ECC CDH secp256k1")
 }
 
 pub(crate) fn eccdh_bp256r1_cmd(
@@ -203,14 +194,13 @@ pub(crate) fn eccdh_bp256r1_cmd(
     pkfile: &Option<String>,
     output_hex: bool,
 ) {
-    eccdh_cmd::<_, _, { keys_bp256r1::SK_LEN }, { keys_bp256r1::PK_LEN }, { eccdh_bp256r1::SS_LEN }>(
-        action,
-        keys_bp256r1::keygen,
-        skfile,
-        pkfile,
-        output_hex,
-        "ECC CDH brainpoolP256r1",
-    )
+    eccdh_cmd::<
+        ECCDHPublicKey<Bp256r1>,
+        ECCDHPrivateKey<Bp256r1>,
+        { Bp256r1::SCALAR_LEN },
+        { Bp256r1::PK_UNCOMPRESSED_LEN },
+        { Bp256r1::FE_LEN },
+    >(action, keygen::<Bp256r1>, skfile, pkfile, output_hex, "ECC CDH brainpoolP256r1")
 }
 
 pub(crate) fn eccdh_bp384r1_cmd(
@@ -219,14 +209,13 @@ pub(crate) fn eccdh_bp384r1_cmd(
     pkfile: &Option<String>,
     output_hex: bool,
 ) {
-    eccdh_cmd::<_, _, { keys_bp384r1::SK_LEN }, { keys_bp384r1::PK_LEN }, { eccdh_bp384r1::SS_LEN }>(
-        action,
-        keys_bp384r1::keygen,
-        skfile,
-        pkfile,
-        output_hex,
-        "ECC CDH brainpoolP384r1",
-    )
+    eccdh_cmd::<
+        ECCDHPublicKey<Bp384r1>,
+        ECCDHPrivateKey<Bp384r1>,
+        { Bp384r1::SCALAR_LEN },
+        { Bp384r1::PK_UNCOMPRESSED_LEN },
+        { Bp384r1::FE_LEN },
+    >(action, keygen::<Bp384r1>, skfile, pkfile, output_hex, "ECC CDH brainpoolP384r1")
 }
 
 pub(crate) fn eccdh_bp512r1_cmd(
@@ -235,12 +224,11 @@ pub(crate) fn eccdh_bp512r1_cmd(
     pkfile: &Option<String>,
     output_hex: bool,
 ) {
-    eccdh_cmd::<_, _, { keys_bp512r1::SK_LEN }, { keys_bp512r1::PK_LEN }, { eccdh_bp512r1::SS_LEN }>(
-        action,
-        keys_bp512r1::keygen,
-        skfile,
-        pkfile,
-        output_hex,
-        "ECC CDH brainpoolP512r1",
-    )
+    eccdh_cmd::<
+        ECCDHPublicKey<Bp512r1>,
+        ECCDHPrivateKey<Bp512r1>,
+        { Bp512r1::SCALAR_LEN },
+        { Bp512r1::PK_UNCOMPRESSED_LEN },
+        { Bp512r1::FE_LEN },
+    >(action, keygen::<Bp512r1>, skfile, pkfile, output_hex, "ECC CDH brainpoolP512r1")
 }

@@ -8,10 +8,8 @@ use bouncycastle_core::key_material::KeyMaterialTrait;
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::RNG;
 use bouncycastle_ec::{Bp256r1, Bp384r1, Bp512r1, P256, P384, P521, Secp256K1};
+use bouncycastle_eccdh::keys::keygen;
 use bouncycastle_eccdh::keys_common::AgreementKeyPair;
-use bouncycastle_eccdh::{
-    keys_bp256r1, keys_bp384r1, keys_bp512r1, keys_p256, keys_p256k1, keys_p384, keys_p521,
-};
 use bouncycastle_rng::{DefaultRNG, FixedSeedRNG};
 use core::fmt::Debug;
 
@@ -49,7 +47,7 @@ where
 
 #[test]
 fn p256_marker_pair_is_keygen_and_agrees() {
-    is_keygen::<P256>(keys_p256::keygen);
+    is_keygen::<P256>(keygen::<P256>);
 
     let mut rng = DefaultRNG::default();
     let (pk_a, sk_a) = P256::generate_agreement_key_pair(&mut rng).unwrap();
@@ -61,7 +59,7 @@ fn p256_marker_pair_is_keygen_and_agrees() {
 
 #[test]
 fn p384_marker_pair_is_keygen_and_agrees() {
-    is_keygen::<P384>(keys_p384::keygen);
+    is_keygen::<P384>(keygen::<P384>);
 
     let mut rng = DefaultRNG::default();
     let (pk_a, sk_a) = P384::generate_agreement_key_pair(&mut rng).unwrap();
@@ -73,7 +71,7 @@ fn p384_marker_pair_is_keygen_and_agrees() {
 
 #[test]
 fn p521_marker_pair_is_keygen_and_agrees() {
-    is_keygen::<P521>(keys_p521::keygen);
+    is_keygen::<P521>(keygen::<P521>);
 
     let mut rng = DefaultRNG::default();
     let (pk_a, sk_a) = P521::generate_agreement_key_pair(&mut rng).unwrap();
@@ -85,7 +83,7 @@ fn p521_marker_pair_is_keygen_and_agrees() {
 
 #[test]
 fn p256k1_marker_pair_is_keygen_and_agrees() {
-    is_keygen::<Secp256K1>(keys_p256k1::keygen);
+    is_keygen::<Secp256K1>(keygen::<Secp256K1>);
 
     let mut rng = DefaultRNG::default();
     let (pk_a, sk_a) = Secp256K1::generate_agreement_key_pair(&mut rng).unwrap();
@@ -97,7 +95,7 @@ fn p256k1_marker_pair_is_keygen_and_agrees() {
 
 #[test]
 fn bp256r1_marker_pair_is_keygen_and_agrees() {
-    is_keygen::<Bp256r1>(keys_bp256r1::keygen);
+    is_keygen::<Bp256r1>(keygen::<Bp256r1>);
 
     let mut rng = DefaultRNG::default();
     let (pk_a, sk_a) = Bp256r1::generate_agreement_key_pair(&mut rng).unwrap();
@@ -109,7 +107,7 @@ fn bp256r1_marker_pair_is_keygen_and_agrees() {
 
 #[test]
 fn bp384r1_marker_pair_is_keygen_and_agrees() {
-    is_keygen::<Bp384r1>(keys_bp384r1::keygen);
+    is_keygen::<Bp384r1>(keygen::<Bp384r1>);
 
     let mut rng = DefaultRNG::default();
     let (pk_a, sk_a) = Bp384r1::generate_agreement_key_pair(&mut rng).unwrap();
@@ -121,7 +119,7 @@ fn bp384r1_marker_pair_is_keygen_and_agrees() {
 
 #[test]
 fn bp512r1_marker_pair_is_keygen_and_agrees() {
-    is_keygen::<Bp512r1>(keys_bp512r1::keygen);
+    is_keygen::<Bp512r1>(keygen::<Bp512r1>);
 
     let mut rng = DefaultRNG::default();
     let (pk_a, sk_a) = Bp512r1::generate_agreement_key_pair(&mut rng).unwrap();

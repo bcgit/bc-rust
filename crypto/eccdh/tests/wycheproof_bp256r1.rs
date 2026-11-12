@@ -3,17 +3,17 @@
 
 mod wycheproof_common;
 
-use bouncycastle_eccdh::eccdh_bp256r1::SS_LEN;
-use bouncycastle_eccdh::keys_bp256r1::{
-    ECCDHBp256r1PrivateKey, ECCDHBp256r1PublicKey, PK_LEN, SK_LEN,
-};
+use bouncycastle_ec::Bp256r1;
+use bouncycastle_ec::curve::Curve;
+use bouncycastle_eccdh::keys::{ECCDHPrivateKey, ECCDHPublicKey};
 
 #[test]
 fn ecdh_brainpoolp256r1_test() {
-    wycheproof_common::run::<ECCDHBp256r1PublicKey, ECCDHBp256r1PrivateKey, PK_LEN, SK_LEN, SS_LEN>(
-        "ecdh_brainpoolP256r1_test.json",
-        "brainpoolP256r1",
-        804,
-        518,
-    );
+    wycheproof_common::run::<
+        ECCDHPublicKey<Bp256r1>,
+        ECCDHPrivateKey<Bp256r1>,
+        { Bp256r1::PK_UNCOMPRESSED_LEN },
+        { Bp256r1::SCALAR_LEN },
+        { Bp256r1::FE_LEN },
+    >("ecdh_brainpoolP256r1_test.json", "brainpoolP256r1", 804, 518);
 }

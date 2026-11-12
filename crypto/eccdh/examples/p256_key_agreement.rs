@@ -1,6 +1,6 @@
 //! ECC CDH over P-256 through the key-agreement roles: two parties make keys and agree on `Z`,
-//! a static key keeps its worker, and the same keys derive a key through HKDF-SHA256 as
-//! `ECCDHP256_HKDF_SHA256` and through the X9.63 KDF as `ECCDHP256_X963KDF_SHA256`.
+//! a static key keeps its worker, and the same keys derive a key through HKDF-SHA256
+//! (`ECC-CDH-P256-HKDF-SHA256`) and through the X9.63 KDF (`ECC-CDH-P256-X963KDF-SHA256`).
 //!
 //! Run with `cargo run -p bouncycastle-eccdh --example p256_key_agreement`.
 
@@ -8,15 +8,16 @@ use bouncycastle_core::agreement_key::AgreementKey;
 use bouncycastle_core::kdf_params::{KdfParams, KeyLen};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait};
 use bouncycastle_core::traits::KeyAgreement;
-use bouncycastle_eccdh::keys_p256::keygen;
+use bouncycastle_ec::P256;
+use bouncycastle_eccdh::keys_common::AgreementKeyPair;
 use bouncycastle_rng::HashDRBG_SHA512;
 use bouncycastle_sha2::hkdf::HKDF_SHA256;
 use bouncycastle_x963kdf::X963KDF_SHA256;
 
 fn main() {
     let mut rng = HashDRBG_SHA512::new_from_os();
-    let (pk_a, sk_a) = keygen(&mut rng).unwrap();
-    let (pk_b, sk_b) = keygen(&mut rng).unwrap();
+    let (pk_a, sk_a) = P256::generate_agreement_key_pair(&mut rng).unwrap();
+    let (pk_b, sk_b) = P256::generate_agreement_key_pair(&mut rng).unwrap();
 
     // ECC CDH: each side's private key with the other's public key gives the same Z, typed
     // SharedSecret at the curve's strength. It is keying material for a KDF, not a key.

@@ -35,10 +35,10 @@
 use bouncycastle::core::agreement_key::AgreementKey;
 use bouncycastle::core::key_material::KeyMaterialTrait;
 use bouncycastle::core::traits::{KeyAgreementPrivateKey, KeyAgreementPublicKey};
+use bouncycastle::ec::curve::Curve;
+use bouncycastle::ec::{Bp256r1, Bp384r1, Bp512r1, P256, P384, P521, Secp256K1};
+use bouncycastle::eccdh::keys::{ECCDHPrivateKey, ECCDHPublicKey, keygen};
 use bouncycastle::eccdh::keys_common::DerivePublicKey;
-use bouncycastle::eccdh::{
-    keys_bp256r1, keys_bp384r1, keys_bp512r1, keys_p256, keys_p256k1, keys_p384, keys_p521,
-};
 use bouncycastle::rng::DefaultRNG;
 
 /// Runs the operation under measurement out of line, so that its frames sit below one symbol
@@ -48,76 +48,27 @@ fn measure<T>(f: impl FnOnce() -> T) -> T {
     f()
 }
 
+/// The in-memory size of a curve's key structs, plus their on-disk encoded length.
+fn print_sizes<C: Curve>(name: &str) {
+    use core::mem::size_of;
+
+    println!("\nECC CDH {name}");
+    println!("size_of<ECCDHPublicKey<{}>>: {}", C::NAME, size_of::<ECCDHPublicKey<C>>());
+    println!("PK_LEN (on disk): {}", C::PK_UNCOMPRESSED_LEN);
+    println!("size_of<ECCDHPrivateKey<{}>>: {}", C::NAME, size_of::<ECCDHPrivateKey<C>>());
+    println!("SK_LEN (on disk): {}", C::SCALAR_LEN);
+}
+
 /// This prints the in-memory size of all the public and private key structs, plus their on-disk
 /// encoded length, for every curve.
 fn print_struct_sizes() {
-    use core::mem::size_of;
-
-    println!("\nECC CDH P-256");
-    println!("size_of<ECCDHP256PublicKey>: {}", size_of::<keys_p256::ECCDHP256PublicKey>());
-    println!("PK_LEN (on disk): {}", keys_p256::PK_LEN);
-    println!("size_of<ECCDHP256PrivateKey>: {}", size_of::<keys_p256::ECCDHP256PrivateKey>());
-    println!("SK_LEN (on disk): {}", keys_p256::SK_LEN);
-
-    println!("\nECC CDH P-384");
-    println!("size_of<ECCDHP384PublicKey>: {}", size_of::<keys_p384::ECCDHP384PublicKey>());
-    println!("PK_LEN (on disk): {}", keys_p384::PK_LEN);
-    println!("size_of<ECCDHP384PrivateKey>: {}", size_of::<keys_p384::ECCDHP384PrivateKey>());
-    println!("SK_LEN (on disk): {}", keys_p384::SK_LEN);
-
-    println!("\nECC CDH P-521");
-    println!("size_of<ECCDHP521PublicKey>: {}", size_of::<keys_p521::ECCDHP521PublicKey>());
-    println!("PK_LEN (on disk): {}", keys_p521::PK_LEN);
-    println!("size_of<ECCDHP521PrivateKey>: {}", size_of::<keys_p521::ECCDHP521PrivateKey>());
-    println!("SK_LEN (on disk): {}", keys_p521::SK_LEN);
-
-    println!("\nECC CDH secp256k1");
-    println!(
-        "size_of<ECCDHSecp256K1PublicKey>: {}",
-        size_of::<keys_p256k1::ECCDHSecp256K1PublicKey>()
-    );
-    println!("PK_LEN (on disk): {}", keys_p256k1::PK_LEN);
-    println!(
-        "size_of<ECCDHSecp256K1PrivateKey>: {}",
-        size_of::<keys_p256k1::ECCDHSecp256K1PrivateKey>()
-    );
-    println!("SK_LEN (on disk): {}", keys_p256k1::SK_LEN);
-
-    println!("\nECC CDH brainpoolP256r1");
-    println!(
-        "size_of<ECCDHBp256r1PublicKey>: {}",
-        size_of::<keys_bp256r1::ECCDHBp256r1PublicKey>()
-    );
-    println!("PK_LEN (on disk): {}", keys_bp256r1::PK_LEN);
-    println!(
-        "size_of<ECCDHBp256r1PrivateKey>: {}",
-        size_of::<keys_bp256r1::ECCDHBp256r1PrivateKey>()
-    );
-    println!("SK_LEN (on disk): {}", keys_bp256r1::SK_LEN);
-
-    println!("\nECC CDH brainpoolP384r1");
-    println!(
-        "size_of<ECCDHBp384r1PublicKey>: {}",
-        size_of::<keys_bp384r1::ECCDHBp384r1PublicKey>()
-    );
-    println!("PK_LEN (on disk): {}", keys_bp384r1::PK_LEN);
-    println!(
-        "size_of<ECCDHBp384r1PrivateKey>: {}",
-        size_of::<keys_bp384r1::ECCDHBp384r1PrivateKey>()
-    );
-    println!("SK_LEN (on disk): {}", keys_bp384r1::SK_LEN);
-
-    println!("\nECC CDH brainpoolP512r1");
-    println!(
-        "size_of<ECCDHBp512r1PublicKey>: {}",
-        size_of::<keys_bp512r1::ECCDHBp512r1PublicKey>()
-    );
-    println!("PK_LEN (on disk): {}", keys_bp512r1::PK_LEN);
-    println!(
-        "size_of<ECCDHBp512r1PrivateKey>: {}",
-        size_of::<keys_bp512r1::ECCDHBp512r1PrivateKey>()
-    );
-    println!("SK_LEN (on disk): {}", keys_bp512r1::SK_LEN);
+    print_sizes::<P256>("P-256");
+    print_sizes::<P384>("P-384");
+    print_sizes::<P521>("P-521");
+    print_sizes::<Secp256K1>("secp256k1");
+    print_sizes::<Bp256r1>("brainpoolP256r1");
+    print_sizes::<Bp384r1>("brainpoolP384r1");
+    print_sizes::<Bp512r1>("brainpoolP512r1");
 }
 
 /// This exists that /usr/bin/time can be used to measure the base memory footprint of the cargo bench harness
@@ -127,151 +78,89 @@ fn bench_do_nothing() {
     print!("{}", 1 + 1);
 }
 
-fn bench_p256_keygen() {
-    eprintln!("ECC CDH P-256/KeyGen");
+/// Key generation on one curve; the figure excludes the caller's RNG, reached through `dyn RNG`.
+fn keygen_bench<C, const PK_LEN: usize>(name: &str)
+where
+    C: Curve<PkUncompressed = [u8; PK_LEN]>,
+{
+    eprintln!("ECC CDH {name}/KeyGen");
 
-    let (pk, _sk) = measure(|| keys_p256::keygen(&mut DefaultRNG::default()).unwrap());
+    let (pk, _sk) = measure(|| keygen::<C>(&mut DefaultRNG::default()).unwrap());
     println!("{:x?}", pk.encode());
+}
+
+/// Agreement on one curve, with fixed keys, d = 42 and the peer's d = 7, so keygen's own stack
+/// cost is not folded in.
+fn agree_bench<C, const PK_LEN: usize, const SK_LEN: usize, const SS_LEN: usize>(name: &str)
+where
+    C: Curve<PkUncompressed = [u8; PK_LEN], ScalarBytes = [u8; SK_LEN], FeBytes = [u8; SS_LEN]>,
+{
+    eprintln!("ECC CDH {name}/Agree");
+
+    let mut bytes = [0u8; SK_LEN];
+    bytes[SK_LEN - 1] = 0x2A;
+    let sk = ECCDHPrivateKey::<C>::from_bytes(&bytes).unwrap();
+    bytes[SK_LEN - 1] = 0x07;
+    let peer_pk = ECCDHPrivateKey::<C>::from_bytes(&bytes).unwrap().derive_pk();
+
+    let z = measure(|| sk.agree(&peer_pk, ()).unwrap());
+    println!("{:x?}", z.ref_to_bytes());
+}
+
+fn bench_p256_keygen() {
+    keygen_bench::<P256, 65>("P-256");
 }
 
 fn bench_p256_agree() {
-    eprintln!("ECC CDH P-256/Agree");
-
-    // Fixed keys, d = 42 and the peer's d = 7, so keygen's own stack cost is not folded in.
-    let mut bytes = [0u8; keys_p256::SK_LEN];
-    bytes[keys_p256::SK_LEN - 1] = 0x2A;
-    let sk = keys_p256::ECCDHP256PrivateKey::from_bytes(&bytes).unwrap();
-    bytes[keys_p256::SK_LEN - 1] = 0x07;
-    let peer_pk = keys_p256::ECCDHP256PrivateKey::from_bytes(&bytes).unwrap().derive_pk();
-
-    let z = measure(|| sk.agree(&peer_pk, ()).unwrap());
-    println!("{:x?}", z.ref_to_bytes());
+    agree_bench::<P256, 65, 32, 32>("P-256");
 }
 
 fn bench_p384_keygen() {
-    eprintln!("ECC CDH P-384/KeyGen");
-
-    let (pk, _sk) = measure(|| keys_p384::keygen(&mut DefaultRNG::default()).unwrap());
-    println!("{:x?}", pk.encode());
+    keygen_bench::<P384, 97>("P-384");
 }
 
 fn bench_p384_agree() {
-    eprintln!("ECC CDH P-384/Agree");
-
-    // Fixed keys, d = 42 and the peer's d = 7, so keygen's own stack cost is not folded in.
-    let mut bytes = [0u8; keys_p384::SK_LEN];
-    bytes[keys_p384::SK_LEN - 1] = 0x2A;
-    let sk = keys_p384::ECCDHP384PrivateKey::from_bytes(&bytes).unwrap();
-    bytes[keys_p384::SK_LEN - 1] = 0x07;
-    let peer_pk = keys_p384::ECCDHP384PrivateKey::from_bytes(&bytes).unwrap().derive_pk();
-
-    let z = measure(|| sk.agree(&peer_pk, ()).unwrap());
-    println!("{:x?}", z.ref_to_bytes());
+    agree_bench::<P384, 97, 48, 48>("P-384");
 }
 
 fn bench_p521_keygen() {
-    eprintln!("ECC CDH P-521/KeyGen");
-
-    let (pk, _sk) = measure(|| keys_p521::keygen(&mut DefaultRNG::default()).unwrap());
-    println!("{:x?}", pk.encode());
+    keygen_bench::<P521, 133>("P-521");
 }
 
 fn bench_p521_agree() {
-    eprintln!("ECC CDH P-521/Agree");
-
-    // Fixed keys, d = 42 and the peer's d = 7, so keygen's own stack cost is not folded in.
-    let mut bytes = [0u8; keys_p521::SK_LEN];
-    bytes[keys_p521::SK_LEN - 1] = 0x2A;
-    let sk = keys_p521::ECCDHP521PrivateKey::from_bytes(&bytes).unwrap();
-    bytes[keys_p521::SK_LEN - 1] = 0x07;
-    let peer_pk = keys_p521::ECCDHP521PrivateKey::from_bytes(&bytes).unwrap().derive_pk();
-
-    let z = measure(|| sk.agree(&peer_pk, ()).unwrap());
-    println!("{:x?}", z.ref_to_bytes());
+    agree_bench::<P521, 133, 66, 66>("P-521");
 }
 
 fn bench_secp256k1_keygen() {
-    eprintln!("ECC CDH secp256k1/KeyGen");
-
-    let (pk, _sk) = measure(|| keys_p256k1::keygen(&mut DefaultRNG::default()).unwrap());
-    println!("{:x?}", pk.encode());
+    keygen_bench::<Secp256K1, 65>("secp256k1");
 }
 
 fn bench_secp256k1_agree() {
-    eprintln!("ECC CDH secp256k1/Agree");
-
-    // Fixed keys, d = 42 and the peer's d = 7, so keygen's own stack cost is not folded in.
-    let mut bytes = [0u8; keys_p256k1::SK_LEN];
-    bytes[keys_p256k1::SK_LEN - 1] = 0x2A;
-    let sk = keys_p256k1::ECCDHSecp256K1PrivateKey::from_bytes(&bytes).unwrap();
-    bytes[keys_p256k1::SK_LEN - 1] = 0x07;
-    let peer_pk = keys_p256k1::ECCDHSecp256K1PrivateKey::from_bytes(&bytes).unwrap().derive_pk();
-
-    let z = measure(|| sk.agree(&peer_pk, ()).unwrap());
-    println!("{:x?}", z.ref_to_bytes());
+    agree_bench::<Secp256K1, 65, 32, 32>("secp256k1");
 }
 
 fn bench_bp256r1_keygen() {
-    eprintln!("ECC CDH brainpoolP256r1/KeyGen");
-
-    let (pk, _sk) = measure(|| keys_bp256r1::keygen(&mut DefaultRNG::default()).unwrap());
-    println!("{:x?}", pk.encode());
+    keygen_bench::<Bp256r1, 65>("brainpoolP256r1");
 }
 
 fn bench_bp256r1_agree() {
-    eprintln!("ECC CDH brainpoolP256r1/Agree");
-
-    // Fixed keys, d = 42 and the peer's d = 7, so keygen's own stack cost is not folded in.
-    let mut bytes = [0u8; keys_bp256r1::SK_LEN];
-    bytes[keys_bp256r1::SK_LEN - 1] = 0x2A;
-    let sk = keys_bp256r1::ECCDHBp256r1PrivateKey::from_bytes(&bytes).unwrap();
-    bytes[keys_bp256r1::SK_LEN - 1] = 0x07;
-    let peer_pk = keys_bp256r1::ECCDHBp256r1PrivateKey::from_bytes(&bytes).unwrap().derive_pk();
-
-    let z = measure(|| sk.agree(&peer_pk, ()).unwrap());
-    println!("{:x?}", z.ref_to_bytes());
+    agree_bench::<Bp256r1, 65, 32, 32>("brainpoolP256r1");
 }
 
 fn bench_bp384r1_keygen() {
-    eprintln!("ECC CDH brainpoolP384r1/KeyGen");
-
-    let (pk, _sk) = measure(|| keys_bp384r1::keygen(&mut DefaultRNG::default()).unwrap());
-    println!("{:x?}", pk.encode());
+    keygen_bench::<Bp384r1, 97>("brainpoolP384r1");
 }
 
 fn bench_bp384r1_agree() {
-    eprintln!("ECC CDH brainpoolP384r1/Agree");
-
-    // Fixed keys, d = 42 and the peer's d = 7, so keygen's own stack cost is not folded in.
-    let mut bytes = [0u8; keys_bp384r1::SK_LEN];
-    bytes[keys_bp384r1::SK_LEN - 1] = 0x2A;
-    let sk = keys_bp384r1::ECCDHBp384r1PrivateKey::from_bytes(&bytes).unwrap();
-    bytes[keys_bp384r1::SK_LEN - 1] = 0x07;
-    let peer_pk = keys_bp384r1::ECCDHBp384r1PrivateKey::from_bytes(&bytes).unwrap().derive_pk();
-
-    let z = measure(|| sk.agree(&peer_pk, ()).unwrap());
-    println!("{:x?}", z.ref_to_bytes());
+    agree_bench::<Bp384r1, 97, 48, 48>("brainpoolP384r1");
 }
 
 fn bench_bp512r1_keygen() {
-    eprintln!("ECC CDH brainpoolP512r1/KeyGen");
-
-    let (pk, _sk) = measure(|| keys_bp512r1::keygen(&mut DefaultRNG::default()).unwrap());
-    println!("{:x?}", pk.encode());
+    keygen_bench::<Bp512r1, 129>("brainpoolP512r1");
 }
 
 fn bench_bp512r1_agree() {
-    eprintln!("ECC CDH brainpoolP512r1/Agree");
-
-    // Fixed keys, d = 42 and the peer's d = 7, so keygen's own stack cost is not folded in.
-    let mut bytes = [0u8; keys_bp512r1::SK_LEN];
-    bytes[keys_bp512r1::SK_LEN - 1] = 0x2A;
-    let sk = keys_bp512r1::ECCDHBp512r1PrivateKey::from_bytes(&bytes).unwrap();
-    bytes[keys_bp512r1::SK_LEN - 1] = 0x07;
-    let peer_pk = keys_bp512r1::ECCDHBp512r1PrivateKey::from_bytes(&bytes).unwrap().derive_pk();
-
-    let z = measure(|| sk.agree(&peer_pk, ()).unwrap());
-    println!("{:x?}", z.ref_to_bytes());
+    agree_bench::<Bp512r1, 129, 64, 64>("brainpoolP512r1");
 }
 
 fn main() {
