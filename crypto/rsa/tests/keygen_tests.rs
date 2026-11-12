@@ -27,11 +27,17 @@ use bouncycastle_core::traits::SignaturePrivateKey;
 use bouncycastle_core_test_framework::signature::TestFrameworkSignature;
 use bouncycastle_ec::montgomery::widening_mul;
 use bouncycastle_rng::DefaultRNG;
+use bouncycastle_rsa::RSA2048;
+use bouncycastle_rsa::RSA3072;
+use bouncycastle_rsa::RSA4096;
+use bouncycastle_rsa::RSA8192;
 use bouncycastle_rsa::keygen::{PUBLIC_EXPONENT, is_probable_prime};
-use bouncycastle_rsa::rsa_2048::{
-    self, RSA2048PrivateKey, RSA2048PublicKey, RSASSA_PKCS1_v1_5_SHA256, RSASSA_PSS_SHA256, SIG_LEN,
-};
+use bouncycastle_rsa::keys::{RsaPrivateKey, RsaPublicKey};
+use bouncycastle_rsa::rsa_2048::{RSASSA_PKCS1_v1_5_SHA256, RSASSA_PSS_SHA256, SIG_LEN};
+use bouncycastle_rsa::rsassa_pkcs1_v1_5::RSASSA_PKCS1_v1_5;
+use bouncycastle_rsa::size::RsaSigningSize;
 use bouncycastle_rsa::{rsa_3072, rsa_4096, rsa_8192};
+use bouncycastle_sha2::SHA256;
 use core::num::NonZeroUsize;
 
 /// The documented Wycheproof RSA-2048 key's `p` and `q` (see `rsa_2048_pkcs1_v1_5_tests.rs` for
@@ -187,29 +193,26 @@ fn assert_fips_186_5_criteria<const HALF: usize, const HALF2: usize, const HALF2
 
 #[test]
 fn keygen_2048_meets_fips_186_5_criteria_and_signs() {
-    let (pk, sk) = rsa_2048::keygen(&mut DefaultRNG::default()).unwrap();
+    let (pk, sk) = RSA2048::keygen(&mut DefaultRNG::default()).unwrap();
     assert_eq!(pk.e(), PUBLIC_EXPONENT);
     assert_eq!(pk.n(), sk.n());
-    assert_fips_186_5_criteria::<16, 32, 33>(&sk.encode(), pk.n(), 5);
+    assert_fips_186_5_criteria::<16, 32, 33>(
+        &sk.key::<RSASSA_PKCS1_v1_5<RSA2048, SHA256>>().encode(),
+        pk.n(),
+        5,
+    );
 
     // Every CRT component takes part in signing, so a round trip under both schemes is a
     // functional check of dP, dQ and qInv against n.
     let msg = b"signed with a freshly generated RSA-2048 key";
-    let sig = DeterministicSigningKey::<RSASSA_PKCS1_v1_5_SHA256, 256>::sign_deterministic(
-        &sk, msg, None,
-    )
-    .unwrap();
-    VerifyingKey::<RSASSA_PKCS1_v1_5_SHA256, 256>::verify(&pk, msg, None, &sig).unwrap();
-    assert!(
-        VerifyingKey::<RSASSA_PKCS1_v1_5_SHA256, 256>::verify(&pk, b"other", None, &sig).is_err()
-    );
-    let sig =
-        SigningKey::<RSASSA_PSS_SHA256, 256>::sign(&sk, &mut DefaultRNG::default(), msg, None)
-            .unwrap();
-    VerifyingKey::<RSASSA_PSS_SHA256, 256>::verify(&pk, msg, None, &sig).unwrap();
+    let sig = sk.key::<RSASSA_PKCS1_v1_5_SHA256>().sign_deterministic(msg, None).unwrap();
+    pk.key::<RSASSA_PKCS1_v1_5_SHA256>().verify(msg, None, &sig).unwrap();
+    assert!(pk.key::<RSASSA_PKCS1_v1_5_SHA256>().verify(b"other", None, &sig).is_err());
+    let sig = sk.key::<RSASSA_PSS_SHA256>().sign(&mut DefaultRNG::default(), msg, None).unwrap();
+    pk.key::<RSASSA_PSS_SHA256>().verify(msg, None, &sig).unwrap();
 
     // Two generations give two keys.
-    let (pk2, _) = rsa_2048::keygen(&mut DefaultRNG::default()).unwrap();
+    let (pk2, _) = RSA2048::keygen(&mut DefaultRNG::default()).unwrap();
     assert_ne!(pk2.n(), pk.n());
 }
 
@@ -217,50 +220,52 @@ fn keygen_2048_meets_fips_186_5_criteria_and_signs() {
 /// pass theirs (the fixed-key runs elsewhere in this crate exist because keygen used not to).
 #[test]
 fn conformance_suite_with_generated_keys() {
-    TestFrameworkSignature::new(false).test_deterministic_signature::<RSASSA_PKCS1_v1_5_SHA256, RSA2048PublicKey, RSA2048PrivateKey, SIG_LEN>(|| rsa_2048::keygen(&mut DefaultRNG::default()), false);
+    TestFrameworkSignature::new(false).test_deterministic_signature::<RSASSA_PKCS1_v1_5_SHA256, RsaPublicKey<RSASSA_PKCS1_v1_5_SHA256>, RsaPrivateKey<RSASSA_PKCS1_v1_5_SHA256>, SIG_LEN>(
+            || RSA2048::keygen(&mut DefaultRNG::default()).map(|(pk, sk)| (pk.into_key::<RSASSA_PKCS1_v1_5_SHA256>(), sk.into_key::<RSASSA_PKCS1_v1_5_SHA256>())), false);
 }
 
 #[test]
 fn keygen_3072_meets_fips_186_5_criteria_and_signs() {
-    let (pk, sk) = rsa_3072::keygen(&mut DefaultRNG::default()).unwrap();
-    assert_fips_186_5_criteria::<24, 48, 49>(&sk.encode(), pk.n(), 4);
+    let (pk, sk) = RSA3072::keygen(&mut DefaultRNG::default()).unwrap();
+    assert_fips_186_5_criteria::<24, 48, 49>(
+        &sk.key::<RSASSA_PKCS1_v1_5<RSA3072, SHA256>>().encode(),
+        pk.n(),
+        4,
+    );
     let msg = b"signed with a freshly generated RSA-3072 key";
-    let sig =
-        DeterministicSigningKey::<rsa_3072::RSASSA_PKCS1_v1_5_SHA384, 384>::sign_deterministic(
-            &sk, msg, None,
-        )
-        .unwrap();
-    VerifyingKey::<rsa_3072::RSASSA_PKCS1_v1_5_SHA384, 384>::verify(&pk, msg, None, &sig).unwrap();
+    let sig = sk.key::<rsa_3072::RSASSA_PKCS1_v1_5_SHA384>().sign_deterministic(msg, None).unwrap();
+    pk.key::<rsa_3072::RSASSA_PKCS1_v1_5_SHA384>().verify(msg, None, &sig).unwrap();
 }
 
 #[test]
 #[ignore = "tens of minutes in a debug build: run with --release --ignored"]
 fn keygen_4096_meets_fips_186_5_criteria_and_signs() {
-    let (pk, sk) = rsa_4096::keygen(&mut DefaultRNG::default()).unwrap();
-    assert_fips_186_5_criteria::<32, 64, 65>(&sk.encode(), pk.n(), 4);
+    let (pk, sk) = RSA4096::keygen(&mut DefaultRNG::default()).unwrap();
+    assert_fips_186_5_criteria::<32, 64, 65>(
+        &sk.key::<RSASSA_PKCS1_v1_5<RSA4096, SHA256>>().encode(),
+        pk.n(),
+        4,
+    );
     let msg = b"signed with a freshly generated RSA-4096 key";
-    let sig = SigningKey::<rsa_4096::RSASSA_PSS_SHA512, 512>::sign(
-        &sk,
-        &mut DefaultRNG::default(),
-        msg,
-        None,
-    )
-    .unwrap();
-    VerifyingKey::<rsa_4096::RSASSA_PSS_SHA512, 512>::verify(&pk, msg, None, &sig).unwrap();
+    let sig = sk
+        .key::<rsa_4096::RSASSA_PSS_SHA512>()
+        .sign(&mut DefaultRNG::default(), msg, None)
+        .unwrap();
+    pk.key::<rsa_4096::RSASSA_PSS_SHA512>().verify(msg, None, &sig).unwrap();
 }
 
 #[test]
 #[ignore = "tens of minutes in a debug build: run with --release --ignored"]
 fn keygen_8192_meets_fips_186_5_criteria_and_signs() {
-    let (pk, sk) = rsa_8192::keygen(&mut DefaultRNG::default()).unwrap();
-    assert_fips_186_5_criteria::<64, 128, 129>(&sk.encode(), pk.n(), 4);
+    let (pk, sk) = RSA8192::keygen(&mut DefaultRNG::default()).unwrap();
+    assert_fips_186_5_criteria::<64, 128, 129>(
+        &sk.key::<RSASSA_PKCS1_v1_5<RSA8192, SHA256>>().encode(),
+        pk.n(),
+        4,
+    );
     let msg = b"signed with a freshly generated RSA-8192 key";
-    let sig =
-        DeterministicSigningKey::<rsa_8192::RSASSA_PKCS1_v1_5_SHA256, 1024>::sign_deterministic(
-            &sk, msg, None,
-        )
-        .unwrap();
-    VerifyingKey::<rsa_8192::RSASSA_PKCS1_v1_5_SHA256, 1024>::verify(&pk, msg, None, &sig).unwrap();
+    let sig = sk.key::<rsa_8192::RSASSA_PKCS1_v1_5_SHA256>().sign_deterministic(msg, None).unwrap();
+    pk.key::<rsa_8192::RSASSA_PKCS1_v1_5_SHA256>().verify(msg, None, &sig).unwrap();
 }
 
 /// An RNG whose every output is the byte `fill`, reporting `strength`.
@@ -302,7 +307,7 @@ impl RNG for ConstantRng {
 fn keygen_rejects_an_rng_below_the_required_strength() {
     let mut weak = ConstantRng { fill: 0x42, strength: SecurityStrength::None };
     assert!(matches!(
-        rsa_2048::keygen(&mut weak),
+        RSA2048::keygen(&mut weak),
         Err(SignatureError::RNGError(RNGError::SecurityStrengthInsufficientForAlgorithm))
     ));
 }
@@ -313,5 +318,5 @@ fn keygen_rejects_an_rng_below_the_required_strength() {
 #[test]
 fn keygen_gives_up_on_a_stuck_rng() {
     let mut stuck = ConstantRng { fill: 0x42, strength: SecurityStrength::_256bit };
-    assert!(matches!(rsa_2048::keygen(&mut stuck), Err(SignatureError::GenericError(_))));
+    assert!(matches!(RSA2048::keygen(&mut stuck), Err(SignatureError::GenericError(_))));
 }

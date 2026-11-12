@@ -7,7 +7,7 @@
 //! FIPS 186-5 as the reference for every step and cited inline.
 //!
 //! The concrete sizes wire this up as `keygen(rng)` in their own modules
-//! (`crate::rsa_2048::keygen` and siblings): `nlen` is fixed by the width, `e` by
+//! (`RsaSigningSize::keygen`, which the size markers' generators wrap): `nlen` is fixed by the width, `e` by
 //! [`PUBLIC_EXPONENT`], and the Miller-Rabin round count and required RNG strength by each size's
 //! row of FIPS 186-5 Table B.1 and SP 800-57 Part 1 Table 2.
 //!
@@ -24,7 +24,7 @@
 //! uses; and the `MontgomeryContext` built over each candidate is the same construction
 //! `rsa_core::rsasp1` already builds over the secret primes on every signature.
 
-use crate::keys::{RsaPrivateKey, RsaPublicKey};
+use crate::keys::{RsaPrivateComponents, RsaPublicComponents};
 use crate::modexp::{MontgomeryContext, mod_pow, mul_mod, reduce_wide};
 use crate::size::{RsaSigningSize, RsaSize};
 use bouncycastle_core::errors::{RNGError, SignatureError};
@@ -500,7 +500,7 @@ fn primes_too_close<const N: usize>(p: &[u64; N], q: &[u64; N]) -> bool {
 /// HALF2` bits) built from two `HALF`-limb primes. `rounds` is the Miller-Rabin iteration count
 /// (Table B.1) and `required_strength` the security strength SP 800-57 Part 1 associates with
 /// `nlen`, which the RNG must meet (step 3 and the paragraph above the process). The size modules
-/// fix all three; see `crate::rsa_2048::keygen` for the RSA-2048 values.
+/// fix all three; see `RSA2048`'s `RsaSigningSize` impl for the RSA-2048 values.
 ///
 /// Returns the pair as this crate's key types: `(n, e)` and the CRT quintuple, with `dP = e^-1 mod
 /// (p - 1)`, `dQ = e^-1 mod (q - 1)` (which equal `d mod (p - 1)` and `d mod (q - 1)` for the
@@ -516,7 +516,7 @@ pub fn keygen_from_rng<K, const HALF: usize, const HALF2: usize, const HALF21: u
     rng: &mut dyn RNG,
     rounds: NonZeroUsize,
     required_strength: SecurityStrength,
-) -> Result<(RsaPublicKey<K>, RsaPrivateKey<K>), SignatureError>
+) -> Result<(RsaPublicComponents<K>, RsaPrivateComponents<K>), SignatureError>
 where
     K: RsaSigningSize + RsaSize<HalfLimbs = [u64; HALF], Limbs = [u64; HALF2]>,
 {
@@ -589,8 +589,8 @@ where
             zeroize_in_place(&mut p_minus_2);
         }
 
-        let sk = RsaPrivateKey::<K>::from_crt_components(&p, &q, &d_p, &d_q, &q_inv)?;
-        let pk = RsaPublicKey::<K>::new(sk.n(), PUBLIC_EXPONENT)?;
+        let sk = RsaPrivateComponents::<K>::from_crt_components(&p, &q, &d_p, &d_q, &q_inv)?;
+        let pk = RsaPublicComponents::<K>::new(sk.n(), PUBLIC_EXPONENT)?;
         return Ok((pk, sk));
     }
 }

@@ -10,12 +10,17 @@
 
 use crate::codec::{be_bytes_from_limbs, limbs_from_be_bytes};
 use crate::keygen::keygen_from_rng;
-use crate::keys::{RsaPrivateKey, RsaPublicKey, modulus_strength};
+use crate::keys::{
+    RsaPrivateComponents, RsaPrivateKey, RsaPublicComponents, RsaPublicKey, modulus_strength,
+};
 use crate::rsa_core;
+use crate::rsassa_pkcs1_v1_5::RSASSA_PKCS1_v1_5;
+use crate::rsassa_pss::RSASSA_PSS;
+use crate::rsassa_pss_shake::RSASSA_PSS_SHAKE;
 use crate::rsasve::{RsaKEMPrivateKey, RsaKEMPublicKey};
 use bouncycastle_core::errors::{KEMError, SignatureError};
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::traits::RNG;
+use bouncycastle_core::traits::{AlgorithmOID, HashAlgParams, HashOneShot, RNG, XOF};
 use bouncycastle_ec::montgomery;
 use bouncycastle_ec::nat;
 use bouncycastle_utils::secret::{NoPadding, ZeroizablePrimitive};
@@ -96,7 +101,7 @@ pub trait RsaSigningSize: RsaSize {
     /// if no prime was found within the candidate budget.
     fn keygen(
         rng: &mut dyn RNG,
-    ) -> Result<(RsaPublicKey<Self>, RsaPrivateKey<Self>), SignatureError>;
+    ) -> Result<(RsaPublicComponents<Self>, RsaPrivateComponents<Self>), SignatureError>;
 
     // The private key's arithmetic: only a signing size has a private key, so only a signing
     // size routes it.
@@ -110,36 +115,82 @@ pub trait RsaSigningSize: RsaSize {
     fn half_is_less(x: &Self::HalfLimbs, y: &Self::HalfLimbs) -> bool;
     /// `m^d mod n` by the CRT (RSASP1 / RSADP's exponentiation), `m < n`, constant time in the
     /// key.
-    fn crt_exp(sk: &RsaPrivateKey<Self>, m: &Self::Limbs) -> Self::Limbs;
+    fn crt_exp(sk: &RsaPrivateComponents<Self>, m: &Self::Limbs) -> Self::Limbs;
 }
 
-/// Implemented on a signing size marker: the signature key pair, so a caller starts from the
-/// size (`RSA2048::generate_signature_key_pair(&mut rng)`). The RNG is an argument, not a
-/// default. The KEM pair is [`KemKeyPair`], a different type, as the crate's `# Key separation`
-/// asks.
-pub trait SignatureKeyPair {
-    /// The size's public key.
-    type PublicKey;
-    /// The size's private key.
-    type PrivateKey;
-
-    /// FIPS 186-5 Appendix A.1.3 key pair generation from `rng`.
+/// Implemented on a signing size marker: a signature key pair for one scheme and hash, so a
+/// caller starts from the size and spells the algorithm,
+/// `RSA2048::generate_pss_signature_key_pair::<SHA256>(&mut rng)`, and the pair is a key for
+/// that algorithm and no other (SP 800-57 Part 1 Rev. 5's one scheme per key pair). The hash
+/// is spelled, never defaulted, as on the ECDSA markers: the customary pairing is a convention
+/// that moves. All three run [`RsaSigningSize::keygen`], FIPS 186-5 Appendix A.1.3; the RNG is
+/// an argument, not a default. The KEM pair is [`KemKeyPair`], a different type, as the crate's
+/// `# Key separation` asks.
+pub trait SignatureKeyPair: RsaSigningSize {
+    /// A key pair for RSASSA-PKCS1-v1_5 with `H`.
     ///
     /// # Errors
     /// As [`RsaSigningSize::keygen`].
-    fn generate_signature_key_pair(
+    #[allow(clippy::type_complexity)]
+    fn generate_pkcs1_v1_5_signature_key_pair<H: HashOneShot + HashAlgParams + AlgorithmOID>(
         rng: &mut dyn RNG,
-    ) -> Result<(Self::PublicKey, Self::PrivateKey), SignatureError>;
+    ) -> Result<
+        (RsaPublicKey<RSASSA_PKCS1_v1_5<Self, H>>, RsaPrivateKey<RSASSA_PKCS1_v1_5<Self, H>>),
+        SignatureError,
+    >;
+
+    /// A key pair for RSASSA-PSS with `H` (and MGF1 over it).
+    ///
+    /// # Errors
+    /// As [`RsaSigningSize::keygen`].
+    #[allow(clippy::type_complexity)]
+    fn generate_pss_signature_key_pair<H: HashOneShot + HashAlgParams>(
+        rng: &mut dyn RNG,
+    ) -> Result<
+        (RsaPublicKey<RSASSA_PSS<Self, H>>, RsaPrivateKey<RSASSA_PSS<Self, H>>),
+        SignatureError,
+    >;
+
+    /// A key pair for RSASSA-PSS with the XOF `X` as hash and mask (RFC 8702).
+    ///
+    /// # Errors
+    /// As [`RsaSigningSize::keygen`].
+    #[allow(clippy::type_complexity)]
+    fn generate_pss_shake_signature_key_pair<X: XOF + HashOneShot + HashAlgParams>(
+        rng: &mut dyn RNG,
+    ) -> Result<
+        (RsaPublicKey<RSASSA_PSS_SHAKE<Self, X>>, RsaPrivateKey<RSASSA_PSS_SHAKE<Self, X>>),
+        SignatureError,
+    >;
 }
 
 impl<K: RsaSigningSize> SignatureKeyPair for K {
-    type PublicKey = RsaPublicKey<K>;
-    type PrivateKey = RsaPrivateKey<K>;
-
-    fn generate_signature_key_pair(
+    fn generate_pkcs1_v1_5_signature_key_pair<H: HashOneShot + HashAlgParams + AlgorithmOID>(
         rng: &mut dyn RNG,
-    ) -> Result<(RsaPublicKey<K>, RsaPrivateKey<K>), SignatureError> {
-        K::keygen(rng)
+    ) -> Result<
+        (RsaPublicKey<RSASSA_PKCS1_v1_5<K, H>>, RsaPrivateKey<RSASSA_PKCS1_v1_5<K, H>>),
+        SignatureError,
+    > {
+        let (pk, sk) = K::keygen(rng)?;
+        Ok((RsaPublicKey::from_components(pk), RsaPrivateKey::from_components(sk)))
+    }
+
+    fn generate_pss_signature_key_pair<H: HashOneShot + HashAlgParams>(
+        rng: &mut dyn RNG,
+    ) -> Result<(RsaPublicKey<RSASSA_PSS<K, H>>, RsaPrivateKey<RSASSA_PSS<K, H>>), SignatureError>
+    {
+        let (pk, sk) = K::keygen(rng)?;
+        Ok((RsaPublicKey::from_components(pk), RsaPrivateKey::from_components(sk)))
+    }
+
+    fn generate_pss_shake_signature_key_pair<X: XOF + HashOneShot + HashAlgParams>(
+        rng: &mut dyn RNG,
+    ) -> Result<
+        (RsaPublicKey<RSASSA_PSS_SHAKE<K, X>>, RsaPrivateKey<RSASSA_PSS_SHAKE<K, X>>),
+        SignatureError,
+    > {
+        let (pk, sk) = K::keygen(rng)?;
+        Ok((RsaPublicKey::from_components(pk), RsaPrivateKey::from_components(sk)))
     }
 }
 
@@ -330,7 +381,7 @@ impl RsaSigningSize for RSA2048 {
 
     fn keygen(
         rng: &mut dyn RNG,
-    ) -> Result<(RsaPublicKey<Self>, RsaPrivateKey<Self>), SignatureError> {
+    ) -> Result<(RsaPublicComponents<Self>, RsaPrivateComponents<Self>), SignatureError> {
         keygen_from_rng::<Self, 16, 32, 33>(rng, Self::MR_ROUNDS, Self::STRENGTH)
     }
 
@@ -350,7 +401,7 @@ impl RsaSigningSize for RSA2048 {
         nat::sub(x, y).1 == 1
     }
 
-    fn crt_exp(sk: &RsaPrivateKey<Self>, m: &Self::Limbs) -> Self::Limbs {
+    fn crt_exp(sk: &RsaPrivateComponents<Self>, m: &Self::Limbs) -> Self::Limbs {
         rsa_core::crt_exp::<32, 64, 65, 16, 32, 33>(
             sk.p(),
             sk.q(),
@@ -408,7 +459,7 @@ impl RsaSigningSize for RSA3072 {
 
     fn keygen(
         rng: &mut dyn RNG,
-    ) -> Result<(RsaPublicKey<Self>, RsaPrivateKey<Self>), SignatureError> {
+    ) -> Result<(RsaPublicComponents<Self>, RsaPrivateComponents<Self>), SignatureError> {
         keygen_from_rng::<Self, 24, 48, 49>(rng, Self::MR_ROUNDS, Self::STRENGTH)
     }
 
@@ -428,7 +479,7 @@ impl RsaSigningSize for RSA3072 {
         nat::sub(x, y).1 == 1
     }
 
-    fn crt_exp(sk: &RsaPrivateKey<Self>, m: &Self::Limbs) -> Self::Limbs {
+    fn crt_exp(sk: &RsaPrivateComponents<Self>, m: &Self::Limbs) -> Self::Limbs {
         rsa_core::crt_exp::<48, 96, 97, 24, 48, 49>(
             sk.p(),
             sk.q(),
@@ -486,7 +537,7 @@ impl RsaSigningSize for RSA4096 {
 
     fn keygen(
         rng: &mut dyn RNG,
-    ) -> Result<(RsaPublicKey<Self>, RsaPrivateKey<Self>), SignatureError> {
+    ) -> Result<(RsaPublicComponents<Self>, RsaPrivateComponents<Self>), SignatureError> {
         keygen_from_rng::<Self, 32, 64, 65>(rng, Self::MR_ROUNDS, Self::STRENGTH)
     }
 
@@ -506,7 +557,7 @@ impl RsaSigningSize for RSA4096 {
         nat::sub(x, y).1 == 1
     }
 
-    fn crt_exp(sk: &RsaPrivateKey<Self>, m: &Self::Limbs) -> Self::Limbs {
+    fn crt_exp(sk: &RsaPrivateComponents<Self>, m: &Self::Limbs) -> Self::Limbs {
         rsa_core::crt_exp::<64, 128, 129, 32, 64, 65>(
             sk.p(),
             sk.q(),
@@ -564,7 +615,7 @@ impl RsaSigningSize for RSA8192 {
 
     fn keygen(
         rng: &mut dyn RNG,
-    ) -> Result<(RsaPublicKey<Self>, RsaPrivateKey<Self>), SignatureError> {
+    ) -> Result<(RsaPublicComponents<Self>, RsaPrivateComponents<Self>), SignatureError> {
         keygen_from_rng::<Self, 64, 128, 129>(rng, Self::MR_ROUNDS, Self::STRENGTH)
     }
 
@@ -584,7 +635,7 @@ impl RsaSigningSize for RSA8192 {
         nat::sub(x, y).1 == 1
     }
 
-    fn crt_exp(sk: &RsaPrivateKey<Self>, m: &Self::Limbs) -> Self::Limbs {
+    fn crt_exp(sk: &RsaPrivateComponents<Self>, m: &Self::Limbs) -> Self::Limbs {
         rsa_core::crt_exp::<128, 256, 257, 64, 128, 129>(
             sk.p(),
             sk.q(),

@@ -2,14 +2,11 @@
 //! the public key and the PKCS#1 v1.5 verifiers (this size is verification only; see the crate's `# Scope`).
 //! Every (scheme, hash) pairing is an algorithm marker the key role traits are implemented over.
 
-use crate::keys::RsaPublicKey;
 use crate::rsassa_pkcs1_v1_5::RSASSA_PKCS1_v1_5;
 pub use crate::size::RSA1536;
 use crate::size::RsaSize;
 use bouncycastle_sha2::{SHA256, SHA384, SHA512};
 
-/// An RSA-1536 public key.
-pub type RSA1536PublicKey = RsaPublicKey<RSA1536>;
 /// Encoded length of an RSA-1536 public key: `n || e`.
 pub const PK_LEN: usize = RSA1536::PK_LEN;
 /// Length of an RSA-1536 signature: the modulus's.

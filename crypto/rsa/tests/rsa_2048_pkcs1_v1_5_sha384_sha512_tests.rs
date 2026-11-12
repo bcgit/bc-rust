@@ -17,10 +17,11 @@ use bouncycastle_core::errors::SignatureError;
 use bouncycastle_core::signature_key::{DeterministicSigningKey, VerifyingKey};
 use bouncycastle_core_test_framework::signature::TestFrameworkSignature;
 use bouncycastle_hex::decode as hex_decode;
-use bouncycastle_rsa::rsa_2048::{
-    RSA2048PrivateKey, RSA2048PublicKey, RSASSA_PKCS1_v1_5_SHA384, RSASSA_PKCS1_v1_5_SHA512,
-    SIG_LEN,
+use bouncycastle_rsa::RSA2048;
+use bouncycastle_rsa::keys::{
+    RsaPrivateComponents, RsaPrivateKey, RsaPublicComponents, RsaPublicKey,
 };
+use bouncycastle_rsa::rsa_2048::{RSASSA_PKCS1_v1_5_SHA384, RSASSA_PKCS1_v1_5_SHA512, SIG_LEN};
 use serde_json::Value;
 use std::fs;
 use std::path::Path;
@@ -59,7 +60,7 @@ fn limbs_from_hex<const L: usize>(hex: &str) -> [u64; L] {
 /// The same genuine RSA-2048 keypair `rsa_2048_pkcs1_v1_5_tests.rs` recovers (from
 /// `rsa_pkcs1_2048_sig_gen_test.json`'s SHA-256 group) -- reused here as a plain, valid RSA-2048
 /// key, not because it has anything to do with SHA-256 specifically.
-fn genuine_key() -> RSA2048PrivateKey {
+fn genuine_key() -> RsaPrivateComponents<RSA2048> {
     let p: [u64; 16] = [
         0x0ea36cfb3a5b18f1, 0x48a6e65332119129, 0x110ad9e7b48a1c93, 0x569156b90113e2e9,
         0xe79813a575cfad9c, 0x69d659d143ec6f17, 0xe81e6bab5ddaa783, 0xbff1c5b80a69f788,
@@ -90,43 +91,37 @@ fn genuine_key() -> RSA2048PrivateKey {
         0xe923e1097c0c562f, 0xc968b48a91c38b5b, 0x933e85179c0320b0, 0x7993d0445f758d51,
         0x9bfc042ee0924b1b, 0x41f956d90fa8a793, 0xee7a87b6483a66ee, 0x2640fbfbcfefb163,
     ];
-    RSA2048PrivateKey::from_crt_components(&p, &q, &d_p, &d_q, &q_inv)
+    RsaPrivateComponents::<RSA2048>::from_crt_components(&p, &q, &d_p, &d_q, &q_inv)
         .expect("recovered CRT components must be accepted")
 }
 
 #[test]
 fn pkcs1_v1_5_sha384_round_trips() {
     let sk = genuine_key();
-    let pk = RSA2048PublicKey::new(sk.n(), 0x10001).unwrap();
-    let sig = DeterministicSigningKey::<RSASSA_PKCS1_v1_5_SHA384, 256>::sign_deterministic(
-        &sk, b"hello", None,
-    )
-    .expect("signing must succeed");
-    VerifyingKey::<RSASSA_PKCS1_v1_5_SHA384, 256>::verify(&pk, b"hello", None, &sig)
-        .expect("must verify");
-    assert!(
-        VerifyingKey::<RSASSA_PKCS1_v1_5_SHA384, 256>::verify(&pk, b"goodbye", None, &sig).is_err()
-    );
+    let pk = RsaPublicComponents::<RSA2048>::new(sk.n(), 0x10001).unwrap();
+    let sig = sk
+        .key::<RSASSA_PKCS1_v1_5_SHA384>()
+        .sign_deterministic(b"hello", None)
+        .expect("signing must succeed");
+    pk.key::<RSASSA_PKCS1_v1_5_SHA384>().verify(b"hello", None, &sig).expect("must verify");
+    assert!(pk.key::<RSASSA_PKCS1_v1_5_SHA384>().verify(b"goodbye", None, &sig).is_err());
 }
 
 #[test]
 fn pkcs1_v1_5_sha512_round_trips() {
     let sk = genuine_key();
-    let pk = RSA2048PublicKey::new(sk.n(), 0x10001).unwrap();
-    let sig = DeterministicSigningKey::<RSASSA_PKCS1_v1_5_SHA512, 256>::sign_deterministic(
-        &sk, b"hello", None,
-    )
-    .expect("signing must succeed");
-    VerifyingKey::<RSASSA_PKCS1_v1_5_SHA512, 256>::verify(&pk, b"hello", None, &sig)
-        .expect("must verify");
-    assert!(
-        VerifyingKey::<RSASSA_PKCS1_v1_5_SHA512, 256>::verify(&pk, b"goodbye", None, &sig).is_err()
-    );
+    let pk = RsaPublicComponents::<RSA2048>::new(sk.n(), 0x10001).unwrap();
+    let sig = sk
+        .key::<RSASSA_PKCS1_v1_5_SHA512>()
+        .sign_deterministic(b"hello", None)
+        .expect("signing must succeed");
+    pk.key::<RSASSA_PKCS1_v1_5_SHA512>().verify(b"hello", None, &sig).expect("must verify");
+    assert!(pk.key::<RSASSA_PKCS1_v1_5_SHA512>().verify(b"goodbye", None, &sig).is_err());
 }
 
 fn run_verify_vectors(
     filename: &str,
-    verify: impl Fn(&RSA2048PublicKey, &[u8], &[u8; 256]) -> bool,
+    verify: impl Fn(&RsaPublicComponents<RSA2048>, &[u8], &[u8; 256]) -> bool,
     expected_sha: &str,
     expected_num_tests: usize,
     expected_num_valid: usize,
@@ -144,7 +139,8 @@ fn run_verify_vectors(
         let n: [u64; 32] = limbs_from_hex(group["publicKey"]["modulus"].as_str().unwrap());
         let e = u32::from_str_radix(group["publicKey"]["publicExponent"].as_str().unwrap(), 16)
             .expect("publicExponent fits in u32 for every group here");
-        let pk = RSA2048PublicKey::new(&n, e).expect("group public key must be valid");
+        let pk =
+            RsaPublicComponents::<RSA2048>::new(&n, e).expect("group public key must be valid");
 
         for test in group["tests"].as_array().unwrap() {
             num_tests += 1;
@@ -194,9 +190,7 @@ fn run_verify_vectors(
 fn rsa_signature_sha384_wycheproof_vectors() {
     run_verify_vectors(
         "rsa_signature_2048_sha384_test.json",
-        |pk, msg, sig| {
-            VerifyingKey::<RSASSA_PKCS1_v1_5_SHA384, 256>::verify(pk, msg, None, sig).is_ok()
-        },
+        |pk, msg, sig| pk.key::<RSASSA_PKCS1_v1_5_SHA384>().verify(msg, None, sig).is_ok(),
         "SHA-384",
         258,
         7,
@@ -208,9 +202,7 @@ fn rsa_signature_sha384_wycheproof_vectors() {
 fn rsa_signature_sha512_wycheproof_vectors() {
     run_verify_vectors(
         "rsa_signature_2048_sha512_test.json",
-        |pk, msg, sig| {
-            VerifyingKey::<RSASSA_PKCS1_v1_5_SHA512, 256>::verify(pk, msg, None, sig).is_ok()
-        },
+        |pk, msg, sig| pk.key::<RSASSA_PKCS1_v1_5_SHA512>().verify(msg, None, sig).is_ok(),
         "SHA-512",
         259,
         8,
@@ -220,9 +212,10 @@ fn rsa_signature_sha512_wycheproof_vectors() {
 
 // ---- bouncycastle_core trait conformance ------------------------------------------------------
 
-fn fixed_keypair() -> Result<(RSA2048PublicKey, RSA2048PrivateKey), SignatureError> {
+fn fixed_keypair()
+-> Result<(RsaPublicComponents<RSA2048>, RsaPrivateComponents<RSA2048>), SignatureError> {
     let sk = genuine_key();
-    let pk = RSA2048PublicKey::new(sk.n(), 0x10001)?;
+    let pk = RsaPublicComponents::<RSA2048>::new(sk.n(), 0x10001)?;
     Ok((pk, sk))
 }
 
@@ -232,6 +225,8 @@ fn fixed_keypair() -> Result<(RSA2048PublicKey, RSA2048PrivateKey), SignatureErr
 #[test]
 fn pkcs1_v1_5_sha384_sha512_trait_conformance_suite() {
     let framework = TestFrameworkSignature::new(false);
-    framework.test_deterministic_signature::<RSASSA_PKCS1_v1_5_SHA384, RSA2048PublicKey, RSA2048PrivateKey, SIG_LEN>(fixed_keypair, false);
-    framework.test_deterministic_signature::<RSASSA_PKCS1_v1_5_SHA512, RSA2048PublicKey, RSA2048PrivateKey, SIG_LEN>(fixed_keypair, false);
+    framework.test_deterministic_signature::<RSASSA_PKCS1_v1_5_SHA384, RsaPublicKey<RSASSA_PKCS1_v1_5_SHA384>, RsaPrivateKey<RSASSA_PKCS1_v1_5_SHA384>, SIG_LEN>(
+            || fixed_keypair().map(|(pk, sk)| (pk.into_key::<RSASSA_PKCS1_v1_5_SHA384>(), sk.into_key::<RSASSA_PKCS1_v1_5_SHA384>())), false);
+    framework.test_deterministic_signature::<RSASSA_PKCS1_v1_5_SHA512, RsaPublicKey<RSASSA_PKCS1_v1_5_SHA512>, RsaPrivateKey<RSASSA_PKCS1_v1_5_SHA512>, SIG_LEN>(
+            || fixed_keypair().map(|(pk, sk)| (pk.into_key::<RSASSA_PKCS1_v1_5_SHA512>(), sk.into_key::<RSASSA_PKCS1_v1_5_SHA512>())), false);
 }

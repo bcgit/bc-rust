@@ -7,10 +7,10 @@
 //! going through a scheme that fixes that.
 //!
 //! Both primitives operate on the two-prime case only (RFC 8017's `u = 2`, no additional
-//! `(r_i, d_i, t_i)` triplets): [`crate::keys::RsaPrivateKey`] has no representation for
+//! `(r_i, d_i, t_i)` triplets): [`crate::keys::RsaPrivateComponents`] has no representation for
 //! multi-prime RSA, so there is nothing here to extend to `u > 2`.
 
-use crate::keys::{RsaPrivateKey, RsaPublicKey};
+use crate::keys::{RsaPrivateComponents, RsaPublicComponents};
 use crate::modexp::{MontgomeryContext, mod_pow, mul_mod, reduce_wide, sub_mod};
 use crate::size::{RsaSigningSize, RsaSize};
 use bouncycastle_core::errors::SignatureError;
@@ -24,7 +24,7 @@ use bouncycastle_utils::secret::{Secret, zeroize_in_place};
 /// Step 1's range check ("If the signature representative s is not between 0 and n - 1, output
 /// 'signature representative out of range'") is `Err(`[`SignatureError::DecodingError`]`)` here.
 pub(crate) fn rsavp1<K: RsaSize>(
-    pk: &RsaPublicKey<K>,
+    pk: &RsaPublicComponents<K>,
     s: &K::Limbs,
 ) -> Result<K::Limbs, SignatureError> {
     // RFC 8017 §5.2.2 step 1: the representative must be in [0, n - 1].
@@ -42,14 +42,14 @@ pub(crate) fn public_exp<const L: usize, const L2: usize, const L21: usize>(
     x: &[u64; L],
 ) -> [u64; L] {
     let ctx = MontgomeryContext::<L>::new(n)
-        .expect("RsaPublicKey::new already validated n is odd and nonzero");
+        .expect("RsaPublicComponents::new already validated n is odd and nonzero");
     let mut e_limbs = [0u64; L];
     e_limbs[0] = e as u64;
     mod_pow::<L, L2, L21>(x, &e_limbs, &ctx)
 }
 
 pub(crate) fn rsasp1<K: RsaSigningSize>(
-    sk: &RsaPrivateKey<K>,
+    sk: &RsaPrivateComponents<K>,
     m: &K::Limbs,
 ) -> Result<K::Limbs, SignatureError> {
     // RFC 8017 §5.2.1 step 1: the representative must be in [0, n - 1].
@@ -79,17 +79,17 @@ pub(crate) fn crt_exp<
 ) -> [u64; L] {
     let mut ctx_p = Secret::<MontgomeryContext<HALF>>::new();
     *ctx_p = MontgomeryContext::<HALF>::new(p)
-        .expect("RsaPrivateKey::from_crt_components already validated p is odd and nonzero");
+        .expect("RsaPrivateComponents::from_crt_components already validated p is odd and nonzero");
     let mut ctx_q = Secret::<MontgomeryContext<HALF>>::new();
     *ctx_q = MontgomeryContext::<HALF>::new(q)
-        .expect("RsaPrivateKey::from_crt_components already validated q is odd and nonzero");
+        .expect("RsaPrivateComponents::from_crt_components already validated q is odd and nonzero");
     // Step 2.b.i: s_1 = m^dP mod p, s_2 = m^dQ mod q, each on m reduced to the prime's width.
     let mut m_mod_p = reduce_wide::<L, HALF>(m, p);
     let mut m_mod_q = reduce_wide::<L, HALF>(m, q);
     let mut s1 = mod_pow::<HALF, HALF2, HALF21>(&m_mod_p, d_p, &ctx_p);
     let mut s2 = mod_pow::<HALF, HALF2, HALF21>(&m_mod_q, d_q, &ctx_q);
     // Step 2.b.iii: h = (s_1 - s_2) * qInv mod p, with s_2 reduced mod p first (the primes need
-    // not be the same length; see RsaPrivateKey's docs).
+    // not be the same length; see RsaPrivateComponents' docs).
     let mut s2_mod_p = reduce_wide::<HALF, HALF>(&s2, p);
     let mut diff = sub_mod::<HALF>(&s1, &s2_mod_p, p);
     let mut h = mul_mod::<HALF, HALF2, HALF21>(&diff, q_inv, &ctx_p);
@@ -125,7 +125,7 @@ mod tests {
 
     use crate::size::RSA2048;
 
-    fn keypair() -> RsaPrivateKey<RSA2048> {
+    fn keypair() -> RsaPrivateComponents<RSA2048> {
         let p: [u64; 16] = [
             0xfec673c1b07d4997, 0x98c9e3737faecc8b, 0x01369d6bebcfd19b, 0x8aadc1799d493a6e,
             0x958ca74fe2a455a1, 0x686e62c9e375661d, 0xbf73814b7bf6fe14, 0x791ffe2d364719e4,
@@ -156,12 +156,12 @@ mod tests {
             0x6ea50741414ce321, 0x7df35889e34d4f38, 0x859106459f51850b, 0xd59e422a92f4a7a2,
             0x0c1e16e70fcbe362, 0xcf95cadb6a1f450d, 0x106a4e948e405012, 0x95a3415bfb9b5ff6,
         ];
-        RsaPrivateKey::from_crt_components(&p, &q, &d_p, &d_q, &q_inv)
+        RsaPrivateComponents::from_crt_components(&p, &q, &d_p, &d_q, &q_inv)
             .expect("genuine CRT components must be accepted")
     }
 
-    fn public_key(sk: &RsaPrivateKey<RSA2048>) -> RsaPublicKey<RSA2048> {
-        RsaPublicKey::new(sk.n(), 0x00010001).expect("e = 65537 is valid")
+    fn public_key(sk: &RsaPrivateComponents<RSA2048>) -> RsaPublicComponents<RSA2048> {
+        RsaPublicComponents::new(sk.n(), 0x00010001).expect("e = 65537 is valid")
     }
 
     #[test]

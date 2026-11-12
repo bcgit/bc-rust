@@ -9,21 +9,22 @@ use bouncycastle_core::signature_key::{DeterministicSigningKey, SigningKey, Veri
 use bouncycastle_core::traits::{
     KEMPrivateKey, KEMPublicKey, SignaturePrivateKey, SignaturePublicKey,
 };
+use bouncycastle_rsa::RSA2048;
 use bouncycastle_rsa::rsa_2048::{RSA2048KEMPrivateKey, RSA2048KEMPublicKey};
+use bouncycastle_rsa::size::RsaSigningSize;
 use criterion::{Criterion, criterion_group, criterion_main};
 use std::hint::black_box;
 
 use bouncycastle_rng::DefaultRNG;
-use bouncycastle_rsa::rsa_2048::keygen;
+use bouncycastle_rsa::keys::{RsaPrivateComponents, RsaPublicComponents};
 use bouncycastle_rsa::rsa_2048::{
-    RSA2048PrivateKey, RSA2048PublicKey, RSASSA_PKCS1_v1_5_SHA256, RSASSA_PKCS1_v1_5_SHA384,
-    RSASSA_PKCS1_v1_5_SHA512, RSASSA_PSS_SHA256, RSASSA_PSS_SHA384, RSASSA_PSS_SHA512,
-    RSASSA_PSS_SHAKE128,
+    RSASSA_PKCS1_v1_5_SHA256, RSASSA_PKCS1_v1_5_SHA384, RSASSA_PKCS1_v1_5_SHA512,
+    RSASSA_PSS_SHA256, RSASSA_PSS_SHA384, RSASSA_PSS_SHA512, RSASSA_PSS_SHAKE128,
 };
 
 const MSG: &[u8] = b"a representative message for benchmarking RSA-2048";
 
-fn genuine_key() -> RSA2048PrivateKey {
+fn genuine_key() -> RsaPrivateComponents<RSA2048> {
     let p: [u64; 16] = [
         0x0ea36cfb3a5b18f1, 0x48a6e65332119129, 0x110ad9e7b48a1c93, 0x569156b90113e2e9,
         0xe79813a575cfad9c, 0x69d659d143ec6f17, 0xe81e6bab5ddaa783, 0xbff1c5b80a69f788,
@@ -54,209 +55,143 @@ fn genuine_key() -> RSA2048PrivateKey {
         0xe923e1097c0c562f, 0xc968b48a91c38b5b, 0x933e85179c0320b0, 0x7993d0445f758d51,
         0x9bfc042ee0924b1b, 0x41f956d90fa8a793, 0xee7a87b6483a66ee, 0x2640fbfbcfefb163,
     ];
-    RSA2048PrivateKey::from_crt_components(&p, &q, &d_p, &d_q, &q_inv)
+    RsaPrivateComponents::<RSA2048>::from_crt_components(&p, &q, &d_p, &d_q, &q_inv)
         .expect("genuine RSA-2048 CRT components must be accepted")
 }
 
 fn bench_rsa_2048(c: &mut Criterion) {
     let sk = genuine_key();
-    let pk = RSA2048PublicKey::new(sk.n(), 0x10001).unwrap();
+    let pk = RsaPublicComponents::<RSA2048>::new(sk.n(), 0x10001).unwrap();
     let mut rng = DefaultRNG::default();
 
-    let sig_pkcs1_256 =
-        DeterministicSigningKey::<RSASSA_PKCS1_v1_5_SHA256, 256>::sign_deterministic(
-            &sk, MSG, None,
-        )
-        .unwrap();
-    let sig_pkcs1_384 =
-        DeterministicSigningKey::<RSASSA_PKCS1_v1_5_SHA384, 256>::sign_deterministic(
-            &sk, MSG, None,
-        )
-        .unwrap();
-    let sig_pkcs1_512 =
-        DeterministicSigningKey::<RSASSA_PKCS1_v1_5_SHA512, 256>::sign_deterministic(
-            &sk, MSG, None,
-        )
-        .unwrap();
-    let sig_pss_256 = SigningKey::<RSASSA_PSS_SHA256, 256>::sign(&sk, &mut rng, MSG, None).unwrap();
-    let sig_pss_384 = SigningKey::<RSASSA_PSS_SHA384, 256>::sign(&sk, &mut rng, MSG, None).unwrap();
-    let sig_pss_512 = SigningKey::<RSASSA_PSS_SHA512, 256>::sign(&sk, &mut rng, MSG, None).unwrap();
-    let sig_pss_shake128 =
-        SigningKey::<RSASSA_PSS_SHAKE128, 256>::sign(&sk, &mut rng, MSG, None).unwrap();
+    let sig_pkcs1_256 = sk.key::<RSASSA_PKCS1_v1_5_SHA256>().sign_deterministic(MSG, None).unwrap();
+    let sig_pkcs1_384 = sk.key::<RSASSA_PKCS1_v1_5_SHA384>().sign_deterministic(MSG, None).unwrap();
+    let sig_pkcs1_512 = sk.key::<RSASSA_PKCS1_v1_5_SHA512>().sign_deterministic(MSG, None).unwrap();
+    let sig_pss_256 = sk.key::<RSASSA_PSS_SHA256>().sign(&mut rng, MSG, None).unwrap();
+    let sig_pss_384 = sk.key::<RSASSA_PSS_SHA384>().sign(&mut rng, MSG, None).unwrap();
+    let sig_pss_512 = sk.key::<RSASSA_PSS_SHA512>().sign(&mut rng, MSG, None).unwrap();
+    let sig_pss_shake128 = sk.key::<RSASSA_PSS_SHAKE128>().sign(&mut rng, MSG, None).unwrap();
 
     let mut group = c.benchmark_group("rsa_2048");
 
     group.bench_function("pkcs1v15_sign_sha256", |b| {
         b.iter(|| {
             black_box(
-                DeterministicSigningKey::<RSASSA_PKCS1_v1_5_SHA256, 256>::sign_deterministic(
-                    black_box(&sk),
-                    black_box(MSG),
-                    None,
-                )
-                .unwrap(),
+                sk.key::<RSASSA_PKCS1_v1_5_SHA256>()
+                    .sign_deterministic(black_box(MSG), None)
+                    .unwrap(),
             )
         })
     });
     group.bench_function("pkcs1v15_verify_sha256", |b| {
         b.iter(|| {
-            VerifyingKey::<RSASSA_PKCS1_v1_5_SHA256, 256>::verify(
-                black_box(&pk),
-                black_box(MSG),
-                None,
-                black_box(&sig_pkcs1_256),
-            )
-            .unwrap()
+            pk.key::<RSASSA_PKCS1_v1_5_SHA256>()
+                .verify(black_box(MSG), None, black_box(&sig_pkcs1_256))
+                .unwrap()
         })
     });
     group.bench_function("pkcs1v15_sign_sha384", |b| {
         b.iter(|| {
             black_box(
-                DeterministicSigningKey::<RSASSA_PKCS1_v1_5_SHA384, 256>::sign_deterministic(
-                    black_box(&sk),
-                    black_box(MSG),
-                    None,
-                )
-                .unwrap(),
+                sk.key::<RSASSA_PKCS1_v1_5_SHA384>()
+                    .sign_deterministic(black_box(MSG), None)
+                    .unwrap(),
             )
         })
     });
     group.bench_function("pkcs1v15_verify_sha384", |b| {
         b.iter(|| {
-            VerifyingKey::<RSASSA_PKCS1_v1_5_SHA384, 256>::verify(
-                black_box(&pk),
-                black_box(MSG),
-                None,
-                black_box(&sig_pkcs1_384),
-            )
-            .unwrap()
+            pk.key::<RSASSA_PKCS1_v1_5_SHA384>()
+                .verify(black_box(MSG), None, black_box(&sig_pkcs1_384))
+                .unwrap()
         })
     });
     group.bench_function("pkcs1v15_sign_sha512", |b| {
         b.iter(|| {
             black_box(
-                DeterministicSigningKey::<RSASSA_PKCS1_v1_5_SHA512, 256>::sign_deterministic(
-                    black_box(&sk),
-                    black_box(MSG),
-                    None,
-                )
-                .unwrap(),
+                sk.key::<RSASSA_PKCS1_v1_5_SHA512>()
+                    .sign_deterministic(black_box(MSG), None)
+                    .unwrap(),
             )
         })
     });
     group.bench_function("pkcs1v15_verify_sha512", |b| {
         b.iter(|| {
-            VerifyingKey::<RSASSA_PKCS1_v1_5_SHA512, 256>::verify(
-                black_box(&pk),
-                black_box(MSG),
-                None,
-                black_box(&sig_pkcs1_512),
-            )
-            .unwrap()
+            pk.key::<RSASSA_PKCS1_v1_5_SHA512>()
+                .verify(black_box(MSG), None, black_box(&sig_pkcs1_512))
+                .unwrap()
         })
     });
     group.bench_function("pss_sign_sha256", |b| {
         b.iter(|| {
             black_box(
-                SigningKey::<RSASSA_PSS_SHA256, 256>::sign(
-                    black_box(&sk),
-                    &mut DefaultRNG::default(),
-                    black_box(MSG),
-                    None,
-                )
-                .unwrap(),
+                sk.key::<RSASSA_PSS_SHA256>()
+                    .sign(&mut DefaultRNG::default(), black_box(MSG), None)
+                    .unwrap(),
             )
         })
     });
     group.bench_function("pss_verify_sha256", |b| {
         b.iter(|| {
-            VerifyingKey::<RSASSA_PSS_SHA256, 256>::verify(
-                black_box(&pk),
-                black_box(MSG),
-                None,
-                black_box(&sig_pss_256),
-            )
-            .unwrap()
+            pk.key::<RSASSA_PSS_SHA256>()
+                .verify(black_box(MSG), None, black_box(&sig_pss_256))
+                .unwrap()
         })
     });
     group.bench_function("pss_sign_sha384", |b| {
         b.iter(|| {
             black_box(
-                SigningKey::<RSASSA_PSS_SHA384, 256>::sign(
-                    black_box(&sk),
-                    &mut DefaultRNG::default(),
-                    black_box(MSG),
-                    None,
-                )
-                .unwrap(),
+                sk.key::<RSASSA_PSS_SHA384>()
+                    .sign(&mut DefaultRNG::default(), black_box(MSG), None)
+                    .unwrap(),
             )
         })
     });
     group.bench_function("pss_verify_sha384", |b| {
         b.iter(|| {
-            VerifyingKey::<RSASSA_PSS_SHA384, 256>::verify(
-                black_box(&pk),
-                black_box(MSG),
-                None,
-                black_box(&sig_pss_384),
-            )
-            .unwrap()
+            pk.key::<RSASSA_PSS_SHA384>()
+                .verify(black_box(MSG), None, black_box(&sig_pss_384))
+                .unwrap()
         })
     });
     group.bench_function("pss_sign_sha512", |b| {
         b.iter(|| {
             black_box(
-                SigningKey::<RSASSA_PSS_SHA512, 256>::sign(
-                    black_box(&sk),
-                    &mut DefaultRNG::default(),
-                    black_box(MSG),
-                    None,
-                )
-                .unwrap(),
+                sk.key::<RSASSA_PSS_SHA512>()
+                    .sign(&mut DefaultRNG::default(), black_box(MSG), None)
+                    .unwrap(),
             )
         })
     });
     group.bench_function("pss_verify_sha512", |b| {
         b.iter(|| {
-            VerifyingKey::<RSASSA_PSS_SHA512, 256>::verify(
-                black_box(&pk),
-                black_box(MSG),
-                None,
-                black_box(&sig_pss_512),
-            )
-            .unwrap()
+            pk.key::<RSASSA_PSS_SHA512>()
+                .verify(black_box(MSG), None, black_box(&sig_pss_512))
+                .unwrap()
         })
     });
     group.bench_function("pss_sign_shake128", |b| {
         b.iter(|| {
             black_box(
-                SigningKey::<RSASSA_PSS_SHAKE128, 256>::sign(
-                    black_box(&sk),
-                    &mut DefaultRNG::default(),
-                    black_box(MSG),
-                    None,
-                )
-                .unwrap(),
+                sk.key::<RSASSA_PSS_SHAKE128>()
+                    .sign(&mut DefaultRNG::default(), black_box(MSG), None)
+                    .unwrap(),
             )
         })
     });
     group.bench_function("pss_verify_shake128", |b| {
         b.iter(|| {
-            VerifyingKey::<RSASSA_PSS_SHAKE128, 256>::verify(
-                black_box(&pk),
-                black_box(MSG),
-                None,
-                black_box(&sig_pss_shake128),
-            )
-            .unwrap()
+            pk.key::<RSASSA_PSS_SHAKE128>()
+                .verify(black_box(MSG), None, black_box(&sig_pss_shake128))
+                .unwrap()
         })
     });
 
     // RSASVE (SP 800-56B Rev. 2 §7.2.1) under the same key material, re-read as KEM key types
     // through the shared raw encoding. Encapsulation is one public-exponent modexp plus the RNG
     // draw; decapsulation is the same CRT exponentiation signing does.
-    let kem_sk = RSA2048KEMPrivateKey::from_bytes(&sk.encode()).unwrap();
-    let kem_pk = RSA2048KEMPublicKey::from_bytes(&pk.encode()).unwrap();
+    let kem_sk = RSA2048KEMPrivateKey::from_bytes(&sk.key::<RSASSA_PSS_SHA256>().encode()).unwrap();
+    let kem_pk = RSA2048KEMPublicKey::from_bytes(&pk.key::<RSASSA_PSS_SHA256>().encode()).unwrap();
     let (_, kem_ct) = kem_pk.encaps(&mut rng, ()).unwrap();
     group.bench_function("rsasve_encaps", |b| {
         b.iter(|| black_box(black_box(&kem_pk).encaps(&mut rng, ()).unwrap()))
@@ -272,7 +207,7 @@ fn bench_rsa_2048(c: &mut Criterion) {
     let mut keygen_group = c.benchmark_group("rsa_2048_keygen");
     keygen_group.sample_size(10);
     keygen_group.bench_function("keygen", |b| {
-        b.iter(|| black_box(keygen(&mut DefaultRNG::default()).unwrap()))
+        b.iter(|| black_box(RSA2048::keygen(&mut DefaultRNG::default()).unwrap()))
     });
     keygen_group.finish();
 }

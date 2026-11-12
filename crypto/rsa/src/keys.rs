@@ -1,43 +1,52 @@
-//! RSA key types: [`RsaPublicKey`] (RFC 8017 §3.1's `(n, e)`) and [`RsaPrivateKey`] (§3.2's
-//! "second representation", the CRT quintuple `p`, `q`, `dP`, `dQ`, `qInv`), generic over the
-//! modulus size [`RsaSize`].
+//! RSA key material and the signature keys over it. [`RsaPublicComponents`] (RFC 8017 §3.1's
+//! `(n, e)`) and [`RsaPrivateComponents`] (§3.2's "second representation", the CRT quintuple
+//! `p`, `q`, `dP`, `dQ`, `qInv`), generic over the modulus size [`RsaSize`], are what a key is
+//! made of and implement no role. [`RsaPublicKey<A>`] and [`RsaPrivateKey<A>`] wrap them for one
+//! signature algorithm `A` ([`RsaSignatureAlgorithm`]: `RSASSA_PSS<RSA2048, SHA256>` and so on),
+//! so a key signs and verifies under the scheme and hash its type names, `sk.sign(..)` and
+//! `pk.verify(..)`, and a PSS key cannot sign PKCS#1 v1.5: SP 800-57 Part 1 Rev. 5's one scheme
+//! per key pair, in the type system, as the ECDSA keys carry their curve and hash. The
+//! key-establishment keys of [`crate::rsasve`] wrap the same components under the KEM roles.
 //!
-//! Keys come either from [`crate::keygen`] (FIPS 186-5 Appendix A.1.3, through
-//! [`RsaSigningSize::keygen`]) or from externally supplied
-//! key material (loaded from CAVP/wycheproof test vectors, or a key produced by another
-//! implementation) through [`RsaPrivateKey::from_crt_components`]. RFC 8017's first
-//! representation, the plain `(n, d)` pair, is not supported -- every real RSA private key ships
-//! as the CRT form because CRT-based signing (RFC 8017 §5.2.1 step 2.b) is the only signing path
-//! this crate implements.
+//! Components come either from [`crate::keygen`] (FIPS 186-5 Appendix A.1.3, through
+//! [`RsaSigningSize::keygen`] and the generators of [`crate::size::SignatureKeyPair`]) or from
+//! externally supplied key material (CAVP and Wycheproof vectors, a key produced by another
+//! implementation) through [`RsaPrivateComponents::from_crt_components`] or the keys' own
+//! `from_crt_components`. RFC 8017's first representation, the plain `(n, d)` pair, is not
+//! supported: every real RSA private key ships as the CRT form because CRT-based signing (RFC
+//! 8017 §5.2.1 step 2.b) is the only signing path this crate implements.
 //!
-//! The key types implement `bouncycastle_core`'s `SignaturePublicKey` / `SignaturePrivateKey`,
-//! the private key only at a [`RsaSigningSize`], with the byte
-//! layouts described on each type below.
+//! The keys implement `bouncycastle_core`'s `SignaturePublicKey` / `SignaturePrivateKey`, the
+//! private key only at a [`RsaSigningSize`], with the byte layouts described on the components.
+//! The scheme is not encoded, so a key file is decoded under the key type it is for.
 
+use crate::rsassa::RsaSignatureAlgorithm;
 use crate::size::{RsaSigningSize, RsaSize};
 use bouncycastle_core::errors::SignatureError;
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{SignaturePrivateKey, SignaturePublicKey};
 use bouncycastle_utils::secret::{Secret, ZeroizablePrimitive};
 use core::fmt;
-use core::fmt::{Display, Formatter};
+use core::fmt::{Debug, Display, Formatter};
+use core::marker::PhantomData;
 
-/// An RSA public key: RFC 8017 §3.1's `(n, e)`, at the size `K`.
+/// RSA public key material: RFC 8017 §3.1's `(n, e)`, at the size `K`. Not a key: the keys over
+/// it are [`RsaPublicKey`] and [`crate::rsasve::RsaKEMPublicKey`].
 ///
 /// # Encoding
 ///
-/// `SignaturePublicKey::encode`/`from_bytes` use the raw layout `n || e`: `n` as `K::K_LEN`
+/// The keys' `SignaturePublicKey::encode`/`from_bytes` use the raw layout `n || e`: `n` as `K::K_LEN`
 /// big-endian bytes (RFC 8017 §4.1's I2OSP), then `e` as 4 big-endian bytes, `K::PK_LEN` in all.
 /// Not an RFC 8017 or ASN.1 format -- this crate has no DER encoder/decoder -- just a fixed-width
 /// layout that round-trips, for `cli/src/rsa_cmd.rs` to read and write public keys as files.
-/// Decoding validates `(n, e)` the same way [`Self::new`] does.
+/// Decoding validates `(n, e)` the same way [`Self::new`] does; the scheme is not encoded.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct RsaPublicKey<K: RsaSize> {
+pub struct RsaPublicComponents<K: RsaSize> {
     n: K::Limbs,
     e: u32,
 }
 
-impl<K: RsaSize> RsaPublicKey<K> {
+impl<K: RsaSize> RsaPublicComponents<K> {
     /// Builds a public key from its modulus and exponent. Returns
     /// `Err(`[`SignatureError::DecodingError`]`)` if `n` is even (a product of two odd primes
     /// never is) or `e` is even or below 3 (RFC 8017 §3.1: `e` is odd and at least 3).
@@ -63,6 +72,16 @@ impl<K: RsaSize> RsaPublicKey<K> {
         self.e
     }
 
+    /// A copy of these components as the public key of `A`.
+    pub fn key<A: RsaSignatureAlgorithm<Size = K>>(&self) -> RsaPublicKey<A> {
+        RsaPublicKey::from_components(self.clone())
+    }
+
+    /// These components as the public key of `A`.
+    pub fn into_key<A: RsaSignatureAlgorithm<Size = K>>(self) -> RsaPublicKey<A> {
+        RsaPublicKey::from_components(self)
+    }
+
     /// The `# Encoding` layout.
     pub(crate) fn encode_raw(&self) -> K::PublicKeyEncoded {
         let mut out = K::PublicKeyEncoded::ZEROED;
@@ -82,42 +101,9 @@ impl<K: RsaSize> RsaPublicKey<K> {
     }
 }
 
-impl<K, const PK_LEN: usize> SignaturePublicKey<PK_LEN> for RsaPublicKey<K>
-where
-    K: RsaSize<PublicKeyEncoded = [u8; PK_LEN]>,
-{
-    fn encode(&self) -> [u8; PK_LEN] {
-        self.encode_raw()
-    }
-
-    fn encode_out(&self, out: &mut [u8; PK_LEN]) -> usize {
-        *out = self.encode_raw();
-        PK_LEN
-    }
-
-    fn from_bytes(bytes: &[u8]) -> Result<Self, SignatureError> {
-        let bytes: &[u8; PK_LEN] = bytes.try_into().map_err(|_| {
-            SignatureError::DecodingError("an RSA public key is the modulus length plus four bytes")
-        })?;
-        Self::from_bytes_raw(bytes)
-    }
-}
-
-/// `RsaPublicKey<RSA-2048> { n: <hex>, e: <hex> }`, `n` as one big-endian hex string (the limbs
-/// are stored least-significant first, so they are printed in reverse). Required by
-/// `SignaturePublicKey`'s `Display` supertrait; public data only, so nothing is redacted.
-impl<K: RsaSize> Display for RsaPublicKey<K> {
-    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        write!(f, "RsaPublicKey<{}> {{ n: ", K::NAME)?;
-        for limb in self.n.as_ref().iter().rev() {
-            write!(f, "{limb:016x}")?;
-        }
-        write!(f, ", e: {:x} }}", self.e)
-    }
-}
-
-/// An RSA private key in RFC 8017 §3.2's CRT ("second representation") form: `p`, `q`, `dP`,
-/// `dQ`, `qInv`, at the size `K`, each component a prime-width integer (`K::HalfLimbs`).
+/// RSA private key material in RFC 8017 §3.2's CRT ("second representation") form: `p`, `q`,
+/// `dP`, `dQ`, `qInv`, at the size `K`, each component a prime-width integer (`K::HalfLimbs`).
+/// Not a key: the keys over it are [`RsaPrivateKey`] and [`crate::rsasve::RsaKEMPrivateKey`].
 ///
 /// `p` and `q` need not be the same bit length: RFC 8017 §3.2 requires only that both are prime
 /// and `p * q = n`, nothing about their relative magnitude. An earlier version of this type
@@ -131,13 +117,13 @@ impl<K: RsaSize> Display for RsaPublicKey<K> {
 ///
 /// # Encoding
 ///
-/// `SignaturePrivateKey::encode`/`from_bytes`, at a signing size, use the raw layout
+/// The keys' `SignaturePrivateKey::encode`/`from_bytes`, at a signing size, use the raw layout
 /// `p || q || dP || dQ || qInv`, each `K::K_LEN / 2` big-endian bytes, `K::SK_LEN` in all. Not an
 /// RFC 8017 or ASN.1 format -- see [`RsaPublicKey`]'s `# Encoding` for why -- just a fixed-width
 /// layout that round-trips, for `cli/src/rsa_cmd.rs` to read and write private keys as files.
 /// Decoding validates the five components the same way [`Self::from_crt_components`] does.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct RsaPrivateKey<K: RsaSize> {
+pub struct RsaPrivateComponents<K: RsaSize> {
     p: Secret<K::HalfLimbs>,
     q: Secret<K::HalfLimbs>,
     d_p: Secret<K::HalfLimbs>,
@@ -149,7 +135,7 @@ pub struct RsaPrivateKey<K: RsaSize> {
 
 // The constructors are a signing size's: RSA-1024 and RSA-1536 verify only, so no private key
 // value exists at those sizes (the crate's `# Scope`).
-impl<K: RsaSigningSize> RsaPrivateKey<K> {
+impl<K: RsaSigningSize> RsaPrivateComponents<K> {
     /// Builds a private key from its CRT components, computing `n = p * q`. Returns
     /// `Err(`[`SignatureError::DecodingError`]`)` if `p` or `q` is even, `p == q`, or `dP`,
     /// `dQ` or `qInv` is not below its prime. Primality is not checked (see the crate's
@@ -200,10 +186,20 @@ impl<K: RsaSigningSize> RsaPrivateKey<K> {
     }
 }
 
-impl<K: RsaSize> RsaPrivateKey<K> {
+impl<K: RsaSize> RsaPrivateComponents<K> {
     /// The modulus `n = p * q`, as little-endian limbs.
     pub fn n(&self) -> &K::Limbs {
         &self.n
+    }
+
+    /// A copy of these components as the private key of `A`.
+    pub fn key<A: RsaSignatureAlgorithm<Size = K>>(&self) -> RsaPrivateKey<A> {
+        RsaPrivateKey::from_components(self.clone())
+    }
+
+    /// These components as the private key of `A`.
+    pub fn into_key<A: RsaSignatureAlgorithm<Size = K>>(self) -> RsaPrivateKey<A> {
+        RsaPrivateKey::from_components(self)
     }
 
     pub(crate) fn p(&self) -> &K::HalfLimbs {
@@ -227,7 +223,7 @@ impl<K: RsaSize> RsaPrivateKey<K> {
     }
 }
 
-impl<K: RsaSigningSize> RsaPrivateKey<K> {
+impl<K: RsaSigningSize> RsaPrivateComponents<K> {
     /// The `# Encoding` layout.
     pub(crate) fn encode_raw(&self) -> K::PrivateKeyEncoded {
         let half = K::K_LEN / 2;
@@ -258,16 +254,185 @@ impl<K: RsaSigningSize> RsaPrivateKey<K> {
     }
 }
 
-impl<K, const SK_LEN: usize> SignaturePrivateKey<SK_LEN> for RsaPrivateKey<K>
+/// An RSA public key for the signature algorithm `A`: [`RsaPublicComponents`] under
+/// [`VerifyingKey`](bouncycastle_core::signature_key::VerifyingKey) for `A`, so `pk.verify(..)`
+/// is `A`'s verification. The same bytes decoded under another `A` are another key.
+pub struct RsaPublicKey<A: RsaSignatureAlgorithm> {
+    components: RsaPublicComponents<A::Size>,
+    _alg: PhantomData<A>,
+}
+
+impl<A: RsaSignatureAlgorithm> RsaPublicKey<A> {
+    /// A key from its modulus and exponent, validated as [`RsaPublicComponents::new`] validates.
+    ///
+    /// # Errors
+    /// As [`RsaPublicComponents::new`].
+    pub fn new(n: &<A::Size as RsaSize>::Limbs, e: u32) -> Result<Self, SignatureError> {
+        Ok(Self::from_components(RsaPublicComponents::new(n, e)?))
+    }
+
+    /// A key over validated components.
+    pub fn from_components(components: RsaPublicComponents<A::Size>) -> Self {
+        Self { components, _alg: PhantomData }
+    }
+
+    /// The components.
+    pub fn components(&self) -> &RsaPublicComponents<A::Size> {
+        &self.components
+    }
+
+    /// The modulus `n`, as little-endian limbs.
+    pub fn n(&self) -> &<A::Size as RsaSize>::Limbs {
+        self.components.n()
+    }
+
+    /// The public exponent `e`.
+    pub fn e(&self) -> u32 {
+        self.components.e()
+    }
+}
+
+// Written out rather than derived: a derive would bound `A`, which is a marker.
+impl<A: RsaSignatureAlgorithm> Clone for RsaPublicKey<A> {
+    fn clone(&self) -> Self {
+        Self { components: self.components.clone(), _alg: PhantomData }
+    }
+}
+
+impl<A: RsaSignatureAlgorithm> Debug for RsaPublicKey<A> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.debug_struct("RsaPublicKey")
+            .field("algorithm", &A::ALG_NAME)
+            .field("components", &self.components)
+            .finish()
+    }
+}
+
+impl<A: RsaSignatureAlgorithm> PartialEq for RsaPublicKey<A> {
+    fn eq(&self, other: &Self) -> bool {
+        self.components == other.components
+    }
+}
+
+impl<A: RsaSignatureAlgorithm> Eq for RsaPublicKey<A> {}
+
+impl<A, const PK_LEN: usize> SignaturePublicKey<PK_LEN> for RsaPublicKey<A>
 where
-    K: RsaSigningSize + RsaSize<PrivateKeyEncoded = [u8; SK_LEN]>,
+    A: RsaSignatureAlgorithm,
+    A::Size: RsaSize<PublicKeyEncoded = [u8; PK_LEN]>,
+{
+    fn encode(&self) -> [u8; PK_LEN] {
+        self.components.encode_raw()
+    }
+
+    fn encode_out(&self, out: &mut [u8; PK_LEN]) -> usize {
+        *out = self.components.encode_raw();
+        PK_LEN
+    }
+
+    fn from_bytes(bytes: &[u8]) -> Result<Self, SignatureError> {
+        let bytes: &[u8; PK_LEN] = bytes.try_into().map_err(|_| {
+            SignatureError::DecodingError("an RSA public key is the modulus length plus four bytes")
+        })?;
+        Ok(Self::from_components(RsaPublicComponents::from_bytes_raw(bytes)?))
+    }
+}
+
+/// `RsaPublicKey<RSASSA-PSS-SHA256, RSA-2048> { n: <hex>, e: <hex> }`, `n` as one big-endian hex
+/// string (the limbs are stored least-significant first, so they are printed in reverse).
+/// Required by `SignaturePublicKey`'s `Display` supertrait; public data only, so nothing is
+/// redacted.
+impl<A: RsaSignatureAlgorithm> Display for RsaPublicKey<A> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "RsaPublicKey<{}, {}> {{ n: ", A::ALG_NAME, A::Size::NAME)?;
+        for limb in self.components.n().as_ref().iter().rev() {
+            write!(f, "{limb:016x}")?;
+        }
+        write!(f, ", e: {:x} }}", self.components.e())
+    }
+}
+
+/// An RSA private key for the signature algorithm `A`: [`RsaPrivateComponents`] under
+/// [`SigningKey`](bouncycastle_core::signature_key::SigningKey) or
+/// [`DeterministicSigningKey`](bouncycastle_core::signature_key::DeterministicSigningKey) for
+/// `A`, whichever `A`'s scheme is, so `sk.sign(..)` or `sk.sign_deterministic(..)` is `A`'s
+/// signing and no other scheme's. Exists only at a [`RsaSigningSize`].
+pub struct RsaPrivateKey<A: RsaSignatureAlgorithm> {
+    components: RsaPrivateComponents<A::Size>,
+    _alg: PhantomData<A>,
+}
+
+impl<A: RsaSignatureAlgorithm> RsaPrivateKey<A>
+where
+    A::Size: RsaSigningSize,
+{
+    /// A key from its CRT components, validated as
+    /// [`RsaPrivateComponents::from_crt_components`] validates.
+    ///
+    /// # Errors
+    /// As [`RsaPrivateComponents::from_crt_components`].
+    pub fn from_crt_components(
+        p: &<A::Size as RsaSize>::HalfLimbs,
+        q: &<A::Size as RsaSize>::HalfLimbs,
+        d_p: &<A::Size as RsaSize>::HalfLimbs,
+        d_q: &<A::Size as RsaSize>::HalfLimbs,
+        q_inv: &<A::Size as RsaSize>::HalfLimbs,
+    ) -> Result<Self, SignatureError> {
+        Ok(Self::from_components(RsaPrivateComponents::from_crt_components(p, q, d_p, d_q, q_inv)?))
+    }
+}
+
+impl<A: RsaSignatureAlgorithm> RsaPrivateKey<A> {
+    /// A key over validated components.
+    pub fn from_components(components: RsaPrivateComponents<A::Size>) -> Self {
+        Self { components, _alg: PhantomData }
+    }
+
+    /// The components.
+    pub fn components(&self) -> &RsaPrivateComponents<A::Size> {
+        &self.components
+    }
+
+    /// The modulus `n = p * q`, as little-endian limbs.
+    pub fn n(&self) -> &<A::Size as RsaSize>::Limbs {
+        self.components.n()
+    }
+}
+
+impl<A: RsaSignatureAlgorithm> Clone for RsaPrivateKey<A> {
+    fn clone(&self) -> Self {
+        Self { components: self.components.clone(), _alg: PhantomData }
+    }
+}
+
+impl<A: RsaSignatureAlgorithm> Debug for RsaPrivateKey<A> {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        f.debug_struct("RsaPrivateKey")
+            .field("algorithm", &A::ALG_NAME)
+            .field("components", &self.components)
+            .finish()
+    }
+}
+
+impl<A: RsaSignatureAlgorithm> PartialEq for RsaPrivateKey<A> {
+    fn eq(&self, other: &Self) -> bool {
+        self.components == other.components
+    }
+}
+
+impl<A: RsaSignatureAlgorithm> Eq for RsaPrivateKey<A> {}
+
+impl<A, const SK_LEN: usize> SignaturePrivateKey<SK_LEN> for RsaPrivateKey<A>
+where
+    A: RsaSignatureAlgorithm,
+    A::Size: RsaSigningSize + RsaSize<PrivateKeyEncoded = [u8; SK_LEN]>,
 {
     fn encode(&self) -> [u8; SK_LEN] {
-        self.encode_raw()
+        self.components.encode_raw()
     }
 
     fn encode_out(&self, out: &mut [u8; SK_LEN]) -> usize {
-        *out = self.encode_raw();
+        *out = self.components.encode_raw();
         SK_LEN
     }
 
@@ -277,7 +442,7 @@ where
                 "an RSA private key is five components of half the modulus length",
             )
         })?;
-        Self::from_bytes_raw(bytes)
+        Ok(Self::from_components(RsaPrivateComponents::from_bytes_raw(bytes)?))
     }
 }
 

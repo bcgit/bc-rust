@@ -15,10 +15,10 @@
 //!
 //! # Key separation
 //!
-//! The key types here wrap the signature schemes' [`RsaPublicKey`]/[`RsaPrivateKey`] rather than
+//! The key types here wrap the signature schemes' [`RsaPublicComponents`]/[`RsaPrivateComponents`] rather than
 //! reusing them, so the type system keeps key-establishment and signing keys apart. There is no
 //! signing-role impl for an [`RsaKEMPrivateKey`] and no decapsulating role for an
-//! [`RsaPrivateKey`]. SP 800-56B Rev. 2 §6.1 item 5 is the requirement: "One key pair shall not
+//! [`RsaPrivateComponents`]. SP 800-56B Rev. 2 §6.1 item 5 is the requirement: "One key pair shall not
 //! be used for different cryptographic purposes (for example, a digital-signature key pair shall
 //! not be used for key establishment or vice versa)". BC FIPS Java checks the same thing at runtime with
 //! `canBeUsed(ENCRYPT_OR_DECRYPT)`. Nothing stops a caller from building both kinds of key from
@@ -26,7 +26,7 @@
 //!
 //! # Key validation
 //!
-//! On top of what [`RsaPublicKey::new`]/[`RsaPrivateKey::from_crt_components`] already check,
+//! On top of what [`RsaPublicComponents::new`]/[`RsaPrivateComponents::from_crt_components`] already check,
 //! the KEM key types enforce two things:
 //!
 //! * `65,537 <= e` (§6.2.1 item 2, "65,537 ≤ e < 2^256"; the upper bound holds by construction,
@@ -40,11 +40,11 @@
 //!   above one half.
 //!
 //! The rest of SP 800-89 §5.3.3's plausibility tests, which §6.4.2.2 also requires, are not
-//! performed (beyond `n` odd and `e` odd, which [`RsaPublicKey::new`] checks). Nothing here
+//! performed (beyond `n` odd and `e` odd, which [`RsaPublicComponents::new`] checks). Nothing here
 //! amounts to full public-key validation, which §6.4.2.2 notes "is not specified in this
 //! Recommendation".
 
-use crate::keys::{RsaPrivateKey, RsaPublicKey};
+use crate::keys::{RsaPrivateComponents, RsaPublicComponents};
 use crate::size::{RsaSigningSize, RsaSize};
 use bouncycastle_core::errors::{KEMError, RNGError, SignatureError};
 use bouncycastle_core::hazmat::do_hazardous_operations;
@@ -93,20 +93,20 @@ fn in_open_range<K: RsaSize>(x: &K::Limbs, n: &K::Limbs) -> bool {
     K::is_less(x, &n_minus_1) && K::is_less(&one, x)
 }
 
-/// An RSA key-establishment public key at the size `K`: [`RsaPublicKey`] under the KEM roles
+/// An RSA key-establishment public key at the size `K`: [`RsaPublicComponents`] under the KEM roles
 /// and the `# Key validation` checks, encoded as it is.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct RsaKEMPublicKey<K: RsaSize>(pub(crate) RsaPublicKey<K>);
+pub struct RsaKEMPublicKey<K: RsaSize>(pub(crate) RsaPublicComponents<K>);
 
 impl<K: RsaSize> RsaKEMPublicKey<K> {
     /// Builds a public key from its modulus and exponent. Returns
-    /// `Err(`[`KEMError::DecodingError`]`)` in the cases [`RsaPublicKey::new`] rejects, and also
+    /// `Err(`[`KEMError::DecodingError`]`)` in the cases [`RsaPublicComponents::new`] rejects, and also
     /// if `e < 65,537` or `n`'s top bit is clear (see the module docs' `# Key validation`).
     pub fn new(n: &K::Limbs, e: u32) -> Result<Self, KEMError> {
-        Self::from_rsa_key(RsaPublicKey::new(n, e).map_err(kem_error)?)
+        Self::from_rsa_key(RsaPublicComponents::new(n, e).map_err(kem_error)?)
     }
 
-    pub(crate) fn from_rsa_key(pk: RsaPublicKey<K>) -> Result<Self, KEMError> {
+    pub(crate) fn from_rsa_key(pk: RsaPublicComponents<K>) -> Result<Self, KEMError> {
         if pk.e() < MIN_PUBLIC_EXPONENT {
             return Err(KEMError::DecodingError(
                 "RSA key-establishment public exponent must be at least 65537",
@@ -129,20 +129,26 @@ impl<K: RsaSize> RsaKEMPublicKey<K> {
     }
 }
 
+/// `RsaKEMPublicKey<RSA-2048> { n: <hex>, e: <hex> }`, `n` as one big-endian hex string; public
+/// data only.
 impl<K: RsaSize> Display for RsaKEMPublicKey<K> {
     fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
-        self.0.fmt(f)
+        write!(f, "RsaKEMPublicKey<{}> {{ n: ", K::NAME)?;
+        for limb in self.0.n().as_ref().iter().rev() {
+            write!(f, "{limb:016x}")?;
+        }
+        write!(f, ", e: {:x} }}", self.0.e())
     }
 }
 
-/// An RSA key-establishment private key at the size `K`: [`RsaPrivateKey`] under the KEM roles
+/// An RSA key-establishment private key at the size `K`: [`RsaPrivateComponents`] under the KEM roles
 /// and the `# Key validation` checks, encoded as it is.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct RsaKEMPrivateKey<K: RsaSize>(pub(crate) RsaPrivateKey<K>);
+pub struct RsaKEMPrivateKey<K: RsaSize>(pub(crate) RsaPrivateComponents<K>);
 
 impl<K: RsaSigningSize> RsaKEMPrivateKey<K> {
     /// Builds a private key from its CRT components. Returns
-    /// `Err(`[`KEMError::DecodingError`]`)` in the cases [`RsaPrivateKey::from_crt_components`]
+    /// `Err(`[`KEMError::DecodingError`]`)` in the cases [`RsaPrivateComponents::from_crt_components`]
     /// rejects, and also if `n = p * q`'s top bit is clear (see the module docs'
     /// `# Key validation`).
     pub fn from_crt_components(
@@ -153,11 +159,11 @@ impl<K: RsaSigningSize> RsaKEMPrivateKey<K> {
         q_inv: &K::HalfLimbs,
     ) -> Result<Self, KEMError> {
         Self::from_rsa_key(
-            RsaPrivateKey::from_crt_components(p, q, d_p, d_q, q_inv).map_err(kem_error)?,
+            RsaPrivateComponents::from_crt_components(p, q, d_p, d_q, q_inv).map_err(kem_error)?,
         )
     }
 
-    pub(crate) fn from_rsa_key(sk: RsaPrivateKey<K>) -> Result<Self, KEMError> {
+    pub(crate) fn from_rsa_key(sk: RsaPrivateComponents<K>) -> Result<Self, KEMError> {
         if !has_full_bit_length::<K>(sk.n()) {
             return Err(KEMError::DecodingError("RSA modulus must have its top bit set"));
         }
@@ -353,7 +359,7 @@ where
                 "an RSA private key is five components of half the modulus length",
             )
         })?;
-        Self::from_rsa_key(RsaPrivateKey::from_bytes_raw(bytes).map_err(kem_error)?)
+        Self::from_rsa_key(RsaPrivateComponents::from_bytes_raw(bytes).map_err(kem_error)?)
     }
 }
 
@@ -374,14 +380,14 @@ where
         let bytes: &[u8; PK_LEN] = bytes.try_into().map_err(|_| {
             KEMError::DecodingError("an RSA public key is the modulus length plus four bytes")
         })?;
-        Self::from_rsa_key(RsaPublicKey::from_bytes_raw(bytes).map_err(kem_error)?)
+        Self::from_rsa_key(RsaPublicComponents::from_bytes_raw(bytes).map_err(kem_error)?)
     }
 }
 
 /// The signature generator's pair as KEM keys, for [`RSASVE::keygen`] and the markers'
 /// `generate_kem_key_pair`.
 pub(crate) fn keygen_from<K: RsaSigningSize>(
-    pair: Result<(RsaPublicKey<K>, RsaPrivateKey<K>), SignatureError>,
+    pair: Result<(RsaPublicComponents<K>, RsaPrivateComponents<K>), SignatureError>,
 ) -> Result<(RsaKEMPublicKey<K>, RsaKEMPrivateKey<K>), KEMError> {
     let (pk, sk) = pair.map_err(kem_error)?;
     Ok((RsaKEMPublicKey::from_rsa_key(pk)?, RsaKEMPrivateKey::from_rsa_key(sk)?))

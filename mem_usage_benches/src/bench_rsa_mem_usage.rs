@@ -37,7 +37,14 @@ use bouncycastle::core::traits::{
     KEMPrivateKey, KEMPublicKey, SignaturePrivateKey, SignaturePublicKey,
 };
 use bouncycastle::rng::DefaultRNG;
-use bouncycastle::rsa::{rsa_1024, rsa_1536, rsa_2048, rsa_3072, rsa_4096, rsa_8192};
+use bouncycastle::rsa::keys::{
+    RsaPrivateComponents, RsaPrivateKey, RsaPublicComponents, RsaPublicKey,
+};
+use bouncycastle::rsa::size::RsaSigningSize;
+use bouncycastle::rsa::{
+    RSA1024, RSA1536, RSA2048, RSA3072, RSA4096, RSA8192, rsa_1024, rsa_1536, rsa_2048, rsa_3072,
+    rsa_4096, rsa_8192,
+};
 
 const MSG: &[u8] = b"peak stack usage of RSA sign/verify, held constant across every modulus size";
 
@@ -49,19 +56,31 @@ fn print_key_sizes() {
 
     println!("\nRSA-1024 (verification only)");
     println!("public key on disk (n || e): {} bytes", 132);
-    println!("size_of<RSA1024PublicKey>: {} bytes", size_of::<rsa_1024::RSA1024PublicKey>());
+    println!(
+        "size_of<RsaPublicComponents<RSA1024>>: {} bytes",
+        size_of::<RsaPublicKey<rsa_1024::RSASSA_PKCS1_v1_5_SHA256>>()
+    );
     println!("signature: {} bytes", 128);
 
     println!("\nRSA-1536 (verification only)");
     println!("public key on disk (n || e): {} bytes", 196);
-    println!("size_of<RSA1536PublicKey>: {} bytes", size_of::<rsa_1536::RSA1536PublicKey>());
+    println!(
+        "size_of<RsaPublicComponents<RSA1536>>: {} bytes",
+        size_of::<RsaPublicKey<rsa_1536::RSASSA_PKCS1_v1_5_SHA256>>()
+    );
     println!("signature: {} bytes", 192);
 
     println!("\nRSA-2048");
     println!("private key on disk (p||q||dP||dQ||qInv): {} bytes", 640);
-    println!("size_of<RSA2048PrivateKey>: {} bytes", size_of::<rsa_2048::RSA2048PrivateKey>());
+    println!(
+        "size_of<RsaPrivateComponents<RSA2048>>: {} bytes",
+        size_of::<RsaPrivateKey<rsa_2048::RSASSA_PKCS1_v1_5_SHA256>>()
+    );
     println!("public key on disk (n || e): {} bytes", 260);
-    println!("size_of<RSA2048PublicKey>: {} bytes", size_of::<rsa_2048::RSA2048PublicKey>());
+    println!(
+        "size_of<RsaPublicComponents<RSA2048>>: {} bytes",
+        size_of::<RsaPublicKey<rsa_2048::RSASSA_PKCS1_v1_5_SHA256>>()
+    );
     println!(
         "size_of<RSA2048KEMPrivateKey>: {} bytes",
         size_of::<rsa_2048::RSA2048KEMPrivateKey>()
@@ -76,9 +95,15 @@ fn print_key_sizes() {
 
     println!("\nRSA-3072");
     println!("private key on disk (p||q||dP||dQ||qInv): {} bytes", 960);
-    println!("size_of<RSA3072PrivateKey>: {} bytes", size_of::<rsa_3072::RSA3072PrivateKey>());
+    println!(
+        "size_of<RsaPrivateComponents<RSA3072>>: {} bytes",
+        size_of::<RsaPrivateKey<rsa_3072::RSASSA_PKCS1_v1_5_SHA256>>()
+    );
     println!("public key on disk (n || e): {} bytes", 388);
-    println!("size_of<RSA3072PublicKey>: {} bytes", size_of::<rsa_3072::RSA3072PublicKey>());
+    println!(
+        "size_of<RsaPublicComponents<RSA3072>>: {} bytes",
+        size_of::<RsaPublicKey<rsa_3072::RSASSA_PKCS1_v1_5_SHA256>>()
+    );
     println!(
         "size_of<RSA3072KEMPrivateKey>: {} bytes",
         size_of::<rsa_3072::RSA3072KEMPrivateKey>()
@@ -93,9 +118,15 @@ fn print_key_sizes() {
 
     println!("\nRSA-4096");
     println!("private key on disk (p||q||dP||dQ||qInv): {} bytes", 1280);
-    println!("size_of<RSA4096PrivateKey>: {} bytes", size_of::<rsa_4096::RSA4096PrivateKey>());
+    println!(
+        "size_of<RsaPrivateComponents<RSA4096>>: {} bytes",
+        size_of::<RsaPrivateKey<rsa_4096::RSASSA_PKCS1_v1_5_SHA256>>()
+    );
     println!("public key on disk (n || e): {} bytes", 516);
-    println!("size_of<RSA4096PublicKey>: {} bytes", size_of::<rsa_4096::RSA4096PublicKey>());
+    println!(
+        "size_of<RsaPublicComponents<RSA4096>>: {} bytes",
+        size_of::<RsaPublicKey<rsa_4096::RSASSA_PKCS1_v1_5_SHA256>>()
+    );
     println!(
         "size_of<RSA4096KEMPrivateKey>: {} bytes",
         size_of::<rsa_4096::RSA4096KEMPrivateKey>()
@@ -110,9 +141,15 @@ fn print_key_sizes() {
 
     println!("\nRSA-8192");
     println!("private key on disk (p||q||dP||dQ||qInv): {} bytes", 2560);
-    println!("size_of<RSA8192PrivateKey>: {} bytes", size_of::<rsa_8192::RSA8192PrivateKey>());
+    println!(
+        "size_of<RsaPrivateComponents<RSA8192>>: {} bytes",
+        size_of::<RsaPrivateKey<rsa_8192::RSASSA_PKCS1_v1_5_SHA256>>()
+    );
     println!("public key on disk (n || e): {} bytes", 1028);
-    println!("size_of<RSA8192PublicKey>: {} bytes", size_of::<rsa_8192::RSA8192PublicKey>());
+    println!(
+        "size_of<RsaPublicComponents<RSA8192>>: {} bytes",
+        size_of::<RsaPublicKey<rsa_8192::RSASSA_PKCS1_v1_5_SHA256>>()
+    );
     println!(
         "size_of<RSA8192KEMPrivateKey>: {} bytes",
         size_of::<rsa_8192::RSA8192KEMPrivateKey>()
@@ -142,7 +179,7 @@ fn bench_1024_verify() {
         0xb909dd0f4c6014f2, 0x9c8a5810b6d05990, 0x40760d1f23fe9250, 0x90adb011a919575a,
         0x45e48572113cab28, 0xcb9ca9ec12000fc8, 0x91b4fcaf62a14595, 0xac9048a7a4f560af,
     ];
-    let pk = rsa_1024::RSA1024PublicKey::new(&n, 0x10001).unwrap();
+    let pk = RsaPublicComponents::<RSA1024>::new(&n, 0x10001).unwrap();
     let mut sig = [0u8; 128];
     sig.copy_from_slice(
         &bouncycastle::hex::decode(
@@ -152,16 +189,14 @@ fn bench_1024_verify() {
     );
     let msg = bouncycastle::hex::decode("0000000000000000000000000000000000000000").unwrap();
 
-    if VerifyingKey::<rsa_1024::RSASSA_PKCS1_v1_5_SHA256, 128>::verify(&pk, &msg, None, &sig)
-        .is_ok()
-    {
+    if pk.key::<rsa_1024::RSASSA_PKCS1_v1_5_SHA256>().verify(&msg, None, &sig).is_ok() {
         eprintln!("Verification succeeded!");
     } else {
         panic!("Verification failed! -- figure that out");
     }
 }
 
-fn genuine_2048_key() -> rsa_2048::RSA2048PrivateKey {
+fn genuine_2048_key() -> RsaPrivateComponents<RSA2048> {
     let p: [u64; 16] = [
         0x0ea36cfb3a5b18f1, 0x48a6e65332119129, 0x110ad9e7b48a1c93, 0x569156b90113e2e9,
         0xe79813a575cfad9c, 0x69d659d143ec6f17, 0xe81e6bab5ddaa783, 0xbff1c5b80a69f788,
@@ -192,7 +227,7 @@ fn genuine_2048_key() -> rsa_2048::RSA2048PrivateKey {
         0xe923e1097c0c562f, 0xc968b48a91c38b5b, 0x933e85179c0320b0, 0x7993d0445f758d51,
         0x9bfc042ee0924b1b, 0x41f956d90fa8a793, 0xee7a87b6483a66ee, 0x2640fbfbcfefb163,
     ];
-    rsa_2048::RSA2048PrivateKey::from_crt_components(&p, &q, &d_p, &d_q, &q_inv).unwrap()
+    RsaPrivateComponents::<RSA2048>::from_crt_components(&p, &q, &d_p, &d_q, &q_inv).unwrap()
 }
 
 /// FIPS 186-5 A.1.3 key generation: the candidate buffers, the Miller-Rabin Montgomery context
@@ -200,41 +235,32 @@ fn genuine_2048_key() -> rsa_2048::RSA2048PrivateKey {
 /// the modulus width.
 fn bench_2048_keygen() {
     eprintln!("RSA-2048/Keygen");
-    let (pk, sk) = rsa_2048::keygen(&mut DefaultRNG::default()).unwrap();
-    println!("{:x?}", pk.encode());
-    println!("{}", sk.encode().len());
+    let (pk, sk) = RSA2048::keygen(&mut DefaultRNG::default()).unwrap();
+    println!("{:x?}", pk.key::<rsa_2048::RSASSA_PKCS1_v1_5_SHA256>().encode());
+    println!("{}", sk.key::<rsa_2048::RSASSA_PKCS1_v1_5_SHA256>().encode().len());
 }
 
 fn bench_2048_sign() {
     eprintln!("RSA-2048/Sign");
     let sk = genuine_2048_key();
-    let sig =
-        DeterministicSigningKey::<rsa_2048::RSASSA_PKCS1_v1_5_SHA256, 256>::sign_deterministic(
-            &sk, MSG, None,
-        )
-        .unwrap();
+    let sig = sk.key::<rsa_2048::RSASSA_PKCS1_v1_5_SHA256>().sign_deterministic(MSG, None).unwrap();
     println!("{:x?}", sig);
 }
 
 fn bench_2048_verify() {
     eprintln!("RSA-2048/Verify");
     let sk = genuine_2048_key();
-    let pk = rsa_2048::RSA2048PublicKey::new(sk.n(), 0x10001).unwrap();
-    let sig =
-        DeterministicSigningKey::<rsa_2048::RSASSA_PKCS1_v1_5_SHA256, 256>::sign_deterministic(
-            &sk, MSG, None,
-        )
-        .unwrap();
+    let pk = RsaPublicComponents::<RSA2048>::new(sk.n(), 0x10001).unwrap();
+    let sig = sk.key::<rsa_2048::RSASSA_PKCS1_v1_5_SHA256>().sign_deterministic(MSG, None).unwrap();
 
-    if VerifyingKey::<rsa_2048::RSASSA_PKCS1_v1_5_SHA256, 256>::verify(&pk, MSG, None, &sig).is_ok()
-    {
+    if pk.key::<rsa_2048::RSASSA_PKCS1_v1_5_SHA256>().verify(MSG, None, &sig).is_ok() {
         eprintln!("Verification succeeded!");
     } else {
         panic!("Verification failed! -- figure that out");
     }
 }
 
-fn genuine_8192_key() -> rsa_8192::RSA8192PrivateKey {
+fn genuine_8192_key() -> RsaPrivateComponents<RSA8192> {
     let p: [u64; 64] = [
         0xa9a87892c469b1e5, 0x038c3f4efcb198ac, 0xed4f14df1b8a1e1f, 0xef2330d78ee73020,
         0xd3093ddaf276904c, 0x94a438d69aeaff23, 0x48dbb3d700ad58ed, 0xbbd763b5346ff916,
@@ -325,33 +351,23 @@ fn genuine_8192_key() -> rsa_8192::RSA8192PrivateKey {
         0xd1aac2fe108f98c0, 0x1e799537a42b3060, 0xdbcce6fc287e449b, 0x1985969e5afbc524,
         0x61ba61f820f83597, 0x65c8523f0767bccc, 0xde04e1644a214f9a, 0x9748f8d853be7131,
     ];
-    rsa_8192::RSA8192PrivateKey::from_crt_components(&p, &q, &d_p, &d_q, &q_inv).unwrap()
+    RsaPrivateComponents::<RSA8192>::from_crt_components(&p, &q, &d_p, &d_q, &q_inv).unwrap()
 }
 
 fn bench_8192_sign() {
     eprintln!("RSA-8192/Sign");
     let sk = genuine_8192_key();
-    let sig =
-        DeterministicSigningKey::<rsa_8192::RSASSA_PKCS1_v1_5_SHA256, 1024>::sign_deterministic(
-            &sk, MSG, None,
-        )
-        .unwrap();
+    let sig = sk.key::<rsa_8192::RSASSA_PKCS1_v1_5_SHA256>().sign_deterministic(MSG, None).unwrap();
     println!("{:x?}", sig);
 }
 
 fn bench_8192_verify() {
     eprintln!("RSA-8192/Verify");
     let sk = genuine_8192_key();
-    let pk = rsa_8192::RSA8192PublicKey::new(sk.n(), 0x10001).unwrap();
-    let sig =
-        DeterministicSigningKey::<rsa_8192::RSASSA_PKCS1_v1_5_SHA256, 1024>::sign_deterministic(
-            &sk, MSG, None,
-        )
-        .unwrap();
+    let pk = RsaPublicComponents::<RSA8192>::new(sk.n(), 0x10001).unwrap();
+    let sig = sk.key::<rsa_8192::RSASSA_PKCS1_v1_5_SHA256>().sign_deterministic(MSG, None).unwrap();
 
-    if VerifyingKey::<rsa_8192::RSASSA_PKCS1_v1_5_SHA256, 1024>::verify(&pk, MSG, None, &sig)
-        .is_ok()
-    {
+    if pk.key::<rsa_8192::RSASSA_PKCS1_v1_5_SHA256>().verify(MSG, None, &sig).is_ok() {
         eprintln!("Verification succeeded!");
     } else {
         panic!("Verification failed! -- figure that out");
@@ -363,8 +379,11 @@ fn bench_8192_verify() {
 fn bench_2048_rsasve_encaps() {
     eprintln!("RSA-2048/RSASVE encaps");
     let sk = genuine_2048_key();
-    let pk = rsa_2048::RSA2048PublicKey::new(sk.n(), 0x10001).unwrap();
-    let pk = rsa_2048::RSA2048KEMPublicKey::from_bytes(&pk.encode()).unwrap();
+    let pk = RsaPublicComponents::<RSA2048>::new(sk.n(), 0x10001).unwrap();
+    let pk = rsa_2048::RSA2048KEMPublicKey::from_bytes(
+        &pk.key::<rsa_2048::RSASSA_PKCS1_v1_5_SHA256>().encode(),
+    )
+    .unwrap();
     let (ss, ct) = pk.encaps(&mut DefaultRNG::default(), ()).unwrap();
     println!("{:x?}", ct);
     println!("{}", ss.key_len());
@@ -374,7 +393,10 @@ fn bench_2048_rsasve_encaps() {
 /// the `nLen`-byte `Z` buffer.
 fn bench_2048_rsasve_decaps() {
     eprintln!("RSA-2048/RSASVE decaps");
-    let sk = rsa_2048::RSA2048KEMPrivateKey::from_bytes(&genuine_2048_key().encode()).unwrap();
+    let sk = rsa_2048::RSA2048KEMPrivateKey::from_bytes(
+        &genuine_2048_key().key::<rsa_2048::RSASSA_PKCS1_v1_5_SHA256>().encode(),
+    )
+    .unwrap();
     let mut ct = [0x5Au8; rsa_2048::CT_LEN];
     ct[0] = 0x01; // well inside (1, n - 1)
     let ss = sk.decaps(&ct, ()).unwrap();
@@ -386,8 +408,11 @@ fn bench_2048_rsasve_decaps() {
 fn bench_8192_rsasve_encaps() {
     eprintln!("RSA-8192/RSASVE encaps");
     let sk = genuine_8192_key();
-    let pk = rsa_8192::RSA8192PublicKey::new(sk.n(), 0x10001).unwrap();
-    let pk = rsa_8192::RSA8192KEMPublicKey::from_bytes(&pk.encode()).unwrap();
+    let pk = RsaPublicComponents::<RSA8192>::new(sk.n(), 0x10001).unwrap();
+    let pk = rsa_8192::RSA8192KEMPublicKey::from_bytes(
+        &pk.key::<rsa_8192::RSASSA_PKCS1_v1_5_SHA256>().encode(),
+    )
+    .unwrap();
     let (ss, ct) = pk.encaps(&mut DefaultRNG::default(), ()).unwrap();
     println!("{:x?}", ct);
     println!("{}", ss.key_len());
@@ -397,7 +422,10 @@ fn bench_8192_rsasve_encaps() {
 /// the `nLen`-byte `Z` buffer.
 fn bench_8192_rsasve_decaps() {
     eprintln!("RSA-8192/RSASVE decaps");
-    let sk = rsa_8192::RSA8192KEMPrivateKey::from_bytes(&genuine_8192_key().encode()).unwrap();
+    let sk = rsa_8192::RSA8192KEMPrivateKey::from_bytes(
+        &genuine_8192_key().key::<rsa_8192::RSASSA_PKCS1_v1_5_SHA256>().encode(),
+    )
+    .unwrap();
     let mut ct = [0x5Au8; rsa_8192::CT_LEN];
     ct[0] = 0x01; // well inside (1, n - 1)
     let ss = sk.decaps(&ct, ()).unwrap();

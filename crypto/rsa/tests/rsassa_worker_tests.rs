@@ -5,11 +5,11 @@ use bouncycastle_core::signature_key::{DeterministicSigningKey, SigningKey, Veri
 use bouncycastle_core::traits::{AlgorithmInfo, HashOneShot};
 use bouncycastle_rng::DefaultRNG;
 use bouncycastle_rsa::RSA2048;
-use bouncycastle_rsa::keys::{RsaPrivateKey, RsaPublicKey};
+use bouncycastle_rsa::keys::{RsaPrivateComponents, RsaPublicComponents};
+use bouncycastle_rsa::rsassa;
 use bouncycastle_rsa::rsassa_pkcs1_v1_5::RSASSA_PKCS1_v1_5;
 use bouncycastle_rsa::rsassa_pss::RSASSA_PSS;
 use bouncycastle_rsa::rsassa_pss_shake::RSASSA_PSS_SHAKE;
-use bouncycastle_rsa::{rsassa_pss, rsassa_pss_shake};
 use bouncycastle_sha2::SHA256;
 use bouncycastle_sha3::SHAKE128;
 
@@ -45,9 +45,10 @@ const Q_INV: [u64; 16] = [
     0x9bfc042ee0924b1b, 0x41f956d90fa8a793, 0xee7a87b6483a66ee, 0x2640fbfbcfefb163,
 ];
 
-fn key_pair() -> (RsaPublicKey<RSA2048>, RsaPrivateKey<RSA2048>) {
-    let sk = RsaPrivateKey::<RSA2048>::from_crt_components(&P, &Q, &D_P, &D_Q, &Q_INV).unwrap();
-    let pk = RsaPublicKey::<RSA2048>::new(sk.n(), 0x10001).unwrap();
+fn key_pair() -> (RsaPublicComponents<RSA2048>, RsaPrivateComponents<RSA2048>) {
+    let sk =
+        RsaPrivateComponents::<RSA2048>::from_crt_components(&P, &Q, &D_P, &D_Q, &Q_INV).unwrap();
+    let pk = RsaPublicComponents::<RSA2048>::new(sk.n(), 0x10001).unwrap();
     (pk, sk)
 }
 
@@ -56,27 +57,30 @@ fn workers_name_their_algorithm() {
     let (pk, sk) = key_pair();
     let mut rng = DefaultRNG::default();
 
-    let signer = DeterministicSigningKey::<RSASSA_PKCS1_v1_5<RSA2048, SHA256>, 256>::create_signer_deterministic(&sk, None).unwrap();
+    let sk_rsassa_pkcs1_v1_5_rsa2048_sha256 = sk.key::<RSASSA_PKCS1_v1_5<RSA2048, SHA256>>();
+    let signer = sk_rsassa_pkcs1_v1_5_rsa2048_sha256.create_signer_deterministic(None).unwrap();
     assert_eq!(signer.alg_name(), "RSASSA-PKCS1-v1_5-SHA256");
-    let verifier =
-        VerifyingKey::<RSASSA_PKCS1_v1_5<RSA2048, SHA256>, 256>::create_verifier(&pk, None)
-            .unwrap();
+    let pk_rsassa_pkcs1_v1_5_rsa2048_sha256 = pk.key::<RSASSA_PKCS1_v1_5<RSA2048, SHA256>>();
+
+    let verifier = pk_rsassa_pkcs1_v1_5_rsa2048_sha256.create_verifier(None).unwrap();
     assert_eq!(verifier.alg_name(), "RSASSA-PKCS1-v1_5-SHA256");
 
-    let signer =
-        SigningKey::<RSASSA_PSS<RSA2048, SHA256>, 256>::create_signer(&sk, &mut rng, None).unwrap();
+    let sk_rsassa_pss_rsa2048_sha256 = sk.key::<RSASSA_PSS<RSA2048, SHA256>>();
+
+    let signer = sk_rsassa_pss_rsa2048_sha256.create_signer(&mut rng, None).unwrap();
     assert_eq!(signer.alg_name(), "RSASSA-PSS-SHA256");
-    let verifier =
-        VerifyingKey::<RSASSA_PSS<RSA2048, SHA256>, 256>::create_verifier(&pk, None).unwrap();
+    let pk_rsassa_pss_rsa2048_sha256 = pk.key::<RSASSA_PSS<RSA2048, SHA256>>();
+
+    let verifier = pk_rsassa_pss_rsa2048_sha256.create_verifier(None).unwrap();
     assert_eq!(verifier.alg_name(), "RSASSA-PSS-SHA256");
 
-    let signer =
-        SigningKey::<RSASSA_PSS_SHAKE<RSA2048, SHAKE128>, 256>::create_signer(&sk, &mut rng, None)
-            .unwrap();
+    let sk_rsassa_pss_shake_rsa2048_shake128 = sk.key::<RSASSA_PSS_SHAKE<RSA2048, SHAKE128>>();
+
+    let signer = sk_rsassa_pss_shake_rsa2048_shake128.create_signer(&mut rng, None).unwrap();
     assert_eq!(signer.alg_name(), "RSASSA-PSS-SHAKE128");
-    let verifier =
-        VerifyingKey::<RSASSA_PSS_SHAKE<RSA2048, SHAKE128>, 256>::create_verifier(&pk, None)
-            .unwrap();
+    let pk_rsassa_pss_shake_rsa2048_shake128 = pk.key::<RSASSA_PSS_SHAKE<RSA2048, SHAKE128>>();
+
+    let verifier = pk_rsassa_pss_shake_rsa2048_shake128.create_verifier(None).unwrap();
     assert_eq!(verifier.alg_name(), "RSASSA-PSS-SHAKE128");
 }
 
@@ -89,20 +93,65 @@ fn pss_sign_from_hash_draws_a_fresh_salt_and_verifies() {
     let mut digest = [0u8; 32];
     SHA256::hash_out(b"the message", &mut digest);
 
-    let a = rsassa_pss::sign_from_hash::<RSA2048, SHA256, 256>(&sk, &digest, &mut rng).unwrap();
-    let b = rsassa_pss::sign_from_hash::<RSA2048, SHA256, 256>(&sk, &digest, &mut rng).unwrap();
+    let a = rsassa::sign_from_hash::<RSASSA_PSS<RSA2048, SHA256>, 256>(
+        &sk.key::<RSASSA_PSS<RSA2048, SHA256>>(),
+        &digest,
+        &mut rng,
+    )
+    .unwrap();
+    let b = rsassa::sign_from_hash::<RSASSA_PSS<RSA2048, SHA256>, 256>(
+        &sk.key::<RSASSA_PSS<RSA2048, SHA256>>(),
+        &digest,
+        &mut rng,
+    )
+    .unwrap();
     assert_ne!(a, b);
-    rsassa_pss::verify_from_hash::<RSA2048, SHA256, 256>(&pk, &digest, &a).unwrap();
-    rsassa_pss::verify_from_hash::<RSA2048, SHA256, 256>(&pk, &digest, &b).unwrap();
-    assert!(rsassa_pss::verify_from_hash::<RSA2048, SHA256, 256>(&pk, &[0u8; 32], &a).is_err());
+    rsassa::verify_from_hash::<RSASSA_PSS<RSA2048, SHA256>, 256>(
+        &pk.key::<RSASSA_PSS<RSA2048, SHA256>>(),
+        &digest,
+        &a,
+    )
+    .unwrap();
+    rsassa::verify_from_hash::<RSASSA_PSS<RSA2048, SHA256>, 256>(
+        &pk.key::<RSASSA_PSS<RSA2048, SHA256>>(),
+        &digest,
+        &b,
+    )
+    .unwrap();
+    assert!(
+        rsassa::verify_from_hash::<RSASSA_PSS<RSA2048, SHA256>, 256>(
+            &pk.key::<RSASSA_PSS<RSA2048, SHA256>>(),
+            &[0u8; 32],
+            &a
+        )
+        .is_err()
+    );
 
     let mut digest = [0u8; 32];
     SHAKE128::hash_out(b"the message", &mut digest);
-    let a =
-        rsassa_pss_shake::sign_from_hash::<RSA2048, SHAKE128, 256>(&sk, &digest, &mut rng).unwrap();
-    let b =
-        rsassa_pss_shake::sign_from_hash::<RSA2048, SHAKE128, 256>(&sk, &digest, &mut rng).unwrap();
+    let a = rsassa::sign_from_hash::<RSASSA_PSS_SHAKE<RSA2048, SHAKE128>, 256>(
+        &sk.key::<RSASSA_PSS_SHAKE<RSA2048, SHAKE128>>(),
+        &digest,
+        &mut rng,
+    )
+    .unwrap();
+    let b = rsassa::sign_from_hash::<RSASSA_PSS_SHAKE<RSA2048, SHAKE128>, 256>(
+        &sk.key::<RSASSA_PSS_SHAKE<RSA2048, SHAKE128>>(),
+        &digest,
+        &mut rng,
+    )
+    .unwrap();
     assert_ne!(a, b);
-    rsassa_pss_shake::verify_from_hash::<RSA2048, SHAKE128, 256>(&pk, &digest, &a).unwrap();
-    rsassa_pss_shake::verify_from_hash::<RSA2048, SHAKE128, 256>(&pk, &digest, &b).unwrap();
+    rsassa::verify_from_hash::<RSASSA_PSS_SHAKE<RSA2048, SHAKE128>, 256>(
+        &pk.key::<RSASSA_PSS_SHAKE<RSA2048, SHAKE128>>(),
+        &digest,
+        &a,
+    )
+    .unwrap();
+    rsassa::verify_from_hash::<RSASSA_PSS_SHAKE<RSA2048, SHAKE128>, 256>(
+        &pk.key::<RSASSA_PSS_SHAKE<RSA2048, SHAKE128>>(),
+        &digest,
+        &b,
+    )
+    .unwrap();
 }

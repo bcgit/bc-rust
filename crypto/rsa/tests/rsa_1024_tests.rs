@@ -10,9 +10,9 @@ use bouncycastle_core::errors::SignatureError;
 use bouncycastle_core::signature_key::VerifyingKey;
 use bouncycastle_core::traits::SignaturePublicKey;
 use bouncycastle_hex::decode as hex_decode;
-use bouncycastle_rsa::rsa_1024::{
-    PK_LEN, RSA1024PublicKey, RSASSA_PKCS1_v1_5_SHA256, RSASSA_PKCS1_v1_5_SHA384,
-};
+use bouncycastle_rsa::RSA1024;
+use bouncycastle_rsa::keys::{RsaPublicComponents, RsaPublicKey};
+use bouncycastle_rsa::rsa_1024::{PK_LEN, RSASSA_PKCS1_v1_5_SHA256, RSASSA_PKCS1_v1_5_SHA384};
 use serde_json::Value;
 use std::fs;
 use std::path::Path;
@@ -50,7 +50,7 @@ fn limbs_from_hex<const L: usize>(hex: &str) -> [u64; L] {
 
 fn run_sig_gen_group_as_verify_vectors(
     sha: &str,
-    verify: impl Fn(&RSA1024PublicKey, &[u8], &[u8; 128]) -> bool,
+    verify: impl Fn(&RsaPublicComponents<RSA1024>, &[u8], &[u8; 128]) -> bool,
 ) {
     let doc: Value =
         serde_json::from_str(&get_test_data("rsa_pkcs1_1024_sig_gen_test.json")).unwrap();
@@ -64,7 +64,7 @@ fn run_sig_gen_group_as_verify_vectors(
     let n: [u64; 16] = limbs_from_hex(group["privateKey"]["modulus"].as_str().unwrap());
     let e =
         u32::from_str_radix(group["privateKey"]["publicExponent"].as_str().unwrap(), 16).unwrap();
-    let pk = RSA1024PublicKey::new(&n, e).expect("group public key must be valid");
+    let pk = RsaPublicComponents::<RSA1024>::new(&n, e).expect("group public key must be valid");
 
     let mut num_tests = 0usize;
     for test in group["tests"].as_array().unwrap() {
@@ -81,20 +81,20 @@ fn run_sig_gen_group_as_verify_vectors(
 #[test]
 fn pkcs1_v1_5_sha256_accepts_genuine_sig_gen_signatures() {
     run_sig_gen_group_as_verify_vectors("SHA-256", |pk, msg, sig| {
-        VerifyingKey::<RSASSA_PKCS1_v1_5_SHA256, 128>::verify(pk, msg, None, sig).is_ok()
+        pk.key::<RSASSA_PKCS1_v1_5_SHA256>().verify(msg, None, sig).is_ok()
     });
 }
 
 #[test]
 fn pkcs1_v1_5_sha384_accepts_genuine_sig_gen_signatures() {
     run_sig_gen_group_as_verify_vectors("SHA-384", |pk, msg, sig| {
-        VerifyingKey::<RSASSA_PKCS1_v1_5_SHA384, 128>::verify(pk, msg, None, sig).is_ok()
+        pk.key::<RSASSA_PKCS1_v1_5_SHA384>().verify(msg, None, sig).is_ok()
     });
 }
 
 fn run_sig_gen_group_rejects_wrong_message(
     sha: &str,
-    verify: impl Fn(&RSA1024PublicKey, &[u8], &[u8; 128]) -> bool,
+    verify: impl Fn(&RsaPublicComponents<RSA1024>, &[u8], &[u8; 128]) -> bool,
 ) {
     let doc: Value =
         serde_json::from_str(&get_test_data("rsa_pkcs1_1024_sig_gen_test.json")).unwrap();
@@ -107,7 +107,7 @@ fn run_sig_gen_group_rejects_wrong_message(
     let n: [u64; 16] = limbs_from_hex(group["privateKey"]["modulus"].as_str().unwrap());
     let e =
         u32::from_str_radix(group["privateKey"]["publicExponent"].as_str().unwrap(), 16).unwrap();
-    let pk = RSA1024PublicKey::new(&n, e).unwrap();
+    let pk = RsaPublicComponents::<RSA1024>::new(&n, e).unwrap();
     let test = &group["tests"][0];
     let sig_bytes = hex_decode(test["sig"].as_str().unwrap()).unwrap();
     let sig: [u8; 128] = sig_bytes.try_into().unwrap();
@@ -117,7 +117,7 @@ fn run_sig_gen_group_rejects_wrong_message(
 #[test]
 fn pkcs1_v1_5_sha256_rejects_wrong_message() {
     run_sig_gen_group_rejects_wrong_message("SHA-256", |pk, msg, sig| {
-        VerifyingKey::<RSASSA_PKCS1_v1_5_SHA256, 128>::verify(pk, msg, None, sig).is_ok()
+        pk.key::<RSASSA_PKCS1_v1_5_SHA256>().verify(msg, None, sig).is_ok()
     });
 }
 
@@ -127,7 +127,7 @@ fn pkcs1_v1_5_sha256_rejects_wrong_message() {
 #[test]
 fn pkcs1_v1_5_sha384_rejects_wrong_message() {
     run_sig_gen_group_rejects_wrong_message("SHA-384", |pk, msg, sig| {
-        VerifyingKey::<RSASSA_PKCS1_v1_5_SHA384, 128>::verify(pk, msg, None, sig).is_ok()
+        pk.key::<RSASSA_PKCS1_v1_5_SHA384>().verify(msg, None, sig).is_ok()
     });
 }
 
@@ -144,7 +144,7 @@ fn pkcs1_v1_5_sha384_rejects_wrong_message() {
 fn trait_verify_rejects_truncated_signature() {
     run_sig_gen_group_as_verify_vectors("SHA-256", |pk, msg, sig| {
         matches!(
-            VerifyingKey::<RSASSA_PKCS1_v1_5_SHA256, 128>::verify(pk, msg, None, &sig[..127]),
+            pk.key::<RSASSA_PKCS1_v1_5_SHA256>().verify(msg, None, &sig[..127]),
             Err(SignatureError::LengthError(_))
         )
     });
@@ -158,19 +158,20 @@ fn public_key_trait_encoding_round_trips_and_rejects_wrong_lengths() {
     let n: [u64; 16] = limbs_from_hex(group["privateKey"]["modulus"].as_str().unwrap());
     let e =
         u32::from_str_radix(group["privateKey"]["publicExponent"].as_str().unwrap(), 16).unwrap();
-    let pk = RSA1024PublicKey::new(&n, e).unwrap();
+    let pk =
+        RsaPublicComponents::<RSA1024>::new(&n, e).unwrap().into_key::<RSASSA_PKCS1_v1_5_SHA256>();
 
     let bytes = pk.encode();
     assert_eq!(bytes.len(), PK_LEN);
-    assert_eq!(RSA1024PublicKey::from_bytes(&bytes).unwrap(), pk);
+    assert_eq!(RsaPublicKey::<RSASSA_PKCS1_v1_5_SHA256>::from_bytes(&bytes).unwrap(), pk);
     assert!(matches!(
-        RSA1024PublicKey::from_bytes(&bytes[..PK_LEN - 1]),
+        RsaPublicKey::<RSASSA_PKCS1_v1_5_SHA256>::from_bytes(&bytes[..PK_LEN - 1]),
         Err(SignatureError::DecodingError(_))
     ));
     let mut too_long = bytes.to_vec();
     too_long.push(0);
     assert!(matches!(
-        RSA1024PublicKey::from_bytes(&too_long),
+        RsaPublicKey::<RSASSA_PKCS1_v1_5_SHA256>::from_bytes(&too_long),
         Err(SignatureError::DecodingError(_))
     ));
 }
@@ -181,7 +182,7 @@ fn public_key_trait_encoding_round_trips_and_rejects_wrong_lengths() {
 fn trait_verify_reports_out_of_range_representative_as_invalid_signature() {
     run_sig_gen_group_as_verify_vectors("SHA-256", |pk, msg, _sig| {
         matches!(
-            VerifyingKey::<RSASSA_PKCS1_v1_5_SHA256, 128>::verify(pk, msg, None, &[0xffu8; 128]),
+            pk.key::<RSASSA_PKCS1_v1_5_SHA256>().verify(msg, None, &[0xffu8; 128]),
             Err(SignatureError::SignatureVerificationFailed)
         )
     });

@@ -12,9 +12,11 @@ use bouncycastle_core::traits::SignatureSigner;
 use bouncycastle_core_test_framework::signature::TestFrameworkSignature;
 use bouncycastle_hex::decode as hex_decode;
 use bouncycastle_rng::DefaultRNG;
-use bouncycastle_rsa::rsa_2048::{
-    RSA2048PrivateKey, RSA2048PublicKey, RSASSA_PSS_SHA384, RSASSA_PSS_SHA512, SIG_LEN,
+use bouncycastle_rsa::RSA2048;
+use bouncycastle_rsa::keys::{
+    RsaPrivateComponents, RsaPrivateKey, RsaPublicComponents, RsaPublicKey,
 };
+use bouncycastle_rsa::rsa_2048::{RSASSA_PSS_SHA384, RSASSA_PSS_SHA512, SIG_LEN};
 use serde_json::Value;
 use std::fs;
 use std::path::Path;
@@ -23,8 +25,8 @@ use std::path::Path;
 /// deterministic PSS mode, for tests against a known salt. Returns `do_sign_final`'s `Result`.
 macro_rules! sign_with_salt {
     ($ty:ty, $sk:expr, $msg:expr, $salt:expr) => {{
-        let mut signer =
-            SigningKey::<$ty, 256>::create_signer($sk, &mut DefaultRNG::default(), None).unwrap();
+        let sk_typed_ty = $sk.key::<$ty>();
+        let mut signer = sk_typed_ty.create_signer(&mut DefaultRNG::default(), None).unwrap();
         signer.set_salt($salt);
         signer.do_update($msg);
         signer.do_final()
@@ -64,7 +66,7 @@ fn limbs_from_hex<const L: usize>(hex: &str) -> [u64; L] {
 
 /// The same genuine RSA-2048 keypair used throughout this crate's other test files -- see
 /// `rsa_2048_pkcs1_v1_5_tests.rs` for the full, sourced provenance.
-fn genuine_key() -> RSA2048PrivateKey {
+fn genuine_key() -> RsaPrivateComponents<RSA2048> {
     let p: [u64; 16] = [
         0x0ea36cfb3a5b18f1, 0x48a6e65332119129, 0x110ad9e7b48a1c93, 0x569156b90113e2e9,
         0xe79813a575cfad9c, 0x69d659d143ec6f17, 0xe81e6bab5ddaa783, 0xbff1c5b80a69f788,
@@ -95,62 +97,58 @@ fn genuine_key() -> RSA2048PrivateKey {
         0xe923e1097c0c562f, 0xc968b48a91c38b5b, 0x933e85179c0320b0, 0x7993d0445f758d51,
         0x9bfc042ee0924b1b, 0x41f956d90fa8a793, 0xee7a87b6483a66ee, 0x2640fbfbcfefb163,
     ];
-    RSA2048PrivateKey::from_crt_components(&p, &q, &d_p, &d_q, &q_inv)
+    RsaPrivateComponents::<RSA2048>::from_crt_components(&p, &q, &d_p, &d_q, &q_inv)
         .expect("recovered CRT components must be accepted")
 }
 
 #[test]
 fn pss_sha384_fixed_salt_round_trips() {
     let sk = genuine_key();
-    let pk = RSA2048PublicKey::new(sk.n(), 0x10001).unwrap();
+    let pk = RsaPublicComponents::<RSA2048>::new(sk.n(), 0x10001).unwrap();
     let salt = [0x42u8; 48];
     let sig =
         sign_with_salt!(RSASSA_PSS_SHA384, &sk, b"hello", salt).expect("signing must succeed");
-    VerifyingKey::<RSASSA_PSS_SHA384, 256>::verify(&pk, b"hello", None, &sig).expect("must verify");
-    assert!(VerifyingKey::<RSASSA_PSS_SHA384, 256>::verify(&pk, b"goodbye", None, &sig).is_err());
+    pk.key::<RSASSA_PSS_SHA384>().verify(b"hello", None, &sig).expect("must verify");
+    assert!(pk.key::<RSASSA_PSS_SHA384>().verify(b"goodbye", None, &sig).is_err());
 }
 
 #[test]
 fn pss_sha384_rng_produces_fresh_salts_that_both_verify() {
     let sk = genuine_key();
-    let pk = RSA2048PublicKey::new(sk.n(), 0x10001).unwrap();
+    let pk = RsaPublicComponents::<RSA2048>::new(sk.n(), 0x10001).unwrap();
     let mut rng = DefaultRNG::default();
-    let sig_a = SigningKey::<RSASSA_PSS_SHA384, 256>::sign(&sk, &mut rng, b"hello", None)
-        .expect("signing must succeed");
-    let sig_b = SigningKey::<RSASSA_PSS_SHA384, 256>::sign(&sk, &mut rng, b"hello", None)
-        .expect("signing must succeed");
+    let sig_a =
+        sk.key::<RSASSA_PSS_SHA384>().sign(&mut rng, b"hello", None).expect("signing must succeed");
+    let sig_b =
+        sk.key::<RSASSA_PSS_SHA384>().sign(&mut rng, b"hello", None).expect("signing must succeed");
     assert_ne!(sig_a, sig_b);
-    VerifyingKey::<RSASSA_PSS_SHA384, 256>::verify(&pk, b"hello", None, &sig_a)
-        .expect("sig_a must verify");
-    VerifyingKey::<RSASSA_PSS_SHA384, 256>::verify(&pk, b"hello", None, &sig_b)
-        .expect("sig_b must verify");
+    pk.key::<RSASSA_PSS_SHA384>().verify(b"hello", None, &sig_a).expect("sig_a must verify");
+    pk.key::<RSASSA_PSS_SHA384>().verify(b"hello", None, &sig_b).expect("sig_b must verify");
 }
 
 #[test]
 fn pss_sha512_fixed_salt_round_trips() {
     let sk = genuine_key();
-    let pk = RSA2048PublicKey::new(sk.n(), 0x10001).unwrap();
+    let pk = RsaPublicComponents::<RSA2048>::new(sk.n(), 0x10001).unwrap();
     let salt = [0x42u8; 64];
     let sig =
         sign_with_salt!(RSASSA_PSS_SHA512, &sk, b"hello", salt).expect("signing must succeed");
-    VerifyingKey::<RSASSA_PSS_SHA512, 256>::verify(&pk, b"hello", None, &sig).expect("must verify");
-    assert!(VerifyingKey::<RSASSA_PSS_SHA512, 256>::verify(&pk, b"goodbye", None, &sig).is_err());
+    pk.key::<RSASSA_PSS_SHA512>().verify(b"hello", None, &sig).expect("must verify");
+    assert!(pk.key::<RSASSA_PSS_SHA512>().verify(b"goodbye", None, &sig).is_err());
 }
 
 #[test]
 fn pss_sha512_rng_produces_fresh_salts_that_both_verify() {
     let sk = genuine_key();
-    let pk = RSA2048PublicKey::new(sk.n(), 0x10001).unwrap();
+    let pk = RsaPublicComponents::<RSA2048>::new(sk.n(), 0x10001).unwrap();
     let mut rng = DefaultRNG::default();
-    let sig_a = SigningKey::<RSASSA_PSS_SHA512, 256>::sign(&sk, &mut rng, b"hello", None)
-        .expect("signing must succeed");
-    let sig_b = SigningKey::<RSASSA_PSS_SHA512, 256>::sign(&sk, &mut rng, b"hello", None)
-        .expect("signing must succeed");
+    let sig_a =
+        sk.key::<RSASSA_PSS_SHA512>().sign(&mut rng, b"hello", None).expect("signing must succeed");
+    let sig_b =
+        sk.key::<RSASSA_PSS_SHA512>().sign(&mut rng, b"hello", None).expect("signing must succeed");
     assert_ne!(sig_a, sig_b);
-    VerifyingKey::<RSASSA_PSS_SHA512, 256>::verify(&pk, b"hello", None, &sig_a)
-        .expect("sig_a must verify");
-    VerifyingKey::<RSASSA_PSS_SHA512, 256>::verify(&pk, b"hello", None, &sig_b)
-        .expect("sig_b must verify");
+    pk.key::<RSASSA_PSS_SHA512>().verify(b"hello", None, &sig_a).expect("sig_a must verify");
+    pk.key::<RSASSA_PSS_SHA512>().verify(b"hello", None, &sig_b).expect("sig_b must verify");
 }
 
 #[test]
@@ -169,7 +167,8 @@ fn rsa_pss_sha384_mgf1_48_wycheproof_vectors() {
         let n: [u64; 32] = limbs_from_hex(group["publicKey"]["modulus"].as_str().unwrap());
         let e = u32::from_str_radix(group["publicKey"]["publicExponent"].as_str().unwrap(), 16)
             .expect("publicExponent fits in u32 for every group here");
-        let pk = RSA2048PublicKey::new(&n, e).expect("group public key must be valid");
+        let pk =
+            RsaPublicComponents::<RSA2048>::new(&n, e).expect("group public key must be valid");
 
         for test in group["tests"].as_array().unwrap() {
             num_tests += 1;
@@ -183,8 +182,7 @@ fn rsa_pss_sha384_mgf1_48_wycheproof_vectors() {
                 continue;
             };
 
-            let verified =
-                VerifyingKey::<RSASSA_PSS_SHA384, 256>::verify(&pk, &msg, None, &sig).is_ok();
+            let verified = pk.key::<RSASSA_PSS_SHA384>().verify(&msg, None, &sig).is_ok();
             match test["result"].as_str().unwrap() {
                 "valid" => {
                     assert!(verified, "tcId {tc_id}: expected valid, got invalid");
@@ -206,9 +204,10 @@ fn rsa_pss_sha384_mgf1_48_wycheproof_vectors() {
 
 // ---- bouncycastle_core trait conformance ------------------------------------------------------
 
-fn fixed_keypair() -> Result<(RSA2048PublicKey, RSA2048PrivateKey), SignatureError> {
+fn fixed_keypair()
+-> Result<(RsaPublicComponents<RSA2048>, RsaPrivateComponents<RSA2048>), SignatureError> {
     let sk = genuine_key();
-    let pk = RSA2048PublicKey::new(sk.n(), 0x10001)?;
+    let pk = RsaPublicComponents::<RSA2048>::new(sk.n(), 0x10001)?;
     Ok((pk, sk))
 }
 
@@ -217,11 +216,11 @@ fn fixed_keypair() -> Result<(RSA2048PublicKey, RSA2048PrivateKey), SignatureErr
 #[test]
 fn pss_sha384_sha512_trait_conformance_suite() {
     let framework = TestFrameworkSignature::new(false);
-    framework.test_signature::<RSASSA_PSS_SHA384, RSA2048PublicKey, RSA2048PrivateKey, SIG_LEN>(
-        fixed_keypair, false,
+    framework.test_signature::<RSASSA_PSS_SHA384, RsaPublicKey<RSASSA_PSS_SHA384>, RsaPrivateKey<RSASSA_PSS_SHA384>, SIG_LEN>(
+            || fixed_keypair().map(|(pk, sk)| (pk.into_key::<RSASSA_PSS_SHA384>(), sk.into_key::<RSASSA_PSS_SHA384>())), false,
     );
-    framework.test_signature::<RSASSA_PSS_SHA512, RSA2048PublicKey, RSA2048PrivateKey, SIG_LEN>(
-        fixed_keypair, false,
+    framework.test_signature::<RSASSA_PSS_SHA512, RsaPublicKey<RSASSA_PSS_SHA512>, RsaPrivateKey<RSASSA_PSS_SHA512>, SIG_LEN>(
+            || fixed_keypair().map(|(pk, sk)| (pk.into_key::<RSASSA_PSS_SHA512>(), sk.into_key::<RSASSA_PSS_SHA512>())), false,
     );
 }
 
@@ -229,28 +228,26 @@ fn pss_sha384_sha512_trait_conformance_suite() {
 fn pss_sha384_and_sha512_reject_each_others_signatures() {
     let (pk, sk) = fixed_keypair().unwrap();
     let msg = b"PSS across both APIs";
-    VerifyingKey::<RSASSA_PSS_SHA384, 256>::verify(
-        &pk,
-        msg,
-        None,
-        &SigningKey::<RSASSA_PSS_SHA384, 256>::sign(&sk, &mut DefaultRNG::default(), msg, None)
-            .unwrap(),
-    )
-    .unwrap();
-    VerifyingKey::<RSASSA_PSS_SHA512, 256>::verify(
-        &pk,
-        msg,
-        None,
-        &SigningKey::<RSASSA_PSS_SHA512, 256>::sign(&sk, &mut DefaultRNG::default(), msg, None)
-            .unwrap(),
-    )
-    .unwrap();
+    pk.key::<RSASSA_PSS_SHA384>()
+        .verify(
+            msg,
+            None,
+            &sk.key::<RSASSA_PSS_SHA384>().sign(&mut DefaultRNG::default(), msg, None).unwrap(),
+        )
+        .unwrap();
+    pk.key::<RSASSA_PSS_SHA512>()
+        .verify(
+            msg,
+            None,
+            &sk.key::<RSASSA_PSS_SHA512>().sign(&mut DefaultRNG::default(), msg, None).unwrap(),
+        )
+        .unwrap();
     let mut rng = DefaultRNG::default();
-    let free_384 = SigningKey::<RSASSA_PSS_SHA384, 256>::sign(&sk, &mut rng, msg, None).unwrap();
-    let free_512 = SigningKey::<RSASSA_PSS_SHA512, 256>::sign(&sk, &mut rng, msg, None).unwrap();
-    VerifyingKey::<RSASSA_PSS_SHA384, 256>::verify(&pk, msg, None, &free_384).unwrap();
-    VerifyingKey::<RSASSA_PSS_SHA512, 256>::verify(&pk, msg, None, &free_512).unwrap();
+    let free_384 = sk.key::<RSASSA_PSS_SHA384>().sign(&mut rng, msg, None).unwrap();
+    let free_512 = sk.key::<RSASSA_PSS_SHA512>().sign(&mut rng, msg, None).unwrap();
+    pk.key::<RSASSA_PSS_SHA384>().verify(msg, None, &free_384).unwrap();
+    pk.key::<RSASSA_PSS_SHA512>().verify(msg, None, &free_512).unwrap();
     // The two hash pairings are distinct encodings: neither accepts the other's signature.
-    assert!(VerifyingKey::<RSASSA_PSS_SHA384, 256>::verify(&pk, msg, None, &free_512).is_err());
-    assert!(VerifyingKey::<RSASSA_PSS_SHA512, 256>::verify(&pk, msg, None, &free_384).is_err());
+    assert!(pk.key::<RSASSA_PSS_SHA384>().verify(msg, None, &free_512).is_err());
+    assert!(pk.key::<RSASSA_PSS_SHA512>().verify(msg, None, &free_384).is_err());
 }

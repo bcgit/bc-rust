@@ -155,13 +155,11 @@ macro_rules! rsasve_suite {
                 assert_eq!(sk_out, sk.encode());
                 assert_eq!(pk.n(), sk.n());
                 assert_eq!(pk.e(), 65537);
-                // `Display` is the wrapped signature key type's, unchanged.
-                let inner = bouncycastle_rsa::keys::RsaPublicKey::<bouncycastle_rsa::$marker>::new(
-                    pk.n(),
-                    65537,
-                )
-                .unwrap();
-                assert_eq!(format!("{pk}"), format!("{inner}"));
+                // `Display` names the KEM key type and the size, then the public data.
+                assert!(format!("{pk}").starts_with(&format!(
+                    "RsaKEMPublicKey<{}> {{ n: ",
+                    <bouncycastle_rsa::$marker as bouncycastle_rsa::size::RsaSize>::NAME
+                )));
             }
 
             /// OpenSSL encapsulated; this crate decapsulates. And the other way round: fed
