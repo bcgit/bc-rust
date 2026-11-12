@@ -12,6 +12,7 @@ use bouncycastle::core::key_material::KeyMaterialTrait;
 use bouncycastle::core::traits::{KeyAgreementPrivateKey, KeyAgreementPublicKey};
 use bouncycastle::ed::x25519::{POINT_LEN, X25519PrivateKey, X25519PublicKey, keygen};
 use bouncycastle::rng::HashDRBG_SHA512;
+use bouncycastle_utils::secret::Secret;
 use clap::ValueEnum;
 use std::process::exit;
 
@@ -44,7 +45,11 @@ pub(crate) fn x25519_cmd(
                 eprintln!("Error: key generation failed: {e:?}");
                 exit(-1);
             });
-            write_bytes_or_hex(&sk.encode(), output_hex);
+            // The encoding lives in a Secret until it is written; the hex form the writer
+            // builds is the shared helper's, as for every other key the CLI prints.
+            let mut sk_bytes = Secret::<[u8; POINT_LEN]>::new();
+            sk.encode_out(&mut sk_bytes);
+            write_bytes_or_hex(&*sk_bytes, output_hex);
         }
         X25519Action::PkFromSk => {
             let sk = parse_sk(read_secret_file_or_stdin(skfile).ref_to_bytes());

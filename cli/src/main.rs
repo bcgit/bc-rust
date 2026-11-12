@@ -5759,15 +5759,15 @@ enum Subcommands {
         action: x25519_cmd::X25519Action,
 
         #[arg(long)]
-        /// The private key file (in hex or binary) for agree and decaps
+        /// The private key file (binary, or hex under --hex-input) for pk-from-sk, check-consistency, agree and decaps; stdin if absent where allowed
         skfile: Option<String>,
 
         #[arg(long)]
-        /// The public key file (in hex or binary) for agree and encaps
+        /// The public key file (binary, or hex under --hex-input) for check-consistency, agree and encaps
         pkfile: Option<String>,
 
         #[arg(long)]
-        /// The ciphertext value file (in hex or binary) either for encaps to output to, or for decaps to read from.
+        /// The ciphertext file (binary, or hex under --hex-input): written by encaps, read by decaps.
         ctfile: Option<String>,
 
         #[arg(short)]
