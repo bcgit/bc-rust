@@ -11,8 +11,8 @@
 //! [`KeyType::SharedSecret`](bouncycastle_core::key_material::KeyType::SharedSecret): keying
 //! material for a KDF (Section 5.8), which nothing else accepts as a key. The raw primitive is
 //! the role impl over `()`. The same keys also run a KDF over `Z`, through
-//! [`KdfParams`](bouncycastle_core::kdf_params::KdfParams) naming a borrowed KDF instance and
-//! the fixed info: SEC 1 Section 6.1's ECDH scheme, the ANSI X9.63 KDF over the hash matched to
+//! [`KdfParams`](bouncycastle_core::kdf_params::KdfParams) naming a borrowed description of the
+//! KDF (readable, for a key that hands the derivation to a device) and the fixed info: SEC 1 Section 6.1's ECDH scheme, the ANSI X9.63 KDF over the hash matched to
 //! the curve ([`ECCDH_X963KDF`](eccdh::ECCDH_X963KDF), `ECC-CDH-P256-X963KDF-SHA256` and so
 //! on), SP 800-56A Rev. 3 Section 5.8's one-step derivation, the NIST concatenation KDF over the
 //! same hash ([`ECCDH_ConcatKDF`](eccdh::ECCDH_ConcatKDF)), and on P-256 HKDF-SHA256
@@ -44,7 +44,7 @@
 //! ```
 //!
 //! `Z` is not a key. Pass it through a KDF: the P-256 keys do that for you over
-//! `KdfParams<HKDF_SHA256, LEN>`, and any curve's `Z` goes into HKDF by hand:
+//! `KdfParams<HkdfDescription<SHA256>, LEN>`, and any curve's `Z` goes into HKDF by hand:
 //!
 //! ```
 //! use bouncycastle_core::agreement_key::AgreementKey;
@@ -53,6 +53,8 @@
 //! use bouncycastle_ec::P256;
 //! use bouncycastle_eccdh::keys_common::AgreementKeyPair;
 //! use bouncycastle_rng::HashDRBG_SHA512;
+//! use bouncycastle_hkdf::HkdfDescription;
+//! use bouncycastle_sha2::SHA256;
 //! use bouncycastle_sha2::hkdf::HKDF_SHA256;
 //!
 //! let mut rng = HashDRBG_SHA512::new_from_os();
@@ -61,7 +63,7 @@
 //!
 //! // ECC-CDH-P256-HKDF-SHA256: the KDF type on the parameters selects it, the KeyLen the length.
 //! let salt = KeyMaterial::<32>::from_rng(&mut rng)?;
-//! let hkdf = HKDF_SHA256::new_with_salt(&salt).unwrap();
+//! let hkdf = HkdfDescription::<SHA256>::with_salt(&salt).unwrap();
 //! let params = KdfParams::new(&hkdf, b"example protocol v1", KeyLen::<32>);
 //! let key_a = sk_a.agree(&pk_b, params)?;
 //! let key_b = sk_b.agree(&pk_a, params)?;

@@ -7,6 +7,7 @@ edition.workspace = true
 bouncycastle-concatkdf.workspace = true
 bouncycastle-core.workspace = true
 bouncycastle-ec.workspace = true
+bouncycastle-hkdf.workspace = true
 bouncycastle-sha2.workspace = true
 bouncycastle-utils.workspace = true
 bouncycastle-x963kdf.workspace = true

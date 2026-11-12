@@ -336,6 +336,18 @@ direction in the worker types. Mechanics to reuse:
   commands (which bind their length through KMACXOF's final read, SP 800-185 Sec 4.3.1) are
   where a length chosen at run time lives; everywhere else it is the key type's.
 
+## KDF descriptions must stay readable by hardware (November 2026)
+
+`core::kdf_params::KdfParams` borrows a `KdfDescription`, not a KDF instance, so that a key
+held in a token or an HSM can read the KDF's identity and every parameter it was made from and
+hand the device the same derivation (a PKCS#11 HKDF or ECDH1 derive mechanism, say), where a
+software key builds the engine from it. If the description trait or a description type is
+modified, that property is the one to preserve: every constructor parameter of the KDF
+(HKDF's salt, and whatever a later KDF takes) stays a readable field of the description, never
+only inside the engine it builds, and a parameter with no readable form is a design error, not
+an implementation detail. `crypto/eccdh/tests/token_key_tests.rs` is the check: a key holding no
+material agrees through the same parameters as the software key by reading them.
+
 ## Working from specifications
 
 QUALITY_AND_STYLE.md is where the requirement for spec-corresponding comments and justified deviations lives. This

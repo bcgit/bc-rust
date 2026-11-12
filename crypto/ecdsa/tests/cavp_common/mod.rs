@@ -197,3 +197,170 @@ pub fn hex_bytes(fields: &BTreeMap<String, String>, key: &str) -> Vec<u8> {
 pub fn result_is_pass(fields: &BTreeMap<String, String>) -> bool {
     fields.get("Result").unwrap_or_else(|| panic!("record missing Result field")).starts_with('P')
 }
+
+use bouncycastle_core::signature_key::{SigningKey, VerifyingKey};
+use bouncycastle_core::traits::{SignaturePrivateKey, SignaturePublicKey};
+use bouncycastle_ec::curve::Curve;
+use bouncycastle_ecdsa::ecdsa::ECDSA;
+use bouncycastle_ecdsa::ecdsa::EcdsaHash;
+use bouncycastle_ecdsa::keys::{ECDSAPrivateKey, ECDSAPublicKey};
+use bouncycastle_rng::DefaultRNG;
+use bouncycastle_sha2::SHA256;
+
+/// SEC 1 Section 2.3.3 case 3 (`04 || X || Y`), built dynamically rather than into a fixed-size
+/// array: `ECDSA_PKV.rsp`'s "out of range" vectors deliberately supply a coordinate wider than
+/// the field (see `hex_field`'s docs), and this must reproduce that oversized encoding rather
+/// than truncate it, so the decoder's own length check is what rejects it.
+pub fn uncompressed_pk(qx: &[u8], qy: &[u8]) -> Vec<u8> {
+    let mut out = vec![0x04u8];
+    out.extend_from_slice(qx);
+    out.extend_from_slice(qy);
+    out
+}
+
+/// `ECDSA_SigVer.rsp`'s `[curve,hash]` section under `ECDSA<C, H>`: positive and negative
+/// verification, every record's verdict as given.
+pub fn sigver<C, H, const PK_LEN: usize, const SIG_LEN: usize>(section: &str)
+where
+    C: Curve<PkUncompressed = [u8; PK_LEN], Signature = [u8; SIG_LEN]>,
+    H: EcdsaHash,
+{
+    let width = C::SCALAR_LEN;
+    let content = get_test_data("ECDSA_SigVer.rsp");
+    let records: Vec<Record> = parse_records(&content)
+        .into_iter()
+        .filter(|r| r.section == section && r.fields.contains_key("Result"))
+        .collect();
+    assert!(!records.is_empty(), "no {section} SigVer records found");
+
+    for record in &records {
+        let msg = hex_bytes(&record.fields, "Msg");
+        let qx = hex_field(&record.fields, "Qx", width);
+        let qy = hex_field(&record.fields, "Qy", width);
+        let r = hex_field(&record.fields, "R", width);
+        let s = hex_field(&record.fields, "S", width);
+        let expect_pass = result_is_pass(&record.fields);
+
+        let mut sig = [0u8; SIG_LEN];
+        sig[..width].copy_from_slice(&r);
+        sig[width..].copy_from_slice(&s);
+        let verified =
+            ECDSAPublicKey::<C, H>::from_bytes(&uncompressed_pk(&qx, &qy)).ok().and_then(|pk| {
+                VerifyingKey::<ECDSA<C, H>, SIG_LEN>::verify(&pk, &msg, None, &sig).ok()
+            });
+        assert_eq!(
+            verified.is_some(),
+            expect_pass,
+            "{section}: mismatch for record {:?}",
+            record.fields
+        );
+    }
+}
+
+/// `ECDSA_SigGen.txt`, NIST's `SigGen.txt` from `186-4ecdsatestvectors.zip`, the form of the
+/// SigGen vectors that carries `d` and the per-message secret `k`: `k` is injected through
+/// [`FixedBytesRng`] (see its docs for why an RNG returning `k - 1` yields exactly `k`), so this
+/// pins the random signer's output against NIST's values through the public API, for the
+/// `[curve,hash]` section under `ECDSA<C, H>`.
+pub fn siggen<C, H, const PK_LEN: usize, const SK_LEN: usize, const SIG_LEN: usize>(section: &str)
+where
+    C: Curve
+        + Curve<PkUncompressed = [u8; PK_LEN], ScalarBytes = [u8; SK_LEN], Signature = [u8; SIG_LEN]>,
+    H: EcdsaHash,
+{
+    let width = C::SCALAR_LEN;
+    let content = get_test_data("ECDSA_SigGen.txt");
+    let records: Vec<Record> = parse_records(&content)
+        .into_iter()
+        .filter(|r| r.section == section && r.fields.contains_key("k"))
+        .collect();
+    assert!(!records.is_empty(), "no {section} SigGen records with k found");
+
+    for record in &records {
+        let msg = hex_bytes(&record.fields, "Msg");
+        let d = hex_field(&record.fields, "d", width);
+        let qx = hex_field(&record.fields, "Qx", width);
+        let qy = hex_field(&record.fields, "Qy", width);
+        let mut k_minus_1 = hex_field(&record.fields, "k", width);
+        decrement_be(&mut k_minus_1);
+        let r = hex_field(&record.fields, "R", width);
+        let s = hex_field(&record.fields, "S", width);
+
+        let sk =
+            ECDSAPrivateKey::<C, H>::from_bytes(&d).expect("CAVP d must be a valid private key");
+        let pk = ECDSAPublicKey::<C, H>::from_bytes(&uncompressed_pk(&qx, &qy))
+            .expect("CAVP Q must be a valid public key");
+
+        let mut rng = FixedBytesRng::new(k_minus_1);
+        let sig = SigningKey::<ECDSA<C, H>, SIG_LEN>::sign(&sk, &mut rng, &msg, None)
+            .expect("signing with a valid key and k must succeed");
+        let mut expected = [0u8; SIG_LEN];
+        expected[..width].copy_from_slice(&r);
+        expected[width..].copy_from_slice(&s);
+        assert_eq!(sig, expected, "{section}: mismatch for record {:?}", record.fields);
+        VerifyingKey::<ECDSA<C, H>, SIG_LEN>::verify(&pk, &msg, None, &sig)
+            .expect("NIST's own signature must verify");
+    }
+}
+
+/// `ECDSA_PKV.rsp`'s `[curve]` section: public-key validation, every verdict as given.
+pub fn pkv<C, const PK_LEN: usize>(section: &str)
+where
+    C: Curve<PkUncompressed = [u8; PK_LEN]>,
+{
+    let content = get_test_data("ECDSA_PKV.rsp");
+    let records: Vec<Record> = parse_records(&content)
+        .into_iter()
+        .filter(|r| r.section == section && r.fields.contains_key("Result"))
+        .collect();
+    assert!(!records.is_empty(), "no {section} PKV records found");
+    for record in &records {
+        // `hex_field` keeps an oversized coordinate oversized (see its docs), so the decoder's
+        // own length check is what rejects the "out of range" vectors.
+        let qx = hex_field(&record.fields, "Qx", C::FE_LEN);
+        let qy = hex_field(&record.fields, "Qy", C::FE_LEN);
+        // The hash takes no part in decoding or validating a public key.
+        let result = ECDSAPublicKey::<C, SHA256>::from_bytes(&uncompressed_pk(&qx, &qy));
+        assert_eq!(
+            result.is_ok(),
+            result_is_pass(&record.fields),
+            "{section}: mismatch for record {:?}",
+            record.fields
+        );
+    }
+}
+
+/// `ECDSA_KeyPair.rsp`'s `[curve]` section: `[d]G` must be `Q`, through `derive_pk` and
+/// through a signature under `d` verifying under `Q`.
+pub fn keypair<C, H, const PK_LEN: usize, const SK_LEN: usize, const SIG_LEN: usize>(section: &str)
+where
+    C: Curve
+        + Curve<PkUncompressed = [u8; PK_LEN], ScalarBytes = [u8; SK_LEN], Signature = [u8; SIG_LEN]>,
+    H: EcdsaHash,
+{
+    use bouncycastle_ecdsa::keys_common::DerivePublicKey;
+    let width = C::SCALAR_LEN;
+    let content = get_test_data("ECDSA_KeyPair.rsp");
+    let records: Vec<Record> = parse_records(&content)
+        .into_iter()
+        .filter(|r| r.section == section && r.fields.contains_key("d"))
+        .collect();
+    assert!(!records.is_empty(), "no {section} KeyPair records found");
+
+    let msg = b"CAVP KeyPair (d, Q) consistency check";
+    for record in &records {
+        let d = hex_field(&record.fields, "d", width);
+        let qx = hex_field(&record.fields, "Qx", width);
+        let qy = hex_field(&record.fields, "Qy", width);
+        let sk =
+            ECDSAPrivateKey::<C, H>::from_bytes(&d).expect("CAVP d must be a valid private key");
+        let pk = ECDSAPublicKey::<C, H>::from_bytes(&uncompressed_pk(&qx, &qy))
+            .expect("CAVP Q must be a valid public key");
+        assert_eq!(sk.derive_pk(), pk, "{section}: [d]G must be Q");
+        let sig =
+            SigningKey::<ECDSA<C, H>, SIG_LEN>::sign(&sk, &mut DefaultRNG::default(), msg, None)
+                .expect("signing with a valid key must succeed");
+        VerifyingKey::<ECDSA<C, H>, SIG_LEN>::verify(&pk, msg, None, &sig)
+            .expect("Q must be [d]G for this (d, Q) pair to verify");
+    }
+}

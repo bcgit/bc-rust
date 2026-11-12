@@ -14,11 +14,11 @@ use crate::mlkem_keys::{
 };
 use crate::params::{CiphertextLen, MLKEMParams};
 use bouncycastle_core::errors::KEMError;
-use bouncycastle_core::kdf_params::KdfParams;
+use bouncycastle_core::kdf_params::{KdfDescription, KdfParams};
 use bouncycastle_core::kem_key::{DecapsulatingKey, EncapsulatingKey};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait};
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::traits::{Algorithm, KDF, KEMDecapsulator, KEMEncapsulator, RNG};
+use bouncycastle_core::traits::{Algorithm, KEMDecapsulator, KEMEncapsulator, RNG};
 use bouncycastle_mlkem_common::kdf::{MLKEMKdfPairing, PairedKdf};
 use core::marker::PhantomData;
 
@@ -36,7 +36,7 @@ pub struct MLKEMKdfEncapsulator<
     'k,
     'p,
     P: MLKEMParams,
-    D: KDF + PairedKdf + ?Sized,
+    D: KdfDescription + PairedKdf + ?Sized,
     EK: MLKEMPublicKeyInternalTrait<P>,
     const SS_LEN: usize,
 > {
@@ -47,7 +47,7 @@ pub struct MLKEMKdfEncapsulator<
 
 impl<
     P: MLKEMParams + MLKEMKdfPairing<D, SS_LEN>,
-    D: KDF + PairedKdf + ?Sized,
+    D: KdfDescription + PairedKdf + ?Sized,
     EK: MLKEMPublicKeyInternalTrait<P>,
     const SS_LEN: usize,
 > Algorithm for MLKEMKdfEncapsulator<'_, '_, P, D, EK, SS_LEN>
@@ -59,7 +59,7 @@ impl<
 
 impl<
     P: MLKEMParams + CiphertextLen<CT_LEN> + MLKEMKdfPairing<D, SS_LEN>,
-    D: KDF + PairedKdf + ?Sized,
+    D: KdfDescription + PairedKdf + ?Sized,
     EK: MLKEMPublicKeyInternalTrait<P>,
     const CT_LEN: usize,
     const SS_LEN: usize,
@@ -91,7 +91,7 @@ pub struct MLKEMKdfDecapsulator<
     'k,
     'p,
     P: MLKEMParams,
-    D: KDF + PairedKdf + ?Sized,
+    D: KdfDescription + PairedKdf + ?Sized,
     DK: MLKEMPrivateKeyInternalTrait<P>,
     const SS_LEN: usize,
 > {
@@ -102,7 +102,7 @@ pub struct MLKEMKdfDecapsulator<
 
 impl<
     P: MLKEMParams + MLKEMKdfPairing<D, SS_LEN>,
-    D: KDF + PairedKdf + ?Sized,
+    D: KdfDescription + PairedKdf + ?Sized,
     DK: MLKEMPrivateKeyInternalTrait<P>,
     const SS_LEN: usize,
 > Algorithm for MLKEMKdfDecapsulator<'_, '_, P, D, DK, SS_LEN>
@@ -114,7 +114,7 @@ impl<
 
 impl<
     P: MLKEMParams + CiphertextLen<CT_LEN> + MLKEMKdfPairing<D, SS_LEN>,
-    D: KDF + PairedKdf + ?Sized,
+    D: KdfDescription + PairedKdf + ?Sized,
     DK: MLKEMPrivateKeyInternalTrait<P>,
     const CT_LEN: usize,
     const SS_LEN: usize,
@@ -138,7 +138,7 @@ impl<'p, P, D, const CT_LEN: usize, const SS_LEN: usize>
     EncapsulatingKey<KdfParams<'p, D, SS_LEN>, CT_LEN, SS_LEN> for MLKEMPublicKey<P>
 where
     P: MLKEMParams + CiphertextLen<CT_LEN> + MLKEMKdfPairing<D, SS_LEN>,
-    D: KDF + PairedKdf + ?Sized,
+    D: KdfDescription + PairedKdf + ?Sized,
 {
     type Algorithm = <P as MLKEMKdfPairing<D, SS_LEN>>::Algorithm;
     type Encapsulator<'k>
@@ -161,7 +161,7 @@ impl<'p, P, D, const CT_LEN: usize, const SS_LEN: usize>
     EncapsulatingKey<KdfParams<'p, D, SS_LEN>, CT_LEN, SS_LEN> for MLKEMPublicKeyExpanded<P>
 where
     P: MLKEMParams + CiphertextLen<CT_LEN> + MLKEMKdfPairing<D, SS_LEN>,
-    D: KDF + PairedKdf + ?Sized,
+    D: KdfDescription + PairedKdf + ?Sized,
 {
     type Algorithm = <P as MLKEMKdfPairing<D, SS_LEN>>::Algorithm;
     type Encapsulator<'k>
@@ -184,7 +184,7 @@ impl<'p, P, D, const CT_LEN: usize, const SS_LEN: usize>
     DecapsulatingKey<KdfParams<'p, D, SS_LEN>, CT_LEN, SS_LEN> for MLKEMPrivateKey<P>
 where
     P: MLKEMParams + CiphertextLen<CT_LEN> + MLKEMKdfPairing<D, SS_LEN>,
-    D: KDF + PairedKdf + ?Sized,
+    D: KdfDescription + PairedKdf + ?Sized,
 {
     type Algorithm = <P as MLKEMKdfPairing<D, SS_LEN>>::Algorithm;
     type Decapsulator<'k>
@@ -207,7 +207,7 @@ impl<'p, P, D, const CT_LEN: usize, const SS_LEN: usize>
     DecapsulatingKey<KdfParams<'p, D, SS_LEN>, CT_LEN, SS_LEN> for MLKEMPrivateKeyExpanded<P>
 where
     P: MLKEMParams + CiphertextLen<CT_LEN> + MLKEMKdfPairing<D, SS_LEN>,
-    D: KDF + PairedKdf + ?Sized,
+    D: KdfDescription + PairedKdf + ?Sized,
 {
     type Algorithm = <P as MLKEMKdfPairing<D, SS_LEN>>::Algorithm;
     type Decapsulator<'k>

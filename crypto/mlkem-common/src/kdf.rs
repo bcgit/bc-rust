@@ -4,10 +4,11 @@
 //!
 //! The derived key is KDF(𝐾, info), of the length the parameters name: 𝐾 is the shared secret
 //! key of FIPS 203 Algorithm 17 (ML-KEM.Encaps_internal), the KDF's input key material, and the
-//! KDF instance, the info and the length are the caller's [`KdfParams`], the length anything from
-//! one byte to 255 hash outputs (RFC 5869 Section 2.3), checked when a worker is made or a derivation
-//! compiled. For the HKDF pairings that is HKDF-Hash(salt, 𝐾,
-//! info), the salt being what the instance was made with. The length is part of the protocol's
+//! KDF's description, the info and the length are the caller's [`KdfParams`], the length anything
+//! from one byte to 255 hash outputs (RFC 5869 Section 2.3), checked when a worker is made or a
+//! derivation compiled. For the HKDF pairings that is HKDF-Hash(salt, 𝐾, info), the salt the
+//! description names ([`HkdfDescription`]), readable there by a key that cannot run the
+//! derivation itself. The length is part of the protocol's
 //! agreement as the info is, and it is not folded into the info: the key at one length is a
 //! prefix of the key at a longer one under the same info (RFC 5869 Section 2.3), so a protocol
 //! that wants two keys from one encapsulation gives them two infos, not two lengths (SP 800-56C
@@ -17,8 +18,8 @@
 //!
 //! The pairings are [`MLKEM512_HKDF_SHA256`], [`MLKEM768_HKDF_SHA512`] and
 //! [`MLKEM1024_HKDF_SHA512`]: the key types of either crate implement the roles over
-//! `KdfParams<'p, HKDF_SHA256, LEN>` for ML-KEM-512 and over `KdfParams<'p, HKDF_SHA512, LEN>`
-//! for the other two, so the parameter type selects the algorithm and the length at the call. A marker's strength is the
+//! `KdfParams<'p, HkdfDescription<'s, SHA256>, LEN>` for ML-KEM-512 and over
+//! `KdfParams<'p, HkdfDescription<'s, SHA512>, LEN>` for the other two, so the parameter type selects the algorithm and the length at the call. A marker's strength is the
 //! lesser of the parameter set's and the KDF's, and the derived key carries no more than it, and
 //! no more than its length holds (a key under 14 bytes carries none): HKDF credits the
 //! 32-byte 𝐾 as seeding it fully, and caps the output at 𝐾's strength; the pairing then caps the
@@ -28,11 +29,12 @@
 use crate::MLKEM_SS_LEN;
 use crate::params::{MLKEM512Params, MLKEM768Params, MLKEM1024Params, MLKEMParamsBase};
 use bouncycastle_core::errors::KEMError;
-use bouncycastle_core::kdf_params::KdfParams;
+use bouncycastle_core::kdf_params::{KdfDescription, KdfParams};
 use bouncycastle_core::kem_key::KEMAlgorithm;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{Algorithm, HashAlgParams, KDF};
+use bouncycastle_hkdf::HkdfDescription;
 use bouncycastle_sha2::hkdf::{HKDF_SHA256, HKDF_SHA512};
 use bouncycastle_sha2::{SHA256, SHA512};
 
@@ -56,7 +58,7 @@ const fn min_strength(a: SecurityStrength, b: SecurityStrength) -> SecurityStren
 }
 
 /// ML-KEM-512 with the shared secret derived through HKDF-SHA256: the algorithm a plain
-/// ML-KEM-512 key runs when made into a worker from `KdfParams<'p, HKDF_SHA256, LEN>`.
+/// ML-KEM-512 key runs when made into a worker from `KdfParams<'p, HkdfDescription<'s, SHA256>, LEN>`.
 #[allow(non_camel_case_types)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MLKEM512_HKDF_SHA256;
@@ -70,7 +72,7 @@ impl Algorithm for MLKEM512_HKDF_SHA256 {
 impl KEMAlgorithm for MLKEM512_HKDF_SHA256 {}
 
 /// ML-KEM-768 with the shared secret derived through HKDF-SHA512: the algorithm a plain
-/// ML-KEM-768 key runs when made into a worker from `KdfParams<'p, HKDF_SHA512, LEN>`.
+/// ML-KEM-768 key runs when made into a worker from `KdfParams<'p, HkdfDescription<'s, SHA512>, LEN>`.
 #[allow(non_camel_case_types)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MLKEM768_HKDF_SHA512;
@@ -84,7 +86,7 @@ impl Algorithm for MLKEM768_HKDF_SHA512 {
 impl KEMAlgorithm for MLKEM768_HKDF_SHA512 {}
 
 /// ML-KEM-1024 with the shared secret derived through HKDF-SHA512: the algorithm a plain
-/// ML-KEM-1024 key runs when made into a worker from `KdfParams<'p, HKDF_SHA512, LEN>`.
+/// ML-KEM-1024 key runs when made into a worker from `KdfParams<'p, HkdfDescription<'s, SHA512>, LEN>`.
 #[allow(non_camel_case_types)]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MLKEM1024_HKDF_SHA512;
@@ -97,7 +99,7 @@ impl Algorithm for MLKEM1024_HKDF_SHA512 {
 
 impl KEMAlgorithm for MLKEM1024_HKDF_SHA512 {}
 
-/// A KDF the library pairs ML-KEM with: HKDF-SHA256 and HKDF-SHA512. Sealed, so that the pairing trait,
+/// A KDF the library pairs ML-KEM with, by its description: HKDF-SHA256 and HKDF-SHA512. Sealed, so that the pairing trait,
 /// which is generic over the KDF, cannot be implemented outside this crate: the orphan rule
 /// would otherwise let a downstream crate pair a parameter set with a KDF of its own, under any
 /// name and strength, and the blanket role impls of both ML-KEM crates would take it.
@@ -106,18 +108,19 @@ pub trait PairedKdf: sealed::Sealed {
     const MAX_LEN: usize;
 }
 
-impl PairedKdf for HKDF_SHA256 {
+impl PairedKdf for HkdfDescription<'_, SHA256> {
     const MAX_LEN: usize = 255 * SHA256::OUTPUT_LEN;
 }
-impl PairedKdf for HKDF_SHA512 {
+impl PairedKdf for HkdfDescription<'_, SHA512> {
     const MAX_LEN: usize = 255 * SHA512::OUTPUT_LEN;
 }
 
 mod sealed {
-    use bouncycastle_sha2::hkdf::{HKDF_SHA256, HKDF_SHA512};
+    use bouncycastle_hkdf::HkdfDescription;
+    use bouncycastle_sha2::{SHA256, SHA512};
     pub trait Sealed {}
-    impl Sealed for HKDF_SHA256 {}
-    impl Sealed for HKDF_SHA512 {}
+    impl Sealed for HkdfDescription<'_, SHA256> {}
+    impl Sealed for HkdfDescription<'_, SHA512> {}
 }
 
 /// A parameter set paired with its KDF: `P: MLKEMKdfPairing<D, SS_LEN>` has one solution per
@@ -129,7 +132,7 @@ mod sealed {
 /// supports, so a key under a KDF it is not paired with has no role, and
 /// `pk.encaps(&mut rng, params)` with the wrong `KdfParams` is a compile error. The derivation
 /// is the same for every pairing, so it is provided here.
-pub trait MLKEMKdfPairing<D: KDF + PairedKdf + ?Sized, const SS_LEN: usize>:
+pub trait MLKEMKdfPairing<D: KdfDescription + PairedKdf + ?Sized, const SS_LEN: usize>:
     MLKEMParamsBase
 {
     /// The algorithm the pairing is.
@@ -148,20 +151,22 @@ pub trait MLKEMKdfPairing<D: KDF + PairedKdf + ?Sized, const SS_LEN: usize>:
     /// costs the caller's frame.
     ///
     /// # Errors
-    /// [`KEMError::KDFError`] with what the KDF refused (an HKDF instance that has absorbed
-    /// input, say); [`KEMError::GenericError`] if it writes anything but `SS_LEN` bytes. `out`
-    /// is left zeroized.
+    /// [`KEMError::KDFError`] with what the KDF refused, building the engine from the
+    /// description or deriving; [`KEMError::GenericError`] if it writes anything but `SS_LEN`
+    /// bytes. `out` is left zeroized.
     fn derive(
         params: KdfParams<'_, D, SS_LEN>,
         K: &KeyMaterial<MLKEM_SS_LEN>,
         out: &mut KeyMaterial<SS_LEN>,
     ) -> Result<(), KEMError> {
         const { Self::LEN_CHECK };
-        // `derive_key_out` zeroizes `out` first and leaves it so on its errors.
-        let written = params
-            .kdf()
-            .derive_key_out(K, params.info(), SS_LEN, out)
-            .map_err(KEMError::KDFError)?;
+        out.zeroize();
+        // The engine is built from the description for this derivation: for HKDF, an instance
+        // keyed with the salt. `derive_key_out` zeroizes `out` first and leaves it so on its
+        // errors.
+        let kdf = params.kdf().engine().map_err(KEMError::KDFError)?;
+        let written =
+            kdf.derive_key_out(K, params.info(), SS_LEN, out).map_err(KEMError::KDFError)?;
         // The trait says `len` bytes come back; the key the worker hands out is SS_LEN bytes.
         if written != SS_LEN || out.key_len() != SS_LEN {
             out.zeroize();
@@ -179,14 +184,14 @@ pub trait MLKEMKdfPairing<D: KDF + PairedKdf + ?Sized, const SS_LEN: usize>:
     }
 }
 
-impl<const SS_LEN: usize> MLKEMKdfPairing<HKDF_SHA256, SS_LEN> for MLKEM512Params {
+impl<const SS_LEN: usize> MLKEMKdfPairing<HkdfDescription<'_, SHA256>, SS_LEN> for MLKEM512Params {
     type Algorithm = MLKEM512_HKDF_SHA256;
 }
 
-impl<const SS_LEN: usize> MLKEMKdfPairing<HKDF_SHA512, SS_LEN> for MLKEM768Params {
+impl<const SS_LEN: usize> MLKEMKdfPairing<HkdfDescription<'_, SHA512>, SS_LEN> for MLKEM768Params {
     type Algorithm = MLKEM768_HKDF_SHA512;
 }
 
-impl<const SS_LEN: usize> MLKEMKdfPairing<HKDF_SHA512, SS_LEN> for MLKEM1024Params {
+impl<const SS_LEN: usize> MLKEMKdfPairing<HkdfDescription<'_, SHA512>, SS_LEN> for MLKEM1024Params {
     type Algorithm = MLKEM1024_HKDF_SHA512;
 }

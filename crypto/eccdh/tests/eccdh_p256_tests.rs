@@ -43,7 +43,9 @@ fn hkdf_sha256_variant() {
     use bouncycastle_core_test_framework::key_agreement::TestFrameworkKeyAgreement;
     use bouncycastle_eccdh::eccdh::ECCDH_HKDF_SHA256;
     use bouncycastle_eccdh::keys::{ECCDHPrivateKey, ECCDHPublicKey, keygen};
+    use bouncycastle_hkdf::HkdfDescription;
     use bouncycastle_rng::DefaultRNG;
+    use bouncycastle_sha2::SHA256;
     use bouncycastle_sha2::hkdf::HKDF_SHA256;
 
     const SS_LEN: usize = 32;
@@ -55,7 +57,7 @@ fn hkdf_sha256_variant() {
     let salt =
         KeyMaterial::<32>::from_bytes_as_type(&DUMMY_SEED[..32], KeyType::CryptographicRandom)
             .unwrap();
-    let hkdf = HKDF_SHA256::new_with_salt(&salt).unwrap();
+    let hkdf = HkdfDescription::<SHA256>::with_salt(&salt).unwrap();
     let params = KdfParams::new(&hkdf, b"eccdh hkdf tests", KeyLen::<SS_LEN>);
     TestFrameworkKeyAgreement::new().test_key_agreement(keygen_default, params);
     assert_eq!(ECCDH_HKDF_SHA256::<P256>::ALG_NAME, "ECC-CDH-P256-HKDF-SHA256");
@@ -78,13 +80,13 @@ fn hkdf_sha256_variant() {
     let other_info = KdfParams::new(&hkdf, b"another context", KeyLen::<SS_LEN>);
     assert!(!sk_a.agree(&pk_b, other_info).unwrap().equals(&key));
     let absent = KeyMaterial0::new();
-    let hkdf_absent = HKDF_SHA256::new_with_salt(&absent).unwrap();
+    let hkdf_absent = HkdfDescription::<SHA256>::with_salt(&absent).unwrap();
     let no_salt = KdfParams::new(&hkdf_absent, b"eccdh hkdf tests", KeyLen::<SS_LEN>);
     assert!(!sk_a.agree(&pk_b, no_salt).unwrap().equals(&key));
 
     let unknown =
         KeyMaterial::<32>::from_bytes_as_type(&DUMMY_SEED[..32], KeyType::Unknown).unwrap();
-    assert!(HKDF_SHA256::new_with_salt(&unknown).is_err());
+    assert!(HkdfDescription::<SHA256>::with_salt(&unknown).is_err());
 }
 
 /// The parameters name the derived key's length: HKDF-SHA256 at 16 bytes (what 16 bytes carry,
@@ -99,14 +101,15 @@ fn the_parameters_name_the_length() {
     use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
     use bouncycastle_core_test_framework::DUMMY_SEED;
     use bouncycastle_eccdh::keys::keygen;
+    use bouncycastle_hkdf::HkdfDescription;
     use bouncycastle_rng::DefaultRNG;
-    use bouncycastle_sha2::hkdf::HKDF_SHA256;
+    use bouncycastle_sha2::SHA256;
     use bouncycastle_x963kdf::X963KDF_SHA256;
 
     let salt =
         KeyMaterial::<32>::from_bytes_as_type(&DUMMY_SEED[..32], KeyType::CryptographicRandom)
             .unwrap();
-    let hkdf = HKDF_SHA256::new_with_salt(&salt).unwrap();
+    let hkdf = HkdfDescription::<SHA256>::with_salt(&salt).unwrap();
     let (pk_a, sk_a) = keygen::<P256>(&mut DefaultRNG::default()).unwrap();
     let (pk_b, sk_b) = keygen::<P256>(&mut DefaultRNG::default()).unwrap();
     let z = sk_a.agree(&pk_b, ()).unwrap();

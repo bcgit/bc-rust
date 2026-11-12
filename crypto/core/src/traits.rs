@@ -518,6 +518,9 @@ pub const KDF_ONE_SHOT_MAX_LEN: usize = 1024;
 /// An instance holds only what it was made from (an HKDF's salt): one that has also absorbed
 /// input through a streaming API is refused by the derivations. A zero-length derivation is
 /// refused, and so is one from no keys, whose output would be a function of the info alone.
+/// An algorithm that derives its output through a KDF is made from a description of it rather
+/// than an instance, [`KdfDescription`](crate::kdf_params::KdfDescription), which builds the
+/// instance.
 pub trait KDF: AlgorithmInfo {
     /// Derives `len` bytes of keying material from `ikm` and `fixed_info` into the front of
     /// `output_key`, which is zeroized first, and returns `len`.

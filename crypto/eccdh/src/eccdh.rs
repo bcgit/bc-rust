@@ -13,13 +13,13 @@ use bouncycastle_concatkdf::{ConcatKDF, ConcatKDFParams};
 use bouncycastle_core::agreement_key::{AgreementKey, KeyAgreementAlgorithm};
 use bouncycastle_core::errors::{KeyAgreementError, KeyMaterialError};
 use bouncycastle_core::hazmat::do_hazardous_operations;
-use bouncycastle_core::kdf_params::KdfParams;
+use bouncycastle_core::kdf_params::{KdfDescription, KdfParams};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::traits::{Algorithm, KDF, KeyAgreement};
+use bouncycastle_core::traits::{Algorithm, KeyAgreement};
 use bouncycastle_ec::curve::{Curve, FieldElement, JacobianPoint};
 use bouncycastle_ec::{Bp256r1, Bp384r1, Bp512r1, P256, P384, P521, Secp256K1};
-use bouncycastle_sha2::hkdf::HKDF_SHA256;
+use bouncycastle_hkdf::HkdfDescription;
 use bouncycastle_sha2::{SHA256, SHA384, SHA512};
 use bouncycastle_utils::const_str::ConstStr;
 use bouncycastle_utils::secret::Secret;
@@ -205,8 +205,9 @@ impl MatchedHash for Bp512r1 {
 }
 
 /// ECC CDH over `C` with the shared secret derived through HKDF-SHA256: the algorithm an
-/// [`ECCDHPrivateKey<C>`] runs when made into a worker from `KdfParams<'p, HKDF_SHA256, LEN>`.
-/// The key is HKDF-SHA256(salt, Z, info) over the primitive's `Z`, the salt the instance's, of
+/// [`ECCDHPrivateKey<C>`] runs when made into a worker from
+/// `KdfParams<'p, HkdfDescription<'s, SHA256>, LEN>`. The key is HKDF-SHA256(salt, Z, info) over
+/// the primitive's `Z`, the salt the description's, of
 /// the length the parameters name, at the curve's strength, which HKDF-SHA256 caps at 128 bits;
 /// paired on P-256, whose strength that is. Named `ECC-CDH-<curve>-HKDF-SHA256`.
 #[allow(non_camel_case_types)]
@@ -223,7 +224,7 @@ impl<C: Curve> Algorithm for ECCDH_HKDF_SHA256<C> {
 
 impl<C: Curve> KeyAgreementAlgorithm for ECCDH_HKDF_SHA256<C> {}
 
-impl<const SS_LEN: usize> KdfPairing<HKDF_SHA256, SS_LEN> for ECCDH<P256> {
+impl<const SS_LEN: usize> KdfPairing<HkdfDescription<'_, SHA256>, SS_LEN> for ECCDH<P256> {
     type Algorithm = ECCDH_HKDF_SHA256<P256>;
 }
 
@@ -277,12 +278,18 @@ impl<C: MatchedHash, const SS_LEN: usize> KdfPairing<ConcatKDF<C::Hash>, SS_LEN>
 
 /// The worker [`AgreementKey::create_agreement`] hands out over [`KdfParams`]: the own key and
 /// the KDF's parameters, borrowed separately. Reusable against any number of peers.
-pub struct ECCDHKdfAgreement<'k, 'p, C: Curve, D: KDF + PairedKdf + ?Sized, const SS_LEN: usize> {
+pub struct ECCDHKdfAgreement<
+    'k,
+    'p,
+    C: Curve,
+    D: KdfDescription + PairedKdf + ?Sized,
+    const SS_LEN: usize,
+> {
     sk: &'k ECCDHPrivateKey<C>,
     params: KdfParams<'p, D, SS_LEN>,
 }
 
-impl<C: Curve, D: KDF + PairedKdf + ?Sized, const SS_LEN: usize> Algorithm
+impl<C: Curve, D: KdfDescription + PairedKdf + ?Sized, const SS_LEN: usize> Algorithm
     for ECCDHKdfAgreement<'_, '_, C, D, SS_LEN>
 where
     ECCDH<C>: KdfPairing<D, SS_LEN>,
@@ -292,7 +299,7 @@ where
         <ECCDH<C> as KdfPairing<D, SS_LEN>>::Algorithm::MAX_SECURITY_STRENGTH;
 }
 
-impl<C, D: KDF + PairedKdf + ?Sized, const Z_LEN: usize, const SS_LEN: usize>
+impl<C, D: KdfDescription + PairedKdf + ?Sized, const Z_LEN: usize, const SS_LEN: usize>
     KeyAgreement<ECCDHPublicKey<C>, SS_LEN> for ECCDHKdfAgreement<'_, '_, C, D, SS_LEN>
 where
     C: Curve<FeBytes = [u8; Z_LEN]>,
@@ -317,7 +324,7 @@ where
     }
 }
 
-impl<'p, C, D: KDF + PairedKdf + ?Sized, const Z_LEN: usize, const SS_LEN: usize>
+impl<'p, C, D: KdfDescription + PairedKdf + ?Sized, const Z_LEN: usize, const SS_LEN: usize>
     AgreementKey<KdfParams<'p, D, SS_LEN>, SS_LEN> for ECCDHPrivateKey<C>
 where
     C: Curve<FeBytes = [u8; Z_LEN]>,

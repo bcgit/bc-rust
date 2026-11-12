@@ -10,8 +10,9 @@ use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait};
 use bouncycastle_core::traits::KeyAgreement;
 use bouncycastle_ec::P256;
 use bouncycastle_eccdh::keys_common::AgreementKeyPair;
+use bouncycastle_hkdf::HkdfDescription;
 use bouncycastle_rng::HashDRBG_SHA512;
-use bouncycastle_sha2::hkdf::HKDF_SHA256;
+use bouncycastle_sha2::SHA256;
 use bouncycastle_x963kdf::X963KDF_SHA256;
 
 fn main() {
@@ -32,9 +33,9 @@ fn main() {
 
     // The same keys under HKDF-SHA256: the KDF type on the parameters selects the algorithm
     // and the KeyLen the key's length, and the result is a key, HKDF-SHA256(salt, Z, info)
-    // with the salt the instance's.
+    // with the salt the description names.
     let salt = KeyMaterial::<32>::from_rng(&mut rng).unwrap();
-    let hkdf = HKDF_SHA256::new_with_salt(&salt).unwrap();
+    let hkdf = HkdfDescription::<SHA256>::with_salt(&salt).unwrap();
     let params = KdfParams::new(&hkdf, b"example protocol v1", KeyLen::<32>);
     let key_a = sk_a.agree(&pk_b, params).unwrap();
     let key_b = sk_b.agree(&pk_a, params).unwrap();

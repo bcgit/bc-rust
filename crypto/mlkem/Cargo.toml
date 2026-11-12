@@ -11,6 +11,7 @@ bouncycastle-rng.workspace = true
 bouncycastle-utils.workspace = true
 
 [dev-dependencies]
+bouncycastle-hkdf.workspace = true # the HKDF description the tests, docs and example name
 bouncycastle-core-test-framework.workspace = true
 bouncycastle-hex.workspace = true
 bouncycastle-rng.workspace = true

@@ -13,8 +13,9 @@
 //! | SHA-2       | `bouncycastle_sha2::hkdf` -- `HKDF_SHA256`, `HKDF_SHA384`, `HKDF_SHA512` |
 //!
 //! An algorithm that derives its output through HKDF (a KEM such as ML-KEM-512-HKDF-SHA256) is
-//! made from an instance keyed with its salt through [`HKDF::new_with_salt`], as the KDF of a
-//! `bouncycastle_core::kdf_params::KdfParams`.
+//! made from an [`HkdfDescription`], the hash and the salt as readable fields, as the KDF of a
+//! `bouncycastle_core::kdf_params::KdfParams`; the pairing builds an instance keyed with the
+//! salt from it for each derivation, and a key held in a token reads the fields instead.
 //!
 //! # Instantiating HKDF over a hash
 //!
@@ -85,6 +86,7 @@
 
 use bouncycastle_core::errors::{KDFError, KeyMaterialError, MACError};
 use bouncycastle_core::hazmat::do_hazardous_operations;
+use bouncycastle_core::kdf_params::KdfDescription;
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterial0, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::symmetric_key::FromAnyKeyMaterial;
@@ -751,6 +753,81 @@ impl<H: HMACParams> KDF for HKDF<H> {
         }
         let prk = hkdf.do_extract_final()?;
         Self::expand_out(&prk, fixed_info, len, output_key)
+    }
+}
+
+/// What an HKDF derivation is made from, as a KDF's description
+/// ([`KdfDescription`]): the hash `H` and the salt, RFC 5869 Section 2.2's optional
+/// `salt`, borrowed for `'s` and readable through [`salt`](Self::salt), absent for the
+/// "string of HashLen zeros". An algorithm that derives through HKDF is made from one of these
+/// as the KDF of `bouncycastle_core::kdf_params::KdfParams`; a software pairing keys an
+/// [`HKDF`] with the salt through [`engine`](KdfDescription::engine) for each derivation, as
+/// [`HKDF::new_with_salt`] does, and a key held where the secret must not leave reads the salt
+/// and hands the device the same derivation. The salt is typed as the caller's material is: a
+/// [`KeyType::MACKey`] salt is the secret salt the crate's Security Considerations describe,
+/// credited by the engine; any other type but [`KeyType::Unknown`], which is refused, is RFC
+/// 5869's non-secret random value.
+pub struct HkdfDescription<'s, H: HMACParams> {
+    salt: Option<&'s dyn KeyMaterialTrait>,
+    _hash: PhantomData<H>,
+}
+
+impl<'s, H: HMACParams> HkdfDescription<'s, H> {
+    /// HKDF over `H` with the salt absent: RFC 5869 Section 2.2's "string of HashLen zeros".
+    pub const fn new() -> Self {
+        Self { salt: None, _hash: PhantomData }
+    }
+
+    /// HKDF over `H` keyed with `salt`, of any [`KeyType`] but [`KeyType::Unknown`]; a
+    /// zero-length salt is the absent one.
+    ///
+    /// # Errors
+    /// [`KeyMaterialError::InvalidKeyType`] for a salt typed `Unknown`, the refusal
+    /// [`HKDF::new_with_salt`] makes, so that a description an engine cannot be built from does
+    /// not exist.
+    pub fn with_salt(salt: &'s dyn KeyMaterialTrait) -> Result<Self, KeyMaterialError> {
+        if salt.key_type() == KeyType::Unknown {
+            return Err(KeyMaterialError::InvalidKeyType("HKDF salt must not be KeyType::Unknown"));
+        }
+        Ok(Self { salt: Some(salt), _hash: PhantomData })
+    }
+
+    /// The salt, or `None` for the absent one.
+    pub fn salt(&self) -> Option<&'s dyn KeyMaterialTrait> {
+        self.salt
+    }
+}
+
+impl<H: HMACParams> Default for HkdfDescription<'_, H> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+// Written out rather than derived: a derive would demand `H: Clone` of the hash.
+impl<H: HMACParams> Clone for HkdfDescription<'_, H> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<H: HMACParams> Copy for HkdfDescription<'_, H> {}
+
+/// The engine's name and strength, [`HKDF`]'s.
+impl<H: HMACParams> Algorithm for HkdfDescription<'_, H> {
+    const ALG_NAME: &'static str = H::HKDF_ALG_NAME;
+    const MAX_SECURITY_STRENGTH: SecurityStrength = H::MAX_SECURITY_STRENGTH;
+}
+
+impl<H: HMACParams> KdfDescription for HkdfDescription<'_, H> {
+    type Engine = HKDF<H>;
+
+    /// [`HKDF::new_with_salt`] with the salt, or [`HKDF::new`] without one.
+    fn engine(&self) -> Result<HKDF<H>, KDFError> {
+        match self.salt {
+            Some(salt) => HKDF::new_with_salt(salt).map_err(KDFError::MACError),
+            None => Ok(HKDF::new()),
+        }
     }
 }
 
