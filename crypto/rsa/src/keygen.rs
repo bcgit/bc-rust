@@ -26,6 +26,7 @@
 
 use crate::keys::{RsaPrivateKey, RsaPublicKey};
 use crate::modexp::{MontgomeryContext, mod_pow, mul_mod, reduce_wide};
+use crate::size::{RsaSigningSize, RsaSize};
 use bouncycastle_core::errors::{RNGError, SignatureError};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::RNG;
@@ -511,11 +512,14 @@ fn primes_too_close<const N: usize>(p: &[u64; N], q: &[u64; N]) -> bool {
 /// `required_strength`; `RNGError` for an RNG failure; `GenericError` if the candidate limits of
 /// steps 4.7/5.8 (`5 * nlen` for `p`, `10 * nlen` for `q`) are exhausted, which a working RNG
 /// does not do.
-pub fn keygen_from_rng<const HALF: usize, const HALF2: usize, const HALF21: usize>(
+pub fn keygen_from_rng<K, const HALF: usize, const HALF2: usize, const HALF21: usize>(
     rng: &mut dyn RNG,
     rounds: NonZeroUsize,
     required_strength: SecurityStrength,
-) -> Result<(RsaPublicKey<HALF2>, RsaPrivateKey<HALF2, HALF>), SignatureError> {
+) -> Result<(RsaPublicKey<K>, RsaPrivateKey<K>), SignatureError>
+where
+    K: RsaSigningSize + RsaSize<HalfLimbs = [u64; HALF], Limbs = [u64; HALF2]>,
+{
     debug_assert_eq!(HALF2, 2 * HALF);
     // Step 3 (and A.1.3's preamble): the DRBG's strength must meet the modulus's.
     if rng.security_strength() < required_strength {
@@ -585,8 +589,8 @@ pub fn keygen_from_rng<const HALF: usize, const HALF2: usize, const HALF21: usiz
             zeroize_in_place(&mut p_minus_2);
         }
 
-        let sk = RsaPrivateKey::<HALF2, HALF>::from_crt_components(&p, &q, &d_p, &d_q, &q_inv)?;
-        let pk = RsaPublicKey::<HALF2>::new(sk.n(), PUBLIC_EXPONENT)?;
+        let sk = RsaPrivateKey::<K>::from_crt_components(&p, &q, &d_p, &d_q, &q_inv)?;
+        let pk = RsaPublicKey::<K>::new(sk.n(), PUBLIC_EXPONENT)?;
         return Ok((pk, sk));
     }
 }

@@ -178,3 +178,15 @@ fn public_key_trait_encoding_round_trips_and_rejects_wrong_lengths() {
         Err(SignatureError::DecodingError(_))
     ));
 }
+
+/// RFC 8017 §8.2.2 step 1 through this size's own range check: `0xff..ff` is `2^1536 - 1 >= n`
+/// for any 1536-bit `n`, an out-of-range representative, reported as an invalid signature.
+#[test]
+fn trait_verify_reports_out_of_range_representative_as_invalid_signature() {
+    run_sig_gen_group_as_verify_vectors("SHA-256", |pk, msg, _sig| {
+        matches!(
+            VerifyingKey::<RSASSA_PKCS1_v1_5_SHA256, 192>::verify(pk, msg, None, &[0xffu8; 192]),
+            Err(SignatureError::SignatureVerificationFailed)
+        )
+    });
+}

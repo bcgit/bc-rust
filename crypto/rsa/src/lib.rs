@@ -9,42 +9,59 @@
 //! # Scope
 //!
 //! Signature schemes, plus RSASVE as a KEM ([`rsasve`]; see below). There is no RSAES-OAEP or
-//! RSAES-PKCS1-v1_5 encryption, and so no KTS-OAEP. Modulus sizes 2048
-//! through 8192 bits ([`rsa_2048`], [`rsa_3072`], [`rsa_4096`], [`rsa_8192`]) support both signing
-//! and verification; 1024- and 1536-bit moduli ([`rsa_1024`], [`rsa_1536`]) support verification
-//! only, enforced by the absence of a private-key type (and so of any signing-role impl) for
-//! those sizes rather than a runtime check.
+//! RSAES-PKCS1-v1_5 encryption, and so no KTS-OAEP. A modulus size is a marker type at the
+//! crate root, [`RSA2048`], [`RSA3072`], [`RSA4096`] and [`RSA8192`], which implement
+//! [`size::RsaSize`] (the size's lengths and limb types) and [`size::RsaSigningSize`] (key
+//! generation and the signing roles); [`RSA1024`] and [`RSA1536`] implement `RsaSize` only, so
+//! a private key, `keygen` and every signing-role impl are absent for them at compile time
+//! rather than refused at run time.
 //!
-//! Every (scheme, hash, modulus size) pairing is an algorithm marker type
-//! (`RSASSA_PKCS1_v1_5_SHA256` and siblings in each size module) that the key role traits of
-//! [`bouncycastle_core::signature_key`] are implemented over: the private key signs through
+//! The schemes are generic over the size and the hash: [`RSASSA_PKCS1_v1_5<K, H>`](rsassa_pkcs1_v1_5::RSASSA_PKCS1_v1_5),
+//! [`RSASSA_PSS<K, H>`](rsassa_pss::RSASSA_PSS) and
+//! [`RSASSA_PSS_SHAKE<K, X>`](rsassa_pss_shake::RSASSA_PSS_SHAKE), named by scheme and hash
+//! (`RSASSA-PSS-SHA256`) at the lesser of the modulus's and the hash's strength, and the keys
+//! are [`RsaPublicKey<K>`](keys::RsaPublicKey) and [`RsaPrivateKey<K>`](keys::RsaPrivateKey).
+//! The key role traits of [`bouncycastle_core::signature_key`] are implemented over every
+//! pairing: the private key signs through
 //! [`SigningKey`](bouncycastle_core::signature_key::SigningKey) for RSASSA-PSS (a fresh salt from
 //! the caller's RNG per signer) and
 //! [`DeterministicSigningKey`](bouncycastle_core::signature_key::DeterministicSigningKey) for
 //! RSASSA-PKCS1-v1_5, and the public key verifies through
 //! [`VerifyingKey`](bouncycastle_core::signature_key::VerifyingKey); one-shot or streaming, the
 //! same API shape as this workspace's ECDSA, SM2 and ML-DSA crates. One key type serves every
-//! scheme and hash, so a call names the marker: `SigningKey::<RSASSA_PSS_SHA256, 256>::sign(&sk,
-//! &mut rng, msg, None)`. The key types implement
-//! [`SignaturePrivateKey`](bouncycastle_core::traits::SignaturePrivateKey)/[`SignaturePublicKey`](bouncycastle_core::traits::SignaturePublicKey)
-//! per size, and each signing size's module offers `keygen(rng)` (FIPS 186-5 Appendix A.1.3, in
-//! [`keygen`]), as the ECDSA crate's curves do. The generic `rsassa_*` modules also expose
-//! `*_from_hash` entry points that take the message hash rather than the message, for a caller
-//! that already holds the digest.
+//! scheme and hash, so a call names the algorithm: `SigningKey::<RSASSA_PSS<RSA2048, SHA256>,
+//! 256>::sign(&sk, &mut rng, msg, None)`. The key types implement
+//! [`SignaturePrivateKey`](bouncycastle_core::traits::SignaturePrivateKey)/[`SignaturePublicKey`](bouncycastle_core::traits::SignaturePublicKey),
+//! and a signing size generates a pair through [`RsaSigningSize::keygen`](size::RsaSigningSize::keygen)
+//! or [`size::SignatureKeyPair`] (`RSA2048::generate_signature_key_pair(&mut rng)`, FIPS 186-5
+//! Appendix A.1.3, in [`keygen`]). The `rsassa_*` modules also expose `*_from_hash` entry
+//! points that take the message hash rather than the message, for a caller that already holds
+//! the digest.
+//!
+//! The size modules [`rsa_1024`] through [`rsa_8192`] are aliases over the markers
+//! (`rsa_2048::RSASSA_PSS_SHA256` is `RSASSA_PSS<RSA2048, SHA256>`, `RSA2048PrivateKey` is
+//! `RsaPrivateKey<RSA2048>`, `SIG_LEN` is `RSA2048::K_LEN`), for code that works at one size.
 //!
 //! RSASVE (SP 800-56B Rev. 2 §7.2.1; BC FIPS Java's `FipsRSA.KTS_SVE`, JCA `RSA-KAS-KEM`;
-//! OpenSSL's `"RSASVE"` KEM operation) is `RSASVE` in each of the 2048/3072/4096/8192 size modules.
+//! OpenSSL's `"RSASVE"` KEM operation) is [`RSASVE<K>`](rsasve::RSASVE) over the same markers.
 //! It implements [`bouncycastle_core`]'s
 //! [`KEMEncapsulator`](bouncycastle_core::traits::KEMEncapsulator)/[`KEMDecapsulator`](bouncycastle_core::traits::KEMDecapsulator)
-//! over its own key types (`RSA2048KEMPrivateKey`/`RSA2048KEMPublicKey` and siblings), which are
-//! kept apart from the signing key types; see [`rsasve`]'s `# Key separation`. Key generation is
-//! `RSASVE::keygen(rng)`, the same FIPS 186-5 generator the signature keys use. The
-//! shared secret is RSASVE's raw secret value `Z`, the full modulus length. It is not a derived key.
+//! over its own key types ([`RsaKEMPublicKey<K>`](rsasve::RsaKEMPublicKey) and
+//! [`RsaKEMPrivateKey<K>`](rsasve::RsaKEMPrivateKey)), which are kept apart from the signing
+//! key types; see [`rsasve`]'s `# Key separation`. Key generation is `RSASVE::<K>::keygen(rng)`
+//! or [`size::KemKeyPair`] (`RSA2048::generate_kem_key_pair(&mut rng)`), the same FIPS 186-5
+//! generator the signature keys use. Over `()` the shared secret is RSASVE's raw secret value
+//! `Z`, the full modulus length, which is not a derived key; over
+//! [`KdfParams`](bouncycastle_core::kdf_params::KdfParams) naming an HKDF description, the
+//! same keys run [`RSASVE_HKDF<K, H>`](rsasve_kdf::RSASVE_HKDF) (`RSASVE-2048-HKDF-SHA256` and
+//! so on) and hand out HKDF-Hash(salt, Z, info) at the length the parameters name, the
+//! description readable by a key held in a token that runs both steps inside the device.
 //!
 //! # Usage Examples
 //!
-//! RSA-2048 with SHA-256 through the `bouncycastle_core` key role traits ([`rsa_2048`]), the way
-//! code written against those traits (and this workspace's CLI) uses every signature scheme:
+//! RSA-2048 with SHA-256 through the `bouncycastle_core` key role traits, spelled with the
+//! [`rsa_2048`] aliases, the way code written against those traits (and this workspace's CLI)
+//! uses every signature scheme:
 //!
 //! ```
 //! use bouncycastle_core::signature_key::{DeterministicSigningKey, SigningKey, VerifyingKey};
@@ -164,6 +181,18 @@
 //!     .expect("HKDF accepts any non-empty input key");
 //! assert_eq!(key.key_len(), 32);
 //!
+//! // Or let the keys do it: over `KdfParams` naming the HKDF's description (its salt, absent
+//! // here) and the info, the same keys run RSASVE-2048-HKDF-SHA256 and hand out that key.
+//! use bouncycastle_core::kdf_params::{KdfParams, KeyLen};
+//! use bouncycastle_hkdf::HkdfDescription;
+//! use bouncycastle_sha2::SHA256;
+//! let hkdf = HkdfDescription::<SHA256>::new();
+//! let params = KdfParams::new(&hkdf, b"example protocol v1", KeyLen::<32>);
+//! let (key_a, ct) = pk.encaps(&mut DefaultRNG::default(), params)?;
+//! let key_b = sk.decaps(&ct, params)?;
+//! assert_eq!(key_a, key_b);
+//! assert_eq!(key_a.security_strength(), bouncycastle_core::security_strength::SecurityStrength::_112bit);
+//!
 //! // A ciphertext outside (1, n - 1) is an error (SP 800-56B §7.1.2.3); a wrong length is a
 //! // type error, since the ciphertext is a `[u8; CT_LEN]`.
 //! assert!(sk.decaps(&[0u8; CT_LEN], ()).is_err());
@@ -184,9 +213,10 @@
 //! and 1536 (verification only, per `# Scope` above) and 2048/3072/4096/8192 (both directions) --
 //! and validated against genuine vectors: Wycheproof for every size except 8192, which it has no
 //! key material for at all (cross-checked against BC Java instead); see each `rsa_*.rs` module's
-//! own tests for the specifics at each size. Every pairing is a marker the key types' `SigningKey`
-//! / `DeterministicSigningKey` / `VerifyingKey` roles name (see `# Scope`), exercised through
-//! `bouncycastle_core_test_framework`'s shared signature conformance suite at each size.
+//! own tests for the specifics at each size. Every pairing is an instantiation of the generic
+//! schemes the key types' `SigningKey` / `DeterministicSigningKey` / `VerifyingKey` roles name
+//! (see `# Scope`), exercised through `bouncycastle_core_test_framework`'s shared signature
+//! conformance suite at each size.
 //!
 //! RSASSA-PSS-SHAKE128 and RSASSA-PSS-SHAKE256 (RFC 8702 §3.2.1 -- SHAKE128/SHAKE256 used
 //! natively as both the message hash and the mask generation function, in place of a hash+MGF1
@@ -195,7 +225,8 @@
 //! ([`rsa_2048`], [`rsa_3072`]) and SHAKE256 with RSA-4096 ([`rsa_4096`]), each validated against
 //! its own genuine Wycheproof `rsa_pss_*_shake*_test.json` vectors.
 //!
-//! RSASVE ([`rsasve`]) is implemented at 2048/3072/4096/8192. It is validated against NIST
+//! RSASVE ([`rsasve`]) is implemented at 2048/3072/4096/8192, and with its secret value derived
+//! through HKDF over any HMAC hash ([`rsasve_kdf`]). It is validated against NIST
 //! ACVP-Server's KAS-IFC-SSC (KAS1 at 2048, KAS2 at 3072, both directions) and SP 800-56B RSADP
 //! (CRT keys at 2048/3072/4096, out-of-range ciphertexts included) vectors, and against OpenSSL
 //! 3.0's `"RSASVE"` KEM operation at every size, 8192 included. See `tests/rsasve_tests.rs` for
@@ -212,7 +243,7 @@
 //! | RSA-4096          | 516              | 520                | 1280             | 1792               |
 //! | RSA-8192          | 1028             | 1032               | 2560             | 3584               |
 //!
-//! The RSASVE key types (`RSA<N>KEMPublicKey`/`RSA<N>KEMPrivateKey`) have the same encodings
+//! The RSASVE key types (`RsaKEMPublicKey<K>`/`RsaKEMPrivateKey<K>`) have the same encodings
 //! and the same in-memory sizes as the signature key types above: each wraps one. An RSASVE
 //! ciphertext and shared secret are each `nLen` bytes, the same as a signature (256/384/512/1024
 //! at 2048/3072/4096/8192).
@@ -229,12 +260,12 @@
 //! All values are in bytes. "On disk" is the `SignaturePublicKey`/`SignaturePrivateKey` raw
 //! layout ([`keys::RsaPublicKey`]'s and [`keys::RsaPrivateKey`]'s `# Encoding`: `n || e`, and
 //! `p || q || dP || dQ || qInv` respectively); "in memory" is `core::mem::size_of`. A signature
-//! is the same size as the modulus itself (`K_LEN = 8 * L` bytes: 128/192/256/384/512/1024 for
+//! is the same size as the modulus itself (`K::K_LEN`: 128/192/256/384/512/1024 for
 //! 1024/1536/2048/3072/4096/8192). These numbers are produced by `mem_usage_benches`'
 //! `bench_rsa_mem_usage` binary's `print_key_sizes()`; that binary is also the stack-usage
 //! measurement harness (see its own doc comment for the `valgrind`/`massif` invocation) -- only
 //! one representative (scheme, hash) pairing is profiled there per modulus size, since stack
-//! usage is dominated by the modulus's own limb count `L`, not by which hash or scheme fed into
+//! usage is dominated by the modulus's own limb count, not by which hash or scheme fed into
 //! RSASP1/RSAVP1's modular exponentiation. A `SignatureSigner` / `SignatureVerifier` worker
 //! borrows its key for its lifetime and holds the hash state beside it.
 //!
@@ -332,3 +363,7 @@ pub mod rsassa_pkcs1_v1_5;
 pub mod rsassa_pss;
 pub mod rsassa_pss_shake;
 pub mod rsasve;
+pub mod rsasve_kdf;
+pub mod size;
+
+pub use size::{RSA1024, RSA1536, RSA2048, RSA3072, RSA4096, RSA8192};

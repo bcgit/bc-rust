@@ -7,6 +7,9 @@
 use bouncycastle_core::errors::SignatureError;
 use bouncycastle_core::traits::{SignaturePrivateKey, SignaturePublicKey};
 use bouncycastle_rsa::keys::{RsaPrivateKey, RsaPublicKey};
+use bouncycastle_rsa::size::{RsaSigningSize, RsaSize};
+use bouncycastle_rsa::{RSA2048, RSA3072, RSA4096, RSA8192};
+use bouncycastle_utils::secret::ZeroizablePrimitive;
 
 const P: [u64; 16] = [
     0xfec673c1b07d4997, 0x98c9e3737faecc8b, 0x01369d6bebcfd19b, 0x8aadc1799d493a6e,
@@ -51,24 +54,15 @@ const N: [u64; 32] = [
 
 #[test]
 fn from_crt_components_accepts_a_genuine_key_and_derives_n() {
-    let sk = RsaPrivateKey::<32, 16>::from_crt_components(&P, &Q, &D_P, &D_Q, &Q_INV)
+    let sk = RsaPrivateKey::<RSA2048>::from_crt_components(&P, &Q, &D_P, &D_Q, &Q_INV)
         .expect("genuine RSA-2048 CRT components must be accepted");
     assert_eq!(*sk.n(), N);
 }
 
 #[test]
-fn from_crt_components_rejects_mismatched_widths() {
-    // L = 31 != 2 * 16.
-    assert!(matches!(
-        RsaPrivateKey::<31, 16>::from_crt_components(&P, &Q, &D_P, &D_Q, &Q_INV),
-        Err(SignatureError::DecodingError(_))
-    ));
-}
-
-#[test]
 fn from_crt_components_rejects_equal_primes() {
     assert!(matches!(
-        RsaPrivateKey::<32, 16>::from_crt_components(&P, &P, &D_P, &D_Q, &Q_INV),
+        RsaPrivateKey::<RSA2048>::from_crt_components(&P, &P, &D_P, &D_Q, &Q_INV),
         Err(SignatureError::DecodingError(_))
     ));
 }
@@ -78,7 +72,7 @@ fn from_crt_components_rejects_even_prime() {
     let mut even_p = P;
     even_p[0] &= !1;
     assert!(matches!(
-        RsaPrivateKey::<32, 16>::from_crt_components(&even_p, &Q, &D_P, &D_Q, &Q_INV),
+        RsaPrivateKey::<RSA2048>::from_crt_components(&even_p, &Q, &D_P, &D_Q, &Q_INV),
         Err(SignatureError::DecodingError(_))
     ));
 }
@@ -88,7 +82,7 @@ fn from_crt_components_rejects_even_q() {
     let mut even_q = Q;
     even_q[0] &= !1;
     assert!(matches!(
-        RsaPrivateKey::<32, 16>::from_crt_components(&P, &even_q, &D_P, &D_Q, &Q_INV),
+        RsaPrivateKey::<RSA2048>::from_crt_components(&P, &even_q, &D_P, &D_Q, &Q_INV),
         Err(SignatureError::DecodingError(_))
     ));
 }
@@ -96,7 +90,7 @@ fn from_crt_components_rejects_even_q() {
 #[test]
 fn from_crt_components_rejects_dp_out_of_range() {
     assert!(matches!(
-        RsaPrivateKey::<32, 16>::from_crt_components(&P, &Q, &P, &D_Q, &Q_INV),
+        RsaPrivateKey::<RSA2048>::from_crt_components(&P, &Q, &P, &D_Q, &Q_INV),
         Err(SignatureError::DecodingError(_))
     ));
 }
@@ -104,40 +98,46 @@ fn from_crt_components_rejects_dp_out_of_range() {
 #[test]
 fn from_crt_components_rejects_qinv_out_of_range() {
     assert!(matches!(
-        RsaPrivateKey::<32, 16>::from_crt_components(&P, &Q, &D_P, &D_Q, &P),
+        RsaPrivateKey::<RSA2048>::from_crt_components(&P, &Q, &D_P, &D_Q, &P),
         Err(SignatureError::DecodingError(_))
     ));
 }
 
 #[test]
 fn public_key_accepts_e_65537() {
-    let pk = RsaPublicKey::<32>::new(&N, 0x00010001).expect("e = 65537 is valid");
+    let pk = RsaPublicKey::<RSA2048>::new(&N, 0x00010001).expect("e = 65537 is valid");
     assert_eq!(*pk.n(), N);
     assert_eq!(pk.e(), 0x00010001);
 }
 
 #[test]
 fn public_key_rejects_even_exponent() {
-    assert!(matches!(RsaPublicKey::<32>::new(&N, 65536), Err(SignatureError::DecodingError(_))));
+    assert!(matches!(
+        RsaPublicKey::<RSA2048>::new(&N, 65536),
+        Err(SignatureError::DecodingError(_))
+    ));
 }
 
 #[test]
 fn public_key_rejects_exponent_below_three() {
-    assert!(matches!(RsaPublicKey::<32>::new(&N, 1), Err(SignatureError::DecodingError(_))));
+    assert!(matches!(RsaPublicKey::<RSA2048>::new(&N, 1), Err(SignatureError::DecodingError(_))));
 }
 
 #[test]
 fn public_key_rejects_even_modulus() {
     let mut even_n = N;
     even_n[0] &= !1;
-    assert!(matches!(RsaPublicKey::<32>::new(&even_n, 3), Err(SignatureError::DecodingError(_))));
+    assert!(matches!(
+        RsaPublicKey::<RSA2048>::new(&even_n, 3),
+        Err(SignatureError::DecodingError(_))
+    ));
 }
 
 #[test]
 fn public_key_encode_round_trips() {
-    let pk = RsaPublicKey::<32>::new(&N, 0x10001).unwrap();
+    let pk = RsaPublicKey::<RSA2048>::new(&N, 0x10001).unwrap();
     let bytes: [u8; 260] = pk.encode();
-    let decoded = RsaPublicKey::<32>::from_bytes(&bytes).expect("must decode");
+    let decoded = RsaPublicKey::<RSA2048>::from_bytes(&bytes).expect("must decode");
     assert_eq!(decoded, pk);
 }
 
@@ -145,7 +145,7 @@ fn public_key_encode_round_trips() {
 /// trip: `n` big-endian (its most significant limb's top byte first), then `e` big-endian.
 #[test]
 fn public_key_encode_layout_is_n_then_e_big_endian() {
-    let pk = RsaPublicKey::<32>::new(&N, 0x10001).unwrap();
+    let pk = RsaPublicKey::<RSA2048>::new(&N, 0x10001).unwrap();
     let bytes = pk.encode();
     assert_eq!(bytes[..8], N[31].to_be_bytes());
     assert_eq!(bytes[248..256], N[0].to_be_bytes());
@@ -158,27 +158,27 @@ fn public_key_encode_layout_is_n_then_e_big_endian() {
 
 #[test]
 fn public_key_from_bytes_rejects_even_modulus() {
-    let pk = RsaPublicKey::<32>::new(&N, 0x10001).unwrap();
+    let pk = RsaPublicKey::<RSA2048>::new(&N, 0x10001).unwrap();
     let mut bytes: [u8; 260] = pk.encode();
     bytes[255] &= !1; // clear n's low bit (last byte, big-endian)
     assert!(matches!(
-        RsaPublicKey::<32>::from_bytes(&bytes),
+        RsaPublicKey::<RSA2048>::from_bytes(&bytes),
         Err(SignatureError::DecodingError(_))
     ));
 }
 
 #[test]
 fn public_key_from_bytes_rejects_wrong_lengths() {
-    let pk = RsaPublicKey::<32>::new(&N, 0x10001).unwrap();
+    let pk = RsaPublicKey::<RSA2048>::new(&N, 0x10001).unwrap();
     let bytes = pk.encode();
     assert!(matches!(
-        RsaPublicKey::<32>::from_bytes(&bytes[..259]),
+        RsaPublicKey::<RSA2048>::from_bytes(&bytes[..259]),
         Err(SignatureError::DecodingError(_))
     ));
     let mut too_long = bytes.to_vec();
     too_long.push(0);
     assert!(matches!(
-        RsaPublicKey::<32>::from_bytes(&too_long),
+        RsaPublicKey::<RSA2048>::from_bytes(&too_long),
         Err(SignatureError::DecodingError(_))
     ));
 }
@@ -187,24 +187,24 @@ fn public_key_from_bytes_rejects_wrong_lengths() {
 /// in hex, so a printed key can be matched by eye against a hex dump of its encoding.
 #[test]
 fn public_key_display_prints_big_endian_hex() {
-    let pk = RsaPublicKey::<32>::new(&N, 0x10001).unwrap();
+    let pk = RsaPublicKey::<RSA2048>::new(&N, 0x10001).unwrap();
     let shown = format!("{pk}");
     let n_hex: String = pk.encode()[..256].iter().map(|b| format!("{b:02x}")).collect();
-    assert_eq!(shown, format!("RsaPublicKey<32> {{ n: {n_hex}, e: 10001 }}"));
+    assert_eq!(shown, format!("RsaPublicKey<RSA-2048> {{ n: {n_hex}, e: 10001 }}"));
 }
 
 #[test]
 fn private_key_encode_round_trips() {
-    let sk = RsaPrivateKey::<32, 16>::from_crt_components(&P, &Q, &D_P, &D_Q, &Q_INV).unwrap();
+    let sk = RsaPrivateKey::<RSA2048>::from_crt_components(&P, &Q, &D_P, &D_Q, &Q_INV).unwrap();
     let bytes: [u8; 640] = sk.encode();
-    let decoded = RsaPrivateKey::<32, 16>::from_bytes(&bytes).expect("must decode");
+    let decoded = RsaPrivateKey::<RSA2048>::from_bytes(&bytes).expect("must decode");
     assert_eq!(decoded, sk);
 }
 
 /// `SignaturePrivateKey`'s `p || q || dP || dQ || qInv` layout, each field 128 bytes big-endian.
 #[test]
 fn private_key_encode_layout_is_five_big_endian_fields() {
-    let sk = RsaPrivateKey::<32, 16>::from_crt_components(&P, &Q, &D_P, &D_Q, &Q_INV).unwrap();
+    let sk = RsaPrivateKey::<RSA2048>::from_crt_components(&P, &Q, &D_P, &D_Q, &Q_INV).unwrap();
     let bytes = sk.encode();
     for (i, field) in [P, Q, D_P, D_Q, Q_INV].iter().enumerate() {
         let start = 128 * i;
@@ -219,29 +219,62 @@ fn private_key_encode_layout_is_five_big_endian_fields() {
 
 #[test]
 fn private_key_from_bytes_rejects_equal_primes() {
-    let sk = RsaPrivateKey::<32, 16>::from_crt_components(&P, &Q, &D_P, &D_Q, &Q_INV).unwrap();
+    let sk = RsaPrivateKey::<RSA2048>::from_crt_components(&P, &Q, &D_P, &D_Q, &Q_INV).unwrap();
     let mut bytes: [u8; 640] = sk.encode();
     // Overwrite q (the second 128-byte field) with p, making the two primes equal.
     let p_field = bytes[..128].to_vec();
     bytes[128..256].copy_from_slice(&p_field);
     assert!(matches!(
-        RsaPrivateKey::<32, 16>::from_bytes(&bytes),
+        RsaPrivateKey::<RSA2048>::from_bytes(&bytes),
         Err(SignatureError::DecodingError(_))
     ));
 }
 
 #[test]
 fn private_key_from_bytes_rejects_wrong_lengths() {
-    let sk = RsaPrivateKey::<32, 16>::from_crt_components(&P, &Q, &D_P, &D_Q, &Q_INV).unwrap();
+    let sk = RsaPrivateKey::<RSA2048>::from_crt_components(&P, &Q, &D_P, &D_Q, &Q_INV).unwrap();
     let bytes = sk.encode();
     assert!(matches!(
-        RsaPrivateKey::<32, 16>::from_bytes(&bytes[..639]),
+        RsaPrivateKey::<RSA2048>::from_bytes(&bytes[..639]),
         Err(SignatureError::DecodingError(_))
     ));
     let mut too_long = bytes.to_vec();
     too_long.push(0);
     assert!(matches!(
-        RsaPrivateKey::<32, 16>::from_bytes(&too_long),
+        RsaPrivateKey::<RSA2048>::from_bytes(&too_long),
         Err(SignatureError::DecodingError(_))
     ));
+}
+
+/// The CRT range checks run through the size's own forwarders: at every signing size a `dP`
+/// not below `p` and a `qInv` not below `p` are refused (no primality check, so tiny odd
+/// values stand in for the primes).
+fn crt_components_out_of_range_rejected<K: RsaSigningSize>() {
+    let mut p = <K as RsaSize>::HalfLimbs::ZEROED;
+    p.as_mut()[0] = 7;
+    let mut q = <K as RsaSize>::HalfLimbs::ZEROED;
+    q.as_mut()[0] = 11;
+    let mut small = <K as RsaSize>::HalfLimbs::ZEROED;
+    small.as_mut()[0] = 3;
+    assert!(RsaPrivateKey::<K>::from_crt_components(&p, &q, &small, &small, &small).is_ok());
+    assert!(matches!(
+        RsaPrivateKey::<K>::from_crt_components(&p, &q, &p, &small, &small),
+        Err(SignatureError::DecodingError(_))
+    ));
+    assert!(matches!(
+        RsaPrivateKey::<K>::from_crt_components(&p, &q, &small, &q, &small),
+        Err(SignatureError::DecodingError(_))
+    ));
+    assert!(matches!(
+        RsaPrivateKey::<K>::from_crt_components(&p, &q, &small, &small, &p),
+        Err(SignatureError::DecodingError(_))
+    ));
+}
+
+#[test]
+fn crt_components_out_of_range_rejected_at_every_signing_size() {
+    crt_components_out_of_range_rejected::<RSA2048>();
+    crt_components_out_of_range_rejected::<RSA3072>();
+    crt_components_out_of_range_rejected::<RSA4096>();
+    crt_components_out_of_range_rejected::<RSA8192>();
 }

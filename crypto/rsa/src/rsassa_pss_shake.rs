@@ -1,272 +1,84 @@
 //! RSASSA-PSS with SHAKE128 or SHAKE256 as both the hash and the (native, non-MGF1) mask
 //! generation function -- `id-RSASSA-PSS-SHAKE128`/`id-RSASSA-PSS-SHAKE256` (RFC 8702 §3.2.1).
-//! Otherwise identical to [`crate::rsassa_pss`] (RFC 8017 §8.1): same RSASP1/RSAVP1 orchestration,
-//! same fresh-salt-per-signature approach, just built on [`crate::emsa_pss_shake`] in place of
-//! [`crate::emsa_pss`] -- and the same [`RSASSA_PSS_SHAKE`] marker over `*_from_hash` functions,
-//! with `X: XOF` in place of `H: Hash` and no `SEED_LEN` (there is no MGF1 counter to size).
+//! Otherwise identical to [`crate::rsassa_pss`] (RFC 8017 §8.1): same RSASP1/RSAVP1
+//! orchestration, same fresh-salt-per-signature approach, just built on `emsa_pss_shake` in
+//! place of `emsa_pss` -- and the same [`RSASSA_PSS_SHAKE`] marker over `*_from_hash`
+//! functions, with `X: XOF` in place of `H: Hash`.
 
-use crate::codec::{be_bytes_from_limbs, limbs_from_be_bytes};
 use crate::emsa_pss_shake::{emsa_pss_encode_shake_from_hash, emsa_pss_verify_shake_from_hash};
-use crate::keys::{RsaPrivateKey, RsaPublicKey, modulus_strength};
+use crate::keys::{RsaPrivateKey, RsaPublicKey};
+use crate::mgf1::MAX_HASH_LEN;
 use crate::rsa_core::{rsasp1, rsavp1};
+use crate::size::{RsaSigningSize, RsaSize, min_strength};
 use bouncycastle_core::errors::SignatureError;
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::signature_key::{SignatureAlgorithm, SigningKey, VerifyingKey};
 use bouncycastle_core::traits::{
-    Algorithm, AlgorithmInfo, HashOneShot, RNG, SignaturePrivateKey, SignaturePublicKey,
-    SignatureSigner, SignatureVerifier, XOF,
+    Algorithm, AlgorithmInfo, HashAlgParams, HashOneShot, RNG, SignatureSigner, SignatureVerifier,
+    XOF,
 };
+use bouncycastle_utils::const_str::ConstStr;
 use core::marker::PhantomData;
 
-/// RSASSA-PSS with a SHAKE XOF `X` as both hash and mask (RFC 8702 §3.2.1), at a modulus of `L` limbs: the algorithm marker the key role
-/// traits are implemented over, with every width fixed by the aliases in the size modules
-/// (`rsa_2048::RSASSA_PSS_SHAKE_SHA256` and siblings).
-/// `RsaPrivateKey` signs through [`SigningKey`]: a fresh `S_LEN`-byte salt from the caller's RNG
-/// per signer (EMSA-PSS-ENCODE step 4), so two signatures of one message differ.
-/// `RsaPublicKey` verifies through [`VerifyingKey`]. One key type serves every scheme and hash, so
-/// a call names the marker: `SigningKey::<rsa_2048::RSASSA_PSS_SHAKE_SHA256, 256>::...(&sk, ..)`. `ctx` is
-/// accepted and ignored, since RSA has no context string.
+/// RSASSA-PSS with a SHAKE XOF `X` as both hash and mask (RFC 8702 §3.2.1), at the modulus size `K`: the algorithm marker the key role traits are implemented
+/// over, named `RSASSA-PSS-<hash>` (`RSASSA-PSS-SHAKE128`), at the lesser of the size's and the hash's
+/// strength. [`RsaPrivateKey`] signs through [`SigningKey`] at a signing size: a fresh salt, one
+/// hash output long, from the caller's RNG per signer (EMSA-PSS-ENCODE step 4), so two
+/// signatures of one message differ. [`RsaPublicKey`] verifies through [`VerifyingKey`] at any
+/// size. One key type serves every scheme and hash, so a call names the marker:
+/// `SigningKey::<rsa_2048::RSASSA_PSS_SHAKE_SHAKE128, 256>::sign(&sk, ..)`. `ctx` is accepted and
+/// ignored, since RSA has no context string.
 #[allow(non_camel_case_types)]
-pub struct RSASSA_PSS_SHAKE<
-    X,
-    const H_LEN: usize,
-    const S_LEN: usize,
-    const M_PRIME_LEN: usize,
-    const DB_LEN: usize,
-    const L: usize,
-    const L2: usize,
-    const L21: usize,
-    const HALF: usize,
-    const HALF2: usize,
-    const HALF21: usize,
-    const K_LEN: usize,
-    const SK_LEN: usize,
-    const PK_LEN: usize,
-> {
-    _hash: PhantomData<X>,
+pub struct RSASSA_PSS_SHAKE<K: RsaSize, X> {
+    _params: PhantomData<(K, X)>,
 }
 
-impl<
-    X,
-    const H_LEN: usize,
-    const S_LEN: usize,
-    const M_PRIME_LEN: usize,
-    const DB_LEN: usize,
-    const L: usize,
-    const L2: usize,
-    const L21: usize,
-    const HALF: usize,
-    const HALF2: usize,
-    const HALF21: usize,
-    const K_LEN: usize,
-    const SK_LEN: usize,
-    const PK_LEN: usize,
-> Algorithm
-    for RSASSA_PSS_SHAKE<
-        X,
-        H_LEN,
-        S_LEN,
-        M_PRIME_LEN,
-        DB_LEN,
-        L,
-        L2,
-        L21,
-        HALF,
-        HALF2,
-        HALF21,
-        K_LEN,
-        SK_LEN,
-        PK_LEN,
-    >
-{
-    const ALG_NAME: &'static str = "RSASSA-PSS-SHAKE";
-    /// From the modulus width, by SP 800-57 Part 1 Rev. 5 Table 2; see [`modulus_strength`].
-    const MAX_SECURITY_STRENGTH: SecurityStrength = modulus_strength(L);
+impl<K: RsaSize, X: HashAlgParams> RSASSA_PSS_SHAKE<K, X> {
+    const NAME: ConstStr<40> = ConstStr::concat(&["RSASSA-PSS-", X::ALG_NAME]);
 }
 
-impl<
-    X,
-    const H_LEN: usize,
-    const S_LEN: usize,
-    const M_PRIME_LEN: usize,
-    const DB_LEN: usize,
-    const L: usize,
-    const L2: usize,
-    const L21: usize,
-    const HALF: usize,
-    const HALF2: usize,
-    const HALF21: usize,
-    const K_LEN: usize,
-    const SK_LEN: usize,
-    const PK_LEN: usize,
-> SignatureAlgorithm
-    for RSASSA_PSS_SHAKE<
-        X,
-        H_LEN,
-        S_LEN,
-        M_PRIME_LEN,
-        DB_LEN,
-        L,
-        L2,
-        L21,
-        HALF,
-        HALF2,
-        HALF21,
-        K_LEN,
-        SK_LEN,
-        PK_LEN,
-    >
-{
+impl<K: RsaSize, X: HashAlgParams> Algorithm for RSASSA_PSS_SHAKE<K, X> {
+    const ALG_NAME: &'static str = Self::NAME.as_str();
+    const MAX_SECURITY_STRENGTH: SecurityStrength =
+        min_strength(K::STRENGTH, X::MAX_SECURITY_STRENGTH);
 }
 
-/// The signer the key hands out; it hashes the message and finishes with [`RSASSA_PSS_SHAKE`]'s encoding and
-/// RSASP1. `set_salt` replaces the drawn salt, for a known-answer test; the signature then depends on the key and message alone.
-pub struct RsaPssShakeSigner<
-    'k,
-    X,
-    const H_LEN: usize,
-    const S_LEN: usize,
-    const M_PRIME_LEN: usize,
-    const DB_LEN: usize,
-    const L: usize,
-    const L2: usize,
-    const L21: usize,
-    const HALF: usize,
-    const HALF2: usize,
-    const HALF21: usize,
-    const K_LEN: usize,
-    const SK_LEN: usize,
-    const PK_LEN: usize,
-> {
-    sk: &'k RsaPrivateKey<L, HALF>,
+impl<K: RsaSize, X: HashAlgParams> SignatureAlgorithm for RSASSA_PSS_SHAKE<K, X> {}
+
+/// The signer [`SigningKey::create_signer`] hands out: the key, borrowed, the running hash and
+/// the salt (the first `X::OUTPUT_LEN` bytes of the buffer).
+pub struct RsaPssShakeSigner<'k, K: RsaSize, X> {
+    sk: &'k RsaPrivateKey<K>,
     hash: X,
-    salt: [u8; S_LEN],
+    salt: [u8; MAX_HASH_LEN],
 }
 
-impl<
-    'k,
-    X: XOF + HashOneShot,
-    const H_LEN: usize,
-    const S_LEN: usize,
-    const M_PRIME_LEN: usize,
-    const DB_LEN: usize,
-    const L: usize,
-    const L2: usize,
-    const L21: usize,
-    const HALF: usize,
-    const HALF2: usize,
-    const HALF21: usize,
-    const K_LEN: usize,
-    const SK_LEN: usize,
-    const PK_LEN: usize,
->
-    RsaPssShakeSigner<
-        'k,
-        X,
-        H_LEN,
-        S_LEN,
-        M_PRIME_LEN,
-        DB_LEN,
-        L,
-        L2,
-        L21,
-        HALF,
-        HALF2,
-        HALF21,
-        K_LEN,
-        SK_LEN,
-        PK_LEN,
-    >
-{
-    /// Replaces the salt drawn at creation with `salt`, for a known-answer test against a
-    /// published salt; the signature then depends on the key and message alone.
-    pub fn set_salt(&mut self, salt: [u8; S_LEN]) {
-        self.salt = salt;
+impl<K: RsaSize, X: XOF + HashOneShot + HashAlgParams> RsaPssShakeSigner<'_, K, X> {
+    /// Replaces the salt drawn when the signer was created, for a known-answer test; `N` must be
+    /// the hash's output length, which is checked when the call is compiled.
+    pub fn set_salt<const N: usize>(&mut self, salt: [u8; N]) {
+        const { assert!(N == X::OUTPUT_LEN, "the PSS salt is one hash output long") };
+        self.salt[..N].copy_from_slice(&salt);
     }
 }
 
-/// The verifier the key hands out: hashes the message and finishes with RSAVP1 and the
-/// encoding's verification.
-pub struct RsaPssShakeVerifier<
-    'k,
-    X,
-    const H_LEN: usize,
-    const S_LEN: usize,
-    const M_PRIME_LEN: usize,
-    const DB_LEN: usize,
-    const L: usize,
-    const L2: usize,
-    const L21: usize,
-    const HALF: usize,
-    const HALF2: usize,
-    const HALF21: usize,
-    const K_LEN: usize,
-    const SK_LEN: usize,
-    const PK_LEN: usize,
-> {
-    pk: &'k RsaPublicKey<L>,
+/// The verifier [`VerifyingKey::create_verifier`] hands out: the key, borrowed, and the running
+/// hash.
+pub struct RsaPssShakeVerifier<'k, K: RsaSize, X> {
+    pk: &'k RsaPublicKey<K>,
     hash: X,
 }
 
-impl<
-    X: XOF + HashOneShot,
-    const H_LEN: usize,
-    const S_LEN: usize,
-    const M_PRIME_LEN: usize,
-    const DB_LEN: usize,
-    const L: usize,
-    const L2: usize,
-    const L21: usize,
-    const HALF: usize,
-    const HALF2: usize,
-    const HALF21: usize,
-    const K_LEN: usize,
-    const SK_LEN: usize,
-    const PK_LEN: usize,
->
-    SigningKey<
-        RSASSA_PSS_SHAKE<
-            X,
-            H_LEN,
-            S_LEN,
-            M_PRIME_LEN,
-            DB_LEN,
-            L,
-            L2,
-            L21,
-            HALF,
-            HALF2,
-            HALF21,
-            K_LEN,
-            SK_LEN,
-            PK_LEN,
-        >,
-        K_LEN,
-    > for RsaPrivateKey<L, HALF>
+impl<K, X, const K_LEN: usize> SigningKey<RSASSA_PSS_SHAKE<K, X>, K_LEN> for RsaPrivateKey<K>
 where
-    // Only a private key type this crate has declared signable (a `SignaturePrivateKey` impl in
-    // its size module) signs: the verify-only sizes, RSA-1024/1536, have none, so this impl does
-    // not exist for them -- compile-time enforcement of the crate's `# Scope`.
-    RsaPrivateKey<L, HALF>: SignaturePrivateKey<SK_LEN>,
+    // Only a signing size signs: the verify-only sizes, RSA-1024/1536, do not implement
+    // RsaSigningSize, so this impl does not exist for them -- the crate's `# Scope` at compile
+    // time.
+    K: RsaSigningSize + RsaSize<Modulus = [u8; K_LEN]>,
+    X: XOF + HashOneShot + HashAlgParams,
 {
     type Signer<'k>
-        = RsaPssShakeSigner<
-        'k,
-        X,
-        H_LEN,
-        S_LEN,
-        M_PRIME_LEN,
-        DB_LEN,
-        L,
-        L2,
-        L21,
-        HALF,
-        HALF2,
-        HALF21,
-        K_LEN,
-        SK_LEN,
-        PK_LEN,
-    >
+        = RsaPssShakeSigner<'k, K, X>
     where
         Self: 'k;
 
@@ -276,68 +88,19 @@ where
         _ctx: Option<&[u8]>,
     ) -> Result<Self::Signer<'k>, SignatureError> {
         // EMSA-PSS-ENCODE step 4's salt, drawn when the signer is created, as ECDSA draws `k`.
-        let mut salt = [0u8; S_LEN];
-        rng.next_bytes_out(&mut salt).map_err(SignatureError::RNGError)?;
+        let mut salt = [0u8; MAX_HASH_LEN];
+        rng.next_bytes_out(&mut salt[..X::OUTPUT_LEN]).map_err(SignatureError::RNGError)?;
         Ok(RsaPssShakeSigner { sk: self, hash: X::default(), salt })
     }
 }
 
-impl<
-    X: XOF + HashOneShot,
-    const H_LEN: usize,
-    const S_LEN: usize,
-    const M_PRIME_LEN: usize,
-    const DB_LEN: usize,
-    const L: usize,
-    const L2: usize,
-    const L21: usize,
-    const HALF: usize,
-    const HALF2: usize,
-    const HALF21: usize,
-    const K_LEN: usize,
-    const SK_LEN: usize,
-    const PK_LEN: usize,
->
-    VerifyingKey<
-        RSASSA_PSS_SHAKE<
-            X,
-            H_LEN,
-            S_LEN,
-            M_PRIME_LEN,
-            DB_LEN,
-            L,
-            L2,
-            L21,
-            HALF,
-            HALF2,
-            HALF21,
-            K_LEN,
-            SK_LEN,
-            PK_LEN,
-        >,
-        K_LEN,
-    > for RsaPublicKey<L>
+impl<K, X, const K_LEN: usize> VerifyingKey<RSASSA_PSS_SHAKE<K, X>, K_LEN> for RsaPublicKey<K>
 where
-    RsaPublicKey<L>: SignaturePublicKey<PK_LEN>,
+    K: RsaSize<Modulus = [u8; K_LEN]>,
+    X: XOF + HashOneShot + HashAlgParams,
 {
     type Verifier<'k>
-        = RsaPssShakeVerifier<
-        'k,
-        X,
-        H_LEN,
-        S_LEN,
-        M_PRIME_LEN,
-        DB_LEN,
-        L,
-        L2,
-        L21,
-        HALF,
-        HALF2,
-        HALF21,
-        K_LEN,
-        SK_LEN,
-        PK_LEN,
-    >
+        = RsaPssShakeVerifier<'k, K, X>
     where
         Self: 'k;
 
@@ -349,135 +112,33 @@ where
     }
 }
 
-impl<
-    X: XOF + HashOneShot,
-    const H_LEN: usize,
-    const S_LEN: usize,
-    const M_PRIME_LEN: usize,
-    const DB_LEN: usize,
-    const L: usize,
-    const L2: usize,
-    const L21: usize,
-    const HALF: usize,
-    const HALF2: usize,
-    const HALF21: usize,
-    const K_LEN: usize,
-    const SK_LEN: usize,
-    const PK_LEN: usize,
-> AlgorithmInfo
-    for RsaPssShakeSigner<
-        '_,
-        X,
-        H_LEN,
-        S_LEN,
-        M_PRIME_LEN,
-        DB_LEN,
-        L,
-        L2,
-        L21,
-        HALF,
-        HALF2,
-        HALF21,
-        K_LEN,
-        SK_LEN,
-        PK_LEN,
-    >
-{
+impl<K: RsaSize, X: HashAlgParams> AlgorithmInfo for RsaPssShakeSigner<'_, K, X> {
     fn alg_name(&self) -> &'static str {
-        <RSASSA_PSS_SHAKE<
-            X,
-            H_LEN,
-            S_LEN,
-            M_PRIME_LEN,
-            DB_LEN,
-            L,
-            L2,
-            L21,
-            HALF,
-            HALF2,
-            HALF21,
-            K_LEN,
-            SK_LEN,
-            PK_LEN,
-        > as Algorithm>::ALG_NAME
+        RSASSA_PSS_SHAKE::<K, X>::ALG_NAME
     }
 
     fn max_security_strength(&self) -> SecurityStrength {
-        <RSASSA_PSS_SHAKE<
-            X,
-            H_LEN,
-            S_LEN,
-            M_PRIME_LEN,
-            DB_LEN,
-            L,
-            L2,
-            L21,
-            HALF,
-            HALF2,
-            HALF21,
-            K_LEN,
-            SK_LEN,
-            PK_LEN,
-        > as Algorithm>::MAX_SECURITY_STRENGTH
+        RSASSA_PSS_SHAKE::<K, X>::MAX_SECURITY_STRENGTH
     }
 }
 
-impl<
-    X: XOF + HashOneShot,
-    const H_LEN: usize,
-    const S_LEN: usize,
-    const M_PRIME_LEN: usize,
-    const DB_LEN: usize,
-    const L: usize,
-    const L2: usize,
-    const L21: usize,
-    const HALF: usize,
-    const HALF2: usize,
-    const HALF21: usize,
-    const K_LEN: usize,
-    const SK_LEN: usize,
-    const PK_LEN: usize,
-> SignatureSigner<K_LEN>
-    for RsaPssShakeSigner<
-        '_,
-        X,
-        H_LEN,
-        S_LEN,
-        M_PRIME_LEN,
-        DB_LEN,
-        L,
-        L2,
-        L21,
-        HALF,
-        HALF2,
-        HALF21,
-        K_LEN,
-        SK_LEN,
-        PK_LEN,
-    >
+impl<K, X, const K_LEN: usize> SignatureSigner<K_LEN> for RsaPssShakeSigner<'_, K, X>
+where
+    K: RsaSigningSize + RsaSize<Modulus = [u8; K_LEN]>,
+    X: XOF + HashOneShot + HashAlgParams,
 {
     fn do_update(&mut self, msg_chunk: &[u8]) {
         self.hash.do_update(msg_chunk);
     }
 
     fn do_final(self) -> Result<[u8; K_LEN], SignatureError> {
-        // The encoding's first step, `Hash(M)`, completed here over the streamed chunks.
-        let mut m_hash = [0u8; H_LEN];
-        self.hash.do_final_out(&mut m_hash);
-        sign_from_hash_with_salt::<
-            X,
-            H_LEN,
-            S_LEN,
-            M_PRIME_LEN,
-            DB_LEN,
-            L,
-            L2,
-            L21,
-            HALF,
-            HALF2,
-            HALF21,
-            K_LEN,
-        >(self.sk, &m_hash, &self.salt)
+        let mut m_hash = [0u8; MAX_HASH_LEN];
+        self.hash.do_final_out(&mut m_hash[..X::OUTPUT_LEN]);
+        sign_from_hash_with_salt::<K, X, K_LEN>(
+            self.sk,
+            &m_hash[..X::OUTPUT_LEN],
+            &self.salt[..X::OUTPUT_LEN],
+        )
     }
 
     fn do_final_out(self, output: &mut [u8; K_LEN]) -> Result<usize, SignatureError> {
@@ -487,228 +148,99 @@ impl<
     }
 }
 
-impl<
-    X: XOF + HashOneShot,
-    const H_LEN: usize,
-    const S_LEN: usize,
-    const M_PRIME_LEN: usize,
-    const DB_LEN: usize,
-    const L: usize,
-    const L2: usize,
-    const L21: usize,
-    const HALF: usize,
-    const HALF2: usize,
-    const HALF21: usize,
-    const K_LEN: usize,
-    const SK_LEN: usize,
-    const PK_LEN: usize,
-> AlgorithmInfo
-    for RsaPssShakeVerifier<
-        '_,
-        X,
-        H_LEN,
-        S_LEN,
-        M_PRIME_LEN,
-        DB_LEN,
-        L,
-        L2,
-        L21,
-        HALF,
-        HALF2,
-        HALF21,
-        K_LEN,
-        SK_LEN,
-        PK_LEN,
-    >
-{
+impl<K: RsaSize, X: HashAlgParams> AlgorithmInfo for RsaPssShakeVerifier<'_, K, X> {
     fn alg_name(&self) -> &'static str {
-        <RSASSA_PSS_SHAKE<
-            X,
-            H_LEN,
-            S_LEN,
-            M_PRIME_LEN,
-            DB_LEN,
-            L,
-            L2,
-            L21,
-            HALF,
-            HALF2,
-            HALF21,
-            K_LEN,
-            SK_LEN,
-            PK_LEN,
-        > as Algorithm>::ALG_NAME
+        RSASSA_PSS_SHAKE::<K, X>::ALG_NAME
     }
 
     fn max_security_strength(&self) -> SecurityStrength {
-        <RSASSA_PSS_SHAKE<
-            X,
-            H_LEN,
-            S_LEN,
-            M_PRIME_LEN,
-            DB_LEN,
-            L,
-            L2,
-            L21,
-            HALF,
-            HALF2,
-            HALF21,
-            K_LEN,
-            SK_LEN,
-            PK_LEN,
-        > as Algorithm>::MAX_SECURITY_STRENGTH
+        RSASSA_PSS_SHAKE::<K, X>::MAX_SECURITY_STRENGTH
     }
 }
 
-impl<
-    X: XOF + HashOneShot,
-    const H_LEN: usize,
-    const S_LEN: usize,
-    const M_PRIME_LEN: usize,
-    const DB_LEN: usize,
-    const L: usize,
-    const L2: usize,
-    const L21: usize,
-    const HALF: usize,
-    const HALF2: usize,
-    const HALF21: usize,
-    const K_LEN: usize,
-    const SK_LEN: usize,
-    const PK_LEN: usize,
-> SignatureVerifier
-    for RsaPssShakeVerifier<
-        '_,
-        X,
-        H_LEN,
-        S_LEN,
-        M_PRIME_LEN,
-        DB_LEN,
-        L,
-        L2,
-        L21,
-        HALF,
-        HALF2,
-        HALF21,
-        K_LEN,
-        SK_LEN,
-        PK_LEN,
-    >
+impl<K, X, const K_LEN: usize> SignatureVerifier for RsaPssShakeVerifier<'_, K, X>
+where
+    K: RsaSize<Modulus = [u8; K_LEN]>,
+    X: XOF + HashOneShot + HashAlgParams,
 {
     fn do_update(&mut self, msg_chunk: &[u8]) {
         self.hash.do_update(msg_chunk);
     }
 
     fn do_verify_final(self, sig: &[u8]) -> Result<(), SignatureError> {
-        // RFC 8017 §8.1.2 / §8.2.2 step 1, "Length checking: If the length of the signature S is
-        // not k octets, output "invalid signature" and stop", reported as the length error the
-        // shared suite expects for a signature of the wrong size.
+        // RFC 8017 §8.1.2 step 1: a signature of the wrong length is rejected for its length.
         let sig: &[u8; K_LEN] = sig.try_into().map_err(|_| {
             SignatureError::LengthError("RSA signature must be exactly the modulus length")
         })?;
-        let mut m_hash = [0u8; H_LEN];
-        self.hash.do_final_out(&mut m_hash);
-        // Step 2.b: RSAVP1's "signature representative out of range" is "invalid signature" here;
-        // one answer for every way a signature can fail.
-        verify_from_hash::<X, H_LEN, S_LEN, M_PRIME_LEN, DB_LEN, L, L2, L21, K_LEN>(
-            self.pk, &m_hash, sig,
-        )
-        .map_err(|_| SignatureError::SignatureVerificationFailed)
+        let mut m_hash = [0u8; MAX_HASH_LEN];
+        self.hash.do_final_out(&mut m_hash[..X::OUTPUT_LEN]);
+        verify_from_hash::<K, X, K_LEN>(self.pk, &m_hash[..X::OUTPUT_LEN], sig)
+            .map_err(|_| SignatureError::SignatureVerificationFailed)
     }
 }
 
-/// RSASSA-PSS-SIGN (RFC 8017 §8.1.1) with the salt supplied directly, given the message's hash
-/// `m_hash` (`X`'s `H_LEN`-byte output over the message) rather than the message -- mirroring
-/// [`crate::rsassa_pss::sign_from_hash_with_salt`], and what [`RsaPssShakeSigner`]'s `do_final`
-/// calls.
-pub fn sign_from_hash_with_salt<
-    X: XOF + HashOneShot,
-    const H_LEN: usize,
-    const S_LEN: usize,
-    const M_PRIME_LEN: usize,
-    const DB_LEN: usize,
-    const L: usize,
-    const L2: usize,
-    const L21: usize,
-    const HALF: usize,
-    const HALF2: usize,
-    const HALF21: usize,
-    const K_LEN: usize,
->(
-    sk: &RsaPrivateKey<L, HALF>,
-    m_hash: &[u8; H_LEN],
-    salt: &[u8; S_LEN],
-) -> Result<[u8; K_LEN], SignatureError> {
-    let em = emsa_pss_encode_shake_from_hash::<X, H_LEN, S_LEN, M_PRIME_LEN, DB_LEN, K_LEN>(
-        m_hash, salt,
-    );
-    let m = limbs_from_be_bytes::<L, K_LEN>(&em);
-    let s = rsasp1::<L, L2, L21, HALF, HALF2, HALF21>(sk, &m)?;
-    Ok(be_bytes_from_limbs::<L, K_LEN>(&s))
+/// RSASSA-PSS-SIGN (RFC 8017 §8.1.1) from the message hash (`X::OUTPUT_LEN` bytes) with the
+/// salt given (the same length): the EMSA-PSS encoding, then RSASP1. The known-answer entry
+/// point; [`sign_from_hash`] draws the salt.
+///
+/// # Errors
+/// [`SignatureError::DecodingError`] if the encoded message is not below `n`, which the
+/// encoding's cleared top bit rules out.
+pub fn sign_from_hash_with_salt<K, X, const K_LEN: usize>(
+    sk: &RsaPrivateKey<K>,
+    m_hash: &[u8],
+    salt: &[u8],
+) -> Result<[u8; K_LEN], SignatureError>
+where
+    K: RsaSigningSize + RsaSize<Modulus = [u8; K_LEN]>,
+    X: XOF + HashOneShot + HashAlgParams,
+{
+    let em = emsa_pss_encode_shake_from_hash::<X, K_LEN>(m_hash, salt);
+    let m = K::limbs_from_be_bytes(&em);
+    let s = rsasp1::<K>(sk, &m)?;
+    Ok(K::be_bytes_from_limbs(&s))
 }
 
-/// RSASSA-PSS-SIGN (RFC 8017 §8.1.1) given the message's hash `m_hash`: draws a fresh
-/// `S_LEN`-byte salt from `rng` (EMSA-PSS-ENCODE step 4; RFC 8702 §3.2.1 fixes `S_LEN` at 32 bytes
-/// for `id-RSASSA-PSS-SHAKE128` and 64 for `id-RSASSA-PSS-SHAKE256`) and hands both to
+/// RSASSA-PSS-SIGN (RFC 8017 §8.1.1) from the message hash, with a fresh salt of one hash
+/// output drawn from `rng` (EMSA-PSS-ENCODE step 4).
+///
+/// # Errors
+/// [`SignatureError::RNGError`] if the RNG fails to deliver; otherwise as
 /// [`sign_from_hash_with_salt`].
-pub fn sign_from_hash<
-    X: XOF + HashOneShot,
-    const H_LEN: usize,
-    const S_LEN: usize,
-    const M_PRIME_LEN: usize,
-    const DB_LEN: usize,
-    const L: usize,
-    const L2: usize,
-    const L21: usize,
-    const HALF: usize,
-    const HALF2: usize,
-    const HALF21: usize,
-    const K_LEN: usize,
->(
-    sk: &RsaPrivateKey<L, HALF>,
-    m_hash: &[u8; H_LEN],
+pub fn sign_from_hash<K, X, const K_LEN: usize>(
+    sk: &RsaPrivateKey<K>,
+    m_hash: &[u8],
     rng: &mut dyn RNG,
-) -> Result<[u8; K_LEN], SignatureError> {
-    let mut salt = [0u8; S_LEN];
-    rng.next_bytes_out(&mut salt).map_err(SignatureError::RNGError)?;
-    sign_from_hash_with_salt::<
-        X,
-        H_LEN,
-        S_LEN,
-        M_PRIME_LEN,
-        DB_LEN,
-        L,
-        L2,
-        L21,
-        HALF,
-        HALF2,
-        HALF21,
-        K_LEN,
-    >(sk, m_hash, &salt)
+) -> Result<[u8; K_LEN], SignatureError>
+where
+    K: RsaSigningSize + RsaSize<Modulus = [u8; K_LEN]>,
+    X: XOF + HashOneShot + HashAlgParams,
+{
+    let mut salt = [0u8; MAX_HASH_LEN];
+    rng.next_bytes_out(&mut salt[..X::OUTPUT_LEN]).map_err(SignatureError::RNGError)?;
+    sign_from_hash_with_salt::<K, X, K_LEN>(sk, m_hash, &salt[..X::OUTPUT_LEN])
 }
 
-/// RSASSA-PSS-VERIFY (RFC 8017 §8.1.2) given the message's hash `m_hash`, mirroring
-/// [`crate::rsassa_pss::verify_from_hash`] but built on the SHAKE-native EMSA-PSS-VERIFY, which
-/// recovers the salt from `EM` itself.
-pub fn verify_from_hash<
-    X: XOF + HashOneShot,
-    const H_LEN: usize,
-    const S_LEN: usize,
-    const M_PRIME_LEN: usize,
-    const DB_LEN: usize,
-    const L: usize,
-    const L2: usize,
-    const L21: usize,
-    const K_LEN: usize,
->(
-    pk: &RsaPublicKey<L>,
-    m_hash: &[u8; H_LEN],
+/// RSASSA-PSS-VERIFY (RFC 8017 §8.1.2) from the message hash: RSAVP1, then the EMSA-PSS
+/// verification against `m_hash`.
+///
+/// # Errors
+/// [`SignatureError::DecodingError`] for a signature representative not below `n` (step 2.b's
+/// "invalid signature" from RSAVP1), [`SignatureError::SignatureVerificationFailed`] for an
+/// encoding that does not verify.
+pub fn verify_from_hash<K, X, const K_LEN: usize>(
+    pk: &RsaPublicKey<K>,
+    m_hash: &[u8],
     signature: &[u8; K_LEN],
-) -> Result<(), SignatureError> {
-    let s = limbs_from_be_bytes::<L, K_LEN>(signature);
-    let m = rsavp1::<L, L2, L21>(pk, &s)?;
-    let em = be_bytes_from_limbs::<L, K_LEN>(&m);
-
-    if emsa_pss_verify_shake_from_hash::<X, H_LEN, S_LEN, M_PRIME_LEN, DB_LEN, K_LEN>(m_hash, &em) {
+) -> Result<(), SignatureError>
+where
+    K: RsaSize<Modulus = [u8; K_LEN]>,
+    X: XOF + HashOneShot + HashAlgParams,
+{
+    let s = K::limbs_from_be_bytes(signature);
+    let m = rsavp1::<K>(pk, &s)?;
+    let em = K::be_bytes_from_limbs(&m);
+    if emsa_pss_verify_shake_from_hash::<X, K_LEN>(m_hash, &em) {
         Ok(())
     } else {
         Err(SignatureError::SignatureVerificationFailed)

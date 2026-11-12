@@ -38,6 +38,7 @@ use bouncycastle_core_test_framework::signature::{
     TestFrameworkSignature, TestFrameworkSignatureKeys,
 };
 use bouncycastle_hex::decode as hex_decode;
+use bouncycastle_rsa::RSA2048;
 use bouncycastle_rsa::rsa_2048::{
     PK_LEN, RSA2048PrivateKey, RSA2048PublicKey, RSASSA_PKCS1_v1_5_SHA256, SIG_LEN, SK_LEN,
 };
@@ -299,9 +300,7 @@ fn trait_verify_reports_out_of_range_representative_as_invalid_signature() {
     let mut digest = [0u8; 32];
     SHA256::hash_out(b"msg", &mut digest);
     assert!(matches!(
-        rsassa_pkcs1_v1_5::verify_from_hash::<SHA256, 32, 32, 64, 65, SIG_LEN>(
-            &pk, &digest, &too_big
-        ),
+        rsassa_pkcs1_v1_5::verify_from_hash::<RSA2048, SHA256, SIG_LEN>(&pk, &digest, &too_big),
         Err(SignatureError::DecodingError(_))
     ));
     assert!(matches!(

@@ -87,13 +87,13 @@ fn rng_emitting<const N: usize>(
 }
 
 macro_rules! rsasve_suite {
-    ($module:ident, $size:ident, $bits:literal, $L:literal, $HALF:literal, $strength:expr, $weaker:expr) => {
+    ($module:ident, $size:ident, $marker:ident, $bits:literal, $strength:expr, $weaker:expr) => {
         mod $module {
             use super::*;
             use bouncycastle_rsa::$size::{CT_LEN, PK_LEN, SK_LEN, SS_LEN};
 
-            type PK = bouncycastle_rsa::rsasve::RsaKEMPublicKey<$L>;
-            type SK = bouncycastle_rsa::rsasve::RsaKEMPrivateKey<$L, $HALF>;
+            type PK = bouncycastle_rsa::rsasve::RsaKEMPublicKey<bouncycastle_rsa::$marker>;
+            type SK = bouncycastle_rsa::rsasve::RsaKEMPrivateKey<bouncycastle_rsa::$marker>;
 
             fn openssl_vectors() -> Value {
                 get_test_data(&format!("openssl/openssl_rsasve_{}.json", $bits))
@@ -101,18 +101,18 @@ macro_rules! rsasve_suite {
 
             fn sk_from(v: &Value, p: &str, q: &str, dp: &str, dq: &str, qinv: &str) -> SK {
                 SK::from_crt_components(
-                    &limbs::<$HALF>(v[p].as_str().unwrap()),
-                    &limbs::<$HALF>(v[q].as_str().unwrap()),
-                    &limbs::<$HALF>(v[dp].as_str().unwrap()),
-                    &limbs::<$HALF>(v[dq].as_str().unwrap()),
-                    &limbs::<$HALF>(v[qinv].as_str().unwrap()),
+                    &limbs(v[p].as_str().unwrap()),
+                    &limbs(v[q].as_str().unwrap()),
+                    &limbs(v[dp].as_str().unwrap()),
+                    &limbs(v[dq].as_str().unwrap()),
+                    &limbs(v[qinv].as_str().unwrap()),
                 )
                 .expect("vector CRT key must be accepted")
             }
 
             fn openssl_keypair() -> Result<(PK, SK), KEMError> {
                 let v = openssl_vectors();
-                let pk = PK::new(&limbs::<$L>(v["n"].as_str().unwrap()), 65537)?;
+                let pk = PK::new(&limbs(v["n"].as_str().unwrap()), 65537)?;
                 let sk = sk_from(&v, "p", "q", "dP", "dQ", "qInv");
                 Ok((pk, sk))
             }
@@ -156,7 +156,11 @@ macro_rules! rsasve_suite {
                 assert_eq!(pk.n(), sk.n());
                 assert_eq!(pk.e(), 65537);
                 // `Display` is the wrapped signature key type's, unchanged.
-                let inner = bouncycastle_rsa::keys::RsaPublicKey::<$L>::new(pk.n(), 65537).unwrap();
+                let inner = bouncycastle_rsa::keys::RsaPublicKey::<bouncycastle_rsa::$marker>::new(
+                    pk.n(),
+                    65537,
+                )
+                .unwrap();
                 assert_eq!(format!("{pk}"), format!("{inner}"));
             }
 
@@ -287,7 +291,7 @@ macro_rules! rsasve_suite {
             #[test]
             fn public_key_validation() {
                 let v = openssl_vectors();
-                let n = limbs::<$L>(v["n"].as_str().unwrap());
+                let n = limbs(v["n"].as_str().unwrap());
                 // SP 800-56B Rev. 2 §6.2.1: 65,537 <= e.
                 assert!(PK::new(&n, 65537).is_ok());
                 assert!(PK::new(&n, 65539).is_ok());
@@ -301,7 +305,8 @@ macro_rules! rsasve_suite {
                 assert!(matches!(PK::new(&even_n, 65537), Err(KEMError::DecodingError(_))));
                 // n must be exactly $bits bits: its top bit set.
                 let mut short_n = n;
-                short_n[$L - 1] &= !(1 << 63);
+                let top = short_n.len() - 1;
+                short_n[top] &= !(1 << 63);
                 assert!(matches!(PK::new(&short_n, 65537), Err(KEMError::DecodingError(_))));
                 // The same checks apply on decoding.
                 let (pk, _) = openssl_keypair().unwrap();
@@ -319,21 +324,21 @@ macro_rules! rsasve_suite {
                 // RsaPrivateKey's own checks come through as DecodingError: p == q.
                 assert!(matches!(
                     SK::from_crt_components(
-                        &limbs::<$HALF>(v["p"].as_str().unwrap()),
-                        &limbs::<$HALF>(v["p"].as_str().unwrap()),
-                        &limbs::<$HALF>(v["dP"].as_str().unwrap()),
-                        &limbs::<$HALF>(v["dP"].as_str().unwrap()),
-                        &limbs::<$HALF>(v["qInv"].as_str().unwrap()),
+                        &limbs(v["p"].as_str().unwrap()),
+                        &limbs(v["p"].as_str().unwrap()),
+                        &limbs(v["dP"].as_str().unwrap()),
+                        &limbs(v["dP"].as_str().unwrap()),
+                        &limbs(v["qInv"].as_str().unwrap()),
                     ),
                     Err(KEMError::DecodingError(_))
                 ));
                 // p = 3, q = 5, dP = dQ = qInv = 1: every RsaPrivateKey check passes, but
                 // n = 15 has its top bit clear.
-                let mut p = [0u64; $HALF];
+                let mut p = [0u64; $bits / 128];
                 p[0] = 3;
-                let mut q = [0u64; $HALF];
+                let mut q = [0u64; $bits / 128];
                 q[0] = 5;
-                let mut small = [0u64; $HALF];
+                let mut small = [0u64; $bits / 128];
                 small[0] = 1;
                 assert!(matches!(
                     SK::from_crt_components(&p, &q, &small, &small, &small),
@@ -341,7 +346,7 @@ macro_rules! rsasve_suite {
                 ));
                 let (_, sk) = openssl_keypair().unwrap();
                 let mut bytes = sk.encode();
-                bytes[..8 * $HALF].fill(0); // p = 0, which is even
+                bytes[..$bits / 16].fill(0); // p = 0, which is even
                 assert!(matches!(SK::from_bytes(&bytes), Err(KEMError::DecodingError(_))));
             }
         }
@@ -351,36 +356,32 @@ macro_rules! rsasve_suite {
 rsasve_suite!(
     rsa_2048_rsasve,
     rsa_2048,
+    RSA2048,
     2048,
-    32,
-    16,
     SecurityStrength::_112bit,
     SecurityStrength::None
 );
 rsasve_suite!(
     rsa_3072_rsasve,
     rsa_3072,
+    RSA3072,
     3072,
-    48,
-    24,
     SecurityStrength::_128bit,
     SecurityStrength::_112bit
 );
 rsasve_suite!(
     rsa_4096_rsasve,
     rsa_4096,
+    RSA4096,
     4096,
-    64,
-    32,
     SecurityStrength::_128bit,
     SecurityStrength::_112bit
 );
 rsasve_suite!(
     rsa_8192_rsasve,
     rsa_8192,
+    RSA8192,
     8192,
-    128,
-    64,
     SecurityStrength::_192bit,
     SecurityStrength::_128bit
 );
@@ -491,11 +492,11 @@ fn acvp_kas_ifc_ssc_kas2_3072() {
 /// `decaps(ct)` must be `pt` at `nLen` bytes, or `DecapsulationFailed` for the out-of-range
 /// ciphertexts ACVP marks as failing.
 macro_rules! acvp_rsadp {
-    ($name:ident, $size:ident, $bits:literal, $L:literal, $HALF:literal) => {
+    ($name:ident, $size:ident, $marker:ident, $bits:literal) => {
         #[test]
         fn $name() {
             use bouncycastle_rsa::$size::CT_LEN;
-            type SK = bouncycastle_rsa::rsasve::RsaKEMPrivateKey<$L, $HALF>;
+            type SK = bouncycastle_rsa::rsasve::RsaKEMPrivateKey<bouncycastle_rsa::$marker>;
             let d = get_test_data("acvp/RSA-DecryptionPrimitive-Sp800-56Br2.json");
             let group = d["testGroups"]
                 .as_array()
@@ -539,9 +540,9 @@ macro_rules! acvp_rsadp {
     };
 }
 
-acvp_rsadp!(acvp_rsadp_crt_2048, rsa_2048, 2048, 32, 16);
-acvp_rsadp!(acvp_rsadp_crt_3072, rsa_3072, 3072, 48, 24);
-acvp_rsadp!(acvp_rsadp_crt_4096, rsa_4096, 4096, 64, 32);
+acvp_rsadp!(acvp_rsadp_crt_2048, rsa_2048, RSA2048, 2048);
+acvp_rsadp!(acvp_rsadp_crt_3072, rsa_3072, RSA3072, 3072);
+acvp_rsadp!(acvp_rsadp_crt_4096, rsa_4096, RSA4096, 4096);
 
 /// `RSASVE::keygen`'s pairs are usable KEM keys (a genuine generation, at the smallest size
 /// only: key generation is the slow part), and `keygen` enforces the RNG strength.

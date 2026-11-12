@@ -3,7 +3,7 @@
 //! always the hash's own `hLen`-byte output) rather than MGF1's fully general arbitrary-length
 //! seed: `mgfSeed` here is always exactly `H_LEN` bytes.
 
-use bouncycastle_core::traits::HashOneShot;
+use bouncycastle_core::traits::{HashAlgParams, HashOneShot};
 
 /// MGF1 (RFC 8017 Appendix B.2.1), with `mgfSeed` fixed at `H_LEN` bytes and `maskLen` fixed at
 /// `MASK_LEN` (a compile-time constant here, since every call site in this crate knows its output
@@ -13,28 +13,28 @@ use bouncycastle_core::traits::HashOneShot;
 /// (the seed plus the 4-octet counter `C`), a separate const parameter for the same reason
 /// [`bouncycastle_ec::montgomery`]'s `L2 = 2 * L` is: stable Rust cannot compute one const
 /// generic from another.
-pub fn mgf1<H: HashOneShot, const H_LEN: usize, const SEED_LEN: usize, const MASK_LEN: usize>(
-    seed: &[u8; H_LEN],
-) -> [u8; MASK_LEN] {
-    debug_assert_eq!(SEED_LEN, H_LEN + 4, "mgf1 needs SEED_LEN == H_LEN + 4");
+/// The largest hash output MGF1 is used with here, SHA-512's.
+pub(crate) const MAX_HASH_LEN: usize = 64;
 
-    let mut mask = [0u8; MASK_LEN];
+/// MGF1 over `H` (RFC 8017 Appendix B.2.1): `mask` filled with `Hash(seed || C)` for the
+/// counter `C` from 0, four big-endian bytes each, the last block truncated. `seed` is a hash
+/// output here (`H::OUTPUT_LEN` bytes, EMSA-PSS's `H`).
+pub fn mgf1<H: HashOneShot + HashAlgParams>(seed: &[u8], mask: &mut [u8]) {
+    debug_assert!(seed.len() + 4 <= MAX_HASH_LEN + 4, "mgf1: seed longer than a hash output");
+    let h_len = H::OUTPUT_LEN;
+    let mut input = [0u8; MAX_HASH_LEN + 4];
+    input[..seed.len()].copy_from_slice(seed);
+    let mut block = [0u8; MAX_HASH_LEN];
     let mut offset = 0;
     let mut counter: u32 = 0;
-    while offset < MASK_LEN {
-        let mut input = [0u8; SEED_LEN];
-        input[..H_LEN].copy_from_slice(seed);
-        input[H_LEN..].copy_from_slice(&counter.to_be_bytes());
-
-        let mut block = [0u8; H_LEN];
-        H::hash_out(&input, &mut block);
-
-        let take = core::cmp::min(H_LEN, MASK_LEN - offset);
+    while offset < mask.len() {
+        input[seed.len()..seed.len() + 4].copy_from_slice(&counter.to_be_bytes());
+        H::hash_out(&input[..seed.len() + 4], &mut block[..h_len]);
+        let take = core::cmp::min(h_len, mask.len() - offset);
         mask[offset..offset + take].copy_from_slice(&block[..take]);
         offset += take;
         counter += 1;
     }
-    mask
 }
 
 #[cfg(test)]
@@ -58,7 +58,8 @@ mod tests {
     /// 32 - 1`), spanning seven full 32-byte hash blocks (`ceil(223/32) = 7`) plus a truncated one.
     #[test]
     fn mgf1_matches_python_for_pss_2048_sha256_mask_length() {
-        let mask: [u8; 223] = mgf1::<SHA256, 32, 36, 223>(&SEED);
+        let mut mask = [0u8; 223];
+        mgf1::<SHA256>(&SEED, &mut mask);
         let expected_prefix: [u8; 16] = [
             0x70, 0xf4, 0x00, 0x3d, 0x52, 0xb6, 0xeb, 0x03, 0xda, 0x85, 0x2e, 0x93, 0x25, 0x6b,
             0x59, 0x86,
@@ -71,12 +72,14 @@ mod tests {
     /// `MASK_LEN = 10`, shorter than one hash block: exercises truncation of the very first block.
     #[test]
     fn mgf1_truncates_within_the_first_block() {
-        let mask: [u8; 10] = mgf1::<SHA256, 32, 36, 10>(&SEED);
+        let mut mask = [0u8; 10];
+        mgf1::<SHA256>(&SEED, &mut mask);
         let expected: [u8; 10] = [0x70, 0xf4, 0x00, 0x3d, 0x52, 0xb6, 0xeb, 0x03, 0xda, 0x85];
         assert_eq!(mask, expected);
         // Must agree with the longer mask's own prefix -- MGF1 is a genuine stream, not
         // recomputed independently per length.
-        let longer: [u8; 223] = mgf1::<SHA256, 32, 36, 223>(&SEED);
+        let mut longer = [0u8; 223];
+        mgf1::<SHA256>(&SEED, &mut longer);
         assert_eq!(mask, longer[..10]);
     }
 
@@ -84,8 +87,10 @@ mod tests {
     /// last.
     #[test]
     fn mgf1_spans_multiple_counter_blocks() {
-        let mask: [u8; 70] = mgf1::<SHA256, 32, 36, 70>(&SEED);
-        let longer: [u8; 223] = mgf1::<SHA256, 32, 36, 223>(&SEED);
+        let mut mask = [0u8; 70];
+        mgf1::<SHA256>(&SEED, &mut mask);
+        let mut longer = [0u8; 223];
+        mgf1::<SHA256>(&SEED, &mut longer);
         assert_eq!(mask, longer[..70]);
     }
 }

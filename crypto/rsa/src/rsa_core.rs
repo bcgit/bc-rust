@@ -12,6 +12,7 @@
 
 use crate::keys::{RsaPrivateKey, RsaPublicKey};
 use crate::modexp::{MontgomeryContext, mod_pow, mul_mod, reduce_wide, sub_mod};
+use crate::size::{RsaSigningSize, RsaSize};
 use bouncycastle_core::errors::SignatureError;
 use bouncycastle_ec::montgomery;
 use bouncycastle_ec::nat;
@@ -22,61 +23,45 @@ use bouncycastle_utils::secret::{Secret, zeroize_in_place};
 ///
 /// Step 1's range check ("If the signature representative s is not between 0 and n - 1, output
 /// 'signature representative out of range'") is `Err(`[`SignatureError::DecodingError`]`)` here.
-pub(crate) fn rsavp1<const L: usize, const L2: usize, const L21: usize>(
-    pk: &RsaPublicKey<L>,
-    s: &[u64; L],
-) -> Result<[u64; L], SignatureError> {
-    if nat::sub(s, pk.n()).1 != 1 {
+pub(crate) fn rsavp1<K: RsaSize>(
+    pk: &RsaPublicKey<K>,
+    s: &K::Limbs,
+) -> Result<K::Limbs, SignatureError> {
+    // RFC 8017 §5.2.2 step 1: the representative must be in [0, n - 1].
+    if !K::is_less(s, pk.n()) {
         return Err(SignatureError::DecodingError("signature representative out of range"));
     }
-    Ok(public_exp::<L, L2, L21>(pk, s))
+    Ok(K::public_exp(pk.n(), pk.e(), s))
 }
 
-/// `x^e mod n` under the public key, with no range check of its own: RSAVP1's step 2 (RFC 8017
-/// §5.2.2), shared with any other primitive that exponentiates by `e` -- each caller applies its
-/// own specification's range check on `x` first, since those differ (RFC 8017 §5.2.2 step 1
-/// accepts "between 0 and n - 1").
+/// `x^e mod n` for a public exponent, the shared core of RSAVP1 and RSAEP: `x` must already be
+/// below `n`. The size marker's `public_exp` forwards here with the size's widths.
 pub(crate) fn public_exp<const L: usize, const L2: usize, const L21: usize>(
-    pk: &RsaPublicKey<L>,
+    n: &[u64; L],
+    e: u32,
     x: &[u64; L],
 ) -> [u64; L] {
-    let ctx = MontgomeryContext::<L>::new(pk.n())
+    let ctx = MontgomeryContext::<L>::new(n)
         .expect("RsaPublicKey::new already validated n is odd and nonzero");
-
     let mut e_limbs = [0u64; L];
-    e_limbs[0] = pk.e() as u64;
-
+    e_limbs[0] = e as u64;
     mod_pow::<L, L2, L21>(x, &e_limbs, &ctx)
 }
 
-/// RSASP1 (RFC 8017 §5.2.1), CRT form (step 2.b, two-prime case): `s1 = m^dP mod p`, `s2 = m^dQ
-/// mod q`, `h = (s1 - s2) * qInv mod p`, `s = s2 + q * h`.
-///
-/// Step 1's range check ("If the message representative m is not between 0 and n - 1, output
-/// 'message representative out of range'") is `Err(`[`SignatureError::DecodingError`]`)` here.
-pub(crate) fn rsasp1<
-    const L: usize,
-    const L2: usize,
-    const L21: usize,
-    const HALF: usize,
-    const HALF2: usize,
-    const HALF21: usize,
->(
-    sk: &RsaPrivateKey<L, HALF>,
-    m: &[u64; L],
-) -> Result<[u64; L], SignatureError> {
-    if nat::sub(m, sk.n()).1 != 1 {
+pub(crate) fn rsasp1<K: RsaSigningSize>(
+    sk: &RsaPrivateKey<K>,
+    m: &K::Limbs,
+) -> Result<K::Limbs, SignatureError> {
+    // RFC 8017 §5.2.1 step 1: the representative must be in [0, n - 1].
+    if !K::is_less(m, sk.n()) {
         return Err(SignatureError::DecodingError("message representative out of range"));
     }
-
-    Ok(crt_exp::<L, L2, L21, HALF, HALF2, HALF21>(sk, m))
+    Ok(K::crt_exp(sk, m))
 }
 
-/// `m^d mod n` through the CRT quintuple, with no range check of its own: RSASP1's step 2.b (RFC
-/// 8017 §5.2.1, two-prime case), shared with any other primitive that exponentiates by the private
-/// key -- each caller applies its own specification's range check on `m` first, since those
-/// differ (RFC 8017 §5.2.1 step 1 accepts "between 0 and n - 1"). `m < n` is all this function
-/// itself relies on.
+/// RFC 8017 §5.2.1 step 2.b, the CRT form of `m^d mod n`, over the five components: the size
+/// marker's `crt_exp` forwards here with the size's widths. Constant time in the key: every
+/// exponentiation is `mod_pow`'s ladder, every reduction `reduce_wide`'s bit-serial loop.
 pub(crate) fn crt_exp<
     const L: usize,
     const L2: usize,
@@ -85,50 +70,35 @@ pub(crate) fn crt_exp<
     const HALF2: usize,
     const HALF21: usize,
 >(
-    sk: &RsaPrivateKey<L, HALF>,
+    p: &[u64; HALF],
+    q: &[u64; HALF],
+    d_p: &[u64; HALF],
+    d_q: &[u64; HALF],
+    q_inv: &[u64; HALF],
     m: &[u64; L],
 ) -> [u64; L] {
-    // The two contexts hold `p` and `q`; `Secret` scrubs them on return.
     let mut ctx_p = Secret::<MontgomeryContext<HALF>>::new();
-    *ctx_p = MontgomeryContext::<HALF>::new(sk.p())
+    *ctx_p = MontgomeryContext::<HALF>::new(p)
         .expect("RsaPrivateKey::from_crt_components already validated p is odd and nonzero");
     let mut ctx_q = Secret::<MontgomeryContext<HALF>>::new();
-    *ctx_q = MontgomeryContext::<HALF>::new(sk.q())
+    *ctx_q = MontgomeryContext::<HALF>::new(q)
         .expect("RsaPrivateKey::from_crt_components already validated q is odd and nonzero");
-
-    // RFC 8017 §5.2.1 step 2.b.1: reducing `m` (n-width) down to each prime's width is not itself
-    // part of the RFC's stated steps, which write "m^dP mod p" as if `m` already fit -- but `m`
-    // is as wide as `n = p * q`, so a real implementation must reduce it first. `p`/`q` are
-    // private key material, so this uses the constant-time (in the modulus) `reduce_wide`, not
-    // `bouncycastle_ec`-style variable-time reduction (which is only safe for RSA's *public* `n`).
-    let mut m_mod_p = reduce_wide::<L, HALF>(m, sk.p());
-    let mut m_mod_q = reduce_wide::<L, HALF>(m, sk.q());
-
-    let mut s1 = mod_pow::<HALF, HALF2, HALF21>(&m_mod_p, sk.d_p(), &ctx_p);
-    let mut s2 = mod_pow::<HALF, HALF2, HALF21>(&m_mod_q, sk.d_q(), &ctx_q);
-
-    // Step 2.b.3: `h = (s1 - s2) * qInv mod p`, which needs `s2` reduced mod `p` first. RFC 8017
-    // does not require `p` and `q` to be close in magnitude (only that both are the modulus's two
-    // prime factors), so `s2 < q` gives no useful bound relative to `p` in general -- see
-    // `RsaPrivateKey`'s docs. `reduce_wide` (built for exactly this: reducing a value wider than
-    // its target modulus, constant-time in that modulus) handles the general case; it does not
-    // require its first width to exceed its second.
-    let mut s2_mod_p = reduce_wide::<HALF, HALF>(&s2, sk.p());
-    let mut diff = sub_mod::<HALF>(&s1, &s2_mod_p, sk.p());
-    let mut h = mul_mod::<HALF, HALF2, HALF21>(&diff, sk.q_inv(), &ctx_p);
-
-    // Step 2.b.4: `s = s2 + q * h`. `h < p` and `q * h < q * p = n`, and CRT recombination
-    // guarantees `s2 + q*h < n` (Garner's algorithm's own correctness property), so this widening
-    // multiply-then-add cannot overflow `L` limbs.
-    let mut q_h = montgomery::widening_mul::<HALF, L>(sk.q(), &h);
+    // Step 2.b.i: s_1 = m^dP mod p, s_2 = m^dQ mod q, each on m reduced to the prime's width.
+    let mut m_mod_p = reduce_wide::<L, HALF>(m, p);
+    let mut m_mod_q = reduce_wide::<L, HALF>(m, q);
+    let mut s1 = mod_pow::<HALF, HALF2, HALF21>(&m_mod_p, d_p, &ctx_p);
+    let mut s2 = mod_pow::<HALF, HALF2, HALF21>(&m_mod_q, d_q, &ctx_q);
+    // Step 2.b.iii: h = (s_1 - s_2) * qInv mod p, with s_2 reduced mod p first (the primes need
+    // not be the same length; see RsaPrivateKey's docs).
+    let mut s2_mod_p = reduce_wide::<HALF, HALF>(&s2, p);
+    let mut diff = sub_mod::<HALF>(&s1, &s2_mod_p, p);
+    let mut h = mul_mod::<HALF, HALF2, HALF21>(&diff, q_inv, &ctx_p);
+    // Step 2.b.iv: s = s_2 + q * h.
+    let mut q_h = montgomery::widening_mul::<HALF, L>(q, &h);
     let mut s2_wide = [0u64; L];
     s2_wide[..HALF].copy_from_slice(&s2);
     let (s, carry) = nat::add(&s2_wide, &q_h);
     debug_assert_eq!(carry, 0, "CRT recombination must stay within n's width");
-
-    // Everything above but `s` is a function of the private primes -- a half-signature alone
-    // factors `n`, through `gcd(s - s1, n)` -- so it is scrubbed before returning, as
-    // QUALITY_AND_STYLE.md asks of a secret-holding local. `s` is the caller's.
     zeroize_in_place(&mut m_mod_p);
     zeroize_in_place(&mut m_mod_q);
     zeroize_in_place(&mut s1);
@@ -153,7 +123,9 @@ mod tests {
 
     use super::*;
 
-    fn keypair() -> RsaPrivateKey<32, 16> {
+    use crate::size::RSA2048;
+
+    fn keypair() -> RsaPrivateKey<RSA2048> {
         let p: [u64; 16] = [
             0xfec673c1b07d4997, 0x98c9e3737faecc8b, 0x01369d6bebcfd19b, 0x8aadc1799d493a6e,
             0x958ca74fe2a455a1, 0x686e62c9e375661d, 0xbf73814b7bf6fe14, 0x791ffe2d364719e4,
@@ -188,7 +160,7 @@ mod tests {
             .expect("genuine CRT components must be accepted")
     }
 
-    fn public_key(sk: &RsaPrivateKey<32, 16>) -> RsaPublicKey<32> {
+    fn public_key(sk: &RsaPrivateKey<RSA2048>) -> RsaPublicKey<RSA2048> {
         RsaPublicKey::new(sk.n(), 0x00010001).expect("e = 65537 is valid")
     }
 
@@ -218,10 +190,10 @@ mod tests {
             0xe6407b5fa454d3c9, 0x7c66144074c5739e, 0x72db535464e48005, 0x3e7bf2011ccdf96c,
         ];
 
-        let s = rsasp1::<32, 64, 65, 16, 32, 33>(&sk, &m).expect("m is in range");
+        let s = rsasp1::<RSA2048>(&sk, &m).expect("m is in range");
         assert_eq!(s, expected_s);
 
-        let recovered = rsavp1::<32, 64, 65>(&pk, &s).expect("s is in range");
+        let recovered = rsavp1::<RSA2048>(&pk, &s).expect("s is in range");
         assert_eq!(recovered, m);
     }
 
@@ -252,9 +224,9 @@ mod tests {
             0xbcda0d67e80f74f5, 0xe8b549b81d5eb31d, 0xf1d74cf682145c5d, 0x74643dc08434c3e1,
         ];
 
-        let s2 = rsasp1::<32, 64, 65, 16, 32, 33>(&sk, &m2).expect("m2 is in range");
+        let s2 = rsasp1::<RSA2048>(&sk, &m2).expect("m2 is in range");
         assert_eq!(s2, expected_s2);
-        assert_eq!(rsavp1::<32, 64, 65>(&pk, &s2).expect("s2 is in range"), m2);
+        assert_eq!(rsavp1::<RSA2048>(&pk, &s2).expect("s2 is in range"), m2);
     }
 
     #[test]
@@ -262,7 +234,7 @@ mod tests {
         let sk = keypair();
         let out_of_range = *sk.n();
         assert!(matches!(
-            rsasp1::<32, 64, 65, 16, 32, 33>(&sk, &out_of_range),
+            rsasp1::<RSA2048>(&sk, &out_of_range),
             Err(SignatureError::DecodingError(_))
         ));
     }
@@ -273,7 +245,7 @@ mod tests {
         let pk = public_key(&sk);
         let out_of_range = *pk.n();
         assert!(matches!(
-            rsavp1::<32, 64, 65>(&pk, &out_of_range),
+            rsavp1::<RSA2048>(&pk, &out_of_range),
             Err(SignatureError::DecodingError(_))
         ));
     }

@@ -13,74 +13,72 @@
 //! SHAKE256) -- already this crate's own "typical" salt-length convention for MGF1-based PSS, so
 //! no new relationship needs stating.
 
-use bouncycastle_core::traits::{HashOneShot, XOF};
+use crate::mgf1::MAX_HASH_LEN;
+use bouncycastle_core::traits::{HashAlgParams, HashOneShot, XOF};
 
 /// EMSA-PSS-ENCODE (RFC 8017 §9.1.1) from step 3 onward with the mask generation function
 /// replaced by native SHAKE output (RFC 8702 §3.2.1), given steps 1-2's `mHash = Hash(M)` by the
 /// caller exactly as [`crate::emsa_pss::emsa_pss_encode_from_hash`] is. See the module docs for
 /// `emBits` and the salt argument.
-pub fn emsa_pss_encode_shake_from_hash<
-    X: XOF + HashOneShot,
-    const H_LEN: usize,
-    const S_LEN: usize,
-    const M_PRIME_LEN: usize,
-    const DB_LEN: usize,
-    const K_LEN: usize,
->(
-    m_hash: &[u8; H_LEN],
-    salt: &[u8; S_LEN],
+/// EMSA-PSS-ENCODE (RFC 8017 §9.1.1) with the XOF `X` as both the hash and the mask generation
+/// function (RFC 8702 §3.2.1), from the message hash `m_hash` (`X::OUTPUT_LEN` bytes, the
+/// output length §3.2.1 fixes for the XOF) and the salt (`sLen = X::OUTPUT_LEN`), into the
+/// `K_LEN`-byte `EM`.
+pub fn emsa_pss_encode_shake_from_hash<X: XOF + HashOneShot + HashAlgParams, const K_LEN: usize>(
+    m_hash: &[u8],
+    salt: &[u8],
 ) -> [u8; K_LEN] {
-    debug_assert_eq!(M_PRIME_LEN, 8 + H_LEN + S_LEN, "emsa_pss_encode_shake: M_PRIME_LEN mismatch");
-    debug_assert_eq!(DB_LEN, K_LEN - H_LEN - 1, "emsa_pss_encode_shake: DB_LEN mismatch");
+    let h_len = X::OUTPUT_LEN;
+    let s_len = salt.len();
+    debug_assert_eq!(m_hash.len(), h_len, "emsa_pss_encode_shake: mHash is one output");
     debug_assert!(
-        K_LEN >= H_LEN + S_LEN + 2,
+        K_LEN >= h_len + s_len + 2,
         "emsa_pss_encode_shake: modulus too short for this hash/salt"
     );
+    let db_len = K_LEN - h_len - 1;
 
     // Steps 5-6: M' = 8 zero octets || mHash || salt; H = Hash(M').
-    let mut m_prime = [0u8; M_PRIME_LEN];
-    m_prime[8..8 + H_LEN].copy_from_slice(m_hash);
-    m_prime[8 + H_LEN..].copy_from_slice(salt);
-    let mut h = [0u8; H_LEN];
-    X::hash_out(&m_prime, &mut h);
+    let mut m_prime = [0u8; 8 + 2 * MAX_HASH_LEN];
+    m_prime[8..8 + h_len].copy_from_slice(m_hash);
+    m_prime[8 + h_len..8 + h_len + s_len].copy_from_slice(salt);
+    let mut h = [0u8; MAX_HASH_LEN];
+    X::hash_out(&m_prime[..8 + h_len + s_len], &mut h[..h_len]);
 
-    // Steps 7-8: DB = PS || 0x01 || salt (PS is all-zero, already the array's initial value).
-    let mut db = [0u8; DB_LEN];
-    db[DB_LEN - S_LEN - 1] = 0x01;
-    db[DB_LEN - S_LEN..].copy_from_slice(salt);
+    // Steps 7-8: DB = PS || 0x01 || salt (PS is all-zero, already the buffer's initial value).
+    let mut db = [0u8; K_LEN];
+    db[db_len - s_len - 1] = 0x01;
+    db[db_len - s_len..db_len].copy_from_slice(salt);
 
     // Steps 9-11: maskedDB = DB xor MGF(H, DB_LEN), the SHAKE itself in place of MGF1 (RFC 8702
-    // SS3.2.1), then clear the top bit (see module docs).
-    let mut db_mask = [0u8; DB_LEN];
-    X::default().xof_out(&h, &mut db_mask);
-    let mut masked_db = [0u8; DB_LEN];
-    for i in 0..DB_LEN {
-        masked_db[i] = db[i] ^ db_mask[i];
+    // §3.2.1), then clear the top bit (see module docs).
+    let mut db_mask = [0u8; K_LEN];
+    X::default().xof_out(&h[..h_len], &mut db_mask[..db_len]);
+    let mut em = [0u8; K_LEN];
+    for i in 0..db_len {
+        em[i] = db[i] ^ db_mask[i];
     }
-    masked_db[0] &= 0x7f;
+    em[0] &= 0x7f;
 
     // Step 12: EM = maskedDB || H || 0xbc.
-    let mut em = [0u8; K_LEN];
-    em[..DB_LEN].copy_from_slice(&masked_db);
-    em[DB_LEN..DB_LEN + H_LEN].copy_from_slice(&h);
+    em[db_len..db_len + h_len].copy_from_slice(&h[..h_len]);
     em[K_LEN - 1] = 0xbc;
     em
 }
 
-/// EMSA-PSS-VERIFY (RFC 8017 §9.1.2) from step 4 onward with the mask generation function
-/// replaced by native SHAKE output, as [`emsa_pss_encode_shake_from_hash`], and step 2's
-/// `mHash = Hash(M)` supplied by the caller the same way.
-pub fn emsa_pss_verify_shake_from_hash<
-    X: XOF + HashOneShot,
-    const H_LEN: usize,
-    const S_LEN: usize,
-    const M_PRIME_LEN: usize,
-    const DB_LEN: usize,
-    const K_LEN: usize,
->(
-    m_hash: &[u8; H_LEN],
+/// EMSA-PSS-VERIFY (RFC 8017 §9.1.2) with the XOF `X` as hash and mask (RFC 8702 §3.2.1), of
+/// the `K_LEN`-byte `em` against the message hash `m_hash`, with `sLen = X::OUTPUT_LEN`.
+pub fn emsa_pss_verify_shake_from_hash<X: XOF + HashOneShot + HashAlgParams, const K_LEN: usize>(
+    m_hash: &[u8],
     em: &[u8; K_LEN],
 ) -> bool {
+    let h_len = X::OUTPUT_LEN;
+    let s_len = h_len;
+    debug_assert_eq!(m_hash.len(), h_len, "emsa_pss_verify_shake: mHash is one output");
+    if K_LEN < h_len + s_len + 2 {
+        return false;
+    }
+    let db_len = K_LEN - h_len - 1;
+
     // Step 4.
     if em[K_LEN - 1] != 0xbc {
         return false;
@@ -89,40 +87,33 @@ pub fn emsa_pss_verify_shake_from_hash<
     if em[0] & 0x80 != 0 {
         return false;
     }
-
     // Step 5.
-    let mut masked_db = [0u8; DB_LEN];
-    masked_db.copy_from_slice(&em[..DB_LEN]);
-    let mut h = [0u8; H_LEN];
-    h.copy_from_slice(&em[DB_LEN..DB_LEN + H_LEN]);
+    let masked_db = &em[..db_len];
+    let h = &em[db_len..db_len + h_len];
 
     // Steps 7-9.
-    let mut db_mask = [0u8; DB_LEN];
-    X::default().xof_out(&h, &mut db_mask);
-    let mut db = [0u8; DB_LEN];
-    for i in 0..DB_LEN {
-        db[i] = masked_db[i] ^ db_mask[i];
+    let mut db = [0u8; K_LEN];
+    X::default().xof_out(h, &mut db[..db_len]);
+    for i in 0..db_len {
+        db[i] ^= masked_db[i];
     }
     db[0] &= 0x7f;
 
     // Step 10.
-    let ps_len = DB_LEN - S_LEN - 1;
+    let ps_len = db_len - s_len - 1;
     if db[..ps_len].iter().any(|&b| b != 0) || db[ps_len] != 0x01 {
         return false;
     }
-
     // Step 11.
-    let mut salt = [0u8; S_LEN];
-    salt.copy_from_slice(&db[DB_LEN - S_LEN..]);
+    let salt = &db[db_len - s_len..db_len];
 
     // Steps 12-14 (step 2's mHash is the caller's `m_hash`).
-    let mut m_prime = [0u8; M_PRIME_LEN];
-    m_prime[8..8 + H_LEN].copy_from_slice(m_hash);
-    m_prime[8 + H_LEN..].copy_from_slice(&salt);
-    let mut h_prime = [0u8; H_LEN];
-    X::hash_out(&m_prime, &mut h_prime);
-
-    h == h_prime
+    let mut m_prime = [0u8; 8 + 2 * MAX_HASH_LEN];
+    m_prime[8..8 + h_len].copy_from_slice(m_hash);
+    m_prime[8 + h_len..8 + h_len + s_len].copy_from_slice(salt);
+    let mut h_prime = [0u8; MAX_HASH_LEN];
+    X::hash_out(&m_prime[..8 + h_len + s_len], &mut h_prime[..h_len]);
+    h == &h_prime[..h_len]
 }
 
 #[cfg(test)]
@@ -152,11 +143,11 @@ mod tests {
     }
 
     fn encode(message: &[u8], salt: &[u8; 32]) -> [u8; 256] {
-        emsa_pss_encode_shake_from_hash::<SHAKE128, 32, 32, 72, 223, 256>(&m_hash(message), salt)
+        emsa_pss_encode_shake_from_hash::<SHAKE128, 256>(&m_hash(message), salt)
     }
 
     fn verify(message: &[u8], em: &[u8; 256]) -> bool {
-        emsa_pss_verify_shake_from_hash::<SHAKE128, 32, 32, 72, 223, 256>(&m_hash(message), em)
+        emsa_pss_verify_shake_from_hash::<SHAKE128, 256>(&m_hash(message), em)
     }
 
     #[test]

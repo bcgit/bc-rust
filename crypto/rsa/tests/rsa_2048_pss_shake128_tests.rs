@@ -12,6 +12,7 @@ use bouncycastle_core::traits::{HashOneShot, SignatureSigner, SignatureVerifier}
 use bouncycastle_core_test_framework::signature::TestFrameworkSignature;
 use bouncycastle_hex::decode as hex_decode;
 use bouncycastle_rng::DefaultRNG;
+use bouncycastle_rsa::RSA2048;
 use bouncycastle_rsa::rsa_2048::{
     RSA2048PrivateKey, RSA2048PublicKey, RSASSA_PSS_SHAKE128, SIG_LEN,
 };
@@ -266,21 +267,9 @@ fn set_salt_fixes_the_salt_on_the_streaming_path() {
     let sig = signer.do_final().unwrap();
     let mut digest = [0u8; 32];
     SHAKE128::hash_out(msg, &mut digest);
-    let expected = rsassa_pss_shake::sign_from_hash_with_salt::<
-        SHAKE128,
-        32,
-        32,
-        72,
-        223,
-        32,
-        64,
-        65,
-        16,
-        32,
-        33,
-        256,
-    >(&sk, &digest, &salt)
-    .unwrap();
+    let expected =
+        rsassa_pss_shake::sign_from_hash_with_salt::<RSA2048, SHAKE128, 256>(&sk, &digest, &salt)
+            .unwrap();
     assert_eq!(sig, expected);
     VerifyingKey::<RSASSA_PSS_SHAKE128, 256>::verify(&pk, msg, None, &sig).unwrap();
 

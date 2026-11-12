@@ -1,190 +1,64 @@
-//! RSA-8192: `L = 128` (8192 bits), `HALF = 64` (4096-bit CRT primes). See [`crate::rsa_2048`]'s
-//! docs for the pattern every concrete modulus size in this crate follows.
+//! RSA-8192: the generic types at this size, as aliases over the marker [`RSA8192`]:
+//! the key types, `keygen`, every (scheme, hash) pairing offered at this size, and RSASVE.
+//! Every (scheme, hash) pairing is an algorithm marker the key role traits are implemented over.
+//! PSS's salt length is the hash's own output length throughout, RFC 8017 §9.1 note 4's
+//! "typical" choice and Wycheproof's own `rsa_pss_*_mgf1_<hLen>_test.json`.
 
 use crate::keys::{RsaPrivateKey, RsaPublicKey};
 use crate::rsassa_pkcs1_v1_5::RSASSA_PKCS1_v1_5;
 use crate::rsassa_pss::RSASSA_PSS;
-use crate::rsasve::{RsaKEMPrivateKey, RsaKEMPublicKey, RsasveDecapsulator, RsasveEncapsulator};
-use bouncycastle_core::errors::{KEMError, SignatureError};
-use bouncycastle_core::kem_key::{DecapsulatingKey, EncapsulatingKey};
-use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::traits::{
-    KEMPrivateKey, KEMPublicKey, RNG, SignaturePrivateKey, SignaturePublicKey,
-};
+use crate::rsasve::{RsaKEMPrivateKey, RsaKEMPublicKey};
+pub use crate::size::RSA8192;
+use crate::size::{RsaSigningSize, RsaSize};
+use bouncycastle_core::errors::SignatureError;
+use bouncycastle_core::traits::RNG;
 use bouncycastle_sha2::{SHA256, SHA384, SHA512};
-use core::num::NonZeroUsize;
 
-/// An RSA-8192 private key (`p`, `q` each 4096 bits).
-pub type RSA8192PrivateKey = RsaPrivateKey<128, 64>;
 /// An RSA-8192 public key.
-pub type RSA8192PublicKey = RsaPublicKey<128>;
+pub type RSA8192PublicKey = RsaPublicKey<RSA8192>;
+/// Encoded length of an RSA-8192 public key: `n || e`.
+pub const PK_LEN: usize = RSA8192::PK_LEN;
+/// Length of an RSA-8192 signature: the modulus's.
+pub const SIG_LEN: usize = RSA8192::K_LEN;
+/// An RSA-8192 private key.
+pub type RSA8192PrivateKey = RsaPrivateKey<RSA8192>;
+/// Encoded length of an RSA-8192 private key: `p || q || dP || dQ || qInv`.
+pub const SK_LEN: usize = RSA8192::SK_LEN;
 
-/// Encoded length of an [`RSA8192PrivateKey`] under [`SignaturePrivateKey`]: five 512-byte
-/// values (see [`RsaPrivateKey`]'s `# Encoding`).
-pub const SK_LEN: usize = 2560;
-/// Encoded length of an [`RSA8192PublicKey`] under [`SignaturePublicKey`]: 1024 + 4 bytes (see
-/// [`RsaPublicKey`]'s `# Encoding`).
-pub const PK_LEN: usize = 1028;
-/// Signature length: `k`, the modulus length in octets (RFC 8017 §8.1.1/§8.2.1 step 2.c).
-pub const SIG_LEN: usize = 1024;
-
-/// As [`keygen`], but sourcing the candidates from the caller-provided RNG, which must offer a
-/// security strength of at least 192 bits (SP 800-57 Part 1 Rev. 5, Table 2: `k = 7680` gives 192, and 8192 exceeds it). Each
-/// candidate prime gets 4 Miller-Rabin rounds: FIPS 186-5 Table B.1 stops at 2048-bit primes; Appendix C.1's formula (2), which reproduces every entry of that table, gives 3 rounds for 4096-bit primes at `2^-192` (RSA-8192 exceeds SP 800-57's 7680-bit/192-bit row) and 5 at `2^-256`, so 4 is taken, matching the table's last row with margin.
+/// FIPS 186-5 Appendix A.1.3 key generation at RSA-8192: [`RsaSigningSize::keygen`].
+///
+/// # Errors
+/// As [`RsaSigningSize::keygen`].
 pub fn keygen(rng: &mut dyn RNG) -> Result<(RSA8192PublicKey, RSA8192PrivateKey), SignatureError> {
-    crate::keygen::keygen_from_rng::<64, 128, 129>(
-        rng,
-        NonZeroUsize::new(4).expect("nonzero literal"),
-        SecurityStrength::_192bit,
-    )
+    RSA8192::keygen(rng)
 }
 
-impl SignaturePrivateKey<SK_LEN> for RSA8192PrivateKey {
-    fn encode(&self) -> [u8; SK_LEN] {
-        self.encode_raw::<512, SK_LEN>()
-    }
-
-    fn encode_out(&self, out: &mut [u8; SK_LEN]) -> usize {
-        *out = self.encode_raw::<512, SK_LEN>();
-        SK_LEN
-    }
-
-    fn from_bytes(bytes: &[u8]) -> Result<Self, SignatureError> {
-        let bytes: &[u8; SK_LEN] = bytes.try_into().map_err(|_| {
-            SignatureError::DecodingError("RSA-8192 private key must be 2560 bytes")
-        })?;
-        Self::from_bytes_raw::<512, SK_LEN>(bytes)
-    }
-}
-
-impl SignaturePublicKey<PK_LEN> for RSA8192PublicKey {
-    fn encode(&self) -> [u8; PK_LEN] {
-        self.encode_raw::<1024, PK_LEN>()
-    }
-
-    fn encode_out(&self, out: &mut [u8; PK_LEN]) -> usize {
-        *out = self.encode_raw::<1024, PK_LEN>();
-        PK_LEN
-    }
-
-    fn from_bytes(bytes: &[u8]) -> Result<Self, SignatureError> {
-        let bytes: &[u8; PK_LEN] = bytes
-            .try_into()
-            .map_err(|_| SignatureError::DecodingError("RSA-8192 public key must be 1028 bytes"))?;
-        Self::from_bytes_raw::<1024, PK_LEN>(bytes)
-    }
-}
-
-/// RSASSA-PKCS1-v1_5/SHA-256 over RSA-8192 through the key role traits; see
-/// [`crate::rsa_2048::RSASSA_PKCS1_v1_5_SHA256`] for the pattern.
+/// RSASSA-PKCS1-v1_5 with SHA-256 at RSA-8192.
 #[allow(non_camel_case_types)]
-pub type RSASSA_PKCS1_v1_5_SHA256 =
-    RSASSA_PKCS1_v1_5<SHA256, 32, 51, 128, 256, 257, 64, 128, 129, 1024, SK_LEN, PK_LEN>;
-/// RSASSA-PKCS1-v1_5/SHA-384 over RSA-8192.
+pub type RSASSA_PKCS1_v1_5_SHA256 = RSASSA_PKCS1_v1_5<RSA8192, SHA256>;
+/// RSASSA-PKCS1-v1_5 with SHA-384 at RSA-8192.
 #[allow(non_camel_case_types)]
-pub type RSASSA_PKCS1_v1_5_SHA384 =
-    RSASSA_PKCS1_v1_5<SHA384, 48, 67, 128, 256, 257, 64, 128, 129, 1024, SK_LEN, PK_LEN>;
-/// RSASSA-PKCS1-v1_5/SHA-512 over RSA-8192.
+pub type RSASSA_PKCS1_v1_5_SHA384 = RSASSA_PKCS1_v1_5<RSA8192, SHA384>;
+/// RSASSA-PKCS1-v1_5 with SHA-512 at RSA-8192.
 #[allow(non_camel_case_types)]
-pub type RSASSA_PKCS1_v1_5_SHA512 =
-    RSASSA_PKCS1_v1_5<SHA512, 64, 83, 128, 256, 257, 64, 128, 129, 1024, SK_LEN, PK_LEN>;
-
-/// RSASSA-PSS/SHA-256 over RSA-8192 through the key role traits; see
-/// [`crate::rsa_2048::RSASSA_PSS_SHA256`] for the pattern (including where the salt comes from).
+pub type RSASSA_PKCS1_v1_5_SHA512 = RSASSA_PKCS1_v1_5<RSA8192, SHA512>;
+/// RSASSA-PSS with SHA-256 (and MGF1 over it) at RSA-8192.
 #[allow(non_camel_case_types)]
-pub type RSASSA_PSS_SHA256 =
-    RSASSA_PSS<SHA256, 32, 36, 32, 72, 991, 128, 256, 257, 64, 128, 129, 1024, SK_LEN, PK_LEN>;
-/// RSASSA-PSS/SHA-384 over RSA-8192.
+pub type RSASSA_PSS_SHA256 = RSASSA_PSS<RSA8192, SHA256>;
+/// RSASSA-PSS with SHA-384 (and MGF1 over it) at RSA-8192.
 #[allow(non_camel_case_types)]
-pub type RSASSA_PSS_SHA384 =
-    RSASSA_PSS<SHA384, 48, 52, 48, 104, 975, 128, 256, 257, 64, 128, 129, 1024, SK_LEN, PK_LEN>;
-/// RSASSA-PSS/SHA-512 over RSA-8192.
+pub type RSASSA_PSS_SHA384 = RSASSA_PSS<RSA8192, SHA384>;
+/// RSASSA-PSS with SHA-512 (and MGF1 over it) at RSA-8192.
 #[allow(non_camel_case_types)]
-pub type RSASSA_PSS_SHA512 =
-    RSASSA_PSS<SHA512, 64, 68, 64, 136, 959, 128, 256, 257, 64, 128, 129, 1024, SK_LEN, PK_LEN>;
+pub type RSASSA_PSS_SHA512 = RSASSA_PSS<RSA8192, SHA512>;
 
-/// An RSA-8192 private key-establishment key for [`RSASVE`], kept apart from the signing key type
-/// [`RSA8192PrivateKey`] (see [`crate::rsasve`]'s `# Key separation`). It uses the same `SK_LEN`-byte
-/// encoding.
-pub type RSA8192KEMPrivateKey = RsaKEMPrivateKey<128, 64>;
-/// An RSA-8192 public key-establishment key for [`RSASVE`]; see [`RSA8192KEMPrivateKey`]. It uses
-/// the same `PK_LEN`-byte encoding.
-pub type RSA8192KEMPublicKey = RsaKEMPublicKey<128>;
-
-/// [`RSASVE`] ciphertext length: `nLen`, the modulus length in octets (SP 800-56B Rev. 2
-/// §7.2.1.2's output `C`).
-pub const CT_LEN: usize = 1024;
-/// [`RSASVE`] shared-secret length: also `nLen` (§7.2.1.2's output `Z`). This is the raw secret
-/// value, not a derived key: see [`crate::rsasve`].
-pub const SS_LEN: usize = 1024;
-
-/// RSASVE (SP 800-56B Rev. 2 §7.2.1) over RSA-8192, the algorithm the KEM roles of
-/// [`RSA8192KEMPublicKey`] and [`RSA8192KEMPrivateKey`] name:
-/// [`crate::rsasve::RSASVE`] at this size's widths and its 192-bit security strength.
-pub type RSASVE = crate::rsasve::RSASVE<128, 256, 257, 64, 128, 129, 1024, 192>;
-
-impl RSASVE {
-    /// As [`Self::keygen`], but sourcing the candidates from the caller-provided RNG, with the
-    /// same RNG requirements as [`keygen`].
-    pub fn keygen(
-        rng: &mut dyn RNG,
-    ) -> Result<(RSA8192KEMPublicKey, RSA8192KEMPrivateKey), KEMError> {
-        crate::rsasve::keygen_from(keygen(rng))
-    }
-}
-
-impl EncapsulatingKey<(), CT_LEN, SS_LEN> for RSA8192KEMPublicKey {
-    type Algorithm = RSASVE;
-    type Encapsulator<'k> = RsasveEncapsulator<'k, 128, 256, 257, 1024, 192>;
-
-    /// The raw KEM takes nothing beyond the key, so this never fails.
-    fn create_encapsulator<'k>(&'k self, _params: ()) -> Result<Self::Encapsulator<'k>, KEMError> {
-        Ok(RsasveEncapsulator::new(self))
-    }
-}
-
-impl DecapsulatingKey<(), CT_LEN, SS_LEN> for RSA8192KEMPrivateKey {
-    type Algorithm = RSASVE;
-    type Decapsulator<'k> = RsasveDecapsulator<'k, 128, 256, 257, 64, 128, 129, 1024, 192>;
-
-    /// The raw KEM takes nothing beyond the key, so this never fails.
-    fn create_decapsulator<'k>(&'k self, _params: ()) -> Result<Self::Decapsulator<'k>, KEMError> {
-        Ok(RsasveDecapsulator::new(self))
-    }
-}
-
-impl KEMPrivateKey<SK_LEN> for RSA8192KEMPrivateKey {
-    fn encode(&self) -> [u8; SK_LEN] {
-        self.0.encode_raw::<512, SK_LEN>()
-    }
-
-    fn encode_out(&self, out: &mut [u8; SK_LEN]) -> usize {
-        *out = self.0.encode_raw::<512, SK_LEN>();
-        SK_LEN
-    }
-
-    fn from_bytes(bytes: &[u8]) -> Result<Self, KEMError> {
-        let bytes: &[u8; SK_LEN] = bytes
-            .try_into()
-            .map_err(|_| KEMError::DecodingError("RSA-8192 private key must be 2560 bytes"))?;
-        crate::rsasve::private_key_from_bytes::<128, 64, 512, SK_LEN>(bytes)
-    }
-}
-
-impl KEMPublicKey<PK_LEN> for RSA8192KEMPublicKey {
-    fn encode(&self) -> [u8; PK_LEN] {
-        self.0.encode_raw::<1024, PK_LEN>()
-    }
-
-    fn encode_out(&self, out: &mut [u8; PK_LEN]) -> usize {
-        *out = self.0.encode_raw::<1024, PK_LEN>();
-        PK_LEN
-    }
-
-    fn from_bytes(bytes: &[u8]) -> Result<Self, KEMError> {
-        let bytes: &[u8; PK_LEN] = bytes
-            .try_into()
-            .map_err(|_| KEMError::DecodingError("RSA-8192 public key must be 1028 bytes"))?;
-        crate::rsasve::public_key_from_bytes::<128, 1024, PK_LEN>(bytes)
-    }
-}
+/// An RSA-8192 key-establishment private key.
+pub type RSA8192KEMPrivateKey = RsaKEMPrivateKey<RSA8192>;
+/// An RSA-8192 key-establishment public key.
+pub type RSA8192KEMPublicKey = RsaKEMPublicKey<RSA8192>;
+/// Length of an RSASVE-8192 ciphertext: `nLen`.
+pub const CT_LEN: usize = RSA8192::K_LEN;
+/// Length of an RSASVE-8192 shared secret, the secret value `Z`: `nLen`.
+pub const SS_LEN: usize = RSA8192::K_LEN;
+/// RSASVE at RSA-8192; `RSASVE::keygen` gives the KEM pair.
+pub type RSASVE = crate::rsasve::RSASVE<RSA8192>;

@@ -25,18 +25,19 @@ use bouncycastle_core::traits::{AlgorithmOID, HashAlgParams};
 /// support (SHA-3's largest output is 64 bytes), so each is a single length byte, not the
 /// multi-byte long form; `debug_assert`'d, since it can only fail on a hash this crate does not
 /// support, never on real input.
-fn digest_info<H: AlgorithmOID + HashAlgParams, const H_LEN: usize, const T_LEN: usize>(
-    digest: &[u8; H_LEN],
-) -> [u8; T_LEN] {
-    debug_assert_eq!(H_LEN, H::OUTPUT_LEN, "digest_info: H_LEN must match H::OUTPUT_LEN");
+/// The largest `T` this crate builds: two SEQUENCE headers, an OID of at most 16 bytes with
+/// its NULL, and a 64-byte digest behind its OCTET STRING header.
+const MAX_T_LEN: usize = 2 + 2 + 16 + 2 + 2 + 64;
+
+fn digest_info<H: AlgorithmOID + HashAlgParams>(digest: &[u8], t: &mut [u8; MAX_T_LEN]) -> usize {
+    let h_len = digest.len();
+    debug_assert_eq!(h_len, H::OUTPUT_LEN, "digest_info: the digest is one hash output");
     let oid_der = H::OID_DER;
-    debug_assert!(oid_der.len() < 128 && H_LEN < 128, "DER length must fit in one byte");
-
+    debug_assert!(oid_der.len() < 128 && h_len < 128, "DER length must fit in one byte");
     let inner_len = oid_der.len() + 2; // + 05 00 (the AlgorithmIdentifier's NULL parameters)
-    let outer_len = 4 + inner_len + H_LEN; // + "30 <inner_len>" and "04 <H_LEN>"
-    debug_assert_eq!(T_LEN, 2 + outer_len, "digest_info: T_LEN must match the computed DER length");
-
-    let mut t = [0u8; T_LEN];
+    let outer_len = 4 + inner_len + h_len; // + "30 <inner_len>" and "04 <h_len>"
+    let t_len = 2 + outer_len;
+    debug_assert!(t_len <= MAX_T_LEN, "digest_info: T fits MAX_T_LEN");
     t[0] = 0x30;
     t[1] = outer_len as u8;
     t[2] = 0x30;
@@ -46,40 +47,30 @@ fn digest_info<H: AlgorithmOID + HashAlgParams, const H_LEN: usize, const T_LEN:
     t[i] = 0x05;
     t[i + 1] = 0x00;
     t[i + 2] = 0x04;
-    t[i + 3] = H_LEN as u8;
+    t[i + 3] = h_len as u8;
     i += 4;
-    t[i..i + H_LEN].copy_from_slice(digest);
-    t
+    t[i..i + h_len].copy_from_slice(digest);
+    t_len
 }
 
-/// EMSA-PKCS1-V1_5-ENCODE (RFC 8017 §9.2) from step 2 onward, with `emLen` fixed to `K_LEN` (see
-/// the module docs) and step 1's `H = Hash(M)` supplied by the caller as `digest`: the caller is
-/// either [`crate::rsassa_pkcs1_v1_5::sign`] hashing a whole message in one call, or a streaming
-/// `Signer` that hashed it incrementally -- this function itself never sees the message.
-///
-/// Step 2 wraps `digest` in [`digest_info`]. Step 3's error ("intended encoded message length
-/// too short", `emLen < tLen + 11`) is a `debug_assert` here, not a runtime error: every (hash,
-/// modulus size) pairing this crate actually wires up has a modulus thousands of bits wider than
-/// any hash's `DigestInfo`, so it can only fire on a deliberately-wrong generic instantiation,
-/// never on real input. Steps 4-5 build `EM = 0x00 || 0x01 || PS || 0x00 || T`, where `PS` is
-/// `K_LEN - T_LEN - 3` bytes of `0xff` (at least 8, per step 3's bound).
-pub fn emsa_pkcs1_v1_5_encode_from_hash<
-    H: HashAlgParams + AlgorithmOID,
-    const H_LEN: usize,
-    const T_LEN: usize,
-    const K_LEN: usize,
->(
-    digest: &[u8; H_LEN],
+/// EMSA-PKCS1-v1_5-ENCODE (RFC 8017 §9.2) from the message hash, into the `K_LEN`-byte `EM`:
+/// `00 || 01 || PS || 00 || T`, `PS` all `0xff` and at least 8 bytes, `T` the DER `DigestInfo`
+/// of [`digest_info`]. `K_LEN >= tLen + 11` is a constant of the pairing; a pairing that
+/// violates it does not exist here (the smallest modulus, 1024 bits, leaves 45 bytes of `PS`
+/// under SHA-512), and is a `debug_assert`.
+pub fn emsa_pkcs1_v1_5_encode_from_hash<H: HashAlgParams + AlgorithmOID, const K_LEN: usize>(
+    digest: &[u8],
 ) -> [u8; K_LEN] {
-    let t: [u8; T_LEN] = digest_info::<H, H_LEN, T_LEN>(digest);
+    let mut t = [0u8; MAX_T_LEN];
+    let t_len = digest_info::<H>(digest, &mut t);
 
-    debug_assert!(K_LEN >= T_LEN + 11, "emsa_pkcs1_v1_5_encode: modulus too short for this hash");
+    debug_assert!(K_LEN >= t_len + 11, "emsa_pkcs1_v1_5_encode: modulus too short for this hash");
 
     let mut em = [0xffu8; K_LEN];
     em[0] = 0x00;
     em[1] = 0x01;
-    em[K_LEN - T_LEN - 1] = 0x00;
-    em[K_LEN - T_LEN..].copy_from_slice(&t);
+    em[K_LEN - t_len - 1] = 0x00;
+    em[K_LEN - t_len..].copy_from_slice(&t[..t_len]);
     em
 }
 
@@ -99,7 +90,7 @@ fn short_form_len(bytes: &[u8], pos: usize) -> Option<usize> {
 /// [`emsa_pkcs1_v1_5_verify_from_hash`]'s docs for why verification must accept it. Every other
 /// check is a strict requirement: a DER length must be single-byte short form, and no byte of `t`
 /// may go unaccounted for.
-fn decode_digest_info<H: AlgorithmOID, const H_LEN: usize>(t: &[u8], digest: &[u8; H_LEN]) -> bool {
+fn decode_digest_info<H: AlgorithmOID>(t: &[u8], digest: &[u8]) -> bool {
     let mut pos = 0;
     if t.first() != Some(&0x30) {
         return false;
@@ -149,7 +140,7 @@ fn decode_digest_info<H: AlgorithmOID, const H_LEN: usize>(t: &[u8], digest: &[u
     // mismatch there, which `PartialEq` for `[u8]` against `[u8; H_LEN]` treats as unequal without
     // panicking. This check exists to fail fast and by a clearer name, not because anything
     // downstream depends on it having fired.
-    if digest_len != H_LEN || pos + digest_len != t.len() {
+    if digest_len != digest.len() || pos + digest_len != t.len() {
         return false;
     }
 
@@ -169,8 +160,8 @@ fn decode_digest_info<H: AlgorithmOID, const H_LEN: usize>(t: &[u8], digest: &[u
 /// Confirmed against every forgery-shaped case in Wycheproof's `rsa_signature_2048_sha256_test.json`
 /// (`BerEncodedPadding`, `InvalidAsnInPadding`, `ModifiedPadding`, `WrongHash`, `InvalidPadding`,
 /// `ShortPadding`, `NoHash`), and its one `MissingNull` "acceptable" case.
-pub fn emsa_pkcs1_v1_5_verify_from_hash<H: AlgorithmOID, const H_LEN: usize, const K_LEN: usize>(
-    digest: &[u8; H_LEN],
+pub fn emsa_pkcs1_v1_5_verify_from_hash<H: AlgorithmOID, const K_LEN: usize>(
+    digest: &[u8],
     em: &[u8; K_LEN],
 ) -> bool {
     if em[0] != 0x00 || em[1] != 0x01 {
@@ -193,7 +184,7 @@ pub fn emsa_pkcs1_v1_5_verify_from_hash<H: AlgorithmOID, const H_LEN: usize, con
         return false;
     }
 
-    decode_digest_info::<H, H_LEN>(&em[i + 1..], digest)
+    decode_digest_info::<H>(&em[i + 1..], digest)
 }
 
 #[cfg(test)]
@@ -215,20 +206,23 @@ mod tests {
     fn encode<const K_LEN: usize>(message: &[u8]) -> [u8; K_LEN] {
         let mut digest = [0u8; 32];
         SHA256::hash_out(message, &mut digest);
-        emsa_pkcs1_v1_5_encode_from_hash::<SHA256, 32, 51, K_LEN>(&digest)
+        emsa_pkcs1_v1_5_encode_from_hash::<SHA256, K_LEN>(&digest)
     }
 
     /// [`encode`]'s verification counterpart, SHA-256.
     fn verify<const K_LEN: usize>(message: &[u8], em: &[u8; K_LEN]) -> bool {
         let mut digest = [0u8; 32];
         SHA256::hash_out(message, &mut digest);
-        emsa_pkcs1_v1_5_verify_from_hash::<SHA256, 32, K_LEN>(&digest, em)
+        emsa_pkcs1_v1_5_verify_from_hash::<SHA256, K_LEN>(&digest, em)
     }
 
     #[test]
     fn digest_info_matches_rfc8017_sha256_prefix() {
         let digest = [0xabu8; 32];
-        let t = digest_info::<SHA256, 32, 51>(&digest);
+        let mut buf = [0u8; MAX_T_LEN];
+        let t_len = digest_info::<SHA256>(&digest, &mut buf);
+        assert_eq!(t_len, 51);
+        let t = &buf[..51];
         let mut expected = [0u8; 51];
         expected[..19].copy_from_slice(&[
             0x30, 0x31, 0x30, 0x0d, 0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02,
@@ -241,7 +235,10 @@ mod tests {
     #[test]
     fn digest_info_matches_rfc8017_sha384_prefix() {
         let digest = [0xcdu8; 48];
-        let t = digest_info::<SHA384, 48, 67>(&digest);
+        let mut buf = [0u8; MAX_T_LEN];
+        let t_len = digest_info::<SHA384>(&digest, &mut buf);
+        assert_eq!(t_len, 67);
+        let t = &buf[..67];
         let mut expected = [0u8; 67];
         expected[..19].copy_from_slice(&[
             0x30, 0x41, 0x30, 0x0d, 0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02,
@@ -254,7 +251,10 @@ mod tests {
     #[test]
     fn digest_info_matches_rfc8017_sha512_prefix() {
         let digest = [0xefu8; 64];
-        let t = digest_info::<SHA512, 64, 83>(&digest);
+        let mut buf = [0u8; MAX_T_LEN];
+        let t_len = digest_info::<SHA512>(&digest, &mut buf);
+        assert_eq!(t_len, 83);
+        let t = &buf[..83];
         let mut expected = [0u8; 83];
         expected[..19].copy_from_slice(&[
             0x30, 0x51, 0x30, 0x0d, 0x06, 0x09, 0x60, 0x86, 0x48, 0x01, 0x65, 0x03, 0x04, 0x02,
