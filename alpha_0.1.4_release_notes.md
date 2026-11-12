@@ -78,7 +78,11 @@
   the ECC CDH HKDF pairing likewise; an HKDF instance that absorbed input through the streaming API, which the
   pairings refused at the derivation, can no longer reach one. `bouncycastle-eccdh`'s `token_key_tests` is the
   shape: a key that holds no material, agreeing through the same parameters as the software key by reading them.
-  `KDFFactory` has no description form yet, so a derivation chosen at run time is still built by hand.
+  `KDFFactory` has no description form yet, so a derivation chosen at run time is still built by hand. Mutants on
+  apollo: core `kdf_params.rs` 5 (3 caught, 2 unviable), hkdf 133 (89 caught, 43 unviable, 1 missed, the
+  description's `Clone`, closed by a test), mlkem-common `kdf.rs` 12 (4 caught, 7 unviable, 1 missed, `derive`'s
+  defensive length check), eccdh `kdf.rs` and `eccdh.rs` 39 (10 caught, 21 unviable, 8 missed: `x963_max_len`'s
+  const-only arithmetic and `derive`'s defensive check, as before).
 * The MAC worker trait splits in two, as the signature and cipher workers are: `MACGenerator<MAC_LEN>`
   (`do_update`, `do_final_out` into a `[u8; MAC_LEN]`, `do_final`) and `MACVerifier<MAC_LEN>` (`do_update`,
   `do_verify_final(&[u8; MAC_LEN]) -> Result<(), MACError>`) replace `MAC`, whose finals and key-era one-shots

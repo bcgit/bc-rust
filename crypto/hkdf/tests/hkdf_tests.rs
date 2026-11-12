@@ -565,6 +565,13 @@ mod hkdf_tests {
         }
         assert!(HkdfDescription::<SHA256>::new().salt().is_none());
 
+        // a copy of a description is the same description: the salt comes with it
+        let copied = hkdf;
+        assert_eq!(copied.salt().unwrap().ref_to_bytes(), salt.ref_to_bytes());
+        #[allow(clippy::clone_on_copy)]
+        let cloned = hkdf.clone();
+        assert_eq!(cloned.salt().unwrap().ref_to_bytes(), salt.ref_to_bytes());
+
         // what the engine would refuse is refused before any parameters exist
         let unknown =
             KeyMaterial256::from_bytes_as_type(&DUMMY_SEED[..32], KeyType::Unknown).unwrap();
