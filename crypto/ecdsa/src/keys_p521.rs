@@ -21,9 +21,10 @@
 //! [`bouncycastle_ec::hazmat::p521_extra_bits`]'s single fold at bit 521 -- see its docs for why
 //! P-521 gets neither the other curves' Barrett reduction nor the field's Solinas fold.
 
-use crate::keys_common::DerivePublicKey;
+use crate::keys_common::{DerivePublicKey, SignatureKeyPair};
 use bouncycastle_core::errors::SignatureError;
 use bouncycastle_core::traits::{RNG, SignaturePrivateKey, SignaturePublicKey};
+use bouncycastle_ec::P521;
 use bouncycastle_ec::hazmat::p521::P521FieldElement;
 use bouncycastle_ec::hazmat::p521_keygen;
 use bouncycastle_ec::hazmat::p521_scalar::{N_LIMBS, P521Scalar};
@@ -141,4 +142,16 @@ pub fn keygen(
     // EXTRA_BITS_DRBG_OUTPUT_LEN bytes and reduces them; this crate names the key types.
     let (d, (x, y)) = p521_keygen::keygen::<EXTRA_BITS_DRBG_OUTPUT_LEN>(rng)?;
     Ok((ECDSAP521PublicKey { x, y }, ECDSAP521PrivateKey(d)))
+}
+
+/// [`P521::generate_signature_key_pair`](SignatureKeyPair::generate_signature_key_pair) is [`keygen`].
+impl SignatureKeyPair for P521 {
+    type PublicKey = ECDSAP521PublicKey;
+    type PrivateKey = ECDSAP521PrivateKey;
+
+    fn generate_signature_key_pair(
+        rng: &mut dyn RNG,
+    ) -> Result<(ECDSAP521PublicKey, ECDSAP521PrivateKey), SignatureError> {
+        keygen(rng)
+    }
 }

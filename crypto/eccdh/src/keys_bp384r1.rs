@@ -1,9 +1,10 @@
 //! ECC CDH brainpoolP384r1 key types and key-pair generation (SP 800-56A Rev. 3 Sections 5.6.1.2.1,
 //! 5.6.2.1.2 and 5.6.2.3.3).
 
-use crate::keys_common::DerivePublicKey;
+use crate::keys_common::{AgreementKeyPair, DerivePublicKey};
 use bouncycastle_core::errors::KeyAgreementError;
 use bouncycastle_core::traits::{KeyAgreementPrivateKey, KeyAgreementPublicKey, RNG};
+use bouncycastle_ec::Bp384r1;
 use bouncycastle_ec::hazmat::bp384r1::Bp384r1FieldElement;
 use bouncycastle_ec::hazmat::bp384r1_keygen;
 use bouncycastle_ec::hazmat::bp384r1_scalar::{Bp384r1Scalar, N_LIMBS};
@@ -142,4 +143,16 @@ pub fn keygen(
     // EXTRA_BITS_DRBG_OUTPUT_LEN bytes and reduces them; this crate names the key types.
     let (d, (x, y)) = bp384r1_keygen::keygen::<EXTRA_BITS_DRBG_OUTPUT_LEN>(rng)?;
     Ok((ECCDHBp384r1PublicKey { x, y }, ECCDHBp384r1PrivateKey(d)))
+}
+
+/// [`Bp384r1::generate_agreement_key_pair`](AgreementKeyPair::generate_agreement_key_pair) is [`keygen`].
+impl AgreementKeyPair for Bp384r1 {
+    type PublicKey = ECCDHBp384r1PublicKey;
+    type PrivateKey = ECCDHBp384r1PrivateKey;
+
+    fn generate_agreement_key_pair(
+        rng: &mut dyn RNG,
+    ) -> Result<(ECCDHBp384r1PublicKey, ECCDHBp384r1PrivateKey), KeyAgreementError> {
+        keygen(rng)
+    }
 }

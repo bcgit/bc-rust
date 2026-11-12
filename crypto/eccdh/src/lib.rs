@@ -1,7 +1,10 @@
 //! ECC CDH, the Elliptic Curve Cryptography Cofactor Diffie-Hellman primitive of SP 800-56A
 //! Rev. 3 Section 5.7.1.2, over seven curves, built on [`bouncycastle_ec`]'s arithmetic, SEC 1
 //! encodings and constant-time multipliers. Each curve has one algorithm marker (`ECCDHP256`,
-//! `ECCDHP384`, ...) and a key pair of its own; the private key agrees through the `core` role
+//! `ECCDHP384`, ...) and a key pair of its own, generated from the curve's [`bouncycastle_ec`]
+//! marker through [`AgreementKeyPair`](keys_common::AgreementKeyPair)
+//! (`P256::generate_agreement_key_pair(&mut rng)`) or the curve's `keygen`; the private key
+//! agrees through the `core` role
 //! trait [`AgreementKey`](bouncycastle_core::agreement_key::AgreementKey), which hands out a
 //! reusable [`KeyAgreement`](bouncycastle_core::traits::KeyAgreement) worker, and the shared
 //! secret `Z` comes back as [`KeyMaterial`](bouncycastle_core::key_material::KeyMaterial) typed
@@ -25,12 +28,13 @@
 //! use bouncycastle_core::agreement_key::AgreementKey;
 //! use bouncycastle_core::key_material::{KeyMaterialTrait, KeyType};
 //! use bouncycastle_core::traits::KeyAgreement;
-//! use bouncycastle_eccdh::keys_p256::keygen;
+//! use bouncycastle_ec::P256;
+//! use bouncycastle_eccdh::keys_common::AgreementKeyPair;
 //! use bouncycastle_rng::HashDRBG_SHA512;
 //!
 //! let mut rng = HashDRBG_SHA512::new_from_os();
-//! let (pk_a, sk_a) = keygen(&mut rng)?;
-//! let (pk_b, sk_b) = keygen(&mut rng)?;
+//! let (pk_a, sk_a) = P256::generate_agreement_key_pair(&mut rng)?;
+//! let (pk_b, sk_b) = P256::generate_agreement_key_pair(&mut rng)?;
 //!
 //! let z_a = sk_a.agree(&pk_b, ())?;
 //! let z_b = sk_b.create_agreement(())?.agree(&pk_a)?;
@@ -46,13 +50,14 @@
 //! use bouncycastle_core::agreement_key::AgreementKey;
 //! use bouncycastle_core::kdf_params::{KdfParams, KeyLen};
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
-//! use bouncycastle_eccdh::keys_p256::keygen;
+//! use bouncycastle_ec::P256;
+//! use bouncycastle_eccdh::keys_common::AgreementKeyPair;
 //! use bouncycastle_rng::HashDRBG_SHA512;
 //! use bouncycastle_sha2::hkdf::HKDF_SHA256;
 //!
 //! let mut rng = HashDRBG_SHA512::new_from_os();
-//! let (pk_a, sk_a) = keygen(&mut rng)?;
-//! let (pk_b, sk_b) = keygen(&mut rng)?;
+//! let (pk_a, sk_a) = P256::generate_agreement_key_pair(&mut rng)?;
+//! let (pk_b, sk_b) = P256::generate_agreement_key_pair(&mut rng)?;
 //!
 //! // ECC-CDH-P256-HKDF-SHA256: the KDF type on the parameters selects it, the KeyLen the length.
 //! let salt = KeyMaterial::<32>::from_rng(&mut rng)?;

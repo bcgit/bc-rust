@@ -1,9 +1,10 @@
 //! ECC CDH P-521 key types and key-pair generation (SP 800-56A Rev. 3 Sections 5.6.1.2.1,
 //! 5.6.2.1.2 and 5.6.2.3.3).
 
-use crate::keys_common::DerivePublicKey;
+use crate::keys_common::{AgreementKeyPair, DerivePublicKey};
 use bouncycastle_core::errors::KeyAgreementError;
 use bouncycastle_core::traits::{KeyAgreementPrivateKey, KeyAgreementPublicKey, RNG};
+use bouncycastle_ec::P521;
 use bouncycastle_ec::hazmat::p521::P521FieldElement;
 use bouncycastle_ec::hazmat::p521_keygen;
 use bouncycastle_ec::hazmat::p521_scalar::{N_LIMBS, P521Scalar};
@@ -143,4 +144,16 @@ pub fn keygen(
     // EXTRA_BITS_DRBG_OUTPUT_LEN bytes and reduces them; this crate names the key types.
     let (d, (x, y)) = p521_keygen::keygen::<EXTRA_BITS_DRBG_OUTPUT_LEN>(rng)?;
     Ok((ECCDHP521PublicKey { x, y }, ECCDHP521PrivateKey(d)))
+}
+
+/// [`P521::generate_agreement_key_pair`](AgreementKeyPair::generate_agreement_key_pair) is [`keygen`].
+impl AgreementKeyPair for P521 {
+    type PublicKey = ECCDHP521PublicKey;
+    type PrivateKey = ECCDHP521PrivateKey;
+
+    fn generate_agreement_key_pair(
+        rng: &mut dyn RNG,
+    ) -> Result<(ECCDHP521PublicKey, ECCDHP521PrivateKey), KeyAgreementError> {
+        keygen(rng)
+    }
 }

@@ -5,9 +5,10 @@
 //! [`bouncycastle_ec::hazmat::p256_extra_bits`] for the wide-DRBG-output reduction this curve's `n`
 //! needs (see that module's docs for why).
 
-use crate::keys_common::DerivePublicKey;
+use crate::keys_common::{DerivePublicKey, SignatureKeyPair};
 use bouncycastle_core::errors::SignatureError;
 use bouncycastle_core::traits::{RNG, SignaturePrivateKey, SignaturePublicKey};
+use bouncycastle_ec::Bp384r1;
 use bouncycastle_ec::hazmat::bp384r1::Bp384r1FieldElement;
 use bouncycastle_ec::hazmat::bp384r1_keygen;
 use bouncycastle_ec::hazmat::bp384r1_scalar::{Bp384r1Scalar, N_LIMBS};
@@ -133,4 +134,16 @@ pub fn keygen(
     // EXTRA_BITS_DRBG_OUTPUT_LEN bytes and reduces them; this crate names the key types.
     let (d, (x, y)) = bp384r1_keygen::keygen::<EXTRA_BITS_DRBG_OUTPUT_LEN>(rng)?;
     Ok((ECDSABp384r1PublicKey { x, y }, ECDSABp384r1PrivateKey(d)))
+}
+
+/// [`Bp384r1::generate_signature_key_pair`](SignatureKeyPair::generate_signature_key_pair) is [`keygen`].
+impl SignatureKeyPair for Bp384r1 {
+    type PublicKey = ECDSABp384r1PublicKey;
+    type PrivateKey = ECDSABp384r1PrivateKey;
+
+    fn generate_signature_key_pair(
+        rng: &mut dyn RNG,
+    ) -> Result<(ECDSABp384r1PublicKey, ECDSABp384r1PrivateKey), SignatureError> {
+        keygen(rng)
+    }
 }

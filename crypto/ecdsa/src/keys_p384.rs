@@ -11,9 +11,10 @@
 //! [`bouncycastle_ec::hazmat::p384_extra_bits`]'s wide reduction; see that module's docs for the
 //! reasoning and for why key generation uses the same draw.
 
-use crate::keys_common::DerivePublicKey;
+use crate::keys_common::{DerivePublicKey, SignatureKeyPair};
 use bouncycastle_core::errors::SignatureError;
 use bouncycastle_core::traits::{RNG, SignaturePrivateKey, SignaturePublicKey};
+use bouncycastle_ec::P384;
 use bouncycastle_ec::hazmat::p384::P384FieldElement;
 use bouncycastle_ec::hazmat::p384_keygen;
 use bouncycastle_ec::hazmat::p384_scalar::{N_LIMBS, P384Scalar};
@@ -130,4 +131,16 @@ pub fn keygen(
     // EXTRA_BITS_DRBG_OUTPUT_LEN bytes and reduces them; this crate names the key types.
     let (d, (x, y)) = p384_keygen::keygen::<EXTRA_BITS_DRBG_OUTPUT_LEN>(rng)?;
     Ok((ECDSAP384PublicKey { x, y }, ECDSAP384PrivateKey(d)))
+}
+
+/// [`P384::generate_signature_key_pair`](SignatureKeyPair::generate_signature_key_pair) is [`keygen`].
+impl SignatureKeyPair for P384 {
+    type PublicKey = ECDSAP384PublicKey;
+    type PrivateKey = ECDSAP384PrivateKey;
+
+    fn generate_signature_key_pair(
+        rng: &mut dyn RNG,
+    ) -> Result<(ECDSAP384PublicKey, ECDSAP384PrivateKey), SignatureError> {
+        keygen(rng)
+    }
 }

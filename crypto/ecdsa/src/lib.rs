@@ -1,8 +1,10 @@
 //! ECDSA over seven curves: key generation (FIPS 186-5 Appendix A.2.1), signature generation
 //! (§6.4.1) and verification (§6.4.2), built on [`bouncycastle_ec`]'s field/scalar/point
 //! arithmetic, SEC 1 encodings, and comb/wNAF multipliers. Each curve has one algorithm marker
-//! (`ECDSAP256`, `ECDSAP384`, ...) and a key pair; the private key signs through the `core` key
-//! role traits, [`SigningKey`](bouncycastle_core::signature_key::SigningKey) with a random
+//! (`ECDSAP256`, `ECDSAP384`, ...) and a key pair, generated from the curve's
+//! [`bouncycastle_ec`] marker through [`SignatureKeyPair`](keys_common::SignatureKeyPair)
+//! (`P256::generate_signature_key_pair(&mut rng)`) or the curve's `keygen`; the private key
+//! signs through the `core` key role traits, [`SigningKey`](bouncycastle_core::signature_key::SigningKey) with a random
 //! per-message `k` (§6.3.1, Appendix A.3.1) and
 //! [`DeterministicSigningKey`](bouncycastle_core::signature_key::DeterministicSigningKey) with
 //! `k` derived from the private key and the message hash (§6.3.2, Appendix A.3.3, RFC 6979), and
@@ -15,16 +17,19 @@
 //!
 //! # Usage Examples
 //!
-//! `sign` draws a fresh `k` from the RNG it is given, so two signatures of one message differ;
-//! `sign_deterministic` takes no RNG and reproduces the same signature every time:
+//! The key pair comes from the curve: `P256` pairs with SHA-256 (ECDSA-P256), and the hash is the
+//! algorithm's, not a parameter. `sign` draws a fresh `k` from the RNG it is given, so two
+//! signatures of one message differ; `sign_deterministic` takes no RNG and reproduces the same
+//! signature every time:
 //!
 //! ```
 //! use bouncycastle_core::signature_key::{DeterministicSigningKey, SigningKey, VerifyingKey};
-//! use bouncycastle_ecdsa::keys_p256::keygen;
+//! use bouncycastle_ec::P256;
+//! use bouncycastle_ecdsa::keys_common::SignatureKeyPair;
 //! use bouncycastle_rng::HashDRBG_SHA512;
 //!
-//! let (pk, sk) = keygen(&mut HashDRBG_SHA512::new_from_os())?;
 //! let mut rng = HashDRBG_SHA512::new_from_os();
+//! let (pk, sk) = P256::generate_signature_key_pair(&mut rng)?;
 //! let message = b"the message to sign";
 //!
 //! // ECDSA has no context string; the traits' `ctx` parameter is accepted and ignored.
@@ -47,10 +52,11 @@
 //! ```
 //! use bouncycastle_core::signature_key::{DeterministicSigningKey, SigningKey, VerifyingKey};
 //! use bouncycastle_core::traits::{AlgorithmInfo, SignatureSigner, SignatureVerifier};
-//! use bouncycastle_ecdsa::keys_p256::keygen;
+//! use bouncycastle_ec::P256;
+//! use bouncycastle_ecdsa::keys_common::SignatureKeyPair;
 //! use bouncycastle_rng::HashDRBG_SHA512;
 //!
-//! let (pk, sk) = keygen(&mut HashDRBG_SHA512::new_from_os())?;
+//! let (pk, sk) = P256::generate_signature_key_pair(&mut HashDRBG_SHA512::new_from_os())?;
 //!
 //! let mut signer = sk.create_signer(&mut HashDRBG_SHA512::new_from_os(), None)?;
 //! assert_eq!(signer.alg_name(), "ECDSA-P256");

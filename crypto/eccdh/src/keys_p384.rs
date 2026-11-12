@@ -1,9 +1,10 @@
 //! ECC CDH P-384 key types and key-pair generation (SP 800-56A Rev. 3 Sections 5.6.1.2.1,
 //! 5.6.2.1.2 and 5.6.2.3.3).
 
-use crate::keys_common::DerivePublicKey;
+use crate::keys_common::{AgreementKeyPair, DerivePublicKey};
 use bouncycastle_core::errors::KeyAgreementError;
 use bouncycastle_core::traits::{KeyAgreementPrivateKey, KeyAgreementPublicKey, RNG};
+use bouncycastle_ec::P384;
 use bouncycastle_ec::hazmat::p384::P384FieldElement;
 use bouncycastle_ec::hazmat::p384_keygen;
 use bouncycastle_ec::hazmat::p384_scalar::{N_LIMBS, P384Scalar};
@@ -142,4 +143,16 @@ pub fn keygen(
     // EXTRA_BITS_DRBG_OUTPUT_LEN bytes and reduces them; this crate names the key types.
     let (d, (x, y)) = p384_keygen::keygen::<EXTRA_BITS_DRBG_OUTPUT_LEN>(rng)?;
     Ok((ECCDHP384PublicKey { x, y }, ECCDHP384PrivateKey(d)))
+}
+
+/// [`P384::generate_agreement_key_pair`](AgreementKeyPair::generate_agreement_key_pair) is [`keygen`].
+impl AgreementKeyPair for P384 {
+    type PublicKey = ECCDHP384PublicKey;
+    type PrivateKey = ECCDHP384PrivateKey;
+
+    fn generate_agreement_key_pair(
+        rng: &mut dyn RNG,
+    ) -> Result<(ECCDHP384PublicKey, ECCDHP384PrivateKey), KeyAgreementError> {
+        keygen(rng)
+    }
 }

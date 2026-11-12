@@ -10,9 +10,10 @@
 //! bits (40 bytes) and go through [`bouncycastle_ec::hazmat::p256k1_extra_bits`]'s wide reduction;
 //! see that module's docs for the reasoning and for why key generation uses the same draw.
 
-use crate::keys_common::DerivePublicKey;
+use crate::keys_common::{DerivePublicKey, SignatureKeyPair};
 use bouncycastle_core::errors::SignatureError;
 use bouncycastle_core::traits::{RNG, SignaturePrivateKey, SignaturePublicKey};
+use bouncycastle_ec::Secp256K1;
 use bouncycastle_ec::hazmat::p256k1::P256K1FieldElement;
 use bouncycastle_ec::hazmat::p256k1_keygen;
 use bouncycastle_ec::hazmat::p256k1_scalar::{N_LIMBS, P256K1Scalar};
@@ -131,4 +132,16 @@ pub fn keygen(
     // EXTRA_BITS_DRBG_OUTPUT_LEN bytes and reduces them; this crate names the key types.
     let (d, (x, y)) = p256k1_keygen::keygen::<EXTRA_BITS_DRBG_OUTPUT_LEN>(rng)?;
     Ok((ECDSASecp256K1PublicKey { x, y }, ECDSASecp256K1PrivateKey(d)))
+}
+
+/// [`Secp256K1::generate_signature_key_pair`](SignatureKeyPair::generate_signature_key_pair) is [`keygen`].
+impl SignatureKeyPair for Secp256K1 {
+    type PublicKey = ECDSASecp256K1PublicKey;
+    type PrivateKey = ECDSASecp256K1PrivateKey;
+
+    fn generate_signature_key_pair(
+        rng: &mut dyn RNG,
+    ) -> Result<(ECDSASecp256K1PublicKey, ECDSASecp256K1PrivateKey), SignatureError> {
+        keygen(rng)
+    }
 }

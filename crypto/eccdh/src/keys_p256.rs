@@ -1,9 +1,10 @@
 //! ECC CDH P-256 key types and key-pair generation (SP 800-56A Rev. 3 Sections 5.6.1.2.1,
 //! 5.6.2.1.2 and 5.6.2.3.3).
 
-use crate::keys_common::DerivePublicKey;
+use crate::keys_common::{AgreementKeyPair, DerivePublicKey};
 use bouncycastle_core::errors::KeyAgreementError;
 use bouncycastle_core::traits::{KeyAgreementPrivateKey, KeyAgreementPublicKey, RNG};
+use bouncycastle_ec::P256;
 use bouncycastle_ec::hazmat::p256::P256FieldElement;
 use bouncycastle_ec::hazmat::p256_keygen;
 use bouncycastle_ec::hazmat::p256_scalar::{N_LIMBS, P256Scalar};
@@ -142,4 +143,16 @@ pub fn keygen(
     // EXTRA_BITS_DRBG_OUTPUT_LEN bytes and reduces them; this crate names the key types.
     let (d, (x, y)) = p256_keygen::keygen::<EXTRA_BITS_DRBG_OUTPUT_LEN>(rng)?;
     Ok((ECCDHP256PublicKey { x, y }, ECCDHP256PrivateKey(d)))
+}
+
+/// [`P256::generate_agreement_key_pair`](AgreementKeyPair::generate_agreement_key_pair) is [`keygen`].
+impl AgreementKeyPair for P256 {
+    type PublicKey = ECCDHP256PublicKey;
+    type PrivateKey = ECCDHP256PrivateKey;
+
+    fn generate_agreement_key_pair(
+        rng: &mut dyn RNG,
+    ) -> Result<(ECCDHP256PublicKey, ECCDHP256PrivateKey), KeyAgreementError> {
+        keygen(rng)
+    }
 }

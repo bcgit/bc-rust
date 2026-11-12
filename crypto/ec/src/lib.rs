@@ -17,9 +17,13 @@
 //!
 //! # Usage Examples
 //!
-//! Most callers want [`bouncycastle_ecdsa`](../bouncycastle_ecdsa/index.html) or
-//! [`bouncycastle_sm2`](../bouncycastle_sm2/index.html) rather than this crate directly; what
-//! follows is the layer underneath them.
+//! Most callers want [`bouncycastle_ecdsa`](../bouncycastle_ecdsa/index.html),
+//! [`bouncycastle_eccdh`](../bouncycastle_eccdh/index.html) or
+//! [`bouncycastle_sm2`](../bouncycastle_sm2/index.html) rather than this crate directly. Their
+//! entry point is a curve marker from here, [`P256`], [`P384`], [`P521`], [`Secp256K1`],
+//! [`Bp256r1`], [`Bp384r1`] or [`Bp512r1`], on which each of those crates implements its key pair
+//! trait (`P256::generate_signature_key_pair(&mut rng)`, `P256::generate_agreement_key_pair(&mut
+//! rng)`); the marker itself carries nothing. What follows is the layer underneath them.
 //!
 //! Field arithmetic, per curve:
 //!
@@ -173,7 +177,10 @@
 #![forbid(missing_docs)]
 
 pub mod barrett;
+mod curves;
 pub mod hazmat;
 pub mod inverse_vartime;
 pub mod montgomery;
 pub mod nat;
+
+pub use curves::{Bp256r1, Bp384r1, Bp512r1, P256, P384, P521, Secp256K1};

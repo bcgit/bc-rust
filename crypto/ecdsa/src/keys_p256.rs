@@ -1,8 +1,9 @@
 //! ECDSA P-256 key types (FIPS 186-5 §6.2) and key-pair generation (Appendix A.2.1).
 
-use crate::keys_common::DerivePublicKey;
+use crate::keys_common::{DerivePublicKey, SignatureKeyPair};
 use bouncycastle_core::errors::SignatureError;
 use bouncycastle_core::traits::{RNG, SignaturePrivateKey, SignaturePublicKey};
+use bouncycastle_ec::P256;
 use bouncycastle_ec::hazmat::p256::P256FieldElement;
 use bouncycastle_ec::hazmat::p256_keygen;
 use bouncycastle_ec::hazmat::p256_scalar::{N_LIMBS, P256Scalar};
@@ -125,4 +126,16 @@ pub fn keygen(
     // EXTRA_BITS_DRBG_OUTPUT_LEN bytes and reduces them; this crate names the key types.
     let (d, (x, y)) = p256_keygen::keygen::<EXTRA_BITS_DRBG_OUTPUT_LEN>(rng)?;
     Ok((ECDSAP256PublicKey { x, y }, ECDSAP256PrivateKey(d)))
+}
+
+/// [`P256::generate_signature_key_pair`](SignatureKeyPair::generate_signature_key_pair) is [`keygen`].
+impl SignatureKeyPair for P256 {
+    type PublicKey = ECDSAP256PublicKey;
+    type PrivateKey = ECDSAP256PrivateKey;
+
+    fn generate_signature_key_pair(
+        rng: &mut dyn RNG,
+    ) -> Result<(ECDSAP256PublicKey, ECDSAP256PrivateKey), SignatureError> {
+        keygen(rng)
+    }
 }
