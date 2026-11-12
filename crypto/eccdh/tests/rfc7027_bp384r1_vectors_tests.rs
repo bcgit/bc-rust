@@ -5,7 +5,8 @@
 use bouncycastle_core::agreement_key::AgreementKey;
 use bouncycastle_core::key_material::KeyMaterialTrait;
 use bouncycastle_core::traits::{KeyAgreementPrivateKey, KeyAgreementPublicKey};
-use bouncycastle_eccdh::keys_bp384r1::{ECCDHBp384r1PrivateKey, ECCDHBp384r1PublicKey};
+use bouncycastle_ec::Bp384r1;
+use bouncycastle_eccdh::keys::{ECCDHPrivateKey, ECCDHPublicKey};
 use bouncycastle_eccdh::keys_common::DerivePublicKey;
 use bouncycastle_hex::decode as hex_decode;
 
@@ -17,15 +18,15 @@ const X_QB: &str = "4D44326F269A597A5B58BBA565DA5556ED7FD9A8A9EB76C25F46DB69D19D
 const Y_QB: &str = "62D692136DE56CBE93BF5FA3188EF58BC8A3A0EC6C1E151A21038A42E9185329B5B275903D192F8D4E1F32FE9CC78C48";
 const X_Z: &str = "0BD9D3A7EA0B3D519D09D8E48D0785FB744A6B355E6304BC51C229FBBCE239BBADF6403715C35D4FB2A5444F575D4F42";
 
-fn pk(x: &str, y: &str) -> ECCDHBp384r1PublicKey {
+fn pk(x: &str, y: &str) -> ECCDHPublicKey<Bp384r1> {
     let encoded = [&[0x04u8][..], &hex_decode(x).unwrap(), &hex_decode(y).unwrap()].concat();
-    ECCDHBp384r1PublicKey::from_bytes(&encoded).unwrap()
+    ECCDHPublicKey::<Bp384r1>::from_bytes(&encoded).unwrap()
 }
 
 #[test]
 fn rfc7027_appendix_a_2() {
-    let sk_a = ECCDHBp384r1PrivateKey::from_bytes(&hex_decode(D_A).unwrap()).unwrap();
-    let sk_b = ECCDHBp384r1PrivateKey::from_bytes(&hex_decode(D_B).unwrap()).unwrap();
+    let sk_a = ECCDHPrivateKey::<Bp384r1>::from_bytes(&hex_decode(D_A).unwrap()).unwrap();
+    let sk_b = ECCDHPrivateKey::<Bp384r1>::from_bytes(&hex_decode(D_B).unwrap()).unwrap();
     let pk_a = pk(X_QA, Y_QA);
     let pk_b = pk(X_QB, Y_QB);
     assert_eq!(sk_a.derive_pk(), pk_a, "Q_A = [d_A]G");

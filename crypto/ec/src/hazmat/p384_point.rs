@@ -5,6 +5,7 @@
 //! methodology, which applies unchanged here (P-384 also has `a = -3` and cofactor `h = 1` per SP
 //! 800-186 §3.2.1.4).
 
+use crate::curve::JacobianPoint;
 use crate::hazmat::p384::P384FieldElement;
 use crate::hazmat::p384_domain::B_LIMBS;
 use bouncycastle_utils::ct;
@@ -366,5 +367,50 @@ mod tests {
                 );
             }
         }
+    }
+}
+
+impl JacobianPoint for P384JacobianPoint {
+    type Fe = P384FieldElement;
+    const INFINITY: Self = P384JacobianPoint::INFINITY;
+
+    fn from_affine(x: P384FieldElement, y: P384FieldElement) -> Self {
+        P384JacobianPoint::from_affine(x, y)
+    }
+
+    fn x(&self) -> &P384FieldElement {
+        &self.x
+    }
+
+    fn y(&self) -> &P384FieldElement {
+        &self.y
+    }
+
+    fn z(&self) -> &P384FieldElement {
+        &self.z
+    }
+
+    fn is_infinity(&self) -> Condition<u64> {
+        P384JacobianPoint::is_infinity(self)
+    }
+
+    fn to_affine(&self) -> Option<(P384FieldElement, P384FieldElement)> {
+        P384JacobianPoint::to_affine(self)
+    }
+
+    fn negate(&self) -> Self {
+        P384JacobianPoint::negate(self)
+    }
+
+    fn zeroize(&mut self) {
+        P384JacobianPoint::zeroize(self)
+    }
+
+    fn double(&self) -> Self {
+        P384JacobianPoint::double(self)
+    }
+
+    fn add(&self, other: &Self) -> Self {
+        P384JacobianPoint::add(self, other)
     }
 }

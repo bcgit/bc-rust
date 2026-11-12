@@ -67,6 +67,18 @@
   32-byte secret seeds HKDF-SHA512 as it does HKDF-SHA256. The `hkdf-*` CLI subcommands type their salt as
   RFC 5869's non-secret random value, as the `mlkem*-hkdf-*` ones do; `--secret-salt` marks it as the secret salt
   of SP 800-56C Rev. 2 Section 5.1, which HKDF credits.
+* The KDF of a KEM or key-agreement pairing is described, not instantiated: `core::kdf_params::KdfParams<D, LEN>`
+  borrows a `KdfDescription`, what the KDF is made from as readable fields and the `Engine` it builds, so that a
+  key held where the shared secret must not leave (a token, an HSM) can read the KDF's identity and parameters and
+  hand the device the same derivation, where a software key builds the engine for each derivation. HKDF's is
+  `bouncycastle_hkdf::HkdfDescription<'s, H>`, the hash and RFC 5869's salt (`with_salt`, `new` for the absent one,
+  `salt()` to read it back; a salt typed `Unknown` is refused where the description is made); the X9.63 and
+  concatenation KDFs, made from nothing but their hash, describe themselves, so `X963KDF<H>` and `ConcatKDF<H>`
+  serve as before. The ML-KEM pairings are over `KdfParams<'p, HkdfDescription<'s, SHA256>, LEN>` and siblings,
+  the ECC CDH HKDF pairing likewise; an HKDF instance that absorbed input through the streaming API, which the
+  pairings refused at the derivation, can no longer reach one. `bouncycastle-eccdh`'s `token_key_tests` is the
+  shape: a key that holds no material, agreeing through the same parameters as the software key by reading them.
+  `KDFFactory` has no description form yet, so a derivation chosen at run time is still built by hand.
 * The MAC worker trait splits in two, as the signature and cipher workers are: `MACGenerator<MAC_LEN>`
   (`do_update`, `do_final_out` into a `[u8; MAC_LEN]`, `do_final`) and `MACVerifier<MAC_LEN>` (`do_update`,
   `do_verify_final(&[u8; MAC_LEN]) -> Result<(), MACError>`) replace `MAC`, whose finals and key-era one-shots
@@ -131,4 +143,24 @@
   (`ConcatKDF-SHA256` and so on) and as the `concatkdf-sha*` CLI subcommands, checked against the ACVP KDA OneStep
   SP800-56Cr2 vectors; `KdfParams<ConcatKDF_SHA256, LEN>` and its siblings are a third KDF role on the ECC CDH keys,
   SP 800-56A Rev. 3 Section 5.8's one-step derivation (`ECCDHP256_ConcatKDF_SHA256` and the rest).
+* `bouncycastle-ec` gains one marker type per curve at its root (`P256`, `P384`, `P521`, `Secp256K1`, `Bp256r1`,
+  `Bp384r1`, `Bp512r1`) and `curve::Curve`, implemented by the markers, which names a curve's arithmetic types
+  and routes to its `hazmat` functions, so a role crate is written once over `C: Curve`; the signature and
+  key-agreement crates hang their key pairs on the markers (`P256::generate_signature_key_pair::<SHA256>(&mut rng)`,
+  `P256::generate_agreement_key_pair(&mut rng)`). `bouncycastle-utils` gains `const_str::ConstStr`, a string
+  concatenated at compile time, for algorithm names built from type parameters.
+* `bouncycastle-eccdh` is one implementation over `Curve`: the algorithm is `ECCDH<C>` and the keys
+  `ECCDHPublicKey<C>` / `ECCDHPrivateKey<C>` for a marker `C`, `keys::keygen::<C>`, and the KDF pairings are
+  `ECCDH_X963KDF<C, H>` and `ECCDH_ConcatKDF<C, H>` over the hash matched to the curve (`eccdh::MatchedHash`)
+  and `ECCDH_HKDF_SHA256<C>` on P-256. The per-curve modules and markers (`ECCDHP256`, `keys_p256` and the
+  rest) go; the algorithm names, encodings, strengths and test vectors are unchanged.
+* `bouncycastle-ecdsa` is one implementation over `Curve` and the hash: the algorithm is `ECDSA<C, H>` for a
+  marker `C` and any `ecdsa::EcdsaHash` hash `H` (SHA-2, SHA-3, SM3), named `ECDSA-P256-SHA256` and so on, at the lesser
+  of the curve's and the hash's strength; the keys `ECDSAPublicKey<C, H>` / `ECDSAPrivateKey<C, H>` carry the
+  pairing in full, with no default hash, and re-pair with `with_hash`; the conventional pairings keep their names as aliases (`ECDSAP256 = ECDSA<P256, SHA256>`). The
+  per-curve modules (`ecdsa_p256`, `keys_p256`, `rfc6979_p256` and the rest) go; RFC 6979 is implemented once in
+  its general form. The algorithm names change from `ECDSA-P256` to `ECDSA-P256-SHA256` (and `ECDetDSA-` likewise);
+  encodings and the default pairings' outputs are unchanged. The tests now cover the CAVP SigGen and SigVer matrix
+  for P-256, P-384 and P-521 under SHA-224 to SHA-512, RFC 6979's appendix under the same hashes, and every
+  Wycheproof ECDSA file for these curves, SHA-3 included.
 

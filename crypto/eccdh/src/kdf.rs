@@ -11,9 +11,9 @@
 //! one agreement gives them two infos, not two lengths (SP 800-56C Rev. 2 Section 4.1 puts `L`
 //! in `FixedInfo` for that reason).
 //!
-//! The pairings are one `impl KdfPairing<KDF, SS_LEN> for Curve` each, in the curve's module:
-//! the X9.63 KDF and the NIST concatenation KDF over the hash matched to the curve on every
-//! curve, and HKDF-SHA256 on P-256.
+//! The pairings are `impl KdfPairing<KDF, SS_LEN> for ECCDH<C>` in [`crate::eccdh`]: the X9.63
+//! KDF and the NIST concatenation KDF over the hash matched to the curve
+//! ([`MatchedHash`](crate::eccdh::MatchedHash)) on every curve, and HKDF-SHA256 on P-256.
 //! A key under a KDF its curve is not paired with has no role, so the wrong KDF is a compile
 //! error; a further pairing is one marker and one impl.
 //!
@@ -33,11 +33,12 @@
 //! ```compile_fail
 //! use bouncycastle_core::agreement_key::AgreementKey;
 //! use bouncycastle_core::kdf_params::{KdfParams, KeyLen};
-//! use bouncycastle_eccdh::keys_p256::keygen;
+//! use bouncycastle_ec::P256;
+//! use bouncycastle_eccdh::keys::keygen;
 //! use bouncycastle_rng::HashDRBG_SHA512;
 //! use bouncycastle_x963kdf::X963KDF_SHA256;
 //!
-//! let (pk, sk) = keygen(&mut HashDRBG_SHA512::new_from_os()).unwrap();
+//! let (pk, sk) = keygen::<P256>(&mut HashDRBG_SHA512::new_from_os()).unwrap();
 //! let kdf = X963KDF_SHA256::new();
 //! let _ = sk.agree(&pk, KdfParams::new(&kdf, b"", KeyLen::<0>));
 //! ```
@@ -47,11 +48,12 @@
 //! ```compile_fail
 //! use bouncycastle_core::agreement_key::AgreementKey;
 //! use bouncycastle_core::kdf_params::{KdfParams, KeyLen};
-//! use bouncycastle_eccdh::keys_p256::keygen;
+//! use bouncycastle_ec::P256;
+//! use bouncycastle_eccdh::keys::keygen;
 //! use bouncycastle_rng::HashDRBG_SHA512;
-//! use bouncycastle_sha2::hkdf::HKDF_SHA256;
+//! use bouncycastle_hkdf::HkdfDescription;
 //!
-//! let (pk, sk) = keygen(&mut HashDRBG_SHA512::new_from_os()).unwrap();
+//! let (pk, sk) = keygen::<P256>(&mut HashDRBG_SHA512::new_from_os()).unwrap();
 //! let hkdf = HKDF_SHA256::new();
 //! let _ = sk.agree(&pk, KdfParams::new(&hkdf, b"", KeyLen::<8161>));
 //! ```
@@ -59,14 +61,15 @@
 use bouncycastle_concatkdf::{ConcatKDF, ConcatKDFParams};
 use bouncycastle_core::agreement_key::KeyAgreementAlgorithm;
 use bouncycastle_core::errors::KeyAgreementError;
-use bouncycastle_core::kdf_params::KdfParams;
+use bouncycastle_core::kdf_params::{KdfDescription, KdfParams};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait};
 use bouncycastle_core::traits::{HashAlgParams, KDF};
+use bouncycastle_hkdf::HkdfDescription;
 use bouncycastle_sha2::SHA256;
-use bouncycastle_sha2::hkdf::HKDF_SHA256;
 use bouncycastle_x963kdf::{X963KDF, X963KDFParams};
 
-/// A KDF the library pairs a curve with: HKDF-SHA256, the X9.63 KDFs and the concatenation KDFs. Sealed, so that the
+/// A KDF the library pairs a curve with, by its description: HKDF-SHA256, the X9.63 KDFs and the
+/// concatenation KDFs. Sealed, so that the
 /// pairing trait, generic over the KDF, cannot be implemented outside this crate under a name
 /// and strength of a downstream crate's choosing.
 pub trait PairedKdf: sealed::Sealed {
@@ -77,7 +80,7 @@ pub trait PairedKdf: sealed::Sealed {
     const MAX_LEN: usize;
 }
 
-impl PairedKdf for HKDF_SHA256 {
+impl PairedKdf for HkdfDescription<'_, SHA256> {
     const MAX_LEN: usize = 255 * SHA256::OUTPUT_LEN;
 }
 
@@ -95,12 +98,12 @@ const fn x963_max_len(hash_len: usize) -> usize {
     if max > usize::MAX as u128 { usize::MAX } else { max as usize }
 }
 
-/// A curve paired with a KDF: `Curve: KdfPairing<D, SS_LEN>` has one solution per curve, KDF
-/// and length, so the curve's role impl, generic over `D` and `SS_LEN` and bound on it, takes
+/// A curve paired with a KDF: `ECCDH<C>: KdfPairing<D, SS_LEN>` has one solution per curve, KDF
+/// and length, so the role impl, generic over `D` and `SS_LEN` and bound on it, takes
 /// both from the parameter type, `KdfParams<'p, D, SS_LEN>`. The length is the caller's, from
 /// one byte to the KDF's [`PairedKdf::MAX_LEN`], checked when the role is instantiated. Sealed
 /// on both sides: the pairings are the library's.
-pub trait KdfPairing<D: KDF + PairedKdf + ?Sized, const SS_LEN: usize>:
+pub trait KdfPairing<D: KdfDescription + PairedKdf + ?Sized, const SS_LEN: usize>:
     KeyAgreementAlgorithm + sealed::Sealed
 {
     /// The algorithm the pairing is.
@@ -111,10 +114,15 @@ pub trait KdfPairing<D: KDF + PairedKdf + ?Sized, const SS_LEN: usize>:
 /// `SharedSecret`, which the KDF credits. The caller's buffer is where the key lives.
 ///
 /// # Errors
-/// [`KeyAgreementError::KDFError`] with the KDF's own error if it refuses the derivation, and
+/// [`KeyAgreementError::KDFError`] with the KDF's own error if it refuses to be built from the
+/// description or refuses the derivation, and
 /// [`KeyAgreementError::GenericError`] if it writes anything but `SS_LEN` bytes; `out` is left
 /// zeroized.
-pub(crate) fn derive<D: KDF + PairedKdf + ?Sized, const Z_LEN: usize, const SS_LEN: usize>(
+pub(crate) fn derive<
+    D: KdfDescription + PairedKdf + ?Sized,
+    const Z_LEN: usize,
+    const SS_LEN: usize,
+>(
     params: KdfParams<'_, D, SS_LEN>,
     z: &KeyMaterial<Z_LEN>,
     out: &mut KeyMaterial<SS_LEN>,
@@ -125,8 +133,11 @@ pub(crate) fn derive<D: KDF + PairedKdf + ?Sized, const Z_LEN: usize, const SS_L
             "the derived key is from one byte to the KDF's MAX_LEN long"
         )
     };
-    // `derive_key_out` zeroizes `out` first and leaves it so on its errors.
-    let written = params.kdf().derive_key_out(z, params.info(), SS_LEN, out)?;
+    out.zeroize();
+    // The engine is built from the description for this derivation: for HKDF, an instance keyed
+    // with the salt. `derive_key_out` zeroizes `out` first and leaves it so on its errors.
+    let kdf = params.kdf().engine()?;
+    let written = kdf.derive_key_out(z, params.info(), SS_LEN, out)?;
     if written != SS_LEN || out.key_len() != SS_LEN {
         out.zeroize();
         return Err(KeyAgreementError::GenericError("the KDF derived a key of the wrong length"));
@@ -136,14 +147,8 @@ pub(crate) fn derive<D: KDF + PairedKdf + ?Sized, const Z_LEN: usize, const SS_L
 
 mod sealed {
     pub trait Sealed {}
-    impl Sealed for bouncycastle_sha2::hkdf::HKDF_SHA256 {}
+    impl Sealed for bouncycastle_hkdf::HkdfDescription<'_, bouncycastle_sha2::SHA256> {}
     impl<H: bouncycastle_x963kdf::X963KDFParams> Sealed for bouncycastle_x963kdf::X963KDF<H> {}
     impl<H: bouncycastle_concatkdf::ConcatKDFParams> Sealed for bouncycastle_concatkdf::ConcatKDF<H> {}
-    impl Sealed for crate::eccdh_p256::ECCDHP256 {}
-    impl Sealed for crate::eccdh_p384::ECCDHP384 {}
-    impl Sealed for crate::eccdh_p521::ECCDHP521 {}
-    impl Sealed for crate::eccdh_p256k1::ECCDHSecp256K1 {}
-    impl Sealed for crate::eccdh_bp256r1::ECCDHBp256r1 {}
-    impl Sealed for crate::eccdh_bp384r1::ECCDHBp384r1 {}
-    impl Sealed for crate::eccdh_bp512r1::ECCDHBp512r1 {}
+    impl<C: bouncycastle_ec::curve::Curve> Sealed for crate::eccdh::ECCDH<C> {}
 }

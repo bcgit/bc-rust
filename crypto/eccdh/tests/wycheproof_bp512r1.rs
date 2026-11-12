@@ -3,17 +3,17 @@
 
 mod wycheproof_common;
 
-use bouncycastle_eccdh::eccdh_bp512r1::SS_LEN;
-use bouncycastle_eccdh::keys_bp512r1::{
-    ECCDHBp512r1PrivateKey, ECCDHBp512r1PublicKey, PK_LEN, SK_LEN,
-};
+use bouncycastle_ec::Bp512r1;
+use bouncycastle_ec::curve::Curve;
+use bouncycastle_eccdh::keys::{ECCDHPrivateKey, ECCDHPublicKey};
 
 #[test]
 fn ecdh_brainpoolp512r1_test() {
-    wycheproof_common::run::<ECCDHBp512r1PublicKey, ECCDHBp512r1PrivateKey, PK_LEN, SK_LEN, SS_LEN>(
-        "ecdh_brainpoolP512r1_test.json",
-        "brainpoolP512r1",
-        794,
-        512,
-    );
+    wycheproof_common::run::<
+        ECCDHPublicKey<Bp512r1>,
+        ECCDHPrivateKey<Bp512r1>,
+        { Bp512r1::PK_UNCOMPRESSED_LEN },
+        { Bp512r1::SCALAR_LEN },
+        { Bp512r1::FE_LEN },
+    >("ecdh_brainpoolP512r1_test.json", "brainpoolP512r1", 794, 512);
 }

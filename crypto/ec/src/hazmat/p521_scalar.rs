@@ -19,6 +19,7 @@
 //! function's own docs for the fold this needs and the real bug an earlier, single-subtraction
 //! version had.
 
+use crate::curve::{PublicScalar, ScalarFieldElement, SecretScalar};
 use crate::nat;
 use bouncycastle_utils::ct;
 use bouncycastle_utils::ct::Condition;
@@ -537,5 +538,94 @@ mod tests {
     #[test]
     fn redc_handles_the_rare_carry_propagation_case() {
         assert_eq!(redc(&T_LIMBS), EXPECTED);
+    }
+}
+
+impl SecretScalar for P521Scalar {
+    type Limbs = [u64; 9];
+    type Bytes = [u8; 66];
+
+    fn from_limbs(limbs: [u64; 9]) -> Self {
+        P521Scalar::from_limbs(limbs)
+    }
+
+    fn from_borrowed_limbs(limbs: &[u64; 9]) -> Self {
+        P521Scalar::from_borrowed_limbs(limbs)
+    }
+
+    fn from_be_bytes(bytes: &[u8; 66]) -> Self {
+        P521Scalar::from_be_bytes(bytes)
+    }
+
+    fn to_be_bytes(&self) -> [u8; 66] {
+        P521Scalar::to_be_bytes(self)
+    }
+}
+
+impl ScalarFieldElement for P521ScalarField {
+    type Limbs = [u64; 9];
+    type Secret = P521Scalar;
+    const ZERO: Self = P521ScalarField::ZERO;
+    const ONE: Self = P521ScalarField::ONE;
+
+    fn from_limbs(limbs: [u64; 9]) -> Self {
+        P521ScalarField::from_limbs(limbs)
+    }
+
+    fn to_limbs(&self) -> [u64; 9] {
+        P521ScalarField::to_limbs(self)
+    }
+
+    fn is_zero(&self) -> Condition<u64> {
+        P521ScalarField::is_zero(self)
+    }
+
+    fn zeroize(&mut self) {
+        P521ScalarField::zeroize(self)
+    }
+
+    fn add(&self, other: &Self) -> Self {
+        P521ScalarField::add(self, other)
+    }
+
+    fn sub(&self, other: &Self) -> Self {
+        P521ScalarField::sub(self, other)
+    }
+
+    fn negate(&self) -> Self {
+        P521ScalarField::negate(self)
+    }
+
+    fn mul(&self, other: &Self) -> Self {
+        P521ScalarField::mul(self, other)
+    }
+
+    fn square(&self) -> Self {
+        P521ScalarField::square(self)
+    }
+
+    fn from_secret(secret: &P521Scalar) -> Self {
+        P521ScalarField::from_secret(secret)
+    }
+
+    fn invert(&self) -> Self {
+        P521ScalarField::invert(self)
+    }
+}
+
+impl PublicScalar for P521PublicScalar {
+    type Limbs = [u64; 9];
+    type Field = P521ScalarField;
+
+    fn from_limbs(limbs: [u64; 9]) -> Self {
+        P521PublicScalar::from_limbs(limbs)
+    }
+
+    fn to_limbs(&self) -> [u64; 9] {
+        P521PublicScalar::to_limbs(self)
+    }
+
+    fn invert_vartime(&self) -> P521ScalarField {
+        P521PublicScalar::invert_vartime(self)
     }
 }
