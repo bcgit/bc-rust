@@ -25,6 +25,29 @@
 //! trait (`P256::generate_signature_key_pair(&mut rng)`, `P256::generate_agreement_key_pair(&mut
 //! rng)`); the marker itself carries nothing. What follows is the layer underneath them.
 //!
+//! Code written once over the seven curves takes the curve as a type parameter bound on
+//! [`curve::Curve`], which names the curve's types and routes to its arithmetic:
+//!
+//! ```
+//! use bouncycastle_core::errors::RNGError;
+//! use bouncycastle_core::traits::RNG;
+//! use bouncycastle_ec::curve::{Curve, JacobianPoint};
+//! use bouncycastle_ec::{P256, P384};
+//! use bouncycastle_rng::HashDRBG_SHA512;
+//!
+//! /// A fresh key pair's public point, SEC 1 encoded, on any curve.
+//! fn fresh_public_key<C: Curve>(rng: &mut dyn RNG) -> Result<C::PkUncompressed, RNGError> {
+//!     let (d, (x, y)) = C::keygen_extra_bits(rng)?;
+//!     debug_assert_eq!(C::multiply_base_point(&d).to_affine(), Some((x, y)));
+//!     Ok(C::encode_uncompressed(&x, &y))
+//! }
+//!
+//! let mut rng = HashDRBG_SHA512::new_from_os();
+//! assert_eq!(fresh_public_key::<P256>(&mut rng)?.len(), P256::PK_UNCOMPRESSED_LEN);
+//! assert_eq!(fresh_public_key::<P384>(&mut rng)?.len(), 97);
+//! # Ok::<(), RNGError>(())
+//! ```
+//!
 //! Field arithmetic, per curve:
 //!
 //! ```
@@ -177,6 +200,7 @@
 #![forbid(missing_docs)]
 
 pub mod barrett;
+pub mod curve;
 mod curves;
 pub mod hazmat;
 pub mod inverse_vartime;

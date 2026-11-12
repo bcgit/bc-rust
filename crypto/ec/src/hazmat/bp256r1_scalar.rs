@@ -5,6 +5,7 @@
 //! [`crate::hazmat::p256_scalar`]), just delegating the widening-multiply/REDC work to the shared
 //! module instead of hand-writing it again.
 
+use crate::curve::{PublicScalar, ScalarFieldElement, SecretScalar};
 use crate::montgomery;
 use bouncycastle_utils::ct;
 use bouncycastle_utils::ct::Condition;
@@ -290,5 +291,94 @@ impl Bp256r1PublicScalar {
     /// [`crate::inverse_vartime`].
     pub fn invert_vartime(&self) -> Bp256r1ScalarField {
         Bp256r1ScalarField::from_limbs(crate::inverse_vartime::mod_inverse(&self.0, &N_LIMBS))
+    }
+}
+
+impl SecretScalar for Bp256r1Scalar {
+    type Limbs = [u64; 4];
+    type Bytes = [u8; 32];
+
+    fn from_limbs(limbs: [u64; 4]) -> Self {
+        Bp256r1Scalar::from_limbs(limbs)
+    }
+
+    fn from_borrowed_limbs(limbs: &[u64; 4]) -> Self {
+        Bp256r1Scalar::from_borrowed_limbs(limbs)
+    }
+
+    fn from_be_bytes(bytes: &[u8; 32]) -> Self {
+        Bp256r1Scalar::from_be_bytes(bytes)
+    }
+
+    fn to_be_bytes(&self) -> [u8; 32] {
+        Bp256r1Scalar::to_be_bytes(self)
+    }
+}
+
+impl ScalarFieldElement for Bp256r1ScalarField {
+    type Limbs = [u64; 4];
+    type Secret = Bp256r1Scalar;
+    const ZERO: Self = Bp256r1ScalarField::ZERO;
+    const ONE: Self = Bp256r1ScalarField::ONE;
+
+    fn from_limbs(limbs: [u64; 4]) -> Self {
+        Bp256r1ScalarField::from_limbs(limbs)
+    }
+
+    fn to_limbs(&self) -> [u64; 4] {
+        Bp256r1ScalarField::to_limbs(self)
+    }
+
+    fn is_zero(&self) -> Condition<u64> {
+        Bp256r1ScalarField::is_zero(self)
+    }
+
+    fn zeroize(&mut self) {
+        Bp256r1ScalarField::zeroize(self)
+    }
+
+    fn add(&self, other: &Self) -> Self {
+        Bp256r1ScalarField::add(self, other)
+    }
+
+    fn sub(&self, other: &Self) -> Self {
+        Bp256r1ScalarField::sub(self, other)
+    }
+
+    fn negate(&self) -> Self {
+        Bp256r1ScalarField::negate(self)
+    }
+
+    fn mul(&self, other: &Self) -> Self {
+        Bp256r1ScalarField::mul(self, other)
+    }
+
+    fn square(&self) -> Self {
+        Bp256r1ScalarField::square(self)
+    }
+
+    fn from_secret(secret: &Bp256r1Scalar) -> Self {
+        Bp256r1ScalarField::from_secret(secret)
+    }
+
+    fn invert(&self) -> Self {
+        Bp256r1ScalarField::invert(self)
+    }
+}
+
+impl PublicScalar for Bp256r1PublicScalar {
+    type Limbs = [u64; 4];
+    type Field = Bp256r1ScalarField;
+
+    fn from_limbs(limbs: [u64; 4]) -> Self {
+        Bp256r1PublicScalar::from_limbs(limbs)
+    }
+
+    fn to_limbs(&self) -> [u64; 4] {
+        Bp256r1PublicScalar::to_limbs(self)
+    }
+
+    fn invert_vartime(&self) -> Bp256r1ScalarField {
+        Bp256r1PublicScalar::invert_vartime(self)
     }
 }
