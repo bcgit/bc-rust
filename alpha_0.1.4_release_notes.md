@@ -28,7 +28,7 @@
   roles: `X25519PrivateKey` implements `AgreementKey` over `()` for the raw shared secret and over
   `KdfParams<HKDF_SHA256, LEN>` for a derived key (`X25519_HKDF_SHA256`), and with `X25519PublicKey` the KEM roles
   as DHKEM(X25519, HKDF-SHA256) of RFC 9180 Section 4.1, through the new `bouncycastle-hpke` crate's generic DHKEM;
-  `keygen` draws the key from the caller's RNG; checked against RFC 7748's vectors, RFC 9180 Appendix A.1 and
+  `keygen` draws the key from the caller's RNG; checked against RFC 7748's vectors, RFC 9180 Appendix A.1.1, A.1.2, A.2.1, A.2.2, A.7.1 and A.7.2, and
   Wycheproof's X25519 set; the `x25519` CLI subcommand covers keygen, pk-from-sk, check-consistency, agree, encaps
   and decaps.
 
