@@ -18,7 +18,6 @@ use bouncycastle_rsa::keys::{
 };
 use bouncycastle_rsa::rsa_2048::{RSASSA_PSS_SHAKE128, SIG_LEN};
 use bouncycastle_rsa::rsassa;
-use bouncycastle_rsa::rsassa_pss_shake::RSASSA_PSS_SHAKE;
 use bouncycastle_sha3::SHAKE128;
 use serde_json::Value;
 use std::fs;
@@ -250,7 +249,7 @@ impl RNG for FixedRng {
 
 /// `set_salt` fixes the salt on the streaming path (the counterpart of ML-DSA's
 /// `set_signer_rnd`): the result is deterministic and byte-identical to the generic
-/// `rsassa_pss_shake::sign_from_hash_with_salt` over the same digest and salt, while an unfixed
+/// `rsassa::sign_from_hash_with_salt` over the same digest and salt, while an unfixed
 /// streamed signature is fresh.
 #[test]
 fn set_salt_fixes_the_salt_on_the_streaming_path() {
@@ -267,10 +266,8 @@ fn set_salt_fixes_the_salt_on_the_streaming_path() {
     let sig = signer.do_final().unwrap();
     let mut digest = [0u8; 32];
     SHAKE128::hash_out(msg, &mut digest);
-    let expected = rsassa::sign_from_hash_with_salt::<RSASSA_PSS_SHAKE<RSA2048, SHAKE128>, 256>(
-        &sk.key::<RSASSA_PSS_SHAKE<RSA2048, SHAKE128>>(),
-        &digest,
-        &salt,
+    let expected = rsassa::sign_from_hash_with_salt::<RSASSA_PSS_SHAKE128, 256>(
+        &sk_rsassa_pss_shake128, &digest, &salt,
     )
     .unwrap();
     assert_eq!(sig, expected);

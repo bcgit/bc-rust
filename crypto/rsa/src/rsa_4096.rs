@@ -7,7 +7,6 @@
 
 use crate::rsassa_pkcs1_v1_5::RSASSA_PKCS1_v1_5;
 use crate::rsassa_pss::RSASSA_PSS;
-use crate::rsassa_pss_shake::RSASSA_PSS_SHAKE;
 use crate::rsasve::{RsaKEMPrivateKey, RsaKEMPublicKey};
 pub use crate::size::RSA4096;
 use crate::size::RsaSize;
@@ -41,7 +40,7 @@ pub type RSASSA_PSS_SHA384 = RSASSA_PSS<RSA4096, SHA384>;
 pub type RSASSA_PSS_SHA512 = RSASSA_PSS<RSA4096, SHA512>;
 /// RSASSA-PSS with SHAKE256 as hash and mask (RFC 8702 §3.2.1, §5's pairing for this size) at RSA-4096.
 #[allow(non_camel_case_types)]
-pub type RSASSA_PSS_SHAKE256 = RSASSA_PSS_SHAKE<RSA4096, SHAKE256>;
+pub type RSASSA_PSS_SHAKE256 = RSASSA_PSS<RSA4096, SHAKE256>;
 
 /// An RSA-4096 key-establishment private key.
 pub type RSA4096KEMPrivateKey = RsaKEMPrivateKey<RSA4096>;

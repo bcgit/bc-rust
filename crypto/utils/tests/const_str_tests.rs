@@ -50,3 +50,21 @@ fn multibyte_parts_stay_valid_utf8() {
     const S: ConstStr<16> = ConstStr::concat(&["🚨", "-", "ü"]);
     assert_eq!(S.as_str(), "🚨-ü");
 }
+
+#[test]
+fn decimal_digits_of_a_number() {
+    const ZERO: ConstStr<1> = ConstStr::decimal(0);
+    assert_eq!(ZERO.as_str(), "0");
+    const ONE_DIGIT: ConstStr<8> = ConstStr::decimal(7);
+    assert_eq!(ONE_DIGIT.as_str(), "7");
+    const SALT: ConstStr<8> = ConstStr::decimal(32);
+    assert_eq!(SALT.as_str(), "32");
+    assert_eq!(SALT.len(), 2);
+    const EXACT: ConstStr<3> = ConstStr::decimal(100);
+    assert_eq!(EXACT.as_str(), "100");
+    const MAX: ConstStr<20> = ConstStr::decimal(usize::MAX);
+    assert_eq!(MAX.as_str(), "18446744073709551615");
+    const IN_NAME: ConstStr<32> =
+        ConstStr::concat(&["-MGF1-SHA256-", ConstStr::<8>::decimal(32).as_str()]);
+    assert_eq!(IN_NAME.as_str(), "-MGF1-SHA256-32");
+}

@@ -299,3 +299,30 @@ fn crt_components_out_of_range_rejected_at_every_signing_size() {
     crt_components_out_of_range_rejected::<RSA4096>();
     crt_components_out_of_range_rejected::<RSA8192>();
 }
+
+/// A typed key exposes its exponent, names its algorithm in `Debug`, and compares by its
+/// material.
+#[test]
+fn typed_keys_expose_e_debug_names_the_algorithm_and_eq_compares_material() {
+    let pk = RsaPublicComponents::<RSA2048>::new(&N, 0x10001).unwrap().into_key::<Pss256>();
+    assert_eq!(pk.e(), 0x10001);
+    let shown = format!("{pk:?}");
+    assert!(shown.starts_with("RsaPublicKey { algorithm: \"RSASSA-PSS-SHA256\", components: "));
+    let pk_other_e = RsaPublicComponents::<RSA2048>::new(&N, 0x10003).unwrap().into_key::<Pss256>();
+    assert_eq!(pk, pk.clone());
+    assert_ne!(pk, pk_other_e);
+
+    let sk = RsaPrivateComponents::<RSA2048>::from_crt_components(&P, &Q, &D_P, &D_Q, &Q_INV)
+        .unwrap()
+        .into_key::<Pss256>();
+    let shown = format!("{sk:?}");
+    assert!(shown.starts_with("RsaPrivateKey { algorithm: \"RSASSA-PSS-SHA256\", components: "));
+    let mut q_inv_other = Q_INV;
+    q_inv_other[0] ^= 1;
+    let sk_other =
+        RsaPrivateComponents::<RSA2048>::from_crt_components(&P, &Q, &D_P, &D_Q, &q_inv_other)
+            .unwrap()
+            .into_key::<Pss256>();
+    assert_eq!(sk, sk.clone());
+    assert_ne!(sk, sk_other);
+}

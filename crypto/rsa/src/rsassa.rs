@@ -1,7 +1,6 @@
 //! The signature roles over any RSA signature algorithm: [`RsaSignatureAlgorithm`] is what a
 //! scheme-and-hash marker ([`RSASSA_PKCS1_v1_5<K, H>`](crate::rsassa_pkcs1_v1_5::RSASSA_PKCS1_v1_5),
-//! [`RSASSA_PSS<K, H>`](crate::rsassa_pss::RSASSA_PSS),
-//! [`RSASSA_PSS_SHAKE<K, X>`](crate::rsassa_pss_shake::RSASSA_PSS_SHAKE)) implements, the size,
+//! [`RSASSA_PSS<K, H, P>`](crate::rsassa_pss::RSASSA_PSS)) implements, the size,
 //! the hash and the scheme's EMSA verification, with its signing side on
 //! [`RsaDeterministicSignatureAlgorithm`] (PKCS#1 v1.5, which draws nothing) or
 //! [`RsaRandomizedSignatureAlgorithm`] (PSS, with its salt); the three workers and the role
@@ -45,11 +44,13 @@ pub trait RsaDeterministicSignatureAlgorithm: RsaSignatureAlgorithm {
     fn emsa_encode<const K_LEN: usize>(m_hash: &[u8]) -> [u8; K_LEN];
 }
 
-/// An RSA signature algorithm whose encoding takes a salt: RSASSA-PSS, with MGF1 or a native
-/// XOF mask. Its keys sign through [`SigningKey`], the salt (one hash output, RFC 8017 §9.1
-/// note 4's "typical" choice) drawn from the RNG when the signer is made.
+/// An RSA signature algorithm whose encoding takes a salt: RSASSA-PSS under salted parameters.
+/// Its keys sign through [`SigningKey`], the salt drawn from the RNG when the signer is made.
 pub trait RsaRandomizedSignatureAlgorithm: RsaSignatureAlgorithm {
-    /// EMSA-PSS-ENCODE of the message hash with `salt`.
+    /// The salt length in bytes, at most 64 (`MAX_HASH_LEN`, the signer's buffer).
+    const SALT_LEN: usize;
+
+    /// EMSA-PSS-ENCODE of the message hash with `salt`, `SALT_LEN` bytes.
     fn emsa_encode<const K_LEN: usize>(m_hash: &[u8], salt: &[u8]) -> [u8; K_LEN];
 }
 
@@ -62,10 +63,11 @@ pub struct RsaSigner<'k, A: RsaRandomizedSignatureAlgorithm> {
 }
 
 impl<A: RsaRandomizedSignatureAlgorithm> RsaSigner<'_, A> {
-    /// Replaces the drawn salt with `salt`, one hash output long (a compile-time check), for a
-    /// known-answer test: the signature is then a function of the key and the message alone.
+    /// Replaces the drawn salt with `salt`, the algorithm's salt length (a compile-time check),
+    /// for a known-answer test: the signature is then a function of the key and the message
+    /// alone.
     pub fn set_salt<const N: usize>(&mut self, salt: [u8; N]) {
-        const { assert!(N == A::Hash::OUTPUT_LEN, "the PSS salt is one hash output long") };
+        const { assert!(N == A::SALT_LEN, "the salt is the algorithm's salt length") };
         self.salt[..N].copy_from_slice(&salt);
     }
 }
@@ -107,8 +109,9 @@ where
         rng: &mut dyn RNG,
         _ctx: Option<&[u8]>,
     ) -> Result<Self::Signer<'k>, SignatureError> {
+        const { assert!(A::SALT_LEN <= MAX_HASH_LEN, "the salt fits the signer's buffer") };
         let mut salt = [0u8; MAX_HASH_LEN];
-        rng.next_bytes_out(&mut salt[..A::Hash::OUTPUT_LEN]).map_err(SignatureError::RNGError)?;
+        rng.next_bytes_out(&mut salt[..A::SALT_LEN]).map_err(SignatureError::RNGError)?;
         Ok(RsaSigner { sk: self, hash: A::Hash::default(), salt })
     }
 }
@@ -174,7 +177,7 @@ where
         let h_len = A::Hash::OUTPUT_LEN;
         let mut m_hash = [0u8; MAX_HASH_LEN];
         self.hash.do_final_out(&mut m_hash[..h_len]);
-        sign_from_hash_with_salt::<A, K_LEN>(self.sk, &m_hash[..h_len], &self.salt[..h_len])
+        sign_from_hash_with_salt::<A, K_LEN>(self.sk, &m_hash[..h_len], &self.salt[..A::SALT_LEN])
     }
 
     fn do_final_out(self, output: &mut [u8; K_LEN]) -> Result<usize, SignatureError> {
@@ -288,10 +291,10 @@ where
     A: RsaRandomizedSignatureAlgorithm,
     A::Size: RsaSigningSize + RsaSize<Modulus = [u8; K_LEN]>,
 {
-    let h_len = A::Hash::OUTPUT_LEN;
+    const { assert!(A::SALT_LEN <= MAX_HASH_LEN, "the salt fits the buffer") };
     let mut salt = [0u8; MAX_HASH_LEN];
-    rng.next_bytes_out(&mut salt[..h_len]).map_err(SignatureError::RNGError)?;
-    sign_from_hash_with_salt::<A, K_LEN>(sk, m_hash, &salt[..h_len])
+    rng.next_bytes_out(&mut salt[..A::SALT_LEN]).map_err(SignatureError::RNGError)?;
+    sign_from_hash_with_salt::<A, K_LEN>(sk, m_hash, &salt[..A::SALT_LEN])
 }
 
 /// A deterministic algorithm's signature of the message hash `m_hash`: RFC 8017 §8.2.1, the
@@ -342,6 +345,5 @@ where
 mod sealed {
     pub trait Sealed {}
     impl<K: crate::size::RsaSize, H> Sealed for crate::rsassa_pkcs1_v1_5::RSASSA_PKCS1_v1_5<K, H> {}
-    impl<K: crate::size::RsaSize, H> Sealed for crate::rsassa_pss::RSASSA_PSS<K, H> {}
-    impl<K: crate::size::RsaSize, X> Sealed for crate::rsassa_pss_shake::RSASSA_PSS_SHAKE<K, X> {}
+    impl<K: crate::size::RsaSize, H, P> Sealed for crate::rsassa_pss::RSASSA_PSS<K, H, P> {}
 }

@@ -17,8 +17,11 @@
 //! rather than refused at run time.
 //!
 //! The schemes are generic over the size and the hash: [`RSASSA_PKCS1_v1_5<K, H>`](rsassa_pkcs1_v1_5::RSASSA_PKCS1_v1_5),
-//! [`RSASSA_PSS<K, H>`](rsassa_pss::RSASSA_PSS) and
-//! [`RSASSA_PSS_SHAKE<K, X>`](rsassa_pss_shake::RSASSA_PSS_SHAKE), named by scheme and hash
+//! [`RSASSA_PSS<K, H, P>`](rsassa_pss::RSASSA_PSS) with its parameters `P` (the mask and the
+//! salt length: [`Conventional`](rsassa_pss::Conventional) unless spelled, what
+//! [`PssHash`](rsassa_pss::PssHash) says the hash is conventionally paired with, MGF1 for SHA-2
+//! and SHA-3 and the XOF itself for SHAKE under RFC 8702; [`Mgf1`](rsassa_pss::Mgf1) and
+//! [`NoSalt`](rsassa_pss::NoSalt) for the rest), named by scheme and hash
 //! (`RSASSA-PSS-SHA256`) at the lesser of the modulus's and the hash's strength. A key is a
 //! key for one of them: [`RsaPublicKey<A>`](keys::RsaPublicKey) and
 //! [`RsaPrivateKey<A>`](keys::RsaPrivateKey) wrap the key material,
@@ -234,10 +237,14 @@
 //!
 //! RSASSA-PSS-SHAKE128 and RSASSA-PSS-SHAKE256 (RFC 8702 §3.2.1 -- SHAKE128/SHAKE256 used
 //! natively as both the message hash and the mask generation function, in place of a hash+MGF1
-//! split) are also implemented ([`rsassa_pss_shake`], built on `emsa_pss_shake` rather than
-//! `mgf1`), wired up for the pairings RFC 8702 §5 recommends: SHAKE128 with RSA-2048/3072
-//! ([`rsa_2048`], [`rsa_3072`]) and SHAKE256 with RSA-4096 ([`rsa_4096`]), each validated against
-//! its own genuine Wycheproof `rsa_pss_*_shake*_test.json` vectors.
+//! split) are the same marker, `RSASSA_PSS<K, SHAKE128>`, under the [`Conventional`](rsassa_pss::Conventional)
+//! parameters [`PssHash`](rsassa_pss::PssHash) gives a SHAKE, wired up for the pairings RFC 8702
+//! §5 recommends: SHAKE128 with RSA-2048/3072 ([`rsa_2048`],
+//! [`rsa_3072`]) and SHAKE256 with RSA-4096 ([`rsa_4096`]), each validated against its own
+//! genuine Wycheproof `rsa_pss_*_shake*_test.json` vectors. The spelled parameters, another
+//! MGF1 hash or salt length ([`Mgf1`](rsassa_pss::Mgf1)) and no salt
+//! ([`NoSalt`](rsassa_pss::NoSalt)), are validated against Wycheproof's
+//! `rsa_pss_2048_sha512_mgf1sha256_32_params` and `rsa_pss_2048_sha256_mgf1_0` files.
 //!
 //! RSASVE ([`rsasve`]) is implemented at 2048/3072/4096/8192, and with its secret value derived
 //! through HKDF over any HMAC hash ([`rsasve_kdf`]). It is validated against NIST
@@ -348,11 +355,14 @@
 //!   exactly the size's bit length, on top of the signature keys' checks. They do not run SP
 //!   800-89's remaining plausibility tests, and full RSA public-key validation is not specified by
 //!   SP 800-56B at all. See [`rsasve`]'s `# Key validation`.
-//! - **RSASSA-PSS's salt length is fixed to the hash's own output length** (RFC 8017 §9.1 note
-//!   4's "typical" choice) rather than being caller-configurable. A verifier that expects a
-//!   different salt length (including the zero-length salt some other implementations default
-//!   to) will not interoperate with signatures this crate produces, and this crate's own verifier
-//!   will reject signatures made with a different salt length.
+//! - **RSASSA-PSS's mask and salt length are the key's.** The conventional parameters are MGF1
+//!   over the message hash and a salt one hash output long (RFC 8017 §8.1's recommendation, §9.1
+//!   note 4's "typical" choice); another MGF1 hash, another salt length or no salt is spelled in
+//!   the key's type (`rsassa_pss::Mgf1`, `rsassa_pss::NoSalt`), so a verifier never guesses them
+//!   and a signature made under other parameters is invalid under this key, not interoperable.
+//!   §8.1 allows the mask's hash to differ from the message hash and matches them only against
+//!   hash substitution, which a key that names its hash prevents; the strength is the size's and
+//!   the message hash's.
 
 #![no_std]
 #![forbid(unsafe_code)]
@@ -361,7 +371,6 @@
 mod codec;
 mod emsa_pkcs1_v1_5;
 mod emsa_pss;
-mod emsa_pss_shake;
 pub mod keygen;
 pub mod keys;
 mod mgf1;
@@ -376,7 +385,6 @@ mod rsa_core;
 pub mod rsassa;
 pub mod rsassa_pkcs1_v1_5;
 pub mod rsassa_pss;
-pub mod rsassa_pss_shake;
 pub mod rsasve;
 pub mod rsasve_kdf;
 pub mod size;

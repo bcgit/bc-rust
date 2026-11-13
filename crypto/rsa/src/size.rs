@@ -15,12 +15,11 @@ use crate::keys::{
 };
 use crate::rsa_core;
 use crate::rsassa_pkcs1_v1_5::RSASSA_PKCS1_v1_5;
-use crate::rsassa_pss::RSASSA_PSS;
-use crate::rsassa_pss_shake::RSASSA_PSS_SHAKE;
+use crate::rsassa_pss::{PssHash, PssParams, RSASSA_PSS};
 use crate::rsasve::{RsaKEMPrivateKey, RsaKEMPublicKey};
 use bouncycastle_core::errors::{KEMError, SignatureError};
 use bouncycastle_core::security_strength::SecurityStrength;
-use bouncycastle_core::traits::{AlgorithmOID, HashAlgParams, HashOneShot, RNG, XOF};
+use bouncycastle_core::traits::{AlgorithmOID, HashAlgParams, HashOneShot, RNG};
 use bouncycastle_ec::montgomery;
 use bouncycastle_ec::nat;
 use bouncycastle_utils::secret::{NoPadding, ZeroizablePrimitive};
@@ -123,7 +122,7 @@ pub trait RsaSigningSize: RsaSize {
 /// `RSA2048::generate_pss_signature_key_pair::<SHA256>(&mut rng)`, and the pair is a key for
 /// that algorithm and no other (SP 800-57 Part 1 Rev. 5's one scheme per key pair). The hash
 /// is spelled, never defaulted, as on the ECDSA markers: the customary pairing is a convention
-/// that moves. All three run [`RsaSigningSize::keygen`], FIPS 186-5 Appendix A.1.3; the RNG is
+/// that moves. All of them run [`RsaSigningSize::keygen`], FIPS 186-5 Appendix A.1.3; the RNG is
 /// an argument, not a default. The KEM pair is [`KemKeyPair`], a different type, as the crate's
 /// `# Key separation` asks.
 pub trait SignatureKeyPair: RsaSigningSize {
@@ -139,27 +138,31 @@ pub trait SignatureKeyPair: RsaSigningSize {
         SignatureError,
     >;
 
-    /// A key pair for RSASSA-PSS with `H` (and MGF1 over it).
+    /// A key pair for RSASSA-PSS with `H` under its conventional parameters
+    /// ([`PssHash`]: MGF1 over `H` for SHA-2 and SHA-3, the XOF
+    /// itself for SHAKE).
     ///
     /// # Errors
     /// As [`RsaSigningSize::keygen`].
     #[allow(clippy::type_complexity)]
-    fn generate_pss_signature_key_pair<H: HashOneShot + HashAlgParams>(
+    fn generate_pss_signature_key_pair<H: PssHash>(
         rng: &mut dyn RNG,
     ) -> Result<
         (RsaPublicKey<RSASSA_PSS<Self, H>>, RsaPrivateKey<RSASSA_PSS<Self, H>>),
         SignatureError,
     >;
 
-    /// A key pair for RSASSA-PSS with the XOF `X` as hash and mask (RFC 8702).
+    /// A key pair for RSASSA-PSS with `H` under the spelled parameters `P`: another MGF1 hash
+    /// or salt length ([`Mgf1`](crate::rsassa_pss::Mgf1)) or no salt
+    /// ([`NoSalt`](crate::rsassa_pss::NoSalt)).
     ///
     /// # Errors
     /// As [`RsaSigningSize::keygen`].
     #[allow(clippy::type_complexity)]
-    fn generate_pss_shake_signature_key_pair<X: XOF + HashOneShot + HashAlgParams>(
+    fn generate_pss_signature_key_pair_with<H: HashOneShot + HashAlgParams, P: PssParams<H>>(
         rng: &mut dyn RNG,
     ) -> Result<
-        (RsaPublicKey<RSASSA_PSS_SHAKE<Self, X>>, RsaPrivateKey<RSASSA_PSS_SHAKE<Self, X>>),
+        (RsaPublicKey<RSASSA_PSS<Self, H, P>>, RsaPrivateKey<RSASSA_PSS<Self, H, P>>),
         SignatureError,
     >;
 }
@@ -175,7 +178,7 @@ impl<K: RsaSigningSize> SignatureKeyPair for K {
         Ok((RsaPublicKey::from_components(pk), RsaPrivateKey::from_components(sk)))
     }
 
-    fn generate_pss_signature_key_pair<H: HashOneShot + HashAlgParams>(
+    fn generate_pss_signature_key_pair<H: PssHash>(
         rng: &mut dyn RNG,
     ) -> Result<(RsaPublicKey<RSASSA_PSS<K, H>>, RsaPrivateKey<RSASSA_PSS<K, H>>), SignatureError>
     {
@@ -183,10 +186,10 @@ impl<K: RsaSigningSize> SignatureKeyPair for K {
         Ok((RsaPublicKey::from_components(pk), RsaPrivateKey::from_components(sk)))
     }
 
-    fn generate_pss_shake_signature_key_pair<X: XOF + HashOneShot + HashAlgParams>(
+    fn generate_pss_signature_key_pair_with<H: HashOneShot + HashAlgParams, P: PssParams<H>>(
         rng: &mut dyn RNG,
     ) -> Result<
-        (RsaPublicKey<RSASSA_PSS_SHAKE<K, X>>, RsaPrivateKey<RSASSA_PSS_SHAKE<K, X>>),
+        (RsaPublicKey<RSASSA_PSS<K, H, P>>, RsaPrivateKey<RSASSA_PSS<K, H, P>>),
         SignatureError,
     > {
         let (pk, sk) = K::keygen(rng)?;

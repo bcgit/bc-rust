@@ -31,6 +31,31 @@ impl<const N: usize> ConstStr<N> {
         Self { buf, len }
     }
 
+    /// The decimal digits of `n`, which must fit in `N` bytes: a longer result is a compile-time
+    /// error where the constant is evaluated. For a number in an algorithm name, such as a salt
+    /// length.
+    pub const fn decimal(n: usize) -> Self {
+        let mut digits = [0u8; 20];
+        let mut count = 0;
+        let mut rest = n;
+        loop {
+            digits[count] = b'0' + (rest % 10) as u8;
+            count += 1;
+            rest /= 10;
+            if rest == 0 {
+                break;
+            }
+        }
+        let mut buf = [0u8; N];
+        let mut i = 0;
+        while i < count {
+            assert!(i < N, "ConstStr::decimal: the digits do not fit in N bytes");
+            buf[i] = digits[count - 1 - i];
+            i += 1;
+        }
+        Self { buf, len: count }
+    }
+
     /// The string.
     pub const fn as_str(&self) -> &str {
         match core::str::from_utf8(self.buf.split_at(self.len).0) {

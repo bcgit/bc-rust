@@ -450,7 +450,7 @@ pub(crate) fn rsa_2048_cmd(
         (RSAScheme::Pss, RSAHash::Shake128) => {
             rsa_pss_cmd::<RSASSA_PSS_SHAKE128, PK_LEN, SK_LEN, SIG_LEN>(
                 action,
-                RSA2048::generate_pss_shake_signature_key_pair::<SHAKE128>,
+                RSA2048::generate_pss_signature_key_pair::<SHAKE128>,
                 skfile,
                 pkfile,
                 sigfile,
@@ -548,7 +548,7 @@ pub(crate) fn rsa_3072_cmd(
         (RSAScheme::Pss, RSAHash::Shake128) => {
             rsa_pss_cmd::<RSASSA_PSS_SHAKE128, PK_LEN, SK_LEN, SIG_LEN>(
                 action,
-                RSA3072::generate_pss_shake_signature_key_pair::<SHAKE128>,
+                RSA3072::generate_pss_signature_key_pair::<SHAKE128>,
                 skfile,
                 pkfile,
                 sigfile,
@@ -646,7 +646,7 @@ pub(crate) fn rsa_4096_cmd(
         (RSAScheme::Pss, RSAHash::Shake256) => {
             rsa_pss_cmd::<RSASSA_PSS_SHAKE256, PK_LEN, SK_LEN, SIG_LEN>(
                 action,
-                RSA4096::generate_pss_shake_signature_key_pair::<SHAKE256>,
+                RSA4096::generate_pss_signature_key_pair::<SHAKE256>,
                 skfile,
                 pkfile,
                 sigfile,
