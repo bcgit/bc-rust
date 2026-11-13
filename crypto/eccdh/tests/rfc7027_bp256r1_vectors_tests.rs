@@ -5,7 +5,8 @@
 use bouncycastle_core::agreement_key::AgreementKey;
 use bouncycastle_core::key_material::KeyMaterialTrait;
 use bouncycastle_core::traits::{KeyAgreementPrivateKey, KeyAgreementPublicKey};
-use bouncycastle_eccdh::keys_bp256r1::{ECCDHBp256r1PrivateKey, ECCDHBp256r1PublicKey};
+use bouncycastle_ec::Bp256r1;
+use bouncycastle_eccdh::keys::{ECCDHPrivateKey, ECCDHPublicKey};
 use bouncycastle_eccdh::keys_common::DerivePublicKey;
 use bouncycastle_hex::decode as hex_decode;
 
@@ -17,15 +18,15 @@ const X_QB: &str = "8D2D688C6CF93E1160AD04CC4429117DC2C41825E1E9FCA0ADDD34E6F1B3
 const Y_QB: &str = "990C57520812BE512641E47034832106BC7D3E8DD0E4C7F1136D7006547CEC6A";
 const X_Z: &str = "89AFC39D41D3B327814B80940B042590F96556EC91E6AE7939BCE31F3A18BF2B";
 
-fn pk(x: &str, y: &str) -> ECCDHBp256r1PublicKey {
+fn pk(x: &str, y: &str) -> ECCDHPublicKey<Bp256r1> {
     let encoded = [&[0x04u8][..], &hex_decode(x).unwrap(), &hex_decode(y).unwrap()].concat();
-    ECCDHBp256r1PublicKey::from_bytes(&encoded).unwrap()
+    ECCDHPublicKey::<Bp256r1>::from_bytes(&encoded).unwrap()
 }
 
 #[test]
 fn rfc7027_appendix_a_1() {
-    let sk_a = ECCDHBp256r1PrivateKey::from_bytes(&hex_decode(D_A).unwrap()).unwrap();
-    let sk_b = ECCDHBp256r1PrivateKey::from_bytes(&hex_decode(D_B).unwrap()).unwrap();
+    let sk_a = ECCDHPrivateKey::<Bp256r1>::from_bytes(&hex_decode(D_A).unwrap()).unwrap();
+    let sk_b = ECCDHPrivateKey::<Bp256r1>::from_bytes(&hex_decode(D_B).unwrap()).unwrap();
     let pk_a = pk(X_QA, Y_QA);
     let pk_b = pk(X_QB, Y_QB);
     assert_eq!(sk_a.derive_pk(), pk_a, "Q_A = [d_A]G");

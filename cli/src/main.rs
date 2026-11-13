@@ -6539,7 +6539,7 @@ fn run() {
                 &mlkem_cmd::MLKEM512_SET,
                 std::marker::PhantomData::<
                     bouncycastle::mlkem::KdfParams<
-                        bouncycastle::sha2::hkdf::HKDF_SHA256,
+                        bouncycastle::hkdf::HkdfDescription<bouncycastle::sha2::SHA256>,
                         { bouncycastle::mlkem::MLKEM512_HKDF_SHA256_SS_LEN },
                     >,
                 >,
@@ -6569,7 +6569,7 @@ fn run() {
                 &mlkem_cmd::MLKEM768_SET,
                 std::marker::PhantomData::<
                     bouncycastle::mlkem::KdfParams<
-                        bouncycastle::sha2::hkdf::HKDF_SHA512,
+                        bouncycastle::hkdf::HkdfDescription<bouncycastle::sha2::SHA512>,
                         { bouncycastle::mlkem::MLKEM768_HKDF_SHA512_SS_LEN },
                     >,
                 >,
@@ -6599,7 +6599,7 @@ fn run() {
                 &mlkem_cmd::MLKEM1024_SET,
                 std::marker::PhantomData::<
                     bouncycastle::mlkem::KdfParams<
-                        bouncycastle::sha2::hkdf::HKDF_SHA512,
+                        bouncycastle::hkdf::HkdfDescription<bouncycastle::sha2::SHA512>,
                         { bouncycastle::mlkem::MLKEM1024_HKDF_SHA512_SS_LEN },
                     >,
                 >,

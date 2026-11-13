@@ -41,8 +41,9 @@
 //! use bouncycastle_core::security_strength::SecurityStrength;
 //! use bouncycastle_core::traits::KeyAgreementPublicKey;
 //! use bouncycastle_ed::x25519::keygen;
+//! use bouncycastle_hkdf::HkdfDescription;
 //! use bouncycastle_rng::HashDRBG_SHA512;
-//! use bouncycastle_sha2::hkdf::HKDF_SHA256;
+//! use bouncycastle_sha2::SHA256;
 //!
 //! let mut rng = HashDRBG_SHA512::new_from_os();
 //! let (alice_pk, alice_sk) = keygen(&mut rng)?;
@@ -60,7 +61,7 @@
 //! let mut info = [0u8; 64];
 //! info[..32].copy_from_slice(&alice_pk.encode());
 //! info[32..].copy_from_slice(&bob_pk.encode());
-//! let hkdf = HKDF_SHA256::new();
+//! let hkdf = HkdfDescription::<SHA256>::new();
 //! let key_a = alice_sk.agree(&bob_pk, KdfParams::new(&hkdf, &info, KeyLen::<32>))?;
 //! let key_b = bob_sk.agree(&alice_pk, KdfParams::new(&hkdf, &info, KeyLen::<32>))?;
 //! assert!(key_a.equals(&key_b));
@@ -182,7 +183,7 @@
 use bouncycastle_core::agreement_key::{AgreementKey, KeyAgreementAlgorithm};
 use bouncycastle_core::errors::{KEMError, KeyAgreementError, KeyMaterialError, RNGError};
 use bouncycastle_core::hazmat::do_hazardous_operations;
-use bouncycastle_core::kdf_params::KdfParams;
+use bouncycastle_core::kdf_params::{KdfDescription, KdfParams};
 use bouncycastle_core::kem_key::{DecapsulatingKey, EncapsulatingKey, KEMAlgorithm};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterial256, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
@@ -190,9 +191,9 @@ use bouncycastle_core::traits::{
     Algorithm, KDF, KEMDecapsulator, KEMEncapsulator, KEMPrivateKey, KEMPublicKey, KeyAgreement,
     KeyAgreementPrivateKey, KeyAgreementPublicKey, RNG,
 };
+use bouncycastle_hkdf::HkdfDescription;
 use bouncycastle_hpke::dhkem::{DHKEM, DHKEMParams};
 use bouncycastle_sha2::SHA256;
-use bouncycastle_sha2::hkdf::HKDF_SHA256;
 use bouncycastle_utils::ct::{Condition, ct_eq_bytes, ct_eq_zero_bytes};
 use bouncycastle_utils::secret::{Secret, zeroize_in_place};
 use core::fmt::{self, Display, Formatter};
@@ -377,7 +378,7 @@ impl AgreementKey<(), POINT_LEN> for X25519PrivateKey {
 
 /// X25519 with its shared secret put through HKDF-SHA256, the KDF of RFC 7748 Section 6.1's
 /// recommendation ("a key-derivation function that includes K, K_A, and K_B"): the caller's
-/// [`KdfParams`] name the HKDF instance (its salt, if any) and the fixed info, which should
+/// [`KdfParams`] name the HKDF description (its salt, if any) and the fixed info, which should
 /// carry both public keys. The derived key is typed by the KDF's accounting,
 /// `CryptographicRandom` at the least of X25519's 128 bits, the KDF's and the length's.
 #[allow(non_camel_case_types)]
@@ -395,21 +396,22 @@ impl KeyAgreementAlgorithm for X25519_HKDF_SHA256 {}
 pub const HKDF_SHA256_MAX_LEN: usize = 255 * 32;
 
 /// The worker an [`X25519PrivateKey`] hands out through [`AgreementKey`] over
-/// [`KdfParams`] of HKDF-SHA256: `K` from the primitive, then the KDF into the caller's
-/// buffer. `K` lives in one local of this frame, wiped when it drops; HKDF's own frame below
+/// [`KdfParams`] of HKDF-SHA256: `K` from the primitive, then the KDF, built from the
+/// description for this derivation, into the caller's buffer. `K` lives in one local of this
+/// frame, wiped when it drops; HKDF's own frame below
 /// it keeps its copies of `K` and of the PRK's HMAC states, which are that crate's (see the
 /// crate docs' Security Considerations).
-pub struct X25519KdfAgreement<'k, 'p, const LEN: usize> {
+pub struct X25519KdfAgreement<'k, 'p, 's, const LEN: usize> {
     sk: &'k X25519PrivateKey,
-    params: KdfParams<'p, HKDF_SHA256, LEN>,
+    params: KdfParams<'p, HkdfDescription<'s, SHA256>, LEN>,
 }
 
-impl<const LEN: usize> Algorithm for X25519KdfAgreement<'_, '_, LEN> {
+impl<const LEN: usize> Algorithm for X25519KdfAgreement<'_, '_, '_, LEN> {
     const ALG_NAME: &'static str = X25519_HKDF_SHA256::ALG_NAME;
     const MAX_SECURITY_STRENGTH: SecurityStrength = X25519_HKDF_SHA256::MAX_SECURITY_STRENGTH;
 }
 
-impl<const LEN: usize> KeyAgreement<X25519PublicKey, LEN> for X25519KdfAgreement<'_, '_, LEN> {
+impl<const LEN: usize> KeyAgreement<X25519PublicKey, LEN> for X25519KdfAgreement<'_, '_, '_, LEN> {
     fn agree_out(
         &self,
         peer_pk: &X25519PublicKey,
@@ -424,8 +426,10 @@ impl<const LEN: usize> KeyAgreement<X25519PublicKey, LEN> for X25519KdfAgreement
         ss.zeroize();
         let mut k = KeyMaterial::<POINT_LEN>::new();
         X25519Agreement { sk: self.sk }.agree_out(peer_pk, &mut k)?;
-        // `derive_key_out` zeroizes `ss` first and leaves it so on its errors.
-        let written = self.params.kdf().derive_key_out(&k, self.params.info(), LEN, ss)?;
+        // The engine is an HKDF keyed with the description's salt, if any. `derive_key_out`
+        // zeroizes `ss` first and leaves it so on its errors.
+        let kdf = self.params.kdf().engine()?;
+        let written = kdf.derive_key_out(&k, self.params.info(), LEN, ss)?;
         if written != LEN || ss.key_len() != LEN {
             ss.zeroize();
             return Err(KeyAgreementError::GenericError(
@@ -436,14 +440,16 @@ impl<const LEN: usize> KeyAgreement<X25519PublicKey, LEN> for X25519KdfAgreement
     }
 }
 
-impl<'p, const LEN: usize> AgreementKey<KdfParams<'p, HKDF_SHA256, LEN>, LEN> for X25519PrivateKey {
+impl<'p, 's, const LEN: usize> AgreementKey<KdfParams<'p, HkdfDescription<'s, SHA256>, LEN>, LEN>
+    for X25519PrivateKey
+{
     type Algorithm = X25519_HKDF_SHA256;
     type PublicKey = X25519PublicKey;
-    type Agreement<'k> = X25519KdfAgreement<'k, 'p, LEN>;
+    type Agreement<'k> = X25519KdfAgreement<'k, 'p, 's, LEN>;
 
     fn create_agreement<'k>(
         &'k self,
-        params: KdfParams<'p, HKDF_SHA256, LEN>,
+        params: KdfParams<'p, HkdfDescription<'s, SHA256>, LEN>,
     ) -> Result<Self::Agreement<'k>, KeyAgreementError> {
         Ok(X25519KdfAgreement { sk: self, params })
     }

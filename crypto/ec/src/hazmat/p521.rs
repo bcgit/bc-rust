@@ -20,6 +20,7 @@
 //! conditional subtraction of `p` (verified, not checked in, against 500,000 random trials plus the
 //! `(p-1)*(p-1)` worst case, in addition to the proof above).
 
+use crate::curve::FieldElement;
 use crate::nat;
 use bouncycastle_utils::ct;
 use bouncycastle_utils::ct::Condition;
@@ -335,4 +336,54 @@ fn reduce(t: &[u64; 18]) -> [u64; 9] {
     let mut result = [0u64; 9];
     ct::conditional_select(Condition::<u64>::from_lsb(borrow), &low, &diff, &mut result);
     result
+}
+
+impl FieldElement for P521FieldElement {
+    type Limbs = [u64; 9];
+    const ZERO: Self = P521FieldElement::ZERO;
+    const ONE: Self = P521FieldElement::ONE;
+
+    fn from_limbs(limbs: [u64; 9]) -> Self {
+        P521FieldElement::from_limbs(limbs)
+    }
+
+    fn to_limbs(&self) -> [u64; 9] {
+        P521FieldElement::to_limbs(self)
+    }
+
+    fn to_limbs_into(&self, out: &mut [u64; 9]) {
+        P521FieldElement::to_limbs_into(self, out)
+    }
+
+    fn is_zero(&self) -> Condition<u64> {
+        P521FieldElement::is_zero(self)
+    }
+
+    fn zeroize(&mut self) {
+        P521FieldElement::zeroize(self)
+    }
+
+    fn add(&self, other: &Self) -> Self {
+        P521FieldElement::add(self, other)
+    }
+
+    fn sub(&self, other: &Self) -> Self {
+        P521FieldElement::sub(self, other)
+    }
+
+    fn negate(&self) -> Self {
+        P521FieldElement::negate(self)
+    }
+
+    fn mul(&self, other: &Self) -> Self {
+        P521FieldElement::mul(self, other)
+    }
+
+    fn square(&self) -> Self {
+        P521FieldElement::square(self)
+    }
+
+    fn invert(&self) -> Self {
+        P521FieldElement::invert(self)
+    }
 }

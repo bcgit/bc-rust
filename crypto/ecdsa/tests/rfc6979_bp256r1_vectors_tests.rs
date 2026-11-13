@@ -16,10 +16,12 @@
 
 use bouncycastle_core::signature_key::{DeterministicSigningKey, VerifyingKey};
 use bouncycastle_core::traits::{SignaturePrivateKey, SignaturePublicKey};
+use bouncycastle_ec::Bp256r1;
 use bouncycastle_ec::hazmat::bp256r1_comb::comb_multiply_base_point;
 use bouncycastle_ec::hazmat::bp256r1_scalar::Bp256r1Scalar;
-use bouncycastle_ecdsa::keys_bp256r1::{ECDSABp256r1PrivateKey, ECDSABp256r1PublicKey};
+use bouncycastle_ecdsa::keys::{ECDSAPrivateKey, ECDSAPublicKey};
 use bouncycastle_hex::decode as hex_decode;
+use bouncycastle_sha2::SHA256;
 
 struct Vector {
     d: &'static str,
@@ -95,12 +97,12 @@ fn bytes32(hex: &str) -> [u8; 32] {
     hex_decode(hex).unwrap().try_into().unwrap()
 }
 
-fn public_key_for(v: &Vector) -> ECDSABp256r1PublicKey {
+fn public_key_for(v: &Vector) -> ECDSAPublicKey<Bp256r1, SHA256> {
     let mut uncompressed = [0u8; 65];
     uncompressed[0] = 0x04;
     uncompressed[1..33].copy_from_slice(&bytes32(v.ux));
     uncompressed[33..65].copy_from_slice(&bytes32(v.uy));
-    ECDSABp256r1PublicKey::from_bytes(&uncompressed).unwrap()
+    ECDSAPublicKey::<Bp256r1, SHA256>::from_bytes(&uncompressed).unwrap()
 }
 
 #[test]
@@ -127,7 +129,7 @@ fn public_key_matches_vectors() {
 #[test]
 fn deterministic_sign_matches_vectors() {
     for v in CASES {
-        let sk = ECDSABp256r1PrivateKey::from_bytes(&bytes32(v.d)).unwrap();
+        let sk = ECDSAPrivateKey::<Bp256r1, SHA256>::from_bytes(&bytes32(v.d)).unwrap();
         let sig = sk.sign_deterministic(v.msg, None).unwrap();
         let mut expected = [0u8; 64];
         expected[..32].copy_from_slice(&bytes32(v.r));
@@ -139,7 +141,7 @@ fn deterministic_sign_matches_vectors() {
 #[test]
 fn deterministic_signature_verifies() {
     for v in CASES {
-        let sk = ECDSABp256r1PrivateKey::from_bytes(&bytes32(v.d)).unwrap();
+        let sk = ECDSAPrivateKey::<Bp256r1, SHA256>::from_bytes(&bytes32(v.d)).unwrap();
         let pk = public_key_for(v);
         let sig = sk.sign_deterministic(v.msg, None).unwrap();
         pk.verify(v.msg, None, &sig).unwrap();

@@ -8,6 +8,7 @@
 //! (programmatically, concatenating the line-wrapped hex, not retyped) and verified in Python: `G`
 //! is on the curve and `n·G` is the point at infinity, before any of this was ported to Rust.
 
+use crate::curve::FieldElement;
 use crate::montgomery;
 use bouncycastle_utils::ct;
 use bouncycastle_utils::ct::Condition;
@@ -238,3 +239,53 @@ impl PartialEq for Bp512r1FieldElement {
 }
 
 impl Eq for Bp512r1FieldElement {}
+
+impl FieldElement for Bp512r1FieldElement {
+    type Limbs = [u64; 8];
+    const ZERO: Self = Bp512r1FieldElement::ZERO;
+    const ONE: Self = Bp512r1FieldElement::ONE;
+
+    fn from_limbs(limbs: [u64; 8]) -> Self {
+        Bp512r1FieldElement::from_limbs(limbs)
+    }
+
+    fn to_limbs(&self) -> [u64; 8] {
+        Bp512r1FieldElement::to_limbs(self)
+    }
+
+    fn to_limbs_into(&self, out: &mut [u64; 8]) {
+        Bp512r1FieldElement::to_limbs_into(self, out)
+    }
+
+    fn is_zero(&self) -> Condition<u64> {
+        Bp512r1FieldElement::is_zero(self)
+    }
+
+    fn zeroize(&mut self) {
+        Bp512r1FieldElement::zeroize(self)
+    }
+
+    fn add(&self, other: &Self) -> Self {
+        Bp512r1FieldElement::add(self, other)
+    }
+
+    fn sub(&self, other: &Self) -> Self {
+        Bp512r1FieldElement::sub(self, other)
+    }
+
+    fn negate(&self) -> Self {
+        Bp512r1FieldElement::negate(self)
+    }
+
+    fn mul(&self, other: &Self) -> Self {
+        Bp512r1FieldElement::mul(self, other)
+    }
+
+    fn square(&self) -> Self {
+        Bp512r1FieldElement::square(self)
+    }
+
+    fn invert(&self) -> Self {
+        Bp512r1FieldElement::invert(self)
+    }
+}

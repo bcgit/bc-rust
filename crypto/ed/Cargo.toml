@@ -5,6 +5,7 @@ version.workspace = true
 
 [dependencies]
 bouncycastle-core.workspace = true
+bouncycastle-hkdf.workspace = true
 bouncycastle-hpke.workspace = true
 bouncycastle-sha2.workspace = true
 bouncycastle-utils.workspace = true

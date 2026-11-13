@@ -1,159 +1,40 @@
-//! Test against the project wycheproof repo: `ecdsa_brainpoolP512r1_sha512_p1363_test.json` (raw `r
-//! || s`, against [`ECDSABp512r1::verify`]) and `ecdsa_brainpoolP512r1_sha512_test.json` (DER
-//! `SEQUENCE { r, s }`, RFC 3279 §2.2.3, against [`ECDSABp512r1::verify`] after
-//! `bouncycastle_ecdsa::der::decode`). See `wycheproof.rs`'s docs for the sibling-clone convention
-//! and what wycheproof's value is here (malleability/invalid-encoding coverage, not
-//! signature-generation KATs).
+//! Wycheproof ECDSA vectors for brainpoolP512r1, every hash the v1 files pair it with that this crate
+//! implements (the SHAKE files need an XOF, which `ECDSA<C, H>` does not take); see
+//! `wycheproof_common` for the files, the verdict rules and the DER handling.
 
-use bouncycastle_core::signature_key::VerifyingKey;
-use bouncycastle_core::traits::SignaturePublicKey;
-use bouncycastle_ecdsa::der;
-use bouncycastle_ecdsa::keys_bp512r1::ECDSABp512r1PublicKey;
-use bouncycastle_hex::decode as hex_decode;
-use serde_json::Value;
-use std::fs;
-use std::path::Path;
+mod wycheproof_common;
 
-const TEST_DATA_PATH_RELATIVE: &str = "../../../wycheproof/testvectors_v1";
-const TEST_DATA_PATH: &str = "../wycheproof/testvectors_v1";
+use bouncycastle_ec::Bp512r1;
+use bouncycastle_sha2::SHA512;
+use bouncycastle_sha3::SHA3_512;
+use wycheproof_common::{Encoding, run};
 
-/// Panics, failing the test, if the wycheproof clone is missing: these suites are the only
-/// adversarial check on this crate's verification, and a green run that never read them would be
-/// indistinguishable from one that did. (For `cargo mutants`, symlink the clone at
-/// `/tmp/wycheproof`; its copied tree resolves the relative path there.)
-fn get_test_data(filename: &str) -> String {
-    for dir in [TEST_DATA_PATH_RELATIVE, TEST_DATA_PATH] {
-        let path = format!("{dir}/{filename}");
-        if Path::new(&path).exists() {
-            return fs::read_to_string(path).unwrap();
-        }
-    }
-    panic!(
-        "wycheproof not found (looked for {filename} in {TEST_DATA_PATH_RELATIVE:?} and \
-         {TEST_DATA_PATH:?}); these suites require it rather than skipping"
+#[test]
+fn sha512_p1363() {
+    run::<Bp512r1, SHA512, 129, 128>(
+        "ecdsa_brainpoolP512r1_sha512_p1363_test.json",
+        "brainpoolP512r1",
+        "SHA-512",
+        Encoding::P1363,
     );
 }
 
 #[test]
-fn ecdsa_brainpool_p512r1_sha512_p1363_test() {
-    let contents = get_test_data("ecdsa_brainpoolP512r1_sha512_p1363_test.json");
-    let doc: Value = serde_json::from_str(&contents).unwrap();
-
-    let mut num_tests = 0usize;
-    let mut num_valid = 0usize;
-    let mut num_invalid = 0usize;
-
-    for group in doc["testGroups"].as_array().unwrap() {
-        assert_eq!(group["sha"], "SHA-512");
-        let pk_hex = group["publicKey"]["uncompressed"].as_str().unwrap();
-        let pk_bytes = hex_decode(pk_hex).unwrap();
-        let pk = ECDSABp512r1PublicKey::from_bytes(&pk_bytes).ok();
-
-        for test in group["tests"].as_array().unwrap() {
-            num_tests += 1;
-            let tc_id = test["tcId"].as_u64().unwrap();
-            let msg = hex_decode(test["msg"].as_str().unwrap()).unwrap();
-            let sig = hex_decode(test["sig"].as_str().unwrap()).unwrap();
-            // Only two of wycheproof's three verdicts are decided here. "acceptable" marks a
-            // vector that is valid under some readings of the specification and not others (its
-            // `flags` say which), and whether this implementation should accept such a vector is
-            // a decision to record per flag, not to default either way -- so an "acceptable"
-            // vector fails the test until someone makes it. The v1 files this suite reads carry
-            // none; this is what turns a future upgrade that adds some into a loud failure.
-            let flags = &test["flags"];
-            let expect_valid = match test["result"].as_str().unwrap() {
-                "valid" => true,
-                "invalid" => false,
-                other => panic!(
-                    "tcId {tc_id}: result {other:?} with flags {flags} needs an explicit \
-                     accept/reject decision in this test"
-                ),
-            };
-            if expect_valid {
-                num_valid += 1;
-            } else {
-                num_invalid += 1;
-            }
-
-            let result = pk.as_ref().and_then(|pk| pk.verify(&msg, None, &sig).ok());
-            assert_eq!(
-                result.is_some(),
-                expect_valid,
-                "tcId {tc_id}: expected valid={expect_valid}, flags {flags}, comment={:?}",
-                test["comment"]
-            );
-        }
-    }
-
-    println!(
-        "ecdsa_brainpoolP512r1_sha512_p1363_test: {num_tests} test cases passed ({num_valid} valid, {num_invalid} invalid)."
+fn sha512_der() {
+    run::<Bp512r1, SHA512, 129, 128>(
+        "ecdsa_brainpoolP512r1_sha512_test.json",
+        "brainpoolP512r1",
+        "SHA-512",
+        Encoding::Der,
     );
 }
 
-/// Decodes a DER `SEQUENCE { r, s }` with [`der::decode`] and verifies the raw signature through
-/// [`VerifyingKey::verify`]; a malformed encoding is a failed verification, which is what the
-/// suite's invalid-encoding cases expect.
-fn verify_der(pk: &ECDSABp512r1PublicKey, msg: &[u8], sig: &[u8]) -> Option<()> {
-    let mut raw = [0u8; 128];
-    let (r, s) = raw.split_at_mut(64);
-    der::decode(sig, r, s)?;
-    pk.verify(msg, None, &raw).ok()
-}
-
-/// The DER counterpart of the above: `ecdsa_brainpoolP512r1_sha512_test.json`, against
-/// [`ECDSABp512r1::verify`] after `bouncycastle_ecdsa::der::decode`.
 #[test]
-fn ecdsa_brainpool_p512r1_sha512_der_test() {
-    let contents = get_test_data("ecdsa_brainpoolP512r1_sha512_test.json");
-    let doc: Value = serde_json::from_str(&contents).unwrap();
-
-    let mut num_tests = 0usize;
-    let mut num_valid = 0usize;
-    let mut num_invalid = 0usize;
-
-    for group in doc["testGroups"].as_array().unwrap() {
-        assert_eq!(group["sha"], "SHA-512");
-        let pk_hex = group["publicKey"]["uncompressed"].as_str().unwrap();
-        let pk_bytes = hex_decode(pk_hex).unwrap();
-        let pk = ECDSABp512r1PublicKey::from_bytes(&pk_bytes).ok();
-
-        for test in group["tests"].as_array().unwrap() {
-            num_tests += 1;
-            let tc_id = test["tcId"].as_u64().unwrap();
-            let msg = hex_decode(test["msg"].as_str().unwrap()).unwrap();
-            let sig = hex_decode(test["sig"].as_str().unwrap()).unwrap();
-            // Only two of wycheproof's three verdicts are decided here. "acceptable" marks a
-            // vector that is valid under some readings of the specification and not others (its
-            // `flags` say which), and whether this implementation should accept such a vector is
-            // a decision to record per flag, not to default either way -- so an "acceptable"
-            // vector fails the test until someone makes it. The v1 files this suite reads carry
-            // none; this is what turns a future upgrade that adds some into a loud failure.
-            let flags = &test["flags"];
-            let expect_valid = match test["result"].as_str().unwrap() {
-                "valid" => true,
-                "invalid" => false,
-                other => panic!(
-                    "tcId {tc_id}: result {other:?} with flags {flags} needs an explicit \
-                     accept/reject decision in this test"
-                ),
-            };
-            if expect_valid {
-                num_valid += 1;
-            } else {
-                num_invalid += 1;
-            }
-
-            let result = pk.as_ref().and_then(|pk| verify_der(pk, &msg, &sig));
-            assert_eq!(
-                result.is_some(),
-                expect_valid,
-                "tcId {tc_id}: expected valid={expect_valid}, flags {flags}, comment={:?}",
-                test["comment"]
-            );
-        }
-    }
-
-    println!(
-        "ecdsa_brainpoolP512r1_sha512_der_test: {num_tests} test cases passed ({num_valid} valid, {num_invalid} invalid)."
+fn sha3_512_der() {
+    run::<Bp512r1, SHA3_512, 129, 128>(
+        "ecdsa_brainpoolP512r1_sha3_512_test.json",
+        "brainpoolP512r1",
+        "SHA3-512",
+        Encoding::Der,
     );
 }

@@ -1,6 +1,6 @@
 use bouncycastle_core::agreement_key::AgreementKey;
 use bouncycastle_core::errors::KeyAgreementError;
-use bouncycastle_core::kdf_params::{KdfParams, KeyLen};
+use bouncycastle_core::kdf_params::{KdfDescription, KdfParams, KeyLen};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterial256, KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{KDF, KeyAgreement, KeyAgreementPublicKey};
@@ -10,8 +10,9 @@ use bouncycastle_ed::x25519::{
     keygen_from_seed,
 };
 use bouncycastle_hex as hex;
+use bouncycastle_hkdf::HkdfDescription;
 use bouncycastle_rng::DefaultRNG;
-use bouncycastle_sha2::hkdf::HKDF_SHA256;
+use bouncycastle_sha2::SHA256;
 
 fn keygen_default() -> Result<(X25519PublicKey, X25519PrivateKey), KeyAgreementError> {
     keygen(&mut DefaultRNG::default())
@@ -21,7 +22,7 @@ fn keygen_default() -> Result<(X25519PublicKey, X25519PrivateKey), KeyAgreementE
 #[test]
 fn core_framework_tests() {
     TestFrameworkKeyAgreement::new().test_key_agreement(keygen_default, ());
-    let hkdf = HKDF_SHA256::new();
+    let hkdf = HkdfDescription::<SHA256>::new();
     TestFrameworkKeyAgreement::new().test_key_agreement(
         keygen_default,
         KdfParams::new(&hkdf, b"X25519 framework info", KeyLen::<32>),
@@ -43,10 +44,10 @@ fn raw_z_is_a_shared_secret_and_the_pairing_is_hkdf_over_it() {
     let mut info = [0u8; 2 * POINT_LEN];
     info[..POINT_LEN].copy_from_slice(&alice_pk.encode());
     info[POINT_LEN..].copy_from_slice(&bob_pk.encode());
-    let hkdf = HKDF_SHA256::new();
+    let hkdf = HkdfDescription::<SHA256>::new();
     let derived = bob_sk.agree(&alice_pk, KdfParams::new(&hkdf, &info, KeyLen::<48>)).unwrap();
     let mut by_hand = KeyMaterial::<48>::new();
-    hkdf.derive_key_out(&z, &info, 48, &mut by_hand).unwrap();
+    hkdf.engine().unwrap().derive_key_out(&z, &info, 48, &mut by_hand).unwrap();
     assert!(derived.equals(&by_hand));
     assert_eq!(derived.key_type(), KeyType::CryptographicRandom);
     assert_eq!(derived.security_strength(), SecurityStrength::_128bit);
@@ -57,7 +58,7 @@ fn raw_z_is_a_shared_secret_and_the_pairing_is_hkdf_over_it() {
 fn the_pairing_derives_its_longest_key() {
     let (alice_pk, alice_sk) = keygen_default().unwrap();
     let (bob_pk, bob_sk) = keygen_default().unwrap();
-    let hkdf = HKDF_SHA256::new();
+    let hkdf = HkdfDescription::<SHA256>::new();
     let key_a = alice_sk
         .agree(&bob_pk, KdfParams::new(&hkdf, b"longest", KeyLen::<HKDF_SHA256_MAX_LEN>))
         .unwrap();
@@ -262,7 +263,7 @@ fn the_workers_leave_a_stale_buffer_zeroized_on_a_small_order_peer() {
     assert_eq!(ss.key_type(), KeyType::Zeroized);
     assert_eq!(ss.key_len(), 0);
 
-    let hkdf = HKDF_SHA256::new();
+    let hkdf = HkdfDescription::<SHA256>::new();
     let paired = sk.create_agreement(KdfParams::new(&hkdf, b"info", KeyLen::<32>)).unwrap();
     let mut ss = KeyMaterial::<32>::from_bytes_as_type(&[0xFF; 32], KeyType::Seed).unwrap();
     assert!(matches!(paired.agree_out(&zero_pk, &mut ss), Err(KeyAgreementError::AgreementFailed)));

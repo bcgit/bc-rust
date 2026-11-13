@@ -87,6 +87,7 @@ bouncycastle-chacha20-poly1305-aead.workspace = true
 bouncycastle-cipher.workspace = true
 bouncycastle-concatkdf.workspace = true
 bouncycastle-core.workspace = true
+bouncycastle-ec.workspace = true
 bouncycastle-eccdh.workspace = true
 bouncycastle-ecdsa.workspace = true
 bouncycastle-ed.workspace = true

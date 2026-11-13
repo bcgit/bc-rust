@@ -3,18 +3,17 @@
 
 mod wycheproof_common;
 
-use bouncycastle_eccdh::eccdh_p256k1::SS_LEN;
-use bouncycastle_eccdh::keys_p256k1::{
-    ECCDHSecp256K1PrivateKey, ECCDHSecp256K1PublicKey, PK_LEN, SK_LEN,
-};
+use bouncycastle_ec::Secp256K1;
+use bouncycastle_ec::curve::Curve;
+use bouncycastle_eccdh::keys::{ECCDHPrivateKey, ECCDHPublicKey};
 
 #[test]
 fn ecdh_secp256k1_test() {
     wycheproof_common::run::<
-        ECCDHSecp256K1PublicKey,
-        ECCDHSecp256K1PrivateKey,
-        PK_LEN,
-        SK_LEN,
-        SS_LEN,
+        ECCDHPublicKey<Secp256K1>,
+        ECCDHPrivateKey<Secp256K1>,
+        { Secp256K1::PK_UNCOMPRESSED_LEN },
+        { Secp256K1::SCALAR_LEN },
+        { Secp256K1::FE_LEN },
     >("ecdh_secp256k1_test.json", "secp256k1", 752, 474);
 }

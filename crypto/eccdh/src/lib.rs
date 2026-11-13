@@ -1,19 +1,22 @@
 //! ECC CDH, the Elliptic Curve Cryptography Cofactor Diffie-Hellman primitive of SP 800-56A
 //! Rev. 3 Section 5.7.1.2, over seven curves, built on [`bouncycastle_ec`]'s arithmetic, SEC 1
-//! encodings and constant-time multipliers. Each curve has one algorithm marker (`ECCDHP256`,
-//! `ECCDHP384`, ...) and a key pair of its own; the private key agrees through the `core` role
+//! encodings and constant-time multipliers, written once over [`bouncycastle_ec::curve::Curve`].
+//! The algorithm is [`ECCDH<C>`](eccdh::ECCDH) for a curve marker `C` from [`bouncycastle_ec`],
+//! with a key pair of its own, generated from the marker through
+//! [`AgreementKeyPair`](keys_common::AgreementKeyPair) (`P256::generate_agreement_key_pair(&mut
+//! rng)`) or [`keys::keygen`]; the private key agrees through the `core` role
 //! trait [`AgreementKey`](bouncycastle_core::agreement_key::AgreementKey), which hands out a
 //! reusable [`KeyAgreement`](bouncycastle_core::traits::KeyAgreement) worker, and the shared
 //! secret `Z` comes back as [`KeyMaterial`](bouncycastle_core::key_material::KeyMaterial) typed
 //! [`KeyType::SharedSecret`](bouncycastle_core::key_material::KeyType::SharedSecret): keying
 //! material for a KDF (Section 5.8), which nothing else accepts as a key. The raw primitive is
 //! the role impl over `()`. The same keys also run a KDF over `Z`, through
-//! [`KdfParams`](bouncycastle_core::kdf_params::KdfParams) naming a borrowed KDF instance and
-//! the fixed info: SEC 1 Section 6.1's ECDH scheme, the ANSI X9.63 KDF over the hash matched to
-//! the curve (`ECCDHP256_X963KDF_SHA256`, `ECCDHP384_X963KDF_SHA384`, `ECCDHP521_X963KDF_SHA512`
-//! and so on), SP 800-56A Rev. 3 Section 5.8's one-step derivation, the NIST concatenation KDF
-//! over the same hash (`ECCDHP256_ConcatKDF_SHA256` and so on), and on P-256 HKDF-SHA256
-//! (`ECCDHP256_HKDF_SHA256`); the pairings are in [`kdf`].
+//! [`KdfParams`](bouncycastle_core::kdf_params::KdfParams) naming a borrowed description of the
+//! KDF (readable, for a key that hands the derivation to a device) and the fixed info: SEC 1 Section 6.1's ECDH scheme, the ANSI X9.63 KDF over the hash matched to
+//! the curve ([`ECCDH_X963KDF`](eccdh::ECCDH_X963KDF), `ECC-CDH-P256-X963KDF-SHA256` and so
+//! on), SP 800-56A Rev. 3 Section 5.8's one-step derivation, the NIST concatenation KDF over the
+//! same hash ([`ECCDH_ConcatKDF`](eccdh::ECCDH_ConcatKDF)), and on P-256 HKDF-SHA256
+//! ([`ECCDH_HKDF_SHA256`](eccdh::ECCDH_HKDF_SHA256)); the pairing trait is in [`kdf`].
 //!
 //! # Usage Examples
 //!
@@ -25,12 +28,13 @@
 //! use bouncycastle_core::agreement_key::AgreementKey;
 //! use bouncycastle_core::key_material::{KeyMaterialTrait, KeyType};
 //! use bouncycastle_core::traits::KeyAgreement;
-//! use bouncycastle_eccdh::keys_p256::keygen;
+//! use bouncycastle_ec::P256;
+//! use bouncycastle_eccdh::keys_common::AgreementKeyPair;
 //! use bouncycastle_rng::HashDRBG_SHA512;
 //!
 //! let mut rng = HashDRBG_SHA512::new_from_os();
-//! let (pk_a, sk_a) = keygen(&mut rng)?;
-//! let (pk_b, sk_b) = keygen(&mut rng)?;
+//! let (pk_a, sk_a) = P256::generate_agreement_key_pair(&mut rng)?;
+//! let (pk_b, sk_b) = P256::generate_agreement_key_pair(&mut rng)?;
 //!
 //! let z_a = sk_a.agree(&pk_b, ())?;
 //! let z_b = sk_b.create_agreement(())?.agree(&pk_a)?;
@@ -40,23 +44,26 @@
 //! ```
 //!
 //! `Z` is not a key. Pass it through a KDF: the P-256 keys do that for you over
-//! `KdfParams<HKDF_SHA256, LEN>`, and any curve's `Z` goes into HKDF by hand:
+//! `KdfParams<HkdfDescription<SHA256>, LEN>`, and any curve's `Z` goes into HKDF by hand:
 //!
 //! ```
 //! use bouncycastle_core::agreement_key::AgreementKey;
 //! use bouncycastle_core::kdf_params::{KdfParams, KeyLen};
 //! use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait, KeyType};
-//! use bouncycastle_eccdh::keys_p256::keygen;
+//! use bouncycastle_ec::P256;
+//! use bouncycastle_eccdh::keys_common::AgreementKeyPair;
 //! use bouncycastle_rng::HashDRBG_SHA512;
+//! use bouncycastle_hkdf::HkdfDescription;
+//! use bouncycastle_sha2::SHA256;
 //! use bouncycastle_sha2::hkdf::HKDF_SHA256;
 //!
 //! let mut rng = HashDRBG_SHA512::new_from_os();
-//! let (pk_a, sk_a) = keygen(&mut rng)?;
-//! let (pk_b, sk_b) = keygen(&mut rng)?;
+//! let (pk_a, sk_a) = P256::generate_agreement_key_pair(&mut rng)?;
+//! let (pk_b, sk_b) = P256::generate_agreement_key_pair(&mut rng)?;
 //!
 //! // ECC-CDH-P256-HKDF-SHA256: the KDF type on the parameters selects it, the KeyLen the length.
 //! let salt = KeyMaterial::<32>::from_rng(&mut rng)?;
-//! let hkdf = HKDF_SHA256::new_with_salt(&salt).unwrap();
+//! let hkdf = HkdfDescription::<SHA256>::with_salt(&salt).unwrap();
 //! let params = KdfParams::new(&hkdf, b"example protocol v1", KeyLen::<32>);
 //! let key_a = sk_a.agree(&pk_b, params)?;
 //! let key_b = sk_b.agree(&pk_a, params)?;
@@ -77,22 +84,25 @@
 //! ```
 //! use bouncycastle_core::errors::KeyAgreementError;
 //! use bouncycastle_core::traits::KeyAgreementPublicKey;
-//! use bouncycastle_eccdh::keys_p256::{ECCDHP256PublicKey, keygen};
+//! use bouncycastle_ec::P256;
+//! use bouncycastle_eccdh::keys::{ECCDHPublicKey, keygen};
 //! use bouncycastle_rng::HashDRBG_SHA512;
 //!
-//! let (pk, _sk) = keygen(&mut HashDRBG_SHA512::new_from_os())?;
+//! let (pk, _sk) = keygen::<P256>(&mut HashDRBG_SHA512::new_from_os())?;
 //! let mut off_curve = pk.encode();
 //! off_curve[64] ^= 1;
 //! assert!(matches!(
-//!     ECCDHP256PublicKey::from_bytes(&off_curve),
+//!     ECCDHPublicKey::<P256>::from_bytes(&off_curve),
 //!     Err(KeyAgreementError::DecodingError(_))
 //! ));
 //! # Ok::<(), bouncycastle_core::errors::KeyAgreementError>(())
 //! ```
 //!
-//! The other curves have the same shape under their own modules: `eccdh_p384`/`keys_p384`,
-//! `eccdh_p521`/`keys_p521`, `eccdh_p256k1`/`keys_p256k1`, `eccdh_bp256r1`/`keys_bp256r1`,
-//! `eccdh_bp384r1`/`keys_bp384r1`, `eccdh_bp512r1`/`keys_bp512r1`.
+//! Every type is generic over the curve, a marker from [`bouncycastle_ec`] (`P256`, `P384`,
+//! `P521`, `Secp256K1`, `Bp256r1`, `Bp384r1`, `Bp512r1`): the algorithm is
+//! [`ECCDH<C>`](eccdh::ECCDH), the keys [`ECCDHPublicKey<C>`](keys::ECCDHPublicKey) and
+//! [`ECCDHPrivateKey<C>`](keys::ECCDHPrivateKey), and code written once over `C: Curve` serves
+//! all seven.
 //!
 //! # Status
 //!
@@ -187,19 +197,7 @@
 #![forbid(unsafe_code)]
 #![forbid(missing_docs)]
 
-pub mod eccdh_bp256r1;
-pub mod eccdh_bp384r1;
-pub mod eccdh_bp512r1;
-pub mod eccdh_p256;
-pub mod eccdh_p256k1;
-pub mod eccdh_p384;
-pub mod eccdh_p521;
+pub mod eccdh;
 pub mod kdf;
-pub mod keys_bp256r1;
-pub mod keys_bp384r1;
-pub mod keys_bp512r1;
+pub mod keys;
 pub mod keys_common;
-pub mod keys_p256;
-pub mod keys_p256k1;
-pub mod keys_p384;
-pub mod keys_p521;

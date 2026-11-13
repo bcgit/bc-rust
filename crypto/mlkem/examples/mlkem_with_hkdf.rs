@@ -1,5 +1,5 @@
 //! ML-KEM-768 with its shared secret derived through HKDF-SHA512: `MLKEM768_HKDF_SHA512` on
-//! plain ML-KEM-768 keys, with the HKDF instance and info as the parameters the KEM roles are
+//! plain ML-KEM-768 keys, with the HKDF description and info as the parameters the KEM roles are
 //! made from. See `bouncycastle_mlkem_common::kdf` for what is derived.
 //!
 //! Run with `cargo run -p bouncycastle-mlkem --example mlkem_with_hkdf`.
@@ -11,21 +11,22 @@ use bouncycastle_core::kdf_params::{KdfParams, KeyLen};
 use bouncycastle_core::kem_key::{DecapsulatingKey, EncapsulatingKey};
 use bouncycastle_core::key_material::{KeyMaterial, KeyMaterialTrait};
 use bouncycastle_core::traits::KEMDecapsulator;
+use bouncycastle_hkdf::HkdfDescription;
 use bouncycastle_mlkem::{MLKEM768, MLKEM768_CT_LEN, MLKEMTrait};
 use bouncycastle_rng::HashDRBG_SHA512;
-use bouncycastle_sha2::hkdf::HKDF_SHA512;
+use bouncycastle_sha2::SHA512;
 
 fn main() {
     let mut rng = HashDRBG_SHA512::new_from_os();
     let (pk, sk) = MLKEM768::keygen(&mut rng).unwrap();
 
-    // The KDF both parties agree on out of band: HKDF-SHA512 keyed with RFC 5869's salt, and
-    // the info. The KDF type on the parameters is what selects ML-KEM-768-HKDF-SHA512 on these
+    // The KDF both parties agree on out of band: HKDF-SHA512 with RFC 5869's salt, described
+    // rather than instantiated so a key held in a token could read it, and the info. The KDF type on the parameters is what selects ML-KEM-768-HKDF-SHA512 on these
     // keys. Both parties must hold the same salt: it is not secret (RFC 5869 Section 3.1), so
     // a protocol fixes it or sends it beside the ciphertext; this example draws one and uses it
     // on both sides. A zero-length salt would be RFC 5869's absent one.
     let salt = KeyMaterial::<32>::from_rng(&mut rng).unwrap();
-    let hkdf = HKDF_SHA512::new_with_salt(&salt).unwrap();
+    let hkdf = HkdfDescription::<SHA512>::with_salt(&salt).unwrap();
     let params = KdfParams::new(&hkdf, b"example protocol v1", KeyLen::<64>);
 
     // One-shots: the parameters name the key's length, 64 bytes here, one SHA-512 output, at

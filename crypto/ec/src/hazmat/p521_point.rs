@@ -4,6 +4,7 @@
 //! [`crate::hazmat::p256_point`]'s docs for the full derivation and verification methodology, which
 //! applies unchanged here (P-521 also has `a = -3` and cofactor `h = 1` per SP 800-186 §3.2.1.5).
 
+use crate::curve::JacobianPoint;
 use crate::hazmat::p521::P521FieldElement;
 use crate::hazmat::p521_domain::B_LIMBS;
 use bouncycastle_utils::ct;
@@ -370,5 +371,50 @@ mod tests {
                 );
             }
         }
+    }
+}
+
+impl JacobianPoint for P521JacobianPoint {
+    type Fe = P521FieldElement;
+    const INFINITY: Self = P521JacobianPoint::INFINITY;
+
+    fn from_affine(x: P521FieldElement, y: P521FieldElement) -> Self {
+        P521JacobianPoint::from_affine(x, y)
+    }
+
+    fn x(&self) -> &P521FieldElement {
+        &self.x
+    }
+
+    fn y(&self) -> &P521FieldElement {
+        &self.y
+    }
+
+    fn z(&self) -> &P521FieldElement {
+        &self.z
+    }
+
+    fn is_infinity(&self) -> Condition<u64> {
+        P521JacobianPoint::is_infinity(self)
+    }
+
+    fn to_affine(&self) -> Option<(P521FieldElement, P521FieldElement)> {
+        P521JacobianPoint::to_affine(self)
+    }
+
+    fn negate(&self) -> Self {
+        P521JacobianPoint::negate(self)
+    }
+
+    fn zeroize(&mut self) {
+        P521JacobianPoint::zeroize(self)
+    }
+
+    fn double(&self) -> Self {
+        P521JacobianPoint::double(self)
+    }
+
+    fn add(&self, other: &Self) -> Self {
+        P521JacobianPoint::add(self, other)
     }
 }
