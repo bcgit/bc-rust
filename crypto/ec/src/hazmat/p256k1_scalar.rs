@@ -7,6 +7,7 @@
 //! 8-limb product (`n` is close enough to `2^256` that `2n` can exceed it): verified (not checked
 //! in) against 300,000 random trials plus the `(n-1)*(n-1)` worst case.
 
+use crate::curve::{PublicScalar, ScalarFieldElement, SecretScalar};
 use crate::nat;
 use bouncycastle_utils::ct;
 use bouncycastle_utils::ct::Condition;
@@ -429,5 +430,94 @@ impl P256K1PublicScalar {
     /// [`crate::inverse_vartime`].
     pub fn invert_vartime(&self) -> P256K1ScalarField {
         P256K1ScalarField::from_limbs(crate::inverse_vartime::mod_inverse(&self.0, &N_LIMBS))
+    }
+}
+
+impl SecretScalar for P256K1Scalar {
+    type Limbs = [u64; 4];
+    type Bytes = [u8; 32];
+
+    fn from_limbs(limbs: [u64; 4]) -> Self {
+        P256K1Scalar::from_limbs(limbs)
+    }
+
+    fn from_borrowed_limbs(limbs: &[u64; 4]) -> Self {
+        P256K1Scalar::from_borrowed_limbs(limbs)
+    }
+
+    fn from_be_bytes(bytes: &[u8; 32]) -> Self {
+        P256K1Scalar::from_be_bytes(bytes)
+    }
+
+    fn to_be_bytes(&self) -> [u8; 32] {
+        P256K1Scalar::to_be_bytes(self)
+    }
+}
+
+impl ScalarFieldElement for P256K1ScalarField {
+    type Limbs = [u64; 4];
+    type Secret = P256K1Scalar;
+    const ZERO: Self = P256K1ScalarField::ZERO;
+    const ONE: Self = P256K1ScalarField::ONE;
+
+    fn from_limbs(limbs: [u64; 4]) -> Self {
+        P256K1ScalarField::from_limbs(limbs)
+    }
+
+    fn to_limbs(&self) -> [u64; 4] {
+        P256K1ScalarField::to_limbs(self)
+    }
+
+    fn is_zero(&self) -> Condition<u64> {
+        P256K1ScalarField::is_zero(self)
+    }
+
+    fn zeroize(&mut self) {
+        P256K1ScalarField::zeroize(self)
+    }
+
+    fn add(&self, other: &Self) -> Self {
+        P256K1ScalarField::add(self, other)
+    }
+
+    fn sub(&self, other: &Self) -> Self {
+        P256K1ScalarField::sub(self, other)
+    }
+
+    fn negate(&self) -> Self {
+        P256K1ScalarField::negate(self)
+    }
+
+    fn mul(&self, other: &Self) -> Self {
+        P256K1ScalarField::mul(self, other)
+    }
+
+    fn square(&self) -> Self {
+        P256K1ScalarField::square(self)
+    }
+
+    fn from_secret(secret: &P256K1Scalar) -> Self {
+        P256K1ScalarField::from_secret(secret)
+    }
+
+    fn invert(&self) -> Self {
+        P256K1ScalarField::invert(self)
+    }
+}
+
+impl PublicScalar for P256K1PublicScalar {
+    type Limbs = [u64; 4];
+    type Field = P256K1ScalarField;
+
+    fn from_limbs(limbs: [u64; 4]) -> Self {
+        P256K1PublicScalar::from_limbs(limbs)
+    }
+
+    fn to_limbs(&self) -> [u64; 4] {
+        P256K1PublicScalar::to_limbs(self)
+    }
+
+    fn invert_vartime(&self) -> P256K1ScalarField {
+        P256K1PublicScalar::invert_vartime(self)
     }
 }

@@ -24,6 +24,7 @@
 //! A.1.1, over precomputed points and their scaled (non-canonical-`Z`) Jacobian representations,
 //! covering every exceptional case above plus the ordinary case.
 
+use crate::curve::JacobianPoint;
 use crate::hazmat::p256::P256FieldElement;
 use crate::hazmat::p256_domain::B_LIMBS;
 use bouncycastle_utils::ct;
@@ -395,5 +396,50 @@ mod tests {
                 );
             }
         }
+    }
+}
+
+impl JacobianPoint for P256JacobianPoint {
+    type Fe = P256FieldElement;
+    const INFINITY: Self = P256JacobianPoint::INFINITY;
+
+    fn from_affine(x: P256FieldElement, y: P256FieldElement) -> Self {
+        P256JacobianPoint::from_affine(x, y)
+    }
+
+    fn x(&self) -> &P256FieldElement {
+        &self.x
+    }
+
+    fn y(&self) -> &P256FieldElement {
+        &self.y
+    }
+
+    fn z(&self) -> &P256FieldElement {
+        &self.z
+    }
+
+    fn is_infinity(&self) -> Condition<u64> {
+        P256JacobianPoint::is_infinity(self)
+    }
+
+    fn to_affine(&self) -> Option<(P256FieldElement, P256FieldElement)> {
+        P256JacobianPoint::to_affine(self)
+    }
+
+    fn negate(&self) -> Self {
+        P256JacobianPoint::negate(self)
+    }
+
+    fn zeroize(&mut self) {
+        P256JacobianPoint::zeroize(self)
+    }
+
+    fn double(&self) -> Self {
+        P256JacobianPoint::double(self)
+    }
+
+    fn add(&self, other: &Self) -> Self {
+        P256JacobianPoint::add(self, other)
     }
 }

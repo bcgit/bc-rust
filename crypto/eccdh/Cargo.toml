@@ -7,6 +7,7 @@ edition.workspace = true
 bouncycastle-concatkdf.workspace = true
 bouncycastle-core.workspace = true
 bouncycastle-ec.workspace = true
+bouncycastle-hkdf.workspace = true
 bouncycastle-sha2.workspace = true
 bouncycastle-utils.workspace = true
 bouncycastle-x963kdf.workspace = true
@@ -18,29 +19,5 @@ bouncycastle-rng.workspace = true
 criterion.workspace = true
 
 [[bench]]
-name = "eccdh_p256_benches"
-harness = false
-
-[[bench]]
-name = "eccdh_p384_benches"
-harness = false
-
-[[bench]]
-name = "eccdh_p521_benches"
-harness = false
-
-[[bench]]
-name = "eccdh_p256k1_benches"
-harness = false
-
-[[bench]]
-name = "eccdh_bp256r1_benches"
-harness = false
-
-[[bench]]
-name = "eccdh_bp384r1_benches"
-harness = false
-
-[[bench]]
-name = "eccdh_bp512r1_benches"
+name = "eccdh_benches"
 harness = false

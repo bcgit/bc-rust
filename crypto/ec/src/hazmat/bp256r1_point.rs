@@ -12,6 +12,7 @@
 //! ZZ`, verified (not checked in) against the affine doubling law over 500 random on-curve points,
 //! using brainpoolP256r1's actual `A`, before being ported here.
 
+use crate::curve::JacobianPoint;
 use crate::hazmat::bp256r1::Bp256r1FieldElement;
 use crate::hazmat::bp256r1_domain::B_LIMBS;
 use bouncycastle_utils::ct;
@@ -406,5 +407,50 @@ mod tests {
                 );
             }
         }
+    }
+}
+
+impl JacobianPoint for Bp256r1JacobianPoint {
+    type Fe = Bp256r1FieldElement;
+    const INFINITY: Self = Bp256r1JacobianPoint::INFINITY;
+
+    fn from_affine(x: Bp256r1FieldElement, y: Bp256r1FieldElement) -> Self {
+        Bp256r1JacobianPoint::from_affine(x, y)
+    }
+
+    fn x(&self) -> &Bp256r1FieldElement {
+        &self.x
+    }
+
+    fn y(&self) -> &Bp256r1FieldElement {
+        &self.y
+    }
+
+    fn z(&self) -> &Bp256r1FieldElement {
+        &self.z
+    }
+
+    fn is_infinity(&self) -> Condition<u64> {
+        Bp256r1JacobianPoint::is_infinity(self)
+    }
+
+    fn to_affine(&self) -> Option<(Bp256r1FieldElement, Bp256r1FieldElement)> {
+        Bp256r1JacobianPoint::to_affine(self)
+    }
+
+    fn negate(&self) -> Self {
+        Bp256r1JacobianPoint::negate(self)
+    }
+
+    fn zeroize(&mut self) {
+        Bp256r1JacobianPoint::zeroize(self)
+    }
+
+    fn double(&self) -> Self {
+        Bp256r1JacobianPoint::double(self)
+    }
+
+    fn add(&self, other: &Self) -> Self {
+        Bp256r1JacobianPoint::add(self, other)
     }
 }

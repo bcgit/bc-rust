@@ -74,6 +74,7 @@
 
 use bouncycastle_core::errors::KDFError;
 use bouncycastle_core::hazmat::do_hazardous_operations;
+use bouncycastle_core::kdf_params::KdfDescription;
 use bouncycastle_core::key_material::{KeyMaterialTrait, KeyType};
 use bouncycastle_core::security_strength::SecurityStrength;
 use bouncycastle_core::traits::{Algorithm, HashAlgParams, HashOneShot, KDF};
@@ -201,6 +202,16 @@ impl<H: ConcatKDFParams> Algorithm for ConcatKDF<H> {
     const ALG_NAME: &'static str = H::CONCAT_KDF_ALG_NAME;
     /// The hash's: the KDF cannot exceed what its hash provides.
     const MAX_SECURITY_STRENGTH: SecurityStrength = H::MAX_SECURITY_STRENGTH;
+}
+
+/// The KDF is made from nothing but its hash, which the type names, so it describes itself:
+/// the engine is a fresh instance.
+impl<H: ConcatKDFParams> KdfDescription for ConcatKDF<H> {
+    type Engine = Self;
+
+    fn engine(&self) -> Result<Self, KDFError> {
+        Ok(Self::new())
+    }
 }
 
 impl<H: ConcatKDFParams> ConcatKDF<H> {

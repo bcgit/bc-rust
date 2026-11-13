@@ -8,9 +8,10 @@ mod cavp_common;
 use bouncycastle_core::agreement_key::AgreementKey;
 use bouncycastle_core::key_material::KeyMaterialTrait;
 use bouncycastle_core::traits::{KeyAgreementPrivateKey, KeyAgreementPublicKey};
-use bouncycastle_eccdh::eccdh_p256::SS_LEN;
+use bouncycastle_ec::P256;
+use bouncycastle_ec::curve::Curve;
+use bouncycastle_eccdh::keys::{ECCDHPrivateKey, ECCDHPublicKey};
 use bouncycastle_eccdh::keys_common::DerivePublicKey;
-use bouncycastle_eccdh::keys_p256::{ECCDHP256PrivateKey, ECCDHP256PublicKey, SK_LEN};
 use cavp_common::{get_test_data, hex_field, parse_records, uncompressed_pk};
 
 const SECTION: &str = "P-256";
@@ -36,14 +37,14 @@ fn cavp_ecc_cdh_primitive() {
             &hex_field(&record.fields, "QIUTx", FIELD_WIDTH),
             &hex_field(&record.fields, "QIUTy", FIELD_WIDTH),
         );
-        let d = hex_field(&record.fields, "dIUT", SK_LEN);
-        let z_expected = hex_field(&record.fields, "ZIUT", SS_LEN);
+        let d = hex_field(&record.fields, "dIUT", P256::SCALAR_LEN);
+        let z_expected = hex_field(&record.fields, "ZIUT", P256::FE_LEN);
 
-        let peer_pk = ECCDHP256PublicKey::from_bytes(&peer)
+        let peer_pk = ECCDHPublicKey::<P256>::from_bytes(&peer)
             .unwrap_or_else(|e| panic!("COUNT {count}: QCAVS {e:?}"));
-        let own_pk = ECCDHP256PublicKey::from_bytes(&own)
+        let own_pk = ECCDHPublicKey::<P256>::from_bytes(&own)
             .unwrap_or_else(|e| panic!("COUNT {count}: QIUT {e:?}"));
-        let sk = ECCDHP256PrivateKey::from_bytes(&d)
+        let sk = ECCDHPrivateKey::<P256>::from_bytes(&d)
             .unwrap_or_else(|e| panic!("COUNT {count}: dIUT {e:?}"));
         assert_eq!(sk.derive_pk(), own_pk, "COUNT {count}: [dIUT]G must be QIUT");
 

@@ -3,25 +3,28 @@
 
 mod wycheproof_common;
 
-use bouncycastle_eccdh::eccdh_p384::SS_LEN;
-use bouncycastle_eccdh::keys_p384::{ECCDHP384PrivateKey, ECCDHP384PublicKey, PK_LEN, SK_LEN};
+use bouncycastle_ec::P384;
+use bouncycastle_ec::curve::Curve;
+use bouncycastle_eccdh::keys::{ECCDHPrivateKey, ECCDHPublicKey};
 
 #[test]
 fn ecdh_secp384r1_test() {
-    wycheproof_common::run::<ECCDHP384PublicKey, ECCDHP384PrivateKey, PK_LEN, SK_LEN, SS_LEN>(
-        "ecdh_secp384r1_test.json",
-        "secp384r1",
-        1047,
-        772,
-    );
+    wycheproof_common::run::<
+        ECCDHPublicKey<P384>,
+        ECCDHPrivateKey<P384>,
+        { P384::PK_UNCOMPRESSED_LEN },
+        { P384::SCALAR_LEN },
+        { P384::FE_LEN },
+    >("ecdh_secp384r1_test.json", "secp384r1", 1047, 772);
 }
 
 #[test]
 fn ecdh_secp384r1_ecpoint_test() {
-    wycheproof_common::run::<ECCDHP384PublicKey, ECCDHP384PrivateKey, PK_LEN, SK_LEN, SS_LEN>(
-        "ecdh_secp384r1_ecpoint_test.json",
-        "secp384r1",
-        790,
-        772,
-    );
+    wycheproof_common::run::<
+        ECCDHPublicKey<P384>,
+        ECCDHPrivateKey<P384>,
+        { P384::PK_UNCOMPRESSED_LEN },
+        { P384::SCALAR_LEN },
+        { P384::FE_LEN },
+    >("ecdh_secp384r1_ecpoint_test.json", "secp384r1", 790, 772);
 }
