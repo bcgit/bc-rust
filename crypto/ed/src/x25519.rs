@@ -118,22 +118,23 @@
 //! All values are in bytes. The "in memory" sizes are measured by rust's `std::mem::size_of`.
 //! [`X25519PrivateKey`] holds its public key alongside the 32-byte scalar.
 //!
-//! Per-call stack usage, measured as the deepest frame chain below each entry point in the release
-//! build (x86-64 Linux, rustc 1.99.0, return addresses included), before the move onto the key
-//! agreement roles; the role's worker adds its own frame of a few words to the agreement figure:
+//! Per-call stack usage, measured as the deepest frame chain below each entry point of
+//! `mem_usage_benches`' x25519 harness in the release build (x86-64 Linux, rustc 1.97.0-nightly,
+//! return addresses included), on the key agreement roles with the field element's wipe:
 //!
 //! | Entry point                     | Stack  |
 //! |---------------------------------|--------|
-//! | `keygen_from_seed`              | 1200 B |
-//! | `X25519PrivateKey::from_bytes`  | 1136 B |
-//! | `agree` on the private key      | 1072 B |
-//! | `encaps` on the public key      | 2368 B |
-//! | `decaps` on the private key     | 1872 B |
+//! | `keygen_from_seed`              | 1784 B |
+//! | `X25519PrivateKey::from_bytes`  | 1704 B |
+//! | `agree` on the private key      | 1816 B |
+//! | `encaps` on the public key      | 2792 B |
+//! | `decaps` on the private key     | 2264 B |
 //!
 //! Key generation, decoding a private key, and key agreement each run one Montgomery ladder plus
-//! the field inversion.
-//! The KEM figures additionally run HPKE.DHKEM and stack usage is dominated by the HKDF-SHA256 key
-//! schedule.
+//! the field inversion: the chain is the in-place scalar multiplication, the ladder and a field
+//! multiplication.
+//! The KEM figures additionally run HPKE.DHKEM, and their chain runs through HKDF-SHA256's HMAC
+//! and SHA-256 compression. The `encaps` figure includes the DRBG that draws the ephemeral key.
 //!
 //! # 🚨 Security Considerations 🚨
 //!
