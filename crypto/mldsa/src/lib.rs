@@ -89,6 +89,14 @@
 //!
 //! All values are in bytes. The "in memory" sizes are measured by rust's `std::mem::size_of`.
 //!
+//! The (rough) performance gains for the pre-expanded key mode are (keygen not included because it does not change):
+//!
+//! | Key Object          | sign()   | verify() |
+//! |---------------------|----------|----------|
+//! | ML-DSA-44_expanded  | x1.13    | x1.9    |
+//! | ML-DSA-65_expanded  | x1.2    | x2.2    |
+//! | ML-DSA-87_expanded  | x1.28    | x2.5    |
+//!
 //! # 🚨 Security Considerations 🚨
 //!
 //! This crate intends to expose only APIs that are secure to use.

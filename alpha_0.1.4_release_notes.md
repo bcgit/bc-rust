@@ -168,3 +168,4 @@
   for P-256, P-384 and P-521 under SHA-224 to SHA-512, RFC 6979's appendix under the same hashes, and every
   Wycheproof ECDSA file for these curves, SHA-3 included.
 
+* Further reductions to the memory usage of the mldsa-lowmemory and mlkem-lowmemory crates.

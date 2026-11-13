@@ -605,7 +605,8 @@ impl<P: MLDSAParams> MLDSA<P> {
         let t_hat = {
             // scope for s1_hat
             // 3: 𝐀_hat ← ExpandA(𝜌) ▷ 𝐀 is generated and stored in NTT representation as 𝐀
-            let A_hat = expandA::<P>(&rho);
+            let mut A_hat = P::MatrixA::new();
+            expandA::<P>(&rho, &mut A_hat);
 
             // 5: 𝐭 ← NTT−1(𝐀 ∘ NTT(𝐬1)) + 𝐬2
             //   ▷ compute 𝐭 = 𝐀𝐬1 + 𝐬2
@@ -783,7 +784,11 @@ pub(crate) fn sign_internal<
         cs2.inv_ntt();
 
         // 21: 𝐫0 ← LowBits(𝐰 − ⟨⟨𝑐𝐬2⟩⟩)
-        let mut r0 = w.sub_vector(&cs2).low_bits::<P>();
+        // 𝐰 is not read again below -- 𝐰1 was taken from it above -- so the subtraction and the
+        // LowBits both run in its buffer.
+        let mut r0 = w;
+        r0.sub_vector(&cs2);
+        r0.low_bits::<P>();
 
         // 23 (second half): if ||𝐳||∞ ≥ 𝛾1 − 𝛽 or ||𝐫0||∞ ≥ 𝛾2 − 𝛽 then (z, h) ← ⊥
         //  ▷ validity checks
@@ -862,8 +867,12 @@ pub(crate) fn verify_internal<
     // 2: (𝑐_tilde, 𝐳, 𝐡) ← sigDecode(𝜎)
     //  ▷ signer’s commitment hash c_tilde, response 𝐳, and hint 𝐡
     // 3: if 𝐡 = ⊥ then return false
-    let (c_tilde, z, h) =
-        sig_decode::<P, SIG_LEN>(sig).ok_or(SignatureError::SignatureVerificationFailed)?;
+    let mut c_tilde = <P::SigCTilde as ZeroizablePrimitive>::ZEROED;
+    let mut z = P::VecL::new();
+    let mut h = P::VecK::new();
+    if !sig_decode::<P, SIG_LEN>(sig, &mut c_tilde, &mut z, &mut h) {
+        return Err(SignatureError::SignatureVerificationFailed);
+    }
 
     // 13 (first half) return [[ ||𝐳||∞ < 𝛾1 − 𝛽]]
     if z.check_norm(P::gamma1_minus_beta) {
@@ -909,7 +918,8 @@ pub(crate) fn verify_internal<
             t1_shift_hat.ntt();
             t1_shift_hat.scalar_vector_ntt(&c_hat)
         };
-        let mut wp_approx = Az.sub_vector(&ct1);
+        let mut wp_approx = Az;
+        wp_approx.sub_vector(&ct1);
         // Bound-keeping step before NTT⁻¹, not in FIPS 204: see `Polynomial::reduce32`. Here it
         // is security-critical: 𝐳 and 𝐭1 are attacker-controlled, and without it a crafted
         // signature overflows the butterflies (<https://eprint.iacr.org/2026/1032>, Wycheproof mldsa_87_verify tcId 240/241).
